@@ -32,9 +32,10 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build-tests --output-on-failure
 
-      # [rc4l] Enforce 100% line coverage on tested units, adding ported files here as they land.
+      # [rc4l] Enforce 100% line coverage on every tested unit — --auto derives the list from
+      # each *_test.cpp's sibling, so new tests are gated automatically with no edit here.
       - name: Coverage (100% gate on tested units)
-        run: bash tests/coverage.sh --enforce src/zandronum/src/vectors.h
+        run: bash tests/coverage.sh --auto
 
       # [rc4l] compile_commands.json comes from the configure step above. Tests are now
       # colocated in the engine tree, so lint every *_test.cpp there (absolute paths so

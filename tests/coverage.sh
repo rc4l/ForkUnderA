@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # [rc4l] Build the tests with llvm-cov instrumentation, run them, and report per-file coverage.
 #
-# [rc4l] Usage: `tests/coverage.sh` reports only; `tests/coverage.sh --enforce <file> …` fails if any listed file is under 100% line coverage.
+# [rc4l] Usage: `tests/coverage.sh` reports only; `--enforce <file> …` fails if any listed
+# file is under 100% line coverage; `--auto` derives that list from the tests themselves.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,7 +18,21 @@ PROFDATA="$(llvm_tool llvm-profdata)"
 COV="$(llvm_tool llvm-cov)"
 
 enforce=()
-if [[ "${1:-}" == "--enforce" ]]; then shift; enforce=("$@"); fi
+if [[ "${1:-}" == "--enforce" ]]; then
+  shift; enforce=("$@")
+elif [[ "${1:-}" == "--auto" ]]; then
+  # [rc4l] Derive the enforced set from the tests themselves: each DIR/NAME_test.cpp gates
+  # its sibling unit DIR/NAME.{cpp,h}. Adding a test auto-enforces its unit — no list to maintain.
+  search=()
+  [[ -d "$ROOT/features" ]] && search+=("$ROOT/features")
+  [[ -d "$ROOT/src/zandronum/src" ]] && search+=("$ROOT/src/zandronum/src")
+  while IFS= read -r t; do
+    base="${t%_test.cpp}"
+    for ext in cpp h; do
+      [[ -f "$base.$ext" ]] && enforce+=("${base#"$ROOT/"}.$ext")
+    done
+  done < <( ((${#search[@]})) && find "${search[@]}" -name '*_test.cpp' 2>/dev/null )
+fi
 
 # [rc4l] llvm-cov instrumentation (-fprofile-instr-generate/-fcoverage-mapping) is
 # Clang-only, so force the Clang toolchain — otherwise Ubuntu's default c++ (GCC)
