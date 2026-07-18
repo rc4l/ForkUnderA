@@ -55,6 +55,17 @@ THIS SOFTWARE.
 #define Intcast (int)(long)
 #define Double_Align
 #define X64_bit_pointers
+#elif defined(__arm64__) || defined(__aarch64__)
+/* [rc4l] Apple Silicon (arm64) is little-endian and LP64, exactly like x86_64 —
+ * so it needs IEEE_8087, not the IEEE_MC68k (big-endian) fallback below. Without
+ * this, dtoa() spins forever during static init (float CVar defaults), hanging
+ * every native-arm64 build before main(). */
+#define IEEE_8087
+#define Arith_Kind_ASL 1
+#define Long int
+#define Intcast (int)(long)
+#define Double_Align
+#define X64_bit_pointers
 #elif defined(__i386__)
 #define IEEE_8087
 #define Arith_Kind_ASL 1
