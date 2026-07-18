@@ -59,7 +59,7 @@
 #include "team.h"
 #include "chat.h"
 
-#ifndef NO_SOUND
+#if !defined(NO_SOUND) && !defined(NO_FMOD)
 #include "fmod_errors.h"
 #endif
 
@@ -271,7 +271,7 @@ CCMD( voice_unignore_idx )
 }
 
 // [AK] Everything past this point only compiles if compiling with sound.
-#ifndef NO_SOUND
+#if !defined(NO_SOUND) && !defined(NO_FMOD)
 
 static void voicechat_SetChannelVolume( FCommandLine &argv, const bool isIndexCmd )
 {
@@ -2430,7 +2430,7 @@ bool FOptionMenuMicTestBar::Selectable( void )
 //*****************************************************************************
 //	STATISTICS
 
-#ifndef NO_SOUND
+#if !defined(NO_SOUND) && !defined(NO_FMOD)
 
 ADD_STAT( voice )
 {

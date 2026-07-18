@@ -144,6 +144,17 @@ public:
 		::new((void*)&Array[Count]) T(item);
 		return Count++;
 	}
+	// [OpenAL] Returns the index of the first element equal to item, or Size() if absent.
+	unsigned int Find(const T& item) const
+	{
+		unsigned int i;
+		for(i = 0;i < Count;++i)
+		{
+			if(Array[i] == item)
+				break;
+		}
+		return i;
+	}
 	bool Pop ()
 	{
 		if (Count > 0)

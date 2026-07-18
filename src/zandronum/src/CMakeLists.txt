@@ -188,6 +188,10 @@ else( WIN32 )
 		option( SERVERONLY "Build a server only binary" )
 		option( NO_SOUND "Turn of sound support" )
 		option( NO_GL "Turn of OpenGL support" )
+		# [ZandroX] Optional sound backends. Default: OpenAL enabled, FMOD enabled.
+		# Building with -DNO_FMOD=ON -DNO_OPENAL=OFF gives the FMOD-free OpenAL build.
+		option( NO_OPENAL "Disable the OpenAL sound backend" OFF )
+		option( NO_FMOD "Disable the FMOD sound backend" OFF )
 
 		# [BB] The server doesn't need sound, GTK or OpenGL.
 		if( SERVERONLY )
@@ -259,8 +263,11 @@ else( WIN32 )
 	add_definitions( -DNO_SERVER_GUI=1 )
 
 	# [BB] Turning off sound needs special handling in the code, activated with the define NO_SOUND.
+	# [ZandroX] NO_SOUND implies no FMOD and no OpenAL backend.
 	if( NO_SOUND )
 		add_definitions( -DNO_SOUND=1 )
+		set( NO_FMOD ON )
+		set( NO_OPENAL ON )
 	endif( NO_SOUND )
 
 	# [BB] Turning off OpenGL needs special handling in the code, activated with the define NO_GL.
@@ -319,9 +326,9 @@ if( FMOD_INCLUDE_DIR )
 	message( STATUS "FMOD include files found at ${FMOD_INCLUDE_DIR}" )
 else( FMOD_INCLUDE_DIR )
 	# [BB] Without sound, we don't need FMOD.
-	if ( NOT NO_SOUND )
+	if ( NOT NO_SOUND AND NOT NO_FMOD )
 		message( SEND_ERROR "Could not find FMOD include files" )
-	endif ( NOT NO_SOUND )
+	endif ( NOT NO_SOUND AND NOT NO_FMOD )
 endif( FMOD_INCLUDE_DIR )
 
 
@@ -341,10 +348,45 @@ if( FMOD_LIBRARY )
 	message( STATUS "FMOD library found at ${FMOD_LIBRARY}" )
 else( FMOD_LIBRARY )
 	# [BB] Without sound, we don't need FMOD.
-	if ( NOT NO_SOUND )
+	if ( NOT NO_SOUND AND NOT NO_FMOD )
 		message( SEND_ERROR "Could not find FMOD library" )
-	endif ( NOT NO_SOUND )
+	endif ( NOT NO_SOUND AND NOT NO_FMOD )
 endif( FMOD_LIBRARY )
+
+
+# [ZandroX] Optional OpenAL sound backend + external sample decoders (SndFile, MPG123).
+if( NO_FMOD )
+	add_definitions( -DNO_FMOD=1 )
+endif( NO_FMOD )
+
+if( NOT NO_OPENAL )
+	find_package( OpenAL )
+	if( OPENAL_INCLUDE_DIR AND OPENAL_LIBRARY )
+		message( STATUS "OpenAL found at ${OPENAL_LIBRARY}" )
+		include_directories( ${OPENAL_INCLUDE_DIR} )
+	else()
+		message( STATUS "Could not find OpenAL; disabling OpenAL backend" )
+		set( NO_OPENAL ON )
+	endif()
+endif( NOT NO_OPENAL )
+
+if( NO_OPENAL )
+	add_definitions( -DNO_OPENAL=1 )
+endif( NO_OPENAL )
+
+# [ZandroX] Sample decoders used by the OpenAL backend.
+if( NOT NO_OPENAL )
+	find_package( SndFile )
+	find_package( MPG123 )
+	if( SNDFILE_FOUND )
+		add_definitions( -DHAVE_SNDFILE )
+		include_directories( "${SNDFILE_INCLUDE_DIRS}" )
+	endif( SNDFILE_FOUND )
+	if( MPG123_FOUND )
+		add_definitions( -DHAVE_MPG123 )
+		include_directories( "${MPG123_INCLUDE_DIR}" )
+	endif( MPG123_FOUND )
+endif( NOT NO_OPENAL )
 
 
 # Search for FluidSynth
@@ -655,12 +697,21 @@ add_custom_target( revision_check ALL
 message( STATUS "Fluid synth libs: ${FLUIDSYNTH_LIBRARIES}" )
 set( ZDOOM_LIBS ${ZDOOM_LIBS} "${ZLIB_LIBRARIES}" "${JPEG_LIBRARIES}" "${BZIP2_LIBRARIES}" "${GME_LIBRARIES}" )
 # [BB] Without sound, we don't need FMOD.
-if ( NOT NO_SOUND )
+include_directories( "${ZLIB_INCLUDE_DIR}" "${BZIP2_INCLUDE_DIR}" "${LZMA_INCLUDE_DIR}" "${JPEG_INCLUDE_DIR}" "${GME_INCLUDE_DIR}" )
+if ( NOT NO_FMOD )
 	set( ZDOOM_LIBS ${ZDOOM_LIBS} "${FMOD_LIBRARY}" )
-	include_directories( "${ZLIB_INCLUDE_DIR}" "${FMOD_INCLUDE_DIR}" "${BZIP2_INCLUDE_DIR}" "${LZMA_INCLUDE_DIR}" "${JPEG_INCLUDE_DIR}" "${GME_INCLUDE_DIR}" )
-else ( NOT NO_SOUND )
-	include_directories( "${ZLIB_INCLUDE_DIR}" "${BZIP2_INCLUDE_DIR}" "${LZMA_INCLUDE_DIR}" "${JPEG_INCLUDE_DIR}" "${GME_INCLUDE_DIR}" )
-endif ( NOT NO_SOUND )
+	include_directories( "${FMOD_INCLUDE_DIR}" )
+endif ( NOT NO_FMOD )
+# [ZandroX] Link the OpenAL backend and its sample decoders.
+if ( NOT NO_OPENAL )
+	set( ZDOOM_LIBS ${OPENAL_LIBRARY} ${ZDOOM_LIBS} )
+	if( SNDFILE_FOUND )
+		set( ZDOOM_LIBS ${ZDOOM_LIBS} "${SNDFILE_LIBRARIES}" )
+	endif( SNDFILE_FOUND )
+	if( MPG123_FOUND )
+		set( ZDOOM_LIBS ${ZDOOM_LIBS} "${MPG123_LIBRARIES}" )
+	endif( MPG123_FOUND )
+endif ( NOT NO_OPENAL )
 
 # [BB] We need OpenSSL for csrp.
 FIND_PACKAGE ( OpenSSL REQUIRED )
@@ -1430,6 +1481,9 @@ add_executable( zdoom WIN32
 	# [rc4l] Feature modules — must link BEFORE zzautozend.cpp so their class
 	# registrations land within the [CRegHead, CRegTail] creg section walked by
 	# PClass::StaticInit (see features/README.md).
+	features/openal-sound/oalsound.cpp
+	features/openal-sound/sndfile_decoder.cpp
+	features/openal-sound/mpg123_decoder.cpp
 	features/freeform-menu/freeformmenu.cpp
 	zzautozend.cpp
 )
@@ -1447,6 +1501,14 @@ ENDIF ( CREATE_PACKET_LOG )
 set_source_files_properties( xlat/parse_xlat.cpp PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/xlat_parser.c" )
 set_source_files_properties( sc_man.cpp PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/sc_man_scanner.h" )
 set_source_files_properties( ${NOT_COMPILED_SOURCE_FILES} PROPERTIES HEADER_FILE_ONLY TRUE )
+
+# [ZandroX] Exclude a sound backend's source when that backend is disabled.
+if( NO_FMOD )
+	set_source_files_properties( sound/fmodsound.cpp PROPERTIES HEADER_FILE_ONLY TRUE )
+endif( NO_FMOD )
+if( NO_OPENAL )
+	set_source_files_properties( features/openal-sound/oalsound.cpp PROPERTIES HEADER_FILE_ONLY TRUE )
+endif( NO_OPENAL )
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS")
 	# [BL] Solaris requires these to be explicitly linked.
@@ -1466,6 +1528,7 @@ include_directories( .
 	Linux
 	oplsynth
 	sound
+	features/openal-sound
 	textures
 	thingdef
 	timidity

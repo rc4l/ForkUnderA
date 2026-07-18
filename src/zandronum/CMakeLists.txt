@@ -266,7 +266,7 @@ if( NOT WIN32 AND NOT APPLE )
 	# [rc4l] ...nor when sound is off entirely (NO_SOUND): output_sdl is the FMOD SDL output
 	# plugin, so with no FMOD its include_directories( ${FMOD_INCLUDE_DIR} ) is empty and
 	# newer CMake errors on the relative path.
-	if ( NOT SERVERONLY AND NOT NO_SOUND )
+	if ( NOT SERVERONLY AND NOT NO_SOUND AND NOT NO_FMOD )
 		add_subdirectory( output_sdl )
 	endif ()
 endif( NOT WIN32 AND NOT APPLE )

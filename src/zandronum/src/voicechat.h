@@ -56,8 +56,9 @@
 #include "i_soundinternal.h"
 #include "v_font.h"
 
-// [AK] Only include FMOD, Opus, and RNNoise files if compiling with sound.
-#ifndef NO_SOUND
+// [AK] Only include FMOD, Opus, and RNNoise files if compiling with FMOD sound.
+// [ZandroX] The OpenAL (NO_FMOD) build has no FMOD, so VoIP is stubbed out.
+#if !defined(NO_SOUND) && !defined(NO_FMOD)
 #include "fmod_wrap.h"
 #include "opus.h"
 #include "rnnoise.h"
@@ -149,7 +150,7 @@ public:
 	static VOIPController &GetInstance( void ) { static VOIPController instance; return instance; }
 
 // [AK] Some of these functions only exist as stubs if compiling without sound.
-#ifdef NO_SOUND
+#if defined(NO_SOUND) || defined(NO_FMOD)
 
 	void Tick( void ) { }
 	void StartRecording( void ) { }

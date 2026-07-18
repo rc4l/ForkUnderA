@@ -38,6 +38,9 @@
 #include "doomtype.h"
 #include "i_soundinternal.h"
 
+class FileReader;
+struct SoundDecoder;
+
 enum ECodecType
 {
 	CODEC_Unknown,
@@ -150,6 +153,10 @@ public:
 	virtual short *DecodeSample(int outlen, const void *coded, int sizebytes, ECodecType type);
 
 	virtual void DrawWaveDebug(int mode);
+
+protected:
+	// [OpenAL] The OpenAL backend decodes samples through external libraries.
+	virtual SoundDecoder *CreateDecoder(FileReader *reader);
 };
 
 extern SoundRenderer *GSnd;
@@ -165,5 +172,8 @@ float S_GetRolloff(FRolloffInfo *rolloff, float distance, bool logarithmic);
 FISoundChannel *S_GetChannel(void *syschan);
 
 extern ReverbContainer *DefaultEnvironments[26];
+
+bool IsFModExPresent();
+bool IsOpenALPresent();
 
 #endif
