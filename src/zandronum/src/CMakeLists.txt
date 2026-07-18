@@ -1427,6 +1427,10 @@ add_executable( zdoom WIN32
 	r_data/renderstyle.cpp
 	r_data/r_interpolate.cpp
 	r_data/r_translate.cpp
+	# [rc4l] Feature modules — must link BEFORE zzautozend.cpp so their class
+	# registrations land within the [CRegHead, CRegTail] creg section walked by
+	# PClass::StaticInit (see features/README.md).
+	features/freeform-menu/freeformmenu.cpp
 	zzautozend.cpp
 )
 
@@ -1632,8 +1636,4 @@ source_group("Network\\Protocol\\Specs" REGULAR_EXPRESSION "^${CMAKE_SOURCE_DIR}
 source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_DIR}/protocolspec/generator/.+")
 
 # MCP dev bridge (overlay -- not committed upstream)
-target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_actorstate.cpp mcp_hud.cpp )
-
-# [rc4l] Freeform menu feature (source in features/freeform-menu/, compiled into the engine).
-target_sources( zdoom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../features/freeform-menu/freeformmenu.cpp )
-target_include_directories( zdoom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../features/freeform-menu )
+target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_actorstate.cpp mcp_hud.cpp )

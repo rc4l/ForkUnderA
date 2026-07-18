@@ -2,7 +2,7 @@ Keep src/ at 100% test coverage for all new c++ code (statements, branches, func
 
 Don't write anti-patterns. Prefer generic, reusable helpers over hand-maintained boilerplate that grows per case. If you catch yourself copy-pasting a function for each new command/parser/tool, factor out the shared part instead.
 
-When a feature is mostly new files, group its source, headers, and tests together in a subfolder under `features/` (package-by-feature) inside `src/zandronum/src/` and are listed in that feature's README. See `features/README.md`.
+When a feature is mostly new files, group its source, headers, and tests together in a subfolder under `features/` (package-by-feature) inside `src/zandronum/src/`, and list its in-engine hooks in that feature's README. Feature `.cpp` files that use `IMPLEMENT_CLASS` MUST be added to the `add_executable( zdoom … )` list before `zzautozend.cpp` (not appended via a trailing `target_sources`), or their class registration lands outside the linker's `creg` section and the class silently never registers — see `src/zandronum/src/features/README.md`.
 
 Comments should be one sentence maximum with each comment being prefixed with the github account name. For example 'rc4l' becomes '// [rc4l]'
 

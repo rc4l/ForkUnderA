@@ -46,7 +46,7 @@
 #include "team.h"
 #include "menu/menu.h"
 // [rc4l] Colocated in features/freeform-menu/ (was menu/ upstream); resolved same-dir.
-#include "freeformmenuitems.h"
+#include "features/freeform-menu/freeformmenuitems.h"
 
 EXTERN_CVAR(Int, m_show_backbutton)
 

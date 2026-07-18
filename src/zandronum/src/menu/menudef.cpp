@@ -53,7 +53,7 @@
 #include "announcer.h"
 #include "doomerrors.h"
 
-#include "freeformmenuitems.h"
+#include "features/freeform-menu/freeformmenuitems.h"
 #include "optionmenuitems.h"
 
 void ClearSaveGames();

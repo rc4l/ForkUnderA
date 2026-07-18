@@ -25,21 +25,18 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 include(GoogleTest)
 
-# [rc4l] Root of the vendored engine sources that tests compile against.
+# [rc4l] Root of the vendored engine sources that tests compile against. Our own feature
+# modules live under features/ INSIDE this tree (src/zandronum/src/features/), so one
+# recursive glob covers both vendored-unit tests and feature tests.
 set(ENGINE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../src/zandronum/src")
-# [rc4l] Our own feature modules (package-by-feature); see features/README.md.
-set(FEATURES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../features")
 
-# [rc4l] Tests live beside the code they cover: colocated in the engine tree for tests of
-# vendored units, or inside features/<name>/ for our own feature modules. The engine build
-# ignores every *_test.cpp (it compiles an explicit source list, never a glob — verified in
-# src/zandronum/src/CMakeLists.txt), so they never leak into the shipped binary.
+# [rc4l] Tests colocate beside the code they cover (vendored units and feature modules alike).
+# The engine build ignores every *_test.cpp (it compiles an explicit source list, never a glob
+# — verified in src/zandronum/src/CMakeLists.txt), so they never leak into the shipped binary.
 # CONFIGURE_DEPENDS re-globs at build time, so a new *_test.cpp needs no CMake edit.
-file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
-  "${ENGINE_SRC}/*_test.cpp"
-  "${FEATURES_DIR}/*_test.cpp")
+file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_test.cpp")
 if(NOT TEST_SOURCES)
-  message(FATAL_ERROR "No *_test.cpp files found under ${ENGINE_SRC} or ${FEATURES_DIR}")
+  message(FATAL_ERROR "No *_test.cpp files found under ${ENGINE_SRC}")
 endif()
 
 add_executable(zandrox_tests ${TEST_SOURCES})
