@@ -257,26 +257,30 @@ make_app_bundle() {
     done
 
     # Stage and re-point dylibs. The recursive pass follows the link graph (OpenAL,
-    # sndfile, mpg123, opus, SDL, GLEW, openssl all resolve via their absolute
-    # install ids). sdl12-compat dlopens SDL2 at runtime (no link-time edge), so
-    # SDL2 is staged explicitly and found via @loader_path next to the binary.
+    # sndfile, mpg123, opus, SDL1.2, GLEW, openssl all resolve via their absolute
+    # install ids). But sdl12-compat loads its *backend* SDL by dlopen'ing it by
+    # leaf name at runtime — there's no link-time edge, so the recursive pass never
+    # sees it. Current Homebrew sdl12-compat targets **SDL3** (older ones SDL2), so
+    # stage whichever backend libs exist and place them at @loader_path next to the
+    # binary (where sdl12-compat's dlopen looks first). Missing this = a fatal
+    # "Failed loading SDL3 library" dialog at launch.
     _BUNDLED=()
-    local sdl sdl2; sdl="$(brew --prefix sdl12-compat)"
-    sdl2="$(brew --prefix sdl2 2>/dev/null || true)"
+    local sdl; sdl="$(brew --prefix sdl12-compat)"
     local search=("$(brew --prefix)/lib" "$sdl/lib" "$macos")
-    [[ -n "$sdl2" ]] && search+=("$sdl2/lib")
-    # sdl12-compat dlopens libSDL2 at runtime (no link-time edge), so stage it
-    # explicitly. It lives in the sdl2 keg, not sdl12-compat.
-    local sdl2lib=""
-    [[ -n "$sdl2" && -f "$sdl2/lib/libSDL2-2.0.0.dylib" ]] && sdl2lib="$sdl2/lib/libSDL2-2.0.0.dylib"
-    [[ -z "$sdl2lib" && -f "$sdl/lib/libSDL2-2.0.0.dylib" ]] && sdl2lib="$sdl/lib/libSDL2-2.0.0.dylib"
-    if [[ -n "$sdl2lib" ]]; then
-        cp -L "$sdl2lib" "$macos/" && chmod u+w "$macos/libSDL2-2.0.0.dylib"
-        _BUNDLED+=("libSDL2-2.0.0.dylib")
-        install_name_tool -id "@loader_path/libSDL2-2.0.0.dylib" "$macos/libSDL2-2.0.0.dylib" 2>/dev/null || true
-    else
-        warn "libSDL2-2.0.0.dylib not found; sound/video may fail at runtime"
-    fi
+    local staged_backend=0 spec keg leaf prefix
+    for spec in "sdl3:libSDL3.0.dylib" "sdl2:libSDL2-2.0.0.dylib"; do
+        keg="${spec%%:*}"; leaf="${spec##*:}"
+        prefix="$(brew --prefix "$keg" 2>/dev/null || true)"
+        [[ -n "$prefix" ]] && search+=("$prefix/lib")
+        if [[ -n "$prefix" && -f "$prefix/lib/$leaf" ]]; then
+            cp -L "$prefix/lib/$leaf" "$macos/$leaf" && chmod u+w "$macos/$leaf"
+            _BUNDLED+=("$leaf")
+            install_name_tool -id "@loader_path/$leaf" "$macos/$leaf" 2>/dev/null || true
+            _bundle_deps "$macos/$leaf" "$macos" "${search[@]}"  # its own (non-system) deps
+            staged_backend=1
+        fi
+    done
+    (( staged_backend )) || warn "no SDL2/SDL3 backend found to bundle; the app will fail to launch"
     _bundle_deps "$macos/zandronum" "$macos" "${search[@]}"
 
     local icon; icon="$(make_icon "$resources")"
