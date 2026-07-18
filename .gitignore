@@ -2,6 +2,11 @@
 deps/
 build/
 
+# Test/coverage build trees (cmake -S tests -B build-*)
+build-tests/
+build-san/
+build-coverage/
+
 # Files the engine build generates into the vendored source tree (upstream
 # .hgignore treats these as generated; we vendored without .hg so ignore them
 # here to keep src/zandronum clean).

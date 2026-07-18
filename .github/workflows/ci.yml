@@ -1,0 +1,33 @@
+# [rc4l] Run the test suite on every push/PR and only build the macOS engine once tests are green.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test.yml
+
+  build-macos:
+    needs: test
+    # [rc4l] Run the costly macOS build on PRs and on main, but not on every feature-branch push.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # [rc4l] Rosetta 2 is needed to run the Intel (FMOD) build on Apple Silicon runners.
+      - name: Install Rosetta 2
+        run: sudo softwareupdate --install-rosetta --agree-to-license
+
+      - name: Build ZandroX (SOUND=1)
+        run: SOUND=1 ./build.sh
+
+      - name: Upload ZandroX.app
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-macos
+          path: build/ZandroX.app

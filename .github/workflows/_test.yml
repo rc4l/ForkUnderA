@@ -1,0 +1,41 @@
+# [rc4l] Reusable C++ test job called by ci.yml and release.yml so the same suite gates both.
+name: tests
+
+on:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # [rc4l] Linux fully supports AddressSanitizer/UBSan/LeakSanitizer, unlike macOS.
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang clang-tidy llvm
+
+      - name: Configure (ASan + UBSan)
+        run: >
+          cmake -S tests -B build-tests -G Ninja
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DZANDROX_TESTS_SANITIZE=ON
+
+      - name: Build
+        run: cmake --build build-tests
+
+      # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
+      - name: Run tests (ASan + UBSan + LeakSanitizer)
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-tests --output-on-failure
+
+      # [rc4l] Enforce 100% line coverage on tested units, adding ported files here as they land.
+      - name: Coverage (100% gate on tested units)
+        run: bash tests/coverage.sh --enforce src/zandronum/src/vectors.h
+
+      # [rc4l] compile_commands.json comes from the configure step above.
+      - name: clang-tidy (report)
+        run: clang-tidy -p build-tests tests/*.cpp
