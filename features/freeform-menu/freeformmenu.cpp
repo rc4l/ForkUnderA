@@ -45,7 +45,8 @@
 #include "deathmatch.h"
 #include "team.h"
 #include "menu/menu.h"
-#include "menu/freeformmenuitems.h"
+// [rc4l] Colocated in features/freeform-menu/ (was menu/ upstream); resolved same-dir.
+#include "freeformmenuitems.h"
 
 EXTERN_CVAR(Int, m_show_backbutton)
 
@@ -2095,5 +2096,5 @@ void FFreeformMenuSliderCVar::SetSliderValue(float val)
 
 bool FFreeformMenuSliderCVar::IsServerInfo() const
 {
-	return mCVar && mCVar->IsServerInfo();
+	return mCVar && mCVar->IsServerCVar();
 }

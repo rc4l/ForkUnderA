@@ -1348,6 +1348,7 @@ bool V_DoModeSetup (int width, int height, int bits)
 	CleanHeight = height / CleanYfac;
 	assert(CleanWidth >= 320);
 	assert(CleanHeight >= 200);
+	ScaleFac = MIN(width / 480.0f, height / 270.0f);	// [geNia] FreeformMenu 480x270 base
 
 	if (width < 800 || width >= 960)
 	{

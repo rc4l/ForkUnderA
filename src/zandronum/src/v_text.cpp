@@ -89,16 +89,17 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 	uint32 tag;
 
 	int			maxstrlen = INT_MAX;
-	int 		w, maxwidth;
+	int 		w;
+	float		maxwidth;			// [rc4l] float so DTA_ScaleYNoMove can scale fractionally
 	const BYTE *ch;
 	int 		c;
-	int 		cx;
-	int 		cy;
+	float 		cx;
+	float 		cy;
 	int			boldcolor;
 	const FRemapTable *range;
-	int			height;
+	float		height;
 	int			forcedwidth = 0;
-	int			scalex, scaley;
+	float		scalex, scaley;
 	int			kerning;
 	FTexture *pic;
 
@@ -111,15 +112,15 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 	boldcolor = normalcolor ? normalcolor - 1 : NumTextColors - 1;
 
 	range = font->GetColorTranslation ((EColorRange)normalcolor);
-	height = font->GetHeight () + 1;
+	height = (float) font->GetHeight () + 1;
 	kerning = font->GetDefaultKerning ();
 
 	ch = (const BYTE *)string;
-	cx = x;
-	cy = y;
+	cx = (float) x;
+	cy = (float) y;
 
 	// Parse the tag list to see if we need to adjust for scaling.
- 	maxwidth = Width;
+ 	maxwidth = (float) Width;
 	scalex = scaley = 1;
 
 #ifndef NO_VA_COPY
@@ -158,13 +159,23 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 			assert("Bad parameter for DrawText" && false);
 			return;
 
+		case DTA_ScaleYNoMove:
+			boolval = va_arg (tags, INTBOOL);
+			if (boolval)
+			{
+				scalex = ScaleFac;
+				scaley = ScaleFac;
+				maxwidth = (float) Width - fmodf((float) Width, scalex);
+			}
+			break;
+
 		case DTA_CleanNoMove_1:
 			boolval = va_arg (tags, INTBOOL);
 			if (boolval)
 			{
-				scalex = CleanXfac_1;
-				scaley = CleanYfac_1;
-				maxwidth = Width - (Width % scalex);
+				scalex = (float) CleanXfac_1;
+				scaley = (float) CleanYfac_1;
+				maxwidth = (float) Width - fmodf((float) Width, scalex);
 			}
 			break;
 
@@ -172,9 +183,9 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 			boolval = va_arg (tags, INTBOOL);
 			if (boolval)
 			{
-				scalex = CleanXfac;
-				scaley = CleanYfac;
-				maxwidth = Width - (Width % scalex);
+				scalex = (float) CleanXfac;
+				scaley = (float) CleanYfac;
+				maxwidth = (float) Width - fmodf((float) Width, scalex);
 			}
 			break;
 

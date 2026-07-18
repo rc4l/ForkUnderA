@@ -66,3 +66,7 @@ Notes:
 `.github/workflows/_test.yml` runs the same three steps (sanitized build+run, coverage
 `--auto`, clang-tidy) on every push/PR, and the macOS engine build is gated behind it
 (`needs: test`). Green tests are required before anything builds.
+
+## Misc
+
+Make sure the feature is tested against its intended networking instance. Server, client, both, etc.

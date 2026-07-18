@@ -76,6 +76,9 @@ int CleanWidth, CleanHeight;
 // Above minus 1 (or 1, if they are already 1)
 int CleanXfac_1, CleanYfac_1, CleanWidth_1, CleanHeight_1;
 
+// [geNia] Stretch values for FreeformMenu, with 480x270 pixels as a base
+float ScaleFac;
+
 // FillSimplePoly uses this
 extern "C" short spanend[MAXHEIGHT];
 
@@ -458,6 +461,15 @@ bool DCanvas::ParseDrawTextureTags (FTexture *img, double x, double y, DWORD tag
 			{
 				parms->destwidth = parms->texwidth * CleanXfac_1;
 				parms->destheight = parms->texheight * CleanYfac_1;
+			}
+			break;
+
+		case DTA_ScaleYNoMove:
+			boolval = va_arg(tags, INTBOOL);
+			if (boolval)
+			{
+				parms->destwidth = parms->texwidth * ScaleFac;
+				parms->destheight = parms->texheight * ScaleFac;
 			}
 			break;
 

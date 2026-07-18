@@ -259,7 +259,7 @@ public:
 
 	bool IsServerInfo() const
 	{
-		return mCVar && mCVar->IsServerInfo();
+		return mCVar && mCVar->IsServerCVar();
 	}
 
 	//=============================================================================
@@ -341,7 +341,7 @@ public:
 
 	bool IsServerInfo() const
 	{
-		return mCVar && mCVar->IsServerInfo();
+		return mCVar && mCVar->IsServerCVar();
 	}
 };
 
@@ -376,7 +376,7 @@ public:
 
 	bool IsServerInfo() const
 	{
-		return mCVar && mCVar->IsServerInfo();
+		return mCVar && mCVar->IsServerCVar();
 	}
 
 };
