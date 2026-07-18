@@ -7,6 +7,11 @@ build-tests/
 build-san/
 build-coverage/
 
+# Linux build outputs (Docker: Dockerfile.linux-build)
+build-linux/
+build-linux-zandronum
+dist-linux/
+
 # Files the engine build generates into the vendored source tree (upstream
 # .hgignore treats these as generated; we vendored without .hg so ignore them
 # here to keep src/zandronum clean).

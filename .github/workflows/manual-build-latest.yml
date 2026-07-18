@@ -1,4 +1,4 @@
-name: Build ZandroX (macOS)
+name: Build ZandroX
 
 on:
   workflow_dispatch: # Trigger manually from the Actions tab
@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  build-macos:
     runs-on: macos-latest
     steps:
       - name: Checkout repository
@@ -27,3 +27,22 @@ jobs:
         with:
           name: ZandroX-macos
           path: build/ZandroX.app
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build ZandroX (Linux, via Docker)
+        run: |
+          # Same Docker path we use locally on macOS — Ubuntu 22.04 base for wide
+          # glibc compatibility. Produces dist-linux/ZandroX-linux-x86_64.tar.gz.
+          ./package-linux.sh
+
+      - name: Upload ZandroX Linux tarball
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-linux
+          path: dist-linux/*.tar.gz

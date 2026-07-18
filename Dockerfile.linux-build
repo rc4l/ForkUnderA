@@ -1,0 +1,30 @@
+# [rc4l] Reproducible Linux build image for ZandroX releases. Ubuntu 22.04 base = older
+# glibc, so the resulting binary runs on a wide range of distros. Deps mirror Zandronum's
+# Linux CI (OpenSSL/Opus/zlib/bzip2/jpeg + Python3 required; SDL1.2 + OpenGL/GLU for the
+# client; GTK/FluidSynth/FMOD are optional). Source is mounted at /work, so the image is
+# just the build environment and never rebuilds as code changes.
+#
+#   ./package-linux.sh                                            # build + tarball (recommended)
+#   docker build -t zandrox-linux -f Dockerfile.linux-build .
+#   docker run --rm -v "$PWD:/work" zandrox-linux                 # full client build (no audio)
+#   docker run --rm -v "$PWD:/work" -e SERVERONLY=ON zandrox-linux  # headless server build
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential cmake ninja-build git python3 pkg-config ca-certificates \
+      libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
+      libsdl1.2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+
+# [rc4l] SERVERONLY=ON (env) builds the headless server (no SDL/GL/audio). Default is the
+# full client with sound off (NO_SOUND=ON) — FMOD Linux libs get layered in later. Builds
+# into the mounted build-linux/ so outputs persist on the host and rebuilds stay incremental.
+CMD ["bash", "-lc", "\
+    cmake -S src/zandronum -B build-linux -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+      -DSERVERONLY=${SERVERONLY:-OFF} -DNO_SOUND=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON && \
+    cmake --build build-linux -j\"$(nproc)\" && \
+    echo '=== built ===' && ls -la build-linux/zandronum* build-linux/*.pk3 2>/dev/null"]
