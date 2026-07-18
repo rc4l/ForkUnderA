@@ -33,6 +33,7 @@
 */
 
 #include "templates.h"
+#include "mcp_bridge.h"
 #include "p_setup.h"
 #include <stdarg.h>
 #include <string.h>
@@ -1155,6 +1156,7 @@ int PrintString (int printlevel, const char *outline)
 	if (printlevel != PRINT_LOG)
 	{
 		I_PrintStr (outlinecopy);
+		MCP_Bridge_TeeOutput( outlinecopy );
 
 		AddToConsole (printlevel, outlinecopy);
 		if ( NETWORK_GetState( ) != NETSTATE_SERVER )

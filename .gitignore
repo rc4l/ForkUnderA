@@ -2,6 +2,18 @@
 deps/
 build/
 
+# Files the engine build generates into the vendored source tree (upstream
+# .hgignore treats these as generated; we vendored without .hg so ignore them
+# here to keep src/zandronum clean).
+src/zandronum/src/gitinfo.h
+src/zandronum/src/network/servercommands.cpp
+src/zandronum/src/network/servercommands.h
+src/zandronum/sqlite/sqlite3.c
+src/zandronum/sqlite/sqlite3.h
+src/zandronum/sqlite/sqlite3ext.h
+src/zandronum/sqlite/sqlite-*.tar.gz
+**/__pycache__/
+
 # Temporary files
 *.tmp
 *.log

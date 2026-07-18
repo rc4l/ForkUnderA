@@ -13569,3 +13569,173 @@ int ACS_GetTranslationIndex( FRemapTable *pTranslation )
 	}
 	return translationindex;
 }
+
+// ==== MCP_ACSVARS (overlay-appended to p_acs.cpp; not committed upstream) ====
+// Read/write ACS world and global variables by index. World vars are a
+// file-static array in p_acs.cpp, so these commands live here (appended) rather
+// than in a separate overlay file. Indices are bounds-checked before access
+// because the array's operator[] calls I_Error (fatal) on out-of-range.
+CCMD( getacsvar )
+{
+	if ( argv.argc() < 3 ) { Printf( "usage: getacsvar <world|global> <index>\n" ); return; }
+	int index = atoi( argv[2] );
+	if ( !stricmp( argv[1], "world" ) )
+	{
+		if ( index < 0 || index >= NUM_WORLDVARS ) { Printf( "index out of range (0-%d)\n", NUM_WORLDVARS - 1 ); return; }
+		Printf( "acsvar world %d = %d\n", index, ACS_WorldVars[index] );
+	}
+	else if ( !stricmp( argv[1], "global" ) )
+	{
+		if ( index < 0 || index >= NUM_GLOBALVARS ) { Printf( "index out of range (0-%d)\n", NUM_GLOBALVARS - 1 ); return; }
+		Printf( "acsvar global %d = %d\n", index, ACS_GlobalVars[index] );
+	}
+	else { Printf( "unknown scope '%s' (use world|global)\n", argv[1] ); }
+}
+
+CCMD( setacsvar )
+{
+	if ( argv.argc() < 4 ) { Printf( "usage: setacsvar <world|global> <index> <value>\n" ); return; }
+	int index = atoi( argv[2] );
+	int value = atoi( argv[3] );
+	if ( !stricmp( argv[1], "world" ) )
+	{
+		if ( index < 0 || index >= NUM_WORLDVARS ) { Printf( "index out of range (0-%d)\n", NUM_WORLDVARS - 1 ); return; }
+		ACS_WorldVars[index] = value;
+		Printf( "acsvar world %d = %d\n", index, ACS_WorldVars[index] );
+	}
+	else if ( !stricmp( argv[1], "global" ) )
+	{
+		if ( index < 0 || index >= NUM_GLOBALVARS ) { Printf( "index out of range (0-%d)\n", NUM_GLOBALVARS - 1 ); return; }
+		ACS_GlobalVars[index] = value;
+		Printf( "acsvar global %d = %d\n", index, ACS_GlobalVars[index] );
+	}
+	else { Printf( "unknown scope '%s' (use world|global)\n", argv[1] ); }
+}
+
+CCMD( dumpacsvars )
+{
+	Printf( "MCP_ACSVARS\n" );
+	for ( int i = 0; i < NUM_WORLDVARS; i++ )
+		if ( ACS_WorldVars[i] != 0 ) Printf( "acsvar world %d = %d\n", i, ACS_WorldVars[i] );
+	for ( int i = 0; i < NUM_GLOBALVARS; i++ )
+		if ( ACS_GlobalVars[i] != 0 ) Printf( "acsvar global %d = %d\n", i, ACS_GlobalVars[i] );
+}
+// ==== end MCP_ACSVARS ====
+
+// ==== MCP_MAPVARS (overlay-appended to p_acs.cpp; not committed upstream) ====
+// Read/write map-scope ACS variables and arrays by name, across all loaded ACS
+// modules. Uses only public FBehavior API, all of which is internally bounds-
+// checked (GetArrayVal/SetArrayVal no-op on OOB, FindMap* return -1, StaticGet-
+// Module returns NULL past the end), so bad input can't crash. Map vars are live
+// only while a map is loaded.
+static FBehavior *MCP_FindModule( const char *name, int &outIndex, bool isArray )
+{
+	for ( int lib = 0; ; lib++ )
+	{
+		FBehavior *m = FBehavior::StaticGetModule( lib );
+		if ( m == NULL ) break;
+		int idx = isArray ? m->FindMapArray( name ) : m->FindMapVarName( name );
+		if ( idx >= 0 ) { outIndex = idx; return m; }
+	}
+	return NULL;
+}
+
+CCMD( getmapvar )
+{
+	if ( argv.argc() < 2 ) { Printf( "usage: getmapvar <name>\n" ); return; }
+	int idx;
+	FBehavior *m = MCP_FindModule( argv[1], idx, false );
+	if ( m == NULL || m->MapVars[idx] == NULL ) { Printf( "mapvar %s not found\n", argv[1] ); return; }
+	Printf( "mapvar %s = %d\n", argv[1], *m->MapVars[idx] );
+}
+
+CCMD( setmapvar )
+{
+	if ( argv.argc() < 3 ) { Printf( "usage: setmapvar <name> <value>\n" ); return; }
+	int idx;
+	FBehavior *m = MCP_FindModule( argv[1], idx, false );
+	if ( m == NULL || m->MapVars[idx] == NULL ) { Printf( "mapvar %s not found\n", argv[1] ); return; }
+	*m->MapVars[idx] = atoi( argv[2] );
+	Printf( "mapvar %s = %d\n", argv[1], *m->MapVars[idx] );
+}
+
+CCMD( getmaparray )
+{
+	if ( argv.argc() < 3 ) { Printf( "usage: getmaparray <name> <index>\n" ); return; }
+	int arrnum;
+	FBehavior *m = MCP_FindModule( argv[1], arrnum, true );
+	if ( m == NULL ) { Printf( "maparray %s not found\n", argv[1] ); return; }
+	int index = atoi( argv[2] );
+	Printf( "maparray %s[%d] = %d\n", argv[1], index, m->GetArrayVal( arrnum, index ) );
+}
+
+CCMD( setmaparray )
+{
+	if ( argv.argc() < 4 ) { Printf( "usage: setmaparray <name> <index> <value>\n" ); return; }
+	int arrnum;
+	FBehavior *m = MCP_FindModule( argv[1], arrnum, true );
+	if ( m == NULL ) { Printf( "maparray %s not found\n", argv[1] ); return; }
+	int index = atoi( argv[2] );
+	m->SetArrayVal( arrnum, index, atoi( argv[3] ) );
+	Printf( "maparray %s[%d] = %d\n", argv[1], index, m->GetArrayVal( arrnum, index ) );
+}
+
+CCMD( dumpmodules )
+{
+	Printf( "MCP_MODULES\n" );
+	for ( int lib = 0; ; lib++ )
+	{
+		FBehavior *m = FBehavior::StaticGetModule( lib );
+		if ( m == NULL ) break;
+		Printf( "module %d %s\n", lib, m->GetModuleName() );
+	}
+}
+// ==== end MCP_MAPVARS ====
+
+// ==== MCP_SCRIPTS (overlay-appended to p_acs.cpp; not committed upstream) ====
+// List ACS scripts and functions across all loaded modules. Read-only, uses
+// public bounds-safe API (GetScriptPtr returns NULL past the end; FindChunk
+// returns NULL if absent), so it can't crash or perturb state.
+CCMD( dumpscripts )
+{
+	Printf( "MCP_SCRIPTS\n" );
+	for ( int lib = 0; ; lib++ )
+	{
+		FBehavior *m = FBehavior::StaticGetModule( lib );
+		if ( m == NULL ) break;
+		for ( int i = 0; ; i++ )
+		{
+			ScriptPtr *s = m->GetScriptPtr( i );
+			if ( s == NULL ) break;
+			// number < 0 encodes a named script (negated FName).
+			if ( s->Number < 0 )
+			{
+				FName nm = FName( (ENamedName) -s->Number );
+				Printf( "script %d %d %s %d %d\n", lib, s->Number, nm.GetChars(), (int)s->Type, (int)s->ArgCount );
+			}
+			else
+			{
+				Printf( "script %d %d - %d %d\n", lib, s->Number, (int)s->Type, (int)s->ArgCount );
+			}
+		}
+	}
+}
+
+CCMD( dumpfunctions )
+{
+	Printf( "MCP_FUNCTIONS\n" );
+	for ( int lib = 0; ; lib++ )
+	{
+		FBehavior *m = FBehavior::StaticGetModule( lib );
+		if ( m == NULL ) break;
+		DWORD *fnames = (DWORD *)m->FindChunk( MAKE_ID( 'F', 'N', 'A', 'M' ) );
+		if ( fnames == NULL ) continue;
+		int count = LittleLong( fnames[2] );
+		for ( int i = 0; i < count; i++ )
+		{
+			const char *name = (char *)( fnames + 2 ) + LittleLong( fnames[3 + i] );
+			Printf( "function %d %d %s\n", lib, i, name );
+		}
+	}
+}
+// ==== end MCP_SCRIPTS ====

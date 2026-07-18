@@ -347,6 +347,7 @@ public:
 	DHUDMessage *DetachMessage (DHUDMessage *msg);
 	DHUDMessage *DetachMessage (uint32 id);
 	void DetachAllMessages ();
+	void MCP_DumpMessages();
 	void ShowPlayerName ();
 	fixed_t GetDisplacement () { return Displacement; }
 	int GetPlayer ();

@@ -33,6 +33,7 @@
 */
 
 #include <stdlib.h>
+#include "mcp_hud.h"
 #include <stdarg.h>
 #include <ctype.h>
 
@@ -104,6 +105,7 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 	if (font == NULL || string == NULL)
 		return;
 
+	MCP_HUD_TeeText( x, y, string );
 	if (normalcolor >= NumTextColors)
 		normalcolor = CR_UNTRANSLATED;
 	boldcolor = normalcolor ? normalcolor - 1 : NumTextColors - 1;

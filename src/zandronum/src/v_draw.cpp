@@ -35,6 +35,7 @@
 // #define NO_SWRENDER 	// set this if you want to exclude the software renderer. Without software renderer the base implementations of DrawTextureV and FillSimplePoly need to be disabled because they depend on it.
 
 #include <stdio.h>
+#include "mcp_hud.h"
 #include <stdarg.h>
 
 #include "doomtype.h"
@@ -115,6 +116,7 @@ static int PalFromRGB(uint32 rgb)
 void STACK_ARGS DCanvas::DrawTexture (FTexture *img, double x, double y, int tags_first, ...)
 {
 	va_list tags;
+	MCP_HUD_TeeTexture( x, y, img );
 	va_start(tags, tags_first);
 	DrawTextureV(img, x, y, tags_first, tags);
 }

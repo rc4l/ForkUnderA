@@ -40,6 +40,7 @@
 #include <fpu_control.h>
 #endif
 #include <float.h>
+#include "mcp_bridge.h"
 
 #if defined(__unix__) || defined(__APPLE__)
 #include <unistd.h>
@@ -1281,6 +1282,7 @@ void D_DoomLoop ()
 	{
 		try
 		{
+			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{
 			case NETSTATE_CLIENT:
