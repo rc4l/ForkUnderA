@@ -13,8 +13,10 @@ Checks: >
   -readability-identifier-length,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay
 
-# [rc4l] Only diagnose headers under tests/ so the vendored engine headers stay excluded.
-HeaderFilterRegex: '.*/tests/.*'
+# [rc4l] Colocated tests live in the same dirs as vendored engine headers, so no path
+# prefix separates ours from upstream's. Diagnose only the test .cpp files passed on the
+# command line, never their included (vendored) headers. '$^' matches nothing.
+HeaderFilterRegex: '$^'
 
 WarningsAsErrors: ''
 

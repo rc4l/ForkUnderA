@@ -36,6 +36,8 @@ jobs:
       - name: Coverage (100% gate on tested units)
         run: bash tests/coverage.sh --enforce src/zandronum/src/vectors.h
 
-      # [rc4l] compile_commands.json comes from the configure step above.
+      # [rc4l] compile_commands.json comes from the configure step above. Tests are now
+      # colocated in the engine tree, so lint every *_test.cpp there (absolute paths so
+      # they match the compile_commands.json entries).
       - name: clang-tidy (report)
-        run: clang-tidy -p build-tests tests/*.cpp
+        run: clang-tidy -p build-tests $(find "$PWD/src/zandronum/src" -name '*_test.cpp')

@@ -28,9 +28,17 @@ include(GoogleTest)
 # [rc4l] Root of the vendored engine sources that tests compile against.
 set(ENGINE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../src/zandronum/src")
 
-add_executable(zandrox_tests
-  vectors_test.cpp
-)
+# [rc4l] Colocated tests: each *_test.cpp lives next to the code it covers, inside the
+# engine tree. The engine build ignores them (it compiles an explicit source list, never
+# a glob — verified in src/zandronum/src/CMakeLists.txt), so they never leak into the
+# shipped binary. CONFIGURE_DEPENDS re-globs at build time, so adding a new *_test.cpp
+# needs no CMake edit — drop the file next to its source and rebuild.
+file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_test.cpp")
+if(NOT TEST_SOURCES)
+  message(FATAL_ERROR "No *_test.cpp files found under ${ENGINE_SRC}")
+endif()
+
+add_executable(zandrox_tests ${TEST_SOURCES})
 target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}")
 target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock)
 target_compile_options(zandrox_tests PRIVATE -Wall -Wextra)
