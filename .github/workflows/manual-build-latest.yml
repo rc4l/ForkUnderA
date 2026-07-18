@@ -1,0 +1,29 @@
+name: Build ZandroX (macOS)
+
+on:
+  workflow_dispatch: # Trigger manually from the Actions tab
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rosetta 2
+        run: |
+          # Needed to run the Intel (FMOD) build on Apple Silicon runners.
+          sudo softwareupdate --install-rosetta --agree-to-license
+
+      - name: Build ZandroX
+        run: |
+          SOUND=1 ./build.sh
+
+      - name: Upload ZandroX.app
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-macos
+          path: build/ZandroX.app

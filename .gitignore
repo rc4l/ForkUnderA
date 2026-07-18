@@ -1,0 +1,11 @@
+# Build artifacts (fetched/built by build.sh)
+deps/
+build/
+src/zandronum/
+
+# Temporary files
+*.tmp
+*.log
+
+# macOS
+.DS_Store

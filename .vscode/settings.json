@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "istream": "cpp"
+    },
+    "search.useIgnoreFiles": false,
+    "search.exclude": {
+        "build": true,
+        "deps": true
+    }
+}

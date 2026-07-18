@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "${workspaceFolder}/src/zandronum/src",
+                "${workspaceFolder}/src/zandronum/src/sdl",
+                "${workspaceFolder}/src/zandronum/gdtoa",
+                "${workspaceFolder}/src/zandronum/lzma/C",
+                "${workspaceFolder}/src/zandronum/bzip2",
+                "${workspaceFolder}/src/zandronum/game-music-emu",
+                "${workspaceFolder}/src/zandronum/jpeg-6b",
+                "${workspaceFolder}/src/zandronum/zlib",
+                "${workspaceFolder}/src/zandronum/rnnoise",
+                "${workspaceFolder}/deps/fmod/include",
+                "${workspaceFolder}/deps/x86/include",
+                "${workspaceFolder}/deps/x86/include/SDL",
+                "${workspaceFolder}/build",
+                "${workspaceFolder}/**"
+            ],
+            "defines": [
+                "HAVE_FLUIDSYNTH",
+                "HAVE_OPL",
+                "DYN_FLUIDSYNTH",
+                "ZANDRONUM"
+            ],
+            "macFrameworkPath": [
+                "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks"
+            ],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c17",
+            "cppStandard": "c++14",
+            "intelliSenseMode": "macos-clang-arm64",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}/src/zandronum",
+                    "${workspaceFolder}/deps"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        }
+    ],
+    "version": 4
+}
