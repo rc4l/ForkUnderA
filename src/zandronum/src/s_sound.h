@@ -344,6 +344,7 @@ void S_StopMusic (bool force);
 void S_PauseSound (bool notmusic, bool notsfx);
 void S_ResumeSound (bool notsfx);
 void S_SetSoundPaused (int state);
+bool S_GetSoundPaused (void);	// [rc4l] getter for freeform menu (Q-Zandronum)
 
 //
 // Updates music & sounds

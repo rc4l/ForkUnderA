@@ -141,6 +141,7 @@ struct gameinfo_t
 	int TextScreenY;
 	FName DefaultEndSequence;
 	FString mMapArrow, mCheatMapArrow;
+	FString mUpArrow, mDownArrow;	// [rc4l] freeform-menu scroll arrows (empty by default -> console-font fallback)
 	FGIFont mStatscreenMapNameFont;
 	FGIFont mStatscreenFinishedFont;
 	FGIFont mStatscreenEnteringFont;

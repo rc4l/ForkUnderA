@@ -1944,6 +1944,17 @@ void S_ResumeSound (bool notsfx)
 
 //==========================================================================
 //
+// S_GetSoundPaused  [rc4l] getter for the file-static flag (Q-Zandronum)
+//
+//==========================================================================
+
+bool S_GetSoundPaused (void)
+{
+	return SoundPaused;
+}
+
+//==========================================================================
+//
 // S_SetSoundPaused
 //
 // Called with state non-zero when the app is active, zero when it isn't.

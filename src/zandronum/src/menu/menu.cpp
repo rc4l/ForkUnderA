@@ -134,6 +134,17 @@ bool DMenu::Responder (event_t *ev)
 			}
 			
 		}
+		else if (ev->subtype == EV_GUI_RButtonDown)
+		{
+			res = MouseEventBack(MOUSE_Click2, ev->data1, ev->data2);
+			// make the menu's mouse handler believe that the current coordinate is outside the valid range
+			if (res) ev->data2 = -1;
+			res |= MouseEvent(MOUSE_Click2, ev->data1, ev->data2);
+			if (res)
+			{
+				SetCapture();
+			}
+		}
 		else if (ev->subtype == EV_GUI_MouseMove)
 		{
 			BackbuttonTime = BACKBUTTON_TIME;
@@ -154,8 +165,18 @@ bool DMenu::Responder (event_t *ev)
 				res |= MouseEvent(MOUSE_Release, ev->data1, ev->data2);
 			}
 		}
+		else if (ev->subtype == EV_GUI_RButtonUp)
+		{
+			if (mMouseCapture)
+			{
+				ReleaseCapture();
+				res = MouseEventBack(MOUSE_Release2, ev->data1, ev->data2);
+				if (res) ev->data2 = -1;
+				res |= MouseEvent(MOUSE_Release2, ev->data1, ev->data2);
+			}
+		}
 	}
-	return false; 
+	return false;
 }
 
 //=============================================================================
@@ -309,6 +330,60 @@ bool DMenu::DimAllowed()
 bool DMenu::TranslateKeyboardEvents()
 {
 	return true;
+}
+
+//=============================================================================
+//
+// [rc4l] DEnterKey moved here from optionmenuitems.h so freeform menus (and
+// everything else) can see it via menu.h. Bodies verbatim from Q-Zandronum.
+//
+//=============================================================================
+
+IMPLEMENT_ABSTRACT_CLASS(DEnterKey)
+
+DEnterKey::DEnterKey(DMenu *parent, int *keyptr)
+ : DMenu(parent)
+{
+	pKey = keyptr;
+	SetMenuMessage(1);
+	menuactive = MENU_WaitKey;	// There should be a better way to disable GUI capture...
+}
+
+bool DEnterKey::TranslateKeyboardEvents()
+{
+	return false;
+}
+
+void DEnterKey::SetMenuMessage(int which)
+{
+	if (mParentMenu->IsKindOf(RUNTIME_CLASS(DOptionMenu)))
+	{
+		DOptionMenu *m = barrier_cast<DOptionMenu*>(mParentMenu);
+		FListMenuItem *it = m->GetItem(NAME_Controlmessage);
+		if (it != NULL)
+		{
+			it->SetValue(0, which);
+		}
+	}
+}
+
+bool DEnterKey::Responder(event_t *ev)
+{
+	if (ev->type == EV_KeyDown)
+	{
+		*pKey = ev->data1;
+		menuactive = MENU_On;
+		SetMenuMessage(0);
+		Close();
+		mParentMenu->MenuEvent((ev->data1 == KEY_ESCAPE)? MKEY_Abort : MKEY_Input, 0);
+		return true;
+	}
+	return false;
+}
+
+void DEnterKey::Drawer()
+{
+	mParentMenu->Drawer();
 }
 
 //=============================================================================
@@ -547,6 +622,30 @@ void M_SetMenu(FName menu, int param)
 				const PClass *cls = ld->mClass == NULL? RUNTIME_CLASS(DListMenu) : ld->mClass;
 
 				DListMenu *newmenu = (DListMenu *)cls->CreateNew();
+				newmenu->Init(DMenu::CurrentMenu, ld);
+				M_ActivateMenu(newmenu);
+			}
+		}
+		else if ((*desc)->mType == MDESC_FreeformMenu)
+		{
+			FFreeformMenuDescriptor *ld = static_cast<FFreeformMenuDescriptor*>(*desc);
+			const PClass *cls = ld->mClass == NULL? RUNTIME_CLASS(DFreeformMenu) : ld->mClass;
+
+			// [TP]
+			if ( ld->mNetgameOnly && ( NETWORK_GetState() != NETSTATE_CLIENT ) )
+			{
+				M_StartMessage( "You must be in a netgame to use this.\n\npress a key.", 1 );
+				return;
+			}
+
+			if (ld->mAutoselect >= 0 && ld->mAutoselect < (int)ld->mItems.Size())
+			{
+				// recursively activate the autoselected item without ever creating this menu.
+				ld->mItems[ld->mAutoselect]->Activate();
+			}
+			else
+			{
+				DFreeformMenu *newmenu = (DFreeformMenu*)cls->CreateNew();
 				newmenu->Init(DMenu::CurrentMenu, ld);
 				M_ActivateMenu(newmenu);
 			}

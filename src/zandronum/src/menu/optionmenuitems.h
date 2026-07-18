@@ -330,69 +330,7 @@ public:
 	}
 };
 
-//=============================================================================
-//
-// This class is used to capture the key to be used as the new key binding
-// for a control item
-//
-//=============================================================================
-
-class DEnterKey : public DMenu
-{
-	DECLARE_CLASS(DEnterKey, DMenu)
-
-	int *pKey;
-
-public:
-	DEnterKey(DMenu *parent, int *keyptr)
-	: DMenu(parent)
-	{
-		pKey = keyptr;
-		SetMenuMessage(1);
-		menuactive = MENU_WaitKey;	// There should be a better way to disable GUI capture...
-	}
-
-	bool TranslateKeyboardEvents()
-	{
-		return false; 
-	}
-
-	void SetMenuMessage(int which)
-	{
-		if (mParentMenu->IsKindOf(RUNTIME_CLASS(DOptionMenu)))
-		{
-			DOptionMenu *m = barrier_cast<DOptionMenu*>(mParentMenu);
-			FListMenuItem *it = m->GetItem(NAME_Controlmessage);
-			if (it != NULL)
-			{
-				it->SetValue(0, which);
-			}
-		}
-	}
-
-	bool Responder(event_t *ev)
-	{
-		if (ev->type == EV_KeyDown)
-		{
-			*pKey = ev->data1;
-			menuactive = MENU_On;
-			SetMenuMessage(0);
-			Close();
-			mParentMenu->MenuEvent((ev->data1 == KEY_ESCAPE)? MKEY_Abort : MKEY_Input, 0);
-			return true;
-		}
-		return false;
-	}
-
-	void Drawer()
-	{
-		mParentMenu->Drawer();
-	}
-};
-
-#ifndef NO_IMP
-IMPLEMENT_ABSTRACT_CLASS(DEnterKey)
-#endif
+// [rc4l] DEnterKey moved to menu.h (declaration) + menu.cpp (bodies) so freeform menus can see it.
 
 //=============================================================================
 //
