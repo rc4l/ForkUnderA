@@ -230,9 +230,17 @@ EMidiDevice MIDIStreamer::SelectMIDIDevice(EMidiDevice device)
 	{
 		return device;
 	}
+	// [rc4l] Without FMOD there's no FMOD soft-synth, so the historical default
+	// (MDEV_FMOD) can't play MIDI. Fall back to the built-in OPL2 synth, which
+	// needs no soundfont and is always available — so music works out of the box.
+#ifdef NO_FMOD
+	#define MDEV_DEFAULT_SYNTH MDEV_OPL
+#else
+	#define MDEV_DEFAULT_SYNTH MDEV_FMOD
+#endif
 	switch (snd_mididevice)
 	{
-	case -1:		return MDEV_FMOD;
+	case -1:		return MDEV_DEFAULT_SYNTH;
 	case -2:		return MDEV_TIMIDITY;
 	case -3:		return MDEV_OPL;
 	case -4:		return MDEV_GUS;
@@ -243,9 +251,10 @@ EMidiDevice MIDIStreamer::SelectMIDIDevice(EMidiDevice device)
 		#ifdef _WIN32
 					return MDEV_MMAPI;
 		#else
-					return MDEV_FMOD;
+					return MDEV_DEFAULT_SYNTH;
 		#endif
 	}
+#undef MDEV_DEFAULT_SYNTH
 }
 
 //==========================================================================
@@ -271,7 +280,11 @@ MIDIDevice *MIDIStreamer::CreateMIDIDevice(EMidiDevice devtype) const
 #endif
 
 	case MDEV_FMOD:
+#ifdef NO_FMOD
+		return new OPLMIDIDevice;   // no FMOD synth in this build; use built-in OPL
+#else
 		return new FMODMIDIDevice;
+#endif
 
 	case MDEV_GUS:
 		return new TimidityMIDIDevice;
