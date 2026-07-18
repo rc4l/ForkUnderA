@@ -1,0 +1,362 @@
+Command SpawnPlayer
+	Player player with IndexTestOnly
+	# [AK] Send the prior state as a short byte so that the four bools can fit together into a single byte.
+	ShortByte<4> priorState
+	Bool isBot
+	Bool isSpectating
+	Bool isDeadSpectator
+	Bool isMorphed
+	NetID netid
+	Angle angle
+	Fixed x
+	Fixed y
+	Fixed z
+	Byte playerClass
+
+	If (isMorphed)
+		Short morphStyle
+		Class morphedClass
+	EndIf
+EndCommand
+
+Command MovePlayer
+	UnreliableCommand
+	Player player with MoTest
+	Byte flags
+
+	# The server only sends position, angle, etc. information if the player is actually visible.
+	If (flags & PLAYER_VISIBLE)
+		CheckFunction IsVisible
+		# [BB] The x/y position has to be sent at full precision, otherwise the player may be rounded to a neighboring
+		# sector on the clients, potentially completely changing its Z position.
+		Fixed x
+		Fixed y
+		AproxFixed z
+		Angle angle
+	EndIf
+
+	# [AK] The server should only send the player's velocity when it's not zero.
+	If ((flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELX))
+		CheckFunction IsMovingX
+		AproxFixed velx
+	EndIf
+
+	If ((flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELY))
+		CheckFunction IsMovingY
+		AproxFixed vely
+	EndIf
+
+	If ((flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELZ))
+		CheckFunction IsMovingZ
+		AproxFixed velz
+	EndIf
+EndCommand
+
+Command DamagePlayer
+	Player player with MoTest
+	Variable health
+	Variable armor
+	Actor attacker with NullAllowed
+EndCommand
+
+Command DamagePlayerWithType
+	ExtendedCommand
+	Player player with MoTest
+	Variable health
+	Variable armor
+	String damageType
+	Actor attacker with NullAllowed
+EndCommand
+
+Command KillPlayer
+	Player player with MoTest
+	Actor source with NullAllowed
+	Actor inflictor with NullAllowed
+	Short health
+	String<Name> MOD
+	String damageType
+	Class weaponType with NullAllowed
+EndCommand
+
+Command SetPlayerHealth
+	Player player
+	Variable health
+EndCommand
+
+Command SetPlayerArmor
+	Player player with MoTest
+	Variable armorAmount
+	String armorIcon
+EndCommand
+
+Command SetPlayerState
+	Player player with MoTest
+	Byte state
+EndCommand
+
+Struct CVar
+	Name name
+	String value
+EndStruct
+
+Command SetPlayerUserInfo
+	# We actually send the player's userinfo before he gets spawned, thus putting him in the game.
+	Player player with IndexTestOnly
+	Struct<CVar>[] cvars
+EndCommand
+
+Command SetPlayerCountry
+	ExtendedCommand
+	Player player with IndexTestOnly
+	Byte country
+EndCommand
+
+Command SetPlayerAccountName
+	ExtendedCommand
+	Player player with IndexTestOnly
+	String accountName
+EndCommand
+
+Command SetPlayerFrags
+	Player player
+	Variable fragCount
+EndCommand
+
+Command SetPlayerPoints
+	Player player
+	Variable pointCount
+EndCommand
+
+Command SetPlayerWins
+	Player player
+	Variable wins
+EndCommand
+
+Command SetPlayerDeaths
+	ExtendedCommand
+	Player player
+	Variable deaths
+EndCommand
+
+Command SetPlayerKillCount
+	Player player
+	Variable killCount
+EndCommand
+
+Command SetPlayerStatus
+	Player player
+	Byte statuses
+EndCommand
+
+Command SetPlayerTeam
+	Player player
+	Byte team
+EndCommand
+
+Command SetPlayerCamera
+	Actor camera with NullAllowed
+	Bool revertPlease
+EndCommand
+
+Command SetPlayerPoisonCount
+	Player player
+	Short poisonCount
+EndCommand
+
+Command SetPlayerAmmoCapacity
+	Player player with MoTest
+	Class<AAmmo> ammoType
+	Long maxAmount
+EndCommand
+
+Command SetPlayerCheats
+	Player player
+	Long cheats
+EndCommand
+
+Command SetPlayerPendingWeapon
+	Player player with MoTest
+	Class<AWeapon> weaponType
+EndCommand
+
+Command SetPlayerPSprite
+	Player player
+	Class<AActor> stateOwner
+	Short offset
+	Byte position
+EndCommand
+
+Command SetPlayerBlend
+	Player player with IndexTestOnly
+	Float blendR
+	Float blendG
+	Float blendB
+	Float blendA
+EndCommand
+
+Command SetPlayerMaxHealth
+	Player player with MoTest
+	Long maxHealth
+EndCommand
+
+Command SetPlayerLivesLeft
+	Player player
+	Byte livesLeft
+EndCommand
+
+Command SetPlayerACSSkin
+	ExtendedCommand
+	Player player
+	Name skinName
+	bool overrideWeaponSkin
+EndCommand
+
+Command UpdatePlayerPing
+	UnreliableCommand
+	Player player
+	UShort ping
+	Byte connectionStrength
+EndCommand
+
+Command UpdatePlayerExtraData
+	UnreliableCommand
+	Player player with MoTest
+	Long pitch
+	Byte waterLevel
+	Byte buttons
+	Long viewZ
+	Long bob
+EndCommand
+
+Command UpdatePlayerTime
+	UnreliableCommand
+	Player player
+	UShort time
+EndCommand
+
+Command MoveLocalPlayer
+	UnreliableCommand
+	ULong clientTicOnServerEnd
+	# [CK] This should be our latest server tick we will record.
+	Long latestServerGametic
+	Fixed x
+	Fixed y
+	Fixed z
+	Fixed velx
+	Fixed vely
+	Fixed velz
+EndCommand
+
+Command SetLocalPlayerJumpTics
+	ExtendedCommand
+	UnreliableCommand
+	ULong clientTicOnServerEnd
+	SByte jumpTics
+EndCommand
+
+Command SetLocalPlayerRespawnDelayTime
+	ExtendedCommand
+	ULong respawnDelayTics
+	Bool spawnTelefragged
+EndCommand
+
+Command DisconnectPlayer
+	Player player
+EndCommand
+
+Command SetConsolePlayer
+	Byte playerNumber
+EndCommand
+
+Command ConsolePlayerKicked
+EndCommand
+
+Command GivePlayerMedal
+	Player player
+	Byte medal
+	Bool silent
+EndCommand
+
+Command ResetAllPlayersFragcount
+EndCommand
+
+Command PlayerIsSpectator
+	Player player
+	Bool deadSpectator
+EndCommand
+
+Command PlayerSay
+	Byte playerNumber
+	Byte mode
+	String message
+EndCommand
+
+Command PlayerVoIPAudioPacket
+	UnreliableCommand
+	Byte playerNumber
+	Long frame
+	Buffer audio
+EndCommand
+
+Command PlayerTaunt
+	Player player with MoTest
+EndCommand
+
+Command PlayerUseInventory
+	Player player with MoTest
+	Class<AInventory> itemType
+EndCommand
+
+Command PlayerDropInventory
+	Player player with MoTest
+	Class<AInventory> itemType
+EndCommand
+
+Command GiveWeaponHolder
+	ExtendedCommand
+	Player player with MoTest
+	Short pieceMask
+	Class pieceWeapon
+EndCommand
+
+Command SetHexenArmorSlots
+	ExtendedCommand
+	Player player with MoTest
+	Long slot0
+	Long slot1
+	Long slot2
+	Long slot3
+	Long slot4
+EndCommand
+
+Command SendPlayerCommRule
+	ExtendedCommand
+	Player player with IndexTestOnly
+	Bool ignoreChat
+	Bool ignoreVoice
+	Bool sendVoIPChannelVolume
+
+	If (ignoreChat)
+		Long ignoreChatTicks
+	EndIf
+
+	If (ignoreVoice)
+		Long ignoreVoiceTicks
+	EndIf
+
+	If (sendVoIPChannelVolume)
+		Float VoIPChannelVolume
+	EndIf
+EndCommand
+
+Command IgnoreLocalPlayer
+	ExtendedCommand
+	Player player with IndexTestOnly
+	Bool ignore
+	Bool doVoice
+
+	If (ignore)
+		Long ticks
+		String reason
+	EndIf
+EndCommand

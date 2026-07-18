@@ -1,0 +1,108 @@
+stages:
+  - build
+
+# For Linux, we use custom Docker images that have our dependencies pre-installed.
+# This saves some time when building.
+
+.linux: &linux
+  stage: build
+  image: registry.heptapod.net/zandronum/ci-images/zandronum-build-ubuntu:latest
+  script:
+    - mkdir -p build &&
+      cd build &&
+      cmake
+        -DCMAKE_BUILD_TYPE=Release
+        -DRELEASE_WITH_DEBUG_FILE=ON
+        -DSERVERONLY=${SERVERONLY}
+        -DFMOD_LIBRARY=${FMOD_DIR_PATH}/api/lib/libfmodex64-${FMOD_SO_VERSION}.so
+        -DFMOD_INCLUDE_DIR=${FMOD_DIR_PATH}/api/inc
+        .. &&
+      make -j$(nproc) &&
+      if [[ "$SERVERONLY" != "ON" ]]; then
+        cp ${FMOD_DIR_PATH}/api/lib/libfmodex64-${FMOD_SO_VERSION}.so .;
+      fi
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - build/zandronum*
+      - build/*.pk3
+      - build/libfmodex*.so
+
+build_linux:
+  <<: *linux
+  variables:
+    SERVERONLY: "OFF"
+
+build_linux_serveronly:
+  <<: *linux
+  variables:
+    SERVERONLY: "ON"
+
+build_linux_serveronly_arm64:
+  <<: *linux
+  image: registry.heptapod.net/zandronum/ci-images/zandronum-build-ubuntu-arm64:latest
+  tags:
+    - arm64
+  variables:
+    SERVERONLY: "ON"
+
+# Windows build currently require a shell runner with the dependencies already set up.
+# Set up as described on the wiki: https://wiki.zandronum.com/Compiling_Zandronum_with_Visual_Studio
+# Then, configure system environment variables pointing to the location of dependencies:
+#   ZA_OPENSSL_WIN32_ROOT     32-bit OpenSSL installation directory
+#   ZA_OPENSSL_X64_ROOT       64-bit OpenSSL installation directory
+#   ZA_NASM_PATH              path to nasm.exe
+#   ZA_OPUS_ROOT              libopus root directory
+#   ZA_FMOD_DIR               FMOD Ex root directory
+# Ensure your runner uses PowerShell 7 or later. (_not_ Windows PowerShell!) 
+
+.windows: &windows
+  stage: build
+  tags:
+    - zan-win-build
+  script:
+    - $fmodArch = "" ;
+      $opensslArch = "x86" ;
+      $opensslRoot = $env:ZA_OPENSSL_WIN32_ROOT ;
+      If ($env:ARCH -eq "x64") {
+        $fmodArch = "64" ;
+        $opensslArch = "x64" ;
+        $opensslRoot = $env:ZA_OPENSSL_X64_ROOT ;
+      } ;
+
+      mkdir build-$env:CI_JOB_ID &&
+      cd build-$env:CI_JOB_ID &&
+      & cmake
+        -Tv140_xp
+        -G"Visual Studio 14 2015"
+        -A"$env:ARCH"
+        -DOPENSSL_INCLUDE_DIR="$opensslRoot\include"
+        -DLIB_EAY_DEBUG="$opensslRoot\lib\VC\$opensslArch\MTd\libcrypto_static.lib"
+        -DLIB_EAY_RELEASE="$opensslRoot\lib\VC\$opensslArch\MT\libcrypto_static.lib"
+        -DSSL_EAY_DEBUG="$opensslRoot\lib\VC\$opensslArch\MTd\libssl_static.lib"
+        -DSSL_EAY_RELEASE="$opensslRoot\lib\VC\$opensslArch\MT\libssl_static.lib"
+        -DNASM_PATH="$env:ZA_NASM_PATH"
+        -DFMOD_INCLUDE_DIR="$env:ZA_FMOD_ROOT\api\inc"
+        -DFMOD_LIBRARY="$env:ZA_FMOD_ROOT\api\lib\fmodex${fmodArch}_vc.lib"
+        -DOPUS_INCLUDE_DIR="$env:ZA_OPUS_ROOT\include"
+        -DOPUS_LIBRARIES="$env:ZA_OPUS_ROOT\win32\VS2015\${env:ARCH}\Release\opus.lib"
+        -DRELEASE_WITH_DEBUG_FILE=ON
+        .. &&
+      & 'C:\Program Files (x86)\MSBuild\14.0\Bin\amd64\MSBuild.exe'
+        /property:Configuration=Release
+        zandronum.sln &&
+      Copy-Item "$env:ZA_FMOD_ROOT\api\fmodex${fmodArch}.dll" -Destination "Release"
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - build-$CI_JOB_ID/Release/*
+
+build_win32:
+  <<: *windows
+  variables:
+    ARCH: Win32
+
+build_win64:
+  <<: *windows
+  variables:
+    ARCH: x64
