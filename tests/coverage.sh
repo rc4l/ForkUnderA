@@ -19,7 +19,11 @@ COV="$(llvm_tool llvm-cov)"
 enforce=()
 if [[ "${1:-}" == "--enforce" ]]; then shift; enforce=("$@"); fi
 
-cmake -S "$ROOT/tests" -B "$BUILD" -DZANDROX_TESTS_COVERAGE=ON >/dev/null
+# [rc4l] llvm-cov instrumentation (-fprofile-instr-generate/-fcoverage-mapping) is
+# Clang-only, so force the Clang toolchain — otherwise Ubuntu's default c++ (GCC)
+# rejects those flags. macOS's clang++ (AppleClang) works the same way.
+cmake -S "$ROOT/tests" -B "$BUILD" -DZANDROX_TESTS_COVERAGE=ON \
+  -DCMAKE_C_COMPILER="${CC:-clang}" -DCMAKE_CXX_COMPILER="${CXX:-clang++}" >/dev/null
 cmake --build "$BUILD" --target zandrox_tests -j"$(getconf _NPROCESSORS_ONLN)" >/dev/null
 
 LLVM_PROFILE_FILE="$BUILD/cov.profraw" "$BUILD/zandrox_tests" >/dev/null
