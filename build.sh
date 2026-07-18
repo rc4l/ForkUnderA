@@ -219,6 +219,15 @@ get_fmod() {
 # Source
 # ---------------------------------------------------------------------------
 get_source() {
+    # Vendored source: this repo now tracks src/zandronum directly (git subtree,
+    # based on ZA_3.2.1). Treat a present, non-hg tree as authoritative so the
+    # build never clobbers local changes. Set ZANDRONUM_FETCH=1 to force a fresh
+    # upstream pull instead (restores the old hg clone/update behavior).
+    if [[ "${ZANDRONUM_FETCH:-0}" != "1" && -f "$ZAN_SRC_DIR/CMakeLists.txt" && ! -d "$ZAN_SRC_DIR/.hg" ]]; then
+        status "Using vendored Zandronum source in $ZAN_SRC_DIR (set ZANDRONUM_FETCH=1 to re-fetch)."
+        return
+    fi
+
     status "Setting up Zandronum source (ref: $DEFAULT_ZANDRONUM_REF)..."
     mkdir -p "$SRC_DIR"
     if [[ -d "$ZAN_SRC_DIR/.hg" ]]; then
