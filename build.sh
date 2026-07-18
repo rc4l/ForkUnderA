@@ -208,7 +208,9 @@ _bundle_deps() {
         [[ "$ref" == "$(otool -D "$macho" | tail -n +2 | head -1)" ]] && continue  # skip self id
         leaf="${ref##*/}"
         # Already staged this dylib? Just fix the referrer and move on.
-        if [[ " ${_BUNDLED[*]} " == *" $leaf "* ]]; then
+        # (Guard the array expansion: macOS bash 3.2 errors on ${arr[*]} for an
+        # empty array under `set -u`.)
+        if (( ${#_BUNDLED[@]} )) && [[ " ${_BUNDLED[*]} " == *" $leaf "* ]]; then
             install_name_tool -change "$ref" "@loader_path/$leaf" "$macho" 2>/dev/null || true
             continue
         fi
@@ -259,12 +261,21 @@ make_app_bundle() {
     # install ids). sdl12-compat dlopens SDL2 at runtime (no link-time edge), so
     # SDL2 is staged explicitly and found via @loader_path next to the binary.
     _BUNDLED=()
-    local sdl; sdl="$(brew --prefix sdl12-compat)"
+    local sdl sdl2; sdl="$(brew --prefix sdl12-compat)"
+    sdl2="$(brew --prefix sdl2 2>/dev/null || true)"
     local search=("$(brew --prefix)/lib" "$sdl/lib" "$macos")
-    if [[ -f "$sdl/lib/libSDL2-2.0.0.dylib" ]]; then
-        cp -L "$sdl/lib/libSDL2-2.0.0.dylib" "$macos/" && chmod u+w "$macos/libSDL2-2.0.0.dylib"
+    [[ -n "$sdl2" ]] && search+=("$sdl2/lib")
+    # sdl12-compat dlopens libSDL2 at runtime (no link-time edge), so stage it
+    # explicitly. It lives in the sdl2 keg, not sdl12-compat.
+    local sdl2lib=""
+    [[ -n "$sdl2" && -f "$sdl2/lib/libSDL2-2.0.0.dylib" ]] && sdl2lib="$sdl2/lib/libSDL2-2.0.0.dylib"
+    [[ -z "$sdl2lib" && -f "$sdl/lib/libSDL2-2.0.0.dylib" ]] && sdl2lib="$sdl/lib/libSDL2-2.0.0.dylib"
+    if [[ -n "$sdl2lib" ]]; then
+        cp -L "$sdl2lib" "$macos/" && chmod u+w "$macos/libSDL2-2.0.0.dylib"
         _BUNDLED+=("libSDL2-2.0.0.dylib")
         install_name_tool -id "@loader_path/libSDL2-2.0.0.dylib" "$macos/libSDL2-2.0.0.dylib" 2>/dev/null || true
+    else
+        warn "libSDL2-2.0.0.dylib not found; sound/video may fail at runtime"
     fi
     _bundle_deps "$macos/zandronum" "$macos" "${search[@]}"
 
