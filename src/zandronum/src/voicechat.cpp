@@ -61,6 +61,9 @@
 
 #if !defined(NO_SOUND) && !defined(NO_FMOD)
 #include "fmod_errors.h"
+#elif !defined(NO_SOUND) && !defined(NO_OPENAL)
+#include <al.h>
+#include <alc.h>
 #endif
 
 // [AK] These files must be included to also include "optionmenuitems.h".
@@ -271,7 +274,15 @@ CCMD( voice_unignore_idx )
 }
 
 // [AK] Everything past this point only compiles if compiling with sound.
-#if !defined(NO_SOUND) && !defined(NO_FMOD)
+// [ZandroX] The implementation is shared between the FMOD and OpenAL backends.
+// Backend-agnostic code (Opus, RNNoise, networking, the jitter buffer) is compiled
+// once; backend-specific code is selected with inner #if !defined(NO_FMOD) /
+// #elif !defined(NO_OPENAL) guards.
+#if !defined(NO_SOUND) && ( !defined(NO_FMOD) || !defined(NO_OPENAL) )
+
+// [ZandroX] Forward declaration so the OpenAL capture path in Tick() can reuse the
+// same float byte-array serialization the playback path uses (defined further down).
+static void voicechat_FloatToByteArray( const float value, unsigned char *bytes );
 
 static void voicechat_SetChannelVolume( FCommandLine &argv, const bool isIndexCmd )
 {
@@ -341,6 +352,8 @@ CCMD( voice_listrecorddrivers )
 //
 //*****************************************************************************
 
+#if !defined(NO_FMOD)
+
 VOIPController::VOIPController( void ) :
 	VoIPChannels{ nullptr },
 	testRMSVolume( MIN_DECIBELS ),
@@ -372,6 +385,35 @@ VOIPController::VOIPController( void ) :
 	Button_VoiceRecord.Reset( );
 }
 
+#elif !defined(NO_OPENAL)
+
+VOIPController::VOIPController( void ) :
+	VoIPChannels{ nullptr },
+	testRMSVolume( MIN_DECIBELS ),
+	captureDevice( nullptr ),
+	encoder( nullptr ),
+	repacketizer( nullptr ),
+	denoiseModel( nullptr ),
+	denoiseState( nullptr ),
+	recordDriverID( 0 ),
+	framesSent( 0 ),
+	lastPackedTOC( 0 ),
+	outputVolume( 1.0f ),
+	outputPitch( 1.0f ),
+	isInitialized( false ),
+	isActive( false ),
+	isTesting( false ),
+	isRecordButtonPressed( false ),
+	transmissionType( TRANSMISSIONTYPE_OFF )
+{
+	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
+		channelVolumes[i] = 1.0f;
+
+	Button_VoiceRecord.Reset( );
+}
+
+#endif
+
 //*****************************************************************************
 //
 // [AK] VOIPController::Init
@@ -379,6 +421,8 @@ VOIPController::VOIPController( void ) :
 // Initializes the VoIP controller.
 //
 //*****************************************************************************
+
+#if !defined(NO_FMOD)
 
 void VOIPController::Init( FMOD::System *mainSystem )
 {
@@ -456,6 +500,79 @@ void VOIPController::Init( FMOD::System *mainSystem )
 	SetVolume( voice_outputvolume );
 }
 
+#elif !defined(NO_OPENAL)
+
+//*****************************************************************************
+//
+// [ZandroX] VOIPController::Init (OpenAL)
+//
+// Sets up the Opus encoder/repacketizer and the RNNoise denoiser. Unlike the
+// FMOD backend there is no external system pointer; playback sources are created
+// on demand on the OpenAL context that oalsound already made current. This is
+// called lazily from Tick() the first time a context is available.
+//
+//*****************************************************************************
+
+void VOIPController::Init( void )
+{
+	int opusErrorCode = OPUS_OK;
+
+	// [AK] The server never initializes the voice recorder.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
+	encoder = opus_encoder_create( PLAYBACK_SAMPLE_RATE, 1, OPUS_APPLICATION_VOIP, &opusErrorCode );
+
+	// [AK] Stop here if the Opus encoder wasn't created successfully.
+	if ( opusErrorCode != OPUS_OK )
+	{
+		Printf( TEXTCOLOR_ORANGE "Failed to create Opus encoder: %s.\n", opus_strerror( opusErrorCode ));
+		return;
+	}
+
+	opus_encoder_ctl( encoder, OPUS_SET_FORCE_CHANNELS( 1 ));
+	opus_encoder_ctl( encoder, OPUS_SET_SIGNAL( OPUS_SIGNAL_VOICE ));
+
+	repacketizer = opus_repacketizer_create( );
+
+	// [AK] Stop here if the Opus repacketizer wasn't created successfully.
+	if ( repacketizer == nullptr )
+	{
+		Printf( TEXTCOLOR_ORANGE "Failed to create Opus repacketizer.\n" );
+		return;
+	}
+
+	// [AK] Load a custom RNNoise model file if we can. Otherwise, use the built-in model.
+	if ( strlen( voice_noisemodelfile ) > 0 )
+	{
+		const char *fileName = voice_noisemodelfile.GetGenericRep( CVAR_String ).String;
+		FILE *modelFile = fopen( fileName, "r" );
+
+		if ( modelFile != nullptr )
+		{
+			denoiseModel = rnnoise_model_from_file( modelFile );
+
+			if ( denoiseModel == nullptr )
+				Printf( TEXTCOLOR_ORANGE "Failed to load RNNoise model \"%s\". Using built-in model instead.\n", fileName );
+		}
+		else
+		{
+			Printf( TEXTCOLOR_YELLOW "Couldn't find RNNoise model \"%s\". Using built-in model instead.\n", fileName );
+		}
+	}
+
+	// [AK] Initialize the denoise state, used for noise suppression.
+	denoiseState = rnnoise_create( denoiseModel );
+
+	isInitialized = true;
+	Printf( "VoIP controller initialized successfully (OpenAL).\n" );
+
+	// [AK] Set the output volume after initialization.
+	SetVolume( voice_outputvolume );
+}
+
+#endif
+
 //*****************************************************************************
 //
 // [AK] VOIPController::Shutdown
@@ -481,11 +598,13 @@ void VOIPController::Shutdown( void )
 		repacketizer = nullptr;
 	}
 
+#if !defined(NO_FMOD)
 	if ( VoIPChannelGroup != nullptr )
 	{
 		VoIPChannelGroup->release( );
 		VoIPChannelGroup = nullptr;
 	}
+#endif
 
 	if ( denoiseModel != nullptr )
 	{
@@ -559,6 +678,7 @@ void VOIPController::Deactivate( void )
 //
 //*****************************************************************************
 
+#if !defined(NO_FMOD)
 template <typename T>
 static void voicechat_ReadSoundBuffer( T *object, FMOD::Sound *sound, unsigned int &offset, const unsigned int length, void ( T::*callback )( unsigned char *, unsigned int ))
 {
@@ -607,6 +727,7 @@ static void voicechat_ReadSoundBuffer( T *object, FMOD::Sound *sound, unsigned i
 	if ( sound->getLength( &soundLength, FMOD_TIMEUNIT_PCM ) == FMOD_OK )
 		offset = offset % soundLength;
 }
+#endif
 
 //*****************************************************************************
 //
@@ -629,6 +750,16 @@ void VOIPController::Tick( void )
 				CHAT_UnignorePlayer( i, true );
 		}
 	}
+
+#if !defined(NO_FMOD)
+	// [AK] FMOD initializes the VoIP controller from FMODSoundRenderer.
+#elif !defined(NO_OPENAL)
+	// [ZandroX] The OpenAL backend has no external init hook (that lived in the
+	// FMOD-only renderer), so initialize lazily once oalsound has made a context
+	// current. The server never initializes the recorder.
+	if (( isInitialized == false ) && ( NETWORK_GetState( ) != NETSTATE_SERVER ) && ( alcGetCurrentContext( ) != nullptr ))
+		Init( );
+#endif
 
 	// [AK] Don't tick while the VoIP controller is uninitialized.
 	if ( isInitialized == false )
@@ -701,6 +832,7 @@ void VOIPController::Tick( void )
 	// This also applies while testing the microphone.
 	if (( isNotIgnored && !voice_muteself && ( transmissionType != TRANSMISSIONTYPE_OFF || isUsingVoiceActivity )) || ( isTesting ))
 	{
+#if !defined(NO_FMOD)
 		unsigned int recordPosition = 0;
 
 		if (( system->getRecordPosition( recordDriverID, &recordPosition ) == FMOD_OK ) && ( recordPosition != lastRecordPosition ))
@@ -716,6 +848,36 @@ void VOIPController::Tick( void )
 
 			compressedBuffers.Clear( );
 		}
+#elif !defined(NO_OPENAL)
+		// [ZandroX] alcCaptureSamples hands us exactly RECORD_SAMPLES_PER_FRAME
+		// samples at a time with no ring buffer wrap math. Each captured 16-bit
+		// sample is converted into the 32-bit float byte layout that the shared
+		// ReadRecordSamples (Opus + RNNoise) pipeline expects.
+		if ( captureDevice != nullptr )
+		{
+			ALCint availableSamples = 0;
+			alcGetIntegerv( captureDevice, ALC_CAPTURE_SAMPLES, 1, &availableSamples );
+
+			short recordBuffer[RECORD_SAMPLES_PER_FRAME];
+			unsigned char frameBuffer[RECORD_SAMPLES_PER_FRAME * SAMPLE_SIZE];
+
+			while ( availableSamples >= RECORD_SAMPLES_PER_FRAME )
+			{
+				alcCaptureSamples( captureDevice, recordBuffer, RECORD_SAMPLES_PER_FRAME );
+
+				for ( unsigned int i = 0; i < RECORD_SAMPLES_PER_FRAME; i++ )
+					voicechat_FloatToByteArray( recordBuffer[i] / 32768.0f, frameBuffer + i * SAMPLE_SIZE );
+
+				ReadRecordSamples( frameBuffer, RECORD_SAMPLES_PER_FRAME * SAMPLE_SIZE );
+				availableSamples -= RECORD_SAMPLES_PER_FRAME;
+			}
+
+			if (( isTesting == false ) && ( opus_repacketizer_get_nb_frames( repacketizer ) > 0 ))
+				SendAudioPacket( );
+
+			compressedBuffers.Clear( );
+		}
+#endif
 	}
 
 	// [AK] Tick through all VoIP channels for each player.
@@ -742,6 +904,7 @@ void VOIPController::Tick( void )
 			continue;
 		}
 
+#if !defined(NO_FMOD)
 		// [AK] If it's been long enough since we first received audio frames from
 		// this player, start playing this channel. By now, the jitter buffer should
 		// have enough samples for clean playback.
@@ -777,6 +940,76 @@ void VOIPController::Tick( void )
 				voicechat_ReadSoundBuffer( VoIPChannels[i], VoIPChannels[i]->sound, VoIPChannels[i]->lastReadPosition, samplesToRead, &VOIPChannel::ReadSamples );
 			}
 		}
+#elif !defined(NO_OPENAL)
+		VOIPChannel *channel = VoIPChannels[i];
+
+		// [ZandroX] Wait for the jitter buffer to fill (and the initial delay to
+		// elapse) before creating a source and starting playback.
+		if ( channel->source == 0 )
+		{
+			if (( channel->jitterBuffer.Size( ) == 0 ) || ( channel->playbackTick > gametic ))
+				continue;
+
+			channel->StartPlaying( );
+
+			if ( channel->source == 0 )
+				continue;
+		}
+
+		// [ZandroX] Reclaim buffers that have finished playing so they can be reused.
+		channel->ReclaimBuffers( );
+
+		// [ZandroX] Work out this channel's gain. During a microphone test, only the
+		// local player's channel is audible (everyone else is muted), mirroring how
+		// the FMOD path muted the VoIP channel group.
+		float gain = outputVolume * channelVolumes[i];
+
+		if ( i == static_cast<unsigned>( consoleplayer ))
+		{
+			if ( isTesting )
+			{
+				gain = voice_recordvolume;
+
+				// [ZandroX] Update the microphone-test meter every three tics from
+				// the frames about to be played, matching the FMOD path's cadence.
+				if ( gametic % 3 == 0 )
+				{
+					float rms = 0.0f;
+					unsigned int numSamples = 0;
+
+					for ( unsigned int f = 0; f < channel->jitterBuffer.Size( ); f++ )
+					{
+						for ( unsigned int s = 0; s < PLAYBACK_SAMPLES_PER_FRAME; s++ )
+						{
+							rms += powf( channel->jitterBuffer[f].samples[s], 2 );
+							numSamples++;
+						}
+					}
+
+					testRMSVolume = ( numSamples > 0 ) ? 20 * log10( sqrtf( rms / numSamples )) : MIN_DECIBELS;
+				}
+			}
+		}
+		else if ( isTesting )
+		{
+			gain = 0.0f;
+		}
+
+		// [ZandroX] Queue every buffered frame and (re)start the source if needed.
+		channel->QueueFrames( gain );
+
+		// [ZandroX] If the talk burst is over (nothing pending and nothing queued),
+		// stop the source so the player is no longer marked as talking. The channel
+		// object (and its Opus decoder) is kept alive for reuse.
+		if (( channel->IsPlaying( ) == false ) && ( channel->jitterBuffer.Size( ) == 0 ))
+		{
+			ALint queuedBuffers = 0;
+			alGetSourcei( channel->source, AL_BUFFERS_QUEUED, &queuedBuffers );
+
+			if ( queuedBuffers == 0 )
+				channel->Stop( );
+		}
+#endif
 	}
 }
 
@@ -800,6 +1033,27 @@ static float voicechat_ByteArrayToFloat( unsigned char *bytes )
 		dataUnion.l |= bytes[i] << 8 * i;
 
 	return dataUnion.f;
+}
+
+//*****************************************************************************
+//
+// [AK] voicechat_FloatToByteArray
+//
+// Serializes a float into a little-endian 4-byte array. Shared by both the FMOD
+// and OpenAL backends (the FMOD playback path and the OpenAL capture path).
+//
+//*****************************************************************************
+
+static void voicechat_FloatToByteArray( const float value, unsigned char *bytes )
+{
+	if ( bytes == nullptr )
+		return;
+
+	union { DWORD l; float f; } dataUnion;
+	dataUnion.f = value;
+
+	for ( unsigned int i = 0; i < 4; i++ )
+		bytes[i] = ( dataUnion.l >> 8 * i ) & 0xFF;
 }
 
 //*****************************************************************************
@@ -948,6 +1202,8 @@ void VOIPController::UpdateTestRMSVolume( unsigned char *soundBuffer, const unsi
 //
 //*****************************************************************************
 
+#if !defined(NO_FMOD)
+
 void VOIPController::StartRecording( void )
 {
 	if ( IsRecording( ))
@@ -1013,6 +1269,60 @@ void VOIPController::StartRecording( void )
 	}
 }
 
+#elif !defined(NO_OPENAL)
+
+//*****************************************************************************
+//
+// [ZandroX] VOIPController::StartRecording (OpenAL)
+//
+// Opens the capture device selected by voice_recorddriver and starts capturing
+// mono 16-bit audio at RECORD_SAMPLE_RATE into an internal ring buffer that is
+// drained one frame at a time in Tick().
+//
+//*****************************************************************************
+
+void VOIPController::StartRecording( void )
+{
+	if ( IsRecording( ))
+		return;
+
+	TArray<FString> recordDriverList;
+	RetrieveRecordDrivers( recordDriverList );
+
+	if ( recordDriverList.Size( ) == 0 )
+	{
+		Printf( TEXTCOLOR_ORANGE "Failed to find any connected record drivers.\n" );
+		return;
+	}
+
+	// [AK] Pick the device by the voice_recorddriver index, falling back to 0.
+	if (( voice_recorddriver < 0 ) || ( voice_recorddriver >= static_cast<int>( recordDriverList.Size( ))))
+	{
+		Printf( "Record driver %d doesn't exist. Using 0 instead.\n", *voice_recorddriver );
+		recordDriverID = 0;
+	}
+	else
+	{
+		recordDriverID = voice_recorddriver;
+	}
+
+	const char *deviceName = recordDriverList[recordDriverID].GetChars( );
+
+	// [ZandroX] alcCaptureOpenDevice returns exactly the requested samples per call
+	// (unlike FMOD's looping record sound), so no ring buffer wrap math is needed.
+	captureDevice = alcCaptureOpenDevice( deviceName, RECORD_SAMPLE_RATE, AL_FORMAT_MONO16, RECORD_SOUND_LENGTH );
+
+	if ( captureDevice == nullptr )
+	{
+		Printf( TEXTCOLOR_ORANGE "Failed to open capture device \"%s\" for VoIP recording.\n", deviceName );
+		return;
+	}
+
+	alcCaptureStart( captureDevice );
+}
+
+#endif
+
 //*****************************************************************************
 //
 // [AK] VOIPController::StopRecording
@@ -1020,6 +1330,8 @@ void VOIPController::StartRecording( void )
 // Stops recording from the selected input device.
 //
 //*****************************************************************************
+
+#if !defined(NO_FMOD)
 
 void VOIPController::StopRecording( void )
 {
@@ -1040,6 +1352,23 @@ void VOIPController::StopRecording( void )
 		recordSound = nullptr;
 	}
 }
+
+#elif !defined(NO_OPENAL)
+
+void VOIPController::StopRecording( void )
+{
+	if ( IsRecording( ) == false )
+		return;
+
+	// [AK] If we're in the middle of a transmission, stop that too.
+	StopTransmission( );
+
+	alcCaptureStop( captureDevice );
+	alcCaptureCloseDevice( captureDevice );
+	captureDevice = nullptr;
+}
+
+#endif
 
 //*****************************************************************************
 //
@@ -1063,6 +1392,7 @@ void VOIPController::StartTransmission( const TRANSMISSIONTYPE_e type, const boo
 
 	if ( getRecordPosition )
 	{
+#if !defined(NO_FMOD)
 		const FMOD_RESULT fmodErrorCode = system->getRecordPosition( recordDriverID, &lastRecordPosition );
 
 		if ( fmodErrorCode != FMOD_OK )
@@ -1070,6 +1400,25 @@ void VOIPController::StartTransmission( const TRANSMISSIONTYPE_e type, const boo
 			Printf( TEXTCOLOR_ORANGE "Failed to get position of voice recording: %s\n", FMOD_ErrorString( fmodErrorCode ));
 			return;
 		}
+#elif !defined(NO_OPENAL)
+		// [ZandroX] There's no record position to seed with OpenAL; instead discard
+		// any samples already sitting in the capture buffer so we don't transmit a
+		// burst of stale audio recorded before the button was pressed.
+		if ( captureDevice != nullptr )
+		{
+			ALCint availableSamples = 0;
+			alcGetIntegerv( captureDevice, ALC_CAPTURE_SAMPLES, 1, &availableSamples );
+
+			short discardBuffer[RECORD_SAMPLES_PER_FRAME];
+
+			while ( availableSamples > 0 )
+			{
+				const ALCint samplesToDiscard = MIN<ALCint>( availableSamples, RECORD_SAMPLES_PER_FRAME );
+				alcCaptureSamples( captureDevice, discardBuffer, samplesToDiscard );
+				availableSamples -= samplesToDiscard;
+			}
+		}
+#endif
 	}
 
 	transmissionType = type;
@@ -1135,6 +1484,7 @@ bool VOIPController::IsPlayerTalking( const unsigned int player ) const
 			return true;
 	}
 
+#if !defined(NO_FMOD)
 	if (( PLAYER_IsValidPlayer( player )) && ( VoIPChannels[player] != nullptr ) && ( VoIPChannels[player]->channel != nullptr ))
 	{
 		// [AK] If this channel's playing in 3D mode, check if they're audible.
@@ -1149,6 +1499,12 @@ bool VOIPController::IsPlayerTalking( const unsigned int player ) const
 
 		return true;
 	}
+#elif !defined(NO_OPENAL)
+	// [ZandroX] VoIP is always 2D with OpenAL, so a player is talking simply if
+	// their source is currently playing.
+	if (( PLAYER_IsValidPlayer( player )) && ( VoIPChannels[player] != nullptr ) && ( VoIPChannels[player]->IsPlaying( )))
+		return true;
+#endif
 
 	return false;
 }
@@ -1163,12 +1519,17 @@ bool VOIPController::IsPlayerTalking( const unsigned int player ) const
 
 bool VOIPController::IsRecording( void ) const
 {
+#if !defined(NO_FMOD)
 	bool isRecording = false;
 
 	if (( system != nullptr ) && ( system->isRecording( recordDriverID, &isRecording ) == FMOD_OK ))
 		return isRecording;
 
 	return false;
+#elif !defined(NO_OPENAL)
+	// [ZandroX] We are recording as long as the capture device is open.
+	return ( captureDevice != nullptr );
+#endif
 }
 
 //*****************************************************************************
@@ -1204,6 +1565,7 @@ void VOIPController::SetChannelVolume( const unsigned int player, float volume, 
 	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( updateServer ) && ( volume != oldVolume ))
 		CLIENTCOMMANDS_SetVoIPChannelVolume( player, volume );
 
+#if !defined(NO_FMOD)
 	if (( VoIPChannels[player] == nullptr ) || ( VoIPChannels[player]->channel == nullptr ))
 		return;
 
@@ -1211,6 +1573,12 @@ void VOIPController::SetChannelVolume( const unsigned int player, float volume, 
 
 	if ( fmodErrorCode != FMOD_OK )
 		Printf( TEXTCOLOR_ORANGE "Couldn't change the volume of VoIP channel %u: %s\n", player, FMOD_ErrorString( fmodErrorCode ));
+#elif !defined(NO_OPENAL)
+	// [ZandroX] Apply the new per-player volume immediately if the source is live.
+	// The final gain combines the global output volume with this channel's volume.
+	if (( VoIPChannels[player] != nullptr ) && ( VoIPChannels[player]->source != 0 ))
+		alSourcef( VoIPChannels[player]->source, AL_GAIN, outputVolume * volume );
+#endif
 }
 
 //*****************************************************************************
@@ -1226,6 +1594,7 @@ void VOIPController::SetVolume( float volume )
 	if ( isInitialized == false )
 		return;
 
+#if !defined(NO_FMOD)
 	if ( VoIPChannelGroup == nullptr )
 	{
 		Printf( TEXTCOLOR_ORANGE "Couldn't change the volume of the VoIP channel group: it doesn't exist.\n" );
@@ -1236,6 +1605,23 @@ void VOIPController::SetVolume( float volume )
 
 	if ( fmodErrorCode != FMOD_OK )
 		Printf( TEXTCOLOR_ORANGE "Couldn't change the volume of the VoIP channel group: %s\n", FMOD_ErrorString( fmodErrorCode ));
+#elif !defined(NO_OPENAL)
+	// [ZandroX] There's no channel group with OpenAL, so store the master output
+	// volume and reapply it (combined with each channel's own volume) to every live
+	// source. Muted test channels are left alone; Tick() manages their gain.
+	outputVolume = volume;
+
+	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
+	{
+		if (( VoIPChannels[i] != nullptr ) && ( VoIPChannels[i]->source != 0 ))
+		{
+			if (( isTesting ) && ( i == static_cast<unsigned>( consoleplayer )))
+				continue;
+
+			alSourcef( VoIPChannels[i]->source, AL_GAIN, isTesting ? 0.0f : outputVolume * channelVolumes[i] );
+		}
+	}
+#endif
 }
 
 //*****************************************************************************
@@ -1251,6 +1637,7 @@ void VOIPController::SetPitch( float pitch )
 	if ( isInitialized == false )
 		return;
 
+#if !defined(NO_FMOD)
 	float oldPitch = 1.0f;
 
 	if ( VoIPChannelGroup == nullptr )
@@ -1286,6 +1673,21 @@ void VOIPController::SetPitch( float pitch )
 		if (( VoIPChannels[i] != nullptr ) && ( VoIPChannels[i]->channel != nullptr ))
 			VoIPChannels[i]->UpdateEndDelay( true );
 	}
+#elif !defined(NO_OPENAL)
+	// [ZandroX] Stop if the pitch is already the same.
+	if ( pitch == outputPitch )
+		return;
+
+	outputPitch = pitch;
+
+	// [ZandroX] OpenAL applies pitch per-source (no sample-accurate end-delay math
+	// is needed, since queued buffers simply play out at the new rate).
+	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
+	{
+		if (( VoIPChannels[i] != nullptr ) && ( VoIPChannels[i]->source != 0 ))
+			alSourcef( VoIPChannels[i]->source, AL_PITCH, outputPitch );
+	}
+#endif
 }
 
 //*****************************************************************************
@@ -1316,10 +1718,13 @@ void VOIPController::SetMicrophoneTest( const bool enable )
 		if ( isRecording == false )
 			StartRecording( );
 
+#if !defined(NO_FMOD)
 		// [AK] While we're testing our microphone, we don't want to hear the
 		// voices of other players, so we'll mute the VoIP channel group.
 		if ( VoIPChannelGroup != nullptr )
 			VoIPChannelGroup->setMute( true );
+#endif
+		// [ZandroX] With OpenAL, other players are muted in Tick() while isTesting.
 	}
 	else
 	{
@@ -1330,9 +1735,11 @@ void VOIPController::SetMicrophoneTest( const bool enable )
 
 		testRMSVolume = MIN_DECIBELS;
 
+#if !defined(NO_FMOD)
 		// [AK] Unmute the VoIP channel group now.
 		if ( VoIPChannelGroup != nullptr )
 			VoIPChannelGroup->setMute( false );
+#endif
 
 		RemoveVoIPChannel( consoleplayer );
 	}
@@ -1351,10 +1758,11 @@ void VOIPController::SetMicrophoneTest( const bool enable )
 
 void VOIPController::RetrieveRecordDrivers( TArray<FString> &list ) const
 {
+	list.Clear( );
+
+#if !defined(NO_FMOD)
 	int numDrivers = 0;
 	char name[256];
-
-	list.Clear( );
 
 	// [AK] Don't retrieve any record drivers while using ALSA.
 	if (( system != nullptr ) && ( system->getRecordNumDrivers( &numDrivers ) == FMOD_OK ) && ( IsUsingALSA( ) == false ))
@@ -1365,6 +1773,21 @@ void VOIPController::RetrieveRecordDrivers( TArray<FString> &list ) const
 				list.Push( name );
 		}
 	}
+#elif !defined(NO_OPENAL)
+	// [ZandroX] The capture device list is a single string of NUL-separated device
+	// names terminated by an extra NUL. This requires the ALC_EXT_CAPTURE extension,
+	// which every modern OpenAL implementation (incl. OpenAL Soft) provides.
+	if ( alcIsExtensionPresent( nullptr, "ALC_EXT_CAPTURE" ) == ALC_FALSE )
+		return;
+
+	const ALCchar *deviceNames = alcGetString( nullptr, ALC_CAPTURE_DEVICE_SPECIFIER );
+
+	if ( deviceNames != nullptr )
+	{
+		for ( const ALCchar *name = deviceNames; *name != '\0'; name += strlen( name ) + 1 )
+			list.Push( name );
+	}
+#endif
 }
 
 //*****************************************************************************
@@ -1475,8 +1898,13 @@ void VOIPController::ReceiveAudioPacket( const unsigned int player, const unsign
 			}
 
 			// [AK] Wait five tics before playing this VoIP channel.
+#if !defined(NO_FMOD)
 			if (( VoIPChannels[player]->jitterBuffer.Size( ) == 0 ) && ( VoIPChannels[player]->channel == nullptr ))
 				VoIPChannels[player]->playbackTick = gametic + 5;
+#elif !defined(NO_OPENAL)
+			if (( VoIPChannels[player]->jitterBuffer.Size( ) == 0 ) && ( VoIPChannels[player]->source == 0 ))
+				VoIPChannels[player]->playbackTick = gametic + 5;
+#endif
 
 			VoIPChannels[player]->jitterBuffer.Push( newAudioFrame );
 		}
@@ -1500,6 +1928,7 @@ void VOIPController::ReceiveAudioPacket( const unsigned int player, const unsign
 
 void VOIPController::UpdateProximityChat( void )
 {
+#if !defined(NO_FMOD)
 	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
 	{
 		if (( playeringame[i] == false ) || ( VoIPChannels[i] == nullptr ) || ( VoIPChannels[i]->channel == nullptr ))
@@ -1507,6 +1936,9 @@ void VOIPController::UpdateProximityChat( void )
 
 		VoIPChannels[i]->Update3DAttributes( );
 	}
+#endif
+	// [ZandroX] The OpenAL backend plays all VoIP non-positionally (2D), so there
+	// are no per-channel 3D attributes to update for proximity chat.
 }
 
 //*****************************************************************************
@@ -1521,8 +1953,11 @@ void VOIPController::UpdateProximityChat( void )
 
 void VOIPController::UpdateRolloffDistances( void )
 {
+#if !defined(NO_FMOD)
 	proximityInfo.Rolloff.MinDistance = sv_minproximityrolloffdist;
 	proximityInfo.Rolloff.MaxDistance = sv_maxproximityrolloffdist;
+#endif
+	// [ZandroX] No proximity rolloff for the OpenAL backend (VoIP is always 2D).
 }
 
 //*****************************************************************************
@@ -1585,13 +2020,21 @@ int VOIPController::EncodeOpusFrame( const float *inBuffer, const unsigned int i
 
 bool VOIPController::IsUsingALSA( void ) const
 {
+#if !defined(NO_FMOD)
 	FMOD_OUTPUTTYPE outputType = FMOD_OUTPUTTYPE_UNKNOWN;
 
 	if (( system != nullptr ) && ( system->getOutput( &outputType ) == FMOD_OK ) && ( outputType == FMOD_OUTPUTTYPE_ALSA ))
 		return true;
 
 	return false;
+#elif !defined(NO_OPENAL)
+	// [ZandroX] The ALSA capture limitation is specific to FMOD's ALSA output; the
+	// OpenAL capture path works regardless of the underlying backend.
+	return false;
+#endif
 }
+
+#if !defined(NO_FMOD)
 
 //*****************************************************************************
 //
@@ -1864,20 +2307,6 @@ void VOIPController::VOIPChannel::StartPlaying( void )
 //
 //*****************************************************************************
 
-static void voicechat_FloatToByteArray( const float value, unsigned char *bytes )
-{
-	if ( bytes == nullptr )
-		return;
-
-	union { DWORD l; float f; } dataUnion;
-	dataUnion.f = value;
-
-	for ( unsigned int i = 0; i < 4; i++ )
-		bytes[i] = ( dataUnion.l >> 8 * i ) & 0xFF;
-}
-
-//*****************************************************************************
-//
 void VOIPController::VOIPChannel::ReadSamples( unsigned char *soundBuffer, const unsigned int length )
 {
 	const unsigned int samplesInBuffer = length / SAMPLE_SIZE;
@@ -2068,6 +2497,270 @@ void VOIPController::VOIPChannel::UpdateEndDelay( const bool resetEpoch )
 	FMOD_64BIT_ADD( newDSPHi, newDSPLo, 0, static_cast<unsigned int>(( samplesRead - endDelaySamples ) * scalar ));
 	channel->setDelay( FMOD_DELAYTYPE_DSPCLOCK_END, newDSPHi, newDSPLo );
 }
+
+#elif !defined(NO_OPENAL)
+
+//*****************************************************************************
+//
+// [ZandroX] VOIPController::VOIPChannel::VOIPChannel (OpenAL)
+//
+// Creates the channel's Opus decoder. The OpenAL source is created lazily in
+// StartPlaying() once there are frames to play.
+//
+//*****************************************************************************
+
+VOIPController::VOIPChannel::VOIPChannel( const unsigned int player ) :
+	player( player ),
+	decoder( nullptr ),
+	source( 0 ),
+	playbackTick( 0 ),
+	lastFrameRead( 0 ),
+	samplesRead( 0 ),
+	samplesPlayed( 0 )
+{
+	int opusErrorCode = OPUS_OK;
+	decoder = opus_decoder_create( PLAYBACK_SAMPLE_RATE, 1, &opusErrorCode );
+
+	// [AK] Print an error message if the Opus decoder wasn't created successfully.
+	if ( opusErrorCode != OPUS_OK )
+		Printf( TEXTCOLOR_ORANGE "Failed to create Opus decoder for VoIP channel %u: %s.\n", player, opus_strerror( opusErrorCode ));
+}
+
+//*****************************************************************************
+//
+// [ZandroX] VOIPController::VOIPChannel::~VOIPChannel (OpenAL)
+//
+// Stops and destroys the OpenAL source, then destroys the Opus decoder.
+//
+//*****************************************************************************
+
+VOIPController::VOIPChannel::~VOIPChannel( void )
+{
+	Stop( );
+
+	if ( decoder != nullptr )
+	{
+		opus_decoder_destroy( decoder );
+		decoder = nullptr;
+	}
+
+	// [AK] Reset this channel's volume back to default.
+	VOIPController::GetInstance( ).channelVolumes[player] = 1.0f;
+}
+
+//*****************************************************************************
+//
+// [ZandroX] VOIPController::VOIPChannel::DecodeOpusFrame (OpenAL)
+//
+// Decodes a single audio frame using the Opus audio codec, and returns the
+// number of samples decoded. Identical to the FMOD path (codec is shared).
+//
+//*****************************************************************************
+
+int VOIPController::VOIPChannel::DecodeOpusFrame( const unsigned char *inBuffer, const unsigned int inLength, float *outBuffer, const unsigned int outLength )
+{
+	if (( decoder == nullptr ) || ( inBuffer == nullptr ) || ( outBuffer == nullptr ))
+		return 0;
+
+	int numBytesDecoded = opus_decode_float( decoder, inBuffer, inLength, outBuffer, outLength, 0 );
+
+	// [AK] Print the error message if decoding failed.
+	if ( numBytesDecoded <= 0 )
+	{
+		Printf( TEXTCOLOR_ORANGE "Failed to decode Opus audio frame: %s.\n", opus_strerror( numBytesDecoded ));
+		return 0;
+	}
+
+	return numBytesDecoded;
+}
+
+//*****************************************************************************
+//
+// [ZandroX] VOIPController::VOIPChannel::IsPlaying (OpenAL)
+//
+// Returns true if the source exists and is currently playing audio, or still
+// has queued buffers that haven't finished playing yet.
+//
+//*****************************************************************************
+
+bool VOIPController::VOIPChannel::IsPlaying( void ) const
+{
+	if ( source == 0 )
+		return false;
+
+	ALint state = AL_STOPPED;
+	alGetSourcei( source, AL_SOURCE_STATE, &state );
+
+	if ( state == AL_PLAYING )
+		return true;
+
+	// [ZandroX] Also consider the channel "playing" if there are still queued
+	// buffers waiting to be processed (e.g. a brief underrun between frames).
+	ALint queued = 0;
+	ALint processed = 0;
+	alGetSourcei( source, AL_BUFFERS_QUEUED, &queued );
+	alGetSourcei( source, AL_BUFFERS_PROCESSED, &processed );
+
+	return (( queued - processed ) > 0 );
+}
+
+//*****************************************************************************
+//
+// [ZandroX] VOIPController::VOIPChannel::StartPlaying (OpenAL)
+//
+// Creates a non-positional (2D) OpenAL source for this channel and prepares it
+// for a new talk burst.
+//
+//*****************************************************************************
+
+void VOIPController::VOIPChannel::StartPlaying( void )
+{
+	if ( source != 0 )
+		return;
+
+	alGetError( );
+	alGenSources( 1, &source );
+
+	if (( alGetError( ) != AL_NO_ERROR ) || ( source == 0 ))
+	{
+		source = 0;
+		Printf( TEXTCOLOR_ORANGE "Failed to create OpenAL source for VoIP channel %u.\n", player );
+		return;
+	}
+
+	// [ZandroX] AL_SOURCE_RELATIVE + a zero position make the source non-positional
+	// (2D), matching the FMOD_2D behavior of the original VoIP channel group.
+	alSourcei( source, AL_SOURCE_RELATIVE, AL_TRUE );
+	alSource3f( source, AL_POSITION, 0.0f, 0.0f, 0.0f );
+	alSource3f( source, AL_VELOCITY, 0.0f, 0.0f, 0.0f );
+	alSourcef( source, AL_PITCH, VOIPController::GetInstance( ).outputPitch );
+	alSourcef( source, AL_GAIN, 1.0f );
+
+	// [ZandroX] Reset the per-burst sample counters (mirrors the FMOD channel-end
+	// callback resetting samplesRead/samplesPlayed).
+	samplesRead = 0;
+	samplesPlayed = 0;
+}
+
+//*****************************************************************************
+//
+// [ZandroX] VOIPController::VOIPChannel::ReclaimBuffers (OpenAL)
+//
+// Unqueues and deletes any buffers that have finished playing, freeing them and
+// advancing the played-sample counter.
+//
+//*****************************************************************************
+
+void VOIPController::VOIPChannel::ReclaimBuffers( void )
+{
+	if ( source == 0 )
+		return;
+
+	ALint processed = 0;
+	alGetSourcei( source, AL_BUFFERS_PROCESSED, &processed );
+
+	while ( processed-- > 0 )
+	{
+		ALuint buffer = 0;
+		alSourceUnqueueBuffers( source, 1, &buffer );
+		alDeleteBuffers( 1, &buffer );
+
+		// [ZandroX] Every buffer holds exactly one decoded frame.
+		samplesPlayed += PLAYBACK_SAMPLES_PER_FRAME;
+	}
+}
+
+//*****************************************************************************
+//
+// [ZandroX] VOIPController::VOIPChannel::QueueFrames (OpenAL)
+//
+// Converts every buffered (decoded) frame in the jitter buffer to 16-bit PCM,
+// queues each as an OpenAL buffer, applies the given gain and (re)starts the
+// source if it isn't already playing.
+//
+//*****************************************************************************
+
+void VOIPController::VOIPChannel::QueueFrames( const float gain )
+{
+	if ( source == 0 )
+		return;
+
+	while ( jitterBuffer.Size( ) > 0 )
+	{
+		const AudioFrame &audioFrame = jitterBuffer[0];
+		short pcm[PLAYBACK_SAMPLES_PER_FRAME];
+
+		for ( unsigned int i = 0; i < PLAYBACK_SAMPLES_PER_FRAME; i++ )
+		{
+			const int sample = static_cast<int>( lroundf( clamp<float>( audioFrame.samples[i], -1.0f, 1.0f ) * SHRT_MAX ));
+			pcm[i] = static_cast<short>( clamp<int>( sample, SHRT_MIN, SHRT_MAX ));
+		}
+
+		ALuint buffer = 0;
+		alGenBuffers( 1, &buffer );
+
+		if ( buffer != 0 )
+		{
+			// [ZandroX] Opus decoded to PLAYBACK_SAMPLE_RATE (24 kHz), so the AL
+			// buffer must advertise that rate, not the 48 kHz record rate.
+			alBufferData( buffer, AL_FORMAT_MONO16, pcm, sizeof( pcm ), PLAYBACK_SAMPLE_RATE );
+			alSourceQueueBuffers( source, 1, &buffer );
+		}
+
+		lastFrameRead = audioFrame.frame;
+		samplesRead += PLAYBACK_SAMPLES_PER_FRAME;
+		jitterBuffer.Delete( 0 );
+	}
+
+	alSourcef( source, AL_GAIN, gain );
+
+	// [ZandroX] Start (or resume) the source if it has buffers to play but isn't
+	// currently playing.
+	ALint state = AL_STOPPED;
+	ALint queued = 0;
+	alGetSourcei( source, AL_SOURCE_STATE, &state );
+	alGetSourcei( source, AL_BUFFERS_QUEUED, &queued );
+
+	if (( state != AL_PLAYING ) && ( queued > 0 ))
+		alSourcePlay( source );
+}
+
+//*****************************************************************************
+//
+// [ZandroX] VOIPController::VOIPChannel::Stop (OpenAL)
+//
+// Stops the source, unqueues and deletes all of its buffers, deletes the source
+// itself and resets the channel's playback state so it can be reused.
+//
+//*****************************************************************************
+
+void VOIPController::VOIPChannel::Stop( void )
+{
+	if ( source == 0 )
+		return;
+
+	alSourceStop( source );
+
+	// [ZandroX] Detach and delete every buffer still attached to the source.
+	ALint queued = 0;
+	alGetSourcei( source, AL_BUFFERS_QUEUED, &queued );
+
+	while ( queued-- > 0 )
+	{
+		ALuint buffer = 0;
+		alSourceUnqueueBuffers( source, 1, &buffer );
+		alDeleteBuffers( 1, &buffer );
+	}
+
+	alDeleteSources( 1, &source );
+	source = 0;
+
+	lastFrameRead = 0;
+	samplesRead = 0;
+	samplesPlayed = 0;
+}
+
+#endif // backend-specific VOIPChannel implementation (FMOD vs OpenAL)
 
 #endif // NO_SOUND
 
@@ -2430,7 +3123,7 @@ bool FOptionMenuMicTestBar::Selectable( void )
 //*****************************************************************************
 //	STATISTICS
 
-#if !defined(NO_SOUND) && !defined(NO_FMOD)
+#if !defined(NO_SOUND) && ( !defined(NO_FMOD) || !defined(NO_OPENAL) )
 
 ADD_STAT( voice )
 {

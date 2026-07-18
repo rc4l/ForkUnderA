@@ -57,11 +57,17 @@
 #include "v_font.h"
 
 // [AK] Only include FMOD, Opus, and RNNoise files if compiling with FMOD sound.
-// [ZandroX] The OpenAL (NO_FMOD) build has no FMOD, so VoIP is stubbed out.
+// [ZandroX] The OpenAL (NO_FMOD) build swaps FMOD for OpenAL capture/playback,
+// but still uses Opus for the codec and RNNoise for noise suppression.
 #if !defined(NO_SOUND) && !defined(NO_FMOD)
 #include "fmod_wrap.h"
 #include "opus.h"
 #include "rnnoise.h"
+#elif !defined(NO_SOUND) && !defined(NO_OPENAL)
+#include "opus.h"
+#include "rnnoise.h"
+#include <al.h>
+#include <alc.h>
 #endif
 
 //*****************************************************************************
@@ -150,7 +156,8 @@ public:
 	static VOIPController &GetInstance( void ) { static VOIPController instance; return instance; }
 
 // [AK] Some of these functions only exist as stubs if compiling without sound.
-#if defined(NO_SOUND) || defined(NO_FMOD)
+// [ZandroX] Full stubs only when there is no VoIP backend at all (no FMOD and no OpenAL).
+#if defined(NO_SOUND) || ( defined(NO_FMOD) && defined(NO_OPENAL) )
 
 	void Tick( void ) { }
 	void StartRecording( void ) { }
@@ -178,7 +185,7 @@ private:
 	VOIPController( void ) { }
 	~VOIPController( void ) { }
 
-#else
+#elif !defined(NO_FMOD)
 
 	void Init( FMOD::System *mainSystem );
 	void Shutdown( void );
@@ -302,6 +309,112 @@ private:
 	// custom callback function FMODSoundRenderer::RolloffCallback then uses to
 	// calculate the sound's volume based on distance.
 	FISoundChannel proximityInfo;
+
+#elif !defined(NO_OPENAL)
+
+	// [ZandroX] OpenAL implementation of the VoIP controller. The capture and
+	// playback backend is OpenAL, but the Opus codec, RNNoise denoising and the
+	// network transmission code are shared verbatim with the FMOD path.
+	void Init( void );
+	void Shutdown( void );
+	void Activate( void );
+	void Deactivate( void );
+	void Tick( void );
+	void StartRecording( void );
+	void StopRecording( void );
+	void StartTransmission( const TRANSMISSIONTYPE_e type, const bool getRecordPosition );
+	void StopTransmission( void );
+	bool IsVoiceChatAllowed( void ) const;
+	bool IsPlayerTalking( const unsigned int player ) const;
+	bool IsRecording( void ) const;
+	bool IsTestingMicrophone( void ) const { return isTesting; }
+	float GetTestRMSVolume( void ) const { return testRMSVolume; }
+	float GetChannelVolume( const unsigned int player ) const;
+	void SetChannelVolume( const unsigned int player, float volume, const bool updateServer );
+	void SetVolume( float volume );
+	void SetPitch( float pitch );
+	void SetMicrophoneTest( const bool enable );
+	void RetrieveRecordDrivers( TArray<FString> &list ) const;
+	FString GrabStats( void ) const;
+	void ReceiveAudioPacket( const unsigned int player, const unsigned int frame, const unsigned char *data, const unsigned int length );
+	void UpdateProximityChat( void );
+	void UpdateRolloffDistances( void );
+	void RemoveVoIPChannel( const unsigned int player );
+
+	// [AK] Static constants of the audio's properties.
+	static const int RECORD_SAMPLE_RATE = 48000; // 48 kHz.
+	static const int PLAYBACK_SAMPLE_RATE = 24000; // 24 kHz.
+	static const int SAMPLE_SIZE = sizeof( float ); // 32-bit floating point, mono-channel.
+	static const int RECORD_SOUND_LENGTH = RECORD_SAMPLE_RATE; // 1 second.
+	static const int PLAYBACK_SOUND_LENGTH = PLAYBACK_SAMPLE_RATE; // 1 second.
+
+	// [AK] Static constants for encoding or decoding frames via Opus.
+	static const int FRAME_SIZE = 10; // 10 ms.
+	static const int RECORD_SAMPLES_PER_FRAME = ( RECORD_SAMPLE_RATE * FRAME_SIZE ) / 1000;
+	static const int PLAYBACK_SAMPLES_PER_FRAME = ( PLAYBACK_SAMPLE_RATE * FRAME_SIZE ) / 1000;
+	static const int MAX_PACKET_SIZE = 1276; // Recommended max packet size by Opus.
+
+private:
+	struct VOIPChannel
+	{
+		struct AudioFrame
+		{
+			unsigned int frame;
+			float samples[PLAYBACK_SAMPLES_PER_FRAME];
+		};
+
+		const unsigned int player;
+		TArray<AudioFrame> jitterBuffer;
+		OpusDecoder *decoder;
+		ALuint source;
+		int playbackTick;
+		unsigned int lastFrameRead;
+		unsigned int samplesRead;
+		unsigned int samplesPlayed;
+
+		VOIPChannel( const unsigned int player );
+		~VOIPChannel( void );
+
+		int DecodeOpusFrame( const unsigned char *inBuffer, const unsigned int inLength, float *outBuffer, const unsigned int outLength );
+		bool IsPlaying( void ) const;
+		void StartPlaying( void );
+		void QueueFrames( const float gain );
+		void ReclaimBuffers( void );
+		void Stop( void );
+	};
+
+	VOIPController( void );
+	~VOIPController( void ) { Shutdown( ); }
+
+	void ReadRecordSamples( unsigned char *soundBuffer, unsigned int length );
+	void SendAudioPacket( void );
+	void UpdateTestRMSVolume( unsigned char *soundBuffer, const unsigned int length );
+	int EncodeOpusFrame( const float *inBuffer, const unsigned int inLength, unsigned char *outBuffer, const unsigned int outLength );
+	bool IsUsingALSA( void ) const;
+
+	VOIPChannel *VoIPChannels[MAXPLAYERS];
+	float channelVolumes[MAXPLAYERS];
+	float testRMSVolume;
+	ALCdevice *captureDevice;
+	OpusEncoder *encoder;
+	OpusRepacketizer *repacketizer;
+	RNNModel *denoiseModel;
+	DenoiseState *denoiseState;
+	int recordDriverID;
+	unsigned int framesSent;
+	unsigned char lastPackedTOC;
+	float outputVolume;
+	float outputPitch;
+	bool isInitialized;
+	bool isActive;
+	bool isTesting;
+	bool isRecordButtonPressed;
+	TRANSMISSIONTYPE_e transmissionType;
+
+	// [AK] This is needed for saving the arrays of encoded audio frames while
+	// using Opus's repacketizer to merge the audio frames together.
+	struct CompressedBuffer { unsigned char data[MAX_PACKET_SIZE]; };
+	TArray<CompressedBuffer> compressedBuffers;
 
 #endif // NO_SOUND
 
