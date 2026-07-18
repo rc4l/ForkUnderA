@@ -12,13 +12,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rosetta 2
-        run: |
-          # Needed to run the Intel (FMOD) build on Apple Silicon runners.
-          sudo softwareupdate --install-rosetta --agree-to-license
-
       - name: Build ZandroX
         run: |
+          # Native OpenAL build (no FMOD, no Rosetta) — arm64 on Apple Silicon runners.
           SOUND=1 ./build.sh
 
       - name: Upload ZandroX.app

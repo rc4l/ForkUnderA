@@ -8,8 +8,8 @@
 #   ./package-linux.sh              # full client, sound off (default)
 #   SERVERONLY=ON ./package-linux.sh   # headless server build
 #
-# NO_SOUND is on: FMOD Ex has no maintained Linux build we vendor yet, so these
-# Linux binaries ship without audio for now. Everything else is fully playable.
+# Audio is OpenAL (NO_FMOD): the binary links libopenal1 / libsndfile1 / libmpg123,
+# which are standard on any desktop Linux (install them if a target box lacks them).
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -24,7 +24,7 @@ docker run --rm -e SERVERONLY="$SERVERONLY" -v "$PWD:/work" "$IMAGE" bash -lc '
   set -euo pipefail
   cmake -S src/zandronum -B build-linux -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-    -DSERVERONLY="${SERVERONLY:-OFF}" -DNO_SOUND=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON
+    -DSERVERONLY="${SERVERONLY:-OFF}" -DNO_FMOD=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON
   cmake --build build-linux -j"$(nproc)"
 
   ARCH="$(uname -m)"
