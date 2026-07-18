@@ -258,7 +258,7 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 				DrawTexture (pic, cx, cy,
 					DTA_Translation, range,
 					DTA_DestWidth, forcedwidth,
-					DTA_DestHeight, height,
+					DTA_DestHeightF, height,	// [rc4l] height is float now (DTA_ScaleYNoMove); use the F variant
 					TAG_MORE, &tags);
 			}
 			else
