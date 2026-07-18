@@ -1,0 +1,3 @@
+# [rc4l] The image is just the toolchain; source is mounted at runtime, not copied.
+# Ignore everything so the build context stays tiny (no huge deps/, build/, src/zandronum).
+*
