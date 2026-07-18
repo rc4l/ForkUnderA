@@ -31,6 +31,15 @@ ZAN_SRC_DIR="$SRC_DIR/zandronum"
 DEFAULT_ZANDRONUM_REF="${ZANDRONUM_REF:-ZA_3.2.1}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 
+# SDL is built from source (SDL2 + sdl12-compat 1.2.68). Homebrew's sdl12-compat
+# now targets SDL3 and dlopens it by leaf name, which does not survive being
+# copied+re-signed into a self-contained .app (its dllinit errors out). The
+# from-source sdl12-compat 1.2.68 uses SDL2 and bundles cleanly.
+SDL2_URL="https://github.com/libsdl-org/SDL/releases/download/release-2.30.10/SDL2-2.30.10.tar.gz"
+SDL12_URL="https://github.com/libsdl-org/sdl12-compat/archive/refs/tags/release-1.2.68.tar.gz"
+SDL_PREFIX="$SCRIPT_ROOT/deps/sdl"          # install prefix for from-source SDL
+SDL_SRC="$SCRIPT_ROOT/deps/sdlsrc"          # scratch dir for SDL source trees
+
 # macOS .app bundle that build/ ships in addition to the loose binary.
 APP_NAME="ZandroX"
 BUNDLE_ID="org.zandrox.zandrox"
@@ -86,7 +95,10 @@ ensure_base_tools() {
 # opt/ prefixes, and the .app bundler resolves their absolute install ids.
 install_native_deps() {
     status "Installing dependencies via Homebrew..."
-    local pkgs=(sdl12-compat glew openssl@3 opus) need=()
+    # SDL is built from source (see build_sdl_from_source); everything else comes
+    # from Homebrew — none of these dlopen a sibling by leaf name, so they bundle
+    # cleanly with the recursive @loader_path pass.
+    local pkgs=(glew openssl@3 opus) need=()
     if [[ "$WANT_SOUND" == "1" ]]; then
         pkgs+=(openal-soft libsndfile mpg123)
     fi
@@ -94,6 +106,47 @@ install_native_deps() {
         brew list --versions "$p" >/dev/null 2>&1 || need+=("$p")
     done
     (( ${#need[@]} )) && brew install "${need[@]}" || echo "Deps present."
+}
+
+# ---------------------------------------------------------------------------
+# SDL from source (SDL2 dylib + sdl12-compat dylib), built for TARGET_ARCH.
+# sdl12-compat provides the SDL 1.2 API Zandronum links; it dlopens libSDL2 at
+# runtime. Both carry absolute install ids so the binary links them and the .app
+# bundler can copy + @loader_path them. (This is the piece Homebrew's SDL3-based
+# sdl12-compat couldn't do — its dllinit errors when re-signed into a bundle.)
+# ---------------------------------------------------------------------------
+_sdl_fetch() { [[ -f "$SDL_SRC/$2" ]] || curl -L --fail -o "$SDL_SRC/$2" "$1"; }
+
+build_sdl_from_source() {
+    if [[ -f "$SDL_PREFIX/lib/libSDL-1.2.0.dylib" && -f "$SDL_PREFIX/lib/libSDL2-2.0.0.dylib" ]]; then
+        echo "SDL already built at $SDL_PREFIX"; return
+    fi
+    status "Building SDL from source (SDL2 + sdl12-compat, arch: $TARGET_ARCH)..."
+    mkdir -p "$SDL_SRC" "$SDL_PREFIX"
+    _sdl_fetch "$SDL2_URL"  SDL2.tar.gz
+    _sdl_fetch "$SDL12_URL" sdl12compat.tar.gz
+    ( cd "$SDL_SRC" && tar xzf SDL2.tar.gz && tar xzf sdl12compat.tar.gz )
+
+    status "  building SDL2 $TARGET_ARCH (dylib)..."
+    ( cd "$SDL_SRC"/SDL2-* && \
+      cmake -S . -B b "${CMAKE_COMPAT[@]}" -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" \
+        -DCMAKE_BUILD_TYPE=Release -DSDL_STATIC=OFF -DSDL_SHARED=ON -DSDL_TEST=OFF \
+        -DCMAKE_INSTALL_PREFIX="$SDL_PREFIX" >/dev/null && \
+      cmake --build b --parallel "$NCPU" >/dev/null && cmake --install b >/dev/null )
+
+    status "  building sdl12-compat $TARGET_ARCH (dylib)..."
+    ( cd "$SDL_SRC"/sdl12-compat-* && \
+      cmake -S . -B b "${CMAKE_COMPAT[@]}" -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" \
+        -DCMAKE_BUILD_TYPE=Release -DSDL12TESTS=OFF -DCMAKE_PREFIX_PATH="$SDL_PREFIX" \
+        -DSDL2_INCLUDE_DIR="$SDL_PREFIX/include/SDL2" \
+        -DCMAKE_INSTALL_PREFIX="$SDL_PREFIX" >/dev/null && \
+      cmake --build b --parallel "$NCPU" >/dev/null && cmake --install b >/dev/null )
+
+    # Absolute install ids so the linked binary resolves the SDL dylibs at runtime
+    # (and the bundler can rewrite them to @loader_path).
+    install_name_tool -id "$SDL_PREFIX/lib/libSDL-1.2.0.dylib" "$SDL_PREFIX/lib/libSDL-1.2.0.dylib" 2>/dev/null || true
+    install_name_tool -id "$SDL_PREFIX/lib/libSDL2-2.0.0.dylib" "$SDL_PREFIX/lib/libSDL2-2.0.0.dylib" 2>/dev/null || true
+    [[ -f "$SDL_PREFIX/lib/libSDL-1.2.0.dylib" ]] || die "SDL build failed."
 }
 
 # ---------------------------------------------------------------------------
@@ -125,8 +178,8 @@ get_source() {
 # ---------------------------------------------------------------------------
 configure() {
     status "Configuring with CMake (arch: $TARGET_ARCH, sound: $WANT_SOUND)..."
-    local sdl glew ssl
-    sdl="$(brew --prefix sdl12-compat)"; glew="$(brew --prefix glew)"
+    local glew ssl
+    glew="$(brew --prefix glew)"
     ssl="$(brew --prefix openssl@3)"
 
     local args=(
@@ -139,8 +192,8 @@ configure() {
         -DFORCE_INTERNAL_JPEG=ON
         # FMOD is gone; OpenAL is the only audio backend.
         -DNO_FMOD=ON
-        -DSDL_INCLUDE_DIR="$sdl/include/SDL"
-        -DSDL_LIBRARY="$sdl/lib/libSDL-1.2.0.dylib"
+        -DSDL_INCLUDE_DIR="$SDL_PREFIX/include/SDL"
+        -DSDL_LIBRARY="$SDL_PREFIX/lib/libSDL-1.2.0.dylib"
         -DGLEW_INCLUDE_DIR="$glew/include"
         -DOPENSSL_ROOT_DIR="$ssl"
     )
@@ -257,30 +310,19 @@ make_app_bundle() {
     done
 
     # Stage and re-point dylibs. The recursive pass follows the link graph (OpenAL,
-    # sndfile, mpg123, opus, SDL1.2, GLEW, openssl all resolve via their absolute
-    # install ids). But sdl12-compat loads its *backend* SDL by dlopen'ing it by
-    # leaf name at runtime — there's no link-time edge, so the recursive pass never
-    # sees it. Current Homebrew sdl12-compat targets **SDL3** (older ones SDL2), so
-    # stage whichever backend libs exist and place them at @loader_path next to the
-    # binary (where sdl12-compat's dlopen looks first). Missing this = a fatal
-    # "Failed loading SDL3 library" dialog at launch.
+    # sndfile, mpg123, opus, sdl12-compat's libSDL-1.2, GLEW, openssl all resolve
+    # via their absolute install ids). sdl12-compat dlopens libSDL2 by leaf name at
+    # runtime (no link-time edge), so stage it explicitly at @loader_path next to
+    # the binary, where sdl12-compat's dlopen looks first.
     _BUNDLED=()
-    local sdl; sdl="$(brew --prefix sdl12-compat)"
-    local search=("$(brew --prefix)/lib" "$sdl/lib" "$macos")
-    local staged_backend=0 spec keg leaf prefix
-    for spec in "sdl3:libSDL3.0.dylib" "sdl2:libSDL2-2.0.0.dylib"; do
-        keg="${spec%%:*}"; leaf="${spec##*:}"
-        prefix="$(brew --prefix "$keg" 2>/dev/null || true)"
-        [[ -n "$prefix" ]] && search+=("$prefix/lib")
-        if [[ -n "$prefix" && -f "$prefix/lib/$leaf" ]]; then
-            cp -L "$prefix/lib/$leaf" "$macos/$leaf" && chmod u+w "$macos/$leaf"
-            _BUNDLED+=("$leaf")
-            install_name_tool -id "@loader_path/$leaf" "$macos/$leaf" 2>/dev/null || true
-            _bundle_deps "$macos/$leaf" "$macos" "${search[@]}"  # its own (non-system) deps
-            staged_backend=1
-        fi
-    done
-    (( staged_backend )) || warn "no SDL2/SDL3 backend found to bundle; the app will fail to launch"
+    local search=("$(brew --prefix)/lib" "$SDL_PREFIX/lib" "$macos")
+    if [[ -f "$SDL_PREFIX/lib/libSDL2-2.0.0.dylib" ]]; then
+        cp -L "$SDL_PREFIX/lib/libSDL2-2.0.0.dylib" "$macos/" && chmod u+w "$macos/libSDL2-2.0.0.dylib"
+        _BUNDLED+=("libSDL2-2.0.0.dylib")
+        install_name_tool -id "@loader_path/libSDL2-2.0.0.dylib" "$macos/libSDL2-2.0.0.dylib" 2>/dev/null || true
+    else
+        warn "libSDL2-2.0.0.dylib not found in $SDL_PREFIX; run build_sdl_from_source"
+    fi
     _bundle_deps "$macos/zandronum" "$macos" "${search[@]}"
 
     local icon; icon="$(make_icon "$resources")"
@@ -346,6 +388,7 @@ main() {
     ensure_base_tools
     get_source
     install_native_deps
+    build_sdl_from_source
     configure
     build
     make_app_bundle
