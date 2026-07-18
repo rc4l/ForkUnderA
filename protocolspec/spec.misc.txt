@@ -1,0 +1,94 @@
+Command ACSScriptExecute
+	Short netid
+	Actor activator with NullAllowed
+	Short lineid
+	Byte levelnum
+	Variable arg0
+	Variable arg1
+	Variable arg2
+	Variable arg3
+	Bool backSide
+	Bool always
+EndCommand
+
+Command ACSSendString
+	ExtendedCommand
+	Short netid
+	Actor activator with NullAllowed
+	String string
+EndCommand
+
+Struct JoinSlot
+	Byte player
+	Byte team
+EndStruct
+
+Command SyncJoinQueue
+	ExtendedCommand
+	Struct<JoinSlot>[] slots
+EndCommand
+
+Struct MapRotationEntry
+	String name
+	Byte isUsed
+	Byte minPlayers
+	Byte maxPlayers
+EndStruct
+
+Command SyncMapRotation
+	ExtendedCommand
+	Struct<MapRotationEntry>[] entries
+	Short currentPosition
+EndCommand
+
+Struct Medal
+	Byte index
+	UShort count
+EndStruct
+
+Command SyncPlayerMedalCounts
+	ExtendedCommand
+	Byte player
+	Struct<Medal>[] medals
+EndCommand
+
+Command ReplaceTextures
+	String fromTexture
+	String toTexture
+	Byte textureFlags
+EndCommand
+
+Command SetCustomPlayerValue
+	ExtendedCommand
+	Byte index
+	Byte player
+	String value
+EndCommand
+
+Command ResetCustomPlayerValue
+	ExtendedCommand
+	Byte index
+	Byte player
+EndCommand
+
+Command OpenMenu
+	ExtendedCommand
+	String menu
+EndCommand
+
+Command CloseMenu
+	ExtendedCommand
+EndCommand
+
+Command SetDominationPointOwner
+	Byte point
+	Byte team
+	Bool broadcast
+EndCommand
+
+Command SetDominationPointState
+	ExtendedCommand
+	Byte point
+	Bool disabled
+	Byte[] contesters
+EndCommand

@@ -1,0 +1,72 @@
+Command Print
+	Byte printlevel
+	String message
+EndCommand
+
+Command PrintMid
+	String message
+	Bool bold
+EndCommand
+
+Command PrintMOTD
+	String motd
+EndCommand
+
+Command PrintHUDMessage
+	String message
+	Float x
+	Float y
+	Short type
+	Short color
+	Float holdTime
+	Long id
+
+	# [AK] HUD messages that are typed on or faded in need an "in" time.
+	If((type & HUDMESSAGETYPE_MASK) == HUDMESSAGETYPE_TYPEONFADEOUT || (type & HUDMESSAGETYPE_MASK) == HUDMESSAGETYPE_FADEINOUT)
+		Float inTime
+	EndIf
+
+	# [AK] Any type of HUD message that isn't plain needs an "out" time.
+	If((type & HUDMESSAGETYPE_MASK) != HUDMESSAGETYPE_NORMAL)
+		Float outTime
+	EndIf
+
+	# [AK] HUD width and height.
+	If(type & HUDMESSAGE_SEND_HUDSIZE)
+		CheckFunction ContainsHUDSize
+		Short hudWidth
+		Short hudHeight
+	EndIf
+
+	# [AK] HUD clipping rectangle, for ACS only.
+	If((type & HUDMESSAGE_ACS) && (type & HUDMESSAGE_SEND_CLIPRECT))
+		CheckFunction ContainsClippingRectangle
+		Short clipRectLeft
+		Short clipRectTop
+		Short clipRectWidth
+		Short clipRectHeight
+	EndIf
+
+	# [AK] Wrap width, for ACS only.
+	If((type & HUDMESSAGE_ACS) && (type & HUDMESSAGE_SEND_WRAPWIDTH))
+		Short wrapWidth
+	EndIf
+
+	# [AK] Font name.
+	If(type & HUDMESSAGE_SEND_FONT)
+		String fontName
+	EndIf
+
+	# [AK] Alpha, for ACS only.
+	If((type & HUDMESSAGE_ACS) && (type & HUDMESSAGE_NET_ALPHA))
+		Fixed alpha
+	EndIf
+EndCommand
+
+Command PrintTeamScoresMessage
+	ExtendedCommand
+	Byte team
+	Byte scorer
+	Byte assister
+	Byte numPoints
+EndCommand
