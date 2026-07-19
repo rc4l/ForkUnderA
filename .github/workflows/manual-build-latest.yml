@@ -44,7 +44,9 @@ jobs:
           path: dist-linux/*.tar.gz
 
   build-windows:
-    runs-on: windows-latest
+    # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose
+    # generator name differs and which CMake mis-detects). Matches the reference build.
+    runs-on: windows-2022
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -66,7 +68,7 @@ jobs:
           # with Zandronum's old CMake minimums and break the VS generator.
           $vcpkg = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows"
           cmake -S src/zandronum -B build-win -G "Visual Studio 17 2022" -A x64 -T v143 `
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
             -DNO_FMOD=ON -DNO_OPENAL=OFF `
             -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
             -DFORCE_INTERNAL_GME=ON `
