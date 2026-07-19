@@ -53,7 +53,30 @@
 #include "i_music.h"
 #include "i_musicinterns.h"
 #include "tempfiles.h"
+// [rc4l] Pure format/sizing and playback math live in dependency-free, unit-tested units.
+#include "features/openal-sound/computation/oal_format_compute.h"
+#include "features/openal-sound/computation/oal_playback_compute.h"
 
+// [rc4l] The computation units mirror the engine's AL/format/rolloff constants; keep synced.
+static_assert(ZX_AL_NONE == AL_NONE, "AL format mirror out of sync");
+static_assert(ZX_AL_FORMAT_MONO8 == AL_FORMAT_MONO8, "AL format mirror out of sync");
+static_assert(ZX_AL_FORMAT_MONO16 == AL_FORMAT_MONO16, "AL format mirror out of sync");
+static_assert(ZX_AL_FORMAT_STEREO8 == AL_FORMAT_STEREO8, "AL format mirror out of sync");
+static_assert(ZX_AL_FORMAT_STEREO16 == AL_FORMAT_STEREO16, "AL format mirror out of sync");
+static_assert(ZX_AL_FORMAT_MONO_FLOAT32 == AL_FORMAT_MONO_FLOAT32, "AL format mirror out of sync");
+static_assert(ZX_AL_FORMAT_STEREO_FLOAT32 == AL_FORMAT_STEREO_FLOAT32, "AL format mirror out of sync");
+static_assert(ZX_CHANNELCONFIG_MONO == ChannelConfig_Mono, "ChannelConfig mirror out of sync");
+static_assert(ZX_CHANNELCONFIG_STEREO == ChannelConfig_Stereo, "ChannelConfig mirror out of sync");
+static_assert(ZX_SAMPLETYPE_UINT8 == SampleType_UInt8, "SampleType mirror out of sync");
+static_assert(ZX_SAMPLETYPE_INT16 == SampleType_Int16, "SampleType mirror out of sync");
+static_assert(ZX_STREAM_MONO == SoundStream::Mono, "stream flag mirror out of sync");
+static_assert(ZX_STREAM_BITS8 == SoundStream::Bits8, "stream flag mirror out of sync");
+static_assert(ZX_STREAM_BITS32 == SoundStream::Bits32, "stream flag mirror out of sync");
+static_assert(ZX_STREAM_FLOAT == SoundStream::Float, "stream flag mirror out of sync");
+static_assert(ZX_ROLLOFF_DOOM == ROLLOFF_Doom, "ROLLOFF mirror out of sync");
+static_assert(ZX_ROLLOFF_LINEAR == ROLLOFF_Linear, "ROLLOFF mirror out of sync");
+static_assert(ZX_ROLLOFF_LOG == ROLLOFF_Log, "ROLLOFF mirror out of sync");
+static_assert(ZX_ROLLOFF_CUSTOM == ROLLOFF_Custom, "ROLLOFF mirror out of sync");
 
 CVAR (String, snd_aldevice, "Default", CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, snd_efx, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
@@ -780,50 +803,16 @@ public:
         UserData = userdata;
         SampleRate = samplerate;
 
-        Format = AL_NONE;
-        if((flags&Bits8)) /* Signed or unsigned? We assume unsigned 8-bit... */
-        {
-            if((flags&Mono)) Format = AL_FORMAT_MONO8;
-            else Format = AL_FORMAT_STEREO8;
-        }
-        else if((flags&Float))
-        {
-            if(alIsExtensionPresent("AL_EXT_FLOAT32"))
-            {
-                if((flags&Mono)) Format = AL_FORMAT_MONO_FLOAT32;
-                else Format = AL_FORMAT_STEREO_FLOAT32;
-            }
-        }
-        else if((flags&Bits32))
-        {
-        }
-        else
-        {
-            if((flags&Mono)) Format = AL_FORMAT_MONO16;
-            else Format = AL_FORMAT_STEREO16;
-        }
-
+        Format = ComputeStreamFormat(flags, !!alIsExtensionPresent("AL_EXT_FLOAT32"));
         if(Format == AL_NONE)
         {
             Printf("Unsupported format: 0x%x\n", flags);
             return false;
         }
 
-        FrameSize = 1;
-        if((flags&Bits8))
-            FrameSize *= 1;
-        else if((flags&(Bits32|Float)))
-            FrameSize *= 4;
-        else
-            FrameSize *= 2;
+        FrameSize = ComputeStreamFrameSize(flags);
 
-        if((flags&Mono))
-            FrameSize *= 1;
-        else
-            FrameSize *= 2;
-
-        buffbytes += FrameSize-1;
-        buffbytes -= buffbytes%FrameSize;
+        buffbytes = ComputeAlignedBufferBytes(buffbytes, FrameSize);
         Data.Resize(buffbytes);
 
         return true;
@@ -851,28 +840,15 @@ public:
 
         Callback = DecoderCallback;
         UserData = NULL;
-        Format = AL_NONE;
-        FrameSize = 1;
 
         ChannelConfig chans;
         SampleType type;
         int srate;
 
         Decoder->getInfo(&srate, &chans, &type);
-        if(chans == ChannelConfig_Mono)
-        {
-            if(type == SampleType_UInt8) Format = AL_FORMAT_MONO8;
-            if(type == SampleType_Int16) Format = AL_FORMAT_MONO16;
-            FrameSize *= 1;
-        }
-        if(chans == ChannelConfig_Stereo)
-        {
-            if(type == SampleType_UInt8) Format = AL_FORMAT_STEREO8;
-            if(type == SampleType_Int16) Format = AL_FORMAT_STEREO16;
-            FrameSize *= 2;
-        }
-        if(type == SampleType_UInt8) FrameSize *= 1;
-        if(type == SampleType_Int16) FrameSize *= 2;
+        ZxSampleFormat sf = ComputeSampleFormat(chans, type);
+        Format = sf.format;
+        FrameSize = sf.sampleSize;
 
         if(Format == AL_NONE)
         {
@@ -885,12 +861,11 @@ public:
         Looping = loop;
 
         Data.Resize((SampleRate / 5) * FrameSize);
-        
-	    if (!startass) Loop_Start = Scale(Loop_Start, srate, 1000);
-	    if (!endass && Loop_End != ~0u) Loop_End = Scale(Loop_End, srate, 1000);
+
         size_t samples = Decoder->getSampleLength() / FrameSize;
-	    if (Loop_Start > samples) Loop_Start = 0;
-	    if (Loop_End > samples) Loop_End = samples;
+        ZxLoopPoints lp = ComputeLoopPoints(Loop_Start, Loop_End, startass, endass, srate, samples);
+        Loop_Start = lp.start;
+        Loop_End = lp.end;
 
         return true;
     }
@@ -917,28 +892,15 @@ public:
 
         Callback = DecoderCallback;
         UserData = NULL;
-        Format = AL_NONE;
-        FrameSize = 1;
 
         ChannelConfig chans;
         SampleType type;
         int srate;
 
         Decoder->getInfo(&srate, &chans, &type);
-        if(chans == ChannelConfig_Mono)
-        {
-            if(type == SampleType_UInt8) Format = AL_FORMAT_MONO8;
-            if(type == SampleType_Int16) Format = AL_FORMAT_MONO16;
-            FrameSize *= 1;
-        }
-        if(chans == ChannelConfig_Stereo)
-        {
-            if(type == SampleType_UInt8) Format = AL_FORMAT_STEREO8;
-            if(type == SampleType_Int16) Format = AL_FORMAT_STEREO16;
-            FrameSize *= 2;
-        }
-        if(type == SampleType_UInt8) FrameSize *= 1;
-        if(type == SampleType_Int16) FrameSize *= 2;
+        ZxSampleFormat sf = ComputeSampleFormat(chans, type);
+        Format = sf.format;
+        FrameSize = sf.sampleSize;
 
         if(Format == AL_NONE)
         {
@@ -951,12 +913,11 @@ public:
         Looping = loop;
 
         Data.Resize((SampleRate / 5) * FrameSize);
-        
-	    if (!startass) Loop_Start = Scale(Loop_Start, srate, 1000);
-	    if (!endass && Loop_End != ~0u) Loop_End = Scale(Loop_End, srate, 1000);
+
         size_t samples = Decoder->getSampleLength();
-        if (Loop_Start > samples) Loop_Start = 0;
-        if (Loop_End > samples) Loop_End = samples;
+        ZxLoopPoints lp = ComputeLoopPoints(Loop_Start, Loop_End, startass, endass, srate, samples);
+        Loop_Start = lp.start;
+        Loop_End = lp.end;
 
         return true;
     }
@@ -973,32 +934,15 @@ extern ReverbContainer *ForcedEnvironment;
 
 static size_t GetChannelCount(ChannelConfig chans)
 {
-    switch (chans)
-    {
-    case ChannelConfig_Mono: return 1;
-    case ChannelConfig_Stereo: return 2;
-    }
-    return 0;
+    return ComputeChannelCount(chans);
 }
 
 static float GetRolloff(const FRolloffInfo *rolloff, float distance)
 {
-    if(distance <= rolloff->MinDistance)
-        return 1.f;
-    // Logarithmic rolloff has no max distance where it goes silent.
-    if(rolloff->RolloffType == ROLLOFF_Log)
-        return rolloff->MinDistance /
-               (rolloff->MinDistance + rolloff->RolloffFactor*(distance-rolloff->MinDistance));
-    if(distance >= rolloff->MaxDistance)
-        return 0.f;
-
-    float volume = (rolloff->MaxDistance - distance) / (rolloff->MaxDistance - rolloff->MinDistance);
-    if(rolloff->RolloffType == ROLLOFF_Linear)
-        return volume;
-
-    if(rolloff->RolloffType == ROLLOFF_Custom && S_SoundCurve != NULL)
-        return S_SoundCurve[int(S_SoundCurveSize * (1.f - volume))] / 127.f;
-    return (powf(10.f, volume) - 1.f) / 9.f;
+    // [rc4l] RolloffFactor/MaxDistance share a union; the pure helper reads whichever the
+    // rolloff type needs from the single value passed in.
+    return ComputeRolloff(rolloff->RolloffType, rolloff->MinDistance, rolloff->MaxDistance,
+        distance, S_SoundCurve, S_SoundCurveSize);
 }
 
 ALCdevice *OpenALSoundRenderer::InitDevice()
@@ -1499,17 +1443,9 @@ SoundHandle OpenALSoundRenderer::LoadSound(BYTE* sfxdata, int length)
     if (!decoder) return retval;
 
     decoder->getInfo(&srate, &chans, &type);
-    int samplesize = 1;
-    if (chans == ChannelConfig_Mono)
-    {
-        if (type == SampleType_UInt8) { format = AL_FORMAT_MONO8; samplesize = 1; }
-        if (type == SampleType_Int16) { format = AL_FORMAT_MONO16; samplesize = 2; }
-    }
-    if (chans == ChannelConfig_Stereo)
-    {
-        if (type == SampleType_UInt8) { format = AL_FORMAT_STEREO8; samplesize = 2; }
-        if (type == SampleType_Int16) { format = AL_FORMAT_STEREO16; samplesize = 4; }
-    }
+    ZxSampleFormat sf = ComputeSampleFormat(chans, type);
+    format = sf.format;
+    int samplesize = sf.sampleSize;
 
     if (format == AL_NONE)
     {
@@ -1537,13 +1473,12 @@ SoundHandle OpenALSoundRenderer::LoadSound(BYTE* sfxdata, int length)
         return retval;
     }
     
-	if (!startass) loop_start = Scale(loop_start, srate, 1000);
-	if (!endass && loop_end != ~0u) loop_end = Scale(loop_end, srate, 1000);
 	const unsigned int samples = data.Size() / samplesize;
-	if (loop_start > samples) loop_start = 0;
-	if (loop_end > samples) loop_end = samples;
+	ZxLoopPoints lp = ComputeLoopPoints(loop_start, loop_end, startass, endass, srate, samples);
+	loop_start = lp.start;
+	loop_end = lp.end;
 
-	if ((loop_start > 0 || loop_end > 0) && loop_end > loop_start && AL.SOFT_loop_points)
+	if (ComputeShouldSetLoopPoints(loop_start, loop_end, !!AL.SOFT_loop_points))
 	{
 		ALint loops[2] = { static_cast<ALint>(loop_start), static_cast<ALint>(loop_end) };
 		DPrintf("Setting loop points %d -> %d\n", loops[0], loops[1]);

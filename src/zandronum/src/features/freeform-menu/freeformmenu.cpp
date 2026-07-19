@@ -47,10 +47,20 @@
 #include "menu/menu.h"
 // [rc4l] Colocated in features/freeform-menu/ (was menu/ upstream); resolved same-dir.
 #include "features/freeform-menu/freeformmenuitems.h"
+// [rc4l] Pure layout math lives in a dependency-free, unit-tested computation unit.
+#include "features/freeform-menu/computation/freeform_layout_compute.h"
 
 EXTERN_CVAR(Int, m_show_backbutton)
 
 IMPLEMENT_CLASS(DFreeformMenu)
+
+// [rc4l] The computation unit mirrors EGravity; keep the two enums in lockstep.
+static_assert(ZX_GRAV_CENTER_HORIZONTAL == GRAV_CENTER_HORIZONTAL, "GRAV mirror out of sync");
+static_assert(ZX_GRAV_CENTER_VERTICAL == GRAV_CENTER_VERTICAL, "GRAV mirror out of sync");
+static_assert(ZX_GRAV_LEFT == GRAV_LEFT, "GRAV mirror out of sync");
+static_assert(ZX_GRAV_RIGHT == GRAV_RIGHT, "GRAV mirror out of sync");
+static_assert(ZX_GRAV_TOP == GRAV_TOP, "GRAV mirror out of sync");
+static_assert(ZX_GRAV_BOTTOM == GRAV_BOTTOM, "GRAV mirror out of sync");
 
 #define SCALEY(f)		(int)((f) * ScaleFac)
 #define DOWNSCALEY(f)	(int)((f) / ScaleFac)
@@ -113,19 +123,9 @@ void DFreeformMenu::Init(DMenu* parent, FFreeformMenuDescriptor* desc)
 			}
 		}
 
-		if (LowestScroll < pagesize)
-		{
-			if (mDesc->mCenter)
-				CenteredOffset = (pagesize - LowestScroll) / 2;
-			else
-				CenteredOffset = 0;
-			LowestScroll = 0;
-		}
-		else
-		{
-			CenteredOffset = 0;
-			LowestScroll -= pagesize;
-		}
+		ZxScrollBounds bounds = ComputeScrollBounds(LowestScroll, pagesize, mDesc->mCenter);
+		LowestScroll = bounds.lowestScroll;
+		CenteredOffset = bounds.centeredOffset;
 
 		CanScrollUp = (mDesc->mScrollPos > 0);
 		CanScrollDown = (mDesc->mScrollPos < LowestScroll);
@@ -311,11 +311,9 @@ bool DFreeformMenu::MenuEvent(int mkey, bool fromcontroller)
 
 		if (mDesc->mItems[mDesc->mSelectedItem]->GetY() < mDesc->mScrollPos)
 		{
-			mDesc->mScrollPos = mDesc->mItems[mDesc->mSelectedItem]->GetY();
-			if (mDesc->mScrollPos < 0)
-				mDesc->mScrollPos = 0;
+			mDesc->mScrollPos = ComputeClampScroll(mDesc->mItems[mDesc->mSelectedItem]->GetY(), LowestScroll);
 		}
-		else 
+		else
 		{
 			int ytop = mDesc->mTopPadding;
 			if (ytop < 0)
@@ -329,9 +327,7 @@ bool DFreeformMenu::MenuEvent(int mkey, bool fromcontroller)
 			y += mDesc->mItems[mDesc->mSelectedItem]->GetMouseAreaHeight();
 			if (y - pagesize > mDesc->mScrollPos)
 			{
-				mDesc->mScrollPos = y - pagesize;
-				if (mDesc->mScrollPos > LowestScroll)
-					mDesc->mScrollPos = LowestScroll;
+				mDesc->mScrollPos = ComputeClampScroll(y - pagesize, LowestScroll);
 			}
 		}
 		break;
@@ -345,13 +341,9 @@ bool DFreeformMenu::MenuEvent(int mkey, bool fromcontroller)
 			ytop = SCALEY(ytop);
 			int pagesize = DOWNSCALEY(screen->GetHeight() - ytop);
 
-			mDesc->mScrollPos -= pagesize;
+			mDesc->mScrollPos = ComputeClampScroll(mDesc->mScrollPos - pagesize, LowestScroll);
 			CanScrollDown = true;
-			if (mDesc->mScrollPos < 0)
-			{
-				mDesc->mScrollPos = 0;
-				CanScrollUp = false;
-			}
+			CanScrollUp = (mDesc->mScrollPos > 0);
 		}
 		break;
 
@@ -364,13 +356,9 @@ bool DFreeformMenu::MenuEvent(int mkey, bool fromcontroller)
 			ytop = SCALEY(ytop);
 			int pagesize = DOWNSCALEY(screen->GetHeight() - ytop);
 
-			mDesc->mScrollPos += pagesize;
+			mDesc->mScrollPos = ComputeClampScroll(mDesc->mScrollPos + pagesize, LowestScroll);
 			CanScrollUp = true;
-			if (mDesc->mScrollPos > LowestScroll)
-			{
-				mDesc->mScrollPos = LowestScroll;
-				CanScrollDown = false;
-			}
+			CanScrollDown = (mDesc->mScrollPos < LowestScroll);
 		}
 		break;
 
@@ -630,46 +618,16 @@ bool FFreeformMenuItem::CheckCoordinate(int x, int y)
 
 	int xLeft, yTop;
 	CalcDrawScreenPos(xLeft, yTop, width, height, false);
-	width = SCALEY(width);
-	height = SCALEY(height);
-
-	return x >= xLeft && x < xLeft + width
-		&& y >= yTop  && y < yTop + height;
+	return ComputePointInRect(x, y, xLeft, yTop, SCALEY(width), SCALEY(height));
 }
 
 void FFreeformMenuItem::CalcDrawScreenPos(int &outX, int &outY, int width, int height, bool withPadding)
 {
-	outX = SCALEY(mXpos);
-	outY = SCALEY(mYpos);
-	
-	// Adjust for gravity
-	if (mGravity & GRAV_RIGHT)
-	{	outX += screen->GetWidth();			}
-	else if (mGravity & GRAV_CENTER_HORIZONTAL)
-	{	outX += screen->GetWidth() / 2;		}
-
-	if (mGravity & GRAV_BOTTOM)
-	{	outY += screen->GetHeight();		}
-	else if (mGravity & GRAV_CENTER_VERTICAL)
-	{	outY += screen->GetHeight() / 2;	}
-
-	// Adjust for anchor
-	if (mAnchor & GRAV_RIGHT)
-	{	outX -= SCALEY(width);				}
-	else if (mAnchor & GRAV_CENTER_HORIZONTAL)
-	{	outX -= SCALEY(width) / 2;			}
-
-	if (mAnchor & GRAV_BOTTOM)
-	{	outY -= SCALEY(height);				}
-	else if (mAnchor & GRAV_CENTER_VERTICAL)
-	{	outY -= SCALEY(height) / 2;			}
-
-	// Adjust for padding
-	if (withPadding)
-	{
-		outX += SCALEY(mXPadding);
-		outY += SCALEY(mYPadding);
-	}
+	ZxScreenPos pos = ComputeAnchoredPosition(mXpos, mYpos, width, height,
+		mGravity, mAnchor, mXPadding, mYPadding, withPadding,
+		ScaleFac, screen->GetWidth(), screen->GetHeight());
+	outX = pos.x;
+	outY = pos.y;
 }
 
 
@@ -932,16 +890,11 @@ void FFreeformMenuItemActionableBase::Draw(FFreeformMenuDescriptor *desc, int yo
 		int foregroundWidth = mForegroundWidth >= 0 ? mForegroundWidth : tex->GetScaledWidth();
 		int foregroundHeight = mForegroundHeight >= 0 ? mForegroundHeight : tex->GetScaledHeight();
 		CalcDrawScreenPos(x, y, foregroundWidth, foregroundHeight, false);
-		if (mAnchor & GRAV_LEFT)
-		{	x -= SCALEY((foregroundWidth - width)) / 2;		}
-		else if (mAnchor & GRAV_RIGHT)
-		{	x += SCALEY((foregroundWidth - width)) / 2;		}
+		ZxScreenOffset fgOffset = ComputeForegroundAnchorOffset(mAnchor,
+			foregroundWidth, foregroundHeight, width, height, ScaleFac);
+		x += fgOffset.dx;
+		y += fgOffset.dy;
 
-		if (mAnchor & GRAV_TOP)
-		{	y -= SCALEY((foregroundHeight - height)) / 2;	}
-		else if (mAnchor & GRAV_BOTTOM)
-		{	y += SCALEY((foregroundHeight - height)) / 2;	}
-		
 		if (!mIsStatic)
 			y += yoffset;
 		screen->DrawTexture(tex, x, y,
