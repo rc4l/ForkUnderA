@@ -1,27 +1,16 @@
-/* 
+// license:GPL-2.0+
+// copyright-holders:Jarek Burczynski,Tatsuyuki Satoh
+/*
 
-This file is based on fmopl.c from MAME 0.95. The non-YM3816 parts have been
+This file is based on fmopl.c from MAME. The non-YM3816 parts have been
 ripped out in the interest of making this simpler, since Doom music doesn't
 need them. I also made it render the sound a voice at a time instead of a
 sample at a time, so unused voices don't waste time being calculated. If all
 voices are playing, it's not much difference, but it does offer a big
 improvement when only a few voices are playing.
 
-Here is the appropriate section from mame.txt:
-
-VI. Reuse of Source Code
---------------------------
-   This chapter might not apply to specific portions of MAME (e.g. CPU
-   emulators) which bear different copyright notices.
-   The source code cannot be used in a commercial product without the written
-   authorization of the authors. Use in non-commercial products is allowed, and
-   indeed encouraged.  If you use portions of the MAME source code in your
-   program, however, you must make the full source code freely available as
-   well.
-   Usage of the _information_ contained in the source code is free for any use.
-   However, given the amount of time and energy it took to collect this
-   information, if you find new information we would appreciate if you made it
-   freely available as well.
+The YM3812 emulator that this file is derived from was relicensed by the MAME
+project (and its authors, Jarek Burczynski and Tatsuyuki Satoh) to GPL-2.0+.
 
 */
 
