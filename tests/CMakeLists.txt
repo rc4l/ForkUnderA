@@ -39,7 +39,12 @@ if(NOT TEST_SOURCES)
   message(FATAL_ERROR "No *_test.cpp files found under ${ENGINE_SRC}")
 endif()
 
-add_executable(zandrox_tests ${TEST_SOURCES})
+# [rc4l] Pure Compute* implementation TUs live in computation/ folders as *_compute.cpp
+# (the actual .cpp we test, not just headers). They have no engine deps, so we compile
+# them straight into the test binary — the coverage gate then measures the real .cpp.
+file(GLOB_RECURSE COMPUTE_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_compute.cpp")
+
+add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES})
 target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}")
 target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock)
 target_compile_options(zandrox_tests PRIVATE -Wall -Wextra)

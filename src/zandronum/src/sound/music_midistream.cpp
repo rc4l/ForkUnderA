@@ -38,6 +38,7 @@
 #include "templates.h"
 #include "doomdef.h"
 #include "m_swap.h"
+#include "sound/computation/midi_device_compute.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -225,36 +226,30 @@ EMidiDevice MIDIStreamer::SelectMIDIDevice(EMidiDevice device)
 			- as fallback when both OPL and Timidity failed and snd_mididevice is >= 0
 	*/
 
-	// Choose the type of MIDI device we want.
-	if (device != MDEV_DEFAULT)
-	{
-		return device;
-	}
-	// [rc4l] Without FMOD there's no FMOD soft-synth, so the historical default
-	// (MDEV_FMOD) can't play MIDI. Fall back to the built-in OPL2 synth, which
-	// needs no soundfont and is always available — so music works out of the box.
-#ifdef NO_FMOD
-	#define MDEV_DEFAULT_SYNTH MDEV_OPL
-#else
-	#define MDEV_DEFAULT_SYNTH MDEV_FMOD
-#endif
-	switch (snd_mididevice)
-	{
-	case -1:		return MDEV_DEFAULT_SYNTH;
-	case -2:		return MDEV_TIMIDITY;
-	case -3:		return MDEV_OPL;
-	case -4:		return MDEV_GUS;
+	// [rc4l] The actual selection is a pure, unit-tested computation (see
+	// sound/computation/midi_device_compute.h); pass the build-time choices as runtime
+	// flags so every combination is covered. Without FMOD the default falls back to the
+	// always-available OPL2 synth so music still plays.
+	static_assert((int)MDEV_DEFAULT == ZX_MDEV_DEFAULT && (int)MDEV_MMAPI == ZX_MDEV_MMAPI &&
+		(int)MDEV_OPL == ZX_MDEV_OPL && (int)MDEV_FMOD == ZX_MDEV_FMOD &&
+		(int)MDEV_TIMIDITY == ZX_MDEV_TIMIDITY && (int)MDEV_FLUIDSYNTH == ZX_MDEV_FLUIDSYNTH &&
+		(int)MDEV_GUS == ZX_MDEV_GUS, "EMidiDevice values must match ZX_MDEV_*");
 #ifdef HAVE_FLUIDSYNTH
-	case -5:		return MDEV_FLUIDSYNTH;
+	const bool hasFluidsynth = true;
+#else
+	const bool hasFluidsynth = false;
 #endif
-	default:
-		#ifdef _WIN32
-					return MDEV_MMAPI;
-		#else
-					return MDEV_DEFAULT_SYNTH;
-		#endif
-	}
-#undef MDEV_DEFAULT_SYNTH
+#ifdef _WIN32
+	const bool isWin32 = true;
+#else
+	const bool isWin32 = false;
+#endif
+#ifdef NO_FMOD
+	const bool noFmod = true;
+#else
+	const bool noFmod = false;
+#endif
+	return (EMidiDevice)ComputeMidiDeviceDefault((int)device, snd_mididevice, hasFluidsynth, isWin32, noFmod);
 }
 
 //==========================================================================

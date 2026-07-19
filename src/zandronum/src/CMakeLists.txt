@@ -1700,3 +1700,10 @@ source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_
 
 # MCP dev bridge (overlay -- not committed upstream)
 target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_actorstate.cpp mcp_hud.cpp )
+
+# [rc4l] Pure Compute* helpers extracted for testability live in computation/ folders as
+# *_compute.cpp. They register no classes, so link order is irrelevant — pull them all in
+# via a glob so a new computation needs no CMake edit. (The engine build uses an explicit
+# source list; this glob is safe because these TUs never use IMPLEMENT_CLASS.)
+file( GLOB_RECURSE ZX_COMPUTE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*_compute.cpp" )
+target_sources( zdoom PRIVATE ${ZX_COMPUTE_SOURCES} )
