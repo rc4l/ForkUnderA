@@ -1874,8 +1874,7 @@ OptionMenu VideoModeMenu
 	
 	Option "Fullscreen",			"fullscreen", "YesNo"
 	Option "Aspect ratio",			"menu_screenratios", "Ratios"
-	// [BB]
-	Option "Renderer",			"vid_renderer", "Renderers"
+	// [rc4l] Renderer option removed: ZandroX is OpenGL-only (software renderer dropped).
 	Option "Force aspect ratio",	"vid_aspect", "ForceRatios"
 	Option "Enable 5:4 aspect ratio","vid_tft", "YesNo"
 	StaticText " "

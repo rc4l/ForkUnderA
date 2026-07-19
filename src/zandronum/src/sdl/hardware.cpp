@@ -74,28 +74,14 @@ int currentrenderer=1;
 int currentrenderer=0;
 #endif
 
-// [ZDoomGL]
-CUSTOM_CVAR (Int, vid_renderer, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
+// [rc4l] GL-only build: OpenGL is the only renderer. Kept so old configs and code that
+// read vid_renderer still resolve, but any non-1 value (e.g. a software-renderer 0 from a
+// pre-GL-only config) is snapped back to 1 rather than pretending to switch renderers.
+CUSTOM_CVAR (Int, vid_renderer, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 {
-	// 0: Software renderer
-	// 1: OpenGL renderer
-
-	if (self != currentrenderer)
+	if (self != 1)
 	{
-		switch (self)
-		{
-		case 0:
-			Printf("Switching to software renderer...\n");
-			break;
-		case 1:
-			Printf("Switching to OpenGL renderer...\n");
-			break;
-		default:
-			Printf("Unknown renderer (%d).  Falling back to software renderer...\n", (int) vid_renderer);
-			self = 0; // make sure to actually switch to the software renderer
-			break;
-		}
-		Printf("You must restart " GAMENAME " to switch the renderer\n");
+		self = 1;
 	}
 }
 
