@@ -1,5 +1,6 @@
 #include "critsec.h"
-#include "muslib.h"
+#include "musicblock.h"
+#include "doomtype.h"
 
 class OPLmusicBlock : public musicBlock
 {
@@ -16,9 +17,14 @@ protected:
 	virtual int PlayTick() = 0;
 	void OffsetSamples(float *buff, int count);
 
+	// [rc4l] score/scoredata/playingcount lived in the old muslib musicBlock; the clean
+	// musicblock.h does not carry them, so the raw-OPL player owns them here now.
+	BYTE *score;
+	BYTE *scoredata;
 	double NextTickIn;
 	double SamplesPerTick;
 	int NumChips;
+	int playingcount;
 	bool Looping;
 	double LastOffset;
 	bool FullPan;

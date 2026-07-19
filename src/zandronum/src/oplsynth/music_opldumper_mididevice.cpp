@@ -130,16 +130,16 @@ DiskWriterIO::DiskWriterIO(const char *filename)
 
 DiskWriterIO::~DiskWriterIO()
 {
-	OPLdeinit();
+	Reset();
 }
 
 //==========================================================================
 //
-// DiskWriterIO :: OPLinit
+// DiskWriterIO :: Init
 //
 //==========================================================================
 
-int DiskWriterIO::OPLinit(uint numchips, bool, bool)
+int DiskWriterIO::Init(int core, uint32_t numchips, bool, bool)
 {
 	// If the file extension is unknown or not present, the default format
 	// is RAW. Otherwise, you can use DRO.
@@ -187,18 +187,22 @@ int DiskWriterIO::OPLinit(uint numchips, bool, bool)
 	CurTime = 0;
 	CurIntTime = 0;
 	CurChip = 0;
-	OPLchannels = OPL2CHANNELS * numchips;
-	OPLwriteInitState(false);
+	// [rc4l] The clean OPLio has no constructor, so set the base bookkeeping the
+	// dumper relies on before WriteInitState walks the chips.
+	IsOPL3 = false;
+	NumChips = numchips;
+	NumChannels = OPL_NUM_VOICES * numchips;
+	WriteInitState(false);
 	return numchips;
 }
 
 //==========================================================================
 //
-// DiskWriterIO :: OPLdeinit
+// DiskWriterIO :: Reset
 //
 //==========================================================================
 
-void DiskWriterIO::OPLdeinit()
+void DiskWriterIO::Reset()
 {
 	if (File != NULL)
 	{
@@ -224,11 +228,11 @@ void DiskWriterIO::OPLdeinit()
 
 //==========================================================================
 //
-// DiskWriterIO :: OPLwriteReg
+// DiskWriterIO :: WriteRegister
 //
 //==========================================================================
 
-void DiskWriterIO::OPLwriteReg(int which, uint reg, uchar data)
+void DiskWriterIO::WriteRegister(int which, uint32_t reg, uint8_t data)
 {
 	SetChip(which);
 	if (Format == FMT_RDOS)
