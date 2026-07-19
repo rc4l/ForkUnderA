@@ -46,6 +46,7 @@
 //-----------------------------------------------------------------------------
 
 #include "voicechat.h"
+#include "computation/voicechat_convert_compute.h"
 #include "c_console.h"
 #include "cl_commands.h"
 #include "cl_demo.h"
@@ -1023,16 +1024,9 @@ void VOIPController::Tick( void )
 
 static float voicechat_ByteArrayToFloat( unsigned char *bytes )
 {
-	if ( bytes == nullptr )
-		return 0.0f;
-
-	union { DWORD l; float f; } dataUnion;
-	dataUnion.l = 0;
-
-	for ( unsigned int i = 0; i < 4; i++ )
-		dataUnion.l |= bytes[i] << 8 * i;
-
-	return dataUnion.f;
+	// [rc4l] Logic lives in a pure, unit-tested computation (see
+	// computation/voicechat_convert_compute.h).
+	return ComputeBytesToFloat( bytes );
 }
 
 //*****************************************************************************
@@ -1046,14 +1040,9 @@ static float voicechat_ByteArrayToFloat( unsigned char *bytes )
 
 static void voicechat_FloatToByteArray( const float value, unsigned char *bytes )
 {
-	if ( bytes == nullptr )
-		return;
-
-	union { DWORD l; float f; } dataUnion;
-	dataUnion.f = value;
-
-	for ( unsigned int i = 0; i < 4; i++ )
-		bytes[i] = ( dataUnion.l >> 8 * i ) & 0xFF;
+	// [rc4l] Logic lives in a pure, unit-tested computation (see
+	// computation/voicechat_convert_compute.h).
+	ComputeFloatToBytes( value, bytes );
 }
 
 //*****************************************************************************
