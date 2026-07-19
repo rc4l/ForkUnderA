@@ -17,6 +17,7 @@
 #define IMF_RATE				700.0
 
 EXTERN_CVAR (Int, opl_numchips)
+EXTERN_CVAR (Int, opl_core)
 
 OPLmusicBlock::OPLmusicBlock()
 {
@@ -38,16 +39,15 @@ OPLmusicBlock::~OPLmusicBlock()
 void OPLmusicBlock::ResetChips ()
 {
 	ChipAccess.Enter();
-	io->OPLdeinit ();
-	NumChips = io->OPLinit(MIN(*opl_numchips, 2), FullPan);
+	io->Reset ();
+	NumChips = io->Init(*opl_core, MIN(*opl_numchips, 2), FullPan, false);
 	ChipAccess.Leave();
 }
 
 void OPLmusicBlock::Restart()
 {
-	OPLstopMusic ();
-	OPLplayMusic (127);
-	MLtime = 0;
+	stopAllVoices ();
+	resetAllControllers (127);
 	playingcount = 0;
 	LastOffset = 0;
 }
@@ -76,7 +76,7 @@ fail:		delete[] scoredata;
 		memcpy(scoredata, &musiccache[0], len);
 	}
 
-	if (0 == (NumChips = io->OPLinit(NumChips)))
+	if (0 == (NumChips = io->Init(*opl_core, NumChips, false, false)))
 	{
 		goto fail;
 	}
@@ -168,7 +168,7 @@ OPLmusicFile::~OPLmusicFile ()
 {
 	if (scoredata != NULL)
 	{
-		io->OPLdeinit ();
+		io->Reset ();
 		delete[] scoredata;
 		scoredata = NULL;
 	}
@@ -287,7 +287,6 @@ bool OPLmusicBlock::ServiceStream (void *buff, int numbytes)
 				io->WriteDelay(next);
 				NextTickIn += SamplesPerTick * next;
 				assert (NextTickIn >= 0);
-				MLtime += next;
 			}
 		}
 	}
@@ -414,7 +413,7 @@ int OPLmusicFile::PlayTick ()
 				break;
 
 			default:	// It's something to stuff into the OPL chip
-				io->OPLwriteReg(WhichChip, reg, data);
+				io->WriteRegister(WhichChip, reg, data);
 				break;
 			}
 		}
@@ -454,7 +453,7 @@ int OPLmusicFile::PlayTick ()
 			{
 				data = *score++;
 			}
-			io->OPLwriteReg(WhichChip, reg, data);
+			io->WriteRegister(WhichChip, reg, data);
 		}
 		break;
 
@@ -484,7 +483,7 @@ int OPLmusicFile::PlayTick ()
 				}
 				else if (code < to_reg_size)
 				{
-					io->OPLwriteReg(which, to_reg[code], data);
+					io->WriteRegister(which, to_reg[code], data);
 				}
 			}
 		}
@@ -502,7 +501,7 @@ int OPLmusicFile::PlayTick ()
 			data = score[1];
 			delay = LittleShort(((WORD *)score)[1]);
 			score += 4;
-			io->OPLwriteReg (0, reg, data);
+			io->WriteRegister(0, reg, data);
 		}
 		return delay;
 	}
@@ -531,7 +530,7 @@ OPLmusicFile::OPLmusicFile(const OPLmusicFile *source, const char *filename)
 		delete io;
 	}
 	io = new DiskWriterIO(filename);
-	NumChips = io->OPLinit(NumChips);
+	NumChips = io->Init(*opl_core, NumChips, false, false);
 	Restart();
 }
 
