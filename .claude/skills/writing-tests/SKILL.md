@@ -35,6 +35,12 @@ glob), so test files never reach the shipped binary.
 - **Engine code tangled in globals is hard to link.** Don't try to link the whole engine.
   Instead, when porting, **extract the pure logic into a small free function/helper** and
   unit-test that; leave the glue thin and driven end-to-end via the MCP.
+- **Name every extracted helper with a `Compute` prefix** (e.g. `ComputeGravityOffset`,
+  `ComputeMidiDeviceDefault`, `ComputeFloatToBytes`). Extract as much logic as humanly
+  possible into these pure `Compute*` computations so it's testable without the engine;
+  the `Compute` prefix marks "this is a dependency-free, unit-tested computation." When a
+  computation must call a C API (OpenAL `al*`/`alc*`, a decoder), mock that one interface
+  with GoogleMock rather than linking the engine.
 - **Cover every branch** — the gate is 100% lines on the unit. If a branch is unreachable,
   restructure rather than leaving it uncovered ("no copping-out", per `AGENTS.md`).
 
