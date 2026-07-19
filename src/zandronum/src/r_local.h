@@ -35,7 +35,6 @@
 // Separate header file for each module.
 //
 #include "r_main.h"
-#include "r_things.h"
-#include "r_draw.h"
+// [rc4l] r_things.h / r_draw.h removed with the software renderer (GL-only build).
 
 #endif // __R_LOCAL_H__

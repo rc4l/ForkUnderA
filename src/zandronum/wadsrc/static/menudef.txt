@@ -1862,9 +1862,9 @@ OptionValue RatiosTFT
 }
 
 // [BB]
+// [rc4l] GL-only build: the Software option is gone; OpenGL is the only renderer.
 OptionValue Renderers
 {
-	0.0, "Software"
 	1.0, "OpenGL"
 }
 

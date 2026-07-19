@@ -47,7 +47,10 @@
 #include "doomstat.h"
 #include "m_argv.h"
 #include "version.h"
-#include "r_swrenderer.h"
+// [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
+#ifdef NO_GL
+#include "r_nullrenderer.h"
+#endif
 
 EXTERN_CVAR (Bool, ticker)
 EXTERN_CVAR (Bool, fullscreen)
@@ -166,8 +169,13 @@ void I_CreateRenderer()
 	currentrenderer = vid_renderer;
 	if (Renderer == NULL)
 	{
-		if (currentrenderer==1) Renderer = gl_CreateInterface();
-		else Renderer = new FSoftwareRenderer;
+#ifndef NO_GL
+		// [rc4l] GL-only build: always use the OpenGL renderer.
+		Renderer = gl_CreateInterface();
+#else
+		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
+		Renderer = new FNullRenderer;
+#endif
 		atterm(I_DeleteRenderer);
 	}
 }

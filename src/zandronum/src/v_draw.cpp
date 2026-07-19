@@ -32,7 +32,10 @@
 **
 */
 
-// #define NO_SWRENDER 	// set this if you want to exclude the software renderer. Without software renderer the base implementations of DrawTextureV and FillSimplePoly need to be disabled because they depend on it.
+// [rc4l] GL-only build: the software renderer is gone, so the base DCanvas
+// implementations of DrawTextureV and FillSimplePoly (which depend on the software
+// rasterizers) are compiled out. The OpenGLFrameBuffer overrides both virtuals.
+#define NO_SWRENDER 	// set this if you want to exclude the software renderer. Without software renderer the base implementations of DrawTextureV and FillSimplePoly need to be disabled because they depend on it.
 
 #include <stdio.h>
 #include "mcp_hud.h"

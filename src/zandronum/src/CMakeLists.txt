@@ -1253,18 +1253,9 @@ add_executable( zdoom WIN32
 	platform.cpp #ST
 	po_man.cpp
 	possession.cpp #ST
-	r_swrenderer.cpp
 	r_utility.cpp
-	r_3dfloors.cpp
-	r_bsp.cpp
-	r_draw.cpp
-	r_drawt.cpp
 	r_main.cpp
-	r_plane.cpp
-	r_polymost.cpp
-	r_segs.cpp
 	r_sky.cpp
-	r_things.cpp
 	s_advsound.cpp
 	s_environment.cpp
 	s_playlist.cpp

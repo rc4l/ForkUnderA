@@ -146,9 +146,8 @@
 #include "r_renderer.h"
 #include "p_local.h"
 
-#ifdef USE_POLYMOST
-#include "r_polymost.h"
-#endif
+// [rc4l] r_polymost.h removed (GL-only build). The USE_POLYMOST blocks below are
+// dead code (USE_POLYMOST is never defined) and are left only as historical markers.
 
 
 // [ZZ] PWO header file

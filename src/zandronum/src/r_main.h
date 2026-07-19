@@ -127,15 +127,9 @@ void R_InitTextureMapping ();
 //
 // REFRESH - the actual rendering functions.
 //
-
-// Called by G_Drawer.
-void R_RenderActorView (AActor *actor, bool dontmaplines = false);
-void R_SetupBuffer ();
-
-void R_RenderViewToCanvas (AActor *actor, DCanvas *canvas, int x, int y, int width, int height, bool dontmaplines = false);
-
-// [RH] Initialize multires stuff for renderer
-void R_MultiresInit (void);
+// [rc4l] R_RenderActorView / R_SetupBuffer / R_RenderViewToCanvas / R_MultiresInit
+// removed with the software renderer (GL-only build). The GL renderer renders the
+// 3D scene and camera textures through the FRenderer virtual interface.
 
 
 extern int stacked_extralight;

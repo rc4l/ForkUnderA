@@ -51,7 +51,10 @@
 #include "sdlglvideo.h"
 #endif
 #include "r_renderer.h"
-#include "r_swrenderer.h"
+// [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
+#ifdef NO_GL
+#include "r_nullrenderer.h"
+#endif
 
 EXTERN_CVAR (Bool, ticker)
 EXTERN_CVAR (Bool, fullscreen)
@@ -150,10 +153,11 @@ void I_CreateRenderer()
 	if (Renderer == NULL)
 	{
 #ifndef NO_GL
-		if (currentrenderer==1) Renderer = gl_CreateInterface();
-		else Renderer = new FSoftwareRenderer;
+		// [rc4l] GL-only build: always use the OpenGL renderer.
+		Renderer = gl_CreateInterface();
 #else
-		Renderer = new FSoftwareRenderer;
+		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
+		Renderer = new FNullRenderer;
 #endif
 		atterm(I_DeleteRenderer);
 	}
