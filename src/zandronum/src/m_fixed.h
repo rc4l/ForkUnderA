@@ -1,125 +1,79 @@
-// "Build Engine & Tools" Copyright (c) 1993-1997 Ken Silverman
-// Ken Silverman's official web site: "http://www.advsys.net/ken"
-// See the included license file "BUILDLIC.TXT" for license info.
+// [rc4l] Fixed-point helpers for ZandroX.
 //
-// This file is based on pragmas.h from Ken Silverman's original Build
-// source code release and contains routines that were originally
-// inline assembly but are not now.
-
+// The core scale math lives in computation/fixedmath.h (clean-room, unit-tested).
+// This header adds the engine-facing wrappers (overflow-clamped division, the
+// FixedMul/FixedDiv aliases, and the float/angle conversion macros). None of it is
+// derived from Ken Silverman's Build "pragmas.h" — ZandroX carries no BUILD-licensed
+// code. The 32-bit-x86 hand-written-assembly variants have been dropped (all supported
+// targets are 64-bit and use the portable 64-bit-intermediate math).
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef __M_FIXED__
 #define __M_FIXED__
 
 #include <stdlib.h>
+#include <cstdint>
 #include "doomtype.h"
-
-#if defined(__GNUC__) && defined(__i386__) && !defined(__clang__)
-#include "gccinlines.h"
-#elif defined(_MSC_VER) && defined(_M_IX86)
-#include "mscinlines.h"
-#else
-#include "basicinlines.h"
-#endif
-
+#include "computation/fixedmath.h"
 #include "xs_Float.h"
 
-#define MAKESAFEDIVSCALE(x) \
+// Overflow-clamped fixed-point division: like DivScale##x but returns FIXED_MIN/FIXED_MAX
+// instead of overflowing, and treats a zero divisor as an overflow.
+#define ZX_MAKE_SAFEDIVSCALE(x) \
 	inline SDWORD SafeDivScale##x (SDWORD a, SDWORD b) \
 	{ \
-		if ((DWORD)abs(a) >> (31-x) >= (DWORD)abs (b)) \
-			return (a^b)<0 ? FIXED_MIN : FIXED_MAX; \
-		return DivScale##x (a, b); \
+		if (b == 0) return (a < 0) ? FIXED_MIN : FIXED_MAX; \
+		int64_t r = ((int64_t)a << (x)) / b; \
+		if (r < FIXED_MIN) return FIXED_MIN; \
+		if (r > FIXED_MAX) return FIXED_MAX; \
+		return (SDWORD)r; \
 	}
-
-MAKESAFEDIVSCALE(1)
-MAKESAFEDIVSCALE(2)
-MAKESAFEDIVSCALE(3)
-MAKESAFEDIVSCALE(4)
-MAKESAFEDIVSCALE(5)
-MAKESAFEDIVSCALE(6)
-MAKESAFEDIVSCALE(7)
-MAKESAFEDIVSCALE(8)
-MAKESAFEDIVSCALE(9)
-MAKESAFEDIVSCALE(10)
-MAKESAFEDIVSCALE(11)
-MAKESAFEDIVSCALE(12)
-MAKESAFEDIVSCALE(13)
-MAKESAFEDIVSCALE(14)
-MAKESAFEDIVSCALE(15)
-MAKESAFEDIVSCALE(16)
-MAKESAFEDIVSCALE(17)
-MAKESAFEDIVSCALE(18)
-MAKESAFEDIVSCALE(19)
-MAKESAFEDIVSCALE(20)
-MAKESAFEDIVSCALE(21)
-MAKESAFEDIVSCALE(22)
-MAKESAFEDIVSCALE(23)
-MAKESAFEDIVSCALE(24)
-MAKESAFEDIVSCALE(25)
-MAKESAFEDIVSCALE(26)
-MAKESAFEDIVSCALE(27)
-MAKESAFEDIVSCALE(28)
-MAKESAFEDIVSCALE(29)
-MAKESAFEDIVSCALE(30)
-#undef MAKESAFEDIVSCALE
-
-inline SDWORD SafeDivScale31 (SDWORD a, SDWORD b)
-{
-	if ((DWORD)abs(a) >= (DWORD)abs (b))
-		return (a^b)<0 ? FIXED_MIN : FIXED_MAX;
-	return DivScale31 (a, b);
-}
-
-inline SDWORD SafeDivScale32 (SDWORD a, SDWORD b)
-{
-	if ((DWORD)abs(a) >= (DWORD)abs (b) >> 1)
-		return (a^b)<0 ? FIXED_MIN : FIXED_MAX;
-	return DivScale32 (a, b);
-}
+ZX_MAKE_SAFEDIVSCALE(1)
+ZX_MAKE_SAFEDIVSCALE(2)
+ZX_MAKE_SAFEDIVSCALE(3)
+ZX_MAKE_SAFEDIVSCALE(4)
+ZX_MAKE_SAFEDIVSCALE(5)
+ZX_MAKE_SAFEDIVSCALE(6)
+ZX_MAKE_SAFEDIVSCALE(7)
+ZX_MAKE_SAFEDIVSCALE(8)
+ZX_MAKE_SAFEDIVSCALE(9)
+ZX_MAKE_SAFEDIVSCALE(10)
+ZX_MAKE_SAFEDIVSCALE(11)
+ZX_MAKE_SAFEDIVSCALE(12)
+ZX_MAKE_SAFEDIVSCALE(13)
+ZX_MAKE_SAFEDIVSCALE(14)
+ZX_MAKE_SAFEDIVSCALE(15)
+ZX_MAKE_SAFEDIVSCALE(16)
+ZX_MAKE_SAFEDIVSCALE(17)
+ZX_MAKE_SAFEDIVSCALE(18)
+ZX_MAKE_SAFEDIVSCALE(19)
+ZX_MAKE_SAFEDIVSCALE(20)
+ZX_MAKE_SAFEDIVSCALE(21)
+ZX_MAKE_SAFEDIVSCALE(22)
+ZX_MAKE_SAFEDIVSCALE(23)
+ZX_MAKE_SAFEDIVSCALE(24)
+ZX_MAKE_SAFEDIVSCALE(25)
+ZX_MAKE_SAFEDIVSCALE(26)
+ZX_MAKE_SAFEDIVSCALE(27)
+ZX_MAKE_SAFEDIVSCALE(28)
+ZX_MAKE_SAFEDIVSCALE(29)
+ZX_MAKE_SAFEDIVSCALE(30)
+ZX_MAKE_SAFEDIVSCALE(31)
+ZX_MAKE_SAFEDIVSCALE(32)
+#undef ZX_MAKE_SAFEDIVSCALE
 
 #define FixedMul MulScale16
 #define FixedDiv SafeDivScale16
 
+// Write count fixed-point values stepping by delta, taking the integer (>>16) part.
 inline void qinterpolatedown16 (SDWORD *out, DWORD count, SDWORD val, SDWORD delta)
 {
-	if (count & 1)
-	{
-		out[0] = val >> 16;
-		val += delta;
-	}
-	count >>= 1;
-	while (count-- != 0)
-	{
-		int temp = val + delta;
-		out[0] = val >> 16;
-		val = temp + delta;
-		out[1] = temp >> 16;
-		out += 2;
-	}
+	for (DWORD i = 0; i < count; i++) { out[i] = val >> 16; val += delta; }
 }
 
 inline void qinterpolatedown16short (short *out, DWORD count, SDWORD val, SDWORD delta)
 {
-	if (count)
-	{
-		if ((size_t)out & 2)
-		{ // align to dword boundary
-			*out++ = (short)(val >> 16);
-			count--;
-			val += delta;
-		}
-		DWORD *o2 = (DWORD *)out;
-		DWORD c2 = count>>1;
-		while (c2-- != 0)
-		{
-			SDWORD temp = val + delta;
-			*o2++ = (temp & 0xffff0000) | ((DWORD)val >> 16);
-			val = temp + delta;
-		}
-		if (count & 1)
-		{
-			*(short *)o2 = (short)(val >> 16);
-		}
-	}
+	for (DWORD i = 0; i < count; i++) { out[i] = (short)(val >> 16); val += delta; }
 }
 
 	//returns num/den, dmval = num%den
@@ -135,7 +89,6 @@ inline SDWORD ModDiv (SDWORD num, SDWORD den, SDWORD *dmval)
 	*dmval = num / den;
 	return num % den;
 }
-
 
 #define FLOAT2FIXED(f)		xs_Fix<16>::ToFix(f)
 #define FIXED2FLOAT(f)		((f) / float(65536))
