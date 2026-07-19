@@ -31,3 +31,6 @@ src/zandronum/sqlite/sqlite-*.tar.gz
 # macOS
 .DS_Store
 build-oal/
+build-mac-arm/
+build-mac-x86/
+build-mac/
