@@ -11,7 +11,7 @@
 #include "stats.h"
 #include "v_palette.h"
 #include "sdlvideo.h"
-#include "r_swrenderer.h"
+// [rc4l] r_swrenderer.h removed (GL-only build); this file does not use it.
 
 #include <SDL.h>
 

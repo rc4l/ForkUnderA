@@ -66,7 +66,7 @@
 #include "networkshared.h"
 #include "p_local.h"
 #include "p_tick.h"
-#include "r_draw.h"
+// [rc4l] r_draw.h removed (GL-only build); this file does not use it.
 #include "r_state.h"
 #include "sbar.h"
 #include "version.h"

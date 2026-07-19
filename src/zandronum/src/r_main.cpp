@@ -39,9 +39,7 @@
 #include "m_random.h"
 #include "m_bbox.h"
 #include "r_local.h"
-#include "r_plane.h"
-#include "r_bsp.h"
-#include "r_3dfloors.h"
+// [rc4l] r_plane.h / r_bsp.h / r_3dfloors.h removed with the software renderer (GL-only build).
 #include "r_sky.h"
 #include "st_stuff.h"
 #include "c_cvars.h"
@@ -78,10 +76,7 @@
 
 // EXTERNAL FUNCTION PROTOTYPES --------------------------------------------
 
-void R_SpanInitData ();
-void RP_RenderBSPNode (void *node);
-bool RP_SetupFrame (bool backside);
-void R_DeinitSprites();
+// [rc4l] Software-renderer entry points removed (GL-only build).
 
 // PUBLIC FUNCTION PROTOTYPES ----------------------------------------------
 
@@ -91,9 +86,7 @@ static void R_ShutdownRenderer();
 
 // EXTERNAL DATA DECLARATIONS ----------------------------------------------
 
-extern short *openings;
-extern bool r_fakingunderwater;
-extern "C" int fuzzviewheight;
+// [rc4l] openings / r_fakingunderwater / fuzzviewheight were software-renderer state (removed).
 
 
 // PRIVATE DATA DECLARATIONS -----------------------------------------------
@@ -101,8 +94,6 @@ extern "C" int fuzzviewheight;
 static float CurrentVisibility = 8.f;
 static fixed_t MaxVisForWall;
 static fixed_t MaxVisForFloor;
-static bool polyclipped;
-extern bool r_showviewer;
 bool r_dontmaplines;
 
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
@@ -110,6 +101,17 @@ bool r_dontmaplines;
 CVAR (String, r_viewsize, "", CVAR_NOSET)
 CVAR (Int, r_polymost, 0, 0)
 CVAR (Bool, r_shadercolormaps, true, CVAR_ARCHIVE)
+
+// [rc4l] Relocated from the deleted r_swrenderer.cpp. This is a shared cvar: it is
+// read by the GL renderer (FGLInterface::GetMaxViewPitch) and by cl_main.cpp, so it
+// must survive the software-renderer removal.
+// [BB] Use ZDoom's freelook limit for the software renderer.
+// Note: ZDoom's limit is chosen such that the sky is rendered properly.
+CUSTOM_CVAR (Bool, cl_oldfreelooklimit, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+{
+	// [AK] Reimpose the new pitch limits for all active players.
+	P_ResetPlayerPitchLimits();
+}
 
 fixed_t			r_BaseVisibility;
 fixed_t			r_WallVisibility;
@@ -154,6 +156,18 @@ int 			loopcount;
 // to the lowest viewangle that maps back to x ranges
 // from clipangle to -clipangle.
 angle_t 		xtoviewangle[MAXWIDTH+1];
+
+// [rc4l] Relocated from the deleted r_plane.cpp so R_SetupFreelook still links
+// in the GL-only build. GL does not read it; the writes are harmless.
+fixed_t			yslope[MAXHEIGHT];
+
+// [rc4l] Stacked (skybox/mirror) view parameters. Definitions relocated from the
+// deleted r_plane.cpp; still written by R_CopyStackedViewParameters() (kept) and
+// declared extern in r_main.h.
+int				stacked_extralight;
+float			stacked_visibility;
+fixed_t			stacked_viewx, stacked_viewy, stacked_viewz;
+angle_t			stacked_angle;
 
 bool			foggy;			// [RH] ignore extralight and fullbright?
 int				r_actualextralight;
@@ -345,80 +359,8 @@ CCMD (r_visibility)
 	}
 }
 
-//==========================================================================
-//
-// R_SetWindow
-//
-//==========================================================================
-
-void R_SWRSetWindow(int windowSize, int fullWidth, int fullHeight, int stHeight, int trueratio)
-{
-	int virtheight, virtwidth, virtwidth2, virtheight2;
-
-	if (!bRenderingToCanvas)
-	{ // Set r_viewsize cvar to reflect the current view size
-		UCVarValue value;
-		char temp[16];
-
-		mysnprintf (temp, countof(temp), "%d x %d", viewwidth, viewheight);
-		value.String = temp;
-		r_viewsize.ForceSet (value, CVAR_String);
-	}
-
-	fuzzviewheight = viewheight - 2;	// Maximum row the fuzzer can draw to
-	halfviewwidth = (viewwidth >> 1) - 1;
-
-	lastcenteryfrac = 1<<30;
-	centerxfrac = centerx<<FRACBITS;
-	centeryfrac = centery<<FRACBITS;
-
-	virtwidth = virtwidth2 = fullWidth;
-	virtheight = virtheight2 = fullHeight;
-
-	if (trueratio & 4)
-	{
-		virtheight2 = virtheight2 * BaseRatioSizes[trueratio][3] / 48;
-	}
-	else
-	{
-		virtwidth2 = virtwidth2 * BaseRatioSizes[trueratio][3] / 48;
-	}
-
-	if (WidescreenRatio & 4)
-	{
-		virtheight = virtheight * BaseRatioSizes[WidescreenRatio][3] / 48;
-	}
-	else
-	{
-		virtwidth = virtwidth * BaseRatioSizes[WidescreenRatio][3] / 48;
-	}
-
-	baseyaspectmul = Scale(320 << FRACBITS, virtheight2, r_Yaspect * virtwidth2);
-	yaspectmul = Scale ((320<<FRACBITS), virtheight, r_Yaspect * virtwidth);
-	iyaspectmulfloat = (float)virtwidth * r_Yaspect / 320.f / (float)virtheight;
-	InvZtoScale = yaspectmul * centerx;
-
-	WallTMapScale = (float)centerx * 32.f;
-	WallTMapScale2 = iyaspectmulfloat * 2.f / (float)centerx;
-
-	// psprite scales
-	pspritexscale = (centerxwide << FRACBITS) / 160;
-	pspriteyscale = FixedMul (pspritexscale, yaspectmul);
-	pspritexiscale = FixedDiv (FRACUNIT, pspritexscale);
-
-	// thing clipping
-	clearbufshort (screenheightarray, viewwidth, (short)viewheight);
-
-	R_InitTextureMapping ();
-
-	MaxVisForWall = FixedMul (Scale (InvZtoScale, SCREENWIDTH*r_Yaspect,
-		viewwidth*SCREENHEIGHT), FocalTangent);
-	MaxVisForWall = FixedDiv (0x7fff0000, MaxVisForWall);
-	MaxVisForFloor = Scale (FixedDiv (0x7fff0000, viewheight<<(FRACBITS-2)), FocalLengthY, 160*FRACUNIT);
-
-	// Reset r_*Visibility vars
-	R_SetVisibility (R_GetVisibility ());
-}
+// [rc4l] R_SWRSetWindow() removed with the software renderer (GL-only build).
+// The GL renderer sets up its own projection; R_SetWindow() lives in r_utility.cpp.
 
 //==========================================================================
 //
@@ -470,22 +412,8 @@ void R_InitRenderer()
 	}
 	*/
 
-	// viewwidth / viewheight are set by the defaults
-	clearbufshort (zeroarray, MAXWIDTH, 0);
-
-	R_InitPlanes ();
-	R_InitShadeMaps();
-	R_InitColumnDrawers ();
-
-	colfunc = basecolfunc = R_DrawColumn;
-	fuzzcolfunc = R_DrawFuzzColumn;
-	transcolfunc = R_DrawTranslatedColumn;
-	spanfunc = R_DrawSpan;
-
-	// [RH] Horizontal column drawers
-	hcolfunc_pre = R_DrawColumnHoriz;
-	hcolfunc_post1 = rt_map1col;
-	hcolfunc_post4 = rt_map4cols;
+	// [rc4l] Software-renderer table/column-drawer initialization removed (GL-only build).
+	// The GL renderer initializes its own state via gl_CreateInterface()/FGLRenderer.
 }
 
 //==========================================================================
@@ -496,21 +424,7 @@ void R_InitRenderer()
 
 static void R_ShutdownRenderer()
 {
-	R_DeinitSprites();
-	R_DeinitPlanes();
-	// Free openings
-	if (openings != NULL)
-	{
-		M_Free (openings);
-		openings = NULL;
-	}
-
-	// Free drawsegs
-	if (drawsegs != NULL)
-	{
-		M_Free (drawsegs);
-		drawsegs = NULL;
-	}
+	// [rc4l] Software-renderer teardown removed (GL-only build); nothing to free here.
 }
 
 //==========================================================================
@@ -641,305 +555,11 @@ void R_SetupFreelook()
 	}
 }
 
-void R_SetupPolymost()
-{
-	if (r_polymost)
-	{
-		polyclipped = RP_SetupFrame (false);
-	}
-}
-
-//==========================================================================
-//
-// R_EnterMirror
-//
-// [RH] Draw the reflection inside a mirror
-//
-//==========================================================================
-
-void R_EnterMirror (drawseg_t *ds, int depth)
-{
-	angle_t startang = viewangle;
-	fixed_t startx = viewx;
-	fixed_t starty = viewy;
-
-	CurrentMirror++;
-
-	unsigned int mirrorsAtStart = WallMirrors.Size ();
-
-	vertex_t *v1 = ds->curline->v1;
-
-	// Reflect the current view behind the mirror.
-	if (ds->curline->linedef->dx == 0)
-	{ // vertical mirror
-		viewx = v1->x - startx + v1->x;
-	}
-	else if (ds->curline->linedef->dy == 0)
-	{ // horizontal mirror
-		viewy = v1->y - starty + v1->y;
-	}
-	else
-	{ // any mirror--use floats to avoid integer overflow
-		vertex_t *v2 = ds->curline->v2;
-
-		float dx = FIXED2FLOAT(v2->x - v1->x);
-		float dy = FIXED2FLOAT(v2->y - v1->y);
-		float x1 = FIXED2FLOAT(v1->x);
-		float y1 = FIXED2FLOAT(v1->y);
-		float x = FIXED2FLOAT(startx);
-		float y = FIXED2FLOAT(starty);
-
-		// the above two cases catch len == 0
-		float r = ((x - x1)*dx + (y - y1)*dy) / (dx*dx + dy*dy);
-
-		viewx = FLOAT2FIXED((x1 + r * dx)*2 - x);
-		viewy = FLOAT2FIXED((y1 + r * dy)*2 - y);
-	}
-	viewangle = 2*R_PointToAngle2 (ds->curline->v1->x, ds->curline->v1->y,
-								   ds->curline->v2->x, ds->curline->v2->y) - startang;
-
-	viewsin = finesine[viewangle>>ANGLETOFINESHIFT];
-	viewcos = finecosine[viewangle>>ANGLETOFINESHIFT];
-
-	viewtansin = FixedMul (FocalTangent, viewsin);
-	viewtancos = FixedMul (FocalTangent, viewcos);
-
-	R_CopyStackedViewParameters();
-
-	validcount++;
-	ActiveWallMirror = ds->curline;
-
-	R_ClearPlanes (false);
-	R_ClearClipSegs (ds->x1, ds->x2 + 1);
-
-	memcpy (ceilingclip + ds->x1, openings + ds->sprtopclip, (ds->x2 - ds->x1 + 1)*sizeof(*ceilingclip));
-	memcpy (floorclip + ds->x1, openings + ds->sprbottomclip, (ds->x2 - ds->x1 + 1)*sizeof(*floorclip));
-
-	WindowLeft = ds->x1;
-	WindowRight = ds->x2;
-	MirrorFlags = (depth + 1) & 1;
-
-	R_RenderBSPNode (nodes + numnodes - 1);
-	R_3D_ResetClip(); // reset clips (floor/ceiling)
-
-	R_DrawPlanes ();
-	R_DrawSkyBoxes ();
-
-	// Allow up to 4 recursions through a mirror
-	if (depth < 4)
-	{
-		unsigned int mirrorsAtEnd = WallMirrors.Size ();
-
-		for (; mirrorsAtStart < mirrorsAtEnd; mirrorsAtStart++)
-		{
-			R_EnterMirror (drawsegs + WallMirrors[mirrorsAtStart], depth + 1);
-		}
-	}
-
-	viewangle = startang;
-	viewx = startx;
-	viewy = starty;
-}
-
-//==========================================================================
-//
-// R_SetupBuffer
-//
-// Precalculate all row offsets and fuzz table.
-//
-//==========================================================================
-
-void R_SetupBuffer ()
-{
-	static BYTE *lastbuff = NULL;
-
-	int pitch = RenderTarget->GetPitch();
-	BYTE *lineptr = RenderTarget->GetBuffer() + viewwindowy*pitch + viewwindowx;
-
-	if (dc_pitch != pitch || lineptr != lastbuff)
-	{
-		if (dc_pitch != pitch)
-		{
-			dc_pitch = pitch;
-			R_InitFuzzTable (pitch);
-#if defined(X86_ASM) || defined(X64_ASM)
-			ASM_PatchPitch ();
-#endif
-		}
-		dc_destorg = lineptr;
-		for (int i = 0; i < RenderTarget->GetHeight(); i++)
-		{
-			ylookup[i] = i * pitch;
-		}
-	}
-}
-
-//==========================================================================
-//
-// R_RenderActorView
-//
-//==========================================================================
-
-void R_RenderActorView (AActor *actor, bool dontmaplines)
-{
-	WallCycles.Reset();
-	PlaneCycles.Reset();
-	MaskedCycles.Reset();
-	WallScanCycles.Reset();
-
-	fakeActive = 0; // kg3D - reset fake floor indicator
-	R_3D_ResetClip(); // reset clips (floor/ceiling)
-
-	R_SetupBuffer ();
-	R_SetupFrame (actor);
-
-	// Clear buffers.
-	R_ClearClipSegs (0, viewwidth);
-	R_ClearDrawSegs ();
-	R_ClearPlanes (true);
-	R_ClearSprites ();
-
-	NetUpdate ();
-
-	// [RH] Show off segs if r_drawflat is 1
-	if (r_drawflat)
-	{
-		hcolfunc_pre = R_FillColumnHorizP;
-		hcolfunc_post1 = rt_copy1col;
-		hcolfunc_post4 = rt_copy4cols;
-		colfunc = R_FillColumnP;
-		spanfunc = R_FillSpan;
-	}
-	else
-	{
-		hcolfunc_pre = R_DrawColumnHoriz;
-		hcolfunc_post1 = rt_map1col;
-		hcolfunc_post4 = rt_map4cols;
-		colfunc = basecolfunc;
-		spanfunc = R_DrawSpan;
-	}
-
-	WindowLeft = 0;
-	WindowRight = viewwidth - 1;
-	MirrorFlags = 0;
-	ActiveWallMirror = NULL;
-
-	r_dontmaplines = dontmaplines;
-	
-	// [RH] Hack to make windows into underwater areas possible
-	r_fakingunderwater = false;
-
-	// [RH] Setup particles for this frame
-	P_FindParticleSubsectors ();
-
-	WallCycles.Clock();
-	DWORD savedflags = camera->renderflags;
-	// Never draw the player unless in chasecam mode
-	if (!r_showviewer)
-	{
-		camera->renderflags |= RF_INVISIBLE;
-	}
-	// Link the polyobjects right before drawing the scene to reduce the amounts of calls to this function
-	PO_LinkToSubsectors();
-	if (r_polymost < 2)
-	{
-		R_RenderBSPNode (nodes + numnodes - 1);	// The head node is the last node output.
-		R_3D_ResetClip(); // reset clips (floor/ceiling)
-	}
-	camera->renderflags = savedflags;
-	WallCycles.Unclock();
-
-	NetUpdate ();
-
-	if (viewactive)
-	{
-		PlaneCycles.Clock();
-		R_DrawPlanes ();
-		R_DrawSkyBoxes ();
-		PlaneCycles.Unclock();
-
-		// [RH] Walk through mirrors
-		size_t lastmirror = WallMirrors.Size ();
-		for (unsigned int i = 0; i < lastmirror; i++)
-		{
-			R_EnterMirror (drawsegs + WallMirrors[i], 0);
-		}
-
-		NetUpdate ();
-		
-		MaskedCycles.Clock();
-		R_DrawMasked ();
-		MaskedCycles.Unclock();
-
-		NetUpdate ();
-
-		if (r_polymost)
-		{
-			RP_RenderBSPNode (nodes + numnodes - 1);
-			if (polyclipped)
-			{
-				RP_SetupFrame (true);
-				RP_RenderBSPNode (nodes + numnodes - 1);
-			}
-		}
-	}
-	WallMirrors.Clear ();
-	interpolator.RestoreInterpolations ();
-	R_SetupBuffer ();
-
-	// If we don't want shadered colormaps, NULL it now so that the
-	// copy to the screen does not use a special colormap shader.
-	if (!r_shadercolormaps)
-	{
-		realfixedcolormap = NULL;
-	}
-}
-
-//==========================================================================
-//
-// R_RenderViewToCanvas
-//
-// Pre: Canvas is already locked.
-//
-//==========================================================================
-
-void R_RenderViewToCanvas (AActor *actor, DCanvas *canvas,
-	int x, int y, int width, int height, bool dontmaplines)
-{
-	const bool savedviewactive = viewactive;
-
-	viewwidth = width;
-	RenderTarget = canvas;
-	bRenderingToCanvas = true;
-
-	R_SetWindow (12, width, height, height);
-	viewwindowx = x;
-	viewwindowy = y;
-	viewactive = true;
-
-	R_RenderActorView (actor, dontmaplines);
-
-	RenderTarget = screen;
-	bRenderingToCanvas = false;
-	R_ExecuteSetViewSize ();
-	screen->Lock (true);
-	R_SetupBuffer ();
-	screen->Unlock ();
-	viewactive = savedviewactive;
-}
-
-//==========================================================================
-//
-// R_MultiresInit
-//
-// Called from V_SetResolution()
-//
-//==========================================================================
-
-void R_MultiresInit ()
-{
-	R_PlaneInitData ();
-}
+// [rc4l] Software 3D-scene functions removed with the software renderer (GL-only build):
+//   R_SetupPolymost, R_EnterMirror, R_SetupBuffer, R_RenderActorView,
+//   R_RenderViewToCanvas, R_MultiresInit. The GL renderer (FGLInterface::RenderView /
+//   RenderTextureView / WriteSavePic) provides the 3D scene, camera-texture and
+//   savepic paths instead.
 
 
 //==========================================================================
