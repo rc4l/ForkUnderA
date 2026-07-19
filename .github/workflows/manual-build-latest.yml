@@ -61,16 +61,24 @@ jobs:
       - name: Configure (MSVC x64, NO_FMOD, OpenAL)
         shell: pwsh
         run: |
+          # Point CMake at the vcpkg-installed deps with explicit -D paths instead of
+          # the vcpkg toolchain file — the toolchain's cmake_policy() calls collide
+          # with Zandronum's old CMake minimums and break the VS generator.
           $vcpkg = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows"
           cmake -S src/zandronum -B build-win -G "Visual Studio 17 2022" -A x64 -T v143 `
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DNO_FMOD=ON -DNO_OPENAL=OFF `
             -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
             -DFORCE_INTERNAL_GME=ON `
             "-DOPENAL_INCLUDE_DIR=$vcpkg/include/AL" `
-            "-DOPENAL_LIBRARY=$vcpkg/lib/OpenAL32.lib"
+            "-DOPENAL_LIBRARY=$vcpkg/lib/OpenAL32.lib" `
+            "-DSNDFILE_INCLUDE_DIR=$vcpkg/include" `
+            "-DSNDFILE_LIBRARY=$vcpkg/lib/sndfile.lib" `
+            "-DMPG123_INCLUDE_DIR=$vcpkg/include" `
+            "-DMPG123_LIBRARIES=$vcpkg/lib/mpg123.lib" `
+            "-DOPUS_INCLUDE_DIR=$vcpkg/include/opus" `
+            "-DOPUS_LIBRARIES=$vcpkg/lib/opus.lib" `
+            "-DOPENSSL_ROOT_DIR=$vcpkg" "-DOPENSSL_USE_STATIC_LIBS=OFF"
 
       - name: Build (Release)
         shell: pwsh
