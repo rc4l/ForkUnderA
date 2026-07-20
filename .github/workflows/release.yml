@@ -1,16 +1,17 @@
-name: Release
+name: Release ZandroX
 
 on:
   workflow_dispatch: # Trigger manually from the Actions tab
     inputs:
       release:
-        description: 'Publish a GitHub Release from these builds'
+        description: 'Publish a GitHub Release from these builds (leave off to just build artifacts)'
         type: boolean
         default: false
-      version:
-        description: 'Release tag (e.g. v0.1.0) — required when "release" is checked'
-        type: string
-        default: ''
+      bump:
+        description: 'Which part of the version to raise, counting from the newest v* tag'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
   push:
     branches: [main]
     tags: ['v*'] # [rc4l] Pushing a v* tag builds and publishes a release on its own.
@@ -27,19 +28,39 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       publish: ${{ steps.v.outputs.publish }}
     steps:
+      # [rc4l] fetch-depth 0 brings the tags with it; the bump below reads them to find
+      # the current version, and a shallow checkout would see none and restart at v0.0.1.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - id: v
         shell: bash
+        env:
+          BUMP: ${{ inputs.bump }}
         run: |
           set -euo pipefail
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME}"
             publish=true
           elif [ "${{ inputs.release }}" = "true" ]; then
-            version="${{ inputs.version }}"
+            # [rc4l] The version is derived, never typed: a hand-entered tag is how you get
+            # v0.2.0 published twice, or a v0.10.0 that sorts below v0.9.0.
+            latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+            latest="${latest:-v0.0.0}"
+            IFS=. read -r major minor patch <<< "${latest#v}"
+            case "$BUMP" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              *)     patch=$((patch + 1)) ;;
+            esac
+            version="v${major}.${minor}.${patch}"
             publish=true
-            # [rc4l] A release with no tag would publish over whatever "latest" points at.
-            if [ -z "$version" ]; then
-              echo "::error::'version' is required when 'release' is checked (e.g. v0.1.0)"
+            echo "newest tag $latest, ${BUMP} bump -> $version"
+            # [rc4l] Belt and braces: publishing onto an existing tag would move it off the
+            # commit whose source the released binaries were built from.
+            if git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
+              echo "::error::$version already exists — is another release in flight?"
               exit 1
             fi
           else
