@@ -51,6 +51,11 @@ int64_t ComputeMulAddShiftS64Soft(int64_t a, int64_t b, int64_t c, int64_t d, un
 int64_t ComputeMulAdd3ShiftS64Soft(int64_t a, int64_t b, int64_t c, int64_t d,
 	int64_t e, int64_t f, unsigned shift);
 
+// [rc4l] Public: (a*b) / c with a 128-bit product, truncating toward zero -- the generic
+// Scale(a,b,c). Caller guarantees c != 0.
+int64_t ComputeMulDivS64(int64_t a, int64_t b, int64_t c);
+int64_t ComputeMulDivS64Soft(int64_t a, int64_t b, int64_t c);
+
 } // namespace zx
 
 #endif // ZX_WIDE128_COMPUTE_H

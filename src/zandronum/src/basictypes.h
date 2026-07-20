@@ -86,16 +86,17 @@ union QWORD_UNION
 };
 
 //
-// Fixed point, 32bit as 16.16.
+// [rc4l] Fixed point, 64-bit as 48.16 (widened from 32-bit 16.16 for giant maps and slope
+// precision; FRACBITS stays 16 so in-range math is bit-identical to the old 32-bit path).
 //
 #define FRACBITS						16
-#define FRACUNIT						(1<<FRACBITS)
+#define FRACUNIT						((fixed_t)1<<FRACBITS)
 
-typedef SDWORD							fixed_t;
+typedef SQWORD							fixed_t;
 typedef DWORD							dsfixed_t;				// fixedpt used by span drawer
 
-#define FIXED_MAX						(signed)(0x7fffffff)
-#define FIXED_MIN						(signed)(0x80000000)
+#define FIXED_MAX						((fixed_t)0x7fffffffffffffffLL)
+#define FIXED_MIN						((fixed_t)0x8000000000000000LL)
 
 #define DWORD_MIN						((uint32)0)
 #define DWORD_MAX						((uint32)0xffffffff)

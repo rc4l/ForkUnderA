@@ -81,7 +81,10 @@ static void CreateCachedNodes(MapData *map);
 // fixed 32 bit gl_vert format v2.0+ (glBsp 1.91)
 struct mapglvertex_t
 {
-  fixed_t x,y;
+  // [rc4l] On-disk GL-node vertices are 32-bit 16.16; keep this a fixed 32-bit width (not the
+  // now-64-bit fixed_t) so both the read and sizeof-based vertex count stay correct. The value
+  // sign-extends losslessly into the 64-bit fixed_t vertex coordinate.
+  SDWORD x,y;
 };
 
 struct gl3_mapsubsector_t

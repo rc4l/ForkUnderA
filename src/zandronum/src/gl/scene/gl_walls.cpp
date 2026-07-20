@@ -1213,7 +1213,7 @@ void GLWall::BuildFFBlock(seg_t * seg, F3DFloor * rover,
 //
 //==========================================================================
 
-__forceinline void GLWall::GetPlanePos(F3DFloor::planeref *planeref, int &left, int &right)
+__forceinline void GLWall::GetPlanePos(F3DFloor::planeref *planeref, fixed_t &left, fixed_t &right)
 {
 	if (planeref->plane->a | planeref->plane->b)
 	{

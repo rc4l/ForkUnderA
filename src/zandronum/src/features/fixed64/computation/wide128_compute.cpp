@@ -159,6 +159,29 @@ int64_t ComputeMulAdd3ShiftS64(int64_t a, int64_t b, int64_t c, int64_t d,
 #endif
 }
 
+int64_t ComputeMulDivS64Soft(int64_t a, int64_t b, int64_t c)
+{
+	// Truncate toward zero: work on magnitudes, reapply the combined sign.
+	const bool neg = (a < 0) != ((b < 0) != (c < 0));
+	const uint64_t ua = (a < 0) ? (uint64_t)0 - (uint64_t)a : (uint64_t)a;
+	const uint64_t ub = (b < 0) ? (uint64_t)0 - (uint64_t)b : (uint64_t)b;
+	const uint64_t uc = (c < 0) ? (uint64_t)0 - (uint64_t)c : (uint64_t)c;
+
+	uint64_t hi;
+	const uint64_t lo = ComputeUMul128Soft(ua, ub, &hi);
+	const uint64_t q = ComputeUDiv128Soft(hi, lo, uc);
+	return neg ? -(int64_t)q : (int64_t)q;
+}
+
+int64_t ComputeMulDivS64(int64_t a, int64_t b, int64_t c)
+{
+#ifdef __SIZEOF_INT128__
+	return (int64_t)(((__int128)a * b) / c);
+#else
+	return ComputeMulDivS64Soft(a, b, c);
+#endif
+}
+
 // [rc4l] Public dispatch: native __int128 where the compiler has it (clang/gcc, and the
 // low-64-truncation matches the software path), otherwise the tested software routines.
 int64_t ComputeMulShiftS64(int64_t a, int64_t b, unsigned shift)

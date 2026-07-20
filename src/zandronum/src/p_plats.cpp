@@ -512,7 +512,7 @@ manual_plat:
 
 		case DPlat::platUpByValue:
 		case DPlat::platUpByValueStay:
-			newheight = sec->floorplane.ZatPoint (0, 0) + height;
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + height;
 			plat->m_High = sec->floorplane.PointToDist (0, 0, newheight);
 			plat->m_Low = sec->floorplane.d;
 			plat->m_Status = DPlat::up;
@@ -520,7 +520,7 @@ manual_plat:
 			break;
 		
 		case DPlat::platDownByValue:
-			newheight = sec->floorplane.ZatPoint (0, 0) - height;
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) - height;
 			plat->m_Low = sec->floorplane.PointToDist (0, 0, newheight);
 			plat->m_High = sec->floorplane.d;
 			plat->m_Status = DPlat::down;

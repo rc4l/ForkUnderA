@@ -138,6 +138,27 @@ TEST(Wide128, MulAddShiftMatchesReference)
 		(int64_t)((((__int128)4000000000LL * 4000000000LL) + ((__int128)4000000000LL * 4000000000LL)) >> 20));
 }
 
+// [rc4l] (a*b)/c generic Scale, both paths vs reference, all sign combinations.
+TEST(Wide128, MulDivMatchesReference)
+{
+	Lcg r(0x0123456789abcdefULL);
+	for (int i = 0; i < 40000; ++i)
+	{
+		const int64_t a = r.range(-(1LL << 40), 1LL << 40);
+		const int64_t b = r.range(-(1LL << 20), 1LL << 20);
+		int64_t c = r.range(-(1LL << 24), 1LL << 24);
+		if (c == 0) c = 1;
+		const int64_t ref = (int64_t)(((__int128)a * b) / c);
+		EXPECT_EQ(zx::ComputeMulDivS64Soft(a, b, c), ref) << "a=" << a << " b=" << b << " c=" << c;
+		EXPECT_EQ(zx::ComputeMulDivS64(a, b, c), ref);
+	}
+	// Explicit sign octants.
+	EXPECT_EQ(zx::ComputeMulDivS64Soft(-1000, 7, 3), (int64_t)(((__int128)-1000 * 7) / 3));
+	EXPECT_EQ(zx::ComputeMulDivS64Soft(1000, -7, 3), (int64_t)(((__int128)1000 * -7) / 3));
+	EXPECT_EQ(zx::ComputeMulDivS64Soft(1000, 7, -3), (int64_t)(((__int128)1000 * 7) / -3));
+	EXPECT_EQ(zx::ComputeMulDivS64Soft(-1000, -7, -3), (int64_t)(((__int128)-1000 * -7) / -3));
+}
+
 TEST(Wide128, MulAdd3ShiftMatchesReference)
 {
 	Lcg r(0x9e3779b97f4a7c15ULL);

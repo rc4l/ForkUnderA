@@ -606,7 +606,7 @@ manual_floor:
 			floor->m_Speed = height;
 		case DFloor::floorLowerByValue:
 			floor->m_Direction = -1;
-			newheight = sec->floorplane.ZatPoint (0, 0) - height;
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) - height;
 			floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, newheight);
 			break;
 
@@ -614,7 +614,7 @@ manual_floor:
 			floor->m_Speed = height;
 		case DFloor::floorRaiseByValue:
 			floor->m_Direction = 1;
-			newheight = sec->floorplane.ZatPoint (0, 0) + height;
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + height;
 			floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, newheight);
 			break;
 
@@ -677,7 +677,7 @@ manual_floor:
 
 		case DFloor::floorLowerByTexture:
 			floor->m_Direction = -1;
-			newheight = sec->floorplane.ZatPoint (0, 0) - sec->FindShortestTextureAround ();
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) - sec->FindShortestTextureAround ();
 			floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, newheight);
 			break;
 
@@ -694,13 +694,13 @@ manual_floor:
 			//		since the code is identical to what was here. (Oddly
 			//		enough, BOOM preserved the code here even though it
 			//		also had this function.)
-			newheight = sec->floorplane.ZatPoint (0, 0) + sec->FindShortestTextureAround ();
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + sec->FindShortestTextureAround ();
 			floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, newheight);
 			break;
 
 		case DFloor::floorRaiseAndChange:
 			floor->m_Direction = 1;
-			newheight = sec->floorplane.ZatPoint (0, 0) + height;
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + height;
 			floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, newheight);
 			if (line != NULL)
 			{
@@ -966,7 +966,7 @@ manual_stair:
 		floor->m_Hexencrush = false;
 
 		floor->m_Speed = speed;
-		height = sec->floorplane.ZatPoint (0, 0) + stairstep;
+		height = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + stairstep;
 		floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, height);
 
 		texture = sec->GetTexture(sector_t::floor);

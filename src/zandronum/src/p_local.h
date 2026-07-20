@@ -756,7 +756,10 @@ protected:
 	fixed_t m_xTarget;
 	fixed_t m_yTarget;
 
-	friend bool EV_MovePolyTo(line_t *line, int polyNum, int speed, int x, int y, bool overRide);
+	// [rc4l] x/y are fixed_t (they were int only because fixed_t used to be int); this friend
+	// must match the real EV_MovePolyTo signature or it stops being a friend once fixed_t is
+	// wider than int.
+	friend bool EV_MovePolyTo(line_t *line, int polyNum, int speed, fixed_t x, fixed_t y, bool overRide);
 };
 
 

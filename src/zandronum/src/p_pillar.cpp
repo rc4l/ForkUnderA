@@ -303,7 +303,7 @@ DPillar::DPillar (sector_t *sector, EPillar type, fixed_t speed,
 		}
 		else
 		{
-			newheight = sector->floorplane.ZatPoint (0, 0) - floordist;
+			newheight = sector->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) - floordist;
 			m_FloorTarget = sector->floorplane.PointToDist (0, 0, newheight);
 		}
 		if (ceilingdist == 0)
@@ -314,7 +314,7 @@ DPillar::DPillar (sector_t *sector, EPillar type, fixed_t speed,
 		}
 		else
 		{
-			newheight = sector->ceilingplane.ZatPoint (0, 0) + ceilingdist;
+			newheight = sector->ceilingplane.ZatPoint(fixed_t(0), fixed_t(0)) + ceilingdist;
 			m_CeilingTarget = sector->ceilingplane.PointToDist (0, 0, newheight);
 		}
 	}

@@ -42,15 +42,21 @@ public:
 
 	FileReaderBase &operator>> (DWORD &v)
 	{
-		Read (&v, 4);
-		v = LittleLong(v);
+		// [rc4l] The on-disk fixed_t in these lumps is 32-bit; read it and sign-extend into
+		// the 64-bit fixed_t (a 16.16 value is the same 48.16 value).
+		SDWORD t;
+		Read (&t, 4);
+		v = LittleLong(t);
 		return *this;
 	}
 
 	FileReaderBase &operator>> (fixed_t &v)
 	{
-		Read (&v, 4);
-		v = LittleLong(v);
+		// [rc4l] The on-disk fixed_t in these lumps is 32-bit; read it and sign-extend into
+		// the 64-bit fixed_t (a 16.16 value is the same 48.16 value).
+		SDWORD t;
+		Read (&t, 4);
+		v = LittleLong(t);
 		return *this;
 	}
 
@@ -108,8 +114,11 @@ public:
 
 	FileReader &operator>> (DWORD &v)
 	{
-		Read (&v, 4);
-		v = LittleLong(v);
+		// [rc4l] The on-disk fixed_t in these lumps is 32-bit; read it and sign-extend into
+		// the 64-bit fixed_t (a 16.16 value is the same 48.16 value).
+		SDWORD t;
+		Read (&t, 4);
+		v = LittleLong(t);
 		return *this;
 	}
 
@@ -170,15 +179,21 @@ public:
 
 	FileReaderZ &operator>> (DWORD &v)
 	{
-		Read (&v, 4);
-		v = LittleLong(v);
+		// [rc4l] The on-disk fixed_t in these lumps is 32-bit; read it and sign-extend into
+		// the 64-bit fixed_t (a 16.16 value is the same 48.16 value).
+		SDWORD t;
+		Read (&t, 4);
+		v = LittleLong(t);
 		return *this;
 	}
 
 	FileReaderZ &operator>> (fixed_t &v)
 	{
-		Read (&v, 4);
-		v = LittleLong(v);
+		// [rc4l] The on-disk fixed_t in these lumps is 32-bit; read it and sign-extend into
+		// the 64-bit fixed_t (a 16.16 value is the same 48.16 value).
+		SDWORD t;
+		Read (&t, 4);
+		v = LittleLong(t);
 		return *this;
 	}
 
@@ -232,15 +247,21 @@ public:
 
 	FileReaderBZ2 &operator>> (DWORD &v)
 	{
-		Read (&v, 4);
-		v = LittleLong(v);
+		// [rc4l] The on-disk fixed_t in these lumps is 32-bit; read it and sign-extend into
+		// the 64-bit fixed_t (a 16.16 value is the same 48.16 value).
+		SDWORD t;
+		Read (&t, 4);
+		v = LittleLong(t);
 		return *this;
 	}
 
 	FileReaderBZ2 &operator>> (fixed_t &v)
 	{
-		Read (&v, 4);
-		v = LittleLong(v);
+		// [rc4l] The on-disk fixed_t in these lumps is 32-bit; read it and sign-extend into
+		// the 64-bit fixed_t (a 16.16 value is the same 48.16 value).
+		SDWORD t;
+		Read (&t, 4);
+		v = LittleLong(t);
 		return *this;
 	}
 
@@ -294,15 +315,21 @@ public:
 
 	FileReaderLZMA &operator>> (DWORD &v)
 	{
-		Read (&v, 4);
-		v = LittleLong(v);
+		// [rc4l] The on-disk fixed_t in these lumps is 32-bit; read it and sign-extend into
+		// the 64-bit fixed_t (a 16.16 value is the same 48.16 value).
+		SDWORD t;
+		Read (&t, 4);
+		v = LittleLong(t);
 		return *this;
 	}
 
 	FileReaderLZMA &operator>> (fixed_t &v)
 	{
-		Read (&v, 4);
-		v = LittleLong(v);
+		// [rc4l] The on-disk fixed_t in these lumps is 32-bit; read it and sign-extend into
+		// the 64-bit fixed_t (a 16.16 value is the same 48.16 value).
+		SDWORD t;
+		Read (&t, 4);
+		v = LittleLong(t);
 		return *this;
 	}
 

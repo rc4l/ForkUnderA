@@ -653,7 +653,7 @@ ULONG BOTPATH_TryWalk( AActor *pActor, fixed_t StartX, fixed_t StartY, fixed_t S
 						{
 							// If the ceiling is too low, we can't jump there
 							// and the path is obstructed.
-							if ( pFrontSector->ceilingplane.ZatPoint( 0, 0 ) - mid3d_top < pActor->height )
+							if ( pFrontSector->ceilingplane.ZatPoint(fixed_t(0), fixed_t(0)) - mid3d_top < pActor->height )
 								return ( ulFlags | BOTPATH_OBSTRUCTED );
 
 							ulFlags |= BOTPATH_JUMPABLELEDGE;
