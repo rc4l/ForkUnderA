@@ -130,13 +130,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # [rc4l] VCPKG_INSTALLATION_ROOT is a runner environment variable, and the env context in
+      # an expression only sees workflow-level env: blocks — using it in the cache path below
+      # silently yielded "/installed", which cached nothing. Resolve it in a step instead.
+      - name: Resolve the vcpkg install path
+        id: vcpkg
+        shell: pwsh
+        run: |
+          $p = Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed'
+          "installed=$p" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "vcpkg installed tree: $p"
+
       # [rc4l] Building these from source took 15.5 of this job's 19 minutes. Restoring the
       # installed tree makes the install below a near-no-op; the key is the workflow file's
       # hash, so it busts whenever the package list here changes.
       - name: Cache vcpkg packages
         uses: actions/cache@v4
         with:
-          path: ${{ env.VCPKG_INSTALLATION_ROOT }}/installed
+          path: ${{ steps.vcpkg.outputs.installed }}
           key: vcpkg-x64-windows-${{ hashFiles('.github/workflows/manual-build-latest.yml') }}
           restore-keys: vcpkg-x64-windows-
 
