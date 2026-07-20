@@ -12,6 +12,10 @@ on:
         type: choice
         options: [patch, minor, major]
         default: patch
+      experimental:
+        description: 'Experimental: publish a PRE-RELEASE from the selected branch (ignores the bump; never a real release)'
+        type: boolean
+        default: false
   push:
     # [rc4l] Tags only. Building main is CI's job — this workflow exists to publish.
     tags: ['v*'] # [rc4l] Pushing a v* tag builds and publishes a release on its own.
@@ -20,6 +24,13 @@ on:
 permissions:
   contents: write
 
+# [rc4l] One release run per ref at a time. Two people triggering an experimental build on
+# the same branch would otherwise race to delete-and-recreate its rolling tag; queueing
+# serialises them. Different branches (and different tags) are independent groups.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # [rc4l] Resolves the version once so every job names its archives identically.
   setup:
@@ -27,6 +38,9 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
       publish: ${{ steps.v.outputs.publish }}
+      channel: ${{ steps.v.outputs.channel }}
+      branch: ${{ steps.v.outputs.branch }}
+      shortsha: ${{ steps.v.outputs.shortsha }}
     steps:
       # [rc4l] fetch-depth 0 brings the tags with it; the bump below reads them to find
       # the current version, and a shallow checkout would see none and restart at v0.0.1.
@@ -40,9 +54,25 @@ jobs:
           BUMP: ${{ inputs.bump }}
         run: |
           set -euo pipefail
+          # [rc4l] Defaults; the experimental path fills branch/shortsha, stable leaves them blank.
+          channel=stable
+          branch=""
+          shortsha="$(echo "${GITHUB_SHA}" | cut -c1-8)"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME}"
             publish=true
+          elif [ "${{ inputs.experimental }}" = "true" ]; then
+            # [rc4l] Experimental wins over release/bump: a pre-release built from whatever branch
+            # the run was dispatched on, tagged by branch (not version) so it can never touch the
+            # stable v* line. The tag is rolling — re-running a branch replaces its one pre-release
+            # rather than piling up. Sanitise the branch to a valid, tidy tag; note two branches
+            # differing only by a '/' vs '-' would collapse to the same tag, which is acceptable.
+            branch="${GITHUB_REF_NAME}"
+            slug="$(echo "$branch" | sed 's#[^A-Za-z0-9._-]#-#g')"
+            version="exp-${slug}"
+            publish=true
+            channel=experimental
+            echo "experimental pre-release from $branch ($shortsha) -> $version"
           elif [ "${{ inputs.release }}" = "true" ]; then
             # [rc4l] The version is derived, never typed: a hand-entered tag is how you get
             # v0.2.0 published twice, or a v0.10.0 that sorts below v0.9.0.
@@ -70,11 +100,17 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
-          echo "version=$version publish=$publish"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "shortsha=$shortsha" >> "$GITHUB_OUTPUT"
+          echo "version=$version publish=$publish channel=$channel"
 
-  # [rc4l] Releases are gated on the suite; ordinary pushes are already covered by test-and-build.yml.
+  # [rc4l] Stable releases are gated on the suite; ordinary pushes are already covered by
+  # test-and-build.yml. Experimental builds deliberately skip it — the suite enforces 100%
+  # coverage, which a work-in-progress branch will not meet, and the whole point is to get a
+  # Windows binary into a tester's hands even while the branch is unfinished.
   test:
-    if: github.ref_type == 'tag' || inputs.release
+    if: github.ref_type == 'tag' || (inputs.release && !inputs.experimental)
     uses: ./.github/workflows/_test.yml
 
   # [rc4l] The three platform builds live in _build.yml so test-and-build.yml runs the same ones on PRs.
@@ -84,11 +120,18 @@ jobs:
     with:
       version: ${{ needs.setup.outputs.version }}
 
-  # [rc4l] Collects the three platform archives into one GitHub Release. Only runs for a v* tag
-  # or an explicit "release" dispatch; ordinary pushes stop after the build jobs.
+  # [rc4l] Collects the three platform archives into one GitHub Release. Runs for a v* tag, a
+  # stable "release" dispatch, or an experimental pre-release; ordinary build-only dispatches
+  # stop after the build jobs. always() is needed because the test job is skipped for
+  # experimental builds — without it, a skipped dependency would skip publish too. The build
+  # must always have succeeded; the suite must have passed only on the stable path.
   publish:
-    if: needs.setup.outputs.publish == 'true'
     needs: [setup, test, build]
+    if: >-
+      always()
+      && needs.setup.outputs.publish == 'true'
+      && needs.build.result == 'success'
+      && (needs.setup.outputs.channel == 'experimental' || needs.test.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -106,11 +149,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.setup.outputs.version }}
+          CHANNEL: ${{ needs.setup.outputs.channel }}
+          BRANCH: ${{ needs.setup.outputs.branch }}
+          SHORTSHA: ${{ needs.setup.outputs.shortsha }}
         run: |
           set -euo pipefail
-          # [rc4l] gh creates the tag at this commit when it does not already exist, so a
-          # dispatch-triggered release needs no separate tag push.
-          cat > notes.md <<'EOF'
+
+          # [rc4l] The platform notes are the same on both channels; keep them in one place.
+          cat > body.md <<'EOF'
           ZandroX build for macOS (Apple Silicon), Linux (x86_64) and Windows (x64).
           Audio is OpenAL on every platform; FMOD is gone.
 
@@ -134,7 +180,39 @@ jobs:
           (bundled libraries and their licenses). Complete corresponding source for
           this binary is the repository at this release's tag.
           EOF
-          gh release create "$VERSION" \
-            --title "ZandroX $VERSION" \
-            --notes-file notes.md \
-            assets/*
+
+          if [ "$CHANNEL" = "experimental" ]; then
+            # [rc4l] Rolling tag: drop this branch's previous pre-release (and its tag) so the
+            # re-run replaces it instead of erroring on an existing tag. First run has nothing
+            # to delete, hence the || true.
+            gh release delete "$VERSION" --yes --cleanup-tag || true
+
+            # [rc4l] Loud banner prepended to the shared notes. The backslash-backticks stay
+            # literal inside the double quotes while $BRANCH/$SHORTSHA expand.
+            built="Built from branch \`${BRANCH}\` at commit \`${SHORTSHA}\` on $(date -u +%Y-%m-%d)."
+            {
+              printf '%s\n' "> ## 🧪 EXPERIMENTAL BUILD — NOT AN OFFICIAL RELEASE"
+              printf '%s\n' ">"
+              printf '%s\n' "> $built"
+              printf '%s\n' "> Unofficial and unsupported — it may be broken or incomplete."
+              printf '%s\n' "> For testing only. Do not treat this as a real ZandroX release."
+              printf '%s\n' ""
+            } > notes.md
+            cat body.md >> notes.md
+
+            # [rc4l] --prerelease keeps it off "Latest release"; --target ties the tag to the
+            # branch the run was built from.
+            gh release create "$VERSION" \
+              --prerelease \
+              --target "$BRANCH" \
+              --title "🧪 EXPERIMENTAL — ${BRANCH} (${SHORTSHA})" \
+              --notes-file notes.md \
+              assets/*
+          else
+            # [rc4l] gh creates the tag at this commit when it does not already exist, so a
+            # dispatch-triggered release needs no separate tag push.
+            gh release create "$VERSION" \
+              --title "ZandroX $VERSION" \
+              --notes-file body.md \
+              assets/*
+          fi
