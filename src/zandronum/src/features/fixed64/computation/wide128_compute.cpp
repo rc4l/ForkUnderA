@@ -196,7 +196,8 @@ int64_t ComputeMulShiftS64(int64_t a, int64_t b, unsigned shift)
 int64_t ComputeDivShiftS64(int64_t a, unsigned shift, int64_t b)
 {
 #ifdef __SIZEOF_INT128__
-	return (int64_t)(((__int128)a << shift) / (__int128)b);
+	// [rc4l] Scale by multiply, not a left shift: left-shifting a negative signed value is UB.
+	return (int64_t)(((__int128)a * ((__int128)1 << shift)) / (__int128)b);
 #else
 	return ComputeDivShiftS64Soft(a, shift, b);
 #endif

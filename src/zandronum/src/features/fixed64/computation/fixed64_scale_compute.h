@@ -32,9 +32,10 @@ inline int64_t MulScale64(int64_t a, int64_t b, unsigned shift)
 inline int64_t DivScale64(int64_t a, unsigned shift, int64_t b)
 {
 	// Fast path when the shifted numerator provably fits int64: |a| < 2^31 and shift <= 31
-	// gives |a << shift| < 2^62.
+	// gives |a * 2^shift| < 2^62. Scale by multiply, not a left shift (shifting a negative
+	// signed value is UB).
 	if (Fits32(a) && shift <= 31)
-		return (a << shift) / b;
+		return (a * ((int64_t)1 << shift)) / b;
 	return ComputeDivShiftS64(a, shift, b);  // wide: numerator exceeds 64 bits
 }
 
