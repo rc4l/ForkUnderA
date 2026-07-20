@@ -22,10 +22,23 @@ docker build -t "$IMAGE" -f Dockerfile.linux-build .
 echo "==> Building + packaging ZandroX (SERVERONLY=$SERVERONLY) inside container"
 docker run --rm -e SERVERONLY="$SERVERONLY" -v "$PWD:/work" "$IMAGE" bash -lc '
   set -euo pipefail
+  # [rc4l] Drop the cache but keep the object files: a cache written before libopenal-dev was in
+  # the image keeps NO_OPENAL=OFF with no OPENAL_LIBRARY, silently producing a soundless binary.
+  rm -f build-linux/CMakeCache.txt
   cmake -S src/zandronum -B build-linux -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DSERVERONLY="${SERVERONLY:-OFF}" -DNO_FMOD=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON
   cmake --build build-linux -j"$(nproc)"
+
+  # [rc4l] Refuse to package a client that cannot make sound; this shipped once already.
+  if [ "${SERVERONLY:-OFF}" != "ON" ]; then
+    if ! ldd build-linux/zandronum | grep -q libopenal; then
+      echo "ERROR: zandronum is not linked against libopenal — the build has no sound." >&2
+      echo "       Check the OpenAL detection in the configure output above." >&2
+      exit 1
+    fi
+    echo "==> sound OK: $(ldd build-linux/zandronum | grep libopenal | tr -s " ")"
+  fi
 
   ARCH="$(uname -m)"
   NAME="ZandroX-linux-$ARCH"

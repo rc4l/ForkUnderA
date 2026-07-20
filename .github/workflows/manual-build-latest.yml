@@ -2,11 +2,62 @@ name: Build ZandroX
 
 on:
   workflow_dispatch: # Trigger manually from the Actions tab
+    inputs:
+      release:
+        description: 'Publish a GitHub Release from these builds'
+        type: boolean
+        default: false
+      version:
+        description: 'Release tag (e.g. v0.1.0) — required when "release" is checked'
+        type: string
+        default: ''
   push:
     branches: [main]
+    tags: ['v*'] # [rc4l] Pushing a v* tag builds and publishes a release on its own.
+
+# [rc4l] Needed by the publish job to create the release and upload its assets.
+permissions:
+  contents: write
 
 jobs:
+  # [rc4l] Resolves the version once so every job names its archives identically.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - id: v
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME}"
+            publish=true
+          elif [ "${{ inputs.release }}" = "true" ]; then
+            version="${{ inputs.version }}"
+            publish=true
+            # [rc4l] A release with no tag would publish over whatever "latest" points at.
+            if [ -z "$version" ]; then
+              echo "::error::'version' is required when 'release' is checked (e.g. v0.1.0)"
+              exit 1
+            fi
+          else
+            # [rc4l] Ordinary pushes still produce artifacts, just no release.
+            version="dev-$(echo "${GITHUB_SHA}" | cut -c1-8)"
+            publish=false
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "version=$version publish=$publish"
+
+  # [rc4l] Releases are gated on the suite; ordinary pushes are already covered by ci.yml.
+  test:
+    if: github.ref_type == 'tag' || inputs.release
+    uses: ./.github/workflows/_test.yml
+
   build-macos:
+    needs: setup
     runs-on: macos-latest
     steps:
       - name: Checkout repository
@@ -17,14 +68,36 @@ jobs:
           # Native OpenAL build (no FMOD, no Rosetta) — arm64 on Apple Silicon runners.
           SOUND=1 ./build.sh
 
+      # [rc4l] A silently soundless build has shipped before; refuse to package one.
+      - name: Verify sound is linked
+        run: |
+          set -euo pipefail
+          bin=build/ZandroX.app/Contents/MacOS/zandronum
+          otool -L "$bin" | grep -q libopenal \
+            || { echo "::error::$bin is not linked against libopenal — no sound"; exit 1; }
+          test -f build/ZandroX.app/Contents/MacOS/libopenal.1.dylib \
+            || { echo "::error::libopenal is not bundled in the .app"; exit 1; }
+          echo "sound OK"; otool -L "$bin" | grep -iE 'openal|sndfile|mpg123'
+
+      # [rc4l] ditto preserves the bundle's permissions and symlinks; upload-artifact's own
+      # zipping drops the executable bit and produces an .app macOS refuses to launch.
+      - name: Package ZandroX.app
+        run: |
+          set -euo pipefail
+          mkdir -p dist-macos
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/ZandroX.app "dist-macos/ZandroX-${{ needs.setup.outputs.version }}-macos-arm64.zip"
+          ls -la dist-macos/
+
       - name: Upload ZandroX.app
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
           name: ZandroX-macos
-          path: build/ZandroX.app
+          path: dist-macos/*.zip
 
   build-linux:
+    needs: setup
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -36,6 +109,16 @@ jobs:
           # glibc compatibility. Produces dist-linux/ZandroX-linux-x86_64.tar.gz.
           ./package-linux.sh
 
+      # [rc4l] Renamed here rather than in package-linux.sh so local runs keep their plain name.
+      - name: Stamp the version into the tarball name
+        run: |
+          set -euo pipefail
+          for f in dist-linux/ZandroX-linux-*.tar.gz; do
+            arch="$(basename "$f" .tar.gz | sed 's/^ZandroX-linux-//')"
+            mv "$f" "dist-linux/ZandroX-${{ needs.setup.outputs.version }}-linux-$arch.tar.gz"
+          done
+          ls -la dist-linux/
+
       - name: Upload ZandroX Linux tarball
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
@@ -44,6 +127,7 @@ jobs:
           path: dist-linux/*.tar.gz
 
   build-windows:
+    needs: setup
     # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose
     # generator name differs and which CMake mis-detects). Matches the reference build.
     runs-on: windows-2022
@@ -118,10 +202,67 @@ jobs:
           Copy-Item "$out/*.pk3" dist-windows/ -ErrorAction SilentlyContinue
           # Runtime DLLs (openal-soft + decoders) next to the exe.
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/*.dll" dist-windows/ -ErrorAction SilentlyContinue
+          # [rc4l] Without OpenAL32.dll beside the exe the game starts and is simply silent.
+          if (-not (Test-Path dist-windows/OpenAL32.dll)) {
+            throw "OpenAL32.dll missing from dist-windows — the build would ship without sound"
+          }
+          Write-Host "sound OK: OpenAL32.dll present"
+          # [rc4l] Zip it ourselves so the release asset is one file with a stable name.
+          Compress-Archive -Path dist-windows/* `
+            -DestinationPath "ZandroX-${{ needs.setup.outputs.version }}-windows-x64.zip" -Force
+          Get-ChildItem *.zip
 
       - name: Upload ZandroX Windows build
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
           name: ZandroX-windows
-          path: dist-windows/
+          path: ZandroX-*-windows-x64.zip
+
+  # [rc4l] Collects the three platform archives into one GitHub Release. Only runs for a v* tag
+  # or an explicit "release" dispatch; ordinary pushes stop after the build jobs.
+  publish:
+    if: needs.setup.outputs.publish == 'true'
+    needs: [setup, test, build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download built archives
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Show what will be published
+        run: ls -laR assets/
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          set -euo pipefail
+          # [rc4l] gh creates the tag at this commit when it does not already exist, so a
+          # dispatch-triggered release needs no separate tag push.
+          cat > notes.md <<'EOF'
+          ZandroX build for macOS (Apple Silicon), Linux (x86_64) and Windows (x64).
+          Audio is OpenAL on every platform; FMOD is gone.
+
+          **macOS** — the app is not signed or notarized, so Gatekeeper will refuse it
+          on first launch. Clear the quarantine flag after unzipping:
+
+              xattr -dr com.apple.quarantine ZandroX.app
+
+          **Linux** — needs `libopenal1`, `libsndfile1` and `libmpg123-0` from your
+          distro's packages.
+
+          **Windows** — the OpenAL and decoder DLLs ship next to `zandronum.exe`; keep
+          them together.
+
+          You must supply your own IWAD (e.g. `freedoom2.wad`, `doom2.wad`).
+          EOF
+          gh release create "$VERSION" \
+            --title "ZandroX $VERSION" \
+            --notes-file notes.md \
+            assets/*

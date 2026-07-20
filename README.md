@@ -1,19 +1,49 @@
 # ZandroX
 
-macOS build harness for the [Zandronum](https://zandronum.com) source port. Builds Zandronum from source and packages a self-contained **`ZandroX.app`**.
+Build harness for the [Zandronum](https://zandronum.com) source port, targeting **macOS, Linux and Windows** with OpenAL audio on all three.
 
 Based on [rc4l/zandronum-macos-compile](https://github.com/rc4l/zandronum-macos-compile).
 
-## Requirements
-- Xcode command line tools — `xcode-select --install`
-- [Homebrew](https://brew.sh)
-
 ## Build
+
+### macOS (native arm64)
+Requires Xcode command line tools (`xcode-select --install`) and [Homebrew](https://brew.sh).
 ```bash
 ./build.sh            # native arm64, OpenAL audio (default)
-SOUND=0 ./build.sh    # native arm64, no in-game audio
+SOUND=0 ./build.sh    # no in-game audio
 ```
 Output: **`build/ZandroX.app`** (`open build/ZandroX.app`).
+
+### Linux (via Docker, reproducible)
+Requires Docker. Runs on macOS too — you get a binary for the host architecture.
+```bash
+./package-linux.sh                 # full client
+SERVERONLY=ON ./package-linux.sh   # headless server
+```
+Output: **`dist-linux/ZandroX-linux-<arch>.tar.gz`**. Needs `libopenal1`,
+`libsndfile1` and `libmpg123-0` on the target machine. The script fails the build
+if the binary did not link OpenAL, rather than shipping a silent client.
+
+### Windows (x64)
+Built in CI only (MSVC + vcpkg for the OpenAL/decoder DLLs) — see the
+`build-windows` job in `.github/workflows/manual-build-latest.yml`. The legacy
+VS2008 `.vcproj`/`.sln` files in the tree are unused by the CMake build.
+
+## Releases
+
+The **Build ZandroX** workflow builds all three platforms and can publish them as a
+GitHub Release. Either:
+
+- push a tag — `git tag v0.1.0 && git push origin v0.1.0`; or
+- run the workflow manually from the Actions tab, tick **release**, and give a version.
+
+Releases are gated on the test suite and on a per-platform check that OpenAL is
+actually linked. Ordinary pushes to `main` still build all three but publish nothing.
+
+The macOS app is **not signed or notarized**, so Gatekeeper blocks it on first launch:
+```bash
+xattr -dr com.apple.quarantine ZandroX.app
+```
 
 ## License
 
