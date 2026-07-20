@@ -1,5 +1,5 @@
-# [rc4l] Run the test suite on every push/PR and build all three platforms on PRs, so
-# platform-specific breakage shows up before merge instead of after.
+# [rc4l] Run the test suite on every push/PR and build all three platforms on PRs and main,
+# so platform-specific breakage shows up before merge instead of after.
 name: CI
 
 on:
@@ -11,13 +11,13 @@ jobs:
   test:
     uses: ./.github/workflows/_test.yml
 
-  # [rc4l] Only on PRs: feature-branch pushes don't need the costly builds, and pushes to
-  # main are already built by release.yml — building here too would duplicate it.
+  # [rc4l] PRs and main, but not every feature-branch push — the builds are the slow part.
+  # Main is covered as well as PRs because an admin can push straight past the PR gate.
   # Advisory, not a required check: the Windows job depends on vcpkg and a pinned runner
   # image, and a hiccup there shouldn't block a merge that never touched Windows.
   build:
     needs: test
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     uses: ./.github/workflows/_build.yml
     with:
-      version: pr-${{ github.event.pull_request.number }}
+      version: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('main-{0}', github.run_number) }}

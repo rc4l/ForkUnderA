@@ -13,7 +13,7 @@ on:
         options: [patch, minor, major]
         default: patch
   push:
-    branches: [main]
+    # [rc4l] Tags only. Building main is CI's job — this workflow exists to publish.
     tags: ['v*'] # [rc4l] Pushing a v* tag builds and publishes a release on its own.
 
 # [rc4l] Needed by the publish job to create the release and upload its assets.
