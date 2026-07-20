@@ -1,4 +1,4 @@
-# [rc4l] Reusable C++ test job called by ci.yml and release.yml so the same suite gates both.
+# [rc4l] Reusable C++ test job called by test-and-build.yml and release.yml so the same suite gates both.
 name: tests (reusable)
 
 on:

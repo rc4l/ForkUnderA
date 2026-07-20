@@ -1,6 +1,6 @@
 # [rc4l] Run the test suite on every push/PR and build all three platforms on PRs and main,
 # so platform-specific breakage shows up before merge instead of after.
-name: CI
+name: Test & Build
 
 on:
   push:

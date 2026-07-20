@@ -72,12 +72,12 @@ jobs:
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "version=$version publish=$publish"
 
-  # [rc4l] Releases are gated on the suite; ordinary pushes are already covered by ci.yml.
+  # [rc4l] Releases are gated on the suite; ordinary pushes are already covered by test-and-build.yml.
   test:
     if: github.ref_type == 'tag' || inputs.release
     uses: ./.github/workflows/_test.yml
 
-  # [rc4l] The three platform builds live in _build.yml so ci.yml runs the same ones on PRs.
+  # [rc4l] The three platform builds live in _build.yml so test-and-build.yml runs the same ones on PRs.
   build:
     needs: setup
     uses: ./.github/workflows/_build.yml
