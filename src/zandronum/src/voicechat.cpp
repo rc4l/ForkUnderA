@@ -60,9 +60,7 @@
 #include "team.h"
 #include "chat.h"
 
-#if !defined(NO_SOUND) && !defined(NO_FMOD)
-#include "fmod_errors.h"
-#elif !defined(NO_SOUND) && !defined(NO_OPENAL)
+#if !defined(NO_SOUND) && !defined(NO_OPENAL)
 #include <al.h>
 #include <alc.h>
 #endif
@@ -275,11 +273,9 @@ CCMD( voice_unignore_idx )
 }
 
 // [AK] Everything past this point only compiles if compiling with sound.
-// [ZandroX] The implementation is shared between the FMOD and OpenAL backends.
-// Backend-agnostic code (Opus, RNNoise, networking, the jitter buffer) is compiled
-// once; backend-specific code is selected with inner #if !defined(NO_FMOD) /
-// #elif !defined(NO_OPENAL) guards.
-#if !defined(NO_SOUND) && ( !defined(NO_FMOD) || !defined(NO_OPENAL) )
+// [ZandroX] OpenAL is the only backend; the Opus, RNNoise, networking and jitter-buffer
+// code is backend-agnostic and the audio calls below are OpenAL throughout.
+#if !defined(NO_SOUND) && !defined(NO_OPENAL)
 
 // [ZandroX] Forward declaration so the OpenAL capture path in Tick() can reuse the
 // same float byte-array serialization the playback path uses (defined further down).
@@ -353,40 +349,7 @@ CCMD( voice_listrecorddrivers )
 //
 //*****************************************************************************
 
-#if !defined(NO_FMOD)
-
-VOIPController::VOIPController( void ) :
-	VoIPChannels{ nullptr },
-	testRMSVolume( MIN_DECIBELS ),
-	system( nullptr ),
-	recordSound( nullptr ),
-	VoIPChannelGroup( nullptr ),
-	encoder( nullptr ),
-	denoiseModel( nullptr ),
-	denoiseState( nullptr ),
-	recordDriverID( 0 ),
-	framesSent( 0 ),
-	lastRecordPosition( 0 ),
-	lastPackedTOC( 0 ),
-	isInitialized( false ),
-	isActive( false ),
-	isTesting( false ),
-	isRecordButtonPressed( false ),
-	transmissionType( TRANSMISSIONTYPE_OFF )
-{
-	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
-		channelVolumes[i] = 1.0f;
-
-	proximityInfo.SysChannel = nullptr;
-	proximityInfo.StartTime.AsOne = 0;
-	proximityInfo.Rolloff.RolloffType = ROLLOFF_Doom;
-	proximityInfo.DistanceScale = 1.0f;
-
-	UpdateRolloffDistances( );
-	Button_VoiceRecord.Reset( );
-}
-
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 
 VOIPController::VOIPController( void ) :
 	VoIPChannels{ nullptr },
@@ -423,85 +386,7 @@ VOIPController::VOIPController( void ) :
 //
 //*****************************************************************************
 
-#if !defined(NO_FMOD)
-
-void VOIPController::Init( FMOD::System *mainSystem )
-{
-	int opusErrorCode = OPUS_OK;
-
-	// [AK] The server never initializes the voice recorder.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		return;
-
-	system = mainSystem;
-
-	// [AK] Abort if the FMOD system is invalid. This should never happen.
-	if ( system == nullptr )
-	{
-		Printf( TEXTCOLOR_ORANGE "Invalid FMOD::System pointer used to initialize VoIP controller.\n" );
-		return;
-	}
-
-	// [AK] Create the player VoIP channel group.
-	const FMOD_RESULT fmodErrorCode = system->createChannelGroup( "VoIP", &VoIPChannelGroup );
-
-	if ( fmodErrorCode != FMOD_OK )
-	{
-		Printf( TEXTCOLOR_ORANGE "Failed to create VoIP channel group for playback: %s\n", FMOD_ErrorString( fmodErrorCode ));
-		return;
-	}
-
-	encoder = opus_encoder_create( PLAYBACK_SAMPLE_RATE, 1, OPUS_APPLICATION_VOIP, &opusErrorCode );
-
-	// [AK] Stop here if the Opus encoder wasn't created successfully.
-	if ( opusErrorCode != OPUS_OK )
-	{
-		Printf( TEXTCOLOR_ORANGE "Failed to create Opus encoder: %s.\n", opus_strerror( opusErrorCode ));
-		return;
-	}
-
-	opus_encoder_ctl( encoder, OPUS_SET_FORCE_CHANNELS( 1 ));
-	opus_encoder_ctl( encoder, OPUS_SET_SIGNAL( OPUS_SIGNAL_VOICE ));
-
-	repacketizer = opus_repacketizer_create( );
-
-	// [AK] Stop here if the Opus repacketizer wasn't created successfully.
-	if ( repacketizer == nullptr )
-	{
-		Printf( TEXTCOLOR_ORANGE "Failed to create Opus repacketizer: %s.\n", opus_strerror( opusErrorCode ));
-		return;
-	}
-
-	// [AK] Load a custom RNNoise model file if we can. Otherwise, use the built-in model.
-	if ( strlen( voice_noisemodelfile ) > 0 )
-	{
-		const char *fileName = voice_noisemodelfile.GetGenericRep( CVAR_String ).String;
-		FILE *modelFile = fopen( fileName, "r" );
-
-		if ( modelFile != nullptr )
-		{
-			denoiseModel = rnnoise_model_from_file( modelFile );
-
-			if ( denoiseModel == nullptr )
-				Printf( TEXTCOLOR_ORANGE "Failed to load RNNoise model \"%s\". Using built-in model instead.\n", fileName );
-		}
-		else
-		{
-			Printf( TEXTCOLOR_YELLOW "Couldn't find RNNoise model \"%s\". Using built-in model instead.\n", fileName );
-		}
-	}
-
-	// [AK] Initialize the denoise state, used for noise suppression.
-	denoiseState = rnnoise_create( denoiseModel );
-
-	isInitialized = true;
-	Printf( "VoIP controller initialized successfully.\n" );
-
-	// [AK] Set the output volume after initialization.
-	SetVolume( voice_outputvolume );
-}
-
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 
 //*****************************************************************************
 //
@@ -599,13 +484,6 @@ void VOIPController::Shutdown( void )
 		repacketizer = nullptr;
 	}
 
-#if !defined(NO_FMOD)
-	if ( VoIPChannelGroup != nullptr )
-	{
-		VoIPChannelGroup->release( );
-		VoIPChannelGroup = nullptr;
-	}
-#endif
 
 	if ( denoiseModel != nullptr )
 	{
@@ -679,56 +557,6 @@ void VOIPController::Deactivate( void )
 //
 //*****************************************************************************
 
-#if !defined(NO_FMOD)
-template <typename T>
-static void voicechat_ReadSoundBuffer( T *object, FMOD::Sound *sound, unsigned int &offset, const unsigned int length, void ( T::*callback )( unsigned char *, unsigned int ))
-{
-	void *ptr1, *ptr2;
-	unsigned int len1, len2;
-
-	if (( object == nullptr ) || ( sound == nullptr ) || ( callback == nullptr ) || ( length == 0 ))
-		return;
-
-	const unsigned int bufferSize = length * VOIPController::SAMPLE_SIZE;
-	unsigned int soundLength = 0;
-
-	// [AK] Lock the portion of the sound buffer that we want to read.
-	if ( sound->lock( offset * VOIPController::SAMPLE_SIZE, bufferSize, &ptr1, &ptr2, &len1, &len2 ) == FMOD_OK )
-	{
-		if (( ptr1 != nullptr ) && ( len1 > 0 ))
-		{
-			// [AK] Combine the ptr1 and ptr2 buffers into a single buffer.
-			if (( ptr2 != nullptr ) && ( len2 > 0 ))
-			{
-				unsigned char *combinedBuffer = new unsigned char[bufferSize];
-
-				memcpy( combinedBuffer, ptr1, len1 );
-				memcpy( combinedBuffer + len1, ptr2, len2 );
-
-				( object->*callback )( combinedBuffer, bufferSize );
-
-				memcpy( ptr1, combinedBuffer, len1 );
-				memcpy( ptr2, combinedBuffer + len1, len2 );
-
-				delete[] combinedBuffer;
-			}
-			else
-			{
-				( object->*callback )( reinterpret_cast<unsigned char *>( ptr1 ), len1 );
-			}
-		}
-
-		// [AK] After everything's finished, unlock the sound buffer.
-		sound->unlock( ptr1, ptr2, len1, len2 );
-	}
-
-	// [AK] Increment the offset.
-	offset += length;
-
-	if ( sound->getLength( &soundLength, FMOD_TIMEUNIT_PCM ) == FMOD_OK )
-		offset = offset % soundLength;
-}
-#endif
 
 //*****************************************************************************
 //
@@ -752,9 +580,7 @@ void VOIPController::Tick( void )
 		}
 	}
 
-#if !defined(NO_FMOD)
-	// [AK] FMOD initializes the VoIP controller from FMODSoundRenderer.
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 	// [ZandroX] The OpenAL backend has no external init hook (that lived in the
 	// FMOD-only renderer), so initialize lazily once oalsound has made a context
 	// current. The server never initializes the recorder.
@@ -833,23 +659,7 @@ void VOIPController::Tick( void )
 	// This also applies while testing the microphone.
 	if (( isNotIgnored && !voice_muteself && ( transmissionType != TRANSMISSIONTYPE_OFF || isUsingVoiceActivity )) || ( isTesting ))
 	{
-#if !defined(NO_FMOD)
-		unsigned int recordPosition = 0;
-
-		if (( system->getRecordPosition( recordDriverID, &recordPosition ) == FMOD_OK ) && ( recordPosition != lastRecordPosition ))
-		{
-			unsigned int recordDelta = recordPosition >= lastRecordPosition ? recordPosition - lastRecordPosition : recordPosition + RECORD_SOUND_LENGTH - lastRecordPosition;
-
-			// [AK] We may need to send out multiple audio frames in a single tic.
-			for ( unsigned int frame = 0; frame < recordDelta / RECORD_SAMPLES_PER_FRAME; frame++ )
-				voicechat_ReadSoundBuffer( this, recordSound, lastRecordPosition, RECORD_SAMPLES_PER_FRAME, &VOIPController::ReadRecordSamples );
-
-			if (( isTesting == false ) && ( opus_repacketizer_get_nb_frames( repacketizer ) > 0 ))
-				SendAudioPacket( );
-
-			compressedBuffers.Clear( );
-		}
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 		// [ZandroX] alcCaptureSamples hands us exactly RECORD_SAMPLES_PER_FRAME
 		// samples at a time with no ring buffer wrap math. Each captured 16-bit
 		// sample is converted into the 32-bit float byte layout that the shared
@@ -905,43 +715,7 @@ void VOIPController::Tick( void )
 			continue;
 		}
 
-#if !defined(NO_FMOD)
-		// [AK] If it's been long enough since we first received audio frames from
-		// this player, start playing this channel. By now, the jitter buffer should
-		// have enough samples for clean playback.
-		if (( VoIPChannels[i]->sound != nullptr ) && ( VoIPChannels[i]->channel == nullptr ))
-		{
-			if (( VoIPChannels[i]->jitterBuffer.Size( ) == 0 ) || ( VoIPChannels[i]->playbackTick > gametic ))
-				continue;
-
-			VoIPChannels[i]->StartPlaying( );
-		}
-
-		// [AK] Keep updating the playback and reading more samples, such that there's
-		// always enough gap between the number of samples read and played.
-		if ( VoIPChannels[i]->channel != nullptr )
-		{
-			unsigned int oldPlaybackPosition = VoIPChannels[i]->lastPlaybackPosition;
-			const unsigned int oldSamplesPlayed = VoIPChannels[i]->samplesPlayed;
-
-			VoIPChannels[i]->UpdatePlayback( );
-
-			// [AK] Update the test RMS volume every three tics if testing the microphone.
-			if (( i == static_cast<unsigned>( consoleplayer )) && ( isTesting ) && ( gametic % 3 == 0 ))
-			{
-				const unsigned int numNewSamples = VoIPChannels[i]->samplesPlayed - oldSamplesPlayed;
-				voicechat_ReadSoundBuffer( this, VoIPChannels[i]->sound, oldPlaybackPosition, numNewSamples, &VOIPController::UpdateTestRMSVolume );
-			}
-
-			const int sampleDiff = static_cast<int>( VoIPChannels[i]->samplesRead ) - static_cast<int>( VoIPChannels[i]->samplesPlayed );
-
-			if ( sampleDiff < READ_BUFFER_SIZE )
-			{
-				const unsigned int samplesToRead = MIN( VoIPChannels[i]->GetUnreadSamples( ), READ_BUFFER_SIZE - sampleDiff );
-				voicechat_ReadSoundBuffer( VoIPChannels[i], VoIPChannels[i]->sound, VoIPChannels[i]->lastReadPosition, samplesToRead, &VOIPChannel::ReadSamples );
-			}
-		}
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 		VOIPChannel *channel = VoIPChannels[i];
 
 		// [ZandroX] Wait for the jitter buffer to fill (and the initial delay to
@@ -1191,74 +965,7 @@ void VOIPController::UpdateTestRMSVolume( unsigned char *soundBuffer, const unsi
 //
 //*****************************************************************************
 
-#if !defined(NO_FMOD)
-
-void VOIPController::StartRecording( void )
-{
-	if ( IsRecording( ))
-		return;
-
-	// [AK] Don't start recording audio while using ALSA.
-	if ( IsUsingALSA( ))
-	{
-		Printf( TEXTCOLOR_ORANGE "Can't start VoIP recording with ALSA. Try using PulseAudio instead.\n" );
-		return;
-	}
-
-	int numRecordDrivers = 0;
-	FMOD_RESULT fmodErrorCode = system->getRecordNumDrivers( &numRecordDrivers );
-
-	// [AK] Try to start recording from the selected record driver.
-	if ( fmodErrorCode == FMOD_OK )
-	{
-		if ( numRecordDrivers > 0 )
-		{
-			FMOD_CREATESOUNDEXINFO exinfo = CreateSoundExInfo( RECORD_SAMPLE_RATE, RECORD_SOUND_LENGTH );
-			fmodErrorCode = system->createSound( nullptr, FMOD_LOOP_NORMAL | FMOD_2D | FMOD_OPENUSER, &exinfo, &recordSound );
-
-			// [AK] Abort if creating the sound to record into failed.
-			if ( fmodErrorCode != FMOD_OK )
-			{
-				Printf( TEXTCOLOR_ORANGE "Failed to create sound for recording: %s\n", FMOD_ErrorString( fmodErrorCode ));
-				return;
-			}
-
-			if ( voice_recorddriver >= numRecordDrivers )
-			{
-				Printf( "Record driver %d doesn't exist. Using 0 instead.\n", *voice_recorddriver );
-				recordDriverID = 0;
-			}
-			else
-			{
-				recordDriverID = voice_recorddriver;
-			}
-
-			fmodErrorCode = system->recordStart( recordDriverID, recordSound, true );
-
-			if ( fmodErrorCode != FMOD_OK )
-			{
-				Printf( TEXTCOLOR_ORANGE "Failed to start VoIP recording: %s\n", FMOD_ErrorString( fmodErrorCode ));
-
-				// [AK] Delete the recording sound if it was created.
-				if ( recordSound != nullptr )
-				{
-					recordSound->release( );
-					recordSound = nullptr;
-				}
-			}
-		}
-		else
-		{
-			Printf( TEXTCOLOR_ORANGE "Failed to find any connected record drivers.\n" );
-		}
-	}
-	else
-	{
-		Printf( TEXTCOLOR_ORANGE "Failed to retrieve number of record drivers: %s\n", FMOD_ErrorString( fmodErrorCode ));
-	}
-}
-
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 
 //*****************************************************************************
 //
@@ -1320,29 +1027,7 @@ void VOIPController::StartRecording( void )
 //
 //*****************************************************************************
 
-#if !defined(NO_FMOD)
-
-void VOIPController::StopRecording( void )
-{
-	if ( IsRecording( ) == false )
-		return;
-
-	// [AK] If we're in the middle of a transmission, stop that too.
-	StopTransmission( );
-
-	const FMOD_RESULT fmodErrorCode = system->recordStop( recordDriverID );
-
-	if ( fmodErrorCode != FMOD_OK )
-		Printf( TEXTCOLOR_ORANGE "Failed to stop voice recording: %s\n", FMOD_ErrorString( fmodErrorCode ));
-
-	if ( recordSound != nullptr )
-	{
-		recordSound->release( );
-		recordSound = nullptr;
-	}
-}
-
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 
 void VOIPController::StopRecording( void )
 {
@@ -1381,15 +1066,7 @@ void VOIPController::StartTransmission( const TRANSMISSIONTYPE_e type, const boo
 
 	if ( getRecordPosition )
 	{
-#if !defined(NO_FMOD)
-		const FMOD_RESULT fmodErrorCode = system->getRecordPosition( recordDriverID, &lastRecordPosition );
-
-		if ( fmodErrorCode != FMOD_OK )
-		{
-			Printf( TEXTCOLOR_ORANGE "Failed to get position of voice recording: %s\n", FMOD_ErrorString( fmodErrorCode ));
-			return;
-		}
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 		// [ZandroX] There's no record position to seed with OpenAL; instead discard
 		// any samples already sitting in the capture buffer so we don't transmit a
 		// burst of stale audio recorded before the button was pressed.
@@ -1473,22 +1150,7 @@ bool VOIPController::IsPlayerTalking( const unsigned int player ) const
 			return true;
 	}
 
-#if !defined(NO_FMOD)
-	if (( PLAYER_IsValidPlayer( player )) && ( VoIPChannels[player] != nullptr ) && ( VoIPChannels[player]->channel != nullptr ))
-	{
-		// [AK] If this channel's playing in 3D mode, check if they're audible.
-		// In case getting the channel's audibility fails, just return true.
-		if ( VoIPChannels[player]->ShouldPlayIn3DMode( ))
-		{
-			float audibility = 0.0f;
-
-			if ( VoIPChannels[player]->channel->getAudibility( &audibility ) == FMOD_OK )
-				return ( audibility > 0.0f );
-		}
-
-		return true;
-	}
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 	// [ZandroX] VoIP is always 2D with OpenAL, so a player is talking simply if
 	// their source is currently playing.
 	if (( PLAYER_IsValidPlayer( player )) && ( VoIPChannels[player] != nullptr ) && ( VoIPChannels[player]->IsPlaying( )))
@@ -1508,14 +1170,7 @@ bool VOIPController::IsPlayerTalking( const unsigned int player ) const
 
 bool VOIPController::IsRecording( void ) const
 {
-#if !defined(NO_FMOD)
-	bool isRecording = false;
-
-	if (( system != nullptr ) && ( system->isRecording( recordDriverID, &isRecording ) == FMOD_OK ))
-		return isRecording;
-
-	return false;
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 	// [ZandroX] We are recording as long as the capture device is open.
 	return ( captureDevice != nullptr );
 #endif
@@ -1554,15 +1209,7 @@ void VOIPController::SetChannelVolume( const unsigned int player, float volume, 
 	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( updateServer ) && ( volume != oldVolume ))
 		CLIENTCOMMANDS_SetVoIPChannelVolume( player, volume );
 
-#if !defined(NO_FMOD)
-	if (( VoIPChannels[player] == nullptr ) || ( VoIPChannels[player]->channel == nullptr ))
-		return;
-
-	const FMOD_RESULT fmodErrorCode = VoIPChannels[player]->channel->setVolume( volume );
-
-	if ( fmodErrorCode != FMOD_OK )
-		Printf( TEXTCOLOR_ORANGE "Couldn't change the volume of VoIP channel %u: %s\n", player, FMOD_ErrorString( fmodErrorCode ));
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 	// [ZandroX] Apply the new per-player volume immediately if the source is live.
 	// The final gain combines the global output volume with this channel's volume.
 	if (( VoIPChannels[player] != nullptr ) && ( VoIPChannels[player]->source != 0 ))
@@ -1583,18 +1230,7 @@ void VOIPController::SetVolume( float volume )
 	if ( isInitialized == false )
 		return;
 
-#if !defined(NO_FMOD)
-	if ( VoIPChannelGroup == nullptr )
-	{
-		Printf( TEXTCOLOR_ORANGE "Couldn't change the volume of the VoIP channel group: it doesn't exist.\n" );
-		return;
-	}
-
-	const FMOD_RESULT fmodErrorCode = VoIPChannelGroup->setVolume( volume );
-
-	if ( fmodErrorCode != FMOD_OK )
-		Printf( TEXTCOLOR_ORANGE "Couldn't change the volume of the VoIP channel group: %s\n", FMOD_ErrorString( fmodErrorCode ));
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 	// [ZandroX] There's no channel group with OpenAL, so store the master output
 	// volume and reapply it (combined with each channel's own volume) to every live
 	// source. Muted test channels are left alone; Tick() manages their gain.
@@ -1626,43 +1262,7 @@ void VOIPController::SetPitch( float pitch )
 	if ( isInitialized == false )
 		return;
 
-#if !defined(NO_FMOD)
-	float oldPitch = 1.0f;
-
-	if ( VoIPChannelGroup == nullptr )
-	{
-		Printf( TEXTCOLOR_ORANGE "Couldn't get the pitch of the VoIP channel group: it doesn't exist.\n" );
-		return;
-	}
-
-	FMOD_RESULT fmodErrorCode = VoIPChannelGroup->getPitch( &oldPitch );
-
-	if ( fmodErrorCode != FMOD_OK )
-	{
-		Printf( TEXTCOLOR_ORANGE "Couldn't get the pitch of the VoIP channel group: %s\n", FMOD_ErrorString( fmodErrorCode ));
-		return;
-	}
-
-	// [AK] Stop if the pitch is already the same.
-	if ( pitch == oldPitch )
-		return;
-
-	fmodErrorCode = VoIPChannelGroup->setPitch( pitch );
-
-	if ( fmodErrorCode != FMOD_OK )
-	{
-		Printf( TEXTCOLOR_ORANGE "Couldn't change the pitch of the VoIP channel group: %s\n", FMOD_ErrorString( fmodErrorCode ));
-		return;
-	}
-
-	// [AK] When the pitch is changed, every VoIP channel's end delay time must
-	// be updated to account for the new pitch. The epoch must also be reset.
-	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
-	{
-		if (( VoIPChannels[i] != nullptr ) && ( VoIPChannels[i]->channel != nullptr ))
-			VoIPChannels[i]->UpdateEndDelay( true );
-	}
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 	// [ZandroX] Stop if the pitch is already the same.
 	if ( pitch == outputPitch )
 		return;
@@ -1707,12 +1307,6 @@ void VOIPController::SetMicrophoneTest( const bool enable )
 		if ( isRecording == false )
 			StartRecording( );
 
-#if !defined(NO_FMOD)
-		// [AK] While we're testing our microphone, we don't want to hear the
-		// voices of other players, so we'll mute the VoIP channel group.
-		if ( VoIPChannelGroup != nullptr )
-			VoIPChannelGroup->setMute( true );
-#endif
 		// [ZandroX] With OpenAL, other players are muted in Tick() while isTesting.
 	}
 	else
@@ -1724,11 +1318,6 @@ void VOIPController::SetMicrophoneTest( const bool enable )
 
 		testRMSVolume = MIN_DECIBELS;
 
-#if !defined(NO_FMOD)
-		// [AK] Unmute the VoIP channel group now.
-		if ( VoIPChannelGroup != nullptr )
-			VoIPChannelGroup->setMute( false );
-#endif
 
 		RemoveVoIPChannel( consoleplayer );
 	}
@@ -1749,20 +1338,7 @@ void VOIPController::RetrieveRecordDrivers( TArray<FString> &list ) const
 {
 	list.Clear( );
 
-#if !defined(NO_FMOD)
-	int numDrivers = 0;
-	char name[256];
-
-	// [AK] Don't retrieve any record drivers while using ALSA.
-	if (( system != nullptr ) && ( system->getRecordNumDrivers( &numDrivers ) == FMOD_OK ) && ( IsUsingALSA( ) == false ))
-	{
-		for ( int i = 0; i < numDrivers; i++ )
-		{
-			if ( system->getRecordDriverInfo( i, name, sizeof( name ), nullptr ) == FMOD_OK )
-				list.Push( name );
-		}
-	}
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 	// [ZandroX] The capture device list is a single string of NUL-separated device
 	// names terminated by an extra NUL. This requires the ALC_EXT_CAPTURE extension,
 	// which every modern OpenAL implementation (incl. OpenAL Soft) provides.
@@ -1887,10 +1463,7 @@ void VOIPController::ReceiveAudioPacket( const unsigned int player, const unsign
 			}
 
 			// [AK] Wait five tics before playing this VoIP channel.
-#if !defined(NO_FMOD)
-			if (( VoIPChannels[player]->jitterBuffer.Size( ) == 0 ) && ( VoIPChannels[player]->channel == nullptr ))
-				VoIPChannels[player]->playbackTick = gametic + 5;
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 			if (( VoIPChannels[player]->jitterBuffer.Size( ) == 0 ) && ( VoIPChannels[player]->source == 0 ))
 				VoIPChannels[player]->playbackTick = gametic + 5;
 #endif
@@ -1917,15 +1490,6 @@ void VOIPController::ReceiveAudioPacket( const unsigned int player, const unsign
 
 void VOIPController::UpdateProximityChat( void )
 {
-#if !defined(NO_FMOD)
-	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
-	{
-		if (( playeringame[i] == false ) || ( VoIPChannels[i] == nullptr ) || ( VoIPChannels[i]->channel == nullptr ))
-			continue;
-
-		VoIPChannels[i]->Update3DAttributes( );
-	}
-#endif
 	// [ZandroX] The OpenAL backend plays all VoIP non-positionally (2D), so there
 	// are no per-channel 3D attributes to update for proximity chat.
 }
@@ -1942,10 +1506,6 @@ void VOIPController::UpdateProximityChat( void )
 
 void VOIPController::UpdateRolloffDistances( void )
 {
-#if !defined(NO_FMOD)
-	proximityInfo.Rolloff.MinDistance = sv_minproximityrolloffdist;
-	proximityInfo.Rolloff.MaxDistance = sv_maxproximityrolloffdist;
-#endif
 	// [ZandroX] No proximity rolloff for the OpenAL backend (VoIP is always 2D).
 }
 
@@ -2009,485 +1569,14 @@ int VOIPController::EncodeOpusFrame( const float *inBuffer, const unsigned int i
 
 bool VOIPController::IsUsingALSA( void ) const
 {
-#if !defined(NO_FMOD)
-	FMOD_OUTPUTTYPE outputType = FMOD_OUTPUTTYPE_UNKNOWN;
-
-	if (( system != nullptr ) && ( system->getOutput( &outputType ) == FMOD_OK ) && ( outputType == FMOD_OUTPUTTYPE_ALSA ))
-		return true;
-
-	return false;
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 	// [ZandroX] The ALSA capture limitation is specific to FMOD's ALSA output; the
 	// OpenAL capture path works regardless of the underlying backend.
 	return false;
 #endif
 }
 
-#if !defined(NO_FMOD)
-
-//*****************************************************************************
-//
-// [AK] VOIPController::CreateSoundExInfo
-//
-// Returns an FMOD_CREATESOUNDEXINFO struct with the settings needed to create
-// new FMOD sounds used by the VoIP controller. The sample rate and file length
-// (in PCM samples) can be adjusted as required.
-//
-//*****************************************************************************
-
-FMOD_CREATESOUNDEXINFO VOIPController::CreateSoundExInfo( const unsigned int sampleRate, const unsigned int fileLength )
-{
-	FMOD_CREATESOUNDEXINFO exinfo;
-
-	memset( &exinfo, 0, sizeof( FMOD_CREATESOUNDEXINFO ));
-	exinfo.cbsize = sizeof( FMOD_CREATESOUNDEXINFO );
-	exinfo.numchannels = 1;
-	exinfo.format = FMOD_SOUND_FORMAT_PCMFLOAT;
-	exinfo.defaultfrequency = sampleRate;
-	exinfo.length = fileLength * SAMPLE_SIZE;
-
-	return exinfo;
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::ChannelCallback
-//
-// Static callback function that executes when a VoIP channel stops playing.
-//
-//*****************************************************************************
-
-FMOD_RESULT F_CALLBACK VOIPController::ChannelCallback( FMOD_CHANNEL *channel, FMOD_CHANNEL_CALLBACKTYPE type, void *commanddata1, void *commanddata2 )
-{
-	if ( type == FMOD_CHANNEL_CALLBACKTYPE_END )
-	{
-		FMOD::Channel *castedChannel = reinterpret_cast<FMOD::Channel *>( channel );
-
-		// [AK] Find which VoIP channel this object belongs to.
-		for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
-		{
-			VOIPChannel *VoIPChannel = GetInstance( ).VoIPChannels[i];
-
-			if (( VoIPChannel != nullptr ) && ( castedChannel == VoIPChannel->channel ))
-			{
-				// [AK] Reset the read and playback positions.
-				VoIPChannel->channel = nullptr;
-				VoIPChannel->lastReadPosition = 0;
-				VoIPChannel->lastPlaybackPosition = 0;
-
-				// [AK] Check if this VoIP channel still has any samples that
-				// haven't been read into the sound's buffer yet. If there are,
-				// read them and play the channel again.
-				if ( VoIPChannel->GetUnreadSamples( ) > 0 )
-				{
-					VoIPChannel->samplesPlayed = VoIPChannel->samplesRead;
-					VoIPChannel->StartPlaying( );
-				}
-				else
-				{
-					VoIPChannel->lastFrameRead = 0;
-					VoIPChannel->samplesRead = 0;
-					VoIPChannel->samplesPlayed = 0;
-				}
-
-				break;
-			}
-		}
-	}
-
-	return FMOD_OK;
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::VOIPChannel::VOIPChannel
-//
-// Creates the channel's decoder and FMOD sound, and sets all members to their
-// default values.
-//
-//*****************************************************************************
-
-VOIPController::VOIPChannel::VOIPChannel( const unsigned int player ) :
-	player( player ),
-	sound( nullptr ),
-	channel( nullptr ),
-	decoder( nullptr ),
-	playbackTick( 0 ),
-	lastReadPosition( 0 ),
-	lastPlaybackPosition( 0 ),
-	lastFrameRead( 0 ),
-	samplesRead( 0 ),
-	samplesPlayed( 0 ),
-	dspEpochHi( 0 ),
-	dspEpochLo( 0 ),
-	endDelaySamples( 0 )
-{
-	int opusErrorCode = OPUS_OK;
-	decoder = opus_decoder_create( PLAYBACK_SAMPLE_RATE, 1, &opusErrorCode );
-
-	// [AK] Print an error message if the Opus decoder wasn't created successfully.
-	if ( opusErrorCode != OPUS_OK )
-		Printf( TEXTCOLOR_ORANGE "Failed to create Opus decoder for VoIP channel %u: %s.\n", player, opus_strerror( opusErrorCode ));
-
-	FMOD_CREATESOUNDEXINFO exinfo = CreateSoundExInfo( PLAYBACK_SAMPLE_RATE, PLAYBACK_SOUND_LENGTH );
-	FMOD_MODE mode = FMOD_3D | FMOD_OPENUSER | FMOD_LOOP_NORMAL | FMOD_SOFTWARE;
-
-	if ( VOIPController::GetInstance( ).system == nullptr )
-		Printf( TEXTCOLOR_ORANGE "Failed to create sound for VoIP channel %u: no valid FMOD system.\n", player );
-
-	const FMOD_RESULT fmodErrorCode = VOIPController::GetInstance( ).system->createSound( nullptr, mode, &exinfo, &sound );
-
-	if ( fmodErrorCode != FMOD_OK )
-		Printf( TEXTCOLOR_ORANGE "Failed to create sound for VoIP channel %u: %s\n", player, FMOD_ErrorString( fmodErrorCode ));
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::VOIPChannel::~VOIPChannel
-//
-// Destroys the decoder and FMOD sound/channel.
-//
-//*****************************************************************************
-
-VOIPController::VOIPChannel::~VOIPChannel( void )
-{
-	if ( channel != nullptr )
-	{
-		channel->stop( );
-		channel = nullptr;
-	}
-
-	if ( sound != nullptr )
-	{
-		sound->release( );
-		sound = nullptr;
-	}
-
-	if ( decoder != nullptr )
-	{
-		opus_decoder_destroy( decoder );
-		decoder = nullptr;
-	}
-
-	// [AK] Reset this channel's volume back to default.
-	VOIPController::GetInstance( ).channelVolumes[player] = 1.0f;
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::VOIPChannel::ShouldPlayIn3DMode
-//
-// Checks if the VoIP channel should be played in 3D mode. To do so, proximity
-// chat must be enabled while in a level, and the player can't be spectating or
-// be spied on by the local player.
-//
-//*****************************************************************************
-
-bool VOIPController::VOIPChannel::ShouldPlayIn3DMode( void ) const
-{
-	if (( sv_proximityvoicechat == false ) || ( gamestate != GS_LEVEL ) || ( PLAYER_IsValidPlayer( player ) == false ))
-		return false;
-
-	// [AK] Never play the local player's channel in 3D mode while testing.
-	if (( player == static_cast<unsigned>( consoleplayer )) && ( VOIPController::GetInstance( ).isTesting ))
-		return false;
-
-	return (( players[player].bSpectating == false ) && ( players[player].mo != nullptr ) && ( players[player].mo != players[consoleplayer].camera ));
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::VOIPChannel::GetUnreadSamples
-//
-// Returns the number of samples that haven't been read into the VoIP channel's
-// sound buffer yet. This includes the total samples still in the jitter buffer
-// and "extra" samples from previous VOIPChannel::ReadSamples calls.
-//
-//*****************************************************************************
-
-int VOIPController::VOIPChannel::GetUnreadSamples( void ) const
-{
-	return jitterBuffer.Size( ) * PLAYBACK_SAMPLES_PER_FRAME + extraSamples.Size( );
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::VOIPChannel::DecodeOpusFrame
-//
-// Decodes a single audio frame using the Opus audio codec, and returns the
-// number of bytes decoded. If decoding fails, an error message is printed.
-//
-//*****************************************************************************
-
-int VOIPController::VOIPChannel::DecodeOpusFrame( const unsigned char *inBuffer, const unsigned int inLength, float *outBuffer, const unsigned int outLength )
-{
-	if (( decoder == nullptr ) || ( inBuffer == nullptr ) || ( outBuffer == nullptr ))
-		return 0;
-
-	int numBytesDecoded = opus_decode_float( decoder, inBuffer, inLength, outBuffer, outLength, 0 );
-
-	// [AK] Print the error message if decoding failed.
-	if ( numBytesDecoded <= 0 )
-	{
-		Printf( TEXTCOLOR_ORANGE "Failed to decode Opus audio frame: %s.\n", opus_strerror( numBytesDecoded ));
-		return 0;
-	}
-
-	return numBytesDecoded;
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::VOIPChannel::StartPlaying
-//
-// Starts playing the VoIP channel.
-//
-//*****************************************************************************
-
-void VOIPController::VOIPChannel::StartPlaying( void )
-{
-	if ( channel != nullptr )
-		return;
-
-	const FMOD_RESULT fmodErrorCode = VOIPController::GetInstance( ).system->playSound( FMOD_CHANNEL_FREE, sound, true, &channel );
-
-	if ( fmodErrorCode != FMOD_OK )
-	{
-		Printf( TEXTCOLOR_ORANGE "Failed to start playing VoIP channel %u: %s\n", player, FMOD_ErrorString( fmodErrorCode ));
-		return;
-	}
-
-	channel->setUserData( &VOIPController::GetInstance( ).proximityInfo );
-	channel->setCallback( VOIPController::ChannelCallback );
-
-	// [AK] Give the VoIP channels more priority than other sounds.
-	channel->setPriority( 0 );
-
-	// [AK] Reset the channel's end delay epoch before playing.
-	UpdateEndDelay( true );
-
-	// [AK] Update this channel's 3D attributes.
-	Update3DAttributes( );
-
-	// [AK] Creating a channel belonging to the local player should only happen
-	// if they're testing their own microphone. This channel is excluded from the
-	// VoIP channel group so that everyone else's channels can be muted without
-	// muting the local player's.
-	if ( player == static_cast<unsigned>( consoleplayer ))
-	{
-		channel->setVolume( voice_recordvolume );
-	}
-	else
-	{
-		channel->setChannelGroup( VOIPController::GetInstance( ).VoIPChannelGroup );
-		channel->setVolume( VOIPController::GetInstance( ).channelVolumes[player] );
-	}
-
-	voicechat_ReadSoundBuffer( this, sound, lastReadPosition, MIN( GetUnreadSamples( ), READ_BUFFER_SIZE ), &VOIPChannel::ReadSamples );
-	channel->setPaused( false );
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::VOIPChannel::ReadSamples
-//
-// Stops playing the voice recording, clears the jitter buffer, and releases
-// any memory the sound and/or channel was using.
-//
-//*****************************************************************************
-
-void VOIPController::VOIPChannel::ReadSamples( unsigned char *soundBuffer, const unsigned int length )
-{
-	const unsigned int samplesInBuffer = length / SAMPLE_SIZE;
-	unsigned int samplesReadIntoBuffer = 0;
-
-	// [AK] Read the extra samples into the sound buffer first. Make sure to
-	// only read as many samples as what can fit in the sound buffer.
-	if ( extraSamples.Size( ) > 0 )
-	{
-		const unsigned int maxExtraSamples = MIN<unsigned int>( extraSamples.Size( ), samplesInBuffer );
-
-		for ( unsigned int i = 0; i < maxExtraSamples; i++ )
-		{
-			voicechat_FloatToByteArray( extraSamples[0], soundBuffer + i * SAMPLE_SIZE );
-			extraSamples.Delete( 0 );
-		}
-
-		samplesReadIntoBuffer += maxExtraSamples;
-	}
-
-	// [AK] If there's still room left to read more samples, then start reading
-	// frames from the jitter buffer. First, find how many frames are needed in
-	// the sound buffer with respect to how many samples have already been read,
-	// then determine how many frames can actually be read. It's possible that
-	// there's less frames in the jitter buffer than what's required.
-	if ( samplesReadIntoBuffer < samplesInBuffer )
-	{
-		const unsigned int framesRequired = static_cast<unsigned int>( ceil( static_cast<float>( samplesInBuffer - samplesReadIntoBuffer ) / PLAYBACK_SAMPLES_PER_FRAME ));
-		const unsigned int framesToRead = MIN<unsigned int>( framesRequired, jitterBuffer.Size( ));
-
-		for ( unsigned int frame = 0; frame < framesToRead; frame++ )
-		{
-			for ( unsigned int i = 0; i < PLAYBACK_SAMPLES_PER_FRAME; i++ )
-			{
-				if ( samplesReadIntoBuffer < samplesInBuffer )
-				{
-					voicechat_FloatToByteArray( jitterBuffer[0].samples[i], soundBuffer + samplesReadIntoBuffer * SAMPLE_SIZE );
-					samplesReadIntoBuffer++;
-				}
-				else
-				{
-					extraSamples.Push( jitterBuffer[0].samples[i] );
-				}
-			}
-
-			lastFrameRead = jitterBuffer[0].frame;
-			jitterBuffer.Delete( 0 );
-		}
-	}
-
-	samplesRead += samplesReadIntoBuffer;
-	UpdateEndDelay( false );
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::VOIPChannel::Update3DAttributes
-//
-// Updates a channel's 3D attributes.
-//
-//*****************************************************************************
-
-void VOIPController::VOIPChannel::Update3DAttributes( void )
-{
-	FMOD_VECTOR pos = { 0.0f, 0.0f, 0.0f };
-	FMOD_VECTOR vel = { 0.0f, 0.0f, 0.0f };
-	FMOD_RESULT fmodErrorCode = FMOD_OK;
-
-	// [AK] If this channel shouldn't play in "3D" mode, then set its position
-	// and velocity to the listener's. This effectively makes them sound "2D".
-	if ( ShouldPlayIn3DMode( ) == false )
-	{
-		if ( VOIPController::GetInstance( ).system == nullptr )
-		{
-			Printf( TEXTCOLOR_ORANGE "Can't get 3D attributes of the listener without a valid FMOD system.\n" );
-			return;
-		}
-
-		fmodErrorCode = VOIPController::GetInstance( ).system->get3DListenerAttributes( 0, &pos, &vel, nullptr, nullptr );
-
-		if ( fmodErrorCode != FMOD_OK )
-		{
-			Printf( TEXTCOLOR_ORANGE "Failed to get 3D attributes of the listener: %s\n", FMOD_ErrorString( fmodErrorCode ));
-			return;
-		}
-	}
-	else if ( players[player].mo != nullptr )
-	{
-		pos.x = FIXED2FLOAT( players[player].mo->x );
-		pos.y = FIXED2FLOAT( players[player].mo->z );
-		pos.z = FIXED2FLOAT( players[player].mo->y );
-
-		vel.x = FIXED2FLOAT( players[player].mo->velx );
-		vel.y = FIXED2FLOAT( players[player].mo->velz );
-		vel.z = FIXED2FLOAT( players[player].mo->vely );
-	}
-
-	fmodErrorCode = channel->set3DAttributes( &pos, &vel );
-
-	if ( fmodErrorCode != FMOD_OK )
-		Printf( TEXTCOLOR_ORANGE "Failed to set 3D attributes for VoIP channel %u: %s\n", player, FMOD_ErrorString( fmodErrorCode ));
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::VOIPChannel::UpdatePlayback
-//
-// Updates the playback position and the number of samples played.
-//
-//*****************************************************************************
-
-void VOIPController::VOIPChannel::UpdatePlayback( void )
-{
-	unsigned int playbackPosition = 0;
-
-	// [AK] Check how many new samples have been played since the last call.
-	if ( channel->getPosition( &playbackPosition, FMOD_TIMEUNIT_PCM ) == FMOD_OK )
-	{
-		unsigned int playbackDelta = 0;
-
-		if ( playbackPosition >= lastPlaybackPosition )
-			playbackDelta = playbackPosition - lastPlaybackPosition;
-		else
-			playbackDelta = playbackPosition + PLAYBACK_SOUND_LENGTH - lastPlaybackPosition;
-
-		samplesPlayed += playbackDelta;
-		lastPlaybackPosition = playbackPosition;
-	}
-}
-
-//*****************************************************************************
-//
-// [AK] VOIPController::VOIPChannel::UpdateEndDelay
-//
-// Determines precisely when a VoIP channel needs to stop, with respect to the
-// FMOD system's DSP clock and sample rate. This is a sample-accurate way of
-// knowing how long a channel should play without any "spilling" (i.e. playing
-// more samples than read).
-//
-//*****************************************************************************
-
-void VOIPController::VOIPChannel::UpdateEndDelay( const bool resetEpoch )
-{
-	if (( channel == nullptr ) || ( VOIPController::GetInstance( ).system == nullptr ))
-		return;
-
-	// [AK] Resetting the epoch means that we get the current DSP clock time of
-	// the system and the current number of samples played. The latter becomes
-	// the new base which we subtract the number of read samples by.
-	if ( resetEpoch )
-	{
-		VOIPController::GetInstance( ).system->getDSPClock( &dspEpochHi, &dspEpochLo );
-		UpdatePlayback( );
-
-		endDelaySamples = samplesPlayed;
-	}
-
-	// [AK] The channel should stop immediately if the number of samples read is
-	// less than or equal to the "end delay" samples.
-	if ( samplesRead <= endDelaySamples )
-	{
-		channel->setDelay( FMOD_DELAYTYPE_DSPCLOCK_END, dspEpochHi, dspEpochLo );
-		return;
-	}
-
-	int sysSampleRate = 0;
-	unsigned int newDSPHi = dspEpochHi;
-	unsigned int newDSPLo = dspEpochLo;
-	FMOD::ChannelGroup *channelGroup = nullptr;
-
-	// [AK] It's important to consider that the system and channel might not
-	// be playing at the same sample rates. Therefore, we must convert the
-	// number of samples with respect to the system's sample rate.
-	VOIPController::GetInstance( ).system->getSoftwareFormat( &sysSampleRate, nullptr, nullptr, nullptr, nullptr, nullptr );
-	float scalar = static_cast<float>( sysSampleRate ) / PLAYBACK_SAMPLE_RATE;
-
-	// [AK] The channel's pitch might've changed (e.g. listening underwater).
-	// This also affects the end delay time; lower pitches extend the time and
-	// higher pitches shorten it.
-	if (( channel->getChannelGroup( &channelGroup ) == FMOD_OK ) && ( channelGroup != nullptr ))
-	{
-		float channelGroupPitch = 1.0f;
-
-		channelGroup->getPitch( &channelGroupPitch );
-		scalar /= channelGroupPitch;
-	}
-
-	FMOD_64BIT_ADD( newDSPHi, newDSPLo, 0, static_cast<unsigned int>(( samplesRead - endDelaySamples ) * scalar ));
-	channel->setDelay( FMOD_DELAYTYPE_DSPCLOCK_END, newDSPHi, newDSPLo );
-}
-
-#elif !defined(NO_OPENAL)
+#if !defined(NO_OPENAL)
 
 //*****************************************************************************
 //
@@ -3112,7 +2201,7 @@ bool FOptionMenuMicTestBar::Selectable( void )
 //*****************************************************************************
 //	STATISTICS
 
-#if !defined(NO_SOUND) && ( !defined(NO_FMOD) || !defined(NO_OPENAL) )
+#if !defined(NO_SOUND) && !defined(NO_OPENAL)
 
 ADD_STAT( voice )
 {

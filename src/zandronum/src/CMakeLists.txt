@@ -40,57 +40,6 @@ if( CMAKE_SIZEOF_VOID_P MATCHES "8" )
 	set( X64 64 )
 endif( CMAKE_SIZEOF_VOID_P MATCHES "8" )
 
-# You can either use "make install" on the FMOD distribution to put it
-# in standard system locations, or you can unpack the FMOD distribution
-# in the root of the zdoom tree. e.g.:
-# zdoom
-#   docs
-#   fmodapi<version>linux[64] -or simply- fmod
-#   jpeg-6b
-#   ...
-# The recommended method is to put it in the zdoom tree, since its
-# headers are unversioned. Especially now that we can't work properly
-# with anything newer than 4.26.xx, you probably don't want to use
-# a system-wide version.
-
-# Construct version numbers for searching for the FMOD library on Linux.
-# [BB] Added "64" to support 4.44.64.
-set( MINOR_VERSIONS "64" "61" "50" "49" "48" "47" "46" "45" "44" "43" "42" "41"
-	"40" "39" "38" "37" "36" "35" "34" "33" "32" "31" "30" "29" "28"
-	"27" "26" "25" "24" "23" "22" "21" "20" "21" "19" "18" "17" "16"
-	"15" "14" "13" "12" "11" "10" "09" "08" "07" "06" "05" "04" "03"
-	"02" "01" "00" )
-set( MAJOR_VERSIONS "44" "34" "28" "26" "24" "22" "20" )
-
-if( NOT FMOD_DIR_VERSIONS )
-	set( FMOD_DIR_VERSIONS "" )
-endif( NOT FMOD_DIR_VERSIONS )
-if( NOT FMOD_VERSIONS )
-	set( FMOD_VERSIONS "" )
-endif( NOT FMOD_VERSIONS )
-if( NOT FMOD_LOCAL_INC_DIRS )
-	set( FMOD_LOCAL_INC_DIRS "" )
-endif( NOT FMOD_LOCAL_INC_DIRS )
-if( NOT FMOD_LOCAL_LIB_DIRS )
-	set( FMOD_LOCAL_LIB_DIRS "" )
-endif( NOT FMOD_LOCAL_LIB_DIRS )
-
-set( FMOD_DIR_VERSIONS ${FMOD_DIR_VERSIONS} "../fmod" )
-foreach( majver ${MAJOR_VERSIONS} )
-	foreach( minver ${MINOR_VERSIONS} )
-		set( FMOD_VERSIONS ${FMOD_VERSIONS} "fmodex${X64}-4.${majver}.${minver}" )
-		# FMOD Ex version 4.44 unified 32-bit and 64-bit linux packages into one.
-		if( NOT majver EQUAL "44" )
-			set( FMOD_DIR_VERSIONS ${FMOD_DIR_VERSIONS} "${CMAKE_HOME_DIRECTORY}/fmodapi4${majver}${minver}linux${X64}" )
-		else()
-			set( FMOD_DIR_VERSIONS ${FMOD_DIR_VERSIONS} "${CMAKE_HOME_DIRECTORY}/fmodapi4${majver}${minver}linux" )
-		endif()
-	endforeach( minver ${MINOR_VERSIONS} )
-	foreach( dir ${FMOD_DIR_VERSIONS} )
-		set( FMOD_LOCAL_INC_DIRS ${FMOD_LOCAL_INC_DIRS} "${dir}/api/inc" )
-		set( FMOD_LOCAL_LIB_DIRS ${FMOD_LOCAL_LIB_DIRS} "${dir}/api/lib" )
-	endforeach( dir ${FMOD_DIR_VERSIONS} )
-endforeach( majver ${MAJOR_VERSIONS} )
 
 if( NOT ZDOOM_LIBS )
 	set( ZDOOM_LIBS "" )
@@ -107,16 +56,6 @@ if( WIN32 )
 	
 	add_definitions( -D_WIN32 )
 	
-	set( FMOD_SEARCH_PATHS
-		"C:/Program Files/FMOD SoundSystem/FMOD Programmers API ${WIN_TYPE}/api"
-		"C:/Program Files (x86)/FMOD SoundSystem/FMOD Programmers API ${WIN_TYPE}/api"
-		# This next one is for Randy.
-		"E:/Software/Dev/FMOD/${WIN_TYPE}/api" 
-		# .. and this one for Graf Zahl
-		"D:/portable/FMOD SoundSystem 4.26/FMOD Programmers API WIN32/api"
-		)
-	set( FMOD_INC_PATH_SUFFIXES PATH_SUFFIXES inc )
-	set( FMOD_LIB_PATH_SUFFIXES PATH_SUFFIXES lib )
 	set( NASM_NAMES nasmw nasm )
 	
 	find_path( D3D_INCLUDE_DIR d3d9.h
@@ -173,9 +112,6 @@ if( WIN32 )
 		DelayImp )
 else( WIN32 )
 	if( APPLE )
-		set( FMOD_SEARCH_PATHS "/Developer/FMOD Programmers API Mac/api" )
-		set( FMOD_INC_PATH_SUFFIXES PATH_SUFFIXES inc )
-		set( FMOD_LIB_PATH_SUFFIXES PATH_SUFFIXES lib )
 		set( NO_GTK ON )
 
 		# [BL] We need to compile without ASM code for now.
@@ -188,10 +124,8 @@ else( WIN32 )
 		option( SERVERONLY "Build a server only binary" )
 		option( NO_SOUND "Turn of sound support" )
 		option( NO_GL "Turn of OpenGL support" )
-		# [ZandroX] Optional sound backends. Default: OpenAL enabled, FMOD enabled.
-		# Building with -DNO_FMOD=ON -DNO_OPENAL=OFF gives the FMOD-free OpenAL build.
+		# [rc4l] OpenAL is the only sound backend; FMOD was removed for GPL compliance.
 		option( NO_OPENAL "Disable the OpenAL sound backend" OFF )
-		option( NO_FMOD "Disable the FMOD sound backend" OFF )
 
 		# [BB] The server doesn't need sound, GTK or OpenGL.
 		if( SERVERONLY )
@@ -201,17 +135,6 @@ else( WIN32 )
 			add_definitions ( -DSERVER_ONLY=1 )
 			set( ZDOOM_EXE_NAME ${ZDOOM_EXE_NAME}-server )
 		endif( SERVERONLY )
-
-		set( FMOD_SEARCH_PATHS
-			/usr/local/include
-			/usr/local/include/fmodex
-			/usr/include
-			/usr/include/fmodex
-			/opt/local/include
-			/opt/local/include/fmodex
-			/opt/include
-			/opt/include/fmodex )
-		set( FMOD_INC_PATH_SUFFIXES PATH_SUFFIXES fmodex )
 
 		# Use GTK+ for the IWAD picker, if available.
 		if( NOT NO_GTK )
@@ -263,10 +186,9 @@ else( WIN32 )
 	add_definitions( -DNO_SERVER_GUI=1 )
 
 	# [BB] Turning off sound needs special handling in the code, activated with the define NO_SOUND.
-	# [ZandroX] NO_SOUND implies no FMOD and no OpenAL backend.
+	# [ZandroX] NO_SOUND implies no OpenAL backend.
 	if( NO_SOUND )
 		add_definitions( -DNO_SOUND=1 )
-		set( NO_FMOD ON )
 		set( NO_OPENAL ON )
 	endif( NO_SOUND )
 
@@ -294,70 +216,6 @@ if( NOT NO_GL )
 	include_directories( ${OPENGL_INCLUDE_DIR} )
 endif( NOT NO_GL )
 
-# Decide on the name of the FMOD library we want to use.
-
-if( NOT FMOD_LIB_NAME AND MSVC )
-	set( FMOD_LIB_NAME fmodex${X64}_vc )
-endif( NOT FMOD_LIB_NAME AND MSVC )
-
-if( NOT FMOD_LIB_NAME AND BORLAND )
-	set( FMOD_LIB_NAME fmodex${X64}_bc )
-endif( NOT FMOD_LIB_NAME AND BORLAND )
-
-if( NOT FMOD_LIB_NAME )
-	set( FMOD_LIB_NAME fmodex${X64} )
-endif( NOT FMOD_LIB_NAME )
-
-
-# Search for FMOD include files
-
-if( NOT WIN32 )
-	find_path( FMOD_INCLUDE_DIR fmod.hpp
-		PATHS ${FMOD_LOCAL_INC_DIRS} )
-endif( NOT WIN32 )
-
-if( NOT FMOD_INCLUDE_DIR )
-	find_path( FMOD_INCLUDE_DIR fmod.hpp
-		PATHS ${FMOD_SEARCH_PATHS}
-		${FMOD_INC_PATH_SUFFIXES} )
-endif( NOT FMOD_INCLUDE_DIR )
-
-if( FMOD_INCLUDE_DIR )
-	message( STATUS "FMOD include files found at ${FMOD_INCLUDE_DIR}" )
-else( FMOD_INCLUDE_DIR )
-	# [BB] Without sound, we don't need FMOD.
-	if ( NOT NO_SOUND AND NOT NO_FMOD )
-		message( SEND_ERROR "Could not find FMOD include files" )
-	endif ( NOT NO_SOUND AND NOT NO_FMOD )
-endif( FMOD_INCLUDE_DIR )
-
-
-# Search for FMOD library
-
-if( WIN32 OR APPLE )
-	find_library( FMOD_LIBRARY ${FMOD_LIB_NAME}
-		PATHS ${FMOD_SEARCH_PATHS}
-		${FMOD_LIB_PATH_SUFFIXES} )
-else( WIN32 OR APPLE )
-	find_library( FMOD_LIBRARY
-		NAMES ${FMOD_VERSIONS}
-		PATHS ${FMOD_LOCAL_LIB_DIRS} )
-endif( WIN32 OR APPLE )
-
-if( FMOD_LIBRARY )
-	message( STATUS "FMOD library found at ${FMOD_LIBRARY}" )
-else( FMOD_LIBRARY )
-	# [BB] Without sound, we don't need FMOD.
-	if ( NOT NO_SOUND AND NOT NO_FMOD )
-		message( SEND_ERROR "Could not find FMOD library" )
-	endif ( NOT NO_SOUND AND NOT NO_FMOD )
-endif( FMOD_LIBRARY )
-
-
-# [ZandroX] Optional OpenAL sound backend + external sample decoders (SndFile, MPG123).
-if( NO_FMOD )
-	add_definitions( -DNO_FMOD=1 )
-endif( NO_FMOD )
 
 if( NOT NO_OPENAL )
 	find_package( OpenAL )
@@ -614,7 +472,6 @@ endif( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" S
 # MSVC Flags
 
 if( MSVC )
-	set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DELAYLOAD:\"fmodex${X64}.dll\"" )
 	# [BB] Use object level parallelism for our main target.
 	set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP" )
 endif( MSVC )
@@ -696,12 +553,7 @@ add_custom_target( revision_check ALL
 
 message( STATUS "Fluid synth libs: ${FLUIDSYNTH_LIBRARIES}" )
 set( ZDOOM_LIBS ${ZDOOM_LIBS} "${ZLIB_LIBRARIES}" "${JPEG_LIBRARIES}" "${BZIP2_LIBRARIES}" "${GME_LIBRARIES}" )
-# [BB] Without sound, we don't need FMOD.
 include_directories( "${ZLIB_INCLUDE_DIR}" "${BZIP2_INCLUDE_DIR}" "${LZMA_INCLUDE_DIR}" "${JPEG_INCLUDE_DIR}" "${GME_INCLUDE_DIR}" )
-if ( NOT NO_FMOD )
-	set( ZDOOM_LIBS ${ZDOOM_LIBS} "${FMOD_LIBRARY}" )
-	include_directories( "${FMOD_INCLUDE_DIR}" )
-endif ( NOT NO_FMOD )
 # [ZandroX] Link the OpenAL backend and its sample decoders.
 if ( NOT NO_OPENAL )
 	set( ZDOOM_LIBS ${OPENAL_LIBRARY} ${ZDOOM_LIBS} )
@@ -1390,7 +1242,6 @@ add_executable( zdoom WIN32
 	resourcefiles/file_directory.cpp
 	resourcefiles/resourcefile.cpp
 	sfmt/SFMT.cpp
-	sound/fmodsound.cpp
 	sound/i_music.cpp
 	sound/i_sound.cpp
 	sound/music_cd.cpp
@@ -1494,9 +1345,6 @@ set_source_files_properties( sc_man.cpp PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRE
 set_source_files_properties( ${NOT_COMPILED_SOURCE_FILES} PROPERTIES HEADER_FILE_ONLY TRUE )
 
 # [ZandroX] Exclude a sound backend's source when that backend is disabled.
-if( NO_FMOD )
-	set_source_files_properties( sound/fmodsound.cpp PROPERTIES HEADER_FILE_ONLY TRUE )
-endif( NO_FMOD )
 if( NO_OPENAL )
 	set_source_files_properties( features/openal-sound/oalsound.cpp PROPERTIES HEADER_FILE_ONLY TRUE )
 endif( NO_OPENAL )
@@ -1558,9 +1406,9 @@ endif( NOT ZDOOM_OUTPUT_OLDSTYLE OR NO_GENERATOR_EXPRESSIONS )
 if( MSVC )
 	option( ZDOOM_GENERATE_MAPFILE "Generate .map file for debugging." OFF )
 	if( ZDOOM_GENERATE_MAPFILE )
-		set_target_properties(zdoom PROPERTIES LINK_FLAGS "/MANIFEST:NO /DELAYLOAD:\"fmodex${X64}.dll\" /MAP")
+		set_target_properties(zdoom PROPERTIES LINK_FLAGS "/MANIFEST:NO /MAP")
 	else( ZDOOM_GENERATE_MAPFILE )
-		set_target_properties(zdoom PROPERTIES LINK_FLAGS "/MANIFEST:NO /DELAYLOAD:\"fmodex${X64}.dll\"")
+		set_target_properties(zdoom PROPERTIES LINK_FLAGS "/MANIFEST:NO")
 	endif( ZDOOM_GENERATE_MAPFILE )
 
 	if( NO_GENERATOR_EXPRESSIONS )

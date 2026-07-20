@@ -244,12 +244,7 @@ EMidiDevice MIDIStreamer::SelectMIDIDevice(EMidiDevice device)
 #else
 	const bool isWin32 = false;
 #endif
-#ifdef NO_FMOD
-	const bool noFmod = true;
-#else
-	const bool noFmod = false;
-#endif
-	return (EMidiDevice)ComputeMidiDeviceDefault((int)device, snd_mididevice, hasFluidsynth, isWin32, noFmod);
+	return (EMidiDevice)ComputeMidiDeviceDefault((int)device, snd_mididevice, hasFluidsynth, isWin32);
 }
 
 //==========================================================================
@@ -274,12 +269,9 @@ MIDIDevice *MIDIStreamer::CreateMIDIDevice(EMidiDevice devtype) const
 		return new FluidSynthMIDIDevice;
 #endif
 
+	// [rc4l] Kept so existing configs naming this device still load; it maps to the OPL synth now.
 	case MDEV_FMOD:
-#ifdef NO_FMOD
-		return new OPLMIDIDevice;   // no FMOD synth in this build; use built-in OPL
-#else
-		return new FMODMIDIDevice;
-#endif
+		return new OPLMIDIDevice;
 
 	case MDEV_GUS:
 		return new TimidityMIDIDevice;
