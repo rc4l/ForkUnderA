@@ -43,12 +43,16 @@ CCMD( dumprenderer )
 	Printf( "view_height=%d\n", viewheight );
 	Printf( "statusbar_y=%d\n", ST_Y );
 
+	// [rc4l] The gl RenderContext lives in gl/system/gl_interface.cpp, which SERVERONLY does not
+	// compile (it implies NO_GL), so referencing it unconditionally fails the server link.
+#ifndef NO_GL
 	if ( currentrenderer == 1 && gl.vendorstring != NULL )
 	{
 		Printf( "gl_vendor=%s\n", gl.vendorstring );
 		Printf( "gl_shadermodel=%u\n", gl.shadermodel );
 		Printf( "gl_maxtexsize=%d\n", gl.max_texturesize );
 	}
+#endif
 
 	static const char *const cvars[] = {
 		"vid_renderer", "fullscreen", "vid_vsync", "vid_defwidth", "vid_defheight",

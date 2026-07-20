@@ -53,7 +53,11 @@ docker run --rm -e SERVERONLY="$SERVERONLY" -e VERSION="${VERSION:-}" -v "$PWD:/
   rm -rf "$STAGE"; mkdir -p "$STAGE"
 
   # The engine binary plus the game data pk3s it needs at runtime.
-  cp build-linux/zandronum "$STAGE"/
+  # [rc4l] SERVERONLY renames the target to zandronum-server; copying the hardcoded client
+  # name shipped whatever stale client binary happened to be in the build directory.
+  if [ "${SERVERONLY:-OFF}" = "ON" ]; then BIN=zandronum-server; else BIN=zandronum; fi
+  [ -f "build-linux/$BIN" ] || { echo "ERROR: build-linux/$BIN not found" >&2; exit 1; }
+  cp "build-linux/$BIN" "$STAGE"/
   cp build-linux/*.pk3 "$STAGE"/
   [ -f README.md ] && cp README.md "$STAGE"/ || true
 

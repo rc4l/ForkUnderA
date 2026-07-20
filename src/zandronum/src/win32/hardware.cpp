@@ -90,10 +90,9 @@ CCMD (vid_restart)
 {
 }
 
-#ifndef NO_GL
-#else
-	Video = new Win32Video (0);
-#endif
+// [rc4l] An empty #ifndef NO_GL/#else/#endif shell with a bare statement in it was left here
+// by the GL-only change; under NO_GL it put "Video = new Win32Video(0);" at file scope, which
+// does not compile. The statement belongs in I_InitGraphics, where it already is.
 
 void I_ShutdownGraphics ()
 {
