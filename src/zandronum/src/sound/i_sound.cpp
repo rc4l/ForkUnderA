@@ -61,12 +61,10 @@ extern HINSTANCE g_hInst;
 #include <math.h>
 
 #include "except.h"
-#ifndef NO_FMOD
-#include "fmodsound.h"
-#endif
 #ifndef NO_OPENAL
 #include "oalsound.h"
 #endif
+#include "sound/computation/sound_backend_compute.h"
 
 #include "mpg123_decoder.h"
 #include "sndfile_decoder.h"
@@ -95,17 +93,13 @@ CVAR (Int, snd_buffersize, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (String, snd_output, "default", CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, snd_hrtf, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
-#ifdef NO_FMOD
-// [ZandroX] These normally live in fmodsound.cpp, which is not compiled when FMOD
-// is disabled. The OpenAL backend still needs them for reverb handling.
+// [ZandroX] These used to live in fmodsound.cpp, which is gone. The OpenAL backend
+// still needs them for reverb handling.
 ReverbContainer *ForcedEnvironment;
 CVAR (Bool, snd_waterreverb, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-#endif
 
 #ifndef NO_OPENAL
 #define DEF_BACKEND "openal"
-#elif !defined(NO_FMOD)
-#define DEF_BACKEND "fmod"
 #else
 #define DEF_BACKEND "null"
 #endif
@@ -292,46 +286,32 @@ void I_InitSound ()
 		return;
 	}
 
-	// This has been extended to allow falling back from FMod to OpenAL and vice versa if the currently active sound system cannot be found.
-	if (stricmp(snd_backend, "null") == 0)
+	// [rc4l] The choice itself is a tested computation; this is just the construction.
+	#ifndef NO_OPENAL
+	const bool openalCompiledIn = true;
+	const bool openalPresent = IsOpenALPresent();
+	#else
+	const bool openalCompiledIn = false;
+	const bool openalPresent = false;
+	#endif
+	const SoundBackendChoice choice = ComputeSoundBackendChoice(snd_backend,
+		/*noSound=*/false, openalCompiledIn, openalPresent);
+
+	if (choice.backend == ZX_SNDBACKEND_NULL)
 	{
 		GSnd = new NullSoundRenderer;
 	}
-	else if (stricmp(snd_backend, "fmod") == 0)
+	else if (choice.backend == ZX_SNDBACKEND_OPENAL)
 	{
-		#ifndef NO_FMOD
-		if (IsFModExPresent())
-		{
-			GSnd = new FMODSoundRenderer;
-		}
-		#endif
 		#ifndef NO_OPENAL
-		if ((!GSnd || !GSnd->IsValid()) && IsOpenALPresent())
-		{
-			Printf( TEXTCOLOR_RED "FMod Ex Sound init failed. Trying OpenAL.\n");
-			I_CloseSound();
-			GSnd = new OpenALSoundRenderer;
+		GSnd = new OpenALSoundRenderer;
+		if (choice.renameToOpenAL)
 			snd_backend = "openal";
-		}
 		#endif
 	}
-	else if (stricmp(snd_backend, "openal") == 0)
+	else if (choice.backend == ZX_SNDBACKEND_UNAVAILABLE)
 	{
-		#ifndef NO_OPENAL
-		if (IsOpenALPresent())
-		{
-			GSnd = new OpenALSoundRenderer;
-		}
-		#endif
-		#ifndef NO_FMOD
-		if ((!GSnd || !GSnd->IsValid()) && IsFModExPresent())
-		{
-			Printf( TEXTCOLOR_RED "OpenAL Sound init failed. Trying FMod Ex.\n");
-			I_CloseSound();
-			GSnd = new FMODSoundRenderer;
-			snd_backend = "fmod";
-		}
-		#endif
+		// [rc4l] Known backend, but unusable in this build; the null renderer below covers it.
 	}
 	else
 	{

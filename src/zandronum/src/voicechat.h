@@ -56,14 +56,9 @@
 #include "i_soundinternal.h"
 #include "v_font.h"
 
-// [AK] Only include FMOD, Opus, and RNNoise files if compiling with FMOD sound.
-// [ZandroX] The OpenAL (NO_FMOD) build swaps FMOD for OpenAL capture/playback,
-// but still uses Opus for the codec and RNNoise for noise suppression.
-#if !defined(NO_SOUND) && !defined(NO_FMOD)
-#include "fmod_wrap.h"
-#include "opus.h"
-#include "rnnoise.h"
-#elif !defined(NO_SOUND) && !defined(NO_OPENAL)
+// [ZandroX] OpenAL handles capture and playback; Opus is the codec and RNNoise the
+// noise suppressor.
+#if !defined(NO_SOUND) && !defined(NO_OPENAL)
 #include "opus.h"
 #include "rnnoise.h"
 #include <al.h>
@@ -156,8 +151,8 @@ public:
 	static VOIPController &GetInstance( void ) { static VOIPController instance; return instance; }
 
 // [AK] Some of these functions only exist as stubs if compiling without sound.
-// [ZandroX] Full stubs only when there is no VoIP backend at all (no FMOD and no OpenAL).
-#if defined(NO_SOUND) || ( defined(NO_FMOD) && defined(NO_OPENAL) )
+// [ZandroX] Full stubs when there is no VoIP backend at all, i.e. no sound or no OpenAL.
+#if defined(NO_SOUND) || defined(NO_OPENAL)
 
 	void Tick( void ) { }
 	void StartRecording( void ) { }
@@ -185,136 +180,10 @@ private:
 	VOIPController( void ) { }
 	~VOIPController( void ) { }
 
-#elif !defined(NO_FMOD)
+#else
 
-	void Init( FMOD::System *mainSystem );
-	void Shutdown( void );
-	void Activate( void );
-	void Deactivate( void );
-	void Tick( void );
-	void StartRecording( void );
-	void StopRecording( void );
-	void StartTransmission( const TRANSMISSIONTYPE_e type, const bool getRecordPosition );
-	void StopTransmission( void );
-	bool IsVoiceChatAllowed( void ) const;
-	bool IsPlayerTalking( const unsigned int player ) const;
-	bool IsRecording( void ) const;
-	bool IsTestingMicrophone( void ) const { return isTesting; }
-	float GetTestRMSVolume( void ) const { return testRMSVolume; }
-	float GetChannelVolume( const unsigned int player ) const;
-	void SetChannelVolume( const unsigned int player, float volume, const bool updateServer );
-	void SetVolume( float volume );
-	void SetPitch( float pitch );
-	void SetMicrophoneTest( const bool enable );
-	void RetrieveRecordDrivers( TArray<FString> &list ) const;
-	FString GrabStats( void ) const;
-	void ReceiveAudioPacket( const unsigned int player, const unsigned int frame, const unsigned char *data, const unsigned int length );
-	void UpdateProximityChat( void );
-	void UpdateRolloffDistances( void );
-	void RemoveVoIPChannel( const unsigned int player );
-
-	// [AK] Static constants of the audio's properties.
-	static const int RECORD_SAMPLE_RATE = 48000; // 48 kHz.
-	static const int PLAYBACK_SAMPLE_RATE = 24000; // 24 kHz.
-	static const int SAMPLE_SIZE = sizeof( float ); // 32-bit floating point, mono-channel.
-	static const int RECORD_SOUND_LENGTH = RECORD_SAMPLE_RATE; // 1 second.
-	static const int PLAYBACK_SOUND_LENGTH = PLAYBACK_SAMPLE_RATE; // 1 second.
-
-	static const int READ_BUFFER_SIZE = 2048;
-
-	// [AK] Static constants for encoding or decoding frames via Opus.
-	static const int FRAME_SIZE = 10; // 10 ms.
-	static const int RECORD_SAMPLES_PER_FRAME = ( RECORD_SAMPLE_RATE * FRAME_SIZE ) / 1000;
-	static const int PLAYBACK_SAMPLES_PER_FRAME = ( PLAYBACK_SAMPLE_RATE * FRAME_SIZE ) / 1000;
-	static const int MAX_PACKET_SIZE = 1276; // Recommended max packet size by Opus.
-
-private:
-	struct VOIPChannel
-	{
-		struct AudioFrame
-		{
-			unsigned int frame;
-			float samples[PLAYBACK_SAMPLES_PER_FRAME];
-		};
-
-		const unsigned int player;
-		TArray<AudioFrame> jitterBuffer;
-		TArray<float> extraSamples;
-		FMOD::Sound *sound;
-		FMOD::Channel *channel;
-		OpusDecoder *decoder;
-		int playbackTick;
-		unsigned int lastReadPosition;
-		unsigned int lastPlaybackPosition;
-		unsigned int lastFrameRead;
-		unsigned int samplesRead;
-		unsigned int samplesPlayed;
-		unsigned int dspEpochHi;
-		unsigned int dspEpochLo;
-		unsigned int endDelaySamples;
-
-		VOIPChannel( const unsigned int player );
-		~VOIPChannel( void );
-
-		bool ShouldPlayIn3DMode( void ) const;
-		int GetUnreadSamples( void ) const;
-		int DecodeOpusFrame( const unsigned char *inBuffer, const unsigned int inLength, float *outBuffer, const unsigned int outLength );
-		void StartPlaying( void );
-		void ReadSamples( unsigned char *soundBuffer, const unsigned int length );
-		void Update3DAttributes( void );
-		void UpdatePlayback( void );
-		void UpdateEndDelay( const bool resetEpoch );
-	};
-
-	VOIPController( void );
-	~VOIPController( void ) { Shutdown( ); }
-
-	void ReadRecordSamples( unsigned char *soundBuffer, unsigned int length );
-	void SendAudioPacket( void );
-	void UpdateTestRMSVolume( unsigned char *soundBuffer, const unsigned int length );
-	int EncodeOpusFrame( const float *inBuffer, const unsigned int inLength, unsigned char *outBuffer, const unsigned int outLength );
-	bool IsUsingALSA( void ) const;
-
-	static FMOD_CREATESOUNDEXINFO CreateSoundExInfo( const unsigned int sampleRate, const unsigned int fileLength );
-	static FMOD_RESULT F_CALLBACK ChannelCallback( FMOD_CHANNEL *channel, FMOD_CHANNEL_CALLBACKTYPE type, void *commanddata1, void *commanddata2 );
-
-	VOIPChannel *VoIPChannels[MAXPLAYERS];
-	float channelVolumes[MAXPLAYERS];
-	float testRMSVolume;
-	FMOD::System *system;
-	FMOD::Sound *recordSound;
-	FMOD::ChannelGroup *VoIPChannelGroup;
-	OpusEncoder *encoder;
-	OpusRepacketizer *repacketizer;
-	RNNModel *denoiseModel;
-	DenoiseState *denoiseState;
-	int recordDriverID;
-	unsigned int framesSent;
-	unsigned int lastRecordPosition;
-	unsigned char lastPackedTOC;
-	bool isInitialized;
-	bool isActive;
-	bool isTesting;
-	bool isRecordButtonPressed;
-	TRANSMISSIONTYPE_e transmissionType;
-
-	// [AK] This is needed for saving the arrays of encoded audio frames while
-	// using Opus's repacketizer to merge the audio frames together.
-	struct CompressedBuffer { unsigned char data[MAX_PACKET_SIZE]; };
-	TArray<CompressedBuffer> compressedBuffers;
-
-	// [AK] This is necessasry for setting up the sound rolloff settings of all
-	// VoIP channels that are played in 3D mode (i.e. proximity chat is used).
-	// A pointer to this struct is used for the channel's user data, which the
-	// custom callback function FMODSoundRenderer::RolloffCallback then uses to
-	// calculate the sound's volume based on distance.
-	FISoundChannel proximityInfo;
-
-#elif !defined(NO_OPENAL)
-
-	// [ZandroX] OpenAL implementation of the VoIP controller. The capture and
-	// playback backend is OpenAL, but the Opus codec, RNNoise denoising and the
-	// network transmission code are shared verbatim with the FMOD path.
+	// [ZandroX] OpenAL implementation of the VoIP controller; the Opus codec, RNNoise
+	// denoising and the network transmission code are backend-agnostic.
 	void Init( void );
 	void Shutdown( void );
 	void Activate( void );
