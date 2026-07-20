@@ -5,8 +5,9 @@
 # Docker Desktop) and on x86_64 Linux CI (-> x86_64 binary). Output:
 #   dist-linux/ZandroX-linux-<arch>.tar.gz   (zandronum binary + game .pk3s)
 #
-#   ./package-linux.sh              # full client, sound off (default)
-#   SERVERONLY=ON ./package-linux.sh   # headless server build
+#   ./package-linux.sh                    # full client
+#   SERVERONLY=ON ./package-linux.sh      # headless server build
+#   VERSION=v0.1.0 ./package-linux.sh     # stamp a version into the tarball name
 #
 # Audio is OpenAL (NO_FMOD): the binary links libopenal1 / libsndfile1 / libmpg123,
 # which are standard on any desktop Linux (install them if a target box lacks them).
@@ -20,7 +21,7 @@ echo "==> Building Docker build image ($IMAGE)"
 docker build -t "$IMAGE" -f Dockerfile.linux-build .
 
 echo "==> Building + packaging ZandroX (SERVERONLY=$SERVERONLY) inside container"
-docker run --rm -e SERVERONLY="$SERVERONLY" -v "$PWD:/work" "$IMAGE" bash -lc '
+docker run --rm -e SERVERONLY="$SERVERONLY" -e VERSION="${VERSION:-}" -v "$PWD:/work" "$IMAGE" bash -lc '
   set -euo pipefail
   # [rc4l] Drop the cache but keep the object files: a cache written before libopenal-dev was in
   # the image keeps NO_OPENAL=OFF with no OPENAL_LIBRARY, silently producing a soundless binary.
@@ -41,7 +42,13 @@ docker run --rm -e SERVERONLY="$SERVERONLY" -v "$PWD:/work" "$IMAGE" bash -lc '
   fi
 
   ARCH="$(uname -m)"
-  NAME="ZandroX-linux-$ARCH"
+  # [rc4l] Named here rather than renamed afterwards: on a Linux host the container writes
+  # dist-linux as root, so the calling user cannot rename anything inside it.
+  if [ -n "${VERSION:-}" ]; then
+    NAME="ZandroX-$VERSION-linux-$ARCH"
+  else
+    NAME="ZandroX-linux-$ARCH"
+  fi
   STAGE="dist-linux/$NAME"
   rm -rf "$STAGE"; mkdir -p "$STAGE"
 

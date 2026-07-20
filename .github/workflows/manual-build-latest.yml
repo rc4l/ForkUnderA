@@ -104,19 +104,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build ZandroX (Linux, via Docker)
+        # [rc4l] VERSION is applied inside the container: on a Linux host it writes dist-linux
+        # as root, so renaming the tarball afterwards fails with EACCES.
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
         run: |
           # Same Docker path we use locally on macOS — Ubuntu 22.04 base for wide
-          # glibc compatibility. Produces dist-linux/ZandroX-linux-x86_64.tar.gz.
+          # glibc compatibility. Produces dist-linux/ZandroX-<version>-linux-x86_64.tar.gz.
           ./package-linux.sh
-
-      # [rc4l] Renamed here rather than in package-linux.sh so local runs keep their plain name.
-      - name: Stamp the version into the tarball name
-        run: |
-          set -euo pipefail
-          for f in dist-linux/ZandroX-linux-*.tar.gz; do
-            arch="$(basename "$f" .tar.gz | sed 's/^ZandroX-linux-//')"
-            mv "$f" "dist-linux/ZandroX-${{ needs.setup.outputs.version }}-linux-$arch.tar.gz"
-          done
           ls -la dist-linux/
 
       - name: Upload ZandroX Linux tarball
