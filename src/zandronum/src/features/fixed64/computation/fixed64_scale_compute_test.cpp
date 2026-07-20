@@ -83,6 +83,47 @@ TEST(Fixed64Scale, DivWidePathMatchesReference)
 	EXPECT_EQ(zx::DivScale64(-1000, 40, 7), DivRef(-1000, 40, 7));
 }
 
+// [rc4l] DMulScale64/TMulScale64: fast-path (all int32) and wide path, vs reference.
+TEST(Fixed64Scale, DMulAndTMulBothPaths)
+{
+	Lcg r(0x13572468acebdf01ULL);
+	for (int i = 0; i < 20000; ++i)
+	{
+		// Fast regime: all operands fit int32.
+		const int64_t a = r.range(INT32_MIN, INT32_MAX), b = r.range(-30000, 30000);
+		const int64_t c = r.range(INT32_MIN, INT32_MAX), d = r.range(-30000, 30000);
+		const unsigned s = (unsigned)(r.next() % 33);
+		EXPECT_EQ(zx::DMulScale64(a, b, c, d, s),
+			(int64_t)((((__int128)a * b) + ((__int128)c * d)) >> s));
+		// Wide regime: a giant operand forces the 128-bit path.
+		const int64_t big = 1LL << 40;
+		EXPECT_EQ(zx::DMulScale64(big, b, c, d, 16),
+			(int64_t)((((__int128)big * b) + ((__int128)c * d)) >> 16));
+		EXPECT_EQ(zx::TMulScale64(a, b, c, d, big, 3, 16),
+			(int64_t)((((__int128)a * b) + ((__int128)c * d) + ((__int128)big * 3)) >> 16));
+	}
+	// Fast-path TMul explicit.
+	EXPECT_EQ(zx::TMulScale64(2, 3, 4, 5, 6, 7, 0), 2*3 + 4*5 + 6*7);
+
+	// [rc4l] Each operand position independently forces the wide path, so every term of the
+	// short-circuit Fits32(...) && ... chain is exercised as the one that fails.
+	const int64_t B = 1LL << 40, s = 12345;
+	auto dref = [](int64_t a, int64_t b, int64_t c, int64_t d) {
+		return (int64_t)((((__int128)a * b) + ((__int128)c * d)) >> 16); };
+	EXPECT_EQ(zx::DMulScale64(B, s, s, s, 16), dref(B, s, s, s));  // a fails
+	EXPECT_EQ(zx::DMulScale64(s, B, s, s, 16), dref(s, B, s, s));  // b fails
+	EXPECT_EQ(zx::DMulScale64(s, s, B, s, 16), dref(s, s, B, s));  // c fails
+	EXPECT_EQ(zx::DMulScale64(s, s, s, B, 16), dref(s, s, s, B));  // d fails
+	auto tref = [](int64_t a, int64_t b, int64_t c, int64_t d, int64_t e, int64_t f) {
+		return (int64_t)((((__int128)a*b)+((__int128)c*d)+((__int128)e*f)) >> 16); };
+	EXPECT_EQ(zx::TMulScale64(B, s, s, s, s, s, 16), tref(B, s, s, s, s, s));  // a
+	EXPECT_EQ(zx::TMulScale64(s, B, s, s, s, s, 16), tref(s, B, s, s, s, s));  // b
+	EXPECT_EQ(zx::TMulScale64(s, s, B, s, s, s, 16), tref(s, s, B, s, s, s));  // c
+	EXPECT_EQ(zx::TMulScale64(s, s, s, B, s, s, 16), tref(s, s, s, B, s, s));  // d
+	EXPECT_EQ(zx::TMulScale64(s, s, s, s, B, s, 16), tref(s, s, s, s, B, s));  // e
+	EXPECT_EQ(zx::TMulScale64(s, s, s, s, s, B, 16), tref(s, s, s, s, s, B));  // f
+}
+
 // [rc4l] Fast and wide paths must agree at the boundary (a value computed both ways).
 TEST(Fixed64Scale, FastAndWideAgreeAtBoundary)
 {

@@ -114,4 +114,42 @@ TEST(Wide128, DivShiftMatchesReferenceAllSignsAndShifts)
 	EXPECT_EQ(zx::ComputeDivShiftS64Soft(100, 4, -7), (int64_t)(((__int128)100 * 16) / -7));
 	EXPECT_EQ(zx::ComputeDivShiftS64Soft(-100, 4, -7), (int64_t)(((__int128)-100 * 16) / -7));
 }
+
+// [rc4l] Sum-of-products (DMulScale/TMulScale), both paths vs __int128 reference. Products are
+// summed before the shift, so this exercises the 128-bit add including carry across words.
+TEST(Wide128, MulAddShiftMatchesReference)
+{
+	Lcg r(0x246813579bdf0ecaULL);
+	for (int i = 0; i < 40000; ++i)
+	{
+		const int64_t a = r.range(-(1LL << 40), 1LL << 40), b = r.range(-(1LL << 20), 1LL << 20);
+		const int64_t c = r.range(-(1LL << 40), 1LL << 40), d = r.range(-(1LL << 20), 1LL << 20);
+		const unsigned s = (unsigned)(r.next() % 41);
+		const int64_t ref = (int64_t)((((__int128)a * b) + ((__int128)c * d)) >> s);
+		EXPECT_EQ(zx::ComputeMulAddShiftS64Soft(a, b, c, d, s), ref) << "i=" << i;
+		EXPECT_EQ(zx::ComputeMulAddShiftS64(a, b, c, d, s), ref);
+	}
+	EXPECT_EQ(zx::ComputeMulAddShiftS64Soft(0, 0, 0, 0, 0), 0);   // zero, shift==0
+	// [rc4l] Negative product with low-64 == 0 -> exercises the MulS128 negation carry.
+	EXPECT_EQ(zx::ComputeMulAddShiftS64Soft(-(1LL << 40), (1LL << 24), 0, 0, 16),
+		(int64_t)((((__int128)-(1LL << 40) * (1LL << 24))) >> 16));
+	// [rc4l] Two large products whose low words sum past 2^64 -> exercises the AddS128 carry.
+	EXPECT_EQ(zx::ComputeMulAddShiftS64Soft(4000000000LL, 4000000000LL, 4000000000LL, 4000000000LL, 20),
+		(int64_t)((((__int128)4000000000LL * 4000000000LL) + ((__int128)4000000000LL * 4000000000LL)) >> 20));
+}
+
+TEST(Wide128, MulAdd3ShiftMatchesReference)
+{
+	Lcg r(0x9e3779b97f4a7c15ULL);
+	for (int i = 0; i < 40000; ++i)
+	{
+		const int64_t a = r.range(-(1LL << 38), 1LL << 38), b = r.range(-(1LL << 18), 1LL << 18);
+		const int64_t c = r.range(-(1LL << 38), 1LL << 38), d = r.range(-(1LL << 18), 1LL << 18);
+		const int64_t e = r.range(-(1LL << 38), 1LL << 38), f = r.range(-(1LL << 18), 1LL << 18);
+		const unsigned s = (unsigned)(r.next() % 41);
+		const int64_t ref = (int64_t)((((__int128)a * b) + ((__int128)c * d) + ((__int128)e * f)) >> s);
+		EXPECT_EQ(zx::ComputeMulAdd3ShiftS64Soft(a, b, c, d, e, f, s), ref) << "i=" << i;
+		EXPECT_EQ(zx::ComputeMulAdd3ShiftS64(a, b, c, d, e, f, s), ref);
+	}
+}
 } // namespace

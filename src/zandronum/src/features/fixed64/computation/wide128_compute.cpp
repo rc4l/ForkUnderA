@@ -92,6 +92,73 @@ int64_t ComputeDivShiftS64Soft(int64_t a, unsigned shift, int64_t b)
 	return neg ? -(int64_t)q : (int64_t)q;
 }
 
+namespace
+{
+// [rc4l] Minimal signed 128-bit as two's-complement (hi:lo), for summing products before the
+// shift -- (a*b + c*d) >> s must add the full products, not the shifted results.
+struct S128 { uint64_t hi, lo; };
+
+S128 MulS128(int64_t a, int64_t b)
+{
+	const bool neg = (a < 0) != (b < 0);
+	const uint64_t ua = (a < 0) ? (uint64_t)0 - (uint64_t)a : (uint64_t)a;
+	const uint64_t ub = (b < 0) ? (uint64_t)0 - (uint64_t)b : (uint64_t)b;
+	S128 r;
+	r.lo = ComputeUMul128Soft(ua, ub, &r.hi);
+	if (neg)
+	{
+		r.lo = ~r.lo + 1;
+		r.hi = ~r.hi + (r.lo == 0 ? 1 : 0);
+	}
+	return r;
+}
+
+S128 AddS128(S128 x, S128 y)
+{
+	S128 r;
+	r.lo = x.lo + y.lo;
+	r.hi = x.hi + y.hi + (r.lo < x.lo ? 1 : 0);   // carry out of the low add
+	return r;
+}
+
+// [rc4l] Low 64 bits of an arithmetic right shift of the signed 128-bit value. shift in [0,63].
+int64_t ShiftS128(S128 v, unsigned shift)
+{
+	const uint64_t res = (shift == 0) ? v.lo : ((v.lo >> shift) | (v.hi << (64 - shift)));
+	return (int64_t)res;
+}
+} // namespace
+
+int64_t ComputeMulAddShiftS64Soft(int64_t a, int64_t b, int64_t c, int64_t d, unsigned shift)
+{
+	return ShiftS128(AddS128(MulS128(a, b), MulS128(c, d)), shift);
+}
+
+int64_t ComputeMulAdd3ShiftS64Soft(int64_t a, int64_t b, int64_t c, int64_t d,
+	int64_t e, int64_t f, unsigned shift)
+{
+	return ShiftS128(AddS128(AddS128(MulS128(a, b), MulS128(c, d)), MulS128(e, f)), shift);
+}
+
+int64_t ComputeMulAddShiftS64(int64_t a, int64_t b, int64_t c, int64_t d, unsigned shift)
+{
+#ifdef __SIZEOF_INT128__
+	return (int64_t)((((__int128)a * b) + ((__int128)c * d)) >> shift);
+#else
+	return ComputeMulAddShiftS64Soft(a, b, c, d, shift);
+#endif
+}
+
+int64_t ComputeMulAdd3ShiftS64(int64_t a, int64_t b, int64_t c, int64_t d,
+	int64_t e, int64_t f, unsigned shift)
+{
+#ifdef __SIZEOF_INT128__
+	return (int64_t)((((__int128)a * b) + ((__int128)c * d) + ((__int128)e * f)) >> shift);
+#else
+	return ComputeMulAdd3ShiftS64Soft(a, b, c, d, e, f, shift);
+#endif
+}
+
 // [rc4l] Public dispatch: native __int128 where the compiler has it (clang/gcc, and the
 // low-64-truncation matches the software path), otherwise the tested software routines.
 int64_t ComputeMulShiftS64(int64_t a, int64_t b, unsigned shift)

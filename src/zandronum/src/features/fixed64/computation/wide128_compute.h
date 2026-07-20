@@ -40,6 +40,17 @@ uint64_t ComputeUDiv128Soft(uint64_t hi, uint64_t lo, uint64_t d);
 int64_t ComputeMulShiftS64Soft(int64_t a, int64_t b, unsigned shift);
 int64_t ComputeDivShiftS64Soft(int64_t a, unsigned shift, int64_t b);
 
+// [rc4l] Public: (a*b + c*d) >> shift and (a*b + c*d + e*f) >> shift with a 128-bit
+// intermediate, for the plane-equation DMulScale/TMulScale. shift in [0,63].
+int64_t ComputeMulAddShiftS64(int64_t a, int64_t b, int64_t c, int64_t d, unsigned shift);
+int64_t ComputeMulAdd3ShiftS64(int64_t a, int64_t b, int64_t c, int64_t d,
+	int64_t e, int64_t f, unsigned shift);
+
+// [rc4l] Software versions, exposed for direct testing (the MSVC path).
+int64_t ComputeMulAddShiftS64Soft(int64_t a, int64_t b, int64_t c, int64_t d, unsigned shift);
+int64_t ComputeMulAdd3ShiftS64Soft(int64_t a, int64_t b, int64_t c, int64_t d,
+	int64_t e, int64_t f, unsigned shift);
+
 } // namespace zx
 
 #endif // ZX_WIDE128_COMPUTE_H

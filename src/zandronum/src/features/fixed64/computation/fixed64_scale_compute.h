@@ -38,6 +38,23 @@ inline int64_t DivScale64(int64_t a, unsigned shift, int64_t b)
 	return ComputeDivShiftS64(a, shift, b);  // wide: numerator exceeds 64 bits
 }
 
+// [rc4l] (a*b + c*d) >> shift -- the plane-equation DMulScale. Fast path when all operands
+// fit int32 (the two products and their sum stay within int64); else the 128-bit path.
+inline int64_t DMulScale64(int64_t a, int64_t b, int64_t c, int64_t d, unsigned shift)
+{
+	if (Fits32(a) && Fits32(b) && Fits32(c) && Fits32(d))
+		return (a * b + c * d) >> shift;
+	return ComputeMulAddShiftS64(a, b, c, d, shift);
+}
+
+// [rc4l] (a*b + c*d + e*f) >> shift -- TMulScale.
+inline int64_t TMulScale64(int64_t a, int64_t b, int64_t c, int64_t d, int64_t e, int64_t f, unsigned shift)
+{
+	if (Fits32(a) && Fits32(b) && Fits32(c) && Fits32(d) && Fits32(e) && Fits32(f))
+		return (a * b + c * d + e * f) >> shift;
+	return ComputeMulAdd3ShiftS64(a, b, c, d, e, f, shift);
+}
+
 // [rc4l] The 16.16 fixed-point multiply/divide -- the FixedMul/FixedDiv of the widened type.
 inline int64_t Fixed64Mul(int64_t a, int64_t b) { return MulScale64(a, b, 16); }
 inline int64_t Fixed64Div(int64_t a, int64_t b) { return DivScale64(a, 16, b); }
