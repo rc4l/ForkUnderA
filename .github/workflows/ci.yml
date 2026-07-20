@@ -1,4 +1,5 @@
-# [rc4l] Run the test suite on every push/PR and only build the macOS engine once tests are green.
+# [rc4l] Run the test suite on every push/PR and build all three platforms on PRs, so
+# platform-specific breakage shows up before merge instead of after.
 name: CI
 
 on:
@@ -10,24 +11,13 @@ jobs:
   test:
     uses: ./.github/workflows/_test.yml
 
-  build-macos:
+  # [rc4l] Only on PRs: feature-branch pushes don't need the costly builds, and pushes to
+  # main are already built by manual-build-latest.yml — building here too would duplicate it.
+  # Advisory, not a required check: the Windows job depends on vcpkg and a pinned runner
+  # image, and a hiccup there shouldn't block a merge that never touched Windows.
+  build:
     needs: test
-    # [rc4l] Run the costly macOS build on PRs and on main, but not on every feature-branch push.
-    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # [rc4l] Rosetta 2 is needed to run the Intel (FMOD) build on Apple Silicon runners.
-      - name: Install Rosetta 2
-        run: sudo softwareupdate --install-rosetta --agree-to-license
-
-      - name: Build ZandroX (SOUND=1)
-        run: SOUND=1 ./build.sh
-
-      - name: Upload ZandroX.app
-        if: ${{ success() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZandroX-macos
-          path: build/ZandroX.app
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/_build.yml
+    with:
+      version: pr-${{ github.event.pull_request.number }}

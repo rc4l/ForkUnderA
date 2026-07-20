@@ -1,0 +1,201 @@
+# [rc4l] Reusable per-platform build called by ci.yml (on PRs) and manual-build-latest.yml
+# (on main and for releases), so a PR builds exactly what a release would ship.
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version string baked into the archive names'
+        required: false
+        type: string
+        default: dev
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build ZandroX
+        run: |
+          # Native OpenAL build (no FMOD, no Rosetta) — arm64 on Apple Silicon runners.
+          SOUND=1 ./build.sh
+
+      # [rc4l] A silently soundless build has shipped before; refuse to package one.
+      - name: Verify sound is linked
+        run: |
+          set -euo pipefail
+          bin=build/ZandroX.app/Contents/MacOS/zandronum
+          otool -L "$bin" | grep -q libopenal \
+            || { echo "::error::$bin is not linked against libopenal — no sound"; exit 1; }
+          test -f build/ZandroX.app/Contents/MacOS/libopenal.1.dylib \
+            || { echo "::error::libopenal is not bundled in the .app"; exit 1; }
+          echo "sound OK"; otool -L "$bin" | grep -iE 'openal|sndfile|mpg123'
+
+      # [rc4l] ditto preserves the bundle's permissions and symlinks; upload-artifact's own
+      # zipping drops the executable bit and produces an .app macOS refuses to launch.
+      - name: Package ZandroX.app
+        run: |
+          set -euo pipefail
+          mkdir -p dist-macos
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/ZandroX.app "dist-macos/ZandroX-${{ inputs.version }}-macos-arm64.zip"
+          ls -la dist-macos/
+
+      - name: Upload ZandroX.app
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-macos
+          path: dist-macos/*.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build ZandroX (Linux, via Docker)
+        # [rc4l] VERSION is applied inside the container: on a Linux host it writes dist-linux
+        # as root, so renaming the tarball afterwards fails with EACCES.
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Same Docker path we use locally on macOS — Ubuntu 22.04 base for wide
+          # glibc compatibility. Produces dist-linux/ZandroX-<version>-linux-x86_64.tar.gz.
+          ./package-linux.sh
+          ls -la dist-linux/
+
+      - name: Upload ZandroX Linux tarball
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-linux
+          path: dist-linux/*.tar.gz
+
+  build-windows:
+    # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose
+    # generator name differs and which CMake mis-detects). Matches the reference build.
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # [rc4l] VCPKG_INSTALLATION_ROOT is a runner environment variable, and the env context in
+      # an expression only sees workflow-level env: blocks — using it in the cache path below
+      # silently yielded "/installed", which cached nothing. Resolve it in a step instead.
+      - name: Resolve the vcpkg install path
+        id: vcpkg
+        shell: pwsh
+        run: |
+          $p = Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed'
+          "installed=$p" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "vcpkg installed tree: $p"
+
+      # [rc4l] Building these from source took 15.5 of this job's 19 minutes. Restoring the
+      # installed tree makes the install below a near-no-op; the key is this workflow file's
+      # hash, so it busts whenever the package list here changes.
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.vcpkg.outputs.installed }}
+          key: vcpkg-x64-windows-${{ hashFiles('.github/workflows/_build.yml') }}
+          restore-keys: vcpkg-x64-windows-
+
+      # OpenAL audio deps (replacing FMOD) via vcpkg, which is preinstalled on the
+      # windows-latest runner along with Visual Studio 2022, CMake and Python.
+      - name: Install audio deps (vcpkg)
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install `
+            openal-soft:x64-windows libsndfile:x64-windows mpg123:x64-windows `
+            opus:x64-windows openssl:x64-windows
+
+      # Zandronum's Windows build wants the legacy DirectX SDK layout ($DXSDK_DIR/
+      # Include/d3d9.h, $DXSDK_DIR/Lib/x64/dxguid.lib). Those files live in the modern
+      # Windows SDK — reshape them into the expected layout and set DXSDK_DIR.
+      - name: Set up DirectX headers/libs from the Windows SDK
+        shell: pwsh
+        run: |
+          $kits = "${env:ProgramFiles(x86)}\Windows Kits\10"
+          if (-not (Test-Path $kits)) { $kits = "${env:ProgramFiles}\Windows Kits\10" }
+          $ver = (Get-ChildItem "$kits\Include" -Directory |
+                  Where-Object { $_.Name -match '^\d+\.\d+' } |
+                  Sort-Object Name -Descending | Select-Object -First 1).Name
+          Write-Host "Windows SDK version: $ver"
+          $dx = "$env:GITHUB_WORKSPACE\dxsdk"
+          New-Item -ItemType Directory -Force -Path "$dx\Include","$dx\Lib\x64" | Out-Null
+          Copy-Item "$kits\Include\$ver\shared\*" "$dx\Include\" -Recurse -Force -ErrorAction SilentlyContinue
+          Copy-Item "$kits\Include\$ver\um\*"     "$dx\Include\" -Recurse -Force -ErrorAction SilentlyContinue
+          Copy-Item "$kits\Lib\$ver\um\x64\*"     "$dx\Lib\x64\" -Force -ErrorAction SilentlyContinue
+          if (-not (Test-Path "$dx\Include\d3d9.h")) { throw "d3d9.h not found in Windows SDK $ver" }
+          if (-not (Test-Path "$dx\Lib\x64\dxguid.lib")) { throw "dxguid.lib not found in Windows SDK $ver" }
+          "DXSDK_DIR=$dx" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "DXSDK_DIR set to $dx"
+
+      - name: Configure (MSVC x64, NO_FMOD, OpenAL)
+        shell: pwsh
+        run: |
+          # Point CMake at the vcpkg-installed deps with explicit -D paths instead of
+          # the vcpkg toolchain file — the toolchain's cmake_policy() calls collide
+          # with Zandronum's old CMake minimums and break the VS generator.
+          $vcpkg = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows"
+          cmake -S src/zandronum -B build-win -G "Visual Studio 17 2022" -A x64 -T v143 `
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
+            -DNO_FMOD=ON -DNO_OPENAL=OFF `
+            -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
+            -DFORCE_INTERNAL_GME=ON `
+            "-DOPENAL_INCLUDE_DIR=$vcpkg/include/AL" `
+            "-DOPENAL_LIBRARY=$vcpkg/lib/OpenAL32.lib" `
+            "-DSNDFILE_INCLUDE_DIR=$vcpkg/include" `
+            "-DSNDFILE_LIBRARY=$vcpkg/lib/sndfile.lib" `
+            "-DMPG123_INCLUDE_DIR=$vcpkg/include" `
+            "-DMPG123_LIBRARIES=$vcpkg/lib/mpg123.lib" `
+            "-DOPUS_INCLUDE_DIR=$vcpkg/include/opus" `
+            "-DOPUS_LIBRARIES=$vcpkg/lib/opus.lib" `
+            "-DOPENSSL_ROOT_DIR=$vcpkg" "-DOPENSSL_USE_STATIC_LIBS=OFF"
+
+      - name: Build (Release)
+        shell: pwsh
+        run: cmake --build build-win --config Release -- -m
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $out = "build-win/Release"
+          if (-not (Test-Path "$out/zandronum.exe")) { throw "zandronum.exe missing — Windows build failed" }
+          New-Item -ItemType Directory -Force -Path dist-windows | Out-Null
+          Copy-Item "$out/zandronum.exe" dist-windows/
+          Copy-Item "$out/*.pk3" dist-windows/ -ErrorAction SilentlyContinue
+          # [rc4l] Ship Freedoom so the zip is playable without a separate IWAD. It is
+          # BSD-3-clause, whose clause 2 requires the notice to accompany binary distributions.
+          if (Test-Path tools/freedoom/freedoom2.wad) {
+            Copy-Item tools/freedoom/*.wad dist-windows/
+            Copy-Item tools/freedoom/License.txt dist-windows/FREEDOOM-LICENSE.txt
+          } else {
+            throw "tools/freedoom/freedoom2.wad missing — the zip would ship without a game"
+          }
+          # [rc4l] GPL-3.0 sections 4-6: the binary must carry the licence text and say where
+          # the corresponding source is, so a missing file fails the build.
+          Copy-Item LICENSE.txt dist-windows/
+          Copy-Item THIRD-PARTY-NOTICES.txt dist-windows/
+          # Runtime DLLs (openal-soft + decoders) next to the exe.
+          Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/*.dll" dist-windows/ -ErrorAction SilentlyContinue
+          # [rc4l] Without OpenAL32.dll beside the exe the game starts and is simply silent.
+          if (-not (Test-Path dist-windows/OpenAL32.dll)) {
+            throw "OpenAL32.dll missing from dist-windows — the build would ship without sound"
+          }
+          Write-Host "sound OK: OpenAL32.dll present"
+          # [rc4l] Zip it ourselves so the release asset is one file with a stable name.
+          Compress-Archive -Path dist-windows/* `
+            -DestinationPath "ZandroX-${{ inputs.version }}-windows-x64.zip" -Force
+          Get-ChildItem *.zip
+
+      - name: Upload ZandroX Windows build
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-windows
+          path: ZandroX-*-windows-x64.zip
