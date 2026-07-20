@@ -3,7 +3,10 @@
 name: Test & Build
 
 on:
+  # [rc4l] Main only, not every branch: a branch with an open PR would otherwise fire both
+  # push and pull_request and run the whole workflow twice over the same commit.
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
