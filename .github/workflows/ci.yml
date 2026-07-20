@@ -12,7 +12,7 @@ jobs:
     uses: ./.github/workflows/_test.yml
 
   # [rc4l] Only on PRs: feature-branch pushes don't need the costly builds, and pushes to
-  # main are already built by manual-build-latest.yml — building here too would duplicate it.
+  # main are already built by release.yml — building here too would duplicate it.
   # Advisory, not a required check: the Windows job depends on vcpkg and a pinned runner
   # image, and a hiccup there shouldn't block a merge that never touched Windows.
   build:

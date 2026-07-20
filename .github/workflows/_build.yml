@@ -1,6 +1,6 @@
-# [rc4l] Reusable per-platform build called by ci.yml (on PRs) and manual-build-latest.yml
+# [rc4l] Reusable per-platform build called by ci.yml (on PRs) and release.yml
 # (on main and for releases), so a PR builds exactly what a release would ship.
-name: build
+name: build (reusable)
 
 on:
   workflow_call:

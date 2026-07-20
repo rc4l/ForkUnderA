@@ -1,5 +1,5 @@
 # [rc4l] Reusable C++ test job called by ci.yml and release.yml so the same suite gates both.
-name: tests
+name: tests (reusable)
 
 on:
   workflow_call:
