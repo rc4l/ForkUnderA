@@ -60,11 +60,24 @@ non-GPL-compatible pieces have been removed or replaced:
 - **OPL synth**: `fmopl.cpp` adopts MAME's GPL-2.0+ relicense; Vladimír Arnošt's
   commercial-clause OPL player → Marisa Heit's clean GPL-3.0 rewrite.
 
-The base ZDoom code is the version relicensed to GPL by the ZDoom/GZDoom project;
-Zandronum's own additions are under a GPL-compatible BSD-3-clause-style license
-(`src/zandronum/LICENSE.txt`); bundled third-party dependencies retain their own
-GPL-compatible licenses.
+The original Doom source was released by id Software under the GPL v2, and ZandroX
+distributes it under the GPL v3 — the same position GZDoom takes for the same code, and
+the one part of this tree's licensing that is arguable rather than settled. See
+[`src/zandronum/docs/licenses/README.TXT`](src/zandronum/docs/licenses/README.TXT) for the
+reasoning and the caveat.
 
-> **Note:** This describes the engineering state, not legal advice. Confirming the base
-> ZDoom/Zandronum contributor relicensing and each bundled dependency's terms for a specific
-> commercial release is a matter for legal review.
+This tree forked from Zandronum, which forked ZDoom at 2.8pre / GZDoom 1.8.6 — *before*
+GZDoom's 2017 relicensing — so the relicensed upstream files were never inherited and the
+headers here were corrected directly. Zandronum's own additions are under a
+BSD-3-clause-style license with an added source-availability clause
+(`src/zandronum/LICENSE.txt`); bundled third-party dependencies retain their own
+GPL-compatible licenses, listed in `THIRD-PARTY-NOTICES.txt`.
+
+**Bundled game data is a separate question from the code.** `brightmaps.pk3` is derived
+from commercial Doom/Heretic/Hexen/Strife artwork and must not ship with a commercial
+standalone game; the artwork in `skulltag_actors.pk3` has no licence recorded upstream.
+Both are covered in `THIRD-PARTY-NOTICES.txt`.
+
+> **Note:** This describes the engineering state, not legal advice. The GPL v2 → v3 step on
+> the id-derived code, the bundled game data, and each dependency's terms should all be
+> reviewed by a lawyer before a commercial release.

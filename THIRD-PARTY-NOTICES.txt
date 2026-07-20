@@ -17,13 +17,40 @@ unavailable, contact the repository owner for a copy.
 
 COMPONENT LICENCES
 ------------------
-The base ZDoom code is the version relicensed to GPL by the ZDoom/GZDoom
-project. Zandronum's own additions are under a GPL-compatible BSD-3-clause-style
-licence, reproduced in the source tree at src/zandronum/LICENSE.txt.
+The original Doom source was released by id Software under the GPL v2. ZandroX
+distributes it under the GPL v3, the same position the GZDoom project takes; see
+src/zandronum/docs/licenses/README.TXT for the detail and the caveat.
+
+This tree descends from Zandronum, which forked ZDoom at 2.8pre / GZDoom 1.8.6 —
+before GZDoom's own 2017 relicensing — so the relicensed upstream files were not
+inherited and the headers here were corrected directly.
+
+Zandronum's and Skulltag's own additions are under BSD-3-clause-style licences
+with an added source-availability clause, reproduced at src/zandronum/LICENSE.txt
+and src/zandronum/docs/Skulltag-license.txt.
 
 Game data:
 
-  Freedoom (freedoom2.wad)  BSD-3-clause  — see FREEDOOM-LICENSE.txt
+  Freedoom (freedoom2.wad)     BSD-3-clause  — see FREEDOOM-LICENSE.txt
+
+  zandronum.pk3                Engine data: menus, DECORATE definitions, fonts,
+                               shaders and sprites from the ZDoom/Zandronum
+                               lineage. Script and definition lumps are GPL v3
+                               unless a lump states otherwise.
+
+  skulltag_actors.pk3          Skulltag-derived actor definitions and sprites.
+                               The Skulltag licence above covers "source and
+                               binary form" and does not explicitly reach
+                               artwork; the artwork's terms are not recorded
+                               upstream. Treat as unresolved.
+
+  brightmaps.pk3               Brightmask images keyed to commercial Doom,
+                               Heretic, Hexen and Strife artwork, and therefore
+                               derived from content owned by id Software, Raven
+                               Software and Rogue Entertainment. Upstream ships
+                               the equivalent set marked "you may not sell this
+                               work", and it must NOT be redistributed with a
+                               commercial standalone game built on this engine.
 
 Bundled shared libraries. macOS and Windows downloads ship these next to the
 executable; the Linux tarball links the distribution's own copies instead and
