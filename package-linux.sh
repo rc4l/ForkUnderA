@@ -57,6 +57,13 @@ docker run --rm -e SERVERONLY="$SERVERONLY" -e VERSION="${VERSION:-}" -v "$PWD:/
   cp build-linux/*.pk3 "$STAGE"/
   [ -f README.md ] && cp README.md "$STAGE"/ || true
 
+  # [rc4l] Ship Freedoom so the tarball is playable without a separate IWAD. It is
+  # BSD-3-clause, whose clause 2 requires the notice to accompany binary distributions.
+  if [ -f tools/freedoom/freedoom2.wad ]; then
+    cp tools/freedoom/*.wad "$STAGE"/
+    cp tools/freedoom/License.txt "$STAGE"/FREEDOOM-LICENSE.txt
+  fi
+
   tar czf "dist-linux/$NAME.tar.gz" -C dist-linux "$NAME"
   echo "=== packaged: dist-linux/$NAME.tar.gz ==="
   ls -la "dist-linux/$NAME.tar.gz"

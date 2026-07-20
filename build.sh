@@ -223,7 +223,12 @@ build() {
     cmake --build "$BUILD_DIR" --config "$CONFIGURATION" --parallel "$NCPU"
 
     # Freedoom WADs for a runnable game (matches the Windows build).
-    [[ -f "$TOOLS_DIR/freedoom/freedoom2.wad" ]] && cp -n "$TOOLS_DIR/freedoom/"*.wad "$BUILD_DIR/" 2>/dev/null || true
+    # [rc4l] Freedoom is BSD-3-clause: clause 2 requires its copyright notice to travel with
+    # any binary distribution, so the licence ships beside the WAD rather than just the WAD.
+    if [[ -f "$TOOLS_DIR/freedoom/freedoom2.wad" ]]; then
+        cp -n "$TOOLS_DIR/freedoom/"*.wad "$BUILD_DIR/" 2>/dev/null || true
+        cp -f "$TOOLS_DIR/freedoom/License.txt" "$BUILD_DIR/FREEDOOM-LICENSE.txt" 2>/dev/null || true
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -308,6 +313,8 @@ make_app_bundle() {
     for f in "$BUILD_DIR"/*.pk3 "$BUILD_DIR"/*.wad; do
         [[ -e "$f" ]] && cp "$f" "$macos/"
     done
+    # [rc4l] Freedoom's BSD-3-clause licence must travel with the WAD it covers.
+    [[ -f "$BUILD_DIR/FREEDOOM-LICENSE.txt" ]] && cp "$BUILD_DIR/FREEDOOM-LICENSE.txt" "$macos/"
 
     # Stage and re-point dylibs. The recursive pass follows the link graph (OpenAL,
     # sndfile, mpg123, opus, sdl12-compat's libSDL-1.2, GLEW, openssl all resolve

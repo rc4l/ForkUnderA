@@ -216,6 +216,14 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist-windows | Out-Null
           Copy-Item "$out/zandronum.exe" dist-windows/
           Copy-Item "$out/*.pk3" dist-windows/ -ErrorAction SilentlyContinue
+          # [rc4l] Ship Freedoom so the zip is playable without a separate IWAD. It is
+          # BSD-3-clause, whose clause 2 requires the notice to accompany binary distributions.
+          if (Test-Path tools/freedoom/freedoom2.wad) {
+            Copy-Item tools/freedoom/*.wad dist-windows/
+            Copy-Item tools/freedoom/License.txt dist-windows/FREEDOOM-LICENSE.txt
+          } else {
+            throw "tools/freedoom/freedoom2.wad missing — the zip would ship without a game"
+          }
           # Runtime DLLs (openal-soft + decoders) next to the exe.
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/*.dll" dist-windows/ -ErrorAction SilentlyContinue
           # [rc4l] Without OpenAL32.dll beside the exe the game starts and is simply silent.
@@ -276,7 +284,9 @@ jobs:
           **Windows** — the OpenAL and decoder DLLs ship next to `zandronum.exe`; keep
           them together.
 
-          You must supply your own IWAD (e.g. `freedoom2.wad`, `doom2.wad`).
+          Every download bundles **Freedoom** (`freedoom2.wad`, BSD-3-clause — see
+          `FREEDOOM-LICENSE.txt`), so it is playable as-is. To play commercial Doom
+          instead, drop your own `doom2.wad` next to the executable.
           EOF
           gh release create "$VERSION" \
             --title "ZandroX $VERSION" \
