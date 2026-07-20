@@ -47,6 +47,9 @@
 #include "doomstat.h"
 #include "m_argv.h"
 #include "version.h"
+// [rc4l] Declares FRenderer and the Renderer global, which used to arrive here through a
+// software-renderer header; matches sdl/hardware.cpp.
+#include "r_renderer.h"
 // [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
 #ifdef NO_GL
 #include "r_nullrenderer.h"

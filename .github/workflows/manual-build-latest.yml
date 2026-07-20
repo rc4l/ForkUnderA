@@ -130,6 +130,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # [rc4l] Building these from source took 15.5 of this job's 19 minutes. Restoring the
+      # installed tree makes the install below a near-no-op; the key is the workflow file's
+      # hash, so it busts whenever the package list here changes.
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_INSTALLATION_ROOT }}/installed
+          key: vcpkg-x64-windows-${{ hashFiles('.github/workflows/manual-build-latest.yml') }}
+          restore-keys: vcpkg-x64-windows-
+
       # OpenAL audio deps (replacing FMOD) via vcpkg, which is preinstalled on the
       # windows-latest runner along with Visual Studio 2022, CMake and Python.
       - name: Install audio deps (vcpkg)
