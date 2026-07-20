@@ -224,7 +224,7 @@ build() {
 
     # Freedoom WADs for a runnable game (matches the Windows build).
     # [rc4l] Freedoom is BSD-3-clause: clause 2 requires its copyright notice to travel with
-    # any binary distribution, so the licence ships beside the WAD rather than just the WAD.
+    # any binary distribution, so the license ships beside the WAD rather than just the WAD.
     if [[ -f "$TOOLS_DIR/freedoom/freedoom2.wad" ]]; then
         cp -n "$TOOLS_DIR/freedoom/"*.wad "$BUILD_DIR/" 2>/dev/null || true
         cp -f "$TOOLS_DIR/freedoom/License.txt" "$BUILD_DIR/FREEDOOM-LICENSE.txt" 2>/dev/null || true
@@ -313,8 +313,8 @@ make_app_bundle() {
     for f in "$BUILD_DIR"/*.pk3 "$BUILD_DIR"/*.wad; do
         [[ -e "$f" ]] && cp "$f" "$macos/"
     done
-    # [rc4l] Freedoom's BSD-3-clause licence must travel with the WAD it covers, and GPL-3.0
-    # sections 4-6 require the licence text plus a pointer to the corresponding source; a
+    # [rc4l] Freedoom's BSD-3-clause license must travel with the WAD it covers, and GPL-3.0
+    # sections 4-6 require the license text plus a pointer to the corresponding source; a
     # binary without them is not compliant. Missing files must not abort the build.
     cp -f "$BUILD_DIR/FREEDOOM-LICENSE.txt" "$macos/" 2>/dev/null || true
     cp -f "$SCRIPT_ROOT/LICENSE.txt" "$macos/" 2>/dev/null || true

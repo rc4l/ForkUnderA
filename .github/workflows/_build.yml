@@ -177,7 +177,7 @@ jobs:
           } else {
             throw "tools/freedoom/freedoom2.wad missing — the zip would ship without a game"
           }
-          # [rc4l] GPL-3.0 sections 4-6: the binary must carry the licence text and say where
+          # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and say where
           # the corresponding source is, so a missing file fails the build.
           Copy-Item LICENSE.txt dist-windows/
           Copy-Item THIRD-PARTY-NOTICES.txt dist-windows/

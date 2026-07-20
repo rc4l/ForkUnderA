@@ -131,7 +131,7 @@ jobs:
 
           **Licensing** — ZandroX is GPL-3.0-or-later. Every download carries
           `LICENSE.txt` (the full GPL-3.0 text) and `THIRD-PARTY-NOTICES.txt`
-          (bundled libraries and their licences). Complete corresponding source for
+          (bundled libraries and their licenses). Complete corresponding source for
           this binary is the repository at this release's tag.
           EOF
           gh release create "$VERSION" \

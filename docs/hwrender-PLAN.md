@@ -282,7 +282,7 @@ process rather than by reading code:
 | Link errors on `ZXFrameBuffer` members | their bodies live in `v_video.cpp`, which we never ported | `common/zx_video.cpp` with minimal bodies for the handful the shader/buffer paths need |
 | Spin in `FLightBuffer::FLightBuffer` | the ported backend resolves GL through **its own** loader, and `ogl_LoadFunctions()` is only called from the `gl_framebuffer.cpp` we do not compile — so every backend GL call went through an unloaded pointer | call `ogl_LoadFunctions()` first in `InitPortedShaders()` |
 
-**Still black under `vid_hwrender 1`.** The legacy renderer continues to initialise and still owns
+**Still black under `vid_hwrender 1`.** The legacy renderer continues to initialize and still owns
 every draw call; its 18 `#version 120` lumps produce ~960 compile errors in a core context, exactly
 as expected. Nothing is drawn through the ported path yet.
 
@@ -314,8 +314,8 @@ lighting, the player weapon and the HUD. `vid_hwrender 0` is untouched throughou
 
 | Subsystem | Route | State |
 |---|---|---|
-| 2D / HUD | `DrawTextureV` → queue → `Renderer2D` | works; clipping, colour overlay, render styles ignored |
-| Walls | `GLWall::RenderWall` → scene queue | works; split edges, glow, per-side colour dropped |
+| 2D / HUD | `DrawTextureV` → queue → `Renderer2D` | works; clipping, color overlay, render styles ignored |
+| Walls | `GLWall::RenderWall` → scene queue | works; split edges, glow, per-side color dropped |
 | Flats | `GLFlat::DrawSubsector` → scene fan | works; VBO fast path bypassed under core |
 | Sprites | `GLSprite::Draw` → scene fan, translucent | works; untextured particles skipped |
 | Weapon | `DrawPSprite` → 2D queue with explicit UVs | works |
@@ -358,9 +358,9 @@ Observed by eye on the running core path, and not yet diagnosed. The A/B metric 
 
 | Defect | Leading hypothesis | Where to look |
 |---|---|---|
-| In-engine font text renders inverted | The 2D path ignores `DrawParms` render style, colour overlay and translation. Fonts draw with a translation and often a non-Normal style, so a paletted/shaded font texture is being sampled as if it were plain RGBA. | `OpenGLFrameBuffer::DrawTextureV` hook — it currently passes a flat white tint and drops every field of `parms` except position, size and alpha |
+| In-engine font text renders inverted | The 2D path ignores `DrawParms` render style, color overlay and translation. Fonts draw with a translation and often a non-Normal style, so a paletted/shaded font texture is being sampled as if it were plain RGBA. | `OpenGLFrameBuffer::DrawTextureV` hook — it currently passes a flat white tint and drops every field of `parms` except position, size and alpha |
 | Enemies appear half cut off | **Queue ordering ruled out.** Splitting the replay into opaque-then-translucent passes changed the metric by 0.016pp and did not fix it, so it is not later opaque geometry erasing depth. Next hypothesis: sprite billboards intersect the floor/stair flats they stand on, and the legacy path applies clipping or a depth offset there that we do not. | `GLSprite::Draw` z1/z2 handling and whatever floor-clip the legacy path applies before emitting |
-| Sprite lighting looks odd | `SetSurfaceColor` is captured globally at `gl_SetColor` time and read at queue time. If any draw is queued without its own `gl_SetColor` first, it inherits the previous surface's colour. | `gl_SetColor` hook in `gl_lightdata.cpp` and the `s_surf*` globals |
+| Sprite lighting looks odd | `SetSurfaceColor` is captured globally at `gl_SetColor` time and read at queue time. If any draw is queued without its own `gl_SetColor` first, it inherits the previous surface's color. | `gl_SetColor` hook in `gl_lightdata.cpp` and the `s_surf*` globals |
 
 The font one is the most clearly wrong and the cheapest to confirm: `DrawTextureV` already parses a
 full `DrawParms` and we throw nearly all of it away.
@@ -385,7 +385,7 @@ bespoke path:
 |---|---|---|
 | Enemies half cut off | `HWSprite::PerformSpriteClipAdjustment` in `rendering/hwrenderer/scene/hw_sprites.cpp:698`, with the `gl_spriteclip` cvar and `floorz` handling | fixed by adopting their sprite path |
 | Inverted font text | `common/2d/v_2ddrawer.cpp` (1259 lines) handles `colorOverlay`, `mTranslationId` and render styles | fixed by adopting their `F2DDrawer` |
-| Odd sprite lighting | same sprite path, which carries its own light/colour rather than a captured global | fixed by the same adoption |
+| Odd sprite lighting | same sprite path, which carries its own light/color rather than a captured global | fixed by the same adoption |
 
 So `Renderer2D` and the queue in `hwrender_init.cpp` are **scaffolding**, not the destination. They
 proved the core context, shaders, buffers and draw path work end to end, which was their job.
@@ -437,7 +437,7 @@ Four null dereferences had to be fixed to get that far, each found by sampling t
 **The most valuable finding: `CreateTexBuffer` is now real.** The P1 stub assumed
 `FMaterial::GetLayer`'s adopted GL id would always short-circuit the uploader's create-branch. That
 holds for the scene path but **not** for 2D — `Bind()` misses and the create-branch runs, so it got
-an empty buffer. It now produces true-colour pixels via our own `CopyTrueColorPixels`, bridging to
+an empty buffer. It now produces true-color pixels via our own `CopyTrueColorPixels`, bridging to
 their uploader without porting `FGameTexture` (issue #4).
 
 **The open question is why `Bind()` keeps missing.** `FMaterial::ValidateTexture` caches on
@@ -955,7 +955,7 @@ is unchanged). Kept because it matches the legacy uploader, not because it fixed
 A hard-edged cut through a quad means part of the geometry is not rasterised. What has *not* been
 tested: whether both triangles of the fan actually draw. `Renderer2D::BeginScene` disables culling,
 so a backwards winding should not matter — but that is reasoning, and reasoning has been wrong on
-this bug five times now. **The test is to draw the two triangles in different solid colours and look
+this bug five times now. **The test is to draw the two triangles in different solid colors and look
 at which survives**, which distinguishes a missing triangle from a texture-coordinate problem in a
 single run.
 

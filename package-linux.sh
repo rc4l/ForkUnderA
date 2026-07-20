@@ -68,7 +68,7 @@ docker run --rm -e SERVERONLY="$SERVERONLY" -e VERSION="${VERSION:-}" -v "$PWD:/
     cp tools/freedoom/License.txt "$STAGE"/FREEDOOM-LICENSE.txt
   fi
 
-  # [rc4l] GPL-3.0 sections 4-6: the binary must carry the licence text and say where the
+  # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and say where the
   # corresponding source is, so these are required rather than best-effort.
   cp LICENSE.txt "$STAGE"/
   cp THIRD-PARTY-NOTICES.txt "$STAGE"/
