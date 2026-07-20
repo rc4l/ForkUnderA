@@ -185,6 +185,11 @@ option(FORCE_INTERNAL_JPEG "Use internal jpeg")
 option(FORCE_INTERNAL_BZIP2 "Use internal bzip2")
 option(FORCE_INTERNAL_GME "Use internal gme" ON)
 
+# [rc4l] Matches UZDoom's option of the same name. brightmaps.pk3 is derived from
+# commercial id/Raven/Rogue artwork, so a commercial standalone game must build with
+# -DBUILD_NONFREE=OFF; see wadsrc_bm/static/license.md.
+option( BUILD_NONFREE "Build non-free assets used by commercial games" ON )
+
 if( ZLIB_FOUND AND NOT FORCE_INTERNAL_ZLIB )
 	message( STATUS "Using system zlib" )
 else( ZLIB_FOUND AND NOT FORCE_INTERNAL_ZLIB )

@@ -24,6 +24,13 @@ Output: **`dist-linux/ZandroX-linux-<arch>.tar.gz`**. Needs `libopenal1`,
 `libsndfile1` and `libmpg123-0` on the target machine. The script fails the build
 if the binary did not link OpenAL, rather than shipping a silent client.
 
+### Building for a commercial game
+`brightmaps.pk3` is derived from commercial Doom/Heretic/Hexen/Strife artwork and
+**must not ship with a commercial standalone game**. Configure with
+`-DBUILD_NONFREE=OFF` to omit it; the engine runs without it and textures simply render
+without their brightmask. The default is `ON`, so ordinary player builds are unchanged.
+See `src/zandronum/wadsrc_bm/static/license.md`.
+
 ### Windows (x64)
 Built in CI only (MSVC + vcpkg for the OpenAL/decoder DLLs) — see the
 `build-windows` job in `.github/workflows/manual-build-latest.yml`. The legacy
