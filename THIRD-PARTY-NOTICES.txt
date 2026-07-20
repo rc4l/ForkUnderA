@@ -1,0 +1,54 @@
+ZandroX — third-party notices for binary distributions
+======================================================
+
+ZandroX itself is distributed under the GNU General Public License v3.0; the
+full text is in LICENSE.txt, which ships alongside this file in every download.
+
+SOURCE CODE
+-----------
+Complete corresponding source for this binary, including the exact revision it
+was built from and the build scripts, is published at:
+
+    https://github.com/rc4l/ZandroX
+
+Each release is tagged, so the source for a given download is the tag matching
+its version. This satisfies GPL-3.0 section 6(d); if that location ever becomes
+unavailable, contact the repository owner for a copy.
+
+COMPONENT LICENCES
+------------------
+The base ZDoom code is the version relicensed to GPL by the ZDoom/GZDoom
+project. Zandronum's own additions are under a GPL-compatible BSD-3-clause-style
+licence, reproduced in the source tree at src/zandronum/LICENSE.txt.
+
+Game data:
+
+  Freedoom (freedoom2.wad)  BSD-3-clause  — see FREEDOOM-LICENSE.txt
+
+Bundled shared libraries. macOS and Windows downloads ship these next to the
+executable; the Linux tarball links the distribution's own copies instead and
+bundles none of them.
+
+  openal-soft   LGPL-2.1-or-later     https://openal-soft.org
+  libsndfile    LGPL-2.1-or-later     https://libsndfile.github.io/libsndfile/
+  mpg123        LGPL-2.1-or-later     https://mpg123.de
+  LAME          LGPL-2.0-or-later     https://lame.sourceforge.io
+  FLAC          BSD-3-clause (libFLAC) / GPL-2.0-or-later (tools)
+                                      https://xiph.org/flac/
+  libogg        BSD-3-clause          https://xiph.org/ogg/
+  libvorbis     BSD-3-clause          https://xiph.org/vorbis/
+  Opus          BSD-3-clause          https://opus-codec.org
+  OpenSSL 3.x   Apache-2.0            https://openssl-library.org
+  SDL           zlib (SDL2) / LGPL-2.1-or-later (SDL 1.2)
+                                      https://libsdl.org
+
+The LGPL components are dynamically linked and shipped unmodified, so they may
+be replaced by the user with compatible builds of their own, as the LGPL
+requires. Source for each is available from the URLs above.
+
+Note on OpenSSL: version 3.x is Apache-2.0, which is compatible with GPL-3.0.
+The older OpenSSL 1.x licence, with its advertising clause, was not — so this
+distribution must stay on OpenSSL 3.x or later.
+
+FMOD, which upstream Zandronum uses for audio, is proprietary and is NOT part of
+this distribution; it has been replaced by the OpenAL stack listed above.

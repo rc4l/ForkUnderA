@@ -224,6 +224,10 @@ jobs:
           } else {
             throw "tools/freedoom/freedoom2.wad missing — the zip would ship without a game"
           }
+          # [rc4l] GPL-3.0 sections 4-6: the binary must carry the licence text and say where
+          # the corresponding source is, so a missing file fails the build.
+          Copy-Item LICENSE.txt dist-windows/
+          Copy-Item THIRD-PARTY-NOTICES.txt dist-windows/
           # Runtime DLLs (openal-soft + decoders) next to the exe.
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/*.dll" dist-windows/ -ErrorAction SilentlyContinue
           # [rc4l] Without OpenAL32.dll beside the exe the game starts and is simply silent.
@@ -287,6 +291,11 @@ jobs:
           Every download bundles **Freedoom** (`freedoom2.wad`, BSD-3-clause — see
           `FREEDOOM-LICENSE.txt`), so it is playable as-is. To play commercial Doom
           instead, drop your own `doom2.wad` next to the executable.
+
+          **Licensing** — ZandroX is GPL-3.0-or-later. Every download carries
+          `LICENSE.txt` (the full GPL-3.0 text) and `THIRD-PARTY-NOTICES.txt`
+          (bundled libraries and their licences). Complete corresponding source for
+          this binary is the repository at this release's tag.
           EOF
           gh release create "$VERSION" \
             --title "ZandroX $VERSION" \

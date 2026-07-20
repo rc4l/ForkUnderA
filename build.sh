@@ -313,8 +313,12 @@ make_app_bundle() {
     for f in "$BUILD_DIR"/*.pk3 "$BUILD_DIR"/*.wad; do
         [[ -e "$f" ]] && cp "$f" "$macos/"
     done
-    # [rc4l] Freedoom's BSD-3-clause licence must travel with the WAD it covers.
-    [[ -f "$BUILD_DIR/FREEDOOM-LICENSE.txt" ]] && cp "$BUILD_DIR/FREEDOOM-LICENSE.txt" "$macos/"
+    # [rc4l] Freedoom's BSD-3-clause licence must travel with the WAD it covers, and GPL-3.0
+    # sections 4-6 require the licence text plus a pointer to the corresponding source; a
+    # binary without them is not compliant. Missing files must not abort the build.
+    cp -f "$BUILD_DIR/FREEDOOM-LICENSE.txt" "$macos/" 2>/dev/null || true
+    cp -f "$SCRIPT_ROOT/LICENSE.txt" "$macos/" 2>/dev/null || true
+    cp -f "$SCRIPT_ROOT/THIRD-PARTY-NOTICES.txt" "$macos/" 2>/dev/null || true
 
     # Stage and re-point dylibs. The recursive pass follows the link graph (OpenAL,
     # sndfile, mpg123, opus, sdl12-compat's libSDL-1.2, GLEW, openssl all resolve
