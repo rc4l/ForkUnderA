@@ -4,18 +4,14 @@ on:
   workflow_dispatch: # Trigger manually from the Actions tab
     inputs:
       release:
-        description: 'Publish a GitHub Release from these builds (leave off to just build artifacts)'
+        description: 'Publish a release from these builds. From main it is a real release; from any other branch it is automatically an experimental PRE-RELEASE. Leave off to just build artifacts.'
         type: boolean
         default: false
       bump:
-        description: 'Which part of the version to raise, counting from the newest v* tag'
+        description: 'Which part of the version to raise (main only; ignored on other branches)'
         type: choice
         options: [patch, minor, major]
         default: patch
-      experimental:
-        description: 'Experimental: publish a PRE-RELEASE from the selected branch (ignores the bump; never a real release)'
-        type: boolean
-        default: false
   push:
     # [rc4l] Tags only. Building main is CI's job — this workflow exists to publish.
     tags: ['v*'] # [rc4l] Pushing a v* tag builds and publishes a release on its own.
@@ -52,6 +48,9 @@ jobs:
         shell: bash
         env:
           BUMP: ${{ inputs.bump }}
+          # [rc4l] The repo's default branch — the only branch a "release" tick means a real
+          # release from. Anything else is automatically an experimental pre-release.
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           # [rc4l] Defaults; the experimental path fills branch/shortsha, stable leaves them blank.
@@ -61,13 +60,13 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME}"
             publish=true
-          elif [ "${{ inputs.experimental }}" = "true" ]; then
-            # [rc4l] Experimental wins over release/bump: a pre-release built from whatever branch
-            # the run was dispatched on, tagged by branch + commit (never a version) so it can
-            # never touch the stable v* line. Including the short SHA means every commit keeps its
-            # own pre-release instead of overwriting the branch's last one — re-building the same
-            # commit refreshes just that tag (see the delete below). Sanitise the branch to a valid,
-            # tidy tag; the SHA also disambiguates two branches whose names collapse to one slug.
+          elif [ "${{ inputs.release }}" = "true" ] && [ "${GITHUB_REF_NAME}" != "${DEFAULT_BRANCH}" ]; then
+            # [rc4l] A release dispatched from any branch other than the default one is
+            # automatically experimental — no separate checkbox. Tagged by branch + commit (never a
+            # version) so it can never touch the stable v* line. The short SHA means every commit
+            # keeps its own pre-release instead of overwriting the branch's last one — re-building
+            # the same commit refreshes just that tag (see the delete below). Sanitise the branch to
+            # a valid, tidy tag; the SHA also disambiguates two branches whose names collapse to one slug.
             branch="${GITHUB_REF_NAME}"
             slug="$(echo "$branch" | sed 's#[^A-Za-z0-9._-]#-#g')"
             version="exp-${slug}-${shortsha}"
@@ -75,7 +74,8 @@ jobs:
             channel=experimental
             echo "experimental pre-release from $branch ($shortsha) -> $version"
           elif [ "${{ inputs.release }}" = "true" ]; then
-            # [rc4l] The version is derived, never typed: a hand-entered tag is how you get
+            # [rc4l] Reaches here only on the default branch: a real, stable release.
+            # The version is derived, never typed: a hand-entered tag is how you get
             # v0.2.0 published twice, or a v0.10.0 that sorts below v0.9.0.
             latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
             latest="${latest:-v0.0.0}"
@@ -111,7 +111,7 @@ jobs:
   # coverage, which a work-in-progress branch will not meet, and the whole point is to get a
   # Windows binary into a tester's hands even while the branch is unfinished.
   test:
-    if: github.ref_type == 'tag' || (inputs.release && !inputs.experimental)
+    if: github.ref_type == 'tag' || (inputs.release && github.ref_name == github.event.repository.default_branch)
     uses: ./.github/workflows/_test.yml
 
   # [rc4l] The three platform builds live in _build.yml so test-and-build.yml runs the same ones on PRs.
