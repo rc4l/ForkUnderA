@@ -13,11 +13,13 @@ using zx::Fixed;
 
 // --- Compile-time contract: the dangerous conversions must NOT exist ---
 
-// [rc4l] angle_t / any unsigned -> Fixed is the zero-extension hazard; must be unconstructible.
-static_assert(!std::is_constructible<Fixed, unsigned>::value,
-	"Fixed must reject construction from unsigned (angle_t) sources");
-static_assert(!std::is_constructible<Fixed, unsigned long>::value, "reject unsigned long");
-static_assert(!std::is_constructible<Fixed, unsigned long long>::value, "reject unsigned long long");
+// [rc4l] angle_t / any unsigned -> Fixed must not happen IMPLICITLY (the zero-extension hazard),
+// but an explicit `(fixed_t)x` is the allowed, visible escape hatch.
+static_assert(!std::is_convertible<unsigned, Fixed>::value,
+	"unsigned (angle_t) must not implicitly convert to Fixed");
+static_assert(!std::is_convertible<unsigned long long, Fixed>::value, "no implicit unsigned long long");
+static_assert(std::is_constructible<Fixed, unsigned>::value,
+	"explicit construction from unsigned is the intended escape hatch");
 
 // [rc4l] Fixed -> int must be explicit only (no implicit narrowing).
 static_assert(!std::is_convertible<Fixed, int>::value,

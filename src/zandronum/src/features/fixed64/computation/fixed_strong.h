@@ -39,19 +39,25 @@ public:
 	constexpr Fixed(long long v) : v_(static_cast<int64_t>(v)) {}
 
 	// [rc4l] Unsigned sources are the hazard (zero-extension of a value that meant a signed
-	// delta). Deleting them turns `fixed_t f = someAngle;` / `= someDWORD;` into a compile error.
-	Fixed(unsigned) = delete;
-	Fixed(unsigned long) = delete;
-	Fixed(unsigned long long) = delete;
+	// delta). Making them EXPLICIT blocks the silent path -- `fixed_t f = someAngle;` and passing
+	// an angle_t to a fixed parameter still fail -- while letting an author who genuinely means it
+	// write `(fixed_t)x` / `Fixed(x)`. The explicit cast is the visible "I take responsibility"
+	// escape hatch; the implicit conversion that caused the bugs stays forbidden.
+	explicit constexpr Fixed(unsigned v) : v_(static_cast<int64_t>(v)) {}
+	explicit constexpr Fixed(unsigned long v) : v_(static_cast<int64_t>(v)) {}
+	explicit constexpr Fixed(unsigned long long v) : v_(static_cast<int64_t>(v)) {}
 
 	// [rc4l] The blessed, visible ways to cross the boundary on purpose.
 	constexpr int64_t Raw() const { return v_; }
 	static constexpr Fixed FromRaw(int64_t v) { Fixed f; f.v_ = v; return f; }
 
-	// [rc4l] Narrowing out of fixed is explicit only.
+	// [rc4l] Narrowing / lossy conversions out of fixed are explicit only.
 	explicit constexpr operator int() const { return static_cast<int>(v_); }
 	explicit constexpr operator int64_t() const { return v_; }
 	explicit constexpr operator unsigned() const { return static_cast<unsigned>(v_); }
+	explicit constexpr operator short() const { return static_cast<short>(v_); }
+	explicit constexpr operator float() const { return static_cast<float>(v_); }
+	explicit constexpr operator double() const { return static_cast<double>(v_); }
 	explicit constexpr operator bool() const { return v_ != 0; }
 
 	// --- additive: fixed +/- fixed (ints promote via the implicit ctor) ---
@@ -95,6 +101,9 @@ public:
 private:
 	int64_t v_;
 };
+
+// [rc4l] abs() for Fixed (found by ADL, so unqualified abs(fixedval) keeps working).
+inline constexpr Fixed abs(Fixed f) { return f.Raw() < 0 ? Fixed::FromRaw(-f.Raw()) : f; }
 
 } // namespace zx
 
