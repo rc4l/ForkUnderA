@@ -36,6 +36,7 @@
 #include "p_local.h"
 #include "cmdlib.h"
 #include "p_lnspec.h"
+#include "features/fixed64/computation/fixed64_scale_compute.h"
 
 //===========================================================================
 //
@@ -190,8 +191,11 @@ void P_SetSlope (secplane_t *plane, bool setCeil, int xyangi, int zangi,
 
 	if (ib_compatflags & BCOMPATF_SETSLOPEOVERFLOW)
 	{
-		norm[0] = float(finecosine[zang] * finecosine[xyang]);
-		norm[1] = float(finecosine[zang] * finesine[xyang]);
+		// [rc4l] These maps depend on the 32-bit product wrapping at 2^32. A plain fixed*fixed is
+		// the full 64-bit product now that fixed_t is widened, so emulate the old overflow
+		// explicitly. See features/fixed64/computation/fixed64_scale_compute.h (Mul32Wrap).
+		norm[0] = float(zx::Mul32Wrap(finecosine[zang], finecosine[xyang]));
+		norm[1] = float(zx::Mul32Wrap(finecosine[zang], finesine[xyang]));
 	}
 	else
 	{

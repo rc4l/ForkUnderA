@@ -104,11 +104,19 @@ int GetRevisionNumber();
 // SAVESIG should match SAVEVER.
 
 // MINSAVEVER is the minimum level snapshot version that can be loaded.
-#define MINSAVEVER	3100
+// [rc4l] Raised from 3100: widening fixed_t to 64-bit doubled the on-disk width of every
+// serialized fixed_t field, so no snapshot at or below LAST_FIXED32_SAVEVER can be decoded.
+#define MINSAVEVER	4507
+
+// [rc4l] The last SAVEVER whose level snapshots serialized fixed_t as 32 bits. fixed_t is now
+// 64-bit (basictypes.h), so FArchive writes 8 bytes per fixed_t field instead of 4. SAVEVER and
+// MINSAVEVER MUST both exceed this whenever fixed_t is wider than 32 bits, or old saves load
+// misaligned and corrupt actor state. A static_assert in p_saveg.cpp enforces this.
+#define LAST_FIXED32_SAVEVER 4506
 
 // Use 4500 as the base git save version, since it's higher than the
 // SVN revision ever got.
-#define SAVEVER 4506
+#define SAVEVER 4507
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)

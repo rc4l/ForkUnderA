@@ -60,6 +60,18 @@ inline int64_t TMulScale64(int64_t a, int64_t b, int64_t c, int64_t d, int64_t e
 inline int64_t Fixed64Mul(int64_t a, int64_t b) { return MulScale64(a, b, 16); }
 inline int64_t Fixed64Div(int64_t a, int64_t b) { return DivScale64(a, 16, b); }
 
+// [rc4l] Reproduce the historical 32-bit signed-multiply overflow that certain maps rely on via
+// BCOMPATF_SETSLOPEOVERFLOW. Both operands are 16.16 values that fit in int32; the old engine
+// multiplied them as 32-bit int and let the result wrap at 2^32. After the fixed_t widening a
+// plain a*b is the full 64-bit product, which no longer reproduces that emulated bug -- so form
+// the product explicitly in 32 bits, wrapping through unsigned to keep it defined (signed
+// overflow is UB). Truncating each operand to int32 is lossless here because |value| <= FRACUNIT.
+inline int32_t Mul32Wrap(int64_t a, int64_t b)
+{
+	return static_cast<int32_t>(static_cast<uint32_t>(static_cast<int32_t>(a)) *
+								static_cast<uint32_t>(static_cast<int32_t>(b)));
+}
+
 } // namespace zx
 
 #endif // ZX_FIXED64_SCALE_COMPUTE_H

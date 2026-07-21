@@ -56,6 +56,17 @@
 #include "deathmatch.h"
 #include "cl_demo.h"
 #include "network.h"
+#include "version.h"
+
+// [rc4l] fixed_t has no dedicated FArchive overload, so `arc << <fixed_t>` binds to the QWORD
+// operator and writes 8 bytes now that fixed_t is 64-bit -- level snapshots serialize every
+// fixed_t field (actor x/y/z, scale, floorz, plane coeffs, ...) at double the old width. That
+// silently changed the on-disk format, so the version must move past the last 32-bit format or
+// old saves load misaligned. This fires at compile time if fixed_t is widened without the bump.
+static_assert(sizeof(fixed_t) == 4 || SAVEVER > LAST_FIXED32_SAVEVER,
+	"fixed_t is wider than 32 bits but SAVEVER was not advanced past the last 32-bit save format");
+static_assert(sizeof(fixed_t) == 4 || MINSAVEVER > LAST_FIXED32_SAVEVER,
+	"fixed_t is wider than 32 bits but MINSAVEVER still accepts 32-bit-format snapshots");
 
 static void CopyPlayer (player_t *dst, player_t *src, const char *name);
 static void ReadOnePlayer (FArchive &arc, bool skipload);

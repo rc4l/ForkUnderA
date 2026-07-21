@@ -1248,8 +1248,13 @@ static void botcmd_CheckTerrain( CSkullBot *pBot )
 
 	Angle >>= ANGLETOFINESHIFT;
 
-	DestX = pBot->GetPlayer( )->mo->x * finecosine[Angle];
-	DestY = pBot->GetPlayer( )->mo->y * finesine[Angle];
+	// [rc4l] Destination is the player's position offset by lDistance map units along Angle --
+	// the same idiom as the other botcmd walk checks below (mo->x + dist * finecosine[Angle]).
+	// The old code multiplied the coordinate by the cosine (ignoring lDistance entirely), which
+	// overflowed 32-bit fixed_t into a bounded value; under the 64-bit widening that product is
+	// full-magnitude garbage. dist * finecosine is smallint * fixed, so it never overflows.
+	DestX = pBot->GetPlayer( )->mo->x + lDistance * finecosine[Angle];
+	DestY = pBot->GetPlayer( )->mo->y + lDistance * finesine[Angle];
 
 	g_iReturnInt = BOTPATH_TryWalk( pBot->GetPlayer( )->mo, pBot->GetPlayer( )->mo->x, pBot->GetPlayer( )->mo->y, pBot->GetPlayer( )->mo->z, DestX, DestY );
 }

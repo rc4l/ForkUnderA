@@ -134,4 +134,29 @@ TEST(Fixed64Scale, FastAndWideAgreeAtBoundary)
 		EXPECT_EQ(zx::MulScale64(a, b, 16), zx::ComputeMulShiftS64(a, b, 16)) << "a=" << a;
 	}
 }
+
+// [rc4l] Mul32Wrap must reproduce the 32-bit signed-multiply overflow that
+// BCOMPATF_SETSLOPEOVERFLOW slopes depend on -- not the full 64-bit product.
+TEST(Mul32Wrap, ReproducesThirtyTwoBitOverflow)
+{
+	const int64_t FRACUNIT = 65536;
+
+	// FRACUNIT * FRACUNIT == 2^32, which wraps to 0 in 32 bits (the whole point of the emulation).
+	EXPECT_EQ(zx::Mul32Wrap(FRACUNIT, FRACUNIT), 0);
+	EXPECT_NE(zx::Mul32Wrap(FRACUNIT, FRACUNIT), FRACUNIT * FRACUNIT); // != full 64-bit product
+
+	// FRACUNIT * (FRACUNIT/2) == 2^31, which wraps to INT32_MIN as a signed 32-bit value.
+	EXPECT_EQ(zx::Mul32Wrap(FRACUNIT, FRACUNIT / 2), INT32_MIN);
+
+	// A negative operand: -FRACUNIT * FRACUNIT == -2^32, wraps to 0.
+	EXPECT_EQ(zx::Mul32Wrap(-FRACUNIT, FRACUNIT), 0);
+}
+
+// [rc4l] For operands whose product fits int32, Mul32Wrap is an ordinary exact multiply.
+TEST(Mul32Wrap, ExactWhenProductFits)
+{
+	EXPECT_EQ(zx::Mul32Wrap(2, 3), 6);
+	EXPECT_EQ(zx::Mul32Wrap(-7, 11), -77);
+	EXPECT_EQ(zx::Mul32Wrap(30000, 30000), 900000000); // 9e8 < INT32_MAX, fits, no wrap
+}
 } // namespace
