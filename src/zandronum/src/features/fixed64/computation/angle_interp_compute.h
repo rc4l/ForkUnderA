@@ -24,13 +24,21 @@
 namespace zx
 {
 
+// [rc4l] Reinterpret a wrapping 32-bit BAM angle (or angle difference) as a SIGNED int32 before
+// it is consumed as a fixed_t operand. Any BAM value at or past 180 degrees -- an absolute swing
+// amplitude (a security camera's Range) or a right-turn wrapping delta -- has bit 31 set. Under
+// 32-bit fixed_t that signed reinterpretation happened for free in the narrow multiply parameter;
+// the widened 64-bit fixed_t instead zero-extends the value into a huge positive magnitude, which
+// is the whole family of "angle read as a giant positive fixed" regressions. Casting through
+// int32 restores the original signed value on both the old and new builds identically.
+inline constexpr int32_t AngleAsSignedFixed(uint32_t bam) { return static_cast<int32_t>(bam); }
+
 // [rc4l] Interpolate a wrapping BAM angle from oldAngle toward newAngle by frac (16.16). The
 // difference is reinterpreted as a signed int32 before the widened multiply -- see the header
 // comment for why the raw unsigned difference breaks right turns after the fixed_t widening.
 inline uint32_t InterpolateAngleBAM(uint32_t oldAngle, uint32_t newAngle, int64_t frac)
 {
-	const int32_t delta = static_cast<int32_t>(newAngle - oldAngle);
-	return oldAngle + static_cast<uint32_t>(Fixed64Mul(frac, delta));
+	return oldAngle + static_cast<uint32_t>(Fixed64Mul(frac, AngleAsSignedFixed(newAngle - oldAngle)));
 }
 
 } // namespace zx

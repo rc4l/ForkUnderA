@@ -453,7 +453,7 @@ CCMD(dumpportals)
 				Printf(PRINT_LOG, "\tSubsector %d (%d):\n\t\t", j, sub->render_sector->sectornum);
 				for(unsigned k = 0;k< sub->numlines; k++)
 				{
-					Printf(PRINT_LOG, "(%.3f,%.3f), ",	sub->firstline[k].v1->x/65536. + xdisp, sub->firstline[k].v1->y/65536. + ydisp);
+					Printf(PRINT_LOG, "(%.3f,%.3f), ",	double(sub->firstline[k].v1->x)/65536. + xdisp, double(sub->firstline[k].v1->y)/65536. + ydisp);
 				}
 				Printf(PRINT_LOG, "\n\t\tCovered by subsectors:\n");
 				FPortalCoverage *cov = &sub->portalcoverage[portals[i]->plane];

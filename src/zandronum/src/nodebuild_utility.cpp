@@ -637,8 +637,8 @@ FNodeBuilder::FVertexMap::FVertexMap (FNodeBuilder &builder,
 {
 	MinX = minx;
 	MinY = miny;
-	BlocksWide = int(((double(maxx) - minx + 1) + (BLOCK_SIZE - 1)) / BLOCK_SIZE);
-	BlocksTall = int(((double(maxy) - miny + 1) + (BLOCK_SIZE - 1)) / BLOCK_SIZE);
+	BlocksWide = int(((double(maxx) - double(minx) + 1) + (BLOCK_SIZE - 1)) / BLOCK_SIZE);
+	BlocksTall = int(((double(maxy) - double(miny) + 1) + (BLOCK_SIZE - 1)) / BLOCK_SIZE);
 	MaxX = MinX + BlocksWide * BLOCK_SIZE - 1;
 	MaxY = MinY + BlocksTall * BLOCK_SIZE - 1;
 	VertexGrid = new TArray<int>[BlocksWide * BlocksTall];

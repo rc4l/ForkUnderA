@@ -51,6 +51,36 @@ TEST(AngleInterp, RightTurnDoesNotOvershoot)
 	EXPECT_GT(int32_t(fixed), -kTicStep);          // and smaller in magnitude than a full tic
 }
 
+// [rc4l] The shared reinterpret primitive underneath every "angle read as a giant positive fixed"
+// fix (view interpolation, the security-camera swing, the player turn delta). Any BAM value with
+// bit 31 set -- an amplitude at/past 180 degrees, or a right-turn wrapping delta -- must come back
+// as a small signed magnitude, not a ~2-billion positive one.
+TEST(AngleInterp, AngleAsSignedFixedReinterpretsHighBit)
+{
+	EXPECT_EQ(zx::AngleAsSignedFixed(0), 0);
+	EXPECT_EQ(zx::AngleAsSignedFixed(1000), 1000);          // small positive is unchanged
+	EXPECT_EQ(zx::AngleAsSignedFixed(0x80000000u), INT32_MIN); // exactly 180 degrees -> most negative
+	EXPECT_LT(zx::AngleAsSignedFixed(0x80000000u), 0);         // >=180 degrees is negative, not huge
+
+	// A one-tic right turn (newAngle - oldAngle wraps below zero) is a small negative delta.
+	const uint32_t rightDelta = 0u - uint32_t(kTicStep);
+	EXPECT_EQ(zx::AngleAsSignedFixed(rightDelta), -kTicStep);
+}
+
+// [rc4l] The security-camera hazard (a_camera): a swing Range of 270 degrees has bit 31 set. Read
+// signed, FixedMul(Range, sine) stays a bounded swing; read unsigned it would explode. This pins
+// the value the widened build must reproduce for a wide-arc camera.
+TEST(AngleInterp, SecurityCameraWideRangeStaysSigned)
+{
+	const uint32_t range270 = 0xC0000000u;                 // 270 degrees in BAM (bit 31 set)
+	const int64_t sine = 32768;                            // an arbitrary 0.5 finesine sample
+	const int64_t asSigned = zx::Fixed64Mul(sine, zx::AngleAsSignedFixed(range270));
+	const int64_t asUnsigned = zx::Fixed64Mul(sine, int64_t(range270));
+	EXPECT_LT(asSigned, 0);                                // signed swing: negative half of the arc
+	EXPECT_GT(asUnsigned, 0);                              // the bug: a giant positive instead
+	EXPECT_NE(asSigned, asUnsigned);
+}
+
 // [rc4l] Endpoints: frac 0 stays at the old angle, frac 1 (FRACUNIT) reaches the new angle,
 // for both directions.
 TEST(AngleInterp, EndpointsExact)

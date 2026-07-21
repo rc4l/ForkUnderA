@@ -1431,5 +1431,5 @@ DThinker *FDecalColorerAnim::CreateThinker (DBaseDecal *actor, side_t *wall) con
 static fixed_t ReadScale (FScanner &sc)
 {
 	sc.MustGetFloat ();
-	return fixed_t(clamp (sc.Float * FRACUNIT, 256.0, 256.0*FRACUNIT));
+	return fixed_t(clamp<double> (sc.Float * double(FRACUNIT), 256.0, 256.0*double(FRACUNIT)));
 }

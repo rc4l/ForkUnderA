@@ -306,7 +306,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_M_Saw)
 		angle = self->angle + (pr_m_saw.Random2() << 18);
 		
 		P_LineAttack (self, angle, MELEERANGE+1,
-					P_AimLineAttack (self, angle, MELEERANGE+1, &linetarget), damage,
+					(int)P_AimLineAttack (self, angle, MELEERANGE+1, &linetarget), damage,
 					NAME_Melee, pufftype, false, &linetarget);
 
 		if (!linetarget)

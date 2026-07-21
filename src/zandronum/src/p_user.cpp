@@ -83,6 +83,7 @@
 #include "invasion.h"
 #include "d_netinf.h"
 #include "g_shared/pwo.h"
+#include "features/fixed64/computation/angle_interp_compute.h"
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -2963,7 +2964,10 @@ void P_MovePlayer (player_t *player)
 		}
 
 		// [AK] Calculate how much the player's angle changed.
-		mo->AngleDelta = fixed_t(mo->angle - oldAngle);
+		// [rc4l] The turn delta is an unsigned wrapping BAM difference; read it back as a signed
+		// int32 so a right turn stays a small negative value instead of a huge positive one after
+		// the fixed_t widening (see angle_interp_compute.h).
+		mo->AngleDelta = fixed_t(zx::AngleAsSignedFixed(mo->angle - (angle_t)oldAngle));
 	}
 	// [AK] Their turn ticks still need to be decremented.
 	else if (player->turnticks)

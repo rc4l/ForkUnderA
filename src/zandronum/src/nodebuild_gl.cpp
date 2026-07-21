@@ -62,7 +62,7 @@ double FNodeBuilder::AddIntersection (const node_t &node, int vertex)
 	// Calculate signed distance of intersection vertex from start of splitter.
 	// Only ordering is important, so we don't need a sqrt.
 	FPrivVert *v = &Vertices[vertex];
-	double dist = (double(v->x) - node.x)*(node.dx) + (double(v->y) - node.y)*(node.dy);
+	double dist = (double(v->x) - double(node.x))*(double(node.dx)) + (double(v->y) - double(node.y))*(double(node.dy));
 
 	FEvent *event = Events.FindEvent (dist);
 	if (event == NULL)

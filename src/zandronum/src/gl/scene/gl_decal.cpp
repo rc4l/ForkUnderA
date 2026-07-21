@@ -257,7 +257,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	float linelength = glseg.fracright * side->TexelLength - leftedge;
 
 	// texel index of the decal's left edge
-	float decalpixpos = (float)side->TexelLength * decal->LeftDistance / (1<<30) - (flipx? decalwidth-decallefto : decallefto) - leftedge;
+	float decalpixpos = (float)side->TexelLength * (float)decal->LeftDistance / (1<<30) - (flipx? decalwidth-decallefto : decallefto) - leftedge;
 
 	float left,right;
 	float lefttex,righttex;

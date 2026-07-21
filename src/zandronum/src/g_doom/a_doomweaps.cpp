@@ -235,7 +235,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	if (Range == 0) Range = MELEERANGE+1;
 
 	angle = self->angle + (pr_saw.Random2() * (Spread_XY / 255));
-	slope = P_AimLineAttack (self, angle, Range, &linetarget) + (pr_saw.Random2() * (Spread_Z / 255));
+	slope = (angle_t)(P_AimLineAttack (self, angle, Range, &linetarget) + fixed_t((int)(pr_saw.Random2() * (Spread_Z / 255))));
 
 
 	AWeapon *weapon = self->player->ReadyWeapon;
@@ -260,11 +260,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	if ( player->cheats2 & CF2_SPREAD )
 	{
 		P_LineAttack( self, angle + ( ANGLE_45 / 3 ), Range,
-					  P_AimLineAttack( self, angle + ( ANGLE_45 / 3 ), Range, &linetarget ), damage,
+					  (int)P_AimLineAttack( self, angle + ( ANGLE_45 / 3 ), Range, &linetarget ), damage,
 					  NAME_Melee, pufftype, false );
 
 		P_LineAttack( self, angle - ( ANGLE_45 / 3 ), Range,
-					  P_AimLineAttack( self, angle - ( ANGLE_45 / 3 ), Range, &linetarget ), damage,
+					  (int)P_AimLineAttack( self, angle - ( ANGLE_45 / 3 ), Range, &linetarget ), damage,
 					  NAME_Melee, pufftype, false );
 	}
 

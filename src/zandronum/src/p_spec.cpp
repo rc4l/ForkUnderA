@@ -1595,7 +1595,7 @@ void P_SpawnSpecials (void)
 			  // Only east scrollers also scroll the texture
 				new DScroller (DScroller::sc_floor,
 					(-FRACUNIT/2)<<((sector->special & 0xff) - Carry_East5),
-					0, -1, int(sector-sectors), 0);
+					fixed_t(0), -1, int(sector-sectors), 0);
 			}
 			break;
 		}

@@ -2611,13 +2611,13 @@ class CommandDrawBar : public SBarInfoCommand
 			// {cx, cy, cr, cb}
 			fixed_t clip[4] = {0, 0, 0, 0};
 		
-			fixed_t sizeOfImage = (horizontal ? fg->GetScaledWidth()-border*2 : fg->GetScaledHeight()-border*2)<<FRACBITS;
+			fixed_t sizeOfImage = fixed_t((horizontal ? fg->GetScaledWidth()-border*2 : fg->GetScaledHeight()-border*2)<<FRACBITS);
 			clip[(!horizontal)|((horizontal ? !reverse : reverse)<<1)] = sizeOfImage - FixedMul(sizeOfImage, value);
 			// Draw background
 			if(border != 0)
 			{
 				for(unsigned int i = 0;i < 4;i++)
-					clip[i] += border<<FRACBITS;
+					clip[i] += fixed_t(border<<FRACBITS);
 		
 				if (bg != NULL && bg->GetScaledWidth() == fg->GetScaledWidth() && bg->GetScaledHeight() == fg->GetScaledHeight())
 					statusBar->DrawGraphic(bg, this->x, this->y, block->XOffset(), block->YOffset(), block->Alpha(), block->FullScreenOffsets(), false, false, 0, false, -1, -1, clip[0], clip[1], clip[2], clip[3]);

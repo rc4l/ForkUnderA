@@ -11857,7 +11857,7 @@ scriptwait:
 		case PCD_GETLINEROWOFFSET:
 			if (activationline != NULL)
 			{
-				(int)((int)((int)((int)((int)((int)((int)((int)((int)((int)((int)((int)((int)((int)((int)((int)((int)((int)((int)((int)(PushToStack (activationline->sidedef[0]->GetTextureYOffset(side_t::mid) >> FRACBITS)))))))))))))))))))));
+				PushToStack ((int)(activationline->sidedef[0]->GetTextureYOffset(side_t::mid) >> FRACBITS));
 			}
 			else
 			{

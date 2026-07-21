@@ -156,7 +156,7 @@ static int CheckForMissingSegs()
 		TVector2<double> lvec((double)(line->dx),(double)( line->dy));
 		float linelen = float(lvec.Length());
 
-		missing += (added_seglen[i] < linelen - FRACUNIT);
+		missing += (added_seglen[i] < linelen - float(FRACUNIT));
 	}
 
 	delete [] added_seglen;
