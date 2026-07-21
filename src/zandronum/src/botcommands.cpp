@@ -1337,8 +1337,8 @@ static void botcmd_PathToGoal( CSkullBot *pBot )
 
 	// We don't need GoalPos anymore, so we can corrupt it! KEKE!
 	Angle = Angle >> ANGLETOFINESHIFT;
-	GoalPos.x = pBot->GetPlayer( )->mo->x + ( USERANGE >> FRACBITS ) * finecosine[Angle];
-	GoalPos.y = pBot->GetPlayer( )->mo->y + ( USERANGE >> FRACBITS ) * finesine[Angle];
+	GoalPos.x = pBot->GetPlayer( )->mo->x + (int)( USERANGE >> FRACBITS ) * finecosine[Angle];
+	GoalPos.y = pBot->GetPlayer( )->mo->y + (int)( USERANGE >> FRACBITS ) * finesine[Angle];
 
 	ulFlags = BOTPATH_TryWalk( pBot->GetPlayer( )->mo, pBot->GetPlayer( )->mo->x, pBot->GetPlayer( )->mo->y, pBot->GetPlayer( )->mo->z, GoalPos.x, GoalPos.y );
 	if ( ulFlags & BOTPATH_JUMPABLELEDGE )
@@ -1453,8 +1453,8 @@ static void botcmd_PathToLastKnownEnemyPosition( CSkullBot *pBot )
 
 	// We don't need GoalPos anymore, so we can corrupt it! KEKE!
 	Angle = Angle >> ANGLETOFINESHIFT;
-	GoalPos.x = pBot->GetPlayer( )->mo->x + ( USERANGE >> FRACBITS ) * finecosine[Angle];
-	GoalPos.y = pBot->GetPlayer( )->mo->y + ( USERANGE >> FRACBITS ) * finesine[Angle];
+	GoalPos.x = pBot->GetPlayer( )->mo->x + (int)( USERANGE >> FRACBITS ) * finecosine[Angle];
+	GoalPos.y = pBot->GetPlayer( )->mo->y + (int)( USERANGE >> FRACBITS ) * finesine[Angle];
 
 	ulFlags = BOTPATH_TryWalk( pBot->GetPlayer( )->mo, pBot->GetPlayer( )->mo->x, pBot->GetPlayer( )->mo->y, pBot->GetPlayer( )->mo->z, GoalPos.x, GoalPos.y );
 	if ( ulFlags & BOTPATH_JUMPABLELEDGE )
@@ -1585,8 +1585,8 @@ static void botcmd_Roam( CSkullBot *pBot )
 
 	// We don't need GoalPos anymore, so we can corrupt it! KEKE!
 	Angle = Angle >> ANGLETOFINESHIFT;
-	GoalPos.x = pBot->GetPlayer( )->mo->x + ( USERANGE >> FRACBITS ) * finecosine[Angle];
-	GoalPos.y = pBot->GetPlayer( )->mo->y + ( USERANGE >> FRACBITS ) * finesine[Angle];
+	GoalPos.x = pBot->GetPlayer( )->mo->x + (int)( USERANGE >> FRACBITS ) * finecosine[Angle];
+	GoalPos.y = pBot->GetPlayer( )->mo->y + (int)( USERANGE >> FRACBITS ) * finesine[Angle];
 
 	ulFlags = BOTPATH_TryWalk( pBot->GetPlayer( )->mo, pBot->GetPlayer( )->mo->x, pBot->GetPlayer( )->mo->y, pBot->GetPlayer( )->mo->z, GoalPos.x, GoalPos.y );
 	if ( ulFlags & BOTPATH_JUMPABLELEDGE )

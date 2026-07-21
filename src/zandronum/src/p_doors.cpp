@@ -1033,7 +1033,7 @@ DAnimatedDoor::DAnimatedDoor (sector_t *sec, line_t *line, int speed, int delay,
 	FTexture *tex = TexMan[picnum];
 	topdist = tex ? tex->GetScaledHeight() : 64;
 
-	topdist = m_Sector->ceilingplane.d - topdist * m_Sector->ceilingplane.c;
+	topdist = m_Sector->ceilingplane.d - (int)topdist * m_Sector->ceilingplane.c;
 
 	m_Status = Opening;
 	m_Speed = speed;

@@ -505,7 +505,7 @@ void P_RunEffect (AActor *actor, int effects)
 
 		fixed_t backx = actor->x - FixedMul (finecosine[(moveangle)>>ANGLETOFINESHIFT], actor->radius*2);
 		fixed_t backy = actor->y - FixedMul (finesine[(moveangle)>>ANGLETOFINESHIFT], actor->radius*2);
-		fixed_t backz = actor->z - (actor->height>>3) * (actor->velz>>16) + (2*actor->height)/3;
+		fixed_t backz = actor->z - (actor->height>>3) * (int)(actor->velz>>16) + (2*actor->height)/3;
 
 		angle_t an = (moveangle + ANG90) >> ANGLETOFINESHIFT;
 		int speed;
@@ -552,7 +552,7 @@ void P_RunEffect (AActor *actor, int effects)
 		P_DrawSplash2 (6,
 			actor->x - FixedMul (finecosine[(moveangle)>>ANGLETOFINESHIFT], actor->radius*2),
 			actor->y - FixedMul (finesine[(moveangle)>>ANGLETOFINESHIFT], actor->radius*2),
-			actor->z - (actor->height>>3) * (actor->velz>>16) + (2*actor->height)/3,
+			actor->z - (actor->height>>3) * (int)(actor->velz>>16) + (2*actor->height)/3,
 			moveangle + ANG180, 2, 2);
 	}
 	if (effects & FX_FOUNTAINMASK)

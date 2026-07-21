@@ -4102,7 +4102,7 @@ void AActor::Tick ()
 				AActor * th = Spawn("GrenadeSmokeTrail", 
 					x - FixedMul (finecosine[(moveangle)>>ANGLETOFINESHIFT], radius*2) + (pr_rockettrail()<<10),
 					y - FixedMul (finesine[(moveangle)>>ANGLETOFINESHIFT], radius*2) + (pr_rockettrail()<<10),
-					z - (height>>3) * (velz>>16) + (2*height)/3, ALLOW_REPLACE);
+					z - (height>>3) * (int)(velz>>16) + (2*height)/3, ALLOW_REPLACE);
 				if (th)
 				{
 					th->tics -= pr_rockettrail()&3;

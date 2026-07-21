@@ -4031,8 +4031,8 @@ fixed_t P_AimLineAttack(AActor *t1, angle_t angle, fixed_t distance, AActor **pL
 	aim.shootthing = t1;
 	aim.friender = (friender == NULL) ? t1 : friender;
 
-	x2 = t1->x + (distance >> FRACBITS)*finecosine[angle];
-	y2 = t1->y + (distance >> FRACBITS)*finesine[angle];
+	x2 = t1->x + (int)(distance >> FRACBITS)*finecosine[angle];
+	y2 = t1->y + (int)(distance >> FRACBITS)*finesine[angle];
 	aim.shootz = t1->z + (t1->height >> 1) - t1->floorclip;
 	// [BB] In ST, right after a map change, mo apparently can be zero.
 	if ( ( t1->player != NULL ) && ( t1->player->mo != NULL ) )

@@ -286,7 +286,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FreezeDeathChunks)
 	// base the number of shards on the size of the dead thing, so bigger
 	// things break up into more shards than smaller things.
 	// An actor with radius 20 and height 64 creates ~40 chunks.
-	numChunks = MAX<int> (4, (self->radius>>FRACBITS)*(self->height>>FRACBITS)/32);
+	numChunks = MAX<int> (4, (int)(self->radius>>FRACBITS)*(int)(self->height>>FRACBITS)/32);
 	i = (pr_freeze.Random2()) % (numChunks/4);
 	for (i = MAX (24, numChunks + i); i >= 0; i--)
 	{

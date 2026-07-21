@@ -571,7 +571,7 @@ static fixed_t scale_ftom;
 // translates between frame-buffer and map distances
 inline fixed_t FTOM(fixed_t x)
 {
-	return x * scale_ftom;
+	return Scale(x, scale_ftom, 1);
 }
 
 inline fixed_t MTOF(fixed_t x)

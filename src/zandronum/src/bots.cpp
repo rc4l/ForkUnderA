@@ -791,7 +791,7 @@ bool BOTS_IsPathObstructed( fixed_t Distance, AActor *pSource )
 				vx,
 				vy,
 				vz,
-				Distance * FRACUNIT,	// Maximum search distance
+				Distance * (int)FRACUNIT,	// Maximum search distance
 				MF_SOLID|MF_SHOOTABLE,		// Actor mask (ignore actors without this flag)
 				0,				// Wall mask
 				pSource,		// Actor to ignore
