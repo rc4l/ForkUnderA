@@ -4,7 +4,7 @@
         {
             "label": "Build Zandronum",
             "type": "shell",
-            "command": "${workspaceFolder}/build.sh",
+            "command": "${workspaceFolder}/mac_build.sh",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -20,7 +20,7 @@
         {
             "label": "Build Zandronum (with sound)",
             "type": "shell",
-            "command": "${workspaceFolder}/build.sh",
+            "command": "${workspaceFolder}/mac_build.sh",
             "options": {
                 "env": {
                     "SOUND": "1"
@@ -38,7 +38,7 @@
         {
             "label": "Clean Build",
             "type": "shell",
-            "command": "rm -rf ${workspaceFolder}/build && ${workspaceFolder}/build.sh",
+            "command": "rm -rf ${workspaceFolder}/build && ${workspaceFolder}/mac_build.sh",
             "group": "build",
             "presentation": {
                 "echo": true,

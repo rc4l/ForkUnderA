@@ -100,7 +100,7 @@ def main():
     args = ap.parse_args()
 
     if not os.path.exists(ENGINE):
-        sys.exit("engine not found at %s -- run ./build.sh first" % ENGINE)
+        sys.exit("engine not found at %s -- run ./mac_build.sh first" % ENGINE)
 
     os.makedirs(args.outdir, exist_ok=True)
     results = {}
