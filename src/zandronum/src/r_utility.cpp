@@ -52,6 +52,7 @@
 #include "p_3dmidtex.h"
 #include "r_data/r_interpolate.h"
 #include "v_palette.h"
+#include "features/fixed64/computation/finetable_compute.h"
 #include "po_man.h"
 #include "p_effect.h"
 #include "st_start.h"
@@ -352,7 +353,11 @@ void R_InitTables (void)
 	}
 	finesine[FINEANGLES/4] = FRACUNIT;
 	finesine[FINEANGLES*3/4] = -FRACUNIT;
-	memcpy (&finesine[FINEANGLES], &finesine[0], sizeof(angle_t)*FINEANGLES/4);
+	// [rc4l] Size the wraparound copy off finesine's own element type, not angle_t. They were
+	// the same width at 32-bit fixed_t; after widening to 64 bits a sizeof(angle_t) copy moved
+	// only half the tail and zeroed finecosine across ~315-360 deg (the "forward = slide south"
+	// bug). See features/fixed64/computation/finetable_compute.h.
+	zx::FillFineSineWrap (finesine, FINEANGLES);
 }
 
 //==========================================================================
