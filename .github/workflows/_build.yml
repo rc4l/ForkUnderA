@@ -95,103 +95,21 @@ jobs:
           Write-Host "vcpkg installed tree: $p"
 
       # [rc4l] Building these from source took 15.5 of this job's 19 minutes. Restoring the
-      # installed tree makes the install below a near-no-op; the key is this workflow file's
-      # hash, so it busts whenever the package list here changes.
+      # installed tree makes the vcpkg install inside the script a near-no-op; the key is the
+      # build script's hash (the dep list lives there now), so it busts when the deps change.
       - name: Cache vcpkg packages
         uses: actions/cache@v4
         with:
           path: ${{ steps.vcpkg.outputs.installed }}
-          key: vcpkg-x64-windows-${{ hashFiles('.github/workflows/_build.yml') }}
+          key: vcpkg-x64-windows-${{ hashFiles('windows_compile.ps1') }}
           restore-keys: vcpkg-x64-windows-
 
-      # OpenAL audio deps (replacing FMOD) via vcpkg, which is preinstalled on the
-      # windows-latest runner along with Visual Studio 2022, CMake and Python.
-      - name: Install audio deps (vcpkg)
+      # [rc4l] The whole compile — vcpkg deps, DirectX-SDK reshaping, CMake configure/build and
+      # packaging — lives in windows_compile.ps1 so a contributor runs exactly what CI runs, and
+      # CI verifies the script on every PR. Keep this a thin wrapper: no build logic here.
+      - name: Compile ZandroX (windows_compile.ps1)
         shell: pwsh
-        run: |
-          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install `
-            openal-soft:x64-windows libsndfile:x64-windows mpg123:x64-windows `
-            opus:x64-windows openssl:x64-windows
-
-      # Zandronum's Windows build wants the legacy DirectX SDK layout ($DXSDK_DIR/
-      # Include/d3d9.h, $DXSDK_DIR/Lib/x64/dxguid.lib). Those files live in the modern
-      # Windows SDK — reshape them into the expected layout and set DXSDK_DIR.
-      - name: Set up DirectX headers/libs from the Windows SDK
-        shell: pwsh
-        run: |
-          $kits = "${env:ProgramFiles(x86)}\Windows Kits\10"
-          if (-not (Test-Path $kits)) { $kits = "${env:ProgramFiles}\Windows Kits\10" }
-          $ver = (Get-ChildItem "$kits\Include" -Directory |
-                  Where-Object { $_.Name -match '^\d+\.\d+' } |
-                  Sort-Object Name -Descending | Select-Object -First 1).Name
-          Write-Host "Windows SDK version: $ver"
-          $dx = "$env:GITHUB_WORKSPACE\dxsdk"
-          New-Item -ItemType Directory -Force -Path "$dx\Include","$dx\Lib\x64" | Out-Null
-          Copy-Item "$kits\Include\$ver\shared\*" "$dx\Include\" -Recurse -Force -ErrorAction SilentlyContinue
-          Copy-Item "$kits\Include\$ver\um\*"     "$dx\Include\" -Recurse -Force -ErrorAction SilentlyContinue
-          Copy-Item "$kits\Lib\$ver\um\x64\*"     "$dx\Lib\x64\" -Force -ErrorAction SilentlyContinue
-          if (-not (Test-Path "$dx\Include\d3d9.h")) { throw "d3d9.h not found in Windows SDK $ver" }
-          if (-not (Test-Path "$dx\Lib\x64\dxguid.lib")) { throw "dxguid.lib not found in Windows SDK $ver" }
-          "DXSDK_DIR=$dx" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Host "DXSDK_DIR set to $dx"
-
-      - name: Configure (MSVC x64, NO_FMOD, OpenAL)
-        shell: pwsh
-        run: |
-          # Point CMake at the vcpkg-installed deps with explicit -D paths instead of
-          # the vcpkg toolchain file — the toolchain's cmake_policy() calls collide
-          # with Zandronum's old CMake minimums and break the VS generator.
-          $vcpkg = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows"
-          cmake -S src/zandronum -B build-win -G "Visual Studio 17 2022" -A x64 -T v143 `
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
-            -DNO_FMOD=ON -DNO_OPENAL=OFF `
-            -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
-            -DFORCE_INTERNAL_GME=ON `
-            "-DOPENAL_INCLUDE_DIR=$vcpkg/include/AL" `
-            "-DOPENAL_LIBRARY=$vcpkg/lib/OpenAL32.lib" `
-            "-DSNDFILE_INCLUDE_DIR=$vcpkg/include" `
-            "-DSNDFILE_LIBRARY=$vcpkg/lib/sndfile.lib" `
-            "-DMPG123_INCLUDE_DIR=$vcpkg/include" `
-            "-DMPG123_LIBRARIES=$vcpkg/lib/mpg123.lib" `
-            "-DOPUS_INCLUDE_DIR=$vcpkg/include/opus" `
-            "-DOPUS_LIBRARIES=$vcpkg/lib/opus.lib" `
-            "-DOPENSSL_ROOT_DIR=$vcpkg" "-DOPENSSL_USE_STATIC_LIBS=OFF"
-
-      - name: Build (Release)
-        shell: pwsh
-        run: cmake --build build-win --config Release -- -m
-
-      - name: Package
-        shell: pwsh
-        run: |
-          $out = "build-win/Release"
-          if (-not (Test-Path "$out/zandronum.exe")) { throw "zandronum.exe missing — Windows build failed" }
-          New-Item -ItemType Directory -Force -Path dist-windows | Out-Null
-          Copy-Item "$out/zandronum.exe" dist-windows/
-          Copy-Item "$out/*.pk3" dist-windows/ -ErrorAction SilentlyContinue
-          # [rc4l] Ship Freedoom so the zip is playable without a separate IWAD. It is
-          # BSD-3-clause, whose clause 2 requires the notice to accompany binary distributions.
-          if (Test-Path tools/freedoom/freedoom2.wad) {
-            Copy-Item tools/freedoom/*.wad dist-windows/
-            Copy-Item tools/freedoom/License.txt dist-windows/FREEDOOM-LICENSE.txt
-          } else {
-            throw "tools/freedoom/freedoom2.wad missing — the zip would ship without a game"
-          }
-          # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and say where
-          # the corresponding source is, so a missing file fails the build.
-          Copy-Item LICENSE.txt dist-windows/
-          Copy-Item THIRD-PARTY-NOTICES.txt dist-windows/
-          # Runtime DLLs (openal-soft + decoders) next to the exe.
-          Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/*.dll" dist-windows/ -ErrorAction SilentlyContinue
-          # [rc4l] Without OpenAL32.dll beside the exe the game starts and is simply silent.
-          if (-not (Test-Path dist-windows/OpenAL32.dll)) {
-            throw "OpenAL32.dll missing from dist-windows — the build would ship without sound"
-          }
-          Write-Host "sound OK: OpenAL32.dll present"
-          # [rc4l] Zip it ourselves so the release asset is one file with a stable name.
-          Compress-Archive -Path dist-windows/* `
-            -DestinationPath "ZandroX-${{ inputs.version }}-windows-x64.zip" -Force
-          Get-ChildItem *.zip
+        run: ./windows_compile.ps1 -Version "${{ inputs.version }}"
 
       - name: Upload ZandroX Windows build
         if: ${{ success() }}
