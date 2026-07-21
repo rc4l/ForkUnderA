@@ -14,6 +14,15 @@
 #include <cstdint>
 #include "features/fixed64/computation/fixed64_scale_compute.h"
 
+namespace zx
+{
+// [rc4l] Mode-agnostic raw accessor for the strong-fixed migration: identity for plain integers
+// (and the non-strict fixed_t, which is int64), .Raw() for the strong Fixed (declared in the
+// ZX_STRONG_FIXED block below). Shared code can unwrap fixed_t to the int64 core without caring
+// which mode is active. Inlines to nothing, so the default build is unaffected.
+inline constexpr int64_t raw(int64_t v) { return v; }
+}
+
 // Generic forms: shift is a runtime argument. (The engine uses the numbered forms below; these
 // exist for completeness and delegate to the same tested core.)
 inline int64_t Scale(int64_t a, int64_t b, int64_t c)                              { return zx::ComputeMulDivS64(a, b, c); }
@@ -59,6 +68,8 @@ ZX_MAKE_SCALE(29) ZX_MAKE_SCALE(30) ZX_MAKE_SCALE(31) ZX_MAKE_SCALE(32)
 // is explicit (so int64 overloads never steal Fixed args) and int->int64 beats int->Fixed (so
 // plain-int calls stay on the int64 path).
 #include "features/fixed64/computation/fixed_strong.h"
+
+namespace zx { inline constexpr int64_t raw(Fixed f) { return f.Raw(); } }
 
 inline zx::Fixed Scale(zx::Fixed a, zx::Fixed b, zx::Fixed c) { return zx::Fixed::FromRaw(zx::ComputeMulDivS64(a.Raw(), b.Raw(), c.Raw())); }
 inline zx::Fixed MulScale(zx::Fixed a, zx::Fixed b, unsigned s) { return zx::Fixed::FromRaw(zx::MulScale64(a.Raw(), b.Raw(), s)); }

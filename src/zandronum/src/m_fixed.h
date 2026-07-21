@@ -25,7 +25,7 @@
 	inline fixed_t SafeDivScale##x (fixed_t a, fixed_t b) \
 	{ \
 		if (b == 0) return (a < 0) ? FIXED_MIN : FIXED_MAX; \
-		return zx::DivScale64(a, (x), b); \
+		return zx::DivScale64(zx::raw(a), (x), zx::raw(b)); \
 	}
 ZX_MAKE_SAFEDIVSCALE(1)
 ZX_MAKE_SAFEDIVSCALE(2)
