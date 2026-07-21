@@ -2220,14 +2220,14 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 		{
 			if (xspeed > maxmove)
 			{
-				steps = 1 + xspeed / maxmove;
+				steps = (int)(1 + xspeed / maxmove);
 			}
 		}
 		else
 		{
 			if (yspeed > maxmove)
 			{
-				steps = 1 + yspeed / maxmove;
+				steps = (int)(1 + yspeed / maxmove);
 			}
 		}
 	}

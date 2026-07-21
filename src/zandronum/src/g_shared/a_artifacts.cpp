@@ -1771,7 +1771,7 @@ void APowerRegeneration::DoEffect()
 
 	if (Owner != NULL && Owner->health > 0 && (level.time & 31) == 0)
 	{
-		if (P_GiveBody(Owner, Strength/FRACUNIT))
+		if (P_GiveBody(Owner,(int)( Strength/FRACUNIT)))
 		{
 			// [BC] If we're the server, send out the health change.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )

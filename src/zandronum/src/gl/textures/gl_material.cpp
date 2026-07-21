@@ -955,7 +955,7 @@ void FMaterial::GetTexCoordInfo(FTexCoordInfo *tci, fixed_t x, fixed_t y) const
 	else
 	{
 		fixed_t scale_x = FixedMul(x, tex->xScale);
-		int foo = (Width[GLUSE_TEXTURE] << 17) / scale_x; 
+		int foo = (int)((Width[GLUSE_TEXTURE] << 17) / scale_x); 
 		tci->mRenderWidth = (foo >> 1) + (foo & 1); 
 		tci->mScaleX = scale_x;
 		tci->mTempScaleX = x;
@@ -970,7 +970,7 @@ void FMaterial::GetTexCoordInfo(FTexCoordInfo *tci, fixed_t x, fixed_t y) const
 	else
 	{
 		fixed_t scale_y = FixedMul(y, tex->yScale);
-		int foo = (Height[GLUSE_TEXTURE] << 17) / scale_y; 
+		int foo = (int)((Height[GLUSE_TEXTURE] << 17) / scale_y); 
 		tci->mRenderHeight = (foo >> 1) + (foo & 1); 
 		tci->mScaleY = scale_y;
 		tci->mTempScaleY = y;

@@ -516,14 +516,14 @@ bool P_Move (AActor *actor)
 		{
 			if (xspeed > maxmove)
 			{
-				steps = 1 + xspeed / maxmove;
+				steps = (int)(1 + xspeed / maxmove);
 			}
 		}
 		else
 		{
 			if (yspeed > maxmove)
 			{
-				steps = 1 + yspeed / maxmove;
+				steps = (int)(1 + yspeed / maxmove);
 			}
 		}
 	}
