@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# [rc4l] Strong-fixed gate: syntax-check every engine translation unit with -DZX_STRONG_FIXED so
-# fixed_t becomes zx::Fixed (see src/zandronum/src/basictypes.h). The shipping build stays on the
-# plain 64-bit typedef and is byte-identical; this gate is what keeps that build honest -- any new
-# code that silently converts an angle_t/unsigned/double into a fixed_t (the whole class of bugs
-# the widening introduced) becomes a hard compile error here instead of a runtime regression.
+# [rc4l] fixed_t is the strong zx::Fixed type by DEFAULT now (the engine CMake defines
+# ZX_STRONG_FIXED; see src/zandronum/src/CMakeLists.txt), so the ordinary `cmake --build` already
+# enforces strict fixed-point typing for everyone -- no gate needed for that. What this checks is
+# the OTHER direction: that the opt-out build (-DZX_STRONG_FIXED=OFF -> the raw 64-bit typedef,
+# used when backporting upstream Zandronum/GZDoom patches) still compiles cleanly. Nobody builds
+# the opt-out day-to-day, so a change that only works under the strong type could silently break
+# the backport escape hatch; this catches that by syntax-checking every engine TU with the
+# ZX_STRONG_FIXED define stripped out.
 #
-# [rc4l] Usage: `tests/strict-check.sh`. Point it at a configured engine build tree via
+# [rc4l] Usage: `tests/optout-fixed-check.sh`. Point it at a configured engine build tree via
 # STRICT_BUILD_DIR (default build-mac-arm) -- it needs that tree's compile_commands.json for each
-# TU's real flags. Exits non-zero (and lists every site) if any TU fails the strong-fixed build.
+# TU's real flags. Exits non-zero (and lists every site) if the opt-out build fails anywhere.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,9 +40,11 @@ byfile = {e['file']: e for e in db}
 
 def check(f):
     e = byfile[f]
-    # Turn the real per-TU compile line into a strong-fixed syntax-only check.
-    cmd = re.sub(r'-o\s+\S+', '', e['command']).replace(
-        ' -c ', ' -fsyntax-only -ferror-limit=0 -DZX_STRONG_FIXED ')
+    # Turn the real per-TU compile line into an opt-out (raw fixed_t) syntax-only check by
+    # stripping the default ZX_STRONG_FIXED define, exactly what -DZX_STRONG_FIXED=OFF does.
+    cmd = re.sub(r'-o\s+\S+', '', e['command'])
+    cmd = re.sub(r'\s-DZX_STRONG_FIXED(?=\s|$)', ' ', cmd)
+    cmd = cmd.replace(' -c ', ' -fsyntax-only -ferror-limit=0 ')
     r = subprocess.run(cmd, cwd=e['directory'], shell=True,
                        capture_output=True, text=True)
     return re.findall(r'/zandronum/src/([^:]+:\d+):\d+: error: (.+)', r.stderr)
@@ -54,11 +59,11 @@ with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
             errors.append((loc, msg))
 
 if errors:
-    print(f"STRICT GATE FAIL: {len(errors)} strong-fixed error(s) across {len(files)} TUs\n",
+    print(f"OPT-OUT GATE FAIL: {len(errors)} error(s) with ZX_STRONG_FIXED stripped across {len(files)} TUs\n",
           file=sys.stderr)
     for loc, msg in errors:
         print(f"  {loc}: {msg[:100]}", file=sys.stderr)
     sys.exit(1)
 
-print(f"STRICT GATE OK: all {len(files)} engine TUs build clean with -DZX_STRONG_FIXED")
+print(f"OPT-OUT GATE OK: all {len(files)} engine TUs still build clean with ZX_STRONG_FIXED stripped")
 PY

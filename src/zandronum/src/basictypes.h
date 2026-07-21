@@ -92,12 +92,17 @@ union QWORD_UNION
 #define FRACBITS						16
 #define FRACUNIT						((fixed_t)1<<FRACBITS)
 
-// [rc4l] Strong-fixed migration switch. Default OFF -> fixed_t is the plain 64-bit integer and
-// the shipping build is byte-identical. Define ZX_STRONG_FIXED to make fixed_t the strong Fixed
-// type, which rejects the implicit angle->fixed and fixed->int conversions that caused the
-// widening bugs (see features/fixed64/computation/fixed_strong.h). The strict build is not yet
-// clean across the whole tree; the switch lets the migration proceed file-by-file while the
-// default build stays green.
+// [rc4l] Strong-fixed type, ON by default. The engine build defines ZX_STRONG_FIXED for every TU
+// (see the ZX_STRONG_FIXED option in src/zandronum/src/CMakeLists.txt), making fixed_t the strong
+// zx::Fixed type -- it rejects the implicit angle->fixed and fixed->int conversions behind the
+// widening bugs (see features/fixed64/computation/fixed_strong.h). It is a transparent wrapper
+// over the same 64-bit integer: every operator forwards to the identical integer op, so the
+// numbers are unchanged; only the dangerous conversions become a compile error instead of a
+// silent bug. Plain C (which can't use a class) always gets the raw typedef. The define is set by
+// the build rather than here so it reaches order-independently every TU, including headers like
+// computation/fixedmath.h whose ZX_STRONG_FIXED shims must agree with this typedef. Configure the
+// engine with -DZX_STRONG_FIXED=OFF to opt back into the raw integer for backporting upstream
+// Zandronum/GZDoom patches, which assume a raw fixed_t.
 #if defined(ZX_STRONG_FIXED) && defined(__cplusplus)
 #include "features/fixed64/computation/fixed_strong.h"
 typedef zx::Fixed						fixed_t;
