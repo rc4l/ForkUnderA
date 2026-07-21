@@ -51,6 +51,13 @@ public:
 	explicit constexpr Fixed(unsigned long v) : v_(static_cast<int64_t>(v)) {}
 	explicit constexpr Fixed(unsigned long long v) : v_(static_cast<int64_t>(v)) {}
 
+	// [rc4l] Explicit construction from floating point, truncating toward zero -- matches what the
+	// non-strict build did for `fixed_t(doubleExpr)` / `(fixed_t)doubleExpr` (an (int64)double
+	// conversion of a value that already carries fixed-point magnitude). Explicit, so an implicit
+	// `fixed_t x = 1.5;` still won't compile. See FixedFromDouble tests in fixed_strong_test.cpp.
+	explicit constexpr Fixed(double v) : v_(static_cast<long long>(v)) {}
+	explicit constexpr Fixed(float v) : v_(static_cast<long long>(v)) {}
+
 	// [rc4l] The blessed, visible ways to cross the boundary on purpose.
 	constexpr int64_t Raw() const { return v_; }
 	static constexpr Fixed FromRaw(int64_t v) { return Fixed(v); }

@@ -58,6 +58,18 @@ TEST(FixedStrong, ComparisonsWithIntLiterals)
 	EXPECT_TRUE(Fixed(0) == 0);
 }
 
+// [rc4l] fixed_t(double)/(fixed_t)double truncate toward zero, matching the non-strict build's
+// (int64)double conversion. Explicit only -- an implicit `Fixed x = 1.5;` must not compile.
+TEST(FixedStrong, FixedFromDoubleTruncatesTowardZero)
+{
+	EXPECT_EQ(Fixed(3.9).Raw(), 3);
+	EXPECT_EQ(Fixed(-3.9).Raw(), -3);
+	EXPECT_EQ(Fixed(65536.0 * 2.5).Raw(), static_cast<long long>(65536.0 * 2.5));
+	EXPECT_EQ((static_cast<Fixed>(7.99)).Raw(), 7);           // C-style / static_cast path
+	EXPECT_EQ(Fixed(-0.5f).Raw(), 0);
+	static_assert(!std::is_convertible<double, Fixed>::value, "double must not implicitly convert");
+}
+
 TEST(FixedStrong, ExplicitBoundaryCrossing)
 {
 	Fixed x = Fixed::FromRaw(int64_t(5) << 40); // a value that overflows int32
