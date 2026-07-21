@@ -63,3 +63,10 @@ TEST(DistCompute, SeekerNearTargetVelZ)
 {
 	EXPECT_EQ(zx::ComputeSeekerVelZ(U(400), U(20), U(1000)), U(1000) / 20);
 }
+
+// [rc4l] Sub-tic range (dist < speed) clamps tics to 1 so the missile closes the whole Z gap in
+// one tic instead of dividing by zero.
+TEST(DistCompute, SeekerWithinOneTicClampsToWholeGap)
+{
+	EXPECT_EQ(zx::ComputeSeekerVelZ(U(5), U(10), U(1000)), U(1000)); // tics = 0 -> clamped to 1
+}
