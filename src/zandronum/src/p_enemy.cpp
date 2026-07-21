@@ -554,7 +554,7 @@ bool P_Move (AActor *actor)
 	{
 		actor->x = origx;
 		actor->y = origy;
-		movefactor *= FRACUNIT / ORIG_FRICTION_FACTOR / 4;
+		movefactor *= (int)(FRACUNIT / ORIG_FRICTION_FACTOR / 4);
 		actor->velx += FixedMul (deltax, movefactor);
 		actor->vely += FixedMul (deltay, movefactor);
 	}

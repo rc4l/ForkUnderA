@@ -5742,14 +5742,14 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 				if (len < 0.f)
 					len = 0.f;
 			}
-			len /= FRACUNIT;
+			len /= (double)(FRACUNIT);
 			len = clamp<double>(len - (double)fulldamagedistance, 0, len);
 			points = bombdamagefloat * (1.f - len * bombdistancefloat);
 			if (thing == bombsource)
 			{
 				points = points * splashfactor;
 			}
-			points *= thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT) / (double)FRACUNIT;
+			points *= (double)(thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT) / (double)FRACUNIT);
 
 			// points and bombdamage should be the same sign
 			if ((points * bombdamage) > 0 && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))

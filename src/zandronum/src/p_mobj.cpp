@@ -7258,7 +7258,7 @@ AActor *P_SpawnMissileXYZ (fixed_t x, fixed_t y, fixed_t z,
 	// [RH] Adjust the trajectory if the missile will go over the target's head.
 	else if (z - source->z >= dest->height)
 	{
-		velocity.Z += dest->height - z + source->z;
+		velocity.Z += (double)(dest->height - z + source->z);
 	}
 	velocity.Resize (speed);
 	th->velx = (fixed_t)(velocity.X);

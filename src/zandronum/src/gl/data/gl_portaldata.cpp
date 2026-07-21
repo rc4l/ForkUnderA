@@ -329,8 +329,8 @@ void gl_BuildPortalCoverage(FPortalCoverage *coverage, subsector_t *subsector, F
 	shape.Resize(subsector->numlines);
 	for(unsigned i=0; i<subsector->numlines; i++)
 	{
-		centerx += (shape[i].x = subsector->firstline[i].v1->x + portal->xDisplacement);
-		centery += (shape[i].y = subsector->firstline[i].v1->y + portal->yDisplacement);
+		centerx += (double)((shape[i].x = subsector->firstline[i].v1->x + portal->xDisplacement));
+		centery += (double)((shape[i].y = subsector->firstline[i].v1->y + portal->yDisplacement));
 	}
 
 	FCoverageBuilder build(subsector, portal);

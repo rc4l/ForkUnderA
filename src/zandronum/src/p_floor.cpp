@@ -997,7 +997,7 @@ manual_stair:
 
 				if ( (ok = (tsec != NULL)) )
 				{
-					height += stairstep;
+					height += (int)(stairstep);
 
 					// if sector's floor already moving, look for another
 					//jff 2/26/98 special lockout condition for retriggering
@@ -1033,14 +1033,14 @@ manual_stair:
 
 					// Doom bug: Height was changed before discarding the sector as part of the stairs.
 					// Needs to be compatibility optioned because some maps (Eternall MAP25) depend on it.
-					if (i_compatflags & COMPATF_STAIRINDEX) height += stairstep;
+					if (i_compatflags & COMPATF_STAIRINDEX) height += (int)(stairstep);
 
 					// if sector's floor already moving, look for another
 					//jff 2/26/98 special lockout condition for retriggering
 					if (tsec->PlaneMoving(sector_t::floor) || tsec->stairlock)
 						continue;
 
-					if (!(i_compatflags & COMPATF_STAIRINDEX)) height += stairstep;
+					if (!(i_compatflags & COMPATF_STAIRINDEX)) height += (int)(stairstep);
 
 					ok = true;
 					break;

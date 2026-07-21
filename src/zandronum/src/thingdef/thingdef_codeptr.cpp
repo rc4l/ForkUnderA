@@ -4133,7 +4133,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckLOF)
 
 			if (flags & CLOFF_NOAIM_VERT)
 			{
-				pitch += self->pitch;
+				pitch += (angle_t)(self->pitch);
 			}
 			else if (flags & CLOFF_AIM_VERT_NOOFFSET)
 			{
@@ -4147,7 +4147,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckLOF)
 		else if (flags & CLOFF_ALLOWNULL)
 		{
 			angle += self->angle;
-			pitch += self->pitch;
+			pitch += (angle_t)(self->pitch);
 
 			angle_t ang = self->angle >> ANGLETOFINESHIFT;
 			x1 += FixedMul(offsetwidth, finesine[ang]);
@@ -5462,7 +5462,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_WolfAttack)
 	int hitchance = speed < runspeed ? 256 : 160;
 
 	// Distance accuracy (factoring dodge)
-	hitchance -= dist * (dodge ? 16 : 8);
+	hitchance -= (int)(dist * (dodge ? 16 : 8));
 
 	// While we're here, we may as well do something for this:
 	if (self->target->flags & MF_SHADOW)

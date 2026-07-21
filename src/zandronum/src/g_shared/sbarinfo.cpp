@@ -1229,10 +1229,10 @@ public:
 			dy += ST_Y - (Scaled ? script->resH : 200) + script->height;
 			w = forceWidth < 0 ? texture->GetScaledWidthDouble() : forceWidth;
 			h = forceHeight < 0 ? texture->GetScaledHeightDouble() : forceHeight;
-			double dcx = cx == 0 ? 0 : dx + ((double) cx / FRACUNIT) - texture->GetScaledLeftOffsetDouble();
-			double dcy = cy == 0 ? 0 : dy + ((double) cy / FRACUNIT) - texture->GetScaledTopOffsetDouble();
-			double dcr = cr == 0 ? INT_MAX : dx + w - ((double) cr / FRACUNIT) - texture->GetScaledLeftOffsetDouble();
-			double dcb = cb == 0 ? INT_MAX : dy + h - ((double) cb / FRACUNIT) - texture->GetScaledTopOffsetDouble();
+			double dcx = cx == 0 ? 0 : dx + ((double) cx / (double)(FRACUNIT)) - texture->GetScaledLeftOffsetDouble();
+			double dcy = cy == 0 ? 0 : dy + ((double) cy / (double)(FRACUNIT)) - texture->GetScaledTopOffsetDouble();
+			double dcr = cr == 0 ? INT_MAX : dx + w - ((double) cr / (double)(FRACUNIT)) - texture->GetScaledLeftOffsetDouble();
+			double dcb = cb == 0 ? INT_MAX : dy + h - ((double) cb / (double)(FRACUNIT)) - texture->GetScaledTopOffsetDouble();
 
 			if(Scaled)
 			{
@@ -1320,10 +1320,10 @@ public:
 			// Check for clipping
 			if(cx != 0 || cy != 0 || cr != 0 || cb != 0)
 			{
-				rcx = cx == 0 ? 0 : rx+((((double) cx/FRACUNIT) - texture->GetScaledLeftOffsetDouble())*xScale);
-				rcy = cy == 0 ? 0 : ry+((((double) cy/FRACUNIT) - texture->GetScaledTopOffsetDouble())*yScale);
-				rcr = cr == 0 ? INT_MAX : rx+w-((((double) cr/FRACUNIT) + texture->GetScaledLeftOffsetDouble())*xScale);
-				rcb = cb == 0 ? INT_MAX : ry+h-((((double) cb/FRACUNIT) + texture->GetScaledTopOffsetDouble())*yScale);
+				rcx = cx == 0 ? 0 : rx+((((double) cx/(double)(FRACUNIT)) - texture->GetScaledLeftOffsetDouble())*xScale);
+				rcy = cy == 0 ? 0 : ry+((((double) cy/(double)(FRACUNIT)) - texture->GetScaledTopOffsetDouble())*yScale);
+				rcr = cr == 0 ? INT_MAX : rx+w-((((double) cr/(double)(FRACUNIT)) + texture->GetScaledLeftOffsetDouble())*xScale);
+				rcb = cb == 0 ? INT_MAX : ry+h-((((double) cb/(double)(FRACUNIT)) + texture->GetScaledTopOffsetDouble())*yScale);
 			}
 
 			if(clearDontDraw)

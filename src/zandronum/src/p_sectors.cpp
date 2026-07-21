@@ -1026,7 +1026,7 @@ int side_t::GetLightLevel (bool foggy, int baselight, bool noabsolute, int *pfak
 				rel = xs_RoundToInt // OMG LEE KILLOUGH LIVES! :/
 					(
 						level.WallHorizLight
-						+ fabs(atan(double(linedef->dy) / linedef->dx) / 1.57079)
+						+ fabs(atan(double(linedef->dy) / (double)(linedef->dx)) / 1.57079)
 						* (level.WallVertLight - level.WallHorizLight)
 					);
 			}
