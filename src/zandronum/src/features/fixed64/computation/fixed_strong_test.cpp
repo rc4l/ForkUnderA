@@ -104,7 +104,12 @@ TEST(FixedStrong, EveryOperatorForwardsToRaw)
 	const Fixed f = Fixed::FromRaw(rv);
 
 	// Constructors from every signed/unsigned integer width (unsigned is the explicit escape hatch).
+	// long and long long are distinct ctors; on LP64 (Linux) int64_t is `long`, so FromRaw covers
+	// Fixed(long) but Fixed(long long) is only reached by an explicit long long argument (on macOS
+	// int64_t is `long long`, so it is the other way round -- exercise both so coverage matches on
+	// every platform).
 	EXPECT_EQ(Fixed(long(-7)).Raw(), -7);
+	{ volatile long long ll = -8; EXPECT_EQ(Fixed((long long)ll).Raw(), -8); }
 	EXPECT_EQ(Fixed(5).Raw(), 5);
 	EXPECT_EQ(Fixed(unsigned(0xFFFFFFFFu)).Raw(), int64_t(uint32_t(0xFFFFFFFFu)));       // zero-extend
 	EXPECT_EQ(Fixed((unsigned long)0x1u).Raw(), 1);
