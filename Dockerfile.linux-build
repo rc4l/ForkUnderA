@@ -6,7 +6,7 @@
 #
 #   ./package-linux.sh                                            # build + tarball (recommended)
 #   docker build -t zandrox-linux -f Dockerfile.linux-build .
-#   docker run --rm -v "$PWD:/work" zandrox-linux                 # full client build (no audio)
+#   docker run --rm -v "$PWD:/work" zandrox-linux                 # full client build + tarball
 #   docker run --rm -v "$PWD:/work" -e SERVERONLY=ON zandrox-linux  # headless server build
 FROM ubuntu:22.04
 
@@ -20,12 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /work
 
-# [rc4l] SERVERONLY=ON (env) builds the headless server (no SDL/GL/audio). Default is the
-# full client with OpenAL audio (NO_FMOD=ON -> openal-soft + libsndfile + libmpg123). Builds
-# into the mounted build-linux/ so outputs persist on the host and rebuilds stay incremental.
-CMD ["bash", "-lc", "\
-    cmake -S src/zandronum -B build-linux -G Ninja \
-      -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-      -DSERVERONLY=${SERVERONLY:-OFF} -DNO_FMOD=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON && \
-    cmake --build build-linux -j\"$(nproc)\" && \
-    echo '=== built ===' && ls -la build-linux/zandronum* build-linux/*.pk3 2>/dev/null"]
+# [rc4l] SERVERONLY=ON (env) builds the headless server (no SDL/GL/audio). Default is the full
+# client with OpenAL audio. Runs linux_compile.sh — the same script devs run natively and that
+# package-linux.sh invokes — so the container has no build logic of its own to drift.
+CMD ["bash", "-lc", "./linux_compile.sh"]
