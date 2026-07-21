@@ -1,10 +1,8 @@
-// [rc4l] Verifies the fixed-point math layer is strict-clean: under ZX_STRONG_FIXED the scale
-// family accepts and returns zx::Fixed, while the plain int64 overloads still serve integer math.
-// This is the first bottom-of-graph milestone of the strong-fixed migration.
+// [rc4l] Verifies the fixed-point math layer is strict-clean: in C++ the scale family accepts and
+// returns zx::Fixed, while the plain int64 overloads still serve integer math. This is the first
+// bottom-of-graph milestone of the strong-fixed migration.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
-#define ZX_STRONG_FIXED 1
-
 #include "gtest/gtest.h"
 
 #include <type_traits>

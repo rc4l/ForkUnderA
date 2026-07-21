@@ -36,17 +36,6 @@ endif( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" S
 
 option( DYN_FLUIDSYNTH "Dynamically load fluidsynth" ON )
 
-# [rc4l] Strong fixed_t is ON by default: define ZX_STRONG_FIXED for every engine TU so fixed_t is
-# the strong zx::Fixed type (see src/basictypes.h) and the dangerous angle/double->fixed and
-# fixed->int conversions the 64-bit widening exposed become compile errors instead of silent bugs.
-# The define lives here rather than in a header so it reaches every TU order-independently, which
-# the ZX_STRONG_FIXED shims in computation/fixedmath.h and farchive.h rely on. Configure with
-# -DZX_STRONG_FIXED=OFF to opt back into the raw 64-bit typedef when backporting upstream patches.
-option( ZX_STRONG_FIXED "Use the strong zx::Fixed type for fixed_t (compile-time conversion safety)" ON )
-if( ZX_STRONG_FIXED )
-	add_definitions( -DZX_STRONG_FIXED )
-endif()
-
 if( CMAKE_SIZEOF_VOID_P MATCHES "8" )
 	set( X64 64 )
 endif( CMAKE_SIZEOF_VOID_P MATCHES "8" )

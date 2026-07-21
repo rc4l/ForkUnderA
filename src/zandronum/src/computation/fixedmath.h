@@ -16,10 +16,9 @@
 
 namespace zx
 {
-// [rc4l] Mode-agnostic raw accessor for the strong-fixed migration: identity for plain integers
-// (and the non-strict fixed_t, which is int64), .Raw() for the strong Fixed (declared in the
-// ZX_STRONG_FIXED block below). Shared code can unwrap fixed_t to the int64 core without caring
-// which mode is active. Inlines to nothing, so the default build is unaffected.
+// [rc4l] Raw accessor for shared fixed-point code: identity for plain integers (and, in C, the
+// raw int64 fixed_t), .Raw() for the strong Fixed (declared in the C++ block below). Lets shared
+// code unwrap fixed_t to the int64 core without caring whether it is C or C++. Inlines to nothing.
 inline constexpr int64_t raw(int64_t v) { return v; }
 }
 
@@ -60,8 +59,8 @@ ZX_MAKE_SCALE(25) ZX_MAKE_SCALE(26) ZX_MAKE_SCALE(27) ZX_MAKE_SCALE(28)
 ZX_MAKE_SCALE(29) ZX_MAKE_SCALE(30) ZX_MAKE_SCALE(31) ZX_MAKE_SCALE(32)
 #undef ZX_MAKE_SCALE
 
-#if defined(ZX_STRONG_FIXED) && defined(__cplusplus)
-// [rc4l] Strong-Fixed overloads for the migration. Under ZX_STRONG_FIXED fixed_t is zx::Fixed, so
+#if defined(__cplusplus)
+// [rc4l] Strong-Fixed overloads. In C++ fixed_t is zx::Fixed, so
 // the scale family needs to accept and return it: these unwrap to the tested int64 core (.Raw())
 // and rewrap (FromRaw), behaviour identical. The plain int64 overloads above still serve genuine
 // integer math (angle/count Scale calls). Overload resolution is unambiguous because Fixed->int64
@@ -90,6 +89,6 @@ ZX_MAKE_SCALE_FIXED(21) ZX_MAKE_SCALE_FIXED(22) ZX_MAKE_SCALE_FIXED(23) ZX_MAKE_
 ZX_MAKE_SCALE_FIXED(25) ZX_MAKE_SCALE_FIXED(26) ZX_MAKE_SCALE_FIXED(27) ZX_MAKE_SCALE_FIXED(28)
 ZX_MAKE_SCALE_FIXED(29) ZX_MAKE_SCALE_FIXED(30) ZX_MAKE_SCALE_FIXED(31) ZX_MAKE_SCALE_FIXED(32)
 #undef ZX_MAKE_SCALE_FIXED
-#endif // ZX_STRONG_FIXED
+#endif // __cplusplus
 
 #endif // ZX_FIXEDMATH_H
