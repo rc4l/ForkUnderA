@@ -11,3 +11,5 @@ Comments should be one sentence maximum with each comment being prefixed with th
 When using Zandronum MCP, prefer windowed mode as opposed to fullscreen so we can work on other things in parallel.
 
 Keep pull request descriptions concise and minimal. Don't write an essay.
+
+Don't modify the base README file without explicit permission.
