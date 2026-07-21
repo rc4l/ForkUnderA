@@ -55,14 +55,24 @@ public:
 	constexpr int64_t Raw() const { return v_; }
 	static constexpr Fixed FromRaw(int64_t v) { return Fixed(v); }
 
-	// [rc4l] Narrowing / lossy conversions out of fixed are explicit only.
-	explicit constexpr operator int() const { return static_cast<int>(v_); }
-	explicit constexpr operator int64_t() const { return v_; }
-	explicit constexpr operator unsigned() const { return static_cast<unsigned>(v_); }
+	// [rc4l] Narrowing / lossy conversions out of fixed are explicit only. Provided for every
+	// standard arithmetic type (using the standard type names, not fixed-width aliases, to avoid
+	// int64_t/long/long long redefinition clashes across platforms) so an explicit (T)fixed cast
+	// to any target resolves to an exact operator -- no ambiguity, which the migration relies on.
+	explicit constexpr operator bool() const { return v_ != 0; }
+	explicit constexpr operator char() const { return static_cast<char>(v_); }
+	explicit constexpr operator signed char() const { return static_cast<signed char>(v_); }
+	explicit constexpr operator unsigned char() const { return static_cast<unsigned char>(v_); }
 	explicit constexpr operator short() const { return static_cast<short>(v_); }
+	explicit constexpr operator unsigned short() const { return static_cast<unsigned short>(v_); }
+	explicit constexpr operator int() const { return static_cast<int>(v_); }
+	explicit constexpr operator unsigned int() const { return static_cast<unsigned int>(v_); }
+	explicit constexpr operator long() const { return static_cast<long>(v_); }
+	explicit constexpr operator unsigned long() const { return static_cast<unsigned long>(v_); }
+	explicit constexpr operator long long() const { return static_cast<long long>(v_); }
+	explicit constexpr operator unsigned long long() const { return static_cast<unsigned long long>(v_); }
 	explicit constexpr operator float() const { return static_cast<float>(v_); }
 	explicit constexpr operator double() const { return static_cast<double>(v_); }
-	explicit constexpr operator bool() const { return v_ != 0; }
 
 	// --- additive: fixed +/- fixed (ints promote via the implicit ctor) ---
 	friend constexpr Fixed operator+(Fixed a, Fixed b) { return FromRaw(a.v_ + b.v_); }
@@ -94,6 +104,10 @@ public:
 	friend constexpr Fixed operator|(Fixed a, M m) { return FromRaw(a.v_ | widenMask(m)); }
 	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
 	friend constexpr Fixed operator^(Fixed a, M m) { return FromRaw(a.v_ ^ widenMask(m)); }
+	// [rc4l] Bitwise ops between two fixed values (used for sign tricks like (dy ^ dx) >= 0).
+	friend constexpr Fixed operator&(Fixed a, Fixed b) { return FromRaw(a.v_ & b.v_); }
+	friend constexpr Fixed operator|(Fixed a, Fixed b) { return FromRaw(a.v_ | b.v_); }
+	friend constexpr Fixed operator^(Fixed a, Fixed b) { return FromRaw(a.v_ ^ b.v_); }
 	constexpr Fixed operator~() const { return FromRaw(~v_); }
 
 	// --- comparisons (ints promote via the implicit ctor) ---
