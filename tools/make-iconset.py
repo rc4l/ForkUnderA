@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Pad a (possibly non-square) source image onto transparent square canvases and
-# emit the standard macOS .iconset PNGs.  build.sh then runs `iconutil` to turn
-# the directory into a .icns.  Best-effort: build.sh skips the icon if this
+# emit the standard macOS .iconset PNGs.  mac_build.sh then runs `iconutil` to turn
+# the directory into a .icns.  Best-effort: mac_build.sh skips the icon if this
 # fails for any reason, so the app still builds without one.
 import sys
 from PIL import Image

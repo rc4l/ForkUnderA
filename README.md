@@ -9,8 +9,8 @@ Based on [rc4l/zandronum-macos-compile](https://github.com/rc4l/zandronum-macos-
 ### macOS (native arm64)
 Requires Xcode command line tools (`xcode-select --install`) and [Homebrew](https://brew.sh).
 ```bash
-./build.sh            # native arm64, OpenAL audio (default)
-SOUND=0 ./build.sh    # no in-game audio
+./mac_build.sh            # native arm64, OpenAL audio (default)
+SOUND=0 ./mac_build.sh    # no in-game audio
 ```
 Output: **`build/ZandroX.app`** (`open build/ZandroX.app`).
 
