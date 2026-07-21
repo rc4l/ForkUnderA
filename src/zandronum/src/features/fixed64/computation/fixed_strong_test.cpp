@@ -154,14 +154,22 @@ TEST(FixedStrong, EveryOperatorForwardsToRaw)
 	{ Fixed a = Fixed(3); EXPECT_EQ((--a).Raw(), 2); EXPECT_EQ((a--).Raw(), 2); EXPECT_EQ(a.Raw(), 1); }
 	{ Fixed a = Fixed(1); a <<= 4; EXPECT_EQ(a.Raw(), 16); a >>= 2; EXPECT_EQ(a.Raw(), 4); }
 
-	// abs/MIN/MAX/clamp (parenthesized to bypass any sys/param.h function-like macro).
-	EXPECT_EQ((zx::abs)(Fixed(-9)).Raw(), 9);
-	EXPECT_EQ((zx::abs)(Fixed(9)).Raw(), 9);
-	EXPECT_EQ((zx::MIN)(Fixed(4), Fixed(7)).Raw(), 4);
-	EXPECT_EQ((zx::MAX)(Fixed(4), Fixed(7)).Raw(), 7);
-	EXPECT_EQ((zx::clamp)(Fixed(1), Fixed(3), Fixed(9)).Raw(), 3);
-	EXPECT_EQ((zx::clamp)(Fixed(12), Fixed(3), Fixed(9)).Raw(), 9);
-	EXPECT_EQ((zx::clamp)(Fixed(5), Fixed(3), Fixed(9)).Raw(), 5);
+	// abs/MIN/MAX/clamp (parenthesized to bypass any sys/param.h function-like macro). Operands are
+	// runtime (volatile-seeded) and BOTH ternary branches of each are exercised, so every region
+	// executes at run time instead of the compiler folding the constexpr call and leaving the branch
+	// not taken uncovered -- different clang versions then disagree on the line count (issue #27).
+	volatile int64_t s_neg = -9, s_lo = 3, s_mid = 5, s_hi = 9, s_below = 1, s_above = 12;
+	const Fixed r_neg = Fixed::FromRaw(s_neg), r_lo = Fixed::FromRaw(s_lo), r_mid = Fixed::FromRaw(s_mid),
+		r_hi = Fixed::FromRaw(s_hi), r_below = Fixed::FromRaw(s_below), r_above = Fixed::FromRaw(s_above);
+	EXPECT_EQ((zx::abs)(r_neg).Raw(), 9);                 // Raw() < 0 branch
+	EXPECT_EQ((zx::abs)(r_hi).Raw(), 9);                  // Raw() >= 0 branch
+	EXPECT_EQ((zx::MIN)(r_lo, r_hi).Raw(), 3);            // a < b  -> a
+	EXPECT_EQ((zx::MIN)(r_hi, r_lo).Raw(), 3);            // a >= b -> b
+	EXPECT_EQ((zx::MAX)(r_lo, r_hi).Raw(), 9);            // a < b  -> b
+	EXPECT_EQ((zx::MAX)(r_hi, r_lo).Raw(), 9);            // a > b  -> a
+	EXPECT_EQ((zx::clamp)(r_below, r_lo, r_hi).Raw(), 3); // v < lo      -> lo
+	EXPECT_EQ((zx::clamp)(r_above, r_lo, r_hi).Raw(), 9); // v > hi      -> hi
+	EXPECT_EQ((zx::clamp)(r_mid, r_lo, r_hi).Raw(), 5);   // lo <= v <= hi -> v
 }
 
 // [rc4l] The polyobject-rotation bug class: a 32-bit align-down mask on a negative fixed value.
@@ -169,15 +177,23 @@ TEST(FixedStrong, EveryOperatorForwardsToRaw)
 // positive -- the bug is now impossible, including in backported code that writes & 0xFFFFFE00.
 TEST(FixedStrong, ThirtyTwoBitMaskStaysSignPreserving)
 {
-	const Fixed neg = Fixed::FromRaw(-1024);
-	EXPECT_EQ((neg & 0xFFFFFE00).Raw(), -1024); // 32-bit unsigned mask, sign preserved (the fix)
-	EXPECT_EQ((neg & ~0x1FF).Raw(), -1024);     // ~0x1FF (signed -512) also fine
-	EXPECT_LT((neg & 0xFFFFFE00), 0);
+	// [rc4l] Runtime-seeded operands so operator&'s widenMask actually executes (both the
+	// sizeof<=4 sign-extending branch and the 64-bit pass-through branch) instead of folding.
+	volatile int64_t neg_seed = -1024;
+	const Fixed neg = Fixed::FromRaw(neg_seed);
+	volatile unsigned m32_seed = 0xFFFFFE00u;    const unsigned m32 = m32_seed;        // 4-byte mask
+	volatile int m32s_seed = ~0x1FF;             const int m32s = m32s_seed;           // 4-byte signed mask
+	volatile unsigned low_seed = 0xFFFFu;        const unsigned low = low_seed;        // 4-byte low-bit mask
+	volatile unsigned fine_seed = 0x1FFFu;       const unsigned fine = fine_seed;      // FINEMASK
+	volatile unsigned long long m64_seed = 0xFFFFFF0000000000ULL; const unsigned long long m64 = m64_seed; // 8-byte mask
+	EXPECT_EQ((neg & m32).Raw(), -1024);        // 4-byte mask, sign preserved (widenMask sizeof<=4)
+	EXPECT_EQ((neg & m32s).Raw(), -1024);       // ~0x1FF (signed -512) also fine
+	EXPECT_LT((neg & m32), 0);
 
 	// Low-bit masks are unaffected (sign-extending a positive mask is a no-op).
-	EXPECT_EQ((Fixed::FromRaw(0x12345) & 0xFFFF).Raw(), 0x12345 & 0xFFFF);
-	EXPECT_EQ((Fixed::FromRaw(0x12345) & 0x1FFF).Raw(), 0x12345 & 0x1FFF); // FINEMASK
+	EXPECT_EQ((Fixed::FromRaw(0x12345) & low).Raw(), 0x12345 & 0xFFFF);
+	EXPECT_EQ((Fixed::FromRaw(0x12345) & fine).Raw(), 0x12345 & 0x1FFF); // FINEMASK
 
-	// A genuine 64-bit mask passes through unchanged.
-	EXPECT_EQ((Fixed::FromRaw(int64_t(5) << 40) & 0xFFFFFF0000000000LL).Raw(), int64_t(5) << 40);
+	// A genuine 64-bit mask passes through unchanged (widenMask sizeof>4 branch).
+	EXPECT_EQ((Fixed::FromRaw(int64_t(5) << 40) & m64).Raw(), int64_t(5) << 40);
 }

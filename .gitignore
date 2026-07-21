@@ -6,6 +6,8 @@ build/
 build-tests/
 build-san/
 build-coverage/
+build-cov-llvm/
+build-cov*/
 
 # Linux build outputs (Docker: Dockerfile.linux-build)
 build-linux/

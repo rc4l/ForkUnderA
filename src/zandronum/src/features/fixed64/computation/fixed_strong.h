@@ -103,8 +103,14 @@ public:
 	// sign (the polyobject-rotation bug), while low-bit masks (& 0xFFFF, & FINEMASK) are unchanged
 	// because sign-extending a positive mask is a no-op. Genuine 64-bit masks pass through as-is.
 	// This makes that whole bug class impossible -- including in backported code.
-	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
-	static constexpr int64_t widenMask(M m) { return sizeof(M) <= 4 ? int64_t(int32_t(m)) : int64_t(m); }
+	// [rc4l] Split by size into two overloads rather than a `sizeof(M) <= 4 ? ... : ...` ternary: a
+	// ternary whose condition is a compile-time constant leaves the untaken branch as a dead but
+	// still coverage-mapped region in each instantiation, which reads as unexecuted and flakes the
+	// 100% coverage gate across clang versions. Each overload carries only its own branch.
+	template <class M, typename std::enable_if<std::is_integral<M>::value && (sizeof(M) <= 4), int>::type = 0>
+	static constexpr int64_t widenMask(M m) { return int64_t(int32_t(m)); }  // <=32-bit mask: sign-extend
+	template <class M, typename std::enable_if<std::is_integral<M>::value && (sizeof(M) > 4), int>::type = 0>
+	static constexpr int64_t widenMask(M m) { return int64_t(m); }           // 64-bit mask: pass through
 	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
 	friend constexpr Fixed operator&(Fixed a, M m) { return FromRaw(a.v_ & widenMask(m)); }
 	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
