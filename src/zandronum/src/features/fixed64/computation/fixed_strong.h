@@ -111,6 +111,15 @@ public:
 	friend constexpr Fixed operator|(Fixed a, M m) { return FromRaw(a.v_ | widenMask(m)); }
 	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
 	friend constexpr Fixed operator^(Fixed a, M m) { return FromRaw(a.v_ ^ widenMask(m)); }
+	// [rc4l] Bare Fixed/Fixed division and modulo are the RAW integer operations (matching the
+	// non-strict int64 build). This is a legitimate, non-overflowing idiom in the engine -- a
+	// distance/speed scalar, coord/FRACUNIT to map units, a zdiff/dist slope. Code that wants a
+	// fixed-point ratio uses FixedDiv/DivScale explicitly, so bare `/` is always the raw quotient.
+	// (Fixed*Fixed is deliberately NOT provided -- a bare fixed multiply overflows, so it must be
+	// spelled FixedMul or an explicit (int) cast, keeping that bug class a compile error.)
+	friend constexpr Fixed operator/(Fixed a, Fixed b) { return FromRaw(a.v_ / b.v_); }
+	friend constexpr Fixed operator%(Fixed a, Fixed b) { return FromRaw(a.v_ % b.v_); }
+
 	// [rc4l] Bitwise ops between two fixed values (used for sign tricks like (dy ^ dx) >= 0).
 	friend constexpr Fixed operator&(Fixed a, Fixed b) { return FromRaw(a.v_ & b.v_); }
 	friend constexpr Fixed operator|(Fixed a, Fixed b) { return FromRaw(a.v_ | b.v_); }

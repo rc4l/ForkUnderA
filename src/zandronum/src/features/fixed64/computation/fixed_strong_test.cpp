@@ -49,6 +49,18 @@ TEST(FixedStrong, ScalingAndShifts)
 	EXPECT_EQ((a << 1).Raw(), 100 * 65536 * 2);
 }
 
+// [rc4l] Bare Fixed/Fixed is the raw integer quotient (dist/speed scalar, coord/FRACUNIT units),
+// matching the non-strict int64 division; % likewise. Fixed*Fixed stays a compile error.
+TEST(FixedStrong, FixedDivFixedIsRawQuotient)
+{
+	const Fixed dist = Fixed::FromRaw(46000LL * 65536); // fixed distance (raw, avoids int overflow)
+	const Fixed speed = Fixed::FromRaw(20LL * 65536);
+	EXPECT_EQ((dist / speed).Raw(), (46000LL * 65536) / (20LL * 65536)); // = 2300 (raw int64 div)
+	const Fixed coord = Fixed::FromRaw(1000 * 65536 + 12345);
+	EXPECT_EQ((coord / Fixed(65536)).Raw(), (1000LL * 65536 + 12345) / 65536); // coord -> ~units
+	EXPECT_EQ((Fixed::FromRaw(7) % Fixed(3)).Raw(), 7 % 3);
+}
+
 TEST(FixedStrong, ComparisonsWithIntLiterals)
 {
 	Fixed x = -65536;
