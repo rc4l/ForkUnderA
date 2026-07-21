@@ -153,7 +153,7 @@ The table inversion is a tested helper (`ComputeInvertKeyTable`, 100%).
 **Not verified:** actual keyboard/mouse input. The MCP injects events below the SDL layer, so it
 cannot exercise the new scancode path; that needs a human at the keyboard.
 
-**Still on the sdl12-compat build:** `build.sh` continues to build the 1.2 shim even though nothing
+**Still on the sdl12-compat build:** `mac_compile.sh` continues to build the 1.2 shim even though nothing
 links it now. Removing it is Phase D cleanup.
 
 ## Phases
@@ -207,7 +207,7 @@ specifically after the flats step.
 
 ### Phase B — SDL2 migration (only as the Core-context prerequisite)
 Port `sdl/sdlglvideo.{h,cpp}`, `sdl/sdlvideo.{h,cpp}`, `sdl/hardware.cpp`, `sdl/i_input.cpp`,
-`sdl/i_main.cpp` from the SDL 1.2 API to SDL2 (already bundled; drop `sdl12-compat` from `build.sh`).
+`sdl/i_main.cpp` from the SDL 1.2 API to SDL2 (already bundled; drop `sdl12-compat` from `mac_compile.sh`).
 **The reason we need this is `SDL_GL_SetAttribute(CONTEXT_MAJOR/MINOR/PROFILE_MASK)`** — SDL 1.2
 cannot request a GL version/profile at all, which is why macOS is stuck at 2.1. Keep the port
 minimal and behavior-preserving; incidental wins (in-place resize instead of the
@@ -253,7 +253,7 @@ them dilutes it:
 
 ## Verification
 - `cmake --build build-tests && ctest` + `bash tests/coverage.sh --auto` (100% on `computation/`).
-- Engine: `cmake --build build-mac-arm`; then **`./build.sh`** to refresh `build/ZandroX.app` — the
+- Engine: `cmake --build build-mac-arm`; then **`./mac_compile.sh`** to refresh `build/ZandroX.app` — the
   MCP launches that bundle, not `build-mac-arm` ([[mcp-launches-stale-app]]).
 - Runtime: MCP `launch_instance` (windowed, MAP01) → `screenshot`, A/B each subsystem against the
   pre-migration image; `renderer_info` to confirm GL version/shadermodel.

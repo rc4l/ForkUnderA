@@ -21,7 +21,7 @@ jobs:
       - name: Build ZandroX
         run: |
           # Native OpenAL build (no FMOD, no Rosetta) — arm64 on Apple Silicon runners.
-          SOUND=1 ./build.sh
+          SOUND=1 ./mac_compile.sh
 
       # [rc4l] A silently soundless build has shipped before; refuse to package one.
       - name: Verify sound is linked
