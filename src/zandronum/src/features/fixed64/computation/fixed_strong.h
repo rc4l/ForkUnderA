@@ -124,10 +124,14 @@ private:
 // working. Same-type MIN(Fixed,Fixed) already resolves via the global template; these non-template
 // overloads additionally let MIN(Fixed, intliteral) work (the int promotes to Fixed), which the
 // global mixed-type overload can't do because it is gated on std::is_arithmetic.
-inline constexpr Fixed abs(Fixed f) { return f.Raw() < 0 ? Fixed::FromRaw(-f.Raw()) : f; }
-inline constexpr Fixed MIN(Fixed a, Fixed b) { return a < b ? a : b; }
-inline constexpr Fixed MAX(Fixed a, Fixed b) { return a > b ? a : b; }
-inline constexpr Fixed clamp(Fixed v, Fixed lo, Fixed hi) { return v < lo ? lo : (hi < v ? hi : v); }
+// [rc4l] The declarator names are parenthesized so a function-like macro (sys/param.h defines
+// MIN/MAX; some libcs macro abs) can't expand into these definitions. Call sites still resolve:
+// via ADL to these overloads when the names are functions, or via the macro (which works on Fixed
+// through its operators) when they are macros.
+inline constexpr Fixed (abs)(Fixed f) { return f.Raw() < 0 ? Fixed::FromRaw(-f.Raw()) : f; }
+inline constexpr Fixed (MIN)(Fixed a, Fixed b) { return a < b ? a : b; }
+inline constexpr Fixed (MAX)(Fixed a, Fixed b) { return a > b ? a : b; }
+inline constexpr Fixed (clamp)(Fixed v, Fixed lo, Fixed hi) { return v < lo ? lo : (hi < v ? hi : v); }
 
 } // namespace zx
 
