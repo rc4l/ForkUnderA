@@ -1969,7 +1969,7 @@ bool P_SeekerMissile (AActor *actor, angle_t thresh, angle_t turnMax, bool preci
 		return ( false );
 	}
 
-	speed = !usecurspeed ? actor->Speed : xs_CRoundToInt(TVector3<double>(actor->velx, actor->vely, actor->velz).Length());
+	speed = !usecurspeed ? actor->Speed : xs_CRoundToInt(TVector3<double>((double)(actor->velx),(double)( actor->vely),(double)( actor->velz)).Length());
 	target = actor->tracer;
 	if (target == NULL || !actor->CanSeek(target))
 	{
@@ -2028,7 +2028,7 @@ bool P_SeekerMissile (AActor *actor, angle_t thresh, angle_t turnMax, bool preci
 		angle_t pitch = 0;
 		if (!(actor->flags3 & (MF3_FLOORHUGGER|MF3_CEILINGHUGGER)))
 		{ // Need to seek vertically
-			double dist = MAX(1.0, FVector2(target->x - actor->x, target->y - actor->y).Length());
+			double dist = MAX(1.0, FVector2((double)(target->x - actor->x),(double)( target->y - actor->y)).Length());
 			// Aim at a player's eyes and at the middle of the actor for everything else.
 			fixed_t aimheight = target->height/2;
 			if (target->IsKindOf(RUNTIME_CLASS(APlayerPawn)))
@@ -7249,7 +7249,7 @@ AActor *P_SpawnMissileXYZ (fixed_t x, fixed_t y, fixed_t z,
 	// missile?
 	// Answer: No, because this way, you can set up sets of parallel missiles.
 
-	FVector3 velocity(dest->x - source->x, dest->y - source->y, dest->z - source->z);
+	FVector3 velocity((double)(dest->x - source->x),(double)( dest->y - source->y),(double)( dest->z - source->z));
 	// Floor and ceiling huggers should never have a vertical component to their velocity
 	if (th->flags3 & (MF3_FLOORHUGGER|MF3_CEILINGHUGGER))
 	{
@@ -7535,7 +7535,7 @@ AActor *P_SpawnPlayerMissile (AActor *source, fixed_t x, fixed_t y, fixed_t z,
 	vz = -finesine[pitch>>ANGLETOFINESHIFT];
 	speed = MissileActor->Speed;
 
-	FVector3 vec(vx, vy, vz);
+	FVector3 vec((double)(vx),(double)( vy),(double)( vz));
 
 	if (MissileActor->flags3 & (MF3_FLOORHUGGER|MF3_CEILINGHUGGER))
 	{

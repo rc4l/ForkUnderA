@@ -334,7 +334,7 @@ bool P_Thing_Projectile (int tid, AActor *source, int type, const char *type_nam
 							// with the math. I don't think I would have thought of using
 							// trig alone had I been left to solve it by myself.
 
-							FVector3 tvel(targ->velx, targ->vely, targ->velz);
+							FVector3 tvel((double)(targ->velx),(double)( targ->vely),(double)( targ->velz));
 							if (!(targ->flags & MF_NOGRAVITY) && targ->waterlevel < 3)
 							{ // If the target is subject to gravity and not underwater,
 							  // assume that it isn't moving vertically. Thanks to gravity,

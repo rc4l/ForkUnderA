@@ -1226,7 +1226,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 				{
 					if (CMF_OFFSETPITCH & flags)
 					{
-							FVector2 velocity (missile->velx, missile->vely);
+							FVector2 velocity ((double)(missile->velx),(double)( missile->vely));
 							pitch += R_PointToAngle2(0,0, (fixed_t)velocity.Length(), missile->velz);
 					}
 					ang = pitch >> ANGLETOFINESHIFT;
@@ -1235,7 +1235,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 				}
 				else
 				{
-					FVector2 velocity (missile->velx, missile->vely);
+					FVector2 velocity ((double)(missile->velx),(double)( missile->vely));
 					missilespeed = (fixed_t)velocity.Length();
 				}
 
@@ -1721,7 +1721,7 @@ void A_FireCustomMissileHelper ( AActor * self,
 		{
 			// This original implementation is to aim straight ahead and then offset
 			// the angle from the resulting direction. 
-			FVector3 velocity(misl->velx, misl->vely, 0);
+			FVector3 velocity((double)(misl->velx),(double)( misl->vely), 0);
 			fixed_t missilespeed = (fixed_t)velocity.Length();
 			misl->angle += Angle;
 			angle_t an = misl->angle >> ANGLETOFINESHIFT;
@@ -2055,7 +2055,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 	if (linetarget == NULL && aim)
 	{
 		// We probably won't hit the target, but aim at it anyway so we don't look stupid.
-		FVector2 xydiff(self->target->x - self->x, self->target->y - self->y);
+		FVector2 xydiff((double)(self->target->x - self->x),(double)( self->target->y - self->y));
 		double zdiff = (self->target->z + (self->target->height>>1)) -
 						(self->z + (self->height>>1) - self->floorclip);
 		self->pitch = int(atan2(zdiff, xydiff.Length()) * ANGLE_180 / -M_PI);
@@ -4107,7 +4107,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckLOF)
 
 		if (target)
 		{
-			FVector2 xyvec(target->x - x1, target->y - y1);
+			FVector2 xyvec((double)(target->x - x1),(double)( target->y - y1));
 			fixed_t distance = P_AproxDistance((fixed_t)xyvec.Length(), target->z - z1);
 
 			if (range && !(flags & CLOFF_CHECKPARTIAL))
@@ -5960,8 +5960,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RadiusGive)
 		}
 		else
 		{ // check if inside a sphere
-			TVector3<double> tpos(thing->x, thing->y, thing->z + thing->height/2);
-			TVector3<double> spos(self->x, self->y, self->z + self->height/2);
+			TVector3<double> tpos((double)(thing->x),(double)( thing->y),(double)( thing->z + thing->height/2));
+			TVector3<double> spos((double)(self->x),(double)( self->y),(double)( self->z + self->height/2));
 			if ((tpos - spos).LengthSquared() > distsquared)
 			{
 				continue;
