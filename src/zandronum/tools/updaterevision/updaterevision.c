@@ -60,8 +60,11 @@ int main(int argc, char **argv)
 	// on a tag, it returns that tag. Otherwise it returns <most recent tag>-<number of
 	// commits since the tag>-<short hash>.
 	// Use git log to get the time of the latest commit in ISO 8601 format and its full hash.
-	// [BB] Changed to use hg instead of git.
-	stream = popen("hg log --template \"{latesttag}-{latesttagdistance}-{node|short}\\n\" --rev . && hg log -r. --template \"{date|isodatesec}*{node}?{date|hgdate}\\n\" && hg identify -n", "r");
+	// [rc4l] ZandroX is a git repo, so read git, not the Mercurial the upstream tool switched to.
+	// [rc4l] Three lines to match the parser below: <describe> / <isodate>*<hash>?<epoch> / a
+	// [rc4l] dirty marker whose only job is to contain a '+' when the tree has local changes.
+	// [rc4l] Only && / || are used so the one command works under both /bin/sh and cmd.exe.
+	stream = popen("git describe --tags --long --always && git log -1 \"--format=%ci*%H?%ct\" && git diff --quiet HEAD && echo clean || echo +", "r");
 
 	if (NULL != stream)
 	{
