@@ -806,8 +806,8 @@ void CLIENTDEMO_WriteWarpCheat ( fixed_t x, fixed_t y )
 	clientdemo_CheckDemoBuffer( 10 );
 	g_ByteStream.WriteByte( CLD_LOCALCOMMAND );
 	g_ByteStream.WriteByte( CLD_LCMD_WARPCHEAT );
-	g_ByteStream.WriteLong( x );
-	g_ByteStream.WriteLong( y );
+	g_ByteStream.WriteLong( (int)(x) );
+	g_ByteStream.WriteLong( (int)(y) );
 }
 
 //*****************************************************************************
@@ -833,7 +833,7 @@ void CLIENTDEMO_WriteFreeChasecam( const bool enable, const fixed_t angle )
 	g_ByteStream.WriteByte( CLD_LOCALCOMMAND );
 	g_ByteStream.WriteByte( CLD_LCMD_FREECHASECAM );
 	g_ByteStream.WriteByte( enable );
-	g_ByteStream.WriteLong( angle );
+	g_ByteStream.WriteLong( (int)(angle) );
 }
 
 //*****************************************************************************

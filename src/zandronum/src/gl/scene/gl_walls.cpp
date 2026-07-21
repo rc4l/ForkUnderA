@@ -764,7 +764,7 @@ void GLWall::DoTexture(int _type,seg_t * seg, int peg,
 	if (peg) floatceilingref += tci.mRenderHeight - FIXED2FLOAT(lh + v_offset);
 
 	if (!SetWallCoordinates(seg, &tci, floatceilingref, topleft, topright, bottomleft, bottomright, 
-							seg->sidedef->GetTextureXOffset(texpos))) return;
+							(int)(seg->sidedef->GetTextureXOffset(texpos)))) return;
 
 	CheckTexturePosition();
 
@@ -950,7 +950,7 @@ void GLWall::DoMidTexture(seg_t * seg, bool drawfogboundary,
 		// at the edges.
 
 		fixed_t textureoffset = tci.TextureOffset(t_ofs);
-		int righttex=(textureoffset>>FRACBITS)+seg->sidedef->TexelLength;
+		int righttex=(int)((textureoffset>>FRACBITS)+seg->sidedef->TexelLength);
 		
 		if ((textureoffset == 0 && righttex <= tci.mRenderWidth) ||
 			(textureoffset >= 0 && righttex == tci.mRenderWidth))
@@ -971,7 +971,7 @@ void GLWall::DoMidTexture(seg_t * seg, bool drawfogboundary,
 		tci.mRenderHeight = -tci.mRenderHeight;
 		tci.mScaleY = -tci.mScaleY;
 	}
-	SetWallCoordinates(seg, &tci, FIXED2FLOAT(texturetop), topleft, topright, bottomleft, bottomright, t_ofs);
+	SetWallCoordinates(seg, &tci, FIXED2FLOAT(texturetop), (int)(topleft), (int)(topright), (int)(bottomleft), (int)(bottomright), (int)(t_ofs));
 
 	//
 	//
@@ -1599,8 +1599,8 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 		if (gltexture) 
 		{
 			DoTexture(RENDERWALL_M1S,seg,(seg->linedef->flags & ML_DONTPEGBOTTOM)>0,
-							  realfront->GetPlaneTexZ(sector_t::ceiling),realfront->GetPlaneTexZ(sector_t::floor),	// must come from the original!
-							  fch1,fch2,ffh1,ffh2,0);
+							  (int)(realfront->GetPlaneTexZ(sector_t::ceiling)),(int)(realfront->GetPlaneTexZ(sector_t::floor)),	// must come from the original!
+							  (int)(fch1),(int)(fch2),(int)(ffh1),(int)(ffh2),0);
 		}
 	}
 	else // two sided
@@ -1654,8 +1654,8 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 				if (gltexture) 
 				{
 					DoTexture(RENDERWALL_TOP,seg,(seg->linedef->flags & (ML_DONTPEGTOP))==0,
-						realfront->GetPlaneTexZ(sector_t::ceiling),realback->GetPlaneTexZ(sector_t::ceiling),
-						fch1,fch2,bch1a,bch2a,0);
+						(int)(realfront->GetPlaneTexZ(sector_t::ceiling)),(int)(realback->GetPlaneTexZ(sector_t::ceiling)),
+						(int)(fch1),(int)(fch2),(int)(bch1a),(int)(bch2a),0);
 				}
 				else if ((frontsector->ceilingplane.a | frontsector->ceilingplane.b | 
 						 backsector->ceilingplane.a | backsector->ceilingplane.b) && 
@@ -1666,8 +1666,8 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 					if (gltexture)
 					{
 						DoTexture(RENDERWALL_TOP,seg,(seg->linedef->flags & (ML_DONTPEGTOP))==0,
-							realfront->GetPlaneTexZ(sector_t::ceiling),realback->GetPlaneTexZ(sector_t::ceiling),
-							fch1,fch2,bch1a,bch2a,0);
+							(int)(realfront->GetPlaneTexZ(sector_t::ceiling)),(int)(realback->GetPlaneTexZ(sector_t::ceiling)),
+							(int)(fch1),(int)(fch2),(int)(bch1a),(int)(bch2a),0);
 					}
 				}
 				else if (!(seg->sidedef->Flags & WALLF_POLYOBJ))
@@ -1716,8 +1716,8 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 			if (gltexture) 
 			{
 				DoTexture(RENDERWALL_BOTTOM,seg,(seg->linedef->flags & ML_DONTPEGBOTTOM)>0,
-					realback->GetPlaneTexZ(sector_t::floor),realfront->GetPlaneTexZ(sector_t::floor),
-					bfh1,bfh2,ffh1,ffh2,
+					(int)(realback->GetPlaneTexZ(sector_t::floor)),(int)(realfront->GetPlaneTexZ(sector_t::floor)),
+					(int)(bfh1),(int)(bfh2),(int)(ffh1),(int)(ffh2),
 					frontsector->GetTexture(sector_t::ceiling)==skyflatnum && backsector->GetTexture(sector_t::ceiling)==skyflatnum ?
 						realfront->GetPlaneTexZ(sector_t::floor)-realback->GetPlaneTexZ(sector_t::ceiling) : 
 						realfront->GetPlaneTexZ(sector_t::floor)-realfront->GetPlaneTexZ(sector_t::ceiling));
@@ -1734,8 +1734,8 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 				if (gltexture)
 				{
 					DoTexture(RENDERWALL_BOTTOM,seg,(seg->linedef->flags & ML_DONTPEGBOTTOM)>0,
-						realback->GetPlaneTexZ(sector_t::floor),realfront->GetPlaneTexZ(sector_t::floor),
-						bfh1,bfh2,ffh1,ffh2, realfront->GetPlaneTexZ(sector_t::floor)-realfront->GetPlaneTexZ(sector_t::ceiling));
+						(int)(realback->GetPlaneTexZ(sector_t::floor)),(int)(realfront->GetPlaneTexZ(sector_t::floor)),
+						(int)(bfh1),(int)(bfh2),(int)(ffh1),(int)(ffh2), (int)(realfront->GetPlaneTexZ(sector_t::floor)-realfront->GetPlaneTexZ(sector_t::ceiling)));
 				}
 			}
 			else if (backsector->GetTexture(sector_t::floor)!=skyflatnum && 
@@ -1797,7 +1797,7 @@ void GLWall::ProcessLowerMiniseg(seg_t *seg, sector_t * frontsector, sector_t * 
 			FTexCoordInfo tci;
 			type=RENDERWALL_BOTTOM;
 			gltexture->GetTexCoordInfo(&tci, FRACUNIT, FRACUNIT);
-			SetWallCoordinates(seg, &tci, FIXED2FLOAT(bfh), bfh, bfh, ffh, ffh, 0);
+			SetWallCoordinates(seg, &tci, FIXED2FLOAT(bfh), (int)(bfh), (int)(bfh), (int)(ffh), (int)(ffh), 0);
 			PutWall(false);
 		}
 	}

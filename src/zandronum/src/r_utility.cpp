@@ -636,7 +636,7 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 			}
 			else
 			{
-				viewpitch = MIN(viewpitch + delta, player->MaxPitch);
+				viewpitch = (int)(MIN(viewpitch + delta, player->MaxPitch));
 			}
 		}
 		else if (delta < 0)
@@ -648,18 +648,18 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 			}
 			else
 			{
-				viewpitch = MAX(viewpitch + delta, player->MinPitch);
+				viewpitch = (int)(MAX(viewpitch + delta, player->MinPitch));
 			}
 		}
 	}
 	else
 	{
-		viewpitch = iview->oviewpitch + FixedMul (frac, iview->nviewpitch - iview->oviewpitch);
+		viewpitch = (int)(iview->oviewpitch + FixedMul (frac, iview->nviewpitch - iview->oviewpitch));
 		// [rc4l] The angle delta is an unsigned 32-bit difference that must be read back as a
 		// signed int32 before the now-64-bit FixedMul, or a right turn (huge unsigned delta)
 		// zero-extends and the view overshoots -- the "+right spins faster than +left" bug.
 		// See features/fixed64/computation/angle_interp_compute.h.
-		viewangle = zx::InterpolateAngleBAM (iview->oviewangle, iview->nviewangle, frac);
+		viewangle = zx::InterpolateAngleBAM (iview->oviewangle, iview->nviewangle, (int64_t)(frac));
 	}
 	
 	// Due to interpolation this is not necessarily the same as the sector the camera is in.
@@ -846,7 +846,7 @@ void R_SetupFrame (AActor *actor)
 	}
 	else
 	{
-		iview->nviewpitch = camera->pitch;
+		iview->nviewpitch = (int)(camera->pitch);
 	}
 
 	if (camera->player != 0)

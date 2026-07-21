@@ -554,7 +554,7 @@ void DDoor::SetType( DDoor::EVlDoor Type )
 
 LONG DDoor::GetSpeed( void )
 {
-	return ( m_Speed );
+	return (LONG)(( m_Speed ));
 }
 
 void DDoor::SetSpeed( LONG lSpeed )

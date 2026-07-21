@@ -382,7 +382,7 @@ static void clientcommand_WriteMoveCommandToBuffer( CLIENT_MOVE_COMMAND_s moveCM
 		CLIENT_GetLocalBuffer( )->ByteStream.WriteShort( pCmd->ucmd.upmove );
 
 	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( players[consoleplayer].mo->angle );
-	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( players[consoleplayer].mo->pitch );
+	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( (int)(players[consoleplayer].mo->pitch) );
 	// [BB] Send the checksum of our ticcmd we calculated when we originally generated the ticcmd from the user input.
 	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( moveCMD.sdwChecksum );
 
@@ -825,8 +825,8 @@ void CLIENTCOMMANDS_InfoCheat( AActor* mobj, bool extended )
 void CLIENTCOMMANDS_WarpCheat( fixed_t x, fixed_t y )
 {
 	CLIENT_GetLocalBuffer( )->ByteStream.WriteByte( CLC_WARPCHEAT );
-	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( x );
-	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( y );
+	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( (int)(x) );
+	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( (int)(y) );
 }
 
 //*****************************************************************************

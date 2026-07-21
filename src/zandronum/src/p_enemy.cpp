@@ -440,7 +440,7 @@ bool P_Move (AActor *actor)
 
 	fixed_t tryx, tryy, deltax, deltay, origx, origy;
 	bool try_ok;
-	int speed = actor->Speed;
+	int speed = (int)(actor->Speed);
 	int movefactor = ORIG_FRICTION_FACTOR;
 	int friction = ORIG_FRICTION;
 	int dropoff = 0;
@@ -3174,8 +3174,8 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 	{
 		// [DH] Don't need to do proper fixed->double conversion, since the
 		// result is only used in a ratio.
-		double dist_x = other->x - self->x;
-		double dist_y = other->y - self->y;
+		double dist_x = (double)(other->x - self->x);
+		double dist_y = (double)(other->y - self->y);
 		// Positioning ala missile spawning, 32 units above foot level
 		fixed_t source_z = self->z + 32*FRACUNIT + self->GetBobOffset();
 		fixed_t target_z = other->z + 32*FRACUNIT + other->GetBobOffset();
@@ -3185,7 +3185,7 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 		{
 			target_z = other->z + other->height / 2;
 		}
-		double dist_z = target_z - source_z;
+		double dist_z = (double)(target_z - source_z);
 		double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
 
 		int other_pitch = (int)rad2bam(asin(dist_z / dist));
@@ -3425,7 +3425,7 @@ void ModifyDropAmount(AInventory *inv, int dropamount)
 	{
 		if (flagmask != 0 && inv->IsKindOf(RUNTIME_CLASS(AAmmo)))
 		{
-			inv->Amount = FixedMul(dropamount, dropammofactor);
+			inv->Amount = (int)(FixedMul(dropamount, dropammofactor));
 			inv->ItemFlags |= IF_IGNORESKILL;
 		}
 		else
@@ -3436,7 +3436,7 @@ void ModifyDropAmount(AInventory *inv, int dropamount)
 	else if (inv->IsKindOf (RUNTIME_CLASS(AAmmo)))
 	{
 		// Half ammo when dropped by bad guys.
-		inv->Amount = inv->GetClass()->Meta.GetMetaInt (AIMETA_DropAmount, MAX(1, FixedMul(inv->Amount, dropammofactor)));
+		inv->Amount = inv->GetClass()->Meta.GetMetaInt (AIMETA_DropAmount, (int)(MAX(1, FixedMul(inv->Amount, dropammofactor))));
 		inv->ItemFlags |= flagmask;
 	}
 	else if (inv->IsKindOf (RUNTIME_CLASS(AWeaponGiver)))
@@ -3447,8 +3447,8 @@ void ModifyDropAmount(AInventory *inv, int dropamount)
 	else if (inv->IsKindOf (RUNTIME_CLASS(AWeapon)))
 	{
 		// The same goes for ammo from a weapon.
-		static_cast<AWeapon *>(inv)->AmmoGive1 = FixedMul(static_cast<AWeapon *>(inv)->AmmoGive1, dropammofactor);
-		static_cast<AWeapon *>(inv)->AmmoGive2 = FixedMul(static_cast<AWeapon *>(inv)->AmmoGive2, dropammofactor);
+		static_cast<AWeapon *>(inv)->AmmoGive1 = (int)(FixedMul(static_cast<AWeapon *>(inv)->AmmoGive1, dropammofactor));
+		static_cast<AWeapon *>(inv)->AmmoGive2 = (int)(FixedMul(static_cast<AWeapon *>(inv)->AmmoGive2, dropammofactor));
 		inv->ItemFlags |= flagmask;
 	}			
 	else if (inv->IsKindOf (RUNTIME_CLASS(ADehackedPickup)))

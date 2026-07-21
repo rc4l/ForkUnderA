@@ -2628,9 +2628,9 @@ FUNC(LS_Sector_SetFloorScale2)
 	int secnum = -1;
 
 	if (arg1)
-		arg1 = FixedDiv (FRACUNIT, arg1);
+		arg1 = (int)(FixedDiv (FRACUNIT, arg1));
 	if (arg2)
-		arg2 = FixedDiv (FRACUNIT, arg2);
+		arg2 = (int)(FixedDiv (FRACUNIT, arg2));
 
 	while ((secnum = P_FindSectorFromTag (arg0, secnum)) >= 0)
 	{
@@ -2652,9 +2652,9 @@ FUNC(LS_Sector_SetCeilingScale2)
 	int secnum = -1;
 
 	if (arg1)
-		arg1 = FixedDiv (FRACUNIT, arg1);
+		arg1 = (int)(FixedDiv (FRACUNIT, arg1));
 	if (arg2)
-		arg2 = FixedDiv (FRACUNIT, arg2);
+		arg2 = (int)(FixedDiv (FRACUNIT, arg2));
 
 	while ((secnum = P_FindSectorFromTag (arg0, secnum)) >= 0)
 	{

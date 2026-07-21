@@ -639,7 +639,7 @@ int FNodeBuilder::Heuristic (node_t &node, DWORD set, bool honorNoSplit)
 			{
 				FPrivVert *v1 = &Vertices[test->v1];
 				FPrivVert *v2 = &Vertices[test->v2];
-				double x = v1->x, y = v1->y;
+				double x = (double)(v1->x), y = (double)(v1->y);
 				x += frac * (v2->x - x);
 				y += frac * (v2->y - y);
 				if (fabs(x - v1->x) < VERTEX_EPSILON+1 && fabs(y - v1->y) < VERTEX_EPSILON+1)

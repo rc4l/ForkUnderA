@@ -221,7 +221,7 @@ static ExpVal GetVariableValue (void *address, FExpressionType &type)
 
 	case VAL_Fixed:
 		ret.Type = VAL_Float;
-		ret.Float = (*(fixed_t*)address) / 65536.;
+		ret.Float = (double)((*(fixed_t*)address) / 65536.);
 		break;
 
 	case VAL_Angle:

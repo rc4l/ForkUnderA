@@ -217,7 +217,7 @@ BYTE *FGLTexture::WarpBuffer(BYTE *buffer, int Width, int Height, int warp)
 
 		for (x = xsize-1; x >= 0; x--)
 		{
-			int yt, yf = (finesine[(timebase+(x+17)*128)&FINEMASK]>>13) & ymask;
+			int yt, yf = (int)((finesine[(timebase+(x+17)*128)&FINEMASK]>>13) & ymask);
 			const DWORD *source = in + x;
 			DWORD *dest = out + x;
 			for (yt = ysize; yt; yt--, yf = (yf+1)&ymask, dest += xsize)
@@ -229,7 +229,7 @@ BYTE *FGLTexture::WarpBuffer(BYTE *buffer, int Width, int Height, int warp)
 		int y;
 		for (y = ysize-1; y >= 0; y--)
 		{
-			int xt, xf = (finesine[(timebase+y*128)&FINEMASK]>>13) & xmask;
+			int xt, xf = (int)((finesine[(timebase+y*128)&FINEMASK]>>13) & xmask);
 			DWORD *source = out + (y<<ds_xbits);
 			DWORD *dest = linebuffer;
 			for (xt = xsize; xt; xt--, xf = (xf+1)&xmask)

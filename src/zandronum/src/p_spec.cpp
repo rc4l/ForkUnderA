@@ -1726,7 +1726,7 @@ void P_SpawnSpecials (void)
 				}
 
 				{
-					int damage = P_AproxDistance (lines[i].dx, lines[i].dy) >> FRACBITS;
+					int damage = (int)(P_AproxDistance (lines[i].dx, lines[i].dy) >> FRACBITS);
 					for (s = -1; (s = P_FindSectorFromTag(lines[i].args[0],s)) >= 0;)
 					{
 						sectors[s].damage = damage;
@@ -2380,7 +2380,7 @@ static void P_SpawnFriction(void)
 			}
 			else
 			{
-				length = P_AproxDistance(l->dx,l->dy)>>FRACBITS;
+				length = (int)(P_AproxDistance(l->dx,l->dy)>>FRACBITS);
 			}
 
 			P_SetSectorFriction (l->args[0], length, false);
@@ -2521,9 +2521,9 @@ DPusher::DPusher (DPusher::EPusher type, line_t *l, int magnitude, int angle,
 	m_Type = type;
 	if (l)
 	{
-		m_Xmag = l->dx>>FRACBITS;
-		m_Ymag = l->dy>>FRACBITS;
-		m_Magnitude = P_AproxDistance (m_Xmag, m_Ymag);
+		m_Xmag = (int)(l->dx>>FRACBITS);
+		m_Ymag = (int)(l->dy>>FRACBITS);
+		m_Magnitude = (int)(P_AproxDistance (m_Xmag, m_Ymag));
 	}
 	else
 	{ // [RH] Allow setting magnitude and angle with parameters
@@ -2532,8 +2532,8 @@ DPusher::DPusher (DPusher::EPusher type, line_t *l, int magnitude, int angle,
 	if (source) // point source exist?
 	{
 		m_Radius = (m_Magnitude) << (FRACBITS+1); // where force goes to zero
-		m_X = m_Source->x;
-		m_Y = m_Source->y;
+		m_X = (int)(m_Source->x);
+		m_Y = (int)(m_Source->y);
 	}
 	m_Affectee = affectee;
 }
@@ -2626,7 +2626,7 @@ void DPusher::Tick ()
 				// 64-bit result once things were >~32k units apart (reachable on a normal map),
 				// flipping its sign and spuriously pushing. See features/fixed64/computation/dist_compute.h.
 				fixed_t dist = P_AproxDistance (thing->x - sx,thing->y - sy);
-				int speed = zx::ComputePusherSpeed (dist, m_Magnitude, PUSH_FACTOR, FRACBITS);
+				int speed = zx::ComputePusherSpeed ((int64_t)(dist), m_Magnitude, PUSH_FACTOR, FRACBITS);
 
 				// If speed <= 0, you're outside the effective radius. You also have
 				// to be able to see the push/pull source point.
@@ -2680,7 +2680,7 @@ void DPusher::Tick ()
 			}
 			else // special water sector
 			{
-				ht = hsec->floorplane.ZatPoint (thing->x, thing->y);
+				ht = (int)(hsec->floorplane.ZatPoint (thing->x, thing->y));
 				if (thing->z > ht) // above ground
 				{
 					xspeed = m_Xmag; // full force

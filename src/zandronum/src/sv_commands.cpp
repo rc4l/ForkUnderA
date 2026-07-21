@@ -934,7 +934,7 @@ void SERVERCOMMANDS_SetPlayerViewHeight( ULONG ulPlayer, ULONG ulPlayerExtra, Se
 
 	NetCommand command( SVC2_SETPLAYERVIEWHEIGHT );
 	command.addByte( ulPlayer );
-	command.addLong( players[ulPlayer].mo->ViewHeight );
+	command.addLong( (SDWORD)(players[ulPlayer].mo->ViewHeight) );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
@@ -1012,11 +1012,11 @@ void SERVERCOMMANDS_UpdatePlayerExtraData( ULONG ulPlayer, ULONG ulDisplayPlayer
 
 	ServerCommands::UpdatePlayerExtraData command;
 	command.SetPlayer( &players[ulDisplayPlayer] );
-	command.SetPitch( players[ulDisplayPlayer].mo->pitch );
+	command.SetPitch( (int)(players[ulDisplayPlayer].mo->pitch) );
 	command.SetWaterLevel( players[ulDisplayPlayer].mo->waterlevel );
 	command.SetButtons( players[ulDisplayPlayer].cmd.ucmd.buttons );
-	command.SetViewZ( players[ulDisplayPlayer].viewz );
-	command.SetBob( players[ulDisplayPlayer].bob );
+	command.SetViewZ( (int)(players[ulDisplayPlayer].viewz) );
+	command.SetBob( (int)(players[ulDisplayPlayer].bob) );
 	command.sendCommandToClients( ulPlayer, SVCF_ONLYTHISCLIENT );
 }
 
@@ -1653,7 +1653,7 @@ void SERVERCOMMANDS_MoveThing( AActor *actor, ULONG bits, ULONG ulPlayerExtra, S
 	command.SetVelX( actor->velx );
 	command.SetVelY( actor->vely );
 	command.SetVelZ( actor->velz );
-	command.SetPitch( actor->pitch );
+	command.SetPitch( (int)(actor->pitch) );
 	command.SetMovedir( actor->movedir );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 
@@ -1695,7 +1695,7 @@ void SERVERCOMMANDS_MoveThingExact( AActor *actor, ULONG bits, ULONG ulPlayerExt
 	command.SetVelX( actor->velx );
 	command.SetVelY( actor->vely );
 	command.SetVelZ( actor->velz );
-	command.SetPitch( actor->pitch );
+	command.SetPitch( (int)(actor->pitch) );
 	command.SetMovedir( actor->movedir );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 
@@ -1904,11 +1904,11 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 	switch ( ulProperty )
 	{
 	case APROP_Speed:
-		value = pActor->Speed;
+		value = (int)(pActor->Speed);
 		break;
 
 	case APROP_Alpha:
-		value = pActor->alpha;
+		value = (int)(pActor->alpha);
 		break;
 
 	case APROP_RenderStyle:
@@ -1917,7 +1917,7 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 
 	case APROP_JumpZ:
 		if ( pActor->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
-			value = static_cast<APlayerPawn *>( pActor )->JumpZ;
+			value = (int)(static_cast<APlayerPawn *>( pActor )->JumpZ);
 		break;
 
 	case APROP_StencilColor:
@@ -2082,7 +2082,7 @@ void SERVERCOMMANDS_SetThingGravity( AActor *pActor, ULONG ulPlayerExtra, Server
 
 	ServerCommands::SetThingGravity command;
 	command.SetActor( pActor );
-	command.SetGravity( pActor->gravity );
+	command.SetGravity( (int)(pActor->gravity) );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
@@ -4169,11 +4169,11 @@ void SERVERCOMMANDS_SetHexenArmorSlots( ULONG ulPlayer, AHexenArmor *hexenArmor,
 
 	ServerCommands::SetHexenArmorSlots command;
 	command.SetPlayer( &players[ulPlayer] );
-	command.SetSlot0( hexenArmor->Slots[0] );
-	command.SetSlot1( hexenArmor->Slots[1] );
-	command.SetSlot2( hexenArmor->Slots[2] );
-	command.SetSlot3( hexenArmor->Slots[3] );
-	command.SetSlot4( hexenArmor->Slots[4] );
+	command.SetSlot0( (int)(hexenArmor->Slots[0]) );
+	command.SetSlot1( (int)(hexenArmor->Slots[1]) );
+	command.SetSlot2( (int)(hexenArmor->Slots[2]) );
+	command.SetSlot3( (int)(hexenArmor->Slots[3]) );
+	command.SetSlot4( (int)(hexenArmor->Slots[4]) );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
@@ -4232,9 +4232,9 @@ void SERVERCOMMANDS_SetThingScale( AActor* mobj, unsigned int scaleFlags, ULONG 
 	command.addShort( mobj->NetID );
 	command.addByte( scaleFlags );
 	if ( scaleFlags & ACTORSCALE_X )
-		command.addLong( mobj->scaleX );
+		command.addLong( (SDWORD)(mobj->scaleX) );
 	if ( scaleFlags & ACTORSCALE_Y )
-		command.addLong( mobj->scaleY );
+		command.addLong( (SDWORD)(mobj->scaleY) );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
@@ -4492,8 +4492,8 @@ void SERVERCOMMANDS_BuildStair( DFloor::EFloor Type, sector_t *pSector, int Dire
 	command.addByte ( (int)Type );
 	command.addShort ( SectorID );
 	command.addByte ( clamp(Direction,-128,127) );
-	command.addLong ( Speed );
-	command.addLong ( FloorDestDist );
+	command.addLong ( (SDWORD)(Speed) );
+	command.addLong ( (SDWORD)(FloorDestDist) );
 	command.addByte ( clamp(Crush,-128,127) );
 	command.addByte ( Hexencrush );
 	command.addLong ( ResetCount );
@@ -4875,8 +4875,8 @@ void SERVERCOMMANDS_SetPolyobjPosition( LONG lPolyNum, ULONG ulPlayerExtra, Serv
 
 	NetCommand command ( SVC_SETPOLYOBJPOSITION );
 	command.addShort ( lPolyNum );
-	command.addLong ( pPoly->StartSpot.x );
-	command.addLong ( pPoly->StartSpot.y );
+	command.addLong ( (SDWORD)(pPoly->StartSpot.x) );
+	command.addLong ( (SDWORD)(pPoly->StartSpot.y) );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 
@@ -5186,7 +5186,7 @@ void SERVERCOMMANDS_Scroll3dMidtexture ( sector_t* sector, fixed_t move, bool ce
 {
 	NetCommand command ( SVC2_SCROLL3DMIDTEX );
 	command.addByte ( sector - sectors );
-	command.addLong ( move );
+	command.addLong ( (SDWORD)(move) );
 	command.addByte ( ceiling );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
@@ -5285,9 +5285,9 @@ void SERVERCOMMANDS_ShootDecal ( const FDecalTemplate* tpl, AActor* actor, fixed
 	NetCommand command ( SVC2_SHOOTDECAL );
 	command.addName( tpl->GetName() );
 	command.addShort( actor->NetID );
-	command.addShort( z >> FRACBITS );
+	command.addShort( (int)(z >> FRACBITS) );
 	command.addShort( angle >> FRACBITS );
-	command.addLong( tracedist );
+	command.addLong( (SDWORD)(tracedist) );
 	command.addByte( permanent );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }

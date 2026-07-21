@@ -893,13 +893,13 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 
 	// Build command.
 	if (forward > MAXPLMOVE)
-		forward = MAXPLMOVE;
+		forward = (int)(MAXPLMOVE);
 	else if (forward < -MAXPLMOVE)
-		forward = -MAXPLMOVE;
+		forward = (int)(-MAXPLMOVE);
 	if (side > MAXPLMOVE)
-		side = MAXPLMOVE;
+		side = (int)(MAXPLMOVE);
 	else if (side < -MAXPLMOVE)
-		side = -MAXPLMOVE;
+		side = (int)(-MAXPLMOVE);
 
 	cmd->ucmd.forwardmove += forward;
 	cmd->ucmd.sidemove += side;
@@ -3499,8 +3499,8 @@ void GAME_ResetMap( bool bRunEnterScripts )
 		if ( pPoly->bMoved )
 		{
 
-			const LONG lDeltaX = pPoly->SavedStartSpot[0] - pPoly->StartSpot.x;
-			const LONG lDeltaY = pPoly->SavedStartSpot[1] - pPoly->StartSpot.y;
+			const LONG lDeltaX = (const LONG)(pPoly->SavedStartSpot[0] - pPoly->StartSpot.x);
+			const LONG lDeltaY = (const LONG)(pPoly->SavedStartSpot[1] - pPoly->StartSpot.y);
 
 			pPoly->MovePolyobj( lDeltaX, lDeltaY, true );
 			pPoly->bMoved = false;

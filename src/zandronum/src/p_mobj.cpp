@@ -2017,9 +2017,9 @@ bool P_SeekerMissile (AActor *actor, angle_t thresh, angle_t turnMax, bool preci
 				// 64-bit result for targets >~32k units away, collapsing the tic count to 1 and
 				// slamming velz to the whole Z gap. See features/fixed64/computation/dist_compute.h.
 				actor->velz = zx::ComputeSeekerVelZ (
-					P_AproxDistance (target->x - actor->x, target->y - actor->y),
-					speed,
-					(target->z + target->height/2) - (actor->z + actor->height/2));
+					(int64_t)(P_AproxDistance (target->x - actor->x, target->y - actor->y)),
+					(int64_t)(speed),
+					(int64_t)((target->z + target->height/2) - (actor->z + actor->height/2)));
 			}
 		}
 	}
@@ -2868,14 +2868,14 @@ void P_MonsterFallingDamage (AActor *mo)
 	if (mo->floorsector->Flags & SECF_NOFALLINGDAMAGE)
 		return;
 
-	vel = abs(mo->velz);
+	vel = (int)(abs(mo->velz));
 	if (vel > 35*FRACUNIT)
 	{ // automatic death
 		damage = TELEFRAG_DAMAGE;
 	}
 	else
 	{
-		damage = ((vel - (23*FRACUNIT))*6)>>FRACBITS;
+		damage = (int)(((vel - (23*FRACUNIT))*6)>>FRACBITS);
 	}
 	damage = TELEFRAG_DAMAGE;	// always kill 'em
 	P_DamageMobj (mo, NULL, NULL, damage, NAME_Falling);
@@ -7541,7 +7541,7 @@ AActor *P_SpawnPlayerMissile (AActor *source, fixed_t x, fixed_t y, fixed_t z,
 	{
 		vec.Z = 0;
 	}
-	vec.Resize(speed);
+	vec.Resize((double)(speed));
 	MissileActor->velx = (fixed_t)vec.X;
 	MissileActor->vely = (fixed_t)vec.Y;
 	MissileActor->velz = (fixed_t)vec.Z;
@@ -7779,7 +7779,7 @@ int AActor::TakeSpecialDamage (AActor *inflictor, AActor *source, int damage, FN
 
 int AActor::GibHealth()
 {
-	return -abs(GetClass()->Meta.GetMetaInt (AMETA_GibHealth, FixedMul(SpawnHealth(), gameinfo.gibfactor)));
+	return -abs(GetClass()->Meta.GetMetaInt (AMETA_GibHealth, (int)(FixedMul(SpawnHealth(), gameinfo.gibfactor))));
 }
 
 void AActor::Crash()

@@ -944,8 +944,8 @@ bool AWeaponGiver::TryPickup(AActor *&toucher)
 					// If DropAmmoFactor is non-negative, modify the given ammo amounts.
 					if (DropAmmoFactor > 0)
 					{
-						weap->AmmoGive1 = FixedMul(weap->AmmoGive1, DropAmmoFactor);
-						weap->AmmoGive2 = FixedMul(weap->AmmoGive2, DropAmmoFactor);
+						weap->AmmoGive1 = (int)(FixedMul(weap->AmmoGive1, DropAmmoFactor));
+						weap->AmmoGive2 = (int)(FixedMul(weap->AmmoGive2, DropAmmoFactor));
 					}
 					weap->BecomeItem();
 				}

@@ -698,7 +698,7 @@ void P_SerializePolyobjs (FArchive &arc)
 			arc << deltaX << deltaY << po->interpolation;
 			deltaX -= po->StartSpot.x;
 			deltaY -= po->StartSpot.y;
-			po->MovePolyobj (deltaX, deltaY, true);
+			po->MovePolyobj ((int)(deltaX), (int)(deltaY), true);
 		}
 	}
 }

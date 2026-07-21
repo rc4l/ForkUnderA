@@ -450,7 +450,7 @@ fixed_t DFloor::GetOrgDist( void )
 
 void DFloor::SetOrgDist( fixed_t OrgDist )
 {
-	m_OrgDist = OrgDist;
+	m_OrgDist = (int)(OrgDist);
 }
 
 LONG DFloor::GetDirection( void )
@@ -569,7 +569,7 @@ manual_floor:
 		floor->m_Hexencrush = hexencrush;
 		floor->m_Speed = speed;
 		floor->m_ResetCount = 0;				// [RH]
-		floor->m_OrgDist = sec->floorplane.d;	// [RH]
+		floor->m_OrgDist = (int)(sec->floorplane.d);	// [RH]
 
 		// [BC] Assign the floor's network ID. However, don't do this on the client end.
 		if ( NETWORK_GetState() == NETSTATE_SERVER )
@@ -914,7 +914,7 @@ bool EV_BuildStairs (int tag, DFloor::EStair type, line_t *line,
 	if (speed == 0)
 		return false;
 
-	persteptime = FixedDiv (stairsize, speed) >> FRACBITS;
+	persteptime = (int)(FixedDiv (stairsize, speed) >> FRACBITS);
 
 	int (* FindSector) (int tag, int start)  =
 		(i_compatflags & COMPATF_STAIRINDEX)? P_FindSectorFromTagLinear : P_FindSectorFromTag;
@@ -956,7 +956,7 @@ manual_stair:
 		stairstep = stairsize * floor->m_Direction;
 		floor->m_Type = DFloor::buildStair;	//jff 3/31/98 do not leave uninited
 		floor->m_ResetCount = reset;	// [RH] Tics until reset (0 if never)
-		floor->m_OrgDist = sec->floorplane.d;	// [RH] Height to reset to
+		floor->m_OrgDist = (int)(sec->floorplane.d);	// [RH] Height to reset to
 		// [RH] Set up delay values
 		floor->m_Delay = delay;
 		floor->m_PauseTime = 0;
@@ -966,7 +966,7 @@ manual_stair:
 		floor->m_Hexencrush = false;
 
 		floor->m_Speed = speed;
-		height = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + stairstep;
+		height = (int)(sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + stairstep);
 		floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, height);
 
 		texture = sec->GetTexture(sector_t::floor);
@@ -1086,7 +1086,7 @@ manual_stair:
 				floor->m_Crush = (!usespecials && speed == 4*FRACUNIT) ? 10 : -1;
 				floor->m_Hexencrush = false;
 				floor->m_ResetCount = reset;	// [RH] Tics until reset (0 if never)
-				floor->m_OrgDist = sec->floorplane.d;	// [RH] Height to reset to
+				floor->m_OrgDist = (int)(sec->floorplane.d);	// [RH] Height to reset to
 
 				// [BC] Assign the floor's network ID. However, don't do this on the client end.
 				if ( NETWORK_GetState() == NETSTATE_SERVER )

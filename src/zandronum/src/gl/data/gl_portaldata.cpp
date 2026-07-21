@@ -68,7 +68,7 @@ struct FPortalID
 	fixed_t mYDisplacement;
 
 	// for the hash code
-	operator intptr_t() const { return (mXDisplacement >> 8) + (mYDisplacement << 8); }
+	operator intptr_t() const { return (intptr_t)((mXDisplacement >> 8) + (mYDisplacement << 8)); }
 	bool operator != (const FPortalID &other) const
 	{
 		return mXDisplacement != other.mXDisplacement ||
@@ -439,8 +439,8 @@ CCMD(dumpportals)
 {
 	for(unsigned i=0;i<portals.Size(); i++)
 	{
-		double xdisp = portals[i]->xDisplacement/65536.;
-		double ydisp = portals[i]->yDisplacement/65536.;
+		double xdisp = (double)(portals[i]->xDisplacement/65536.);
+		double ydisp = (double)(portals[i]->yDisplacement/65536.);
 		Printf(PRINT_LOG, "Portal #%d, %s, displacement = (%f,%f)\n", i, portals[i]->plane==0? "floor":"ceiling",
 			xdisp, ydisp);
 		Printf(PRINT_LOG, "Coverage:\n");

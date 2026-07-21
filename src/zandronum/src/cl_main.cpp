@@ -4527,7 +4527,7 @@ void ServerCommands::UpdatePlayerExtraData::Execute()
 		// [BB] The user can restore ZDoom's freelook limit.
 		const fixed_t pitchLimit = -ANGLE_1*( cl_oldfreelooklimit ? 32 : 56 );
 		if (pitch < pitchLimit)
-			pitch = pitchLimit;
+			pitch = (int)(pitchLimit);
 		if (pitch > ANGLE_1*56)
 			pitch = ANGLE_1*56;
 	}

@@ -1326,7 +1326,7 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 
 		if (!(flags & DMG_NO_FACTOR))
 		{
-			damage = FixedMul(damage, target->DamageFactor);
+			damage = (int)(FixedMul(damage, target->DamageFactor));
 			if (damage >= 0)
 			{
 				damage = DamageTypeDefinition::ApplyMobjDamageFactor(damage, mod, target->GetClass()->ActorInfo->DamageFactors);
@@ -2072,7 +2072,7 @@ void P_PoisonDamage (player_t *player, AActor *source, int damage,
 		target->Inventory->ModifyDamage(damage, player->poisontype, damage, true);
 	}
 	// Modify with damage factors
-	damage = FixedMul(damage, target->DamageFactor);
+	damage = (int)(FixedMul(damage, target->DamageFactor));
 	if (damage > 0)
 	{
 		damage = DamageTypeDefinition::ApplyMobjDamageFactor(damage, player->poisontype, target->GetClass()->ActorInfo->DamageFactors);

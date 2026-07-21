@@ -131,7 +131,7 @@ int gl_CheckSpriteGlow(sector_t *sec, int lightlevel, fixed_t x, fixed_t y, fixe
 			int maxlight = (255+lightlevel)>>1;
 			fixed_t lightfrac = floordiff / tex->gl_info.GlowHeight;
 			if (lightfrac<0) lightfrac=0;
-			lightlevel= (lightfrac*lightlevel + maxlight*(FRACUNIT-lightfrac))>>FRACBITS;
+			lightlevel= (int)((lightfrac*lightlevel + maxlight*(FRACUNIT-lightfrac))>>FRACBITS);
 		}
 	}
 	return lightlevel;

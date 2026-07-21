@@ -673,7 +673,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_BulletAttack)
 	A_FaceTarget (self);
 	bangle = self->angle;
 
-	slope = P_AimLineAttack (self, bangle, MISSILERANGE);
+	slope = (int)(P_AimLineAttack (self, bangle, MISSILERANGE));
 
 	S_Sound (self, CHAN_WEAPON, self->AttackSound, 1, ATTN_NORM, true );	// [BC] Inform the clients.
 	for (i = self->GetMissileDamage (0, 1); i > 0; --i)
@@ -1343,7 +1343,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomBulletAttack)
 
 		if (!pufftype) pufftype = PClass::FindClass(NAME_BulletPuff);
 
-		if (!(Flags & CBAF_NOPITCH)) bslope = P_AimLineAttack (self, bangle, MISSILERANGE);
+		if (!(Flags & CBAF_NOPITCH)) bslope = (int)(P_AimLineAttack (self, bangle, MISSILERANGE));
 
 		S_Sound (self, CHAN_WEAPON, self->AttackSound, 1, ATTN_NORM, true );	// [BB] Inform the clients.
 		for (i=0 ; i<NumBullets ; i++)
@@ -1863,7 +1863,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomPunch)
 
 	angle = self->angle + (pr_cwpunch.Random2() << 18);
 	if (Range == 0) Range = MELEERANGE;
-	pitch = P_AimLineAttack (self, angle, Range, &linetarget);
+	pitch = (int)(P_AimLineAttack (self, angle, Range, &linetarget));
 
 	// only use ammo when actually hitting something!
 	if ((flags & CPF_USEAMMO) && linetarget && weapon)
@@ -3334,17 +3334,17 @@ static bool DoCheckSightOrRange(AActor *self, AActor *camera, double range)
 		return false;
 	}
 	// Check distance first, since it's cheaper than checking sight.
-	double dx = self->x - camera->x;
-	double dy = self->y - camera->y;
+	double dx = (double)(self->x - camera->x);
+	double dy = (double)(self->y - camera->y);
 	double dz;
 	fixed_t eyez = (camera->z + camera->height - (camera->height>>2));	// same eye height as P_CheckSight
 	if (eyez > self->z + self->height)
 	{
-		dz = self->z + self->height - eyez;
+		dz = (double)(self->z + self->height - eyez);
 	}
 	else if (eyez < self->z)
 	{
-		dz = self->z - eyez;
+		dz = (double)(self->z - eyez);
 	}
 	else
 	{
@@ -3371,7 +3371,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckSightOrRange)
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
-	range = range * range * (double(FRACUNIT) * FRACUNIT);		// no need for square roots
+	range = (double)(range * range * (double(FRACUNIT) * FRACUNIT));		// no need for square roots
 	for (int i = 0; i < MAXPLAYERS; ++i)
 	{
 		if (playeringame[i])
@@ -3405,15 +3405,15 @@ static bool DoCheckRange(AActor *self, AActor *camera, double range)
 		return false;
 	}
 	// Check distance first, since it's cheaper than checking sight.
-	double dx = self->x - camera->x;
-	double dy = self->y - camera->y;
+	double dx = (double)(self->x - camera->x);
+	double dy = (double)(self->y - camera->y);
 	double dz;
 	fixed_t eyez = (camera->z + camera->height - (camera->height>>2));	// same eye height as P_CheckSight
 	if (eyez > self->z + self->height){
-		dz = self->z + self->height - eyez;
+		dz = (double)(self->z + self->height - eyez);
 	}
 	else if (eyez < self->z){
-		dz = self->z - eyez;
+		dz = (double)(self->z - eyez);
 	}
 	else{
 		dz = 0;
@@ -3433,7 +3433,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckRange)
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
-	range = range * range * (double(FRACUNIT) * FRACUNIT);		// no need for square roots
+	range = (double)(range * range * (double(FRACUNIT) * FRACUNIT));		// no need for square roots
 	for (int i = 0; i < MAXPLAYERS; ++i)
 	{
 		if (playeringame[i])
@@ -5019,7 +5019,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ScaleVelocity)
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
 		return;
 
-	INTBOOL was_moving = self->velx | self->vely | self->velz;
+	INTBOOL was_moving = (INTBOOL)(self->velx | self->vely | self->velz);
 
 	self->velx = FixedMul(self->velx, scale);
 	self->vely = FixedMul(self->vely, scale);
@@ -5055,7 +5055,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeVelocity)
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
 		return;
 
-	INTBOOL was_moving = self->velx | self->vely | self->velz;
+	INTBOOL was_moving = (INTBOOL)(self->velx | self->vely | self->velz);
 
 	fixed_t vx = x, vy = y, vz = z;
 	fixed_t sina = finesine[self->angle >> ANGLETOFINESHIFT];

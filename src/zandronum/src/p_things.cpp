@@ -244,7 +244,7 @@ bool P_Thing_Projectile (int tid, AActor *source, int type, const char *type_nam
 	const PClass *kind;
 	AActor *spot, *mobj, *targ = forcedest;
 	FActorIterator iterator (tid);
-	double fspeed = speed;
+	double fspeed = (double)(speed);
 	int defflags3;
 	// [BC]
 	bool	bMissileExplode;

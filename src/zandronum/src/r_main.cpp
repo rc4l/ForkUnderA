@@ -213,8 +213,8 @@ static inline int viewangletox(int i)
 	}
 	else
 	{
-		int t = FixedMul(finetangent[i], FocalLengthX);
-		t = (centerxfrac - t + FRACUNIT-1) >> FRACBITS;
+		int t = (int)(FixedMul(finetangent[i], FocalLengthX));
+		t = (int)((centerxfrac - t + FRACUNIT-1) >> FRACBITS);
 		return clamp(t, -1, viewwidth+1);
 	}
 }
@@ -512,7 +512,7 @@ void R_SetupFreelook()
 		}
 
 		centeryfrac = (viewheight << (FRACBITS-1)) + dy;
-		centery = centeryfrac >> FRACBITS;
+		centery = (int)(centeryfrac >> FRACBITS);
 		globaluclip = FixedDiv (-centeryfrac, InvZtoScale);
 		globaldclip = FixedDiv ((viewheight<<FRACBITS)-centeryfrac, InvZtoScale);
 

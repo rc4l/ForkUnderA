@@ -510,7 +510,7 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 	// [XA] Get the current weapon's bob properties.
 	// [AK] Adjust the bob style and speed to the client's preference if cl_usecustombob is enabled.
 	int bobstyle = cl_usecustombob ? cl_bobstyle : weapon->BobStyle;
-	int bobspeed = ((cl_usecustombob ? FLOAT2FIXED(cl_bobspeed) : weapon->BobSpeed) * 128) >> 16;
+	int bobspeed = (int)(((cl_usecustombob ? FLOAT2FIXED(cl_bobspeed) : weapon->BobSpeed) * 128) >> 16);
 	fixed_t rangex = weapon->BobRangeX;
 	fixed_t rangey = weapon->BobRangeY;
 

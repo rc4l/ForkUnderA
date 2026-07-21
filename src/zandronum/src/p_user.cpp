@@ -1499,7 +1499,7 @@ bool APlayerPawn::ResetAirSupply (bool playgasp)
 	{
 		S_Sound (this, CHAN_VOICE, "*gasp", 1, ATTN_NORM);
 	}
-	if (level.airsupply> 0 && player->mo->AirCapacity > 0) player->air_finished = level.time + FixedMul(level.airsupply, player->mo->AirCapacity);
+	if (level.airsupply> 0 && player->mo->AirCapacity > 0) player->air_finished = (int)(level.time + FixedMul(level.airsupply, player->mo->AirCapacity));
 	else player->air_finished = INT_MAX;
 	return wasdrowning;
 }
@@ -2285,8 +2285,8 @@ void APlayerPawn::TweakSpeeds (int &forward, int &side)
 	// [Dusk] Let the user move at whatever speed they desire when spectating.
 	if (player->bSpectating) {
 		fixed_t factor = FLOAT2FIXED(cl_spectatormove);
-		forward = FixedMul(forward, factor);
-		side = FixedMul(side, factor);
+		forward = (int)(FixedMul(forward, factor));
+		side = (int)(FixedMul(side, factor));
 		return;
 	}
 
@@ -2300,19 +2300,19 @@ void APlayerPawn::TweakSpeeds (int &forward, int &side)
 	// [GRB]
 	if ((unsigned int)(forward + 0x31ff) < 0x63ff)
 	{
-		forward = FixedMul (forward, ForwardMove1);
+		forward = (int)(FixedMul (forward, ForwardMove1));
 	}
 	else
 	{
-		forward = FixedMul (forward, ForwardMove2);
+		forward = (int)(FixedMul (forward, ForwardMove2));
 	}
 	if ((unsigned int)(side + 0x27ff) < 0x4fff)
 	{
-		side = FixedMul (side, SideMove1);
+		side = (int)(FixedMul (side, SideMove1));
 	}
 	else
 	{
-		side = FixedMul (side, SideMove2);
+		side = (int)(FixedMul (side, SideMove2));
 	}
 
 	// [BC] This comes out to 50%, so we can use this for the turbosphere.
@@ -2320,8 +2320,8 @@ void APlayerPawn::TweakSpeeds (int &forward, int &side)
 	if (( !player->morphTics || ( PlayerFlags & PPF_NOMORPHLIMITATIONS ) ) && Inventory != NULL)
 	{
 		fixed_t factor = Inventory->GetSpeedFactor ();
-		forward = FixedMul(forward, factor);
-		side = FixedMul(side, factor);
+		forward = (int)(FixedMul(forward, factor));
+		side = (int)(FixedMul(side, factor));
 	}
 
 	// [BC] Apply the 25% speed increase power.
@@ -3004,8 +3004,8 @@ void P_MovePlayer (player_t *player)
 			// [RH] allow very limited movement if not on ground.
 			if ( zacompatflags & ZACOMPATF_LIMITED_AIRMOVEMENT )
 			{
-				movefactor = FixedMul (movefactor, level.aircontrol);
-				bobfactor = FixedMul (bobfactor, level.aircontrol);
+				movefactor = (int)(FixedMul (movefactor, level.aircontrol));
+				bobfactor = (int)(FixedMul (bobfactor, level.aircontrol));
 			}
 			else
 			{
@@ -3018,15 +3018,15 @@ void P_MovePlayer (player_t *player)
 		fm = cmd->ucmd.forwardmove;
 		sm = cmd->ucmd.sidemove;
 		mo->TweakSpeeds (fm, sm);
-		fm = FixedMul (fm, player->mo->Speed);
-		sm = FixedMul (sm, player->mo->Speed);
+		fm = (int)(FixedMul (fm, player->mo->Speed));
+		sm = (int)(FixedMul (sm, player->mo->Speed));
 
 		// When crouching, speed and bobbing have to be reduced
 		if (player->CanCrouch() && player->crouchfactor != FRACUNIT)
 		{
-			fm = FixedMul(fm, player->crouchfactor);
-			sm = FixedMul(sm, player->crouchfactor);
-			bobfactor = FixedMul(bobfactor, player->crouchfactor);
+			fm = (int)(FixedMul(fm, player->crouchfactor));
+			sm = (int)(FixedMul(sm, player->crouchfactor));
+			bobfactor = (int)(FixedMul(bobfactor, player->crouchfactor));
 		}
 
 		forwardmove = Scale (fm, movefactor * 35, TICRATE << 8);
@@ -3185,7 +3185,7 @@ void P_FallingDamage (AActor *actor)
 		else
 		{
 			vel = FixedMul (vel, 16*FRACUNIT/23);
-			damage = ((FixedMul (vel, vel) / 10) >> FRACBITS) - 24;
+			damage = (int)(((FixedMul (vel, vel) / 10) >> FRACBITS) - 24);
 			if (actor->velz > -39*FRACUNIT && damage > actor->health
 				&& actor->health != 1)
 			{ // No-death threshold
@@ -3205,7 +3205,7 @@ void P_FallingDamage (AActor *actor)
 		}
 		else
 		{
-			damage = ((MulScale23 (vel, vel*11) >> FRACBITS) - 30) / 2;
+			damage = (int)(((MulScale23 (vel, vel*11) >> FRACBITS) - 30) / 2);
 			if (damage < 1)
 			{
 				damage = 1;
@@ -3220,7 +3220,7 @@ void P_FallingDamage (AActor *actor)
 		}
 		// The minimum amount of damage you take from falling in Strife
 		// is 52. Ouch!
-		damage = vel / 25000;
+		damage = (int)(vel / 25000);
 		break;
 
 	default:
@@ -3262,7 +3262,7 @@ void P_DeathThink (player_t *player)
 		{
 			if (player->mo->pitch > -(int)ANGLE_1*19)
 			{
-				lookDelta = (-(int)ANGLE_1*19 - player->mo->pitch) / 8;
+				lookDelta = (int)((-(int)ANGLE_1*19 - player->mo->pitch) / 8);
 				player->mo->pitch += lookDelta;
 			}
 		}

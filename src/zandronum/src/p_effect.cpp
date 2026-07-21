@@ -516,7 +516,7 @@ void P_RunEffect (AActor *actor, int effects)
 			particle->x = backx - FixedMul(actor->velx, pathdist);
 			particle->y = backy - FixedMul(actor->vely, pathdist);
 			particle->z = backz - FixedMul(actor->velz, pathdist);
-			speed = (M_Random () - 128) * (FRACUNIT/200);
+			speed = (int)((M_Random () - 128) * (FRACUNIT/200));
 			particle->velx += FixedMul (speed, finecosine[an]);
 			particle->vely += FixedMul (speed, finesine[an]);
 			particle->velz -= FRACUNIT/36;
@@ -531,7 +531,7 @@ void P_RunEffect (AActor *actor, int effects)
 				particle->x = backx - FixedMul(actor->velx, pathdist);
 				particle->y = backy - FixedMul(actor->vely, pathdist);
 				particle->z = backz - FixedMul(actor->velz, pathdist) + (M_Random() << 10);
-				speed = (M_Random () - 128) * (FRACUNIT/200);
+				speed = (int)((M_Random () - 128) * (FRACUNIT/200));
 				particle->velx += FixedMul (speed, finecosine[an]);
 				particle->vely += FixedMul (speed, finesine[an]);
 				particle->velz += FRACUNIT/80;

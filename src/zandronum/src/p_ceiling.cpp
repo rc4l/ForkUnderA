@@ -493,7 +493,7 @@ DCeiling *DCeiling::Create(sector_t *sec, DCeiling::ECeiling type, line_t *line,
 
 	case ceilMoveToValue:
 		{
-			int diff = height - sec->ceilingplane.ZatPoint (spot);
+			int diff = (int)(height - sec->ceilingplane.ZatPoint (spot));
 
 			targheight = height;
 			if (diff < 0)

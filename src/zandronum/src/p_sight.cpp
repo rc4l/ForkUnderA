@@ -483,15 +483,15 @@ bool SightCheck::P_SightPathTraverse (fixed_t x1, fixed_t y1, fixed_t x2, fixed_
 	trace.dx = x2 - x1;
 	trace.dy = y2 - y1;
 
-	_x1 = (long long)x1 - bmaporgx;
-	_y1 = (long long)y1 - bmaporgy;
+	_x1 = (long long)((long long)x1 - bmaporgx);
+	_y1 = (long long)((long long)y1 - bmaporgy);
 	x1 -= bmaporgx;
 	y1 -= bmaporgy;
 	xt1 = int(_x1 >> MAPBLOCKSHIFT);
 	yt1 = int(_y1 >> MAPBLOCKSHIFT);
 
-	_x2 = (long long)x2 - bmaporgx;
-	_y2 = (long long)y2 - bmaporgy;
+	_x2 = (long long)((long long)x2 - bmaporgx);
+	_y2 = (long long)((long long)y2 - bmaporgy);
 	x2 -= bmaporgx;
 	y2 -= bmaporgy;
 	xt2 = int(_x2 >> MAPBLOCKSHIFT);
@@ -568,8 +568,8 @@ bool SightCheck::P_SightPathTraverse (fixed_t x1, fixed_t y1, fixed_t x2, fixed_
 //
 // step through map blocks
 // Count is present to prevent a round off error from skipping the break
-	mapx = xt1;
-	mapy = yt1;
+	mapx = (int)(xt1);
+	mapy = (int)(yt1);
 
 	for (count = 0 ; count < 100 ; count++)
 	{

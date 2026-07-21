@@ -158,8 +158,8 @@ static bool PIT_FindFloorCeiling(line_t *ld, const FBoundingBox &box, FCheckPosi
 	else
 	{ // Find the point on the line closest to the actor's center, and use
 		// that to calculate openings
-		double dx = ld->dx;
-		double dy = ld->dy;
+		double dx = (double)(ld->dx);
+		double dy = (double)(ld->dy);
 		fixed_t r = xs_CRoundToInt(((double)(tmf.x - ld->v1->x) * dx +
 			(double)(tmf.y - ld->v1->y) * dy) /
 			(dx*dx + dy*dy) * 16777216.f);
@@ -568,8 +568,8 @@ int P_GetFriction(const AActor *mo, int *frictionfactor)
 	else if ((!(mo->flags & MF_NOGRAVITY) && mo->waterlevel > 1) ||
 		(mo->waterlevel == 1 && mo->z > mo->floorz + 6 * FRACUNIT))
 	{
-		friction = secfriction(mo->Sector);
-		movefactor = secmovefac(mo->Sector) >> 1;
+		friction = (int)(secfriction(mo->Sector));
+		movefactor = (int)(secmovefac(mo->Sector) >> 1);
 	}
 	else if (var_friction && !(mo->flags & (MF_NOCLIP | MF_NOGRAVITY)))
 	{	// When the object is straddling sectors with the same
@@ -593,8 +593,8 @@ int P_GetFriction(const AActor *mo, int *frictionfactor)
 				newfriction = secfriction(rover->model);
 				if (newfriction < friction || friction == ORIG_FRICTION)
 				{
-					friction = newfriction;
-					movefactor = secmovefac(rover->model);
+					friction = (int)(newfriction);
+					movefactor = (int)(secmovefac(rover->model));
 				}
 			}
 #endif
@@ -610,8 +610,8 @@ int P_GetFriction(const AActor *mo, int *frictionfactor)
 				(sec->GetHeightSec() != NULL &&
 				mo->z <= sec->heightsec->floorplane.ZatPoint(mo->x, mo->y))))
 			{
-				friction = newfriction;
-				movefactor = secmovefac(sec);
+				friction = (int)(newfriction);
+				movefactor = (int)(secmovefac(sec));
 			}
 		}
 	}
@@ -645,7 +645,7 @@ int P_GetMoveFactor(const AActor *mo, int *frictionp)
 		// phares 3/11/98: you start off slowly, then increase as
 		// you get better footing
 
-		int velocity = P_AproxDistance(mo->velx, mo->vely);
+		int velocity = (int)(P_AproxDistance(mo->velx, mo->vely));
 
 		if (velocity > MORE_FRICTION_VELOCITY << 2)
 			movefactor <<= 3;
@@ -1104,15 +1104,15 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 
 		if (thing->projectilepassheight > 0)
 		{
-			clipheight = thing->projectilepassheight;
+			clipheight = (int)(thing->projectilepassheight);
 		}
 		else if (thing->projectilepassheight < 0 && (i_compatflags & COMPATF_MISSILECLIP))
 		{
-			clipheight = -thing->projectilepassheight;
+			clipheight = (int)(-thing->projectilepassheight);
 		}
 		else
 		{
-			clipheight = thing->height;
+			clipheight = (int)(thing->height);
 		}
 
 		// Check if it went over / under
@@ -1469,7 +1469,7 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 		F3DFloor*  rover;
 		fixed_t    delta1;
 		fixed_t    delta2;
-		int        thingtop = thing->z + (thing->height == 0 ? 1 : thing->height);
+		int        thingtop = (int)(thing->z + (thing->height == 0 ? 1 : thing->height));
 
 		for (unsigned i = 0; i<newsec->e->XFloor.ffloors.Size(); i++)
 		{
@@ -3937,7 +3937,7 @@ void aim_t::AimTraverse(fixed_t startx, fixed_t starty, fixed_t endx, fixed_t en
 		if (thingbottompitch > bottompitch)
 			thingbottompitch = bottompitch;
 
-		thingpitch = thingtoppitch / 2 + thingbottompitch / 2;
+		thingpitch = (int)(thingtoppitch / 2 + thingbottompitch / 2);
 
 		if (flags & ALF_CHECK3D)
 		{
@@ -5863,10 +5863,10 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 			if (P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
 			{ // OK to damage; target is in direct path
 				dist = clamp<int>(dist - fulldamagedistance, 0, dist);
-				int damage = Scale(bombdamage, bombdistance - dist, bombdistance);
+				int damage = (int)(Scale(bombdamage, bombdistance - dist, bombdistance));
 				damage = (int)((double)damage * splashfactor);
 
-				damage = Scale(damage, thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT), FRACUNIT);
+				damage = (int)(Scale(damage, thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT), FRACUNIT));
 				if (damage > 0)
 				{
 					// [BC/BB] Damage is server side.

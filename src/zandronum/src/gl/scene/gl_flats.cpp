@@ -604,7 +604,7 @@ void GLFlat::ProcessSector(sector_t * frontsector)
 		if ((stack = (frontsector->portals[sector_t::floor] != NULL)))
 		{
 			gl_drawinfo->AddFloorStack(sector);
-			alpha = frontsector->GetAlpha(sector_t::floor)/65536.0f;
+			alpha = (float)(frontsector->GetAlpha(sector_t::floor)/65536.0f);
 		}
 		else
 		{
@@ -655,7 +655,7 @@ void GLFlat::ProcessSector(sector_t * frontsector)
 		if ((stack = (frontsector->portals[sector_t::ceiling] != NULL))) 
 		{
 			gl_drawinfo->AddCeilingStack(sector);
-			alpha = frontsector->GetAlpha(sector_t::ceiling)/65536.0f;
+			alpha = (float)(frontsector->GetAlpha(sector_t::ceiling)/65536.0f);
 		}
 		else
 		{

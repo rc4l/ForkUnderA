@@ -303,7 +303,7 @@ DWORD FNodeBuilder::CheckLoopStart (fixed_t dx, fixed_t dy, int vertex, int vert
 		angle_t diff = splitAngle - segAngle;
 
 		if (diff < ANGLE_EPSILON &&
-			PointOnSide (Vertices[seg->v1].x, Vertices[seg->v1].y, v->x, v->y, dx, dy) == 0)
+			PointOnSide ((int)(Vertices[seg->v1].x), (int)(Vertices[seg->v1].y), (int)(v->x), (int)(v->y), (int)(dx), (int)(dy)) == 0)
 		{
 			// If a seg lies right on the splitter, don't count it
 		}
@@ -362,7 +362,7 @@ DWORD FNodeBuilder::CheckLoopEnd (fixed_t dx, fixed_t dy, int vertex)
 		angle_t diff = segAngle - splitAngle;
 
 		if (diff < ANGLE_EPSILON &&
-			PointOnSide (Vertices[seg->v1].x, Vertices[seg->v1].y, v->x, v->y, dx, dy) == 0)
+			PointOnSide ((int)(Vertices[seg->v1].x), (int)(Vertices[seg->v1].y), (int)(v->x), (int)(v->y), (int)(dx), (int)(dy)) == 0)
 		{
 			// If a seg lies right on the splitter, don't count it
 		}

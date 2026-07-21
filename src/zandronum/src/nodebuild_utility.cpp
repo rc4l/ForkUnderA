@@ -314,8 +314,8 @@ void FNodeBuilder::GroupSegPlanes ()
 			fixed_t cy1 = Vertices[check->v1].y;
 			fixed_t cdx = Vertices[check->v2].x - cx1;
 			fixed_t cdy = Vertices[check->v2].y - cy1;
-			if (PointOnSide (x1, y1, cx1, cy1, cdx, cdy) == 0 &&
-				PointOnSide (x2, y2, cx1, cy1, cdx, cdy) == 0)
+			if (PointOnSide ((int)(x1), (int)(y1), (int)(cx1), (int)(cy1), (int)(cdx), (int)(cdy)) == 0 &&
+				PointOnSide ((int)(x2), (int)(y2), (int)(cx1), (int)(cy1), (int)(cdx), (int)(cdy)) == 0)
 			{
 				break;
 			}
@@ -457,7 +457,7 @@ void FNodeBuilder::FindPolyContainers (TArray<FPolyStart> &spots, TArray<FPolySt
 
 					fixed_t dx = v2->x - v1->x;
 
-					if (PointOnSide (center.x, center.y, v1->x, v1->y, dx, dy) <= 0)
+					if (PointOnSide ((int)(center.x), (int)(center.y), (int)(v1->x), (int)(v1->y), (int)(dx), (int)(dy)) <= 0)
 					{
 						fixed_t t = DivScale30 (center.y - v1->y, dy);
 						fixed_t sx = v1->x + MulScale30 (dx, t);

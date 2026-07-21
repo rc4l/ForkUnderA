@@ -143,7 +143,7 @@ void DPillar::SetFloorSpeed( LONG lSpeed )
 // [BB]
 LONG DPillar::GetFloorSpeed( )
 {
-	return m_FloorSpeed;
+	return (LONG)(m_FloorSpeed);
 }
 
 // [BC]
@@ -155,7 +155,7 @@ void DPillar::SetCeilingSpeed( LONG lSpeed )
 // [BB]
 LONG DPillar::GetCeilingSpeed( )
 {
-	return m_CeilingSpeed;
+	return (LONG)(m_CeilingSpeed);
 }
 
 // [BC]
@@ -167,7 +167,7 @@ void DPillar::SetFloorTarget( LONG lTarget )
 // [BB]
 LONG DPillar::GetFloorTarget( )
 {
-	return m_FloorTarget;
+	return (LONG)(m_FloorTarget);
 }
 
 // [BC]
@@ -179,7 +179,7 @@ void DPillar::SetCeilingTarget( LONG lTarget )
 // [BB]
 LONG DPillar::GetCeilingTarget( )
 {
-	return m_CeilingTarget;
+	return (LONG)(m_CeilingTarget);
 }
 
 LONG DPillar::GetCrush( void )

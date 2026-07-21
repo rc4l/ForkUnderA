@@ -340,7 +340,7 @@ static void DrawArmor(ABasicArmor * barmor, AHexenArmor * harmor, int x, int y)
 
 	if (harmor)
 	{
-		int ac = (harmor->Slots[0] + harmor->Slots[1] + harmor->Slots[2] + harmor->Slots[3] + harmor->Slots[4]);
+		int ac = (int)((harmor->Slots[0] + harmor->Slots[1] + harmor->Slots[2] + harmor->Slots[3] + harmor->Slots[4]));
 		ac >>= FRACBITS;
 		ap += ac;
 		
@@ -782,7 +782,7 @@ static void DrawInventory(player_t * CPlayer, int x,int y)
 
 				if (AltIcon.Exists() && (rover->Icon.isValid() || AltIcon.isValid()) )
 				{
-					int trans = rover==CPlayer->mo->InvSel ? FRACUNIT : 0x6666;
+					int trans = (int)(rover==CPlayer->mo->InvSel ? FRACUNIT : 0x6666);
 
 					DrawImageToBox(TexMan[AltIcon.isValid()? AltIcon : rover->Icon], x, y, 19, 25, trans);
 					if (rover->Amount>1)

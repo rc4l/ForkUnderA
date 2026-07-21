@@ -711,7 +711,7 @@ void S_ParseSndSeq (int levellump)
 						sc.MustGetString ();
 						val = sc.MustMatchString(&Attenuations[0].name, sizeof(Attenuations[0])) << FRACBITS;
 					}
-					ScriptTemp.Push(MakeCommand(SS_CMD_ATTENUATION, val));
+					ScriptTemp.Push((const unsigned int)(MakeCommand(SS_CMD_ATTENUATION, val)));
 					break;
 
 				case SS_STRING_RANDOMSEQUENCE:
