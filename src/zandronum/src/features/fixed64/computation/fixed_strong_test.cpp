@@ -67,9 +67,20 @@ TEST(FixedStrong, ExplicitBoundaryCrossing)
 	EXPECT_TRUE(static_cast<bool>(x));
 }
 
-TEST(FixedStrong, MaskKeepsFullWidth)
+// [rc4l] The polyobject-rotation bug class: a 32-bit align-down mask on a negative fixed value.
+// The type sign-extends 32-bit masks, so it stays negative (correct) instead of becoming a huge
+// positive -- the bug is now impossible, including in backported code that writes & 0xFFFFFE00.
+TEST(FixedStrong, ThirtyTwoBitMaskStaysSignPreserving)
 {
-	// Sign-preserving align-down (the polyobject idiom) works when the mask is 64-bit.
-	Fixed neg = Fixed::FromRaw(-1024);
-	EXPECT_LT((neg & ~int64_t(0x1FF)), 0); // stays negative with a full-width mask
+	const Fixed neg = Fixed::FromRaw(-1024);
+	EXPECT_EQ((neg & 0xFFFFFE00).Raw(), -1024); // 32-bit unsigned mask, sign preserved (the fix)
+	EXPECT_EQ((neg & ~0x1FF).Raw(), -1024);     // ~0x1FF (signed -512) also fine
+	EXPECT_LT((neg & 0xFFFFFE00), 0);
+
+	// Low-bit masks are unaffected (sign-extending a positive mask is a no-op).
+	EXPECT_EQ((Fixed::FromRaw(0x12345) & 0xFFFF).Raw(), 0x12345 & 0xFFFF);
+	EXPECT_EQ((Fixed::FromRaw(0x12345) & 0x1FFF).Raw(), 0x12345 & 0x1FFF); // FINEMASK
+
+	// A genuine 64-bit mask passes through unchanged.
+	EXPECT_EQ((Fixed::FromRaw(int64_t(5) << 40) & 0xFFFFFF0000000000LL).Raw(), int64_t(5) << 40);
 }

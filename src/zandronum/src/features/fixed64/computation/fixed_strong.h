@@ -23,6 +23,7 @@
 #define ZX_FIXED_STRONG_H
 
 #include <cstdint>
+#include <type_traits>
 
 namespace zx
 {
@@ -75,9 +76,21 @@ public:
 	// --- bit ops (shifts and masks are used pervasively on fixed values) ---
 	friend constexpr Fixed operator<<(Fixed a, int n) { return FromRaw(a.v_ << n); }
 	friend constexpr Fixed operator>>(Fixed a, int n) { return FromRaw(a.v_ >> n); }
-	friend constexpr Fixed operator&(Fixed a, int64_t m) { return FromRaw(a.v_ & m); }
-	friend constexpr Fixed operator|(Fixed a, int64_t m) { return FromRaw(a.v_ | m); }
-	friend constexpr Fixed operator^(Fixed a, int64_t m) { return FromRaw(a.v_ ^ m); }
+
+	// [rc4l] Bitwise masks. A mask of 32 bits or fewer is reinterpreted as a 32-bit pattern and
+	// SIGN-EXTENDED to 64 bits -- the author's 32-bit mental model. So a high-bit "clear the low N
+	// bits" mask like 0xFFFFFE00 stays sign-preserving on the widened value instead of wiping the
+	// sign (the polyobject-rotation bug), while low-bit masks (& 0xFFFF, & FINEMASK) are unchanged
+	// because sign-extending a positive mask is a no-op. Genuine 64-bit masks pass through as-is.
+	// This makes that whole bug class impossible -- including in backported code.
+	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
+	static constexpr int64_t widenMask(M m) { return sizeof(M) <= 4 ? int64_t(int32_t(m)) : int64_t(m); }
+	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
+	friend constexpr Fixed operator&(Fixed a, M m) { return FromRaw(a.v_ & widenMask(m)); }
+	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
+	friend constexpr Fixed operator|(Fixed a, M m) { return FromRaw(a.v_ | widenMask(m)); }
+	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
+	friend constexpr Fixed operator^(Fixed a, M m) { return FromRaw(a.v_ ^ widenMask(m)); }
 	constexpr Fixed operator~() const { return FromRaw(~v_); }
 
 	// --- comparisons (ints promote via the implicit ctor) ---
@@ -95,8 +108,10 @@ public:
 	Fixed &operator/=(int b) { v_ /= b; return *this; }
 	Fixed &operator<<=(int n) { v_ <<= n; return *this; }
 	Fixed &operator>>=(int n) { v_ >>= n; return *this; }
-	Fixed &operator&=(int64_t m) { v_ &= m; return *this; }
-	Fixed &operator|=(int64_t m) { v_ |= m; return *this; }
+	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
+	Fixed &operator&=(M m) { v_ &= widenMask(m); return *this; }
+	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>
+	Fixed &operator|=(M m) { v_ |= widenMask(m); return *this; }
 
 private:
 	int64_t v_;
