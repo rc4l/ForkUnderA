@@ -164,7 +164,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_AlienSpectreDeath)
 		{	// You wield the power of the complete Sigil.
 			log = 85;
 		}
-		EV_DoDoor (DDoor::doorOpen, NULL, NULL, 222, 8*FRACUNIT, 0, 0, 0);
+		EV_DoDoor (DDoor::doorOpen, NULL, NULL, 222,(int)( 8*FRACUNIT), 0, 0, 0);
 		break;
 	}
 

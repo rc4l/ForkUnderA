@@ -310,7 +310,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	const int prevhealth = self->health;
 
 	if (LifeSteal && !(linetarget->flags5 & MF5_DONTDRAIN))
-		P_GiveBody (self, (actualdamage * LifeSteal) >> FRACBITS);
+		P_GiveBody (self,(int)( (actualdamage * LifeSteal) >> FRACBITS));
 
 	// [EP] Inform the clients about the player health change if needed.
 	if ( ( NETWORK_GetState() == NETSTATE_SERVER ) && self->player && prevhealth != self->health )

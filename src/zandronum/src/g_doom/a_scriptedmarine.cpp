@@ -439,7 +439,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_M_FirePistol)
 
 	S_Sound (self, CHAN_WEAPON, "weapons/pistol", 1, ATTN_NORM, true);	// [BC] Inform the clients.
 	A_FaceTarget (self);
-	P_GunShot2 (self, accurate, P_AimLineAttack (self, self->angle, MISSILERANGE),
+	P_GunShot2 (self, accurate,(int)( P_AimLineAttack (self, self->angle, MISSILERANGE)),
 		PClass::FindClass(NAME_BulletPuff));
 }
 
@@ -556,7 +556,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_M_FireCGun)
 
 	S_Sound (self, CHAN_WEAPON, "weapons/chngun", 1, ATTN_NORM, true);	// [BC] Inform the clients.
 	A_FaceTarget (self);
-	P_GunShot2 (self, accurate, P_AimLineAttack (self, self->angle, MISSILERANGE),
+	P_GunShot2 (self, accurate,(int)( P_AimLineAttack (self, self->angle, MISSILERANGE)),
 		PClass::FindClass(NAME_BulletPuff));
 }
 

@@ -376,7 +376,7 @@ void FRemapTable::AddColorRange(int start, int end, int _r1,int _g1, int _b1, in
 	if (start == end)
 	{
 		start = GPalette.Remap[start];
-		Remap[start] = ColorMatcher.Pick(r >> FRACBITS, g >> FRACBITS, b >> FRACBITS);
+		Remap[start] = ColorMatcher.Pick((int)(r >> FRACBITS), g >> FRACBITS, b >> FRACBITS);
 		Palette[start] = PalEntry((BYTE)(r >> FRACBITS),(BYTE)( g >> FRACBITS),(BYTE)( b >> FRACBITS));
 		Palette[start].a = start == 0 ? 0 : 255;
 	}
@@ -388,7 +388,7 @@ void FRemapTable::AddColorRange(int start, int end, int _r1,int _g1, int _b1, in
 		for (int i = start; i <= end; ++i)
 		{
 			int j = GPalette.Remap[i];
-			Remap[j] = ColorMatcher.Pick(r >> FRACBITS, g >> FRACBITS, b >> FRACBITS);
+			Remap[j] = ColorMatcher.Pick((int)(r >> FRACBITS), g >> FRACBITS, b >> FRACBITS);
 			Palette[j] = PalEntry(j == 0 ? 0 : 255,(BYTE)( r >> FRACBITS),(BYTE)( g >> FRACBITS),(BYTE)( b >> FRACBITS));
 			r += rs;
 			g += gs;

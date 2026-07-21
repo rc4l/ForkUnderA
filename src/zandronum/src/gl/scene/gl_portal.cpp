@@ -776,7 +776,7 @@ void GLPlaneMirrorPortal::DrawContents()
 	fixed_t planez = origin->ZatPoint(viewx, viewy);
 	viewz = 2*planez - viewz;
 	GLRenderer->mViewActor = NULL;
-	PlaneMirrorMode = ksgn(origin->c);
+	PlaneMirrorMode = ksgn((int)(origin->c));
 
 	validcount++;
 

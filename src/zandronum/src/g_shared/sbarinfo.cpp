@@ -1081,9 +1081,9 @@ public:
 			}
 
 			if(currentPopup != POP_None && !script->huds[hud]->FullScreenOffsets())
-				script->huds[hud]->Draw(NULL, this, script->popups[currentPopup-1].getXDisplacement(), script->popups[currentPopup-1].getYDisplacement(), FRACUNIT);
+				script->huds[hud]->Draw(NULL, this, script->popups[currentPopup-1].getXDisplacement(), script->popups[currentPopup-1].getYDisplacement(),(int)( FRACUNIT));
 			else
-				script->huds[hud]->Draw(NULL, this, 0, 0, FRACUNIT);
+				script->huds[hud]->Draw(NULL, this, 0, 0,(int)( FRACUNIT));
 			lastHud = hud;
 
 			// Handle inventory bar drawing

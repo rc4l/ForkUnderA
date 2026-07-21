@@ -34,7 +34,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_IceGuyLook)
 	if (pr_iceguylook() < 64)
 	{
 		dist = ((pr_iceguylook()-128)*self->radius)>>7;
-		an = (self->angle+ANG90)>>ANGLETOFINESHIFT;
+		an = fixed_t((self->angle+ANG90)>>ANGLETOFINESHIFT);
 
 		mo = Spawn (WispTypes[pr_iceguylook()&1],
 			self->x+FixedMul(dist, finecosine[(int)(an)]),
@@ -68,7 +68,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_IceGuyChase)
 	if (pr_iceguychase() < 128)
 	{
 		dist = ((pr_iceguychase()-128)*self->radius)>>7;
-		an = (self->angle+ANG90)>>ANGLETOFINESHIFT;
+		an = fixed_t((self->angle+ANG90)>>ANGLETOFINESHIFT);
 
 		mo = Spawn (WispTypes[pr_iceguychase()&1],
 			self->x+FixedMul(dist, finecosine[(int)(an)]),
@@ -113,12 +113,12 @@ DEFINE_ACTION_FUNCTION(AActor, A_IceGuyAttack)
 	{
 		return;
 	}
-	an = (self->angle+ANG90)>>ANGLETOFINESHIFT;
+	an = fixed_t((self->angle+ANG90)>>ANGLETOFINESHIFT);
 	P_SpawnMissileXYZ(self->x+FixedMul(self->radius>>1,
 		finecosine[(int)(an)]), self->y+FixedMul(self->radius>>1,
 		finesine[(int)(an)]), self->z+40*FRACUNIT, self, self->target,
 		PClass::FindClass ("IceGuyFX"), true, NULL, true);	// [BB] Inform the clients.
-	an = (self->angle-ANG90)>>ANGLETOFINESHIFT;
+	an = fixed_t((self->angle-ANG90)>>ANGLETOFINESHIFT);
 	P_SpawnMissileXYZ(self->x+FixedMul(self->radius>>1,
 		finecosine[(int)(an)]), self->y+FixedMul(self->radius>>1,
 		finesine[(int)(an)]), self->z+40*FRACUNIT, self, self->target,
