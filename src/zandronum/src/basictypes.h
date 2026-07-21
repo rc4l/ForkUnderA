@@ -92,7 +92,18 @@ union QWORD_UNION
 #define FRACBITS						16
 #define FRACUNIT						((fixed_t)1<<FRACBITS)
 
+// [rc4l] Strong-fixed migration switch. Default OFF -> fixed_t is the plain 64-bit integer and
+// the shipping build is byte-identical. Define ZX_STRONG_FIXED to make fixed_t the strong Fixed
+// type, which rejects the implicit angle->fixed and fixed->int conversions that caused the
+// widening bugs (see features/fixed64/computation/fixed_strong.h). The strict build is not yet
+// clean across the whole tree; the switch lets the migration proceed file-by-file while the
+// default build stays green.
+#if defined(ZX_STRONG_FIXED) && defined(__cplusplus)
+#include "features/fixed64/computation/fixed_strong.h"
+typedef zx::Fixed						fixed_t;
+#else
 typedef SQWORD							fixed_t;
+#endif
 typedef DWORD							dsfixed_t;				// fixedpt used by span drawer
 
 #define FIXED_MAX						((fixed_t)0x7fffffffffffffffLL)
