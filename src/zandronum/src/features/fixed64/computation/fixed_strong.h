@@ -31,7 +31,10 @@ namespace zx
 class Fixed
 {
 public:
-	constexpr Fixed() : v_(0) {}
+	// [rc4l] Trivial default ctor (leaves v_ uninitialized, exactly like a raw `fixed_t x;`), so
+	// Fixed stays trivially-default-constructible and can be a union member (e.g. FMetaData) and
+	// live in memcpy'd/aggregate storage. Value-init (`Fixed x{}` / `= {}`) still zeroes.
+	Fixed() = default;
 
 	// [rc4l] Signed integer sources sign-extend safely -> implicit is fine and keeps literals,
 	// comparisons, and `+`/`-` with plain ints working without a flood of overloads.
@@ -50,7 +53,7 @@ public:
 
 	// [rc4l] The blessed, visible ways to cross the boundary on purpose.
 	constexpr int64_t Raw() const { return v_; }
-	static constexpr Fixed FromRaw(int64_t v) { Fixed f; f.v_ = v; return f; }
+	static constexpr Fixed FromRaw(int64_t v) { return Fixed(v); }
 
 	// [rc4l] Narrowing / lossy conversions out of fixed are explicit only.
 	explicit constexpr operator int() const { return static_cast<int>(v_); }
