@@ -96,7 +96,11 @@ TEST(FixedStrong, ExplicitBoundaryCrossing)
 // guarantee in miniature (strong == raw for every op) and covers the full operator surface.
 TEST(FixedStrong, EveryOperatorForwardsToRaw)
 {
-	const int64_t rv = 0x0000001234567890LL; // a value with bits above 32 to exercise truncation
+	// [rc4l] Seed through volatile so nothing below constant-folds: with literal constexpr operands
+	// some compilers evaluate these operators at compile time and they never register as executed
+	// (CI saw exactly this on operator|). Reading a volatile forces a genuine runtime call chain.
+	volatile int64_t seed = 0x0000001234567890LL; // a value with bits above 32 to exercise truncation
+	const int64_t rv = seed;
 	const Fixed f = Fixed::FromRaw(rv);
 
 	// Constructors from every signed/unsigned integer width (unsigned is the explicit escape hatch).
@@ -126,11 +130,13 @@ TEST(FixedStrong, EveryOperatorForwardsToRaw)
 	EXPECT_EQ((3 * Fixed(10)).Raw(), 3 * 10);
 	EXPECT_EQ((Fixed::FromRaw(17) % 5).Raw(), 17 % 5);
 
-	// Bitwise on two Fixeds and complement.
-	EXPECT_EQ((Fixed::FromRaw(0xF0) & Fixed::FromRaw(0x3C)).Raw(), 0xF0 & 0x3C);
-	EXPECT_EQ((Fixed::FromRaw(0xF0) | Fixed::FromRaw(0x3C)).Raw(), 0xF0 | 0x3C);
-	EXPECT_EQ((Fixed::FromRaw(0xF0) ^ Fixed::FromRaw(0x3C)).Raw(), 0xF0 ^ 0x3C);
-	EXPECT_EQ((~Fixed::FromRaw(0)).Raw(), ~int64_t(0));
+	// Bitwise on two Fixeds and complement -- driven off the runtime-seeded f so the operators are
+	// actually called (see the volatile note above; this is what makes operator| register).
+	const Fixed mask = Fixed::FromRaw(0xFF);
+	EXPECT_EQ((f & mask).Raw(), rv & 0xFF);
+	EXPECT_EQ((f | mask).Raw(), rv | 0xFF);
+	EXPECT_EQ((f ^ mask).Raw(), rv ^ 0xFF);
+	EXPECT_EQ((~f).Raw(), ~rv);
 
 	// Remaining comparisons.
 	EXPECT_TRUE(Fixed(1) != Fixed(2));
