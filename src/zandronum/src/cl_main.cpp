@@ -3671,7 +3671,7 @@ void ServerCommands::SpawnPlayer::Execute()
 		pActor->Translation = TRANSLATION( TRANSLATION_Players, ulPlayer );
 	}
 	pActor->angle = angle;
-	pActor->pitch = pActor->roll = 0;
+	pActor->pitch = fixed_t(pActor->roll = 0);
 	pActor->health = pPlayer->health;
 	pActor->FixedColormap = NOFIXEDCOLORMAP;
 
@@ -3911,7 +3911,7 @@ void ServerCommands::MovePlayer::Execute()
 	}
 
 	// [AK] Calculate how much this player's angle changed.
-	player->mo->AngleDelta = angle - player->mo->angle;
+	player->mo->AngleDelta = fixed_t(angle - player->mo->angle);
 
 	// Set the player's angle.
 	player->mo->angle = angle;

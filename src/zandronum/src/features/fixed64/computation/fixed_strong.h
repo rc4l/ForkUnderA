@@ -139,6 +139,10 @@ public:
 	Fixed &operator-=(Fixed b) { v_ -= b.v_; return *this; }
 	Fixed &operator*=(int b) { v_ *= b; return *this; }
 	Fixed &operator/=(int b) { v_ /= b; return *this; }
+	Fixed &operator++() { ++v_; return *this; }
+	Fixed &operator--() { --v_; return *this; }
+	Fixed operator++(int) { Fixed t = *this; ++v_; return t; }
+	Fixed operator--(int) { Fixed t = *this; --v_; return t; }
 	Fixed &operator<<=(int n) { v_ <<= n; return *this; }
 	Fixed &operator>>=(int n) { v_ >>= n; return *this; }
 	template <class M, class = typename std::enable_if<std::is_integral<M>::value>::type>

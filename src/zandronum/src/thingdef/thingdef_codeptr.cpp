@@ -1241,7 +1241,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 
 				if (CMF_SAVEPITCH & flags)
 				{
-					missile->pitch = pitch;
+					missile->pitch = fixed_t(pitch);
 					// In aimmode 0 and 1 without absolutepitch or offsetpitch, the pitch parameter
 					// contains the unapplied parameter. In that case, it is set as pitch without
 					// otherwise affecting the spawned actor.

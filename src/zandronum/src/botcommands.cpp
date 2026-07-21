@@ -1243,7 +1243,7 @@ static void botcmd_CheckTerrain( CSkullBot *pBot )
 	if ( lAngle < 0 )
 		lAngle = ANGLE_MAX - labs( lAngle );
 
-	Angle = pBot->GetPlayer( )->mo->angle;
+	Angle = fixed_t(pBot->GetPlayer( )->mo->angle);
 	Angle += lAngle;
 
 	Angle >>= ANGLETOFINESHIFT;

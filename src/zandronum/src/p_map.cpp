@@ -4106,12 +4106,12 @@ fixed_t P_AimLineAttack(AActor *t1, angle_t angle, fixed_t distance, AActor **pL
 		if (aim.thing_other)
 		{
 			aim.linetarget = aim.thing_other;
-			aim.aimpitch = aim.pitch_other;
+			aim.aimpitch = fixed_t(aim.pitch_other);
 		}
 		else if (aim.thing_friend)
 		{
 			aim.linetarget = aim.thing_friend;
-			aim.aimpitch = aim.pitch_friend;
+			aim.aimpitch = fixed_t(aim.pitch_friend);
 		}
 	}
 	if (pLineTarget)
@@ -5068,7 +5068,7 @@ void P_RailAttackWithPossibleSpread (AActor *source, int damage, int offset_xy, 
 		{
 			fixed_t		SavedActorAngle;
 
-			SavedActorAngle = source->angle;
+			SavedActorAngle = fixed_t(source->angle);
 
 			source->angle += ( ANGLE_45 / 3 );
 			P_RailAttack (source, damage, offset_xy, offset_z, lOuterColor, lInnerColor, maxdiff, railflags, puffclass, angleoffset, pitchoffset, distance, duration, sparsity, drift, spawnclass );

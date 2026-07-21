@@ -5549,7 +5549,7 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	}
 
 	mobj->angle = spawn_angle;
-	mobj->pitch = mobj->roll = 0;
+	mobj->pitch = fixed_t(mobj->roll = 0);
 	mobj->health = p->health;
 	mobj->FixedColormap = NOFIXEDCOLORMAP;
 
@@ -6328,7 +6328,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 
 	// [BOF] Save UDMF variables for map resets.
 	mobj->SavedPitch = mobj->pitch;
-	mobj->SavedRoll = mobj->roll;
+	mobj->SavedRoll = fixed_t(mobj->roll);
 	mobj->SavedScaleX = mobj->scaleX;
 	mobj->SavedScaleY = mobj->scaleY;
 	mobj->SavedRenderStyle = mobj->RenderStyle;

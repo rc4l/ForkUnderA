@@ -2138,7 +2138,7 @@ void S_UpdateSounds (AActor *listenactor)
 
 		if (usingFreeChasecam)
 		{
-			oldAngle = listenactor->angle;
+			oldAngle = fixed_t(listenactor->angle);
 			listenactor->angle = FreeChasecam::cameraAngle;
 
 			oldPitch = listenactor->pitch;

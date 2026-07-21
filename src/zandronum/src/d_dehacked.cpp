@@ -845,14 +845,14 @@ static int PatchThing (int thingy)
 		}
 		else if (linelen == 12 && stricmp (Line1, "Translucency") == 0)
 		{
-			info->alpha = val;
+			info->alpha = fixed_t(val);
 			info->RenderStyle = STYLE_Translucent;
 			hadTranslucency = true;
 			hadStyle = true;
 		}
 		else if (linelen == 6 && stricmp (Line1, "Height") == 0)
 		{
-			info->height = val;
+			info->height = fixed_t(val);
 			info->projectilepassheight = 0;	// needs to be disabled
 			hadHeight = true;
 		}
@@ -864,11 +864,11 @@ static int PatchThing (int thingy)
 		{
 			if (stricmp (Line1, "Speed") == 0)
 			{
-				info->Speed = val;
+				info->Speed = fixed_t(val);
 			}
 			else if (stricmp (Line1, "Width") == 0)
 			{
-				info->radius = val;
+				info->radius = fixed_t(val);
 			}
 			else if (stricmp (Line1, "Alpha") == 0)
 			{

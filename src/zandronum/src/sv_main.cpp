@@ -6309,7 +6309,7 @@ bool ClientMoveCommand::process( const ULONG clientIndex ) const
 			// In this case the client still sends these values based on the previous map.
 			if ( client->State == CLS_SPAWNED )
 			{
-				player->mo->pitch = moveCmd.pitch;
+				player->mo->pitch = fixed_t(moveCmd.pitch);
 
 				// [HYP] Lock angle if speed is above sr40
 				if ( !sv_cheats && ( cmd->ucmd.sidemove > ( sidemove[1] << 8 ) || cmd->ucmd.sidemove < -( sidemove[1] << 8 )))
