@@ -2959,7 +2959,7 @@ void P_MovePlayer (player_t *player)
 		if (usingFreeChasecam)
 		{
 			FreeChasecam::cameraAngle = mo->angle;
-			mo->angle = oldAngle;
+			mo->angle = (angle_t)(oldAngle);
 		}
 
 		// [AK] Calculate how much the player's angle changed.

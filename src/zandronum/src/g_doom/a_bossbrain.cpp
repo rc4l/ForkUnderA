@@ -151,11 +151,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BrainSpit)
 			}
 			else if (abs(spit->vely) > abs(spit->velx))
 			{
-				spit->special2 = (targ->y - self->y) / spit->vely;
+				spit->special2 = (int)((targ->y - self->y) / spit->vely);
 			}
 			else
 			{
-				spit->special2 = (targ->x - self->x) / spit->velx;
+				spit->special2 = (int)((targ->x - self->x) / spit->velx);
 			}
 			// [GZ] Calculates when the projectile will have reached destination
 			spit->special2 += level.maptime;

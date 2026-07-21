@@ -488,7 +488,7 @@ bool EV_SilentLineTeleport (line_t *line, int side, AActor *thing, int id, INTBO
 			{
 				SQWORD den;
 
-				den = (SQWORD)line->dx*line->dx + (SQWORD)line->dy*line->dy;
+				den = (SQWORD)((SQWORD)line->dx*line->dx + (SQWORD)line->dy*line->dy);
 				if (den == 0)
 				{
 					pos = 0;

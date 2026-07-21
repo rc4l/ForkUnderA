@@ -5072,11 +5072,11 @@ void P_RailAttackWithPossibleSpread (AActor *source, int damage, int offset_xy, 
 
 			source->angle += ( ANGLE_45 / 3 );
 			P_RailAttack (source, damage, offset_xy, offset_z, lOuterColor, lInnerColor, maxdiff, railflags, puffclass, angleoffset, pitchoffset, distance, duration, sparsity, drift, spawnclass );
-			source->angle = SavedActorAngle;
+			source->angle = (angle_t)(SavedActorAngle);
 
 			source->angle -= ( ANGLE_45 / 3 );
 			P_RailAttack (source, damage, offset_xy, offset_z, lOuterColor, lInnerColor, maxdiff, railflags, puffclass, angleoffset, pitchoffset, distance, duration, sparsity, drift, spawnclass );
-			source->angle = SavedActorAngle;
+			source->angle = (angle_t)(SavedActorAngle);
 		}
 
 		// Player did not strike a player with his railgun. Reset consecutive hits to 0.

@@ -2152,7 +2152,7 @@ void S_UpdateSounds (AActor *listenactor)
 	// [AK] Restore the listening actor's angle and pitch if necessary.
 	if (usingFreeChasecam)
 	{
-		listenactor->angle = oldAngle;
+		listenactor->angle = (angle_t)(oldAngle);
 		listenactor->pitch = oldPitch;
 	}
 

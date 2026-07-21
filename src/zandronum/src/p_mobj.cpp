@@ -1602,12 +1602,12 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 				fixed_t x, y, z;
 				SQWORD num, den;
 
-				den = (SQWORD)line->dx*line->dx + (SQWORD)line->dy*line->dy;
+				den = (SQWORD)((SQWORD)line->dx*line->dx + (SQWORD)line->dy*line->dy);
 				if (den != 0)
 				{
 					SDWORD frac;
 
-					num = (SQWORD)(mo->x-line->v1->x)*line->dx+(SQWORD)(mo->y-line->v1->y)*line->dy;
+					num = (SQWORD)((SQWORD)(mo->x-line->v1->x)*line->dx+(SQWORD)(mo->y-line->v1->y)*line->dy);
 					if (num <= 0)
 					{
 						frac = 0;
@@ -7464,7 +7464,7 @@ AActor *P_SpawnPlayerMissile (AActor *source, fixed_t x, fixed_t y, fixed_t z,
 	{
 		// Keep exactly the same angle and pitch as the player's own aim
 		an = angle;
-		pitch = source->pitch;
+		pitch = (angle_t)(source->pitch);
 		linetarget = NULL;
 	}
 	else // see which target is to be aimed at
@@ -7478,7 +7478,7 @@ AActor *P_SpawnPlayerMissile (AActor *source, fixed_t x, fixed_t y, fixed_t z,
 		do
 		{
 			an = angle + angdiff[i];
-			pitch = P_AimLineAttack (source, an, linetargetrange, &linetarget, vrange);
+			pitch = (angle_t)(P_AimLineAttack (source, an, linetargetrange, &linetarget, vrange));
 	
 			if (source->player != NULL &&
 				!nofreeaim &&

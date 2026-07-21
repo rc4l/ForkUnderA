@@ -8951,8 +8951,8 @@ static void client_SetPolyDoorSpeedPosition( BYTESTREAM_s *pByteStream )
 	if ( pPoly == NULL )
 		return;
 
-	lDeltaX = lX - pPoly->StartSpot.x;
-	lDeltaY = lY - pPoly->StartSpot.y;
+	lDeltaX = (LONG)(lX - pPoly->StartSpot.x);
+	lDeltaY = (LONG)(lY - pPoly->StartSpot.y);
 
 	pPoly->MovePolyobj( lDeltaX, lDeltaY );
 	
@@ -9060,8 +9060,8 @@ static void client_SetPolyobjPosition( BYTESTREAM_s *pByteStream )
 		return;
 	}
 
-	lDeltaX = lX - pPoly->StartSpot.x;
-	lDeltaY = lY - pPoly->StartSpot.y;
+	lDeltaX = (LONG)(lX - pPoly->StartSpot.x);
+	lDeltaY = (LONG)(lY - pPoly->StartSpot.y);
 
 //	Printf( "DeltaX: %d\nDeltaY: %d\n", lDeltaX, lDeltaY );
 

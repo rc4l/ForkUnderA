@@ -1261,7 +1261,7 @@ angle_t P_BulletSlope (AActor *mo, AActor **pLineTarget)
 	do
 	{
 		an = mo->angle + angdiff[i];
-		pitch = P_AimLineAttack (mo, an, 16*64*FRACUNIT, &linetarget);
+		pitch = (angle_t)(P_AimLineAttack (mo, an, 16*64*FRACUNIT, &linetarget));
 
 		if (mo->player != NULL &&
 			level.IsFreelookAllowed() &&

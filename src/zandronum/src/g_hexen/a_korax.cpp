@@ -463,7 +463,7 @@ void A_KSpiritSeeker (AActor *actor, angle_t thresh, angle_t turnMax)
 			}
 		}
 		dist = (int)(P_AproxDistance (target->x-actor->x, target->y-actor->y));
-		dist = dist/actor->Speed;
+		dist = (int)(dist/actor->Speed);
 		if (dist < 1)
 		{
 			dist = 1;
@@ -619,7 +619,7 @@ AActor *P_SpawnKoraxMissile (fixed_t x, fixed_t y, fixed_t z,
 	th->velx = FixedMul (th->Speed, finecosine[an]);
 	th->vely = FixedMul (th->Speed, finesine[an]);
 	dist = (int)(P_AproxDistance (dest->x - x, dest->y - y));
-	dist = dist/th->Speed;
+	dist = (int)(dist/th->Speed);
 	if (dist < 1)
 	{
 		dist = 1;

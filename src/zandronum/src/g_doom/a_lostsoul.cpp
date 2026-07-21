@@ -50,7 +50,7 @@ void A_SkullAttack(AActor *self, fixed_t speed)
 	self->velx = FixedMul (speed, finecosine[an]);
 	self->vely = FixedMul (speed, finesine[an]);
 	dist = (int)(P_AproxDistance (dest->x - self->x, dest->y - self->y));
-	dist = dist / speed;
+	dist = (int)(dist / speed);
 	
 	if (dist < 1)
 		dist = 1;

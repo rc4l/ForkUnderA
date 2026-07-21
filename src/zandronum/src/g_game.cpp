@@ -3319,7 +3319,7 @@ static void GAME_ResetActorUDMFValues(AActor *oldActor, AActor *newActor)
 	newActor->ResetUserVars();
 
 	newActor->pitch				= oldActor->SavedPitch;
-	newActor->roll				= oldActor->SavedRoll;
+	newActor->roll				= (angle_t)(oldActor->SavedRoll);
 	newActor->scaleX			= oldActor->SavedScaleX;
 	newActor->scaleY			= oldActor->SavedScaleY;
 	newActor->RenderStyle		= oldActor->SavedRenderStyle;

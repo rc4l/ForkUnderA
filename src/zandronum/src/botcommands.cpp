@@ -1107,13 +1107,13 @@ static void botcmd_GetClosestPlayerEnemy( CSkullBot *pBot )
 		if ( lClosestPlayer == -1 )
 		{
 			lClosestPlayer = ulIdx;
-			lClosestDistance = P_AproxDistance( pBot->GetPlayer( )->mo->x - players[ulIdx].mo->x, 
-												pBot->GetPlayer( )->mo->y - players[ulIdx].mo->y );
+			lClosestDistance = (LONG)(P_AproxDistance( pBot->GetPlayer( )->mo->x - players[ulIdx].mo->x, 
+												pBot->GetPlayer( )->mo->y - players[ulIdx].mo->y ));
 			continue;
 		}
 
-		lDistance = P_AproxDistance( pBot->GetPlayer( )->mo->x - players[ulIdx].mo->x, 
-									 pBot->GetPlayer( )->mo->y - players[ulIdx].mo->y );
+		lDistance = (LONG)(P_AproxDistance( pBot->GetPlayer( )->mo->x - players[ulIdx].mo->x, 
+									 pBot->GetPlayer( )->mo->y - players[ulIdx].mo->y ));
 		if ( lDistance < lClosestDistance )
 		{
 			lClosestPlayer = ulIdx;
@@ -1672,8 +1672,8 @@ static void botcmd_GetDistanceToItem( CSkullBot *pBot )
 	AActor *pActor = g_ActorNetIDList.findPointerByID( netID );
 	if ( pActor )
 	{
-		g_iReturnInt = abs( P_AproxDistance( pActor->x - pBot->GetPlayer( )->mo->x, 
-											 pActor->y - pBot->GetPlayer( )->mo->y ) / FRACUNIT );
+		g_iReturnInt = (int)(abs( P_AproxDistance( pActor->x - pBot->GetPlayer( )->mo->x, 
+											 pActor->y - pBot->GetPlayer( )->mo->y ) / FRACUNIT ));
 	}
 	else
 		g_iReturnInt = -1;
@@ -1858,8 +1858,8 @@ static void botcmd_GetDistanceToEnemy( CSkullBot *pBot )
 		POS_t	EnemyPos;
 
 		EnemyPos = pBot->GetEnemyPosition( );
-		g_iReturnInt = P_AproxDistance( pBot->GetPlayer( )->mo->x - EnemyPos.x, 
-										pBot->GetPlayer( )->mo->y - EnemyPos.y ) / FRACUNIT;
+		g_iReturnInt = (int)(P_AproxDistance( pBot->GetPlayer( )->mo->x - EnemyPos.x, 
+										pBot->GetPlayer( )->mo->y - EnemyPos.y ) / FRACUNIT);
 	}
 	else
 		g_iReturnInt = -1;

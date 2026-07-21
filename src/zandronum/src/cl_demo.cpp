@@ -597,7 +597,7 @@ void CLIENTDEMO_ReadPacket( void )
 					FreeChasecam::enabled = enable;
 
 					if ( players[consoleplayer].mo != nullptr )
-						players[consoleplayer].mo->angle = angle;
+						players[consoleplayer].mo->angle = (angle_t)(angle);
 				}
 				break;
 			case CLD_LCMD_CONSOLEPLAYERUNRESTRICTED:

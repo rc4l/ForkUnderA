@@ -314,7 +314,7 @@ static CLIENT_MOVE_COMMAND_s clientcommand_CreateMoveCommand( void )
 	}
 
 	moveCMD.angle = players[consoleplayer].mo->angle;
-	moveCMD.pitch = players[consoleplayer].mo->pitch;
+	moveCMD.pitch = (angle_t)(players[consoleplayer].mo->pitch);
 	// [AK] Calculate the checksum of this ticcmd from this tic.
 	moveCMD.sdwChecksum = g_sdwCheckCmd;
 

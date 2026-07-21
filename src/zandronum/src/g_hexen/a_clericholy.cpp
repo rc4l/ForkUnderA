@@ -454,7 +454,7 @@ static void CHolySeekerMissile (AActor *actor, angle_t thresh, angle_t turnMax)
 			}
 		}
 		dist = (int)(P_AproxDistance (target->x-actor->x, target->y-actor->y));
-		dist = dist / actor->Speed;
+		dist = (int)(dist / actor->Speed);
 		if (dist < 1)
 		{
 			dist = 1;
