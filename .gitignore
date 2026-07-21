@@ -1,4 +1,4 @@
-# Build artifacts (fetched/built by mac_build.sh)
+# Build artifacts (fetched/built by mac_compile.sh)
 deps/
 build/
 

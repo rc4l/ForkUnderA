@@ -5,9 +5,9 @@
 # Builds ZandroX from the Zandronum source tree and packages it as ZandroX.app.
 # macOS counterpart to build.ps1. Terminal-only, "run and go".
 #
-#   ./mac_build.sh                 # native build with OpenAL audio (default)
-#   SOUND=0 ./mac_build.sh         # native build, no audio (faster)
-#   ARCH=x86_64 ./mac_build.sh     # force a specific architecture
+#   ./mac_compile.sh                 # native build with OpenAL audio (default)
+#   SOUND=0 ./mac_compile.sh         # native build, no audio (faster)
+#   ARCH=x86_64 ./mac_compile.sh     # force a specific architecture
 #
 # Layout mirrors the Windows build: src/zandronum (source), deps/ (downloads),
 # build/ (output).  Source is NEVER patched (touchless rule).
