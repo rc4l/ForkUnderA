@@ -90,8 +90,8 @@ void A_PainShootSkull (AActor *self, angle_t angle, const PClass *spawntype, int
 	// okay, there's room for another one
 	an = angle >> ANGLETOFINESHIFT;
 	
-	prestep = (int)(4*FRACUNIT +
-		3*(self->radius + GetDefaultByType(spawntype)->radius)/2);
+	prestep = (int)((int)(4*FRACUNIT +
+		3*(self->radius + GetDefaultByType(spawntype)->radius)/2));
 	
 	x = self->x + FixedMul (prestep, finecosine[an]);
 	y = self->y + FixedMul (prestep, finesine[an]);

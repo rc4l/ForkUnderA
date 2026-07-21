@@ -1425,8 +1425,8 @@ class CommandDrawNumber : public CommandDrawString
 					AHexenArmor *harmor = statusBar->CPlayer->mo->FindInventory<AHexenArmor>();
 					if(harmor != NULL)
 					{
-						num = (int)(harmor->Slots[0] + harmor->Slots[1] +
-							harmor->Slots[2] + harmor->Slots[3] + harmor->Slots[4]);
+						num = (int)((int)(harmor->Slots[0] + harmor->Slots[1] +
+							harmor->Slots[2] + harmor->Slots[3] + harmor->Slots[4]));
 					}
 					//Hexen counts basic armor also so we should too.
 					if(statusBar->armor != NULL)

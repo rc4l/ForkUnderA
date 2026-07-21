@@ -1718,9 +1718,9 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 				DoTexture(RENDERWALL_BOTTOM,seg,(seg->linedef->flags & ML_DONTPEGBOTTOM)>0,
 					(int)(realback->GetPlaneTexZ(sector_t::floor)),(int)(realfront->GetPlaneTexZ(sector_t::floor)),
 					(int)(bfh1),(int)(bfh2),(int)(ffh1),(int)(ffh2),
-					(int)(frontsector->GetTexture(sector_t::ceiling)==skyflatnum && backsector->GetTexture(sector_t::ceiling)==skyflatnum ?
+					(int)((int)(frontsector->GetTexture(sector_t::ceiling)==skyflatnum && backsector->GetTexture(sector_t::ceiling)==skyflatnum ?
 						realfront->GetPlaneTexZ(sector_t::floor)-realback->GetPlaneTexZ(sector_t::ceiling) : 
-						realfront->GetPlaneTexZ(sector_t::floor)-realfront->GetPlaneTexZ(sector_t::ceiling)));
+						realfront->GetPlaneTexZ(sector_t::floor)-realfront->GetPlaneTexZ(sector_t::ceiling))));
 			}
 			else if ((frontsector->floorplane.a | frontsector->floorplane.b | 
 					backsector->floorplane.a | backsector->floorplane.b) && 
