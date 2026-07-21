@@ -264,7 +264,7 @@ struct secplane_t
 	// Returns < 0 : behind; == 0 : on; > 0 : in front
 	int PointOnSide (fixed_t x, fixed_t y, fixed_t z) const
 	{
-		return TMulScale16(a,x, b,y, c,z) + d;
+		return (int)(TMulScale16(a,x, b,y, c,z) + d);
 	}
 
 	// Returns the value of z at (0,0) This is used by the 3D floor code which does not handle slopes
@@ -282,7 +282,7 @@ struct secplane_t
 	// Returns the value of z at (x,y) as a double
 	double ZatPoint (double x, double y) const
 	{
-		return (d + a*x + b*y) * ic / (-65536.0 * 65536.0);
+		return (double(d) + double(a)*x + double(b)*y) * double(ic) / (-65536.0 * 65536.0);
 	}
 
 	// Returns the value of z at vertex v
@@ -603,14 +603,14 @@ struct sector_t
 		}
 		else
 		{
-			return planes[pos].xform.angle + planes[pos].xform.base_angle;
+			return planes[pos].xform.angle + (angle_t)zx::raw(planes[pos].xform.base_angle);
 		}
 	}
 
 	void SetBase(int pos, fixed_t y, angle_t o)
 	{
 		planes[pos].xform.base_yoffs = y;
-		planes[pos].xform.base_angle = o;
+		planes[pos].xform.base_angle = fixed_t(o);
 	}
 
 	void SetAlpha(int pos, fixed_t o)
