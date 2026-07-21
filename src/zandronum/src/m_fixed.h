@@ -90,8 +90,10 @@ inline SDWORD ModDiv (SDWORD num, SDWORD den, SDWORD *dmval)
 }
 
 #define FLOAT2FIXED(f)		xs_Fix<16>::ToFix(f)
-#define FIXED2FLOAT(f)		((f) / float(65536))
-#define FIXED2DBL(f)		((f) / double(65536))
+// [rc4l] float(f) works in both modes: (float)int64 in the plain build, and Fixed's explicit
+// operator float in the strong-fixed build. So these need no per-mode variant.
+#define FIXED2FLOAT(f)		(float(f) / 65536.0f)
+#define FIXED2DBL(f)		(double(f) / 65536.0)
 
 #define ANGLE2DBL(f)		((f) * (90./ANGLE_90))
 #define ANGLE2FLOAT(f)		(float((f) * (90./ANGLE_90)))

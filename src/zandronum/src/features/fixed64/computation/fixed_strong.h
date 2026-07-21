@@ -117,8 +117,14 @@ private:
 	int64_t v_;
 };
 
-// [rc4l] abs() for Fixed (found by ADL, so unqualified abs(fixedval) keeps working).
+// [rc4l] abs()/MIN/MAX/clamp for Fixed, found by ADL so the engine's unqualified calls keep
+// working. Same-type MIN(Fixed,Fixed) already resolves via the global template; these non-template
+// overloads additionally let MIN(Fixed, intliteral) work (the int promotes to Fixed), which the
+// global mixed-type overload can't do because it is gated on std::is_arithmetic.
 inline constexpr Fixed abs(Fixed f) { return f.Raw() < 0 ? Fixed::FromRaw(-f.Raw()) : f; }
+inline constexpr Fixed MIN(Fixed a, Fixed b) { return a < b ? a : b; }
+inline constexpr Fixed MAX(Fixed a, Fixed b) { return a > b ? a : b; }
+inline constexpr Fixed clamp(Fixed v, Fixed lo, Fixed hi) { return v < lo ? lo : (hi < v ? hi : v); }
 
 } // namespace zx
 
