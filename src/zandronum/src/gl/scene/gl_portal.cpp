@@ -302,7 +302,7 @@ bool GLPortal::Start(bool usestencil, bool doquery)
 
 inline void GLPortal::ClearClipper()
 {
-	fixed_t angleOffset = viewangle - savedviewangle;
+	fixed_t angleOffset = fixed_t(viewangle - savedviewangle);
 
 	clipper.Clear();
 
@@ -624,7 +624,7 @@ void GLSkyboxPortal::DrawContents()
 	viewx = origin->PrevX + FixedMul(ticFracToUse, origin->x - origin->PrevX);
 	viewy = origin->PrevY + FixedMul(ticFracToUse, origin->y - origin->PrevY);
 	viewz = origin->PrevZ + FixedMul(ticFracToUse, origin->z - origin->PrevZ);
-	viewangle += origin->PrevAngle + FixedMul(ticFracToUse, origin->angle - origin->PrevAngle);
+	viewangle += fixed_t(origin->PrevAngle) + FixedMul(ticFracToUse, origin->angle - origin->PrevAngle);
 
 	// Don't let the viewpoint be too close to a floor or ceiling!
 	fixed_t floorh = origin->Sector->floorplane.ZatPoint(origin->x, origin->y);

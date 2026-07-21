@@ -3195,12 +3195,12 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 			if (self->pitch > other_pitch)
 			{
 				max_pitch = MIN(max_pitch, unsigned(self->pitch - other_pitch));
-				self->pitch -= max_pitch;
+				self->pitch -= fixed_t(max_pitch);
 			}
 			else
 			{
 				max_pitch = MIN(max_pitch, unsigned(other_pitch - self->pitch));
-				self->pitch += max_pitch;
+				self->pitch += fixed_t(max_pitch);
 			}
 		}
 		else

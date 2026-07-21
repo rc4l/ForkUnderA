@@ -429,8 +429,8 @@ int FNodeBuilder::OutputDegenerateSubsector (TArray<glseg_t> &segs, int subsecto
 	seg = &Segs[SegList[first].SegNum];
 	x1 = (double)(Vertices[seg->v1].x);
 	y1 = (double)(Vertices[seg->v1].y);
-	dx = Vertices[seg->v2].x - x1;
-	dy = Vertices[seg->v2].y - y1;
+	dx = double(Vertices[seg->v2].x) - x1;
+	dy = double(Vertices[seg->v2].y) - y1;
 	wantside = seg->planefront ^ !bForward;
 
 	for (i = first + 1; i < max; ++i)
@@ -444,8 +444,8 @@ int FNodeBuilder::OutputDegenerateSubsector (TArray<glseg_t> &segs, int subsecto
 			{
 				continue;
 			}
-			dx2 = Vertices[seg->v1].x - x1;
-			dy2 = Vertices[seg->v1].y - y1;
+			dx2 = double(Vertices[seg->v1].x) - x1;
+			dy2 = double(Vertices[seg->v1].y) - y1;
 			dot = dx*dx2 + dy*dy2;
 
 			if (bForward)

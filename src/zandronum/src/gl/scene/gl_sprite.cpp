@@ -468,7 +468,7 @@ void GLSprite::SetSpriteColor(sector_t *sector, fixed_t center_y)
 		maplightbottom=FIXED2FLOAT(lightbottom);
 		if (maplightbottom<z2) maplightbottom=z2;
 
-		if (maplightbottom<center_y)
+		if (maplightbottom<float(center_y))
 		{
 			lightlevel=*lightlist[i].p_lightlevel;
 			Colormap.CopyLightColor(lightlist[i].extra_colormap);

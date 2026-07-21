@@ -93,7 +93,7 @@ void ASecurityCamera::Tick ()
 {
 	Acc += Delta;
 	if (Range)
-		angle = Center + FixedMul (Range, finesine[Acc >> ANGLETOFINESHIFT]);
+		angle = fixed_t(Center) + FixedMul (Range, finesine[Acc >> ANGLETOFINESHIFT]);
 	else if (Delta)
 		angle = Acc;
 }

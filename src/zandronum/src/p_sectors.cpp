@@ -764,7 +764,7 @@ void sector_t::ClosestPoint(fixed_t fx, fixed_t fy, fixed_t &ox, fixed_t &oy) co
 		}
 		else
 		{
-			double num = (x - v1->x) * a + (y - v1->y) * b;
+			double num = (x - double(v1->x)) * a + (y - double(v1->y)) * b;
 			double u = num / den;
 			if (u <= 0)
 			{
@@ -778,8 +778,8 @@ void sector_t::ClosestPoint(fixed_t fx, fixed_t fy, fixed_t &ox, fixed_t &oy) co
 			}
 			else
 			{
-				ix = v1->x + u * a;
-				iy = v1->y + u * b;
+				ix = double(v1->x) + u * a;
+				iy = double(v1->y) + u * b;
 			}
 		}
 		a = (ix - x);

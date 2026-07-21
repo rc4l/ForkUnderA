@@ -519,8 +519,8 @@ static void P_AlignPlane (sector_t *sec, line_t *line, int which)
 			vert = (*probe++)->v2;
 		else
 			vert = (*probe)->v1;
-		dist = fabs((double(line->v1->y) - vert->y) * line->dx -
-					(double(line->v1->x) - vert->x) * line->dy);
+		dist = fabs((double(line->v1->y) - vert->y) * double(line->dx) -
+					(double(line->v1->x) - vert->x) * double(line->dy));
 
 		if (dist > bestdist)
 		{

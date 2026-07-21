@@ -208,9 +208,9 @@ PalEntry averageColor(const DWORD *data, int size, fixed_t maxout_factor)
 	if(maxv && maxout_factor)
 	{
 		maxout_factor = FixedMul(maxout_factor, 255);
-		r = Scale(r, maxout_factor, maxv);
-		g = Scale(g, maxout_factor, maxv);
-		b = Scale(b, maxout_factor, maxv);
+		r = Scale(r, zx::raw(maxout_factor), maxv);
+		g = Scale(g, zx::raw(maxout_factor), maxv);
+		b = Scale(b, zx::raw(maxout_factor), maxv);
 	}
 	return PalEntry(r,g,b);
 }

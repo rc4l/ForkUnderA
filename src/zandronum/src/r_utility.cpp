@@ -333,10 +333,10 @@ void R_InitTables (void)
 	const double pimul = PI*2/FINEANGLES;
 
 	// viewangle tangent table
-	finetangent[0] = (fixed_t)(FRACUNIT*tan ((0.5-FINEANGLES/4)*pimul)+0.5);
+	finetangent[0] = (fixed_t)(double(FRACUNIT)*tan ((0.5-FINEANGLES/4)*pimul)+0.5);
 	for (i = 1; i < FINEANGLES/2; i++)
 	{
-		finetangent[i] = (fixed_t)(FRACUNIT*tan ((i-FINEANGLES/4)*pimul)+0.5);
+		finetangent[i] = (fixed_t)(double(FRACUNIT)*tan ((i-FINEANGLES/4)*pimul)+0.5);
 	}
 	
 	// finesine table

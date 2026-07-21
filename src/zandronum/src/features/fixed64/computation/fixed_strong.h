@@ -139,6 +139,9 @@ public:
 	Fixed &operator-=(Fixed b) { v_ -= b.v_; return *this; }
 	Fixed &operator*=(int b) { v_ *= b; return *this; }
 	Fixed &operator/=(int b) { v_ /= b; return *this; }
+	Fixed &operator/=(Fixed b) { v_ /= b.v_; return *this; } // raw quotient, matches operator/
+	Fixed &operator%=(int b) { v_ %= b; return *this; }
+	Fixed &operator%=(Fixed b) { v_ %= b.v_; return *this; }
 	Fixed &operator++() { ++v_; return *this; }
 	Fixed &operator--() { --v_; return *this; }
 	Fixed operator++(int) { Fixed t = *this; ++v_; return t; }

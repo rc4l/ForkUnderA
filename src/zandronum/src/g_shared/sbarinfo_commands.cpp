@@ -1431,10 +1431,10 @@ class CommandDrawNumber : public CommandDrawString
 					//Hexen counts basic armor also so we should too.
 					if(statusBar->armor != NULL)
 					{
-						num += FixedMul(statusBar->armor->SavePercent, 100*FRACUNIT);
+						num += (int)FixedMul(statusBar->armor->SavePercent, 100*FRACUNIT);
 					}
 					if(value == ARMORCLASS)
-						num /= (5*FRACUNIT);
+						num /= (int)(5*FRACUNIT);
 					else
 						num >>= FRACBITS;
 					break;

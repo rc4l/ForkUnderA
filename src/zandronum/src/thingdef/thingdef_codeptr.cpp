@@ -1768,13 +1768,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 		fixed_t x = SpawnOfs_XY * finecosine[ang];
 		fixed_t y = SpawnOfs_XY * finesine[ang];
 		fixed_t z = SpawnHeight;
-		fixed_t shootangle = self->angle;
+		fixed_t shootangle = fixed_t(self->angle);
 
-		if (AimAtAngle) shootangle+=Angle;
+		if (AimAtAngle) shootangle+=fixed_t(Angle);
 
 		// Temporarily adjusts the pitch
 		fixed_t SavedPlayerPitch = self->pitch;
-		self->pitch -= pitch;
+		self->pitch -= fixed_t(pitch);
 
 		A_FireCustomMissileHelper( self, x, y, z, shootangle, ti, Angle , AimAtAngle, linetarget );
 

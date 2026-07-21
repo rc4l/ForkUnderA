@@ -2935,7 +2935,7 @@ void P_MovePlayer (player_t *player)
 	{
 		// [AK] Save the player's angle before we update it.
 		const bool usingFreeChasecam = FreeChasecam::IsBeingUsed(player);
-		fixed_t oldAngle = mo->angle;
+		fixed_t oldAngle = fixed_t(mo->angle);
 
 		// [AK] If using the free chasecam, temporarily set the player's angle
 		// to that of the free chasecam.
@@ -2963,7 +2963,7 @@ void P_MovePlayer (player_t *player)
 		}
 
 		// [AK] Calculate how much the player's angle changed.
-		mo->AngleDelta = mo->angle - oldAngle;
+		mo->AngleDelta = fixed_t(mo->angle - oldAngle);
 	}
 	// [AK] Their turn ticks still need to be decremented.
 	else if (player->turnticks)
@@ -3855,13 +3855,13 @@ void P_PlayerThink (player_t *player)
 		{
 			if (FreeChasecam::enabled == false)
 			{
-				CLIENTDEMO_WriteFreeChasecam(true, players[consoleplayer].mo->angle);
+				CLIENTDEMO_WriteFreeChasecam(true, fixed_t(players[consoleplayer].mo->angle));
 				FreeChasecam::enabled = true;
 			}
 		}
 		else if (FreeChasecam::enabled)
 		{
-			CLIENTDEMO_WriteFreeChasecam(false, players[consoleplayer].mo->angle);
+			CLIENTDEMO_WriteFreeChasecam(false, fixed_t(players[consoleplayer].mo->angle));
 			FreeChasecam::enabled = false;
 		}
 	}
