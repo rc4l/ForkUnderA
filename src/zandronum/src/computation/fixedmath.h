@@ -51,4 +51,34 @@ ZX_MAKE_SCALE(25) ZX_MAKE_SCALE(26) ZX_MAKE_SCALE(27) ZX_MAKE_SCALE(28)
 ZX_MAKE_SCALE(29) ZX_MAKE_SCALE(30) ZX_MAKE_SCALE(31) ZX_MAKE_SCALE(32)
 #undef ZX_MAKE_SCALE
 
+#if defined(ZX_STRONG_FIXED) && defined(__cplusplus)
+// [rc4l] Strong-Fixed overloads for the migration. Under ZX_STRONG_FIXED fixed_t is zx::Fixed, so
+// the scale family needs to accept and return it: these unwrap to the tested int64 core (.Raw())
+// and rewrap (FromRaw), behaviour identical. The plain int64 overloads above still serve genuine
+// integer math (angle/count Scale calls). Overload resolution is unambiguous because Fixed->int64
+// is explicit (so int64 overloads never steal Fixed args) and int->int64 beats int->Fixed (so
+// plain-int calls stay on the int64 path).
+#include "features/fixed64/computation/fixed_strong.h"
+
+inline zx::Fixed Scale(zx::Fixed a, zx::Fixed b, zx::Fixed c) { return zx::Fixed::FromRaw(zx::ComputeMulDivS64(a.Raw(), b.Raw(), c.Raw())); }
+inline zx::Fixed MulScale(zx::Fixed a, zx::Fixed b, unsigned s) { return zx::Fixed::FromRaw(zx::MulScale64(a.Raw(), b.Raw(), s)); }
+inline zx::Fixed DivScale(zx::Fixed a, zx::Fixed b, unsigned s) { return zx::Fixed::FromRaw(zx::DivScale64(a.Raw(), s, b.Raw())); }
+inline zx::Fixed DMulScale(zx::Fixed a, zx::Fixed b, zx::Fixed c, zx::Fixed d, unsigned s) { return zx::Fixed::FromRaw(zx::DMulScale64(a.Raw(), b.Raw(), c.Raw(), d.Raw(), s)); }
+
+#define ZX_MAKE_SCALE_FIXED(N) \
+	inline zx::Fixed MulScale##N(zx::Fixed a, zx::Fixed b)                                                       { return zx::Fixed::FromRaw(zx::MulScale64(a.Raw(), b.Raw(), N)); } \
+	inline zx::Fixed DivScale##N(zx::Fixed a, zx::Fixed b)                                                       { return zx::Fixed::FromRaw(zx::DivScale64(a.Raw(), N, b.Raw())); } \
+	inline zx::Fixed DMulScale##N(zx::Fixed a, zx::Fixed b, zx::Fixed c, zx::Fixed d)                            { return zx::Fixed::FromRaw(zx::DMulScale64(a.Raw(), b.Raw(), c.Raw(), d.Raw(), N)); } \
+	inline zx::Fixed TMulScale##N(zx::Fixed a, zx::Fixed b, zx::Fixed c, zx::Fixed d, zx::Fixed e, zx::Fixed f)  { return zx::Fixed::FromRaw(zx::TMulScale64(a.Raw(), b.Raw(), c.Raw(), d.Raw(), e.Raw(), f.Raw(), N)); }
+ZX_MAKE_SCALE_FIXED(1)  ZX_MAKE_SCALE_FIXED(2)  ZX_MAKE_SCALE_FIXED(3)  ZX_MAKE_SCALE_FIXED(4)
+ZX_MAKE_SCALE_FIXED(5)  ZX_MAKE_SCALE_FIXED(6)  ZX_MAKE_SCALE_FIXED(7)  ZX_MAKE_SCALE_FIXED(8)
+ZX_MAKE_SCALE_FIXED(9)  ZX_MAKE_SCALE_FIXED(10) ZX_MAKE_SCALE_FIXED(11) ZX_MAKE_SCALE_FIXED(12)
+ZX_MAKE_SCALE_FIXED(13) ZX_MAKE_SCALE_FIXED(14) ZX_MAKE_SCALE_FIXED(15) ZX_MAKE_SCALE_FIXED(16)
+ZX_MAKE_SCALE_FIXED(17) ZX_MAKE_SCALE_FIXED(18) ZX_MAKE_SCALE_FIXED(19) ZX_MAKE_SCALE_FIXED(20)
+ZX_MAKE_SCALE_FIXED(21) ZX_MAKE_SCALE_FIXED(22) ZX_MAKE_SCALE_FIXED(23) ZX_MAKE_SCALE_FIXED(24)
+ZX_MAKE_SCALE_FIXED(25) ZX_MAKE_SCALE_FIXED(26) ZX_MAKE_SCALE_FIXED(27) ZX_MAKE_SCALE_FIXED(28)
+ZX_MAKE_SCALE_FIXED(29) ZX_MAKE_SCALE_FIXED(30) ZX_MAKE_SCALE_FIXED(31) ZX_MAKE_SCALE_FIXED(32)
+#undef ZX_MAKE_SCALE_FIXED
+#endif // ZX_STRONG_FIXED
+
 #endif // ZX_FIXEDMATH_H
