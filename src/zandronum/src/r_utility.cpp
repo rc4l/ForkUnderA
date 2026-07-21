@@ -214,11 +214,11 @@ angle_t R_PointToAngle2 (fixed_t x1, fixed_t y1, fixed_t x, fixed_t y)
 			{
 				if (x > y)
 				{ // octant 0
-					return SlopeDiv(y, x);
+					return SlopeDiv((unsigned int)(y),(unsigned int)( x));
 				}
 				else
 				{ // octant 1
-					return ANG90 - 1 - SlopeDiv(x, y);
+					return ANG90 - 1 - SlopeDiv((unsigned int)(x),(unsigned int)( y));
 				}
 			}
 			else // y < 0
@@ -226,11 +226,11 @@ angle_t R_PointToAngle2 (fixed_t x1, fixed_t y1, fixed_t x, fixed_t y)
 				y = -y;
 				if (x > y)
 				{ // octant 8
-					return 0 - SlopeDiv(y, x);
+					return 0 - SlopeDiv((unsigned int)(y),(unsigned int)( x));
 				}
 				else
 				{ // octant 7
-					return ANG270 + SlopeDiv(x, y);
+					return ANG270 + SlopeDiv((unsigned int)(x),(unsigned int)( y));
 				}
 			}
 		}
@@ -241,11 +241,11 @@ angle_t R_PointToAngle2 (fixed_t x1, fixed_t y1, fixed_t x, fixed_t y)
 			{
 				if (x > y)
 				{ // octant 3
-					return ANG180 - 1 - SlopeDiv(y, x);
+					return ANG180 - 1 - SlopeDiv((unsigned int)(y),(unsigned int)( x));
 				}
 				else
 				{ // octant 2
-					return ANG90 + SlopeDiv(x, y);
+					return ANG90 + SlopeDiv((unsigned int)(x),(unsigned int)( y));
 				}
 			}
 			else // y < 0
@@ -253,11 +253,11 @@ angle_t R_PointToAngle2 (fixed_t x1, fixed_t y1, fixed_t x, fixed_t y)
 				y = -y;
 				if (x > y)
 				{ // octant 4
-					return ANG180 + SlopeDiv(y, x);
+					return ANG180 + SlopeDiv((unsigned int)(y),(unsigned int)( x));
 				}
 				else
 				{ // octant 5
-					return ANG270 - 1 - SlopeDiv(x, y);
+					return ANG270 - 1 - SlopeDiv((unsigned int)(x),(unsigned int)( y));
 				}
 			}
 		}

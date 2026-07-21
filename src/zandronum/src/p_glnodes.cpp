@@ -1088,8 +1088,8 @@ static void CreateCachedNodes(MapData *map)
 	WriteLong(ZNodes, numvertexes);
 	for(int i=0;i<numvertexes;i++)
 	{
-		WriteLong(ZNodes, vertexes[i].x);
-		WriteLong(ZNodes, vertexes[i].y);
+		WriteLong(ZNodes,(DWORD)( vertexes[i].x));
+		WriteLong(ZNodes,(DWORD)( vertexes[i].y));
 	}
 
 	WriteLong(ZNodes, numsubsectors);
@@ -1118,15 +1118,15 @@ static void CreateCachedNodes(MapData *map)
 	WriteLong(ZNodes, numnodes);
 	for(int i=0;i<numnodes;i++)
 	{
-		WriteWord(ZNodes, nodes[i].x >> FRACBITS);
-		WriteWord(ZNodes, nodes[i].y >> FRACBITS);
-		WriteWord(ZNodes, nodes[i].dx >> FRACBITS);
-		WriteWord(ZNodes, nodes[i].dy >> FRACBITS);
+		WriteWord(ZNodes,(WORD)( nodes[i].x >> FRACBITS));
+		WriteWord(ZNodes,(WORD)( nodes[i].y >> FRACBITS));
+		WriteWord(ZNodes,(WORD)( nodes[i].dx >> FRACBITS));
+		WriteWord(ZNodes,(WORD)( nodes[i].dy >> FRACBITS));
 		for (int j = 0; j < 2; ++j)
 		{
 			for (int k = 0; k < 4; ++k)
 			{
-				WriteWord(ZNodes, nodes[i].bbox[j][k] >> FRACBITS);
+				WriteWord(ZNodes,(WORD)( nodes[i].bbox[j][k] >> FRACBITS));
 			}
 		}
 
@@ -1464,7 +1464,7 @@ void P_SetRenderSector()
 		ss->flags |= SSECF_DEGENERATE;
 		for(j=2; j<ss->numlines; j++)
 		{
-			if (!PointOnLine(seg[j].v1->x, seg[j].v1->y, seg->v1->x, seg->v1->y, seg->v2->x-seg->v1->x, seg->v2->y-seg->v1->y))
+			if (!PointOnLine((int)(seg[j].v1->x),(int)( seg[j].v1->y),(int)( seg->v1->x),(int)( seg->v1->y),(int)( seg->v2->x-seg->v1->x),(int)( seg->v2->y-seg->v1->y)))
 			{
 				// Not on the same line
 				ss->flags &= ~SSECF_DEGENERATE;

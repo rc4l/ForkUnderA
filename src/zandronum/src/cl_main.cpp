@@ -6572,7 +6572,7 @@ void ServerCommands::SetSectorFloorPlane::Execute()
 	sector->floorplane.ChangeHeight( -delta );
 
 	// Call this to update various actor's within the sector.
-	P_ChangeSector( sector, false, -delta, 0, false );
+	P_ChangeSector( sector, false,(int)( -delta), 0, false );
 
 	// Finally, adjust textures.
 	sector->SetPlaneTexZ(sector_t::floor, sector->GetPlaneTexZ(sector_t::floor) + sector->floorplane.HeightDiff( lastPos ) );
@@ -6944,7 +6944,7 @@ void ServerCommands::SetLineTextureOffset::Execute()
 //
 void ServerCommands::SetLineTextureOffsetByID::Execute()
 {
-	P_ExecuteSpecial( Line_SetTextureOffset, NULL, NULL, false, lineID, XOffset, YOffset, side, flags );
+	P_ExecuteSpecial( Line_SetTextureOffset, NULL, NULL, false, lineID,(int)( XOffset),(int)( YOffset), side, flags );
 }
 
 //*****************************************************************************
@@ -6962,7 +6962,7 @@ void ServerCommands::SetLineTextureScale::Execute()
 //
 void ServerCommands::SetLineTextureScaleByID::Execute()
 {
-	P_ExecuteSpecial( Line_SetTextureScale, NULL, NULL, false, lineID, XScale, YScale, side, flags );
+	P_ExecuteSpecial( Line_SetTextureScale, NULL, NULL, false, lineID,(int)( XScale),(int)( YScale), side, flags );
 }
 
 //*****************************************************************************

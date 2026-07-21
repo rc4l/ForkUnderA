@@ -6983,7 +6983,7 @@ foundone:
 
 		// [BC] Tell clients to play the sound.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SoundPoint( thing->x, thing->y, thing->z, CHAN_ITEM, smallsplash ? S_GetName( splash->SmallSplashSound ) : S_GetName( splash->NormalSplashSound ), 1, ATTN_IDLE );
+			SERVERCOMMANDS_SoundPoint((LONG)( thing->x),(LONG)( thing->y),(LONG)( thing->z), CHAN_ITEM, smallsplash ? S_GetName( splash->SmallSplashSound ) : S_GetName( splash->NormalSplashSound ), 1, ATTN_IDLE );
 	}
 
 	// Don't let deep water eat missiles

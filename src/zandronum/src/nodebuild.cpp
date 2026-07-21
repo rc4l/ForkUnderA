@@ -125,7 +125,7 @@ void FNodeBuilder::BuildTree ()
 {
 	fixed_t bbox[4];
 
-	C_InitTicker ("Building BSP", FRACUNIT);
+	C_InitTicker ("Building BSP",(unsigned int)( FRACUNIT));
 	HackSeg = DWORD_MAX;
 	HackMate = DWORD_MAX;
 	CreateNode (0, Segs.Size(), bbox);

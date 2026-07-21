@@ -560,7 +560,7 @@ sector_t *AActor::LinkToWorldForMapThing ()
 
 				// Get the exact distance to the line
 				divline_t dll, dlv;
-				fixed_t linelen = (fixed_t)sqrt((double)ldef->dx*ldef->dx + (double)ldef->dy*ldef->dy);
+				fixed_t linelen = (fixed_t)sqrt((double)((double)ldef->dx*ldef->dx + (double)ldef->dy*ldef->dy));
 
 				P_MakeDivline (ldef, &dll);
 

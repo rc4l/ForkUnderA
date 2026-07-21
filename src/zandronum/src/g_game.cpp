@@ -769,11 +769,11 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 		
 		if (Button_Right.bDown)
 		{
-			G_AddViewAngle (angleturn[tspeed]);
+			G_AddViewAngle ((int)(angleturn[tspeed]));
 		}
 		if (Button_Left.bDown)
 		{
-			G_AddViewAngle (-angleturn[tspeed]);
+			G_AddViewAngle ((int)(-angleturn[tspeed]));
 		}
 	}
 
@@ -868,8 +868,8 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 		G_AddViewAngle(joyint(-1280 * joyaxes[JOYAXIS_Yaw]));
 	}
 
-	side -= joyint(sidemove[speed] * joyaxes[JOYAXIS_Side]);
-	forward += joyint(joyaxes[JOYAXIS_Forward] * forwardmove[speed]);
+	side -= joyint((double)(sidemove[speed] * joyaxes[JOYAXIS_Side]));
+	forward += joyint((double)(joyaxes[JOYAXIS_Forward] * forwardmove[speed]));
 	fly += joyint(joyaxes[JOYAXIS_Up] * 2048);
 
 	// Handle mice.

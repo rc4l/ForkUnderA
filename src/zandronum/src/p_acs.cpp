@@ -6427,7 +6427,7 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 
 				if (args[0] == 0)
 				{
-					P_LineAttack(activator, angle, range, pitch, damage, damagetype, pufftype, fhflags);
+					P_LineAttack(activator,(angle_t)( angle), range,(int)( pitch), damage, damagetype, pufftype, fhflags);
 				}
 				else
 				{
@@ -6436,7 +6436,7 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 
 					while ((source = it.Next()) != NULL)
 					{
-						P_LineAttack(source, angle, range, pitch, damage, damagetype, pufftype, fhflags);
+						P_LineAttack(source,(angle_t)( angle), range,(int)( pitch), damage, damagetype, pufftype, fhflags);
 					}
 				}
 			}

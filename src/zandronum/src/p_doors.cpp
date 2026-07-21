@@ -329,7 +329,7 @@ void DDoor::Tick ()
 
 void DDoor::UpdateToClient( ULONG ulClient )
 {
-	SERVERCOMMANDS_DoDoor( m_Sector, m_Type, m_Speed, m_Direction, m_LightTag, m_DoorID, ulClient, SVCF_ONLYTHISCLIENT );
+	SERVERCOMMANDS_DoDoor( m_Sector, m_Type,(LONG)( m_Speed), m_Direction, m_LightTag, m_DoorID, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 int DDoor::GetDirection ()

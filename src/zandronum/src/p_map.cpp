@@ -3505,7 +3505,7 @@ bool FSlide::BounceWall(AActor *mo)
 	lineangle >>= ANGLETOFINESHIFT;
 	deltaangle >>= ANGLETOFINESHIFT;
 
-	movelen = fixed_t(sqrt(double(mo->velx)*mo->velx + double(mo->vely)*mo->vely));
+	movelen = fixed_t(sqrt((double)(double(mo->velx)*mo->velx + double(mo->vely)*mo->vely)));
 	movelen = FixedMul(movelen, mo->wallbouncefactor);
 
 	FBoundingBox box(mo->x, mo->y, mo->radius);
@@ -4775,7 +4775,7 @@ void P_TraceBleed(int damage, AActor *target)
 		fixed_t two = (pr_tracebleed() - 128) << 16;
 
 		P_TraceBleed(damage, target->x, target->y, target->z + target->height / 2,
-			target, one, two);
+			target,(angle_t)( one),(int)( two));
 	}
 }
 
@@ -5862,7 +5862,7 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 
 			if (P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
 			{ // OK to damage; target is in direct path
-				dist = clamp<int>(dist - fulldamagedistance, 0, dist);
+				dist = clamp<int>((const int)(dist - fulldamagedistance), 0,(const int)( dist));
 				int damage = (int)(Scale(bombdamage, bombdistance - dist, bombdistance));
 				damage = (int)((double)damage * splashfactor);
 

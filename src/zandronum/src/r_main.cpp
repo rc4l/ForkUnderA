@@ -249,8 +249,8 @@ void R_InitTextureMapping ()
 	//   the drawn sky texture.
 	// The remaining arcs are done with tantoangle instead.
 
-	const int t1 = MAX<int>(centerx - (FocalLengthX >> FRACBITS), 0);
-	const int t2 = MIN<int>(centerx + (FocalLengthX >> FRACBITS), viewwidth);
+	const int t1 = MAX<int>((const int)(centerx - (FocalLengthX >> FRACBITS)), 0);
+	const int t2 = MIN<int>((const int)(centerx + (FocalLengthX >> FRACBITS)), viewwidth);
 	const fixed_t dfocus = FocalLengthX >> DBITS;
 
 	for (i = 0, x = t2; x >= t1; --x)

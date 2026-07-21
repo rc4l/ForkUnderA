@@ -398,7 +398,7 @@ bool AActor::SuggestMissileAttack (fixed_t dist)
 	if (flags4 & MF4_MISSILEEVENMORE) dist >>= 3;
 	
 	int mmc = FixedMul(MinMissileChance, G_SkillProperty(SKILLP_Aggressiveness));
-	return pr_checkmissilerange() >= MIN<int> (dist >> FRACBITS, mmc);
+	return pr_checkmissilerange() >= MIN<int> ((const int)(dist >> FRACBITS), mmc);
 }
 
 //=============================================================================
@@ -494,7 +494,7 @@ bool P_Move (AActor *actor)
 			   * speed) / ORIG_FRICTION_FACTOR;
 			if (speed == 0)
 			{ // always give the monster a little bit of speed
-				speed = ksgn(actor->Speed);
+				speed = ksgn((int)(actor->Speed));
 			}
 		}
 	}
@@ -3782,7 +3782,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_BossDeath)
 			return;
 		
 		case LEVEL_SPECOPENDOOR:
-			EV_DoDoor (DDoor::doorOpen, NULL, NULL, 666, 8*FRACUNIT, 0, 0, 0);
+			EV_DoDoor (DDoor::doorOpen, NULL, NULL, 666,(int)( 8*FRACUNIT), 0, 0, 0);
 			return;
 		}
 	}

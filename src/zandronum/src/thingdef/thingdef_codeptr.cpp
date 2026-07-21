@@ -1712,7 +1712,7 @@ void A_FireCustomMissileHelper ( AActor * self,
 {
 	// [BB] Don't tell the clients to spawn the missile yet. This is done later
 	// after we are done manipulating angle and velocity.
-	AActor * misl=P_SpawnPlayerMissile (self, x, y, z, ti, shootangle, &linetarget,	NULL, false, true, false);
+	AActor * misl=P_SpawnPlayerMissile (self, x, y, z, ti,(angle_t)( shootangle), &linetarget,	NULL, false, true, false);
 	// automatic handling of seeker missiles
 	if (misl)
 	{
@@ -1893,7 +1893,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomPunch)
 		const int prevhealth = self->health;
 
 		if (LifeSteal && !(linetarget->flags5 & MF5_DONTDRAIN))
-			P_GiveBody (self, (actualdamage * LifeSteal) >> FRACBITS);
+			P_GiveBody (self,(int)( (actualdamage * LifeSteal) >> FRACBITS));
 
 		if (weapon != NULL)
 		{

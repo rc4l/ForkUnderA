@@ -192,11 +192,11 @@ DMover::EResult DMover::MovePlane (fixed_t speed, fixed_t dest, int crush,
 				if (!MoveAttached(crush, move, 0, true)) return crushed;
 
 				m_Sector->floorplane.d = dest;
-				flag = P_ChangeSector (m_Sector, crush, move, 0, false);
+				flag = P_ChangeSector (m_Sector, crush,(int)( move), 0, false);
 				if (flag)
 				{
 					m_Sector->floorplane.d = lastpos;
-					P_ChangeSector (m_Sector, crush, -move, 0, true);
+					P_ChangeSector (m_Sector, crush,(int)( -move), 0, true);
 					MoveAttached(crush, -move, 0, false);
 				}
 				else
@@ -212,11 +212,11 @@ DMover::EResult DMover::MovePlane (fixed_t speed, fixed_t dest, int crush,
 
 				m_Sector->floorplane.d = movedest;
 
-				flag = P_ChangeSector (m_Sector, crush, -speed, 0, false);
+				flag = P_ChangeSector (m_Sector, crush,(int)( -speed), 0, false);
 				if (flag)
 				{
 					m_Sector->floorplane.d = lastpos;
-					P_ChangeSector (m_Sector, crush, speed, 0, true);
+					P_ChangeSector (m_Sector, crush,(int)( speed), 0, true);
 					MoveAttached(crush, speed, 0, false);
 					return crushed;
 				}
@@ -250,11 +250,11 @@ DMover::EResult DMover::MovePlane (fixed_t speed, fixed_t dest, int crush,
 
 				m_Sector->floorplane.d = dest;
 
-				flag = P_ChangeSector (m_Sector, crush, move, 0, false);
+				flag = P_ChangeSector (m_Sector, crush,(int)( move), 0, false);
 				if (flag)
 				{
 					m_Sector->floorplane.d = lastpos;
-					P_ChangeSector (m_Sector, crush, -move, 0, true);
+					P_ChangeSector (m_Sector, crush,(int)( -move), 0, true);
 					MoveAttached(crush, -move, 0, false);
 				}
 				else
@@ -271,7 +271,7 @@ DMover::EResult DMover::MovePlane (fixed_t speed, fixed_t dest, int crush,
 				m_Sector->floorplane.d = movedest;
 
 				// COULD GET CRUSHED
-				flag = P_ChangeSector (m_Sector, crush, speed, 0, false);
+				flag = P_ChangeSector (m_Sector, crush,(int)( speed), 0, false);
 				if (flag)
 				{
 					if (crush >= 0 && !hexencrush)
@@ -281,7 +281,7 @@ DMover::EResult DMover::MovePlane (fixed_t speed, fixed_t dest, int crush,
 						return crushed;
 					}
 					m_Sector->floorplane.d = lastpos;
-					P_ChangeSector (m_Sector, crush, -speed, 0, true);
+					P_ChangeSector (m_Sector, crush,(int)( -speed), 0, true);
 					MoveAttached(crush, -speed, 0, false);
 					return crushed;
 				}
@@ -316,12 +316,12 @@ DMover::EResult DMover::MovePlane (fixed_t speed, fixed_t dest, int crush,
 				if (!MoveAttached(crush, move, 1, true)) return crushed;
 
 				m_Sector->ceilingplane.d = dest;
-				flag = P_ChangeSector (m_Sector, crush, move, 1, false);
+				flag = P_ChangeSector (m_Sector, crush,(int)( move), 1, false);
 
 				if (flag)
 				{
 					m_Sector->ceilingplane.d = lastpos;
-					P_ChangeSector (m_Sector, crush, -move, 1, true);
+					P_ChangeSector (m_Sector, crush,(int)( -move), 1, true);
 					MoveAttached(crush, -move, 1, false);
 				}
 				else
@@ -337,7 +337,7 @@ DMover::EResult DMover::MovePlane (fixed_t speed, fixed_t dest, int crush,
 				m_Sector->ceilingplane.d = movedest;
 
 				// COULD GET CRUSHED
-				flag = P_ChangeSector (m_Sector, crush, -speed, 1, false);
+				flag = P_ChangeSector (m_Sector, crush,(int)( -speed), 1, false);
 				if (flag)
 				{
 					if (crush >= 0 && !hexencrush)
@@ -346,7 +346,7 @@ DMover::EResult DMover::MovePlane (fixed_t speed, fixed_t dest, int crush,
 						return crushed;
 					}
 					m_Sector->ceilingplane.d = lastpos;
-					P_ChangeSector (m_Sector, crush, speed, 1, true);
+					P_ChangeSector (m_Sector, crush,(int)( speed), 1, true);
 					MoveAttached(crush, speed, 1, false);
 					return crushed;
 				}
@@ -365,11 +365,11 @@ DMover::EResult DMover::MovePlane (fixed_t speed, fixed_t dest, int crush,
 
 				m_Sector->ceilingplane.d = dest;
 
-				flag = P_ChangeSector (m_Sector, crush, move, 1, false);
+				flag = P_ChangeSector (m_Sector, crush,(int)( move), 1, false);
 				if (flag)
 				{
 					m_Sector->ceilingplane.d = lastpos;
-					P_ChangeSector (m_Sector, crush, move, 1, true);
+					P_ChangeSector (m_Sector, crush,(int)( move), 1, true);
 					MoveAttached(crush, move, 1, false);
 				}
 				else
@@ -384,11 +384,11 @@ DMover::EResult DMover::MovePlane (fixed_t speed, fixed_t dest, int crush,
 
 				m_Sector->ceilingplane.d = movedest;
 
-				flag = P_ChangeSector (m_Sector, crush, speed, 1, false);
+				flag = P_ChangeSector (m_Sector, crush,(int)( speed), 1, false);
 				if (flag)
 				{
 					m_Sector->ceilingplane.d = lastpos;
-					P_ChangeSector (m_Sector, crush, -speed, 1, true);
+					P_ChangeSector (m_Sector, crush,(int)( -speed), 1, true);
 					MoveAttached(crush, -speed, 1, false);
 					return crushed;
 				}

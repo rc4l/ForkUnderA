@@ -171,7 +171,7 @@ void DCeiling::Tick ()
 					SERVERCOMMANDS_ChangeCeilingDirection( m_CeilingID, m_Direction );
 
 					// Tell clients to change the speed of the ceiling.
-					SERVERCOMMANDS_ChangeCeilingSpeed( m_CeilingID, m_Speed );
+					SERVERCOMMANDS_ChangeCeilingSpeed( m_CeilingID,(LONG)( m_Speed ));
 
 					// Potentially tell clients to stop playing a ceiling sound.
 					if ( SN_IsMakingLoopingSound( m_Sector ) == false )
@@ -248,7 +248,7 @@ void DCeiling::Tick ()
 					SERVERCOMMANDS_ChangeCeilingDirection( m_CeilingID, m_Direction );
 
 					// Tell clients to change the speed of the ceiling.
-					SERVERCOMMANDS_ChangeCeilingSpeed( m_CeilingID, m_Speed );
+					SERVERCOMMANDS_ChangeCeilingSpeed( m_CeilingID,(LONG)( m_Speed ));
 
 					// Potentially tell clients to stop playing a ceiling sound.
 					if ( SN_IsMakingLoopingSound( m_Sector ) == false )
@@ -303,7 +303,7 @@ void DCeiling::Tick ()
 
 						// [BC] If we're the server, tell clients to change the ceiling's speed.
 						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-							SERVERCOMMANDS_ChangeCeilingSpeed( m_CeilingID, m_Speed );
+							SERVERCOMMANDS_ChangeCeilingSpeed( m_CeilingID,(LONG)( m_Speed ));
 					}
 					break;
 
@@ -318,7 +318,7 @@ void DCeiling::Tick ()
 
 void DCeiling::UpdateToClient( ULONG ulClient )
 {
-	SERVERCOMMANDS_DoCeiling( m_Type, m_Sector, m_Direction, m_BottomHeight, m_TopHeight, m_Speed, m_Crush, m_Hexencrush, m_Silent, m_CeilingID, ulClient, SVCF_ONLYTHISCLIENT );
+	SERVERCOMMANDS_DoCeiling( m_Type, m_Sector, m_Direction,(LONG)( m_BottomHeight),(LONG)( m_TopHeight),(LONG)( m_Speed), m_Crush, m_Hexencrush, m_Silent, m_CeilingID, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 //============================================================================
@@ -618,7 +618,7 @@ DCeiling *DCeiling::Create(sector_t *sec, DCeiling::ECeiling type, line_t *line,
 
 	// [BC] If we're the server, tell clients to create a ceiling.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVERCOMMANDS_DoCeiling( type, sec, ceiling->m_Direction, ceiling->m_BottomHeight, ceiling->m_TopHeight, ceiling->m_Speed, ceiling->m_Crush, ceiling->m_Hexencrush, ceiling->m_Silent, ceiling->m_CeilingID );
+		SERVERCOMMANDS_DoCeiling( type, sec, ceiling->m_Direction,(LONG)( ceiling->m_BottomHeight),(LONG)( ceiling->m_TopHeight),(LONG)( ceiling->m_Speed), ceiling->m_Crush, ceiling->m_Hexencrush, ceiling->m_Silent, ceiling->m_CeilingID );
 
 	// set texture/type change properties
 	if (change & 3)		// if a texture change is indicated

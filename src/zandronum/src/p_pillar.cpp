@@ -107,7 +107,7 @@ void DPillar::Serialize (FArchive &arc)
 // [BC]
 void DPillar::UpdateToClient( ULONG ulClient )
 {
-	SERVERCOMMANDS_DoPillar( m_Type, m_Sector, m_FloorSpeed, m_CeilingSpeed, m_FloorTarget, m_CeilingTarget, m_Crush, m_Hexencrush, m_PillarID, ulClient, SVCF_ONLYTHISCLIENT );
+	SERVERCOMMANDS_DoPillar( m_Type, m_Sector,(LONG)( m_FloorSpeed),(LONG)( m_CeilingSpeed),(LONG)( m_FloorTarget),(LONG)( m_CeilingTarget), m_Crush, m_Hexencrush, m_PillarID, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 // [BC]

@@ -1342,7 +1342,7 @@ void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sound_id, f
 
 	// [RK] Instruct the clients to play the sound.
 	if (bSoundOnClient && (NETWORK_GetState() == NETSTATE_SERVER))
-		SERVERCOMMANDS_SoundPoint(x, y, z, channel, S_GetName(sound_id), volume, attenuation);
+		SERVERCOMMANDS_SoundPoint((LONG)(x),(LONG)( y),(LONG)( z), channel, S_GetName(sound_id), volume, attenuation);
 }
 
 //==========================================================================

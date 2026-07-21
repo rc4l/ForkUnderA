@@ -3674,7 +3674,7 @@ void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSo
 	// [BB] If the actor doesn't have a NetID, we have to instruct the clients differently how to play the sound.
 	if ( pActor->NetID == 0 )
 	{
-		SERVERCOMMANDS_SoundPoint( pActor->x, pActor->y, pActor->z, lChannel, pszSound, fVolume, fAttenuation, ulPlayerExtra, flags );
+		SERVERCOMMANDS_SoundPoint((LONG)( pActor->x),(LONG)( pActor->y),(LONG)( pActor->z), lChannel, pszSound, fVolume, fAttenuation, ulPlayerExtra, flags );
 		return;
 	}
 

@@ -186,7 +186,7 @@ struct FCoverageBuilder
 
 	double PartitionDistance(FCoverageVertex *vt, node_t *node)
 	{	
-		return fabs(double(-node->dy) * (vt->x - node->x) + double(node->dx) * (vt->y - node->y)) / node->len;
+		return fabs((double)(double(-node->dy) * (vt->x - node->x) + double(node->dx) * (vt->y - node->y))) / node->len;
 	}
 
 	//==========================================================================
