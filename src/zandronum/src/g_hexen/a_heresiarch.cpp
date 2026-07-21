@@ -337,7 +337,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_SorcBallOrbit)
 	angle_t angle, baseangle;
 	int mode = self->target->args[3];
 	AHeresiarch *parent = barrier_cast<AHeresiarch *>(self->target);
-	int dist = parent->radius - (self->radius<<1);
+	int dist = (int)(parent->radius - (self->radius<<1));
 	angle_t prevangle = self->special1;
 
 	if (!self->IsKindOf (RUNTIME_CLASS(ASorcBall)))
@@ -478,8 +478,8 @@ DEFINE_ACTION_FUNCTION(AActor, A_SorcBallOrbit)
 		S_Sound (actor, CHAN_BODY, "SorcererBallWoosh", 1, ATTN_NORM);
 	}
 	actor->special1 = angle;		// Set previous angle
-	x = parent->x + FixedMul(dist, finecosine[angle]);
-	y = parent->y + FixedMul(dist, finesine[angle]);
+	x = (int)(parent->x + FixedMul(dist, finecosine[angle]));
+	y = (int)(parent->y + FixedMul(dist, finesine[angle]));
 	actor->SetOrigin (x, y, parent->z - parent->floorclip + parent->height);
 	actor->floorz = parent->floorz;
 	actor->ceilingz = parent->ceilingz;
@@ -840,14 +840,14 @@ void A_SorcOffense2(AActor *actor)
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		SERVERCOMMANDS_SetThingArguments( actor );
 
-	delta = (finesine[index])*SORCFX4_SPREAD_ANGLE;
+	delta = (int)((finesine[index])*SORCFX4_SPREAD_ANGLE);
 	delta = (delta>>FRACBITS)*ANGLE_1;
 	ang1 = actor->angle + delta;
 	mo = P_SpawnMissileAngle(parent, PClass::FindClass("SorcFX4"), ang1, 0);
 	if (mo)
 	{
 		mo->special2 = 35*5/2;		// 5 seconds
-		dist = P_AproxDistance(dest->x - mo->x, dest->y - mo->y);
+		dist = (int)(P_AproxDistance(dest->x - mo->x, dest->y - mo->y));
 		dist = dist/mo->Speed;
 		if(dist < 1) dist = 1;
 		mo->velz = (dest->z - mo->z) / dist;
@@ -1180,7 +1180,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_SorcBallPop)
 	self->velx = ((pr_heresiarch()%10)-5) << FRACBITS;
 	self->vely = ((pr_heresiarch()%10)-5) << FRACBITS;
 	self->velz = (2+(pr_heresiarch()%3)) << FRACBITS;
-	self->special2 = 4*FRACUNIT;		// Initial bounce factor
+	self->special2 = (int)(4*FRACUNIT);		// Initial bounce factor
 	self->args[4] = BOUNCE_TIME_UNIT;	// Bounce time unit
 	self->args[3] = 5;					// Bounce time in seconds
 }

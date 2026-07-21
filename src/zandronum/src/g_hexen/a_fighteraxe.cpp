@@ -220,7 +220,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FAxeAttack)
 	for (i = 0; i < 16; i++)
 	{
 		angle = pmo->angle+i*(ANG45/16);
-		slope = P_AimLineAttack (pmo, angle, AXERANGE, &linetarget);
+		slope = (int)(P_AimLineAttack (pmo, angle, AXERANGE, &linetarget));
 		if (linetarget)
 		{
 			P_LineAttack (pmo, angle, AXERANGE, slope, damage, NAME_Melee, pufftype, true, &linetarget);
@@ -255,7 +255,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FAxeAttack)
 			}
 		}
 		angle = pmo->angle-i*(ANG45/16);
-		slope = P_AimLineAttack (pmo, angle, AXERANGE, &linetarget);
+		slope = (int)(P_AimLineAttack (pmo, angle, AXERANGE, &linetarget));
 		if (linetarget)
 		{
 			P_LineAttack (pmo, angle, AXERANGE, slope, damage, NAME_Melee, pufftype, true, &linetarget);
@@ -294,7 +294,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FAxeAttack)
 	pmo->special1 = 0;
 
 	angle = pmo->angle;
-	slope = P_AimLineAttack (pmo, angle, MELEERANGE, &linetarget);
+	slope = (int)(P_AimLineAttack (pmo, angle, MELEERANGE, &linetarget));
 	P_LineAttack (pmo, angle, MELEERANGE, slope, damage, NAME_Melee, pufftype, true);
 
 	// [BC] Apply spread.

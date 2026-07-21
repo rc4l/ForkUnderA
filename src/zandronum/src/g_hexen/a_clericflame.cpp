@@ -151,8 +151,8 @@ DEFINE_ACTION_FUNCTION(AActor, A_CFlameMissile)
 			{
 				mo->angle = an<<ANGLETOFINESHIFT;
 				mo->target = self->target;
-				mo->velx = mo->special1 = FixedMul(FLAMESPEED, finecosine[an]);
-				mo->vely = mo->special2 = FixedMul(FLAMESPEED, finesine[an]);
+				mo->velx = mo->special1 = (int)(FixedMul(FLAMESPEED, finecosine[an]));
+				mo->vely = mo->special2 = (int)(FixedMul(FLAMESPEED, finesine[an]));
 				mo->tics -= pr_missile()&3;
 
 				// [BC] If we're the server, spawn this to clients.
@@ -166,8 +166,8 @@ DEFINE_ACTION_FUNCTION(AActor, A_CFlameMissile)
 			{
 				mo->angle = ANG180+(an<<ANGLETOFINESHIFT);
 				mo->target = self->target;
-				mo->velx = mo->special1 = FixedMul(-FLAMESPEED, finecosine[an]);
-				mo->vely = mo->special2 = FixedMul(-FLAMESPEED, finesine[an]);
+				mo->velx = mo->special1 = (int)(FixedMul(-FLAMESPEED, finecosine[an]));
+				mo->vely = mo->special2 = (int)(FixedMul(-FLAMESPEED, finesine[an]));
 				mo->tics -= pr_missile()&3;
 
 				// [BC] If we're the server, spawn this to clients.

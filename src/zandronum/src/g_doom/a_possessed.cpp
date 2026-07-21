@@ -36,7 +36,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_PosAttack)
 				
 	A_FaceTarget (self);
 	angle = self->angle;
-	slope = P_AimLineAttack (self, angle, MISSILERANGE);
+	slope = (int)(P_AimLineAttack (self, angle, MISSILERANGE));
 
 	S_Sound (self, CHAN_WEAPON, "grunt/attack", 1, ATTN_NORM);
 	angle += pr_posattack.Random2() << 20;
@@ -52,7 +52,7 @@ static void A_SPosAttack2 (AActor *self)
 		
 	A_FaceTarget (self);
 	bangle = self->angle;
-	slope = P_AimLineAttack (self, bangle, MISSILERANGE);
+	slope = (int)(P_AimLineAttack (self, bangle, MISSILERANGE));
 
 	for (i=0 ; i<3 ; i++)
     {
@@ -128,7 +128,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_CPosAttack)
 	S_Sound (self, CHAN_WEAPON, self->AttackSound, 1, ATTN_NORM);
 	A_FaceTarget (self);
 	bangle = self->angle;
-	slope = P_AimLineAttack (self, bangle, MISSILERANGE);
+	slope = (int)(P_AimLineAttack (self, bangle, MISSILERANGE));
 
 	angle = bangle + (pr_cposattack.Random2() << 20);
 	damage = ((pr_cposattack()%5)+1)*3;

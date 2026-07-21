@@ -91,7 +91,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StaffAttack)
 	if (puff == NULL) puff = PClass::FindClass(NAME_BulletPuff);	// just to be sure
 	angle = self->angle;
 	angle += pr_sap.Random2() << 18;
-	slope = P_AimLineAttack (self, angle, MELEERANGE, &linetarget);
+	slope = (int)(P_AimLineAttack (self, angle, MELEERANGE, &linetarget));
 	P_LineAttack (self, angle, MELEERANGE, slope, damage, NAME_Melee, puff, true, &linetarget);
 
 	// [BC] Apply spread.
@@ -378,7 +378,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GauntletAttack)
 		angle += pr_gatk.Random2() << 18;
 		pufftype = PClass::FindClass("GauntletPuff1");
 	}
-	slope = P_AimLineAttack (self, angle, dist, &linetarget);
+	slope = (int)(P_AimLineAttack (self, angle, dist, &linetarget));
 	P_LineAttack (self, angle, dist, slope, damage, NAME_Melee, pufftype, false, &linetarget, &actualdamage);
 	if (!linetarget)
 	{

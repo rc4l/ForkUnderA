@@ -362,7 +362,7 @@ int APoisonCloud::DoSpecialDamage (AActor *victim, int damage, FName damagetype)
 				victim->Inventory->ModifyDamage(damage, damagetype, damage, true);
 			}
 			// Modify with damage factors
-			damage = FixedMul(damage, victim->DamageFactor);
+			damage = (int)(FixedMul(damage, victim->DamageFactor));
 			if (damage > 0)
 			{
 				damage = DamageTypeDefinition::ApplyMobjDamageFactor(damage, damagetype, victim->GetClass()->ActorInfo->DamageFactors);

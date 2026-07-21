@@ -68,7 +68,7 @@ static void DragonSeek (AActor *actor, angle_t thresh, angle_t turnMax)
 	if (actor->z+actor->height < target->z ||
 		target->z+target->height < actor->z)
 	{
-		dist = P_AproxDistance(target->x-actor->x, target->y-actor->y);
+		dist = (int)(P_AproxDistance(target->x-actor->x, target->y-actor->y));
 		dist = dist/actor->Speed;
 		if (dist < 1)
 		{
@@ -78,7 +78,7 @@ static void DragonSeek (AActor *actor, angle_t thresh, angle_t turnMax)
 	}
 	else
 	{
-		dist = P_AproxDistance (target->x-actor->x, target->y-actor->y);
+		dist = (int)(P_AproxDistance (target->x-actor->x, target->y-actor->y));
 		dist = dist/actor->Speed;
 	}
 	// [BB] If we're the server, update the thing's velocity and angle.

@@ -366,7 +366,7 @@ static void MarinePunch(AActor *self, int damagemul)
 
 	A_FaceTarget (self);
 	angle = self->angle + (pr_m_punch.Random2() << 18);
-	pitch = P_AimLineAttack (self, angle, MELEERANGE, &linetarget);
+	pitch = (int)(P_AimLineAttack (self, angle, MELEERANGE, &linetarget));
 	P_LineAttack (self, angle, MELEERANGE, pitch, damage, NAME_Melee, NAME_BulletPuff, true, &linetarget);
 
 	// turn to face target
@@ -464,7 +464,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_M_FireShotgun)
 
 	S_Sound (self, CHAN_WEAPON,  "weapons/shotgf", 1, ATTN_NORM, true);	// [BC] Inform the clients.
 	A_FaceTarget (self);
-	pitch = P_AimLineAttack (self, self->angle, MISSILERANGE);
+	pitch = (int)(P_AimLineAttack (self, self->angle, MISSILERANGE));
 	for (int i = 0; i < 7; ++i)
 	{
 		P_GunShot2 (self, false, pitch, PClass::FindClass(NAME_BulletPuff));
@@ -521,7 +521,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_M_FireShotgun2)
 
 	S_Sound (self, CHAN_WEAPON, "weapons/sshotf", 1, ATTN_NORM, true);	// [BC] Inform the clients.
 	A_FaceTarget (self);
-	pitch = P_AimLineAttack (self, self->angle, MISSILERANGE);
+	pitch = (int)(P_AimLineAttack (self, self->angle, MISSILERANGE));
 	for (int i = 0; i < 20; ++i)
 	{
 		int damage = 5*(pr_m_fireshotgun2()%3+1);

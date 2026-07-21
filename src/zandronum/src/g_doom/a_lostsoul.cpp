@@ -49,7 +49,7 @@ void A_SkullAttack(AActor *self, fixed_t speed)
 	an = self->angle >> ANGLETOFINESHIFT;
 	self->velx = FixedMul (speed, finecosine[an]);
 	self->vely = FixedMul (speed, finesine[an]);
-	dist = P_AproxDistance (dest->x - self->x, dest->y - self->y);
+	dist = (int)(P_AproxDistance (dest->x - self->x, dest->y - self->y));
 	dist = dist / speed;
 	
 	if (dist < 1)
