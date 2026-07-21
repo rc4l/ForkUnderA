@@ -160,6 +160,27 @@ TEST(Mul32Wrap, ExactWhenProductFits)
 	EXPECT_EQ(zx::Mul32Wrap(30000, 30000), 900000000); // 9e8 < INT32_MAX, fits, no wrap
 }
 
+// [rc4l] Every bare fixed*fixed in the engine was replaced by Scale(a,b,1) (= ComputeMulDivS64
+// with c=1). This must equal the OLD non-strict `a*b` (int64 * int64) for ALL values -- the low
+// 64 bits of the true product, including the overflow-wrap case -- so the migration preserves the
+// exact calculated value. The de-facto non-strict product is (uint64)a*(uint64)b reinterpreted
+// (signed int64 overflow is UB, but every real target computes the wrapped low 64 bits).
+TEST(Fixed64Scale, ScaleByOneEqualsRawInt64Product)
+{
+	Lcg r(0xA1B2C3D4E5F6ULL);
+	for (int i = 0; i < 4000; ++i)
+	{
+		const int64_t a = (int64_t)r.next(); // full-width random int64 (exercises overflow too)
+		const int64_t b = (int64_t)r.next();
+		const int64_t ref = (int64_t)((uint64_t)a * (uint64_t)b); // what non-strict `a*b` yields
+		EXPECT_EQ(zx::ComputeMulDivS64(a, b, 1), ref) << "a=" << a << " b=" << b;
+	}
+	// Explicit overflow: 2^40 * 2^40 = 2^80; low 64 bits are 0.
+	const int64_t big = int64_t(1) << 40;
+	EXPECT_EQ(zx::ComputeMulDivS64(big, big, 1), (int64_t)((uint64_t)big * (uint64_t)big));
+	EXPECT_EQ(zx::ComputeMulDivS64(-big, big, 1), (int64_t)((uint64_t)(-big) * (uint64_t)big));
+}
+
 // [rc4l] AlignDownPow2 must keep the sign of negative values -- the polyobject-rotation bug was a
 // 32-bit mask that turned negative rotated coordinates into huge positive ones.
 TEST(AlignDownPow2, PreservesSignOnNegatives)
