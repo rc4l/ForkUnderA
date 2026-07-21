@@ -497,8 +497,8 @@ bool EV_SilentLineTeleport (line_t *line, int side, AActor *thing, int id, INTBO
 				}
 				else
 				{
-					SQWORD num = (SQWORD)(thing->x-line->v1->x)*line->dx + 
-								 (SQWORD)(thing->y-line->v1->y)*line->dy;
+					SQWORD num = (SQWORD)((SQWORD)(thing->x-line->v1->x)*line->dx + 
+								 (SQWORD)(thing->y-line->v1->y)*line->dy);
 					if (num <= 0)
 					{
 						pos = 0;

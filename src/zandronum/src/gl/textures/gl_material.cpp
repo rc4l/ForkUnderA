@@ -249,12 +249,12 @@ BYTE *FGLTexture::WarpBuffer(BYTE *buffer, int Width, int Height, int warp)
 		{
 			for (int y = ysize-1; y >= 0; y--)
 			{
-				int xt = (x + 128
+				int xt = (int)((x + 128
 					+ ((finesine[(y*128 + timebase*5 + 900) & 8191]*2)>>FRACBITS)
-					+ ((finesine[(x*256 + timebase*4 + 300) & 8191]*2)>>FRACBITS)) & xmask;
-				int yt = (y + 128
+					+ ((finesine[(x*256 + timebase*4 + 300) & 8191]*2)>>FRACBITS)) & xmask);
+				int yt = (int)((y + 128
 					+ ((finesine[(y*128 + timebase*3 + 700) & 8191]*2)>>FRACBITS)
-					+ ((finesine[(x*256 + timebase*4 + 1200) & 8191]*2)>>FRACBITS)) & ymask;
+					+ ((finesine[(x*256 + timebase*4 + 1200) & 8191]*2)>>FRACBITS)) & ymask);
 				const DWORD *source = in + (xt << ybits) + yt;
 				DWORD *dest = out + (x << ybits) + y;
 				*dest = *source;

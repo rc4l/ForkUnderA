@@ -2056,8 +2056,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 	{
 		// We probably won't hit the target, but aim at it anyway so we don't look stupid.
 		FVector2 xydiff((double)(self->target->x - self->x),(double)( self->target->y - self->y));
-		double zdiff = (self->target->z + (self->target->height>>1)) -
-						(self->z + (self->height>>1) - self->floorclip);
+		double zdiff = (double)((self->target->z + (self->target->height>>1)) -
+						(self->z + (self->height>>1) - self->floorclip));
 		self->pitch = int(atan2(zdiff, xydiff.Length()) * ANGLE_180 / -M_PI);
 	}
 	// Let the aim trail behind the player
