@@ -1,0 +1,43 @@
+# [rc4l] Maintainer tool: regenerates windows_assets/ (the prebuilt deps windows_build.ps1
+# links against). Manual only — run from the Actions tab, download the windows_assets artifact,
+# and drop its contents into windows_assets/. See windows_assets/README.md.
+name: Export Windows deps
+
+on:
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: windows-2022
+    steps:
+      - name: Install the OpenAL dependency set (vcpkg)
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install `
+            openal-soft:x64-windows libsndfile:x64-windows mpg123:x64-windows `
+            opus:x64-windows openssl:x64-windows
+
+      - name: Export and trim to a committable tree
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" export `
+            openal-soft:x64-windows libsndfile:x64-windows mpg123:x64-windows `
+            opus:x64-windows openssl:x64-windows `
+            --raw --output=export --output-dir="$PWD"
+          $src = "$PWD/export/installed/x64-windows"
+          # [rc4l] Only release include/lib/bin ship; debug/ (>100 MB), share/ and tools/ do not.
+          New-Item -ItemType Directory -Force -Path windows_assets/licenses | Out-Null
+          Copy-Item "$src/include" windows_assets/ -Recurse -Force
+          Copy-Item "$src/lib"     windows_assets/ -Recurse -Force
+          Copy-Item "$src/bin"     windows_assets/ -Recurse -Force
+          Get-ChildItem "$src/share" -Directory | ForEach-Object {
+            $c = Join-Path $_.FullName "copyright"
+            if (Test-Path $c) { Copy-Item $c "windows_assets/licenses/$($_.Name).txt" -Force }
+          }
+          Get-ChildItem -Recurse windows_assets -Filter *.pdb | Remove-Item -Force -ErrorAction SilentlyContinue
+
+      - name: Upload the committable windows_assets tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows_assets
+          path: windows_assets

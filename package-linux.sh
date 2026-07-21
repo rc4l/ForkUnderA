@@ -21,61 +21,8 @@ echo "==> Building Docker build image ($IMAGE)"
 docker build -t "$IMAGE" -f Dockerfile.linux-build .
 
 echo "==> Building + packaging ZandroX (SERVERONLY=$SERVERONLY) inside container"
-docker run --rm -e SERVERONLY="$SERVERONLY" -e VERSION="${VERSION:-}" -v "$PWD:/work" "$IMAGE" bash -lc '
-  set -euo pipefail
-  # [rc4l] Drop the cache but keep the object files: a cache written before libopenal-dev was in
-  # the image keeps NO_OPENAL=OFF with no OPENAL_LIBRARY, silently producing a soundless binary.
-  rm -f build-linux/CMakeCache.txt
-  cmake -S src/zandronum -B build-linux -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-    -DSERVERONLY="${SERVERONLY:-OFF}" -DNO_FMOD=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON
-  cmake --build build-linux -j"$(nproc)"
-
-  # [rc4l] Refuse to package a client that cannot make sound; this shipped once already.
-  if [ "${SERVERONLY:-OFF}" != "ON" ]; then
-    if ! ldd build-linux/zandronum | grep -q libopenal; then
-      echo "ERROR: zandronum is not linked against libopenal — the build has no sound." >&2
-      echo "       Check the OpenAL detection in the configure output above." >&2
-      exit 1
-    fi
-    echo "==> sound OK: $(ldd build-linux/zandronum | grep libopenal | tr -s " ")"
-  fi
-
-  ARCH="$(uname -m)"
-  # [rc4l] Named here rather than renamed afterwards: on a Linux host the container writes
-  # dist-linux as root, so the calling user cannot rename anything inside it.
-  if [ -n "${VERSION:-}" ]; then
-    NAME="ZandroX-$VERSION-linux-$ARCH"
-  else
-    NAME="ZandroX-linux-$ARCH"
-  fi
-  STAGE="dist-linux/$NAME"
-  rm -rf "$STAGE"; mkdir -p "$STAGE"
-
-  # The engine binary plus the game data pk3s it needs at runtime.
-  # [rc4l] SERVERONLY renames the target to zandronum-server; copying the hardcoded client
-  # name shipped whatever stale client binary happened to be in the build directory.
-  if [ "${SERVERONLY:-OFF}" = "ON" ]; then BIN=zandronum-server; else BIN=zandronum; fi
-  [ -f "build-linux/$BIN" ] || { echo "ERROR: build-linux/$BIN not found" >&2; exit 1; }
-  cp "build-linux/$BIN" "$STAGE"/
-  cp build-linux/*.pk3 "$STAGE"/
-  [ -f README.md ] && cp README.md "$STAGE"/ || true
-
-  # [rc4l] Ship Freedoom so the tarball is playable without a separate IWAD. It is
-  # BSD-3-clause, whose clause 2 requires the notice to accompany binary distributions.
-  if [ -f tools/freedoom/freedoom2.wad ]; then
-    cp tools/freedoom/*.wad "$STAGE"/
-    cp tools/freedoom/License.txt "$STAGE"/FREEDOOM-LICENSE.txt
-  fi
-
-  # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and say where the
-  # corresponding source is, so these are required rather than best-effort.
-  cp LICENSE.txt "$STAGE"/
-  cp THIRD-PARTY-NOTICES.txt "$STAGE"/
-
-  tar czf "dist-linux/$NAME.tar.gz" -C dist-linux "$NAME"
-  echo "=== packaged: dist-linux/$NAME.tar.gz ==="
-  ls -la "dist-linux/$NAME.tar.gz"
-  echo "--- contents ---"
-  tar tzf "dist-linux/$NAME.tar.gz"
-'
+# [rc4l] The container just runs linux_compile.sh — the same script a dev runs natively — so
+# there is one build+package code path. The Ubuntu 22.04 image supplies its older glibc (wide
+# distro compatibility) and the pre-installed deps, so no --install-deps is needed here.
+docker run --rm -e SERVERONLY="$SERVERONLY" -e VERSION="${VERSION:-}" -v "$PWD:/work" "$IMAGE" \
+  bash -lc './linux_compile.sh'

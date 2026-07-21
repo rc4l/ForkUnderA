@@ -38,7 +38,7 @@ Anchors verified against ZA_3.2.1; menu base classes (`DMenu`, `FListMenuItem`,
 - [ ] **Build** — `target_sources( zdoom PRIVATE freeform-menu/freeformmenu.cpp )`.
 
 ## Verification
-No unit tests (pure UI, engine-coupled). Verify by building `SOUND=1 ./build.sh` and
+No unit tests (pure UI, engine-coupled). Verify by building `SOUND=1 ./mac_compile.sh` and
 driving via the MCP: define a `FREEFORMMENU` in a test menudef lump, open it with
 `verify_menu`, and screenshot — the menu should render scaled on the 480×270 canvas.
 

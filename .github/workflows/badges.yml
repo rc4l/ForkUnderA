@@ -1,0 +1,49 @@
+# [rc4l] Publishes the dynamic badge data (currently the test count) to an orphan `badges`
+# branch that shields.io reads via raw.githubusercontent. Standard release/version/date badges
+# need no data of ours and are not handled here.
+name: Badges
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Count GoogleTest cases
+        id: count
+        run: |
+          n=$(grep -rhoE '\b(TEST|TEST_F|TEST_P)[[:space:]]*\(' --include='*_test.cpp' . | wc -l | tr -d ' ')
+          echo "tests=$n" >> "$GITHUB_OUTPUT"
+          echo "test cases: $n"
+
+      - name: Publish tests.json to the badges branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTS: ${{ steps.count.outputs.tests }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"; cd "$tmp"
+          git init -q
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # [rc4l] Reuse the branch if it exists, otherwise start it empty (orphan).
+          if git fetch -q --depth 1 origin badges 2>/dev/null; then
+            git checkout -q badges
+          else
+            git checkout -q --orphan badges
+          fi
+          printf '{"schemaVersion":1,"label":"tests","message":"%s","color":"blue"}\n' "$TESTS" > tests.json
+          git add tests.json
+          if git -c user.email=ci@zandrox -c user.name="ZandroX CI" commit -q -m "Update tests badge: $TESTS"; then
+            git push -q origin badges
+            echo "published tests=$TESTS"
+          else
+            echo "no change"
+          fi
