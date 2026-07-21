@@ -2028,7 +2028,7 @@ DScroller::DScroller (fixed_t dx, fixed_t dy, const line_t *l,
 	fixed_t x = abs(l->dx), y = abs(l->dy), d;
 	if (y > x)
 		d = x, x = y, y = d;
-	d = FixedDiv (x, finesine[(tantoangle[FixedDiv(y,x) >> DBITS] + ANG90)
+	d = FixedDiv (x, finesine[(tantoangle[(int)(FixedDiv(y,x) >> DBITS)] + ANG90)
 						  >> ANGLETOFINESHIFT]);
 	x = -FixedDiv (FixedMul(dy, l->dy) + FixedMul(dx, l->dx), d);
 	y = -FixedDiv (FixedMul(dx, l->dy) - FixedMul(dy, l->dx), d);

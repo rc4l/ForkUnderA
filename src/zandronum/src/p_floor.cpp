@@ -1780,7 +1780,7 @@ void DWaggleBase::DoWaggle (bool ceiling)
 	m_Accumulator += m_AccDelta;
 
 
-	fixed_t mag = finesine[(m_Accumulator>>9)&8191]*8;
+	fixed_t mag = finesine[(int)((m_Accumulator>>9)&8191)]*8;
 
 	dist = plane->d;
 	plane->d = m_OriginalDist + plane->PointToDist (0, 0, FixedMul (mag, m_Scale));

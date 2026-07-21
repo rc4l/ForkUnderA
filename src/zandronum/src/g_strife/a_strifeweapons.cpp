@@ -870,7 +870,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireGrenade)
 			S_Sound (grenade, CHAN_VOICE, grenade->SeeSound, 1, ATTN_NORM);
 		}
 
-		grenade->velz = FixedMul (finetangent[FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT)], grenade->Speed) + 8*FRACUNIT;
+		grenade->velz = FixedMul (finetangent[(int)(FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT))], grenade->Speed) + 8*FRACUNIT;
 
 		an = self->angle >> ANGLETOFINESHIFT;
 		tworadii = self->radius + grenade->radius;

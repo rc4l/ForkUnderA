@@ -263,7 +263,7 @@ void R_InitTextureMapping ()
 	}
 	for (x = t2 + 1; x <= viewwidth; ++x)
 	{
-		xtoviewangle[x] = ANGLE_270 + tantoangle[dfocus / (x - centerx)];
+		xtoviewangle[x] = ANGLE_270 + tantoangle[(int)(dfocus / (x - centerx))];
 	}
 	for (x = 0; x < t1; ++x)
 	{

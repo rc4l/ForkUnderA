@@ -600,7 +600,7 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 		const fixed_t stillBobSpeed = ((cl_usecustombob ? FLOAT2FIXED(cl_stillbobspeed) : weapon->StillBobSpeed) * 128) >> FRACBITS;
 		const fixed_t stillBobAngle = (stillBobSpeed * level.time) & FINEMASK;
 
-		*y += FixedMul(stillBobRange, finesine[stillBobAngle & (FINEANGLES / 2 - 1)]);
+		*y += FixedMul(stillBobRange, finesine[(int)(stillBobAngle & (FINEANGLES / 2 - 1))]);
 	}
 
 	float viewSwaySpeed = 0.0f;

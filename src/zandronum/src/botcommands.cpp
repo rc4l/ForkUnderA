@@ -1253,8 +1253,8 @@ static void botcmd_CheckTerrain( CSkullBot *pBot )
 	// The old code multiplied the coordinate by the cosine (ignoring lDistance entirely), which
 	// overflowed 32-bit fixed_t into a bounded value; under the 64-bit widening that product is
 	// full-magnitude garbage. dist * finecosine is smallint * fixed, so it never overflows.
-	DestX = pBot->GetPlayer( )->mo->x + lDistance * finecosine[Angle];
-	DestY = pBot->GetPlayer( )->mo->y + lDistance * finesine[Angle];
+	DestX = pBot->GetPlayer( )->mo->x + lDistance * finecosine[(int)(Angle)];
+	DestY = pBot->GetPlayer( )->mo->y + lDistance * finesine[(int)(Angle)];
 
 	g_iReturnInt = BOTPATH_TryWalk( pBot->GetPlayer( )->mo, pBot->GetPlayer( )->mo->x, pBot->GetPlayer( )->mo->y, pBot->GetPlayer( )->mo->z, DestX, DestY );
 }
