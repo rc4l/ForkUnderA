@@ -14,6 +14,7 @@
 
 #include "doomdef.h"
 #include "p_local.h"
+#include "features/fixed64/computation/fixed64_scale_compute.h"
 #include "i_system.h"
 #include "w_wad.h"
 #include "m_swap.h"
@@ -1391,8 +1392,11 @@ static void RotatePt (int an, fixed_t *x, fixed_t *y, fixed_t startSpotX, fixed_
 	fixed_t tr_x = *x;
 	fixed_t tr_y = *y;
 
-	*x = (DMulScale16 (tr_x, finecosine[an], -tr_y, finesine[an]) & 0xFFFFFE00) + startSpotX;
-	*y = (DMulScale16 (tr_x, finesine[an], tr_y, finecosine[an]) & 0xFFFFFE00) + startSpotY;
+	// [rc4l] Align the rotated offset down to a 512 grid, sign-preserving. The old `& 0xFFFFFE00`
+	// literal is 32-bit: once DMulScale16 widened to 64-bit it zero-extended and wiped the sign of
+	// negative offsets (half of every polyobject), flinging those vertices ~65k units away.
+	*x = zx::AlignDownPow2 (DMulScale16 (tr_x, finecosine[an], -tr_y, finesine[an]), 9) + startSpotX;
+	*y = zx::AlignDownPow2 (DMulScale16 (tr_x, finesine[an], tr_y, finecosine[an]), 9) + startSpotY;
 }
 
 //==========================================================================

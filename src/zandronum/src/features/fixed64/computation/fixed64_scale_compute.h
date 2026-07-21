@@ -72,6 +72,17 @@ inline int32_t Mul32Wrap(int64_t a, int64_t b)
 								static_cast<uint32_t>(static_cast<int32_t>(b)));
 }
 
+// [rc4l] Clear the low `bits` bits of a signed value (align down to a 2^bits multiple, toward
+// negative infinity). Polyobject rotation aligned its rotated vertices to a 512 grid with the
+// literal mask `& 0xFFFFFE00`. That literal is a 32-bit unsigned constant, so once the
+// DMulScale result widened to 64-bit it zero-extended to 0x00000000FFFFFE00 and the AND wiped
+// the sign of any negative coordinate -- hurling half of every rotating polyobject ~65k map
+// units away. A full-width signed mask preserves the sign.
+inline int64_t AlignDownPow2(int64_t v, unsigned bits)
+{
+	return v & ~((static_cast<int64_t>(1) << bits) - 1);
+}
+
 } // namespace zx
 
 #endif // ZX_FIXED64_SCALE_COMPUTE_H

@@ -159,4 +159,22 @@ TEST(Mul32Wrap, ExactWhenProductFits)
 	EXPECT_EQ(zx::Mul32Wrap(-7, 11), -77);
 	EXPECT_EQ(zx::Mul32Wrap(30000, 30000), 900000000); // 9e8 < INT32_MAX, fits, no wrap
 }
+
+// [rc4l] AlignDownPow2 must keep the sign of negative values -- the polyobject-rotation bug was a
+// 32-bit mask that turned negative rotated coordinates into huge positive ones.
+TEST(AlignDownPow2, PreservesSignOnNegatives)
+{
+	// 512-grid alignment (bits = 9), exactly as RotatePt uses.
+	EXPECT_EQ(zx::AlignDownPow2(1000, 9), 512);
+	EXPECT_EQ(zx::AlignDownPow2(-1000, 9), -1024); // floor toward -inf, stays negative
+	EXPECT_EQ(zx::AlignDownPow2(-1024, 9), -1024); // already aligned
+	EXPECT_EQ(zx::AlignDownPow2(-1, 9), -512);
+	EXPECT_EQ(zx::AlignDownPow2(0, 9), 0);
+
+	// The pre-fix 32-bit mask turned a negative 64-bit value into a large positive; the helper
+	// keeps it negative. This is the exact regression.
+	const int64_t neg = -1024;
+	EXPECT_GT((neg & 0xFFFFFE00), 0x40000000);   // buggy: ~4.29e9, geometry flung away
+	EXPECT_LT(zx::AlignDownPow2(neg, 9), 0);     // fixed: stays negative
+}
 } // namespace

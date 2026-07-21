@@ -53,6 +53,7 @@
 #include "r_data/r_interpolate.h"
 #include "v_palette.h"
 #include "features/fixed64/computation/finetable_compute.h"
+#include "features/fixed64/computation/angle_interp_compute.h"
 #include "po_man.h"
 #include "p_effect.h"
 #include "st_start.h"
@@ -654,7 +655,11 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 	else
 	{
 		viewpitch = iview->oviewpitch + FixedMul (frac, iview->nviewpitch - iview->oviewpitch);
-		viewangle = iview->oviewangle + FixedMul (frac, iview->nviewangle - iview->oviewangle);
+		// [rc4l] The angle delta is an unsigned 32-bit difference that must be read back as a
+		// signed int32 before the now-64-bit FixedMul, or a right turn (huge unsigned delta)
+		// zero-extends and the view overshoots -- the "+right spins faster than +left" bug.
+		// See features/fixed64/computation/angle_interp_compute.h.
+		viewangle = zx::InterpolateAngleBAM (iview->oviewangle, iview->nviewangle, frac);
 	}
 	
 	// Due to interpolation this is not necessarily the same as the sector the camera is in.
