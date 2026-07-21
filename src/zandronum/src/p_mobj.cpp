@@ -33,6 +33,7 @@
 #include "network.h"
 
 #include "templates.h"
+#include "features/fixed64/computation/dist_compute.h"
 #include "i_system.h"
 #include "m_random.h"
 #include "doomdef.h"
@@ -1957,7 +1958,6 @@ bool AActor::CanSeek(AActor *target) const
 bool P_SeekerMissile (AActor *actor, angle_t thresh, angle_t turnMax, bool precise, bool usecurspeed)
 {
 	int dir;
-	int dist;
 	angle_t delta;
 	angle_t angle;
 	AActor *target;
@@ -2013,13 +2013,13 @@ bool P_SeekerMissile (AActor *actor, angle_t thresh, angle_t turnMax, bool preci
 			if (actor->z + actor->height < target->z ||
 				target->z + target->height < actor->z)
 			{ // Need to seek vertically
-				dist = P_AproxDistance (target->x - actor->x, target->y - actor->y);
-				dist = dist / speed;
-				if (dist < 1)
-				{
-					dist = 1;
-				}
-				actor->velz = ((target->z+target->height/2) - (actor->z+actor->height/2)) / dist;
+				// [rc4l] dist stays full-width fixed_t: `int dist` truncated P_AproxDistance's now-
+				// 64-bit result for targets >~32k units away, collapsing the tic count to 1 and
+				// slamming velz to the whole Z gap. See features/fixed64/computation/dist_compute.h.
+				actor->velz = zx::ComputeSeekerVelZ (
+					P_AproxDistance (target->x - actor->x, target->y - actor->y),
+					speed,
+					(target->z + target->height/2) - (actor->z + actor->height/2));
 			}
 		}
 	}

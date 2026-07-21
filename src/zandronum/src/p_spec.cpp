@@ -51,6 +51,7 @@
 #include "w_wad.h"
 
 #include "p_local.h"
+#include "features/fixed64/computation/dist_compute.h"
 #include "p_lnspec.h"
 #include "p_terrain.h"
 #include "p_acs.h"
@@ -2619,10 +2620,13 @@ void DPusher::Tick ()
 
 			if ((pusharound) )
 			{
-				int sx = m_X;
-				int sy = m_Y;
-				int dist = P_AproxDistance (thing->x - sx,thing->y - sy);
-				int speed = (m_Magnitude - ((dist>>FRACBITS)>>1))<<(FRACBITS-PUSH_FACTOR-1);
+				fixed_t sx = m_X;
+				fixed_t sy = m_Y;
+				// [rc4l] Keep the distance full-width: `int dist` truncated P_AproxDistance's now-
+				// 64-bit result once things were >~32k units apart (reachable on a normal map),
+				// flipping its sign and spuriously pushing. See features/fixed64/computation/dist_compute.h.
+				fixed_t dist = P_AproxDistance (thing->x - sx,thing->y - sy);
+				int speed = zx::ComputePusherSpeed (dist, m_Magnitude, PUSH_FACTOR, FRACBITS);
 
 				// If speed <= 0, you're outside the effective radius. You also have
 				// to be able to see the push/pull source point.
