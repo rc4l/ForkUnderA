@@ -63,13 +63,14 @@ jobs:
             publish=true
           elif [ "${{ inputs.experimental }}" = "true" ]; then
             # [rc4l] Experimental wins over release/bump: a pre-release built from whatever branch
-            # the run was dispatched on, tagged by branch (not version) so it can never touch the
-            # stable v* line. The tag is rolling — re-running a branch replaces its one pre-release
-            # rather than piling up. Sanitise the branch to a valid, tidy tag; note two branches
-            # differing only by a '/' vs '-' would collapse to the same tag, which is acceptable.
+            # the run was dispatched on, tagged by branch + commit (never a version) so it can
+            # never touch the stable v* line. Including the short SHA means every commit keeps its
+            # own pre-release instead of overwriting the branch's last one — re-building the same
+            # commit refreshes just that tag (see the delete below). Sanitise the branch to a valid,
+            # tidy tag; the SHA also disambiguates two branches whose names collapse to one slug.
             branch="${GITHUB_REF_NAME}"
             slug="$(echo "$branch" | sed 's#[^A-Za-z0-9._-]#-#g')"
-            version="exp-${slug}"
+            version="exp-${slug}-${shortsha}"
             publish=true
             channel=experimental
             echo "experimental pre-release from $branch ($shortsha) -> $version"
@@ -182,9 +183,10 @@ jobs:
           EOF
 
           if [ "$CHANNEL" = "experimental" ]; then
-            # [rc4l] Rolling tag: drop this branch's previous pre-release (and its tag) so the
-            # re-run replaces it instead of erroring on an existing tag. First run has nothing
-            # to delete, hence the || true.
+            # [rc4l] Each commit keeps its own pre-release, so this only clears a release for the
+            # SAME commit — i.e. rebuilding the exact same SHA refreshes that one tag instead of
+            # erroring on it. A new commit gets a new tag and leaves earlier ones in place. First
+            # build of a commit has nothing to delete, hence the || true.
             gh release delete "$VERSION" --yes --cleanup-tag || true
 
             # [rc4l] Loud banner prepended to the shared notes. The backslash-backticks stay
