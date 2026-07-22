@@ -121,7 +121,7 @@ Write-Status "ZandroX Windows compile — configuration=$Configuration version=$
 # --- Tooling ---------------------------------------------------------------
 Require-Command "cmake" "Install CMake and Visual Studio 2022 (with the C++ workload)." | Out-Null
 $VcpkgRoot      = Resolve-Vcpkg
-$VcpkgExe       = Join-Path $VcpkgRoot "vcpkg.exe"
+$VcpkgExe       = Join-Path "$PSScriptRoot\deps\vcpkg" "vcpkg.exe"
 $VcpkgInstalled = Join-Path $VcpkgRoot "installed\x64-windows"
 
 # --- Dependencies (OpenAL stack — never FMOD) ------------------------------
