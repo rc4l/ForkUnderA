@@ -56,6 +56,7 @@
 // [rc4l] Pure format/sizing and playback math live in dependency-free, unit-tested units.
 #include "features/openal-sound/computation/oal_format_compute.h"
 #include "features/openal-sound/computation/oal_playback_compute.h"
+#include "features/openal-sound/computation/oal_menu_compute.h"
 
 // [rc4l] The computation units mirror the engine's AL/format/rolloff constants; keep synced.
 static_assert(ZX_AL_NONE == AL_NONE, "AL format mirror out of sync");
@@ -69,6 +70,12 @@ static_assert(ZX_CHANNELCONFIG_MONO == ChannelConfig_Mono, "ChannelConfig mirror
 static_assert(ZX_CHANNELCONFIG_STEREO == ChannelConfig_Stereo, "ChannelConfig mirror out of sync");
 static_assert(ZX_SAMPLETYPE_UINT8 == SampleType_UInt8, "SampleType mirror out of sync");
 static_assert(ZX_SAMPLETYPE_INT16 == SampleType_Int16, "SampleType mirror out of sync");
+// [rc4l] oal_menu_compute mirrors these ALC/AL menu constants; keep synced.
+static_assert(ZX_HRTF_DISABLE == ALC_FALSE, "HRTF attrib mirror out of sync");
+static_assert(ZX_HRTF_ENABLE == ALC_TRUE, "HRTF attrib mirror out of sync");
+static_assert(ZX_HRTF_DONTCARE == ALC_DONT_CARE_SOFT, "HRTF attrib mirror out of sync");
+static_assert(ZX_AL_NORMAL_SOFT == AL_NORMAL_SOFT, "stereo-mode mirror out of sync");
+static_assert(ZX_AL_SUPER_STEREO_SOFT == AL_SUPER_STEREO_SOFT, "stereo-mode mirror out of sync");
 static_assert(ZX_STREAM_MONO == SoundStream::Mono, "stream flag mirror out of sync");
 static_assert(ZX_STREAM_BITS8 == SoundStream::Bits8, "stream flag mirror out of sync");
 static_assert(ZX_STREAM_BITS32 == SoundStream::Bits32, "stream flag mirror out of sync");
@@ -80,6 +87,11 @@ static_assert(ZX_ROLLOFF_CUSTOM == ROLLOFF_Custom, "ROLLOFF mirror out of sync")
 
 CVAR (String, snd_aldevice, "Default", CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, snd_efx, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+// [rc4l] UZDoom-parity OpenAL options. All gated at runtime on the matching extension; a driver
+// that lacks it leaves these as harmless no-ops (the menu still shows the control).
+CVAR (String, snd_alresampler, "Default", CVAR_ARCHIVE|CVAR_GLOBALCONFIG) // AL_SOFT_source_resampler
+CVAR (Int, snd_musicmode, ZX_MUSICMODE_NORMAL, CVAR_ARCHIVE|CVAR_GLOBALCONFIG) // AL_SOFT_UHJ / direct_channels_remix
+CVAR (Float, snd_superstereowidth, 0.45f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG) // AL_SUPER_STEREO_WIDTH_SOFT
 
 
 bool IsOpenALPresent()
@@ -112,6 +124,14 @@ bool IsOpenALPresent()
 #endif
 }
 
+// [rc4l] Append a "Value","Label" pair to a menu option list.
+static void AddOptionValue(FOptionValues *opt, const char *text)
+{
+	unsigned int i = opt->mValues.Reserve(1);
+	opt->mValues[i].TextValue = text;
+	opt->mValues[i].Text = text;
+}
+
 void I_BuildALDeviceList(FOptionValues *opt)
 {
     opt->mValues.Resize(1);
@@ -126,15 +146,33 @@ void I_BuildALDeviceList(FOptionValues *opt)
 			alcGetString(NULL, ALC_DEVICE_SPECIFIER));
 		if (!names)
 			Printf("Failed to get device list: %s\n", alcGetString(NULL, alcGetError(NULL)));
-		else while (*names)
-		{
-			unsigned int i = opt->mValues.Reserve(1);
-			opt->mValues[i].TextValue = names;
-			opt->mValues[i].Text = names;
-
-			names += strlen(names) + 1;
-		}
+		else for (const std::string &name : ParseAlNameList(names))
+			AddOptionValue(opt, name.c_str());
 	}
+#endif
+}
+
+// [rc4l] Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514: fill the resampler menu list
+// from the driver's AL_SOFT_source_resampler names, so snd_alresampler shows the real resamplers.
+// Falls back to just "Default" when the extension is absent.
+void I_BuildALResamplersList(FOptionValues *opt)
+{
+    opt->mValues.Resize(1);
+    opt->mValues[0].TextValue = "Default";
+    opt->mValues[0].Text = "Default";
+
+#ifndef NO_OPENAL
+	if (!IsOpenALPresent() || !alcGetCurrentContext() || !alIsExtensionPresent("AL_SOFT_source_resampler"))
+		return;
+
+	LPALGETSTRINGISOFT alGetStringiSOFT =
+		reinterpret_cast<LPALGETSTRINGISOFT>(alGetProcAddress("alGetStringiSOFT"));
+	if (!alGetStringiSOFT)
+		return;
+
+	const ALint num = alGetInteger(AL_NUM_RESAMPLERS_SOFT);
+	for (ALint i = 0; i < num; ++i)
+		AddOptionValue(opt, alGetStringiSOFT(AL_RESAMPLER_NAME_SOFT, i));
 #endif
 }
 
@@ -145,7 +183,7 @@ EXTERN_CVAR (Int, snd_channels)
 EXTERN_CVAR (Int, snd_samplerate)
 EXTERN_CVAR (Bool, snd_waterreverb)
 EXTERN_CVAR (Bool, snd_pitched)
-EXTERN_CVAR (Bool, snd_hrtf)
+EXTERN_CVAR (Int, snd_hrtf)
 
 
 #define MAKE_PTRID(x)  ((void*)(uintptr_t)(x))
@@ -549,6 +587,19 @@ class OpenALSoundStream : public SoundStream
             alSourcef(Source, AL_SOURCE_RADIUS, 0.f);
 		if (Renderer->AL.SOFT_source_spatialize)
 			alSourcei(Source, AL_SOURCE_SPATIALIZE_SOFT, AL_AUTO_SOFT);
+		// [rc4l] Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514: snd_musicmode applies
+		// super-stereo (UHJ) widening for stereo music and direct-mix channel remapping, each only
+		// when its extension is present. The mode mapping is the pure ComputeStereoModeSoft/DirectMix.
+		if (Renderer->AL.SOFT_UHJ)
+		{
+			alSourcei(Source, AL_STEREO_MODE_SOFT, ComputeStereoModeSoft(snd_musicmode));
+			alSourcef(Source, AL_SUPER_STEREO_WIDTH_SOFT, snd_superstereowidth);
+		}
+		if (Renderer->AL.SOFT_direct_channels_remix)
+		{
+			alSourcei(Source, AL_DIRECT_CHANNELS_SOFT,
+				ComputeDirectMixRemix(snd_musicmode) ? AL_REMIX_UNMATCHED_SOFT : AL_FALSE);
+		}
 
         alGenBuffers(BufferCount, Buffers);
         return (getALError() == AL_NO_ERROR);
@@ -639,6 +690,10 @@ public:
     void UpdateVolume()
     {
         alSourcef(Source, AL_GAIN, Renderer->MusicVolume*Volume);
+        // [rc4l] Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514: re-apply the super-stereo
+        // width on each update so the menu slider takes effect live.
+        if (Renderer->AL.SOFT_UHJ)
+            alSourcef(Source, AL_SUPER_STEREO_WIDTH_SOFT, snd_superstereowidth);
         getALError();
     }
 
@@ -1032,10 +1087,9 @@ OpenALSoundRenderer::OpenALSoundRenderer()
 	    if(ALC.SOFT_HRTF)
 	    {
 		    attribs.Push(ALC_HRTF_SOFT);
-		    if(snd_hrtf == 0)
-                attribs.Push(ALC_TRUE);
-            else
-			    attribs.Push(ALC_FALSE);
+		    // [rc4l] ComputeHrtfAttrib maps snd_hrtf's tri-state (0 off, >0 on, <0 auto) to the ALC
+		    // value. (The previous inline logic was inverted -- snd_hrtf==0 pushed ALC_TRUE.)
+		    attribs.Push(ComputeHrtfAttrib(snd_hrtf));
 	    }
         attribs.Push(0);
 
@@ -1062,6 +1116,9 @@ OpenALSoundRenderer::OpenALSoundRenderer()
         AL.SOFT_deferred_updates = !!alIsExtensionPresent("AL_SOFT_deferred_updates");
         AL.SOFT_loop_points = !!alIsExtensionPresent("AL_SOFT_loop_points");
         AL.SOFT_source_spatialize = !!alIsExtensionPresent("AL_SOFT_source_spatialize");
+        AL.SOFT_source_resampler = !!alIsExtensionPresent("AL_SOFT_source_resampler");
+        AL.SOFT_UHJ = !!alIsExtensionPresent("AL_SOFT_UHJ");
+        AL.SOFT_direct_channels_remix = !!alIsExtensionPresent("AL_SOFT_direct_channels_remix");
 
         alDopplerFactor(0.5f);
         alSpeedOfSound(343.3f * 96.0f);
@@ -1227,6 +1284,27 @@ OpenALSoundRenderer::OpenALSoundRenderer()
 
         if (EnvSlot)
             Printf("  EFX enabled\n");
+
+        // [rc4l] Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514: snd_alresampler points
+        // every source at the requested AL_SOFT_source_resampler; "Default" keeps the driver's own
+        // choice. The name->index lookup is the pure ComputeResamplerIndex; -1 means it's unavailable.
+        if (AL.SOFT_source_resampler && strcmp(*snd_alresampler, "Default") != 0)
+        {
+            LPALGETSTRINGISOFT alGetStringiSOFT =
+                reinterpret_cast<LPALGETSTRINGISOFT>(alGetProcAddress("alGetStringiSOFT"));
+            const ALint num = alGetInteger(AL_NUM_RESAMPLERS_SOFT);
+            const ALint def = alGetInteger(AL_DEFAULT_RESAMPLER_SOFT);
+            std::vector<std::string> names;
+            names.reserve(num);
+            for (ALint i = 0; i < num; ++i)
+                names.emplace_back(alGetStringiSOFT ? alGetStringiSOFT(AL_RESAMPLER_NAME_SOFT, i) : "");
+            const int ridx = ComputeResamplerIndex(names, def, *snd_alresampler);
+            if (ridx < 0)
+                Printf(TEXTCOLOR_RED "  Failed to find resampler " TEXTCOLOR_ORANGE "%s\n", *snd_alresampler);
+            else
+                for (unsigned i = 0; i < Sources.Size(); ++i)
+                    alSourcei(Sources[i], AL_SOURCE_RESAMPLER_SOFT, ridx);
+        }
 }
 #undef LOAD_DEV_FUNC
 #undef LOAD_FUNC
