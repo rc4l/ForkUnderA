@@ -103,7 +103,7 @@ struct cvertex_t
 {
 	fixed_t x, y;
 
-	operator int () const { return ((x>>16)&0xffff) | y; }
+	operator int () const { return (int)(((x>>16)&0xffff) | y); }
 	bool operator!= (const cvertex_t &other) const { return x != other.x || y != other.y; }
 	cvertex_t& operator =(const vertex_t *v) { x = v->x; y = v->y; return *this; }
 };
@@ -503,7 +503,7 @@ static int STACK_ARGS segcmp(const void *a, const void *b)
 {
 	seg_t *A = *(seg_t**)a;
 	seg_t *B = *(seg_t**)b;
-	return xs_RoundToInt(FRACUNIT*(A->sidefrac - B->sidefrac));
+	return xs_RoundToInt((real64)(double(FRACUNIT)*double((A->sidefrac - B->sidefrac))));
 }
 
 //==========================================================================

@@ -791,7 +791,7 @@ bool BOTS_IsPathObstructed( fixed_t Distance, AActor *pSource )
 				vx,
 				vy,
 				vz,
-				Distance * FRACUNIT,	// Maximum search distance
+				Distance * (int)FRACUNIT,	// Maximum search distance
 				MF_SOLID|MF_SHOOTABLE,		// Actor mask (ignore actors without this flag)
 				0,				// Wall mask
 				pSource,		// Actor to ignore
@@ -1866,7 +1866,7 @@ CSkullBot::CSkullBot( const char *pszName, const char *pszTeamName, ULONG ulPlay
 	// For now, bots always switch weapons on pickup.
 	m_pPlayer->userinfo.SwitchOnPickupChanged ( 2 );
 	*static_cast<FIntCVar *>(m_pPlayer->userinfo[NAME_StillBob]) = 0;
-	*static_cast<FIntCVar *>(m_pPlayer->userinfo[NAME_MoveBob]) = static_cast<fixed_t>(65536.f * 0.25);
+	*static_cast<FIntCVar *>(m_pPlayer->userinfo[NAME_MoveBob]) = (int)(65536.f * 0.25);
 
 	// If we've added the bot to a single player game, enable "fake multiplayer" mode.
 	if ( NETWORK_GetState( ) == NETSTATE_SINGLE )

@@ -34,7 +34,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KeenDie)
 	ACTION_PARAM_START(1);
 	ACTION_PARAM_INT(doortag, 0);
 
-	EV_DoDoor (DDoor::doorOpen, NULL, NULL, doortag, 2*FRACUNIT, 0, 0, 0);
+	EV_DoDoor (DDoor::doorOpen, NULL, NULL, doortag,(int)( 2*FRACUNIT), 0, 0, 0);
 }
 
 

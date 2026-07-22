@@ -4259,7 +4259,7 @@ int DLevelScript::DoSpawnSpotFacing (int type, int spot, int tid, bool force)
 
 void DLevelScript::DoFadeTo (int r, int g, int b, int a, fixed_t time)
 {
-	DoFadeRange (0, 0, 0, -1, clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255), clamp(a, 0, FRACUNIT), time);
+	DoFadeRange (0, 0, 0, -1, clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255), (int)(clamp(a, 0, FRACUNIT)), time);
 }
 
 void DLevelScript::DoFadeRange (int r1, int g1, int b1, int a1,
@@ -4575,7 +4575,7 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 
 	case APROP_Speed:
 		// [BB] Save the original value.
-		oldValue = actor->Speed;
+		oldValue = (int)(actor->Speed);
 
 		actor->Speed = value;
 
@@ -4591,7 +4591,7 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 
 	case APROP_Alpha:
 		// [AK] Save the original value.
-		oldValue = actor->alpha;
+		oldValue = (int)(actor->alpha);
 
 		actor->alpha = value;
 
@@ -4654,7 +4654,7 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		{ 
 			// [AK] Save the original value.
 			APlayerPawn *playerActor = static_cast<APlayerPawn *>(actor);
-			oldValue = playerActor->JumpZ;
+			oldValue = (int)(playerActor->JumpZ);
 
 			playerActor->JumpZ = value;
 
@@ -4714,7 +4714,7 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 
 	case APROP_Gravity:
 		// [BB] Save the original value.
-		oldValue = actor->gravity;
+		oldValue = (int)(actor->gravity);
 
 		actor->gravity = value;
 
@@ -4824,7 +4824,7 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 
 	case APROP_ScaleX:
 		// [AK] Save the original value.
-		oldValue = actor->scaleX;
+		oldValue = (int)(actor->scaleX);
 
 		actor->scaleX = value;
 
@@ -4836,7 +4836,7 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 
 	case APROP_ScaleY:
 		// [AK] Save the original value.
-		oldValue = actor->scaleY;
+		oldValue = (int)(actor->scaleY);
 
 		actor->scaleY = value;
 
@@ -4867,7 +4867,7 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		{
 			// [AK] Save the original value.
 			APlayerPawn *playerActor = static_cast<APlayerPawn *>(actor);
-			oldValue = playerActor->ViewHeight;
+			oldValue = (int)(playerActor->ViewHeight);
 
 			playerActor->ViewHeight = value;
 			if (actor->player != NULL)
@@ -4916,10 +4916,10 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	switch (property)
 	{
 	case APROP_Health:		return actor->health;
-	case APROP_Speed:		return actor->Speed;
+	case APROP_Speed:		return (int)(actor->Speed);
 	case APROP_Damage:		return actor->Damage;	// Should this call GetMissileDamage() instead?
-	case APROP_DamageFactor:return actor->DamageFactor;
-	case APROP_Alpha:		return actor->alpha;
+	case APROP_DamageFactor:return (int)(actor->DamageFactor);
+	case APROP_Alpha:		return (int)(actor->alpha);
 	case APROP_RenderStyle:	for (int style = STYLE_None; style < STYLE_Count; ++style)
 							{ // Check for a legacy render style that matches.
 								if (LegacyRenderStyles[style] == actor->RenderStyle)
@@ -4930,7 +4930,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 							// The current render style isn't expressable as a legacy style,
 							// so pretends it's normal.
 							return STYLE_Normal;
-	case APROP_Gravity:		return actor->gravity;
+	case APROP_Gravity:		return (int)(actor->gravity);
 	case APROP_Invulnerable:return !!(actor->flags2 & MF2_INVULNERABLE);
 	case APROP_Ambush:		return !!(actor->flags & MF_AMBUSH);
 	case APROP_Dropped:		return !!(actor->flags & MF_DROPPED);
@@ -4951,7 +4951,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 
 	case APROP_JumpZ:		if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
 							{
-								return static_cast<APlayerPawn *>(actor)->JumpZ;	// [GRB]
+								return (int)(static_cast<APlayerPawn *>(actor)->JumpZ);	// [GRB]
 							}
 							else
 							{
@@ -4962,18 +4962,18 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_TargetTID:	return (actor->target != NULL)? actor->target->tid : 0;
 	case APROP_TracerTID:	return (actor->tracer != NULL)? actor->tracer->tid : 0;
 	case APROP_WaterLevel:	return actor->waterlevel;
-	case APROP_ScaleX: 		return actor->scaleX;
-	case APROP_ScaleY: 		return actor->scaleY;
+	case APROP_ScaleX: 		return (int)(actor->scaleX);
+	case APROP_ScaleY: 		return (int)(actor->scaleY);
 	case APROP_Mass: 		return actor->Mass;
 	case APROP_Accuracy:    return actor->accuracy;
 	case APROP_Stamina:     return actor->stamina;
-	case APROP_Height:		return actor->height;
-	case APROP_Radius:		return actor->radius;
+	case APROP_Height:		return (int)(actor->height);
+	case APROP_Radius:		return (int)(actor->radius);
 	case APROP_ReactionTime:return actor->reactiontime;
-	case APROP_MeleeRange:	return actor->meleerange;
+	case APROP_MeleeRange:	return (int)(actor->meleerange);
 	case APROP_ViewHeight:	if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
 							{
-								return static_cast<APlayerPawn *>(actor)->ViewHeight;
+								return (int)(static_cast<APlayerPawn *>(actor)->ViewHeight);
 							}
 							else
 							{
@@ -4982,7 +4982,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_AttackZOffset:
 							if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
 							{
-								return static_cast<APlayerPawn *>(actor)->AttackZOffset;
+								return (int)(static_cast<APlayerPawn *>(actor)->AttackZOffset);
 							}
 							else
 							{
@@ -5884,7 +5884,7 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 			return GetUDMFInt(UDMF_Line, LineFromID(args[0]), FBehavior::StaticLookupString(args[1]));
 
 		case ACSF_GetLineUDMFFixed:
-			return GetUDMFFixed(UDMF_Line, LineFromID(args[0]), FBehavior::StaticLookupString(args[1]));
+			return (int)(GetUDMFFixed(UDMF_Line, LineFromID(args[0]), FBehavior::StaticLookupString(args[1])));
 
 		case ACSF_GetThingUDMFInt:
 		case ACSF_GetThingUDMFFixed:
@@ -5894,25 +5894,25 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 			return GetUDMFInt(UDMF_Sector, P_FindSectorFromTag(args[0], -1), FBehavior::StaticLookupString(args[1]));
 
 		case ACSF_GetSectorUDMFFixed:
-			return GetUDMFFixed(UDMF_Sector, P_FindSectorFromTag(args[0], -1), FBehavior::StaticLookupString(args[1]));
+			return (int)(GetUDMFFixed(UDMF_Sector, P_FindSectorFromTag(args[0], -1), FBehavior::StaticLookupString(args[1])));
 
 		case ACSF_GetSideUDMFInt:
 			return GetUDMFInt(UDMF_Side, SideFromID(args[0], args[1]), FBehavior::StaticLookupString(args[2]));
 
 		case ACSF_GetSideUDMFFixed:
-			return GetUDMFFixed(UDMF_Side, SideFromID(args[0], args[1]), FBehavior::StaticLookupString(args[2]));
+			return (int)(GetUDMFFixed(UDMF_Side, SideFromID(args[0], args[1]), FBehavior::StaticLookupString(args[2])));
 
 		case ACSF_GetActorVelX:
 			actor = SingleActorFromTID(args[0], activator);
-			return actor != NULL? actor->velx : 0;
+			return (int)(actor != NULL? actor->velx : 0);
 
 		case ACSF_GetActorVelY:
 			actor = SingleActorFromTID(args[0], activator);
-			return actor != NULL? actor->vely : 0;
+			return (int)(actor != NULL? actor->vely : 0);
 
 		case ACSF_GetActorVelZ:
 			actor = SingleActorFromTID(args[0], activator);
-			return actor != NULL? actor->velz : 0;
+			return (int)(actor != NULL? actor->velz : 0);
 
 		case ACSF_SetPointer:
 			if (activator)
@@ -5966,11 +5966,11 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 			{
 				if (actor->player != NULL)
 				{
-					return actor->player->mo->ViewHeight + actor->player->crouchviewdelta;
+					return (int)(actor->player->mo->ViewHeight + actor->player->crouchviewdelta);
 				}
 				else
 				{
-					return actor->GetClass()->Meta.GetMetaFixed(AMETA_CameraHeight, actor->height/2);
+					return (int)(actor->GetClass()->Meta.GetMetaFixed(AMETA_CameraHeight, actor->height/2));
 				}
 			}
 			else return 0;
@@ -6056,7 +6056,7 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 						return equippedarmor->MaxAmount;
 
 					case ARMORINFO_SAVEPERCENT:
-						return equippedarmor->SavePercent;
+						return (int)(equippedarmor->SavePercent);
 
 					case ARMORINFO_MAXABSORB:
 						return equippedarmor->MaxAbsorb;
@@ -6251,20 +6251,20 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 				FPolyObj *poly = PO_GetPolyobj(args[0]);
 				if (poly != NULL)
 				{
-					return poly->StartSpot.x;
+					return (int)(poly->StartSpot.x);
 				}
 			}
-			return FIXED_MAX;
+			return (int)(FIXED_MAX);
 
 		case ACSF_GetPolyobjY:
 			{
 				FPolyObj *poly = PO_GetPolyobj(args[0]);
 				if (poly != NULL)
 				{
-					return poly->StartSpot.y;
+					return (int)(poly->StartSpot.y);
 				}
 			}
-			return FIXED_MAX;
+			return (int)(FIXED_MAX);
         
         case ACSF_CheckSight:
         {
@@ -6427,7 +6427,7 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 
 				if (args[0] == 0)
 				{
-					P_LineAttack(activator, angle, range, pitch, damage, damagetype, pufftype, fhflags);
+					P_LineAttack(activator,(angle_t)( angle), range,(int)( pitch), damage, damagetype, pufftype, fhflags);
 				}
 				else
 				{
@@ -6436,7 +6436,7 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 
 					while ((source = it.Next()) != NULL)
 					{
-						P_LineAttack(source, angle, range, pitch, damage, damagetype, pufftype, fhflags);
+						P_LineAttack(source,(angle_t)( angle), range,(int)( pitch), damage, damagetype, pufftype, fhflags);
 					}
 				}
 			}
@@ -11417,7 +11417,7 @@ scriptwait:
 			break;
 
 		case PCD_FIXEDDIV:
-			STACK(2) = FixedDiv (STACK(2), STACK(1));
+			STACK(2) = (int)(FixedDiv (STACK(2), STACK(1)));
 			sp--;
 			break;
 
@@ -11817,11 +11817,11 @@ scriptwait:
 				}
 				else if (pcd == PCD_GETACTORZ)
 				{
-					STACK(1) = actor->z + actor->GetBobOffset();
+					STACK(1) = (int)(actor->z + actor->GetBobOffset());
 				}
 				else
 				{
-					STACK(1) =  (&actor->x)[pcd - PCD_GETACTORX];
+					STACK(1) =  (int)((&actor->x)[pcd - PCD_GETACTORX]);
 				}
 			}
 			break;
@@ -11829,14 +11829,14 @@ scriptwait:
 		case PCD_GETACTORFLOORZ:
 			{
 				AActor *actor = SingleActorFromTID(STACK(1), activator);
-				STACK(1) = actor == NULL ? 0 : actor->floorz;
+				STACK(1) = (int)(actor == NULL ? 0 : actor->floorz);
 			}
 			break;
 
 		case PCD_GETACTORCEILINGZ:
 			{
 				AActor *actor = SingleActorFromTID(STACK(1), activator);
-				STACK(1) = actor == NULL ? 0 : actor->ceilingz;
+				STACK(1) = (int)(actor == NULL ? 0 : actor->ceilingz);
 			}
 			break;
 
@@ -11850,14 +11850,14 @@ scriptwait:
 		case PCD_GETACTORPITCH:
 			{
 				AActor *actor = SingleActorFromTID(STACK(1), activator);
-				STACK(1) = actor == NULL ? 0 : actor->pitch >> 16;
+				STACK(1) = (int)(actor == NULL ? 0 : actor->pitch >> 16);
 			}
 			break;
 
 		case PCD_GETLINEROWOFFSET:
 			if (activationline != NULL)
 			{
-				PushToStack (activationline->sidedef[0]->GetTextureYOffset(side_t::mid) >> FRACBITS);
+				PushToStack ((int)(activationline->sidedef[0]->GetTextureYOffset(side_t::mid) >> FRACBITS));
 			}
 			else
 			{
@@ -11895,7 +11895,7 @@ scriptwait:
 					}
 				}
 				sp -= 2;
-				STACK(1) = z;
+				STACK(1) = (int)(z);
 			}
 			break;
 
@@ -12046,11 +12046,11 @@ scriptwait:
 			break;
 
 		case PCD_SIN:
-			STACK(1) = finesine[angle_t(STACK(1)<<16)>>ANGLETOFINESHIFT];
+			STACK(1) = (int)(finesine[angle_t(STACK(1)<<16)>>ANGLETOFINESHIFT]);
 			break;
 
 		case PCD_COS:
-			STACK(1) = finecosine[angle_t(STACK(1)<<16)>>ANGLETOFINESHIFT];
+			STACK(1) = (int)(finecosine[angle_t(STACK(1)<<16)>>ANGLETOFINESHIFT]);
 			break;
 
 		case PCD_VECTORANGLE:
@@ -12491,8 +12491,8 @@ scriptwait:
 				case PLAYERINFO_COLOR:			STACK(2) = userinfo->GetColor(); break;
 				case PLAYERINFO_GENDER:			STACK(2) = userinfo->GetGender(); break;
 				case PLAYERINFO_NEVERSWITCH:	STACK(2) = userinfo->GetSwitchOnPickup(); break;
-				case PLAYERINFO_MOVEBOB:		STACK(2) = userinfo->GetMoveBob(); break;
-				case PLAYERINFO_STILLBOB:		STACK(2) = userinfo->GetStillBob(); break;
+				case PLAYERINFO_MOVEBOB:		STACK(2) = (int)(userinfo->GetMoveBob()); break;
+				case PLAYERINFO_STILLBOB:		STACK(2) = (int)(userinfo->GetStillBob()); break;
 				case PLAYERINFO_PLAYERCLASS:	STACK(2) = userinfo->GetPlayerClassNum(); break;
 				case PLAYERINFO_DESIREDFOV:		STACK(2) = (int)pl->DesiredFOV; break;
 				case PLAYERINFO_FOV:			STACK(2) = (int)pl->FOV; break;

@@ -571,7 +571,7 @@ static fixed_t scale_ftom;
 // translates between frame-buffer and map distances
 inline fixed_t FTOM(fixed_t x)
 {
-	return x * scale_ftom;
+	return Scale(x, scale_ftom, 1);
 }
 
 inline fixed_t MTOF(fixed_t x)
@@ -1202,7 +1202,7 @@ void AM_changeWindowLoc ()
 		f_oldloc.x = FIXED_MAX;
 	}
 
-	int oldmx = m_x, oldmy = m_y;
+	int oldmx = (int)(m_x), oldmy = (int)(m_y);
 	fixed_t incx, incy, oincx, oincy;
 	
 	incx = m_paninc.x;
@@ -1678,9 +1678,9 @@ void AM_clearFB (const AMColor &color)
 			int x, y;
 
 			//blit the automap background to the screen.
-			for (y = mapystart >> MAPBITS; y < f_h; y += pheight)
+			for (y = (int)(mapystart >> MAPBITS); y < f_h; y += pheight)
 			{
-				for (x = mapxstart >> MAPBITS; x < f_w; x += pwidth)
+				for (x = (int)(mapxstart >> MAPBITS); x < f_w; x += pwidth)
 				{
 					screen->DrawTexture (backtex, x, y, DTA_ClipBottom, f_h, DTA_TopOffset, 0, DTA_LeftOffset, 0, TAG_DONE);
 				}
@@ -1752,10 +1752,10 @@ bool AM_clipMline (mline_t *ml, fline_t *fl)
 		return false; // trivially outside
 
 	// transform to frame-buffer coordinates.
-	fl->a.x = CXMTOF(ml->a.x);
-	fl->a.y = CYMTOF(ml->a.y);
-	fl->b.x = CXMTOF(ml->b.x);
-	fl->b.y = CYMTOF(ml->b.y);
+	fl->a.x = (int)(CXMTOF(ml->a.x));
+	fl->a.y = (int)(CYMTOF(ml->a.y));
+	fl->b.x = (int)(CXMTOF(ml->b.x));
+	fl->b.y = (int)(CYMTOF(ml->b.y));
 
 	DOOUTCODE(outcode1, fl->a.x, fl->a.y);
 	DOOUTCODE(outcode2, fl->b.x, fl->b.y);
@@ -1949,8 +1949,8 @@ void AM_drawSubsectors()
 			{
 				AM_rotatePoint(&pt.x, &pt.y);
 			}
-			points[j].X = f_x + ((pt.x - m_x) * scale / float(1 << 24));
-			points[j].Y = f_y + (f_h - (pt.y - m_y) * scale / float(1 << 24));
+			points[j].X = (float)(f_x + (double((pt.x - m_x)) * double(scale) / float(1 << 24)));
+			points[j].Y = (float)(f_y + (f_h - double((pt.y - m_y)) * double(scale) / float(1 << 24)));
 		}
 		// For lighting and texture determination
 		sector_t *sec = Renderer->FakeFlat (subsectors[i].render_sector, &tempsec, &floorlight,	&ceilinglight, false);
@@ -2045,8 +2045,8 @@ void AM_drawSubsectors()
 			rotation += ANG90 - players[consoleplayer].camera->angle;
 			AM_rotatePoint(&originpt.x, &originpt.y);
 		}
-		originx = f_x + ((originpt.x - m_x) * scale / float(1 << 24));
-		originy = f_y + (f_h - (originpt.y - m_y) * scale / float(1 << 24));
+		originx = (double)(f_x + (double((originpt.x - m_x)) * double(scale) / float(1 << 24)));
+		originy = (double)(f_y + (f_h - double((originpt.y - m_y)) * double(scale) / float(1 << 24)));
 
 		// If this subsector has not actually been seen yet (because you are cheating
 		// to see it on the map), tint and desaturate it.
@@ -2803,7 +2803,7 @@ static void DrawMarker (FTexture *tex, fixed_t x, fixed_t y, int yadjust,
 	{
 		AM_rotatePoint (&x, &y);
 	}
-	screen->DrawTexture (tex, CXMTOF(x) + f_x, CYMTOF(y) + yadjust + f_y,
+	screen->DrawTexture (tex, (double)(CXMTOF(x) + f_x), (double)(CYMTOF(y) + yadjust + f_y),
 		DTA_DestWidth, MulScale16 (tex->GetScaledWidth() * CleanXfac, xscale),
 		DTA_DestHeight, MulScale16 (tex->GetScaledHeight() * CleanYfac, yscale),
 		DTA_ClipTop, f_y,

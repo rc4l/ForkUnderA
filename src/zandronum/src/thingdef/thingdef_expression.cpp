@@ -146,7 +146,7 @@ fixed_t EvalExpressionFix (DWORD xi, AActor *self)
 	case VAL_Int:
 		return val.Int << FRACBITS;
 	case VAL_Float:
-		return fixed_t(val.Float*FRACUNIT);
+		return fixed_t(double(val.Float)*double(FRACUNIT));
 	}
 }
 
@@ -221,7 +221,7 @@ static ExpVal GetVariableValue (void *address, FExpressionType &type)
 
 	case VAL_Fixed:
 		ret.Type = VAL_Float;
-		ret.Float = (*(fixed_t*)address) / 65536.;
+		ret.Float = (double)(double((*(fixed_t*)address)) / 65536.);
 		break;
 
 	case VAL_Angle:

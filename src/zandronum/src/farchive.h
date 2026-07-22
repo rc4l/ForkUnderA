@@ -197,6 +197,11 @@ inline	FArchive& operator<< (SBYTE &c) { return operator<< ((BYTE &)c); }
 inline	FArchive& operator<< (SWORD &s) { return operator<< ((WORD &)s); }
 inline	FArchive& operator<< (SDWORD &i) { return operator<< ((DWORD &)i); }
 inline	FArchive& operator<< (SQWORD &i) { return operator<< ((QWORD &)i); }
+#if defined(__cplusplus)
+	// [rc4l] Serialize the strong fixed_t as its raw 48.16 value (8 bytes, same on-disk layout as
+	// the SQWORD path -- the SAVEVER bump already accounts for the widened width).
+	inline FArchive& operator<< (zx::Fixed &f) { SQWORD v = f.Raw(); operator<< (v); f = zx::Fixed::FromRaw(v); return *this; }
+#endif
 inline	FArchive& operator<< (unsigned char *&str) { return operator<< ((char *&)str); }
 inline	FArchive& operator<< (signed char *&str) { return operator<< ((char *&)str); }
 inline	FArchive& operator<< (bool &b) { return operator<< ((BYTE &)b); }

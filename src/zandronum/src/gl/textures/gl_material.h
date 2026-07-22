@@ -182,12 +182,12 @@ public:
 
 	int GetScaledLeftOffset(ETexUse i) const
 	{
-		return DivScale16(LeftOffset[i], tex->xScale);
+		return (int)DivScale16(LeftOffset[i], tex->xScale);
 	}
 
 	int GetScaledTopOffset(ETexUse i) const
 	{
-		return DivScale16(TopOffset[i], tex->yScale);
+		return (int)DivScale16(TopOffset[i], tex->yScale);
 	}
 
 	float GetScaledLeftOffsetFloat(ETexUse i) const

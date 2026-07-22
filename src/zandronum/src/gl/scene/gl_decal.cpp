@@ -257,7 +257,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	float linelength = glseg.fracright * side->TexelLength - leftedge;
 
 	// texel index of the decal's left edge
-	float decalpixpos = (float)side->TexelLength * decal->LeftDistance / (1<<30) - (flipx? decalwidth-decallefto : decallefto) - leftedge;
+	float decalpixpos = (float)side->TexelLength * (float)decal->LeftDistance / (1<<30) - (flipx? decalwidth-decallefto : decallefto) - leftedge;
 
 	float left,right;
 	float lefttex,righttex;
@@ -297,7 +297,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	dv[3].x=dv[2].x=glseg.x1+vx*right;
 	dv[3].y=dv[2].y=glseg.y1+vy*right;
 		
-	zpos+= FRACUNIT*(flipy? decalheight-decaltopo : decaltopo);
+	zpos+= (fixed_t)(double(FRACUNIT)*(flipy? decalheight-decaltopo : decaltopo));
 
 	tex->BindPatch(p.colormap, decal->Translation);
 

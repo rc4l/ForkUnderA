@@ -86,16 +86,30 @@ union QWORD_UNION
 };
 
 //
-// Fixed point, 32bit as 16.16.
+// [rc4l] Fixed point, 64-bit as 48.16 (widened from 32-bit 16.16 for giant maps and slope
+// precision; FRACBITS stays 16 so in-range math is bit-identical to the old 32-bit path).
 //
 #define FRACBITS						16
-#define FRACUNIT						(1<<FRACBITS)
+#define FRACUNIT						((fixed_t)1<<FRACBITS)
 
-typedef SDWORD							fixed_t;
+// [rc4l] fixed_t is the strong zx::Fixed type in C++ -- it rejects the implicit angle->fixed and
+// fixed->int conversions behind the 64-bit widening bugs (see fixed_strong.h). It is a transparent
+// wrapper over the same 64-bit integer: every operator forwards to the identical integer op, so
+// the numbers are unchanged; only the dangerous conversions become a compile error. Plain C, which
+// can't use a class, gets the raw 64-bit typedef -- no engine .c file uses fixed_t, so the split
+// only ever hands the strong type to the C++ code the safety is for. There is deliberately no
+// opt-out: backported upstream patches that trip a conversion error should get the explicit cast
+// (that error points at exactly the fixed-point site the widening cares about), not a way around it.
+#if defined(__cplusplus)
+#include "features/fixed64/computation/fixed_strong.h"
+typedef zx::Fixed						fixed_t;
+#else
+typedef SQWORD							fixed_t;
+#endif
 typedef DWORD							dsfixed_t;				// fixedpt used by span drawer
 
-#define FIXED_MAX						(signed)(0x7fffffff)
-#define FIXED_MIN						(signed)(0x80000000)
+#define FIXED_MAX						((fixed_t)0x7fffffffffffffffLL)
+#define FIXED_MIN						((fixed_t)0x8000000000000000LL)
 
 #define DWORD_MIN						((uint32)0)
 #define DWORD_MAX						((uint32)0xffffffff)

@@ -213,8 +213,8 @@ static inline int viewangletox(int i)
 	}
 	else
 	{
-		int t = FixedMul(finetangent[i], FocalLengthX);
-		t = (centerxfrac - t + FRACUNIT-1) >> FRACBITS;
+		int t = (int)(FixedMul(finetangent[i], FocalLengthX));
+		t = (int)((centerxfrac - t + FRACUNIT-1) >> FRACBITS);
 		return clamp(t, -1, viewwidth+1);
 	}
 }
@@ -249,8 +249,8 @@ void R_InitTextureMapping ()
 	//   the drawn sky texture.
 	// The remaining arcs are done with tantoangle instead.
 
-	const int t1 = MAX<int>(centerx - (FocalLengthX >> FRACBITS), 0);
-	const int t2 = MIN<int>(centerx + (FocalLengthX >> FRACBITS), viewwidth);
+	const int t1 = MAX<int>((const int)(centerx - (FocalLengthX >> FRACBITS)), 0);
+	const int t2 = MIN<int>((const int)(centerx + (FocalLengthX >> FRACBITS)), viewwidth);
 	const fixed_t dfocus = FocalLengthX >> DBITS;
 
 	for (i = 0, x = t2; x >= t1; --x)
@@ -263,7 +263,7 @@ void R_InitTextureMapping ()
 	}
 	for (x = t2 + 1; x <= viewwidth; ++x)
 	{
-		xtoviewangle[x] = ANGLE_270 + tantoangle[dfocus / (x - centerx)];
+		xtoviewangle[x] = ANGLE_270 + tantoangle[(int)(dfocus / (x - centerx))];
 	}
 	for (x = 0; x < t1; ++x)
 	{
@@ -512,7 +512,7 @@ void R_SetupFreelook()
 		}
 
 		centeryfrac = (viewheight << (FRACBITS-1)) + dy;
-		centery = centeryfrac >> FRACBITS;
+		centery = (int)(centeryfrac >> FRACBITS);
 		globaluclip = FixedDiv (-centeryfrac, InvZtoScale);
 		globaldclip = FixedDiv ((viewheight<<FRACBITS)-centeryfrac, InvZtoScale);
 

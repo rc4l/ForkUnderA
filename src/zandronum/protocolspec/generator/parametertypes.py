@@ -364,7 +364,11 @@ class FixedParameter(SpecParameter):
 		writer.writeline('command.{reference} = bytestream->ReadLong();'.format(**locals()))
 
 	def writesend(self, writer, command, reference, **args):
-		writer.writeline('command.addLong( this->{reference} );'.format(**locals()))
+		# [rc4l] fixed_t is the strong zx::Fixed type; the wire field is 32-bit, so the narrowing to
+		# SDWORD must be explicit (it will not implicitly convert). Behaviour is unchanged -- this is
+		# the same truncation the old int-typed fixed_t did implicitly, and it is identical for the
+		# angle_t subclass (an unsigned value reinterpreted to SDWORD, exactly as before).
+		writer.writeline('command.addLong( (SDWORD)( this->{reference} ) );'.format(**locals()))
 
 # ----------------------------------------------------------------------------------------------------------------------
 
@@ -377,7 +381,10 @@ class AproxfixedParameter(SpecParameter):
 		writer.writeline('command.{reference} = bytestream->ReadShort() << FRACBITS;'.format(**locals()))
 
 	def writesend(self, writer, command, reference, **args):
-		writer.writeline('command.addShort( this->{reference} >> FRACBITS );'.format(**locals()))
+		# [rc4l] Strong zx::Fixed >> FRACBITS is still a Fixed; the 16-bit wire field needs an
+		# explicit (int). Same truncation as before (and identical for the angle_t subclass, where
+		# the unsigned value was already narrowed implicitly).
+		writer.writeline('command.addShort( (int)( this->{reference} >> FRACBITS ) );'.format(**locals()))
 
 # ----------------------------------------------------------------------------------------------------------------------
 

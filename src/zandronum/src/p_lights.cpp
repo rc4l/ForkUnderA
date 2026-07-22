@@ -592,7 +592,7 @@ void EV_LightTurnOnPartway (int tag, fixed_t frac)
 				}
 			}
 		}
-		sector->SetLightLevel(DMulScale16 (frac, bright, FRACUNIT-frac, min));
+		sector->SetLightLevel((int)(DMulScale16 (frac, bright, FRACUNIT-frac, min)));
 	}
 }
 

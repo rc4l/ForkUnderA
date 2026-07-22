@@ -77,7 +77,7 @@ struct Popup
 	bool isDoneMoving();
 	int getXOffset();
 	int getYOffset();
-	int getAlpha(int maxAlpha=FRACUNIT);
+	int getAlpha(int maxAlpha=(int)FRACUNIT);
 	int getXDisplacement();
 	int getYDisplacement();
 };

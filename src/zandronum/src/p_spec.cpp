@@ -51,6 +51,7 @@
 #include "w_wad.h"
 
 #include "p_local.h"
+#include "features/fixed64/computation/dist_compute.h"
 #include "p_lnspec.h"
 #include "p_terrain.h"
 #include "p_acs.h"
@@ -1552,7 +1553,7 @@ void P_SpawnSpecials (void)
 
 			new DStrobe (sector, STROBEBRIGHT, FASTDARK, false);
 			new DScroller (DScroller::sc_floor, (-FRACUNIT/2)<<3,
-				0, -1, int(sector-sectors), 0);
+				fixed_t(0), -1, int(sector-sectors), 0);
 			break;
 
 		case Sector_Hidden:
@@ -1594,7 +1595,7 @@ void P_SpawnSpecials (void)
 			  // Only east scrollers also scroll the texture
 				new DScroller (DScroller::sc_floor,
 					(-FRACUNIT/2)<<((sector->special & 0xff) - Carry_East5),
-					0, -1, int(sector-sectors), 0);
+					fixed_t(0), -1, int(sector-sectors), 0);
 			}
 			break;
 		}
@@ -1707,7 +1708,7 @@ void P_SpawnSpecials (void)
 				}
 
 				{
-				float grav = ((float)P_AproxDistance (lines[i].dx, lines[i].dy)) / (FRACUNIT * 100.0f);
+				float grav = ((float)P_AproxDistance (lines[i].dx, lines[i].dy)) / (double)((double(FRACUNIT) * 100.0f));
 				for (s = -1; (s = P_FindSectorFromTag(lines[i].args[0],s)) >= 0;)
 					sectors[s].gravity = grav;
 				}
@@ -1725,7 +1726,7 @@ void P_SpawnSpecials (void)
 				}
 
 				{
-					int damage = P_AproxDistance (lines[i].dx, lines[i].dy) >> FRACBITS;
+					int damage = (int)(P_AproxDistance (lines[i].dx, lines[i].dy) >> FRACBITS);
 					for (s = -1; (s = P_FindSectorFromTag(lines[i].args[0],s)) >= 0;)
 					{
 						sectors[s].damage = damage;
@@ -1925,7 +1926,7 @@ void DScroller::UpdateToClient( ULONG ulClient )
 	case sc_ceiling:
 	case sc_carry_ceiling:
 
-		SERVERCOMMANDS_DoScroller( m_Type, m_dx, m_dy, m_Affectee, !!m_Accel, m_Control, m_Parts, ulClient, SVCF_ONLYTHISCLIENT );
+		SERVERCOMMANDS_DoScroller( m_Type,(LONG)( m_dx),(LONG)( m_dy), m_Affectee, !!m_Accel, m_Control, m_Parts, ulClient, SVCF_ONLYTHISCLIENT );
 		break;
 	}
 }
@@ -2027,7 +2028,7 @@ DScroller::DScroller (fixed_t dx, fixed_t dy, const line_t *l,
 	fixed_t x = abs(l->dx), y = abs(l->dy), d;
 	if (y > x)
 		d = x, x = y, y = d;
-	d = FixedDiv (x, finesine[(tantoangle[FixedDiv(y,x) >> DBITS] + ANG90)
+	d = FixedDiv (x, finesine[(tantoangle[(int)(FixedDiv(y,x) >> DBITS)] + ANG90)
 						  >> ANGLETOFINESHIFT]);
 	x = -FixedDiv (FixedMul(dy, l->dy) + FixedMul(dx, l->dx), d);
 	y = -FixedDiv (FixedMul(dx, l->dy) - FixedMul(dy, l->dx), d);
@@ -2379,7 +2380,7 @@ static void P_SpawnFriction(void)
 			}
 			else
 			{
-				length = P_AproxDistance(l->dx,l->dy)>>FRACBITS;
+				length = (int)(P_AproxDistance(l->dx,l->dy)>>FRACBITS);
 			}
 
 			P_SetSectorFriction (l->args[0], length, false);
@@ -2520,9 +2521,9 @@ DPusher::DPusher (DPusher::EPusher type, line_t *l, int magnitude, int angle,
 	m_Type = type;
 	if (l)
 	{
-		m_Xmag = l->dx>>FRACBITS;
-		m_Ymag = l->dy>>FRACBITS;
-		m_Magnitude = P_AproxDistance (m_Xmag, m_Ymag);
+		m_Xmag = (int)(l->dx>>FRACBITS);
+		m_Ymag = (int)(l->dy>>FRACBITS);
+		m_Magnitude = (int)(P_AproxDistance (m_Xmag, m_Ymag));
 	}
 	else
 	{ // [RH] Allow setting magnitude and angle with parameters
@@ -2531,8 +2532,8 @@ DPusher::DPusher (DPusher::EPusher type, line_t *l, int magnitude, int angle,
 	if (source) // point source exist?
 	{
 		m_Radius = (m_Magnitude) << (FRACBITS+1); // where force goes to zero
-		m_X = m_Source->x;
-		m_Y = m_Source->y;
+		m_X = (int)(m_Source->x);
+		m_Y = (int)(m_Source->y);
 	}
 	m_Affectee = affectee;
 }
@@ -2619,10 +2620,13 @@ void DPusher::Tick ()
 
 			if ((pusharound) )
 			{
-				int sx = m_X;
-				int sy = m_Y;
-				int dist = P_AproxDistance (thing->x - sx,thing->y - sy);
-				int speed = (m_Magnitude - ((dist>>FRACBITS)>>1))<<(FRACBITS-PUSH_FACTOR-1);
+				fixed_t sx = m_X;
+				fixed_t sy = m_Y;
+				// [rc4l] Keep the distance full-width: `int dist` truncated P_AproxDistance's now-
+				// 64-bit result once things were >~32k units apart (reachable on a normal map),
+				// flipping its sign and spuriously pushing. See features/fixed64/computation/dist_compute.h.
+				fixed_t dist = P_AproxDistance (thing->x - sx,thing->y - sy);
+				int speed = zx::ComputePusherSpeed ((int64_t)(dist), m_Magnitude, PUSH_FACTOR, FRACBITS);
 
 				// If speed <= 0, you're outside the effective radius. You also have
 				// to be able to see the push/pull source point.
@@ -2676,7 +2680,7 @@ void DPusher::Tick ()
 			}
 			else // special water sector
 			{
-				ht = hsec->floorplane.ZatPoint (thing->x, thing->y);
+				ht = (int)(hsec->floorplane.ZatPoint (thing->x, thing->y));
 				if (thing->z > ht) // above ground
 				{
 					xspeed = m_Xmag; // full force

@@ -328,15 +328,15 @@ int G_SkillProperty(ESkillProperty prop)
 		case SKILLP_AmmoFactor:
 			if (dmflags2 & DF2_YES_DOUBLEAMMO)
 			{
-				return AllSkills[gameskill].DoubleAmmoFactor;
+				return (int)(AllSkills[gameskill].DoubleAmmoFactor);
 			}
-			return AllSkills[gameskill].AmmoFactor;
+			return (int)(AllSkills[gameskill].AmmoFactor);
 
 		case SKILLP_DropAmmoFactor:
-			return AllSkills[gameskill].DropAmmoFactor;
+			return (int)(AllSkills[gameskill].DropAmmoFactor);
 
 		case SKILLP_DamageFactor:
-			return AllSkills[gameskill].DamageFactor;
+			return (int)(AllSkills[gameskill].DamageFactor);
 
 		case SKILLP_FastMonsters:
 			return AllSkills[gameskill].FastMonsters  || (dmflags & DF_FAST_MONSTERS);
@@ -353,7 +353,7 @@ int G_SkillProperty(ESkillProperty prop)
 			return AllSkills[gameskill].RespawnLimit;
 
 		case SKILLP_Aggressiveness:
-			return AllSkills[gameskill].Aggressiveness;
+			return (int)(AllSkills[gameskill].Aggressiveness);
 
 		case SKILLP_DisableCheats:
 			return AllSkills[gameskill].DisableCheats;
@@ -374,16 +374,16 @@ int G_SkillProperty(ESkillProperty prop)
 			return AllSkills[gameskill].ACSReturn;
 		
 		case SKILLP_MonsterHealth:
-			return AllSkills[gameskill].MonsterHealth;
+			return (int)(AllSkills[gameskill].MonsterHealth);
 
 		case SKILLP_FriendlyHealth:
-			return AllSkills[gameskill].FriendlyHealth;
+			return (int)(AllSkills[gameskill].FriendlyHealth);
 
 		case SKILLP_NoPain:			
 			return AllSkills[gameskill].NoPain;	
 
 		case SKILLP_ArmorFactor:
-			return AllSkills[gameskill].ArmorFactor;
+			return (int)(AllSkills[gameskill].ArmorFactor);
 		}
 	}
 	return 0;

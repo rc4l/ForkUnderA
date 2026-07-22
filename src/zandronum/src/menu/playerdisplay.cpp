@@ -276,10 +276,10 @@ void FBackdropTexture::Render()
 	fixed_t z1 = (finecosine[z2ang>>ANGLETOFINESHIFT]>>2)+FRACUNIT/2;
 	fixed_t z2 = (finecosine[z1ang>>ANGLETOFINESHIFT]>>2)+FRACUNIT*3/4;
 
-	tc = MulScale5 (finecosine[t1ang>>ANGLETOFINESHIFT], z1);
-	ts = MulScale5 (finesine[t1ang>>ANGLETOFINESHIFT], z1);
-	uc = MulScale5 (finecosine[t2ang>>ANGLETOFINESHIFT], z2);
-	us = MulScale5 (finesine[t2ang>>ANGLETOFINESHIFT], z2);
+	tc = (DWORD)(MulScale5 (finecosine[t1ang>>ANGLETOFINESHIFT], z1));
+	ts = (DWORD)(MulScale5 (finesine[t1ang>>ANGLETOFINESHIFT], z1));
+	uc = (DWORD)(MulScale5 (finecosine[t2ang>>ANGLETOFINESHIFT], z2));
+	us = (DWORD)(MulScale5 (finesine[t2ang>>ANGLETOFINESHIFT], z2));
 
 	ltx = -width/2*tc;
 	lty = -width/2*ts;
@@ -300,9 +300,9 @@ void FBackdropTexture::Render()
 		{
 			c1 = finecosine[a1>>ANGLETOFINESHIFT];
 			c2 = finecosine[a2>>ANGLETOFINESHIFT];
-			from[x] = ((c1 + c2 + c3 + c4) >> (FRACBITS+3-7)) + 128	// plasma
+			from[x] = (BYTE)(((c1 + c2 + c3 + c4) >> (FRACBITS+3-7)) + 128	// plasma
 			 + pattern1[(tx>>27)+((ty>>22)&992)]					// rotozoomer 1
-			 + pattern2[(ux>>27)+((uy>>22)&992)];					// rotozoomer 2
+			 + pattern2[(ux>>27)+((uy>>22)&992)]);					// rotozoomer 2
 			tx += tc;
 			ty += ts;
 			ux += uc;

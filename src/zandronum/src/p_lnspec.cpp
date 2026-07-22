@@ -138,19 +138,19 @@ FUNC(LS_Polyobj_RotateRight)
 FUNC(LS_Polyobj_Move)
 // Polyobj_Move (po, speed, angle, distance)
 {
-	return EV_MovePoly (ln, arg0, SPEED(arg1), BYTEANGLE(arg2), arg3 * FRACUNIT, false);
+	return EV_MovePoly (ln, arg0,(int)( SPEED(arg1)), BYTEANGLE(arg2), arg3 * FRACUNIT, false);
 }
 
 FUNC(LS_Polyobj_MoveTimes8)
 // Polyobj_MoveTimes8 (po, speed, angle, distance)
 {
-	return EV_MovePoly (ln, arg0, SPEED(arg1), BYTEANGLE(arg2), arg3 * FRACUNIT * 8, false);
+	return EV_MovePoly (ln, arg0,(int)( SPEED(arg1)), BYTEANGLE(arg2), arg3 * FRACUNIT * 8, false);
 }
 
 FUNC(LS_Polyobj_MoveTo)
 // Polyobj_MoveTo (po, speed, x, y)
 {
-	return EV_MovePolyTo (ln, arg0, SPEED(arg1), arg2 << FRACBITS, arg3 << FRACBITS, false);
+	return EV_MovePolyTo (ln, arg0,(int)( SPEED(arg1)), arg2 << FRACBITS, arg3 << FRACBITS, false);
 }
 
 FUNC(LS_Polyobj_MoveToSpot)
@@ -159,7 +159,7 @@ FUNC(LS_Polyobj_MoveToSpot)
 	FActorIterator iterator (arg2);
 	AActor *spot = iterator.Next();
 	if (spot == NULL) return false;
-	return EV_MovePolyTo (ln, arg0, SPEED(arg1), spot->x, spot->y, false);
+	return EV_MovePolyTo (ln, arg0,(int)( SPEED(arg1)), spot->x, spot->y, false);
 }
 
 FUNC(LS_Polyobj_DoorSwing)
@@ -171,7 +171,7 @@ FUNC(LS_Polyobj_DoorSwing)
 FUNC(LS_Polyobj_DoorSlide)
 // Polyobj_DoorSlide (po, speed, angle, distance, delay)
 {
-	return EV_OpenPolyDoor (ln, arg0, SPEED(arg1), BYTEANGLE(arg2), arg4, arg3*FRACUNIT, PODOOR_SLIDE);
+	return EV_OpenPolyDoor (ln, arg0,(int)( SPEED(arg1)), BYTEANGLE(arg2), arg4,(int)( arg3*FRACUNIT), PODOOR_SLIDE);
 }
 
 FUNC(LS_Polyobj_OR_RotateLeft)
@@ -189,19 +189,19 @@ FUNC(LS_Polyobj_OR_RotateRight)
 FUNC(LS_Polyobj_OR_Move)
 // Polyobj_OR_Move (po, speed, angle, distance)
 {
-	return EV_MovePoly (ln, arg0, SPEED(arg1), BYTEANGLE(arg2), arg3 * FRACUNIT, true);
+	return EV_MovePoly (ln, arg0,(int)( SPEED(arg1)), BYTEANGLE(arg2), arg3 * FRACUNIT, true);
 }
 
 FUNC(LS_Polyobj_OR_MoveTimes8)
 // Polyobj_OR_MoveTimes8 (po, speed, angle, distance)
 {
-	return EV_MovePoly (ln, arg0, SPEED(arg1), BYTEANGLE(arg2), arg3 * FRACUNIT * 8, true);
+	return EV_MovePoly (ln, arg0,(int)( SPEED(arg1)), BYTEANGLE(arg2), arg3 * FRACUNIT * 8, true);
 }
 
 FUNC(LS_Polyobj_OR_MoveTo)
 // Polyobj_OR_MoveTo (po, speed, x, y)
 {
-	return EV_MovePolyTo (ln, arg0, SPEED(arg1), arg2 << FRACBITS, arg3 << FRACBITS, true);
+	return EV_MovePolyTo (ln, arg0,(int)( SPEED(arg1)), arg2 << FRACBITS, arg3 << FRACBITS, true);
 }
 
 FUNC(LS_Polyobj_OR_MoveToSpot)
@@ -210,7 +210,7 @@ FUNC(LS_Polyobj_OR_MoveToSpot)
 	FActorIterator iterator (arg2);
 	AActor *spot = iterator.Next();
 	if (spot == NULL) return false;
-	return EV_MovePolyTo (ln, arg0, SPEED(arg1), spot->x, spot->y, true);
+	return EV_MovePolyTo (ln, arg0,(int)( SPEED(arg1)), spot->x, spot->y, true);
 }
 
 FUNC(LS_Polyobj_Stop)
@@ -222,32 +222,32 @@ FUNC(LS_Polyobj_Stop)
 FUNC(LS_Door_Close)
 // Door_Close (tag, speed, lighttag)
 {
-	return EV_DoDoor (DDoor::doorClose, ln, it, arg0, SPEED(arg1), 0, 0, arg2);
+	return EV_DoDoor (DDoor::doorClose, ln, it, arg0,(int)( SPEED(arg1)), 0, 0, arg2);
 }
 
 FUNC(LS_Door_Open)
 // Door_Open (tag, speed, lighttag)
 {
-	return EV_DoDoor (DDoor::doorOpen, ln, it, arg0, SPEED(arg1), 0, 0, arg2);
+	return EV_DoDoor (DDoor::doorOpen, ln, it, arg0,(int)( SPEED(arg1)), 0, 0, arg2);
 }
 
 FUNC(LS_Door_Raise)
 // Door_Raise (tag, speed, delay, lighttag)
 {
-	return EV_DoDoor (DDoor::doorRaise, ln, it, arg0, SPEED(arg1), TICS(arg2), 0, arg3);
+	return EV_DoDoor (DDoor::doorRaise, ln, it, arg0,(int)( SPEED(arg1)), TICS(arg2), 0, arg3);
 }
 
 FUNC(LS_Door_LockedRaise)
 // Door_LockedRaise (tag, speed, delay, lock, lighttag)
 {
 	return EV_DoDoor (arg2 ? DDoor::doorRaise : DDoor::doorOpen, ln, it,
-					  arg0, SPEED(arg1), TICS(arg2), arg3, arg4);
+					  arg0,(int)( SPEED(arg1)), TICS(arg2), arg3, arg4);
 }
 
 FUNC(LS_Door_CloseWaitOpen)
 // Door_CloseWaitOpen (tag, speed, delay, lighttag)
 {
-	return EV_DoDoor (DDoor::doorCloseWaitOpen, ln, it, arg0, SPEED(arg1), OCTICS(arg2), 0, arg3);
+	return EV_DoDoor (DDoor::doorCloseWaitOpen, ln, it, arg0,(int)( SPEED(arg1)), OCTICS(arg2), 0, arg3);
 }
 
 FUNC(LS_Door_Animated)
@@ -287,7 +287,7 @@ FUNC(LS_Generic_Door)
 		tag = arg0;
 		lightTag = 0;
 	}
-	return EV_DoDoor (type, ln, it, tag, SPEED(arg1), OCTICS(arg3), arg4, lightTag, boomgen);
+	return EV_DoDoor (type, ln, it, tag,(int)( SPEED(arg1)), OCTICS(arg3), arg4, lightTag, boomgen);
 }
 
 FUNC(LS_Floor_LowerByValue)
@@ -729,13 +729,13 @@ FUNC(LS_Generic_Crusher2)
 FUNC(LS_Plat_PerpetualRaise)
 // Plat_PerpetualRaise (tag, speed, delay)
 {
-	return EV_DoPlat (arg0, ln, DPlat::platPerpetualRaise, 0, SPEED(arg1), TICS(arg2), 8, 0);
+	return EV_DoPlat (arg0, ln, DPlat::platPerpetualRaise, 0,(int)( SPEED(arg1)), TICS(arg2), 8, 0);
 }
 
 FUNC(LS_Plat_PerpetualRaiseLip)
 // Plat_PerpetualRaiseLip (tag, speed, delay, lip)
 {
-	return EV_DoPlat (arg0, ln, DPlat::platPerpetualRaise, 0, SPEED(arg1), TICS(arg2), arg3, 0);
+	return EV_DoPlat (arg0, ln, DPlat::platPerpetualRaise, 0,(int)( SPEED(arg1)), TICS(arg2), arg3, 0);
 }
 
 FUNC(LS_Plat_Stop)
@@ -748,7 +748,7 @@ FUNC(LS_Plat_Stop)
 FUNC(LS_Plat_DownWaitUpStay)
 // Plat_DownWaitUpStay (tag, speed, delay)
 {
-	return EV_DoPlat (arg0, ln, DPlat::platDownWaitUpStay, 0, SPEED(arg1), TICS(arg2), 8, 0);
+	return EV_DoPlat (arg0, ln, DPlat::platDownWaitUpStay, 0,(int)( SPEED(arg1)), TICS(arg2), 8, 0);
 }
 
 FUNC(LS_Plat_DownWaitUpStayLip)
@@ -756,31 +756,31 @@ FUNC(LS_Plat_DownWaitUpStayLip)
 {
 	return EV_DoPlat (arg0, ln,
 		arg4 ? DPlat::platDownWaitUpStayStone : DPlat::platDownWaitUpStay,
-		0, SPEED(arg1), TICS(arg2), arg3, 0);
+		0,(int)( SPEED(arg1)), TICS(arg2), arg3, 0);
 }
 
 FUNC(LS_Plat_DownByValue)
 // Plat_DownByValue (tag, speed, delay, height)
 {
-	return EV_DoPlat (arg0, ln, DPlat::platDownByValue, FRACUNIT*arg3*8, SPEED(arg1), TICS(arg2), 0, 0);
+	return EV_DoPlat (arg0, ln, DPlat::platDownByValue,(int)( FRACUNIT*arg3*8),(int)( SPEED(arg1)), TICS(arg2), 0, 0);
 }
 
 FUNC(LS_Plat_UpByValue)
 // Plat_UpByValue (tag, speed, delay, height)
 {
-	return EV_DoPlat (arg0, ln, DPlat::platUpByValue, FRACUNIT*arg3*8, SPEED(arg1), TICS(arg2), 0, 0);
+	return EV_DoPlat (arg0, ln, DPlat::platUpByValue,(int)( FRACUNIT*arg3*8),(int)( SPEED(arg1)), TICS(arg2), 0, 0);
 }
 
 FUNC(LS_Plat_UpWaitDownStay)
 // Plat_UpWaitDownStay (tag, speed, delay)
 {
-	return EV_DoPlat (arg0, ln, DPlat::platUpWaitDownStay, 0, SPEED(arg1), TICS(arg2), 0, 0);
+	return EV_DoPlat (arg0, ln, DPlat::platUpWaitDownStay, 0,(int)( SPEED(arg1)), TICS(arg2), 0, 0);
 }
 
 FUNC(LS_Plat_UpNearestWaitDownStay)
 // Plat_UpNearestWaitDownStay (tag, speed, delay)
 {
-	return EV_DoPlat (arg0, ln, DPlat::platUpNearestWaitDownStay, 0, SPEED(arg1), TICS(arg2), 0, 0);
+	return EV_DoPlat (arg0, ln, DPlat::platUpNearestWaitDownStay, 0,(int)( SPEED(arg1)), TICS(arg2), 0, 0);
 }
 
 FUNC(LS_Plat_RaiseAndStayTx0)
@@ -802,13 +802,13 @@ FUNC(LS_Plat_RaiseAndStayTx0)
 	}
 
 
-	return EV_DoPlat (arg0, ln, type, 0, SPEED(arg1), 0, 0, 1);
+	return EV_DoPlat (arg0, ln, type, 0,(int)( SPEED(arg1)), 0, 0, 1);
 }
 
 FUNC(LS_Plat_UpByValueStayTx)
 // Plat_UpByValueStayTx (tag, speed, height)
 {
-	return EV_DoPlat (arg0, ln, DPlat::platUpByValueStay, FRACUNIT*arg2*8, SPEED(arg1), 0, 0, 2);
+	return EV_DoPlat (arg0, ln, DPlat::platUpByValueStay,(int)( FRACUNIT*arg2*8),(int)( SPEED(arg1)), 0, 0, 2);
 }
 
 FUNC(LS_Plat_ToggleCeiling)
@@ -841,7 +841,7 @@ FUNC(LS_Generic_Lift)
 			break;
 	}
 
-	return EV_DoPlat (arg0, ln, type, arg4*8*FRACUNIT, SPEED(arg1), OCTICS(arg2), 0, 0);
+	return EV_DoPlat (arg0, ln, type,(int)( arg4*8*FRACUNIT),(int)( SPEED(arg1)), OCTICS(arg2), 0, 0);
 }
 
 FUNC(LS_Exit_Normal)
@@ -2267,7 +2267,7 @@ FUNC(LS_Sector_SetLink)
 {
 	// [BB] The server has to tell the clients to call SetWallScroller.
 	if( NETWORK_GetState() == NETSTATE_SERVER )
-		SERVERCOMMANDS_SetWallScroller( id, sidechoice, dx, dy, Where );
+		SERVERCOMMANDS_SetWallScroller( id, sidechoice,(LONG)( dx),(LONG)( dy), Where );
 
 	Where &=7;
 	if (Where == 0) return;
@@ -2375,7 +2375,7 @@ FUNC(LS_Scroll_Wall)
 {
 	// [BB] The server has to tell the clients to call SetScroller.
 	if( NETWORK_GetState() == NETSTATE_SERVER )
-		SERVERCOMMANDS_SetScroller(type, dx, dy, tag);
+		SERVERCOMMANDS_SetScroller(type,(LONG)( dx),(LONG)( dy), tag);
 
 	TThinkerIterator<DScroller> iterator (STAT_SCROLLER);
 	DScroller *scroller;
@@ -2628,9 +2628,9 @@ FUNC(LS_Sector_SetFloorScale2)
 	int secnum = -1;
 
 	if (arg1)
-		arg1 = FixedDiv (FRACUNIT, arg1);
+		arg1 = (int)(FixedDiv (FRACUNIT, arg1));
 	if (arg2)
-		arg2 = FixedDiv (FRACUNIT, arg2);
+		arg2 = (int)(FixedDiv (FRACUNIT, arg2));
 
 	while ((secnum = P_FindSectorFromTag (arg0, secnum)) >= 0)
 	{
@@ -2652,9 +2652,9 @@ FUNC(LS_Sector_SetCeilingScale2)
 	int secnum = -1;
 
 	if (arg1)
-		arg1 = FixedDiv (FRACUNIT, arg1);
+		arg1 = (int)(FixedDiv (FRACUNIT, arg1));
 	if (arg2)
-		arg2 = FixedDiv (FRACUNIT, arg2);
+		arg2 = (int)(FixedDiv (FRACUNIT, arg2));
 
 	while ((secnum = P_FindSectorFromTag (arg0, secnum)) >= 0)
 	{

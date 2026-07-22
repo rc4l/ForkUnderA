@@ -63,7 +63,7 @@ static bool TryPunch(APlayerPawn *pmo, angle_t angle, int damage, fixed_t power)
 	AActor *linetarget;
 	int slope;
 
-	slope = P_AimLineAttack (pmo, angle, 2*MELEERANGE, &linetarget);
+	slope = (int)(P_AimLineAttack (pmo, angle, 2*MELEERANGE, &linetarget));
 	if (linetarget != NULL)
 	{
 		if (++pmo->special1 >= 3)
@@ -147,7 +147,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FPunchAttack)
 	pmo->special1 = 0;
 
 	AActor *linetarget;
-	int slope = P_AimLineAttack (pmo, pmo->angle, MELEERANGE, &linetarget);
+	int slope = (int)(P_AimLineAttack (pmo, pmo->angle, MELEERANGE, &linetarget));
 	P_LineAttack (pmo, pmo->angle, MELEERANGE, slope, damage, NAME_Melee, PClass::FindClass("PunchPuff"), true);
 	
 	// [BC] Apply spread.

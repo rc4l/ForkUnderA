@@ -560,7 +560,7 @@ sector_t *AActor::LinkToWorldForMapThing ()
 
 				// Get the exact distance to the line
 				divline_t dll, dlv;
-				fixed_t linelen = (fixed_t)sqrt((double)ldef->dx*ldef->dx + (double)ldef->dy*ldef->dy);
+				fixed_t linelen = (fixed_t)sqrt((double)((double)ldef->dx*double(ldef->dx) + (double)ldef->dy*double(ldef->dy)));
 
 				P_MakeDivline (ldef, &dll);
 
@@ -1249,8 +1249,8 @@ FPathTraverse::FPathTraverse (fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2, in
 		trace.dy = y2 - y1;
 	}
 
-	_x1 = (long long)x1 - bmaporgx;
-	_y1 = (long long)y1 - bmaporgy;
+	_x1 = (long long)((long long)x1 - bmaporgx);
+	_y1 = (long long)((long long)y1 - bmaporgy);
 	x1 -= bmaporgx;
 	y1 -= bmaporgy;
 	xt1 = int(_x1 >> MAPBLOCKSHIFT);
@@ -1258,8 +1258,8 @@ FPathTraverse::FPathTraverse (fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2, in
 
 	if (flags & PT_DELTA)
 	{
-		_x2 = _x1 + x2;
-		_y2 = _y1 + y2;
+		_x2 = (long long)(_x1 + x2);
+		_y2 = (long long)(_y1 + y2);
 		xt2 = int(_x2 >> MAPBLOCKSHIFT);
 		yt2 = int(_y2 >> MAPBLOCKSHIFT);
 		x2 = (int)_x2;
@@ -1267,8 +1267,8 @@ FPathTraverse::FPathTraverse (fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2, in
 	}
 	else
 	{
-		_x2 = (long long)x2 - bmaporgx;
-		_y2 = (long long)y2 - bmaporgy;
+		_x2 = (long long)((long long)x2 - bmaporgx);
+		_y2 = (long long)((long long)y2 - bmaporgy);
 		x2 -= bmaporgx;
 		y2 -= bmaporgy;
 		xt2 = int(_x2 >> MAPBLOCKSHIFT);
@@ -1340,8 +1340,8 @@ FPathTraverse::FPathTraverse (fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2, in
 	// Step through map blocks.
 	// Count is present to prevent a round off error
 	// from skipping the break statement.
-	mapx = xt1;
-	mapy = yt1;
+	mapx = (int)(xt1);
+	mapy = (int)(yt1);
 
 	bool compatible = (flags & PT_COMPATIBLE) && (i_compatflags & COMPATF_HITSCAN);
 		

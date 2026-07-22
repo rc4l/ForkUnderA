@@ -3671,7 +3671,7 @@ void ServerCommands::SpawnPlayer::Execute()
 		pActor->Translation = TRANSLATION( TRANSLATION_Players, ulPlayer );
 	}
 	pActor->angle = angle;
-	pActor->pitch = pActor->roll = 0;
+	pActor->pitch = fixed_t(pActor->roll = 0);
 	pActor->health = pPlayer->health;
 	pActor->FixedColormap = NOFIXEDCOLORMAP;
 
@@ -3911,7 +3911,7 @@ void ServerCommands::MovePlayer::Execute()
 	}
 
 	// [AK] Calculate how much this player's angle changed.
-	player->mo->AngleDelta = angle - player->mo->angle;
+	player->mo->AngleDelta = fixed_t(angle - player->mo->angle);
 
 	// Set the player's angle.
 	player->mo->angle = angle;
@@ -4527,7 +4527,7 @@ void ServerCommands::UpdatePlayerExtraData::Execute()
 		// [BB] The user can restore ZDoom's freelook limit.
 		const fixed_t pitchLimit = -ANGLE_1*( cl_oldfreelooklimit ? 32 : 56 );
 		if (pitch < pitchLimit)
-			pitch = pitchLimit;
+			pitch = (int)(pitchLimit);
 		if (pitch > ANGLE_1*56)
 			pitch = ANGLE_1*56;
 	}
@@ -6572,7 +6572,7 @@ void ServerCommands::SetSectorFloorPlane::Execute()
 	sector->floorplane.ChangeHeight( -delta );
 
 	// Call this to update various actor's within the sector.
-	P_ChangeSector( sector, false, -delta, 0, false );
+	P_ChangeSector( sector, false,(int)( -delta), 0, false );
 
 	// Finally, adjust textures.
 	sector->SetPlaneTexZ(sector_t::floor, sector->GetPlaneTexZ(sector_t::floor) + sector->floorplane.HeightDiff( lastPos ) );
@@ -6944,7 +6944,7 @@ void ServerCommands::SetLineTextureOffset::Execute()
 //
 void ServerCommands::SetLineTextureOffsetByID::Execute()
 {
-	P_ExecuteSpecial( Line_SetTextureOffset, NULL, NULL, false, lineID, XOffset, YOffset, side, flags );
+	P_ExecuteSpecial( Line_SetTextureOffset, NULL, NULL, false, lineID,(int)( XOffset),(int)( YOffset), side, flags );
 }
 
 //*****************************************************************************
@@ -6962,7 +6962,7 @@ void ServerCommands::SetLineTextureScale::Execute()
 //
 void ServerCommands::SetLineTextureScaleByID::Execute()
 {
-	P_ExecuteSpecial( Line_SetTextureScale, NULL, NULL, false, lineID, XScale, YScale, side, flags );
+	P_ExecuteSpecial( Line_SetTextureScale, NULL, NULL, false, lineID,(int)( XScale),(int)( YScale), side, flags );
 }
 
 //*****************************************************************************
@@ -8951,8 +8951,8 @@ static void client_SetPolyDoorSpeedPosition( BYTESTREAM_s *pByteStream )
 	if ( pPoly == NULL )
 		return;
 
-	lDeltaX = lX - pPoly->StartSpot.x;
-	lDeltaY = lY - pPoly->StartSpot.y;
+	lDeltaX = (LONG)(lX - pPoly->StartSpot.x);
+	lDeltaY = (LONG)(lY - pPoly->StartSpot.y);
 
 	pPoly->MovePolyobj( lDeltaX, lDeltaY );
 	
@@ -9060,8 +9060,8 @@ static void client_SetPolyobjPosition( BYTESTREAM_s *pByteStream )
 		return;
 	}
 
-	lDeltaX = lX - pPoly->StartSpot.x;
-	lDeltaY = lY - pPoly->StartSpot.y;
+	lDeltaX = (LONG)(lX - pPoly->StartSpot.x);
+	lDeltaY = (LONG)(lY - pPoly->StartSpot.y);
 
 //	Printf( "DeltaX: %d\nDeltaY: %d\n", lDeltaX, lDeltaY );
 

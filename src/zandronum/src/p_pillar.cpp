@@ -107,7 +107,7 @@ void DPillar::Serialize (FArchive &arc)
 // [BC]
 void DPillar::UpdateToClient( ULONG ulClient )
 {
-	SERVERCOMMANDS_DoPillar( m_Type, m_Sector, m_FloorSpeed, m_CeilingSpeed, m_FloorTarget, m_CeilingTarget, m_Crush, m_Hexencrush, m_PillarID, ulClient, SVCF_ONLYTHISCLIENT );
+	SERVERCOMMANDS_DoPillar( m_Type, m_Sector,(LONG)( m_FloorSpeed),(LONG)( m_CeilingSpeed),(LONG)( m_FloorTarget),(LONG)( m_CeilingTarget), m_Crush, m_Hexencrush, m_PillarID, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 // [BC]
@@ -143,7 +143,7 @@ void DPillar::SetFloorSpeed( LONG lSpeed )
 // [BB]
 LONG DPillar::GetFloorSpeed( )
 {
-	return m_FloorSpeed;
+	return (LONG)(m_FloorSpeed);
 }
 
 // [BC]
@@ -155,7 +155,7 @@ void DPillar::SetCeilingSpeed( LONG lSpeed )
 // [BB]
 LONG DPillar::GetCeilingSpeed( )
 {
-	return m_CeilingSpeed;
+	return (LONG)(m_CeilingSpeed);
 }
 
 // [BC]
@@ -167,7 +167,7 @@ void DPillar::SetFloorTarget( LONG lTarget )
 // [BB]
 LONG DPillar::GetFloorTarget( )
 {
-	return m_FloorTarget;
+	return (LONG)(m_FloorTarget);
 }
 
 // [BC]
@@ -179,7 +179,7 @@ void DPillar::SetCeilingTarget( LONG lTarget )
 // [BB]
 LONG DPillar::GetCeilingTarget( )
 {
-	return m_CeilingTarget;
+	return (LONG)(m_CeilingTarget);
 }
 
 LONG DPillar::GetCrush( void )
@@ -303,7 +303,7 @@ DPillar::DPillar (sector_t *sector, EPillar type, fixed_t speed,
 		}
 		else
 		{
-			newheight = sector->floorplane.ZatPoint (0, 0) - floordist;
+			newheight = sector->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) - floordist;
 			m_FloorTarget = sector->floorplane.PointToDist (0, 0, newheight);
 		}
 		if (ceilingdist == 0)
@@ -314,7 +314,7 @@ DPillar::DPillar (sector_t *sector, EPillar type, fixed_t speed,
 		}
 		else
 		{
-			newheight = sector->ceilingplane.ZatPoint (0, 0) + ceilingdist;
+			newheight = sector->ceilingplane.ZatPoint(fixed_t(0), fixed_t(0)) + ceilingdist;
 			m_CeilingTarget = sector->ceilingplane.PointToDist (0, 0, newheight);
 		}
 	}

@@ -65,7 +65,7 @@ class CommandDrawImage : public SBarInfoCommandFlowControl
 			// We must calculate this per frame in order to prevent glitches with cl_capfps true.
 			fixed_t frameAlpha = block->Alpha();
 			if(alpha != FRACUNIT)
-				frameAlpha = fixed_t(((double) block->Alpha() / (double) FRACUNIT) * ((double) alpha / (double) OPAQUE) * FRACUNIT);
+				frameAlpha = fixed_t(double(((double) block->Alpha() / (double) FRACUNIT) * ((double) alpha / (double) OPAQUE)) * double(FRACUNIT));
 			
 			if(flags & DI_DRAWINBOX)
 			{
@@ -98,7 +98,7 @@ class CommandDrawImage : public SBarInfoCommandFlowControl
 				w=(int) (texture->GetScaledWidthDouble()*spawnScaleX);
 				h=(int) (texture->GetScaledHeightDouble()*spawnScaleY);
 			}
-			statusBar->DrawGraphic(texture, imgx, imgy, block->XOffset(), block->YOffset(), frameAlpha, block->FullScreenOffsets(),
+			statusBar->DrawGraphic(texture, imgx, imgy, block->XOffset(), block->YOffset(), (int)(frameAlpha), block->FullScreenOffsets(),
 				translatable, false, offset, false, w, h);
 		}
 		void	Parse(FScanner &sc, bool fullScreenOffsets)
@@ -243,7 +243,7 @@ class CommandDrawImage : public SBarInfoCommandFlowControl
 				return;
 
 			texture = NULL;
-			alpha = FRACUNIT;
+			alpha = (int)(FRACUNIT);
 			if (applyscale)
 			{
 				spawnScaleX = spawnScaleY = 1.0f;
@@ -291,7 +291,7 @@ class CommandDrawImage : public SBarInfoCommandFlowControl
 					if (harmor->Slots[armorType] > 0 && harmor->SlotsIncrement[armorType] > 0)
 					{
 						//combine the alpha values
-						alpha = fixed_t(((double) alpha / (double) FRACUNIT) * ((double) MIN<fixed_t> (OPAQUE, Scale(harmor->Slots[armorType], OPAQUE, harmor->SlotsIncrement[armorType])) / (double) OPAQUE) * FRACUNIT);
+						alpha = (int)(fixed_t(double(((double) alpha / (double) FRACUNIT) * ((double) MIN<fixed_t> (OPAQUE, Scale(harmor->Slots[armorType], OPAQUE, harmor->SlotsIncrement[armorType])) / (double) OPAQUE)) * double(FRACUNIT)));
 						texture = statusBar->Images[image];
 					}
 					else
@@ -663,7 +663,7 @@ class CommandDrawSwitchableImage : public CommandDrawImage
 
 				// Since we're not going to call our parent's tick() method,
 				// be sure to set the alpha value properly.
-				alpha = FRACUNIT;
+				alpha = (int)(FRACUNIT);
 				return;
 			}
 			CommandDrawImage::Tick(block, statusBar, hudChanged);
@@ -1425,16 +1425,16 @@ class CommandDrawNumber : public CommandDrawString
 					AHexenArmor *harmor = statusBar->CPlayer->mo->FindInventory<AHexenArmor>();
 					if(harmor != NULL)
 					{
-						num = harmor->Slots[0] + harmor->Slots[1] +
-							harmor->Slots[2] + harmor->Slots[3] + harmor->Slots[4];
+						num = (int)((int)(harmor->Slots[0] + harmor->Slots[1] +
+							harmor->Slots[2] + harmor->Slots[3] + harmor->Slots[4]));
 					}
 					//Hexen counts basic armor also so we should too.
 					if(statusBar->armor != NULL)
 					{
-						num += FixedMul(statusBar->armor->SavePercent, 100*FRACUNIT);
+						num += (int)FixedMul(statusBar->armor->SavePercent, 100*FRACUNIT);
 					}
 					if(value == ARMORCLASS)
-						num /= (5*FRACUNIT);
+						num /= (int)(5*FRACUNIT);
 					else
 						num >>= FRACBITS;
 					break;
@@ -1694,8 +1694,8 @@ class CommandDrawSelectedInventory : public CommandDrawImage, private CommandDra
 				{
 					if(itemflash && itemflashFade)
 					{
-						fixed_t flashAlpha = fixed_t(((double) block->Alpha() / (double) FRACUNIT) * ((double) itemflashFade / (double) OPAQUE) * FRACUNIT);
-						statusBar->DrawGraphic(statusBar->Images[statusBar->invBarOffset + imgCURSOR], imgx-4, imgy+2, block->XOffset(), block->YOffset(), flashAlpha, block->FullScreenOffsets(),
+						fixed_t flashAlpha = fixed_t(double(((double) block->Alpha() / (double) FRACUNIT) * ((double) itemflashFade / (double) OPAQUE)) * double(FRACUNIT));
+						statusBar->DrawGraphic(statusBar->Images[statusBar->invBarOffset + imgCURSOR], imgx-4, imgy+2, block->XOffset(), block->YOffset(), (int)(flashAlpha), block->FullScreenOffsets(),
 							translatable, false, offset);
 					}
 					CommandDrawImage::Draw(block, statusBar);
@@ -1813,7 +1813,7 @@ class CommandDrawSelectedInventory : public CommandDrawImage, private CommandDra
 		static fixed_t	itemflashFade;
 };
 int CommandDrawSelectedInventory::artiflashTick = 4;
-int CommandDrawSelectedInventory::itemflashFade = FRACUNIT*3/4;
+fixed_t CommandDrawSelectedInventory::itemflashFade = FRACUNIT*3/4;
 
 void DSBarInfo::FlashItem(const PClass *itemtype)
 {
@@ -2211,7 +2211,7 @@ class CommandDrawInventoryBar : public SBarInfoCommand
 		
 			int bgalpha = block->Alpha();
 			if(translucent)
-				bgalpha = fixed_t((((double) block->Alpha() / (double) FRACUNIT) * ((double) HX_SHADOW / (double) FRACUNIT)) * FRACUNIT);
+				bgalpha = (int)(fixed_t(double((((double) block->Alpha() / (double) FRACUNIT) * ((double) HX_SHADOW / (double) FRACUNIT))) * double(FRACUNIT)));
 		
 			AInventory *item;
 			unsigned int i = 0;
@@ -2611,13 +2611,13 @@ class CommandDrawBar : public SBarInfoCommand
 			// {cx, cy, cr, cb}
 			fixed_t clip[4] = {0, 0, 0, 0};
 		
-			fixed_t sizeOfImage = (horizontal ? fg->GetScaledWidth()-border*2 : fg->GetScaledHeight()-border*2)<<FRACBITS;
+			fixed_t sizeOfImage = fixed_t((horizontal ? fg->GetScaledWidth()-border*2 : fg->GetScaledHeight()-border*2)<<FRACBITS);
 			clip[(!horizontal)|((horizontal ? !reverse : reverse)<<1)] = sizeOfImage - FixedMul(sizeOfImage, value);
 			// Draw background
 			if(border != 0)
 			{
 				for(unsigned int i = 0;i < 4;i++)
-					clip[i] += border<<FRACBITS;
+					clip[i] += fixed_t(border<<FRACBITS);
 		
 				if (bg != NULL && bg->GetScaledWidth() == fg->GetScaledWidth() && bg->GetScaledHeight() == fg->GetScaledHeight())
 					statusBar->DrawGraphic(bg, this->x, this->y, block->XOffset(), block->YOffset(), block->Alpha(), block->FullScreenOffsets(), false, false, 0, false, -1, -1, clip[0], clip[1], clip[2], clip[3]);
@@ -3616,7 +3616,7 @@ class CommandAlpha : public SBarInfoMainBlock
 		void	Parse(FScanner &sc, bool fullScreenOffsets)
 		{
 			sc.MustGetToken(TK_FloatConst);
-			alpha = fixed_t(FRACUNIT * sc.Float);
+			alpha = (int)(fixed_t(double(FRACUNIT) * double(sc.Float)));
 
 			// We don't want to allow all the options of a regular main block
 			// so skip to the SBarInfoCommandFlowControl.

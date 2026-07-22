@@ -17,16 +17,15 @@
 #include "computation/fixedmath.h"
 #include "xs_Float.h"
 
-// Overflow-clamped fixed-point division: like DivScale##x but returns FIXED_MIN/FIXED_MAX
-// instead of overflowing, and treats a zero divisor as an overflow.
+// [rc4l] Fixed-point division (widened to 64-bit fixed_t) that treats a zero divisor as an
+// overflow rather than crashing. The (a<<x)/b math is the tested zx::DivScale64 (with its
+// 32-bit fast-path and 128-bit wide path); a valid fixed_t result is already within
+// FIXED_MIN/FIXED_MAX, so no post-clamp is needed.
 #define ZX_MAKE_SAFEDIVSCALE(x) \
-	inline SDWORD SafeDivScale##x (SDWORD a, SDWORD b) \
+	inline fixed_t SafeDivScale##x (fixed_t a, fixed_t b) \
 	{ \
 		if (b == 0) return (a < 0) ? FIXED_MIN : FIXED_MAX; \
-		int64_t r = ((int64_t)a << (x)) / b; \
-		if (r < FIXED_MIN) return FIXED_MIN; \
-		if (r > FIXED_MAX) return FIXED_MAX; \
-		return (SDWORD)r; \
+		return zx::DivScale64(zx::raw(a), (x), zx::raw(b)); \
 	}
 ZX_MAKE_SAFEDIVSCALE(1)
 ZX_MAKE_SAFEDIVSCALE(2)
@@ -66,12 +65,12 @@ ZX_MAKE_SAFEDIVSCALE(32)
 #define FixedDiv SafeDivScale16
 
 // Write count fixed-point values stepping by delta, taking the integer (>>16) part.
-inline void qinterpolatedown16 (SDWORD *out, DWORD count, SDWORD val, SDWORD delta)
+inline void qinterpolatedown16 (SDWORD *out, DWORD count, fixed_t val, fixed_t delta)
 {
-	for (DWORD i = 0; i < count; i++) { out[i] = val >> 16; val += delta; }
+	for (DWORD i = 0; i < count; i++) { out[i] = (SDWORD)(val >> 16); val += delta; }
 }
 
-inline void qinterpolatedown16short (short *out, DWORD count, SDWORD val, SDWORD delta)
+inline void qinterpolatedown16short (short *out, DWORD count, fixed_t val, fixed_t delta)
 {
 	for (DWORD i = 0; i < count; i++) { out[i] = (short)(val >> 16); val += delta; }
 }
@@ -91,8 +90,10 @@ inline SDWORD ModDiv (SDWORD num, SDWORD den, SDWORD *dmval)
 }
 
 #define FLOAT2FIXED(f)		xs_Fix<16>::ToFix(f)
-#define FIXED2FLOAT(f)		((f) / float(65536))
-#define FIXED2DBL(f)		((f) / double(65536))
+// [rc4l] float(f) works in both modes: (float)int64 in the plain build, and Fixed's explicit
+// operator float in the strong-fixed build. So these need no per-mode variant.
+#define FIXED2FLOAT(f)		(float(f) / 65536.0f)
+#define FIXED2DBL(f)		(double(f) / 65536.0)
 
 #define ANGLE2DBL(f)		((f) * (90./ANGLE_90))
 #define ANGLE2FLOAT(f)		(float((f) * (90./ANGLE_90)))

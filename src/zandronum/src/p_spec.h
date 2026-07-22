@@ -105,7 +105,7 @@ private:
 
 // Factor to scale scrolling effect into mobj-carrying properties = 3/32.
 // (This is so scrolling floors and objects on them can move at same speed.)
-enum { CARRYFACTOR = (3*FRACUNIT >> 5) };
+enum { CARRYFACTOR = (3 << FRACBITS) >> 5 };
 
 // phares 3/20/98: added new model of Pushers for push/pull effects
 
@@ -132,8 +132,8 @@ public:
 		m_Angle = angle;
 
 		angle_t ang = ((angle_t)(angle<<24)) >> ANGLETOFINESHIFT;
-		m_Xmag = (magnitude * finecosine[ang]) >> FRACBITS;
-		m_Ymag = (magnitude * finesine[ang]) >> FRACBITS;
+		m_Xmag = (int)((magnitude * finecosine[ang]) >> FRACBITS);
+		m_Ymag = (int)((magnitude * finesine[ang]) >> FRACBITS);
 		m_Magnitude = magnitude;
 	}
 

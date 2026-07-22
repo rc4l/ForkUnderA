@@ -1192,7 +1192,7 @@ IMPLEMENT_CLASS (APlayerSpeedTrail)
 
 void APlayerSpeedTrail::Tick ()
 {
-	const int fade = OPAQUE*6/10/8;
+	const int fade = (const int)(OPAQUE*6/10/8);
 	if (alpha <= fade)
 	{
 		Destroy ();
@@ -1625,7 +1625,7 @@ void APowerDamage::ModifyDamage(int damage, FName damageType, int &newdamage, bo
 		}
 		if (pdf != NULL)
 		{
-			damage = newdamage = FixedMul(damage, *pdf);
+			damage = newdamage = (int)(FixedMul(damage, *pdf));
 			if (*pdf > 0 && damage == 0) damage = newdamage = 1;	// don't allow zero damage as result of an underflow
 			if (Owner != NULL && *pdf > FRACUNIT) S_Sound(Owner, 5, ActiveSound, 1.0f, ATTN_NONE);
 		}
@@ -1703,7 +1703,7 @@ void APowerProtection::ModifyDamage(int damage, FName damageType, int &newdamage
 
 		if (pdf != NULL)
 		{
-			damage = newdamage = FixedMul(damage, *pdf);
+			damage = newdamage = (int)(FixedMul(damage, *pdf));
 			if (Owner != NULL && *pdf < FRACUNIT) S_Sound(Owner, CHAN_AUTO, ActiveSound, 1.0f, ATTN_NONE, true);	// [EP] Inform the clients.
 		}
 	}
@@ -1771,7 +1771,7 @@ void APowerRegeneration::DoEffect()
 
 	if (Owner != NULL && Owner->health > 0 && (level.time & 31) == 0)
 	{
-		if (P_GiveBody(Owner, Strength/FRACUNIT))
+		if (P_GiveBody(Owner,(int)( Strength/FRACUNIT)))
 		{
 			// [BC] If we're the server, send out the health change.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )

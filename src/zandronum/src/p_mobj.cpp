@@ -33,6 +33,7 @@
 #include "network.h"
 
 #include "templates.h"
+#include "features/fixed64/computation/dist_compute.h"
 #include "i_system.h"
 #include "m_random.h"
 #include "doomdef.h"
@@ -1601,12 +1602,12 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 				fixed_t x, y, z;
 				SQWORD num, den;
 
-				den = (SQWORD)line->dx*line->dx + (SQWORD)line->dy*line->dy;
+				den = (SQWORD)((SQWORD)line->dx*line->dx + (SQWORD)line->dy*line->dy);
 				if (den != 0)
 				{
 					SDWORD frac;
 
-					num = (SQWORD)(mo->x-line->v1->x)*line->dx+(SQWORD)(mo->y-line->v1->y)*line->dy;
+					num = (SQWORD)((SQWORD)(mo->x-line->v1->x)*line->dx+(SQWORD)(mo->y-line->v1->y)*line->dy);
 					if (num <= 0)
 					{
 						frac = 0;
@@ -1957,7 +1958,6 @@ bool AActor::CanSeek(AActor *target) const
 bool P_SeekerMissile (AActor *actor, angle_t thresh, angle_t turnMax, bool precise, bool usecurspeed)
 {
 	int dir;
-	int dist;
 	angle_t delta;
 	angle_t angle;
 	AActor *target;
@@ -1969,7 +1969,7 @@ bool P_SeekerMissile (AActor *actor, angle_t thresh, angle_t turnMax, bool preci
 		return ( false );
 	}
 
-	speed = !usecurspeed ? actor->Speed : xs_CRoundToInt(TVector3<double>(actor->velx, actor->vely, actor->velz).Length());
+	speed = !usecurspeed ? actor->Speed : xs_CRoundToInt(TVector3<double>((double)(actor->velx),(double)( actor->vely),(double)( actor->velz)).Length());
 	target = actor->tracer;
 	if (target == NULL || !actor->CanSeek(target))
 	{
@@ -2013,13 +2013,13 @@ bool P_SeekerMissile (AActor *actor, angle_t thresh, angle_t turnMax, bool preci
 			if (actor->z + actor->height < target->z ||
 				target->z + target->height < actor->z)
 			{ // Need to seek vertically
-				dist = P_AproxDistance (target->x - actor->x, target->y - actor->y);
-				dist = dist / speed;
-				if (dist < 1)
-				{
-					dist = 1;
-				}
-				actor->velz = ((target->z+target->height/2) - (actor->z+actor->height/2)) / dist;
+				// [rc4l] dist stays full-width fixed_t: `int dist` truncated P_AproxDistance's now-
+				// 64-bit result for targets >~32k units away, collapsing the tic count to 1 and
+				// slamming velz to the whole Z gap. See features/fixed64/computation/dist_compute.h.
+				actor->velz = zx::ComputeSeekerVelZ (
+					(int64_t)(P_AproxDistance (target->x - actor->x, target->y - actor->y)),
+					(int64_t)(speed),
+					(int64_t)((target->z + target->height/2) - (actor->z + actor->height/2)));
 			}
 		}
 	}
@@ -2028,7 +2028,7 @@ bool P_SeekerMissile (AActor *actor, angle_t thresh, angle_t turnMax, bool preci
 		angle_t pitch = 0;
 		if (!(actor->flags3 & (MF3_FLOORHUGGER|MF3_CEILINGHUGGER)))
 		{ // Need to seek vertically
-			double dist = MAX(1.0, FVector2(target->x - actor->x, target->y - actor->y).Length());
+			double dist = MAX(1.0, FVector2((double)(target->x - actor->x),(double)( target->y - actor->y)).Length());
 			// Aim at a player's eyes and at the middle of the actor for everything else.
 			fixed_t aimheight = target->height/2;
 			if (target->IsKindOf(RUNTIME_CLASS(APlayerPawn)))
@@ -2220,14 +2220,14 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 		{
 			if (xspeed > maxmove)
 			{
-				steps = 1 + xspeed / maxmove;
+				steps = (int)(1 + xspeed / maxmove);
 			}
 		}
 		else
 		{
 			if (yspeed > maxmove)
 			{
-				steps = 1 + yspeed / maxmove;
+				steps = (int)(1 + yspeed / maxmove);
 			}
 		}
 	}
@@ -2868,14 +2868,14 @@ void P_MonsterFallingDamage (AActor *mo)
 	if (mo->floorsector->Flags & SECF_NOFALLINGDAMAGE)
 		return;
 
-	vel = abs(mo->velz);
+	vel = (int)(abs(mo->velz));
 	if (vel > 35*FRACUNIT)
 	{ // automatic death
 		damage = TELEFRAG_DAMAGE;
 	}
 	else
 	{
-		damage = ((vel - (23*FRACUNIT))*6)>>FRACBITS;
+		damage = (int)(((vel - (23*FRACUNIT))*6)>>FRACBITS);
 	}
 	damage = TELEFRAG_DAMAGE;	// always kill 'em
 	P_DamageMobj (mo, NULL, NULL, damage, NAME_Falling);
@@ -3988,7 +3988,7 @@ void AActor::Tick ()
 	if (state == NULL)
 	{
 		Printf("Actor of type %s at (%f,%f) left without a state\n", GetClass()->TypeName.GetChars(),
-			x/65536., y/65536.);
+			double(x)/65536., double(y)/65536.);
 		Destroy();
 		return;
 	}
@@ -4102,7 +4102,7 @@ void AActor::Tick ()
 				AActor * th = Spawn("GrenadeSmokeTrail", 
 					x - FixedMul (finecosine[(moveangle)>>ANGLETOFINESHIFT], radius*2) + (pr_rockettrail()<<10),
 					y - FixedMul (finesine[(moveangle)>>ANGLETOFINESHIFT], radius*2) + (pr_rockettrail()<<10),
-					z - (height>>3) * (velz>>16) + (2*height)/3, ALLOW_REPLACE);
+					z - (height>>3) * (int)(velz>>16) + (2*height)/3, ALLOW_REPLACE);
 				if (th)
 				{
 					th->tics -= pr_rockettrail()&3;
@@ -5549,7 +5549,7 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	}
 
 	mobj->angle = spawn_angle;
-	mobj->pitch = mobj->roll = 0;
+	mobj->pitch = fixed_t(mobj->roll = 0);
 	mobj->health = p->health;
 	mobj->FixedColormap = NOFIXEDCOLORMAP;
 
@@ -6328,7 +6328,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 
 	// [BOF] Save UDMF variables for map resets.
 	mobj->SavedPitch = mobj->pitch;
-	mobj->SavedRoll = mobj->roll;
+	mobj->SavedRoll = fixed_t(mobj->roll);
 	mobj->SavedScaleX = mobj->scaleX;
 	mobj->SavedScaleY = mobj->scaleY;
 	mobj->SavedRenderStyle = mobj->RenderStyle;
@@ -6983,7 +6983,7 @@ foundone:
 
 		// [BC] Tell clients to play the sound.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SoundPoint( thing->x, thing->y, thing->z, CHAN_ITEM, smallsplash ? S_GetName( splash->SmallSplashSound ) : S_GetName( splash->NormalSplashSound ), 1, ATTN_IDLE );
+			SERVERCOMMANDS_SoundPoint((LONG)( thing->x),(LONG)( thing->y),(LONG)( thing->z), CHAN_ITEM, smallsplash ? S_GetName( splash->SmallSplashSound ) : S_GetName( splash->NormalSplashSound ), 1, ATTN_IDLE );
 	}
 
 	// Don't let deep water eat missiles
@@ -7249,7 +7249,7 @@ AActor *P_SpawnMissileXYZ (fixed_t x, fixed_t y, fixed_t z,
 	// missile?
 	// Answer: No, because this way, you can set up sets of parallel missiles.
 
-	FVector3 velocity(dest->x - source->x, dest->y - source->y, dest->z - source->z);
+	FVector3 velocity((double)(dest->x - source->x),(double)( dest->y - source->y),(double)( dest->z - source->z));
 	// Floor and ceiling huggers should never have a vertical component to their velocity
 	if (th->flags3 & (MF3_FLOORHUGGER|MF3_CEILINGHUGGER))
 	{
@@ -7258,7 +7258,7 @@ AActor *P_SpawnMissileXYZ (fixed_t x, fixed_t y, fixed_t z,
 	// [RH] Adjust the trajectory if the missile will go over the target's head.
 	else if (z - source->z >= dest->height)
 	{
-		velocity.Z += dest->height - z + source->z;
+		velocity.Z += (double)(dest->height - z + source->z);
 	}
 	velocity.Resize (speed);
 	th->velx = (fixed_t)(velocity.X);
@@ -7464,7 +7464,7 @@ AActor *P_SpawnPlayerMissile (AActor *source, fixed_t x, fixed_t y, fixed_t z,
 	{
 		// Keep exactly the same angle and pitch as the player's own aim
 		an = angle;
-		pitch = source->pitch;
+		pitch = (angle_t)(source->pitch);
 		linetarget = NULL;
 	}
 	else // see which target is to be aimed at
@@ -7478,7 +7478,7 @@ AActor *P_SpawnPlayerMissile (AActor *source, fixed_t x, fixed_t y, fixed_t z,
 		do
 		{
 			an = angle + angdiff[i];
-			pitch = P_AimLineAttack (source, an, linetargetrange, &linetarget, vrange);
+			pitch = (angle_t)(P_AimLineAttack (source, an, linetargetrange, &linetarget, vrange));
 	
 			if (source->player != NULL &&
 				!nofreeaim &&
@@ -7535,13 +7535,13 @@ AActor *P_SpawnPlayerMissile (AActor *source, fixed_t x, fixed_t y, fixed_t z,
 	vz = -finesine[pitch>>ANGLETOFINESHIFT];
 	speed = MissileActor->Speed;
 
-	FVector3 vec(vx, vy, vz);
+	FVector3 vec((double)(vx),(double)( vy),(double)( vz));
 
 	if (MissileActor->flags3 & (MF3_FLOORHUGGER|MF3_CEILINGHUGGER))
 	{
 		vec.Z = 0;
 	}
-	vec.Resize(speed);
+	vec.Resize((double)(speed));
 	MissileActor->velx = (fixed_t)vec.X;
 	MissileActor->vely = (fixed_t)vec.Y;
 	MissileActor->velz = (fixed_t)vec.Z;
@@ -7779,7 +7779,7 @@ int AActor::TakeSpecialDamage (AActor *inflictor, AActor *source, int damage, FN
 
 int AActor::GibHealth()
 {
-	return -abs(GetClass()->Meta.GetMetaInt (AMETA_GibHealth, FixedMul(SpawnHealth(), gameinfo.gibfactor)));
+	return -abs(GetClass()->Meta.GetMetaInt (AMETA_GibHealth, (int)(FixedMul(SpawnHealth(), gameinfo.gibfactor))));
 }
 
 void AActor::Crash()

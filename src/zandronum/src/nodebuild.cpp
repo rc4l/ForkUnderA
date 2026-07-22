@@ -125,7 +125,7 @@ void FNodeBuilder::BuildTree ()
 {
 	fixed_t bbox[4];
 
-	C_InitTicker ("Building BSP", FRACUNIT);
+	C_InitTicker ("Building BSP",(unsigned int)( FRACUNIT));
 	HackSeg = DWORD_MAX;
 	HackMate = DWORD_MAX;
 	CreateNode (0, Segs.Size(), bbox);
@@ -639,15 +639,15 @@ int FNodeBuilder::Heuristic (node_t &node, DWORD set, bool honorNoSplit)
 			{
 				FPrivVert *v1 = &Vertices[test->v1];
 				FPrivVert *v2 = &Vertices[test->v2];
-				double x = v1->x, y = v1->y;
-				x += frac * (v2->x - x);
-				y += frac * (v2->y - y);
-				if (fabs(x - v1->x) < VERTEX_EPSILON+1 && fabs(y - v1->y) < VERTEX_EPSILON+1)
+				double x = (double)(v1->x), y = (double)(v1->y);
+				x += frac * (double(v2->x) - x);
+				y += frac * (double(v2->y) - y);
+				if (fabs(x - double(v1->x)) < VERTEX_EPSILON+1 && fabs(y - double(v1->y)) < VERTEX_EPSILON+1)
 				{
 					D(Printf("Splitter will produce same start vertex as seg %d\n", i));
 					return -1;
 				}
-				if (fabs(x - v2->x) < VERTEX_EPSILON+1 && fabs(y - v2->y) < VERTEX_EPSILON+1)
+				if (fabs(x - double(v2->x)) < VERTEX_EPSILON+1 && fabs(y - double(v2->y)) < VERTEX_EPSILON+1)
 				{
 					D(Printf("Splitter will produce same end vertex as seg %d\n", i));
 					return -1;

@@ -63,6 +63,7 @@
 #include "gl/utility/gl_geometric.h"
 // [AK] New #includes.
 #include "c_console.h"
+#include "features/fixed64/computation/angle_interp_compute.h"
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -302,7 +303,7 @@ bool GLPortal::Start(bool usestencil, bool doquery)
 
 inline void GLPortal::ClearClipper()
 {
-	fixed_t angleOffset = viewangle - savedviewangle;
+	fixed_t angleOffset = fixed_t(viewangle - savedviewangle);
 
 	clipper.Clear();
 
@@ -320,7 +321,7 @@ inline void GLPortal::ClearClipper()
 
 		if (startAngle-endAngle>0) 
 		{
-			clipper.SafeRemoveClipRangeRealAngles(startAngle + angleOffset, endAngle + angleOffset);
+			clipper.SafeRemoveClipRangeRealAngles(startAngle + (angle_t)angleOffset, endAngle + (angle_t)angleOffset);
 		}
 	}
 
@@ -624,7 +625,10 @@ void GLSkyboxPortal::DrawContents()
 	viewx = origin->PrevX + FixedMul(ticFracToUse, origin->x - origin->PrevX);
 	viewy = origin->PrevY + FixedMul(ticFracToUse, origin->y - origin->PrevY);
 	viewz = origin->PrevZ + FixedMul(ticFracToUse, origin->z - origin->PrevZ);
-	viewangle += origin->PrevAngle + FixedMul(ticFracToUse, origin->angle - origin->PrevAngle);
+	// [rc4l] Same wrapping-BAM interpolation as R_InterpolateView -- the delta must be read back
+	// as a signed int32 before the widened multiply, or a rotating portal overshoots on right
+	// turns (see features/fixed64/computation/angle_interp_compute.h).
+	viewangle += zx::InterpolateAngleBAM(origin->PrevAngle, origin->angle, (int64_t)(ticFracToUse));
 
 	// Don't let the viewpoint be too close to a floor or ceiling!
 	fixed_t floorh = origin->Sector->floorplane.ZatPoint(origin->x, origin->y);
@@ -776,7 +780,7 @@ void GLPlaneMirrorPortal::DrawContents()
 	fixed_t planez = origin->ZatPoint(viewx, viewy);
 	viewz = 2*planez - viewz;
 	GLRenderer->mViewActor = NULL;
-	PlaneMirrorMode = ksgn(origin->c);
+	PlaneMirrorMode = ksgn((int)(origin->c));
 
 	validcount++;
 
@@ -939,7 +943,7 @@ int GLMirrorPortal::ClipPoint(fixed_t x, fixed_t y)
 // are 2 problems with it:
 //
 // 1. Setting this up completely negates any performance gains.
-// 2. It doesn't work with a 360° field of view (as when you are looking up.)
+// 2. It doesn't work with a 360ï¿½ field of view (as when you are looking up.)
 //
 //
 // So the brute force mechanism is just as good.

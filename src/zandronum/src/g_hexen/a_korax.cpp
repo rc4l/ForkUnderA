@@ -41,14 +41,14 @@ const int KORAX_DELTAANGLE			= 85*ANGLE_1;
 const int KORAX_ARM_EXTENSION_SHORT	= 40;
 const int KORAX_ARM_EXTENSION_LONG	= 55;
 
-const int KORAX_ARM1_HEIGHT			= 108*FRACUNIT;
-const int KORAX_ARM2_HEIGHT			= 82*FRACUNIT;
-const int KORAX_ARM3_HEIGHT			= 54*FRACUNIT;
-const int KORAX_ARM4_HEIGHT			= 104*FRACUNIT;
-const int KORAX_ARM5_HEIGHT			= 86*FRACUNIT;
-const int KORAX_ARM6_HEIGHT			= 53*FRACUNIT;
+const int KORAX_ARM1_HEIGHT			= (const int)(108*FRACUNIT);
+const int KORAX_ARM2_HEIGHT			= (const int)(82*FRACUNIT);
+const int KORAX_ARM3_HEIGHT			= (const int)(54*FRACUNIT);
+const int KORAX_ARM4_HEIGHT			= (const int)(104*FRACUNIT);
+const int KORAX_ARM5_HEIGHT			= (const int)(86*FRACUNIT);
+const int KORAX_ARM6_HEIGHT			= (const int)(53*FRACUNIT);
 
-const int KORAX_BOLT_HEIGHT			= 48*FRACUNIT;
+const int KORAX_BOLT_HEIGHT			= (const int)(48*FRACUNIT);
 const int KORAX_BOLT_LIFETIME		= 3;
 
 
@@ -462,8 +462,8 @@ void A_KSpiritSeeker (AActor *actor, angle_t thresh, angle_t turnMax)
 				deltaZ = -15*FRACUNIT;
 			}
 		}
-		dist = P_AproxDistance (target->x-actor->x, target->y-actor->y);
-		dist = dist/actor->Speed;
+		dist = (int)(P_AproxDistance (target->x-actor->x, target->y-actor->y));
+		dist = (int)(dist/actor->Speed);
 		if (dist < 1)
 		{
 			dist = 1;
@@ -618,8 +618,8 @@ AActor *P_SpawnKoraxMissile (fixed_t x, fixed_t y, fixed_t z,
 	an >>= ANGLETOFINESHIFT;
 	th->velx = FixedMul (th->Speed, finecosine[an]);
 	th->vely = FixedMul (th->Speed, finesine[an]);
-	dist = P_AproxDistance (dest->x - x, dest->y - y);
-	dist = dist/th->Speed;
+	dist = (int)(P_AproxDistance (dest->x - x, dest->y - y));
+	dist = (int)(dist/th->Speed);
 	if (dist < 1)
 	{
 		dist = 1;

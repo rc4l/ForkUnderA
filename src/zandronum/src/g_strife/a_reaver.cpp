@@ -27,7 +27,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_ReaverRanged)
 		A_FaceTarget (self);
 		S_Sound (self, CHAN_WEAPON, "reaver/attack", 1, ATTN_NORM, true);	// [BC] Inform the clients.
 		bangle = self->angle;
-		pitch = P_AimLineAttack (self, bangle, MISSILERANGE);
+		pitch = (int)(P_AimLineAttack (self, bangle, MISSILERANGE));
 
 		for (int i = 0; i < 3; ++i)
 		{

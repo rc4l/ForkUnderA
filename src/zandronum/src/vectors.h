@@ -445,7 +445,7 @@ struct TVector3
 
 	TVector3 operator- (const TVector3 &other) const
 	{
-		return TVector3(X - other.X, Y - other.Y, Z - other.Z);
+		return TVector3(double(X - other.X), double(Y - other.Y), double(Z - other.Z));
 	}
 
 	// Add a 2D vector to this 3D vector, leaving Z unchanged.

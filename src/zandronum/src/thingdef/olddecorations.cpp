@@ -448,7 +448,7 @@ static void ParseInsideDecoration (Baggage &bag, AActor *defaults,
 		else if (sc.Compare ("Alpha"))
 		{
 			sc.MustGetFloat ();
-			defaults->alpha = int(clamp (sc.Float, 0.0, 1.0) * OPAQUE);
+			defaults->alpha = int(double(clamp (sc.Float, 0.0, 1.0)) * double(OPAQUE));
 		}
 		else if (sc.Compare ("Scale"))
 		{
@@ -463,22 +463,22 @@ static void ParseInsideDecoration (Baggage &bag, AActor *defaults,
 		else if (sc.Compare ("Radius"))
 		{
 			sc.MustGetFloat ();
-			defaults->radius = int(sc.Float * FRACUNIT);
+			defaults->radius = int(double(sc.Float) * double(FRACUNIT));
 		}
 		else if (sc.Compare ("Height"))
 		{
 			sc.MustGetFloat ();
-			defaults->height = int(sc.Float * FRACUNIT);
+			defaults->height = int(double(sc.Float) * double(FRACUNIT));
 		}
 		else if (def == DEF_BreakableDecoration && sc.Compare ("DeathHeight"))
 		{
 			sc.MustGetFloat ();
-			extra.DeathHeight = int(sc.Float * FRACUNIT);
+			extra.DeathHeight = int(double(sc.Float) * double(FRACUNIT));
 		}
 		else if (def == DEF_BreakableDecoration && sc.Compare ("BurnHeight"))
 		{
 			sc.MustGetFloat ();
-			extra.BurnHeight = int(sc.Float * FRACUNIT);
+			extra.BurnHeight = int(double(sc.Float) * double(FRACUNIT));
 		}
 		else if (def == DEF_BreakableDecoration && sc.Compare ("Health"))
 		{

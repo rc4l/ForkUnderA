@@ -259,15 +259,15 @@ public:
 	int GetWidth () { return Width; }
 	int GetHeight () { return Height; }
 
-	int GetScaledWidth () { int foo = (Width << 17) / xScale; return (foo >> 1) + (foo & 1); }
-	int GetScaledHeight () { int foo = (Height << 17) / yScale; return (foo >> 1) + (foo & 1); }
-	double GetScaledWidthDouble () { return (Width * 65536.) / xScale; }
-	double GetScaledHeightDouble () { return (Height * 65536.) / yScale; }
+	int GetScaledWidth () { int foo = (Width << 17) / (int)xScale; return (foo >> 1) + (foo & 1); }
+	int GetScaledHeight () { int foo = (Height << 17) / (int)yScale; return (foo >> 1) + (foo & 1); }
+	double GetScaledWidthDouble () { return (Width * 65536.) / double(xScale); }
+	double GetScaledHeightDouble () { return (Height * 65536.) / double(yScale); }
 
-	int GetScaledLeftOffset () { int foo = (LeftOffset << 17) / xScale; return (foo >> 1) + (foo & 1); }
-	int GetScaledTopOffset () { int foo = (TopOffset << 17) / yScale; return (foo >> 1) + (foo & 1); }
-	double GetScaledLeftOffsetDouble() { return (LeftOffset * 65536.) / xScale; }
-	double GetScaledTopOffsetDouble() { return (TopOffset * 65536.) / yScale; }
+	int GetScaledLeftOffset () { int foo = (LeftOffset << 17) / (int)xScale; return (foo >> 1) + (foo & 1); }
+	int GetScaledTopOffset () { int foo = (TopOffset << 17) / (int)yScale; return (foo >> 1) + (foo & 1); }
+	double GetScaledLeftOffsetDouble() { return (LeftOffset * 65536.) / double(xScale); }
+	double GetScaledTopOffsetDouble() { return (TopOffset * 65536.) / double(yScale); }
 
 	virtual void SetFrontSkyLayer();
 

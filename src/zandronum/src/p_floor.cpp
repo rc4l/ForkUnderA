@@ -116,7 +116,7 @@ void DFloor::Serialize (FArchive &arc)
 // [BC]
 void DElevator::UpdateToClient( ULONG ulClient )
 {
-	SERVERCOMMANDS_DoElevator( m_Type, m_Sector, m_Speed, m_Direction, m_FloorDestDist, m_CeilingDestDist, m_ElevatorID, ulClient, SVCF_ONLYTHISCLIENT );
+	SERVERCOMMANDS_DoElevator( m_Type, m_Sector,(LONG)( m_Speed), m_Direction,(LONG)( m_FloorDestDist),(LONG)( m_CeilingDestDist), m_ElevatorID, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 // [BC]
@@ -333,7 +333,7 @@ void DFloor::Tick ()
 void DFloor::UpdateToClient( ULONG ulClient )
 {
 	if ( ( m_Type != buildStair ) && ( m_Type != waitStair ) && ( m_Type != resetStair ) )
-		SERVERCOMMANDS_DoFloor( m_Type, m_Sector, m_Direction, m_Speed, m_FloorDestDist, m_Crush, m_Hexencrush, m_FloorID, ulClient, SVCF_ONLYTHISCLIENT );
+		SERVERCOMMANDS_DoFloor( m_Type, m_Sector, m_Direction,(LONG)( m_Speed),(LONG)( m_FloorDestDist), m_Crush, m_Hexencrush, m_FloorID, ulClient, SVCF_ONLYTHISCLIENT );
 	else
 		SERVERCOMMANDS_BuildStair( m_Type, m_Sector, m_Direction, m_Speed, m_FloorDestDist, m_Crush, m_Hexencrush, m_ResetCount, m_Delay, m_PauseTime, m_StepTime, m_PerStepTime, m_FloorID, ulClient, SVCF_ONLYTHISCLIENT );
 	SERVERCOMMANDS_StartFloorSound( m_FloorID );
@@ -450,7 +450,7 @@ fixed_t DFloor::GetOrgDist( void )
 
 void DFloor::SetOrgDist( fixed_t OrgDist )
 {
-	m_OrgDist = OrgDist;
+	m_OrgDist = (int)(OrgDist);
 }
 
 LONG DFloor::GetDirection( void )
@@ -569,7 +569,7 @@ manual_floor:
 		floor->m_Hexencrush = hexencrush;
 		floor->m_Speed = speed;
 		floor->m_ResetCount = 0;				// [RH]
-		floor->m_OrgDist = sec->floorplane.d;	// [RH]
+		floor->m_OrgDist = (int)(sec->floorplane.d);	// [RH]
 
 		// [BC] Assign the floor's network ID. However, don't do this on the client end.
 		if ( NETWORK_GetState() == NETSTATE_SERVER )
@@ -606,7 +606,7 @@ manual_floor:
 			floor->m_Speed = height;
 		case DFloor::floorLowerByValue:
 			floor->m_Direction = -1;
-			newheight = sec->floorplane.ZatPoint (0, 0) - height;
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) - height;
 			floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, newheight);
 			break;
 
@@ -614,7 +614,7 @@ manual_floor:
 			floor->m_Speed = height;
 		case DFloor::floorRaiseByValue:
 			floor->m_Direction = 1;
-			newheight = sec->floorplane.ZatPoint (0, 0) + height;
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + height;
 			floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, newheight);
 			break;
 
@@ -677,7 +677,7 @@ manual_floor:
 
 		case DFloor::floorLowerByTexture:
 			floor->m_Direction = -1;
-			newheight = sec->floorplane.ZatPoint (0, 0) - sec->FindShortestTextureAround ();
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) - sec->FindShortestTextureAround ();
 			floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, newheight);
 			break;
 
@@ -694,13 +694,13 @@ manual_floor:
 			//		since the code is identical to what was here. (Oddly
 			//		enough, BOOM preserved the code here even though it
 			//		also had this function.)
-			newheight = sec->floorplane.ZatPoint (0, 0) + sec->FindShortestTextureAround ();
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + sec->FindShortestTextureAround ();
 			floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, newheight);
 			break;
 
 		case DFloor::floorRaiseAndChange:
 			floor->m_Direction = 1;
-			newheight = sec->floorplane.ZatPoint (0, 0) + height;
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + height;
 			floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, newheight);
 			if (line != NULL)
 			{
@@ -756,7 +756,7 @@ manual_floor:
 		// [BC] If we're the server, tell clients to create the floor.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			SERVERCOMMANDS_DoFloor( floortype, &sectors[secnum], floor->m_Direction, floor->m_Speed, floor->m_FloorDestDist, floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
+			SERVERCOMMANDS_DoFloor( floortype, &sectors[secnum], floor->m_Direction,(LONG)( floor->m_Speed),(LONG)( floor->m_FloorDestDist), floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
 			SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
 		}
 
@@ -914,7 +914,7 @@ bool EV_BuildStairs (int tag, DFloor::EStair type, line_t *line,
 	if (speed == 0)
 		return false;
 
-	persteptime = FixedDiv (stairsize, speed) >> FRACBITS;
+	persteptime = (int)(FixedDiv (stairsize, speed) >> FRACBITS);
 
 	int (* FindSector) (int tag, int start)  =
 		(i_compatflags & COMPATF_STAIRINDEX)? P_FindSectorFromTagLinear : P_FindSectorFromTag;
@@ -956,7 +956,7 @@ manual_stair:
 		stairstep = stairsize * floor->m_Direction;
 		floor->m_Type = DFloor::buildStair;	//jff 3/31/98 do not leave uninited
 		floor->m_ResetCount = reset;	// [RH] Tics until reset (0 if never)
-		floor->m_OrgDist = sec->floorplane.d;	// [RH] Height to reset to
+		floor->m_OrgDist = (int)(sec->floorplane.d);	// [RH] Height to reset to
 		// [RH] Set up delay values
 		floor->m_Delay = delay;
 		floor->m_PauseTime = 0;
@@ -966,7 +966,7 @@ manual_stair:
 		floor->m_Hexencrush = false;
 
 		floor->m_Speed = speed;
-		height = sec->floorplane.ZatPoint (0, 0) + stairstep;
+		height = (int)(sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + stairstep);
 		floor->m_FloorDestDist = sec->floorplane.PointToDist (0, 0, height);
 
 		texture = sec->GetTexture(sector_t::floor);
@@ -997,7 +997,7 @@ manual_stair:
 
 				if ( (ok = (tsec != NULL)) )
 				{
-					height += stairstep;
+					height += (int)(stairstep);
 
 					// if sector's floor already moving, look for another
 					//jff 2/26/98 special lockout condition for retriggering
@@ -1033,14 +1033,14 @@ manual_stair:
 
 					// Doom bug: Height was changed before discarding the sector as part of the stairs.
 					// Needs to be compatibility optioned because some maps (Eternall MAP25) depend on it.
-					if (i_compatflags & COMPATF_STAIRINDEX) height += stairstep;
+					if (i_compatflags & COMPATF_STAIRINDEX) height += (int)(stairstep);
 
 					// if sector's floor already moving, look for another
 					//jff 2/26/98 special lockout condition for retriggering
 					if (tsec->PlaneMoving(sector_t::floor) || tsec->stairlock)
 						continue;
 
-					if (!(i_compatflags & COMPATF_STAIRINDEX)) height += stairstep;
+					if (!(i_compatflags & COMPATF_STAIRINDEX)) height += (int)(stairstep);
 
 					ok = true;
 					break;
@@ -1086,7 +1086,7 @@ manual_stair:
 				floor->m_Crush = (!usespecials && speed == 4*FRACUNIT) ? 10 : -1;
 				floor->m_Hexencrush = false;
 				floor->m_ResetCount = reset;	// [RH] Tics until reset (0 if never)
-				floor->m_OrgDist = sec->floorplane.d;	// [RH] Height to reset to
+				floor->m_OrgDist = (int)(sec->floorplane.d);	// [RH] Height to reset to
 
 				// [BC] Assign the floor's network ID. However, don't do this on the client end.
 				if ( NETWORK_GetState() == NETSTATE_SERVER )
@@ -1188,7 +1188,7 @@ manual_donut:
 			// [BC] If we're the server, tell clients to create the floor.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				SERVERCOMMANDS_DoFloor( floor->m_Type, floor->m_Sector, floor->m_Direction, floor->m_Speed, floor->m_FloorDestDist, floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
+				SERVERCOMMANDS_DoFloor( floor->m_Type, floor->m_Sector, floor->m_Direction,(LONG)( floor->m_Speed),(LONG)( floor->m_FloorDestDist), floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
 				SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
 			}
 
@@ -1211,7 +1211,7 @@ manual_donut:
 			// [BC] If we're the server, tell clients to create the floor.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				SERVERCOMMANDS_DoFloor( floor->m_Type, floor->m_Sector, floor->m_Direction, floor->m_Speed, floor->m_FloorDestDist, floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
+				SERVERCOMMANDS_DoFloor( floor->m_Type, floor->m_Sector, floor->m_Direction,(LONG)( floor->m_Speed),(LONG)( floor->m_FloorDestDist), floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
 				SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
 			}
 
@@ -1494,7 +1494,7 @@ manual_elevator:
 		// [BC] If we're the server, tell clients to create the elevator.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			SERVERCOMMANDS_DoElevator( elevator->m_Type, elevator->m_Sector, elevator->m_Speed, elevator->m_Direction, elevator->m_FloorDestDist, elevator->m_CeilingDestDist, elevator->m_ElevatorID );
+			SERVERCOMMANDS_DoElevator( elevator->m_Type, elevator->m_Sector,(LONG)( elevator->m_Speed), elevator->m_Direction,(LONG)( elevator->m_FloorDestDist),(LONG)( elevator->m_CeilingDestDist), elevator->m_ElevatorID );
 			SERVERCOMMANDS_StartElevatorSound( elevator->m_ElevatorID );
 		}
 
@@ -1639,7 +1639,7 @@ void DWaggleBase::Destroy()
 // [BC]
 void DWaggleBase::UpdateToClient( ULONG ulClient )
 {
-	SERVERCOMMANDS_DoWaggle( GetClass( ) == RUNTIME_CLASS( DCeilingWaggle ), m_Sector, m_OriginalDist, m_Accumulator, m_AccDelta, m_TargetScale, m_Scale, m_ScaleDelta, m_Ticker, m_State, m_WaggleID, ulClient, SVCF_ONLYTHISCLIENT );
+	SERVERCOMMANDS_DoWaggle( GetClass( ) == RUNTIME_CLASS( DCeilingWaggle ), m_Sector,(LONG)( m_OriginalDist),(LONG)( m_Accumulator),(LONG)( m_AccDelta),(LONG)( m_TargetScale),(LONG)( m_Scale),(LONG)( m_ScaleDelta), m_Ticker, m_State, m_WaggleID, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 // [BC]
@@ -1748,7 +1748,7 @@ void DWaggleBase::DoWaggle (bool ceiling)
 			dist = FixedMul (m_OriginalDist - plane->d, plane->ic);
 			m_Sector->ChangePlaneTexZ(pos, -plane->HeightDiff (m_OriginalDist));
 			plane->d = m_OriginalDist;
-			P_ChangeSector (m_Sector, true, dist, ceiling, false);
+			P_ChangeSector (m_Sector, true,(int)( dist), ceiling, false);
 			if (ceiling)
 			{
 				m_Sector->ceilingdata = NULL;
@@ -1780,7 +1780,7 @@ void DWaggleBase::DoWaggle (bool ceiling)
 	m_Accumulator += m_AccDelta;
 
 
-	fixed_t mag = finesine[(m_Accumulator>>9)&8191]*8;
+	fixed_t mag = finesine[(int)((m_Accumulator>>9)&8191)]*8;
 
 	dist = plane->d;
 	plane->d = m_OriginalDist + plane->PointToDist (0, 0, FixedMul (mag, m_Scale));
@@ -1791,7 +1791,7 @@ void DWaggleBase::DoWaggle (bool ceiling)
 	// Also, this does not reset the move if it blocks.
 	P_Scroll3dMidtex(m_Sector, 1, dist, ceiling);
 	P_MoveLinkedSectors(m_Sector, 1, dist, ceiling);
-	P_ChangeSector (m_Sector, 1, dist, ceiling, false);
+	P_ChangeSector (m_Sector, 1,(int)( dist), ceiling, false);
 
 	// [BC] At the peak and troughs of the waggle, update the clients with the current
 	// position of the floor/ceiling.
@@ -1805,7 +1805,7 @@ void DWaggleBase::DoWaggle (bool ceiling)
 				continue;
 			}
 
-			SERVERCOMMANDS_UpdateWaggle( m_WaggleID, m_Accumulator, ulIdx, SVCF_ONLYTHISCLIENT );
+			SERVERCOMMANDS_UpdateWaggle( m_WaggleID,(LONG)( m_Accumulator), ulIdx, SVCF_ONLYTHISCLIENT );
 		}
 	}
 }
@@ -1914,7 +1914,7 @@ manual_waggle:
 
 		// [BC] If we're the server, tell clients to do the waggle.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_DoWaggle( ceiling, sector, waggle->m_OriginalDist, waggle->m_Accumulator, waggle->m_AccDelta, waggle->m_TargetScale, waggle->m_Scale, waggle->m_ScaleDelta, waggle->m_Ticker, waggle->m_State, waggle->m_WaggleID );
+			SERVERCOMMANDS_DoWaggle( ceiling, sector,(LONG)( waggle->m_OriginalDist),(LONG)( waggle->m_Accumulator),(LONG)( waggle->m_AccDelta),(LONG)( waggle->m_TargetScale),(LONG)( waggle->m_Scale),(LONG)( waggle->m_ScaleDelta), waggle->m_Ticker, waggle->m_State, waggle->m_WaggleID );
 
 	}
 	return retCode;

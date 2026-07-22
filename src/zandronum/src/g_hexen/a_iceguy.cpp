@@ -34,11 +34,11 @@ DEFINE_ACTION_FUNCTION(AActor, A_IceGuyLook)
 	if (pr_iceguylook() < 64)
 	{
 		dist = ((pr_iceguylook()-128)*self->radius)>>7;
-		an = (self->angle+ANG90)>>ANGLETOFINESHIFT;
+		an = fixed_t((self->angle+ANG90)>>ANGLETOFINESHIFT);
 
 		mo = Spawn (WispTypes[pr_iceguylook()&1],
-			self->x+FixedMul(dist, finecosine[an]),
-			self->y+FixedMul(dist, finesine[an]),
+			self->x+FixedMul(dist, finecosine[(int)(an)]),
+			self->y+FixedMul(dist, finesine[(int)(an)]),
 			self->z+60*FRACUNIT, ALLOW_REPLACE);
 
 		// [RK] Clients spawn these on their own. In order to prevent the 
@@ -68,11 +68,11 @@ DEFINE_ACTION_FUNCTION(AActor, A_IceGuyChase)
 	if (pr_iceguychase() < 128)
 	{
 		dist = ((pr_iceguychase()-128)*self->radius)>>7;
-		an = (self->angle+ANG90)>>ANGLETOFINESHIFT;
+		an = fixed_t((self->angle+ANG90)>>ANGLETOFINESHIFT);
 
 		mo = Spawn (WispTypes[pr_iceguychase()&1],
-			self->x+FixedMul(dist, finecosine[an]),
-			self->y+FixedMul(dist, finesine[an]),
+			self->x+FixedMul(dist, finecosine[(int)(an)]),
+			self->y+FixedMul(dist, finesine[(int)(an)]),
 			self->z+60*FRACUNIT, ALLOW_REPLACE);
 		if (mo)
 		{
@@ -113,15 +113,15 @@ DEFINE_ACTION_FUNCTION(AActor, A_IceGuyAttack)
 	{
 		return;
 	}
-	an = (self->angle+ANG90)>>ANGLETOFINESHIFT;
+	an = fixed_t((self->angle+ANG90)>>ANGLETOFINESHIFT);
 	P_SpawnMissileXYZ(self->x+FixedMul(self->radius>>1,
-		finecosine[an]), self->y+FixedMul(self->radius>>1,
-		finesine[an]), self->z+40*FRACUNIT, self, self->target,
+		finecosine[(int)(an)]), self->y+FixedMul(self->radius>>1,
+		finesine[(int)(an)]), self->z+40*FRACUNIT, self, self->target,
 		PClass::FindClass ("IceGuyFX"), true, NULL, true);	// [BB] Inform the clients.
-	an = (self->angle-ANG90)>>ANGLETOFINESHIFT;
+	an = fixed_t((self->angle-ANG90)>>ANGLETOFINESHIFT);
 	P_SpawnMissileXYZ(self->x+FixedMul(self->radius>>1,
-		finecosine[an]), self->y+FixedMul(self->radius>>1,
-		finesine[an]), self->z+40*FRACUNIT, self, self->target,
+		finecosine[(int)(an)]), self->y+FixedMul(self->radius>>1,
+		finesine[(int)(an)]), self->z+40*FRACUNIT, self, self->target,
 		PClass::FindClass ("IceGuyFX"), true, NULL, true);	// [BB] Inform the clients.
 	S_Sound (self, CHAN_WEAPON, self->AttackSound, 1, ATTN_NORM, true);	// [BB] Inform the clients.
 }
@@ -159,7 +159,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_IceGuyMissileExplode)
 	for (i = 0; i < 8; i++)
 	{
 		mo = P_SpawnMissileAngleZ (self, self->z+3*FRACUNIT, 
-			PClass::FindClass("IceGuyFX2"), i*ANG45, (fixed_t)(-0.3*FRACUNIT), true); // [RK] Inform the clients.
+			PClass::FindClass("IceGuyFX2"), i*ANG45, (fixed_t)(-0.3*double(FRACUNIT)), true); // [RK] Inform the clients.
 		if (mo)
 		{
 			mo->target = self->target;

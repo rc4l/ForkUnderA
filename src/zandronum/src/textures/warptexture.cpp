@@ -151,7 +151,7 @@ void FWarpTexture::MakeTexture (DWORD time)
 	DWORD timebase = DWORD(time * Speed * 32 / 28);
 	for (y = ysize-1; y >= 0; y--)
 	{
-		int xt, xf = (finesine[(timebase+y*128)&FINEMASK]>>13) & xmask;
+		int xt, xf = (int)((finesine[(timebase+y*128)&FINEMASK]>>13) & xmask);
 		const BYTE *source = otherpix + y;
 		BYTE *dest = Pixels + y;
 		for (xt = xsize; xt; xt--, xf = (xf+1)&xmask, dest += ysize)
@@ -160,7 +160,7 @@ void FWarpTexture::MakeTexture (DWORD time)
 	timebase = DWORD(time * Speed * 23 / 28);
 	for (x = xsize-1; x >= 0; x--)
 	{
-		int yt, yf = (finesine[(time+(x+17)*128)&FINEMASK]>>13) & ymask;
+		int yt, yf = (int)((finesine[(time+(x+17)*128)&FINEMASK]>>13) & ymask);
 		const BYTE *source = Pixels + (x << ybits);
 		BYTE *dest = buffer;
 		for (yt = ysize; yt; yt--, yf = (yf+1)&ymask)
@@ -210,12 +210,12 @@ void FWarp2Texture::MakeTexture (DWORD time)
 		BYTE *dest = Pixels + (x << ybits);
 		for (y = 0; y < ysize; ++y)
 		{
-			int xt = (x + 128
+			int xt = (int)((int)((x + 128
 				+ ((finesine[(y*128 + timebase*5 + 900) & FINEMASK]*2)>>FRACBITS)
-				+ ((finesine[(x*256 + timebase*4 + 300) & FINEMASK]*2)>>FRACBITS)) & xmask;
-			int yt = (y + 128
+				+ ((finesine[(x*256 + timebase*4 + 300) & FINEMASK]*2)>>FRACBITS)) & xmask));
+			int yt = (int)((int)((y + 128
 				+ ((finesine[(y*128 + timebase*3 + 700) & FINEMASK]*2)>>FRACBITS)
-				+ ((finesine[(x*256 + timebase*4 + 1200) & FINEMASK]*2)>>FRACBITS)) & ymask;
+				+ ((finesine[(x*256 + timebase*4 + 1200) & FINEMASK]*2)>>FRACBITS)) & ymask));
 			*dest++ = otherpix[(xt << ybits) + yt];
 		}
 	}

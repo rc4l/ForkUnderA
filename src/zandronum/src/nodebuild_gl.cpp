@@ -62,7 +62,7 @@ double FNodeBuilder::AddIntersection (const node_t &node, int vertex)
 	// Calculate signed distance of intersection vertex from start of splitter.
 	// Only ordering is important, so we don't need a sqrt.
 	FPrivVert *v = &Vertices[vertex];
-	double dist = (double(v->x) - node.x)*(node.dx) + (double(v->y) - node.y)*(node.dy);
+	double dist = (double(v->x) - double(node.x))*(double(node.dx)) + (double(v->y) - double(node.y))*(double(node.dy));
 
 	FEvent *event = Events.FindEvent (dist);
 	if (event == NULL)
@@ -303,7 +303,7 @@ DWORD FNodeBuilder::CheckLoopStart (fixed_t dx, fixed_t dy, int vertex, int vert
 		angle_t diff = splitAngle - segAngle;
 
 		if (diff < ANGLE_EPSILON &&
-			PointOnSide (Vertices[seg->v1].x, Vertices[seg->v1].y, v->x, v->y, dx, dy) == 0)
+			PointOnSide ((int)(Vertices[seg->v1].x), (int)(Vertices[seg->v1].y), (int)(v->x), (int)(v->y), (int)(dx), (int)(dy)) == 0)
 		{
 			// If a seg lies right on the splitter, don't count it
 		}
@@ -362,7 +362,7 @@ DWORD FNodeBuilder::CheckLoopEnd (fixed_t dx, fixed_t dy, int vertex)
 		angle_t diff = segAngle - splitAngle;
 
 		if (diff < ANGLE_EPSILON &&
-			PointOnSide (Vertices[seg->v1].x, Vertices[seg->v1].y, v->x, v->y, dx, dy) == 0)
+			PointOnSide ((int)(Vertices[seg->v1].x), (int)(Vertices[seg->v1].y), (int)(v->x), (int)(v->y), (int)(dx), (int)(dy)) == 0)
 		{
 			// If a seg lies right on the splitter, don't count it
 		}

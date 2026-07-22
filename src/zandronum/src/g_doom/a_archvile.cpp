@@ -46,7 +46,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Fire)
 	ACTION_PARAM_START(1);
 	ACTION_PARAM_FIXED(height,0);
 	
-	A_Fire(self, height);
+	A_Fire(self,(int)( height));
 }
 
 void A_Fire(AActor *self, int height)

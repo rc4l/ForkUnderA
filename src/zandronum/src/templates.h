@@ -39,6 +39,9 @@
 #pragma once
 #endif
 
+// [rc4l] Needed by the mixed-type MIN/MAX/clamp overloads below (common_type).
+#include <type_traits>
+
 #include <stdlib.h>
 
 //==========================================================================
@@ -161,6 +164,21 @@ const T MIN (const T a, const T b)
 	return a < b ? a : b;
 }
 
+// [rc4l] Mixed-type overload: after widening fixed_t to 64-bit, calls like MIN(intLiteral,
+// fixedValue) no longer share one type. Result is the common type (the wider of the two), so
+// same-type calls still bind to the template above (more specialized) and are unchanged.
+// Constrained to arithmetic types so it never hijacks calls whose args are convertible objects
+// (e.g. a CVar with operator int) -- those fall through to the single-type template above.
+template<class A, class B>
+inline
+typename std::enable_if<std::is_arithmetic<A>::value && std::is_arithmetic<B>::value,
+	typename std::common_type<A, B>::type>::type
+MIN (const A a, const B b)
+{
+	typedef typename std::common_type<A, B>::type C;
+	return (C)a < (C)b ? (C)a : (C)b;
+}
+
 //==========================================================================
 //
 // MAX
@@ -179,6 +197,17 @@ const T MAX (const T a, const T b)
 	return a > b ? a : b;
 }
 
+// [rc4l] Mixed-type overload (see MIN above), arithmetic types only.
+template<class A, class B>
+inline
+typename std::enable_if<std::is_arithmetic<A>::value && std::is_arithmetic<B>::value,
+	typename std::common_type<A, B>::type>::type
+MAX (const A a, const B b)
+{
+	typedef typename std::common_type<A, B>::type C;
+	return (C)a > (C)b ? (C)a : (C)b;
+}
+
 //==========================================================================
 //
 // clamp
@@ -191,6 +220,20 @@ inline
 T clamp (const T in, const T min, const T max)
 {
 	return in <= min ? min : in >= max ? max : in;
+}
+
+// [rc4l] Mixed-type overload (see MIN above): clamp(intValue, 0, FRACUNIT) etc. after the
+// fixed_t widening. Arithmetic types only, so an explicit clamp<int>(...) with a convertible
+// object argument (e.g. a CVar) still binds to the single-type template rather than trying to
+// copy the object here.
+template<class A, class B, class C>
+inline
+typename std::enable_if<std::is_arithmetic<A>::value && std::is_arithmetic<B>::value && std::is_arithmetic<C>::value,
+	typename std::common_type<A, B, C>::type>::type
+clamp (const A in, const B min, const C max)
+{
+	typedef typename std::common_type<A, B, C>::type T;
+	return (T)in <= (T)min ? (T)min : (T)in >= (T)max ? (T)max : (T)in;
 }
 
 //==========================================================================

@@ -3300,7 +3300,7 @@ void D3DFB::FillSimplePoly(FTexture *texture, FVector2 *points, int npoints,
 			quad->ShaderNum = BQS_InGameColormap;
 			quad->Desat = colormap->Desaturate;
 			color0 = D3DCOLOR_ARGB(255, colormap->Color.r, colormap->Color.g, colormap->Color.b);
-			double fadelevel = clamp(shade / (NUMCOLORMAPS * 65536.0), 0.0, 1.0);
+			double fadelevel = clamp(double(shade) / (NUMCOLORMAPS * 65536.0), 0.0, 1.0);
 			color1 = D3DCOLOR_ARGB(DWORD((1 - fadelevel) * 255),
 				DWORD(colormap->Fade.r * fadelevel),
 				DWORD(colormap->Fade.g * fadelevel),
@@ -3690,7 +3690,7 @@ bool D3DFB::SetStyle(D3DTex *tex, DrawParms &parms, D3DCOLOR &color0, D3DCOLOR &
 	}
 	else
 	{
-		alpha = clamp<fixed_t> (parms.alpha, 0, FRACUNIT) / 65536.f;
+		alpha = float(clamp<fixed_t> (parms.alpha, 0, FRACUNIT)) / 65536.f;
 	}
 
 	style.CheckFuzz();

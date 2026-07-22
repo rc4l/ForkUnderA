@@ -140,7 +140,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_MakePod)
 		return;
 	}
 	mo->SetState (mo->FindState("Grow"));
-	P_ThrustMobj (mo, pr_makepod()<<24, (fixed_t)(4.5*FRACUNIT));
+	P_ThrustMobj (mo, pr_makepod()<<24, (fixed_t)(4.5*double(FRACUNIT)));
 
 	// [BC] If we're the server, spawn the pod.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
