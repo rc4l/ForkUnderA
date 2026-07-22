@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Tests for the widened (64-bit) fixed-point scale math. fixedmath.h now delegates to
 // the tested zx:: scale layer; these checks confirm each named form maps to the right
 // operation/shift and returns the full 64-bit result, and exercise every numbered variant for

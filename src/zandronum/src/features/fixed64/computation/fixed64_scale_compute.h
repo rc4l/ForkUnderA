@@ -7,6 +7,7 @@
 // out-of-range (giant-map) operands.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #ifndef ZX_FIXED64_SCALE_COMPUTE_H
 #define ZX_FIXED64_SCALE_COMPUTE_H
 

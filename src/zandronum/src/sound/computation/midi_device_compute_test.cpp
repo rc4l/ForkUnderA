@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Tests for ComputeMidiDeviceDefault — the extracted MIDI-device-selection logic.
 #include "gtest/gtest.h"
 #include "sound/computation/midi_device_compute.h"

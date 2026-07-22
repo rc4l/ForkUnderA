@@ -4,6 +4,7 @@
 // wrong result.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #include "gtest/gtest.h"
 
 #include <cstdint>

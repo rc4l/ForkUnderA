@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Tests for the voice-chat float<->bytes little-endian conversions.
 #include "gtest/gtest.h"
 #include "computation/voicechat_convert_compute.h"

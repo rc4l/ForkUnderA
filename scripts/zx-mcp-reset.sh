@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # zx-mcp-reset — reap ZandroX/Zandronum engine processes left behind by the MCP.
 #
 # With the v0.4.0 engine watchdog, a launched instance exits on its own when its

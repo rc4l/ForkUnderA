@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Covers every branch of the sound-backend selection, including the legacy "fmod"
 // alias that exists because FMOD was removed from the tree.
 #include <gtest/gtest.h>

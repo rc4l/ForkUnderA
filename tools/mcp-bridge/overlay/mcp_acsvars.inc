@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // ==== MCP_ACSVARS (overlay-appended to p_acs.cpp; not committed upstream) ====
 // Read/write ACS world and global variables by index. World vars are a
 // file-static array in p_acs.cpp, so these commands live here (appended) rather

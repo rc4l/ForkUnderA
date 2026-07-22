@@ -9,6 +9,7 @@
 // Standalone (only <cstdint>) so it is unit-testable without the engine.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #ifndef ZX_WIDE128_COMPUTE_H
 #define ZX_WIDE128_COMPUTE_H
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Implementation of the 128-bit intermediate primitives. See wide128_compute.h.
 // Standalone; no engine dependencies, so the engine and the test binary both compile it.
 #include "features/fixed64/computation/wide128_compute.h"

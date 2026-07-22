@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Implementation of the pure OpenAL playback math. No engine or OpenAL dependencies,
 // so both the engine and the standalone test build compile this TU.
 #include "features/openal-sound/computation/oal_playback_compute.h"

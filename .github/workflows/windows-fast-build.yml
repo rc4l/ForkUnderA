@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] Verifies windows_build.ps1 (the prebuilt-deps fast path) on a real Windows runner.
 # Path-filtered so it only runs when the fast build or its deps change — the normal per-PR
 # Windows build already goes through windows_compile.ps1 in _build.yml.

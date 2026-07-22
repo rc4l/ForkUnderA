@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 //
 // apply-bridge.core.mjs -- logic for applying the MCP engine bridge overlay to a
 // Zandronum source tree. fs-backed helpers, unit-tested at 100%. The runnable CLI

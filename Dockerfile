@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] ZandroX dev/test/debug image — a clean Linux box with the full toolchain, so the
 # GoogleTest suite + memory sanitizers + coverage run identically for everyone (no Homebrew,
 # no Rosetta, no "works on my machine"). The source is MOUNTED at runtime, not copied, so the

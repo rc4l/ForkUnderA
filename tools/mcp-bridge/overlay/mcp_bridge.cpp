@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 //
 // mcp_bridge.cpp -- minimal local IPC seam (overlay file; see mcp_bridge.h).
 //

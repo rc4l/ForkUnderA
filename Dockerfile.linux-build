@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] Reproducible Linux build image for ZandroX releases. Ubuntu 22.04 base = older
 # glibc, so the resulting binary runs on a wide range of distros. Deps mirror Zandronum's
 # Linux CI (OpenSSL/Opus/zlib/bzip2/jpeg + Python3 required; SDL1.2 + OpenGL/GLU for the

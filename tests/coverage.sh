@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] Build the tests with llvm-cov instrumentation, run them, and report per-file coverage.
 #
 # [rc4l] Usage: `tests/coverage.sh` reports only; `--enforce <file> …` fails if any listed

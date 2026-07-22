@@ -8,6 +8,7 @@
 // invariant is also exercised by the test suite.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #include "gtest/gtest.h"
 
 #include "basictypes.h"

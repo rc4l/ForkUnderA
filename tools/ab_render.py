@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] Drives the engine down both render paths to the same viewpoint and captures a screenshot
 # from each, so core-vs-compat parity can be measured with compare_shots.py instead of eyeballed.
 import argparse
