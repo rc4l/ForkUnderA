@@ -55,20 +55,26 @@ jobs:
           path: dist-macos/*.zip
 
   build-linux:
-    runs-on: ubuntu-latest
+    # [rc4l] Build natively on the jammy runner, NOT via Dockerfile.linux-build. The Docker path
+    # rebuilt its image every run, and a from-scratch apt-get against public Ubuntu mirrors took
+    # ~36 min of a ~40 min job (the compile itself is ~3 min). The runner is already Ubuntu 22.04
+    # (jammy, glibc 2.35) — the exact target the Docker base gave us — so a native build keeps the
+    # same wide-distro glibc compatibility while apt resolves in seconds off the runner's mirror.
+    # Docker (Dockerfile.linux-build / package-linux.sh) stays in the repo for local macOS->Linux
+    # cross-builds; CI just doesn't need it. Pin 22.04 (not ubuntu-latest) so the glibc floor is
+    # explicit and can't drift up when the "latest" label moves to a newer release.
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build ZandroX (Linux, via Docker)
-        # [rc4l] VERSION is applied inside the container: on a Linux host it writes dist-linux
-        # as root, so renaming the tarball afterwards fails with EACCES.
+      - name: Build + package ZandroX (Linux, native)
+        # [rc4l] linux_compile.sh is the same script devs run; --install-deps apt-installs the
+        # build/OpenAL libs, then it configures, builds and packages dist-linux/*.tar.gz itself.
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          # Same Docker path we use locally on macOS — Ubuntu 22.04 base for wide
-          # glibc compatibility. Produces dist-linux/ZandroX-<version>-linux-x86_64.tar.gz.
-          ./package-linux.sh
+          ./linux_compile.sh --install-deps
           ls -la dist-linux/
 
       - name: Upload ZandroX Linux tarball
