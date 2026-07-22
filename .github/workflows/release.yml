@@ -159,65 +159,43 @@ jobs:
         run: |
           set -euo pipefail
 
-          # [rc4l] The platform notes are the same on both channels; keep them in one place.
-          cat > body.md <<'EOF'
-          ZandroX build for macOS (Apple Silicon), Linux (x86_64) and Windows (x64).
-          Audio is OpenAL on every platform; FMOD is gone.
-
-          **macOS** — the app is not signed or notarized, so Gatekeeper will refuse it
-          on first launch. Clear the quarantine flag after unzipping:
-
-              xattr -dr com.apple.quarantine ZandroX.app
-
-          **Linux** — needs `libopenal1`, `libsndfile1` and `libmpg123-0` from your
-          distro's packages.
-
-          **Windows** — the OpenAL and decoder DLLs ship next to `zandronum.exe`; keep
-          them together.
-
-          Every download bundles **Freedoom** (`freedoom2.wad`, BSD-3-clause — see
-          `FREEDOOM-LICENSE.txt`), so it is playable as-is. To play commercial Doom
-          instead, drop your own `doom2.wad` next to the executable.
-
-          **Licensing** — ZandroX is GPL-3.0-or-later. Every download carries
-          `LICENSE.txt` (the full GPL-3.0 text) and `THIRD-PARTY-NOTICES.txt`
-          (bundled libraries and their licenses). Complete corresponding source for
-          this binary is the repository at this release's tag.
-          EOF
+          # [rc4l] The one piece of fine print worth keeping: the app is unsigned, so without this
+          # macOS silently blocks it and users think the build is broken. Tracked in the signing issue.
+          macos='**macOS:** the app is unsigned, so Gatekeeper blocks the first launch. After unzipping, run `xattr -dr com.apple.quarantine ZandroX.app`.'
 
           if [ "$CHANNEL" = "experimental" ]; then
             # [rc4l] Each commit keeps its own pre-release, so this only clears a release for the
-            # SAME commit — i.e. rebuilding the exact same SHA refreshes that one tag instead of
-            # erroring on it. A new commit gets a new tag and leaves earlier ones in place. First
-            # build of a commit has nothing to delete, hence the || true.
+            # SAME commit: rebuilding the exact same SHA refreshes that one tag instead of erroring.
+            # A new commit gets a new tag and leaves earlier ones in place; first build has nothing
+            # to delete, hence the || true.
             gh release delete "$VERSION" --yes --cleanup-tag || true
 
-            # [rc4l] Loud banner prepended to the shared notes. The backslash-backticks stay
-            # literal inside the double quotes while $BRANCH/$SHORTSHA expand.
-            built="Built from branch \`${BRANCH}\` at commit \`${SHORTSHA}\` on $(date -u +%Y-%m-%d)."
+            # [rc4l] Banner marks it as unofficial; the backslash-backticks stay literal while
+            # $BRANCH/$SHORTSHA expand.
             {
-              printf '%s\n' "> ## 🧪 EXPERIMENTAL BUILD — NOT AN OFFICIAL RELEASE"
-              printf '%s\n' ">"
-              printf '%s\n' "> $built"
-              printf '%s\n' "> Unofficial and unsupported — it may be broken or incomplete."
-              printf '%s\n' "> For testing only. Do not treat this as a real ZandroX release."
-              printf '%s\n' ""
+              printf '%s\n' "> ## 🧪 EXPERIMENTAL BUILD, NOT AN OFFICIAL RELEASE"
+              printf '%s\n' "> Built from branch \`${BRANCH}\` at commit \`${SHORTSHA}\` on $(date -u +%Y-%m-%d). For testing only."
+              printf '%s\n\n' ">"
+              printf '%s\n' "$macos"
             } > notes.md
-            cat body.md >> notes.md
 
-            # [rc4l] --prerelease keeps it off "Latest release"; --target ties the tag to the
-            # branch the run was built from.
+            # [rc4l] --prerelease keeps it off "Latest release"; --target ties the tag to the branch.
             gh release create "$VERSION" \
               --prerelease \
               --target "$BRANCH" \
-              --title "🧪 EXPERIMENTAL — ${BRANCH} (${SHORTSHA})" \
+              --title "🧪 EXPERIMENTAL: ${BRANCH} (${SHORTSHA})" \
               --notes-file notes.md \
               assets/*
           else
-            # [rc4l] gh creates the tag at this commit when it does not already exist, so a
-            # dispatch-triggered release needs no separate tag push.
+            # [rc4l] Auto-generate the "What's Changed" list from PRs merged since the previous tag,
+            # then prepend the one macOS line. target_commitish lets this run before the tag exists.
+            changelog="$(gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="$VERSION" -f target_commitish="$GITHUB_SHA" --jq '.body')"
+            { printf '%s\n\n' "$macos"; printf '%s\n' "$changelog"; } > notes.md
+
+            # [rc4l] gh creates the tag at this commit when it does not already exist.
             gh release create "$VERSION" \
               --title "ZandroX $VERSION" \
-              --notes-file body.md \
+              --notes-file notes.md \
               assets/*
           fi
