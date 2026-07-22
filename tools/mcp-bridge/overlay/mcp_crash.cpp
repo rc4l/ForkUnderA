@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 //
 // mcp_crash.cpp -- crash backtrace handler for the MCP bridge (overlay file).
 //

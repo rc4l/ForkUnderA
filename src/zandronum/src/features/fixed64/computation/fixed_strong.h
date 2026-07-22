@@ -19,6 +19,7 @@
 //     callers must use FixedMul, so a bare fixed*fixed overflow can't recur.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #ifndef ZX_FIXED_STRONG_H
 #define ZX_FIXED_STRONG_H
 

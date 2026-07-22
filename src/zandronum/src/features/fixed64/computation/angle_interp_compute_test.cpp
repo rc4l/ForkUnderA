@@ -7,6 +7,7 @@
 // InterpolateAngleBAM reinterprets the difference as int32 first, restoring symmetry.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #include "gtest/gtest.h"
 
 #include <cstdint>

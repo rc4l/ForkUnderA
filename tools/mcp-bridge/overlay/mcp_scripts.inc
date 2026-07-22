@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // ==== MCP_SCRIPTS (overlay-appended to p_acs.cpp; not committed upstream) ====
 // List ACS scripts and functions across all loaded modules. Read-only, uses
 // public bounds-safe API (GetScriptPtr returns NULL past the end; FindChunk

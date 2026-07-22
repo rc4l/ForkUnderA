@@ -7,6 +7,7 @@
 // they slid due south no matter which way they faced. This pins both the mechanism and the fix.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #include <gtest/gtest.h>
 
 #include <cmath>

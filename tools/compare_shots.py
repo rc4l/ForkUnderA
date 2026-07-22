@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] Compares two renderer screenshots and reports how far apart they are, so core-vs-compat
 # parity is evidence rather than an impression. Exits non-zero when the difference exceeds the
 # threshold, making it usable as a gate.

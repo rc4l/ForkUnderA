@@ -1,4 +1,7 @@
 #Requires -Version 5.1
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 <#
 .SYNOPSIS
     Compile ZandroX on Windows from the in-repo source.

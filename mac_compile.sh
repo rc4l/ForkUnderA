@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 #
 # ZandroX macOS Build  (fork of Zandronum)
 #

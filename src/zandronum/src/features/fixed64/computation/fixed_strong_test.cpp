@@ -2,6 +2,7 @@
 // values as raw int64, while the two bug-prone implicit conversions are rejected at compile time.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #include "gtest/gtest.h"
 
 #include <cmath>

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] Publishes the dynamic badge data (currently the test count) to an orphan `badges`
 # branch that shields.io reads via raw.githubusercontent. Standard release/version/date badges
 # need no data of ours and are not handled here.

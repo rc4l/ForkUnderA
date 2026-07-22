@@ -47,6 +47,7 @@
 #include "d_event.h"
 #include "d_gui.h"
 #include "i_music.h"
+#include "i_sound.h"
 #include "m_joy.h"
 #include "gi.h"
 // [TP] New #includes
@@ -170,6 +171,12 @@ static bool CheckSkipOptionBlock(FScanner &sc)
 		else if (sc.Compare("Mac"))
 		{
 			#ifdef __APPLE__
+				filter = true;
+			#endif
+		}
+		else if (sc.Compare("OpenAL")) // [rc4l] the OpenAL backend is present (always, unless NO_OPENAL)
+		{
+			#ifndef NO_OPENAL
 				filter = true;
 			#endif
 		}
@@ -2526,10 +2533,16 @@ void M_CreateMenus()
 	InitChatSoundsList();
 
 	FOptionValues **opt = OptionValues.CheckKey(NAME_Mididevices);
-	if (opt != NULL) 
+	if (opt != NULL)
 	{
 		I_BuildMIDIMenuList(*opt);
 	}
+
+	// [rc4l] Populate the OpenAL device + resampler lists from the live driver (UZDoom parity).
+	if ((opt = OptionValues.CheckKey(NAME_Aldevices)) != NULL)
+		I_BuildALDeviceList(*opt);
+	if ((opt = OptionValues.CheckKey(NAME_Alresamplers)) != NULL)
+		I_BuildALResamplersList(*opt);
 }
 
 //=============================================================================

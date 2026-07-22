@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 //
 // mcp_hud.cpp -- read-only capture of what the engine paints on screen (overlay).
 //

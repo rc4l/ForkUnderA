@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Verifies the 128-bit primitives, especially the software 128/64 divide that only
 // runs on ARM64 MSVC. Everything is checked against the native __int128 reference, so the
 // MSVC-only code is proven correct here on clang. A deterministic LCG drives the random

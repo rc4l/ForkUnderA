@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] Reusable C++ test job called by test-and-build.yml and release.yml so the same suite gates both.
 name: tests (reusable)
 
