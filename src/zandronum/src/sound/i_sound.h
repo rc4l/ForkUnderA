@@ -166,6 +166,11 @@ extern bool nosound;
 void I_InitSound ();
 void I_ShutdownSound ();
 
+// [rc4l] Fill the OpenAL device / resampler menu option lists (defined in the OpenAL backend).
+struct FOptionValues;
+void I_BuildALDeviceList (FOptionValues *opt);
+void I_BuildALResamplersList (FOptionValues *opt);
+
 void S_ChannelEnded(FISoundChannel *schan);
 void S_ChannelVirtualChanged(FISoundChannel *schan, bool is_virtual);
 float S_GetRolloff(FRolloffInfo *rolloff, float distance, bool logarithmic);

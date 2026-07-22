@@ -92,6 +92,33 @@ ALC_API ALCboolean ALC_APIENTRY alcResetDeviceSOFT(ALCdevice* device, const ALCi
 #define AL_AUTO_SOFT                             0x0002
 #endif
 
+// [rc4l] Fallbacks for the newer SOFT extensions used for UZDoom sound-menu parity, mirroring
+// alext.h -- so the backend compiles on platforms whose OpenAL headers predate them. Whether the
+// features actually run is still gated at runtime on alIsExtensionPresent (see the AL struct below).
+#ifndef AL_SOFT_source_resampler
+#define AL_SOFT_source_resampler 1
+#define AL_NUM_RESAMPLERS_SOFT                   0x1210
+#define AL_DEFAULT_RESAMPLER_SOFT                0x1211
+#define AL_SOURCE_RESAMPLER_SOFT                 0x1212
+#define AL_RESAMPLER_NAME_SOFT                   0x1213
+typedef const ALchar* (AL_APIENTRY *LPALGETSTRINGISOFT)(ALenum pname, ALsizei index);
+#endif
+
+#ifndef AL_SOFT_direct_channels_remix
+#define AL_SOFT_direct_channels_remix 1
+#define AL_DIRECT_CHANNELS_SOFT                  0x1033
+#define AL_DROP_UNMATCHED_SOFT                   0x0001
+#define AL_REMIX_UNMATCHED_SOFT                  0x0002
+#endif
+
+#ifndef AL_SOFT_UHJ
+#define AL_SOFT_UHJ 1
+#define AL_STEREO_MODE_SOFT                      0x19B0
+#define AL_NORMAL_SOFT                           0x0000
+#define AL_SUPER_STEREO_SOFT                     0x0001
+#define AL_SUPER_STEREO_WIDTH_SOFT               0x19B1
+#endif
+
 
 class OpenALSoundStream;
 
@@ -164,6 +191,9 @@ private:
 		bool SOFT_deferred_updates;
 		bool SOFT_loop_points;
 		bool SOFT_source_spatialize;
+		bool SOFT_source_resampler;      // [rc4l] snd_alresampler
+		bool SOFT_UHJ;                   // [rc4l] snd_musicmode super-stereo + snd_superstereowidth
+		bool SOFT_direct_channels_remix; // [rc4l] snd_musicmode direct-mix
 	} AL;
 
 	// EFX Extension function pointer variables. Loaded after context creation

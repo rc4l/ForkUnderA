@@ -91,7 +91,9 @@ EXTERN_CVAR (Float, snd_sfxvolume)
 CVAR (Int, snd_samplerate, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Int, snd_buffersize, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (String, snd_output, "default", CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-CVAR (Bool, snd_hrtf, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+// [rc4l] Int, not Bool, for UZDoom parity: -1 = Auto (driver decides -- HRTF for headphones, off for
+// speakers), 0 = Off, 1 = On. The menu exposes it through the AutoOffOn option list.
+CVAR (Int, snd_hrtf, -1, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 // [ZandroX] These used to live in fmodsound.cpp, which is gone. The OpenAL backend
 // still needs them for reverb handling.
