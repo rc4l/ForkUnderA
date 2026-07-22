@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 //
 // mcp_renderinfo.cpp -- console command dumping renderer / video / HUD state
 // (overlay file). Read-only inspection: active backend, GL info, screen size,

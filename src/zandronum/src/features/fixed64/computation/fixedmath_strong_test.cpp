@@ -3,6 +3,7 @@
 // bottom-of-graph milestone of the strong-fixed migration.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #include "gtest/gtest.h"
 
 #include <type_traits>

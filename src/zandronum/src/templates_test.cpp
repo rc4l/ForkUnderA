@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Regression tests for the MIN/MAX/clamp mixed-type overloads added for the 64-bit
 // fixed_t widening. Same-type calls must still bind to the original single-type template
 // (unchanged behaviour); mixed int/int64 calls must resolve to the common (wider) type. This

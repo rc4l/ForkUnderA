@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Tests for the freeform-menu layout math (gravity/anchor positioning, scroll
 // range/centering, scroll clamping, hit-testing). Covers every branch.
 #include "gtest/gtest.h"

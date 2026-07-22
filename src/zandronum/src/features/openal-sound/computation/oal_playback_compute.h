@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Pure OpenAL playback math, extracted from oalsound.cpp so it can be unit-tested
 // without linking OpenAL or the engine: distance rolloff attenuation and loop-point
 // scaling/clamping. The ROLLOFF_* values are mirrored here and static_asserted in the

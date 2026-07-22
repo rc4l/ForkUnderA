@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 //
 // mcp_actorstate.cpp -- read-only DECORATE/actor state inspection (overlay file).
 // Dumps an actor's live state: class, health, position, current DECORATE state

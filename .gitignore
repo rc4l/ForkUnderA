@@ -45,3 +45,6 @@ build-mac/
 
 # Harness-created git worktrees (.claude/skills is tracked, so ignore just this)
 .claude/worktrees/
+
+# llvm coverage raw profiles
+*.profraw

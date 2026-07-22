@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] Compile ZandroX on Linux from the in-repo source — the native, no-Docker path.
 #
 # A Linux contributor runs this directly to build and package ZandroX. It is also the

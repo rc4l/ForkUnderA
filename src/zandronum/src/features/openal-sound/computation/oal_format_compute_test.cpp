@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Tests for the OpenAL format/sizing math. Covers every branch.
 #include "gtest/gtest.h"
 #include "features/openal-sound/computation/oal_format_compute.h"

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] Maintainer tool: regenerates windows_assets/ (the prebuilt deps windows_build.ps1
 # links against). Manual only — run from the Actions tab, download the windows_assets artifact,
 # and drop its contents into windows_assets/. See windows_assets/README.md.

@@ -8,6 +8,7 @@
 // for giant-map operands. Not derived from Ken Silverman's Build code.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #ifndef ZX_FIXEDMATH_H
 #define ZX_FIXEDMATH_H
 

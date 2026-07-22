@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Pure OpenAL sample-format / buffer-sizing math, extracted from oalsound.cpp so it
 // can be unit-tested without linking OpenAL or the engine. Maps decoder channel/sample
 // descriptions and stream flags to AL buffer formats and frame sizes, and rounds buffer

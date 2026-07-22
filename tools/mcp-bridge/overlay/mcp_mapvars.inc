@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // ==== MCP_MAPVARS (overlay-appended to p_acs.cpp; not committed upstream) ====
 // Read/write map-scope ACS variables and arrays by name, across all loaded ACS
 // modules. Uses only public FBehavior API, all of which is internally bounds-

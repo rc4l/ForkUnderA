@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # [rc4l] Standalone GoogleTest project, kept separate from the heavy vendored engine build.
 cmake_minimum_required(VERSION 3.14)
 project(zandrox_tests CXX)

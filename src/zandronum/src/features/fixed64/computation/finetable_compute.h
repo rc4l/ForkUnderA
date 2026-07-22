@@ -14,6 +14,7 @@
 // regardless of facing. See finetable_compute_test.cpp.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
 #ifndef ZX_FINETABLE_COMPUTE_H
 #define ZX_FINETABLE_COMPUTE_H
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Verifies the 64-bit scale layer: both the 32-bit fast-path and the wide128 path
 // against the __int128 reference, and that both branches are exercised. Deterministic LCG.
 #include "gtest/gtest.h"

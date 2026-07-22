@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Tests for the OpenAL playback math (distance rolloff and loop points). Covers
 // every branch.
 #include "gtest/gtest.h"

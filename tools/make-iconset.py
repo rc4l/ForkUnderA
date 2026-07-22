@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
 # Pad a (possibly non-square) source image onto transparent square canvases and
 # emit the standard macOS .iconset PNGs.  mac_compile.sh then runs `iconutil` to turn
 # the directory into a .icns.  Best-effort: mac_compile.sh skips the icon if this

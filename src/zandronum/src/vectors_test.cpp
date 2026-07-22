@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
 // [rc4l] Unit tests for the engine's header-only vector math (src/vectors.h).
 #include "vectors.h"
 
