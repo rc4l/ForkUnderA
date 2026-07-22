@@ -344,7 +344,7 @@ int MatchString (const char *in, const char **strings);
 	float var = params[(no)+1].f;
 
 #define PROP_FIXED_PARM(var, no) \
-	fixed_t var = fixed_t(params[(no)+1].f * FRACUNIT);
+	fixed_t var = fixed_t(params[(no)+1].f * double(FRACUNIT));
 
 #define PROP_COLOR_PARM(var, no) \
 	int var = params[(no)+1].i== 0? params[(no)+2].i : V_GetColor(NULL, params[(no)+2].s);

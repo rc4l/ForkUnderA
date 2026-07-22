@@ -464,7 +464,7 @@ void cht_DoCheat (player_t *player, int cheat)
 			// a very very cheap kill.
 			// [Dusk] <jino> and summoning 5000 bfg balls isn't?
 			P_LineAttack (player->mo, player->mo->angle, PLAYERMISSILERANGE,
-				P_AimLineAttack (player->mo, player->mo->angle, PLAYERMISSILERANGE), TELEFRAG_DAMAGE,
+				(int)P_AimLineAttack (player->mo, player->mo->angle, PLAYERMISSILERANGE), TELEFRAG_DAMAGE,
 				NAME_MDK, NAME_BulletPuff);
 		}
 		break;

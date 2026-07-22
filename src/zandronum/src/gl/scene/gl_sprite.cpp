@@ -468,7 +468,7 @@ void GLSprite::SetSpriteColor(sector_t *sector, fixed_t center_y)
 		maplightbottom=FIXED2FLOAT(lightbottom);
 		if (maplightbottom<z2) maplightbottom=z2;
 
-		if (maplightbottom<center_y)
+		if (maplightbottom<float(center_y))
 		{
 			lightlevel=*lightlist[i].p_lightlevel;
 			Colormap.CopyLightColor(lightlist[i].extra_colormap);
@@ -761,7 +761,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		gltexture=NULL;
 	}
 
-	depth = DMulScale20 (thing->x-viewx, viewtancos, thing->y-viewy, viewtansin);
+	depth = (int)(DMulScale20 (thing->x-viewx, viewtancos, thing->y-viewy, viewtansin));
 
 	// light calculation
 
@@ -982,8 +982,8 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 		Colormap = sector->ColorMap;
 		for(unsigned int i=0;i<lightlist.Size();i++)
 		{
-			if (i<lightlist.Size()-1) lightbottom = lightlist[i+1].plane.ZatPoint(particle->x,particle->y);
-			else lightbottom = sector->floorplane.ZatPoint(particle->x,particle->y);
+			if (i<lightlist.Size()-1) lightbottom = (int)(lightlist[i+1].plane.ZatPoint(particle->x,particle->y));
+			else lightbottom = (int)(sector->floorplane.ZatPoint(particle->x,particle->y));
 
 			if (lightbottom < particle->y)
 			{
@@ -1057,7 +1057,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 	z1=z-scalefac;
 	z2=z+scalefac;
 
-	depth = DMulScale20 (particle->x-viewx, viewtancos, particle->y-viewy, viewtansin);
+	depth = (int)(DMulScale20 (particle->x-viewx, viewtancos, particle->y-viewy, viewtansin));
 
 	actor=NULL;
 	this->particle=particle;

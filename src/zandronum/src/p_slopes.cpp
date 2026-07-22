@@ -36,6 +36,7 @@
 #include "p_local.h"
 #include "cmdlib.h"
 #include "p_lnspec.h"
+#include "features/fixed64/computation/fixed64_scale_compute.h"
 
 //===========================================================================
 //
@@ -190,8 +191,11 @@ void P_SetSlope (secplane_t *plane, bool setCeil, int xyangi, int zangi,
 
 	if (ib_compatflags & BCOMPATF_SETSLOPEOVERFLOW)
 	{
-		norm[0] = float(finecosine[zang] * finecosine[xyang]);
-		norm[1] = float(finecosine[zang] * finesine[xyang]);
+		// [rc4l] These maps depend on the 32-bit product wrapping at 2^32. A plain fixed*fixed is
+		// the full 64-bit product now that fixed_t is widened, so emulate the old overflow
+		// explicitly. See features/fixed64/computation/fixed64_scale_compute.h (Mul32Wrap).
+		norm[0] = float(zx::Mul32Wrap((int64_t)(finecosine[zang]), (int64_t)(finecosine[xyang])));
+		norm[1] = float(zx::Mul32Wrap((int64_t)(finecosine[zang]), (int64_t)(finesine[xyang])));
 	}
 	else
 	{
@@ -515,8 +519,8 @@ static void P_AlignPlane (sector_t *sec, line_t *line, int which)
 			vert = (*probe++)->v2;
 		else
 			vert = (*probe)->v1;
-		dist = fabs((double(line->v1->y) - vert->y) * line->dx -
-					(double(line->v1->x) - vert->x) * line->dy);
+		dist = fabs((double(line->v1->y) - double(vert->y)) * double(line->dx) -
+					(double(line->v1->x) - double(vert->x)) * double(line->dy));
 
 		if (dist > bestdist)
 		{

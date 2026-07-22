@@ -84,7 +84,7 @@ bool AArtiTeleport::Use (bool pickup)
 		else
 		{
 			// [BB] Silence uninitialized warnings.
-			destX = destY = destAngle = 0;
+			destX = destY = fixed_t(destAngle = 0);
 			I_Error( "ArtiTeleport: No player start found!" );
 		}
 	}

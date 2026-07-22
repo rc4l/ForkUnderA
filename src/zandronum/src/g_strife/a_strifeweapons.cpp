@@ -128,7 +128,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_JabDagger)
 	}
 
 	angle = self->angle + (pr_jabdagger.Random2() << 18);
-	pitch = P_AimLineAttack (self, angle, 80*FRACUNIT, &linetarget);
+	pitch = (int)(P_AimLineAttack (self, angle, 80*FRACUNIT, &linetarget));
 	P_LineAttack (self, angle, 80*FRACUNIT, pitch, damage, NAME_Melee, "StrifeSpark", true, &linetarget);
 
 	// turn to face target
@@ -697,7 +697,7 @@ AActor *P_SpawnSubMissile (AActor *source, const PClass *type, AActor *target)
 
 	if (P_CheckMissileSpawn (other, source->radius))
 	{
-		angle_t pitch = P_AimLineAttack (source, source->angle, 1024*FRACUNIT);
+		angle_t pitch = (angle_t)(P_AimLineAttack (source, source->angle, 1024*FRACUNIT));
 		other->velz = FixedMul (-finesine[pitch>>ANGLETOFINESHIFT], other->Speed);
 
 		// [BC] If we're the server, spawn this to clients.
@@ -870,7 +870,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireGrenade)
 			S_Sound (grenade, CHAN_VOICE, grenade->SeeSound, 1, ATTN_NORM);
 		}
 
-		grenade->velz = FixedMul (finetangent[FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT)], grenade->Speed) + 8*FRACUNIT;
+		grenade->velz = FixedMul (finetangent[(int)(FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT))], grenade->Speed) + 8*FRACUNIT;
 
 		an = self->angle >> ANGLETOFINESHIFT;
 		tworadii = self->radius + grenade->radius;

@@ -144,7 +144,7 @@ static void LoadSectors (sectortype *bsectors);
 static void LoadWalls (walltype *walls, int numwalls, sectortype *bsectors);
 static int LoadSprites (spritetype *sprites, Xsprite *xsprites, int numsprites, sectortype *bsectors, FMapThing *mapthings);
 static vertex_t *FindVertex (fixed_t x, fixed_t y);
-static void CreateStartSpot (fixed_t *pos, FMapThing *start);
+static void CreateStartSpot (SDWORD *pos, FMapThing *start);
 static void CalcPlane (SlopeWork &slope, secplane_t &plane);
 static void Decrypt (void *to, const void *from, int len, int key);
 
@@ -230,7 +230,7 @@ bool P_LoadBuildMap (BYTE *data, size_t len, FMapThing **sprites, int *numspr)
 
 	numsprites = *(WORD *)(data + 24 + numsectors*sizeof(sectortype) + numwalls*sizeof(walltype));
 	*sprites = new FMapThing[numsprites + 1];
-	CreateStartSpot ((fixed_t *)(data + 4), *sprites);
+	CreateStartSpot ((SDWORD *)(data + 4), *sprites);
 	*numspr = 1 + LoadSprites ((spritetype *)(data + 26 + numsectors*sizeof(sectortype) + numwalls*sizeof(walltype)),
 		NULL, numsprites, (sectortype *)(data + 22), *sprites + 1);
 
@@ -362,7 +362,7 @@ static bool P_LoadBloodMap (BYTE *data, size_t len, FMapThing **mapthings, int *
 	LoadSectors (bsec);
 	LoadWalls (bwal, numWalls, bsec);
 	*mapthings = new FMapThing[numsprites + 1];
-	CreateStartSpot ((fixed_t *)infoBlock, *mapthings);
+	CreateStartSpot ((SDWORD *)infoBlock, *mapthings);
 	*numspr = 1 + LoadSprites (bspr, xspr, numsprites, bsec, *mapthings + 1);
 
 	delete[] bsec;
@@ -760,7 +760,7 @@ vertex_t *FindVertex (fixed_t x, fixed_t y)
 //
 //==========================================================================
 
-static void CreateStartSpot (fixed_t *pos, FMapThing *start)
+static void CreateStartSpot (SDWORD *pos, FMapThing *start)
 {
 	short angle = LittleShort(*(WORD *)(&pos[3]));
 	FMapThing mt =

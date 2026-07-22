@@ -320,7 +320,7 @@ void DPlat::Tick ()
 // [BC]
 void DPlat::UpdateToClient( ULONG ulClient )
 {
-	SERVERCOMMANDS_DoPlat( m_Type, m_Sector, m_Status, m_High, m_Low, m_Speed, m_PlatID, ulClient, SVCF_ONLYTHISCLIENT );
+	SERVERCOMMANDS_DoPlat( m_Type, m_Sector, m_Status,(LONG)( m_High),(LONG)( m_Low),(LONG)( m_Speed), m_PlatID, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 DPlat::DPlat (sector_t *sector)
@@ -512,7 +512,7 @@ manual_plat:
 
 		case DPlat::platUpByValue:
 		case DPlat::platUpByValueStay:
-			newheight = sec->floorplane.ZatPoint (0, 0) + height;
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) + height;
 			plat->m_High = sec->floorplane.PointToDist (0, 0, newheight);
 			plat->m_Low = sec->floorplane.d;
 			plat->m_Status = DPlat::up;
@@ -520,7 +520,7 @@ manual_plat:
 			break;
 		
 		case DPlat::platDownByValue:
-			newheight = sec->floorplane.ZatPoint (0, 0) - height;
+			newheight = sec->floorplane.ZatPoint(fixed_t(0), fixed_t(0)) - height;
 			plat->m_Low = sec->floorplane.PointToDist (0, 0, newheight);
 			plat->m_High = sec->floorplane.d;
 			plat->m_Status = DPlat::down;
@@ -616,7 +616,7 @@ manual_plat:
 		// [BC] If we're the server, tell clients to create the plat.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			SERVERCOMMANDS_DoPlat( type, &sectors[secnum], plat->m_Status, plat->m_High, plat->m_Low, plat->m_Speed, plat->m_PlatID );
+			SERVERCOMMANDS_DoPlat( type, &sectors[secnum], plat->m_Status,(LONG)( plat->m_High),(LONG)( plat->m_Low),(LONG)( plat->m_Speed), plat->m_PlatID );
 
 			// [BC] Also, if we're the server, tell clients to play the appropriate plat sound.
 			switch ( type )

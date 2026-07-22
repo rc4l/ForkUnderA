@@ -132,7 +132,7 @@ void ABasicArmor::AbsorbDamage (int damage, FName damageType, int &newdamage)
 		}
 		else
 		{
-			saved = full + FixedMul (damage - full, SavePercent);
+			saved = (int)(full + FixedMul (damage - full, SavePercent));
 			if (MaxAbsorb > 0 && saved + AbsorbCount > MaxAbsorb) 
 			{
 				saved = MAX(0,  MaxAbsorb - AbsorbCount);
@@ -188,7 +188,7 @@ void ABasicArmor::AbsorbDamage (int damage, FName damageType, int &newdamage)
 			pdf = df->CheckFactor(damageType);
 			if (pdf != NULL)
 			{
-				damage = newdamage = FixedMul(damage, *pdf);
+				damage = newdamage = (int)(FixedMul(damage, *pdf));
 			}
 		}
 	}
@@ -497,7 +497,7 @@ bool AHexenArmor::AddArmorToSlot (AActor *actor, int slot, int amount)
 	}
 	if (amount <= 0)
 	{
-		hits = SlotsIncrement[slot];
+		hits = (int)(SlotsIncrement[slot]);
 		if (Slots[slot] < hits)
 		{
 			Slots[slot] = hits;
@@ -506,7 +506,7 @@ bool AHexenArmor::AddArmorToSlot (AActor *actor, int slot, int amount)
 	}
 	else
 	{
-		hits = amount * 5 * FRACUNIT;
+		hits = (int)(amount * 5 * FRACUNIT);
 		fixed_t total = Slots[0]+Slots[1]+Slots[2]+Slots[3]+Slots[4];
 		fixed_t max = SlotsIncrement[0]+SlotsIncrement[1]+SlotsIncrement[2]+SlotsIncrement[3]+Slots[4]+4*5*FRACUNIT;
 		if (total < max)
@@ -562,10 +562,10 @@ void AHexenArmor::AbsorbDamage (int damage, FName damageType, int &newdamage)
 					bAbsorbed = true;
 				}
 			}
-			int saved = Scale (damage, savedPercent, 100*FRACUNIT);
+			int saved = (int)(Scale (damage, savedPercent, 100*FRACUNIT));
 			if (saved > savedPercent >> (FRACBITS-1))
 			{	
-				saved = savedPercent >> (FRACBITS-1);
+				saved = (int)(savedPercent >> (FRACBITS-1));
 			}
 			newdamage -= saved;
 			damage = newdamage;

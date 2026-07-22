@@ -756,9 +756,9 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 	if (strafe)
 	{
 		if (Button_Right.bDown)
-			side += sidemove[speed];
+			side += (int)(sidemove[speed]);
 		if (Button_Left.bDown)
-			side -= sidemove[speed];
+			side -= (int)(sidemove[speed]);
 	}
 	else
 	{
@@ -769,11 +769,11 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 		
 		if (Button_Right.bDown)
 		{
-			G_AddViewAngle (angleturn[tspeed]);
+			G_AddViewAngle ((int)(angleturn[tspeed]));
 		}
 		if (Button_Left.bDown)
 		{
-			G_AddViewAngle (-angleturn[tspeed]);
+			G_AddViewAngle ((int)(-angleturn[tspeed]));
 		}
 	}
 
@@ -787,9 +787,9 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 	}
 
 	if (Button_MoveUp.bDown)
-		fly += flyspeed[speed];
+		fly += (int)(flyspeed[speed]);
 	if (Button_MoveDown.bDown)
-		fly -= flyspeed[speed];
+		fly -= (int)(flyspeed[speed]);
 
 	if (Button_Klook.bDown)
 	{
@@ -801,15 +801,15 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 	else
 	{
 		if (Button_Forward.bDown)
-			forward += forwardmove[speed];
+			forward += (int)(forwardmove[speed]);
 		if (Button_Back.bDown)
-			forward -= forwardmove[speed];
+			forward -= (int)(forwardmove[speed]);
 	}
 
 	if (Button_MoveRight.bDown)
-		side += sidemove[speed];
+		side += (int)(sidemove[speed]);
 	if (Button_MoveLeft.bDown)
-		side -= sidemove[speed];
+		side -= (int)(sidemove[speed]);
 
 	// buttons
 	if (Button_Attack.bDown)		cmd->ucmd.buttons |= BT_ATTACK;
@@ -868,8 +868,8 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 		G_AddViewAngle(joyint(-1280 * joyaxes[JOYAXIS_Yaw]));
 	}
 
-	side -= joyint(sidemove[speed] * joyaxes[JOYAXIS_Side]);
-	forward += joyint(joyaxes[JOYAXIS_Forward] * forwardmove[speed]);
+	side -= joyint((double)(double(sidemove[speed]) * double(joyaxes[JOYAXIS_Side])));
+	forward += joyint((double)(double(joyaxes[JOYAXIS_Forward]) * double(forwardmove[speed])));
 	fly += joyint(joyaxes[JOYAXIS_Up] * 2048);
 
 	// Handle mice.
@@ -893,13 +893,13 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 
 	// Build command.
 	if (forward > MAXPLMOVE)
-		forward = MAXPLMOVE;
+		forward = (int)(MAXPLMOVE);
 	else if (forward < -MAXPLMOVE)
-		forward = -MAXPLMOVE;
+		forward = (int)(-MAXPLMOVE);
 	if (side > MAXPLMOVE)
-		side = MAXPLMOVE;
+		side = (int)(MAXPLMOVE);
 	else if (side < -MAXPLMOVE)
-		side = -MAXPLMOVE;
+		side = (int)(-MAXPLMOVE);
 
 	cmd->ucmd.forwardmove += forward;
 	cmd->ucmd.sidemove += side;
@@ -3319,7 +3319,7 @@ static void GAME_ResetActorUDMFValues(AActor *oldActor, AActor *newActor)
 	newActor->ResetUserVars();
 
 	newActor->pitch				= oldActor->SavedPitch;
-	newActor->roll				= oldActor->SavedRoll;
+	newActor->roll				= (angle_t)(oldActor->SavedRoll);
 	newActor->scaleX			= oldActor->SavedScaleX;
 	newActor->scaleY			= oldActor->SavedScaleY;
 	newActor->RenderStyle		= oldActor->SavedRenderStyle;
@@ -3499,8 +3499,8 @@ void GAME_ResetMap( bool bRunEnterScripts )
 		if ( pPoly->bMoved )
 		{
 
-			const LONG lDeltaX = pPoly->SavedStartSpot[0] - pPoly->StartSpot.x;
-			const LONG lDeltaY = pPoly->SavedStartSpot[1] - pPoly->StartSpot.y;
+			const LONG lDeltaX = (const LONG)(pPoly->SavedStartSpot[0] - pPoly->StartSpot.x);
+			const LONG lDeltaY = (const LONG)(pPoly->SavedStartSpot[1] - pPoly->StartSpot.y);
 
 			pPoly->MovePolyobj( lDeltaX, lDeltaY, true );
 			pPoly->bMoved = false;

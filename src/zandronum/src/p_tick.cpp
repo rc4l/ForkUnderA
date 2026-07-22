@@ -294,7 +294,7 @@ void P_Ticker (void)
 			ULONG				ulTextColor;
 			DHUDMessageFadeOut	*pMsg;
 
-			if ( BOTS_IsPathObstructed( botdebug_obstructiontest, players[consoleplayer].camera ))
+			if ( BOTS_IsPathObstructed( (int)botdebug_obstructiontest, players[consoleplayer].camera ))
 			{
 				ulTextColor = CR_RED;
 				sprintf( szString, "PATH OBSTRUCTED!" );

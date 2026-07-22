@@ -175,7 +175,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Mushroom)
 			AActor *mo;
 			target->x = self->x + (i << FRACBITS);    // Aim in many directions from source
 			target->y = self->y + (j << FRACBITS);
-			target->z = self->z + (P_AproxDistance(i,j) * vrange); // Aim up fairly high
+			target->z = self->z + Scale(P_AproxDistance(i,j), vrange, 1); // Aim up fairly high
 			if ((flags & MSF_Classic) || // Flag explicitely set, or no flags and compat options
 				(flags == 0 && (self->state->DefineFlags & SDF_DEHACKED) && (i_compatflags & COMPATF_MUSHROOM)))
 			{	// Use old function for MBF compatibility

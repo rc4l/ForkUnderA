@@ -767,13 +767,13 @@ void FDecalLib::ParseSlider (FScanner &sc)
 		else if (sc.Compare ("DistX"))
 		{
 			sc.MustGetFloat ();
-			distX = (fixed_t)(sc.Float * FRACUNIT);
+			distX = (fixed_t)(double(sc.Float) * double(FRACUNIT));
 			Printf ("DistX in slider decal %s is unsupported\n", sliderName.GetChars());
 		}
 		else if (sc.Compare ("DistY"))
 		{
 			sc.MustGetFloat ();
-			distY = (fixed_t)(sc.Float * FRACUNIT);
+			distY = (fixed_t)(double(sc.Float) * double(FRACUNIT));
 		}
 		else
 		{
@@ -1431,5 +1431,5 @@ DThinker *FDecalColorerAnim::CreateThinker (DBaseDecal *actor, side_t *wall) con
 static fixed_t ReadScale (FScanner &sc)
 {
 	sc.MustGetFloat ();
-	return fixed_t(clamp (sc.Float * FRACUNIT, 256.0, 256.0*FRACUNIT));
+	return fixed_t(clamp<double> (sc.Float * double(FRACUNIT), 256.0, 256.0*double(FRACUNIT)));
 }

@@ -29,7 +29,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_ShootGun)
 
 	S_Sound (self, CHAN_WEAPON, "monsters/rifle", 1, ATTN_NORM, true);	// [BC] Inform the clients.
 	A_FaceTarget (self);
-	pitch = P_AimLineAttack (self, self->angle, MISSILERANGE);
+	pitch = (int)(P_AimLineAttack (self, self->angle, MISSILERANGE));
 	P_LineAttack (self, self->angle + (pr_shootgun.Random2() << 19),
 		MISSILERANGE, pitch,
 		3*(pr_shootgun() % 5 + 1), NAME_Hitscan, NAME_StrifePuff);

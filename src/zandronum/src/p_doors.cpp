@@ -329,7 +329,7 @@ void DDoor::Tick ()
 
 void DDoor::UpdateToClient( ULONG ulClient )
 {
-	SERVERCOMMANDS_DoDoor( m_Sector, m_Type, m_Speed, m_Direction, m_LightTag, m_DoorID, ulClient, SVCF_ONLYTHISCLIENT );
+	SERVERCOMMANDS_DoDoor( m_Sector, m_Type,(LONG)( m_Speed), m_Direction, m_LightTag, m_DoorID, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 int DDoor::GetDirection ()
@@ -554,7 +554,7 @@ void DDoor::SetType( DDoor::EVlDoor Type )
 
 LONG DDoor::GetSpeed( void )
 {
-	return ( m_Speed );
+	return (LONG)(( m_Speed ));
 }
 
 void DDoor::SetSpeed( LONG lSpeed )
@@ -1033,7 +1033,7 @@ DAnimatedDoor::DAnimatedDoor (sector_t *sec, line_t *line, int speed, int delay,
 	FTexture *tex = TexMan[picnum];
 	topdist = tex ? tex->GetScaledHeight() : 64;
 
-	topdist = m_Sector->ceilingplane.d - topdist * m_Sector->ceilingplane.c;
+	topdist = m_Sector->ceilingplane.d - (int)topdist * m_Sector->ceilingplane.c;
 
 	m_Status = Opening;
 	m_Speed = speed;

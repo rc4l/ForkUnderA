@@ -52,6 +52,8 @@
 #include "p_3dmidtex.h"
 #include "r_data/r_interpolate.h"
 #include "v_palette.h"
+#include "features/fixed64/computation/finetable_compute.h"
+#include "features/fixed64/computation/angle_interp_compute.h"
 #include "po_man.h"
 #include "p_effect.h"
 #include "st_start.h"
@@ -212,11 +214,11 @@ angle_t R_PointToAngle2 (fixed_t x1, fixed_t y1, fixed_t x, fixed_t y)
 			{
 				if (x > y)
 				{ // octant 0
-					return SlopeDiv(y, x);
+					return SlopeDiv((unsigned int)(y),(unsigned int)( x));
 				}
 				else
 				{ // octant 1
-					return ANG90 - 1 - SlopeDiv(x, y);
+					return ANG90 - 1 - SlopeDiv((unsigned int)(x),(unsigned int)( y));
 				}
 			}
 			else // y < 0
@@ -224,11 +226,11 @@ angle_t R_PointToAngle2 (fixed_t x1, fixed_t y1, fixed_t x, fixed_t y)
 				y = -y;
 				if (x > y)
 				{ // octant 8
-					return 0 - SlopeDiv(y, x);
+					return 0 - SlopeDiv((unsigned int)(y),(unsigned int)( x));
 				}
 				else
 				{ // octant 7
-					return ANG270 + SlopeDiv(x, y);
+					return ANG270 + SlopeDiv((unsigned int)(x),(unsigned int)( y));
 				}
 			}
 		}
@@ -239,11 +241,11 @@ angle_t R_PointToAngle2 (fixed_t x1, fixed_t y1, fixed_t x, fixed_t y)
 			{
 				if (x > y)
 				{ // octant 3
-					return ANG180 - 1 - SlopeDiv(y, x);
+					return ANG180 - 1 - SlopeDiv((unsigned int)(y),(unsigned int)( x));
 				}
 				else
 				{ // octant 2
-					return ANG90 + SlopeDiv(x, y);
+					return ANG90 + SlopeDiv((unsigned int)(x),(unsigned int)( y));
 				}
 			}
 			else // y < 0
@@ -251,11 +253,11 @@ angle_t R_PointToAngle2 (fixed_t x1, fixed_t y1, fixed_t x, fixed_t y)
 				y = -y;
 				if (x > y)
 				{ // octant 4
-					return ANG180 + SlopeDiv(y, x);
+					return ANG180 + SlopeDiv((unsigned int)(y),(unsigned int)( x));
 				}
 				else
 				{ // octant 5
-					return ANG270 - 1 - SlopeDiv(x, y);
+					return ANG270 - 1 - SlopeDiv((unsigned int)(x),(unsigned int)( y));
 				}
 			}
 		}
@@ -316,7 +318,7 @@ fixed_t R_PointToDist2 (fixed_t dx, fixed_t dy)
 		swapvalues (dx, dy);
 	}
 
-	return FixedDiv (dx, finecosine[tantoangle[FixedDiv (dy, dx) >> DBITS] >> ANGLETOFINESHIFT]);
+	return FixedDiv (dx, finecosine[tantoangle[(int)(FixedDiv (dy, dx) >> DBITS)] >> ANGLETOFINESHIFT]);
 }
 
 //==========================================================================
@@ -331,16 +333,20 @@ void R_InitTables (void)
 	const double pimul = PI*2/FINEANGLES;
 
 	// viewangle tangent table
-	finetangent[0] = (fixed_t)(FRACUNIT*tan ((0.5-FINEANGLES/4)*pimul)+0.5);
+	finetangent[0] = (fixed_t)(double(FRACUNIT)*tan ((0.5-FINEANGLES/4)*pimul)+0.5);
 	for (i = 1; i < FINEANGLES/2; i++)
 	{
-		finetangent[i] = (fixed_t)(FRACUNIT*tan ((i-FINEANGLES/4)*pimul)+0.5);
+		finetangent[i] = (fixed_t)(double(FRACUNIT)*tan ((i-FINEANGLES/4)*pimul)+0.5);
 	}
 	
 	// finesine table
+	// [rc4l] double(FRACUNIT), not bare FRACUNIT: FRACUNIT is now the strong Fixed type, so
+	// FRACUNIT * sin(...) bound to operator*(Fixed,int) and truncated sin (which is in [0,1)
+	// across this quarter) to 0 -- zeroing the whole sine/cosine table except the quarter points.
+	// That killed movement/hitscan/sight/rendering at every non-cardinal angle.
 	for (i = 0; i < FINEANGLES/4; i++)
 	{
-		finesine[i] = (fixed_t)(FRACUNIT * sin (i*pimul));
+		finesine[i] = (fixed_t)(double(FRACUNIT) * sin (i*pimul));
 	}
 	for (i = 0; i < FINEANGLES/4; i++)
 	{
@@ -352,7 +358,11 @@ void R_InitTables (void)
 	}
 	finesine[FINEANGLES/4] = FRACUNIT;
 	finesine[FINEANGLES*3/4] = -FRACUNIT;
-	memcpy (&finesine[FINEANGLES], &finesine[0], sizeof(angle_t)*FINEANGLES/4);
+	// [rc4l] Size the wraparound copy off finesine's own element type, not angle_t. They were
+	// the same width at 32-bit fixed_t; after widening to 64 bits a sizeof(angle_t) copy moved
+	// only half the tail and zeroed finecosine across ~315-360 deg (the "forward = slide south"
+	// bug). See features/fixed64/computation/finetable_compute.h.
+	zx::FillFineSineWrap (finesine, FINEANGLES);
 }
 
 //==========================================================================
@@ -630,7 +640,7 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 			}
 			else
 			{
-				viewpitch = MIN(viewpitch + delta, player->MaxPitch);
+				viewpitch = (int)(MIN(viewpitch + delta, player->MaxPitch));
 			}
 		}
 		else if (delta < 0)
@@ -642,14 +652,18 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 			}
 			else
 			{
-				viewpitch = MAX(viewpitch + delta, player->MinPitch);
+				viewpitch = (int)(MAX(viewpitch + delta, player->MinPitch));
 			}
 		}
 	}
 	else
 	{
-		viewpitch = iview->oviewpitch + FixedMul (frac, iview->nviewpitch - iview->oviewpitch);
-		viewangle = iview->oviewangle + FixedMul (frac, iview->nviewangle - iview->oviewangle);
+		viewpitch = (int)(iview->oviewpitch + FixedMul (frac, iview->nviewpitch - iview->oviewpitch));
+		// [rc4l] The angle delta is an unsigned 32-bit difference that must be read back as a
+		// signed int32 before the now-64-bit FixedMul, or a right turn (huge unsigned delta)
+		// zero-extends and the view overshoots -- the "+right spins faster than +left" bug.
+		// See features/fixed64/computation/angle_interp_compute.h.
+		viewangle = zx::InterpolateAngleBAM (iview->oviewangle, iview->nviewangle, (int64_t)(frac));
 	}
 	
 	// Due to interpolation this is not necessarily the same as the sector the camera is in.
@@ -836,7 +850,7 @@ void R_SetupFrame (AActor *actor)
 	}
 	else
 	{
-		iview->nviewpitch = camera->pitch;
+		iview->nviewpitch = (int)(camera->pitch);
 	}
 
 	if (camera->player != 0)

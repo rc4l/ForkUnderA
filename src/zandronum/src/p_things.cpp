@@ -244,7 +244,7 @@ bool P_Thing_Projectile (int tid, AActor *source, int type, const char *type_nam
 	const PClass *kind;
 	AActor *spot, *mobj, *targ = forcedest;
 	FActorIterator iterator (tid);
-	double fspeed = speed;
+	double fspeed = (double)(speed);
 	int defflags3;
 	// [BC]
 	bool	bMissileExplode;
@@ -334,7 +334,7 @@ bool P_Thing_Projectile (int tid, AActor *source, int type, const char *type_nam
 							// with the math. I don't think I would have thought of using
 							// trig alone had I been left to solve it by myself.
 
-							FVector3 tvel(targ->velx, targ->vely, targ->velz);
+							FVector3 tvel((double)(targ->velx),(double)( targ->vely),(double)( targ->velz));
 							if (!(targ->flags & MF_NOGRAVITY) && targ->waterlevel < 3)
 							{ // If the target is subject to gravity and not underwater,
 							  // assume that it isn't moving vertically. Thanks to gravity,
@@ -393,7 +393,7 @@ nolead:						mobj->angle = R_PointToAngle2 (mobj->x, mobj->y, targ->x, targ->y);
 					// Set the missile's speed to reflect the speed it was spawned at.
 					if (mobj->flags & MF_MISSILE)
 					{
-						mobj->Speed = fixed_t (sqrt (double(mobj->velx)*mobj->velx + double(mobj->vely)*mobj->vely + double(mobj->velz)*mobj->velz));
+						mobj->Speed = fixed_t (sqrt ((double)(double(mobj->velx)*double(mobj->velx) + double(mobj->vely)*double(mobj->vely) + double(mobj->velz)*double(mobj->velz))));
 					}
 					// Hugger missiles don't have any vertical velocity
 					if (mobj->flags3 & (MF3_FLOORHUGGER|MF3_CEILINGHUGGER))

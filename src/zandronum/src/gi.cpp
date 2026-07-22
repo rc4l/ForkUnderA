@@ -137,7 +137,7 @@ const char* GameInfoBorders[] =
 	else if(nextKey.CompareNoCase(variable) == 0) \
 	{ \
 		sc.MustGetFloat(); \
-		gameinfo.key = static_cast<int> (sc.Float*FRACUNIT); \
+		gameinfo.key = static_cast<int> (sc.Float*double(FRACUNIT)); \
 	}
 
 #define GAMEINFOKEY_COLOR(key, variable) \

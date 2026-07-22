@@ -845,14 +845,14 @@ static int PatchThing (int thingy)
 		}
 		else if (linelen == 12 && stricmp (Line1, "Translucency") == 0)
 		{
-			info->alpha = val;
+			info->alpha = fixed_t(val);
 			info->RenderStyle = STYLE_Translucent;
 			hadTranslucency = true;
 			hadStyle = true;
 		}
 		else if (linelen == 6 && stricmp (Line1, "Height") == 0)
 		{
-			info->height = val;
+			info->height = fixed_t(val);
 			info->projectilepassheight = 0;	// needs to be disabled
 			hadHeight = true;
 		}
@@ -864,15 +864,15 @@ static int PatchThing (int thingy)
 		{
 			if (stricmp (Line1, "Speed") == 0)
 			{
-				info->Speed = val;
+				info->Speed = fixed_t(val);
 			}
 			else if (stricmp (Line1, "Width") == 0)
 			{
-				info->radius = val;
+				info->radius = fixed_t(val);
 			}
 			else if (stricmp (Line1, "Alpha") == 0)
 			{
-				info->alpha = (fixed_t)(atof (Line2) * FRACUNIT);
+				info->alpha = (fixed_t)(double(atof (Line2)) * double(FRACUNIT));
 				hadTranslucency = true;
 			}
 			else if (stricmp (Line1, "Scale") == 0)
@@ -1092,11 +1092,11 @@ static int PatchThing (int thingy)
 						// MBF bounce factors depend on flag combos:
 						enum
 						{
-							MBF_BOUNCE_NOGRAVITY	= FRACUNIT,				// With NOGRAVITY: full momentum
-							MBF_BOUNCE_FLOATDROPOFF	= (FRACUNIT * 85) / 100,// With FLOAT and DROPOFF: 85%
-							MBF_BOUNCE_FLOAT		= (FRACUNIT * 70) / 100,// With FLOAT alone: 70%
-							MBF_BOUNCE_DEFAULT		= (FRACUNIT * 45) / 100,// Without the above flags: 45%
-							MBF_BOUNCE_WALL			= (FRACUNIT * 50) / 100,// Bouncing off walls: 50%
+							MBF_BOUNCE_NOGRAVITY	= (1<<FRACBITS),				// With NOGRAVITY: full momentum
+							MBF_BOUNCE_FLOATDROPOFF	= ((1<<FRACBITS) * 85) / 100,// With FLOAT and DROPOFF: 85%
+							MBF_BOUNCE_FLOAT		= ((1<<FRACBITS) * 70) / 100,// With FLOAT alone: 70%
+							MBF_BOUNCE_DEFAULT		= ((1<<FRACBITS) * 45) / 100,// Without the above flags: 45%
+							MBF_BOUNCE_WALL			= ((1<<FRACBITS) * 50) / 100,// Bouncing off walls: 50%
 						};
 						info->bouncefactor = ((value[0] & MF_NOGRAVITY) ? MBF_BOUNCE_NOGRAVITY
 							: (value[0] & MF_FLOAT) ? (value[0] & MF_DROPOFF) ? MBF_BOUNCE_FLOATDROPOFF
@@ -1802,7 +1802,7 @@ static int PatchMisc (int dummy)
 			}
 			else if (stricmp (Line1, "Rocket Explosion Alpha") == 0)
 			{
-				deh.ExplosionAlpha = (fixed_t)(atof (Line2) * FRACUNIT);
+				deh.ExplosionAlpha = (fixed_t)(double(atof (Line2)) * double(FRACUNIT));
 			}
 			else if (stricmp (Line1, "Monsters Infight") == 0)
 			{

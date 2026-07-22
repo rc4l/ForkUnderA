@@ -894,7 +894,7 @@ public:
 		 {
 			 return 0;
 		 }
-		 return finesine[MulScale22(((FloatBobPhase + level.maptime) << FRACBITS) + ticfrac, FINEANGLES) & FINEMASK] * 8;
+		 return finesine[(int)(MulScale22(((FloatBobPhase + level.maptime) << FRACBITS) + ticfrac, FINEANGLES) & FINEMASK)] * 8;
 	}
 
 	// Enter the crash state

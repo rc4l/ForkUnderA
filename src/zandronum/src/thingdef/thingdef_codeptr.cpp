@@ -673,7 +673,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_BulletAttack)
 	A_FaceTarget (self);
 	bangle = self->angle;
 
-	slope = P_AimLineAttack (self, bangle, MISSILERANGE);
+	slope = (int)(P_AimLineAttack (self, bangle, MISSILERANGE));
 
 	S_Sound (self, CHAN_WEAPON, self->AttackSound, 1, ATTN_NORM, true );	// [BC] Inform the clients.
 	for (i = self->GetMissileDamage (0, 1); i > 0; --i)
@@ -1226,7 +1226,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 				{
 					if (CMF_OFFSETPITCH & flags)
 					{
-							FVector2 velocity (missile->velx, missile->vely);
+							FVector2 velocity ((double)(missile->velx),(double)( missile->vely));
 							pitch += R_PointToAngle2(0,0, (fixed_t)velocity.Length(), missile->velz);
 					}
 					ang = pitch >> ANGLETOFINESHIFT;
@@ -1235,13 +1235,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 				}
 				else
 				{
-					FVector2 velocity (missile->velx, missile->vely);
+					FVector2 velocity ((double)(missile->velx),(double)( missile->vely));
 					missilespeed = (fixed_t)velocity.Length();
 				}
 
 				if (CMF_SAVEPITCH & flags)
 				{
-					missile->pitch = pitch;
+					missile->pitch = fixed_t(pitch);
 					// In aimmode 0 and 1 without absolutepitch or offsetpitch, the pitch parameter
 					// contains the unapplied parameter. In that case, it is set as pitch without
 					// otherwise affecting the spawned actor.
@@ -1343,7 +1343,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomBulletAttack)
 
 		if (!pufftype) pufftype = PClass::FindClass(NAME_BulletPuff);
 
-		if (!(Flags & CBAF_NOPITCH)) bslope = P_AimLineAttack (self, bangle, MISSILERANGE);
+		if (!(Flags & CBAF_NOPITCH)) bslope = (int)(P_AimLineAttack (self, bangle, MISSILERANGE));
 
 		S_Sound (self, CHAN_WEAPON, self->AttackSound, 1, ATTN_NORM, true );	// [BB] Inform the clients.
 		for (i=0 ; i<NumBullets ; i++)
@@ -1712,7 +1712,7 @@ void A_FireCustomMissileHelper ( AActor * self,
 {
 	// [BB] Don't tell the clients to spawn the missile yet. This is done later
 	// after we are done manipulating angle and velocity.
-	AActor * misl=P_SpawnPlayerMissile (self, x, y, z, ti, shootangle, &linetarget,	NULL, false, true, false);
+	AActor * misl=P_SpawnPlayerMissile (self, x, y, z, ti,(angle_t)( shootangle), &linetarget,	NULL, false, true, false);
 	// automatic handling of seeker missiles
 	if (misl)
 	{
@@ -1721,7 +1721,7 @@ void A_FireCustomMissileHelper ( AActor * self,
 		{
 			// This original implementation is to aim straight ahead and then offset
 			// the angle from the resulting direction. 
-			FVector3 velocity(misl->velx, misl->vely, 0);
+			FVector3 velocity((double)(misl->velx),(double)( misl->vely), 0);
 			fixed_t missilespeed = (fixed_t)velocity.Length();
 			misl->angle += Angle;
 			angle_t an = misl->angle >> ANGLETOFINESHIFT;
@@ -1768,13 +1768,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 		fixed_t x = SpawnOfs_XY * finecosine[ang];
 		fixed_t y = SpawnOfs_XY * finesine[ang];
 		fixed_t z = SpawnHeight;
-		fixed_t shootangle = self->angle;
+		fixed_t shootangle = fixed_t(self->angle);
 
-		if (AimAtAngle) shootangle+=Angle;
+		if (AimAtAngle) shootangle+=fixed_t(Angle);
 
 		// Temporarily adjusts the pitch
 		fixed_t SavedPlayerPitch = self->pitch;
-		self->pitch -= pitch;
+		self->pitch -= fixed_t(pitch);
 
 		A_FireCustomMissileHelper( self, x, y, z, shootangle, ti, Angle , AimAtAngle, linetarget );
 
@@ -1863,7 +1863,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomPunch)
 
 	angle = self->angle + (pr_cwpunch.Random2() << 18);
 	if (Range == 0) Range = MELEERANGE;
-	pitch = P_AimLineAttack (self, angle, Range, &linetarget);
+	pitch = (int)(P_AimLineAttack (self, angle, Range, &linetarget));
 
 	// only use ammo when actually hitting something!
 	if ((flags & CPF_USEAMMO) && linetarget && weapon)
@@ -1893,7 +1893,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomPunch)
 		const int prevhealth = self->health;
 
 		if (LifeSteal && !(linetarget->flags5 & MF5_DONTDRAIN))
-			P_GiveBody (self, (actualdamage * LifeSteal) >> FRACBITS);
+			P_GiveBody (self,(int)( (actualdamage * LifeSteal) >> FRACBITS));
 
 		if (weapon != NULL)
 		{
@@ -2055,9 +2055,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 	if (linetarget == NULL && aim)
 	{
 		// We probably won't hit the target, but aim at it anyway so we don't look stupid.
-		FVector2 xydiff(self->target->x - self->x, self->target->y - self->y);
-		double zdiff = (self->target->z + (self->target->height>>1)) -
-						(self->z + (self->height>>1) - self->floorclip);
+		FVector2 xydiff((double)(self->target->x - self->x),(double)( self->target->y - self->y));
+		double zdiff = (double)((double)((self->target->z + (self->target->height>>1)) -
+						(self->z + (self->height>>1) - self->floorclip)));
 		self->pitch = int(atan2(zdiff, xydiff.Length()) * ANGLE_180 / -M_PI);
 	}
 	// Let the aim trail behind the player
@@ -3334,17 +3334,17 @@ static bool DoCheckSightOrRange(AActor *self, AActor *camera, double range)
 		return false;
 	}
 	// Check distance first, since it's cheaper than checking sight.
-	double dx = self->x - camera->x;
-	double dy = self->y - camera->y;
+	double dx = (double)(self->x - camera->x);
+	double dy = (double)(self->y - camera->y);
 	double dz;
 	fixed_t eyez = (camera->z + camera->height - (camera->height>>2));	// same eye height as P_CheckSight
 	if (eyez > self->z + self->height)
 	{
-		dz = self->z + self->height - eyez;
+		dz = (double)(self->z + self->height - eyez);
 	}
 	else if (eyez < self->z)
 	{
-		dz = self->z - eyez;
+		dz = (double)(self->z - eyez);
 	}
 	else
 	{
@@ -3371,7 +3371,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckSightOrRange)
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
-	range = range * range * (double(FRACUNIT) * FRACUNIT);		// no need for square roots
+	range = (double)(range * range * (double(FRACUNIT) * double(FRACUNIT)));		// no need for square roots
 	for (int i = 0; i < MAXPLAYERS; ++i)
 	{
 		if (playeringame[i])
@@ -3405,15 +3405,15 @@ static bool DoCheckRange(AActor *self, AActor *camera, double range)
 		return false;
 	}
 	// Check distance first, since it's cheaper than checking sight.
-	double dx = self->x - camera->x;
-	double dy = self->y - camera->y;
+	double dx = (double)(self->x - camera->x);
+	double dy = (double)(self->y - camera->y);
 	double dz;
 	fixed_t eyez = (camera->z + camera->height - (camera->height>>2));	// same eye height as P_CheckSight
 	if (eyez > self->z + self->height){
-		dz = self->z + self->height - eyez;
+		dz = (double)(self->z + self->height - eyez);
 	}
 	else if (eyez < self->z){
-		dz = self->z - eyez;
+		dz = (double)(self->z - eyez);
 	}
 	else{
 		dz = 0;
@@ -3433,7 +3433,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckRange)
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
-	range = range * range * (double(FRACUNIT) * FRACUNIT);		// no need for square roots
+	range = (double)(range * range * (double(FRACUNIT) * double(FRACUNIT)));		// no need for square roots
 	for (int i = 0; i < MAXPLAYERS; ++i)
 	{
 		if (playeringame[i])
@@ -3655,7 +3655,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Burst)
 	// base the number of shards on the size of the dead thing, so bigger
 	// things break up into more shards than smaller things.
 	// An self with radius 20 and height 64 creates ~40 chunks.
-	numChunks = MAX<int> (4, (self->radius>>FRACBITS)*(self->height>>FRACBITS)/32);
+	numChunks = MAX<int> (4, (int)(self->radius>>FRACBITS)*(int)(self->height>>FRACBITS)/32);
 	i = (pr_burst.Random2()) % (numChunks/4);
 	for (i = MAX (24, numChunks + i); i >= 0; i--)
 	{
@@ -4107,7 +4107,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckLOF)
 
 		if (target)
 		{
-			FVector2 xyvec(target->x - x1, target->y - y1);
+			FVector2 xyvec((double)(target->x - x1),(double)( target->y - y1));
 			fixed_t distance = P_AproxDistance((fixed_t)xyvec.Length(), target->z - z1);
 
 			if (range && !(flags & CLOFF_CHECKPARTIAL))
@@ -4133,7 +4133,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckLOF)
 
 			if (flags & CLOFF_NOAIM_VERT)
 			{
-				pitch += self->pitch;
+				pitch += (angle_t)(self->pitch);
 			}
 			else if (flags & CLOFF_AIM_VERT_NOOFFSET)
 			{
@@ -4147,7 +4147,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckLOF)
 		else if (flags & CLOFF_ALLOWNULL)
 		{
 			angle += self->angle;
-			pitch += self->pitch;
+			pitch += (angle_t)(self->pitch);
 
 			angle_t ang = self->angle >> ANGLETOFINESHIFT;
 			x1 += FixedMul(offsetwidth, finesine[ang]);
@@ -5019,7 +5019,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ScaleVelocity)
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
 		return;
 
-	INTBOOL was_moving = self->velx | self->vely | self->velz;
+	INTBOOL was_moving = (INTBOOL)(self->velx | self->vely | self->velz);
 
 	self->velx = FixedMul(self->velx, scale);
 	self->vely = FixedMul(self->vely, scale);
@@ -5055,7 +5055,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeVelocity)
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
 		return;
 
-	INTBOOL was_moving = self->velx | self->vely | self->velz;
+	INTBOOL was_moving = (INTBOOL)(self->velx | self->vely | self->velz);
 
 	fixed_t vx = x, vy = y, vz = z;
 	fixed_t sina = finesine[self->angle >> ANGLETOFINESHIFT];
@@ -5462,7 +5462,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_WolfAttack)
 	int hitchance = speed < runspeed ? 256 : 160;
 
 	// Distance accuracy (factoring dodge)
-	hitchance -= dist * (dodge ? 16 : 8);
+	hitchance -= (int)(dist * (dodge ? 16 : 8));
 
 	// While we're here, we may as well do something for this:
 	if (self->target->flags & MF_SHADOW)
@@ -5960,8 +5960,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RadiusGive)
 		}
 		else
 		{ // check if inside a sphere
-			TVector3<double> tpos(thing->x, thing->y, thing->z + thing->height/2);
-			TVector3<double> spos(self->x, self->y, self->z + self->height/2);
+			TVector3<double> tpos((double)(thing->x),(double)( thing->y),(double)( thing->z + thing->height/2));
+			TVector3<double> spos((double)(self->x),(double)( self->y),(double)( self->z + self->height/2));
 			if ((tpos - spos).LengthSquared() > distsquared)
 			{
 				continue;

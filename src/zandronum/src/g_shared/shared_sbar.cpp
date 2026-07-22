@@ -1175,8 +1175,8 @@ void DBaseStatusBar::DrawCrosshair ()
 	{
 		size = FixedMul (size, CrosshairSize);
 	}
-	w = (CrosshairImage->GetWidth() * size) >> FRACBITS;
-	h = (CrosshairImage->GetHeight() * size) >> FRACBITS;
+	w = (int)((CrosshairImage->GetWidth() * size) >> FRACBITS);
+	h = (int)((CrosshairImage->GetHeight() * size) >> FRACBITS);
 
 	if (crosshairhealth)
 	{

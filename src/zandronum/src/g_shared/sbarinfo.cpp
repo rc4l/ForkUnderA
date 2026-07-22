@@ -314,7 +314,7 @@ class SBarInfoMainBlock : public SBarInfoCommandFlowControl
 		{
 			this->xOffset = xOffset;
 			this->yOffset = yOffset;
-			this->currentAlpha = fixed_t((((double) this->alpha / (double) FRACUNIT) * ((double) alpha / (double) FRACUNIT)) * FRACUNIT);
+			this->currentAlpha = (int)(fixed_t(double((((double) this->alpha / (double) FRACUNIT) * ((double) alpha / (double) FRACUNIT))) * double(FRACUNIT)));
 			SBarInfoCommandFlowControl::Draw(this, statusBar);
 		}
 		bool	ForceScaled() const { return forceScaled; }
@@ -339,7 +339,7 @@ class SBarInfoMainBlock : public SBarInfoCommandFlowControl
 					}
 				}
 				sc.MustGetToken(TK_FloatConst);
-				alpha = fixed_t(FRACUNIT * sc.Float);
+				alpha = (int)(fixed_t(double(FRACUNIT) * double(sc.Float)));
 			}
 			SBarInfoCommandFlowControl::Parse(sc, this->fullScreenOffsets);
 		}
@@ -730,10 +730,10 @@ void SBarInfo::ParseSBarInfo(int lump)
 						popup.transition = Popup::TRANSITION_FADE;
 						sc.MustGetToken(',');
 						sc.MustGetToken(TK_FloatConst);
-						popup.speed = fixed_t(FRACUNIT * (1.0 / (35.0 * sc.Float)));
+						popup.speed = (int)(fixed_t(double(FRACUNIT) * double((1.0 / (35.0 * sc.Float)))));
 						sc.MustGetToken(',');
 						sc.MustGetToken(TK_FloatConst);
-						popup.speed2 = fixed_t(FRACUNIT * (1.0 / (35.0 * sc.Float)));
+						popup.speed2 = (int)(fixed_t(double(FRACUNIT) * double((1.0 / (35.0 * sc.Float)))));
 					}
 					else
 						sc.ScriptError("Unkown transition type: '%s'", sc.String);
@@ -888,9 +888,9 @@ void Popup::tick()
 			if(moving)
 			{
 				if(opened)
-					alpha = clamp(alpha + speed, 0, FRACUNIT);
+					alpha = (int)(clamp(alpha + speed, 0, FRACUNIT));
 				else
-					alpha = clamp(alpha - speed2, 0, FRACUNIT);
+					alpha = (int)(clamp(alpha - speed2, 0, FRACUNIT));
 			}
 			if(alpha == 0 || alpha == FRACUNIT)
 				moving = false;
@@ -932,7 +932,7 @@ int Popup::getAlpha(int maxAlpha)
 {
 	double a = (double) alpha / (double) FRACUNIT;
 	double b = (double) maxAlpha / (double) FRACUNIT;
-	return fixed_t((a * b) * FRACUNIT);
+	return (int)(fixed_t(double((a * b)) * double(FRACUNIT)));
 }
 
 int Popup::getXDisplacement()
@@ -1081,9 +1081,9 @@ public:
 			}
 
 			if(currentPopup != POP_None && !script->huds[hud]->FullScreenOffsets())
-				script->huds[hud]->Draw(NULL, this, script->popups[currentPopup-1].getXDisplacement(), script->popups[currentPopup-1].getYDisplacement(), FRACUNIT);
+				script->huds[hud]->Draw(NULL, this, script->popups[currentPopup-1].getXDisplacement(), script->popups[currentPopup-1].getYDisplacement(),(int)( FRACUNIT));
 			else
-				script->huds[hud]->Draw(NULL, this, 0, 0, FRACUNIT);
+				script->huds[hud]->Draw(NULL, this, 0, 0,(int)( FRACUNIT));
 			lastHud = hud;
 
 			// Handle inventory bar drawing
@@ -1097,7 +1097,7 @@ public:
 				if(inventoryBar->NumCommands() == 0)
 					CPlayer->inventorytics = 0;
 				else
-					inventoryBar->DrawAux(NULL, this, 0, 0, FRACUNIT);
+					inventoryBar->DrawAux(NULL, this, 0, 0, (int)(FRACUNIT));
 			}
 		}
 
@@ -1229,10 +1229,10 @@ public:
 			dy += ST_Y - (Scaled ? script->resH : 200) + script->height;
 			w = forceWidth < 0 ? texture->GetScaledWidthDouble() : forceWidth;
 			h = forceHeight < 0 ? texture->GetScaledHeightDouble() : forceHeight;
-			double dcx = cx == 0 ? 0 : dx + ((double) cx / FRACUNIT) - texture->GetScaledLeftOffsetDouble();
-			double dcy = cy == 0 ? 0 : dy + ((double) cy / FRACUNIT) - texture->GetScaledTopOffsetDouble();
-			double dcr = cr == 0 ? INT_MAX : dx + w - ((double) cr / FRACUNIT) - texture->GetScaledLeftOffsetDouble();
-			double dcb = cb == 0 ? INT_MAX : dy + h - ((double) cb / FRACUNIT) - texture->GetScaledTopOffsetDouble();
+			double dcx = cx == 0 ? 0 : dx + ((double) cx / (double)(FRACUNIT)) - texture->GetScaledLeftOffsetDouble();
+			double dcy = cy == 0 ? 0 : dy + ((double) cy / (double)(FRACUNIT)) - texture->GetScaledTopOffsetDouble();
+			double dcr = cr == 0 ? INT_MAX : dx + w - ((double) cr / (double)(FRACUNIT)) - texture->GetScaledLeftOffsetDouble();
+			double dcb = cb == 0 ? INT_MAX : dy + h - ((double) cb / (double)(FRACUNIT)) - texture->GetScaledTopOffsetDouble();
 
 			if(Scaled)
 			{
@@ -1320,10 +1320,10 @@ public:
 			// Check for clipping
 			if(cx != 0 || cy != 0 || cr != 0 || cb != 0)
 			{
-				rcx = cx == 0 ? 0 : rx+((((double) cx/FRACUNIT) - texture->GetScaledLeftOffsetDouble())*xScale);
-				rcy = cy == 0 ? 0 : ry+((((double) cy/FRACUNIT) - texture->GetScaledTopOffsetDouble())*yScale);
-				rcr = cr == 0 ? INT_MAX : rx+w-((((double) cr/FRACUNIT) + texture->GetScaledLeftOffsetDouble())*xScale);
-				rcb = cb == 0 ? INT_MAX : ry+h-((((double) cb/FRACUNIT) + texture->GetScaledTopOffsetDouble())*yScale);
+				rcx = cx == 0 ? 0 : rx+((((double) cx/(double)(FRACUNIT)) - texture->GetScaledLeftOffsetDouble())*xScale);
+				rcy = cy == 0 ? 0 : ry+((((double) cy/(double)(FRACUNIT)) - texture->GetScaledTopOffsetDouble())*yScale);
+				rcr = cr == 0 ? INT_MAX : rx+w-((((double) cr/(double)(FRACUNIT)) + texture->GetScaledLeftOffsetDouble())*xScale);
+				rcb = cb == 0 ? INT_MAX : ry+h-((((double) cb/(double)(FRACUNIT)) + texture->GetScaledTopOffsetDouble())*yScale);
 			}
 
 			if(clearDontDraw)
@@ -1476,7 +1476,7 @@ public:
 			}
 			if(drawshadow)
 			{
-				int salpha = fixed_t(((double) alpha / (double) FRACUNIT) * ((double) HR_SHADOW / (double) FRACUNIT) * FRACUNIT);
+				int salpha = (int)(fixed_t(double(((double) alpha / (double) FRACUNIT) * ((double) HR_SHADOW / (double) FRACUNIT)) * double(FRACUNIT)));
 				double srx = rx + (shadowX*xScale);
 				double sry = ry + (shadowY*yScale);
 				screen->DrawTexture(character, srx, sry,

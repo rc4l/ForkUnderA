@@ -127,14 +127,14 @@ void ASTAR_BuildNodes( void )
 	for ( ulIdx = 0; ulIdx < (ULONG)numvertexes; ulIdx++ )
 	{
 		if ( vertexes[ulIdx].x > g_lMapXMax )
-			g_lMapXMax = vertexes[ulIdx].x;
+			g_lMapXMax = (LONG)(vertexes[ulIdx].x);
     
 		if ( vertexes[ulIdx].y > g_lMapYMax )
-			g_lMapYMax = vertexes[ulIdx].y;
+			g_lMapYMax = (LONG)(vertexes[ulIdx].y);
 	}
 
-	g_lMapXMin = bmaporgx;
-	g_lMapYMin = bmaporgy;
+	g_lMapXMin = (LONG)(bmaporgx);
+	g_lMapYMin = (LONG)(bmaporgy);
 
 //	g_lNumHorizontalNodes = ((( g_lMapXMax - g_lMapXMin ) / FRACUNIT ) / ASTAR_NODE_SIZE );
 //	g_lNumVerticalNodes = ((( g_lMapYMax - g_lMapYMin ) / FRACUNIT ) / ASTAR_NODE_SIZE );
@@ -441,7 +441,7 @@ ASTARRETURNSTRUCT_t ASTAR_Path( ULONG ulPathIdx, POS_t GoalPoint, float fMaxSear
 			astar_PushNodeToStack( pPath->pGoalNode, pPath );
 
 			ReturnVal.bIsGoal = true;
-			ReturnVal.lTotalCost = P_AproxDistance( pPath->pActor->x - GoalPoint.x, pPath->pActor->y - GoalPoint.y );
+			ReturnVal.lTotalCost = (LONG)(P_AproxDistance( pPath->pActor->x - GoalPoint.x, pPath->pActor->y - GoalPoint.y ));
 			ReturnVal.pNode = pPath->pGoalNode;
 			ReturnVal.ulFlags = pPath->ulFlags;
 
@@ -621,8 +621,8 @@ void ASTAR_SelectRandomMapLocation( POS_t *pPos, fixed_t X, fixed_t Y )
 	LONG	lXNode;
 	LONG	lYNode;
 
-	lXNode = ( X >> ASTAR_NODE_SHIFT ) - ( g_lMapXMin >> ASTAR_NODE_SHIFT );
-	lYNode = ( Y >> ASTAR_NODE_SHIFT ) - ( g_lMapYMin >> ASTAR_NODE_SHIFT );
+	lXNode = (LONG)(( X >> ASTAR_NODE_SHIFT ) - ( g_lMapXMin >> ASTAR_NODE_SHIFT ));
+	lYNode = (LONG)(( Y >> ASTAR_NODE_SHIFT ) - ( g_lMapYMin >> ASTAR_NODE_SHIFT ));
 
 	if ( g_lNumHorizontalNodes <= 3 )
 	{
@@ -781,8 +781,8 @@ static ASTARNODE_t *astar_GetNodeFromPoint( POS_t Point )
 
 //	lXNode = ( Point.x - g_lMapXMin ) >> ASTAR_NODE_SHIFT;
 //	lYNode = ( Point.y - g_lMapYMin ) >> ASTAR_NODE_SHIFT;
-	lXNode = ( Point.x >> ASTAR_NODE_SHIFT ) - ( g_lMapXMin >> ASTAR_NODE_SHIFT );
-	lYNode = ( Point.y >> ASTAR_NODE_SHIFT ) - ( g_lMapYMin >> ASTAR_NODE_SHIFT );
+	lXNode = (LONG)(( Point.x >> ASTAR_NODE_SHIFT ) - ( g_lMapXMin >> ASTAR_NODE_SHIFT ));
+	lYNode = (LONG)(( Point.y >> ASTAR_NODE_SHIFT ) - ( g_lMapYMin >> ASTAR_NODE_SHIFT ));
 
 	if (( lXNode >= g_lNumHorizontalNodes ) || ( lXNode < 0 ) ||
 		( lYNode >= g_lNumVerticalNodes ) || ( lYNode < 0 ))
@@ -797,7 +797,7 @@ static ASTARNODE_t *astar_GetNodeFromPoint( POS_t Point )
 //
 static LONG astar_GetCostToGoalEstimate( ASTARPATH_t *pPath, ASTARNODE_t *pNode )
 {
-	return ( P_AproxDistance( pNode->Position.x - pPath->pGoalNode->Position.x, pNode->Position.y - pPath->pGoalNode->Position.y ) / FRACUNIT );
+	return (LONG)(( P_AproxDistance( pNode->Position.x - pPath->pGoalNode->Position.x, pNode->Position.y - pPath->pGoalNode->Position.y ) / FRACUNIT ));
 /*
 	POS_t	PosGoal;
 	POS_t	PosNode;

@@ -352,7 +352,7 @@ static void Scale8 (BYTE *src, int srcpitch,
 			x = destwidth;
 			while (((size_t)dest & 3) && x != 0)
 			{
-				*dest++ = src[xf >> FRACBITS];
+				*dest++ = src[(int)(xf >> FRACBITS)];
 				xf += xstep;
 				x--;
 			}
@@ -366,17 +366,17 @@ static void Scale8 (BYTE *src, int srcpitch,
 				work |= src[xf >> FRACBITS] << 8;	xf += xstep;
 				work |= src[xf >> FRACBITS];		xf += xstep;
 #else
-				work  = src[xf >> FRACBITS];		xf += xstep;
-				work |= src[xf >> FRACBITS] << 8;	xf += xstep;
-				work |= src[xf >> FRACBITS] << 16;	xf += xstep;
-				work |= src[xf >> FRACBITS] << 24;	xf += xstep;
+				work  = src[(int)(xf >> FRACBITS)];		xf += xstep;
+				work |= src[(int)(xf >> FRACBITS)] << 8;	xf += xstep;
+				work |= src[(int)(xf >> FRACBITS)] << 16;	xf += xstep;
+				work |= src[(int)(xf >> FRACBITS)] << 24;	xf += xstep;
 #endif
 				*(DWORD *)dest = work;
 				dest += 4;
 			}
 			for (savedx &= 3; savedx != 0; savedx--, xf += xstep)
 			{
-				*dest++ = src[xf >> FRACBITS];
+				*dest++ = src[(int)(xf >> FRACBITS)];
 			}
 			yfrac += ystep;
 			while (yfrac >= FRACUNIT)
@@ -446,7 +446,7 @@ static void Convert8 (BYTE *src, int srcpitch,
 			x = destwidth;
 			while (((size_t)dest & 3) && x != 0)
 			{
-				*dest++ = GPfxPal.Pal8[src[xf >> FRACBITS]];
+				*dest++ = GPfxPal.Pal8[src[(int)(xf >> FRACBITS)]];
 				xf += xstep;
 				x--;
 			}
@@ -460,17 +460,17 @@ static void Convert8 (BYTE *src, int srcpitch,
 				work |= GPfxPal.Pal8[src[xf >> FRACBITS]] << 8;		xf += xstep;
 				work |= GPfxPal.Pal8[src[xf >> FRACBITS]];			xf += xstep;
 #else
-				work  = GPfxPal.Pal8[src[xf >> FRACBITS]];			xf += xstep;
-				work |= GPfxPal.Pal8[src[xf >> FRACBITS]] << 8;		xf += xstep;
-				work |= GPfxPal.Pal8[src[xf >> FRACBITS]] << 16;	xf += xstep;
-				work |= GPfxPal.Pal8[src[xf >> FRACBITS]] << 24;	xf += xstep;
+				work  = GPfxPal.Pal8[src[(int)(xf >> FRACBITS)]];			xf += xstep;
+				work |= GPfxPal.Pal8[src[(int)(xf >> FRACBITS)]] << 8;		xf += xstep;
+				work |= GPfxPal.Pal8[src[(int)(xf >> FRACBITS)]] << 16;	xf += xstep;
+				work |= GPfxPal.Pal8[src[(int)(xf >> FRACBITS)]] << 24;	xf += xstep;
 #endif
 				*(DWORD *)dest = work;
 				dest += 4;
 			}
 			for (savedx &= 3; savedx != 0; savedx--, xf += xstep)
 			{
-				*dest++ = GPfxPal.Pal8[src[xf >> FRACBITS]];
+				*dest++ = GPfxPal.Pal8[src[(int)(xf >> FRACBITS)]];
 			}
 			yfrac += ystep;
 			while (yfrac >= FRACUNIT)
@@ -536,7 +536,7 @@ static void Convert16 (BYTE *src, int srcpitch,
 			x = destwidth;
 			if ((size_t)dest & 1)
 			{
-				*dest++ = GPfxPal.Pal16[src[xf >> FRACBITS]];
+				*dest++ = GPfxPal.Pal16[src[(int)(xf >> FRACBITS)]];
 				xf += xstep;
 				x--;
 			}
@@ -548,15 +548,15 @@ static void Convert16 (BYTE *src, int srcpitch,
 				work  = GPfxPal.Pal16[src[xf >> FRACBITS]] << 16;	xf += xstep;
 				work |= GPfxPal.Pal16[src[xf >> FRACBITS]];			xf += xstep;
 #else
-				work  = GPfxPal.Pal16[src[xf >> FRACBITS]];			xf += xstep;
-				work |= GPfxPal.Pal16[src[xf >> FRACBITS]] << 16;	xf += xstep;
+				work  = GPfxPal.Pal16[src[(int)(xf >> FRACBITS)]];			xf += xstep;
+				work |= GPfxPal.Pal16[src[(int)(xf >> FRACBITS)]] << 16;	xf += xstep;
 #endif
 				*(DWORD *)dest = work;
 				dest += 2;
 			}
 			if (savedx & 1)
 			{
-				*dest++ = GPfxPal.Pal16[src[xf >> FRACBITS]];
+				*dest++ = GPfxPal.Pal16[src[(int)(xf >> FRACBITS)]];
 			}
 			yfrac += ystep;
 			while (yfrac >= FRACUNIT)
@@ -607,7 +607,7 @@ static void Convert24 (BYTE *src, int srcpitch,
 			fixed_t xf = xfrac;
 			for (x = destwidth; x != 0; x--)
 			{
-				BYTE *pe = GPfxPal.Pal24[src[xf >> FRACBITS]];
+				BYTE *pe = GPfxPal.Pal24[src[(int)(xf >> FRACBITS)]];
 				dest[0] = pe[0];
 				dest[1] = pe[1];
 				dest[2] = pe[2];
@@ -671,13 +671,13 @@ static void Convert32 (BYTE *src, int srcpitch,
 			fixed_t xf = xfrac;
 			for (savedx = x = destwidth, x >>= 1; x != 0; x--)
 			{
-				dest[0] = GPfxPal.Pal32[src[xf >> FRACBITS]];		xf += xstep;
-				dest[1] = GPfxPal.Pal32[src[xf >> FRACBITS]];		xf += xstep;
+				dest[0] = GPfxPal.Pal32[src[(int)(xf >> FRACBITS)]];		xf += xstep;
+				dest[1] = GPfxPal.Pal32[src[(int)(xf >> FRACBITS)]];		xf += xstep;
 				dest += 2;
 			}
 			if (savedx & 1)
 			{
-				*dest++ = GPfxPal.Pal32[src[xf >> FRACBITS]];
+				*dest++ = GPfxPal.Pal32[src[(int)(xf >> FRACBITS)]];
 			}
 			yfrac += ystep;
 			while (yfrac >= FRACUNIT)

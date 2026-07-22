@@ -674,18 +674,18 @@ void S_ParseSndSeq (int levellump)
 
 				case SS_STRING_VOLUME:		// volume is in range 0..100
 					sc.MustGetFloat ();
-					ScriptTemp.Push(MakeCommand(SS_CMD_VOLUME, int(sc.Float * (FRACUNIT/100.f))));
+					ScriptTemp.Push(MakeCommand(SS_CMD_VOLUME, int(sc.Float * (double(FRACUNIT)/100.f))));
 					break;
 
 				case SS_STRING_VOLUMEREL:
 					sc.MustGetFloat ();
-					ScriptTemp.Push(MakeCommand(SS_CMD_VOLUMEREL, int(sc.Float * (FRACUNIT/100.f))));
+					ScriptTemp.Push(MakeCommand(SS_CMD_VOLUMEREL, int(sc.Float * (double(FRACUNIT)/100.f))));
 					break;
 
 				case SS_STRING_VOLUMERAND:
 					sc.MustGetFloat ();
 					volumebase = float(sc.Float);
-					ScriptTemp.Push(MakeCommand(SS_CMD_VOLUMERAND, int(sc.Float * (FRACUNIT/100.f))));
+					ScriptTemp.Push(MakeCommand(SS_CMD_VOLUMERAND, int(sc.Float * (double(FRACUNIT)/100.f))));
 					sc.MustGetFloat ();
 					ScriptTemp.Push(int((sc.Float - volumebase) * (256/100.f)));
 					break;
@@ -711,7 +711,7 @@ void S_ParseSndSeq (int levellump)
 						sc.MustGetString ();
 						val = sc.MustMatchString(&Attenuations[0].name, sizeof(Attenuations[0])) << FRACBITS;
 					}
-					ScriptTemp.Push(MakeCommand(SS_CMD_ATTENUATION, val));
+					ScriptTemp.Push((const unsigned int)(MakeCommand(SS_CMD_ATTENUATION, val)));
 					break;
 
 				case SS_STRING_RANDOMSEQUENCE:

@@ -230,7 +230,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_MinotaurDecide)
 	{
 		S_Sound (self, CHAN_WEAPON, "minotaur/sight", 1, ATTN_NORM, true);	// [BC] Inform the clients.
 	}
-	dist = P_AproxDistance (self->x-target->x, self->y-target->y);
+	dist = (int)(P_AproxDistance (self->x-target->x, self->y-target->y));
 	if (target->z+target->height > self->z
 		&& target->z+target->height < self->z+self->height
 		&& dist < (friendly ? 16*64*FRACUNIT : 8*64*FRACUNIT)

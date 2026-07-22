@@ -55,9 +55,9 @@ void A_FiredSpawnRock (AActor *actor)
 			break;
 	}
 
-	x = actor->x + ((pr_firedemonrock() - 128) << 12);
-	y = actor->y + ((pr_firedemonrock() - 128) << 12);
-	z = actor->z + ( pr_firedemonrock() << 11);
+	x = (int)(actor->x + ((pr_firedemonrock() - 128) << 12));
+	y = (int)(actor->y + ((pr_firedemonrock() - 128) << 12));
+	z = (int)(actor->z + ( pr_firedemonrock() << 11));
 	mo = Spawn (rtype, x, y, z, ALLOW_REPLACE);
 	if (mo)
 	{

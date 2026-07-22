@@ -630,7 +630,7 @@ int DamageTypeDefinition::ApplyMobjDamageFactor(int damage, FName const type, Dm
 	{
 		// If the actor has named damage factors, look for a specific factor
 		fixed_t const *pdf = factors->CheckKey(type);
-		if (pdf) return FixedMul(damage, *pdf); // type specific damage type
+		if (pdf) return (int)(FixedMul(damage, *pdf)); // type specific damage type
 		
 		// If this was nonspecific damage, don't fall back to nonspecific search
 		if (type == NAME_None) return damage;
@@ -645,7 +645,7 @@ int DamageTypeDefinition::ApplyMobjDamageFactor(int damage, FName const type, Dm
 	{
 		// Normal is unsupplied / 1.0, so there's no difference between modifying and overriding
 		DamageTypeDefinition *dtd = Get(type);
-		return dtd ? FixedMul(damage, dtd->DefaultFactor) : damage;
+		return (int)(dtd ? FixedMul(damage, dtd->DefaultFactor) : damage);
 	}
 	
 	{
@@ -657,14 +657,14 @@ int DamageTypeDefinition::ApplyMobjDamageFactor(int damage, FName const type, Dm
 		{
 			if (dtd)
 			{
-				if (dtd->ReplaceFactor) return FixedMul(damage, dtd->DefaultFactor); // use default instead of untyped factor
-				return FixedMul(damage, FixedMul(*pdf, dtd->DefaultFactor)); // use default as modification of untyped factor
+				if (dtd->ReplaceFactor) return (int)(FixedMul(damage, dtd->DefaultFactor)); // use default instead of untyped factor
+				return (int)(FixedMul(damage, FixedMul(*pdf, dtd->DefaultFactor))); // use default as modification of untyped factor
 			}
-			return FixedMul(damage, *pdf); // there was no default, so actor default is used
+			return (int)(FixedMul(damage, *pdf)); // there was no default, so actor default is used
 		}
 		else if (dtd)
 		{
-			return FixedMul(damage, dtd->DefaultFactor); // implicit untyped factor 1.0 does not need to be applied/replaced explicitly
+			return (int)(FixedMul(damage, dtd->DefaultFactor)); // implicit untyped factor 1.0 does not need to be applied/replaced explicitly
 		}
 	}
 	return damage;

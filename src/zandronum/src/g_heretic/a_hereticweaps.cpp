@@ -91,7 +91,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StaffAttack)
 	if (puff == NULL) puff = PClass::FindClass(NAME_BulletPuff);	// just to be sure
 	angle = self->angle;
 	angle += pr_sap.Random2() << 18;
-	slope = P_AimLineAttack (self, angle, MELEERANGE, &linetarget);
+	slope = (int)(P_AimLineAttack (self, angle, MELEERANGE, &linetarget));
 	P_LineAttack (self, angle, MELEERANGE, slope, damage, NAME_Melee, puff, true, &linetarget);
 
 	// [BC] Apply spread.
@@ -378,7 +378,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GauntletAttack)
 		angle += pr_gatk.Random2() << 18;
 		pufftype = PClass::FindClass("GauntletPuff1");
 	}
-	slope = P_AimLineAttack (self, angle, dist, &linetarget);
+	slope = (int)(P_AimLineAttack (self, angle, dist, &linetarget));
 	P_LineAttack (self, angle, dist, slope, damage, NAME_Melee, pufftype, false, &linetarget, &actualdamage);
 	if (!linetarget)
 	{
@@ -519,11 +519,11 @@ void FireMacePL1B (AActor *actor)
 	ball = Spawn("MaceFX2", actor->x, actor->y, actor->z + 28*FRACUNIT 
 		- actor->floorclip, ALLOW_REPLACE);
 	ball->velz = 2*FRACUNIT+/*((player->lookdir)<<(FRACBITS-5))*/
-		finetangent[FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT)];
+		finetangent[(int)(FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT))];
 	angle = actor->angle;
 	ball->target = actor;
 	ball->angle = angle;
-	ball->z += 2*finetangent[FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT)];
+	ball->z += 2*finetangent[(int)(FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT))];
 	angle >>= ANGLETOFINESHIFT;
 	ball->velx = (actor->velx>>1) + FixedMul(ball->Speed, finecosine[angle]);
 	ball->vely = (actor->vely>>1) + FixedMul(ball->Speed, finesine[angle]);
@@ -542,11 +542,11 @@ void FireMacePL1B (AActor *actor)
 		ball = Spawn("MaceFX2", actor->x, actor->y, actor->z + 28*FRACUNIT 
 			- actor->floorclip, ALLOW_REPLACE);
 		ball->velz = 2*FRACUNIT+/*((player->lookdir)<<(FRACBITS-5))*/
-			finetangent[FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT)];
+			finetangent[(int)(FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT))];
 		angle = actor->angle + ( ANGLE_45 / 3 );
 		ball->target = actor;
 		ball->angle = angle;
-		ball->z += 2*finetangent[FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT)];
+		ball->z += 2*finetangent[(int)(FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT))];
 		angle >>= ANGLETOFINESHIFT;
 		ball->velx = (actor->velx>>1)+FixedMul(ball->Speed, finecosine[angle]);
 		ball->vely = (actor->vely>>1)+FixedMul(ball->Speed, finesine[angle]);
@@ -562,11 +562,11 @@ void FireMacePL1B (AActor *actor)
 		ball = Spawn("MaceFX2", actor->x, actor->y, actor->z + 28*FRACUNIT 
 			- actor->floorclip, ALLOW_REPLACE);
 		ball->velz = 2*FRACUNIT+/*((player->lookdir)<<(FRACBITS-5))*/
-			finetangent[FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT)];
+			finetangent[(int)(FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT))];
 		angle = actor->angle - ( ANGLE_45 / 3 );
 		ball->target = actor;
 		ball->angle = angle;
-		ball->z += 2*finetangent[FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT)];
+		ball->z += 2*finetangent[(int)(FINEANGLES/4-(actor->pitch>>ANGLETOFINESHIFT))];
 		angle >>= ANGLETOFINESHIFT;
 		ball->velx = (actor->velx>>1)+FixedMul(ball->Speed, finecosine[angle]);
 		ball->vely = (actor->vely>>1)+FixedMul(ball->Speed, finesine[angle]);
@@ -681,8 +681,8 @@ DEFINE_ACTION_FUNCTION(AActor, A_MacePL1Check)
 	double velscale = sqrt ((double)self->velx * (double)self->velx +
 							 (double)self->vely * (double)self->vely);
 	velscale = 458752 / velscale;
-	self->velx = (int)(self->velx * velscale);
-	self->vely = (int)(self->vely * velscale);
+	self->velx = (int)(double(self->velx) * double(velscale));
+	self->vely = (int)(double(self->vely) * double(velscale));
 #endif
 	self->velz -= self->velz >> 1;
 
@@ -901,7 +901,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FireMacePL2)
 		mo->velx += self->velx;
 		mo->vely += self->vely;
 		mo->velz = 2*FRACUNIT+
-			clamp<fixed_t>(finetangent[FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT)], -5*FRACUNIT, 5*FRACUNIT);
+			clamp<fixed_t>(finetangent[(int)(FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT))], -5*FRACUNIT, 5*FRACUNIT);
 		if (linetarget)
 		{
 			mo->tracer = linetarget;
@@ -924,7 +924,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FireMacePL2)
 			mo->velx += self->velx;
 			mo->vely += self->vely;
 			mo->velz = 2*FRACUNIT+
-				clamp<fixed_t>(finetangent[FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT)], -5*FRACUNIT, 5*FRACUNIT);
+				clamp<fixed_t>(finetangent[(int)(FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT))], -5*FRACUNIT, 5*FRACUNIT);
 			if (linetarget)
 			{
 				mo->tracer = linetarget;
@@ -941,7 +941,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_FireMacePL2)
 			mo->velx += self->velx;
 			mo->vely += self->vely;
 			mo->velz = 2*FRACUNIT+
-				clamp<fixed_t>(finetangent[FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT)], -5*FRACUNIT, 5*FRACUNIT);
+				clamp<fixed_t>(finetangent[(int)(FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT))], -5*FRACUNIT, 5*FRACUNIT);
 			if (linetarget)
 			{
 				mo->tracer = linetarget;
@@ -1886,9 +1886,9 @@ DEFINE_ACTION_FUNCTION(AActor, A_FirePhoenixPL2)
 	angle = self->angle;
 	x = self->x + (pr_fp2.Random2() << 9);
 	y = self->y + (pr_fp2.Random2() << 9);
-	z = self->z + 26*FRACUNIT + finetangent[FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT)];
+	z = self->z + 26*FRACUNIT + finetangent[(int)(FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT))];
 	z -= self->floorclip;
-	slope = finetangent[FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT)] + (FRACUNIT/10);
+	slope = finetangent[(int)(FINEANGLES/4-(self->pitch>>ANGLETOFINESHIFT))] + (FRACUNIT/10);
 	mo = Spawn("PhoenixFX2", x, y, z, ALLOW_REPLACE);
 	mo->target = self;
 	mo->angle = angle;

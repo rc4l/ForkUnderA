@@ -57,7 +57,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_Punch)
 	angle = self->angle;
 
 	angle += pr_punch.Random2() << 18;
-	pitch = P_AimLineAttack (self, angle, MELEERANGE, &linetarget);
+	pitch = (int)(P_AimLineAttack (self, angle, MELEERANGE, &linetarget));
 
 	P_LineAttack (self, angle, MELEERANGE, pitch, damage, NAME_Melee, NAME_BulletPuff, LAF_ISMELEEATTACK, &linetarget);
 
@@ -235,7 +235,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	if (Range == 0) Range = MELEERANGE+1;
 
 	angle = self->angle + (pr_saw.Random2() * (Spread_XY / 255));
-	slope = P_AimLineAttack (self, angle, Range, &linetarget) + (pr_saw.Random2() * (Spread_Z / 255));
+	slope = (angle_t)(P_AimLineAttack (self, angle, Range, &linetarget) + fixed_t((int)(pr_saw.Random2() * (Spread_Z / 255))));
 
 
 	AWeapon *weapon = self->player->ReadyWeapon;
@@ -260,11 +260,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	if ( player->cheats2 & CF2_SPREAD )
 	{
 		P_LineAttack( self, angle + ( ANGLE_45 / 3 ), Range,
-					  P_AimLineAttack( self, angle + ( ANGLE_45 / 3 ), Range, &linetarget ), damage,
+					  (int)P_AimLineAttack( self, angle + ( ANGLE_45 / 3 ), Range, &linetarget ), damage,
 					  NAME_Melee, pufftype, false );
 
 		P_LineAttack( self, angle - ( ANGLE_45 / 3 ), Range,
-					  P_AimLineAttack( self, angle - ( ANGLE_45 / 3 ), Range, &linetarget ), damage,
+					  (int)P_AimLineAttack( self, angle - ( ANGLE_45 / 3 ), Range, &linetarget ), damage,
 					  NAME_Melee, pufftype, false );
 	}
 
@@ -310,7 +310,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	const int prevhealth = self->health;
 
 	if (LifeSteal && !(linetarget->flags5 & MF5_DONTDRAIN))
-		P_GiveBody (self, (actualdamage * LifeSteal) >> FRACBITS);
+		P_GiveBody (self,(int)( (actualdamage * LifeSteal) >> FRACBITS));
 
 	// [EP] Inform the clients about the player health change if needed.
 	if ( ( NETWORK_GetState() == NETSTATE_SERVER ) && self->player && prevhealth != self->health )
@@ -750,7 +750,7 @@ bool AGrenade::FloorBounceMissile( secplane_t &plane )
 {
 	fixed_t bouncevelx = velx / 4;
 	fixed_t bouncevely = vely / 4;
-	fixed_t bouncevelz = FixedMul (velz, (fixed_t)(-0.6*FRACUNIT));
+	fixed_t bouncevelz = FixedMul (velz, (fixed_t)(-0.6*double(FRACUNIT)));
 /*
 	if (abs (bouncevelz) < (FRACUNIT/2))
 	{

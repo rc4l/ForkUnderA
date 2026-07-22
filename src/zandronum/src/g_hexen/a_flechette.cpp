@@ -133,7 +133,7 @@ bool AArtiPoisonBag3::Use (bool pickup)
 		angle_t orgpitch = angle_t(-Owner->pitch) >> ANGLETOFINESHIFT;
 		angle_t modpitch = angle_t(0xDC00000 - Owner->pitch) >> ANGLETOFINESHIFT;
 		angle_t angle = mo->angle >> ANGLETOFINESHIFT;
-		fixed_t speed = fixed_t(sqrt((double)mo->Speed*mo->Speed + (4.0*65536*4*65536)));
+		fixed_t speed = fixed_t(sqrt((double)mo->Speed*(double)mo->Speed + (4.0*65536*4*65536)));
 		fixed_t xyscale = FixedMul(speed, finecosine[modpitch]);
 
 		mo->velz = FixedMul(speed, finesine[modpitch]);
@@ -362,7 +362,7 @@ int APoisonCloud::DoSpecialDamage (AActor *victim, int damage, FName damagetype)
 				victim->Inventory->ModifyDamage(damage, damagetype, damage, true);
 			}
 			// Modify with damage factors
-			damage = FixedMul(damage, victim->DamageFactor);
+			damage = (int)(FixedMul(damage, victim->DamageFactor));
 			if (damage > 0)
 			{
 				damage = DamageTypeDefinition::ApplyMobjDamageFactor(damage, damagetype, victim->GetClass()->ActorInfo->DamageFactors);

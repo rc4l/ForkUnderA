@@ -105,12 +105,12 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	scalex = xratio[WidescreenRatio] * vw / 320;
 
 	tx = sx - ((160 + tex->GetScaledLeftOffset(GLUSE_PATCH))<<FRACBITS);
-	x1 = (FixedMul(tx, scalex)>>FRACBITS) + (vw>>1);
+	x1 = (int)((FixedMul(tx, scalex)>>FRACBITS) + (vw>>1));
 	if (x1 > vw)	return; // off the right side
 	x1+=viewwindowx;
 
 	tx +=  tex->TextureWidth(GLUSE_PATCH) << FRACBITS;
-	x2 = (FixedMul(tx, scalex)>>FRACBITS) + (vw>>1);
+	x2 = (int)((FixedMul(tx, scalex)>>FRACBITS) + (vw>>1));
 	if (x2 < 0) return; // off the left side
 	x2+=viewwindowx;
 
@@ -260,11 +260,11 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 
 				if (i<lightlist.Size()-1) 
 				{
-					lightbottom=lightlist[i+1].plane.ZatPoint(viewx,viewy);
+					lightbottom=(int)(lightlist[i+1].plane.ZatPoint(viewx,viewy));
 				}
 				else 
 				{
-					lightbottom=viewsector->floorplane.ZatPoint(viewx,viewy);
+					lightbottom=(int)(viewsector->floorplane.ZatPoint(viewx,viewy));
 				}
 
 				if (lightbottom<player->viewz) 

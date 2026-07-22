@@ -138,7 +138,7 @@ IMPLEMENT_CLASS (APrisonPass)
 bool APrisonPass::TryPickup (AActor *&toucher)
 {
 	Super::TryPickup (toucher);
-	EV_DoDoor (DDoor::doorOpen, NULL, toucher, 223, 2*FRACUNIT, 0, 0, 0);
+	EV_DoDoor (DDoor::doorOpen, NULL, toucher, 223,(int)( 2*FRACUNIT), 0, 0, 0);
 	toucher->GiveInventoryType (QuestItemClasses[9]);
 	return true;
 }
@@ -155,7 +155,7 @@ bool APrisonPass::TryPickup (AActor *&toucher)
 
 bool APrisonPass::SpecialDropAction (AActor *dropper)
 {
-	EV_DoDoor (DDoor::doorOpen, NULL, dropper, 223, 2*FRACUNIT, 0, 0, 0);
+	EV_DoDoor (DDoor::doorOpen, NULL, dropper, 223,(int)( 2*FRACUNIT), 0, 0, 0);
 	Destroy ();
 	return true;
 }
@@ -248,7 +248,7 @@ IMPLEMENT_CLASS (AOpenDoor222)
 
 bool AOpenDoor222::TryPickup (AActor *&toucher)
 {
-	EV_DoDoor (DDoor::doorOpen, NULL, toucher, 222, 2*FRACUNIT, 0, 0, 0);
+	EV_DoDoor (DDoor::doorOpen, NULL, toucher, 222,(int)( 2*FRACUNIT), 0, 0, 0);
 	GoAwayAndDie ();
 	return true;
 }
@@ -267,14 +267,14 @@ IMPLEMENT_CLASS (ACloseDoor222)
 
 bool ACloseDoor222::TryPickup (AActor *&toucher)
 {
-	EV_DoDoor (DDoor::doorClose, NULL, toucher, 222, 2*FRACUNIT, 0, 0, 0);
+	EV_DoDoor (DDoor::doorClose, NULL, toucher, 222,(int)( 2*FRACUNIT), 0, 0, 0);
 	GoAwayAndDie ();
 	return true;
 }
 
 bool ACloseDoor222::SpecialDropAction (AActor *dropper)
 {
-	EV_DoDoor (DDoor::doorClose, NULL, dropper, 222, 2*FRACUNIT, 0, 0, 0);
+	EV_DoDoor (DDoor::doorClose, NULL, dropper, 222,(int)( 2*FRACUNIT), 0, 0, 0);
 	if (dropper->target != nullptr)
 	{
 		if (dropper->target->CheckLocalView(consoleplayer))
@@ -301,14 +301,14 @@ IMPLEMENT_CLASS (AOpenDoor224)
 
 bool AOpenDoor224::TryPickup (AActor *&toucher)
 {
-	EV_DoDoor (DDoor::doorOpen, NULL, toucher, 224, 2*FRACUNIT, 0, 0, 0);
+	EV_DoDoor (DDoor::doorOpen, NULL, toucher, 224,(int)( 2*FRACUNIT), 0, 0, 0);
 	GoAwayAndDie ();
 	return true;
 }
 
 bool AOpenDoor224::SpecialDropAction (AActor *dropper)
 {
-	EV_DoDoor (DDoor::doorOpen, NULL, dropper, 224, 2*FRACUNIT, 0, 0, 0);
+	EV_DoDoor (DDoor::doorOpen, NULL, dropper, 224,(int)( 2*FRACUNIT), 0, 0, 0);
 	Destroy ();
 	return true;
 }

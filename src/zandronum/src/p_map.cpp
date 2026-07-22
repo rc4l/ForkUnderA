@@ -158,8 +158,8 @@ static bool PIT_FindFloorCeiling(line_t *ld, const FBoundingBox &box, FCheckPosi
 	else
 	{ // Find the point on the line closest to the actor's center, and use
 		// that to calculate openings
-		double dx = ld->dx;
-		double dy = ld->dy;
+		double dx = (double)(ld->dx);
+		double dy = (double)(ld->dy);
 		fixed_t r = xs_CRoundToInt(((double)(tmf.x - ld->v1->x) * dx +
 			(double)(tmf.y - ld->v1->y) * dy) /
 			(dx*dx + dy*dy) * 16777216.f);
@@ -568,8 +568,8 @@ int P_GetFriction(const AActor *mo, int *frictionfactor)
 	else if ((!(mo->flags & MF_NOGRAVITY) && mo->waterlevel > 1) ||
 		(mo->waterlevel == 1 && mo->z > mo->floorz + 6 * FRACUNIT))
 	{
-		friction = secfriction(mo->Sector);
-		movefactor = secmovefac(mo->Sector) >> 1;
+		friction = (int)(secfriction(mo->Sector));
+		movefactor = (int)(secmovefac(mo->Sector) >> 1);
 	}
 	else if (var_friction && !(mo->flags & (MF_NOCLIP | MF_NOGRAVITY)))
 	{	// When the object is straddling sectors with the same
@@ -593,8 +593,8 @@ int P_GetFriction(const AActor *mo, int *frictionfactor)
 				newfriction = secfriction(rover->model);
 				if (newfriction < friction || friction == ORIG_FRICTION)
 				{
-					friction = newfriction;
-					movefactor = secmovefac(rover->model);
+					friction = (int)(newfriction);
+					movefactor = (int)(secmovefac(rover->model));
 				}
 			}
 #endif
@@ -610,8 +610,8 @@ int P_GetFriction(const AActor *mo, int *frictionfactor)
 				(sec->GetHeightSec() != NULL &&
 				mo->z <= sec->heightsec->floorplane.ZatPoint(mo->x, mo->y))))
 			{
-				friction = newfriction;
-				movefactor = secmovefac(sec);
+				friction = (int)(newfriction);
+				movefactor = (int)(secmovefac(sec));
 			}
 		}
 	}
@@ -645,7 +645,7 @@ int P_GetMoveFactor(const AActor *mo, int *frictionp)
 		// phares 3/11/98: you start off slowly, then increase as
 		// you get better footing
 
-		int velocity = P_AproxDistance(mo->velx, mo->vely);
+		int velocity = (int)(P_AproxDistance(mo->velx, mo->vely));
 
 		if (velocity > MORE_FRICTION_VELOCITY << 2)
 			movefactor <<= 3;
@@ -1104,15 +1104,15 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 
 		if (thing->projectilepassheight > 0)
 		{
-			clipheight = thing->projectilepassheight;
+			clipheight = (int)(thing->projectilepassheight);
 		}
 		else if (thing->projectilepassheight < 0 && (i_compatflags & COMPATF_MISSILECLIP))
 		{
-			clipheight = -thing->projectilepassheight;
+			clipheight = (int)(-thing->projectilepassheight);
 		}
 		else
 		{
-			clipheight = thing->height;
+			clipheight = (int)(thing->height);
 		}
 
 		// Check if it went over / under
@@ -1469,7 +1469,7 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 		F3DFloor*  rover;
 		fixed_t    delta1;
 		fixed_t    delta2;
-		int        thingtop = thing->z + (thing->height == 0 ? 1 : thing->height);
+		int        thingtop = (int)(thing->z + (thing->height == 0 ? 1 : thing->height));
 
 		for (unsigned i = 0; i<newsec->e->XFloor.ffloors.Size(); i++)
 		{
@@ -3505,7 +3505,7 @@ bool FSlide::BounceWall(AActor *mo)
 	lineangle >>= ANGLETOFINESHIFT;
 	deltaangle >>= ANGLETOFINESHIFT;
 
-	movelen = fixed_t(sqrt(double(mo->velx)*mo->velx + double(mo->vely)*mo->vely));
+	movelen = fixed_t(sqrt((double)(double(mo->velx)*double(mo->velx) + double(mo->vely)*double(mo->vely))));
 	movelen = FixedMul(movelen, mo->wallbouncefactor);
 
 	FBoundingBox box(mo->x, mo->y, mo->radius);
@@ -3937,7 +3937,7 @@ void aim_t::AimTraverse(fixed_t startx, fixed_t starty, fixed_t endx, fixed_t en
 		if (thingbottompitch > bottompitch)
 			thingbottompitch = bottompitch;
 
-		thingpitch = thingtoppitch / 2 + thingbottompitch / 2;
+		thingpitch = (int)(thingtoppitch / 2 + thingbottompitch / 2);
 
 		if (flags & ALF_CHECK3D)
 		{
@@ -4031,8 +4031,8 @@ fixed_t P_AimLineAttack(AActor *t1, angle_t angle, fixed_t distance, AActor **pL
 	aim.shootthing = t1;
 	aim.friender = (friender == NULL) ? t1 : friender;
 
-	x2 = t1->x + (distance >> FRACBITS)*finecosine[angle];
-	y2 = t1->y + (distance >> FRACBITS)*finesine[angle];
+	x2 = t1->x + (int)(distance >> FRACBITS)*finecosine[angle];
+	y2 = t1->y + (int)(distance >> FRACBITS)*finesine[angle];
 	aim.shootz = t1->z + (t1->height >> 1) - t1->floorclip;
 	// [BB] In ST, right after a map change, mo apparently can be zero.
 	if ( ( t1->player != NULL ) && ( t1->player->mo != NULL ) )
@@ -4106,12 +4106,12 @@ fixed_t P_AimLineAttack(AActor *t1, angle_t angle, fixed_t distance, AActor **pL
 		if (aim.thing_other)
 		{
 			aim.linetarget = aim.thing_other;
-			aim.aimpitch = aim.pitch_other;
+			aim.aimpitch = fixed_t(aim.pitch_other);
 		}
 		else if (aim.thing_friend)
 		{
 			aim.linetarget = aim.thing_friend;
-			aim.aimpitch = aim.pitch_friend;
+			aim.aimpitch = fixed_t(aim.pitch_friend);
 		}
 	}
 	if (pLineTarget)
@@ -4775,7 +4775,7 @@ void P_TraceBleed(int damage, AActor *target)
 		fixed_t two = (pr_tracebleed() - 128) << 16;
 
 		P_TraceBleed(damage, target->x, target->y, target->z + target->height / 2,
-			target, one, two);
+			target,(angle_t)( one),(int)( two));
 	}
 }
 
@@ -5068,15 +5068,15 @@ void P_RailAttackWithPossibleSpread (AActor *source, int damage, int offset_xy, 
 		{
 			fixed_t		SavedActorAngle;
 
-			SavedActorAngle = source->angle;
+			SavedActorAngle = fixed_t(source->angle);
 
 			source->angle += ( ANGLE_45 / 3 );
 			P_RailAttack (source, damage, offset_xy, offset_z, lOuterColor, lInnerColor, maxdiff, railflags, puffclass, angleoffset, pitchoffset, distance, duration, sparsity, drift, spawnclass );
-			source->angle = SavedActorAngle;
+			source->angle = (angle_t)(SavedActorAngle);
 
 			source->angle -= ( ANGLE_45 / 3 );
 			P_RailAttack (source, damage, offset_xy, offset_z, lOuterColor, lInnerColor, maxdiff, railflags, puffclass, angleoffset, pitchoffset, distance, duration, sparsity, drift, spawnclass );
-			source->angle = SavedActorAngle;
+			source->angle = (angle_t)(SavedActorAngle);
 		}
 
 		// Player did not strike a player with his railgun. Reset consecutive hits to 0.
@@ -5742,14 +5742,14 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 				if (len < 0.f)
 					len = 0.f;
 			}
-			len /= FRACUNIT;
+			len /= (double)(FRACUNIT);
 			len = clamp<double>(len - (double)fulldamagedistance, 0, len);
 			points = bombdamagefloat * (1.f - len * bombdistancefloat);
 			if (thing == bombsource)
 			{
 				points = points * splashfactor;
 			}
-			points *= thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT) / (double)FRACUNIT;
+			points *= (double)(double(thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT)) / (double)FRACUNIT);
 
 			// points and bombdamage should be the same sign
 			if ((points * bombdamage) > 0 && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
@@ -5816,14 +5816,14 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 							// [BB] Potentially use the horizontal thrust of old ZDoom versions.
 							if ( zacompatflags & ZACOMPATF_OLD_EXPLOSION_THRUST )
 							{
-								thing->velx = origvelx + static_cast<fixed_t>((thing->x - bombspot->x) * thrust);
-								thing->vely = origvely + static_cast<fixed_t>((thing->y - bombspot->y) * thrust);
+								thing->velx = origvelx + static_cast<fixed_t>(double((thing->x - bombspot->x)) * double(thrust));
+								thing->vely = origvely + static_cast<fixed_t>(double((thing->y - bombspot->y)) * double(thrust));
 							}
 							else
 							{
 								angle_t ang = R_PointToAngle2(bombspot->x, bombspot->y, thing->x, thing->y) >> ANGLETOFINESHIFT;
-								thing->velx += fixed_t(finecosine[ang] * thrust);
-								thing->vely += fixed_t(finesine[ang] * thrust);
+								thing->velx += fixed_t(double(finecosine[ang]) * double(thrust));
+								thing->vely += fixed_t(double(finesine[ang]) * double(thrust));
 							}
 
 							// [BB] If ZADF_NO_ROCKET_JUMPING is on, don't give players any z-velocity if the attack was made by a player.
@@ -5862,11 +5862,11 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 
 			if (P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
 			{ // OK to damage; target is in direct path
-				dist = clamp<int>(dist - fulldamagedistance, 0, dist);
-				int damage = Scale(bombdamage, bombdistance - dist, bombdistance);
+				dist = clamp<int>((const int)(dist - fulldamagedistance), 0,(const int)( dist));
+				int damage = (int)(Scale(bombdamage, bombdistance - dist, bombdistance));
 				damage = (int)((double)damage * splashfactor);
 
-				damage = Scale(damage, thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT), FRACUNIT);
+				damage = (int)(Scale(damage, thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT), FRACUNIT));
 				if (damage > 0)
 				{
 					// [BC/BB] Damage is server side.

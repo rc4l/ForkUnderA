@@ -58,6 +58,10 @@ for f in "${enforce[@]:-}"; do
         | grep -o '"lines":{[^}]*"percent":[0-9.]*' | grep -o '[0-9.]*$' | head -1)"
   if [[ "$pct" != "100" && "$pct" != "100.0" ]]; then
     echo "COVERAGE GATE FAIL: $f is at ${pct:-0}% line coverage (need 100%)" >&2
+    # [rc4l] Print the exact uncovered lines so a CI failure is diagnosable without re-running
+    # locally -- especially useful when the miss is compiler-version specific (see issue #27).
+    $COV show "$BUILD/zandrox_tests" -instr-profile="$BUILD/cov.profdata" "$ROOT/$f" 2>/dev/null \
+      | grep -E '^[[:space:]]*[0-9]+\|[[:space:]]*0\|' | sed 's/^/    uncovered| /' >&2
     status=1
   else
     echo "COVERAGE GATE OK:   $f 100%"

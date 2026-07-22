@@ -33,7 +33,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_CMaceAttack)
 	for (i = 0; i < 16; i++)
 	{
 		angle = player->mo->angle+i*(ANG45/16);
-		slope = P_AimLineAttack (player->mo, angle, 2*MELEERANGE, &linetarget);
+		slope = (int)(P_AimLineAttack (player->mo, angle, 2*MELEERANGE, &linetarget));
 		if (linetarget)
 		{
 			P_LineAttack (player->mo, angle, 2*MELEERANGE, slope, damage, NAME_Melee, PClass::FindClass ("HammerPuff"), true, &linetarget);
@@ -55,7 +55,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_CMaceAttack)
 			}
 		}
 		angle = player->mo->angle-i*(ANG45/16);
-		slope = P_AimLineAttack (player->mo, angle, 2*MELEERANGE, &linetarget);
+		slope = (int)(P_AimLineAttack (player->mo, angle, 2*MELEERANGE, &linetarget));
 		if (linetarget)
 		{
 			P_LineAttack (player->mo, angle, 2*MELEERANGE, slope, damage, NAME_Melee, PClass::FindClass ("HammerPuff"), true, &linetarget);
@@ -81,7 +81,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_CMaceAttack)
 	player->mo->special1 = 0;
 
 	angle = player->mo->angle;
-	slope = P_AimLineAttack (player->mo, angle, MELEERANGE, &linetarget);
+	slope = (int)(P_AimLineAttack (player->mo, angle, MELEERANGE, &linetarget));
 	P_LineAttack (player->mo, angle, MELEERANGE, slope, damage, NAME_Melee, PClass::FindClass ("HammerPuff"));
 
 	// [BC] Apply spread.

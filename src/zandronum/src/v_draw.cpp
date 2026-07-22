@@ -1000,7 +1000,7 @@ void DCanvas::DrawLine(int x0, int y0, int x1, int y1, int palColor, uint32 real
 
 		if (deltaY > deltaX)
 		{ // y-major line
-			fixed_t errorAdj = (((unsigned)deltaX << 16) / (unsigned)deltaY) & 0xffff;
+			fixed_t errorAdj = fixed_t((((unsigned)deltaX << 16) / (unsigned)deltaY) & 0xffff);
 			if (xDir < 0)
 			{
 				if (WeightingScale == 0)
@@ -1009,9 +1009,9 @@ void DCanvas::DrawLine(int x0, int y0, int x1, int y1, int palColor, uint32 real
 					{
 						errorAcc += errorAdj;
 						y0++;
-						int weighting = (errorAcc >> WEIGHTSHIFT) & WEIGHTMASK;
-						PUTTRANSDOT (x0 - (errorAcc >> 16), y0, palColor, weighting);
-						PUTTRANSDOT (x0 - (errorAcc >> 16) - 1, y0,
+						int weighting = (int)((errorAcc >> WEIGHTSHIFT) & WEIGHTMASK);
+						PUTTRANSDOT ((int)(x0 - (errorAcc >> 16)), y0, palColor, weighting);
+						PUTTRANSDOT ((int)(x0 - (errorAcc >> 16) - 1), y0,
 								palColor, WEIGHTMASK - weighting);
 					}
 				}
@@ -1021,9 +1021,9 @@ void DCanvas::DrawLine(int x0, int y0, int x1, int y1, int palColor, uint32 real
 					{
 						errorAcc += errorAdj;
 						y0++;
-						int weighting = ((errorAcc * WeightingScale) >> (WEIGHTSHIFT+8)) & WEIGHTMASK;
-						PUTTRANSDOT (x0 - (errorAcc >> 16), y0, palColor, weighting);
-						PUTTRANSDOT (x0 - (errorAcc >> 16) - 1, y0,
+						int weighting = (int)(((errorAcc * WeightingScale) >> (WEIGHTSHIFT+8)) & WEIGHTMASK);
+						PUTTRANSDOT ((int)(x0 - (errorAcc >> 16)), y0, palColor, weighting);
+						PUTTRANSDOT ((int)(x0 - (errorAcc >> 16) - 1), y0,
 								palColor, WEIGHTMASK - weighting);
 					}
 				}
@@ -1036,9 +1036,9 @@ void DCanvas::DrawLine(int x0, int y0, int x1, int y1, int palColor, uint32 real
 					{
 						errorAcc += errorAdj;
 						y0++;
-						int weighting = (errorAcc >> WEIGHTSHIFT) & WEIGHTMASK;
-						PUTTRANSDOT (x0 + (errorAcc >> 16), y0, palColor, weighting);
-						PUTTRANSDOT (x0 + (errorAcc >> 16) + xDir, y0,
+						int weighting = (int)((errorAcc >> WEIGHTSHIFT) & WEIGHTMASK);
+						PUTTRANSDOT ((int)(x0 + (errorAcc >> 16)), y0, palColor, weighting);
+						PUTTRANSDOT ((int)(x0 + (errorAcc >> 16) + xDir), y0,
 								palColor, WEIGHTMASK - weighting);
 					}
 				}
@@ -1048,9 +1048,9 @@ void DCanvas::DrawLine(int x0, int y0, int x1, int y1, int palColor, uint32 real
 					{
 						errorAcc += errorAdj;
 						y0++;
-						int weighting = ((errorAcc * WeightingScale) >> (WEIGHTSHIFT+8)) & WEIGHTMASK;
-						PUTTRANSDOT (x0 + (errorAcc >> 16), y0, palColor, weighting);
-						PUTTRANSDOT (x0 + (errorAcc >> 16) + xDir, y0,
+						int weighting = (int)(((errorAcc * WeightingScale) >> (WEIGHTSHIFT+8)) & WEIGHTMASK);
+						PUTTRANSDOT ((int)(x0 + (errorAcc >> 16)), y0, palColor, weighting);
+						PUTTRANSDOT ((int)(x0 + (errorAcc >> 16) + xDir), y0,
 								palColor, WEIGHTMASK - weighting);
 					}
 				}
@@ -1058,7 +1058,7 @@ void DCanvas::DrawLine(int x0, int y0, int x1, int y1, int palColor, uint32 real
 		}
 		else
 		{ // x-major line
-			fixed_t errorAdj = (((DWORD) deltaY << 16) / (DWORD) deltaX) & 0xffff;
+			fixed_t errorAdj = fixed_t((((DWORD) deltaY << 16) / (DWORD) deltaX) & 0xffff);
 
 			if (WeightingScale == 0)
 			{
@@ -1066,9 +1066,9 @@ void DCanvas::DrawLine(int x0, int y0, int x1, int y1, int palColor, uint32 real
 				{
 					errorAcc += errorAdj;
 					x0 += xDir;
-					int weighting = (errorAcc >> WEIGHTSHIFT) & WEIGHTMASK;
-					PUTTRANSDOT (x0, y0 + (errorAcc >> 16), palColor, weighting);
-					PUTTRANSDOT (x0, y0 + (errorAcc >> 16) + 1,
+					int weighting = (int)((errorAcc >> WEIGHTSHIFT) & WEIGHTMASK);
+					PUTTRANSDOT (x0, (int)(y0 + (errorAcc >> 16)), palColor, weighting);
+					PUTTRANSDOT (x0, (int)(y0 + (errorAcc >> 16) + 1),
 							palColor, WEIGHTMASK - weighting);
 				}
 			}
@@ -1078,9 +1078,9 @@ void DCanvas::DrawLine(int x0, int y0, int x1, int y1, int palColor, uint32 real
 				{
 					errorAcc += errorAdj;
 					x0 += xDir;
-					int weighting = ((errorAcc * WeightingScale) >> (WEIGHTSHIFT+8)) & WEIGHTMASK;
-					PUTTRANSDOT (x0, y0 + (errorAcc >> 16), palColor, weighting);
-					PUTTRANSDOT (x0, y0 + (errorAcc >> 16) + 1,
+					int weighting = (int)(((errorAcc * WeightingScale) >> (WEIGHTSHIFT+8)) & WEIGHTMASK);
+					PUTTRANSDOT (x0, (int)(y0 + (errorAcc >> 16)), palColor, weighting);
+					PUTTRANSDOT (x0, (int)(y0 + (errorAcc >> 16) + 1),
 							palColor, WEIGHTMASK - weighting);
 				}
 			}

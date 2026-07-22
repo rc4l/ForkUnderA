@@ -81,7 +81,10 @@ static void CreateCachedNodes(MapData *map);
 // fixed 32 bit gl_vert format v2.0+ (glBsp 1.91)
 struct mapglvertex_t
 {
-  fixed_t x,y;
+  // [rc4l] On-disk GL-node vertices are 32-bit 16.16; keep this a fixed 32-bit width (not the
+  // now-64-bit fixed_t) so both the read and sizeof-based vertex count stay correct. The value
+  // sign-extends losslessly into the 64-bit fixed_t vertex coordinate.
+  SDWORD x,y;
 };
 
 struct gl3_mapsubsector_t
@@ -140,7 +143,7 @@ static int CheckForMissingSegs()
 		if (seg->sidedef!=NULL)
 		{
 			// check all the segs and calculate the length they occupy on their sidedef
-			TVector2<double> vec1(seg->v2->x - seg->v1->x, seg->v2->y - seg->v1->y);
+			TVector2<double> vec1((double)(seg->v2->x - seg->v1->x),(double)( seg->v2->y - seg->v1->y));
 			added_seglen[seg->sidedef - sides] += float(vec1.Length());
 		}
 	}
@@ -150,10 +153,10 @@ static int CheckForMissingSegs()
 		side_t * side =&sides[i];
 		line_t * line = side->linedef;
 
-		TVector2<double> lvec(line->dx, line->dy);
+		TVector2<double> lvec((double)(line->dx),(double)( line->dy));
 		float linelen = float(lvec.Length());
 
-		missing += (added_seglen[i] < linelen - FRACUNIT);
+		missing += (added_seglen[i] < linelen - float(FRACUNIT));
 	}
 
 	delete [] added_seglen;
@@ -1085,8 +1088,8 @@ static void CreateCachedNodes(MapData *map)
 	WriteLong(ZNodes, numvertexes);
 	for(int i=0;i<numvertexes;i++)
 	{
-		WriteLong(ZNodes, vertexes[i].x);
-		WriteLong(ZNodes, vertexes[i].y);
+		WriteLong(ZNodes,(DWORD)( vertexes[i].x));
+		WriteLong(ZNodes,(DWORD)( vertexes[i].y));
 	}
 
 	WriteLong(ZNodes, numsubsectors);
@@ -1115,15 +1118,15 @@ static void CreateCachedNodes(MapData *map)
 	WriteLong(ZNodes, numnodes);
 	for(int i=0;i<numnodes;i++)
 	{
-		WriteWord(ZNodes, nodes[i].x >> FRACBITS);
-		WriteWord(ZNodes, nodes[i].y >> FRACBITS);
-		WriteWord(ZNodes, nodes[i].dx >> FRACBITS);
-		WriteWord(ZNodes, nodes[i].dy >> FRACBITS);
+		WriteWord(ZNodes,(WORD)( nodes[i].x >> FRACBITS));
+		WriteWord(ZNodes,(WORD)( nodes[i].y >> FRACBITS));
+		WriteWord(ZNodes,(WORD)( nodes[i].dx >> FRACBITS));
+		WriteWord(ZNodes,(WORD)( nodes[i].dy >> FRACBITS));
 		for (int j = 0; j < 2; ++j)
 		{
 			for (int k = 0; k < 4; ++k)
 			{
-				WriteWord(ZNodes, nodes[i].bbox[j][k] >> FRACBITS);
+				WriteWord(ZNodes,(WORD)( nodes[i].bbox[j][k] >> FRACBITS));
 			}
 		}
 
@@ -1461,7 +1464,7 @@ void P_SetRenderSector()
 		ss->flags |= SSECF_DEGENERATE;
 		for(j=2; j<ss->numlines; j++)
 		{
-			if (!PointOnLine(seg[j].v1->x, seg[j].v1->y, seg->v1->x, seg->v1->y, seg->v2->x-seg->v1->x, seg->v2->y-seg->v1->y))
+			if (!PointOnLine((int)(seg[j].v1->x),(int)( seg[j].v1->y),(int)( seg->v1->x),(int)( seg->v1->y),(int)( seg->v2->x-seg->v1->x),(int)( seg->v2->y-seg->v1->y)))
 			{
 				// Not on the same line
 				ss->flags &= ~SSECF_DEGENERATE;

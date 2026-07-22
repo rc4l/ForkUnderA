@@ -151,11 +151,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BrainSpit)
 			}
 			else if (abs(spit->vely) > abs(spit->velx))
 			{
-				spit->special2 = (targ->y - self->y) / spit->vely;
+				spit->special2 = (int)((targ->y - self->y) / spit->vely);
 			}
 			else
 			{
-				spit->special2 = (targ->x - self->x) / spit->velx;
+				spit->special2 = (int)((targ->x - self->x) / spit->velx);
 			}
 			// [GZ] Calculates when the projectile will have reached destination
 			spit->special2 += level.maptime;
@@ -172,7 +172,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BrainSpit)
 
 			// [BC] If we're the server, tell clients create the sound.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SoundPoint( self->x, self->y, self->z, CHAN_WEAPON, self->AttackSound, 1, ATTN_NONE );
+				SERVERCOMMANDS_SoundPoint((LONG)( self->x), (LONG)self->y, (LONG)self->z, CHAN_WEAPON, self->AttackSound, 1, ATTN_NONE );
 		}
 		else
 		{
@@ -181,7 +181,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BrainSpit)
 
 			// [BC] If we're the server, tell clients create the sound.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SoundPoint( self->x, self->y, self->z, CHAN_WEAPON, "brain/spit", 1, ATTN_NONE );
+				SERVERCOMMANDS_SoundPoint((LONG)( self->x), (LONG)self->y, (LONG)self->z, CHAN_WEAPON, "brain/spit", 1, ATTN_NONE );
 		}
 	}
 }
@@ -222,7 +222,7 @@ static void SpawnFly(AActor *self, const PClass *spawntype, FSoundID sound)
 	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( fog ))
 	{
 		SERVERCOMMANDS_SpawnThing( fog );
-		SERVERCOMMANDS_SoundPoint( fog->x, fog->y, fog->z, CHAN_BODY, S_GetName( sound ), 1, ATTN_NORM );
+		SERVERCOMMANDS_SoundPoint((LONG)( fog->x), (LONG)fog->y, (LONG)fog->z, CHAN_BODY, S_GetName( sound ), 1, ATTN_NORM );
 	}
 
 	FName SpawnName;

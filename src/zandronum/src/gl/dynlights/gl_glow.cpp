@@ -119,7 +119,7 @@ void gl_InitGlow(FScanner &sc)
 // Checks whether a sprite should be affected by a glow
 //
 //==========================================================================
-int gl_CheckSpriteGlow(sector_t *sec, int lightlevel, int x, int y, int z)
+int gl_CheckSpriteGlow(sector_t *sec, int lightlevel, fixed_t x, fixed_t y, fixed_t z)
 {
 	FTextureID floorpic = sec->GetTexture(sector_t::floor);
 	FTexture *tex = TexMan[floorpic];
@@ -131,7 +131,7 @@ int gl_CheckSpriteGlow(sector_t *sec, int lightlevel, int x, int y, int z)
 			int maxlight = (255+lightlevel)>>1;
 			fixed_t lightfrac = floordiff / tex->gl_info.GlowHeight;
 			if (lightfrac<0) lightfrac=0;
-			lightlevel= (lightfrac*lightlevel + maxlight*(FRACUNIT-lightfrac))>>FRACBITS;
+			lightlevel= (int)((lightfrac*lightlevel + maxlight*(FRACUNIT-lightfrac))>>FRACBITS);
 		}
 	}
 	return lightlevel;

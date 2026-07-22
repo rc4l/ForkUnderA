@@ -1394,11 +1394,11 @@ void P_LoadSegs (MapData * map)
 			if (delta_angle != 0)
 			{
 				segangle >>= (ANGLETOFINESHIFT-16);
-				dx = (li->v1->x - li->v2->x)>>FRACBITS;
-				dy = (li->v1->y - li->v2->y)>>FRACBITS;
+				dx = (int)((li->v1->x - li->v2->x)>>FRACBITS);
+				dy = (int)((li->v1->y - li->v2->y)>>FRACBITS);
 				dis = ((int) sqrt((double)(dx*dx + dy*dy)))<<FRACBITS;
-				dx = finecosine[segangle];
-				dy = finesine[segangle];
+				dx = (int)(finecosine[segangle]);
+				dy = (int)(finesine[segangle]);
 				if ((vnum2 > vnum1) && (vertchanged[vnum2] == 0))
 				{
 					li->v2->x = li->v1->x + FixedMul(dis,dx);
@@ -2143,7 +2143,7 @@ void P_FinishLoadingLineDef(line_t *ld, int alpha)
 			additive = true;
 		}
 
-		alpha = Scale(alpha, FRACUNIT, 255); 
+		alpha = (int)(Scale(alpha, FRACUNIT, 255)); 
 		if (!ld->args[0])
 		{
 			ld->Alpha = alpha;
@@ -2896,15 +2896,15 @@ static void P_CreateBlockMap ()
 		return;
 
 	// Find map extents for the blockmap
-	minx = maxx = vertexes[0].x;
-	miny = maxy = vertexes[0].y;
+	minx = maxx = (int)(vertexes[0].x);
+	miny = maxy = (int)(vertexes[0].y);
 
 	for (i = 1; i < numvertexes; ++i)
 	{
-			 if (vertexes[i].x < minx) minx = vertexes[i].x;
-		else if (vertexes[i].x > maxx) maxx = vertexes[i].x;
-			 if (vertexes[i].y < miny) miny = vertexes[i].y;
-		else if (vertexes[i].y > maxy) maxy = vertexes[i].y;
+			 if (vertexes[i].x < minx) minx = (int)(vertexes[i].x);
+		else if (vertexes[i].x > maxx) maxx = (int)(vertexes[i].x);
+			 if (vertexes[i].y < miny) miny = (int)(vertexes[i].y);
+		else if (vertexes[i].y > maxy) maxy = (int)(vertexes[i].y);
 	}
 
 	maxx >>= FRACBITS;
@@ -2926,10 +2926,10 @@ static void P_CreateBlockMap ()
 
 	for (line = 0; line < numlines; ++line)
 	{
-		int x1 = lines[line].v1->x >> FRACBITS;
-		int y1 = lines[line].v1->y >> FRACBITS;
-		int x2 = lines[line].v2->x >> FRACBITS;
-		int y2 = lines[line].v2->y >> FRACBITS;
+		int x1 = (int)(lines[line].v1->x >> FRACBITS);
+		int y1 = (int)(lines[line].v1->y >> FRACBITS);
+		int x2 = (int)(lines[line].v2->x >> FRACBITS);
+		int y2 = (int)(lines[line].v2->y >> FRACBITS);
 		int dx = x2 - x1;
 		int dy = y2 - y1;
 		int bx = (x1 - minx) >> BLOCKBITS;

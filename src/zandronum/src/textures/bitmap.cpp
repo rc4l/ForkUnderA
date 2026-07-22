@@ -145,9 +145,9 @@ void iCopyColors(BYTE *pout, const BYTE *pin, int count, int step, FCopyInfo *in
 			a = TSrc::A(pin);
 			if (TBlend::ProcessAlpha0() || a)
 			{
-				r = (TSrc::R(pin)*inf->blendcolor[0])>>FRACBITS;
-				g = (TSrc::G(pin)*inf->blendcolor[1])>>FRACBITS;
-				b = (TSrc::B(pin)*inf->blendcolor[2])>>FRACBITS;
+				r = (BYTE)((TSrc::R(pin)*inf->blendcolor[0])>>FRACBITS);
+				g = (BYTE)((TSrc::G(pin)*inf->blendcolor[1])>>FRACBITS);
+				b = (BYTE)((TSrc::B(pin)*inf->blendcolor[2])>>FRACBITS);
 
 				TBlend::OpC(pout[TDest::RED],   r, a, inf);
 				TBlend::OpC(pout[TDest::GREEN], g, a, inf);
@@ -166,9 +166,9 @@ void iCopyColors(BYTE *pout, const BYTE *pin, int count, int step, FCopyInfo *in
 			a = TSrc::A(pin);
 			if (TBlend::ProcessAlpha0() || a)
 			{
-				r = (TSrc::R(pin)*inf->blendcolor[3] + inf->blendcolor[0]) >> FRACBITS;
-				g = (TSrc::G(pin)*inf->blendcolor[3] + inf->blendcolor[1]) >> FRACBITS;
-				b = (TSrc::B(pin)*inf->blendcolor[3] + inf->blendcolor[2]) >> FRACBITS;
+				r = (BYTE)((TSrc::R(pin)*inf->blendcolor[3] + inf->blendcolor[0]) >> FRACBITS);
+				g = (BYTE)((TSrc::G(pin)*inf->blendcolor[3] + inf->blendcolor[1]) >> FRACBITS);
+				b = (BYTE)((TSrc::B(pin)*inf->blendcolor[3] + inf->blendcolor[2]) >> FRACBITS);
 
 				TBlend::OpC(pout[TDest::RED],   r, a, inf);
 				TBlend::OpC(pout[TDest::GREEN], g, a, inf);

@@ -110,7 +110,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_BridgeOrbit)
 	if (self->target->args[3] > 128) rotationspeed = ANGLE_45/32 * (self->target->args[3]-256) / TICRATE;
 	else if (self->target->args[3] > 0) rotationspeed = ANGLE_45/32 * (self->target->args[3]) / TICRATE;
 	// Set rotation radius
-	if (self->target->args[4]) rotationradius = ((self->target->args[4] * self->target->radius) / (100 * FRACUNIT));
+	if (self->target->args[4]) rotationradius = (int)(((self->target->args[4] * self->target->radius) / (100 * FRACUNIT)));
 
 	self->angle += rotationspeed;
 	self->x = self->target->x + rotationradius * finecosine[self->angle >> ANGLETOFINESHIFT];

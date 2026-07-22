@@ -448,12 +448,12 @@ ULONG BOTPATH_TryWalk( AActor *pActor, fixed_t StartX, fixed_t StartY, fixed_t S
 	if ( AbsXDistance > AbsYDistance )
 	{
 		if ( AbsXDistance > MAXMOVE )
-			lNumSteps = 1 + ( AbsXDistance / MAXMOVE );
+			lNumSteps = (LONG)(1 + ( AbsXDistance / MAXMOVE ));
 	}
 	else
 	{
 		if ( AbsYDistance > MAXMOVE )
-			lNumSteps = 1 + ( AbsYDistance / MAXMOVE );
+			lNumSteps = (LONG)(1 + ( AbsYDistance / MAXMOVE ));
 	}
 
 	lCurrentStep = 1;
@@ -543,7 +543,7 @@ ULONG BOTPATH_TryWalk( AActor *pActor, fixed_t StartX, fixed_t StartY, fixed_t S
 			}
 		}
 
-		lHeightChange = g_PathSectorFloorZ - pActor->z;
+		lHeightChange = (LONG)(g_PathSectorFloorZ - pActor->z);
 		if ( lHeightChange > 0 )
 		{
 			if ( lHeightChange <= 0 /*gameinfo.StepHeight*/ )
@@ -622,7 +622,7 @@ ULONG BOTPATH_TryWalk( AActor *pActor, fixed_t StartX, fixed_t StartY, fixed_t S
 					pBackSector = pLine->frontsector;
 				}
 
-				lHeightChange = pBackSector->floorplane.ZatPoint( pLine->v1 ) - pFrontSector->floorplane.ZatPoint( pLine->v1 );
+				lHeightChange = (LONG)(pBackSector->floorplane.ZatPoint( pLine->v1 ) - pFrontSector->floorplane.ZatPoint( pLine->v1 ));
 				if ( lHeightChange > 0 )
 				{
 					if ( lHeightChange <= 0 /*gameinfo.StepHeight*/ )
@@ -653,7 +653,7 @@ ULONG BOTPATH_TryWalk( AActor *pActor, fixed_t StartX, fixed_t StartY, fixed_t S
 						{
 							// If the ceiling is too low, we can't jump there
 							// and the path is obstructed.
-							if ( pFrontSector->ceilingplane.ZatPoint( 0, 0 ) - mid3d_top < pActor->height )
+							if ( pFrontSector->ceilingplane.ZatPoint(fixed_t(0), fixed_t(0)) - mid3d_top < pActor->height )
 								return ( ulFlags | BOTPATH_OBSTRUCTED );
 
 							ulFlags |= BOTPATH_JUMPABLELEDGE;

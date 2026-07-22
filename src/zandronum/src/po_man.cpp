@@ -14,6 +14,7 @@
 
 #include "doomdef.h"
 #include "p_local.h"
+#include "features/fixed64/computation/fixed64_scale_compute.h"
 #include "i_system.h"
 #include "w_wad.h"
 #include "m_swap.h"
@@ -384,12 +385,12 @@ DMovePoly::DMovePoly (int polyNum)
 
 void DMovePoly::UpdateToClient( ULONG ulClient )
 {
-	SERVERCOMMANDS_DoMovePoly( m_xSpeed, m_ySpeed, m_PolyObj, ulClient, SVCF_ONLYTHISCLIENT );
+	SERVERCOMMANDS_DoMovePoly( (LONG)m_xSpeed, (LONG)m_ySpeed, m_PolyObj, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 LONG DMovePoly::GetXSpeed ()
 {
-	return ( m_xSpeed );
+	return (LONG)(( m_xSpeed ));
 }
 
 void DMovePoly::SetXSpeed (LONG lSpeed)
@@ -399,7 +400,7 @@ void DMovePoly::SetXSpeed (LONG lSpeed)
 
 LONG DMovePoly::GetYSpeed ()
 {
-	return ( m_ySpeed );
+	return (LONG)(( m_ySpeed ));
 }
 
 void DMovePoly::SetYSpeed (LONG lSpeed)
@@ -482,7 +483,7 @@ void DPolyDoor::UpdateToClient( ULONG ulClient )
 	{
 		// [WS] Play the sound.
 		SERVERCOMMANDS_PlayPolyobjSound( m_PolyObj, 0 );
-		SERVERCOMMANDS_DoPolyDoor( m_Type, m_xSpeed, m_ySpeed, m_Speed, m_PolyObj, ulClient, SVCF_ONLYTHISCLIENT );
+		SERVERCOMMANDS_DoPolyDoor( m_Type, (LONG)m_xSpeed, (LONG)m_ySpeed, m_Speed, m_PolyObj, ulClient, SVCF_ONLYTHISCLIENT );
 	}
 }
 
@@ -643,13 +644,13 @@ void DMovePoly::Tick ()
 	if ( NETWORK_InClientMode() )
 	{
 		if ( poly )
-			poly->MovePolyobj( m_xSpeed, m_ySpeed );
+			poly->MovePolyobj( (int)(m_xSpeed), (int)(m_ySpeed) );
 		return;
 	}
 
 	if (poly != NULL)
 	{
-		if (poly->MovePolyobj (m_xSpeed, m_ySpeed))
+		if (poly->MovePolyobj ((int)(m_xSpeed), (int)(m_ySpeed)))
 		{
 			int absSpeed = abs (m_Speed);
 			m_Dist -= absSpeed;
@@ -713,7 +714,7 @@ bool EV_MovePoly (line_t *line, int polyNum, int speed, angle_t angle,
 		}
 		pe = new DMovePoly(poly->tag);
 		poly->specialdata = pe;
-		pe->m_Dist = dist; // Distance
+		pe->m_Dist = (int)(dist); // Distance
 		pe->m_Speed = speed;
 		pe->m_Angle = an >> ANGLETOFINESHIFT;
 		pe->m_xSpeed = FixedMul (pe->m_Speed, finecosine[pe->m_Angle]);
@@ -722,7 +723,7 @@ bool EV_MovePoly (line_t *line, int polyNum, int speed, angle_t angle,
 
 		// [BC] If we're the server, tell clients to create the move poly.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_DoMovePoly( pe->m_xSpeed, pe->m_ySpeed, pe->m_PolyObj );
+			SERVERCOMMANDS_DoMovePoly( (LONG)pe->m_xSpeed, (LONG)pe->m_ySpeed, pe->m_PolyObj );
 
 		// Do not interpolate very fast moving polyobjects. The minimum tic count is
 		// 3 instead of 2, because the moving crate effect in Massmouth 2, Hostitality
@@ -750,7 +751,7 @@ void DMovePolyTo::Tick ()
 
 	if (poly != NULL)
 	{
-		if (poly->MovePolyobj (m_xSpeed, m_ySpeed))
+		if (poly->MovePolyobj ((int)(m_xSpeed), (int)(m_ySpeed)))
 		{
 			int absSpeed = abs (m_Speed);
 			m_Dist -= absSpeed;
@@ -789,8 +790,8 @@ bool EV_MovePolyTo(line_t *line, int polyNum, int speed, fixed_t targx, fixed_t 
 	}
 	FPolyMirrorIterator it(poly);
 
-	dist.X = targx - poly->StartSpot.x;
-	dist.Y = targy - poly->StartSpot.y;
+	dist.X = (double)(targx - poly->StartSpot.x);
+	dist.Y = (double)(targy - poly->StartSpot.y);
 	distlen = dist.MakeUnit();
 	while ((poly = it.NextMirror()) != NULL)
 	{
@@ -804,8 +805,8 @@ bool EV_MovePolyTo(line_t *line, int polyNum, int speed, fixed_t targx, fixed_t 
 		pe->m_Speed = speed;
 		pe->m_xSpeed = xs_RoundToInt(speed * dist.X);
 		pe->m_ySpeed = xs_RoundToInt(speed * dist.Y);
-		pe->m_xTarget = xs_RoundToInt(poly->StartSpot.x + distlen * dist.X);
-		pe->m_yTarget = xs_RoundToInt(poly->StartSpot.y + distlen * dist.Y);
+		pe->m_xTarget = xs_RoundToInt((double)poly->StartSpot.x + distlen * dist.X);
+		pe->m_yTarget = xs_RoundToInt((double)poly->StartSpot.y + distlen * dist.Y);
 		if ((pe->m_Dist / pe->m_Speed) <= 2)
 		{
 			pe->StopInterpolation();
@@ -835,7 +836,7 @@ void DPolyDoor::Tick ()
 		{
 		case PODOOR_SLIDE:
 
-			poly->MovePolyobj( m_xSpeed, m_ySpeed );
+			poly->MovePolyobj( (int)(m_xSpeed), (int)(m_ySpeed) );
 			break;
 		case PODOOR_SWING:
 
@@ -863,7 +864,7 @@ void DPolyDoor::Tick ()
 	switch (m_Type)
 	{
 	case PODOOR_SLIDE:
-		if (m_Dist <= 0 || poly->MovePolyobj (m_xSpeed, m_ySpeed))
+		if (m_Dist <= 0 || poly->MovePolyobj ((int)(m_xSpeed), (int)(m_ySpeed)))
 		{
 			// [WS] Inform clients that the door is closing.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER && ( ( m_TotalDist == m_Dist && m_Close ) || poly->bBlocked ) )
@@ -871,10 +872,10 @@ void DPolyDoor::Tick ()
 				// [EP] The door is not blocked anymore.
 				poly->bBlocked = false;
 				SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj,
-															m_xSpeed,
-															m_ySpeed,
-															poly->StartSpot.x,
-															poly->StartSpot.y );
+															(LONG)m_xSpeed,
+															(LONG)m_ySpeed,
+															(LONG)poly->StartSpot.x,
+															(LONG)poly->StartSpot.y );
 			}
 
 			absSpeed = abs (m_Speed);
@@ -897,7 +898,7 @@ void DPolyDoor::Tick ()
 
 					// [WS] Inform clients the door has stopped.
 					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-						SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj, 0, 0, poly->StartSpot.x, poly->StartSpot.y );
+						SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj, 0, 0, (LONG)poly->StartSpot.x, (LONG)poly->StartSpot.y );
 				}
 				else
 				{
@@ -921,7 +922,7 @@ void DPolyDoor::Tick ()
 				if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( m_Dist > 0 ) && ( poly->bBlocked == false ) )
 				{
 					poly->bBlocked = true;
-					SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj, 0, 0, poly->StartSpot.x, poly->StartSpot.y );
+					SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj, 0, 0, (LONG)poly->StartSpot.x, (LONG)poly->StartSpot.y );
 				}
 				return;
 			}
@@ -940,9 +941,9 @@ void DPolyDoor::Tick ()
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 				{
 					SERVERCOMMANDS_PlayPolyobjSound( m_PolyObj, 0 );
-					SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj, m_xSpeed, m_ySpeed,
-														poly->StartSpot.x,
-														poly->StartSpot.y );
+					SERVERCOMMANDS_SetPolyDoorSpeedPosition( m_PolyObj, (LONG)m_xSpeed, (LONG)m_ySpeed,
+														(LONG)poly->StartSpot.x,
+														(LONG)poly->StartSpot.y );
 				}
 			}
 		}
@@ -1086,7 +1087,7 @@ bool EV_OpenPolyDoor (line_t *line, int polyNum, int speed, angle_t angle,
 		// [BC] Tell clients to create the poly door, and play a sound.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			SERVERCOMMANDS_DoPolyDoor( pd->m_Type, pd->m_xSpeed, pd->m_ySpeed, pd->m_Speed, pd->m_PolyObj );
+			SERVERCOMMANDS_DoPolyDoor( pd->m_Type, (LONG)pd->m_xSpeed, (LONG)pd->m_ySpeed, pd->m_Speed, pd->m_PolyObj );
 			SERVERCOMMANDS_PlayPolyobjSound( poly->tag, 0 );
 		}
 
@@ -1221,20 +1222,20 @@ void FPolyObj::ThrustMobj (AActor *actor, side_t *side)
 		}
 		if (force < FRACUNIT)
 		{
-			force = FRACUNIT;
+			force = (int)(FRACUNIT);
 		}
 		else if (force > 4*FRACUNIT)
 		{
-			force = 4*FRACUNIT;
+			force = (int)(4*FRACUNIT);
 		}
 	}
 	else
 	{
-		force = FRACUNIT;
+		force = (int)(FRACUNIT);
 	}
 
-	thrustX = FixedMul (force, finecosine[thrustAngle]);
-	thrustY = FixedMul (force, finesine[thrustAngle]);
+	thrustX = (int)(FixedMul (force, finecosine[thrustAngle]));
+	thrustY = (int)(FixedMul (force, finesine[thrustAngle]));
 	actor->velx += thrustX;
 	actor->vely += thrustY;
 	if (crush && ( NETWORK_InClientMode() == false ))
@@ -1305,8 +1306,8 @@ void FPolyObj::CalcCenter()
 	SQWORD cx = 0, cy = 0;
 	for(unsigned i=0;i<Vertices.Size(); i++)
 	{
-		cx += Vertices[i]->x;
-		cy += Vertices[i]->y;
+		cx += zx::raw(Vertices[i]->x);
+		cy += zx::raw(Vertices[i]->y);
 	}
 	CenterSpot.x = (fixed_t)(cx / Vertices.Size());
 	CenterSpot.y = (fixed_t)(cy / Vertices.Size());
@@ -1391,8 +1392,11 @@ static void RotatePt (int an, fixed_t *x, fixed_t *y, fixed_t startSpotX, fixed_
 	fixed_t tr_x = *x;
 	fixed_t tr_y = *y;
 
-	*x = (DMulScale16 (tr_x, finecosine[an], -tr_y, finesine[an]) & 0xFFFFFE00) + startSpotX;
-	*y = (DMulScale16 (tr_x, finesine[an], tr_y, finecosine[an]) & 0xFFFFFE00) + startSpotY;
+	// [rc4l] Align the rotated offset down to a 512 grid, sign-preserving. The old `& 0xFFFFFE00`
+	// literal is 32-bit: once DMulScale16 widened to 64-bit it zero-extended and wiped the sign of
+	// negative offsets (half of every polyobject), flinging those vertices ~65k units away.
+	*x = zx::AlignDownPow2 ((int64_t)(DMulScale16 (tr_x, finecosine[an], -tr_y, finesine[an])), 9) + startSpotX;
+	*y = zx::AlignDownPow2 ((int64_t)(DMulScale16 (tr_x, finesine[an], tr_y, finecosine[an])), 9) + startSpotY;
 }
 
 //==========================================================================
@@ -1720,7 +1724,7 @@ void FPolyObj::RecalcActorFloorCeil(FBoundingBox bounds) const
 void FPolyObj::ClosestPoint(fixed_t fx, fixed_t fy, fixed_t &ox, fixed_t &oy, side_t **side) const
 {
 	unsigned int i;
-	double x = fx, y = fy;
+	double x = (double)(fx), y = (double)(fy);
 	double bestdist = HUGE_VAL;
 	double bestx = 0, besty = 0;
 	side_t *bestline = NULL;
@@ -1729,34 +1733,34 @@ void FPolyObj::ClosestPoint(fixed_t fx, fixed_t fy, fixed_t &ox, fixed_t &oy, si
 	{
 		vertex_t *v1 = Sidedefs[i]->V1();
 		vertex_t *v2 = Sidedefs[i]->V2();
-		double a = v2->x - v1->x;
-		double b = v2->y - v1->y;
+		double a = (double)(v2->x - v1->x);
+		double b = (double)(v2->y - v1->y);
 		double den = a*a + b*b;
 		double ix, iy, dist;
 
 		if (den == 0)
 		{ // Line is actually a point!
-			ix = v1->x;
-			iy = v1->y;
+			ix = (double)(v1->x);
+			iy = (double)(v1->y);
 		}
 		else
 		{
-			double num = (x - v1->x) * a + (y - v1->y) * b;
+			double num = (x - double(v1->x)) * a + (y - double(v1->y)) * b;
 			double u = num / den;
 			if (u <= 0)
 			{
-				ix = v1->x;
-				iy = v1->y;
+				ix = (double)(v1->x);
+				iy = (double)(v1->y);
 			}
 			else if (u >= 1)
 			{
-				ix = v2->x;
-				iy = v2->y;
+				ix = (double)(v2->x);
+				iy = (double)(v2->y);
 			}
 			else
 			{
-				ix = v1->x + u * a;
-				iy = v1->y + u * b;
+				ix = double(v1->x) + u * a;
+				iy = double(v1->y) + u * b;
 			}
 		}
 		a = (ix - x);
@@ -1770,8 +1774,8 @@ void FPolyObj::ClosestPoint(fixed_t fx, fixed_t fy, fixed_t &ox, fixed_t &oy, si
 			bestline = Sidedefs[i];
 		}
 	}
-	ox = fixed_t(bestx);
-	oy = fixed_t(besty);
+	ox = fixed_t((SQWORD)bestx);
+	oy = fixed_t((SQWORD)besty);
 	if (side != NULL)
 	{
 		*side = bestline;
@@ -2072,8 +2076,8 @@ static void TranslateToStartSpot (int tag, int originX, int originY)
 	}
 	po->OriginalPts.Resize(po->Sidedefs.Size());
 	po->PrevPts.Resize(po->Sidedefs.Size());
-	deltaX = originX - po->StartSpot.x;
-	deltaY = originY - po->StartSpot.y;
+	deltaX = (int)(originX - po->StartSpot.x);
+	deltaY = (int)(originY - po->StartSpot.y);
 
 	for (unsigned i = 0; i < po->Sidedefs.Size(); i++)
 	{
@@ -2151,7 +2155,7 @@ void PO_Init (void)
 		if (polyspawn->type == PO_ANCHOR_TYPE)
 		{ 
 			// Polyobj Anchor Pt.
-			TranslateToStartSpot (polyspawn->angle, polyspawn->x, polyspawn->y);
+			TranslateToStartSpot (polyspawn->angle, (int)polyspawn->x, (int)polyspawn->y);
 		}
 		delete polyspawn;
 		polyspawn = next;
@@ -2313,7 +2317,7 @@ static bool GetIntersection(FPolySeg *seg, node_t *bsp, FPolyVertex *v)
 
 static double PartitionDistance(FPolyVertex *vt, node_t *node)
 {	
-	return fabs(double(-node->dy) * (vt->x - node->x) + double(node->dx) * (vt->y - node->y)) / node->len;
+	return fabs(double(-node->dy) * double(vt->x - node->x) + double(node->dx) * double(vt->y - node->y)) / node->len;
 }
 
 //==========================================================================
