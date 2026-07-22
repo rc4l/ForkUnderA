@@ -65,6 +65,7 @@
 #include "cl_commands.h"
 #include "cl_demo.h"
 #include "cl_statistics.h"
+#include "features/fixed64/computation/angle_interp_compute.h"
 #include "cooperative.h"
 #include "doomerrors.h"
 #include "doomtype.h"
@@ -3911,7 +3912,9 @@ void ServerCommands::MovePlayer::Execute()
 	}
 
 	// [AK] Calculate how much this player's angle changed.
-	player->mo->AngleDelta = fixed_t(angle - player->mo->angle);
+	// [rc4l] Reinterpret the wrapping angle_t difference as a signed int32 first (as p_user.cpp does):
+	// a right turn is a small negative delta, but fixed_t(unsigned) would zero-extend it to ~4.2e9.
+	player->mo->AngleDelta = fixed_t(zx::AngleAsSignedFixed(angle - player->mo->angle));
 
 	// Set the player's angle.
 	player->mo->angle = angle;

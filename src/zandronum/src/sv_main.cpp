@@ -6309,7 +6309,13 @@ bool ClientMoveCommand::process( const ULONG clientIndex ) const
 			// In this case the client still sends these values based on the previous map.
 			if ( client->State == CLS_SPAWNED )
 			{
-				player->mo->pitch = fixed_t(moveCmd.pitch);
+				// [rc4l] moveCmd.pitch is angle_t (UNSIGNED). A negative aim-up pitch travels as its
+				// two's-complement bits, so fixed_t(moveCmd.pitch) hit the strong type's zero-extending
+				// unsigned ctor and turned the aim-up pitch into a huge positive -- the next clamp then
+				// pinned it to +90 (straight down) and the shot landed at the player's feet. Reinterpret
+				// the 32-bit angle as SIGNED first (what 32-bit Zandronum's (fixed_t) cast did) so
+				// fixed_t sign-extends it back to the real, negative aim-up pitch.
+				player->mo->pitch = fixed_t((SDWORD)moveCmd.pitch);
 
 				// [HYP] Lock angle if speed is above sr40
 				if ( !sv_cheats && ( cmd->ucmd.sidemove > ( sidemove[1] << 8 ) || cmd->ucmd.sidemove < -( sidemove[1] << 8 )))
