@@ -3371,7 +3371,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckSightOrRange)
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
-	range = (double)(range * range * (double(FRACUNIT) * FRACUNIT));		// no need for square roots
+	range = (double)(range * range * (double(FRACUNIT) * double(FRACUNIT)));		// no need for square roots
 	for (int i = 0; i < MAXPLAYERS; ++i)
 	{
 		if (playeringame[i])
@@ -3433,7 +3433,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckRange)
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
-	range = (double)(range * range * (double(FRACUNIT) * FRACUNIT));		// no need for square roots
+	range = (double)(range * range * (double(FRACUNIT) * double(FRACUNIT)));		// no need for square roots
 	for (int i = 0; i < MAXPLAYERS; ++i)
 	{
 		if (playeringame[i])

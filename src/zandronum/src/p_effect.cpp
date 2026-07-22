@@ -428,10 +428,10 @@ particle_t *JitterParticle (int ttl, float drift)
 
 		// Set initial velocities
 		for (i = 3; i; i--, val++)
-			*val = (int)((FRACUNIT/4096) * (M_Random () - 128) * drift);
+			*val = (int)(double((FRACUNIT/4096) * (M_Random () - 128)) * double(drift));
 		// Set initial accelerations
 		for (i = 3; i; i--, val++)
-			*val = (int)((FRACUNIT/16384) * (M_Random () - 128) * drift);
+			*val = (int)(double((FRACUNIT/16384) * (M_Random () - 128)) * double(drift));
 
 		particle->trans = 255;	// fully opaque
 		particle->ttl = ttl;

@@ -314,7 +314,7 @@ class SBarInfoMainBlock : public SBarInfoCommandFlowControl
 		{
 			this->xOffset = xOffset;
 			this->yOffset = yOffset;
-			this->currentAlpha = (int)(fixed_t((((double) this->alpha / (double) FRACUNIT) * ((double) alpha / (double) FRACUNIT)) * FRACUNIT));
+			this->currentAlpha = (int)(fixed_t(double((((double) this->alpha / (double) FRACUNIT) * ((double) alpha / (double) FRACUNIT))) * double(FRACUNIT)));
 			SBarInfoCommandFlowControl::Draw(this, statusBar);
 		}
 		bool	ForceScaled() const { return forceScaled; }
@@ -339,7 +339,7 @@ class SBarInfoMainBlock : public SBarInfoCommandFlowControl
 					}
 				}
 				sc.MustGetToken(TK_FloatConst);
-				alpha = (int)(fixed_t(FRACUNIT * sc.Float));
+				alpha = (int)(fixed_t(double(FRACUNIT) * double(sc.Float)));
 			}
 			SBarInfoCommandFlowControl::Parse(sc, this->fullScreenOffsets);
 		}
@@ -730,10 +730,10 @@ void SBarInfo::ParseSBarInfo(int lump)
 						popup.transition = Popup::TRANSITION_FADE;
 						sc.MustGetToken(',');
 						sc.MustGetToken(TK_FloatConst);
-						popup.speed = (int)(fixed_t(FRACUNIT * (1.0 / (35.0 * sc.Float))));
+						popup.speed = (int)(fixed_t(double(FRACUNIT) * double((1.0 / (35.0 * sc.Float)))));
 						sc.MustGetToken(',');
 						sc.MustGetToken(TK_FloatConst);
-						popup.speed2 = (int)(fixed_t(FRACUNIT * (1.0 / (35.0 * sc.Float))));
+						popup.speed2 = (int)(fixed_t(double(FRACUNIT) * double((1.0 / (35.0 * sc.Float)))));
 					}
 					else
 						sc.ScriptError("Unkown transition type: '%s'", sc.String);
@@ -932,7 +932,7 @@ int Popup::getAlpha(int maxAlpha)
 {
 	double a = (double) alpha / (double) FRACUNIT;
 	double b = (double) maxAlpha / (double) FRACUNIT;
-	return (int)(fixed_t((a * b) * FRACUNIT));
+	return (int)(fixed_t(double((a * b)) * double(FRACUNIT)));
 }
 
 int Popup::getXDisplacement()
@@ -1476,7 +1476,7 @@ public:
 			}
 			if(drawshadow)
 			{
-				int salpha = (int)(fixed_t(((double) alpha / (double) FRACUNIT) * ((double) HR_SHADOW / (double) FRACUNIT) * FRACUNIT));
+				int salpha = (int)(fixed_t(double(((double) alpha / (double) FRACUNIT) * ((double) HR_SHADOW / (double) FRACUNIT)) * double(FRACUNIT)));
 				double srx = rx + (shadowX*xScale);
 				double sry = ry + (shadowY*yScale);
 				screen->DrawTexture(character, srx, sry,

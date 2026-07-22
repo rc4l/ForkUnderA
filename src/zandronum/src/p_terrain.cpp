@@ -538,7 +538,7 @@ static void GenericParse (FScanner &sc, FGenericParse *parser, const char **keyw
 
 		case GEN_Fixed:
 			sc.MustGetFloat ();
-			SET_FIELD (fixed_t, (fixed_t)(FRACUNIT * sc.Float));
+			SET_FIELD (fixed_t, (fixed_t)(double(FRACUNIT) * sc.Float));
 			break;
 
 		case GEN_Sound:

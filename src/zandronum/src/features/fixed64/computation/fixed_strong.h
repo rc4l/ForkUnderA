@@ -93,6 +93,13 @@ public:
 	friend constexpr Fixed operator/(Fixed a, int b) { return FromRaw(a.v_ / b); }
 	friend constexpr Fixed operator%(Fixed a, int b) { return FromRaw(a.v_ % b); }
 
+	// [rc4l] A floating-point operand to *, /, %, <<, >> is a silent-truncation hazard: `FRACUNIT *
+	// sin(x)` bound to operator*(Fixed,int), truncating sin (in [0,1)) to 0 -- which zeroed the whole
+	// finesine/finecosine table and killed movement, hitscan, sight and rendering at every
+	// non-cardinal angle. These are deleted as SFINAE templates *after the class* (see below) so they
+	// match only floating types -- a plain operator*(Fixed,double) would also make `long * Fixed`
+	// ambiguous between the int/double/float overloads.
+
 	// --- bit ops (shifts and masks are used pervasively on fixed values) ---
 	friend constexpr Fixed operator<<(Fixed a, int n) { return FromRaw(a.v_ << n); }
 	friend constexpr Fixed operator>>(Fixed a, int n) { return FromRaw(a.v_ >> n); }
@@ -148,6 +155,15 @@ public:
 	Fixed &operator/=(Fixed b) { v_ /= b.v_; return *this; } // raw quotient, matches operator/
 	Fixed &operator%=(int b) { v_ %= b; return *this; }
 	Fixed &operator%=(Fixed b) { v_ %= b.v_; return *this; }
+	// [rc4l] Same silent-truncation hazard as the binary *, /, % above -- delete the float forms so
+	// `fixed *= 0.6` is a compile error (write fixed = fixed_t(double(fixed) * 0.6) explicitly). SFINAE
+	// on is_floating_point so integer compound ops (fixed *= someLong) still resolve to the int form.
+	template <class F, class = typename std::enable_if<std::is_floating_point<F>::value>::type>
+	Fixed &operator*=(F) = delete;
+	template <class F, class = typename std::enable_if<std::is_floating_point<F>::value>::type>
+	Fixed &operator/=(F) = delete;
+	template <class F, class = typename std::enable_if<std::is_floating_point<F>::value>::type>
+	Fixed &operator%=(F) = delete;
 	Fixed &operator++() { ++v_; return *this; }
 	Fixed &operator--() { --v_; return *this; }
 	Fixed operator++(int) { Fixed t = *this; ++v_; return t; }
@@ -162,6 +178,23 @@ public:
 private:
 	int64_t v_;
 };
+
+// [rc4l] Delete `Fixed op <floating>` (and the reverse) for *, /, %, <<, >> as SFINAE templates that
+// match ONLY floating-point types. This makes `FRACUNIT * sin(x)` and `alpha / 65536.0` hard compile
+// errors -- forcing double(fixedval) for float math, FixedMul for fixed*fixed, or an explicit (int)
+// -- while integer operands (long, unsigned, ...) still resolve to operator*(Fixed,int) without the
+// ambiguity a plain deleted operator*(Fixed,double) would introduce.
+#define ZX_DELETE_FIXED_FLOAT_OP(op) \
+	template <class F, class = typename std::enable_if<std::is_floating_point<F>::value>::type> \
+	Fixed operator op (Fixed, F) = delete; \
+	template <class F, class = typename std::enable_if<std::is_floating_point<F>::value>::type> \
+	Fixed operator op (F, Fixed) = delete;
+ZX_DELETE_FIXED_FLOAT_OP(*)
+ZX_DELETE_FIXED_FLOAT_OP(/)
+ZX_DELETE_FIXED_FLOAT_OP(%)
+ZX_DELETE_FIXED_FLOAT_OP(<<)
+ZX_DELETE_FIXED_FLOAT_OP(>>)
+#undef ZX_DELETE_FIXED_FLOAT_OP
 
 // [rc4l] abs()/MIN/MAX/clamp for Fixed, found by ADL so the engine's unqualified calls keep
 // working. Same-type MIN(Fixed,Fixed) already resolves via the global template; these non-template

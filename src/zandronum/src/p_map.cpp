@@ -3505,7 +3505,7 @@ bool FSlide::BounceWall(AActor *mo)
 	lineangle >>= ANGLETOFINESHIFT;
 	deltaangle >>= ANGLETOFINESHIFT;
 
-	movelen = fixed_t(sqrt((double)(double(mo->velx)*mo->velx + double(mo->vely)*mo->vely)));
+	movelen = fixed_t(sqrt((double)(double(mo->velx)*double(mo->velx) + double(mo->vely)*double(mo->vely))));
 	movelen = FixedMul(movelen, mo->wallbouncefactor);
 
 	FBoundingBox box(mo->x, mo->y, mo->radius);
@@ -5749,7 +5749,7 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 			{
 				points = points * splashfactor;
 			}
-			points *= (double)(thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT) / (double)FRACUNIT);
+			points *= (double)(double(thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT)) / (double)FRACUNIT);
 
 			// points and bombdamage should be the same sign
 			if ((points * bombdamage) > 0 && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
@@ -5816,14 +5816,14 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 							// [BB] Potentially use the horizontal thrust of old ZDoom versions.
 							if ( zacompatflags & ZACOMPATF_OLD_EXPLOSION_THRUST )
 							{
-								thing->velx = origvelx + static_cast<fixed_t>((thing->x - bombspot->x) * thrust);
-								thing->vely = origvely + static_cast<fixed_t>((thing->y - bombspot->y) * thrust);
+								thing->velx = origvelx + static_cast<fixed_t>(double((thing->x - bombspot->x)) * double(thrust));
+								thing->vely = origvely + static_cast<fixed_t>(double((thing->y - bombspot->y)) * double(thrust));
 							}
 							else
 							{
 								angle_t ang = R_PointToAngle2(bombspot->x, bombspot->y, thing->x, thing->y) >> ANGLETOFINESHIFT;
-								thing->velx += fixed_t(finecosine[ang] * thrust);
-								thing->vely += fixed_t(finesine[ang] * thrust);
+								thing->velx += fixed_t(double(finecosine[ang]) * double(thrust));
+								thing->vely += fixed_t(double(finesine[ang]) * double(thrust));
 							}
 
 							// [BB] If ZADF_NO_ROCKET_JUMPING is on, don't give players any z-velocity if the attack was made by a player.

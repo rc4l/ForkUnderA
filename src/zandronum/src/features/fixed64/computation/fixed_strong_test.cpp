@@ -4,12 +4,70 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "gtest/gtest.h"
 
+#include <cmath>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 #include "features/fixed64/computation/fixed_strong.h"
 
 using zx::Fixed;
+
+// [rc4l] Detection idiom: is a given operator expression well-formed for these operand types? The
+// float-hazard operators are deleted as SFINAE *templates* (enable_if<is_floating_point>), so a
+// call that resolves to one is a substitution failure in the immediate context -- SFINAE-friendly,
+// not a hard error -- and these traits report false. (A plainly deleted non-template would instead
+// hard-error the whole TU and could not be probed this way.)
+template <class A, class B, class = void> struct HasMul : std::false_type {};
+template <class A, class B>
+struct HasMul<A, B, decltype(void(std::declval<A>() * std::declval<B>()))> : std::true_type {};
+template <class A, class B, class = void> struct HasDiv : std::false_type {};
+template <class A, class B>
+struct HasDiv<A, B, decltype(void(std::declval<A>() / std::declval<B>()))> : std::true_type {};
+template <class A, class B, class = void> struct HasMod : std::false_type {};
+template <class A, class B>
+struct HasMod<A, B, decltype(void(std::declval<A>() % std::declval<B>()))> : std::true_type {};
+template <class A, class B, class = void> struct HasShl : std::false_type {};
+template <class A, class B>
+struct HasShl<A, B, decltype(void(std::declval<A>() << std::declval<B>()))> : std::true_type {};
+template <class A, class B, class = void> struct HasShr : std::false_type {};
+template <class A, class B>
+struct HasShr<A, B, decltype(void(std::declval<A>() >> std::declval<B>()))> : std::true_type {};
+template <class A, class B, class = void> struct HasLt : std::false_type {};
+template <class A, class B>
+struct HasLt<A, B, decltype(void(std::declval<A>() < std::declval<B>()))> : std::true_type {};
+template <class A, class B, class = void> struct HasTernary : std::false_type {};
+template <class A, class B>
+struct HasTernary<A, B, decltype(void(true ? std::declval<A>() : std::declval<B>()))> : std::true_type {};
+
+// [rc4l] The finesine bug in miniature, pinned as a compile-time contract. A floating-point operand
+// to *, /, %, <<, >> against a Fixed is REJECTED (both operand orders) -- so `FRACUNIT * sin(x)`,
+// `alpha / 65536.0`, `fixed % 1.5` can never again silently bind to operator*(Fixed,int) and
+// truncate the float to an integer. Integer operands (int, long, unsigned) still resolve cleanly,
+// so ordinary scaling keeps working and there is no long*Fixed ambiguity.
+static_assert(HasMul<Fixed, int>::value, "Fixed*int (scaling) must stay valid");
+static_assert(HasMul<Fixed, long>::value, "Fixed*long must resolve (no float/int ambiguity)");
+static_assert(HasMul<int, Fixed>::value, "int*Fixed must stay valid");
+static_assert(!HasMul<Fixed, double>::value, "Fixed*double must be a compile error (float truncation)");
+static_assert(!HasMul<double, Fixed>::value, "double*Fixed must be a compile error");
+static_assert(!HasMul<Fixed, float>::value, "Fixed*float must be a compile error");
+static_assert(!HasDiv<Fixed, double>::value, "Fixed/double must be a compile error");
+static_assert(!HasDiv<double, Fixed>::value, "double/Fixed must be a compile error");
+static_assert(!HasMod<Fixed, double>::value, "Fixed%double must be a compile error");
+static_assert(!HasShl<Fixed, double>::value, "Fixed<<double must be a compile error");
+static_assert(!HasShr<Fixed, double>::value, "Fixed>>double must be a compile error");
+static_assert(HasDiv<Fixed, int>::value && HasMod<Fixed, int>::value, "integer / and % must stay valid");
+static_assert(HasShl<Fixed, int>::value && HasShr<Fixed, int>::value, "integer shifts must stay valid");
+
+// [rc4l] Fixed-vs-floating comparisons and mixed Fixed/floating ternaries are guarded too -- not by
+// a deleted operator but by the explicit float ctor / explicit `operator double`: neither implicit
+// direction exists, so there is no viable operator< and no common ternary type. Integer comparisons
+// still work (int promotes to Fixed).
+static_assert(HasLt<Fixed, int>::value, "Fixed<int must stay valid (int promotes)");
+static_assert(!HasLt<Fixed, double>::value, "Fixed<double must be a compile error");
+static_assert(!HasLt<double, Fixed>::value, "double<Fixed must be a compile error");
+static_assert(!HasTernary<Fixed, double>::value, "cond?Fixed:double must be a compile error");
+static_assert(!HasTernary<double, Fixed>::value, "cond?double:Fixed must be a compile error");
 
 // --- Compile-time contract: the dangerous conversions must NOT exist ---
 
@@ -175,6 +233,29 @@ TEST(FixedStrong, EveryOperatorForwardsToRaw)
 	EXPECT_EQ((zx::clamp)(r_below, r_lo, r_hi).Raw(), 3); // v < lo      -> lo
 	EXPECT_EQ((zx::clamp)(r_above, r_lo, r_hi).Raw(), 9); // v > hi      -> hi
 	EXPECT_EQ((zx::clamp)(r_mid, r_lo, r_hi).Raw(), 5);   // lo <= v <= hi -> v
+}
+
+// [rc4l] The finesine bug, as a runtime behavioral guard alongside the compile-time traits above.
+// R_InitTables (r_utility.cpp) fills finesine[i] = (fixed_t)(double(FRACUNIT) * sin(i*pimul)). The
+// original `FRACUNIT * sin(...)` bound to operator*(Fixed,int), truncating sin -- which is in [0,1)
+// across the first quarter -- to 0, zeroing the whole sine/cosine table and killing movement,
+// hitscan, monster sight and rendering at every non-cardinal angle. This pins that the float-
+// multiply form produces the correct non-zero fixed value (and, via the traits above, that the
+// truncating form no longer compiles).
+TEST(FixedStrong, FinesineFillIsFloatMultiplyNotTruncation)
+{
+	const Fixed kFracUnit = Fixed::FromRaw(65536); // FRACUNIT, without pulling in doomtype.h
+	const double pimul = M_PI * 2 / 8192.0;        // FINEANGLES = 8192
+	for (int i : {1, 500, 1000, 2047})             // non-cardinal indices within the first quarter
+	{
+		const Fixed v = (Fixed)(double(kFracUnit) * sin(i * pimul)); // exactly R_InitTables' form
+		const long long expect = (long long)(65536.0 * sin(i * pimul));
+		EXPECT_EQ(v.Raw(), expect);
+		EXPECT_GT(v.Raw(), 0); // the crux: a real fixed-point sine, not truncated to zero
+	}
+	// Sanity: the quarter endpoints (sin 0, sin ~1) still behave.
+	EXPECT_EQ(((Fixed)(double(kFracUnit) * sin(0 * pimul))).Raw(), 0);
+	EXPECT_GT(((Fixed)(double(kFracUnit) * sin(2048 * pimul))).Raw(), 60000); // ~FRACUNIT at 90deg
 }
 
 // [rc4l] The polyobject-rotation bug class: a 32-bit align-down mask on a negative fixed value.

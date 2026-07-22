@@ -1949,8 +1949,8 @@ void AM_drawSubsectors()
 			{
 				AM_rotatePoint(&pt.x, &pt.y);
 			}
-			points[j].X = (float)(f_x + ((pt.x - m_x) * scale / float(1 << 24)));
-			points[j].Y = (float)(f_y + (f_h - (pt.y - m_y) * scale / float(1 << 24)));
+			points[j].X = (float)(f_x + (double((pt.x - m_x)) * double(scale) / float(1 << 24)));
+			points[j].Y = (float)(f_y + (f_h - double((pt.y - m_y)) * double(scale) / float(1 << 24)));
 		}
 		// For lighting and texture determination
 		sector_t *sec = Renderer->FakeFlat (subsectors[i].render_sector, &tempsec, &floorlight,	&ceilinglight, false);
@@ -2045,8 +2045,8 @@ void AM_drawSubsectors()
 			rotation += ANG90 - players[consoleplayer].camera->angle;
 			AM_rotatePoint(&originpt.x, &originpt.y);
 		}
-		originx = (double)(f_x + ((originpt.x - m_x) * scale / float(1 << 24)));
-		originy = (double)(f_y + (f_h - (originpt.y - m_y) * scale / float(1 << 24)));
+		originx = (double)(f_x + (double((originpt.x - m_x)) * double(scale) / float(1 << 24)));
+		originy = (double)(f_y + (f_h - double((originpt.y - m_y)) * double(scale) / float(1 << 24)));
 
 		// If this subsector has not actually been seen yet (because you are cheating
 		// to see it on the map), tint and desaturate it.

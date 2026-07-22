@@ -186,7 +186,7 @@ struct FCoverageBuilder
 
 	double PartitionDistance(FCoverageVertex *vt, node_t *node)
 	{	
-		return fabs((double)(double(-node->dy) * (vt->x - node->x) + double(node->dx) * (vt->y - node->y))) / node->len;
+		return fabs((double)(double(-node->dy) * double((vt->x - node->x)) + double(node->dx) * double((vt->y - node->y)))) / node->len;
 	}
 
 	//==========================================================================
@@ -439,8 +439,8 @@ CCMD(dumpportals)
 {
 	for(unsigned i=0;i<portals.Size(); i++)
 	{
-		double xdisp = (double)(portals[i]->xDisplacement/65536.);
-		double ydisp = (double)(portals[i]->yDisplacement/65536.);
+		double xdisp = (double)(double(portals[i]->xDisplacement)/65536.);
+		double ydisp = (double)(double(portals[i]->yDisplacement)/65536.);
 		Printf(PRINT_LOG, "Portal #%d, %s, displacement = (%f,%f)\n", i, portals[i]->plane==0? "floor":"ceiling",
 			xdisp, ydisp);
 		Printf(PRINT_LOG, "Coverage:\n");
@@ -463,7 +463,7 @@ CCMD(dumpportals)
 					Printf(PRINT_LOG, "\t\t\t%5d (%4d): ", cov->subsectors[l], csub->render_sector->sectornum);
 					for(unsigned m = 0;m< csub->numlines; m++)
 					{
-						Printf(PRINT_LOG, "(%.3f,%.3f), ",	csub->firstline[m].v1->x/65536., csub->firstline[m].v1->y/65536.);
+						Printf(PRINT_LOG, "(%.3f,%.3f), ",	double(csub->firstline[m].v1->x)/65536., double(csub->firstline[m].v1->y)/65536.);
 					}
 					Printf(PRINT_LOG, "\n");
 				}

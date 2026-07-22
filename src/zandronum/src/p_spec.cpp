@@ -1708,7 +1708,7 @@ void P_SpawnSpecials (void)
 				}
 
 				{
-				float grav = ((float)P_AproxDistance (lines[i].dx, lines[i].dy)) / (double)((FRACUNIT * 100.0f));
+				float grav = ((float)P_AproxDistance (lines[i].dx, lines[i].dy)) / (double)((double(FRACUNIT) * 100.0f));
 				for (s = -1; (s = P_FindSectorFromTag(lines[i].args[0],s)) >= 0;)
 					sectors[s].gravity = grav;
 				}

@@ -767,13 +767,13 @@ void FDecalLib::ParseSlider (FScanner &sc)
 		else if (sc.Compare ("DistX"))
 		{
 			sc.MustGetFloat ();
-			distX = (fixed_t)(sc.Float * FRACUNIT);
+			distX = (fixed_t)(double(sc.Float) * double(FRACUNIT));
 			Printf ("DistX in slider decal %s is unsupported\n", sliderName.GetChars());
 		}
 		else if (sc.Compare ("DistY"))
 		{
 			sc.MustGetFloat ();
-			distY = (fixed_t)(sc.Float * FRACUNIT);
+			distY = (fixed_t)(double(sc.Float) * double(FRACUNIT));
 		}
 		else
 		{

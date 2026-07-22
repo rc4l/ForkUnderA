@@ -872,7 +872,7 @@ static int PatchThing (int thingy)
 			}
 			else if (stricmp (Line1, "Alpha") == 0)
 			{
-				info->alpha = (fixed_t)(atof (Line2) * FRACUNIT);
+				info->alpha = (fixed_t)(double(atof (Line2)) * double(FRACUNIT));
 				hadTranslucency = true;
 			}
 			else if (stricmp (Line1, "Scale") == 0)
@@ -1802,7 +1802,7 @@ static int PatchMisc (int dummy)
 			}
 			else if (stricmp (Line1, "Rocket Explosion Alpha") == 0)
 			{
-				deh.ExplosionAlpha = (fixed_t)(atof (Line2) * FRACUNIT);
+				deh.ExplosionAlpha = (fixed_t)(double(atof (Line2)) * double(FRACUNIT));
 			}
 			else if (stricmp (Line1, "Monsters Infight") == 0)
 			{

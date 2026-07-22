@@ -340,9 +340,13 @@ void R_InitTables (void)
 	}
 	
 	// finesine table
+	// [rc4l] double(FRACUNIT), not bare FRACUNIT: FRACUNIT is now the strong Fixed type, so
+	// FRACUNIT * sin(...) bound to operator*(Fixed,int) and truncated sin (which is in [0,1)
+	// across this quarter) to 0 -- zeroing the whole sine/cosine table except the quarter points.
+	// That killed movement/hitscan/sight/rendering at every non-cardinal angle.
 	for (i = 0; i < FINEANGLES/4; i++)
 	{
-		finesine[i] = (fixed_t)(FRACUNIT * sin (i*pimul));
+		finesine[i] = (fixed_t)(double(FRACUNIT) * sin (i*pimul));
 	}
 	for (i = 0; i < FINEANGLES/4; i++)
 	{

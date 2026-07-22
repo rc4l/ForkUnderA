@@ -345,9 +345,9 @@ void FVoxelModel::AddVertex(FVoxelVertex &vert, FVoxelMap &check)
 
 void FVoxelModel::AddFace(int x1, int y1, int z1, int x2, int y2, int z2, int x3, int y3, int z3, int x4, int y4, int z4, BYTE col, FVoxelMap &check)
 {
-	float PivotX = (float)(mVoxel->Mips[0].PivotX / 256.f);
-	float PivotY = (float)(mVoxel->Mips[0].PivotY / 256.f);
-	float PivotZ = (float)(mVoxel->Mips[0].PivotZ / 256.f);
+	float PivotX = (float)(double(mVoxel->Mips[0].PivotX) / 256.f);
+	float PivotY = (float)(double(mVoxel->Mips[0].PivotY) / 256.f);
+	float PivotZ = (float)(double(mVoxel->Mips[0].PivotZ) / 256.f);
 	int h = mVoxel->Mips[0].SizeZ;
 	FVoxelVertex vert;
 

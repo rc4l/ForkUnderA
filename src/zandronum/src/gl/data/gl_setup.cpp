@@ -503,7 +503,7 @@ static int STACK_ARGS segcmp(const void *a, const void *b)
 {
 	seg_t *A = *(seg_t**)a;
 	seg_t *B = *(seg_t**)b;
-	return xs_RoundToInt((real64)(FRACUNIT*(A->sidefrac - B->sidefrac)));
+	return xs_RoundToInt((real64)(double(FRACUNIT)*double((A->sidefrac - B->sidefrac))));
 }
 
 //==========================================================================

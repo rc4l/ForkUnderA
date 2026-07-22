@@ -681,8 +681,8 @@ DEFINE_ACTION_FUNCTION(AActor, A_MacePL1Check)
 	double velscale = sqrt ((double)self->velx * (double)self->velx +
 							 (double)self->vely * (double)self->vely);
 	velscale = 458752 / velscale;
-	self->velx = (int)(self->velx * velscale);
-	self->vely = (int)(self->vely * velscale);
+	self->velx = (int)(double(self->velx) * double(velscale));
+	self->vely = (int)(double(self->vely) * double(velscale));
 #endif
 	self->velz -= self->velz >> 1;
 

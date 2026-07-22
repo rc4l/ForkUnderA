@@ -67,10 +67,10 @@ DEFINE_ACTION_FUNCTION(AActor, A_CStaffCheck)
 	for (i = 0; i < 3; i++)
 	{
 		angle = pmo->angle+i*(ANG45/16);
-		slope = (int)(P_AimLineAttack (pmo, angle, fixed_t(1.5*MELEERANGE), &linetarget, 0, ALF_CHECK3D));
+		slope = (int)(P_AimLineAttack (pmo, angle, fixed_t(1.5*double(MELEERANGE)), &linetarget, 0, ALF_CHECK3D));
 		if (linetarget)
 		{
-			P_LineAttack (pmo, angle, fixed_t(1.5*MELEERANGE), slope, damage, NAME_Melee, PClass::FindClass ("CStaffPuff"), false, &linetarget);
+			P_LineAttack (pmo, angle, fixed_t(1.5*double(MELEERANGE)), slope, damage, NAME_Melee, PClass::FindClass ("CStaffPuff"), false, &linetarget);
 			pmo->angle = R_PointToAngle2 (pmo->x, pmo->y, 
 				linetarget->x, linetarget->y);
 			if (((linetarget->player && (!linetarget->IsTeammate (pmo) || level.teamdamage != 0))|| linetarget->flags3&MF3_ISMONSTER)
@@ -99,10 +99,10 @@ DEFINE_ACTION_FUNCTION(AActor, A_CStaffCheck)
 			break;
 		}
 		angle = pmo->angle-i*(ANG45/16);
-		slope = (int)(P_AimLineAttack (player->mo, angle, fixed_t(1.5*MELEERANGE), &linetarget, 0, ALF_CHECK3D));
+		slope = (int)(P_AimLineAttack (player->mo, angle, fixed_t(1.5*double(MELEERANGE)), &linetarget, 0, ALF_CHECK3D));
 		if (linetarget)
 		{
-			P_LineAttack (pmo, angle, fixed_t(1.5*MELEERANGE), slope, damage, NAME_Melee, PClass::FindClass ("CStaffPuff"), false, &linetarget);
+			P_LineAttack (pmo, angle, fixed_t(1.5*double(MELEERANGE)), slope, damage, NAME_Melee, PClass::FindClass ("CStaffPuff"), false, &linetarget);
 			pmo->angle = R_PointToAngle2 (pmo->x, pmo->y, 
 				linetarget->x, linetarget->y);
 			if ((linetarget->player && (!linetarget->IsTeammate (pmo) || level.teamdamage != 0)) || linetarget->flags3&MF3_ISMONSTER)

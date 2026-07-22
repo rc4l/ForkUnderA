@@ -3988,7 +3988,7 @@ void AActor::Tick ()
 	if (state == NULL)
 	{
 		Printf("Actor of type %s at (%f,%f) left without a state\n", GetClass()->TypeName.GetChars(),
-			x/65536., y/65536.);
+			double(x)/65536., double(y)/65536.);
 		Destroy();
 		return;
 	}

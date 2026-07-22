@@ -13,7 +13,7 @@
 #include "thingdef/thingdef.h"
 */
 
-#define AXERANGE	((fixed_t)(2.25*MELEERANGE))
+#define AXERANGE	((fixed_t)(2.25*double(MELEERANGE)))
 
 static FRandom pr_axeatk ("FAxeAtk");
 

@@ -44,7 +44,7 @@ void AFloatyIcon::Tick( )
 			// If the icon is fading out, ramp down the alpha.
 			if ( this->lTick <= TICRATE )
 			{
-				this->alpha = (LONG)( OPAQUE * (float)( (float)lTick / (float)TICRATE ));
+				this->alpha = (LONG)( double(OPAQUE) * (float)( (float)lTick / (float)TICRATE ));
 				this->RenderStyle = STYLE_Translucent;
 			}
 		}

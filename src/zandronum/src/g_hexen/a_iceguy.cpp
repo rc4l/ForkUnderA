@@ -159,7 +159,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_IceGuyMissileExplode)
 	for (i = 0; i < 8; i++)
 	{
 		mo = P_SpawnMissileAngleZ (self, self->z+3*FRACUNIT, 
-			PClass::FindClass("IceGuyFX2"), i*ANG45, (fixed_t)(-0.3*FRACUNIT), true); // [RK] Inform the clients.
+			PClass::FindClass("IceGuyFX2"), i*ANG45, (fixed_t)(-0.3*double(FRACUNIT)), true); // [RK] Inform the clients.
 		if (mo)
 		{
 			mo->target = self->target;

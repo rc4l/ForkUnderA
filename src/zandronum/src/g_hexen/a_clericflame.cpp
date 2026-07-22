@@ -13,7 +13,7 @@
 #include "thingdef/thingdef.h"
 */
 
-const fixed_t FLAMESPEED	= fixed_t(0.45*FRACUNIT);
+const fixed_t FLAMESPEED	= fixed_t(0.45*double(FRACUNIT));
 const fixed_t CFLAMERANGE	= 12*64*FRACUNIT;
 const fixed_t FLAMEROTSPEED	= 2*FRACUNIT;
 

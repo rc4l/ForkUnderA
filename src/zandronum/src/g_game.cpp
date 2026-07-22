@@ -868,8 +868,8 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 		G_AddViewAngle(joyint(-1280 * joyaxes[JOYAXIS_Yaw]));
 	}
 
-	side -= joyint((double)(sidemove[speed] * joyaxes[JOYAXIS_Side]));
-	forward += joyint((double)(joyaxes[JOYAXIS_Forward] * forwardmove[speed]));
+	side -= joyint((double)(double(sidemove[speed]) * double(joyaxes[JOYAXIS_Side])));
+	forward += joyint((double)(double(joyaxes[JOYAXIS_Forward]) * double(forwardmove[speed])));
 	fly += joyint(joyaxes[JOYAXIS_Up] * 2048);
 
 	// Handle mice.

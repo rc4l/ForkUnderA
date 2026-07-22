@@ -339,7 +339,7 @@ void MEDAL_Render( void )
 		return;
 
 	const MEDAL_t *medal = medalQueue[player].medals[0];
-	const fixed_t alpha = medalQueue[player].ticks > TICRATE ? OPAQUE : static_cast<fixed_t>( OPAQUE * ( static_cast<float>( medalQueue[player].ticks ) / TICRATE ));
+	const fixed_t alpha = medalQueue[player].ticks > TICRATE ? OPAQUE : static_cast<fixed_t>( double(OPAQUE) * double(( static_cast<float>( medalQueue[player].ticks ) / TICRATE )));
 
 	// Get the graphic and text name from the global array.
 	FTexture *icon = TexMan( medal->icon );

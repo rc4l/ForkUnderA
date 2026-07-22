@@ -151,7 +151,7 @@ void R_InitSkyMap ()
 void R_UpdateSky (DWORD mstime)
 {
 	// Scroll the sky
-	double ms = (double)((double)mstime * FRACUNIT);
+	double ms = (double)((double)mstime * double(FRACUNIT));
 	sky1pos = ms * level.skyspeed1;
 	sky2pos = ms * level.skyspeed2;
 }
