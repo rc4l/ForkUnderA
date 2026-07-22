@@ -52,7 +52,7 @@ TEST(NetPitch, FixedFromUnsignedZeroExtendsAndIsWrongForPitch)
 	const int64_t aimUp = -(11 * ANGLE_1);
 	const angle_t wire = static_cast<angle_t>(aimUp);
 
-	const Fixed buggy = Fixed(wire); // Fixed(unsigned) -- the explicit zero-extending ctor
+	const Fixed buggy = Fixed::FromUnsignedBits(wire); // zero-extend -- what the plain unsigned ctor did
 	EXPECT_GT(buggy.Raw(), 0) << "zero-extension turns the aim-up pitch into a large positive";
 	EXPECT_NE(buggy.Raw(), aimUp) << "which is not the pitch the player aimed";
 }

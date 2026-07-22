@@ -1000,7 +1000,7 @@ void DCanvas::DrawLine(int x0, int y0, int x1, int y1, int palColor, uint32 real
 
 		if (deltaY > deltaX)
 		{ // y-major line
-			fixed_t errorAdj = fixed_t((((unsigned)deltaX << 16) / (unsigned)deltaY) & 0xffff);
+			fixed_t errorAdj = fixed_t::FromUnsignedBits((((unsigned)deltaX << 16) / (unsigned)deltaY) & 0xffff);
 			if (xDir < 0)
 			{
 				if (WeightingScale == 0)
@@ -1058,7 +1058,7 @@ void DCanvas::DrawLine(int x0, int y0, int x1, int y1, int palColor, uint32 real
 		}
 		else
 		{ // x-major line
-			fixed_t errorAdj = fixed_t((((DWORD) deltaY << 16) / (DWORD) deltaX) & 0xffff);
+			fixed_t errorAdj = fixed_t::FromUnsignedBits((((DWORD) deltaY << 16) / (DWORD) deltaX) & 0xffff);
 
 			if (WeightingScale == 0)
 			{

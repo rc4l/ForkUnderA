@@ -3672,7 +3672,7 @@ void ServerCommands::SpawnPlayer::Execute()
 		pActor->Translation = TRANSLATION( TRANSLATION_Players, ulPlayer );
 	}
 	pActor->angle = angle;
-	pActor->pitch = fixed_t(pActor->roll = 0);
+	pActor->pitch = fixed_t::FromUnsignedBits(pActor->roll = 0);
 	pActor->health = pPlayer->health;
 	pActor->FixedColormap = NOFIXEDCOLORMAP;
 

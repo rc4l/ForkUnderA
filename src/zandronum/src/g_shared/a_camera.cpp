@@ -97,7 +97,7 @@ void ASecurityCamera::Tick ()
 		// [rc4l] Range is a BAM swing amplitude that can reach or exceed 180 degrees (bit 31 set),
 		// so it must be read as a signed int32 before the fixed multiply -- otherwise the widened
 		// fixed_t treats a wide swing as a giant positive value. See angle_interp_compute.h.
-		angle = (angle_t)(fixed_t(Center) + FixedMul (zx::AngleAsSignedFixed(Range), finesine[Acc >> ANGLETOFINESHIFT]));
+		angle = (angle_t)(fixed_t::FromUnsignedBits(Center) + FixedMul (zx::AngleAsSignedFixed(Range), finesine[Acc >> ANGLETOFINESHIFT]));
 	else if (Delta)
 		angle = Acc;
 }

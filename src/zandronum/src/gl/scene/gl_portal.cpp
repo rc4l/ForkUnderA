@@ -303,7 +303,7 @@ bool GLPortal::Start(bool usestencil, bool doquery)
 
 inline void GLPortal::ClearClipper()
 {
-	fixed_t angleOffset = fixed_t(viewangle - savedviewangle);
+	fixed_t angleOffset = fixed_t::FromUnsignedBits(viewangle - savedviewangle);
 
 	clipper.Clear();
 

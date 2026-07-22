@@ -72,13 +72,19 @@ static_assert(!HasTernary<double, Fixed>::value, "cond?double:Fixed must be a co
 
 // --- Compile-time contract: the dangerous conversions must NOT exist ---
 
-// [rc4l] angle_t / any unsigned -> Fixed must not happen IMPLICITLY (the zero-extension hazard),
-// but an explicit `(fixed_t)x` is the allowed, visible escape hatch.
+// [rc4l] A 32-bit unsigned/angle_t must not convert to Fixed AT ALL -- not implicitly, and no longer
+// even explicitly. The plain `Fixed(unsigned)` was deleted because it silently zero-extended, and a
+// codemod spammed it onto signed pitches/deltas (the "aim up fires into the floor" bug). Callers must
+// now pick the sign intent: FromUnsignedBits (zero-extend) or FromSignedBits (sign-extend).
 static_assert(!std::is_convertible<unsigned, Fixed>::value,
 	"unsigned (angle_t) must not implicitly convert to Fixed");
 static_assert(!std::is_convertible<unsigned long long, Fixed>::value, "no implicit unsigned long long");
-static_assert(std::is_constructible<Fixed, unsigned>::value,
-	"explicit construction from unsigned is the intended escape hatch");
+static_assert(!std::is_constructible<Fixed, unsigned>::value,
+	"Fixed(unsigned) is deleted -- use FromUnsignedBits / FromSignedBits to state the sign intent");
+// [rc4l] The named factories give the two intents explicitly, and differ exactly on the high bit.
+static_assert(Fixed::FromUnsignedBits(0xF8000000u).Raw() == int64_t(0xF8000000u), "unsigned = zero-extend");
+static_assert(Fixed::FromSignedBits(0xF8000000u).Raw() == int64_t(int32_t(0xF8000000u)), "signed = sign-extend");
+static_assert(Fixed::FromSignedBits(0xF8000000u).Raw() < 0, "aim-up bit pattern stays negative when signed");
 
 // [rc4l] Fixed -> int must be explicit only (no implicit narrowing).
 static_assert(!std::is_convertible<Fixed, int>::value,
@@ -162,7 +168,7 @@ TEST(FixedStrong, EveryOperatorForwardsToRaw)
 	const int64_t rv = seed;
 	const Fixed f = Fixed::FromRaw(rv);
 
-	// Constructors from every signed/unsigned integer width (unsigned is the explicit escape hatch).
+	// Constructors from every signed integer width, plus the named 32-bit-unsigned factories.
 	// long and long long are distinct ctors; on LP64 (Linux) int64_t is `long`, so FromRaw covers
 	// Fixed(long) but Fixed(long long) is only reached by an explicit long long argument (on macOS
 	// int64_t is `long long`, so it is the other way round -- exercise both so coverage matches on
@@ -170,8 +176,9 @@ TEST(FixedStrong, EveryOperatorForwardsToRaw)
 	EXPECT_EQ(Fixed(long(-7)).Raw(), -7);
 	{ volatile long long ll = -8; EXPECT_EQ(Fixed((long long)ll).Raw(), -8); }
 	EXPECT_EQ(Fixed(5).Raw(), 5);
-	EXPECT_EQ(Fixed(unsigned(0xFFFFFFFFu)).Raw(), int64_t(uint32_t(0xFFFFFFFFu)));       // zero-extend
-	EXPECT_EQ(Fixed((unsigned long)0x1u).Raw(), 1);
+	EXPECT_EQ(Fixed::FromUnsignedBits(0xFFFFFFFFu).Raw(), int64_t(uint32_t(0xFFFFFFFFu)));       // zero-extend
+	EXPECT_EQ(Fixed::FromSignedBits(0xFFFFFFFFu).Raw(), -1);                                     // sign-extend
+	EXPECT_EQ(Fixed((unsigned long)0x1u).Raw(), 1);   // 64-bit unsigned ctors kept (same-width reinterpret)
 	EXPECT_EQ(Fixed((unsigned long long)0x2u).Raw(), 2);
 
 	// Explicit conversions out: each narrows exactly like a static_cast of the raw value.
