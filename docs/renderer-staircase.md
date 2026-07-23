@@ -112,3 +112,10 @@ release tags (fetched from canonical gzdoom into the reference clone): stable `g
 (2014-12-27) is +107 src/gl commits past the summit; stable `g2.1.1` (2016-02-23) is +203 and
 sits at the wall's doorstep. The summit is a direct ancestor of both -- continuing the staircase
 to either is plain replay.
+
+## Deferred performance work
+
+- SIMD HQnX upscaler variants (upstream `6f65bccf1` MSVC-asm, `60d78bcdf` SSE2 intrinsics)
+  skipped on the staircase as x86-only speedups with pixel-identical output; revisit for all
+  platforms (x86 intrinsics + arm64 NEON/sse2neon) — tracked in
+  https://github.com/rc4l/ZandroX/issues/40.
