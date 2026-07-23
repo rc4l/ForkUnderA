@@ -237,6 +237,7 @@ FTexture::MiscGLInfo::MiscGLInfo() throw()
 	bDisableFullbright = false;
 	bNoFilter = false;
 	bNoCompress = false;
+	bNoExpand = false;
 	areas = NULL;
 	areacount = 0;
 	mIsTransparent = -1;
@@ -322,12 +323,12 @@ void FTexture::PrecacheGL(int cache)
 {
 	if (gl_precache)
 	{
-		if (cache & 2)
+		if (cache & (FTextureManager::HIT_Wall | FTextureManager::HIT_Flat | FTextureManager::HIT_Sky))
 		{
 			FMaterial * gltex = FMaterial::ValidateTexture(this, false);
 			if (gltex) gltex->Precache();
 		}
-		if (cache & 4)
+		if (cache & FTextureManager::HIT_Sprite)
 		{
 			FMaterial * gltex = FMaterial::ValidateTexture(this, true);
 			if (gltex) gltex->Precache();

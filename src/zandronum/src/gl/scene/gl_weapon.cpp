@@ -62,6 +62,7 @@ EXTERN_CVAR (Bool, r_drawplayersprites)
 EXTERN_CVAR(Float, transsouls)
 EXTERN_CVAR (Bool, st_scale)
 EXTERN_CVAR(Int, gl_fuzztype)
+EXTERN_CVAR (Bool, r_deathcamera)
 
 
 //==========================================================================
@@ -74,19 +75,21 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 {
 	float			fU1,fV1;
 	float			fU2,fV2;
-	fixed_t			tx;
-	int				x1,y1,x2,y2;
+	float			tx;
+	float			x1,y1,x2,y2;
 	float			scale;
-	fixed_t			scalex;
-	fixed_t			texturemid;// 4:3		16:9		16:10			17:10			5:4
-	static fixed_t xratio[] = {FRACUNIT, FRACUNIT*3/4, FRACUNIT*5/6, FRACUNIT*40/51, FRACUNIT};
-	
+	float			scalex;
+	float			ftexturemid;
+	                      // 4:3  16:9   16:10  17:10    5:4
+	static float xratio[] = {1.f, 3.f/4, 5.f/6, 40.f/51, 1.f};
+
 	// [BB] In the HUD model step we just render the model and break out. 
 	if ( hudModelStep )
 	{
 		gl_RenderHUDModel( psp, sx, sy);
 		return;
 	}
+	
 
 	// decide which patch to use
 	bool mirror;
@@ -98,55 +101,60 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 
 	gl_RenderState.SetMaterial(tex, CLAMP_XY_NOMIP, 0, OverrideShader, alphatexture);
 
-	int vw = viewwidth;
-	int vh = viewheight;
+	float vw = (float)viewwidth;
+	float vh = (float)viewheight;
+
+	FloatRect r;
+	tex->GetSpriteRect(&r);
 
 	// calculate edges of the shape
 	scalex = xratio[WidescreenRatio] * vw / 320;
 
-	tx = sx - ((160 + tex->GetScaledLeftOffset())<<FRACBITS);
-	x1 = (int)((FixedMul(tx, scalex)>>FRACBITS) + (vw>>1));
+	tx = FIXED2FLOAT(sx) - (160 - r.left);
+	x1 = tx * scalex + vw/2;
 	if (x1 > vw)	return; // off the right side
-	x1+=viewwindowx;
+	x1 += viewwindowx;
 
-	tx +=  tex->TextureWidth() << FRACBITS;
-	x2 = (int)((FixedMul(tx, scalex)>>FRACBITS) + (vw>>1));
+	tx += r.width;
+	x2 = tx * scalex + vw / 2;
 	if (x2 < 0) return; // off the left side
-	x2+=viewwindowx;
+	x2 += viewwindowx;
+
 
 	// killough 12/98: fix psprite positioning problem
-	texturemid = (100<<FRACBITS) - (sy-(tex->GetScaledTopOffset()<<FRACBITS));
+	ftexturemid = 100.f - FIXED2FLOAT(sy) - r.top;
 
 	AWeapon * wi=player->ReadyWeapon;
 	if (wi && wi->YAdjust)
 	{
-		if (screenblocks>=11)
+		float fYAd = FIXED2FLOAT(wi->YAdjust);
+		if (screenblocks >= 11)
 		{
-			texturemid -= wi->YAdjust;
+			ftexturemid -= fYAd;
 		}
 		else if (!st_scale)
 		{
-			texturemid -= FixedMul (StatusBar->GetDisplacement (), wi->YAdjust);
+			ftexturemid -= FIXED2FLOAT(StatusBar->GetDisplacement ()) * fYAd;
 		}
 	}
 
-	scale = ((SCREENHEIGHT*vw)/SCREENWIDTH) / 200.0f;    
-	y1 = viewwindowy + (vh >> 1) - (int)(((float)texturemid / (float)FRACUNIT) * scale);
-	y2 = y1 + (int)((float)tex->TextureHeight() * scale) + 1;
+	scale = (SCREENHEIGHT*vw) / (SCREENWIDTH * 200.0f);
+	y1 = viewwindowy + vh / 2 - (ftexturemid * scale);
+	y2 = y1 + (r.height * scale) + 1;
 
 	if (!mirror)
 	{
-		fU1=tex->GetUL();
-		fV1=tex->GetVT();
-		fU2=tex->GetUR();
-		fV2=tex->GetVB();
+		fU1=tex->GetSpriteUL();
+		fV1=tex->GetSpriteVT();
+		fU2=tex->GetSpriteUR();
+		fV2=tex->GetSpriteVB();
 	}
 	else
 	{
-		fU2=tex->GetUL();
-		fV1=tex->GetVT();
-		fU1=tex->GetUR();
-		fV2=tex->GetVB();
+		fU2=tex->GetSpriteUL();
+		fV1=tex->GetSpriteVT();
+		fU1=tex->GetSpriteUR();
+		fV2=tex->GetSpriteVB();
 	}
 
 	if (tex->GetTransparent() || OverrideShader != -1)
@@ -193,7 +201,8 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		!camera->player ||
 		// [EP] similarly to the change in the software renderer, weapon display
 		// for the chasecam case must be checked only for the console player.
-		(/*player->*/players[consoleplayer].cheats & CF_CHASECAM))
+		(players[consoleplayer].cheats & CF_CHASECAM) || 
+		(r_deathcamera && camera->health <= 0))
 		return;
 
 	P_BobWeapon (player, &player->psprites[ps_weapon], &ofsx, &ofsy);
@@ -252,15 +261,15 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 			TArray<lightlist_t> & lightlist = viewsector->e->XFloor.lightlist;
 			for(i=0;i<lightlist.Size();i++)
 			{
-				int lightbottom;
+				fixed_t lightbottom;
 
 				if (i<lightlist.Size()-1) 
 				{
-					lightbottom=(int)(lightlist[i+1].plane.ZatPoint(viewx,viewy));
+					lightbottom=lightlist[i+1].plane.ZatPoint(viewx,viewy);
 				}
 				else 
 				{
-					lightbottom=(int)(viewsector->floorplane.ZatPoint(viewx,viewy));
+					lightbottom=viewsector->floorplane.ZatPoint(viewx,viewy);
 				}
 
 				if (lightbottom<player->viewz) 

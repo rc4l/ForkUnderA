@@ -345,6 +345,7 @@ public:
 		int areacount;
 		int shaderindex;
 		unsigned int precacheTime;
+
 		float shaderspeed;
 		int mIsTransparent:2;
 		bool bGlowing:1;						// Texture glows
@@ -355,6 +356,7 @@ public:
 		bool bDisableFullbright:1;				// This texture will not be displayed as fullbright sprite
 		bool bNoFilter:1;
 		bool bNoCompress:1;
+		bool bNoExpand:1;
 		bool mExpanded:1;
 
 		MiscGLInfo() throw ();
@@ -379,6 +381,17 @@ public:
 class FTextureManager
 {
 public:
+	// [rc4l] Precache hit classes from ZDoom's reworked precaching (arrived upstream via a
+	// master merge; required by GL 1e9a6e667).
+	enum
+	{
+		HIT_Wall = 1,
+		HIT_Flat = 2,
+		HIT_Sky = 4,
+		HIT_Sprite = 8,
+
+		HIT_Columnmode = HIT_Wall|HIT_Sky|HIT_Sprite
+	};
 	unsigned int precacheTime;
 	FTextureManager ();
 	~FTextureManager ();
