@@ -5003,7 +5003,12 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	}
 	if (railEnd.puff && puffclass != NULL && puffDefaults->flags3 & MF3_ALWAYSPUFF)
 	{
-		AActor *puff = P_SpawnPuff(source, puffclass, trace.X, trace.Y, trace.Z, (source->angle + angleoffset) - ANG90, 1, 0);
+		// [rc4l] Ported from qzandronum@d33dacfb1ca1dfa3eef1989b1e5c6d5f8443ddce: pull the endpoint puff
+		// 4 units back toward the shooter along the rail trajectory (vx,vy,vz) so it renders in front of
+		// the surface instead of embedded in it -- otherwise a wall/ledge hit leaves the puff stuck in the
+		// geometry. UZDoom spawns at the exact hit point and has no equivalent nudge.
+		const fixed_t closer = 4 * FRACUNIT;
+		AActor *puff = P_SpawnPuff(source, puffclass, trace.X - FixedMul(vx, closer), trace.Y - FixedMul(vy, closer), trace.Z - FixedMul(vz, closer), (source->angle + angleoffset) - ANG90, 1, 0);
 		if (railEnd.skyGuard && puff != NULL && !(puff->flags3 & MF3_SKYEXPLODE) &&
 			(((trace.HitType == TRACE_HitFloor) && (puff->floorpic == skyflatnum)) ||
 			((trace.HitType == TRACE_HitCeiling) && (puff->ceilingpic == skyflatnum))))
