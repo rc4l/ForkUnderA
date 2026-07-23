@@ -270,22 +270,22 @@ f8c38a0bb	2015-12-25	build	deferred	—	hqNx MMX GCC pragma warnings; rides with
 ac6e2f497	2015-12-31	renderer	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
 f2c890272	2016-01-01	renderer	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
 cc10fe9bc	2016-01-04	texture	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-7d2bbbd35	2016-01-05	bugfix	pending	—	- fixed rendering of two-sided polyobjects that have their upper or lower textures exposed.
-926e9fdac	2016-01-07	bugfix	pending	—	- fixed: For 2D-drawing of camera textures the render style was not set.
-ef7bcb3a6	2016-01-11	sky	pending	—	- implement Eternity-Style flat and horizon portals. Not tested yet due to lack of material to work with.
-196c9bc34	2016-01-11	sky	pending	—	- cleaned up the skybox type detection logic.
-65022b780	2016-01-11	sky	pending	—	- implemented 'copy portal to wall' linedef type.
-cd778b6bd	2016-01-13	portal	pending	—	- fixed CollectPortalSectors
-2657c0883	2016-01-13	sky	pending	—	- fixed: stacked sector portals were not added to the render list
-581604951	2016-01-21	dynlights	pending	—	- made necessary adjustments for the coordinate refactoring in ZDoom.
-685385635	2016-01-26	other	pending	—	- made adjustments to FGLBitmap for the changes in its base class.
-3c16a2386	2016-01-27	portal	pending	—	- when rendering mirrors, discard subsectors lying behind them.
-47db3252f	2016-01-27	shader	pending	—	- it's really not necessary to waste two clip planes for reflective surfaces because only one can be active at any time.
-238990c87	2016-01-27	shader	pending	—	don't leave any gaps in the used clip planes.
-d037493ff	2016-01-29	lighting	pending	—	- fixed handling of FF_FADEWALLS on 3D floors. The problems with the old method became quite obvious in the demo map after the light list bug got fixed.
-342f1abcc	2016-01-30	dynlights	pending	—	- fixed: flickering dynamic lights with their first intensity value larger than the second one weren't properly linked into all touching sectors.
-4a9b2bf76	2016-01-30	portal	pending	—	- fixed: The stencil cap drawer did not properly advance the vertex pointer.
-37ac6ef9a	2016-01-30	texture	pending	—	- fixed: Translucency detection for GL textures was broken. - fixed: Textures which are already scaled should not be upsampled. - fixed: The transparency check in the upscaling code checked the wrong modes for exclusion when handling translucent textures.
+7d2bbbd35	2016-01-05	bugfix	skipped	—	Two-sided polyobj portal detection needs GLEEHorizonPortal (Eternity portals) -- absent; see #41.
+926e9fdac	2016-01-07	bugfix	ported	368b262	- fixed: For 2D-drawing of camera textures the render style was not set.
+ef7bcb3a6	2016-01-11	sky	skipped	—	Eternity flat/horizon portals; needs playsim portal infra Zandronum lacks -- see #41.
+196c9bc34	2016-01-11	sky	skipped	—	Skybox type cleanup needs the SKYBOX_MAP type system -- absent; see #41.
+65022b780	2016-01-11	sky	skipped	—	'copy portal to wall' linedef needs Line_SetPortal / line portals -- absent; see #41.
+cd778b6bd	2016-01-13	portal	skipped	—	CollectPortalSectors fix on the stacked-sector-portal path Zandronum lacks -- see #41.
+2657c0883	2016-01-13	sky	skipped	—	Stacked sector portals into the render list; portal infra absent -- see #41.
+581604951	2016-01-21	dynlights	skipped	—	GL adjustments FOR ZDoom coordinate refactor (fixedvec3/InterpolatedPosition) -- absent; see #41.
+685385635	2016-01-26	other	skipped	—	FGLBitmap adjustments for a ZDoom base-class change we do not have -- see #41.
+3c16a2386	2016-01-27	portal	ported	368b262	- when rendering mirrors, discard subsectors lying behind them.
+47db3252f	2016-01-27	shader	deferred	—	Reflective surfaces need only one clip plane; deferred with its shader pair 238990c87 to the flight-24 clip-plane rework.
+238990c87	2016-01-27	shader	deferred	—	Clip-plane slot renumber; deferred to the flight-24 clip-plane rework where our diverged main.vp layout is reconciled.
+d037493ff	2016-01-29	lighting	skipped	—	FF_FADEWALLS rework uses the FF_RESET 3D-floor flag -- absent from our tree; see #41.
+342f1abcc	2016-01-30	dynlights	ported	368b262	- fixed: flickering dynamic lights with their first intensity value larger than the second one weren't properly linked into all touching sectors.
+4a9b2bf76	2016-01-30	portal	ported	368b262	- fixed: The stencil cap drawer did not properly advance the vertex pointer.
+37ac6ef9a	2016-01-30	texture	ported	368b262	- fixed: Translucency detection for GL textures was broken. - fixed: Textures which are already scaled should not be upsampled. - fixed: The transparency check in the upscaling code checked the wrong modes for exclusion when handling translucent textures.
 fc57180d7	2016-01-30	shader	pending	—	- added necessary state to implement 3D light splitting using hardware clipping planes.
 1d9ab5c63	2016-01-31	renderer	pending	—	- clean out GLWall::SplitWall and instead of actually splitting the wall just attach a list of lights to it.
 f86535407	2016-01-31	renderer	pending	—	- forgot this.

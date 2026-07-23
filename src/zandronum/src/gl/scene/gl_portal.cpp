@@ -156,15 +156,17 @@ void GLPortal::DrawPortalStencil()
 			// Cap the stencil at the top and bottom
 			int n = lines.Size() * 2;
 			FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
-			ptr->Set(-32767.0f, 32767.0f, -32767.0f, 0, 0);
-			ptr->Set(-32767.0f, 32767.0f, 32767.0f, 0, 0);
-			ptr->Set(32767.0f, 32767.0f, 32767.0f, 0, 0);
-			ptr->Set(32767.0f, 32767.0f, -32767.0f, 0, 0);
+			ptr[0].Set(-32767.0f, 32767.0f, -32767.0f, 0, 0);
+			ptr[1].Set(-32767.0f, 32767.0f, 32767.0f, 0, 0);
+			ptr[2].Set(32767.0f, 32767.0f, 32767.0f, 0, 0);
+			ptr[3].Set(32767.0f, 32767.0f, -32767.0f, 0, 0);
+			ptr += 4;
 			mPrimIndices[n + 1] = GLRenderer->mVBO->GetCount(ptr, &mPrimIndices[n]);
-			ptr->Set(-32767.0f, -32767.0f, -32767.0f, 0, 0);
-			ptr->Set(-32767.0f, -32767.0f, 32767.0f, 0, 0);
-			ptr->Set(32767.0f, -32767.0f, 32767.0f, 0, 0);
-			ptr->Set(32767.0f, -32767.0f, -32767.0f, 0, 0);
+			ptr[0].Set(-32767.0f, -32767.0f, -32767.0f, 0, 0);
+			ptr[1].Set(-32767.0f, -32767.0f, 32767.0f, 0, 0);
+			ptr[2].Set(32767.0f, -32767.0f, 32767.0f, 0, 0);
+			ptr[3].Set(32767.0f, -32767.0f, -32767.0f, 0, 0);
+			ptr += 4;
 			mPrimIndices[n + 3] = GLRenderer->mVBO->GetCount(ptr, &mPrimIndices[n + 2]);
 		}
 	}
@@ -774,7 +776,6 @@ void GLSectorStackPortal::DrawContents()
 	viewx += origin->xDisplacement;
 	viewy += origin->yDisplacement;
 	GLRenderer->mViewActor = NULL;
-	GLRenderer->mCurrentPortal = this;
 
 
 	validcount++;
@@ -961,13 +962,23 @@ void GLMirrorPortal::DrawContents()
 
 int GLMirrorPortal::ClipSeg(seg_t *seg) 
 { 
-	// this seg is completely behind the mirror!
+	// this seg is completely behind the mirror.
 	if (P_PointOnLineSide(seg->v1->x, seg->v1->y, linedef) &&
 		P_PointOnLineSide(seg->v2->x, seg->v2->y, linedef)) 
 	{
 		return PClip_InFront;
 	}
 	return PClip_Inside; 
+}
+
+int GLMirrorPortal::ClipSubsector(subsector_t *sub) 
+{ 
+	// this seg is completely behind the mirror!
+	for(int i=0;i<sub->numlines;i++)
+	{
+		if (P_PointOnLineSide(sub->firstline[i].v1->x, sub->firstline[i].v1->y, linedef) == 0) return PClip_Inside;
+	}
+	return PClip_InFront; 
 }
 
 int GLMirrorPortal::ClipPoint(fixed_t x, fixed_t y) 

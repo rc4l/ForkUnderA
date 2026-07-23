@@ -264,6 +264,10 @@ unsigned char *gl_CreateUpsampledTextureBuffer ( const FTexture *inputTexture, u
 	if ( inputTexture->bHasCanvas )
 		return inputBuffer;
 
+	// already scaled?
+	if (inputTexture->xScale >= FRACUNIT*2 && inputTexture->yScale >= FRACUNIT*2)
+		return inputBuffer;
+
 	switch (inputTexture->UseType)
 	{
 	case FTexture::TEX_Sprite:
