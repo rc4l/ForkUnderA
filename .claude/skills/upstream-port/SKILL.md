@@ -81,7 +81,11 @@ the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/da
    deleted first (the `add_pk3` trap). E2E must inspect the *artifacts an action leaves behind*,
    not just the action itself: fire at a wall and then WALK UP to the decals; kill and look at the
    corpse; open a door and look at the track (the white-decal miss — the muzzle flash verified,
-   the bullet marks it left didn't).
+   the bullet marks it left didn't). And cover the views nobody defaults to: LOOK STRAIGHT UP at
+   the sky (`warp -600 1800` on MAP01 + `+lookup` — the white-zenith miss), look down from
+   ledges, check a mirror/portal when the flight touches stencils. `warp x y` teleports; use it
+   instead of walking. For visual deltas, A/B against the previous flight: `git stash` +
+   rebuild beats reasoning from memory (screenshots of both sides settle it in minutes).
 6. Commit per verified step, plain messages, no attribution (user's global rules). Do not merge
    WIP branches; draft PRs are the CI vehicle.
 
