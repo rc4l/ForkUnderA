@@ -40,6 +40,7 @@ enum TexMode
 
 struct RenderContext
 {
+	float version;
 	unsigned int flags;
 	unsigned int shadermodel;
 	unsigned int maxuniforms;

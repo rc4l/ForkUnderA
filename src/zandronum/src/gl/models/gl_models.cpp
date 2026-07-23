@@ -73,7 +73,6 @@ CVAR(Bool, gl_light_models, true, CVAR_ARCHIVE)
 // [BB] Allow the user disable the use of any kind of models.
 CVAR(Bool, gl_use_models, true, CVAR_ARCHIVE)
 EXTERN_CVAR(Int, gl_fogmode)
-EXTERN_CVAR(Bool, gl_dynlight_shader)
 
 extern TDeletingArray<FVoxel *> Voxels;
 extern TDeletingArray<FVoxelDef *> VoxelDefs;

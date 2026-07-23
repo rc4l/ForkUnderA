@@ -108,7 +108,6 @@ static bool CheckExtension(const char *ext)
 	{
 		if (m_Extensions[i].CompareNoCase(ext) == 0) return true;
 	}
-
 	return false;
 }
 
@@ -141,7 +140,10 @@ void gl_LoadExtensions()
 	InitContext();
 	CollectExtensions();
 
-	const char *version = (const char*)glGetString(GL_VERSION);
+	const char *version = Args->CheckValue("-glversion");
+	if (version == NULL) version = (const char*)glGetString(GL_VERSION);
+	else Printf("Emulating OpenGL v %s\n", version);
+
 
 	// Don't even start if it's lower than 1.3
 	if (strcmp(version, "1.3") < 0) 
@@ -174,6 +176,9 @@ void gl_LoadExtensions()
 
 	gl.shadermodel = 0;	// assume no shader support
 	gl.vendorstring=(char*)glGetString(GL_VENDOR);
+	// [rc4l] upstream 0ce6b4067: numeric version (honors -glversion override via the
+	// 'version' local above) so capability checks can gate on it.
+	gl.version = (float)strtod(version, NULL);
 	gl.glslversion = (float)strtod((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), NULL);
 
 	if (CheckExtension("GL_ARB_texture_non_power_of_two")) gl.flags|=RFL_NPOT_TEXTURE;
@@ -204,7 +209,9 @@ void gl_LoadExtensions()
 	else if (Args->CheckParm("-sm3") && gl.shadermodel > 3) gl.shadermodel = 3;
 
 	if (CheckExtension("GL_ARB_occlusion_query")) gl.flags|=RFL_OCCLUSION_QUERY;
-	if (CheckExtension("GL_ARB_buffer_storage")) gl.flags|=RFL_BUFFER_STORAGE;
+	// [rc4l] upstream 0ce6b4067: ARB_buffer_storage requires GL 4.0 per spec, so
+	// don't use it when emulating something lower via -glversion.
+	if (gl.version >= 4.f && CheckExtension("GL_ARB_buffer_storage")) gl.flags|=RFL_BUFFER_STORAGE;
 	if (CheckExtension("GL_ARB_shader_storage_buffer_object")) gl.flags|=RFL_SHADER_STORAGE_BUFFER;
 	if (gl.flags & RFL_GL_21) gl.flags |= RFL_VBO;
 	else if (CheckExtension("GL_ARB_vertex_buffer_object")) gl.flags |= RFL_VBO;
