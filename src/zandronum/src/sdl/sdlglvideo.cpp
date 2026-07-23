@@ -166,14 +166,29 @@ bool SDLGLVideo::NextMode (int *width, int *height, bool *letterbox)
 	}
 	else
 	{
-		// [rc4l] SDL2 enumerates modes per display rather than handing back a NULL-terminated list.
+		// [rc4l] SDL2 enumerates modes per display rather than handing back a NULL-terminated
+		// list, and it reports one entry per (w, h, refresh rate, format) tuple -- SDL 1.2's
+		// SDL_ListModes deduplicated by size for free, so upstream never needed this skip.
+		// SDL2's list is sorted largest-first, so consecutive entries with the same w/h are
+		// the same resolution at different refresh rates; skip them (the same guard SDL2-era
+		// GZDoom uses).
 		SDL_DisplayMode mode;
-		if (IteratorMode < SDL_GetNumDisplayModes (0) &&
+		int prevw = -1, prevh = -1;
+		if (IteratorMode > 0 && SDL_GetDisplayMode (0, IteratorMode - 1, &mode) == 0)
+		{
+			prevw = mode.w;
+			prevh = mode.h;
+		}
+		while (IteratorMode < SDL_GetNumDisplayModes (0) &&
 			SDL_GetDisplayMode (0, IteratorMode, &mode) == 0)
 		{
+			++IteratorMode;
+			if (mode.w == prevw && mode.h == prevh)
+			{
+				continue;
+			}
 			*width = mode.w;
 			*height = mode.h;
-			++IteratorMode;
 			return true;
 		}
 	}
