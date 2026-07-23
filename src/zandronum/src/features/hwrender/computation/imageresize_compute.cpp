@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 #include "features/hwrender/computation/imageresize_compute.h"
 
+#include <cstddef>
 #include <vector>
 
 namespace zx
@@ -48,8 +49,8 @@ void ResizeImageBoxAverage(int srcWidth, int srcHeight, const unsigned char *src
 {
 	if (srcWidth <= 0 || srcHeight <= 0 || dstWidth <= 0 || dstHeight <= 0) return;
 
-	std::vector<BoxPrecalc> vPre((size_t)dstHeight);
-	std::vector<BoxPrecalc> hPre((size_t)dstWidth);
+	std::vector<BoxPrecalc> vPre((std::size_t)dstHeight);
+	std::vector<BoxPrecalc> hPre((std::size_t)dstWidth);
 	ResampleBoxPrecalc(vPre, srcHeight);
 	ResampleBoxPrecalc(hPre, srcWidth);
 
@@ -68,7 +69,7 @@ void ResizeImageBoxAverage(int srcWidth, int srcHeight, const unsigned char *src
 			{
 				for (int i = h.boxStart; i <= h.boxEnd; ++i)
 				{
-					const unsigned char *p = src + ((size_t)j * srcWidth + i) * 4;
+					const unsigned char *p = src + ((std::size_t)j * srcWidth + i) * 4;
 					const int a = p[3];
 					// Fully transparent pixels contribute no colour, or they would darken edges.
 					if (a > 0)

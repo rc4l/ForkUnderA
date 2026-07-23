@@ -77,7 +77,8 @@
 
 #ifdef _WIN32
 #define DWORD WINDOWS_DWORD	// I don't want to depend on this throughout the GL code!
-#include "gl/api/wglext.h"
+// [rc4l] Flight 1: wglext.h deleted; GLEW's wglew.h provides the WGL extension surface.
+#include <GL/wglew.h>
 #ifndef __WINE__
 #undef DWORD
 #endif
