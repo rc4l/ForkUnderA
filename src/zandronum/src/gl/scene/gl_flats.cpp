@@ -143,12 +143,13 @@ void GLFlat::DrawSubsectorLights(subsector_t * sub, int pass)
 		}
 
 		p.Set(plane.plane);
-		if (!gl_SetupLight(p, light, nearPt, up, right, scale, false, foggy)) 
+		if (!gl_SetupLight(p, light, nearPt, up, right, scale, Colormap.desaturation, false, foggy)) 
 		{
 			node=node->nextLight;
 			continue;
 		}
 		draw_dlightf++;
+		gl_RenderState.Apply();
 
 		// Render the light
 		glBegin(GL_TRIANGLE_FAN);
@@ -407,7 +408,7 @@ void GLFlat::Draw(int pass)
 		// fall through
 	case GLPASS_TEXTURE:
 	{
-		gltexture->Bind(Colormap.colormap);
+		gltexture->Bind();
 		bool pushed = gl_SetPlaneTextureRotation(&plane, gltexture);
 		DrawSubsectors(pass, false);
 		if (pushed) 
@@ -471,7 +472,7 @@ void GLFlat::Draw(int pass)
 		else 
 		{
 			if (foggy) gl_RenderState.EnableBrightmap(false);
-			gltexture->Bind(Colormap.colormap);
+			gltexture->Bind();
 			bool pushed = gl_SetPlaneTextureRotation(&plane, gltexture);
 			DrawSubsectors(pass, true);
 			gl_RenderState.EnableBrightmap(true);
@@ -501,7 +502,7 @@ inline void GLFlat::PutFlat(bool fog)
 
 	if (gl_fixedcolormap) 
 	{
-		Colormap.GetFixedColormap();
+		Colormap.Clear();
 	}
 	if (renderstyle!=STYLE_Translucent || alpha < 1.f - FLT_EPSILON || fog)
 	{
@@ -515,7 +516,7 @@ inline void GLFlat::PutFlat(bool fog)
 			{ { GLDL_LIGHT, GLDL_LIGHTFOG }, { GLDL_LIGHTMASKED, GLDL_LIGHTFOGMASKED } }
 		};
 
-		bool light = gl_forcemultipass;
+		bool light = false;
 		bool masked = gltexture->isMasked() && ((renderflags&SSRF_RENDER3DPLANES) || stack);
 
 		if (!gl_fixedcolormap)
@@ -533,7 +534,7 @@ inline void GLFlat::PutFlat(bool fog)
 		else foggy = false;
 
 		list = list_indices[light][masked][foggy];
-		if (list == GLDL_LIGHT && gltexture->tex->gl_info.Brightmap && gl_BrightmapsActive()) list = GLDL_LIGHTBRIGHT;
+		if (list == GLDL_LIGHT && gltexture->tex->gl_info.Brightmap && gl.hasGLSL()) list = GLDL_LIGHTBRIGHT;
 
 		gl_drawinfo->drawlists[list].AddFlat (this);
 	}

@@ -86,7 +86,6 @@ CVAR(Bool, gl_no_skyclear, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 // [BB] Don't allow this in release builds.
 CVAR(Float, gl_mask_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_DEBUGONLY)
 CVAR(Float, gl_mask_sprite_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-CVAR(Bool, gl_forcemultipass, false, 0)
 
 EXTERN_CVAR (Int, screenblocks)
 EXTERN_CVAR (Bool, cl_capfps)
@@ -494,7 +493,7 @@ void FGLRenderer::RenderScene(int recursion)
 		}
 
 		// third pass: modulated texture
-		glColor3f(1.0f, 1.0f, 1.0f);
+		gl_RenderState.ResetColor();
 		gl_RenderState.BlendFunc(GL_DST_COLOR, GL_ZERO);
 		gl_RenderState.EnableFog(false);
 		glDepthFunc(GL_LEQUAL);
@@ -645,7 +644,7 @@ static void FillScreen()
 {
 	gl_RenderState.EnableAlphaTest(false);
 	gl_RenderState.EnableTexture(false);
-	gl_RenderState.Apply(true);
+	gl_RenderState.Apply();
 	glBegin(GL_TRIANGLE_STRIP);
 	glVertex2f(0.0f, 0.0f);
 	glVertex2f(0.0f, (float)SCREENHEIGHT);
@@ -741,7 +740,7 @@ void FGLRenderer::DrawBlend(sector_t * viewsector)
 			if (extra_red || extra_green || extra_blue)
 			{
 				gl_RenderState.BlendFunc(GL_DST_COLOR, GL_ZERO);
-				glColor4f(extra_red, extra_green, extra_blue, 1.0f);
+				gl_RenderState.SetColor(extra_red, extra_green, extra_blue, 1.0f);
 				FillScreen();
 			}
 		}
@@ -799,14 +798,14 @@ void FGLRenderer::DrawBlend(sector_t * viewsector)
 		if (inverse)
 		{
 			gl_RenderState.BlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
-			glColor4f(1.f, 1.f, 1.f, 1.f);
+			gl_RenderState.ResetColor();
 			FillScreen();
 		}
 
 		if (r < WHITE_THRESH || g < WHITE_THRESH || b < WHITE_THRESH)
 		{
 			gl_RenderState.BlendFunc(GL_DST_COLOR, GL_ZERO);
-			glColor4f(r, g, b, 1.0f);
+			gl_RenderState.SetColor(r, g, b, 1.0f);
 			FillScreen();
 		}
 	}
@@ -832,7 +831,7 @@ void FGLRenderer::DrawBlend(sector_t * viewsector)
 	if (blend[3]>0.0f)
 	{
 		gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glColor4fv(blend);
+		gl_RenderState.SetColor(blend[0], blend[1], blend[2], blend[3]);
 		FillScreen();
 	}
 }
@@ -870,12 +869,13 @@ void FGLRenderer::EndDrawScene(sector_t * viewsector)
 	{
 		DrawPlayerSprites (viewsector, false);
 	}
+	gl_RenderState.SetFixedColormap(CM_DEFAULT);
 	DrawTargeterSprites();
 	DrawBlend(viewsector);
 
 	// Restore standard rendering state
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glColor3f(1.0f,1.0f,1.0f);
+	gl_RenderState.ResetColor();
 	gl_RenderState.EnableTexture(true);
 	gl_RenderState.EnableAlphaTest(true);
 	glDisable(GL_SCISSOR_TEST);
@@ -943,6 +943,7 @@ void FGLRenderer::SetFixedColormap (player_t *player)
 			}
 		}
 	}
+	gl_RenderState.SetFixedColormap(gl_fixedcolormap);
 }
 
 //-----------------------------------------------------------------------------
@@ -1172,6 +1173,7 @@ void FGLRenderer::WriteSavePic (player_t *player, FILE *file, int width, int hei
 	sector_t *viewsector = RenderViewpoint(players[consoleplayer].camera, &bounds, 
 								FieldOfView * 360.0f / FINEANGLES, 1.6f, 1.6f, true, false);
 	glDisable(GL_STENCIL_TEST);
+	gl_RenderState.SetFixedColormap(CM_DEFAULT);
 	screen->Begin2D(false);
 	DrawBlend(viewsector);
 	glFlush();
@@ -1358,6 +1360,7 @@ void FGLInterface::RenderTextureView (FCanvasTexture *tex, AActor *Viewpoint, in
 	int height = gltex->TextureHeight(GLUSE_TEXTURE);
 
 	gl_fixedcolormap=CM_DEFAULT;
+	gl_RenderState.SetFixedColormap(CM_DEFAULT);
 
 	bool usefb;
 
@@ -1402,7 +1405,7 @@ void FGLInterface::RenderTextureView (FCanvasTexture *tex, AActor *Viewpoint, in
 	if (!usefb)
 	{
 		glFlush();
-		gltex->Bind(CM_DEFAULT, 0, 0);
+		gltex->Bind(0, 0);
 		glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, bounds.width, bounds.height);
 	}
 	else
@@ -1410,7 +1413,7 @@ void FGLInterface::RenderTextureView (FCanvasTexture *tex, AActor *Viewpoint, in
 		GLRenderer->EndOffscreen();
 	}
 
-	gltex->Bind(CM_DEFAULT, 0, 0);
+	gltex->Bind(0, 0);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, TexFilter[gl_texture_filter].magfilter);
 	tex->SetUpdated();
 }

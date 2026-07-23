@@ -510,10 +510,10 @@ int FVoxelModel::FindFrame(const char * name)
 //
 //===========================================================================
 
-void FVoxelModel::RenderFrame(FTexture * skin, int frame, int cm, int translation)
+void FVoxelModel::RenderFrame(FTexture * skin, int frame, int translation)
 {
 	FMaterial * tex = FMaterial::ValidateTexture(skin);
-	tex->Bind(cm, 0, translation);
+	tex->Bind(0, translation);
 
 	// [rc4l] Flight 2 (upstream 7d3beb665): voxel VBO binds through the render state; the [BB]
 	// RFL_VBO guard is gone -- VBOs are core since GL 1.5 and the floor is 2.0.
@@ -544,8 +544,8 @@ void FVoxelModel::RenderFrame(FTexture * skin, int frame, int cm, int translatio
 //
 //===========================================================================
 
-void FVoxelModel::RenderFrameInterpolated(FTexture * skin, int frame, int frame2, double inter, int cm, int translation)
+void FVoxelModel::RenderFrameInterpolated(FTexture * skin, int frame, int frame2, double inter, int translation)
 {
-	RenderFrame(skin, frame, cm, translation);
+	RenderFrame(skin, frame, translation);
 }
 

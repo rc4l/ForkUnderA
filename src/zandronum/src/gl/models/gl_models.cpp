@@ -681,7 +681,6 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 						   const FState *curState,
 						   const int curTics,
 						   const PClass *ti,
-						   int cm,
 						   Matrix3x4 *normaltransform,
 						   int translation)
 {
@@ -741,9 +740,9 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 			mdl->PushSpriteMDLFrame(smf, i);
 
 			if ( smfNext && smf->modelframes[i] != smfNext->modelframes[i] )
-				mdl->RenderFrameInterpolated(smf->skins[i], smf->modelframes[i], smfNext->modelframes[i], inter, cm, translation);
+				mdl->RenderFrameInterpolated(smf->skins[i], smf->modelframes[i], smfNext->modelframes[i], inter, translation);
 			else
-				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], cm, translation);
+				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], translation);
 		}
 	}
 }
@@ -763,7 +762,7 @@ float gl_RollAgainstAngleHelper ( const AActor *actor )
 	return angleDiff;
 }
 
-void gl_RenderModel(GLSprite * spr, int cm)
+void gl_RenderModel(GLSprite * spr)
 {
 	FSpriteModelFrame * smf = spr->modelframe;
 
@@ -898,11 +897,11 @@ void gl_RenderModel(GLSprite * spr, int cm)
 		if (pitch != 0) NormalTransform.Rotate(0,0,1,-pitch);
 		if (angle != 0) NormalTransform.Rotate(0,1,0, angle);
 
-		gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), cm, &ModelToWorld, &NormalTransform, translation );
+		gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), &ModelToWorld, &NormalTransform, translation );
 	}
 #endif
 
-	gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), cm, NULL, translation );
+	gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), NULL, translation );
 
 	if (!gl.hasGLSL())
 	{
@@ -930,7 +929,7 @@ void gl_RenderModel(GLSprite * spr, int cm)
 //
 //===========================================================================
 
-void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy, int cm)
+void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy)
 {
 	AActor * playermo=players[consoleplayer].camera;
 	FSpriteModelFrame *smf = gl_FindModelFrame(playermo->player->ReadyWeapon->GetClass(), psp->state->sprite, psp->state->GetFrame(), false);
@@ -973,7 +972,7 @@ void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy, int cm)
 	glRotatef(smf->pitchoffset, 0, 0, 1);
 	glRotatef(-smf->rolloffset, 1, 0, 0);
 
-	gl_RenderFrameModels( smf, psp->state, psp->tics, playermo->player->ReadyWeapon->GetClass(), cm, NULL, 0 );
+	gl_RenderFrameModels( smf, psp->state, psp->tics, playermo->player->ReadyWeapon->GetClass(), NULL, 0 );
 
 	glMatrixMode(GL_MODELVIEW);
 	glPopMatrix();

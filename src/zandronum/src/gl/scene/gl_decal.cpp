@@ -183,8 +183,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	
 	if (glset.nocoloredspritelighting)
 	{
-		int v = (Colormap.LightColor.r * 77 + Colormap.LightColor.g*143 + Colormap.LightColor.b*35)/255;
-		p.LightColor = PalEntry(p.colormap, v, v, v);
+		p.Decolorize();
 	}
 	
 	
@@ -329,7 +328,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 
 
 	gl_SetRenderStyle(decal->RenderStyle, false, false);
-	tex->BindPatch(p.colormap, decal->Translation);
+	tex->BindPatch(decal->Translation);
 
 
 	// If srcalpha is one it looks better with a higher alpha threshold

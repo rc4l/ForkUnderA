@@ -86,3 +86,13 @@ reassessment.
 Every line of hybrid renderer code: the capture/queue seam, the adapted backend copy, the scene
 bridge, `vid_hwrender` and its menu entry (they return when there is a second renderer to select),
 all hook edits in `gl/`. The `gl/` tree is byte-identical to `main` again.
+
+## Known temporary regressions (tracked, grep `ZX_TODO_FIXEDCOLORMAP`)
+
+- **Per-actor FixedColormap on other players** (the [TP/BB] doom-sphere-renders-red-to-observers
+  feature): upstream `c47c7421a` removed `FColormap::colormap`, the field that carried the
+  per-sprite special-colormap index. The two set-sites in `gl_sprite.cpp` are disabled with
+  `ZX_TODO_FIXEDCOLORMAP` markers. Restore via a per-object fixed-colormap render-state call once
+  the shader-consolidation flights add one (upstream grows `SetFixedColormap` on the render state
+  on the way to the core flip). Offline play is unaffected — the feature only triggers on other
+  players' powerups in netgames.

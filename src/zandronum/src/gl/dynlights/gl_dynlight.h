@@ -95,6 +95,7 @@ public:
 	FState *targetState;
 	FLightNode * touching_sides;
 	FLightNode * touching_subsectors;
+	FLightNode * touching_sector;
 
 private:
 	float DistToSeg(seg_t *seg);
@@ -186,8 +187,9 @@ struct FDynLightData
 	const float gl_lights_size = ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) ? 1.0f : gl_lights_size_CVAR_value;
 
 bool gl_GetLight(Plane & p, ADynamicLight * light, bool checkside, bool forceadditive, FDynLightData &data);
-bool gl_SetupLight(Plane & p, ADynamicLight * light, Vector & nearPt, Vector & up, Vector & right, float & scale, bool checkside=true, bool forceadditive=true);
+bool gl_SetupLight(Plane & p, ADynamicLight * light, Vector & nearPt, Vector & up, Vector & right, float & scale, int desaturation, bool checkside=true, bool forceadditive=true);
 bool gl_SetupLightTexture();
+void gl_UploadLights(FDynLightData &data);
 
 
 #endif

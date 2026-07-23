@@ -985,7 +985,7 @@ void FDrawInfo::SetupFloodStencil(wallseg * ws)
 	glStencilOp(GL_KEEP,GL_KEEP,GL_INCR);		// increment stencil of valid pixels
 	glColorMask(0,0,0,0);						// don't write to the graphics buffer
 	gl_RenderState.EnableTexture(false);
-	glColor3f(1,1,1);
+	gl_RenderState.ResetColor();
 	glEnable(GL_DEPTH_TEST);
 	glDepthMask(true);
 
@@ -1013,7 +1013,7 @@ void FDrawInfo::ClearFloodStencil(wallseg * ws)
 	glStencilOp(GL_KEEP,GL_KEEP,GL_DECR);
 	gl_RenderState.EnableTexture(false);
 	glColorMask(0,0,0,0);						// don't write to the graphics buffer
-	glColor3f(1,1,1);
+	gl_RenderState.ResetColor();
 
 	gl_RenderState.Apply();
 	glBegin(GL_TRIANGLE_FAN);
@@ -1051,7 +1051,7 @@ void FDrawInfo::DrawFloodedPlane(wallseg * ws, float planez, sector_t * sec, boo
 
 	if (gl_fixedcolormap) 
 	{
-		Colormap.GetFixedColormap();
+		Colormap.Clear();
 		lightlevel=255;
 	}
 	else
@@ -1068,7 +1068,7 @@ void FDrawInfo::DrawFloodedPlane(wallseg * ws, float planez, sector_t * sec, boo
 	int rel = getExtraLight();
 	gl_SetColor(lightlevel, rel, &Colormap, 1.0f);
 	gl_SetFog(lightlevel, rel, &Colormap, false);
-	gltexture->Bind(Colormap.colormap);
+	gltexture->Bind();
 
 	float fviewx = FIXED2FLOAT(viewx);
 	float fviewy = FIXED2FLOAT(viewy);

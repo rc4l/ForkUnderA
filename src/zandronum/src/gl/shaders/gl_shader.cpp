@@ -396,6 +396,7 @@ FShader *FShaderContainer::Bind(int cm, bool glowing, float Speed, bool lights)
 			glUniform3fv(sh->colormaprange_index, 1, m);
 		}
 	}
+	/*
 	else
 	{
 		bool desat = cm>=CM_DESAT1 && cm<=CM_DESAT31;
@@ -410,6 +411,7 @@ FShader *FShaderContainer::Bind(int cm, bool glowing, float Speed, bool lights)
 			}
 		}
 	}
+	*/
 	return sh;
 }
 
