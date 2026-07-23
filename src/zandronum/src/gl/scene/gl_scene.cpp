@@ -377,23 +377,34 @@ void FGLRenderer::RenderScene(int recursion)
 	gl_RenderState.EnableFog(true);
 	gl_RenderState.BlendFunc(GL_ONE,GL_ZERO);
 
-	// First draw all single-pass stuff
+	gl_drawinfo->drawlists[GLDL_PLAIN].Sort();
+	gl_drawinfo->drawlists[GLDL_MASKED].Sort();
+	gl_drawinfo->drawlists[GLDL_MASKEDOFS].Sort();
+
+	// if we don't have a persistently mapped buffer, we have to process all the dynamic lights up front,
+	// so that we don't have to do repeated map/unmap calls on the buffer.
+	if (mLightCount > 0 && gl_fixedcolormap == CM_DEFAULT && gl_lights && !(gl.flags & RFL_BUFFER_STORAGE))
+	{
+		GLRenderer->mLights->Begin();
+		gl_drawinfo->drawlists[GLDL_PLAIN].Draw(GLPASS_LIGHTSONLY);
+		gl_drawinfo->drawlists[GLDL_MASKED].Draw(GLPASS_LIGHTSONLY);
+		gl_drawinfo->drawlists[GLDL_MASKEDOFS].Draw(GLPASS_LIGHTSONLY);
+		gl_drawinfo->drawlists[GLDL_TRANSLUCENTBORDER].Draw(GLPASS_LIGHTSONLY);
+		gl_drawinfo->drawlists[GLDL_TRANSLUCENT].Draw(GLPASS_LIGHTSONLY);
+		GLRenderer->mLights->Finish();
+	}
 
 	// Part 1: solid geometry. This is set up so that there are no transparent parts
 	glDepthFunc(GL_LESS);
-
-
 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
-
-	glDisable(GL_POLYGON_OFFSET_FILL);	// just in case
-	GLRenderer->mLights->Finish();
+	glDisable(GL_POLYGON_OFFSET_FILL);
 
 	int pass;
 
 	// [AK] Take care of gl_texture and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_GL_TEXTURE_IF_NECESSARY
 
-	if (mLightCount > 0 && gl_fixedcolormap == CM_DEFAULT && gl_lights)
+	if (mLightCount > 0 && gl_fixedcolormap == CM_DEFAULT && gl_lights && (gl.flags & RFL_BUFFER_STORAGE))
 	{
 		pass = GLPASS_ALL;
 	}
@@ -404,7 +415,6 @@ void FGLRenderer::RenderScene(int recursion)
 
 	gl_RenderState.EnableTexture(gl_texture);
 	gl_RenderState.EnableBrightmap(true);
-	gl_drawinfo->drawlists[GLDL_PLAIN].Sort();
 	gl_drawinfo->drawlists[GLDL_PLAIN].Draw(pass);
 
 
@@ -415,15 +425,13 @@ void FGLRenderer::RenderScene(int recursion)
 		gl_RenderState.SetTextureMode(TM_MASK);
 	}
 	gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_threshold);
-	gl_drawinfo->drawlists[GLDL_MASKED].Sort();
 	gl_drawinfo->drawlists[GLDL_MASKED].Draw(pass);
 
-	// this list is empty most of the time so only waste time on it when in use.
+	// Part 3: masked geometry with polygon offset. This list is empty most of the time so only waste time on it when in use.
 	if (gl_drawinfo->drawlists[GLDL_MASKEDOFS].Size() > 0)
 	{
 		glEnable(GL_POLYGON_OFFSET_FILL);
 		glPolygonOffset(-1.0f, -128.0f);
-		gl_drawinfo->drawlists[GLDL_MASKEDOFS].Sort();
 		gl_drawinfo->drawlists[GLDL_MASKEDOFS].Draw(pass);
 		glDisable(GL_POLYGON_OFFSET_FILL);
 		glPolygonOffset(0, 0);
@@ -433,7 +441,7 @@ void FGLRenderer::RenderScene(int recursion)
 
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	// Draw decals (not a real pass)
+	// Part 4: Draw decals (not a real pass)
 	glDepthFunc(GL_LEQUAL);
 	glEnable(GL_POLYGON_OFFSET_FILL);
 	glPolygonOffset(-1.0f, -128.0f);
@@ -453,8 +461,8 @@ void FGLRenderer::RenderScene(int recursion)
 	// so they don't interfere with overlapping mid textures.
 	glPolygonOffset(1.0f, 128.0f);
 
-	// flood all the gaps with the back sector's flat texture
-	// This will always be drawn like GLDL_PLAIN or GLDL_FOG, depending on the fog settings
+	// Part 5: flood all the gaps with the back sector's flat texture
+	// This will always be drawn like GLDL_PLAIN, depending on the fog settings
 
 	// [BB] We may only do this when drawing the final eye.
 	GLint drawBuffer;
@@ -705,7 +713,6 @@ void FGLRenderer::EndDrawScene(sector_t * viewsector)
 	}
 
 	glDisable(GL_STENCIL_TEST);
-	glDisable(GL_POLYGON_SMOOTH);
 
 	framebuffer->Begin2D(false);
 

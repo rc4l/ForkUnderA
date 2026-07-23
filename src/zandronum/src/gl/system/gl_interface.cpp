@@ -69,6 +69,7 @@ int occlusion_type=0;
 
 
 
+
 //==========================================================================
 //
 // 
@@ -154,10 +155,10 @@ void gl_LoadExtensions()
 	else Printf("Emulating OpenGL v %s\n", version);
 
 
-	// [rc4l] upstream 2925c96b5: GL 3.0 is the floor now that all GL 2.x code is gone.
-	if (strcmp(version, "3.0") < 0) 
+	// [rc4l] upstream 86d37e06f: the floor settles at GL 3.3.
+	if (strcmp(version, "3.3") < 0)
 	{
-		I_FatalError("Unsupported OpenGL version.\nAt least GL 3.0 is required to run " GAMENAME ".\n");
+		I_FatalError("Unsupported OpenGL version.\nAt least OpenGL 3.3 is required to run " GAMENAME ".\n");
 	}
 
 	// add 0.01 to account for roundoff errors making the number a tad smaller than the actual version
@@ -170,12 +171,13 @@ void gl_LoadExtensions()
 
 	if (CheckExtension("GL_ARB_texture_compression")) gl.flags|=RFL_TEXTURE_COMPRESSION;
 	if (CheckExtension("GL_EXT_texture_compression_s3tc")) gl.flags|=RFL_TEXTURE_COMPRESSION_S3TC;
-	// [rc4l] upstream 0ce6b4067: ARB_buffer_storage requires GL 4.0 per spec, so
-	// don't use it when emulating something lower via -glversion.
-	if (CheckExtension("GL_ARB_buffer_storage") && !Args->CheckParm("-nopersistentbuffers")) gl.flags|=RFL_BUFFER_STORAGE;
-	if (CheckExtension("GL_ARB_separate_shader_objects")) gl.flags |= RFL_SEPARATE_SHADER_OBJECTS;
 	if (!CheckExtension("GL_ARB_compatibility")) gl.flags |= RFL_COREPROFILE;
-	if (CheckExtension("GL_ARB_shader_storage_buffer_object")) gl.flags|=RFL_SHADER_STORAGE_BUFFER;
+	if (!Args->CheckParm("-gl3"))
+	{
+		// don't use GL 4.x features when running in GL 3 emulation mode.
+		if (CheckExtension("GL_ARB_shader_storage_buffer_object")) gl.flags |= RFL_SHADER_STORAGE_BUFFER;
+		if (CheckExtension("GL_ARB_buffer_storage") && !Args->CheckParm("-nopersistentbuffers")) gl.flags |= RFL_BUFFER_STORAGE;
+	}
 	// [rc4l] Guaranteed on every GL 3.x context; kept for [BB] call sites.
 	gl.flags |= RFL_NPOT_TEXTURE | RFL_OCCLUSION_QUERY;
 

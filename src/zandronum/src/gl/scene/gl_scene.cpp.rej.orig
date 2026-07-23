@@ -1,46 +1,47 @@
-@@ -245,36 +245,11 @@
- //
- //-----------------------------------------------------------------------------
+@@ -340,20 +340,31 @@
+ 	gl_RenderState.EnableFog(true);
+ 	gl_RenderState.BlendFunc(GL_ONE,GL_ZERO);
  
--static void setPerspective(GLdouble fovy, GLdouble aspect, GLdouble zNear, GLdouble zFar)
--{
--	GLdouble m[4][4];
--	double sine, cotangent, deltaZ;
--	double radians = fovy / 2 * M_PI / 180;
--
--	deltaZ = zFar - zNear;
--	sine = sin(radians);
--	if ((deltaZ == 0) || (sine == 0) || (aspect == 0)) {
--		return;
--	}
--	cotangent = cos(radians) / sine;
--
--	memset(m, 0, sizeof(m));
--	m[0][0] = cotangent / aspect;
--	m[1][1] = cotangent;
--	m[2][2] = -(zFar + zNear) / deltaZ;
--	m[2][3] = -1;
--	m[3][2] = -2 * zNear * zFar / deltaZ;
--	m[3][3] = 0;
--	glLoadMatrixd(&m[0][0]);
--}
--
--
- void FGLRenderer::SetProjection(float fov, float ratio, float fovratio)
- {
--	glMatrixMode(GL_PROJECTION);
+-	// First draw all single-pass stuff
++	gl_drawinfo->drawlists[GLDL_PLAIN].Sort();
++	gl_drawinfo->drawlists[GLDL_MASKED].Sort();
++	gl_drawinfo->drawlists[GLDL_MASKEDOFS].Sort();
++
++	// if we don't have a persistently mapped buffer, we have to process all the dynamic lights up front,
++	// so that we don't have to do repeated map/unmap calls on the buffer.
++	if (mLightCount > 0 && gl_fixedcolormap == CM_DEFAULT && gl_lights && !(gl.flags & RFL_SHADER_STORAGE_BUFFER))
++	{
++		GLRenderer->mLights->Begin();
++		gl_drawinfo->drawlists[GLDL_PLAIN].Draw(GLPASS_LIGHTSONLY);
++		gl_drawinfo->drawlists[GLDL_MASKED].Draw(GLPASS_LIGHTSONLY);
++		gl_drawinfo->drawlists[GLDL_MASKEDOFS].Draw(GLPASS_LIGHTSONLY);
++		gl_drawinfo->drawlists[GLDL_TRANSLUCENTBORDER].Draw(GLPASS_LIGHTSONLY);
++		gl_drawinfo->drawlists[GLDL_TRANSLUCENT].Draw(GLPASS_LIGHTSONLY);
++		GLRenderer->mLights->Finish();
++	}
  
- 	float fovy = 2 * RAD2DEG(atan(tan(DEG2RAD(fov) / 2) / fovratio));
--	setPerspective(fovy, ratio, 5.f, 65536.f);
-+	gl_RenderState.mProjectionMatrix.perspective(fovy, ratio, 5.f, 65536.f);
- 	gl_RenderState.Set2DMode(false);
- }
+ 	// Part 1: solid geometry. This is set up so that there are no transparent parts
+ 	glDepthFunc(GL_LESS);
+-
+-
+ 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
+-
+-	glDisable(GL_POLYGON_OFFSET_FILL);	// just in case
+-	GLRenderer->mLights->Finish();
++	glDisable(GL_POLYGON_OFFSET_FILL);
  
-@@ -903,6 +877,7 @@
- 	SetProjection(fov, ratio, fovratio);	// switch to perspective mode and set up clipper
+ 	int pass;
+ 
+-	if (mLightCount > 0 && gl_fixedcolormap == CM_DEFAULT && gl_lights)
++	if (mLightCount > 0 && gl_fixedcolormap == CM_DEFAULT && gl_lights && (gl.flags & RFL_SHADER_STORAGE_BUFFER))
+ 	{
+ 		pass = GLPASS_ALL;
+ 	}
+@@ -822,6 +830,7 @@
  	SetCameraPos(viewx, viewy, viewz, viewangle);
  	SetViewMatrix(false, false);
-+	gl_RenderState.ApplyMatrices();
+ 	gl_RenderState.ApplyMatrices();
++	GLRenderer->mLights->Clear();
  
  	clipper.Clear();
  	angle_t a1 = FrustumAngle();

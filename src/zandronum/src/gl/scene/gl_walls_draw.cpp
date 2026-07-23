@@ -70,8 +70,19 @@ EXTERN_CVAR(Bool, gl_seamless)
 //==========================================================================
 FDynLightData lightdata;
 
+
 void GLWall::SetupLights()
 {
+	// check for wall types which cannot have dynamic lights on them (portal types never get here so they don't need to be checked.)
+	switch (type)
+	{
+	case RENDERWALL_FOGBOUNDARY:
+	case RENDERWALL_MIRRORSURFACE:
+	case RENDERWALL_COLOR:
+	case RENDERWALL_COLORLAYER:
+		return;
+	}
+
 	// [AK] Take care of gl_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_LIGHTS_SIZE_IF_NECESSARY
 
@@ -169,7 +180,7 @@ void GLWall::SetupLights()
 void GLWall::RenderWall(int textured, unsigned int *store)
 {
 	static texcoord tcs[4]; // making this variable static saves us a relatively costly stack integrity check.
-	bool split = (gl_seamless && !(textured&RWF_NOSPLIT) && seg->sidedef != NULL && !(seg->sidedef->Flags & WALLF_POLYOBJ));
+	bool split = (gl_seamless && !(textured&RWF_NOSPLIT) && seg->sidedef != NULL && !(seg->sidedef->Flags & WALLF_POLYOBJ) && !(flags & GLWF_NOSPLIT));
 
 	tcs[0]=lolft;
 	tcs[1]=uplft;
@@ -360,7 +371,7 @@ void GLWall::Draw(int pass)
 #endif
 
 
-	if (type == RENDERWALL_COLORLAYER)
+	if (type == RENDERWALL_COLORLAYER && pass != GLPASS_LIGHTSONLY)
 	{
 		glEnable(GL_POLYGON_OFFSET_FILL);
 		glPolygonOffset(-1.0f, -128.0f);
@@ -368,10 +379,14 @@ void GLWall::Draw(int pass)
 
 	switch (pass)
 	{
-	case GLPASS_ALL:			// Single-pass rendering
+	case GLPASS_LIGHTSONLY:
+		SetupLights();
+		break;
+
+	case GLPASS_ALL:
 		SetupLights();
 		// fall through
-	case GLPASS_PLAIN:			// Single-pass rendering
+	case GLPASS_PLAIN:
 		rel = rellight + getExtraLight();
 		gl_SetColor(lightlevel, rel, Colormap,1.0f);
 		if (type!=RENDERWALL_M2SNF) gl_SetFog(lightlevel, rel, &Colormap, false);
@@ -412,7 +427,7 @@ void GLWall::Draw(int pass)
 		}
 	}
 
-	if (type == RENDERWALL_COLORLAYER)
+	if (type == RENDERWALL_COLORLAYER && pass != GLPASS_LIGHTSONLY)
 	{
 		glDisable(GL_POLYGON_OFFSET_FILL);
 		glPolygonOffset(0, 0);

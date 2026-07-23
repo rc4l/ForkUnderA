@@ -39,7 +39,6 @@ enum WallTypes
 	RENDERWALL_MIRROR,
 	RENDERWALL_MIRRORSURFACE,
 	RENDERWALL_M2SNF,
-	RENDERWALL_M2SFOG,
 	RENDERWALL_COLOR,
 	RENDERWALL_FFBLOCK,
 	RENDERWALL_COLORLAYER,
@@ -100,6 +99,7 @@ public:
 		GLWF_GLOW=8,		// illuminated by glowing flats
 		GLWF_NOSPLITUPPER=16,
 		GLWF_NOSPLITLOWER=32,
+		GLWF_NOSPLIT=64,
 	};
 
 	enum
@@ -278,16 +278,17 @@ public:
 
 	int dynlightindex;
 
-	bool SetupSubsectorLights(bool lightsapplied, subsector_t * sub);
+	void SetupSubsectorLights(int pass, subsector_t * sub, int *dli = NULL);
 	void DrawSubsector(subsector_t * sub);
 	void DrawSubsectorLights(subsector_t * sub, int pass);
-	void DrawSubsectors(int pass, bool istrans);
+	void DrawSubsectors(int pass, bool processlights, bool istrans);
+	void ProcessLights(bool istrans);
 
 	void PutFlat(bool fog = false);
 	void Process(sector_t * model, int whichplane, bool notexture);
 	void SetFrom3DFloor(F3DFloor *rover, bool top, bool underside);
 	void ProcessSector(sector_t * frontsector);
-	void Draw(int pass);
+	void Draw(int pass, bool trans);
 };
 
 
@@ -332,6 +333,7 @@ public:
 
 	void SplitSprite(sector_t * frontsector, bool translucent);
 	void SetLowerParam();
+	void PerformSpriteClipAdjustment(AActor *thing, fixed_t thingx, fixed_t thingy, float spriteheight);
 
 public:
 

@@ -95,33 +95,26 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 
 	if (lightbuffertype == GL_UNIFORM_BUFFER)
 	{
-		// [rc4l] macOS core profiles reject '#version 130'; UBOs are core since GL 3.1,
-		// so the core path needs neither the low version nor the extension pragma.
-		// The 130+extension form is upstream's, for the reactivated compat contexts.
-		if (gl.glslversion >= 3.3f)
+		// [rc4l] Apple's core profiles reject the UBO extension pragma outright -- UBOs are
+		// core since GL 3.1, so on a core profile the pragma is both unnecessary and fatal.
+		if (gl.flags & RFL_COREPROFILE)
 		{
 			vp_comb.Format("#version 330 core\n#define NUM_UBO_LIGHTS %d\n", lightbuffersize);
 		}
 		else
 		{
-			vp_comb.Format("#version 130\n#extension GL_ARB_uniform_buffer_object : require\n#define NUM_UBO_LIGHTS %d\n", lightbuffersize);
+			vp_comb.Format("#version 330 core\n#extension GL_ARB_uniform_buffer_object : require\n#define NUM_UBO_LIGHTS %d\n", lightbuffersize);
 		}
 	}
 	else
 	{
-		vp_comb = "#version 400 compatibility\n#extension GL_ARB_shader_storage_buffer_object : require\n#define SHADER_STORAGE_LIGHTS\n";
+		vp_comb = "#version 400 core\n#extension GL_ARB_shader_storage_buffer_object : require\n#define SHADER_STORAGE_LIGHTS\n";
 	}
 
 	// [rc4l] Apple's GLSL compiler is strict: texture2D() does not exist in core
 	// profiles. Upstream got away with it on NVIDIA's lenient compiler and only
 	// converted the calls later; the alias is their eventual fix, applied early.
 	vp_comb << "#define texture2D texture\n";
-
-	if (!(gl.flags & RFL_BUFFER_STORAGE))
-	{
-		// we only want the uniform array hack in the shader if we actually need it.
-		vp_comb << "#define UNIFORM_VB\n";
-	}
 
 	vp_comb << defines << i_data.GetString().GetChars();
 	FString fp_comb = vp_comb;
@@ -321,18 +314,9 @@ FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath
 
 void FShader::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
 {
-
-	if (gl.flags & RFL_SEPARATE_SHADER_OBJECTS)
-	{
-		glProgramUniformMatrix4fv(hShader, projectionmatrix_index, 1, false, proj->get());
-		glProgramUniformMatrix4fv(hShader, viewmatrix_index, 1, false, view->get());
-	}
-	else
-	{
-		Bind();
-		glUniformMatrix4fv(projectionmatrix_index, 1, false, proj->get());
-		glUniformMatrix4fv(viewmatrix_index, 1, false, view->get());
-	}
+	Bind();
+	glUniformMatrix4fv(projectionmatrix_index, 1, false, proj->get());
+	glUniformMatrix4fv(viewmatrix_index, 1, false, view->get());
 }
 
 
@@ -418,6 +402,8 @@ void FShaderManager::CompileShaders()
 {
 	mActiveShader = NULL;
 
+	mTextureEffects.Clear();
+	mTextureEffectsNAT.Clear();
 	for (int i = 0; i < MAX_EFFECTS; i++)
 	{
 		mEffectShaders[i] = NULL;
@@ -427,6 +413,11 @@ void FShaderManager::CompileShaders()
 	{
 		FShader *shc = Compile(defaultshaders[i].ShaderName, defaultshaders[i].gettexelfunc, true);
 		mTextureEffects.Push(shc);
+		if (i <= 3)
+		{
+			FShader *shc = Compile(defaultshaders[i].ShaderName, defaultshaders[i].gettexelfunc, false);
+			mTextureEffectsNAT.Push(shc);
+		}
 	}
 
 	for(unsigned i = 0; i < usershaders.Size(); i++)
@@ -461,6 +452,10 @@ void FShaderManager::Clean()
 	glUseProgram(0);
 	mActiveShader = NULL;
 
+	for (unsigned int i = 0; i < mTextureEffectsNAT.Size(); i++)
+	{
+		if (mTextureEffectsNAT[i] != NULL) delete mTextureEffectsNAT[i];
+	}
 	for (unsigned int i = 0; i < mTextureEffects.Size(); i++)
 	{
 		if (mTextureEffects[i] != NULL) delete mTextureEffects[i];
@@ -471,6 +466,7 @@ void FShaderManager::Clean()
 		mEffectShaders[i] = NULL;
 	}
 	mTextureEffects.Clear();
+	mTextureEffectsNAT.Clear();
 }
 
 //==========================================================================
@@ -535,10 +531,12 @@ EXTERN_CVAR(Int, gl_fuzztype)
 
 void FShaderManager::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
 {
-	for (int i = 0; i <= 4; i++)
+	for (int i = 0; i < 4; i++)
 	{
 		mTextureEffects[i]->ApplyMatrices(proj, view);
+		mTextureEffectsNAT[i]->ApplyMatrices(proj, view);
 	}
+	mTextureEffects[4]->ApplyMatrices(proj, view);
 	if (gl_fuzztype != 0)
 	{
 		mTextureEffects[4+gl_fuzztype]->ApplyMatrices(proj, view);
@@ -551,6 +549,7 @@ void FShaderManager::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
 	{
 		mEffectShaders[i]->ApplyMatrices(proj, view);
 	}
+	if (mActiveShader != NULL) mActiveShader->Bind();
 }
 
 //==========================================================================

@@ -996,6 +996,7 @@ void GLWall::DoMidTexture(seg_t * seg, bool drawfogboundary,
 		//
 		FloatRect *splitrect;
 		int v = gltexture->GetAreas(&splitrect);
+		if (seg->frontsector == seg->backsector) flags |= GLWF_NOSPLIT;	// we don't need to do vertex splits if a line has both sides in the same sector
 		if (v>0 && !drawfogboundary && !(seg->linedef->flags&ML_WRAP_MIDTEX))
 		{
 			// split the poly!
@@ -1419,7 +1420,7 @@ void GLWall::DoFFloorBlocks(seg_t * seg,sector_t * frontsector,sector_t * backse
 //==========================================================================
 void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 {
-	vertex_t * v1, * v2;
+	vertex_t * v1, *v2;
 	fixed_t fch1;
 	fixed_t ffh1;
 	fixed_t fch2;
@@ -1433,7 +1434,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 		int a = 0;
 	}
 #endif
-		
+
 	// note: we always have a valid sidedef and linedef reference when getting here.
 
 	this->seg = seg;
@@ -1448,24 +1449,24 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 	{
 		// Need these for aligning the textures
 		realfront = &sectors[frontsector->sectornum];
-		realback = backsector? &sectors[backsector->sectornum] : NULL;
+		realback = backsector ? &sectors[backsector->sectornum] : NULL;
 	}
 
 	if (seg->sidedef == seg->linedef->sidedef[0])
 	{
-		v1=seg->linedef->v1;
-		v2=seg->linedef->v2;
+		v1 = seg->linedef->v1;
+		v2 = seg->linedef->v2;
 	}
 	else
 	{
-		v1=seg->linedef->v2;
-		v2=seg->linedef->v1;
+		v1 = seg->linedef->v2;
+		v2 = seg->linedef->v1;
 	}
 
 	if (!(seg->sidedef->Flags & WALLF_POLYOBJ))
 	{
-		glseg.fracleft=0;
-		glseg.fracright=1;
+		glseg.fracleft = 0;
+		glseg.fracright = 1;
 		if (gl_seamless)
 		{
 			if (v1->dirty) gl_RecalcVertexHeights(v1);
@@ -1474,29 +1475,29 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 	}
 	else	// polyobjects must be rendered per seg.
 	{
-		if (abs(v1->x-v2->x) > abs(v1->y-v2->y))
+		if (abs(v1->x - v2->x) > abs(v1->y - v2->y))
 		{
-			glseg.fracleft = float(seg->v1->x - v1->x)/float(v2->x-v1->x);
-			glseg.fracright = float(seg->v2->x - v1->x)/float(v2->x-v1->x);
+			glseg.fracleft = float(seg->v1->x - v1->x) / float(v2->x - v1->x);
+			glseg.fracright = float(seg->v2->x - v1->x) / float(v2->x - v1->x);
 		}
 		else
 		{
-			glseg.fracleft = float(seg->v1->y - v1->y)/float(v2->y-v1->y);
-			glseg.fracright = float(seg->v2->y - v1->y)/float(v2->y-v1->y);
+			glseg.fracleft = float(seg->v1->y - v1->y) / float(v2->y - v1->y);
+			glseg.fracright = float(seg->v2->y - v1->y) / float(v2->y - v1->y);
 		}
-		v1=seg->v1;
-		v2=seg->v2;
+		v1 = seg->v1;
+		v2 = seg->v2;
 	}
 
 
-	vertexes[0]=v1;
-	vertexes[1]=v2;
+	vertexes[0] = v1;
+	vertexes[1] = v2;
 
-	glseg.x1= FIXED2FLOAT(v1->x);
-	glseg.y1= FIXED2FLOAT(v1->y);
-	glseg.x2= FIXED2FLOAT(v2->x);
-	glseg.y2= FIXED2FLOAT(v2->y);
-	Colormap=frontsector->ColorMap;
+	glseg.x1 = FIXED2FLOAT(v1->x);
+	glseg.y1 = FIXED2FLOAT(v1->y);
+	glseg.x2 = FIXED2FLOAT(v2->x);
+	glseg.y2 = FIXED2FLOAT(v2->y);
+	Colormap = frontsector->ColorMap;
 	flags = 0;
 	dynlightindex = UINT_MAX;
 
@@ -1506,10 +1507,10 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 	lightlevel = gl_ClampLight(seg->sidedef->GetLightLevel(foggy, orglightlevel, false, &rel));
 	if (orglightlevel >= 253)			// with the software renderer fake contrast won't be visible above this.
 	{
-		rellight = 0;					
+		rellight = 0;
 	}
 	else if (lightlevel - rel > 256)	// the brighter part of fake contrast will be clamped so also clamp the darker part by the same amount for better looks
-	{	
+	{
 		rellight = 256 - lightlevel + rel;
 	}
 	else
@@ -1517,35 +1518,35 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 		rellight = rel;
 	}
 
-	alpha=1.0f;
-	RenderStyle=STYLE_Normal;
-	gltexture=NULL;
+	alpha = 1.0f;
+	RenderStyle = STYLE_Normal;
+	gltexture = NULL;
 
-	topflat=frontsector->GetTexture(sector_t::ceiling);	// for glowing textures. These must be saved because
-	bottomflat=frontsector->GetTexture(sector_t::floor);	// the sector passed here might be a temporary copy.
+	topflat = frontsector->GetTexture(sector_t::ceiling);	// for glowing textures. These must be saved because
+	bottomflat = frontsector->GetTexture(sector_t::floor);	// the sector passed here might be a temporary copy.
 	topplane = frontsector->ceilingplane;
 	bottomplane = frontsector->floorplane;
 
 	// Save a little time (up to 0.3 ms per frame ;) )
 	if (frontsector->floorplane.a | frontsector->floorplane.b)
 	{
-		ffh1=frontsector->floorplane.ZatPoint(v1); 
-		ffh2=frontsector->floorplane.ZatPoint(v2); 
-		zfloor[0]=FIXED2FLOAT(ffh1);
-		zfloor[1]=FIXED2FLOAT(ffh2);
+		ffh1 = frontsector->floorplane.ZatPoint(v1);
+		ffh2 = frontsector->floorplane.ZatPoint(v2);
+		zfloor[0] = FIXED2FLOAT(ffh1);
+		zfloor[1] = FIXED2FLOAT(ffh2);
 	}
 	else
 	{
-		ffh1 = ffh2 = -frontsector->floorplane.d; 
+		ffh1 = ffh2 = -frontsector->floorplane.d;
 		zfloor[0] = zfloor[1] = FIXED2FLOAT(ffh2);
 	}
 
 	if (frontsector->ceilingplane.a | frontsector->ceilingplane.b)
 	{
-		fch1=frontsector->ceilingplane.ZatPoint(v1);
-		fch2=frontsector->ceilingplane.ZatPoint(v2);
-		zceil[0]= FIXED2FLOAT(fch1);
-		zceil[1]= FIXED2FLOAT(fch2);
+		fch1 = frontsector->ceilingplane.ZatPoint(v1);
+		fch2 = frontsector->ceilingplane.ZatPoint(v2);
+		zceil[0] = FIXED2FLOAT(fch1);
+		zceil[1] = FIXED2FLOAT(fch2);
 	}
 	else
 	{
@@ -1587,8 +1588,8 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 
 		if (backsector->floorplane.a | backsector->floorplane.b)
 		{
-			bfh1=backsector->floorplane.ZatPoint(v1); 
-			bfh2=backsector->floorplane.ZatPoint(v2); 
+			bfh1 = backsector->floorplane.ZatPoint(v1);
+			bfh2 = backsector->floorplane.ZatPoint(v2);
 		}
 		else
 		{
@@ -1728,19 +1729,19 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 //==========================================================================
 void GLWall::ProcessLowerMiniseg(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 {
-	if (frontsector->GetTexture(sector_t::floor)==skyflatnum) return;
+	if (frontsector->GetTexture(sector_t::floor) == skyflatnum) return;
 
-	fixed_t ffh = frontsector->GetPlaneTexZ(sector_t::floor); 
-	fixed_t bfh = backsector->GetPlaneTexZ(sector_t::floor); 
-	if (bfh>ffh)
+	fixed_t ffh = frontsector->GetPlaneTexZ(sector_t::floor);
+	fixed_t bfh = backsector->GetPlaneTexZ(sector_t::floor);
+	if (bfh > ffh)
 	{
 		this->seg = seg;
 		this->sub = NULL;
 
-		vertex_t * v1=seg->v1;
-		vertex_t * v2=seg->v2;
-		vertexes[0]=v1;
-		vertexes[1]=v2;
+		vertex_t * v1 = seg->v1;
+		vertex_t * v2 = seg->v2;
+		vertexes[0] = v1;
+		vertexes[1] = v2;
 
 		glseg.x1 = FIXED2FLOAT(v1->x);
 		glseg.y1 = FIXED2FLOAT(v1->y);
@@ -1769,10 +1770,10 @@ void GLWall::ProcessLowerMiniseg(seg_t *seg, sector_t * frontsector, sector_t * 
 
 		gltexture = FMaterial::ValidateTexture(frontsector->GetTexture(sector_t::floor), true);
 
-		if (gltexture) 
+		if (gltexture)
 		{
 			FTexCoordInfo tci;
-			type=RENDERWALL_BOTTOM;
+			type = RENDERWALL_BOTTOM;
 			gltexture->GetTexCoordInfo(&tci, FRACUNIT, FRACUNIT);
 			SetWallCoordinates(seg, &tci, FIXED2FLOAT(bfh), (int)(bfh), (int)(bfh), (int)(ffh), (int)(ffh), 0);
 			PutWall(false);
