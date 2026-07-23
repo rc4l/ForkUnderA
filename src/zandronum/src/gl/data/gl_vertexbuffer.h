@@ -51,8 +51,8 @@ class FFlatVertexBuffer : public FVertexBuffer
 
 	void CheckPlanes(sector_t *sector);
 
-	const unsigned int BUFFER_SIZE = 2000000;
-	const unsigned int BUFFER_SIZE_TO_USE = 1999500;
+	static const unsigned int BUFFER_SIZE = 2000000;
+	static const unsigned int BUFFER_SIZE_TO_USE = 1999500;
 
 	void ImmRenderBuffer(unsigned int primtype, unsigned int offset, unsigned int count);
 
@@ -200,14 +200,17 @@ class FModelVertexBuffer : public FVertexBuffer
 	unsigned int ibo_id;
 
 public:
-	// these are public because it's the models having to fill them in.
-	TArray<FModelVertex> vbo_shadowdata;	// this is kept around for interpolating on GL 2.0
-	TArray<unsigned int> ibo_shadowdata;	// this is kept around for interpolating on GL 2.0
 
-	FModelVertexBuffer();
+	FModelVertexBuffer(bool needindex);
 	~FModelVertexBuffer();
 
-	unsigned int SetupFrame(unsigned int frame1, unsigned int frame2, float factor);
+	FModelVertex *LockVertexBuffer(unsigned int size);
+	void UnlockVertexBuffer();
+
+	unsigned int *LockIndexBuffer(unsigned int size);
+	void UnlockIndexBuffer();
+
+	unsigned int SetupFrame(unsigned int frame1, unsigned int frame2);
 };
 
 #define VMO ((FModelVertex*)NULL)

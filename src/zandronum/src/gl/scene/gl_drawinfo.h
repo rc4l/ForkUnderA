@@ -8,7 +8,6 @@ enum GLDrawItemType
 	GLDIT_WALL,
 	GLDIT_FLAT,
 	GLDIT_SPRITE,
-	GLDIT_POLY,
 };
 
 enum DrawListType
@@ -126,7 +125,7 @@ public:
 	void DoDraw(int pass, int index, bool trans);
 	void DoDrawSorted(SortNode * node);
 	void DrawSorted();
-	void Draw(int pass);
+	void Draw(int pass, bool trans = false);
 	void DrawWalls(int pass);
 	void DrawFlats(int pass);
 	void DrawDecals();

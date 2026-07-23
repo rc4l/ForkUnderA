@@ -62,7 +62,6 @@ EXTERN_CVAR (Bool, r_drawplayersprites)
 EXTERN_CVAR(Float, transsouls)
 EXTERN_CVAR (Bool, st_scale)
 EXTERN_CVAR(Int, gl_fuzztype)
-EXTERN_CVAR (Bool, r_deathcamera)
 
 
 //==========================================================================
@@ -194,8 +193,7 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		!camera->player ||
 		// [EP] similarly to the change in the software renderer, weapon display
 		// for the chasecam case must be checked only for the console player.
-		(/*player->*/players[consoleplayer].cheats & CF_CHASECAM) || 
-		(r_deathcamera && camera->health <= 0))
+		(/*player->*/players[consoleplayer].cheats & CF_CHASECAM))
 		return;
 
 	P_BobWeapon (player, &player->psprites[ps_weapon], &ofsx, &ofsy);
@@ -213,7 +211,7 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 				{
 					FMaterial * tex=FMaterial::ValidateTexture(lump, false, false);
 					if (tex)
-						disablefullbright = tex->tex->gl_info.bBrightmapDisablesFullbright;
+						disablefullbright = tex->tex->gl_info.bDisableFullbright;
 				}
 				statebright[i] = !!psp->state->GetFullbright() && !disablefullbright;
 			}
@@ -389,7 +387,10 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 			}
 			else
 			{
-				gl_SetDynSpriteLight(playermo, NULL);
+				if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && gl_light_sprites)
+				{
+					gl_SetDynSpriteLight(playermo, NULL);
+				}
 				gl_SetColor(statebright[i] ? 255 : lightlevel, 0, cmc, trans, true);
 			}
 			DrawPSprite(player, psp, psp->sx + ofsx, psp->sy + ofsy, hudModelStep, OverrideShader, !!(vis.RenderStyle.Flags & STYLEF_RedIsAlpha));

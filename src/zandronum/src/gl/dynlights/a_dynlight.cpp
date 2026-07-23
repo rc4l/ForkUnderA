@@ -424,7 +424,6 @@ size_t ADynamicLight::PointerSubstitution (DObject *old, DObject *notOld)
 // nodes that will get linked in later. Returns a pointer to the new node.
 //
 //=============================================================================
-static FreeList<FLightNode> freelist;
 
 FLightNode * AddLightNode(FLightNode ** thread, void * linkto, ADynamicLight * light, FLightNode *& nextnode)
 {
@@ -444,7 +443,7 @@ FLightNode * AddLightNode(FLightNode ** thread, void * linkto, ADynamicLight * l
 	// Couldn't find an existing node for this sector. Add one at the head
 	// of the list.
 	
-	node = freelist.GetNew();
+	node = new FLightNode;
 	
 	node->targ = linkto;
 	node->lightsource = light; 
@@ -487,7 +486,7 @@ static FLightNode * DeleteLightNode(FLightNode * node)
 		
 		// Return this node to the freelist
 		tn=node->nextTarget;
-		freelist.Release(node);
+		delete node;
 		return(tn);
     }
 	return(NULL);
@@ -674,6 +673,7 @@ void ADynamicLight::UnlinkLight ()
 	}
 	while (touching_sides) touching_sides = DeleteLightNode(touching_sides);
 	while (touching_subsectors) touching_subsectors = DeleteLightNode(touching_subsectors);
+	while (touching_sector) touching_sector = DeleteLightNode(touching_sector);
 }
 
 void ADynamicLight::Destroy()
@@ -777,4 +777,5 @@ CCMD(listsublights)
 		Printf(PRINT_LOG, "Subsector %d - %d lights\n", i, lights);
 	}
 }
+
 

@@ -160,7 +160,7 @@ void gl_GenerateGlobalBrightmapFromColormap()
 			if (cmapdata[i+j*256]!=i || (paldata[3*i]<10 && paldata[3*i+1]<10 && paldata[3*i+2]<10))
 			{
 				GlobalBrightmap.Remap[i]=black;
-				GlobalBrightmap.Palette[i]=PalEntry(0,0,0);
+				GlobalBrightmap.Palette[i] = PalEntry(255, 0, 0, 0);
 			}
 		}
 	}
@@ -234,8 +234,7 @@ FTexture::MiscGLInfo::MiscGLInfo() throw()
 	bFullbright = false;
 	bSkyColorDone = false;
 	bBrightmapChecked = false;
-	bBrightmap = false;
-	bBrightmapDisablesFullbright = false;
+	bDisableFullbright = false;
 	bNoFilter = false;
 	bNoCompress = false;
 	areas = NULL;
@@ -596,7 +595,7 @@ bool FTexture::SmoothEdges(unsigned char * buffer,int w, int h)
 
 bool FTexture::ProcessData(unsigned char * buffer, int w, int h, bool ispatch)
 {
-	if (bMasked && !gl_info.bBrightmap) 
+	if (bMasked) 
 	{
 		bMasked = SmoothEdges(buffer, w, h);
 		if (bMasked && !ispatch) FindHoles(buffer, w, h);
@@ -622,7 +621,7 @@ FBrightmapTexture::FBrightmapTexture (FTexture *source)
 	bNoDecals = source->bNoDecals;
 	Rotations = source->Rotations;
 	UseType = source->UseType;
-	gl_info.bBrightmap = true;
+	bMasked = false;
 	id.SetInvalid();
 	SourceLump = -1;
 }
@@ -759,7 +758,7 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 					maplumpname.GetChars(), tex->Name);
 				return;
 			}
-			brightmap->gl_info.bBrightmap = true;
+			brightmap->bMasked = false;	// [rc4l] bBrightmap died in 3c7664a46; bMasked=false is its replacement semantic
 			brightmap->Name[0] = 0;	// brightmaps don't have names
 			TexMan.AddTexture(brightmap);
 		}
@@ -770,7 +769,7 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 
 		tex->gl_info.Brightmap = brightmap;
 	}	
-	tex->gl_info.bBrightmapDisablesFullbright = disable_fullbright;
+	tex->gl_info.bDisableFullbright = disable_fullbright;
 }
 
 //==========================================================================
@@ -844,7 +843,7 @@ CCMD(textureinfo)
 		if (tex->gl_info.SystemTexture[0] || tex->gl_info.SystemTexture[1] || tex->gl_info.Material[0] || tex->gl_info.Material[1])
 		{
 			int lump = tex->GetSourceLump();
-			Printf(PRINT_LOG, "Texture '%s' (Index %d, Lump %d, Name '%s'):\n", (const char*)(tex->Name), i, lump, Wads.GetLumpFullName(lump));
+			Printf(PRINT_LOG, "Texture '%s' (Index %d, Lump %d, Name '%s'):\n", tex->Name, i, lump, Wads.GetLumpFullName(lump));
 			if (tex->gl_info.Material[0])
 			{
 				Printf(PRINT_LOG, "in use (normal)\n");

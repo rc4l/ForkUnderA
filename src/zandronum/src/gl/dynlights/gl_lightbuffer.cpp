@@ -57,7 +57,7 @@ FLightBuffer::FLightBuffer()
 	if (gl.flags & RFL_SHADER_STORAGE_BUFFER)
 	{
 		mBufferType = GL_SHADER_STORAGE_BUFFER;
-		mBlockAlign = -1;
+		mBlockAlign = 0;
 		mBlockSize = mBufferSize;
 	}
 	else
@@ -105,14 +105,15 @@ int FLightBuffer::UploadLights(FDynLightData &data)
 	int size2 = data.arrays[2].Size()/4;
 	int totalsize = size0 + size1 + size2 + 1;
 
-	if (mBlockAlign >= 0 && totalsize + (mIndex % mBlockAlign) > mBlockSize)
+	// pointless type casting because some compilers can't print enough warnings.
+	if (mBlockAlign > 0 && (unsigned int)totalsize + (mIndex % mBlockAlign) > mBlockSize)
 	{
 		mIndex = ((mIndex + mBlockAlign) / mBlockAlign) * mBlockAlign;
 
 		// can't be rendered all at once.
-		if (totalsize > mBlockSize)
+		if ((unsigned int)totalsize > mBlockSize)
 		{
-			int diff = totalsize - mBlockSize;
+			int diff = totalsize - (int)mBlockSize;
 
 			size2 -= diff;
 			if (size2 < 0)
@@ -131,7 +132,7 @@ int FLightBuffer::UploadLights(FDynLightData &data)
 
 	if (totalsize <= 1) return -1;
 
-	if (mIndex + totalsize > mBufferSize)
+	if (mIndex + totalsize > mBufferSize/4)
 	{
 		// reallocate the buffer with twice the size
 		unsigned int newbuffer;
@@ -191,7 +192,7 @@ void FLightBuffer::Begin()
 	if (!(gl.flags & RFL_BUFFER_STORAGE))
 	{
 		glBindBuffer(mBufferType, mBufferId);
-		mBufferPointer = (float*)glMapBufferRange(mBufferType, 0, mByteSize, GL_MAP_WRITE_BIT|GL_MAP_INVALIDATE_BUFFER_BIT);
+		mBufferPointer = (float*)glMapBufferRange(mBufferType, 0, mByteSize, GL_MAP_WRITE_BIT);
 	}
 }
 

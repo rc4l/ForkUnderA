@@ -2197,6 +2197,8 @@ void G_AirControlChanged ()
 //
 //==========================================================================
 
+void gl_SerializeGlobals(FArchive &arc);
+
 void G_SerializeLevel (FArchive &arc, bool hubLoad)
 {
 	int i = level.totaltime;
@@ -2211,6 +2213,7 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 	// [BB] The server doesn't have a Renderer.
 	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 		Renderer->StartSerialize(arc);
+	gl_SerializeGlobals(arc);
 
 	arc << level.flags
 		<< level.flags2

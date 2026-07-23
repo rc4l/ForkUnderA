@@ -75,6 +75,13 @@ vec4 getTexel(vec2 st)
 		case 4:	// TM_REDTOALPHA
 			texel = vec4(1.0, 1.0, 1.0, texel.r);
 			break;
+			
+		case 5:	// TM_CLAMPY
+			if (st.t < 0.0 || st.t > 1.0)
+			{
+				texel.a = 0.0;
+			}
+			break;
 	}
 	texel *= uObjectColor;
 
@@ -306,8 +313,7 @@ void main()
 		
 		case 2:
 		{
-			frag = frag * uFixedColormapStart;
-			frag.a *= vColor.a;
+			frag = vColor * frag * uFixedColormapStart;
 			break;
 		}
 

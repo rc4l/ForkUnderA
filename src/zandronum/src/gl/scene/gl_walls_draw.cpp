@@ -241,7 +241,11 @@ void GLWall::RenderFogBoundary()
 		gl_SetFog(lightlevel, rel, &Colormap, false);
 		gl_RenderState.SetEffect(EFF_FOGBOUNDARY);
 		gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
+		glEnable(GL_POLYGON_OFFSET_FILL);
+		glPolygonOffset(-1.0f, -128.0f);
 		RenderWall(RWF_BLANK);
+		glPolygonOffset(0.0f, 0.0f);
+		glDisable(GL_POLYGON_OFFSET_FILL);
 		gl_RenderState.SetEffect(EFF_NONE);
 	}
 }
@@ -337,10 +341,18 @@ void GLWall::RenderTranslucentWall()
 		gl_RenderState.EnableTexture(false);
 		extra = 0;
 	}
+	int tmode = gl_RenderState.GetTextureMode();
 
 	gl_SetColor(lightlevel, extra, Colormap, fabsf(alpha));
 	if (type!=RENDERWALL_M2SNF) gl_SetFog(lightlevel, extra, &Colormap, isadditive);
-	else gl_SetFog(255, 0, NULL, false);
+	else
+	{
+		if (flags & GLT_CLAMPY)
+		{
+			if (tmode == TM_MODULATE) gl_RenderState.SetTextureMode(TM_CLAMPY);
+		}
+		gl_SetFog(255, 0, NULL, false);
+	}
 
 	RenderWall(RWF_TEXTURED|RWF_NOSPLIT);
 
@@ -352,6 +364,7 @@ void GLWall::RenderTranslucentWall()
 		gl_RenderState.EnableTexture(true);
 	}
 	gl_RenderState.EnableGlow(false);
+	gl_RenderState.SetTextureMode(tmode);
 }
 
 //==========================================================================
@@ -362,6 +375,7 @@ void GLWall::RenderTranslucentWall()
 void GLWall::Draw(int pass)
 {
 	int rel;
+	int tmode;
 
 #ifdef _DEBUG
 	if (seg->linedef-lines==879)
@@ -370,12 +384,6 @@ void GLWall::Draw(int pass)
 	}
 #endif
 
-
-	if (type == RENDERWALL_COLORLAYER && pass != GLPASS_LIGHTSONLY)
-	{
-		glEnable(GL_POLYGON_OFFSET_FILL);
-		glPolygonOffset(-1.0f, -128.0f);
-	}
 
 	switch (pass)
 	{
@@ -389,16 +397,26 @@ void GLWall::Draw(int pass)
 	case GLPASS_PLAIN:
 		rel = rellight + getExtraLight();
 		gl_SetColor(lightlevel, rel, Colormap,1.0f);
+		tmode = gl_RenderState.GetTextureMode();
 		if (type!=RENDERWALL_M2SNF) gl_SetFog(lightlevel, rel, &Colormap, false);
-		else gl_SetFog(255, 0, NULL, false);
-
+		else
+		{
+			if (flags & GLT_CLAMPY)
+			{
+				if (tmode == TM_MODULATE) gl_RenderState.SetTextureMode(TM_CLAMPY);
+			}
+			gl_SetFog(255, 0, NULL, false);
+		}
 		gl_RenderState.EnableGlow(!!(flags & GLWF_GLOW));
 		gl_RenderState.SetMaterial(gltexture, flags & 3, false, -1, false);
 		RenderWall(RWF_TEXTURED|RWF_GLOW);
 		gl_RenderState.EnableGlow(false);
+		gl_RenderState.SetTextureMode(tmode);
 		break;
 
 	case GLPASS_TRANSLUCENT:
+
+
 		switch (type)
 		{
 		case RENDERWALL_MIRRORSURFACE:
@@ -409,15 +427,16 @@ void GLWall::Draw(int pass)
 			RenderFogBoundary();
 			break;
 
+		case RENDERWALL_COLORLAYER:
+			glEnable(GL_POLYGON_OFFSET_FILL);
+			glPolygonOffset(-1.0f, -128.0f);
+			RenderTranslucentWall();
+			glDisable(GL_POLYGON_OFFSET_FILL);
+			glPolygonOffset(0, 0);
+
 		default:
 			RenderTranslucentWall();
 			break;
 		}
-	}
-
-	if (type == RENDERWALL_COLORLAYER && pass != GLPASS_LIGHTSONLY)
-	{
-		glDisable(GL_POLYGON_OFFSET_FILL);
-		glPolygonOffset(0, 0);
 	}
 }

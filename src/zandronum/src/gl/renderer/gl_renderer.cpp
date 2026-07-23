@@ -99,6 +99,8 @@ FGLRenderer::FGLRenderer(OpenGLFrameBuffer *fb)
 	mLights = NULL;
 }
 
+void gl_LoadModels();
+
 void FGLRenderer::Initialize()
 {
 	glpart2 = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/glpart2.png"), FTexture::TEX_MiscPatch);
@@ -107,13 +109,13 @@ void FGLRenderer::Initialize()
 
 	mVBO = new FFlatVertexBuffer;
 	mSkyVBO = new FSkyVertexBuffer;
-	mModelVBO = new FModelVertexBuffer;
 	mLights = new FLightBuffer();
 	gl_RenderState.SetVertexBuffer(mVBO);
 	mFBID = 0;
 	SetupLevel();
 	mShaderManager = new FShaderManager;
 	mSamplerManager = new FSamplerManager;
+	gl_LoadModels();
 }
 
 FGLRenderer::~FGLRenderer() 
@@ -123,7 +125,6 @@ FGLRenderer::~FGLRenderer()
 	if (mShaderManager != NULL) delete mShaderManager;
 	if (mSamplerManager != NULL) delete mSamplerManager;
 	if (mVBO != NULL) delete mVBO;
-	if (mModelVBO) delete mModelVBO;
 	if (mSkyVBO != NULL) delete mSkyVBO;
 	if (mLights != NULL) delete mLights;
 	if (glpart2) delete glpart2;
@@ -586,7 +587,13 @@ void FGLRenderer::FillSimplePoly(FTexture *texture, FVector2 *points, int npoint
 	FColormap cm;
 	cm = colormap;
 
+	// We cannot use the software light mode here because it doesn't properly calculate the light for 2D rendering.
+	SBYTE savedlightmode = glset.lightmode;
+	if (glset.lightmode == 8) glset.lightmode = 0;
+
 	gl_SetColor(lightlevel, 0, cm, 1.f);
+
+	glset.lightmode = savedlightmode;
 
 	gl_RenderState.SetMaterial(gltexture, CLAMP_NONE, 0, -1, false);
 

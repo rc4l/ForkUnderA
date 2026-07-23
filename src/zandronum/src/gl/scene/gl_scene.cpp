@@ -398,7 +398,7 @@ void FGLRenderer::RenderScene(int recursion)
 		gl_drawinfo->drawlists[GLDL_MASKEDFLATS].DrawFlats(GLPASS_LIGHTSONLY);
 		gl_drawinfo->drawlists[GLDL_MASKEDWALLSOFS].DrawWalls(GLPASS_LIGHTSONLY);
 		gl_drawinfo->drawlists[GLDL_TRANSLUCENTBORDER].Draw(GLPASS_LIGHTSONLY);
-		gl_drawinfo->drawlists[GLDL_TRANSLUCENT].Draw(GLPASS_LIGHTSONLY);
+		gl_drawinfo->drawlists[GLDL_TRANSLUCENT].Draw(GLPASS_LIGHTSONLY, true);
 		GLRenderer->mLights->Finish();
 	}
 
@@ -980,6 +980,8 @@ void FGLRenderer::RenderView (player_t* player)
 
 	P_FindParticleSubsectors ();
 
+	GLRenderer->mLights->Clear();
+
 	// prepare all camera textures that have been used in the last frame
 	FCanvasTextureInfo::UpdateAll();
 
@@ -1031,6 +1033,7 @@ void FGLRenderer::WriteSavePic (player_t *player, FILE *file, int width, int hei
 	SetFixedColormap(player);
 	gl_RenderState.SetVertexBuffer(mVBO);
 	GLRenderer->mVBO->Reset();
+	GLRenderer->mLights->Clear();
 
 	// Check if there's some lights. If not some code can be skipped.
 	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
@@ -1138,6 +1141,10 @@ void FGLInterface::StateChanged(AActor *actor)
 void FGLInterface::StartSerialize(FArchive &arc)
 {
 	gl_DeleteAllAttachedLights();
+}
+
+void gl_SerializeGlobals(FArchive &arc)
+{
 	arc << fogdensity << outsidefogdensity << skyfog;
 }
 
