@@ -80,7 +80,8 @@ void GLWall::SkyPlane(sector_t *sector, int plane, bool allowreflect)
 	else if (sector->GetTexture(plane)==skyflatnum)
 	{
 		GLSkyInfo skyinfo;
-		ASkyViewpoint * skyboxx = sector->GetSkyBox(plane);
+		ASkyViewpoint * skyboxx = plane == sector_t::floor? sector->FloorSkyBox : sector->CeilingSkyBox;
+		if (skyboxx == NULL) skyboxx = level.DefaultSkybox;
 
 		// JUSTHIT is used as an indicator that a skybox is in use.
 		// This is to avoid recursion

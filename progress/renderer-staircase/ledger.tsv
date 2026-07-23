@@ -242,34 +242,34 @@ f273b6c46	2015-04-27	system	ported	a809457	- fix uninitialized variable.
 a59824cd8	2015-05-07	models	ported	a809457	- fixed: MD2 vertex indices were signed shorts but should be unsigned. - fixed a few warnings from Visual C++ 2015.
 065b7f9ad	2015-05-29	bugfix	ported	a809457	- fixed: The CollectSectorStack functions had a local sector_t variable used by gl_FakeFlat which caused a stack overflow. Using the global one defined at the top of the file is ok here.
 abf11f1a1	2015-07-13	texture	ported	a809457	- print an error message if GL_ARB_sampler_objects cannot be found.
-694dff67e	2015-10-26	other	pending	—	Copy stereo3d source files from my GLOOME fork.
-0874455fa	2015-10-30	portal	pending	—	Initial implementation of five 3D modes -- some bugs remain.
-b82d61193	2015-10-30	portal	pending	—	Call EndDrawScene for each eye. Actually use stereoscopic projection matrix.
-89328e685	2015-10-30	portal	pending	—	Use eye->TearDown method to restore glColorMask. Restore assert in i_system.cpp that was interfering with my debugging. Restore scoped colorMask-ing in gl_portal.cpp and gl_drawinfo.cpp.
-789dca2ab	2015-10-31	renderer	pending	—	Refactor stereo 3d projection matrix calculations to use VSMatrix.
-382d2cf74	2015-10-31	other	pending	—	Simplify ShiftedEyePose::GetProjection() maths.
-16cb4407a	2015-11-03	dynlights	pending	—	- disabled 'isVisibleToPlayerClass' check for dynamic lights affecting sprites.
-151b47c3a	2015-11-03	other	pending	—	Merge branch 'master' of https://github.com/coelckers/gzdoom into merge_down
-ad6ce5a72	2015-11-09	lighting	pending	—	- added a NULL check to gl_enhanced_nightvision's handler so that it won't crash without an uninitialized GL renderer.
-bcac35226	2015-11-09	other	pending	—	Merge branch 'master' of https://github.com/coelckers/gzdoom into stereo3d
-b00b49c11	2015-11-25	sky	pending	—	- fixed skybox picking in GL renderer.
-f9cbaef1d	2015-11-30	sky	pending	—	- fixed: Boom's Transfer_Heights did not work for upper parts in sectors with a sky ceiling.
-10088544c	2015-12-09	other	pending	—	Merge branch 'master' of https://github.com/coelckers/gzdoom into stereo3d
-841ddb0d6	2015-12-10	other	pending	—	<stdlib.h> has replaced <malloc.h> on FreeBSD as well
-37ea94abf	2015-12-11	dynlights	pending	—	- fixed: translucent walls did not set up their dynamic lights in the GL4 render path.
-17569139b	2015-12-11	other	pending	—	Merge branch 'master' of https://github.com/coelckers/gzdoom
-c8810db5f	2015-12-24	bugfix	pending	—	- fixed: clipping swimmable against non-swimmable translucent 3D-floors was broken due to an incorrect flag check.
-19ae244f6	2015-12-25	texture	pending	—	- fixed: allow to use all hqNx texture upscale modes
-69813993b	2015-12-25	menu	pending	—	- added missing hqNx modes to options menu
-1c5d0ccd6	2015-12-25	menu	pending	—	- enabled hqNx MMX on all platforms with Intel intrinsics support
-f8c38a0bb	2015-12-25	build	pending	—	- fixed GCC's 'unknown pragma' warnings in hqNx MMX implementation
-8e237e614	2015-12-30	other	pending	—	Merge branch 'master' of https://github.com/coelckers/gzdoom into stereo3d
-655defed2	2015-12-30	build	pending	—	Avoid compile errors on Linux. Fixes #107.
-5b7f9b04c	2015-12-31	other	pending	—	Add license headers to stereo3d source files.
-95f413463	2015-12-31	renderer	pending	—	Refactor stereo3d classes to use TArray instead of std::vector.
-ac6e2f497	2015-12-31	renderer	pending	—	Use gl_RenderState to manipulate OpenGL color mask for anaglyph modes, to avoid glGet...
-f2c890272	2016-01-01	renderer	pending	—	- FRenderState::Apply does not need to call ApplyColorMask.
-cc10fe9bc	2016-01-04	texture	pending	—	- fixed: The stereo3D code accessed the global 'viewsector' variable at a place where it no longer contained a correct value. - fixed: The same code did not exclude camera texture views from drawing the 2D overlay.
+694dff67e	2015-10-26	other	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+0874455fa	2015-10-30	portal	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+b82d61193	2015-10-30	portal	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+89328e685	2015-10-30	portal	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+789dca2ab	2015-10-31	renderer	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+382d2cf74	2015-10-31	other	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+16cb4407a	2015-11-03	dynlights	ported	edc9eb4	- disabled 'isVisibleToPlayerClass' check for dynamic lights affecting sprites.
+151b47c3a	2015-11-03	other	skipped	—	Upstream branch merge (no content of its own); GL touch is the merge itself.
+ad6ce5a72	2015-11-09	lighting	ported	edc9eb4	- added a NULL check to gl_enhanced_nightvision's handler so that it won't crash without an uninitialized GL renderer.
+bcac35226	2015-11-09	other	skipped	—	Upstream branch merge (no content of its own); GL touch is the merge itself.
+b00b49c11	2015-11-25	sky	ported	edc9eb4	- fixed skybox picking in GL renderer.
+f9cbaef1d	2015-11-30	sky	ported	edc9eb4	- fixed: Boom's Transfer_Heights did not work for upper parts in sectors with a sky ceiling.
+10088544c	2015-12-09	other	skipped	—	Upstream branch merge (no content of its own); GL touch is the merge itself.
+841ddb0d6	2015-12-10	other	skipped	—	FreeBSD malloc.h->stdlib.h; irrelevant to our macOS/Windows/Linux targets.
+37ea94abf	2015-12-11	dynlights	ported	edc9eb4	- fixed: translucent walls did not set up their dynamic lights in the GL4 render path.
+17569139b	2015-12-11	other	skipped	—	Upstream branch merge (no content of its own); GL touch is the merge itself.
+c8810db5f	2015-12-24	bugfix	ported	edc9eb4	- fixed: clipping swimmable against non-swimmable translucent 3D-floors was broken due to an incorrect flag check.
+19ae244f6	2015-12-25	texture	ported	edc9eb4	- fixed: allow to use all hqNx texture upscale modes
+69813993b	2015-12-25	menu	ported	edc9eb4	- added missing hqNx modes to options menu
+1c5d0ccd6	2015-12-25	menu	deferred	—	hqNx MMX on all Intel platforms; x86-only SIMD, arm64 needs a NEON twin -- see #40.
+f8c38a0bb	2015-12-25	build	deferred	—	hqNx MMX GCC pragma warnings; rides with the deferred x86 MMX path -- see #40.
+8e237e614	2015-12-30	other	skipped	—	Upstream branch merge (no content of its own); GL touch is the merge itself.
+655defed2	2015-12-30	build	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+5b7f9b04c	2015-12-31	other	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+95f413463	2015-12-31	renderer	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+ac6e2f497	2015-12-31	renderer	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+f2c890272	2016-01-01	renderer	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+cc10fe9bc	2016-01-04	texture	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
 7d2bbbd35	2016-01-05	bugfix	pending	—	- fixed rendering of two-sided polyobjects that have their upper or lower textures exposed.
 926e9fdac	2016-01-07	bugfix	pending	—	- fixed: For 2D-drawing of camera textures the render style was not set.
 ef7bcb3a6	2016-01-11	sky	pending	—	- implement Eternity-Style flat and horizon portals. Not tested yet due to lack of material to work with.

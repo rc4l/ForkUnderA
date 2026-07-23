@@ -1273,7 +1273,7 @@ void GLWall::ClipFFloors(seg_t * seg, F3DFloor * ffloor, sector_t * frontsector,
 		F3DFloor * rover=frontffloors[i];
 		if (!(rover->flags&FF_EXISTS)) continue;
 		if (!(rover->flags&FF_RENDERSIDES)) continue;
-		if ((rover->flags&flags)!=flags) continue;
+		if ((rover->flags&(FF_SWIMMABLE|FF_TRANSLUCENT))!=flags) continue;
 
 		fixed_t ff_topleft;
 		fixed_t ff_topright;
@@ -1432,7 +1432,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 	sector_t * realback;
 
 #ifdef _DEBUG
-	if (seg->linedef-lines==4)
+	if (seg->linedef-lines==5835)
 	{
 		int a = 0;
 	}
