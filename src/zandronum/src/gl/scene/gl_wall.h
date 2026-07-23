@@ -104,6 +104,16 @@ public:
 		GLWF_NOSPLITLOWER=128,
 	};
 
+	enum
+	{
+		RWF_BLANK = 0,
+		RWF_TEXTURED = 1,	// actually not being used anymore because with buffers it's even less efficient not writing the texture coordinates - but leave it here
+		RWF_GLOW = 2,
+		RWF_NOSPLIT = 4,
+		RWF_NORENDER = 8,
+	};
+
+
 	friend struct GLDrawList;
 	friend class GLPortal;
 
@@ -158,8 +168,7 @@ private:
 
 	void SetupLights();
 	bool PrepareLight(texcoord * tcs, ADynamicLight * light);
-	void RenderWall(int textured, float * color2, ADynamicLight * light=NULL);
-	void GetPrimitive(unsigned int *store);
+	void RenderWall(int textured, ADynamicLight * light=NULL, unsigned int *store = NULL);
 
 	void FloodPlane(int pass);
 
@@ -210,11 +219,6 @@ private:
 	void RenderFogBoundary();
 	void RenderMirrorSurface();
 	void RenderTranslucentWall();
-
-	void SplitLeftEdge(texcoord * tcs);
-	void SplitRightEdge(texcoord * tcs);
-	void SplitUpperEdge(texcoord * tcs);
-	void SplitLowerEdge(texcoord * tcs);
 
 	void SplitLeftEdge(texcoord * tcs, FFlatVertex *&ptr);
 	void SplitRightEdge(texcoord * tcs, FFlatVertex *&ptr);

@@ -218,6 +218,7 @@ void GLWall::SetupLights()
 	}
 }
 
+
 //==========================================================================
 //
 // General purpose wall rendering function
@@ -225,10 +226,10 @@ void GLWall::SetupLights()
 //
 //==========================================================================
 
-void GLWall::RenderWall(int textured, float * color2, ADynamicLight * light)
+void GLWall::RenderWall(int textured, ADynamicLight * light, unsigned int *store)
 {
 	texcoord tcs[4];
-	bool split = (gl_seamless && !(textured&4) && seg->sidedef != NULL && !(seg->sidedef->Flags & WALLF_POLYOBJ));
+	bool split = (gl_seamless && !(textured&RWF_NOSPLIT) && seg->sidedef != NULL && !(seg->sidedef->Flags & WALLF_POLYOBJ));
 
 	if (!light)
 	{
@@ -236,7 +237,7 @@ void GLWall::RenderWall(int textured, float * color2, ADynamicLight * light)
 		tcs[1]=uplft;
 		tcs[2]=uprgt;
 		tcs[3]=lorgt;
-		if (!!(flags&GLWF_GLOW) && (textured & 2))
+		if ((flags&GLWF_GLOW) && (textured & RWF_GLOW))
 		{
 			gl_RenderState.SetGlowPlanes(topplane, bottomplane);
 			gl_RenderState.SetGlowParams(topglowcolor, bottomglowcolor);
@@ -249,98 +250,39 @@ void GLWall::RenderWall(int textured, float * color2, ADynamicLight * light)
 	}
 
 
-	gl_RenderState.Apply();
+	if (!(textured & RWF_NORENDER))
+	{
+		gl_RenderState.Apply();
+	}
 
 	// the rest of the code is identical for textured rendering and lights
-
-
-	if (!gl_usevbo)
-	{
-		glBegin(GL_TRIANGLE_FAN);
-
-		// lower left corner
-		if (textured & 1) glTexCoord2f(tcs[0].u, tcs[0].v);
-		glVertex3f(glseg.x1, zbottom[0], glseg.y1);
-
-		if (split && glseg.fracleft == 0) SplitLeftEdge(tcs);
-
-		// upper left corner
-		if (textured & 1) glTexCoord2f(tcs[1].u, tcs[1].v);
-		glVertex3f(glseg.x1, ztop[0], glseg.y1);
-
-		if (split && !(flags & GLWF_NOSPLITUPPER)) SplitUpperEdge(tcs);
-
-		// color for right side (do not set in render state!)
-		if (color2) glColor4fv(color2);
-
-		// upper right corner
-		if (textured & 1) glTexCoord2f(tcs[2].u, tcs[2].v);
-		glVertex3f(glseg.x2, ztop[1], glseg.y2);
-
-		if (split && glseg.fracright == 1) SplitRightEdge(tcs);
-
-		// lower right corner
-		if (textured & 1) glTexCoord2f(tcs[3].u, tcs[3].v);
-		glVertex3f(glseg.x2, zbottom[1], glseg.y2);
-
-		if (split && !(flags & GLWF_NOSPLITLOWER)) SplitLowerEdge(tcs);
-
-		glEnd();
-
-		vertexcount += 4;
-	}
-	else
-	{
-		FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
-
-		ptr->Set(glseg.x1, zbottom[0], glseg.y1, tcs[0].u, tcs[0].v);
-		ptr++;
-		if (split && glseg.fracleft == 0) SplitLeftEdge(tcs, ptr);
-		ptr->Set(glseg.x1, ztop[0], glseg.y1, tcs[1].u, tcs[1].v);
-		ptr++;
-		if (split && !(flags & GLWF_NOSPLITUPPER)) SplitUpperEdge(tcs, ptr);
-		ptr->Set(glseg.x2, ztop[1], glseg.y2, tcs[2].u, tcs[2].v);
-		ptr++;
-		if (split && glseg.fracright == 1) SplitRightEdge(tcs, ptr);
-		ptr->Set(glseg.x2, zbottom[1], glseg.y2, tcs[3].u, tcs[3].v);
-		ptr++;
-		if (split && !(flags & GLWF_NOSPLITLOWER)) SplitLowerEdge(tcs, ptr);
-		GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_FAN);
-		vertexcount += 4;
-	}
-
-
-}
-
-//==========================================================================
-//
-// Gets the vertex data for rendering a stencil which needs to be
-// repeated several times
-//
-//==========================================================================
-
-void GLWall::GetPrimitive(unsigned int *store)
-{
-	static texcoord tcs[4] = { 0, 0, 0, 0 };
-	bool split = (gl_seamless && seg->sidedef != NULL && !(seg->sidedef->Flags & WALLF_POLYOBJ));
-
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
+	unsigned int count, offset;
 
-	ptr->Set(glseg.x1, zbottom[0], glseg.y1, 0, 0);
+	ptr->Set(glseg.x1, zbottom[0], glseg.y1, tcs[0].u, tcs[0].v);
 	ptr++;
 	if (split && glseg.fracleft == 0) SplitLeftEdge(tcs, ptr);
-	ptr->Set(glseg.x1, ztop[0], glseg.y1, 0, 0);
+	ptr->Set(glseg.x1, ztop[0], glseg.y1, tcs[1].u, tcs[1].v);
 	ptr++;
 	if (split && !(flags & GLWF_NOSPLITUPPER)) SplitUpperEdge(tcs, ptr);
-	ptr->Set(glseg.x2, ztop[1], glseg.y2, 0, 0);
+	ptr->Set(glseg.x2, ztop[1], glseg.y2, tcs[2].u, tcs[2].v);
 	ptr++;
 	if (split && glseg.fracright == 1) SplitRightEdge(tcs, ptr);
-	ptr->Set(glseg.x2, zbottom[1], glseg.y2, 0, 0);
+	ptr->Set(glseg.x2, zbottom[1], glseg.y2, tcs[3].u, tcs[3].v);
 	ptr++;
 	if (split && !(flags & GLWF_NOSPLITLOWER)) SplitLowerEdge(tcs, ptr);
-	store[1] = GLRenderer->mVBO->GetCount(ptr, &store[0]);
-	vertexcount += 4;
- }
+	count = GLRenderer->mVBO->GetCount(ptr, &offset);
+	if (!(textured & RWF_NORENDER))
+	{
+		GLRenderer->mVBO->RenderArray(GL_TRIANGLE_FAN, offset, count);
+		vertexcount += count;
+	}
+	if (store != NULL)
+	{
+		store[0] = offset;
+		store[1] = count;
+	}
+}
 
 //==========================================================================
 //
@@ -362,13 +304,14 @@ void GLWall::RenderFogBoundary()
 			gl_SetFog(lightlevel, rel, &Colormap, false);
 			gl_RenderState.SetEffect(EFF_FOGBOUNDARY);
 			gl_RenderState.EnableAlphaTest(false);
-			RenderWall(0, NULL);
+			RenderWall(RWF_BLANK);
 			gl_RenderState.EnableAlphaTest(true);
 			gl_RenderState.SetEffect(EFF_NONE);
 		}
 		else
 		{
-			// otherwise some approximation is needed. This won't look as good
+			// If we use the fixed function pipeline (GL 2.x)
+			// some approximation is needed. This won't look as good
 			// as the shader version but it's an acceptable compromise.
 			float fogdensity=gl_GetFogDensity(lightlevel, Colormap.FadeColor);
 
@@ -391,8 +334,17 @@ void GLWall::RenderFogBoundary()
 			glDepthFunc(GL_LEQUAL);
 			gl_RenderState.SetColor(fc[0], fc[1], fc[2], fogd1);
 
-			flags &= ~GLWF_GLOW;
-			RenderWall(4,fc);
+			// this case is special because it needs to change the color in the middle of the polygon so it cannot use the standard function
+			// This also needs no splits so it's relatively simple.
+			gl_RenderState.Apply();
+			glBegin(GL_TRIANGLE_FAN);
+			glVertex3f(glseg.x1, zbottom[0], glseg.y1);
+			glVertex3f(glseg.x1, ztop[0], glseg.y1);
+			glColor4fv(fc);
+			glVertex3f(glseg.x2, ztop[1], glseg.y2);
+			glVertex3f(glseg.x2, zbottom[1], glseg.y2);
+			glEnd();
+			vertexcount += 4;
 
 			glDepthFunc(GL_LESS);
 			gl_RenderState.EnableFog(true);
@@ -430,8 +382,7 @@ void GLWall::RenderMirrorSurface()
 	pat->BindPatch(0);
 
 	flags &= ~GLWF_GLOW;
-	//flags |= GLWF_NOSHADER;
-	RenderWall(0,NULL);
+	RenderWall(RWF_BLANK);
 
 	gl_RenderState.SetEffect(EFF_NONE);
 
@@ -492,7 +443,7 @@ void GLWall::RenderTranslucentWall()
 	if (type!=RENDERWALL_M2SNF) gl_SetFog(lightlevel, extra, &Colormap, isadditive);
 	else gl_SetFog(255, 0, NULL, false);
 
-	RenderWall(5,NULL);
+	RenderWall(RWF_TEXTURED|RWF_NOSPLIT);
 
 	// restore default settings
 	if (isadditive) gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -546,7 +497,7 @@ void GLWall::Draw(int pass)
 
 		gl_RenderState.EnableGlow(!!(flags & GLWF_GLOW));
 		gltexture->Bind(flags, 0);
-		RenderWall(3, NULL);
+		RenderWall(RWF_TEXTURED|RWF_GLOW);
 		gl_RenderState.EnableGlow(false);
 		gl_RenderState.EnableLight(false);
 		break;
@@ -567,14 +518,14 @@ void GLWall::Draw(int pass)
 		{
 			gltexture->Bind(flags, 0);
 		}
-		RenderWall(pass == GLPASS_BASE? 2:3, NULL);
+		RenderWall(RWF_TEXTURED|RWF_GLOW);
 		gl_RenderState.EnableGlow(false);
 		gl_RenderState.EnableLight(false);
 		break;
 
 	case GLPASS_TEXTURE:		// modulated texture
 		gltexture->Bind(flags, 0);
-		RenderWall(1, NULL);
+		RenderWall(RWF_TEXTURED);
 		break;
 
 	case GLPASS_LIGHT:
@@ -603,7 +554,7 @@ void GLWall::Draw(int pass)
 			if (!(node->lightsource->flags2&MF2_DORMANT))
 			{
 				iter_dlight++;
-				RenderWall(1, NULL, node->lightsource);
+				RenderWall(RWF_TEXTURED, node->lightsource);
 			}
 			node = node->nextLight;
 		}
