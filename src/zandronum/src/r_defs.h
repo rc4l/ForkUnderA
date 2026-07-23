@@ -460,6 +460,8 @@ struct extsector_t
 		TArray<lightlist_t>				lightlist;		// 3D light list
 		TArray<sector_t*>				attached;		// 3D floors attached to this sector
 	} XFloor;
+
+	TArray<vertex_t *> vertices;
 	
 	void Serialize(FArchive &arc);
 };
@@ -661,14 +663,28 @@ struct sector_t
 		return planes[pos].TexZ;
 	}
 
+	void SetVerticesDirty()
+	{
+		for (unsigned i = 0; i < e->vertices.Size(); i++) e->vertices[i]->dirty = true;
+	}
+
+	void SetAllVerticesDirty()
+	{
+		SetVerticesDirty();
+		for (unsigned i = 0; i < e->FakeFloor.Sectors.Size(); i++) e->FakeFloor.Sectors[i]->SetVerticesDirty();
+		for (unsigned i = 0; i < e->XFloor.attached.Size(); i++) e->XFloor.attached[i]->SetVerticesDirty();
+	}
+
 	void SetPlaneTexZ(int pos, fixed_t val)
 	{
 		planes[pos].TexZ = val;
+		SetAllVerticesDirty();
 	}
 
 	void ChangePlaneTexZ(int pos, fixed_t val)
 	{
 		planes[pos].TexZ += val;
+		SetAllVerticesDirty();
 	}
 
 	static inline short ClampLight(int level)
@@ -791,14 +807,12 @@ struct sector_t
 	// GL only stuff starts here
 	float						reflect[2];
 
-	int							dirtyframe[3];		// last frame this sector was marked dirty
-	bool						dirty;				// marked for recalculation
 	bool						transdoor;			// For transparent door hacks
 	fixed_t						transdoorheight;	// for transparent door hacks
 	int							subsectorcount;		// list of subsectors
 	subsector_t **				subsectors;
 	FPortal *					portals[2];			// floor and ceiling portals
-	FLightNode *				lighthead[2];
+	FLightNode *			lighthead;
 
 	enum
 	{
@@ -1032,7 +1046,7 @@ struct side_t
 	vertex_t *V2() const;
 
 	//For GL
-	FLightNode * lighthead[2];				// all blended lights that may affect this wall
+	FLightNode * lighthead;				// all blended lights that may affect this wall
 
 	seg_t **segs;	// all segs belonging to this sidedef in ascending order. Used for precise rendering
 	int numsegs;
@@ -1180,7 +1194,7 @@ struct subsector_t
 
 	void BuildPolyBSP();
 	// subsector related GL data
-	FLightNode *	lighthead[2];	// Light nodes (blended and additive)
+	FLightNode *			lighthead;	// Light nodes (blended and additive)
 	int				validcount;
 	short			mapsection;
 	char			hacked;			// 1: is part of a render hack
@@ -1190,7 +1204,7 @@ struct subsector_t
 	// [BL] Constructor to init GZDoom data
 	subsector_t() : render_sector(NULL), hacked(0)
 	{
-		lighthead[0] = lighthead[1] = NULL;
+		lighthead = NULL;
 	}
 };
 

@@ -1,10 +1,11 @@
 // This file contains common data definitions for both vertex and fragment shader
 
 uniform vec4 uCameraPos;
+uniform int uTextureMode;
 uniform float uClipHeightTop, uClipHeightBottom;
 
-uniform int uTextureMode;
 uniform float uAlphaThreshold;
+
 
 // colors
 uniform vec4 uObjectColor;
@@ -33,7 +34,7 @@ uniform vec4 uLightAttr;
 uniform int uFogEnabled;
 
 // dynamic lights
-uniform ivec4 uLightRange;
+uniform int uLightIndex;
 
 // matrices
 uniform mat4 ProjectionMatrix;

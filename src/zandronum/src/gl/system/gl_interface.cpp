@@ -59,6 +59,7 @@ char myGlBeginCharArray[4] = {0,0,0,0};
 #define wglGetProcAddress(x) (*SDL_GL_GetProcAddress)(x)
 #endif
 
+CVAR(Bool, gl_persistent_avail, false, CVAR_NOSET);
 
 static TArray<FString>  m_Extensions;
 
@@ -154,7 +155,7 @@ void gl_LoadExtensions()
 
 
 	// [rc4l] upstream 2925c96b5: GL 3.0 is the floor now that all GL 2.x code is gone.
-	if (strcmp(version, "3.0") < 0)
+	if (strcmp(version, "3.0") < 0) 
 	{
 		I_FatalError("Unsupported OpenGL version.\nAt least GL 3.0 is required to run " GAMENAME ".\n");
 	}
@@ -163,6 +164,7 @@ void gl_LoadExtensions()
 	gl.version = (float)strtod(version, NULL) + 0.01f;
 	gl.glslversion = (float)strtod((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), NULL) + 0.01f;
 	gl.vendorstring=(char*)glGetString(GL_VENDOR);
+	if (!strstr(gl.vendorstring, "NVIDIA Corporation")) gl.flags |= RFL_NOBUFFER;
 	// [rc4l] Always 4 on the 3.0 floor; kept for the [BB] map_lightmode gates.
 	gl.shadermodel = 4;
 
@@ -170,7 +172,9 @@ void gl_LoadExtensions()
 	if (CheckExtension("GL_EXT_texture_compression_s3tc")) gl.flags|=RFL_TEXTURE_COMPRESSION_S3TC;
 	// [rc4l] upstream 0ce6b4067: ARB_buffer_storage requires GL 4.0 per spec, so
 	// don't use it when emulating something lower via -glversion.
-	if (CheckExtension("GL_ARB_buffer_storage")) gl.flags|=RFL_BUFFER_STORAGE;
+	if (CheckExtension("GL_ARB_buffer_storage") && !Args->CheckParm("-nopersistentbuffers")) gl.flags|=RFL_BUFFER_STORAGE;
+	if (CheckExtension("GL_ARB_separate_shader_objects")) gl.flags |= RFL_SEPARATE_SHADER_OBJECTS;
+	if (!CheckExtension("GL_ARB_compatibility")) gl.flags |= RFL_COREPROFILE;
 	if (CheckExtension("GL_ARB_shader_storage_buffer_object")) gl.flags|=RFL_SHADER_STORAGE_BUFFER;
 	// [rc4l] Guaranteed on every GL 3.x context; kept for [BB] call sites.
 	gl.flags |= RFL_NPOT_TEXTURE | RFL_OCCLUSION_QUERY;
@@ -202,12 +206,20 @@ void gl_PrintStartupLog()
 	if (gl.shadermodel == 4) gl.maxuniforms = v;
 	glGetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, &v);
 	Printf ("Max. vertex uniforms: %d\n", v);
+	glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &v);
+	Printf ("Max. uniform block size: %d\n", v);
+	gl.maxuniformblock = v;
+	glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &v);
+	Printf ("Uniform block alignment: %d\n", v);
+	gl.uniformblockalignment = v;
+
 	glGetIntegerv(GL_MAX_VARYING_FLOATS, &v);
 	Printf ("Max. varying: %d\n", v);
 	glGetIntegerv(GL_MAX_COMBINED_SHADER_STORAGE_BLOCKS, &v);
 	Printf("Max. combined shader storage blocks: %d\n", v);
 	glGetIntegerv(GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS, &v);
 	Printf("Max. vertex shader storage blocks: %d\n", v);
+
 
 }
 

@@ -57,6 +57,7 @@
 #include "gl/system/gl_cvars.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
+#include "gl/dynlights/gl_lightbuffer.h"
 
 //==========================================================================
 //
@@ -87,15 +88,34 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 // The following code uses GetChars on the strings to get rid of terminating 0 characters. Do not remove or the code may break!
 //
 
-	FString vp_comb = "#version 130\n";
-	if (gl.glslversion >= 3.3f) vp_comb = "#version 330 core\n";	// I can't shut up the deprecation warnings in GLSL 1.3 so if available use a version with compatibility profile.
+	unsigned int lightbuffertype = GLRenderer->mLights->GetBufferType();
+	unsigned int lightbuffersize = GLRenderer->mLights->GetBlockSize();
+
+	FString vp_comb;
+
+	if (lightbuffertype == GL_UNIFORM_BUFFER)
+	{
+		// [rc4l] macOS core profiles reject '#version 130'; UBOs are core since GL 3.1,
+		// so the core path needs neither the low version nor the extension pragma.
+		// The 130+extension form is upstream's, for the reactivated compat contexts.
+		if (gl.glslversion >= 3.3f)
+		{
+			vp_comb.Format("#version 330 core\n#define NUM_UBO_LIGHTS %d\n", lightbuffersize);
+		}
+		else
+		{
+			vp_comb.Format("#version 130\n#extension GL_ARB_uniform_buffer_object : require\n#define NUM_UBO_LIGHTS %d\n", lightbuffersize);
+		}
+	}
+	else
+	{
+		vp_comb = "#version 400 compatibility\n#extension GL_ARB_shader_storage_buffer_object : require\n#define SHADER_STORAGE_LIGHTS\n";
+	}
 
 	// [rc4l] Apple's GLSL compiler is strict: texture2D() does not exist in core
 	// profiles. Upstream got away with it on NVIDIA's lenient compiler and only
 	// converted the calls later; the alias is their eventual fix, applied early.
 	vp_comb << "#define texture2D texture\n";
-	// todo when using shader storage buffers, add
-	// "#version 400 compatibility\n#extension GL_ARB_shader_storage_buffer_object : require\n" instead.
 
 	if (!(gl.flags & RFL_BUFFER_STORAGE))
 	{
@@ -202,7 +222,7 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	muLightParms.Init(hShader, "uLightAttr");
 	muColormapStart.Init(hShader, "uFixedColormapStart");
 	muColormapRange.Init(hShader, "uFixedColormapRange");
-	muLightRange.Init(hShader, "uLightRange");
+	muLightIndex.Init(hShader, "uLightIndex");
 	muFogColor.Init(hShader, "uFogColor");
 	muDynLightColor.Init(hShader, "uDynLightColor");
 	muObjectColor.Init(hShader, "uObjectColor");
@@ -215,8 +235,8 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	muClipHeightTop.Init(hShader, "uClipHeightTop");
 	muClipHeightBottom.Init(hShader, "uClipHeightBottom");
 	muAlphaThreshold.Init(hShader, "uAlphaThreshold");
+	muTimer.Init(hShader, "timer");
 
-	timer_index = glGetUniformLocation(hShader, "timer");
 	lights_index = glGetUniformLocation(hShader, "lights");
 	fakevb_index = glGetUniformLocation(hShader, "fakeVB");
 	projectionmatrix_index = glGetUniformLocation(hShader, "ProjectionMatrix");
@@ -224,10 +244,13 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	modelmatrix_index = glGetUniformLocation(hShader, "ModelMatrix");
 	texturematrix_index = glGetUniformLocation(hShader, "TextureMatrix");
 
+	int tempindex = glGetUniformBlockIndex(hShader, "LightBufferUBO");
+	if (tempindex != -1) glUniformBlockBinding(hShader, tempindex, LIGHTBUF_BINDINGPOINT);
+
 	glUseProgram(hShader);
 
-	int texture_index = glGetUniformLocation(hShader, "texture2");
-	if (texture_index > 0) glUniform1i(texture_index, 1);
+	tempindex = glGetUniformLocation(hShader, "texture2");
+	if (tempindex > 0) glUniform1i(tempindex, 1);
 
 	glUseProgram(0);
 	return !!linked;
@@ -270,7 +293,7 @@ FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath
 	FString defines;
 	// this can't be in the shader code due to ATI strangeness.
 	if (gl.MaxLights() == 128) defines += "#define MAXLIGHTS128\n";
-	if (!usediscard) defines += "#define NO_DISCARD\n";
+	if (!usediscard) defines += "#define NO_ALPHATEST\n";
 
 	FShader *shader = NULL;
 	try
@@ -298,8 +321,18 @@ FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath
 
 void FShader::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
 {
-	glProgramUniformMatrix4fv(hShader, projectionmatrix_index, 1, false, proj->get());
-	glProgramUniformMatrix4fv(hShader, viewmatrix_index, 1, false, view->get());
+
+	if (gl.flags & RFL_SEPARATE_SHADER_OBJECTS)
+	{
+		glProgramUniformMatrix4fv(hShader, projectionmatrix_index, 1, false, proj->get());
+		glProgramUniformMatrix4fv(hShader, viewmatrix_index, 1, false, view->get());
+	}
+	else
+	{
+		Bind();
+		glUniformMatrix4fv(projectionmatrix_index, 1, false, proj->get());
+		glUniformMatrix4fv(viewmatrix_index, 1, false, view->get());
+	}
 }
 
 
@@ -346,10 +379,10 @@ struct FEffectShader
 
 static const FEffectShader effectshaders[]=
 {
-	{ "fogboundary", "shaders/glsl/main.vp", "shaders/glsl/fogboundary.fp", NULL, "" },
-	{ "spheremap", "shaders/glsl/main.vp", "shaders/glsl/main.fp", "shaders/glsl/func_normal.fp", "#define SPHEREMAP\n" },
-	{ "burn", "shaders/glsl/main.vp", "shaders/glsl/burn.fp", NULL, "#define SIMPLE\n" },
-	{ "stencil", "shaders/glsl/main.vp", "shaders/glsl/stencil.fp", NULL, "#define SIMPLE\n" },
+	{ "fogboundary", "shaders/glsl/main.vp", "shaders/glsl/fogboundary.fp", NULL, "#define NO_ALPHATEST\n" },
+	{ "spheremap", "shaders/glsl/main.vp", "shaders/glsl/main.fp", "shaders/glsl/func_normal.fp", "#define SPHEREMAP\n#define NO_ALPHATEST\n" },
+	{ "burn", "shaders/glsl/main.vp", "shaders/glsl/burn.fp", NULL, "#define SIMPLE\n#define NO_ALPHATEST\n" },
+	{ "stencil", "shaders/glsl/main.vp", "shaders/glsl/stencil.fp", NULL, "#define SIMPLE\n#define NO_ALPHATEST\n" },
 };
 
 
@@ -475,25 +508,6 @@ void FShaderManager::SetActiveShader(FShader *sh)
 	}
 }
 
-
-//==========================================================================
-//
-// To avoid maintenance this will be set when a warped texture is bound
-// because at that point the draw buffer needs to be flushed anyway.
-//
-//==========================================================================
-
-void FShaderManager::SetWarpSpeed(unsigned int eff, float speed)
-{
-	// indices 0-2 match the warping modes, 3 is brightmap, 4 no texture, the following are custom
-	if (eff < mTextureEffects.Size())
-	{
-		FShader *sh = mTextureEffects[eff];
-
-		float warpphase = gl_frameMS * speed / 1000.f;
-		glProgramUniform1f(sh->GetHandle(), sh->timer_index, warpphase);
-	}
-}
 
 //==========================================================================
 //

@@ -67,6 +67,7 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/models/gl_models.h"
+#include "gl/dynlights/gl_lightbuffer.h"
 
 //===========================================================================
 // 
@@ -96,7 +97,8 @@ FGLRenderer::FGLRenderer(OpenGLFrameBuffer *fb)
 	mSkyVBO = NULL;
 	gl_spriteindex = 0;
 	mShaderManager = NULL;
-	glpart2 = glpart = gllight = mirrortexture = NULL;
+	glpart2 = glpart = mirrortexture = NULL;
+	mLights = NULL;
 }
 
 void FGLRenderer::Initialize()
@@ -104,11 +106,11 @@ void FGLRenderer::Initialize()
 	glpart2 = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/glpart2.png"), FTexture::TEX_MiscPatch);
 	glpart = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/glpart.png"), FTexture::TEX_MiscPatch);
 	mirrortexture = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/mirror.png"), FTexture::TEX_MiscPatch);
-	gllight = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/gllight.png"), FTexture::TEX_MiscPatch);
 
 	mVBO = new FFlatVertexBuffer;
 	mSkyVBO = new FSkyVertexBuffer;
 	mModelVBO = new FModelVertexBuffer;
+	mLights = new FLightBuffer;
 	gl_RenderState.SetVertexBuffer(mVBO);
 	mFBID = 0;
 	SetupLevel();
@@ -125,10 +127,10 @@ FGLRenderer::~FGLRenderer()
 	if (mVBO != NULL) delete mVBO;
 	if (mModelVBO) delete mModelVBO;
 	if (mSkyVBO != NULL) delete mSkyVBO;
+	if (mLights != NULL) delete mLights;
 	if (glpart2) delete glpart2;
 	if (glpart) delete glpart;
 	if (mirrortexture) delete mirrortexture;
-	if (gllight) delete gllight;
 	if (mFBID != 0) glDeleteFramebuffers(1, &mFBID);
 }
 

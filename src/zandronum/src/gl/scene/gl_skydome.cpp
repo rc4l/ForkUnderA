@@ -332,6 +332,7 @@ static void RenderBox(FTextureID texno, FMaterial * gltex, float x_offset, bool 
 	FMaterial * tex;
 
 	gl_RenderState.EnableModelMatrix(true);
+	gl_RenderState.mModelMatrix.loadIdentity();
 
 	if (!sky2)
 		gl_RenderState.mModelMatrix.rotate(-180.0f+x_offset, glset.skyrotatevector.X, glset.skyrotatevector.Z, glset.skyrotatevector.Y);
@@ -524,6 +525,7 @@ void GLSkyPortal::DrawContents()
 			gl_RenderState.Apply();
 			glDrawArrays(GL_TRIANGLES, 0, 12);
 			gl_RenderState.EnableTexture(true);
+			gl_RenderState.SetObjectColor(0xffffffff);
 		}
 		gl_RenderState.SetVertexBuffer(GLRenderer->mVBO);
 	}

@@ -48,6 +48,7 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/renderer/gl_colormap.h"
+#include "gl/dynlights//gl_lightbuffer.h"
 
 // [EP] New #includes.
 #include "gl/gl_functions.h"
@@ -71,17 +72,16 @@ TArray<VSMatrix> gl_MatrixStack;
 void FRenderState::Reset()
 {
 	mTextureEnabled = true;
-	mBrightmapEnabled = mFogEnabled = mGlowEnabled = mLightEnabled = false;
+	mBrightmapEnabled = mFogEnabled = mGlowEnabled = false;
 	mFogColor.d = -1;
 	mTextureMode = -1;
+	mLightIndex = -1;
 	mDesaturation = 0;
 	mSrcBlend = GL_SRC_ALPHA;
 	mDstBlend = GL_ONE_MINUS_SRC_ALPHA;
-	glSrcBlend = glDstBlend = -1;
 	mAlphaThreshold = 0.5f;
 	mBlendEquation = GL_FUNC_ADD;
 	mObjectColor = 0xffffffff;
-	glBlendEquation = -1;
 	m2D = true;
 	mVertexBuffer = mCurrentVertexBuffer = NULL;
 	mColormapState = CM_DEFAULT;
@@ -89,21 +89,11 @@ void FRenderState::Reset()
 	mSpecialEffect = EFF_NONE;
 	mClipHeightTop = 65536.f;
 	mClipHeightBottom = -65536.f;
+
+	stSrcBlend = stDstBlend = -1;
+	stBlendEquation = -1;
+	stAlphaThreshold = -1.f;
 }
-
-
-//==========================================================================
-//
-// Set texture shader info
-//
-//==========================================================================
-
-void FRenderState::SetupShader(int &shaderindex, float warptime)
-{
-	mEffectState = shaderindex;
-	if (shaderindex > 0) GLRenderer->mShaderManager->SetWarpSpeed(shaderindex, warptime);
-}
-
 
 //==========================================================================
 //
@@ -116,7 +106,6 @@ bool FRenderState::ApplyShader()
 	// [BB/EP] Take care of gl_fogmode and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_FOGMODE_IF_NECESSARY
 
-	FShader *activeShader;
 	if (mSpecialEffect > EFF_NONE)
 	{
 		activeShader = GLRenderer->mShaderManager->BindEffect(mSpecialEffect);
@@ -155,7 +144,9 @@ bool FRenderState::ApplyShader()
 	activeShader->muInterpolationFactor.Set(mInterpolationFactor);
 	activeShader->muClipHeightTop.Set(mClipHeightTop);
 	activeShader->muClipHeightBottom.Set(mClipHeightBottom);
+	activeShader->muTimer.Set(gl_frameMS * mShaderTimer / 1000.f);
 	activeShader->muAlphaThreshold.Set(mAlphaThreshold);
+	activeShader->muLightIndex.Set(mLightIndex);	// will always be -1 for now
 
 	if (mGlowEnabled)
 	{
@@ -174,17 +165,6 @@ bool FRenderState::ApplyShader()
 		activeShader->muGlowTopPlane.Set(nulvec);
 		activeShader->muGlowBottomPlane.Set(nulvec);
 		activeShader->currentglowstate = 0;
-	}
-
-	if (mLightEnabled)
-	{
-		activeShader->muLightRange.Set(mNumLights);
-		glUniform4fv(activeShader->lights_index, mNumLights[3], mLightData);
-	}
-	else
-	{
-		static const int nulint[] = { 0, 0, 0, 0 };
-		activeShader->muLightRange.Set(nulint);
 	}
 
 	if (mColormapState != activeShader->currentfixedcolormap)
@@ -268,16 +248,16 @@ void FRenderState::Apply()
 {
 	if (!gl_direct_state_change)
 	{
-		if (mSrcBlend != glSrcBlend || mDstBlend != glDstBlend)
+		if (mSrcBlend != stSrcBlend || mDstBlend != stDstBlend)
 		{
-			glSrcBlend = mSrcBlend;
-			glDstBlend = mDstBlend;
+			stSrcBlend = mSrcBlend;
+			stDstBlend = mDstBlend;
 			glBlendFunc(mSrcBlend, mDstBlend);
 		}
-		if (mBlendEquation != glBlendEquation)
+		if (mBlendEquation != stBlendEquation)
 		{
-			glBlendEquation = mBlendEquation;
-			::glBlendEquation(mBlendEquation);
+			stBlendEquation = mBlendEquation;
+			glBlendEquation(mBlendEquation);
 		}
 	}
 
@@ -300,4 +280,13 @@ void FRenderState::ApplyMatrices()
 		GLRenderer->mShaderManager->ApplyMatrices(&mProjectionMatrix, &mViewMatrix);
 	}
 	drawcalls.Unclock();
+}
+
+void FRenderState::ApplyLightIndex(int index)
+{
+	if (GLRenderer->mLights->GetBufferType() == GL_UNIFORM_BUFFER && index > -1)
+	{
+		index = GLRenderer->mLights->BindUBO(index);
+	}
+	activeShader->muLightIndex.Set(index);
 }

@@ -187,7 +187,7 @@ class FShader
 	FUniform1i muFixedColormap;
 	FUniform4f muColormapStart;
 	FUniform4f muColormapRange;
-	FBufferedUniform4i muLightRange;
+	FBufferedUniform1i muLightIndex;
 	FBufferedUniformPE muFogColor;
 	FBufferedUniform4f muDynLightColor;
 	FBufferedUniformPE muObjectColor;
@@ -199,8 +199,8 @@ class FShader
 	FBufferedUniform1f muClipHeightTop;
 	FBufferedUniform1f muClipHeightBottom;
 	FBufferedUniform1f muAlphaThreshold;
+	FBufferedUniform1f muTimer;
 	
-	int timer_index;
 	int lights_index;
 	int projectionmatrix_index;
 	int viewmatrix_index;
@@ -262,7 +262,6 @@ public:
 	int Find(const char *mame);
 	FShader *BindEffect(int effect);
 	void SetActiveShader(FShader *sh);
-	void SetWarpSpeed(unsigned int eff, float speed);
 	void ApplyMatrices(VSMatrix *proj, VSMatrix *view);
 	FShader *GetActiveShader() const
 	{
@@ -282,6 +281,10 @@ public:
 
 #define FIRST_USER_SHADER 12
 
+enum
+{
+	LIGHTBUF_BINDINGPOINT = 1
+};
 
 #endif
 

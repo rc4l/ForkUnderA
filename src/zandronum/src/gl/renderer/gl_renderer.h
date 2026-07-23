@@ -17,6 +17,7 @@ struct pspdef_t;
 class FShaderManager;
 class GLPortal;
 class FGLThreadManager;
+class FLightBuffer;
 
 enum SectorRenderFlags
 {
@@ -62,8 +63,7 @@ public:
 	FTexture *glpart2;
 	FTexture *glpart;
 	FTexture *mirrortexture;
-	FTexture *gllight;
-
+	
 	float mSky1Pos, mSky2Pos;
 
 	FRotator mAngles;
@@ -73,6 +73,7 @@ public:
 	FFlatVertexBuffer *mVBO;
 	FSkyVertexBuffer *mSkyVBO;
 	FModelVertexBuffer *mModelVBO;
+	FLightBuffer *mLights;
 
 
 	FGLRenderer(OpenGLFrameBuffer *fb);

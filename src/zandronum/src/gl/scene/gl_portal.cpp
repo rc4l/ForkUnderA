@@ -147,7 +147,7 @@ void GLPortal::DrawPortalStencil()
 
 		for (unsigned int i = 0; i<lines.Size(); i++)
 		{
-			lines[i].RenderWall(GLWall::RWF_NORENDER, NULL, &mPrimIndices[i * 2]);
+			lines[i].RenderWall(GLWall::RWF_NORENDER, &mPrimIndices[i * 2]);
 		}
 
 		if (cap)
@@ -299,8 +299,10 @@ bool GLPortal::Start(bool usestencil, bool doquery)
 	}
 	planestack.Push(gl_RenderState.GetClipHeightTop());
 	planestack.Push(gl_RenderState.GetClipHeightBottom());
-	gl_RenderState.SetClipHeightTop(65536.f);
+	glDisable(GL_CLIP_DISTANCE0);
+	glDisable(GL_CLIP_DISTANCE1);
 	gl_RenderState.SetClipHeightBottom(-65536.f);
+	gl_RenderState.SetClipHeightTop(65536.f);
 
 	// save viewpoint
 	savedviewx=viewx;
@@ -364,8 +366,10 @@ void GLPortal::End(bool usestencil)
 	float f;
 	planestack.Pop(f);
 	gl_RenderState.SetClipHeightBottom(f);
+	if (f > -65535.f) glEnable(GL_CLIP_DISTANCE0);
 	planestack.Pop(f);
 	gl_RenderState.SetClipHeightTop(f);
+	if (f < 65535.f) glEnable(GL_CLIP_DISTANCE1);
 
 	if (usestencil)
 	{
@@ -809,15 +813,27 @@ void GLPlaneMirrorPortal::DrawContents()
 
 	validcount++;
 
-	float f = FIXED2FLOAT(planez);
-	if (PlaneMirrorMode < 0) gl_RenderState.SetClipHeightTop(f);	// ceiling mirror: clip everytihng with a z lower than the portal's ceiling
-	else gl_RenderState.SetClipHeightBottom(f);	// floor mirror: clip everything with a z higher than the portal's floor
-
 	PlaneMirrorFlag++;
 	GLRenderer->SetupView(viewx, viewy, viewz, viewangle, !!(MirrorFlag&1), !!(PlaneMirrorFlag&1));
 	ClearClipper();
 
+	float f = FIXED2FLOAT(planez);
+	if (PlaneMirrorMode < 0)
+	{
+		gl_RenderState.SetClipHeightTop(f);	// ceiling mirror: clip everytihng with a z lower than the portal's ceiling
+		glEnable(GL_CLIP_DISTANCE1);
+	}
+	else
+	{
+		gl_RenderState.SetClipHeightBottom(f);	// floor mirror: clip everything with a z higher than the portal's floor
+		glEnable(GL_CLIP_DISTANCE0);
+	}
+
 	GLRenderer->DrawScene();
+	glDisable(GL_CLIP_DISTANCE0);
+	glDisable(GL_CLIP_DISTANCE1);
+	gl_RenderState.SetClipHeightBottom(-65536.f);
+	gl_RenderState.SetClipHeightTop(65536.f);
 	PlaneMirrorFlag--;
 	PlaneMirrorMode=old_pm;
 }

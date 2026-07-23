@@ -9,9 +9,12 @@ enum RenderFlags
 	RFL_TEXTURE_COMPRESSION=1,
 	RFL_TEXTURE_COMPRESSION_S3TC=2,
 
-	RFL_BUFFER_STORAGE = 8,
-	RFL_SHADER_STORAGE_BUFFER = 16,
-	RFL_BASEINDEX = 32,
+	RFL_SEPARATE_SHADER_OBJECTS = 4,	// we need this extension for glProgramUniform. On hardware not supporting it we need some rather clumsy workarounds
+	RFL_BUFFER_STORAGE = 8,				// allows persistently mapped buffers, which are the only efficient way to actually use a dynamic vertex buffer. If this isn't present, a workaround with uniform arrays is used.
+	RFL_SHADER_STORAGE_BUFFER = 16,		// to be used later for a parameter buffer
+	RFL_BASEINDEX = 32,					// currently unused
+	RFL_COREPROFILE = 256,
+	RFL_NOBUFFER = 512,				// the static buffer makes no sense on GL 3.x AMD and Intel hardware, as long as compatibility mode is on
 
 	// [rc4l] Retained past upstream 2925c96b5 for Zandronum-side call sites
 	// ([BB] framebuffer/portal/trim checks, mcp_renderinfo): both are
@@ -32,6 +35,8 @@ struct RenderContext
 {
 	unsigned int flags;
 	unsigned int maxuniforms;
+	unsigned int maxuniformblock;
+	unsigned int uniformblockalignment;
 	float version;
 	float glslversion;
 	int max_texturesize;

@@ -770,6 +770,7 @@ if( NOT NO_GL )
 		gl/dynlights/gl_dynlight.cpp
 		gl/dynlights/gl_glow.cpp
 		gl/dynlights/gl_dynlight1.cpp
+	gl/dynlights/gl_lightbuffer.cpp
 			gl/shaders/gl_shader.cpp
 		gl/shaders/gl_texshader.cpp
 		gl/system/gl_interface.cpp

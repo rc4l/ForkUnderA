@@ -115,7 +115,7 @@ CVAR(Bool, gl_nolayer, false, 0)
 //==========================================================================
 void GLSprite::Draw(int pass)
 {
-	if (pass!=GLPASS_PLAIN && pass != GLPASS_ALL && pass!=GLPASS_TRANSLUCENT) return;
+	if (pass == GLPASS_DECALS) return;
 
 
 
@@ -318,13 +318,9 @@ inline void GLSprite::PutSprite(bool translucent)
 	{
 		list = GLDL_TRANSLUCENT;
 	}
-	else if ((!gl_isBlack (Colormap.FadeColor) || level.flags&LEVEL_HASFADETABLE))
-	{
-		list = GLDL_FOGMASKED;
-	}
 	else
 	{
-		list = GLDL_MASKED;
+		list = GLDL_MODELS;
 	}
 
 	// [TP/BB] This makes sure that actors, which have FixedColormap set, are rendered accordingly.
@@ -635,9 +631,9 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 				if (smarterclip)
 				{
 					// Reduce slightly clipping adjustment of corpses
-					if (thing->flags & MF_CORPSE || spriteheight > abs(diffb))
+					if (thing->flags & MF_CORPSE || spriteheight > fabs(diffb))
 					{
-						float ratio = clamp<float>((abs(diffb) * (float)gl_sclipfactor/(spriteheight+1)), 0.5, 1.0);
+						float ratio = clamp<float>((fabs(diffb) * (float)gl_sclipfactor/(spriteheight+1)), 0.5, 1.0);
 						diffb*=ratio;
 					}
 					if (!diffb)
@@ -651,9 +647,9 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 								difft=0;
 							}
 						}
-						if (spriteheight > abs(difft))
+						if (spriteheight > fabs(difft))
 						{
-							float ratio = clamp<float>((abs(difft) * (float)gl_sclipfactor/(spriteheight+1)), 0.5, 1.0);
+							float ratio = clamp<float>((fabs(difft) * (float)gl_sclipfactor/(spriteheight+1)), 0.5, 1.0);
 							difft*=ratio;
 						}
 						z2-=difft;

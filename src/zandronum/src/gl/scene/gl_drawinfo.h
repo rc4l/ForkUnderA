@@ -13,42 +13,24 @@ enum GLDrawItemType
 
 enum DrawListType
 {
-	// These are organized so that the various multipass rendering modes
-	// have to be set as few times as possible
-	GLDL_LIGHT,	
-	GLDL_LIGHTBRIGHT,
-	GLDL_LIGHTMASKED,
-	GLDL_LIGHTFOG,
-	GLDL_LIGHTFOGMASKED,
-
 	GLDL_PLAIN,
 	GLDL_MASKED,
-	GLDL_FOG,
-	GLDL_FOGMASKED,
+	GLDL_MASKEDOFS,
+	GLDL_MODELS,
 
 	GLDL_TRANSLUCENT,
 	GLDL_TRANSLUCENTBORDER,
 
 	GLDL_TYPES,
-
-	GLDL_FIRSTLIGHT = GLDL_LIGHT,
-	GLDL_LASTLIGHT = GLDL_LIGHTFOGMASKED,
-	GLDL_FIRSTNOLIGHT = GLDL_PLAIN,
-	GLDL_LASTNOLIGHT = GLDL_FOGMASKED,
 };
 
 enum Drawpasses
 {
-	GLPASS_BASE,		// Draws the untextured surface only
-	GLPASS_BASE_MASKED,	// Draws an untextured surface that is masked by the texture
-	GLPASS_PLAIN,		// Draws a texture that isn't affected by dynamic lights with sector light settings
-	GLPASS_LIGHT,		// Draws dynamic lights
-	GLPASS_LIGHT_ADDITIVE,	// Draws additive dynamic lights
-	GLPASS_TEXTURE,		// Draws the texture to be modulated with the light information on the base surface
+	GLPASS_PLAIN,		// Main pass without dynamic lights
+	GLPASS_ALL,			// Main pass with dynamic lights
 	GLPASS_DECALS,		// Draws a decal
 	GLPASS_DECALS_NOFOG,// Draws a decal without setting the fog (used for passes that need a fog layer)
 	GLPASS_TRANSLUCENT,	// Draws translucent objects
-	GLPASS_ALL			// Everything at once, using shaders for dynamic lights
 };
 
 //==========================================================================
@@ -112,6 +94,11 @@ public:
 	~GLDrawList()
 	{
 		Reset();
+	}
+
+	unsigned int Size()
+	{
+		return drawitems.Size();
 	}
 
 	void AddWall(GLWall * wall);
