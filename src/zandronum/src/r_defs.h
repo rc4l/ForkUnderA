@@ -610,7 +610,7 @@ struct sector_t
 	void SetBase(int pos, fixed_t y, angle_t o)
 	{
 		planes[pos].xform.base_yoffs = y;
-		planes[pos].xform.base_angle = fixed_t(o);
+		planes[pos].xform.base_angle = fixed_t::FromUnsignedBits(o);
 	}
 
 	void SetAlpha(int pos, fixed_t o)

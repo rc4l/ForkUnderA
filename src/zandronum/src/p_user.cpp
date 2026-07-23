@@ -2936,7 +2936,7 @@ void P_MovePlayer (player_t *player)
 	{
 		// [AK] Save the player's angle before we update it.
 		const bool usingFreeChasecam = FreeChasecam::IsBeingUsed(player);
-		fixed_t oldAngle = fixed_t(mo->angle);
+		fixed_t oldAngle = fixed_t::FromUnsignedBits(mo->angle);
 
 		// [AK] If using the free chasecam, temporarily set the player's angle
 		// to that of the free chasecam.
@@ -3859,13 +3859,13 @@ void P_PlayerThink (player_t *player)
 		{
 			if (FreeChasecam::enabled == false)
 			{
-				CLIENTDEMO_WriteFreeChasecam(true, fixed_t(players[consoleplayer].mo->angle));
+				CLIENTDEMO_WriteFreeChasecam(true, fixed_t::FromUnsignedBits(players[consoleplayer].mo->angle));
 				FreeChasecam::enabled = true;
 			}
 		}
 		else if (FreeChasecam::enabled)
 		{
-			CLIENTDEMO_WriteFreeChasecam(false, fixed_t(players[consoleplayer].mo->angle));
+			CLIENTDEMO_WriteFreeChasecam(false, fixed_t::FromUnsignedBits(players[consoleplayer].mo->angle));
 			FreeChasecam::enabled = false;
 		}
 	}

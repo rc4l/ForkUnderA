@@ -1147,7 +1147,7 @@ void FWeaponSlot::SetInitialPositions()
 	{
 		for (i = 0; i < size; ++i)
 		{
-			Weapons[i].Position = fixed_t(i * 0xFF00 / (size - 1) + 0x80);
+			Weapons[i].Position = fixed_t::FromUnsignedBits(i * 0xFF00 / (size - 1) + 0x80);
 		}
 	}
 }
