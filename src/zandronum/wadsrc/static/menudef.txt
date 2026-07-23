@@ -1601,97 +1601,26 @@ OptionValue SampleRates
 }
 
 
-OptionValue BufferSizes
+
+// [rc4l] OpenAL-era sound option lists (the old FMOD-only SoundOutputs*/OutputFormats/SpeakerModes/
+// Resamplers strings were removed with FMOD -- their CVARs no longer exist, so they showed UNKNOWN).
+OptionValue AutoOffOn
 {
-	   0, "Default"
-	  64, "64 samples"
-	 128, "128 samples"
-	 256, "256 samples"
-	 512, "512 samples"
-	1024, "1024 samples"
-	2048, "2048 samples"
-	4096, "4096 samples"
+	-1,	"Auto"
+	 0,	"Off"
+	 1,	"On"
 }
 
-
-OptionValue BufferCounts
+OptionValue MusicModes
 {
-	   0, "Default"
-	   2, "2"
-	   3, "3"
-	   4, "4"
-	   5, "5"
-	   6, "6"
-	   7, "7"
-	   8, "8"
-	   9, "9"
-	  10, "10"
-	  11, "11"
-	  12, "12"
+	0,	"Normal"
+	1,	"Direct Mix"
+	2,	"Super Stereo"
 }
 
-
-OptionString SoundOutputsWindows
-{
-	"Default",		"Default"
-	"DirectSound",	"DirectSound"
-	"WASAPI",		"Vista WASAPI"
-	"ASIO",			"ASIO"
-	"WaveOut",		"WaveOut"
-	// [AK] OpenAL was removed in the FMOD version used in Zandronum 3.1 and over.
-	// "OpenAL",		"OpenAL (very beta)"
-	"No sound",		"No sound"
-}
-
-
-OptionString SoundOutputsUnix
-{
-	"Default",		"Default"
-	"OSS",			"OSS"
-	"ALSA",			"ALSA"
-	"SDL",			"SDL"
-	"ESD",			"ESD"
-	"PulseAudio",	"PulseAudio"
-	"No sound",		"No sound"
-}
-
-OptionString SoundOutputsMac
-{
-	"Sound Manager",	"Sound Manager"
-	"Core Audio",		"Core Audio"
-	"No sound",			"No sound"
-}
-
-OptionString OutputFormats
-{
-	"PCM-8",		"8-bit"
-	"PCM-16",		"16-bit"
-	"PCM-24",		"24-bit"
-	"PCM-32",		"32-bit"
-	"PCM-Float",	"32-bit float"
-}
-
-
-OptionString SpeakerModes
-{
-	"Auto",		"Auto"
-	"Mono",		"Mono"
-	"Stereo",	"Stereo"
-	"Prologic",	"Dolby Prologic Decoder"
-	"Quad",		"Quad"
-	"Surround",	"5 speakers"
-	"5.1",		"5.1 speakers"
-	"7.1",		"7.1 speakers"
-}
-
-
-OptionString Resamplers
-{
-	"NoInterp",		"No interpolation"
-	"Linear",		"Linear"
-	"Cubic",		"Cubic"
-	"Spline",		"Spline"
-}
+// [rc4l] Filled at runtime by I_BuildALDeviceList / I_BuildALResamplersList from the live driver.
+OptionValue "Aldevices" { }
+OptionValue "Alresamplers" { }
 
 OptionValue MidiDevices
 {
@@ -1718,27 +1647,37 @@ OptionMenu SoundOptions
 	StaticText " "
 	Command "Restart sound",	"snd_reset"
 	StaticText " "
-	IfOption(Windows)
+	// [rc4l] The FMOD Output system/format/Speaker mode/Resampler rows were removed with FMOD (their
+	// CVARs are gone -- they rendered as UNKNOWN). OpenAL exposes HRTF here and the rest in its submenu.
+	Option "HRTF filter",		"snd_hrtf", "AutoOffOn"
+	IfOption(OpenAL)
 	{
-		Option "Output system",		"snd_output", "SoundOutputsWindows"
+		Submenu "OpenAL options",	"OpenALSoundItems"
 	}
-	IfOption(Unix)
-	{
-		Option "Output system",		"snd_output", "SoundOutputsUnix"
-	}
-	IfOption(Mac)
-	{
-		Option "Output system",		"snd_output", "SoundOutputsMac"
-	}
-	Option "Output format",		"snd_output_format", "OutputFormats"
-	Option "Speaker mode",		"snd_speakermode", "SpeakerModes"
-	Option "Resampler",			"snd_resampler", "Resamplers"
-	Option "HRTF filter",		"snd_hrtf", "OnOff"
 
 	StaticText " "
 	Submenu "Advanced options",			"AdvSoundOptions"
 	Submenu "Module replayer options",	"ModReplayerOptions"
 	Submenu "Voice chat options",		"ZA_VoiceChatOptions" // [AK]
+}
+
+/*=======================================
+ *
+ * OpenAL Sound Options Menu  [rc4l]
+ *
+ *=======================================*/
+
+OptionMenu OpenALSoundItems
+{
+	Title "OPENAL OPTIONS"
+	Option	"Playback device",		"snd_aldevice",			"Aldevices"
+	Option	"Enable EFX",			"snd_efx",				"OnOff"
+	Option	"Resampler",			"snd_alresampler",		"Alresamplers"
+	StaticText " "
+	Option	"Music mode",			"snd_musicmode",		"MusicModes"
+	Slider	"Super stereo width",	"snd_superstereowidth",	0, 1, 0.05
+	StaticText " "
+	Command	"Restart sound",		"snd_reset"
 }
 
 /*=======================================
@@ -1767,8 +1706,8 @@ OptionMenu AdvSoundOptions
 {
 	Title "ADVANCED SOUND OPTIONS"
 	Option "Sample rate",			"snd_samplerate", "SampleRates"
-	Option "Buffer size",			"snd_buffersize", "BufferSizes"
-	Option "Buffer count",			"snd_buffercount", "BufferCounts"
+	// [rc4l] Buffer size/count were FMOD-only: snd_buffercount no longer exists (it read UNKNOWN) and
+	// snd_buffersize is dead (the OpenAL backend sizes its own buffers). Removed with their lists.
 	StaticText " "
 	StaticText "OPL Synthesis",	1
 	Slider "Number of emulated OPL chips", "opl_numchips", 1, 8, 1, 0

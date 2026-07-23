@@ -1241,7 +1241,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 
 				if (CMF_SAVEPITCH & flags)
 				{
-					missile->pitch = fixed_t(pitch);
+					missile->pitch = fixed_t::FromSignedBits(pitch);
 					// In aimmode 0 and 1 without absolutepitch or offsetpitch, the pitch parameter
 					// contains the unapplied parameter. In that case, it is set as pitch without
 					// otherwise affecting the spawned actor.
@@ -1768,13 +1768,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 		fixed_t x = SpawnOfs_XY * finecosine[ang];
 		fixed_t y = SpawnOfs_XY * finesine[ang];
 		fixed_t z = SpawnHeight;
-		fixed_t shootangle = fixed_t(self->angle);
+		fixed_t shootangle = fixed_t::FromUnsignedBits(self->angle);
 
-		if (AimAtAngle) shootangle+=fixed_t(Angle);
+		if (AimAtAngle) shootangle+=fixed_t::FromUnsignedBits(Angle);
 
 		// Temporarily adjusts the pitch
 		fixed_t SavedPlayerPitch = self->pitch;
-		self->pitch -= fixed_t(pitch);
+		self->pitch -= fixed_t::FromSignedBits(pitch);
 
 		A_FireCustomMissileHelper( self, x, y, z, shootangle, ti, Angle , AimAtAngle, linetarget );
 

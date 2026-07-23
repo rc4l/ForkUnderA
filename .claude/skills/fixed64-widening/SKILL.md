@@ -67,6 +67,25 @@ Symptom → shape shortcuts:
 - **"wrong only far away / on giant maps"** → shape 1 (truncation past 32k units).
 - **"builds fine, wrong at runtime, no warning"** → shapes 1/3 (implicit narrowings are silent).
 - **"UBSan fails but local ctest passes"** → shape 6 (see the halt_on_error gotcha below).
+- **"wrong only when aiming up / pitch is negative, netgame only"** → shape 3 at a *conversion* (an
+  `angle_t`/`unsigned` holding a signed pitch was ZERO-extended into the widened `fixed_t`). This is
+  the reverse of the mask case and shipped a real bug: `fixed_t(moveCmd.pitch)` with an unsigned
+  pitch made aim-up fire into the floor. See the rule below.
+
+### The `unsigned -> Fixed` sign rule (this bug class is now a compile error)
+
+`angle_t` is `unsigned int`, but it carries BOTH genuine unsigned magnitudes (a real angle, mod 2³²)
+AND signed quantities in two's-complement bits (a **pitch** — up is negative; an **angle delta** — a
+right turn is negative). There is no single correct way to widen it, so **`Fixed(unsigned)` is deleted**
+— a 32-bit unsigned/angle_t no longer converts to `fixed_t` at all. Every site must state its intent:
+- `Fixed::FromUnsignedBits(x)` — genuine unsigned magnitude → zero-extend.
+- `Fixed::FromSignedBits(x)` (== `Fixed(zx::AngleAsSignedFixed(x))`) — signed bits → sign-extend.
+
+**Codemod rule (this is how the bug got in):** an `angle_t -> fixed_t` conversion is a SIGN DECISION.
+Never let a mechanical pass wrap it in `fixed_t(...)` — that used to pick zero-extend silently. The
+deletion now forces a human choice; a codemod must FLAG these, not auto-fix them. Grep:
+`grep -rnE "fixed_t\s*\(" $S | grep -iE "angle|pitch|delta"` — pitch/roll/delta → FromSignedBits, a
+full-circle angle round-trip (stored then truncated back to angle_t) → FromUnsignedBits.
 
 ---
 

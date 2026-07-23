@@ -1507,7 +1507,7 @@ public:
 	void ParseVertex(vertex_t *vt, vertexdata_t *vd)
 	{
 		vt->x = vt->y = 0;
-		vd->zCeiling = vd->zFloor = fixed_t(vd->flags = 0);
+		vd->zCeiling = vd->zFloor = fixed_t::FromUnsignedBits(vd->flags = 0);
 		sc.MustGetStringName("{");
 		while (!sc.CheckString("}"))
 		{

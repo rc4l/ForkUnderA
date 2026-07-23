@@ -498,7 +498,7 @@ bool APathFollower::Interpolate ()
 				float fdz = FIXED2FLOAT(-dz);
 				float dist = (float)sqrt (fdx*fdx + fdy*fdy);
 				float ang = dist != 0.f ? (float)atan2 (fdz, dist) : 0;
-				pitch = fixed_t((angle_t)(ang * 2147483648.f / PI));
+				pitch = fixed_t::FromSignedBits((angle_t)(ang * 2147483648.f / PI));
 			}
 		}
 		else
@@ -765,7 +765,7 @@ bool AMovingCamera::Interpolate ()
 			float dz = FIXED2FLOAT(z - tracer->z - tracer->height/2);
 			float dist = (float)sqrt (dx*dx + dy*dy);
 			float ang = dist != 0.f ? (float)atan2 (dz, dist) : 0;
-			pitch = fixed_t((angle_t)(ang * 2147483648.f / PI));
+			pitch = fixed_t::FromSignedBits((angle_t)(ang * 2147483648.f / PI));
 		}
 
 		return true;

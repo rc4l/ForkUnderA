@@ -43,14 +43,27 @@ public:
 	constexpr Fixed(long v) : v_(static_cast<int64_t>(v)) {}
 	constexpr Fixed(long long v) : v_(static_cast<int64_t>(v)) {}
 
-	// [rc4l] Unsigned sources are the hazard (zero-extension of a value that meant a signed
-	// delta). Making them EXPLICIT blocks the silent path -- `fixed_t f = someAngle;` and passing
-	// an angle_t to a fixed parameter still fail -- while letting an author who genuinely means it
-	// write `(fixed_t)x` / `Fixed(x)`. The explicit cast is the visible "I take responsibility"
-	// escape hatch; the implicit conversion that caused the bugs stays forbidden.
-	explicit constexpr Fixed(unsigned v) : v_(static_cast<int64_t>(v)) {}
+	// [rc4l] Unsigned sources are the hazard, and NOT just because of the implicit path. A 32-bit
+	// unsigned/angle_t can be a genuine unsigned magnitude (a real angle) OR a signed quantity carried
+	// in two's-complement bits (a pitch -- up is negative; an angle delta -- a right turn is negative).
+	// A single `Fixed(unsigned)` ctor has to pick one interpretation, and it silently ZERO-extended --
+	// which a mechanical codemod then spammed at sites that needed sign-extension, shipping a netplay
+	// bug where aiming up fired straight into the floor (see net_pitch_compute_test.cpp). So the
+	// unsigned ctors are DELETED: every unsigned source must state its sign intent through one of the
+	// named factories below (a compile error until it does -- no automation can guess wrong again).
+	// Only the 32-bit unsigned ctor is deleted: that is the WIDTH-EXTENDING one (32 -> 64), where
+	// zero- vs sign-extension actually differ and an angle_t hides the ambiguity. The 64-bit unsigned
+	// ctors are a same-width reinterpret (no extension, sign bit already in place), so they stay --
+	// they carry the (fixed_t)0x........LL raw-bit constants without a sign question.
+	Fixed(unsigned) = delete;
 	explicit constexpr Fixed(unsigned long v) : v_(static_cast<int64_t>(v)) {}
 	explicit constexpr Fixed(unsigned long long v) : v_(static_cast<int64_t>(v)) {}
+
+	// [rc4l] The value is a genuine unsigned magnitude (a real angle, an index) -> zero-extend.
+	static constexpr Fixed FromUnsignedBits(uint32_t v) { return FromRaw(static_cast<int64_t>(v)); }
+	// [rc4l] The bits are a two's-complement SIGNED value (a pitch, an angle delta) -> sign-extend.
+	// Equivalent to Fixed(zx::AngleAsSignedFixed(v)); kept here so the sign choice is stated locally.
+	static constexpr Fixed FromSignedBits(uint32_t v) { return FromRaw(static_cast<int64_t>(static_cast<int32_t>(v))); }
 
 	// [rc4l] Explicit construction from floating point, truncating toward zero -- matches what the
 	// non-strict build did for `fixed_t(doubleExpr)` / `(fixed_t)doubleExpr` (an (int64)double
