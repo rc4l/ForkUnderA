@@ -114,10 +114,10 @@ FFlatVertexBuffer::FFlatVertexBuffer()
 
 	glBindVertexArray(vao_id);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
-	glVertexPointer(3,GL_FLOAT, sizeof(FFlatVertex), &VTO->x);
-	glTexCoordPointer(2,GL_FLOAT, sizeof(FFlatVertex), &VTO->u);
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+	glVertexAttribPointer(VATTR_VERTEX, 3,GL_FLOAT, false, sizeof(FFlatVertex), &VTO->x);
+	glVertexAttribPointer(VATTR_TEXCOORD, 2,GL_FLOAT, false, sizeof(FFlatVertex), &VTO->u);
+	glEnableVertexAttribArray(VATTR_VERTEX);
+	glEnableVertexAttribArray(VATTR_TEXCOORD);
 	glBindVertexArray(0);
 }
 
@@ -140,6 +140,7 @@ CVAR(Bool, gl_testbuffer, false, 0)
 
 void FFlatVertexBuffer::ImmRenderBuffer(unsigned int primtype, unsigned int offset, unsigned int count)
 {
+#if 0
 	if (!gl_testbuffer)	// todo: remove the immediate mode calls once the uniform array method has been tested.
 	{
 		glBegin(primtype);
@@ -151,6 +152,7 @@ void FFlatVertexBuffer::ImmRenderBuffer(unsigned int primtype, unsigned int offs
 		glEnd();
 	}
 	else
+#endif
 	{
 		if (count > 20)
 		{

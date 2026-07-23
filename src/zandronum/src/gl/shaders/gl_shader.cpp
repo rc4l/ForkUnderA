@@ -88,7 +88,12 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 //
 
 	FString vp_comb = "#version 130\n";
-	if (gl.glslversion >= 3.3f) vp_comb = "#version 330 compatibility\n";	// I can't shut up the deprecation warnings in GLSL 1.3 so if available use a version with compatibility profile.
+	if (gl.glslversion >= 3.3f) vp_comb = "#version 330 core\n";	// I can't shut up the deprecation warnings in GLSL 1.3 so if available use a version with compatibility profile.
+
+	// [rc4l] Apple's GLSL compiler is strict: texture2D() does not exist in core
+	// profiles. Upstream got away with it on NVIDIA's lenient compiler and only
+	// converted the calls later; the alias is their eventual fix, applied early.
+	vp_comb << "#define texture2D texture\n";
 	// todo when using shader storage buffers, add
 	// "#version 400 compatibility\n#extension GL_ARB_shader_storage_buffer_object : require\n" instead.
 
@@ -120,6 +125,7 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 				fp_comb.Substitute("vec4 frag = ProcessTexel();", "vec4 frag = Process(vec4(1.0));");
 			}
 			fp_comb << pp_data.GetString().GetChars();
+			fp_comb.Substitute("gl_TexCoord[0]", "vTexCoord");	// fix old custom shaders.
 
 			if (pp_data.GetString().IndexOf("ProcessLight") < 0)
 			{
@@ -156,6 +162,11 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 
 	glAttachShader(hShader, hVertProg);
 	glAttachShader(hShader, hFragProg);
+
+	glBindAttribLocation(hShader, VATTR_VERTEX, "aPosition");
+	glBindAttribLocation(hShader, VATTR_TEXCOORD, "aTexCoord");
+	glBindAttribLocation(hShader, VATTR_COLOR, "aColor");
+	glBindAttribLocation(hShader, VATTR_VERTEX2, "aVertex2");
 
 	glLinkProgram(hShader);
 
@@ -203,6 +214,7 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	muInterpolationFactor.Init(hShader, "uInterpolationFactor");
 	muClipHeightTop.Init(hShader, "uClipHeightTop");
 	muClipHeightBottom.Init(hShader, "uClipHeightBottom");
+	muAlphaThreshold.Init(hShader, "uAlphaThreshold");
 
 	timer_index = glGetUniformLocation(hShader, "timer");
 	lights_index = glGetUniformLocation(hShader, "lights");
@@ -211,8 +223,6 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	viewmatrix_index = glGetUniformLocation(hShader, "ViewMatrix");
 	modelmatrix_index = glGetUniformLocation(hShader, "ModelMatrix");
 	texturematrix_index = glGetUniformLocation(hShader, "TextureMatrix");
-
-	glBindAttribLocation(hShader, VATTR_VERTEX2, "aVertex2");
 
 	glUseProgram(hShader);
 

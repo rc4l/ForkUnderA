@@ -1,9 +1,15 @@
 
+in vec4 aPosition;
+in vec2 aTexCoord;
+in vec4 aColor;
 #ifndef SIMPLE	// we do not need these for simple shaders
 in vec4 aVertex2;
 out vec4 pixelpos;
 out vec2 glowdist;
 #endif
+
+out vec4 vTexCoord;
+out vec4 vColor;
 
 #ifdef UNIFORM_VB
 uniform float fakeVB[100];
@@ -11,26 +17,23 @@ uniform float fakeVB[100];
 
 void main()
 {
-
-#ifdef UNIFORM_VB
 	vec4 vert;
 	vec4 tc;
+
+#ifdef UNIFORM_VB
 	
-	if (gl_MultiTexCoord0.x >= 100000.0)
+	if (aTexCoord.x >= 100000.0)
 	{
-		int fakeVI = int(gl_MultiTexCoord0.y)*5;
-		vert = gl_Vertex + vec4(fakeVB[fakeVI], fakeVB[fakeVI+1], fakeVB[fakeVI+2], 0.0);
+		int fakeVI = int(aTexCoord.y)*5;
+		vert = aPosition + vec4(fakeVB[fakeVI], fakeVB[fakeVI+1], fakeVB[fakeVI+2], 0.0);
 		tc = vec4(fakeVB[fakeVI+3], fakeVB[fakeVI+4], 0.0, 0.0);
 	}
 	else
-	{
-		vert = gl_Vertex;
-		tc = gl_MultiTexCoord0;
-	}
-#else
-	#define vert gl_Vertex
-	#define tc gl_MultiTexCoord0
 #endif
+	{
+		vert = aPosition;
+		tc = vec4(aTexCoord, 0.0, 0.0);
+	}
 	
 	#ifndef SIMPLE
 		vec4 worldcoord = ModelMatrix * mix(vert, aVertex2, uInterpolationFactor);
@@ -40,7 +43,7 @@ void main()
 
 	vec4 eyeCoordPos = ViewMatrix * worldcoord;
 
-	gl_FrontColor = gl_Color;
+	vColor = aColor;
 
 	#ifndef SIMPLE
 		pixelpos.xyz = worldcoord.xyz;
@@ -52,13 +55,13 @@ void main()
 	
 	#ifdef SPHEREMAP
 		vec3 u = normalize(eyeCoordPos.xyz);
-		vec3 n = normalize(gl_NormalMatrix * gl_Normal);
-		vec3 r = reflect(u, n);
+		vec4 n = normalize(TextureMatrix * vec4(tc.x, 0.0, tc.y, 0.0));	// use texture matrix and coordinates for our normal. Since this is only used on walls, the normal's y coordinate is always 0.
+		vec3 r = reflect(u, n.xyz);
 		float m = 2.0 * sqrt( r.x*r.x + r.y*r.y + (r.z+1.0)*(r.z+1.0) );
 		vec2 sst = vec2(r.x/m + 0.5,  r.y/m + 0.5);
-		gl_TexCoord[0].xy = sst;
+		vTexCoord.xy = sst;
 	#else
-		gl_TexCoord[0] = TextureMatrix * tc;
+		vTexCoord = TextureMatrix * tc;
 	#endif
 	
 	gl_Position = ProjectionMatrix * eyeCoordPos;

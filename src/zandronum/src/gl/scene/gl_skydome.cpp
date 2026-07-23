@@ -80,12 +80,12 @@ FSkyVertexBuffer::FSkyVertexBuffer()
 
 	glBindVertexArray(vao_id);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
-	glVertexPointer(3, GL_FLOAT, sizeof(FSkyVertex), &VSO->x);
-	glTexCoordPointer(2, GL_FLOAT, sizeof(FSkyVertex), &VSO->u);
-	glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(FSkyVertex), &VSO->color);
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
+	glVertexAttribPointer(VATTR_VERTEX, 3, GL_FLOAT, false, sizeof(FSkyVertex), &VSO->x);
+	glVertexAttribPointer(VATTR_TEXCOORD, 2, GL_FLOAT, false, sizeof(FSkyVertex), &VSO->u);
+	glVertexAttribPointer(VATTR_COLOR, 4, GL_UNSIGNED_BYTE, true, sizeof(FSkyVertex), &VSO->color);
+	glEnableVertexAttribArray(VATTR_VERTEX);
+	glEnableVertexAttribArray(VATTR_TEXCOORD);
+	glEnableVertexAttribArray(VATTR_COLOR);
 	glBindVertexArray(0);
 
 }
@@ -485,7 +485,7 @@ void GLSkyPortal::DrawContents()
 
 	gl_RenderState.ResetColor();
 	gl_RenderState.EnableFog(false);
-	gl_RenderState.EnableAlphaTest(false);
+	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	gl_MatrixStack.Push(gl_RenderState.mViewMatrix);
@@ -494,7 +494,6 @@ void GLSkyPortal::DrawContents()
 	if (origin->texture[0] && origin->texture[0]->tex->gl_info.bSkybox)
 	{
 		RenderBox(origin->skytexno1, origin->texture[0], origin->x_offset[0], origin->sky2);
-		gl_RenderState.EnableAlphaTest(true);
 	}
 	else
 	{
@@ -508,8 +507,7 @@ void GLSkyPortal::DrawContents()
 			gl_RenderState.SetTextureMode(TM_MODULATE);
 		}
 		
-		gl_RenderState.EnableAlphaTest(true);
-		gl_RenderState.AlphaFunc(GL_GEQUAL,0.05f);
+		gl_RenderState.AlphaFunc(GL_GEQUAL, 0.05f);
 		
 		if (origin->doublesky && origin->texture[1])
 		{

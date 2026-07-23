@@ -307,9 +307,8 @@ void GLWall::RenderFogBoundary()
 		int rel = rellight + getExtraLight();
 		gl_SetFog(lightlevel, rel, &Colormap, false);
 		gl_RenderState.SetEffect(EFF_FOGBOUNDARY);
-		gl_RenderState.EnableAlphaTest(false);
+		gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
 		RenderWall(RWF_BLANK);
-		gl_RenderState.EnableAlphaTest(true);
 		gl_RenderState.SetEffect(EFF_NONE);
 	}
 }
@@ -327,7 +326,13 @@ void GLWall::RenderMirrorSurface()
 	// For the sphere map effect we need a normal of the mirror surface,
 	Vector v(glseg.y2-glseg.y1, 0 ,-glseg.x2+glseg.x1);
 	v.Normalize();
-	glNormal3fv(&v[0]);
+
+	// we use texture coordinates and texture matrix to pass the normal stuff to the shader so that the default vertex buffer format can be used as is.
+	lolft.u = lorgt.u = uplft.u = uprgt.u = v.X();
+	lolft.v = lorgt.v = uplft.v = uprgt.v = v.Z();
+
+	gl_RenderState.EnableTextureMatrix(true);
+	gl_RenderState.mTextureMatrix.computeNormalMatrix(gl_RenderState.mViewMatrix);
 
 	// Use sphere mapping for this
 	gl_RenderState.SetEffect(EFF_SPHEREMAP);
@@ -344,11 +349,12 @@ void GLWall::RenderMirrorSurface()
 	flags &= ~GLWF_GLOW;
 	RenderWall(RWF_BLANK);
 
+	gl_RenderState.EnableTextureMatrix(false);
 	gl_RenderState.SetEffect(EFF_NONE);
 
 	// Restore the defaults for the translucent pass
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	gl_RenderState.AlphaFunc(GL_GEQUAL,0.5f*gl_mask_sprite_threshold);
+	gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
 	glDepthFunc(GL_LESS);
 
 	// This is drawn in the translucent pass which is done after the decal pass
@@ -382,8 +388,8 @@ void GLWall::RenderTranslucentWall()
 	// and until that changes I won't fix this code for the new blending modes!
 	bool isadditive = RenderStyle == STYLE_Add;
 
-	if (!transparent) gl_RenderState.AlphaFunc(GL_GEQUAL,gl_mask_threshold*fabs(alpha));
-	else gl_RenderState.EnableAlphaTest(false);
+	if (!transparent) gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_threshold);
+	else gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
 	if (isadditive) gl_RenderState.BlendFunc(GL_SRC_ALPHA,GL_ONE);
 
 	int extra;
@@ -407,7 +413,6 @@ void GLWall::RenderTranslucentWall()
 
 	// restore default settings
 	if (isadditive) gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	if (transparent) gl_RenderState.EnableAlphaTest(true);
 
 	if (!gltexture)	
 	{

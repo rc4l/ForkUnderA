@@ -359,11 +359,11 @@ SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen)
 	if (Screen == NULL)
 		return;
 
-	// [rc4l] Renderer staircase base: the legacy renderer is the only renderer, and it needs a
-	// compatibility profile, so the chain is compat-only (3.0 -> 2.1). The core request returns as
-	// a staircase step once the renderer itself can use a core context.
+	// [rc4l] The staircase summit (upstream fc0cf4f99): the renderer runs on a core profile,
+	// so request the core chain (4.1 -> 4.0 -> 3.3). This is the flip that gives macOS its
+	// shaders back -- Apple never offered compatibility contexts above 2.1.
 	zx::GLContextRequest reqs[zx::kMaxGLContextRequests];
-	const int reqCount = zx::ComputeGLContextRequests(false, reqs, zx::kMaxGLContextRequests);
+	const int reqCount = zx::ComputeGLContextRequests(true, reqs, zx::kMaxGLContextRequests);
 	GLContext = NULL;
 	for (int attempt = 0; attempt < reqCount; attempt++)
 	{

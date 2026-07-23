@@ -1,6 +1,10 @@
 in vec4 pixelpos;
 in vec2 glowdist;
 
+in vec4 vTexCoord;
+in vec4 vColor;
+
+out vec4 FragColor;
 
 #ifdef SHADER_STORAGE_LIGHTS
 	layout(std430, binding = 3) buffer ParameterBuffer
@@ -31,13 +35,8 @@ vec4 desaturate(vec4 texel)
 {
 	if (uDesaturationFactor > 0.0)
 	{
-		float gray = (texel.r * 0.3 + texel.g * 0.56 + texel.b * 0.14) * uDesaturationFactor;	
-		
-		vec4 desaturated = vec4(gray,gray,gray,texel.a);
-		// I have absolutely no idea why this works and 'mix' doesn't...
-		texel *= (1.0-uDesaturationFactor);
-		return texel + desaturated;
-		//return mix (desaturated, texel, uDesaturationFactor);
+		float gray = (texel.r * 0.3 + texel.g * 0.56 + texel.b * 0.14);	
+		return mix (texel, vec4(gray,gray,gray,texel.a), uDesaturationFactor);
 	}
 	else
 	{
@@ -125,7 +124,7 @@ float R_DoomLightingEquation(float light, float dist)
 
 vec4 getLightColor(float fogdist, float fogfactor)
 {
-	vec4 color = gl_Color;
+	vec4 color = vColor;
 	
 	if (uLightLevel >= 0.0)
 	{
@@ -198,7 +197,7 @@ vec4 getLightColor(float fogdist, float fogfactor)
 	color.rgb = clamp(color.rgb + desaturate(dynlight).rgb, 0.0, 1.4);
 	
 	// prevent any unintentional messing around with the alpha.
-	return vec4(color.rgb, gl_Color.a);
+	return vec4(color.rgb, vColor.a);
 }
 
 //===========================================================================
@@ -228,6 +227,12 @@ void main()
 #endif
 
 	vec4 frag = ProcessTexel();
+	
+#ifndef NO_DISCARD
+	// alpha testing
+	if (frag.a <= uAlphaThreshold) discard;
+#endif
+
 
 	switch (uFixedColormap)
 	{
@@ -290,14 +295,14 @@ void main()
 		{
 			float gray = (frag.r * 0.3 + frag.g * 0.56 + frag.b * 0.14);	
 			vec4 cm = uFixedColormapStart + gray * uFixedColormapRange;
-			frag = vec4(clamp(cm.rgb, 0.0, 1.0), frag.a*gl_Color.a);
+			frag = vec4(clamp(cm.rgb, 0.0, 1.0), frag.a*vColor.a);
 			break;
 		}
 		
 		case 2:
 		{
 			frag = frag * uFixedColormapStart;
-			frag.a *= gl_Color.a;
+			frag.a *= vColor.a;
 			break;
 		}
 
@@ -319,10 +324,10 @@ void main()
 			}
 			fogfactor = exp2 (uFogDensity * fogdist);
 			
-			frag = vec4(uFogColor.rgb, (1.0 - fogfactor) * frag.a * 0.75 * gl_Color.a);
+			frag = vec4(uFogColor.rgb, (1.0 - fogfactor) * frag.a * 0.75 * vColor.a);
 			break;
 		}
 	}
-	gl_FragColor = frag;
+	FragColor = frag;
 }
 

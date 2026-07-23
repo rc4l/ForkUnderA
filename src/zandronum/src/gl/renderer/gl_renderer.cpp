@@ -385,7 +385,7 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 	glScissor(parms.lclip, btm - parms.dclip + space, parms.rclip - parms.lclip, parms.dclip - parms.uclip);
 	
 	gl_RenderState.SetColor(color);
-	gl_RenderState.EnableAlphaTest(false);
+	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
 	gl_RenderState.Apply();
 
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
@@ -411,8 +411,6 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 		GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 	}
 
-	gl_RenderState.EnableAlphaTest(true);
-	
 	glScissor(0, 0, screen->GetWidth(), screen->GetHeight());
 	glDisable(GL_SCISSOR_TEST);
 	gl_RenderState.SetTextureMode(TM_MODULATE);

@@ -45,6 +45,7 @@
 #include "v_text.h"
 #include "gl/system/gl_interface.h"
 #include "gl/system/gl_cvars.h"
+#include "doomstat.h"	// [rc4l] for 'developer' (extension-list print gate)
 
 #ifdef _WIN32 // [BB] Detect some kinds of glBegin hooking.
 char myGlBeginCharArray[4] = {0,0,0,0};
@@ -75,24 +76,15 @@ int occlusion_type=0;
 
 static void CollectExtensions()
 {
-	const char *supported = NULL;
-	char *extensions, *extension;
+	const char *extension;
 
-	supported = (char *)glGetString(GL_EXTENSIONS);
+	int max = 0;
+	glGetIntegerv(GL_NUM_EXTENSIONS, &max);
 
-	if (supported)
+	for(int i = 0; i < max; i++)
 	{
-		extensions = new char[strlen(supported) + 1];
-		strcpy(extensions, supported);
-
-		extension = strtok(extensions, " ");
-		while(extension)
-		{
-			m_Extensions.Push(FString(extension));
-			extension = strtok(NULL, " ");
-		}
-
-		delete [] extensions;
+		extension = (const char*)glGetStringi(GL_EXTENSIONS, i);
+		m_Extensions.Push(FString(extension));
 	}
 
 }
@@ -139,6 +131,21 @@ static void InitContext()
 void gl_LoadExtensions()
 {
 	InitContext();
+
+	// [rc4l] Flight 1 (upstream 69af73d9b/94b06900c): one real loader. glewInit resolves every
+	// entry point the context offers. This MUST run before CollectExtensions(): on a core
+	// profile the extension list comes from glGetStringi, which is a GLEW-resolved pointer
+	// (the old glGetString(GL_EXTENSIONS) was statically linked, so the pre-summit ordering
+	// never mattered).
+	glewExperimental = GL_TRUE;
+	GLenum glewErr = glewInit();
+	if (glewErr != GLEW_OK)
+	{
+		I_FatalError("glewInit failed: %s\n", glewGetErrorString(glewErr));
+	}
+	// glewInit can leave a benign GL_INVALID_ENUM behind on some drivers; clear it.
+	while (glGetError() != GL_NO_ERROR) {}
+
 	CollectExtensions();
 
 	const char *version = Args->CheckValue("-glversion");
@@ -152,19 +159,9 @@ void gl_LoadExtensions()
 		I_FatalError("Unsupported OpenGL version.\nAt least GL 3.0 is required to run " GAMENAME ".\n");
 	}
 
-	// [rc4l] Flight 1 (upstream 69af73d9b/94b06900c): one real loader. glewInit resolves every
-	// entry point the context offers.
-	glewExperimental = GL_TRUE;
-	GLenum glewErr = glewInit();
-	if (glewErr != GLEW_OK)
-	{
-		I_FatalError("glewInit failed: %s\n", glewGetErrorString(glewErr));
-	}
-	// glewInit can leave a benign GL_INVALID_ENUM behind on some drivers; clear it.
-	while (glGetError() != GL_NO_ERROR) {}
-
-	gl.version = (float)strtod(version, NULL);
-	gl.glslversion = (float)strtod((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), NULL);
+	// add 0.01 to account for roundoff errors making the number a tad smaller than the actual version
+	gl.version = (float)strtod(version, NULL) + 0.01f;
+	gl.glslversion = (float)strtod((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), NULL) + 0.01f;
 	gl.vendorstring=(char*)glGetString(GL_VENDOR);
 	// [rc4l] Always 4 on the 3.0 floor; kept for the [BB] map_lightmode gates.
 	gl.shadermodel = 4;
@@ -173,8 +170,7 @@ void gl_LoadExtensions()
 	if (CheckExtension("GL_EXT_texture_compression_s3tc")) gl.flags|=RFL_TEXTURE_COMPRESSION_S3TC;
 	// [rc4l] upstream 0ce6b4067: ARB_buffer_storage requires GL 4.0 per spec, so
 	// don't use it when emulating something lower via -glversion.
-	if (gl.version >= 4.f && CheckExtension("GL_ARB_buffer_storage")) gl.flags|=RFL_BUFFER_STORAGE;
-	if (gl.version >= 3.2f || CheckExtension("GL_ARB_draw_elements_base_vertex")) gl.flags |= RFL_BASEINDEX;
+	if (CheckExtension("GL_ARB_buffer_storage")) gl.flags|=RFL_BUFFER_STORAGE;
 	if (CheckExtension("GL_ARB_shader_storage_buffer_object")) gl.flags|=RFL_SHADER_STORAGE_BUFFER;
 	// [rc4l] Guaranteed on every GL 3.x context; kept for [BB] call sites.
 	gl.flags |= RFL_NPOT_TEXTURE | RFL_OCCLUSION_QUERY;
@@ -195,8 +191,8 @@ void gl_PrintStartupLog()
 	Printf ("GL_RENDERER: %s\n", glGetString(GL_RENDERER));
 	Printf ("GL_VERSION: %s\n", glGetString(GL_VERSION));
 	Printf ("GL_SHADING_LANGUAGE_VERSION: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
-	// [TDRR] Make GL extension printing optional (using the developer CVAR).
-	DPrintf ("GL_EXTENSIONS: %s\n", glGetString(GL_EXTENSIONS));
+	// [rc4l] core profile: glGetString(GL_EXTENSIONS) is invalid; enumerate instead ([TDRR] optional via developer CVAR).
+	if (developer) { Printf("GL_EXTENSIONS:"); for (unsigned ext_i = 0; ext_i < m_Extensions.Size(); ext_i++) Printf(" %s", m_Extensions[ext_i].GetChars()); Printf("\n"); }
 	int v;
 
 	glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &v);

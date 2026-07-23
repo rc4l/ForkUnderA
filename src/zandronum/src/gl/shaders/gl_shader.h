@@ -9,7 +9,10 @@ extern bool gl_shaderactive;
 
 enum
 {
-	VATTR_VERTEX2 = 15
+	VATTR_VERTEX = 0,
+	VATTR_TEXCOORD = 1,
+	VATTR_COLOR = 2,
+	VATTR_VERTEX2 = 3
 };
 
 
@@ -195,6 +198,7 @@ class FShader
 	FBufferedUniform1f muInterpolationFactor;
 	FBufferedUniform1f muClipHeightTop;
 	FBufferedUniform1f muClipHeightBottom;
+	FBufferedUniform1f muAlphaThreshold;
 	
 	int timer_index;
 	int lights_index;
