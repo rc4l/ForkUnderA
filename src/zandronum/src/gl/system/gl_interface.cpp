@@ -169,6 +169,10 @@ void gl_LoadExtensions()
 	// [rc4l] Always 4 on the 3.0 floor; kept for the [BB] map_lightmode gates.
 	gl.shadermodel = 4;
 
+	if (gl.version < 3.3f && !CheckExtension("GL_ARB_sampler_objects"))
+	{
+		I_FatalError("'GL_ARB_sampler_objects' extension not found. Please update your graphics driver.");
+	}
 	if (CheckExtension("GL_ARB_texture_compression")) gl.flags|=RFL_TEXTURE_COMPRESSION;
 	if (CheckExtension("GL_EXT_texture_compression_s3tc")) gl.flags|=RFL_TEXTURE_COMPRESSION_S3TC;
 	if (!CheckExtension("GL_ARB_compatibility")) gl.flags |= RFL_COREPROFILE;
@@ -218,7 +222,7 @@ void gl_PrintStartupLog()
 	Printf ("GL_SHADING_LANGUAGE_VERSION: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
 	// [rc4l] core profile: glGetString(GL_EXTENSIONS) is invalid; enumerate instead ([TDRR] optional via developer CVAR).
 	if (developer) { Printf("GL_EXTENSIONS:"); for (unsigned ext_i = 0; ext_i < m_Extensions.Size(); ext_i++) Printf(" %s", m_Extensions[ext_i].GetChars()); Printf("\n"); }
-	int v;
+	int v = 0;
 
 	glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &v);
 	Printf ("Max. texture units: %d\n", v);

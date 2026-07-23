@@ -36,6 +36,11 @@ public:
 	virtual int FindFrame(const char * name) = 0;
 	virtual void RenderFrame(FTexture * skin, int frame, int frame2, double inter, int translation=0) = 0;
 	virtual void BuildVertexBuffer() = 0;
+	void DestroyVertexBuffer()
+	{
+		delete mVBuf;
+		mVBuf = NULL;
+	}
 	virtual float getAspectFactor() { return 1.f; }
 
 	FModelVertexBuffer *mVBuf;
@@ -52,8 +57,8 @@ protected:
 
 	struct FTriangle
 	{
-		unsigned short           vertexIndices[3];
-		unsigned short           textureIndices[3];
+		short           vertexIndices[3];
+		short           textureIndices[3];
 	};
 
 
@@ -100,9 +105,13 @@ protected:
 	struct ModelFrame
 	{
 		char            name[16];
+		unsigned int vindex;
+	};
+
+	struct ModelFrameVertexData
+	{
 		DMDModelVertex *vertices;
 		DMDModelVertex *normals;
-		unsigned int vindex;
 	};
 
 	struct DMDLoDInfo
@@ -119,21 +128,23 @@ protected:
 	};
 
 
-	bool			loaded;
+	int				mLumpNum;
 	DMDHeader	    header;
 	DMDInfo			info;
 	FTexture **		skins;
-	FTexCoord *		texCoords;
-	
 	ModelFrame  *	frames;
+	bool			allowTexComp;  // Allow texture compression with this.
+
+	// Temp data only needed for buffer construction
+	FTexCoord *		texCoords;
+	ModelFrameVertexData *framevtx;
 	DMDLoDInfo		lodInfo[MAX_LODS];
 	DMDLoD			lods[MAX_LODS];
-	bool			allowTexComp;  // Allow texture compression with this.
 
 public:
 	FDMDModel() 
 	{ 
-		loaded = false; 
+		mLumpNum = -1;
 		frames = NULL;
 		skins = NULL;
 		for (int i = 0; i < MAX_LODS; i++)
@@ -142,14 +153,16 @@ public:
 		}
 		info.numLODs = 0;
 		texCoords = NULL;
+		framevtx = NULL;
 	}
 	virtual ~FDMDModel();
 
 	virtual bool Load(const char * fn, int lumpnum, const char * buffer, int length);
 	virtual int FindFrame(const char * name);
 	virtual void RenderFrame(FTexture * skin, int frame, int frame2, double inter, int translation=0);
+	virtual void LoadGeometry();
+	void UnloadGeometry();
 	void BuildVertexBuffer();
-	void CleanTempData();
 
 };
 
@@ -161,6 +174,7 @@ public:
 	virtual ~FMD2Model();
 
 	virtual bool Load(const char * fn, int lumpnum, const char * buffer, int length);
+	virtual void LoadGeometry();
 
 };
 
@@ -213,10 +227,10 @@ class FMD3Model : public FModel
 		~MD3Surface()
 		{
 			if (skins) delete [] skins;
-			CleanTempData();
+			UnloadGeometry();
 		}
 
-		void CleanTempData()
+		void UnloadGeometry()
 		{
 			if (tris) delete [] tris;
 			if (vertices) delete [] vertices;
@@ -238,6 +252,7 @@ class FMD3Model : public FModel
 	int numFrames;
 	int numTags;
 	int numSurfaces;
+	int mLumpNum;
 
 	MD3Frame * frames;
 	MD3Surface * surfaces;
@@ -249,6 +264,7 @@ public:
 	virtual bool Load(const char * fn, int lumpnum, const char * buffer, int length);
 	virtual int FindFrame(const char * name);
 	virtual void RenderFrame(FTexture * skin, int frame, int frame2, double inter, int translation=0);
+	void LoadGeometry();
 	void BuildVertexBuffer();
 };
 
