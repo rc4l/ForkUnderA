@@ -118,7 +118,7 @@ angle_t FGLRenderer::FrustumAngle()
 {
 	float tilt= fabs(mAngles.Pitch);
 
-	// If the pitch is larger than this you can look all around at a FOV of 90°
+	// If the pitch is larger than this you can look all around at a FOV of 90ï¿½
 	if (tilt>46.0f) return 0xffffffff;
 
 	// ok, this is a gross hack that barely works...
@@ -268,7 +268,14 @@ void FGLRenderer::SetProjection(float fov, float ratio, float fovratio, float ey
 	float fovy = 2 * RAD2DEG(atan(tan(DEG2RAD(fov) / 2) / fovratio));
 	// [BB] Added eyeShift from GZ3Doom.
 	if ( eyeShift == 0 )
-		gluPerspective(fovy, ratio, 5.f, 65536.f);
+	{
+		// [rc4l] Flight 1: the last GLU call. gluPerspective(fovy, ratio, near, far) is exactly
+		// this symmetric glFrustum; GLU is no longer linked on any platform.
+		const double zNear = 5.0, zFar = 65536.0;
+		const double fH = tan(DEG2RAD(fovy) / 2.0) * zNear;
+		const double fW = fH * ratio;
+		glFrustum(-fW, fW, -fH, fH, zNear, zFar);
+	}
 	else
 	{
 		const float zNear = 5.0f;
