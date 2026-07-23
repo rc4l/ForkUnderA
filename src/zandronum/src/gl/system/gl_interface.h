@@ -17,6 +17,9 @@ enum RenderFlags
 	RFL_TEXTUREBUFFER = 256,
 	RFL_NVIDIA = 512,
 	RFL_ATI = 1024,
+	// [rc4l] Flight 2 (upstream 7d3beb665): persistent-mapped vertex buffers when available;
+	// the vertex buffer falls back to glBufferData streaming without it (e.g. macOS).
+	RFL_BUFFER_STORAGE = 2048,
 
 
 	RFL_GL_20 = 0x10000000,

@@ -203,6 +203,7 @@ void gl_LoadExtensions()
 	else if (Args->CheckParm("-sm3") && gl.shadermodel > 3) gl.shadermodel = 3;
 
 	if (CheckExtension("GL_ARB_occlusion_query")) gl.flags|=RFL_OCCLUSION_QUERY;
+	if (CheckExtension("GL_ARB_buffer_storage")) gl.flags|=RFL_BUFFER_STORAGE;
 	if (gl.flags & RFL_GL_21) gl.flags |= RFL_VBO;
 	else if (CheckExtension("GL_ARB_vertex_buffer_object")) gl.flags |= RFL_VBO;
 	if (CheckExtension("GL_ARB_map_buffer_range")) gl.flags|=RFL_MAP_BUFFER_RANGE;

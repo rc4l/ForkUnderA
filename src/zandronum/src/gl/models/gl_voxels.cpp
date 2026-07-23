@@ -514,20 +514,20 @@ void FVoxelModel::RenderFrame(FTexture * skin, int frame, int cm, int translatio
 {
 	FMaterial * tex = FMaterial::ValidateTexture(skin);
 	tex->Bind(cm, 0, translation);
-	gl_RenderState.Apply();
 
-	if (gl.flags&RFL_VBO)
+	// [rc4l] Flight 2 (upstream 7d3beb665): voxel VBO binds through the render state; the [BB]
+	// RFL_VBO guard is gone -- VBOs are core since GL 1.5 and the floor is 2.0.
+	if (mVBO == NULL) MakeGLData();
+	if (mVBO != NULL)
 	{
-		if (mVBO == NULL) MakeGLData();
-		if (mVBO != NULL)
-		{
-			mVBO->BindVBO();
-			glDrawElements(GL_QUADS, mIndices.Size(), mVBO->IsInt()? GL_UNSIGNED_INT:GL_UNSIGNED_SHORT, 0);
-			GLRenderer->mVBO->BindVBO();
-			return;
-		}
+		gl_RenderState.SetVertexBuffer(mVBO);
+		gl_RenderState.Apply();
+		glDrawElements(GL_QUADS, mIndices.Size(), mVBO->IsInt() ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT, 0);
+		gl_RenderState.SetVertexBuffer(GLRenderer->mVBO);
+		return;
 	}
 
+	gl_RenderState.Apply();
 	glBegin(GL_QUADS);
 	for(unsigned i=0;i < mIndices.Size(); i++)
 	{
