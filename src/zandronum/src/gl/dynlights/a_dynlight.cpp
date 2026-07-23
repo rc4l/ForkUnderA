@@ -392,6 +392,19 @@ void ADynamicLight::UpdateLocation()
 //
 //
 //==========================================================================
+
+void ADynamicLight::SetOrigin(fixed_t x, fixed_t y, fixed_t z)
+{
+	Super::SetOrigin(x, y, z);
+	LinkLight();
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
 void ADynamicLight::SetOffset(fixed_t x, fixed_t y, fixed_t z)
 {
 	m_offX = x;

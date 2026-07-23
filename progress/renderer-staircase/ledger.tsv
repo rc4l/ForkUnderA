@@ -286,27 +286,27 @@ d037493ff	2016-01-29	lighting	skipped	—	FF_FADEWALLS rework uses the FF_RESET 
 342f1abcc	2016-01-30	dynlights	ported	368b262	- fixed: flickering dynamic lights with their first intensity value larger than the second one weren't properly linked into all touching sectors.
 4a9b2bf76	2016-01-30	portal	ported	368b262	- fixed: The stencil cap drawer did not properly advance the vertex pointer.
 37ac6ef9a	2016-01-30	texture	ported	368b262	- fixed: Translucency detection for GL textures was broken. - fixed: Textures which are already scaled should not be upsampled. - fixed: The transparency check in the upscaling code checked the wrong modes for exclusion when handling translucent textures.
-fc57180d7	2016-01-30	shader	pending	—	- added necessary state to implement 3D light splitting using hardware clipping planes.
-1d9ab5c63	2016-01-31	renderer	pending	—	- clean out GLWall::SplitWall and instead of actually splitting the wall just attach a list of lights to it.
-f86535407	2016-01-31	renderer	pending	—	- forgot this.
-5448b335c	2016-01-31	renderer	pending	—	- rewrote render loop for walls. Not working yet.
-9ce6a7932	2016-01-31	portal	pending	—	- implemented rendering of 3D lights with clip planes.
-53a389aaf	2016-01-31	texture	pending	—	- fixed: for untextured walls, the texture must be disabled before rendering. - fixed: untextured walls should never be passed to SplitWall. - fixed: untextured walls should not be affected by dynamic lights (it's either fog boundaries or outsides of 3D fog volumes.)
-71da7406b	2016-02-01	other	pending	—	- since we no longer split walls at 3D floor boundaries, those planes no longer need to be added to the vertex height lists.
-9305cd86a	2016-02-01	renderer	pending	—	- remove the GLWallLightEntry type. Everything it contains can be retrieved from the existing lightlist just as easily, and this approach avoids a lot of memory allocations. - removed the SplitWall profiling timer because all it measures now is an almost empty function.
-67fc35e73	2016-02-01	sky	pending	—	- some cleanup of wall processing code.
-1ad310e69	2016-02-01	renderer	pending	—	- only draw visible 3D-lights.
-2c55dcca2	2016-02-01	models	pending	—	- use hardware clipping to apply 3D lights to sprites. This solves all the problems with properly lighting models and billboarded sprites. - add some restrictions for the checks that exclude sprites which are too close to the camera. Most importantly, for clipping the first frame of a projectile, do not solely clip against the projectile's speed but use the player's radius as a limiting factor to avoid too large distances.
-faa08410d	2016-02-01	sprites	pending	—	- handle nocoloredspritelighting with 3D light splitter
-f11f86f05	2016-02-01	sprites	pending	—	- added light plane clipping for decals as well.
-9453a8a7e	2016-02-01	sprites	pending	—	- reuse the same vertex buffer data for all slices of a decal.
-22e9fc9b7	2016-02-02	texture	pending	—	- re-fixed FTexture::CheckTrans
-d79741574	2016-02-02	dynlights	pending	—	- fixed: dynamic lights did not relink themselves when their position changed.
-df9c59bcf	2016-02-02	build	pending	—	- moved gl_builddraw.cpp to a new 'unused' directory and also added gl_sections, which is needed by the Build algorithm to preprocess the level.
-db766f9fe	2016-02-03	sprites	pending	—	- fixed some warnings.
-0c8a817df	2016-02-04	sprites	pending	—	- fixed wall clipping with 3D lights.
-c129cb3ca	2016-02-04	renderer	pending	—	- reinstated software clipping by light volumes for walls.
-b2158c5b9	2016-02-05	renderer	pending	—	- removed unneeded parameter.
-b6f8a45bb	2016-02-09	sky	pending	—	- fixed: The check for missing textures in Vavoom skyboxes was inverted.
-6ac3e4ce4	2016-02-12	sprites	pending	—	- fixed: part of the special handling of projectiles being spawned near the camera also affected other actors, this caused the fly cheat to break.
-a21044791	2016-02-19	bugfix	pending	—	- fixed: fake contrast was not applied.
+fc57180d7	2016-01-30	shader	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+1d9ab5c63	2016-01-31	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+f86535407	2016-01-31	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+5448b335c	2016-01-31	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+9ce6a7932	2016-01-31	portal	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+53a389aaf	2016-01-31	texture	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+71da7406b	2016-02-01	other	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+9305cd86a	2016-02-01	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+67fc35e73	2016-02-01	sky	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+1ad310e69	2016-02-01	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+2c55dcca2	2016-02-01	models	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+faa08410d	2016-02-01	sprites	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+f11f86f05	2016-02-01	sprites	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+9453a8a7e	2016-02-01	sprites	deferred	—	Decal vertex-buffer reuse needs the decal lightlist member from the 3D-light splitter -- #41.
+22e9fc9b7	2016-02-02	texture	ported	c77d5e4	- re-fixed FTexture::CheckTrans
+d79741574	2016-02-02	dynlights	ported	c77d5e4	- fixed: dynamic lights did not relink themselves when their position changed.
+df9c59bcf	2016-02-02	build	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+db766f9fe	2016-02-03	sprites	ported	c77d5e4	- fixed some warnings.
+0c8a817df	2016-02-04	sprites	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+c129cb3ca	2016-02-04	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+b2158c5b9	2016-02-05	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
+b6f8a45bb	2016-02-09	sky	skipped	—	Vavoom skybox missing-texture check; our code uses a different (already-correct) maplump==-1 form -- no-op.
+6ac3e4ce4	2016-02-12	sprites	deferred	—	Fly-cheat/projectile-spawn fix needs MF7_FLYCHEAT + the coordinate refactor (thingpos) -- #41.
+a21044791	2016-02-19	bugfix	ported	c77d5e4	- fixed: fake contrast was not applied.
