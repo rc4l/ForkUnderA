@@ -67,18 +67,13 @@
 #include <fcntl.h>
 
 //GL headers
+// [rc4l] Flight 1 (upstream 69af73d9b/94b06900c): real GLEW on every platform. The hand-rolled
+// loader (gl/api) and the vendored glext/wglext headers are gone; GLU is gone with the
+// gluScaleImage call (imageresize_compute replaces it).
+#include <GL/glew.h>
 #if defined(__APPLE__)
-#include <GL/glew.h>
 #include <OpenGL/OpenGL.h>
-#elif defined(__unix__)
-#include <GL/glew.h>
-// #include "gl/api/glext.h" [AK] Commented this out to fix compile errors on Fedora.
-#else // !__APPLE__ && !__unix__
-#include <GL/gl.h>
-#include <GL/glu.h>
-#include "gl/api/glext.h"
 #endif
-#include "gl/api/gl_api.h"
 
 #ifdef _WIN32
 #define DWORD WINDOWS_DWORD	// I don't want to depend on this throughout the GL code!

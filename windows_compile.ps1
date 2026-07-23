@@ -132,9 +132,11 @@ if ($SkipDeps) {
     Write-Status "Skipping vcpkg install (-SkipDeps)"
 } else {
     Write-Status "Installing OpenAL audio dependencies via vcpkg (first run is slow)"
+    # [rc4l] Flight 1: glew replaces the hand-rolled GL loader (gl/api) on Windows too -- one
+    # loader on every platform, per upstream 69af73d9b/94b06900c.
     & $VcpkgExe install `
         openal-soft:x64-windows libsndfile:x64-windows mpg123:x64-windows `
-        opus:x64-windows openssl:x64-windows
+        opus:x64-windows openssl:x64-windows glew:x64-windows
     if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed" }
 }
 
@@ -177,6 +179,8 @@ $dep = $VcpkgInstalled
     "-DMPG123_LIBRARIES=$dep/lib/mpg123.lib" `
     "-DOPUS_INCLUDE_DIR=$dep/include/opus" `
     "-DOPUS_LIBRARIES=$dep/lib/opus.lib" `
+    "-DGLEW_INCLUDE_DIR=$dep/include" `
+    "-DGLEW_LIBRARY=$dep/lib/glew32.lib" `
     "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=OFF"
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 

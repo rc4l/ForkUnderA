@@ -198,6 +198,8 @@ configure() {
         # [rc4l] Native SDL2, not the sdl12-compat shim: SDL 1.2 cannot request a GL version/profile.
         -DSDL2_DIR="$SDL_PREFIX/lib/cmake/SDL2"
         -DGLEW_INCLUDE_DIR="$glew/include"
+        # [rc4l] Flight 1: real GLEW (glewInit) needs the library linked, not just headers.
+        -DGLEW_LIBRARY="$glew/lib/libGLEW.dylib"
         -DOPENSSL_ROOT_DIR="$ssl"
     )
 

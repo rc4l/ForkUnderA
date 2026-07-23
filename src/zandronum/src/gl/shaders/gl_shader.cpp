@@ -165,7 +165,9 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 			error << "Linking:\n" << buffer << "\n";
 		}
 		int linked;
-		glGetObjectParameteriv(hShader, GL_LINK_STATUS, &linked);
+		// [rc4l] Flight 1: the old loader aliased glGetObjectParameteriv; under real GLEW the
+		// modern GL 2.0 name is glGetProgramiv (hShader is a program object here).
+		glGetProgramiv(hShader, GL_LINK_STATUS, &linked);
 		if (linked == 0)
 		{
 			// only print message if there's an error.

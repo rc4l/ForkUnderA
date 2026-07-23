@@ -200,10 +200,8 @@ if( NOT NO_GL )
 	if( NOT OPENGL_FOUND )
 		message( FATAL_ERROR "OpenGL is required for building." )
 	endif( NOT OPENGL_FOUND )
-	if( NOT OPENGL_GLU_FOUND )
-		message( FATAL_ERROR "OpenGL GLU is required for building." )
-	endif( NOT OPENGL_GLU_FOUND )
-	
+	# [rc4l] Flight 1: GLU dependency removed (gluScaleImage replaced by the tested
+	# imageresize_compute unit).
 	set( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPENGL_LIBRARIES} )
 	include_directories( ${OPENGL_INCLUDE_DIR} )
 endif( NOT NO_GL )
@@ -342,19 +340,22 @@ if( NOT NO_ASM )
 	ENDMACRO( ADD_ASM_FILE )
 endif( NOT NO_ASM )
 
-# OpenGL on OS X: Search for GLEW include files
-
-if( APPLE )
+# [rc4l] Flight 1 (upstream 69af73d9b/94b06900c): real GLEW on every platform -- glewInit()
+# replaces the hand-rolled loader (gl/api), so later GL3+ entry points arrive without hand-adding
+# each one. The server build has no GL and skips this.
+if( NOT NO_GL )
 	find_path( GLEW_INCLUDE_DIR GL/glew.h
-		PATHS "/usr/include"
-		"/usr/local/include" )
+		PATHS "/usr/include" "/usr/local/include" "/opt/homebrew/include" )
+	find_library( GLEW_LIBRARY NAMES GLEW glew32
+		PATHS "/usr/lib" "/usr/local/lib" "/opt/homebrew/lib" )
 
-	if( GLEW_INCLUDE_DIR )
-		message( STATUS "GLEW include files found at ${GLEW_INCLUDE_DIR}" )
-	else( GLEW_INCLUDE_DIR )
-		message( SEND_ERROR "Could not find GLEW include files" )
-	endif( GLEW_INCLUDE_DIR )
-endif( APPLE )
+	if( GLEW_INCLUDE_DIR AND GLEW_LIBRARY )
+		message( STATUS "GLEW found: ${GLEW_LIBRARY} (${GLEW_INCLUDE_DIR})" )
+	else( GLEW_INCLUDE_DIR AND GLEW_LIBRARY )
+		message( SEND_ERROR "GLEW is required for the client build (include=${GLEW_INCLUDE_DIR} lib=${GLEW_LIBRARY})" )
+	endif( GLEW_INCLUDE_DIR AND GLEW_LIBRARY )
+	set( ZDOOM_LIBS ${ZDOOM_LIBS} "${GLEW_LIBRARY}" )
+endif( NOT NO_GL )
 
 # Decide on SSE setup
 
@@ -581,11 +582,10 @@ else( NOT DYN_FLUIDSYNTH )
 	set( ZDOOM_LIBS ${ZDOOM_LIBS} ${CMAKE_DL_LIBS} )
 endif( NOT DYN_FLUIDSYNTH )
 
-# OpenGL on OS X: GLEW include directory
-
-if( APPLE )
+# [rc4l] GLEW include dir for all client platforms (Flight 1).
+if( NOT NO_GL )
 	include_directories( "${GLEW_INCLUDE_DIR}" )
-endif( APPLE )
+endif( NOT NO_GL )
 
 # Start defining source files for ZDoom
 set( PLAT_WIN32_SOURCES
@@ -723,8 +723,6 @@ endif( DYN_FLUIDSYNTH )
 # [BB] Only complile the gl sources, if we want GL support.
 if( NOT NO_GL )
 	set( GL_SOURCES
-		gl/api/gl_api.cpp
-		gl/data/gl_sections.cpp
 		gl/data/gl_data.cpp
 		gl/data/gl_portaldata.cpp
 		gl/data/gl_setup.cpp

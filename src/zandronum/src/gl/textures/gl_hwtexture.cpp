@@ -40,6 +40,8 @@
 */
 
 #include "gl/system/gl_system.h"
+// [rc4l] Flight 1: the GLU replacement scaler (tested computation unit).
+#include "features/hwrender/computation/imageresize_compute.h"
 #include "templates.h"
 #include "m_crc32.h"
 #include "c_cvars.h"
@@ -131,7 +133,10 @@ void FHardwareTexture::LoadImage(unsigned char * buffer,int w, int h, unsigned i
 			unsigned char * scaledbuffer=(unsigned char *)calloc(4,rw * (rh+1));
 			if (scaledbuffer)
 			{
-				gluScaleImage(GL_RGBA,w, h,GL_UNSIGNED_BYTE,buffer, rw, rh, GL_UNSIGNED_BYTE,scaledbuffer);
+				// [rc4l] Flight 1 (upstream 94b06900c): our own box-average scaler instead of
+				// gluScaleImage -- drops the deprecated GLU dependency. Tested unit; also fixes
+				// upstream's division by zero on fully transparent boxes.
+				zx::ResizeImageBoxAverage(w, h, buffer, rw, rh, scaledbuffer);
 				deletebuffer=true;
 				buffer=scaledbuffer;
 			}

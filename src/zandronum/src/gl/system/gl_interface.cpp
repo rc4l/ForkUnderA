@@ -57,7 +57,6 @@ char myGlBeginCharArray[4] = {0,0,0,0};
 #include <SDL.h>
 #define wglGetProcAddress(x) (*SDL_GL_GetProcAddress)(x)
 #endif
-static void APIENTRY glBlendEquationDummy (GLenum mode);
 
 
 static TArray<FString>  m_Extensions;
@@ -66,12 +65,6 @@ RenderContext gl;
 
 int occlusion_type=0;
 
-PROC myGetProcAddress(LPCSTR proc)
-{
-	PROC p = wglGetProcAddress(proc);
-	if (p == NULL) I_Error("Fatal: GL function '%s' not found.", proc);
-	return p;
-}
 
 
 //==========================================================================
@@ -130,7 +123,6 @@ static bool CheckExtension(const char *ext)
 static void InitContext()
 {
 	gl.flags=0;
-	glBlendEquation = glBlendEquationDummy;
 
 #ifdef _WIN32 // [BB] Detect some kinds of glBegin hooking.
 	for ( int i = 0; i < 4; ++i )
@@ -163,18 +155,25 @@ void gl_LoadExtensions()
 		Printf(TEXTCOLOR_RED "The current graphics driver implements a OpenGL version lower than 1.4 and may not support all features " GAMENAME " requires.\n");
 	}
 
-	// This loads any function pointers and flags that require a vaild render context to
-	// initialize properly
+	// [rc4l] Flight 1 (upstream 69af73d9b/94b06900c): one real loader. glewInit resolves every
+	// entry point the context offers; the ~90 hand-loaded pointers, their ARB-suffix fallbacks and
+	// the pre-GL2 dummies are gone. Pre-GL2.0 hardware is no longer supported.
+	glewExperimental = GL_TRUE;
+	GLenum glewErr = glewInit();
+	if (glewErr != GLEW_OK)
+	{
+		I_FatalError("glewInit failed: %s\n", glewGetErrorString(glewErr));
+	}
+	// glewInit can leave a benign GL_INVALID_ENUM behind on some drivers; clear it.
+	while (glGetError() != GL_NO_ERROR) {}
+
+	if (strcmp(version, "2.0") < 0)
+	{
+		I_FatalError("Unsupported OpenGL version.\nAt least GL 2.0 is required to run " GAMENAME ".\n");
+	}
 
 	gl.shadermodel = 0;	// assume no shader support
 	gl.vendorstring=(char*)glGetString(GL_VENDOR);
-
-	// First try the regular function
-	glBlendEquation = (PFNGLBLENDEQUATIONPROC)wglGetProcAddress("glBlendEquation");
-	// If that fails try the EXT version
-	if (!glBlendEquation) glBlendEquation = (PFNGLBLENDEQUATIONPROC)wglGetProcAddress("glBlendEquationEXT");
-	// If that fails use a no-op dummy
-	if (!glBlendEquation) glBlendEquation = glBlendEquationDummy;
 
 	if (CheckExtension("GL_ARB_texture_non_power_of_two")) gl.flags|=RFL_NPOT_TEXTURE;
 	if (CheckExtension("GL_ARB_texture_compression")) gl.flags|=RFL_TEXTURE_COMPRESSION;
@@ -190,157 +189,24 @@ void gl_LoadExtensions()
 
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE,&gl.max_texturesize);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	
-	if (gl.flags & RFL_GL_20)
-	{
-		glDeleteShader = (PFNGLDELETESHADERPROC)myGetProcAddress("glDeleteShader");
-		glDeleteProgram = (PFNGLDELETEPROGRAMPROC)myGetProcAddress("glDeleteProgram");
-		glDetachShader = (PFNGLDETACHSHADERPROC)myGetProcAddress("glDetachShader");
-		glCreateShader = (PFNGLCREATESHADERPROC)myGetProcAddress("glCreateShader");
-		glShaderSource = (PFNGLSHADERSOURCEPROC)myGetProcAddress("glShaderSource");
-		glCompileShader = (PFNGLCOMPILESHADERPROC)myGetProcAddress("glCompileShader");
-		glCreateProgram = (PFNGLCREATEPROGRAMPROC)myGetProcAddress("glCreateProgram");
-		glAttachShader = (PFNGLATTACHSHADERPROC)myGetProcAddress("glAttachShader");
-		glLinkProgram = (PFNGLLINKPROGRAMPROC)myGetProcAddress("glLinkProgram");
-		glUseProgram = (PFNGLUSEPROGRAMPROC)myGetProcAddress("glUseProgram");
-		glValidateProgram = (PFNGLVALIDATEPROGRAMPROC)myGetProcAddress("glValidateProgram");
 
-		glVertexAttrib1f = (PFNGLVERTEXATTRIB1FPROC)myGetProcAddress("glVertexAttrib1f");
-		glVertexAttrib2f = (PFNGLVERTEXATTRIB2FPROC)myGetProcAddress("glVertexAttrib2f");
-		glVertexAttrib4f = (PFNGLVERTEXATTRIB4FPROC)myGetProcAddress("glVertexAttrib4f");
-		glVertexAttrib2fv = (PFNGLVERTEXATTRIB4FVPROC)myGetProcAddress("glVertexAttrib2fv");
-		glVertexAttrib3fv = (PFNGLVERTEXATTRIB4FVPROC)myGetProcAddress("glVertexAttrib3fv");
-		glVertexAttrib4fv = (PFNGLVERTEXATTRIB4FVPROC)myGetProcAddress("glVertexAttrib4fv");
-		glVertexAttrib4ubv = (PFNGLVERTEXATTRIB4UBVPROC)myGetProcAddress("glVertexAttrib4ubv");
-		glGetAttribLocation = (PFNGLGETATTRIBLOCATIONPROC)myGetProcAddress("glGetAttribLocation");
-		glBindAttribLocation = (PFNGLBINDATTRIBLOCATIONPROC)myGetProcAddress("glBindAttribLocation");
+	// Shader model detection (unchanged this flight; the pre-1.3 GLSL branches retire later).
+	if (strcmp((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), "1.3") >= 0) gl.shadermodel = 4;
+	else if (CheckExtension("GL_NV_GPU_shader4")) gl.shadermodel = 4;
+	else if (CheckExtension("GL_EXT_GPU_shader4")) gl.shadermodel = 4;
+	else if (CheckExtension("GL_NV_vertex_program3")) gl.shadermodel = 3;
+	else if (!strstr(gl.vendorstring, "NVIDIA")) gl.shadermodel = 3;
+	else gl.shadermodel = 2;
 
+	// Command line overrides for testing and problem cases.
+	if (Args->CheckParm("-sm2") && gl.shadermodel > 2) gl.shadermodel = 2;
+	else if (Args->CheckParm("-sm3") && gl.shadermodel > 3) gl.shadermodel = 3;
 
-		glUniform1f = (PFNGLUNIFORM1FPROC)myGetProcAddress("glUniform1f");
-		glUniform2f = (PFNGLUNIFORM2FPROC)myGetProcAddress("glUniform2f");
-		glUniform3f = (PFNGLUNIFORM3FPROC)myGetProcAddress("glUniform3f");
-		glUniform4f = (PFNGLUNIFORM4FPROC)myGetProcAddress("glUniform4f");
-		glUniform1i = (PFNGLUNIFORM1IPROC)myGetProcAddress("glUniform1i");
-		glUniform2i = (PFNGLUNIFORM2IPROC)myGetProcAddress("glUniform2i");
-		glUniform3i = (PFNGLUNIFORM3IPROC)myGetProcAddress("glUniform3i");
-		glUniform4i = (PFNGLUNIFORM4IPROC)myGetProcAddress("glUniform4i");
-		glUniform1fv = (PFNGLUNIFORM1FVPROC)myGetProcAddress("glUniform1fv");
-		glUniform2fv = (PFNGLUNIFORM2FVPROC)myGetProcAddress("glUniform2fv");
-		glUniform3fv = (PFNGLUNIFORM3FVPROC)myGetProcAddress("glUniform3fv");
-		glUniform4fv = (PFNGLUNIFORM4FVPROC)myGetProcAddress("glUniform4fv");
-		glUniform1iv = (PFNGLUNIFORM1IVPROC)myGetProcAddress("glUniform1iv");
-		glUniform2iv = (PFNGLUNIFORM2IVPROC)myGetProcAddress("glUniform2iv");
-		glUniform3iv = (PFNGLUNIFORM3IVPROC)myGetProcAddress("glUniform3iv");
-		glUniform4iv = (PFNGLUNIFORM4IVPROC)myGetProcAddress("glUniform4iv");
-		
-		glUniformMatrix2fv = (PFNGLUNIFORMMATRIX2FVPROC)myGetProcAddress("glUniformMatrix2fv");
-		glUniformMatrix3fv = (PFNGLUNIFORMMATRIX3FVPROC)myGetProcAddress("glUniformMatrix3fv");
-		glUniformMatrix4fv = (PFNGLUNIFORMMATRIX4FVPROC)myGetProcAddress("glUniformMatrix4fv");
-		
-		glGetProgramInfoLog = (PFNGLGETPROGRAMINFOLOGPROC)myGetProcAddress("glGetProgramInfoLog");
-		glGetShaderInfoLog = (PFNGLGETSHADERINFOLOGPROC)myGetProcAddress("glGetShaderInfoLog");
-		glGetUniformLocation = (PFNGLGETUNIFORMLOCATIONPROC)myGetProcAddress("glGetUniformLocation");
-		glGetActiveUniform = (PFNGLGETACTIVEUNIFORMPROC)myGetProcAddress("glGetActiveUniform");
-		glGetUniformfv = (PFNGLGETUNIFORMFVPROC)myGetProcAddress("glGetUniformfv");
-		glGetUniformiv = (PFNGLGETUNIFORMIVPROC)myGetProcAddress("glGetUniformiv");
-		glGetShaderSource = (PFNGLGETSHADERSOURCEPROC)myGetProcAddress("glGetShaderSource");
-
-		glEnableVertexAttribArray = (PFNGLENABLEVERTEXATTRIBARRAYPROC)myGetProcAddress("glEnableVertexAttribArray");
-		glDisableVertexAttribArray= (PFNGLDISABLEVERTEXATTRIBARRAYPROC)myGetProcAddress("glDisableVertexAttribArray");
-		glVertexAttribPointer		= (PFNGLVERTEXATTRIBPOINTERPROC)myGetProcAddress("glVertexAttribPointer");
-
-		// what'S the equivalent of this in GL 2.0???
-		glGetObjectParameteriv = (PFNGLGETOBJECTPARAMETERIVARBPROC)myGetProcAddress("glGetObjectParameterivARB");
-
-		// Rules:
-		// SM4 will always use shaders. No option to switch them off is needed here.
-		// SM3 has shaders optional but they are off by default (they will have a performance impact
-		// SM2 only uses shaders for colormaps on camera textures and has no option to use them in general.
-		//     On SM2 cards the shaders will be too slow and show visual bugs (at least on GF 6800.)
-		if (strcmp((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), "1.3") >= 0) gl.shadermodel = 4;
-		else if (CheckExtension("GL_NV_GPU_shader4")) gl.shadermodel = 4;	// for pre-3.0 drivers that support GF8xxx.
-		else if (CheckExtension("GL_EXT_GPU_shader4")) gl.shadermodel = 4;	// for pre-3.0 drivers that support GF8xxx.
-		else if (CheckExtension("GL_NV_vertex_program3")) gl.shadermodel = 3;
-		else if (!strstr(gl.vendorstring, "NVIDIA")) gl.shadermodel = 3;
-		else gl.shadermodel = 2;	// Only for older NVidia cards which had notoriously bad shader support.
-
-		// Command line overrides for testing and problem cases.
-		if (Args->CheckParm("-sm2") && gl.shadermodel > 2) gl.shadermodel = 2;
-		else if (Args->CheckParm("-sm3") && gl.shadermodel > 3) gl.shadermodel = 3;
-	}
-
-	if (CheckExtension("GL_ARB_occlusion_query"))
-	{
-        glGenQueries         = (PFNGLGENQUERIESARBPROC)myGetProcAddress("glGenQueriesARB");
-        glDeleteQueries      = (PFNGLDELETEQUERIESARBPROC)myGetProcAddress("glDeleteQueriesARB");
-        glGetQueryObjectuiv  = (PFNGLGETQUERYOBJECTUIVARBPROC)myGetProcAddress("glGetQueryObjectuivARB");
-        glBeginQuery         = (PFNGLBEGINQUERYARBPROC)myGetProcAddress("glBeginQueryARB");
-        glEndQuery           = (PFNGLENDQUERYPROC)myGetProcAddress("glEndQueryARB");
-		gl.flags|=RFL_OCCLUSION_QUERY;
-	}
-
-	if (gl.flags & RFL_GL_21)
-	{
-		glBindBuffer			= (PFNGLBINDBUFFERPROC)myGetProcAddress("glBindBuffer");
-		glDeleteBuffers			= (PFNGLDELETEBUFFERSPROC)myGetProcAddress("glDeleteBuffers");
-		glGenBuffers			= (PFNGLGENBUFFERSPROC)myGetProcAddress("glGenBuffers");
-		glBufferData			= (PFNGLBUFFERDATAPROC)myGetProcAddress("glBufferData");
-		glBufferSubData			= (PFNGLBUFFERSUBDATAPROC)myGetProcAddress("glBufferSubData");
-		glMapBuffer				= (PFNGLMAPBUFFERPROC)myGetProcAddress("glMapBuffer");
-		glUnmapBuffer			= (PFNGLUNMAPBUFFERPROC)myGetProcAddress("glUnmapBuffer");
-		gl.flags |= RFL_VBO;
-	}
-	else if (CheckExtension("GL_ARB_vertex_buffer_object"))
-	{
-		glBindBuffer			= (PFNGLBINDBUFFERPROC)myGetProcAddress("glBindBufferARB");
-		glDeleteBuffers			= (PFNGLDELETEBUFFERSPROC)myGetProcAddress("glDeleteBuffersARB");
-		glGenBuffers			= (PFNGLGENBUFFERSPROC)myGetProcAddress("glGenBuffersARB");
-		glBufferData			= (PFNGLBUFFERDATAPROC)myGetProcAddress("glBufferDataARB");
-		glBufferSubData			= (PFNGLBUFFERSUBDATAPROC)myGetProcAddress("glBufferSubDataARB");
-		glMapBuffer				= (PFNGLMAPBUFFERPROC)myGetProcAddress("glMapBufferARB");
-		glUnmapBuffer			= (PFNGLUNMAPBUFFERPROC)myGetProcAddress("glUnmapBufferARB");
-		gl.flags |= RFL_VBO;
-	}
-
-	if (CheckExtension("GL_ARB_map_buffer_range")) 
-	{
-		glMapBufferRange			= (PFNGLMAPBUFFERRANGEPROC)myGetProcAddress("glMapBufferRange");
-		glFlushMappedBufferRange	= (PFNGLFLUSHMAPPEDBUFFERRANGEPROC)myGetProcAddress("glFlushMappedBufferRange");
-		gl.flags|=RFL_MAP_BUFFER_RANGE;
-	}
-
-	if (CheckExtension("GL_ARB_framebuffer_object"))
-	{
-		glGenFramebuffers			= (PFNGLGENFRAMEBUFFERSPROC)myGetProcAddress("glGenFramebuffers");
-		glDeleteFramebuffers		= (PFNGLDELETEFRAMEBUFFERSPROC)myGetProcAddress("glDeleteFramebuffers");
-		glBindFramebuffer			= (PFNGLBINDFRAMEBUFFERPROC)myGetProcAddress("glBindFramebuffer");
-		glFramebufferTexture2D		= (PFNGLFRAMEBUFFERTEXTURE2DPROC)myGetProcAddress("glFramebufferTexture2D");
-		glGenRenderbuffers			= (PFNGLGENRENDERBUFFERSPROC)myGetProcAddress("glGenRenderbuffers");
-		glDeleteRenderbuffers		= (PFNGLDELETERENDERBUFFERSPROC)myGetProcAddress("glDeleteRenderbuffers");
-		glBindRenderbuffer			= (PFNGLBINDRENDERBUFFERPROC)myGetProcAddress("glBindRenderbuffer");
-		glRenderbufferStorage		= (PFNGLRENDERBUFFERSTORAGEPROC)myGetProcAddress("glRenderbufferStorage");
-		glFramebufferRenderbuffer	= (PFNGLFRAMEBUFFERRENDERBUFFERPROC)myGetProcAddress("glFramebufferRenderbuffer");
-
-		gl.flags|=RFL_FRAMEBUFFER;
-	}
-
-#if 0
-	if (CheckExtension("GL_ARB_texture_buffer_object") && 
-		CheckExtension("GL_ARB_texture_float") && 
-		CheckExtension("GL_EXT_GPU_Shader4") && 
-		CheckExtension("GL_ARB_texture_rg") && 
-		gl.shadermodel == 4)
-	{
-		glTexBufferARB = (PFNGLTEXBUFFERARBPROC)myGetProcAddress("glTexBufferARB");
-		gl.flags|=RFL_TEXTUREBUFFER;
-	}
-#endif
-
-
-
-	glActiveTexture = (PFNGLACTIVETEXTUREPROC)myGetProcAddress("glActiveTextureARB");
-	glMultiTexCoord2f = (PFNGLMULTITEXCOORD2FPROC) myGetProcAddress("glMultiTexCoord2fARB");
-	glMultiTexCoord2fv = (PFNGLMULTITEXCOORD2FVPROC) myGetProcAddress("glMultiTexCoord2fvARB");
+	if (CheckExtension("GL_ARB_occlusion_query")) gl.flags|=RFL_OCCLUSION_QUERY;
+	if (gl.flags & RFL_GL_21) gl.flags |= RFL_VBO;
+	else if (CheckExtension("GL_ARB_vertex_buffer_object")) gl.flags |= RFL_VBO;
+	if (CheckExtension("GL_ARB_map_buffer_range")) gl.flags|=RFL_MAP_BUFFER_RANGE;
+	if (CheckExtension("GL_ARB_framebuffer_object")) gl.flags|=RFL_FRAMEBUFFER;
 }
 
 //==========================================================================
@@ -381,19 +247,6 @@ void gl_PrintStartupLog()
 //
 //==========================================================================
 
-static void APIENTRY glBlendEquationDummy (GLenum mode)
-{
-	// If this is not supported all non-existent modes are
-	// made to draw nothing.
-	if (mode == GL_FUNC_ADD)
-	{
-		glColorMask(true, true, true, true);
-	}
-	else
-	{
-		glColorMask(false, false, false, false);
-	}
-}
 
 //==========================================================================
 //
