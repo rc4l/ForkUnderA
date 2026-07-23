@@ -103,3 +103,12 @@ all hook edits in `gl/`. The `gl/` tree is byte-identical to `main` again.
   long-texture-names change (removal of the 8-char lump-name limit). Zandronum never took the
   base-engine feature, so there is nothing for these to adapt; the pre-change texture-name code
   paths remain correct here. Revisit only if long texture names are ever backported wholesale.
+
+## Position correction (post-summit)
+
+"GZDoom 2.1-class" in this document is shorthand for the 2.x architecture line, NOT the 2.1
+release. The summit `fc0cf4f99` (2014-07-15) is the start of that line. Pinned against the real
+release tags (fetched from canonical gzdoom into the reference clone): stable `g2.0.05`
+(2014-12-27) is +107 src/gl commits past the summit; stable `g2.1.1` (2016-02-23) is +203 and
+sits at the wall's doorstep. The summit is a direct ancestor of both -- continuing the staircase
+to either is plain replay.
