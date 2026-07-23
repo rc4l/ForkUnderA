@@ -739,9 +739,9 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 			mdl->PushSpriteMDLFrame(smf, i);
 
 			if ( smfNext && smf->modelframes[i] != smfNext->modelframes[i] )
-				mdl->RenderFrameInterpolated(smf->skins[i], smf->modelframes[i], smfNext->modelframes[i], inter, translation);
+				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], smfNext->modelframes[i], inter, translation);
 			else
-				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], translation);
+				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], NULL, 0.f, translation);
 		}
 	}
 }
@@ -996,16 +996,3 @@ bool gl_IsHUDModelForPlayerAvailable (player_t * player)
 	return ( smf != NULL );
 }
 
-//===========================================================================
-//
-// gl_CleanModelData
-//
-//===========================================================================
-
-void gl_CleanModelData()
-{
-	for (unsigned i=0;i<Models.Size(); i++)
-	{
-		Models[i]->CleanGLData();
-	}
-}

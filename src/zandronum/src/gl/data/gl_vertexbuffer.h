@@ -44,7 +44,6 @@ struct FFlatVertex
 class FFlatVertexBuffer : public FVertexBuffer
 {
 	FFlatVertex *map;
-	FFlatVertex mDrawBuffer[1000];
 	unsigned int mIndex;
 	unsigned int mCurIndex;
 
@@ -172,6 +171,45 @@ public:
 };
 
 #define VSO ((FSkyVertex*)NULL)
+
+struct FModelVertex
+{
+	float x, y, z;	// world position
+	float u, v;		// texture coordinates
+
+	void Set(float xx, float yy, float zz, float uu, float vv)
+	{
+		x = xx;
+		y = yy;
+		z = zz;
+		u = uu;
+		v = vv;
+	}
+
+	void SetNormal(float nx, float ny, float nz)
+	{
+		// GZDoom currently doesn't use normals. This function is so that the high level code can pretend it does.
+	}
+};
+
+
+class FModelVertexBuffer : public FVertexBuffer
+{
+	int mIndexFrame[2];
+
+public:
+	// these are public because it's the models having to fill them in.
+	TArray<FModelVertex> vbo_shadowdata;	// this is kept around for interpolating on GL 2.0
+	TArray<unsigned int> ibo_shadowdata;	// this is kept around for interpolating on GL 2.0
+
+	FModelVertexBuffer();
+	~FModelVertexBuffer();
+
+	void BindVBO();
+	void UpdateBufferPointers(int frame1, int frame2);
+};
+
+#define VMO ((FModelVertex*)NULL)
 
 
 #endif

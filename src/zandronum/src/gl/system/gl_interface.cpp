@@ -94,6 +94,7 @@ static void CollectExtensions()
 
 		delete [] extensions;
 	}
+
 }
 
 //==========================================================================
@@ -212,6 +213,7 @@ void gl_LoadExtensions()
 	// [rc4l] upstream 0ce6b4067: ARB_buffer_storage requires GL 4.0 per spec, so
 	// don't use it when emulating something lower via -glversion.
 	if (gl.version >= 4.f && CheckExtension("GL_ARB_buffer_storage")) gl.flags|=RFL_BUFFER_STORAGE;
+	if (gl.version >= 3.2f || CheckExtension("GL_ARB_draw_elements_base_vertex")) gl.flags |= RFL_BASEINDEX;
 	if (CheckExtension("GL_ARB_shader_storage_buffer_object")) gl.flags|=RFL_SHADER_STORAGE_BUFFER;
 	if (gl.flags & RFL_GL_21) gl.flags |= RFL_VBO;
 	else if (CheckExtension("GL_ARB_vertex_buffer_object")) gl.flags |= RFL_VBO;

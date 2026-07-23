@@ -22,6 +22,8 @@ enum RenderFlags
 	RFL_BUFFER_STORAGE = 2048,
 	// [rc4l] Flight 3 (upstream 09f407143): dynamic-light capability check.
 	RFL_SHADER_STORAGE_BUFFER = 4096,
+	// [rc4l] Flight 12 (upstream ca76c2525): glDrawElementsBaseVertex for model buffers.
+	RFL_BASEINDEX = 8192,
 
 
 	RFL_GL_20 = 0x10000000,
@@ -59,6 +61,11 @@ struct RenderContext
 	int MaxLights() const
 	{
 		return maxuniforms>=2048? 128:64;
+	}
+
+	bool hasCompatibility()	// will return false, once transition to a core profile is possible and a core profile is used.
+	{
+		return true;
 	}
 };
 

@@ -62,6 +62,7 @@
 #include "gl/gl_functions.h"
 
 void InitGLRMapinfoData();
+void gl_InitData();
 
 //==========================================================================
 //
@@ -611,6 +612,15 @@ extern int restart;
 void gl_PreprocessLevel()
 {
 	int i;
+
+	static int datadone=-1;
+
+
+	if (datadone != restart)
+	{
+		datadone = restart;
+		gl_InitData();
+	}
 
 	PrepareSegs();
 	PrepareSectorData();
