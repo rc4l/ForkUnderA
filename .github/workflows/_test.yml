@@ -41,6 +41,11 @@ jobs:
       # [rc4l] The FF-parity tripwire retired with its subject at the GL 2.x removal
       # (staircase flight 13a): there is no fixed-function branch left to diverge from.
 
+      # [rc4l] Staircase ledger: no upstream commit behind our frontier may be unresolved
+      # (silent-skip guard), and every resolved row's provenance commit must exist.
+      - name: Staircase ledger check
+        run: bash tools/staircase-ledger-check.sh
+
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:

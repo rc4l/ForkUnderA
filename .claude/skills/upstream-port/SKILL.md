@@ -95,3 +95,12 @@ the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/da
 - No float-sim adoption; the sim stays fixed-point — conversions are draw-side and one-way.
 - No post-2016 `thingdef/*` cherry-picks (upstream DECORATE is VM-backed after 2016-10).
 - No second render pipeline coexisting with the first (the 15-seam lesson).
+
+## Ledger (staircase flights)
+
+Every staircase flight updates its rows in `progress/renderer-staircase/ledger.tsv` in the SAME
+commit that lands the code — advance the frontier and mark each upstream sha
+`ported`/`adapted`/`skipped`/`deferred` with its one-sentence note and your zandrox_sha.
+`tools/staircase-ledger-check.sh` (CI) fails on any `pending` row behind the frontier, so a
+late-discovered dependency (the flight-16 setsectortag class) can't hide. Schema:
+`progress/renderer-staircase/README.md`.
