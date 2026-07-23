@@ -59,8 +59,6 @@
 
 FDrawInfo * gl_drawinfo;
 
-CVAR(Bool, gl_sort_textures, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-
 //==========================================================================
 //
 //
@@ -644,7 +642,6 @@ SortNode * GLDrawList::DoSort(SortNode * head)
 			case GLDIT_SPRITE:
 				SortSpriteIntoPlane(head,node);
 				break;
-			case GLDIT_POLY: break;
 			}
 			node=next;
 		}
@@ -670,7 +667,7 @@ SortNode * GLDrawList::DoSort(SortNode * head)
 				case GLDIT_SPRITE:
 					SortSpriteIntoWall(head,node);
 					break;
-				case GLDIT_POLY: break;
+
 				case GLDIT_FLAT: break;
 				}
 				node=next;
@@ -722,7 +719,6 @@ void GLDrawList::DoDraw(int pass, int i, bool trans)
 			RenderSprite.Unclock();
 		}
 		break;
-	case GLDIT_POLY: break;
 	}
 }
 
@@ -785,66 +781,93 @@ void GLDrawList::Draw(int pass)
 
 //==========================================================================
 //
+//
+//
+//==========================================================================
+void GLDrawList::DrawWalls(int pass)
+{
+	RenderWall.Clock();
+	for(unsigned i=0;i<drawitems.Size();i++)
+	{
+		walls[drawitems[i].index].Draw(pass);
+	}
+	RenderWall.Unclock();
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+void GLDrawList::DrawFlats(int pass)
+{
+	RenderFlat.Clock();
+	for(unsigned i=0;i<drawitems.Size();i++)
+	{
+		flats[drawitems[i].index].Draw(pass, false);
+	}
+	RenderFlat.Unclock();
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+void GLDrawList::DrawDecals()
+{
+	for(unsigned i=0;i<drawitems.Size();i++)
+	{
+		walls[drawitems[i].index].DoDrawDecals();
+	}
+}
+
+//==========================================================================
+//
 // Sorting the drawitems first by texture and then by light level.
 //
 //==========================================================================
 static GLDrawList * sortinfo;
 
-static int __cdecl dicmp (const void *a, const void *b)
+static int __cdecl diwcmp (const void *a, const void *b)
 {
-	const GLDrawItem * di[2];
-	FMaterial * tx[2];
-	int lights[2];
-	int clamp[2];
-	//colormap_t cm[2];
-	di[0]=(const GLDrawItem *)a;
-	di[1]=(const GLDrawItem *)b;
+	const GLDrawItem * di1 = (const GLDrawItem *)a;
+	GLWall * w1=&sortinfo->walls[di1->index];
 
-	for(int i=0;i<2;i++)
-	{
-		switch(di[i]->rendertype)
-		{
-		case GLDIT_FLAT:
-		{
-			GLFlat * f=&sortinfo->flats[di[i]->index];
-			tx[i]=f->gltexture;
-			lights[i]=f->lightlevel;
-			clamp[i] = 0;
-		}
-		break;
+	const GLDrawItem * di2 = (const GLDrawItem *)b;
+	GLWall * w2=&sortinfo->walls[di2->index];
 
-		case GLDIT_WALL:
-		{
-			GLWall * w=&sortinfo->walls[di[i]->index];
-			tx[i]=w->gltexture;
-			lights[i]=w->lightlevel;
-			clamp[i] = w->flags & 3;
-		}
-		break;
+	if (w1->gltexture != w2->gltexture) return w1->gltexture - w2->gltexture;
+	return ((w1->flags & 3) - (w2->flags & 3));
+}
 
-		case GLDIT_SPRITE:
-		{
-			GLSprite * s=&sortinfo->sprites[di[i]->index];
-			tx[i]=s->gltexture;
-			lights[i]=s->lightlevel;
-			clamp[i] = 4;
-		}
-		break;
-		case GLDIT_POLY: break;
-		}
-	}
-	if (tx[0]!=tx[1]) return tx[0]-tx[1];
-	if (clamp[0]!=clamp[1]) return clamp[0]-clamp[1];	// clamping forces different textures.
-	return lights[0]-lights[1];
+static int __cdecl difcmp (const void *a, const void *b)
+{
+	const GLDrawItem * di1 = (const GLDrawItem *)a;
+	GLFlat * w1=&sortinfo->flats[di1->index];
+
+	const GLDrawItem * di2 = (const GLDrawItem *)b;
+	GLFlat* w2=&sortinfo->flats[di2->index];
+
+	return w1->gltexture - w2->gltexture;
 }
 
 
-void GLDrawList::Sort()
+void GLDrawList::SortWalls()
 {
-	if (drawitems.Size()!=0 && gl_sort_textures)
+	if (drawitems.Size() > 1)
 	{
 		sortinfo=this;
-		qsort(&drawitems[0], drawitems.Size(), sizeof(drawitems[0]), dicmp);
+		qsort(&drawitems[0], drawitems.Size(), sizeof(drawitems[0]), diwcmp);
+	}
+}
+
+void GLDrawList::SortFlats()
+{
+	if (drawitems.Size() > 1)
+	{
+		sortinfo=this;
+		qsort(&drawitems[0], drawitems.Size(), sizeof(drawitems[0]), difcmp);
 	}
 }
 
@@ -855,7 +878,6 @@ void GLDrawList::Sort()
 //==========================================================================
 void GLDrawList::AddWall(GLWall * wall)
 {
-	//@sync-drawinfo
 	drawitems.Push(GLDrawItem(GLDIT_WALL,walls.Push(*wall)));
 }
 
@@ -866,7 +888,6 @@ void GLDrawList::AddWall(GLWall * wall)
 //==========================================================================
 void GLDrawList::AddFlat(GLFlat * flat)
 {
-	//@sync-drawinfo
 	drawitems.Push(GLDrawItem(GLDIT_FLAT,flats.Push(*flat)));
 }
 
@@ -877,7 +898,6 @@ void GLDrawList::AddFlat(GLFlat * flat)
 //==========================================================================
 void GLDrawList::AddSprite(GLSprite * sprite)
 {	
-	//@sync-drawinfo
 	drawitems.Push(GLDrawItem(GLDIT_SPRITE,sprites.Push(*sprite)));
 }
 
@@ -1055,7 +1075,7 @@ void FDrawInfo::DrawFloodedPlane(wallseg * ws, float planez, sector_t * sec, boo
 
 	plane.GetFromSector(sec, ceiling);
 
-	gltexture=FMaterial::ValidateTexture(plane.texture, true);
+	gltexture=FMaterial::ValidateTexture(plane.texture, false, true);
 	if (!gltexture) return;
 
 	if (gl_fixedcolormap) 
@@ -1077,7 +1097,7 @@ void FDrawInfo::DrawFloodedPlane(wallseg * ws, float planez, sector_t * sec, boo
 	int rel = getExtraLight();
 	gl_SetColor(lightlevel, rel, Colormap, 1.0f);
 	gl_SetFog(lightlevel, rel, &Colormap, false);
-	gltexture->Bind();
+	gl_RenderState.SetMaterial(gltexture, CLAMP_NONE, 0, -1, false);
 
 	float fviewx = FIXED2FLOAT(viewx);
 	float fviewy = FIXED2FLOAT(viewy);

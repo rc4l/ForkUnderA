@@ -1004,7 +1004,7 @@ void GLHorizonPortal::DrawContents()
 	float z;
 	player_t * player=&players[consoleplayer];
 
-	gltexture=FMaterial::ValidateTexture(sp->texture, true);
+	gltexture=FMaterial::ValidateTexture(sp->texture, false, true);
 	if (!gltexture) 
 	{
 		ClearScreen();
@@ -1030,7 +1030,7 @@ void GLHorizonPortal::DrawContents()
 	}
 
 
-	gltexture->Bind();
+	gl_RenderState.SetMaterial(gltexture, CLAMP_NONE, 0, -1, false);
 
 	gl_SetPlaneTextureRotation(sp, gltexture);
 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);

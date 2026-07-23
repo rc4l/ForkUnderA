@@ -151,11 +151,11 @@ void GLWall::PutWall(bool translucent)
 
 		if ((flags&GLWF_SKYHACK && type == RENDERWALL_M2S))
 		{
-			list = GLDL_MASKEDOFS;
+			list = GLDL_MASKEDWALLSOFS;
 		}
 		else
 		{
-			list = masked ? GLDL_MASKED : GLDL_PLAIN;
+			list = masked ? GLDL_MASKEDWALLS : GLDL_PLAINWALLS;
 		}
 		gl_drawinfo->drawlists[list].AddWall(this);
 
@@ -169,7 +169,6 @@ void GLWall::PutWall(bool translucent)
 	// portals don't go into the draw list.
 	// Instead they are added to the portal manager
 	case RENDERWALL_HORIZON:
-		//@sync-portal
 		horizon=UniqueHorizons.Get(horizon);
 		portal=GLPortal::FindPortal(horizon);
 		if (!portal) portal=new GLHorizonPortal(horizon);
@@ -177,14 +176,12 @@ void GLWall::PutWall(bool translucent)
 		break;
 
 	case RENDERWALL_SKYBOX:
-		//@sync-portal
 		portal=GLPortal::FindPortal(skybox);
 		if (!portal) portal=new GLSkyboxPortal(skybox);
 		portal->AddLine(this);
 		break;
 
 	case RENDERWALL_SECTORSTACK:
-		//@sync-portal
 		portal = this->portal->GetGLPortal();
 		portal->AddLine(this);
 		break;
@@ -201,7 +198,6 @@ void GLWall::PutWall(bool translucent)
 		break;
 
 	case RENDERWALL_MIRROR:
-		//@sync-portal
 		portal=GLPortal::FindPortal(seg->linedef);
 		if (!portal) portal=new GLMirrorPortal(seg->linedef);
 		portal->AddLine(this);
@@ -214,7 +210,6 @@ void GLWall::PutWall(bool translucent)
 		break;
 
 	case RENDERWALL_SKY:
-		//@sync-portal
 		portal=GLPortal::FindPortal(sky);
 		if (!portal) portal=new GLSkyPortal(sky);
 		portal->AddLine(this);
@@ -1106,19 +1101,19 @@ void GLWall::BuildFFBlock(seg_t * seg, F3DFloor * rover,
 		
 		if (rover->flags&FF_UPPERTEXTURE) 
 		{
-			gltexture = FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::top), true);
+			gltexture = FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::top), false,  true);
 			if (!gltexture) return;
 			gltexture->GetTexCoordInfo(&tci, seg->sidedef->GetTextureXScale(side_t::top), seg->sidedef->GetTextureYScale(side_t::top));
 		}
 		else if (rover->flags&FF_LOWERTEXTURE) 
 		{
-			gltexture = FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::bottom), true);
+			gltexture = FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::bottom), false, true);
 			if (!gltexture) return;
 			gltexture->GetTexCoordInfo(&tci, seg->sidedef->GetTextureXScale(side_t::bottom), seg->sidedef->GetTextureYScale(side_t::bottom));
 		}
 		else 
 		{
-			gltexture = FMaterial::ValidateTexture(mastersd->GetTexture(side_t::mid), true);
+			gltexture = FMaterial::ValidateTexture(mastersd->GetTexture(side_t::mid), false, true);
 			if (!gltexture) return;
 			gltexture->GetTexCoordInfo(&tci, mastersd->GetTextureXScale(side_t::mid), mastersd->GetTextureYScale(side_t::mid));
 		}
@@ -1570,7 +1565,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 		SkyNormal(frontsector,v1,v2);
 		
 		// normal texture
-		gltexture=FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::mid), true);
+		gltexture=FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::mid), false, true);
 		if (gltexture) 
 		{
 			DoTexture(RENDERWALL_M1S,seg,(seg->linedef->flags & ML_DONTPEGBOTTOM)>0,
@@ -1625,7 +1620,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 
 			if (bch1a<fch1 || bch2a<fch2)
 			{
-				gltexture=FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::top), true);
+				gltexture=FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::top), false, true);
 				if (gltexture) 
 				{
 					DoTexture(RENDERWALL_TOP,seg,(seg->linedef->flags & (ML_DONTPEGTOP))==0,
@@ -1637,7 +1632,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 						frontsector->GetTexture(sector_t::ceiling)!=skyflatnum &&
 						backsector->GetTexture(sector_t::ceiling)!=skyflatnum)
 				{
-					gltexture=FMaterial::ValidateTexture(frontsector->GetTexture(sector_t::ceiling), true);
+					gltexture=FMaterial::ValidateTexture(frontsector->GetTexture(sector_t::ceiling), false, true);
 					if (gltexture)
 					{
 						DoTexture(RENDERWALL_TOP,seg,(seg->linedef->flags & (ML_DONTPEGTOP))==0,
@@ -1647,7 +1642,11 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 				}
 				else if (!(seg->sidedef->Flags & WALLF_POLYOBJ))
 				{
-					gl_drawinfo->AddUpperMissingTexture(seg->sidedef, sub, bch1a);
+					// skip processing if the back is a malformed subsector
+					if (!(seg->PartnerSeg->Subsector->hacked & 4))
+					{
+						gl_drawinfo->AddUpperMissingTexture(seg->sidedef, sub, bch1a);
+					}
 				}
 			}
 		}
@@ -1662,7 +1661,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 			{
 				tex = tex->GetRawTexture();
 			}
-			gltexture=FMaterial::ValidateTexture(tex);
+			gltexture=FMaterial::ValidateTexture(tex, false);
 		}
 		else gltexture = NULL;
 
@@ -1687,7 +1686,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 
 		if (bfh1>ffh1 || bfh2>ffh2)
 		{
-			gltexture=FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::bottom), true);
+			gltexture=FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::bottom), false, true);
 			if (gltexture) 
 			{
 				DoTexture(RENDERWALL_BOTTOM,seg,(seg->linedef->flags & ML_DONTPEGBOTTOM)>0,
@@ -1705,7 +1704,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 				// render it anyway with the sector's floor texture. With a background sky
 				// there are ugly holes otherwise and slopes are simply not precise enough
 				// to mach in any case.
-				gltexture=FMaterial::ValidateTexture(frontsector->GetTexture(sector_t::floor), true);
+				gltexture=FMaterial::ValidateTexture(frontsector->GetTexture(sector_t::floor), false, true);
 				if (gltexture)
 				{
 					DoTexture(RENDERWALL_BOTTOM,seg,(seg->linedef->flags & ML_DONTPEGBOTTOM)>0,
@@ -1716,7 +1715,11 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 			else if (backsector->GetTexture(sector_t::floor)!=skyflatnum && 
 				!(seg->sidedef->Flags & WALLF_POLYOBJ))
 			{
-				gl_drawinfo->AddLowerMissingTexture(seg->sidedef, sub, bfh1);
+				// skip processing if the back is a malformed subsector
+				if (!(seg->PartnerSeg->Subsector->hacked & 4))
+				{
+					gl_drawinfo->AddLowerMissingTexture(seg->sidedef, sub, bfh1);
+				}
 			}
 		}
 	}
@@ -1768,7 +1771,7 @@ void GLWall::ProcessLowerMiniseg(seg_t *seg, sector_t * frontsector, sector_t * 
 
 		zfloor[0] = zfloor[1] = FIXED2FLOAT(ffh);
 
-		gltexture = FMaterial::ValidateTexture(frontsector->GetTexture(sector_t::floor), true);
+		gltexture = FMaterial::ValidateTexture(frontsector->GetTexture(sector_t::floor), false, true);
 
 		if (gltexture)
 		{

@@ -156,9 +156,9 @@ void gl_LoadExtensions()
 
 
 	// [rc4l] upstream 86d37e06f: the floor settles at GL 3.3.
-	if (strcmp(version, "3.3") < 0)
+	if (strcmp(version, "3.0") < 0)
 	{
-		I_FatalError("Unsupported OpenGL version.\nAt least OpenGL 3.3 is required to run " GAMENAME ".\n");
+		I_FatalError("Unsupported OpenGL version.\nAt least OpenGL 3.0 is required to run " GAMENAME ".\n");
 	}
 
 	// add 0.01 to account for roundoff errors making the number a tad smaller than the actual version
@@ -183,6 +183,13 @@ void gl_LoadExtensions()
 
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE,&gl.max_texturesize);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+	// [rc4l] upstream cfc8f3dbb's intent, completed: capability values must be read at
+	// context init, not inside the startup-log printer (which may not run everywhere).
+	int v = 0;
+	glGetIntegerv(GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, &v); gl.maxuniforms = v;
+	glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &v); gl.maxuniformblock = v;
+	glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &v); gl.uniformblockalignment = v;
 }
 
 //==========================================================================
@@ -205,15 +212,12 @@ void gl_PrintStartupLog()
 	Printf ("Max. texture units: %d\n", v);
 	glGetIntegerv(GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, &v);
 	Printf ("Max. fragment uniforms: %d\n", v);
-	if (gl.shadermodel == 4) gl.maxuniforms = v;
 	glGetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, &v);
 	Printf ("Max. vertex uniforms: %d\n", v);
 	glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &v);
 	Printf ("Max. uniform block size: %d\n", v);
-	gl.maxuniformblock = v;
 	glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &v);
 	Printf ("Uniform block alignment: %d\n", v);
-	gl.uniformblockalignment = v;
 
 	glGetIntegerv(GL_MAX_VARYING_FLOATS, &v);
 	Printf ("Max. varying: %d\n", v);

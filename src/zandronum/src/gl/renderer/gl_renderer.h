@@ -16,8 +16,8 @@ struct FDrawInfo;
 struct pspdef_t;
 class FShaderManager;
 class GLPortal;
-class FGLThreadManager;
 class FLightBuffer;
+class FSamplerManager;
 
 enum SectorRenderFlags
 {
@@ -56,7 +56,7 @@ public:
 	float mCurrentFoV;
 	AActor *mViewActor;
 	FShaderManager *mShaderManager;
-	FGLThreadManager *mThreadManager;
+	FSamplerManager *mSamplerManager;
 	int gl_spriteindex;
 	unsigned int mFBID;
 

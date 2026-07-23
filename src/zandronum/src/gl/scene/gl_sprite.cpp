@@ -217,7 +217,7 @@ void GLSprite::Draw(int pass)
 		gl_RenderState.SetFog(0, 0);
 	}
 
-	if (gltexture) gltexture->BindPatch(translation, OverrideShader, !!(RenderStyle.Flags & STYLEF_RedIsAlpha));
+	if (gltexture) gl_RenderState.SetMaterial(gltexture, CLAMP_XY, translation, OverrideShader, !!(RenderStyle.Flags & STYLEF_RedIsAlpha));
 	else if (!modelframe) gl_RenderState.EnableTexture(false);
 
 	if (!modelframe)
@@ -467,8 +467,9 @@ void GLSprite::PerformSpriteClipAdjustment(AActor *thing, fixed_t thingx, fixed_
 		if (top == -1000000.0f)
 			top = FIXED2FLOAT(thing->Sector->ceilingplane.ZatPoint(thingx, thingy));
 
-		float diffb = z2 - btm;
-		float difft = z1 - top;
+		// +/-1 to account for the one pixel empty frame around the sprite.
+		float diffb = (z2+1) - btm;
+		float difft = (z1-1) - top;
 		if (diffb >= 0 /*|| !gl_sprite_clip_to_floor*/) diffb = 0;
 		// Adjust sprites clipping into ceiling and adjust clipping adjustment for tall graphics
 		if (smarterclip)
@@ -625,14 +626,15 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		bool mirror;
 		FTextureID patch = gl_GetSpriteFrame(spritenum, thing->frame, -1, ang - thing->angle, &mirror);
 		if (!patch.isValid()) return;
-		gltexture = FMaterial::ValidateTexture(patch, false);
+		int type = thing->renderflags & RF_SPRITETYPEMASK;
+		gltexture = FMaterial::ValidateTexture(patch, (type == RF_FACESPRITE), false);
 		if (!gltexture) return;
 
 		if (gl.flags & RFL_NPOT_TEXTURE)	// trimming only works if non-power-of-2 textures are supported
 		{
 			vt = gltexture->GetSpriteVT();
 			vb = gltexture->GetSpriteVB();
-			gltexture->GetRect(&r, GLUSE_SPRITE);
+			gltexture->GetSpriteRect(&r);
 			if (mirror)
 			{
 				r.left=-r.width-r.left;	// mirror the sprite's x-offset
@@ -649,7 +651,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		{
 			vt = gltexture->GetVT();
 			vb = gltexture->GetVB();
-			gltexture->GetRect(&r, GLUSE_PATCH);
+			gltexture->GetSpriteRect(&r);
 			if (mirror)
 			{
 				r.left=-r.width-r.left;	// mirror the sprite's x-offset
@@ -671,7 +673,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		z1=z-r.top;
 		z2=z1-r.height;
 
-		float spriteheight = FIXED2FLOAT(spritescaleY) * gltexture->GetScaledHeightFloat(GLUSE_SPRITE);
+		float spriteheight = FIXED2FLOAT(spritescaleY) * r.height;
 		
 		// Tests show that this doesn't look good for many decorations and corpses
 		// [RK] tests also show this looks terrible for floatbob items
@@ -789,7 +791,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 
 	translation=thing->Translation;
 
-	OverrideShader = 0;
+	OverrideShader = -1;
 	trans = FIXED2FLOAT(thing->alpha);
 	hw_styleflags = STYLEHW_Normal;
 
@@ -978,7 +980,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 
 		if (lump != NULL)
 		{
-			gltexture=FMaterial::ValidateTexture(lump);
+			gltexture = FMaterial::ValidateTexture(lump, true);
 			translation = 0;
 
 			ul = gltexture->GetUL();
@@ -986,7 +988,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 			vt = gltexture->GetVT();
 			vb = gltexture->GetVB();
 			FloatRect r;
-			gltexture->GetRect(&r, GLUSE_PATCH);
+			gltexture->GetSpriteRect(&r);
 		}
 	}
 
