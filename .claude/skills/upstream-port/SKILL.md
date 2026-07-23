@@ -48,6 +48,12 @@ the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/da
 
 ## The non-negotiable gates, in order
 
+0. **Proactive enforcement (user directive)**: any flight/port that REMOVES an API or dependency
+   must, in the same commit, (a) append the removed API's call pattern to
+   `tools/removed-api-tripwire.sh` and (b) sever its linkage in the build — the linker is part of
+   the tripwire. Never rely on one platform's strictness to catch stragglers (the gluPerspective
+   lesson: mac/linux tolerated a missed call for a full CI round because GLU was still linked
+   there; only Windows enforced it).
 1. **Tripwire**: `tools/zscript-tripwire.sh` (also in CI). Known false-positive traps already
    excluded: `GC::WriteBarrier` (2008 GC, ours) and `DEFINE_ACTION_FUNCTION` (classic DECORATE
    macro). If a ported file needs its VM surface stripped, the F2DDrawer precedent says script

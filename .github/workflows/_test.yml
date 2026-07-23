@@ -33,6 +33,11 @@ jobs:
       - name: ZScript tripwire
         run: bash tools/zscript-tripwire.sh
 
+      # [rc4l] Calls to APIs a staircase flight removed (born from the gluPerspective slip:
+      # dependency removal is only as strict as the loosest platform unless a machine checks).
+      - name: Removed-API tripwire
+        run: bash tools/removed-api-tripwire.sh
+
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:

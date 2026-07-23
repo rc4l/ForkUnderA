@@ -202,7 +202,10 @@ if( NOT NO_GL )
 	endif( NOT OPENGL_FOUND )
 	# [rc4l] Flight 1: GLU dependency removed (gluScaleImage replaced by the tested
 	# imageresize_compute unit).
-	set( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPENGL_LIBRARIES} )
+	# [rc4l] OPENGL_gl_LIBRARY only, NOT OPENGL_LIBRARIES: the latter bundles GLU, which Flight 1
+	# removed -- leaving it linked let a missed gluPerspective call slip through on mac/linux while
+	# only Windows enforced the removal. The linker is part of the tripwire now.
+	set( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPENGL_gl_LIBRARY} )
 	include_directories( ${OPENGL_INCLUDE_DIR} )
 endif( NOT NO_GL )
 
