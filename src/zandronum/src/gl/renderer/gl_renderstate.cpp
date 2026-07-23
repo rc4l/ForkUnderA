@@ -38,6 +38,7 @@
 **
 */
 
+#include "templates.h"
 #include "gl/system/gl_system.h"
 #include "gl/system/gl_interface.h"
 #include "gl/data/gl_data.h"
@@ -54,7 +55,6 @@
 void gl_SetTextureMode(int type);
 
 FRenderState gl_RenderState;
-int FStateAttr::ChangeCounter;
 
 CVAR(Bool, gl_direct_state_change, true, 0)
 
@@ -72,8 +72,9 @@ void FRenderState::Reset()
 	ffTextureEnabled = ffFogEnabled = false;
 	mSpecialEffect = ffSpecialEffect = EFF_NONE;
 	mFogColor.d = ffFogColor.d = -1;
-	mFogDensity = ffFogDensity = 0;
+	ffFogDensity = 0;
 	mTextureMode = ffTextureMode = -1;
+	mDesaturation = 0;
 	mSrcBlend = GL_SRC_ALPHA;
 	mDstBlend = GL_ONE_MINUS_SRC_ALPHA;
 	glSrcBlend = glDstBlend = -1;
@@ -86,6 +87,7 @@ void FRenderState::Reset()
 	m2D = true;
 	mVertexBuffer = mCurrentVertexBuffer = NULL;
 	mColormapState = CM_DEFAULT;
+	mLightParms[3] = -1.f;
 }
 
 
@@ -95,15 +97,14 @@ void FRenderState::Reset()
 //
 //==========================================================================
 
-int FRenderState::SetupShader(bool cameratexture, int &shaderindex, float warptime)
+int FRenderState::SetupShader(int &shaderindex, float warptime)
 {
 	int softwarewarp = 0;
-
 
 	if (gl.hasGLSL())
 	{
 		mEffectState = shaderindex;
-		mWarpTime = warptime;
+		if (shaderindex > 0) GLRenderer->mShaderManager->SetWarpSpeed(shaderindex, warptime);
 	}
 	else
 	{
@@ -134,11 +135,12 @@ bool FRenderState::ApplyShader()
 		{
 			activeShader = GLRenderer->mShaderManager->BindEffect(mSpecialEffect);
 		}
-		FShaderContainer *shd = GLRenderer->mShaderManager->Get(mTextureEnabled ? mEffectState : 4);
+		FShader *shd = GLRenderer->mShaderManager->Get(mTextureEnabled? mEffectState : 4);
 
 		if (shd != NULL)
 		{
-			activeShader = shd->Bind(mColormapState, mGlowEnabled, mWarpTime, mLightEnabled);
+			activeShader = shd;
+			shd->Bind();
 		}
 
 		int fogset = 0;
@@ -155,74 +157,93 @@ bool FRenderState::ApplyShader()
 			}
 		}
 
-		if (fogset != activeShader->currentfogenabled)
-		{
-			glUniform1i(activeShader->fogenabled_index, (activeShader->currentfogenabled = fogset)); 
-		}
-		if (mTextureMode != activeShader->currenttexturemode)
-		{
-			glUniform1i(activeShader->texturemode_index, (activeShader->currenttexturemode = mTextureMode)); 
-		}
-		if (activeShader->currentcamerapos.Update(&mCameraPos))
-		{
-			glUniform3fv(activeShader->camerapos_index, 1, mCameraPos.vec); 
-		}
-		/*if (mLightParms[0] != activeShader->currentlightfactor || 
-			mLightParms[1] != activeShader->currentlightdist ||
-			mFogDensity != activeShader->currentfogdensity)*/
-		{
-			const float LOG2E = 1.442692f;	// = 1/log(2)
-			//activeShader->currentlightdist = mLightParms[1];
-			//activeShader->currentlightfactor = mLightParms[0];
-			//activeShader->currentfogdensity = mFogDensity;
-			// premultiply the density with as much as possible here to reduce shader
-			// execution time.
-			glVertexAttrib4f(VATTR_FOGPARAMS, mLightParms[0], mLightParms[1], mFogDensity * (-LOG2E / 64000.f), 0);
-		}
-		if (mFogColor != activeShader->currentfogcolor)
-		{
-			activeShader->currentfogcolor = mFogColor;
+		glColor4fv(mColor.vec);
 
-			glUniform4f (activeShader->fogcolor_index, mFogColor.r/255.f, mFogColor.g/255.f, 
-							mFogColor.b/255.f, 0);
-		}
+		activeShader->muDesaturation.Set(mDesaturation);
+		activeShader->muFogEnabled.Set(fogset);
+		activeShader->muTextureMode.Set(mTextureMode);
+		activeShader->muCameraPos.Set(mCameraPos.vec);
+		activeShader->muLightParms.Set(mLightParms);
+		activeShader->muFogColor.Set(mFogColor);
+		activeShader->muObjectColor.Set(mObjectColor);
+		activeShader->muDynLightColor.Set(mDynColor);
+
 		if (mGlowEnabled)
 		{
-			glUniform4fv(activeShader->glowtopcolor_index, 1, mGlowTop.vec);
-			glUniform4fv(activeShader->glowbottomcolor_index, 1, mGlowBottom.vec);
-			glUniform4fv(activeShader->glowtopplane_index, 1, mGlowTopPlane.vec);
-			glUniform4fv(activeShader->glowbottomplane_index, 1, mGlowBottomPlane.vec);
+			activeShader->muGlowTopColor.Set(mGlowTop.vec);
+			activeShader->muGlowBottomColor.Set(mGlowBottom.vec);
+			activeShader->muGlowTopPlane.Set(mGlowTopPlane.vec);
+			activeShader->muGlowBottomPlane.Set(mGlowBottomPlane.vec);
 			activeShader->currentglowstate = 1;
 		}
 		else if (activeShader->currentglowstate)
 		{
 			// if glowing is on, disable it.
-			glUniform4f(activeShader->glowtopcolor_index, 0.f, 0.f, 0.f, 0.f);
-			glUniform4f(activeShader->glowbottomcolor_index, 0.f, 0.f, 0.f, 0.f);
+			static const float nulvec[] = { 0.f, 0.f, 0.f, 0.f };
+			activeShader->muGlowTopColor.Set(nulvec);
+			activeShader->muGlowBottomColor.Set(nulvec);
+			activeShader->muGlowTopPlane.Set(nulvec);
+			activeShader->muGlowBottomPlane.Set(nulvec);
 			activeShader->currentglowstate = 0;
 		}
 
 		if (mLightEnabled)
 		{
-			glUniform3iv(activeShader->lightrange_index, 1, mNumLights);
-			glUniform4fv(activeShader->lights_index, mNumLights[2], mLightData);
+			activeShader->muLightRange.Set(mNumLights);
+			glUniform4fv(activeShader->lights_index, mNumLights[3], mLightData);
 		}
-		if (mObjectColor != activeShader->currentobjectcolor)
+		else
 		{
-			activeShader->currentobjectcolor = mObjectColor;
-			glUniform4f(activeShader->objectcolor_index, mObjectColor.r / 255.f, mObjectColor.g / 255.f, mObjectColor.b / 255.f, mObjectColor.a / 255.f);
-		}
-		if (mDynColor != activeShader->currentdlightcolor)
-		{
-			activeShader->currentobjectcolor = mObjectColor;
-			glUniform4f(activeShader->dlightcolor_index, mDynColor.r / 255.f, mDynColor.g / 255.f, mDynColor.b / 255.f, 0);
+			static const int nulint[] = { 0, 0, 0, 0 };
+			activeShader->muLightRange.Set(nulint);
 		}
 
-		if (glset.lightmode == 8)
+		if (mColormapState != activeShader->currentfixedcolormap)
 		{
-			glVertexAttrib1f(VATTR_LIGHTLEVEL, mSoftLight / 255.f);
-		}
+			float r, g, b;
+			activeShader->currentfixedcolormap = mColormapState;
+			if (mColormapState == CM_DEFAULT)
+			{
+				activeShader->muFixedColormap.Set(0);
+			}
+			else if (mColormapState < CM_MAXCOLORMAP)
+			{
+				FSpecialColormap *scm = &SpecialColormaps[gl_fixedcolormap - CM_FIRSTSPECIALCOLORMAP];
+				float m[] = { scm->ColorizeEnd[0] - scm->ColorizeStart[0],
+					scm->ColorizeEnd[1] - scm->ColorizeStart[1], scm->ColorizeEnd[2] - scm->ColorizeStart[2], 0.f };
 
+				activeShader->muFixedColormap.Set(1);
+				activeShader->muColormapStart.Set(scm->ColorizeStart[0], scm->ColorizeStart[1], scm->ColorizeStart[2], 0.f);
+				activeShader->muColormapRange.Set(m);
+			}
+			else if (mColormapState == CM_FOGLAYER)
+			{
+				activeShader->muFixedColormap.Set(3);
+			}
+			else if (mColormapState == CM_LITE)
+			{
+				if (gl_enhanced_nightvision)
+				{
+					r = 0.375f, g = 1.0f, b = 0.375f;
+				}
+				else
+				{
+					r = g = b = 1.f;
+				}
+				activeShader->muFixedColormap.Set(2);
+				activeShader->muColormapStart.Set(r, g, b, 1.f);
+			}
+			else if (mColormapState >= CM_TORCH)
+			{
+				int flicker = mColormapState - CM_TORCH;
+				r = (0.8f + (7 - flicker) / 70.0f);
+				if (r > 1.0f) r = 1.0f;
+				b = g = r;
+				if (gl_enhanced_nightvision) b = g * 0.75f;
+				activeShader->muFixedColormap.Set(2);
+				activeShader->muColormapStart.Set(r, g, b, 1.f);
+			}
+		}
 		return true;
 	}
 	return false;
@@ -276,19 +297,9 @@ void FRenderState::Apply(bool forcenoshader)
 
 		GLRenderer->mShaderManager->SetActiveShader(NULL);
 
-		// [rc4l] Fixed-function fallback for the object color (shaded decals,
-		// fixed-color render styles): the GLSL path multiplies 'objectcolor'
-		// into the texel; without shaders we fold its RGB into the immediate
-		// modulate color instead (alpha already carries the translucency in
-		// mColor). Upstream never had this because it dropped GL 2.x wholesale
-		// at the core flip -- this dies with the fixed-function branch there.
-		if (mObjectColor.d != 0xffffffff && mColor.vec[0] >= 0.f)
-		{
-			glColor4f(mColor.vec[0] * mObjectColor.r / 255.f,
-			          mColor.vec[1] * mObjectColor.g / 255.f,
-			          mColor.vec[2] * mObjectColor.b / 255.f,
-			          mColor.vec[3]);
-		}
+		// [rc4l] Our interim FF object-color shim (the white-decal fix) is
+		// superseded here: the shader rework's own fixed-function branch
+		// composes mObjectColor and mDynColor into the final color below.
 		if (mTextureMode != ffTextureMode)
 		{
 			gl_SetTextureMode((ffTextureMode = mTextureMode));
@@ -314,10 +325,11 @@ void FRenderState::Apply(bool forcenoshader)
 				GLfloat FogColor[4]={mFogColor.r/255.0f,mFogColor.g/255.0f,mFogColor.b/255.0f,0.0f};
 				glFogfv(GL_FOG_COLOR, FogColor);
 			}
-			if (ffFogDensity != mFogDensity)
+			if (ffFogDensity != mLightParms[2])
 			{
-				glFogf(GL_FOG_DENSITY, mFogDensity/64000.f);
-				ffFogDensity=mFogDensity;
+				const float LOG2E = 1.442692f;	// = 1/log(2)
+				glFogf(GL_FOG_DENSITY, -mLightParms[2] / LOG2E);
+				ffFogDensity = mLightParms[2];
 			}
 		}
 		if (mSpecialEffect != ffSpecialEffect)
@@ -346,6 +358,14 @@ void FRenderState::Apply(bool forcenoshader)
 			}
 			ffSpecialEffect = mSpecialEffect;
 		}
+		// Now compose the final color for this...
+		float realcolor[4];
+		realcolor[0] = clamp<float>((mColor.vec[0] + mDynColor.r / 255.f), 0.f, 1.f) * (mObjectColor.r / 255.f);
+		realcolor[1] = clamp<float>((mColor.vec[1] + mDynColor.g / 255.f), 0.f, 1.f) * (mObjectColor.g / 255.f);
+		realcolor[2] = clamp<float>((mColor.vec[2] + mDynColor.b / 255.f), 0.f, 1.f) * (mObjectColor.b / 255.f);
+		realcolor[3] = mColor.vec[3] * (mObjectColor.a / 255.f);
+		glColor4fv(realcolor);
+
 	}
 
 }
