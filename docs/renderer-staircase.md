@@ -45,6 +45,30 @@ backend is game-model-free; the vendored reference trees stay in-repo for that d
 Each batch: cherry-pick/adapt onto our tree → build (all platforms via CI) → tests green → **manual
 end-to-end pass by the user on the live game** (the verification standard) → commit → next.
 
+## Scope: what rides along, measured (fonts, textures, status bar, menus)
+
+The window (anchor -> 2016) holds **2,207 upstream commits total**; the staircase's 244 `src/gl`
+commits are remarkably self-contained -- **only 5 of them also touch shared systems** (notably
+`105001301` "major cleanup of the texture manager"), and commit-scoped cherry-picks carry those
+files automatically.
+
+- **The GPU side of fonts, textures, the status bar and menus IS the staircase**: they draw through
+  the 2D path and upload through `gl/textures/*` (material/hwtexture/translate), all inside the 244.
+  They are clients (measured in the portability scope, sect. 12) -- they come along at every step.
+- **Their game-side evolution is a small parallel track: 77 commits** in-window touching shared
+  systems without touching gl -- textures 28, status bar ~24, menu 18, r_data 13, v_video 7,
+  v_draw 5, fonts 4. Optional companion flights, not prerequisites; the texture-manager cleanup is
+  the one worth taking early since later gl work assumes its shape.
+- **Deliberately never taken** (post-wall): ZScript menus/statusbar (2017+), the FGameTexture split
+  (2018+), unicode fonts (2019+). Our C++ MENUDEF and SBARINFO stay, as scoped.
+
+## Where the staircase lands, version-wise
+
+The summit (`fc0cf4f99` -> GZDoom 2.x) is **OpenGL 3.3 core minimum, 4.1 core on macOS** (Apple's
+ceiling; the 4.1 -> 4.0 -> 3.3 request chain in `glcontext_compute` is built for exactly this).
+GL 4.5+/Vulkan-class backends are post-wall; the vendored reference trees exist for that
+reassessment.
+
 ## What this branch keeps from the port effort (banked, verified)
 
 - **Native SDL2** (compatibility-only context for now — 3.0 → 2.1 via the tested
