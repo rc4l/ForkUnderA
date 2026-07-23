@@ -70,3 +70,66 @@ stable 2.1.1 = **+203**. The staircase's "2.1-class" shorthand in earlier docs m
 architecture line, not the 2.1 release itself — the ladder to the true stable is:
 `g2.0.01pre` (+30) → `g2.0.05` (+107) → `g2.1.pre` region → `g2.1.1` (+203, at the wall's
 doorstep).
+
+## Portability analysis (finalized) and the chosen plan
+
+ZandroX's windowing is **split by inherited architecture** (verified):
+
+| Platform | Backend | Fullscreen today |
+|---|---|---|
+| Windows | native Win32 (`src/win32/win32gliface.cpp`) | `ChangeDisplaySettingsEx(CDS_FULLSCREEN)` — exclusive |
+| macOS + Linux | SDL2 (`src/sdl/sdlglvideo.cpp`) | `SDL_WINDOW_FULLSCREEN` — exclusive |
+
+CMake compiles `win32/` on Windows and `sdl/` on non-Windows (`if(WIN32) … else`).
+The `fullscreen` CVAR name is shared, but its handler and `IVideo::IsFullscreen()`
+are per-backend. So borderless is uniform in concept, per-backend in
+implementation. **Chosen: Option A (per-backend)** — the split is real but
+shallow; a full SDL2-on-Windows unification (Option B) is a separate deliberate
+effort, not bundled here.
+
+### Implementation (Option A)
+
+1. **SDL2 backend (macOS + Linux), one shared change**: request
+   `SDL_WINDOW_FULLSCREEN_DESKTOP` instead of `SDL_WINDOW_FULLSCREEN` when the mode
+   is Borderless; runtime toggle via `SDL_SetWindowFullscreen`. Covers both
+   platforms from one code path.
+2. **Win32 backend (Windows)**: replace the exclusive
+   `ChangeDisplaySettingsEx(CDS_FULLSCREEN)` + `SetWindowLong(GWL_STYLE)` path with
+   a borderless `WS_POPUP` window sized to the monitor (the `938cd3cab` pattern) for
+   the Borderless mode; keep the exclusive path for the Exclusive mode. Preserve the
+   `win32gliface` Zandronum bits (the anti-cheat glBegin-hook detection, crash-catcher).
+3. **Shared layer (portable)**: a `vid_fullscreen` mode enum (0 Windowed / 1
+   Borderless / 2 Exclusive) replacing the boolean `fullscreen`, with a migration
+   that maps the old bool. Backends read the enum and set their window accordingly.
+4. **Renderer**: no changes (resolution-independent; renders at the drawable size).
+
+### UX (chosen: three-way "Display mode" selector)
+
+On the "VIDEO MODE" screen (Options → Set Video Mode), replace:
+
+```
+Option "Fullscreen",  "fullscreen", "YesNo"
+```
+
+with a single cycler:
+
+```
+Option "Display mode", "vid_fullscreen", "DisplayModes"   // Windowed / Borderless / Exclusive
+```
+
+`DisplayModes` is a new OptionValues block ({0="Windowed", 1="Borderless",
+2="Exclusive fullscreen"}). One line, clearest, matches modern GZDoom. The
+resolution grid stays: it sets the windowed size; Borderless uses the desktop
+resolution; Exclusive uses the picked mode. (The SDL2 mode-list dedup from the
+1080p fix already makes that grid correct.)
+
+### Flights
+
+- Flight B1: shared `vid_fullscreen` enum + bool migration + the `DisplayModes`
+  menu + the SDL2 backend (mac/Linux borderless). E2E: all three modes on macOS.
+- Flight B2: Win32 backend (`WS_POPUP` borderless). E2E: all three modes on Windows
+  (CI build + manual).
+
+No sim/netcode/fixed64/ZScript contact — entirely draw/backend-side. Kills the
+missing-1920x1080 complaint class permanently and removes the gamma-stuck-on-crash
+failure mode (no exclusive display state to restore in Borderless).
