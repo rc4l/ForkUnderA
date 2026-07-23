@@ -25,6 +25,10 @@
 #include "gl/system/gl_framebuffer.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/utility/gl_templates.h"
+// [rc4l] borderless-video: single pure source of truth for what `fullscreen` means. See
+// features/borderless-video/computation/displaymode_compute.h. Backends ask it; never branch
+// on the raw CVAR. Easy to replace when upstream's video backend is cherry-picked wholesale.
+#include "features/borderless-video/computation/displaymode_compute.h"
 
 void gl_CalculateCPUSpeed();
 extern int NewWidth, NewHeight, NewBits, DisplayBits;
@@ -326,14 +330,11 @@ bool Win32GLVideo::GoFullscreen(bool yes)
 		}
 	}
 
-	if (yes)
-	{
-		SetFullscreen(m_DisplayDeviceName, m_DisplayWidth, m_trueHeight, m_DisplayBits, m_DisplayHz);
-	}
-	else
-	{
-		SetFullscreen(m_DisplayDeviceName, 0,0,0,0);
-	}
+	// [rc4l] borderless-video: fullscreen is now a borderless window at the desktop resolution,
+	// matching upstream (b65b83edb) and our SDL2 backend. We never switch the display's mode, so
+	// there is no exclusive resolution to set here -- and no broken desktop gamma to restore on a
+	// crash. The popup window that covers the monitor is set up in the framebuffer constructor.
+	SetFullscreen(m_DisplayDeviceName, 0, 0, 0, 0);
 	return yes;
 }
 
@@ -900,7 +901,9 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 	static_cast<Win32GLVideo *>(Video)->GoFullscreen(fullscreen);
 
 	m_displayDeviceName = 0;
-	int monX = 0, monY = 0;
+	// [rc4l] borderless-video: the borderless window covers the whole monitor at desktop
+	// resolution, so we need the monitor's real pixel rect (not the requested mode).
+	int monX = 0, monY = 0, monW = width, monH = GetTrueHeight();
 
 	if (hMonitor)
 	{
@@ -914,15 +917,21 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 
 			monX = int(mi.rcMonitor.left);
 			monY = int(mi.rcMonitor.top);
+			monW = int(mi.rcMonitor.right - mi.rcMonitor.left);
+			monH = int(mi.rcMonitor.bottom - mi.rcMonitor.top);
 		}
 	}
+
+	// [rc4l] borderless-video: ask the pure decision unit what kind of window `fullscreen` means
+	// rather than branching on the flag directly, so the intent lives in one tested place.
+	zx::WindowKind windowKind = zx::WindowKindForFullscreen(fullscreen);
 
 	ShowWindow (Window, SW_SHOW);
 	GetWindowRect(Window, &r);
 	style = WS_VISIBLE | WS_CLIPSIBLINGS;
 	exStyle = 0;
 
-	if (fullscreen)
+	if (windowKind == zx::WINDOW_BORDERLESS_DESKTOP)
 		style |= WS_POPUP;
 	else
 	{
@@ -934,9 +943,14 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 	SetWindowLong(Window, GWL_EXSTYLE, exStyle);
 	SetWindowPos(Window, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
 
-	if (fullscreen)
+	if (windowKind == zx::WINDOW_BORDERLESS_DESKTOP)
 	{
-		MoveWindow(Window, monX, monY, width, GetTrueHeight(), FALSE);
+		// [rc4l] borderless-video: cover the whole monitor (rect from the pure decision unit).
+		// WS_POPUP above dropped the frame; no ChangeDisplaySettings means the desktop mode is
+		// untouched.
+		int bx, by, bw, bh;
+		zx::BorderlessWindowRect(monX, monY, monW, monH, &bx, &by, &bw, &bh);
+		MoveWindow(Window, bx, by, bw, bh, FALSE);
 
 		// And now, seriously, it IS in the right place. Promise.
 	}

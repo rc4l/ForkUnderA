@@ -87,49 +87,34 @@ implementation. **Chosen: Option A (per-backend)** — the split is real but
 shallow; a full SDL2-on-Windows unification (Option B) is a separate deliberate
 effort, not bundled here.
 
-### Implementation (Option A)
+### Final decision: two window kinds, matching upstream (not three)
 
-1. **SDL2 backend (macOS + Linux), one shared change**: request
-   `SDL_WINDOW_FULLSCREEN_DESKTOP` instead of `SDL_WINDOW_FULLSCREEN` when the mode
-   is Borderless; runtime toggle via `SDL_SetWindowFullscreen`. Covers both
-   platforms from one code path.
-2. **Win32 backend (Windows)**: replace the exclusive
-   `ChangeDisplaySettingsEx(CDS_FULLSCREEN)` + `SetWindowLong(GWL_STYLE)` path with
-   a borderless `WS_POPUP` window sized to the monitor (the `938cd3cab` pattern) for
-   the Borderless mode; keep the exclusive path for the Exclusive mode. Preserve the
-   `win32gliface` Zandronum bits (the anti-cheat glBegin-hook detection, crash-catcher).
-3. **Shared layer (portable)**: a `vid_fullscreen` mode enum (0 Windowed / 1
-   Borderless / 2 Exclusive) replacing the boolean `fullscreen`, with a migration
-   that maps the old bool. Backends read the enum and set their window accordingly.
-4. **Renderer**: no changes (resolution-independent; renders at the drawable size).
+Scoping the code revealed that exclusive fullscreen is not worth keeping as a third
+mode: upstream deleted it outright (`b65b83edb`), and the SDL2 backend we already
+ship on macOS/Linux **is already borderless-desktop** (`SDL_WINDOW_FULLSCREEN_DESKTOP`
+at `sdlglvideo.cpp:212/216/372/490`, toggled via `SDL_SetWindowFullscreen`). So the
+boolean `fullscreen` CVAR is kept; it simply *means* borderless-desktop now. Two kinds
+only: `WINDOW_NORMAL` and `WINDOW_BORDERLESS_DESKTOP`.
 
-### UX (chosen: three-way "Display mode" selector)
+### What was actually built (`features/borderless-video/`)
 
-On the "VIDEO MODE" screen (Options → Set Video Mode), replace:
-
-```
-Option "Fullscreen",  "fullscreen", "YesNo"
-```
-
-with a single cycler:
-
-```
-Option "Display mode", "vid_fullscreen", "DisplayModes"   // Windowed / Borderless / Exclusive
-```
-
-`DisplayModes` is a new OptionValues block ({0="Windowed", 1="Borderless",
-2="Exclusive fullscreen"}). One line, clearest, matches modern GZDoom. The
-resolution grid stays: it sets the windowed size; Borderless uses the desktop
-resolution; Exclusive uses the picked mode. (The SDL2 mode-list dedup from the
-1080p fix already makes that grid correct.)
-
-### Flights
-
-- Flight B1: shared `vid_fullscreen` enum + bool migration + the `DisplayModes`
-  menu + the SDL2 backend (mac/Linux borderless). E2E: all three modes on macOS.
-- Flight B2: Win32 backend (`WS_POPUP` borderless). E2E: all three modes on Windows
-  (CI build + manual).
+1. **Pure decision unit** — `features/borderless-video/computation/displaymode_compute.{h,cpp}`
+   (+ `_test.cpp`, 100% coverage). Header-pure single source of truth:
+   `WindowKindForFullscreen(bool)` and `BorderlessWindowRect(...)`. Backends ask it;
+   they never branch on the raw CVAR. **Easy to replace** when upstream's video backend
+   is cherry-picked wholesale — swap this unit + the two `[rc4l] borderless-video` call
+   sites and nothing else moves.
+2. **Win32 backend (Windows)** — the only real code change. `Win32GLVideo::GoFullscreen`
+   drops the exclusive `ChangeDisplaySettingsEx(CDS_FULLSCREEN)` mode switch; the
+   framebuffer constructor sizes a `WS_POPUP` window to the monitor's real pixel rect via
+   `BorderlessWindowRect`. Zandronum win32 bits (anti-cheat glBegin-hook detection,
+   crash-catcher) untouched.
+3. **SDL2 backend (macOS + Linux)** — no change; already borderless-desktop.
+4. **Menu** — no change; `Option "Fullscreen", "fullscreen", "YesNo"` (menudef.txt:1814)
+   already matches UZDoom's `Fullscreen: Yes/No`, and `fullscreen` now means borderless,
+   so the label is already correct.
+5. **Renderer** — no change (resolution-independent; renders at the drawable size).
 
 No sim/netcode/fixed64/ZScript contact — entirely draw/backend-side. Kills the
 missing-1920x1080 complaint class permanently and removes the gamma-stuck-on-crash
-failure mode (no exclusive display state to restore in Borderless).
+failure mode (no exclusive display state to restore).
