@@ -119,3 +119,14 @@ to either is plain replay.
   skipped on the staircase as x86-only speedups with pixel-identical output; revisit for all
   platforms (x86 intrinsics + arm64 NEON/sse2neon) — tracked in
   https://github.com/rc4l/ZandroX/issues/40.
+
+## Landing (renderer frontier: flight 23, upstream 37ac6ef9a)
+
+The renderer staircase lands at flight 23 (`460d04e`): OpenGL core profile on all
+platforms, ~GZDoom 2.0.05-plus, with the stereo3D framework and the 2.1 fix waves.
+Everything past the frontier (`37ac6ef9a` → `g2.1.1`) is **gated on the base-engine
+backport (#41)**: in the 2.1.1 codebase the 3D-light-splitting rework and the final
+renderer commits are inseparably interwoven with ZDoom's coordinate refactor
+(`fixedvec3` / `X()`/`Y()`/`Z()` accessors), line/Eternity portals, and the skybox
+type system — none of which Zandronum's 2012 fork has. Full 2.1.1 renderer parity
+requires #41 first; see `docs/base-engine-backport-scope.md`.
