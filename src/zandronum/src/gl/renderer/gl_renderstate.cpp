@@ -218,6 +218,11 @@ bool FRenderState::ApplyShader()
 			glUniform4f(activeShader->dlightcolor_index, mDynColor.r / 255.f, mDynColor.g / 255.f, mDynColor.b / 255.f, 0);
 		}
 
+		if (glset.lightmode == 8)
+		{
+			glVertexAttrib1f(VATTR_LIGHTLEVEL, mSoftLight / 255.f);
+		}
+
 		return true;
 	}
 	return false;
@@ -268,8 +273,22 @@ void FRenderState::Apply(bool forcenoshader)
 	if (forcenoshader || !ApplyShader())
 	{
 		//if (mColor.vec[0] >= 0.f) glColor4fv(mColor.vec);
-	
+
 		GLRenderer->mShaderManager->SetActiveShader(NULL);
+
+		// [rc4l] Fixed-function fallback for the object color (shaded decals,
+		// fixed-color render styles): the GLSL path multiplies 'objectcolor'
+		// into the texel; without shaders we fold its RGB into the immediate
+		// modulate color instead (alpha already carries the translucency in
+		// mColor). Upstream never had this because it dropped GL 2.x wholesale
+		// at the core flip -- this dies with the fixed-function branch there.
+		if (mObjectColor.d != 0xffffffff && mColor.vec[0] >= 0.f)
+		{
+			glColor4f(mColor.vec[0] * mObjectColor.r / 255.f,
+			          mColor.vec[1] * mObjectColor.g / 255.f,
+			          mColor.vec[2] * mObjectColor.b / 255.f,
+			          mColor.vec[3]);
+		}
 		if (mTextureMode != ffTextureMode)
 		{
 			gl_SetTextureMode((ffTextureMode = mTextureMode));

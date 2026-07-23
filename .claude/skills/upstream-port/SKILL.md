@@ -54,10 +54,15 @@ the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/da
    the tripwire. Never rely on one platform's strictness to catch stragglers (the gluPerspective
    lesson: mac/linux tolerated a missed call for a full CI round because GLU was still linked
    there; only Windows enforced it).
-1. **Tripwire**: `tools/zscript-tripwire.sh` (also in CI). Known false-positive traps already
-   excluded: `GC::WriteBarrier` (2008 GC, ours) and `DEFINE_ACTION_FUNCTION` (classic DECORATE
-   macro). If a ported file needs its VM surface stripped, the F2DDrawer precedent says script
-   exports are typically self-contained blocks under ~6% of the file.
+1. **Tripwires**: `tools/zscript-tripwire.sh`, `tools/removed-api-tripwire.sh`, and
+   `tools/ff-parity-tripwire.sh` (all in CI). ZScript false-positive traps already excluded:
+   `GC::WriteBarrier` (2008 GC, ours) and `DEFINE_ACTION_FUNCTION` (classic DECORATE macro). If a
+   ported file needs its VM surface stripped, the F2DDrawer precedent says script exports are
+   typically self-contained blocks under ~6% of the file. FF-parity (the white-decal lesson,
+   flight 6): upstream freely moves state into shader-only uniforms because it dropped GL 2.x at
+   the core flip — we keep fixed-function alive on macOS until OUR core flip, so any render-state
+   field consumed only in `ApplyShader()` needs an FF fallback (`[rc4l]` shim in `Apply()`, see
+   the mObjectColor precedent) or a justified allowlist entry in the tripwire.
 2. **fixed64 audit** (see the `fixed64-widening` skill): every fixed→float crossing goes
    `int64 → double → float` (`features/hwrender/computation/vertexconvert_compute` is the tested
    reference); grep applied hunks for `fixed_t`, `FRACBITS`, `<<16`, `(int)` casts. Upstream code
@@ -73,7 +78,10 @@ the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/da
    reads repeatedly). Drive the engine with the `zandronum-driver` skill; remember the THREE stale
    layers after any change: `cmake --build build`, copy `build/zandronum` AND `build/zandronum.pk3`
    into `build/ZandroX.app/Contents/MacOS/`, re-codesign; wadsrc edits additionally need the pk3
-   deleted first (the `add_pk3` trap).
+   deleted first (the `add_pk3` trap). E2E must inspect the *artifacts an action leaves behind*,
+   not just the action itself: fire at a wall and then WALK UP to the decals; kill and look at the
+   corpse; open a door and look at the track (the white-decal miss — the muzzle flash verified,
+   the bullet marks it left didn't).
 6. Commit per verified step, plain messages, no attribution (user's global rules). Do not merge
    WIP branches; draft PRs are the CI vehicle.
 

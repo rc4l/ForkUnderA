@@ -38,6 +38,12 @@ jobs:
       - name: Removed-API tripwire
         run: bash tools/removed-api-tripwire.sh
 
+      # [rc4l] Shader/fixed-function parity (born from the white-decal slip: upstream routes
+      # state through shader-only uniforms; our macOS path stays fixed-function until the core
+      # flip, so every shader-consumed field needs an FF fallback or a justified allowlist entry).
+      - name: FF-parity tripwire
+        run: bash tools/ff-parity-tripwire.sh
+
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:

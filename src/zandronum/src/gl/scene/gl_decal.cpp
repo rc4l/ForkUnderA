@@ -317,7 +317,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 		gl_RenderState.SetObjectColor(decal->AlphaColor);
 	}
 
-	gl_SetColor(light, rel, &p, a);
+	gl_SetColor(light, rel, p, a);
 
 	// for additively drawn decals we must temporarily set the fog color to black.
 	PalEntry fc = gl_RenderState.GetFogColor();
@@ -328,7 +328,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 
 
 	gl_SetRenderStyle(decal->RenderStyle, false, false);
-	tex->BindPatch(decal->Translation);
+	tex->BindPatch(decal->Translation, 0, !!(decal->RenderStyle.Flags & STYLEF_RedIsAlpha));
 
 
 	// If srcalpha is one it looks better with a higher alpha threshold

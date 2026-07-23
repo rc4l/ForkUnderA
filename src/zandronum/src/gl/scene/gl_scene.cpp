@@ -424,7 +424,6 @@ void FGLRenderer::RenderScene(int recursion)
 	gl_RenderState.EnableBrightmap(gl_fixedcolormap == CM_DEFAULT);
 	gl_drawinfo->drawlists[GLDL_PLAIN].Sort();
 	gl_drawinfo->drawlists[GLDL_PLAIN].Draw(pass);
-	gl_RenderState.EnableBrightmap(false);
 	gl_drawinfo->drawlists[GLDL_FOG].Sort();
 	gl_drawinfo->drawlists[GLDL_FOG].Draw(pass);
 	gl_drawinfo->drawlists[GLDL_LIGHTFOG].Sort();
@@ -441,10 +440,8 @@ void FGLRenderer::RenderScene(int recursion)
 	}
 	if (pass == GLPASS_BASE) pass = GLPASS_BASE_MASKED;
 	gl_RenderState.AlphaFunc(GL_GEQUAL,gl_mask_threshold);
-	gl_RenderState.EnableBrightmap(true);
 	gl_drawinfo->drawlists[GLDL_MASKED].Sort();
 	gl_drawinfo->drawlists[GLDL_MASKED].Draw(pass);
-	gl_RenderState.EnableBrightmap(false);
 	gl_drawinfo->drawlists[GLDL_FOGMASKED].Sort();
 	gl_drawinfo->drawlists[GLDL_FOGMASKED].Draw(pass);
 	gl_drawinfo->drawlists[GLDL_LIGHTFOGMASKED].Sort();
@@ -482,7 +479,7 @@ void FGLRenderer::RenderScene(int recursion)
 			{
 				gl_RenderState.BlendFunc(GL_ONE, GL_ONE);
 				glDepthFunc(GL_EQUAL);
-				if (glset.lightmode == 8) glVertexAttrib1f(VATTR_LIGHTLEVEL, 1.0f); // Korshun.
+				gl_RenderState.SetSoftLightLevel(255);
 				for(int i=GLDL_FIRSTLIGHT; i<=GLDL_LASTLIGHT; i++)
 				{
 					gl_drawinfo->drawlists[i].Draw(GLPASS_LIGHT);

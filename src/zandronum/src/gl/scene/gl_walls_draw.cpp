@@ -377,8 +377,7 @@ void GLWall::RenderFogBoundary()
 			gl_RenderState.EnableFog(false);
 			gl_RenderState.AlphaFunc(GL_GREATER,0);
 			glDepthFunc(GL_LEQUAL);
-			gl_RenderState.SetColor(fc[0], fc[1], fc[2], fogd1, Colormap.desaturation);
-			if (glset.lightmode == 8) glVertexAttrib1f(VATTR_LIGHTLEVEL, 1.0); // Korshun.
+			gl_RenderState.SetColor(fc[0], fc[1], fc[2], fogd1);
 
 			flags &= ~GLWF_GLOW;
 			RenderWall(4,fc);
@@ -409,7 +408,7 @@ void GLWall::RenderMirrorSurface()
 	// Use sphere mapping for this
 	gl_RenderState.SetEffect(EFF_SPHEREMAP);
 
-	gl_SetColor(lightlevel, 0, &Colormap ,0.1f);
+	gl_SetColor(lightlevel, 0, Colormap ,0.1f);
 	gl_SetFog(lightlevel, 0, &Colormap, true);
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA,GL_ONE);
 	gl_RenderState.AlphaFunc(GL_GREATER,0);
@@ -467,7 +466,6 @@ void GLWall::RenderTranslucentWall()
 	int extra;
 	if (gltexture) 
 	{
-		if (flags&GLWF_FOGGY) gl_RenderState.EnableBrightmap(false);
 		gl_RenderState.EnableGlow(!!(flags & GLWF_GLOW));
 		gltexture->Bind(flags, 0);
 		extra = getExtraLight();
@@ -478,7 +476,7 @@ void GLWall::RenderTranslucentWall()
 		extra = 0;
 	}
 
-	gl_SetColor(lightlevel, extra, &Colormap, fabsf(alpha));
+	gl_SetColor(lightlevel, extra, Colormap, fabsf(alpha));
 	if (type!=RENDERWALL_M2SNF) gl_SetFog(lightlevel, extra, &Colormap, isadditive);
 	else gl_SetFog(255, 0, NULL, false);
 
@@ -492,7 +490,6 @@ void GLWall::RenderTranslucentWall()
 	{
 		gl_RenderState.EnableTexture(true);
 	}
-	gl_RenderState.EnableBrightmap(true);
 	gl_RenderState.EnableGlow(false);
 }
 
@@ -531,7 +528,7 @@ void GLWall::Draw(int pass)
 		// fall through
 	case GLPASS_PLAIN:			// Single-pass rendering
 		rel = rellight + getExtraLight();
-		gl_SetColor(lightlevel, rel, &Colormap,1.0f);
+		gl_SetColor(lightlevel, rel, Colormap,1.0f);
 		if (type!=RENDERWALL_M2SNF) gl_SetFog(lightlevel, rel, &Colormap, false);
 		else gl_SetFog(255, 0, NULL, false);
 
@@ -545,7 +542,7 @@ void GLWall::Draw(int pass)
 	case GLPASS_BASE:			// Base pass for non-masked polygons (all opaque geometry)
 	case GLPASS_BASE_MASKED:	// Base pass for masked polygons (2sided mid-textures and transparent 3D floors)
 		rel = rellight + getExtraLight();
-		gl_SetColor(lightlevel, rel, &Colormap,1.0f);
+		gl_SetColor(lightlevel, rel, Colormap,1.0f);
 		if (!(flags&GLWF_FOGGY)) 
 		{
 			if (type!=RENDERWALL_M2SNF) gl_SetFog(lightlevel, rel, &Colormap, false);
