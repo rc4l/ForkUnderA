@@ -411,6 +411,9 @@ static void RenderBox(FTextureID texno, FMaterial * gltex, float x_offset, bool 
 	else 
 	{
 		faces=1;
+		tex = FMaterial::ValidateTexture(sb->faces[0], false);
+		gl_RenderState.SetMaterial(tex, CLAMP_XY, 0, -1, false);
+		gl_RenderState.Apply();
 
 		ptr = GLRenderer->mVBO->GetBuffer();
 		ptr->Set(128.f, 128.f, -128.f, 0, 0);
@@ -481,13 +484,18 @@ void GLSkyPortal::DrawContents()
 
 	// We have no use for Doom lighting special handling here, so disable it for this function.
 	int oldlightmode = glset.lightmode;
-	if (glset.lightmode == 8) glset.lightmode = 2;
+	if (glset.lightmode == 8)
+	{
+		glset.lightmode = 2;
+		gl_RenderState.SetSoftLightLevel(-1);
+	}
 
 
 	gl_RenderState.ResetColor();
 	gl_RenderState.EnableFog(false);
 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	bool oldClamp = gl_RenderState.SetDepthClamp(true);
 
 	gl_MatrixStack.Push(gl_RenderState.mViewMatrix);
 	GLRenderer->SetupView(0, 0, 0, viewangle, !!(MirrorFlag&1), !!(PlaneMirrorFlag&1));
@@ -532,5 +540,6 @@ void GLSkyPortal::DrawContents()
 	gl_MatrixStack.Pop(gl_RenderState.mViewMatrix);
 	gl_RenderState.ApplyMatrices();
 	glset.lightmode = oldlightmode;
+	gl_RenderState.SetDepthClamp(oldClamp);
 }
 

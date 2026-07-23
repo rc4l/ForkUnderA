@@ -646,8 +646,7 @@ void GLSkyboxPortal::DrawContents()
 
 	PlaneMirrorMode=0;
 
-	glDisable(GL_DEPTH_CLAMP);
-
+	bool oldclamp = gl_RenderState.SetDepthClamp(false);
 	// [AK] Don't interpolate the skybox if the game is supposed to be paused
 	// but the console is still interpolated. Otherwise, it will appear jittery.
 	const fixed_t ticFracToUse = C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac;
@@ -682,7 +681,7 @@ void GLSkyboxPortal::DrawContents()
 	GLRenderer->DrawScene();
 	origin->flags&=~MF_JUSTHIT;
 	inskybox=false;
-	glEnable(GL_DEPTH_CLAMP);
+	gl_RenderState.SetDepthClamp(oldclamp);
 	skyboxrecursion--;
 
 	PlaneMirrorMode=old_pm;

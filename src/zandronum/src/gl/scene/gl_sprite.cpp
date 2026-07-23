@@ -121,7 +121,7 @@ void GLSprite::Draw(int pass)
 
 	bool additivefog = false;
 	bool foglayer = false;
-	int rel = getExtraLight();
+	int rel = fullbright? 0 : getExtraLight();
 
 	if (pass==GLPASS_TRANSLUCENT)
 	{
