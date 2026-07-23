@@ -44,38 +44,42 @@ extern constate_e ConsoleState;
 extern SDL_Surface *cursorSurface;
 extern SDL_Rect cursorBlit;
 
-static BYTE KeySymToDIK[SDLK_LAST], DownState[SDLK_LAST];
+#include "computation/keymap_compute.h"
 
-static WORD DIKToKeySym[256] =
+// [rc4l] SDL2 keysyms for non-ASCII keys are >= 1<<30, so they cannot index a table; scancodes are a
+// dense, physically-positional enum, which is what DIK codes already are.
+static BYTE ScancodeToDIK[SDL_NUM_SCANCODES], DownState[SDL_NUM_SCANCODES];
+
+static WORD DIKToScancode[256] =
 {
-	0, SDLK_ESCAPE, '1', '2', '3', '4', '5', '6',
-	'7', '8', '9', '0', '-', '=', SDLK_BACKSPACE, SDLK_TAB,
-	'q', 'w', 'e', 'r', 't', 'y', 'u', 'i',
-	'o', 'p', '[', ']', SDLK_RETURN, SDLK_LCTRL, 'a', 's',
-	'd', 'f', 'g', 'h', 'j', 'k', 'l', SDLK_SEMICOLON,
-	'\'', '`', SDLK_LSHIFT, '\\', 'z', 'x', 'c', 'v',
-	'b', 'n', 'm', ',', '.', '/', SDLK_RSHIFT, SDLK_KP_MULTIPLY,
-	SDLK_LALT, ' ', SDLK_CAPSLOCK, SDLK_F1, SDLK_F2, SDLK_F3, SDLK_F4, SDLK_F5,
-	SDLK_F6, SDLK_F7, SDLK_F8, SDLK_F9, SDLK_F10, SDLK_NUMLOCK, SDLK_SCROLLOCK, SDLK_KP7,
-	SDLK_KP8, SDLK_KP9, SDLK_KP_MINUS, SDLK_KP4, SDLK_KP5, SDLK_KP6, SDLK_KP_PLUS, SDLK_KP1,
-	SDLK_KP2, SDLK_KP3, SDLK_KP0, SDLK_KP_PERIOD, 0, 0, 0, SDLK_F11,
-	SDLK_F12, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, SDLK_F13, SDLK_F14, SDLK_F15, 0,
+	0, SDL_SCANCODE_ESCAPE, SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4, SDL_SCANCODE_5, SDL_SCANCODE_6,
+	SDL_SCANCODE_7, SDL_SCANCODE_8, SDL_SCANCODE_9, SDL_SCANCODE_0, SDL_SCANCODE_MINUS, SDL_SCANCODE_EQUALS, SDL_SCANCODE_BACKSPACE, SDL_SCANCODE_TAB,
+	SDL_SCANCODE_Q, SDL_SCANCODE_W, SDL_SCANCODE_E, SDL_SCANCODE_R, SDL_SCANCODE_T, SDL_SCANCODE_Y, SDL_SCANCODE_U, SDL_SCANCODE_I,
+	SDL_SCANCODE_O, SDL_SCANCODE_P, SDL_SCANCODE_LEFTBRACKET, SDL_SCANCODE_RIGHTBRACKET, SDL_SCANCODE_RETURN, SDL_SCANCODE_LCTRL, SDL_SCANCODE_A, SDL_SCANCODE_S,
+	SDL_SCANCODE_D, SDL_SCANCODE_F, SDL_SCANCODE_G, SDL_SCANCODE_H, SDL_SCANCODE_J, SDL_SCANCODE_K, SDL_SCANCODE_L, SDL_SCANCODE_SEMICOLON,
+	SDL_SCANCODE_APOSTROPHE, SDL_SCANCODE_GRAVE, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_BACKSLASH, SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_C, SDL_SCANCODE_V,
+	SDL_SCANCODE_B, SDL_SCANCODE_N, SDL_SCANCODE_M, SDL_SCANCODE_COMMA, SDL_SCANCODE_PERIOD, SDL_SCANCODE_SLASH, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_KP_MULTIPLY,
+	SDL_SCANCODE_LALT, SDL_SCANCODE_SPACE, SDL_SCANCODE_CAPSLOCK, SDL_SCANCODE_F1, SDL_SCANCODE_F2, SDL_SCANCODE_F3, SDL_SCANCODE_F4, SDL_SCANCODE_F5,
+	SDL_SCANCODE_F6, SDL_SCANCODE_F7, SDL_SCANCODE_F8, SDL_SCANCODE_F9, SDL_SCANCODE_F10, SDL_SCANCODE_NUMLOCKCLEAR, SDL_SCANCODE_SCROLLLOCK, SDL_SCANCODE_KP_7,
+	SDL_SCANCODE_KP_8, SDL_SCANCODE_KP_9, SDL_SCANCODE_KP_MINUS, SDL_SCANCODE_KP_4, SDL_SCANCODE_KP_5, SDL_SCANCODE_KP_6, SDL_SCANCODE_KP_PLUS, SDL_SCANCODE_KP_1,
+	SDL_SCANCODE_KP_2, SDL_SCANCODE_KP_3, SDL_SCANCODE_KP_0, SDL_SCANCODE_KP_PERIOD, 0, 0, 0, SDL_SCANCODE_F11,
+	SDL_SCANCODE_F12, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, SDL_SCANCODE_F13, SDL_SCANCODE_F14, SDL_SCANCODE_F15, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, SDLK_KP_EQUALS, 0, 0,
-	0, SDLK_AT, SDLK_COLON, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, SDLK_KP_ENTER, SDLK_RCTRL, 0, 0,
+	0, 0, 0, 0, 0, SDL_SCANCODE_KP_EQUALS, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, SDL_SCANCODE_KP_ENTER, SDL_SCANCODE_RCTRL, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, SDLK_KP_DIVIDE, 0, SDLK_SYSREQ,
-	SDLK_RALT, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, SDLK_PAUSE, 0, SDLK_HOME,
-	SDLK_UP, SDLK_PAGEUP, 0, SDLK_LEFT, 0, SDLK_RIGHT, 0, SDLK_END,
-	SDLK_DOWN, SDLK_PAGEDOWN, SDLK_INSERT, SDLK_DELETE, 0, 0, 0, 0,
-	0, 0, 0, SDLK_LSUPER, SDLK_RSUPER, SDLK_MENU, SDLK_POWER, 0,
+	0, 0, 0, 0, 0, SDL_SCANCODE_KP_DIVIDE, 0, SDL_SCANCODE_SYSREQ,
+	SDL_SCANCODE_RALT, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, SDL_SCANCODE_PAUSE, 0, SDL_SCANCODE_HOME,
+	SDL_SCANCODE_UP, SDL_SCANCODE_PAGEUP, 0, SDL_SCANCODE_LEFT, 0, SDL_SCANCODE_RIGHT, 0, SDL_SCANCODE_END,
+	SDL_SCANCODE_DOWN, SDL_SCANCODE_PAGEDOWN, SDL_SCANCODE_INSERT, SDL_SCANCODE_DELETE, 0, 0, 0, 0,
+	0, 0, 0, SDL_SCANCODE_LGUI, SDL_SCANCODE_RGUI, SDL_SCANCODE_MENU, SDL_SCANCODE_POWER, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
@@ -88,25 +92,18 @@ static void FlushDIKState (int low=0, int high=NUM_KEYS-1)
 
 static void InitKeySymMap ()
 {
-	for (int i = 0; i < 256; ++i)
-	{
-		KeySymToDIK[DIKToKeySym[i]] = i;
-	}
-	KeySymToDIK[0] = 0;
-	KeySymToDIK[SDLK_RSHIFT] = DIK_LSHIFT;
-	KeySymToDIK[SDLK_RCTRL] = DIK_LCONTROL;
-	KeySymToDIK[SDLK_RALT] = DIK_LMENU;
-	// Depending on your Linux flavor, you may get SDLK_PRINT or SDLK_SYSREQ
-	KeySymToDIK[SDLK_PRINT] = DIK_SYSRQ;
+	ComputeInvertKeyTable(DIKToScancode, 256, ScancodeToDIK, SDL_NUM_SCANCODES);
+	ScancodeToDIK[0] = 0;
+	// [rc4l] The right-hand modifiers report as their left-hand equivalents, as they did under SDL 1.2.
+	ScancodeToDIK[SDL_SCANCODE_RSHIFT] = DIK_LSHIFT;
+	ScancodeToDIK[SDL_SCANCODE_RCTRL] = DIK_LCONTROL;
+	ScancodeToDIK[SDL_SCANCODE_RALT] = DIK_LMENU;
+	ScancodeToDIK[SDL_SCANCODE_PRINTSCREEN] = DIK_SYSRQ;
 }
 
 static void I_CheckGUICapture ()
 {
 	bool wantCapt;
-	bool repeat;
-	int oldrepeat, interval;
-
-	SDL_GetKeyRepeat(&oldrepeat, &interval);
 
 	if (menuactive == MENU_Off)
 	{
@@ -129,32 +126,12 @@ static void I_CheckGUICapture ()
 
 			FlushDIKState ();
 			memset (DownState, 0, sizeof(DownState));
-			repeat = !sdl_nokeyrepeat;
-			SDL_EnableUNICODE (1);
+			// [rc4l] SDL2 delivers typed characters as SDL_TEXTINPUT rather than a unicode field on the key event.
+			SDL_StartTextInput ();
 		}
 		else
 		{
-			repeat = false;
-			SDL_EnableUNICODE (0);
-		}
-	}
-	if (wantCapt)
-	{
-		repeat = !sdl_nokeyrepeat;
-	}
-	else
-	{
-		repeat = false;
-	}
-	if (repeat != (oldrepeat != 0))
-	{
-		if (repeat)
-		{
-			SDL_EnableKeyRepeat (SDL_DEFAULT_REPEAT_DELAY, SDL_DEFAULT_REPEAT_INTERVAL);
-		}
-		else
-		{
-			SDL_EnableKeyRepeat (0, 0);
+			SDL_StopTextInput ();
 		}
 	}
 }
@@ -169,7 +146,7 @@ void I_ReleaseMouseCapture()
 
 static void CenterMouse ()
 {
-	SDL_WarpMouse (screen->GetWidth()/2, screen->GetHeight()/2);
+	SDL_WarpMouseInWindow (SDL_GL_GetCurrentWindow (), screen->GetWidth()/2, screen->GetHeight()/2);
 	SDL_PumpEvents ();
 	SDL_GetRelativeMouseState (NULL, NULL);
 }
@@ -226,7 +203,7 @@ static void WheelMoved(event_t *event)
 	{
 		if (event->type != EV_KeyUp)
 		{
-			SDLMod mod = SDL_GetModState();
+			SDL_Keymod mod = SDL_GetModState();
 			event->type = EV_GUI_Event;
 			event->subtype = event->data1 == KEY_MWHEELUP ? EV_GUI_WheelUp : EV_GUI_WheelDown;
 			event->data1 = 0;
@@ -264,10 +241,11 @@ static bool inGame()
 
 static void I_CheckNativeMouse ()
 {
-	bool focus = (SDL_GetAppState() & (SDL_APPINPUTFOCUS|SDL_APPACTIVE))
-			== (SDL_APPINPUTFOCUS|SDL_APPACTIVE);
-	bool fs = (SDL_GetVideoSurface ()->flags & SDL_FULLSCREEN) != 0;
-	
+	SDL_Window *window = SDL_GL_GetCurrentWindow ();
+	const Uint32 flags = window != NULL ? SDL_GetWindowFlags (window) : 0;
+	bool focus = (flags & (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_SHOWN))
+			== (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_SHOWN);
+
 	bool wantNative = !focus || (!use_mouse || GUICapture || paused || demoplayback || !inGame());
 
 	if (wantNative != NativeMouse)
@@ -276,12 +254,12 @@ static void I_CheckNativeMouse ()
 		SDL_ShowCursor (wantNative ? cursorSurface == NULL : 0);
 		if (wantNative)
 		{
-			SDL_WM_GrabInput (SDL_GRAB_OFF);
+			SDL_SetRelativeMouseMode (SDL_FALSE);
 			FlushDIKState (KEY_MOUSE1, KEY_MOUSE8);
 		}
 		else
 		{
-			SDL_WM_GrabInput (SDL_GRAB_ON);
+			SDL_SetRelativeMouseMode (SDL_TRUE);
 			CenterMouse ();
 		}
 	}
@@ -298,22 +276,35 @@ void MessagePump (const SDL_Event &sev)
 	case SDL_QUIT:
 		exit (0);
 
-	case SDL_ACTIVEEVENT:
-		if (sev.active.state == SDL_APPINPUTFOCUS)
+	// [rc4l] SDL2 replaces SDL_ACTIVEEVENT with per-window focus events.
+	case SDL_WINDOWEVENT:
+		if (sev.window.event == SDL_WINDOWEVENT_FOCUS_GAINED ||
+			sev.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
 		{
-			if (sev.active.gain == 0)
+			const int gain = sev.window.event == SDL_WINDOWEVENT_FOCUS_GAINED;
+			if (!gain)
 			{ // kill focus
 				FlushDIKState ();
 			}
 			if (( NETWORK_GetState() != NETSTATE_CLIENT ) || ( cl_soundwhennotactive == false ))	// [EP]
-				S_SetSoundPaused(sev.active.gain);
+				S_SetSoundPaused(gain);
+		}
+		break;
+
+	// [rc4l] SDL2 reports the wheel as its own event instead of mouse buttons 4/5.
+	case SDL_MOUSEWHEEL:
+		if (sev.wheel.y != 0)
+		{
+			event.type = EV_KeyDown;
+			event.data1 = sev.wheel.y > 0 ? KEY_MWHEELUP : KEY_MWHEELDOWN;
+			WheelMoved(&event);
 		}
 		break;
 
 	case SDL_MOUSEBUTTONDOWN:
 	case SDL_MOUSEBUTTONUP:
 	case SDL_MOUSEMOTION:
-		if (!GUICapture || sev.button.button == 4 || sev.button.button == 5)
+		if (!GUICapture)
 		{
 			if(sev.type != SDL_MOUSEMOTION)
 			{
@@ -326,32 +317,21 @@ void MessagePump (const SDL_Event &sev)
 				*/
 				switch (sev.button.button)
 				{
+				// [rc4l] SDL2 normalises these: 1/2/3 are left/middle/right and 4+ are the extra buttons.
 				case 1:		event.data1 = KEY_MOUSE1;		break;
 				case 2:		event.data1 = KEY_MOUSE3;		break;
 				case 3:		event.data1 = KEY_MOUSE2;		break;
-				case 4:		event.data1 = KEY_MWHEELUP;		break;
-				case 5:		event.data1 = KEY_MWHEELDOWN;	break;
-				case 6:		event.data1 = KEY_MOUSE4;		break;	/* dunno; not generated by my mouse */
-				case 7:		event.data1 = KEY_MOUSE5;		break;	/* ditto */
-				case 8:		event.data1 = KEY_MOUSE4;		break;
-				case 9:		event.data1 = KEY_MOUSE5;		break;
-				case 10:	event.data1 = KEY_MOUSE6;		break;
-				case 11:	event.data1 = KEY_MOUSE7;		break;
-				case 12:	event.data1 = KEY_MOUSE8;		break;
+				case 4:		event.data1 = KEY_MOUSE4;		break;
+				case 5:		event.data1 = KEY_MOUSE5;		break;
+				case 6:		event.data1 = KEY_MOUSE6;		break;
+				case 7:		event.data1 = KEY_MOUSE7;		break;
+				case 8:		event.data1 = KEY_MOUSE8;		break;
 				default:	printf("SDL mouse button %s %d\n",
 					sev.type == SDL_MOUSEBUTTONDOWN ? "down" : "up", sev.button.button);	break;
 				}
 				if (event.data1 != 0)
 				{
-					//DIKState[ActiveDIKState][event.data1] = (event.type == EV_KeyDown);
-					if (event.data1 == KEY_MWHEELUP || event.data1 == KEY_MWHEELDOWN)
-					{
-						WheelMoved(&event);
-					}
-					else
-					{
-						D_PostEvent(&event);
-					}
+					D_PostEvent(&event);
 				}
 			}
 		}
@@ -376,13 +356,15 @@ void MessagePump (const SDL_Event &sev)
 
 	case SDL_KEYDOWN:
 	case SDL_KEYUP:
-		if (sev.key.keysym.sym >= SDLK_LAST)
+	{
+		const SDL_Scancode scan = sev.key.keysym.scancode;
+		if (scan >= SDL_NUM_SCANCODES)
 			break;
 
 		if (!GUICapture)
 		{
 			event.type = sev.type == SDL_KEYDOWN ? EV_KeyDown : EV_KeyUp;
-			event.data1 = KeySymToDIK[sev.key.keysym.sym];
+			event.data1 = ScancodeToDIK[scan];
 			if (event.data1)
 			{
 				if (sev.key.keysym.sym < 256)
@@ -400,25 +382,26 @@ void MessagePump (const SDL_Event &sev)
 						  ((sev.key.keysym.mod & KMOD_CTRL) ? GKM_CTRL : 0) |
 						  ((sev.key.keysym.mod & KMOD_ALT) ? GKM_ALT : 0);
 
-			if (sev.key.keysym.sym < SDLK_LAST)
+			// [rc4l] SDL2 repeats keys itself, but the DownState table still distinguishes a
+			// genuine repeat from a fresh press, and honours sdl_nokeyrepeat.
+			if (event.subtype == EV_GUI_KeyDown)
 			{
-				if (event.subtype == EV_GUI_KeyDown)
+				if (DownState[scan])
 				{
-					if (DownState[sev.key.keysym.sym])
-					{
-						event.subtype = EV_GUI_KeyRepeat;
-					}
-					DownState[sev.key.keysym.sym] = 1;
+					if (sdl_nokeyrepeat) break;
+					event.subtype = EV_GUI_KeyRepeat;
 				}
-				else
-				{
-					DownState[sev.key.keysym.sym] = 0;
-				}
+				DownState[scan] = 1;
+			}
+			else
+			{
+				DownState[scan] = 0;
 			}
 
 			switch (sev.key.keysym.sym)
 			{
 			case SDLK_KP_ENTER:	event.data1 = GK_RETURN;	break;
+			case SDLK_BACKSPACE:	event.data1 = GK_BACKSPACE;	break;
 			case SDLK_PAGEUP:	event.data1 = GK_PGUP;		break;
 			case SDLK_PAGEDOWN:	event.data1 = GK_PGDN;		break;
 			case SDLK_END:		event.data1 = GK_END;		break;
@@ -448,17 +431,27 @@ void MessagePump (const SDL_Event &sev)
 				}
 				break;
 			}
-			event.data2 = sev.key.keysym.unicode & 0xff;
+			// [rc4l] Typed characters now arrive separately as SDL_TEXTINPUT, so this only posts the key itself.
 			if (event.data1 < 128)
 			{
 				event.data1 = toupper(event.data1);
 				D_PostEvent (&event);
 			}
-			if (!iscntrl(event.data2) && event.subtype != EV_GUI_KeyUp)
+		}
+		break;
+	}
+
+	// [rc4l] SDL2's replacement for SDL 1.2's unicode field on the key event.
+	case SDL_TEXTINPUT:
+		if (GUICapture)
+		{
+			const unsigned char ch = (unsigned char)sev.text.text[0];
+			if (ch != 0 && !iscntrl(ch))
 			{
+				event.type = EV_GUI_Event;
 				event.subtype = EV_GUI_Char;
-				event.data1 = event.data2;
-				event.data2 = sev.key.keysym.mod & KMOD_ALT;
+				event.data1 = ch;
+				event.data2 = (SDL_GetModState () & KMOD_ALT) != 0;
 				event.data3 = 0;
 				D_PostEvent (&event);
 			}
@@ -502,7 +495,7 @@ void I_StartTic ()
 void I_ProcessJoysticks ();
 void I_StartFrame ()
 {
-	if (KeySymToDIK[SDLK_BACKSPACE] == 0)
+	if (ScancodeToDIK[SDL_SCANCODE_BACKSPACE] == 0)
 	{
 		InitKeySymMap ();
 	}

@@ -253,6 +253,13 @@ add_subdirectory( lzma )
 add_subdirectory( tools )
 add_subdirectory( dumb )
 add_subdirectory( gdtoa )
+# [rc4l] Vulkan backend support library (vendored, self-contained: volk + vk_mem_alloc + glslang).
+# OFF by default so platforms/CI without Vulkan build deps are untouched; mac_compile.sh opts in.
+# On Apple, ZVulkan's CMake requires MoltenVK (brew: molten-vk vulkan-headers vulkan-loader).
+option( HAVE_VULKAN "Build the ZVulkan library for the Vulkan renderer backend" OFF )
+if( HAVE_VULKAN )
+	add_subdirectory( ZVulkan )
+endif( HAVE_VULKAN )
 add_subdirectory( wadsrc )
 add_subdirectory( wadsrc_bm )
 # [BB] Zandronum includes the light definitions in zandronum.pk3.

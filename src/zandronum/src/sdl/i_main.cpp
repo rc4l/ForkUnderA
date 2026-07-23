@@ -82,10 +82,6 @@ extern "C" int cc_install_handlers(int, char**, int, int*, const char*, int(*)(c
 
 // EXTERNAL DATA DECLARATIONS ----------------------------------------------
 
-#ifdef USE_XCURSOR
-extern bool UseXCursor;
-#endif
-
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
 
 #ifndef NO_GTK
@@ -312,36 +308,33 @@ int main (int argc, char **argv)
 #endif
 
 	{
-		char viddriver[80];
+		// [rc4l] SDL2 names the driver of the initialised video subsystem directly.
+		const char *viddriver = SDL_GetCurrentVideoDriver();
 
-		if (SDL_VideoDriverName(viddriver, sizeof(viddriver)) != NULL)
+		if (viddriver != NULL)
 		{
 			printf("Using video driver %s\n", viddriver);
-#ifdef USE_XCURSOR
-			UseXCursor = (strcmp(viddriver, "x11") == 0);
-#endif
 		}
 		printf("\n");
 	}
 
-	char caption[100];
-	mysnprintf(caption, countof(caption), GAMESIG " %s (%s)", GetVersionString(), GetGitTime());
-	SDL_WM_SetCaption(caption, caption);
+	// [rc4l] The window title is set at window creation now; there is no window here yet to title.
 
 #ifdef __APPLE__
 	
-	const SDL_VideoInfo* videoInfo = SDL_GetVideoInfo();
-	if ( NULL != videoInfo )
+	// [rc4l] SDL2 reports the desktop mode per display instead of a global SDL_VideoInfo.
+	SDL_DisplayMode desktop;
+	if ( 0 == SDL_GetDesktopDisplayMode( 0, &desktop ) )
 	{
 		EXTERN_CVAR(  Int, vid_defwidth  )
 		EXTERN_CVAR(  Int, vid_defheight )
 		EXTERN_CVAR(  Int, vid_defbits   )
 		EXTERN_CVAR( Bool, vid_vsync     )
 		EXTERN_CVAR( Bool, fullscreen    )
-		
-		vid_defwidth  = videoInfo->current_w;
-		vid_defheight = videoInfo->current_h;
-		vid_defbits   = videoInfo->vfmt->BitsPerPixel;
+
+		vid_defwidth  = desktop.w;
+		vid_defheight = desktop.h;
+		vid_defbits   = SDL_BITSPERPIXEL( desktop.format );
 		vid_vsync     = True;
 		fullscreen    = True;
 	}

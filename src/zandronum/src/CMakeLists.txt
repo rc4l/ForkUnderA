@@ -147,18 +147,9 @@ else( WIN32 )
 			endif( GTK2_FOUND )
 		endif( NOT NO_GTK )
 
-		# Check for Xcursor library and header files
-		find_library( XCURSOR_LIB Xcursor )
-		if( XCURSOR_LIB )
-			find_file( XCURSOR_HEADER "X11/Xcursor/Xcursor.h" )
-			if( XCURSOR_HEADER )
-				add_definitions( -DUSE_XCURSOR=1 )
-				message( STATUS "Found Xcursor at ${XCURSOR_LIB}" )
-				set( ZDOOM_LIBS ${ZDOOM_LIBS} ${XCURSOR_LIB} )
-			else( XCURSOR_HEADER )
-				unset( XCURSOR_LIB )
-			endif( XCURSOR_HEADER )
-		endif( XCURSOR_LIB )
+		# [rc4l] The Xcursor detection is gone: SDL2's native color cursors
+		# (SDL_CreateColorCursor in sdl/i_system.cpp) replaced the USE_XCURSOR hack that
+		# reached into SDL 1.2's private structs for the XDisplay.
 	endif( APPLE )
 	set( NASM_NAMES nasm )
 	
@@ -166,15 +157,16 @@ else( WIN32 )
 		add_definitions( -DNO_GTK=1 )
 	endif( NO_GTK )
 	
-	# Non-Windows version also needs SDL
-	find_package( SDL )
-	if( NOT SDL_FOUND )
-		message( SEND_ERROR "SDL is required for building." )
-	endif( NOT SDL_FOUND )
-	set( ZDOOM_LIBS ${ZDOOM_LIBS} "${SDL_LIBRARY}" )
-	# [BB] Don't put the SDL path in inverted commas. At least on FreeBSD 8.1 this
-	# variable contains two directories.
-	include_directories( ${SDL_INCLUDE_DIR} )
+	# [rc4l] Native SDL2, not the sdl12-compat shim: SDL 1.2 cannot request a GL version or profile, which is what capped macOS at a 2.1 compatibility context.
+	find_package( SDL2 REQUIRED )
+	set( ZDOOM_LIBS ${ZDOOM_LIBS} SDL2::SDL2 SDL2::SDL2main )
+
+	# [rc4l] Vulkan backend support: the vendored ZVulkan lib (added at the top level behind
+	# HAVE_VULKAN). The define gates the Vulkan code paths; the GL backend has no dependency on it.
+	if( HAVE_VULKAN )
+		add_definitions( -DHAVE_VULKAN )
+		set( ZDOOM_LIBS ${ZDOOM_LIBS} zvulkan )
+	endif( HAVE_VULKAN )
 
 	find_path( FPU_CONTROL_DIR fpu_control.h )
 	if( FPU_CONTROL_DIR )
@@ -648,11 +640,9 @@ set( PLAT_SDL_SOURCES
 	sdl/i_main.cpp
 	sdl/i_movie.cpp
 	sdl/i_system.cpp
-	sdl/sdlvideo.cpp
 	sdl/sdlglvideo.cpp
 	sdl/st_start.cpp )
 set( PLAT_MAC_SOURCES
-	sdl/SDLMain.m
 	sdl/iwadpicker_cocoa.mm
 	sdl/i_system_cocoa.mm )
 if( WIN32 )
@@ -1546,3 +1536,4 @@ target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_crash.cpp mcp_event.cpp mcp_ren
 # source list; this glob is safe because these TUs never use IMPLEMENT_CLASS.)
 file( GLOB_RECURSE ZX_COMPUTE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*_compute.cpp" )
 target_sources( zdoom PRIVATE ${ZX_COMPUTE_SOURCES} )
+

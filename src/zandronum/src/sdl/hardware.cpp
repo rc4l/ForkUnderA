@@ -43,7 +43,6 @@
 #include "c_console.h"
 #include "c_cvars.h"
 #include "c_dispatch.h"
-#include "sdlvideo.h"
 #include "v_text.h"
 #include "doomstat.h"
 #include "m_argv.h"
@@ -102,23 +101,15 @@ void I_InitGraphics ()
 {
 	UCVarValue val;
 
-#ifndef NO_GL
-	// hack by stevenaaus to force software mode if no 32bpp
-	const SDL_VideoInfo *i = SDL_GetVideoInfo();
-	if ((i->vfmt)->BytesPerPixel != 4) {
-		fprintf (stderr, "n32 bit colour not found, disabling OpenGL.n");
-		fprintf (stderr, "To enable OpenGL, restart X with 32 color (try 'startx -- :1 -depth 24'), and enable OpenGL in the Display Options.nn");
-	} 
-#endif
 	val.Bool = !!Args->CheckParm ("-devparm");
 	ticker.SetGenericRepDefault (val, CVAR_Bool);
 
 #ifndef NO_GL
-	//currentrenderer = vid_renderer;
-	if (currentrenderer==1) Video = new SDLGLVideo(0);
-	else Video = new SDLVideo (0);
+	// [rc4l] GL-only build: OpenGL is the only renderer, so there is no software video backend to fall back to.
+	Video = new SDLGLVideo(0);
 #else
-	Video = new SDLVideo (0);
+	// [rc4l] The dedicated server has no renderer and must never try to open a window.
+	I_FatalError ("This is a server-only build; it cannot initialize graphics");
 #endif
 	if (Video == NULL)
 		I_FatalError ("Failed to initialize display");

@@ -30,6 +30,9 @@ class SDLGLVideo : public IVideo
 	bool SetupPixelFormat(bool allowsoftware, int multisample);
 	bool InitHardware (bool allowsoftware, int multisample);
 
+	// [rc4l] True once a core-profile context was actually obtained; the legacy renderer must not draw into one.
+	static bool IsCoreProfile();
+
 private:
 	int IteratorMode;
 	int IteratorBits;
@@ -71,7 +74,9 @@ protected:
 	BYTE GammaTable[3][256];
 	bool UpdatePending;
 	
-	SDL_Surface *Screen;
+	// [rc4l] SDL2 splits SDL 1.2's single screen surface into a window plus an explicit GL context.
+	SDL_Window *Screen;
+	SDL_GLContext GLContext;
 	
 	void UpdateColors ();
 
