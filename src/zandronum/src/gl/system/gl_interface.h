@@ -20,6 +20,8 @@ enum RenderFlags
 	// [rc4l] Flight 2 (upstream 7d3beb665): persistent-mapped vertex buffers when available;
 	// the vertex buffer falls back to glBufferData streaming without it (e.g. macOS).
 	RFL_BUFFER_STORAGE = 2048,
+	// [rc4l] Flight 3 (upstream 09f407143): dynamic-light capability check.
+	RFL_SHADER_STORAGE_BUFFER = 4096,
 
 
 	RFL_GL_20 = 0x10000000,
@@ -49,6 +51,15 @@ struct RenderContext
 	unsigned int maxuniforms;
 	int max_texturesize;
 	char * vendorstring;
+	// [rc4l] Flight 3 (upstream 09f407143): GLSL availability is a version check. On a macOS 2.1
+	// compatibility context glslversion is 1.20, so hasGLSL() is false and the fixed-function path
+	// runs until the core-profile flip restores shaders as GLSL 330.
+	float glslversion;
+
+	bool hasGLSL() const
+	{
+		return glslversion >= 1.3f;
+	}
 
 	int MaxLights() const
 	{

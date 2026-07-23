@@ -304,7 +304,7 @@ void FGLRenderer::SetProjection(float fov, float ratio, float fovratio, float ey
 
 void FGLRenderer::SetViewMatrix(bool mirror, bool planemirror)
 {
-	if (gl.shadermodel >= 4)
+	if (gl.hasGLSL())
 	{
 		glActiveTexture(GL_TEXTURE7);
 		glMatrixMode(GL_TEXTURE);

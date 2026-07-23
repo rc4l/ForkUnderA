@@ -174,6 +174,7 @@ void gl_LoadExtensions()
 
 	gl.shadermodel = 0;	// assume no shader support
 	gl.vendorstring=(char*)glGetString(GL_VENDOR);
+	gl.glslversion = (float)strtod((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), NULL);
 
 	if (CheckExtension("GL_ARB_texture_non_power_of_two")) gl.flags|=RFL_NPOT_TEXTURE;
 	if (CheckExtension("GL_ARB_texture_compression")) gl.flags|=RFL_TEXTURE_COMPRESSION;
@@ -204,6 +205,7 @@ void gl_LoadExtensions()
 
 	if (CheckExtension("GL_ARB_occlusion_query")) gl.flags|=RFL_OCCLUSION_QUERY;
 	if (CheckExtension("GL_ARB_buffer_storage")) gl.flags|=RFL_BUFFER_STORAGE;
+	if (CheckExtension("GL_ARB_shader_storage_buffer_object")) gl.flags|=RFL_SHADER_STORAGE_BUFFER;
 	if (gl.flags & RFL_GL_21) gl.flags |= RFL_VBO;
 	else if (CheckExtension("GL_ARB_vertex_buffer_object")) gl.flags |= RFL_VBO;
 	if (CheckExtension("GL_ARB_map_buffer_range")) gl.flags|=RFL_MAP_BUFFER_RANGE;
