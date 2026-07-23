@@ -21,8 +21,10 @@ int32_t ByteRoundtripLong(int32_t v)
 	b[1] = static_cast<unsigned char>((v >> 8) & 0xFF);
 	b[2] = static_cast<unsigned char>((v >> 16) & 0xFF);
 	b[3] = static_cast<unsigned char>((v >> 24) & 0xFF);
-	// Exactly ReadLong(): the << 24 term makes a high bit reconstruct as a negative int.
-	return static_cast<int32_t>(int(b[0]) + (int(b[1]) << 8) + (int(b[2]) << 16) + (int(b[3]) << 24));
+	// Exactly ReadLong(): the high byte becomes the sign bit. Assemble in uint32_t (shifting a set
+	// high bit into a signed int is UB) and reinterpret to int32_t.
+	const uint32_t u = uint32_t(b[0]) | (uint32_t(b[1]) << 8) | (uint32_t(b[2]) << 16) | (uint32_t(b[3]) << 24);
+	return static_cast<int32_t>(u);
 }
 
 // [rc4l] WriteShort emits the low 2 bytes; ReadShort returns (short)(b0 + (b1<<8)) -- the `(short)`
@@ -53,8 +55,9 @@ int64_t WireRoundtripShort(int64_t rawFixed)
 	const int sentInt = static_cast<int>(rawFixed >> ZX_WIRE_FRACBITS);
 	// Wire + ReadShort() sign-extend the low 16 bits back to a signed short.
 	const int16_t got = ByteRoundtripShort(sentInt);
-	// command.field = ReadShort() << FRACBITS; -- widen and shift into the fixed_t.
-	return static_cast<int64_t>(got) << ZX_WIRE_FRACBITS;
+	// command.field = ReadShort() << FRACBITS. Multiply by 1<<FRACBITS rather than shift: `got` is a
+	// signed short and left-shifting a negative value is UB (UBSan halt_on_error fails CI on it).
+	return static_cast<int64_t>(got) * (int64_t(1) << ZX_WIRE_FRACBITS);
 }
 
 } // namespace zx
