@@ -28,6 +28,11 @@ jobs:
       - name: Build
         run: cmake --build build-tests
 
+      # [rc4l] ZScript tripwire: fail the build if VM/ZScript symbols enter compiled engine code
+      # (policy: docs/zscript-insulation.md). A machine checks, not a person.
+      - name: ZScript tripwire
+        run: bash tools/zscript-tripwire.sh
+
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:
