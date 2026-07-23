@@ -193,14 +193,22 @@ class FShader
 	FUniform4f muGlowBottomPlane;
 	FUniform4f muGlowTopPlane;
 	FBufferedUniform1f muInterpolationFactor;
+	FBufferedUniform1f muClipHeightTop;
+	FBufferedUniform1f muClipHeightBottom;
 	
 	int timer_index;
 	int lights_index;
+	int projectionmatrix_index;
+	int viewmatrix_index;
+	int modelmatrix_index;
+	int texturematrix_index;
 public:
 	int fakevb_index;
 private:
 	int currentglowstate;
 	int currentfixedcolormap;
+	bool currentTextureMatrixState;
+	bool currentModelMatrixState;
 
 public:
 	FShader(const char *name)
@@ -209,6 +217,8 @@ public:
 		hShader = hVertProg = hFragProg = 0;
 		currentglowstate = 0;
 		currentfixedcolormap = 0;
+		currentTextureMatrixState = true;	// by setting the matrix state to 'true' it is guaranteed to be set the first time the render state gets applied.
+		currentModelMatrixState = true;
 	}
 
 	~FShader();
@@ -222,6 +232,7 @@ public:
 	bool Bind();
 	unsigned int GetHandle() const { return hShader; }
 
+	void ApplyMatrices(VSMatrix *proj, VSMatrix *view);
 
 };
 
@@ -243,11 +254,12 @@ class FShaderManager
 public:
 	FShaderManager();
 	~FShaderManager();
-	FShader *Compile(const char *ShaderName, const char *ShaderPath);
+	FShader *Compile(const char *ShaderName, const char *ShaderPath, bool usediscard);
 	int Find(const char *mame);
 	FShader *BindEffect(int effect);
 	void SetActiveShader(FShader *sh);
 	void SetWarpSpeed(unsigned int eff, float speed);
+	void ApplyMatrices(VSMatrix *proj, VSMatrix *view);
 	FShader *GetActiveShader() const
 	{
 		return mActiveShader;

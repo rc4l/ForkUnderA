@@ -59,6 +59,9 @@ FRenderState gl_RenderState;
 CVAR(Bool, gl_direct_state_change, true, 0)
 
 
+static VSMatrix identityMatrix(1);
+TArray<VSMatrix> gl_MatrixStack;
+
 //==========================================================================
 //
 //
@@ -86,6 +89,8 @@ void FRenderState::Reset()
 	mColormapState = CM_DEFAULT;
 	mLightParms[3] = -1.f;
 	mSpecialEffect = EFF_NONE;
+	mClipHeightTop = 65536.f;
+	mClipHeightBottom = -65536.f;
 }
 
 
@@ -120,12 +125,13 @@ bool FRenderState::ApplyShader()
 	}
 	else
 	{
+		// todo: check how performance is affected by using 'discard' in a shader and if necessary create a separate set of discard-less shaders.
 		activeShader = GLRenderer->mShaderManager->Get(mTextureEnabled ? mEffectState : 4);
 		activeShader->Bind();
 	}
 
 	int fogset = 0;
-	//glColor4fv(mColor.vec);
+
 	if (mFogEnabled)
 	{
 		if ((mFogColor & 0xffffff) == 0)
@@ -149,6 +155,8 @@ bool FRenderState::ApplyShader()
 	activeShader->muObjectColor.Set(mObjectColor);
 	activeShader->muDynLightColor.Set(mDynColor.vec);
 	activeShader->muInterpolationFactor.Set(mInterpolationFactor);
+	activeShader->muClipHeightTop.Set(mClipHeightTop);
+	activeShader->muClipHeightBottom.Set(mClipHeightBottom);
 
 	if (mGlowEnabled)
 	{
@@ -226,6 +234,27 @@ bool FRenderState::ApplyShader()
 			activeShader->muColormapStart.Set(r, g, b, 1.f);
 		}
 	}
+	if (mTextureMatrixEnabled)
+	{
+		mTextureMatrix.matrixToGL(activeShader->texturematrix_index);
+		activeShader->currentTextureMatrixState = true;
+	}
+	else if (activeShader->currentTextureMatrixState)
+	{
+		activeShader->currentTextureMatrixState = false;
+		identityMatrix.matrixToGL(activeShader->texturematrix_index);
+	}
+
+	if (mModelMatrixEnabled)
+	{
+		mModelMatrix.matrixToGL(activeShader->modelmatrix_index);
+		activeShader->currentModelMatrixState = true;
+	}
+	else if (activeShader->currentModelMatrixState)
+	{
+		activeShader->currentModelMatrixState = false;
+		identityMatrix.matrixToGL(activeShader->modelmatrix_index);
+	}
 	return true;
 }
 
@@ -274,3 +303,14 @@ void FRenderState::Apply()
 	ApplyShader();
 }
 
+
+
+void FRenderState::ApplyMatrices()
+{
+	drawcalls.Clock();
+	if (GLRenderer->mShaderManager != NULL)
+	{
+		GLRenderer->mShaderManager->ApplyMatrices(&mProjectionMatrix, &mViewMatrix);
+	}
+	drawcalls.Unclock();
+}

@@ -51,6 +51,7 @@
 
 #include "gl/system/gl_interface.h"
 #include "gl/data/gl_data.h"
+#include "gl/data/gl_matrix.h"
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/system/gl_cvars.h"
@@ -200,10 +201,16 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	muGlowTopPlane.Init(hShader, "uGlowTopPlane");
 	muFixedColormap.Init(hShader, "uFixedColormap");
 	muInterpolationFactor.Init(hShader, "uInterpolationFactor");
+	muClipHeightTop.Init(hShader, "uClipHeightTop");
+	muClipHeightBottom.Init(hShader, "uClipHeightBottom");
 
 	timer_index = glGetUniformLocation(hShader, "timer");
 	lights_index = glGetUniformLocation(hShader, "lights");
 	fakevb_index = glGetUniformLocation(hShader, "fakeVB");
+	projectionmatrix_index = glGetUniformLocation(hShader, "ProjectionMatrix");
+	viewmatrix_index = glGetUniformLocation(hShader, "ViewMatrix");
+	modelmatrix_index = glGetUniformLocation(hShader, "ModelMatrix");
+	texturematrix_index = glGetUniformLocation(hShader, "TextureMatrix");
 
 	glBindAttribLocation(hShader, VATTR_VERTEX2, "aVertex2");
 
@@ -248,16 +255,18 @@ bool FShader::Bind()
 //
 //==========================================================================
 
-FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath)
+FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath, bool usediscard)
 {
+	FString defines;
 	// this can't be in the shader code due to ATI strangeness.
-	const char *str = (gl.MaxLights() == 128)? "#define MAXLIGHTS128\n" : "";
+	if (gl.MaxLights() == 128) defines += "#define MAXLIGHTS128\n";
+	if (!usediscard) defines += "#define NO_DISCARD\n";
 
 	FShader *shader = NULL;
 	try
 	{
 		shader = new FShader(ShaderName);
-		if (!shader->Load(ShaderName, "shaders/glsl/main.vp", "shaders/glsl/main.fp", ShaderPath, str))
+		if (!shader->Load(ShaderName, "shaders/glsl/main.vp", "shaders/glsl/main.fp", ShaderPath, defines.GetChars()))
 		{
 			I_FatalError("Unable to load shader %s\n", ShaderName);
 		}
@@ -270,6 +279,19 @@ FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath
 	}
 	return shader;
 }
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+void FShader::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
+{
+	glProgramUniformMatrix4fv(hShader, projectionmatrix_index, 1, false, proj->get());
+	glProgramUniformMatrix4fv(hShader, viewmatrix_index, 1, false, view->get());
+}
+
 
 //==========================================================================
 //
@@ -316,8 +338,8 @@ static const FEffectShader effectshaders[]=
 {
 	{ "fogboundary", "shaders/glsl/main.vp", "shaders/glsl/fogboundary.fp", NULL, "" },
 	{ "spheremap", "shaders/glsl/main.vp", "shaders/glsl/main.fp", "shaders/glsl/func_normal.fp", "#define SPHEREMAP\n" },
-	{ "burn", "shaders/glsl/burn.vp", "shaders/glsl/burn.fp", NULL, "" },
-	{ "stencil", "shaders/glsl/stencil.vp", "shaders/glsl/stencil.fp", NULL, "" },
+	{ "burn", "shaders/glsl/main.vp", "shaders/glsl/burn.fp", NULL, "#define SIMPLE\n" },
+	{ "stencil", "shaders/glsl/main.vp", "shaders/glsl/stencil.fp", NULL, "#define SIMPLE\n" },
 };
 
 
@@ -351,11 +373,16 @@ FShaderManager::~FShaderManager()
 
 void FShaderManager::CompileShaders()
 {
-	mActiveShader = mEffectShaders[0] = mEffectShaders[1] = NULL;
+	mActiveShader = NULL;
+
+	for (int i = 0; i < MAX_EFFECTS; i++)
+	{
+		mEffectShaders[i] = NULL;
+	}
 
 	for(int i=0;defaultshaders[i].ShaderName != NULL;i++)
 	{
-		FShader *shc = Compile(defaultshaders[i].ShaderName, defaultshaders[i].gettexelfunc);
+		FShader *shc = Compile(defaultshaders[i].ShaderName, defaultshaders[i].gettexelfunc, true);
 		mTextureEffects.Push(shc);
 	}
 
@@ -364,7 +391,7 @@ void FShaderManager::CompileShaders()
 		FString name = ExtractFileBase(usershaders[i]);
 		FName sfn = name;
 
-		FShader *shc = Compile(sfn, usershaders[i]);
+		FShader *shc = Compile(sfn, usershaders[i], true);
 		mTextureEffects.Push(shc);
 	}
 
@@ -474,6 +501,33 @@ FShader *FShaderManager::BindEffect(int effect)
 	return NULL;
 }
 
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+EXTERN_CVAR(Int, gl_fuzztype)
+
+void FShaderManager::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
+{
+	for (int i = 0; i <= 4; i++)
+	{
+		mTextureEffects[i]->ApplyMatrices(proj, view);
+	}
+	if (gl_fuzztype != 0)
+	{
+		mTextureEffects[4+gl_fuzztype]->ApplyMatrices(proj, view);
+	}
+	for (unsigned i = 12; i < mTextureEffects.Size(); i++)
+	{
+		mTextureEffects[i]->ApplyMatrices(proj, view);
+	}
+	for (int i = 0; i < MAX_EFFECTS; i++)
+	{
+		mEffectShaders[i]->ApplyMatrices(proj, view);
+	}
+}
 
 //==========================================================================
 //

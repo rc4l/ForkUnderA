@@ -260,19 +260,14 @@ void FGLRenderer::SetCameraPos(fixed_t viewx, fixed_t viewy, fixed_t viewz, angl
 
 void FGLRenderer::SetProjection(float fov, float ratio, float fovratio, float eyeShift) // [BB] Added eyeShift from GZ3Doom.
 {
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-
+	// [rc4l] upstream ce3653f6e: the projection lives in the render state's own
+	// matrix now; nothing touches the builtin GL matrix stack anymore.
 	float fovy = 2 * RAD2DEG(atan(tan(DEG2RAD(fov) / 2) / fovratio));
 	// [BB] Added eyeShift from GZ3Doom.
 	if ( eyeShift == 0 )
 	{
-		// [rc4l] Flight 1: the last GLU call. gluPerspective(fovy, ratio, near, far) is exactly
-		// this symmetric glFrustum; GLU is no longer linked on any platform.
-		const double zNear = 5.0, zFar = 65536.0;
-		const double fH = tan(DEG2RAD(fovy) / 2.0) * zNear;
-		const double fW = fH * ratio;
-		glFrustum(-fW, fW, -fH, fH, zNear, zFar);
+		gl_RenderState.mProjectionMatrix.loadIdentity();
+		gl_RenderState.mProjectionMatrix.perspective(fovy, ratio, 5.f, 65536.f);
 	}
 	else
 	{
@@ -285,10 +280,11 @@ void FGLRenderer::SetProjection(float fov, float ratio, float fovratio, float ey
 		float screenZ = 25.0;
 		float frustumShift = eyeShift * zNear / screenZ;
 
-		glFrustum( -fW - frustumShift, fW - frustumShift, 
-			-fH, fH, 
+		gl_RenderState.mProjectionMatrix.loadIdentity();
+		gl_RenderState.mProjectionMatrix.frustum( -fW - frustumShift, fW - frustumShift,
+			-fH, fH,
 			zNear, zFar);
-		glTranslatef(-eyeShift, 0, 0);
+		gl_RenderState.mProjectionMatrix.translate(-eyeShift, 0, 0);
 	}
 
 	gl_RenderState.Set2DMode(false);
@@ -302,25 +298,15 @@ void FGLRenderer::SetProjection(float fov, float ratio, float fovratio, float ey
 
 void FGLRenderer::SetViewMatrix(bool mirror, bool planemirror)
 {
-	glActiveTexture(GL_TEXTURE7);
-	glMatrixMode(GL_TEXTURE);
-	glLoadIdentity();
-
-	glActiveTexture(GL_TEXTURE0);
-	glMatrixMode(GL_TEXTURE);
-	glLoadIdentity();
-
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-
 	float mult = mirror? -1:1;
 	float planemult = planemirror? -1:1;
 
-	glRotatef(GLRenderer->mAngles.Roll,  0.0f, 0.0f, 1.0f);
-	glRotatef(GLRenderer->mAngles.Pitch, 1.0f, 0.0f, 0.0f);
-	glRotatef(GLRenderer->mAngles.Yaw,   0.0f, mult, 0.0f);
-	glTranslatef( GLRenderer->mCameraPos.X * mult, -GLRenderer->mCameraPos.Z*planemult, -GLRenderer->mCameraPos.Y);
-	glScalef(-mult, planemult, 1);
+	gl_RenderState.mViewMatrix.loadIdentity();
+	gl_RenderState.mViewMatrix.rotate(GLRenderer->mAngles.Roll,  0.0f, 0.0f, 1.0f);
+	gl_RenderState.mViewMatrix.rotate(GLRenderer->mAngles.Pitch, 1.0f, 0.0f, 0.0f);
+	gl_RenderState.mViewMatrix.rotate(GLRenderer->mAngles.Yaw,   0.0f, mult, 0.0f);
+	gl_RenderState.mViewMatrix.translate( GLRenderer->mCameraPos.X * mult, -GLRenderer->mCameraPos.Z*planemult, -GLRenderer->mCameraPos.Y);
+	gl_RenderState.mViewMatrix.scale(-mult, planemult, 1);
 }
 
 
@@ -334,6 +320,7 @@ void FGLRenderer::SetupView(fixed_t viewx, fixed_t viewy, fixed_t viewz, angle_t
 {
 	SetCameraPos(viewx, viewy, viewz, viewangle);
 	SetViewMatrix(mirror, planemirror);
+	gl_RenderState.ApplyMatrices();
 }
 
 //-----------------------------------------------------------------------------
@@ -936,6 +923,7 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 		SetProjection(fov, ratio, fovratio);	// switch to perspective mode and set up clipper
 		SetCameraPos(viewx, viewy, viewz, viewangle);
 		SetViewMatrix(false, false);
+		gl_RenderState.ApplyMatrices();
 
 		clipper.Clear();
 		angle_t a1 = FrustumAngle();
@@ -947,6 +935,7 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 	{
 		SetCameraPos(viewx, viewy, viewz, viewangle);
 		SetViewMatrix(false, false);
+		gl_RenderState.ApplyMatrices();
 		angle_t a1 = FrustumAngle();
 
 		// Stereo 
@@ -956,6 +945,7 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 		// Left eye
 		glDrawBuffer(GL_BACK_LEFT);
 		SetProjection(fov, ratio, fovratio, -iod/2);	// switch to perspective mode and set up clipper
+		gl_RenderState.ApplyMatrices();
 		clipper.Clear();
 		clipper.SafeAddClipRangeRealAngles(viewangle+a1, viewangle-a1);
 		ProcessScene(toscreen);
@@ -964,6 +954,7 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 		SetViewport(bounds);
 		glDrawBuffer(GL_BACK_RIGHT);
 		SetProjection(fov, ratio, fovratio, +iod/2);	// switch to perspective mode and set up clipper
+		gl_RenderState.ApplyMatrices();
 		clipper.Clear();
 		clipper.SafeAddClipRangeRealAngles(viewangle+a1, viewangle-a1);
 		ProcessScene(toscreen);

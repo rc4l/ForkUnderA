@@ -4,10 +4,12 @@
 #include <string.h>
 #include "gl/system/gl_interface.h"
 #include "gl/data/gl_data.h"
+#include "gl/data/gl_matrix.h"
 #include "c_cvars.h"
 #include "r_defs.h"
 
 class FVertexBuffer;
+extern TArray<VSMatrix> gl_MatrixStack;
 
 EXTERN_CVAR(Bool, gl_direct_state_change)
 
@@ -57,6 +59,9 @@ class FRenderState
 	int mBlendEquation;
 	bool m2D;
 	float mInterpolationFactor;
+	float mClipHeightTop, mClipHeightBottom;
+	bool mModelMatrixEnabled;
+	bool mTextureMatrixEnabled;
 
 	FVertexBuffer *mVertexBuffer, *mCurrentVertexBuffer;
 	FStateVec4 mColor;
@@ -79,6 +84,12 @@ class FRenderState
 	bool ApplyShader();
 
 public:
+
+	VSMatrix mProjectionMatrix;
+	VSMatrix mViewMatrix;
+	VSMatrix mModelMatrix;
+	VSMatrix mTextureMatrix;
+
 	FRenderState()
 	{
 		Reset();
@@ -88,6 +99,7 @@ public:
 
 	void SetupShader(int &shaderindex, float warptime);
 	void Apply();
+	void ApplyMatrices();
 
 	void SetVertexBuffer(FVertexBuffer *vb)
 	{
@@ -98,6 +110,26 @@ public:
 	{
 		// forces rebinding with the next 'apply' call.
 		mCurrentVertexBuffer = NULL;
+	}
+
+	void SetClipHeightTop(float clip)
+	{
+		mClipHeightTop = clip;
+	}
+
+	float GetClipHeightTop()
+	{
+		return mClipHeightTop;
+	}
+
+	void SetClipHeightBottom(float clip)
+	{
+		mClipHeightBottom = clip;
+	}
+
+	float GetClipHeightBottom()
+	{
+		return mClipHeightBottom;
 	}
 
 	void SetColor(float r, float g, float b, float a = 1.f, int desat = 0)
@@ -157,6 +189,16 @@ public:
 	void EnableBrightmap(bool on)
 	{
 		mBrightmapEnabled = on;
+	}
+
+	void EnableModelMatrix(bool on)
+	{
+		mModelMatrixEnabled = on;
+	}
+
+	void EnableTextureMatrix(bool on)
+	{
+		mTextureMatrixEnabled = on;
 	}
 
 	void SetCameraPos(float x, float y, float z)
