@@ -303,7 +303,6 @@ static void RenderDome(FTextureID texno, FMaterial * tex, float x_offset, float 
 	if (tex && !secondlayer) 
 	{
 		PalEntry pe = tex->tex->GetSkyCapColor(false);
-		if (CM_Index!=CM_DEFAULT) ModifyPalette(&pe, &pe, CM_Index, 1);
 
 		R=pe.r/255.0f;
 		G=pe.g/255.0f;
@@ -325,7 +324,6 @@ static void RenderDome(FTextureID texno, FMaterial * tex, float x_offset, float 
 	if (tex && !secondlayer) 
 	{
 		PalEntry pe = tex->tex->GetSkyCapColor(true);
-		if (CM_Index!=CM_DEFAULT) ModifyPalette(&pe, &pe, CM_Index, 1);
 		R=pe.r/255.0f;
 		G=pe.g/255.0f;
 		B=pe.b/255.0f;

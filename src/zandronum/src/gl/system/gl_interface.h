@@ -32,16 +32,13 @@ enum RenderFlags
 
 enum TexMode
 {
-	TMF_MASKBIT = 1,
-	TMF_OPAQUEBIT = 2,
-	TMF_INVERTBIT = 4,
+	TM_MODULATE = 0,	// (r, g, b, a)
+	TM_MASK = 1,		// (1, 1, 1, a)
+	TM_OPAQUE = 2,		// (r, g, b, 1)
+	TM_INVERSE = 3,		// (1-r, 1-g, 1-b, a)
+	TM_REDTOALPHA = 4,	// (1, 1, 1, r)
 
-	TM_MODULATE = 0,
-	TM_MASK = TMF_MASKBIT,
-	TM_OPAQUE = TMF_OPAQUEBIT,
-	TM_INVERT = TMF_INVERTBIT,
-	//TM_INVERTMASK = TMF_MASKBIT | TMF_INVERTBIT
-	TM_INVERTOPAQUE = TMF_INVERTBIT | TMF_OPAQUEBIT,
+	// 4 cannot be done natively without shaders and requires special textures.
 };
 
 struct RenderContext
@@ -51,6 +48,7 @@ struct RenderContext
 	unsigned int maxuniforms;
 	int max_texturesize;
 	char * vendorstring;
+	bool needAlphaTexture;
 	// [rc4l] Flight 3 (upstream 09f407143): GLSL availability is a version check. On a macOS 2.1
 	// compatibility context glslversion is 1.20, so hasGLSL() is false and the fixed-function path
 	// runs until the core-profile flip restores shaders as GLSL 330.
@@ -64,6 +62,11 @@ struct RenderContext
 	int MaxLights() const
 	{
 		return maxuniforms>=2048? 128:64;
+	}
+
+	void checkTextureMode(int mode)
+	{
+		if (!hasGLSL()) needAlphaTexture = (mode == TM_REDTOALPHA);
 	}
 };
 

@@ -173,13 +173,18 @@ void gl_GetRenderStyle(FRenderStyle style, bool drawopaque, bool allowcolorblend
 	int blendequation = renderops[style.BlendOp&15];
 	int texturemode = drawopaque? TM_OPAQUE : TM_MODULATE;
 
-	if (style.Flags & STYLEF_ColorIsFixed)
+	if (style.Flags & STYLEF_RedIsAlpha)
+	{
+		texturemode = TM_REDTOALPHA;
+	}
+	else if (style.Flags & STYLEF_ColorIsFixed)
 	{
 		texturemode = TM_MASK;
 	}
 	else if (style.Flags & STYLEF_InvertSource)
 	{
-		texturemode = drawopaque? TM_INVERTOPAQUE : TM_INVERT;
+		// The only place where InvertSource is used is for inverted sprites with the infrared powerup.
+		texturemode = TM_INVERSE;
 	}
 
 	if (blendequation == -1)
@@ -332,14 +337,9 @@ void gl_GetLightColor(int lightlevel, int rellight, const FColormap * cm, float 
 // set current light color
 //
 //==========================================================================
-void gl_SetColor(int light, int rellight, const FColormap * cm, float *red, float *green, float *blue, PalEntry ThingColor, bool weapon)
+void gl_SetColor(int light, int rellight, const FColormap * cm, float *red, float *green, float *blue, bool weapon)
 { 
-	float r,g,b;
-	gl_GetLightColor(light, rellight, cm, &r, &g, &b, weapon);
-
-	*red = r * ThingColor.r/255.0f;
-	*green = g * ThingColor.g/255.0f;
-	*blue = b * ThingColor.b/255.0f;
+	gl_GetLightColor(light, rellight, cm, red, green, blue, weapon);
 }
 
 //==========================================================================
@@ -347,20 +347,15 @@ void gl_SetColor(int light, int rellight, const FColormap * cm, float *red, floa
 // set current light color
 //
 //==========================================================================
-void gl_SetColor(int light, int rellight, const FColormap * cm, float alpha, PalEntry ThingColor, bool weapon)
+void gl_SetColor(int light, int rellight, const FColormap * cm, float alpha, bool weapon)
 { 
 	float r,g,b;
 
 	gl_GetLightColor(light, rellight, cm, &r, &g, &b, weapon);
 
-	if (glset.lightmode != 8)
-	{
-		glColor4f(r * ThingColor.r/255.0f, g * ThingColor.g/255.0f, b * ThingColor.b/255.0f, alpha);
-	}
-	else
+	gl_RenderState.SetColor(r, g, b, alpha);
+	if (glset.lightmode == 8)
 	{ 
-		glColor4f(r, g, b, alpha);
-
 		if (gl_fixedcolormap)
 		{
 			glVertexAttrib1f(VATTR_LIGHTLEVEL, 1.0);
