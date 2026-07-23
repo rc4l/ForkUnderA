@@ -45,6 +45,10 @@ EXTERN_CVAR(Float, gl_mask_sprite_threshold)
 
 EXTERN_CVAR(Int, gl_usevbo)
 
+
+
+EXTERN_CVAR(Int, gl_usevbo)
+
 // [AK] Override gl_texture in the same way as gl_fogmode.
 #define OVERRIDE_GL_TEXTURE_IF_NECESSARY \
 	const bool gl_texture_CVAR_value = !!gl_texture; \

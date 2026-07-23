@@ -169,6 +169,7 @@ void GLPortal::DrawPortalStencil()
 			mPrimIndices[n + 3] = GLRenderer->mVBO->GetCount(ptr, &mPrimIndices[n + 2]);
 		}
 	}
+	gl_RenderState.Apply();
 	for (unsigned int i = 0; i < mPrimIndices.Size(); i += 2)
 	{
 		GLRenderer->mVBO->RenderArray(GL_TRIANGLE_FAN, mPrimIndices[i], mPrimIndices[i + 1]);
@@ -1017,26 +1018,21 @@ void GLHorizonPortal::DrawContents()
 	float vy=FIXED2FLOAT(viewy);
 
 	// Draw to some far away boundary
+	// This is not drawn as larher strips because it causes visual glitches.
 	for(float x=-32768+vx; x<32768+vx; x+=4096)
 	{
 		for(float y=-32768+vy; y<32768+vy;y+=4096)
 		{
-			glBegin(GL_TRIANGLE_FAN);
-
-			glTexCoord2f(x/64, -y/64);
-			glVertex3f(x, z, y);
-
-			glTexCoord2f(x/64 + 64, -y/64);
-			glVertex3f(x + 4096, z, y);
-
-			glTexCoord2f(x/64 + 64, -y/64 - 64);
-			glVertex3f(x + 4096, z, y + 4096);
-
-			glTexCoord2f(x/64, -y/64 - 64);
-			glVertex3f(x, z, y + 4096);
-
-			glEnd();
-
+			FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
+			ptr->Set(x, z, y, x / 64, -y / 64);
+			ptr++;
+			ptr->Set(x + 4096, z, y, x / 64 + 64, -y / 64);
+			ptr++;
+			ptr->Set(x, z, y + 4096, x / 64, -y / 64 - 64);
+			ptr++;
+			ptr->Set(x + 4096, z, y + 4096, x / 64 + 64, -y / 64 - 64);
+			ptr++;
+			GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 		}
 	}
 
@@ -1047,34 +1043,28 @@ void GLHorizonPortal::DrawContents()
 	// Since I can't draw into infinity there can always be a
 	// small gap
 
-	glBegin(GL_TRIANGLE_STRIP);
-
-	glTexCoord2f(512.f, 0);
-	glVertex3f(-32768+vx, z, -32768+vy);
-	glTexCoord2f(512.f, tz);
-	glVertex3f(-32768+vx, vz, -32768+vy);
-
-	glTexCoord2f(-512.f, 0);
-	glVertex3f(-32768+vx, z,  32768+vy);
-	glTexCoord2f(-512.f, tz);
-	glVertex3f(-32768+vx, vz,  32768+vy);
-
-	glTexCoord2f(512.f, 0);
-	glVertex3f( 32768+vx, z,  32768+vy);
-	glTexCoord2f(512.f, tz);
-	glVertex3f( 32768+vx, vz,  32768+vy);
-
-	glTexCoord2f(-512.f, 0);
-	glVertex3f( 32768+vx, z, -32768+vy);
-	glTexCoord2f(-512.f, tz);
-	glVertex3f( 32768+vx, vz, -32768+vy);
-
-	glTexCoord2f(512.f, 0);
-	glVertex3f(-32768+vx, z, -32768+vy);
-	glTexCoord2f(512.f, tz);
-	glVertex3f(-32768+vx, vz, -32768+vy);
-
-	glEnd();
+	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
+	ptr->Set(-32768 + vx, z, -32768 + vy, 512.f, 0);
+	ptr++;
+	ptr->Set(-32768 + vx, vz, -32768 + vy, 512.f, tz);
+	ptr++;
+	ptr->Set(-32768 + vx, z, 32768 + vy, -512.f, 0);
+	ptr++;
+	ptr->Set(-32768 + vx, vz, 32768 + vy, -512.f, tz);
+	ptr++;
+	ptr->Set(32768 + vx, z, 32768 + vy, 512.f, 0);
+	ptr++;
+	ptr->Set(32768 + vx, vz, 32768 + vy, 512.f, tz);
+	ptr++;
+	ptr->Set(32768 + vx, z, -32768 + vy, -512.f, 0);
+	ptr++;
+	ptr->Set(32768 + vx, vz, -32768 + vy, -512.f, tz);
+	ptr++;
+	ptr->Set(-32768 + vx, z, -32768 + vy, 512.f, 0);
+	ptr++;
+	ptr->Set(-32768 + vx, vz, -32768 + vy, 512.f, tz);
+	ptr++;
+	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 
 	if (pushed)
 	{
