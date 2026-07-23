@@ -56,6 +56,7 @@ class FRenderState
 	bool mAlphaTest;
 	int mBlendEquation;
 	bool m2D;
+	float mInterpolationFactor;
 
 	FVertexBuffer *mVertexBuffer, *mCurrentVertexBuffer;
 	FStateVec4 mColor;
@@ -64,7 +65,7 @@ class FRenderState
 	FStateVec4 mGlowTopPlane, mGlowBottomPlane;
 	PalEntry mFogColor;
 	PalEntry mObjectColor;
-	PalEntry mDynColor;
+	FStateVec4 mDynColor;
 
 	int mEffectState;
 	int mColormapState;
@@ -74,13 +75,6 @@ class FRenderState
 	float glAlphaThreshold;
 	bool glAlphaTest;
 	int glBlendEquation;
-
-	bool ffTextureEnabled;
-	bool ffFogEnabled;
-	int ffTextureMode;
-	int ffSpecialEffect;
-	PalEntry ffFogColor;
-	float ffFogDensity;
 
 	bool ApplyShader();
 
@@ -92,8 +86,8 @@ public:
 
 	void Reset();
 
-	int SetupShader(int &shaderindex, float warptime);
-	void Apply(bool forcenoshader = false);
+	void SetupShader(int &shaderindex, float warptime);
+	void Apply();
 
 	void SetVertexBuffer(FVertexBuffer *vb)
 	{
@@ -190,12 +184,7 @@ public:
 
 	void SetDynLight(float r, float g, float b)
 	{
-		mDynColor = PalEntry(255, xs_CRoundToInt(r*255), xs_CRoundToInt(g*255), xs_CRoundToInt(b*255));
-	}
-
-	void SetDynLight(PalEntry pe)
-	{
-		mDynColor = pe;
+		mDynColor.Set(r, g, b, 0);
 	}
 
 	void SetObjectColor(PalEntry pe)
@@ -289,6 +278,11 @@ public:
 	void Set2DMode(bool on)
 	{
 		m2D = on;
+	}
+
+	void SetInterpolationFactor(float fac)
+	{
+		mInterpolationFactor = fac;
 	}
 };
 

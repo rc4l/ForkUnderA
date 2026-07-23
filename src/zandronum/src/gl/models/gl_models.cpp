@@ -59,6 +59,7 @@
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_convert.h"
 #include "gl/renderer/gl_renderstate.h"
+#include "gl/shaders/gl_shader.h"
 
 // [BB] New #includes. 
 #include "r_main.h"
@@ -95,6 +96,64 @@ public:
 };
 
 DeletingModelArray Models;
+
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+FModelVertexBuffer::FModelVertexBuffer()
+{
+	ibo_id = 0;
+	glGenBuffers(1, &ibo_id);
+	//for (unsigned i = 1; i < Models.Size(); i++)
+	for (int i = Models.Size() - 1; i >= 0; i--)
+	{
+		Models[i]->BuildVertexBuffer(this);
+	}
+
+	glBindVertexArray(vao_id);
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
+	glBufferData(GL_ARRAY_BUFFER,vbo_shadowdata.Size() * sizeof(FModelVertex), &vbo_shadowdata[0], GL_STATIC_DRAW);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_id);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER,ibo_shadowdata.Size() * sizeof(unsigned int), &ibo_shadowdata[0], GL_STATIC_DRAW);
+
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+	glEnableVertexAttribArray(VATTR_VERTEX2);
+	glBindVertexArray(0);
+}
+
+FModelVertexBuffer::~FModelVertexBuffer()
+{
+	if (ibo_id != 0)
+	{
+		glDeleteBuffers(1, &ibo_id);
+	}
+}
+
+
+//===========================================================================
+//
+// Sets up the buffer starts for frame interpolation
+// This must be called after gl_RenderState.Apply!
+//
+//===========================================================================
+
+unsigned int FModelVertexBuffer::SetupFrame(unsigned int frame1, unsigned int frame2, float factor)
+{
+	glVertexPointer(3, GL_FLOAT, sizeof(FModelVertex), &VMO[frame1].x);
+	glTexCoordPointer(2, GL_FLOAT, sizeof(FModelVertex), &VMO[frame1].u);
+	glVertexAttribPointer(VATTR_VERTEX2, 3, GL_FLOAT, false, sizeof(FModelVertex), &VMO[frame2].x);
+	return frame1;
+}
+
+
+
+
 
 static TArray<FSpriteModelFrame> SpriteModelFrames;
 static int * SpriteModelHash;
@@ -738,10 +797,14 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 		{
 			mdl->PushSpriteMDLFrame(smf, i);
 
+			gl_RenderState.SetVertexBuffer(GLRenderer->mModelVBO);
+
 			if ( smfNext && smf->modelframes[i] != smfNext->modelframes[i] )
 				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], smfNext->modelframes[i], inter, translation);
 			else
-				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], NULL, 0.f, translation);
+				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], smf->modelframes[i], 0.f, translation);
+
+			gl_RenderState.SetVertexBuffer(GLRenderer->mVBO);
 		}
 	}
 }
@@ -823,17 +886,9 @@ void gl_RenderModel(GLSprite * spr)
 	if(smf->flags & MDL_INHERITACTORPITCH) pitch += float(static_cast<double>(spr->actor->pitch >> 16) / (1 << 13) * 45 + static_cast<double>(spr->actor->pitch & 0x0000FFFF) / (1 << 29) * 45);
 	if(smf->flags & MDL_INHERITACTORROLL) roll += float(static_cast<double>(spr->actor->roll >> 16) / (1 << 13) * 45 + static_cast<double>(spr->actor->roll & 0x0000FFFF) / (1 << 29) * 45);
 		
-	if (!gl.hasGLSL())
-	{
-		glMatrixMode(GL_MODELVIEW);
-		glPushMatrix();
-	}
-	else
-	{
-		glActiveTexture(GL_TEXTURE7);	// Hijack the otherwise unused seventh texture matrix for the model to world transformation.
-		glMatrixMode(GL_TEXTURE);
-		glLoadIdentity();
-	}
+	glActiveTexture(GL_TEXTURE7);	// Hijack the otherwise unused seventh texture matrix for the model to world transformation.
+	glMatrixMode(GL_TEXTURE);
+	glLoadIdentity();
 
 	// Model space => World space
 	glTranslatef(spr->x, spr->z, spr->y );	
@@ -883,7 +938,7 @@ void gl_RenderModel(GLSprite * spr)
 	glRotatef(smf->pitchoffset, 0, 0, 1);
 	glRotatef(-smf->rolloffset, 1, 0, 0);
 		
-	if (gl.hasGLSL()) glActiveTexture(GL_TEXTURE0);
+	glActiveTexture(GL_TEXTURE0);
 
 #if 0
 	if (gl_light_models)
@@ -902,19 +957,11 @@ void gl_RenderModel(GLSprite * spr)
 
 	gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), NULL, translation );
 
-	if (!gl.hasGLSL())
-	{
-		glMatrixMode(GL_MODELVIEW);
-		glPopMatrix();
-	}
-	else
-	{
-		glActiveTexture(GL_TEXTURE7);
-		glMatrixMode(GL_TEXTURE);
-		glLoadIdentity();
-		glActiveTexture(GL_TEXTURE0);
-		glMatrixMode(GL_MODELVIEW);
-	}
+	glActiveTexture(GL_TEXTURE7);
+	glMatrixMode(GL_TEXTURE);
+	glLoadIdentity();
+	glActiveTexture(GL_TEXTURE0);
+	glMatrixMode(GL_MODELVIEW);
 
 	glDepthFunc(GL_LESS);
 	if (!( spr->actor->RenderStyle == LegacyRenderStyles[STYLE_Normal] ))

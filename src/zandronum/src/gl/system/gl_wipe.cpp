@@ -53,9 +53,11 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/system/gl_framebuffer.h"
+#include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_translate.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_templates.h"
+#include "gl/data/gl_vertexbuffer.h"
 
 #ifndef _WIN32
 struct POINT {
@@ -282,30 +284,24 @@ bool OpenGLFrameBuffer::Wiper_Crossfade::Run(int ticks, OpenGLFrameBuffer *fb)
 	gl_RenderState.ResetColor();
 	gl_RenderState.Apply();
 	fb->wipestartscreen->Bind(0);
-	glBegin(GL_TRIANGLE_STRIP);
-	glTexCoord2f(0, vb);
-	glVertex2i(0, 0);
-	glTexCoord2f(0, 0);
-	glVertex2i(0, fb->Height);
-	glTexCoord2f(ur, vb);
-	glVertex2i(fb->Width, 0);
-	glTexCoord2f(ur, 0);
-	glVertex2i(fb->Width, fb->Height);
-	glEnd();
+
+	FFlatVertex *ptr;
+	unsigned int offset, count;
+	ptr = GLRenderer->mVBO->GetBuffer();
+	ptr->Set(0, 0, 0, 0, vb);
+	ptr++;
+	ptr->Set(0, fb->Height, 0, 0, 0);
+	ptr++;
+	ptr->Set(fb->Width, 0, 0, ur, vb);
+	ptr++;
+	ptr->Set(fb->Width, fb->Height, 0, ur, 0);
+	ptr++;
+	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP, &offset, &count);
 
 	fb->wipeendscreen->Bind(0);
 	gl_RenderState.SetColorAlpha(0xffffff, clamp(Clock/32.f, 0.f, 1.f));
 	gl_RenderState.Apply();
-	glBegin(GL_TRIANGLE_STRIP);
-	glTexCoord2f(0, vb);
-	glVertex2i(0, 0);
-	glTexCoord2f(0, 0);
-	glVertex2i(0, fb->Height);
-	glTexCoord2f(ur, vb);
-	glVertex2i(fb->Width, 0);
-	glTexCoord2f(ur, 0);
-	glVertex2i(fb->Width, fb->Height);
-	glEnd();
+	GLRenderer->mVBO->RenderArray(GL_TRIANGLE_STRIP, offset, count);
 	gl_RenderState.EnableAlphaTest(true);
 	gl_RenderState.SetTextureMode(TM_MODULATE);
 
@@ -350,16 +346,17 @@ bool OpenGLFrameBuffer::Wiper_Melt::Run(int ticks, OpenGLFrameBuffer *fb)
 	gl_RenderState.ResetColor();
 	gl_RenderState.Apply();
 	fb->wipeendscreen->Bind(0);
-	glBegin(GL_TRIANGLE_STRIP);
-	glTexCoord2f(0, vb);
-	glVertex2i(0, 0);
-	glTexCoord2f(0, 0);
-	glVertex2i(0, fb->Height);
-	glTexCoord2f(ur, vb);
-	glVertex2i(fb->Width, 0);
-	glTexCoord2f(ur, 0);
-	glVertex2i(fb->Width, fb->Height);
-	glEnd();
+	FFlatVertex *ptr;
+	ptr = GLRenderer->mVBO->GetBuffer();
+	ptr->Set(0, 0, 0, 0, vb);
+	ptr++;
+	ptr->Set(0, fb->Height, 0, 0, 0);
+	ptr++;
+	ptr->Set(fb->Width, 0, 0, ur, vb);
+	ptr++;
+	ptr->Set(fb->Width, fb->Height, 0, ur, 0);
+	ptr++;
+	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 
 	int i, dy;
 	bool done = false;
@@ -383,7 +380,9 @@ bool OpenGLFrameBuffer::Wiper_Melt::Run(int ticks, OpenGLFrameBuffer *fb)
 				done = false;
 			}
 			if (ticks == 0)
-			{ // Only draw for the final tick.
+			{ 
+				// Only draw for the final tick.
+				// No need for optimization. Wipes won't ever be drawn with anything else.
 				RECT rect;
 				POINT dpt;
 
@@ -399,16 +398,17 @@ bool OpenGLFrameBuffer::Wiper_Melt::Run(int ticks, OpenGLFrameBuffer *fb)
 					float th = (float)FHardwareTexture::GetTexDimension(fb->Height);
 					rect.bottom = fb->Height - rect.bottom;
 					rect.top = fb->Height - rect.top;
-					glBegin(GL_TRIANGLE_STRIP);
-					glTexCoord2f(rect.left / tw, rect.top / th);
-					glVertex2i(rect.left, rect.bottom);
-					glTexCoord2f(rect.left / tw, rect.bottom / th);
-					glVertex2i(rect.left, rect.top);
-					glTexCoord2f(rect.right / tw, rect.top / th);
-					glVertex2i(rect.right, rect.bottom);
-					glTexCoord2f(rect.right / tw, rect.bottom / th);
-					glVertex2i(rect.right, rect.top);
-					glEnd();
+
+					ptr = GLRenderer->mVBO->GetBuffer();
+					ptr->Set(rect.left, rect.bottom, 0, rect.left / tw, rect.top / th);
+					ptr++;
+					ptr->Set(rect.left, rect.top, 0, rect.left / tw, rect.bottom / th);
+					ptr++;
+					ptr->Set(rect.right, rect.bottom, 0, rect.right / tw, rect.top / th);
+					ptr++;
+					ptr->Set(rect.right, rect.top, 0, rect.right / tw, rect.bottom / th);
+					ptr++;
+					GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 				}
 			}
 		}
@@ -494,63 +494,31 @@ bool OpenGLFrameBuffer::Wiper_Burn::Run(int ticks, OpenGLFrameBuffer *fb)
 	gl_RenderState.ResetColor();
 	gl_RenderState.Apply();
 	fb->wipestartscreen->Bind(0);
-	glBegin(GL_TRIANGLE_STRIP);
-	glTexCoord2f(0, vb);
-	glVertex2i(0, 0);
-	glTexCoord2f(0, 0);
-	glVertex2i(0, fb->Height);
-	glTexCoord2f(ur, vb);
-	glVertex2i(fb->Width, 0);
-	glTexCoord2f(ur, 0);
-	glVertex2i(fb->Width, fb->Height);
-	glEnd();
+	FFlatVertex *ptr;
+	unsigned int offset, count;
+	ptr = GLRenderer->mVBO->GetBuffer();
+	ptr->Set(0, 0, 0, 0, vb);
+	ptr++;
+	ptr->Set(0, fb->Height, 0, 0, 0);
+	ptr++;
+	ptr->Set(fb->Width, 0, 0, ur, vb);
+	ptr++;
+	ptr->Set(fb->Width, fb->Height, 0, ur, 0);
+	ptr++;
+	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP, &offset, &count);
 
 	gl_RenderState.SetTextureMode(TM_MODULATE);
-	gl_RenderState.Apply(true);
-	glActiveTexture(GL_TEXTURE1);
-	glEnable(GL_TEXTURE_2D);
-
-	// mask out the alpha channel of the wipeendscreen.
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-	glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
-	glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE1);
-	glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-	glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE); 
-	glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
-	glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-
-	glActiveTexture(GL_TEXTURE0);
+	gl_RenderState.SetEffect(EFF_BURN);
+	gl_RenderState.ResetColor();
+	gl_RenderState.Apply();
 
 	// Burn the new screen on top of it.
 	fb->wipeendscreen->Bind(1);
-	//BurnTexture->Bind(0, CM_DEFAULT);
 
 	BurnTexture->CreateTexture(rgb_buffer, WIDTH, HEIGHT, false, 0);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-
-	glBegin(GL_TRIANGLE_STRIP);
-	glMultiTexCoord2f(GL_TEXTURE0, 0, 0);
-	glMultiTexCoord2f(GL_TEXTURE1, 0, vb);
-	glVertex2i(0, 0);
-	glMultiTexCoord2f(GL_TEXTURE0, 0, 1);
-	glMultiTexCoord2f(GL_TEXTURE1, 0, 0);
-	glVertex2i(0, fb->Height);
-	glMultiTexCoord2f(GL_TEXTURE0, 1, 0);
-	glMultiTexCoord2f(GL_TEXTURE1, ur, vb);
-	glVertex2i(fb->Width, 0);
-	glMultiTexCoord2f(GL_TEXTURE0, 1, 1);
-	glMultiTexCoord2f(GL_TEXTURE1, ur, 0);
-	glVertex2i(fb->Width, fb->Height);
-	glEnd();
-
-	glActiveTexture(GL_TEXTURE1);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-	glDisable(GL_TEXTURE_2D);
-	glActiveTexture(GL_TEXTURE0);
+	GLRenderer->mVBO->RenderArray(GL_TRIANGLE_STRIP, offset, count);
+	gl_RenderState.SetEffect(EFF_NONE);
 
 	// The fire may not always stabilize, so the wipe is forced to end
 	// after an arbitrary maximum time.

@@ -53,7 +53,6 @@
 #include "gl/data/gl_data.h"
 #include "gl/dynlights/gl_dynlight.h"
 #include "gl/dynlights/gl_glow.h"
-#include "gl/dynlights/gl_lightbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/scene/gl_portal.h"
 #include "gl/textures/gl_material.h"
@@ -71,7 +70,7 @@
 void GLWall::CheckGlowing()
 {
 	bottomglowcolor[3] = topglowcolor[3] = 0;
-	if (!gl_isFullbright(Colormap.LightColor, lightlevel) && gl.hasGLSL())
+	if (!gl_isFullbright(Colormap.LightColor, lightlevel))
 	{
 		FTexture *tex = TexMan[topflat];
 		if (tex != NULL && tex->isGlowing())
@@ -184,7 +183,7 @@ void GLWall::PutWall(bool translucent)
 		list = list_indices[light][masked][!!(flags&GLWF_FOGGY)];
 		if (list == GLDL_LIGHT)
 		{
-			if (gltexture->tex->gl_info.Brightmap && gl.hasGLSL()) list = GLDL_LIGHTBRIGHT;
+			if (gltexture->tex->gl_info.Brightmap) list = GLDL_LIGHTBRIGHT;
 			if (flags & GLWF_GLOW) list = GLDL_LIGHTBRIGHT;
 		}
 		gl_drawinfo->drawlists[list].AddWall(this);

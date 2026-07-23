@@ -56,7 +56,6 @@
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/dynlights/gl_dynlight.h"
 #include "gl/dynlights/gl_glow.h"
-#include "gl/dynlights/gl_lightbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
@@ -501,7 +500,7 @@ inline void GLFlat::PutFlat(bool fog)
 		else foggy = false;
 
 		list = list_indices[light][masked][foggy];
-		if (list == GLDL_LIGHT && gltexture->tex->gl_info.Brightmap && gl.hasGLSL()) list = GLDL_LIGHTBRIGHT;
+		if (list == GLDL_LIGHT && gltexture->tex->gl_info.Brightmap) list = GLDL_LIGHTBRIGHT;
 
 		gl_drawinfo->drawlists[list].AddFlat (this);
 	}

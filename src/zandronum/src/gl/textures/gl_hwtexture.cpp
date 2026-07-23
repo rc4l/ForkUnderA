@@ -56,7 +56,6 @@
 
 extern TexFilter_s TexFilter[];
 extern int TexFormat[];
-EXTERN_CVAR(Bool, gl_clamp_per_texture)
 
 
 //===========================================================================
@@ -104,10 +103,6 @@ void FHardwareTexture::LoadImage(unsigned char * buffer,int w, int h, unsigned i
 		{
 			texformat = GL_R8;
 		}
-		else if (gl.version <= 3.0f || gl.hasCompatibility())
-		{
-			texformat = GL_ALPHA8;
-		}
 		else
 		{
 			texformat = GL_RGBA8;
@@ -130,7 +125,6 @@ void FHardwareTexture::LoadImage(unsigned char * buffer,int w, int h, unsigned i
 
 		// The texture must at least be initialized if no data is present.
 		mipmap=false;
-		glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, false);
 		buffer=(unsigned char *)calloc(4,rw * (rh+1));
 		deletebuffer=true;
 		//texheight=-h;	
@@ -139,8 +133,6 @@ void FHardwareTexture::LoadImage(unsigned char * buffer,int w, int h, unsigned i
 	{
 		rw = GetTexDimension (w);
 		rh = GetTexDimension (h);
-
-		glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, (mipmap && use_mipmapping && !forcenofiltering));
 
 		if (rw == w && rh == h)
 		{
@@ -185,16 +177,18 @@ void FHardwareTexture::LoadImage(unsigned char * buffer,int w, int h, unsigned i
 
 	if (deletebuffer) free(buffer);
 
-	// When using separate samplers the stuff below is not needed.
-	// if (gl.flags & RFL_SAMPLER_OBJECTS) return;
-
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapparam==GL_CLAMP? GL_CLAMP_TO_EDGE : GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapparam==GL_CLAMP? GL_CLAMP_TO_EDGE : GL_REPEAT);
+	if (mipmap && use_mipmapping && !forcenofiltering) glGenerateMipmap(GL_TEXTURE_2D);
 	if (alphatexture && gl.version >= 3.3f)
 	{
 		static const GLint swizzleMask[] = {GL_ONE, GL_ONE, GL_ONE, GL_RED};
 		glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
 	}
+
+	// When using separate samplers the stuff below is not needed.
+	// if (gl.flags & RFL_SAMPLER_OBJECTS) return;
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapparam==GL_CLAMP? GL_CLAMP_TO_EDGE : GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapparam==GL_CLAMP? GL_CLAMP_TO_EDGE : GL_REPEAT);
 	clampmode = wrapparam==GL_CLAMP? GLT_CLAMPX|GLT_CLAMPY : 0;
 
 	if (forcenofiltering)
@@ -373,19 +367,15 @@ void FHardwareTexture::UnbindAll()
 
 int FHardwareTexture::GetDepthBuffer()
 {
-	if (gl.flags & RFL_FRAMEBUFFER)
+	if (glDepthID == 0)
 	{
-		if (glDepthID == 0)
-		{
-			glGenRenderbuffers(1, &glDepthID);
-			glBindRenderbuffer(GL_RENDERBUFFER, glDepthID);
-			glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 
-				GetTexDimension(texwidth), GetTexDimension(texheight));
-			glBindRenderbuffer(GL_RENDERBUFFER, 0);
-		}
-		return glDepthID;
+		glGenRenderbuffers(1, &glDepthID);
+		glBindRenderbuffer(GL_RENDERBUFFER, glDepthID);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 
+			GetTexDimension(texwidth), GetTexDimension(texheight));
+		glBindRenderbuffer(GL_RENDERBUFFER, 0);
 	}
-	return 0;
+	return glDepthID;
 }
 
 
@@ -397,11 +387,8 @@ int FHardwareTexture::GetDepthBuffer()
 
 void FHardwareTexture::BindToFrameBuffer()
 {
-	if (gl.flags & RFL_FRAMEBUFFER)
-	{
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, glDefTexID, 0);
-		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, GetDepthBuffer()); 
-	}
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, glDefTexID, 0);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, GetDepthBuffer()); 
 }
 
 

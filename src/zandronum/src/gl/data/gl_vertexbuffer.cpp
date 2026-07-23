@@ -45,6 +45,7 @@
 #include "c_cvars.h"
 #include "gl/system/gl_interface.h"
 #include "gl/renderer/gl_renderer.h"
+#include "gl/shaders/gl_shader.h"
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 
@@ -57,8 +58,10 @@
 
 FVertexBuffer::FVertexBuffer()
 {
-	vbo_id = 0;
+	vao_id = vbo_id = 0;
 	glGenBuffers(1, &vbo_id);
+	glGenVertexArrays(1, &vao_id);
+
 }
 	
 FVertexBuffer::~FVertexBuffer()
@@ -67,6 +70,15 @@ FVertexBuffer::~FVertexBuffer()
 	{
 		glDeleteBuffers(1, &vbo_id);
 	}
+	if (vao_id != 0)
+	{
+		glDeleteVertexArrays(1, &vao_id);
+	}
+}
+
+void FVertexBuffer::BindVBO()
+{
+	glBindVertexArray(vao_id);
 }
 
 //==========================================================================
@@ -89,8 +101,24 @@ FFlatVertexBuffer::FFlatVertexBuffer()
 	{
 		vbo_shadowdata.Reserve(BUFFER_SIZE);
 		map = &vbo_shadowdata[0];
+
+		FFlatVertex fill[20];
+		for (int i = 0; i < 20; i++)
+		{
+			fill[i].Set(0, 0, 0, 100001.f, i);
+		}
+		glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
+		glBufferData(GL_ARRAY_BUFFER, 20 * sizeof(FFlatVertex), fill, GL_STATIC_DRAW);
 	}
 	mIndex = mCurIndex = 0;
+
+	glBindVertexArray(vao_id);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
+	glVertexPointer(3,GL_FLOAT, sizeof(FFlatVertex), &VTO->x);
+	glTexCoordPointer(2,GL_FLOAT, sizeof(FFlatVertex), &VTO->u);
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+	glBindVertexArray(0);
 }
 
 FFlatVertexBuffer::~FFlatVertexBuffer()
@@ -108,15 +136,55 @@ FFlatVertexBuffer::~FFlatVertexBuffer()
 //
 //==========================================================================
 
+CVAR(Bool, gl_testbuffer, false, 0)
+
 void FFlatVertexBuffer::ImmRenderBuffer(unsigned int primtype, unsigned int offset, unsigned int count)
 {
-	glBegin(primtype);
-	for (unsigned int i = 0; i < count; i++)
+	if (!gl_testbuffer)	// todo: remove the immediate mode calls once the uniform array method has been tested.
 	{
-		glTexCoord2fv(&map[offset + i].u);
-		glVertex3fv(&map[offset + i].x);
+		glBegin(primtype);
+		for (unsigned int i = 0; i < count; i++)
+		{
+			glTexCoord2fv(&map[offset + i].u);
+			glVertex3fv(&map[offset + i].x);
+		}
+		glEnd();
 	}
-	glEnd();
+	else
+	{
+		if (count > 20)
+		{
+			int start = offset;
+			FFlatVertex ff = map[offset];
+			while (count > 20)
+			{
+
+				if (primtype == GL_TRIANGLE_FAN)
+				{
+					// split up the fan into multiple sub-fans
+					map[offset] = map[start];
+					glUniform1fv(GLRenderer->mShaderManager->GetActiveShader()->fakevb_index, 20 * 5, &map[offset].x);
+					glDrawArrays(primtype, 0, 20);
+					offset += 18;
+					count -= 18;
+				}
+				else
+				{
+					// we only have triangle fans of this size so don't bother with strips and triangles here.
+					break;
+				}
+			}
+			map[offset] = map[start];
+			glUniform1fv(GLRenderer->mShaderManager->GetActiveShader()->fakevb_index, count * 5, &map[offset].x);
+			glDrawArrays(primtype, 0, count);
+			map[offset] = ff;
+		}
+		else
+		{
+			glUniform1fv(GLRenderer->mShaderManager->GetActiveShader()->fakevb_index, count * 5, &map[offset].x);
+			glDrawArrays(primtype, 0, count);
+		}
+	}
 }
 
 //==========================================================================
@@ -312,26 +380,6 @@ void FFlatVertexBuffer::CreateVBO()
 			sectors[i].vboindex[1] = sectors[i].vboindex[0] = -1;
 			sectors[i].vboheight[1] = sectors[i].vboheight[0] = FIXED_MIN;
 		}
-	}
-}
-
-//==========================================================================
-//
-//
-//
-//==========================================================================
-
-void FFlatVertexBuffer::BindVBO()
-{
-	if (gl.flags & RFL_BUFFER_STORAGE)
-	{
-		glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-		glVertexPointer(3,GL_FLOAT, sizeof(FFlatVertex), &VTO->x);
-		glTexCoordPointer(2,GL_FLOAT, sizeof(FFlatVertex), &VTO->u);
-		glEnableClientState(GL_VERTEX_ARRAY);
-		glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-		glDisableClientState(GL_COLOR_ARRAY);
 	}
 }
 

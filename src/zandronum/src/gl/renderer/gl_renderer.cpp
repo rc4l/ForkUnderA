@@ -59,7 +59,6 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
-#include "gl/dynlights/gl_lightbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_texture.h"
@@ -109,6 +108,7 @@ void FGLRenderer::Initialize()
 
 	mVBO = new FFlatVertexBuffer;
 	mSkyVBO = new FSkyVertexBuffer;
+	mModelVBO = new FModelVertexBuffer;
 	gl_RenderState.SetVertexBuffer(mVBO);
 	mFBID = 0;
 	SetupLevel();
@@ -123,6 +123,7 @@ FGLRenderer::~FGLRenderer()
 	//if (mThreadManager != NULL) delete mThreadManager;
 	if (mShaderManager != NULL) delete mShaderManager;
 	if (mVBO != NULL) delete mVBO;
+	if (mModelVBO) delete mModelVBO;
 	if (mSkyVBO != NULL) delete mSkyVBO;
 	if (glpart2) delete glpart2;
 	if (glpart) delete glpart;
@@ -216,13 +217,9 @@ void FGLRenderer::FlushTextures()
 
 bool FGLRenderer::StartOffscreen()
 {
-	if (gl.flags & RFL_FRAMEBUFFER)
-	{
-		if (mFBID == 0) glGenFramebuffers(1, &mFBID);
-		glBindFramebuffer(GL_FRAMEBUFFER, mFBID);
-		return true;
-	}
-	return false;
+	if (mFBID == 0) glGenFramebuffers(1, &mFBID);
+	glBindFramebuffer(GL_FRAMEBUFFER, mFBID);
+	return true;
 }
 
 //===========================================================================
@@ -233,10 +230,7 @@ bool FGLRenderer::StartOffscreen()
 
 void FGLRenderer::EndOffscreen()
 {
-	if (gl.flags & RFL_FRAMEBUFFER)
-	{
-		glBindFramebuffer(GL_FRAMEBUFFER, 0); 
-	}
+	glBindFramebuffer(GL_FRAMEBUFFER, 0); 
 }
 
 //===========================================================================

@@ -77,24 +77,22 @@ extern int skyfog;
 FSkyVertexBuffer::FSkyVertexBuffer()
 {
 	CreateDome();
-}
 
-FSkyVertexBuffer::~FSkyVertexBuffer()
-{
-}
-
-void FSkyVertexBuffer::BindVBO()
-{
+	glBindVertexArray(vao_id);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glVertexPointer(3, GL_FLOAT, sizeof(FSkyVertex), &VSO->x);
 	glTexCoordPointer(2, GL_FLOAT, sizeof(FSkyVertex), &VSO->u);
 	glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(FSkyVertex), &VSO->color);
 	glEnableClientState(GL_VERTEX_ARRAY);
 	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 	glEnableClientState(GL_COLOR_ARRAY);
+	glBindVertexArray(0);
+
 }
 
+FSkyVertexBuffer::~FSkyVertexBuffer()
+{
+}
 
 //-----------------------------------------------------------------------------
 //
@@ -237,13 +235,9 @@ void FSkyVertexBuffer::RenderDome(FMaterial *tex, int mode)
 		gl_RenderState.SetObjectColor(pe);
 		gl_RenderState.EnableTexture(false);
 		gl_RenderState.Apply();
-		// [rc4l] The white-zenith fix: Apply() above may just have bound the sky VBO,
-		// and FSkyVertexBuffer::BindVBO() re-enables the color array -- so disabling it
-		// before Apply() (as upstream did) leaves the cap fan reading the fade-ring
-		// vertex colors (white) instead of the object color. Disable it AFTER Apply().
-		// Upstream never hit this: its GL 2.x path died at the core flip before anyone
-		// looked up.
-		if (!gl.hasGLSL()) glDisableClientState(GL_COLOR_ARRAY);
+		// [rc4l] The white-zenith shim retires here with the rest of the fixed-function
+		// path (upstream 2925c96b5): shaders now always run, and the object color is
+		// applied as a uniform, not through the client color array.
 		RenderRow(GL_TRIANGLE_FAN, 0);
 
 		pe = tex->tex->GetSkyCapColor(true);
@@ -251,7 +245,6 @@ void FSkyVertexBuffer::RenderDome(FMaterial *tex, int mode)
 		gl_RenderState.Apply();
 		RenderRow(GL_TRIANGLE_FAN, rc);
 		gl_RenderState.EnableTexture(true);
-		if (!gl.hasGLSL()) glEnableClientState(GL_COLOR_ARRAY);
 	}
 	gl_RenderState.SetObjectColor(0xffffffff);
 	gl_RenderState.Apply();
@@ -536,9 +529,7 @@ void GLSkyPortal::DrawContents()
 			gl_RenderState.EnableTexture(false);
 			gl_RenderState.SetObjectColor(FadeColor);
 			gl_RenderState.Apply();
-			if (!gl.hasGLSL()) glDisableClientState(GL_COLOR_ARRAY);
 			glDrawArrays(GL_TRIANGLES, 0, 12);
-			if (!gl.hasGLSL()) glEnableClientState(GL_COLOR_ARRAY);
 			gl_RenderState.EnableTexture(true);
 		}
 		gl_RenderState.SetVertexBuffer(GLRenderer->mVBO);

@@ -146,21 +146,14 @@ void gl_LoadExtensions()
 	else Printf("Emulating OpenGL v %s\n", version);
 
 
-	// Don't even start if it's lower than 1.3
-	if (strcmp(version, "1.3") < 0) 
+	// [rc4l] upstream 2925c96b5: GL 3.0 is the floor now that all GL 2.x code is gone.
+	if (strcmp(version, "3.0") < 0)
 	{
-		I_FatalError("Unsupported OpenGL version.\nAt least GL 1.3 is required to run " GAMENAME ".\n");
-	}
-	else if (strcmp(version, "1.4") < 0) 
-	{
-		// The engine will still assume 1.4 but the only 1.4 feature being used is GL_GENERATE_MIPMAP which should be supported as an extension
-		// on most 1.3 cards this is present but let's print a warning that not everything may work as intended.
-		Printf(TEXTCOLOR_RED "The current graphics driver implements a OpenGL version lower than 1.4 and may not support all features " GAMENAME " requires.\n");
+		I_FatalError("Unsupported OpenGL version.\nAt least GL 3.0 is required to run " GAMENAME ".\n");
 	}
 
 	// [rc4l] Flight 1 (upstream 69af73d9b/94b06900c): one real loader. glewInit resolves every
-	// entry point the context offers; the ~90 hand-loaded pointers, their ARB-suffix fallbacks and
-	// the pre-GL2 dummies are gone. Pre-GL2.0 hardware is no longer supported.
+	// entry point the context offers.
 	glewExperimental = GL_TRUE;
 	GLenum glewErr = glewInit();
 	if (glewErr != GLEW_OK)
@@ -170,55 +163,24 @@ void gl_LoadExtensions()
 	// glewInit can leave a benign GL_INVALID_ENUM behind on some drivers; clear it.
 	while (glGetError() != GL_NO_ERROR) {}
 
-	if (strcmp(version, "2.0") < 0)
-	{
-		I_FatalError("Unsupported OpenGL version.\nAt least GL 2.0 is required to run " GAMENAME ".\n");
-	}
-
-	gl.shadermodel = 0;	// assume no shader support
-	gl.vendorstring=(char*)glGetString(GL_VENDOR);
-	// [rc4l] upstream 0ce6b4067: numeric version (honors -glversion override via the
-	// 'version' local above) so capability checks can gate on it.
 	gl.version = (float)strtod(version, NULL);
 	gl.glslversion = (float)strtod((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), NULL);
+	gl.vendorstring=(char*)glGetString(GL_VENDOR);
+	// [rc4l] Always 4 on the 3.0 floor; kept for the [BB] map_lightmode gates.
+	gl.shadermodel = 4;
 
-	if (CheckExtension("GL_ARB_texture_non_power_of_two")) gl.flags|=RFL_NPOT_TEXTURE;
 	if (CheckExtension("GL_ARB_texture_compression")) gl.flags|=RFL_TEXTURE_COMPRESSION;
 	if (CheckExtension("GL_EXT_texture_compression_s3tc")) gl.flags|=RFL_TEXTURE_COMPRESSION_S3TC;
-	if (strstr(gl.vendorstring, "NVIDIA")) gl.flags|=RFL_NVIDIA;
-	else if (strstr(gl.vendorstring, "ATI Technologies")) gl.flags|=RFL_ATI;
-
-	if (strcmp(version, "2.0") >= 0) gl.flags|=RFL_GL_20;
-	if (strcmp(version, "2.1") >= 0) gl.flags|=RFL_GL_21;
-	if (strcmp(version, "3.0") >= 0) gl.flags|=RFL_GL_30;
-	// [BB]
-	if (strcmp(version, "4.0") >= 0) gl.flags|=RFL_GL_40;
-
-	glGetIntegerv(GL_MAX_TEXTURE_SIZE,&gl.max_texturesize);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-	// Shader model detection (unchanged this flight; the pre-1.3 GLSL branches retire later).
-	if (strcmp((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), "1.3") >= 0) gl.shadermodel = 4;
-	else if (CheckExtension("GL_NV_GPU_shader4")) gl.shadermodel = 4;
-	else if (CheckExtension("GL_EXT_GPU_shader4")) gl.shadermodel = 4;
-	else if (CheckExtension("GL_NV_vertex_program3")) gl.shadermodel = 3;
-	else if (!strstr(gl.vendorstring, "NVIDIA")) gl.shadermodel = 3;
-	else gl.shadermodel = 2;
-
-	// Command line overrides for testing and problem cases.
-	if (Args->CheckParm("-sm2") && gl.shadermodel > 2) gl.shadermodel = 2;
-	else if (Args->CheckParm("-sm3") && gl.shadermodel > 3) gl.shadermodel = 3;
-
-	if (CheckExtension("GL_ARB_occlusion_query")) gl.flags|=RFL_OCCLUSION_QUERY;
 	// [rc4l] upstream 0ce6b4067: ARB_buffer_storage requires GL 4.0 per spec, so
 	// don't use it when emulating something lower via -glversion.
 	if (gl.version >= 4.f && CheckExtension("GL_ARB_buffer_storage")) gl.flags|=RFL_BUFFER_STORAGE;
 	if (gl.version >= 3.2f || CheckExtension("GL_ARB_draw_elements_base_vertex")) gl.flags |= RFL_BASEINDEX;
 	if (CheckExtension("GL_ARB_shader_storage_buffer_object")) gl.flags|=RFL_SHADER_STORAGE_BUFFER;
-	if (gl.flags & RFL_GL_21) gl.flags |= RFL_VBO;
-	else if (CheckExtension("GL_ARB_vertex_buffer_object")) gl.flags |= RFL_VBO;
-	if (CheckExtension("GL_ARB_map_buffer_range")) gl.flags|=RFL_MAP_BUFFER_RANGE;
-	if (CheckExtension("GL_ARB_framebuffer_object")) gl.flags|=RFL_FRAMEBUFFER;
+	// [rc4l] Guaranteed on every GL 3.x context; kept for [BB] call sites.
+	gl.flags |= RFL_NPOT_TEXTURE | RFL_OCCLUSION_QUERY;
+
+	glGetIntegerv(GL_MAX_TEXTURE_SIZE,&gl.max_texturesize);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 }
 
 //==========================================================================

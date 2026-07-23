@@ -68,146 +68,152 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	static char buffer[10000];
 	FString error;
 
-	if (gl.hasGLSL())
+	int i_lump = Wads.CheckNumForFullName("shaders/glsl/shaderdefs.i");
+	if (i_lump == -1) I_Error("Unable to load 'shaders/glsl/shaderdefs.i'");
+	FMemLump i_data = Wads.ReadLump(i_lump);
+
+	int vp_lump = Wads.CheckNumForFullName(vert_prog_lump);
+	if (vp_lump == -1) I_Error("Unable to load '%s'", vert_prog_lump);
+	FMemLump vp_data = Wads.ReadLump(vp_lump);
+
+	int fp_lump = Wads.CheckNumForFullName(frag_prog_lump);
+	if (fp_lump == -1) I_Error("Unable to load '%s'", frag_prog_lump);
+	FMemLump fp_data = Wads.ReadLump(fp_lump);
+
+
+
+//
+// The following code uses GetChars on the strings to get rid of terminating 0 characters. Do not remove or the code may break!
+//
+
+	FString vp_comb = "#version 130\n";
+	if (gl.glslversion >= 3.3f) vp_comb = "#version 330 compatibility\n";	// I can't shut up the deprecation warnings in GLSL 1.3 so if available use a version with compatibility profile.
+	// todo when using shader storage buffers, add
+	// "#version 400 compatibility\n#extension GL_ARB_shader_storage_buffer_object : require\n" instead.
+
+	if (!(gl.flags & RFL_BUFFER_STORAGE))
 	{
-		int i_lump = Wads.CheckNumForFullName("shaders/glsl/shaderdefs.i");
-		if (i_lump == -1) I_Error("Unable to load 'shaders/glsl/shaderdefs.i'");
-		FMemLump i_data = Wads.ReadLump(i_lump);
-
-		int vp_lump = Wads.CheckNumForFullName(vert_prog_lump);
-		if (vp_lump == -1) I_Error("Unable to load '%s'", vert_prog_lump);
-		FMemLump vp_data = Wads.ReadLump(vp_lump);
-
-		int fp_lump = Wads.CheckNumForFullName(frag_prog_lump);
-		if (fp_lump == -1) I_Error("Unable to load '%s'", frag_prog_lump);
-		FMemLump fp_data = Wads.ReadLump(fp_lump);
-
-
-
-	//
-	// The following code uses GetChars on the strings to get rid of terminating 0 characters. Do not remove or the code may break!
-	//
-
-		FString vp_comb = "#version 130\n";
-		if (gl.glslversion >= 3.3f) vp_comb = "#version 330 compatibility\n";	// I can't shut up the deprecation warnings in GLSL 1.3 so if available use a version with compatibility profile.
-		// todo when using shader storage buffers, add
-		// "#version 400 compatibility\n#extension GL_ARB_shader_storage_buffer_object : require\n" instead.
-		vp_comb << defines << i_data.GetString().GetChars();
-		FString fp_comb = vp_comb;
-
-		vp_comb << vp_data.GetString().GetChars() << "\n";
-		fp_comb << fp_data.GetString().GetChars() << "\n";
-
-		if (proc_prog_lump != NULL)
-		{
-			if (*proc_prog_lump != '#')
-			{
-				int pp_lump = Wads.CheckNumForFullName(proc_prog_lump);
-				if (pp_lump == -1) I_Error("Unable to load '%s'", proc_prog_lump);
-				FMemLump pp_data = Wads.ReadLump(pp_lump);
-
-				if (pp_data.GetString().IndexOf("ProcessTexel") < 0)
-				{
-					// this looks like an old custom hardware shader.
-					// We need to replace the ProcessTexel call to make it work.
-
-					fp_comb.Substitute("vec4 frag = ProcessTexel();", "vec4 frag = Process(vec4(1.0));");
-				}
-				fp_comb << pp_data.GetString().GetChars();
-
-				if (pp_data.GetString().IndexOf("ProcessLight") < 0)
-				{
-					int pl_lump = Wads.CheckNumForFullName("shaders/glsl/func_defaultlight.fp");
-					if (pl_lump == -1) I_Error("Unable to load '%s'", "shaders/glsl/func_defaultlight.fp");
-					FMemLump pl_data = Wads.ReadLump(pl_lump);
-					fp_comb << "\n" << pl_data.GetString().GetChars();
-				}
-			}
-			else
-			{
-				// Proc_prog_lump is not a lump name but the source itself (from generated shaders)
-				fp_comb << proc_prog_lump + 1;
-			}
-		}
-
-		hVertProg = glCreateShader(GL_VERTEX_SHADER);
-		hFragProg = glCreateShader(GL_FRAGMENT_SHADER);	
-
-
-		int vp_size = (int)vp_comb.Len();
-		int fp_size = (int)fp_comb.Len();
-
-		const char *vp_ptr = vp_comb.GetChars();
-		const char *fp_ptr = fp_comb.GetChars();
-
-		glShaderSource(hVertProg, 1, &vp_ptr, &vp_size);
-		glShaderSource(hFragProg, 1, &fp_ptr, &fp_size);
-
-		glCompileShader(hVertProg);
-		glCompileShader(hFragProg);
-
-		hShader = glCreateProgram();
-
-		glAttachShader(hShader, hVertProg);
-		glAttachShader(hShader, hFragProg);
-
-		glLinkProgram(hShader);
-
-		glGetShaderInfoLog(hVertProg, 10000, NULL, buffer);
-		if (*buffer) 
-		{
-			error << "Vertex shader:\n" << buffer << "\n";
-		}
-		glGetShaderInfoLog(hFragProg, 10000, NULL, buffer);
-		if (*buffer) 
-		{
-			error << "Fragment shader:\n" << buffer << "\n";
-		}
-
-		glGetProgramInfoLog(hShader, 10000, NULL, buffer);
-		if (*buffer) 
-		{
-			error << "Linking:\n" << buffer << "\n";
-		}
-		int linked;
-		glGetProgramiv(hShader, GL_LINK_STATUS, &linked);
-		if (linked == 0)
-		{
-			// only print message if there's an error.
-			I_Error("Init Shader '%s':\n%s\n", name, error.GetChars());
-		}
-
-
-		muDesaturation.Init(hShader, "uDesaturationFactor");
-		muFogEnabled.Init(hShader, "uFogEnabled");
-		muTextureMode.Init(hShader, "uTextureMode");
-		muCameraPos.Init(hShader, "uCameraPos");
-		muLightParms.Init(hShader, "uLightAttr");
-		muColormapStart.Init(hShader, "uFixedColormapStart");
-		muColormapRange.Init(hShader, "uFixedColormapRange");
-		muLightRange.Init(hShader, "uLightRange");
-		muFogColor.Init(hShader, "uFogColor");
-		muDynLightColor.Init(hShader, "uDynLightColor");
-		muObjectColor.Init(hShader, "uObjectColor");
-		muGlowBottomColor.Init(hShader, "uGlowBottomColor");
-		muGlowTopColor.Init(hShader, "uGlowTopColor");
-		muGlowBottomPlane.Init(hShader, "uGlowBottomPlane");
-		muGlowTopPlane.Init(hShader, "uGlowTopPlane");
-		muFixedColormap.Init(hShader, "uFixedColormap");
-
-		timer_index = glGetUniformLocation(hShader, "timer");
-		lights_index = glGetUniformLocation(hShader, "lights");
-
-
-		glUseProgram(hShader);
-
-		int texture_index = glGetUniformLocation(hShader, "texture2");
-		if (texture_index > 0) glUniform1i(texture_index, 1);
-
-		glUseProgram(0);
-		return !!linked;
+		// we only want the uniform array hack in the shader if we actually need it.
+		vp_comb << "#define UNIFORM_VB\n";
 	}
-	return false;
+
+	vp_comb << defines << i_data.GetString().GetChars();
+	FString fp_comb = vp_comb;
+
+	vp_comb << vp_data.GetString().GetChars() << "\n";
+	fp_comb << fp_data.GetString().GetChars() << "\n";
+
+	if (proc_prog_lump != NULL)
+	{
+		if (*proc_prog_lump != '#')
+		{
+			int pp_lump = Wads.CheckNumForFullName(proc_prog_lump);
+			if (pp_lump == -1) I_Error("Unable to load '%s'", proc_prog_lump);
+			FMemLump pp_data = Wads.ReadLump(pp_lump);
+
+			if (pp_data.GetString().IndexOf("ProcessTexel") < 0)
+			{
+				// this looks like an old custom hardware shader.
+				// We need to replace the ProcessTexel call to make it work.
+
+				fp_comb.Substitute("vec4 frag = ProcessTexel();", "vec4 frag = Process(vec4(1.0));");
+			}
+			fp_comb << pp_data.GetString().GetChars();
+
+			if (pp_data.GetString().IndexOf("ProcessLight") < 0)
+			{
+				int pl_lump = Wads.CheckNumForFullName("shaders/glsl/func_defaultlight.fp");
+				if (pl_lump == -1) I_Error("Unable to load '%s'", "shaders/glsl/func_defaultlight.fp");
+				FMemLump pl_data = Wads.ReadLump(pl_lump);
+				fp_comb << "\n" << pl_data.GetString().GetChars();
+			}
+		}
+		else
+		{
+			// Proc_prog_lump is not a lump name but the source itself (from generated shaders)
+			fp_comb << proc_prog_lump + 1;
+		}
+	}
+
+	hVertProg = glCreateShader(GL_VERTEX_SHADER);
+	hFragProg = glCreateShader(GL_FRAGMENT_SHADER);	
+
+
+	int vp_size = (int)vp_comb.Len();
+	int fp_size = (int)fp_comb.Len();
+
+	const char *vp_ptr = vp_comb.GetChars();
+	const char *fp_ptr = fp_comb.GetChars();
+
+	glShaderSource(hVertProg, 1, &vp_ptr, &vp_size);
+	glShaderSource(hFragProg, 1, &fp_ptr, &fp_size);
+
+	glCompileShader(hVertProg);
+	glCompileShader(hFragProg);
+
+	hShader = glCreateProgram();
+
+	glAttachShader(hShader, hVertProg);
+	glAttachShader(hShader, hFragProg);
+
+	glLinkProgram(hShader);
+
+	glGetShaderInfoLog(hVertProg, 10000, NULL, buffer);
+	if (*buffer) 
+	{
+		error << "Vertex shader:\n" << buffer << "\n";
+	}
+	glGetShaderInfoLog(hFragProg, 10000, NULL, buffer);
+	if (*buffer) 
+	{
+		error << "Fragment shader:\n" << buffer << "\n";
+	}
+
+	glGetProgramInfoLog(hShader, 10000, NULL, buffer);
+	if (*buffer) 
+	{
+		error << "Linking:\n" << buffer << "\n";
+	}
+	int linked;
+	glGetProgramiv(hShader, GL_LINK_STATUS, &linked);
+	if (linked == 0)
+	{
+		// only print message if there's an error.
+		I_Error("Init Shader '%s':\n%s\n", name, error.GetChars());
+	}
+
+
+	muDesaturation.Init(hShader, "uDesaturationFactor");
+	muFogEnabled.Init(hShader, "uFogEnabled");
+	muTextureMode.Init(hShader, "uTextureMode");
+	muCameraPos.Init(hShader, "uCameraPos");
+	muLightParms.Init(hShader, "uLightAttr");
+	muColormapStart.Init(hShader, "uFixedColormapStart");
+	muColormapRange.Init(hShader, "uFixedColormapRange");
+	muLightRange.Init(hShader, "uLightRange");
+	muFogColor.Init(hShader, "uFogColor");
+	muDynLightColor.Init(hShader, "uDynLightColor");
+	muObjectColor.Init(hShader, "uObjectColor");
+	muGlowBottomColor.Init(hShader, "uGlowBottomColor");
+	muGlowTopColor.Init(hShader, "uGlowTopColor");
+	muGlowBottomPlane.Init(hShader, "uGlowBottomPlane");
+	muGlowTopPlane.Init(hShader, "uGlowTopPlane");
+	muFixedColormap.Init(hShader, "uFixedColormap");
+	muInterpolationFactor.Init(hShader, "uInterpolationFactor");
+
+	timer_index = glGetUniformLocation(hShader, "timer");
+	lights_index = glGetUniformLocation(hShader, "lights");
+	fakevb_index = glGetUniformLocation(hShader, "fakeVB");
+
+	glBindAttribLocation(hShader, VATTR_VERTEX2, "aVertex2");
+
+	glUseProgram(hShader);
+
+	int texture_index = glGetUniformLocation(hShader, "texture2");
+	if (texture_index > 0) glUniform1i(texture_index, 1);
+
+	glUseProgram(0);
+	return !!linked;
 }
 
 //==========================================================================
@@ -218,12 +224,9 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 
 FShader::~FShader()
 {
-	if (gl.hasGLSL())
-	{
-		glDeleteProgram(hShader);
-		glDeleteShader(hVertProg);
-		glDeleteShader(hFragProg);
-	}
+	glDeleteProgram(hShader);
+	glDeleteShader(hVertProg);
+	glDeleteShader(hFragProg);
 }
 
 
@@ -256,14 +259,14 @@ FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath
 		shader = new FShader(ShaderName);
 		if (!shader->Load(ShaderName, "shaders/glsl/main.vp", "shaders/glsl/main.fp", ShaderPath, str))
 		{
-			I_Error("Unable to load shader %s\n", ShaderName);
+			I_FatalError("Unable to load shader %s\n", ShaderName);
 		}
 	}
 	catch(CRecoverableError &err)
 	{
 		if (shader != NULL) delete shader;
 		shader = NULL;
-		I_Error("Unable to load shader %s:\n%s\n", ShaderName, err.GetMessage());
+		I_FatalError("Unable to load shader %s:\n%s\n", ShaderName, err.GetMessage());
 	}
 	return shader;
 }
@@ -348,45 +351,32 @@ FShaderManager::~FShaderManager()
 
 void FShaderManager::CompileShaders()
 {
-	try
+	mActiveShader = mEffectShaders[0] = mEffectShaders[1] = NULL;
+
+	for(int i=0;defaultshaders[i].ShaderName != NULL;i++)
 	{
-		mActiveShader = mEffectShaders[0] = mEffectShaders[1] = NULL;
-		if (gl.hasGLSL())
-		{
-			for (int i = 0; defaultshaders[i].ShaderName != NULL; i++)
-			{
-				FShader *shc = Compile(defaultshaders[i].ShaderName, defaultshaders[i].gettexelfunc);
-				mTextureEffects.Push(shc);
-			}
-
-			for (unsigned i = 0; i < usershaders.Size(); i++)
-			{
-				FString name = ExtractFileBase(usershaders[i]);
-				FName sfn = name;
-
-				FShader *shc = Compile(sfn, usershaders[i]);
-				mTextureEffects.Push(shc);
-			}
-
-			for (int i = 0; i < MAX_EFFECTS; i++)
-			{
-				FShader *eff = new FShader(effectshaders[i].ShaderName);
-				if (!eff->Load(effectshaders[i].ShaderName, effectshaders[i].vp, effectshaders[i].fp1,
-					effectshaders[i].fp2, effectshaders[i].defines))
-				{
-					delete eff;
-				}
-				else mEffectShaders[i] = eff;
-			}
-		}
+		FShader *shc = Compile(defaultshaders[i].ShaderName, defaultshaders[i].gettexelfunc);
+		mTextureEffects.Push(shc);
 	}
-	catch (CRecoverableError &err)
+
+	for(unsigned i = 0; i < usershaders.Size(); i++)
 	{
-		// If shader compilation failed we can still run the fixed function mode so do that instead of aborting.
-		Printf("%s\n", err.GetMessage());
-		Printf(PRINT_HIGH, "Failed to compile shaders. Reverting to fixed function mode\n");
-		gl.glslversion = 0.0;
-		gl.flags &= ~RFL_BUFFER_STORAGE;
+		FString name = ExtractFileBase(usershaders[i]);
+		FName sfn = name;
+
+		FShader *shc = Compile(sfn, usershaders[i]);
+		mTextureEffects.Push(shc);
+	}
+
+	for(int i=0;i<MAX_EFFECTS;i++)
+	{
+		FShader *eff = new FShader(effectshaders[i].ShaderName);
+		if (!eff->Load(effectshaders[i].ShaderName, effectshaders[i].vp, effectshaders[i].fp1,
+						effectshaders[i].fp2, effectshaders[i].defines))
+		{
+			delete eff;
+		}
+		else mEffectShaders[i] = eff;
 	}
 }
 
@@ -398,22 +388,19 @@ void FShaderManager::CompileShaders()
 
 void FShaderManager::Clean()
 {
-	if (gl.hasGLSL())
-	{
-		glUseProgram(0);
-		mActiveShader = NULL;
+	glUseProgram(0);
+	mActiveShader = NULL;
 
-		for (unsigned int i = 0; i < mTextureEffects.Size(); i++)
-		{
-			if (mTextureEffects[i] != NULL) delete mTextureEffects[i];
-		}
-		for (int i = 0; i < MAX_EFFECTS; i++)
-		{
-			if (mEffectShaders[i] != NULL) delete mEffectShaders[i];
-			mEffectShaders[i] = NULL;
-		}
-		mTextureEffects.Clear();
+	for (unsigned int i = 0; i < mTextureEffects.Size(); i++)
+	{
+		if (mTextureEffects[i] != NULL) delete mTextureEffects[i];
 	}
+	for (int i = 0; i < MAX_EFFECTS; i++)
+	{
+		if (mEffectShaders[i] != NULL) delete mEffectShaders[i];
+		mEffectShaders[i] = NULL;
+	}
+	mTextureEffects.Clear();
 }
 
 //==========================================================================
@@ -444,7 +431,7 @@ int FShaderManager::Find(const char * shn)
 
 void FShaderManager::SetActiveShader(FShader *sh)
 {
-	if (gl.hasGLSL() && mActiveShader != sh)
+	if (mActiveShader != sh)
 	{
 		glUseProgram(sh!= NULL? sh->GetHandle() : 0);
 		mActiveShader = sh;
@@ -471,6 +458,9 @@ void FShaderManager::SetWarpSpeed(unsigned int eff, float speed)
 	}
 }
 
+//==========================================================================
+//
+//
 //
 //==========================================================================
 

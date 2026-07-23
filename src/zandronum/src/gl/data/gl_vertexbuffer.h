@@ -15,11 +15,12 @@ class FVertexBuffer
 {
 protected:
 	unsigned int vbo_id;
+	unsigned int vao_id;
 
 public:
 	FVertexBuffer();
 	virtual ~FVertexBuffer();
-	virtual void BindVBO() = 0;
+	void BindVBO();
 };
 
 struct FFlatVertex
@@ -60,7 +61,6 @@ public:
 	~FFlatVertexBuffer();
 
 	void CreateVBO();
-	void BindVBO();
 	void CheckUpdate(sector_t *sector);
 
 	FFlatVertex *GetBuffer()
@@ -165,7 +165,6 @@ public:
 
 	FSkyVertexBuffer();
 	virtual ~FSkyVertexBuffer();
-	virtual void BindVBO();
 	void RenderDome(FMaterial *tex, int mode);
 
 };
@@ -196,6 +195,7 @@ struct FModelVertex
 class FModelVertexBuffer : public FVertexBuffer
 {
 	int mIndexFrame[2];
+	unsigned int ibo_id;
 
 public:
 	// these are public because it's the models having to fill them in.
@@ -205,8 +205,7 @@ public:
 	FModelVertexBuffer();
 	~FModelVertexBuffer();
 
-	void BindVBO();
-	void UpdateBufferPointers(int frame1, int frame2);
+	unsigned int SetupFrame(unsigned int frame1, unsigned int frame2, float factor);
 };
 
 #define VMO ((FModelVertex*)NULL)
