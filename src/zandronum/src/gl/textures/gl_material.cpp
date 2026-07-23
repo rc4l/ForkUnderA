@@ -1013,7 +1013,7 @@ int FMaterial::GetAreas(FloatRect **pAreas) const
 
 void FMaterial::BindToFrameBuffer()
 {
-	if (mBaseLayer->gltexture[0] == NULL)
+	if (mBaseLayer->gltexture == NULL)
 	{
 		// must create the hardware texture first
 		mBaseLayer->Bind(0, 0, 0, NULL, 0);

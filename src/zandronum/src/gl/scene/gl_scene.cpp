@@ -642,12 +642,28 @@ static void FillScreen()
 	gl_RenderState.EnableAlphaTest(false);
 	gl_RenderState.EnableTexture(false);
 	gl_RenderState.Apply();
-	glBegin(GL_TRIANGLE_STRIP);
-	glVertex2f(0.0f, 0.0f);
-	glVertex2f(0.0f, (float)SCREENHEIGHT);
-	glVertex2f((float)SCREENWIDTH, 0.0f);
-	glVertex2f((float)SCREENWIDTH, (float)SCREENHEIGHT);
-	glEnd();
+	if (!gl_usevbo)
+	{
+		glBegin(GL_TRIANGLE_STRIP);
+		glVertex2f(0.0f, 0.0f);
+		glVertex2f(0.0f, (float)SCREENHEIGHT);
+		glVertex2f((float)SCREENWIDTH, 0.0f);
+		glVertex2f((float)SCREENWIDTH, (float)SCREENHEIGHT);
+		glEnd();
+	}
+	else
+	{
+		FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
+		ptr->Set(0, 0, 0, 0, 0);
+		ptr++;
+		ptr->Set(0, (float)SCREENHEIGHT, 0, 0, 0);
+		ptr++;
+		ptr->Set((float)SCREENWIDTH, 0, 0, 0, 0);
+		ptr++;
+		ptr->Set((float)SCREENWIDTH, (float)SCREENHEIGHT, 0, 0, 0);
+		ptr++;
+		GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
+	}
 }
 
 //==========================================================================
@@ -756,7 +772,7 @@ void FGLRenderer::DrawBlend(sector_t * viewsector)
 		// for various reasons (performance and keeping the lighting code clean)
 		// we no longer do colormapped textures on pre GL 3.0 hardware and instead do 
 		// just a fullscreen overlay to emulate the inverse invulnerability effect or similar fullscreen blends.
-		if (gl_fixedcolormap >= CM_FIRSTSPECIALCOLORMAP && gl_fixedcolormap < CM_MAXCOLORMAP)
+		if (gl_fixedcolormap >= (DWORD)CM_FIRSTSPECIALCOLORMAP && gl_fixedcolormap < (DWORD)CM_MAXCOLORMAP)
 		{
 			FSpecialColormap *scm = &SpecialColormaps[gl_fixedcolormap - CM_FIRSTSPECIALCOLORMAP];
 
@@ -773,13 +789,14 @@ void FGLRenderer::DrawBlend(sector_t * viewsector)
 				g = scm->ColorizeEnd[1];
 				b = scm->ColorizeEnd[2];
 			}
-
 		}
 		else if (gl_enhanced_nightvision)
 		{
 			if (gl_fixedcolormap == CM_LITE)
 			{
-				r = 0.375f, g = 1.0f, b = 0.375f;
+				r = 0.375f;
+				g = 1.0f;
+				b = 0.375f;
 			}
 			else if (gl_fixedcolormap >= CM_TORCH)
 			{
@@ -791,6 +808,7 @@ void FGLRenderer::DrawBlend(sector_t * viewsector)
 			}
 			else r = g = b = 1.f;
 		}
+		else r = g = b = 1.f;
 
 		if (inverse)
 		{

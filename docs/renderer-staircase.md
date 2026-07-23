@@ -96,3 +96,10 @@ all hook edits in `gl/`. The `gl/` tree is byte-identical to `main` again.
   the shader-consolidation flights add one (upstream grows `SetFixedColormap` on the render state
   on the way to the core flip). Offline play is unaffected — the feature only triggers on other
   players' powerups in netgames.
+
+## Skipped as inapplicable (not regressions)
+
+- `03d4f23a6`, `d925279be`, `a26fbc74f` (May 2014): GL-side adaptations to ZDoom's
+  long-texture-names change (removal of the 8-char lump-name limit). Zandronum never took the
+  base-engine feature, so there is nothing for these to adapt; the pre-change texture-name code
+  paths remain correct here. Revisit only if long texture names are ever backported wholesale.
