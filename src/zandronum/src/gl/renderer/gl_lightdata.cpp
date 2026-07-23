@@ -272,13 +272,15 @@ PalEntry gl_CalcLightColor(int light, PalEntry pe, int blendfactor, bool force)
 	}
 	else
 	{
+		// This is what Legacy does with colored light in 3D volumes. No, it doesn't really make sense...
+		// It also doesn't translate well to software style lighting.
 		int mixlight = light * (255 - blendfactor);
 
 		r = (mixlight + pe.r * blendfactor) / 255;
 		g = (mixlight + pe.g * blendfactor) / 255;
 		b = (mixlight + pe.b * blendfactor) / 255;
 	}
-	return PalEntry(BYTE(r), BYTE(g), BYTE(b));
+	return PalEntry(255, BYTE(r), BYTE(g), BYTE(b));
 }
 
 //==========================================================================
@@ -291,22 +293,27 @@ void gl_GetLightColor(int lightlevel, int rellight, const FColormap * cm, float 
 	float & r=*pred,& g=*pgreen,& b=*pblue;
 	int torch=0;
 
-	if (gl_fixedcolormap) 
+	if (gl_fixedcolormap)
 	{
-		if (gl_fixedcolormap==CM_LITE)
+		if (!gl_enhanced_nightvision || !gl.hasGLSL())
 		{
-			if (gl_enhanced_nightvision) r=0.375f, g=1.0f, b=0.375f;
-			else r=g=b=1.0f;
+			// we cannot multiply the light in here without causing major problems with the ThingColor so for older hardware
+			// these maps are done as a postprocessing overlay.
+			r = g = b = 1.0f;
 		}
-		else if (gl_fixedcolormap>=CM_TORCH)
+		else if (gl_fixedcolormap == CM_LITE)
 		{
-			int flicker=gl_fixedcolormap-CM_TORCH;
-			r=(0.8f+(7-flicker)/70.0f);
-			if (r>1.0f) r=1.0f;
-			b=g=r;
-			if (gl_enhanced_nightvision) b*=0.75f;
+			r = 0.375f, g = 1.0f, b = 0.375f;
 		}
-		else r=g=b=1.0f;
+		else if (gl_fixedcolormap >= CM_TORCH)
+		{
+			int flicker = gl_fixedcolormap - CM_TORCH;
+			r = (0.8f + (7 - flicker) / 70.0f);
+			if (r > 1.0f) r = 1.0f;
+			g = r;
+			b = g * 0.75f;
+		}
+		else r = g = b = 1.0f;
 		return;
 	}
 
@@ -466,60 +473,61 @@ bool gl_CheckFog(FColormap *cm, int lightlevel)
 //
 // Check if the current linedef is a candidate for a fog boundary
 //
+// Requirements for a fog boundary:
+// - front sector has no fog
+// - back sector has fog
+// - at least one of both does not have a sky ceiling.
+//
 //==========================================================================
 
 bool gl_CheckFog(sector_t *frontsector, sector_t *backsector)
 {
+	if (gl_fixedcolormap) return false;
+	if (frontsector == backsector) return false;	// there can't be a boundary if both sides are in the same sector.
+
 	// Check for fog boundaries. This needs a few more checks for the sectors
-	bool frontfog, backfog;
 
 	PalEntry fogcolor = frontsector->ColorMap->Fade;
 
 	if ((fogcolor.d & 0xffffff) == 0)
 	{
-		frontfog = false;
+		return false;
 	}
 	else if (outsidefogdensity != 0 && outsidefogcolor.a!=0xff && (fogcolor.d & 0xffffff) == (outsidefogcolor.d & 0xffffff))
 	{
-		frontfog = true;
 	}
 	else  if (fogdensity!=0 || (glset.lightmode & 4))
 	{
 		// case 3: level has fog density set
-		frontfog = true;
 	}
 	else 
 	{
 		// case 4: use light level
-		frontfog = frontsector->lightlevel < 248;
+		if (frontsector->lightlevel >= 248) return false;
 	}
-
-	if (backsector == NULL) return frontfog;
 
 	fogcolor = backsector->ColorMap->Fade;
 
 	if ((fogcolor.d & 0xffffff) == 0)
 	{
-		backfog = false;
 	}
 	else if (outsidefogdensity != 0 && outsidefogcolor.a!=0xff && (fogcolor.d & 0xffffff) == (outsidefogcolor.d & 0xffffff))
 	{
-		backfog = true;
+		return false;
 	}
 	else  if (fogdensity!=0 || (glset.lightmode & 4))
 	{
 		// case 3: level has fog density set
-		backfog = true;
+		return false;
 	}
 	else 
 	{
 		// case 4: use light level
-		backfog = backsector->lightlevel < 248;
+		if (backsector->lightlevel < 248) return false;
 	}
 
 	// in all other cases this might create more problems than it solves.
-	return (frontfog && !backfog && !gl_fixedcolormap &&
-			(frontsector->GetTexture(sector_t::ceiling)!=skyflatnum || 
+	return ((frontsector->GetTexture(sector_t::ceiling)!=skyflatnum || 
 			 backsector->GetTexture(sector_t::ceiling)!=skyflatnum));
 }
 

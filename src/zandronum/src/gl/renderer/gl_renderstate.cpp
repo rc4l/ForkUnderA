@@ -81,6 +81,7 @@ void FRenderState::Reset()
 	mAlphaFunc = GL_GEQUAL;
 	mAlphaThreshold = 0.5f;
 	mBlendEquation = GL_FUNC_ADD;
+	mObjectColor = 0xffffffff;
 	glBlendEquation = -1;
 	m2D = true;
 	mVertexBuffer = mCurrentVertexBuffer = NULL;
@@ -95,33 +96,35 @@ void FRenderState::Reset()
 
 int FRenderState::SetupShader(bool cameratexture, int &shaderindex, int &cm, float warptime)
 {
-	bool usecmshader;
 	int softwarewarp = 0;
 
-	if (shaderindex == 3)
-	{
-		// Brightmap should not be used.
-		if (!mBrightmapEnabled || cm >= CM_FIRSTSPECIALCOLORMAP)
-		{
-			shaderindex = 0;
-		}
-	}
 
 	if (gl.hasGLSL())
 	{
-		usecmshader = cm > CM_DEFAULT && cm < CM_MAXCOLORMAP && mTextureMode != TM_MASK;
+		if (shaderindex == 3)
+		{
+			// Brightmap should not be used.
+			if (!mBrightmapEnabled || cm >= CM_FIRSTSPECIALCOLORMAP)
+			{
+				shaderindex = 0;
+			}
+		}
+
+		mColormapState = cm;
+		if (cm > CM_DEFAULT && cm < CM_MAXCOLORMAP && mTextureMode != TM_MASK)
+		{
+			cm = CM_DEFAULT;
+		}
+		mEffectState = shaderindex;
+		mWarpTime = warptime;
 	}
 	else
 	{
-		usecmshader = false;
+		if (cm != CM_SHADE) cm = CM_DEFAULT;
 		softwarewarp = shaderindex > 0 && shaderindex < 3? shaderindex : 0;
 		shaderindex = 0;
 	}
 
-	mEffectState = shaderindex;
-	mColormapState = usecmshader? cm : CM_DEFAULT;
-	if (usecmshader) cm = CM_DEFAULT;
-	mWarpTime = warptime;
 	return softwarewarp;
 }
 
@@ -147,21 +150,22 @@ bool FRenderState::ApplyShader()
 	else if (gl.hasGLSL())
 	{
 		useshaders = (!m2D || mEffectState != 0 || mColormapState); // all 3D rendering and 2D with texture effects.
-	}
-
-	if (useshaders)
-	{
-		FShaderContainer *shd = GLRenderer->mShaderManager->Get(mTextureEnabled? mEffectState : 4);
-
-		if (shd != NULL)
+		if (useshaders)
 		{
-			activeShader = shd->Bind(mColormapState, mGlowEnabled, mWarpTime, mLightEnabled);
+			FShaderContainer *shd = GLRenderer->mShaderManager->Get(mTextureEnabled ? mEffectState : 4);
+
+			if (shd != NULL)
+			{
+				activeShader = shd->Bind(mColormapState, mGlowEnabled, mWarpTime, mLightEnabled);
+			}
 		}
 	}
+
 
 	if (activeShader)
 	{
 		int fogset = 0;
+		//glColor4fv(mColor.vec);
 		if (mFogEnabled)
 		{
 			if ((mFogColor & 0xffffff) == 0)
@@ -226,9 +230,15 @@ bool FRenderState::ApplyShader()
 			glUniform3iv(activeShader->lightrange_index, 1, mNumLights);
 			glUniform4fv(activeShader->lights_index, mNumLights[2], mLightData);
 		}
-		if (glset.lightmode == 8)
+		if (mObjectColor != activeShader->currentobjectcolor)
 		{
-			glUniform3fv(activeShader->dlightcolor_index, 1, mDynLight);
+			activeShader->currentobjectcolor = mObjectColor;
+			glUniform4f(activeShader->objectcolor_index, mObjectColor.r / 255.f, mObjectColor.g / 255.f, mObjectColor.b / 255.f, mObjectColor.a / 255.f);
+		}
+		if (mDynColor != activeShader->currentdlightcolor)
+		{
+			activeShader->currentobjectcolor = mObjectColor;
+			glUniform4f(activeShader->dlightcolor_index, mDynColor.r / 255.f, mDynColor.g / 255.f, mDynColor.b / 255.f, 0);
 		}
 
 		return true;
@@ -257,7 +267,7 @@ void FRenderState::Apply(bool forcenoshader)
 		{
 			glAlphaFunc = mAlphaFunc;
 			glAlphaThreshold = mAlphaThreshold;
-			::glBlendFunc(mAlphaFunc, mAlphaThreshold);
+			::glAlphaFunc(mAlphaFunc, mAlphaThreshold);
 		}
 		if (mAlphaTest != glAlphaTest)
 		{
@@ -280,6 +290,8 @@ void FRenderState::Apply(bool forcenoshader)
 	}
 	if (forcenoshader || !ApplyShader())
 	{
+		//if (mColor.vec[0] >= 0.f) glColor4fv(mColor.vec);
+	
 		GLRenderer->mShaderManager->SetActiveShader(NULL);
 		if (mTextureMode != ffTextureMode)
 		{

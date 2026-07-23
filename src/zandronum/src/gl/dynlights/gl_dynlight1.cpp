@@ -100,8 +100,7 @@ CUSTOM_CVAR (Bool, gl_lights_additive, false,  CVAR_ARCHIVE | CVAR_GLOBALCONFIG 
 // Sets up the parameters to render one dynamic light onto one plane
 //
 //==========================================================================
-bool gl_GetLight(Plane & p, ADynamicLight * light,
-				 int desaturation, bool checkside, bool forceadditive, FDynLightData &ldata)
+bool gl_GetLight(Plane & p, ADynamicLight * light, bool checkside, bool forceadditive, FDynLightData &ldata)
 {
 	// [AK] Take care of gl_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_LIGHTS_SIZE_IF_NECESSARY
@@ -150,14 +149,6 @@ bool gl_GetLight(Plane & p, ADynamicLight * light,
 		i = 1;
 	}
 
-	if (desaturation>0)
-	{
-		float gray=(r*77 + g*143 + b*37)/257;
-
-		r= (r*(32-desaturation)+ gray*desaturation)/32;
-		g= (g*(32-desaturation)+ gray*desaturation)/32;
-		b= (b*(32-desaturation)+ gray*desaturation)/32;
-	}
 	float *data = &ldata.arrays[i][ldata.arrays[i].Reserve(8)];
 	data[0] = x;
 	data[1] = z;
@@ -179,7 +170,7 @@ bool gl_GetLight(Plane & p, ADynamicLight * light,
 //
 //==========================================================================
 bool gl_SetupLight(Plane & p, ADynamicLight * light, Vector & nearPt, Vector & up, Vector & right, 
-				   float & scale, int desaturation, bool checkside, bool forceadditive)
+				   float & scale, bool checkside, bool forceadditive)
 {
 	// [AK] Take care of gl_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_LIGHTS_SIZE_IF_NECESSARY
@@ -239,14 +230,6 @@ bool gl_SetupLight(Plane & p, ADynamicLight * light, Vector & nearPt, Vector & u
 	else
 	{
 		gl_RenderState.BlendEquation(GL_FUNC_ADD);
-	}
-	if (desaturation>0)
-	{
-		float gray=(r*77 + g*143 + b*37)/257;
-
-		r= (r*(32-desaturation)+ gray*desaturation)/32;
-		g= (g*(32-desaturation)+ gray*desaturation)/32;
-		b= (b*(32-desaturation)+ gray*desaturation)/32;
 	}
 	glColor3f(r,g,b);
 	return true;

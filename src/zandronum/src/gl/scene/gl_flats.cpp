@@ -143,7 +143,7 @@ void GLFlat::DrawSubsectorLights(subsector_t * sub, int pass)
 		}
 
 		p.Set(plane.plane);
-		if (!gl_SetupLight(p, light, nearPt, up, right, scale, Colormap.colormap, false, foggy)) 
+		if (!gl_SetupLight(p, light, nearPt, up, right, scale, false, foggy)) 
 		{
 			node=node->nextLight;
 			continue;
@@ -206,7 +206,7 @@ bool GLFlat::SetupSubsectorLights(bool lightsapplied, subsector_t * sub)
 			}
 
 			p.Set(plane.plane);
-			gl_GetLight(p, light, Colormap.colormap, false, false, lightdata);
+			gl_GetLight(p, light, false, false, lightdata);
 			node = node->nextLight;
 		}
 	}
@@ -325,7 +325,6 @@ void GLFlat::DrawSubsectors(int pass, bool istrans)
 	{
 		if (gl_usevbo && vboindex >= 0)
 		{
-			//glColor3f( 1.f,.5f,.5f);
 			int index = vboindex;
 			for (int i=0; i<sector->subsectorcount; i++)
 			{

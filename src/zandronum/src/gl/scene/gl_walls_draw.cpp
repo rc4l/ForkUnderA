@@ -81,7 +81,7 @@ bool GLWall::PrepareLight(texcoord * tcs, ADynamicLight * light)
 		return false;
 	}
 
-	if (!gl_SetupLight(p, light, nearPt, up, right, scale, Colormap.colormap, true, !!(flags&GLWF_FOGGY))) 
+	if (!gl_SetupLight(p, light, nearPt, up, right, scale, true, !!(flags&GLWF_FOGGY))) 
 	{
 		return false;
 	}
@@ -200,7 +200,7 @@ void GLWall::SetupLights()
 					}
 					if (outcnt[0]!=4 && outcnt[1]!=4 && outcnt[2]!=4 && outcnt[3]!=4) 
 					{
-						gl_GetLight(p, node->lightsource, Colormap.colormap, true, false, lightdata);
+						gl_GetLight(p, node->lightsource, true, false, lightdata);
 					}
 				}
 			}
@@ -379,6 +379,7 @@ void GLWall::RenderFogBoundary()
 			gl_RenderState.AlphaFunc(GL_GREATER,0);
 			glDepthFunc(GL_LEQUAL);
 			glColor4f(fc[0],fc[1],fc[2], fogd1);
+			gl_RenderState.SetColor(-1, 0, 0, 0);	// we do not want the render state to control the color.
 			if (glset.lightmode == 8) glVertexAttrib1f(VATTR_LIGHTLEVEL, 1.0); // Korshun.
 
 			flags &= ~GLWF_GLOW;
