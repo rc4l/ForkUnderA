@@ -59,6 +59,10 @@ public:
 	FSamplerManager *mSamplerManager;
 	int gl_spriteindex;
 	unsigned int mFBID;
+	// [rc4l] video-scale: the current "screen" render target -- 0 (backbuffer) normally, or the
+	// framebuffer's scale FBO when internal-resolution scaling is active. EndOffscreen restores to
+	// this instead of hard-coding 0, so camera textures don't unbind the scale buffer.
+	unsigned int mOutputFB;
 
 	FTexture *glpart2;
 	FTexture *glpart;

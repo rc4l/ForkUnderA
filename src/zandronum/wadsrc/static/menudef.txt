@@ -1807,15 +1807,33 @@ OptionValue Renderers
 	1.0, "OpenGL"
 }
 
+// [rc4l] video-scale: internal render resolution presets, faithful to upstream's ScaleModes
+// (r_videoscale vScaleTable). See features/video-scale. >>> SUPERSEDED-BY-UPSTREAM <<<
+OptionValue ScaleModes
+{
+	0, "Native (full resolution)"
+	1, "Minimum scale to fill"
+	2, "640x400"
+	3, "960x600"
+	4, "1280x800"
+	5, "Custom"
+	6, "320x200"
+	7, "Minimum scale to fill (1.2)"
+}
+
 OptionMenu VideoModeMenu
 {
 	Title "VIDEO MODE"
-	
+
 	Option "Fullscreen",			"fullscreen", "YesNo"
 	Option "Aspect ratio",			"menu_screenratios", "Ratios"
 	// [rc4l] Renderer option removed: ZandroX is OpenGL-only (software renderer dropped).
 	Option "Force aspect ratio",	"vid_aspect", "ForceRatios"
 	Option "Enable 5:4 aspect ratio","vid_tft", "YesNo"
+	// [rc4l] video-scale: the internal-resolution knob. Renders below (or above) the window size
+	// and blit-upscales to fill -- lower = faster, higher = supersampled. See features/video-scale.
+	Option "Render scale mode",		"vid_scalemode", "ScaleModes"
+	Slider "Render scale factor",	"vid_scalefactor", 0.25, 2.0, 0.25, 2
 	StaticText " "
 	ScreenResolution "res_0"
 	ScreenResolution "res_1"

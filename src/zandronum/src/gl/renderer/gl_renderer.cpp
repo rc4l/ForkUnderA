@@ -112,6 +112,7 @@ void FGLRenderer::Initialize()
 	mLights = new FLightBuffer();
 	gl_RenderState.SetVertexBuffer(mVBO);
 	mFBID = 0;
+	mOutputFB = 0; // [rc4l] video-scale
 	SetupLevel();
 	mShaderManager = new FShaderManager;
 	mSamplerManager = new FSamplerManager;
@@ -232,7 +233,9 @@ bool FGLRenderer::StartOffscreen()
 
 void FGLRenderer::EndOffscreen()
 {
-	glBindFramebuffer(GL_FRAMEBUFFER, 0); 
+	// [rc4l] video-scale: restore the active screen target (backbuffer, or the scale FBO when
+	// internal-resolution scaling is on) rather than always the backbuffer.
+	glBindFramebuffer(GL_FRAMEBUFFER, mOutputFB);
 }
 
 //===========================================================================

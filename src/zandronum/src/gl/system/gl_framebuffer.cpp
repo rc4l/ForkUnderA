@@ -93,6 +93,11 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 	ScreenshotBuffer = NULL;
 	LastCamera = NULL;
 
+	// [rc4l] video-scale: no scale buffer until UpdateScaleBuffer decides one is needed.
+	mScaleFB = mScaleColorTex = mScaleDepthRB = 0;
+	mScaleFBW = mScaleFBH = 0;
+	mScaleActive = false;
+
 	InitializeState();
 	gl_SetupMenu();
 	gl_GenerateGlobalBrightmapFromColormap();
@@ -105,6 +110,7 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 
 OpenGLFrameBuffer::~OpenGLFrameBuffer()
 {
+	DestroyScaleBuffer(); // [rc4l] video-scale
 	delete GLRenderer;
 	GLRenderer = NULL;
 }
@@ -158,7 +164,11 @@ void OpenGLFrameBuffer::InitializeState()
 
 	int trueH = GetTrueHeight();
 	int h = GetHeight();
-	glViewport(0, (trueH - h)/2, GetWidth(), GetHeight()); 
+	glViewport(0, (trueH - h)/2, GetWidth(), GetHeight());
+
+	// [rc4l] video-scale: decide whether we render into an offscreen scale buffer, (re)build it, and
+	// bind it as the render target so everything below draws into it at the virtual size.
+	UpdateScaleBuffer();
 
 	Begin2D(false);
 	GLRenderer->Initialize();
@@ -193,13 +203,131 @@ void OpenGLFrameBuffer::Update()
 
 		Begin2D(false);
 	}
+	// [rc4l] video-scale: the frame was rendered into the scale FBO at the virtual size; blit it up
+	// to fill the window before the backbuffer is presented.
+	if (mScaleActive)
+		BlitScaleBuffer();
+
 	if (gl_draw_sync || !swapped)
 	{
 		Swap();
 	}
 	swapped = false;
+
+	// [rc4l] video-scale: re-bind the scale FBO so the next frame renders into it again.
+	if (mScaleActive)
+	{
+		glBindFramebuffer(GL_FRAMEBUFFER, mScaleFB);
+		glViewport(0, 0, GetWidth(), GetHeight());
+	}
+
 	Unlock();
 	CheckBench();
+}
+
+//==========================================================================
+//
+// [rc4l] video-scale: the GL executor for internal-resolution scaling. All the *sizing* decisions
+// live in features/video-scale (unit-tested); this only creates/binds/blits GL objects.
+// >>> SUPERSEDED-BY-UPSTREAM <<< When upstream's render-buffers backend is ported, replace these
+// four methods and the two call sites above with it.
+//
+//==========================================================================
+
+void OpenGLFrameBuffer::GetClientSize(int &w, int &h)
+{
+#ifdef _WIN32
+	// Win32 native backend: the borderless popup covers the monitor; scaling on Windows is a
+	// follow-up, so report the render size (=> scaling inactive, no regression).
+	w = GetWidth();
+	h = GetHeight();
+#else
+	// SDL2 (macOS/Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
+	// desktop; for a window it is the window's drawable.
+	SDL_GL_GetDrawableSize(Screen, &w, &h);
+#endif
+}
+
+void OpenGLFrameBuffer::DestroyScaleBuffer()
+{
+	if (mScaleColorTex) { glDeleteTextures(1, &mScaleColorTex); mScaleColorTex = 0; }
+	if (mScaleDepthRB)  { glDeleteRenderbuffers(1, &mScaleDepthRB); mScaleDepthRB = 0; }
+	if (mScaleFB)       { glDeleteFramebuffers(1, &mScaleFB); mScaleFB = 0; }
+	mScaleFBW = mScaleFBH = 0;
+	mScaleActive = false;
+	if (GLRenderer != NULL)
+		GLRenderer->mOutputFB = 0;
+}
+
+void OpenGLFrameBuffer::UpdateScaleBuffer()
+{
+	int renderW = GetWidth();
+	int renderH = GetHeight();
+	int clientW = renderW, clientH = renderH;
+	GetClientSize(clientW, clientH);
+
+	// A scale buffer is needed exactly when the render size differs from the window (matches the
+	// pure ScalePresentPlan.active decision). Otherwise render straight to the backbuffer.
+	if (clientW == renderW && clientH == renderH)
+	{
+		DestroyScaleBuffer();
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		return;
+	}
+
+	if (mScaleFB == 0 || mScaleFBW != renderW || mScaleFBH != renderH)
+	{
+		DestroyScaleBuffer();
+
+		glGenTextures(1, &mScaleColorTex);
+		glBindTexture(GL_TEXTURE_2D, mScaleColorTex);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, renderW, renderH, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+		glGenRenderbuffers(1, &mScaleDepthRB);
+		glBindRenderbuffer(GL_RENDERBUFFER, mScaleDepthRB);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, renderW, renderH);
+
+		glGenFramebuffers(1, &mScaleFB);
+		glBindFramebuffer(GL_FRAMEBUFFER, mScaleFB);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mScaleColorTex, 0);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, mScaleDepthRB);
+
+		if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		{
+			// Fall back to no scaling rather than render nothing.
+			Printf("video-scale: scale framebuffer incomplete; disabling scaling\n");
+			DestroyScaleBuffer();
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			return;
+		}
+
+		mScaleFBW = renderW;
+		mScaleFBH = renderH;
+	}
+
+	mScaleActive = true;
+	if (GLRenderer != NULL)
+		GLRenderer->mOutputFB = mScaleFB;
+
+	glBindFramebuffer(GL_FRAMEBUFFER, mScaleFB);
+	glViewport(0, 0, renderW, renderH);
+}
+
+void OpenGLFrameBuffer::BlitScaleBuffer()
+{
+	int clientW = GetWidth(), clientH = GetHeight();
+	GetClientSize(clientW, clientH);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, mScaleFB);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glBlitFramebuffer(0, 0, GetWidth(), GetHeight(),
+	                  0, 0, clientW, clientH,
+	                  GL_COLOR_BUFFER_BIT, GL_LINEAR);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 
