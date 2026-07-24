@@ -125,10 +125,12 @@ Write-Status "ZandroX Windows compile — configuration=$Configuration version=$
 Require-Command "cmake" "Install CMake and Visual Studio 2022 (with the C++ workload)." | Out-Null
 $VcpkgRoot      = Resolve-Vcpkg
 $VcpkgExe       = Join-Path $VcpkgRoot "vcpkg.exe"
-# [rc4l] Static triplet (static libs, dynamic CRT) so the audio/GL stack links INTO the exe and the
-# package ships (near) zero loose DLLs -- matching upstream's static vcpkg build. GPL app + full
-# source makes static-linking the LGPL codecs compliant. static-md keeps the /MD CRT the app uses.
-$VcpkgTriplet   = "x64-windows-static-md"
+# [rc4l] Fully-static triplet so the audio/GL stack links INTO the exe and the package ships (near)
+# zero loose DLLs -- matching upstream's static vcpkg build. GPL app + full source makes
+# static-linking the LGPL codecs compliant. Use x64-windows-static (NOT -static-md): Zandronum
+# builds the engine with the static CRT (/MT) to avoid a VC-redist dependency, so the vcpkg libs
+# must be /MT too, or the linker rejects the MD/MT RuntimeLibrary mismatch.
+$VcpkgTriplet   = "x64-windows-static"
 $VcpkgInstalled = Join-Path $VcpkgRoot "installed\$VcpkgTriplet"
 
 # --- Dependencies (OpenAL stack — never FMOD) ------------------------------
