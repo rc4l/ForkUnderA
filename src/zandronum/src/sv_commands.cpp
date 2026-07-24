@@ -878,7 +878,9 @@ void SERVERCOMMANDS_SetPlayerPSprite( ULONG ulPlayer, FState *pState, LONG lPosi
 		command.SetPlayer( &players[ulPlayer] );
 		command.SetStateOwner( stateOwner );
 		command.SetOffset( pState - stateOwner->ActorInfo->OwnedStates );
-		command.SetPosition( lPosition );
+		// [overlay] The wire 'position' field is a byte, but ps_flash is now a large layer id.
+		// Only the two reserved weapon layers are replicated, so encode them compactly (0/1).
+		command.SetPosition( lPosition == ps_flash ? 1 : 0 );
 		command.sendCommandToClients( ulPlayerExtra, flags );
 	}
 }
