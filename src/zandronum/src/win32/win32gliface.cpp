@@ -900,10 +900,16 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 
 	static_cast<Win32GLVideo *>(Video)->GoFullscreen(fullscreen);
 
+	// [rc4l] video-scale: the OS window is the CLIENT size; the render size (width/height) may be
+	// smaller when internal-resolution scaling is on. See features/video-scale.
+	extern int zx_pendingClientWidth, zx_pendingClientHeight;
+	int clientW = (zx_pendingClientWidth  > 0) ? zx_pendingClientWidth  : width;
+	int clientH = (zx_pendingClientHeight > 0) ? zx_pendingClientHeight : GetTrueHeight();
+
 	m_displayDeviceName = 0;
 	// [rc4l] borderless-video: the borderless window covers the whole monitor at desktop
 	// resolution, so we need the monitor's real pixel rect (not the requested mode).
-	int monX = 0, monY = 0, monW = width, monH = GetTrueHeight();
+	int monX = 0, monY = 0, monW = clientW, monH = clientH;
 
 	if (hMonitor)
 	{
@@ -956,7 +962,9 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 	}
 	else
 	{
-		MoveWindow(Window, r.left, r.top, width + (GetSystemMetrics(SM_CXSIZEFRAME) * 2), height + (GetSystemMetrics(SM_CYSIZEFRAME) * 2) + GetSystemMetrics(SM_CYCAPTION), FALSE);
+		// [rc4l] video-scale: size the window's CLIENT area to the client size, not the (possibly
+		// smaller) render size. The render target follows the client live via MaybeResizeForScale.
+		MoveWindow(Window, r.left, r.top, clientW + (GetSystemMetrics(SM_CXSIZEFRAME) * 2), clientH + (GetSystemMetrics(SM_CYSIZEFRAME) * 2) + GetSystemMetrics(SM_CYCAPTION), FALSE);
 
 		I_RestoreWindowedPos();
 	}
@@ -1010,6 +1018,18 @@ Win32GLFrameBuffer::~Win32GLFrameBuffer()
 
 void Win32GLFrameBuffer::InitializeState()
 {
+}
+
+// [rc4l] windowed-video: resize the OS window's client area to w x h (windowed only). WM_SIZE then
+// persists the new size and MaybeResizeForScale resizes the render target. See features/windowed-video.
+void Win32GLFrameBuffer::SetWindowSize (int w, int h)
+{
+	if (Window == NULL || IsFullscreen())
+		return;
+
+	int frameW = w + GetSystemMetrics(SM_CXSIZEFRAME) * 2;
+	int frameH = h + GetSystemMetrics(SM_CYSIZEFRAME) * 2 + GetSystemMetrics(SM_CYCAPTION);
+	SetWindowPos(Window, NULL, 0, 0, frameW, frameH, SWP_NOMOVE | SWP_NOZORDER);
 }
 
 //==========================================================================

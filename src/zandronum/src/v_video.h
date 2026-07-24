@@ -373,6 +373,10 @@ public:
 	// Returns true if running fullscreen.
 	virtual bool IsFullscreen () = 0;
 
+	// [rc4l] windowed-video: resize the OS window (windowed only). Default no-op; the SDL and Win32
+	// framebuffers override it. See features/windowed-video.
+	virtual void SetWindowSize (int w, int h) {}
+
 	// Changes the vsync setting, if supported by the device.
 	virtual void SetVSync (bool vsync);
 

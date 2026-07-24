@@ -254,10 +254,19 @@ void OpenGLFrameBuffer::Update()
 void OpenGLFrameBuffer::GetClientSize(int &w, int &h)
 {
 #ifdef _WIN32
-	// Win32 native backend: the borderless popup covers the monitor; scaling on Windows is a
-	// follow-up, so report the render size (=> scaling inactive, no regression).
-	w = GetWidth();
-	h = GetHeight();
+	// Win32 native backend: the window's client rectangle in pixels (the borderless popup covers the
+	// monitor when fullscreen; a normal window when windowed). Window is the global HWND.
+	RECT r;
+	if (Window != NULL && GetClientRect(Window, &r))
+	{
+		w = int(r.right - r.left);
+		h = int(r.bottom - r.top);
+	}
+	else
+	{
+		w = GetWidth();
+		h = GetHeight();
+	}
 #else
 	// SDL2 (macOS/Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
 	// desktop; for a window it is the window's drawable.

@@ -39,6 +39,8 @@
 #include "hardware.h"
 #include "win32iface.h"
 #include "i_video.h"
+// [rc4l] video-scale: faithful port of upstream's r_videoscale math. See features/video-scale.
+#include "features/video-scale/computation/videoscale_compute.h"
 #include "i_system.h"
 #include "c_console.h"
 #include "c_cvars.h"
@@ -58,6 +60,14 @@
 EXTERN_CVAR (Bool, ticker)
 EXTERN_CVAR (Bool, fullscreen)
 EXTERN_CVAR (Float, vid_winscale)
+// [rc4l] video-scale: the render-scale knob (features/video-scale/videoscale.cpp).
+EXTERN_CVAR (Int, vid_scalemode)
+EXTERN_CVAR (Float, vid_scalefactor)
+EXTERN_CVAR (Int, vid_scale_customwidth)
+EXTERN_CVAR (Int, vid_scale_customheight)
+EXTERN_CVAR (Float, vid_scale_custompixelaspect)
+EXTERN_CVAR (Bool, vid_cropaspect)
+extern int zx_pendingClientWidth, zx_pendingClientHeight;
 
 CVAR(Int, win_x, -1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Int, win_y, -1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
@@ -192,6 +202,37 @@ DFrameBuffer *I_SetMode (int &width, int &height, DFrameBuffer *old)
 		}
 		break;
 	}
+
+	// [rc4l] video-scale: split the window's CLIENT size from the RENDER (virtual) size, mirroring
+	// the SDL backend. Client = the primary monitor for fullscreen (borderless-desktop), or the
+	// requested size for a window. Render/virtual = what the engine draws, from the scale unit
+	// (Native/1.0 => virtual == client => native fill, exactly as before). We pass the virtual size
+	// on as width/height and stash the client size for the window creation in win32gliface.cpp.
+	// >>> SUPERSEDED-BY-UPSTREAM <<< See features/video-scale/README.md.
+	int clientW = width, clientH = height;
+	if (fs)
+	{
+		int mw = GetSystemMetrics (SM_CXSCREEN);
+		int mh = GetSystemMetrics (SM_CYSCREEN);
+		if (mw > 0 && mh > 0)
+		{
+			clientW = mw;
+			clientH = mh;
+		}
+	}
+	{
+		zx::ScalePresentPlan plan = zx::ComputeScalePresentPlan (
+			clientW, clientH,
+			vid_scalemode, vid_scalefactor,
+			vid_scale_customwidth, vid_scale_customheight, vid_scale_custompixelaspect,
+			!!vid_cropaspect, 0.f,
+			zx::VID_SCALE_MIN_WIDTH, zx::VID_SCALE_MIN_HEIGHT);
+		width  = plan.virtualWidth;
+		height = plan.virtualHeight;
+	}
+	zx_pendingClientWidth  = clientW;
+	zx_pendingClientHeight = clientH;
+
 	DFrameBuffer *res = Video->CreateFrameBuffer (width, height, fs, old);
 
 	//* Right now, CreateFrameBuffer cannot return NULL
