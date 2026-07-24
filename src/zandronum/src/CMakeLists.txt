@@ -1326,6 +1326,7 @@ add_executable( zdoom WIN32
 	features/openal-sound/sndfile_decoder.cpp
 	features/openal-sound/mpg123_decoder.cpp
 	features/freeform-menu/freeformmenu.cpp
+	features/video-scale/videoscale.cpp
 	zzautozend.cpp
 )
 

@@ -56,6 +56,11 @@ EXTERN_CVAR (Int, vid_renderer)
 
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
 
+// [rc4l] video-scale: the CLIENT (window drawable) size the next framebuffer should give its SDL
+// window, set by I_SetMode before construction. Distinct from the render/virtual size passed as
+// width/height. See features/video-scale.
+int zx_pendingClientWidth = 0, zx_pendingClientHeight = 0;
+
 CUSTOM_CVAR(Int, gl_vid_multisample, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL )
 {
 	Printf("This won't take effect until " GAMENAME " is restarted.\n");
@@ -366,9 +371,15 @@ SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen)
 	char caption[100];
 	mysnprintf(caption, countof(caption), GAMESIG " %s (%s)", GetVersionString(), GetGitTime());
 
+	// [rc4l] video-scale: the OS window is the CLIENT size; the render size (width/height above) may
+	// be smaller when internal-resolution scaling is on. For fullscreen FULLSCREEN_DESKTOP ignores
+	// the size and uses the desktop anyway. See features/video-scale.
+	int winW = (zx_pendingClientWidth  > 0) ? zx_pendingClientWidth  : width;
+	int winH = (zx_pendingClientHeight > 0) ? zx_pendingClientHeight : height;
+
 	Screen = SDL_CreateWindow (caption,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-		width, height,
+		winW, winH,
 		SDL_WINDOW_OPENGL | (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
 
 	if (Screen == NULL)
