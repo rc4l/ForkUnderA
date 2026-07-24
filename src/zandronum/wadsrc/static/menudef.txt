@@ -1821,6 +1821,12 @@ OptionValue ScaleModes
 	7, "Minimum scale to fill (1.2)"
 }
 
+// [rc4l] video-scale / windowed-video: the resolution grid is retired (upstream deleted it in
+// b65b83edb). Fullscreen is borderless-desktop and always fills; there is no mode to pick. The
+// "resolution" is now expressed as a render Scale mode + Scale factor (rendered at that size and
+// blit-upscaled to fill), and the windowed size is set below (or by dragging the window edges).
+// Labels match upstream's VideoModeMenu ("Scale mode" / "Scale factor"). See features/video-scale
+// and features/windowed-video.
 OptionMenu VideoModeMenu
 {
 	Title "VIDEO MODE"
@@ -1830,24 +1836,15 @@ OptionMenu VideoModeMenu
 	// [rc4l] Renderer option removed: ZandroX is OpenGL-only (software renderer dropped).
 	Option "Force aspect ratio",	"vid_aspect", "ForceRatios"
 	Option "Enable 5:4 aspect ratio","vid_tft", "YesNo"
-	// [rc4l] video-scale: the internal-resolution knob. Renders below (or above) the window size
-	// and blit-upscales to fill -- lower = faster, higher = supersampled. See features/video-scale.
-	Option "Render scale mode",		"vid_scalemode", "ScaleModes"
-	Slider "Render scale factor",	"vid_scalefactor", 0.25, 2.0, 0.25, 2
+	Option "Scale mode",			"vid_scalemode", "ScaleModes"
+	Slider "Scale factor",			"vid_scalefactor", 0.25, 2.0, 0.25, 2
 	StaticText " "
-	ScreenResolution "res_0"
-	ScreenResolution "res_1"
-	ScreenResolution "res_2"
-	ScreenResolution "res_3"
-	ScreenResolution "res_4"
-	ScreenResolution "res_5"
-	ScreenResolution "res_6"
-	ScreenResolution "res_7"
-	ScreenResolution "res_8"
-	ScreenResolution "res_9"
-	StaticTextSwitchable "Press ENTER to set mode", "", "VMEnterText"
+	StaticText "Windowed size", 1
+	TextField "Width",				"vid_defwidth"
+	TextField "Height",				"vid_defheight"
+	Command "Apply windowed size",	"vid_setsize"
 	StaticText " "
-	StaticTextSwitchable "T to test mode for 5 seconds", "Please wait 5 seconds...", "VMTestText"
+	StaticText "(or drag the window edges to resize)"
 	class VideoModeMenu
 }
 

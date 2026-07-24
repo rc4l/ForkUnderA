@@ -224,8 +224,11 @@ void OpenGLFrameBuffer::Update()
 	}
 	swapped = false;
 
-	// [rc4l] video-scale: apply any pending scale change live -- resize the render target in place,
-	// no window teardown (UpdateScaleBuffer inside also re-binds the FBO for the next frame).
+	Unlock();
+
+	// [rc4l] video-scale: apply any pending scale/window resize AFTER Unlock -- resizing the canvas
+	// reallocates its backing store, and while locked `Buffer` aliases that store; doing it here (with
+	// Buffer == NULL) avoids a dangling pointer. No window teardown, so no flash/focus loss.
 	MaybeResizeForScale();
 
 	// re-bind the scale FBO so the next frame renders into it again (no-op if the resize above
@@ -236,7 +239,6 @@ void OpenGLFrameBuffer::Update()
 		glViewport(0, 0, GetWidth(), GetHeight());
 	}
 
-	Unlock();
 	CheckBench();
 }
 

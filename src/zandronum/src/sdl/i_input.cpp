@@ -37,6 +37,9 @@ CVAR (Bool,  sdl_nokeyrepeat,		false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool,	 cl_soundwhennotactive, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 EXTERN_CVAR (Bool, fullscreen)
+// [rc4l] windowed-video: the persisted windowed size (updated on window resize).
+EXTERN_CVAR (Int, vid_defwidth)
+EXTERN_CVAR (Int, vid_defheight)
 
 extern int WaitingForKey;
 extern constate_e ConsoleState;
@@ -288,6 +291,18 @@ void MessagePump (const SDL_Event &sev)
 			}
 			if (( NETWORK_GetState() != NETSTATE_CLIENT ) || ( cl_soundwhennotactive == false ))	// [EP]
 				S_SetSoundPaused(gain);
+		}
+		// [rc4l] windowed-video: the window was resized (dragged, or via vid_setsize). Persist the
+		// new size so it reopens the same, matching upstream's win_w/win_h. The render target itself
+		// follows the drawable live via OpenGLFrameBuffer::MaybeResizeForScale, so nothing else to do
+		// here. See features/windowed-video.
+		else if (sev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+		{
+			if (screen != NULL && !screen->IsFullscreen () && sev.window.data1 > 0 && sev.window.data2 > 0)
+			{
+				vid_defwidth  = sev.window.data1;
+				vid_defheight = sev.window.data2;
+			}
 		}
 		break;
 
