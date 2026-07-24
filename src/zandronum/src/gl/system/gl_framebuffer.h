@@ -89,6 +89,7 @@ private:
 	// GL executor. >>> SUPERSEDED-BY-UPSTREAM <<< See features/video-scale/README.md.
 	unsigned int mScaleFB, mScaleColorTex, mScaleDepthRB;
 	int mScaleFBW, mScaleFBH;
+	int mScaleClientW, mScaleClientH; // cached window client size (avoids per-frame GetClientSize)
 	bool mScaleActive;
 	void GetClientSize(int &w, int &h);
 	void UpdateScaleBuffer();   // decide active, (re)build the FBO, bind it as the render target
