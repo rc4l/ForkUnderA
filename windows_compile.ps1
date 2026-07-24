@@ -125,7 +125,11 @@ Write-Status "ZandroX Windows compile — configuration=$Configuration version=$
 Require-Command "cmake" "Install CMake and Visual Studio 2022 (with the C++ workload)." | Out-Null
 $VcpkgRoot      = Resolve-Vcpkg
 $VcpkgExe       = Join-Path $VcpkgRoot "vcpkg.exe"
-$VcpkgInstalled = Join-Path $VcpkgRoot "installed\x64-windows"
+# [rc4l] Static triplet (static libs, dynamic CRT) so the audio/GL stack links INTO the exe and the
+# package ships (near) zero loose DLLs -- matching upstream's static vcpkg build. GPL app + full
+# source makes static-linking the LGPL codecs compliant. static-md keeps the /MD CRT the app uses.
+$VcpkgTriplet   = "x64-windows-static-md"
+$VcpkgInstalled = Join-Path $VcpkgRoot "installed\$VcpkgTriplet"
 
 # --- Dependencies (OpenAL stack — never FMOD) ------------------------------
 if ($SkipDeps) {
@@ -135,8 +139,8 @@ if ($SkipDeps) {
     # [rc4l] Flight 1: glew replaces the hand-rolled GL loader (gl/api) on Windows too -- one
     # loader on every platform, per upstream 69af73d9b/94b06900c.
     & $VcpkgExe install `
-        openal-soft:x64-windows libsndfile:x64-windows mpg123:x64-windows `
-        opus:x64-windows openssl:x64-windows glew:x64-windows
+        "openal-soft:$VcpkgTriplet" "libsndfile:$VcpkgTriplet" "mpg123:$VcpkgTriplet" `
+        "opus:$VcpkgTriplet" "openssl:$VcpkgTriplet" "glew:$VcpkgTriplet"
     if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed" }
 }
 
@@ -164,24 +168,35 @@ Write-Note "DXSDK_DIR set to $dx"
 # --- Configure (MSVC x64, NO_FMOD, OpenAL) ---------------------------------
 # [rc4l] Explicit -D dep paths instead of the vcpkg toolchain file — the toolchain's
 # cmake_policy() calls collide with Zandronum's old CMake minimums and break the VS generator.
-Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL)"
+Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, STATIC deps)"
 $dep = $VcpkgInstalled
+# [rc4l] Static linking. We don't use the vcpkg toolchain + find_package(CONFIG) (which would pull
+# transitive static deps automatically) because the toolchain's cmake_policy() calls break the VS
+# generator against Zandronum's old CMake minimums. So enumerate the transitive static libs by hand
+# (MSVC resolves libs order-independently, so a flat list is fine), add the static-lib defines
+# (AL_LIBTYPE_STATIC / GLEW_STATIC -- without them the headers declare dllimport symbols the static
+# libs don't provide), and add the Win32 system libs the static codecs + OpenSSL pull in.
+$sndfileLibs = @("sndfile","FLAC","ogg","vorbis","vorbisenc","vorbisfile") | ForEach-Object { "$dep/lib/$_.lib" }
+$sysLibs     = @("crypt32.lib","ws2_32.lib","shlwapi.lib","opengl32.lib","glu32.lib")
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
     -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
     -DFORCE_INTERNAL_GME=ON `
+    "-DCMAKE_CXX_FLAGS=/DAL_LIBTYPE_STATIC /DGLEW_STATIC" `
+    "-DCMAKE_C_FLAGS=/DAL_LIBTYPE_STATIC /DGLEW_STATIC" `
     "-DOPENAL_INCLUDE_DIR=$dep/include/AL" `
     "-DOPENAL_LIBRARY=$dep/lib/OpenAL32.lib" `
     "-DSNDFILE_INCLUDE_DIR=$dep/include" `
-    "-DSNDFILE_LIBRARY=$dep/lib/sndfile.lib" `
+    "-DSNDFILE_LIBRARY=$($sndfileLibs -join ';')" `
     "-DMPG123_INCLUDE_DIR=$dep/include" `
     "-DMPG123_LIBRARIES=$dep/lib/mpg123.lib" `
     "-DOPUS_INCLUDE_DIR=$dep/include/opus" `
     "-DOPUS_LIBRARIES=$dep/lib/opus.lib" `
     "-DGLEW_INCLUDE_DIR=$dep/include" `
     "-DGLEW_LIBRARY=$dep/lib/glew32.lib" `
-    "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=OFF"
+    "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=ON" `
+    "-DCMAKE_EXE_LINKER_FLAGS=$($sysLibs -join ' ')"
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
 # --- Build -----------------------------------------------------------------
@@ -218,12 +233,18 @@ if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\
 Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\
 
-# Runtime DLLs (openal-soft + decoders) next to the exe.
-Copy-Item "$VcpkgInstalled\bin\*.dll" $DistDir\ -ErrorAction SilentlyContinue
-if (-not (Test-Path "$DistDir\OpenAL32.dll")) {
-    throw "OpenAL32.dll missing from dist-windows — the build would ship without sound"
+# [rc4l] Static build: the audio/GL stack is linked INTO zandronum.exe, so there are no codec DLLs
+# to ship. Verify statically -- the exe must NOT import OpenAL32.dll (that would mean we accidentally
+# fell back to the dynamic lib), yet the link succeeded, which means the static OpenAL is in. Also
+# copy any DLLs that genuinely remained (should be none beyond system) so a stray runtime dep can't
+# silently break the package.
+$deps = & dumpbin /dependents $exe 2>$null | Select-String -Pattern '\.dll' | ForEach-Object { $_.ToString().Trim() }
+Write-Note ("exe DLL dependents:`n  " + (($deps -join "`n  ")))
+if ($deps -match '(?i)OpenAL32\.dll') {
+    throw "zandronum.exe still imports OpenAL32.dll — static OpenAL link did not take"
 }
-Write-Note "sound OK: OpenAL32.dll present"
+Copy-Item "$VcpkgInstalled\bin\*.dll" $DistDir\ -ErrorAction SilentlyContinue
+Write-Note "sound OK: OpenAL is statically linked (no OpenAL32.dll dependency)"
 
 $zip = Join-Path $ScriptRoot "ZandroX-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
