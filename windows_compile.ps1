@@ -178,6 +178,12 @@ $dep = $VcpkgInstalled
 # libs don't provide), and add the Win32 system libs the static codecs + OpenSSL pull in.
 $sndfileLibs = @("sndfile","FLAC","ogg","vorbis","vorbisenc","vorbisfile") | ForEach-Object { "$dep/lib/$_.lib" }
 $sysLibs     = @("crypt32.lib","ws2_32.lib","shlwapi.lib","opengl32.lib","glu32.lib")
+# [rc4l] Diagnostic: static-triplet lib names differ from dynamic (e.g. glew32.lib -> glew32s.lib);
+# dump the real names so a naming mismatch is one glance, not one CI cycle.
+Write-Note ("Static libs in $dep\lib:`n  " + (((Get-ChildItem "$dep\lib" -Filter *.lib -ErrorAction SilentlyContinue).Name | Sort-Object) -join "`n  "))
+$glewLib = (Get-ChildItem "$dep\lib" -Filter "glew*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1)
+if (-not $glewLib) { throw "no glew*.lib found in $dep\lib" }
+Write-Note "Resolved GLEW static lib: $($glewLib.Name)"
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
@@ -194,7 +200,7 @@ $sysLibs     = @("crypt32.lib","ws2_32.lib","shlwapi.lib","opengl32.lib","glu32.
     "-DOPUS_INCLUDE_DIR=$dep/include/opus" `
     "-DOPUS_LIBRARIES=$dep/lib/opus.lib" `
     "-DGLEW_INCLUDE_DIR=$dep/include" `
-    "-DGLEW_LIBRARY=$dep/lib/glew32.lib" `
+    "-DGLEW_LIBRARY=$($glewLib.FullName)" `
     "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=ON" `
     "-DCMAKE_EXE_LINKER_FLAGS=$($sysLibs -join ' ')"
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
