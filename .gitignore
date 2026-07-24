@@ -8,6 +8,10 @@ build-san/
 build-coverage/
 build-cov-llvm/
 build-cov*/
+# [rc4l] FuzzTest build trees (tests/fuzz.sh). The corpus under tests/corpus is tracked on
+# purpose -- that is where found inputs live so they replay as regressions.
+build-fuzz/
+build-fuzz-mode/
 
 # Linux build outputs (Docker: Dockerfile.linux-build)
 build-linux/

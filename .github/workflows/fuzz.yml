@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] The long fuzzing run, kept off the PR path on purpose: coverage-guided fuzzing pays off
+# over hours, not the seconds a PR can afford, so it runs nightly the way continuous fuzzing is
+# normally operated. PRs get the bounded property mode from test-and-build.yml instead.
+name: Fuzz (nightly)
+
+on:
+  schedule:
+    # [rc4l] 04:00 UTC, off-peak for the shared runner pool.
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Time budget per fuzz test (e.g. 300s, 10m)'
+        type: string
+        default: '300s'
+
+jobs:
+  fuzz:
+    uses: ./.github/workflows/_fuzz.yml
+    with:
+      mode: fuzz
+      # [rc4l] 300s x ~18 harnesses keeps the nightly around the 90-minute mark.
+      duration: ${{ inputs.duration || '300s' }}

@@ -17,6 +17,15 @@ jobs:
   test:
     uses: ./.github/workflows/_test.yml
 
+  # [rc4l] Bounded property mode only -- every FUZZ_TEST runs as a randomized unit test, which is
+  # seconds once the FuzzTest build tree is cached. The coverage-guided run that actually hunts
+  # for new bugs is nightly (fuzz.yml); this job is here to catch a property that a PR breaks
+  # outright. Advisory until the cache is warm and the job's timing has settled.
+  fuzz:
+    uses: ./.github/workflows/_fuzz.yml
+    with:
+      mode: unit
+
   # [rc4l] PRs and main, but not every feature-branch push — the builds are the slow part.
   # Main is covered as well as PRs because an admin can push straight past the PR gate.
   # Advisory, not a required check: the Windows job depends on vcpkg and a pinned runner
