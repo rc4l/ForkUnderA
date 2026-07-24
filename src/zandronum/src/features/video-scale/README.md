@@ -29,18 +29,18 @@ at the render/virtual size, and a single `glBlitFramebuffer(..., GL_LINEAR)` tha
 fill the window each frame. One GPU blit per frame — negligible cost. The default (Native, factor
 1.0) skips the FBO entirely and renders straight to the backbuffer, byte-for-byte the old path.
 
-### macOS: always render through the FBO (performance)
+### Event-driven resize (performance)
 
-On macOS (Apple GL-on-Metal), rendering the frame **straight to the window drawable stalls badly** —
-measured ~19 FPS vs ~58 FPS (vsync) for the same scene. Rendering into an offscreen FBO and doing a
-single `glBlitFramebuffer` to the drawable avoids the stall. So on `__APPLE__` the scale FBO is
-**always active**, even at 1:1 (no scaling); the blit is a straight copy. This is also what modern
-GZDoom does (its render-buffers pipeline always blits). Other platforms keep the FBO only when
-scaling is actually requested.
+The per-frame present path must never call `GetClientSize` -> `SDL_GL_GetDrawableSize`, which is an
+expensive Cocoa/Metal query on macOS. So the render-size re-check is **event-driven**:
+`MaybeResizeForScale` only queries + resizes when `zx_videoScaleDirty` is raised (a mode set, a
+window resize, or a scale-CVAR change); the client size is cached in `UpdateScaleBuffer`. The scale
+FBO is active only when scaling is actually requested (render size != client size), so 2D-only
+frames (menus, the console) render straight to the backbuffer with no extra blit.
 
-The per-frame present path never calls the (expensive on macOS) `GetClientSize` — the client size is
-cached in `UpdateScaleBuffer`, which only runs when `zx_videoScaleDirty` is raised (mode set, window
-resize, or a scale-CVAR change). The resize check is event-driven, never polled.
+(An earlier experiment forced the FBO always-on on macOS to dodge the GL-on-Metal drawable stall for
+the 3D scene; it hurt pure-2D frames and was reverted. The deeper macOS GL-on-Metal frame-rate
+ceiling is a separate, pre-existing issue for the modern render backend, not this feature.)
 
 ### The client-vs-render split
 

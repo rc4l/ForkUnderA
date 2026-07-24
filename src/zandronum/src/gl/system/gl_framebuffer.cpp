@@ -197,13 +197,10 @@ void OpenGLFrameBuffer::InitializeState()
 
 // Testing only for now. 
 CVAR(Bool, gl_draw_sync, true, 0) //false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-// [rc4l] Match upstream GZDoom (gl_finishbeforeswap, refined in c5d75c18b, 2016-12-25): off by
-// default -- a per-frame glFinish just stalls the CPU on the GPU with no benefit on modern drivers.
-CVAR(Bool, gl_finishbeforeswap, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 void OpenGLFrameBuffer::Update()
 {
-	if (!CanUpdate()) 
+	if (!CanUpdate())
 	{
 		GLRenderer->Flush();
 		return;
@@ -305,15 +302,9 @@ void OpenGLFrameBuffer::UpdateScaleBuffer()
 	mScaleClientW = clientW;
 	mScaleClientH = clientH;
 
-	// A scale buffer is needed when the render size differs from the window (the pure
-	// ScalePresentPlan.active decision). On macOS we ALWAYS render offscreen and blit, even at 1:1:
-	// rendering straight to the window drawable stalls badly on the GL-on-Metal path (~2.5x slower);
-	// an offscreen FBO + one blit avoids it. See features/video-scale/README.md.
-	bool needFBO = (clientW != renderW || clientH != renderH);
-#ifdef __APPLE__
-	needFBO = true;
-#endif
-	if (!needFBO)
+	// A scale buffer is needed exactly when the render size differs from the window (matches the
+	// pure ScalePresentPlan.active decision). Otherwise render straight to the backbuffer.
+	if (clientW == renderW && clientH == renderH)
 	{
 		DestroyScaleBuffer();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -419,9 +410,7 @@ void OpenGLFrameBuffer::Swap()
 {
 	Finish.Reset();
 	Finish.Clock();
-	// [rc4l] Match upstream GZDoom (c5d75c18b): the per-frame glFinish before swap is off by default;
-	// it only stalls the CPU on the GPU. Was unconditional in the old ZDoom-GL code we inherited.
-	if (gl_finishbeforeswap) glFinish();
+	glFinish();
 	if (needsetgamma)
 	{
 		//DoSetGamma();
