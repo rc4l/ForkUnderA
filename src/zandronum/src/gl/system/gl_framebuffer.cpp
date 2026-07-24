@@ -69,6 +69,16 @@ IMPLEMENT_CLASS(OpenGLFrameBuffer)
 EXTERN_CVAR (Float, vid_brightness)
 EXTERN_CVAR (Float, vid_contrast)
 EXTERN_CVAR (Bool, vid_vsync)
+// [rc4l] video-scale: the render-scale knob (features/video-scale/videoscale.cpp).
+EXTERN_CVAR (Int, vid_scalemode)
+EXTERN_CVAR (Float, vid_scalefactor)
+EXTERN_CVAR (Int, vid_scale_customwidth)
+EXTERN_CVAR (Int, vid_scale_customheight)
+EXTERN_CVAR (Float, vid_scale_custompixelaspect)
+EXTERN_CVAR (Bool, vid_cropaspect)
+extern bool setsizeneeded;
+extern int DisplayBits;
+#include "features/video-scale/computation/videoscale_compute.h"
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
 
@@ -214,7 +224,12 @@ void OpenGLFrameBuffer::Update()
 	}
 	swapped = false;
 
-	// [rc4l] video-scale: re-bind the scale FBO so the next frame renders into it again.
+	// [rc4l] video-scale: apply any pending scale change live -- resize the render target in place,
+	// no window teardown (UpdateScaleBuffer inside also re-binds the FBO for the next frame).
+	MaybeResizeForScale();
+
+	// re-bind the scale FBO so the next frame renders into it again (no-op if the resize above
+	// already rebound it; needed in the common no-change case).
 	if (mScaleActive)
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, mScaleFB);
@@ -328,6 +343,32 @@ void OpenGLFrameBuffer::BlitScaleBuffer()
 	                  0, 0, clientW, clientH,
 	                  GL_COLOR_BUFFER_BIT, GL_LINEAR);
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void OpenGLFrameBuffer::ResizeRenderInPlace(int w, int h)
+{
+	// Resize the render target without recreating the SDL window or GL context -- mirrors upstream's
+	// V_OutputResized. No black flash, no keyboard-focus loss (the window never goes away).
+	Resize(w, h);                                // canvas backing store + Width/Height/Pitch
+	V_RecalcVideoModeState(w, h, DisplayBits);   // Clean facs, DisplayW/H, mode-set recompute
+	setsizeneeded = true;                        // recompute the 3D view for the new render size
+	UpdateScaleBuffer();                         // (re)build + bind the scale FBO, or drop to backbuffer
+}
+
+void OpenGLFrameBuffer::MaybeResizeForScale()
+{
+	// The window (client) size is fixed; recompute the render (virtual) size from the live scale
+	// settings and, if it changed, resize in place. This is the whole reason a scale change is
+	// smooth instead of a full mode reset.
+	int cw = GetWidth(), ch = GetHeight();
+	GetClientSize(cw, ch);
+	zx::ScaledViewport v = zx::ComputeScaledViewport(cw, ch,
+		vid_scalemode, vid_scalefactor,
+		vid_scale_customwidth, vid_scale_customheight, vid_scale_custompixelaspect,
+		!!vid_cropaspect, 0.f,
+		zx::VID_SCALE_MIN_WIDTH, zx::VID_SCALE_MIN_HEIGHT);
+	if (v.width != GetWidth() || v.height != GetHeight())
+		ResizeRenderInPlace(v.width, v.height);
 }
 
 
