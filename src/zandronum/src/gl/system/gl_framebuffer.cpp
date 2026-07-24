@@ -197,6 +197,9 @@ void OpenGLFrameBuffer::InitializeState()
 
 // Testing only for now. 
 CVAR(Bool, gl_draw_sync, true, 0) //false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+// [rc4l] Match upstream GZDoom (gl_finishbeforeswap, refined in c5d75c18b, 2016-12-25): off by
+// default -- a per-frame glFinish just stalls the CPU on the GPU with no benefit on modern drivers.
+CVAR(Bool, gl_finishbeforeswap, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 void OpenGLFrameBuffer::Update()
 {
@@ -416,8 +419,10 @@ void OpenGLFrameBuffer::Swap()
 {
 	Finish.Reset();
 	Finish.Clock();
-	glFinish();
-	if (needsetgamma) 
+	// [rc4l] Match upstream GZDoom (c5d75c18b): the per-frame glFinish before swap is off by default;
+	// it only stalls the CPU on the GPU. Was unconditional in the old ZDoom-GL code we inherited.
+	if (gl_finishbeforeswap) glFinish();
+	if (needsetgamma)
 	{
 		//DoSetGamma();
 		needsetgamma = false;
