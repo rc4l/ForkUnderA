@@ -120,7 +120,14 @@ public:
 	void NewRefreshRate ();
 
 
-	int GetTrueHeight() { return static_cast<Win32GLVideo *>(Video)->GetTrueHeight(); }
+	// [rc4l] video-scale: track the CURRENT render height, like the SDL backend
+	// (SDLGLFB::GetTrueHeight also returns GetHeight()). The legacy Win32GLVideo::m_trueHeight is
+	// only updated at a full mode-set (GoFullscreen), NOT by the in-place render-target resize the
+	// scale knob uses -- so returning it left GetTrueHeight() stale after a scale change, which fed
+	// a bogus (trueHeight-height)/2 letterbox offset and mis-fired ClearBorders, rendering the frame
+	// off the resized scale FBO (the "yellow cut-off screen" bug). The m_trueHeight realheight/
+	// stretched-mode feature is obsolete since borderless-video removed exclusive fullscreen modes.
+	int GetTrueHeight() { return GetHeight(); }
 
 	bool Lock(bool buffered);
 	bool Lock ();

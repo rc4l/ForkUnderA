@@ -194,7 +194,13 @@ void FLightBuffer::Begin()
 	if (!(gl.flags & RFL_BUFFER_STORAGE))
 	{
 		glBindBuffer(mBufferType, mBufferId);
-		mBufferPointer = (float*)glMapBufferRange(mBufferType, 0, mByteSize, GL_MAP_WRITE_BIT);
+		// [rc4l] Orphan the buffer (GL_MAP_INVALIDATE_BUFFER_BIT) instead of a plain synchronizing
+		// map. A plain GL_MAP_WRITE_BIT map of the whole buffer makes the driver wait for pending
+		// GPU reads of the old contents -- a per-frame CPU<->GPU stall on macOS core profile. Safe:
+		// each frame Clear() resets mIndex to 0 and RenderScene re-uploads ALL lights from offset 0
+		// after this map, so discarding the old contents loses nothing. Matches the flag the resize
+		// path above already uses.
+		mBufferPointer = (float*)glMapBufferRange(mBufferType, 0, mByteSize, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
 	}
 }
 
