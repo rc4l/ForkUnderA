@@ -176,13 +176,22 @@ $dep = $VcpkgInstalled
 # (MSVC resolves libs order-independently, so a flat list is fine), add the static-lib defines
 # (AL_LIBTYPE_STATIC / GLEW_STATIC -- without them the headers declare dllimport symbols the static
 # libs don't provide), and add the Win32 system libs the static codecs + OpenSSL pull in.
-$sndfileLibs = @("sndfile","FLAC","ogg","vorbis","vorbisenc","vorbisfile") | ForEach-Object { "$dep/lib/$_.lib" }
-$sysLibs     = @("crypt32.lib","ws2_32.lib","shlwapi.lib","opengl32.lib","glu32.lib")
-# [rc4l] Diagnostic: static-triplet lib names differ from dynamic (e.g. glew32.lib -> glew32s.lib);
-# dump the real names so a naming mismatch is one glance, not one CI cycle.
+# [rc4l] Full audio static-lib set (verified against the vcpkg static-md tree). libsndfile pulls
+# FLAC/ogg/vorbis; its MP3 support pulls lame (libmp3lame-static/libmpghip-static); mpg123 has its
+# out123/syn123 companions. MSVC links order-independently and drops any lib nothing references, so
+# an over-complete bucket is safe and saves CI round-trips.
+$sndfileLibs = @("sndfile","FLAC","FLAC++","ogg","vorbis","vorbisenc","vorbisfile",
+                 "opus","mpg123","out123","syn123","libmp3lame-static","libmpghip-static") |
+               ForEach-Object { "$dep/lib/$_.lib" }
+$sysLibs     = @("crypt32.lib","ws2_32.lib","bcrypt.lib","advapi32.lib","user32.lib",
+                 "shlwapi.lib","opengl32.lib","glu32.lib")
+# [rc4l] Diagnostic: static-triplet lib names differ from dynamic; dump the real names so a mismatch
+# is one glance, not one CI cycle.
 Write-Note ("Static libs in $dep\lib:`n  " + (((Get-ChildItem "$dep\lib" -Filter *.lib -ErrorAction SilentlyContinue).Name | Sort-Object) -join "`n  "))
-$glewLib = (Get-ChildItem "$dep\lib" -Filter "glew*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1)
-if (-not $glewLib) { throw "no glew*.lib found in $dep\lib" }
+# vcpkg names the static GLEW lib libglew32.lib (not glew32.lib) -- resolve by glob (matches the
+# 'lib' prefix too).
+$glewLib = (Get-ChildItem "$dep\lib" -Filter "*glew*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1)
+if (-not $glewLib) { throw "no *glew*.lib found in $dep\lib" }
 Write-Note "Resolved GLEW static lib: $($glewLib.Name)"
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
