@@ -41,6 +41,14 @@ ACTOR Inventory native
 	action native A_ClearReFire();
 	action native A_CheckReload();
 	action native A_GunFlash(state flash = "", int flags = 0);
+	// [overlay] A_Overlay family (restored from GZDoom).
+	action native A_Overlay(int layer, state st = "", bool nooverride = false);
+	action native A_ClearOverlays(int start = 0, int stopindex = 0, bool safety = true);
+	action native A_OverlayFlags(int layer, int flags, bool set);
+	action native A_OverlayOffset(int layer = 1, float wx = 0, float wy = 32, int flags = 0);
+	action native A_OverlayAlpha(int layer, float alpha);
+	action native A_OverlayRenderStyle(int layer, int style);
+	action native A_OverlayScale(int layer, float scalex = 1, float scaley = 0, int flags = 0);
 	action native A_Saw(sound fullsound = "weapons/sawfull", sound hitsound = "weapons/sawhit", int damage = 2, class<Actor> pufftype = "BulletPuff", int flags = 0, float range = 0, float spread_xy = 2.8125, float spread_z = 0, float lifesteal = 0);
 	action native A_CheckForReload(int counter, state label, bool dontincrement = false);
 	action native A_ResetReloadCounter();

@@ -3152,7 +3152,8 @@ void PLAYER_ResetPlayerData( player_t *pPlayer )
 	{
 		CLIENT_PREDICT_Construct();
 	}
-	memset( pPlayer->psprites, 0, sizeof( pPlayer->psprites ));
+	// [overlay] Drop overlays and deactivate the reserved layers.
+	pPlayer->psprites.ResetToReserved();
 
 	// [AK] Clear the player's medals.
 	MEDAL_ResetPlayerMedals( static_cast<ULONG>( pPlayer - players ), true );
@@ -4475,7 +4476,8 @@ void ServerCommands::SetPlayerPSprite::Execute()
 	}
 	else
 	{
-		P_SetPsprite( player, position, pNewState );
+		// [overlay] Decode the compact wire position back into a reserved layer id.
+		P_SetPsprite( player, position == 1 ? ps_flash : ps_weapon, pNewState );
 	}
 }
 
