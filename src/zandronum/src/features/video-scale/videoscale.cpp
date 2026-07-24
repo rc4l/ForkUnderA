@@ -17,10 +17,11 @@
 #include "features/video-scale/computation/videoscale_compute.h"
 
 // The scale CVARs do NOT trigger a mode reset. A mode reset would destroy and recreate the SDL
-// window + GL context (black flash + keyboard-focus loss on every slider tick). Instead the
-// framebuffer's Update() checks these CVARs each frame and resizes the render target in place
-// (OpenGLFrameBuffer::MaybeResizeForScale), keeping the window -- exactly as upstream does. So the
-// handlers only validate their value; the change is picked up on the next frame.
+// window + GL context (black flash + keyboard-focus loss on every slider tick). Instead they raise
+// zx_videoScaleDirty; the framebuffer's MaybeResizeForScale then resizes the render target in place
+// on the next frame, keeping the window -- exactly as upstream does. (The check is event-driven,
+// not polled, because querying the drawable size every frame is expensive on macOS.)
+extern bool zx_videoScaleDirty;
 
 // vid_scalefactor: a multiplier on the chosen scale mode (upstream range 0.05..2.0). 1.0 = the mode
 // as-is. < 1.0 renders fewer pixels (upscaled to fill = faster); > 1.0 supersamples.
@@ -28,6 +29,7 @@ CUSTOM_CVAR(Float, vid_scalefactor, 1.0f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVA
 {
 	if (self < 0.05f || self > 2.0f)
 		self = 1.0f;
+	zx_videoScaleDirty = true;
 }
 
 // vid_scalemode: index into the scale table (Native / min-fill / fixed presets / custom).
@@ -35,28 +37,33 @@ CUSTOM_CVAR(Int, vid_scalemode, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINI
 {
 	if (!zx::VideoScaleModeValid(self))
 		self = 0;
+	zx_videoScaleDirty = true;
 }
 
 CUSTOM_CVAR(Int, vid_scale_customwidth, zx::VID_SCALE_MIN_WIDTH, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 	if (self < zx::VID_SCALE_MIN_WIDTH)
 		self = zx::VID_SCALE_MIN_WIDTH;
+	zx_videoScaleDirty = true;
 }
 
 CUSTOM_CVAR(Int, vid_scale_customheight, zx::VID_SCALE_MIN_HEIGHT, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 	if (self < zx::VID_SCALE_MIN_HEIGHT)
 		self = zx::VID_SCALE_MIN_HEIGHT;
+	zx_videoScaleDirty = true;
 }
 
 CUSTOM_CVAR(Float, vid_scale_custompixelaspect, 1.0f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 	if (self < 0.2f || self > 5.0f)
 		self = 1.0f;
+	zx_videoScaleDirty = true;
 }
 
 CUSTOM_CVAR(Bool, vid_cropaspect, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
+	zx_videoScaleDirty = true;
 }
 
 // Report the real vs emulated resolution, like upstream's vid_showcurrentscaling.

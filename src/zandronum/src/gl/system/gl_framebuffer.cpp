@@ -78,6 +78,7 @@ EXTERN_CVAR (Float, vid_scale_custompixelaspect)
 EXTERN_CVAR (Bool, vid_cropaspect)
 extern bool setsizeneeded;
 extern int DisplayBits;
+extern bool zx_videoScaleDirty;
 #include "features/video-scale/computation/videoscale_compute.h"
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
@@ -106,6 +107,7 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 	// [rc4l] video-scale: no scale buffer until UpdateScaleBuffer decides one is needed.
 	mScaleFB = mScaleColorTex = mScaleDepthRB = 0;
 	mScaleFBW = mScaleFBH = 0;
+	mScaleClientW = mScaleClientH = 0;
 	mScaleActive = false;
 
 	InitializeState();
@@ -179,6 +181,9 @@ void OpenGLFrameBuffer::InitializeState()
 	// [rc4l] video-scale: decide whether we render into an offscreen scale buffer, (re)build it, and
 	// bind it as the render target so everything below draws into it at the virtual size.
 	UpdateScaleBuffer();
+	// The client/drawable size may differ from the mode-set size (e.g. macOS reports a slightly
+	// different desktop drawable); re-check once on the next frame.
+	zx_videoScaleDirty = true;
 
 	Begin2D(false);
 	GLRenderer->Initialize();
@@ -292,9 +297,20 @@ void OpenGLFrameBuffer::UpdateScaleBuffer()
 	int clientW = renderW, clientH = renderH;
 	GetClientSize(clientW, clientH);
 
-	// A scale buffer is needed exactly when the render size differs from the window (matches the
-	// pure ScalePresentPlan.active decision). Otherwise render straight to the backbuffer.
-	if (clientW == renderW && clientH == renderH)
+	// Cache the client size so the per-frame BlitScaleBuffer never has to call the (macOS-expensive)
+	// GetClientSize again -- it only changes when we get here (mode set / resize / scale change).
+	mScaleClientW = clientW;
+	mScaleClientH = clientH;
+
+	// A scale buffer is needed when the render size differs from the window (the pure
+	// ScalePresentPlan.active decision). On macOS we ALWAYS render offscreen and blit, even at 1:1:
+	// rendering straight to the window drawable stalls badly on the GL-on-Metal path (~2.5x slower);
+	// an offscreen FBO + one blit avoids it. See features/video-scale/README.md.
+	bool needFBO = (clientW != renderW || clientH != renderH);
+#ifdef __APPLE__
+	needFBO = true;
+#endif
+	if (!needFBO)
 	{
 		DestroyScaleBuffer();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -345,8 +361,10 @@ void OpenGLFrameBuffer::UpdateScaleBuffer()
 
 void OpenGLFrameBuffer::BlitScaleBuffer()
 {
-	int clientW = GetWidth(), clientH = GetHeight();
-	GetClientSize(clientW, clientH);
+	// Cached client size (set in UpdateScaleBuffer); avoids a per-frame GetClientSize, which is an
+	// expensive Cocoa/Metal query on macOS.
+	int clientW = (mScaleClientW > 0) ? mScaleClientW : GetWidth();
+	int clientH = (mScaleClientH > 0) ? mScaleClientH : GetHeight();
 
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, mScaleFB);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -368,9 +386,14 @@ void OpenGLFrameBuffer::ResizeRenderInPlace(int w, int h)
 
 void OpenGLFrameBuffer::MaybeResizeForScale()
 {
-	// The window (client) size is fixed; recompute the render (virtual) size from the live scale
-	// settings and, if it changed, resize in place. This is the whole reason a scale change is
-	// smooth instead of a full mode reset.
+	// [rc4l] video-scale: event-driven, NOT polled. GetClientSize -> SDL_GL_GetDrawableSize is an
+	// expensive Cocoa/Metal query on macOS (~tens of ms), so calling it every frame tanks FPS.
+	// Only re-check when something actually changed -- a mode set, a window resize, or a scale CVAR
+	// change all raise zx_videoScaleDirty. This matches upstream's event-driven resize.
+	if (!zx_videoScaleDirty)
+		return;
+	zx_videoScaleDirty = false;
+
 	int cw = GetWidth(), ch = GetHeight();
 	GetClientSize(cw, ch);
 	zx::ScaledViewport v = zx::ComputeScaledViewport(cw, ch,
