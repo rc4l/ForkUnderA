@@ -14,6 +14,8 @@
 #include "stats.h"
 #include "version.h"
 #include "c_console.h"
+#include "c_dispatch.h"
+#include "c_cvars.h"
 
 #include "sdlglvideo.h"
 #include "gl/system/gl_system.h"
@@ -377,10 +379,15 @@ SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen)
 	int winW = (zx_pendingClientWidth  > 0) ? zx_pendingClientWidth  : width;
 	int winH = (zx_pendingClientHeight > 0) ? zx_pendingClientHeight : height;
 
+	// [rc4l] windowed-video: a normal window is freely resizable (drag the edges), matching upstream.
+	// The render target follows the drawable live via OpenGLFrameBuffer::MaybeResizeForScale, and the
+	// new size is persisted on the resize event (see i_input.cpp / features/windowed-video).
+	Uint32 windowFlags = SDL_WINDOW_OPENGL | (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_RESIZABLE);
+
 	Screen = SDL_CreateWindow (caption,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 		winW, winH,
-		SDL_WINDOW_OPENGL | (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
+		windowFlags);
 
 	if (Screen == NULL)
 		return;
@@ -499,6 +506,47 @@ bool SDLGLFB::IsLocked ()
 bool SDLGLFB::IsFullscreen ()
 {
 	return (SDL_GetWindowFlags (Screen) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
+}
+
+void SDLGLFB::SetWindowSize (int w, int h)
+{
+	// [rc4l] windowed-video: only meaningful when windowed; fullscreen covers the desktop. The
+	// SDL resize event that follows persists the new size and MaybeResizeForScale resizes the
+	// render target -- so this is all it needs to do.
+	if (Screen != NULL && !IsFullscreen ())
+	{
+		SDL_SetWindowSize (Screen, w, h);
+		SDL_SetWindowPosition (Screen, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+	}
+}
+
+// [rc4l] windowed-video: set the windowed size, faithful to upstream's vid_setsize. With two args
+// it sets a specific size; with none it re-applies the persisted vid_defwidth/vid_defheight (used
+// by the "Apply windowed size" menu command). See features/windowed-video.
+EXTERN_CVAR (Int, vid_defwidth)
+EXTERN_CVAR (Int, vid_defheight)
+
+CCMD (vid_setsize)
+{
+	int w, h;
+	if (argv.argc () >= 3)
+	{
+		w = atoi (argv[1]);
+		h = atoi (argv[2]);
+		vid_defwidth = w;
+		vid_defheight = h;
+	}
+	else
+	{
+		w = vid_defwidth;
+		h = vid_defheight;
+	}
+
+	if (w < 320) w = 320;
+	if (h < 200) h = 200;
+
+	if (screen != NULL)
+		static_cast<SDLGLFB *> (screen)->SetWindowSize (w, h);
 }
 
 

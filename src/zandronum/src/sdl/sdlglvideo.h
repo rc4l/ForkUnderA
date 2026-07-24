@@ -55,6 +55,9 @@ public:
 	bool IsValid ();
 	bool IsFullscreen ();
 
+	// [rc4l] windowed-video: resize the OS window (windowed only); the render target follows live.
+	void SetWindowSize (int w, int h);
+
 	virtual void SetVSync( bool vsync );
 	void SwapBuffers();
 	
