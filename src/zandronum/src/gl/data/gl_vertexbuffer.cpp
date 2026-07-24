@@ -151,12 +151,37 @@ FFlatVertexBuffer::~FFlatVertexBuffer()
 
 void FFlatVertexBuffer::ImmRenderBuffer(unsigned int primtype, unsigned int offset, unsigned int count)
 {
-	// this will only get called if we can't acquire a persistently mapped buffer.
-	// [rc4l] Core-profile-safe replacement for upstream's glBegin replay (see the
-	// constructor): subload the collected client-side range into the streaming VBO
-	// and draw it. Slower than persistent mapping, but correct on macOS core.
+	// this will only get called if we can't acquire a persistently mapped buffer (i.e. no
+	// GL_ARB_buffer_storage -- always the case on macOS, which caps OpenGL at 4.1 core).
+	//
+	// [rc4l] Core-profile-safe replacement for upstream's glBegin replay (see the constructor):
+	// subload the collected client-side range into the streaming VBO and draw it.
+	//
+	// [rc4l] PERF (macOS console/2D sluggishness): the obvious glBufferSubData here forces Apple's
+	// GL-on-Metal driver to serialize CPU<->GPU on EVERY draw, because the VBO still has pending
+	// draws referencing it -- and a 2D/console frame issues hundreds of these (one per glyph). Map
+	// the sub-range UNSYNCHRONIZED instead, so the driver does NOT wait. This is safe here: within a
+	// frame our write offsets advance monotonically (mCurIndex only grows), so we never overwrite a
+	// range a live draw is still reading; and the per-frame glFinish() in OpenGLFrameBuffer::Swap()
+	// drains the GPU before the buffer wraps back to offset 0 for the next frame. INVALIDATE_RANGE
+	// tells the driver the old bytes in this range may be discarded (we overwrite them whole).
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
-	glBufferSubData(GL_ARRAY_BUFFER, offset * sizeof(FFlatVertex), count * sizeof(FFlatVertex), &map[offset]);
+
+	const GLintptr   byteOffset = (GLintptr)offset * sizeof(FFlatVertex);
+	const GLsizeiptr byteCount  = (GLsizeiptr)count * sizeof(FFlatVertex);
+	void *dst = glMapBufferRange(GL_ARRAY_BUFFER, byteOffset, byteCount,
+		GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_INVALIDATE_RANGE_BIT);
+	if (dst != NULL)
+	{
+		memcpy(dst, &map[offset], byteCount);
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+	}
+	else
+	{
+		// Defensive fallback (should not happen) -- keep rendering correct if the map is refused.
+		glBufferSubData(GL_ARRAY_BUFFER, byteOffset, byteCount, &map[offset]);
+	}
+
 	glBindVertexArray(vao_id);
 	glDrawArrays(primtype, offset, count);
 }
