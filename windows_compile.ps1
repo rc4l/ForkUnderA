@@ -182,11 +182,13 @@ $dep = $VcpkgInstalled
 # FLAC/ogg/vorbis; its MP3 support pulls lame (libmp3lame-static/libmpghip-static); mpg123 has its
 # out123/syn123 companions. MSVC links order-independently and drops any lib nothing references, so
 # an over-complete bucket is safe and saves CI round-trips.
+# fmt is a static dep of recent openal-soft (its logging uses fmt::v12).
 $sndfileLibs = @("sndfile","FLAC","FLAC++","ogg","vorbis","vorbisenc","vorbisfile",
-                 "opus","mpg123","out123","syn123","libmp3lame-static","libmpghip-static") |
+                 "opus","mpg123","out123","syn123","libmp3lame-static","libmpghip-static","fmt") |
                ForEach-Object { "$dep/lib/$_.lib" }
+# avrt.lib: openal-soft's WASAPI backend uses the MMCSS AvSetMmThreadCharacteristics APIs.
 $sysLibs     = @("crypt32.lib","ws2_32.lib","bcrypt.lib","advapi32.lib","user32.lib",
-                 "shlwapi.lib","opengl32.lib","glu32.lib")
+                 "shlwapi.lib","avrt.lib","opengl32.lib","glu32.lib")
 # [rc4l] Diagnostic: static-triplet lib names differ from dynamic; dump the real names so a mismatch
 # is one glance, not one CI cycle.
 Write-Note ("Static libs in $dep\lib:`n  " + (((Get-ChildItem "$dep\lib" -Filter *.lib -ErrorAction SilentlyContinue).Name | Sort-Object) -join "`n  "))
