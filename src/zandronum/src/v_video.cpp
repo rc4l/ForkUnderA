@@ -769,6 +769,47 @@ DSimpleCanvas::DSimpleCanvas (int width, int height)
 
 //==========================================================================
 //
+// [rc4l] DSimpleCanvas::Resize -- change the canvas dimensions and reallocate the backing store in
+// place, using the same pitch rule as the constructor. Lets a live render-target resize (the scale
+// knob) change the render resolution without recreating the framebuffer. See features/video-scale.
+//
+//==========================================================================
+
+void DSimpleCanvas::Resize(int width, int height)
+{
+	Width = width;
+	Height = height;
+
+	if (width <= 640)
+	{
+		Pitch = width;
+	}
+	else
+	{
+		if (CPU.DataL1LineSize == 0)
+		{
+			CPU.DataL1LineSize = 32;
+		}
+		if (CPU.bIsAMD)
+		{
+			Pitch = width + CPU.DataL1LineSize;
+		}
+		else
+		{
+			Pitch = width + MAX(0, CPU.DataL1LineSize - 8);
+		}
+	}
+
+	if (MemBuffer != NULL)
+	{
+		delete[] MemBuffer;
+	}
+	MemBuffer = new BYTE[Pitch * height];
+	memset (MemBuffer, 0, Pitch * height);
+}
+
+//==========================================================================
+//
 // DSimpleCanvas Destructor
 //
 //==========================================================================
@@ -1325,23 +1366,14 @@ CCMD(clean)
 //
 // V_SetResolution
 //
-bool V_DoModeSetup (int width, int height, int bits)
+// [rc4l] video-scale: the mode-derived 2D scaling state (Clean facs, DisplayWidth/Height, view
+// recompute, network notify). Factored out of V_DoModeSetup so a live render-target resize (the
+// scale knob changing the render resolution without recreating the window) recomputes exactly the
+// same state a full mode-set does -- mirroring upstream's V_OutputResized, which resizes the render
+// target in place instead of tearing the window down. See features/video-scale.
+void V_RecalcVideoModeState (int width, int height, int bits)
 {
-	DFrameBuffer *buff = I_SetMode (width, height, screen);
 	int cx1, cx2;
-
-	if (buff == NULL)
-	{
-		return false;
-	}
-
-	screen = buff;
-	GC::WriteBarrier(screen);
-	screen->SetGamma (Gamma);
-
-	// Load fonts now so they can be packed into textures straight away,
-	// if D3DFB is being used for the display.
-	FFont::StaticPreloadFonts();
 
 	V_CalcCleanFacs(320, 200, width, height, &CleanXfac, &CleanYfac, &cx1, &cx2);
 
@@ -1356,7 +1388,7 @@ bool V_DoModeSetup (int width, int height, int bits)
 		if (cx1 < cx2)
 		{
 			// Special case in which we don't need to scale down.
-			CleanXfac_1 = 
+			CleanXfac_1 =
 			CleanYfac_1 = cx1;
 		}
 		else
@@ -1388,7 +1420,7 @@ bool V_DoModeSetup (int width, int height, int bits)
 
 	R_OldBlend = ~0;
 	Renderer->OnModeSet();
-	
+
 	M_RefreshModesList ();
 
 	// [AK] Reset the virtual screen if the screen size changed.
@@ -1397,6 +1429,26 @@ bool V_DoModeSetup (int width, int height, int bits)
 	// [TP] Inform the server of our new resolution.
 	if ( NETWORK_GetState() == NETSTATE_CLIENT )
 		CLIENTCOMMANDS_SetVideoResolution();
+}
+
+bool V_DoModeSetup (int width, int height, int bits)
+{
+	DFrameBuffer *buff = I_SetMode (width, height, screen);
+
+	if (buff == NULL)
+	{
+		return false;
+	}
+
+	screen = buff;
+	GC::WriteBarrier(screen);
+	screen->SetGamma (Gamma);
+
+	// Load fonts now so they can be packed into textures straight away,
+	// if D3DFB is being used for the display.
+	FFont::StaticPreloadFonts();
+
+	V_RecalcVideoModeState (width, height, bits);
 
 	return true;
 }

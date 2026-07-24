@@ -50,6 +50,9 @@ extern int DisplayWidth, DisplayHeight, DisplayBits;
 extern float ScaleFac;
 
 bool V_DoModeSetup (int width, int height, int bits);
+// [rc4l] video-scale: recompute mode-derived 2D scaling for a live render-target resize (no window
+// teardown). See features/video-scale.
+void V_RecalcVideoModeState (int width, int height, int bits);
 void V_CalcCleanFacs (int designwidth, int designheight, int realwidth, int realheight, int *cleanx, int *cleany, int *cx1=NULL, int *cx2=NULL);
 
 class FTexture;
@@ -292,6 +295,9 @@ class DSimpleCanvas : public DCanvas
 public:
 	DSimpleCanvas (int width, int height);
 	~DSimpleCanvas ();
+
+	// [rc4l] video-scale: resize the backing store in place (no framebuffer recreation).
+	void Resize (int width, int height);
 
 	bool IsValid ();
 	bool Lock (bool buffered=true);
