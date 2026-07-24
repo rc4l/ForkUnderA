@@ -13,14 +13,16 @@ on:
   workflow_dispatch:
     inputs:
       duration:
-        description: 'Time budget per fuzz test (e.g. 300s, 10m)'
+        description: 'Time budget per fuzz test, spent sequentially per target (e.g. 200s, 10m)'
         type: string
-        default: '300s'
+        default: '200s'
 
 jobs:
   fuzz:
     uses: ./.github/workflows/_fuzz.yml
     with:
       mode: fuzz
-      # [rc4l] 300s x ~18 harnesses keeps the nightly around the 90-minute mark.
-      duration: ${{ inputs.duration || '300s' }}
+      # [rc4l] --fuzz_for spends the budget on each target in turn, so the run is
+      # duration x target count: 200s x 25 lands near 85 minutes, plus the build. Raising this
+      # means re-checking that total against the job timeout -- and adding a target raises it too.
+      duration: ${{ inputs.duration || '200s' }}
