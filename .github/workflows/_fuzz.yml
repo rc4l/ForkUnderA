@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Reusable FuzzTest job. Called two ways: test-and-build.yml runs it in `unit` mode on
+# every PR (bounded, seconds), and fuzz.yml runs it nightly in `fuzz` mode with a real time
+# budget. Same harnesses, same binary -- only the time budget and the instrumentation differ.
+name: fuzz (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: 'unit (bounded properties), replay (committed corpus), or fuzz (coverage-guided)'
+        type: string
+        default: 'unit'
+      duration:
+        description: 'Time budget per fuzz test, fuzz mode only'
+        type: string
+        default: '60s'
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # [rc4l] FuzzTest is Clang-only upstream; GCC is explicitly unsupported.
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang llvm
+
+      # [rc4l] FuzzTest pulls abseil/re2/protobuf, which dominates the job's wall clock. Caching
+      # the configured build directory turns a ~15 minute cold build into a rebuild of just our
+      # own harnesses. Keyed on the CMake file so bumping the pinned FuzzTest SHA busts it.
+      - name: Cache FuzzTest build tree
+        uses: actions/cache@v4
+        with:
+          path: |
+            build-fuzz
+            build-fuzz-mode
+          key: fuzz-${{ runner.os }}-${{ inputs.mode }}-${{ hashFiles('tests/CMakeLists.txt') }}
+          restore-keys: |
+            fuzz-${{ runner.os }}-${{ inputs.mode }}-
+
+      # [rc4l] Bounded random properties. Cheap enough to gate a PR, and needs no corpus to exist.
+      - name: Properties (bounded random)
+        if: inputs.mode == 'unit'
+        run: bash tests/fuzz.sh
+
+      # [rc4l] Re-runs inputs previous fuzzing sessions found interesting, to catch regressions.
+      - name: Replay committed corpus
+        if: inputs.mode == 'replay'
+        run: bash tests/fuzz.sh --replay
+
+      - name: Fuzz (coverage-guided)
+        if: inputs.mode == 'fuzz'
+        run: bash tests/fuzz.sh --fuzz '${{ inputs.duration }}'
+
+      # [rc4l] A crashing input is the entire point of the nightly run, so keep it even when the
+      # step above fails -- otherwise the reproducer dies with the runner.
+      - name: Upload corpus and any findings
+        if: always() && inputs.mode == 'fuzz'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus
+          path: tests/corpus
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # [rc4l] Lint the harnesses with the same check set as the rest of our code. Report-only,
+      # matching _test.yml -- compile_commands.json comes from the configure inside fuzz.sh.
+      - name: clang-tidy (report)
+        if: inputs.mode == 'unit'
+        run: |
+          sudo apt-get install -y clang-tidy
+          clang-tidy -p build-fuzz $(find "$PWD/src/zandronum/src" -name '*_fuzz.cpp')

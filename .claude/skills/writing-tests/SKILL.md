@@ -50,6 +50,59 @@ glob), so test files never reach the shipped binary.
   `namespace {}`.
 - Comments: one sentence, prefixed `// [rc4l]` (per `AGENTS.md`).
 
+## Property/fuzz harnesses — `*_fuzz.cpp`
+
+A `TEST` checks the values you thought to list. A `FUZZ_TEST` states a *rule* and lets a
+coverage-guided search hunt for a counterexample across the whole input domain. The 100%
+coverage gate cannot see the difference — it only asks whether a line ran, not whether it ran
+with a value that breaks it — so arithmetic units want both.
+
+**Reach for one when** the unit is a pure `Compute*` over scalars and you can name a rule:
+
+- **Differential** — two implementations that must agree (`ComputeMulShiftS64Soft` vs the
+  native `__int128` path; a fast path vs the wide path it skips). The oracle is free.
+- **Round-trip** — `encode → decode` is the identity (`WireRoundtripLong`, the voice-chat
+  float↔bytes pair).
+- **Invariant** — a rule with no reference implementation at all (`AlignDownPow2` lands on a
+  multiple of 2^bits, at or below the input, within one step).
+
+```cpp
+void MulShiftSoftMatchesNative(int64_t a, int64_t b, unsigned shift) {
+    ASSERT_EQ(zx::ComputeMulShiftS64Soft(a, b, shift), zx::ComputeMulShiftS64(a, b, shift));
+}
+FUZZ_TEST(Wide128Fuzz, MulShiftSoftMatchesNative)
+    .WithDomains(fuzztest::Arbitrary<int64_t>(), fuzztest::Arbitrary<int64_t>(),
+                 fuzztest::InRange<unsigned>(0, 63));
+```
+
+Rules that matter:
+
+- File **must** end in `_fuzz.cpp` — its own glob, its own binary (`zandrox_fuzz`). Misnamed
+  files are silently skipped, exactly like `*_test.cpp`.
+- Use `ASSERT_*`, not `EXPECT_*` — the property function must stop at the first failure so the
+  reported counterexample is the one that actually broke it.
+- **Encode preconditions as domains, not as assumptions.** A header that says "shift in [0,63]"
+  means `fuzztest::InRange<unsigned>(0, 63)`; "caller guarantees b != 0" means a
+  `fuzztest::Filter`. Skip this and you get reports for inputs the engine can never produce.
+- **Watch for UB in your own reference.** Left-shifting a negative value is UB — build the
+  shift as a multiply (`v * (__int128(1) << s)`). This is the bug `fa93b7f` fixed in a test
+  model, and a reference implementation is just as easy to get wrong.
+- A found counterexample gets committed to `tests/corpus/` and replays forever after. Treat it
+  exactly like the failing test you'd hand-write for a crash report (per `AGENTS.md`).
+
+## Run the harnesses
+
+```bash
+bash tests/fuzz.sh              # every property as a bounded random test (~1s each) — works on macOS
+bash tests/fuzz.sh --replay     # re-run the committed corpus; the presubmit regression gate
+bash tests/fuzz.sh --fuzz 300s  # coverage-guided fuzzing — Linux only, see below
+```
+
+**Coverage-guided fuzzing is Linux-only**: FuzzTest's fuzzing runtime does not link on macOS
+arm64. The first two modes work everywhere, which is what a local edit-test loop needs; the
+nightly `fuzz.yml` workflow does the real searching on Ubuntu. The first build is slow
+(FuzzTest pulls abseil/re2/protobuf) — CI caches the build tree, so budget that cost once.
+
 ## Run it locally (macOS or Linux)
 
 ```bash
@@ -72,6 +125,11 @@ Notes:
 `.github/workflows/_test.yml` runs the same three steps (sanitized build+run, coverage
 `--auto`, clang-tidy) on every push/PR, and the macOS engine build is gated behind it
 (`needs: test`). Green tests are required before anything builds.
+
+`.github/workflows/_fuzz.yml` runs the property harnesses. `test-and-build.yml` calls it in
+`unit` mode on every PR (bounded, seconds once cached); `fuzz.yml` calls it nightly in `fuzz`
+mode with a real time budget and uploads the corpus — continuous fuzzing pays off over hours,
+so it deliberately stays off the PR path.
 
 ## Misc
 
