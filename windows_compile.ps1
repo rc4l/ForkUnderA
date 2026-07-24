@@ -260,9 +260,12 @@ Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\
 # dumpbin needs the VS dev environment, which isn't on the plain PowerShell PATH -- resolve it from
 # the VS install (best-effort). The link succeeding against the static OpenAL lib is the real proof;
 # this is a belt-and-suspenders check that we didn't silently fall back to the dynamic lib.
-$dumpbin = (Get-Command dumpbin -ErrorAction SilentlyContinue).Source
+$dumpbin = $null
+$dbCmd = Get-Command dumpbin -ErrorAction SilentlyContinue
+if ($dbCmd) { $dumpbin = $dbCmd.Source }
 if (-not $dumpbin) {
-    $dumpbin = (Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+    $dbFile = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($dbFile) { $dumpbin = $dbFile.FullName }
 }
 if ($dumpbin) {
     $deps = & $dumpbin /dependents $exe 2>$null | Select-String -Pattern '\.dll' | ForEach-Object { $_.ToString().Trim() }
