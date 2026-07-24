@@ -129,6 +129,8 @@ public:
 
 
 	bool IsFullscreen();
+	// [rc4l] windowed-video: resize the OS window (windowed only). See features/windowed-video.
+	void SetWindowSize (int w, int h);
 	void PaletteChanged();
 	int QueryNewPalette();
 

@@ -70,12 +70,12 @@ as a parameter. No engine/GL/SDL/CVAR includes.
 - `wadsrc/static/menudef.txt` — `VideoModeMenu`: "Render scale mode" + "Render scale factor" plus
   the `ScaleModes` OptionValue list.
 
-## Not in scope (tracked follow-ups)
+## Platforms
 
-- **Windows backend parity** — the SDL path is done; the Win32 native backend gets the same
-  client/render split next. Today `GetClientSize` on Win32 reports the render size, so scaling is
-  simply inactive there (no regression).
-- **Retire the resolution grid + windowed our-own-way** — a freely resizable window +
-  `vid_setsize` + persisted `win_w/win_h`, matching upstream. Separate step.
+Both backends: SDL2 (macOS/Linux) and the native Win32 backend do the client/render split and the
+shared GL executor (`GetClientSize` reads the drawable / client rect per platform). See
+[[windowed-video]] for the Win32 window details.
+
+## Not in scope (tracked follow-ups)
 - Per-monitor `vid_adapter` selection for fullscreen; High-DPI (retina) native-pixel rendering via
   `SDL_WINDOW_ALLOW_HIGHDPI` (today we fill at the desktop point size and let the OS upscale).

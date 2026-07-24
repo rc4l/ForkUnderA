@@ -59,9 +59,8 @@ EXTERN_CVAR (Int, vid_renderer)
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
 
 // [rc4l] video-scale: the CLIENT (window drawable) size the next framebuffer should give its SDL
-// window, set by I_SetMode before construction. Distinct from the render/virtual size passed as
-// width/height. See features/video-scale.
-int zx_pendingClientWidth = 0, zx_pendingClientHeight = 0;
+// window. Defined in v_video.cpp (shared with the Win32 backend). See features/video-scale.
+extern int zx_pendingClientWidth, zx_pendingClientHeight;
 
 CUSTOM_CVAR(Int, gl_vid_multisample, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL )
 {
@@ -520,34 +519,8 @@ void SDLGLFB::SetWindowSize (int w, int h)
 	}
 }
 
-// [rc4l] windowed-video: set the windowed size, faithful to upstream's vid_setsize. With two args
-// it sets a specific size; with none it re-applies the persisted vid_defwidth/vid_defheight (used
-// by the "Apply windowed size" menu command). See features/windowed-video.
-EXTERN_CVAR (Int, vid_defwidth)
-EXTERN_CVAR (Int, vid_defheight)
-
-CCMD (vid_setsize)
-{
-	int w, h;
-	if (argv.argc () >= 3)
-	{
-		w = atoi (argv[1]);
-		h = atoi (argv[2]);
-		vid_defwidth = w;
-		vid_defheight = h;
-	}
-	else
-	{
-		w = vid_defwidth;
-		h = vid_defheight;
-	}
-
-	if (w < 320) w = 320;
-	if (h < 200) h = 200;
-
-	if (screen != NULL)
-		static_cast<SDLGLFB *> (screen)->SetWindowSize (w, h);
-}
+// [rc4l] windowed-video: SetWindowSize overrides DFrameBuffer::SetWindowSize; the cross-platform
+// vid_setsize CCMD (features/windowed-video/windowedvideo.cpp) calls it through that virtual.
 
 
 bool SDLGLFB::IsValid ()

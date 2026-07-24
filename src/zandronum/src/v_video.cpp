@@ -156,6 +156,11 @@ DFrameBuffer *screen;
 
 CVAR (Int, vid_defwidth, 640, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Int, vid_defheight, 480, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+
+// [rc4l] video-scale: the CLIENT (window drawable) size the next framebuffer should give its OS
+// window, set by I_SetMode before construction. Distinct from the render/virtual size passed as
+// width/height. Shared by both video backends (SDL and Win32). See features/video-scale.
+int zx_pendingClientWidth = 0, zx_pendingClientHeight = 0;
 CVAR (Int, vid_defbits, 8, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, vid_fps, false, 0)
 CVAR (Bool, ticker, false, 0)

@@ -44,7 +44,15 @@ the mode iterators) is no longer referenced by any menu descriptor and is dorman
 place (harmless; `M_RefreshModesList` null-guards the absent items) to keep the diff to the upstream
 menu code small until the whole backend is replaced.
 
+## Windows (Win32) backend
+
+The native Win32 backend has the same behaviour: the windowed window is already resizable
+(`WS_THICKFRAME` via `WS_OVERLAPPEDWINDOW`); `GetClientSize` reads `GetClientRect(Window)`; `I_SetMode`
+does the same client/render split (fullscreen client = the primary monitor via `GetSystemMetrics`);
+`WM_SIZE` persists the size; and `Win32GLFrameBuffer::SetWindowSize` handles `vid_setsize`. The
+`vid_setsize` CCMD itself is cross-platform (this feature's `windowedvideo.cpp`), dispatching through
+`DFrameBuffer::SetWindowSize`.
+
 ## Not in scope (tracked follow-ups)
 
 - Window position / maximized persistence (`win_x`/`win_y`/`win_maximized`).
-- Windows (Win32) backend parity.
