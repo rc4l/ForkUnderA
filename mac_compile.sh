@@ -203,25 +203,6 @@ configure() {
         -DOPENSSL_ROOT_DIR="$ssl"
     )
 
-    # [rc4l] Vulkan backend support (ZVulkan): opt in only when the brew deps are present
-    # (molten-vk vulkan-headers vulkan-loader). ZVulkan's CMake on Apple requires MoltenVK;
-    # the brew kegs are keg-only, so point FindVulkan at them explicitly.
-    local mvk vkh vkl
-    mvk="$(brew --prefix molten-vk 2>/dev/null || true)"
-    vkh="$(brew --prefix vulkan-headers 2>/dev/null || true)"
-    vkl="$(brew --prefix vulkan-loader 2>/dev/null || true)"
-    if [[ -f "$mvk/lib/libMoltenVK.dylib" && -d "$vkh/include/vulkan" && -f "$vkl/lib/libvulkan.dylib" ]]; then
-        status "  Vulkan deps found (MoltenVK); building ZVulkan (-DHAVE_VULKAN=ON)."
-        args+=(
-            -DHAVE_VULKAN=ON
-            -DVulkan_INCLUDE_DIR="$vkh/include"
-            -DVulkan_LIBRARY="$vkl/lib/libvulkan.dylib"
-            -DVulkan_MoltenVK_LIBRARY="$mvk/lib/libMoltenVK.dylib"
-        )
-    else
-        warn "Vulkan deps not found (brew install molten-vk vulkan-headers vulkan-loader); building without ZVulkan."
-    fi
-
     if [[ "$WANT_SOUND" == "1" ]]; then
         local oal snd mp3
         oal="$(brew --prefix openal-soft)"; snd="$(brew --prefix libsndfile)"; mp3="$(brew --prefix mpg123)"

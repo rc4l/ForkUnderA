@@ -11,8 +11,8 @@
 #   tools/zscript-tripwire.sh              # scan the tree (CI / pre-merge)
 #   tools/zscript-tripwire.sh <paths...>   # scan specific files (pre-batch cherry-pick audit)
 #
-# The vendored reference trees (src/zandronum/rendering, src/zandronum/ZVulkan) are exempt: they
-# are not in the engine's source list. If they ever enter the build, they must pass this gate.
+# Only the engine's compiled source (src/zandronum/src) is scanned. Any reference tree brought in
+# later that enters the build must pass this gate.
 
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

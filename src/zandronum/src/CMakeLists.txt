@@ -161,13 +161,6 @@ else( WIN32 )
 	find_package( SDL2 REQUIRED )
 	set( ZDOOM_LIBS ${ZDOOM_LIBS} SDL2::SDL2 SDL2::SDL2main )
 
-	# [rc4l] Vulkan backend support: the vendored ZVulkan lib (added at the top level behind
-	# HAVE_VULKAN). The define gates the Vulkan code paths; the GL backend has no dependency on it.
-	if( HAVE_VULKAN )
-		add_definitions( -DHAVE_VULKAN )
-		set( ZDOOM_LIBS ${ZDOOM_LIBS} zvulkan )
-	endif( HAVE_VULKAN )
-
 	find_path( FPU_CONTROL_DIR fpu_control.h )
 	if( FPU_CONTROL_DIR )
 		include_directories( ${FPU_CONTROL_DIR} )
