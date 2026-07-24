@@ -257,13 +257,25 @@ Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\
 # fell back to the dynamic lib), yet the link succeeded, which means the static OpenAL is in. Also
 # copy any DLLs that genuinely remained (should be none beyond system) so a stray runtime dep can't
 # silently break the package.
-$deps = & dumpbin /dependents $exe 2>$null | Select-String -Pattern '\.dll' | ForEach-Object { $_.ToString().Trim() }
-Write-Note ("exe DLL dependents:`n  " + (($deps -join "`n  ")))
-if ($deps -match '(?i)OpenAL32\.dll') {
-    throw "zandronum.exe still imports OpenAL32.dll — static OpenAL link did not take"
+# dumpbin needs the VS dev environment, which isn't on the plain PowerShell PATH -- resolve it from
+# the VS install (best-effort). The link succeeding against the static OpenAL lib is the real proof;
+# this is a belt-and-suspenders check that we didn't silently fall back to the dynamic lib.
+$dumpbin = (Get-Command dumpbin -ErrorAction SilentlyContinue).Source
+if (-not $dumpbin) {
+    $dumpbin = (Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
 }
+if ($dumpbin) {
+    $deps = & $dumpbin /dependents $exe 2>$null | Select-String -Pattern '\.dll' | ForEach-Object { $_.ToString().Trim() }
+    Write-Note ("exe DLL dependents:`n  " + (($deps -join "`n  ")))
+    if ($deps -match '(?i)OpenAL32\.dll') {
+        throw "zandronum.exe still imports OpenAL32.dll — static OpenAL link did not take"
+    }
+    Write-Note "sound OK: OpenAL is statically linked (no OpenAL32.dll dependency)"
+} else {
+    Write-Note "dumpbin not found; skipping the static-dependency check (the static link already succeeded)"
+}
+# Static build: no codec DLLs in the tree, but copy any that remain so a stray dep can't be missed.
 Copy-Item "$VcpkgInstalled\bin\*.dll" $DistDir\ -ErrorAction SilentlyContinue
-Write-Note "sound OK: OpenAL is statically linked (no OpenAL32.dll dependency)"
 
 $zip = Join-Path $ScriptRoot "ZandroX-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
