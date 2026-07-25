@@ -675,10 +675,16 @@ struct sector_t
 		for (unsigned i = 0; i < e->XFloor.attached.Size(); i++) e->XFloor.attached[i]->SetVerticesDirty();
 	}
 
-	void SetPlaneTexZ(int pos, fixed_t val)
+	// [rc4l] dirtify defaults to false. This is called by init code (P_LoadSectors, UDMF
+	// ParseSector via memset'd temp sectors, P_BuildMap) *before* sec->e is allocated, so
+	// unconditionally calling SetAllVerticesDirty() here dereferenced a NULL extsector_t and
+	// crashed on map load. Faithful to upstream r_defs.h (GZDoom, the vertex-dirty commit):
+	// "This mainly gets used by init code. The only place where it must set the vertex to dirty
+	// is the interpolation code." Runtime moving floors dirty via ChangePlaneTexZ instead.
+	void SetPlaneTexZ(int pos, fixed_t val, bool dirtify = false)
 	{
 		planes[pos].TexZ = val;
-		SetAllVerticesDirty();
+		if (dirtify) SetAllVerticesDirty();
 	}
 
 	void ChangePlaneTexZ(int pos, fixed_t val)
