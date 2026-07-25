@@ -236,13 +236,14 @@ void OpenGLFrameBuffer::Update()
 	// Buffer == NULL) avoids a dangling pointer. No window teardown, so no flash/focus loss.
 	MaybeResizeForScale();
 
-	// re-bind the scale FBO so the next frame renders into it again (no-op if the resize above
-	// already rebound it; needed in the common no-change case).
-	if (mScaleActive)
-	{
-		glBindFramebuffer(GL_FRAMEBUFFER, mScaleFB);
-		glViewport(0, 0, GetWidth(), GetHeight());
-	}
+	// Re-bind the render target AND reset the viewport for the next frame. Binding is a no-op in the
+	// common no-change case (the resize above already rebound); the viewport reset is what matters
+	// when scaling was just turned OFF at runtime (menu). Begin2D sets the projection matrix but not
+	// glViewport, so without resetting here the 2D pass keeps the smaller scaled viewport and draws
+	// the whole menu squished into the bottom-left corner over stale pixels. Both branches must set
+	// it: the FBO branch to its virtual size, the backbuffer branch to the full client size.
+	glBindFramebuffer(GL_FRAMEBUFFER, mScaleActive ? mScaleFB : 0);
+	glViewport(0, 0, GetWidth(), GetHeight());
 
 	CheckBench();
 }
@@ -308,6 +309,9 @@ void OpenGLFrameBuffer::UpdateScaleBuffer()
 	{
 		DestroyScaleBuffer();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		// Reset the viewport to the full backbuffer here too, so the frame in which scaling turns off
+		// is already correct -- not just the next present. (See the matching note in Update().)
+		glViewport(0, 0, renderW, renderH);
 		return;
 	}
 
