@@ -11,7 +11,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # [rc4l] Full history (not the default shallow depth-1): staircase-ledger-check.sh verifies
+      # every ledger row's zandrox_sha exists as a commit, which needs the whole history present.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # [rc4l] Linux fully supports AddressSanitizer/UBSan/LeakSanitizer, unlike macOS.
       - name: Install toolchain
