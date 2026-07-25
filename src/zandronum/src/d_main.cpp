@@ -66,6 +66,7 @@
 #include "doomstat.h"
 #include "gstrings.h"
 #include "w_wad.h"
+#include "features/crashreport/zx_crashreport.h"
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
@@ -872,7 +873,11 @@ void D_Display ()
 
 	if (nodrawers || screen == NULL)
 		return; 				// for comparative timing / profiling
-	
+
+	// [rc4l] Now that we're actually rendering, open a pending crash-consent prompt (deferred
+	// from startup so the title/demo loop doesn't clobber it).
+	ZX_CrashReportTickPrompt ();
+
 	cycle_t cycles;
 	
 	cycles.Reset();
@@ -2853,6 +2858,8 @@ void D_DoomMain (void)
 
 		Printf ("W_Init: Init WADfiles.\n");
 		Wads.InitMultipleFiles (/*allwads*/); // [BB] Removed argument.
+		// [rc4l] Tag crash reports with the IWAD + full load order (bare filenames only).
+		ZX_CrashReportSetLoadedFiles();
 		allwads.Clear();
 		allwads.ShrinkToFit();
 		SetMapxxFlag();
@@ -3068,6 +3075,10 @@ void D_DoomMain (void)
 
 		Printf ("M_Init: Init menus.\n");
 		M_Init ();
+
+		// [rc4l] Menus are up and config (cl_crashreports) is loaded: if we crashed last run,
+		// upload silently (consent given) or pop the one-time consent prompt.
+		ZX_CrashReportCheckPreviousCrash ();
 
 		Printf ("P_Init: Init Playloop state.\n");
 		StartScreen->LoadingStatus ("Init game engine", 0x3f);
