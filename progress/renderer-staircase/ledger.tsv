@@ -242,36 +242,36 @@ f273b6c46	2015-04-27	system	ported	66abdae	- fix uninitialized variable.
 a59824cd8	2015-05-07	models	ported	66abdae	- fixed: MD2 vertex indices were signed shorts but should be unsigned. - fixed a few warnings from Visual C++ 2015.
 065b7f9ad	2015-05-29	bugfix	ported	66abdae	- fixed: The CollectSectorStack functions had a local sector_t variable used by gl_FakeFlat which caused a stack overflow. Using the global one defined at the top of the file is ok here.
 abf11f1a1	2015-07-13	texture	ported	66abdae	- print an error message if GL_ARB_sampler_objects cannot be found.
-694dff67e	2015-10-26	other	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-0874455fa	2015-10-30	portal	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-b82d61193	2015-10-30	portal	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-89328e685	2015-10-30	portal	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-789dca2ab	2015-10-31	renderer	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-382d2cf74	2015-10-31	other	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-16cb4407a	2015-11-03	dynlights	ported	edc9eb4	- disabled 'isVisibleToPlayerClass' check for dynamic lights affecting sprites.
+694dff67e	2015-10-26	other	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+0874455fa	2015-10-30	portal	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+b82d61193	2015-10-30	portal	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+89328e685	2015-10-30	portal	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+789dca2ab	2015-10-31	renderer	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+382d2cf74	2015-10-31	other	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+16cb4407a	2015-11-03	dynlights	ported	db0ea86	- disabled 'isVisibleToPlayerClass' check for dynamic lights affecting sprites.
 151b47c3a	2015-11-03	other	skipped	—	Upstream branch merge (no content of its own); GL touch is the merge itself.
-ad6ce5a72	2015-11-09	lighting	ported	edc9eb4	- added a NULL check to gl_enhanced_nightvision's handler so that it won't crash without an uninitialized GL renderer.
+ad6ce5a72	2015-11-09	lighting	ported	db0ea86	- added a NULL check to gl_enhanced_nightvision's handler so that it won't crash without an uninitialized GL renderer.
 bcac35226	2015-11-09	other	skipped	—	Upstream branch merge (no content of its own); GL touch is the merge itself.
-b00b49c11	2015-11-25	sky	ported	edc9eb4	- fixed skybox picking in GL renderer.
-f9cbaef1d	2015-11-30	sky	ported	edc9eb4	- fixed: Boom's Transfer_Heights did not work for upper parts in sectors with a sky ceiling.
+b00b49c11	2015-11-25	sky	ported	db0ea86	- fixed skybox picking in GL renderer.
+f9cbaef1d	2015-11-30	sky	ported	db0ea86	- fixed: Boom's Transfer_Heights did not work for upper parts in sectors with a sky ceiling.
 10088544c	2015-12-09	other	skipped	—	Upstream branch merge (no content of its own); GL touch is the merge itself.
 841ddb0d6	2015-12-10	other	skipped	—	FreeBSD malloc.h->stdlib.h; irrelevant to our macOS/Windows/Linux targets.
-37ea94abf	2015-12-11	dynlights	ported	edc9eb4	- fixed: translucent walls did not set up their dynamic lights in the GL4 render path.
+37ea94abf	2015-12-11	dynlights	ported	db0ea86	- fixed: translucent walls did not set up their dynamic lights in the GL4 render path.
 17569139b	2015-12-11	other	skipped	—	Upstream branch merge (no content of its own); GL touch is the merge itself.
-c8810db5f	2015-12-24	bugfix	ported	edc9eb4	- fixed: clipping swimmable against non-swimmable translucent 3D-floors was broken due to an incorrect flag check.
-19ae244f6	2015-12-25	texture	ported	edc9eb4	- fixed: allow to use all hqNx texture upscale modes
-69813993b	2015-12-25	menu	ported	edc9eb4	- added missing hqNx modes to options menu
+c8810db5f	2015-12-24	bugfix	ported	db0ea86	- fixed: clipping swimmable against non-swimmable translucent 3D-floors was broken due to an incorrect flag check.
+19ae244f6	2015-12-25	texture	ported	db0ea86	- fixed: allow to use all hqNx texture upscale modes
+69813993b	2015-12-25	menu	ported	db0ea86	- added missing hqNx modes to options menu
 1c5d0ccd6	2015-12-25	menu	deferred	—	hqNx MMX on all Intel platforms; x86-only SIMD, arm64 needs a NEON twin -- see #40.
 f8c38a0bb	2015-12-25	build	deferred	—	hqNx MMX GCC pragma warnings; rides with the deferred x86 MMX path -- see #40.
 8e237e614	2015-12-30	other	skipped	—	Upstream branch merge (no content of its own); GL touch is the merge itself.
-655defed2	2015-12-30	build	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-5b7f9b04c	2015-12-31	other	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-95f413463	2015-12-31	renderer	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-ac6e2f497	2015-12-31	renderer	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-f2c890272	2016-01-01	renderer	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
-cc10fe9bc	2016-01-04	texture	ported	edc9eb4	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+655defed2	2015-12-30	build	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+5b7f9b04c	2015-12-31	other	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+95f413463	2015-12-31	renderer	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+ac6e2f497	2015-12-31	renderer	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+f2c890272	2016-01-01	renderer	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
+cc10fe9bc	2016-01-04	texture	ported	db0ea86	Stereo3D framework from GLOOME; modular (10 self-contained files), mono default renders identically.
 7d2bbbd35	2016-01-05	bugfix	skipped	—	Two-sided polyobj portal detection needs GLEEHorizonPortal (Eternity portals) -- absent; see #41.
-926e9fdac	2016-01-07	bugfix	ported	368b262	- fixed: For 2D-drawing of camera textures the render style was not set.
+926e9fdac	2016-01-07	bugfix	ported	712afbd	- fixed: For 2D-drawing of camera textures the render style was not set.
 ef7bcb3a6	2016-01-11	sky	skipped	—	Eternity flat/horizon portals; needs playsim portal infra Zandronum lacks -- see #41.
 196c9bc34	2016-01-11	sky	skipped	—	Skybox type cleanup needs the SKYBOX_MAP type system -- absent; see #41.
 65022b780	2016-01-11	sky	skipped	—	'copy portal to wall' linedef needs Line_SetPortal / line portals -- absent; see #41.
@@ -279,13 +279,13 @@ cd778b6bd	2016-01-13	portal	skipped	—	CollectPortalSectors fix on the stacked-
 2657c0883	2016-01-13	sky	skipped	—	Stacked sector portals into the render list; portal infra absent -- see #41.
 581604951	2016-01-21	dynlights	skipped	—	GL adjustments FOR ZDoom coordinate refactor (fixedvec3/InterpolatedPosition) -- absent; see #41.
 685385635	2016-01-26	other	skipped	—	FGLBitmap adjustments for a ZDoom base-class change we do not have -- see #41.
-3c16a2386	2016-01-27	portal	ported	368b262	- when rendering mirrors, discard subsectors lying behind them.
+3c16a2386	2016-01-27	portal	ported	712afbd	- when rendering mirrors, discard subsectors lying behind them.
 47db3252f	2016-01-27	shader	deferred	—	Reflective surfaces need only one clip plane; deferred with its shader pair 238990c87 to the flight-24 clip-plane rework.
 238990c87	2016-01-27	shader	deferred	—	Clip-plane slot renumber; deferred to the flight-24 clip-plane rework where our diverged main.vp layout is reconciled.
 d037493ff	2016-01-29	lighting	skipped	—	FF_FADEWALLS rework uses the FF_RESET 3D-floor flag -- absent from our tree; see #41.
-342f1abcc	2016-01-30	dynlights	ported	368b262	- fixed: flickering dynamic lights with their first intensity value larger than the second one weren't properly linked into all touching sectors.
-4a9b2bf76	2016-01-30	portal	ported	368b262	- fixed: The stencil cap drawer did not properly advance the vertex pointer.
-37ac6ef9a	2016-01-30	texture	ported	368b262	- fixed: Translucency detection for GL textures was broken. - fixed: Textures which are already scaled should not be upsampled. - fixed: The transparency check in the upscaling code checked the wrong modes for exclusion when handling translucent textures.
+342f1abcc	2016-01-30	dynlights	ported	712afbd	- fixed: flickering dynamic lights with their first intensity value larger than the second one weren't properly linked into all touching sectors.
+4a9b2bf76	2016-01-30	portal	ported	712afbd	- fixed: The stencil cap drawer did not properly advance the vertex pointer.
+37ac6ef9a	2016-01-30	texture	ported	712afbd	- fixed: Translucency detection for GL textures was broken. - fixed: Textures which are already scaled should not be upsampled. - fixed: The transparency check in the upscaling code checked the wrong modes for exclusion when handling translucent textures.
 fc57180d7	2016-01-30	shader	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
 1d9ab5c63	2016-01-31	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
 f86535407	2016-01-31	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
@@ -300,13 +300,13 @@ f86535407	2016-01-31	renderer	deferred	—	#41-gated: the 3D-light-splitting rew
 faa08410d	2016-02-01	sprites	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
 f11f86f05	2016-02-01	sprites	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
 9453a8a7e	2016-02-01	sprites	deferred	—	Decal vertex-buffer reuse needs the decal lightlist member from the 3D-light splitter -- #41.
-22e9fc9b7	2016-02-02	texture	ported	c77d5e4	- re-fixed FTexture::CheckTrans
-d79741574	2016-02-02	dynlights	ported	c77d5e4	- fixed: dynamic lights did not relink themselves when their position changed.
+22e9fc9b7	2016-02-02	texture	ported	9811962	- re-fixed FTexture::CheckTrans
+d79741574	2016-02-02	dynlights	ported	9811962	- fixed: dynamic lights did not relink themselves when their position changed.
 df9c59bcf	2016-02-02	build	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
-db766f9fe	2016-02-03	sprites	ported	c77d5e4	- fixed some warnings.
+db766f9fe	2016-02-03	sprites	ported	9811962	- fixed some warnings.
 0c8a817df	2016-02-04	sprites	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
 c129cb3ca	2016-02-04	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
 b2158c5b9	2016-02-05	renderer	deferred	—	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.
 b6f8a45bb	2016-02-09	sky	skipped	—	Vavoom skybox missing-texture check; our code uses a different (already-correct) maplump==-1 form -- no-op.
 6ac3e4ce4	2016-02-12	sprites	deferred	—	Fly-cheat/projectile-spawn fix needs MF7_FLYCHEAT + the coordinate refactor (thingpos) -- #41.
-a21044791	2016-02-19	bugfix	ported	c77d5e4	- fixed: fake contrast was not applied.
+a21044791	2016-02-19	bugfix	ported	9811962	- fixed: fake contrast was not applied.
