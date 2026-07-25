@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
 
       - name: Build ZandroX
         run: |
@@ -70,7 +70,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
 
       - name: Build + package ZandroX (Linux, native)
         # [rc4l] linux_compile.sh is the same script devs run; --install-deps apt-installs the
@@ -96,7 +96,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
 
       # [rc4l] VCPKG_INSTALLATION_ROOT is a runner environment variable, and the env context in
       # an expression only sees workflow-level env: blocks — using it in the cache path below

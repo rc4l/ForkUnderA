@@ -45,6 +45,7 @@ DEPS=(
   libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev
   libsdl1.2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev
   libopenal-dev libsndfile1-dev libmpg123-dev
+  libcurl4-openssl-dev
 )
 
 if [ "$INSTALL_DEPS" = "ON" ]; then
