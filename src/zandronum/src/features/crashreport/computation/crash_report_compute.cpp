@@ -17,14 +17,15 @@ StartupAction ComputeStartupAction(int crashreportsCvar, bool crashedLastRun)
 
 CrashChoiceAction ComputeChoiceAction(CrashChoice choice)
 {
+	CrashChoiceAction a{false, false, false};
 	switch (choice)
 	{
-	case CrashChoice::SendOnce:   return {true,  false, false};
-	case CrashChoice::AlwaysSend: return {true,  true,  false};
-	case CrashChoice::SaveToDisk: return {false, false, true};
-	case CrashChoice::NotNow:     return {false, false, false};
+	case CrashChoice::SendOnce:   a.upload = true; break;
+	case CrashChoice::AlwaysSend: a.upload = true; a.persistAlways = true; break;
+	case CrashChoice::SaveToDisk: a.saveToDisk = true; break;
+	case CrashChoice::NotNow:     break;
 	}
-	return {false, false, false};
+	return a;
 }
 
 std::string ComputeSafeFileLabel(const std::string &path)
