@@ -1,0 +1,55 @@
+# [rc4l] Mirrors GlitchTip crash groups into GitHub issues so all triage lives on GitHub.
+# GlitchTip does the capture, symbolication and de-duplication; this job just upserts one
+# GitHub issue per unique crash group. Runs on a schedule and can be dispatched on demand
+# (the game -> GlitchTip -> this job -> GitHub issue path is proven by dispatching it).
+name: crash-sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GLITCHTIP_URL: ${{ secrets.GLITCHTIP_URL }}
+      GLITCHTIP_TOKEN: ${{ secrets.GLITCHTIP_TOKEN }}
+      GLITCHTIP_ORG: ${{ secrets.GLITCHTIP_ORG }}
+    steps:
+      - name: Ensure the "crash" label exists
+        run: gh label create crash --repo "$GITHUB_REPOSITORY" --color B60205 --description "Auto-filed from GlitchTip" 2>/dev/null || true
+
+      - name: Pull GlitchTip issues and upsert GitHub issues
+        run: |
+          set -euo pipefail
+          api="${GLITCHTIP_URL%/}/api/0/organizations/${GLITCHTIP_ORG}/issues/"
+          echo "Querying $api"
+          resp=$(curl -sf -H "Authorization: Bearer ${GLITCHTIP_TOKEN}" "$api?limit=50&query=") || {
+            echo "GlitchTip API unreachable"; exit 1; }
+          count=$(jq 'length' <<<"$resp")
+          echo "GlitchTip returned $count issue group(s)"
+          for i in $(seq 0 $((count - 1))); do
+            row=$(jq -c ".[$i]" <<<"$resp")
+            id=$(jq -r '.id' <<<"$row")
+            title=$(jq -r '.title // .metadata.type // "Unknown crash"' <<<"$row")
+            culprit=$(jq -r '.culprit // ""' <<<"$row")
+            events=$(jq -r '.count // "?"' <<<"$row")
+            users=$(jq -r '.userCount // 0' <<<"$row")
+            last=$(jq -r '.lastSeen // ""' <<<"$row")
+            permalink=$(jq -r '.permalink // ""' <<<"$row")
+            marker="GlitchTip-ID: ${id}"
+            existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --search "\"${marker}\" in:body" --json number --jq '.[0].number // empty')
+            if [ -n "$existing" ]; then
+              echo "  group $id already mirrored as #$existing"
+              continue
+            fi
+            body=$(printf '**Crash captured by GlitchTip**\n\n- **Where:** %s\n- **Events:** %s\n- **Users affected:** %s\n- **Last seen:** %s\n- **Details:** %s\n\n<!-- do not edit: %s -->' \
+              "$culprit" "$events" "$users" "$last" "$permalink" "$marker")
+            num=$(gh issue create --repo "$GITHUB_REPOSITORY" --title "[crash] ${title}" --label crash --body "$body" | grep -oE '[0-9]+$')
+            echo "  filed new GitHub issue #$num for GlitchTip group $id"
+          done
