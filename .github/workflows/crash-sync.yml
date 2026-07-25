@@ -33,11 +33,16 @@ jobs:
             echo "GlitchTip API unreachable"; exit 1; }
           count=$(jq 'length' <<<"$resp")
           echo "GlitchTip returned $count issue group(s)"
+          # Redact player PII before it reaches a public GitHub issue: home-directory paths
+          # embed the player's OS username (e.g. C:\Users\aurat\, /home/bob/, /Users/bob/).
+          scrub() {
+            perl -pe 's{([A-Za-z]:\\Users\\)[^\\]+}{$1<user>}gi; s{(/(?:home|Users)/)[^/ ]+}{$1<user>}g'
+          }
           for i in $(seq 0 $((count - 1))); do
             row=$(jq -c ".[$i]" <<<"$resp")
             id=$(jq -r '.id' <<<"$row")
-            title=$(jq -r '.title // .metadata.type // "Unknown crash"' <<<"$row")
-            culprit=$(jq -r '.culprit // ""' <<<"$row")
+            title=$(jq -r '.title // .metadata.type // "Unknown crash"' <<<"$row" | scrub)
+            culprit=$(jq -r '.culprit // ""' <<<"$row" | scrub)
             events=$(jq -r '.count // "?"' <<<"$row")
             users=$(jq -r '.userCount // 0' <<<"$row")
             last=$(jq -r '.lastSeen // ""' <<<"$row")
