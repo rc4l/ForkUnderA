@@ -20,6 +20,12 @@
 #include <string>
 #include <sentry.h>
 
+#ifdef _WIN32
+// sentry.h pulls in <windows.h>, which typedefs DWORD; tell the engine headers below to use that
+// one instead of redefining it (see basictypes.h). Without this the Windows build fails C2371.
+#define USE_WINDOWS_DWORD
+#endif
+
 #include "version.h"   // GetGitDescription(), GetGitHash()
 #include "w_wad.h"     // Wads
 #include "c_cvars.h"
