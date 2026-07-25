@@ -6395,12 +6395,7 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 	puff = Spawn (pufftype, x, y, z, ALLOW_REPLACE);
 	if (puff == NULL) return NULL;
 
-	// [CK] The puff has been made if we're a client, so any client prediction 
-	// of puffs is done, meaning we can exit now.
-	if ( NETWORK_InClientMode() )
-		return NULL;
-
-	//Moved puff creation and target/master/tracer setting to here. 
+	//Moved puff creation and target/master/tracer setting to here.
 	if (puff && vict)
 	{
 		if (puff->flags7 & MF7_HITTARGET)	puff->target = vict;
@@ -6410,7 +6405,14 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 	// [BB] If the puff came from a player, set the target of the puff to this player.
 	if ( puff && (puff->flags5 & MF5_PUFFGETSOWNER))
 		puff->target = source;
-	
+
+	// [CK] The puff has been made if we're a client, so any client prediction
+	// of puffs is done, meaning we can exit now.
+	// [rc4l] Ported from qzandronum@4d7b8870...: moved BELOW the target/master/tracer setting above --
+	// it used to return here first, so client-predicted puffs never got their target set.
+	if ( NETWORK_InClientMode() )
+		return NULL;
+
 
 	if (source != NULL) puff->angle = R_PointToAngle2(x, y, source->x, source->y);
 

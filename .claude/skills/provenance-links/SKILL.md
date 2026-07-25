@@ -22,6 +22,14 @@ follows upstream's.
 - Our own fixes to vendored code — those get a **"why" comment instead** (see below).
 - Trivial one-liners and mechanical changes (a cast, a rename, a signature tweak).
 
+## Pick the source: prefer canonical upstream
+
+Before porting from a fork (Q-Zandronum, etc.), **check whether UZDoom/GZDoom already has the
+feature or fix** — read the actual code, don't stop at the first `if` block. If upstream has it,
+port UZDoom/GZDoom's version and tag `uzdoom@<sha>`: it's usually more complete (e.g. the rail
+floor/ceiling puff — Q-Zandronum had it, but only UZDoom added the sky-flat guard). Port a fork's
+version (and tag it) only when upstream genuinely lacks it, or the fork's is deliberately different.
+
 ## Format
 
 One link per **ported unit** — on that unit's header comment, using our existing `// [rc4l]`
