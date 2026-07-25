@@ -68,9 +68,22 @@ echo "==> Configuring (Release, OpenAL, NO_FMOD, SERVERONLY=$SERVERONLY)"
 # [rc4l] Drop the cache but keep object files: a cache written before libopenal-dev was present
 # keeps NO_OPENAL=OFF with no OPENAL_LIBRARY, silently producing a soundless binary.
 rm -f build-linux/CMakeCache.txt
+
+# [rc4l] ZX_WITH_SYMBOLS=1 (set by release CI) builds with debug info and splits it into
+# zandronum.debug via RELEASE_WITH_DEBUG_FILE, keeping the shipped binary stripped/lean. The
+# .debug file is uploaded to GlitchTip so crashes symbolicate. --build-id links the two.
+SYM_ARGS=()
+if [ "${ZX_WITH_SYMBOLS:-0}" = "1" ]; then
+  echo "==> building with debug symbols (ZX_WITH_SYMBOLS=1)"
+  SYM_ARGS=( -DRELEASE_WITH_DEBUG_FILE=ON
+             -DCMAKE_CXX_FLAGS=-g -DCMAKE_C_FLAGS=-g
+             -DCMAKE_EXE_LINKER_FLAGS=-Wl,--build-id )
+fi
+
 cmake -S src/zandronum -B build-linux -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-  -DSERVERONLY="$SERVERONLY" -DNO_FMOD=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON
+  -DSERVERONLY="$SERVERONLY" -DNO_FMOD=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON \
+  "${SYM_ARGS[@]}"
 
 echo "==> Building"
 cmake --build build-linux -j"$(nproc)"

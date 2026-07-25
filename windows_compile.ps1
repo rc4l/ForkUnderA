@@ -164,6 +164,13 @@ Write-Note "DXSDK_DIR set to $dx"
 # cmake_policy() calls collide with Zandronum's old CMake minimums and break the VS generator.
 Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL)"
 $dep = $VcpkgInstalled
+# [rc4l] ZX_WITH_SYMBOLS=1 (release CI) emits a PDB (/Zi compiler + /DEBUG linker) so the crash's
+# addresses symbolicate in GlitchTip after upload. Off by default to keep dev builds fast.
+$symArgs = @()
+if ($env:ZX_WITH_SYMBOLS -eq "1") {
+    Write-Status "building with debug symbols (PDB)"
+    $symArgs = @("-DRELEASE_WITH_DEBUG_FILE=ON", "-DCMAKE_CXX_FLAGS=/Zi", "-DCMAKE_C_FLAGS=/Zi", "-DCMAKE_EXE_LINKER_FLAGS=/DEBUG")
+}
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
@@ -177,7 +184,8 @@ $dep = $VcpkgInstalled
     "-DMPG123_LIBRARIES=$dep/lib/mpg123.lib" `
     "-DOPUS_INCLUDE_DIR=$dep/include/opus" `
     "-DOPUS_LIBRARIES=$dep/lib/opus.lib" `
-    "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=OFF"
+    "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=OFF" `
+    @symArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
 # --- Build -----------------------------------------------------------------
