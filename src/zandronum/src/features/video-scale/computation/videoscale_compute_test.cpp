@@ -133,10 +133,15 @@ TEST(VideoScale, CropAspectTallClientCropsHeight)
 
 TEST(VideoScale, DegenerateClientDoesNotDivideByZero)
 {
-	// Zero height must not crash MinimumToFill; result is just the floor.
+	// Zero height must not crash the minimum-to-fill math; result is just the floor. Cover both the
+	// plain (MIN_FILL -> MinimumToFill) and 1.2-biased (MIN_FILL_1_2 -> MinimumToFill2) divide guards.
 	ScaledViewport v = Scale(0, 0, VID_SCALEMODE_MIN_FILL);
 	EXPECT_EQ(VID_SCALE_MIN_WIDTH, v.width);
 	EXPECT_EQ(VID_SCALE_MIN_HEIGHT, v.height);
+
+	ScaledViewport v2 = Scale(0, 0, VID_SCALEMODE_MIN_FILL_1_2);
+	EXPECT_EQ(VID_SCALE_MIN_WIDTH, v2.width);
+	EXPECT_EQ(VID_SCALE_MIN_HEIGHT, v2.height);
 }
 
 namespace

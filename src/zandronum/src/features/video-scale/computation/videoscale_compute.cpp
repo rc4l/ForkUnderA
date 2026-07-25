@@ -99,9 +99,10 @@ ScaledViewport ComputeScaledViewport(
 	bool cropAspect, float activeRatio,
 	int minWidth, int minHeight)
 {
-	if (!VideoScaleModeValid(scaleMode))
-		scaleMode = VID_SCALEMODE_NATIVE;
-
+	// An out-of-range scaleMode is handled by the switch `default:` cases below (ScaledWidthForMode /
+	// ScaledHeightForMode return the client size, PixelAspectForMode returns 1.0) -- i.e. it renders
+	// exactly like Native. No separate clamp here: that would just duplicate the defaults and leave
+	// them dead/untestable.
 	int w = clientWidth;
 	int h = clientHeight;
 
