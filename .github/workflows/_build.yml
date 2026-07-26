@@ -173,5 +173,19 @@ jobs:
           name: ZandroX-windows
           path: ZandroX-*-windows-x64.zip
 
-      # [rc4l] Windows symbol (PDB) generation is disabled pending the /Zi-vs-PCH fix in
-      # windows_compile.ps1 — see the TODO there. Mac + Linux symbolication is live.
+      - name: Package debug symbols (PDB)
+        if: ${{ inputs.upload_symbols }}
+        shell: pwsh
+        run: |
+          $sha = (git rev-parse HEAD).Substring(0,12)
+          $pdb = Get-ChildItem -Path build-win -Recurse -Filter zandronum.pdb | Select-Object -First 1
+          if (-not $pdb) { throw "no zandronum.pdb found under build-win" }
+          Compress-Archive -Path $pdb.FullName -DestinationPath "ZandroX-symbols-windows-$sha.zip" -Force
+          Get-ChildItem ZandroX-symbols-windows-*.zip
+
+      - name: Upload symbols artifact
+        if: ${{ inputs.upload_symbols }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-symbols-windows
+          path: ZandroX-symbols-windows-*.zip
