@@ -696,31 +696,33 @@ static void DoJump(AActor * self, FState * CallingState, FState *jumpto, StateCa
 {
 	if (jumpto == NULL) return;
 
+	// [overlay] The psprite layer whose state action is currently running (0 = not a psprite
+	// action), and its node. Used to route the jump to the executing layer below.
+	pspdef_t *pspLayerPtr = NULL;
+	const int pspLayer = (self->player != NULL) ? P_GetCurrentPSpriteLayer() : 0;
+	if (pspLayer != 0)
+		pspLayerPtr = self->player->psprites.Find(pspLayer);
+
 	if (statecall != NULL)
 	{
 		statecall->State = jumpto;
 	}
-	else if (self->player != NULL && CallingState == self->player->psprites[ps_weapon].state)
+	// [overlay] A jump inside a psprite state action targets the layer that is executing.
+	// Detecting that via the tracked current layer -- instead of matching CallingState against
+	// psprites[ps_weapon/ps_flash].state -- means an overlay that happens to share a state
+	// pointer with the weapon layer can no longer hijack it (which fired the weapon early).
+	else if (pspLayerPtr != NULL && pspLayerPtr->state == CallingState)
 	{
-		// [BB] If we're the server, tell clients to change the thing's state.
+		// [BB] If we're the server, tell clients to change the thing's state. Only the reserved
+		// weapon/flash layers are replicated; overlays are single-player only for now.
 		if (( clientUpdateFlags & CLIENTUPDATE_FRAME ) &&
-			( NETWORK_GetState( ) == NETSTATE_SERVER ))
+			( NETWORK_GetState( ) == NETSTATE_SERVER ) &&
+			( pspLayer == ps_weapon || pspLayer == ps_flash ))
 		{
-			SERVER_HandleWeaponStateJump ( static_cast<ULONG>( self->player - players ), jumpto, ps_weapon );
+			SERVER_HandleWeaponStateJump ( static_cast<ULONG>( self->player - players ), jumpto, pspLayer );
 		}
 
-		P_SetPsprite(self->player, ps_weapon, jumpto);
-	}
-	else if (self->player != NULL && CallingState == self->player->psprites[ps_flash].state)
-	{
-		// [BB] If we're the server, tell clients to change the thing's state.
-		if (( clientUpdateFlags & CLIENTUPDATE_FRAME ) &&
-			( NETWORK_GetState( ) == NETSTATE_SERVER ))
-		{
-			SERVER_HandleWeaponStateJump ( static_cast<ULONG>( self->player - players ), jumpto, ps_flash );
-		}
-
-		P_SetPsprite(self->player, ps_flash, jumpto);
+		P_SetPsprite(self->player, pspLayer, jumpto);
 	}
 	else if (CallingState == self->state)
 	{
@@ -6008,11 +6010,12 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTics)
 	// [AK] Added a sanity check to make sure stateowner isn't NULL.
 	if (stateowner != NULL && stateowner != self && self->player != NULL && stateowner->IsKindOf(RUNTIME_CLASS(AWeapon)))
 	{ // Is this a weapon? Need to check psp states for a match, then. Blah.
-		for (int i = 0; i < NUMPSPRITES; ++i)
+		// [overlay] Search every layer (weapon, flash, overlays, targeter) for the state.
+		for (unsigned int i = 0; i < self->player->psprites.Size(); ++i)
 		{
-			if (self->player->psprites[i].state == CallingState)
+			if (self->player->psprites.Element(i).state == CallingState)
 			{
-				self->player->psprites[i].tics = tics_to_set;
+				self->player->psprites.Element(i).tics = tics_to_set;
 				return;
 			}
 		}
