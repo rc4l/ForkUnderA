@@ -123,6 +123,8 @@ jobs:
     uses: ./.github/workflows/_build.yml
     with:
       version: ${{ needs.setup.outputs.version }}
+      upload_symbols: true
+    secrets: inherit
 
   # [rc4l] Collects the three platform archives into one GitHub Release. Runs for a v* tag, a
   # stable "release" dispatch, or an experimental pre-release; ordinary build-only dispatches
