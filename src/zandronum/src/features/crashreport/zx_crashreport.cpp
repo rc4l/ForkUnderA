@@ -27,6 +27,32 @@ void ZX_CrashReportShutdown()
 	g_sentryInited = false;
 }
 
+// [rc4l] GlitchTip keeps event tags but drops the native debug-image list, and it can't
+// symbolicate C/C++ crashes server-side. So copy the main module's load address + debug id into
+// tags; our crash-sync workflow uses them (with the raw addresses GlitchTip does keep and the
+// build's symbols from the GitHub release) to symbolicate the stack itself.
+static sentry_value_t zx_before_send(sentry_value_t event, void *hint, void *closure)
+{
+	(void)hint; (void)closure;
+	sentry_value_t images = sentry_value_get_by_key(
+		sentry_value_get_by_key(event, "debug_meta"), "images");
+	if (sentry_value_get_length(images) > 0)
+	{
+		sentry_value_t img = sentry_value_get_by_index(images, 0); // main executable
+		const char *base = sentry_value_as_string(sentry_value_get_by_key(img, "image_addr"));
+		const char *did  = sentry_value_as_string(sentry_value_get_by_key(img, "debug_id"));
+		sentry_value_t tags = sentry_value_get_by_key(event, "tags");
+		if (sentry_value_is_null(tags))
+		{
+			tags = sentry_value_new_object();
+			sentry_value_set_by_key(event, "tags", tags);
+		}
+		if (base && base[0]) sentry_value_set_by_key(tags, "zx_image_base", sentry_value_new_string(base));
+		if (did && did[0])   sentry_value_set_by_key(tags, "zx_debug_id", sentry_value_new_string(did));
+	}
+	return event;
+}
+
 void ZX_CrashReportInit()
 {
 	const char *dsn = ZX_SENTRY_DSN;
@@ -35,6 +61,7 @@ void ZX_CrashReportInit()
 
 	sentry_options_t *options = sentry_options_new();
 	sentry_options_set_dsn(options, dsn);
+	sentry_options_set_before_send(options, zx_before_send, NULL);
 
 	// Tie each crash to the exact build: release groups them, dist pins the commit.
 	char release[128];
