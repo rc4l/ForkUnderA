@@ -1328,6 +1328,8 @@ add_executable( zdoom WIN32
 	features/openal-sound/mpg123_decoder.cpp
 	features/freeform-menu/freeformmenu.cpp
 	features/crashreport/zx_crashreport.cpp
+	features/crashreport/zx_consentmenu.cpp
+	features/crashreport/computation/consent_panel_compute.cpp
 	zzautozend.cpp
 )
 

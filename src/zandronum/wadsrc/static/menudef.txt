@@ -369,6 +369,7 @@ OptionMenu "OptionsMenu"
 // no permanent "never send" button -- that stays a manual "cl_crashreports 0".
 OptionMenu "CrashConsentMenu"
 {
+	Class "CrashConsentMenu"	// draws a solid rounded gradient panel behind the prompt (zx_consentmenu.cpp)
 	Title "CRASH REPORT"
 	StaticText "ZandroX crashed last time."
 	StaticText " "
