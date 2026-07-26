@@ -81,6 +81,32 @@ void ZX_CrashReportShutdown()
 	g_sentryInited = false;
 }
 
+// [rc4l] GlitchTip keeps event tags but drops the native debug-image list, and it can't
+// symbolicate C/C++ crashes server-side. So copy the main module's load address + debug id into
+// tags; our crash-sync workflow uses them (with the raw addresses GlitchTip does keep and the
+// build's symbols from the GitHub release) to symbolicate the stack itself.
+static sentry_value_t zx_before_send(sentry_value_t event, void *hint, void *closure)
+{
+	(void)hint; (void)closure;
+	sentry_value_t images = sentry_value_get_by_key(
+		sentry_value_get_by_key(event, "debug_meta"), "images");
+	if (sentry_value_get_length(images) > 0)
+	{
+		sentry_value_t img = sentry_value_get_by_index(images, 0); // main executable
+		const char *base = sentry_value_as_string(sentry_value_get_by_key(img, "image_addr"));
+		const char *did  = sentry_value_as_string(sentry_value_get_by_key(img, "debug_id"));
+		sentry_value_t tags = sentry_value_get_by_key(event, "tags");
+		if (sentry_value_is_null(tags))
+		{
+			tags = sentry_value_new_object();
+			sentry_value_set_by_key(event, "tags", tags);
+		}
+		if (base && base[0]) sentry_value_set_by_key(tags, "zx_image_base", sentry_value_new_string(base));
+		if (did && did[0])   sentry_value_set_by_key(tags, "zx_debug_id", sentry_value_new_string(did));
+	}
+	return event;
+}
+
 // The single init point. consentAction: 0 = use persisted consent, +1 = give, -1 = revoke.
 // Giving consent here (right after sentry_init) is what actually uploads a stored crash.
 static void ZX_CrashReportDoInit(int consentAction)
@@ -94,6 +120,7 @@ static void ZX_CrashReportDoInit(int consentAction)
 	sentry_options_t *options = sentry_options_new();
 	sentry_options_set_dsn(options, dsn);
 	sentry_options_set_require_user_consent(options, 1);
+	sentry_options_set_before_send(options, zx_before_send, NULL);
 
 	char release[128];
 	snprintf(release, sizeof release, "ZandroX@%s", GetGitDescription());
@@ -210,6 +237,14 @@ void ZX_CrashReportCheckPreviousCrash()
 		ZX_CrashReportDoInit(0);           // safety (no pending crash after all)
 		break;
 	}
+
+	// [rc4l] Announce status here (post-console, so it reliably reaches the log -- doing it in
+	// ZX_CrashReportInit at main() is too early to print). If an upstream re-sync ever drops the
+	// hook calls, this line stops appearing: a visible signal that crash reporting went missing.
+	if (g_sentryInited)
+		Printf("Crash reporting active (ZandroX@%s)\n", GetGitHash());
+	else if (g_pendingCrash)
+		Printf("Crash reporting: waiting for your choice on last run's crash\n");
 }
 
 void ZX_CrashReportTickPrompt()
