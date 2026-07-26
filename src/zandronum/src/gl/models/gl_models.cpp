@@ -1099,10 +1099,10 @@ void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy)
 
 bool gl_IsHUDModelForPlayerAvailable (player_t * player)
 {
-	if ( (player == NULL) || (player->ReadyWeapon == NULL) || (player->psprites[0].state == NULL) )
+	if ( (player == NULL) || (player->ReadyWeapon == NULL) || (player->psprites[ps_weapon].state == NULL) )
 		return false;
 
-	FState* state = player->psprites[0].state;
+	FState* state = player->psprites[ps_weapon].state;
 	FSpriteModelFrame *smf = gl_FindModelFrame(player->ReadyWeapon->GetClass(), state->sprite, state->GetFrame(), false);
 	return ( smf != NULL );
 }

@@ -365,6 +365,23 @@ OptionMenu "OptionsMenu"
 	Command "Go to console",			"menuconsole"
 }
 
+// [rc4l] Shown once on the next launch after a crash (see zx_crashreport.cpp). Deliberately has
+// no permanent "never send" button -- that stays a manual "cl_crashreports 0".
+OptionMenu "CrashConsentMenu"
+{
+	Class "CrashConsentMenu"	// draws a solid rounded gradient panel behind the prompt (zx_consentmenu.cpp)
+	Title "CRASH REPORT"
+	StaticText "ZandroX crashed last time."
+	StaticText " "
+	StaticText "A crash report helps get it fixed."
+	StaticText "It is anonymous -- no personal data is sent."
+	StaticText " "
+	Command "Send report",					"crashreport_send"
+	Command "Always send (never ask again)",	"crashreport_always"
+	Command "Save report to disk",			"crashreport_save"
+	Command "Not now",						"crashreport_notnow"
+}
+
 //-------------------------------------------------------------------------------------------
 //
 // The player menu

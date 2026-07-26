@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: dev
+      upload_symbols:
+        description: 'Build with debug info and upload symbols to GlitchTip (release only)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-macos:
@@ -20,8 +25,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Build ZandroX
+        env:
+          ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
           # Native OpenAL build (no FMOD, no Rosetta) — arm64 on Apple Silicon runners.
           SOUND=1 ./mac_compile.sh
@@ -54,6 +63,21 @@ jobs:
           name: ZandroX-macos
           path: dist-macos/*.zip
 
+      - name: Package debug symbols (dSYM)
+        if: ${{ inputs.upload_symbols }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD | cut -c1-12)
+          ( cd build && zip -qry "../ZandroX-symbols-macos-${sha}.zip" zandronum.dSYM )
+          ls -la ZandroX-symbols-macos-*.zip
+
+      - name: Upload symbols artifact
+        if: ${{ inputs.upload_symbols }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-symbols-macos
+          path: ZandroX-symbols-macos-*.zip
+
   build-linux:
     # [rc4l] Build natively on the jammy runner, NOT via Dockerfile.linux-build. The Docker path
     # rebuilt its image every run, and a from-scratch apt-get against public Ubuntu mirrors took
@@ -67,12 +91,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Build + package ZandroX (Linux, native)
         # [rc4l] linux_compile.sh is the same script devs run; --install-deps apt-installs the
         # build/OpenAL libs, then it configures, builds and packages dist-linux/*.tar.gz itself.
         env:
           VERSION: ${{ inputs.version }}
+          ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
           ./linux_compile.sh --install-deps
           ls -la dist-linux/
@@ -84,6 +111,21 @@ jobs:
           name: ZandroX-linux
           path: dist-linux/*.tar.gz
 
+      - name: Package debug symbols (.debug)
+        if: ${{ inputs.upload_symbols }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD | cut -c1-12)
+          ( cd build-linux && zip -qy "../ZandroX-symbols-linux-${sha}.zip" zandronum.debug )
+          ls -la ZandroX-symbols-linux-*.zip
+
+      - name: Upload symbols artifact
+        if: ${{ inputs.upload_symbols }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-symbols-linux
+          path: ZandroX-symbols-linux-*.zip
+
   build-windows:
     # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose
     # generator name differs and which CMake mis-detects). Matches the reference build.
@@ -91,6 +133,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       # [rc4l] VCPKG_INSTALLATION_ROOT is a runner environment variable, and the env context in
       # an expression only sees workflow-level env: blocks — using it in the cache path below
@@ -118,6 +162,8 @@ jobs:
       # CI verifies the script on every PR. Keep this a thin wrapper: no build logic here.
       - name: Compile ZandroX (windows_compile.ps1)
         shell: pwsh
+        env:
+          ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
         run: ./windows_compile.ps1 -Version "${{ inputs.version }}"
 
       - name: Upload ZandroX Windows build
@@ -126,3 +172,20 @@ jobs:
         with:
           name: ZandroX-windows
           path: ZandroX-*-windows-x64.zip
+
+      - name: Package debug symbols (PDB)
+        if: ${{ inputs.upload_symbols }}
+        shell: pwsh
+        run: |
+          $sha = (git rev-parse HEAD).Substring(0,12)
+          $pdb = Get-ChildItem -Path build-win -Recurse -Filter zandronum.pdb | Select-Object -First 1
+          if (-not $pdb) { throw "no zandronum.pdb found under build-win" }
+          Compress-Archive -Path $pdb.FullName -DestinationPath "ZandroX-symbols-windows-$sha.zip" -Force
+          Get-ChildItem ZandroX-symbols-windows-*.zip
+
+      - name: Upload symbols artifact
+        if: ${{ inputs.upload_symbols }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-symbols-windows
+          path: ZandroX-symbols-windows-*.zip

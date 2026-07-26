@@ -54,6 +54,7 @@
 #include "gstrings.h"
 #include "r_utility.h"
 #include "menu/menu.h"
+#include "features/crashreport/zx_crashreport.h"
 #include "textures/textures.h"
 // [BB] New #includes.
 #include "chat.h"
