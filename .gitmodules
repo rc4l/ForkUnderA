@@ -1,0 +1,3 @@
+[submodule "src/zandronum/sentry-native"]
+	path = src/zandronum/sentry-native
+	url = https://github.com/getsentry/sentry-native

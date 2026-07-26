@@ -57,6 +57,7 @@
 #include "c_console.h"
 #include "errors.h"
 #include "version.h"
+#include "features/crashreport/zx_crashreport.h"
 #include "w_wad.h"
 #include "g_level.h"
 #include "r_state.h"
@@ -275,6 +276,10 @@ int main (int argc, char **argv)
 	// [SB] Zandronum version
 	if (ZA_PrintVersion())
 		return 0;
+
+	// [rc4l] Start crash reporting after --version has bailed (keeps --version side-effect-free),
+	// before the engine does any real work so early crashes are still captured.
+	ZX_CrashReportInit();
 
  	// [SB] I moved this below the ZA_PrintVersion call so it
 	//      doesn't get printed to stdout with --version's output.
