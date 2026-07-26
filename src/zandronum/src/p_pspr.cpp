@@ -39,6 +39,7 @@
 #include "g_game.h"
 #include "p_tick.h"
 #include "cl_main.h"
+#include "computation/psprite_overlay_compute.h"
 
 
 // MACROS ------------------------------------------------------------------
@@ -129,6 +130,156 @@ static FRandom pr_gunshot ("GunShot");
 
 // CODE --------------------------------------------------------------------
 
+// [overlay] Keep the ps_* reserved ids in lockstep with the compute module's canonical
+// values; these fire at compile time if either side is edited without the other.
+static_assert(ps_weapon == ZX_PSP_WEAPON, "ps_weapon id mismatch with compute module");
+static_assert(ps_flash == ZX_PSP_FLASH, "ps_flash id mismatch with compute module");
+static_assert(ps_targetcenter == ZX_PSP_TARGETCENTER, "ps_targetcenter id mismatch with compute module");
+static_assert(ps_targetleft == ZX_PSP_TARGETLEFT, "ps_targetleft id mismatch with compute module");
+static_assert(ps_targetright == ZX_PSP_TARGETRIGHT, "ps_targetright id mismatch with compute module");
+// [overlay] The pure draw-offset helper hardcodes these two PSPF_ bits; keep them in sync.
+static_assert(PSPF_ADDWEAPON == ZX_PSPF_ADDWEAPON, "PSPF_ADDWEAPON mismatch with compute module");
+static_assert(PSPF_ADDBOB == ZX_PSPF_ADDBOB, "PSPF_ADDBOB mismatch with compute module");
+
+bool P_IsReservedPSpriteLayer(int layer)
+{
+	return ComputeIsReservedPSpriteLayer(layer);
+}
+
+// [overlay] The layer whose state action is currently executing, so the A_Overlay family can
+// resolve a layer argument of 0 to "the calling layer" (and back OverlayID()). Saved/restored
+// re-entrantly around each state dispatch in P_SetPsprite.
+static int g_currentPSpriteLayer = 0;
+
+int P_GetCurrentPSpriteLayer()
+{
+	return g_currentPSpriteLayer;
+}
+
+//---------------------------------------------------------------------------
+//
+// [overlay] FPSpriteLayers - the player's dynamic set of psprite layers.
+//
+//---------------------------------------------------------------------------
+
+FPSpriteLayers::FPSpriteLayers()
+{
+	ResetToReserved();
+}
+
+FPSpriteLayers::FPSpriteLayers(const FPSpriteLayers &other)
+{
+	*this = other;
+}
+
+FPSpriteLayers &FPSpriteLayers::operator=(const FPSpriteLayers &other)
+{
+	if (this == &other)
+		return *this;
+
+	DeleteAll();
+	for (unsigned int i = 0; i < other.list.Size(); i++)
+		list.Push(new pspdef_t(*other.list[i]));
+
+	return *this;
+}
+
+FPSpriteLayers::~FPSpriteLayers()
+{
+	DeleteAll();
+}
+
+void FPSpriteLayers::DeleteAll()
+{
+	for (unsigned int i = 0; i < list.Size(); i++)
+		delete list[i];
+	list.Clear();
+}
+
+pspdef_t *FPSpriteLayers::CreateSorted(int layer)
+{
+	pspdef_t *node = new pspdef_t;
+	node->layer = layer;
+
+	// Gather the current ids so the insert position is decided by the pure helper.
+	TArray<int> ids;
+	for (unsigned int i = 0; i < list.Size(); i++)
+		ids.Push(list[i]->layer);
+
+	const int *idptr = ids.Size() ? &ids[0] : NULL;
+	unsigned int index = ComputeSortedInsertIndex(idptr, ids.Size(), layer);
+	list.Insert(index, node);
+
+	return node;
+}
+
+pspdef_t *FPSpriteLayers::Find(int layer) const
+{
+	for (unsigned int i = 0; i < list.Size(); i++)
+		if (list[i]->layer == layer)
+			return list[i];
+
+	return NULL;
+}
+
+pspdef_t &FPSpriteLayers::operator[](int layer)
+{
+	pspdef_t *p = Find(layer);
+	if (p == NULL)
+		p = CreateSorted(layer);
+
+	return *p;
+}
+
+void FPSpriteLayers::RemoveLayer(int layer)
+{
+	// Reserved layers are engine-owned and never destroyed, only deactivated.
+	if (P_IsReservedPSpriteLayer(layer))
+		return;
+
+	for (unsigned int i = 0; i < list.Size(); i++)
+	{
+		if (list[i]->layer == layer)
+		{
+			delete list[i];
+			list.Delete(i);
+			return;
+		}
+	}
+}
+
+void FPSpriteLayers::ClearRange(int start, int stop, bool safety)
+{
+	for (unsigned int i = 0; i < list.Size(); )
+	{
+		if (ComputeClearOverlayShouldRemove(list[i]->layer, start, stop, safety))
+		{
+			delete list[i];
+			list.Delete(i);
+		}
+		else
+		{
+			i++;
+		}
+	}
+}
+
+void FPSpriteLayers::ClearOverlays()
+{
+	// Remove every non-reserved layer (start==stop==0 means "all"; safety keeps the reserved).
+	ClearRange(0, 0, true);
+}
+
+void FPSpriteLayers::ResetToReserved()
+{
+	DeleteAll();
+
+	static const int reserved[NUM_RESERVED_PSPRITES] =
+		{ ps_weapon, ps_flash, ps_targetcenter, ps_targetleft, ps_targetright };
+	for (int i = 0; i < NUM_RESERVED_PSPRITES; i++)
+		CreateSorted(reserved[i]);
+}
+
 //---------------------------------------------------------------------------
 //
 // PROC P_NewPspriteTick
@@ -146,10 +297,11 @@ void P_NewPspriteTick(player_t *player)
 		// [EP] if player is not NULL, only this player's psprite settings are changed.
 		if (playeringame[i] && ( player == NULL || player-players == i ))
 		{
-			pspdef_t *pspdef = players[i].psprites;
-			for (int j = 0;j < NUMPSPRITES; j++)
+			// [overlay] Mark every active layer (weapon, flash, overlays, targeter).
+			FPSpriteLayers &pspr = players[i].psprites;
+			for (unsigned int j = 0; j < pspr.Size(); j++)
 			{
-				pspdef[j].processPending = true;
+				pspr.Element(j).processPending = true;
 			}
 		}
 	}
@@ -195,9 +347,11 @@ void P_SetPsprite (player_t *player, int position, FState *state, bool nofunctio
 		}
 
 
+		// [overlay] Reserved layers obey sv_fastweapons as before; overlays only if CVARFAST.
+		bool fasteligible = P_IsReservedPSpriteLayer(position) || (psp->Flags & PSPF_CVARFAST);
 		if (sv_fastweapons >= 2 && position == ps_weapon)
 			psp->tics = state->ActionFunc == NULL? 0 : 1;
-		else if (sv_fastweapons)
+		else if (sv_fastweapons && fasteligible)
 			psp->tics = 1;		// great for producing decals :)
 		else
 			psp->tics = state->GetTics(); // could be 0
@@ -214,17 +368,30 @@ void P_SetPsprite (player_t *player, int position, FState *state, bool nofunctio
 		// [BB] Some action functions rely on the fact that ReadyWeapon is not NULL.
 		if (!nofunction && player->mo != NULL && player->ReadyWeapon)
 		{
-			if (state->CallAction(player->mo, player->ReadyWeapon))
+			// [overlay] Track the executing layer so A_Overlay(0, ...) / OverlayID() resolve.
+			int savedLayer = g_currentPSpriteLayer;
+			g_currentPSpriteLayer = position;
+			bool actionResult = state->CallAction(player->mo, player->ReadyWeapon);
+			g_currentPSpriteLayer = savedLayer;
+
+			// [overlay] The action may have destroyed this very layer (e.g. A_ClearOverlays);
+			// re-fetch it and stop if it is gone.
+			psp = player->psprites.Find(position);
+			if (psp == NULL)
+				break;
+
+			if (actionResult && !psp->state)
 			{
-				if (!psp->state)
-				{
-					break;
-				}
+				break;
 			}
 		}
 
 		state = psp->state->GetNextState();
 	} while (!psp->tics); // An initial state of 0 could cycle through.
+
+	// [overlay] An overlay whose state chain ended removes itself; reserved layers persist.
+	if (psp != NULL && psp->state == NULL && !P_IsReservedPSpriteLayer(position))
+		player->psprites.RemoveLayer(position);
 }
 
 //---------------------------------------------------------------------------
@@ -283,6 +450,9 @@ void P_BringUpWeapon (player_t *player)
 
 	player->PendingWeapon = WP_NOCHANGE;
 	player->ReadyWeapon = weapon;
+	// [overlay] Drop any overlays left over from the previous weapon before the new one's
+	// select state runs (which may create its own overlays).
+	player->psprites.ClearOverlays();
 	player->psprites[ps_weapon].sy = player->cheats & CF_INSTANTWEAPSWITCH
 		? WEAPONTOP : WEAPONBOTTOM;
 	P_SetPsprite (player, ps_weapon, newstate);
@@ -468,6 +638,8 @@ void P_DropWeapon (player_t *player)
 	{
 		return;
 	}
+	// [overlay] The weapon is going away (drop or death); its overlays go with it.
+	player->psprites.ClearOverlays();
 	// Since the weapon is dropping, stop blocking switching.
 	player->WeaponState &= ~WF_DISABLESWITCH;
 	if (player->ReadyWeapon != NULL)
@@ -1218,13 +1390,211 @@ void A_GunFlash(AActor *self, FState *flash, const int Flags)
 		}
 	}
 
-	// [BB] In a crash log, client_GiveInventory was calling this with ReadyWeapon == NULL when giving some CustomInventory. 
+	// [BB] In a crash log, client_GiveInventory was calling this with ReadyWeapon == NULL when giving some CustomInventory.
 	if (flash == NULL && player->ReadyWeapon)
 	{
 		if (player->ReadyWeapon->bAltFire) flash = player->ReadyWeapon->FindState(NAME_AltFlash);
 		if (flash == NULL) flash = player->ReadyWeapon->FindState(NAME_Flash);
 	}
 	P_SetPsprite (player, ps_flash, flash);
+}
+
+//---------------------------------------------------------------------------
+//
+// [rc4l] The A_Overlay family, adapting GZDoom's DECORATE overlay functions and their
+// PSPF_/WOF_ flag semantics to this engine's psprite model (GZDoom implements them on its
+// DPSprite/VM rewrite; this is a behavioural reimplementation, not a line port, so no single
+// upstream SHA pins it).
+// [overlay] Resolve a layer argument of 0 to the layer whose state is currently executing,
+// so overlays can act on themselves.
+//
+//---------------------------------------------------------------------------
+
+static int P_ResolveOverlayLayer(int layer)
+{
+	return layer != 0 ? layer : P_GetCurrentPSpriteLayer();
+}
+
+//
+// A_Overlay(int layer, state st, bool nooverride = false)
+// Place (or replace) a psprite on an arbitrary layer.
+//
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_Overlay)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_INT(layer, 0);
+	ACTION_PARAM_STATE(st, 1);
+	ACTION_PARAM_BOOL(nooverride, 2);
+
+	player_t *player = self->player;
+	if (player == NULL)
+		return;
+
+	layer = P_ResolveOverlayLayer(layer);
+	if (layer == 0)
+		return; // layer 0 is not a valid target
+
+	if (nooverride)
+	{
+		pspdef_t *existing = player->psprites.Find(layer);
+		if (existing != NULL && existing->state != NULL)
+			return;
+	}
+
+	P_SetPsprite(player, layer, st);
+}
+
+//
+// A_ClearOverlays(int start = 0, int stop = 0, bool safety = true)
+// Remove overlay layers in [start, stop] (or all when both are 0).
+//
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_ClearOverlays)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_INT(start, 0);
+	ACTION_PARAM_INT(stop, 1);
+	ACTION_PARAM_BOOL(safety, 2);
+
+	player_t *player = self->player;
+	if (player == NULL)
+		return;
+
+	player->psprites.ClearRange(start, stop, safety);
+}
+
+//
+// A_OverlayFlags(int layer, int flags, bool set)
+// Set or clear PSPF_* flags on a layer.
+//
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_OverlayFlags)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_INT(layer, 0);
+	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_BOOL(set, 2);
+
+	player_t *player = self->player;
+	if (player == NULL)
+		return;
+
+	pspdef_t *psp = player->psprites.Find(P_ResolveOverlayLayer(layer));
+	if (psp == NULL)
+		return;
+
+	psp->Flags = ComputeOverlayFlags((unsigned int)psp->Flags, (unsigned int)flags, set);
+}
+
+//
+// A_OverlayOffset(int layer = 1, float wx = 0, float wy = 32, int flags = 0)
+// Move a layer, honoring WOF_KEEPX / WOF_KEEPY / WOF_ADD.
+//
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_OverlayOffset)
+{
+	ACTION_PARAM_START(4);
+	ACTION_PARAM_INT(layer, 0);
+	ACTION_PARAM_FIXED(wx, 1);
+	ACTION_PARAM_FIXED(wy, 2);
+	ACTION_PARAM_INT(flags, 3);
+
+	player_t *player = self->player;
+	if (player == NULL)
+		return;
+
+	pspdef_t *psp = player->psprites.Find(P_ResolveOverlayLayer(layer));
+	if (psp == NULL)
+		return;
+
+	bool keepx = (flags & WOF_KEEPX) != 0;
+	bool keepy = (flags & WOF_KEEPY) != 0;
+	bool add = (flags & WOF_ADD) != 0;
+
+	// [overlay] WOF_INTERPOLATE forces smoothing for this tic; a plain move (no ADD and no
+	// INTERPOLATE) snaps instead, matching GZDoom's backwards-compatible behaviour. oldx/oldy
+	// are owned by P_MovePsprites, which snapshots them at the start of every tic.
+	if (flags & WOF_INTERPOLATE)
+		psp->bInterpolate = true;
+	else if ((flags & WOF_ADD) == 0)
+		psp->bInterpolate = false;
+
+	// [overlay] The pure helper works on raw 48.16 fixed values (fixed_t is now zx::Fixed).
+	psp->sx = fixed_t::FromRaw(ComputeOverlayAxis(psp->sx.Raw(), wx.Raw(), keepx, add));
+	psp->sy = fixed_t::FromRaw(ComputeOverlayAxis(psp->sy.Raw(), wy.Raw(), keepy, add));
+}
+
+//
+// A_OverlayAlpha(int layer, float alpha)
+// Set a layer's alpha. Only visible when the layer has PSPF_ALPHA/PSPF_FORCEALPHA set.
+//
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_OverlayAlpha)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(layer, 0);
+	ACTION_PARAM_FIXED(alpha, 1);
+
+	player_t *player = self->player;
+	if (player == NULL)
+		return;
+
+	pspdef_t *psp = player->psprites.Find(P_ResolveOverlayLayer(layer));
+	if (psp == NULL)
+		return;
+
+	psp->alpha = clamp<fixed_t>(alpha, 0, FRACUNIT);
+}
+
+//
+// A_OverlayRenderStyle(int layer, int style)
+// Set a layer's render style. Only used when PSPF_RENDERSTYLE/PSPF_FORCESTYLE is set.
+//
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_OverlayRenderStyle)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(layer, 0);
+	ACTION_PARAM_INT(style, 1);
+
+	player_t *player = self->player;
+	if (player == NULL)
+		return;
+
+	if (style < 0 || style >= STYLE_Count)
+		return;
+
+	pspdef_t *psp = player->psprites.Find(P_ResolveOverlayLayer(layer));
+	if (psp == NULL)
+		return;
+
+	psp->RenderStyle = LegacyRenderStyles[style];
+}
+
+//
+// A_OverlayScale(int layer, float scalex = 1, float scaley = 0, int flags = 0)
+// Resize a layer, honoring WOF_KEEPX / WOF_KEEPY / WOF_ADD. A scaley of 0 copies scalex.
+//
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_OverlayScale)
+{
+	ACTION_PARAM_START(4);
+	ACTION_PARAM_INT(layer, 0);
+	ACTION_PARAM_FIXED(scalex, 1);
+	ACTION_PARAM_FIXED(scaley, 2);
+	ACTION_PARAM_INT(flags, 3);
+
+	player_t *player = self->player;
+	if (player == NULL)
+		return;
+
+	pspdef_t *psp = player->psprites.Find(P_ResolveOverlayLayer(layer));
+	if (psp == NULL)
+		return;
+
+	// [overlay] Raw 48.16 fixed values through the pure helpers (fixed_t is now zx::Fixed).
+	scaley = fixed_t::FromRaw(ComputeOverlaySquareScaleY(scalex.Raw(), scaley.Raw()));
+
+	bool keepx = (flags & WOF_KEEPX) != 0;
+	bool keepy = (flags & WOF_KEEPY) != 0;
+	bool add = (flags & WOF_ADD) != 0;
+
+	psp->scalex = fixed_t::FromRaw(ComputeOverlayAxis(psp->scalex.Raw(), scalex.Raw(), keepx, add));
+	psp->scaley = fixed_t::FromRaw(ComputeOverlayAxis(psp->scaley.Raw(), scaley.Raw(), keepy, add));
 }
 
 
@@ -1347,13 +1717,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_Light)
 
 void P_SetupPsprites(player_t *player, bool startweaponup)
 {
-	int i;
-
-	// Remove all psprites
-	for (i = 0; i < NUMPSPRITES; i++)
-	{
-		player->psprites[i].state = NULL;
-	}
+	// [overlay] Remove all psprites: drop overlays and deactivate the reserved layers.
+	player->psprites.ResetToReserved();
 	// Spawn the ready weapon
 	player->PendingWeapon = !startweaponup ? player->ReadyWeapon : WP_NOCHANGE;
 	P_BringUpWeapon (player);
@@ -1369,7 +1734,6 @@ void P_SetupPsprites(player_t *player, bool startweaponup)
 
 void P_MovePsprites (player_t *player)
 {
-	int i;
 	pspdef_t *psp;
 	FState *state;
 
@@ -1385,9 +1749,25 @@ void P_MovePsprites (player_t *player)
 	}
 	else
 	{
-		psp = &player->psprites[0];
-		for (i = 0; i < NUMPSPRITES; i++, psp++)
+		// [overlay] Snapshot the layer ids up front: advancing a state runs its action,
+		// which may add or remove layers, so a live iteration could be invalidated.
+		TArray<int> ids;
+		for (unsigned int n = 0; n < player->psprites.Size(); n++)
+			ids.Push(player->psprites.Element(n).layer);
+
+		for (unsigned int n = 0; n < ids.Size(); n++)
 		{
+			psp = player->psprites.Find(ids[n]);
+			if (psp == NULL)
+				continue; // this layer was removed by an earlier action this tick
+
+			// [overlay] Snapshot this tic's starting offset so the renderer can interpolate
+			// towards whatever the state actions set below. PSPF_INTERPOLATE opts in; an
+			// A_OverlayOffset without ADD/INTERPOLATE turns it back off for this tic.
+			psp->oldx = psp->sx;
+			psp->oldy = psp->sy;
+			psp->bInterpolate = (psp->Flags & PSPF_INTERPOLATE) != 0;
+
 			if ((state = psp->state) != NULL && psp->processPending) // a null state means not active
 			{
 				// drop tic count and possibly change state
@@ -1396,12 +1776,14 @@ void P_MovePsprites (player_t *player)
 					psp->tics--;
 
 					// [BC] Apply double firing speed.
-					if ( psp->tics && (player->cheats & CF_DOUBLEFIRINGSPEED))
+					// [overlay] Reserved layers always; overlays only with PSPF_POWDOUBLE.
+					if ( psp->tics && (player->cheats & CF_DOUBLEFIRINGSPEED) &&
+						 (P_IsReservedPSpriteLayer(ids[n]) || (psp->Flags & PSPF_POWDOUBLE)))
 						psp->tics--;
 
 					if(!psp->tics)
 					{
-						P_SetPsprite (player, i, psp->state->GetNextState());
+						P_SetPsprite (player, ids[n], psp->state->GetNextState());
 					}
 				}
 			}
@@ -1427,6 +1809,36 @@ void P_MovePsprites (player_t *player)
 FArchive &operator<< (FArchive &arc, pspdef_t &def)
 {
 	arc << def.state << def.tics << def.sx << def.sy
-		<< def.sprite << def.frame;
+		<< def.sprite << def.frame
+		// [overlay] Per-layer overlay state. oldx/oldy are transient (rebuilt each tic).
+		<< def.layer << def.Flags << def.alpha << def.RenderStyle.AsDWORD << def.scalex << def.scaley;
+	return arc;
+}
+
+// [overlay] Serialize the whole layer set; the count varies because overlays are dynamic.
+FArchive &operator<< (FArchive &arc, FPSpriteLayers &layers)
+{
+	if (arc.IsStoring())
+	{
+		DWORD count = layers.list.Size();
+		arc << count;
+		for (unsigned int i = 0; i < layers.list.Size(); i++)
+			arc << *layers.list[i];
+	}
+	else
+	{
+		for (unsigned int i = 0; i < layers.list.Size(); i++)
+			delete layers.list[i];
+		layers.list.Clear();
+
+		DWORD count = 0;
+		arc << count;
+		for (DWORD i = 0; i < count; i++)
+		{
+			pspdef_t *node = new pspdef_t;
+			arc << *node;
+			layers.list.Push(node);
+		}
+	}
 	return arc;
 }
