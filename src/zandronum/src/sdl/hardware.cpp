@@ -340,7 +340,9 @@ void I_SetFPSLimit(int limit)
 }
 #endif
 
-CUSTOM_CVAR (Int, vid_maxfps, 200, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// [rc4l] Default 500 to match upstream UZDoom/GZDoom (was 200). vsync and cl_capfps are already off
+// by default like upstream; this was the only framerate-cap divergence. 0 = uncapped, clamp [35,1000].
+CUSTOM_CVAR (Int, vid_maxfps, 500, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 {
 	if (vid_maxfps < TICRATE && vid_maxfps != 0)
 	{
