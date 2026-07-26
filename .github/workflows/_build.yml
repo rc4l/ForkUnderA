@@ -63,16 +63,20 @@ jobs:
           name: ZandroX-macos
           path: dist-macos/*.zip
 
-      - name: Upload debug symbols to GlitchTip
+      - name: Package debug symbols (dSYM)
         if: ${{ inputs.upload_symbols }}
-        env:
-          SENTRY_URL: ${{ secrets.SENTRY_URL }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: zandrox
-          SENTRY_PROJECT: zandrox
         run: |
-          npm install -g @sentry/cli
-          sentry-cli debug-files upload build   # scans for zandronum.dSYM + the binary
+          set -euo pipefail
+          sha=$(git rev-parse HEAD | cut -c1-12)
+          ( cd build && zip -qry "../ZandroX-symbols-macos-${sha}.zip" zandronum.dSYM )
+          ls -la ZandroX-symbols-macos-*.zip
+
+      - name: Upload symbols artifact
+        if: ${{ inputs.upload_symbols }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-symbols-macos
+          path: ZandroX-symbols-macos-*.zip
 
   build-linux:
     # [rc4l] Build natively on the jammy runner, NOT via Dockerfile.linux-build. The Docker path
@@ -107,16 +111,20 @@ jobs:
           name: ZandroX-linux
           path: dist-linux/*.tar.gz
 
-      - name: Upload debug symbols to GlitchTip
+      - name: Package debug symbols (.debug)
         if: ${{ inputs.upload_symbols }}
-        env:
-          SENTRY_URL: ${{ secrets.SENTRY_URL }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: zandrox
-          SENTRY_PROJECT: zandrox
         run: |
-          npm install -g @sentry/cli
-          sentry-cli debug-files upload build-linux   # scans for zandronum.debug + the binary
+          set -euo pipefail
+          sha=$(git rev-parse HEAD | cut -c1-12)
+          ( cd build-linux && zip -qy "../ZandroX-symbols-linux-${sha}.zip" zandronum.debug )
+          ls -la ZandroX-symbols-linux-*.zip
+
+      - name: Upload symbols artifact
+        if: ${{ inputs.upload_symbols }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-symbols-linux
+          path: ZandroX-symbols-linux-*.zip
 
   build-windows:
     # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose
@@ -165,14 +173,19 @@ jobs:
           name: ZandroX-windows
           path: ZandroX-*-windows-x64.zip
 
-      - name: Upload debug symbols to GlitchTip
+      - name: Package debug symbols (PDB)
         if: ${{ inputs.upload_symbols }}
         shell: pwsh
-        env:
-          SENTRY_URL: ${{ secrets.SENTRY_URL }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: zandrox
-          SENTRY_PROJECT: zandrox
         run: |
-          npm install -g @sentry/cli
-          sentry-cli debug-files upload build-win   # scans for the .pdb
+          $sha = (git rev-parse HEAD).Substring(0,12)
+          $pdb = Get-ChildItem -Path build-win -Recurse -Filter *.pdb | Where-Object { $_.Name -match 'zandronum|zdoom' } | Select-Object -First 1
+          if (-not $pdb) { throw "no PDB found under build-win" }
+          Compress-Archive -Path $pdb.FullName -DestinationPath "ZandroX-symbols-windows-$sha.zip" -Force
+          Get-ChildItem ZandroX-symbols-windows-*.zip
+
+      - name: Upload symbols artifact
+        if: ${{ inputs.upload_symbols }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZandroX-symbols-windows
+          path: ZandroX-symbols-windows-*.zip
