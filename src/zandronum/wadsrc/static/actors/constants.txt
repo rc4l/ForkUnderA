@@ -112,6 +112,44 @@ const int WRF_ALLOWRELOAD = 16;
 const int WRF_ALLOWZOOM = 32;
 const int WRF_DISABLESWITCH = 64;
 
+// [overlay] Reserved psprite layer ids for the A_Overlay family.
+const int PSP_WEAPON = 1;
+const int PSP_FLASH = 1000;
+
+// [overlay] Flags for A_OverlayFlags.
+const int PSPF_ADDWEAPON = 1;
+const int PSPF_ADDBOB = 2;
+const int PSPF_POWDOUBLE = 4;
+const int PSPF_CVARFAST = 8;
+const int PSPF_ALPHA = 16;
+const int PSPF_RENDERSTYLE = 32;
+const int PSPF_FORCEALPHA = 64;
+const int PSPF_FORCESTYLE = 128;
+const int PSPF_FLIP = 256;
+const int PSPF_MIRROR = 512;
+const int PSPF_PLAYERTRANSLATED = 1024;
+const int PSPF_INTERPOLATE = 2048;
+
+// [overlay] Flags for A_OverlayOffset / A_OverlayScale.
+const int WOF_KEEPX = 1;
+const int WOF_KEEPY = 2;
+const int WOF_ADD = 4;
+const int WOF_INTERPOLATE = 8;
+
+// [overlay] Render styles for A_OverlayRenderStyle (values match the engine ERenderStyle enum).
+const int STYLE_None = 0;
+const int STYLE_Normal = 1;
+const int STYLE_Fuzzy = 2;
+const int STYLE_SoulTrans = 3;
+const int STYLE_OptFuzzy = 4;
+const int STYLE_Stencil = 5;
+const int STYLE_Translucent = 6;
+const int STYLE_Add = 7;
+const int STYLE_Shaded = 8;
+const int STYLE_TranslucentStencil = 9;
+const int STYLE_Shadow = 10;
+const int STYLE_Subtract = 11;
+
 // Morph constants
 const int MRF_ADDSTAMINA = 1;
 const int MRF_FULLHEALTH = 2;

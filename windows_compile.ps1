@@ -197,6 +197,15 @@ Write-Note ("Static libs in $dep\lib:`n  " + (((Get-ChildItem "$dep\lib" -Filter
 $glewLib = (Get-ChildItem "$dep\lib" -Filter "*glew*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1)
 if (-not $glewLib) { throw "no *glew*.lib found in $dep\lib" }
 Write-Note "Resolved GLEW static lib: $($glewLib.Name)"
+
+# [rc4l] ZX_WITH_SYMBOLS=1 (release CI) emits a program PDB for symbol upload. We pass it as a
+# cache var, NOT via CMAKE_CXX_FLAGS: overriding CMAKE_CXX_FLAGS wipes MSVC's default /DWIN32
+# /D_WINDOWS defines and breaks the build. src/CMakeLists.txt adds /Zi + /DEBUG per-target instead.
+$symArgs = @()
+if ($env:ZX_WITH_SYMBOLS -eq "1") {
+    Write-Status "building with debug symbols (PDB)"
+    $symArgs = @("-DZX_WITH_SYMBOLS=ON")
+}
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
@@ -215,7 +224,8 @@ Write-Note "Resolved GLEW static lib: $($glewLib.Name)"
     "-DGLEW_INCLUDE_DIR=$dep/include" `
     "-DGLEW_LIBRARY=$($glewLib.FullName)" `
     "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=ON" `
-    "-DCMAKE_EXE_LINKER_FLAGS=$($sysLibs -join ' ')"
+    "-DCMAKE_EXE_LINKER_FLAGS=$($sysLibs -join ' ')" `
+    @symArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
 # --- Build -----------------------------------------------------------------

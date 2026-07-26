@@ -71,6 +71,7 @@
 #include "i_system.h"
 #include "c_console.h"
 #include "version.h"
+#include "features/crashreport/zx_crashreport.h"
 #include "i_video.h"
 #include "i_sound.h"
 #include "i_input.h"
@@ -1336,6 +1337,9 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int n
 	DuplicateHandle (GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &MainThread,
 		0, FALSE, DUPLICATE_SAME_ACCESS);
 	MainThreadID = GetCurrentThreadId();
+
+	// [rc4l] Start crash reporting before the legacy filter so sentry-native chains ahead of it.
+	ZX_CrashReportInit();
 
 #ifndef _DEBUG
 	if (MainThread != INVALID_HANDLE_VALUE)

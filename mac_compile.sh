@@ -203,6 +203,12 @@ configure() {
         -DOPENSSL_ROOT_DIR="$ssl"
     )
 
+    # [rc4l] ZX_WITH_SYMBOLS=1 (release CI) builds with debug info; a .dSYM is generated after the
+    # build (RELEASE_WITH_DEBUG_FILE is off on Apple) and uploaded to GlitchTip so crashes symbolicate.
+    if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" ]]; then
+        args+=( -DCMAKE_CXX_FLAGS=-g -DCMAKE_C_FLAGS=-g )
+    fi
+
     if [[ "$WANT_SOUND" == "1" ]]; then
         local oal snd mp3
         oal="$(brew --prefix openal-soft)"; snd="$(brew --prefix libsndfile)"; mp3="$(brew --prefix mpg123)"
@@ -226,6 +232,12 @@ configure() {
 build() {
     status "Building Zandronum..."
     cmake --build "$BUILD_DIR" --config "$CONFIGURATION" --parallel "$NCPU"
+
+    # [rc4l] Extract debug info into a .dSYM for symbol upload (kept out of the shipped binary).
+    if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" && -f "$BUILD_DIR/zandronum" ]]; then
+        status "Generating dSYM..."
+        dsymutil "$BUILD_DIR/zandronum" -o "$BUILD_DIR/zandronum.dSYM" || warn "dsymutil failed"
+    fi
 
     # Freedoom WADs for a runnable game (matches the Windows build).
     # [rc4l] Freedoom is BSD-3-clause: clause 2 requires its copyright notice to travel with

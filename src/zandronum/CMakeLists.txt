@@ -253,6 +253,22 @@ add_subdirectory( lzma )
 add_subdirectory( tools )
 add_subdirectory( dumb )
 add_subdirectory( gdtoa )
+
+# [rc4l] sentry-native crash reporting -> our self-hosted GlitchTip. Built with the inproc
+# backend (no external handler binary). Empty ZX_SENTRY_DSN disables it at compile time.
+set( ZX_SENTRY_DSN "https://6e61a7f0-0c4b-47d7-9444-ecbef0957bfc@crash.cantstopscrolling.net/1"
+	CACHE STRING "Sentry/GlitchTip DSN for crash reporting (empty string disables it)" )
+option( ZX_ENABLE_SENTRY "Build with sentry-native crash reporting" ON )
+if( ZX_ENABLE_SENTRY AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sentry-native/CMakeLists.txt" )
+	set( SENTRY_BACKEND inproc CACHE STRING "" FORCE )
+	set( SENTRY_BUILD_TESTS OFF CACHE BOOL "" FORCE )
+	set( SENTRY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE )
+	set( SENTRY_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE )
+	add_subdirectory( sentry-native )
+else()
+	set( ZX_ENABLE_SENTRY OFF )
+endif()
+
 add_subdirectory( wadsrc )
 add_subdirectory( wadsrc_bm )
 # [BB] Zandronum includes the light definitions in zandronum.pk3.

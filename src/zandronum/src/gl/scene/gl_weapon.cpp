@@ -57,6 +57,7 @@
 #include "gl/models/gl_models.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
+#include "computation/psprite_overlay_compute.h"
 
 EXTERN_CVAR (Bool, r_drawplayersprites)
 EXTERN_CVAR(Float, transsouls)
@@ -96,10 +97,22 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	FTextureID lump = gl_GetSpriteFrame(psp->sprite, psp->frame, 0, 0, &mirror);
 	if (!lump.isValid()) return;
 
+	// [overlay] PSPF_FLIP mirrors the sprite's pixels (not its position).
+	if (psp->Flags & PSPF_FLIP)
+		mirror = !mirror;
+
 	FMaterial * tex = FMaterial::ValidateTexture(lump, true, false);
 	if (!tex) return;
 
-	gl_RenderState.SetMaterial(tex, CLAMP_XY_NOMIP, 0, OverrideShader, alphatexture);
+	// [overlay] PSPF_PLAYERTRANSLATED remaps the sprite with the player's colour translation
+	// (the same one used for their body sprite), for overlays representing the player. On the
+	// core-profile renderer the translation rides in SetMaterial's arg3, where BindPatch's
+	// cm_index/translation used to go.
+	int psptranslation = 0;
+	if ((psp->Flags & PSPF_PLAYERTRANSLATED) && player->mo != NULL)
+		psptranslation = (int)player->mo->Translation;
+
+	gl_RenderState.SetMaterial(tex, CLAMP_XY_NOMIP, psptranslation, OverrideShader, alphatexture);
 
 	float vw = (float)viewwidth;
 	float vh = (float)viewheight;
@@ -110,19 +123,27 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	// calculate edges of the shape
 	scalex = xratio[WidescreenRatio] * vw / 320;
 
-	tx = FIXED2FLOAT(sx) - (160 - r.left);
+	// [overlay] A_OverlayScale: the layer scale multiplies the sprite's offset and size so it
+	// scales about its own offset origin (matching GZDoom). psp->scalex/scaley default to FRACUNIT,
+	// so sxf/syf are 1.0 for normal weapons and this stays byte-identical to the original. On the
+	// core-profile renderer the offsets/dimensions come from the sprite FloatRect (r.left is the
+	// negated left offset, r.width the width) instead of GetScaledLeftOffset/TextureWidth.
+	float sxf = FIXED2FLOAT(psp->scalex);
+	float syf = FIXED2FLOAT(psp->scaley);
+
+	tx = FIXED2FLOAT(sx) - (160 - r.left * sxf);
 	x1 = tx * scalex + vw/2;
 	if (x1 > vw)	return; // off the right side
 	x1 += viewwindowx;
 
-	tx += r.width;
+	tx += r.width * sxf;
 	x2 = tx * scalex + vw / 2;
 	if (x2 < 0) return; // off the left side
 	x2 += viewwindowx;
 
 
 	// killough 12/98: fix psprite positioning problem
-	ftexturemid = 100.f - FIXED2FLOAT(sy) - r.top;
+	ftexturemid = 100.f - FIXED2FLOAT(sy) - r.top * syf;
 
 	AWeapon * wi=player->ReadyWeapon;
 	if (wi && wi->YAdjust)
@@ -140,7 +161,19 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 
 	scale = (SCREENHEIGHT*vw) / (SCREENWIDTH * 200.0f);
 	y1 = viewwindowy + vh / 2 - (ftexturemid * scale);
-	y2 = y1 + (r.height * scale) + 1;
+	// [overlay] The layer's vertical scale multiplies the sprite height (identity at 1x).
+	y2 = y1 + (r.height * syf * scale) + 1;
+
+	// [overlay] PSPF_MIRROR reflects the sprite's horizontal position about the view centre,
+	// keeping the pixels' orientation (combine with PSPF_FLIP for a proper handedness flip).
+	if (psp->Flags & PSPF_MIRROR)
+	{
+		float center = viewwindowx + (vw / 2);
+		float nx1 = 2 * center - x2;
+		float nx2 = 2 * center - x1;
+		x1 = nx1;
+		x2 = nx2;
+	}
 
 	if (!mirror)
 	{
@@ -185,9 +218,13 @@ EXTERN_CVAR(Bool, gl_brightfog)
 
 void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 {
-	bool statebright[2] = {false, false};
 	unsigned int i;
 	pspdef_t *psp;
+	// [overlay] Per-layer fullbright, plus the two global overrides (fixed colormap / fuzz).
+	bool allbright = false;
+	bool nobright = false;
+	TArray<pspdef_t *> drawlist;	// weapon-pass layers (below the targeter), ascending draw order
+	TArray<bool> statebrightlist;	// parallel to drawlist
 	int lightlevel=0;
 	fixed_t ofsx, ofsy;
 	FColormap cm;
@@ -207,31 +244,37 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 
 	P_BobWeapon (player, &player->psprites[ps_weapon], &ofsx, &ofsy);
 
-	// check for fullbright
-	if (player->fixedcolormap==NOFIXEDCOLORMAP)
+	// [overlay] Collect the weapon-pass layers (everything below the targeter) in ascending
+	// draw order, and compute each layer's fullbright exactly as the old statebright[] did.
+	for (i = 0; i < player->psprites.Size(); i++)
 	{
-		for (i = 0, psp = player->psprites; i <= ps_flash; i++, psp++)
+		pspdef_t &pl = player->psprites.Element(i);
+		if (pl.layer >= ps_targetcenter || pl.state == NULL)
+			continue;
+
+		drawlist.Push(&pl);
+
+		bool bright = false;
+		if (player->fixedcolormap==NOFIXEDCOLORMAP)
 		{
-			if (psp->state != NULL)
+			bool disablefullbright = false;
+			FTextureID lump = gl_GetSpriteFrame(pl.sprite, pl.frame, 0, 0, NULL);
+			if (lump.isValid())
 			{
-				bool disablefullbright = false;
-				FTextureID lump = gl_GetSpriteFrame(psp->sprite, psp->frame, 0, 0, NULL);
-				if (lump.isValid())
-				{
-					FMaterial * tex=FMaterial::ValidateTexture(lump, false, false);
-					if (tex)
-						disablefullbright = tex->tex->gl_info.bDisableFullbright;
-				}
-				statebright[i] = !!psp->state->GetFullbright() && !disablefullbright;
+				FMaterial * tex=FMaterial::ValidateTexture(lump, false, false);
+				if (tex)
+					disablefullbright = tex->tex->gl_info.bDisableFullbright;
 			}
+			bright = !!pl.state->GetFullbright() && !disablefullbright;
 		}
+		statebrightlist.Push(bright);
 	}
 
 	if (gl_fixedcolormap) 
 	{
 		lightlevel=255;
 		cm.Clear();
-		statebright[0] = statebright[1] = true;
+		allbright = true;	// [overlay] fixed colormap makes every layer fullbright
 		fakesec = viewsector;
 	}
 	else
@@ -335,7 +378,7 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 				vis.RenderStyle.BlendOp = STYLEOP_Shadow;
 			}
 		}
-		statebright[0] = statebright[1] = false;
+		nobright = true;	// [overlay] fuzz forces every layer non-bright
 	}
 
 	gl_SetRenderStyle(vis.RenderStyle, false, false);
@@ -353,10 +396,21 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		trans = FIXED2FLOAT(vis.alpha);
 	}
 
+	// [overlay] Is any drawn layer fullbright? (drives the weapon-brighten below)
+	bool anybright = false;
+	for (i = 0; i < drawlist.Size(); i++)
+	{
+		if (!nobright && (allbright || statebrightlist[i]))
+		{
+			anybright = true;
+			break;
+		}
+	}
+
 	// now draw the different layers of the weapon
 	gl_RenderState.EnableBrightmap(true);
 	gl_RenderState.SetObjectColor(ThingColor);
-	if (statebright[0] || statebright[1])
+	if (anybright)
 	{
 		// brighten the weapon to reduce the difference between
 		// normal sprite and fullbright flash.
@@ -368,42 +422,83 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 	int oldlightmode = glset.lightmode;
 	if (glset.lightmode == 8) glset.lightmode = 2;
 	
-	for (i=0, psp=player->psprites; i<=ps_flash; i++,psp++)
+	// [overlay] Draw every weapon-pass layer in ascending id order (further back -> in front).
+	fixed_t weaponx = player->psprites[ps_weapon].sx;
+	fixed_t weapony = player->psprites[ps_weapon].sy;
+	for (i=0; i<drawlist.Size(); i++)
 	{
-		if (psp->state) 
+		psp = drawlist[i];
+		bool bright = !nobright && (allbright || statebrightlist[i]);
+
+		FColormap cmc = cm;
+		if (bright)
 		{
-			FColormap cmc = cm;
-			if (statebright[i]) 
+			if (fakesec == viewsector || in_area != area_below)
+				// under water areas keep most of their color for fullbright objects
 			{
-				if (fakesec == viewsector || in_area != area_below)	
-				{
-					cmc.LightColor.r=
-					cmc.LightColor.g=
-					cmc.LightColor.b=0xff;
-				}
-				else
-				{
-					// under water areas keep most of their color for fullbright objects
-					cmc.LightColor.r = (3 * cmc.LightColor.r + 0xff) / 4;
-					cmc.LightColor.g = (3*cmc.LightColor.g + 0xff)/4;
-					cmc.LightColor.b = (3*cmc.LightColor.b + 0xff)/4;
-				}
-			}
-			// set the lighting parameters
-			if (vis.RenderStyle.BlendOp == STYLEOP_Shadow)
-			{
-				gl_RenderState.SetColor(0.2f, 0.2f, 0.2f, 0.33f, cmc.desaturation);
+				cmc.LightColor.r=
+				cmc.LightColor.g=
+				cmc.LightColor.b=0xff;
 			}
 			else
 			{
-				if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && gl_light_sprites)
-				{
-					gl_SetDynSpriteLight(playermo, NULL);
-				}
-				gl_SetColor(statebright[i] ? 255 : lightlevel, 0, cmc, trans, true);
+				cmc.LightColor.r = (3*cmc.LightColor.r + 0xff)/4;
+				cmc.LightColor.g = (3*cmc.LightColor.g + 0xff)/4;
+				cmc.LightColor.b = (3*cmc.LightColor.b + 0xff)/4;
 			}
-			DrawPSprite(player, psp, psp->sx + ofsx, psp->sy + ofsy, hudModelStep, OverrideShader, !!(vis.RenderStyle.Flags & STYLEF_RedIsAlpha));
 		}
+		// [overlay] Effective render style and alpha for this layer. By default a layer uses the
+		// weapon's style/alpha; overlays override via PSPF_RENDERSTYLE / PSPF_ALPHA (and their
+		// FORCE variants), so the reserved weapon/flash layers stay pixel-identical.
+		FRenderStyle layerStyle = vis.RenderStyle;
+		int layerShader = OverrideShader;
+		if ((psp->Flags & (PSPF_RENDERSTYLE | PSPF_FORCESTYLE)) && psp->RenderStyle.AsDWORD != 0)
+		{
+			layerStyle = psp->RenderStyle;
+			layerShader = 0;
+		}
+
+		float layertrans = trans;
+		if (psp->Flags & (PSPF_ALPHA | PSPF_FORCEALPHA))
+			layertrans = FIXED2FLOAT(psp->alpha);
+
+		gl_SetRenderStyle(layerStyle, false, false);
+
+		// [overlay] Lighting on the core-profile renderer. The pre-core renderer used one
+		// gl_SetSpriteLighting() call; here we drive render state directly: STYLEOP_Shadow draws
+		// flat-dark, otherwise apply the dynamic sprite light and the sprite colour via gl_SetColor.
+		if (layerStyle.BlendOp == STYLEOP_Shadow)
+		{
+			gl_RenderState.SetColor(0.2f, 0.2f, 0.2f, 0.33f, cmc.desaturation);
+		}
+		else
+		{
+			if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && gl_light_sprites)
+			{
+				gl_SetDynSpriteLight(playermo, NULL);
+			}
+			gl_SetColor(bright ? 255 : lightlevel, 0, cmc, layertrans, true);
+		}
+
+		// [overlay] The reserved weapon/flash layers always ride the bob; overlays follow the
+		// weapon offset and/or the bob only when they set the matching flag.
+		bool ridesBob = (psp->layer == ps_weapon || psp->layer == ps_flash);
+		// [overlay] The pure helper works on raw 48.16 fixed values (fixed_t is now zx::Fixed).
+		int64_t addxRaw, addyRaw;
+		ComputeOverlayDrawOffset(ridesBob, (int)psp->Flags, weaponx.Raw(), weapony.Raw(), ofsx.Raw(), ofsy.Raw(), &addxRaw, &addyRaw);
+		fixed_t addx = fixed_t::FromRaw(addxRaw);
+		fixed_t addy = fixed_t::FromRaw(addyRaw);
+
+		// [overlay] PSPF_INTERPOLATE / WOF_INTERPOLATE smooth an overlay's offset between tics.
+		// Reserved weapon/flash layers are left alone so stock rendering is unchanged.
+		fixed_t drawsx = psp->sx;
+		fixed_t drawsy = psp->sy;
+		if (psp->bInterpolate && !ridesBob)
+		{
+			drawsx = psp->oldx + FixedMul(psp->sx - psp->oldx, r_TicFrac);
+			drawsy = psp->oldy + FixedMul(psp->sy - psp->oldy, r_TicFrac);
+		}
+		DrawPSprite (player,psp,drawsx+addx, drawsy+addy, hudModelStep, layerShader, !!(layerStyle.Flags & STYLEF_RedIsAlpha));
 	}
 	gl_RenderState.SetObjectColor(0xffffffff);
 	gl_RenderState.SetDynLight(0, 0, 0);
@@ -435,6 +530,11 @@ void FGLRenderer::DrawTargeterSprites()
 	gl_RenderState.SetTextureMode(TM_MODULATE);
 
 	// The Targeter's sprites are always drawn normally.
-	for (i=ps_targetcenter, psp = &player->psprites[ps_targetcenter]; i<NUMPSPRITES; i++,psp++)
-		if (psp->state) DrawPSprite (player,psp,psp->sx, psp->sy, false, 0, false);
+	// [overlay] Iterate the three reserved targeter layers by id.
+	static const int targetlayers[3] = { ps_targetcenter, ps_targetleft, ps_targetright };
+	for (i=0; i<3; i++)
+	{
+		psp = player->psprites.Find(targetlayers[i]);
+		if (psp && psp->state) DrawPSprite (player,psp,psp->sx, psp->sy, false, 0, false);
+	}
 }
