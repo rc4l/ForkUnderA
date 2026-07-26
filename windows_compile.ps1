@@ -164,13 +164,10 @@ Write-Note "DXSDK_DIR set to $dx"
 # cmake_policy() calls collide with Zandronum's old CMake minimums and break the VS generator.
 Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL)"
 $dep = $VcpkgInstalled
-# [rc4l] ZX_WITH_SYMBOLS=1 (release CI) emits a PDB (/Zi compiler + /DEBUG linker) so the crash's
-# addresses symbolicate in GlitchTip after upload. Off by default to keep dev builds fast.
+# [rc4l] TODO(windows symbols): emitting a PDB via /Zi clashes with the precompiled-header setup
+# here (breaks _WIN32/windows.h detection). Mac+Linux symbolication works; Windows PDB generation
+# needs a PCH-compatible flag (likely /Z7) sorted out separately, so it's disabled for now.
 $symArgs = @()
-if ($env:ZX_WITH_SYMBOLS -eq "1") {
-    Write-Status "building with debug symbols (PDB)"
-    $symArgs = @("-DRELEASE_WITH_DEBUG_FILE=ON", "-DCMAKE_CXX_FLAGS=/Zi", "-DCMAKE_C_FLAGS=/Zi", "-DCMAKE_EXE_LINKER_FLAGS=/DEBUG")
-}
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
