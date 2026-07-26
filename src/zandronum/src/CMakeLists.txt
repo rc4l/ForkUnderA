@@ -1327,6 +1327,7 @@ add_executable( zdoom WIN32
 	features/openal-sound/sndfile_decoder.cpp
 	features/openal-sound/mpg123_decoder.cpp
 	features/freeform-menu/freeformmenu.cpp
+	features/crashreport/zx_crashreport.cpp
 	zzautozend.cpp
 )
 
@@ -1356,6 +1357,12 @@ endif(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS")
 
 # [BB] Added GeoIP, huffman & sqlite
 target_link_libraries( zdoom ${ZDOOM_LIBS} gdtoa dumb lzma GeoIP sqlite3 )
+
+# [rc4l] sentry-native crash reporting (the `sentry` target propagates its own include dirs).
+if( ZX_ENABLE_SENTRY )
+	target_link_libraries( zdoom sentry )
+	target_compile_definitions( zdoom PRIVATE ZX_ENABLE_SENTRY "ZX_SENTRY_DSN=\"${ZX_SENTRY_DSN}\"" )
+endif()
 include_directories( .
 	g_doom
 	g_heretic

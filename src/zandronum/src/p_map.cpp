@@ -44,6 +44,14 @@
 #include "p_terrain.h"
 #include "p_trace.h"
 #include "p_3dmidtex.h"
+#include "computation/rail_puff_compute.h"
+
+// [rc4l] rail_puff_compute mirrors these TRACE_Hit* values; keep synced.
+static_assert(ZX_TRACE_HitNone == TRACE_HitNone, "TRACE_Hit mirror out of sync");
+static_assert(ZX_TRACE_HitFloor == TRACE_HitFloor, "TRACE_Hit mirror out of sync");
+static_assert(ZX_TRACE_HitCeiling == TRACE_HitCeiling, "TRACE_Hit mirror out of sync");
+static_assert(ZX_TRACE_HitWall == TRACE_HitWall, "TRACE_Hit mirror out of sync");
+static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync");
 
 #include "s_sound.h"
 #include "decallib.h"
@@ -51,6 +59,7 @@
 // State.
 #include "doomstat.h"
 #include "r_state.h"
+#include "r_sky.h"	// [rc4l] skyflatnum, for the rail endpoint sky-flat puff guard
 
 #include "gi.h"
 
@@ -4983,14 +4992,29 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	}
 
 	// Spawn a decal or puff at the point where the trace ended.
-	if (trace.HitType == TRACE_HitWall)
+	// [rc4l] Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514: the endpoint puff now spawns
+	// on floor/ceiling hits too, not only walls (older Zandronum was wall-only), with a sky-flat guard
+	// that destroys the puff if it landed on the open sky (unless the puff is MF3_SKYEXPLODE). The decal
+	// stays wall-only -- flats don't take wall decals. Hit-type branching is the pure ComputeRailEndpointSpawn.
+	const RailEndpointSpawn railEnd = ComputeRailEndpointSpawn(trace.HitType);
+	if (railEnd.decal)
 	{
 		SpawnShootDecal(source, trace);
-		if (puffclass != NULL && puffDefaults->flags3 & MF3_ALWAYSPUFF)
+	}
+	if (railEnd.puff && puffclass != NULL && puffDefaults->flags3 & MF3_ALWAYSPUFF)
+	{
+		// [rc4l] Ported from qzandronum@d33dacfb1ca1dfa3eef1989b1e5c6d5f8443ddce: pull the endpoint puff
+		// 4 units back toward the shooter along the rail trajectory (vx,vy,vz) so it renders in front of
+		// the surface instead of embedded in it -- otherwise a wall/ledge hit leaves the puff stuck in the
+		// geometry. UZDoom spawns at the exact hit point and has no equivalent nudge.
+		const fixed_t closer = 4 * FRACUNIT;
+		AActor *puff = P_SpawnPuff(source, puffclass, trace.X - FixedMul(vx, closer), trace.Y - FixedMul(vy, closer), trace.Z - FixedMul(vz, closer), (source->angle + angleoffset) - ANG90, 1, 0);
+		if (railEnd.skyGuard && puff != NULL && !(puff->flags3 & MF3_SKYEXPLODE) &&
+			(((trace.HitType == TRACE_HitFloor) && (puff->floorpic == skyflatnum)) ||
+			((trace.HitType == TRACE_HitCeiling) && (puff->ceilingpic == skyflatnum))))
 		{
-			P_SpawnPuff(source, puffclass, trace.X, trace.Y, trace.Z, (source->angle + angleoffset) - ANG90, 1, 0);
+			puff->Destroy();
 		}
-
 	}
 	if (thepuff != NULL)
 	{
