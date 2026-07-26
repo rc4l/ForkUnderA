@@ -13,3 +13,11 @@ ZandroX is a GPL-compliant fork of Zandronum.
 - **macOS:** `./mac_compile.sh`
 - **Linux:** `./linux_compile.sh`
 - **Windows:** `.\windows_compile.ps1`
+
+## The Big Changes from Zandronum
+
+- Fully GPL Compliant. You can make commercial games with this.
+- OpenGL renderer upgraded to 3.3 (GZDoom 2.0.5)
+- Borderless Windows
+- Freeform Menus (Ported from QZandronum)
+- Advanced crash reporter
