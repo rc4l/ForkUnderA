@@ -396,7 +396,8 @@ player_t::player_t()
 	memset (&cmd, 0, sizeof(cmd));
 	// [BB] Check if this is still necessary.
 	userinfo.Reset();
-	memset (psprites, 0, sizeof(psprites));
+	// [overlay] The layer container self-initializes its reserved layers on construction.
+	psprites.ResetToReserved();
 }
 
 player_t &player_t::operator=(const player_t &p)
@@ -456,7 +457,7 @@ player_t &player_t::operator=(const player_t &p)
 	extralight = p.extralight;
 	fixedcolormap = p.fixedcolormap;
 	fixedlightlevel = p.fixedlightlevel;
-	memcpy(psprites, &p.psprites, sizeof(psprites));
+	psprites = p.psprites;	// [overlay] deep-copies the dynamic layer container
 	morphTics = p.morphTics;
 	MorphedPlayerClass = p.MorphedPlayerClass;
 	MorphStyle = p.MorphStyle;
@@ -4393,7 +4394,6 @@ void P_UnPredictPlayer ()
 
 void player_t::Serialize (FArchive &arc)
 {
-	int i;
 	FString skinname;
 
 	arc << cls
@@ -4492,8 +4492,7 @@ void player_t::Serialize (FArchive &arc)
 	// [BB] Zandronum doesn't use this.
 	//for (i = 0; i < MAXPLAYERS; i++)
 	//	arc << frags[i];
-	for (i = 0; i < NUMPSPRITES; i++)
-		arc << psprites[i];
+	arc << psprites;	// [overlay] serializes the whole dynamic layer container
 
 	arc << CurrentPlayerClass;
 

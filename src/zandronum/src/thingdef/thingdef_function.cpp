@@ -45,6 +45,7 @@
 #include "thingdef_exp.h"
 #include "actor.h"
 #include "actorptrselect.h"
+#include "p_pspr.h"		// [overlay] P_GetCurrentPSpriteLayer for OverlayID()
 
 static TMap<FName, FxGlobalFunctionCall::Creator> CreatorMap;
 
@@ -294,3 +295,41 @@ class FxGlobalFunctionCall_IsPointerEqual : public FxGlobalFunctionCall
 };
 
 GLOBALFUNCTION_ADDER(IsPointerEqual);
+
+//==========================================================================
+//
+// [overlay] Function: OverlayID
+//
+// Returns the id of the psprite layer whose state is currently executing, so
+// an overlay's own states can refer to themselves. Returns 0 when nothing is
+// executing on a layer. The A_Overlay family also accepts a layer of 0 to mean
+// "the calling layer", which uses the same tracking.
+//
+//==========================================================================
+
+class FxGlobalFunctionCall_OverlayID : public FxGlobalFunctionCall
+{
+	public:
+		GLOBALFUNCTION_DEFINE(OverlayID);
+
+		FxExpression *Resolve(FCompileContext& ctx)
+		{
+			CHECKRESOLVED();
+
+			if (!ResolveArgs(ctx, 0, 0, false))
+				return NULL;
+
+			ValueType = VAL_Int;
+			return this;
+		}
+
+		ExpVal EvalExpression(AActor *self)
+		{
+			ExpVal ret;
+			ret.Type = VAL_Int;
+			ret.Int = P_GetCurrentPSpriteLayer();
+			return ret;
+		}
+};
+
+GLOBALFUNCTION_ADDER(OverlayID);
