@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <sentry.h>
 #include "version.h"   // GetGitDescription(), GetGitHash()
+#include "c_console.h" // Printf
 
 #ifndef ZX_SENTRY_DSN
 #define ZX_SENTRY_DSN ""
@@ -83,6 +84,10 @@ void ZX_CrashReportInit()
 	{
 		g_sentryInited = true;
 		atexit(ZX_CrashReportShutdown); // flush/close even on paths that don't call us explicitly
+		// [rc4l] Announce it at startup. If a future upstream re-sync ever drops the
+		// ZX_CrashReportInit() hook call from i_main.cpp, this line stops appearing -- a visible
+		// signal that crash reporting silently went missing, rather than failing quietly.
+		Printf("Crash reporting active (%s)\n", release);
 	}
 }
 
