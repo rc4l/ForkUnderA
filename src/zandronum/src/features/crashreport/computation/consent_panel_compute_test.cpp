@@ -54,6 +54,12 @@ TEST(ConsentPanelRect, DegenerateHeightAndScreen)
 	EXPECT_EQ(r.radius, 0);            // half of min(0,0)=0
 }
 
+TEST(CenteredTop, CentresAndClamps)
+{
+	EXPECT_EQ(ComputeCenteredTop(480, 200), 140); // (480-200)/2
+	EXPECT_EQ(ComputeCenteredTop(100, 200), 0);   // block taller than screen -> clamped to 0
+}
+
 TEST(RoundedInset, ZeroRadiusOrOutOfRange)
 {
 	EXPECT_EQ(ComputeRoundedInset(5, 100, 0), 0);   // radius <= 0

@@ -753,6 +753,7 @@ public:
 	}
 
 	~FOptionMenuItem();
+	const char *GetLabel() const { return mLabel; } // [rc4l] for measuring text extents (zx_consentmenu.cpp)
 	virtual int Draw(FOptionMenuDescriptor *desc, int y, int indent, bool selected);
 	virtual bool Selectable();
 	virtual int GetIndent();

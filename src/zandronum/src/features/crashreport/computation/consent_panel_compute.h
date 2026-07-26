@@ -21,6 +21,10 @@ struct ConsentPanelRect
 ConsentPanelRect ComputeConsentPanelRect(int screenW, int screenH, int panelW,
 	int contentTop, int contentBottom, int padY, int radius);
 
+// Top y that vertically centres a block of height blockH within screenH (clamped to >= 0 so an
+// over-tall block simply starts at the top instead of going off-screen).
+int ComputeCenteredTop(int screenH, int blockH);
+
 // Horizontal inset (in px, >= 0) for a given row so the top/bottom corners follow a quarter
 // circle of the panel's radius. Rows in the straight middle band return 0.
 int ComputeRoundedInset(int row, int height, int radius);

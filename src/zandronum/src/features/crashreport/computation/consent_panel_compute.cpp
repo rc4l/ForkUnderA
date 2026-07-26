@@ -58,6 +58,14 @@ ConsentPanelRect ComputeConsentPanelRect(int screenW, int screenH, int panelW,
 	return out;
 }
 
+int ComputeCenteredTop(int screenH, int blockH)
+{
+	int top = (screenH - blockH) / 2;
+	if (top < 0)
+		top = 0;
+	return top;
+}
+
 int ComputeRoundedInset(int row, int height, int radius)
 {
 	if (radius <= 0)
