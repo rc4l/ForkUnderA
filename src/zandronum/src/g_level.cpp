@@ -35,6 +35,7 @@
 #include <assert.h>
 #include "templates.h"
 #include "d_main.h"
+#include "features/crashreport/zx_crashreport.h"
 #include "g_level.h"
 #include "g_game.h"
 #include "s_sound.h"
@@ -415,6 +416,10 @@ void G_InitNew (const char *mapname, bool bTitleLevel)
 	int i;
 
 	G_ClearHubInfo();
+
+	// [rc4l] Tag crash reports with the map we're entering, so a crash says where it happened.
+	if (!bTitleLevel)
+		ZX_CrashReportSetMap(mapname);
 
 	// [AK] We must save our demo playback status since G_InitNew resets it.
 	const bool bIsPlayingDemo = CLIENTDEMO_IsPlaying( );

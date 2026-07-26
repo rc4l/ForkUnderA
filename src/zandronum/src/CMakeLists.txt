@@ -1465,6 +1465,15 @@ if ( RELEASE_WITH_DEBUG_FILE )
 	endif ( MSVC )
 endif ( RELEASE_WITH_DEBUG_FILE )
 
+# [rc4l] Windows debug symbols for crash symbolication: /Zi emits debug info and /DEBUG makes the
+# linker write zandronum.pdb next to the exe. Applied per-target on purpose -- overriding the global
+# CMAKE_CXX_FLAGS wipes MSVC's default /DWIN32 /D_WINDOWS defines and breaks the build. /FS lets the
+# parallel (/MP) compile share the PDB. Gated on ZX_WITH_SYMBOLS so dev/PR builds stay lean.
+if ( ZX_WITH_SYMBOLS AND MSVC )
+	target_compile_options( zdoom PRIVATE /Zi /FS )
+	target_link_options( zdoom PRIVATE /DEBUG )
+endif()
+
 # [TP] Generate the servercommands.cpp and servercommands.h files.
 include_directories(${CMAKE_BINARY_DIR})
 add_custom_target( protocolspec ALL
