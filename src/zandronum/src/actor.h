@@ -1229,7 +1229,7 @@ public:
 	void LinkToWorld (sector_t *sector);
 	void UnlinkFromWorld ();
 	void AdjustFloorClip ();
-	void SetOrigin (fixed_t x, fixed_t y, fixed_t z);
+	virtual void SetOrigin (fixed_t x, fixed_t y, fixed_t z);
 	bool InStateSequence(FState * newstate, FState * basestate);
 	int GetTics(FState * newstate);
 	bool SetState (FState *newstate, bool nofunction=false);

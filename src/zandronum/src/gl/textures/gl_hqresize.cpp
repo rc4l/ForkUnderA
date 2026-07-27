@@ -46,7 +46,11 @@
 
 CUSTOM_CVAR(Int, gl_texture_hqresize, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
+#ifdef _MSC_VER
+	if (self < 0 || self > 9)
+#else
 	if (self < 0 || self > 6)
+#endif
 		self = 0;
 	GLRenderer->FlushTextures();
 }
@@ -260,8 +264,8 @@ unsigned char *gl_CreateUpsampledTextureBuffer ( const FTexture *inputTexture, u
 	if ( inputTexture->bHasCanvas )
 		return inputBuffer;
 
-	// [BB] Don't upsample non-shader handled warped textures. Needs too much memory and time
-	if (gl.shadermodel == 2 || (gl.shadermodel == 3 && inputTexture->bWarped))
+	// already scaled?
+	if (inputTexture->xScale >= FRACUNIT*2 && inputTexture->yScale >= FRACUNIT*2)
 		return inputBuffer;
 
 	switch (inputTexture->UseType)

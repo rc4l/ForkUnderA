@@ -121,6 +121,7 @@ static void P_Add3DFloor(sector_t* sec, sector_t* sec2, line_t* master, int flag
 	
 	//Add the floor
 	ffloor = new F3DFloor;
+	ffloor->top.copied = ffloor->bottom.copied = false;
 	ffloor->top.model = ffloor->bottom.model = ffloor->model = sec2;
 	ffloor->target = sec;
 	ffloor->ceilingclip = ffloor->floorclip = NULL;
@@ -265,6 +266,7 @@ static int P_Set3DFloor(line_t * line, int param, int param2, int alpha)
 		else if (param==4)
 		{
 			flags=FF_EXISTS|FF_RENDERPLANES|FF_INVERTPLANES|FF_NOSHADE|FF_FIX;
+			if (param2 & 1) flags |= FF_SEETHROUGH;	// marker for allowing missing texture checks
 			alpha=255;
 		}
 		else 
@@ -422,6 +424,8 @@ void P_Recalculate3DFloors(sector_t * sector)
 	F3DFloor *		pick;
 	unsigned		pickindex;
 	F3DFloor *		clipped=NULL;
+	F3DFloor *		solid=NULL;
+	fixed_t			solid_bottom=0;
 	fixed_t			clipped_top;
 	fixed_t			clipped_bottom=0;
 	fixed_t			maxheight, minheight;
@@ -479,6 +483,7 @@ void P_Recalculate3DFloors(sector_t * sector)
 			}
 
 			oldlist.Delete(pickindex);
+			fixed_t pick_bottom=pick->bottom.plane->ZatPoint(CenterSpot(sector));
 
 			if (pick->flags & FF_THISINSIDE)
 			{
@@ -488,10 +493,38 @@ void P_Recalculate3DFloors(sector_t * sector)
 			}
 			else if (pick->flags&(FF_SWIMMABLE|FF_TRANSLUCENT) && pick->flags&FF_EXISTS)
 			{
-				clipped=pick;
-				clipped_top=height;
-				clipped_bottom=pick->bottom.plane->ZatPoint(CenterSpot(sector));
-				ffloors.Push(pick);
+				// We must check if this nonsolid segment gets clipped from the top by another 3D floor
+				if (solid != NULL && solid_bottom < height)
+				{
+					ffloors.Push(pick);
+					if (solid_bottom < pick_bottom)
+					{
+						// this one is fully covered
+						pick->flags|=FF_CLIPPED;
+						pick->flags&=~FF_EXISTS;
+					}
+					else
+					{
+						F3DFloor * dyn=new F3DFloor;
+						*dyn=*pick;
+						pick->flags|=FF_CLIPPED;
+						pick->flags&=~FF_EXISTS;
+						dyn->flags|=FF_DYNAMIC;
+						dyn->top.copyPlane(&solid->bottom);
+						ffloors.Push(dyn);
+
+						clipped = dyn;
+						clipped_top = solid_bottom;
+						clipped_bottom = pick_bottom;
+					}
+				}
+				else
+				{
+					clipped = pick;
+					clipped_top = height;
+					clipped_bottom = pick_bottom;
+					ffloors.Push(pick);
+				}
 			}
 			else if (clipped && clipped_bottom<height)
 			{
@@ -501,11 +534,9 @@ void P_Recalculate3DFloors(sector_t * sector)
 				clipped->flags|=FF_CLIPPED;
 				clipped->flags&=~FF_EXISTS;
 				dyn->flags|=FF_DYNAMIC;
-				dyn->bottom=pick->top;
+				dyn->bottom.copyPlane(&pick->top);
 				ffloors.Push(dyn);
 				ffloors.Push(pick);
-
-				fixed_t pick_bottom=pick->bottom.plane->ZatPoint(CenterSpot(sector));
 
 				if (pick_bottom<=clipped_bottom)
 				{
@@ -517,13 +548,23 @@ void P_Recalculate3DFloors(sector_t * sector)
 					dyn=new F3DFloor;
 					*dyn=*clipped;
 					dyn->flags|=FF_DYNAMIC|FF_EXISTS;
-					dyn->top=pick->bottom;
+					dyn->top.copyPlane(&pick->bottom);
 					ffloors.Push(dyn);
+					clipped = dyn;
+					clipped_top = pick_bottom;
 				}
+				solid = pick;
+				solid_bottom = pick_bottom;
 			}
 			else
 			{
-				clipped=NULL;
+				clipped = NULL;
+				if (solid == NULL || solid_bottom > pick_bottom)
+				{
+					// only if this one is lower
+					solid = pick;
+					solid_bottom = pick_bottom;
+				}
 				ffloors.Push(pick);
 			}
 
@@ -543,6 +584,7 @@ void P_Recalculate3DFloors(sector_t * sector)
 		lightlist[0].extra_colormap = sector->ColorMap;
 		lightlist[0].blend = 0;
 		lightlist[0].flags = 0;
+		lightlist[0].fromsector = true;
 		
 		maxheight = sector->CenterCeiling();
 		minheight = sector->CenterFloor();
@@ -564,6 +606,7 @@ void P_Recalculate3DFloors(sector_t * sector)
 				newlight.extra_colormap = rover->GetColormap();
 				newlight.blend = rover->GetBlend();
 				newlight.flags = rover->flags;
+				newlight.fromsector = false;
 				lightlist.Push(newlight);
 			}
 			else if (i==0)
@@ -578,6 +621,7 @@ void P_Recalculate3DFloors(sector_t * sector)
 					lightlist[0].extra_colormap = rover->GetColormap();
 					lightlist[0].blend = rover->GetBlend();
 					lightlist[0].flags = rover->flags;
+					lightlist[0].fromsector = false;
 				}
 			}
 			if (rover->flags&FF_DOUBLESHADOW)

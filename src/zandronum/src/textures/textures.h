@@ -334,10 +334,9 @@ public:
 
 	struct MiscGLInfo
 	{
-		FMaterial *Material;
-		FGLTexture *SystemTexture;
+		FMaterial *Material[2];
+		FGLTexture *SystemTexture[2];
 		FTexture *Brightmap;
-		FTexture *DecalTexture;					// This is needed for decals of UseType TEX_MiscPatch-
 		PalEntry GlowColor;
 		PalEntry FloorSkyColor;
 		PalEntry CeilingSkyColor;
@@ -345,6 +344,8 @@ public:
 		FloatRect *areas;
 		int areacount;
 		int shaderindex;
+		unsigned int precacheTime;
+
 		float shaderspeed;
 		int mIsTransparent:2;
 		bool bGlowing:1;						// Texture glows
@@ -352,10 +353,10 @@ public:
 		bool bSkybox:1;							// This is a skybox
 		bool bSkyColorDone:1;					// Fill color for sky
 		char bBrightmapChecked:1;				// Set to 1 if brightmap has been checked
-		bool bBrightmap:1;						// This is a brightmap
-		bool bBrightmapDisablesFullbright:1;	// This disables fullbright display
+		bool bDisableFullbright:1;				// This texture will not be displayed as fullbright sprite
 		bool bNoFilter:1;
 		bool bNoCompress:1;
+		bool bNoExpand:1;
 		bool mExpanded:1;
 
 		MiscGLInfo() throw ();
@@ -363,7 +364,7 @@ public:
 	};
 	MiscGLInfo gl_info;
 
-	virtual void PrecacheGL();
+	virtual void PrecacheGL(int cache);
 	virtual void UncacheGL();
 	void GetGlowColor(float *data);
 	PalEntry GetSkyCapColor(bool bottom);
@@ -380,6 +381,18 @@ public:
 class FTextureManager
 {
 public:
+	// [rc4l] Precache hit classes from ZDoom's reworked precaching (arrived upstream via a
+	// master merge; required by GL 1e9a6e667).
+	enum
+	{
+		HIT_Wall = 1,
+		HIT_Flat = 2,
+		HIT_Sky = 4,
+		HIT_Sprite = 8,
+
+		HIT_Columnmode = HIT_Wall|HIT_Sky|HIT_Sprite
+	};
+	unsigned int precacheTime;
 	FTextureManager ();
 	~FTextureManager ();
 

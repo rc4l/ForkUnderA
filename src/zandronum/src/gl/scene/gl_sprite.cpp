@@ -52,6 +52,7 @@
 #include "gl/system/gl_cvars.h"
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderstate.h"
+#include "gl/renderer/gl_renderer.h"
 #include "gl/data/gl_data.h"
 #include "gl/dynlights/gl_glow.h"
 #include "gl/scene/gl_drawinfo.h"
@@ -60,6 +61,7 @@
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_clock.h"
+#include "gl/data/gl_vertexbuffer.h"
 // [BB] New #includes.
 #include "gamemode.h"
 #include "c_console.h"
@@ -113,41 +115,36 @@ CVAR(Bool, gl_nolayer, false, 0)
 //==========================================================================
 void GLSprite::Draw(int pass)
 {
-	if (pass!=GLPASS_PLAIN && pass != GLPASS_ALL && pass!=GLPASS_TRANSLUCENT) return;
+	if (pass == GLPASS_DECALS || pass == GLPASS_LIGHTSONLY) return;
 
-	// Hack to enable bright sprites in faded maps
-	uint32 backupfade = Colormap.FadeColor.d;
-	if (gl_spritebrightfog && fullbright)
-		Colormap.FadeColor = 0;
 
 
 	bool additivefog = false;
 	bool foglayer = false;
-	int rel = getExtraLight();
+	int rel = fullbright? 0 : getExtraLight();
 
 	if (pass==GLPASS_TRANSLUCENT)
 	{
 		// The translucent pass requires special setup for the various modes.
 
-		// Brightmaps will only be used when doing regular drawing ops and having no fog
-		if (!gl_spritebrightfog && (!gl_isBlack(Colormap.FadeColor) || level.flags&LEVEL_HASFADETABLE || 
-			RenderStyle.BlendOp != STYLEOP_Add))
+		// for special render styles brightmaps would not look good - especially for subtractive.
+		if (RenderStyle.BlendOp != STYLEOP_Add)
 		{
 			gl_RenderState.EnableBrightmap(false);
 		}
 
 		gl_SetRenderStyle(RenderStyle, false, 
 			// The rest of the needed checks are done inside gl_SetRenderStyle
-			trans > 1.f - FLT_EPSILON && gl_usecolorblending && gl_fixedcolormap < CM_FIRSTSPECIALCOLORMAP && actor && 
+			trans > 1.f - FLT_EPSILON && gl_usecolorblending && gl_fixedcolormap == CM_DEFAULT && actor && 
 			fullbright && gltexture && !gltexture->GetTransparent());
 
 		if (hw_styleflags == STYLEHW_NoAlphaTest)
 		{
-			gl_RenderState.EnableAlphaTest(false);
+			gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
 		}
 		else
 		{
-			gl_RenderState.AlphaFunc(GL_GEQUAL,trans*gl_mask_sprite_threshold);
+			gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
 		}
 
 		if (RenderStyle.BlendOp == STYLEOP_Shadow)
@@ -171,8 +168,8 @@ void GLSprite::Draw(int pass)
 				minalpha*=factor;
 			}
 
-			gl_RenderState.AlphaFunc(GL_GEQUAL,minalpha*gl_mask_sprite_threshold);
-			glColor4f(0.2f,0.2f,0.2f,fuzzalpha);
+			gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
+			gl_RenderState.SetColor(0.2f,0.2f,0.2f,fuzzalpha, Colormap.desaturation);
 			additivefog = true;
 		}
 		else if (RenderStyle.BlendOp == STYLEOP_Add && RenderStyle.DestAlpha == STYLEALPHA_One)
@@ -182,24 +179,13 @@ void GLSprite::Draw(int pass)
 	}
 	if (RenderStyle.BlendOp!=STYLEOP_Shadow)
 	{
-		if (actor)
+		if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && !fullbright)
 		{
-			lightlevel = gl_SetSpriteLighting(RenderStyle, actor, lightlevel, rel, &Colormap, ThingColor, trans,
-							 fullbright || gl_fixedcolormap >= CM_FIRSTSPECIALCOLORMAP, false);
+			gl_SetDynSpriteLight(gl_light_sprites ? actor : NULL, gl_light_particles ? particle : NULL);
 		}
-		else if (particle)
-		{
-			if (gl_light_particles)
-			{
-				lightlevel = gl_SetSpriteLight(particle, lightlevel, rel, &Colormap, trans, ThingColor);
-			}
-			else 
-			{
-				gl_SetColor(lightlevel, rel, &Colormap, trans, ThingColor);
-			}
-		}
-		else return;
+		gl_SetColor(lightlevel, rel, Colormap, trans);
 	}
+	gl_RenderState.SetObjectColor(ThingColor);
 
 	if (gl_isBlack(Colormap.FadeColor)) foglevel=lightlevel;
 
@@ -209,11 +195,6 @@ void GLSprite::Draw(int pass)
 		additivefog = true;
 	}
 
-	if (RenderStyle.Flags & STYLEF_InvertOverlay) 
-	{
-		Colormap.FadeColor = Colormap.FadeColor.InverseColor();
-		additivefog=false;
-	}
 	if (RenderStyle.BlendOp == STYLEOP_RevSub || RenderStyle.BlendOp == STYLEOP_Sub)
 	{
 		if (!modelframe)
@@ -221,18 +202,9 @@ void GLSprite::Draw(int pass)
 			// non-black fog with subtractive style needs special treatment
 			if (!gl_isBlack(Colormap.FadeColor))
 			{
-				if (gl.shadermodel >= 4 && !gl_nolayer)
-				{
-					// fog layer only works on modern hardware. 
-					foglayer = true;
-					// Due to the two-layer approach we need to force an alpha test that lets everything pass
-					gl_RenderState.AlphaFunc(GL_GREATER, 0);
-				}
-				else
-				{
-					// this at least partially handles the fog issue
-					Colormap.FadeColor = Colormap.FadeColor.InverseColor();
-				}
+				foglayer = true;
+				// Due to the two-layer approach we need to force an alpha test that lets everything pass
+				gl_RenderState.AlphaFunc(GL_GREATER, 0);
 			}
 		}
 		else RenderStyle.BlendOp = STYLEOP_Fuzz;	// subtractive with models is not going to work.
@@ -245,7 +217,7 @@ void GLSprite::Draw(int pass)
 		gl_RenderState.SetFog(0, 0);
 	}
 
-	if (gltexture) gltexture->BindPatch(Colormap.colormap, translation, OverrideShader);
+	if (gltexture) gl_RenderState.SetMaterial(gltexture, CLAMP_XY, translation, OverrideShader, !!(RenderStyle.Flags & STYLEF_RedIsAlpha));
 	else if (!modelframe) gl_RenderState.EnableTexture(false);
 
 	if (!modelframe)
@@ -289,23 +261,18 @@ void GLSprite::Draw(int pass)
 			v4 = Vector(x2, z2, y2);
 		}
 
-		glBegin(GL_TRIANGLE_STRIP);
-		if (gltexture)
-		{
-			glTexCoord2f(ul, vt); glVertex3fv(&v1[0]);
-			glTexCoord2f(ur, vt); glVertex3fv(&v2[0]);
-			glTexCoord2f(ul, vb); glVertex3fv(&v3[0]);
-			glTexCoord2f(ur, vb); glVertex3fv(&v4[0]);
-		}
-		else	// Particle
-		{
-			glVertex3fv(&v1[0]);
-			glVertex3fv(&v2[0]);
-			glVertex3fv(&v3[0]);
-			glVertex3fv(&v4[0]);
-		}
-
-		glEnd();
+		FFlatVertex *ptr;
+		unsigned int offset, count;
+		ptr = GLRenderer->mVBO->GetBuffer();
+		ptr->Set(v1[0], v1[1], v1[2], ul, vt);
+		ptr++;
+		ptr->Set(v2[0], v2[1], v2[2], ur, vt);
+		ptr++;
+		ptr->Set(v3[0], v3[1], v3[2], ul, vb);
+		ptr++;
+		ptr->Set(v4[0], v4[1], v4[2], ur, vb);
+		ptr++;
+		GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP, &offset, &count);
 
 		if (foglayer)
 		{
@@ -315,29 +282,13 @@ void GLSprite::Draw(int pass)
 			gl_RenderState.BlendEquation(GL_FUNC_ADD);
 			gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 			gl_RenderState.Apply();
-
-			glBegin(GL_TRIANGLE_STRIP);
-			if (gltexture)
-			{
-				glTexCoord2f(ul, vt); glVertex3fv(&v1[0]);
-				glTexCoord2f(ur, vt); glVertex3fv(&v2[0]);
-				glTexCoord2f(ul, vb); glVertex3fv(&v3[0]);
-				glTexCoord2f(ur, vb); glVertex3fv(&v4[0]);
-			}
-			else	// Particle
-			{
-				glVertex3fv(&v1[0]);
-				glVertex3fv(&v2[0]);
-				glVertex3fv(&v3[0]);
-				glVertex3fv(&v4[0]);
-			}
-			glEnd();
-
+			GLRenderer->mVBO->RenderArray(GL_TRIANGLE_STRIP, offset, count);
+			gl_RenderState.SetFixedColormap(CM_DEFAULT);
 		}
 	}
 	else
 	{
-		gl_RenderModel(this, Colormap.colormap);
+		gl_RenderModel(this);
 	}
 
 	if (pass==GLPASS_TRANSLUCENT)
@@ -346,22 +297,9 @@ void GLSprite::Draw(int pass)
 		gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		gl_RenderState.BlendEquation(GL_FUNC_ADD);
 		gl_RenderState.SetTextureMode(TM_MODULATE);
-
-		// [BB] Restore the alpha test after drawing a smooth particle.
-		if (hw_styleflags == STYLEHW_NoAlphaTest)
-		{
-			gl_RenderState.EnableAlphaTest(true);
-		}
-		else
-		{
-			gl_RenderState.AlphaFunc(GL_GEQUAL,gl_mask_sprite_threshold);
-		}
 	}
 
-	// End of gl_sprite_brightfog hack: restore FadeColor to normalcy
-	if (backupfade != Colormap.FadeColor.d)
-		Colormap.FadeColor = backupfade;
-
+	gl_RenderState.SetObjectColor(0xffffffff);
 	gl_RenderState.EnableTexture(true);
 	gl_RenderState.SetDynLight(0,0,0);
 }
@@ -380,19 +318,18 @@ inline void GLSprite::PutSprite(bool translucent)
 	{
 		list = GLDL_TRANSLUCENT;
 	}
-	else if ((!gl_isBlack (Colormap.FadeColor) || level.flags&LEVEL_HASFADETABLE))
-	{
-		list = GLDL_FOGMASKED;
-	}
 	else
 	{
-		list = GLDL_MASKED;
+		list = GLDL_MODELS;
 	}
 
 	// [TP/BB] This makes sure that actors, which have FixedColormap set, are rendered accordingly.
 	// For example a player using a doom sphere is rendered red for the other players.
-	if ( this->actor && this->actor->FixedColormap != NOFIXEDCOLORMAP )
-		this->Colormap.colormap = CM_FIRSTSPECIALCOLORMAP + this->actor->FixedColormap;
+	// [rc4l] ZX_TODO_FIXEDCOLORMAP: FColormap lost its per-sprite colormap index upstream
+	// (c47c7421a); restore via per-object SetFixedColormap once the render state grows it
+	// at the shader-consolidation flights. Tracked in docs/renderer-staircase.md.
+	//if ( this->actor && this->actor->FixedColormap != NOFIXEDCOLORMAP )
+	//	this->Colormap.colormap = CM_FIRSTSPECIALCOLORMAP + this->actor->FixedColormap;
 
 	gl_drawinfo->drawlists[list].AddSprite(this);
 }
@@ -434,13 +371,6 @@ void GLSprite::SplitSprite(sector_t * frontsector, bool translucent)
 				copySprite.Colormap.LightColor.b=(255+v+v)/3;
 			}
 
-			if (!gl_isWhite(ThingColor))
-			{
-				copySprite.Colormap.LightColor.r=(copySprite.Colormap.LightColor.r*ThingColor.r)>>8;
-				copySprite.Colormap.LightColor.g=(copySprite.Colormap.LightColor.g*ThingColor.g)>>8;
-				copySprite.Colormap.LightColor.b=(copySprite.Colormap.LightColor.b*ThingColor.b)>>8;
-			}
-
 			z1=copySprite.z2=maplightbottom;
 			vt=copySprite.vb=copySprite.vt+ 
 				(maplightbottom-copySprite.z1)*(copySprite.vb-copySprite.vt)/(z2-copySprite.z1);
@@ -480,15 +410,106 @@ void GLSprite::SetSpriteColor(sector_t *sector, fixed_t center_y)
 				Colormap.LightColor.g=
 				Colormap.LightColor.b=(255+v+v)/3;
 			}
-
-			if (!gl_isWhite(ThingColor))
-			{
-				Colormap.LightColor.r=(Colormap.LightColor.r*ThingColor.r)>>8;
-				Colormap.LightColor.g=(Colormap.LightColor.g*ThingColor.g)>>8;
-				Colormap.LightColor.b=(Colormap.LightColor.b*ThingColor.b)>>8;
-			}
 			return;
 		}
+	}
+}
+
+//==========================================================================
+//
+// 
+//
+//==========================================================================
+
+void GLSprite::PerformSpriteClipAdjustment(AActor *thing, fixed_t thingx, fixed_t thingy, float spriteheight)
+{
+	bool smarterclip = false; // Set to true if one condition triggers the test below
+	if (((thing->player || thing->flags3&MF3_ISMONSTER ||
+		thing->IsKindOf(RUNTIME_CLASS(AInventory))) && (thing->flags&MF_ICECORPSE ||
+		!(thing->flags&MF_CORPSE))) || (gl_spriteclip == 3 && (smarterclip = true)) || gl_spriteclip > 1)
+	{
+		float btm = 1000000.0f;
+		float top = -1000000.0f;
+		extsector_t::xfloor &x = thing->Sector->e->XFloor;
+
+		if (x.ffloors.Size())
+		{
+			for (unsigned int i = 0; i < x.ffloors.Size(); i++)
+			{
+				F3DFloor * ff = x.ffloors[i];
+				fixed_t floorh = ff->top.plane->ZatPoint(thingx, thingy);
+				fixed_t ceilingh = ff->bottom.plane->ZatPoint(thingx, thingy);
+				if (floorh == thing->floorz)
+				{
+					btm = FIXED2FLOAT(floorh);
+				}
+				if (ceilingh == thing->ceilingz)
+				{
+					top = FIXED2FLOAT(ceilingh);
+				}
+				if (btm != 1000000.0f && top != -1000000.0f)
+				{
+					break;
+				}
+			}
+		}
+		else if (thing->Sector->heightsec && !(thing->Sector->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC))
+		{
+			if (thing->flags2&MF2_ONMOBJ && thing->floorz ==
+				thing->Sector->heightsec->floorplane.ZatPoint(thingx, thingy))
+			{
+				btm = FIXED2FLOAT(thing->floorz);
+				top = FIXED2FLOAT(thing->ceilingz);
+			}
+		}
+		if (btm == 1000000.0f)
+			btm = FIXED2FLOAT(thing->Sector->floorplane.ZatPoint(thingx, thingy) - thing->floorclip);
+		if (top == -1000000.0f)
+			top = FIXED2FLOAT(thing->Sector->ceilingplane.ZatPoint(thingx, thingy));
+
+		// +/-1 to account for the one pixel empty frame around the sprite.
+		float diffb = (z2+1) - btm;
+		float difft = (z1-1) - top;
+		if (diffb >= 0 /*|| !gl_sprite_clip_to_floor*/) diffb = 0;
+		// Adjust sprites clipping into ceiling and adjust clipping adjustment for tall graphics
+		if (smarterclip)
+		{
+			// Reduce slightly clipping adjustment of corpses
+			if (thing->flags & MF_CORPSE || spriteheight > fabs(diffb))
+			{
+				float ratio = clamp<float>((fabs(diffb) * (float)gl_sclipfactor / (spriteheight + 1)), 0.5, 1.0);
+				diffb *= ratio;
+			}
+			if (!diffb)
+			{
+				if (difft <= 0) difft = 0;
+				if (difft >= (float)gl_sclipthreshold)
+				{
+					// dumb copy of the above.
+					if (!(thing->flags3&MF3_ISMONSTER) || (thing->flags&MF_NOGRAVITY) || (thing->flags&MF_CORPSE) || difft > (float)gl_sclipthreshold)
+					{
+						difft = 0;
+					}
+				}
+				if (spriteheight > fabs(difft))
+				{
+					float ratio = clamp<float>((fabs(difft) * (float)gl_sclipfactor / (spriteheight + 1)), 0.5, 1.0);
+					difft *= ratio;
+				}
+				z2 -= difft;
+				z1 -= difft;
+			}
+		}
+		if (diffb <= (0 - (float)gl_sclipthreshold))	// such a large displacement can't be correct! 
+		{
+			// for living monsters standing on the floor allow a little more.
+			if (!(thing->flags3&MF3_ISMONSTER) || (thing->flags&MF_NOGRAVITY) || (thing->flags&MF_CORPSE) || diffb < (-1.8*(float)gl_sclipthreshold))
+			{
+				diffb = 0;
+			}
+		}
+		z2 -= diffb;
+		z1 -= diffb;
 	}
 }
 
@@ -605,14 +626,15 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		bool mirror;
 		FTextureID patch = gl_GetSpriteFrame(spritenum, thing->frame, -1, ang - thing->angle, &mirror);
 		if (!patch.isValid()) return;
-		gltexture=FMaterial::ValidateTexture(patch, false);
+		int type = thing->renderflags & RF_SPRITETYPEMASK;
+		gltexture = FMaterial::ValidateTexture(patch, (type == RF_FACESPRITE), false);
 		if (!gltexture) return;
 
 		if (gl.flags & RFL_NPOT_TEXTURE)	// trimming only works if non-power-of-2 textures are supported
 		{
 			vt = gltexture->GetSpriteVT();
 			vb = gltexture->GetSpriteVB();
-			gltexture->GetRect(&r, GLUSE_SPRITE);
+			gltexture->GetSpriteRect(&r);
 			if (mirror)
 			{
 				r.left=-r.width-r.left;	// mirror the sprite's x-offset
@@ -629,7 +651,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		{
 			vt = gltexture->GetVT();
 			vb = gltexture->GetVB();
-			gltexture->GetRect(&r, GLUSE_PATCH);
+			gltexture->GetSpriteRect(&r);
 			if (mirror)
 			{
 				r.left=-r.width-r.left;	// mirror the sprite's x-offset
@@ -651,107 +673,39 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		z1=z-r.top;
 		z2=z1-r.height;
 
-		float spriteheight = FIXED2FLOAT(spritescaleY) * gltexture->GetScaledHeightFloat(GLUSE_SPRITE);
+		float spriteheight = FIXED2FLOAT(spritescaleY) * r.height;
 		
 		// Tests show that this doesn't look good for many decorations and corpses
 		// [RK] tests also show this looks terrible for floatbob items
-		if (spriteheight>0 && gl_spriteclip>0 && !(thing->flags2 & MF2_FLOATBOB))
+		if (spriteheight > 0 && gl_spriteclip > 0 && !(thing->flags2 & MF2_FLOATBOB) && (thing->renderflags & RF_SPRITETYPEMASK) == RF_FACESPRITE)
 		{
-			bool smarterclip = false; // Set to true if one condition triggers the test below
-			if (((thing->player || thing->flags3&MF3_ISMONSTER ||
-				thing->IsKindOf(RUNTIME_CLASS(AInventory)))	&& (thing->flags&MF_ICECORPSE ||
-				!(thing->flags&MF_CORPSE))) || (gl_spriteclip==3 && (smarterclip = true)) || gl_spriteclip > 1)
-			{
-				float btm= 1000000.0f;
-				float top=-1000000.0f;
-				extsector_t::xfloor &x = thing->Sector->e->XFloor;
-
-				if (x.ffloors.Size())
-				{
-					for(unsigned int i=0;i<x.ffloors.Size();i++)
-					{
-						F3DFloor * ff=x.ffloors[i];
-						fixed_t floorh=ff->top.plane->ZatPoint(thingx, thingy);
-						fixed_t ceilingh=ff->bottom.plane->ZatPoint(thingx, thingy);
-						if (floorh==thing->floorz) 
-						{
-							btm=FIXED2FLOAT(floorh);
-						}
-						if (ceilingh==thing->ceilingz) 
-						{
-							top=FIXED2FLOAT(ceilingh);
-						}
-						if (btm != 1000000.0f && top != -1000000.0f)
-						{
-							break;
-						}
-					}
-				}
-				else if (thing->Sector->heightsec && !(thing->Sector->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC))
-				{
-					if (thing->flags2&MF2_ONMOBJ && thing->floorz==
-						thing->Sector->heightsec->floorplane.ZatPoint(thingx, thingy))
-					{
-						btm=FIXED2FLOAT(thing->floorz);
-						top=FIXED2FLOAT(thing->ceilingz);
-					}
-				}
-				if (btm==1000000.0f) 
-					btm= FIXED2FLOAT(thing->Sector->floorplane.ZatPoint(thingx, thingy)-thing->floorclip);
-				if (top==-1000000.0f)
-					top= FIXED2FLOAT(thing->Sector->ceilingplane.ZatPoint(thingx, thingy));
-
-				float diffb = z2 - btm;
-				float difft = z1 - top;
-				if (diffb >= 0 /*|| !gl_sprite_clip_to_floor*/) diffb = 0;
-				// Adjust sprites clipping into ceiling and adjust clipping adjustment for tall graphics
-				if (smarterclip)
-				{
-					// Reduce slightly clipping adjustment of corpses
-					if (thing->flags & MF_CORPSE || spriteheight > abs(diffb))
-					{
-						float ratio = clamp<float>((abs(diffb) * (float)gl_sclipfactor/(spriteheight+1)), 0.5, 1.0);
-						diffb*=ratio;
-					}
-					if (!diffb)
-					{
-						if (difft <= 0) difft = 0;
-						if (difft >= (float)gl_sclipthreshold) 
-						{
-							// dumb copy of the above.
-							if (!(thing->flags3&MF3_ISMONSTER) || (thing->flags&MF_NOGRAVITY) || (thing->flags&MF_CORPSE) || difft > (float)gl_sclipthreshold)
-							{
-								difft=0;
-							}
-						}
-						if (spriteheight > abs(difft))
-						{
-							float ratio = clamp<float>((abs(difft) * (float)gl_sclipfactor/(spriteheight+1)), 0.5, 1.0);
-							difft*=ratio;
-						}
-						z2-=difft;
-						z1-=difft;
-					}
-				}
-				if (diffb <= (0 - (float)gl_sclipthreshold))	// such a large displacement can't be correct! 
-				{
-					// for living monsters standing on the floor allow a little more.
-					if (!(thing->flags3&MF3_ISMONSTER) || (thing->flags&MF_NOGRAVITY) || (thing->flags&MF_CORPSE) || diffb<(-1.8*(float)gl_sclipthreshold))
-					{
-						diffb=0;
-					}
-				}
-				z2-=diffb;
-				z1-=diffb;
-			}
+			PerformSpriteClipAdjustment(thing, thingx, thingy, spriteheight);
 		}
-		float viewvecX = GLRenderer->mViewVector.X;
-		float viewvecY = GLRenderer->mViewVector.Y;
 
-		x1=x-viewvecY*leftfac;
-		x2=x-viewvecY*rightfac;
-		y1=y+viewvecX*leftfac;
-		y2=y+viewvecX*rightfac;		
+		float viewvecX;
+		float viewvecY;
+		switch (thing->renderflags & RF_SPRITETYPEMASK)
+		{
+		case RF_FACESPRITE:
+			viewvecX = GLRenderer->mViewVector.X;
+			viewvecY = GLRenderer->mViewVector.Y;
+
+			x1 = x - viewvecY*leftfac;
+			x2 = x - viewvecY*rightfac;
+			y1 = y + viewvecX*leftfac;
+			y2 = y + viewvecX*rightfac;
+			break;
+
+		case RF_WALLSPRITE:
+			viewvecX = FIXED2FLOAT(finecosine[thing->angle >> ANGLETOFINESHIFT]);
+			viewvecY = FIXED2FLOAT(finesine[thing->angle >> ANGLETOFINESHIFT]);
+
+			x1 = x + viewvecY*leftfac;
+			x2 = x + viewvecY*rightfac;
+			y1 = y - viewvecX*leftfac;
+			y2 = y - viewvecX*rightfac;
+			break;
+		}
 	}
 	else 
 	{
@@ -770,7 +724,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	// allow disabling of the fullbright flag by a brightmap definition
 	// (e.g. to do the gun flashes of Doom's zombies correctly.
 	fullbright = (thing->flags5 & MF5_BRIGHT) ||
-		((thing->renderflags & RF_FULLBRIGHT) && (!gl_BrightmapsActive() || !gltexture || !gltexture->tex->gl_info.bBrightmapDisablesFullbright));
+		((thing->renderflags & RF_FULLBRIGHT) && (!gltexture || !gltexture->tex->gl_info.bDisableFullbright));
 
 	lightlevel=fullbright? 255 : 
 		gl_ClampLight(rendersector->GetTexture(sector_t::ceiling) == skyflatnum ? 
@@ -778,6 +732,10 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	foglevel = (BYTE)clamp<short>(rendersector->lightlevel, 0, 255);
 
 	lightlevel = (byte)gl_CheckSpriteGlow(rendersector, lightlevel, thingx, thingy, thingz);
+
+	ThingColor = (thing->RenderStyle.Flags & STYLEF_ColorIsFixed) ? thing->fillcolor : 0xffffff;
+	ThingColor.a = 255;
+	RenderStyle = thing->RenderStyle;
 
 	// colormap stuff is a little more complicated here...
 	if (gl_fixedcolormap) 
@@ -787,14 +745,14 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 			|| (gl_enhanced_nv_stealth == 3))								// Any fixed colormap
 			enhancedvision=true;
 
-		Colormap.GetFixedColormap();
+		Colormap.Clear();
 
 		if (gl_fixedcolormap==CM_LITE)
 		{
 			if (gl_enhanced_nightvision &&
 				(thing->IsKindOf(RUNTIME_CLASS(AInventory)) || thing->flags3&MF3_ISMONSTER || thing->flags&MF_MISSILE || thing->flags&MF_CORPSE))
 			{
-				Colormap.colormap = CM_FIRSTSPECIALCOLORMAP + INVERSECOLORMAP;
+				RenderStyle.Flags |= STYLEF_InvertSource;
 			}
 		}
 	}
@@ -820,24 +778,20 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		}
 		else if (glset.nocoloredspritelighting)
 		{
-			int v = (Colormap.LightColor.r /* * 77 */ + Colormap.LightColor.g /**143 */ + Colormap.LightColor.b /**35*/)/3;//255;
-			Colormap.LightColor.r=
-			Colormap.LightColor.g=
-			Colormap.LightColor.b=(255+v+v)/3;
+			Colormap.Decolorize();
 		}
 		// [BB] This makes sure that actors, which have FixedColormap set, are renderes accordingly.
 		// For example a player using a doom sphere is rendered red for the other players.
-		if ( thing->FixedColormap != NOFIXEDCOLORMAP )
-		{
-			Colormap.colormap = CM_FIRSTSPECIALCOLORMAP + thing->FixedColormap;
-		}
+		// [rc4l] ZX_TODO_FIXEDCOLORMAP: see PutSprite above.
+		//if ( thing->FixedColormap != NOFIXEDCOLORMAP )
+		//{
+		//	Colormap.colormap = CM_FIRSTSPECIALCOLORMAP + thing->FixedColormap;
+		//}
 	}
 
 	translation=thing->Translation;
 
-	ThingColor=0xffffff;
-	RenderStyle = thing->RenderStyle;
-	OverrideShader = 0;
+	OverrideShader = -1;
 	trans = FIXED2FLOAT(thing->alpha);
 	hw_styleflags = STYLEHW_Normal;
 
@@ -846,7 +800,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		RenderStyle.CheckFuzz();
 		if (RenderStyle.BlendOp == STYLEOP_Fuzz)
 		{
-			if (gl.shadermodel >= 4 && gl_fuzztype != 0)
+			if (gl_fuzztype != 0)
 			{
 				// Todo: implement shader selection here
 				RenderStyle = LegacyRenderStyles[STYLE_Translucent];
@@ -909,7 +863,9 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		{
 			// enhanced vision makes them more visible!
 			trans=0.5f;
+			FRenderStyle rs = RenderStyle;
 			RenderStyle = STYLE_Translucent;
+			RenderStyle.Flags = rs.Flags;	// Flags must be preserved, at this point it can only be STYLEF_InvertSource
 		}
 		else if (thing->flags & MF_STEALTH)	
 		{
@@ -927,6 +883,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	particle=NULL;
 	
 	const bool drawWithXYBillboard = ( !(actor->renderflags & RF_FORCEYBILLBOARD)
+									   && (actor->renderflags & RF_SPRITETYPEMASK) == RF_FACESPRITE
 									   && players[consoleplayer].camera
 									   && (gl_billboard_mode == 1 || actor->renderflags & RF_FORCEXYBILLBOARD ) );
 
@@ -972,7 +929,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 
 	if (gl_fixedcolormap) 
 	{
-		Colormap.GetFixedColormap();
+		Colormap.Clear();
 	}
 	else if (!particle->bright)
 	{
@@ -1005,8 +962,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 	OverrideShader = 0;
 
 	ThingColor = particle->color;
-	gl_ModifyColor(ThingColor.r, ThingColor.g, ThingColor.b, Colormap.colormap);
-	ThingColor.a=0;
+	ThingColor.a = 255;
 
 	modelframe=NULL;
 	gltexture=NULL;
@@ -1026,7 +982,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 
 		if (lump != NULL)
 		{
-			gltexture=FMaterial::ValidateTexture(lump);
+			gltexture = FMaterial::ValidateTexture(lump, true);
 			translation = 0;
 
 			ul = gltexture->GetUL();
@@ -1034,7 +990,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 			vt = gltexture->GetVT();
 			vb = gltexture->GetVB();
 			FloatRect r;
-			gltexture->GetRect(&r, GLUSE_PATCH);
+			gltexture->GetSpriteRect(&r);
 		}
 	}
 

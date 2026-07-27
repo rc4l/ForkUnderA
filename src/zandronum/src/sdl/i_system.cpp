@@ -84,13 +84,6 @@
 #include "cl_main.h"
 #include "v_text.h"
 
-#ifdef USE_XCURSOR
-// Xlib has its own GC, so don't let it interfere.
-#define GC XGC
-#include <X11/Xcursor/Xcursor.h>
-#undef GC
-#endif
-
 EXTERN_CVAR (String, language)
 
 extern "C"
@@ -104,12 +97,6 @@ extern bool GtkAvailable;
 #elif defined(__APPLE__)
 int I_PickIWad_Cocoa (WadStuff *wads, int numwads, bool showwin, int defaultiwad);
 #endif
-#ifdef USE_XCURSOR
-bool UseXCursor;
-SDL_Cursor *X11Cursor;
-SDL_Cursor *FirstCursor;
-#endif
-
 DWORD LanguageIDs[4] =
 {
 	MAKE_ID ('e','n','u',0),
@@ -878,49 +865,15 @@ unsigned int I_MakeRNGSeed()
 	return seed;
 }
 
-#ifdef USE_XCURSOR
-// Hack! Hack! SDL does not provide a clean way to get the XDisplay.
-// On the other hand, there are no more planned updates for SDL 1.2,
-// so we should be fine making assumptions.
-struct SDL_PrivateVideoData
-{
-	int local_X11;
-	Display *X11_Display;
-};
-
-struct SDL_VideoDevice
-{
-	const char *name;
-	int (*functions[9])();
-	SDL_VideoInfo info;
-	SDL_PixelFormat *displayformatalphapixel;
-	int (*morefuncs[9])();
-	Uint16 *gamma;
-	int (*somefuncs[9])();
-	unsigned int texture;				// Only here if SDL was compiled with OpenGL support. Ack!
-	int is_32bit;
-	int (*itsafuncs[13])();
-	SDL_Surface *surfaces[3];
-	SDL_Palette *physpal;
-	SDL_Color *gammacols;
-	char *wm_strings[2];
-	int offsets[2];
-	SDL_GrabMode input_grab;
-	int handles_any_size;
-	SDL_PrivateVideoData *hidden;	// Why did they have to bury this so far in?
-};
-
-extern SDL_VideoDevice *current_video;
-#define SDL_Display (current_video->hidden->X11_Display)
-
-SDL_Cursor *CreateColorCursor(FTexture *cursorpic)
-{
-	return NULL;
-}
-#endif
-
+// [rc4l] SDL2 has native color cursors (SDL_CreateColorCursor), which replaces both the old
+// software-blitted cursor surface (whose blit consumer died with sdlvideo.cpp) and the
+// USE_XCURSOR hack that fished the XDisplay out of SDL 1.2's private structs. The globals stay
+// because i_input.cpp links them: cursorSurface remains NULL so its "custom cursor active" check
+// resolves to showing the (now native) cursor, and cursorBlit is only positional bookkeeping.
 SDL_Surface *cursorSurface = NULL;
 SDL_Rect cursorBlit = {0, 0, 32, 32};
+static SDL_Cursor *NativeCursor;
+
 bool I_SetCursor(FTexture *cursorpic)
 {
 	if (cursorpic != NULL && cursorpic->UseType != FTexture::TEX_Null)
@@ -931,50 +884,40 @@ bool I_SetCursor(FTexture *cursorpic)
 			return false;
 		}
 
-#ifdef USE_XCURSOR
-		if (UseXCursor)
-		{
-			if (FirstCursor == NULL)
-			{
-				FirstCursor = SDL_GetCursor();
-			}
-			X11Cursor = CreateColorCursor(cursorpic);
-			if (X11Cursor != NULL)
-			{
-				SDL_SetCursor(X11Cursor);
-				return true;
-			}
-		}
-#endif
-		if (cursorSurface == NULL)
-			cursorSurface = SDL_CreateRGBSurface (0, 32, 32, 32, MAKEARGB(0,255,0,0), MAKEARGB(0,0,255,0), MAKEARGB(0,0,0,255), MAKEARGB(255,0,0,0));
-
-		SDL_ShowCursor(0);
-		SDL_LockSurface(cursorSurface);
+		// Render the texture into a 32x32 BGRA buffer and hand it to SDL, which copies it.
 		BYTE buffer[32*32*4];
 		memset(buffer, 0, 32*32*4);
 		FBitmap bmp(buffer, 32*4, 32, 32);
 		cursorpic->CopyTrueColorPixels(&bmp, 0, 0);
-		memcpy(cursorSurface->pixels, bmp.GetPixels(), 32*32*4);
-		SDL_UnlockSurface(cursorSurface);
+		SDL_Surface *surf = SDL_CreateRGBSurfaceFrom(buffer, 32, 32, 32, 32*4,
+			MAKEARGB(0,255,0,0), MAKEARGB(0,0,255,0), MAKEARGB(0,0,0,255), MAKEARGB(255,0,0,0));
+		if (surf == NULL)
+		{
+			return false;
+		}
+		SDL_Cursor *cursor = SDL_CreateColorCursor(surf, 0, 0);
+		SDL_FreeSurface(surf);
+		if (cursor == NULL)
+		{
+			return false;
+		}
+		SDL_SetCursor(cursor);
+		SDL_ShowCursor(1);
+		if (NativeCursor != NULL)
+		{
+			SDL_FreeCursor(NativeCursor);
+		}
+		NativeCursor = cursor;
 	}
 	else
 	{
+		SDL_SetCursor(SDL_GetDefaultCursor());
 		SDL_ShowCursor(1);
-
-		if (cursorSurface != NULL)
+		if (NativeCursor != NULL)
 		{
-			SDL_FreeSurface(cursorSurface);
-			cursorSurface = NULL;
+			SDL_FreeCursor(NativeCursor);
+			NativeCursor = NULL;
 		}
-#ifdef USE_XCURSOR
-		if (X11Cursor != NULL)
-		{
-			SDL_SetCursor(FirstCursor);
-			SDL_FreeCursor(X11Cursor);
-			X11Cursor = NULL;
-		}
-#endif
 	}
 	return true;
 }

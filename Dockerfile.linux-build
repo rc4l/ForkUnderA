@@ -3,7 +3,7 @@
 
 # [rc4l] Reproducible Linux build image for ZandroX releases. Ubuntu 22.04 base = older
 # glibc, so the resulting binary runs on a wide range of distros. Deps mirror Zandronum's
-# Linux CI (OpenSSL/Opus/zlib/bzip2/jpeg + Python3 required; SDL1.2 + OpenGL/GLU for the
+# Linux CI (OpenSSL/Opus/zlib/bzip2/jpeg + Python3 required; SDL2 + OpenGL/GLU for the
 # client; GTK/FluidSynth/FMOD are optional). Source is mounted at /work, so the image is
 # just the build environment and never rebuilds as code changes.
 #
@@ -17,7 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake ninja-build git python3 pkg-config ca-certificates \
       libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
-      libsdl1.2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
+      libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
       libopenal-dev libsndfile1-dev libmpg123-dev \
   && rm -rf /var/lib/apt/lists/*
 
