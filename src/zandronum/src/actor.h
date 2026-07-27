@@ -1009,7 +1009,7 @@ public:
 	// a wider/taller extent without getting stuck on walls or under low ceilings. A value of 0
 	// (unset) falls back to the physical extent (see ComputeAttackExtent in p_attackextent.h).
 	fixed_t GetAttackRadius() const { return ComputeAttackExtent(projectilepassradius, radius); }
-	// [MGOOOOOO] Scales a custom PassHeight by the crouch shrink (current height vs default height),
+	// [MGOOOOOO] Scales a custom HitboxHeight by the crouch shrink (current height vs default height),
 	// so a crouching player's vertical attack box shrinks like its physical height does.
 	fixed_t GetAttackHeight() const { return ComputeAttackHeight(projectilepassheight, height, GetDefault()->height); }
 	// [MGOOOOOO] True when the attack hitbox is larger than the physical box, so an occlusion check
