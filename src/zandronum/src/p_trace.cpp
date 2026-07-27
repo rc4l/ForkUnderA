@@ -584,6 +584,16 @@ cont:
 				abs(hity - in->d.thing->y) > thingradius) continue;
 		}
 
+		// [MGOOOOOO] Anti-bleed: a widened attack box (usePassWidth) can poke through thin geometry,
+		// so when this actor's hitbox is larger than its physical box, require line of sight from the
+		// shooter (IgnoreThis) to the body -- otherwise the trace would hit a phantom part of the box
+		// sticking past a wall/window. Physical-size (or smaller) boxes cannot bleed and skip this.
+		if (usePassWidth && IgnoreThis != NULL && in->d.thing->AttackHitboxEnlarged() &&
+			!P_CheckSight(in->d.thing, IgnoreThis, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
+		{
+			continue;
+		}
+
 		// check for extrafloors first
 		if (CurSector->e->XFloor.ffloors.Size())
 		{

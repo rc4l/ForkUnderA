@@ -1012,6 +1012,9 @@ public:
 	// [MGOOOOOO] Scales a custom PassHeight by the crouch shrink (current height vs default height),
 	// so a crouching player's vertical attack box shrinks like its physical height does.
 	fixed_t GetAttackHeight() const { return ComputeAttackHeight(projectilepassheight, height, GetDefault()->height); }
+	// [MGOOOOOO] True when the attack hitbox is larger than the physical box, so an occlusion check
+	// is needed to stop the widened box hitting through thin geometry. Smaller/equal boxes skip it.
+	bool AttackHitboxEnlarged() const { return AttackHitboxIsEnlarged(GetAttackRadius(), radius, GetAttackHeight(), height); }
 	fixed_t			velx, vely, velz;	// velocity
 	SDWORD			tics;				// state tic counter
 	FState			*state;
