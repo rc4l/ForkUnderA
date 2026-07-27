@@ -101,7 +101,8 @@ install_native_deps() {
     # SDL is built from source (see build_sdl_from_source); everything else comes
     # from Homebrew — none of these dlopen a sibling by leaf name, so they bundle
     # cleanly with the recursive @loader_path pass.
-    local pkgs=(glew openssl@3 opus) need=()
+    # ffmpeg (libav*) powers the FUA instant-replay encoder; bundled via the @loader_path pass.
+    local pkgs=(glew openssl@3 opus ffmpeg) need=()
     if [[ "$WANT_SOUND" == "1" ]]; then
         pkgs+=(openal-soft libsndfile mpg123)
     fi
