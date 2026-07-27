@@ -154,8 +154,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ steps.vcpkg.outputs.installed }}
-          key: vcpkg-x64-windows-${{ hashFiles('windows_compile.ps1') }}
-          restore-keys: vcpkg-x64-windows-
+          key: vcpkg-x64-windows-static-md-${{ hashFiles('windows_compile.ps1') }}
+          restore-keys: vcpkg-x64-windows-static-md-
 
       # [rc4l] The whole compile — vcpkg deps, DirectX-SDK reshaping, CMake configure/build and
       # packaging — lives in windows_compile.ps1 so a contributor runs exactly what CI runs, and
