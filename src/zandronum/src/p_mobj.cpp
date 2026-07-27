@@ -377,6 +377,13 @@ void AActor::Serialize (FArchive &arc)
 		<< pPickupSpot
 		<< Rune;
 
+	// [MGOOOOOO] Horizontal attack extent (ProjectilePassRadius). Version-guarded so older snapshots
+	// (which never stored it) still load with the class default.
+	if (SaveVersion >= 4508)
+	{
+		arc << projectilepassradius;
+	}
+
 	{
 		FString tagstr;
 		if (arc.IsStoring() && Tag != NULL && Tag->Len() > 0) tagstr = *Tag;
