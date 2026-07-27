@@ -63,6 +63,9 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/gl_functions.h"
+#ifdef ZX_ENABLE_REPLAY
+#include "features/replay/zx_replay.h"   // [rc4l] FUA instant-replay frame capture hook
+#endif
 
 IMPLEMENT_CLASS(OpenGLFrameBuffer)
 EXTERN_CVAR (Float, vid_brightness)
@@ -226,7 +229,22 @@ void OpenGLFrameBuffer::Swap()
 	Finish.Reset();
 	Finish.Clock();
 	glFinish();
-	if (needsetgamma) 
+#ifdef ZX_ENABLE_REPLAY
+	// [rc4l] FUA instant replay: when a frame is due, read back the just-rendered back buffer
+	// (RGB, bottom-up) and hand it to the capture pipeline. WantsFrame() gates on the capture rate
+	// so this only fires ~30x/sec, and the readback reuses the screenshot path.
+	if (zx::replay::WantsFrame())
+	{
+		const BYTE *ssbuf = NULL;
+		int sspitch = 0;
+		ESSType sstype;
+		GetScreenshotBuffer(ssbuf, sspitch, sstype);
+		if (ssbuf != NULL && sstype == SS_RGB)
+			zx::replay::SubmitFrame(ssbuf, SCREENWIDTH, SCREENHEIGHT, sspitch);
+		ReleaseScreenshotBuffer();
+	}
+#endif
+	if (needsetgamma)
 	{
 		//DoSetGamma();
 		needsetgamma = false;
