@@ -136,7 +136,7 @@ if ($SkipDeps) {
     # loader on every platform, per upstream 69af73d9b/94b06900c.
     & $VcpkgExe install `
         openal-soft:x64-windows-static libsndfile:x64-windows-static mpg123:x64-windows-static `
-        opus:x64-windows-static openssl:x64-windows-static
+        opus:x64-windows-static openssl:x64-windows-static glew:x64-windows-static
     if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed" }
 }
 
@@ -174,6 +174,12 @@ $dep = $VcpkgInstalled
 # resolved relative to the build dir and fail). The SDK's um\x64 libs were copied into $dx\Lib\x64.
 $sysLibs = @('advapi32','bcrypt','avrt') | ForEach-Object { Join-Path "$dx\Lib\x64" ($_ + '.lib') }
 $staticLibs = ((Get-ChildItem "$dep\lib\*.lib").FullName + $sysLibs) -join ';'
+# [rc4l] Flight 1 needs GLEW on Windows too. vcpkg names the static lib libglew32.lib (not
+# glew32.lib), which CMake's find_library(NAMES GLEW glew32) won't match by default -- resolve it by
+# glob and pass GLEW_INCLUDE_DIR/GLEW_LIBRARY explicitly. (It also lands in $staticLibs via the glob.)
+$glewLib = (Get-ChildItem "$dep\lib" -Filter "*glew*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1)
+if (-not $glewLib) { throw "no *glew*.lib found in $dep\lib" }
+Write-Note "Resolved GLEW static lib: $($glewLib.Name)"
 # [rc4l] ZX_WITH_SYMBOLS=1 (release CI) emits a program PDB for symbol upload. We pass it as a
 # cache var, NOT via CMAKE_CXX_FLAGS: overriding CMAKE_CXX_FLAGS wipes MSVC's default /DWIN32
 # /D_WINDOWS defines and breaks the build. src/CMakeLists.txt adds /Zi + /DEBUG per-target instead.
@@ -197,6 +203,8 @@ if ($env:ZX_WITH_SYMBOLS -eq "1") {
     "-DMPG123_LIBRARIES=$dep/lib/mpg123.lib" `
     "-DOPUS_INCLUDE_DIR=$dep/include/opus" `
     "-DOPUS_LIBRARIES=$dep/lib/opus.lib" `
+    "-DGLEW_INCLUDE_DIR=$dep/include" `
+    "-DGLEW_LIBRARY=$($glewLib.FullName)" `
     "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=ON" `
     @symArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
