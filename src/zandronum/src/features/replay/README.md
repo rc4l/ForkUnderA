@@ -42,7 +42,8 @@ bindable command is **`fua_clip`** (commands don't take the `cl_` cvar prefix).
   (default off).
 - **Phase 2 (done, macOS):** capture in `OpenGLFrameBuffer::Swap()`, worker-thread H.264 encode into
   a rolling ring of packets (`ReplayEncoder`, libx264, VBV-capped bitrate), MP4 mux on `fua_clip` →
-  `~/ZandroX-Clips/`. Verified end-to-end: comma in MAP01 → a valid, shareable `.mp4`. mac_compile.sh
+  the platform video folder (macOS `~/Movies/ZandroX`, Linux `~/Videos/ZandroX`). Verified end-to-end:
+  comma in MAP01 → a valid, shareable `.mp4`. mac_compile.sh
   bundles the libav* stack (+x264/vpx/…) into the .app, so it's self-contained.
   - *Perf follow-up:* capture reuses the synchronous `glReadPixels` screenshot readback. It fires
     only at the capture rate (~30/s), but a double-buffered **PBO** async readback is the intended

@@ -42,7 +42,11 @@ CVAR(Int,  cl_fua_replay_encoder,   0,     CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 #include <deque>
 #include <mutex>
 #include <string>
-#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>   // _mkdir
+#else
+#include <sys/stat.h> // mkdir
+#endif
 #include <thread>
 #include <vector>
 
@@ -88,11 +92,27 @@ const char *EncoderName()
 	return (cl_fua_replay_encoder == 2) ? "h264_videotoolbox" : "libx264";
 }
 
+// Clips land in the platform's standard video folder, under a ZandroX subfolder.
 std::string ClipsDir()
 {
+#ifdef _WIN32
+	const char *base = getenv("USERPROFILE");
+	std::string parent = (base ? std::string(base) : std::string(".")) + "\\Videos";
+	std::string dir = parent + "\\ZandroX";
+	_mkdir(parent.c_str());   // ensure the video folder exists (no-op if it already does)
+	_mkdir(dir.c_str());
+#else
 	const char *home = getenv("HOME");
-	std::string dir = (home ? std::string(home) : std::string(".")) + "/ZandroX-Clips";
+	std::string base = home ? std::string(home) : std::string(".");
+#ifdef __APPLE__
+	std::string parent = base + "/Movies";   // standard macOS video location
+#else
+	std::string parent = base + "/Videos";   // XDG-style video location on Linux
+#endif
+	std::string dir = parent + "/ZandroX";
+	mkdir(parent.c_str(), 0755);   // ensure the video folder exists (no-op if it already does)
 	mkdir(dir.c_str(), 0755);
+#endif
 	return dir;
 }
 
