@@ -558,14 +558,29 @@ endif ( NOT NO_OPENAL )
 # if the libraries aren't found the feature compiles as a no-capture stub (ZX_ENABLE_REPLAY off).
 option( NO_REPLAY "Disable the FUA instant-replay video feature" OFF )
 if( NOT NO_REPLAY )
+	# First try pkg-config (macOS Homebrew, Linux distros).
 	find_package( PkgConfig QUIET )
 	if( PkgConfig_FOUND )
-		# keg-only Homebrew ffmpeg lives outside the default pkg-config search path; add common prefixes.
+		# Homebrew ffmpeg may live outside the default pkg-config search path; add common prefixes.
 		set( ENV{PKG_CONFIG_PATH} "/opt/homebrew/opt/ffmpeg/lib/pkgconfig:/usr/local/opt/ffmpeg/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}" )
 		pkg_check_modules( FFMPEG QUIET libavcodec libavformat libavutil libswscale )
 	endif()
+	# Fallback for toolchains without pkg-config (Windows/vcpkg): find the headers + import libs
+	# directly. On Windows the static ffmpeg libs and their deps are also linked via the whole-lib
+	# glob in windows_compile.ps1; this just supplies the include dir and flips ZX_ENABLE_REPLAY.
+	if( NOT FFMPEG_FOUND )
+		find_path( FFMPEG_INCLUDE_DIRS libavcodec/avcodec.h )
+		find_library( FFMPEG_AVCODEC_LIB  avcodec )
+		find_library( FFMPEG_AVFORMAT_LIB avformat )
+		find_library( FFMPEG_AVUTIL_LIB   avutil )
+		find_library( FFMPEG_SWSCALE_LIB  swscale )
+		if( FFMPEG_INCLUDE_DIRS AND FFMPEG_AVCODEC_LIB AND FFMPEG_AVFORMAT_LIB AND FFMPEG_AVUTIL_LIB AND FFMPEG_SWSCALE_LIB )
+			set( FFMPEG_FOUND TRUE )
+			set( FFMPEG_LIBRARIES ${FFMPEG_AVFORMAT_LIB} ${FFMPEG_AVCODEC_LIB} ${FFMPEG_SWSCALE_LIB} ${FFMPEG_AVUTIL_LIB} )
+		endif()
+	endif()
 	if( FFMPEG_FOUND )
-		message( STATUS "FUA replay: FFmpeg ${FFMPEG_libavcodec_VERSION} found -- video capture enabled" )
+		message( STATUS "FUA replay: FFmpeg found (${FFMPEG_INCLUDE_DIRS}) -- video capture enabled" )
 		add_definitions( -DZX_ENABLE_REPLAY )
 		include_directories( ${FFMPEG_INCLUDE_DIRS} )
 		link_directories( ${FFMPEG_LIBRARY_DIRS} )
