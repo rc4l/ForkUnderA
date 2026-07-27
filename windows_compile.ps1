@@ -168,7 +168,7 @@ $dep = $VcpkgInstalled
 # discards what it doesn't reference -- so libsndfile's transitive codecs (FLAC/vorbis/ogg/opus/
 # mpg123/LAME) resolve without hand-listing, plus the Win32 system libs static OpenAL-soft/OpenSSL
 # need beyond what the engine already links (advapi32/bcrypt/avrt). Fed via SNDFILE_LIBRARY (a list).
-$staticLibs = ((Get-ChildItem "$dep\lib\*.lib").FullName + @('advapi32','bcrypt','avrt')) -join ';'
+$staticLibs = ((Get-ChildItem "$dep\lib\*.lib").FullName + @('advapi32.lib','bcrypt.lib','avrt.lib')) -join ';'
 # [rc4l] ZX_WITH_SYMBOLS=1 (release CI) emits a program PDB for symbol upload. We pass it as a
 # cache var, NOT via CMAKE_CXX_FLAGS: overriding CMAKE_CXX_FLAGS wipes MSVC's default /DWIN32
 # /D_WINDOWS defines and breaks the build. src/CMakeLists.txt adds /Zi + /DEBUG per-target instead.
