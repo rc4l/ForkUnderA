@@ -1113,19 +1113,21 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 			return true;
 		}
 
-		int clipheight;
+		fixed_t clipheight;
 
 		if (thing->projectilepassheight > 0)
 		{
-			clipheight = (int)(thing->projectilepassheight);
+			// [MGOOOOOO] Use the (crouch-scaled) attack height so projectile Z-hits stay consistent
+			// with hitscan/splash, which already resolve through GetAttackHeight().
+			clipheight = thing->GetAttackHeight();
 		}
 		else if (thing->projectilepassheight < 0 && (i_compatflags & COMPATF_MISSILECLIP))
 		{
-			clipheight = (int)(-thing->projectilepassheight);
+			clipheight = -thing->projectilepassheight;
 		}
 		else
 		{
-			clipheight = (int)(thing->height);
+			clipheight = thing->height;
 		}
 
 		// Check if it went over / under
@@ -1135,6 +1137,16 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		}
 		if (tm.thing->z + tm.thing->height < thing->z)
 		{ // Under thing
+			return true;
+		}
+
+		// [MGOOOOOO] Anti-bleed: only a widened attack box can stick out through thin geometry, so
+		// if this actor's hitbox is larger than its physical box, require line of sight before the
+		// missile connects -- otherwise the widened margin could hit a body that is actually behind
+		// a wall/window. Physical-size (or smaller) boxes cannot bleed and skip this entirely.
+		if (thing->AttackHitboxEnlarged() &&
+			!P_CheckSight(thing, tm.thing, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
+		{
 			return true;
 		}
 

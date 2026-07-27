@@ -30,4 +30,15 @@ inline T ComputeAttackHeight(T passHeight, T physicalHeight, T defaultHeight)
 	return passHeight;
 }
 
+// [MGOOOOOO] True when an actor's attack hitbox exceeds its physical movement box in either
+// dimension -- the only case where the widened box can poke through thin geometry (windows, bars,
+// narrow pillars) and hit a body that is really behind that geometry. Such a hit needs an extra
+// line-of-sight check; a box that is smaller-or-equal in both dimensions cannot bleed, so callers
+// use this to skip the check entirely and avoid the cost.
+template<typename T>
+inline bool AttackHitboxIsEnlarged(T attackRadius, T physicalRadius, T attackHeight, T physicalHeight)
+{
+	return attackRadius > physicalRadius || attackHeight > physicalHeight;
+}
+
 #endif //__P_ATTACKEXTENT_H__

@@ -57,4 +57,27 @@ TEST(AttackHeight, ZeroDefaultGuardKeepsOverride) {
   EXPECT_EQ(ComputeAttackHeight<ext_t>(96, 28, 0), 96);
 }
 
+// AttackHitboxIsEnlarged: gate for the anti-bleed line-of-sight check.
+
+TEST(HitboxEnlarged, EqualBoxIsNotEnlarged) {
+  EXPECT_FALSE(AttackHitboxIsEnlarged<ext_t>(20, 20, 56, 56));
+}
+
+TEST(HitboxEnlarged, SmallerBoxIsNotEnlarged) {
+  EXPECT_FALSE(AttackHitboxIsEnlarged<ext_t>(8, 20, 40, 56));
+}
+
+TEST(HitboxEnlarged, WiderRadiusIsEnlarged) {
+  EXPECT_TRUE(AttackHitboxIsEnlarged<ext_t>(96, 20, 56, 56));
+}
+
+TEST(HitboxEnlarged, TallerHeightIsEnlarged) {
+  EXPECT_TRUE(AttackHitboxIsEnlarged<ext_t>(20, 20, 96, 56));
+}
+
+TEST(HitboxEnlarged, NarrowRadiusButTallerHeightIsEnlarged) {
+  // Enlarged in either dimension is enough to require the check.
+  EXPECT_TRUE(AttackHitboxIsEnlarged<ext_t>(8, 20, 96, 56));
+}
+
 }  // namespace
