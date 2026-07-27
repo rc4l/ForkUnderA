@@ -80,6 +80,8 @@
 #include "p_acs.h"
 #include "unlagged.h"
 #include "d_netinf.h"
+// [MGOOOOOO] Pure decision logic for A_JumpIfInput.
+#include "features/jumpifinput/computation/jumpifinput_compute.h"
 
 static FRandom pr_camissile ("CustomActorfire");
 static FRandom pr_camelee ("CustomMelee");
@@ -784,6 +786,39 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Jump)
 		ACTION_JUMP(jumpto, CLIENTUPDATE_FRAME ); // [BC] Random state changes shouldn't be client-side.
 	}
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
+}
+
+//==========================================================================
+//
+// [MGOOOOOO] A_JumpIfInput: jump if a player is pressing the given input buttons.
+//
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfInput)
+{
+	ACTION_PARAM_START(4);
+	ACTION_PARAM_INT(keys, 0);
+	ACTION_PARAM_STATE(jump, 1);
+	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_INT(ptr, 3);
+
+	ACTION_SET_RESULT(false);	// [MGOOOOOO] Jumps should never set the inventory-chain result.
+
+	// [MGOOOOOO] The server owns the input and decides the jump; clients wait for it to be
+	// replicated, exactly like A_Jump. Input-driven state changes can't be trusted client-side.
+	if ( NETWORK_InClientMode() )
+	{
+		if (( self->NetworkFlags & NETFL_CLIENTSIDEONLY ) == false )
+			return;
+	}
+
+	// [MGOOOOOO] Resolve whose input to read (default: self's player).
+	AActor *owner = COPY_AAPTR( self, ptr );
+	if (( owner == NULL ) || ( owner->player == NULL ))
+		return;
+
+	player_t *p = owner->player;
+	if ( ComputeInputMatch( p->cmd.ucmd.buttons, p->oldbuttons, keys, flags ) )
+		ACTION_JUMP(jump, CLIENTUPDATE_FRAME);
 }
 
 //==========================================================================
