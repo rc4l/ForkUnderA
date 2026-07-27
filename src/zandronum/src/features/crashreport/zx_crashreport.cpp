@@ -188,10 +188,26 @@ static void ClearCrashMarker()
 		sentry_clear_crashed_last_run();
 }
 
+// [rc4l] After consent is given the stored crash is queued on sentry's background transport. Block
+// briefly until it is actually delivered so the upload can't be lost by the player quitting right
+// after choosing Send, and log the outcome to the console/logfile so the result is visible in-game.
+// Only meaningful once sentry is initialized (a DSN is baked in); otherwise it is a no-op.
+static void ReportUploadResult()
+{
+	if (!g_sentryInited)
+		return;
+	Printf("Uploading crash report...\n");
+	if (sentry_flush(5000) == 0)   // wait up to 5s for the background transport to finish sending
+		Printf("Crash report uploaded. Thanks for helping fix ZandroX.\n");
+	else
+		Printf("Crash report upload timed out; it will retry on the next launch.\n");
+}
+
 // Menu buttons -> here. When we get here with a pending crash, sentry is not yet initialized.
 CCMD(crashreport_send)
 {
-	ZX_CrashReportDoInit(1);   // give consent -> uploads the pending crash
+	ZX_CrashReportDoInit(1);   // give consent -> queues the pending crash for upload
+	ReportUploadResult();
 	ClearCrashMarker();
 	M_ClearMenus();
 }
@@ -200,6 +216,8 @@ CCMD(crashreport_always)
 	UCVarValue v; v.Int = 2;   // remember: always send
 	cl_crashreports.ForceSet(v, CVAR_Int);
 	ZX_CrashReportDoInit(1);
+	Printf("Crash reporting set to always send (ZandroX@%s).\n", GetGitHash());
+	ReportUploadResult();
 	ClearCrashMarker();
 	M_ClearMenus();
 }
@@ -207,6 +225,7 @@ CCMD(crashreport_notnow)
 {
 	ZX_CrashReportDoInit(0);   // init with unknown consent -> discards the pending crash, asks again next time
 	ClearCrashMarker();
+	Printf("Crash report discarded (you'll be asked again if it happens next time).\n");
 	M_ClearMenus();
 }
 CCMD(crashreport_save)
