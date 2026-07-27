@@ -253,7 +253,12 @@ bool Trace (fixed_t x, fixed_t y, fixed_t z, sector_t *sector,
 
 bool FTraceInfo::TraceTraverse (int ptflags)
 {
-	FPathTraverse it(StartX, StartY, FixedMul (Vx, MaxDist), FixedMul (Vy, MaxDist), ptflags | PT_DELTA);
+	// [MGOOOOOO] By default every trace selects and validates actors using their attack extents
+	// (PassRadius/PassHeight), so all Trace() consumers -- hitscan, railgun, line-of-fire, target
+	// picking, bot/HUD targeting -- stay consistent with what can actually be shot. A consumer that
+	// specifically needs the physical movement extents opts out with TRACE_NoPassWidth.
+	const bool usePassWidth = (TraceFlags & TRACE_NoPassWidth) == 0;
+	FPathTraverse it(StartX, StartY, FixedMul (Vx, MaxDist), FixedMul (Vy, MaxDist), ptflags | PT_DELTA, usePassWidth);
 	intercept_t *in;
 
 	while ((in = it.Next()))
@@ -538,12 +543,17 @@ cont:
 		hity = StartY + FixedMul (Vy, dist);
 		hitz = StartZ + FixedMul (Vz, dist);
 
-		if (hitz > in->d.thing->z + in->d.thing->height)
+		// [MGOOOOOO] For attack traces, use the actor's attack extents so it can be shot at a
+		// wider/taller extent than its movement box. Non-attack traces keep the physical box.
+		fixed_t thingtopz = in->d.thing->z + (usePassWidth ? in->d.thing->GetAttackHeight() : in->d.thing->height);
+		fixed_t thingradius = usePassWidth ? in->d.thing->GetAttackRadius() : in->d.thing->radius;
+
+		if (hitz > thingtopz)
 		{ // trace enters above actor
 			if (Vz >= 0) continue;      // Going up: can't hit
-			
+
 			// Does it hit the top of the actor?
-			dist = FixedDiv(in->d.thing->z + in->d.thing->height - StartZ, Vz);
+			dist = FixedDiv(thingtopz - StartZ, Vz);
 
 			if (dist > MaxDist) continue;
 			in->frac = FixedDiv(dist, MaxDist);
@@ -553,8 +563,8 @@ cont:
 			hitz = StartZ + FixedMul (Vz, dist);
 
 			// calculated coordinate is outside the actor's bounding box
-			if (abs(hitx - in->d.thing->x) > in->d.thing->radius ||
-				abs(hity - in->d.thing->y) > in->d.thing->radius) continue;
+			if (abs(hitx - in->d.thing->x) > thingradius ||
+				abs(hity - in->d.thing->y) > thingradius) continue;
 		}
 		else if (hitz < in->d.thing->z)
 		{ // trace enters below actor
@@ -570,8 +580,8 @@ cont:
 			hitz = StartZ + FixedMul (Vz, dist);
 
 			// calculated coordinate is outside the actor's bounding box
-			if (abs(hitx - in->d.thing->x) > in->d.thing->radius ||
-				abs(hity - in->d.thing->y) > in->d.thing->radius) continue;
+			if (abs(hitx - in->d.thing->x) > thingradius ||
+				abs(hity - in->d.thing->y) > thingradius) continue;
 		}
 
 		// check for extrafloors first

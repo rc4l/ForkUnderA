@@ -921,7 +921,11 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 	if (!((thing->flags & (MF_SOLID | MF_SPECIAL | MF_SHOOTABLE)) || thing->flags6 & MF6_TOUCHY))
 		return true;	// can't hit thing
 
-	fixed_t blockdist = thing->radius + tm.thing->radius;
+	// [MGOOOOOO] Missiles clip against the target's attack radius (ProjectilePassRadius) rather than
+	// its movement radius, so an actor can be shot at a wider/narrower horizontal extent without
+	// affecting movement collision. All non-missile movers keep using the physical radius.
+	fixed_t hitradius = (tm.thing->flags & MF_MISSILE) ? thing->GetAttackRadius() : thing->radius;
+	fixed_t blockdist = hitradius + tm.thing->radius;
 	if (abs(thing->x - tm.x) >= blockdist || abs(thing->y - tm.y) >= blockdist)
 		return true;
 
@@ -3796,7 +3800,9 @@ bool aim_t::AimTraverse3DFloors(const divline_t &trace, intercept_t * in)
 
 void aim_t::AimTraverse(fixed_t startx, fixed_t starty, fixed_t endx, fixed_t endy, AActor *target)
 {
-	FPathTraverse it(startx, starty, endx, endy, PT_ADDLINES | PT_ADDTHINGS | PT_COMPATIBLE);
+	// [MGOOOOOO] Autoaim selects actors by their attack radius (ProjectilePassRadius) for parity with
+	// the damage trace, so a widened/narrowed attack box also governs what can be aimed at.
+	FPathTraverse it(startx, starty, endx, endy, PT_ADDLINES | PT_ADDTHINGS | PT_COMPATIBLE, true);
 	intercept_t *in;
 
 	while ((in = it.Next()))
@@ -3908,7 +3914,8 @@ void aim_t::AimTraverse(fixed_t startx, fixed_t starty, fixed_t endx, fixed_t en
 
 		// check angles to see if the thing can be aimed at
 
-		thingtoppitch = -(int)R_PointToAngle2(0, shootz, dist, th->z + th->height);
+		// [MGOOOOOO] Aim against the actor's attack height so ProjectilePassHeight governs autoaim too.
+		thingtoppitch = -(int)R_PointToAngle2(0, shootz, dist, th->z + th->GetAttackHeight());
 
 		if (thingtoppitch > bottompitch)
 			continue;					// shot over the thing
@@ -5733,18 +5740,21 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 
 			dx = abs(thing->x - bombspot->x);
 			dy = abs(thing->y - bombspot->y);
-			boxradius = double(thing->radius);
+			// [MGOOOOOO] Splash damage uses the actor's attack extents (ProjectilePassRadius/Height)
+			// so a widened/narrowed attack box also governs its exposure to explosions.
+			boxradius = double(thing->GetAttackRadius());
+			fixed_t attackheight = thing->GetAttackHeight();
 
 			// The damage pattern is square, not circular.
 			len = double(dx > dy ? dx : dy);
 
-			if (bombspot->z < thing->z || bombspot->z >= thing->z + thing->height)
+			if (bombspot->z < thing->z || bombspot->z >= thing->z + attackheight)
 			{
 				double dz;
 
 				if (bombspot->z > thing->z)
 				{
-					dz = double(bombspot->z - thing->z - thing->height);
+					dz = double(bombspot->z - thing->z - attackheight);
 				}
 				else
 				{
@@ -5876,7 +5886,8 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 			dy = abs(thing->y - bombspot->y);
 
 			dist = dx>dy ? dx : dy;
-			dist = (dist - thing->radius) >> FRACBITS;
+			// [MGOOOOOO] Use the attack radius (ProjectilePassRadius) for splash exposure parity.
+			dist = (dist - thing->GetAttackRadius()) >> FRACBITS;
 
 			if (dist < 0)
 				dist = 0;

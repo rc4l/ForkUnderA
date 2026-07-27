@@ -396,10 +396,16 @@ void AActor::LinkToWorld (sector_t *sec)
 	// link into blockmap (inert things don't need to be in the blockmap)
 	if ( !(flags & MF_NOBLOCKMAP) )
 	{
-		int x1 = GetSafeBlockX(x - radius - bmaporgx);
-		int x2 = GetSafeBlockX(x + radius - bmaporgx);
-		int y1 = GetSafeBlockY(y - radius - bmaporgy);
-		int y2 = GetSafeBlockY(y + radius - bmaporgy);
+		// [MGOOOOOO] Link on the larger of the movement radius and the attack radius so that
+		// actors with a widened ProjectilePassRadius are actually visited by attack sweeps
+		// that reach beyond their physical radius. This only widens which blocks the actor
+		// occupies; every non-attack collision test still gates on the physical radius, so a
+		// wide-linked actor is merely considered and then rejected (the old MAXRADIUS role).
+		fixed_t linkradius = MAX(radius, GetAttackRadius());
+		int x1 = GetSafeBlockX(x - linkradius - bmaporgx);
+		int x2 = GetSafeBlockX(x + linkradius - bmaporgx);
+		int y1 = GetSafeBlockY(y - linkradius - bmaporgy);
+		int y2 = GetSafeBlockY(y + linkradius - bmaporgy);
 
 		if (x1 >= bmapwidth || x2 < 0 || y1 >= bmapheight || y2 < 0)
 		{ // thing is off the map
@@ -1038,6 +1044,9 @@ void FPathTraverse::AddThingIntercepts (int bx, int by, FBlockThingsIterator &it
 		divline_t line;
 		int i;
 
+		// [MGOOOOOO] Attack traces test against the actor's attack radius (ProjectilePassRadius);
+		// everything else keeps using the physical movement radius.
+		fixed_t thingradius = usePassWidth ? thing->GetAttackRadius() : thing->radius;
 
 		if (!compatible)
 		{
@@ -1051,31 +1060,31 @@ void FPathTraverse::AddThingIntercepts (int bx, int by, FBlockThingsIterator &it
 				switch (i)
 				{
 				case 0:		// Top edge
-					line.x = thing->x + thing->radius;
-					line.y = thing->y + thing->radius;
-					line.dx = -thing->radius * 2;
+					line.x = thing->x + thingradius;
+					line.y = thing->y + thingradius;
+					line.dx = -thingradius * 2;
 					line.dy = 0;
 					break;
 
 				case 1:		// Right edge
-					line.x = thing->x + thing->radius;
-					line.y = thing->y - thing->radius;
+					line.x = thing->x + thingradius;
+					line.y = thing->y - thingradius;
 					line.dx = 0;
-					line.dy = thing->radius * 2;
+					line.dy = thingradius * 2;
 					break;
 
 				case 2:		// Bottom edge
-					line.x = thing->x - thing->radius;
-					line.y = thing->y - thing->radius;
-					line.dx = thing->radius * 2;
+					line.x = thing->x - thingradius;
+					line.y = thing->y - thingradius;
+					line.dx = thingradius * 2;
 					line.dy = 0;
 					break;
 
 				case 3:		// Left edge
-					line.x = thing->x - thing->radius;
-					line.y = thing->y + thing->radius;
+					line.x = thing->x - thingradius;
+					line.y = thing->y + thingradius;
 					line.dx = 0;
-					line.dy = thing->radius * -2;
+					line.dy = thingradius * -2;
 					break;
 				}
 				// Check if this side is facing the trace origin
@@ -1130,19 +1139,19 @@ void FPathTraverse::AddThingIntercepts (int bx, int by, FBlockThingsIterator &it
 			// check a corner to corner crossection for hit
 			if (tracepositive)
 			{
-				x1 = thing->x - thing->radius;
-				y1 = thing->y + thing->radius;
-						
-				x2 = thing->x + thing->radius;
-				y2 = thing->y - thing->radius;					
+				x1 = thing->x - thingradius;
+				y1 = thing->y + thingradius;
+
+				x2 = thing->x + thingradius;
+				y2 = thing->y - thingradius;
 			}
 			else
 			{
-				x1 = thing->x - thing->radius;
-				y1 = thing->y - thing->radius;
-						
-				x2 = thing->x + thing->radius;
-				y2 = thing->y + thing->radius;					
+				x1 = thing->x - thingradius;
+				y1 = thing->y - thingradius;
+
+				x2 = thing->x + thingradius;
+				y2 = thing->y + thingradius;
 			}
 			
 			s1 = P_PointOnDivlineSide (x1, y1, &trace);
@@ -1205,8 +1214,10 @@ intercept_t *FPathTraverse::Next()
 //
 //===========================================================================
 
-FPathTraverse::FPathTraverse (fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2, int flags)
+FPathTraverse::FPathTraverse (fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2, int flags, bool usePassWidth)
 {
+	this->usePassWidth = usePassWidth;
+
 	fixed_t 	xt1, xt2;
 	fixed_t 	yt1, yt2;
 	long long	_x1, _x2, _y1, _y2;

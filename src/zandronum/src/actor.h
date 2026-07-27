@@ -45,6 +45,7 @@
 #include "s_sound.h"
 #include "memarena.h"
 #include "g_level.h"
+#include "p_attackextent.h"
 
 // [AK] Needed for std::numeric_limits in the IDList class.
 #include <limits>
@@ -1001,6 +1002,16 @@ public:
 	FTextureID		ceilingpic;			// contacted sec ceilingpic
 	fixed_t			radius, height;		// for movement checking
 	fixed_t			projectilepassheight;	// height for clipping projectile movement against this actor
+	fixed_t			projectilepassradius;	// effective radius (half-width) for clipping attacks against this actor, independent of movement radius
+
+	// [MGOOOOOO] Effective extents used when deciding whether an attack hits this actor. These are
+	// independent of the physical radius/height that govern movement, so an actor can be shot at
+	// a wider/taller extent without getting stuck on walls or under low ceilings. A value of 0
+	// (unset) falls back to the physical extent (see ComputeAttackExtent in p_attackextent.h).
+	fixed_t GetAttackRadius() const { return ComputeAttackExtent(projectilepassradius, radius); }
+	// [MGOOOOOO] Scales a custom PassHeight by the crouch shrink (current height vs default height),
+	// so a crouching player's vertical attack box shrinks like its physical height does.
+	fixed_t GetAttackHeight() const { return ComputeAttackHeight(projectilepassheight, height, GetDefault()->height); }
 	fixed_t			velx, vely, velz;	// velocity
 	SDWORD			tics;				// state tic counter
 	FState			*state;
