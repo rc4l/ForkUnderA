@@ -596,7 +596,6 @@ set( PLAT_WIN32_SOURCES
 	win32/hardware.cpp
 	win32/helperthread.cpp
 	win32/i_cd.cpp
-	win32/i_crash.cpp
 	win32/i_input.cpp
 	win32/i_keyboard.cpp
 	win32/i_mouse.cpp
