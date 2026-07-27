@@ -142,6 +142,15 @@ static void ZX_CrashReportDoInit(int consentAction)
 	g_sentryInited = true;
 	atexit(ZX_CrashReportShutdown);
 
+#ifdef _WIN32
+	// [rc4l] With the legacy Win32 crash handler removed, sentry-native owns crashes. Its handler
+	// captures the crash and then returns EXCEPTION_CONTINUE_SEARCH, which would let Windows pop its
+	// own "stopped working" (WER) dialog. Suppress that GPF box so the process dies quietly after we
+	// have captured; our consent prompt then appears on the next launch. (sentry itself already sets
+	// SEM_FAILCRITICALERRORS; we add the GPF-box bit on top and preserve any existing flags.)
+	SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX);
+#endif
+
 	if (consentAction > 0)
 		sentry_user_consent_give();     // uploads the stored crash, if any
 	else if (consentAction < 0)
