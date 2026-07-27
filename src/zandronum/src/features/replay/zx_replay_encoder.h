@@ -28,8 +28,10 @@ public:
 	// srcW/srcH: incoming framebuffer size; dstW/dstH: encoded (downscaled) size. encName e.g.
 	// "libx264" (software) or "h264_videotoolbox" (hardware). Returns false if unavailable.
 	bool Init(int srcW, int srcH, int dstW, int dstH, int fps, int bitrateKbps, const char *encName);
-	// Top-down tightly-or-strided RGB24; tUs is a monotonic capture timestamp in microseconds.
-	void AddFrameTopDownRGB(const uint8_t *rgb, int srcStride, int64_t tUs);
+	// Top-down RGB24 of the CURRENT framebuffer (srcW x srcH, srcStride may be negative); tUs is a
+	// monotonic capture timestamp in microseconds. srcW/srcH are per-frame so a mid-capture window or
+	// render-scale resize is handled -- the frame is scaled to the fixed output size.
+	void AddFrameTopDownRGB(const uint8_t *rgb, int srcW, int srcH, int srcStride, int64_t tUs);
 	// Mux the last windowSecs of buffered packets (from a keyframe) to an .mp4. False on failure.
 	bool SaveClip(const char *path, int windowSecs);
 	void Shutdown();

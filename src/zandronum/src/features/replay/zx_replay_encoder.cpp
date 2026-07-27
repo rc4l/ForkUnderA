@@ -60,18 +60,23 @@ bool ReplayEncoder::Init(int srcW, int srcH, int dstW, int dstH, int fps, int bi
 	frame_->height = dstH_;
 	if (av_frame_get_buffer(frame_, 0) < 0) return false;
 
-	sws_ = sws_getContext(srcW_, srcH_, AV_PIX_FMT_RGB24, dstW_, dstH_, AV_PIX_FMT_YUV420P,
-						  SWS_BILINEAR, nullptr, nullptr, nullptr);
-	return sws_ != nullptr;
+	// The swscale context is (re)built lazily per source size in AddFrameTopDownRGB, so a mid-capture
+	// window/render-scale resize is handled rather than assumed away. Output size stays fixed.
+	return true;
 }
 
-void ReplayEncoder::AddFrameTopDownRGB(const uint8_t *rgb, int srcStride, int64_t tUs)
+void ReplayEncoder::AddFrameTopDownRGB(const uint8_t *rgb, int srcW, int srcH, int srcStride, int64_t tUs)
 {
-	if (!enc_ || !sws_) return;
+	if (!enc_ || srcW <= 0 || srcH <= 0) return;
+	// Reuse the scaler while the source size is unchanged; rebuild it (cached) only on a resize. The
+	// destination stays dstW_ x dstH_, so every encoded packet is the same size and remains muxable.
+	sws_ = sws_getCachedContext(sws_, srcW, srcH, AV_PIX_FMT_RGB24, dstW_, dstH_, AV_PIX_FMT_YUV420P,
+							   SWS_BILINEAR, nullptr, nullptr, nullptr);
+	if (!sws_) return;
 	const uint8_t *src[4] = { rgb, nullptr, nullptr, nullptr };
 	int srcS[4] = { srcStride, 0, 0, 0 };
 	if (av_frame_make_writable(frame_) < 0) return;
-	sws_scale(sws_, src, srcS, 0, srcH_, frame_->data, frame_->linesize);
+	sws_scale(sws_, src, srcS, 0, srcH, frame_->data, frame_->linesize);
 
 	// Real-time PTS: map the capture timestamp onto the encoder's 1/fps timebase. At full capture
 	// rate this yields 0,1,2,3,... (smooth); if the game lagged, PTS gaps keep playback real-time.

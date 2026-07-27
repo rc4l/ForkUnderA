@@ -124,7 +124,7 @@ void WorkerLoop()
 			}
 			enc.SetWindow(cl_fua_replay_duration);
 			if (inited)
-				enc.AddFrameTopDownRGB(frame.rgb.data(), frame.w * 3, frame.tUs);
+				enc.AddFrameTopDownRGB(frame.rgb.data(), frame.w, frame.h, frame.w * 3, frame.tUs);
 		}
 
 		if (!saveReq.empty())
