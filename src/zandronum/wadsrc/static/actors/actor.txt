@@ -213,6 +213,7 @@ ACTOR Actor native //: Thinker
 	action native A_JumpIfTargetOutsideMeleeRange(state label);
 	action native A_JumpIfTargetInsideMeleeRange(state label);
 	action native A_JumpIfInventory(class<Inventory> itemtype, int itemamount, state label, int owner = AAPTR_DEFAULT);
+	action native A_JumpIfInput(int keys, state label, int flags = 0, int owner = AAPTR_DEFAULT); // [MGOOOOOO]
 	action native A_JumpIfArmorType(string Type, state label, int amount = 1);
 	action native A_GiveInventory(class<Inventory> itemtype, int amount = 0, int giveto = AAPTR_DEFAULT);
 	action native A_TakeInventory(class<Inventory> itemtype, int amount = 0, int flags = 0, int giveto = AAPTR_DEFAULT);

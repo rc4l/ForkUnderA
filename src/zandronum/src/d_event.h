@@ -86,6 +86,8 @@ typedef enum
 //
 // Button/action code definitions.
 // The net code supports up to 29 buttons, so don't make this longer than that.
+// [MGOOOOOO] These BT_* values are mirrored as DECORATE constants for A_JumpIfInput in
+// wadsrc/static/actors/constants.txt -- keep the two lists in sync.
 //
 typedef enum
 {

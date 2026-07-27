@@ -64,6 +64,8 @@
 #include "network_enums.h"
 #include "p_acs.h"
 #include "v_video.h"
+// [MGOOOOOO] Predicate for when the full 32-bit button set must be transmitted.
+#include "features/jumpifinput/computation/jumpifinput_compute.h"
 
 //*****************************************************************************
 //	VARIABLES
@@ -347,7 +349,9 @@ static void clientcommand_WriteMoveCommandToBuffer( CLIENT_MOVE_COMMAND_s moveCM
 	if ( pCmd->ucmd.buttons )
 	{
 		ulBits |= CLIENT_UPDATE_BUTTONS;
-		if ( zacompatflags & ZACOMPATF_CLIENTS_SEND_FULL_BUTTON_INFO )
+		// [MGOOOOOO] Send the full 32-bit set when a script/user button above the low gameplay
+		// byte is pressed (so server-side A_JumpIfInput can see it); the compat flag still forces it.
+		if ( ComputeShouldSendFullButtons( pCmd->ucmd.buttons, !!( zacompatflags & ZACOMPATF_CLIENTS_SEND_FULL_BUTTON_INFO ) ) )
 			ulBits |= CLIENT_UPDATE_BUTTONS_LONG;
 	}
 	if ( pCmd->ucmd.forwardmove )
