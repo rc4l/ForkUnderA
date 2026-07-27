@@ -194,6 +194,7 @@ if ($env:ZX_WITH_SYMBOLS -eq "1") {
 }
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
+    "-DCMAKE_PREFIX_PATH=$dep" ` # [rc4l] let find_path/find_library locate the vcpkg tree (ffmpeg headers + .libs for replay)
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
     -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
     -DFORCE_INTERNAL_GME=ON `
