@@ -136,7 +136,8 @@ if ($SkipDeps) {
     # loader on every platform, per upstream 69af73d9b/94b06900c.
     & $VcpkgExe install `
         openal-soft:x64-windows-static libsndfile:x64-windows-static mpg123:x64-windows-static `
-        opus:x64-windows-static openssl:x64-windows-static glew:x64-windows-static
+        opus:x64-windows-static openssl:x64-windows-static glew:x64-windows-static `
+        ffmpeg[x264]:x64-windows-static
     if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed" }
 }
 
@@ -172,7 +173,10 @@ $dep = $VcpkgInstalled
 # need beyond what the engine already links (advapi32/bcrypt/avrt). Fed via SNDFILE_LIBRARY, whose
 # entries are consumed as file PATHS -- so the system libs must be full paths too (bare names get
 # resolved relative to the build dir and fail). The SDK's um\x64 libs were copied into $dx\Lib\x64.
-$sysLibs = @('advapi32','bcrypt','avrt') | ForEach-Object { Join-Path "$dx\Lib\x64" ($_ + '.lib') }
+# [rc4l] avrt/bcrypt cover the audio stack; the mf*/secur32/strmiids/ws2_32 set is what static ffmpeg
+# (libav*) pulls in on Windows for its Media Foundation + networking + DirectShow glue.
+$sysLibs = @('advapi32','bcrypt','avrt','secur32','ws2_32','mfplat','mfuuid','strmiids','ole32','user32') |
+    ForEach-Object { Join-Path "$dx\Lib\x64" ($_ + '.lib') }
 $staticLibs = ((Get-ChildItem "$dep\lib\*.lib").FullName + $sysLibs) -join ';'
 # [rc4l] Flight 1 needs GLEW on Windows too. vcpkg names the static lib libglew32.lib (not
 # glew32.lib), which CMake's find_library(NAMES GLEW glew32) won't match by default -- resolve it by
