@@ -5,7 +5,7 @@
 #define __P_ATTACKEXTENT_H__
 
 // [MGOOOOOO] Effective extent used when deciding whether an attack hits an actor: a positive
-// per-actor override (PassRadius/PassHeight) wins, otherwise fall back to the actor's physical
+// per-actor override (HitboxRadius/HitboxHeight) wins, otherwise fall back to the actor's physical
 // movement extent (radius/height). Templated so it stays dependency-free and unit-testable
 // without linking the engine.
 template<typename T>
@@ -14,11 +14,11 @@ inline T ComputeAttackExtent(T passExtent, T physicalExtent)
 	return passExtent > 0 ? passExtent : physicalExtent;
 }
 
-// [MGOOOOOO] Effective vertical attack extent. Like ComputeAttackExtent, a positive PassHeight
+// [MGOOOOOO] Effective vertical attack extent. Like ComputeAttackExtent, a positive HitboxHeight
 // override wins -- but the override is scaled down to mirror any shrink applied to the physical
 // height. Crouching sets an actor's height to defaultHeight * crouchfactor, so passing the current
 // and default heights here makes a crouching player's attack box shrink vertically by the same
-// factor. It never inflates the override (a taller-than-default actor keeps its full PassHeight),
+// factor. It never inflates the override (a taller-than-default actor keeps its full HitboxHeight),
 // and with no override it just returns the physical height (which already reflects the crouch).
 template<typename T>
 inline T ComputeAttackHeight(T passHeight, T physicalHeight, T defaultHeight)

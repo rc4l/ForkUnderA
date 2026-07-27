@@ -609,11 +609,11 @@ DEFINE_PROPERTY(height, F, Actor)
 //==========================================================================
 //
 // Vertical attack extent, independent of the physical (movement) height.
-// [MGOOOOOO] PassHeight is the canonical name; ProjectilePassHeight is kept as a
+// [MGOOOOOO] HitboxHeight is the canonical name; ProjectilePassHeight is kept as a
 // backward-compatible alias (stock decorations and existing content still use it).
 //
 //==========================================================================
-DEFINE_PROPERTY(passheight, F, Actor)
+DEFINE_PROPERTY(hitboxheight, F, Actor)
 {
 	PROP_FIXED_PARM(id, 0);
 	defaults->projectilepassheight=id;
@@ -627,12 +627,12 @@ DEFINE_PROPERTY(projectilepassheight, F, Actor)
 
 //==========================================================================
 //
-// [MGOOOOOO] Horizontal analog of PassHeight: an effective attack radius (half-width)
+// [MGOOOOOO] Horizontal analog of HitboxHeight: an effective attack radius (half-width)
 // independent of the physical movement radius. >0 overrides (widen or narrow);
 // 0 falls back to the movement radius. ProjectilePassRadius is kept as an alias.
 //
 //==========================================================================
-DEFINE_PROPERTY(passradius, F, Actor)
+DEFINE_PROPERTY(hitboxradius, F, Actor)
 {
 	PROP_FIXED_PARM(id, 0);
 	defaults->projectilepassradius=id;
