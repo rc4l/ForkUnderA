@@ -301,7 +301,8 @@ ship without the feature rather than block a release.
    behind `cl_fua_replay` default-off. Verified live in-engine.
 2. **Capture + save (video-only, software x264) — DONE (macOS).** `Swap()` capture, 30fps cadence,
    downscale (`ComputeScaledDims`), worker-thread encode into a rolling packet ring (`ReplayEncoder`,
-   libx264, VBV-capped bitrate), whole-GOP eviction, MP4 mux on `fua_clip` → `~/ZandroX-Clips/`, HUD
+   libx264, VBV-capped bitrate), whole-GOP eviction, MP4 mux on `fua_clip` → the platform video folder
+   (macOS `~/Movies/ZandroX`), HUD
    "Saved…" line. Verified: comma in MAP01 → a valid, shareable `.mp4`; the .app self-bundles libav*.
    *Remaining:* PBO async readback (perf), and Windows/Linux FFmpeg provisioning.
 3. **Hardware encoders** — `cl_fua_replay_encoder 2` selects `h264_videotoolbox` today (wired,
