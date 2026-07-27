@@ -14,6 +14,8 @@
 #include "stats.h"
 #include "version.h"
 #include "c_console.h"
+#include "c_dispatch.h"
+#include "c_cvars.h"
 
 #include "sdlglvideo.h"
 #include "gl/system/gl_system.h"
@@ -27,6 +29,7 @@
 #include "gl/utility/gl_templates.h"
 #include "gl/textures/gl_material.h"
 #include "gl/system/gl_cvars.h"
+#include "features/hwrender/computation/glcontext_compute.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -55,9 +58,21 @@ EXTERN_CVAR (Int, vid_renderer)
 
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
 
+// [rc4l] video-scale: the CLIENT (window drawable) size the next framebuffer should give its SDL
+// window. Defined in v_video.cpp (shared with the Win32 backend). See features/video-scale.
+extern int zx_pendingClientWidth, zx_pendingClientHeight;
+
 CUSTOM_CVAR(Int, gl_vid_multisample, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL )
 {
 	Printf("This won't take effect until " GAMENAME " is restarted.\n");
+}
+
+// [rc4l] Records the profile actually obtained, which may differ from what was asked for.
+static bool s_coreProfile = false;
+
+bool SDLGLVideo::IsCoreProfile()
+{
+	return s_coreProfile;
 }
 
 // PRIVATE DATA DEFINITIONS ------------------------------------------------
@@ -157,12 +172,29 @@ bool SDLGLVideo::NextMode (int *width, int *height, bool *letterbox)
 	}
 	else
 	{
-		SDL_Rect **modes = SDL_ListModes (NULL, SDL_FULLSCREEN|SDL_HWSURFACE);
-		if (modes != NULL && modes[IteratorMode] != NULL)
+		// [rc4l] SDL2 enumerates modes per display rather than handing back a NULL-terminated
+		// list, and it reports one entry per (w, h, refresh rate, format) tuple -- SDL 1.2's
+		// SDL_ListModes deduplicated by size for free, so upstream never needed this skip.
+		// SDL2's list is sorted largest-first, so consecutive entries with the same w/h are
+		// the same resolution at different refresh rates; skip them (the same guard SDL2-era
+		// GZDoom uses).
+		SDL_DisplayMode mode;
+		int prevw = -1, prevh = -1;
+		if (IteratorMode > 0 && SDL_GetDisplayMode (0, IteratorMode - 1, &mode) == 0)
 		{
-			*width = modes[IteratorMode]->w;
-			*height = modes[IteratorMode]->h;
+			prevw = mode.w;
+			prevh = mode.h;
+		}
+		while (IteratorMode < SDL_GetNumDisplayModes (0) &&
+			SDL_GetDisplayMode (0, IteratorMode, &mode) == 0)
+		{
 			++IteratorMode;
+			if (mode.w == prevw && mode.h == prevh)
+			{
+				continue;
+			}
+			*width = mode.w;
+			*height = mode.h;
 			return true;
 		}
 	}
@@ -183,11 +215,11 @@ DFrameBuffer *SDLGLVideo::CreateFrameBuffer (int width, int height, bool fullscr
 		if (fb->Width == width &&
 			fb->Height == height)
 		{
-			bool fsnow = (fb->Screen->flags & SDL_FULLSCREEN) != 0;
-	
+			bool fsnow = (SDL_GetWindowFlags (fb->Screen) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
+
 			if (fsnow != fullscreen)
 			{
-				SDL_WM_ToggleFullScreen (fb->Screen);
+				SDL_SetWindowFullscreen (fb->Screen, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
 			}
 			return old;
 		}
@@ -291,7 +323,7 @@ bool SDLGLVideo::SetupPixelFormat(bool allowsoftware, int multisample)
 	SDL_GL_SetAttribute( SDL_GL_ALPHA_SIZE,  8 );
 	SDL_GL_SetAttribute( SDL_GL_DEPTH_SIZE,  24 );
 	SDL_GL_SetAttribute( SDL_GL_STENCIL_SIZE,  8 );
-//		SDL_GL_SetAttribute( SDL_GL_DOUBLEBUFFER,  1 );
+	SDL_GL_SetAttribute( SDL_GL_DOUBLEBUFFER,  1 );
 	if (multisample > 0) {
 		SDL_GL_SetAttribute( SDL_GL_MULTISAMPLEBUFFERS, 1 );
 		SDL_GL_SetAttribute( SDL_GL_MULTISAMPLESAMPLES, multisample );
@@ -337,30 +369,81 @@ SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen)
 		return;
 	}
 
-		
-	Screen = SDL_SetVideoMode (width, height,
-		32,
-		SDL_HWSURFACE|SDL_HWPALETTE|SDL_OPENGL | SDL_GL_DOUBLEBUFFER|SDL_ANYFORMAT|
-		(fullscreen ? SDL_FULLSCREEN : 0));
+	char caption[100];
+	mysnprintf(caption, countof(caption), GAMESIG " %s (%s)", GetVersionString(), GetGitTime());
+
+	// [rc4l] video-scale: the OS window is the CLIENT size; the render size (width/height above) may
+	// be smaller when internal-resolution scaling is on. For fullscreen FULLSCREEN_DESKTOP ignores
+	// the size and uses the desktop anyway. See features/video-scale.
+	int winW = (zx_pendingClientWidth  > 0) ? zx_pendingClientWidth  : width;
+	int winH = (zx_pendingClientHeight > 0) ? zx_pendingClientHeight : height;
+
+	// [rc4l] windowed-video: a normal window is freely resizable (drag the edges), matching upstream.
+	// The render target follows the drawable live via OpenGLFrameBuffer::MaybeResizeForScale, and the
+	// new size is persisted on the resize event (see i_input.cpp / features/windowed-video).
+	Uint32 windowFlags = SDL_WINDOW_OPENGL | (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_RESIZABLE);
+
+	Screen = SDL_CreateWindow (caption,
+		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+		winW, winH,
+		windowFlags);
 
 	if (Screen == NULL)
 		return;
 
-	m_supportsGamma = -1 != SDL_GetGammaRamp(m_origGamma[0], m_origGamma[1], m_origGamma[2]);
-	
-#if defined(__APPLE__)
-	// Need to set title here because a window is not created yet when calling the same function from main()
-	char caption[100];
-	mysnprintf(caption, countof(caption), GAMESIG " %s (%s)", GetVersionString(), GetGitTime());
-	SDL_WM_SetCaption(caption, NULL);
-#endif // __APPLE__
+	// [rc4l] The staircase summit (upstream fc0cf4f99): the renderer runs on a core profile,
+	// so request the core chain (4.1 -> 4.0 -> 3.3). This is the flip that gives macOS its
+	// shaders back -- Apple never offered compatibility contexts above 2.1.
+	zx::GLContextRequest reqs[zx::kMaxGLContextRequests];
+	const int reqCount = zx::ComputeGLContextRequests(true, reqs, zx::kMaxGLContextRequests);
+	GLContext = NULL;
+	for (int attempt = 0; attempt < reqCount; attempt++)
+	{
+		const zx::GLContextRequest &req = reqs[attempt];
+
+		SDL_GL_SetAttribute (SDL_GL_CONTEXT_MAJOR_VERSION, req.major);
+		SDL_GL_SetAttribute (SDL_GL_CONTEXT_MINOR_VERSION, req.minor);
+		SDL_GL_SetAttribute (SDL_GL_CONTEXT_PROFILE_MASK, req.coreProfile
+			? SDL_GL_CONTEXT_PROFILE_CORE : SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+
+		GLContext = SDL_GL_CreateContext (Screen);
+		if (GLContext != NULL)
+		{
+			s_coreProfile = req.coreProfile;
+			Printf ("GL context: %d.%d %s\n", req.major, req.minor,
+				req.coreProfile ? "core" : "compatibility");
+			break;
+		}
+	}
+
+	if (GLContext == NULL)
+	{
+		Printf ("Failed to create a GL context: %s\n", SDL_GetError ());
+		SDL_DestroyWindow (Screen);
+		Screen = NULL;
+		return;
+	}
+
+	SDL_GL_MakeCurrent (Screen, GLContext);
+
+	m_supportsGamma = 0 == SDL_GetWindowGammaRamp(Screen, m_origGamma[0], m_origGamma[1], m_origGamma[2]);
 }
 
 SDLGLFB::~SDLGLFB ()
 {
-	if (m_supportsGamma) 
+	if (m_supportsGamma && Screen != NULL)
 	{
-		SDL_SetGammaRamp(m_origGamma[0], m_origGamma[1], m_origGamma[2]);
+		SDL_SetWindowGammaRamp(Screen, m_origGamma[0], m_origGamma[1], m_origGamma[2]);
+	}
+	if (GLContext != NULL)
+	{
+		SDL_GL_DeleteContext (GLContext);
+		GLContext = NULL;
+	}
+	if (Screen != NULL)
+	{
+		SDL_DestroyWindow (Screen);
+		Screen = NULL;
 	}
 }
 
@@ -387,7 +470,7 @@ bool SDLGLFB::CanUpdate ()
 
 void SDLGLFB::SetGammaTable(WORD *tbl)
 {
-	SDL_SetGammaRamp(&tbl[0], &tbl[256], &tbl[512]);
+	if (Screen != NULL) SDL_SetWindowGammaRamp(Screen, &tbl[0], &tbl[256], &tbl[512]);
 }
 
 bool SDLGLFB::Lock(bool buffered)
@@ -421,8 +504,23 @@ bool SDLGLFB::IsLocked ()
 
 bool SDLGLFB::IsFullscreen ()
 {
-	return (Screen->flags & SDL_FULLSCREEN) != 0;
+	return (SDL_GetWindowFlags (Screen) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
 }
+
+void SDLGLFB::SetWindowSize (int w, int h)
+{
+	// [rc4l] windowed-video: only meaningful when windowed; fullscreen covers the desktop. The
+	// SDL resize event that follows persists the new size and MaybeResizeForScale resizes the
+	// render target -- so this is all it needs to do.
+	if (Screen != NULL && !IsFullscreen ())
+	{
+		SDL_SetWindowSize (Screen, w, h);
+		SDL_SetWindowPosition (Screen, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+	}
+}
+
+// [rc4l] windowed-video: SetWindowSize overrides DFrameBuffer::SetWindowSize; the cross-platform
+// vid_setsize CCMD (features/windowed-video/windowedvideo.cpp) calls it through that virtual.
 
 
 bool SDLGLFB::IsValid ()
@@ -432,10 +530,8 @@ bool SDLGLFB::IsValid ()
 
 void SDLGLFB::SetVSync( bool vsync )
 {
-#if defined (__APPLE__)
-	const GLint value = vsync ? 1 : 0;
-	CGLSetParameter( CGLGetCurrentContext(), kCGLCPSwapInterval, &value );
-#endif
+	// [rc4l] SDL2 has a portable swap interval, so the CGL-specific path is gone.
+	SDL_GL_SetSwapInterval (vsync ? 1 : 0);
 }
 
 void SDLGLFB::NewRefreshRate ()
@@ -444,7 +540,7 @@ void SDLGLFB::NewRefreshRate ()
 
 void SDLGLFB::SwapBuffers()
 {
-	SDL_GL_SwapBuffers ();
+	SDL_GL_SwapWindow (Screen);
 }
 
 

@@ -62,6 +62,7 @@
 #include "gl/gl_functions.h"
 
 void InitGLRMapinfoData();
+void gl_InitData();
 
 //==========================================================================
 //
@@ -233,6 +234,7 @@ static void SpreadHackedFlag(subsector_t * sub)
 			if (!(sub2->hacked&1) && sub2->render_sector == sub->render_sector)
 			{
 				sub2->hacked|=1;
+				sub->hacked &= ~4;
 				SpreadHackedFlag (sub2);
 			}
 		}
@@ -285,7 +287,7 @@ static void PrepareSectorData()
 						subsectors[i].render_sector != seg[j].PartnerSeg->Subsector->render_sector)
 				{
 					DPrintf("Found hack: (%d,%d) (%d,%d)\n", seg[j].v1->x>>16, seg[j].v1->y>>16, seg[j].v2->x>>16, seg[j].v2->y>>16);
-					subsectors[i].hacked|=1;
+					subsectors[i].hacked|=5;
 					SpreadHackedFlag(&subsectors[i]);
 				}
 				if (seg[j].PartnerSeg==NULL) subsectors[i].hacked|=2;	// used for quick termination checks
@@ -612,15 +614,50 @@ void gl_PreprocessLevel()
 {
 	int i;
 
+	static int datadone=-1;
+
+
+	if (datadone != restart)
+	{
+		datadone = restart;
+		gl_InitData();
+	}
+
 	PrepareSegs();
 	PrepareSectorData();
 	InitVertexData();
+	int *checkmap = new int[numvertexes];
+	memset(checkmap, -1, sizeof(int)*numvertexes);
 	for(i=0;i<numsectors;i++) 
 	{
-		sectors[i].dirty = true;
 		sectors[i].sectornum = i;
 		PrepareTransparentDoors(&sectors[i]);
+
+		// This ignores vertices only used for seg splitting because those aren't needed here
+		for(int j = 0; j < sectors[i].linecount; j++)
+		{
+			line_t *l = sectors[i].lines[j];
+			if (l->sidedef[0]->Flags & WALLF_POLYOBJ) continue;	// don't bother with polyobjects
+
+			int vtnum1 = int(l->v1 - vertexes);
+			int vtnum2 = int(l->v2 - vertexes);
+
+			if (checkmap[vtnum1] < i)
+			{
+				checkmap[vtnum1] = i;
+				sectors[i].e->vertices.Push(&vertexes[vtnum1]);
+				vertexes[vtnum1].dirty = true;
+			}
+
+			if (checkmap[vtnum2] < i)
+			{
+				checkmap[vtnum2] = i;
+				sectors[i].e->vertices.Push(&vertexes[vtnum2]);
+				vertexes[vtnum2].dirty = true;
+			}
+		}
 	}
+	delete[] checkmap;
 
 	gl_InitPortals();
 

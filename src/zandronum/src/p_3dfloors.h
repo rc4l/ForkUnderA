@@ -78,6 +78,13 @@ struct F3DFloor
 		int				isceiling;
 		int				vindex;
 		int				iindex;
+		bool			copied;
+
+		void copyPlane(planeref * other)
+		{
+			*this = *other;
+			copied = true;
+		}
 	};
 
 	planeref			bottom;
@@ -117,6 +124,7 @@ struct lightlist_t
 	int						flags;
 	F3DFloor*				lightsource;
 	F3DFloor*				caster;
+	bool					fromsector;
 };
 
 

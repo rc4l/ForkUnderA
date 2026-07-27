@@ -11,7 +11,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # [rc4l] Full history (not the default shallow depth-1): staircase-ledger-check.sh verifies
+      # every ledger row's zandrox_sha exists as a commit, which needs the whole history present.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # [rc4l] Linux fully supports AddressSanitizer/UBSan/LeakSanitizer, unlike macOS.
       - name: Install toolchain
@@ -27,6 +31,24 @@ jobs:
 
       - name: Build
         run: cmake --build build-tests
+
+      # [rc4l] ZScript tripwire: fail the build if VM/ZScript symbols enter compiled engine code
+      # (policy: docs/zscript-insulation.md). A machine checks, not a person.
+      - name: ZScript tripwire
+        run: bash tools/zscript-tripwire.sh
+
+      # [rc4l] Calls to APIs a staircase flight removed (born from the gluPerspective slip:
+      # dependency removal is only as strict as the loosest platform unless a machine checks).
+      - name: Removed-API tripwire
+        run: bash tools/removed-api-tripwire.sh
+
+      # [rc4l] The FF-parity tripwire retired with its subject at the GL 2.x removal
+      # (staircase flight 13a): there is no fixed-function branch left to diverge from.
+
+      # [rc4l] Staircase ledger: no upstream commit behind our frontier may be unresolved
+      # (silent-skip guard), and every resolved row's provenance commit must exist.
+      - name: Staircase ledger check
+        run: bash tools/staircase-ledger-check.sh
 
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
       - name: Run tests (ASan + UBSan + LeakSanitizer)

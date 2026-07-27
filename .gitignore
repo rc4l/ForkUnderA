@@ -48,3 +48,8 @@ build-mac/
 
 # llvm coverage raw profiles
 *.profraw
+
+# patch artifacts
+*.rej
+*.rej.orig
+*.orig

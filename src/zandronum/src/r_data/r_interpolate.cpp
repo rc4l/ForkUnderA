@@ -451,12 +451,12 @@ void DSectorPlaneInterpolation::Restore()
 	if (!ceiling)
 	{
 		sector->floorplane.d = bakheight;
-		sector->SetPlaneTexZ(sector_t::floor, baktexz);
+		sector->SetPlaneTexZ(sector_t::floor, baktexz, true);	// [rc4l] interpolation: the one caller that must dirtify (matches upstream)
 	}
 	else
 	{
 		sector->ceilingplane.d = bakheight;
-		sector->SetPlaneTexZ(sector_t::ceiling, baktexz);
+		sector->SetPlaneTexZ(sector_t::ceiling, baktexz, true);	// [rc4l] interpolation: the one caller that must dirtify (matches upstream)
 	}
 	P_RecalculateAttached3DFloors(sector);
 }
@@ -487,7 +487,7 @@ void DSectorPlaneInterpolation::Interpolate(fixed_t smoothratio)
 	baktexz = sector->GetPlaneTexZ(pos);
 
 	*pheight = oldheight + FixedMul(bakheight - oldheight, smoothratio);
-	sector->SetPlaneTexZ(pos, oldtexz + FixedMul(baktexz - oldtexz, smoothratio));
+	sector->SetPlaneTexZ(pos, oldtexz + FixedMul(baktexz - oldtexz, smoothratio), true);	// [rc4l] interpolation: must dirtify (matches upstream)
 	P_RecalculateAttached3DFloors(sector);
 }
 

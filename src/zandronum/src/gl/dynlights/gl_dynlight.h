@@ -81,7 +81,8 @@ public:
 	void UnlinkLight();
 	size_t PointerSubstitution (DObject *old, DObject *notOld);
 
-	virtual void BeginPlay();
+	void BeginPlay();
+	virtual void SetOrigin (fixed_t x, fixed_t y, fixed_t z);
 	void PostBeginPlay();
 	void Destroy();
 	void Activate(AActor *activator);
@@ -95,6 +96,7 @@ public:
 	FState *targetState;
 	FLightNode * touching_sides;
 	FLightNode * touching_subsectors;
+	FLightNode * touching_sector;
 
 private:
 	float DistToSeg(seg_t *seg);
@@ -185,9 +187,8 @@ struct FDynLightData
 	const float gl_lights_size_CVAR_value = gl_lights_size; \
 	const float gl_lights_size = ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) ? 1.0f : gl_lights_size_CVAR_value;
 
-bool gl_GetLight(Plane & p, ADynamicLight * light, int desaturation, bool checkside, bool forceadditive, FDynLightData &data);
-bool gl_SetupLight(Plane & p, ADynamicLight * light, Vector & nearPt, Vector & up, Vector & right, float & scale, int desaturation, bool checkside=true, bool forceadditive=true);
-bool gl_SetupLightTexture();
+bool gl_GetLight(Plane & p, ADynamicLight * light, bool checkside, bool forceadditive, FDynLightData &data);
+void gl_UploadLights(FDynLightData &data);
 
 
 #endif

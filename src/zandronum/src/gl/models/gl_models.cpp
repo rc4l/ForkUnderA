@@ -59,6 +59,7 @@
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_convert.h"
 #include "gl/renderer/gl_renderstate.h"
+#include "gl/shaders/gl_shader.h"
 
 // [BB] New #includes. 
 #include "r_main.h"
@@ -73,7 +74,6 @@ CVAR(Bool, gl_light_models, true, CVAR_ARCHIVE)
 // [BB] Allow the user disable the use of any kind of models.
 CVAR(Bool, gl_use_models, true, CVAR_ARCHIVE)
 EXTERN_CVAR(Int, gl_fogmode)
-EXTERN_CVAR(Bool, gl_dynlight_shader)
 
 extern TDeletingArray<FVoxel *> Voxels;
 extern TDeletingArray<FVoxelDef *> VoxelDefs;
@@ -96,6 +96,149 @@ public:
 };
 
 DeletingModelArray Models;
+
+
+void gl_LoadModels()
+{
+	for (int i = Models.Size() - 1; i >= 0; i--)
+	{
+		Models[i]->BuildVertexBuffer();
+	}
+}
+
+void gl_FlushModels()
+{
+	for (int i = Models.Size() - 1; i >= 0; i--)
+	{
+		Models[i]->DestroyVertexBuffer();
+	}
+}
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+FModelVertexBuffer::FModelVertexBuffer(bool needindex)
+{
+	glBindVertexArray(vao_id);
+
+	ibo_id = 0;
+	if (needindex)
+	{
+		glGenBuffers(1, &ibo_id);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_id);
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
+	glEnableVertexAttribArray(VATTR_VERTEX);
+	glEnableVertexAttribArray(VATTR_TEXCOORD);
+	glEnableVertexAttribArray(VATTR_VERTEX2);
+	glBindVertexArray(0);
+}
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+FModelVertexBuffer::~FModelVertexBuffer()
+{
+	if (ibo_id != 0)
+	{
+		glDeleteBuffers(1, &ibo_id);
+	}
+}
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+FModelVertex *FModelVertexBuffer::LockVertexBuffer(unsigned int size)
+{
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
+	glBufferData(GL_ARRAY_BUFFER, size * sizeof(FModelVertex), NULL, GL_STATIC_DRAW);
+	return (FModelVertex*)glMapBufferRange(GL_ARRAY_BUFFER, 0, size * sizeof(FModelVertex), GL_MAP_WRITE_BIT|GL_MAP_INVALIDATE_BUFFER_BIT);
+}
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+void FModelVertexBuffer::UnlockVertexBuffer()
+{
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
+	glUnmapBuffer(GL_ARRAY_BUFFER); 
+}
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+unsigned int *FModelVertexBuffer::LockIndexBuffer(unsigned int size)
+{
+	if (ibo_id != 0)
+	{
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_id);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, size * sizeof(unsigned int), NULL, GL_STATIC_DRAW);
+		return (unsigned int*)glMapBufferRange(GL_ELEMENT_ARRAY_BUFFER, 0, size * sizeof(unsigned int), GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+	}
+	else
+	{
+		return NULL;
+	}
+}
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+void FModelVertexBuffer::UnlockIndexBuffer()
+{
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_id);
+	glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER); 
+}
+
+
+//===========================================================================
+//
+// Sets up the buffer starts for frame interpolation
+// This must be called after gl_RenderState.Apply!
+//
+//===========================================================================
+
+unsigned int FModelVertexBuffer::SetupFrame(unsigned int frame1, unsigned int frame2)
+{
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
+	glVertexAttribPointer(VATTR_VERTEX, 3, GL_FLOAT, false, sizeof(FModelVertex), &VMO[frame1].x);
+	glVertexAttribPointer(VATTR_TEXCOORD, 2, GL_FLOAT, false, sizeof(FModelVertex), &VMO[frame1].u);
+	glVertexAttribPointer(VATTR_VERTEX2, 3, GL_FLOAT, false, sizeof(FModelVertex), &VMO[frame2].x);
+	return frame1;
+}
+
+//===========================================================================
+//
+// FModel::~FModel
+//
+//===========================================================================
+
+FModel::~FModel()
+{
+	if (mVBuf != NULL) delete mVBuf;
+}
+
+
+
 
 static TArray<FSpriteModelFrame> SpriteModelFrames;
 static int * SpriteModelHash;
@@ -246,7 +389,7 @@ static FModel * FindModel(const char * path, const char * modelfile)
 			return NULL;
 		}
 	}
-
+	// The vertex buffer cannot be initialized here because this gets called before OpenGL is initialized
 	model->mFileName = fullname;
 	Models.Push(model);
 	return model;
@@ -541,7 +684,7 @@ void gl_InitModels()
 						smf.sprite = -1;
 						for (i = 0; i < (int)sprites.Size (); ++i)
 						{
-							if (strncmp (sprites[i].name, sc.String, 4) == 0)
+							if (strnicmp (sprites[i].name, sc.String, 4) == 0)
 							{
 								if (sprites[i].numframes==0)
 								{
@@ -681,7 +824,6 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 						   const FState *curState,
 						   const int curTics,
 						   const PClass *ti,
-						   int cm,
 						   Matrix3x4 *normaltransform,
 						   int translation)
 {
@@ -740,10 +882,15 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 		{
 			mdl->PushSpriteMDLFrame(smf, i);
 
+			mdl->BuildVertexBuffer();
+			gl_RenderState.SetVertexBuffer(mdl->mVBuf);
+
 			if ( smfNext && smf->modelframes[i] != smfNext->modelframes[i] )
-				mdl->RenderFrameInterpolated(smf->skins[i], smf->modelframes[i], smfNext->modelframes[i], inter, cm, translation);
+				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], smfNext->modelframes[i], inter, translation);
 			else
-				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], cm, translation);
+				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], smf->modelframes[i], 0.f, translation);
+
+			gl_RenderState.SetVertexBuffer(GLRenderer->mVBO);
 		}
 	}
 }
@@ -763,14 +910,13 @@ float gl_RollAgainstAngleHelper ( const AActor *actor )
 	return angleDiff;
 }
 
-void gl_RenderModel(GLSprite * spr, int cm)
+void gl_RenderModel(GLSprite * spr)
 {
 	FSpriteModelFrame * smf = spr->modelframe;
 
 
 	// Setup transformation.
 	glDepthFunc(GL_LEQUAL);
-	gl_RenderState.SetTextureMode(TM_MODULATE);
 	gl_RenderState.EnableTexture(true);
 	// [BB] In case the model should be rendered translucent, do back face culling.
 	// This solves a few of the problems caused by the lack of depth sorting.
@@ -810,7 +956,7 @@ void gl_RenderModel(GLSprite * spr, int cm)
 		{
 			if((x * cos(angle * M_PI / 180) + y * sin(angle * M_PI / 180)) / sqrt(x * x + y * y) < 0) pitch *= -1;
 		}
-		else pitch = abs(pitch);
+		else pitch = fabs(pitch);
 	}
 
 	if( smf->flags & MDL_ROTATING )
@@ -825,98 +971,63 @@ void gl_RenderModel(GLSprite * spr, int cm)
 	if(smf->flags & MDL_INHERITACTORPITCH) pitch += float(static_cast<double>(spr->actor->pitch >> 16) / (1 << 13) * 45 + static_cast<double>(spr->actor->pitch & 0x0000FFFF) / (1 << 29) * 45);
 	if(smf->flags & MDL_INHERITACTORROLL) roll += float(static_cast<double>(spr->actor->roll >> 16) / (1 << 13) * 45 + static_cast<double>(spr->actor->roll & 0x0000FFFF) / (1 << 29) * 45);
 		
-	if (gl.shadermodel < 4)
-	{
-		glMatrixMode(GL_MODELVIEW);
-		glPushMatrix();
-	}
-	else
-	{
-		glActiveTexture(GL_TEXTURE7);	// Hijack the otherwise unused seventh texture matrix for the model to world transformation.
-		glMatrixMode(GL_TEXTURE);
-		glLoadIdentity();
-	}
+	gl_RenderState.mModelMatrix.loadIdentity();
 
 	// Model space => World space
-	glTranslatef(spr->x, spr->z, spr->y );	
+	gl_RenderState.mModelMatrix.translate(spr->x, spr->z, spr->y );	
 	
 	// Applying model transformations:
 	// 1) Applying actor angle, pitch and roll to the model
 	if ( !(smf->flags & MDL_ALIGNANGLE) )
-		glRotatef(-angle, 0, 1, 0);
+		gl_RenderState.mModelMatrix.rotate(-angle, 0, 1, 0);
 	// [BB] Change the angle so that the object is exactly facing the camera in the x/y plane.
 	else
-		glRotatef( -ANGLE_TO_FLOAT ( R_PointToAngle ( spr->actor->x, spr->actor->y ) ), 0, 1, 0);
+		gl_RenderState.mModelMatrix.rotate( -ANGLE_TO_FLOAT ( R_PointToAngle ( spr->actor->x, spr->actor->y ) ), 0, 1, 0);
 
 	// [BB] Change the pitch so that the object is vertically facing the camera (only makes sense combined with MDL_ALIGNANGLE).
 	if ( (smf->flags & MDL_ALIGNPITCH) )
 	{
 		const fixed_t distance = R_PointToDist2( spr->actor->x - viewx, spr->actor->y - viewy );
 		const float pitch = RAD2DEG ( atan2( FIXED2FLOAT ( spr->actor->z - viewz ), FIXED2FLOAT ( distance ) ) );
-		glRotatef(pitch, 0, 0, 1);
+		gl_RenderState.mModelMatrix.rotate(pitch, 0, 0, 1);
 	}
 	else
-		glRotatef(pitch, 0, 0, 1);
+		gl_RenderState.mModelMatrix.rotate(pitch, 0, 0, 1);
 
 	// [BB] Special flag for flat, beam like models.
 	if ( (smf->flags & MDL_ROLLAGAINSTANGLE) )
-		glRotatef( gl_RollAgainstAngleHelper ( spr->actor ), 1, 0, 0);
+		gl_RenderState.mModelMatrix.rotate( gl_RollAgainstAngleHelper ( spr->actor ), 1, 0, 0);
 	else
-		glRotatef(-roll, 1, 0, 0);
+		gl_RenderState.mModelMatrix.rotate(-roll, 1, 0, 0);
 	
 	// 2) Applying Doomsday like rotation of the weapon pickup models
 	// The rotation angle is based on the elapsed time.
 	
 	if( smf->flags & MDL_ROTATING )
 	{
-		glTranslatef(smf->rotationCenterX, smf->rotationCenterY, smf->rotationCenterZ);
-		glRotatef(rotateOffset, smf->xrotate, smf->yrotate, smf->zrotate);
-		glTranslatef(-smf->rotationCenterX, -smf->rotationCenterY, -smf->rotationCenterZ);
+		gl_RenderState.mModelMatrix.translate(smf->rotationCenterX, smf->rotationCenterY, smf->rotationCenterZ);
+		gl_RenderState.mModelMatrix.rotate(rotateOffset, smf->xrotate, smf->yrotate, smf->zrotate);
+		gl_RenderState.mModelMatrix.translate(-smf->rotationCenterX, -smf->rotationCenterY, -smf->rotationCenterZ);
 	}
 
 	// 3) Scaling model.
-	glScalef(scaleFactorX, scaleFactorZ, scaleFactorY);
+	gl_RenderState.mModelMatrix.scale(scaleFactorX, scaleFactorZ, scaleFactorY);
 
 	// 4) Aplying model offsets (model offsets do not depend on model scalings).
-	glTranslatef(smf->xoffset / smf->xscale, smf->zoffset / smf->zscale, smf->yoffset / smf->yscale);
+	gl_RenderState.mModelMatrix.translate(smf->xoffset / smf->xscale, smf->zoffset / smf->zscale, smf->yoffset / smf->yscale);
 	
 	// 5) Applying model rotations.
-	glRotatef(-ANGLE_TO_FLOAT(smf->angleoffset), 0, 1, 0);
-	glRotatef(smf->pitchoffset, 0, 0, 1);
-	glRotatef(-smf->rolloffset, 1, 0, 0);
-		
-	if (gl.shadermodel >= 4) glActiveTexture(GL_TEXTURE0);
+	gl_RenderState.mModelMatrix.rotate(-ANGLE_TO_FLOAT(smf->angleoffset), 0, 1, 0);
+	gl_RenderState.mModelMatrix.rotate(smf->pitchoffset, 0, 0, 1);
+	gl_RenderState.mModelMatrix.rotate(-smf->rolloffset, 1, 0, 0);
 
-#if 0
-	if (gl_light_models)
-	{
-		// The normal transform matrix only contains the inverse rotations and scalings but not the translations
-		NormalTransform.MakeIdentity();
+	// consider the pixel stretching. For non-voxels this must be factored out here
+	float stretch = (smf->models[0] != NULL ? smf->models[0]->getAspectFactor() : 1.f) / glset.pixelstretch;
+	gl_RenderState.mModelMatrix.scale(1, stretch, 1);
 
-		NormalTransform.Scale(1.f/scaleFactorX, 1.f/scaleFactorZ, 1.f/scaleFactorY);
-		if( smf->flags & MDL_ROTATING ) NormalTransform.Rotate(smf->xrotate, smf->yrotate, smf->zrotate, -rotateOffset);
-		if (pitch != 0) NormalTransform.Rotate(0,0,1,-pitch);
-		if (angle != 0) NormalTransform.Rotate(0,1,0, angle);
-
-		gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), cm, &ModelToWorld, &NormalTransform, translation );
-	}
-#endif
-
-	gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), cm, NULL, translation );
-
-	if (gl.shadermodel < 4)
-	{
-		glMatrixMode(GL_MODELVIEW);
-		glPopMatrix();
-	}
-	else
-	{
-		glActiveTexture(GL_TEXTURE7);
-		glMatrixMode(GL_TEXTURE);
-		glLoadIdentity();
-		glActiveTexture(GL_TEXTURE0);
-		glMatrixMode(GL_MODELVIEW);
-	}
+	gl_RenderState.EnableModelMatrix(true);
+	gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), NULL, translation );
+	gl_RenderState.EnableModelMatrix(false);
 
 	glDepthFunc(GL_LESS);
 	if (!( spr->actor->RenderStyle == LegacyRenderStyles[STYLE_Normal] ))
@@ -930,7 +1041,7 @@ void gl_RenderModel(GLSprite * spr, int cm)
 //
 //===========================================================================
 
-void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy, int cm)
+void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy)
 {
 	AActor * playermo=players[consoleplayer].camera;
 	FSpriteModelFrame *smf = gl_FindModelFrame(playermo->player->ReadyWeapon->GetClass(), psp->state->sprite, psp->state->GetFrame(), false);
@@ -939,11 +1050,6 @@ void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy, int cm)
 	if ( smf == NULL )
 		return;
 
-	// [BB] The model has to be drawn independtly from the position of the player,
-	// so we have to reset the GL_MODELVIEW matrix.
-	glMatrixMode(GL_MODELVIEW);
-	glPushMatrix();
-	glLoadIdentity();
 	glDepthFunc(GL_LEQUAL);
 
 	// [BB] In case the model should be rendered translucent, do back face culling.
@@ -955,28 +1061,31 @@ void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy, int cm)
 		glFrontFace(GL_CCW);
 	}
 
+	// [BB] The model has to be drawn independently from the position of the player,
+	// so we have to reset the view matrix.
+	gl_RenderState.mViewMatrix.loadIdentity();
+
 	// Scaling model (y scale for a sprite means height, i.e. z in the world!).
-	glScalef(smf->xscale, smf->zscale, smf->yscale);
+	gl_RenderState.mViewMatrix.scale(smf->xscale, smf->zscale, smf->yscale);
 	
 	// Aplying model offsets (model offsets do not depend on model scalings).
-	glTranslatef(smf->xoffset / smf->xscale, smf->zoffset / smf->zscale, smf->yoffset / smf->yscale);
+	gl_RenderState.mViewMatrix.translate(smf->xoffset / smf->xscale, smf->zoffset / smf->zscale, smf->yoffset / smf->yscale);
 
 	// [BB] Weapon bob, very similar to the normal Doom weapon bob.
-	glRotatef(FIXED2FLOAT(ofsx)/4, 0, 1, 0);
-	glRotatef(-FIXED2FLOAT(ofsy-WEAPONTOP)/4, 1, 0, 0);
+	gl_RenderState.mViewMatrix.rotate(FIXED2FLOAT(ofsx)/4, 0, 1, 0);
+	gl_RenderState.mViewMatrix.rotate(-FIXED2FLOAT(ofsy-WEAPONTOP)/4, 1, 0, 0);
 
 	// [BB] For some reason the jDoom models need to be rotated.
-	glRotatef(90., 0, 1, 0);
+	gl_RenderState.mViewMatrix.rotate(90.f, 0, 1, 0);
 
 	// Applying angleoffset, pitchoffset, rolloffset.
-	glRotatef(-ANGLE_TO_FLOAT(smf->angleoffset), 0, 1, 0);
-	glRotatef(smf->pitchoffset, 0, 0, 1);
-	glRotatef(-smf->rolloffset, 1, 0, 0);
+	gl_RenderState.mViewMatrix.rotate(-ANGLE_TO_FLOAT(smf->angleoffset), 0, 1, 0);
+	gl_RenderState.mViewMatrix.rotate(smf->pitchoffset, 0, 0, 1);
+	gl_RenderState.mViewMatrix.rotate(-smf->rolloffset, 1, 0, 0);
+	gl_RenderState.ApplyMatrices();
 
-	gl_RenderFrameModels( smf, psp->state, psp->tics, playermo->player->ReadyWeapon->GetClass(), cm, NULL, 0 );
+	gl_RenderFrameModels( smf, psp->state, psp->tics, playermo->player->ReadyWeapon->GetClass(), NULL, 0 );
 
-	glMatrixMode(GL_MODELVIEW);
-	glPopMatrix();
 	glDepthFunc(GL_LESS);
 	if (!( playermo->RenderStyle == LegacyRenderStyles[STYLE_Normal] ))
 		glDisable(GL_CULL_FACE);
@@ -998,16 +1107,3 @@ bool gl_IsHUDModelForPlayerAvailable (player_t * player)
 	return ( smf != NULL );
 }
 
-//===========================================================================
-//
-// gl_CleanModelData
-//
-//===========================================================================
-
-void gl_CleanModelData()
-{
-	for (unsigned i=0;i<Models.Size(); i++)
-	{
-		Models[i]->CleanGLData();
-	}
-}
