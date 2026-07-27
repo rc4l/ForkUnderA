@@ -554,6 +554,27 @@ if ( NOT NO_OPENAL )
 	endif( MPG123_FOUND )
 endif ( NOT NO_OPENAL )
 
+# [rc4l] FUA instant replay: encode gameplay clips as H.264/MP4 via FFmpeg (libav*). Optional --
+# if the libraries aren't found the feature compiles as a no-capture stub (ZX_ENABLE_REPLAY off).
+option( NO_REPLAY "Disable the FUA instant-replay video feature" OFF )
+if( NOT NO_REPLAY )
+	find_package( PkgConfig QUIET )
+	if( PkgConfig_FOUND )
+		# keg-only Homebrew ffmpeg lives outside the default pkg-config search path; add common prefixes.
+		set( ENV{PKG_CONFIG_PATH} "/opt/homebrew/opt/ffmpeg/lib/pkgconfig:/usr/local/opt/ffmpeg/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}" )
+		pkg_check_modules( FFMPEG QUIET libavcodec libavformat libavutil libswscale )
+	endif()
+	if( FFMPEG_FOUND )
+		message( STATUS "FUA replay: FFmpeg ${FFMPEG_libavcodec_VERSION} found -- video capture enabled" )
+		add_definitions( -DZX_ENABLE_REPLAY )
+		include_directories( ${FFMPEG_INCLUDE_DIRS} )
+		link_directories( ${FFMPEG_LIBRARY_DIRS} )
+		set( ZDOOM_LIBS ${ZDOOM_LIBS} ${FFMPEG_LIBRARIES} )
+	else()
+		message( STATUS "FUA replay: FFmpeg not found -- instant replay builds as a no-capture stub" )
+	endif()
+endif()
+
 # [BB] We need OpenSSL for csrp.
 FIND_PACKAGE ( OpenSSL REQUIRED )
 include_directories( ${OPENSSL_INCLUDE_DIR} )
@@ -1323,6 +1344,9 @@ add_executable( zdoom WIN32
 	features/crashreport/zx_crashreport.cpp
 	features/crashreport/zx_consentmenu.cpp
 	features/crashreport/computation/consent_panel_compute.cpp
+	features/replay/zx_replay.cpp
+	features/replay/zx_replay_encoder.cpp
+	features/replay/computation/replay_compute.cpp
 	zzautozend.cpp
 )
 

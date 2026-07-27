@@ -106,6 +106,7 @@ static const FBinding DefBindings[] =
 	{ "enter", "togglemap" }, // [AK]
 	{ "pause", "pause" },
 	{ "sysrq", "screenshot" },
+	{ ",", "fua_clip" },	// [rc4l] FUA instant replay -- save the last N seconds as a shareable clip (comma is free; WASD replaced the old comma/period turn keys)
 	// [AK] Added/changed binds for global, team, and private chat modes.
 	{ "y", "messagemode" },
 	{ "t", "messagemode2" },
