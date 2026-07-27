@@ -39,14 +39,15 @@ bool ReplayEncoder::Init(int srcW, int srcH, int dstW, int dstH, int fps, int bi
 	enc_->bit_rate = (int64_t)bitrateKbps * 1000;
 	enc_->gop_size = fps_;      // ~1 keyframe/sec so a clip can start on a clean GOP boundary
 	enc_->max_b_frames = 0;     // no B-frames -> dts==pts, muxing stays trivial
-	// VBV rate cap so the target bitrate is actually honoured (ultrafast otherwise overshoots by
-	// several x, producing needlessly huge, hard-to-share files). ~1 second buffer.
-	enc_->rc_max_rate = enc_->bit_rate;
-	enc_->rc_buffer_size = (int)enc_->bit_rate;
 	if (!std::strcmp(encName, "libx264"))
 	{
 		av_opt_set(enc_->priv_data, "preset", "ultrafast", 0);
 		av_opt_set(enc_->priv_data, "tune", "zerolatency", 0);
+		// VBV rate cap so the target bitrate is actually honoured (ultrafast otherwise overshoots by
+		// several x, producing needlessly huge files). Hardware encoders manage their own rate
+		// control from bit_rate, so this is scoped to x264. ~1 second buffer.
+		enc_->rc_max_rate = enc_->bit_rate;
+		enc_->rc_buffer_size = (int)enc_->bit_rate;
 	}
 	if (avcodec_open2(enc_, codec, nullptr) < 0)
 	{

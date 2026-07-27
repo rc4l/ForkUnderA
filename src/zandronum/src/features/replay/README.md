@@ -45,11 +45,16 @@ bindable command is **`fua_clip`** (commands don't take the `cl_` cvar prefix).
   the platform video folder (macOS `~/Movies/ZandroX`, Linux `~/Videos/ZandroX`). Verified end-to-end:
   comma in MAP01 → a valid, shareable `.mp4`. mac_compile.sh
   bundles the libav* stack (+x264/vpx/…) into the .app, so it's self-contained.
-  - *Perf follow-up:* capture reuses the synchronous `glReadPixels` screenshot readback. It fires
-    only at the capture rate (~30/s), but a double-buffered **PBO** async readback is the intended
-    optimization to remove the GPU stall (design §3.1).
-  - *Build follow-up:* Windows (vcpkg) + Linux (apt) FFmpeg provisioning still to wire; the CMake
-    detection is pkg-config based and platform-neutral.
-- **Phase 3:** hardware encoders — `cl_fua_replay_encoder 2` already selects `h264_videotoolbox`
-  (wired, untested); NVENC/QSV/AMF/VAAPI + hw-first auto to follow, x264 fallback.
-- **Phase 4:** audio via OpenAL-Soft `ALC_SOFT_loopback`.
+- **Build wiring (done):** FFmpeg is provisioned in all three builds (brew / apt / vcpkg
+  `ffmpeg[x264]`); CMake detects it via pkg-config or a find_path/find_library fallback (Windows).
+- **Capture perf (done):** the capture hook uses a **double-buffered PBO async readback** — it issues
+  `glReadPixels` into one pixel-pack buffer (returns immediately) and hands the previous frame's
+  already-completed readback to the encoder, so the render thread never stalls (design §3.1).
+- **Phase 3 — hardware encoders (done for the software-upload path):** `cl_fua_replay_encoder` 0 =
+  auto (hardware first, then x264), 1 = software, 2 = hardware only. The worker tries candidates in
+  order and falls through if one isn't built in / can't open. macOS `h264_videotoolbox` is verified;
+  Windows tries `h264_nvenc`/`amf`/`qsv` (fall back to x264 when absent); Linux VAAPI needs a
+  hw-frames context and is deferred (software there for now).
+- **Phase 4 — audio:** OpenAL-Soft `ALC_SOFT_loopback`. Not yet done — it requires rerouting the
+  audio output path (regression risk to all game sound) and cannot be quality/sync-verified without
+  listening, so it belongs in its own listen-tested PR rather than bundled with the above.

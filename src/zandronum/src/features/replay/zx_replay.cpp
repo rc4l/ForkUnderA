@@ -76,6 +76,7 @@ std::mutex             g_resMtx;
 bool                   g_resPending = false;
 bool                   g_resOk = false;
 std::string            g_resPath;
+std::string            g_pendingInfo;   // one-shot status line (e.g. which encoder was selected)
 
 int64_t                g_lastCaptureUs = 0; // game thread only
 
@@ -85,11 +86,26 @@ int64_t NowUs()
 	return duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
-const char *EncoderName()
+// Ordered list of H.264 encoders to try. The platform hardware encoder is tried first (near-zero
+// CPU); an encoder that isn't built into this ffmpeg, or can't open (no GPU), simply fails and we
+// fall through to the next. cl_fua_replay_encoder: 0 = auto (hardware then software), 1 = software
+// only, 2 = hardware only.
+std::vector<const char *> EncoderCandidates()
 {
-	// Phase 2 ships the software path; 2 = force hardware (VideoToolbox on macOS). Auto stays
-	// software here and becomes hardware-first in phase 3.
-	return (cl_fua_replay_encoder == 2) ? "h264_videotoolbox" : "libx264";
+	std::vector<const char *> hw;
+#if defined(__APPLE__)
+	hw = { "h264_videotoolbox" };
+#elif defined(_WIN32)
+	hw = { "h264_nvenc", "h264_amf", "h264_qsv" };
+#else
+	// Linux VAAPI needs a hw-frames context (a separate effort); use software there for now.
+	hw = {};
+#endif
+	if (cl_fua_replay_encoder == 2) return hw;                 // hardware only
+	if (cl_fua_replay_encoder == 1) return { "libx264" };      // software only
+	std::vector<const char *> out = hw;                        // auto: hardware first...
+	out.push_back("libx264");                                  // ...then software fallback
+	return out;
 }
 
 // Clips land in the platform's standard video folder, under a ZandroX subfolder.
@@ -120,6 +136,7 @@ void WorkerLoop()
 {
 	zx::ReplayEncoder enc;
 	bool inited = false;
+	bool triedInit = false;   // pick the encoder once, on the first frame's dimensions
 
 	for (;;)
 	{
@@ -136,11 +153,26 @@ void WorkerLoop()
 
 		if (haveFrame)
 		{
-			if (!inited)
+			if (!inited && !triedInit)
 			{
+				triedInit = true;
 				zx::ScaledDims d = zx::ComputeScaledDims(frame.w, frame.h, cl_fua_replay_maxheight);
-				inited = enc.Init(frame.w, frame.h, d.w, d.h,
-								  cl_fua_replay_fps, cl_fua_replay_bitrate * 1000, EncoderName());
+				for (const char *name : EncoderCandidates())
+				{
+					if (enc.Init(frame.w, frame.h, d.w, d.h, cl_fua_replay_fps,
+								 cl_fua_replay_bitrate * 1000, name))
+					{
+						inited = true;
+						std::lock_guard<std::mutex> lk(g_resMtx);
+						g_pendingInfo = std::string("Instant replay recording (") + name + ").";
+						break;
+					}
+				}
+				if (!inited)
+				{
+					std::lock_guard<std::mutex> lk(g_resMtx);
+					g_pendingInfo = "Instant replay: no usable H.264 encoder found.";
+				}
 			}
 			enc.SetWindow(cl_fua_replay_duration);
 			if (inited)
@@ -196,11 +228,13 @@ void ReplayAtTerm()
 
 void FlushMessages()
 {
-	std::string path; bool ok = false, pending = false;
+	std::string path, info; bool ok = false, pending = false;
 	{
 		std::lock_guard<std::mutex> lk(g_resMtx);
 		if (g_resPending) { pending = true; ok = g_resOk; path = g_resPath; g_resPending = false; }
+		if (!g_pendingInfo.empty()) { info.swap(g_pendingInfo); }
 	}
+	if (!info.empty()) Printf("%s\n", info.c_str());
 	if (!pending) return;
 	if (ok) Printf("Saved replay clip: %s\n", path.c_str());
 	else Printf("Replay clip failed (no footage buffered yet, or encoder error).\n");
