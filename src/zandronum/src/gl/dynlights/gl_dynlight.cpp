@@ -104,7 +104,7 @@ public:
 	FLightAssociation(FName actorName, const char *frameName, FName lightName)
 		: m_ActorName(actorName), m_AssocLight(lightName)
 	{
-		strncpy(m_FrameName, frameName, 8);
+		mysnprintf(m_FrameName, 8, "%s", frameName);
 	}
 
 	FName ActorName() { return m_ActorName; }
@@ -1125,8 +1125,8 @@ void gl_SetActorLights(AActor *actor)
 		ADynamicLight *lights, *tmpLight;
 		unsigned int i;
 
-		int sprite = actor->state->sprite;
-		int frame = actor->state->GetFrame();
+		int sprite = actor->sprite;
+		int frame = actor->frame;
 
 		lights = tmpLight = NULL;
 

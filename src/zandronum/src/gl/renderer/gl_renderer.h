@@ -5,16 +5,19 @@
 #include "v_video.h"
 #include "vectors.h"
 #include "r_renderer.h"
+#include "gl/data/gl_matrix.h"
 
 struct particle_t;
 class FCanvasTexture;
 class FFlatVertexBuffer;
+class FSkyVertexBuffer;
 class OpenGLFrameBuffer;
 struct FDrawInfo;
 struct pspdef_t;
 class FShaderManager;
 class GLPortal;
-class FGLThreadManager;
+class FLightBuffer;
+class FSamplerManager;
 
 enum SectorRenderFlags
 {
@@ -53,22 +56,26 @@ public:
 	float mCurrentFoV;
 	AActor *mViewActor;
 	FShaderManager *mShaderManager;
-	FGLThreadManager *mThreadManager;
+	FSamplerManager *mSamplerManager;
 	int gl_spriteindex;
 	unsigned int mFBID;
+	// [rc4l] video-scale: the current "screen" render target -- 0 (backbuffer) normally, or the
+	// framebuffer's scale FBO when internal-resolution scaling is active. EndOffscreen restores to
+	// this instead of hard-coding 0, so camera textures don't unbind the scale buffer.
+	unsigned int mOutputFB;
 
 	FTexture *glpart2;
 	FTexture *glpart;
 	FTexture *mirrortexture;
-	FTexture *gllight;
-
+	
 	float mSky1Pos, mSky2Pos;
 
 	FRotator mAngles;
 	FVector2 mViewVector;
-	FVector3 mCameraPos;
 
 	FFlatVertexBuffer *mVBO;
+	FSkyVertexBuffer *mSkyVBO;
+	FLightBuffer *mLights;
 
 
 	FGLRenderer(OpenGLFrameBuffer *fb);
@@ -80,7 +87,7 @@ public:
 	void SetViewport(GL_IRECT *bounds);
 	sector_t *RenderViewpoint (AActor * camera, GL_IRECT * bounds, float fov, float ratio, float fovratio, bool mainview, bool toscreen);
 	void RenderView(player_t *player);
-	void SetCameraPos(fixed_t viewx, fixed_t viewy, fixed_t viewz, angle_t viewangle);
+	void SetViewAngle(angle_t viewangle);
 	void SetupView(fixed_t viewx, fixed_t viewy, fixed_t viewz, angle_t viewangle, bool mirror, bool planemirror);
 
 	void Initialize();
@@ -91,7 +98,7 @@ public:
 	void DrawScene(bool toscreen = false);
 	void DrawBlend(sector_t * viewsector);
 
-	void DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed_t sy, int cm_index, bool hudModelStep, int OverrideShader);
+	void DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed_t sy, bool hudModelStep, int OverrideShader, bool alphatexture);
 	void DrawPlayerSprites(sector_t * viewsector, bool hudModelStep);
 	void DrawTargeterSprites();
 
@@ -118,7 +125,8 @@ public:
 	void Flush() {}
 
 	void SetProjection(float fov, float ratio, float fovratio, float eyeShift=0); // [BB] Added eyeShift from GZ3Doom.
-	void SetViewMatrix(bool mirror, bool planemirror);
+	void SetProjection(VSMatrix matrix); // [rc4l] raw matrix input from stereo 3d modes
+	void SetViewMatrix(fixed_t viewx, fixed_t viewy, fixed_t viewz, bool mirror, bool planemirror);
 	void ProcessScene(bool toscreen = false);
 
 	bool StartOffscreen();

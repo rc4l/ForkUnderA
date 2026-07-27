@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 rc4l
-
 # [rc4l] Drives the engine down both render paths to the same viewpoint and captures a screenshot
 # from each, so core-vs-compat parity can be measured with compare_shots.py instead of eyeballed.
 import argparse
@@ -103,7 +100,7 @@ def main():
     args = ap.parse_args()
 
     if not os.path.exists(ENGINE):
-        sys.exit("engine not found at %s -- run ./mac_compile.sh first" % ENGINE)
+        sys.exit("engine not found at %s -- run ./build.sh first" % ENGINE)
 
     os.makedirs(args.outdir, exist_ok=True)
     results = {}

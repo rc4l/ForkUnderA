@@ -1,5 +1,10 @@
 #include "gl/system/gl_system.h"
 
+#define DWORD WINDOWS_DWORD	
+#include <GL/wglew.h>
+#undef DWORD
+
+
 #include "win32iface.h"
 #include "win32gliface.h"
 //#include "gl/gl_intern.h"
@@ -12,15 +17,27 @@
 #include "i_system.h"
 #include "doomstat.h"
 #include "v_text.h"
+#include "m_argv.h"
+#include "doomerrors.h"
 //#include "gl_defs.h"
 
 #include "gl/renderer/gl_renderer.h"
 #include "gl/system/gl_framebuffer.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/utility/gl_templates.h"
+// [rc4l] borderless-video: single pure source of truth for what `fullscreen` means. See
+// features/borderless-video/computation/displaymode_compute.h. Backends ask it; never branch
+// on the raw CVAR. Easy to replace when upstream's video backend is cherry-picked wholesale.
+#include "features/borderless-video/computation/displaymode_compute.h"
 
 void gl_CalculateCPUSpeed();
 extern int NewWidth, NewHeight, NewBits, DisplayBits;
+
+// these get used before GLEW is initialized so we have to use separate pointers with different names
+PFNWGLCHOOSEPIXELFORMATARBPROC myWglChoosePixelFormatARB; // = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
+PFNWGLCREATECONTEXTATTRIBSARBPROC myWglCreateContextAttribsARB;
+PFNWGLSWAPINTERVALEXTPROC vsyncfunc;
+
 
 CUSTOM_CVAR(Int, gl_vid_multisample, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL )
 {
@@ -313,14 +330,11 @@ bool Win32GLVideo::GoFullscreen(bool yes)
 		}
 	}
 
-	if (yes)
-	{
-		SetFullscreen(m_DisplayDeviceName, m_DisplayWidth, m_trueHeight, m_DisplayBits, m_DisplayHz);
-	}
-	else
-	{
-		SetFullscreen(m_DisplayDeviceName, 0,0,0,0);
-	}
+	// [rc4l] borderless-video: fullscreen is now a borderless window at the desktop resolution,
+	// matching upstream (b65b83edb) and our SDL2 backend. We never switch the display's mode, so
+	// there is no exclusive resolution to set here -- and no broken desktop gamma to restore on a
+	// crash. The popup window that covers the monitor is set up in the framebuffer constructor.
+	SetFullscreen(m_DisplayDeviceName, 0, 0, 0, 0);
 	return yes;
 }
 
@@ -369,9 +383,7 @@ DFrameBuffer *Win32GLVideo::CreateFrameBuffer(int width, int height, bool fs, DF
 		//old->GetFlash(flashColor, flashAmount);
 		delete old;
 	}
-
 	fb = new OpenGLFrameBuffer(m_hMonitor, m_DisplayWidth, m_DisplayHeight, m_DisplayBits, m_DisplayHz, fs);
-
 	return fb;
 }
 
@@ -584,8 +596,8 @@ bool Win32GLVideo::SetPixelFormat()
 	hRC = wglCreateContext(hDC);
 	wglMakeCurrent(hDC, hRC);
 
-	wglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
-	wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+	myWglChoosePixelFormatARB = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
+	myWglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
 	// any extra stuff here?
 
 	wglMakeCurrent(NULL, NULL);
@@ -602,7 +614,7 @@ bool Win32GLVideo::SetPixelFormat()
 //
 //==========================================================================
 
-bool Win32GLVideo::SetupPixelFormat(bool allowsoftware, int multisample)
+bool Win32GLVideo::SetupPixelFormat(int multisample)
 {
 	int colorDepth;
 	HDC deskDC;
@@ -615,7 +627,7 @@ bool Win32GLVideo::SetupPixelFormat(bool allowsoftware, int multisample)
 	colorDepth = GetDeviceCaps(deskDC, BITSPIXEL);
 	ReleaseDC(GetDesktopWindow(), deskDC);
 
-	if (wglChoosePixelFormatARB)
+	if (myWglChoosePixelFormatARB)
 	{
 		attributes[0]	=	WGL_RED_BITS_ARB; //bits
 		attributes[1]	=	8;
@@ -638,14 +650,7 @@ bool Win32GLVideo::SetupPixelFormat(bool allowsoftware, int multisample)
 		attributes[17]	=	true;
 	
 		attributes[18]	=	WGL_ACCELERATION_ARB;	//required to be FULL_ACCELERATION_ARB
-		if (allowsoftware)
-		{
-			attributes[19]	=	WGL_NO_ACCELERATION_ARB;
-		}
-		else
-		{
-			attributes[19]	=	WGL_FULL_ACCELERATION_ARB;
-		}
+		attributes[19]	=	WGL_FULL_ACCELERATION_ARB;
 	
 		if (multisample > 0)
 		{
@@ -670,7 +675,7 @@ bool Win32GLVideo::SetupPixelFormat(bool allowsoftware, int multisample)
 		attributes[offset+2]	=	0;
 		attributes[offset+3]	=	0;
 	
-		if (!wglChoosePixelFormatARB(m_hDC, attributes, attribsFloat, 1, &pixelFormat, &numFormats))
+		if (!myWglChoosePixelFormatARB(m_hDC, attributes, attribsFloat, 1, &pixelFormat, &numFormats))
 		{
 			Printf("R_OPENGL: Couldn't choose pixel format. Retrying in compatibility mode\n");
 			goto oldmethod;
@@ -710,17 +715,14 @@ bool Win32GLVideo::SetupPixelFormat(bool allowsoftware, int multisample)
 
 		if (pfd.dwFlags & PFD_GENERIC_FORMAT)
 		{
-			if (!allowsoftware)
-			{
-				Printf("R_OPENGL: OpenGL driver not accelerated!  Falling back to software renderer.\n");
-				return false;
-			}
+			I_Error("R_OPENGL: OpenGL driver not accelerated!");
+			return false;
 		}
 	}
 
 	if (!::SetPixelFormat(m_hDC, pixelFormat, NULL))
 	{
-		Printf("R_OPENGL: Couldn't set pixel format.\n");
+		I_Error("R_OPENGL: Couldn't set pixel format.\n");
 		return false;
 	}
 	return true;
@@ -732,43 +734,89 @@ bool Win32GLVideo::SetupPixelFormat(bool allowsoftware, int multisample)
 //
 //==========================================================================
 
-bool Win32GLVideo::InitHardware (HWND Window, bool allowsoftware, int multisample)
+bool Win32GLVideo::checkCoreUsability()
+{
+	// if we explicitly want to disable 4.x features this must fail.
+	if (Args->CheckParm("-gl3")) return false;
+
+	// GL 4.4 implies GL_ARB_buffer_storage
+	if (strcmp((char*)glGetString(GL_VERSION), "4.4") >= 0) return true;
+
+	// at this point GLEW has not been initialized so we have to retrieve glGetStringi ourselves.
+	PFNGLGETSTRINGIPROC myglGetStringi = (PFNGLGETSTRINGIPROC)wglGetProcAddress("glGetStringi");
+	if (!myglGetStringi) return false;	// this should not happen.
+
+	const char *extension;
+
+	int max = 0;
+	glGetIntegerv(GL_NUM_EXTENSIONS, &max);
+
+	// step through all reported extensions and see if we got what we need...
+	for (int i = 0; i < max; i++)
+	{
+		extension = (const char*)myglGetStringi(GL_EXTENSIONS, i);
+		if (!strcmp(extension, "GL_ARB_buffer_storage")) return true;
+	}
+	return false;
+}
+
+bool Win32GLVideo::InitHardware (HWND Window, int multisample)
 {
 	m_Window=Window;
 	m_hDC = GetDC(Window);
 
-	if (!SetupPixelFormat(allowsoftware, multisample))
+	if (!SetupPixelFormat(multisample))
 	{
-		Printf ("R_OPENGL: Reverting to software mode...\n");
+		I_Error ("R_OPENGL: Unabl...\n");
 		return false;
 	}
 
-	m_hRC = 0;
-	if (wglCreateContextAttribsARB != NULL)
+	for (int prof = WGL_CONTEXT_CORE_PROFILE_BIT_ARB; prof <= WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB; prof++)
 	{
-		int ctxAttribs[] = {
-			WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
-			WGL_CONTEXT_MINOR_VERSION_ARB, 3,
-			WGL_CONTEXT_FLAGS_ARB, gl_debug? WGL_CONTEXT_DEBUG_BIT_ARB : 0,
-			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
-			0
-		};
+		m_hRC = NULL;
+		if (myWglCreateContextAttribsARB != NULL)
+		{
+			// let's try to get the best version possible. Some drivers only give us the version we request
+			// which breaks all version checks for feature support. The highest used features we use are from version 4.4, and 3.0 is a requirement.
+			static int versions[] = { 45, 44, 43, 42, 41, 40, 33, 32, 31, 30, -1 };
 
-		m_hRC = wglCreateContextAttribsARB(m_hDC, 0, ctxAttribs);
-	}
-	if (m_hRC == 0)
-	{
-		m_hRC = wglCreateContext(m_hDC);
-	}
+			for (int i = 0; versions[i] > 0; i++)
+			{
+				int ctxAttribs[] = {
+					WGL_CONTEXT_MAJOR_VERSION_ARB, versions[i] / 10,
+					WGL_CONTEXT_MINOR_VERSION_ARB, versions[i] % 10,
+					WGL_CONTEXT_FLAGS_ARB, gl_debug ? WGL_CONTEXT_DEBUG_BIT_ARB : 0,
+					WGL_CONTEXT_PROFILE_MASK_ARB, prof,
+					0
+				};
 
-	if (m_hRC == NULL)
-	{
-		Printf ("R_OPENGL: Couldn't create render context. Reverting to software mode...\n");
-		return false;
-	}
+				m_hRC = myWglCreateContextAttribsARB(m_hDC, 0, ctxAttribs);
+				if (m_hRC != NULL) break;
+			}
+		}
 
-	wglMakeCurrent(m_hDC, m_hRC);
-	return true;
+		if (m_hRC == NULL && prof == WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB)
+		{
+			I_Error ("R_OPENGL: Unable to create an OpenGL 3.x render context.\n");
+			return false;
+		}
+
+		wglMakeCurrent(m_hDC, m_hRC);
+
+		// we can only use core profile contexts if GL_ARB_buffer_storage is supported or GL version is >= 4.4
+		if (prof == WGL_CONTEXT_CORE_PROFILE_BIT_ARB && !checkCoreUsability())
+		{
+			wglMakeCurrent(0, 0);
+			wglDeleteContext(m_hRC);
+		}
+		else
+		{
+			return true;
+		}
+	}
+	// We get here if the driver doesn't support the modern context creation API which always means an old driver.
+	I_Error ("R_OPENGL: Unable to create an OpenGL 3.x render context.\n");
+	return false;
 }
 
 //==========================================================================
@@ -852,8 +900,16 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 
 	static_cast<Win32GLVideo *>(Video)->GoFullscreen(fullscreen);
 
+	// [rc4l] video-scale: the OS window is the CLIENT size; the render size (width/height) may be
+	// smaller when internal-resolution scaling is on. See features/video-scale.
+	extern int zx_pendingClientWidth, zx_pendingClientHeight;
+	int clientW = (zx_pendingClientWidth  > 0) ? zx_pendingClientWidth  : width;
+	int clientH = (zx_pendingClientHeight > 0) ? zx_pendingClientHeight : GetTrueHeight();
+
 	m_displayDeviceName = 0;
-	int monX = 0, monY = 0;
+	// [rc4l] borderless-video: the borderless window covers the whole monitor at desktop
+	// resolution, so we need the monitor's real pixel rect (not the requested mode).
+	int monX = 0, monY = 0, monW = clientW, monH = clientH;
 
 	if (hMonitor)
 	{
@@ -867,15 +923,21 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 
 			monX = int(mi.rcMonitor.left);
 			monY = int(mi.rcMonitor.top);
+			monW = int(mi.rcMonitor.right - mi.rcMonitor.left);
+			monH = int(mi.rcMonitor.bottom - mi.rcMonitor.top);
 		}
 	}
+
+	// [rc4l] borderless-video: ask the pure decision unit what kind of window `fullscreen` means
+	// rather than branching on the flag directly, so the intent lives in one tested place.
+	zx::WindowKind windowKind = zx::WindowKindForFullscreen(fullscreen);
 
 	ShowWindow (Window, SW_SHOW);
 	GetWindowRect(Window, &r);
 	style = WS_VISIBLE | WS_CLIPSIBLINGS;
 	exStyle = 0;
 
-	if (fullscreen)
+	if (windowKind == zx::WINDOW_BORDERLESS_DESKTOP)
 		style |= WS_POPUP;
 	else
 	{
@@ -887,20 +949,27 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 	SetWindowLong(Window, GWL_EXSTYLE, exStyle);
 	SetWindowPos(Window, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
 
-	if (fullscreen)
+	if (windowKind == zx::WINDOW_BORDERLESS_DESKTOP)
 	{
-		MoveWindow(Window, monX, monY, width, GetTrueHeight(), FALSE);
+		// [rc4l] borderless-video: cover the whole monitor (rect from the pure decision unit).
+		// WS_POPUP above dropped the frame; no ChangeDisplaySettings means the desktop mode is
+		// untouched.
+		int bx, by, bw, bh;
+		zx::BorderlessWindowRect(monX, monY, monW, monH, &bx, &by, &bw, &bh);
+		MoveWindow(Window, bx, by, bw, bh, FALSE);
 
 		// And now, seriously, it IS in the right place. Promise.
 	}
 	else
 	{
-		MoveWindow(Window, r.left, r.top, width + (GetSystemMetrics(SM_CXSIZEFRAME) * 2), height + (GetSystemMetrics(SM_CYSIZEFRAME) * 2) + GetSystemMetrics(SM_CYCAPTION), FALSE);
+		// [rc4l] video-scale: size the window's CLIENT area to the client size, not the (possibly
+		// smaller) render size. The render target follows the client live via MaybeResizeForScale.
+		MoveWindow(Window, r.left, r.top, clientW + (GetSystemMetrics(SM_CXSIZEFRAME) * 2), clientH + (GetSystemMetrics(SM_CYSIZEFRAME) * 2) + GetSystemMetrics(SM_CYCAPTION), FALSE);
 
 		I_RestoreWindowedPos();
 	}
 
-	if (!static_cast<Win32GLVideo *>(Video)->InitHardware(Window, false, localmultisample))
+	if (!static_cast<Win32GLVideo *>(Video)->InitHardware(Window, localmultisample))
 	{
 		vid_renderer = 0;
 		return;
@@ -949,6 +1018,18 @@ Win32GLFrameBuffer::~Win32GLFrameBuffer()
 
 void Win32GLFrameBuffer::InitializeState()
 {
+}
+
+// [rc4l] windowed-video: resize the OS window's client area to w x h (windowed only). WM_SIZE then
+// persists the new size and MaybeResizeForScale resizes the render target. See features/windowed-video.
+void Win32GLFrameBuffer::SetWindowSize (int w, int h)
+{
+	if (Window == NULL || IsFullscreen())
+		return;
+
+	int frameW = w + GetSystemMetrics(SM_CXSIZEFRAME) * 2;
+	int frameH = h + GetSystemMetrics(SM_CYSIZEFRAME) * 2 + GetSystemMetrics(SM_CYCAPTION);
+	SetWindowPos(Window, NULL, 0, 0, frameW, frameH, SWP_NOMOVE | SWP_NOZORDER);
 }
 
 //==========================================================================

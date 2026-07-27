@@ -195,9 +195,11 @@ configure() {
         -DFORCE_INTERNAL_JPEG=ON
         # FMOD is gone; OpenAL is the only audio backend.
         -DNO_FMOD=ON
-        -DSDL_INCLUDE_DIR="$SDL_PREFIX/include/SDL"
-        -DSDL_LIBRARY="$SDL_PREFIX/lib/libSDL-1.2.0.dylib"
+        # [rc4l] Native SDL2, not the sdl12-compat shim: SDL 1.2 cannot request a GL version/profile.
+        -DSDL2_DIR="$SDL_PREFIX/lib/cmake/SDL2"
         -DGLEW_INCLUDE_DIR="$glew/include"
+        # [rc4l] Flight 1: real GLEW (glewInit) needs the library linked, not just headers.
+        -DGLEW_LIBRARY="$glew/lib/libGLEW.dylib"
         -DOPENSSL_ROOT_DIR="$ssl"
     )
 
