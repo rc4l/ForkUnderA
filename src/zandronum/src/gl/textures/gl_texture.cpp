@@ -52,6 +52,7 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/textures/gl_texture.h"
 #include "gl/textures/gl_material.h"
+#include "gl/textures/gl_samplers.h"
 
 //==========================================================================
 //
@@ -61,7 +62,7 @@
 // [BB] Changed default
 CUSTOM_CVAR(Float,gl_texture_filter_anisotropic,1.0f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITCALL)
 {
-	if (GLRenderer != NULL) GLRenderer->FlushTextures();
+	if (GLRenderer != NULL && GLRenderer->mSamplerManager != NULL) GLRenderer->mSamplerManager->SetTextureFilterMode();
 }
 
 CCMD(gl_flush)
@@ -73,7 +74,7 @@ CCMD(gl_flush)
 CUSTOM_CVAR(Int, gl_texture_filter, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITCALL)
 {
 	if (self < 0 || self > 5) self=4;
-	if (GLRenderer != NULL) GLRenderer->FlushTextures();
+	if (GLRenderer != NULL && GLRenderer->mSamplerManager != NULL) GLRenderer->mSamplerManager->SetTextureFilterMode();
 }
 
 CUSTOM_CVAR(Int, gl_texture_format, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITCALL)
@@ -96,7 +97,6 @@ CUSTOM_CVAR(Bool, gl_texture_usehires, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
 }
 
 CVAR(Bool, gl_precache, false, CVAR_ARCHIVE)
-CVAR(Bool, gl_clamp_per_texture, false,  CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 CVAR(Bool, gl_trimsprites, true, CVAR_ARCHIVE);
 
@@ -160,7 +160,7 @@ void gl_GenerateGlobalBrightmapFromColormap()
 			if (cmapdata[i+j*256]!=i || (paldata[3*i]<10 && paldata[3*i+1]<10 && paldata[3*i+2]<10))
 			{
 				GlobalBrightmap.Remap[i]=black;
-				GlobalBrightmap.Palette[i]=PalEntry(0,0,0);
+				GlobalBrightmap.Palette[i] = PalEntry(255, 0, 0, 0);
 			}
 		}
 	}
@@ -212,7 +212,7 @@ PalEntry averageColor(const DWORD *data, int size, fixed_t maxout_factor)
 		g = Scale(g, zx::raw(maxout_factor), maxv);
 		b = Scale(b, zx::raw(maxout_factor), maxv);
 	}
-	return PalEntry(r,g,b);
+	return PalEntry(255,r,g,b);
 }
 
 
@@ -234,41 +234,38 @@ FTexture::MiscGLInfo::MiscGLInfo() throw()
 	bFullbright = false;
 	bSkyColorDone = false;
 	bBrightmapChecked = false;
-	bBrightmap = false;
-	bBrightmapDisablesFullbright = false;
+	bDisableFullbright = false;
 	bNoFilter = false;
 	bNoCompress = false;
-	mExpanded = false;
+	bNoExpand = false;
 	areas = NULL;
 	areacount = 0;
 	mIsTransparent = -1;
 	shaderspeed = 1.f;
 	shaderindex = 0;
+	precacheTime = 0;
 
-	Material = NULL;
-	SystemTexture = NULL;
+	Material[1] = Material[0] = NULL;
+	SystemTexture[1] = SystemTexture[0] = NULL;
 	Brightmap = NULL;
-	DecalTexture = NULL;
 }
 
 FTexture::MiscGLInfo::~MiscGLInfo()
 {
-	if (Material != NULL) delete Material;
-	Material = NULL;
+	for (int i = 0; i < 2; i++)
+	{
+		if (Material[i] != NULL) delete Material[i];
+		Material[i] = NULL;
 
-	if (SystemTexture != NULL) delete SystemTexture;
-	SystemTexture = NULL;
+		if (SystemTexture[i] != NULL) delete SystemTexture[i];
+		SystemTexture[i] = NULL;
+	}
 
-	// this is managed by the texture manager so it may not be deleted here.
-	//if (Brightmap != NULL) delete Brightmap;
+	// this is just a reference to another texture in the texture manager.
 	Brightmap = NULL;
 
 	if (areas != NULL) delete [] areas;
 	areas = NULL;
-
-	if (DecalTexture != NULL) delete DecalTexture;
-	DecalTexture = NULL;
-
 }
 
 //===========================================================================
@@ -322,12 +319,21 @@ void FTexture::CreateDefaultBrightmap()
 //
 //==========================================================================
 
-void FTexture::PrecacheGL()
+void FTexture::PrecacheGL(int cache)
 {
 	if (gl_precache)
 	{
-		FMaterial * gltex = FMaterial::ValidateTexture(this);
-		if (gltex) gltex->Precache();
+		if (cache & (FTextureManager::HIT_Wall | FTextureManager::HIT_Flat | FTextureManager::HIT_Sky))
+		{
+			FMaterial * gltex = FMaterial::ValidateTexture(this, false);
+			if (gltex) gltex->Precache();
+		}
+		if (cache & FTextureManager::HIT_Sprite)
+		{
+			FMaterial * gltex = FMaterial::ValidateTexture(this, true);
+			if (gltex) gltex->Precache();
+		}
+		gl_info.precacheTime = TexMan.precacheTime;
 	}
 }
 
@@ -339,7 +345,12 @@ void FTexture::PrecacheGL()
 
 void FTexture::UncacheGL()
 {
-	if (gl_info.Material) gl_info.Material->Clean(true); 
+	if (gl_info.precacheTime != TexMan.precacheTime)
+	{
+		if (gl_info.Material[0]) gl_info.Material[0]->Clean(true);
+		if (gl_info.Material[1]) gl_info.Material[1]->Clean(true);
+		gl_info.precacheTime = 0;
+	}
 }
 
 //==========================================================================
@@ -501,7 +512,7 @@ void FTexture::CheckTrans(unsigned char * buffer, int size, int trans)
 		if (trans == -1)
 		{
 			DWORD * dwbuf = (DWORD*)buffer;
-			if (gl_info.mIsTransparent == -1) for(int i=0;i<size;i++)
+			for(int i=0;i<size;i++)
 			{
 				DWORD alpha = dwbuf[i]>>24;
 
@@ -512,7 +523,6 @@ void FTexture::CheckTrans(unsigned char * buffer, int size, int trans)
 				}
 			}
 		}
-		gl_info.mIsTransparent = 0;
 	}
 }
 
@@ -560,7 +570,7 @@ bool FTexture::SmoothEdges(unsigned char * buffer,int w, int h)
 		l1+=4;
 		for(x=1;x<w-1;x++, l1+=4)
 		{
-			if (l1[MSB]==0 &&  !CHKPIX(-w) && !CHKPIX(-1) && !CHKPIX(1) && !CHKPIX(-w-1) && !CHKPIX(-w+1) && !CHKPIX(w-1) && !CHKPIX(w+1)) CHKPIX(w);
+			if (l1[MSB]==0 &&  !CHKPIX(-w) && !CHKPIX(-1) && !CHKPIX(1)) CHKPIX(w);
 		}
 		if (l1[MSB]==0 && !CHKPIX(-w) && !CHKPIX(-1)) CHKPIX(w);
 		l1+=4;
@@ -585,7 +595,7 @@ bool FTexture::SmoothEdges(unsigned char * buffer,int w, int h)
 
 bool FTexture::ProcessData(unsigned char * buffer, int w, int h, bool ispatch)
 {
-	if (bMasked && !gl_info.bBrightmap) 
+	if (bMasked) 
 	{
 		bMasked = SmoothEdges(buffer, w, h);
 		if (bMasked && !ispatch) FindHoles(buffer, w, h);
@@ -611,7 +621,7 @@ FBrightmapTexture::FBrightmapTexture (FTexture *source)
 	bNoDecals = source->bNoDecals;
 	Rotations = source->Rotations;
 	UseType = source->UseType;
-	gl_info.bBrightmap = true;
+	bMasked = false;
 	id.SetInvalid();
 	SourceLump = -1;
 }
@@ -643,48 +653,7 @@ int FBrightmapTexture::CopyTrueColorPixels(FBitmap *bmp, int x, int y, int rotat
 }
 
 
-//===========================================================================
-//
-// A cloned texture. This is needed by the decal code which needs to assign
-// a different texture type to some of its graphics.
-//
-//===========================================================================
 
-FCloneTexture::FCloneTexture (FTexture *source, int usetype)
-{
-	memset(Name, 0, sizeof(Name));
-	SourcePic = source;
-	CopySize(source);
-	bNoDecals = source->bNoDecals;
-	Rotations = source->Rotations;
-	UseType = usetype;
-	gl_info.bBrightmap = false;
-	id.SetInvalid();
-	SourceLump = -1;
-}
-
-FCloneTexture::~FCloneTexture ()
-{
-}
-
-const BYTE *FCloneTexture::GetColumn (unsigned int column, const Span **spans_out)
-{
-	return NULL;
-}
-
-const BYTE *FCloneTexture::GetPixels ()
-{
-	return NULL;
-}
-
-void FCloneTexture::Unload ()
-{
-}
-
-int FCloneTexture::CopyTrueColorPixels(FBitmap *bmp, int x, int y, int rotate, FCopyInfo *inf)
-{
-	return SourcePic->CopyTrueColorPixels(bmp, x, y, rotate, inf);
-}
 
 //==========================================================================
 //
@@ -789,7 +758,7 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 					maplumpname.GetChars(), tex->Name);
 				return;
 			}
-			brightmap->gl_info.bBrightmap = true;
+			brightmap->bMasked = false;	// [rc4l] bBrightmap died in 3c7664a46; bMasked=false is its replacement semantic
 			brightmap->Name[0] = 0;	// brightmaps don't have names
 			TexMan.AddTexture(brightmap);
 		}
@@ -800,7 +769,7 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 
 		tex->gl_info.Brightmap = brightmap;
 	}	
-	tex->gl_info.bBrightmapDisablesFullbright = disable_fullbright;
+	tex->gl_info.bDisableFullbright = disable_fullbright;
 }
 
 //==========================================================================
@@ -856,5 +825,44 @@ void gl_ParseDetailTexture(FScanner &sc)
 			}
 		}
 	}
+}
+
+
+//==========================================================================
+//
+// Prints some texture info
+//
+//==========================================================================
+
+CCMD(textureinfo)
+{
+	int cntt = 0;
+	for (int i = 0; i < TexMan.NumTextures(); i++)
+	{
+		FTexture *tex = TexMan.ByIndex(i);
+		if (tex->gl_info.SystemTexture[0] || tex->gl_info.SystemTexture[1] || tex->gl_info.Material[0] || tex->gl_info.Material[1])
+		{
+			int lump = tex->GetSourceLump();
+			Printf(PRINT_LOG, "Texture '%s' (Index %d, Lump %d, Name '%s'):\n", tex->Name, i, lump, Wads.GetLumpFullName(lump));
+			if (tex->gl_info.Material[0])
+			{
+				Printf(PRINT_LOG, "in use (normal)\n");
+			}
+			else if (tex->gl_info.SystemTexture[0])
+			{
+				Printf(PRINT_LOG, "referenced (normal)\n");
+			}
+			if (tex->gl_info.Material[1])
+			{
+				Printf(PRINT_LOG, "in use (expanded)\n");
+			}
+			else if (tex->gl_info.SystemTexture[1])
+			{
+				Printf(PRINT_LOG, "referenced (normal)\n");
+			}
+			cntt++;
+		}
+	}
+	Printf(PRINT_LOG, "%d system textures\n", cntt);
 }
 
