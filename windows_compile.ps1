@@ -125,7 +125,7 @@ Write-Status "ZandroX Windows compile — configuration=$Configuration version=$
 Require-Command "cmake" "Install CMake and Visual Studio 2022 (with the C++ workload)." | Out-Null
 $VcpkgRoot      = Resolve-Vcpkg
 $VcpkgExe       = Join-Path $VcpkgRoot "vcpkg.exe"
-$VcpkgInstalled = Join-Path $VcpkgRoot "installed\x64-windows-static-md"
+$VcpkgInstalled = Join-Path $VcpkgRoot "installed\x64-windows-static"
 
 # --- Dependencies (OpenAL stack — never FMOD) ------------------------------
 if ($SkipDeps) {
@@ -133,8 +133,8 @@ if ($SkipDeps) {
 } else {
     Write-Status "Installing OpenAL audio dependencies via vcpkg (first run is slow)"
     & $VcpkgExe install `
-        openal-soft:x64-windows-static-md libsndfile:x64-windows-static-md mpg123:x64-windows-static-md `
-        opus:x64-windows-static-md openssl:x64-windows-static-md
+        openal-soft:x64-windows-static libsndfile:x64-windows-static mpg123:x64-windows-static `
+        opus:x64-windows-static openssl:x64-windows-static
     if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed" }
 }
 
@@ -164,7 +164,7 @@ Write-Note "DXSDK_DIR set to $dx"
 # cmake_policy() calls collide with Zandronum's old CMake minimums and break the VS generator.
 Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL)"
 $dep = $VcpkgInstalled
-# [rc4l] Static deps (x64-windows-static-md): link the whole vcpkg static lib set -- the linker
+# [rc4l] Static deps (x64-windows-static): link the whole vcpkg static lib set -- the linker
 # discards what it doesn't reference -- so libsndfile's transitive codecs (FLAC/vorbis/ogg/opus/
 # mpg123/LAME) resolve without hand-listing, plus the Win32 system libs static OpenAL-soft/OpenSSL
 # need beyond what the engine already links (advapi32/bcrypt/avrt). Fed via SNDFILE_LIBRARY, whose
@@ -231,7 +231,7 @@ if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\
 Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\
 
-# [rc4l] Deps are statically linked (x64-windows-static-md), so there are NO runtime DLLs to ship;
+# [rc4l] Deps are statically linked (x64-windows-static), so there are NO runtime DLLs to ship;
 # the app folder is just the exe + pk3s. Guard against a silent regression to dynamic linking.
 if (Get-ChildItem "$DistDir\*.dll" -ErrorAction SilentlyContinue) {
     throw "unexpected DLL(s) in dist-windows — deps should be static; check the vcpkg triplet"
