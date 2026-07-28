@@ -874,10 +874,6 @@ void D_Display ()
 	if (nodrawers || screen == NULL)
 		return; 				// for comparative timing / profiling
 
-	// [rc4l] Now that we're actually rendering, open a pending crash-consent prompt (deferred
-	// from startup so the title/demo loop doesn't clobber it).
-	ZX_CrashReportTickPrompt ();
-
 	cycle_t cycles;
 	
 	cycles.Reset();
@@ -1284,6 +1280,10 @@ void D_DoomLoop ()
 	Page = Advisory = NULL;
 
 	vid_cursor.Callback();
+
+	// [rc4l] Print the crash-reporting status now (last startup line before the loop) so it's visible
+	// at the bottom of the log alongside the sound/VoIP init lines, not scrolled off mid-startup.
+	ZX_CrashReportLogStatus ();
 
 	for (;;)
 	{
@@ -3076,8 +3076,9 @@ void D_DoomMain (void)
 		Printf ("M_Init: Init menus.\n");
 		M_Init ();
 
-		// [rc4l] Menus are up and config (cl_crashreports) is loaded: if we crashed last run,
-		// upload silently (consent given) or pop the one-time consent prompt.
+		// [rc4l] Config (cl_crashreports) is loaded: bring crash reporting up with consent = the
+		// setting. Auto-send/opt-out, no prompt -- runs on dedicated servers too (this is in the
+		// shared D_DoomMain init path, not a client-only branch).
 		ZX_CrashReportCheckPreviousCrash ();
 
 		Printf ("P_Init: Init Playloop state.\n");

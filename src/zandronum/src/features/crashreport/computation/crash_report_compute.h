@@ -10,36 +10,15 @@
 
 namespace zx {
 
-// cl_crashreports: 0 = never send/ask, 1 = ask after a crash (default), 2 = always send.
-// On launch, decide what to do given the cvar and whether the previous run crashed.
+// cl_crashreports: 0 = off (opt out), >= 1 = on (auto-send, the default). There is no per-crash
+// prompt -- a prompt can't reach a headless server, so reporting is a plain persistent setting and
+// consent is simply whatever the setting says. On launch, decide what to tell sentry.
 enum class StartupAction
 {
-	Nothing,       // nothing to do (no crash, or ask-mode with no crash)
-	RevokeConsent, // cvar==never: make sure nothing uploads
-	GiveConsent,   // cvar==always: upload the stored crash silently
-	ShowPrompt,    // cvar==ask and we crashed: ask once
+	GiveConsent,   // reporting on: capture this run + upload any crash stored from the last run
+	RevokeConsent, // reporting off: discard any stored crash and upload nothing
 };
-StartupAction ComputeStartupAction(int crashreportsCvar, bool crashedLastRun);
-
-// The prompt's choices. Deliberately NO permanent "never send" -- that stays a manual
-// `cl_crashreports 0`, so the prompt can't be used to opt out of ever helping in one click.
-enum class CrashChoice
-{
-	SendOnce,   // send this crash; keep asking next time
-	AlwaysSend, // send this crash + set cl_crashreports=2 (never ask again)
-	SaveToDisk, // don't send; export the report to a findable file
-	NotNow,     // don't send; ask again next crash
-};
-struct CrashChoiceAction
-{
-	bool upload;        // send the stored crash now
-	bool persistAlways; // set cl_crashreports = 2 (always; stop asking)
-	bool saveToDisk;    // export the report locally instead of sending
-	bool flush;         // block until the upload is delivered (else an async send is lost when the
-	                    // process exits right after consent -- the v0.1.8 bug). INVARIANT: whenever
-	                    // upload is true, flush must be true.
-};
-CrashChoiceAction ComputeChoiceAction(CrashChoice choice);
+StartupAction ComputeStartupAction(int crashreportsCvar);
 
 // Privacy: a tag value for a loaded file must be the bare filename, never the full path -- a path
 // like C:\Users\aurat\wads\x.pk3 leaks the player's OS username. Strips any directory component

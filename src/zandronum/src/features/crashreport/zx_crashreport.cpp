@@ -3,11 +3,13 @@
 // handler binary to ship. The DSN is a compile-time define (ZX_SENTRY_DSN); a DSN is public by
 // design (it ships in the client), so baking it in is expected.
 //
-// Consent model (deferred init): sentry-native DISCARDS a stored crash if consent is unknown at
-// sentry_init. So on the launch after a crash we must NOT init until the player decides -- we
-// detect the pending crash from the on-disk marker, hold init, ask, then init WITH the answer so
-// the crash is uploaded (Send/Always), discarded (Not now), or left on disk (Save). The cvar
-// `cl_crashreports` is the persistent control (0 = never, 1 = ask [default], 2 = always). The pure
+// Reporting model: auto-send, opt-out. `cl_crashreports` (0 = off, >= 1 = on; default on) is a
+// plain persistent setting in the FUA options menu -- there is NO per-crash prompt. A prompt can't
+// reach a headless server, so the old "ask on next launch" dialog left dedicated servers unable to
+// report; a setting works everywhere. On the launch after a crash we simply init sentry with
+// consent = the setting: if on, the stored crash uploads silently (and this run is captured too);
+// if off, it is discarded. We only init once the config is loaded (so the setting is known and we
+// never init with an unknown consent, which would make sentry discard a stored crash). The pure
 // decision logic lives in computation/crash_report_compute.* so it is unit-tested off-engine.
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
@@ -30,20 +32,18 @@
 #include "w_wad.h"     // Wads
 #include "c_cvars.h"
 #include "c_console.h"    // Printf
-#include "c_dispatch.h"   // CCMD
-#include "menu/menu.h"    // M_SetMenu, M_ClearMenus, NAME_CrashConsentMenu
+#include "v_text.h"       // TEXTCOLOR_* console color codes
 #include "features/crashreport/computation/crash_report_compute.h"
 
 #ifndef ZX_SENTRY_DSN
 #define ZX_SENTRY_DSN ""
 #endif
 
-// 0 = never send or ask, 1 = ask after a crash (default), 2 = always send silently.
+// Crash reporting: 0 = off (opt out), >= 1 = on (auto-send). Default on. Exposed as an On/Off toggle
+// in the FUA options menu (menudef "FUAOptions").
 CVAR(Int, cl_crashreports, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 static bool g_sentryInited = false;
-static bool g_pendingCrash = false;       // a crash from the previous run is waiting on disk
-static bool g_wantsConsentPrompt = false; // set on the ask path; consumed by the consent menu
 
 static std::string CrashDbPath()
 {
@@ -57,7 +57,8 @@ static std::string CrashDbPath()
 }
 
 // sentry writes a "last_crash" marker in the DB dir when it captures a crash. Checking for it on
-// disk lets us know we crashed WITHOUT calling sentry_init (which would discard the crash).
+// disk tells us we crashed last run, so we can flush hard enough to guarantee that stored crash
+// actually delivers before the process could crash again.
 static bool PendingCrashExists()
 {
 #ifdef _WIN32
@@ -146,7 +147,7 @@ static void ZX_CrashReportDoInit(int consentAction)
 	// [rc4l] With the legacy Win32 crash handler removed, sentry-native owns crashes. Its handler
 	// captures the crash and then returns EXCEPTION_CONTINUE_SEARCH, which would let Windows pop its
 	// own "stopped working" (WER) dialog. Suppress that GPF box so the process dies quietly after we
-	// have captured; our consent prompt then appears on the next launch. (sentry itself already sets
+	// have captured; the report then uploads on the next launch. (sentry itself already sets
 	// SEM_FAILCRITICALERRORS; we add the GPF-box bit on top and preserve any existing flags.)
 	SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX);
 #endif
@@ -165,21 +166,15 @@ void ZX_CrashReportInit()
 	if (dsn == NULL || dsn[0] == '\0')
 		return; // no DSN baked in -> reporting disabled
 
-	g_pendingCrash = PendingCrashExists();
-
 	// [rc4l] Dev/CI override: ZX_CRASH_CONSENT=1 gives consent up front so an intentional crash
-	// verifies end-to-end without a human answering the prompt. Never set in shipped builds.
+	// verifies end-to-end without waiting for the config to load. Never set in shipped builds.
 	const char *force = getenv("ZX_CRASH_CONSENT");
 	if (force != NULL && force[0] == '1')
-	{
 		ZX_CrashReportDoInit(1);
-		return;
-	}
 
-	// No pending crash -> safe to init now (sentry uses the persisted consent). A pending crash is
-	// held: we defer init to ZX_CrashReportCheckPreviousCrash / the prompt so it isn't discarded.
-	if (!g_pendingCrash)
-		ZX_CrashReportDoInit(0);
+	// The normal path defers init to ZX_CrashReportCheckPreviousCrash(), which runs once the config
+	// (cl_crashreports) is loaded -- so we never init with an unknown setting and discard a stored
+	// crash. The pre-config startup window is a sub-second sliver where crashes are vanishingly rare.
 }
 
 static void ClearCrashMarker()
@@ -188,102 +183,84 @@ static void ClearCrashMarker()
 		sentry_clear_crashed_last_run();
 }
 
-// [rc4l] After consent is given the stored crash is queued on sentry's background transport. Block
-// briefly until it is actually delivered so the upload can't be lost by the player quitting right
-// after choosing Send, and log the outcome to the console/logfile so the result is visible in-game.
-// Only meaningful once sentry is initialized (a DSN is baked in); otherwise it is a no-op.
-static void ReportUploadResult()
+// [rc4l] After consent is given the stored crash is queued on sentry's background transport. When a
+// crash is actually pending, block briefly until it is delivered so an immediate re-crash (or a
+// server auto-restart that exits fast) can't lose it -- and log the outcome. No-op until sentry is
+// initialized (a DSN is baked in).
+// After consent is given a stored crash is queued on sentry's background transport. When one is
+// actually pending, block briefly until it delivers so an immediate re-crash (or a server that
+// exits fast) can't lose it. Returns true if it was delivered within the timeout.
+static bool FlushPendingReport()
 {
 	if (!g_sentryInited)
-		return;
-	Printf("Uploading crash report...\n");
-	if (sentry_flush(5000) == 0)   // wait up to 5s for the background transport to finish sending
-		Printf("Crash report uploaded. Thanks for helping fix ZandroX.\n");
-	else
-		Printf("Crash report upload timed out; it will retry on the next launch.\n");
+		return false;
+	return sentry_flush(5000) == 0;   // wait up to 5s for the background transport to finish
 }
 
-// Menu buttons -> here. When we get here with a pending crash, sentry is not yet initialized.
-CCMD(crashreport_send)
-{
-	// Route through the pure, unit-tested decision so upload/flush stay in lockstep (see the
-	// UploadAlwaysImpliesFlush regression test -- this is what the v0.1.8 flow got wrong).
-	const zx::CrashChoiceAction a = zx::ComputeChoiceAction(zx::CrashChoice::SendOnce);
-	if (a.upload) ZX_CrashReportDoInit(1);   // give consent -> queues the pending crash for upload
-	if (a.flush)  ReportUploadResult();      // ...and block until it's actually delivered
-	ClearCrashMarker();
-	M_ClearMenus();
-}
-CCMD(crashreport_always)
-{
-	const zx::CrashChoiceAction a = zx::ComputeChoiceAction(zx::CrashChoice::AlwaysSend);
-	if (a.persistAlways) { UCVarValue v; v.Int = 2; cl_crashreports.ForceSet(v, CVAR_Int); }
-	if (a.upload) ZX_CrashReportDoInit(1);
-	Printf("Crash reporting set to always send (ZandroX@%s).\n", GetGitHash());
-	if (a.flush)  ReportUploadResult();
-	ClearCrashMarker();
-	M_ClearMenus();
-}
-CCMD(crashreport_notnow)
-{
-	ZX_CrashReportDoInit(0);   // init with unknown consent -> discards the pending crash, asks again next time
-	ClearCrashMarker();
-	Printf("Crash report discarded (you'll be asked again if it happens next time).\n");
-	M_ClearMenus();
-}
-CCMD(crashreport_save)
-{
-	// Don't init (that would discard it): the crash stays in the DB on disk for the player to keep.
-	Printf("Crash report kept locally in: %s\n", CrashDbPath().c_str());
-	M_ClearMenus();
-}
+// [rc4l] The startup status line, built during init but printed later (ZX_CrashReportLogStatus,
+// from D_DoomLoop) so it lands at the BOTTOM of the startup log next to the other "... initialized"
+// lines, where it's actually visible -- instead of scrolling off mid-startup.
+static char g_statusLine[192] = { 0 };
 
+// Called once the config (cl_crashreports) is loaded, before the game's late init. The real init
+// point: bring sentry up with consent = the setting. If reporting is on, any crash stored from the
+// last run uploads (silently) here; if off, it is discarded. Works headless (no prompt anywhere).
 void ZX_CrashReportCheckPreviousCrash()
 {
-	if (g_sentryInited)
-	{
-		// Already inited at startup (no pending crash). Keep sentry consent in step with the cvar.
-		if (cl_crashreports <= 0)
-			sentry_user_consent_revoke();
-		else if (cl_crashreports >= 2)
-			sentry_user_consent_give();
+	const char *dsn = ZX_SENTRY_DSN;
+	if (dsn == NULL || dsn[0] == '\0')
 		return;
-	}
 
-	// Deferred: a crash is pending and sentry is still uninitialized.
-	switch (zx::ComputeStartupAction(cl_crashreports, g_pendingCrash))
-	{
-	case zx::StartupAction::GiveConsent:   // always
-		ZX_CrashReportDoInit(1);
-		ClearCrashMarker();
-		break;
-	case zx::StartupAction::RevokeConsent: // never
-		ZX_CrashReportDoInit(-1);
-		ClearCrashMarker();
-		break;
-	case zx::StartupAction::ShowPrompt:    // ask: stay deferred; the menu decides + inits
-		g_wantsConsentPrompt = true;
-		break;
-	case zx::StartupAction::Nothing:
-		ZX_CrashReportDoInit(0);           // safety (no pending crash after all)
-		break;
-	}
+	const bool on = zx::ComputeStartupAction(cl_crashreports) == zx::StartupAction::GiveConsent;
+	const bool pending = PendingCrashExists();   // a crash from the last run is waiting on disk
 
-	// [rc4l] Announce status here (post-console, so it reliably reaches the log -- doing it in
-	// ZX_CrashReportInit at main() is too early to print). If an upstream re-sync ever drops the
-	// hook calls, this line stops appearing: a visible signal that crash reporting went missing.
 	if (g_sentryInited)
-		Printf("Crash reporting active (ZandroX@%s)\n", GetGitHash());
-	else if (g_pendingCrash)
-		Printf("Crash reporting: waiting for your choice on last run's crash\n");
+		// Already inited early (ZX_CRASH_CONSENT override): just keep consent in step with the cvar.
+		{ if (on) sentry_user_consent_give(); else sentry_user_consent_revoke(); }
+	else
+		ZX_CrashReportDoInit(on ? 1 : -1);
+
+	// Do the upload/flush now (so a stored crash delivers before a possible re-crash), but only
+	// record the outcome -- the actual Printf is deferred to ZX_CrashReportLogStatus() for visibility.
+	// Colors: green for the working/positive states (like the demo-playback notices), orange for a
+	// retryable warning, red for an outright failure, default for the neutral "off" states.
+	if (!g_sentryInited)
+		snprintf(g_statusLine, sizeof g_statusLine,
+			TEXTCOLOR_RED "Crash reporting: unavailable (init failed)" TEXTCOLOR_NORMAL);
+	else if (pending && on)
+	{
+		const bool sent = FlushPendingReport();
+		ClearCrashMarker();
+		if (sent)
+			snprintf(g_statusLine, sizeof g_statusLine,
+				TEXTCOLOR_GREEN "Crash reporting: a crash from the last run was SENT. Thanks for helping fix ZandroX. (ZandroX@%s)" TEXTCOLOR_NORMAL, GetGitHash());
+		else
+			snprintf(g_statusLine, sizeof g_statusLine,
+				TEXTCOLOR_ORANGE "Crash reporting: crash upload timed out; it will retry next launch. (ZandroX@%s)" TEXTCOLOR_NORMAL, GetGitHash());
+	}
+	else if (pending && !on)
+	{
+		ClearCrashMarker();
+		snprintf(g_statusLine, sizeof g_statusLine,
+			"Crash reporting: a crash from the last run was discarded (reporting is off).");
+	}
+	else if (on)
+		snprintf(g_statusLine, sizeof g_statusLine,
+			TEXTCOLOR_GREEN "Crash reporting: active, auto-send ON (ZandroX@%s)" TEXTCOLOR_NORMAL, GetGitHash());
+	else
+		snprintf(g_statusLine, sizeof g_statusLine,
+			"Crash reporting: OFF -- enable it in Options > FUA Options > Crash Reporting.");
 }
 
-void ZX_CrashReportTickPrompt()
+// Print the crash-reporting status exactly once. Called late (D_DoomLoop) so it shows at the bottom
+// of the startup log, next to the sound/VoIP init lines, where a player or server operator sees it.
+void ZX_CrashReportLogStatus()
 {
-	if (!g_wantsConsentPrompt)
-		return;
-	g_wantsConsentPrompt = false;              // open exactly once
-	M_SetMenu(NAME_CrashConsentMenu, -1);
+	if (g_statusLine[0] != '\0')
+	{
+		Printf("%s\n", g_statusLine);
+		g_statusLine[0] = '\0';
+	}
 }
 
 void ZX_CrashReportSetTag(const char *key, const char *value)
@@ -323,7 +300,7 @@ void ZX_CrashReportSetLoadedFiles()
 void ZX_CrashReportInit() {}
 void ZX_CrashReportShutdown() {}
 void ZX_CrashReportCheckPreviousCrash() {}
-void ZX_CrashReportTickPrompt() {}
+void ZX_CrashReportLogStatus() {}
 void ZX_CrashReportSetLoadedFiles() {}
 void ZX_CrashReportSetMap(const char *) {}
 void ZX_CrashReportSetTag(const char *, const char *) {}
