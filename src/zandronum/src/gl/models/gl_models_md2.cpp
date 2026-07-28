@@ -43,11 +43,13 @@
 #include "sc_man.h"
 #include "m_crc32.h"
 
+#include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
 #include "gl/textures/gl_material.h"
 #include "gl/shaders/gl_shader.h"
+#include "gl/data/gl_vertexbuffer.h"
 
 static float   avertexnormals[NUMVERTEXNORMALS][3] = {
 #include "tab_anorms.h"
@@ -74,52 +76,56 @@ static void UnpackVector(unsigned short packed, float vec[3])
 
 //===========================================================================
 //
+// DMD file structure
+//
+//===========================================================================
+
+struct dmd_chunk_t
+{
+	int             type;
+	int             length;		   // Next chunk follows...
+};
+
+#pragma pack(1)
+struct dmd_packedVertex_t
+{
+	byte            vertex[3];
+	unsigned short  normal;		   // Yaw and pitch.
+};
+
+struct dmd_packedFrame_t
+{
+	float           scale[3];
+	float           translate[3];
+	char            name[16];
+	dmd_packedVertex_t vertices[1];
+};
+#pragma pack()
+
+// Chunk types.
+enum
+{
+	DMC_END,					   // Must be the last chunk.
+	DMC_INFO					   // Required; will be expected to exist.
+};
+
+//===========================================================================
+//
 // FDMDModel::Load
 //
 //===========================================================================
 
-bool FDMDModel::Load(const char * path, int, const char * buffer, int length)
+bool FDMDModel::Load(const char * path, int lumpnum, const char * buffer, int length)
 {
-	struct dmd_chunk_t
-	{
-		int             type;
-		int             length;		   // Next chunk follows...
-	};
-
-#pragma pack(1)
-	struct dmd_packedVertex_t
-	{
-		byte            vertex[3];
-		unsigned short  normal;		   // Yaw and pitch.
-	};
-
-	struct dmd_packedFrame_t
-	{
-		float           scale[3];
-		float           translate[3];
-		char            name[16];
-		dmd_packedVertex_t vertices[1];
-	} ;
-#pragma pack()
-
-	// Chunk types.
-	enum 
-	{
-		DMC_END,					   // Must be the last chunk.
-		DMC_INFO					   // Required; will be expected to exist.
-	};
-
-	dmd_chunk_t * chunk = (dmd_chunk_t*)(buffer+12);
+	dmd_chunk_t * chunk = (dmd_chunk_t*)(buffer + 12);
 	char   *temp;
 	ModelFrame *frame;
-	int     i, k, c;
-	FTriangle *triangles[MAX_LODS];
-	int     axis[3] = { VX, VY, VZ };
+	int     i;
 
-	int fileoffset=12+sizeof(dmd_chunk_t);
+	int fileoffset = 12 + sizeof(dmd_chunk_t);
 
 	chunk->type = LittleLong(chunk->type);
-	while(chunk->type != DMC_END)
+	while (chunk->type != DMC_END)
 	{
 		switch (chunk->type)
 		{
@@ -147,7 +153,7 @@ bool FDMDModel::Load(const char * path, int, const char * buffer, int length)
 			break;
 		}
 		// Read the next chunk header.
-		chunk = (dmd_chunk_t*)(buffer+fileoffset);
+		chunk = (dmd_chunk_t*)(buffer + fileoffset);
 		chunk->type = LittleLong(chunk->type);
 		fileoffset += sizeof(dmd_chunk_t);
 	}
@@ -155,35 +161,60 @@ bool FDMDModel::Load(const char * path, int, const char * buffer, int length)
 	// Allocate and load in the data.
 	skins = new FTexture *[info.numSkins];
 
-	for(i = 0; i < info.numSkins; i++)
+	for (i = 0; i < info.numSkins; i++)
 	{
-		skins[i] = LoadSkin(path, buffer + info.offsetSkins + i*64);
+		skins[i] = LoadSkin(path, buffer + info.offsetSkins + i * 64);
 	}
-
-
 	temp = (char*)buffer + info.offsetFrames;
 	frames = new ModelFrame[info.numFrames];
 
-	for(i = 0, frame = frames; i < info.numFrames; i++, frame++)
+	for (i = 0, frame = frames; i < info.numFrames; i++, frame++)
+	{
+		dmd_packedFrame_t *pfr = (dmd_packedFrame_t *)(temp + info.frameSize * i);
+
+		memcpy(frame->name, pfr->name, sizeof(pfr->name));
+		frame->vindex = UINT_MAX;
+	}
+	mLumpNum = lumpnum;
+	return true;
+}
+
+//===========================================================================
+//
+// FDMDModel::LoadGeometry
+//
+//===========================================================================
+
+void FDMDModel::LoadGeometry()
+{
+	static int axis[3] = { VX, VY, VZ };
+	FMemLump lumpdata = Wads.ReadLump(mLumpNum);
+	const char *buffer = (const char *)lumpdata.GetMem();
+	texCoords = new FTexCoord[info.numTexCoords];
+	memcpy(texCoords, buffer + info.offsetTexCoords, info.numTexCoords * sizeof(FTexCoord));
+
+	const char *temp = buffer + info.offsetFrames;
+	framevtx= new ModelFrameVertexData[info.numFrames];
+
+	ModelFrameVertexData *framev;
+	int i, k, c;
+	for(i = 0, framev = framevtx; i < info.numFrames; i++, framev++)
 	{
 		dmd_packedFrame_t *pfr = (dmd_packedFrame_t *) (temp + info.frameSize * i);
 		dmd_packedVertex_t *pVtx;
 
-		memcpy(frame->name, pfr->name, sizeof(pfr->name));
-		frame->vertices = new FModelVertex[info.numVertices];
-		frame->normals = new FModelVertex[info.numVertices];
+		framev->vertices = new DMDModelVertex[info.numVertices];
+		framev->normals = new DMDModelVertex[info.numVertices];
 
 		// Translate each vertex.
 		for(k = 0, pVtx = pfr->vertices; k < info.numVertices; k++, pVtx++)
 		{
-			UnpackVector((unsigned short)(pVtx->normal), frame->normals[k].xyz);
+			UnpackVector((unsigned short)(pVtx->normal), framev->normals[k].xyz);
 			for(c = 0; c < 3; c++)
 			{
-				frame->vertices[k].xyz[axis[c]] =
+				framev->vertices[k].xyz[axis[c]] =
 					(pVtx->vertex[c] * FLOAT(pfr->scale[c]) + FLOAT(pfr->translate[c]));
 			}
-			// Aspect undo.
-			frame->vertices[k].xyz[VZ] *= rModelAspectMod;
 		}
 	}
 
@@ -191,58 +222,121 @@ bool FDMDModel::Load(const char * path, int, const char * buffer, int length)
 	for(i = 0; i < info.numLODs; i++)
 	{
 		lodInfo[i].numTriangles = LittleLong(lodInfo[i].numTriangles);
-		lodInfo[i].numGlCommands = LittleLong(lodInfo[i].numGlCommands);
 		lodInfo[i].offsetTriangles = LittleLong(lodInfo[i].offsetTriangles);
-		lodInfo[i].offsetGlCommands = LittleLong(lodInfo[i].offsetGlCommands);
-
-		triangles[i] = (FTriangle*)(buffer + lodInfo[i].offsetTriangles);
-
-		lods[i].glCommands = new int[lodInfo[i].numGlCommands];
-		memcpy(lods[i].glCommands, buffer + lodInfo[i].offsetGlCommands, sizeof(int) * lodInfo[i].numGlCommands);
+		if (lodInfo[i].numTriangles > 0)
+		{
+			lods[i].triangles = new FTriangle[lodInfo[i].numTriangles];
+			memcpy(lods[i].triangles, buffer + lodInfo[i].offsetTriangles, lodInfo[i].numTriangles * sizeof(FTriangle));
+			for (int j = 0; j < lodInfo[i].numTriangles; j++)
+			{
+				for (int k = 0; k < 3; k++)
+				{
+					lods[i].triangles[j].textureIndices[k] = LittleShort(lods[i].triangles[j].textureIndices[k]);
+					lods[i].triangles[j].vertexIndices[k] = LittleShort(lods[i].triangles[j].vertexIndices[k]);
+				}
+			}
+		}
 	}
 
-	// Determine vertex usage at each LOD level.
-	vertexUsage = new char[info.numVertices];
-	memset(vertexUsage, 0, info.numVertices);
-
-	for(i = 0; i < info.numLODs; i++)
-		for(k = 0; k < lodInfo[i].numTriangles; k++)
-			for(c = 0; c < 3; c++)
-				vertexUsage[short(triangles[i][k].vertexIndices[c])] |= 1 << i;
-
-	loaded=true;
-	return true;
 }
 
+//===========================================================================
+//
+// Deletes everything that's no longer needed after building the vertex buffer
+//
+//===========================================================================
 
-FDMDModel::~FDMDModel()
+void FDMDModel::UnloadGeometry()
 {
 	int i;
 
-	// clean up
-	if (skins != NULL)
-	{
-		// skins are managed by the texture manager so they must not be deleted here.
-		delete [] skins;
-	}
-
-	if (frames != NULL)
+	if (framevtx != NULL)
 	{
 		for (i=0;i<info.numFrames;i++)
 		{
-			delete [] frames[i].vertices;
-			delete [] frames[i].normals;
+			if (framevtx[i].vertices != NULL) delete [] framevtx[i].vertices;
+			if (framevtx[i].normals != NULL) delete [] framevtx[i].normals;
+
+			framevtx[i].vertices = NULL;
+			framevtx[i].normals = NULL;
 		}
-		delete [] frames;
+		delete[] framevtx;
+		framevtx = NULL;
 	}
 
 	for(i = 0; i < info.numLODs; i++)
 	{
-		delete [] lods[i].glCommands;
+		if (lods[i].triangles != NULL) delete[] lods[i].triangles;
+		lods[i].triangles = NULL;
 	}
 
-	if (vertexUsage != NULL) delete [] vertexUsage;
+	if (texCoords != NULL) delete[] texCoords;
+	texCoords = NULL;
 }
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+FDMDModel::~FDMDModel()
+{
+	UnloadGeometry();
+
+	// skins are managed by the texture manager so they must not be deleted here.
+	if (skins != NULL) delete [] skins;
+	if (frames != NULL) delete [] frames;
+}
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+void FDMDModel::BuildVertexBuffer()
+{
+	if (mVBuf == NULL)
+	{
+		LoadGeometry();
+
+		int VertexBufferSize = info.numFrames * lodInfo[0].numTriangles * 3;
+		unsigned int vindex = 0;
+
+		mVBuf = new FModelVertexBuffer(false);
+		FModelVertex *vertptr = mVBuf->LockVertexBuffer(VertexBufferSize);
+
+		for (int i = 0; i < info.numFrames; i++)
+		{
+			DMDModelVertex *vert = framevtx[i].vertices;
+			DMDModelVertex *norm = framevtx[i].normals;
+
+			frames[i].vindex = vindex;
+
+			FTriangle *tri = lods[0].triangles;
+
+			for (int i = 0; i < lodInfo[0].numTriangles; i++)
+			{
+				for (int j = 0; j < 3; j++)
+				{
+
+					int ti = tri->textureIndices[j];
+					int vi = tri->vertexIndices[j];
+
+					FModelVertex *bvert = &vertptr[vindex++];
+					bvert->Set(vert[vi].xyz[0], vert[vi].xyz[1], vert[vi].xyz[2], (float)texCoords[ti].s / info.skinWidth, (float)texCoords[ti].t / info.skinHeight);
+					bvert->SetNormal(norm[vi].xyz[0], norm[vi].xyz[1], norm[vi].xyz[2]);
+				}
+				tri++;
+			}
+		}
+		mVBuf->UnlockVertexBuffer();
+		UnloadGeometry();
+	}
+}
+
+
 
 //===========================================================================
 //
@@ -260,117 +354,74 @@ int FDMDModel::FindFrame(const char * name)
 
 //===========================================================================
 //
-// Render a set of GL commands using the given data.
+//
 //
 //===========================================================================
-void FDMDModel::RenderGLCommands(void *glCommands, unsigned int numVertices,FModelVertex * vertices)
+
+void FDMDModel::RenderFrame(FTexture * skin, int frameno, int frameno2, double inter, int translation)
 {
-	char   *pos;
-	FGLCommandVertex * v;
-	int     count;
+	if (frameno >= info.numFrames || frameno2 >= info.numFrames) return;
+
+	if (!skin)
+	{
+		if (info.numSkins == 0) return;
+		skin = skins[0];
+		if (!skin) return;
+	}
+
+	FMaterial * tex = FMaterial::ValidateTexture(skin, false);
+
+	gl_RenderState.SetMaterial(tex, CLAMP_NONE, translation, -1, false);
+	gl_RenderState.SetInterpolationFactor((float)inter);
 
 	gl_RenderState.Apply();
-	for(pos = (char*)glCommands; *pos;)
-	{
-		count = *(int *) pos;
-		pos += 4;
-
-		// The type of primitive depends on the sign.
-		glBegin(count > 0 ? GL_TRIANGLE_STRIP : GL_TRIANGLE_FAN);
-		count = abs(count);
-
-		while(count--)
-		{
-			v = (FGLCommandVertex *) pos;
-			pos += sizeof(FGLCommandVertex);
-
-			glTexCoord2fv(&v->s);
-			glVertex3fv((float*)&vertices[v->index]);
-		}
-
-		glEnd();
-	}
+	mVBuf->SetupFrame(frames[frameno].vindex, frames[frameno2].vindex);
+	glDrawArrays(GL_TRIANGLES, 0, lodInfo[0].numTriangles * 3);
+	gl_RenderState.SetInterpolationFactor(0.f);
 }
 
 
-void FDMDModel::RenderFrame(FTexture * skin, int frameno, int cm, int translation)
+
+//===========================================================================
+//
+// Internal data structures of MD2 files - only used during loading
+//
+//===========================================================================
+
+struct md2_header_t
 {
-	int activeLod;
+	int             magic;
+	int             version;
+	int             skinWidth;
+	int             skinHeight;
+	int             frameSize;
+	int             numSkins;
+	int             numVertices;
+	int             numTexCoords;
+	int             numTriangles;
+	int             numGlCommands;
+	int             numFrames;
+	int             offsetSkins;
+	int             offsetTexCoords;
+	int             offsetTriangles;
+	int             offsetFrames;
+	int             offsetGlCommands;
+	int             offsetEnd;
+};
 
-	if (frameno>=info.numFrames) return;
-
-	ModelFrame * frame = &frames[frameno];
-	//int mainFlags = mf->flags;
-
-	if (!skin)
-	{
-		if (info.numSkins==0) return;
-		skin = skins[0];
-		if (!skin) return;
-	}
-
-	FMaterial * tex = FMaterial::ValidateTexture(skin);
-
-	tex->Bind(cm, 0, translation);
-
-	int numVerts = info.numVertices;
-
-	// Determine the suitable LOD.
-	/*
-	if(info.numLODs > 1 && rend_model_lod != 0)
-	{
-	float   lodFactor = rend_model_lod * screen->Width() / 640.0f / (GLRenderer->mCurrentFoV / 90.0f);
-	if(lodFactor) lodFactor = 1 / lodFactor;
-
-	// Determine the LOD we will be using.
-	activeLod = (int) (lodFactor * spr->distance);
-	if(activeLod < 0) activeLod = 0;
-	if(activeLod >= mdl->info.numLODs) activeLod = mdl->info.numLODs - 1;
-	vertexUsage = mdl->vertexUsage;
-	}
-	else
-	*/
-	{
-		activeLod = 0;
-	}
-
-	RenderGLCommands(lods[activeLod].glCommands, numVerts, frame->vertices/*, modelColors, NULL*/);
-}
-
-void FDMDModel::RenderFrameInterpolated(FTexture * skin, int frameno, int frameno2, double inter, int cm, int translation)
+struct md2_triangleVertex_t
 {
-	int activeLod = 0;
+	byte            vertex[3];
+	byte            lightNormalIndex;
+};
 
-	if (frameno>=info.numFrames || frameno2>=info.numFrames) return;
-
-	FModelVertex *vertices1 = frames[frameno].vertices;
-	FModelVertex *vertices2 = frames[frameno2].vertices;
-
-	if (!skin)
-	{
-		if (info.numSkins==0) return;
-		skin = skins[0];
-		if (!skin) return;
-	}
-
-	FMaterial * tex = FMaterial::ValidateTexture(skin);
-
-	tex->Bind(cm, 0, translation);
-
-	int numVerts = info.numVertices;
-
-	// [BB] Calculate the interpolated vertices by linear interpolation.
-	FModelVertex *verticesInterpolated = new FModelVertex[numVerts];
-	for( int k = 0; k < numVerts; k++ )
-	{
-		for ( int i = 0; i < 3; i++ )
-			verticesInterpolated[k].xyz[i] = (1-inter)*vertices1[k].xyz[i]+ (inter)*vertices2[k].xyz[i];
-	}
-
-	RenderGLCommands(lods[activeLod].glCommands, numVerts, verticesInterpolated/*, modelColors, NULL*/);
-	delete[] verticesInterpolated;
-}
-
+struct md2_packedFrame_t
+{
+	float           scale[3];
+	float           translate[3];
+	char            name[16];
+	md2_triangleVertex_t vertices[1];
+};
 
 //===========================================================================
 //
@@ -378,55 +429,17 @@ void FDMDModel::RenderFrameInterpolated(FTexture * skin, int frameno, int framen
 //
 //===========================================================================
 
-bool FMD2Model::Load(const char * path, int, const char * buffer, int length)
+bool FMD2Model::Load(const char * path, int lumpnum, const char * buffer, int length)
 {
-	// Internal data structures of MD2 files - only used during loading!
-	struct md2_header_t
-	{
-		int             magic;
-		int             version;
-		int             skinWidth;
-		int             skinHeight;
-		int             frameSize;
-		int             numSkins;
-		int             numVertices;
-		int             numTexCoords;
-		int             numTriangles;
-		int             numGlCommands;
-		int             numFrames;
-		int             offsetSkins;
-		int             offsetTexCoords;
-		int             offsetTriangles;
-		int             offsetFrames;
-		int             offsetGlCommands;
-		int             offsetEnd;
-	} ;
-
-	struct md2_triangleVertex_t
-	{
-		byte            vertex[3];
-		byte            lightNormalIndex;
-	};
-
-	struct md2_packedFrame_t
-	{
-		float           scale[3];
-		float           translate[3];
-		char            name[16];
-		md2_triangleVertex_t vertices[1];
-	};
-
 	md2_header_t * md2header = (md2_header_t *)buffer;
 	ModelFrame *frame;
 	byte   *md2_frames;
-	int     i, k, c;
-	int     axis[3] = { VX, VY, VZ };
+	int     i;
 
 	// Convert it to DMD.
 	header.magic = MD2_MAGIC;
 	header.version = 8;
 	header.flags = 0;
-	vertexUsage = NULL;
 	info.skinWidth = LittleLong(md2header->skinWidth);
 	info.skinHeight = LittleLong(md2header->skinHeight);
 	info.frameSize = LittleLong(md2header->frameSize);
@@ -456,48 +469,83 @@ bool FMD2Model::Load(const char * path, int, const char * buffer, int length)
 		return false;
 	}
 
+	skins = new FTexture *[info.numSkins];
+
+	for (i = 0; i < info.numSkins; i++)
+	{
+		skins[i] = LoadSkin(path, buffer + info.offsetSkins + i * 64);
+	}
+
 	// The frames need to be unpacked.
 	md2_frames = (byte*)buffer + info.offsetFrames;
-
 	frames = new ModelFrame[info.numFrames];
 
-	for(i = 0, frame = frames; i < info.numFrames; i++, frame++)
+	for (i = 0, frame = frames; i < info.numFrames; i++, frame++)
+	{
+		md2_packedFrame_t *pfr = (md2_packedFrame_t *)(md2_frames + info.frameSize * i);
+
+		memcpy(frame->name, pfr->name, sizeof(pfr->name));
+		frame->vindex = UINT_MAX;
+	}
+	mLumpNum = lumpnum;
+	return true;
+}
+
+//===========================================================================
+//
+// FMD2Model::LoadGeometry
+//
+//===========================================================================
+
+void FMD2Model::LoadGeometry()
+{
+	static int axis[3] = { VX, VY, VZ };
+	byte   *md2_frames;
+	FMemLump lumpdata = Wads.ReadLump(mLumpNum);
+	const char *buffer = (const char *)lumpdata.GetMem();
+
+	texCoords = new FTexCoord[info.numTexCoords];
+	memcpy(texCoords, (byte*)buffer + info.offsetTexCoords, info.numTexCoords * sizeof(FTexCoord));
+
+	md2_frames = (byte*)buffer + info.offsetFrames;
+	framevtx = new ModelFrameVertexData[info.numFrames];
+	ModelFrameVertexData *framev;
+	int i, k, c;
+
+	for(i = 0, framev = framevtx; i < info.numFrames; i++, framev++)
 	{
 		md2_packedFrame_t *pfr = (md2_packedFrame_t *) (md2_frames + info.frameSize * i);
 		md2_triangleVertex_t *pVtx;
 
-		memcpy(frame->name, pfr->name, sizeof(pfr->name));
-		frame->vertices = new FModelVertex[info.numVertices];
-		frame->normals = new FModelVertex[info.numVertices];
+		framev->vertices = new DMDModelVertex[info.numVertices];
+		framev->normals = new DMDModelVertex[info.numVertices];
 
 		// Translate each vertex.
 		for(k = 0, pVtx = pfr->vertices; k < info.numVertices; k++, pVtx++)
 		{
-			memcpy(frame->normals[k].xyz,
+			memcpy(framev->normals[k].xyz,
 				avertexnormals[pVtx->lightNormalIndex], sizeof(float) * 3);
 
 			for(c = 0; c < 3; c++)
 			{
-				frame->vertices[k].xyz[axis[c]] =
+				framev->vertices[k].xyz[axis[c]] =
 					(pVtx->vertex[c] * pfr->scale[c] + pfr->translate[c]);
 			}
-			// Aspect ratio adjustment (1.33 -> 1.6.)
-			frame->vertices[k].xyz[VZ] *= rModelAspectMod;
 		}
 	}
 
-
-	lods[0].glCommands = new int[lodInfo[0].numGlCommands];
-	memcpy(lods[0].glCommands, buffer + lodInfo[0].offsetGlCommands, sizeof(int) * lodInfo[0].numGlCommands);
-
-	skins = new FTexture *[info.numSkins];
-
-	for(i = 0; i < info.numSkins; i++)
+	lods[0].triangles = new FTriangle[lodInfo[0].numTriangles];
+		
+	int cnt = lodInfo[0].numTriangles;
+	memcpy(lods[0].triangles, buffer + lodInfo[0].offsetTriangles, sizeof(FTriangle) * cnt);
+	for (int j = 0; j < cnt; j++)
 	{
-		skins[i] = LoadSkin(path, buffer + info.offsetSkins + i*64);
+		for (int k = 0; k < 3; k++)
+		{
+			lods[0].triangles[j].textureIndices[k] = LittleShort(lods[0].triangles[j].textureIndices[k]);
+			lods[0].triangles[j].vertexIndices[k] = LittleShort(lods[0].triangles[j].vertexIndices[k]);
+		}
 	}
-	loaded=true;
-	return true;
 }
 
 FMD2Model::~FMD2Model()

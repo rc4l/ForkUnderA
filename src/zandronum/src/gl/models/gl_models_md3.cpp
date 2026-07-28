@@ -42,6 +42,7 @@
 #include "m_crc32.h"
 
 #include "gl/renderer/gl_renderstate.h"
+#include "gl/renderer/gl_renderer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
 #include "gl/textures/gl_material.h"
@@ -49,9 +50,14 @@
 
 #define MAX_QPATH 64
 
+//===========================================================================
+//
+// decode the lat/lng normal to a 3 float normal
+//
+//===========================================================================
+
 static void UnpackVector(unsigned short packed, float & nx, float & ny, float & nz)
 {
-	// decode the lat/lng normal to a 3 float normal
 	double lat = ( packed >> 8 ) & 0xff;
 	double lng = ( packed & 0xff );
 	lat *= PI/128;
@@ -62,75 +68,86 @@ static void UnpackVector(unsigned short packed, float & nx, float & ny, float & 
 	nz = cos(lng);
 }
 
+//===========================================================================
+//
+// MD3 File structure
+//
+//===========================================================================
 
-
-bool FMD3Model::Load(const char * path, int, const char * buffer, int length)
+#pragma pack(4)
+struct md3_header_t
 {
-	#pragma pack(4)
-	struct md3_header_t
-	{
-		DWORD Magic;
-		DWORD Version;
-		char Name[MAX_QPATH];
-		DWORD Flags;
-		DWORD Num_Frames;
-		DWORD Num_Tags;
-		DWORD Num_Surfaces;
-		DWORD Num_Skins;
-		DWORD Ofs_Frames;
-		DWORD Ofs_Tags;
-		DWORD Ofs_Surfaces;
-		DWORD Ofs_Eof;
-	};
+	DWORD Magic;
+	DWORD Version;
+	char Name[MAX_QPATH];
+	DWORD Flags;
+	DWORD Num_Frames;
+	DWORD Num_Tags;
+	DWORD Num_Surfaces;
+	DWORD Num_Skins;
+	DWORD Ofs_Frames;
+	DWORD Ofs_Tags;
+	DWORD Ofs_Surfaces;
+	DWORD Ofs_Eof;
+};
 
-	struct md3_surface_t
-	{
-		DWORD Magic;
-		char Name[MAX_QPATH];
-		DWORD Flags;
-		DWORD Num_Frames;
-		DWORD Num_Shaders;
-		DWORD Num_Verts;
-		DWORD Num_Triangles;
-		DWORD Ofs_Triangles;
-		DWORD Ofs_Shaders;
-		DWORD Ofs_Texcoord;
-		DWORD Ofs_XYZNormal;
-		DWORD Ofs_End;
-	};
+struct md3_surface_t
+{
+	DWORD Magic;
+	char Name[MAX_QPATH];
+	DWORD Flags;
+	DWORD Num_Frames;
+	DWORD Num_Shaders;
+	DWORD Num_Verts;
+	DWORD Num_Triangles;
+	DWORD Ofs_Triangles;
+	DWORD Ofs_Shaders;
+	DWORD Ofs_Texcoord;
+	DWORD Ofs_XYZNormal;
+	DWORD Ofs_End;
+};
 
-	struct md3_triangle_t
-	{
-		DWORD vt_index[3];
-	};
+struct md3_triangle_t
+{
+	DWORD vt_index[3];
+};
 
-	struct md3_shader_t
-	{
-		char Name[MAX_QPATH];
-		DWORD index;
-	};
+struct md3_shader_t
+{
+	char Name[MAX_QPATH];
+	DWORD index;
+};
 
-	struct md3_texcoord_t
-	{
-		float s,t;
-	};
+struct md3_texcoord_t
+{
+	float s, t;
+};
 
-	struct md3_vertex_t
-	{
-		short x,y,z,n;
-	};
+struct md3_vertex_t
+{
+	short x, y, z, n;
+};
 
-	struct md3_frame_t
-	{
-		float min_Bounds[3];
-		float max_Bounds[3];
-		float localorigin[3];
-		float radius;
-		char Name[16];
-	};
-	#pragma pack()
+struct md3_frame_t
+{
+	float min_Bounds[3];
+	float max_Bounds[3];
+	float localorigin[3];
+	float radius;
+	char Name[16];
+};
+#pragma pack()
 
-	md3_header_t * hdr=(md3_header_t *)buffer;
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+bool FMD3Model::Load(const char * path, int lumpnum, const char * buffer, int length)
+{
+	md3_header_t * hdr = (md3_header_t *)buffer;
 
 	numFrames = LittleLong(hdr->Num_Frames);
 	numTags = LittleLong(hdr->Num_Tags);
@@ -139,16 +156,17 @@ bool FMD3Model::Load(const char * path, int, const char * buffer, int length)
 	md3_frame_t * frm = (md3_frame_t*)(buffer + LittleLong(hdr->Ofs_Frames));
 
 	frames = new MD3Frame[numFrames];
-	for(int i=0;i<numFrames;i++)
+	for (int i = 0; i < numFrames; i++)
 	{
 		strncpy(frames[i].Name, frm[i].Name, 16);
-		for(int j=0;j<3;j++) frames[i].origin[j] = frm[i].localorigin[j];
+		for (int j = 0; j < 3; j++) frames[i].origin[j] = frm[i].localorigin[j];
 	}
 
 	md3_surface_t * surf = (md3_surface_t*)(buffer + LittleLong(hdr->Ofs_Surfaces));
 
 	surfaces = new MD3Surface[numSurfaces];
-	for(int i=0;i<numSurfaces;i++)
+
+	for (int i = 0; i < numSurfaces; i++)
 	{
 		MD3Surface * s = &surfaces[i];
 		md3_surface_t * ss = surf;
@@ -159,6 +177,43 @@ bool FMD3Model::Load(const char * path, int, const char * buffer, int length)
 		s->numTriangles = LittleLong(ss->Num_Triangles);
 		s->numVertices = LittleLong(ss->Num_Verts);
 
+		// copy shaders (skins)
+		md3_shader_t * shader = (md3_shader_t*)(((char*)ss) + LittleLong(ss->Ofs_Shaders));
+		s->skins = new FTexture *[s->numSkins];
+
+		for (int i = 0; i < s->numSkins; i++)
+		{
+			// [BB] According to the MD3 spec, Name is supposed to include the full path.
+			s->skins[i] = LoadSkin("", shader[i].Name);
+			// [BB] Fall back and check if Name is relative.
+			if (s->skins[i] == NULL)
+				s->skins[i] = LoadSkin(path, shader[i].Name);
+		}
+	}
+	mLumpNum = lumpnum;
+	return true;
+}
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+void FMD3Model::LoadGeometry()
+{
+	FMemLump lumpdata = Wads.ReadLump(mLumpNum);
+	const char *buffer = (const char *)lumpdata.GetMem();
+	md3_header_t * hdr = (md3_header_t *)buffer;
+	md3_surface_t * surf = (md3_surface_t*)(buffer + LittleLong(hdr->Ofs_Surfaces));
+
+	for(int i=0;i<numSurfaces;i++)
+	{
+		MD3Surface * s = &surfaces[i];
+		md3_surface_t * ss = surf;
+
+		surf = (md3_surface_t *)(((char*)surf) + LittleLong(surf->Ofs_End));
+
 		// copy triangle indices
 		md3_triangle_t * tris = (md3_triangle_t*)(((char*)ss)+LittleLong(ss->Ofs_Triangles));
 		s->tris = new MD3Triangle[s->numTriangles];
@@ -166,19 +221,6 @@ bool FMD3Model::Load(const char * path, int, const char * buffer, int length)
 		for(int i=0;i<s->numTriangles;i++) for (int j=0;j<3;j++)
 		{
 			s->tris[i].VertIndex[j]=LittleLong(tris[i].vt_index[j]);
-		}
-
-		// copy shaders (skins)
-		md3_shader_t * shader = (md3_shader_t*)(((char*)ss)+LittleLong(ss->Ofs_Shaders));
-		s->skins = new FTexture *[s->numSkins];
-
-		for(int i=0;i<s->numSkins;i++)
-		{
-			// [BB] According to the MD3 spec, Name is supposed to include the full path.
-			s->skins[i] = LoadSkin("", shader[i].Name);
-			// [BB] Fall back and check if Name is relative.
-			if ( s->skins[i] == NULL )
-				s->skins[i] = LoadSkin(path, shader[i].Name);
 		}
 
 		// Load texture coordinates
@@ -199,12 +241,79 @@ bool FMD3Model::Load(const char * path, int, const char * buffer, int length)
 		{
 			s->vertices[i].x = LittleShort(vt[i].x)/64.f;
 			s->vertices[i].y = LittleShort(vt[i].y)/64.f;
-			s->vertices[i].z = LittleShort(vt[i].z)/64.f * rModelAspectMod;
+			s->vertices[i].z = LittleShort(vt[i].z)/64.f;
 			UnpackVector( LittleShort(vt[i].n), s->vertices[i].nx, s->vertices[i].ny, s->vertices[i].nz);
 		}
 	}
-	return true;
 }
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
+
+void FMD3Model::BuildVertexBuffer()
+{
+	if (mVBuf == NULL)
+	{
+		LoadGeometry();
+
+		unsigned int vbufsize = 0;
+		unsigned int ibufsize = 0;
+
+		for (int i = 0; i < numSurfaces; i++)
+		{
+			MD3Surface * surf = &surfaces[i];
+			vbufsize += numFrames * surf->numVertices;
+			ibufsize += 3 * surf->numTriangles;
+		}
+
+		mVBuf = new FModelVertexBuffer(true);
+		FModelVertex *vertptr = mVBuf->LockVertexBuffer(vbufsize);
+		unsigned int *indxptr = mVBuf->LockIndexBuffer(ibufsize);
+
+		assert(vertptr != NULL && indxptr != NULL);
+
+		unsigned int vindex = 0, iindex = 0;
+
+		for (int i = 0; i < numSurfaces; i++)
+		{
+			MD3Surface * surf = &surfaces[i];
+
+			surf->vindex = vindex;
+			surf->iindex = iindex;
+			for (int j = 0; j < numFrames * surf->numVertices; j++)
+			{
+				MD3Vertex* vert = surf->vertices + j;
+
+				FModelVertex *bvert = &vertptr[vindex++];
+
+				int tc = j % surf->numVertices;
+				bvert->Set(vert->x, vert->z, vert->y, surf->texcoords[tc].s, surf->texcoords[tc].t);
+				bvert->SetNormal(vert->nx, vert->nz, vert->ny);
+			}
+
+			for (int k = 0; k < surf->numTriangles; k++)
+			{
+				for (int l = 0; l < 3; l++)
+				{
+					indxptr[iindex++] = surf->tris[k].VertIndex[l];
+				}
+			}
+			surf->UnloadGeometry();
+		}
+		mVBuf->UnlockVertexBuffer();
+		mVBuf->UnlockIndexBuffer();
+	}
+}
+
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
 
 int FMD3Model::FindFrame(const char * name)
 {
@@ -215,65 +324,13 @@ int FMD3Model::FindFrame(const char * name)
 	return -1;
 }
 
-void FMD3Model::RenderTriangles(MD3Surface * surf, MD3Vertex * vert)
-{
-	gl_RenderState.Apply();
-	glBegin(GL_TRIANGLES);
-	for(int i=0; i<surf->numTriangles;i++)
-	{
-		for(int j=0;j<3;j++)
-		{
-			int x = surf->tris[i].VertIndex[j];
-
-			glTexCoord2fv(&surf->texcoords[x].s);
-			glVertex3f(vert[x].x, vert[x].z, vert[x].y);
-		}
-	}
-	glEnd();
-}
-
-void FMD3Model::RenderFrame(FTexture * skin, int frameno, int cm, int translation)
-{
-	if (frameno>=numFrames) return;
-
-	MD3Frame * frame = &frames[frameno];
-
-	// I can't confirm correctness of this because no model I have tested uses this information
-	// glMatrixMode(GL_MODELVIEW);
-	// glTranslatef(frame->origin[0], frame->origin[1], frame->origin[2]);
-
-	for(int i=0;i<numSurfaces;i++)
-	{
-		MD3Surface * surf = &surfaces[i];
-
-		// [BB] In case no skin is specified via MODELDEF, check if the MD3 has a skin for the current surface.
-		// Note: Each surface may have a different skin.
-		FTexture *surfaceSkin = skin;
-		if (!surfaceSkin)
-		{
-			if (curSpriteMDLFrame->surfaceskins[curMDLIndex][i])
-			{
-				surfaceSkin = curSpriteMDLFrame->surfaceskins[curMDLIndex][i];
-			}
-			else if (surf->numSkins > 0 && surf->skins[0])
-			{
-				surfaceSkin = surf->skins[0];
-			}
-
-			if (!surfaceSkin) return;
-		}
-
-		FMaterial * tex = FMaterial::ValidateTexture(surfaceSkin);
-
-		tex->Bind(cm, 0, translation);
-		RenderTriangles(surf, surf->vertices + frameno * surf->numVertices);
-	}
-}
-
-void FMD3Model::RenderFrameInterpolated(FTexture * skin, int frameno, int frameno2, double inter, int cm, int translation)
+// [rc4l] upstream 03916d75d merged RenderFrame and RenderFrameInterpolated into one
+// function; the [BB] per-surface MODELDEF skin fallback is preserved.
+void FMD3Model::RenderFrame(FTexture * skin, int frameno, int frameno2, double inter, int translation)
 {
 	if (frameno>=numFrames || frameno2>=numFrames) return;
 
+	gl_RenderState.SetInterpolationFactor((float)inter);
 	for(int i=0;i<numSurfaces;i++)
 	{
 		MD3Surface * surf = &surfaces[i];
@@ -295,28 +352,22 @@ void FMD3Model::RenderFrameInterpolated(FTexture * skin, int frameno, int framen
 			if (!surfaceSkin) return;
 		}
 
-		FMaterial * tex = FMaterial::ValidateTexture(surfaceSkin);
+		FMaterial * tex = FMaterial::ValidateTexture(surfaceSkin, false);
 
-		tex->Bind(cm, 0, translation);
+		gl_RenderState.SetMaterial(tex, CLAMP_NONE, translation, -1, false);
 
-		MD3Vertex* verticesInterpolated = new MD3Vertex[surfaces[i].numVertices];
-		MD3Vertex* vertices1 = surf->vertices + frameno * surf->numVertices;
-		MD3Vertex* vertices2 = surf->vertices + frameno2 * surf->numVertices;
-
-		// [BB] Calculate the interpolated vertices by linear interpolation.
-		for( int k = 0; k < surf->numVertices; k++ )
-		{
-			verticesInterpolated[k].x = (1-inter)*vertices1[k].x+ (inter)*vertices2[k].x;
-			verticesInterpolated[k].y = (1-inter)*vertices1[k].y+ (inter)*vertices2[k].y;
-			verticesInterpolated[k].z = (1-inter)*vertices1[k].z+ (inter)*vertices2[k].z;
-			// [BB] Apparently RenderTriangles doesn't use nx, ny, nz, so don't interpolate them.
-		}
-
-		RenderTriangles(surf, verticesInterpolated);
-
-		delete[] verticesInterpolated;
+		gl_RenderState.Apply();
+		mVBuf->SetupFrame(surf->vindex + frameno * surf->numVertices, surf->vindex + frameno2 * surf->numVertices);
+		glDrawElements(GL_TRIANGLES, surf->numTriangles * 3, GL_UNSIGNED_INT, (void*)(intptr_t)(surf->iindex * sizeof(unsigned int)));
 	}
+	gl_RenderState.SetInterpolationFactor(0.f);
 }
+
+//===========================================================================
+//
+//
+//
+//===========================================================================
 
 FMD3Model::~FMD3Model()
 {

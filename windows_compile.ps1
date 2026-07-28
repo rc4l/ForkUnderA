@@ -125,16 +125,19 @@ Write-Status "ZandroX Windows compile — configuration=$Configuration version=$
 Require-Command "cmake" "Install CMake and Visual Studio 2022 (with the C++ workload)." | Out-Null
 $VcpkgRoot      = Resolve-Vcpkg
 $VcpkgExe       = Join-Path $VcpkgRoot "vcpkg.exe"
-$VcpkgInstalled = Join-Path $VcpkgRoot "installed\x64-windows"
+$VcpkgInstalled = Join-Path $VcpkgRoot "installed\x64-windows-static"
 
 # --- Dependencies (OpenAL stack — never FMOD) ------------------------------
 if ($SkipDeps) {
     Write-Status "Skipping vcpkg install (-SkipDeps)"
 } else {
     Write-Status "Installing OpenAL audio dependencies via vcpkg (first run is slow)"
+    # [rc4l] Flight 1: glew replaces the hand-rolled GL loader (gl/api) on Windows too -- one
+    # loader on every platform, per upstream 69af73d9b/94b06900c.
     & $VcpkgExe install `
-        openal-soft:x64-windows libsndfile:x64-windows mpg123:x64-windows `
-        opus:x64-windows openssl:x64-windows
+        openal-soft:x64-windows-static libsndfile:x64-windows-static mpg123:x64-windows-static `
+        opus:x64-windows-static openssl:x64-windows-static glew:x64-windows-static `
+        ffmpeg[x264]:x64-windows-static
     if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed" }
 }
 
@@ -162,8 +165,25 @@ Write-Note "DXSDK_DIR set to $dx"
 # --- Configure (MSVC x64, NO_FMOD, OpenAL) ---------------------------------
 # [rc4l] Explicit -D dep paths instead of the vcpkg toolchain file — the toolchain's
 # cmake_policy() calls collide with Zandronum's old CMake minimums and break the VS generator.
-Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL)"
+Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, STATIC deps)"
 $dep = $VcpkgInstalled
+# [rc4l] Static deps (x64-windows-static): link the whole vcpkg static lib set -- the linker
+# discards what it doesn't reference -- so libsndfile's transitive codecs (FLAC/vorbis/ogg/opus/
+# mpg123/LAME) resolve without hand-listing, plus the Win32 system libs static OpenAL-soft/OpenSSL
+# need beyond what the engine already links (advapi32/bcrypt/avrt). Fed via SNDFILE_LIBRARY, whose
+# entries are consumed as file PATHS -- so the system libs must be full paths too (bare names get
+# resolved relative to the build dir and fail). The SDK's um\x64 libs were copied into $dx\Lib\x64.
+# [rc4l] avrt/bcrypt cover the audio stack; the mf*/secur32/strmiids/ws2_32 set is what static ffmpeg
+# (libav*) pulls in on Windows for its Media Foundation + networking + DirectShow glue.
+$sysLibs = @('advapi32','bcrypt','ncrypt','avrt','secur32','ws2_32','mfplat','mfuuid','strmiids','ole32','user32') |
+    ForEach-Object { Join-Path "$dx\Lib\x64" ($_ + '.lib') }
+$staticLibs = ((Get-ChildItem "$dep\lib\*.lib").FullName + $sysLibs) -join ';'
+# [rc4l] Flight 1 needs GLEW on Windows too. vcpkg names the static lib libglew32.lib (not
+# glew32.lib), which CMake's find_library(NAMES GLEW glew32) won't match by default -- resolve it by
+# glob and pass GLEW_INCLUDE_DIR/GLEW_LIBRARY explicitly. (It also lands in $staticLibs via the glob.)
+$glewLib = (Get-ChildItem "$dep\lib" -Filter "*glew*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1)
+if (-not $glewLib) { throw "no *glew*.lib found in $dep\lib" }
+Write-Note "Resolved GLEW static lib: $($glewLib.Name)"
 # [rc4l] ZX_WITH_SYMBOLS=1 (release CI) emits a program PDB for symbol upload. We pass it as a
 # cache var, NOT via CMAKE_CXX_FLAGS: overriding CMAKE_CXX_FLAGS wipes MSVC's default /DWIN32
 # /D_WINDOWS defines and breaks the build. src/CMakeLists.txt adds /Zi + /DEBUG per-target instead.
@@ -174,18 +194,23 @@ if ($env:ZX_WITH_SYMBOLS -eq "1") {
 }
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
+    "-DCMAKE_PREFIX_PATH=$dep" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
     -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
     -DFORCE_INTERNAL_GME=ON `
+    "-DCMAKE_CXX_FLAGS=/DWIN32 /D_WINDOWS /EHsc /DAL_LIBTYPE_STATIC /DGLEW_STATIC" `
+    "-DCMAKE_C_FLAGS=/DWIN32 /D_WINDOWS /DAL_LIBTYPE_STATIC /DGLEW_STATIC" `
     "-DOPENAL_INCLUDE_DIR=$dep/include/AL" `
     "-DOPENAL_LIBRARY=$dep/lib/OpenAL32.lib" `
     "-DSNDFILE_INCLUDE_DIR=$dep/include" `
-    "-DSNDFILE_LIBRARY=$dep/lib/sndfile.lib" `
+    "-DSNDFILE_LIBRARY=$staticLibs" `
     "-DMPG123_INCLUDE_DIR=$dep/include" `
     "-DMPG123_LIBRARIES=$dep/lib/mpg123.lib" `
     "-DOPUS_INCLUDE_DIR=$dep/include/opus" `
     "-DOPUS_LIBRARIES=$dep/lib/opus.lib" `
-    "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=OFF" `
+    "-DGLEW_INCLUDE_DIR=$dep/include" `
+    "-DGLEW_LIBRARY=$($glewLib.FullName)" `
+    "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=ON" `
     @symArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
@@ -223,12 +248,12 @@ if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\
 Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\
 
-# Runtime DLLs (openal-soft + decoders) next to the exe.
-Copy-Item "$VcpkgInstalled\bin\*.dll" $DistDir\ -ErrorAction SilentlyContinue
-if (-not (Test-Path "$DistDir\OpenAL32.dll")) {
-    throw "OpenAL32.dll missing from dist-windows — the build would ship without sound"
+# [rc4l] Deps are statically linked (x64-windows-static), so there are NO runtime DLLs to ship;
+# the app folder is just the exe + pk3s. Guard against a silent regression to dynamic linking.
+if (Get-ChildItem "$DistDir\*.dll" -ErrorAction SilentlyContinue) {
+    throw "unexpected DLL(s) in dist-windows — deps should be static; check the vcpkg triplet"
 }
-Write-Note "sound OK: OpenAL32.dll present"
+Write-Note "static build: no runtime DLLs in dist-windows"
 
 $zip = Join-Path $ScriptRoot "ZandroX-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }

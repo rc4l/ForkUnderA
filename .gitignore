@@ -51,3 +51,8 @@ build-mac/
 
 # Packaged dist output (versioned build directory with runtime DLLs/pk3s)
 ZandroX-dev-*/
+
+# patch artifacts
+*.rej
+*.rej.orig
+*.orig

@@ -42,12 +42,10 @@ public:
 	DFrameBuffer *CreateFrameBuffer (int width, int height, bool fs, DFrameBuffer *old);
 	virtual bool SetResolution (int width, int height, int bits);
 	void DumpAdapters();
-	bool InitHardware (HWND Window, bool allowsoftware, int multisample);
+	bool InitHardware (HWND Window, int multisample);
 	void Shutdown();
 	bool SetFullscreen(const char *devicename, int w, int h, int bits, int hz);
 
-	PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB; // = (PFNWGLCHOOSEPIXELFORMATARBPROC)wglGetProcAddress("wglChoosePixelFormatARB");
-	PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB;
 	HDC m_hDC;
 
 protected:
@@ -83,12 +81,13 @@ protected:
 	HWND InitDummy();
 	void ShutdownDummy(HWND dummy);
 	bool SetPixelFormat();
-	bool SetupPixelFormat(bool allowsoftware, int multisample);
+	bool SetupPixelFormat(int multisample);
 
 	void GetDisplayDeviceName();
 	void MakeModesList();
 	void AddMode(int x, int y, int bits, int baseHeight, int refreshHz);
 	void FreeModes();
+	bool checkCoreUsability();
 public:
 	int GetTrueHeight() { return m_trueHeight; }
 
@@ -107,7 +106,6 @@ public:
 	Win32GLFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen);
 	virtual ~Win32GLFrameBuffer();
 
-	PFNWGLSWAPINTERVALEXTPROC vsyncfunc;
 
 	// unused but must be defined
 	virtual void Blank ();
@@ -122,7 +120,14 @@ public:
 	void NewRefreshRate ();
 
 
-	int GetTrueHeight() { return static_cast<Win32GLVideo *>(Video)->GetTrueHeight(); }
+	// [rc4l] video-scale: track the CURRENT render height, like the SDL backend
+	// (SDLGLFB::GetTrueHeight also returns GetHeight()). The legacy Win32GLVideo::m_trueHeight is
+	// only updated at a full mode-set (GoFullscreen), NOT by the in-place render-target resize the
+	// scale knob uses -- so returning it left GetTrueHeight() stale after a scale change, which fed
+	// a bogus (trueHeight-height)/2 letterbox offset and mis-fired ClearBorders, rendering the frame
+	// off the resized scale FBO (the "yellow cut-off screen" bug). The m_trueHeight realheight/
+	// stretched-mode feature is obsolete since borderless-video removed exclusive fullscreen modes.
+	int GetTrueHeight() { return GetHeight(); }
 
 	bool Lock(bool buffered);
 	bool Lock ();
@@ -131,6 +136,8 @@ public:
 
 
 	bool IsFullscreen();
+	// [rc4l] windowed-video: resize the OS window (windowed only). See features/windowed-video.
+	void SetWindowSize (int w, int h);
 	void PaletteChanged();
 	int QueryNewPalette();
 

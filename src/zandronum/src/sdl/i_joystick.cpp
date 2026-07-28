@@ -35,7 +35,8 @@ public:
 
 	FString GetName()
 	{
-		return SDL_JoystickName(DeviceIndex);
+		// [rc4l] SDL2 queries the opened device rather than the enumeration index.
+		return SDL_JoystickName(Device);
 	}
 	float GetSensitivity()
 	{

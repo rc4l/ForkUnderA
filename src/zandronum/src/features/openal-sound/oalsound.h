@@ -249,6 +249,7 @@ private:
 
 	ALCdevice *Device;
 	ALCcontext *Context;
+	bool Loopback;   // [rc4l] running through an ALC_SOFT_loopback device for instant-replay audio
 
 	TArray<ALuint> Sources;
 

@@ -147,18 +147,9 @@ else( WIN32 )
 			endif( GTK2_FOUND )
 		endif( NOT NO_GTK )
 
-		# Check for Xcursor library and header files
-		find_library( XCURSOR_LIB Xcursor )
-		if( XCURSOR_LIB )
-			find_file( XCURSOR_HEADER "X11/Xcursor/Xcursor.h" )
-			if( XCURSOR_HEADER )
-				add_definitions( -DUSE_XCURSOR=1 )
-				message( STATUS "Found Xcursor at ${XCURSOR_LIB}" )
-				set( ZDOOM_LIBS ${ZDOOM_LIBS} ${XCURSOR_LIB} )
-			else( XCURSOR_HEADER )
-				unset( XCURSOR_LIB )
-			endif( XCURSOR_HEADER )
-		endif( XCURSOR_LIB )
+		# [rc4l] The Xcursor detection is gone: SDL2's native color cursors
+		# (SDL_CreateColorCursor in sdl/i_system.cpp) replaced the USE_XCURSOR hack that
+		# reached into SDL 1.2's private structs for the XDisplay.
 	endif( APPLE )
 	set( NASM_NAMES nasm )
 	
@@ -166,15 +157,9 @@ else( WIN32 )
 		add_definitions( -DNO_GTK=1 )
 	endif( NO_GTK )
 	
-	# Non-Windows version also needs SDL
-	find_package( SDL )
-	if( NOT SDL_FOUND )
-		message( SEND_ERROR "SDL is required for building." )
-	endif( NOT SDL_FOUND )
-	set( ZDOOM_LIBS ${ZDOOM_LIBS} "${SDL_LIBRARY}" )
-	# [BB] Don't put the SDL path in inverted commas. At least on FreeBSD 8.1 this
-	# variable contains two directories.
-	include_directories( ${SDL_INCLUDE_DIR} )
+	# [rc4l] Native SDL2, not the sdl12-compat shim: SDL 1.2 cannot request a GL version or profile, which is what capped macOS at a 2.1 compatibility context.
+	find_package( SDL2 REQUIRED )
+	set( ZDOOM_LIBS ${ZDOOM_LIBS} SDL2::SDL2 SDL2::SDL2main )
 
 	find_path( FPU_CONTROL_DIR fpu_control.h )
 	if( FPU_CONTROL_DIR )
@@ -208,11 +193,12 @@ if( NOT NO_GL )
 	if( NOT OPENGL_FOUND )
 		message( FATAL_ERROR "OpenGL is required for building." )
 	endif( NOT OPENGL_FOUND )
-	if( NOT OPENGL_GLU_FOUND )
-		message( FATAL_ERROR "OpenGL GLU is required for building." )
-	endif( NOT OPENGL_GLU_FOUND )
-	
-	set( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPENGL_LIBRARIES} )
+	# [rc4l] Flight 1: GLU dependency removed (gluScaleImage replaced by the tested
+	# imageresize_compute unit).
+	# [rc4l] OPENGL_gl_LIBRARY only, NOT OPENGL_LIBRARIES: the latter bundles GLU, which Flight 1
+	# removed -- leaving it linked let a missed gluPerspective call slip through on mac/linux while
+	# only Windows enforced the removal. The linker is part of the tripwire now.
+	set( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPENGL_gl_LIBRARY} )
 	include_directories( ${OPENGL_INCLUDE_DIR} )
 endif( NOT NO_GL )
 
@@ -350,19 +336,22 @@ if( NOT NO_ASM )
 	ENDMACRO( ADD_ASM_FILE )
 endif( NOT NO_ASM )
 
-# OpenGL on OS X: Search for GLEW include files
-
-if( APPLE )
+# [rc4l] Flight 1 (upstream 69af73d9b/94b06900c): real GLEW on every platform -- glewInit()
+# replaces the hand-rolled loader (gl/api), so later GL3+ entry points arrive without hand-adding
+# each one. The server build has no GL and skips this.
+if( NOT NO_GL )
 	find_path( GLEW_INCLUDE_DIR GL/glew.h
-		PATHS "/usr/include"
-		"/usr/local/include" )
+		PATHS "/usr/include" "/usr/local/include" "/opt/homebrew/include" )
+	find_library( GLEW_LIBRARY NAMES GLEW glew32
+		PATHS "/usr/lib" "/usr/local/lib" "/opt/homebrew/lib" )
 
-	if( GLEW_INCLUDE_DIR )
-		message( STATUS "GLEW include files found at ${GLEW_INCLUDE_DIR}" )
-	else( GLEW_INCLUDE_DIR )
-		message( SEND_ERROR "Could not find GLEW include files" )
-	endif( GLEW_INCLUDE_DIR )
-endif( APPLE )
+	if( GLEW_INCLUDE_DIR AND GLEW_LIBRARY )
+		message( STATUS "GLEW found: ${GLEW_LIBRARY} (${GLEW_INCLUDE_DIR})" )
+	else( GLEW_INCLUDE_DIR AND GLEW_LIBRARY )
+		message( SEND_ERROR "GLEW is required for the client build (include=${GLEW_INCLUDE_DIR} lib=${GLEW_LIBRARY})" )
+	endif( GLEW_INCLUDE_DIR AND GLEW_LIBRARY )
+	set( ZDOOM_LIBS ${ZDOOM_LIBS} "${GLEW_LIBRARY}" )
+endif( NOT NO_GL )
 
 # Decide on SSE setup
 
@@ -565,6 +554,42 @@ if ( NOT NO_OPENAL )
 	endif( MPG123_FOUND )
 endif ( NOT NO_OPENAL )
 
+# [rc4l] FUA instant replay: encode gameplay clips as H.264/MP4 via FFmpeg (libav*). Optional --
+# if the libraries aren't found the feature compiles as a no-capture stub (ZX_ENABLE_REPLAY off).
+option( NO_REPLAY "Disable the FUA instant-replay video feature" OFF )
+if( NOT NO_REPLAY )
+	# First try pkg-config (macOS Homebrew, Linux distros).
+	find_package( PkgConfig QUIET )
+	if( PkgConfig_FOUND )
+		# Homebrew ffmpeg may live outside the default pkg-config search path; add common prefixes.
+		set( ENV{PKG_CONFIG_PATH} "/opt/homebrew/opt/ffmpeg/lib/pkgconfig:/usr/local/opt/ffmpeg/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}" )
+		pkg_check_modules( FFMPEG QUIET libavcodec libavformat libavutil libswscale )
+	endif()
+	# Fallback for toolchains without pkg-config (Windows/vcpkg): find the headers + import libs
+	# directly. On Windows the static ffmpeg libs and their deps are also linked via the whole-lib
+	# glob in windows_compile.ps1; this just supplies the include dir and flips ZX_ENABLE_REPLAY.
+	if( NOT FFMPEG_FOUND )
+		find_path( FFMPEG_INCLUDE_DIRS libavcodec/avcodec.h )
+		find_library( FFMPEG_AVCODEC_LIB  avcodec )
+		find_library( FFMPEG_AVFORMAT_LIB avformat )
+		find_library( FFMPEG_AVUTIL_LIB   avutil )
+		find_library( FFMPEG_SWSCALE_LIB  swscale )
+		if( FFMPEG_INCLUDE_DIRS AND FFMPEG_AVCODEC_LIB AND FFMPEG_AVFORMAT_LIB AND FFMPEG_AVUTIL_LIB AND FFMPEG_SWSCALE_LIB )
+			set( FFMPEG_FOUND TRUE )
+			set( FFMPEG_LIBRARIES ${FFMPEG_AVFORMAT_LIB} ${FFMPEG_AVCODEC_LIB} ${FFMPEG_SWSCALE_LIB} ${FFMPEG_AVUTIL_LIB} )
+		endif()
+	endif()
+	if( FFMPEG_FOUND )
+		message( STATUS "FUA replay: FFmpeg found (${FFMPEG_INCLUDE_DIRS}) -- video capture enabled" )
+		add_definitions( -DZX_ENABLE_REPLAY )
+		include_directories( ${FFMPEG_INCLUDE_DIRS} )
+		link_directories( ${FFMPEG_LIBRARY_DIRS} )
+		set( ZDOOM_LIBS ${ZDOOM_LIBS} ${FFMPEG_LIBRARIES} )
+	else()
+		message( STATUS "FUA replay: FFmpeg not found -- instant replay builds as a no-capture stub" )
+	endif()
+endif()
+
 # [BB] We need OpenSSL for csrp.
 FIND_PACKAGE ( OpenSSL REQUIRED )
 include_directories( ${OPENSSL_INCLUDE_DIR} )
@@ -589,11 +614,10 @@ else( NOT DYN_FLUIDSYNTH )
 	set( ZDOOM_LIBS ${ZDOOM_LIBS} ${CMAKE_DL_LIBS} )
 endif( NOT DYN_FLUIDSYNTH )
 
-# OpenGL on OS X: GLEW include directory
-
-if( APPLE )
+# [rc4l] GLEW include dir for all client platforms (Flight 1).
+if( NOT NO_GL )
 	include_directories( "${GLEW_INCLUDE_DIR}" )
-endif( APPLE )
+endif( NOT NO_GL )
 
 # Start defining source files for ZDoom
 set( PLAT_WIN32_SOURCES
@@ -608,7 +632,6 @@ set( PLAT_WIN32_SOURCES
 	win32/hardware.cpp
 	win32/helperthread.cpp
 	win32/i_cd.cpp
-	win32/i_crash.cpp
 	win32/i_input.cpp
 	win32/i_keyboard.cpp
 	win32/i_mouse.cpp
@@ -648,11 +671,9 @@ set( PLAT_SDL_SOURCES
 	sdl/i_main.cpp
 	sdl/i_movie.cpp
 	sdl/i_system.cpp
-	sdl/sdlvideo.cpp
 	sdl/sdlglvideo.cpp
 	sdl/st_start.cpp )
 set( PLAT_MAC_SOURCES
-	sdl/SDLMain.m
 	sdl/iwadpicker_cocoa.mm
 	sdl/i_system_cocoa.mm )
 if( WIN32 )
@@ -733,11 +754,10 @@ endif( DYN_FLUIDSYNTH )
 # [BB] Only complile the gl sources, if we want GL support.
 if( NOT NO_GL )
 	set( GL_SOURCES
-		gl/api/gl_api.cpp
-		gl/data/gl_sections.cpp
 		gl/data/gl_data.cpp
 		gl/data/gl_portaldata.cpp
 		gl/data/gl_setup.cpp
+	gl/data/gl_matrix.cpp
 		gl/data/gl_vertexbuffer.cpp
 		gl/dynlights/a_dynlight.cpp
 		gl/utility/gl_clock.cpp
@@ -755,6 +775,7 @@ if( NOT NO_GL )
 		gl/textures/gl_material.cpp
 		gl/textures/gl_hirestex.cpp
 		gl/textures/gl_bitmap.cpp
+	gl/textures/gl_samplers.cpp
 		gl/textures/gl_translate.cpp
 		gl/textures/gl_hqresize.cpp
 		gl/textures/gl_skyboxtexture.cpp
@@ -775,11 +796,16 @@ if( NOT NO_GL )
 		gl/scene/gl_walls_draw.cpp
 		gl/scene/gl_vertex.cpp
 		gl/scene/gl_spritelight.cpp
+		gl/stereo3d/gl_stereo3d.cpp
+		gl/stereo3d/gl_stereo_cvars.cpp
+		gl/stereo3d/gl_stereo_leftright.cpp
+		gl/stereo3d/scoped_view_shifter.cpp
+		gl/stereo3d/gl_anaglyph.cpp
 		gl/dynlights/gl_dynlight.cpp
 		gl/dynlights/gl_glow.cpp
 		gl/dynlights/gl_dynlight1.cpp
-		gl/dynlights/gl_lightbuffer.cpp
-		gl/shaders/gl_shader.cpp
+	gl/dynlights/gl_lightbuffer.cpp
+			gl/shaders/gl_shader.cpp
 		gl/shaders/gl_texshader.cpp
 		gl/system/gl_interface.cpp
 		gl/system/gl_framebuffer.cpp
@@ -832,6 +858,7 @@ file( GLOB HEADER_FILES
 	gl/models/*.h
 	gl/renderer/*.h
 	gl/scene/*.h
+	gl/stereo3d/*.h
 	gl/shaders/*.h
 	gl/system/*.h
 	gl/textures/*.h
@@ -1327,9 +1354,14 @@ add_executable( zdoom WIN32
 	features/openal-sound/sndfile_decoder.cpp
 	features/openal-sound/mpg123_decoder.cpp
 	features/freeform-menu/freeformmenu.cpp
+	features/video-scale/videoscale.cpp
+	features/windowed-video/windowedvideo.cpp
 	features/crashreport/zx_crashreport.cpp
 	features/crashreport/zx_consentmenu.cpp
 	features/crashreport/computation/consent_panel_compute.cpp
+	features/replay/zx_replay.cpp
+	features/replay/zx_replay_encoder.cpp
+	features/replay/computation/replay_compute.cpp
 	zzautozend.cpp
 )
 
@@ -1528,6 +1560,7 @@ source_group("OpenGL Renderer\\HQ Resize Assembly version" REGULAR_EXPRESSION "^
 source_group("OpenGL Renderer\\Models" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/models/.+")
 source_group("OpenGL Renderer\\Renderer" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/renderer/.+")
 source_group("OpenGL Renderer\\Scene" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/scene/.+")
+source_group("OpenGL Renderer\\Stereo3D" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/stereo3d/.+")
 source_group("OpenGL Renderer\\Shaders" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/shaders/.+")
 source_group("OpenGL Renderer\\System" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/system/.+")
 source_group("OpenGL Renderer\\Textures" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/textures/.+")
@@ -1564,3 +1597,4 @@ target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_crash.cpp mcp_event.cpp mcp_ren
 # source list; this glob is safe because these TUs never use IMPLEMENT_CLASS.)
 file( GLOB_RECURSE ZX_COMPUTE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*_compute.cpp" )
 target_sources( zdoom PRIVATE ${ZX_COMPUTE_SOURCES} )
+
