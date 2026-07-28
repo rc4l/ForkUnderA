@@ -49,6 +49,9 @@ build-mac/
 # llvm coverage raw profiles
 *.profraw
 
+# Packaged dist output (versioned build directory with runtime DLLs/pk3s)
+ZandroX-dev-*/
+
 # patch artifacts
 *.rej
 *.rej.orig

@@ -369,6 +369,9 @@ class FPathTraverse
 	unsigned int intercept_count;
 	fixed_t maxfrac;
 	unsigned int count;
+	// [MGOOOOOO] When true, thing intercepts are generated against each actor's attack radius
+	// (ProjectilePassRadius) instead of its movement radius. Only attack traces set this.
+	bool usePassWidth;
 
 	void AddLineIntercepts(int bx, int by);
 	void AddThingIntercepts(int bx, int by, FBlockThingsIterator &it, bool compatible);
@@ -376,7 +379,7 @@ public:
 
 	intercept_t *Next();
 
-	FPathTraverse(fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2, int flags);
+	FPathTraverse(fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2, int flags, bool usePassWidth = false);
 	~FPathTraverse();
 	const divline_t &Trace() const { return trace; }
 };
