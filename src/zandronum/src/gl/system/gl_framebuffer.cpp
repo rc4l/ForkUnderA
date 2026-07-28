@@ -424,9 +424,12 @@ static int    s_zxPboIndex = 0;
 static int    s_zxPboW = 0, s_zxPboH = 0;
 static bool   s_zxPboFilled = false;
 
-static void ZX_CaptureFramePBO(int trueHeight)
+// w,h are the window's drawable (client) size -- we read the DEFAULT framebuffer, which holds the
+// final image the player sees (the staircase/video-scale renderer draws into an offscreen buffer at
+// a virtual size and upscales it into this back buffer before present, so reading the back buffer at
+// the client size captures the whole frame -- reading the virtual size would crop it).
+static void ZX_CaptureFramePBO(int w, int h)
 {
-	const int w = SCREENWIDTH, h = SCREENHEIGHT;
 	if (w <= 0 || h <= 0) return;
 	const GLsizeiptr bytes = (GLsizeiptr)w * h * 3;
 
@@ -444,9 +447,13 @@ static void ZX_CaptureFramePBO(int trueHeight)
 	const int a = s_zxPboIndex;      // issue this frame's read here
 	const int b = s_zxPboIndex ^ 1;  // this one holds the previous frame's (completed) read
 
+	GLint prevFB = 0;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFB);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);   // the window back buffer (final, upscaled image)
+
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, s_zxPbo[a]);
-	glReadPixels(0, (trueHeight - h) / 2, w, h, GL_RGB, GL_UNSIGNED_BYTE, 0);
+	glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, 0);
 
 	if (s_zxPboFilled)
 	{
@@ -455,13 +462,14 @@ static void ZX_CaptureFramePBO(int trueHeight)
 		if (data != NULL)
 		{
 			// glReadPixels rows are bottom-up; hand off the last row with a negative stride so the
-			// consumer walks it top-to-bottom (matches the old screenshot readback's convention).
+			// consumer walks it top-to-bottom.
 			zx::replay::SubmitFrame(data + (size_t)(h - 1) * w * 3, w, h, -(w * 3));
 			glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
 		}
 	}
 
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, prevFB);   // restore whatever the renderer had bound
 	s_zxPboIndex = b;
 	s_zxPboFilled = true;
 }
@@ -476,7 +484,12 @@ void OpenGLFrameBuffer::Swap()
 	// [rc4l] FUA instant replay: when a frame is due, kick off an async PBO readback of the just-
 	// rendered back buffer and hand the PREVIOUS frame's (already-completed) readback to the encoder.
 	if (zx::replay::WantsFrame())
-		ZX_CaptureFramePBO(GetTrueHeight());
+	{
+		// Capture at the window's drawable size (the full presented frame), not the virtual render size.
+		const int cw = mScaleClientW > 0 ? mScaleClientW : SCREENWIDTH;
+		const int ch = mScaleClientH > 0 ? mScaleClientH : SCREENHEIGHT;
+		ZX_CaptureFramePBO(cw, ch);
+	}
 #endif
 	if (needsetgamma)
 	{
