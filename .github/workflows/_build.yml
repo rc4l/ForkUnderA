@@ -33,7 +33,12 @@ jobs:
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
           # Native OpenAL build (no FMOD, no Rosetta) — arm64 on Apple Silicon runners.
-          SOUND=1 ./mac_compile.sh
+          set -o pipefail
+          SOUND=1 ./mac_compile.sh 2>&1 | tee build.log
+          # [rc4l] Fail if a shipping feature silently didn't compile in (the recurring
+          # "works locally, dead in release" class: FFmpeg replay, sentry crash reporting).
+          grep -q "FUA replay: FFmpeg found" build.log || { echo "::error::instant replay / FFmpeg not enabled in this build"; exit 1; }
+          grep -q "ZX crash reporting: sentry ENABLED" build.log || { echo "::error::sentry crash reporting not enabled in this build"; exit 1; }
 
       # [rc4l] A silently soundless build has shipped before; refuse to package one.
       - name: Verify sound is linked
@@ -101,7 +106,11 @@ jobs:
           VERSION: ${{ inputs.version }}
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
-          ./linux_compile.sh --install-deps
+          set -o pipefail
+          ./linux_compile.sh --install-deps 2>&1 | tee build.log
+          # [rc4l] Fail if a shipping feature silently didn't compile in.
+          grep -q "FUA replay: FFmpeg found" build.log || { echo "::error::instant replay / FFmpeg not enabled in this build"; exit 1; }
+          grep -q "ZX crash reporting: sentry ENABLED" build.log || { echo "::error::sentry crash reporting not enabled in this build"; exit 1; }
           ls -la dist-linux/
 
       - name: Upload ZandroX Linux tarball
@@ -164,7 +173,12 @@ jobs:
         shell: pwsh
         env:
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
-        run: ./windows_compile.ps1 -Version "${{ inputs.version }}"
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./windows_compile.ps1 -Version "${{ inputs.version }}" 2>&1 | Tee-Object -FilePath build.log
+          # [rc4l] Fail if a shipping feature silently didn't compile in.
+          if (-not (Select-String -Path build.log -Pattern "FUA replay: FFmpeg found" -Quiet)) { Write-Error "instant replay / FFmpeg not enabled in this build" }
+          if (-not (Select-String -Path build.log -Pattern "ZX crash reporting: sentry ENABLED" -Quiet)) { Write-Error "sentry crash reporting not enabled in this build" }
 
       - name: Upload ZandroX Windows build
         if: ${{ success() }}

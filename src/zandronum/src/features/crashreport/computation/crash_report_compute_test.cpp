@@ -7,59 +7,20 @@
 
 using namespace zx;
 
-// --- startup action: cvar x crashed matrix ----------------------------------
+// --- startup action: on/off (auto-send, no prompt) --------------------------
 
-TEST(CrashStartup, NeverCvarAlwaysRevokes)
+TEST(CrashStartup, OffCvarRevokes)
 {
-	EXPECT_EQ(ComputeStartupAction(0, true), StartupAction::RevokeConsent);
-	EXPECT_EQ(ComputeStartupAction(0, false), StartupAction::RevokeConsent);
+	EXPECT_EQ(ComputeStartupAction(0), StartupAction::RevokeConsent);
+	EXPECT_EQ(ComputeStartupAction(-1), StartupAction::RevokeConsent);
 }
 
-TEST(CrashStartup, AlwaysCvarAlwaysGives)
+TEST(CrashStartup, OnCvarGives)
 {
-	EXPECT_EQ(ComputeStartupAction(2, true), StartupAction::GiveConsent);
-	EXPECT_EQ(ComputeStartupAction(2, false), StartupAction::GiveConsent);
-	EXPECT_EQ(ComputeStartupAction(5, true), StartupAction::GiveConsent) << "any >=2 means always";
-}
-
-TEST(CrashStartup, AskCvarPromptsOnlyWhenCrashed)
-{
-	EXPECT_EQ(ComputeStartupAction(1, true), StartupAction::ShowPrompt);
-	EXPECT_EQ(ComputeStartupAction(1, false), StartupAction::Nothing);
-}
-
-// --- prompt choices: no permanent "never send" -------------------------------
-
-TEST(CrashChoiceMap, SendOnceUploadsButKeepsAsking)
-{
-	const CrashChoiceAction a = ComputeChoiceAction(CrashChoice::SendOnce);
-	EXPECT_TRUE(a.upload);
-	EXPECT_FALSE(a.persistAlways) << "one-time send must not silence future prompts";
-	EXPECT_FALSE(a.saveToDisk);
-}
-
-TEST(CrashChoiceMap, AlwaysSendUploadsAndSilencesPrompts)
-{
-	const CrashChoiceAction a = ComputeChoiceAction(CrashChoice::AlwaysSend);
-	EXPECT_TRUE(a.upload);
-	EXPECT_TRUE(a.persistAlways);
-	EXPECT_FALSE(a.saveToDisk);
-}
-
-TEST(CrashChoiceMap, SaveToDiskNeverUploads)
-{
-	const CrashChoiceAction a = ComputeChoiceAction(CrashChoice::SaveToDisk);
-	EXPECT_FALSE(a.upload);
-	EXPECT_FALSE(a.persistAlways);
-	EXPECT_TRUE(a.saveToDisk);
-}
-
-TEST(CrashChoiceMap, NotNowDoesNothingPersistent)
-{
-	const CrashChoiceAction a = ComputeChoiceAction(CrashChoice::NotNow);
-	EXPECT_FALSE(a.upload);
-	EXPECT_FALSE(a.persistAlways) << "declining once must still ask next crash (no silent opt-out)";
-	EXPECT_FALSE(a.saveToDisk);
+	EXPECT_EQ(ComputeStartupAction(1), StartupAction::GiveConsent);
+	// Legacy inis may still hold 2 (the old "always"); any positive value means on.
+	EXPECT_EQ(ComputeStartupAction(2), StartupAction::GiveConsent);
+	EXPECT_EQ(ComputeStartupAction(5), StartupAction::GiveConsent);
 }
 
 // --- privacy: file labels must not leak the player's home path --------------
