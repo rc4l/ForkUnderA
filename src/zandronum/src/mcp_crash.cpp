@@ -18,6 +18,12 @@
 //
 #include "mcp_bridge.h"
 
+// [rc4l] Pure decision helper for chaining to the fatal-signal handler that was installed before
+// ours (on a shipped build that is sentry-native's). Declares only an enum + one function in
+// namespace zx -- no engine types -- so it does not violate the "no engine headers" rule above
+// (it cannot clash with the platform system headers this file relies on).
+#include "features/crashreport/computation/signal_chain_compute.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -98,6 +104,12 @@ namespace
 		return EXCEPTION_CONTINUE_SEARCH; // let the process crash as usual
 	}
 #else
+	// [rc4l] The fatal signals we hook, and the disposition each had BEFORE we installed ours
+	// (captured via sigaction's oldact). We chain to these on a crash so sentry-native -- installed
+	// before us -- still captures the report instead of being silently overwritten.
+	int g_sigList[] = { SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE };
+	struct sigaction g_prevAction[sizeof( g_sigList ) / sizeof( g_sigList[0] )];
+
 	const char *SignalName( int sig )
 	{
 		switch ( sig )
@@ -116,7 +128,6 @@ namespace
 	// warmed up at install time so it does no lazy dlopen/allocation here.
 	void CrashHandler( int sig, siginfo_t *si, void *ucontext )
 	{
-		(void)ucontext;
 		int fd = open( g_crashPath, O_WRONLY | O_CREAT | O_TRUNC, 0644 );
 		if ( fd >= 0 )
 		{
@@ -134,8 +145,36 @@ namespace
 			backtrace_symbols_fd( frames, nf, fd );
 			close( fd );
 		}
-		// Restore the default handler and re-raise so the process dies normally
-		// (core dump / abort), which closes the bridge socket for the MCP.
+		// [rc4l] Chain to whatever fatal-signal handler was installed before ours. On a shipped
+		// build that is sentry-native's crash handler, so this is what lets sentry capture the
+		// crash even though the MCP bridge layered its own handler on top. Before this, we simply
+		// re-raised the default, so sentry never saw the signal -- the bug where a crash under the
+		// bridge (e.g. TNT MAP18 with a bot) produced no report. The chaining DECISION is the pure,
+		// unit-tested zx::ComputeSignalChainAction; here we just translate the saved sigaction into
+		// its inputs and act on the result.
+		struct sigaction *prev = NULL;
+		for ( unsigned i = 0; i < sizeof( g_sigList ) / sizeof( g_sigList[0] ); ++i )
+			if ( g_sigList[i] == sig ) { prev = &g_prevAction[i]; break; }
+
+		if ( prev != NULL )
+		{
+			const bool usesSiginfo = ( prev->sa_flags & SA_SIGINFO ) != 0;
+			void *const saPtr = (void *)prev->sa_sigaction; // aliases sa_handler (a union)
+			void *const hPtr  = (void *)prev->sa_handler;
+			const bool prevIsSelf = ( saPtr == (void *)CrashHandler );
+			const bool sigactionIsReal = saPtr && saPtr != (void *)SIG_DFL && saPtr != (void *)SIG_IGN;
+			const bool handlerIsReal   = hPtr  && hPtr  != (void *)SIG_DFL && hPtr  != (void *)SIG_IGN;
+
+			switch ( zx::ComputeSignalChainAction( prevIsSelf, usesSiginfo, sigactionIsReal, handlerIsReal ) )
+			{
+				case zx::SignalChainAction::CallSigInfo: prev->sa_sigaction( sig, si, ucontext ); break;
+				case zx::SignalChainAction::CallPlain:   prev->sa_handler( sig );                 break;
+				case zx::SignalChainAction::ReraiseDefault: break;
+			}
+		}
+
+		// The chained handler returned (or there was none): restore the default and re-raise so the
+		// process dies normally (core dump / abort), which closes the bridge socket for the MCP.
 		signal( sig, SIG_DFL );
 		raise( sig );
 	}
@@ -162,11 +201,14 @@ void MCP_Crash_Init()
 	struct sigaction sa;
 	memset( &sa, 0, sizeof( sa ) );
 	sa.sa_sigaction = CrashHandler;
-	sa.sa_flags = SA_SIGINFO;
+	// SA_ONSTACK: run on the alternate signal stack sentry-native registers, so the chain still
+	// works for stack-overflow crashes (and matches sentry's own handler flags). Ignored if no
+	// alternate stack is set up.
+	sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
 	sigemptyset( &sa.sa_mask );
 
-	int sigs[] = { SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE };
-	for ( unsigned i = 0; i < sizeof( sigs ) / sizeof( sigs[0] ); ++i )
-		sigaction( sigs[i], &sa, NULL );
+	// Save the previous disposition (oldact) for each signal so CrashHandler can chain to it.
+	for ( unsigned i = 0; i < sizeof( g_sigList ) / sizeof( g_sigList[0] ); ++i )
+		sigaction( g_sigList[i], &sa, &g_prevAction[i] );
 #endif
 }

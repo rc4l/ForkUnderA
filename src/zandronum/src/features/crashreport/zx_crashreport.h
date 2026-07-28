@@ -1,23 +1,25 @@
-// [rc4l] Crash reporting glue: sentry-native captures crashes and (once the player consents)
-// uploads them to our self-hosted GlitchTip. Consent is asked once, on the next launch after a
-// crash. Original wiring (no upstream equivalent). All entry points are safe no-ops when built
-// without ZX_ENABLE_SENTRY or with an empty DSN.
+// [rc4l] Crash reporting glue: sentry-native captures crashes and (when reporting is enabled)
+// uploads them to our self-hosted GlitchTip. Reporting is auto-send / opt-out via the persistent
+// `cl_crashreports` setting in the FUA options menu -- there is no per-crash prompt (a prompt can't
+// reach a headless server). All entry points are safe no-ops when built without ZX_ENABLE_SENTRY or
+// with an empty DSN.
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 #ifndef ZX_CRASHREPORT_H
 #define ZX_CRASHREPORT_H
 
 // Lifecycle
-void ZX_CrashReportInit();        // as early as possible in main()/WinMain()
+void ZX_CrashReportInit();        // as early as possible in main()/WinMain() (CI override only)
 void ZX_CrashReportShutdown();    // idempotent; also auto-registered via atexit()
 
-// Called once the menu system is up: if we crashed last run, either upload silently (consent
-// already given) or pop the one-time consent prompt.
+// Called once the menu system is up and the config (cl_crashreports) is loaded. The real init
+// point: brings sentry up with consent = the setting, uploading any crash stored from the last run
+// silently if reporting is on, or discarding it if off. Safe on dedicated servers (no UI needed).
 void ZX_CrashReportCheckPreviousCrash();
 
-// Call once per rendered frame: opens the one-time consent prompt when one is pending (deferred
-// here from ZX_CrashReportCheckPreviousCrash so it survives the title/demo loop startup).
-void ZX_CrashReportTickPrompt();
+// Prints the crash-reporting status (active / a crash was sent / off) exactly once. Call late in
+// startup (D_DoomLoop) so the line lands at the bottom of the log where it's actually visible.
+void ZX_CrashReportLogStatus();
 
 // Context tags (cheap, set-and-forget). Values are attached to every future crash event.
 void ZX_CrashReportSetLoadedFiles(); // reads the wad list; strips paths to bare filenames

@@ -366,23 +366,6 @@ OptionMenu "OptionsMenu"
 	Command "Go to console",			"menuconsole"
 }
 
-// [rc4l] Shown once on the next launch after a crash (see zx_crashreport.cpp). Deliberately has
-// no permanent "never send" button -- that stays a manual "cl_crashreports 0".
-OptionMenu "CrashConsentMenu"
-{
-	Class "CrashConsentMenu"	// draws a solid rounded gradient panel behind the prompt (zx_consentmenu.cpp)
-	Title "CRASH REPORT"
-	StaticText "ZandroX crashed last time."
-	StaticText " "
-	StaticText "A crash report helps get it fixed."
-	StaticText "It is anonymous -- no personal data is sent."
-	StaticText " "
-	Command "Send report",					"crashreport_send"
-	Command "Always send (never ask again)",	"crashreport_always"
-	Command "Save report to disk",			"crashreport_save"
-	Command "Not now",						"crashreport_notnow"
-}
-
 //-------------------------------------------------------------------------------------------
 //
 // [rc4l] FUA Options -- the home for all ZandroX-specific ("FUA") features. Pinned to the top of
@@ -394,6 +377,21 @@ OptionMenu "FUAOptions"
 {
 	Title "FUA OPTIONS"
 	Submenu "Instant Replay Options",	"ReplayOptions"
+	Submenu "Crash Reporting",			"CrashReportOptions"
+}
+
+// [rc4l] Crash reporting: auto-send / opt-out. There is no per-crash prompt because a prompt can't
+// reach a headless server, so reporting is a plain setting that works everywhere. Anonymous; the
+// report target is baked in, not user-editable. "Reset to default" restores the on-by-default state.
+OptionMenu "CrashReportOptions"
+{
+	Title "CRASH REPORTING"
+	Option	"Send crash reports",		"cl_crashreports",	"OnOff"
+	StaticText " "
+	StaticText "Sent automatically after a crash."
+	StaticText "Anonymous -- no personal data, just helps fix bugs."
+	StaticText " "
+	SafeCommand "Reset to default",		"cl_crashreports 1"
 }
 
 // Instant replay: save the last N seconds of gameplay to a shareable H.264/MP4 clip (default bind F3).
