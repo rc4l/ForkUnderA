@@ -1,13 +1,20 @@
 # [rc4l] Mirrors GlitchTip crash groups into GitHub issues so all triage lives on GitHub.
 # GlitchTip does the capture, symbolication and de-duplication; this job just upserts one
-# GitHub issue per unique crash group. Runs on a schedule and can be dispatched on demand
-# (the game -> GlitchTip -> this job -> GitHub issue path is proven by dispatching it).
+# GitHub issue per unique crash group.
+#
+# Triggering is event-driven: a GlitchTip alert fires a webhook -> a relay adds GitHub auth and
+# sends a `repository_dispatch` (type `glitchtip-crash`) -> this job runs within seconds of a real
+# crash. GlitchTip's webhook is URL-only (no auth header), hence the relay (see zandrox-crash-infra:
+# relay/). The schedule is now just a slow safety-net that catches anything a missed webhook dropped
+# (was every 15 min, which ran ~96 no-op times/day); on-demand dispatch is still available too.
 name: crash-sync
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [glitchtip-crash]   # fired by the GlitchTip-alert -> relay path (event-driven, instant)
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 */6 * * *"      # safety net only; the webhook is the primary path
 
 permissions:
   issues: write
