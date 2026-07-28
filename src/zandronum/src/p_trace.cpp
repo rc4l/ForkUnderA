@@ -254,7 +254,7 @@ bool Trace (fixed_t x, fixed_t y, fixed_t z, sector_t *sector,
 bool FTraceInfo::TraceTraverse (int ptflags)
 {
 	// [MGOOOOOO] By default every trace selects and validates actors using their attack extents
-	// (HitboxRadius/HitboxHeight), so all Trace() consumers -- hitscan, railgun, line-of-fire, target
+	// (HitRadius/HitHeight), so all Trace() consumers -- hitscan, railgun, line-of-fire, target
 	// picking, bot/HUD targeting -- stay consistent with what can actually be shot. A consumer that
 	// specifically needs the physical movement extents opts out with TRACE_NoPassWidth.
 	const bool usePassWidth = (TraceFlags & TRACE_NoPassWidth) == 0;

@@ -86,7 +86,7 @@ enum
 	TRACE_NoSky			= 1,	// Hitting the sky returns TRACE_HitNone
 	TRACE_PCross		= 2,	// Trigger SPAC_PCROSS lines
 	TRACE_Impact		= 4,	// Trigger SPAC_IMPACT lines
-	TRACE_NoPassWidth	= 8,	// [MGOOOOOO] Opt out of attack-extent testing: use the actors' physical movement extents instead of their HitboxRadius/HitboxHeight
+	TRACE_NoPassWidth	= 8,	// [MGOOOOOO] Opt out of attack-extent testing: use the actors' physical movement extents instead of their HitRadius/HitHeight
 };
 
 // return values from callback
