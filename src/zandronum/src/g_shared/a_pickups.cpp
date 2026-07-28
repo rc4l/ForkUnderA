@@ -1141,7 +1141,11 @@ void AInventory::Touch (AActor *toucher)
 	}
 
 	// If a voodoo doll touches something, pretend the real player touched it instead.
-	if (toucher->player != NULL)
+	// [rc4l] Guard player->mo != NULL: a bot mid-teardown during a map change keeps its player
+	// back-pointer while player->mo is transiently NULL. Without this, the reassignment below nulls
+	// `toucher`, and CallTryPickup dereferences it -> crash (TNT MAP18 + bots, Zandronum 0004597).
+	// Matches the fix already carried by Q-Zandronum (a_pickups.cpp).
+	if (toucher->player != NULL && toucher->player->mo != NULL)
 	{
 		toucher = toucher->player->mo;
 	}
