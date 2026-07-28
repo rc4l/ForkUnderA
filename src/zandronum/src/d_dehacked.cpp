@@ -869,6 +869,7 @@ static int PatchThing (int thingy)
 			else if (stricmp (Line1, "Width") == 0)
 			{
 				info->radius = fixed_t(val);
+				info->projectilepassradius = 0;	// [MGOOOOOO] disable, matching the Height handling
 			}
 			else if (stricmp (Line1, "Alpha") == 0)
 			{
