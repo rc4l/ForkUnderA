@@ -5,27 +5,10 @@
 
 namespace zx {
 
-StartupAction ComputeStartupAction(int crashreportsCvar, bool crashedLastRun)
+StartupAction ComputeStartupAction(int crashreportsCvar)
 {
-	if (crashreportsCvar <= 0)
-		return StartupAction::RevokeConsent;   // never
-	if (crashreportsCvar >= 2)
-		return StartupAction::GiveConsent;      // always
-	// ask (1): only relevant if we actually crashed
-	return crashedLastRun ? StartupAction::ShowPrompt : StartupAction::Nothing;
-}
-
-CrashChoiceAction ComputeChoiceAction(CrashChoice choice)
-{
-	CrashChoiceAction a{false, false, false};
-	switch (choice)
-	{
-	case CrashChoice::SendOnce:   a.upload = true; break;
-	case CrashChoice::AlwaysSend: a.upload = true; a.persistAlways = true; break;
-	case CrashChoice::SaveToDisk: a.saveToDisk = true; break;
-	case CrashChoice::NotNow:     break;
-	}
-	return a;
+	// Any positive value means reporting is on; zero or negative means the player opted out.
+	return crashreportsCvar >= 1 ? StartupAction::GiveConsent : StartupAction::RevokeConsent;
 }
 
 std::string ComputeSafeFileLabel(const std::string &path)

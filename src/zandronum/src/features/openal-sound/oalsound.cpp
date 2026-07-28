@@ -1127,7 +1127,10 @@ OpenALSoundRenderer::OpenALSoundRenderer()
         ALC.EXT_EFX = !!alcIsExtensionPresent(Device, "ALC_EXT_EFX");
         ALC.EXT_disconnect = !!alcIsExtensionPresent(Device, "ALC_EXT_disconnect");
         ALC.SOFT_HRTF = !!alcIsExtensionPresent(Device, "ALC_SOFT_HRTF");
-        ALC.SOFT_pause_device = !!alcIsExtensionPresent(Device, "ALC_SOFT_pause_device");
+        // [rc4l] A loopback device (used to capture audio for instant replay) has no real backend to
+        // pause/resume; calling alcDevicePause/ResumeSOFT on it spams "ALC error Invalid Device" on
+        // every focus change. Treat pause-device as unsupported for loopback so we never make the call.
+        ALC.SOFT_pause_device = !Loopback && !!alcIsExtensionPresent(Device, "ALC_SOFT_pause_device");
 
 
         const ALCchar* current = NULL;
