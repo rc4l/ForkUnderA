@@ -206,18 +206,21 @@ static void ReportUploadResult()
 // Menu buttons -> here. When we get here with a pending crash, sentry is not yet initialized.
 CCMD(crashreport_send)
 {
-	ZX_CrashReportDoInit(1);   // give consent -> queues the pending crash for upload
-	ReportUploadResult();
+	// Route through the pure, unit-tested decision so upload/flush stay in lockstep (see the
+	// UploadAlwaysImpliesFlush regression test -- this is what the v0.1.8 flow got wrong).
+	const zx::CrashChoiceAction a = zx::ComputeChoiceAction(zx::CrashChoice::SendOnce);
+	if (a.upload) ZX_CrashReportDoInit(1);   // give consent -> queues the pending crash for upload
+	if (a.flush)  ReportUploadResult();      // ...and block until it's actually delivered
 	ClearCrashMarker();
 	M_ClearMenus();
 }
 CCMD(crashreport_always)
 {
-	UCVarValue v; v.Int = 2;   // remember: always send
-	cl_crashreports.ForceSet(v, CVAR_Int);
-	ZX_CrashReportDoInit(1);
+	const zx::CrashChoiceAction a = zx::ComputeChoiceAction(zx::CrashChoice::AlwaysSend);
+	if (a.persistAlways) { UCVarValue v; v.Int = 2; cl_crashreports.ForceSet(v, CVAR_Int); }
+	if (a.upload) ZX_CrashReportDoInit(1);
 	Printf("Crash reporting set to always send (ZandroX@%s).\n", GetGitHash());
-	ReportUploadResult();
+	if (a.flush)  ReportUploadResult();
 	ClearCrashMarker();
 	M_ClearMenus();
 }

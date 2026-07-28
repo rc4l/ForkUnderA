@@ -269,6 +269,19 @@ else()
 	set( ZX_ENABLE_SENTRY OFF )
 endif()
 
+# [rc4l] Guard against silently shipping crash reporting that can't deliver: if sentry is enabled it
+# MUST have a DSN, or every report goes nowhere (a whole class of "works locally, dead in release"
+# bugs). Emit a status line CI asserts on (see .github/workflows/_build.yml).
+if( ZX_ENABLE_SENTRY )
+	if( ZX_SENTRY_DSN STREQUAL "" )
+		message( FATAL_ERROR "ZX_ENABLE_SENTRY is ON but ZX_SENTRY_DSN is empty -- crash reports would "
+			"go nowhere. Set -DZX_SENTRY_DSN=... or build with -DZX_ENABLE_SENTRY=OFF." )
+	endif()
+	message( STATUS "ZX crash reporting: sentry ENABLED (DSN baked in)" )
+else()
+	message( STATUS "ZX crash reporting: sentry DISABLED" )
+endif()
+
 add_subdirectory( wadsrc )
 add_subdirectory( wadsrc_bm )
 # [BB] Zandronum includes the light definitions in zandronum.pk3.

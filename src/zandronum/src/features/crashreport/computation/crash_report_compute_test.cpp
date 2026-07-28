@@ -36,6 +36,7 @@ TEST(CrashChoiceMap, SendOnceUploadsButKeepsAsking)
 	EXPECT_TRUE(a.upload);
 	EXPECT_FALSE(a.persistAlways) << "one-time send must not silence future prompts";
 	EXPECT_FALSE(a.saveToDisk);
+	EXPECT_TRUE(a.flush) << "must wait for delivery, else the async send is lost on exit (v0.1.8 bug)";
 }
 
 TEST(CrashChoiceMap, AlwaysSendUploadsAndSilencesPrompts)
@@ -44,6 +45,23 @@ TEST(CrashChoiceMap, AlwaysSendUploadsAndSilencesPrompts)
 	EXPECT_TRUE(a.upload);
 	EXPECT_TRUE(a.persistAlways);
 	EXPECT_FALSE(a.saveToDisk);
+	EXPECT_TRUE(a.flush) << "must wait for delivery, else the async send is lost on exit (v0.1.8 bug)";
+}
+
+// Regression guard for the v0.1.8 bug: a choice that uploads MUST also flush, otherwise the report
+// is queued to the background transport and lost when the process exits right after consent.
+TEST(CrashChoiceMap, UploadAlwaysImpliesFlush)
+{
+	const CrashChoice all[] = { CrashChoice::SendOnce, CrashChoice::AlwaysSend,
+							   CrashChoice::SaveToDisk, CrashChoice::NotNow };
+	for (CrashChoice c : all)
+	{
+		const CrashChoiceAction a = ComputeChoiceAction(c);
+		if (a.upload)
+			EXPECT_TRUE(a.flush) << "an uploading choice must flush to guarantee delivery";
+		else
+			EXPECT_FALSE(a.flush) << "no upload -> nothing to flush";
+	}
 }
 
 TEST(CrashChoiceMap, SaveToDiskNeverUploads)
