@@ -51,8 +51,41 @@ DEPS=(
 
 if [ "$INSTALL_DEPS" = "ON" ]; then
   echo "==> Installing build dependencies (apt)"
-  sudo apt-get update
-  sudo apt-get install -y --no-install-recommends "${DEPS[@]}"
+  # [rc4l] APT_CACHE_DIR (set by CI) is a persistent directory of .deb files. Seed apt's
+  # archive dir from it so an install that is already cached downloads nothing, and harvest
+  # it afterwards so the next run is seeded too. The debs go through apt's normal root-owned
+  # archive dir rather than pointing Dir::Cache::archives at the cache: apt drops privileges
+  # to _apt for downloads and warns/degrades on a dir it cannot write.
+  #
+  # This exists because dependency DOWNLOAD, not compilation, is what makes this job slow.
+  # A release build on 2026-07-28 spent 21m50s in apt (multi-minute stalls part-way through
+  # the ffmpeg dev tree on azure.archive.ubuntu.com) against 3m27s actually compiling — the
+  # compile is ~3.5 min on every run, fast or slow. Caching the debs is what bounds that
+  # tail; a compiler cache would target the 3.5 minutes that were never the problem.
+  if [ -n "${APT_CACHE_DIR:-}" ]; then
+    mkdir -p "$APT_CACHE_DIR"
+    sudo cp -n "$APT_CACHE_DIR"/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+  fi
+
+  # Retries cover a mirror that drops a connection outright; they do not help the slow-transfer
+  # case above, which is why the cache carries the load.
+  sudo apt-get -o Acquire::Retries=3 update
+
+  # Download and install as two steps, harvesting in between. Harvesting after a combined
+  # install would depend on apt LEAVING the debs in place, which is not guaranteed — a
+  # DPkg::Post-Invoke cleanup (Ubuntu's docker images ship exactly that) empties the archive
+  # dir the moment dpkg runs, and the cache would silently stay empty forever. -d runs no
+  # dpkg, so the debs are still there to harvest; the install that follows then needs 0 B.
+  if [ -n "${APT_CACHE_DIR:-}" ]; then
+    sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends -d "${DEPS[@]}"
+    # Hand the debs back to the invoking user so actions/cache can read them. apt re-downloads
+    # anything stale or corrupt, so a partial or outdated cache is slow at worst, never wrong.
+    sudo cp -n /var/cache/apt/archives/*.deb "$APT_CACHE_DIR"/ 2>/dev/null || true
+    sudo chown -R "$(id -u):$(id -g)" "$APT_CACHE_DIR" || true
+    echo "==> apt cache: $(ls -1 "$APT_CACHE_DIR"/*.deb 2>/dev/null | wc -l) debs in $APT_CACHE_DIR"
+  fi
+
+  sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends "${DEPS[@]}"
 fi
 
 # [rc4l] Fail early with the exact package list rather than deep in a confusing CMake error.
