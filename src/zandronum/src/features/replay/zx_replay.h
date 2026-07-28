@@ -17,6 +17,12 @@ bool WantsFrame();
 // packed RGB24; pitch may be negative (OpenGL bottom-up readback). Copies out immediately.
 void SubmitFrame(const unsigned char *rgbTopRow, int w, int h, int pitch);
 
+// Experimental audio capture (cl_fua_replay_audio). AudioCaptureEnabled() is checked once by the
+// OpenAL backend at startup to decide whether to run in loopback mode; SubmitAudio() receives the
+// mixed master as interleaved stereo float (nSamples per channel) captured at time tUs.
+bool AudioCaptureEnabled();
+void SubmitAudio(const float *interleavedStereo, int nSamples, int sampleRate, long long tUs);
+
 } // namespace replay
 } // namespace zx
 

@@ -42,6 +42,60 @@
 #include "doomstat.h"
 #include "templates.h"
 #include "oalsound.h"
+#ifdef ZX_ENABLE_REPLAY
+#include <SDL.h>
+#include <cstring>
+#include "features/replay/zx_replay.h"
+
+// [rc4l] Instant-replay audio (cl_fua_replay_audio): the OpenAL device runs in ALC_SOFT_loopback
+// mode, so nothing auto-plays -- an SDL audio callback drives the mix (alcRenderSamplesSOFT renders
+// the master at the output rate), taps it for the replay recorder, and outputs S16 to the speakers.
+// The bundled OpenAL headers may predate ALC_SOFT_loopback, so we define the enums we need and load
+// the functions at runtime via alcGetProcAddress (openal-soft exports them).
+#ifndef ALC_FORMAT_CHANNELS_SOFT
+#define ALC_FORMAT_CHANNELS_SOFT 0x1990
+#endif
+#ifndef ALC_FORMAT_TYPE_SOFT
+#define ALC_FORMAT_TYPE_SOFT 0x1991
+#endif
+#ifndef ALC_STEREO_SOFT
+#define ALC_STEREO_SOFT 0x1501
+#endif
+#ifndef ALC_FLOAT_SOFT
+#define ALC_FLOAT_SOFT 0x1406
+#endif
+typedef ALCdevice* (ALC_APIENTRY *ZX_LPALCLOOPBACKOPENDEVICESOFT)(const ALCchar*);
+typedef void       (ALC_APIENTRY *ZX_LPALCRENDERSAMPLESSOFT)(ALCdevice*, ALCvoid*, ALCsizei);
+static ZX_LPALCLOOPBACKOPENDEVICESOFT zx_alcLoopbackOpenDeviceSOFT = NULL;
+static ZX_LPALCRENDERSAMPLESSOFT      zx_alcRenderSamplesSOFT      = NULL;
+static ALCdevice *g_zxLoopbackDev = NULL;
+static bool       g_zxAudioOpen   = false;
+
+static void ZX_LoadLoopbackFuncs()
+{
+	if (!zx_alcLoopbackOpenDeviceSOFT)
+		zx_alcLoopbackOpenDeviceSOFT = (ZX_LPALCLOOPBACKOPENDEVICESOFT)alcGetProcAddress(NULL, "alcLoopbackOpenDeviceSOFT");
+	if (!zx_alcRenderSamplesSOFT)
+		zx_alcRenderSamplesSOFT = (ZX_LPALCRENDERSAMPLESSOFT)alcGetProcAddress(NULL, "alcRenderSamplesSOFT");
+}
+
+static void ZX_SDLAudioCallback(void *, Uint8 *stream, int len)
+{
+	static float fbuf[8192];
+	int samples = len / (2 * (int)sizeof(Sint16));      // per-channel stereo frames
+	if (samples * 2 > 8192) samples = 8192 / 2;
+	if (g_zxLoopbackDev && zx_alcRenderSamplesSOFT) zx_alcRenderSamplesSOFT(g_zxLoopbackDev, fbuf, samples);
+	else std::memset(fbuf, 0, (size_t)samples * 2 * sizeof(float));
+	zx::replay::SubmitAudio(fbuf, samples, 44100, 0);   // records only while a clip is buffering
+	Sint16 *out = reinterpret_cast<Sint16 *>(stream);
+	for (int i = 0; i < samples * 2; ++i)
+	{
+		float v = fbuf[i];
+		v = v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
+		out[i] = (Sint16)(v * 32767.0f);
+	}
+}
+#endif
 #include "c_cvars.h"
 #include "c_dispatch.h"
 #include "i_system.h"
@@ -1003,8 +1057,18 @@ static float GetRolloff(const FRolloffInfo *rolloff, float distance)
 ALCdevice *OpenALSoundRenderer::InitDevice()
 {
 	ALCdevice *device = NULL;
+	Loopback = false;
 	if (IsOpenALPresent())
 	{
+#ifdef ZX_ENABLE_REPLAY
+		if (zx::replay::AudioCaptureEnabled())
+		{
+			ZX_LoadLoopbackFuncs();
+			if (zx_alcLoopbackOpenDeviceSOFT) device = zx_alcLoopbackOpenDeviceSOFT(NULL);
+			if (device) { Loopback = true; return device; }
+			Printf(TEXTCOLOR_RED " Instant-replay audio: could not open a loopback device; using normal output.\n");
+		}
+#endif
 		if(strcmp(snd_aldevice, "Default") != 0)
 		{
 			device = alcOpenDevice(*snd_aldevice);
@@ -1073,11 +1137,21 @@ OpenALSoundRenderer::OpenALSoundRenderer()
         DPrintf("	ALC Extensions: " TEXTCOLOR_ORANGE"%s\n", alcGetString(Device, ALC_EXTENSIONS));
 
         TArray<ALCint> attribs;
-        if (*snd_samplerate > 0)
+        if (*snd_samplerate > 0 && !Loopback)
         {
             attribs.Push(ALC_FREQUENCY);
             attribs.Push(*snd_samplerate);
         }
+#ifdef ZX_ENABLE_REPLAY
+        if (Loopback)
+        {
+            // A loopback device has no hardware to infer the format from, so we must specify it:
+            // float stereo 44100 (matches the SDL output + the AAC recorder).
+            attribs.Push(ALC_FORMAT_CHANNELS_SOFT); attribs.Push(ALC_STEREO_SOFT);
+            attribs.Push(ALC_FORMAT_TYPE_SOFT);     attribs.Push(ALC_FLOAT_SOFT);
+            attribs.Push(ALC_FREQUENCY);            attribs.Push(44100);
+        }
+#endif
         // Make sure one source is capable of stereo output with the rest doing
         // mono, without running out of voices
         attribs.Push(ALC_MONO_SOURCES);
@@ -1105,6 +1179,30 @@ OpenALSoundRenderer::OpenALSoundRenderer()
             return;
         }
         attribs.Clear();
+
+#ifdef ZX_ENABLE_REPLAY
+        if (Loopback)
+        {
+            // Drive the loopback mix from an SDL audio callback (pulls at the output rate) and play
+            // the rendered master back to a real device.
+            g_zxLoopbackDev = Device;
+            SDL_InitSubSystem(SDL_INIT_AUDIO);
+            SDL_AudioSpec want;
+            std::memset(&want, 0, sizeof(want));
+            want.freq = 44100; want.format = AUDIO_S16SYS; want.channels = 2;
+            want.samples = 1024; want.callback = ZX_SDLAudioCallback; want.userdata = NULL;
+            if (SDL_OpenAudio(&want, NULL) == 0)
+            {
+                g_zxAudioOpen = true;
+                SDL_PauseAudio(0);
+                Printf("  Instant-replay audio: OpenAL loopback -> SDL output.\n");
+            }
+            else
+            {
+                Printf(TEXTCOLOR_RED "  Instant-replay audio: SDL_OpenAudio failed (%s); game will be silent.\n", SDL_GetError());
+            }
+        }
+#endif
 
         DPrintf("	Vendor: " TEXTCOLOR_ORANGE"%s\n", alGetString(AL_VENDOR));
         DPrintf("	Renderer: " TEXTCOLOR_ORANGE"%s\n", alGetString(AL_RENDERER));
@@ -1313,6 +1411,13 @@ OpenALSoundRenderer::~OpenALSoundRenderer()
 {
     if(!Device)
         return;
+
+#ifdef ZX_ENABLE_REPLAY
+    // Stop the audio callback before the device it renders from is closed.
+    if (g_zxAudioOpen) { SDL_CloseAudio(); g_zxAudioOpen = false; }
+    g_zxLoopbackDev = NULL;
+    if (Loopback) SDL_QuitSubSystem(SDL_INIT_AUDIO);
+#endif
 
     while(Streams.Size() > 0)
         delete Streams[0];
