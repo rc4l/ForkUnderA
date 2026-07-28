@@ -29,7 +29,7 @@ TEST(AttackExtent, NegativeFallsBackToPhysical) {
   EXPECT_EQ(ComputeAttackExtent<ext_t>(-16, 20), 20);
 }
 
-// ComputeAttackHeight: crouch-scaling of a custom HitboxHeight.
+// ComputeAttackHeight: crouch-scaling of a custom HitHeight.
 
 TEST(AttackHeight, NoOverrideReturnsPhysicalHeight) {
   // passHeight <= 0 -> use the physical height (which already reflects any crouch).
