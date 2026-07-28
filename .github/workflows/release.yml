@@ -151,6 +151,12 @@ jobs:
       - name: Show what will be published
         run: ls -laR assets/
 
+      # [rc4l] Don't ship a release whose crash-reporting backend is dead: send a canary event to the
+      # baked-in DSN and fail here if GlitchTip doesn't accept it. Catches the "reports silently go
+      # nowhere" class (the v0.1.8 experience) before users hit it.
+      - name: Crash-reporting canary
+        run: ./tools/crash-canary.sh
+
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}

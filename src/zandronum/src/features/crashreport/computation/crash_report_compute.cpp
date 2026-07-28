@@ -17,11 +17,13 @@ StartupAction ComputeStartupAction(int crashreportsCvar, bool crashedLastRun)
 
 CrashChoiceAction ComputeChoiceAction(CrashChoice choice)
 {
-	CrashChoiceAction a{false, false, false};
+	CrashChoiceAction a{false, false, false, false};
 	switch (choice)
 	{
-	case CrashChoice::SendOnce:   a.upload = true; break;
-	case CrashChoice::AlwaysSend: a.upload = true; a.persistAlways = true; break;
+	// Uploading always sets flush too: an unflushed (async) send is lost if the game exits right
+	// after the player picks a Send option -- exactly the v0.1.8 regression this pairing prevents.
+	case CrashChoice::SendOnce:   a.upload = true; a.flush = true; break;
+	case CrashChoice::AlwaysSend: a.upload = true; a.persistAlways = true; a.flush = true; break;
 	case CrashChoice::SaveToDisk: a.saveToDisk = true; break;
 	case CrashChoice::NotNow:     break;
 	}

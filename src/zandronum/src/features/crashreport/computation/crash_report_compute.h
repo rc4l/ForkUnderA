@@ -35,6 +35,9 @@ struct CrashChoiceAction
 	bool upload;        // send the stored crash now
 	bool persistAlways; // set cl_crashreports = 2 (always; stop asking)
 	bool saveToDisk;    // export the report locally instead of sending
+	bool flush;         // block until the upload is delivered (else an async send is lost when the
+	                    // process exits right after consent -- the v0.1.8 bug). INVARIANT: whenever
+	                    // upload is true, flush must be true.
 };
 CrashChoiceAction ComputeChoiceAction(CrashChoice choice);
 
