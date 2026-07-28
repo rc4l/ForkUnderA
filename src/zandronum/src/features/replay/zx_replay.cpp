@@ -31,6 +31,9 @@ CVAR(Int,  cl_fua_replay_maxheight, 720,   CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Int,  cl_fua_replay_bitrate,   12,    CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 // Encoder preference: 0 auto (hardware then software), 1 force software (x264), 2 force hardware.
 CVAR(Int,  cl_fua_replay_encoder,   0,     CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// Experimental: capture game audio into clips. Routes OpenAL through a loopback device at startup,
+// so it only takes effect on the next launch. Default off.
+CVAR(Bool, cl_fua_replay_audio,     false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 #ifdef ZX_ENABLE_REPLAY
 
@@ -61,12 +64,14 @@ namespace {
 void ReplayAtTerm(); // joins the worker on engine shutdown (defined below)
 
 
-struct RawFrame { std::vector<unsigned char> rgb; int w; int h; int64_t tUs; };
+struct RawFrame  { std::vector<unsigned char> rgb; int w; int h; int64_t tUs; };
+struct AudioChunk { std::vector<float> pcm; int rate; int64_t tUs; };  // interleaved stereo
 
 std::thread            g_worker;
 std::mutex             g_mtx;
 std::condition_variable g_cv;
 std::deque<RawFrame>   g_queue;          // raw frames awaiting encode (bounded)
+std::deque<AudioChunk> g_audioQueue;     // captured audio awaiting encode (bounded)
 std::string            g_saveReq;        // non-empty => worker should mux a clip to this path
 bool                   g_stop = false;
 bool                   g_running = false; // game-thread view of worker liveness
@@ -76,6 +81,7 @@ std::mutex             g_resMtx;
 bool                   g_resPending = false;
 bool                   g_resOk = false;
 std::string            g_resPath;
+std::string            g_pendingInfo;   // one-shot status line (e.g. which encoder was selected)
 
 int64_t                g_lastCaptureUs = 0; // game thread only
 
@@ -85,11 +91,26 @@ int64_t NowUs()
 	return duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
-const char *EncoderName()
+// Ordered list of H.264 encoders to try. The platform hardware encoder is tried first (near-zero
+// CPU); an encoder that isn't built into this ffmpeg, or can't open (no GPU), simply fails and we
+// fall through to the next. cl_fua_replay_encoder: 0 = auto (hardware then software), 1 = software
+// only, 2 = hardware only.
+std::vector<const char *> EncoderCandidates()
 {
-	// Phase 2 ships the software path; 2 = force hardware (VideoToolbox on macOS). Auto stays
-	// software here and becomes hardware-first in phase 3.
-	return (cl_fua_replay_encoder == 2) ? "h264_videotoolbox" : "libx264";
+	std::vector<const char *> hw;
+#if defined(__APPLE__)
+	hw = { "h264_videotoolbox" };
+#elif defined(_WIN32)
+	hw = { "h264_nvenc", "h264_amf", "h264_qsv" };
+#else
+	// Linux VAAPI needs a hw-frames context (a separate effort); use software there for now.
+	hw = {};
+#endif
+	if (cl_fua_replay_encoder == 2) return hw;                 // hardware only
+	if (cl_fua_replay_encoder == 1) return { "libx264" };      // software only
+	std::vector<const char *> out = hw;                        // auto: hardware first...
+	out.push_back("libx264");                                  // ...then software fallback
+	return out;
 }
 
 // Clips land in the platform's standard video folder, under a ZandroX subfolder.
@@ -120,27 +141,53 @@ void WorkerLoop()
 {
 	zx::ReplayEncoder enc;
 	bool inited = false;
+	bool triedInit = false;   // pick the encoder once, on the first frame's dimensions
+	bool audioInited = false;
 
 	for (;;)
 	{
 		RawFrame frame;
+		AudioChunk audio;
 		std::string saveReq;
-		bool haveFrame = false;
+		bool haveFrame = false, haveAudio = false;
 		{
 			std::unique_lock<std::mutex> lk(g_mtx);
-			g_cv.wait(lk, [] { return g_stop || !g_queue.empty() || !g_saveReq.empty(); });
-			if (g_stop && g_queue.empty() && g_saveReq.empty()) break;
+			g_cv.wait(lk, [] { return g_stop || !g_queue.empty() || !g_audioQueue.empty() || !g_saveReq.empty(); });
+			if (g_stop && g_queue.empty() && g_audioQueue.empty() && g_saveReq.empty()) break;
 			if (!g_queue.empty()) { frame = std::move(g_queue.front()); g_queue.pop_front(); haveFrame = true; }
+			if (!g_audioQueue.empty()) { audio = std::move(g_audioQueue.front()); g_audioQueue.pop_front(); haveAudio = true; }
 			saveReq.swap(g_saveReq);
+		}
+
+		// Audio needs the video encoder initialised first (it sets up alongside it).
+		if (haveAudio && inited)
+		{
+			if (!audioInited) audioInited = enc.InitAudio(audio.rate);
+			if (audioInited) enc.AddAudioInterleaved(audio.pcm.data(), (int)(audio.pcm.size() / 2), audio.tUs);
 		}
 
 		if (haveFrame)
 		{
-			if (!inited)
+			if (!inited && !triedInit)
 			{
+				triedInit = true;
 				zx::ScaledDims d = zx::ComputeScaledDims(frame.w, frame.h, cl_fua_replay_maxheight);
-				inited = enc.Init(frame.w, frame.h, d.w, d.h,
-								  cl_fua_replay_fps, cl_fua_replay_bitrate * 1000, EncoderName());
+				for (const char *name : EncoderCandidates())
+				{
+					if (enc.Init(frame.w, frame.h, d.w, d.h, cl_fua_replay_fps,
+								 cl_fua_replay_bitrate * 1000, name))
+					{
+						inited = true;
+						std::lock_guard<std::mutex> lk(g_resMtx);
+						g_pendingInfo = std::string("Instant replay recording (") + name + ").";
+						break;
+					}
+				}
+				if (!inited)
+				{
+					std::lock_guard<std::mutex> lk(g_resMtx);
+					g_pendingInfo = "Instant replay: no usable H.264 encoder found.";
+				}
 			}
 			enc.SetWindow(cl_fua_replay_duration);
 			if (inited)
@@ -168,6 +215,7 @@ void StartCapture()
 		std::lock_guard<std::mutex> lk(g_mtx);
 		g_stop = false;
 		g_queue.clear();
+		g_audioQueue.clear();
 		g_saveReq.clear();
 	}
 	g_worker = std::thread(WorkerLoop);
@@ -196,11 +244,13 @@ void ReplayAtTerm()
 
 void FlushMessages()
 {
-	std::string path; bool ok = false, pending = false;
+	std::string path, info; bool ok = false, pending = false;
 	{
 		std::lock_guard<std::mutex> lk(g_resMtx);
 		if (g_resPending) { pending = true; ok = g_resOk; path = g_resPath; g_resPending = false; }
+		if (!g_pendingInfo.empty()) { info.swap(g_pendingInfo); }
 	}
+	if (!info.empty()) Printf("%s\n", info.c_str());
 	if (!pending) return;
 	if (ok) Printf("Saved replay clip: %s\n", path.c_str());
 	else Printf("Replay clip failed (no footage buffered yet, or encoder error).\n");
@@ -241,6 +291,26 @@ void SubmitFrame(const unsigned char *rgbTopRow, int w, int h, int pitch)
 	{
 		std::lock_guard<std::mutex> lk(g_mtx);
 		if (g_queue.size() < 8) g_queue.push_back(std::move(f)); // bounded: drop if worker is behind
+	}
+	g_cv.notify_one();
+}
+
+bool AudioCaptureEnabled()
+{
+	return cl_fua_replay_audio;
+}
+
+void SubmitAudio(const float *interleavedStereo, int nSamples, int sampleRate, long long tUs)
+{
+	if (!g_running || interleavedStereo == nullptr || nSamples <= 0) return;
+	(void)tUs;   // timestamp on the capture clock (same as video) so A/V align in SaveClip
+	AudioChunk c;
+	c.rate = sampleRate;
+	c.tUs = NowUs();
+	c.pcm.assign(interleavedStereo, interleavedStereo + (size_t)nSamples * 2);
+	{
+		std::lock_guard<std::mutex> lk(g_mtx);
+		if (g_audioQueue.size() < 64) g_audioQueue.push_back(std::move(c)); // bounded
 	}
 	g_cv.notify_one();
 }

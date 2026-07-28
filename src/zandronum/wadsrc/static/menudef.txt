@@ -436,6 +436,7 @@ OptionMenu "ReplayOptions"
 	Option	"Resolution",				"cl_fua_replay_maxheight",	"ReplayQuality",	"cl_fua_replay"
 	Slider	"Bitrate (Mbit/s)",			"cl_fua_replay_bitrate",	4, 50, 2, 0
 	Option	"Encoder",					"cl_fua_replay_encoder",	"ReplayEncoderMode","cl_fua_replay"
+	Option	"Capture audio (experimental)",	"cl_fua_replay_audio",		"OnOff",			"cl_fua_replay"
 	StaticText " "
 	// [rc4l] A Control row shows the *live* binding for fua_clip (e.g. "Save replay clip ... F3") and
 	// is rebindable inline, so it always reflects the real key -- no hardcoded hint to drift.
