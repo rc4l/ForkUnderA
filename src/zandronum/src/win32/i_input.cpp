@@ -147,6 +147,9 @@ extern HWND Window, ConWindow;
 extern HWND EAXEditWindow;
 
 EXTERN_CVAR (String, language)
+// [rc4l] windowed-video: the persisted windowed size (updated on window resize).
+EXTERN_CVAR (Int, vid_defwidth)
+EXTERN_CVAR (Int, vid_defheight)
 EXTERN_CVAR (Bool, lookstrafe)
 EXTERN_CVAR (Bool, use_joystick)
 EXTERN_CVAR (Bool, use_mouse)
@@ -493,6 +496,24 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case WM_SIZE:
+		// [rc4l] windowed-video: the window was resized (dragged, or via vid_setsize). Persist the
+		// new client size so it reopens the same, matching upstream. The render target follows the
+		// client live via OpenGLFrameBuffer::MaybeResizeForScale. See features/windowed-video.
+		if (wParam != SIZE_MINIMIZED && screen != NULL)
+		{
+			extern bool zx_videoScaleDirty;
+			zx_videoScaleDirty = true; // re-check the render size against the new client rect
+			if (!screen->IsFullscreen ())
+			{
+				int cw = LOWORD (lParam);
+				int ch = HIWORD (lParam);
+				if (cw > 0 && ch > 0)
+				{
+					vid_defwidth  = cw;
+					vid_defheight = ch;
+				}
+			}
+		}
 		InvalidateRect (Window, NULL, FALSE);
 		break;
 

@@ -109,8 +109,6 @@
 // EXTERNAL FUNCTION PROTOTYPES --------------------------------------------
 
 LRESULT CALLBACK WndProc (HWND, UINT, WPARAM, LPARAM);
-void CreateCrashLog (char *custominfo, DWORD customsize, HWND richedit);
-void DisplayCrashLog ();
 extern BYTE *ST_Util_BitsForBitmap (BITMAPINFO *bitmap_info);
 void I_FlushBufferedConsoleStuff();
 
@@ -120,7 +118,6 @@ void I_FlushBufferedConsoleStuff();
 
 // EXTERNAL DATA DECLARATIONS ----------------------------------------------
 
-extern EXCEPTION_POINTERS CrashPointers;
 extern BITMAPINFO *StartupBitmap;
 extern UINT TimerPeriod;
 
@@ -1061,226 +1058,6 @@ void DoMain (HINSTANCE hInstance)
 	}
 }
 
-//==========================================================================
-//
-// DoomSpecificInfo
-//
-// Called by the crash logger to get application-specific information.
-//
-//==========================================================================
-
-void DoomSpecificInfo (char *buffer, size_t bufflen)
-{
-	const char *arg;
-	char *const buffend = buffer + bufflen - 2;	// -2 for CRLF at end
-	int i;
-
-	buffer += mysnprintf (buffer, buffend - buffer, GAMENAME " version %s (%s)", GetVersionString(), GetGitHash());
-	buffer += mysnprintf (buffer, buffend - buffer, "\r\nCommand line: %s\r\n", GetCommandLine());
-
-	for (i = 0; (arg = Wads.GetWadName (i)) != NULL; ++i)
-	{
-		buffer += mysnprintf (buffer, buffend - buffer, "\r\nWad %d: %s", i, arg);
-	}
-
-	if (gamestate != GS_LEVEL && gamestate != GS_TITLELEVEL)
-	{
-		buffer += mysnprintf (buffer, buffend - buffer, "\r\n\r\nNot in a level.");
-	}
-	else
-	{
-		char name[9];
-
-		strncpy (name, level.mapname, 8);
-		name[8] = 0;
-		buffer += mysnprintf (buffer, buffend - buffer, "\r\n\r\nCurrent map: %s", name);
-
-		// [BC] Also display the network state.
-		char	szNetState[16];
-		switch ( NETWORK_GetState( ))
-		{
-		case NETSTATE_SINGLE:
-
-			sprintf( szNetState, "SINGLE" );
-			break;
-		case NETSTATE_SINGLE_MULTIPLAYER:
-
-			sprintf( szNetState, "FAKE MULTI" );
-			break;
-		case NETSTATE_CLIENT:
-
-			sprintf( szNetState, "CLIENT" );
-			break;
-		case NETSTATE_SERVER:
-
-			sprintf( szNetState, "SERVER" );
-			break;
-		default:
-
-			sprintf( szNetState, "UNKNOWN" );
-			break;
-		}
-		buffer += wsprintf (buffer, "\r\n\r\nNetwork state: %s", szNetState);
-
-		if (!viewactive)
-		{
-			buffer += mysnprintf (buffer, buffend - buffer, "\r\n\r\nView not active.");
-		}
-		else
-		{
-			buffer += mysnprintf (buffer, buffend - buffer, "\r\n\r\nviewx = %d", viewx);
-			buffer += mysnprintf (buffer, buffend - buffer, "\r\nviewy = %d", viewy);
-			buffer += mysnprintf (buffer, buffend - buffer, "\r\nviewz = %d", viewz);
-			buffer += mysnprintf (buffer, buffend - buffer, "\r\nviewangle = %x", viewangle);
-		}
-	}
-	*buffer++ = '\r';
-	*buffer++ = '\n';
-	*buffer++ = '\0';
-}
-
-// Here is how the error logging system works.
-//
-// To catch exceptions that occur in secondary threads, CatchAllExceptions is
-// set as the UnhandledExceptionFilter for this process. It records the state
-// of the thread at the time of the crash using CreateCrashLog and then queues
-// an APC on the primary thread. When the APC executes, it raises a software
-// exception that gets caught by the __try/__except block in WinMain.
-// I_GetEvent calls SleepEx to put the primary thread in a waitable state
-// periodically so that the APC has a chance to execute.
-//
-// Exceptions on the primary thread are caught by the __try/__except block in
-// WinMain. Not only does it record the crash information, it also shuts
-// everything down and displays a dialog with the information present. If a
-// console log is being produced, the information will also be appended to it.
-//
-// If a debugger is running, CatchAllExceptions never executes, so secondary
-// thread exceptions will always be caught by the debugger. For the primary
-// thread, IsDebuggerPresent is called to determine if a debugger is present.
-// Note that this function is not present on Windows 95, so we cannot
-// statically link to it.
-//
-// To make this work with MinGW, you will need to use inline assembly
-// because GCC offers no native support for Windows' SEH.
-
-//==========================================================================
-//
-// SleepForever
-//
-//==========================================================================
-
-void SleepForever ()
-{
-	Sleep (INFINITE);
-}
-
-//==========================================================================
-//
-// ExitMessedUp
-//
-// An exception occurred while exiting, so don't do any standard processing.
-// Just die.
-//
-//==========================================================================
-
-LONG WINAPI ExitMessedUp (LPEXCEPTION_POINTERS foo)
-{
-	ExitProcess (1000);
-}
-
-//==========================================================================
-//
-// ExitFatally
-//
-//==========================================================================
-
-void CALLBACK ExitFatally (ULONG_PTR dummy)
-{
-	// [BB] If we are the server, try to kick all players before we shut down.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-	{
-		SERVER_KickAllPlayers( "The server encountered a fatal error and needs to shut down!" );
-		// [BB] It's crucial that we send the packets informing the clients now.
-		SERVER_SendOutPackets();
-	}
-
-	SetUnhandledExceptionFilter (ExitMessedUp);
-	I_ShutdownGraphics ();
-	RestoreConView ();
-	DisplayCrashLog ();
-	exit (-1);
-}
-
-//==========================================================================
-//
-// CatchAllExceptions
-//
-//==========================================================================
-
-namespace
-{
-	CONTEXT MainThreadContext;
-}
-
-LONG WINAPI CatchAllExceptions (LPEXCEPTION_POINTERS info)
-{
-#ifdef _DEBUG
-	if (info->ExceptionRecord->ExceptionCode == EXCEPTION_BREAKPOINT)
-	{
-		return EXCEPTION_CONTINUE_SEARCH;
-	}
-#endif
-
-	static bool caughtsomething = false;
-
-	if (caughtsomething) return EXCEPTION_EXECUTE_HANDLER;
-	caughtsomething = true;
-
-	char *custominfo = (char *)HeapAlloc (GetProcessHeap(), 0, 16384);
-
-	CrashPointers = *info;
-	DoomSpecificInfo (custominfo, 16384);
-	CreateCrashLog (custominfo, (DWORD)strlen(custominfo), ConWindow);
-
-	// If the main thread crashed, then make it clean up after itself.
-	// Otherwise, put the crashing thread to sleep and signal the main thread to clean up.
-	if (GetCurrentThreadId() == MainThreadID)
-	{
-#ifdef _M_X64
-		*info->ContextRecord = MainThreadContext;
-#else
-		info->ContextRecord->Eip = (DWORD_PTR)ExitFatally;
-#endif // _M_X64
-	}
-	else
-	{
-#ifndef _M_X64
-		info->ContextRecord->Eip = (DWORD_PTR)SleepForever;
-#else
-		info->ContextRecord->Rip = (DWORD_PTR)SleepForever;
-#endif
-		QueueUserAPC (ExitFatally, MainThread, 0);
-	}
-	return EXCEPTION_CONTINUE_EXECUTION;
-}
-
-//==========================================================================
-//
-// infiniterecursion
-//
-// Debugging routine for testing the crash logger.
-//
-//==========================================================================
-
-#ifdef _DEBUG
-static void infiniterecursion(int foo)
-{
-	if (foo)
-	{
-		infiniterecursion(foo);
-	}
-}
-#endif
 
 //==========================================================================
 //
@@ -1304,60 +1081,17 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE nothing, LPSTR cmdline, int n
 		exit(0);
 	}
 
-#if !defined(__GNUC__) && defined(_DEBUG)
-	if (__argc == 2 && strcmp (__argv[1], "TestCrash") == 0)
-	{
-		__try
-		{
-			*(int *)0 = 0;
-		}
-		__except(CrashPointers = *GetExceptionInformation(),
-			CreateCrashLog (__argv[1], 9, NULL), EXCEPTION_EXECUTE_HANDLER)
-		{
-		}
-		DisplayCrashLog ();
-		exit (0);
-	}
-	if (__argc == 2 && strcmp (__argv[1], "TestStackCrash") == 0)
-	{
-		__try
-		{
-			infiniterecursion(1);
-		}
-		__except(CrashPointers = *GetExceptionInformation(),
-			CreateCrashLog (__argv[1], 14, NULL), EXCEPTION_EXECUTE_HANDLER)
-		{
-		}
-		DisplayCrashLog ();
-		exit (0);
-	}
-#endif
 
 	MainThread = INVALID_HANDLE_VALUE;
 	DuplicateHandle (GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &MainThread,
 		0, FALSE, DUPLICATE_SAME_ACCESS);
 	MainThreadID = GetCurrentThreadId();
 
-	// [rc4l] Start crash reporting before the legacy filter so sentry-native chains ahead of it.
+	// [rc4l] Install sentry-native's crash handler. It now owns crash handling on Windows via
+	// SetUnhandledExceptionFilter (process-wide, all threads); the legacy CatchAllExceptions
+	// filter + crash dialog (win32/i_crash.cpp) were removed so they can't clobber it.
 	ZX_CrashReportInit();
 
-#ifndef _DEBUG
-	if (MainThread != INVALID_HANDLE_VALUE)
-	{
-		SetUnhandledExceptionFilter (CatchAllExceptions);
-
-#ifdef _M_X64
-		static bool setJumpResult = false;
-		RtlCaptureContext(&MainThreadContext);
-		if (setJumpResult)
-		{
-			ExitFatally(0);
-			return 0;
-		}
-		setJumpResult = true;
-#endif // _M_X64
-	}
-#endif
 
 #if defined(_DEBUG) && defined(_MSC_VER)
 	// Uncomment this line to make the Visual C++ CRT check the heap before
@@ -1394,20 +1128,6 @@ DWORD WINAPI MainDoomThread( LPVOID )
 		0, FALSE, DUPLICATE_SAME_ACCESS);
 	MainThreadID = GetCurrentThreadId();
 
-	// [AK] This was copied from the WinMain function above.
-#if !defined(_DEBUG) && defined(_M_X64)
-	if (MainThread != INVALID_HANDLE_VALUE)
-	{
-		static bool setJumpResult = false;
-		RtlCaptureContext(&MainThreadContext);
-		if (setJumpResult)
-		{
-			ExitFatally(0);
-			return 0;
-		}
-		setJumpResult = true;
-	}
-#endif
 
 	try
 	{

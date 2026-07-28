@@ -81,6 +81,23 @@ public:
 
 
 private:
+	// [rc4l] video-scale: offscreen render target for internal-resolution scaling. When
+	// mScaleActive is false (the default -- Native mode at factor 1.0) the engine renders straight
+	// to the backbuffer, byte-for-byte the old path. When active, the frame is rendered into this
+	// FBO at the virtual size (== GetWidth()/GetHeight()) and blit-upscaled to fill the window in
+	// Update(). All sizing decisions come from features/video-scale (unit-tested); this is the dumb
+	// GL executor. >>> SUPERSEDED-BY-UPSTREAM <<< See features/video-scale/README.md.
+	unsigned int mScaleFB, mScaleColorTex, mScaleDepthRB;
+	int mScaleFBW, mScaleFBH;
+	int mScaleClientW, mScaleClientH; // cached window client size (avoids per-frame GetClientSize)
+	bool mScaleActive;
+	void GetClientSize(int &w, int &h);
+	void UpdateScaleBuffer();   // decide active, (re)build the FBO, bind it as the render target
+	void DestroyScaleBuffer();
+	void BlitScaleBuffer();     // blit the FBO to the backbuffer, filling the client rect
+	void MaybeResizeForScale(); // per-frame: apply a scale change by resizing the render target live
+	void ResizeRenderInPlace(int w, int h); // resize render target, no window/context teardown
+
 	PalEntry Flash;
 
 	// Texture creation info

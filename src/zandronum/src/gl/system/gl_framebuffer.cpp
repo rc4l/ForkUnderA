@@ -54,6 +54,7 @@
 #include "gl/system/gl_interface.h"
 #include "gl/system/gl_framebuffer.h"
 #include "gl/renderer/gl_renderer.h"
+#include "gl/renderer/gl_renderstate.h"
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/data/gl_data.h"
 #include "gl/textures/gl_hwtexture.h"
@@ -63,19 +64,33 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/gl_functions.h"
+#ifdef ZX_ENABLE_REPLAY
+#include "features/replay/zx_replay.h"   // [rc4l] FUA instant-replay frame capture hook
+#endif
 
 IMPLEMENT_CLASS(OpenGLFrameBuffer)
 EXTERN_CVAR (Float, vid_brightness)
 EXTERN_CVAR (Float, vid_contrast)
 EXTERN_CVAR (Bool, vid_vsync)
+// [rc4l] video-scale: the render-scale knob (features/video-scale/videoscale.cpp).
+EXTERN_CVAR (Int, vid_scalemode)
+EXTERN_CVAR (Float, vid_scalefactor)
+EXTERN_CVAR (Int, vid_scale_customwidth)
+EXTERN_CVAR (Int, vid_scale_customheight)
+EXTERN_CVAR (Float, vid_scale_custompixelaspect)
+EXTERN_CVAR (Bool, vid_cropaspect)
+extern bool setsizeneeded;
+extern int DisplayBits;
+extern bool zx_videoScaleDirty;
+#include "features/video-scale/computation/videoscale_compute.h"
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
 
 FGLRenderer *GLRenderer;
 
-void gl_SetupMenu();
 void gl_LoadExtensions();
 void gl_PrintStartupLog();
+void gl_SetupMenu();
 
 //==========================================================================
 //
@@ -92,6 +107,12 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 	ScreenshotBuffer = NULL;
 	LastCamera = NULL;
 
+	// [rc4l] video-scale: no scale buffer until UpdateScaleBuffer decides one is needed.
+	mScaleFB = mScaleColorTex = mScaleDepthRB = 0;
+	mScaleFBW = mScaleFBH = 0;
+	mScaleClientW = mScaleClientH = 0;
+	mScaleActive = false;
+
 	InitializeState();
 	gl_SetupMenu();
 	gl_GenerateGlobalBrightmapFromColormap();
@@ -104,6 +125,7 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 
 OpenGLFrameBuffer::~OpenGLFrameBuffer()
 {
+	DestroyScaleBuffer(); // [rc4l] video-scale
 	delete GLRenderer;
 	GLRenderer = NULL;
 }
@@ -120,6 +142,7 @@ void OpenGLFrameBuffer::InitializeState()
 
 	gl_LoadExtensions();
 	Super::InitializeState();
+
 	if (first)
 	{
 		first=false;
@@ -140,37 +163,30 @@ void OpenGLFrameBuffer::InitializeState()
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 	glClearDepth(1.0f);
 	glDepthFunc(GL_LESS);
-	glShadeModel(GL_SMOOTH);
 
 	glEnable(GL_DITHER);
-	glEnable(GL_ALPHA_TEST);
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_POLYGON_OFFSET_FILL);
 	glEnable(GL_POLYGON_OFFSET_LINE);
 	glEnable(GL_BLEND);
-	glEnable(GL_DEPTH_CLAMP_NV);
+	glEnable(GL_DEPTH_CLAMP);
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_TEXTURE_2D);
 	glDisable(GL_LINE_SMOOTH);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glAlphaFunc(GL_GEQUAL,0.5f);
-	glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-	glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
-	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
-
-	// This was to work around a bug in some older driver. Probably doesn't make sense anymore.
-	glEnable(GL_FOG);
-	glDisable(GL_FOG);
-
-	glHint(GL_FOG_HINT, GL_FASTEST);
-	glFogi(GL_FOG_MODE, GL_EXP);
-
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	int trueH = GetTrueHeight();
 	int h = GetHeight();
-	glViewport(0, (trueH - h)/2, GetWidth(), GetHeight()); 
+	glViewport(0, (trueH - h)/2, GetWidth(), GetHeight());
+
+	// [rc4l] video-scale: decide whether we render into an offscreen scale buffer, (re)build it, and
+	// bind it as the render target so everything below draws into it at the virtual size.
+	UpdateScaleBuffer();
+	// The client/drawable size may differ from the mode-set size (e.g. macOS reports a slightly
+	// different desktop drawable); re-check once on the next frame.
+	zx_videoScaleDirty = true;
 
 	Begin2D(false);
 	GLRenderer->Initialize();
@@ -187,7 +203,7 @@ CVAR(Bool, gl_draw_sync, true, 0) //false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 void OpenGLFrameBuffer::Update()
 {
-	if (!CanUpdate()) 
+	if (!CanUpdate())
 	{
 		GLRenderer->Flush();
 		return;
@@ -205,13 +221,189 @@ void OpenGLFrameBuffer::Update()
 
 		Begin2D(false);
 	}
+	// [rc4l] video-scale: the frame was rendered into the scale FBO at the virtual size; blit it up
+	// to fill the window before the backbuffer is presented.
+	if (mScaleActive)
+		BlitScaleBuffer();
+
 	if (gl_draw_sync || !swapped)
 	{
 		Swap();
 	}
 	swapped = false;
+
 	Unlock();
+
+	// [rc4l] video-scale: apply any pending scale/window resize AFTER Unlock -- resizing the canvas
+	// reallocates its backing store, and while locked `Buffer` aliases that store; doing it here (with
+	// Buffer == NULL) avoids a dangling pointer. No window teardown, so no flash/focus loss.
+	MaybeResizeForScale();
+
+	// Re-bind the render target AND reset the viewport for the next frame. Binding is a no-op in the
+	// common no-change case (the resize above already rebound); the viewport reset is what matters
+	// when scaling was just turned OFF at runtime (menu). Begin2D sets the projection matrix but not
+	// glViewport, so without resetting here the 2D pass keeps the smaller scaled viewport and draws
+	// the whole menu squished into the bottom-left corner over stale pixels. Both branches must set
+	// it: the FBO branch to its virtual size, the backbuffer branch to the full client size.
+	glBindFramebuffer(GL_FRAMEBUFFER, mScaleActive ? mScaleFB : 0);
+	glViewport(0, 0, GetWidth(), GetHeight());
+
 	CheckBench();
+}
+
+//==========================================================================
+//
+// [rc4l] video-scale: the GL executor for internal-resolution scaling. All the *sizing* decisions
+// live in features/video-scale (unit-tested); this only creates/binds/blits GL objects.
+// >>> SUPERSEDED-BY-UPSTREAM <<< When upstream's render-buffers backend is ported, replace these
+// four methods and the two call sites above with it.
+//
+//==========================================================================
+
+void OpenGLFrameBuffer::GetClientSize(int &w, int &h)
+{
+#ifdef _WIN32
+	// Win32 native backend: the window's client rectangle in pixels (the borderless popup covers the
+	// monitor when fullscreen; a normal window when windowed). Window is the global HWND.
+	RECT r;
+	if (Window != NULL && GetClientRect(Window, &r))
+	{
+		w = int(r.right - r.left);
+		h = int(r.bottom - r.top);
+	}
+	else
+	{
+		w = GetWidth();
+		h = GetHeight();
+	}
+#else
+	// SDL2 (macOS/Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
+	// desktop; for a window it is the window's drawable.
+	SDL_GL_GetDrawableSize(Screen, &w, &h);
+#endif
+}
+
+void OpenGLFrameBuffer::DestroyScaleBuffer()
+{
+	if (mScaleColorTex) { glDeleteTextures(1, &mScaleColorTex); mScaleColorTex = 0; }
+	if (mScaleDepthRB)  { glDeleteRenderbuffers(1, &mScaleDepthRB); mScaleDepthRB = 0; }
+	if (mScaleFB)       { glDeleteFramebuffers(1, &mScaleFB); mScaleFB = 0; }
+	mScaleFBW = mScaleFBH = 0;
+	mScaleActive = false;
+	if (GLRenderer != NULL)
+		GLRenderer->mOutputFB = 0;
+}
+
+void OpenGLFrameBuffer::UpdateScaleBuffer()
+{
+	int renderW = GetWidth();
+	int renderH = GetHeight();
+	int clientW = renderW, clientH = renderH;
+	GetClientSize(clientW, clientH);
+
+	// Cache the client size so the per-frame BlitScaleBuffer never has to call the (macOS-expensive)
+	// GetClientSize again -- it only changes when we get here (mode set / resize / scale change).
+	mScaleClientW = clientW;
+	mScaleClientH = clientH;
+
+	// A scale buffer is needed exactly when the render size differs from the window (matches the
+	// pure ScalePresentPlan.active decision). Otherwise render straight to the backbuffer.
+	if (clientW == renderW && clientH == renderH)
+	{
+		DestroyScaleBuffer();
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		// Reset the viewport to the full backbuffer here too, so the frame in which scaling turns off
+		// is already correct -- not just the next present. (See the matching note in Update().)
+		glViewport(0, 0, renderW, renderH);
+		return;
+	}
+
+	if (mScaleFB == 0 || mScaleFBW != renderW || mScaleFBH != renderH)
+	{
+		DestroyScaleBuffer();
+
+		glGenTextures(1, &mScaleColorTex);
+		glBindTexture(GL_TEXTURE_2D, mScaleColorTex);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, renderW, renderH, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+		glGenRenderbuffers(1, &mScaleDepthRB);
+		glBindRenderbuffer(GL_RENDERBUFFER, mScaleDepthRB);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, renderW, renderH);
+
+		glGenFramebuffers(1, &mScaleFB);
+		glBindFramebuffer(GL_FRAMEBUFFER, mScaleFB);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mScaleColorTex, 0);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, mScaleDepthRB);
+
+		if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		{
+			// Fall back to no scaling rather than render nothing.
+			Printf("video-scale: scale framebuffer incomplete; disabling scaling\n");
+			DestroyScaleBuffer();
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			return;
+		}
+
+		mScaleFBW = renderW;
+		mScaleFBH = renderH;
+	}
+
+	mScaleActive = true;
+	if (GLRenderer != NULL)
+		GLRenderer->mOutputFB = mScaleFB;
+
+	glBindFramebuffer(GL_FRAMEBUFFER, mScaleFB);
+	glViewport(0, 0, renderW, renderH);
+}
+
+void OpenGLFrameBuffer::BlitScaleBuffer()
+{
+	// Cached client size (set in UpdateScaleBuffer); avoids a per-frame GetClientSize, which is an
+	// expensive Cocoa/Metal query on macOS.
+	int clientW = (mScaleClientW > 0) ? mScaleClientW : GetWidth();
+	int clientH = (mScaleClientH > 0) ? mScaleClientH : GetHeight();
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, mScaleFB);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glBlitFramebuffer(0, 0, GetWidth(), GetHeight(),
+	                  0, 0, clientW, clientH,
+	                  GL_COLOR_BUFFER_BIT, GL_LINEAR);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void OpenGLFrameBuffer::ResizeRenderInPlace(int w, int h)
+{
+	// Resize the render target without recreating the SDL window or GL context -- mirrors upstream's
+	// V_OutputResized. No black flash, no keyboard-focus loss (the window never goes away).
+	Resize(w, h);                                // canvas backing store + Width/Height/Pitch
+	V_RecalcVideoModeState(w, h, DisplayBits);   // Clean facs, DisplayW/H, mode-set recompute
+	setsizeneeded = true;                        // recompute the 3D view for the new render size
+	UpdateScaleBuffer();                         // (re)build + bind the scale FBO, or drop to backbuffer
+}
+
+void OpenGLFrameBuffer::MaybeResizeForScale()
+{
+	// [rc4l] video-scale: event-driven, NOT polled. GetClientSize -> SDL_GL_GetDrawableSize is an
+	// expensive Cocoa/Metal query on macOS (~tens of ms), so calling it every frame tanks FPS.
+	// Only re-check when something actually changed -- a mode set, a window resize, or a scale CVAR
+	// change all raise zx_videoScaleDirty. This matches upstream's event-driven resize.
+	if (!zx_videoScaleDirty)
+		return;
+	zx_videoScaleDirty = false;
+
+	int cw = GetWidth(), ch = GetHeight();
+	GetClientSize(cw, ch);
+	zx::ScaledViewport v = zx::ComputeScaledViewport(cw, ch,
+		vid_scalemode, vid_scalefactor,
+		vid_scale_customwidth, vid_scale_customheight, vid_scale_custompixelaspect,
+		!!vid_cropaspect, 0.f,
+		zx::VID_SCALE_MIN_WIDTH, zx::VID_SCALE_MIN_HEIGHT);
+	if (v.width != GetWidth() || v.height != GetHeight())
+		ResizeRenderInPlace(v.width, v.height);
 }
 
 
@@ -221,12 +413,85 @@ void OpenGLFrameBuffer::Update()
 //
 //==========================================================================
 
+#ifdef ZX_ENABLE_REPLAY
+// [rc4l] Double-buffered PBO async framebuffer readback for the instant-replay capture. Issuing
+// glReadPixels into a bound pixel-pack buffer returns immediately (the copy DMAs in the background);
+// we then map the OTHER PBO, whose read was issued a frame ago and is already done, so nothing
+// stalls the render thread the way the synchronous screenshot readback did. The two buffers are
+// reallocated whenever the framebuffer size changes (e.g. a window resize).
+static GLuint s_zxPbo[2] = { 0, 0 };
+static int    s_zxPboIndex = 0;
+static int    s_zxPboW = 0, s_zxPboH = 0;
+static bool   s_zxPboFilled = false;
+
+// w,h are the window's drawable (client) size -- we read the DEFAULT framebuffer, which holds the
+// final image the player sees (the staircase/video-scale renderer draws into an offscreen buffer at
+// a virtual size and upscales it into this back buffer before present, so reading the back buffer at
+// the client size captures the whole frame -- reading the virtual size would crop it).
+static void ZX_CaptureFramePBO(int w, int h)
+{
+	if (w <= 0 || h <= 0) return;
+	const GLsizeiptr bytes = (GLsizeiptr)w * h * 3;
+
+	if (s_zxPbo[0] == 0 || w != s_zxPboW || h != s_zxPboH)
+	{
+		if (s_zxPbo[0] == 0) glGenBuffers(2, s_zxPbo);
+		for (int i = 0; i < 2; ++i)
+		{
+			glBindBuffer(GL_PIXEL_PACK_BUFFER, s_zxPbo[i]);
+			glBufferData(GL_PIXEL_PACK_BUFFER, bytes, NULL, GL_STREAM_READ);
+		}
+		s_zxPboW = w; s_zxPboH = h; s_zxPboFilled = false; s_zxPboIndex = 0;
+	}
+
+	const int a = s_zxPboIndex;      // issue this frame's read here
+	const int b = s_zxPboIndex ^ 1;  // this one holds the previous frame's (completed) read
+
+	GLint prevFB = 0;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFB);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);   // the window back buffer (final, upscaled image)
+
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, s_zxPbo[a]);
+	glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, 0);
+
+	if (s_zxPboFilled)
+	{
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, s_zxPbo[b]);
+		const BYTE *data = (const BYTE *)glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+		if (data != NULL)
+		{
+			// glReadPixels rows are bottom-up; hand off the last row with a negative stride so the
+			// consumer walks it top-to-bottom.
+			zx::replay::SubmitFrame(data + (size_t)(h - 1) * w * 3, w, h, -(w * 3));
+			glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+		}
+	}
+
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, prevFB);   // restore whatever the renderer had bound
+	s_zxPboIndex = b;
+	s_zxPboFilled = true;
+}
+#endif
+
 void OpenGLFrameBuffer::Swap()
 {
 	Finish.Reset();
 	Finish.Clock();
 	glFinish();
-	if (needsetgamma) 
+#ifdef ZX_ENABLE_REPLAY
+	// [rc4l] FUA instant replay: when a frame is due, kick off an async PBO readback of the just-
+	// rendered back buffer and hand the PREVIOUS frame's (already-completed) readback to the encoder.
+	if (zx::replay::WantsFrame())
+	{
+		// Capture at the window's drawable size (the full presented frame), not the virtual render size.
+		const int cw = mScaleClientW > 0 ? mScaleClientW : SCREENWIDTH;
+		const int ch = mScaleClientH > 0 ? mScaleClientH : SCREENHEIGHT;
+		ZX_CaptureFramePBO(cw, ch);
+	}
+#endif
+	if (needsetgamma)
 	{
 		//DoSetGamma();
 		needsetgamma = false;
@@ -347,7 +612,8 @@ void OpenGLFrameBuffer::GetHitlist(BYTE *hitlist)
 	// check skybox textures and mark the separate faces as used
 	for(int i=0;i<TexMan.NumTextures(); i++)
 	{
-		if (hitlist[i])
+		// HIT_Wall must be checked for MBF-style sky transfers. 
+		if (hitlist[i] & (FTextureManager::HIT_Sky|FTextureManager::HIT_Wall))
 		{
 			FTexture *tex = TexMan.ByIndex(i);
 			if (tex->gl_info.bSkybox)
@@ -358,7 +624,7 @@ void OpenGLFrameBuffer::GetHitlist(BYTE *hitlist)
 					if (sb->faces[i]) 
 					{
 						int index = sb->faces[i]->id.GetIndex();
-						hitlist[index] |= 1;
+						hitlist[index] |= FTextureManager::HIT_Flat;
 					}
 				}
 			}
@@ -389,18 +655,10 @@ FNativePalette *OpenGLFrameBuffer::CreatePalette(FRemapTable *remap)
 //==========================================================================
 bool OpenGLFrameBuffer::Begin2D(bool)
 {
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glOrtho(
-		(GLdouble) 0,
-		(GLdouble) GetWidth(), 
-		(GLdouble) GetHeight(), 
-		(GLdouble) 0,
-		(GLdouble) -1.0, 
-		(GLdouble) 1.0 
-		);
+	gl_RenderState.mViewMatrix.loadIdentity();
+	gl_RenderState.mProjectionMatrix.ortho(0, GetWidth(), GetHeight(), 0, -1.0f, 1.0f);
+	gl_RenderState.ApplyMatrices();
+
 	glDisable(GL_DEPTH_TEST);
 
 	// Korshun: ENABLE AUTOMAP ANTIALIASING!!!

@@ -48,7 +48,6 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/data/gl_data.h"
 #include "gl/dynlights/gl_glow.h"
-#include "gl/dynlights/gl_lightbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/scene/gl_portal.h"
 #include "gl/utility/gl_clock.h"
@@ -163,7 +162,6 @@ void FDrawInfo::AddUpperMissingTexture(side_t * side, subsector_t *sub, fixed_t 
 				return;
 			}
 
-			//@sync-hack
 			for(unsigned int i=0;i<MissingUpperTextures.Size();i++)
 			{
 				if (MissingUpperTextures[i].sub == sub)
@@ -230,13 +228,12 @@ void FDrawInfo::AddLowerMissingTexture(side_t * side, subsector_t *sub, fixed_t 
 			}
 
 			// Ignore FF_FIX's because they are designed to abuse missing textures
-			if (seg->backsector->e->XFloor.ffloors.Size() && seg->backsector->e->XFloor.ffloors[0]->flags&FF_FIX)
+			if (seg->backsector->e->XFloor.ffloors.Size() && (seg->backsector->e->XFloor.ffloors[0]->flags&(FF_FIX|FF_SEETHROUGH)) == FF_FIX)
 			{
 				totalms.Unclock();
 				return;
 			}
 
-			//@sync-hack
 			for(unsigned int i=0;i<MissingLowerTextures.Size();i++)
 			{
 				if (MissingLowerTextures[i].sub == sub)
@@ -733,7 +730,6 @@ void FDrawInfo::AddHackedSubsector(subsector_t * sub)
 {
 	if (!(level.maptype == MAPTYPE_HEXEN))
 	{
-		//@sync-hack (probably not, this is only called from the main thread)
 		SubsectorHackInfo sh={sub, 0};
 		SubsectorHacks.Push (sh);
 	}
@@ -1033,13 +1029,11 @@ ADD_STAT(sectorhacks)
 
 void FDrawInfo::AddFloorStack(sector_t * sec)
 {
-	//@sync-hack
 	FloorStacks.Push(sec);
 }
 
 void FDrawInfo::AddCeilingStack(sector_t * sec)
 {
-	//@sync-hack
 	CeilingStacks.Push(sec);
 }
 
@@ -1051,6 +1045,8 @@ void FDrawInfo::AddCeilingStack(sector_t * sec)
 
 void FDrawInfo::CollectSectorStacksCeiling(subsector_t * sub, sector_t * anchor)
 {
+	sector_t fake;
+
 	// mark it checked
 	sub->validcount=validcount;
 
@@ -1061,7 +1057,7 @@ void FDrawInfo::CollectSectorStacksCeiling(subsector_t * sub, sector_t * anchor)
 	if (sub->numlines>2 && !(ss_renderflags[DWORD(sub-subsectors)]&SSRF_PROCESSED)) return;
 
 	// Must be the exact same visplane
-	sector_t * me = gl_FakeFlat(sub->render_sector, &fakesec, false);
+	sector_t * me = gl_FakeFlat(sub->render_sector, &fake, false);
 	if (me->GetTexture(sector_t::ceiling) != anchor->GetTexture(sector_t::ceiling) ||
 		me->ceilingplane != anchor->ceilingplane ||
 		me->GetCeilingLight() != anchor->GetCeilingLight() ||
@@ -1098,6 +1094,7 @@ void FDrawInfo::CollectSectorStacksCeiling(subsector_t * sub, sector_t * anchor)
 
 void FDrawInfo::CollectSectorStacksFloor(subsector_t * sub, sector_t * anchor)
 {
+	sector_t fake;
 	// mark it checked
 	sub->validcount=validcount;
 
@@ -1108,7 +1105,7 @@ void FDrawInfo::CollectSectorStacksFloor(subsector_t * sub, sector_t * anchor)
 	if (sub->numlines>2 && !(ss_renderflags[DWORD(sub-subsectors)]&SSRF_PROCESSED)) return;
 
 	// Must be the exact same visplane
-	sector_t * me = gl_FakeFlat(sub->render_sector, &fakesec, false);
+	sector_t * me = gl_FakeFlat(sub->render_sector, &fake, false);
 	if (me->GetTexture(sector_t::floor) != anchor->GetTexture(sector_t::floor) ||
 		me->floorplane != anchor->floorplane ||
 		me->GetFloorLight() != anchor->GetFloorLight() ||

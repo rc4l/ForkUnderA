@@ -43,13 +43,14 @@
 #include "c_console.h"
 #include "c_cvars.h"
 #include "c_dispatch.h"
-#include "sdlvideo.h"
 #include "v_text.h"
 #include "doomstat.h"
 #include "m_argv.h"
 #ifndef NO_GL
 #include "sdlglvideo.h"
 #endif
+// [rc4l] video-scale: faithful port of upstream's r_videoscale math. See features/video-scale.
+#include "features/video-scale/computation/videoscale_compute.h"
 #include "r_renderer.h"
 // [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
 #ifdef NO_GL
@@ -59,6 +60,13 @@
 EXTERN_CVAR (Bool, ticker)
 EXTERN_CVAR (Bool, fullscreen)
 EXTERN_CVAR (Float, vid_winscale)
+// [rc4l] video-scale: the internal-resolution knob (features/video-scale/videoscale.cpp).
+EXTERN_CVAR (Int, vid_scalemode)
+EXTERN_CVAR (Float, vid_scalefactor)
+EXTERN_CVAR (Int, vid_scale_customwidth)
+EXTERN_CVAR (Int, vid_scale_customheight)
+EXTERN_CVAR (Float, vid_scale_custompixelaspect)
+EXTERN_CVAR (Bool, vid_cropaspect)
 
 IVideo *Video;
 
@@ -102,23 +110,15 @@ void I_InitGraphics ()
 {
 	UCVarValue val;
 
-#ifndef NO_GL
-	// hack by stevenaaus to force software mode if no 32bpp
-	const SDL_VideoInfo *i = SDL_GetVideoInfo();
-	if ((i->vfmt)->BytesPerPixel != 4) {
-		fprintf (stderr, "n32 bit colour not found, disabling OpenGL.n");
-		fprintf (stderr, "To enable OpenGL, restart X with 32 color (try 'startx -- :1 -depth 24'), and enable OpenGL in the Display Options.nn");
-	} 
-#endif
 	val.Bool = !!Args->CheckParm ("-devparm");
 	ticker.SetGenericRepDefault (val, CVAR_Bool);
 
 #ifndef NO_GL
-	//currentrenderer = vid_renderer;
-	if (currentrenderer==1) Video = new SDLGLVideo(0);
-	else Video = new SDLVideo (0);
+	// [rc4l] GL-only build: OpenGL is the only renderer, so there is no software video backend to fall back to.
+	Video = new SDLGLVideo(0);
 #else
-	Video = new SDLVideo (0);
+	// [rc4l] The dedicated server has no renderer and must never try to open a window.
+	I_FatalError ("This is a server-only build; it cannot initialize graphics");
 #endif
 	if (Video == NULL)
 		I_FatalError ("Failed to initialize display");
@@ -169,6 +169,41 @@ DFrameBuffer *I_SetMode (int &width, int &height, DFrameBuffer *old)
 		fs = fullscreen;
 		break;
 	}
+
+	// [rc4l] video-scale: split the window's CLIENT size from the RENDER (virtual) size.
+	//   - client size = the window's drawable: the desktop for fullscreen (borderless-desktop), or
+	//     the requested size for a window.
+	//   - render/virtual size = what the engine actually renders, from the scale unit. Native/1.0
+	//     (default) => virtual == client => renders straight to the backbuffer, exactly as before;
+	//     e.g. vid_scalefactor 0.5 => virtual == half the client, blit-upscaled to fill by the GL
+	//     executor in gl_framebuffer.cpp.
+	// We pass the virtual size on as width/height (so the framebuffer, SCREENWIDTH and the GL
+	// viewport all agree) and stash the client size for the SDL window creation.
+	// >>> SUPERSEDED-BY-UPSTREAM <<< See features/video-scale/README.md.
+	int clientW = width, clientH = height;
+	if (fs)
+	{
+		SDL_DisplayMode desktop;
+		if (SDL_GetDesktopDisplayMode (0, &desktop) == 0 && desktop.w > 0 && desktop.h > 0)
+		{
+			clientW = desktop.w;
+			clientH = desktop.h;
+		}
+	}
+	{
+		zx::ScalePresentPlan plan = zx::ComputeScalePresentPlan (
+			clientW, clientH,
+			vid_scalemode, vid_scalefactor,
+			vid_scale_customwidth, vid_scale_customheight, vid_scale_custompixelaspect,
+			!!vid_cropaspect, 0.f,
+			zx::VID_SCALE_MIN_WIDTH, zx::VID_SCALE_MIN_HEIGHT);
+		width  = plan.virtualWidth;
+		height = plan.virtualHeight;
+	}
+	extern int zx_pendingClientWidth, zx_pendingClientHeight;
+	zx_pendingClientWidth  = clientW;
+	zx_pendingClientHeight = clientH;
+
 	DFrameBuffer *res = Video->CreateFrameBuffer (width, height, fs, old);
 
 	/* Right now, CreateFrameBuffer cannot return NULL
@@ -305,7 +340,9 @@ void I_SetFPSLimit(int limit)
 }
 #endif
 
-CUSTOM_CVAR (Int, vid_maxfps, 200, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// [rc4l] Default 500 to match upstream UZDoom/GZDoom (was 200). vsync and cl_capfps are already off
+// by default like upstream; this was the only framerate-cap divergence. 0 = uncapped, clamp [35,1000].
+CUSTOM_CVAR (Int, vid_maxfps, 500, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 {
 	if (vid_maxfps < TICRATE && vid_maxfps != 0)
 	{

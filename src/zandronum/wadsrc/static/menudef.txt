@@ -344,6 +344,7 @@ OptionValue ZA_Announcers {}
 OptionMenu "OptionsMenu"
 {
 	Title "OPTIONS"
+	Submenu "FUA Options",				"FUAOptions" // [rc4l] ZandroX-specific features, pinned at top
 	Submenu "Multiplayer Options",		"ZA_MultiplayerOptions" // [TP]
 	StaticText " " // [TP]
 	Submenu "Customize Controls",		"CustomizeControls"
@@ -380,6 +381,66 @@ OptionMenu "CrashConsentMenu"
 	Command "Always send (never ask again)",	"crashreport_always"
 	Command "Save report to disk",			"crashreport_save"
 	Command "Not now",						"crashreport_notnow"
+}
+
+//-------------------------------------------------------------------------------------------
+//
+// [rc4l] FUA Options -- the home for all ZandroX-specific ("FUA") features. Pinned to the top of
+// the Options menu. New FUA features add a Submenu row here.
+//
+//-------------------------------------------------------------------------------------------
+
+OptionMenu "FUAOptions"
+{
+	Title "FUA OPTIONS"
+	Submenu "Instant Replay Options",	"ReplayOptions"
+}
+
+// Instant replay: save the last N seconds of gameplay to a shareable H.264/MP4 clip (default bind F3).
+OptionValue "ReplayDurations"
+{
+	5,	"5 seconds"
+	10,	"10 seconds"
+	15,	"15 seconds"
+	30,	"30 seconds"
+	60,	"60 seconds"
+}
+
+OptionValue "ReplayFps"
+{
+	30,	"30 fps"
+	60,	"60 fps"
+}
+
+OptionValue "ReplayQuality"
+{
+	720,	"720p"
+	1080,	"1080p"
+	0,		"Native"
+}
+
+OptionValue "ReplayEncoderMode"
+{
+	0,	"Auto (hardware if available)"
+	2,	"Hardware only"
+	1,	"Software (x264)"
+}
+
+OptionMenu "ReplayOptions"
+{
+	Title "INSTANT REPLAY"
+	Option	"Enable instant replay",	"cl_fua_replay",			"OnOff"
+	StaticText " "
+	Option	"Clip length",				"cl_fua_replay_duration",	"ReplayDurations",	"cl_fua_replay"
+	Option	"Capture rate",				"cl_fua_replay_fps",		"ReplayFps",		"cl_fua_replay"
+	Option	"Resolution",				"cl_fua_replay_maxheight",	"ReplayQuality",	"cl_fua_replay"
+	Slider	"Bitrate (Mbit/s)",			"cl_fua_replay_bitrate",	4, 50, 2, 0
+	Option	"Encoder",					"cl_fua_replay_encoder",	"ReplayEncoderMode","cl_fua_replay"
+	Option	"Capture audio (experimental)",	"cl_fua_replay_audio",		"OnOff",			"cl_fua_replay"
+	StaticText " "
+	// [rc4l] A Control row shows the *live* binding for fua_clip (e.g. "Save replay clip ... F3") and
+	// is rebindable inline, so it always reflects the real key -- no hardcoded hint to drift.
+	Control	"Save replay clip",			"fua_clip"
 }
 
 //-------------------------------------------------------------------------------------------
@@ -555,6 +616,9 @@ OptionMenu "CustomizeControls"
 	Control 	"Mission objectives",	"showpop 1"
 	Control 	"Keys list",			"showpop 2"
 	Control 	"Weapons/ammo/stats",	"showpop 3"
+	StaticText 	""
+	StaticText 	"FUA", 1
+	Control 	"Save replay clip",		"fua_clip"
 }
 
 //-------------------------------------------------------------------------------------------
@@ -1824,29 +1888,44 @@ OptionValue Renderers
 	1.0, "OpenGL"
 }
 
+// [rc4l] video-scale: internal render resolution presets, faithful to upstream's ScaleModes
+// (r_videoscale vScaleTable). See features/video-scale. >>> SUPERSEDED-BY-UPSTREAM <<<
+OptionValue ScaleModes
+{
+	0, "Native (full resolution)"
+	1, "Minimum scale to fill"
+	2, "640x400"
+	3, "960x600"
+	4, "1280x800"
+	5, "Custom"
+	6, "320x200"
+	7, "Minimum scale to fill (1.2)"
+}
+
+// [rc4l] video-scale / windowed-video: the resolution grid is retired (upstream deleted it in
+// b65b83edb). Fullscreen is borderless-desktop and always fills; there is no mode to pick. The
+// "resolution" is now expressed as a render Scale mode + Scale factor (rendered at that size and
+// blit-upscaled to fill), and the windowed size is set below (or by dragging the window edges).
+// Labels match upstream's VideoModeMenu ("Scale mode" / "Scale factor"). See features/video-scale
+// and features/windowed-video.
 OptionMenu VideoModeMenu
 {
 	Title "VIDEO MODE"
-	
+
 	Option "Fullscreen",			"fullscreen", "YesNo"
 	Option "Aspect ratio",			"menu_screenratios", "Ratios"
 	// [rc4l] Renderer option removed: ZandroX is OpenGL-only (software renderer dropped).
 	Option "Force aspect ratio",	"vid_aspect", "ForceRatios"
 	Option "Enable 5:4 aspect ratio","vid_tft", "YesNo"
+	Option "Scale mode",			"vid_scalemode", "ScaleModes"
+	Slider "Scale factor",			"vid_scalefactor", 0.25, 2.0, 0.25, 2
 	StaticText " "
-	ScreenResolution "res_0"
-	ScreenResolution "res_1"
-	ScreenResolution "res_2"
-	ScreenResolution "res_3"
-	ScreenResolution "res_4"
-	ScreenResolution "res_5"
-	ScreenResolution "res_6"
-	ScreenResolution "res_7"
-	ScreenResolution "res_8"
-	ScreenResolution "res_9"
-	StaticTextSwitchable "Press ENTER to set mode", "", "VMEnterText"
+	StaticText "Windowed size", 1
+	TextField "Width",				"vid_defwidth"
+	TextField "Height",				"vid_defheight"
+	Command "Apply windowed size",	"vid_setsize"
 	StaticText " "
-	StaticTextSwitchable "T to test mode for 5 seconds", "Please wait 5 seconds...", "VMTestText"
+	StaticText "(or drag the window edges to resize)"
 	class VideoModeMenu
 }
 
