@@ -42,7 +42,14 @@
 #include "doomstat.h"
 #include "templates.h"
 #include "oalsound.h"
-#ifdef ZX_ENABLE_REPLAY
+// [rc4l] Instant-replay audio drives its output through SDL. SDL is not part of the win32 build
+// (native Windows audio there), so the loopback capture path is macOS/Linux only for now; the AAC
+// encoder/mux itself (zx_replay_encoder) is cross-platform.
+#if defined(ZX_ENABLE_REPLAY) && !defined(_WIN32)
+#define ZX_REPLAY_AUDIO 1
+#endif
+
+#ifdef ZX_REPLAY_AUDIO
 #include <SDL.h>
 #include <cstring>
 #include "features/replay/zx_replay.h"
@@ -1060,7 +1067,7 @@ ALCdevice *OpenALSoundRenderer::InitDevice()
 	Loopback = false;
 	if (IsOpenALPresent())
 	{
-#ifdef ZX_ENABLE_REPLAY
+#ifdef ZX_REPLAY_AUDIO
 		if (zx::replay::AudioCaptureEnabled())
 		{
 			ZX_LoadLoopbackFuncs();
@@ -1142,7 +1149,7 @@ OpenALSoundRenderer::OpenALSoundRenderer()
             attribs.Push(ALC_FREQUENCY);
             attribs.Push(*snd_samplerate);
         }
-#ifdef ZX_ENABLE_REPLAY
+#ifdef ZX_REPLAY_AUDIO
         if (Loopback)
         {
             // A loopback device has no hardware to infer the format from, so we must specify it:
@@ -1180,7 +1187,7 @@ OpenALSoundRenderer::OpenALSoundRenderer()
         }
         attribs.Clear();
 
-#ifdef ZX_ENABLE_REPLAY
+#ifdef ZX_REPLAY_AUDIO
         if (Loopback)
         {
             // Drive the loopback mix from an SDL audio callback (pulls at the output rate) and play
@@ -1412,7 +1419,7 @@ OpenALSoundRenderer::~OpenALSoundRenderer()
     if(!Device)
         return;
 
-#ifdef ZX_ENABLE_REPLAY
+#ifdef ZX_REPLAY_AUDIO
     // Stop the audio callback before the device it renders from is closed.
     if (g_zxAudioOpen) { SDL_CloseAudio(); g_zxAudioOpen = false; }
     g_zxLoopbackDev = NULL;

@@ -20,7 +20,14 @@ extern "C" {
 #include <libavutil/opt.h>
 #include <libavutil/channel_layout.h>
 #include <libavutil/samplefmt.h>
+#include <libavutil/version.h>
 }
+
+// The new AVChannelLayout API (ch_layout / av_channel_layout_default) arrived in libavutil 57.24
+// (FFmpeg 5.1). Older distro ffmpeg (e.g. Ubuntu) still uses channel_layout + channels.
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 24, 100)
+#define ZX_NEW_CHLAYOUT 1
+#endif
 
 namespace zx {
 
@@ -135,7 +142,12 @@ bool ReplayEncoder::InitAudio(int sampleRate)
 	aenc_->sample_fmt = AV_SAMPLE_FMT_FLTP;
 	aenc_->sample_rate = sampleRate;
 	aenc_->bit_rate = 128000;
+#ifdef ZX_NEW_CHLAYOUT
 	av_channel_layout_default(&aenc_->ch_layout, 2);
+#else
+	aenc_->channel_layout = AV_CH_LAYOUT_STEREO;
+	aenc_->channels = 2;
+#endif
 	aenc_->time_base = AVRational{ 1, sampleRate };
 	if (avcodec_open2(aenc_, codec, nullptr) < 0) { avcodec_free_context(&aenc_); return false; }
 	aSampleRate_ = sampleRate;
@@ -143,7 +155,12 @@ bool ReplayEncoder::InitAudio(int sampleRate)
 	aframe_ = av_frame_alloc();
 	aframe_->format = AV_SAMPLE_FMT_FLTP;
 	aframe_->sample_rate = sampleRate;
+#ifdef ZX_NEW_CHLAYOUT
 	av_channel_layout_default(&aframe_->ch_layout, 2);
+#else
+	aframe_->channel_layout = AV_CH_LAYOUT_STEREO;
+	aframe_->channels = 2;
+#endif
 	aframe_->nb_samples = aFrameSamples_;
 	return av_frame_get_buffer(aframe_, 0) >= 0;
 }
