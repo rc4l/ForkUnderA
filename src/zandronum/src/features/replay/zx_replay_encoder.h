@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <vector>
 
 struct AVCodecContext;
 struct AVFrame;
@@ -32,6 +33,13 @@ public:
 	// monotonic capture timestamp in microseconds. srcW/srcH are per-frame so a mid-capture window or
 	// render-scale resize is handled -- the frame is scaled to the fixed output size.
 	void AddFrameTopDownRGB(const uint8_t *rgb, int srcW, int srcH, int srcStride, int64_t tUs);
+	// Optional audio: set up an AAC stream at the given rate (stereo assumed). AddAudioInterleaved
+	// takes interleaved float samples (nSamples = per-channel count) captured at time tUs; they are
+	// framed, encoded, and ring-buffered alongside the video, then muxed as a 2nd stream by SaveClip.
+	bool InitAudio(int sampleRate);
+	void AddAudioInterleaved(const float *pcm, int nSamples, int64_t tUs);
+	bool HasAudio() const { return aenc_ != nullptr; }
+
 	// Mux the last windowSecs of buffered packets (from a keyframe) to an .mp4. False on failure.
 	bool SaveClip(const char *path, int windowSecs);
 	void Shutdown();
@@ -45,6 +53,8 @@ private:
 	struct RingPkt { AVPacket *pkt; int64_t tUs; bool key; };
 	void Drain(AVFrame *f, int64_t tUs);
 	void Evict();
+	void DrainAudio(AVFrame *f, int64_t tUs);
+	void EvictAudio();
 
 	int srcW_ = 0, srcH_ = 0, dstW_ = 0, dstH_ = 0, fps_ = 30, windowSecs_ = 15;
 	// PTS is derived from real capture time (not a frame counter) so a clip's playback duration
@@ -55,6 +65,17 @@ private:
 	AVFrame *frame_ = nullptr;
 	SwsContext *sws_ = nullptr;
 	std::deque<RingPkt> ring_;
+
+	// Audio (optional): AAC encoder + a parallel packet ring. Incoming samples are accumulated into
+	// full encoder frames; pts is a continuous sample counter (glitch-free), tUs tracks wall time
+	// for windowing/sync.
+	struct APkt { AVPacket *pkt; int64_t tUs; };
+	AVCodecContext *aenc_ = nullptr;
+	AVFrame *aframe_ = nullptr;
+	std::deque<APkt> aring_;
+	std::vector<float> aAccum_;   // leftover interleaved-stereo samples between calls
+	int aSampleRate_ = 0, aFrameSamples_ = 0;
+	int64_t aPts_ = 0, aAccumUs_ = 0;
 };
 
 } // namespace zx

@@ -55,6 +55,9 @@ bindable command is **`fua_clip`** (commands don't take the `cl_` cvar prefix).
   order and falls through if one isn't built in / can't open. macOS `h264_videotoolbox` is verified;
   Windows tries `h264_nvenc`/`amf`/`qsv` (fall back to x264 when absent); Linux VAAPI needs a
   hw-frames context and is deferred (software there for now).
-- **Phase 4 — audio:** OpenAL-Soft `ALC_SOFT_loopback`. Not yet done — it requires rerouting the
-  audio output path (regression risk to all game sound) and cannot be quality/sync-verified without
-  listening, so it belongs in its own listen-tested PR rather than bundled with the above.
+- **Phase 4 — audio (experimental, `cl_fua_replay_audio`, default off):** when enabled, the OpenAL
+  backend opens an **`ALC_SOFT_loopback`** device at startup; an SDL audio callback renders the mix
+  (`alcRenderSamplesSOFT`) at the output rate, plays it back, and taps it for the recorder. The
+  encoder gains an **AAC** stream and `SaveClip` muxes video+audio interleaved, aligned by capture
+  time. The default (off) audio path is untouched — loopback only engages on opt-in + relaunch.
+  Verified programmatically (2-stream clip, non-silent audio); quality/sync still needs a listen-test.

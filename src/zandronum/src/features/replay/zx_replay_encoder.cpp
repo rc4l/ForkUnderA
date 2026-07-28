@@ -18,6 +18,8 @@ extern "C" {
 #include <libswscale/swscale.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/samplefmt.h>
 }
 
 namespace zx {
@@ -124,6 +126,74 @@ void ReplayEncoder::Evict()
 	}
 }
 
+bool ReplayEncoder::InitAudio(int sampleRate)
+{
+	const AVCodec *codec = avcodec_find_encoder_by_name("aac");
+	if (!codec) return false;
+	aenc_ = avcodec_alloc_context3(codec);
+	if (!aenc_) return false;
+	aenc_->sample_fmt = AV_SAMPLE_FMT_FLTP;
+	aenc_->sample_rate = sampleRate;
+	aenc_->bit_rate = 128000;
+	av_channel_layout_default(&aenc_->ch_layout, 2);
+	aenc_->time_base = AVRational{ 1, sampleRate };
+	if (avcodec_open2(aenc_, codec, nullptr) < 0) { avcodec_free_context(&aenc_); return false; }
+	aSampleRate_ = sampleRate;
+	aFrameSamples_ = aenc_->frame_size > 0 ? aenc_->frame_size : 1024;
+	aframe_ = av_frame_alloc();
+	aframe_->format = AV_SAMPLE_FMT_FLTP;
+	aframe_->sample_rate = sampleRate;
+	av_channel_layout_default(&aframe_->ch_layout, 2);
+	aframe_->nb_samples = aFrameSamples_;
+	return av_frame_get_buffer(aframe_, 0) >= 0;
+}
+
+void ReplayEncoder::AddAudioInterleaved(const float *pcm, int nSamples, int64_t tUs)
+{
+	if (!aenc_ || pcm == nullptr || nSamples <= 0) return;
+	if (aAccum_.empty()) aAccumUs_ = tUs;            // wall time of the accumulator's first sample
+	aAccum_.insert(aAccum_.end(), pcm, pcm + (size_t)nSamples * 2);
+
+	const size_t frameFloats = (size_t)aFrameSamples_ * 2;
+	while (aAccum_.size() >= frameFloats)
+	{
+		if (av_frame_make_writable(aframe_) < 0) break;
+		float *L = reinterpret_cast<float *>(aframe_->data[0]);
+		float *R = reinterpret_cast<float *>(aframe_->data[1]);
+		for (int i = 0; i < aFrameSamples_; ++i) { L[i] = aAccum_[(size_t)i * 2]; R[i] = aAccum_[(size_t)i * 2 + 1]; }
+		aframe_->nb_samples = aFrameSamples_;
+		aframe_->pts = aPts_;                        // continuous sample counter -> glitch-free AAC
+		const int64_t frameUs = aAccumUs_;
+		aPts_ += aFrameSamples_;
+		aAccumUs_ += (int64_t)aFrameSamples_ * 1000000 / aSampleRate_;
+		aAccum_.erase(aAccum_.begin(), aAccum_.begin() + frameFloats);
+		DrainAudio(aframe_, frameUs);
+	}
+}
+
+void ReplayEncoder::DrainAudio(AVFrame *f, int64_t tUs)
+{
+	if (avcodec_send_frame(aenc_, f) < 0) return;
+	for (;;)
+	{
+		AVPacket *pkt = av_packet_alloc();
+		int r = avcodec_receive_packet(aenc_, pkt);
+		if (r < 0) { av_packet_free(&pkt); break; }
+		aring_.push_back(APkt{ pkt, tUs });
+	}
+	EvictAudio();
+}
+
+void ReplayEncoder::EvictAudio()
+{
+	const int64_t keep = (int64_t)(windowSecs_ + 2) * 1000000;
+	while (aring_.size() > 2 && (lastUs_ - aring_.front().tUs) > keep)
+	{
+		av_packet_free(&aring_.front().pkt);
+		aring_.pop_front();
+	}
+}
+
 bool ReplayEncoder::SaveClip(const char *path, int windowSecs)
 {
 	if (!enc_) return false;
@@ -140,29 +210,71 @@ bool ReplayEncoder::SaveClip(const char *path, int windowSecs)
 	if (startIdx < 0) return false;
 	const size_t start = (size_t)startIdx;
 
+	const int64_t clipStartUs = ring_[start].tUs;
+
+	// Flush the audio encoder and pick the first audio packet at/after the clip start, so audio and
+	// video are aligned by capture time. Audio is optional -- a video-only clip is still valid.
+	bool haveAudio = false;
+	size_t aStart = 0;
+	if (aenc_ != nullptr)
+	{
+		DrainAudio(nullptr, aAccumUs_);
+		for (size_t i = 0; i < aring_.size(); ++i)
+			if (aring_[i].tUs >= clipStartUs) { aStart = i; haveAudio = true; break; }
+	}
+
 	AVFormatContext *oc = nullptr;
 	avformat_alloc_output_context2(&oc, nullptr, nullptr, path);
 	if (!oc) return false;
-	AVStream *st = avformat_new_stream(oc, nullptr);
-	if (!st) { avformat_free_context(oc); return false; }
-	avcodec_parameters_from_context(st->codecpar, enc_);
-	st->time_base = enc_->time_base;
+	AVStream *vst = avformat_new_stream(oc, nullptr);
+	if (!vst) { avformat_free_context(oc); return false; }
+	avcodec_parameters_from_context(vst->codecpar, enc_);
+	vst->time_base = enc_->time_base;
+	AVStream *ast = nullptr;
+	if (haveAudio)
+	{
+		ast = avformat_new_stream(oc, nullptr);
+		avcodec_parameters_from_context(ast->codecpar, aenc_);
+		ast->time_base = aenc_->time_base;
+	}
 	if (avio_open(&oc->pb, path, AVIO_FLAG_WRITE) < 0) { avformat_free_context(oc); return false; }
 	if (avformat_write_header(oc, nullptr) < 0) { avio_closep(&oc->pb); avformat_free_context(oc); return false; }
 
-	const int64_t basePts = ring_[start].pkt->pts;
+	const int64_t vbase = ring_[start].pkt->pts;
+	const int64_t abase = haveAudio ? aring_[aStart].pkt->pts : 0;
+	size_t vi = start, ai = aStart;
 	int written = 0;
-	for (size_t i = start; i < ring_.size(); ++i)
+	// Interleave the two rings by presentation time so the muxer stays monotonic across streams.
+	for (;;)
 	{
-		AVPacket *p = av_packet_clone(ring_[i].pkt);
+		const bool haveV = vi < ring_.size();
+		const bool haveA = haveAudio && ai < aring_.size();
+		if (!haveV && !haveA) break;
+		bool takeV;
+		if (!haveA) takeV = true;
+		else if (!haveV) takeV = false;
+		else
+		{
+			const double vt = av_q2d(enc_->time_base)  * (ring_[vi].pkt->pts  - vbase);
+			const double at = av_q2d(aenc_->time_base) * (aring_[ai].pkt->pts - abase);
+			takeV = vt <= at;
+		}
+		AVPacket *p = av_packet_clone(takeV ? ring_[vi].pkt : aring_[ai].pkt);
+		if (takeV) ++vi; else ++ai;
 		if (!p) continue;
-		p->stream_index = 0;
-		p->pts -= basePts;
-		p->dts = p->pts;
-		av_packet_rescale_ts(p, enc_->time_base, st->time_base);
+		if (takeV)
+		{
+			p->stream_index = 0; p->pts -= vbase; p->dts = p->pts;
+			av_packet_rescale_ts(p, enc_->time_base, vst->time_base);
+			++written;
+		}
+		else
+		{
+			p->stream_index = 1; p->pts -= abase; p->dts = p->pts;
+			av_packet_rescale_ts(p, aenc_->time_base, ast->time_base);
+		}
 		av_interleaved_write_frame(oc, p);
 		av_packet_free(&p);
-		++written;
 	}
 	av_write_trailer(oc);
 	avio_closep(&oc->pb);
@@ -177,6 +289,11 @@ void ReplayEncoder::Shutdown()
 	if (sws_) { sws_freeContext(sws_); sws_ = nullptr; }
 	if (frame_) av_frame_free(&frame_);
 	if (enc_) avcodec_free_context(&enc_);
+
+	for (auto &r : aring_) av_packet_free(&r.pkt);
+	aring_.clear();
+	if (aframe_) av_frame_free(&aframe_);
+	if (aenc_) avcodec_free_context(&aenc_);
 }
 
 } // namespace zx
