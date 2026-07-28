@@ -79,6 +79,12 @@ CCMD( mcp_look )
 	}
 	if ( argv.argc() >= 5 )
 	{
+		// [rc4l] Teleporting / fly-cam moves the player -- a cheat in online play. Guard it exactly
+		// like the warp CCMD: allowed in single-player, for spectators, or with sv_cheats; refused
+		// for a normal player in a netgame. The pitch/yaw above stays ungated (it is only view aim).
+		if ( players[consoleplayer].bSpectating == false && CheckCheatmode() )
+			return;
+
 		fixed_t tx = atoi( argv[3] ) * FRACUNIT;
 		fixed_t ty = atoi( argv[4] ) * FRACUNIT;
 		if ( argv.argc() >= 6 )
