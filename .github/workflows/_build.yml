@@ -94,13 +94,30 @@ jobs:
         with:
           submodules: true
 
+      # [rc4l] Downloading the deps, not compiling, is what makes this job slow when it is slow.
+      # The 2026-07-28 v0.1.14 release build took 25 min: 21m50s of it was apt stalling part-way
+      # through the ffmpeg dev tree on azure.archive.ubuntu.com, against 3m27s of actual compile.
+      # A typical run installs in ~25s and compiles in ~3m23s — the compile time is flat either
+      # way, so the win here is bounding apt's tail latency, not speeding up a warm build.
+      # Keyed on the script's hash because the dep list lives there, matching the vcpkg cache.
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/zandrox-apt
+          key: apt-jammy-${{ hashFiles('linux_compile.sh') }}
+          restore-keys: apt-jammy-
+
       - name: Build + package ZandroX (Linux, native)
         # [rc4l] linux_compile.sh is the same script devs run; --install-deps apt-installs the
         # build/OpenAL libs, then it configures, builds and packages dist-linux/*.tar.gz itself.
+        # APT_CACHE_DIR is optional — a contributor running the script plainly is unaffected.
         env:
           VERSION: ${{ inputs.version }}
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
+          # Must resolve to the same path the cache step above restores. Set here rather than in
+          # env: so $HOME expands — an env: value is taken literally, not shell-expanded.
+          export APT_CACHE_DIR="$HOME/.cache/zandrox-apt"
           ./linux_compile.sh --install-deps
           ls -la dist-linux/
 
