@@ -17,6 +17,7 @@
 #include "r_data/sprites.h"
 #include "m_fixed.h"
 #include "tables.h"
+#include "p_local.h"
 #include <stdlib.h>
 
 static void MCP_PrintState( const char *label, AActor *mo )
@@ -55,6 +56,43 @@ CCMD( dumpactor )
 
 	for ( AInventory *item = mo->Inventory; item != NULL; item = item->Inventory )
 		Printf( "item %s %d %d\n", item->GetClass()->TypeName.GetChars(), item->Amount, item->MaxAmount );
+}
+
+// mcp_look <pitchDeg> [yawDeg] [x y [z]] -- drive the player's view/position for
+// screenshotting from the MCP. Pitch follows ZDoom (positive = look DOWN, negative =
+// look UP), clamped to maxviewpitch on the next tic. Yaw is absolute compass degrees.
+// With x y it teleports (no cheat check); a 5th arg z makes it a no-gravity fly-cam at
+// that height (e.g. high above the map looking straight down).
+CCMD( mcp_look )
+{
+	AActor *mo = players[consoleplayer].mo;
+	if ( mo == NULL ) { Printf( "MCP_LOOK none\n" ); return; }
+	if ( argv.argc() >= 2 )
+	{
+		int degi = atoi( argv[1] );
+		mo->pitch = degi * ANGLE_1;
+	}
+	if ( argv.argc() >= 3 )
+	{
+		int yawi = atoi( argv[2] );
+		mo->angle = (angle_t)( yawi * ANGLE_1 );
+	}
+	if ( argv.argc() >= 5 )
+	{
+		fixed_t tx = atoi( argv[3] ) * FRACUNIT;
+		fixed_t ty = atoi( argv[4] ) * FRACUNIT;
+		if ( argv.argc() >= 6 )
+		{
+			mo->flags |= MF_NOGRAVITY;
+			P_TeleportMove( mo, tx, ty, atoi( argv[5] ) * FRACUNIT, true );
+		}
+		else
+		{
+			P_TeleportMove( mo, tx, ty, ONFLOORZ, true );
+		}
+	}
+	Printf( "MCP_LOOK pitchraw %u angleraw %u pos %.0f %.0f\n",
+		(unsigned)(angle_t)mo->pitch, (unsigned)mo->angle, FIXED2FLOAT( mo->x ), FIXED2FLOAT( mo->y ) );
 }
 
 CCMD( actorsnear )
