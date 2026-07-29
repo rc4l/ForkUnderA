@@ -1090,6 +1090,11 @@ public:
 									// but instead tries to come closer for a melee attack.
 									// This is not the same as meleerange
 	fixed_t			maxtargetrange;	// any target farther away cannot be attacked
+	// [rc4l] MBF21 damage groups (per actor type, set from DeHackEd). Default 0 = vanilla behaviour;
+	// the immunity semantics live in features/mbf21/computation/damage_groups_compute.
+	int				InfightingGroup;
+	int				ProjectileGroup;
+	int				SplashGroup;
 	fixed_t			bouncefactor;	// Strife's grenades use 50%, Hexen's Flechettes 70.
 	fixed_t			wallbouncefactor;	// The bounce factor for walls can be different.
 	int				bouncecount;	// Strife's grenades only bounce twice before exploding
