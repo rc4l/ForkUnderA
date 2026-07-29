@@ -1,0 +1,41 @@
+// DECORATE conformance lump for the GZDoom-successor action functions backported for
+// Eviternity II: A_NoiseAlert, A_StartSound, A_FireProjectile. Exercises every call shape the
+// wad uses so a regression that drops a decl/param resurfaces as an "Invalid state parameter" /
+// "unknown identifier" parse error. Package into a pk3/wad and -file it; see README.md.
+
+ACTOR ZXConfNoiseAlert
+{
+	States
+	{
+	Spawn:
+		TNT1 A 2 A_NoiseAlert
+		TNT1 A 2 A_NoiseAlert()
+		Stop
+	}
+}
+
+ACTOR ZXConfStartSound
+{
+	States
+	{
+	Spawn:
+		TNT1 A 1 A_StartSound("world/barrelx", 0, CHANF_OVERLAP)
+		TNT1 A 1 A_StartSound("world/barrelx", 0, CHANF_OVERLAP, 1.0, 0.4)
+		TNT1 A 1 A_StartSound("weapons/pistol", CHAN_WEAPON)
+		TNT1 A 1 A_StartSound("weapons/pistol", CHAN_BODY, CHANF_LOOP, 1.0, ATTN_NORM, 0.0)
+		Stop
+	}
+}
+
+ACTOR ZXConfFireProjectile : Pistol replaces Pistol
+{
+	States
+	{
+	Fire:
+		PISG A 1 A_FireProjectile("Rocket", 0.0, 0)
+		PISG A 1 A_FireProjectile("Rocket", 15, false, 0, 0, FPF_AIMATANGLE)
+		PISG A 1 A_FireProjectile("Rocket", 0, true, 0, 0, FPF_NOAUTOAIM, 0)
+		PISG A 1 A_ReFire
+		Goto Ready
+	}
+}

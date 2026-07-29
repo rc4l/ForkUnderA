@@ -605,6 +605,49 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_PlaySoundEx)
 	}
 }
 
+//==========================================================================
+//
+// [rc4l] A_StartSound -- the modern successor to A_PlaySound. Ported from
+// uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514 (actor.zs A_StartSound). Mods (Eviternity II
+// among them) call it by name from DECORATE. `flags` carries uzdoom's EChanFlags: CHANF_OVERLAP
+// maps onto this base's CHAN_AUTO free-channel search (its native overlap mechanism -- never cuts
+// an existing sound); CHANF_LOOP loops. pitch/startTime and CHANF_NOSTOP are accepted for signature
+// parity but not yet honoured -- this base's S_Sound has no per-call pitch, and no shipping mod uses
+// them here.
+//
+//==========================================================================
+enum
+{
+	CHANF_LOOP		= 256,
+	CHANF_OVERLAP	= 8192,
+};
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StartSound)
+{
+	ACTION_PARAM_START(6);
+	ACTION_PARAM_SOUND(soundid, 0);
+	ACTION_PARAM_INT(slot, 1);
+	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_FLOAT(volume, 3);
+	ACTION_PARAM_FLOAT(attenuation, 4);
+	ACTION_PARAM_FLOAT(pitch, 5);
+
+	// [BC]-style: let the server drive actor sounds.
+	if ( NETWORK_InClientMode() )
+	{
+		if (( self->NetworkFlags & NETFL_CLIENTSIDEONLY ) == false )
+			return;
+	}
+
+	int channel = slot & 7;
+	if ( flags & CHANF_OVERLAP )
+		channel = CHAN_AUTO;	// free-channel search never cuts an existing sound
+	if ( flags & CHANF_LOOP )
+		channel |= CHAN_LOOP;
+
+	S_Sound( self, channel, soundid, volume, attenuation, true );	// true = replicate to clients
+}
+
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StopSoundEx)
 {
 	ACTION_PARAM_START(1);
@@ -628,6 +671,23 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StopSoundEx)
 		if ( NETWORK_GetState() == NETSTATE_SERVER )
 			SERVER_UpdateLoopingChannels( self, int(channel) - NAME_Auto, 0, 0, 0, true );
 	}
+}
+
+//==========================================================================
+//
+// [rc4l] A_NoiseAlert -- alerts nearby monsters (via sound flood-fill) to the caller's target.
+// Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514 (mbf21.zs A_NoiseAlert), where it
+// is `if (target) SoundAlert(target)`. Eviternity II calls it by name from DECORATE. Monster
+// alerting is server-authoritative, so clients no-op (mirrors A_AlertMonsters).
+//
+//==========================================================================
+DEFINE_ACTION_FUNCTION(AActor, A_NoiseAlert)
+{
+	if ( NETWORK_InClientMode() )
+		return;
+
+	if ( self->target != NULL )
+		P_NoiseAlert( self->target, self );
 }
 
 //==========================================================================
@@ -1850,17 +1910,30 @@ void A_FireCustomMissileHelper ( AActor * self,
 	}
 }
 
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
+// [rc4l] Flags for A_FireProjectile, matching uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514
+// (constants.zs). This base always auto-aims and has no per-missile translation, so
+// FPF_NOAUTOAIM / FPF_TRANSFERTRANSLATION are accepted for signature parity but not yet honoured.
+enum
 {
-	ACTION_PARAM_START(7);
-	ACTION_PARAM_CLASS(ti, 0);
-	ACTION_PARAM_ANGLE(Angle, 1);
-	ACTION_PARAM_BOOL(UseAmmo, 2);
-	ACTION_PARAM_INT(SpawnOfs_XY, 3);
-	ACTION_PARAM_FIXED(SpawnHeight, 4);
-	ACTION_PARAM_BOOL(AimAtAngle, 5);
-	ACTION_PARAM_ANGLE(pitch, 6);
+	FPF_AIMATANGLE			= 1,
+	FPF_TRANSFERTRANSLATION	= 2,
+	FPF_NOAUTOAIM			= 4,
+};
 
+//==========================================================================
+//
+// [rc4l] ZX_FireProjectile -- shared body of A_FireProjectile and its deprecated predecessor
+// A_FireCustomMissile. Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514
+// (stateprovider.zs A_FireProjectile), where A_FireCustomMissile is a thin
+// wrapper that calls A_FireProjectile with a negated pitch. PitchAdjust is added to the player's
+// pitch; A_FireCustomMissile passes the negated form so its aim stays bit-for-bit what it has
+// always been.
+//
+//==========================================================================
+static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Angle, const INTBOOL UseAmmo,
+							   const int SpawnOfs_XY, const fixed_t SpawnHeight, const INTBOOL AimAtAngle,
+							   const fixed_t PitchAdjust )
+{
 	if (!self->player) return;
 
 	player_t *player=self->player;
@@ -1876,7 +1949,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 	if ( NETWORK_ShouldActorNotBeSpawned ( self, ti ) )
 		return;
 
-	if (ti) 
+	if (ti)
 	{
 		angle_t ang = (self->angle - ANGLE_90) >> ANGLETOFINESHIFT;
 		fixed_t x = SpawnOfs_XY * finecosine[ang];
@@ -1888,7 +1961,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 
 		// Temporarily adjusts the pitch
 		fixed_t SavedPlayerPitch = self->pitch;
-		self->pitch -= fixed_t::FromSignedBits(pitch);
+		self->pitch += PitchAdjust;
 
 		A_FireCustomMissileHelper( self, x, y, z, shootangle, ti, Angle , AimAtAngle, linetarget );
 
@@ -1901,31 +1974,48 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 			}
 		}
 
-		//AActor * misl=P_SpawnPlayerMissile (self, x, y, z, ti, shootangle, &linetarget);
 		self->pitch = SavedPlayerPitch;
-/*
-		// automatic handling of seeker missiles
-		if (misl)
-		{
-			if (linetarget && misl->flags2&MF2_SEEKERMISSILE) misl->tracer=linetarget;
-			if (!AimAtAngle)
-			{
-				// This original implementation is to aim straight ahead and then offset
-				// the angle from the resulting direction. 
-				FVector3 velocity(misl->velx, misl->vely, 0);
-				fixed_t missilespeed = (fixed_t)velocity.Length();
-				misl->angle += Angle;
-				angle_t an = misl->angle >> ANGLETOFINESHIFT;
-				misl->velx = FixedMul (missilespeed, finecosine[an]);
-				misl->vely = FixedMul (missilespeed, finesine[an]);
-			}
-
-			// [BC] If we're the server, tell clients to spawn this missile.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SpawnMissile( misl );
-		}
-*/
 	}
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
+{
+	ACTION_PARAM_START(7);
+	ACTION_PARAM_CLASS(ti, 0);
+	ACTION_PARAM_ANGLE(Angle, 1);
+	ACTION_PARAM_BOOL(UseAmmo, 2);
+	ACTION_PARAM_INT(SpawnOfs_XY, 3);
+	ACTION_PARAM_FIXED(SpawnHeight, 4);
+	ACTION_PARAM_BOOL(AimAtAngle, 5);
+	ACTION_PARAM_ANGLE(pitch, 6);
+
+	// [rc4l] Deprecated upstream in favour of A_FireProjectile, kept because the existing mod corpus
+	// calls it. Negates pitch to match upstream's deprecated wrapper (A_FireProjectile(..., -pitch)).
+	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight, AimAtAngle,
+					   -fixed_t::FromSignedBits(pitch) );
+}
+
+//==========================================================================
+//
+// [rc4l] A_FireProjectile -- upstream's successor to A_FireCustomMissile. Mods (Eviternity II among
+// them) call it by name from DECORATE, and the whole file was rejected without it. `flags` carries
+// FPF_AIMATANGLE; the pitch sign is upstream's (added, not subtracted -- the opposite of the
+// deprecated wrapper).
+//
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireProjectile)
+{
+	ACTION_PARAM_START(7);
+	ACTION_PARAM_CLASS(ti, 0);
+	ACTION_PARAM_ANGLE(Angle, 1);
+	ACTION_PARAM_BOOL(UseAmmo, 2);
+	ACTION_PARAM_INT(SpawnOfs_XY, 3);
+	ACTION_PARAM_FIXED(SpawnHeight, 4);
+	ACTION_PARAM_INT(flags, 5);
+	ACTION_PARAM_ANGLE(pitch, 6);
+
+	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
+					   flags & FPF_AIMATANGLE, fixed_t::FromSignedBits(pitch) );
 }
 
 
