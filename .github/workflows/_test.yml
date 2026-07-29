@@ -50,6 +50,12 @@ jobs:
       - name: Staircase ledger check
         run: bash tools/staircase-ledger-check.sh
 
+      # [rc4l] crash-sync reopen rule: it reopened closed crash issues forever (#79, #85) because it
+      # treated "still unresolved in GlitchTip" as "the crash recurred". Pure, stdlib-only, no
+      # network — a machine checks the rule, not a person.
+      - name: crash-sync regression rule
+        run: python3 tools/crash_sync_test.py
+
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:
@@ -63,7 +69,18 @@ jobs:
         run: bash tests/coverage.sh --auto
 
       # [rc4l] compile_commands.json comes from the configure step above. Tests are now
-      # colocated in the engine tree, so lint every *_test.cpp there (absolute paths so
-      # they match the compile_commands.json entries).
+      # colocated in the engine tree, so lint every *_test.cpp there.
+      #
+      # run-clang-tidy, not clang-tidy: handing all 50 files to one clang-tidy process made it
+      # walk them strictly serially on a single core, which was ~10 min of a ~12 min job — and
+      # since build/ needs: test, every platform build waited on it. Profiling showed the cost is
+      # per-file parsing of the vendored engine headers repeated 50 times, not the checks
+      # themselves (any one check group costs ~0.6s/file; all six together ~0.86s), so trimming
+      # Checks would not have helped — parallelising is what does. run-clang-tidy ships with the
+      # clang-tidy package already installed above, so this needs no new dependency.
+      #
+      # It selects files by regex against compile_commands.json rather than argv; the pattern is
+      # anchored to the same directory the previous find walked so exactly the same 50 files are
+      # linted. .clang-tidy is still picked up per-file, so what gets reported is unchanged.
       - name: clang-tidy (report)
-        run: clang-tidy -p build-tests $(find "$PWD/src/zandronum/src" -name '*_test.cpp')
+        run: run-clang-tidy -p build-tests -j"$(nproc)" 'src/zandronum/src/.*_test\.cpp$'
