@@ -3168,6 +3168,13 @@ static bool DoDehPatch()
 		Printf ("DeHackEd patch version is %d.\nUnexpected results may occur.\n", pversion);
 	}
 
+	// [rc4l] Enable DSDHacked's unlimited thing/frame/sprite/sound numbering. It is a Patch-format-6
+	// feature: the spec recommends "Doom version = 2021", but real MBF21/DSDHacked wads (e.g. Judgment:
+	// version 21, format 6) don't always set it, and dsda-doom grows its tables on demand for any
+	// format-6 patch. Compute from the ORIGINAL version/format, before the remap below. See
+	// zx::mbf21::ComputeDsdHackedEnabled.
+	DsdHackedEnabled = zx::mbf21::ComputeDsdHackedEnabled(dversion, pversion);
+
 	if (dversion == 16)
 		dversion = 0;
 	else if (dversion == 17)
@@ -3180,8 +3187,7 @@ static bool DoDehPatch()
 		dversion = 4;
 	else if (dversion == 2021)	// [rc4l] MBF21 patches identify themselves like this.
 	{
-		dversion = 3;
-		DsdHackedEnabled = true;	// [rc4l] MBF21 patches may also use DSDHacked's unlimited numbering.
+		dversion = 3;	// [rc4l] DSDHacked enablement handled above via ComputeDsdHackedEnabled.
 	}
 	else
 	{
