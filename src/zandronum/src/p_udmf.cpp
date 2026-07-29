@@ -974,7 +974,12 @@ public:
 				continue;
 
 			case NAME_Blockplayers:
-				Flag(ld->flags, ML_BLOCK_PLAYERS, key); 
+				Flag(ld->flags, ML_BLOCK_PLAYERS, key);
+				continue;
+
+			// [rc4l] MBF21: blocks non-floating monsters (UDMF equivalent of the Doom-format flag).
+			case NAME_Blocklandmonsters:
+				Flag(ld->flags, ML_BLOCKLANDMONSTERS, key);
 				continue;
 
 			case NAME_Blockeverything:
