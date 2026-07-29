@@ -4208,6 +4208,15 @@ void AActor::Tick ()
 		}
 		}
 
+		// [rc4l] MBF21: sectors with the kill-monsters bit kill grounded (non-floating) monsters.
+		// Server-authoritative; the death is then replicated to clients like any other.
+		if (( Sector->special & KILL_MONSTERS_MASK ) && z <= floorz &&
+			player == NULL && (flags & MF_SHOOTABLE) && !(flags & MF_FLOAT) &&
+			( NETWORK_InClientMode() == false ))
+		{
+			P_DamageMobj (this, NULL, NULL, TELEFRAG_DAMAGE, NAME_InstantDeath);
+		}
+
 		// [RH] Consider carrying sectors here
 		fixed_t cummx = 0, cummy = 0;
 		if ((level.Scrolls != NULL || player != NULL) && !(flags & MF_NOCLIP) && !(flags & MF_NOSECTOR))
