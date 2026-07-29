@@ -608,7 +608,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_PlaySoundEx)
 //==========================================================================
 //
 // [rc4l] A_StartSound -- the modern successor to A_PlaySound. Ported from
-// uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514 (zscript/actors/actor.zs). Mods (Eviternity II
+// uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514 (actor.zs A_StartSound). Mods (Eviternity II
 // among them) call it by name from DECORATE. `flags` carries uzdoom's EChanFlags: CHANF_OVERLAP
 // maps onto this base's CHAN_AUTO free-channel search (its native overlap mechanism -- never cuts
 // an existing sound); CHANF_LOOP loops. pitch/startTime and CHANF_NOSTOP are accepted for signature
@@ -676,7 +676,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StopSoundEx)
 //==========================================================================
 //
 // [rc4l] A_NoiseAlert -- alerts nearby monsters (via sound flood-fill) to the caller's target.
-// Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514 (zscript/actors/mbf21.zs), where it
+// Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514 (mbf21.zs A_NoiseAlert), where it
 // is `if (target) SoundAlert(target)`. Eviternity II calls it by name from DECORATE. Monster
 // alerting is server-authoritative, so clients no-op (mirrors A_AlertMonsters).
 //
@@ -1911,7 +1911,7 @@ void A_FireCustomMissileHelper ( AActor * self,
 }
 
 // [rc4l] Flags for A_FireProjectile, matching uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514
-// (zscript/constants.zs). This base always auto-aims and has no per-missile translation, so
+// (constants.zs). This base always auto-aims and has no per-missile translation, so
 // FPF_NOAUTOAIM / FPF_TRANSFERTRANSLATION are accepted for signature parity but not yet honoured.
 enum
 {
@@ -1924,7 +1924,7 @@ enum
 //
 // [rc4l] ZX_FireProjectile -- shared body of A_FireProjectile and its deprecated predecessor
 // A_FireCustomMissile. Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514
-// (zscript/actors/inventory/stateprovider.zs A_FireProjectile), where A_FireCustomMissile is a thin
+// (stateprovider.zs A_FireProjectile), where A_FireCustomMissile is a thin
 // wrapper that calls A_FireProjectile with a negated pitch. PitchAdjust is added to the player's
 // pitch; A_FireCustomMissile passes the negated form so its aim stays bit-for-bit what it has
 // always been.
