@@ -2,6 +2,11 @@
 deps/
 build/
 
+# Visual Studio outputs
+.vs/
+
+src/zandronum/sqlite/sqlite-autoconf*
+
 # Test/coverage build trees (cmake -S tests -B build-*)
 build-tests/
 build-san/
