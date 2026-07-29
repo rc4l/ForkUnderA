@@ -2042,7 +2042,8 @@ DEFINE_ACTION_FUNCTION(AActor, A_Look)
 	}
 	else if (self->SeeSound)
 	{
-		if (self->flags2 & MF2_BOSS)
+		// [rc4l] MBF21 FULLVOLSOUNDS makes the see sound full-volume even on non-boss actors.
+		if (self->flags2 & MF2_BOSS || self->flags8 & MF8_FULLVOLSEE)
 		{ // full volume
 			S_Sound (self, CHAN_VOICE, self->SeeSound, 1, ATTN_NONE, true );	// [BC] Inform the clients.
 		}
@@ -3336,7 +3337,8 @@ DEFINE_ACTION_FUNCTION(AActor, A_Scream)
 	if (self->DeathSound)
 	{
 		// Check for bosses.
-		if (self->flags2 & MF2_BOSS)
+		// [rc4l] MBF21 FULLVOLSOUNDS makes the death sound full-volume even on non-boss actors.
+		if (self->flags2 & MF2_BOSS || self->flags8 & MF8_FULLVOLDEATH)
 		{
 			// full volume
 			S_Sound (self, CHAN_VOICE, self->DeathSound, 1, ATTN_NONE);
@@ -3733,10 +3735,12 @@ DEFINE_ACTION_FUNCTION(AActor, A_BossDeath)
 		return;
 
 	if ((i_compatflags & COMPATF_ANYBOSSDEATH) || ( // [GZ] Added for UAC_DEAD
-		((level.flags & LEVEL_MAP07SPECIAL) && (type == NAME_Fatso || type == NAME_Arachnotron)) ||
-		((level.flags & LEVEL_BRUISERSPECIAL) && (type == NAME_BaronOfHell)) ||
-		((level.flags & LEVEL_CYBORGSPECIAL) && (type == NAME_Cyberdemon)) ||
-		((level.flags & LEVEL_SPIDERSPECIAL) && (type == NAME_SpiderMastermind)) ||
+		// [rc4l] MBF21 lets a DeHackEd thing opt into a boss-death action via MF8_* flags, not just
+		// the hardcoded vanilla types.
+		((level.flags & LEVEL_MAP07SPECIAL) && (type == NAME_Fatso || type == NAME_Arachnotron || (self->flags8 & (MF8_MAP07BOSS1|MF8_MAP07BOSS2)))) ||
+		((level.flags & LEVEL_BRUISERSPECIAL) && (type == NAME_BaronOfHell || (self->flags8 & MF8_E1M8BOSS))) ||
+		((level.flags & LEVEL_CYBORGSPECIAL) && (type == NAME_Cyberdemon || (self->flags8 & (MF8_E2M8BOSS|MF8_E4M6BOSS)))) ||
+		((level.flags & LEVEL_SPIDERSPECIAL) && (type == NAME_SpiderMastermind || (self->flags8 & (MF8_E3M8BOSS|MF8_E4M8BOSS)))) ||
 		((level.flags & LEVEL_HEADSPECIAL) && (type == NAME_Ironlich)) ||
 		((level.flags & LEVEL_MINOTAURSPECIAL) && (type == NAME_Minotaur)) ||
 		((level.flags & LEVEL_SORCERER2SPECIAL) && (type == NAME_Sorcerer2))
@@ -3757,13 +3761,13 @@ DEFINE_ACTION_FUNCTION(AActor, A_BossDeath)
 	}
 	if (level.flags & LEVEL_MAP07SPECIAL)
 	{
-		if (type == NAME_Fatso)
+		if (type == NAME_Fatso || (self->flags8 & MF8_MAP07BOSS1))
 		{
 			EV_DoFloor (DFloor::floorLowerToLowest, NULL, 666, FRACUNIT, 0, 0, 0, false);
 			return;
 		}
-		
-		if (type == NAME_Arachnotron)
+
+		if (type == NAME_Arachnotron || (self->flags8 & MF8_MAP07BOSS2))
 		{
 			EV_DoFloor (DFloor::floorRaiseByTexture, NULL, 667, FRACUNIT, 0, 0, 0, false);
 			return;
