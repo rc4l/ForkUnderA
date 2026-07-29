@@ -888,6 +888,20 @@ static const PClass *FindOrCreateDsdActor(int thingnum)
 	FString name;
 	name.Format("DsdHackedThing%d", thingnum);
 	PClass *cls = RUNTIME_CLASS(AActor)->CreateDerivedClass(name, sizeof(AActor));
+
+	// [rc4l] dsda-doom zero-initializes a new mobjinfo (dsda/mobjinfo.c), so a DSDHacked patch that
+	// leaves a field unset sees 0 -- not AActor's Doom defaults (health 1000, radius 20, height 16,
+	// mass 100, reactiontime 8). Zero those so an unset field matches dsda. Fields that already match
+	// are left alone: Speed/PainChance are 0 on our base Actor too; meleerange 44 + the 20-unit target
+	// radius == dsda's MELEERANGE(64); fast-speed-unset already falls back like dsda's NO_ALTSPEED; and
+	// ZDoom-model fields (gravity, minmissilechance) have no dsda equivalent.
+	AActor *def = GetDefaultByType (cls);
+	def->health = 0;
+	def->radius = 0;
+	def->height = 0;
+	def->Mass = 0;
+	def->reactiontime = 0;
+
 	DsdActors.Insert(thingnum, cls);
 	return cls;
 }
@@ -1195,28 +1209,43 @@ static int PatchThing (int thingy)
 	type = NULL;
 	info = (AActor *)&dummy;
 	ednum = &dummyed;
-	if (thingy > (int)InfoNames.Size() || thingy <= 0)
+	if (thingy <= 0)
 	{
 		Printf ("Thing %d out of range.\n", thingy);
+	}
+	else if (thingy > (int)InfoNames.Size())
+	{
+		// [rc4l] DSDHacked: things past the static DEHEXTRA/DEHSUPP pool are allocated on demand --
+		// dsda-doom grows mobjinfo[] for ANY index (dsda/mobjinfo.c). Route the block to a lazily-
+		// created class (with dsda-matching zeroed defaults, see FindOrCreateDsdActor) instead of
+		// discarding it into a throwaway dummy, so e.g. "Thing 70000 { ... }" actually defines a thing.
+		if (DsdHackedEnabled)
+		{
+			DPrintf ("Thing %d (DSDHacked)\n", thingy);
+			type = FindOrCreateDsdActor (thingy);
+			info = GetDefaultByType (type);
+			ednum = &type->ActorInfo->DoomEdNum;
+		}
+		else
+		{
+			Printf ("Thing %d out of range.\n", thingy);
+		}
 	}
 	else
 	{
 		DPrintf ("Thing %d\n", thingy);
-		if (thingy > 0)
+		type = InfoNames[thingy - 1];
+		if (type == NULL)
 		{
-			type = InfoNames[thingy - 1];
-			if (type == NULL)
-			{
-				info = (AActor *)&dummy;
-				ednum = &dummyed;
-				// An error for the name has already been printed while loading DEHSUPP.
-				Printf ("Could not find thing %d\n", thingy);
-			}
-			else
-			{
-				info = GetDefaultByType (type);
-				ednum = &type->ActorInfo->DoomEdNum;
-			}
+			info = (AActor *)&dummy;
+			ednum = &dummyed;
+			// An error for the name has already been printed while loading DEHSUPP.
+			Printf ("Could not find thing %d\n", thingy);
+		}
+		else
+		{
+			info = GetDefaultByType (type);
+			ednum = &type->ActorInfo->DoomEdNum;
 		}
 	}
 
