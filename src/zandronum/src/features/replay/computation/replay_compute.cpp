@@ -70,4 +70,29 @@ int ComputeClipStartIndex(const int64_t *tUs, const unsigned char *key, int coun
 	return -1; // nothing keyframed -> nothing decodable to save
 }
 
+PboAction ComputePboAction(bool haveBuffers, int curW, int curH, int reqW, int reqH)
+{
+	// Reuse only when we already own live buffers AND their size still matches. A framebuffer that
+	// owns no buffers (fresh, or just after a GL context recreate on a video-mode switch) must always
+	// allocate -- reusing a name from the destroyed context is the crash this guards against.
+	if (haveBuffers && curW == reqW && curH == reqH)
+		return PboAction::Reuse;
+	return PboAction::Allocate;
+}
+
+int64_t ComputeRgbReadbackBytes(int reqW, int reqH)
+{
+	if (reqW <= 0 || reqH <= 0)
+		return 0;
+	return static_cast<int64_t>(reqW) * reqH * 3;
+}
+
+BottomUpView ComputeBottomUpView(int reqW, int reqH)
+{
+	if (reqW <= 0 || reqH <= 0)
+		return BottomUpView{ 0, 0 };
+	const int rowBytes = reqW * 3;
+	return BottomUpView{ static_cast<int64_t>(reqH - 1) * rowBytes, -rowBytes };
+}
+
 } // namespace zx
