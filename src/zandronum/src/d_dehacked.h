@@ -58,6 +58,17 @@ public:
 	AInventory* GetRealPickup();
 };
 
+// [rc4l] MBF21 thing-flag translation. Applies (set=true) or clears (set=false) a set of MBF21
+// flag bits (DEH21F_*, see features/mbf21/computation/mbf21_flags_compute.h) on an actor's native
+// flag words. Shared by the "MBF21 Bits" DeHackEd parser and, later, the A_AddFlags/A_RemoveFlags/
+// A_JumpIfFlagsSet codepointers.
+void DEH_ChangeMBF21Flags (AActor *actor, DWORD bits, bool set);
+// True when every MBF21 bit in `bits` is currently set on the actor (for A_JumpIfFlagsSet).
+bool DEH_CheckMBF21Flags (AActor *actor, DWORD bits);
+// Same pair for the vanilla Doom thing-flag word the MBF21 flag codepointers take as their first arg.
+void DEH_ChangeVanillaFlags (AActor *actor, DWORD bits, bool set);
+bool DEH_CheckVanillaFlags (AActor *actor, DWORD bits);
+
 int D_LoadDehLumps();
 bool D_LoadDehLump(int lumpnum);
 bool D_LoadDehFile(const char *filename);

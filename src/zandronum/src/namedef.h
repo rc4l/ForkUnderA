@@ -414,6 +414,7 @@ xx(Blockeverything)
 xx(Zoneboundary)
 xx(Jumpover)
 xx(Blockfloaters)
+xx(Blocklandmonsters) // [rc4l] MBF21
 xx(Clipmidtex)
 xx(Wrapmidtex)
 xx(Midtex3d)
