@@ -55,6 +55,8 @@
 #include "a_action.h"
 #include "decallib.h"
 #include "m_random.h"
+#include "d_dehacked.h"
+#include "features/mbf21/computation/hitscan_spread_compute.h"
 #include "i_system.h"
 #include "p_local.h"
 #include "c_console.h"
@@ -6111,4 +6113,271 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ClientsideACSExecute)
 	bool res = !!P_ExecuteSpecial(ACS_ExecuteWithResult, NULL, self, false, -scriptname, arg1, arg2, arg3, arg4);
 
 	ACTION_SET_RESULT(res);
+}
+
+//==========================================================================
+//
+// [rc4l] MBF21 codepointers. Purpose-built DEHACKED actions from the MBF21
+// spec (v1.4), ported from Zandronum lz/mbf21 and cross-checked against
+// dsda-doom. All arguments are optional so they qualify as DEHACKED-
+// compatible codepointers; the DEHACKED "Args1".."Args8" fields are mapped
+// onto these parameters by SetMBF21Params in d_dehacked.cpp. The netcode-
+// sensitive pitch->slope math lives in the tested zx::mbf21 helper.
+//
+//==========================================================================
+
+static FRandom pr_mbf21 ("MBF21");
+
+// MBF21 projectile pitch (fixed-point degrees) -> slope. The index math is the tested, integer-only
+// (hence demo/netcode-deterministic) zx::mbf21::ComputeDegToSlopeIndex; here we read the engine's
+// finetangent table and re-apply the sign (negative pitch aims up).
+static fixed_t MBF21_DegToSlope(fixed_t a)
+{
+	fixed_t slope = finetangent[zx::mbf21::ComputeDegToSlopeIndex(a.Raw())];
+	return a >= 0 ? slope : -slope;
+}
+
+//==========================================================================
+// A_SpawnObject: generic actor spawn, position/velocity relative to angle.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SpawnObject)
+{
+	ACTION_PARAM_START(8);
+	ACTION_PARAM_CLASS(type, 0);
+	ACTION_PARAM_ANGLE(angle, 1);
+	ACTION_PARAM_FIXED(xofs, 2);
+	ACTION_PARAM_FIXED(yofs, 3);
+	ACTION_PARAM_FIXED(zofs, 4);
+	ACTION_PARAM_FIXED(xvel, 5);
+	ACTION_PARAM_FIXED(yvel, 6);
+	ACTION_PARAM_FIXED(zvel, 7);
+
+	if (type == NULL)
+		return;
+
+	if ( NETWORK_ShouldActorNotBeSpawned ( self, type ) )
+		return;
+
+	const angle_t an = self->angle + angle;
+	const int fan = an >> ANGLETOFINESHIFT;
+	const fixed_t dx = FixedMul(xofs, finecosine[fan]) - FixedMul(yofs, finesine[fan]);
+	const fixed_t dy = FixedMul(xofs, finesine[fan]) + FixedMul(yofs, finecosine[fan]);
+
+	AActor *mo = Spawn(type, self->x + dx, self->y + dy, self->z + zofs, ALLOW_REPLACE);
+	if (mo == NULL)
+		return;
+
+	mo->angle = an;
+	mo->velx = FixedMul(xvel, finecosine[fan]) - FixedMul(yvel, finesine[fan]);
+	mo->vely = FixedMul(xvel, finesine[fan]) + FixedMul(yvel, finecosine[fan]);
+	mo->velz = zvel;
+
+	// If the spawnee is a missile, set up its owner pointers as the spec asks.
+	if (mo->flags & MF_MISSILE || mo->BounceFlags != BOUNCE_None)
+	{
+		if (self->flags & MF_MISSILE || self->BounceFlags != BOUNCE_None)
+		{
+			mo->target = self->target;
+			mo->tracer = self->tracer;
+		}
+		else
+		{
+			mo->target = self;
+			mo->tracer = self->target;
+		}
+	}
+
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		if (mo->flags & MF_MISSILE)
+		{
+			SERVERCOMMANDS_SpawnMissileExact( mo );
+		}
+		else
+		{
+			SERVERCOMMANDS_SpawnThing( mo );
+			SERVER_SetThingNonZeroAngleAndVelocity( mo );
+		}
+		if (( mo->flags & MF_MISSILE || mo->BounceFlags != BOUNCE_None ) && mo->target != NULL )
+			SERVERCOMMANDS_SetThingTarget ( mo );
+	}
+
+	if ( NETWORK_InClientMode() )
+		mo->NetworkFlags |= NETFL_CLIENTSIDEONLY;
+}
+
+//==========================================================================
+// A_MonsterProjectile: generic monster projectile attack.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_MonsterProjectile)
+{
+	ACTION_PARAM_START(5);
+	ACTION_PARAM_CLASS(type, 0);
+	ACTION_PARAM_ANGLE(angle, 1);
+	ACTION_PARAM_FIXED(pitch, 2);
+	ACTION_PARAM_FIXED(hoffset, 3);
+	ACTION_PARAM_FIXED(voffset, 4);
+
+	if ( NETWORK_InClientMode() )
+		return;
+
+	if (type == NULL || self->target == NULL)
+		return;
+
+	A_FaceTarget(self);
+	AActor *mo = P_SpawnMissile(self, self->target, type);
+	if (mo == NULL)
+		return;
+
+	mo->angle += angle;
+	const int fan = mo->angle >> ANGLETOFINESHIFT;
+	mo->velx = FixedMul(mo->Speed, finecosine[fan]);
+	mo->vely = FixedMul(mo->Speed, finesine[fan]);
+	mo->velz += FixedMul(mo->Speed, MBF21_DegToSlope(pitch));
+
+	const int oan = (self->angle - ANGLE_90) >> ANGLETOFINESHIFT;
+	mo->SetOrigin(mo->x + FixedMul(hoffset, finecosine[oan]),
+		mo->y + FixedMul(hoffset, finesine[oan]), mo->z + voffset);
+
+	// Always set the tracer to the target so seeker missiles can home in later.
+	mo->tracer = self->target;
+
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SpawnMissileExact( mo );
+}
+
+//==========================================================================
+// A_MonsterMeleeAttack: generic monster melee attack.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_MonsterMeleeAttack)
+{
+	ACTION_PARAM_START(4);
+	ACTION_PARAM_INT(damagebase, 0);
+	ACTION_PARAM_INT(damagedice, 1);
+	ACTION_PARAM_SOUND(hitsound, 2);
+	ACTION_PARAM_FIXED(range, 3);
+
+	if ( NETWORK_InClientMode() )
+		return;
+
+	AActor *target = self->target;
+	if (target == NULL)
+		return;
+
+	// The dehacked range uses the vanilla MELEERANGE convention (includes the target radius); ZDoom's
+	// meleerange does not, hence the -20.
+	if (range == 0)
+		range = self->meleerange;
+	else
+		range -= 20*FRACUNIT;
+
+	A_FaceTarget(self);
+
+	if (P_AproxDistance(target->x - self->x, target->y - self->y) >= range + target->radius)
+		return;
+	if (!(self->flags5 & MF5_NOVERTICALMELEERANGE))
+	{
+		if (target->z > self->z + self->height)
+			return;
+		if (target->z + target->height < self->z)
+			return;
+	}
+	if (!P_CheckSight(self, target, 0))
+		return;
+
+	if (hitsound != 0)
+		S_Sound (self, CHAN_WEAPON, hitsound, 1, ATTN_NORM, true);	// [rc4l] Inform the clients.
+
+	const int damage = damagedice > 0 ? (pr_mbf21() % damagedice + 1) * damagebase : 0;
+	const int newdam = P_DamageMobj(target, self, self, damage, NAME_Melee);
+	P_TraceBleed(newdam > 0 ? newdam : damage, target, self);
+}
+
+//==========================================================================
+// A_JumpIfFlagsSet / A_AddFlags / A_RemoveFlags: MBF21 flag codepointers.
+// The first flag word is the vanilla Doom bits; the second is the MBF21 word.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfFlagsSet)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_STATE(jump, 0);
+	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_INT(flags2, 2);
+
+	ACTION_SET_RESULT(false);	// Jumps must not set the result for inventory state chains.
+
+	if ( NETWORK_InClientMode() )
+	{
+		if (( self->NetworkFlags & NETFL_CLIENTSIDEONLY ) == false )
+			return;
+	}
+
+	if (DEH_CheckVanillaFlags(self, (DWORD)flags) && DEH_CheckMBF21Flags(self, (DWORD)flags2))
+	{
+		ACTION_JUMP(jump, CLIENTUPDATE_FRAME);
+	}
+}
+
+static void MBF21_ChangeFlags(AActor *self, int flags, int flags2, bool set)
+{
+	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+		return;
+
+	const bool kill_before = self->CountsAsKill();
+	const DWORD oldflags[] = { self->flags, self->flags2, self->flags3, self->flags4, self->flags6 };
+	const fixed_t oldgravity = self->gravity;
+
+	// Changing these two requires relinking the actor into the world.
+	const bool linkchange = (flags & (MF_NOBLOCKMAP | MF_NOSECTOR)) != 0;
+	if (linkchange)
+		self->UnlinkFromWorld();
+	DEH_ChangeVanillaFlags(self, (DWORD)flags, set);
+	DEH_ChangeMBF21Flags(self, (DWORD)flags2, set);
+	if (linkchange)
+		self->LinkToWorld();
+
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		static const FlagSet flagsets[] = { FLAGSET_FLAGS, FLAGSET_FLAGS2, FLAGSET_FLAGS3, FLAGSET_FLAGS4, FLAGSET_FLAGS6 };
+		const DWORD newflags[] = { self->flags, self->flags2, self->flags3, self->flags4, self->flags6 };
+		for (unsigned int i = 0; i < countof(oldflags); i++)
+		{
+			if (oldflags[i] != newflags[i])
+				SERVERCOMMANDS_SetThingFlags( self, flagsets[i] );
+		}
+		if (oldgravity != self->gravity)
+			SERVERCOMMANDS_SetThingGravity( self );
+	}
+
+	const bool kill_after = self->CountsAsKill();
+	if (kill_before != kill_after)
+	{
+		if (kill_after)
+			level.total_monsters++;
+		else
+			level.total_monsters--;
+
+		INVASION_UpdateMonsterCount( self, !kill_after );
+
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetMapNumTotalMonsters( );
+	}
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_AddFlags)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(flags, 0);
+	ACTION_PARAM_INT(flags2, 1);
+
+	MBF21_ChangeFlags(self, flags, flags2, true);
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveFlags)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(flags, 0);
+	ACTION_PARAM_INT(flags2, 1);
+
+	MBF21_ChangeFlags(self, flags, flags2, false);
 }

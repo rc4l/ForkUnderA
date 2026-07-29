@@ -65,6 +65,9 @@ public:
 void DEH_ChangeMBF21Flags (AActor *actor, DWORD bits, bool set);
 // True when every MBF21 bit in `bits` is currently set on the actor (for A_JumpIfFlagsSet).
 bool DEH_CheckMBF21Flags (AActor *actor, DWORD bits);
+// Same pair for the vanilla Doom thing-flag word the MBF21 flag codepointers take as their first arg.
+void DEH_ChangeVanillaFlags (AActor *actor, DWORD bits, bool set);
+bool DEH_CheckVanillaFlags (AActor *actor, DWORD bits);
 
 int D_LoadDehLumps();
 bool D_LoadDehLump(int lumpnum);
