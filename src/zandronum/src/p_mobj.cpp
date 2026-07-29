@@ -384,6 +384,15 @@ void AActor::Serialize (FArchive &arc)
 		arc << projectilepassradius;
 	}
 
+	// [rc4l] MBF21 damage groups. Version-guarded so older snapshots (which never stored them) load
+	// with the class default (0 = vanilla behaviour). These are per-actor state set from DeHackEd.
+	if (SaveVersion >= 4509)
+	{
+		arc << InfightingGroup
+			<< ProjectileGroup
+			<< SplashGroup;
+	}
+
 	{
 		FString tagstr;
 		if (arc.IsStoring() && Tag != NULL && Tag->Len() > 0) tagstr = *Tag;
