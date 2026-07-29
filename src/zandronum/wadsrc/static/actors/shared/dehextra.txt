@@ -701,8 +701,63 @@ ACTOR DehExtraSprites
 	}
 }
 
-// Blank actors for the DEHEXTRA things 151-250, extended up to 500 for
+// Blank actors for the DEHEXTRA things 145-250, extended up to 500 for
 // DSDHacked. DEHACKED patches are expected to define everything about them.
+// [rc4l] 145-150 were missing; without them the InfoNames list was misaligned by 6 (see dehsupp.txt).
+ACTOR Deh_Actor_145
+{
+	States
+	{
+	Spawn:
+		TNT1 A -1
+	}
+}
+
+ACTOR Deh_Actor_146
+{
+	States
+	{
+	Spawn:
+		TNT1 A -1
+	}
+}
+
+ACTOR Deh_Actor_147
+{
+	States
+	{
+	Spawn:
+		TNT1 A -1
+	}
+}
+
+ACTOR Deh_Actor_148
+{
+	States
+	{
+	Spawn:
+		TNT1 A -1
+	}
+}
+
+ACTOR Deh_Actor_149
+{
+	States
+	{
+	Spawn:
+		TNT1 A -1
+	}
+}
+
+ACTOR Deh_Actor_150
+{
+	States
+	{
+	Spawn:
+		TNT1 A -1
+	}
+}
+
 ACTOR Deh_Actor_151
 {
 	States
