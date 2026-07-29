@@ -27,6 +27,27 @@ Initial frame = 1090
 Projectile group = -1
 Speed = 20
 
+# --- DSDHacked UNLIMITED numbering: a thing and a frame far beyond the static
+#     DEHEXTRA pools (thing index > 500, frame index > 15999). dsda-doom grows its
+#     tables for ANY index; before the fix, PatchThing rejected high indices as
+#     "Thing N out of range" and wrote the block to a throwaway dummy -- the thing
+#     was silently non-functional. A clean load (no "out of range") proves the
+#     unlimited thing numbering is wired to the lazy DSDHacked class. ---
+Thing 70000 (DSDHacked High Monster)
+Hit points = 3000
+Speed = 8
+Width = 1310720
+Height = 3407872
+Initial frame = 20000
+Bits = SOLID+SHOOTABLE+COUNTKILL
+MBF21 Bits = FULLVOLSOUNDS
+
+Frame 20000
+Sprite number = 145
+Sprite subnumber = 0
+Duration = 6
+Next frame = 20000
+
 # --- Frames carrying MBF21 codepointer arguments (Args1..Args8) ---
 Frame 1076
 Sprite number = 145
