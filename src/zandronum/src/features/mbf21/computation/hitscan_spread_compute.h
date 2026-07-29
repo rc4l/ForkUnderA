@@ -25,6 +25,13 @@ int ComputeHitscanAngleBAM(int64_t spreadBam, int rnd1, int rnd2);
 // the reference for every reachable spread (a >90-degree spread is not expressible in real content).
 int ComputeHitscanSlopeIndex(int angleOffsetBam);
 
+// A_MonsterProjectile / A_WeaponProjectile pitch (dsda-doom DegToSlope). MBF21 gives the pitch as
+// fixed-point degrees; this converts |degrees| to a finetangent[] index (0..FINEANGLES/4). Pure
+// integer so it stays demo/netcode-deterministic (no float). `fixedDegrees` is the raw 16.16 value;
+// the engine reads finetangent[index] and re-applies the sign (negative pitch aims up). The pitch is
+// clamped just under 90 degrees, matching the reference.
+int ComputeDegToSlopeIndex(int64_t fixedDegrees);
+
 }} // namespace zx::mbf21
 
 #endif // ZX_MBF21_HITSCAN_SPREAD_COMPUTE_H

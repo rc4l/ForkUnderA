@@ -75,3 +75,33 @@ TEST(Mbf21Slope, NinetyDegreeBoundaryIsNotClamped)
 {
 	EXPECT_EQ(ComputeHitscanSlopeIndex(0x40000000), 0);      // exactly ANG90 -> (0)>>19 = 0
 }
+
+// ---- ComputeDegToSlopeIndex (projectile pitch) -----------------------------
+
+static const int64_t DEG = 65536;   // one fixed-point degree
+
+TEST(Mbf21DegToSlope, ZeroPitchIsTheFlatIndex)
+{
+	// |0| -> ang 0 -> (ANG90 - 0) >> 19 = 0x40000000 >> 19 = 2048 (tangent 0 / horizontal).
+	EXPECT_EQ(ComputeDegToSlopeIndex(0), 2048);
+}
+
+TEST(Mbf21DegToSlope, FortyFiveDegreesHalvesTheOffset)
+{
+	// 45 deg -> ang ~= 0x20000000 -> (0x40000000 - ang) >> 19 = 1024.
+	EXPECT_EQ(ComputeDegToSlopeIndex(45 * DEG), 1024);
+}
+
+TEST(Mbf21DegToSlope, SignIsIgnored_MagnitudeOnly)
+{
+	// The helper returns the same index for +/- pitch; the engine re-applies the sign to the slope.
+	EXPECT_EQ(ComputeDegToSlopeIndex(-45 * DEG), ComputeDegToSlopeIndex(45 * DEG));
+	EXPECT_EQ(ComputeDegToSlopeIndex(-45 * DEG), 1024);
+}
+
+TEST(Mbf21DegToSlope, BeyondNinetyDegreesClampsToTheSteepestIndex)
+{
+	// 91 deg pushes ang past ANG90, so it clamps to ANG90-1 -> index 0 (steepest downward).
+	EXPECT_EQ(ComputeDegToSlopeIndex(91 * DEG), 0);
+	EXPECT_EQ(ComputeDegToSlopeIndex(-120 * DEG), 0);
+}

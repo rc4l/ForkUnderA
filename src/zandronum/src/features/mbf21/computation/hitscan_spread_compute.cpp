@@ -8,6 +8,8 @@ namespace zx { namespace mbf21 {
 namespace {
 // Standard Doom BAM angle constants.
 const int64_t ANG90            = 0x40000000;  // 90 degrees in BAM
+const uint32_t ANG90U          = 0x40000000u; // 90 degrees in BAM (unsigned)
+const uint32_t ANGLE_1_BAM     = 0x00B60B60u; // 1 degree in BAM
 const int     ANGLETOFINESHIFT = 19;
 const int     FINEANGLES       = 8192;
 }
@@ -31,6 +33,18 @@ int ComputeHitscanSlopeIndex(int angleOffsetBam)
 	// (ANG90 - angle) >> ANGLETOFINESHIFT, done fully in uint32 so the subtraction wraps by
 	// definition (no signed overflow) while matching the reference for every reachable spread.
 	return (int)(((uint32_t)ANG90 - (uint32_t)angleOffsetBam) >> ANGLETOFINESHIFT);
+}
+
+int ComputeDegToSlopeIndex(int64_t fixedDegrees)
+{
+	// Work on the magnitude; the engine re-applies the sign after the table lookup.
+	int64_t a = fixedDegrees < 0 ? -fixedDegrees : fixedDegrees;
+	// FixedMul(|a|, ANGLE_1): (|a| * ANGLE_1) >> 16, giving the pitch as a BAM angle.
+	uint32_t ang = (uint32_t)(((uint64_t)a * ANGLE_1_BAM) >> 16);
+	// Clamp just under 90 degrees so the index stays in the first quadrant of finetangent[].
+	if (ang >= ANG90U)
+		ang = ANG90U - 1;
+	return (int)((ANG90U - ang) >> ANGLETOFINESHIFT);
 }
 
 }} // namespace zx::mbf21

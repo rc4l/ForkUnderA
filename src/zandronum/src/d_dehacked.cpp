@@ -836,6 +836,228 @@ bool DEH_CheckMBF21Flags (AActor *actor, DWORD bits)
 	return true;
 }
 
+// ==========================================================================
+// [rc4l] MBF21 codepointer support. A DeHackEd frame can point at one of the MBF21 codepointers and
+// supply up to eight "Args" fields. We record the raw args per state, remap the pointer to a native
+// DECORATE action (a purpose-built one, or an existing generic function it aliases), and once the
+// whole patch is parsed convert the args into that function's DECORATE parameters. Machinery ported
+// from Zandronum lz/mbf21; arg mappings copied verbatim so they match the MBF21 spec's arg order.
+// ==========================================================================
+
+// Maps a DeHackEd thing number to its class (1-based, like the rest of PatchThing). DSDHacked's
+// dynamic thing numbering is not supported yet, so out-of-range numbers resolve to NULL.
+static const PClass *LookupThingType(int value)
+{
+	if (value <= 0 || value > (int)InfoNames.Size())
+		return NULL;
+	return InfoNames[value - 1];
+}
+
+// Per-state MBF21 "Args1".."Args8" storage, filled by PatchFrame and consumed by SetMBF21Params.
+struct MBF21FrameArgs
+{
+	int  value[8];
+	BYTE argsused;	// bitmask of the args the patch actually set
+};
+static TMap<FState *, MBF21FrameArgs> MBF21StateArgs;
+
+// How one MBF21 Arg becomes a DECORATE parameter.
+enum EMBF21ArgType
+{
+	M21ARG_INT,		// plain integer
+	M21ARG_FIXED,	// 16.16 fixed point -> float (double) parameter
+	M21ARG_STATE,	// dehacked state index -> state parameter
+	M21ARG_SOUND,	// dehacked sound index -> sound parameter
+	M21ARG_CLASS,	// dehacked thing number -> class parameter
+	M21ARG_ATTN,	// sound attenuation: 0 = normal, nonzero = full volume
+};
+struct MBF21ArgMapping { BYTE type; BYTE param; int defvalue; };
+struct MBF21ConstParam { SBYTE param; int value; };
+struct MBF21CodePointerInfo
+{
+	const char *name;		// name the DEHACKED patch uses (after the "A_" prefix is prepended)
+	const char *function;	// native DECORATE function that implements it
+	BYTE numargs;			// how many Args fields the pointer reads
+	BYTE numparams;			// total parameter count of the native function
+	MBF21ArgMapping args[8];
+	MBF21ConstParam consts[2];	// constant params needed when aliasing to a generic function
+};
+struct MBF21ParamState { FState *state; int pointer; };
+static TArray<MBF21ParamState> MBF21ParamStates;
+
+#define M21_NOARG		{ 0, 0, 0 }
+#define M21_NOCONST		{ -1, 0 }
+
+// The MBF21 codepointers we support, with the exact arg->param mapping from the spec. Purpose-built
+// functions map onto themselves; the rest alias to an existing generic function. (Tracer/heal/weapon
+// codepointers are added as their functions are ported.)
+static const MBF21CodePointerInfo MBF21CodePointers[] =
+{
+	{ "A_SpawnObject", "A_SpawnObject", 8, 8,
+		{ { M21ARG_CLASS, 0, 0 }, { M21ARG_FIXED, 1, 0 }, { M21ARG_FIXED, 2, 0 }, { M21ARG_FIXED, 3, 0 },
+		  { M21ARG_FIXED, 4, 0 }, { M21ARG_FIXED, 5, 0 }, { M21ARG_FIXED, 6, 0 }, { M21ARG_FIXED, 7, 0 } },
+		{ M21_NOCONST, M21_NOCONST } },
+	{ "A_MonsterProjectile", "A_MonsterProjectile", 5, 5,
+		{ { M21ARG_CLASS, 0, 0 }, { M21ARG_FIXED, 1, 0 }, { M21ARG_FIXED, 2, 0 }, { M21ARG_FIXED, 3, 0 },
+		  { M21ARG_FIXED, 4, 0 }, M21_NOARG, M21_NOARG, M21_NOARG },
+		{ M21_NOCONST, M21_NOCONST } },
+	{ "A_MonsterMeleeAttack", "A_MonsterMeleeAttack", 4, 4,
+		{ { M21ARG_INT, 0, 3 }, { M21ARG_INT, 1, 8 }, { M21ARG_SOUND, 2, 0 }, { M21ARG_FIXED, 3, 0 },
+		  M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG },
+		{ M21_NOCONST, M21_NOCONST } },
+	{ "A_RadiusDamage", "A_Explode", 2, 8,
+		{ { M21ARG_INT, 0, 0 }, { M21ARG_INT, 1, 0 }, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG },
+		{ M21_NOCONST, M21_NOCONST } },
+	{ "A_JumpIfHealthBelow", "A_JumpIfHealthLower", 2, 2,
+		{ { M21ARG_STATE, 1, 0 }, { M21ARG_INT, 0, 0 }, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG },
+		{ M21_NOCONST, M21_NOCONST } },
+	{ "A_JumpIfTargetInSight", "A_JumpIfTargetInLOS", 2, 5,
+		{ { M21ARG_STATE, 0, 0 }, { M21ARG_FIXED, 1, 0 }, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG },
+		{ M21_NOCONST, M21_NOCONST } },
+	{ "A_JumpIfTargetCloser", "A_JumpIfCloser", 2, 2,
+		{ { M21ARG_STATE, 1, 0 }, { M21ARG_FIXED, 0, 0 }, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG },
+		{ M21_NOCONST, M21_NOCONST } },
+	{ "A_JumpIfFlagsSet", "A_JumpIfFlagsSet", 3, 3,
+		{ { M21ARG_STATE, 0, 0 }, { M21ARG_INT, 1, 0 }, { M21ARG_INT, 2, 0 }, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG },
+		{ M21_NOCONST, M21_NOCONST } },
+	{ "A_AddFlags", "A_AddFlags", 2, 2,
+		{ { M21ARG_INT, 0, 0 }, { M21ARG_INT, 1, 0 }, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG },
+		{ M21_NOCONST, M21_NOCONST } },
+	{ "A_RemoveFlags", "A_RemoveFlags", 2, 2,
+		{ { M21ARG_INT, 0, 0 }, { M21ARG_INT, 1, 0 }, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG },
+		{ M21_NOCONST, M21_NOCONST } },
+	{ "A_WeaponSound", "A_PlaySound", 2, 5,
+		{ { M21ARG_SOUND, 0, 0 }, { M21ARG_ATTN, 4, 0 }, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG, M21_NOARG },
+		{ { 1, 1 /*CHAN_WEAPON*/ }, M21_NOCONST } },
+};
+
+// Converts a state's recorded MBF21 Args into DECORATE parameters for its (possibly aliased) native
+// action. Runs from FinishDehPatch, after the whole patch is parsed. Mirrors SetDehParams.
+static void SetMBF21Params(FState *state, int codepointer)
+{
+	const MBF21CodePointerInfo &cp = MBF21CodePointers[codepointer];
+	MBF21FrameArgs *args = MBF21StateArgs.CheckKey(state);
+
+	if (args != NULL)
+	{
+		for (int i = cp.numargs; i < 8; i++)
+		{
+			if (args->argsused & (1 << i))
+				Printf("Warning: %s uses only %d args, but Args%d was set.\n", cp.name, cp.numargs, i + 1);
+		}
+	}
+	if (cp.numparams == 0)
+		return;
+
+	FScriptPosition *pos = new FScriptPosition(FString("DEHACKED"), 0);
+
+	PSymbol *s = RUNTIME_CLASS(AInventory)->Symbols.FindSymbol(FName(cp.function), true);
+	if (s == NULL || s->SymbolType != SYM_ActionFunction) return;
+	PSymbolActionFunction *sym = static_cast<PSymbolActionFunction *>(s);
+
+	// Clone the default parameter list first; see SetDehParams for the rationale.
+	if (state->ParameterIndex - 1 == sym->defaultparameterindex)
+	{
+		int a = PrepareStateParameters(state, cp.numparams, FState::StaticFindStateOwner(state));
+		int b = sym->defaultparameterindex;
+		for (int i = 0; i < cp.numparams; i++)
+			StateParams.Set(a + i, StateParams.Get(b + i), true);
+	}
+	int ParamIndex = state->ParameterIndex - 1;
+
+	for (int i = 0; i < cp.numargs; i++)
+	{
+		const MBF21ArgMapping &m = cp.args[i];
+		bool provided = args != NULL && (args->argsused & (1 << i));
+		int val = provided ? args->value[i] : m.defvalue;
+
+		switch (m.type)
+		{
+		case M21ARG_INT:
+			StateParams.Set(ParamIndex + m.param, new FxConstant(val, *pos));
+			break;
+		case M21ARG_FIXED:
+			// Divide as double, not float, to keep the 16.16 precision.
+			StateParams.Set(ParamIndex + m.param, new FxConstant(val / 65536., *pos));
+			break;
+		case M21ARG_ATTN:
+			StateParams.Set(ParamIndex + m.param, new FxConstant(val ? 0. /*ATTN_NONE*/ : 1. /*ATTN_NORM*/, *pos));
+			break;
+		case M21ARG_STATE:
+			if (provided)
+				StateParams.Set(ParamIndex + m.param, new FxConstant(FindState(val), *pos));
+			break;
+		case M21ARG_SOUND:
+			if (provided && val != 0)
+			{
+				if (val > 0 && (unsigned)val <= SoundMap.Size())
+					StateParams.Set(ParamIndex + m.param, new FxConstant(SoundMap[val - 1], *pos));
+				else
+					Printf("Bad sound index %d for %s\n", val, cp.name);
+			}
+			break;
+		case M21ARG_CLASS:
+			if (provided && val != 0)
+			{
+				const PClass *argtype = LookupThingType(val);
+				if (argtype != NULL)
+					StateParams.Set(ParamIndex + m.param, new FxConstant(argtype, *pos));
+				else
+					Printf("Bad thing type %d for %s\n", val, cp.name);
+			}
+			break;
+		}
+	}
+	for (int i = 0; i < 2; i++)
+	{
+		if (cp.consts[i].param >= 0)
+			StateParams.Set(ParamIndex + cp.consts[i].param, new FxConstant(cp.consts[i].value, *pos));
+	}
+}
+
+// Applies (or clears) a set of vanilla Doom thing-flag bits on an actor. Shared by the
+// A_AddFlags/A_RemoveFlags/A_JumpIfFlagsSet codepointers (their first flag word is vanilla bits;
+// the second is the MBF21 word handled by DEH_ChangeMBF21Flags). Ported from lz/mbf21.
+void DEH_ChangeVanillaFlags (AActor *actor, DWORD bits, bool set)
+{
+	// Bits that map directly onto ZDoom's own flags word. Excludes the SLIDE/translation slots and
+	// the MBF-specific bits, which are remapped below (as PatchThing does).
+	const DWORD directmask = 0x03ffdfff;
+	if (bits & directmask)
+	{
+		if (set) actor->flags |= (bits & directmask);
+		else actor->flags &= ~(bits & directmask);
+	}
+	if (bits & 0x10000000)	// MBF TOUCHY
+		Deh21SetFlag(actor->flags6, MF6_TOUCHY, set);
+	if (bits & 0x20000000)	// MBF BOUNCES
+	{
+		if (set) actor->BounceFlags = (actor->flags & MF_MISSILE) ? BOUNCE_Classic : BOUNCE_Grenade;
+		else actor->BounceFlags = BOUNCE_None;
+	}
+	if (bits & 0x40000000)	// MBF FRIEND
+	{
+		Deh21SetFlag(actor->flags, MF_FRIENDLY, set);
+		Deh21SetFlag(actor->flags3, MF3_NOBLOCKMONST, set);
+	}
+	if (bits & 0x80000000)	// Boom TRANSLUCENT
+	{
+		actor->RenderStyle = set ? STYLE_Translucent : STYLE_Normal;
+		actor->alpha = set ? TRANSLUC50 : OPAQUE;
+	}
+}
+
+bool DEH_CheckVanillaFlags (AActor *actor, DWORD bits)
+{
+	const DWORD directmask = 0x03ffdfff;
+	if ((actor->flags & (bits & directmask)) != (bits & directmask)) return false;
+	if ((bits & 0x10000000) && !(actor->flags6 & MF6_TOUCHY)) return false;
+	if ((bits & 0x20000000) && actor->BounceFlags == BOUNCE_None) return false;
+	if ((bits & 0x40000000) && !(actor->flags & MF_FRIENDLY)) return false;
+	if ((bits & 0x80000000) && actor->RenderStyle == LegacyRenderStyles[STYLE_Normal]) return false;
+	return true;
+}
+
 static int PatchThing (int thingy)
 {
 	enum
@@ -1534,6 +1756,24 @@ static int PatchFrame (int frameNum)
 		{
 			frame = val;
 		}
+		// [rc4l] MBF21 codepointer arguments ("Args1".."Args8"), stored per state and converted into
+		// DECORATE parameters once the whole patch is parsed (see SetMBF21Params).
+		else if (keylen == 5 && strnicmp (Line1, "Args", 4) == 0 && Line1[4] >= '1' && Line1[4] <= '8')
+		{
+			if (info != &dummy)
+			{
+				MBF21FrameArgs *args = MBF21StateArgs.CheckKey(info);
+				if (args == NULL)
+				{
+					MBF21FrameArgs newargs;
+					memset(&newargs, 0, sizeof(newargs));
+					args = &MBF21StateArgs.Insert(info, newargs);
+				}
+				const int argi = Line1[4] - '1';
+				args->value[argi] = val;
+				args->argsused |= 1 << argi;
+			}
+		}
 		else
 		{
 			Printf (unknown_str, Line1, "Frame", frameNum);
@@ -2185,6 +2425,20 @@ static int PatchCodePtrs (int dummy)
 					}
 				}
 
+				// [rc4l] MBF21 codepointers: some are implemented by existing generic functions, so
+				// remap the name and remember the state for the Args conversion that runs once the
+				// patch is fully parsed.
+				int mbf21index = -1;
+				for (unsigned int i = 0; i < countof(MBF21CodePointers); i++)
+				{
+					if (!symname.CompareNoCase(MBF21CodePointers[i].name))
+					{
+						mbf21index = i;
+						symname = MBF21CodePointers[i].function;
+						break;
+					}
+				}
+
 				// This skips the action table and goes directly to the internal symbol table
 				// DEH compatible functions are easy to recognize.
 				PSymbol *sym = RUNTIME_CLASS(AInventory)->Symbols.FindSymbol(symname, true);
@@ -2202,6 +2456,13 @@ static int PatchCodePtrs (int dummy)
 					}
 				}
 				SetPointer(state, sym, frame);
+				if (mbf21index >= 0 && sym != NULL)
+				{
+					MBF21ParamState ps;
+					ps.state = state;
+					ps.pointer = mbf21index;
+					MBF21ParamStates.Push(ps);
+				}
 			}
 		}
 	}
@@ -2723,6 +2984,15 @@ static void UnloadDehSupp ()
 		}
 		MBFParamStates.Clear();
 		MBFParamStates.ShrinkToFit();
+		// [rc4l] Convert MBF21 codepointer Args into DECORATE parameters, likewise before the arrays
+		// they read (states/sounds/things) are cleared.
+		for (unsigned int i=0; i < MBF21ParamStates.Size(); i++)
+		{
+			SetMBF21Params(MBF21ParamStates[i].state, MBF21ParamStates[i].pointer);
+		}
+		MBF21ParamStates.Clear();
+		MBF21ParamStates.ShrinkToFit();
+		MBF21StateArgs.Clear();
 		MBFCodePointers.Clear();
 		MBFCodePointers.ShrinkToFit();
 		// StateMap is not freed here, because if you load a second
