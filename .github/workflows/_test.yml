@@ -63,7 +63,18 @@ jobs:
         run: bash tests/coverage.sh --auto
 
       # [rc4l] compile_commands.json comes from the configure step above. Tests are now
-      # colocated in the engine tree, so lint every *_test.cpp there (absolute paths so
-      # they match the compile_commands.json entries).
+      # colocated in the engine tree, so lint every *_test.cpp there.
+      #
+      # run-clang-tidy, not clang-tidy: handing all 50 files to one clang-tidy process made it
+      # walk them strictly serially on a single core, which was ~10 min of a ~12 min job — and
+      # since build/ needs: test, every platform build waited on it. Profiling showed the cost is
+      # per-file parsing of the vendored engine headers repeated 50 times, not the checks
+      # themselves (any one check group costs ~0.6s/file; all six together ~0.86s), so trimming
+      # Checks would not have helped — parallelising is what does. run-clang-tidy ships with the
+      # clang-tidy package already installed above, so this needs no new dependency.
+      #
+      # It selects files by regex against compile_commands.json rather than argv; the pattern is
+      # anchored to the same directory the previous find walked so exactly the same 50 files are
+      # linted. .clang-tidy is still picked up per-file, so what gets reported is unchanged.
       - name: clang-tidy (report)
-        run: clang-tidy -p build-tests $(find "$PWD/src/zandronum/src" -name '*_test.cpp')
+        run: run-clang-tidy -p build-tests -j"$(nproc)" 'src/zandronum/src/.*_test\.cpp$'
