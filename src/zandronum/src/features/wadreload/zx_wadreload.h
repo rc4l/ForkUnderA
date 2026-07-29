@@ -32,11 +32,13 @@ enum class ReloadResult
 bool WadLoadable(const char *path, FString &outWhy);
 
 // Reload the engine onto a new WAD set. `iwad` may be NULL/empty to keep the current IWAD; `pwads`
-// replaces the current -file set (may be empty to run the bare IWAD). Validates every wanted file
+// replaces the current -file set (may be empty to run the bare IWAD). `startMap` (NULL/empty = none)
+// makes the reload boot straight into that map instead of the title screen -- if the map isn't in the
+// new WAD set, it lands at the title with a message rather than failing. Validates every wanted file
 // first: if any is not loadable, returns InvalidWads and the running game is untouched. If the wanted
 // set already matches what's loaded, returns AlreadyLoaded. Otherwise rewrites Args and throws
 // CRestartException (so it does not return on that path).
-ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads);
+ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const char *startMap = NULL);
 
 }} // namespace zx::wadreload
 

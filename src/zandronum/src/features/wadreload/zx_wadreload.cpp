@@ -13,9 +13,15 @@
 #include "doomerrors.h"
 #include "resourcefiles/resourcefile.h"
 #include "d_main.h"   // CRestartException
+#include "g_level.h"  // G_DeferedInitNew
+#include "w_wad.h"    // Wads.CheckNumForName
 
 #include "features/wadreload/zx_wadreload.h"
 #include "features/wadreload/computation/wadreload_compute.h"
+
+// [rc4l] Set by RequestReload before it throws CRestartException; consumed on the restart path in
+// D_DoomMain to boot straight into a map instead of the title screen. Empty = go to title as usual.
+FString StoredReloadMap;
 
 namespace zx { namespace wadreload {
 
@@ -106,18 +112,28 @@ bool WadLoadable(const char *path, FString &outWhy)
 	return true;
 }
 
-ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads)
+ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const char *startMap)
 {
 	const bool changingIwad = (iwad != NULL && iwad[0] != '\0');
+	const bool haveMap = (startMap != NULL && startMap[0] != '\0');
 
-	// 1. Skip when the wanted set already matches what's loaded (no pointless full re-init).
+	// 1. Skip the full re-init when the wanted set already matches what's loaded. If a map was asked
+	//    for, still honor it -- just switch maps directly (no teardown needed).
 	const FString        curIwadFS = CurrentIwad();
 	const TArray<FString> curFiles = CurrentFiles();
 	const FString wantIwadFS = changingIwad ? FString(iwad) : curIwadFS; // empty iwad => keep current
 	if (WantedMatchesLoaded(curIwadFS.GetChars(), ToStd(curFiles),
 	                        wantIwadFS.GetChars(), ToStd(pwads)))
 	{
-		Printf("wad_reload: the requested WAD set is already loaded; nothing to do.\n");
+		if (haveMap)
+		{
+			Printf("wad_reload: WAD set unchanged; switching to map %s.\n", startMap);
+			G_DeferedInitNew(startMap);
+		}
+		else
+		{
+			Printf("wad_reload: the requested WAD set is already loaded; nothing to do.\n");
+		}
 		return ReloadResult::AlreadyLoaded;
 	}
 
@@ -178,7 +194,14 @@ ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads)
 	for (size_t i = 0; i < newArgv.size(); ++i)
 		Args->AppendArg(FString(newArgv[i].c_str()));
 
-	Printf("wad_reload: restarting onto the new WAD set...\n");
+	// Boot straight into this map after the restart (consumed in D_DoomMain's restart path), or leave
+	// empty to land on the title screen as a restart normally does.
+	StoredReloadMap = haveMap ? FString(startMap) : FString("");
+
+	if (haveMap)
+		Printf("wad_reload: restarting onto the new WAD set, into map %s...\n", startMap);
+	else
+		Printf("wad_reload: restarting onto the new WAD set...\n");
 	throw CRestartException();
 	// not reached
 }
@@ -189,10 +212,11 @@ ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads)
 //
 // CCMD wad_reload
 //
-// wad_reload <iwad|-> [pwad ...]
+// wad_reload <iwad|-> [pwad ...] [map=<MAP>]
 //   Reloads the engine onto a new WAD set at runtime. The first argument is the IWAD path, or "-"
-//   to keep the current IWAD; the rest replace the -file set. Validates the set first and refuses
-//   (leaving the game running) if anything is missing or not a real WAD.
+//   to keep the current IWAD; the rest replace the -file set. A trailing map=<MAP> token (e.g.
+//   map=MAP11) boots straight into that map instead of the title screen. Validates the set first and
+//   refuses (leaving the game running) if anything is missing or not a real WAD.
 //
 //==========================================================================
 
@@ -200,17 +224,27 @@ CCMD(wad_reload)
 {
 	if (argv.argc() < 2)
 	{
-		Printf("usage: wad_reload <iwad|-> [pwad ...]\n"
-		       "  first arg is the IWAD path, or - to keep the current IWAD; the rest replace -file.\n");
+		Printf("usage: wad_reload <iwad|-> [pwad ...] [map=<MAP>]\n"
+		       "  first arg is the IWAD path, or - to keep the current IWAD; the rest replace -file;\n"
+		       "  an optional map=MAP01 boots straight into that map after the reload.\n");
 		return;
 	}
 
 	const char *iwad = argv[1];
 	const bool keepIwad = (strcmp(iwad, "-") == 0 || strcmp(iwad, ".") == 0);
 
+	// Pull an optional "map=<MAP>" token out of the arg list; everything else is a pwad.
+	FString startMap;
 	TArray<FString> pwads;
 	for (int i = 2; i < argv.argc(); ++i)
-		pwads.Push(argv[i]);
+	{
+		std::string mapVal = zx::wadreload::ParseMapAssignment(argv[i]);
+		if (!mapVal.empty())
+			startMap = mapVal.c_str();
+		else
+			pwads.Push(argv[i]);
+	}
 
-	zx::wadreload::RequestReload(keepIwad ? NULL : iwad, pwads);
+	zx::wadreload::RequestReload(keepIwad ? NULL : iwad, pwads,
+	                             startMap.IsNotEmpty() ? startMap.GetChars() : NULL);
 }
