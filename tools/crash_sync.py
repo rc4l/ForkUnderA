@@ -19,6 +19,9 @@
 import io, json, os, re, subprocess, sys, glob, shutil, tempfile, zipfile
 import urllib.request, urllib.error, urllib.parse
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from crash_rebase import PLAT, to_addr, rebase_main_module   # shared, unit-tested address rebasing
+
 GT_URL  = os.environ["GLITCHTIP_URL"].rstrip("/")
 GT_TOK  = os.environ["GLITCHTIP_TOKEN"]
 GT_ORG  = os.environ.get("GLITCHTIP_ORG", "zandrox")
@@ -27,12 +30,9 @@ GH_TOK  = os.environ["GITHUB_TOKEN"]
 DRY_RUN = os.environ.get("DRY_RUN", "") not in ("", "0", "false")
 MARKER_TMPL = "GlitchTip-ID: {}"          # dedup marker embedded (hidden) in each issue body
 
-# platform -> (preferred load base, symbol-file path inside the release symbols zip)
-PLAT = {
-    "macos":   (0x100000000, "zandronum.dSYM/Contents/Resources/DWARF/zandronum"),
-    "linux":   (0,           "zandronum.debug"),
-    "windows": (0x140000000, None),        # first *.pdb found in the zip
-}
+# platform -> (preferred load base, symbol-file path inside the release symbols zip): PLAT, and the
+# rebasing math, now live in crash_rebase.py so this cloud path and tools/symbolicate_local.py stay
+# byte-for-byte identical.
 
 # ---- http helpers ----------------------------------------------------------
 def http(url, headers, method="GET", data=None):
@@ -178,15 +178,10 @@ def symbolicate(ev, platform):
 
     pref, _ = PLAT[platform]
     base = int(base_tag, 16)
-    # Keep only main-module frames; carry each frame's rebased static address.
-    kept = []
-    for f in raw:                                        # GlitchTip order: outermost (main) first
-        ia = f.get("instruction_addr")
-        if not ia:
-            continue
-        off = int(ia, 16) - base
-        if 0 <= off < (256 << 20):
-            kept.append(pref + off)
+    # Keep only main-module frames; carry each frame's rebased static address (shared with the local
+    # symbolizer so both resolve to identical source lines).
+    addrs = [to_addr(f.get("instruction_addr")) for f in raw]   # GlitchTip order: outermost first
+    kept = [a for _, a in rebase_main_module(addrs, base, pref)]
     if not kept:
         return None, "no frames fell inside the main module after rebasing"
 
