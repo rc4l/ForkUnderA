@@ -253,6 +253,12 @@ static FFlagDef ActorFlags[]=
 	DEFINE_FLAG(MF7, USEKILLSCRIPTS, AActor, flags7),
 	DEFINE_FLAG(MF7, NOKILLSCRIPTS, AActor, flags7),
 
+	// [rc4l] MBF21 flags8, exposed to DECORATE. The flag and its behavior already exist from the
+	// MBF21 port (actor.h MF8_FULLVOLSEE; p_enemy.cpp plays the see sound at ATTN_NONE when set) --
+	// this row just lets DECORATE set it via +FULLVOLSEE, matching GZDoom's
+	// DEFINE_FLAG(MF8, FULLVOLSEE, AActor, flags8). Needed by e.g. Eviternity II's DECORATE.
+	DEFINE_FLAG(MF8, FULLVOLSEE, AActor, flags8),
+
 	// [BC] New DECORATE flag defines here.
 	DEFINE_FLAG(STFL, BLUETEAM, AActor, STFlags),
 	DEFINE_FLAG(STFL, REDTEAM, AActor, STFlags),
