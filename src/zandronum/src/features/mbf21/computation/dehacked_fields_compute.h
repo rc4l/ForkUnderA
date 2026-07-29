@@ -29,6 +29,17 @@ int ComputeSplashGroupStored(int dehValue);
 // standard 20-unit radius. int64 because fixed_t is 64-bit in ZandroX. (Matches Zandronum lz/mbf21.)
 int64_t ComputeMeleeRangeFixed(int64_t dehFixedValue);
 
+// Whether a DEHACKED patch should get DSDHacked's unlimited thing/frame/sprite/sound numbering, from
+// its declared "Doom version" and "Patch format". DSDHacked is a Patch-format-6 feature: the spec
+// recommends "Doom version = 2021", but real MBF21/DSDHacked wads don't always set it (Judgment ships
+// "Doom version = 21", "Patch format = 6"), and dsda-doom -- the behavior reference -- grows its
+// tables on demand for ANY format-6 patch. So: enabled when the patch format is 6, or the explicit
+// MBF21 marker (Doom version 2021) is present regardless of format. Gating on 2021 alone (as stock
+// GZDoom does) leaves format-6/version-21 wads with their high frames "out of range" -> missing
+// sprites. Enabling it for a plain Boom format-6 patch is harmless: the lazy allocation only fires
+// for indices past the static pools, which such patches never reference.
+bool ComputeDsdHackedEnabled(int doomVersion, int patchFormat);
+
 }} // namespace zx::mbf21
 
 #endif // ZX_MBF21_DEHACKED_FIELDS_COMPUTE_H

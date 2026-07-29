@@ -27,4 +27,9 @@ int64_t ComputeMeleeRangeFixed(int64_t dehFixedValue)
 	return dehFixedValue - 20 * FRACUNIT;
 }
 
+bool ComputeDsdHackedEnabled(int doomVersion, int patchFormat)
+{
+	return patchFormat == 6 || doomVersion == 2021;
+}
+
 }} // namespace zx::mbf21
