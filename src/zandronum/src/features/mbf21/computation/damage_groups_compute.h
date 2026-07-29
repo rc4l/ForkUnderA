@@ -11,13 +11,22 @@
 
 namespace zx { namespace mbf21 {
 
-// Group sentinels, matching the MBF21 spec + DSDA-Doom's enums.
+// Group sentinels + encoding offsets, matching the MBF21 spec + DSDA-Doom's enums. Stored group
+// values are the DeHackEd value offset past the reserved sentinels (see dehacked_fields_compute),
+// so DeHackEd "group 0" is a real group distinct from "unset".
 enum
 {
-	IG_DEFAULT   = 0,    // infighting: default (no group-based immunity)
-	SG_DEFAULT   = 0,    // splash:     default (radius damage always applies)
-	PG_DEFAULT   = 0,    // projectile: default (immunity only to the exact same actor type)
-	PG_GROUPLESS = -1,   // projectile: no immunity at all, even to your own species
+	// infighting
+	IG_DEFAULT   = 0,    // default (no group-based immunity / unset)
+	IG_END       = 1,    // first user group: stored = deh_value + IG_END
+	// projectile
+	PG_GROUPLESS = -1,   // no immunity at all, even to your own species
+	PG_DEFAULT   = 0,    // default (immunity only to the exact same actor type / unset)
+	PG_BARON     = 1,    // built-in group: barons/knights share projectile immunity in vanilla
+	PG_END       = 2,    // first user group: stored = deh_value + PG_END
+	// splash
+	SG_DEFAULT   = 0,    // default (radius damage always applies / unset)
+	SG_END       = 1,    // first user group: stored = deh_value + SG_END
 };
 
 // True when `target` must NOT retaliate against `source`: both share the same, non-default
