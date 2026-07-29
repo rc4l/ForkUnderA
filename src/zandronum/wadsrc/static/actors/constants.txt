@@ -136,19 +136,13 @@ const int WOF_KEEPY = 2;
 const int WOF_ADD = 4;
 const int WOF_INTERPOLATE = 8;
 
-// [overlay] Render styles for A_OverlayRenderStyle (values match the engine ERenderStyle enum).
-const int STYLE_None = 0;
-const int STYLE_Normal = 1;
-const int STYLE_Fuzzy = 2;
-const int STYLE_SoulTrans = 3;
-const int STYLE_OptFuzzy = 4;
-const int STYLE_Stencil = 5;
-const int STYLE_Translucent = 6;
-const int STYLE_Add = 7;
-const int STYLE_Shaded = 8;
-const int STYLE_TranslucentStencil = 9;
-const int STYLE_Shadow = 10;
-const int STYLE_Subtract = 11;
+// [rc4l] NOTE: do NOT define global STYLE_* render-style constants here. Stock Zandronum ships none,
+// so virtually every Zandronum mod defines its own STYLE_* (with the ACS APROP_RenderStyle values),
+// and our DECORATE parser treats a duplicate const as a fatal error -- so shipping our own STYLE_*
+// made those mods fail to load (e.g. MM8BDM: 12 "already defined" errors -> I_FatalError). A_Overlay /
+// A_OverlayRenderStyle work fine without them (the codepointer takes a plain int; mods that call it
+// supply their own render-style constants, exactly as on stock Zandronum). See issue on the A_Overlay
+// regression.
 
 // Morph constants
 const int MRF_ADDSTAMINA = 1;
@@ -401,39 +395,12 @@ const int AMF_TARGETNONPLAYER = 2;
 const int AMF_EMITFROMTARGET = 4;
 
 
-// [MGOOOOOO] Input button masks for A_JumpIfInput, mirroring buttoncode_t in src/d_event.h
-// (keep these two lists in sync). Combine with '|' (e.g. BT_ATTACK | BT_ALTATTACK).
-const int BT_ATTACK = 1;
-const int BT_USE = 2;
-const int BT_JUMP = 4;
-const int BT_CROUCH = 8;
-const int BT_TURN180 = 16;
-const int BT_ALTATTACK = 32;
-const int BT_RELOAD = 64;
-const int BT_ZOOM = 128;
-const int BT_SPEED = 256;
-const int BT_STRAFE = 512;
-const int BT_MOVERIGHT = 1024;
-const int BT_MOVELEFT = 2048;
-const int BT_BACK = 4096;
-const int BT_FORWARD = 8192;
-const int BT_RIGHT = 16384;
-const int BT_LEFT = 32768;
-const int BT_LOOKUP = 65536;
-const int BT_LOOKDOWN = 131072;
-const int BT_MOVEUP = 262144;
-const int BT_MOVEDOWN = 524288;
-const int BT_SHOWSCORES = 1048576;
-const int BT_USER1 = 2097152;
-const int BT_USER2 = 4194304;
-const int BT_USER3 = 8388608;
-const int BT_USER4 = 16777216;
-
-// [MGOOOOOO] Match-behavior flags for A_JumpIfInput (mirror the JIF_* enum in
-// features/jumpifinput/computation/jumpifinput_compute.h).
-const int JIF_ALL = 1;
-const int JIF_EDGE = 2;
-const int JIF_NOT = 4;
+// [rc4l] NOTE: do NOT define global BT_* / JIF_* constants here (see the STYLE_* note above for the
+// full reasoning). Stock Zandronum ships none, so mods routinely define their own BT_ATTACK/BT_USE/
+// BT_JUMP/… for input handling, and our DECORATE parser fatals on a duplicate const -- so shipping
+// these broke mods that define them. A_JumpIfInput takes a plain int bitmask; callers pass a literal
+// or their own constants. The button-bit values live in buttoncode_t (src/d_event.h) and the JIF_*
+// match flags in features/jumpifinput/computation/jumpifinput_compute.h.
 
 
 // This is only here to provide one global variable for testing.
