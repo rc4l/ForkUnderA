@@ -340,6 +340,8 @@ static int PatchStrings (int);
 static int PatchPars (int);
 static int PatchCodePtrs (int);
 static int PatchMusic (int);
+static int PatchSpriteNames (int);	// [rc4l] DSDHacked
+static int PatchSoundNames (int);	// [rc4l] DSDHacked
 static int DoInclude (int);
 static bool DoDehPatch();
 
@@ -364,6 +366,9 @@ static const struct {
 	{ "[PARS]",		PatchPars },
 	{ "[CODEPTR]",	PatchCodePtrs },
 	{ "[MUSIC]",	PatchMusic },
+	// [rc4l] These appear in DSDHacked patches.
+	{ "[SPRITES]",	PatchSpriteNames },
+	{ "[SOUNDS]",	PatchSoundNames },
 	{ NULL, NULL },
 };
 
@@ -1265,6 +1270,24 @@ static int PatchThing (int thingy)
 		else if (linelen == 12 && stricmp (Line1, "Splash group") == 0)
 		{
 			info->SplashGroup = zx::mbf21::ComputeSplashGroupStored((int)val);
+		}
+		// [rc4l] DEHEXTRA "Dropped item": a thing number (0 = none) dropped on death, stored as the
+		// class's drop-item chain like DECORATE's DropItem.
+		else if (linelen == 12 && stricmp (Line1, "Dropped item") == 0)
+		{
+			if (type != NULL)
+			{
+				const PClass *dropitem = val >= 1 ? LookupThingType((int)val) : NULL;
+				if (dropitem != NULL)
+				{
+					FDropItem *di = new FDropItem;
+					di->Name = dropitem->TypeName;
+					di->probability = 255;
+					di->amount = -1;
+					di->Next = NULL;
+					const_cast<PClass *>(type)->Meta.SetMetaInt (ACMETA_DropItems, StoreDropItemChain (di));
+				}
+			}
 		}
 		// [rc4l] MBF21 thing flags. A space-/comma-/plus-separated list of mnemonics (or raw bit
 		// numbers) that REPLACES the actor's whole MBF21 flag set. Mnemonic->bit is the tested
@@ -2640,6 +2663,94 @@ static int PatchMusic (int dummy)
 		GStrings.SetString (keystring, newname);
 		DPrintf ("Music %s set to:\n%s\n", keystring.GetChars(), newname);
 	}
+
+	return result;
+}
+
+// [rc4l] DSDHacked: a [SPRITES] block assigns 4-char names to new sprite indices, e.g.
+// "145 = SP00" for the sprite lump SP00A0. Grows OrgSprNames and registers the sprite.
+static int PatchSpriteNames (int dummy)
+{
+	int result;
+
+	DPrintf ("[Sprites]\n");
+
+	while ((result = GetLine ()) == 1)
+	{
+		if (IsNum (Line1))
+		{
+			int index = atoi (Line1);
+			stripwhite (Line2);
+
+			if (index < 0 || strlen (Line2) != 4)
+			{
+				Printf ("Bad sprite name assignment: %s = %s\n", Line1, Line2);
+				continue;
+			}
+
+			if ((unsigned)index >= OrgSprNames.Size ())
+			{
+				DEHSprName zero;
+				memset (&zero, 0, sizeof(zero));
+				while ((unsigned)index >= OrgSprNames.Size ())
+					OrgSprNames.Push (zero);
+			}
+
+			DEHSprName &name = OrgSprNames[index];
+			for (int i = 0; i < 4; ++i)
+				name.c[i] = toupper (Line2[i]);
+			name.c[4] = 0;
+			GetSpriteIndex (name.c);
+		}
+		else
+		{
+			// The old BEX form that renames a sprite by its mnemonic; a "Text" chunk does the same,
+			// so this has never been supported here.
+			Printf ("Sprite mnemonic assignment %s ignored.\n", Line1);
+		}
+	}
+
+	return result;
+}
+
+// [rc4l] DSDHacked: a [SOUNDS] block assigns names to new sound indices, e.g. "700 = CASIN0" for
+// the lump DSCASIN0. Grows SoundMap and registers the sound.
+static int PatchSoundNames (int dummy)
+{
+	int result;
+
+	DPrintf ("[Sounds]\n");
+
+	while ((result = GetLine ()) == 1)
+	{
+		if (IsNum (Line1))
+		{
+			int index = atoi (Line1);
+			stripwhite (Line2);
+
+			if (index < 1)
+			{
+				Printf ("Bad sound index %s\n", Line1);
+				continue;
+			}
+
+			FString lumpname;
+			lumpname << "DS" << Line2;
+			int sndid = S_AddSound (Line2, lumpname);
+
+			while ((unsigned)index > SoundMap.Size ())
+				SoundMap.Push (FSoundID(0));
+			SoundMap[index - 1] = FSoundID(sndid);
+		}
+		else
+		{
+			Printf ("Sound mnemonic assignment %s ignored.\n", Line1);
+		}
+	}
+
+	// S_AddSound() only appends to S_sfx; it doesn't touch the name->index hash (built once from the
+	// SNDINFO sounds). Rebuild it so S_FindSound() can still find the older (incl. vanilla) sounds.
+	S_HashSounds ();
 
 	return result;
 }
