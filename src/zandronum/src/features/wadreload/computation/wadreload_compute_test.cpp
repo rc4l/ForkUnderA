@@ -147,3 +147,22 @@ TEST(ArchiveMagic, RejectsGarbageTruncatedAndNull)
 	EXPECT_EQ(ClassifyArchiveMagic(nullptr, 8), ArchiveKind::Unknown);
 	EXPECT_EQ(Kind("", 0), ArchiveKind::Unknown);
 }
+
+// ---- ParseMapAssignment ----------------------------------------------------
+
+TEST(MapAssignment, ExtractsValueWithCaseInsensitiveKey)
+{
+	EXPECT_EQ(ParseMapAssignment("map=MAP02"), "MAP02");
+	EXPECT_EQ(ParseMapAssignment("MAP=E1M1"), "E1M1");   // key is case-insensitive
+	EXPECT_EQ(ParseMapAssignment("Map=map07"), "map07"); // value preserved verbatim
+}
+
+TEST(MapAssignment, EmptyForNonAssignmentsAndEmptyValue)
+{
+	EXPECT_EQ(ParseMapAssignment("doom2.wad"), "");                 // a wad path, not a map token
+	EXPECT_EQ(ParseMapAssignment("/path/to/Judgment.wad"), "");
+	EXPECT_EQ(ParseMapAssignment("map="), "");                      // no value -> no map
+	EXPECT_EQ(ParseMapAssignment("mapfoo"), "");                    // no '=' -> not an assignment
+	EXPECT_EQ(ParseMapAssignment("ma"), "");                        // shorter than the key
+	EXPECT_EQ(ParseMapAssignment(""), "");
+}

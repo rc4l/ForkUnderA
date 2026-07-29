@@ -106,4 +106,16 @@ ArchiveKind ClassifyArchiveMagic(const unsigned char *bytes, size_t n)
 	return ArchiveKind::Unknown;
 }
 
+std::string ParseMapAssignment(const std::string &token)
+{
+	const char key[] = "map=";
+	const size_t klen = 4;
+	if (token.size() <= klen)
+		return std::string();
+	for (size_t i = 0; i < klen; ++i)
+		if (std::tolower((unsigned char)token[i]) != key[i])
+			return std::string();
+	return token.substr(klen);
+}
+
 }} // namespace zx::wadreload
