@@ -76,6 +76,7 @@
 #include "cl_demo.h"
 #include "network.h"
 #include "sv_commands.h"
+#include "features/mbf21/computation/dehacked_fields_compute.h"
 
 // [SO] Just the way Randy said to do it :)
 // [RH] Made this CVAR_SERVERINFO
@@ -859,6 +860,20 @@ static int PatchThing (int thingy)
 		else if (linelen == 14 && stricmp (Line1, "Missile damage") == 0)
 		{
 			info->Damage = val;
+		}
+		// [rc4l] MBF21 damage groups. (int)val recovers the signed value (projectile group -1 =
+		// groupless). Stored offset past the sentinels; semantics in features/mbf21/computation.
+		else if (linelen == 16 && stricmp (Line1, "Infighting group") == 0)
+		{
+			info->InfightingGroup = zx::mbf21::ComputeInfightingGroupStored((int)val);
+		}
+		else if (linelen == 16 && stricmp (Line1, "Projectile group") == 0)
+		{
+			info->ProjectileGroup = zx::mbf21::ComputeProjectileGroupStored((int)val);
+		}
+		else if (linelen == 12 && stricmp (Line1, "Splash group") == 0)
+		{
+			info->SplashGroup = zx::mbf21::ComputeSplashGroupStored((int)val);
 		}
 		else if (linelen == 5)
 		{
