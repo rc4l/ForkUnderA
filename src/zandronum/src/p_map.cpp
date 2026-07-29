@@ -753,6 +753,7 @@ bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 		}
 		else if ((ld->flags & (ML_BLOCKING | ML_BLOCKEVERYTHING)) || 				// explicitly blocking everything
 			(!(NotBlocked) && (ld->flags & ML_BLOCKMONSTERS)) || 				// block monsters only
+			(!(NotBlocked) && !(tm.thing->flags & MF_FLOAT) && (ld->flags & ML_BLOCKLANDMONSTERS)) || // [rc4l] MBF21: block non-floating monsters
 			(tm.thing->player != NULL && (ld->flags & ML_BLOCK_PLAYERS)) ||		// block players
 			((Projectile) && (ld->flags & ML_BLOCKPROJECTILE)) ||				// block projectiles
 			((tm.thing->flags & MF_FLOAT) && (ld->flags & ML_BLOCK_FLOATERS)))	// block floaters
@@ -2898,6 +2899,13 @@ void FSlide::SlideTraverse(fixed_t startx, fixed_t starty, fixed_t endx, fixed_t
 			goto isblocking;
 		}
 		if (li->flags & ML_BLOCKMONSTERS && !((slidemo->flags3 & MF3_NOBLOCKMONST)
+			|| ((i_compatflags & COMPATF_NOBLOCKFRIENDS) && (slidemo->flags & MF_FRIENDLY))))
+		{
+			goto isblocking;
+		}
+		// [rc4l] MBF21: block non-floating monsters.
+		if (li->flags & ML_BLOCKLANDMONSTERS && !(slidemo->flags & MF_FLOAT)
+			&& !((slidemo->flags3 & MF3_NOBLOCKMONST)
 			|| ((i_compatflags & COMPATF_NOBLOCKFRIENDS) && (slidemo->flags & MF_FRIENDLY))))
 		{
 			goto isblocking;
