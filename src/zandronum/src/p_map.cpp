@@ -42,6 +42,7 @@
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
+#include "features/mbf21/computation/damage_groups_compute.h"
 #include "p_trace.h"
 #include "p_3dmidtex.h"
 #include "computation/rail_puff_compute.h"
@@ -1188,8 +1189,22 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 				else if (level.flags2 & LEVEL2_NOINFIGHTING) infight = -1;
 				else infight = infighting;
 
+				// [rc4l] MBF21 projectile groups: an explicitly set group overrides the default
+				// species-immunity rules below. Actors in the same positive group don't take
+				// projectile damage from each other; a groupless (negative) actor is immune to
+				// nothing. Semantics live in features/mbf21/computation/damage_groups_compute.
+				if (thing->ProjectileGroup != zx::mbf21::PG_DEFAULT || tm.thing->target->ProjectileGroup != zx::mbf21::PG_DEFAULT)
+				{
+					if (zx::mbf21::ComputeProjectileImmune(
+							thing->ProjectileGroup, tm.thing->target->ProjectileGroup,
+							thing->GetClass() == tm.thing->target->GetClass(),
+							thing == tm.thing->target))
+					{
+						return false;	// Explode, but do no damage.
+					}
+				}
 				// [BC] No infighting during invasion mode.
-				if (infight < 0 || invasion)
+				else if (infight < 0 || invasion)
 				{
 					// -1: Monsters cannot hurt each other, but make exceptions for
 					//     friendliness and hate status.
@@ -5718,6 +5733,11 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 		{ // don't damage the source of the explosion
 			continue;
 		}
+
+		// [rc4l] MBF21: an explosion doesn't splash-damage actors sharing the exploding thing's
+		// splash group. Semantics in features/mbf21/computation/damage_groups_compute.
+		if (zx::mbf21::ComputeSplashImmune(thing->SplashGroup, bombspot->SplashGroup))
+			continue;
 
 		// a much needed option: monsters that fire explosive projectiles cannot 
 		// be hurt by projectiles fired by a monster of the same type.
