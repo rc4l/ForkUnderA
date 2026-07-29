@@ -1334,6 +1334,8 @@ static int PatchThing (int thingy)
 					info->DeathSound = snd;
 				else if (!strnicmp (Line1, "Action", 6))
 					info->ActiveSound = snd;
+				else if (!strnicmp (Line1, "Rip", 3))	// [rc4l] MBF21
+					info->RipSound = snd;
 			}
 		}
 		else if (linelen == 4)
@@ -1756,6 +1758,24 @@ static int PatchFrame (int frameNum)
 		{
 			frame = val;
 		}
+		// [rc4l] MBF21 frame flags. Only SKILL5FAST is defined: it makes the frame use its Fast tics
+		// when fast-monsters is on (the FState::Fast bit).
+		else if (keylen == 10 && stricmp (Line1, "MBF21 Bits") == 0)
+		{
+			DWORD value = 0;
+			char *strval;
+
+			for (strval = Line2; (strval = strtok (strval, ",+| \t\f\r")); strval = NULL)
+			{
+				if (IsNum (strval))
+					value |= (DWORD)strtoul(strval, NULL, 10);
+				else if (!stricmp(strval, "SKILL5FAST"))
+					value |= 1;
+				else
+					DPrintf("Unknown MBF21 frame bit mnemonic %s\n", strval);
+			}
+			info->Fast = !!(value & 1);
+		}
 		// [rc4l] MBF21 codepointer arguments ("Args1".."Args8"), stored per state and converted into
 		// DECORATE parameters once the whole patch is parsed (see SetMBF21Params).
 		else if (keylen == 5 && strnicmp (Line1, "Args", 4) == 0 && Line1[4] >= '1' && Line1[4] <= '8')
@@ -1985,6 +2005,41 @@ static int PatchWeapon (int weapNum)
 					}
 				}
 			}
+			// [rc4l] MBF21 weapon flags, translated to their ZDoom counterparts. ("MBF21 Bits" is 10
+			// chars so it only ever reaches this >=9 branch.)
+			else if (stricmp (Line1, "MBF21 Bits") == 0)
+			{
+				DWORD value = 0;
+				char *strval;
+
+				for (strval = Line2; (strval = strtok (strval, ",+| \t\f\r")); strval = NULL)
+				{
+					if (IsNum (strval))
+					{
+						value |= (DWORD)strtoul(strval, NULL, 10);
+					}
+					else
+					{
+						DWORD bit = zx::mbf21::ComputeMbf21WeaponBitFromName(strval);
+						if (bit != 0) value |= bit;
+						else DPrintf("Unknown MBF21 weapon bit mnemonic %s\n", strval);
+					}
+				}
+				using namespace zx::mbf21;
+				info->Kickback = (value & DEH21WF_NOTHRUST) ? 0 : 100;
+				Deh21SetFlag(info->WeaponFlags, WIF_NOALERT, !!(value & DEH21WF_SILENT));
+				Deh21SetFlag(info->WeaponFlags, WIF_NOAUTOFIRE, !!(value & DEH21WF_NOAUTOFIRE));
+				Deh21SetFlag(info->WeaponFlags, WIF_MELEEWEAPON, !!(value & DEH21WF_FLEEMELEE));
+				Deh21SetFlag(info->WeaponFlags, WIF_WIMPY_WEAPON, !!(value & DEH21WF_AUTOSWITCHFROM));
+				Deh21SetFlag(info->WeaponFlags, WIF_NO_AUTO_SWITCH, !!(value & DEH21WF_NOAUTOSWITCHTO));
+			}
+			// [rc4l] "Ammo per shot" is MBF21's name for "Ammo use"; at 13 chars it only reaches this
+			// >=9 branch, so it must be handled here too (the <9 branch below never sees it).
+			else if (stricmp (Line1, "Ammo per shot") == 0)
+			{
+				info->AmmoUse1 = val;
+				info->flags6 |= MF6_INTRYMOVE;	// flag the weapon for postprocessing (reuse a flag that can't be set by external means)
+			}
 			else
 			{
 				Printf (unknown_str, Line1, "Weapon", weapNum);
@@ -2003,7 +2058,7 @@ static int PatchWeapon (int weapNum)
 				Printf ("Weapon %d: Unknown decal %s\n", weapNum, Line2);
 			}
 		}
-		else if (stricmp (Line1, "Ammo use") == 0 || stricmp (Line1, "Ammo per shot") == 0)
+		else if (stricmp (Line1, "Ammo use") == 0)	// [rc4l] "Ammo per shot" (>=9 chars) is handled above
 		{
 			info->AmmoUse1 = val;
 			info->flags6 |= MF6_INTRYMOVE;	// flag the weapon for postprocessing (reuse a flag that can't be set by external means)

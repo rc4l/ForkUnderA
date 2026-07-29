@@ -395,7 +395,8 @@ void AActor::Serialize (FArchive &arc)
 	{
 		arc << InfightingGroup
 			<< ProjectileGroup
-			<< SplashGroup;
+			<< SplashGroup
+			<< RipSound;
 	}
 
 	{

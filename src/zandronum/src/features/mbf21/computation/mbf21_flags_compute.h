@@ -44,6 +44,24 @@ enum
 // caller concern -- this only knows the mnemonic table.
 unsigned ComputeMbf21ThingBitFromName(const char *name);
 
+// MBF21 WEAPON-flag bits, as ordered in the weapon "MBF21 Bits" field. Like the thing bits these
+// are an intermediate representation the engine maps onto native weapon flags (see PatchWeapon).
+enum
+{
+	DEH21WF_NOTHRUST       = 0x001,   // doesn't thrust the player's target
+	DEH21WF_SILENT         = 0x002,   // weapon is silent (doesn't alert monsters)
+	DEH21WF_NOAUTOFIRE     = 0x004,   // can't fire by holding the button after switching to it
+	DEH21WF_FLEEMELEE      = 0x008,   // monsters consider it a melee weapon (flee when wielding)
+	DEH21WF_AUTOSWITCHFROM = 0x010,   // auto-switch away from it when out of ammo, even if pref lower
+	DEH21WF_NOAUTOSWITCHTO = 0x020,   // never auto-switch TO this weapon on pickup
+
+	DEH21WF_ALLFLAGS       = 0x03f,   // union of every weapon bit above
+};
+
+// Resolves one weapon "MBF21 Bits" mnemonic (case-insensitive, e.g. "SILENT") to its DEH21WF_ bit.
+// Returns 0 for an unrecognised name or a null pointer.
+unsigned ComputeMbf21WeaponBitFromName(const char *name);
+
 }} // namespace zx::mbf21
 
 #endif // ZX_MBF21_FLAGS_COMPUTE_H
