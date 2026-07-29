@@ -15,7 +15,7 @@ const int SF_RANDOMLIGHTBOTH = 6;
 const int SF_NOUSEAMMOMISS = 8;
 const int SF_NOUSEAMMO = 16;
 
-// Flags for A_CustomMissile
+// Flags for A_SpawnProjectile (and its deprecated predecessor A_CustomMissile)
 const int CMF_AIMOFFSET = 1;
 const int CMF_AIMDIRECTION = 2;
 const int CMF_TRACKOWNER = 4;
