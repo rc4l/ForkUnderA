@@ -86,6 +86,7 @@
 #include "d_netinf.h"
 // [MGOOOOOO] Pure decision logic for A_JumpIfInput.
 #include "features/jumpifinput/computation/jumpifinput_compute.h"
+#include "features/spawnprojectile/computation/spawnprojectile_compute.h"
 
 static FRandom pr_camissile ("CustomActorfire");
 static FRandom pr_camelee ("CustomMelee");
@@ -1194,29 +1195,45 @@ enum CM_Flags
 	CMF_OFFSETPITCH = 32,
 	CMF_SAVEPITCH = 64,
 
-	CMF_ABSOLUTEANGLE = 128
+	CMF_ABSOLUTEANGLE = 128,
+
+	// [rc4l] Selects A_CustomMissile's historic inverted pitch arithmetic. A_CustomMissile forces
+	// this on; A_SpawnProjectile leaves it off and gets upstream's corrected form. See
+	// features/spawnprojectile/computation/spawnprojectile_compute.h for the derivation.
+	CMF_BADPITCH = 256
 };
 
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
-{
-	ACTION_PARAM_START(6);
-	ACTION_PARAM_CLASS(ti, 0);
-	ACTION_PARAM_FIXED(SpawnHeight, 1);
-	ACTION_PARAM_INT(Spawnofs_XY, 2);
-	ACTION_PARAM_ANGLE(Angle, 3);
-	ACTION_PARAM_INT(flags, 4);
-	ACTION_PARAM_ANGLE(pitch, 5);
+// [rc4l] The compute unit mirrors these flags; keep the two definitions from drifting apart.
+static_assert( CMF_ABSOLUTEPITCH == zx::ZX_CMF_ABSOLUTEPITCH, "CMF_ABSOLUTEPITCH mismatch" );
+static_assert( CMF_OFFSETPITCH == zx::ZX_CMF_OFFSETPITCH, "CMF_OFFSETPITCH mismatch" );
+static_assert( CMF_BADPITCH == zx::ZX_CMF_BADPITCH, "CMF_BADPITCH mismatch" );
 
+//==========================================================================
+//
+// [rc4l] Shared body of A_SpawnProjectile and A_CustomMissile.
+//
+// The two differ only in the pitch arithmetic (CMF_BADPITCH, forced on by A_CustomMissile) and in
+// A_SpawnProjectile's extra `ptr` parameter, which chooses which actor the shot aims at instead of
+// always using target. Passing AAPTR_TARGET reproduces the old behaviour exactly.
+//
+//==========================================================================
+static void ZX_SpawnProjectile( AActor *self, const PClass *ti, fixed_t SpawnHeight, int Spawnofs_XY,
+								angle_t Angle, int flags, angle_t pitch, int ptr )
+{
 	int aimmode = flags & CMF_AIMMODE;
 
 	AActor * targ;
 	AActor * missile;
 
+	// [rc4l] Which actor the missile is aimed at. A_CustomMissile passes AAPTR_TARGET, so this
+	// resolves to self->target and its behaviour is unchanged.
+	AActor * ref = COPY_AAPTR( self, ptr );
+
 	// [BB] Should the actor not be spawned, taking in account client side only actors?
 	if ( NETWORK_ShouldActorNotBeSpawned ( self, ti ) )
 		return;
 
-	if (self->target != NULL || aimmode==2)
+	if (ref != NULL || aimmode==2)
 	{
 		if (ti) 
 		{
@@ -1233,14 +1250,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 				self->x += x;
 				self->y += y;
 				self->z += z;
-				missile = P_SpawnMissileXYZ(self->x, self->y, self->z + 32*FRACUNIT, self, self->target, ti, false);
+				missile = P_SpawnMissileXYZ(self->x, self->y, self->z + 32*FRACUNIT, self, ref, ti, false);
 				self->x -= x;
 				self->y -= y;
 				self->z -= z;
 				break;
 
 			case 1:
-				missile = P_SpawnMissileXYZ(self->x+x, self->y+y, self->z + self->GetBobOffset() + SpawnHeight, self, self->target, ti, false);
+				missile = P_SpawnMissileXYZ(self->x+x, self->y+y, self->z + self->GetBobOffset() + SpawnHeight, self, ref, ti, false);
 				break;
 
 			case 2:
@@ -1263,16 +1280,25 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 
 				fixed_t missilespeed;
 
-				if ( (CMF_ABSOLUTEPITCH|CMF_OFFSETPITCH) & flags)
+				if ( zx::SpawnProjectileUsesPitch( flags ) )
 				{
+					// [rc4l] The pitch arithmetic lives in the compute unit because A_CustomMissile
+					// and A_SpawnProjectile disagree about its sign; CMF_BADPITCH picks between
+					// them. Doing it here by hand is what let the inversion go unnoticed upstream
+					// for years.
+					angle_t velPitch = 0;
 					if (CMF_OFFSETPITCH & flags)
 					{
-							FVector2 velocity ((double)(missile->velx),(double)( missile->vely));
-							pitch += R_PointToAngle2(0,0, (fixed_t)velocity.Length(), missile->velz);
+						FVector2 velocity ((double)(missile->velx),(double)( missile->vely));
+						velPitch = R_PointToAngle2(0,0, (fixed_t)velocity.Length(), missile->velz);
 					}
+					pitch = zx::ComputeSpawnProjectilePitch( flags, pitch, velPitch );
+
 					ang = pitch >> ANGLETOFINESHIFT;
-					missilespeed = abs(FixedMul(finecosine[ang], missile->Speed));
-					missile->velz = FixedMul(finesine[ang], missile->Speed);
+					const zx::SpawnProjectileVelocity vel = zx::ComputeSpawnProjectileVelocity(
+						flags, finesine[ang].Raw(), finecosine[ang].Raw(), missile->Speed.Raw() );
+					missilespeed = fixed_t::FromRaw( vel.speedXY );
+					missile->velz = fixed_t::FromRaw( vel.velZ );
 				}
 				else
 				{
@@ -1343,6 +1369,53 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 		// Target is dead and the attack shall be aborted.
 		if (self->SeeState != NULL) self->SetState(self->SeeState);
 	}
+}
+
+//==========================================================================
+//
+// [rc4l] A_SpawnProjectile -- upstream's corrected successor to A_CustomMissile, with the pitch
+// inversion fixed and a `ptr` parameter selecting what to aim at. Mods (Eviternity II among them)
+// call this by name, and DECORATE rejected the whole file without it.
+//
+// Signature matches uzdoom@81fd6c819fd5a6b71a946ba6e95cb67a76e4cac7, declared upstream in their
+// actor script definitions (actor.zs:1320).
+//
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SpawnProjectile)
+{
+	ACTION_PARAM_START(7);
+	ACTION_PARAM_CLASS(ti, 0);
+	ACTION_PARAM_FIXED(SpawnHeight, 1);
+	ACTION_PARAM_INT(Spawnofs_XY, 2);
+	ACTION_PARAM_ANGLE(Angle, 3);
+	ACTION_PARAM_INT(flags, 4);
+	ACTION_PARAM_ANGLE(pitch, 5);
+	ACTION_PARAM_INT(ptr, 6);
+
+	// [rc4l] CMF_BADPITCH is A_CustomMissile's compatibility path and must not be reachable from
+	// here, or a mod could opt back into the very bug this function exists to avoid.
+	ZX_SpawnProjectile( self, ti, SpawnHeight, Spawnofs_XY, Angle, flags & ~CMF_BADPITCH, pitch, ptr );
+}
+
+//==========================================================================
+//
+// [rc4l] A_CustomMissile -- deprecated upstream in favour of A_SpawnProjectile, kept here because
+// the entire existing mod corpus calls it. Forces CMF_BADPITCH so its aim is bit-for-bit what it
+// has always been, and always aims at target (upstream's deprecated wrapper does the same).
+//
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
+{
+	ACTION_PARAM_START(6);
+	ACTION_PARAM_CLASS(ti, 0);
+	ACTION_PARAM_FIXED(SpawnHeight, 1);
+	ACTION_PARAM_INT(Spawnofs_XY, 2);
+	ACTION_PARAM_ANGLE(Angle, 3);
+	ACTION_PARAM_INT(flags, 4);
+	ACTION_PARAM_ANGLE(pitch, 5);
+
+	ZX_SpawnProjectile( self, ti, SpawnHeight, Spawnofs_XY, Angle, flags | CMF_BADPITCH, pitch,
+						AAPTR_TARGET );
 }
 
 //==========================================================================
