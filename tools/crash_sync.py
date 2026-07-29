@@ -362,10 +362,25 @@ def main():
                     if not reopen:
                         print(f"  group {gid}: #{num} closed, no new events ({why}); leaving closed")
                         continue
+                    # [rc4l] A bot silently flipping an issue back open reads as the tracker acting on
+                    # its own, which is how the old always-reopen bug went unnoticed. State the
+                    # decision in full -- what recurred, when it was closed, when it was next seen,
+                    # which run did it -- so a reopen can be judged (or disputed) without reading
+                    # this source.
+                    run = os.environ.get("GITHUB_RUN_ID")
+                    where = (f"[crash-sync run](https://github.com/{GH_REPO}/actions/runs/{run})"
+                             if run else "a crash-sync run")
                     gh(f"/repos/{GH_REPO}/issues/{num}", "PATCH", {"state": "open"})
                     gh(f"/repos/{GH_REPO}/issues/{num}/comments", "POST",
-                       {"body": f"↩️ Recurred — this crash was seen again after this issue was closed "
-                                f"({iss.get('count','?')} events, last seen {iss.get('lastSeen','')}). Reopened."})
+                       {"body":
+                        f"↩️ **Reopened automatically — this crash was seen again after the issue was closed.**\n\n"
+                        f"- Closed at: `{cur.get('closed_at','?')}`\n"
+                        f"- Last seen: `{iss.get('lastSeen','?')}`\n"
+                        f"- Events in this group: {iss.get('count','?')}\n"
+                        f"- Decided by: {where} — {why}\n\n"
+                        f"Reopened only because the crash recurred *after* the close; a closed issue "
+                        f"with no newer events is left closed. If this is unwanted, resolve the group "
+                        f"in GlitchTip so it stops being mirrored."})
                     print(f"  group {gid}: reopened #{num} ({why})")
                     filed += 1
                 else:
