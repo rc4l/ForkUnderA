@@ -98,6 +98,20 @@ private:
 	void MaybeResizeForScale(); // per-frame: apply a scale change by resizing the render target live
 	void ResizeRenderInPlace(int w, int h); // resize render target, no window/context teardown
 
+#ifdef ZX_ENABLE_REPLAY
+	// [rc4l] Instant-replay async readback: double-buffered pixel-pack buffers for glReadPixels. These
+	// are MEMBERS (not file-statics) so they live and die with THIS framebuffer's GL context. A
+	// windowed<->fullscreen switch destroys the framebuffer -- taking these buffers with it -- so a
+	// stale buffer name from a dead context can never be reused in the new one. Reusing such a name is
+	// what faulted Apple's GL driver (storeVecColor_RGB_UB on a dispatch worker). See fix notes.
+	unsigned int mReplayPbo[2];
+	int  mReplayPboIndex;
+	int  mReplayPboW, mReplayPboH;
+	bool mReplayPboFilled;
+	void CaptureReplayFramePBO(int w, int h); // issue this frame's read, hand off the previous frame's
+	void DestroyReplayCapture();              // delete the PBOs while the context is still current
+#endif
+
 	PalEntry Flash;
 
 	// Texture creation info
