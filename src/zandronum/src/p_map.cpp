@@ -3500,9 +3500,12 @@ bool FSlide::BounceWall(AActor *mo)
 	}
 	line = bestslideline;
 
-	if (line->special == Line_Horizon)
+	// [DA] -- Bouncing projectiles never bounced off properly from/exploded on line horizons like normal projectiles did.
+	if (line->special == Line_Horizon && !(mo->flags3 & MF3_SKYEXPLODE))
 	{
 		mo->SeeSound = 0;	// it might make a sound otherwise
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_DestroyThing( mo );
 		mo->Destroy();
 		return true;
 	}
