@@ -216,6 +216,10 @@ def raw_stack(ev):
     return frames
 
 # ---- issue title/body ------------------------------------------------------
+def _is_real_name(fn):
+    # A resolved function name, not a bare address ("0x1e0b234dc") or the "?" placeholder.
+    return bool(fn) and fn != "?" and not fn.startswith("0x")
+
 def crash_site(frames):
     # First frame (innermost) that resolves to a project source line; else the innermost frame.
     for fr in frames:
@@ -223,9 +227,19 @@ def crash_site(frames):
             short = fr["loc"].split("/")[-1]
             return f"{fr['func']} ({short})"
     for fr in frames:
-        if fr.get("loc"):
+        # A real source location (has a path separator) -- not a bare address the raw fallback parks
+        # in loc.
+        if fr.get("loc") and "/" in fr["loc"]:
             return f"{fr['func']} ({fr['loc'].split('/')[-1]})"
-    return frames[0]["func"] if frames else "<unknown>"
+    # The client names frames via dladdr but without a file:line (system libs, or an un-symbolicated
+    # dev build). Take the innermost frame that has a REAL function name -- so a crash in Apple's GL
+    # driver reads "storeVecColor_RGB_UB", never "<unknown>".
+    for fr in frames:
+        if _is_real_name(fr.get("func") or ""):
+            return fr["func"]
+    # Nothing resolved to a real name (e.g. a pre-fix event that only has raw addresses): never title
+    # with a bare address or "<unknown>".
+    return "native crash (no symbols)"
 
 def fmt_stack(frames):
     return "\n".join(f"  {i}: {f['func']}" + (f"  ({f['loc']})" if f.get("loc") else "")
@@ -241,7 +255,12 @@ def build_issue(iss, ev, frames, symbolicated, skip_reason):
     perma   = iss.get("permalink", "")
     marker  = MARKER_TMPL.format(gid)
 
-    title_site = scrub(crash_site(frames)) if frames else scrub(iss.get("title") or "<unknown>")
+    title_site = scrub(crash_site(frames)) if frames else scrub(iss.get("title") or "")
+    # Never file a "<unknown>" title: fall back to GlitchTip's own group title (now named, since the
+    # client resolves frames), then to a stable no-symbols label.
+    if not title_site or title_site == "<unknown>":
+        gt_title = scrub(iss.get("title") or "")
+        title_site = gt_title if gt_title and gt_title != "<unknown>" else "native crash (no symbols)"
     title = f"[crash] {title_site}"
 
     head = "**Symbolicated stack**" if symbolicated else "**Raw stack** (not symbolicated)"
@@ -284,13 +303,31 @@ def ensure_label():
 def main():
     if not DRY_RUN:
         ensure_label()
-    issues = gt(f"/api/0/organizations/{GT_ORG}/issues/?query=&limit=50")
+    # Only active (unresolved) crashes: a resolved group is one someone has already triaged, so it
+    # must not trigger a spurious reopen of its closed GitHub issue.
+    issues = gt(f"/api/0/organizations/{GT_ORG}/issues/?query=is:unresolved&limit=50")
     print(f"GlitchTip returned {len(issues)} group(s)")
     filed = 0
     for iss in issues:
         gid = iss["id"]
-        if not DRY_RUN and existing_issue(gid):
-            print(f"  group {gid}: already mirrored")
+        num = None if DRY_RUN else existing_issue(gid)
+        if num:
+            # Already mirrored. GlitchTip only returns unresolved (active) groups, so a group that is
+            # still here while its GitHub issue is CLOSED means the crash recurred after someone closed
+            # it -> reopen and note it, instead of silently dropping the recurrence.
+            try:
+                cur = json.loads(gh(f"/repos/{GH_REPO}/issues/{num}"))
+                if cur.get("state") == "closed":
+                    gh(f"/repos/{GH_REPO}/issues/{num}", "PATCH", {"state": "open"})
+                    gh(f"/repos/{GH_REPO}/issues/{num}/comments", "POST",
+                       {"body": f"↩️ Recurred — this crash is active again in GlitchTip "
+                                f"({iss.get('count','?')} events, last seen {iss.get('lastSeen','')}). Reopened."})
+                    print(f"  group {gid}: reopened #{num} (recurred)")
+                    filed += 1
+                else:
+                    print(f"  group {gid}: already mirrored (#{num})")
+            except urllib.error.HTTPError:
+                print(f"  group {gid}: already mirrored (#{num})")
             continue
         try:
             ev = gt(f"/api/0/issues/{gid}/events/latest/")
