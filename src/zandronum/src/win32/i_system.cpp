@@ -84,6 +84,7 @@
 #include "v_font.h"
 #include "g_level.h"
 #include "doomstat.h"
+#include "features/crashreport/zx_crashreport.h" // [rc4l] report graceful fatals to GlitchTip
 #include "v_palette.h"
 #include "stats.h"
 #include "textures/bitmap.h"
@@ -892,6 +893,10 @@ void STACK_ARGS I_FatalError(const char *error, ...)
 		va_start(argptr, error);
 		myvsnprintf(errortext, MAX_ERRORTEXT, error, argptr);
 		va_end(argptr);
+
+		// [rc4l] A fatal is a graceful throw/exit, not a signal, so sentry's handler never sees it.
+		// Report it here so bad-WAD / script-error fatals reach GlitchTip/GitHub. No-op if off.
+		ZX_CrashReportFatal(errortext);
 
 		// Record error to log (if logging)
 		if (Logfile)
