@@ -50,6 +50,12 @@ jobs:
       - name: Staircase ledger check
         run: bash tools/staircase-ledger-check.sh
 
+      # [rc4l] crash-sync reopen rule: it reopened closed crash issues forever (#79, #85) because it
+      # treated "still unresolved in GlitchTip" as "the crash recurred". Pure, stdlib-only, no
+      # network — a machine checks the rule, not a person.
+      - name: crash-sync regression rule
+        run: python3 tools/crash_sync_test.py
+
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:
