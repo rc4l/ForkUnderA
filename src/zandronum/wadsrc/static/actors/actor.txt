@@ -193,6 +193,12 @@ ACTOR Actor native //: Thinker
 	action native A_SpawnObject(class<Actor> spawntype = "None", float angle = 0, float xofs = 0, float yofs = 0, float zofs = 0, float xvel = 0, float yvel = 0, float zvel = 0);
 	action native A_MonsterProjectile(class<Actor> spawntype = "None", float angle = 0, float pitch = 0, float hoffset = 0, float voffset = 0);
 	action native A_MonsterMeleeAttack(int damagebase = 3, int damagedice = 8, sound hitsound = "", float range = 0);
+	action native A_MonsterBulletAttack(float hspread = 0, float vspread = 0, int numbullets = 1, int damagebase = 3, int damagedice = 5);
+	action native A_HealChase(state healstate = "", sound healsound = "");
+	action native A_SeekTracer(float threshold = 0, float maxturnangle = 0);
+	action native A_FindTracer(float fov = 0, int rangeblocks = 10);
+	action native A_ClearTracer();
+	action native A_JumpIfTracerInSight(state label = "", float fov = 0);
 	action native A_JumpIfFlagsSet(state label = "", int flags = 0, int flags2 = 0);
 	action native A_AddFlags(int flags = 0, int flags2 = 0);
 	action native A_RemoveFlags(int flags = 0, int flags2 = 0);

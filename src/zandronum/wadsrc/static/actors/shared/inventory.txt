@@ -41,6 +41,15 @@ ACTOR Inventory native
 	action native A_ClearReFire();
 	action native A_CheckReload();
 	action native A_GunFlash(state flash = "", int flags = 0);
+	// [rc4l] MBF21 weapon codepointers. All arguments optional (DEHACKED-compatible).
+	action native A_WeaponProjectile(class<Actor> spawntype = "None", float angle = 0, float pitch = 0, float hoffset = 0, float voffset = 0);
+	action native A_WeaponBulletAttack(float hspread = 0, float vspread = 0, int numbullets = 1, int damagebase = 5, int damagedice = 3);
+	action native A_WeaponMeleeAttack(int damagebase = 2, int damagedice = 10, float zerkfactor = 1, sound hitsound = "", float range = 0);
+	action native A_WeaponJump(state label = "", int chance = 0);
+	action native A_ConsumeAmmo(int amount = 0);
+	action native A_CheckAmmo(state label = "", int amount = 0);
+	action native A_RefireTo(state label = "", int noammocheck = 0);
+	action native A_GunFlashTo(state label = "", int nothirdperson = 0);
 	// [overlay] A_Overlay family (restored from GZDoom).
 	action native A_Overlay(int layer, state st = "", bool nooverride = false);
 	action native A_ClearOverlays(int start = 0, int stopindex = 0, bool safety = true);
