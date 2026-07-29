@@ -11,6 +11,32 @@ using namespace zx::mbf21;
 
 static const int64_t FRACUNIT = 65536;
 
+// ---- DSDHacked enable decision ---------------------------------------------
+
+TEST(Mbf21DsdHacked, EnabledForPatchFormat6RegardlessOfDoomVersion)
+{
+	// Judgment's real header: Doom version 21, Patch format 6 -> must enable (this is the bug fix;
+	// stock GZDoom gated on 2021 only and left Judgment's high frames out of range).
+	EXPECT_TRUE(ComputeDsdHackedEnabled(21, 6));
+	// Canonical MBF21 declaration.
+	EXPECT_TRUE(ComputeDsdHackedEnabled(2021, 6));
+	// A plain Boom/MBF format-6 patch also "enables" it, but harmlessly (it never references indices
+	// past the static pools, so the lazy allocation never fires).
+	EXPECT_TRUE(ComputeDsdHackedEnabled(19, 6));
+}
+
+TEST(Mbf21DsdHacked, EnabledForExplicit2021MarkerEvenIfFormatDiffers)
+{
+	EXPECT_TRUE(ComputeDsdHackedEnabled(2021, 5));
+}
+
+TEST(Mbf21DsdHacked, DisabledForOlderNonFormat6Patches)
+{
+	EXPECT_FALSE(ComputeDsdHackedEnabled(19, 5));   // vanilla-era
+	EXPECT_FALSE(ComputeDsdHackedEnabled(21, 3));   // version 21 but not format 6 -> no extended nums
+	EXPECT_FALSE(ComputeDsdHackedEnabled(0, 0));
+}
+
 // ---- infighting group encoding ---------------------------------------------
 
 TEST(Mbf21DehFields, InfightingGroupOffsetsPastDefault)
