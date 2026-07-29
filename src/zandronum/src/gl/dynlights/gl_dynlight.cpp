@@ -210,6 +210,7 @@ static const char *LightTags[]=
    "additive",
    "halo",
    "dontlightself",
+   "attenuate",
    NULL
 };
 
@@ -230,6 +231,7 @@ enum {
    LIGHTTAG_ADDITIVE,
    LIGHTTAG_HALO,
    LIGHTTAG_DONTLIGHTSELF,
+   LIGHTTAG_ATTENUATE,
 };
 
 
@@ -357,6 +359,11 @@ void gl_ParsePointLight(FScanner &sc)
 			case LIGHTTAG_DONTLIGHTSELF:
 				defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
 				break;
+			case LIGHTTAG_ATTENUATE:
+				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
+				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
+				gl_ParseInt(sc);
+				break;
 			default:
 				sc.ScriptError("Unknown tag: %s\n", sc.String);
 			}
@@ -435,6 +442,11 @@ void gl_ParsePulseLight(FScanner &sc)
 				break;
 			case LIGHTTAG_DONTLIGHTSELF:
 				defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
+				break;
+			case LIGHTTAG_ATTENUATE:
+				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
+				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
+				gl_ParseInt(sc);
 				break;
 			default:
 				sc.ScriptError("Unknown tag: %s\n", sc.String);
@@ -515,6 +527,11 @@ void gl_ParseFlickerLight(FScanner &sc)
 			case LIGHTTAG_DONTLIGHTSELF:
 				defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
 				break;
+			case LIGHTTAG_ATTENUATE:
+				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
+				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
+				gl_ParseInt(sc);
+				break;
 			default:
 				sc.ScriptError("Unknown tag: %s\n", sc.String);
 			}
@@ -594,6 +611,11 @@ void gl_ParseFlickerLight2(FScanner &sc)
 			case LIGHTTAG_DONTLIGHTSELF:
 				defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
 				break;
+			case LIGHTTAG_ATTENUATE:
+				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
+				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
+				gl_ParseInt(sc);
+				break;
 			default:
 				sc.ScriptError("Unknown tag: %s\n", sc.String);
 			}
@@ -670,6 +692,11 @@ void gl_ParseSectorLight(FScanner &sc)
 				break;
 			case LIGHTTAG_DONTLIGHTSELF:
 				defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
+				break;
+			case LIGHTTAG_ATTENUATE:
+				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
+				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
+				gl_ParseInt(sc);
 				break;
 			default:
 				sc.ScriptError("Unknown tag: %s\n", sc.String);
@@ -757,6 +784,11 @@ void gl_ParseFrame(FScanner &sc, FString name)
 				if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 					gl_AddLightAssociation(name, frameName, sc.String);
 				break;
+			case LIGHTTAG_ATTENUATE:
+				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
+				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
+				gl_ParseInt(sc);
+				break;
 			default:
 				sc.ScriptError("Unknown tag: %s\n", sc.String);
 			}
@@ -805,6 +837,11 @@ void gl_ParseObject(FScanner &sc)
 				break;
 			case LIGHTTAG_FRAME:
 				gl_ParseFrame(sc, name);
+				break;
+			case LIGHTTAG_ATTENUATE:
+				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
+				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
+				gl_ParseInt(sc);
 				break;
 			default:
 				sc.ScriptError("Unknown tag: %s\n", sc.String);
