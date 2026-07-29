@@ -256,6 +256,11 @@ void AActor::Serialize (FArchive &arc)
 	{
 		arc << flags7;
 	}
+	// [rc4l] MBF21 flags word. Guarded so older snapshots (which never stored it) load with 0.
+	if (SaveVersion >= 4509)
+	{
+		arc << flags8;
+	}
 	arc	<< special1
 		<< special2
 		<< health

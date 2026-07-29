@@ -527,6 +527,23 @@ enum
 	MF_STRIFEx8000000 = 0,		// seems related to MF_SHADOW
 };
 
+// [rc4l] MBF21 needed more flag bits. These back the MBF21 thing flags that have no existing
+// ZDoom equivalent (the episode/MAP07 boss actions and full-volume sounds); the rest of the
+// MBF21 "Bits" mnemonics map onto the flags2/3/4 words above. Values match Zandronum lz/mbf21.
+// Ported behaviour: DSDA-Doom + Zandronum lz/mbf21; MBF21 spec v1.4.
+enum
+{
+	MF8_FULLVOLDEATH	= 0x00000001,	// [MBF21] death sound plays at full volume
+	MF8_FULLVOLSEE		= 0x00000002,	// [MBF21] see sound plays at full volume
+	MF8_E1M8BOSS		= 0x00000004,	// [MBF21] E1M8 boss (Baron-like: lower floor tag 666 on death)
+	MF8_E2M8BOSS		= 0x00000008,	// [MBF21] E2M8 boss (Cyberdemon-like: exit on death)
+	MF8_E3M8BOSS		= 0x00000010,	// [MBF21] E3M8 boss (Mastermind-like: exit on death)
+	MF8_E4M6BOSS		= 0x00000020,	// [MBF21] E4M6 boss (Cyberdemon-like: open tag 666 on death)
+	MF8_E4M8BOSS		= 0x00000040,	// [MBF21] E4M8 boss (Mastermind-like: lower floor tag 666)
+	MF8_MAP07BOSS1		= 0x00000080,	// [MBF21] MAP07 tag 666 boss (Mancubus-like)
+	MF8_MAP07BOSS2		= 0x00000100,	// [MBF21] MAP07 tag 667 boss (Arachnotron-like)
+};
+
 #define TRANSLUC25			(FRACUNIT/4)
 #define TRANSLUC33			(FRACUNIT/3)
 #define TRANSLUC50			(FRACUNIT/2)
@@ -1026,7 +1043,8 @@ public:
 	DWORD			flags4;			// [RH] Even more flags!
 	DWORD			flags5;			// OMG! We need another one.
 	DWORD			flags6;			// Shit! Where did all the flags go?
-	DWORD			flags7;			// 
+	DWORD			flags7;			//
+	DWORD			flags8;			// [rc4l] MBF21 needed more of them (see MF8_* above).
 
 	// [BB] If 0, everybody can see the actor, if > 0, only members of team (VisibleToTeam-1) can see it.
 	DWORD			VisibleToTeam;
