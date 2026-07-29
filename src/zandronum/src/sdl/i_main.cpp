@@ -389,6 +389,10 @@ int main (int argc, char **argv)
     catch (class CDoomError &error)
     {
 		I_ShutdownJoysticks();
+		// [rc4l] A recoverable/fatal engine error that escaped D_DoomMain dies here via exit() -- no
+		// signal, so sentry's handler never sees it. Report it (I_FatalError already reports+exit()s
+		// on this platform, so it never reaches here -- no double report). No-op if reporting is off.
+		ZX_CrashReportFatal (error.GetMessage ());
 		if (error.GetMessage ())
 			fprintf (stderr, "%s\n", error.GetMessage ());
 		exit (-1);

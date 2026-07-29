@@ -1360,6 +1360,7 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay.cpp
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
+	features/wadreload/zx_wadreload.cpp
 	zzautozend.cpp
 )
 
