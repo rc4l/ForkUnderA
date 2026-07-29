@@ -15,7 +15,17 @@ on:
   repository_dispatch:
     types: [glitchtip-crash]   # fired by the GlitchTip-alert -> relay path (event-driven, instant)
   schedule:
-    - cron: "0 */6 * * *"      # safety net only; the webhook is the primary path
+    # [rc4l] Reconciliation poll behind the webhook. Every 5 min, not every 6h: a webhook failure
+    # is SILENT -- a dispatch that never arrives creates no workflow run, so there is no failed
+    # job and no red X, and the only symptom is a crash issue that does not exist, which nobody
+    # can notice. The interval is therefore the whole detection budget, and 6h meant a crash
+    # could sit unfiled for most of a day. Ways the webhook drops an event without a trace: the
+    # relay's token expires (GitHub 4xx to a relay outside this repo), the relay is down,
+    # GlitchTip's alert rule does not fire for a recurrence on an existing group, or Actions has
+    # an incident. Runs are no-ops when nothing changed (one GlitchTip query), so the cost is
+    # small; what this does NOT provide is an alert when the webhook path itself breaks, which
+    # is the real fix and is tracked separately.
+    - cron: "*/5 * * * *"
 
 permissions:
   issues: write     # file/label crash issues
