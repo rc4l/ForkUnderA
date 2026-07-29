@@ -229,19 +229,20 @@ CUSTOM_CVAR (String, vid_cursor, "None", CVAR_ARCHIVE | CVAR_NOINITCALL)
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
 
-	bool res = false;
+	// [rc4l] ZandroX default: use the OS cursor, not the game's CursorPic / "cursor" lump (e.g.
+	// Freedoom's rabbit-head). The default value "None" now means "the native OS pointer"; a user can
+	// still opt into a game graphic by setting vid_cursor to a texture name.
+	if (!stricmp(self, "None"))
+	{
+		I_SetCursor(NULL);
+		return;
+	}
 
-	if (!stricmp(self, "None" ) && gameinfo.CursorPic.IsNotEmpty())
+	// An explicit name: use that graphic, falling back to the OS cursor (not a surprise lump) if the
+	// texture can't be found.
+	if (!I_SetCursor(TexMan[self]))
 	{
-		res = I_SetCursor(TexMan[gameinfo.CursorPic]);
-	}
-	else
-	{
-		res = I_SetCursor(TexMan[self]);
-	}
-	if (!res)
-	{
-		I_SetCursor(TexMan["cursor"]);
+		I_SetCursor(NULL);
 	}
 }
 
