@@ -1,0 +1,18 @@
+Patch File for DeHackEd v3.0
+# [rc4l] DEHEXTRA thing-index alignment regression probe. Load on doom2, then
+# verify at runtime that BOTH ends map correctly:
+#   summon Fatso          -> health MUST be 4242  (vanilla Thing 9 still edits Fatso;
+#                            proves the DEHEXTRA insert did NOT disturb vanilla indices)
+#   summon Deh_Actor_151  -> health MUST be 55555 (Thing 151 edits Deh_Actor_151, index==name)
+#   summon Deh_Actor_150  -> must EXIST            (was missing -> `replaces Deh_Actor_150` failed)
+# Before the fix, the InfoNames list was missing Deh_Actor_145..150, so Thing 151
+# edited Deh_Actor_157 (off by 6) and Deh_Actor_150 didn't exist.
+Doom version = 21
+Patch format = 6
+
+Thing 9 (Fatso)
+Hit points = 4242
+
+Thing 151 (AlignProbe)
+Hit points = 55555
+ID # = 31300

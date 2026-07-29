@@ -886,7 +886,10 @@ static const PClass *FindOrCreateDsdActor(int thingnum)
 		return *cached;
 
 	FString name;
-	name.Format("DsdHackedThing%d", thingnum);
+	// [rc4l] Name lazy DSDHacked things "Deh_Actor_<N>" to match the static pool and GZDoom, so DECORATE
+	// can reference them (e.g. `replaces Deh_Actor_<N>`). Safe: the static pool ends at Deh_Actor_500
+	// and the lazy path only fires for indices > InfoNames.Size() (== 501+), so no name collision.
+	name.Format("Deh_Actor_%d", thingnum);
 	PClass *cls = RUNTIME_CLASS(AActor)->CreateDerivedClass(name, sizeof(AActor));
 
 	// [rc4l] dsda-doom zero-initializes a new mobjinfo (dsda/mobjinfo.c), so a DSDHacked patch that
