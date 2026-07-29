@@ -132,6 +132,16 @@ static TArray<FSoundID> SoundMap;
 // Names of different actor types, in original Doom 2 order
 static TArray<const PClass *> InfoNames;
 
+// [rc4l] DSDHacked (doomwiki.org/wiki/DSDhacked): once a patch identifies itself as
+// "Doom version = 2021", thing/frame numbers beyond the static DEHEXTRA pools are no longer errors
+// -- DECOHack output routinely starts content at large arbitrary bases (e.g. 70000). Matching
+// GZDoom, such numbers get a class/state created lazily on first reference rather than a giant
+// static pool. Each is permanent for the process's life so pointers into it stay valid. Declared
+// up here so both FindState (lazy states) and FindOrCreateDsdActor (below) can see them.
+static bool DsdHackedEnabled = false;
+static TMap<int, PClass *> DsdActors;
+static TMap<int, FState *> DsdStates;
+
 // bit flags for PatchThing (a .bex extension):
 struct BitName
 {
@@ -442,6 +452,23 @@ static FState *FindState (int statenum)
 			else return NULL;
 		}
 		stateacc += StateMap[i].StateSpan;
+	}
+
+	// [rc4l] DSDHacked: for any frame number beyond the static pools, lazily allocate a permanent,
+	// individually-allocated state (Tics -1, loops to itself, TNT1 sprite) so pointers stay valid.
+	if (DsdHackedEnabled && statenum > 0)
+	{
+		FState **cached = DsdStates.CheckKey(statenum);
+		if (cached != NULL)
+			return *cached;
+
+		FState *state = new FState;
+		memset(state, 0, sizeof(FState));
+		state->Tics = -1;
+		state->NextState = state;
+		state->sprite = GetSpriteIndex("TNT1");
+		DsdStates.Insert(statenum, state);
+		return state;
 	}
 	return NULL;
 }
@@ -844,13 +871,31 @@ bool DEH_CheckMBF21Flags (AActor *actor, DWORD bits)
 // from Zandronum lz/mbf21; arg mappings copied verbatim so they match the MBF21 spec's arg order.
 // ==========================================================================
 
-// Maps a DeHackEd thing number to its class (1-based, like the rest of PatchThing). DSDHacked's
-// dynamic thing numbering is not supported yet, so out-of-range numbers resolve to NULL.
+static const PClass *FindOrCreateDsdActor(int thingnum)
+{
+	if (!DsdHackedEnabled)
+		return NULL;
+
+	PClass **cached = DsdActors.CheckKey(thingnum);
+	if (cached != NULL)
+		return *cached;
+
+	FString name;
+	name.Format("DsdHackedThing%d", thingnum);
+	PClass *cls = RUNTIME_CLASS(AActor)->CreateDerivedClass(name, sizeof(AActor));
+	DsdActors.Insert(thingnum, cls);
+	return cls;
+}
+
+// Maps a DeHackEd thing number to its class (1-based, like the rest of PatchThing). Numbers past the
+// static InfoNames pool fall back to a lazily-created DSDHacked class (or NULL if DSDHacked is off).
 static const PClass *LookupThingType(int value)
 {
-	if (value <= 0 || value > (int)InfoNames.Size())
+	if (value <= 0)
 		return NULL;
-	return InfoNames[value - 1];
+	if (value <= (int)InfoNames.Size())
+		return InfoNames[value - 1];
+	return FindOrCreateDsdActor(value);
 }
 
 // Per-state MBF21 "Args1".."Args8" storage, filled by PatchFrame and consumed by SetMBF21Params.
@@ -3022,6 +3067,11 @@ static bool DoDehPatch()
 		dversion = 1;
 	else if (dversion == 21)
 		dversion = 4;
+	else if (dversion == 2021)	// [rc4l] MBF21 patches identify themselves like this.
+	{
+		dversion = 3;
+		DsdHackedEnabled = true;	// [rc4l] MBF21 patches may also use DSDHacked's unlimited numbering.
+	}
 	else
 	{
 		Printf ("Patch created with unknown DOOM version.\nAssuming version 1.9.\n");
@@ -3462,11 +3512,23 @@ static bool LoadDehSupp ()
 
 			sc.MustGetStringName(";");
 		}
+
+		// [rc4l] DEHEXTRA requires its extra frames to loop back to themselves by default, which
+		// DECORATE can't express, so fix up the DehExtraStates pool here after it's loaded.
+		{
+			const PClass *pool = PClass::FindClass("DehExtraStates");
+			if (pool != NULL && pool->ActorInfo != NULL)
+			{
+				FState *states = pool->ActorInfo->OwnedStates;
+				for (int i = 0; i < pool->ActorInfo->NumOwnedStates; ++i)
+					states[i].NextState = &states[i];
+			}
+		}
 		return true;
 	}
 	catch(CRecoverableError &err)
 	{
-		// Don't abort if DEHSUPP loading fails. 
+		// Don't abort if DEHSUPP loading fails.
 		// Just print the message and continue.
 		Printf("%s\n", err.GetMessage());
 		return false;
