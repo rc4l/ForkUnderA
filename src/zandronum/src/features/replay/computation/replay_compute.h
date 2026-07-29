@@ -38,6 +38,30 @@ void ComputeClipFilename(char *out, int outSize, const ClipStamp &s);
 int ComputeClipStartIndex(const int64_t *tUs, const unsigned char *key, int count,
 						  int64_t lastUs, int windowSecs);
 
+// ---- async framebuffer readback (PBO) ------------------------------------------------------------
+// The instant-replay capture reads the back buffer into pixel-pack buffers. The GL objects are owned
+// by the framebuffer (destroyed with its GL context on a windowed<->fullscreen switch), so `haveBuffers`
+// is false whenever we hold no live buffers -- a fresh framebuffer, or the frame right after a context
+// recreate. These pure helpers make the size/lifecycle decisions unit-testable off-engine.
+
+// Whether the readback PBOs must be (re)allocated. Allocate when we own no buffers yet (haveBuffers
+// false) OR the framebuffer size changed since they were sized; otherwise reuse. Allocating on
+// !haveBuffers -- even when the requested size equals the last-seen size -- is what prevents a buffer
+// name from a destroyed GL context ever being reused (the Apple-driver crash this fixes).
+enum class PboAction { Allocate, Reuse };
+PboAction ComputePboAction(bool haveBuffers, int curW, int curH, int reqW, int reqH);
+
+// Byte size of a tightly-packed (GL_PACK_ALIGNMENT 1) RGB / 8-bit-per-channel readback of reqW x reqH.
+// Returns 0 for any non-positive dimension (nothing to allocate or read). int64 so large windows can't
+// overflow the size computation.
+int64_t ComputeRgbReadbackBytes(int reqW, int reqH);
+
+// glReadPixels returns rows bottom-up; to hand a top-down image to the encoder we point at the LAST
+// row and walk with a negative stride. Returns that first (bottom) row's byte offset from the buffer
+// start and the negative row stride. Both are 0 when either dimension is non-positive.
+struct BottomUpView { int64_t firstRowOffset; int rowStride; };
+BottomUpView ComputeBottomUpView(int reqW, int reqH);
+
 } // namespace zx
 
 #endif
