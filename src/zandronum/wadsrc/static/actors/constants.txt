@@ -278,6 +278,23 @@ enum
 	CHAN_NOPAUSE = 64
 };
 
+// Flags for A_StartSound (uzdoom EChanFlags)
+enum
+{
+	CHANF_DEFAULT = 0,
+	CHANF_LOOP = 256,
+	CHANF_NOSTOP = 4096,
+	CHANF_OVERLAP = 8192
+};
+
+// Flags for A_FireProjectile
+enum
+{
+	FPF_AIMATANGLE = 1,
+	FPF_TRANSFERTRANSLATION = 2,
+	FPF_NOAUTOAIM = 4
+};
+
 // sound attenuation values
 const float ATTN_NONE = 0;
 const float ATTN_NORM = 1;
