@@ -14,6 +14,20 @@ ACTOR ZXConfNoiseAlert
 	}
 }
 
+ACTOR ZXConfCheckRange
+{
+	States
+	{
+	Spawn:
+		TNT1 A 1 A_CheckRange(2048, "Far")
+		TNT1 A 1 A_CheckRange(2048, "Far", true)
+		Loop
+	Far:
+		TNT1 A 1
+		Stop
+	}
+}
+
 ACTOR ZXConfStartSound
 {
 	States

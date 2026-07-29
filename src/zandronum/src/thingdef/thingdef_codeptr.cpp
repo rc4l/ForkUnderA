@@ -3602,7 +3602,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckSightOrRange)
 // Jumps if this actor is out of range of all players.
 //
 //===========================================================================
-static bool DoCheckRange(AActor *self, AActor *camera, double range)
+static bool DoCheckRange(AActor *self, AActor *camera, double range, bool twodi)
 {
 	if (camera == NULL)
 	{
@@ -3613,7 +3613,10 @@ static bool DoCheckRange(AActor *self, AActor *camera, double range)
 	double dy = (double)(self->y - camera->y);
 	double dz;
 	fixed_t eyez = (camera->z + camera->height - (camera->height>>2));	// same eye height as P_CheckSight
-	if (eyez > self->z + self->height){
+	if (twodi){	// [rc4l] two_dimension: measure the horizontal distance only, ignoring height.
+		dz = 0;
+	}
+	else if (eyez > self->z + self->height){
 		dz = (double)(self->z + self->height - eyez);
 	}
 	else if (eyez < self->z){
@@ -3631,9 +3634,10 @@ static bool DoCheckRange(AActor *self, AActor *camera, double range)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckRange)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	double range = EvalExpressionF(ParameterIndex+0, self);
 	ACTION_PARAM_STATE(jump, 1);
+	ACTION_PARAM_BOOL(twodi, 2);	// [rc4l] two_dimension: measure horizontal distance only (uzdoom checks.zs A_CheckRange)
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
@@ -3643,13 +3647,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckRange)
 		if (playeringame[i])
 		{
 			// Always check from each player.
-			if (DoCheckRange(self, players[i].mo, range))
+			if (DoCheckRange(self, players[i].mo, range, twodi))
 			{
 				return;
 			}
 			// If a player is viewing from a non-player, check that too.
 			if (players[i].camera != NULL && players[i].camera->player == NULL &&
-				DoCheckRange(self, players[i].camera, range))
+				DoCheckRange(self, players[i].camera, range, twodi))
 			{
 				return;
 			}
