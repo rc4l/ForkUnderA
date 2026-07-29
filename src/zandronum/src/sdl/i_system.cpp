@@ -53,6 +53,7 @@
 #include "SDL.h"
 #include "doomtype.h"
 #include "doomstat.h"
+#include "features/crashreport/zx_crashreport.h" // [rc4l] report graceful fatals to GlitchTip
 #include "version.h"
 #include "doomdef.h"
 #include "cmdlib.h"
@@ -385,9 +386,14 @@ void STACK_ARGS I_FatalError (const char *error, ...)
 		index = vsnprintf (errortext, MAX_ERRORTEXT, error, argptr);
 		va_end (argptr);
 
+		// [rc4l] A fatal error is a graceful exit(), not a signal, so sentry's crash handler never
+		// sees it. Report it here (before any blocking dialog) so bad-WAD / script-error fatals reach
+		// GlitchTip/GitHub instead of vanishing. No-op if reporting is off.
+		ZX_CrashReportFatal(errortext);
+
 #ifdef __APPLE__
 		Mac_I_FatalError(errortext);
-#endif // __APPLE__		
+#endif // __APPLE__
 		
 		// Record error to log (if logging)
 		if (Logfile)

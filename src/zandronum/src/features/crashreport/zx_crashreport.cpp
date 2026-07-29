@@ -389,6 +389,35 @@ void ZX_CrashReportSetLoadedFiles()
 		sentry_set_extra("load_order", sentry_value_new_string(order.c_str()));
 }
 
+// [rc4l] Report a graceful fatal (I_FatalError) to GlitchTip. A signal crash is caught by sentry's
+// handler, but an I_FatalError just calls exit() -- so a bad WAD, a DECORATE/MAPINFO script error, or
+// a missing resource would otherwise vanish with only a stderr line no GUI player ever sees. We
+// capture it as a fatal-level message event, fingerprinted on the message so distinct fatals form
+// distinct GlitchTip groups (crash-sync then files a GitHub issue titled with the reason). The loaded
+// WAD set is already tagged on the event, so the issue shows which wads were up when it died. Blocks
+// briefly to flush, because the caller exits immediately after.
+void ZX_CrashReportFatal(const char *message)
+{
+	if (!g_sentryInited)
+		return;
+	if (message == NULL || message[0] == '\0')
+		message = "fatal error";
+
+	sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fatal", message);
+	sentry_value_set_by_key(event, "logger", sentry_value_new_string("I_FatalError"));
+
+	// Group by the message (before_send only sets a fingerprint when there are exception frames, so a
+	// message event keeps this one). Distinct reasons -> distinct issues; recurrences of the same one
+	// collapse together.
+	sentry_value_t fp = sentry_value_new_list();
+	sentry_value_append(fp, sentry_value_new_string("i_fatalerror"));
+	sentry_value_append(fp, sentry_value_new_string(message));
+	sentry_value_set_by_key(event, "fingerprint", fp);
+
+	sentry_capture_event(event);
+	sentry_flush(3000); // wait up to 3s so it uploads before the process exits
+}
+
 #else // !ZX_ENABLE_SENTRY
 
 void ZX_CrashReportInit() {}
@@ -398,5 +427,6 @@ void ZX_CrashReportLogStatus() {}
 void ZX_CrashReportSetLoadedFiles() {}
 void ZX_CrashReportSetMap(const char *) {}
 void ZX_CrashReportSetTag(const char *, const char *) {}
+void ZX_CrashReportFatal(const char *) {}
 
 #endif
