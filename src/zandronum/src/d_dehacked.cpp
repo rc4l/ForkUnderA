@@ -969,6 +969,27 @@ static int PatchThing (int thingy)
 			DEH_ChangeMBF21Flags(info, value & zx::mbf21::DEH21F_ALLFLAGS, true);
 			DEH_ChangeMBF21Flags(info, ~value & zx::mbf21::DEH21F_ALLFLAGS, false);
 		}
+		// [rc4l] MBF21 "Fast speed": the actor's speed while fast-monsters is on. Stored as a class
+		// meta value, and given the same small-integer <<FRACBITS treatment the Speed field gets.
+		else if (linelen == 10 && stricmp (Line1, "Fast speed") == 0)
+		{
+			fixed_t fspeed = fixed_t(val);
+			if (abs(fspeed) < 256)
+			{
+				fspeed <<= FRACBITS;
+			}
+			if (type != NULL)
+			{
+				const_cast<PClass *>(type)->Meta.SetMetaFixed(AMETA_FastSpeed, fspeed);
+			}
+		}
+		// [rc4l] MBF21 "Melee range": how far a melee attack reaches. The DeHackEd value uses the
+		// vanilla MELEERANGE convention (includes the target radius); ZDoom's meleerange does not,
+		// hence the -20*FRACUNIT the tested helper applies.
+		else if (linelen == 11 && stricmp (Line1, "Melee range") == 0)
+		{
+			info->meleerange = fixed_t(zx::mbf21::ComputeMeleeRangeFixed((int64_t)val));
+		}
 		else if (linelen == 5)
 		{
 			if (stricmp (Line1, "Speed") == 0)
