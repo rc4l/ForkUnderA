@@ -56,6 +56,8 @@
 #include "decallib.h"
 #include "m_random.h"
 #include "d_dehacked.h"
+#include "team.h"			// [rc4l] teamgame (A_FindTracer friend check)
+#include "d_event.h"		// [rc4l] BT_ATTACK (A_RefireTo)
 #include "features/mbf21/computation/hitscan_spread_compute.h"
 #include "i_system.h"
 #include "p_local.h"
@@ -6137,6 +6139,20 @@ static fixed_t MBF21_DegToSlope(fixed_t a)
 	return a >= 0 ? slope : -slope;
 }
 
+// MBF21 triangular hitscan spread (A_MonsterBulletAttack / A_WeaponBulletAttack). `spread` is a
+// fixed-point-degree half-angle; converts it to BAM and applies the spec's triangular distribution
+// via the tested zx::mbf21 helper. The two RNG rolls are pulled here (not as call arguments) so
+// their order is defined -- a demo/netcode determinism requirement.
+static angle_t MBF21_RandomHitscanAngle(fixed_t spread)
+{
+	// degrees(16.16) -> BAM: |spread| * ANGLE_1 (BAM per degree) >> FRACBITS. Done on the raw int64
+	// (dsda takes the absolute value before the conversion, which can't represent negatives).
+	const int64_t spreadBam = (abs(spread).Raw() * (int64_t)ANGLE_1) >> FRACBITS;
+	const int r1 = pr_mbf21();
+	const int r2 = pr_mbf21();
+	return (angle_t)zx::mbf21::ComputeHitscanAngleBAM(spreadBam, r1, r2);
+}
+
 //==========================================================================
 // A_SpawnObject: generic actor spawn, position/velocity relative to angle.
 //==========================================================================
@@ -6380,4 +6396,418 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveFlags)
 	ACTION_PARAM_INT(flags2, 1);
 
 	MBF21_ChangeFlags(self, flags, flags2, false);
+}
+
+//==========================================================================
+// A_MonsterBulletAttack: generic monster hitscan attack.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_MonsterBulletAttack)
+{
+	ACTION_PARAM_START(5);
+	ACTION_PARAM_FIXED(hspread, 0);
+	ACTION_PARAM_FIXED(vspread, 1);
+	ACTION_PARAM_INT(numbullets, 2);
+	ACTION_PARAM_INT(damagebase, 3);
+	ACTION_PARAM_INT(damagedice, 4);
+
+	// [rc4l] The server handles monster attacks; clients only play the sound.
+	if ( NETWORK_InClientMode() )
+	{
+		S_Sound (self, CHAN_WEAPON, self->AttackSound, 1, ATTN_NORM);
+		return;
+	}
+
+	if (self->target == NULL)
+		return;
+
+	A_FaceTarget(self);
+	const int bangle = self->angle;
+	const int bslope = (int)P_AimLineAttack(self, bangle, MISSILERANGE);
+
+	S_Sound (self, CHAN_WEAPON, self->AttackSound, 1, ATTN_NORM);
+	for (int i = 0; i < numbullets; i++)
+	{
+		const int damage = damagedice > 0 ? (pr_mbf21() % damagedice + 1) * damagebase : 0;
+		const angle_t bulletangle = bangle + MBF21_RandomHitscanAngle(hspread);
+		const int bulletpitch = bslope + (int)MBF21_RandomHitscanAngle(vspread);
+		P_LineAttack(self, bulletangle, MISSILERANGE, bulletpitch, damage, NAME_Hitscan, NAME_BulletPuff);
+	}
+}
+
+//==========================================================================
+// A_HealChase: A_VileChase with a custom resurrection state and sound.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_HealChase)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_STATE(healstate, 0);
+	ACTION_PARAM_SOUND(healsound, 1);
+
+	if (!P_CheckForResurrection(self, false, healstate, healsound))
+		A_Chase(self);
+}
+
+//==========================================================================
+// A_SeekTracer: generic seeker-missile homing (MBF21 precise z-seeking).
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SeekTracer)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_ANGLE(thresh, 0);
+	ACTION_PARAM_ANGLE(turnmax, 1);
+
+	P_SeekerMissile(self, thresh, turnmax, true, false);
+}
+
+//==========================================================================
+// A_FindTracer: acquire a seek target within a FOV cone, up to rangeblocks.
+//==========================================================================
+static AActor *MBF21_FindTracerCheck(AActor *mo, int index, void *param)
+{
+	const angle_t fov = *(angle_t *)param;
+	// For a missile the "friend" reference is its shooter, so a player missile never picks the
+	// player or their allies.
+	AActor *friendactor = (mo->flags & MF_MISSILE) && mo->target != NULL ? (AActor *)mo->target : mo;
+
+	for (FBlockNode *link = blocklinks[index]; link != NULL; link = link->NextActor)
+	{
+		AActor *other = link->Me;
+		if (other == mo || other == friendactor)
+			continue;
+		if (!(other->player || (other->flags3 & MF3_ISMONSTER)))
+			continue;
+		if (!(other->flags & MF_SHOOTABLE))
+			continue;
+		if (other->health <= 0)
+			continue;
+		if (other->flags2 & MF2_DORMANT)
+			continue;
+		if (friendactor->IsFriend(other))
+			continue;
+		// No targeting fellow players outside deathmatch.
+		if (( NETWORK_GetState( ) != NETSTATE_SINGLE ) && !deathmatch && !teamgame &&
+			other->player && friendactor->player)
+			continue;
+		if (fov > 0)
+		{
+			angle_t an = R_PointToAngle2(mo->x, mo->y, other->x, other->y) - mo->angle;
+			if (an > ANGLE_180)
+				an = 0 - an;
+			if (an > fov / 2)
+				continue;
+		}
+		if (!P_CheckSight(mo, other, 0))
+			continue;
+		return other;
+	}
+	return NULL;
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FindTracer)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_ANGLE(fov, 0);
+	ACTION_PARAM_INT(rangeblocks, 1);
+
+	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+		return;
+
+	// No-op if the actor already has a tracer.
+	if (self->tracer != NULL)
+		return;
+
+	self->tracer = P_BlockmapSearch(self, rangeblocks, MBF21_FindTracerCheck, &fov);
+}
+
+//==========================================================================
+// A_ClearTracer: drop the current seek target.
+//==========================================================================
+DEFINE_ACTION_FUNCTION(AActor, A_ClearTracer)
+{
+	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+		return;
+
+	self->tracer = NULL;
+}
+
+//==========================================================================
+// A_JumpIfTracerInSight: jump if the tracer is within the FOV cone and visible.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfTracerInSight)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_STATE(jump, 0);
+	ACTION_PARAM_ANGLE(fov, 1);
+
+	ACTION_SET_RESULT(false);	// Jumps must not set the result for inventory state chains.
+
+	if ( NETWORK_InClientMode() )
+	{
+		if (( self->NetworkFlags & NETFL_CLIENTSIDEONLY ) == false )
+			return;
+	}
+
+	AActor *tracer = self->tracer;
+	if (tracer == NULL)
+		return;
+
+	if (fov > 0)
+	{
+		angle_t an = R_PointToAngle2(self->x, self->y, tracer->x, tracer->y) - self->angle;
+		if (an > ANGLE_180)
+			an = 0 - an;
+		if (an > fov / 2)
+			return;
+	}
+
+	if (P_CheckSight(self, tracer, 0))
+		ACTION_JUMP(jump, CLIENTUPDATE_FRAME|CLIENTUPDATE_POSITION);	// [rc4l] Clients may not know the tracer.
+}
+
+//==========================================================================
+// [rc4l] MBF21 weapon codepointers (scoped to AInventory; `self` is the owning
+// player pawn). Ported from Zandronum lz/mbf21; strong-Fixed idioms adapted.
+//==========================================================================
+
+//==========================================================================
+// A_WeaponProjectile: fire a projectile without consuming ammo / flashing / sound.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_WeaponProjectile)
+{
+	ACTION_PARAM_START(5);
+	ACTION_PARAM_CLASS(type, 0);
+	ACTION_PARAM_ANGLE(angle, 1);
+	ACTION_PARAM_FIXED(pitch, 2);
+	ACTION_PARAM_FIXED(hoffset, 3);
+	ACTION_PARAM_FIXED(voffset, 4);
+
+	if (self->player == NULL || type == NULL)
+		return;
+
+	if ( NETWORK_ShouldActorNotBeSpawned ( self, type ) )
+		return;
+
+	AActor *linetarget;
+	// Don't tell clients to spawn the missile yet; that happens after the adjustments below.
+	AActor *mo = P_SpawnPlayerMissile(self, 0, 0, 0, type, self->angle, &linetarget, NULL, false, true, false);
+	if (mo == NULL)
+		return;
+
+	// adjust the angle, preserving the horizontal speed
+	mo->angle += angle;
+	FVector2 velocity ((double)mo->velx, (double)mo->vely);
+	const fixed_t hspeed = (fixed_t)velocity.Length();
+	const int fan = mo->angle >> ANGLETOFINESHIFT;
+	mo->velx = FixedMul(hspeed, finecosine[fan]);
+	mo->vely = FixedMul(hspeed, finesine[fan]);
+
+	mo->velz += FixedMul(mo->Speed, MBF21_DegToSlope(pitch));
+
+	const int oan = (self->angle - ANGLE_90) >> ANGLETOFINESHIFT;
+	mo->SetOrigin(mo->x + FixedMul(hoffset, finecosine[oan]),
+		mo->y + FixedMul(hoffset, finesine[oan]), mo->z + voffset);
+
+	// tracer = the player's autoaim target, so the missile can seek later
+	mo->tracer = linetarget;
+
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SpawnMissileExact( mo );
+}
+
+//==========================================================================
+// A_WeaponBulletAttack: hitscan without consuming ammo / flashing / sound.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_WeaponBulletAttack)
+{
+	ACTION_PARAM_START(5);
+	ACTION_PARAM_FIXED(hspread, 0);
+	ACTION_PARAM_FIXED(vspread, 1);
+	ACTION_PARAM_INT(numbullets, 2);
+	ACTION_PARAM_INT(damagebase, 3);
+	ACTION_PARAM_INT(damagedice, 4);
+
+	if (self->player == NULL)
+		return;
+
+	if ( NETWORK_InClientMode() )
+		return;
+
+	const int bangle = self->angle;
+	const int bslope = P_BulletSlope(self);
+
+	for (int i = 0; i < numbullets; i++)
+	{
+		const int damage = damagedice > 0 ? (pr_mbf21() % damagedice + 1) * damagebase : 0;
+		const angle_t bulletangle = bangle + MBF21_RandomHitscanAngle(hspread);
+		const int bulletpitch = bslope + (int)MBF21_RandomHitscanAngle(vspread);
+		P_LineAttack(self, bulletangle, MISSILERANGE, bulletpitch, damage, NAME_Hitscan, NAME_BulletPuff);
+	}
+
+	// [rc4l] If the player struck another player, maybe award a medal.
+	PLAYER_CheckStruckPlayer( self );
+}
+
+//==========================================================================
+// A_WeaponMeleeAttack: generic weapon melee attack.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_WeaponMeleeAttack)
+{
+	ACTION_PARAM_START(5);
+	ACTION_PARAM_INT(damagebase, 0);
+	ACTION_PARAM_INT(damagedice, 1);
+	ACTION_PARAM_FIXED(zerkfactor, 2);
+	ACTION_PARAM_SOUND(hitsound, 3);
+	ACTION_PARAM_FIXED(range, 4);
+
+	player_t *player = self->player;
+	if (player == NULL)
+		return;
+
+	if ( NETWORK_InClientMode() )
+		return;
+
+	if (range == 0)
+		range = self->meleerange + 20*FRACUNIT;	// back to the vanilla convention
+
+	int damage = damagedice > 0 ? (pr_mbf21() % damagedice + 1) * damagebase : 0;
+	if (self->FindInventory<APowerStrength>())
+		damage = (int)(((SQWORD)damage * zerkfactor.Raw()) >> FRACBITS);
+
+	// slight angle randomization; a vanillaism from the reference implementation
+	angle_t attackangle = self->angle + (pr_mbf21.Random2() << 18);
+
+	AActor *linetarget;
+	const int slope = (int)P_AimLineAttack(self, attackangle, range, &linetarget);
+	P_LineAttack(self, attackangle, range, slope, damage, NAME_Melee, NAME_BulletPuff, LAF_ISMELEEATTACK, &linetarget);
+
+	if (linetarget == NULL)
+		return;
+
+	if (hitsound != 0)
+		S_Sound (self, CHAN_WEAPON, hitsound, 1, ATTN_NORM, true);	// [rc4l] Inform the clients.
+
+	// turn to face the target
+	self->angle = R_PointToAngle2(self->x, self->y, linetarget->x, linetarget->y);
+
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SetThingAngle( self );
+}
+
+//==========================================================================
+// A_WeaponJump: random state jump for weapons.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_WeaponJump)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_STATE(jump, 0);
+	ACTION_PARAM_INT(chance, 1);
+
+	ACTION_SET_RESULT(false);	// Jumps must not set the result for inventory state chains.
+
+	if (self->player == NULL)
+		return;
+
+	// Random jumps must not desync: don't run on non-authoritative clients.
+	if ( NETWORK_InClientMode() )
+	{
+		if (( self->NetworkFlags & NETFL_CLIENTSIDEONLY ) == false )
+			return;
+	}
+
+	if (chance >= 256 || pr_mbf21() < chance)
+		ACTION_JUMP(jump, CLIENTUPDATE_FRAME);
+}
+
+//==========================================================================
+// A_ConsumeAmmo: subtract (or, if negative, give) primary ammo. 0 = ammo-per-shot.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_ConsumeAmmo)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(amount, 0);
+
+	player_t *player = self->player;
+	if (player == NULL || player->ReadyWeapon == NULL)
+		return;
+
+	AWeapon *weapon = player->ReadyWeapon;
+	AAmmo *ammo = weapon->Ammo1;
+	if (ammo == NULL)
+		return;
+
+	if ((dmflags & DF_INFINITE_AMMO) || (player->cheats & CF_INFINITEAMMO))
+		return;
+
+	if (amount == 0)
+		amount = weapon->AmmoUse1;
+
+	ammo->Amount = clamp(ammo->Amount - amount, 0, ammo->MaxAmount);
+
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_GiveInventory( ULONG( player - players ), ammo );
+}
+
+//==========================================================================
+// A_CheckAmmo: jump if primary ammo is below the threshold. 0 = ammo-per-shot.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_CheckAmmo)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_STATE(jump, 0);
+	ACTION_PARAM_INT(amount, 1);
+
+	ACTION_SET_RESULT(false);	// Jumps must not set the result for inventory state chains.
+
+	player_t *player = self->player;
+	if (player == NULL || player->ReadyWeapon == NULL)
+		return;
+
+	AWeapon *weapon = player->ReadyWeapon;
+	if (weapon->Ammo1 == NULL)
+		return;
+
+	if (amount == 0)
+		amount = weapon->AmmoUse1;
+
+	if (weapon->Ammo1->Amount < amount)
+		ACTION_JUMP(jump, 0);	// [rc4l] Clients have ammo info.
+}
+
+//==========================================================================
+// A_RefireTo: jump if fire is held and (unless noammocheck) there's enough ammo.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_RefireTo)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_STATE(jump, 0);
+	ACTION_PARAM_INT(noammocheck, 1);
+
+	ACTION_SET_RESULT(false);	// Jumps must not set the result for inventory state chains.
+
+	player_t *player = self->player;
+	if (player == NULL || player->ReadyWeapon == NULL)
+		return;
+
+	const bool pending = player->PendingWeapon != WP_NOCHANGE && (player->WeaponState & WF_REFIRESWITCHOK);
+	if ((player->cmd.ucmd.buttons & BT_ATTACK) &&
+		!player->ReadyWeapon->bAltFire && !pending && player->health > 0)
+	{
+		if (noammocheck || player->ReadyWeapon->CheckAmmo(AWeapon::PrimaryFire, false, true))
+			ACTION_JUMP(jump, 0);	// [rc4l] Clients know the fire buttons and ammo.
+	}
+}
+
+//==========================================================================
+// A_GunFlashTo: generic weapon muzzle flash to a given state.
+//==========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AInventory, A_GunFlashTo)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_STATE(flash, 0);
+	ACTION_PARAM_INT(nothirdperson, 1);
+
+	if (self->player == NULL)
+		return;
+
+	A_GunFlash(self, flash, nothirdperson ? 1 /*GFF_NOEXTCHANGE*/ : 0);
 }

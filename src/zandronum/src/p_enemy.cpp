@@ -2881,7 +2881,9 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 //
 //==========================================================================
 
-static bool P_CheckForResurrection(AActor *self, bool usevilestates)
+// [rc4l] MBF21 A_HealChase passes a custom heal state + sound; the vanilla A_VileChase path passes
+// none (customstate=NULL, customsound=0) and keeps the original behaviour.
+bool P_CheckForResurrection(AActor *self, bool usevilestates, FState *customstate, FSoundID customsound)
 {
 	const AActor *info;
 	AActor *temp;
@@ -2966,28 +2968,44 @@ static bool P_CheckForResurrection(AActor *self, bool usevilestates)
 				}
 				self->target = temp;
 
-				// [BC] If we are the server, tell clients about the state change.
-				// [EP/BB] Handle also A_VileChase which requires the archvile's states.
-				if ( NETWORK_GetState() == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetThingState( self, usevilestates ? STATE_ARCHVILE_HEAL : STATE_HEAL );
+				// [rc4l] MBF21's A_HealChase provides its own heal state.
+				if (customstate != NULL)
+				{
+					if ( NETWORK_GetState() == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetThingFrame( self, customstate );
 
-				// Make the state the monster enters customizable.
-				FState * state = self->FindState(NAME_Heal);
-				if (state != NULL)
-				{
-					self->SetState(state);
+					self->SetState(customstate);
 				}
-				else if (usevilestates)
+				else
 				{
-					// For Dehacked compatibility this has to use the Arch Vile's
-					// heal state as a default if the actor doesn't define one itself.
-					const PClass *archvile = PClass::FindClass("Archvile");
-					if (archvile != NULL)
+					// [BC] If we are the server, tell clients about the state change.
+					// [EP/BB] Handle also A_VileChase which requires the archvile's states.
+					if ( NETWORK_GetState() == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetThingState( self, usevilestates ? STATE_ARCHVILE_HEAL : STATE_HEAL );
+
+					// Make the state the monster enters customizable.
+					FState * state = self->FindState(NAME_Heal);
+					if (state != NULL)
 					{
-						self->SetState(archvile->ActorInfo->FindState(NAME_Heal));
+						self->SetState(state);
+					}
+					else if (usevilestates)
+					{
+						// For Dehacked compatibility this has to use the Arch Vile's
+						// heal state as a default if the actor doesn't define one itself.
+						const PClass *archvile = PClass::FindClass("Archvile");
+						if (archvile != NULL)
+						{
+							self->SetState(archvile->ActorInfo->FindState(NAME_Heal));
+						}
 					}
 				}
-				S_Sound(corpsehit, CHAN_BODY, "vile/raise", 1, ATTN_IDLE);
+				// [rc4l] Inform clients when playing a custom raise sound, since they don't run
+				// this function themselves.
+				if (customsound != 0)
+					S_Sound(corpsehit, CHAN_BODY, customsound, 1, ATTN_IDLE, true);
+				else
+					S_Sound(corpsehit, CHAN_BODY, "vile/raise", 1, ATTN_IDLE);
 				info = corpsehit->GetDefault();
 
 				if (corpsehit->state == corpsehit->FindState(NAME_GenericCrush))
