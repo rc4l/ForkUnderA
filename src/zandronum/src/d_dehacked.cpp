@@ -77,6 +77,7 @@
 #include "network.h"
 #include "sv_commands.h"
 #include "features/mbf21/computation/dehacked_fields_compute.h"
+#include "features/mbf21/computation/mbf21_flags_compute.h"
 
 // [SO] Just the way Randy said to do it :)
 // [RH] Made this CVAR_SERVERINFO
@@ -767,6 +768,74 @@ void SetDehParams(FState * state, int codepointer)
 	}
 }
 
+// [rc4l] Shared translation of MBF21 thing flags to native flags/properties. Used when parsing the
+// "MBF21 Bits" field and, later, by the A_AddFlags/A_RemoveFlags/A_JumpIfFlagsSet codepointers.
+// Most MBF21 bits map onto existing flags2/3/4 words or a property (gravity / target range / melee
+// threshold); the nine that have no ZDoom equivalent live in flags8 (MF8_*). Mapping follows
+// Zandronum lz/mbf21 and the MBF21 spec v1.4.
+static inline void Deh21SetFlag (DWORD &flagword, DWORD flag, bool set)
+{
+	if (set) flagword |= flag;
+	else flagword &= ~flag;
+}
+
+void DEH_ChangeMBF21Flags (AActor *actor, DWORD bits, bool set)
+{
+	using namespace zx::mbf21;	// DEH21F_* bit constants
+	if (bits & DEH21F_LOGRAV)			actor->gravity = set ? FRACUNIT/8 : FRACUNIT;
+	if (bits & DEH21F_SHORTMRANGE)		actor->maxtargetrange = set ? 896*FRACUNIT : fixed_t(0);
+	if (bits & DEH21F_DMGIGNORED)		Deh21SetFlag(actor->flags3, MF3_NOTARGET, set);
+	if (bits & DEH21F_NORADIUSDMG)		Deh21SetFlag(actor->flags3, MF3_NORADIUSDMG, set);
+	if (bits & DEH21F_FORCERADIUSDMG)	Deh21SetFlag(actor->flags4, MF4_FORCERADIUSDMG, set);
+	if (bits & DEH21F_HIGHERMPROB)		Deh21SetFlag(actor->flags4, MF4_MISSILEEVENMORE, set);
+	if (bits & DEH21F_RANGEHALF)		Deh21SetFlag(actor->flags4, MF4_MISSILEMORE, set);
+	if (bits & DEH21F_NOTHRESHOLD)		Deh21SetFlag(actor->flags4, MF4_QUICKTORETALIATE, set);
+	if (bits & DEH21F_LONGMELEE)		actor->meleethreshold = set ? 196*FRACUNIT : fixed_t(0);
+	if (bits & DEH21F_BOSS)
+	{
+		Deh21SetFlag(actor->flags2, MF2_BOSS, set);
+		// BOSS also implies splash immunity, but don't undo an explicitly requested NORADIUSDMG.
+		if (!(bits & DEH21F_NORADIUSDMG))
+		{
+			Deh21SetFlag(actor->flags3, MF3_NORADIUSDMG, set);
+		}
+	}
+	if (bits & DEH21F_MAP07BOSS1)		Deh21SetFlag(actor->flags8, MF8_MAP07BOSS1, set);
+	if (bits & DEH21F_MAP07BOSS2)		Deh21SetFlag(actor->flags8, MF8_MAP07BOSS2, set);
+	if (bits & DEH21F_E1M8BOSS)			Deh21SetFlag(actor->flags8, MF8_E1M8BOSS, set);
+	if (bits & DEH21F_E2M8BOSS)			Deh21SetFlag(actor->flags8, MF8_E2M8BOSS, set);
+	if (bits & DEH21F_E3M8BOSS)			Deh21SetFlag(actor->flags8, MF8_E3M8BOSS, set);
+	if (bits & DEH21F_E4M6BOSS)			Deh21SetFlag(actor->flags8, MF8_E4M6BOSS, set);
+	if (bits & DEH21F_E4M8BOSS)			Deh21SetFlag(actor->flags8, MF8_E4M8BOSS, set);
+	if (bits & DEH21F_RIP)				Deh21SetFlag(actor->flags2, MF2_RIP, set);
+	if (bits & DEH21F_FULLVOLSOUNDS)	Deh21SetFlag(actor->flags8, MF8_FULLVOLSEE|MF8_FULLVOLDEATH, set);
+}
+
+bool DEH_CheckMBF21Flags (AActor *actor, DWORD bits)
+{
+	using namespace zx::mbf21;	// DEH21F_* bit constants
+	if ((bits & DEH21F_LOGRAV) && actor->gravity != FRACUNIT/8) return false;
+	if ((bits & DEH21F_SHORTMRANGE) && actor->maxtargetrange != 896*FRACUNIT) return false;
+	if ((bits & DEH21F_DMGIGNORED) && !(actor->flags3 & MF3_NOTARGET)) return false;
+	if ((bits & DEH21F_NORADIUSDMG) && !(actor->flags3 & MF3_NORADIUSDMG)) return false;
+	if ((bits & DEH21F_FORCERADIUSDMG) && !(actor->flags4 & MF4_FORCERADIUSDMG)) return false;
+	if ((bits & DEH21F_HIGHERMPROB) && !(actor->flags4 & MF4_MISSILEEVENMORE)) return false;
+	if ((bits & DEH21F_RANGEHALF) && !(actor->flags4 & MF4_MISSILEMORE)) return false;
+	if ((bits & DEH21F_NOTHRESHOLD) && !(actor->flags4 & MF4_QUICKTORETALIATE)) return false;
+	if ((bits & DEH21F_LONGMELEE) && actor->meleethreshold != 196*FRACUNIT) return false;
+	if ((bits & DEH21F_BOSS) && !(actor->flags2 & MF2_BOSS)) return false;
+	if ((bits & DEH21F_MAP07BOSS1) && !(actor->flags8 & MF8_MAP07BOSS1)) return false;
+	if ((bits & DEH21F_MAP07BOSS2) && !(actor->flags8 & MF8_MAP07BOSS2)) return false;
+	if ((bits & DEH21F_E1M8BOSS) && !(actor->flags8 & MF8_E1M8BOSS)) return false;
+	if ((bits & DEH21F_E2M8BOSS) && !(actor->flags8 & MF8_E2M8BOSS)) return false;
+	if ((bits & DEH21F_E3M8BOSS) && !(actor->flags8 & MF8_E3M8BOSS)) return false;
+	if ((bits & DEH21F_E4M6BOSS) && !(actor->flags8 & MF8_E4M6BOSS)) return false;
+	if ((bits & DEH21F_E4M8BOSS) && !(actor->flags8 & MF8_E4M8BOSS)) return false;
+	if ((bits & DEH21F_RIP) && !(actor->flags2 & MF2_RIP)) return false;
+	if ((bits & DEH21F_FULLVOLSOUNDS) && !(actor->flags8 & MF8_FULLVOLSEE)) return false;
+	return true;
+}
+
 static int PatchThing (int thingy)
 {
 	enum
@@ -874,6 +943,31 @@ static int PatchThing (int thingy)
 		else if (linelen == 12 && stricmp (Line1, "Splash group") == 0)
 		{
 			info->SplashGroup = zx::mbf21::ComputeSplashGroupStored((int)val);
+		}
+		// [rc4l] MBF21 thing flags. A space-/comma-/plus-separated list of mnemonics (or raw bit
+		// numbers) that REPLACES the actor's whole MBF21 flag set. Mnemonic->bit is the tested
+		// helper; DEH_ChangeMBF21Flags maps the resulting bits onto native flags.
+		else if (linelen == 10 && stricmp (Line1, "MBF21 Bits") == 0)
+		{
+			DWORD value = 0;
+			char *strval;
+
+			for (strval = Line2; (strval = strtok (strval, ",+| \t\f\r")); strval = NULL)
+			{
+				if (IsNum (strval))
+				{
+					value |= (DWORD)strtoul(strval, NULL, 10);
+				}
+				else
+				{
+					DWORD bit = zx::mbf21::ComputeMbf21ThingBitFromName(strval);
+					if (bit != 0) value |= bit;
+					else DPrintf("Unknown MBF21 bit mnemonic %s\n", strval);
+				}
+			}
+			// The field replaces all MBF21 flags at once: set the named bits, clear the rest.
+			DEH_ChangeMBF21Flags(info, value & zx::mbf21::DEH21F_ALLFLAGS, true);
+			DEH_ChangeMBF21Flags(info, ~value & zx::mbf21::DEH21F_ALLFLAGS, false);
 		}
 		else if (linelen == 5)
 		{
