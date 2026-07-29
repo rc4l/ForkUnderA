@@ -1280,7 +1280,11 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 					{ // Ok to spawn blood
 						P_RipperBlood(tm.thing, thing);
 					}
-					S_Sound(tm.thing, CHAN_BODY, "misc/ripslop", 1, ATTN_IDLE);
+					// [rc4l] MBF21: a ripper can override the default rip sound via its RipSound.
+					if (tm.thing->RipSound != 0)
+						S_Sound(tm.thing, CHAN_BODY, tm.thing->RipSound, 1, ATTN_IDLE);
+					else
+						S_Sound(tm.thing, CHAN_BODY, "misc/ripslop", 1, ATTN_IDLE);
 
 					// Do poisoning (if using new style poison)
 					if (tm.thing->PoisonDamage > 0 && tm.thing->PoisonDuration != INT_MIN)

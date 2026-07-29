@@ -1113,6 +1113,7 @@ public:
 	int				InfightingGroup;
 	int				ProjectileGroup;
 	int				SplashGroup;
+	FSoundID		RipSound;		// [rc4l] MBF21: sound a ripper missile makes ripping through a target (0 = default "misc/ripslop").
 	fixed_t			bouncefactor;	// Strife's grenades use 50%, Hexen's Flechettes 70.
 	fixed_t			wallbouncefactor;	// The bounce factor for walls can be different.
 	int				bouncecount;	// Strife's grenades only bounce twice before exploding

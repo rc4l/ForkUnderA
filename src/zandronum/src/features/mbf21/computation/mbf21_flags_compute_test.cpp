@@ -73,3 +73,40 @@ TEST(Mbf21Flags, EachBitIsDistinctAndAllflagsIsTheirUnion)
 	}
 	EXPECT_EQ(unionBits, (unsigned)DEH21F_ALLFLAGS);
 }
+
+// ---- weapon flags ----------------------------------------------------------
+
+static const struct { const char *name; unsigned bit; } kWeaponExpected[] =
+{
+	{ "NOTHRUST",       DEH21WF_NOTHRUST },
+	{ "SILENT",         DEH21WF_SILENT },
+	{ "NOAUTOFIRE",     DEH21WF_NOAUTOFIRE },
+	{ "FLEEMELEE",      DEH21WF_FLEEMELEE },
+	{ "AUTOSWITCHFROM", DEH21WF_AUTOSWITCHFROM },
+	{ "NOAUTOSWITCHTO", DEH21WF_NOAUTOSWITCHTO },
+};
+
+TEST(Mbf21Flags, EveryWeaponMnemonicResolvesToItsBit)
+{
+	for (const auto &e : kWeaponExpected)
+		EXPECT_EQ(ComputeMbf21WeaponBitFromName(e.name), e.bit) << e.name;
+}
+
+TEST(Mbf21Flags, WeaponLookupIsCaseInsensitiveAndRejectsUnknown)
+{
+	EXPECT_EQ(ComputeMbf21WeaponBitFromName("silent"), DEH21WF_SILENT);
+	EXPECT_EQ(ComputeMbf21WeaponBitFromName("NoAutoSwitchTo"), DEH21WF_NOAUTOSWITCHTO);
+	EXPECT_EQ(ComputeMbf21WeaponBitFromName("NOTAFLAG"), 0u);
+	EXPECT_EQ(ComputeMbf21WeaponBitFromName(nullptr), 0u);
+}
+
+TEST(Mbf21Flags, WeaponBitsAreDistinctAndUnionIsAllflags)
+{
+	unsigned unionBits = 0;
+	for (const auto &e : kWeaponExpected)
+	{
+		EXPECT_EQ(unionBits & e.bit, 0u) << "duplicate bit for " << e.name;
+		unionBits |= e.bit;
+	}
+	EXPECT_EQ(unionBits, (unsigned)DEH21WF_ALLFLAGS);
+}

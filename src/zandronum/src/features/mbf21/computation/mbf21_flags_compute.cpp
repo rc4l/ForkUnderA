@@ -60,4 +60,26 @@ unsigned ComputeMbf21ThingBitFromName(const char *name)
 	return 0;
 }
 
+namespace {
+const BitName kWeaponBits[] =
+{
+	{ DEH21WF_NOTHRUST,       "NOTHRUST" },
+	{ DEH21WF_SILENT,         "SILENT" },
+	{ DEH21WF_NOAUTOFIRE,     "NOAUTOFIRE" },
+	{ DEH21WF_FLEEMELEE,      "FLEEMELEE" },
+	{ DEH21WF_AUTOSWITCHFROM, "AUTOSWITCHFROM" },
+	{ DEH21WF_NOAUTOSWITCHTO, "NOAUTOSWITCHTO" },
+};
+} // namespace
+
+unsigned ComputeMbf21WeaponBitFromName(const char *name)
+{
+	if (name == nullptr) return 0;
+	for (const BitName &bn : kWeaponBits)
+	{
+		if (CaseEq(name, bn.name)) return bn.bit;
+	}
+	return 0;
+}
+
 }} // namespace zx::mbf21
