@@ -117,7 +117,9 @@ int GetRevisionNumber();
 // Use 4500 as the base git save version, since it's higher than the
 // SVN revision ever got.
 // [MGOOOOOO] 4508: AActor now serializes projectilepassradius (guarded in AActor::Serialize).
-#define SAVEVER 4508
+// [rc4l] 4509: AActor now serializes the MBF21 damage-group fields (Infighting/Projectile/Splash
+// group), guarded in AActor::Serialize.
+#define SAVEVER 4509
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)

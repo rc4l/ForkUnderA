@@ -42,6 +42,7 @@
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
+#include "features/mbf21/computation/damage_groups_compute.h"
 #include "p_trace.h"
 #include "p_3dmidtex.h"
 #include "computation/rail_puff_compute.h"
@@ -752,6 +753,7 @@ bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 		}
 		else if ((ld->flags & (ML_BLOCKING | ML_BLOCKEVERYTHING)) || 				// explicitly blocking everything
 			(!(NotBlocked) && (ld->flags & ML_BLOCKMONSTERS)) || 				// block monsters only
+			(!(NotBlocked) && !(tm.thing->flags & MF_FLOAT) && (ld->flags & ML_BLOCKLANDMONSTERS)) || // [rc4l] MBF21: block non-floating monsters
 			(tm.thing->player != NULL && (ld->flags & ML_BLOCK_PLAYERS)) ||		// block players
 			((Projectile) && (ld->flags & ML_BLOCKPROJECTILE)) ||				// block projectiles
 			((tm.thing->flags & MF_FLOAT) && (ld->flags & ML_BLOCK_FLOATERS)))	// block floaters
@@ -1188,8 +1190,22 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 				else if (level.flags2 & LEVEL2_NOINFIGHTING) infight = -1;
 				else infight = infighting;
 
+				// [rc4l] MBF21 projectile groups: an explicitly set group overrides the default
+				// species-immunity rules below. Actors in the same positive group don't take
+				// projectile damage from each other; a groupless (negative) actor is immune to
+				// nothing. Semantics live in features/mbf21/computation/damage_groups_compute.
+				if (thing->ProjectileGroup != zx::mbf21::PG_DEFAULT || tm.thing->target->ProjectileGroup != zx::mbf21::PG_DEFAULT)
+				{
+					if (zx::mbf21::ComputeProjectileImmune(
+							thing->ProjectileGroup, tm.thing->target->ProjectileGroup,
+							thing->GetClass() == tm.thing->target->GetClass(),
+							thing == tm.thing->target))
+					{
+						return false;	// Explode, but do no damage.
+					}
+				}
 				// [BC] No infighting during invasion mode.
-				if (infight < 0 || invasion)
+				else if (infight < 0 || invasion)
 				{
 					// -1: Monsters cannot hurt each other, but make exceptions for
 					//     friendliness and hate status.
@@ -1264,7 +1280,11 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 					{ // Ok to spawn blood
 						P_RipperBlood(tm.thing, thing);
 					}
-					S_Sound(tm.thing, CHAN_BODY, "misc/ripslop", 1, ATTN_IDLE);
+					// [rc4l] MBF21: a ripper can override the default rip sound via its RipSound.
+					if (tm.thing->RipSound != 0)
+						S_Sound(tm.thing, CHAN_BODY, tm.thing->RipSound, 1, ATTN_IDLE);
+					else
+						S_Sound(tm.thing, CHAN_BODY, "misc/ripslop", 1, ATTN_IDLE);
 
 					// Do poisoning (if using new style poison)
 					if (tm.thing->PoisonDamage > 0 && tm.thing->PoisonDuration != INT_MIN)
@@ -2883,6 +2903,13 @@ void FSlide::SlideTraverse(fixed_t startx, fixed_t starty, fixed_t endx, fixed_t
 			goto isblocking;
 		}
 		if (li->flags & ML_BLOCKMONSTERS && !((slidemo->flags3 & MF3_NOBLOCKMONST)
+			|| ((i_compatflags & COMPATF_NOBLOCKFRIENDS) && (slidemo->flags & MF_FRIENDLY))))
+		{
+			goto isblocking;
+		}
+		// [rc4l] MBF21: block non-floating monsters.
+		if (li->flags & ML_BLOCKLANDMONSTERS && !(slidemo->flags & MF_FLOAT)
+			&& !((slidemo->flags3 & MF3_NOBLOCKMONST)
 			|| ((i_compatflags & COMPATF_NOBLOCKFRIENDS) && (slidemo->flags & MF_FRIENDLY))))
 		{
 			goto isblocking;
@@ -5721,6 +5748,11 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 		{ // don't damage the source of the explosion
 			continue;
 		}
+
+		// [rc4l] MBF21: an explosion doesn't splash-damage actors sharing the exploding thing's
+		// splash group. Semantics in features/mbf21/computation/damage_groups_compute.
+		if (zx::mbf21::ComputeSplashImmune(thing->SplashGroup, bombspot->SplashGroup))
+			continue;
 
 		// a much needed option: monsters that fire explosive projectiles cannot 
 		// be hurt by projectiles fired by a monster of the same type.
