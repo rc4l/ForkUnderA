@@ -20,6 +20,8 @@ tools/backport-scout.sh /Users/talhataj/repos/UZDoom <upstream path>
 It answers: VM-tainted or clean, scriptification ancestor (Rosetta), and the delta since. Regenerate
 the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/data/zscript-rosetta.tsv`.
 
+When porting a specific fix rather than a whole file, trace it to its origin commit (`cd $UP && git log --oneline -- <path>` or `git log -S<symbol>`) and port that change with its rationale — don't reason from the HEAD snapshot alone.
+
 ## The four routes
 
 1. **Staircase batch** (renderer commits, 2013-12→2016-01 window): cherry-pick the upstream commits
