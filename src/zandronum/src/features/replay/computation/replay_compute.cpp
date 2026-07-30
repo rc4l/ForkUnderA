@@ -95,4 +95,24 @@ BottomUpView ComputeBottomUpView(int reqW, int reqH)
 	return BottomUpView{ static_cast<int64_t>(reqH - 1) * rowBytes, -rowBytes };
 }
 
+int ComputeEncodableFramesAcrossSaves(const int *ops, int count, bool terminalFlushOnSave)
+{
+	bool encoderAtEof = false;
+	int encoded = 0;
+	for (int i = 0; i < count; ++i)
+	{
+		if (ops[i] == 1)                 // SaveClip
+		{
+			// A terminal flush (send_frame(NULL)) EOFs the live encoder for good; a non-destructive
+			// save leaves it recording.
+			if (terminalFlushOnSave) encoderAtEof = true;
+		}
+		else                             // AddFrame: rejected once the encoder is at EOF
+		{
+			if (!encoderAtEof) ++encoded;
+		}
+	}
+	return encoded;
+}
+
 } // namespace zx
