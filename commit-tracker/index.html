@@ -34,6 +34,11 @@
          border-radius: 5px; padding: 0 6px; margin: 1px 3px 1px 0; font-size: 11px; line-height: 18px; white-space: nowrap; }
   .tag-fn { background: #ecfdf5; color: #065f46; border-color: #d1fae5;
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .tag-file { background: #fffbeb; color: #92400e; border-color: #fde68a; }              /* filename subsystem */
+  .tag-lump { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; font-weight: 600; } /* lump */
+  .tag-kw   { background: #fdf2f8; color: #9d174d; border-color: #fbcfe8; }              /* lump keyword */
+  .tag-acs  { background: #fff7ed; color: #9a3412; border-color: #fed7aa;
+              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }            /* ACS builtin */
 </style>
 </head>
 <body>
@@ -76,8 +81,13 @@ const columnDefs = [
     // value is a space-joined string (filterable/searchable); rendered as chips.
     // fn:A_* = a DECORATE action the commit's diff touched; the rest = code areas it changed.
     cellRenderer: p => (p.value || "").split(" ").filter(Boolean).map(t => {
-      const fn = t.startsWith("fn:");
-      return `<span class="tag${fn ? " tag-fn" : ""}">${fn ? t.slice(3) : t}</span>`;
+      let cls = "tag", label = t;
+      if (t.startsWith("fn:"))        { cls = "tag tag-fn";   label = t.slice(3); }
+      else if (t.startsWith("acs:"))  { cls = "tag tag-acs";  label = t.slice(4); }
+      else if (t.startsWith("lump:")) { cls = "tag tag-lump"; label = t.slice(5); }
+      else if (t.startsWith("f:"))    { cls = "tag tag-file"; label = t.slice(2); }
+      else if (/^[A-Z0-9_]+:[a-z]/.test(t)) { cls = "tag tag-kw"; }   // LUMP:keyword
+      return `<span class="${cls}">${label}</span>`;
     }).join("") },
   { field: "note", headerName: "note", flex: 1, minWidth: 130, tooltipField: "note" },
 ];
@@ -123,18 +133,26 @@ async function setStatus(key) {
   gridApi.onFilterChanged();
 }
 
+const loadTags = url => fetch(url).then(r => r.ok ? r.text() : "").catch(() => "");
 Promise.all([
   fetch("coverage.tsv").then(r => r.text()),
-  fetch("tags.tsv").then(r => r.ok ? r.text() : "").catch(() => ""),
-]).then(([covText, tagText]) => {
-  const tagmap = {};
-  for (const line of tagText.split("\n")) {
-    if (!line || line[0] === "#") continue;
-    const i = line.indexOf("\t");
-    if (i > 0) tagmap[line.slice(0, i)] = line.slice(i + 1);
-  }
+  loadTags("tags.tsv"),           // path/structural tags
+  loadTags("combined_tags.tsv"),  // source-gazetteer tags: lump / keyword / fn / acs
+]).then(([covText, tagText, gazText]) => {
+  const tagmap = {};              // sha -> Set(tags), unioned across both files
+  const ingest = text => {
+    for (const line of text.split("\n")) {
+      if (!line || line[0] === "#") continue;
+      const i = line.indexOf("\t");
+      if (i < 0) continue;
+      const sha = line.slice(0, i);
+      (tagmap[sha] = tagmap[sha] || new Set());
+      for (const t of line.slice(i + 1).split(" ")) if (t) tagmap[sha].add(t);
+    }
+  };
+  ingest(tagText); ingest(gazText);
   const rows = parseTSV(covText);
-  for (const r of rows) r.tags = tagmap[r.sha] || "";
+  for (const r of rows) r.tags = tagmap[r.sha] ? [...tagmap[r.sha]].sort().join(" ") : "";
   renderChips(rows);
   gridApi = agGrid.createGrid(document.getElementById("grid"), {
     columnDefs,
