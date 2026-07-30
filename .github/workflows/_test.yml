@@ -11,8 +11,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      # [rc4l] Full history (not the default shallow depth-1): staircase-ledger-check.sh verifies
-      # every ledger row's zandrox_sha exists as a commit, which needs the whole history present.
+      # [rc4l] Full history (not the default shallow depth-1): commit-tracker-check.sh verifies
+      # every ported/adapted row's provenance sha exists as a commit, which needs full history.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -45,10 +45,10 @@ jobs:
       # [rc4l] The FF-parity tripwire retired with its subject at the GL 2.x removal
       # (staircase flight 13a): there is no fixed-function branch left to diverge from.
 
-      # [rc4l] Staircase ledger: no upstream commit behind our frontier may be unresolved
-      # (silent-skip guard), and every resolved row's provenance commit must exist.
-      - name: Staircase ledger check
-        run: bash tools/staircase-ledger-check.sh
+      # [rc4l] Commit tracker: coverage.tsv stays machine-parseable (5 fields, 40-hex sha,
+      # valid status vocab) and every ported/adapted row's provenance commit must exist.
+      - name: Commit tracker check
+        run: bash tools/commit-tracker-check.sh
 
       # [rc4l] crash-sync reopen rule: it reopened closed crash issues forever (#79, #85) because it
       # treated "still unresolved in GlitchTip" as "the crash recurred". Pure, stdlib-only, no
