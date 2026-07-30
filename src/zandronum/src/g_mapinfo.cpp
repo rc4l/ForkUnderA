@@ -1395,7 +1395,22 @@ MapFlagHandlers[] =
 	{ "compat_floormove",				MITYPE_COMPATFLAG, 0, COMPATF2_FLOORMOVE },
 	{ "compat_pushwindow",				MITYPE_COMPATFLAG, 0, COMPATF2_PUSHWINDOW },
 	{ "compat_explode1",				MITYPE_COMPATFLAG, 0, COMPATF2_EXPLODE1 },	// [rc4l] no vertical explosion thrust
+	{ "compat_explode2",				MITYPE_COMPATFLAG, 0, COMPATF2_EXPLODE2 },	// [rc4l] uzdoom@dc67355e9
 	{ "compat_nombf21",					MITYPE_COMPATFLAG, 0, COMPATF2_NOMBF21 },	// [rc4l] parse-only (unused, as upstream)
+	{ "compat_soundcutoff",				MITYPE_COMPATFLAG, 0, COMPATF2_SOUNDCUTOFF },		// [rc4l] uzdoom@ef5707d73
+	{ "compat_pointonline",				MITYPE_COMPATFLAG, 0, COMPATF2_POINTONLINE },		// [rc4l] uzdoom@ee7eb3253
+	{ "compat_multiexit",				MITYPE_COMPATFLAG, 0, COMPATF2_MULTIEXIT },			// [rc4l] uzdoom@51da78ba2
+	{ "compat_teleport",				MITYPE_COMPATFLAG, 0, COMPATF2_TELEPORT },			// [rc4l] uzdoom@ab837b608
+	{ "compat_checkswitchrange",		MITYPE_COMPATFLAG, 0, COMPATF2_CHECKSWITCHRANGE },	// [rc4l] uzdoom@d4d010ac3
+	{ "compat_railing",					MITYPE_COMPATFLAG, 0, COMPATF2_RAILING },			// [rc4l] uzdoom@0341a3d75
+	{ "compat_scriptwait",				MITYPE_COMPATFLAG, 0, COMPATF2_SCRIPTWAIT },		// [rc4l] uzdoom@cbd447962
+	{ "compat_avoidhazards",			MITYPE_COMPATFLAG, 0, COMPATF2_AVOIDHAZARDS },		// [rc4l] uzdoom@d15f450fe
+	{ "compat_stayonlift",				MITYPE_COMPATFLAG, 0, COMPATF2_STAYONLIFT },		// [rc4l] uzdoom@196a4c0b3
+	{ "compat_voodoozombies",			MITYPE_COMPATFLAG, 0, COMPATF2_VOODOOZOMBIES },		// [rc4l] uzdoom@1589afb46
+	{ "compat_vileghosts",				MITYPE_COMPATFLAG, 0, COMPATF2_VILEGHOSTS },		// [rc4l] uzdoom@c83344f5c
+	{ "compat_noacsargcheck",			MITYPE_COMPATFLAG, 0, COMPATF2_NOACSARGCHECK },		// [rc4l] uzdoom@35f66c5cc
+	{ "compat_novdolllockmsg",			MITYPE_COMPATFLAG, 0, COMPATF2_NOVDOLLLOCKMSG },	// [rc4l] uzdoom@7d2d874af
+	{ "compat_reservedlineflag",		MITYPE_COMPATFLAG, 0, COMPATF2_RESERVEDLINEFLAG },	// [rc4l] uzdoom@e38d46f3d
 	{ "cd_start_track",					MITYPE_EATNEXT,	0, 0 },
 	{ "cd_end1_track",					MITYPE_EATNEXT,	0, 0 },
 	{ "cd_end2_track",					MITYPE_EATNEXT,	0, 0 },

@@ -684,7 +684,9 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 		Printf (TEXTCOLOR_RED "Unloading scripts cannot exit the level again.\n");
 		return;
 	}
-	if (gameaction == ga_completed)	// do not exit multiple times.
+	// [rc4l] uzdoom@51da78ba2 compat_multiexit: allow the exit to trigger multiple times (some
+	// faulty scripts, e.g. Daedalus's travel tubes, rely on it).
+	if (gameaction == ga_completed && !(i_compatflags2 & COMPATF2_MULTIEXIT))	// do not exit multiple times.
 	{
 		return;
 	}
