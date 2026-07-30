@@ -52,6 +52,7 @@
 #include "autosegs.h"
 #include "version.h"
 #include "v_text.h"
+#include "c_cvars.h"
 
 TArray<cluster_info_t> wadclusterinfos;
 TArray<level_info_t> wadlevelinfos;
@@ -283,6 +284,8 @@ void level_info_t::Reset()
 	Translator = "";
 	RedirectType = 0;
 	RedirectMap[0] = 0;
+	RedirectCVAR = 0;
+	RedirectCVARMap[0] = 0;
 	EnterPic = "";
 	ExitPic = "";
 	InterMusic = "";
@@ -401,6 +404,24 @@ level_info_t *level_info_t::CheckLevelRedirect ()
 						return FindLevelInfo(RedirectMap);
 					}
 					break;
+				}
+			}
+		}
+	}
+	// [ZandroX] cvar_redirect: redirect if the named CVAR is non-zero.
+	// Ported from uzdoom@04ea28def.
+	if (RedirectCVAR != NAME_None)
+	{
+		FBaseCVar *cvar = FindCVar(RedirectCVAR, NULL);
+		if (cvar != NULL)
+		{
+			UCVarValue val = cvar->GetGenericRep(CVAR_Int);
+			if (val.Int != 0)
+			{
+				// check for actual presence of the map.
+				if (P_CheckMapData(RedirectCVARMap))
+				{
+					return FindLevelInfo(RedirectCVARMap);
 				}
 			}
 		}
@@ -1145,6 +1166,17 @@ DEFINE_MAP_OPTION(redirect, true)
 	info->RedirectType = parse.sc.String;
 	parse.ParseComma();
 	parse.ParseLumpOrTextureName(info->RedirectMap);
+}
+
+// [ZandroX] cvar_redirect: redirect to another map when a CVAR is non-zero.
+// Ported from uzdoom@04ea28def.
+DEFINE_MAP_OPTION(cvar_redirect, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->RedirectCVAR = parse.sc.String;
+	parse.ParseComma();
+	parse.ParseLumpOrTextureName(info->RedirectCVARMap);
 }
 
 DEFINE_MAP_OPTION(sndseq, true)

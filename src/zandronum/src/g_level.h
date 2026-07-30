@@ -343,6 +343,11 @@ struct level_info_t
 	FName		RedirectType;
 	char		RedirectMap[9];
 
+	// [ZandroX] cvar_redirect: like RedirectType, but keyed on a CVAR being
+	// non-zero rather than a player carrying an item. Ported from uzdoom@04ea28def.
+	FName		RedirectCVAR;
+	char		RedirectCVARMap[9];
+
 	FString		EnterPic;
 	FString		ExitPic;
 	FString 	InterMusic;
