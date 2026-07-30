@@ -356,6 +356,7 @@ struct level_info_t
 
 	FString		SoundInfo;
 	FString		SndSeq;
+	FString		LightningSound;	// [ZandroX] uzdoom@ce2a0c929: overrides "world/thunder" for level lightning
 
 	// [ZandroX] Per-level finale (independent of the cluster). Ported from
 	// uzdoom@49b77f3a1: exittext / textflat / textpic / textmusic.
