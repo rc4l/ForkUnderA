@@ -78,3 +78,5 @@ one link on the enclosing unit.
 2. Is it our own fix/glue? → add a "why" comment, no upstream link.
 3. Is the SHA a full 40-char commit hash (not a branch/tag/line)? 
 4. One link per unit, on its header — not per line?
+5. The SHA you tag is a row in `commit-tracker/coverage.tsv` — set that row's status (`ported` /
+   `adapted`) with your commit sha in the note, so the coverage ledger and the code agree.

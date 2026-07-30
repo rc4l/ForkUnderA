@@ -22,6 +22,17 @@ the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/da
 
 When porting a specific fix rather than a whole file, trace it to its origin commit (`cd $UP && git log --oneline -- <path>` or `git log -S<symbol>`) and port that change with its rationale — don't reason from the HEAD snapshot alone.
 
+## Step 0.5 — the commit tracker is the coverage ledger
+
+`commit-tracker/coverage.tsv` holds one row per upstream commit from our parity anchor
+(`ad88cfc5e`) to UZDoom HEAD, each marked `pending` / `ported` / `adapted` / `skip`. Before
+porting, look the commit up there; when a port lands, set its row (`ported` = faithful/re-diffable,
+`adapted` = our own reimplementation, `skip` = won't take — note why). A deliberately scoped-down
+port is `adapted` or stays `pending` with the leftover in the note — **never** `ported`; that is how
+silent scope-narrowing is caught. To find which commits touched a file, use `commit-tracker/index.tsv`
+(`path → shas`) — see `commit-tracker/README.md` for the query recipes. Re-run `commit-tracker/regen.sh`
+after an upstream pull; it appends new commits as `pending` and preserves every status you've set.
+
 ## The four routes
 
 1. **Staircase batch** (renderer commits, 2013-12→2016-01 window): cherry-pick the upstream commits
@@ -100,9 +111,8 @@ When porting a specific fix rather than a whole file, trace it to its origin com
 
 ## Ledger (staircase flights)
 
-Every staircase flight updates its rows in `progress/renderer-staircase/ledger.tsv` in the SAME
-commit that lands the code — advance the frontier and mark each upstream sha
-`ported`/`adapted`/`skipped`/`deferred` with its one-sentence note and your zandrox_sha.
-`tools/staircase-ledger-check.sh` (CI) fails on any `pending` row behind the frontier, so a
-late-discovered dependency (the flight-16 setsectortag class) can't hide. Schema:
-`progress/renderer-staircase/README.md`.
+Staircase flights record their status in the repo-wide commit tracker (see Step 0.5), same as any
+other port — mark each upstream sha `ported`/`adapted`/`skip` in `commit-tracker/coverage.tsv` in the
+SAME commit that lands the code, with your zandrox sha in the note. `tools/commit-tracker-check.sh`
+(CI) guards the file's format and that every ported/adapted row's provenance commit exists. Strategy
+and the flight table live in `docs/renderer-staircase.md`.
