@@ -4941,7 +4941,9 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 
 	FRandom &rng = pr_spawnmobj;
 
-	if (actor->isFast() && actor->flags3 & MF3_ISMONSTER)
+	// [rc4l] uzdoom gates instant reaction on the InstantReaction skill flag as well as fast
+	// monsters (p_mobj.cpp), so a skill can zero reaction time without also making monsters fast.
+	if ((actor->isFast() || G_SkillProperty(SKILLP_InstantReaction)) && actor->flags3 & MF3_ISMONSTER)
 		actor->reactiontime = 0;
 
 	if (actor->flags3 & MF3_ISMONSTER)

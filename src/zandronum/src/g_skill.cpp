@@ -65,6 +65,8 @@ void FMapInfoParser::ParseSkill ()
 	skill.DamageFactor = FRACUNIT;
 	skill.FastMonsters = false;
 	skill.SlowMonsters = false;
+	skill.SpawnMulti = false;		// [rc4l] uzdoom skill flag
+	skill.InstantReaction = false;	// [rc4l] uzdoom skill flag
 	skill.DisableCheats = false;
 	skill.EasyBossBrain = false;
 	skill.EasyKey = false;
@@ -118,6 +120,14 @@ void FMapInfoParser::ParseSkill ()
 		else if (sc.Compare ("fastmonsters"))
 		{
 			skill.FastMonsters = true;
+		}
+		else if (sc.Compare ("spawnmulti"))	// [rc4l] uzdoom skill flag
+		{
+			skill.SpawnMulti = true;
+		}
+		else if (sc.Compare ("instantreaction"))	// [rc4l] uzdoom skill flag
+		{
+			skill.InstantReaction = true;
 		}
 		else if (sc.Compare ("slowmonsters"))
 		{
@@ -344,6 +354,12 @@ int G_SkillProperty(ESkillProperty prop)
 		case SKILLP_SlowMonsters:
 			return AllSkills[gameskill].SlowMonsters;
 
+		case SKILLP_SpawnMulti:		// [rc4l] uzdoom skill flag
+			return AllSkills[gameskill].SpawnMulti;
+
+		case SKILLP_InstantReaction:	// [rc4l] uzdoom skill flag
+			return AllSkills[gameskill].InstantReaction;
+
 		case SKILLP_Respawn:
 			if (dmflags & DF_MONSTERS_RESPAWN && AllSkills[gameskill].RespawnCounter==0) 
 				return TICRATE * gameinfo.defaultrespawntime;
@@ -442,6 +458,8 @@ FSkillInfo &FSkillInfo::operator=(const FSkillInfo &other)
 	DamageFactor = other.DamageFactor;
 	FastMonsters = other.FastMonsters;
 	SlowMonsters = other.SlowMonsters;
+	SpawnMulti = other.SpawnMulti;			// [rc4l] uzdoom skill flag
+	InstantReaction = other.InstantReaction;	// [rc4l] uzdoom skill flag
 	DisableCheats = other.DisableCheats;
 	AutoUseHealth = other.AutoUseHealth;
 	EasyBossBrain = other.EasyBossBrain;

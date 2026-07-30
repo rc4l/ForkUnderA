@@ -581,6 +581,8 @@ enum ESkillProperty
 	SKILLP_ArmorFactor,
 	SKILLP_EasyKey,
 	SKILLP_SlowMonsters,
+	SKILLP_SpawnMulti,		// [rc4l] uzdoom skill flag: spawn multiplayer things in singleplayer
+	SKILLP_InstantReaction,	// [rc4l] uzdoom skill flag: monsters react instantly (no reaction delay)
 };
 int G_SkillProperty(ESkillProperty prop);
 const char * G_SkillName();
@@ -596,6 +598,8 @@ struct FSkillInfo
 	fixed_t DamageFactor;
 	bool FastMonsters;
 	bool SlowMonsters;
+	bool SpawnMulti;		// [rc4l] spawn multiplayer things in singleplayer (uzdoom)
+	bool InstantReaction;	// [rc4l] monsters react instantly (uzdoom)
 	bool DisableCheats;
 	bool AutoUseHealth;
 
