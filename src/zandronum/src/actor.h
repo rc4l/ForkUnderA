@@ -1242,6 +1242,10 @@ public:
 	void LinkToWorld (bool buggy=false);
 	void LinkToWorld (sector_t *sector);
 	void UnlinkFromWorld ();
+	// [ZandroX] Change radius/height at runtime (relinks to the world so blockmap
+	// and sector-touch lists stay valid). If testpos is true, reverts and returns
+	// false when the new size does not fit at the actor's current position.
+	bool SetSize (fixed_t newradius, fixed_t newheight, bool testpos = false);
 	void AdjustFloorClip ();
 	virtual void SetOrigin (fixed_t x, fixed_t y, fixed_t z);
 	bool InStateSequence(FState * newstate, FState * basestate);
