@@ -646,6 +646,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StartSound)
 	if ( flags & CHANF_OVERLAP )
 		channel = CHAN_AUTO;	// free-channel search never cuts an existing sound
 
+	// [rc4l] uzdoom pitch is a playback-rate multiplier (1.0 = normal, 0.0 = "use default"). Convert
+	// to this engine's NORM_PITCH=128 integer scale; -1 means "no explicit pitch" so the normal
+	// (possibly randomised) default is used and the client computes its own.
+	int enginePitch = ( pitch > 0.f ) ? int( pitch * 128.f ) : -1;
+
 	// CHANF_NOSTOP: bail if this channel is already playing anything.
 	if (( flags & CHANF_NOSTOP ) && S_IsActorPlayingSomething( self, channel & 7, -1 ))
 		return;
@@ -660,11 +665,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StartSound)
 		if (( NETWORK_GetState() == NETSTATE_SERVER ) && SERVER_IsChannelLooping( self, channel & 7, soundid ))
 			return;
 
-		S_Sound( self, channel | CHAN_LOOP, soundid, volume, attenuation );
+		S_Sound( self, channel | CHAN_LOOP, soundid, volume, attenuation, false, enginePitch );
 
 		if ( NETWORK_GetState() == NETSTATE_SERVER )
 		{
-			SERVERCOMMANDS_SoundActor( self, channel | CHAN_LOOP, S_GetName( soundid ), volume, attenuation, MAXPLAYERS, 0, true );
+			SERVERCOMMANDS_SoundActor( self, channel | CHAN_LOOP, S_GetName( soundid ), volume, attenuation, MAXPLAYERS, 0, true, enginePitch );
 			SERVER_UpdateLoopingChannels( self, channel, soundid, volume, attenuation, false );
 		}
 	}
@@ -674,7 +679,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StartSound)
 		if ( NETWORK_GetState() == NETSTATE_SERVER )
 			SERVER_UpdateLoopingChannels( self, channel, soundid, volume, attenuation, ( channel & CHAN_LOOP ) == false );
 
-		S_Sound( self, channel, soundid, volume, attenuation, true );	// true = replicate to clients
+		S_Sound( self, channel, soundid, volume, attenuation, true, enginePitch );	// true = replicate to clients
 	}
 }
 
