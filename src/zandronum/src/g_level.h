@@ -315,6 +315,7 @@ struct level_info_t
 
 	FString		Music;
 	FString		LevelName;
+	FString		AuthorName;		// [ZandroX] uzdoom@3e9921696: author, shown on the intermission summary
 	SBYTE		WallVertLight, WallHorizLight;
 	int			musicorder;
 	FCompressedMemFile	*snapshot;

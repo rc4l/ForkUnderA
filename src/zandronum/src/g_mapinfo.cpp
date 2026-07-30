@@ -262,6 +262,7 @@ void level_info_t::Reset()
 	flagsZA = 0;
 	Music = "";
 	LevelName = "";
+	AuthorName = "";
 	strcpy (fadetable, "COLORMAP");
 	WallHorizLight = -8;
 	WallVertLight = +8;
@@ -1208,6 +1209,15 @@ DEFINE_MAP_OPTION(textmusic, true)
 {
 	parse.ParseAssign();
 	parse.ParseMusic(info->FinaleMusic, info->finalemusicorder);
+}
+
+// [ZandroX] author: map author string, shown on the intermission summary.
+// Ported from uzdoom@3e9921696.
+DEFINE_MAP_OPTION(author, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->AuthorName = parse.sc.String;
 }
 
 // [ZandroX] PrecacheClasses: force-precache the sprites of named actor

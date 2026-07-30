@@ -292,6 +292,9 @@ static FTexture*		lnames[2];	// Name graphics of each level (centered)
 // [RH] Info to dynamically generate the level name graphics
 static FString			lnametexts[2];
 
+// [ZandroX] uzdoom@3e9921696: author string of the just-finished level.
+static FString			authortext;
+
 static FTexture			*background;
 
 //
@@ -1008,7 +1011,17 @@ int WI_drawLF ()
 	int y = WI_TITLEY * CleanYfac;
 
 	y = WI_DrawName(y, wbs->LName0, lnametexts[0]);
-	
+
+	// [ZandroX] uzdoom@3e9921696: draw the map author below the level name.
+	if (authortext.IsNotEmpty())
+	{
+		const char *auth = authortext.GetChars();
+		screen->DrawText(SmallFont, CR_GREY,
+			(SCREENWIDTH - SmallFont->StringWidth(auth) * CleanXfac) / 2,
+			y, auth, DTA_CleanNoMove, true, TAG_DONE);
+		y += SmallFont->GetHeight() * CleanYfac;
+	}
+
 	// Adjustment for different font sizes for map name and 'finished'.
 	y -= ((mapname.mFont->GetHeight() - finished.mFont->GetHeight()) * CleanYfac) / 4;
 
@@ -2687,7 +2700,10 @@ void WI_loadData(void)
 #endif
 
 	// Use the local level structure which can be overridden by hubs
-	lnametexts[0] = level.LevelName;		
+	lnametexts[0] = level.LevelName;
+
+	// [ZandroX] uzdoom@3e9921696: author of the just-finished level.
+	authortext = (level.info != NULL) ? level.info->AuthorName : FString();
 
 	level_info_t *li = FindLevelInfo(wbs->next);
 	if (li) lnametexts[1] = li->LookupLevelName();
