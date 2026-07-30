@@ -218,6 +218,23 @@ enum ELevelFlags : unsigned int
 	LEVEL2_NOAUTOSAVEHINT		= 0x40000000,	// tell the game that an autosave for this level does not need to be kept
 	LEVEL2_FORGETSTATE			= 0x80000000,	// forget this map's state in a hub
 
+	// [rc4l] Third level-flag word (level_info_t/FLevelLocals::flags3). LEVEL/LEVEL2 are full.
+	// Values here index `flags3`, so they may reuse low bit patterns without colliding.
+	LEVEL3_NOGRAVITY			= 0x00000001,	// uzdoom@3781c43ae: zero-gravity level
+	LEVEL3_AVOIDMELEE			= 0x00000002,	// uzdoom@ff497996a: MBF21 per-level avoid-melee
+	LEVEL3_PROPERMONSTERFALLDMG	= 0x00000004,	// uzdoom@e74b9f195: monster falling-damage variant
+	LEVEL3_REMOVEITEMS			= 0x00000008,	// uzdoom@d80dc098b: hub item reset (resetitems)
+	LEVEL3_FORCEWORLDPANNING	= 0x00000010,	// uzdoom@74ea9143e: force world texture panning
+	LEVEL3_NOCLUSTERTEXT		= 0x00000020,	// uzdoom@20b6395cf: suppress cluster exit text
+	LEVEL3_FORCECLUSTERTEXT		= 0x00000040,	// uzdoom@20b6395cf: force cluster exit text (needclustertext)
+	LEVEL3_PASSOVER				= 0x00000080,	// uzdoom@be2f9c866: DSDA infinitely-tall clipping on
+	LEVEL3_NOPASSOVER			= 0x00000100,	// uzdoom@be2f9c866: DSDA infinitely-tall clipping off
+	LEVEL3_E1M8SPECIAL			= 0x00000200,	// uzdoom@e2e8ec8b3: vanilla E1M8 boss action
+	LEVEL3_E2M8SPECIAL			= 0x00000400,	// uzdoom@e2e8ec8b3: vanilla E2M8 boss action
+	LEVEL3_E3M8SPECIAL			= 0x00000800,	// uzdoom@e2e8ec8b3: vanilla E3M8 boss action
+	LEVEL3_E4M6SPECIAL			= 0x00001000,	// uzdoom@e2e8ec8b3: vanilla E4M6 boss action
+	LEVEL3_E4M8SPECIAL			= 0x00002000,	// uzdoom@e2e8ec8b3: vanilla E4M8 boss action
+
 	// [BB] Zandronum flags
 	LEVEL_ZA_NOBOTNODES			= 0x00000001,	// [BC] Level does not use bot nodes.
 	// [BB] Ceartain game modes are supposed to behave differently on
@@ -292,6 +309,7 @@ struct level_info_t
 	int			sucktime;
 	DWORD		flags;
 	DWORD		flags2;
+	DWORD		flags3;		// [rc4l] third level-flag word (LEVEL3_*); LEVEL/LEVEL2 are full
 	// [BB]
 	DWORD		flagsZA;
 
@@ -411,6 +429,7 @@ struct FLevelLocals
 
 	DWORD		flags;
 	DWORD		flags2;
+	DWORD		flags3;		// [rc4l] third level-flag word (LEVEL3_*)
 	// [BB]
 	DWORD		flagsZA;
 

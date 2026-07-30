@@ -252,6 +252,7 @@ void level_info_t::Reset()
 	partime = 0;
 	sucktime = 0;
 	flags = 0;
+	flags3 = 0;	// [rc4l]
 	if (gameinfo.gametype == GAME_Hexen)
 		flags2 = 0;
 	else
@@ -1260,6 +1261,9 @@ enum EMIType
 	MITYPE_SETFLAG2,
 	MITYPE_CLRFLAG2,
 	MITYPE_SCFLAGS2,
+	MITYPE_SETFLAG3,	// [rc4l] third level-flag word
+	MITYPE_CLRFLAG3,	// [rc4l]
+	MITYPE_SCFLAGS3,	// [rc4l]
 	MITYPE_COMPATFLAG,
 	MITYPE_SETFLAGZA, // [BB]
 };
@@ -1534,6 +1538,20 @@ void FMapInfoParser::ParseMapDefinition(level_info_t &info)
 
 			case MITYPE_SCFLAGS2:
 				info.flags2 = (info.flags2 & handler->data2) | handler->data1;
+				break;
+
+			case MITYPE_SETFLAG3:	// [rc4l]
+				info.flags3 |= handler->data1;
+				info.flags3 |= handler->data2;
+				break;
+
+			case MITYPE_CLRFLAG3:	// [rc4l]
+				info.flags3 &= ~handler->data1;
+				info.flags3 |= handler->data2;
+				break;
+
+			case MITYPE_SCFLAGS3:	// [rc4l]
+				info.flags3 = (info.flags3 & handler->data2) | handler->data1;
 				break;
 
 			case MITYPE_COMPATFLAG:
