@@ -2456,7 +2456,8 @@ void WI_drawStats (void)
 			WI_drawTime (160 - SP_TIMEX, SP_TIMEY + lh, cnt_total_time, true);	// no 'sucks' for total time ever!
 		}
 
-		if (wbs->partime)
+		// [ZandroX] uzdoom@a2f8b7d0d: gameinfo hidepartimes suppresses par display.
+		if (wbs->partime && !gameinfo.hidepartimes)
 		{
 			screen->DrawTexture (par, 160 + SP_TIMEX, SP_TIMEY, DTA_Clean, true, TAG_DONE);
 			WI_drawTime (320 - SP_TIMEX, SP_TIMEY, cnt_par);

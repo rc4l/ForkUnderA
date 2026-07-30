@@ -45,6 +45,10 @@
 
 gameinfo_t gameinfo;
 
+// [ZandroX] uzdoom@a1cc548af: normforwardmove/normsidemove GAMEINFO keys set
+// these console-turbo movement defaults (defined in g_game.cpp).
+extern float normforwardmove[2], normsidemove[2];
+
 const char *GameNames[17] =
 {
 	NULL, "Doom", "Heretic", NULL, "Hexen", NULL, NULL, NULL, "Strife", NULL, NULL, NULL, NULL, NULL, NULL, NULL, "Chex"
@@ -349,6 +353,23 @@ void FMapInfoParser::ParseGameInfo()
 			}
 			else gameinfo.mCheatMapArrow = "";
 		}
+		// [ZandroX] uzdoom@a1cc548af: default walk/run movement speeds.
+		else if(nextKey.CompareNoCase("normforwardmove") == 0)
+		{
+			sc.MustGetToken(TK_IntConst);
+			normforwardmove[0] = float(sc.Number);
+			sc.MustGetToken(',');
+			sc.MustGetToken(TK_IntConst);
+			normforwardmove[1] = float(sc.Number);
+		}
+		else if(nextKey.CompareNoCase("normsidemove") == 0)
+		{
+			sc.MustGetToken(TK_IntConst);
+			normsidemove[0] = float(sc.Number);
+			sc.MustGetToken(',');
+			sc.MustGetToken(TK_IntConst);
+			normsidemove[1] = float(sc.Number);
+		}
 		// [AK] Adds or removes a set of custom data that will be used by a custom column.
 		else if (( nextKey.CompareNoCase( "addcustomdata" ) == 0 ) || ( nextKey.CompareNoCase( "removecustomdata" ) == 0 ))
 		{
@@ -413,6 +434,8 @@ void FMapInfoParser::ParseGameInfo()
 		GAMEINFOKEY_BOOL(drawreadthis, "drawreadthis")
 		GAMEINFOKEY_BOOL(swapmenu, "swapmenu")
 		GAMEINFOKEY_BOOL(intermissioncounter, "intermissioncounter")
+		GAMEINFOKEY_BOOL(hidepartimes, "hidepartimes")
+		GAMEINFOKEY_BOOL(dontcrunchcorpses, "dontcrunchcorpses")
 		GAMEINFOKEY_BOOL(nightmarefast, "nightmarefast")
 		GAMEINFOKEY_COLOR(dimcolor, "dimcolor")
 		GAMEINFOKEY_FLOAT(dimamount, "dimamount")
