@@ -1040,8 +1040,10 @@ void G_DoCompleted (void)
 	}
 
 	// [BB] LEVEL_NOINTERMISSION is also respected in deathmatch games
+	// [ZandroX] uzdoom@ed2b73833: allowintermission overrides the hub skip.
 	if ( ((level.flags & LEVEL_NOINTERMISSION) ||
-		 ( !deathmatch && (nextcluster == thiscluster) && (thiscluster->flags & CLUSTER_HUB))))
+		 ( !deathmatch && (nextcluster == thiscluster) && (thiscluster->flags & CLUSTER_HUB)
+		   && !(thiscluster->flags & CLUSTER_ALLOWINTERMISSION))))
 	{
 		G_WorldDone ();
 		return;
