@@ -84,6 +84,8 @@ struct gameinfo_t
 	bool drawreadthis;
 	bool noloopfinalemusic;
 	bool intermissioncounter;
+	bool hidepartimes;	// [ZandroX] uzdoom@a2f8b7d0d: hide par times on the intermission
+	bool dontcrunchcorpses;	// [ZandroX] uzdoom@a1cc548af: crushers don't gib corpses
 	bool nightmarefast;
 	bool swapmenu;
 	TArray<FName> creditPages;
