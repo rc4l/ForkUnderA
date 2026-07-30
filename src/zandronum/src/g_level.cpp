@@ -2090,6 +2090,10 @@ void G_InitLevelLocals ()
 	level.flags |= info->flags;
 	level.flags2 |= info->flags2;
 	level.flags3 |= info->flags3;	// [rc4l]
+	// [rc4l] uzdoom@3781c43ae: a 'nogravity' level runs at zero gravity (applied after the flag copy
+	// so it overrides the sv_gravity/info->gravity default set above).
+	if (level.flags3 & LEVEL3_NOGRAVITY)
+		level.gravity = 0;
 	// [BB]
 	level.flagsZA |= info->flagsZA;
 	level.levelnum = info->levelnum;
