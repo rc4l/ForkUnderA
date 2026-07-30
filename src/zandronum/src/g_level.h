@@ -90,6 +90,7 @@ struct FMapInfoParser
 	void ParseGameInfo();
 	void ParseEpisodeInfo ();
 	void ParseSkill ();
+	void ParseDamageDefinition ();	// [ZandroX] uzdoom@9e2830a3d: MAPINFO DamageType block
 	void ParseMapInfo (int lump, level_info_t &gamedefaults, level_info_t &defaultinfo);
 
 	void ParseOpenBrace();
