@@ -297,6 +297,7 @@ void level_info_t::Reset()
 	specialactions.Clear();
 	DefaultEnvironment = 0;
 	PrecacheSounds.Clear();
+	ACSLibraries.Clear();
 }
 
 
@@ -1156,6 +1157,19 @@ DEFINE_MAP_OPTION(PrecacheSounds, true)
 		{
 			info->PrecacheSounds.Push(snd);
 		}
+	} while (parse.sc.CheckString(","));
+}
+
+// [ZandroX] loadacs: load extra ACS library lumps for this level.
+// Ported from uzdoom@6ae417725.
+DEFINE_MAP_OPTION(loadacs, true)
+{
+	parse.ParseAssign();
+
+	do
+	{
+		parse.sc.MustGetString();
+		info->ACSLibraries.Push(FName(parse.sc.String));
 	} while (parse.sc.CheckString(","));
 }
 
