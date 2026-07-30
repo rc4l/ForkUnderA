@@ -378,6 +378,37 @@ OptionMenu "FUAOptions"
 	Title "FUA OPTIONS"
 	Submenu "Instant Replay Options",	"ReplayOptions"
 	Submenu "Crash Reporting",			"CrashReportOptions"
+	Submenu "Hitbox Visualization",		"HitboxVizOptions"
+}
+
+// [MGOOOOOO] Debug overlay drawing actor collision boxes, attack boxes (HitRadius/HitHeight) and
+// explosion damage regions. Enforcement is in C++, not here: the overlay re-checks CheckCheatmode()
+// every frame, so these settings persist but simply draw nothing while cheats are refused. The
+// graycheck argument can't express that -- it is a plain bool read, so graying on sv_cheats would
+// also gray the rows in single-player, where cheats *are* permitted. Hence the label instead.
+OptionMenu "HitboxVizOptions"
+{
+	Title "HITBOX VISUALIZATION"
+	Option	"Enable (requires sv_cheats)",	"cl_fua_hitbox",			"OnOff"
+	StaticText " "
+	Option	"Actor hitboxes",				"cl_fua_hitbox_actors",		"OnOff",	"cl_fua_hitbox"
+	Option	"Projectile hitboxes",			"cl_fua_hitbox_missiles",	"OnOff",	"cl_fua_hitbox"
+	Option	"Attack box (HitRadius/Height)",	"cl_fua_hitbox_attackbox",	"OnOff",	"cl_fua_hitbox"
+	Option	"Explosion regions",			"cl_fua_hitbox_explosions",	"OnOff",	"cl_fua_hitbox"
+	Option	"Own / followed player",		"cl_fua_hitbox_self",		"OnOff",	"cl_fua_hitbox"
+	Option	"See through walls",			"cl_fua_hitbox_xray",		"OnOff",	"cl_fua_hitbox"
+	StaticText " "
+	Slider	"Line width",					"cl_fua_hitbox_linewidth",	1, 8, 1, 1
+	ColorPicker "Collision box color",		"cl_fua_hitbox_color"
+	ColorPicker "Hurtbox color",			"cl_fua_hitbox_attackcolor"
+	ColorPicker "Explosion color",			"cl_fua_hitbox_blastcolor"
+	SafeCommand "Reset colors to default",	"fua_hitbox_resetcolors"
+	StaticText " "
+	StaticText "The attack box is drawn only when it"
+	StaticText "differs from the collision box."
+	StaticText " "
+	StaticText "sv_cheats must be true. It is latched,"
+	StaticText "so it takes effect on the next map."
 }
 
 // [rc4l] Crash reporting: auto-send / opt-out. There is no per-crash prompt because a prompt can't
@@ -617,6 +648,7 @@ OptionMenu "CustomizeControls"
 	StaticText 	""
 	StaticText 	"FUA", 1
 	Control 	"Save replay clip",		"fua_clip"
+	Control 	"Toggle hitbox overlay",	"fua_hitbox"
 }
 
 //-------------------------------------------------------------------------------------------

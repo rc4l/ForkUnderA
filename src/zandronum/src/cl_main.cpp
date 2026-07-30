@@ -66,6 +66,7 @@
 #include "cl_demo.h"
 #include "cl_statistics.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
+#include "features/hitboxviz/hitboxviz.h"
 #include "cooperative.h"
 #include "doomerrors.h"
 #include "doomtype.h"
@@ -5650,6 +5651,29 @@ void ServerCommands::SetThingSize::Execute()
 	fixed_t newradius = ContainsRadius() ? radius : actor->radius;
 	fixed_t newheight = ContainsHeight() ? height : actor->height;
 	actor->SetSize( newradius, newheight );
+
+	// [MGOOOOOO] Attack extent, only ever present while the server has debug explosions enabled
+	// (see network.h ActorSizeFlag). Routed through SetHitSize so the blockmap link radius, which
+	// is MAX(radius, GetAttackRadius()), is recomputed.
+	if ( ContainsHitradius() || ContainsHitheight() )
+	{
+		fixed_t newhitradius = ContainsHitradius() ? hitradius : actor->projectilepassradius;
+		fixed_t newhitheight = ContainsHitheight() ? hitheight : actor->projectilepassheight;
+		actor->SetHitSize( newhitradius, newhitheight );
+	}
+}
+
+//*****************************************************************************
+//
+void ServerCommands::DebugExplosion::Execute()
+{
+	// [ZandroX] Debug-only overlay data. The server already gates the send on sv_cheats, but check
+	// again here rather than trusting the wire: a client must never be shown cheat-gated
+	// information because a packet said so.
+	if ( sv_cheats == false )
+		return;
+
+	zx::hitboxviz::PushBlast( x, y, z, distance, fulldamagedistance );
 }
 
 //*****************************************************************************
