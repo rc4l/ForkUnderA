@@ -365,6 +365,10 @@ struct level_info_t
 
 	TArray<FSoundID> PrecacheSounds;
 
+	// [ZandroX] loadacs: extra ACS library lumps to load for this level, in
+	// addition to any global LOADACS lumps. Ported from uzdoom@6ae417725.
+	TArray<FName> ACSLibraries;
+
 	//[BL] Link a sectinfo to a map
 	SectInfo	SectorInfo;
 
