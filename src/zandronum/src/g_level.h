@@ -223,8 +223,7 @@ enum ELevelFlags : unsigned int
 	LEVEL3_NOGRAVITY			= 0x00000001,	// uzdoom@3781c43ae: zero-gravity level
 	LEVEL3_AVOIDMELEE			= 0x00000002,	// uzdoom@ff497996a: MBF21 per-level avoid-melee
 	LEVEL3_PROPERMONSTERFALLDMG	= 0x00000004,	// uzdoom@e74b9f195: monster falling-damage variant
-	LEVEL3_REMOVEITEMS			= 0x00000008,	// uzdoom@d80dc098b: hub item reset (resetitems)
-	LEVEL3_FORCEWORLDPANNING	= 0x00000010,	// uzdoom@74ea9143e: force world texture panning
+	// (0x00000008, 0x00000010 free — resetitems + forceworldpanning are parse-only, see ZXUnhandledMapKeys)
 	LEVEL3_NOCLUSTERTEXT		= 0x00000020,	// uzdoom@20b6395cf: suppress cluster exit text
 	LEVEL3_FORCECLUSTERTEXT		= 0x00000040,	// uzdoom@20b6395cf: force cluster exit text (needclustertext)
 	// (passover/nopassover are implemented via COMPATF_NO_PASSMOBJ, not a LEVEL3 bit)
