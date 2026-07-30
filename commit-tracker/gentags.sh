@@ -26,7 +26,8 @@ GAMEPLAY=(src/g_doom src/g_heretic src/g_hexen src/g_strife src/g_shared src/g_r
           wadsrc/static/zscript)
 
 # --- pass A: category tags from touched paths (all files, fast) ---
-git -C "$UP" log --no-renames --name-only --format=$'\x01''%H%x1f%cs' "${ANCHOR}..HEAD" \
+# UNTIL bounds both passes to a date window (e.g. the first N commits) for a quick partial run.
+git -C "$UP" log --no-renames --name-only --format=$'\x01''%H%x1f%cs' ${UNTIL:+--until="$UNTIL"} "${ANCHOR}..HEAD" \
 | awk -v floor="$FLOOR" '
     function addcat(p) {
       if (p ~ /vulkan/)                                     t["vulkan"]=1;
