@@ -1246,14 +1246,16 @@ void FTextureManager::PrecacheLevel (void)
 	screen->GetHitlist(hitlist);
 
 	// [ZandroX] uzdoom@3849cb862: honor the level's PrecacheTextures list.
+	// Names are resolved here (not at MAPINFO parse) because the texture
+	// manager is not yet initialized when MAPINFO is parsed.
 	if (level.info != NULL)
 	{
 		for (unsigned t = 0; t < level.info->PrecacheTextures.Size(); ++t)
 		{
-			int idx = level.info->PrecacheTextures[t];
-			if (idx > 0 && idx < cnt)
+			FTextureID pic = CheckForTexture(level.info->PrecacheTextures[t].GetChars(), FTexture::TEX_Any);
+			if (pic.isValid() && pic.GetIndex() < cnt)
 			{
-				hitlist[idx] |= 1;
+				hitlist[pic.GetIndex()] |= 1;
 			}
 		}
 	}
