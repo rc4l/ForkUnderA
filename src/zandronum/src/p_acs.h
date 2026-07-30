@@ -423,7 +423,14 @@ enum
 	APROP_ViewHeight	= 39,
 	APROP_AttackZOffset	= 40,
 	APROP_StencilColor	= 41,
-};	
+	// [ZandroX] 42-49 are left unused on purpose: UZDoom/GZDoom assign them
+	// (Friction, DamageMultiplier, MaxStepHeight, MaxDropOffHeight, DamageType,
+	// SoundClass, FriendlySeeBlocks, WaterDepth). ZandroX doesn't implement those
+	// yet, so reserving the ids keeps ACS written against UZDoom's constants valid.
+	// Fork-specific properties therefore start at 50.
+	APROP_HitRadius		= 50,	// [ZandroX] projectilepassradius (attack half-width)
+	APROP_HitHeight		= 51,	// [ZandroX] projectilepassheight (attack height)
+};
 
 // [Dusk] Enumeration for GetTeamProperty
 enum

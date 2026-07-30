@@ -230,6 +230,7 @@ ACTOR Actor native //: Thinker
 	action native A_SetScale(float scalex, float scaley = 0);
 	action native A_SetMass(int mass);
 	action native A_SetSize(float newradius = -1, float newheight = -1, bool testpos = false);
+	action native A_SetHitSize(float hitradius = -1, float hitheight = -1);
 	action native A_SpawnDebris(class<Actor> spawntype, bool transfer_translation = false, float mult_h = 1, float mult_v = 1);
 	action native A_CheckSight(state label);
 	action native A_ExtChase(bool usemelee, bool usemissile, bool playactive = true, bool nightmarefast = false);

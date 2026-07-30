@@ -1728,6 +1728,29 @@ bool AActor::SetSize (fixed_t newradius, fixed_t newheight, bool testpos)
 }
 
 
+//----------------------------------------------------------------------------
+//
+// AActor :: SetHitSize
+//
+// [ZandroX] Adjusts the attack extent (HitRadius/HitHeight -> projectilepass
+// radius/height) at runtime. The blockmap link radius is MAX(radius,
+// GetAttackRadius()) (see p_maputl.cpp), so a change to the attack radius must
+// relink the actor. Unlike SetSize there is no position test: the attack extent
+// is not the movement radius, so widening it cannot get the actor stuck. The
+// extent is server-authoritative and, like the DECORATE HitRadius/HitHeight
+// properties, is not networked.
+//
+//----------------------------------------------------------------------------
+
+void AActor::SetHitSize (fixed_t hitradius, fixed_t hitheight)
+{
+	UnlinkFromWorld();
+	projectilepassradius = hitradius;
+	projectilepassheight = hitheight;
+	LinkToWorld();
+}
+
+
 //=============================================================================
 //
 // P_CheckOnmobj(AActor *thing)
