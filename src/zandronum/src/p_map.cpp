@@ -5985,6 +5985,11 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 								velz *= 0.8f;
 							}
 
+							// [rc4l] COMPATF2_EXPLODE1 (uzdoom p_map.cpp): Doom's radius attack gave no
+							// vertical thrust. When set, drop the z-kick but keep the horizontal push.
+							if ( i_compatflags2 & COMPATF2_EXPLODE1 )
+								velz = 0;
+
 							// [BB] Potentially use the horizontal thrust of old ZDoom versions.
 							if ( zacompatflags & ZACOMPATF_OLD_EXPLOSION_THRUST )
 							{

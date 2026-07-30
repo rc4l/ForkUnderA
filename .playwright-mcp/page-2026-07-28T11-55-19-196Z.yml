@@ -1,0 +1,105 @@
+- generic [ref=f3e47]:
+  - generic [ref=f3e50]:
+    - generic [ref=f3e51]:
+      - img "GlitchTip" [ref=f3e52] [cursor=pointer]
+      - button [ref=f3e53] [cursor=pointer]:
+        - img [ref=f3e54]: left_panel_close
+    - combobox [ref=f3e60] [cursor=pointer]
+    - navigation [ref=f3e67]:
+      - separator [ref=f3e68]
+      - generic [ref=f3e69]:
+        - img [ref=f3e70]: breaking_news
+        - generic [ref=f3e71]: Issues
+      - generic [ref=f3e73]:
+        - img [ref=f3e74]: avg_pace
+        - generic [ref=f3e75]: Performance
+      - generic [ref=f3e77]:
+        - img [ref=f3e78]: team_dashboard
+        - generic [ref=f3e79]: Projects
+      - generic [ref=f3e81]:
+        - img [ref=f3e82]: rocket_launch
+        - generic [ref=f3e83]: Releases
+      - separator [ref=f3e85]
+      - generic [ref=f3e86]:
+        - button [disabled] [ref=f3e87]:
+          - img [ref=f3e88]: account_tree
+          - img [ref=f3e91]: arrow_drop_down
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/projects
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/subscription
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/teams
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/members
+      - generic [ref=f3e92]:
+        - button [ref=f3e93] [cursor=pointer]:
+          - img [ref=f3e94]: account_circle
+          - img [ref=f3e97]: arrow_drop_down
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/multi-factor-auth
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/notifications
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/auth-tokens
+      - button [ref=f3e98] [cursor=pointer]:
+        - img [ref=f3e99]: help
+        - img [ref=f3e102]: arrow_drop_down
+    - link "GlitchTip" [ref=f3e104]:
+      - /url: https://crash.cantstopscrolling.net/system-info
+  - generic [ref=f3e108]:
+    - heading "Issues" [level=1] [ref=f3e114]
+    - generic [ref=f3e115]:
+      - generic [ref=f3e117]:
+        - generic [ref=f3e118]:
+          - generic [ref=f3e120]:
+            - generic:
+              - generic:
+                - generic: Environment
+                - generic:
+                  - combobox "Environment" [disabled]
+          - generic [ref=f3e125]:
+            - generic: Search
+            - searchbox "Search" [ref=f3e128]: is:unresolved
+            - button "Search syntax help" [ref=f3e130] [cursor=pointer]:
+              - img [ref=f3e131]: help_outline
+        - generic [ref=f3e133]:
+          - radiogroup [disabled] [ref=f3e134]:
+            - radio "24h" [checked] [disabled]
+            - radio "14d" [disabled]
+          - generic [ref=f3e136]:
+            - generic:
+              - generic:
+                - generic: Sort by
+                - generic:
+                  - combobox "Sort by" [disabled]:
+                    - generic: Last Seen
+      - table [ref=f3e139]:
+        - rowgroup [ref=f3e140]:
+          - row [ref=f3e141]:
+            - columnheader [ref=f3e142]:
+              - generic:
+                - generic:
+                  - generic:
+                    - checkbox [disabled]
+            - columnheader [ref=f3e143]:
+              - generic [ref=f3e144]:
+                - generic [ref=f3e145]:
+                  - button "Mark resolved" [disabled]
+                  - button "Mark unresolved" [disabled]
+                  - button "Mark ignored" [disabled]
+                  - button "Merge" [disabled]
+                  - button "Delete" [disabled]
+                - progressbar [ref=f3e149]
+          - row [ref=f3e164]:
+            - columnheader [ref=f3e165]
+            - columnheader "Issue" [ref=f3e166]
+            - columnheader "Trend" [ref=f3e167]
+            - columnheader "Events" [ref=f3e170]
+        - rowgroup [ref=f3e171]:
+          - row [ref=f3e172]:
+            - cell [ref=f3e173]

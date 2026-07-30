@@ -1,0 +1,56 @@
+- generic [ref=f6e47]:
+  - generic [ref=f6e50]:
+    - generic [ref=f6e51]:
+      - img "GlitchTip" [ref=f6e52] [cursor=pointer]
+      - button [ref=f6e53] [cursor=pointer]:
+        - img [ref=f6e54]: left_panel_close
+    - combobox [ref=f6e60] [cursor=pointer]
+    - navigation [ref=f6e67]:
+      - separator [ref=f6e68]
+      - generic [ref=f6e69]:
+        - img [ref=f6e70]: breaking_news
+        - generic [ref=f6e71]: Issues
+      - generic [ref=f6e73]:
+        - img [ref=f6e74]: avg_pace
+        - generic [ref=f6e75]: Performance
+      - generic [ref=f6e77]:
+        - img [ref=f6e78]: team_dashboard
+        - generic [ref=f6e79]: Projects
+      - generic [ref=f6e81]:
+        - img [ref=f6e82]: rocket_launch
+        - generic [ref=f6e83]: Releases
+      - separator [ref=f6e85]
+      - generic [ref=f6e86]:
+        - button [disabled] [ref=f6e87]:
+          - img [ref=f6e88]: account_tree
+          - img [ref=f6e91]: arrow_drop_down
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/projects
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/subscription
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/teams
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/members
+      - generic [ref=f6e92]:
+        - button [ref=f6e93] [cursor=pointer]:
+          - img [ref=f6e94]: account_circle
+          - img [ref=f6e97]: arrow_drop_down
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/multi-factor-auth
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/notifications
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/auth-tokens
+      - button [ref=f6e98] [cursor=pointer]:
+        - img [ref=f6e99]: help
+        - img [ref=f6e102]: arrow_drop_down
+    - link "GlitchTip" [ref=f6e104]:
+      - /url: https://crash.cantstopscrolling.net/system-info
+  - link "Back to Projects" [ref=f6e113]:
+    - /url: https://crash.cantstopscrolling.net/zandrox/settings/projects
+    - img [ref=f6e114]: keyboard_arrow_left

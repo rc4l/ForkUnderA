@@ -90,6 +90,7 @@ struct FMapInfoParser
 	void ParseGameInfo();
 	void ParseEpisodeInfo ();
 	void ParseSkill ();
+	void ParseDamageDefinition ();	// [ZandroX] uzdoom@9e2830a3d: MAPINFO DamageType block
 	void ParseMapInfo (int lump, level_info_t &gamedefaults, level_info_t &defaultinfo);
 
 	void ParseOpenBrace();
@@ -218,6 +219,23 @@ enum ELevelFlags : unsigned int
 	LEVEL2_NOAUTOSAVEHINT		= 0x40000000,	// tell the game that an autosave for this level does not need to be kept
 	LEVEL2_FORGETSTATE			= 0x80000000,	// forget this map's state in a hub
 
+	// [rc4l] Third level-flag word (level_info_t/FLevelLocals::flags3). LEVEL/LEVEL2 are full.
+	// Values here index `flags3`, so they may reuse low bit patterns without colliding.
+	LEVEL3_NOGRAVITY			= 0x00000001,	// uzdoom@3781c43ae: zero-gravity level
+	LEVEL3_AVOIDMELEE			= 0x00000002,	// uzdoom@ff497996a: MBF21 per-level avoid-melee
+	LEVEL3_PROPERMONSTERFALLDMG	= 0x00000004,	// uzdoom@e74b9f195: monster falling-damage variant
+	// (0x00000008, 0x00000010 free — resetitems + forceworldpanning are parse-only, see ZXUnhandledMapKeys)
+	LEVEL3_NOCLUSTERTEXT		= 0x00000020,	// uzdoom@20b6395cf: suppress cluster exit text
+	LEVEL3_FORCECLUSTERTEXT		= 0x00000040,	// uzdoom@20b6395cf: force cluster exit text (needclustertext)
+	// (passover/nopassover are implemented via COMPATF_NO_PASSMOBJ, not a LEVEL3 bit)
+	LEVEL3_E1M8SPECIAL			= 0x00000200,	// uzdoom@e2e8ec8b3: vanilla E1M8 boss action
+	LEVEL3_E2M8SPECIAL			= 0x00000400,	// uzdoom@e2e8ec8b3: vanilla E2M8 boss action
+	LEVEL3_E3M8SPECIAL			= 0x00000800,	// uzdoom@e2e8ec8b3: vanilla E3M8 boss action
+	LEVEL3_E4M6SPECIAL			= 0x00001000,	// uzdoom@e2e8ec8b3: vanilla E4M6 boss action
+	LEVEL3_E4M8SPECIAL			= 0x00002000,	// uzdoom@e2e8ec8b3: vanilla E4M8 boss action
+	LEVEL3_LOOKUPEXITTEXT		= 0x00004000,	// uzdoom@49b77f3a1: per-map exittext is a $lookup
+	LEVEL3_FINALEPIC			= 0x00008000,	// uzdoom@49b77f3a1: per-map finale backdrop is a pic (textpic)
+
 	// [BB] Zandronum flags
 	LEVEL_ZA_NOBOTNODES			= 0x00000001,	// [BC] Level does not use bot nodes.
 	// [BB] Ceartain game modes are supposed to behave differently on
@@ -263,6 +281,15 @@ struct FOptionalMapinfoDataPtr
 typedef TMap<FName, FOptionalMapinfoDataPtr> FOptData;
 typedef TMap<int, FName> FMusicMap;
 
+// [ZandroX] uzdoom@bb7e19120: mapintermusic — intermission music keyed to the
+// destination map.
+struct FInterMusicEntry
+{
+	FString	music;
+	int		order;
+};
+typedef TMap<FName, FInterMusicEntry> FInterMusicMap;
+
 enum EMapType
 {
 	MAPTYPE_UNKNOWN = 0,
@@ -292,11 +319,13 @@ struct level_info_t
 	int			sucktime;
 	DWORD		flags;
 	DWORD		flags2;
+	DWORD		flags3;		// [rc4l] third level-flag word (LEVEL3_*); LEVEL/LEVEL2 are full
 	// [BB]
 	DWORD		flagsZA;
 
 	FString		Music;
 	FString		LevelName;
+	FString		AuthorName;		// [ZandroX] uzdoom@3e9921696: author, shown on the intermission summary
 	SBYTE		WallVertLight, WallHorizLight;
 	int			musicorder;
 	FCompressedMemFile	*snapshot;
@@ -325,6 +354,11 @@ struct level_info_t
 	FName		RedirectType;
 	char		RedirectMap[9];
 
+	// [ZandroX] cvar_redirect: like RedirectType, but keyed on a CVAR being
+	// non-zero rather than a player carrying an item. Ported from uzdoom@04ea28def.
+	FName		RedirectCVAR;
+	char		RedirectCVARMap[9];
+
 	FString		EnterPic;
 	FString		ExitPic;
 	FString 	InterMusic;
@@ -332,15 +366,36 @@ struct level_info_t
 
 	FString		SoundInfo;
 	FString		SndSeq;
+	FString		LightningSound;	// [ZandroX] uzdoom@ce2a0c929: overrides "world/thunder" for level lightning
+	int			HazardColor;	// [ZandroX] uzdoom@b4079b991: Strife hazard gradual blend color (-1 = engine default)
+	int			HazardFlash;	// [ZandroX] uzdoom@b4079b991: Strife hazard flash blend color (-1 = engine default)
+
+	// [ZandroX] Per-level finale (independent of the cluster). Ported from
+	// uzdoom@49b77f3a1: exittext / textflat / textpic / textmusic.
+	FString		FinaleText;		// exittext
+	FString		FinaleFlat;		// textflat (or textpic backdrop, see LEVEL3_FINALEPIC)
+	FString		FinaleMusic;	// textmusic
+	int			finalemusicorder;
 
 	float		teamdamage;
 
 	FOptData	optdata;
 	FMusicMap	MusicMap;
+	FInterMusicMap	MapInterMusic;	// [ZandroX] uzdoom@bb7e19120: per-destination intermission music
 
 	TArray<FSpecialAction> specialactions;
 
 	TArray<FSoundID> PrecacheSounds;
+
+	// [ZandroX] loadacs: extra ACS library lumps to load for this level, in
+	// addition to any global LOADACS lumps. Ported from uzdoom@6ae417725.
+	TArray<FName> ACSLibraries;
+
+	// [ZandroX] PrecacheClasses (uzdoom@65e158954) / PrecacheTextures
+	// (uzdoom@3849cb862): force-precache the sprites of named actor classes
+	// and the named textures at level load.
+	TArray<FName> PrecacheClasses;
+	TArray<FName> PrecacheTextures;	// texture names — MAPINFO is parsed before TexMan.Init, so resolve at precache time
 
 	//[BL] Link a sectinfo to a map
 	SectInfo	SectorInfo;
@@ -411,6 +466,7 @@ struct FLevelLocals
 
 	DWORD		flags;
 	DWORD		flags2;
+	DWORD		flags3;		// [rc4l] third level-flag word (LEVEL3_*)
 	// [BB]
 	DWORD		flagsZA;
 
@@ -486,6 +542,7 @@ struct cluster_info_t
 #define CLUSTER_LOOKUPENTERTEXT	0x00000020	// Enter text is the name of a language string
 #define CLUSTER_LOOKUPNAME		0x00000040	// Name is the name of a language string
 #define CLUSTER_LOOKUPCLUSTERNAME 0x00000080	// Cluster name is the name of a language string
+#define CLUSTER_ALLOWINTERMISSION 0x00000100	// [ZandroX] uzdoom@ed2b73833: show intermission even for intra-hub travel
 
 extern FLevelLocals level;
 
@@ -581,6 +638,12 @@ enum ESkillProperty
 	SKILLP_ArmorFactor,
 	SKILLP_EasyKey,
 	SKILLP_SlowMonsters,
+	SKILLP_SpawnMulti,		// [rc4l] uzdoom skill flag: spawn multiplayer things in singleplayer
+	SKILLP_InstantReaction,	// [rc4l] uzdoom skill flag: monsters react instantly (no reaction delay)
+	SKILLP_HealthFactor,	// [rc4l] uzdoom@f7cdb28ea: monster spawn-health scale
+	SKILLP_KickbackFactor,	// [rc4l] uzdoom@7267e608c: damage-kickback scale
+	SKILLP_Infight,			// [rc4l] uzdoom@1ad02a6ce: -1 no infight / 0 default / 1 total
+	SKILLP_NoMenu,			// [rc4l] uzdoom@80e9763d6: hide skill from the menu
 };
 int G_SkillProperty(ESkillProperty prop);
 const char * G_SkillName();
@@ -596,6 +659,12 @@ struct FSkillInfo
 	fixed_t DamageFactor;
 	bool FastMonsters;
 	bool SlowMonsters;
+	bool SpawnMulti;		// [rc4l] spawn multiplayer things in singleplayer (uzdoom)
+	bool InstantReaction;	// [rc4l] monsters react instantly (uzdoom)
+	bool NoMenu;			// [rc4l] uzdoom@80e9763d6: hide this skill from the menu
+	fixed_t HealthFactor;	// [rc4l] uzdoom@f7cdb28ea: monster spawn-health scale (default FRACUNIT)
+	fixed_t KickbackFactor;	// [rc4l] uzdoom@7267e608c: damage-kickback scale (default FRACUNIT)
+	int Infighting;			// [rc4l] uzdoom@1ad02a6ce: 0 default / LEVEL2_NOINFIGHTING / LEVEL2_TOTALINFIGHTING
 	bool DisableCheats;
 	bool AutoUseHealth;
 

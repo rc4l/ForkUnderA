@@ -169,17 +169,35 @@ void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int
 
 	if (CPlayer->hazardcount)
 	{
+		// [ZandroX] uzdoom@b4079b991: honor per-level hazardcolor/hazardflash
+		// overrides; -1 keeps the engine's default Strife green.
 		if (paletteflash & PF_HAZARD)
 		{
 			if (CPlayer->hazardcount > 16*TICRATE || (CPlayer->hazardcount & 8))
 			{
-				V_AddBlend (0.f, 1.f, 0.f, 0.125f, blend);
+				if (level.info != NULL && level.info->HazardFlash >= 0)
+				{
+					int c = level.info->HazardFlash;
+					V_AddBlend (((c>>16)&0xff)/255.f, ((c>>8)&0xff)/255.f, (c&0xff)/255.f, 0.125f, blend);
+				}
+				else
+				{
+					V_AddBlend (0.f, 1.f, 0.f, 0.125f, blend);
+				}
 			}
 		}
 		else
 		{
 			cnt= MIN(CPlayer->hazardcount/8, 64);
-			V_AddBlend (0.f, 0.2571f, 0.f, cnt/93.2571428571f, blend);
+			if (level.info != NULL && level.info->HazardColor >= 0)
+			{
+				int c = level.info->HazardColor;
+				V_AddBlend (((c>>16)&0xff)/255.f, ((c>>8)&0xff)/255.f, (c&0xff)/255.f, cnt/93.2571428571f, blend);
+			}
+			else
+			{
+				V_AddBlend (0.f, 0.2571f, 0.f, cnt/93.2571428571f, blend);
+			}
 		}
 	}
 

@@ -178,3 +178,28 @@ TEST(BottomUpView, ZeroForNonPositiveDims)
 	EXPECT_EQ(h.firstRowOffset, 0);
 	EXPECT_EQ(h.rowStride, 0);
 }
+
+// [ZandroX] Regression guard for the "every clip after the first freezes" bug: SaveClip must not
+// terminally-flush the live FFmpeg encoder (that EOFs it, so later frames are dropped and every clip
+// after the first repeats the first clip's footage -- e.g. one clip per wad_reload all identical).
+TEST(EncodableFramesAcrossSaves, SaveIsNonDestructive)
+{
+	// F F  SAVE  F F  SAVE  F   -> 5 add-frame ops, 2 saves interleaved.
+	const int ops[] = { 0, 0, 1, 0, 0, 1, 0 };
+	const int n = (int)(sizeof(ops) / sizeof(ops[0]));
+
+	// Fixed SaveClip (no terminal flush): all 5 frames stay encodable, so clips 2 and 3 contain the
+	// footage recorded after clip 1 -- capture keeps working across saves and reloads.
+	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(ops, n, false), 5);
+
+	// The bug (terminal flush on save): the encoder EOFs at the first save, so the 3 frames added
+	// afterwards are dropped and every later clip freezes on clip 1.
+	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(ops, n, true), 2);
+
+	// No saves -> every frame encodable, both modes agree.
+	const int noSave[] = { 0, 0, 0 };
+	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(noSave, 3, false), 3);
+	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(noSave, 3, true), 3);
+	// Empty sequence.
+	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(nullptr, 0, true), 0);
+}

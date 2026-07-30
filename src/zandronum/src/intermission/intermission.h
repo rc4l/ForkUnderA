@@ -75,6 +75,7 @@ struct FIntermissionAction
 	FString mBackground;
 	FString mPalette;
 	FString mSound;
+	FString mSubtitle;	// [ZandroX] uzdoom@2c226afff: caption drawn at the bottom of the screen
 	bool mFlatfill;
 	bool mMusicLooping;
 	TArray<FIntermissionPatch> mOverlays;
@@ -163,6 +164,7 @@ protected:
 	int mDuration;
 	FTextureID mBackground;
 	bool mFlatfill;
+	FString mSubtitle;	// [ZandroX] uzdoom@2c226afff
 	TArray<FIIntermissionPatch> mOverlays;
 
 	bool CheckOverlay(int i);

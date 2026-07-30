@@ -7075,7 +7075,8 @@ void ServerCommands::Sound::Execute()
 	if ( volume > 127 )
 		volume = 127;
 
-	S_Sound( channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ) );
+	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
+	S_Sound( channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
@@ -7085,7 +7086,8 @@ void ServerCommands::SoundActor::Execute()
 	if ( volume > 127 )
 		volume = 127;
 
-	S_Sound( actor, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ) );
+	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
+	S_Sound( actor, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
@@ -7100,7 +7102,8 @@ void ServerCommands::SoundActorIfNotPlaying::Execute()
 	if ( S_IsActorPlayingSomething (actor, channel & (~CHAN_LOOP), S_FindSound ( sound ) ) )
 		return;
 
-	S_Sound( actor, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ) );
+	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
+	S_Sound( actor, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
@@ -7110,7 +7113,8 @@ void ServerCommands::SoundSector::Execute()
 	if ( volume > 127 )
 		volume = 127;
 
-	S_Sound( sector, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ) );
+	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
+	S_Sound( sector, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), pitch );
 }
 
 //*****************************************************************************
@@ -7121,7 +7125,8 @@ void ServerCommands::SoundPoint::Execute()
 		volume = 127;
 
 	// Finally, play the sound.
-	S_Sound( x, y, z, channel, S_FindSound(sound), (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ) );
+	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
+	S_Sound( x, y, z, channel, S_FindSound(sound), (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************

@@ -149,6 +149,14 @@ bool FIntermissionAction::ParseKey(FScanner &sc)
 		mSound = sc.String;
 		return true;
 	}
+	// [ZandroX] uzdoom@2c226afff: subtitle caption for this screen.
+	else if (sc.Compare("Subtitle"))
+	{
+		sc.MustGetToken('=');
+		sc.MustGetToken(TK_StringConst);
+		mSubtitle = sc.String;
+		return true;
+	}
 	else if (sc.Compare("Draw"))
 	{
 		FIntermissionPatch *pat = &mOverlays[mOverlays.Reserve(1)];
