@@ -583,6 +583,10 @@ enum ESkillProperty
 	SKILLP_SlowMonsters,
 	SKILLP_SpawnMulti,		// [rc4l] uzdoom skill flag: spawn multiplayer things in singleplayer
 	SKILLP_InstantReaction,	// [rc4l] uzdoom skill flag: monsters react instantly (no reaction delay)
+	SKILLP_HealthFactor,	// [rc4l] uzdoom@f7cdb28ea: monster spawn-health scale
+	SKILLP_KickbackFactor,	// [rc4l] uzdoom@7267e608c: damage-kickback scale
+	SKILLP_Infight,			// [rc4l] uzdoom@1ad02a6ce: -1 no infight / 0 default / 1 total
+	SKILLP_NoMenu,			// [rc4l] uzdoom@80e9763d6: hide skill from the menu
 };
 int G_SkillProperty(ESkillProperty prop);
 const char * G_SkillName();
@@ -600,6 +604,10 @@ struct FSkillInfo
 	bool SlowMonsters;
 	bool SpawnMulti;		// [rc4l] spawn multiplayer things in singleplayer (uzdoom)
 	bool InstantReaction;	// [rc4l] monsters react instantly (uzdoom)
+	bool NoMenu;			// [rc4l] uzdoom@80e9763d6: hide this skill from the menu
+	fixed_t HealthFactor;	// [rc4l] uzdoom@f7cdb28ea: monster spawn-health scale (default FRACUNIT)
+	fixed_t KickbackFactor;	// [rc4l] uzdoom@7267e608c: damage-kickback scale (default FRACUNIT)
+	int Infighting;			// [rc4l] uzdoom@1ad02a6ce: 0 default / LEVEL2_NOINFIGHTING / LEVEL2_TOTALINFIGHTING
 	bool DisableCheats;
 	bool AutoUseHealth;
 

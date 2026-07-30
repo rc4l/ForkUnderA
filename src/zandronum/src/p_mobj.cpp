@@ -7875,12 +7875,13 @@ int AActor::SpawnHealth()
 	}
 	else if (flags & MF_FRIENDLY)
 	{
-		int adj = FixedMul(defhealth, G_SkillProperty(SKILLP_FriendlyHealth));
+		// [rc4l] uzdoom@f7cdb28ea: skill HealthFactor scales spawn health on top of Friendly/MonsterHealth.
+		int adj = FixedMul(FixedMul(defhealth, G_SkillProperty(SKILLP_FriendlyHealth)), G_SkillProperty(SKILLP_HealthFactor));
 		return (adj <= 0) ? 1 : adj;
 	}
 	else
 	{
-		int adj = FixedMul(defhealth, G_SkillProperty(SKILLP_MonsterHealth));
+		int adj = FixedMul(FixedMul(defhealth, G_SkillProperty(SKILLP_MonsterHealth)), G_SkillProperty(SKILLP_HealthFactor));
 		return (adj <= 0) ? 1 : adj;
 	}
 }
