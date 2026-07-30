@@ -52,6 +52,7 @@
 #include "gl/scene/gl_portal.h"
 #include "gl/scene/gl_wall.h"
 #include "gl/utility/gl_clock.h"
+#include "features/hitboxviz/hitboxviz.h"
 
 EXTERN_CVAR(Bool, gl_render_segs)
 
@@ -340,6 +341,10 @@ static inline void RenderThings(subsector_t * sub, sector_t * sector)
 		for (AActor * thing = sec->thinglist; thing; thing = thing->snext)
 		{
 			GLRenderer->ProcessSprite(thing, sector);
+			// [MGOOOOOO] Debug hitbox overlay. Collected here rather than in GLSprite::Process
+			// because that path culls spriteless, +INVISIBLE and fully translucent actors, which
+			// still have collision boxes worth seeing. No-op unless the overlay is on.
+			zx::hitboxviz::CollectActor(thing);
 		}
 	}
 	SetupSprite.Unclock();

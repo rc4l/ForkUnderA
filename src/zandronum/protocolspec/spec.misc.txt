@@ -92,3 +92,16 @@ Command SetDominationPointState
 	Bool disabled
 	Byte[] contesters
 EndCommand
+
+# [ZandroX] Debug: the authoritative damage region of an explosion, for the client-side hitbox
+# overlay. Sent only while sv_debugexplosions and sv_cheats are both on, so production traffic is
+# unaffected. Positions use AproxFixed to match the other spawn-position commands; distance and
+# fulldamagedistance are plain map units, as P_RadiusAttack takes them.
+Command DebugExplosion
+	ExtendedCommand
+	AproxFixed x
+	AproxFixed y
+	AproxFixed z
+	Short distance
+	Short fulldamagedistance
+EndCommand
