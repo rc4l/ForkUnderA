@@ -65,6 +65,7 @@
 #include "r_state.h"
 #include "sbar.h"
 #include "sv_commands.h"
+#include "features/hitboxviz/hitboxviz.h"
 #include "sv_main.h"
 #include "team.h"
 #include "survival.h"
@@ -4288,6 +4289,30 @@ void SERVERCOMMANDS_SetThingSize( AActor* pActor, unsigned int sizeFlags, ULONG 
 		command.addLong( (SDWORD)( pActor->radius ) );
 	if ( sizeFlags & ACTORSIZE_HEIGHT )
 		command.addLong( (SDWORD)( heightToSend ) );
+	// [MGOOOOOO] Attack extent, debug-only (see network.h ActorSizeFlag). Sent raw: unlike height,
+	// it is not re-derived per tic on the client, and GetAttackHeight applies the crouch scaling
+	// there from the physical height it already has.
+	if ( sizeFlags & ACTORSIZE_HITRADIUS )
+		command.addLong( (SDWORD)( pActor->projectilepassradius ) );
+	if ( sizeFlags & ACTORSIZE_HITHEIGHT )
+		command.addLong( (SDWORD)( pActor->projectilepassheight ) );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
+// [ZandroX] Debug: tells clients the damage region of an explosion so the hitbox overlay can draw
+// it. The server is the only machine that runs P_RadiusAttack (A_Explode returns early in client
+// mode), so without this a client could only guess at where and how big a blast was.
+//
+void SERVERCOMMANDS_DebugExplosion( fixed_t x, fixed_t y, fixed_t z, int distance, int fulldamagedistance, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	ServerCommands::DebugExplosion command;
+	command.SetX( x );
+	command.SetY( y );
+	command.SetZ( z );
+	command.SetDistance( distance );
+	command.SetFulldamagedistance( fulldamagedistance );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
@@ -4313,6 +4338,16 @@ void SERVERCOMMANDS_UpdateThingSizeNotAtDefault( AActor* pActor, ULONG ulPlayerE
 		sizeFlags |= ACTORSIZE_RADIUS;
 	if ( baseHeight != pActor->GetDefault()->height )
 		sizeFlags |= ACTORSIZE_HEIGHT;
+
+	// [MGOOOOOO] Debug-only: carry the attack extent too, so a client connecting *after* a
+	// SetHitSize still draws the right attack box instead of the class default.
+	if ( zx::hitboxviz::ServerDebugActive( ) )
+	{
+		if ( pActor->projectilepassradius != pActor->GetDefault()->projectilepassradius )
+			sizeFlags |= ACTORSIZE_HITRADIUS;
+		if ( pActor->projectilepassheight != pActor->GetDefault()->projectilepassheight )
+			sizeFlags |= ACTORSIZE_HITHEIGHT;
+	}
 
 	if ( sizeFlags != 0 )
 		SERVERCOMMANDS_SetThingSize( pActor, sizeFlags, ulPlayerExtra, flags );

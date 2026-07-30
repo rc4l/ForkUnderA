@@ -43,6 +43,7 @@
 #include "p_effect.h"
 #include "p_terrain.h"
 #include "features/mbf21/computation/damage_groups_compute.h"
+#include "features/hitboxviz/hitboxviz.h"
 #include "p_trace.h"
 #include "p_3dmidtex.h"
 #include "computation/rail_puff_compute.h"
@@ -1758,7 +1759,9 @@ bool AActor::SetSize (fixed_t newradius, fixed_t newheight, bool testpos)
 // relink the actor. Unlike SetSize there is no position test: the attack extent
 // is not the movement radius, so widening it cannot get the actor stuck. The
 // extent is server-authoritative and, like the DECORATE HitRadius/HitHeight
-// properties, is not networked.
+// properties, is not networked -- except while sv_debugexplosions + sv_cheats
+// are on, where it is replicated purely so the client-side hitbox overlay can
+// draw a truthful attack box (see features/hitboxviz).
 //
 //----------------------------------------------------------------------------
 
@@ -1768,6 +1771,12 @@ void AActor::SetHitSize (fixed_t hitradius, fixed_t hitheight)
 	projectilepassradius = hitradius;
 	projectilepassheight = hitheight;
 	LinkToWorld();
+
+	// [MGOOOOOO] Debug-only replication: without this a netgame client would draw the class-default
+	// attack box and silently miss every runtime change. Costs production servers nothing, since
+	// ServerDebugActive() is false unless an admin has explicitly turned the debug feed on.
+	if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && zx::hitboxviz::ServerDebugActive( ) )
+		SERVERCOMMANDS_SetThingSize( this, ACTORSIZE_HITRADIUS | ACTORSIZE_HITHEIGHT );
 }
 
 
@@ -5784,6 +5793,22 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 	if (bombdistance <= 0)
 		return;
 	fulldamagedistance = clamp<int>(fulldamagedistance, 0, bombdistance - 1);
+
+	// [MGOOOOOO] Debug hitbox overlay: record the region this blast is about to test. Placed after
+	// the clamp above so the drawn region can never disagree with the simulation that produced it.
+	// A_Explode / A_RadiusThrust return early in client mode, so a client never reaches here on its
+	// own -- the server has to tell it, which also makes what it draws authoritative rather than a
+	// prediction. Locally simulated games (single-player, and the listen host's own view) just
+	// record it directly.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		if ( zx::hitboxviz::ServerDebugActive( ) )
+			SERVERCOMMANDS_DebugExplosion( bombspot->x, bombspot->y, bombspot->z, bombdistance, fulldamagedistance );
+	}
+	else if ( NETWORK_InClientMode( ) == false )
+	{
+		zx::hitboxviz::PushBlast( bombspot->x, bombspot->y, bombspot->z, bombdistance, fulldamagedistance );
+	}
 
 	double bombdistancefloat = 1.f / (double)(bombdistance - fulldamagedistance);
 	double bombdamagefloat = (double)bombdamage;
