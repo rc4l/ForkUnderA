@@ -455,6 +455,9 @@ enum : unsigned int
 	COMPATF2_FLOORMOVE		= 1 << 1,	// Use the same floor motion behavior as Doom.
 	// [BB] Out of order ZDoom backport.
 	COMPATF2_PUSHWINDOW		= 1 << 6,	// Disable the window check in CheckForPushSpecial()
+	// [rc4l] backported from uzdoom doomdef.h (matching upstream bit positions).
+	COMPATF2_EXPLODE1		= 1 << 8,	// No vertical explosion thrust (Doom radius-attack behaviour).
+	COMPATF2_NOMBF21		= 1 << 14,	// Unused. Kept for backwards compatibility (matches upstream).
 };
 
 // [BB] Zandronum compatibility flags.
