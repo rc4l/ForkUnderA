@@ -225,6 +225,10 @@ namespace
 		{ "bluramount",				ZXGI_PARSEONLY,   "a1cc548af" },
 		{ "forcenogfxsubstitution",	ZXGI_PARSEONLY,   "ba13a540e" },
 		{ "forcetextinmenus",		ZXGI_PARSEONLY,   "2874a36fb" },
+		{ "nomergepickupmsg",		ZXGI_PARSEONLY,   "7d5df1dd7" },	// disables merging of identical pickup messages; this base's PrintPickupMessage never merges, so the flag is a correct no-op
+		{ "correctprintbold",		ZXGI_PARSEONLY,   "a1cc548af" },	// tweaks PrintBold vertical centering; this base's C_MidPrintBold uses the classic placement and has no alternate to select
+		{ "fullscreenautoaspect",	ZXGI_PARSEONLY,   "db5efddf1" },	// aspect-aware fullscreen-image scaling modes; this base's DTA_Fullscreen is a fixed stretch with no aspect-mode plumbing
+		{ "BasicArmorClass",		ZXGI_PARSEONLY,   "0d43272c8" },	// overrides the ABasicArmor class; this base hardcodes RUNTIME_CLASS(ABasicArmor) at the armor-add sites, so honoring it needs a broader class-indirection change
 		// NOT-PORTABLE (ZScript class references / VM event handlers)
 		{ "statusbarclass",			ZXGI_UNSUPPORTED, "a1cc548af" },
 		{ "althudclass",			ZXGI_UNSUPPORTED, "a7f2df4fe" },
