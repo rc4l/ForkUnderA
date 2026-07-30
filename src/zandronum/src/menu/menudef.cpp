@@ -2670,6 +2670,7 @@ void M_StartupSkillMenu(FGameStartup *gs)
 			for(unsigned int i = 0; i < AllSkills.Size(); i++)
 			{
 				FSkillInfo &skill = AllSkills[i];
+				if (skill.NoMenu) continue;	// [rc4l] uzdoom@80e9763d6: skill hidden from the menu
 				FListMenuItem *li;
 				// Using a different name for skills that must be confirmed makes handling this easier.
 				FName action = (skill.MustConfirm && !AllEpisodes[gs->Episode].mNoSkill) ?
