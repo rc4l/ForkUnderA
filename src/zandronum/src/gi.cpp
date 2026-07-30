@@ -199,6 +199,61 @@ const char* GameInfoBorders[] =
 	}
 
 
+// [rc4l] Known-but-unhandled GAMEINFO keys (see the equivalent map manifest in g_mapinfo.cpp).
+// Consulted at the "ignore unknown keys" fallback so these are classified with provenance instead
+// of silently dropped. PARSE-ONLY = benign value inert on this base; NOT-PORTABLE = needs the
+// ZScript VM / a menu path we don't share.
+namespace
+{
+	enum ZXGiClass { ZXGI_PARSEONLY, ZXGI_UNSUPPORTED };
+	struct ZXUnhandledGameInfoKey { const char *name; ZXGiClass cls; const char *sha; };
+	const ZXUnhandledGameInfoKey ZXUnhandledGameInfoKeys[] =
+	{
+		// PARSE-ONLY (menu/statscreen/renderer values inert here)
+		{ "usepausestring",			ZXGI_PARSEONLY,   "c98042ed0" },
+		{ "cheatKey",				ZXGI_PARSEONLY,   "a1cc548af" },
+		{ "easyKey",				ZXGI_PARSEONLY,   "a1cc548af" },
+		{ "menuslidercolor",		ZXGI_PARSEONLY,   "a1cc548af" },
+		{ "menusliderbackcolor",	ZXGI_PARSEONLY,   "a2b8ad79e" },
+		{ "statscreen_authorfont",	ZXGI_PARSEONLY,   "3e9921696" },
+		{ "statscreen_contentfont",	ZXGI_PARSEONLY,   "2fd170b06" },
+		{ "bloodsplatdecaldistance",ZXGI_PARSEONLY,   "47f6f4cb1" },
+		{ "bluramount",				ZXGI_PARSEONLY,   "a1cc548af" },
+		{ "forcenogfxsubstitution",	ZXGI_PARSEONLY,   "ba13a540e" },
+		{ "forcetextinmenus",		ZXGI_PARSEONLY,   "2874a36fb" },
+		// NOT-PORTABLE (ZScript class references / VM event handlers)
+		{ "statusbarclass",			ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "althudclass",			ZXGI_UNSUPPORTED, "a7f2df4fe" },
+		{ "MessageBoxClass",		ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "HelpMenuClass",			ZXGI_UNSUPPORTED, "58e66f480" },
+		{ "MenuDelegateClass",		ZXGI_UNSUPPORTED, "58e66f480" },
+		{ "defaultconversationmenuclass",ZXGI_UNSUPPORTED,"a1cc548af" },
+		{ "eventhandlers",			ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "addeventhandlers",		ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "statscreen_single",		ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "statscreen_coop",		ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "statscreen_dm",			ZXGI_UNSUPPORTED, "a1cc548af" },
+	};
+
+	bool ZX_ReportUnhandledGameInfo(FScanner &sc, const char *key)
+	{
+		for (const ZXUnhandledGameInfoKey &k : ZXUnhandledGameInfoKeys)
+		{
+			if (stricmp(key, k.name) != 0) continue;
+			static TArray<FName> logged;
+			FName fn(key);
+			for (unsigned i = 0; i < logged.Size(); i++) if (logged[i] == fn) return true;
+			logged.Push(fn);
+			if (k.cls == ZXGI_PARSEONLY)
+				sc.ScriptMessage("GAMEINFO '%s' parsed but not yet wired in this port (uzdoom@%s)\n", k.name, k.sha);
+			else
+				sc.ScriptMessage("GAMEINFO '%s' not supported in this port (uzdoom@%s)\n", k.name, k.sha);
+			return true;
+		}
+		return false;
+	}
+}
+
 void FMapInfoParser::ParseGameInfo()
 {
 	sc.MustGetToken('{');
@@ -398,6 +453,9 @@ void FMapInfoParser::ParseGameInfo()
 
 		else
 		{
+			// [rc4l] Classify known-but-unhandled UZDoom gameinfo keys with provenance; genuinely
+			// unknown keys stay silently ignored as before.
+			ZX_ReportUnhandledGameInfo(sc, nextKey);
 			// ignore unkown keys.
 			sc.UnGet();
 			SkipToNext();
