@@ -772,7 +772,8 @@ void APlayerPawn::Serialize (FArchive &arc)
 	}
 	// [ZandroX] Runtime standing height. Older saves predate runtime resizing, so
 	// fall back to the class default (matching PostBeginPlay's initialization).
-	if (SaveVersion >= 4509)
+	// (SAVEVER 4510: 4509 was taken by upstream's MBF21 damage-group fields.)
+	if (SaveVersion >= 4510)
 	{
 		arc << FullHeight;
 	}

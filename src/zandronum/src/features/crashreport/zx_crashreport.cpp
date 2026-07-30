@@ -34,6 +34,19 @@
 #include "c_console.h"    // Printf
 #include "v_text.h"       // TEXTCOLOR_* console color codes
 #include "features/crashreport/computation/crash_report_compute.h"
+#include "features/crashreport/computation/crash_symbolize_compute.h"
+
+#ifndef _WIN32
+// [rc4l] POSIX crash naming: dyld has every loaded module's symbols at crash time, so dladdr names
+// both our own frames (we ship un-stripped) AND system frames -- which is the only place a crash on
+// an Apple GL-driver worker thread has any name at all. GlitchTip can't do this (no Apple symbols),
+// which is why unsymbolicated native crashes collapse into one "<unknown>" group. Windows keeps its
+// own path untouched.
+#include <dlfcn.h>
+#include <cxxabi.h>
+#include <vector>
+#include <cstdint>
+#endif
 
 #ifndef ZX_SENTRY_DSN
 #define ZX_SENTRY_DSN ""
@@ -86,6 +99,65 @@ void ZX_CrashReportShutdown()
 // symbolicate C/C++ crashes server-side. So copy the main module's load address + debug id into
 // tags; our crash-sync workflow uses them (with the raw addresses GlitchTip does keep and the
 // build's symbols from the GitHub release) to symbolicate the stack itself.
+#ifndef _WIN32
+// Resolve one instruction address to a demangled name via dladdr; mainModule = it's in our exe.
+static std::string zx_resolve_addr(const void *addr, const std::string &mainFname, bool &mainModule)
+{
+	Dl_info info;
+	if (dladdr(addr, &info) == 0 || info.dli_sname == NULL)
+	{
+		mainModule = false;
+		return std::string();
+	}
+	mainModule = (info.dli_fname != NULL && mainFname == info.dli_fname);
+	int status = 0;
+	char *dem = abi::__cxa_demangle(info.dli_sname, NULL, NULL, &status);
+	std::string out = (status == 0 && dem != NULL) ? std::string(dem) : std::string(info.dli_sname);
+	free(dem);
+	return out;
+}
+
+// Walk the crash stacktrace, name each frame in place via dladdr, and collect the resolved frames
+// (outermost-first) for the title/fingerprint decision. Returns false if there are no frames.
+static bool zx_resolve_event_frames(sentry_value_t event, std::vector<zx::crashreport::ResolvedFrame> &out)
+{
+	// A native crash nests its stack under exception.values[0].stacktrace.frames.
+	sentry_value_t values = sentry_value_get_by_key(sentry_value_get_by_key(event, "exception"), "values");
+	sentry_value_t stack  = sentry_value_get_by_key(sentry_value_get_by_index(values, 0), "stacktrace");
+	sentry_value_t frames = sentry_value_get_by_key(stack, "frames");
+	size_t n = sentry_value_get_length(frames);
+	if (n == 0)
+		return false;
+
+	Dl_info self;
+	std::string mainFname;
+	if (dladdr((const void *)&zx_resolve_event_frames, &self) != 0 && self.dli_fname)
+		mainFname = self.dli_fname;
+
+	out.clear();
+	out.reserve(n);
+	for (size_t i = 0; i < n; ++i)
+	{
+		sentry_value_t fr = sentry_value_get_by_index(frames, i);
+		const char *iaStr = sentry_value_as_string(sentry_value_get_by_key(fr, "instruction_addr"));
+		zx::crashreport::ResolvedFrame rf;
+		if (iaStr && iaStr[0])
+		{
+			const void *addr = (const void *)(uintptr_t)strtoull(iaStr, NULL, 16);
+			rf.func = zx_resolve_addr(addr, mainFname, rf.mainModule);
+			if (!rf.func.empty())
+			{
+				sentry_value_set_by_key(fr, "function", sentry_value_new_string(rf.func.c_str()));
+				if (rf.mainModule)
+					sentry_value_set_by_key(fr, "in_app", sentry_value_new_bool(1));
+			}
+		}
+		out.push_back(rf);
+	}
+	return true;
+}
+#endif // !_WIN32
+
 static sentry_value_t zx_before_send(sentry_value_t event, void *hint, void *closure)
 {
 	(void)hint; (void)closure;
@@ -105,6 +177,28 @@ static sentry_value_t zx_before_send(sentry_value_t event, void *hint, void *clo
 		if (base && base[0]) sentry_value_set_by_key(tags, "zx_image_base", sentry_value_new_string(base));
 		if (did && did[0])   sentry_value_set_by_key(tags, "zx_debug_id", sentry_value_new_string(did));
 	}
+
+#ifndef _WIN32
+	// [rc4l] Name every frame via dladdr and set a fingerprint so GlitchTip forms a distinct, titled
+	// group per crash site (instead of collapsing all native crashes into one "<unknown>" group).
+	std::vector<zx::crashreport::ResolvedFrame> resolved;
+	if (zx_resolve_event_frames(event, resolved))
+	{
+		zx::crashreport::CrashIdentity id = zx::crashreport::ComputeCrashIdentity(resolved);
+
+		sentry_value_t fp = sentry_value_new_list();
+		sentry_value_append(fp, sentry_value_new_string(id.fingerprint.c_str()));
+		sentry_value_set_by_key(event, "fingerprint", fp);
+
+		sentry_value_t tags2 = sentry_value_get_by_key(event, "tags");
+		if (sentry_value_is_null(tags2))
+		{
+			tags2 = sentry_value_new_object();
+			sentry_value_set_by_key(event, "tags", tags2);
+		}
+		sentry_value_set_by_key(tags2, "zx_crash_site", sentry_value_new_string(id.title.c_str()));
+	}
+#endif
 	return event;
 }
 
@@ -295,6 +389,35 @@ void ZX_CrashReportSetLoadedFiles()
 		sentry_set_extra("load_order", sentry_value_new_string(order.c_str()));
 }
 
+// [rc4l] Report a graceful fatal (I_FatalError) to GlitchTip. A signal crash is caught by sentry's
+// handler, but an I_FatalError just calls exit() -- so a bad WAD, a DECORATE/MAPINFO script error, or
+// a missing resource would otherwise vanish with only a stderr line no GUI player ever sees. We
+// capture it as a fatal-level message event, fingerprinted on the message so distinct fatals form
+// distinct GlitchTip groups (crash-sync then files a GitHub issue titled with the reason). The loaded
+// WAD set is already tagged on the event, so the issue shows which wads were up when it died. Blocks
+// briefly to flush, because the caller exits immediately after.
+void ZX_CrashReportFatal(const char *message)
+{
+	if (!g_sentryInited)
+		return;
+	if (message == NULL || message[0] == '\0')
+		message = "fatal error";
+
+	sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fatal", message);
+	sentry_value_set_by_key(event, "logger", sentry_value_new_string("I_FatalError"));
+
+	// Group by the message (before_send only sets a fingerprint when there are exception frames, so a
+	// message event keeps this one). Distinct reasons -> distinct issues; recurrences of the same one
+	// collapse together.
+	sentry_value_t fp = sentry_value_new_list();
+	sentry_value_append(fp, sentry_value_new_string("i_fatalerror"));
+	sentry_value_append(fp, sentry_value_new_string(message));
+	sentry_value_set_by_key(event, "fingerprint", fp);
+
+	sentry_capture_event(event);
+	sentry_flush(3000); // wait up to 3s so it uploads before the process exits
+}
+
 #else // !ZX_ENABLE_SENTRY
 
 void ZX_CrashReportInit() {}
@@ -304,5 +427,6 @@ void ZX_CrashReportLogStatus() {}
 void ZX_CrashReportSetLoadedFiles() {}
 void ZX_CrashReportSetMap(const char *) {}
 void ZX_CrashReportSetTag(const char *, const char *) {}
+void ZX_CrashReportFatal(const char *) {}
 
 #endif

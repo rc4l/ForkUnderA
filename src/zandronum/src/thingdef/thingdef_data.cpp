@@ -253,6 +253,23 @@ static FFlagDef ActorFlags[]=
 	DEFINE_FLAG(MF7, USEKILLSCRIPTS, AActor, flags7),
 	DEFINE_FLAG(MF7, NOKILLSCRIPTS, AActor, flags7),
 
+	// [rc4l] MBF21 flags8, exposed to DECORATE. The flag and its behavior already exist from the
+	// MBF21 port (actor.h MF8_FULLVOLSEE; p_enemy.cpp plays the see sound at ATTN_NONE when set) --
+	// this row just lets DECORATE set it via +FULLVOLSEE, matching GZDoom's
+	// DEFINE_FLAG(MF8, FULLVOLSEE, AActor, flags8). Needed by e.g. Eviternity II's DECORATE.
+	DEFINE_FLAG(MF8, FULLVOLSEE, AActor, flags8),
+	// [rc4l] The MBF21 boss-action flags, exposed to DECORATE to match GZDoom
+	// (thingdef_data.cpp DEFINE_FLAG(MF8, E1M8BOSS...)). The flags and their behavior already exist
+	// from the MBF21 port (actor.h MF8_*; A_BossDeath in p_enemy.cpp consumes them) -- these rows just
+	// let DECORATE set them by name so a wad can flag a custom actor as, e.g., a MAP07 boss.
+	DEFINE_FLAG(MF8, E1M8BOSS, AActor, flags8),
+	DEFINE_FLAG(MF8, E2M8BOSS, AActor, flags8),
+	DEFINE_FLAG(MF8, E3M8BOSS, AActor, flags8),
+	DEFINE_FLAG(MF8, E4M6BOSS, AActor, flags8),
+	DEFINE_FLAG(MF8, E4M8BOSS, AActor, flags8),
+	DEFINE_FLAG(MF8, MAP07BOSS1, AActor, flags8),
+	DEFINE_FLAG(MF8, MAP07BOSS2, AActor, flags8),
+
 	// [BC] New DECORATE flag defines here.
 	DEFINE_FLAG(STFL, BLUETEAM, AActor, STFlags),
 	DEFINE_FLAG(STFL, REDTEAM, AActor, STFlags),

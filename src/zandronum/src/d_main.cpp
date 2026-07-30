@@ -229,19 +229,20 @@ CUSTOM_CVAR (String, vid_cursor, "None", CVAR_ARCHIVE | CVAR_NOINITCALL)
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
 
-	bool res = false;
+	// [rc4l] ZandroX default: use the OS cursor, not the game's CursorPic / "cursor" lump (e.g.
+	// Freedoom's rabbit-head). The default value "None" now means "the native OS pointer"; a user can
+	// still opt into a game graphic by setting vid_cursor to a texture name.
+	if (!stricmp(self, "None"))
+	{
+		I_SetCursor(NULL);
+		return;
+	}
 
-	if (!stricmp(self, "None" ) && gameinfo.CursorPic.IsNotEmpty())
+	// An explicit name: use that graphic, falling back to the OS cursor (not a surprise lump) if the
+	// texture can't be found.
+	if (!I_SetCursor(TexMan[self]))
 	{
-		res = I_SetCursor(TexMan[gameinfo.CursorPic]);
-	}
-	else
-	{
-		res = I_SetCursor(TexMan[self]);
-	}
-	if (!res)
-	{
-		I_SetCursor(TexMan["cursor"]);
+		I_SetCursor(NULL);
 	}
 }
 
@@ -257,6 +258,7 @@ bool singletics = false;	// debug flag to cancel adaptiveness
 FString startmap;
 bool autostart;
 FString StoredWarp;
+extern FString StoredReloadMap; // [rc4l] set by wad_reload to boot into a map after a restart
 bool advancedemo;
 FILE *debugfile;
 event_t events[MAXEVENTS];
@@ -3265,7 +3267,24 @@ void D_DoomMain (void)
 			// These calls from inside V_Init2 are still necessary
 			C_NewModeAdjust();
 			M_InitVideoModesMenu();
-			D_StartTitle ();				// start up intro loop
+			// [rc4l] wad_reload can request booting straight into a map instead of the title screen.
+			// If the map isn't present in the new WAD set, fall back to the title rather than dying.
+			if ( StoredReloadMap.IsNotEmpty() )
+			{
+				FString map = StoredReloadMap;
+				StoredReloadMap = "";
+				if ( Wads.CheckNumForName( map.GetChars() ) != -1 )
+					G_InitNew( map.GetChars(), false );
+				else
+				{
+					Printf( TEXTCOLOR_RED "wad_reload: map '%s' not found in the new WAD set; staying at the title.\n", map.GetChars() );
+					D_StartTitle ();
+				}
+			}
+			else
+			{
+				D_StartTitle ();			// start up intro loop
+			}
 			setmodeneeded = false;			// This may be set to true here, but isn't needed for a restart
 		}
 		// [BB] .. but the server needs to load the new startmap.

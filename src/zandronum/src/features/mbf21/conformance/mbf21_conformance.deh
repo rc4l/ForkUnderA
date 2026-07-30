@@ -1,0 +1,109 @@
+Patch File for DeHackEd v3.0
+# [rc4l] Synthetic MBF21 conformance patch: exercises the FULL parse surface
+# (every codepointer, every thing/weapon/frame flag + field, [SPRITES]/[SOUNDS])
+# beyond what Judgment happens to use. Loaded via -deh; a clean load (no
+# "unknown"/"Bad"/"Incompatible" lines) proves the parser handles all MBF21 wads.
+Doom version = 21
+Patch format = 6
+
+# --- A DEHEXTRA monster (thing 151) exercising every MBF21 thing field ---
+Thing 151 (MBF21 Test Monster)
+Initial frame = 1076
+Hit points = 1000
+Speed = 8
+Fast speed = 30
+Melee range = 8388608
+Infighting group = 5
+Projectile group = 5
+Splash group = 5
+Rip sound = 1
+Dropped item = 64
+MBF21 Bits = LOGRAV+SHORTMRANGE+DMGIGNORED+NORADIUSDMG+FORCERADIUSDMG+HIGHERMPROB+RANGEHALF+NOTHRESHOLD+LONGMELEE+BOSS+MAP07BOSS1+MAP07BOSS2+E1M8BOSS+E2M8BOSS+E3M8BOSS+E4M6BOSS+E4M8BOSS+RIP+FULLVOLSOUNDS
+Bits = SOLID+SHOOTABLE+COUNTKILL
+
+# A groupless projectile group (-1) on another DEHEXTRA thing
+Thing 152 (MBF21 Test Projectile)
+Initial frame = 1090
+Projectile group = -1
+Speed = 20
+
+# --- DSDHacked UNLIMITED numbering: a thing and a frame far beyond the static
+#     DEHEXTRA pools (thing index > 500, frame index > 15999). dsda-doom grows its
+#     tables for ANY index; before the fix, PatchThing rejected high indices as
+#     "Thing N out of range" and wrote the block to a throwaway dummy -- the thing
+#     was silently non-functional. A clean load (no "out of range") proves the
+#     unlimited thing numbering is wired to the lazy DSDHacked class. ---
+Thing 70000 (DSDHacked High Monster)
+Hit points = 3000
+Speed = 8
+Width = 1310720
+Height = 3407872
+Initial frame = 20000
+Bits = SOLID+SHOOTABLE+COUNTKILL
+MBF21 Bits = FULLVOLSOUNDS
+
+Frame 20000
+Sprite number = 145
+Sprite subnumber = 0
+Duration = 6
+Next frame = 20000
+
+# --- Frames carrying MBF21 codepointer arguments (Args1..Args8) ---
+Frame 1076
+Sprite number = 145
+Duration = 10
+Next frame = 1077
+Args1 = 152
+Args2 = 30
+Args3 = 45
+Args4 = 65536
+Args5 = 131072
+
+Frame 1077
+Duration = 8
+Next frame = 1078
+Args1 = 11
+Args2 = 22
+
+# --- Weapon fields: MBF21 Bits + Ammo per shot ---
+Weapon 0 (Fist)
+MBF21 Bits = NOTHRUST+SILENT+NOAUTOFIRE+FLEEMELEE+AUTOSWITCHFROM+NOAUTOSWITCHTO
+Ammo per shot = 2
+
+# --- New sprite + sound lump names (DSDHacked [SPRITES]/[SOUNDS]) ---
+[SPRITES]
+700 = MBFX
+
+[SOUNDS]
+700 = MBFSND
+
+# --- Codepointers on the DEHEXTRA frames: every MBF21 monster + weapon pointer ---
+[CODEPTR]
+Frame 1076 = MonsterProjectile
+Frame 1077 = MonsterBulletAttack
+Frame 1078 = MonsterMeleeAttack
+Frame 1079 = SpawnObject
+Frame 1080 = RadiusDamage
+Frame 1081 = NoiseAlert
+Frame 1082 = HealChase
+Frame 1083 = SeekTracer
+Frame 1084 = FindTracer
+Frame 1085 = ClearTracer
+Frame 1086 = JumpIfHealthBelow
+Frame 1087 = JumpIfTargetInSight
+Frame 1088 = JumpIfTargetCloser
+Frame 1089 = JumpIfTracerInSight
+Frame 1090 = JumpIfTracerCloser
+Frame 1091 = JumpIfFlagsSet
+Frame 1092 = AddFlags
+Frame 1093 = RemoveFlags
+Frame 1094 = WeaponProjectile
+Frame 1095 = WeaponBulletAttack
+Frame 1096 = WeaponMeleeAttack
+Frame 1097 = WeaponSound
+Frame 1098 = WeaponAlert
+Frame 1099 = WeaponJump
+Frame 1100 = ConsumeAmmo
+Frame 1101 = CheckAmmo
+Frame 1102 = RefireTo
+Frame 1103 = GunFlashTo

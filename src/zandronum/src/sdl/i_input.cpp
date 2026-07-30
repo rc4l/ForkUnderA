@@ -357,6 +357,25 @@ void MessagePump (const SDL_Event &sev)
 			int x, y;
 			SDL_GetMouseState (&x, &y);
 
+			// [rc4l] SDL reports the mouse in window-CLIENT points, but the GUI/menu code works in
+			// render (framebuffer) space (GetWidth() x GetHeight()). The render is blitted to fill the
+			// whole window (OpenGLFrameBuffer::BlitScaleBuffer stretches GetWidth()xGetHeight() over the
+			// entire client, no letterbox), so the inverse is a plain per-axis fill ratio. Without this,
+			// a raw client coordinate lands the menu cursor off-target whenever the window size differs
+			// from the internal render size (which on macOS it always does). Using the window size (not
+			// the drawable) also folds in any HiDPI point->pixel factor.
+			if (screen != NULL)
+			{
+				SDL_Window *win = SDL_GL_GetCurrentWindow ();
+				int ww = 0, wh = 0;
+				if (win != NULL) SDL_GetWindowSize (win, &ww, &wh);
+				if (ww > 0 && wh > 0)
+				{
+					x = int((int64_t)x * screen->GetWidth () / ww);
+					y = int((int64_t)y * screen->GetHeight () / wh);
+				}
+			}
+
 			cursorBlit.x = event.data1 = x;
 			cursorBlit.y = event.data2 = y;
 			event.type = EV_GUI_Event;

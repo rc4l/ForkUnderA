@@ -85,6 +85,7 @@
 #include "v_video.h"
 #include "st_hud.h"
 #include "p_terrain.h"
+#include "features/mbf21/computation/damage_groups_compute.h"
 
 // [BC] Ugh.
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
@@ -1957,7 +1958,11 @@ bool AActor::OkayToSwitchTarget (AActor *other)
 	{ // [RH] Friendlies don't target other friendlies
 		return false;
 	}
-	
+
+	// [rc4l] MBF21: never retaliate against a member of your own infighting group.
+	if (zx::mbf21::ComputeInfightingImmune(InfightingGroup, other->InfightingGroup))
+		return false;
+
 	int infight;
 	if (flags5 & MF5_NOINFIGHTING) infight=-1;	
 	else if (level.flags2 & LEVEL2_TOTALINFIGHTING) infight=1;

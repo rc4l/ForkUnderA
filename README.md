@@ -19,5 +19,7 @@ ZandroX is a GPL-compliant fork of Zandronum.
 - Fully GPL Compliant. You can make commercial games with this.
 - OpenGL renderer upgraded to 3.3 (GZDoom 2.0.5)
 - Borderless Windows
+- MBF21 Support
 - Freeform Menus (Ported from QZandronum)
+- In-engine video recording
 - Advanced crash reporter

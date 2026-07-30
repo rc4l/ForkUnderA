@@ -26,4 +26,10 @@ void ZX_CrashReportSetLoadedFiles(); // reads the wad list; strips paths to bare
 void ZX_CrashReportSetMap(const char *mapname);
 void ZX_CrashReportSetTag(const char *key, const char *value);
 
+// Report a graceful fatal (I_FatalError) before the process exits. A signal crash is caught by
+// sentry's handler; an I_FatalError just exit()s, so bad-WAD / script-error / missing-resource fatals
+// would otherwise go unreported. Safe no-op if reporting is off or sentry isn't up; blocks briefly to
+// flush before the caller exits.
+void ZX_CrashReportFatal(const char *message);
+
 #endif // ZX_CRASHREPORT_H
