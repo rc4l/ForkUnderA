@@ -395,7 +395,7 @@ struct level_info_t
 	// (uzdoom@3849cb862): force-precache the sprites of named actor classes
 	// and the named textures at level load.
 	TArray<FName> PrecacheClasses;
-	TArray<int> PrecacheTextures;	// raw texture indices (avoids textures.h in this header)
+	TArray<FName> PrecacheTextures;	// texture names — MAPINFO is parsed before TexMan.Init, so resolve at precache time
 
 	//[BL] Link a sectinfo to a map
 	SectInfo	SectorInfo;

@@ -1290,15 +1290,9 @@ DEFINE_MAP_OPTION(PrecacheTextures, true)
 	do
 	{
 		parse.sc.MustGetString();
-		FTextureID tex = TexMan.CheckForTexture(parse.sc.String, FTexture::TEX_MiscPatch);
-		if (!tex.Exists())
-		{
-			parse.sc.ScriptMessage("Unknown texture \"%s\"", parse.sc.String);
-		}
-		else
-		{
-			info->PrecacheTextures.Push(tex.GetIndex());
-		}
+		// MAPINFO is parsed before TexMan.Init(), so store the name and
+		// resolve it at precache time (FTextureManager::PrecacheLevel).
+		info->PrecacheTextures.Push(FName(parse.sc.String));
 	} while (parse.sc.CheckString(","));
 }
 
