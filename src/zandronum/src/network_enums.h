@@ -395,6 +395,8 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_RCONACCESS ),
 	// [TRSR] Command for syncing Domination point state.
 	ENUM_ELEMENT ( SVC2_SETDOMINATIONPOINTSTATE ),
+	// [ZandroX] Runtime actor radius/height changes (A_SetSize / APROP_Radius / APROP_Height).
+	ENUM_ELEMENT ( SVC2_SETTHINGSIZE ),
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }

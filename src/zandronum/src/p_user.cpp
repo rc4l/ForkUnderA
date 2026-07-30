@@ -770,6 +770,16 @@ void APlayerPawn::Serialize (FArchive &arc)
 	{
 		arc << AirCapacity;
 	}
+	// [ZandroX] Runtime standing height. Older saves predate runtime resizing, so
+	// fall back to the class default (matching PostBeginPlay's initialization).
+	if (SaveVersion >= 4509)
+	{
+		arc << FullHeight;
+	}
+	else
+	{
+		FullHeight = GetDefault()->height;
+	}
 }
 
 //===========================================================================
@@ -841,11 +851,13 @@ void APlayerPawn::Tick()
 		if ( player->bSpectating )
 			height = 0;
 		else
-			height = FixedMul(GetDefault()->height, player->crouchfactor);
+			// [ZandroX] Scale the runtime standing height (FullHeight), not the
+			// class default, so A_SetSize/ACS height changes persist.
+			height = FixedMul(FullHeight, player->crouchfactor);
 	}
 	else
 	{
-		if (health > 0) height = GetDefault()->height;
+		if (health > 0) height = FullHeight;
 	}
 	Super::Tick();
 }
@@ -860,6 +872,10 @@ void APlayerPawn::PostBeginPlay()
 {
 	Super::PostBeginPlay();
 	SetupWeaponSlots();
+
+	// [ZandroX] Establish the runtime standing height used by the crouch recompute
+	// in Tick(). A_SetSize/ACS may later change this on a per-instance basis.
+	FullHeight = GetDefault()->height;
 
 	// Voodoo dolls: restore original floorz/ceilingz logic
 	if (player == NULL || player->mo != this)

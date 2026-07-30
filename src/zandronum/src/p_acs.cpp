@@ -4858,6 +4858,27 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		actor->stamina = value;
 		break;
 
+	// [ZandroX] Radius/height can now be changed at runtime. Route through
+	// AActor::SetSize so the actor is relinked to the world (and, for players,
+	// FullHeight is updated), then tell the clients about the new size.
+	case APROP_Radius:
+		if ( actor->radius != value )
+		{
+			actor->SetSize( value, actor->height );
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetThingSize( actor, ACTORSIZE_RADIUS );
+		}
+		break;
+
+	case APROP_Height:
+		if ( actor->height != value )
+		{
+			actor->SetSize( actor->radius, value );
+			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetThingSize( actor, ACTORSIZE_HEIGHT );
+		}
+		break;
+
 	case APROP_ReactionTime:
 		actor->reactiontime = value;
 		break;

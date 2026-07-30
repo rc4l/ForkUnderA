@@ -3749,6 +3749,9 @@ void SERVER_UpdateActorProperties( AActor *pActor, ULONG ulClient )
 
 	// [EP] Update the actor's scale if it's changed.
 	SERVERCOMMANDS_UpdateThingScaleNotAtDefault ( pActor, ulClient, SVCF_ONLYTHISCLIENT );
+
+	// [ZandroX] Update the actor's radius/height if it's been resized at runtime.
+	SERVERCOMMANDS_UpdateThingSizeNotAtDefault ( pActor, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 //*****************************************************************************
