@@ -1597,6 +1597,8 @@ static const ZXUnhandledMapInfoKey ZXUnhandledMapKeys[] =
 	{ "notexturefill",			ZXUH_PARSEONLY,   "65e7b6dfa" },
 	{ "thickfogdistance",		ZXUH_PARSEONLY,   "c6a6ae23a" },
 	{ "thickfogmultiplier",		ZXUH_PARSEONLY,   "c6a6ae23a" },
+	// --- map flags: deep savegame/hub-snapshot hook, flagged divergence (parse-only) ---
+	{ "resetitems",				ZXUH_PARSEONLY,   "d80dc098b" },	// re-placing items on hub re-entry means mixing fresh spawns into the savegamerestore snapshot path (p_setup.cpp savegamerestore gate); regression-prone save-adjacent change, no target content uses it
 	// --- map value-options: needs a subsystem we lack (not-portable) ---
 	{ "intro",					ZXUH_UNSUPPORTED, "cda6394a9" },	// cutscene engine
 	{ "outro",					ZXUH_UNSUPPORTED, "cda6394a9" },	// cutscene engine
