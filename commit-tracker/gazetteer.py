@@ -19,7 +19,8 @@ ANCHOR = os.environ.get("ANCHOR", "ad88cfc5e")
 UNTIL  = os.environ.get("UNTIL")
 HERE   = os.path.dirname(os.path.abspath(__file__))
 REPO   = os.path.dirname(HERE)
-OUT    = os.path.join(HERE, "combined_tags.tsv")
+OUT     = os.environ.get("OUT", os.path.join(HERE, "combined_tags.tsv"))
+SHAFILE = os.environ.get("SHAFILE")   # parallel worker: diff only these shas (one per line)
 TREES  = [UP, REPO]
 
 LOOKUP = (r"CheckNumForName|GetNumForName|CheckNumForFullName|GetNumForFullName|"
@@ -54,12 +55,15 @@ def alt(words):
 
 
 def target_shas():
-    shas = []
+    limit = int(os.environ.get("LIMIT", "0"))   # 0 = all commits; set LIMIT=1000 for a quick trial
+    shas = set()
     with open(os.path.join(HERE, "coverage.tsv")) as f:
         for i, line in enumerate(f):
-            if i >= 2 and len(shas) < 1000:
-                shas.append(line.split("\t", 1)[0])
-    return set(shas)
+            if i >= 2:
+                if limit and len(shas) >= limit:
+                    break
+                shas.add(line.split("\t", 1)[0])
+    return shas
 
 
 def main():
@@ -107,12 +111,19 @@ def main():
         for b in lump_files[lp]:
             base_matchers[b].append((lp, rx))
 
-    want, tags = target_shas(), defaultdict(set)
+    if SHAFILE:                                 # parallel worker: only its chunk of shas
+        want = set(open(SHAFILE).read().split())
+        shas_in = "\n".join(want)
+    else:
+        want, shas_in = target_shas(), None
+    tags = defaultdict(set)
+    walk = (["--no-walk", "--stdin"] if shas_in else
+            (["--until=" + UNTIL] if UNTIL else []) + [ANCHOR + "..HEAD"])
 
     # messages: lump names only (keywords need parser scope; actions/acs rarely in prose)
-    args = ["git", "-C", UP, "log", "--format=%H\x1f%B%x00"] + \
-           (["--until=" + UNTIL] if UNTIL else []) + [ANCHOR + "..HEAD"]
-    for rec in subprocess.run(args, capture_output=True, encoding="utf-8", errors="replace").stdout.split("\0"):
+    args = ["git", "-C", UP, "log", "--format=%H\x1f%B%x00"] + walk
+    blob = subprocess.run(args, input=shas_in, capture_output=True, encoding="utf-8", errors="replace").stdout
+    for rec in blob.split("\0"):
         if "\x1f" in rec:
             sha, msg = rec.split("\x1f", 1)
             if sha.strip() in want:
@@ -120,9 +131,11 @@ def main():
                     tags[sha.strip()].add("lump:" + h)
 
     # diffs: lump names + actions + acs everywhere; keywords only on their parser file's lines
-    args = ["git", "-C", UP, "log", "-p", "--unified=0", "--format=\x01%H"] + \
-           (["--until=" + UNTIL] if UNTIL else []) + [ANCHOR + "..HEAD"]
-    p = subprocess.Popen(args, stdout=subprocess.PIPE, encoding="utf-8", errors="replace", bufsize=1)
+    args = ["git", "-C", UP, "log", "-p", "--unified=0", "--format=\x01%H"] + walk
+    p = subprocess.Popen(args, stdin=(subprocess.PIPE if shas_in else None),
+                         stdout=subprocess.PIPE, encoding="utf-8", errors="replace", bufsize=1)
+    if shas_in:
+        p.stdin.write(shas_in); p.stdin.close()
     sha, on, budget, base = None, False, 0, ""
     for line in p.stdout:
         line = line.rstrip("\n")[:2000]
