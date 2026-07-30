@@ -1,0 +1,16 @@
+// Conformance lump for A_StartSound (features/a_startsound). Pack as a DECORATE lump in a pk3 and
+// -file it; a dropped decl/param/constant resurfaces as a parse error. See README.md.
+
+ACTOR ZXConfStartSound
+{
+	States
+	{
+	Spawn:
+		TNT1 A 1 A_StartSound("world/barrelx", 0, CHANF_OVERLAP)
+		TNT1 A 1 A_StartSound("world/barrelx", 0, CHANF_OVERLAP, 1.0, 0.4)
+		TNT1 A 1 A_StartSound("weapons/pistol", CHAN_WEAPON)
+		TNT1 A 1 A_StartSound("weapons/pistol", CHAN_BODY, CHANF_NOSTOP)
+		TNT1 A 1 A_StartSound("weapons/pistol", CHAN_BODY, CHANF_LOOP, 1.0, ATTN_NORM, 0.5)
+		Stop
+	}
+}
