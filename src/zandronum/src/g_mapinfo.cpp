@@ -1368,6 +1368,95 @@ MapFlagHandlers[] =
 
 //==========================================================================
 //
+// [rc4l] Known-but-unhandled MAPINFO keyword manifest.
+//
+// These are UZDoom MAPINFO properties ZandroX recognises but does not act on. Rather than add a
+// value-parser for each (which risks mis-consuming vector/string values and desyncing the parser),
+// they fall through to the "Unknown property" site and are classified here, then SkipToNext()
+// consumes them exactly as before -- no parse regression. The table doubles as the machine-readable
+// provenance manifest for the upstream-commit tracker (keyword -> uzdoom SHA).
+//
+//   ZXUH_PARSEONLY  = benign value we could wire later once the feature exists (mostly GL renderer
+//                     state); logged "parsed but not yet wired".
+//   ZXUH_UNSUPPORTED = needs a subsystem this base lacks (cutscene engine, ID24, ZScript VM);
+//                     logged "not supported in this port".
+//
+//==========================================================================
+
+enum ZXUnhandledClass { ZXUH_PARSEONLY, ZXUH_UNSUPPORTED };
+
+struct ZXUnhandledMapInfoKey
+{
+	const char *name;
+	ZXUnhandledClass cls;
+	const char *sha;	// uzdoom commit that introduced it
+};
+
+static const ZXUnhandledMapInfoKey ZXUnhandledMapKeys[] =
+{
+	// --- map flags: GL-renderer / portal state (parse-only) ---
+	{ "attenuatelights",		ZXUH_PARSEONLY,   "63bba40d7" },
+	{ "compat_emulatemikoportals",ZXUH_PARSEONLY, "70ec7b64a" },
+	{ "disableshadowmap",		ZXUH_PARSEONLY,   "0cffeef2c" },
+	{ "enableshadowmap",		ZXUH_PARSEONLY,   "0cffeef2c" },
+	{ "disableskyboxao",		ZXUH_PARSEONLY,   "df4f41f4e" },
+	{ "enableskyboxao",			ZXUH_PARSEONLY,   "df4f41f4e" },
+	{ "noambientocclusion",		ZXUH_PARSEONLY,   "29b5fe903" },
+	{ "forcefakecontrast",		ZXUH_PARSEONLY,   "4f383e5aa" },
+	{ "nocoloredspritelighting",ZXUH_PARSEONLY,   "3aa7687d9" },
+	{ "nofogofwar",				ZXUH_PARSEONLY,   "95b264bdb" },
+	{ "nolightfade",			ZXUH_PARSEONLY,   "d86bd470e" },
+	{ "useskymist",				ZXUH_PARSEONLY,   "e9a067dd6" },
+	// --- map value-options: GL-renderer state (parse-only) ---
+	{ "brightfog",				ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "fogdensity",				ZXUH_PARSEONLY,   "44a087554" },
+	{ "outsidefogdensity",		ZXUH_PARSEONLY,   "44a087554" },
+	{ "skyfog",					ZXUH_PARSEONLY,   "44a087554" },
+	{ "skymist",				ZXUH_PARSEONLY,   "e9a067dd6" },
+	{ "skymistyscale",			ZXUH_PARSEONLY,   "091432532" },
+	{ "skyrotate",				ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "skyrotate2",				ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "lightadditivesurfaces",	ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "lightblendmode",			ZXUH_PARSEONLY,   "8e7897233" },
+	{ "lightmode",				ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "notexturefill",			ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "thickfogdistance",		ZXUH_PARSEONLY,   "c6a6ae23a" },
+	{ "thickfogmultiplier",		ZXUH_PARSEONLY,   "c6a6ae23a" },
+	// --- map value-options: needs a subsystem we lack (not-portable) ---
+	{ "intro",					ZXUH_UNSUPPORTED, "cda6394a9" },	// cutscene engine
+	{ "outro",					ZXUH_UNSUPPORTED, "cda6394a9" },	// cutscene engine
+	{ "enteranim",				ZXUH_UNSUPPORTED, "e88d91289" },	// ID24 interlevel anim
+	{ "exitanim",				ZXUH_UNSUPPORTED, "e88d91289" },	// ID24 interlevel anim
+	{ "eventhandlers",			ZXUH_UNSUPPORTED, "9b3b21c73" },	// per-map ZScript event handlers
+	{ "edata",					ZXUH_UNSUPPORTED, "6ae417725" },	// Eternity EDF extradata
+};
+
+// Returns true if the keyword is a known-unhandled MAPINFO property (and emits a classified,
+// once-per-keyword message). The caller still SkipToNext()s to consume the value.
+static bool ZX_ReportUnhandledMapInfo(FScanner &sc, const char *keyword)
+{
+	for (const ZXUnhandledMapInfoKey &k : ZXUnhandledMapKeys)
+	{
+		if (stricmp(keyword, k.name) != 0)
+			continue;
+
+		static TArray<FName> logged;	// dedupe: one line per keyword per session
+		FName fn(keyword);
+		for (unsigned i = 0; i < logged.Size(); i++)
+			if (logged[i] == fn) return true;
+		logged.Push(fn);
+
+		if (k.cls == ZXUH_PARSEONLY)
+			sc.ScriptMessage("MAPINFO '%s' parsed but not yet wired in this port (uzdoom@%s)\n", k.name, k.sha);
+		else
+			sc.ScriptMessage("MAPINFO '%s' not supported in this port (uzdoom@%s)\n", k.name, k.sha);
+		return true;
+	}
+	return false;
+}
+
+//==========================================================================
+//
 // ParseMapDefinition
 // Parses the body of a map definition, including defaultmap etc.
 //
@@ -1488,8 +1577,10 @@ void FMapInfoParser::ParseMapDefinition(level_info_t &info)
 			{
 				if (!ParseCloseBrace())
 				{
-					// Unknown
-					sc.ScriptMessage("Unknown property '%s' found in map definition\n", sc.String);
+					// [rc4l] Classify known-but-unhandled UZDoom properties (parse-only / not
+					// supported) with their provenance SHA before falling back to "Unknown".
+					if (!ZX_ReportUnhandledMapInfo(sc, sc.String))
+						sc.ScriptMessage("Unknown property '%s' found in map definition\n", sc.String);
 					SkipToNext();
 				}
 				else
