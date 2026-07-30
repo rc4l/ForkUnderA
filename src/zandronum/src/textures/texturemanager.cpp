@@ -1244,6 +1244,20 @@ void FTextureManager::PrecacheLevel (void)
 	memset (hitlist, 0, cnt);
 
 	screen->GetHitlist(hitlist);
+
+	// [ZandroX] uzdoom@3849cb862: honor the level's PrecacheTextures list.
+	if (level.info != NULL)
+	{
+		for (unsigned t = 0; t < level.info->PrecacheTextures.Size(); ++t)
+		{
+			int idx = level.info->PrecacheTextures[t];
+			if (idx > 0 && idx < cnt)
+			{
+				hitlist[idx] |= 1;
+			}
+		}
+	}
+
 	for (int i = cnt - 1; i >= 0; i--)
 	{
 		Renderer->PrecacheTexture(ByIndex(i), hitlist[i]);

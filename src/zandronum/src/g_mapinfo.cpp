@@ -302,6 +302,8 @@ void level_info_t::Reset()
 	DefaultEnvironment = 0;
 	PrecacheSounds.Clear();
 	ACSLibraries.Clear();
+	PrecacheClasses.Clear();
+	PrecacheTextures.Clear();
 }
 
 
@@ -1206,6 +1208,40 @@ DEFINE_MAP_OPTION(textmusic, true)
 {
 	parse.ParseAssign();
 	parse.ParseMusic(info->FinaleMusic, info->finalemusicorder);
+}
+
+// [ZandroX] PrecacheClasses: force-precache the sprites of named actor
+// classes. Ported from uzdoom@65e158954.
+DEFINE_MAP_OPTION(PrecacheClasses, true)
+{
+	parse.ParseAssign();
+
+	do
+	{
+		parse.sc.MustGetString();
+		info->PrecacheClasses.Push(FName(parse.sc.String));
+	} while (parse.sc.CheckString(","));
+}
+
+// [ZandroX] PrecacheTextures: force-precache the named textures.
+// Ported from uzdoom@3849cb862.
+DEFINE_MAP_OPTION(PrecacheTextures, true)
+{
+	parse.ParseAssign();
+
+	do
+	{
+		parse.sc.MustGetString();
+		FTextureID tex = TexMan.CheckForTexture(parse.sc.String, FTexture::TEX_MiscPatch);
+		if (!tex.Exists())
+		{
+			parse.sc.ScriptMessage("Unknown texture \"%s\"", parse.sc.String);
+		}
+		else
+		{
+			info->PrecacheTextures.Push(tex.GetIndex());
+		}
+	} while (parse.sc.CheckString(","));
 }
 
 DEFINE_MAP_OPTION(redirect, true)
