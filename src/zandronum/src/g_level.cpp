@@ -2030,6 +2030,7 @@ void G_InitLevelLocals ()
 	level.teamdamage = teamdamage;
 	level.flags = 0;
 	level.flags2 = 0;
+	level.flags3 = 0;	// [rc4l]
 	// [BB]
 	level.flagsZA = 0;
 
@@ -2084,6 +2085,7 @@ void G_InitLevelLocals ()
 	level.clusterflags = clus ? clus->flags : 0;
 	level.flags |= info->flags;
 	level.flags2 |= info->flags2;
+	level.flags3 |= info->flags3;	// [rc4l]
 	// [BB]
 	level.flagsZA |= info->flagsZA;
 	level.levelnum = info->levelnum;
