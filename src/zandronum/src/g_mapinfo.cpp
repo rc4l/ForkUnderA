@@ -2172,6 +2172,48 @@ static void SetLevelNum (level_info_t *info, int num)
 
 //==========================================================================
 //
+// [ZandroX] uzdoom@9e2830a3d: MAPINFO "DamageType <name> { ... }" block.
+// Defines global damage-type properties (factor, noarmor, replacefactor),
+// stored in the engine's existing GlobalDamageDefinitions table.
+//
+//==========================================================================
+
+void FMapInfoParser::ParseDamageDefinition()
+{
+	sc.MustGetString();
+	FName damageType = sc.String;
+
+	DamageTypeDefinition dtd;
+	ParseOpenBrace();
+	while (!ParseCloseBrace())
+	{
+		if (sc.Compare("FACTOR"))
+		{
+			ParseAssign();
+			sc.MustGetFloat();
+			dtd.DefaultFactor = FLOAT2FIXED(sc.Float);
+			// A factor of 0 with no explicit replace still means "immune".
+			if (dtd.DefaultFactor == 0)
+				dtd.ReplaceFactor = true;
+		}
+		else if (sc.Compare("REPLACEFACTOR"))
+		{
+			dtd.ReplaceFactor = true;
+		}
+		else if (sc.Compare("NOARMOR"))
+		{
+			dtd.NoArmor = true;
+		}
+		else
+		{
+			sc.ScriptError("Unexpected data (%s) in damagetype definition.", sc.String);
+		}
+	}
+	dtd.Apply(damageType);
+}
+
+//==========================================================================
+//
 // G_DoParseMapInfo
 // Parses a single MAPINFO lump
 // data for wadlevelinfos and wadclusterinfos.
@@ -2294,6 +2336,29 @@ void FMapInfoParser::ParseMapInfo (int lump, level_info_t &gamedefaults, level_i
 			else
 			{
 				sc.ScriptError("automap colorset definitions not supported with old MAPINFO syntax");
+			}
+		}
+		// [ZandroX] uzdoom@9e2830a3d: DamageType global definitions (real port).
+		else if (sc.Compare("damagetype"))
+		{
+			format_type = FMT_New;
+			ParseDamageDefinition();
+		}
+		// [ZandroX] Editor-number / spawn-number / conversation-id maps
+		// (uzdoom doomednums@15dbbc913, spawnnums@2ec8e2c2a,
+		// conversationids@b6a4511dd): these require GZDoom's deferred
+		// class-resolution machinery (SpawnMap/InitClassMap), which this base
+		// lacks. Skip the block and warn, so wads using them still load.
+		else if (sc.Compare("doomednums") || sc.Compare("spawnnums") || sc.Compare("conversationids"))
+		{
+			static const char *shas[] = { "15dbbc913", "2ec8e2c2a", "b6a4511dd" };
+			const char *sha = sc.Compare("doomednums") ? shas[0] : (sc.Compare("spawnnums") ? shas[1] : shas[2]);
+			Printf(TEXTCOLOR_ORANGE "MAPINFO '%s' block needs deferred class resolution not present in this port; skipped (uzdoom@%s)\n", sc.String, sha);
+			format_type = FMT_New;
+			ParseOpenBrace();
+			while (sc.GetString())
+			{
+				if (ParseCloseBrace()) break;
 			}
 		}
 		else
