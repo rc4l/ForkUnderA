@@ -12,7 +12,7 @@ not a cop-out).
 | keyword | uzdoom | status |
 |---|---|---|
 | compat_multiexit | 51da78ba2 | **GATED** — G_ChangeLevel `ga_completed` guard |
-| compat_checkswitchrange | d4d010ac3 | behaviour present (P_CheckSwitchRange) — gate wiring in follow-up |
+| compat_checkswitchrange | d4d010ac3 | **GATED** — P_CheckSwitchRange returns true (no range check) |
 | compat_scriptwait | cbd447962 | behaviour present (ACS ScriptWait) — gate wiring in follow-up |
 | compat_explode2 | dc67355e9 | gate wiring in follow-up (radius-attack) |
 | compat_soundcutoff | ef5707d73 | gate wiring in follow-up (sound owner cutoff) |
