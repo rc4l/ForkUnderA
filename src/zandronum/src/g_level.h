@@ -234,6 +234,8 @@ enum ELevelFlags : unsigned int
 	LEVEL3_E3M8SPECIAL			= 0x00000800,	// uzdoom@e2e8ec8b3: vanilla E3M8 boss action
 	LEVEL3_E4M6SPECIAL			= 0x00001000,	// uzdoom@e2e8ec8b3: vanilla E4M6 boss action
 	LEVEL3_E4M8SPECIAL			= 0x00002000,	// uzdoom@e2e8ec8b3: vanilla E4M8 boss action
+	LEVEL3_LOOKUPEXITTEXT		= 0x00004000,	// uzdoom@49b77f3a1: per-map exittext is a $lookup
+	LEVEL3_FINALEPIC			= 0x00008000,	// uzdoom@49b77f3a1: per-map finale backdrop is a pic (textpic)
 
 	// [BB] Zandronum flags
 	LEVEL_ZA_NOBOTNODES			= 0x00000001,	// [BC] Level does not use bot nodes.
@@ -355,6 +357,13 @@ struct level_info_t
 
 	FString		SoundInfo;
 	FString		SndSeq;
+
+	// [ZandroX] Per-level finale (independent of the cluster). Ported from
+	// uzdoom@49b77f3a1: exittext / textflat / textpic / textmusic.
+	FString		FinaleText;		// exittext
+	FString		FinaleFlat;		// textflat (or textpic backdrop, see LEVEL3_FINALEPIC)
+	FString		FinaleMusic;	// textmusic
+	int			finalemusicorder;
 
 	float		teamdamage;
 

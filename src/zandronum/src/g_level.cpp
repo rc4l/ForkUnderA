@@ -1711,6 +1711,28 @@ void G_WorldDone (void)
 	{
 		nextcluster = FindClusterInfo (FindLevelInfo (nextlevel)->cluster);
 
+		// [ZandroX] uzdoom@49b77f3a1: a level may define its own finale text
+		// (exittext/textflat/textpic/textmusic) that takes precedence over the
+		// cluster's exit/enter text.
+		if (level.info != NULL && level.info->FinaleText.IsNotEmpty()
+			&& NETWORK_GetState( ) == NETSTATE_SINGLE)
+		{
+			const char *music = level.info->FinaleMusic.IsNotEmpty()
+				? level.info->FinaleMusic.GetChars() : thiscluster->MessageMusic.GetChars();
+			int musicorder = level.info->FinaleMusic.IsNotEmpty()
+				? level.info->finalemusicorder : thiscluster->musicorder;
+			const char *flat = level.info->FinaleFlat.IsNotEmpty()
+				? level.info->FinaleFlat.GetChars() : thiscluster->FinaleFlat.GetChars();
+			F_StartFinale (music, musicorder,
+				thiscluster->cdtrack, thiscluster->cdid,
+				flat, level.info->FinaleText,
+				false,
+				level.info->flags3 & LEVEL3_FINALEPIC,
+				level.info->flags3 & LEVEL3_LOOKUPEXITTEXT,
+				false);
+			return;
+		}
+
 		// [rc4l] uzdoom@20b6395cf: 'needclustertext' forces the cluster text even within the same
 		// cluster; 'noclustertext' suppresses it entirely.
 		if ((( nextcluster->cluster != level.cluster ) || ( level.flags3 & LEVEL3_FORCECLUSTERTEXT ))

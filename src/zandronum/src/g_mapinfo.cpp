@@ -292,6 +292,10 @@ void level_info_t::Reset()
 	intermusicorder = 0;
 	SoundInfo = "";
 	SndSeq = "";
+	FinaleText = "";
+	FinaleFlat = "";
+	FinaleMusic = "";
+	finalemusicorder = 0;
 	bordertexture[0] = 0;
 	teamdamage = 0.f;
 	specialactions.Clear();
@@ -1171,6 +1175,37 @@ DEFINE_MAP_OPTION(loadacs, true)
 		parse.sc.MustGetString();
 		info->ACSLibraries.Push(FName(parse.sc.String));
 	} while (parse.sc.CheckString(","));
+}
+
+// [ZandroX] Per-level finale (independent of the cluster).
+// Ported from uzdoom@49b77f3a1.
+DEFINE_MAP_OPTION(exittext, true)
+{
+	parse.ParseAssign();
+	if (parse.ParseLookupName(info->FinaleText))
+		info->flags3 |= LEVEL3_LOOKUPEXITTEXT;
+	else
+		info->flags3 &= ~LEVEL3_LOOKUPEXITTEXT;
+}
+
+DEFINE_MAP_OPTION(textflat, true)
+{
+	parse.ParseAssign();
+	parse.ParseLumpOrTextureName(info->FinaleFlat);
+	info->flags3 &= ~LEVEL3_FINALEPIC;
+}
+
+DEFINE_MAP_OPTION(textpic, true)
+{
+	parse.ParseAssign();
+	parse.ParseLumpOrTextureName(info->FinaleFlat);
+	info->flags3 |= LEVEL3_FINALEPIC;
+}
+
+DEFINE_MAP_OPTION(textmusic, true)
+{
+	parse.ParseAssign();
+	parse.ParseMusic(info->FinaleMusic, info->finalemusicorder);
 }
 
 DEFINE_MAP_OPTION(redirect, true)
