@@ -1296,6 +1296,7 @@ MapFlagHandlers[] =
 	{ "noclustertext",					MITYPE_SETFLAG3, LEVEL3_NOCLUSTERTEXT, 0 },		// [rc4l] uzdoom@20b6395cf
 	{ "needclustertext",				MITYPE_SETFLAG3, LEVEL3_FORCECLUSTERTEXT, 0 },	// [rc4l] uzdoom@20b6395cf
 	{ "nogravity",						MITYPE_SETFLAG3, LEVEL3_NOGRAVITY, 0 },			// [rc4l] uzdoom@3781c43ae
+	{ "propermonsterfallingdamage",	MITYPE_SETFLAG3, LEVEL3_PROPERMONSTERFALLDMG, 0 },	// [rc4l] uzdoom@e74b9f195
 	{ "ironlichspecial",				MITYPE_SETFLAG,	LEVEL_HEADSPECIAL, 0 },
 	{ "specialaction_exitlevel",		MITYPE_SCFLAGS,	0, ~LEVEL_SPECACTIONSMASK },
 	{ "specialaction_opendoor",			MITYPE_SCFLAGS,	LEVEL_SPECOPENDOOR, ~LEVEL_SPECACTIONSMASK },
@@ -1434,6 +1435,7 @@ static const ZXUnhandledMapInfoKey ZXUnhandledMapKeys[] =
 {
 	// --- map flags: GL-renderer / portal state (parse-only) ---
 	{ "attenuatelights",		ZXUH_PARSEONLY,   "63bba40d7" },
+	{ "forceworldpanning",		ZXUH_PARSEONLY,   "74ea9143e" },	// our GL caches bWorldPanning in the per-texture material (no per-wall read); true per-level forcing needs a render-path refactor
 	{ "compat_emulatemikoportals",ZXUH_PARSEONLY, "70ec7b64a" },
 	{ "disableshadowmap",		ZXUH_PARSEONLY,   "0cffeef2c" },
 	{ "enableshadowmap",		ZXUH_PARSEONLY,   "0cffeef2c" },
