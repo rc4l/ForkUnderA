@@ -44,12 +44,20 @@ ACTION  = re.compile(r"A_[A-Z][A-Za-z0-9]*")
 PREFIX  = re.compile(r"^([a-z0-9]+)_")
 
 
-def file_subsystem(fname):
+def file_subsystems(fname):
+    """Subsystem tags from a filename: the ZDoom prefix (readable) PLUS the specific name
+    token after it -- so d_net -> {main, net}, g_level -> {game, level}, p_setup -> {playsim, setup}.
+    Broad prefix stays for grouping; the name breaks it down."""
     stem = fname.rsplit(".", 1)[0]
     m = PREFIX.match(stem)
-    if m:
-        return ZDOOM_PREFIX.get(m.group(1), m.group(1))
-    return stem
+    if not m:
+        return {stem}
+    prefix = m.group(1)
+    out = {ZDOOM_PREFIX.get(prefix, prefix)}
+    name = re.match(r"[a-z0-9]+", stem[len(prefix) + 1:])
+    if name and len(name.group(0)) >= 2:
+        out.add(name.group(0))
+    return out
 
 
 def path_tags(path):
@@ -70,9 +78,11 @@ def path_tags(path):
             q = q[len(root):]
             break
     parts = q.split("/")
-    tags.update(d for d in parts[:-1] if d)   # every directory component (literal)
+    dirs = {d for d in parts[:-1] if d}       # every directory component (literal)
+    tags |= dirs
     if parts[-1]:
-        tags.add(file_subsystem(parts[-1]))   # filename subsystem prefix
+        for sub in file_subsystems(parts[-1]):   # subsystem + name token; "f:" marks file-derived
+            tags.add(sub if sub in dirs else "f:" + sub)
     return tags
 
 
