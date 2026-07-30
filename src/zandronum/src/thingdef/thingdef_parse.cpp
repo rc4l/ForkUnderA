@@ -43,6 +43,7 @@
 #include "a_pickups.h"
 #include "sc_man.h"
 #include "thingdef.h"
+#include "features/dupconst/computation/dup_const_compute.h"
 #include "a_morph.h"
 #include "cmdlib.h"
 #include "templates.h"
@@ -166,6 +167,73 @@ FxExpression *ParseParameter(FScanner &sc, PClass *cls, char type, bool constant
 
 //==========================================================================
 //
+// [rc4l] A global DECORATE constant was defined twice. This used to be a hard error, which meant
+// the engine shipping a constant a mod also defines would refuse to start the game entirely --
+// A_Overlay's STYLE_* and A_JumpIfInput's BT_*/JIF_* did exactly that, and MM8BDM (which brings
+// its own STYLE_*) hit 12 of them and quit before the menu.
+//
+// Stock Zandronum ships none of these, so mods have always brought their own and will keep doing
+// so. Treat the redefinition as a warning instead: the FIRST definition stays in force, and since
+// the engine's own constants.txt is parsed from zandronum.pk3 before any pwad, that means THE
+// ENGINE VALUE WINS and the mod's copy is ignored.
+//
+// The warning prints both values, because engine-wins is not always behaviour-preserving. The
+// STYLE_* names diverge above STYLE_Stencil -- the engine's DECORATE values run 6,7,8… while the
+// ACS APROP_RenderStyle values mods use run 64,65,66… (see LegacyRenderStyleIndices in p_acs.cpp).
+// A mod whose STYLE_Translucent means 64 will now get 6, so it loads but renders differently. That
+// is the deliberate trade for never fataling; the differing-value case is called out explicitly so
+// it shows up in the console rather than as a silent visual bug.
+//
+// Class-scoped constants are left as errors: those are a mod redefining its own symbol, which is a
+// genuine authoring mistake rather than an engine/mod collision.
+//
+// Returns true if the duplicate was tolerated (caller should not raise an error).
+//==========================================================================
+
+static bool HandleDuplicateConstant (FScanner &sc, PSymbolTable *symt, PClass *cls,
+									 FName symname, const PSymbolConst *dropped)
+{
+	const PSymbol *existing = symt->FindSymbol (symname, false);
+	const bool existingIsConstant = ( existing != NULL ) && ( existing->SymbolType == SYM_Const );
+	const PSymbolConst *kept = existingIsConstant
+		? static_cast<const PSymbolConst *>(existing) : NULL;
+
+	const bool sameValue = existingIsConstant
+		&& ( kept->ValueType == dropped->ValueType )
+		&& ( kept->ValueType == VAL_Int ? ( kept->Value == dropped->Value )
+										: ( kept->Float == dropped->Float ) );
+
+	// [rc4l] The policy itself lives in the compute unit so it is unit-tested; this function only
+	// looks up the existing symbol and renders the message.
+	const zx::DuplicateConstantAction action =
+		zx::ComputeDuplicateConstantAction( cls == NULL, existingIsConstant, sameValue );
+	if ( action == zx::DupConst_Error )
+		return false;
+
+	FString keptText, droppedText;
+	if ( kept->ValueType == VAL_Int ) keptText.Format( "%d", kept->Value );
+	else keptText.Format( "%f", kept->Float );
+	if ( dropped->ValueType == VAL_Int ) droppedText.Format( "%d", dropped->Value );
+	else droppedText.Format( "%f", dropped->Float );
+
+	if ( action == zx::DupConst_WarnSameValue )
+	{
+		FScriptPosition(sc).Message (MSG_WARNING,
+			"'%s' is already defined globally with the same value (%s); keeping the existing "
+			"definition.", symname.GetChars(), keptText.GetChars());
+	}
+	else
+	{
+		FScriptPosition(sc).Message (MSG_WARNING,
+			"'%s' is already defined globally as %s; this redefinition to %s is IGNORED and the "
+			"existing value is kept. Anything here relying on %s will behave differently.",
+			symname.GetChars(), keptText.GetChars(), droppedText.GetChars(), droppedText.GetChars());
+	}
+	return true;
+}
+
+//==========================================================================
+//
 // ActorConstDef
 //
 // Parses a constant definition.
@@ -199,10 +267,16 @@ static void ParseConstant (FScanner &sc, PSymbolTable * symt, PClass *cls)
 		}
 		if (symt->AddSymbol (sym) == NULL)
 		{
+			// [rc4l] Global duplicates warn and keep the existing (engine) value; see
+			// HandleDuplicateConstant. Anything else stays a hard error.
+			const bool tolerated = HandleDuplicateConstant (sc, symt, cls, symname, sym);
 			delete sym;
-			sc.ScriptMessage ("'%s' is already defined in '%s'.",
-				symname.GetChars(), cls? cls->TypeName.GetChars() : "Global");
-			FScriptPosition::ErrorCounter++;
+			if (!tolerated)
+			{
+				sc.ScriptMessage ("'%s' is already defined in '%s'.",
+					symname.GetChars(), cls? cls->TypeName.GetChars() : "Global");
+				FScriptPosition::ErrorCounter++;
+			}
 		}
 	}
 	else
@@ -240,10 +314,16 @@ static void ParseEnum (FScanner &sc, PSymbolTable *symt, PClass *cls)
 		sym->Value = currvalue;
 		if (symt->AddSymbol (sym) == NULL)
 		{
+			// [rc4l] Same rule as ParseConstant: a global enum member colliding with an existing
+			// global constant warns and keeps the engine's value instead of killing the load.
+			const bool tolerated = HandleDuplicateConstant (sc, symt, cls, symname, sym);
 			delete sym;
-			sc.ScriptMessage ("'%s' is already defined in '%s'.",
-				symname.GetChars(), cls? cls->TypeName.GetChars() : "Global");
-			FScriptPosition::ErrorCounter++;
+			if (!tolerated)
+			{
+				sc.ScriptMessage ("'%s' is already defined in '%s'.",
+					symname.GetChars(), cls? cls->TypeName.GetChars() : "Global");
+				FScriptPosition::ErrorCounter++;
+			}
 		}
 		// This allows a comma after the last value but doesn't enforce it.
 		if (sc.CheckToken('}')) break;

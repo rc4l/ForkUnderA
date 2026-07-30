@@ -256,6 +256,11 @@ void AActor::Serialize (FArchive &arc)
 	{
 		arc << flags7;
 	}
+	// [rc4l] MBF21 flags word. Guarded so older snapshots (which never stored it) load with 0.
+	if (SaveVersion >= 4509)
+	{
+		arc << flags8;
+	}
 	arc	<< special1
 		<< special2
 		<< health
@@ -382,6 +387,16 @@ void AActor::Serialize (FArchive &arc)
 	if (SaveVersion >= 4508)
 	{
 		arc << projectilepassradius;
+	}
+
+	// [rc4l] MBF21 damage groups. Version-guarded so older snapshots (which never stored them) load
+	// with the class default (0 = vanilla behaviour). These are per-actor state set from DeHackEd.
+	if (SaveVersion >= 4509)
+	{
+		arc << InfightingGroup
+			<< ProjectileGroup
+			<< SplashGroup
+			<< RipSound;
 	}
 
 	{
@@ -4192,6 +4207,15 @@ void AActor::Tick ()
 				}
 			}
 		}
+		}
+
+		// [rc4l] MBF21: sectors with the kill-monsters bit kill grounded (non-floating) monsters.
+		// Server-authoritative; the death is then replicated to clients like any other.
+		if (( Sector->special & KILL_MONSTERS_MASK ) && z <= floorz &&
+			player == NULL && (flags & MF_SHOOTABLE) && !(flags & MF_FLOAT) &&
+			( NETWORK_InClientMode() == false ))
+		{
+			P_DamageMobj (this, NULL, NULL, TELEFRAG_DAMAGE, NAME_InstantDeath);
 		}
 
 		// [RH] Consider carrying sectors here
