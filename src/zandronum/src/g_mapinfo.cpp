@@ -802,6 +802,11 @@ void FMapInfoParser::ParseCluster()
 		{
 			clusterinfo->flags |= CLUSTER_HUB;
 		}
+		// [ZandroX] uzdoom@ed2b73833: show the intermission even within a hub.
+		else if (sc.Compare("allowintermission"))
+		{
+			clusterinfo->flags |= CLUSTER_ALLOWINTERMISSION;
+		}
 		else if (sc.Compare("cdtrack"))
 		{
 			ParseAssign();

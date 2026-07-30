@@ -541,6 +541,7 @@ struct cluster_info_t
 #define CLUSTER_LOOKUPENTERTEXT	0x00000020	// Enter text is the name of a language string
 #define CLUSTER_LOOKUPNAME		0x00000040	// Name is the name of a language string
 #define CLUSTER_LOOKUPCLUSTERNAME 0x00000080	// Cluster name is the name of a language string
+#define CLUSTER_ALLOWINTERMISSION 0x00000100	// [ZandroX] uzdoom@ed2b73833: show intermission even for intra-hub travel
 
 extern FLevelLocals level;
 
