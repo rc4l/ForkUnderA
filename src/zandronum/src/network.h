@@ -212,6 +212,13 @@ enum ActorScaleFlag
 	ACTORSCALE_Y = 2
 };
 
+// [ZandroX] Which dimensions a SetThingSize command carries.
+enum ActorSizeFlag
+{
+	ACTORSIZE_RADIUS = 1,
+	ACTORSIZE_HEIGHT = 2
+};
+
 enum SetPlayerStatusFlag
 {
 	SETPLAYERSTATUS_CLIENTSENDSUPDATE		= 1 << 0,

@@ -297,6 +297,21 @@ Command SetThingScale
 	EndIf
 EndCommand
 
+# [ZandroX] Runtime radius/height change (A_SetSize / APROP_Radius / APROP_Height).
+Command SetThingSize
+	ExtendedCommand
+	Actor actor
+	Byte sizeflags
+
+	If (sizeflags & ACTORSIZE_RADIUS)
+		Long radius
+	EndIf
+
+	If (sizeflags & ACTORSIZE_HEIGHT)
+		Long height
+	EndIf
+EndCommand
+
 Command ThingIsCorpse
 	Actor actor
 	# [TP] TODO: Does this really need to be sent? The client should be able to deduce this.

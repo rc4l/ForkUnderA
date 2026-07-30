@@ -1705,6 +1705,72 @@ bool P_TestMobjLocation(AActor *mobj)
 }
 
 
+//----------------------------------------------------------------------------
+//
+// AActor :: SetSize
+//
+// [ZandroX] Adjusts the actor's radius/height at runtime. The actor is unlinked
+// from the world before the change and relinked afterwards, because blockmap
+// links and the touching_sectorlist depend on the radius. When testpos is true
+// the change is reverted (and false returned) if the actor no longer fits.
+//
+// Modeled on GZDoom/UZDoom's A_SetSize:
+// https://github.com/UZDoom/UZDoom/blob/master/src/playsim/p_actionfunctions.cpp
+//
+//----------------------------------------------------------------------------
+
+bool AActor::SetSize (fixed_t newradius, fixed_t newheight, bool testpos)
+{
+	fixed_t oldradius = radius;
+	fixed_t oldheight = height;
+
+	UnlinkFromWorld();
+	radius = newradius;
+	height = newheight;
+	LinkToWorld();
+
+	if (testpos && !P_TestMobjLocation(this))
+	{
+		UnlinkFromWorld();
+		radius = oldradius;
+		height = oldheight;
+		LinkToWorld();
+		return false;
+	}
+
+	// [ZandroX] For a player, the pawn's height is re-derived every tic from
+	// FullHeight * crouchfactor (see APlayerPawn::Tick), so update the base
+	// standing height too or the new size would be overwritten next tic.
+	if (player != NULL && player->mo == this)
+		static_cast<APlayerPawn *>(this)->FullHeight = newheight;
+
+	return true;
+}
+
+
+//----------------------------------------------------------------------------
+//
+// AActor :: SetHitSize
+//
+// [ZandroX] Adjusts the attack extent (HitRadius/HitHeight -> projectilepass
+// radius/height) at runtime. The blockmap link radius is MAX(radius,
+// GetAttackRadius()) (see p_maputl.cpp), so a change to the attack radius must
+// relink the actor. Unlike SetSize there is no position test: the attack extent
+// is not the movement radius, so widening it cannot get the actor stuck. The
+// extent is server-authoritative and, like the DECORATE HitRadius/HitHeight
+// properties, is not networked.
+//
+//----------------------------------------------------------------------------
+
+void AActor::SetHitSize (fixed_t hitradius, fixed_t hitheight)
+{
+	UnlinkFromWorld();
+	projectilepassradius = hitradius;
+	projectilepassheight = hitheight;
+	LinkToWorld();
+}
+
+
 //=============================================================================
 //
 // P_CheckOnmobj(AActor *thing)

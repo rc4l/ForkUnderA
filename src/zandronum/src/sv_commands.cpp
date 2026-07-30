@@ -4260,6 +4260,62 @@ void SERVERCOMMANDS_UpdateThingScaleNotAtDefault( AActor* pActor, ULONG ulPlayer
 
 //*****************************************************************************
 //
+// [ZandroX] Tells clients about a runtime radius/height change.
+//
+void SERVERCOMMANDS_SetThingSize( AActor* pActor, unsigned int sizeFlags, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	if ( !EnsureActorHasNetID( pActor ) )
+		return;
+
+	if ( sizeFlags == 0 )
+		return;
+
+	// [ZandroX] For a player pawn the live height is re-derived from the base
+	// standing height (FullHeight) every tic, so send FullHeight instead - that
+	// is what the client's crouch recompute needs.
+	fixed_t heightToSend = pActor->height;
+	if ( pActor->player != NULL && pActor->player->mo == pActor )
+		heightToSend = static_cast<APlayerPawn *>( pActor )->FullHeight;
+
+	NetCommand command( SVC2_SETTHINGSIZE );
+	command.addShort( pActor->NetID );
+	command.addByte( sizeFlags );
+	if ( sizeFlags & ACTORSIZE_RADIUS )
+		command.addLong( (SDWORD)( pActor->radius ) );
+	if ( sizeFlags & ACTORSIZE_HEIGHT )
+		command.addLong( (SDWORD)( heightToSend ) );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
+// [ZandroX] Sends the current size to a (joining) client if it differs from the
+// class default, so late joiners see runtime-resized actors correctly.
+//
+void SERVERCOMMANDS_UpdateThingSizeNotAtDefault( AActor* pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	// [ZandroX] Sanity check.
+	if ( pActor == NULL )
+		return;
+
+	// [ZandroX] Compare against the class defaults. For a player compare the base
+	// standing height (FullHeight) so a merely-crouching player isn't flagged.
+	fixed_t baseHeight = pActor->height;
+	if ( pActor->player != NULL && pActor->player->mo == pActor )
+		baseHeight = static_cast<APlayerPawn *>( pActor )->FullHeight;
+
+	unsigned int sizeFlags = 0;
+	if ( pActor->radius != pActor->GetDefault()->radius )
+		sizeFlags |= ACTORSIZE_RADIUS;
+	if ( baseHeight != pActor->GetDefault()->height )
+		sizeFlags |= ACTORSIZE_HEIGHT;
+
+	if ( sizeFlags != 0 )
+		SERVERCOMMANDS_SetThingSize( pActor, sizeFlags, ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
 void SERVERCOMMANDS_FlashStealthMonster( AActor* pActor, SBYTE direction, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	if ( EnsureActorHasNetID( pActor ) == false )
