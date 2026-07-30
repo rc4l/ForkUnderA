@@ -1709,7 +1709,11 @@ void G_WorldDone (void)
 	{
 		nextcluster = FindClusterInfo (FindLevelInfo (nextlevel)->cluster);
 
-		if (nextcluster->cluster != level.cluster && NETWORK_GetState( ) == NETSTATE_SINGLE )
+		// [rc4l] uzdoom@20b6395cf: 'needclustertext' forces the cluster text even within the same
+		// cluster; 'noclustertext' suppresses it entirely.
+		if ((( nextcluster->cluster != level.cluster ) || ( level.flags3 & LEVEL3_FORCECLUSTERTEXT ))
+			&& !( level.flags3 & LEVEL3_NOCLUSTERTEXT )
+			&& NETWORK_GetState( ) == NETSTATE_SINGLE )
 		{
 			// Only start the finale if the next level's cluster is different
 			// than the current one and we're not in deathmatch. [BC] And we're not in multiplayer
