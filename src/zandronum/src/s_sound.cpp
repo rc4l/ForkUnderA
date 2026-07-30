@@ -119,7 +119,7 @@ static void CalcPosVel(int type, const AActor *actor, const sector_t *sector, co
 static void CalcSectorSoundOrg(const sector_t *sec, int channum, fixed_t *x, fixed_t *y, fixed_t *z);
 static void CalcPolyobjSoundOrg(const FPolyObj *poly, fixed_t *x, fixed_t *y, fixed_t *z);
 static FSoundChan *S_StartSound(AActor *mover, const sector_t *sec, const FPolyObj *poly,
-	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation, FRolloffInfo *rolloff);
+	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation, FRolloffInfo *rolloff, int pitch_override);
 static void S_SetListener(SoundListener &listener, AActor *listenactor);
 
 // PRIVATE DATA DEFINITIONS ------------------------------------------------
@@ -147,6 +147,7 @@ int S_SoundCurveSize;
 FBoolCVar noisedebug ("noise", false, 0);	// [RH] Print sound debugging info?
 CVAR (Int, snd_channels, 32, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)	// number of channels available
 CVAR (Bool, snd_flipstereo, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+EXTERN_CVAR (Bool, snd_pitched)	// [rc4l] gates the random PitchMask variation (see S_StartSound)
 
 // [AK] Prevents any music changes as if a playlist was playing, originally from ZCC.
 CVAR (Bool, snd_lockmusic, false, CVAR_ARCHIVE);
@@ -883,7 +884,7 @@ static void CalcPolyobjSoundOrg(const FPolyObj *poly, fixed_t *x, fixed_t *y, fi
 
 static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyObj *poly,
 	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation,
-	FRolloffInfo *forcedrolloff=NULL)
+	FRolloffInfo *forcedrolloff=NULL, int pitch_override=-1)
 {
 	sfxinfo_t *sfx;
 	int chanflags;
@@ -1126,8 +1127,16 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		return NULL;
 	}
 
-	// Vary the sfx pitches.
-	if (sfx->PitchMask != 0)
+	// [rc4l] An explicit pitch (e.g. from A_StartSound, or replicated from the server) always wins
+	// and is applied unconditionally by the backend. The snd_pitched CVar only gates the random
+	// PitchMask variation -- so with snd_pitched off we leave randomised sounds at NORM_PITCH but
+	// still honour an explicit request. (Historically the random value was always computed here and
+	// the OpenAL backend discarded it when snd_pitched was off; that gate now lives here instead.)
+	if (pitch_override >= 0)
+	{
+		pitch = pitch_override;
+	}
+	else if (snd_pitched && sfx->PitchMask != 0)
 	{
 		pitch = NORM_PITCH - (M_Random() & sfx->PitchMask) + (M_Random() & sfx->PitchMask);
 	}
@@ -1271,13 +1280,13 @@ void S_RestartSound(FSoundChan *chan)
 //
 //==========================================================================
 
-void S_Sound (int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient) // [EP] Added bSoundOnClient.
+void S_Sound (int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient, int pitch) // [EP] Added bSoundOnClient. [rc4l] explicit pitch.
 {
-	S_StartSound (NULL, NULL, NULL, NULL, channel, sound_id, volume, attenuation);
+	S_StartSound (NULL, NULL, NULL, NULL, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [EP] If we're the server, tell the clients to make a sound.
 	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
-		SERVERCOMMANDS_Sound( channel, S_GetName( sound_id ), volume, attenuation );
+		SERVERCOMMANDS_Sound( channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, pitch );
 }
 
 //==========================================================================
@@ -1286,15 +1295,16 @@ void S_Sound (int channel, FSoundID sound_id, float volume, float attenuation, b
 //
 //==========================================================================
 
-void S_Sound (AActor *ent, int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient) // [EP] Added bSoundOnClient.
+void S_Sound (AActor *ent, int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient, int pitch) // [EP] Added bSoundOnClient. [rc4l] explicit pitch.
 {
 	if (ent == NULL || ent->Sector->Flags & SECF_SILENT)
 		return;
-	S_StartSound (ent, NULL, NULL, NULL, channel, sound_id, volume, attenuation);
+	S_StartSound (ent, NULL, NULL, NULL, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [EP] If we're the server, tell the clients to make a sound.
+	// [rc4l] Forward the explicit pitch so the client plays it at the same pitch.
 	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
-		SERVERCOMMANDS_SoundActor( ent, channel, S_GetName( sound_id ), volume, attenuation );
+		SERVERCOMMANDS_SoundActor( ent, channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, false, pitch );
 }
 
 //==========================================================================
@@ -1335,14 +1345,14 @@ void S_Sound (const FPolyObj *poly, int channel, FSoundID sound_id, float volume
 //
 //==========================================================================
 
-void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient) // [RK] Added bSoundOnClient.
+void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient, int pitch) // [RK] Added bSoundOnClient. [rc4l] explicit pitch.
 {
 	FVector3 pt(FIXED2FLOAT(x), FIXED2FLOAT(z), FIXED2FLOAT(y));
-	S_StartSound (NULL, NULL, NULL, &pt, channel, sound_id, volume, attenuation);
+	S_StartSound (NULL, NULL, NULL, &pt, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [RK] Instruct the clients to play the sound.
 	if (bSoundOnClient && (NETWORK_GetState() == NETSTATE_SERVER))
-		SERVERCOMMANDS_SoundPoint((LONG)(x),(LONG)( y),(LONG)( z), channel, S_GetName(sound_id), volume, attenuation);
+		SERVERCOMMANDS_SoundPoint((LONG)(x),(LONG)( y),(LONG)( z), channel, S_GetName(sound_id), volume, attenuation, MAXPLAYERS, 0, pitch);
 }
 
 //==========================================================================
@@ -1351,9 +1361,9 @@ void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sound_id, f
 //
 //==========================================================================
 
-void S_Sound (const sector_t *sec, int channel, FSoundID sfxid, float volume, float attenuation)
+void S_Sound (const sector_t *sec, int channel, FSoundID sfxid, float volume, float attenuation, int pitch)
 {
-	S_StartSound (NULL, sec, NULL, NULL, channel, sfxid, volume, attenuation);
+	S_StartSound (NULL, sec, NULL, NULL, channel, sfxid, volume, attenuation, NULL, pitch);
 }
 
 //==========================================================================

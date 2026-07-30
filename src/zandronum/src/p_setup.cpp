@@ -54,6 +54,7 @@
 #include "doomstat.h"
 #include "p_lnspec.h"
 #include "v_palette.h"
+#include "features/hitboxviz/hitboxviz.h"
 #include "c_console.h"
 #include "c_cvars.h"
 #include "p_acs.h"
@@ -3950,6 +3951,10 @@ void P_SetupLevel (char *lumpname, int position)
 		times[i].Reset();
 	}
 
+	// [MGOOOOOO] Debug hitbox overlay: recorded explosion regions are map coordinates, so anything
+	// left over from the previous level would be drawn in the wrong place here.
+	zx::hitboxviz::ClearBlasts();
+
 	level.maptype = MAPTYPE_UNKNOWN;
 	wminfo.partime = 180;
 
@@ -4102,6 +4107,25 @@ void P_SetupLevel (char *lumpname, int position)
 		}
 
 		FBehavior::StaticLoadDefaultModules ();
+
+		// [ZandroX] loadacs: load any per-map ACS libraries named in MAPINFO.
+		// Ported from uzdoom@6ae417725.
+		if (level.info != NULL)
+		{
+			for (unsigned int i = 0; i < level.info->ACSLibraries.Size(); ++i)
+			{
+				const char *libname = level.info->ACSLibraries[i].GetChars();
+				int acslump = Wads.CheckNumForName (libname, ns_acslibrary);
+				if (acslump >= 0)
+				{
+					FBehavior::StaticLoadModule (acslump);
+				}
+				else
+				{
+					Printf ("Could not find loadacs ACS library %s\n", libname);
+				}
+			}
+		}
 
 		P_LoadStrifeConversations (map, lumpname);
 

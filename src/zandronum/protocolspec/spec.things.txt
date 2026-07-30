@@ -310,6 +310,17 @@ Command SetThingSize
 	If (sizeflags & ACTORSIZE_HEIGHT)
 		Long height
 	EndIf
+
+	# [MGOOOOOO] Attack extent (HitRadius/HitHeight). Debug-only: these bits are set solely while
+	# sv_debugexplosions + sv_cheats are on, for the client-side hitbox overlay. Purely additive --
+	# ordinary senders never set them, so the bytes on the wire are unchanged for existing traffic.
+	If (sizeflags & ACTORSIZE_HITRADIUS)
+		Long hitradius
+	EndIf
+
+	If (sizeflags & ACTORSIZE_HITHEIGHT)
+		Long hitheight
+	EndIf
 EndCommand
 
 Command ThingIsCorpse

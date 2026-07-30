@@ -610,16 +610,18 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_PlaySoundEx)
 //
 // [rc4l] A_StartSound -- the modern successor to A_PlaySound. Ported from
 // uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514 (actor.zs A_StartSound). Mods (Eviternity II
-// among them) call it by name from DECORATE. `flags` carries uzdoom's EChanFlags: CHANF_OVERLAP
-// maps onto this base's CHAN_AUTO free-channel search (its native overlap mechanism -- never cuts
-// an existing sound); CHANF_LOOP loops. pitch/startTime and CHANF_NOSTOP are accepted for signature
-// parity but not yet honoured -- this base's S_Sound has no per-call pitch, and no shipping mod uses
-// them here.
+// among them) call it by name from DECORATE. `flags` carries uzdoom's EChanFlags:
+//   CHANF_OVERLAP -- never cut an existing sound; maps onto CHAN_AUTO's free-channel search.
+//   CHANF_NOSTOP  -- do not start if the channel is already playing anything.
+//   CHANF_LOOP    -- loop, with the same server-side looping-channel bookkeeping as A_PlaySound.
+// `pitch` is honoured by the networked-sound-pitch change; `startTime` has no backend here and is
+// accepted for signature parity only.
 //
 //==========================================================================
 enum
 {
 	CHANF_LOOP		= 256,
+	CHANF_NOSTOP	= 4096,
 	CHANF_OVERLAP	= 8192,
 };
 
@@ -643,10 +645,42 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StartSound)
 	int channel = slot & 7;
 	if ( flags & CHANF_OVERLAP )
 		channel = CHAN_AUTO;	// free-channel search never cuts an existing sound
-	if ( flags & CHANF_LOOP )
-		channel |= CHAN_LOOP;
 
-	S_Sound( self, channel, soundid, volume, attenuation, true );	// true = replicate to clients
+	// [rc4l] uzdoom pitch is a playback-rate multiplier (1.0 = normal, 0.0 = "use default"). Convert
+	// to this engine's NORM_PITCH=128 integer scale; -1 means "no explicit pitch" so the normal
+	// (possibly randomised) default is used and the client computes its own.
+	int enginePitch = ( pitch > 0.f ) ? int( pitch * 128.f ) : -1;
+
+	// CHANF_NOSTOP: bail if this channel is already playing anything.
+	if (( flags & CHANF_NOSTOP ) && S_IsActorPlayingSomething( self, channel & 7, -1 ))
+		return;
+
+	if ( flags & CHANF_LOOP )
+	{
+		// [rc4l] Looping path mirrors A_PlaySound: don't restack a loop already playing on this
+		// channel, and keep the server's looping-channel list in sync for late-joining clients.
+		if ( S_IsActorPlayingSomething( self, channel & 7, soundid ) )
+			return;
+
+		if (( NETWORK_GetState() == NETSTATE_SERVER ) && SERVER_IsChannelLooping( self, channel & 7, soundid ))
+			return;
+
+		S_Sound( self, channel | CHAN_LOOP, soundid, volume, attenuation, false, enginePitch );
+
+		if ( NETWORK_GetState() == NETSTATE_SERVER )
+		{
+			SERVERCOMMANDS_SoundActor( self, channel | CHAN_LOOP, S_GetName( soundid ), volume, attenuation, MAXPLAYERS, 0, true, enginePitch );
+			SERVER_UpdateLoopingChannels( self, channel, soundid, volume, attenuation, false );
+		}
+	}
+	else
+	{
+		// Non-looping: clear any looping record this channel held, then play + replicate.
+		if ( NETWORK_GetState() == NETSTATE_SERVER )
+			SERVER_UpdateLoopingChannels( self, channel, soundid, volume, attenuation, ( channel & CHAN_LOOP ) == false );
+
+		S_Sound( self, channel, soundid, volume, attenuation, true, enginePitch );	// true = replicate to clients
+	}
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StopSoundEx)
@@ -1883,11 +1917,15 @@ void A_FireCustomMissileHelper ( AActor * self,
 								 const PClass * ti,
 								 const angle_t Angle,
 								 const INTBOOL AimAtAngle,
-								 AActor *&linetarget )
+								 AActor *&linetarget,
+								 const INTBOOL NoAutoAim,			// [rc4l] A_FireProjectile FPF_NOAUTOAIM
+								 const INTBOOL TransferTranslation )	// [rc4l] A_FireProjectile FPF_TRANSFERTRANSLATION
 {
 	// [BB] Don't tell the clients to spawn the missile yet. This is done later
 	// after we are done manipulating angle and velocity.
-	AActor * misl=P_SpawnPlayerMissile (self, x, y, z, ti,(angle_t)( shootangle), &linetarget,	NULL, false, true, false);
+	// [rc4l] NoAutoAim maps to P_SpawnPlayerMissile's nofreeaim (arg 9): the shot keeps the exact
+	// pitch instead of vertically autoaiming at a target.
+	AActor * misl=P_SpawnPlayerMissile (self, x, y, z, ti,(angle_t)( shootangle), &linetarget,	NULL, NoAutoAim ? true : false, true, false);
 	// automatic handling of seeker missiles
 	if (misl)
 	{
@@ -1895,7 +1933,7 @@ void A_FireCustomMissileHelper ( AActor * self,
 		if (!AimAtAngle)
 		{
 			// This original implementation is to aim straight ahead and then offset
-			// the angle from the resulting direction. 
+			// the angle from the resulting direction.
 			FVector3 velocity((double)(misl->velx),(double)( misl->vely), 0);
 			fixed_t missilespeed = (fixed_t)velocity.Length();
 			misl->angle += Angle;
@@ -1905,15 +1943,25 @@ void A_FireCustomMissileHelper ( AActor * self,
 		}
 		if (misl->flags4&MF4_SPECTRAL) misl->health=-1;
 
+		// [rc4l] FPF_TRANSFERTRANSLATION: the projectile inherits the shooter's translation.
+		if (TransferTranslation)
+			misl->Translation = self->Translation;
+
 		// [BC] If we're the server, tell clients to spawn this missile.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		{
 			SERVERCOMMANDS_SpawnMissileExact( misl );
+			// [rc4l] Replicate the transferred translation after the actor exists on clients.
+			if (TransferTranslation)
+				SERVERCOMMANDS_SetThingTranslation( misl );
+		}
 	}
 }
 
 // [rc4l] Flags for A_FireProjectile, matching uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514
-// (constants.zs). This base always auto-aims and has no per-missile translation, so
-// FPF_NOAUTOAIM / FPF_TRANSFERTRANSLATION are accepted for signature parity but not yet honoured.
+// (constants.zs). All three are honoured: FPF_AIMATANGLE offsets the aim by `angle`, FPF_NOAUTOAIM
+// maps to P_SpawnPlayerMissile's nofreeaim, and FPF_TRANSFERTRANSLATION copies the shooter's
+// translation onto the projectile (replicated in multiplayer).
 enum
 {
 	FPF_AIMATANGLE			= 1,
@@ -1933,7 +1981,8 @@ enum
 //==========================================================================
 static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Angle, const INTBOOL UseAmmo,
 							   const int SpawnOfs_XY, const fixed_t SpawnHeight, const INTBOOL AimAtAngle,
-							   const fixed_t PitchAdjust )
+							   const fixed_t PitchAdjust, const INTBOOL NoAutoAim = false,
+							   const INTBOOL TransferTranslation = false )
 {
 	if (!self->player) return;
 
@@ -1964,14 +2013,14 @@ static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Ang
 		fixed_t SavedPlayerPitch = self->pitch;
 		self->pitch += PitchAdjust;
 
-		A_FireCustomMissileHelper( self, x, y, z, shootangle, ti, Angle , AimAtAngle, linetarget );
+		A_FireCustomMissileHelper( self, x, y, z, shootangle, ti, Angle , AimAtAngle, linetarget, NoAutoAim, TransferTranslation );
 
 		if (NULL != self->player )
 		{
 			if ( self->player->cheats2 & CF2_SPREAD )
 			{
-				A_FireCustomMissileHelper( self, x, y, z, shootangle + ( ANGLE_45 / 3 ), ti, Angle, AimAtAngle, linetarget );
-				A_FireCustomMissileHelper( self, x, y, z, shootangle - ( ANGLE_45 / 3 ), ti, Angle, AimAtAngle, linetarget );
+				A_FireCustomMissileHelper( self, x, y, z, shootangle + ( ANGLE_45 / 3 ), ti, Angle, AimAtAngle, linetarget, NoAutoAim, TransferTranslation );
+				A_FireCustomMissileHelper( self, x, y, z, shootangle - ( ANGLE_45 / 3 ), ti, Angle, AimAtAngle, linetarget, NoAutoAim, TransferTranslation );
 			}
 		}
 
@@ -2016,7 +2065,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireProjectile)
 	ACTION_PARAM_ANGLE(pitch, 6);
 
 	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
-					   flags & FPF_AIMATANGLE, fixed_t::FromSignedBits(pitch) );
+					   flags & FPF_AIMATANGLE, fixed_t::FromSignedBits(pitch),
+					   flags & FPF_NOAUTOAIM, flags & FPF_TRANSFERTRANSLATION );
 }
 
 

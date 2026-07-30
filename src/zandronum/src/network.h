@@ -216,7 +216,13 @@ enum ActorScaleFlag
 enum ActorSizeFlag
 {
 	ACTORSIZE_RADIUS = 1,
-	ACTORSIZE_HEIGHT = 2
+	ACTORSIZE_HEIGHT = 2,
+	// [MGOOOOOO] The attack extent (HitRadius / HitHeight) is server-authoritative and normally not
+	// replicated at all. These two bits are set only while sv_debugexplosions + sv_cheats are on,
+	// so the client-side hitbox overlay can draw a truthful attack box; ordinary play never sets
+	// them and the wire format is unchanged for every existing sender.
+	ACTORSIZE_HITRADIUS = 4,
+	ACTORSIZE_HITHEIGHT = 8
 };
 
 enum SetPlayerStatusFlag

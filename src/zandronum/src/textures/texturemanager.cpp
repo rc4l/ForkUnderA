@@ -1244,6 +1244,22 @@ void FTextureManager::PrecacheLevel (void)
 	memset (hitlist, 0, cnt);
 
 	screen->GetHitlist(hitlist);
+
+	// [ZandroX] uzdoom@3849cb862: honor the level's PrecacheTextures list.
+	// Names are resolved here (not at MAPINFO parse) because the texture
+	// manager is not yet initialized when MAPINFO is parsed.
+	if (level.info != NULL)
+	{
+		for (unsigned t = 0; t < level.info->PrecacheTextures.Size(); ++t)
+		{
+			FTextureID pic = CheckForTexture(level.info->PrecacheTextures[t].GetChars(), FTexture::TEX_Any);
+			if (pic.isValid() && pic.GetIndex() < cnt)
+			{
+				hitlist[pic.GetIndex()] |= 1;
+			}
+		}
+	}
+
 	for (int i = cnt - 1; i >= 0; i--)
 	{
 		Renderer->PrecacheTexture(ByIndex(i), hitlist[i]);

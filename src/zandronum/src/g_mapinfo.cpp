@@ -52,6 +52,7 @@
 #include "autosegs.h"
 #include "version.h"
 #include "v_text.h"
+#include "c_cvars.h"
 
 TArray<cluster_info_t> wadclusterinfos;
 TArray<level_info_t> wadlevelinfos;
@@ -252,6 +253,7 @@ void level_info_t::Reset()
 	partime = 0;
 	sucktime = 0;
 	flags = 0;
+	flags3 = 0;	// [rc4l]
 	if (gameinfo.gametype == GAME_Hexen)
 		flags2 = 0;
 	else
@@ -260,6 +262,7 @@ void level_info_t::Reset()
 	flagsZA = 0;
 	Music = "";
 	LevelName = "";
+	AuthorName = "";
 	strcpy (fadetable, "COLORMAP");
 	WallHorizLight = -8;
 	WallVertLight = +8;
@@ -282,17 +285,30 @@ void level_info_t::Reset()
 	Translator = "";
 	RedirectType = 0;
 	RedirectMap[0] = 0;
+	RedirectCVAR = 0;
+	RedirectCVARMap[0] = 0;
 	EnterPic = "";
 	ExitPic = "";
 	InterMusic = "";
 	intermusicorder = 0;
 	SoundInfo = "";
 	SndSeq = "";
+	LightningSound = "";
+	HazardColor = -1;
+	HazardFlash = -1;
+	FinaleText = "";
+	FinaleFlat = "";
+	FinaleMusic = "";
+	finalemusicorder = 0;
 	bordertexture[0] = 0;
 	teamdamage = 0.f;
 	specialactions.Clear();
 	DefaultEnvironment = 0;
 	PrecacheSounds.Clear();
+	ACSLibraries.Clear();
+	PrecacheClasses.Clear();
+	PrecacheTextures.Clear();
+	MapInterMusic.Clear();
 }
 
 
@@ -400,6 +416,24 @@ level_info_t *level_info_t::CheckLevelRedirect ()
 						return FindLevelInfo(RedirectMap);
 					}
 					break;
+				}
+			}
+		}
+	}
+	// [ZandroX] cvar_redirect: redirect if the named CVAR is non-zero.
+	// Ported from uzdoom@04ea28def.
+	if (RedirectCVAR != NAME_None)
+	{
+		FBaseCVar *cvar = FindCVar(RedirectCVAR, NULL);
+		if (cvar != NULL)
+		{
+			UCVarValue val = cvar->GetGenericRep(CVAR_Int);
+			if (val.Int != 0)
+			{
+				// check for actual presence of the map.
+				if (P_CheckMapData(RedirectCVARMap))
+				{
+					return FindLevelInfo(RedirectCVARMap);
 				}
 			}
 		}
@@ -683,6 +717,29 @@ void FMapInfoParser::ParseMusic(FString &name, int &order)
 
 //==========================================================================
 //
+// [rc4l] Known-but-unhandled CLUSTER keywords (UZDoom cutscene engine). Classified at the cluster
+// "Unknown property" fallback; SkipToNext() consumes them as before. NOT-PORTABLE.
+//
+//==========================================================================
+
+static bool ZX_ReportUnhandledCluster(FScanner &sc, const char *keyword)
+{
+	static const char *const notPortable[] = { "intro", "outro", "gameover" };	// uzdoom@cda6394a9
+	for (const char *n : notPortable)
+	{
+		if (stricmp(keyword, n) != 0) continue;
+		static TArray<FName> logged;
+		FName fn(keyword);
+		for (unsigned i = 0; i < logged.Size(); i++) if (logged[i] == fn) return true;
+		logged.Push(fn);
+		sc.ScriptMessage("cluster '%s' cutscene not supported in this port (uzdoom@cda6394a9)\n", n);
+		return true;
+	}
+	return false;
+}
+
+//==========================================================================
+//
 // ParseCluster
 // Parses a cluster definition
 //
@@ -745,6 +802,11 @@ void FMapInfoParser::ParseCluster()
 		{
 			clusterinfo->flags |= CLUSTER_HUB;
 		}
+		// [ZandroX] uzdoom@ed2b73833: show the intermission even within a hub.
+		else if (sc.Compare("allowintermission"))
+		{
+			clusterinfo->flags |= CLUSTER_ALLOWINTERMISSION;
+		}
 		else if (sc.Compare("cdtrack"))
 		{
 			ParseAssign();
@@ -767,8 +829,10 @@ void FMapInfoParser::ParseCluster()
 		}
 		else if (!ParseCloseBrace())
 		{
-			// Unknown
-			sc.ScriptMessage("Unknown property '%s' found in map definition\n", sc.String);
+			// [rc4l] Classify the UZDoom cluster cutscene keywords (intro/outro/gameover) before
+			// the generic "Unknown" fallback.
+			if (!ZX_ReportUnhandledCluster(sc, sc.String))
+				sc.ScriptMessage("Unknown property '%s' found in cluster definition\n", sc.String);
 			SkipToNext();
 		}
 		else
@@ -1112,6 +1176,126 @@ DEFINE_MAP_OPTION(PrecacheSounds, true)
 	} while (parse.sc.CheckString(","));
 }
 
+// [ZandroX] loadacs: load extra ACS library lumps for this level.
+// Ported from uzdoom@6ae417725.
+DEFINE_MAP_OPTION(loadacs, true)
+{
+	parse.ParseAssign();
+
+	do
+	{
+		parse.sc.MustGetString();
+		info->ACSLibraries.Push(FName(parse.sc.String));
+	} while (parse.sc.CheckString(","));
+}
+
+// [ZandroX] Per-level finale (independent of the cluster).
+// Ported from uzdoom@49b77f3a1.
+DEFINE_MAP_OPTION(exittext, true)
+{
+	parse.ParseAssign();
+	if (parse.ParseLookupName(info->FinaleText))
+		info->flags3 |= LEVEL3_LOOKUPEXITTEXT;
+	else
+		info->flags3 &= ~LEVEL3_LOOKUPEXITTEXT;
+}
+
+DEFINE_MAP_OPTION(textflat, true)
+{
+	parse.ParseAssign();
+	parse.ParseLumpOrTextureName(info->FinaleFlat);
+	info->flags3 &= ~LEVEL3_FINALEPIC;
+}
+
+DEFINE_MAP_OPTION(textpic, true)
+{
+	parse.ParseAssign();
+	parse.ParseLumpOrTextureName(info->FinaleFlat);
+	info->flags3 |= LEVEL3_FINALEPIC;
+}
+
+DEFINE_MAP_OPTION(textmusic, true)
+{
+	parse.ParseAssign();
+	parse.ParseMusic(info->FinaleMusic, info->finalemusicorder);
+}
+
+// [ZandroX] hazardcolor / hazardflash: Strife hazard screen-blend colors.
+// Ported from uzdoom@b4079b991.
+DEFINE_MAP_OPTION(hazardcolor, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->HazardColor = V_GetColor(NULL, parse.sc.String);
+}
+
+DEFINE_MAP_OPTION(hazardflash, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->HazardFlash = V_GetColor(NULL, parse.sc.String);
+}
+
+// [ZandroX] mapintermusic: intermission music keyed to the destination map.
+// Ported from uzdoom@bb7e19120.
+DEFINE_MAP_OPTION(mapintermusic, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	FName mapname = parse.sc.String;
+	parse.ParseComma();
+	FInterMusicEntry entry;
+	entry.order = 0;
+	parse.ParseMusic(entry.music, entry.order);
+	info->MapInterMusic[mapname] = entry;
+}
+
+// [ZandroX] lightningsound: overrides the thunder sound on lightning levels.
+// Ported from uzdoom@ce2a0c929.
+DEFINE_MAP_OPTION(lightningsound, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->LightningSound = parse.sc.String;
+}
+
+// [ZandroX] author: map author string, shown on the intermission summary.
+// Ported from uzdoom@3e9921696.
+DEFINE_MAP_OPTION(author, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->AuthorName = parse.sc.String;
+}
+
+// [ZandroX] PrecacheClasses: force-precache the sprites of named actor
+// classes. Ported from uzdoom@65e158954.
+DEFINE_MAP_OPTION(PrecacheClasses, true)
+{
+	parse.ParseAssign();
+
+	do
+	{
+		parse.sc.MustGetString();
+		info->PrecacheClasses.Push(FName(parse.sc.String));
+	} while (parse.sc.CheckString(","));
+}
+
+// [ZandroX] PrecacheTextures: force-precache the named textures.
+// Ported from uzdoom@3849cb862.
+DEFINE_MAP_OPTION(PrecacheTextures, true)
+{
+	parse.ParseAssign();
+
+	do
+	{
+		parse.sc.MustGetString();
+		// MAPINFO is parsed before TexMan.Init(), so store the name and
+		// resolve it at precache time (FTextureManager::PrecacheLevel).
+		info->PrecacheTextures.Push(FName(parse.sc.String));
+	} while (parse.sc.CheckString(","));
+}
+
 DEFINE_MAP_OPTION(redirect, true)
 {
 	parse.ParseAssign();
@@ -1119,6 +1303,17 @@ DEFINE_MAP_OPTION(redirect, true)
 	info->RedirectType = parse.sc.String;
 	parse.ParseComma();
 	parse.ParseLumpOrTextureName(info->RedirectMap);
+}
+
+// [ZandroX] cvar_redirect: redirect to another map when a CVAR is non-zero.
+// Ported from uzdoom@04ea28def.
+DEFINE_MAP_OPTION(cvar_redirect, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->RedirectCVAR = parse.sc.String;
+	parse.ParseComma();
+	parse.ParseLumpOrTextureName(info->RedirectCVARMap);
 }
 
 DEFINE_MAP_OPTION(sndseq, true)
@@ -1235,7 +1430,11 @@ enum EMIType
 	MITYPE_SETFLAG2,
 	MITYPE_CLRFLAG2,
 	MITYPE_SCFLAGS2,
+	MITYPE_SETFLAG3,	// [rc4l] third level-flag word
+	MITYPE_CLRFLAG3,	// [rc4l]
+	MITYPE_SCFLAGS3,	// [rc4l]
 	MITYPE_COMPATFLAG,
+	MITYPE_CLRCOMPATFLAG,	// [ZandroX] force-clear a compat bit (e.g. passover)
 	MITYPE_SETFLAGZA, // [BB]
 };
 
@@ -1258,6 +1457,18 @@ MapFlagHandlers[] =
 	{ "spidermastermindspecial",		MITYPE_SETFLAG,	LEVEL_SPIDERSPECIAL, 0 },
 	{ "minotaurspecial",				MITYPE_SETFLAG,	LEVEL_MINOTAURSPECIAL, 0 },
 	{ "dsparilspecial",					MITYPE_SETFLAG,	LEVEL_SORCERER2SPECIAL, 0 },
+	{ "e1m8special",					MITYPE_SETFLAG3, LEVEL3_E1M8SPECIAL, 0 },	// [rc4l] uzdoom@e2e8ec8b3
+	{ "e2m8special",					MITYPE_SETFLAG3, LEVEL3_E2M8SPECIAL, 0 },	// [rc4l]
+	{ "e3m8special",					MITYPE_SETFLAG3, LEVEL3_E3M8SPECIAL, 0 },	// [rc4l]
+	{ "e4m6special",					MITYPE_SETFLAG3, LEVEL3_E4M6SPECIAL, 0 },	// [rc4l]
+	{ "e4m8special",					MITYPE_SETFLAG3, LEVEL3_E4M8SPECIAL, 0 },	// [rc4l]
+	{ "avoidmelee",						MITYPE_SETFLAG3, LEVEL3_AVOIDMELEE, 0 },	// [rc4l] uzdoom@ff497996a
+	{ "noclustertext",					MITYPE_SETFLAG3, LEVEL3_NOCLUSTERTEXT, 0 },		// [rc4l] uzdoom@20b6395cf
+	{ "needclustertext",				MITYPE_SETFLAG3, LEVEL3_FORCECLUSTERTEXT, 0 },	// [rc4l] uzdoom@20b6395cf
+	{ "nogravity",						MITYPE_SETFLAG3, LEVEL3_NOGRAVITY, 0 },			// [rc4l] uzdoom@3781c43ae
+	{ "propermonsterfallingdamage",	MITYPE_SETFLAG3, LEVEL3_PROPERMONSTERFALLDMG, 0 },	// [rc4l] uzdoom@e74b9f195
+	{ "passover",						MITYPE_CLRCOMPATFLAG, COMPATF_NO_PASSMOBJ, 0 },	// [rc4l] uzdoom@be2f9c866
+	{ "nopassover",						MITYPE_COMPATFLAG, COMPATF_NO_PASSMOBJ, 0 },	// [rc4l] uzdoom@be2f9c866
 	{ "ironlichspecial",				MITYPE_SETFLAG,	LEVEL_HEADSPECIAL, 0 },
 	{ "specialaction_exitlevel",		MITYPE_SCFLAGS,	0, ~LEVEL_SPECACTIONSMASK },
 	{ "specialaction_opendoor",			MITYPE_SCFLAGS,	LEVEL_SPECOPENDOOR, ~LEVEL_SPECACTIONSMASK },
@@ -1355,6 +1566,23 @@ MapFlagHandlers[] =
 	{ "compat_badangles",				MITYPE_COMPATFLAG, 0, COMPATF2_BADANGLES },
 	{ "compat_floormove",				MITYPE_COMPATFLAG, 0, COMPATF2_FLOORMOVE },
 	{ "compat_pushwindow",				MITYPE_COMPATFLAG, 0, COMPATF2_PUSHWINDOW },
+	{ "compat_explode1",				MITYPE_COMPATFLAG, 0, COMPATF2_EXPLODE1 },	// [rc4l] no vertical explosion thrust
+	{ "compat_explode2",				MITYPE_COMPATFLAG, 0, COMPATF2_EXPLODE2 },	// [rc4l] uzdoom@dc67355e9
+	{ "compat_nombf21",					MITYPE_COMPATFLAG, 0, COMPATF2_NOMBF21 },	// [rc4l] parse-only (unused, as upstream)
+	{ "compat_soundcutoff",				MITYPE_COMPATFLAG, 0, COMPATF2_SOUNDCUTOFF },		// [rc4l] uzdoom@ef5707d73
+	{ "compat_pointonline",				MITYPE_COMPATFLAG, 0, COMPATF2_POINTONLINE },		// [rc4l] uzdoom@ee7eb3253
+	{ "compat_multiexit",				MITYPE_COMPATFLAG, 0, COMPATF2_MULTIEXIT },			// [rc4l] uzdoom@51da78ba2
+	{ "compat_teleport",				MITYPE_COMPATFLAG, 0, COMPATF2_TELEPORT },			// [rc4l] uzdoom@ab837b608
+	{ "compat_checkswitchrange",		MITYPE_COMPATFLAG, 0, COMPATF2_CHECKSWITCHRANGE },	// [rc4l] uzdoom@d4d010ac3
+	{ "compat_railing",					MITYPE_COMPATFLAG, 0, COMPATF2_RAILING },			// [rc4l] uzdoom@0341a3d75
+	{ "compat_scriptwait",				MITYPE_COMPATFLAG, 0, COMPATF2_SCRIPTWAIT },		// [rc4l] uzdoom@cbd447962
+	{ "compat_avoidhazards",			MITYPE_COMPATFLAG, 0, COMPATF2_AVOIDHAZARDS },		// [rc4l] uzdoom@d15f450fe
+	{ "compat_stayonlift",				MITYPE_COMPATFLAG, 0, COMPATF2_STAYONLIFT },		// [rc4l] uzdoom@196a4c0b3
+	{ "compat_voodoozombies",			MITYPE_COMPATFLAG, 0, COMPATF2_VOODOOZOMBIES },		// [rc4l] uzdoom@1589afb46
+	{ "compat_vileghosts",				MITYPE_COMPATFLAG, 0, COMPATF2_VILEGHOSTS },		// [rc4l] uzdoom@c83344f5c
+	{ "compat_noacsargcheck",			MITYPE_COMPATFLAG, 0, COMPATF2_NOACSARGCHECK },		// [rc4l] uzdoom@35f66c5cc
+	{ "compat_novdolllockmsg",			MITYPE_COMPATFLAG, 0, COMPATF2_NOVDOLLLOCKMSG },	// [rc4l] uzdoom@7d2d874af
+	{ "compat_reservedlineflag",		MITYPE_COMPATFLAG, 0, COMPATF2_RESERVEDLINEFLAG },	// [rc4l] uzdoom@e38d46f3d
 	{ "cd_start_track",					MITYPE_EATNEXT,	0, 0 },
 	{ "cd_end1_track",					MITYPE_EATNEXT,	0, 0 },
 	{ "cd_end2_track",					MITYPE_EATNEXT,	0, 0 },
@@ -1363,6 +1591,103 @@ MapFlagHandlers[] =
 	{ "cd_title_track",					MITYPE_EATNEXT,	0, 0 },
 	{ NULL, MITYPE_IGNORE, 0, 0}
 };
+
+//==========================================================================
+//
+// [rc4l] Known-but-unhandled MAPINFO keyword manifest.
+//
+// These are UZDoom MAPINFO properties ZandroX recognises but does not act on. Rather than add a
+// value-parser for each (which risks mis-consuming vector/string values and desyncing the parser),
+// they fall through to the "Unknown property" site and are classified here, then SkipToNext()
+// consumes them exactly as before -- no parse regression. The table doubles as the machine-readable
+// provenance manifest for the upstream-commit tracker (keyword -> uzdoom SHA).
+//
+//   ZXUH_PARSEONLY  = benign value we could wire later once the feature exists (mostly GL renderer
+//                     state); logged "parsed but not yet wired".
+//   ZXUH_UNSUPPORTED = needs a subsystem this base lacks (cutscene engine, ID24, ZScript VM);
+//                     logged "not supported in this port".
+//
+//==========================================================================
+
+enum ZXUnhandledClass { ZXUH_PARSEONLY, ZXUH_UNSUPPORTED };
+
+struct ZXUnhandledMapInfoKey
+{
+	const char *name;
+	ZXUnhandledClass cls;
+	const char *sha;	// uzdoom commit that introduced it
+};
+
+static const ZXUnhandledMapInfoKey ZXUnhandledMapKeys[] =
+{
+	// --- map flags: GL-renderer / portal state (parse-only) ---
+	{ "attenuatelights",		ZXUH_PARSEONLY,   "63bba40d7" },
+	{ "forceworldpanning",		ZXUH_PARSEONLY,   "74ea9143e" },	// our GL caches bWorldPanning in the per-texture material (no per-wall read); true per-level forcing needs a render-path refactor
+	{ "compat_emulatemikoportals",ZXUH_PARSEONLY, "70ec7b64a" },
+	{ "disableshadowmap",		ZXUH_PARSEONLY,   "0cffeef2c" },
+	{ "enableshadowmap",		ZXUH_PARSEONLY,   "0cffeef2c" },
+	{ "disableskyboxao",		ZXUH_PARSEONLY,   "df4f41f4e" },
+	{ "enableskyboxao",			ZXUH_PARSEONLY,   "df4f41f4e" },
+	{ "noambientocclusion",		ZXUH_PARSEONLY,   "29b5fe903" },
+	{ "forcefakecontrast",		ZXUH_PARSEONLY,   "4f383e5aa" },
+	{ "nocoloredspritelighting",ZXUH_PARSEONLY,   "3aa7687d9" },
+	{ "nofogofwar",				ZXUH_PARSEONLY,   "95b264bdb" },
+	{ "nolightfade",			ZXUH_PARSEONLY,   "d86bd470e" },
+	{ "useskymist",				ZXUH_PARSEONLY,   "e9a067dd6" },
+	// --- map value-options: GL-renderer state (parse-only) ---
+	{ "brightfog",				ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "fogdensity",				ZXUH_PARSEONLY,   "44a087554" },
+	{ "outsidefogdensity",		ZXUH_PARSEONLY,   "44a087554" },
+	{ "skyfog",					ZXUH_PARSEONLY,   "44a087554" },
+	{ "skymist",				ZXUH_PARSEONLY,   "e9a067dd6" },
+	{ "skymistyscale",			ZXUH_PARSEONLY,   "091432532" },
+	{ "skyrotate",				ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "skyrotate2",				ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "lightadditivesurfaces",	ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "lightblendmode",			ZXUH_PARSEONLY,   "8e7897233" },
+	{ "lightmode",				ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "notexturefill",			ZXUH_PARSEONLY,   "65e7b6dfa" },
+	{ "thickfogdistance",		ZXUH_PARSEONLY,   "c6a6ae23a" },
+	{ "thickfogmultiplier",		ZXUH_PARSEONLY,   "c6a6ae23a" },
+	// --- map value-options: no display consumer in this base (parse-only) ---
+	{ "label",					ZXUH_PARSEONLY,   "2decf1086" },	// UMAPINFO short level-label override shown before the name; this base composes/draws only LevelName, so there is no separate label slot to render into
+	{ "colormap",				ZXUH_PARSEONLY,   "e12f2ce0f" },	// Boom whole-level fixed colormap; the GL renderer applies per-sector Colormap fades, not a global Boom COLORMAP index
+	{ "pixelratio",				ZXUH_PARSEONLY,   "d86bd470e" },	// per-level pixel aspect override; this base has no pixelstretch/aspect-override plumbing to feed
+	{ "fs_nocheckposition",		ZXUH_PARSEONLY,   "6ae417725" },	// FraggleScript compat flag; FraggleScript is not implemented in this base
+	// --- map flags: deep savegame/hub-snapshot hook, flagged divergence (parse-only) ---
+	{ "resetitems",				ZXUH_PARSEONLY,   "d80dc098b" },	// re-placing items on hub re-entry means mixing fresh spawns into the savegamerestore snapshot path (p_setup.cpp savegamerestore gate); regression-prone save-adjacent change, no target content uses it
+	// --- map value-options: needs a subsystem we lack (not-portable) ---
+	{ "intro",					ZXUH_UNSUPPORTED, "cda6394a9" },	// cutscene engine
+	{ "outro",					ZXUH_UNSUPPORTED, "cda6394a9" },	// cutscene engine
+	{ "enteranim",				ZXUH_UNSUPPORTED, "e88d91289" },	// ID24 interlevel anim
+	{ "exitanim",				ZXUH_UNSUPPORTED, "e88d91289" },	// ID24 interlevel anim
+	{ "eventhandlers",			ZXUH_UNSUPPORTED, "9b3b21c73" },	// per-map ZScript event handlers
+	{ "edata",					ZXUH_UNSUPPORTED, "6ae417725" },	// Eternity EDF extradata
+};
+
+// Returns true if the keyword is a known-unhandled MAPINFO property (and emits a classified,
+// once-per-keyword message). The caller still SkipToNext()s to consume the value.
+static bool ZX_ReportUnhandledMapInfo(FScanner &sc, const char *keyword)
+{
+	for (const ZXUnhandledMapInfoKey &k : ZXUnhandledMapKeys)
+	{
+		if (stricmp(keyword, k.name) != 0)
+			continue;
+
+		static TArray<FName> logged;	// dedupe: one line per keyword per session
+		FName fn(keyword);
+		for (unsigned i = 0; i < logged.Size(); i++)
+			if (logged[i] == fn) return true;
+		logged.Push(fn);
+
+		if (k.cls == ZXUH_PARSEONLY)
+			sc.ScriptMessage("MAPINFO '%s' parsed but not yet wired in this port (uzdoom@%s)\n", k.name, k.sha);
+		else
+			sc.ScriptMessage("MAPINFO '%s' not supported in this port (uzdoom@%s)\n", k.name, k.sha);
+		return true;
+	}
+	return false;
+}
 
 //==========================================================================
 //
@@ -1420,6 +1745,20 @@ void FMapInfoParser::ParseMapDefinition(level_info_t &info)
 				info.flags2 = (info.flags2 & handler->data2) | handler->data1;
 				break;
 
+			case MITYPE_SETFLAG3:	// [rc4l]
+				info.flags3 |= handler->data1;
+				info.flags3 |= handler->data2;
+				break;
+
+			case MITYPE_CLRFLAG3:	// [rc4l]
+				info.flags3 &= ~handler->data1;
+				info.flags3 |= handler->data2;
+				break;
+
+			case MITYPE_SCFLAGS3:	// [rc4l]
+				info.flags3 = (info.flags3 & handler->data2) | handler->data1;
+				break;
+
 			case MITYPE_COMPATFLAG:
 			{
 				int set = 1;
@@ -1446,6 +1785,17 @@ void FMapInfoParser::ParseMapDefinition(level_info_t &info)
 					info.compatflags &= ~handler->data1;
 					info.compatflags2 &= ~handler->data2;
 				}
+				info.compatmask |= handler->data1;
+				info.compatmask2 |= handler->data2;
+			}
+			break;
+
+			// [ZandroX] uzdoom@be2f9c866: 'passover' force-clears a compat bit
+			// (COMPATF_NO_PASSMOBJ) so things pass over/under each other.
+			case MITYPE_CLRCOMPATFLAG:
+			{
+				info.compatflags &= ~handler->data1;
+				info.compatflags2 &= ~handler->data2;
 				info.compatmask |= handler->data1;
 				info.compatmask2 |= handler->data2;
 			}
@@ -1486,8 +1836,10 @@ void FMapInfoParser::ParseMapDefinition(level_info_t &info)
 			{
 				if (!ParseCloseBrace())
 				{
-					// Unknown
-					sc.ScriptMessage("Unknown property '%s' found in map definition\n", sc.String);
+					// [rc4l] Classify known-but-unhandled UZDoom properties (parse-only / not
+					// supported) with their provenance SHA before falling back to "Unknown".
+					if (!ZX_ReportUnhandledMapInfo(sc, sc.String))
+						sc.ScriptMessage("Unknown property '%s' found in map definition\n", sc.String);
 					SkipToNext();
 				}
 				else
@@ -1814,6 +2166,52 @@ static void SetLevelNum (level_info_t *info, int num)
 
 //==========================================================================
 //
+// [ZandroX] uzdoom@9e2830a3d: MAPINFO "DamageType <name> { ... }" block.
+// Defines global damage-type properties (factor, noarmor, replacefactor),
+// stored in the engine's existing GlobalDamageDefinitions table.
+//
+//==========================================================================
+
+void FMapInfoParser::ParseDamageDefinition()
+{
+	sc.MustGetString();
+	FName damageType = sc.String;
+
+	DamageTypeDefinition dtd;
+	ParseOpenBrace();
+	while (sc.GetString())
+	{
+		if (ParseCloseBrace())
+		{
+			break;
+		}
+		else if (sc.Compare("FACTOR"))
+		{
+			CheckAssign();		// '=' is optional
+			sc.MustGetFloat();
+			dtd.DefaultFactor = FLOAT2FIXED(sc.Float);
+			// A factor of 0 with no explicit replace still means "immune".
+			if (dtd.DefaultFactor == 0)
+				dtd.ReplaceFactor = true;
+		}
+		else if (sc.Compare("REPLACEFACTOR"))
+		{
+			dtd.ReplaceFactor = true;
+		}
+		else if (sc.Compare("NOARMOR"))
+		{
+			dtd.NoArmor = true;
+		}
+		else
+		{
+			sc.ScriptError("Unexpected data (%s) in damagetype definition.", sc.String);
+		}
+	}
+	dtd.Apply(damageType);
+}
+
+//==========================================================================
+//
 // G_DoParseMapInfo
 // Parses a single MAPINFO lump
 // data for wadlevelinfos and wadclusterinfos.
@@ -1936,6 +2334,29 @@ void FMapInfoParser::ParseMapInfo (int lump, level_info_t &gamedefaults, level_i
 			else
 			{
 				sc.ScriptError("automap colorset definitions not supported with old MAPINFO syntax");
+			}
+		}
+		// [ZandroX] uzdoom@9e2830a3d: DamageType global definitions (real port).
+		else if (sc.Compare("damagetype"))
+		{
+			format_type = FMT_New;
+			ParseDamageDefinition();
+		}
+		// [ZandroX] Editor-number / spawn-number / conversation-id maps
+		// (uzdoom doomednums@15dbbc913, spawnnums@2ec8e2c2a,
+		// conversationids@b6a4511dd): these require GZDoom's deferred
+		// class-resolution machinery (SpawnMap/InitClassMap), which this base
+		// lacks. Skip the block and warn, so wads using them still load.
+		else if (sc.Compare("doomednums") || sc.Compare("spawnnums") || sc.Compare("conversationids"))
+		{
+			static const char *shas[] = { "15dbbc913", "2ec8e2c2a", "b6a4511dd" };
+			const char *sha = sc.Compare("doomednums") ? shas[0] : (sc.Compare("spawnnums") ? shas[1] : shas[2]);
+			Printf(TEXTCOLOR_ORANGE "MAPINFO '%s' block needs deferred class resolution not present in this port; skipped (uzdoom@%s)\n", sc.String, sha);
+			format_type = FMT_New;
+			ParseOpenBrace();
+			while (sc.GetString())
+			{
+				if (ParseCloseBrace()) break;
 			}
 		}
 		else
