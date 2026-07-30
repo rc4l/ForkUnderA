@@ -29,22 +29,34 @@ GAMEPLAY=(src/g_doom src/g_heretic src/g_hexen src/g_strife src/g_shared src/g_r
 # UNTIL bounds both passes to a date window (e.g. the first N commits) for a quick partial run.
 git -C "$UP" log --no-renames --name-only --format=$'\x01''%H%x1f%cs' ${UNTIL:+--until="$UNTIL"} "${ANCHOR}..HEAD" \
 | awk -v floor="$FLOOR" '
-    function addcat(p) {
+    # readable name for a ZDoom-convention filename prefix (fixed source convention, not per-feature)
+    function readable(x) {
+      if(x=="p")return"playsim"; if(x=="g")return"game";   if(x=="r")return"swrender";
+      if(x=="s")return"sound";   if(x=="d")return"main";   if(x=="m")return"misc";
+      if(x=="c")return"console"; if(x=="v")return"video";  if(x=="i")return"system";
+      if(x=="w")return"wad";     if(x=="f")return"finale"; if(x=="b")return"bot";
+      if(x=="a")return"actors";  if(x=="hu")return"hud";   if(x=="st")return"statusbar";
+      if(x=="am")return"automap";if(x=="po")return"polyobj"; return x;
+    }
+    function addcat(p,  q,dir) {
+      # cross-cutting semantic tags (additive)
       if (p ~ /vulkan/)                                     t["vulkan"]=1;
-      if (p ~ /(\/|^)(gl|hwrenderer)\// || p ~ /rendering\/hwrenderer/) { t["gl"]=1; t["renderer"]=1 }
-      if (p ~ /rendering\//)                                t["renderer"]=1;
+      if (p ~ /(\/|^)(gl|hwrenderer)\// || p ~ /rendering\//) t["renderer"]=1;
       if (p ~ /\.zs$/ || p ~ /zscript/)                     t["zscript"]=1;
       if (p ~ /decorate|thingdef/)                          t["decorate"]=1;
-      if (p ~ /p_acs|\/acs/)                                t["acs"]=1;
-      if (p ~ /sound|oalsound|music|midi|s_sndseq|s_advsound/) t["sound"]=1;
-      if (p ~ /menu/)                                       t["menu"]=1;
-      if (p ~ /textures?\/|r_data\/textures|gl_texture/)    t["texture"]=1;
-      if (p ~ /wadsrc/)                                     t["wadsrc"]=1;
-      if (p ~ /mapinfo|g_level|g_mapinfo/)                  t["mapinfo"]=1;
-      if (p ~ /p_(map|mobj|enemy|user|pspr|inter)/)         t["playsim"]=1;
-      if (p ~ /net|sv_|cl_|d_net/)                          t["netcode"]=1;
+      if (p ~ /p_acs/)                                      t["acs"]=1;
+      # structural auto-tag: guarantees every touched file yields a tag
+      if (p ~ /CMakeLists|\.cmake$/) { t["build"]=1; return }
+      if (p ~ /^\.github\//)         { t["ci"]=1;    return }
+      if (p ~ /^docs\//)             { t["docs"]=1;  return }
+      q=p; sub(/^src\//,"",q); sub(/^wadsrc\/static\//,"",q); sub(/^wadsrc\//,"",q);
+      if (q ~ /\//) { dir=q; sub(/\/.*/,"",dir); t[dir]=1; return }   # first dir component
+      if (match(q,/^[a-z0-9]+_/)) { t[readable(substr(q,1,RLENGTH-1))]=1; return }
+      sub(/\.[^.]+$/,"",q); if (q!="") t[q]=1;                        # flat file, no prefix -> stem
     }
-    function emit(  k,o){ o=""; for(k in t) o=o (o==""?"":" ") k; if(sha!=""&&o!="") print sha"\t"o }
+    # every non-skipped commit emits a tag; a commit with no files (a merge) is tagged "merge"
+    function emit(  k,o){ if(sha==""||skip)return; o=""; for(k in t) o=o (o==""?"":" ") k;
+                         if(o=="")o="merge"; print sha"\t"o }
     /^\x01/ { emit(); sub(/^\x01/,""); n=split($0,a,"\x1f"); sha=a[1]; skip=(a[2]<floor); delete t; next }
     skip { next }
     /./ { addcat($0) }
