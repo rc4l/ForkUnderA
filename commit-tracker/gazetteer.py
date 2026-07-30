@@ -17,6 +17,7 @@ from collections import defaultdict
 UP     = os.environ.get("UZDOOM", "/Users/talhataj/repos/UZDoom")
 ANCHOR = os.environ.get("ANCHOR", "ad88cfc5e")
 UNTIL  = os.environ.get("UNTIL")
+SINCE  = os.environ.get("SINCE")      # parallel worker: efficient date-range walk lower bound
 HERE   = os.path.dirname(os.path.abspath(__file__))
 REPO   = os.path.dirname(HERE)
 OUT     = os.environ.get("OUT", os.path.join(HERE, "combined_tags.tsv"))
@@ -111,18 +112,17 @@ def main():
         for b in lump_files[lp]:
             base_matchers[b].append((lp, rx))
 
-    if SHAFILE:                                 # parallel worker: only its chunk of shas
-        want = set(open(SHAFILE).read().split())
-        shas_in = "\n".join(want)
-    else:
-        want, shas_in = target_shas(), None
+    # A worker gets its sha chunk (want) via SHAFILE and an efficient date-range walk via
+    # SINCE/UNTIL. The date window is only the walk bound; `want` does the precise assignment,
+    # so overlapping windows are harmless (each commit is tagged by exactly one worker).
+    want = set(open(SHAFILE).read().split()) if SHAFILE else target_shas()
     tags = defaultdict(set)
-    walk = (["--no-walk", "--stdin"] if shas_in else
+    walk = ((["--since=" + SINCE] if SINCE else []) +
             (["--until=" + UNTIL] if UNTIL else []) + [ANCHOR + "..HEAD"])
 
     # messages: lump names only (keywords need parser scope; actions/acs rarely in prose)
     args = ["git", "-C", UP, "log", "--format=%H\x1f%B%x00"] + walk
-    blob = subprocess.run(args, input=shas_in, capture_output=True, encoding="utf-8", errors="replace").stdout
+    blob = subprocess.run(args, capture_output=True, encoding="utf-8", errors="replace").stdout
     for rec in blob.split("\0"):
         if "\x1f" in rec:
             sha, msg = rec.split("\x1f", 1)
@@ -132,10 +132,7 @@ def main():
 
     # diffs: lump names + actions + acs everywhere; keywords only on their parser file's lines
     args = ["git", "-C", UP, "log", "-p", "--unified=0", "--format=\x01%H"] + walk
-    p = subprocess.Popen(args, stdin=(subprocess.PIPE if shas_in else None),
-                         stdout=subprocess.PIPE, encoding="utf-8", errors="replace", bufsize=1)
-    if shas_in:
-        p.stdin.write(shas_in); p.stdin.close()
+    p = subprocess.Popen(args, stdout=subprocess.PIPE, encoding="utf-8", errors="replace", bufsize=1)
     sha, on, budget, base = None, False, 0, ""
     for line in p.stdout:
         line = line.rstrip("\n")[:2000]
