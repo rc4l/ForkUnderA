@@ -378,6 +378,12 @@ struct level_info_t
 	// addition to any global LOADACS lumps. Ported from uzdoom@6ae417725.
 	TArray<FName> ACSLibraries;
 
+	// [ZandroX] PrecacheClasses (uzdoom@65e158954) / PrecacheTextures
+	// (uzdoom@3849cb862): force-precache the sprites of named actor classes
+	// and the named textures at level load.
+	TArray<FName> PrecacheClasses;
+	TArray<int> PrecacheTextures;	// raw texture indices (avoids textures.h in this header)
+
 	//[BL] Link a sectinfo to a map
 	SectInfo	SectorInfo;
 
