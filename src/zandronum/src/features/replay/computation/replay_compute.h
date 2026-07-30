@@ -62,6 +62,19 @@ int64_t ComputeRgbReadbackBytes(int reqW, int reqH);
 struct BottomUpView { int64_t firstRowOffset; int rowStride; };
 BottomUpView ComputeBottomUpView(int reqW, int reqH);
 
+// [ZandroX] Regression guard for the "every clip after the first freezes" bug in
+// ReplayEncoder::SaveClip. The FFmpeg video encoder is a one-way pipeline: avcodec_send_frame(enc,
+// NULL) is a *terminal* flush that moves it to EOF, after which every further send_frame returns
+// AVERROR_EOF and the frame is dropped. SaveClip used to terminally-flush the LIVE encoder to grab
+// queued packets, permanently killing capture -- so the 2nd+ clips in a session (e.g. one per
+// wad_reload) froze on the first clip's footage.
+//
+// This models that pipeline. `ops` is a sequence: 0 = add a frame, 1 = save a clip.
+// `terminalFlushOnSave` picks the buggy (true) vs fixed (false) SaveClip behaviour. Returns the
+// number of frames that reach the packet ring (are encodable). The invariant a correct SaveClip must
+// keep: saving is non-destructive -- every added frame stays encodable regardless of intervening saves.
+int ComputeEncodableFramesAcrossSaves(const int *ops, int count, bool terminalFlushOnSave);
+
 } // namespace zx
 
 #endif

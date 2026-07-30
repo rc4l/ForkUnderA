@@ -4108,6 +4108,25 @@ void P_SetupLevel (char *lumpname, int position)
 
 		FBehavior::StaticLoadDefaultModules ();
 
+		// [ZandroX] loadacs: load any per-map ACS libraries named in MAPINFO.
+		// Ported from uzdoom@6ae417725.
+		if (level.info != NULL)
+		{
+			for (unsigned int i = 0; i < level.info->ACSLibraries.Size(); ++i)
+			{
+				const char *libname = level.info->ACSLibraries[i].GetChars();
+				int acslump = Wads.CheckNumForName (libname, ns_acslibrary);
+				if (acslump >= 0)
+				{
+					FBehavior::StaticLoadModule (acslump);
+				}
+				else
+				{
+					Printf ("Could not find loadacs ACS library %s\n", libname);
+				}
+			}
+		}
+
 		P_LoadStrifeConversations (map, lumpname);
 
 		FMissingTextureTracker missingtex;

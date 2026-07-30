@@ -129,7 +129,7 @@ public:
 			if (SB_state != 0)
 			{
 				SB_state--;
-				DrawImage (&StatusBarTex, 0, 0);
+				{ int wsx = StatusBarTex.GetScaledWidth(); wsx = (wsx > 320) ? (wsx - 320) / 2 : 0; DrawImage (&StatusBarTex, -wsx, 0); }
 				memset (OldArms, 255, sizeof(OldArms));
 				OldKeys = -1;
 				memset (OldAmmo, 255, sizeof(OldAmmo));
@@ -221,7 +221,7 @@ private:
 		int amount;
 
 		if ( ForceRefresh() )
-			DrawImage (&StatusBarTex, 0, 0);
+			{ int wsx = StatusBarTex.GetScaledWidth(); wsx = (wsx > 320) ? (wsx - 320) / 2 : 0; DrawImage (&StatusBarTex, -wsx, 0); }
 
 		DrawAmmoStats ();
 		DrawFace ();
@@ -1493,16 +1493,21 @@ void DDoomStatusBar::FDoomStatusBarTexture::MakeTexture ()
 	Pixels = new BYTE[Width*Height];
 	const BYTE *pix = BaseTexture->GetPixels();
 	memcpy(Pixels, pix, Width*Height);
+	// [ZandroX] Widescreen STBAR support: a status-bar graphic wider than the
+	// vanilla 320 places the original layout centered with filler extensions on
+	// each side (see the ZDoom "widescreen statusbars" convention), so composite
+	// the vanilla overlays into the centered region.
+	int xoff = (Width > 320) ? (Width - 320) / 2 : 0;
 	// [BC] Teamgame must also be false to draw STARMS.
 	if (!deathmatch && !teamgame)
 	{
-		DrawToBar ("STARMS", 104, 0, NULL);
+		DrawToBar ("STARMS", xoff+104, 0, NULL);
 	}
 	else if ( GAMEMODE_GetCurrentFlags() & GMF_PLAYERSEARNPOINTS )
-		DrawToBar( "STPTS", 104, 0, NULL );
-	DrawToBar("STTPRCNT", 90, 3, NULL);
-	DrawToBar("STTPRCNT", 221, 3, NULL);
-	if ( NETWORK_GetState( ) != NETSTATE_SINGLE ) DrawToBar("STFBANY", 143, 1, STFBRemap? STFBRemap->Remap : NULL);
+		DrawToBar( "STPTS", xoff+104, 0, NULL );
+	DrawToBar("STTPRCNT", xoff+90, 3, NULL);
+	DrawToBar("STTPRCNT", xoff+221, 3, NULL);
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE ) DrawToBar("STFBANY", xoff+143, 1, STFBRemap? STFBRemap->Remap : NULL);
 }
 
 int DDoomStatusBar::FDoomStatusBarTexture::CopyTrueColorPixels(FBitmap *bmp, int x, int y, int rotate, FCopyInfo *inf)

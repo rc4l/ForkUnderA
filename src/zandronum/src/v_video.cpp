@@ -34,6 +34,8 @@
 #include "doomdef.h"
 #include "doomdata.h"
 #include "doomstat.h"
+#include "g_level.h"
+#include "info.h"
 
 #include "c_console.h"
 #include "hu_stuff.h"
@@ -1284,6 +1286,27 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 
 		while ( (actor = iterator.Next ()) )
 			spritelist[actor->sprite] = 1;
+	}
+
+	// [ZandroX] uzdoom@65e158954: honor the level's PrecacheClasses list by
+	// seeding the sprite list from every state of each named actor class, so
+	// their sprites are precached even if none are currently spawned.
+	if (level.info != NULL)
+	{
+		for (unsigned c = 0; c < level.info->PrecacheClasses.Size(); ++c)
+		{
+			const PClass *cls = PClass::FindClass(level.info->PrecacheClasses[c]);
+			if (cls != NULL && cls->ActorInfo != NULL)
+			{
+				const FActorInfo *ai = cls->ActorInfo;
+				for (int s = 0; s < ai->NumOwnedStates; ++s)
+				{
+					WORD spr = ai->OwnedStates[s].sprite;
+					if (spr < sprites.Size())
+						spritelist[spr] = 1;
+				}
+			}
+		}
 	}
 
 	for (i = (int)(sprites.Size () - 1); i >= 0; i--)

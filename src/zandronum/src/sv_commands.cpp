@@ -3645,19 +3645,20 @@ void SERVERCOMMANDS_SetSideFlags( ULONG ulSide, ULONG ulPlayerExtra, ServerComma
 //*****************************************************************************
 //*****************************************************************************
 //
-void SERVERCOMMANDS_Sound( LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_Sound( LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, int pitch )
 {
 	ServerCommands::Sound command;
 	command.SetChannel( lChannel );
 	command.SetSound( pszSound );
 	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ) );
+	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, bool bRespectActorPlayingSomething )
+void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, bool bRespectActorPlayingSomething, int pitch )
 {
 	if ( pActor == NULL )
 		return;
@@ -3677,7 +3678,7 @@ void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSo
 	// [BB] If the actor doesn't have a NetID, we have to instruct the clients differently how to play the sound.
 	if ( pActor->NetID == 0 )
 	{
-		SERVERCOMMANDS_SoundPoint((LONG)( pActor->x),(LONG)( pActor->y),(LONG)( pActor->z), lChannel, pszSound, fVolume, fAttenuation, ulPlayerExtra, flags );
+		SERVERCOMMANDS_SoundPoint((LONG)( pActor->x),(LONG)( pActor->y),(LONG)( pActor->z), lChannel, pszSound, fVolume, fAttenuation, ulPlayerExtra, flags, pitch );
 		return;
 	}
 
@@ -3689,12 +3690,13 @@ void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSo
 	command.SetSound( pszSound );
 	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ));
+	command.SetPitch( pitch );	// [rc4l] -1 = default (client computes its own); >=0 = explicit
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SoundSector( sector_t *sector, int channel, const char *sound, float volume, float attenuation, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_SoundSector( sector_t *sector, int channel, const char *sound, float volume, float attenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, int pitch )
 {
 	if ( sector == NULL )
 		return;
@@ -3705,12 +3707,13 @@ void SERVERCOMMANDS_SoundSector( sector_t *sector, int channel, const char *soun
 	command.SetSound( sound );
 	command.SetVolume( LONG ( clamp( volume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( attenuation ));
+	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SoundPoint( LONG lX, LONG lY, LONG lZ, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_SoundPoint( LONG lX, LONG lY, LONG lZ, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, int pitch )
 {
 	ServerCommands::SoundPoint command;
 	command.SetX( lX );
@@ -3720,6 +3723,7 @@ void SERVERCOMMANDS_SoundPoint( LONG lX, LONG lY, LONG lZ, LONG lChannel, const 
 	command.SetSound( pszSound );
 	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ) );
+	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 

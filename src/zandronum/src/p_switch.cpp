@@ -122,6 +122,11 @@ bool P_CheckSwitchRange(AActor *user, line_t *line, int sideno)
 	if (side == NULL)
 		return true;
 
+	// [rc4l] uzdoom@d4d010ac3 compat_checkswitchrange: revert to the old behaviour that never
+	// range-checked the switch (any use activates it regardless of the toucher's height).
+	if (i_compatflags2 & COMPATF2_CHECKSWITCHRANGE)
+		return true;
+
 	fixed_t checktop;
 	fixed_t checkbot;
 	sector_t *front = side->sector;

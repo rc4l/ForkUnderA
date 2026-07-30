@@ -1025,7 +1025,8 @@ void P_NewChaseDir(AActor * actor)
 	if (target->health > 0 && !actor->IsFriend(target) && target != actor->goal)
     {   // Live enemy target
 
-		if (actor->flags3 & MF3_AVOIDMELEE)
+		// [rc4l] uzdoom@ff497996a: MAPINFO 'avoidmelee' forces the MBF21 avoid-melee AI level-wide.
+		if ((actor->flags3 & MF3_AVOIDMELEE) || (level.flags3 & LEVEL3_AVOIDMELEE))
 		{
 			bool ismeleeattacker = false;
 			fixed_t dist = P_AproxDistance(actor->x-target->x, actor->y-target->y);
@@ -3761,7 +3762,14 @@ DEFINE_ACTION_FUNCTION(AActor, A_BossDeath)
 		((level.flags & LEVEL_SPIDERSPECIAL) && (type == NAME_SpiderMastermind || (self->flags8 & (MF8_E3M8BOSS|MF8_E4M8BOSS)))) ||
 		((level.flags & LEVEL_HEADSPECIAL) && (type == NAME_Ironlich)) ||
 		((level.flags & LEVEL_MINOTAURSPECIAL) && (type == NAME_Minotaur)) ||
-		((level.flags & LEVEL_SORCERER2SPECIAL) && (type == NAME_Sorcerer2))
+		((level.flags & LEVEL_SORCERER2SPECIAL) && (type == NAME_Sorcerer2)) ||
+		// [rc4l] uzdoom@e2e8ec8b3: MAPINFO e#m8special flags qualify a boss death by MF8 boss
+		// type; the action still comes from the shared LEVEL_SPECACTIONSMASK switch below.
+		((level.flags3 & LEVEL3_E1M8SPECIAL) && (self->flags8 & MF8_E1M8BOSS)) ||
+		((level.flags3 & LEVEL3_E2M8SPECIAL) && (self->flags8 & MF8_E2M8BOSS)) ||
+		((level.flags3 & LEVEL3_E3M8SPECIAL) && (self->flags8 & MF8_E3M8BOSS)) ||
+		((level.flags3 & LEVEL3_E4M8SPECIAL) && (self->flags8 & MF8_E4M8BOSS)) ||
+		((level.flags3 & LEVEL3_E4M6SPECIAL) && (self->flags8 & MF8_E4M6BOSS))
 	   ))
 		;
 	else

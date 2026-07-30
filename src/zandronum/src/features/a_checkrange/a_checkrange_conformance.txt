@@ -1,0 +1,16 @@
+// Conformance lump for A_CheckRange (features/a_checkrange). Pack as a DECORATE lump in a pk3 and
+// -file it; a dropped param resurfaces as "Expected ')', got ','". See README.md.
+
+ACTOR ZXConfCheckRange
+{
+	States
+	{
+	Spawn:
+		TNT1 A 1 A_CheckRange(2048, "Far")
+		TNT1 A 1 A_CheckRange(2048, "Far", true)
+		Loop
+	Far:
+		TNT1 A 1
+		Stop
+	}
+}

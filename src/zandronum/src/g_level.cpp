@@ -684,7 +684,9 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 		Printf (TEXTCOLOR_RED "Unloading scripts cannot exit the level again.\n");
 		return;
 	}
-	if (gameaction == ga_completed)	// do not exit multiple times.
+	// [rc4l] uzdoom@51da78ba2 compat_multiexit: allow the exit to trigger multiple times (some
+	// faulty scripts, e.g. Daedalus's travel tubes, rely on it).
+	if (gameaction == ga_completed && !(i_compatflags2 & COMPATF2_MULTIEXIT))	// do not exit multiple times.
 	{
 		return;
 	}
@@ -1038,8 +1040,10 @@ void G_DoCompleted (void)
 	}
 
 	// [BB] LEVEL_NOINTERMISSION is also respected in deathmatch games
+	// [ZandroX] uzdoom@ed2b73833: allowintermission overrides the hub skip.
 	if ( ((level.flags & LEVEL_NOINTERMISSION) ||
-		 ( !deathmatch && (nextcluster == thiscluster) && (thiscluster->flags & CLUSTER_HUB))))
+		 ( !deathmatch && (nextcluster == thiscluster) && (thiscluster->flags & CLUSTER_HUB)
+		   && !(thiscluster->flags & CLUSTER_ALLOWINTERMISSION))))
 	{
 		G_WorldDone ();
 		return;
@@ -1709,7 +1713,33 @@ void G_WorldDone (void)
 	{
 		nextcluster = FindClusterInfo (FindLevelInfo (nextlevel)->cluster);
 
-		if (nextcluster->cluster != level.cluster && NETWORK_GetState( ) == NETSTATE_SINGLE )
+		// [ZandroX] uzdoom@49b77f3a1: a level may define its own finale text
+		// (exittext/textflat/textpic/textmusic) that takes precedence over the
+		// cluster's exit/enter text.
+		if (level.info != NULL && level.info->FinaleText.IsNotEmpty()
+			&& NETWORK_GetState( ) == NETSTATE_SINGLE)
+		{
+			const char *music = level.info->FinaleMusic.IsNotEmpty()
+				? level.info->FinaleMusic.GetChars() : thiscluster->MessageMusic.GetChars();
+			int musicorder = level.info->FinaleMusic.IsNotEmpty()
+				? level.info->finalemusicorder : thiscluster->musicorder;
+			const char *flat = level.info->FinaleFlat.IsNotEmpty()
+				? level.info->FinaleFlat.GetChars() : thiscluster->FinaleFlat.GetChars();
+			F_StartFinale (music, musicorder,
+				thiscluster->cdtrack, thiscluster->cdid,
+				flat, level.info->FinaleText,
+				false,
+				level.info->flags3 & LEVEL3_FINALEPIC,
+				level.info->flags3 & LEVEL3_LOOKUPEXITTEXT,
+				false);
+			return;
+		}
+
+		// [rc4l] uzdoom@20b6395cf: 'needclustertext' forces the cluster text even within the same
+		// cluster; 'noclustertext' suppresses it entirely.
+		if ((( nextcluster->cluster != level.cluster ) || ( level.flags3 & LEVEL3_FORCECLUSTERTEXT ))
+			&& !( level.flags3 & LEVEL3_NOCLUSTERTEXT )
+			&& NETWORK_GetState( ) == NETSTATE_SINGLE )
 		{
 			// Only start the finale if the next level's cluster is different
 			// than the current one and we're not in deathmatch. [BC] And we're not in multiplayer
@@ -2030,6 +2060,7 @@ void G_InitLevelLocals ()
 	level.teamdamage = teamdamage;
 	level.flags = 0;
 	level.flags2 = 0;
+	level.flags3 = 0;	// [rc4l]
 	// [BB]
 	level.flagsZA = 0;
 
@@ -2084,6 +2115,11 @@ void G_InitLevelLocals ()
 	level.clusterflags = clus ? clus->flags : 0;
 	level.flags |= info->flags;
 	level.flags2 |= info->flags2;
+	level.flags3 |= info->flags3;	// [rc4l]
+	// [rc4l] uzdoom@3781c43ae: a 'nogravity' level runs at zero gravity (applied after the flag copy
+	// so it overrides the sv_gravity/info->gravity default set above).
+	if (level.flags3 & LEVEL3_NOGRAVITY)
+		level.gravity = 0;
 	// [BB]
 	level.flagsZA |= info->flagsZA;
 	level.levelnum = info->levelnum;
