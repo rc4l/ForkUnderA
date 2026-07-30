@@ -293,6 +293,7 @@ void level_info_t::Reset()
 	intermusicorder = 0;
 	SoundInfo = "";
 	SndSeq = "";
+	LightningSound = "";
 	FinaleText = "";
 	FinaleFlat = "";
 	FinaleMusic = "";
@@ -1211,6 +1212,15 @@ DEFINE_MAP_OPTION(textmusic, true)
 	parse.ParseMusic(info->FinaleMusic, info->finalemusicorder);
 }
 
+// [ZandroX] lightningsound: overrides the thunder sound on lightning levels.
+// Ported from uzdoom@ce2a0c929.
+DEFINE_MAP_OPTION(lightningsound, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->LightningSound = parse.sc.String;
+}
+
 // [ZandroX] author: map author string, shown on the intermission summary.
 // Ported from uzdoom@3e9921696.
 DEFINE_MAP_OPTION(author, true)
@@ -1607,6 +1617,8 @@ static const ZXUnhandledMapInfoKey ZXUnhandledMapKeys[] =
 	{ "notexturefill",			ZXUH_PARSEONLY,   "65e7b6dfa" },
 	{ "thickfogdistance",		ZXUH_PARSEONLY,   "c6a6ae23a" },
 	{ "thickfogmultiplier",		ZXUH_PARSEONLY,   "c6a6ae23a" },
+	// --- map value-options: no display consumer in this base (parse-only) ---
+	{ "label",					ZXUH_PARSEONLY,   "2decf1086" },	// UMAPINFO short level-label override shown before the name; this base composes/draws only LevelName, so there is no separate label slot to render into
 	// --- map flags: deep savegame/hub-snapshot hook, flagged divergence (parse-only) ---
 	{ "resetitems",				ZXUH_PARSEONLY,   "d80dc098b" },	// re-placing items on hub re-entry means mixing fresh spawns into the savegamerestore snapshot path (p_setup.cpp savegamerestore gate); regression-prone save-adjacent change, no target content uses it
 	// --- map value-options: needs a subsystem we lack (not-portable) ---
