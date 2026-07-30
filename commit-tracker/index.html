@@ -30,6 +30,10 @@
   .s-pending { color: #9ca3af; }
   a.sha { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #2563eb; text-decoration: none; }
   a.sha:hover { text-decoration: underline; }
+  .tag { display: inline-block; background: #eef2ff; color: #3730a3; border: 1px solid #e0e7ff;
+         border-radius: 5px; padding: 0 6px; margin: 1px 3px 1px 0; font-size: 11px; line-height: 18px; white-space: nowrap; }
+  .tag-fn { background: #ecfdf5; color: #065f46; border-color: #d1fae5;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
 </head>
 <body>
@@ -65,10 +69,17 @@ const columnDefs = [
         day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })
         + "  ·  " + p.value + " (UTC)";
     } },
-  { field: "title", headerName: "title", flex: 2, minWidth: 320, tooltipField: "title" },
-  { field: "status", headerName: "status", width: 130,
+  { field: "title", headerName: "title", flex: 2, minWidth: 300, tooltipField: "title" },
+  { field: "status", headerName: "status", width: 120,
     cellClass: p => "s-" + p.value },
-  { field: "note", headerName: "note", flex: 1, minWidth: 160, tooltipField: "note" },
+  { field: "tags", headerName: "tags (auto-derived)", flex: 2, minWidth: 260, filter: true,
+    // value is a space-joined string (filterable/searchable); rendered as chips.
+    // fn:A_* = a DECORATE action the commit's diff touched; the rest = code areas it changed.
+    cellRenderer: p => (p.value || "").split(" ").filter(Boolean).map(t => {
+      const fn = t.startsWith("fn:");
+      return `<span class="tag${fn ? " tag-fn" : ""}">${fn ? t.slice(3) : t}</span>`;
+    }).join("") },
+  { field: "note", headerName: "note", flex: 1, minWidth: 130, tooltipField: "note" },
 ];
 
 function parseTSV(text) {
@@ -112,8 +123,18 @@ async function setStatus(key) {
   gridApi.onFilterChanged();
 }
 
-fetch("coverage.tsv").then(r => r.text()).then(text => {
-  const rows = parseTSV(text);
+Promise.all([
+  fetch("coverage.tsv").then(r => r.text()),
+  fetch("tags.tsv").then(r => r.ok ? r.text() : "").catch(() => ""),
+]).then(([covText, tagText]) => {
+  const tagmap = {};
+  for (const line of tagText.split("\n")) {
+    if (!line || line[0] === "#") continue;
+    const i = line.indexOf("\t");
+    if (i > 0) tagmap[line.slice(0, i)] = line.slice(i + 1);
+  }
+  const rows = parseTSV(covText);
+  for (const r of rows) r.tags = tagmap[r.sha] || "";
   renderChips(rows);
   gridApi = agGrid.createGrid(document.getElementById("grid"), {
     columnDefs,
