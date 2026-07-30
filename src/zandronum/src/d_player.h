@@ -168,6 +168,10 @@ public:
 	int			SpawnMask;
 	FNameNoInit	MorphWeapon;
 	fixed_t		AttackZOffset;			// attack height, relative to player center
+	// [ZandroX] Runtime standing height. Defaults to the class default height and
+	// is the base that APlayerPawn::Tick scales by crouchfactor; A_SetSize/ACS
+	// update this so a player's height change survives the per-tic crouch recompute.
+	fixed_t		FullHeight;
 	fixed_t		UseRange;				// [NS] Distance at which player can +use
 	fixed_t		AirCapacity;			// Multiplier for air supply underwater.
 	const PClass *FlechetteType;

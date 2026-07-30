@@ -5642,6 +5642,18 @@ void ServerCommands::SetThingScale::Execute()
 
 //*****************************************************************************
 //
+void ServerCommands::SetThingSize::Execute()
+{
+	// [ZandroX] Route through AActor::SetSize so the actor is relinked to the
+	// world (and, for a player pawn, FullHeight is updated). Dimensions not
+	// carried by this command keep their current value.
+	fixed_t newradius = ContainsRadius() ? radius : actor->radius;
+	fixed_t newheight = ContainsHeight() ? height : actor->height;
+	actor->SetSize( newradius, newheight );
+}
+
+//*****************************************************************************
+//
 void ServerCommands::SetWeaponAmmoGive::Execute()
 {
 	weapon->AmmoGive1 = ammoGive1;

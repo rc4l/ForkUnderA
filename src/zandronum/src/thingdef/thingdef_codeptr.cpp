@@ -86,6 +86,7 @@
 #include "d_netinf.h"
 // [MGOOOOOO] Pure decision logic for A_JumpIfInput.
 #include "features/jumpifinput/computation/jumpifinput_compute.h"
+#include "features/actorresize/actorresize.h"
 #include "features/spawnprojectile/computation/spawnprojectile_compute.h"
 
 static FRandom pr_camissile ("CustomActorfire");
@@ -3404,6 +3405,85 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetMass)
 	ACTION_PARAM_INT(mass, 0);
 
 	self->Mass = mass;
+}
+
+//===========================================================================
+//
+// A_SetSize(float newradius = -1, float newheight = -1, bool testpos = false)
+//
+// Changes the actor's radius and/or height at runtime. A negative value keeps
+// the current dimension. When testpos is true the change is reverted if the
+// actor no longer fits at its current position.
+//
+// [ZandroX] Ported from GZDoom/UZDoom's A_SetSize:
+// https://github.com/UZDoom/UZDoom/blob/master/src/playsim/p_actionfunctions.cpp
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetSize)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_FIXED(newradius, 0);
+	ACTION_PARAM_FIXED(newheight, 1);
+	ACTION_PARAM_BOOL(testpos, 2);
+
+	// [ZandroX] Server-authoritative: pure clients wait for the SetThingSize
+	// broadcast, but the local player's own (client-handled) pawn still applies
+	// the change locally so movement prediction uses the new size.
+	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+		return;
+
+	// [ZandroX] A negative argument means "keep the current dimension".
+	newradius = ActorResize::ComputeResolvedDimension( newradius, self->radius );
+	newheight = ActorResize::ComputeResolvedDimension( newheight, self->height );
+
+	fixed_t oldradius = self->radius;
+	fixed_t oldheight = self->height;
+
+	bool bFit = self->SetSize( newradius, newheight, testpos );
+	ACTION_SET_RESULT( bFit );
+
+	// [ZandroX] Tell the clients about the new size if anything actually changed.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
+	{
+		const ActorResize::SizeDelta delta =
+			ActorResize::ComputeSizeDelta( oldradius, self->radius, oldheight, self->height );
+		if ( delta.Any( ) )
+		{
+			unsigned int sizeFlags = 0;
+			if ( delta.radiusChanged )	sizeFlags |= ACTORSIZE_RADIUS;
+			if ( delta.heightChanged )	sizeFlags |= ACTORSIZE_HEIGHT;
+			SERVERCOMMANDS_SetThingSize( self, sizeFlags );
+		}
+	}
+}
+
+//===========================================================================
+//
+// A_SetHitSize(float hitradius = -1, float hitheight = -1)
+//
+// Changes the actor's attack extent (HitRadius / HitHeight) at runtime. A
+// negative value keeps the current dimension; 0 clears it so the extent falls
+// back to the physical radius/height.
+//
+// [ZandroX] The attack extent is server-authoritative (see AActor::SetHitSize),
+// so -- like the HitRadius/HitHeight DECORATE properties -- it is not broadcast.
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetHitSize)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_FIXED(hitradius, 0);
+	ACTION_PARAM_FIXED(hitheight, 1);
+
+	// [ZandroX] Server-authoritative: pure clients keep the class default.
+	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+		return;
+
+	// [ZandroX] A negative argument means "keep the current dimension".
+	hitradius = ActorResize::ComputeResolvedDimension( hitradius, self->projectilepassradius );
+	hitheight = ActorResize::ComputeResolvedDimension( hitheight, self->projectilepassheight );
+
+	self->SetHitSize( hitradius, hitheight );
 }
 
 //===========================================================================
