@@ -88,6 +88,8 @@ void DIntermissionScreen::Init(FIntermissionAction *desc, bool first)
 		}
 	}
 	mDuration = desc->mDuration;
+	// [ZandroX] uzdoom@2c226afff: subtitle caption ($lookup supported).
+	mSubtitle = desc->mSubtitle;
 
 	const char *texname = desc->mBackground;
 	if (*texname == '@')
@@ -201,6 +203,30 @@ void DIntermissionScreen::Drawer ()
 			screen->DrawTexture (TexMan[mOverlays[i].mPic], mOverlays[i].x, mOverlays[i].y, DTA_320x200, true, TAG_DONE);
 	}
 	if (!mFlatfill) screen->FillBorder (NULL);
+
+	// [ZandroX] uzdoom@2c226afff: draw the subtitle caption, wrapped and
+	// centered near the bottom of the screen.
+	if (mSubtitle.IsNotEmpty())
+	{
+		const char *sub = mSubtitle.GetChars();
+		if (*sub == '$') sub = GStrings(sub + 1);
+		if (sub != NULL && *sub != 0)
+		{
+			FBrokenLines *lines = V_BreakLines(SmallFont, SCREENWIDTH / CleanXfac - 20, sub);
+			int lh = SmallFont->GetHeight() * CleanYfac;
+			int count = 0;
+			for (; lines[count].Width >= 0; count++) {}
+			int y = SCREENHEIGHT - (count + 1) * lh;
+			for (int i = 0; i < count; i++)
+			{
+				screen->DrawText(SmallFont, CR_UNTRANSLATED,
+					(SCREENWIDTH - lines[i].Width * CleanXfac) / 2, y, lines[i].Text,
+					DTA_CleanNoMove, true, TAG_DONE);
+				y += lh;
+			}
+			V_FreeBrokenLines(lines);
+		}
+	}
 }
 
 void DIntermissionScreen::Destroy()
