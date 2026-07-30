@@ -1287,6 +1287,12 @@ MapFlagHandlers[] =
 	{ "spidermastermindspecial",		MITYPE_SETFLAG,	LEVEL_SPIDERSPECIAL, 0 },
 	{ "minotaurspecial",				MITYPE_SETFLAG,	LEVEL_MINOTAURSPECIAL, 0 },
 	{ "dsparilspecial",					MITYPE_SETFLAG,	LEVEL_SORCERER2SPECIAL, 0 },
+	{ "e1m8special",					MITYPE_SETFLAG3, LEVEL3_E1M8SPECIAL, 0 },	// [rc4l] uzdoom@e2e8ec8b3
+	{ "e2m8special",					MITYPE_SETFLAG3, LEVEL3_E2M8SPECIAL, 0 },	// [rc4l]
+	{ "e3m8special",					MITYPE_SETFLAG3, LEVEL3_E3M8SPECIAL, 0 },	// [rc4l]
+	{ "e4m6special",					MITYPE_SETFLAG3, LEVEL3_E4M6SPECIAL, 0 },	// [rc4l]
+	{ "e4m8special",					MITYPE_SETFLAG3, LEVEL3_E4M8SPECIAL, 0 },	// [rc4l]
+	{ "avoidmelee",						MITYPE_SETFLAG3, LEVEL3_AVOIDMELEE, 0 },	// [rc4l] uzdoom@ff497996a
 	{ "ironlichspecial",				MITYPE_SETFLAG,	LEVEL_HEADSPECIAL, 0 },
 	{ "specialaction_exitlevel",		MITYPE_SCFLAGS,	0, ~LEVEL_SPECACTIONSMASK },
 	{ "specialaction_opendoor",			MITYPE_SCFLAGS,	LEVEL_SPECOPENDOOR, ~LEVEL_SPECACTIONSMASK },
