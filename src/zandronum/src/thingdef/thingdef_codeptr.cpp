@@ -3292,6 +3292,35 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetSize)
 
 //===========================================================================
 //
+// A_SetHitSize(float hitradius = -1, float hitheight = -1)
+//
+// Changes the actor's attack extent (HitRadius / HitHeight) at runtime. A
+// negative value keeps the current dimension; 0 clears it so the extent falls
+// back to the physical radius/height.
+//
+// [ZandroX] The attack extent is server-authoritative (see AActor::SetHitSize),
+// so -- like the HitRadius/HitHeight DECORATE properties -- it is not broadcast.
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetHitSize)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_FIXED(hitradius, 0);
+	ACTION_PARAM_FIXED(hitheight, 1);
+
+	// [ZandroX] Server-authoritative: pure clients keep the class default.
+	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+		return;
+
+	// [ZandroX] A negative argument means "keep the current dimension".
+	hitradius = ActorResize::ComputeResolvedDimension( hitradius, self->projectilepassradius );
+	hitheight = ActorResize::ComputeResolvedDimension( hitheight, self->projectilepassheight );
+
+	self->SetHitSize( hitradius, hitheight );
+}
+
+//===========================================================================
+//
 // A_SpawnDebris
 //
 //===========================================================================

@@ -4486,7 +4486,10 @@ enum
 	APROP_MeleeRange	= 38,
 	APROP_ViewHeight	= 39,
 	APROP_AttackZOffset	= 40,
-	APROP_StencilColor	= 41
+	APROP_StencilColor	= 41,
+	// [ZandroX] 42-49 reserved to match UZDoom; fork-specific properties start at 50.
+	APROP_HitRadius		= 50,
+	APROP_HitHeight		= 51
 };
 */
 
@@ -4879,6 +4882,19 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		}
 		break;
 
+	// [ZandroX] Attack extent (HitRadius/HitHeight). Routed through SetHitSize so the
+	// blockmap link radius (MAX(radius, GetAttackRadius())) is rebuilt. Server-
+	// authoritative like the DECORATE properties, so no client broadcast.
+	case APROP_HitRadius:
+		if ( actor->projectilepassradius != value )
+			actor->SetHitSize( value, actor->projectilepassheight );
+		break;
+
+	case APROP_HitHeight:
+		if ( actor->projectilepassheight != value )
+			actor->SetHitSize( actor->projectilepassradius, value );
+		break;
+
 	case APROP_ReactionTime:
 		actor->reactiontime = value;
 		break;
@@ -4990,6 +5006,9 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_Stamina:     return actor->stamina;
 	case APROP_Height:		return (int)(actor->height);
 	case APROP_Radius:		return (int)(actor->radius);
+	// [ZandroX] Raw attack-extent fields (0 = unset, falls back to the physical extent).
+	case APROP_HitRadius:	return (int)(actor->projectilepassradius);
+	case APROP_HitHeight:	return (int)(actor->projectilepassheight);
 	case APROP_ReactionTime:return actor->reactiontime;
 	case APROP_MeleeRange:	return (int)(actor->meleerange);
 	case APROP_ViewHeight:	if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
@@ -5060,6 +5079,8 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_Stamina:
 		case APROP_Height:
 		case APROP_Radius:
+		case APROP_HitRadius:
+		case APROP_HitHeight:
 		case APROP_ReactionTime:
 		case APROP_MeleeRange:
 		case APROP_ViewHeight:
