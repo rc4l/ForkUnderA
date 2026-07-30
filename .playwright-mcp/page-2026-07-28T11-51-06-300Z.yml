@@ -1,0 +1,142 @@
+- generic [ref=f2e47]:
+  - generic [ref=f2e50]:
+    - generic [ref=f2e51]:
+      - img "GlitchTip" [ref=f2e52] [cursor=pointer]
+      - button [ref=f2e53] [cursor=pointer]:
+        - img [ref=f2e54]: left_panel_close
+    - combobox [ref=f2e60] [cursor=pointer]
+    - navigation [ref=f2e67]:
+      - separator [ref=f2e68]
+      - generic [ref=f2e69]:
+        - img [ref=f2e70]: breaking_news
+        - generic [ref=f2e71]: Issues
+      - generic [ref=f2e73]:
+        - img [ref=f2e74]: avg_pace
+        - generic [ref=f2e75]: Performance
+      - generic [ref=f2e77]:
+        - img [ref=f2e78]: team_dashboard
+        - generic [ref=f2e79]: Projects
+      - generic [ref=f2e81]:
+        - img [ref=f2e82]: rocket_launch
+        - generic [ref=f2e83]: Releases
+      - separator [ref=f2e85]
+      - generic [ref=f2e86]:
+        - button [disabled] [ref=f2e87]:
+          - img [ref=f2e88]: account_tree
+          - img [ref=f2e91]: arrow_drop_down
+        - link:
+          - /url: https://crash.cantstopscrolling.net/null/settings
+        - link:
+          - /url: https://crash.cantstopscrolling.net/null/settings/projects
+        - link:
+          - /url: https://crash.cantstopscrolling.net/null/settings/subscription
+        - link:
+          - /url: https://crash.cantstopscrolling.net/null/settings/teams
+        - link:
+          - /url: https://crash.cantstopscrolling.net/null/settings/members
+      - generic [ref=f2e92]:
+        - button [ref=f2e93] [cursor=pointer]:
+          - img [ref=f2e94]: account_circle
+          - img [ref=f2e97]: arrow_drop_down
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/multi-factor-auth
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/notifications
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/auth-tokens
+      - button [ref=f2e98] [cursor=pointer]:
+        - img [ref=f2e99]: help
+        - img [ref=f2e102]: arrow_drop_down
+    - link "GlitchTip" [ref=f2e104]:
+      - /url: https://crash.cantstopscrolling.net/system-info
+  - generic [ref=f2e107]:
+    - heading "User Profile" [level=1] [ref=f2e111]
+    - generic [ref=f2e116]:
+      - generic [ref=f2e117]:
+        - generic [ref=f2e118]: Create New Token
+        - link "Back to auth tokens" [ref=f2e120]:
+          - /url: https://crash.cantstopscrolling.net/profile/auth-tokens
+          - img [ref=f2e121]: keyboard_arrow_left
+          - generic [ref=f2e122]: Auth Tokens
+      - separator [ref=f2e124]
+      - generic [ref=f2e127]:
+        - heading "Label" [level=2] [ref=f2e128]
+        - paragraph [ref=f2e129]: Give your token a name, so you can easily identify it.
+        - generic [ref=f2e132]:
+          - generic [ref=f2e133]:
+            - text: Label
+            - generic [ref=f2e134]: "*"
+          - textbox "Label" [ref=f2e136]
+        - heading "Scopes" [level=2] [ref=f2e138]
+        - paragraph [ref=f2e139]: Set the kind of access you want this token to have to your app.
+        - generic [ref=f2e141]:
+          - checkbox "Full Access" [ref=f2e143] [cursor=pointer]
+          - generic [ref=f2e144] [cursor=pointer]: Full Access
+        - list [ref=f2e145]:
+          - listitem [ref=f2e146]:
+            - generic [ref=f2e148]:
+              - checkbox "project:read" [ref=f2e150] [cursor=pointer]
+              - generic [ref=f2e151] [cursor=pointer]: project:read
+          - listitem [ref=f2e152]:
+            - generic [ref=f2e154]:
+              - checkbox "project:write" [ref=f2e156] [cursor=pointer]
+              - generic [ref=f2e157] [cursor=pointer]: project:write
+          - listitem [ref=f2e158]:
+            - generic [ref=f2e160]:
+              - checkbox "project:admin" [ref=f2e162] [cursor=pointer]
+              - generic [ref=f2e163] [cursor=pointer]: project:admin
+          - listitem [ref=f2e164]:
+            - generic [ref=f2e166]:
+              - checkbox "project:releases" [ref=f2e168] [cursor=pointer]
+              - generic [ref=f2e169] [cursor=pointer]: project:releases
+          - listitem [ref=f2e170]:
+            - generic [ref=f2e172]:
+              - checkbox "team:read" [ref=f2e174] [cursor=pointer]
+              - generic [ref=f2e175] [cursor=pointer]: team:read
+          - listitem [ref=f2e176]:
+            - generic [ref=f2e178]:
+              - checkbox "team:write" [ref=f2e180] [cursor=pointer]
+              - generic [ref=f2e181] [cursor=pointer]: team:write
+          - listitem [ref=f2e182]:
+            - generic [ref=f2e184]:
+              - checkbox "team:admin" [ref=f2e186] [cursor=pointer]
+              - generic [ref=f2e187] [cursor=pointer]: team:admin
+          - listitem [ref=f2e188]:
+            - generic [ref=f2e190]:
+              - checkbox "event:read" [ref=f2e192] [cursor=pointer]
+              - generic [ref=f2e193] [cursor=pointer]: event:read
+          - listitem [ref=f2e194]:
+            - generic [ref=f2e196]:
+              - checkbox "event:write" [ref=f2e198] [cursor=pointer]
+              - generic [ref=f2e199] [cursor=pointer]: event:write
+          - listitem [ref=f2e200]:
+            - generic [ref=f2e202]:
+              - checkbox "event:admin" [ref=f2e204] [cursor=pointer]
+              - generic [ref=f2e205] [cursor=pointer]: event:admin
+          - listitem [ref=f2e206]:
+            - generic [ref=f2e208]:
+              - checkbox "org:read" [ref=f2e210] [cursor=pointer]
+              - generic [ref=f2e211] [cursor=pointer]: org:read
+          - listitem [ref=f2e212]:
+            - generic [ref=f2e214]:
+              - checkbox "org:write" [ref=f2e216] [cursor=pointer]
+              - generic [ref=f2e217] [cursor=pointer]: org:write
+          - listitem [ref=f2e218]:
+            - generic [ref=f2e220]:
+              - checkbox "org:admin" [ref=f2e222] [cursor=pointer]
+              - generic [ref=f2e223] [cursor=pointer]: org:admin
+          - listitem [ref=f2e224]:
+            - generic [ref=f2e226]:
+              - checkbox "member:read" [ref=f2e228] [cursor=pointer]
+              - generic [ref=f2e229] [cursor=pointer]: member:read
+          - listitem [ref=f2e230]:
+            - generic [ref=f2e232]:
+              - checkbox "member:write" [ref=f2e234] [cursor=pointer]
+              - generic [ref=f2e235] [cursor=pointer]: member:write
+          - listitem [ref=f2e236]:
+            - generic [ref=f2e238]:
+              - checkbox "member:admin" [ref=f2e240] [cursor=pointer]
+              - generic [ref=f2e241] [cursor=pointer]: member:admin
+        - button "Create Token" [ref=f2e244]

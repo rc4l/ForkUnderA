@@ -185,7 +185,12 @@ void DLightningThinker::LightningFlash ()
 	}
 
 	level.flags |= LEVEL_SWAPSKIES;	// set alternate sky
-	S_Sound (CHAN_AUTO, "world/thunder", 1.0, ATTN_NONE);
+	// [ZandroX] uzdoom@ce2a0c929: honor the level's lightningsound override.
+	{
+		const char *thundersound = (level.info != NULL && level.info->LightningSound.IsNotEmpty())
+			? level.info->LightningSound.GetChars() : "world/thunder";
+		S_Sound (CHAN_AUTO, thundersound, 1.0, ATTN_NONE);
+	}
 
 nextflash: // [Dusk] Server jumps back in here
 	bool bClientOnly = NETWORK_InClientMode();

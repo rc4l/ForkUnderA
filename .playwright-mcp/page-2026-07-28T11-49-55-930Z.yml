@@ -1,0 +1,81 @@
+- generic [ref=e83]:
+  - generic [ref=e86]:
+    - generic [ref=e87]:
+      - img "GlitchTip" [ref=e88] [cursor=pointer]
+      - button [ref=e89] [cursor=pointer]:
+        - img [ref=e90]: left_panel_close
+    - combobox "ZandroX" [ref=e96] [cursor=pointer]
+    - navigation [ref=e104]:
+      - separator [ref=e105]
+      - generic [ref=e106]:
+        - img [ref=e107]: breaking_news
+        - generic [ref=e108]: Issues
+      - generic [ref=e110]:
+        - img [ref=e111]: share_eta
+        - generic [ref=e112]: Uptime Monitors
+      - generic [ref=e114]:
+        - img [ref=e115]: avg_pace
+        - generic [ref=e116]: Performance
+      - generic [ref=e118]:
+        - img [ref=e119]: text_snippet
+        - generic [ref=e120]: Logs
+      - generic [ref=e122]:
+        - img [ref=e123]: team_dashboard
+        - generic [ref=e124]: Projects
+      - generic [ref=e126]:
+        - img [ref=e127]: rocket_launch
+        - generic [ref=e128]: Releases
+      - separator [ref=e130]
+      - generic [ref=e131]:
+        - button [disabled] [ref=e132]:
+          - img [ref=e133]: account_tree
+          - img [ref=e136]: arrow_drop_down
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/projects
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/subscription
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/teams
+        - link:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/members
+      - generic [ref=e137]:
+        - button [ref=e138] [cursor=pointer]:
+          - img [ref=e139]: account_circle
+          - img [ref=e142]: arrow_drop_down
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/multi-factor-auth
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/notifications
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/auth-tokens
+      - button [ref=e143] [cursor=pointer]:
+        - img [ref=e144]: help
+        - img [ref=e147]: arrow_drop_down
+    - link "GlitchTip 6.2.2" [ref=e149]:
+      - /url: https://crash.cantstopscrolling.net/system-info
+  - generic [ref=e155]:
+    - generic [ref=e156]:
+      - heading "ZandroX" [level=2] [ref=e157]
+      - link "Create new project in ZandroX" [disabled]:
+        - /url: https://crash.cantstopscrolling.net/zandrox/settings/projects/new
+    - generic [ref=e161]:
+      - link "ZandroX ORGANIZATION ZandroX DATE CREATED Jul 25, 2026" [ref=e162]:
+        - /url: https://crash.cantstopscrolling.net/zandrox/issues?project=1
+        - generic [ref=e163]: ZandroX
+        - separator [ref=e166]
+        - generic [ref=e167]:
+          - paragraph [ref=e168]: ORGANIZATION
+          - paragraph [ref=e169]: ZandroX
+          - paragraph [ref=e170]: DATE CREATED
+          - paragraph [ref=e171]: Jul 25, 2026
+      - generic [ref=e172]:
+        - link "Issues" [ref=e173]:
+          - /url: https://crash.cantstopscrolling.net/zandrox/issues?project=1
+          - img [ref=e174]: warning
+        - link "Settings" [ref=e177]:
+          - /url: https://crash.cantstopscrolling.net/zandrox/settings/projects/zandrox
+          - img [ref=e178]: settings

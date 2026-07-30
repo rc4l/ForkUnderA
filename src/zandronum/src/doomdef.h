@@ -455,6 +455,26 @@ enum : unsigned int
 	COMPATF2_FLOORMOVE		= 1 << 1,	// Use the same floor motion behavior as Doom.
 	// [BB] Out of order ZDoom backport.
 	COMPATF2_PUSHWINDOW		= 1 << 6,	// Disable the window check in CheckForPushSpecial()
+	// [rc4l] backported from uzdoom doomdef.h (matching upstream bit positions).
+	COMPATF2_EXPLODE1		= 1 << 8,	// No vertical explosion thrust (Doom radius-attack behaviour).
+	COMPATF2_NOMBF21		= 1 << 14,	// Unused. Kept for backwards compatibility (matches upstream).
+	// [rc4l] MAPINFO compat_* backports. Bit positions match uzdoom doomdef.h where defined there;
+	// avoidhazards/voodoozombies/vileghosts get free bits (uzdoom keeps two of those elsewhere).
+	COMPATF2_SOUNDCUTOFF		= 1 << 2,	// uzdoom@ef5707d73: keep sounds owner-less instead of cutting when actor vanishes
+	COMPATF2_POINTONLINE		= 1 << 3,	// uzdoom@ee7eb3253: original buggy P_PointOnLineSide
+	COMPATF2_MULTIEXIT			= 1 << 4,	// uzdoom@51da78ba2: exit can trigger multiple times
+	COMPATF2_TELEPORT			= 1 << 5,	// uzdoom@ab837b608: indirect teleports don't trigger sector actions
+	COMPATF2_CHECKSWITCHRANGE	= 1 << 7,	// uzdoom@d4d010ac3: buggy CheckSwitchRange
+	COMPATF2_EXPLODE2			= 1 << 9,	// uzdoom@dc67355e9: original explosion code throughout
+	COMPATF2_RAILING			= 1 << 10,	// uzdoom@0341a3d75: bugged Strife railings
+	COMPATF2_SCRIPTWAIT			= 1 << 11,	// uzdoom@cbd447962: old ScriptWait behaviour
+	COMPATF2_AVOIDHAZARDS		= 1 << 12,	// uzdoom@d15f450fe: disable MBF stay-off-hazard mover
+	COMPATF2_STAYONLIFT			= 1 << 13,	// uzdoom@196a4c0b3: disable MBF stay-on-lift AI
+	COMPATF2_VOODOOZOMBIES		= 1 << 15,	// uzdoom@1589afb46: voodoo-zombie behaviour
+	COMPATF2_VILEGHOSTS			= 1 << 16,	// uzdoom@c83344f5c: archvile ghost behaviour
+	COMPATF2_NOACSARGCHECK		= 1 << 17,	// uzdoom@35f66c5cc: disable ACS arg-count check
+	COMPATF2_NOVDOLLLOCKMSG		= 1 << 18,	// uzdoom@7d2d874af: voodoo dolls don't trigger lock messages
+	COMPATF2_RESERVEDLINEFLAG	= 1 << 20,	// uzdoom@e38d46f3d: disable reserved-line-flag features (NoMBF21 fix)
 };
 
 // [BB] Zandronum compatibility flags.

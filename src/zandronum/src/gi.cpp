@@ -45,6 +45,10 @@
 
 gameinfo_t gameinfo;
 
+// [ZandroX] uzdoom@a1cc548af: normforwardmove/normsidemove GAMEINFO keys set
+// these console-turbo movement defaults (defined in g_game.cpp).
+extern float normforwardmove[2], normsidemove[2];
+
 const char *GameNames[17] =
 {
 	NULL, "Doom", "Heretic", NULL, "Hexen", NULL, NULL, NULL, "Strife", NULL, NULL, NULL, NULL, NULL, NULL, NULL, "Chex"
@@ -199,6 +203,65 @@ const char* GameInfoBorders[] =
 	}
 
 
+// [rc4l] Known-but-unhandled GAMEINFO keys (see the equivalent map manifest in g_mapinfo.cpp).
+// Consulted at the "ignore unknown keys" fallback so these are classified with provenance instead
+// of silently dropped. PARSE-ONLY = benign value inert on this base; NOT-PORTABLE = needs the
+// ZScript VM / a menu path we don't share.
+namespace
+{
+	enum ZXGiClass { ZXGI_PARSEONLY, ZXGI_UNSUPPORTED };
+	struct ZXUnhandledGameInfoKey { const char *name; ZXGiClass cls; const char *sha; };
+	const ZXUnhandledGameInfoKey ZXUnhandledGameInfoKeys[] =
+	{
+		// PARSE-ONLY (menu/statscreen/renderer values inert here)
+		{ "usepausestring",			ZXGI_PARSEONLY,   "c98042ed0" },
+		{ "cheatKey",				ZXGI_PARSEONLY,   "a1cc548af" },
+		{ "easyKey",				ZXGI_PARSEONLY,   "a1cc548af" },
+		{ "menuslidercolor",		ZXGI_PARSEONLY,   "a1cc548af" },
+		{ "menusliderbackcolor",	ZXGI_PARSEONLY,   "a2b8ad79e" },
+		{ "statscreen_authorfont",	ZXGI_PARSEONLY,   "3e9921696" },
+		{ "statscreen_contentfont",	ZXGI_PARSEONLY,   "2fd170b06" },
+		{ "bloodsplatdecaldistance",ZXGI_PARSEONLY,   "47f6f4cb1" },
+		{ "bluramount",				ZXGI_PARSEONLY,   "a1cc548af" },
+		{ "forcenogfxsubstitution",	ZXGI_PARSEONLY,   "ba13a540e" },
+		{ "forcetextinmenus",		ZXGI_PARSEONLY,   "2874a36fb" },
+		{ "nomergepickupmsg",		ZXGI_PARSEONLY,   "7d5df1dd7" },	// disables merging of identical pickup messages; this base's PrintPickupMessage never merges, so the flag is a correct no-op
+		{ "correctprintbold",		ZXGI_PARSEONLY,   "a1cc548af" },	// tweaks PrintBold vertical centering; this base's C_MidPrintBold uses the classic placement and has no alternate to select
+		{ "fullscreenautoaspect",	ZXGI_PARSEONLY,   "db5efddf1" },	// aspect-aware fullscreen-image scaling modes; this base's DTA_Fullscreen is a fixed stretch with no aspect-mode plumbing
+		{ "BasicArmorClass",		ZXGI_PARSEONLY,   "0d43272c8" },	// overrides the ABasicArmor class; this base hardcodes RUNTIME_CLASS(ABasicArmor) at the armor-add sites, so honoring it needs a broader class-indirection change
+		// NOT-PORTABLE (ZScript class references / VM event handlers)
+		{ "statusbarclass",			ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "althudclass",			ZXGI_UNSUPPORTED, "a7f2df4fe" },
+		{ "MessageBoxClass",		ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "HelpMenuClass",			ZXGI_UNSUPPORTED, "58e66f480" },
+		{ "MenuDelegateClass",		ZXGI_UNSUPPORTED, "58e66f480" },
+		{ "defaultconversationmenuclass",ZXGI_UNSUPPORTED,"a1cc548af" },
+		{ "eventhandlers",			ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "addeventhandlers",		ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "statscreen_single",		ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "statscreen_coop",		ZXGI_UNSUPPORTED, "a1cc548af" },
+		{ "statscreen_dm",			ZXGI_UNSUPPORTED, "a1cc548af" },
+	};
+
+	bool ZX_ReportUnhandledGameInfo(FScanner &sc, const char *key)
+	{
+		for (const ZXUnhandledGameInfoKey &k : ZXUnhandledGameInfoKeys)
+		{
+			if (stricmp(key, k.name) != 0) continue;
+			static TArray<FName> logged;
+			FName fn(key);
+			for (unsigned i = 0; i < logged.Size(); i++) if (logged[i] == fn) return true;
+			logged.Push(fn);
+			if (k.cls == ZXGI_PARSEONLY)
+				sc.ScriptMessage("GAMEINFO '%s' parsed but not yet wired in this port (uzdoom@%s)\n", k.name, k.sha);
+			else
+				sc.ScriptMessage("GAMEINFO '%s' not supported in this port (uzdoom@%s)\n", k.name, k.sha);
+			return true;
+		}
+		return false;
+	}
+}
+
 void FMapInfoParser::ParseGameInfo()
 {
 	sc.MustGetToken('{');
@@ -294,6 +357,23 @@ void FMapInfoParser::ParseGameInfo()
 			}
 			else gameinfo.mCheatMapArrow = "";
 		}
+		// [ZandroX] uzdoom@a1cc548af: default walk/run movement speeds.
+		else if(nextKey.CompareNoCase("normforwardmove") == 0)
+		{
+			sc.MustGetToken(TK_IntConst);
+			normforwardmove[0] = float(sc.Number);
+			sc.MustGetToken(',');
+			sc.MustGetToken(TK_IntConst);
+			normforwardmove[1] = float(sc.Number);
+		}
+		else if(nextKey.CompareNoCase("normsidemove") == 0)
+		{
+			sc.MustGetToken(TK_IntConst);
+			normsidemove[0] = float(sc.Number);
+			sc.MustGetToken(',');
+			sc.MustGetToken(TK_IntConst);
+			normsidemove[1] = float(sc.Number);
+		}
 		// [AK] Adds or removes a set of custom data that will be used by a custom column.
 		else if (( nextKey.CompareNoCase( "addcustomdata" ) == 0 ) || ( nextKey.CompareNoCase( "removecustomdata" ) == 0 ))
 		{
@@ -358,6 +438,8 @@ void FMapInfoParser::ParseGameInfo()
 		GAMEINFOKEY_BOOL(drawreadthis, "drawreadthis")
 		GAMEINFOKEY_BOOL(swapmenu, "swapmenu")
 		GAMEINFOKEY_BOOL(intermissioncounter, "intermissioncounter")
+		GAMEINFOKEY_BOOL(hidepartimes, "hidepartimes")
+		GAMEINFOKEY_BOOL(dontcrunchcorpses, "dontcrunchcorpses")
 		GAMEINFOKEY_BOOL(nightmarefast, "nightmarefast")
 		GAMEINFOKEY_COLOR(dimcolor, "dimcolor")
 		GAMEINFOKEY_FLOAT(dimamount, "dimamount")
@@ -398,6 +480,9 @@ void FMapInfoParser::ParseGameInfo()
 
 		else
 		{
+			// [rc4l] Classify known-but-unhandled UZDoom gameinfo keys with provenance; genuinely
+			// unknown keys stay silently ignored as before.
+			ZX_ReportUnhandledGameInfo(sc, nextKey);
 			// ignore unkown keys.
 			sc.UnGet();
 			SkipToNext();

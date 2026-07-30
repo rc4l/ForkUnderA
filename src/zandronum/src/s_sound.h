@@ -232,12 +232,12 @@ void S_PrecacheLevel ();
 void S_CacheSound (sfxinfo_t *sfx);
 
 // Start sound for thing at <ent>
-void S_Sound (int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false); // [EP] Added bSoundOnClient.
-void S_Sound (AActor *ent, int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false); // [EP] Added bSoundOnClient.
+void S_Sound (int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false, int pitch = -1); // [EP] Added bSoundOnClient. [rc4l] explicit pitch (-1 = default).
+void S_Sound (AActor *ent, int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false, int pitch = -1); // [EP] Added bSoundOnClient. [rc4l] explicit pitch (-1 = default).
 void S_SoundMinMaxDist (AActor *ent, int channel, FSoundID sfxid, float volume, float mindist, float maxdist);
 void S_Sound (const FPolyObj *poly, int channel, FSoundID sfxid, float volume, float attenuation);
-void S_Sound (const sector_t *sec, int channel, FSoundID sfxid, float volume, float attenuation);
-void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false); // [RK] Added bSoundOnClient.
+void S_Sound (const sector_t *sec, int channel, FSoundID sfxid, float volume, float attenuation, int pitch = -1); // [rc4l] explicit pitch (-1 = default).
+void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false, int pitch = -1); // [RK] Added bSoundOnClient. [rc4l] explicit pitch.
 
 // sound channels
 // channel 0 never willingly overrides

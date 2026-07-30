@@ -65,6 +65,12 @@ void FMapInfoParser::ParseSkill ()
 	skill.DamageFactor = FRACUNIT;
 	skill.FastMonsters = false;
 	skill.SlowMonsters = false;
+	skill.SpawnMulti = false;		// [rc4l] uzdoom skill flag
+	skill.InstantReaction = false;	// [rc4l] uzdoom skill flag
+	skill.NoMenu = false;			// [rc4l] uzdoom@80e9763d6
+	skill.HealthFactor = FRACUNIT;	// [rc4l] uzdoom@f7cdb28ea
+	skill.KickbackFactor = FRACUNIT;	// [rc4l] uzdoom@7267e608c
+	skill.Infighting = 0;			// [rc4l] uzdoom@1ad02a6ce
 	skill.DisableCheats = false;
 	skill.EasyBossBrain = false;
 	skill.EasyKey = false;
@@ -118,6 +124,36 @@ void FMapInfoParser::ParseSkill ()
 		else if (sc.Compare ("fastmonsters"))
 		{
 			skill.FastMonsters = true;
+		}
+		else if (sc.Compare ("spawnmulti"))	// [rc4l] uzdoom skill flag
+		{
+			skill.SpawnMulti = true;
+		}
+		else if (sc.Compare ("instantreaction"))	// [rc4l] uzdoom skill flag
+		{
+			skill.InstantReaction = true;
+		}
+		else if (sc.Compare ("nomenu"))				// [rc4l] uzdoom@80e9763d6
+		{
+			skill.NoMenu = true;
+		}
+		else if (sc.Compare ("healthfactor"))		// [rc4l] uzdoom@f7cdb28ea
+		{
+			sc.MustGetFloat ();
+			skill.HealthFactor = FLOAT2FIXED(sc.Float);
+		}
+		else if (sc.Compare ("kickbackfactor"))		// [rc4l] uzdoom@7267e608c
+		{
+			sc.MustGetFloat ();
+			skill.KickbackFactor = FLOAT2FIXED(sc.Float);
+		}
+		else if (sc.Compare ("noinfighting"))		// [rc4l] uzdoom@1ad02a6ce
+		{
+			skill.Infighting = LEVEL2_NOINFIGHTING;
+		}
+		else if (sc.Compare ("totalinfighting"))	// [rc4l] uzdoom@1ad02a6ce
+		{
+			skill.Infighting = LEVEL2_TOTALINFIGHTING;
 		}
 		else if (sc.Compare ("slowmonsters"))
 		{
@@ -344,6 +380,26 @@ int G_SkillProperty(ESkillProperty prop)
 		case SKILLP_SlowMonsters:
 			return AllSkills[gameskill].SlowMonsters;
 
+		case SKILLP_SpawnMulti:		// [rc4l] uzdoom skill flag
+			return AllSkills[gameskill].SpawnMulti;
+
+		case SKILLP_InstantReaction:	// [rc4l] uzdoom skill flag
+			return AllSkills[gameskill].InstantReaction;
+
+		case SKILLP_HealthFactor:	// [rc4l] uzdoom@f7cdb28ea
+			return (int)(AllSkills[gameskill].HealthFactor);
+
+		case SKILLP_KickbackFactor:	// [rc4l] uzdoom@7267e608c
+			return (int)(AllSkills[gameskill].KickbackFactor);
+
+		case SKILLP_Infight:		// [rc4l] uzdoom@1ad02a6ce: 1 total / -1 none / 0 default
+			if (AllSkills[gameskill].Infighting == LEVEL2_TOTALINFIGHTING) return 1;
+			if (AllSkills[gameskill].Infighting == LEVEL2_NOINFIGHTING) return -1;
+			return 0;
+
+		case SKILLP_NoMenu:			// [rc4l] uzdoom@80e9763d6
+			return AllSkills[gameskill].NoMenu;
+
 		case SKILLP_Respawn:
 			if (dmflags & DF_MONSTERS_RESPAWN && AllSkills[gameskill].RespawnCounter==0) 
 				return TICRATE * gameinfo.defaultrespawntime;
@@ -442,6 +498,12 @@ FSkillInfo &FSkillInfo::operator=(const FSkillInfo &other)
 	DamageFactor = other.DamageFactor;
 	FastMonsters = other.FastMonsters;
 	SlowMonsters = other.SlowMonsters;
+	SpawnMulti = other.SpawnMulti;			// [rc4l] uzdoom skill flag
+	InstantReaction = other.InstantReaction;	// [rc4l] uzdoom skill flag
+	NoMenu = other.NoMenu;					// [rc4l] uzdoom@80e9763d6
+	HealthFactor = other.HealthFactor;		// [rc4l] uzdoom@f7cdb28ea
+	KickbackFactor = other.KickbackFactor;	// [rc4l] uzdoom@7267e608c
+	Infighting = other.Infighting;			// [rc4l] uzdoom@1ad02a6ce
 	DisableCheats = other.DisableCheats;
 	AutoUseHealth = other.AutoUseHealth;
 	EasyBossBrain = other.EasyBossBrain;

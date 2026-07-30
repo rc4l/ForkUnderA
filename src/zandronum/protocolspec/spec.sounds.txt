@@ -3,6 +3,7 @@ Command Sound
 	String sound
 	Byte volume
 	Byte attenuation
+	Short pitch
 EndCommand
 
 Command SoundActor
@@ -11,6 +12,7 @@ Command SoundActor
 	String sound
 	Byte volume
 	Byte attenuation
+	Short pitch
 EndCommand
 
 Command SoundActorIfNotPlaying : SoundActor
@@ -23,6 +25,7 @@ Command SoundSector
 	String sound
 	Byte volume
 	Byte attenuation
+	Short pitch
 EndCommand
 
 Command SoundPoint
@@ -33,6 +36,7 @@ Command SoundPoint
 	String sound
 	Byte volume
 	Byte attenuation
+	Short pitch
 EndCommand
 
 Command AnnouncerSound
