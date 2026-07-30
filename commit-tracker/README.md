@@ -5,9 +5,11 @@ half-done port can never masquerade as finished and nothing gets silently skippe
 
 One row per upstream commit, from our **parity anchor** forward to UZDoom HEAD. The anchor is
 `ad88cfc5e` (GZDoom ~1.8, 2013-12-25) — the point where our `src/gl/` was a structural match to
-upstream and we began cherry-picking the renderer forward. Everything the anchor already contains
-is our inherited baseline and isn't tracked. Commits are chronological, so **GZDoom-era rows come
-first and the UZDoom tail (after 2025-10) comes last**.
+upstream and we began cherry-picking the renderer forward. Our engine base is **Zandronum 3.2.1**
+(ZDoom 2.8pre @ `458e1b1`); everything the anchor already contains is inherited baseline and isn't
+tracked, and rows dated before the anchor are floored out (old ZScript-VM branches that merged into
+mainline years later). Commits are chronological, so **GZDoom-era rows come first and the UZDoom
+tail (after 2025-10) comes last**.
 
 ## Files
 
@@ -16,11 +18,13 @@ first and the UZDoom tail (after 2025-10) comes last**.
 | `coverage.tsv` | the tracker — one row per commit, `sha date title status note`          |
 | `index.tsv`    | `path → the commits that touched it` (for "what changed file X?")        |
 | `regen.sh`     | rebuilds both from the UZDoom clone; re-runnable, never wipes curation   |
+| `index.html`   | AG Grid viewer — status filters, search, sortable, commit links (GitHub Pages-ready) |
 
 ## coverage.tsv columns
 
 `sha` `date` `title` — copied verbatim from `git log`, never hand-edited (a re-run refreshes them).
-`status` `note` — the only two fields you curate.
+`date` is a canonical UTC ISO timestamp (sorts to the second); the viewer shows it in the reader's
+local time. `status` `note` — the only two fields you curate.
 
 Commit URL = `https://github.com/UZDoom/UZDoom/commit/<sha>`.
 
