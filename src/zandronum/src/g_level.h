@@ -227,8 +227,7 @@ enum ELevelFlags : unsigned int
 	LEVEL3_FORCEWORLDPANNING	= 0x00000010,	// uzdoom@74ea9143e: force world texture panning
 	LEVEL3_NOCLUSTERTEXT		= 0x00000020,	// uzdoom@20b6395cf: suppress cluster exit text
 	LEVEL3_FORCECLUSTERTEXT		= 0x00000040,	// uzdoom@20b6395cf: force cluster exit text (needclustertext)
-	LEVEL3_PASSOVER				= 0x00000080,	// uzdoom@be2f9c866: DSDA infinitely-tall clipping on
-	LEVEL3_NOPASSOVER			= 0x00000100,	// uzdoom@be2f9c866: DSDA infinitely-tall clipping off
+	// (passover/nopassover are implemented via COMPATF_NO_PASSMOBJ, not a LEVEL3 bit)
 	LEVEL3_E1M8SPECIAL			= 0x00000200,	// uzdoom@e2e8ec8b3: vanilla E1M8 boss action
 	LEVEL3_E2M8SPECIAL			= 0x00000400,	// uzdoom@e2e8ec8b3: vanilla E2M8 boss action
 	LEVEL3_E3M8SPECIAL			= 0x00000800,	// uzdoom@e2e8ec8b3: vanilla E3M8 boss action

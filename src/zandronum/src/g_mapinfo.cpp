@@ -1382,6 +1382,7 @@ enum EMIType
 	MITYPE_CLRFLAG3,	// [rc4l]
 	MITYPE_SCFLAGS3,	// [rc4l]
 	MITYPE_COMPATFLAG,
+	MITYPE_CLRCOMPATFLAG,	// [ZandroX] force-clear a compat bit (e.g. passover)
 	MITYPE_SETFLAGZA, // [BB]
 };
 
@@ -1414,6 +1415,8 @@ MapFlagHandlers[] =
 	{ "needclustertext",				MITYPE_SETFLAG3, LEVEL3_FORCECLUSTERTEXT, 0 },	// [rc4l] uzdoom@20b6395cf
 	{ "nogravity",						MITYPE_SETFLAG3, LEVEL3_NOGRAVITY, 0 },			// [rc4l] uzdoom@3781c43ae
 	{ "propermonsterfallingdamage",	MITYPE_SETFLAG3, LEVEL3_PROPERMONSTERFALLDMG, 0 },	// [rc4l] uzdoom@e74b9f195
+	{ "passover",						MITYPE_CLRCOMPATFLAG, COMPATF_NO_PASSMOBJ, 0 },	// [rc4l] uzdoom@be2f9c866
+	{ "nopassover",						MITYPE_COMPATFLAG, COMPATF_NO_PASSMOBJ, 0 },	// [rc4l] uzdoom@be2f9c866
 	{ "ironlichspecial",				MITYPE_SETFLAG,	LEVEL_HEADSPECIAL, 0 },
 	{ "specialaction_exitlevel",		MITYPE_SCFLAGS,	0, ~LEVEL_SPECACTIONSMASK },
 	{ "specialaction_opendoor",			MITYPE_SCFLAGS,	LEVEL_SPECOPENDOOR, ~LEVEL_SPECACTIONSMASK },
@@ -1723,6 +1726,17 @@ void FMapInfoParser::ParseMapDefinition(level_info_t &info)
 					info.compatflags &= ~handler->data1;
 					info.compatflags2 &= ~handler->data2;
 				}
+				info.compatmask |= handler->data1;
+				info.compatmask2 |= handler->data2;
+			}
+			break;
+
+			// [ZandroX] uzdoom@be2f9c866: 'passover' force-clears a compat bit
+			// (COMPATF_NO_PASSMOBJ) so things pass over/under each other.
+			case MITYPE_CLRCOMPATFLAG:
+			{
+				info.compatflags &= ~handler->data1;
+				info.compatflags2 &= ~handler->data2;
 				info.compatmask |= handler->data1;
 				info.compatmask2 |= handler->data2;
 			}
