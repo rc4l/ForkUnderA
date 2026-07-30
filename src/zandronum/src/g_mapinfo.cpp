@@ -294,6 +294,8 @@ void level_info_t::Reset()
 	SoundInfo = "";
 	SndSeq = "";
 	LightningSound = "";
+	HazardColor = -1;
+	HazardFlash = -1;
 	FinaleText = "";
 	FinaleFlat = "";
 	FinaleMusic = "";
@@ -1213,6 +1215,22 @@ DEFINE_MAP_OPTION(textmusic, true)
 	parse.ParseMusic(info->FinaleMusic, info->finalemusicorder);
 }
 
+// [ZandroX] hazardcolor / hazardflash: Strife hazard screen-blend colors.
+// Ported from uzdoom@b4079b991.
+DEFINE_MAP_OPTION(hazardcolor, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->HazardColor = V_GetColor(NULL, parse.sc.String);
+}
+
+DEFINE_MAP_OPTION(hazardflash, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->HazardFlash = V_GetColor(NULL, parse.sc.String);
+}
+
 // [ZandroX] mapintermusic: intermission music keyed to the destination map.
 // Ported from uzdoom@bb7e19120.
 DEFINE_MAP_OPTION(mapintermusic, true)
@@ -1634,6 +1652,9 @@ static const ZXUnhandledMapInfoKey ZXUnhandledMapKeys[] =
 	{ "thickfogmultiplier",		ZXUH_PARSEONLY,   "c6a6ae23a" },
 	// --- map value-options: no display consumer in this base (parse-only) ---
 	{ "label",					ZXUH_PARSEONLY,   "2decf1086" },	// UMAPINFO short level-label override shown before the name; this base composes/draws only LevelName, so there is no separate label slot to render into
+	{ "colormap",				ZXUH_PARSEONLY,   "e12f2ce0f" },	// Boom whole-level fixed colormap; the GL renderer applies per-sector Colormap fades, not a global Boom COLORMAP index
+	{ "pixelratio",				ZXUH_PARSEONLY,   "d86bd470e" },	// per-level pixel aspect override; this base has no pixelstretch/aspect-override plumbing to feed
+	{ "fs_nocheckposition",		ZXUH_PARSEONLY,   "6ae417725" },	// FraggleScript compat flag; FraggleScript is not implemented in this base
 	// --- map flags: deep savegame/hub-snapshot hook, flagged divergence (parse-only) ---
 	{ "resetitems",				ZXUH_PARSEONLY,   "d80dc098b" },	// re-placing items on hub re-entry means mixing fresh spawns into the savegamerestore snapshot path (p_setup.cpp savegamerestore gate); regression-prone save-adjacent change, no target content uses it
 	// --- map value-options: needs a subsystem we lack (not-portable) ---

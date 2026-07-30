@@ -366,6 +366,8 @@ struct level_info_t
 	FString		SoundInfo;
 	FString		SndSeq;
 	FString		LightningSound;	// [ZandroX] uzdoom@ce2a0c929: overrides "world/thunder" for level lightning
+	int			HazardColor;	// [ZandroX] uzdoom@b4079b991: Strife hazard gradual blend color (-1 = engine default)
+	int			HazardFlash;	// [ZandroX] uzdoom@b4079b991: Strife hazard flash blend color (-1 = engine default)
 
 	// [ZandroX] Per-level finale (independent of the cluster). Ported from
 	// uzdoom@49b77f3a1: exittext / textflat / textpic / textmusic.
