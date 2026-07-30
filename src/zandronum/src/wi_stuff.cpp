@@ -2614,11 +2614,18 @@ void WI_Ticker(void)
 		{
 			// [BB] Nothing to do. We already changed the music.
 		}
+		// [ZandroX] uzdoom@bb7e19120: mapintermusic — intermission music keyed
+		// to the destination map takes precedence over the level default.
+		else if (level.info != NULL && level.info->MapInterMusic.CheckKey(FName(wbs->next)) != NULL)
+		{
+			const FInterMusicEntry *ime = level.info->MapInterMusic.CheckKey(FName(wbs->next));
+			S_ChangeMusic(ime->music, ime->order);
+		}
 		// intermission music - use the defaults if none specified
-		else if (level.info->InterMusic.IsNotEmpty()) 
+		else if (level.info->InterMusic.IsNotEmpty())
 			S_ChangeMusic(level.info->InterMusic, level.info->intermusicorder);
 		else
-			S_ChangeMusic (gameinfo.intermissionMusic.GetChars(), gameinfo.intermissionOrder); 
+			S_ChangeMusic (gameinfo.intermissionMusic.GetChars(), gameinfo.intermissionOrder);
 
 	}
 	

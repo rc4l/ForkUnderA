@@ -306,6 +306,7 @@ void level_info_t::Reset()
 	ACSLibraries.Clear();
 	PrecacheClasses.Clear();
 	PrecacheTextures.Clear();
+	MapInterMusic.Clear();
 }
 
 
@@ -1210,6 +1211,20 @@ DEFINE_MAP_OPTION(textmusic, true)
 {
 	parse.ParseAssign();
 	parse.ParseMusic(info->FinaleMusic, info->finalemusicorder);
+}
+
+// [ZandroX] mapintermusic: intermission music keyed to the destination map.
+// Ported from uzdoom@bb7e19120.
+DEFINE_MAP_OPTION(mapintermusic, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	FName mapname = parse.sc.String;
+	parse.ParseComma();
+	FInterMusicEntry entry;
+	entry.order = 0;
+	parse.ParseMusic(entry.music, entry.order);
+	info->MapInterMusic[mapname] = entry;
 }
 
 // [ZandroX] lightningsound: overrides the thunder sound on lightning levels.
