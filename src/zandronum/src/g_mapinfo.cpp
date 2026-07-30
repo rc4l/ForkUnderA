@@ -683,6 +683,29 @@ void FMapInfoParser::ParseMusic(FString &name, int &order)
 
 //==========================================================================
 //
+// [rc4l] Known-but-unhandled CLUSTER keywords (UZDoom cutscene engine). Classified at the cluster
+// "Unknown property" fallback; SkipToNext() consumes them as before. NOT-PORTABLE.
+//
+//==========================================================================
+
+static bool ZX_ReportUnhandledCluster(FScanner &sc, const char *keyword)
+{
+	static const char *const notPortable[] = { "intro", "outro", "gameover" };	// uzdoom@cda6394a9
+	for (const char *n : notPortable)
+	{
+		if (stricmp(keyword, n) != 0) continue;
+		static TArray<FName> logged;
+		FName fn(keyword);
+		for (unsigned i = 0; i < logged.Size(); i++) if (logged[i] == fn) return true;
+		logged.Push(fn);
+		sc.ScriptMessage("cluster '%s' cutscene not supported in this port (uzdoom@cda6394a9)\n", n);
+		return true;
+	}
+	return false;
+}
+
+//==========================================================================
+//
 // ParseCluster
 // Parses a cluster definition
 //
@@ -767,8 +790,10 @@ void FMapInfoParser::ParseCluster()
 		}
 		else if (!ParseCloseBrace())
 		{
-			// Unknown
-			sc.ScriptMessage("Unknown property '%s' found in map definition\n", sc.String);
+			// [rc4l] Classify the UZDoom cluster cutscene keywords (intro/outro/gameover) before
+			// the generic "Unknown" fallback.
+			if (!ZX_ReportUnhandledCluster(sc, sc.String))
+				sc.ScriptMessage("Unknown property '%s' found in cluster definition\n", sc.String);
 			SkipToNext();
 		}
 		else
