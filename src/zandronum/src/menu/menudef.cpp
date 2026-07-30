@@ -1732,13 +1732,26 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 		{
 			sc.MustGetString();
 			FString label = sc.String;
-			bool cr = false;
+			FOptionMenuItem *it;
 			if (sc.CheckString(","))
 			{
-				sc.MustGetNumber();
-				cr = !!sc.Number;
+				// [rc4l] The second argument is either the legacy header bool (numeric) or a
+				// GZDoom font-colour name (e.g. "Gold"), as Eviternity II uses. uzdoom's
+				// scriptified StaticText takes a colour here.
+				if (sc.CheckNumber())
+				{
+					it = new FOptionMenuItemStaticText(label, !!sc.Number);
+				}
+				else
+				{
+					sc.MustGetString();
+					it = new FOptionMenuItemStaticText(label, V_FindFontColor(sc.String));
+				}
 			}
-			FOptionMenuItem *it = new FOptionMenuItemStaticText(label, cr);
+			else
+			{
+				it = new FOptionMenuItemStaticText(label, false);
+			}
 			desc->mItems.Push(it);
 		}
 		else if (sc.Compare("StaticTextSwitchable"))
@@ -1951,6 +1964,29 @@ static void ParseOptionMenu(FScanner &sc)
 	if (scratch) delete desc;
 }
 
+//=============================================================================
+//
+// [rc4l] AddOptionMenu -- append items to an EXISTING option menu instead of replacing it.
+// Ported from uzdoom common/menu/menudef.cpp (ParseAddOptionMenu); mirrors our own
+// ParseAddFreeformMenu. Eviternity II uses it to graft its options submenu onto "OptionsMenu".
+//
+//=============================================================================
+
+static void ParseAddOptionMenu(FScanner &sc)
+{
+	sc.MustGetString();
+
+	FMenuDescriptor **pOld = MenuDescriptors.CheckKey(sc.String);
+	if (pOld == nullptr || *pOld == nullptr || (*pOld)->mType != MDESC_OptionsMenu)
+	{
+		sc.ScriptError("%s is not an option menu that can be extended", sc.String);
+		return;
+	}
+
+	// Reuse the normal option-menu item grammar; ParseOptionMenuBody appends to mItems.
+	ParseOptionMenuBody(sc, static_cast<FOptionMenuDescriptor*>(*pOld));
+}
+
 
 //=============================================================================
 //
@@ -2025,6 +2061,10 @@ void M_ParseMenuDefs()
 			else if (sc.Compare("OPTIONMENU"))
 			{
 				ParseOptionMenu(sc);
+			}
+			else if (sc.Compare("ADDOPTIONMENU"))
+			{
+				ParseAddOptionMenu(sc);
 			}
 			else if (sc.Compare("DEFAULTOPTIONMENU"))
 			{
@@ -2630,6 +2670,7 @@ void M_StartupSkillMenu(FGameStartup *gs)
 			for(unsigned int i = 0; i < AllSkills.Size(); i++)
 			{
 				FSkillInfo &skill = AllSkills[i];
+				if (skill.NoMenu) continue;	// [rc4l] uzdoom@80e9763d6: skill hidden from the menu
 				FListMenuItem *li;
 				// Using a different name for skills that must be confirmed makes handling this easier.
 				FName action = (skill.MustConfirm && !AllEpisodes[gs->Episode].mNoSkill) ?

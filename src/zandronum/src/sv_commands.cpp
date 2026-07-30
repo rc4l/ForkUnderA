@@ -65,6 +65,7 @@
 #include "r_state.h"
 #include "sbar.h"
 #include "sv_commands.h"
+#include "features/hitboxviz/hitboxviz.h"
 #include "sv_main.h"
 #include "team.h"
 #include "survival.h"
@@ -3644,19 +3645,20 @@ void SERVERCOMMANDS_SetSideFlags( ULONG ulSide, ULONG ulPlayerExtra, ServerComma
 //*****************************************************************************
 //*****************************************************************************
 //
-void SERVERCOMMANDS_Sound( LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_Sound( LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, int pitch )
 {
 	ServerCommands::Sound command;
 	command.SetChannel( lChannel );
 	command.SetSound( pszSound );
 	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ) );
+	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, bool bRespectActorPlayingSomething )
+void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, bool bRespectActorPlayingSomething, int pitch )
 {
 	if ( pActor == NULL )
 		return;
@@ -3676,7 +3678,7 @@ void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSo
 	// [BB] If the actor doesn't have a NetID, we have to instruct the clients differently how to play the sound.
 	if ( pActor->NetID == 0 )
 	{
-		SERVERCOMMANDS_SoundPoint((LONG)( pActor->x),(LONG)( pActor->y),(LONG)( pActor->z), lChannel, pszSound, fVolume, fAttenuation, ulPlayerExtra, flags );
+		SERVERCOMMANDS_SoundPoint((LONG)( pActor->x),(LONG)( pActor->y),(LONG)( pActor->z), lChannel, pszSound, fVolume, fAttenuation, ulPlayerExtra, flags, pitch );
 		return;
 	}
 
@@ -3688,12 +3690,13 @@ void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSo
 	command.SetSound( pszSound );
 	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ));
+	command.SetPitch( pitch );	// [rc4l] -1 = default (client computes its own); >=0 = explicit
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SoundSector( sector_t *sector, int channel, const char *sound, float volume, float attenuation, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_SoundSector( sector_t *sector, int channel, const char *sound, float volume, float attenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, int pitch )
 {
 	if ( sector == NULL )
 		return;
@@ -3704,12 +3707,13 @@ void SERVERCOMMANDS_SoundSector( sector_t *sector, int channel, const char *soun
 	command.SetSound( sound );
 	command.SetVolume( LONG ( clamp( volume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( attenuation ));
+	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SoundPoint( LONG lX, LONG lY, LONG lZ, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_SoundPoint( LONG lX, LONG lY, LONG lZ, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, int pitch )
 {
 	ServerCommands::SoundPoint command;
 	command.SetX( lX );
@@ -3719,6 +3723,7 @@ void SERVERCOMMANDS_SoundPoint( LONG lX, LONG lY, LONG lZ, LONG lChannel, const 
 	command.SetSound( pszSound );
 	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ) );
+	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 
@@ -4284,6 +4289,30 @@ void SERVERCOMMANDS_SetThingSize( AActor* pActor, unsigned int sizeFlags, ULONG 
 		command.addLong( (SDWORD)( pActor->radius ) );
 	if ( sizeFlags & ACTORSIZE_HEIGHT )
 		command.addLong( (SDWORD)( heightToSend ) );
+	// [MGOOOOOO] Attack extent, debug-only (see network.h ActorSizeFlag). Sent raw: unlike height,
+	// it is not re-derived per tic on the client, and GetAttackHeight applies the crouch scaling
+	// there from the physical height it already has.
+	if ( sizeFlags & ACTORSIZE_HITRADIUS )
+		command.addLong( (SDWORD)( pActor->projectilepassradius ) );
+	if ( sizeFlags & ACTORSIZE_HITHEIGHT )
+		command.addLong( (SDWORD)( pActor->projectilepassheight ) );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
+// [ZandroX] Debug: tells clients the damage region of an explosion so the hitbox overlay can draw
+// it. The server is the only machine that runs P_RadiusAttack (A_Explode returns early in client
+// mode), so without this a client could only guess at where and how big a blast was.
+//
+void SERVERCOMMANDS_DebugExplosion( fixed_t x, fixed_t y, fixed_t z, int distance, int fulldamagedistance, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	ServerCommands::DebugExplosion command;
+	command.SetX( x );
+	command.SetY( y );
+	command.SetZ( z );
+	command.SetDistance( distance );
+	command.SetFulldamagedistance( fulldamagedistance );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
@@ -4309,6 +4338,16 @@ void SERVERCOMMANDS_UpdateThingSizeNotAtDefault( AActor* pActor, ULONG ulPlayerE
 		sizeFlags |= ACTORSIZE_RADIUS;
 	if ( baseHeight != pActor->GetDefault()->height )
 		sizeFlags |= ACTORSIZE_HEIGHT;
+
+	// [MGOOOOOO] Debug-only: carry the attack extent too, so a client connecting *after* a
+	// SetHitSize still draws the right attack box instead of the class default.
+	if ( zx::hitboxviz::ServerDebugActive( ) )
+	{
+		if ( pActor->projectilepassradius != pActor->GetDefault()->projectilepassradius )
+			sizeFlags |= ACTORSIZE_HITRADIUS;
+		if ( pActor->projectilepassheight != pActor->GetDefault()->projectilepassheight )
+			sizeFlags |= ACTORSIZE_HITHEIGHT;
+	}
 
 	if ( sizeFlags != 0 )
 		SERVERCOMMANDS_SetThingSize( pActor, sizeFlags, ulPlayerExtra, flags );

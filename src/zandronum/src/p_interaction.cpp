@@ -1388,6 +1388,9 @@ thrust:
 		else
 			kickback = source->player->ReadyWeapon->Kickback;
 
+		// [rc4l] uzdoom@7267e608c: skill KickbackFactor scales damage kickback.
+		kickback = FixedMul(kickback, G_SkillProperty(SKILLP_KickbackFactor));
+
 		if (kickback)
 		{
 			// [BB] Safe the original z-velocity of the target. This way we can check if we need to update it.
@@ -1964,9 +1967,14 @@ bool AActor::OkayToSwitchTarget (AActor *other)
 		return false;
 
 	int infight;
-	if (flags5 & MF5_NOINFIGHTING) infight=-1;	
+	// [rc4l] uzdoom@1ad02a6ce: a skill's NoInfighting/TotalInfighting overrides the level/global
+	// setting (but never the per-actor MF5_NOINFIGHTING).
+	const int skillInfight = G_SkillProperty(SKILLP_Infight);
+	if (flags5 & MF5_NOINFIGHTING) infight=-1;
+	else if (skillInfight > 0) infight=1;
+	else if (skillInfight < 0) infight=-1;
 	else if (level.flags2 & LEVEL2_TOTALINFIGHTING) infight=1;
-	else if (level.flags2 & LEVEL2_NOINFIGHTING) infight=-1;	
+	else if (level.flags2 & LEVEL2_NOINFIGHTING) infight=-1;
 	else infight = infighting;
 	
 	// [BC] No infighting during invasion mode.

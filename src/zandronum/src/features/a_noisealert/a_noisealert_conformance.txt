@@ -1,0 +1,12 @@
+// Conformance lump for A_NoiseAlert (features/a_noisealert). Pack as a DECORATE lump in a pk3 and
+// -file it; a dropped decl resurfaces as "Invalid state parameter a_noisealert". See README.md.
+
+ACTOR ZXConfNoiseAlert
+{
+	States
+	{
+	Spawn:
+		TNT1 A 2 A_NoiseAlert
+		Stop
+	}
+}

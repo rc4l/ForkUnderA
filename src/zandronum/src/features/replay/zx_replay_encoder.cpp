@@ -214,7 +214,13 @@ void ReplayEncoder::EvictAudio()
 bool ReplayEncoder::SaveClip(const char *path, int windowSecs)
 {
 	if (!enc_) return false;
-	Drain(nullptr, lastUs_); // flush any queued frames
+	// [ZandroX] Do NOT send a terminal (nullptr) flush here. avcodec_send_frame(enc_, NULL) puts the
+	// encoder into a permanent draining/EOF state, after which every later AddFrame's send_frame
+	// returns AVERROR_EOF and no new packets ever reach the ring -- so the 2nd and later clips in a
+	// session (e.g. one per wad_reload) freeze on the first clip's footage. The encoder runs with
+	// max_b_frames=0 + zerolatency, so each AddFrame's receive loop already drains every emitted
+	// packet into the ring; the ring is complete except for at most the encoder's in-flight pipeline
+	// tail (~a couple of frames on VideoToolbox, zero on x264), which is imperceptible for a replay.
 	if (ring_.empty()) return false;
 
 	// Pick the start packet with the pure, unit-tested selector (handles the "session shorter than
@@ -235,7 +241,8 @@ bool ReplayEncoder::SaveClip(const char *path, int windowSecs)
 	size_t aStart = 0;
 	if (aenc_ != nullptr)
 	{
-		DrainAudio(nullptr, aAccumUs_);
+		// Same reasoning as the video path: a terminal flush would EOF the audio encoder and freeze
+		// all later clips. The audio ring already holds every emitted packet.
 		for (size_t i = 0; i < aring_.size(); ++i)
 			if (aring_[i].tUs >= clipStartUs) { aStart = i; haveAudio = true; break; }
 	}

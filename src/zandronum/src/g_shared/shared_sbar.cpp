@@ -613,9 +613,13 @@ void DBaseStatusBar::DrawPartialImage (FTexture *img, int wx, int ww) const
 {
 	if (img != NULL)
 	{
-		screen->DrawTexture (img, ST_X, ST_Y,
-			DTA_WindowLeft, wx,
-			DTA_WindowRight, wx + ww,
+		// [ZandroX] Widescreen status bar: the vanilla 320-wide layout is
+		// centered within a wider bar graphic, so read the partial slice from
+		// the centered region and shift the draw origin to compensate.
+		int xoff = (img->GetScaledWidth() > 320) ? (img->GetScaledWidth() - 320) / 2 : 0;
+		screen->DrawTexture (img, ST_X - xoff, ST_Y,
+			DTA_WindowLeft, wx + xoff,
+			DTA_WindowRight, wx + xoff + ww,
 			DTA_Bottom320x200, Scaled,
 			TAG_DONE);
 	}
