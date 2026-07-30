@@ -2185,11 +2185,15 @@ void FMapInfoParser::ParseDamageDefinition()
 
 	DamageTypeDefinition dtd;
 	ParseOpenBrace();
-	while (!ParseCloseBrace())
+	while (sc.GetString())
 	{
-		if (sc.Compare("FACTOR"))
+		if (ParseCloseBrace())
 		{
-			ParseAssign();
+			break;
+		}
+		else if (sc.Compare("FACTOR"))
+		{
+			CheckAssign();		// '=' is optional
 			sc.MustGetFloat();
 			dtd.DefaultFactor = FLOAT2FIXED(sc.Float);
 			// A factor of 0 with no explicit replace still means "immune".
