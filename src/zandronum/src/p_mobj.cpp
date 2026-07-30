@@ -2899,7 +2899,10 @@ void P_MonsterFallingDamage (AActor *mo)
 	{
 		damage = (int)(((vel - (23*FRACUNIT))*6)>>FRACBITS);
 	}
-	damage = TELEFRAG_DAMAGE;	// always kill 'em
+	// [rc4l] uzdoom@e74b9f195: without 'propermonsterfallingdamage' the monster is instakilled
+	// (historical behaviour); the flag makes it use the real computed falling-damage instead.
+	if (!(level.flags3 & LEVEL3_PROPERMONSTERFALLDMG))
+		damage = TELEFRAG_DAMAGE;	// always kill 'em
 	P_DamageMobj (mo, NULL, NULL, damage, NAME_Falling);
 }
 
