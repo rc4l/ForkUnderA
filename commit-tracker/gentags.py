@@ -48,10 +48,10 @@ def file_subsystems(fname):
     """Subsystem tags from a filename: the ZDoom prefix (readable) PLUS the specific name
     token after it -- so d_net -> {main, net}, g_level -> {game, level}, p_setup -> {playsim, setup}.
     Broad prefix stays for grouping; the name breaks it down."""
-    stem = fname.rsplit(".", 1)[0]
+    stem = fname.rsplit(".", 1)[0] or fname.lstrip(".")   # dotfile (.gitignore) -> "gitignore"
     m = PREFIX.match(stem)
     if not m:
-        return {stem}
+        return {stem} if stem else set()
     prefix = m.group(1)
     out = {ZDOOM_PREFIX.get(prefix, prefix)}
     name = re.match(r"[a-z0-9]+", stem[len(prefix) + 1:])
