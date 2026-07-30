@@ -280,6 +280,15 @@ struct FOptionalMapinfoDataPtr
 typedef TMap<FName, FOptionalMapinfoDataPtr> FOptData;
 typedef TMap<int, FName> FMusicMap;
 
+// [ZandroX] uzdoom@bb7e19120: mapintermusic — intermission music keyed to the
+// destination map.
+struct FInterMusicEntry
+{
+	FString	music;
+	int		order;
+};
+typedef TMap<FName, FInterMusicEntry> FInterMusicMap;
+
 enum EMapType
 {
 	MAPTYPE_UNKNOWN = 0,
@@ -369,6 +378,7 @@ struct level_info_t
 
 	FOptData	optdata;
 	FMusicMap	MusicMap;
+	FInterMusicMap	MapInterMusic;	// [ZandroX] uzdoom@bb7e19120: per-destination intermission music
 
 	TArray<FSpecialAction> specialactions;
 
