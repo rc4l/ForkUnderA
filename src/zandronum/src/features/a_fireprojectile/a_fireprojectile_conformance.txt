@@ -1,0 +1,16 @@
+// Conformance lump for A_FireProjectile (features/a_fireprojectile). Pack as a DECORATE lump in a
+// pk3 and -file it; a dropped decl/param/flag resurfaces as a parse error. See README.md.
+
+ACTOR ZXConfFireProjectile : Pistol replaces Pistol
+{
+	States
+	{
+	Fire:
+		PISG A 1 A_FireProjectile("Rocket", 0.0, 0)
+		PISG A 1 A_FireProjectile("Rocket", 15, false, 0, 0, FPF_AIMATANGLE)
+		PISG A 1 A_FireProjectile("Rocket", 0, true, 0, 0, FPF_NOAUTOAIM, 0)
+		PISG A 1 A_FireProjectile("Rocket", 0, true, 0, 0, FPF_TRANSFERTRANSLATION, 0)
+		PISG A 1 A_ReFire
+		Goto Ready
+	}
+}

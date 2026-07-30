@@ -1396,7 +1396,8 @@ void AActor::Touch (AActor *toucher)
 bool AActor::Grind(bool items)
 {
 	// crunch bodies to giblets
-	if ((flags & MF_CORPSE) && !(flags3 & MF3_DONTGIB) && (health <= 0))
+	// [ZandroX] uzdoom@a1cc548af: dontcrunchcorpses leaves corpses intact.
+	if ((flags & MF_CORPSE) && !(flags3 & MF3_DONTGIB) && (health <= 0) && !gameinfo.dontcrunchcorpses)
 	{
 		FState * state = FindState(NAME_Crush);
 		bool isgeneric = false;
@@ -2899,7 +2900,10 @@ void P_MonsterFallingDamage (AActor *mo)
 	{
 		damage = (int)(((vel - (23*FRACUNIT))*6)>>FRACBITS);
 	}
-	damage = TELEFRAG_DAMAGE;	// always kill 'em
+	// [rc4l] uzdoom@e74b9f195: without 'propermonsterfallingdamage' the monster is instakilled
+	// (historical behaviour); the flag makes it use the real computed falling-damage instead.
+	if (!(level.flags3 & LEVEL3_PROPERMONSTERFALLDMG))
+		damage = TELEFRAG_DAMAGE;	// always kill 'em
 	P_DamageMobj (mo, NULL, NULL, damage, NAME_Falling);
 }
 
@@ -4941,7 +4945,9 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 
 	FRandom &rng = pr_spawnmobj;
 
-	if (actor->isFast() && actor->flags3 & MF3_ISMONSTER)
+	// [rc4l] uzdoom gates instant reaction on the InstantReaction skill flag as well as fast
+	// monsters (p_mobj.cpp), so a skill can zero reaction time without also making monsters fast.
+	if ((actor->isFast() || G_SkillProperty(SKILLP_InstantReaction)) && actor->flags3 & MF3_ISMONSTER)
 		actor->reactiontime = 0;
 
 	if (actor->flags3 & MF3_ISMONSTER)
@@ -7873,12 +7879,13 @@ int AActor::SpawnHealth()
 	}
 	else if (flags & MF_FRIENDLY)
 	{
-		int adj = FixedMul(defhealth, G_SkillProperty(SKILLP_FriendlyHealth));
+		// [rc4l] uzdoom@f7cdb28ea: skill HealthFactor scales spawn health on top of Friendly/MonsterHealth.
+		int adj = FixedMul(FixedMul(defhealth, G_SkillProperty(SKILLP_FriendlyHealth)), G_SkillProperty(SKILLP_HealthFactor));
 		return (adj <= 0) ? 1 : adj;
 	}
 	else
 	{
-		int adj = FixedMul(defhealth, G_SkillProperty(SKILLP_MonsterHealth));
+		int adj = FixedMul(FixedMul(defhealth, G_SkillProperty(SKILLP_MonsterHealth)), G_SkillProperty(SKILLP_HealthFactor));
 		return (adj <= 0) ? 1 : adj;
 	}
 }

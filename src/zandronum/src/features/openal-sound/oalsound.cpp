@@ -1046,7 +1046,10 @@ extern ReverbContainer *ForcedEnvironment;
 
 #define PITCH_MULT (0.7937005f) /* Approx. 4 semitones lower; what Nash suggested */
 
-#define PITCH(pitch) (snd_pitched ? (pitch)/128.f : 1.f)
+// [rc4l] Apply the channel's pitch unconditionally: S_StartSound now decides the pitch value
+// (leaving randomised sounds at NORM_PITCH=128 when snd_pitched is off, which yields 1.0 here),
+// so an explicit A_StartSound pitch is honoured regardless of the snd_pitched CVar.
+#define PITCH(pitch) ((pitch)/128.f)
 
 static size_t GetChannelCount(ChannelConfig chans)
 {
