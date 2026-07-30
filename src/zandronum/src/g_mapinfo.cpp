@@ -1295,6 +1295,7 @@ MapFlagHandlers[] =
 	{ "avoidmelee",						MITYPE_SETFLAG3, LEVEL3_AVOIDMELEE, 0 },	// [rc4l] uzdoom@ff497996a
 	{ "noclustertext",					MITYPE_SETFLAG3, LEVEL3_NOCLUSTERTEXT, 0 },		// [rc4l] uzdoom@20b6395cf
 	{ "needclustertext",				MITYPE_SETFLAG3, LEVEL3_FORCECLUSTERTEXT, 0 },	// [rc4l] uzdoom@20b6395cf
+	{ "nogravity",						MITYPE_SETFLAG3, LEVEL3_NOGRAVITY, 0 },			// [rc4l] uzdoom@3781c43ae
 	{ "ironlichspecial",				MITYPE_SETFLAG,	LEVEL_HEADSPECIAL, 0 },
 	{ "specialaction_exitlevel",		MITYPE_SCFLAGS,	0, ~LEVEL_SPECACTIONSMASK },
 	{ "specialaction_opendoor",			MITYPE_SCFLAGS,	LEVEL_SPECOPENDOOR, ~LEVEL_SPECACTIONSMASK },
