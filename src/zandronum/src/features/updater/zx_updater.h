@@ -23,6 +23,11 @@ bool IsAvailable();
 // The newer release's tag, or "" when none. Valid only while IsAvailable() is true.
 const char *Tag();
 
+// Kick off the background GitHub-releases check on a detached worker thread (non-blocking). Called
+// once at startup; a no-op when the cl_fua_update_notify cvar is off. On finding a newer release it
+// calls SetLatestTag; any failure/timeout leaves the notice hidden. Safe to call again (e.g. a CCMD).
+void StartCheck();
+
 } } // namespace zx::updater
 
 #endif
