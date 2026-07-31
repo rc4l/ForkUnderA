@@ -134,7 +134,7 @@ d74f0450041a2219dbffce58a00e9d1d1934d50f	2014-04-05T13:37:10Z	Merge branch 'mast
 69af73d9b98b1f8b8f0a4b81a0c5f3dcad448f40	2014-04-06T12:35:44Z	- alternative configuration using GLEW to get extension functions. This requires GL 2.0, though so it won't be promoted to the mainline for the time being. - removed all pre GL 2.0 support.	ported	d2e4479
 ca93e04de37cb9f105c7c8d0106868013b403395	2014-04-07T11:23:55Z	Added GetActorPowerupTics ACS function	ported	present 11/11 (inherited)
 bbb41e869c67cccec3c177e2cfa06b7fa7fc6b46	2014-04-07T17:54:30Z	Merge branch 'master' of https://github.com/Edward850/zdoom	skip	merge
-580094a7924ea586bc0c789e55d51aa3dc3f2287	2014-04-10T10:32:23Z	More editing flags	skip	PSX/Doom64 MTF_* thing-effect flags; net-new feature, no consumer subsystem in tree -- re-triageable if adopted
+580094a7924ea586bc0c789e55d51aa3dc3f2287	2014-04-10T10:32:23Z	More editing flags	adapted	ported thing half (MTF_TRANS/ADD/SUBTRACT/SPECTRE/DOUBLEHEALTH in doomdata/namedef/p_udmf/p_mobj); linedef half inherited; added [rc4l] SetThingHealth broadcast at both [EP] SpawnThing sites for C/S
 4cac599b8899abd3385eeef4bece05c619d8aedc	2014-04-10T22:58:59Z	Less flags, more generic properties	ported	present 23/25 (inherited)
 101107b1e5ea3f498747f31291d10694d7dbe09f	2014-04-12T08:55:10Z	Updated documentation	ported	present 15/15 (inherited)
 42708386138aea39d712df72b80a410e92243b4a	2014-04-12T10:02:19Z	CANRAISE state definition	ported	present 5/7 (inherited)

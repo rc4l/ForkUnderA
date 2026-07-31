@@ -51,7 +51,9 @@ For upstream commit `C` (`UP` = the UZDoom clone; our source = `src/zandronum/sr
      renames constantly — `src/gl` → `src/rendering/hwrenderer`). `git -C $UP log --follow` traces the
      rename; grep our tree for the basename.
    - *Symbol:* grep our source for the function / DECORATE action / ACS func / lump keyword it changes.
-3. **Classify** → skip (nothing of ours) / candidate (ours exists) / partial (mixed).
+3. **Classify** → skip (nothing of ours) / candidate (ours exists) / partial (mixed). A self-contained
+   feature that's *absent but not tied to any dropped subsystem* is a candidate you port, not a product
+   decision to surface — port it and move on.
 4. **For candidates, hand off to `upstream-port`:** run `backport-scout.sh` → pick the route
    (staircase batch / post-wall C++ / scriptified / born-in-ZScript) → port or adapt → its gates.
 
