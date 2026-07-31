@@ -282,23 +282,6 @@ addEventListener("resize", () => { clearTimeout(fitTimer); fitTimer = setTimeout
 const columnDefs = [
   { field: "sha", headerName: "their commit", width: 130, minWidth: 92, filter: true,
     cellRenderer: p => `<a class="sha" href="${REPO}${p.value}" target="_blank" rel="noopener">${p.value.slice(0,9)}</a>` },
-  { field: "date", headerName: "date", width: 200, minWidth: 150, sort: "asc",
-    // stored value is a canonical UTC ISO stamp (sorts precisely); the cell shows the
-    // reader's own local time to the minute (am/pm, no "at"); hover for full seconds + UTC.
-    valueFormatter: p => {
-      if (!p.value) return "";
-      const d = new Date(p.value);
-      return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
-        + ", " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-    },
-    tooltipValueGetter: p => {
-      if (!p.value) return "";
-      const d = new Date(p.value);
-      return d.toLocaleString("en-US", { weekday: "short", year: "numeric", month: "long",
-        day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })
-        + "  ·  " + p.value + " (UTC)";
-    } },
-  { field: "title", headerName: "title", flex: 3, minWidth: 130, tooltipField: "title" },
   { field: "status", headerName: "status", width: 120, minWidth: 78,
     cellClass: p => "s-" + p.value },
   { field: "ours", headerName: "our commit", width: 150, filter: true,
@@ -316,6 +299,23 @@ const columnDefs = [
         .map(s => `<a class="sha" href="${OUR_REPO}${s}" target="_blank" rel="noopener">${s.slice(0,9)}</a>`)
         .join(" ");
     } },
+  { field: "date", headerName: "date", width: 200, minWidth: 150, sort: "asc",
+    // stored value is a canonical UTC ISO stamp (sorts precisely); the cell shows the
+    // reader's own local time to the minute (am/pm, no "at"); hover for full seconds + UTC.
+    valueFormatter: p => {
+      if (!p.value) return "";
+      const d = new Date(p.value);
+      return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+        + ", " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    },
+    tooltipValueGetter: p => {
+      if (!p.value) return "";
+      const d = new Date(p.value);
+      return d.toLocaleString("en-US", { weekday: "short", year: "numeric", month: "long",
+        day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })
+        + "  ·  " + p.value + " (UTC)";
+    } },
+  { field: "title", headerName: "title", flex: 3, minWidth: 130, tooltipField: "title" },
   { field: "tags", headerName: "tags (auto-derived)", flex: 2, minWidth: 200, filter: true,
     tooltipValueGetter: p => (p.value || "").split(" ").filter(Boolean)
       .map(t => t.replace(/^(fn|acs|lump|f):/, "")).join("   ·   "),
