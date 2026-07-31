@@ -28,6 +28,9 @@
                    font-variant-numeric: tabular-nums; }
   #progress .goal { color: #1a1a2e; font-weight: 600; }
   #progress .counts { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .release { margin: 0 0 10px; font-size: 12px; }
+  .release a { color: #2563eb; text-decoration: none; }
+  .release a:hover { text-decoration: underline; }
   .chip { border: 1px solid #d1d5db; background: #f9fafb; border-radius: 999px;
           padding: 5px 12px; font-size: 13px; cursor: pointer; user-select: none; }
   .chip:hover { background: #f3f4f6; }
@@ -82,6 +85,11 @@
       <span class="counts"></span>
     </div>
     <div class="track"><div class="fill"></div></div>
+  </div>
+  <!-- [rc4l] /releases/latest is GitHub's own redirect to whatever the newest release is, so
+       this never names a version and never needs regenerating when we ship one. -->
+  <div class="release">
+    <a href="https://github.com/rc4l/ZandroX/releases/latest" target="_blank" rel="noopener">Latest release &#8599;</a>
   </div>
   <div class="bar" id="chips"></div>
 </header>
