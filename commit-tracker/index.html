@@ -65,14 +65,23 @@
   .release { margin: 0 0 10px; font-size: 12px; }
   .release a { color: #2563eb; text-decoration: none; font-weight: 700; }
   .release a:hover { text-decoration: underline; }
-  .chip { border: 1px solid #d1d5db; background: #f9fafb; border-radius: 999px;
+  /* [rc4l] Filter chips live on ONE line that scrolls sideways, rather than wrapping. Wrapping
+     cost three lines (106px) of a phone's viewport before the table even started. The search box
+     is a sibling of the strip, so it stays put while the chips scroll under it. */
+  .controls { display: flex; gap: 8px; align-items: center; }
+  #chips { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 0;
+           overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -ms-overflow-style: none;
+           -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; padding-bottom: 1px; }
+  #chips::-webkit-scrollbar { display: none; }
+  .chip { flex: 0 0 auto; border: 1px solid #d1d5db; background: #f9fafb; border-radius: 999px;
           padding: 5px 12px; font-size: 13px; cursor: pointer; user-select: none; }
   .chip:hover { background: #f3f4f6; }
   .chip.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
   .chip b { font-variant-numeric: tabular-nums; }
   .chip .n { opacity: .7; margin-left: 5px; font-size: 12px; }
-  input.search { margin-left: auto; padding: 6px 10px; border: 1px solid #d1d5db;
+  input.search { flex: 0 0 auto; padding: 6px 10px; border: 1px solid #d1d5db;
                  border-radius: 8px; font-size: 13px; width: 260px; }
+  @media (max-width: 760px) { input.search { width: 132px; } }
   /* [rc4l] The wrapper is the horizontal scroller; the grid inside it is laid out at its full
      natural width when the screen is narrower. Because the header and the rows are both inside
      the element that moves, they cannot drift apart the way AG Grid's own scroll-event sync did. */
@@ -139,7 +148,9 @@
   <div class="release">
     <a href="https://github.com/rc4l/ZandroX/releases/latest" target="_blank" rel="noopener">Download latest release &#8599;</a>
   </div>
-  <div class="bar" id="chips"></div>
+  <div class="controls">
+    <div id="chips"></div>
+  </div>
 </header>
 <div id="gridwrap"><div id="grid" class="ag-theme-quartz">
   <div id="loading"><div class="ring"></div><div>Loading ~5&nbsp;MB of commit data&hellip;</div></div>
@@ -243,9 +254,22 @@ async function onRowClicked(e) {
 // wrapper do the horizontal scrolling. Header and rows are then inside ONE moving element and
 // cannot drift apart, however the scroll is driven. Vertical scrolling stays inside the grid,
 // where row virtualisation needs it. Every column stays visible at every width.
+const NARROW = 760;       // below this we are on a phone-sized screen
 const TABLE_MIN = 1120;   // width the columns lay out in when the screen is narrower than this
+// [rc4l] Per-column filter boxes are a desktop idiom: on a phone they cost a whole 49px band
+// above the rows to duplicate what the chip strip and the search box already do. Toggled rather
+// than deleted, so rotating to landscape (or a tablet) gets them back.
+let floatingOn = null;
+function syncFloatingFilters() {
+  const want = innerWidth >= NARROW;
+  if (want === floatingOn) return;                 // setGridOption rebuilds the columns; only do it on a real change
+  floatingOn = want;
+  gridApi.setGridOption("defaultColDef",
+    { sortable: true, filter: true, resizable: true, floatingFilter: want });
+}
 function fitColumns() {
   if (!gridApi) return;
+  syncFloatingFilters();
   const wrap = document.getElementById("gridwrap");
   const grid = document.getElementById("grid");
   // Wider than the table needs? Let it be fluid so the flex columns fill the screen. Narrower?
@@ -335,9 +359,12 @@ function renderChips(rows) {
   el.append(mk("all", "all"));
   for (const s of STATUSES) el.append(mk(s, s));
   const search = document.createElement("input");
-  search.className = "search"; search.placeholder = "search title / note / sha…";
+  search.className = "search";
+  // [rc4l] The long placeholder is what forced the toolbar onto a third line on a phone.
+  search.placeholder = innerWidth < NARROW ? "search…" : "search title / note / sha…";
   search.oninput = e => gridApi.setGridOption("quickFilterText", e.target.value);
-  el.append(search);
+  // Sibling of #chips, not a child: the chip strip scrolls, the search box must not scroll away.
+  document.querySelector(".controls").append(search);
 }
 
 async function setStatus(key) {
