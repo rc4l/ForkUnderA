@@ -906,6 +906,12 @@ void M_StartControlPanel (bool makeSound);
 void M_SetMenu(FName menu, int param = -1);
 void M_NotifyNewSave (const char *file, const char *title, bool okForQuicksave);
 void M_StartMessage(const char *message, int messagemode, FName action = NAME_None);
+// [rc4l] Pop a yes/no dialog that opens `url` in the browser on Yes. The dialog text ALWAYS shows the
+// full URL (this builds it — no caller can substitute hidden text), and non-http/https URLs are
+// refused outright. This is the only sanctioned way to reach I_OpenURL from menudef/CCMD/a mod.
+void M_ConfirmOpenURL(const char *url);
+// [rc4l] Same dialog, but for a GitHub release `tag`: opens the download for the running OS on Yes.
+void M_ConfirmDownloadRelease(const char *tag);
 DMenu *StartPickerMenu(DMenu *parent, const char *name, FColorCVar *cvar);
 void M_RefreshModesList ();
 void M_InitVideoModesMenu ();
