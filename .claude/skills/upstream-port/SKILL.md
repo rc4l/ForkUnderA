@@ -96,10 +96,14 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
 5. **Tests**: `cmake --build build-tests && ctest` all green; new computation units at 100%
    coverage (`bash tests/coverage.sh --auto`).
 6. **Manual E2E by the user is the verification standard** (their eye has overruled screenshot
-   reads repeatedly). Drive the engine with the `zandronum-driver` skill; remember the THREE stale
-   layers after any change: `cmake --build build`, copy `build/zandronum` AND `build/zandronum.pk3`
-   into `build/ZandroX.app/Contents/MacOS/`, re-codesign; wadsrc edits additionally need the pk3
-   deleted first (the `add_pk3` trap). E2E must inspect the *artifacts an action leaves behind*,
+   reads repeatedly). **Rebuild + refresh the bundle with `mac_build_run.sh` (`--run` to launch) —
+   never hand-roll `cmake --build --target zdoom` + manual copies.** That target does NOT rebuild the
+   pk3s (`add_pk3` depends on the zipdir *tool*, not on `wadsrc/` content), so a hand-rolled build
+   ships a stale or missing `zandronum.pk3` and a silently-failed link as if they were fine — the
+   exact trap that has burned whole sessions. `mac_build_run.sh` fails CLOSED: it stops on a bad build,
+   repacks any pk3 missing or older than its `wadsrc/`, syncs into `build/ZandroX.app/Contents/MacOS/`,
+   re-codesigns, and verifies the bundle's binary + pk3 before it ever says "safe to launch." Then
+   drive with the `zandronum-driver` skill. E2E must inspect the *artifacts an action leaves behind*,
    not just the action itself: fire at a wall and then WALK UP to the decals; kill and look at the
    corpse; open a door and look at the track (the white-decal miss — the muzzle flash verified,
    the bullet marks it left didn't). And cover the views nobody defaults to: LOOK STRAIGHT UP at
