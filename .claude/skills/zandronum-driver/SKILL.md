@@ -8,6 +8,14 @@ description: How to drive the ZandroX engine via the Zandronum MCP without wasti
 The MCP (`zandronum-mcp`, v0.4.0+) spawns a bridge-patched engine and drives it over
 loopback TCP. Follow this to avoid the failure modes that otherwise eat a lot of time.
 
+## Rebuild before you launch
+
+- **After any code or `wadsrc/` change, rebuild the bundle with `mac_build_run.sh` first.**
+  It fails closed — stops on a bad build, repacks any stale/missing pk3, and verifies the
+  bundle's binary + pk3 before it says "safe to launch." Launching without it is the #1 time
+  sink: a hand-rolled `cmake --build --target zdoom` never rebuilds the pk3, so you drive a
+  stale binary or hit `Cannot find zandronum.pk3` and debug the wrong layer for an hour.
+
 ## Launch
 
 - **Always launch into a map.** Pass `map: "MAP01"` (and `skill: 3`). Without a map the
