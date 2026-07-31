@@ -4502,6 +4502,8 @@ static const int LegacyRenderStyleIndices[] =
 	3,	// STYLE_SoulTrans,
 	4,	// STYLE_OptFuzzy,
 	5,	// STYLE_Stencil,
+	6,	// STYLE_AddStencil
+	7,	// STYLE_AddShaded
 	64,	// STYLE_Translucent
 	65,	// STYLE_Add,
 	66,	// STYLE_Shaded,
