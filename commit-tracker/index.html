@@ -193,6 +193,13 @@ function detailHead(d) {
       + ` &middot; ${new Date(d.date).toLocaleString("en-US", { year: "numeric", month: "short",
             day: "numeric", hour: "numeric", minute: "2-digit" })}`
     + `</div>`
+    // [rc4l] `ours` is one of the columns hidden on a narrow screen, so it has to appear here or
+    // it would be unreachable on a phone. "/" means inapplicable — not worth a line of its own.
+    + (d.ours && d.ours !== "/" ? `<div class="note"><b>ours</b> ${
+        d.ours === "zandronum-base" ? `<span class="ours-inh">zandronum&#8209;base</span>`
+        : d.ours.split(",").map(s => s.trim()).filter(Boolean).map(s =>
+            `<a class="sha" href="${OUR_REPO}${esc(s)}" target="_blank" rel="noopener">${esc(s.slice(0,9))}</a>`).join(", ")
+      }</div>` : "")
     + (d.note ? `<div class="note"><b>note</b> ${esc(d.note)}</div>` : "")
     + (tags.length ? `<div class="dtags">${tags.map(t =>
         `<span class="tag">${esc(t.replace(/^(fn|acs|lump|f):/, ""))}</span>`).join("")}</div>` : "");
@@ -211,10 +218,31 @@ async function onRowClicked(e) {
     + `</div>`;
 }
 
+// [rc4l] Why this exists: AG Grid's header is a separate scrolling element kept in step with the
+// rows by re-transforming it on the body's scroll event. During a compositor-driven touch scroll
+// those events arrive throttled, so the header visibly trails the rows — you cannot fix that
+// alignment from CSS. The cure is to not scroll sideways at all on a small screen: drop the
+// columns that don't fit and let the rest fill the width. Nothing is lost, because tapping a row
+// shows the full title, note and tags anyway.
+const NARROW = 760, VERY_NARROW = 520;
+function fitColumns() {
+  if (!gridApi) return;
+  const w = window.innerWidth;
+  gridApi.setColumnsVisible(["tags", "note", "ours"], w >= NARROW);
+  gridApi.setColumnsVisible(["date"], w >= VERY_NARROW);
+  // Only narrow screens need this: it spends the exact viewport width, leaving no horizontal
+  // overflow for the header and the body to disagree about. On a wide screen the flex columns
+  // already fill the width, and calling it there just steals room from `title` to pad the
+  // fixed-width columns.
+  if (w < NARROW) gridApi.sizeColumnsToFit();
+}
+let fitTimer;
+addEventListener("resize", () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitColumns, 150); });
+
 const columnDefs = [
-  { field: "sha", headerName: "their commit", width: 130, filter: true,
+  { field: "sha", headerName: "their commit", width: 130, minWidth: 92, filter: true,
     cellRenderer: p => `<a class="sha" href="${REPO}${p.value}" target="_blank" rel="noopener">${p.value.slice(0,9)}</a>` },
-  { field: "date", headerName: "date", width: 200, sort: "asc",
+  { field: "date", headerName: "date", width: 200, minWidth: 150, sort: "asc",
     // stored value is a canonical UTC ISO stamp (sorts precisely); the cell shows the
     // reader's own local time to the minute (am/pm, no "at"); hover for full seconds + UTC.
     valueFormatter: p => {
@@ -230,8 +258,8 @@ const columnDefs = [
         day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })
         + "  ·  " + p.value + " (UTC)";
     } },
-  { field: "title", headerName: "title", flex: 2, minWidth: 300, tooltipField: "title" },
-  { field: "status", headerName: "status", width: 120,
+  { field: "title", headerName: "title", flex: 3, minWidth: 130, tooltipField: "title" },
+  { field: "status", headerName: "status", width: 120, minWidth: 78,
     cellClass: p => "s-" + p.value },
   { field: "ours", headerName: "our commit", width: 150, filter: true,
     // OUR repo commit(s) that addressed the row. "/" = inapplicable (pending/skip);
@@ -248,7 +276,7 @@ const columnDefs = [
         .map(s => `<a class="sha" href="${OUR_REPO}${s}" target="_blank" rel="noopener">${s.slice(0,9)}</a>`)
         .join(" ");
     } },
-  { field: "tags", headerName: "tags (auto-derived)", flex: 2, minWidth: 260, filter: true,
+  { field: "tags", headerName: "tags (auto-derived)", flex: 2, minWidth: 200, filter: true,
     tooltipValueGetter: p => (p.value || "").split(" ").filter(Boolean)
       .map(t => t.replace(/^(fn|acs|lump|f):/, "")).join("   ·   "),
     // value is a space-joined string (filterable/searchable); rendered as chips.
@@ -344,6 +372,7 @@ Promise.all([
     tooltipShowDelay: 400,
     onRowClicked: onRowClicked,
   });
+  fitColumns();
 }).catch(err => {
   // [rc4l] A spinner that never stops is worse than the blank box it replaced: if the fetch or
   // the parse dies, say so instead of spinning for ever.
