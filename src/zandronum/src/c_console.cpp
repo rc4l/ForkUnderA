@@ -42,6 +42,7 @@
 #include <time.h>
 
 #include "version.h"
+#include "features/fua-branding/computation/fua_version_compute.h"
 #include "g_game.h"
 #include "c_bind.h"
 #include "c_console.h"
@@ -1497,10 +1498,22 @@ void C_DrawConsole (bool hw2d)
 			// [AK] Use FString to create the version string.
 			FString versionString;
 
-			// [BC] In addition to drawing the program version, draw the ZDoom version as well.
-			// [RC] Also draw revision number, but break these up so it's legible.
-			versionString.Format( "v%s (" TEXTCOLOR_GREEN "%s" TEXTCOLOR_NORMAL ") ", GetVersionString( ), ZDOOMVERSIONSTR );
-			versionString.AppendFormat( TEXTCOLOR_BLUE "%s", GetGitTime( ));
+			// [rc4l] Show OUR version, not the upstream ones. This used to read
+			// "v3.2.1 (2.8pre-441-g458e1b1) 260731-0646" -- Zandronum's version, ZDoom's version and
+			// a build timestamp, none of which identify the ZandroX build someone is running or let
+			// them point at the commit it came from. Now: name, our version tag, our commit, and the
+			// release channel, which is what a bug report actually needs.
+			char tag[64];
+			zx::FuaVersionTag( GetFuaDescribe( ), tag, sizeof tag );
+			const bool stable = zx::FuaIsStableBuild( GetFuaDescribe( ) );
+
+			versionString.Format( FUA_NAME " %s ", tag );
+			versionString.AppendFormat( TEXTCOLOR_BLUE "%s" TEXTCOLOR_NORMAL " ", GetGitHash( ));
+			// Green for a released build, orange for anything built past a tag -- the colour is the
+			// part people notice at a glance, so it carries the same signal as the word.
+			versionString.AppendFormat( "%s%s" TEXTCOLOR_NORMAL,
+				stable ? TEXTCOLOR_GREEN : TEXTCOLOR_ORANGE,
+				stable ? "stable" : "experimental" );
 
 			screen->DrawText (ConFont, CR_ORANGE, SCREENWIDTH - 8 -
 				ConFont->StringWidth( versionString.GetChars( )),
