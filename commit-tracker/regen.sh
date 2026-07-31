@@ -71,3 +71,6 @@ TZ=UTC git -C "$UP" log --reverse --date=format-local:'%Y-%m-%dT%H:%M:%SZ' \
 
 echo "coverage.tsv: $(( $(grep -c "" "$TSV") - 2 )) commit rows"
 echo "index.tsv:    $(( $(grep -c "" "$IDX") - 1 )) paths"
+
+# --- 5. progress.json: the goal bar, computed here so no client ever counts rows ---
+"$DIR/progress.sh"
