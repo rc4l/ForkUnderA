@@ -24,6 +24,16 @@
   input.search { margin-left: auto; padding: 6px 10px; border: 1px solid #d1d5db;
                  border-radius: 8px; font-size: 13px; width: 260px; }
   #grid { flex: 1; width: 100%; }
+  /* [rc4l] Shown from first paint (it is in the static markup, so it does not wait on the
+     AG Grid CDN script) and removed just before the grid is created. Without it the page is
+     a blank box for the ~5 MB of TSV the table needs, which reads as "nothing is loading". */
+  #loading { height: 100%; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; gap: 14px; color: #6b7280; font-size: 13px; }
+  #loading .ring { width: 34px; height: 34px; border: 3px solid #e5e7eb;
+                   border-top-color: #1a1a2e; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { #loading .ring { animation-duration: 2.4s; } }
+  #loading.error .ring { display: none; }
   #detail { border-top: 1px solid #e5e7eb; background: #fafafa; max-height: 34vh; overflow: auto;
             padding: 10px 18px; display: none; }
   #detail.open { display: block; }
@@ -55,7 +65,9 @@
   <div class="sub">One row per upstream commit from anchor <code>ad88cfc5e</code> to UZDoom HEAD &middot; click a sha to open the commit</div>
   <div class="bar" id="chips"></div>
 </header>
-<div id="grid" class="ag-theme-quartz"></div>
+<div id="grid" class="ag-theme-quartz">
+  <div id="loading"><div class="ring"></div><div>Loading ~5&nbsp;MB of commit data&hellip;</div></div>
+</div>
 <div id="detail"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.js"></script>
@@ -177,7 +189,10 @@ async function setStatus(key) {
 
 const loadTags = url => fetch(url).then(r => r.ok ? r.text() : "").catch(() => "");
 Promise.all([
-  fetch("coverage.tsv").then(r => r.text()),
+  // [rc4l] coverage.tsv IS the table — a 404 here used to resolve with the error page's HTML,
+  // parse to zero rows and render an empty grid. Reject so the catch below says so out loud.
+  // The two tag files stay soft-failing (loadTags): they only decorate a column.
+  fetch("coverage.tsv").then(r => r.ok ? r.text() : Promise.reject(new Error("coverage.tsv: HTTP " + r.status))),
   loadTags("tags.tsv"),           // path/structural tags
   loadTags("combined_tags.tsv"),  // source-gazetteer tags: lump / keyword / fn / acs
 ]).then(([covText, tagText, gazText]) => {
@@ -196,6 +211,9 @@ Promise.all([
   const rows = parseTSV(covText);
   for (const r of rows) r.tags = tagmap[r.sha] ? [...tagmap[r.sha]].sort().join(" ") : "";
   renderChips(rows);
+  // [rc4l] Drop the spinner only now — createGrid takes the container over, and leaving the
+  // node in place would have it torn out mid-render rather than cleanly removed.
+  document.getElementById("loading")?.remove();
   gridApi = agGrid.createGrid(document.getElementById("grid"), {
     columnDefs,
     rowData: rows,
@@ -204,6 +222,12 @@ Promise.all([
     tooltipShowDelay: 400,
     onRowClicked: onRowClicked,
   });
+}).catch(err => {
+  // [rc4l] A spinner that never stops is worse than the blank box it replaced: if the fetch or
+  // the parse dies, say so instead of spinning for ever.
+  console.error(err);
+  const el = document.getElementById("loading");
+  if (el) { el.className = "error"; el.innerHTML = "<div>Couldn&rsquo;t load the commit data. Try reloading.</div>"; }
 });
 </script>
 </body>
