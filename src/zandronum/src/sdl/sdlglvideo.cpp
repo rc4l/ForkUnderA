@@ -13,6 +13,7 @@
 #include "v_pfx.h"
 #include "stats.h"
 #include "version.h"
+#include "features/fua-branding/computation/fua_version_compute.h"
 #include "c_console.h"
 #include "c_dispatch.h"
 #include "c_cvars.h"
@@ -369,8 +370,21 @@ SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen)
 		return;
 	}
 
+	// [rc4l] Window/taskbar title names OUR build. It used to read "ZANDRONUM 3.2.1 (260731-0646)"
+	// -- upstream's name, upstream's version and a build timestamp. On an experimental build the
+	// commit is included too: those are the builds handed round for testing, so the title alone has
+	// to be enough to say exactly which one someone is looking at. A stable build needs no hash --
+	// the tag already identifies it uniquely. GAMESIG is left alone; it identifies the engine
+	// inside savegames.
 	char caption[100];
-	mysnprintf(caption, countof(caption), GAMESIG " %s (%s)", GetVersionString(), GetGitTime());
+	{
+		char tag[64];
+		zx::FuaVersionTag(GetFuaDescribe(), tag, sizeof tag);
+		if (zx::FuaIsStableBuild(GetFuaDescribe()))
+			mysnprintf(caption, countof(caption), FUA_NAME " %s (stable)", tag);
+		else
+			mysnprintf(caption, countof(caption), FUA_NAME " %s (experimental %s)", tag, GetGitHash());
+	}
 
 	// [rc4l] video-scale: the OS window is the CLIENT size; the render size (width/height above) may
 	// be smaller when internal-resolution scaling is on. For fullscreen FULLSCREEN_DESKTOP ignores
