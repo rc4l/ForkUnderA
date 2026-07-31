@@ -1292,6 +1292,7 @@ void D_DoomLoop ()
 	{
 		try
 		{
+			zx::updater::DrainLog(); // [rc4l] main-thread-safe logging of the async update-check verdict
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{
