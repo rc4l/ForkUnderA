@@ -240,7 +240,6 @@ public:
 	virtual int GetSourceLump() { return SourceLump; }
 	virtual FTexture *GetRedirect(bool wantwarped);
 	virtual FTexture *GetRawTexture();		// for FMultiPatchTexture to override
-	FTextureID GetID() const { return id; }
 
 	virtual void Unload () = 0;
 
@@ -446,13 +445,18 @@ public:
 		TEXMAN_TryAny = 1,
 		TEXMAN_Overridable = 2,
 		TEXMAN_ReturnFirst = 4,
-		TEXMAN_AllowSkins = 8
+		TEXMAN_AllowSkins = 8,
+		TEXMAN_ShortNameOnly = 16
 	};
 
 	FTextureID CheckForTexture (const char *name, int usetype, BITFIELD flags=TEXMAN_TryAny);
 	FTextureID GetTexture (const char *name, int usetype, BITFIELD flags=0);
-	FTextureID FindTextureByLumpNum (int lumpnum);
 	int ListTextures (const char *name, TArray<FTextureID> &list);
+	// [rc4l] uzdoom@ca4179caa deleted this because its ONE upstream caller went away with the new
+	// full-path texture lookup. It is not dead here: gl_skyboxtexture.cpp and gl_texture.cpp both
+	// ask "which texture came from this lump?" (Vavoom skyboxes, brightmap pairing), which the
+	// name-based lookups cannot answer. Kept, with the rest of that commit taken.
+	FTextureID FindTextureByLumpNum (int lumpnum);
 
 	void AddTexturesLump (const void *lumpdata, int lumpsize, int deflumpnum, int patcheslump, int firstdup=0, bool texture1=false);
 	void AddTexturesLumps (int lump1, int lump2, int patcheslump);

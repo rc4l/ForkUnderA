@@ -32,6 +32,7 @@
 
 class FResourceFile;
 struct FResourceLump;
+class FTexture;
 
 struct wadinfo_t
 {
@@ -174,6 +175,9 @@ public:
 	int CheckNumForFullName (const char *name, bool trynormal = false, int namespc = ns_global);
 	int CheckNumForFullName (const char *name, int wadfile);
 	int GetNumForFullName (const char *name);
+
+	void SetLinkedTexture(int lump, FTexture *tex);
+	FTexture *GetLinkedTexture(int lump);
 
 
 	void ReadLump (int lump, void *dest);
