@@ -404,6 +404,14 @@ enum EMapThingFlags
 	MTF_SECRET			= 0x080000,	// Secret pickup
 	MTF_NOINFIGHTING	= 0x100000,
 
+	// [rc4l] PSX Doom and Doom 64 effects. Ported from uzdoom@580094a7924e (Gaerzi,
+	// "More editing flags"): boolean thing flags that set a spawn-time render style / hit points.
+	MTF_TRANS			= 0x200000,  // 50% alpha
+	MTF_ADD				= 0x400000,  // 100% additive
+	MTF_SUBTRACT		= 0x800000,  // 100% subtractive
+	MTF_SPECTRE			= 0x1000000, // 25% additive
+	MTF_DOUBLEHEALTH	= 0x2000000, // Double hit points
+
 	// BOOM and DOOM compatible versions of some of the above
 
 	BTF_NOTSINGLE		= 0x0010,	// (TF_COOPERATIVE|TF_DEATHMATCH)
