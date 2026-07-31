@@ -157,44 +157,44 @@ c54f5571ea174c19022354eb35dd3704d08f5ac8	2014-04-15T15:24:01Z	Typo.	ported	same 
 d855bd66b301ebd8ad969e6816a4c190d9e3ec8f	2014-04-16T12:46:33Z	Fixed P_LookForPlayers scanning redundancies	adapted	P_LookForPlayers scan superseded by [BB] abSearched[]/M_Random rewrite (each player once)	zandronum-base
 897d87a6a3841a0e484cc5de1e1b411848a3c6a8	2014-04-16T13:13:18Z	Invisibility would could P_LookForPlayers early	adapted	invisibility early-abort moot; our [BB] loop continues past MF3_GHOST players	zandronum-base
 584dd78ba9dd67c7f3045eae87089e8e4024bea6	2014-04-16T14:42:43Z	Merge branch 'master' of https://github.com/Edward850/zdoom	skip	merge	/
-60fe07df7451176803f4fe28b42160d02a72bd9c	2014-04-17T15:42:16Z	Added slow states to relevant Strife monsters	pending		/
-7cb828d7633eb8e8b56da18ef7f0021968014721	2014-04-18T07:46:23Z	Merge branch 'slowstate' of https://github.com/Gaerzi/zdoom	pending		/
-97c7f2c5ce8a1e088bc9b7d6b6cdaf86e2bfedf1	2014-04-18T10:13:29Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-4517079e82603441b8b45f40137e0fb4a589df8a	2014-04-18T10:14:17Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	pending		/
-c7354c571fcbb4f0e8c85eb327a680490cb3ab3d	2014-04-18T10:16:12Z	Merge branch 'master' into GLEW_VERSION	pending		/
-1c50b5dd6f764eb70f29624cead70a929ffeab9c	2014-04-20T10:37:59Z	Fixed initialization of Hexen-style things	pending		/
-265917c923bb33bac32d91ad15ebbf79b1d169dc	2014-04-22T11:31:55Z	Add shadow and subtract styles to ACS.	pending		/
-7c3660087ed7fc1db18c0ae38285a14f6f5a5c9f	2014-04-22T11:32:33Z	Restore shadow renderstyle.	pending		/
-3f8c7239af9301d6bce955b2595861e3c82395d7	2014-04-24T07:41:54Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	pending		/
-a0d4bc0a895620ca2122cad7e248bf0ddda111f5	2014-04-24T23:30:03Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-3fa89b4e9fb9579b2b77927997dbc41c4cc876e8	2014-04-27T07:18:50Z	Fixed crash on attempt to load corrupted data file	pending		/
-6b26b710b84110b4f96e27da59dc9c8329948e86	2014-04-27T07:23:20Z	Added simple check for unsupported compression method in .7z files	pending		/
-3af7d8a245a3d8c310fb8077a14ecaec36df1714	2014-04-27T10:05:40Z	Added support for LZMA2 compression method in .7z archives	pending		/
-94c4f38c584bc679f2c278843ae42f85f74a98c1	2014-04-27T23:26:30Z	- added constants for sound channels 5-7.	pending		/
-64d4ddf559e7d66b20e11c1b3aeaeed361886dd7	2014-04-28T08:42:47Z	Fixed file list in VS2005 project of LZMA library	pending		/
-76fdb4905f37735956c1a03d7ad9e7e9a86762d4	2014-04-28T10:06:36Z	Fixed compilation with updated LZMA library using Visual Studio	pending		/
-04c5a38ac639e407b375a5961784337ef63f550e	2014-04-28T10:06:56Z	Merge branch 'master' of https://github.com/rheit/zdoom into lzma2	pending		/
-cc4305e86c37d46f62ff56dbcf43e25164564de9	2014-04-29T23:29:26Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+60fe07df7451176803f4fe28b42160d02a72bd9c	2014-04-17T15:42:16Z	Added slow states to relevant Strife monsters	ported	83ea1cb inherited: added lines already present in our tree (25/25); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+7cb828d7633eb8e8b56da18ef7f0021968014721	2014-04-18T07:46:23Z	Merge branch 'slowstate' of https://github.com/Gaerzi/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+97c7f2c5ce8a1e088bc9b7d6b6cdaf86e2bfedf1	2014-04-18T10:13:29Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+4517079e82603441b8b45f40137e0fb4a589df8a	2014-04-18T10:14:17Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+c7354c571fcbb4f0e8c85eb327a680490cb3ab3d	2014-04-18T10:16:12Z	Merge branch 'master' into GLEW_VERSION	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+1c50b5dd6f764eb70f29624cead70a929ffeab9c	2014-04-20T10:37:59Z	Fixed initialization of Hexen-style things	ported	83ea1cb inherited: added lines already present in our tree (1/1); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+265917c923bb33bac32d91ad15ebbf79b1d169dc	2014-04-22T11:31:55Z	Add shadow and subtract styles to ACS.	ported	83ea1cb inherited: added lines already present in our tree (2/2); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+7c3660087ed7fc1db18c0ae38285a14f6f5a5c9f	2014-04-22T11:32:33Z	Restore shadow renderstyle.	ported	83ea1cb inherited: added lines already present in our tree (4/4); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+3f8c7239af9301d6bce955b2595861e3c82395d7	2014-04-24T07:41:54Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+a0d4bc0a895620ca2122cad7e248bf0ddda111f5	2014-04-24T23:30:03Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+3fa89b4e9fb9579b2b77927997dbc41c4cc876e8	2014-04-27T07:18:50Z	Fixed crash on attempt to load corrupted data file	ported	83ea1cb inherited: added lines already present in our tree (1/1); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+6b26b710b84110b4f96e27da59dc9c8329948e86	2014-04-27T07:23:20Z	Added simple check for unsupported compression method in .7z files	ported	83ea1cb inherited: added lines already present in our tree (7/7); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+3af7d8a245a3d8c310fb8077a14ecaec36df1714	2014-04-27T10:05:40Z	Added support for LZMA2 compression method in .7z archives	ported	83ea1cb inherited: added lines already present in our tree (25/25); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+94c4f38c584bc679f2c278843ae42f85f74a98c1	2014-04-27T23:26:30Z	- added constants for sound channels 5-7.	ported	83ea1cb inherited: added lines already present in our tree (CHAN_5..7 present); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+64d4ddf559e7d66b20e11c1b3aeaeed361886dd7	2014-04-28T08:42:47Z	Fixed file list in VS2005 project of LZMA library	ported	83ea1cb inherited: added lines already present in our tree (1/1); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+76fdb4905f37735956c1a03d7ad9e7e9a86762d4	2014-04-28T10:06:36Z	Fixed compilation with updated LZMA library using Visual Studio	ported	83ea1cb inherited: added lines already present in our tree (4/4); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+04c5a38ac639e407b375a5961784337ef63f550e	2014-04-28T10:06:56Z	Merge branch 'master' of https://github.com/rheit/zdoom into lzma2	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+cc4305e86c37d46f62ff56dbcf43e25164564de9	2014-04-29T23:29:26Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
 314225f1b0b8f95433d4099f35b90dabd4368e62	2014-05-01T10:30:56Z	- don't depend on stdint.h because older MSVC versions do not have it.	ported	d2e4479	d2e4479
-d6af8dc352f2f87bcbeda11f932a6fbc574fe883	2014-05-02T15:01:40Z	Added static RNGseed control	pending		/
-6183f8125fa4dc00db087b683bc08b8deb68e3d2	2014-05-02T15:01:49Z	Don't change RNG in demos incase they are static	pending		/
-104a07d461bd8f75622a8674a7cb390174c41b9b	2014-05-02T15:27:14Z	Make sure use_staticrng is false if not needed	pending		/
-34360e7975f231f4c1d3e320abceb53214fcf406	2014-05-02T15:31:02Z	Merge branch 'upstream' of https://github.com/Edward850/zdoom	pending		/
-a9f1b54d2db91a3ff28f7198b4c8c5420dc73c42	2014-05-03T08:12:25Z	- fixed: since A_LightGoesOut alters a sector's floor plane it must also alter the TexZ for that sector's floor.	pending		/
-a4076ffe38f22328e348f1f2606d361f56a7d310	2014-05-03T10:29:18Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-93aa1ea2c4da75918f19b97d9dfead98952b1bd5	2014-05-05T09:24:20Z	fixed some issues with reviving monsters	pending		/
-90e9937b71b6d846edbd7ae245189e9aa3353039	2014-05-05T10:47:48Z	Stop NetUpdate from corrupting demo playback	pending		/
-fcbb72a4d45760c3f4512cea6d535b7ef12ecb15	2014-05-06T07:59:56Z	- removed redundant variable.	pending		/
-890e9ecdddd36e1075098a3dcbaf0a93f73ddb51	2014-05-07T15:18:44Z	- typo in resurrection code.	pending		/
-67ebbe3ed4bb2028c8850157d9e551569cc0aaba	2014-05-08T07:15:56Z	made some changes to turn the CF_INTERPVIEW flag when changing angles into an op-in feature instead of making it automatic.	pending		/
-63a0e01c6a62b92256b2d94535d7ef3300b1c70c	2014-05-08T07:17:00Z	Merge branch 'interpview_optin'	pending		/
-2223c12938ab24995a798443bee841b1fa249563	2014-05-08T07:43:58Z	- added new ChangeActorAngle/ChangeActorPitch ACS functions because the new required 'interpolate' parameter cannot be added to the existing SetActorAngle/SetActorPitch functions without breaking old scripts.	pending		/
+d6af8dc352f2f87bcbeda11f932a6fbc574fe883	2014-05-02T15:01:40Z	Added static RNGseed control	ported	83ea1cb inherited: added lines already present in our tree (22/25); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+6183f8125fa4dc00db087b683bc08b8deb68e3d2	2014-05-02T15:01:49Z	Don't change RNG in demos incase they are static	ported	83ea1cb inherited: added lines already present in our tree (4/5); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+104a07d461bd8f75622a8674a7cb390174c41b9b	2014-05-02T15:27:14Z	Make sure use_staticrng is false if not needed	ported	83ea1cb inherited: added lines already present in our tree (1/1); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+34360e7975f231f4c1d3e320abceb53214fcf406	2014-05-02T15:31:02Z	Merge branch 'upstream' of https://github.com/Edward850/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+a9f1b54d2db91a3ff28f7198b4c8c5420dc73c42	2014-05-03T08:12:25Z	- fixed: since A_LightGoesOut alters a sector's floor plane it must also alter the TexZ for that sector's floor.	ported	83ea1cb inherited: added lines already present in our tree (4/4); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+a4076ffe38f22328e348f1f2606d361f56a7d310	2014-05-03T10:29:18Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+93aa1ea2c4da75918f19b97d9dfead98952b1bd5	2014-05-05T09:24:20Z	fixed some issues with reviving monsters	ported	83ea1cb inherited: added lines already present in our tree (25/25); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+90e9937b71b6d846edbd7ae245189e9aa3353039	2014-05-05T10:47:48Z	Stop NetUpdate from corrupting demo playback	ported	83ea1cb inherited: added lines already present in our tree (3/3); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+fcbb72a4d45760c3f4512cea6d535b7ef12ecb15	2014-05-06T07:59:56Z	- removed redundant variable.	ported	83ea1cb inherited: added lines already present in our tree (redundant decl already absent); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+890e9ecdddd36e1075098a3dcbaf0a93f73ddb51	2014-05-07T15:18:44Z	- typo in resurrection code.	ported	83ea1cb inherited: added lines already present in our tree (!GetCanRaise() present); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+67ebbe3ed4bb2028c8850157d9e551569cc0aaba	2014-05-08T07:15:56Z	made some changes to turn the CF_INTERPVIEW flag when changing angles into an op-in feature instead of making it automatic.	ported	83ea1cb inherited: added lines already present in our tree (12/16); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+63a0e01c6a62b92256b2d94535d7ef3300b1c70c	2014-05-08T07:17:00Z	Merge branch 'interpview_optin'	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+2223c12938ab24995a798443bee841b1fa249563	2014-05-08T07:43:58Z	- added new ChangeActorAngle/ChangeActorPitch ACS functions because the new required 'interpolate' parameter cannot be added to the existing SetActorAngle/SetActorPitch functions without breaking old scripts.	ported	83ea1cb inherited: added lines already present in our tree (25/25); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
 1d4ea9f16286c600514982e6d22f2ebc36b6192f	2014-05-08T07:48:39Z	- removed the __asm nop breakpoints for debugging. They not only do not work on non-MSVC but also not on 64 bit.	ported	d2e4479	d2e4479
-6988156d0f6ea0a5fa143a4fe08065ddc364db2f	2014-05-08T07:49:00Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-ea7fb936a83d66d520ac45b110b0d74f9f29b136	2014-05-08T08:33:32Z	- fixed: memory allocation for file names in 7z archives was broken. Changing it to use TArray instead of alloca makes it work.	pending		/
-a7f8f7c18b5f9b1dacd194ad3d941f0a69d7b254	2014-05-08T08:35:10Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-458e1b1be2a7e76045849050f32c76b2e5c28d44	2014-05-08T09:29:45Z	- changed sound lookup for ZSDF dialogues so that it first checks the svox/ namespace before using the global one.	pending		/
-7c180e5094ea953c7e575c4aaa99ee09d7a7872e	2014-05-08T09:30:12Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+6988156d0f6ea0a5fa143a4fe08065ddc364db2f	2014-05-08T07:49:00Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+ea7fb936a83d66d520ac45b110b0d74f9f29b136	2014-05-08T08:33:32Z	- fixed: memory allocation for file names in 7z archives was broken. Changing it to use TArray instead of alloca makes it work.	ported	83ea1cb inherited: added lines already present in our tree (7/7); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+a7f8f7c18b5f9b1dacd194ad3d941f0a69d7b254	2014-05-08T08:35:10Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
+458e1b1be2a7e76045849050f32c76b2e5c28d44	2014-05-08T09:29:45Z	- changed sound lookup for ZSDF dialogues so that it first checks the svox/ namespace before using the global one.	ported	83ea1cb inherited: added lines already present in our tree (3/3); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+7c180e5094ea953c7e575c4aaa99ee09d7a7872e	2014-05-08T09:30:12Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
 64d991b9b3e29ac03c65bf8042acf2d8be4b8c67	2014-05-10T13:29:06Z	Merge branch 'master' into Glew_Version_For_Real	ported	d2e4479	d2e4479
 b09405a8bd2f3cb5918114d903d24abf00a34fd0	2014-05-10T15:09:43Z	- changed rendering of glowing walls so that it doesn't require an additional vertex attribute, just pass the floor and ceiling planes as uniforms.	ported	bdfcbae	bdfcbae
 7d3beb665b7a3e802ef57091ff423dffc7bf29b5	2014-05-10T19:47:07Z	- rewrote vertex buffer code to require GL_ARB_BUFFER_STORAGE extension.	ported	2d43731	2d43731
@@ -226,7 +226,7 @@ cf45f2d718eb9548f7eba91565fcaa860fab780a	2014-05-12T20:24:26Z	- added missing sh
 fedf9c6a5ba40e4166b9da6874a7454a174d38fc	2014-05-13T09:39:25Z	fixed: if we allow long names for the fade table we must also check for them when the colormap gets loaded.	pending		/
 e718a72b4d3891f1207ab66fe081eb8c733af23b	2014-05-13T09:53:08Z	fixed: skies should be loaded into the FLevelLocals struct not into the global variables of the renderer.	pending		/
 60f0ab5f1b4de47ae4bfb01830edee896b490774	2014-05-13T10:00:11Z	- fixed Linux warning with type cast.	ported	a9b178e	a9b178e
-a05e584b81e4f4dbe4df414f6ab30e65e08408f4	2014-05-13T10:00:37Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+a05e584b81e4f4dbe4df414f6ab30e65e08408f4	2014-05-13T10:00:37Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
 a05e62f3f7b4d690ebe5398a5c76c7c796bfad36	2014-05-13T10:44:17Z	- changed storage of lump and texture names in gameinfo to allow long names (with the exception of view border elements.)	pending		/
 a22670626c1b81a7bb97a2742741f50d7541cd75	2014-05-13T11:40:02Z	- expanded names for view border elements. Also fixed the horribly bad implementation of custom borders which modified the DoomBorder elements without ever checking the game being used.	pending		/
 ebd6c18bef6ed7e2508d8ee14cb3b65d1fe587fb	2014-05-13T13:32:54Z	- missed one texture name field in level_info_t.	pending		/
@@ -236,7 +236,7 @@ e49e926bd95a95f963859878fbb2d2fdc074b60d	2014-05-13T19:26:51Z	- added option to 
 24886b6734523df3c5b8847afb3465465299f839	2014-05-13T21:16:13Z	- removed the last static character arrays from FLevelLocals.	pending		/
 a375454474266fd753863ff09271947d20dfb4d1	2014-05-13T22:52:16Z	- removed 8 character limit for map names.	pending		/
 fdfcb728a970113548f6aafb425fc77eacecdfad	2014-05-14T05:50:39Z	- make it easier to spot patch definition errors in console log	pending		/
-8c052818b7acdc428a590a0c0cd8922d5c7aeb94	2014-05-14T08:27:40Z	- fixed: long texture name lookup did not work with TEXMAN_TryAny.	pending		/
+8c052818b7acdc428a590a0c0cd8922d5c7aeb94	2014-05-14T08:27:40Z	- fixed: long texture name lookup did not work with TEXMAN_TryAny.	ported	83ea1cb inherited: added lines already present in our tree (1/1); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
 47a9dab56d74fe021f454bccec91e57715f6db94	2014-05-14T10:16:33Z	- allow setting sector planes' plane equations directly from UDMF.	pending		/
 388f09f786d5ab3927d3bb6d76895b043a18bdb6	2014-05-14T10:54:03Z	- fixed: In Heretic corpses do not get crunched to gibs, they just get their size reduced to 0. Handled by a new gameinfo flag. This also gets set for Chex quest which has the gib sprite replaced by something different. Using a Crush state will override this global flag.	pending		/
 51ed68dc7243cf00c285526a8009a2fa2d4c427d	2014-05-14T11:02:04Z	- forgot to save this...	pending		/
