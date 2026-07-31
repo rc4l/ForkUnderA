@@ -84,3 +84,26 @@ jobs:
       # linted. .clang-tidy is still picked up per-file, so what gets reported is unchanged.
       - name: clang-tidy (report)
         run: run-clang-tidy -p build-tests -j"$(nproc)" 'src/zandronum/src/.*_test\.cpp$'
+
+  # [rc4l] macOS-only ASan job for the Objective-C updater networking seam. The Linux `test` job above
+  # can't compile Cocoa code, so the use-after-free regression test (i_system_cocoa_net_test.mm) that
+  # guards the Mac_HttpsGet retain fix runs here instead. Runs in PARALLEL with `test` (no `needs:`),
+  # and builds ONLY the tiny zandrox_tests_objc target (two .mm files + gtest) — not the engine — so it
+  # stays a seconds-long check, not a full macOS build. LeakSanitizer is intentionally absent: macOS
+  # AddressSanitizer does not support detect_leaks (it aborts), unlike the Linux job.
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # [rc4l] cmake and the Xcode clang toolchain are preinstalled on GitHub macOS runners.
+      - name: Configure (ASan + UBSan)
+        run: cmake -S tests -B build-tests -DZANDROX_TESTS_SANITIZE=ON
+
+      - name: Build (Objective-C test target only)
+        run: cmake --build build-tests --target zandrox_tests_objc
+
+      - name: Run tests (ASan + UBSan)
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ./build-tests/zandrox_tests_objc
