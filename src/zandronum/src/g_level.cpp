@@ -2282,11 +2282,21 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 	}
 	else
 	{
-		sky1texture = TexMan.GetTexture (arc.ReadName(), FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_ReturnFirst);
-		sky2texture = TexMan.GetTexture (arc.ReadName(), FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_ReturnFirst);
+		level.skytexture1 = TexMan.GetTexture(arc.ReadName(), FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
+		level.skytexture2 = TexMan.GetTexture(arc.ReadName(), FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
 	}
 	if (arc.IsLoading())
 	{
+		// [rc4l] Upstream's save only carries the resolved sky textures (uzdoom@e718a72b4). Our
+		// wire-facing sky NAMES (see g_level.h) are not in it, and a level restored from a save
+		// would otherwise broadcast a stale or empty sky name to clients on the next
+		// SERVERCOMMANDS_SetMapSky. Re-derive them from the textures actually loaded, rather than
+		// widening the save format -- the texture's own name is by definition the right answer.
+		FTexture *pSky1 = TexMan[level.skytexture1];
+		FTexture *pSky2 = TexMan[level.skytexture2];
+		snprintf( level.skypic1, sizeof( level.skypic1 ), "%s", pSky1 ? pSky1->Name : "" );
+		snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", pSky2 ? pSky2->Name : "" );
+
 		R_InitSkyMap();
 	}
 
