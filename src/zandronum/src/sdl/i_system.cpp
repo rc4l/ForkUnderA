@@ -68,6 +68,7 @@
 #include "d_net.h"
 #include "g_game.h"
 #include "i_system.h"
+#include "features/updater/computation/openurl_compute.h" // [rc4l] scheme allowlist for I_OpenURL
 #include "c_dispatch.h"
 #include "templates.h"
 #include "v_palette.h"
@@ -926,4 +927,47 @@ bool I_SetCursor(FTexture *cursorpic)
 		}
 	}
 	return true;
+}
+
+// [rc4l] Open a URL in the user's browser. The scheme allowlist is re-checked here (defense in depth
+// behind the confirmation dialog): only http/https, so a mod that reaches this can't turn it into a
+// file:// opener or a smuggled shell command. On macOS we defer to NSWorkspace (Mac_I_OpenURL in
+// i_system_cocoa.mm); on Linux we launch xdg-open via a detached double-fork with an argv exec (never
+// a shell) so the URL can't be reinterpreted and no zombie is left behind.
+#ifdef __APPLE__
+void Mac_I_OpenURL(const char* url);
+#else
+#include <sys/wait.h>
+#endif
+
+void I_OpenURL (const char *url)
+{
+	if (!zx::IsOpenableURL(url))
+	{
+		Printf("I_OpenURL: refusing to open %s (only http/https URLs are allowed)\n",
+			url != NULL ? url : "(null)");
+		return;
+	}
+#ifdef __APPLE__
+	Mac_I_OpenURL(url);
+#else
+	// Detach so the browser outlives us and leaves no zombie: fork a middle child that we reap
+	// immediately; it setsid()s and forks the grandchild that execs xdg-open (reparented to init).
+	pid_t mid = fork();
+	if (mid == 0)
+	{
+		setsid();
+		if (fork() == 0)
+		{
+			execlp("xdg-open", "xdg-open", url, (char *)NULL);
+			_exit(127); // exec failed
+		}
+		_exit(0);
+	}
+	else if (mid > 0)
+	{
+		int status;
+		waitpid(mid, &status, 0);
+	}
+#endif
 }
