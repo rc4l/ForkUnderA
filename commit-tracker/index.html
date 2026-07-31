@@ -100,6 +100,8 @@
   .s-pending { color: #9ca3af; }
   a.sha { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #2563eb; text-decoration: none; }
   a.sha:hover { text-decoration: underline; }
+  .ours-na { color: #9ca3af; }                                       /* "/" — inapplicable (pending/skip) */
+  .ours-inh { color: #64748b; font-style: italic; font-size: 12px; } /* zandronum-base (baseline import) */
   .tag { display: inline-block; background: #eef2ff; color: #3730a3; border: 1px solid #e0e7ff;
          border-radius: 5px; padding: 0 6px; margin: 1px 3px 1px 0; font-size: 11px; line-height: 18px; white-space: nowrap; }
   .tag-fn { background: #ecfdf5; color: #065f46; border-color: #d1fae5;
@@ -138,6 +140,7 @@
 <script>
 const REPO = "https://github.com/UZDoom/UZDoom/commit/";
 const REPO_BASE = "https://github.com/UZDoom/UZDoom";
+const OUR_REPO = "https://github.com/rc4l/ZandroX/commit/";  // "our commit" column links here
 const STATUSES = ["pending", "ported", "adapted", "skip"];
 let gridApi, active = "all";
 
@@ -209,7 +212,7 @@ async function onRowClicked(e) {
 }
 
 const columnDefs = [
-  { field: "sha", headerName: "commit", width: 120, filter: true,
+  { field: "sha", headerName: "their commit", width: 130, filter: true,
     cellRenderer: p => `<a class="sha" href="${REPO}${p.value}" target="_blank" rel="noopener">${p.value.slice(0,9)}</a>` },
   { field: "date", headerName: "date", width: 200, sort: "asc",
     // stored value is a canonical UTC ISO stamp (sorts precisely); the cell shows the
@@ -230,6 +233,21 @@ const columnDefs = [
   { field: "title", headerName: "title", flex: 2, minWidth: 300, tooltipField: "title" },
   { field: "status", headerName: "status", width: 120,
     cellClass: p => "s-" + p.value },
+  { field: "ours", headerName: "our commit", width: 150, filter: true,
+    // OUR repo commit(s) that addressed the row. "/" = inapplicable (pending/skip);
+    // "zandronum-base" = present in the Zandronum 3.2.1 baseline import (no discrete commit
+    // of ours); otherwise one-or-more comma-separated zandrox shas, each linked to our repo.
+    tooltipValueGetter: p => p.value === "/" ? "not applicable (pending / skip)"
+      : p.value === "zandronum-base" ? "present in the Zandronum 3.2.1 baseline — no discrete backport commit of ours (fork import b9495b8, from upstream 28f736fb3)"
+      : (p.value || ""),
+    cellRenderer: p => {
+      const v = p.value || "";
+      if (v === "/")              return `<span class="ours-na">/</span>`;
+      if (v === "zandronum-base") return `<span class="ours-inh">zandronum&#8209;base</span>`;
+      return v.split(",").map(s => s.trim()).filter(Boolean)
+        .map(s => `<a class="sha" href="${OUR_REPO}${s}" target="_blank" rel="noopener">${s.slice(0,9)}</a>`)
+        .join(" ");
+    } },
   { field: "tags", headerName: "tags (auto-derived)", flex: 2, minWidth: 260, filter: true,
     tooltipValueGetter: p => (p.value || "").split(" ").filter(Boolean)
       .map(t => t.replace(/^(fn|acs|lump|f):/, "")).join("   ·   "),
@@ -253,7 +271,7 @@ function parseTSV(text) {
     if (!line || line[0] === "#") continue;
     const f = line.split("\t");
     if (f[0] === "sha" || f.length < 4) continue;
-    rows.push({ sha: f[0], date: f[1], title: f[2], status: f[3], note: f[4] || "" });
+    rows.push({ sha: f[0], date: f[1], title: f[2], status: f[3], note: f[4] || "", ours: f[5] || "/" });
   }
   return rows;
 }

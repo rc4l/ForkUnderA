@@ -15,7 +15,7 @@ tail (after 2025-10) comes last**.
 
 | file           | what it is                                                              |
 |----------------|-------------------------------------------------------------------------|
-| `coverage.tsv` | the tracker — one row per commit, `sha date title status note`          |
+| `coverage.tsv` | the tracker — one row per commit, `sha date title status note ours`     |
 | `index.tsv`    | `path → the commits that touched it` (for "what changed file X?")        |
 | `regen.sh`     | rebuilds both from the UZDoom clone; re-runnable, never wipes curation   |
 | `progress.sh`  | computes progress toward the current goal into `progress.json` (run by `regen.sh`) |
@@ -26,9 +26,19 @@ tail (after 2025-10) comes last**.
 
 `sha` `date` `title` — copied verbatim from `git log`, never hand-edited (a re-run refreshes them).
 `date` is a canonical UTC ISO timestamp (sorts to the second); the viewer shows it in the reader's
-local time. `status` `note` — the only two fields you curate.
+local time. `status` `note` `ours` — the three fields you curate.
 
-Commit URL = `https://github.com/UZDoom/UZDoom/commit/<sha>`.
+`sha` (field 1) is **their** commit (upstream UZDoom). `ours` (field 6) is **our** repo commit(s)
+that addressed the row — the provenance the guard enforces instead of parsing it out of the note:
+
+| `ours` value                | meaning                                                            |
+|-----------------------------|-------------------------------------------------------------------|
+| `/`                         | inapplicable — the row is `pending` or `skip` (nothing of ours)   |
+| `zandronum-base`            | present in the Zandronum 3.2.1 baseline import (squash `b9495b8`, from upstream `28f736fb3`) — no discrete backport commit of ours |
+| `<sha>[,<sha>…]`            | one-or-more zandrox commits that ported/adapted it (comma-separated) |
+
+Commit URL = `https://github.com/UZDoom/UZDoom/commit/<sha>` (their); `ours` links to
+`https://github.com/rc4l/ZandroX/commit/<sha>`.
 
 ## the goal bar
 
