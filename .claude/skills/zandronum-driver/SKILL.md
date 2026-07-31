@@ -10,7 +10,7 @@ loopback TCP. Follow this to avoid the failure modes that otherwise eat a lot of
 
 ## Rebuild before you launch
 
-- **After any code or `wadsrc/` change, rebuild the bundle with `tools/build-run.sh` first.**
+- **After any code or `wadsrc/` change, rebuild the bundle with `mac_build_run.sh` first.**
   It fails closed — stops on a bad build, repacks any stale/missing pk3, and verifies the
   bundle's binary + pk3 before it says "safe to launch." Launching without it is the #1 time
   sink: a hand-rolled `cmake --build --target zdoom` never rebuilds the pk3, so you drive a

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 #
-# tools/build-run.sh -- fail-CLOSED incremental rebuild + bundle for ZandroX (macOS).
+# mac_build_run.sh -- fail-CLOSED incremental rebuild + bundle for ZandroX (macOS).
 #
 # THE sanctioned way to rebuild and relaunch after a code or wadsrc/ change. It
 # replaces hand-rolling `cmake --build --target zdoom` + manual pk3/binary copies
@@ -26,11 +26,11 @@
 # safe to launch. Requires a bundle already assembled once by ./mac_compile.sh
 # (dylibs, icon, Info.plist); this script only refreshes the binary + pk3s + seal.
 #
-#   tools/build-run.sh          # build, refresh bundle, verify, stop
-#   tools/build-run.sh --run    # ... then launch the bundle
+#   ./mac_build_run.sh          # build, refresh bundle, verify, stop
+#   ./mac_build_run.sh --run    # ... then launch the bundle
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="$ROOT/build"
 SRC="$ROOT/src/zandronum"
 APP="$BUILD/ZandroX.app"
