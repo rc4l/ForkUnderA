@@ -84,6 +84,7 @@ extern bool setsizeneeded;
 extern int DisplayBits;
 extern bool zx_videoScaleDirty;
 #include "features/video-scale/computation/videoscale_compute.h"
+#include "features/shader-gamma/shadergamma.h" // [rc4l] shader gamma present pass
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
 
@@ -125,6 +126,16 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 	InitializeState();
 	gl_SetupMenu();
 	gl_GenerateGlobalBrightmapFromColormap();
+	// [rc4l] shader-gamma: build the present program here, before the first UpdateScaleBuffer, so
+	// that call already knows whether the scene has to land in an FBO. If it fails we keep the old
+	// behaviour (direct-to-backbuffer unless scaling) and simply have no gamma control.
+	if (!zx::ShaderGammaInit())
+	{
+		// [rc4l] Worth stating plainly: on this path gamma goes through the OS ramp again, which is
+		// display-global, so alt-tabbing will tint the desktop. Which path is live is the first
+		// thing to establish when someone reports that.
+		Printf("Shader gamma unavailable -- falling back to the OS gamma ramp.\n");
+	}
 	DoSetGamma();
 	needsetgamma = true;
 	swapped = false;
@@ -134,6 +145,7 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 
 OpenGLFrameBuffer::~OpenGLFrameBuffer()
 {
+	zx::ShaderGammaShutdown(); // [rc4l] shader-gamma: drop the program/quad while the context lives
 	DestroyScaleBuffer(); // [rc4l] video-scale
 #ifdef ZX_ENABLE_REPLAY
 	DestroyReplayCapture(); // [rc4l] free the replay readback PBOs before the base dtor kills the context
@@ -233,10 +245,12 @@ void OpenGLFrameBuffer::Update()
 
 		Begin2D(false);
 	}
-	// [rc4l] video-scale: the frame was rendered into the scale FBO at the virtual size; blit it up
-	// to fill the window before the backbuffer is presented.
+	// [rc4l] video-scale: the frame was rendered into the scale FBO at the virtual size; get it onto
+	// the backbuffer before the swap. With shader gamma available this is a textured quad that
+	// applies Gamma/vid_contrast/vid_brightness on the way (see features/shader-gamma); otherwise it
+	// stays the plain stretch blit and the image is presented untouched.
 	if (mScaleActive)
-		BlitScaleBuffer();
+		PresentScaleBuffer();
 
 	if (gl_draw_sync || !swapped)
 	{
@@ -318,9 +332,12 @@ void OpenGLFrameBuffer::UpdateScaleBuffer()
 	mScaleClientW = clientW;
 	mScaleClientH = clientH;
 
-	// A scale buffer is needed exactly when the render size differs from the window (matches the
-	// pure ScalePresentPlan.active decision). Otherwise render straight to the backbuffer.
-	if (clientW == renderW && clientH == renderH)
+	// A scale buffer is needed when the render size differs from the window (matches the pure
+	// ScalePresentPlan.active decision) -- and ALSO, since shader gamma, whenever the present pass
+	// has to run: the shader can only correct pixels it can sample, so the scene must land in a
+	// texture even at 1:1. If the shader failed to build we keep the old direct-to-backbuffer fast
+	// path rather than paying for an FBO that would buy nothing.
+	if (clientW == renderW && clientH == renderH && !zx::ShaderGammaReady())
 	{
 		DestroyScaleBuffer();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -370,6 +387,24 @@ void OpenGLFrameBuffer::UpdateScaleBuffer()
 
 	glBindFramebuffer(GL_FRAMEBUFFER, mScaleFB);
 	glViewport(0, 0, renderW, renderH);
+}
+
+// [rc4l] shader-gamma: present the scene texture, applying gamma in the shader when it is
+// available. Falls back to the historic stretch blit if the program did not build -- losing gamma
+// control is survivable, losing the frame is not.
+void OpenGLFrameBuffer::PresentScaleBuffer()
+{
+	if (zx::ShaderGammaReady())
+	{
+		int clientW = (mScaleClientW > 0) ? mScaleClientW : GetWidth();
+		int clientH = (mScaleClientH > 0) ? mScaleClientH : GetHeight();
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		zx::ShaderGammaPresent(mScaleColorTex, clientW, clientH);
+		return;
+	}
+
+	BlitScaleBuffer();
 }
 
 void OpenGLFrameBuffer::BlitScaleBuffer()
@@ -542,6 +577,14 @@ void OpenGLFrameBuffer::Swap()
 void OpenGLFrameBuffer::DoSetGamma()
 {
 	WORD gammaTable[768];
+
+	// [rc4l] shader-gamma: with the present shader running, gamma/contrast/brightness are uniforms
+	// read per frame in ShaderGammaPresent, so there is nothing to push here. Crucially we must NOT
+	// fall through to the hardware ramp: SDL_SetWindowGammaRamp / SetDeviceGammaRamp program the
+	// DISPLAY's LUT, not ours, which is why brightness used to stay applied to the desktop after
+	// alt-tabbing and was only undone when the engine exited.
+	if (zx::ShaderGammaReady())
+		return;
 
 	if (m_supportsGamma)
 	{

@@ -1355,6 +1355,7 @@ add_executable( zdoom WIN32
 	features/openal-sound/mpg123_decoder.cpp
 	features/freeform-menu/freeformmenu.cpp
 	features/video-scale/videoscale.cpp
+	features/shader-gamma/shadergamma.cpp
 	features/windowed-video/windowedvideo.cpp
 	features/crashreport/zx_crashreport.cpp
 	features/replay/zx_replay.cpp
