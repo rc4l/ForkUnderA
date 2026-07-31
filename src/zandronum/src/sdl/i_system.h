@@ -121,6 +121,11 @@ void I_PrintStr (const char *str);
 // Set the title string of the startup window
 void I_SetIWADInfo ();
 
+// [rc4l] Open a URL in the user's default browser (macOS: NSWorkspace; Linux: xdg-open). Only
+// http/https pass (re-checked here via zx::IsOpenableURL, defense-in-depth behind the confirmation
+// dialog); anything else is refused and logged. Reachable by mods through the openurl CCMD.
+void I_OpenURL (const char *url);
+
 // Pick from multiple IWADs to use
 int I_PickIWad (WadStuff *wads, int numwads, bool queryiwad, int defaultiwad);
 
