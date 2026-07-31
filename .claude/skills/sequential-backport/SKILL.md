@@ -84,18 +84,22 @@ partial** against the real diff. Two shapes it can't call alone, both seen in th
 
 ## Order & dependencies
 
-- Oldest→newest, so a commit's prerequisites are already in.
+- **One commit at a time, oldest→newest. Never bundle commits into a "flight" or "cluster."** Each
+  upstream commit was built and shipped on its own upstream, so ported in order, individually, each
+  one builds — the *ordering* supplies the dependency (the commit that introduces a symbol lands
+  before the commit that uses it). A big multi-commit refactor is still done one commit at a time; it
+  is not a reason to batch. (Flights are a renderer-staircase cherry-pick optimization — not this.)
 - **Skipping a prereq can break a later dependent** (it references a symbol the skipped commit
-  added). When a candidate won't apply cleanly, check whether it leans on a skipped commit; port the
+  added). When a commit won't apply cleanly, check whether it leans on a skipped one; port the
   minimal prerequisite or adapt around it. Don't blind-skip a whole subsystem without checking who
   downstream depends on it.
-- Group contiguous commits of one coherent unit into a **flight** (the staircase route) rather than
-  one-at-a-time when they belong together.
 
 ## Cadence — batch, push, prove green, then advance
 
-Never pile up a mountain of unverified ports. Work in **small batches** (a flight, or a handful of
-related commits), and after each one:
+Never pile up a mountain of unverified ports. Port **one commit at a time** (each its own commit with
+its ledger row); a "batch" here is only a **push/CI grouping** — a handful of *already-finished*
+individual ports pushed together so CI runs once, never a bundle of commits ported as a unit. After
+each port:
 
 1. **Commit per verified step** — one upstream commit (or one coherent flight) per commit, with its
    tracker row updated in the same commit.
@@ -149,6 +153,32 @@ belief — `"skip: no software-renderer (r_*) in our tree as of <our-sha>"`, `"s
 tripwire)"`, `"ported: 9811962"`. A future reader (or a re-triage after the tree changes) can then
 re-run the same existence check and confirm or overturn it. That is what keeps the whole thing from
 silently rotting into a stale drop-list.
+
+## Zandronum client/server sanity check — do this for EVERY gameplay port
+
+Our single biggest porting hazard: Zandronum is **client/server**; GZDoom is not. A gameplay change
+that's correct upstream can **desync multiplayer** here — and it passes a single-player build+run
+clean, so the bug is invisible offline. Any port touching **actor state, movement/collision,
+spawning, targeting/AI, player state, RNG, or sound** must be evaluated against the C/S model *before*
+it lands. Per such a port, ask:
+
+- **Server authority:** does it mutate state the server owns? In Zandronum that state changes on the
+  server and is pushed to clients via `SERVERCOMMANDS_*`; a raw port that also runs client-side (or
+  only client-side) desyncs. Grep the surrounding code for `NETWORK_GetState()`, `SERVER_*`,
+  `CLIENT_*`, `SERVERCOMMANDS_*` to see how neighbouring code gates the same kind of change, and match it.
+- **RNG:** does it draw randomness? The game RNG (`P_Random` / `pr_*`) is consistency-critical and must
+  stay identical on server and clients — changing how/when it's drawn desyncs. Confirm the ported code
+  uses the sync RNG where the surrounding code does.
+- **Prediction:** does it affect player movement/collision that runs through client prediction
+  (`CLIENT_PREDICT_*`)? It must hold under predict+correct, not just locally.
+- **Spectators / clientside:** gated by `bSpectating` / `CLIENTSIDEONLY` where neighbours are?
+- **Consistency:** does it change state each client computes independently per tic? Then it must be
+  server-broadcast or made deterministic, or clients drift apart.
+
+If a port trips any of these and you can't confirm the C/S handling, mark it `adapted` (recording the
+gate you added), never `ported` as a raw cherry-pick — and verify with a **multiplayer** E2E (host +
+connect a client), not single-player. `P_LookForPlayers` (server-authoritative AI targeting),
+resurrection/actor-state, and `S_Sound` network variants in the current batch are all in scope.
 
 ## Gates (per candidate)
 
