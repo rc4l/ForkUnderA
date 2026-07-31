@@ -272,7 +272,10 @@ void FMugShot::Tick(player_t *player)
 			RampageTimer++;
 		}
 	}
-	else
+	// [rc4l] Ported from uzdoom@4770b9b27b0aebf29117ca1345db0cf0d0ea04fc: only reset the rampage
+	// (weapon-fire face) timer once the weapon is actually ready to fire again, not on every tic
+	// the player isn't attacking -- otherwise a between-shots gap wrongly clears the rampage face.
+	else if ((player->WeaponState & (WF_WEAPONREADY | WF_WEAPONREADYALT)))
 	{
 		RampageTimer = 0;
 	}

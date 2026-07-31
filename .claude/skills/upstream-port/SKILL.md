@@ -20,6 +20,19 @@ tools/backport-scout.sh /Users/talhataj/repos/UZDoom <upstream path>
 It answers: VM-tainted or clean, scriptification ancestor (Rosetta), and the delta since. Regenerate
 the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/data/zscript-rosetta.tsv`.
 
+When porting a specific fix rather than a whole file, trace it to its origin commit (`cd $UP && git log --oneline -- <path>` or `git log -S<symbol>`) and port that change with its rationale — don't reason from the HEAD snapshot alone.
+
+## Step 0.5 — the commit tracker is the coverage ledger
+
+`commit-tracker/coverage.tsv` holds one row per upstream commit from our parity anchor
+(`ad88cfc5e`) to UZDoom HEAD, each marked `pending` / `ported` / `adapted` / `skip`. Before
+porting, look the commit up there; when a port lands, set its row (`ported` = faithful/re-diffable,
+`adapted` = our own reimplementation, `skip` = won't take — note why). A deliberately scoped-down
+port is `adapted` or stays `pending` with the leftover in the note — **never** `ported`; that is how
+silent scope-narrowing is caught. To find which commits touched a file, use `commit-tracker/index.tsv`
+(`path → shas`) — see `commit-tracker/README.md` for the query recipes. Re-run `commit-tracker/regen.sh`
+after an upstream pull; it appends new commits as `pending` and preserves every status you've set.
+
 ## The four routes
 
 1. **Staircase batch** (renderer commits, 2013-12→2016-01 window): cherry-pick the upstream commits
@@ -68,13 +81,21 @@ the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/da
    reference); grep applied hunks for `fixed_t`, `FRACBITS`, `<<16`, `(int)` casts. Upstream code
    declaring its own `fixed_t` MUST defer to `basictypes.h` — the strong type catches collisions at
    compile time; treat any such error as a real finding, not noise.
-3. **Build everywhere**: local `mac_compile.sh`, then CI (draft PR triggers Linux/Windows — branch
+3. **Client/server netcode** (see the `netcode-adaptation` skill): ZandroX is client/server, upstream
+   is not. Any port touching **actor state, movement/collision, spawning, AI, player state, RNG, or
+   sound** must be server-gated (`NETWORK_InClientMode()`) and broadcast via the matching
+   `SERVERCOMMANDS_*`, with the sync RNG (`P_Random`) preserved and byte/bit-exact wire-format
+   regression tests added. A desync is invisible to a single-player build+run, so this gate is
+   verified only by a **multiplayer** E2E. Beware the inverse trap: an upstream commit that is *itself*
+   a netcode fix targets P2P lockstep (`d_net.cpp`/ticcmd), a mechanism we replaced — skip it unless
+   the gameplay bug reproduces under C/S, then write the C/S equivalent, never the diff.
+4. **Build everywhere**: local `mac_compile.sh`, then CI (draft PR triggers Linux/Windows — branch
    pushes alone skip the build jobs). MSVC flags are spelled per-compiler; MSVC also catches real
    ODR bugs ELF/Mach-O swallow — same-name classes get a `Legacy` prefix rename (precedent:
    `LegacyFRenderState`, `LegacyFlatVertexBuffer`).
-4. **Tests**: `cmake --build build-tests && ctest` all green; new computation units at 100%
+5. **Tests**: `cmake --build build-tests && ctest` all green; new computation units at 100%
    coverage (`bash tests/coverage.sh --auto`).
-5. **Manual E2E by the user is the verification standard** (their eye has overruled screenshot
+6. **Manual E2E by the user is the verification standard** (their eye has overruled screenshot
    reads repeatedly). Drive the engine with the `zandronum-driver` skill; remember the THREE stale
    layers after any change: `cmake --build build`, copy `build/zandronum` AND `build/zandronum.pk3`
    into `build/ZandroX.app/Contents/MacOS/`, re-codesign; wadsrc edits additionally need the pk3
@@ -86,7 +107,7 @@ the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/da
    ledges, check a mirror/portal when the flight touches stencils. `warp x y` teleports; use it
    instead of walking. For visual deltas, A/B against the previous flight: `git stash` +
    rebuild beats reasoning from memory (screenshots of both sides settle it in minutes).
-6. Commit per verified step, plain messages, no attribution (user's global rules). Do not merge
+7. Commit per verified step, plain messages, no attribution (user's global rules). Do not merge
    WIP branches; draft PRs are the CI vehicle.
 
 ## Hard prohibitions
@@ -95,12 +116,13 @@ the index after upstream pulls: `tools/zscript-rosetta-gen.sh <clone> > tools/da
 - No float-sim adoption; the sim stays fixed-point — conversions are draw-side and one-way.
 - No post-2016 `thingdef/*` cherry-picks (upstream DECORATE is VM-backed after 2016-10).
 - No second render pipeline coexisting with the first (the 15-seam lesson).
+- No upstream P2P-lockstep netcode diffs (`d_net.cpp`/ticcmd transport) ported as-is — that mechanism
+  was replaced by client/server; adapt per `netcode-adaptation` or skip.
 
 ## Ledger (staircase flights)
 
-Every staircase flight updates its rows in `progress/renderer-staircase/ledger.tsv` in the SAME
-commit that lands the code — advance the frontier and mark each upstream sha
-`ported`/`adapted`/`skipped`/`deferred` with its one-sentence note and your zandrox_sha.
-`tools/staircase-ledger-check.sh` (CI) fails on any `pending` row behind the frontier, so a
-late-discovered dependency (the flight-16 setsectortag class) can't hide. Schema:
-`progress/renderer-staircase/README.md`.
+Staircase flights record their status in the repo-wide commit tracker (see Step 0.5), same as any
+other port — mark each upstream sha `ported`/`adapted`/`skip` in `commit-tracker/coverage.tsv` in the
+SAME commit that lands the code, with your zandrox sha in the note. `tools/commit-tracker-check.sh`
+(CI) guards the file's format and that every ported/adapted row's provenance commit exists. Strategy
+and the flight table live in `docs/renderer-staircase.md`.

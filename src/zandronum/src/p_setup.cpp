@@ -54,6 +54,7 @@
 #include "doomstat.h"
 #include "p_lnspec.h"
 #include "v_palette.h"
+#include "features/hitboxviz/hitboxviz.h"
 #include "c_console.h"
 #include "c_cvars.h"
 #include "p_acs.h"
@@ -3949,6 +3950,10 @@ void P_SetupLevel (char *lumpname, int position)
 	{
 		times[i].Reset();
 	}
+
+	// [MGOOOOOO] Debug hitbox overlay: recorded explosion regions are map coordinates, so anything
+	// left over from the previous level would be drawn in the wrong place here.
+	zx::hitboxviz::ClearBlasts();
 
 	level.maptype = MAPTYPE_UNKNOWN;
 	wminfo.partime = 180;

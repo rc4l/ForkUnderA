@@ -77,6 +77,7 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_convert.h"
 #include "gl/utility/gl_templates.h"
+#include "features/hitboxviz/hitboxviz.h"
 
 //==========================================================================
 //
@@ -344,6 +345,10 @@ void FGLRenderer::SetupView(fixed_t viewx, fixed_t viewy, fixed_t viewz, angle_t
 
 void FGLRenderer::CreateScene()
 {
+	// [MGOOOOOO] Debug hitbox overlay: open this scene's geometry range before the BSP walk starts
+	// collecting actors. Paired with the Draw() at the end of RenderTranslucent.
+	zx::hitboxviz::BeginFrame();
+
 	// reset the portal manager
 	GLPortal::StartFrame();
 	PO_LinkToSubsectors();
@@ -527,6 +532,12 @@ void FGLRenderer::RenderTranslucent()
 	glDepthMask(true);
 
 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.5f);
+
+	// [MGOOOOOO] Debug hitbox overlay, drawn last: the 3D projection is still current and the depth
+	// buffer is writable again, so boxes are correctly occluded by world geometry. Closes the
+	// geometry range opened by BeginFrame in CreateScene.
+	zx::hitboxviz::Draw();
+
 	RenderAll.Unclock();
 }
 
