@@ -628,7 +628,33 @@ public:
 
 			case NAME_Countsecret:
 				CHECK_N(Zd | Zdt | Va)
-				Flag(th->flags, MTF_SECRET, key); 
+				Flag(th->flags, MTF_SECRET, key);
+				break;
+
+			// [rc4l] uzdoom@580094a7924e -- PSX/Doom64 boolean render-style thing flags.
+			case NAME_Transparent:
+				CHECK_N(Zd | Zdt)
+				Flag(th->flags, MTF_TRANS, key);
+				break;
+
+			case NAME_Additive:
+				CHECK_N(Zd | Zdt)
+				Flag(th->flags, MTF_ADD, key);
+				break;
+
+			case NAME_Subtractive:
+				CHECK_N(Zd | Zdt)
+				Flag(th->flags, MTF_SUBTRACT, key);
+				break;
+
+			case NAME_Spectre:
+				CHECK_N(Zd | Zdt)
+				Flag(th->flags, MTF_SPECTRE, key);
+				break;
+
+			case NAME_Doublehealth:
+				CHECK_N(Zd | Zdt)
+				Flag(th->flags, MTF_DOUBLEHEALTH, key);
 				break;
 
 			case NAME_Renderstyle:
