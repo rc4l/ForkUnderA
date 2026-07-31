@@ -55,6 +55,15 @@ const char *GetGitTime()
 	return HG_TIME; // GIT_TIME;
 }
 
+// [rc4l] Our own version, straight from `git describe` -- e.g. "v0.1.19-29-gde55d35". Note this is
+// NOT GetGitDescription(): that one is overridden above to return the 12-char hash, which the crash
+// reporter uses to build the "ZandroX@<sha>" release id that symbol assets are published under.
+// Repointing it at the describe string would silently break crash symbolication.
+const char *GetFuaDescribe()
+{
+	return GIT_DESCRIPTION;
+}
+
 const char *GetVersionString()
 {
 	// [BB]

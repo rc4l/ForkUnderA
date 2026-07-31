@@ -71,6 +71,7 @@
 #include "i_system.h"
 #include "c_console.h"
 #include "version.h"
+#include "features/fua-branding/computation/fua_version_compute.h"
 #include "features/crashreport/zx_crashreport.h"
 #include "i_video.h"
 #include "i_sound.h"
@@ -970,7 +971,20 @@ void DoMain (HINSTANCE hInstance)
 		
 			/* create window */
 			char caption[100];
-			mysnprintf(caption, countof(caption), "" GAMESIG " %s " X64 " (%s)", GetVersionString(), GetGitTime());
+			// [rc4l] Window/taskbar title names OUR build -- see the matching change in
+			// sdl/sdlglvideo.cpp, which must stay in step with this. An experimental build also
+			// carries its commit, because those are the ones handed round for testing and the title
+			// alone has to identify exactly which build someone is running. GAMESIG stays as-is; it
+			// identifies the engine inside savegames.
+			{
+				char tag[64];
+				zx::FuaVersionTag(GetFuaDescribe(), tag, sizeof tag);
+				if (zx::FuaIsStableBuild(GetFuaDescribe()))
+					mysnprintf(caption, countof(caption), FUA_NAME " %s " X64 " (stable)", tag);
+				else
+					mysnprintf(caption, countof(caption), FUA_NAME " %s " X64 " (experimental %s)",
+						tag, GetGitHash());
+			}
 			Window = CreateWindowEx(
 					WS_EX_APPWINDOW,
 					(LPCTSTR)WinClassName,
