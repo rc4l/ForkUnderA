@@ -8,9 +8,12 @@
 #include <cstring>
 
 using zx::ComputeReleaseDownloadURL;
+using zx::ComputeUpdateCheckResult;
 using zx::ExtractVersionTag;
 using zx::IsNewerVersion;
+using zx::ParseLatestReleaseTag;
 using zx::ReleasePlatform;
+using zx::UpdateCheckStatus;
 
 namespace {
 const char *kRepo = "https://github.com/rc4l/ZandroX";
@@ -106,6 +109,106 @@ TEST(IsNewerVersion, OrdersByMajorMinorPatch)
 	EXPECT_FALSE(IsNewerVersion("v0.1.19", "v0.1.18")); // older
 	EXPECT_FALSE(IsNewerVersion("v0.1.19", "v0.1.19")); // equal is NOT newer
 	EXPECT_FALSE(IsNewerVersion("v1.0.0", "v0.9.9"));   // older major
+}
+
+// ---- ParseLatestReleaseTag: robust to real + adversarial API bodies --------
+
+TEST(ParseLatestReleaseTag, ExtractsTagFromRealisticJson)
+{
+	char buf[64];
+	const char *json =
+		"{\"url\":\"https://api.github.com/...\",\"tag_name\":\"v0.1.19\",\"name\":\"ZandroX v0.1.19\"}";
+	ASSERT_TRUE(ParseLatestReleaseTag(json, buf, sizeof buf));
+	EXPECT_STREQ(buf, "v0.1.19");
+}
+
+TEST(ParseLatestReleaseTag, ToleratesWhitespaceAndKeyOrder)
+{
+	char buf[64];
+	EXPECT_TRUE(ParseLatestReleaseTag("{ \"tag_name\"  :  \"v1.2.3\" }", buf, sizeof buf));
+	EXPECT_STREQ(buf, "v1.2.3");
+	EXPECT_TRUE(ParseLatestReleaseTag("{\"tag_name\":\"v2.0.0\",\"draft\":false}", buf, sizeof buf));
+	EXPECT_STREQ(buf, "v2.0.0");
+	// key not first
+	EXPECT_TRUE(ParseLatestReleaseTag("{\"id\":42,\n\"tag_name\":\"v9\"}", buf, sizeof buf));
+	EXPECT_STREQ(buf, "v9");
+}
+
+TEST(ParseLatestReleaseTag, RejectsEmptyMissingAndNull)
+{
+	char buf[64];
+	buf[0] = 'x';
+	EXPECT_FALSE(ParseLatestReleaseTag("", buf, sizeof buf));            // empty body
+	EXPECT_STREQ(buf, "");
+	EXPECT_FALSE(ParseLatestReleaseTag("{\"name\":\"no tag here\"}", buf, sizeof buf)); // key absent
+	EXPECT_FALSE(ParseLatestReleaseTag(nullptr, buf, sizeof buf));       // null body
+	EXPECT_FALSE(ParseLatestReleaseTag("{\"tag_name\":\"\"}", buf, sizeof buf)); // empty value
+	EXPECT_FALSE(ParseLatestReleaseTag(nullptr, nullptr, 0));            // bad buffer
+	EXPECT_FALSE(ParseLatestReleaseTag("{\"tag_name\":\"v1\"}", buf, 0));
+}
+
+TEST(ParseLatestReleaseTag, RejectsTruncatedAndMalformed)
+{
+	char buf[64];
+	// Response cut off mid-way (data arrived partial / stream closed early):
+	EXPECT_FALSE(ParseLatestReleaseTag("{\"tag_name\":\"v0.1.1", buf, sizeof buf)); // unterminated value
+	EXPECT_FALSE(ParseLatestReleaseTag("{\"tag_name\"", buf, sizeof buf));          // cut at the key
+	EXPECT_FALSE(ParseLatestReleaseTag("{\"tag_name\":", buf, sizeof buf));         // cut after colon
+	EXPECT_FALSE(ParseLatestReleaseTag("{\"tag_name\" \"v1\"}", buf, sizeof buf));  // missing colon
+	EXPECT_FALSE(ParseLatestReleaseTag("{\"tag_name\":null}", buf, sizeof buf));    // value not a string
+}
+
+TEST(ParseLatestReleaseTag, RefusesOversizedValue)
+{
+	char small[8]; // "v0.1.19" (7) fits; a longer tag must be refused, not truncated
+	EXPECT_TRUE(ParseLatestReleaseTag("{\"tag_name\":\"v0.1.1\"}", small, sizeof small));
+	EXPECT_STREQ(small, "v0.1.1");
+	EXPECT_FALSE(ParseLatestReleaseTag("{\"tag_name\":\"v0.1.100-rc1\"}", small, sizeof small));
+	EXPECT_STREQ(small, "");
+}
+
+// ---- ComputeUpdateCheckResult: one place that folds fetch + parse + compare -
+
+TEST(UpdateCheckResult, NoNetworkWhenFetchFails)
+{
+	// Covers timeout / no-network / DNS / HTTP error: fetchOk == false, whatever the body.
+	auto r = ComputeUpdateCheckResult(false, "", "v0.1.18-37-gabc");
+	EXPECT_EQ(r.status, UpdateCheckStatus::NoNetwork);
+	auto r2 = ComputeUpdateCheckResult(false, "{\"tag_name\":\"v9.9.9\"}", "v0.1.18");
+	EXPECT_EQ(r2.status, UpdateCheckStatus::NoNetwork); // a body we never trust because the GET failed
+}
+
+TEST(UpdateCheckResult, MalformedBodyNeverFalsePositives)
+{
+	for (const char *body : { "", "not json", "{\"tag_name\":\"v0.1.1", "{\"other\":1}" })
+	{
+		auto r = ComputeUpdateCheckResult(true, body, "v0.1.18");
+		EXPECT_EQ(r.status, UpdateCheckStatus::Malformed) << "body: " << body;
+		EXPECT_STREQ(r.tag, "");
+	}
+}
+
+TEST(UpdateCheckResult, UpToDateForEqualOrOlder)
+{
+	auto eq = ComputeUpdateCheckResult(true, "{\"tag_name\":\"v0.1.18\"}", "v0.1.18-37-gabc");
+	EXPECT_EQ(eq.status, UpdateCheckStatus::UpToDate); // latest == running build
+	auto older = ComputeUpdateCheckResult(true, "{\"tag_name\":\"v0.1.17\"}", "v0.1.18");
+	EXPECT_EQ(older.status, UpdateCheckStatus::UpToDate); // latest older than running build
+}
+
+TEST(UpdateCheckResult, UpdateAvailableForNewerReleasesTheTag)
+{
+	auto r = ComputeUpdateCheckResult(true, "{\"tag_name\":\"v0.2.0\"}", "v0.1.18-37-gabc");
+	EXPECT_EQ(r.status, UpdateCheckStatus::UpdateAvailable);
+	EXPECT_STREQ(r.tag, "v0.2.0");
+	// Unknown/garbage current build version -> any real release counts as newer.
+	auto r2 = ComputeUpdateCheckResult(true, "{\"tag_name\":\"v0.0.1\"}", "garbage");
+	EXPECT_EQ(r2.status, UpdateCheckStatus::UpdateAvailable);
+	EXPECT_STREQ(r2.tag, "v0.0.1");
+	// Empty/unparseable current describe (ExtractVersionTag fails) -> treated as 0.0.0, still newer.
+	auto r3 = ComputeUpdateCheckResult(true, "{\"tag_name\":\"v0.0.1\"}", "");
+	EXPECT_EQ(r3.status, UpdateCheckStatus::UpdateAvailable);
+	EXPECT_STREQ(r3.tag, "v0.0.1");
 }
 
 TEST(IsNewerVersion, ToleratesMissingPartsAndPrefix)

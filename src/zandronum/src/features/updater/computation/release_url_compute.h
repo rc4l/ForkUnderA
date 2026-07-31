@@ -46,6 +46,32 @@ bool ExtractVersionTag(const char *gitDescribe, char *out, int outSize);
 // for raising the "update available" notice, so it must never call an equal or older build "newer".
 bool IsNewerVersion(const char *current, const char *candidate);
 
+// Extract the "tag_name" string value from a GitHub /releases/latest API JSON response into `out`.
+// Returns true on success; false (with `out` emptied) if the key is absent/malformed, the buffer is
+// bad, or the value wouldn't fit. Tolerant of surrounding whitespace and key order. Release tags carry
+// no JSON escape sequences, so none are interpreted (a value is taken literally up to the next quote).
+bool ParseLatestReleaseTag(const char *json, char *out, int outSize);
+
+// Outcome of one update check, folding together every way it can go so the background worker (and its
+// tests) treat a timeout, a truncated body, and a valid response uniformly.
+enum class UpdateCheckStatus {
+	NoNetwork,        // the HTTPS GET failed/timed out/returned non-2xx -> we simply don't know; no notice
+	Malformed,        // got a body but no usable tag_name (empty, truncated, garbage) -> no notice
+	UpToDate,         // latest release is not newer than this build -> no notice
+	UpdateAvailable,  // latest release is strictly newer -> raise the notice for `tag`
+};
+
+struct UpdateCheckResult {
+	UpdateCheckStatus status;
+	char tag[64];     // the latest tag; meaningful only when status == UpdateAvailable, else ""
+};
+
+// Decide the outcome of a check. `fetchOk` is whether the HTTP layer got a good 2xx response at all
+// (false covers timeouts, no network, DNS failure, HTTP errors -- all "NoNetwork"). `body` is the
+// response text; `currentDescribe` is this build's GIT_DESCRIPTION. Never reports UpdateAvailable for
+// an equal/older release or an unparseable body, so a flaky/slow/partial response can't false-positive.
+UpdateCheckResult ComputeUpdateCheckResult(bool fetchOk, const char *body, const char *currentDescribe);
+
 } // namespace zx
 
 #endif
