@@ -318,7 +318,7 @@ function fitColumns() {
 // no measuring, no layout reads — so it cannot stall the compositor scroll we spent so long
 // smoothing. Hysteresis (down past 48px hides, any 8px of upward movement shows) stops it
 // flickering when a finger jitters mid-scroll.
-let lastY = 0;
+let lastY = 0, programmaticScroll = false;
 function armChromeCollapse() {
   const vp = document.querySelector(".ag-body-viewport");
   if (!vp || vp.dataset.collapseArmed) return;
@@ -326,10 +326,35 @@ function armChromeCollapse() {
   vp.addEventListener("scroll", () => {
     const y = vp.scrollTop, dy = y - lastY;
     lastY = y;
+    if (programmaticScroll) return;              // the opening jump is not a user gesture
     if (!isCompact()) { document.body.classList.remove("chrome-hidden"); return; }
     if (dy > 0 && y > 48) document.body.classList.add("chrome-hidden");
     else if (dy < -8 || y <= 8) document.body.classList.remove("chrome-hidden");
   }, { passive: true });
+}
+
+// [rc4l] Land where the work is. The table is oldest-first and the first ~1,100 rows are largely
+// triaged, so opening at row 1 shows a wall of struck-out shas; the first pending commit is the
+// row you actually came for. Order is untouched — this only sets the initial scroll position.
+// 'middle' rather than 'top' keeps the handled rows just above it visible for context.
+function jumpToFirstPending() {
+  const n = gridApi.getDisplayedRowCount();
+  if (!n) return;
+  let target = -1, where = "middle";
+  for (let i = 0; i < n; i++) {
+    if (gridApi.getDisplayedRowAtIndex(i)?.data?.status === "pending") { target = i; break; }
+  }
+  // Nothing pending means the whole tracker is triaged: the end of the list is the frontier, so
+  // land there rather than at the top of a list with no outstanding work in it.
+  if (target < 0) { target = n - 1; where = "bottom"; }
+  programmaticScroll = true;                     // don't let this count as the user scrolling down
+  gridApi.ensureIndexVisible(target, where);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const vp = document.querySelector(".ag-body-viewport");
+    if (vp) lastY = vp.scrollTop;                // rebase the direction tracker at the new position
+    programmaticScroll = false;
+  }));
+  return target;
 }
 
 let fitTimer;
@@ -470,6 +495,7 @@ Promise.all([
     rowHeight: 30,
     tooltipShowDelay: 400,
     onRowClicked: onRowClicked,
+    onFirstDataRendered: jumpToFirstPending,
   });
   fitColumns();
   armChromeCollapse();
