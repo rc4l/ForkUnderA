@@ -32,21 +32,25 @@
                    font-variant-numeric: tabular-nums; }
   #progress .goal { color: #1a1a2e; font-weight: 600; }
   #progress .counts { margin-left: auto; font-variant-numeric: tabular-nums; }
-  /* [rc4l] Touch devices only (a mouse keeps every behaviour below). On a phone, dragging over
-     the table started a text selection instead of a scroll: iOS treats a press-and-drag on
-     selectable text as "select", so the first ~200ms of every swipe went to the selection
-     magnifier and the scroll stuttered or never started. Cells become non-selectable and opt
-     out of the long-press callout; the panning axes are declared so the browser can scroll on
-     the compositor instead of waiting to see whether script cancels the touch. The detail panel
-     below stays selectable — that is where the file paths worth copying live. */
+  /* [rc4l] Dragging across the table must scroll it, never select it. This is deliberately NOT
+     inside a touch media query: it was, and the blue selection still appeared for anyone whose
+     device reports a pointer (desktop, iPad with a trackpad, hybrid laptops). The table is a
+     scroll surface — the text worth copying lives in the detail panel, which stays selectable,
+     and the shas are links. -webkit-touch-callout stops iOS's long-press magnifier; the tap
+     highlight goes too, since a row tap opens the detail panel and the flash reads as a misfire. */
+  .ag-theme-quartz .ag-root-wrapper,
+  .ag-theme-quartz .ag-row,
+  .ag-theme-quartz .ag-cell,
+  .ag-theme-quartz .ag-header-cell,
+  .ag-theme-quartz .ag-floating-filter,
+  .chip {
+    -webkit-user-select: none; -moz-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* The filter inputs are still real text fields — typing and editing there needs selection. */
+  .ag-theme-quartz input, .ag-theme-quartz textarea { -webkit-user-select: text; user-select: text; }
   @media (hover: none) and (pointer: coarse) {
-    .ag-theme-quartz .ag-cell,
-    .ag-theme-quartz .ag-header-cell,
-    .ag-theme-quartz .ag-floating-filter,
-    .chip {
-      -webkit-user-select: none; user-select: none;
-      -webkit-touch-callout: none;
-    }
     /* One axis each, so a swipe is claimed by exactly one scroller: the wrapper pans sideways,
        the grid body pans vertically. Both run on the compositor. */
     #gridwrap { touch-action: pan-x; }
