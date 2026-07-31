@@ -26,7 +26,18 @@ const char *Tag();
 // Kick off the background GitHub-releases check on a detached worker thread (non-blocking). Called
 // once at startup; a no-op when the cl_fua_update_notify cvar is off. On finding a newer release it
 // calls SetLatestTag; any failure/timeout leaves the notice hidden. Safe to call again (e.g. a CCMD).
+// The worker touches only thread-safe state -- NEVER the console -- because ZDoom's Printf is not
+// thread-safe (calling it off the main thread crashed on first launch).
 void StartCheck();
+
+// Log the async check's verdict, if any, exactly once. MUST be called from the main thread (it uses
+// Printf); called by Tick(). The worker only sets an atomic status; this drains it.
+void DrainLog();
+
+// Call once per frame from the main loop (D_DoomLoop). Fires the background check ONCE, a short delay
+// after the loop starts -- NOT during startup, where the worker raced the heavy first-launch init and
+// crashed -- and drains the verdict log. A no-op after it has done both.
+void Tick();
 
 } } // namespace zx::updater
 

@@ -28,6 +28,15 @@ jobs:
         with:
           submodules: true
 
+      # [rc4l] On a real release, tag HEAD with the release version BEFORE building so updaterevision's
+      # `git describe` bakes the correct version into GIT_DESCRIPTION. Otherwise the tag is created only
+      # at publish time (after the build), so the shipped binary self-identifies as the PREVIOUS release
+      # and the auto-update check flags an update to itself.
+      - name: Bake release version into git describe
+        if: inputs.upload_symbols
+        shell: bash
+        run: git tag -f "${{ inputs.version }}" HEAD
+
       - name: Build ZandroX
         env:
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
@@ -99,6 +108,11 @@ jobs:
         with:
           submodules: true
 
+      - name: Bake release version into git describe
+        if: inputs.upload_symbols
+        shell: bash
+        run: git tag -f "${{ inputs.version }}" HEAD
+
       - name: Build + package ZandroX (Linux, native)
         # [rc4l] linux_compile.sh is the same script devs run; --install-deps apt-installs the
         # build/OpenAL libs, then it configures, builds and packages dist-linux/*.tar.gz itself.
@@ -144,6 +158,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+
+      - name: Bake release version into git describe
+        if: inputs.upload_symbols
+        shell: bash
+        run: git tag -f "${{ inputs.version }}" HEAD
 
       # [rc4l] VCPKG_INSTALLATION_ROOT is a runner environment variable, and the env context in
       # an expression only sees workflow-level env: blocks — using it in the cache path below

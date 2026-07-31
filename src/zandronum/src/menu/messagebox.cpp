@@ -899,7 +899,7 @@ static void M_StartOpenURLMenu(const char *url, const char *caption, const char 
 {
 	if (!zx::IsOpenableURL(url))
 	{
-		Printf("openurl: refusing to open %s (only http/https URLs are allowed)\n",
+		Printf("fua_openurl: refusing to open %s (only http/https URLs are allowed)\n",
 			url != NULL ? url : "(null)");
 		return;
 	}
@@ -955,21 +955,21 @@ void M_ConfirmDownloadRelease(const char *tag)
 	M_StartOpenURLMenu(url, caption.GetChars(), "This will open a link in your web browser.");
 }
 
-CCMD(openurl)
+CCMD(fua_openurl)
 {
 	if (argv.argc() < 2)
 	{
-		Printf("usage: openurl <http(s)-url>\n");
+		Printf("usage: fua_openurl <http(s)-url>\n");
 		return;
 	}
 	M_ConfirmOpenURL(argv[1]);
 }
 
-CCMD(download_release)
+CCMD(fua_download_release)
 {
 	if (argv.argc() < 2)
 	{
-		Printf("usage: download_release <tag>   (e.g. download_release v0.1.19)\n");
+		Printf("usage: fua_download_release <tag>   (e.g. fua_download_release v0.1.19)\n");
 		return;
 	}
 	M_ConfirmDownloadRelease(argv[1]);

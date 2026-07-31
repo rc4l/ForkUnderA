@@ -1292,6 +1292,7 @@ void D_DoomLoop ()
 	{
 		try
 		{
+			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{
@@ -3084,9 +3085,9 @@ void D_DoomMain (void)
 		// shared D_DoomMain init path, not a client-only branch).
 		ZX_CrashReportCheckPreviousCrash ();
 
-		// [rc4l] Kick off the background auto-update check (GitHub releases/latest -> notice). Detached
-		// worker thread, non-blocking; a no-op if the cl_fua_update_notify cvar is off.
-		zx::updater::StartCheck ();
+		// [rc4l] The background auto-update check is NOT started here -- doing so during the heavy
+		// first-launch init raced and crashed. zx::updater::Tick() (in D_DoomLoop) fires it a short
+		// delay into the main loop instead, when the engine is idle at the title screen.
 
 		Printf ("P_Init: Init Playloop state.\n");
 		StartScreen->LoadingStatus ("Init game engine", 0x3f);
