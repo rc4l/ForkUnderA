@@ -70,3 +70,31 @@ if(ZANDROX_TESTS_COVERAGE)
 endif()
 
 gtest_discover_tests(zandrox_tests)
+
+# [rc4l] macOS-only Objective-C++ test target for the Cocoa updater networking seam. Kept SEPARATE
+# from zandrox_tests because it needs Foundation and MUST compile without ARC, matching the shipping
+# i_system_cocoa_net.mm's manual retain/release -- if the memory model differed, the use-after-free
+# regression test would be meaningless. The .mm sources are matched by their own *_test.mm glob, so the
+# portable zandrox_tests target above (globbing *_test.cpp / *_compute.cpp) never sees them, and no
+# Linux/Windows build gains an Objective-C or Foundation dependency. These .mm units sit outside the
+# 100%-line coverage gate (that gate measures *_compute.cpp); their guard is ASan + the assertions.
+if(APPLE)
+  file(GLOB_RECURSE OBJC_TEST_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_test.mm")
+  if(OBJC_TEST_SOURCES)
+    add_executable(zandrox_tests_objc
+      ${OBJC_TEST_SOURCES}
+      "${ENGINE_SRC}/sdl/i_system_cocoa_net.mm")
+    target_include_directories(zandrox_tests_objc PRIVATE "${ENGINE_SRC}")
+    target_link_libraries(zandrox_tests_objc PRIVATE GTest::gtest_main)
+    target_link_options(zandrox_tests_objc PRIVATE -framework Foundation)
+    # Manual reference counting (NOT ARC) to match the engine build of these .mm files.
+    target_compile_options(zandrox_tests_objc PRIVATE -Wall -Wextra -fno-objc-arc)
+    if(ZANDROX_TESTS_SANITIZE)
+      message(STATUS "zandrox_tests_objc: AddressSanitizer + UBSan enabled")
+      target_compile_options(zandrox_tests_objc PRIVATE
+        -fsanitize=address,undefined -fno-omit-frame-pointer -g)
+      target_link_options(zandrox_tests_objc PRIVATE -fsanitize=address,undefined)
+    endif()
+    gtest_discover_tests(zandrox_tests_objc)
+  endif()
+endif()
