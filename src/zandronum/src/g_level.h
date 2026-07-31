@@ -38,6 +38,7 @@
 #include "doomdef.h"
 #include "sc_man.h"
 #include "s_sound.h"
+#include "textures/textures.h"
 //[BL] New Includes
 #include "sectinfo.h"
 
@@ -307,12 +308,12 @@ struct level_info_t
 	char		pname[9];
 	char		nextmap[11];
 	char		secretmap[11];
-	char		skypic1[9];
-	char		skypic2[9];
-	char		fadetable[9];
-	char		f1[9];
-	char		bordertexture[9];
-	char		mapbg[9];
+	FString		SkyPic1;
+	FString		SkyPic2;
+	FString		FadeTable;
+	FString		F1Pic;
+	FString		BorderTexture;
+	FString		MapBackground;
 
 	int			cluster;
 	int			partime;
@@ -478,6 +479,14 @@ struct FLevelLocals
 	int			cdtrack;
 	unsigned int cdid;
 	int			nextmusic;				// For MUSINFO purposes
+	FTextureID	skytexture1;
+	FTextureID	skytexture2;
+	// [rc4l] uzdoom@65e8563cf dropped the sky NAME from FLevelLocals, keeping only the resolved
+	// texture ids above -- upstream never needs the name again. We do: SERVERCOMMANDS_SetMapSky
+	// puts the sky on the wire BY NAME (sv_commands.cpp), and sv_main/g_game compare the live sky
+	// against the level info to decide whether to broadcast an update at all. Kept as char[9]
+	// rather than FString on purpose, so the historic 8-character truncation on the wire is
+	// bit-for-bit what it always was and old clients keep parsing it.
 	char		skypic1[9];
 	char		skypic2[9];
 

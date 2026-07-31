@@ -3810,19 +3810,22 @@ void GAME_ResetMap( bool bRunEnterScripts )
 	if ( pLevelInfo )
 	{
 		bSendSkyUpdate = false;
-		if (( stricmp( level.skypic1, pLevelInfo->skypic1 ) != 0 ) ||
-			( stricmp( level.skypic2, pLevelInfo->skypic2 ) != 0 ))
+		if (( stricmp( level.skypic1, pLevelInfo->SkyPic1.GetChars() ) != 0 ) ||
+			( stricmp( level.skypic2, pLevelInfo->SkyPic2.GetChars() ) != 0 ))
 		{
 			bSendSkyUpdate = true;
 		}
 
-		snprintf( level.skypic1, sizeof( level.skypic1 ), "%s", pLevelInfo->skypic1 );
-		snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", pLevelInfo->skypic2 );
+		snprintf( level.skypic1, sizeof( level.skypic1 ), "%s", pLevelInfo->SkyPic1.GetChars() );
+		snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", pLevelInfo->SkyPic2.GetChars() );
 		if ( level.skypic2[0] == 0 )
 			snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", level.skypic1 );
 
-		sky1texture = TexMan.GetTexture( level.skypic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
-		sky2texture = TexMan.GetTexture( level.skypic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		// [rc4l] keep the resolved ids (uzdoom@65e8563cf) in step with the names above.
+		level.skytexture1 = TexMan.GetTexture( level.skypic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		level.skytexture2 = TexMan.GetTexture( level.skypic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		sky1texture = level.skytexture1;
+		sky2texture = level.skytexture2;
 
 		R_InitSkyMap( );
 

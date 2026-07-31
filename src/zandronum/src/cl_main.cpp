@@ -7408,11 +7408,16 @@ void ServerCommands::SetMapMusic::Execute()
 //
 void ServerCommands::SetMapSky::Execute()
 {
-	strncpy( level.skypic1, sky1, 8 );
-	sky1texture = TexMan.GetTexture( sky1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	// [rc4l] level.skypic1/2 were char[9] name buffers; uzdoom@65e8563cf replaced them with
+	// resolved FTextureIDs (level.skytexture1/2), which is also what R_InitSkyMap consumes. The
+	// server still sends the sky by NAME on the wire -- that is the netcode's contract and is
+	// unchanged -- so the client resolves the received name once and stores the id, exactly as
+	// G_InitLevelLocals now does for a normal map start.
+	level.skytexture1 = TexMan.GetTexture( sky1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	sky1texture = level.skytexture1;
 
-	strncpy( level.skypic2, sky2, 8 );
-	sky2texture = TexMan.GetTexture( sky2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	level.skytexture2 = TexMan.GetTexture( sky2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	sky2texture = level.skytexture2;
 
 	// Set some other sky properties.
 	R_InitSkyMap( );
