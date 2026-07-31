@@ -41,17 +41,21 @@ TZ=UTC git -C "$UP" log --reverse --date=format-local:'%Y-%m-%dT%H:%M:%SZ' \
         t=$3; gsub(/[\t\r\n]+/," ",t); sub(/^ +/,"",t); sub(/ +$/,"",t);
         printf "%s\t%s\t%s\n", sha, $2, t }' > "$RAW"
 
-# --- 2. preserve existing curation (status,note) keyed by sha ---
-[ -f "$TSV" ] && awk -F'\t' '$1 ~ /^[0-9a-f]{40}$/ {print $1"\t"$4"\t"$5}' "$TSV" > "$CUR"
+# --- 2. preserve existing curation (status,note,ours) keyed by sha ---
+[ -f "$TSV" ] && awk -F'\t' '$1 ~ /^[0-9a-f]{40}$/ {print $1"\t"$4"\t"$5"\t"$6}' "$TSV" > "$CUR"
 
 # --- 3. coverage.tsv ---
+# ours (field 6) = OUR repo commit(s) that addressed the row: "/" if pending/skip,
+# "zandronum-base" if present in the Zandronum 3.2.1 baseline import (no discrete commit
+# of ours), else comma-separated zandrox shas. New commits are born pending -> "/".
 {
-  printf '# commit tracker | repo https://github.com/UZDoom/UZDoom | commit URL = <repo>/commit/<sha> | status = pending|ported|adapted|skip\n'
-  printf 'sha\tdate\ttitle\tstatus\tnote\n'
+  printf '# commit tracker | repo https://github.com/UZDoom/UZDoom | commit URL = <repo>/commit/<sha> | status = pending|ported|adapted|skip | ours = OUR commit(s), "/" if pending/skip, "zandronum-base" if baseline\n'
+  printf 'sha\tdate\ttitle\tstatus\tnote\tours\n'
   awk -F'\t' -v cur="$CUR" '
-      BEGIN{ while((getline l < cur)>0){ split(l,c,"\t"); st[c[1]]=c[2]; nt[c[1]]=c[3] } }
+      BEGIN{ while((getline l < cur)>0){ split(l,c,"\t"); st[c[1]]=c[2]; nt[c[1]]=c[3]; ou[c[1]]=c[4] } }
       { sha=$1; s=(sha in st && st[sha]!="")?st[sha]:"pending"; n=(sha in nt)?nt[sha]:"";
-        printf "%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, s, n }' "$RAW"
+        o=(sha in ou && ou[sha]!="")?ou[sha]:"/";
+        printf "%s\t%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, s, n, o }' "$RAW"
 } > "$TSV"
 
 # --- 4. index.tsv: path -> shas that touched it (path as-of-commit; follow renames manually) ---
