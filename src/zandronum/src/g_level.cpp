@@ -37,6 +37,7 @@
 #include "d_main.h"
 #include "features/crashreport/zx_crashreport.h"
 #include "g_level.h"
+#include "features/skywire/computation/sky_wire_compute.h"
 #include "g_game.h"
 #include "s_sound.h"
 #include "d_event.h"
@@ -2072,8 +2073,9 @@ void G_InitLevelLocals ()
 	level.skytexture1 = TexMan.GetTexture(info->SkyPic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
 	level.skytexture2 = TexMan.GetTexture(info->SkyPic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
 	// [rc4l] and keep the wire-facing names in step with the ids we just resolved (see g_level.h).
-	snprintf( level.skypic1, sizeof( level.skypic1 ), "%s", info->SkyPic1.GetChars() );
-	snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", info->SkyPic2.GetChars() );
+	// The 8-char bound is the SetMapSky protocol constant, pinned by features/skywire tests.
+	zx::CopySkyNameForWire( info->SkyPic1.GetChars(), level.skypic1, sizeof( level.skypic1 ) );
+	zx::CopySkyNameForWire( info->SkyPic2.GetChars(), level.skypic2, sizeof( level.skypic2 ) );
 	level.fadeto = info->fadeto;
 	level.cdtrack = info->cdtrack;
 	level.cdid = info->cdid;
@@ -2294,8 +2296,8 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 		// widening the save format -- the texture's own name is by definition the right answer.
 		FTexture *pSky1 = TexMan[level.skytexture1];
 		FTexture *pSky2 = TexMan[level.skytexture2];
-		snprintf( level.skypic1, sizeof( level.skypic1 ), "%s", pSky1 ? pSky1->Name : "" );
-		snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", pSky2 ? pSky2->Name : "" );
+		zx::CopySkyNameForWire( pSky1 ? pSky1->Name : "", level.skypic1, sizeof( level.skypic1 ) );
+		zx::CopySkyNameForWire( pSky2 ? pSky2->Name : "", level.skypic2, sizeof( level.skypic2 ) );
 
 		R_InitSkyMap();
 	}

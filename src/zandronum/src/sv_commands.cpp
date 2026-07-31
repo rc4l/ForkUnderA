@@ -65,6 +65,7 @@
 #include "r_state.h"
 #include "sbar.h"
 #include "sv_commands.h"
+#include "features/skywire/computation/sky_wire_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "sv_main.h"
 #include "team.h"
@@ -3994,6 +3995,12 @@ void SERVERCOMMANDS_SetMapMusic( const char *pszMusic, int track, ULONG ulPlayer
 //
 void SERVERCOMMANDS_SetMapSky( ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [rc4l] The sky goes on the wire BY NAME, bounded to 8 characters + NUL. That bound is a
+	// protocol constant, not an artefact of the field's size -- features/skywire pins it, and this
+	// assert is what stops the two definitions drifting if someone widens FLevelLocals.
+	static_assert( sizeof( level.skypic1 ) == zx::ZX_SKY_NAME_SIZE, "sky1 wire size changed" );
+	static_assert( sizeof( level.skypic2 ) == zx::ZX_SKY_NAME_SIZE, "sky2 wire size changed" );
+
 	ServerCommands::SetMapSky command;
 	command.SetSky1( level.skypic1 );
 	command.SetSky2( level.skypic2 );
