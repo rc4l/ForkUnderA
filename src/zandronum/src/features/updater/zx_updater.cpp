@@ -3,17 +3,10 @@
 // Copyright (C) 2026 rc4l
 #include "features/updater/zx_updater.h"
 
-// Platform networking headers at file scope (before engine headers), so no namespace juggling.
-#if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <winhttp.h>
-#elif !defined(__APPLE__)
+// Platform networking headers at file scope (before engine headers). NOTE: <windows.h> is NOT
+// included here -- it redefines DWORD/BYTE and clashes with the engine's basictypes.h, so the Windows
+// fetch lives in its own TU (zx_updater_net_win.cpp) behind Zx_Win_HttpsGet.
+#if !defined(_WIN32) && !defined(__APPLE__)
 #include <dlfcn.h>
 #endif
 
@@ -65,63 +58,11 @@ bool HttpsGet(const char *host, const char *path, char *out, int outSize)
 
 #elif defined(_WIN32)
 
+// Defined in zx_updater_net_win.cpp (isolated so <windows.h> doesn't clash with basictypes.h).
+extern "C" bool Zx_Win_HttpsGet(const char *host, const char *path, char *out, int outSize);
 bool HttpsGet(const char *host, const char *path, char *out, int outSize)
 {
-	if (out == nullptr || outSize <= 0)
-		return false;
-	out[0] = '\0';
-
-	wchar_t whost[256], wpath[512];
-	MultiByteToWideChar(CP_UTF8, 0, host, -1, whost, 256);
-	MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, 512);
-
-	bool ok = false;
-	HINTERNET hSession = WinHttpOpen(L"ZandroX-updater", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-		WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-	if (hSession != nullptr)
-	{
-		WinHttpSetTimeouts(hSession, 8000, 8000, 8000, 8000);
-		HINTERNET hConnect = WinHttpConnect(hSession, whost, INTERNET_DEFAULT_HTTPS_PORT, 0);
-		if (hConnect != nullptr)
-		{
-			HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", wpath, nullptr,
-				WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
-			if (hRequest != nullptr)
-			{
-				if (WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-						WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
-					WinHttpReceiveResponse(hRequest, nullptr))
-				{
-					DWORD status = 0, len = sizeof(status);
-					WinHttpQueryHeaders(hRequest,
-						WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-						WINHTTP_HEADER_NAME_BY_INDEX, &status, &len, WINHTTP_NO_HEADER_INDEX);
-					if (status >= 200 && status < 300)
-					{
-						int total = 0;
-						DWORD avail = 0;
-						while (WinHttpQueryDataAvailable(hRequest, &avail) && avail > 0 &&
-							   total < outSize - 1)
-						{
-							DWORD want = avail;
-							if ((int)want > outSize - 1 - total) want = (DWORD)(outSize - 1 - total);
-							DWORD got = 0;
-							if (!WinHttpReadData(hRequest, out + total, want, &got) || got == 0)
-								break;
-							total += (int)got;
-						}
-						out[total] = '\0';
-						ok = true;
-					}
-				}
-				WinHttpCloseHandle(hRequest);
-			}
-			WinHttpCloseHandle(hConnect);
-		}
-		WinHttpCloseHandle(hSession);
-	}
-	if (!ok) out[0] = '\0';
-	return ok;
+	return Zx_Win_HttpsGet(host, path, out, outSize);
 }
 
 #else // Linux/other: libcurl loaded at runtime (dlopen), so it's not a hard build dependency.
