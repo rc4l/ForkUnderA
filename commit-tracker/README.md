@@ -18,6 +18,8 @@ tail (after 2025-10) comes last**.
 | `coverage.tsv` | the tracker — one row per commit, `sha date title status note`          |
 | `index.tsv`    | `path → the commits that touched it` (for "what changed file X?")        |
 | `regen.sh`     | rebuilds both from the UZDoom clone; re-runnable, never wipes curation   |
+| `progress.sh`  | computes progress toward the current goal into `progress.json` (run by `regen.sh`) |
+| `progress.json`| the goal bar's numbers, precomputed — the viewer draws them, never counts rows |
 | `index.html`   | AG Grid viewer — status filters, search, sortable, commit links (GitHub Pages-ready) |
 
 ## coverage.tsv columns
@@ -27,6 +29,28 @@ tail (after 2025-10) comes last**.
 local time. `status` `note` — the only two fields you curate.
 
 Commit URL = `https://github.com/UZDoom/UZDoom/commit/<sha>`.
+
+## the goal bar
+
+The viewer shows one number: **percent of commits handled, up to a goal we pick**. Handled means
+any status other than `pending` — `skip` counts, because a reviewed-and-rejected commit is done
+with, not outstanding. The goal is a release we're aiming at; everything dated after it is out of
+scope for the bar until we move the goal.
+
+It is computed in the repo by `progress.sh` and shipped as `progress.json`. Clients never
+calculate it — one definition of progress, and the bar paints instantly instead of waiting on
+the ~5 MB of TSV behind the table.
+
+**To retarget it**, edit the two constants at the top of `progress.sh` and re-run it:
+
+```sh
+GOAL_LABEL="GZDoom 2.1.1"   GOAL_DATE="2016-02-23"   ./progress.sh
+```
+
+| goal | date | note |
+|---|---|---|
+| GZDoom 2.0.05 | 2014-12-27 | current |
+| GZDoom 2.1.1  | 2016-02-23 | next; the renderer half is gated on the base-engine backport (#41) |
 
 ## status vocabulary
 
