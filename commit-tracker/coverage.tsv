@@ -7,7 +7,7 @@ sha	date	title	status	note
 50cec119a08d048fc61a38f639a0acbdc1f8f0f3	2014-01-03T00:12:03Z	- Work around GCC 4.8 bug 54570	ported	inherited (present 3/3 (inherited))
 511bdc7208ea0589b059a49b2b43c5f761a53e7b	2014-01-03T00:41:53Z	- Work around GCC 4.8 bug 54570	ported	inherited (present 3/3 (inherited))
 a62996386dc5e4835ff5901f1b159876238fd645	2014-01-03T00:42:15Z	Merge branch 'maint'	skip	merge
-4770b9b27b0aebf29117ca1345db0cf0d0ea04fc	2014-01-03T06:21:21Z	- Fixed: Rampage timer should only reset when the weapon is ready to be fired.	pending	candidate: rampage-timer WF_WEAPONREADY guard absent in sbar_mugshot.cpp
+4770b9b27b0aebf29117ca1345db0cf0d0ea04fc	2014-01-03T06:21:21Z	- Fixed: Rampage timer should only reset when the weapon is ready to be fired.	ported	ported e8840f6 (rampage-ready guard in sbar_mugshot.cpp)
 b0f40c07338cea851f03720e7355b4ed71d55705	2014-01-04T05:37:15Z	- So we did end up restoring the variable that the last commit was compensating for.	ported	inherited (present 1/1 (inherited))
 005313c00e61c0ab4bb3934d8dad03fc050c4507	2014-01-04T10:29:02Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
 cd3f5db16a8866d7ed2e97a05ab74e1f631feaf2	2014-01-04T21:58:21Z	- Updated gdtoa in order to fix clang warnings.	ported	inherited (present 25/25 (inherited))
@@ -20,7 +20,7 @@ db4a23e3c45dbe6db1b4164ad3c18516c9e1e200	2014-01-10T07:19:14Z	Merge branch 'orig
 6db974918a67fafd081954714b922e7b2e1d4d30	2014-01-12T05:39:19Z	Treat packets from unknown nodes differently	ported	inherited (present 5/5 (inherited))
 725d3e3f530be44aea34a0ef1acc3915b913c051	2014-01-12T09:53:34Z	Merge branch 'master' of https://github.com/Edward850/zdoom	skip	merge
 812f2d92300f5f49701dd602fab605f0979ee2ce	2014-01-12T11:02:02Z	- removed all unneeded files from gdtoa/CMakeLists.txt because some compilers seem to throw duplicate symbol errors when strtod gets included.	ported	REVIEW->gdtoa unneeded-files removal already applied
-2501dc6df68e749094b4517a48c81f9a7b4fe1d2	2014-01-13T00:48:31Z	Fixed signed overflow issue, which caused a non-intended aggressive optimization by GCC 4.8. Also, negative values of the 'limit' parameter in both ACS UniqueTID() and in 'utid' CCMD are ignored and replaced by 0.	pending	candidate(partial): p_mobj P_FindUniqueTID signed-overflow UB fix absent; ACS half inherited
+2501dc6df68e749094b4517a48c81f9a7b4fe1d2	2014-01-13T00:48:31Z	Fixed signed overflow issue, which caused a non-intended aggressive optimization by GCC 4.8. Also, negative values of the 'limit' parameter in both ACS UniqueTID() and in 'utid' CCMD are ignored and replaced by 0.	adapted	already present (adapted): P_FindUniqueTID pre-checks INT_MAX-limit+1 == upstream end_tid rewrite; utid CCMD arg>=0 guard + ACS half present
 af3e619232c05279c7317b5ff74fcccf9b5cd99a	2014-01-16T10:38:53Z	Merge branch 'uniquetid_overflow_fix' of https://github.com/edward-san/zdoom	skip	merge
 f51fcd90b3f08333fc9c2935cfedfc4c8026a7d9	2014-01-17T17:57:52Z	- Fixed scanf in IWAD picker without GTK	ported	inherited (present 1/1 (inherited))
 aafea851f0fa334efaaafe1271b15dbdb5330854	2014-01-17T18:11:29Z	- Remove clang check from GCC-related workaround	ported	inherited (present 3/3 (inherited))
