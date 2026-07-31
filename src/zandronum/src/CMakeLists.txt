@@ -676,7 +676,8 @@ set( PLAT_SDL_SOURCES
 	sdl/st_start.cpp )
 set( PLAT_MAC_SOURCES
 	sdl/iwadpicker_cocoa.mm
-	sdl/i_system_cocoa.mm )
+	sdl/i_system_cocoa.mm
+	sdl/i_system_cocoa_net.mm )
 if( WIN32 )
 	set( SYSTEM_SOURCES_DIR win32 )
 	set( SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} )
