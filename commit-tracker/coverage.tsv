@@ -102,61 +102,61 @@ bf0b85008835451507d71e4d3e83270fff9cd4e7	2014-03-28T00:54:20Z	look for gme heade
 6e87ee80e4e5b4cac6e03fa75e955d924c46505c	2014-03-29T11:04:38Z	Merge branch 'for-upstream' of https://github.com/galtgendo/gzdoom	skip	merge
 a97b068ed7df7ff0f04d521b69f5d81392a3e8ee	2014-03-30T10:27:27Z	Enable fighting between different types of gargoyles and golems	ported	inherited (present 3/3 (inherited))
 c47d77228d08840503aeeb7c4acd9e431193b9e1	2014-03-30T18:27:05Z	- increased updaterevision's buffer sizes to prevent GIT_BRANCH from cut short	ported	inherited (present 1/1 (inherited))
-79f6e77e2ba617e3496f7178a94811dbabad3092	2014-03-31T10:51:18Z	Remove garbage characters from info CCMD	pending	
-016cc7ba9608f528a4f57261d093aaf89f3f32d6	2014-03-31T10:57:43Z	Missed space in flags7 line.	pending	
-55844e00e53f6c97ab9994bc6c353d6687079c28	2014-03-31T13:59:21Z	Merge branch 'master' of https://github.com/crimsondusk/zdoom	pending	
-639367df8d650758b1fecadb3bcfdae6736b79d8	2014-03-31T14:00:11Z	Merge branch 'upstream2' of https://github.com/Edward850/zdoom	pending	
-e983649731ca693465d324403239b88ca8610528	2014-03-31T14:02:43Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-bd3bd0ed227a1e580ca8ebdec763c2b9ac68a7a8	2014-03-31T14:36:54Z	Merge branch 'upstream' of https://github.com/Edward850/zdoom	pending	
-edcc2576673d09f353441abd4db096251877d0bd	2014-03-31T14:39:34Z	fixed: APROP_StencilColor was not implemented for CheckActorProperty.	pending	
-a9bea7d77403fe25b3e6d93ab07011864f551d3a	2014-03-31T17:12:47Z	Merge branch 'getsectorz_take2' of https://github.com/crimsondusk/zdoom	pending	
-3e41685536b1ee3de64ce905b6770bab54a95bfb	2014-04-01T21:57:42Z	Merge pull request #6 from galtgendo/for-upstream	pending	
-be33d2894ac59be3d8424f145113cb8248645b2f	2014-04-02T08:25:12Z	Fixed prediction thinglist order restoration	pending	
-546ae759fdf3abb27f01f0b70ff550e703d917b0	2014-04-02T08:25:45Z	Cleanup old prediction fix development code	pending	
+79f6e77e2ba617e3496f7178a94811dbabad3092	2014-03-31T10:51:18Z	Remove garbage characters from info CCMD	ported	present 6/7 (inherited)
+016cc7ba9608f528a4f57261d093aaf89f3f32d6	2014-03-31T10:57:43Z	Missed space in flags7 line.	ported	present 2/2 (inherited)
+55844e00e53f6c97ab9994bc6c353d6687079c28	2014-03-31T13:59:21Z	Merge branch 'master' of https://github.com/crimsondusk/zdoom	skip	merge
+639367df8d650758b1fecadb3bcfdae6736b79d8	2014-03-31T14:00:11Z	Merge branch 'upstream2' of https://github.com/Edward850/zdoom	skip	merge
+e983649731ca693465d324403239b88ca8610528	2014-03-31T14:02:43Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+bd3bd0ed227a1e580ca8ebdec763c2b9ac68a7a8	2014-03-31T14:36:54Z	Merge branch 'upstream' of https://github.com/Edward850/zdoom	skip	merge
+edcc2576673d09f353441abd4db096251877d0bd	2014-03-31T14:39:34Z	fixed: APROP_StencilColor was not implemented for CheckActorProperty.	ported	present 1/1 (inherited)
+a9bea7d77403fe25b3e6d93ab07011864f551d3a	2014-03-31T17:12:47Z	Merge branch 'getsectorz_take2' of https://github.com/crimsondusk/zdoom	skip	merge
+3e41685536b1ee3de64ce905b6770bab54a95bfb	2014-04-01T21:57:42Z	Merge pull request #6 from galtgendo/for-upstream	skip	merge
+be33d2894ac59be3d8424f145113cb8248645b2f	2014-04-02T08:25:12Z	Fixed prediction thinglist order restoration	ported	present 25/25 (inherited)
+546ae759fdf3abb27f01f0b70ff550e703d917b0	2014-04-02T08:25:45Z	Cleanup old prediction fix development code	ported	present 4/4 (inherited)
 7261af1d9ff3de3d600e8e1815bb19f7e99608e1	2014-04-02T18:23:17Z	Don't define HQX_API to anything on Windows	ported	d2e4479
-59eede6e6ced01c08c9e9af4d7f7d02386313289	2014-04-02T21:49:34Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	pending	
-072db7920df86da942dafa4e438ad92e2e037fa8	2014-04-02T21:51:24Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-3670acbe63f07583d03c165055303f3e76ddc398	2014-04-03T13:44:33Z	Don't compile some unused DUMB tables spotted by Clang	pending	
-4406578522f991e7f1edcc54a38aa788993edec7	2014-04-03T13:46:47Z	Fixed: DSMF loader wrote outside filename array's bounds	pending	
-1d1289722f14bea9f32fbaad3a0c7a151f838c66	2014-04-03T13:50:09Z	Change , to && in 2 for loops in Oktalyzer loader	pending	
-fbddfbe57658cc3d94d32dc86ecc3b3903ce1858	2014-04-03T14:19:51Z	Upgrade game-music-emu to version 0.6.0	pending	
+59eede6e6ced01c08c9e9af4d7f7d02386313289	2014-04-02T21:49:34Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	skip	merge
+072db7920df86da942dafa4e438ad92e2e037fa8	2014-04-02T21:51:24Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+3670acbe63f07583d03c165055303f3e76ddc398	2014-04-03T13:44:33Z	Don't compile some unused DUMB tables spotted by Clang	skip	no dumb/ music library in our tree (DUMB decoder absent)
+4406578522f991e7f1edcc54a38aa788993edec7	2014-04-03T13:46:47Z	Fixed: DSMF loader wrote outside filename array's bounds	ported	present 1/1 (inherited)
+1d1289722f14bea9f32fbaad3a0c7a151f838c66	2014-04-03T13:50:09Z	Change , to && in 2 for loops in Oktalyzer loader	ported	present 2/2 (inherited)
+fbddfbe57658cc3d94d32dc86ecc3b3903ce1858	2014-04-03T14:19:51Z	Upgrade game-music-emu to version 0.6.0	ported	present 25/25 (inherited)
 0aba6e09f3c53b012e0da38552e42253935aed52	2014-04-03T18:14:38Z	Disambiguate which abs type we want.	ported	d2e4479
-e446a8eb30102ab5e5f231500d1520111be5dd7a	2014-04-03T20:56:50Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	pending	
+e446a8eb30102ab5e5f231500d1520111be5dd7a	2014-04-03T20:56:50Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	skip	merge
 47406a3406b0048e976edb9d92d69592112ec014	2014-04-03T21:02:43Z	- I don't think it's a good idea to put a 64 MB lookup table into the static data segment, if it's for a piece of code most people will never use...	ported	d2e4479
-43fe317dbe81545685807423784e945bc1ae2a74	2014-04-03T21:33:33Z	Use flexible array members for structs that end with var-sized arrays	pending	
-fc97584c696ac4b7ab988b978f9fa5798ad21a5d	2014-04-03T21:50:20Z	Disable warning C4200 on VC++	pending	
-138e7ff749281ee33960a16b34163db4783f4919	2014-04-03T22:16:40Z	Redo GME warning-silencing that was undone by commit fbddfbe57	pending	
-1d52d75fab2929dcaac4e75ebadbed253e410d40	2014-04-03T22:23:18Z	Add new GME files to VC++ 2005 project	pending	
-f429510cd1ca373f366422761800a55ce4490d8f	2014-04-03T22:26:59Z	We're building GME static, so don't do any DLL magic on Win32	pending	
-940794929c2a0d31a3bc8d82354e19ead8dee8df	2014-04-03T22:51:15Z	Remove more VC++ warnings	pending	
-d74f0450041a2219dbffce58a00e9d1d1934d50f	2014-04-05T13:37:10Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-878dcdc0a46315227ee1d558ead5dbc538f34e55	2014-04-06T09:56:51Z	Fix loading of lumps from directory on OS X	pending	
+43fe317dbe81545685807423784e945bc1ae2a74	2014-04-03T21:33:33Z	Use flexible array members for structs that end with var-sized arrays	skip	software renderer (r_plane) absent; residual flexible-array-member change cosmetic
+fc97584c696ac4b7ab988b978f9fa5798ad21a5d	2014-04-03T21:50:20Z	Disable warning C4200 on VC++	ported	present 3/3 (inherited)
+138e7ff749281ee33960a16b34163db4783f4919	2014-04-03T22:16:40Z	Redo GME warning-silencing that was undone by commit fbddfbe57	ported	present 25/25 (inherited)
+1d52d75fab2929dcaac4e75ebadbed253e410d40	2014-04-03T22:23:18Z	Add new GME files to VC++ 2005 project	ported	present 25/25 (inherited)
+f429510cd1ca373f366422761800a55ce4490d8f	2014-04-03T22:26:59Z	We're building GME static, so don't do any DLL magic on Win32	ported	present 1/1 (inherited)
+940794929c2a0d31a3bc8d82354e19ead8dee8df	2014-04-03T22:51:15Z	Remove more VC++ warnings	ported	present 2/2 (inherited)
+d74f0450041a2219dbffce58a00e9d1d1934d50f	2014-04-05T13:37:10Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+878dcdc0a46315227ee1d558ead5dbc538f34e55	2014-04-06T09:56:51Z	Fix loading of lumps from directory on OS X	ported	present 1/1 (inherited)
 69af73d9b98b1f8b8f0a4b81a0c5f3dcad448f40	2014-04-06T12:35:44Z	- alternative configuration using GLEW to get extension functions. This requires GL 2.0, though so it won't be promoted to the mainline for the time being. - removed all pre GL 2.0 support.	ported	d2e4479
-ca93e04de37cb9f105c7c8d0106868013b403395	2014-04-07T11:23:55Z	Added GetActorPowerupTics ACS function	pending	
-bbb41e869c67cccec3c177e2cfa06b7fa7fc6b46	2014-04-07T17:54:30Z	Merge branch 'master' of https://github.com/Edward850/zdoom	pending	
-580094a7924ea586bc0c789e55d51aa3dc3f2287	2014-04-10T10:32:23Z	More editing flags	pending	
-4cac599b8899abd3385eeef4bece05c619d8aedc	2014-04-10T22:58:59Z	Less flags, more generic properties	pending	
-101107b1e5ea3f498747f31291d10694d7dbe09f	2014-04-12T08:55:10Z	Updated documentation	pending	
-42708386138aea39d712df72b80a410e92243b4a	2014-04-12T10:02:19Z	CANRAISE state definition	pending	
-2205ca606fd5302eaf3ed35661d4660b09cc378f	2014-04-15T07:18:04Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-4e683d360d0852df3c8505f6339ed27c0dc9e954	2014-04-15T07:22:50Z	Merge branch 'master' of https://github.com/Edward850/zdoom	pending	
-dbefac81d8e3d4575390d20070190a6f7b76d410	2014-04-15T07:26:05Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-6a3a159e098d5a5a6993f3f045f316d9093111db	2014-04-15T07:37:58Z	Merge branch 'master' into GLEW_VERSION	pending	
+ca93e04de37cb9f105c7c8d0106868013b403395	2014-04-07T11:23:55Z	Added GetActorPowerupTics ACS function	ported	present 11/11 (inherited)
+bbb41e869c67cccec3c177e2cfa06b7fa7fc6b46	2014-04-07T17:54:30Z	Merge branch 'master' of https://github.com/Edward850/zdoom	skip	merge
+580094a7924ea586bc0c789e55d51aa3dc3f2287	2014-04-10T10:32:23Z	More editing flags	skip	PSX/Doom64 MTF_* thing-effect flags; net-new feature, no consumer subsystem in tree -- re-triageable if adopted
+4cac599b8899abd3385eeef4bece05c619d8aedc	2014-04-10T22:58:59Z	Less flags, more generic properties	ported	present 23/25 (inherited)
+101107b1e5ea3f498747f31291d10694d7dbe09f	2014-04-12T08:55:10Z	Updated documentation	ported	present 15/15 (inherited)
+42708386138aea39d712df72b80a410e92243b4a	2014-04-12T10:02:19Z	CANRAISE state definition	ported	present 5/7 (inherited)
+2205ca606fd5302eaf3ed35661d4660b09cc378f	2014-04-15T07:18:04Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+4e683d360d0852df3c8505f6339ed27c0dc9e954	2014-04-15T07:22:50Z	Merge branch 'master' of https://github.com/Edward850/zdoom	skip	merge
+dbefac81d8e3d4575390d20070190a6f7b76d410	2014-04-15T07:26:05Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+6a3a159e098d5a5a6993f3f045f316d9093111db	2014-04-15T07:37:58Z	Merge branch 'master' into GLEW_VERSION	skip	merge
 94b06900cbcef33f5404ae007190aaba6f246af6	2014-04-15T09:59:41Z	- got rid of a lot of stuff that's no longer required with GLEW. - replaced GLUs texture scaling with our own function. This is only used to scale down textures larger than what the hardware can handle so we do not need a dependency to an essentially deprecated library for it.	ported	d2e4479
-745b147d185f38d710649c61aceac68a93fbbc3e	2014-04-15T14:40:53Z	- fixed typo in xlat files (they don't use exactly C syntax.)	pending	
-e5578934ad711fa2e38369f1bbe9e1eb36fc191e	2014-04-15T15:16:33Z	Init new non-0 fields for non-UDMF maps.	pending	
-8e3360453fa5d90cbfda05e28817060d8f98dde3	2014-04-15T15:18:55Z	Hexen too.	pending	
-6f2fd8edbfec14a62a6a96ddf3b1050ab3ad9bcb	2014-04-15T15:22:56Z	Hexen also needs to init 0 fields.	pending	
-c54f5571ea174c19022354eb35dd3704d08f5ac8	2014-04-15T15:24:01Z	Typo.	pending	
-361341e07ef6dcd7533275ccfdbaa20ea4e0bf66	2014-04-15T15:52:48Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	pending	
-017c919f3991cd927b0a7ef442c29641bba7f4f9	2014-04-15T18:38:13Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-83182b703de94b7645026db155e979bf0535d778	2014-04-15T19:01:49Z	Added slow monsters, the inverse of fast monsters	pending	
-94d47efbb5fa2b7269b50858a9dda9307c436ebb	2014-04-15T19:02:20Z	Added slow monsters to Strife's easiest skill	pending	
-48b926e5b47cf2380db412b6c08e8c7aeec1138a	2014-04-16T07:53:07Z	- check +logfile explicitly at the start of execution. Due to the custom CVAR rewrite it would get called so late that it'd miss half of the log. - added version check for Windows 8. I also would have liked to add 8.1 but due to some incredibly stupid changes in the version API it's no longer possible to reliably retrieve the correct Windows version for later builds.	pending	
-29231fa3b79de17253f9484b169a726ed5b9e0ec	2014-04-16T09:34:32Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-d855bd66b301ebd8ad969e6816a4c190d9e3ec8f	2014-04-16T12:46:33Z	Fixed P_LookForPlayers scanning redundancies	pending	
-897d87a6a3841a0e484cc5de1e1b411848a3c6a8	2014-04-16T13:13:18Z	Invisibility would could P_LookForPlayers early	pending	
-584dd78ba9dd67c7f3045eae87089e8e4024bea6	2014-04-16T14:42:43Z	Merge branch 'master' of https://github.com/Edward850/zdoom	pending	
+745b147d185f38d710649c61aceac68a93fbbc3e	2014-04-15T14:40:53Z	- fixed typo in xlat files (they don't use exactly C syntax.)	ported	present 1/1 (inherited)
+e5578934ad711fa2e38369f1bbe9e1eb36fc191e	2014-04-15T15:16:33Z	Init new non-0 fields for non-UDMF maps.	ported	present 3/3 (inherited)
+8e3360453fa5d90cbfda05e28817060d8f98dde3	2014-04-15T15:18:55Z	Hexen too.	ported	present 3/3 (inherited)
+6f2fd8edbfec14a62a6a96ddf3b1050ab3ad9bcb	2014-04-15T15:22:56Z	Hexen also needs to init 0 fields.	ported	0-init via memset(&mti[i],0,...) in P_LoadThings; upstream explicit field zeroing redundant
+c54f5571ea174c19022354eb35dd3704d08f5ac8	2014-04-15T15:24:01Z	Typo.	ported	same field-zeroing path; effect present via memset 0-init in P_LoadThings
+361341e07ef6dcd7533275ccfdbaa20ea4e0bf66	2014-04-15T15:52:48Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	skip	merge
+017c919f3991cd927b0a7ef442c29641bba7f4f9	2014-04-15T18:38:13Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+83182b703de94b7645026db155e979bf0535d778	2014-04-15T19:01:49Z	Added slow monsters, the inverse of fast monsters	ported	present 17/17 (inherited)
+94d47efbb5fa2b7269b50858a9dda9307c436ebb	2014-04-15T19:02:20Z	Added slow monsters to Strife's easiest skill	ported	present 1/1 (inherited)
+48b926e5b47cf2380db412b6c08e8c7aeec1138a	2014-04-16T07:53:07Z	- check +logfile explicitly at the start of execution. Due to the custom CVAR rewrite it would get called so late that it'd miss half of the log. - added version check for Windows 8. I also would have liked to add 8.1 but due to some incredibly stupid changes in the version API it's no longer possible to reliably retrieve the correct Windows version for later builds.	ported	present 15/17 (inherited)
+29231fa3b79de17253f9484b169a726ed5b9e0ec	2014-04-16T09:34:32Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+d855bd66b301ebd8ad969e6816a4c190d9e3ec8f	2014-04-16T12:46:33Z	Fixed P_LookForPlayers scanning redundancies	adapted	P_LookForPlayers scan superseded by [BB] abSearched[]/M_Random rewrite (each player once)
+897d87a6a3841a0e484cc5de1e1b411848a3c6a8	2014-04-16T13:13:18Z	Invisibility would could P_LookForPlayers early	adapted	invisibility early-abort moot; our [BB] loop continues past MF3_GHOST players
+584dd78ba9dd67c7f3045eae87089e8e4024bea6	2014-04-16T14:42:43Z	Merge branch 'master' of https://github.com/Edward850/zdoom	skip	merge
 60fe07df7451176803f4fe28b42160d02a72bd9c	2014-04-17T15:42:16Z	Added slow states to relevant Strife monsters	pending	
 7cb828d7633eb8e8b56da18ef7f0021968014721	2014-04-18T07:46:23Z	Merge branch 'slowstate' of https://github.com/Gaerzi/zdoom	pending	
 97c7f2c5ce8a1e088bc9b7d6b6cdaf86e2bfedf1	2014-04-18T10:13:29Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
