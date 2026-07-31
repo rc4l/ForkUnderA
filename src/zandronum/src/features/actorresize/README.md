@@ -27,7 +27,11 @@ The [projectile-pass] `HitRadius`/`HitHeight` properties (`projectilepassradius`
   clears it so the extent falls back to the physical radius/height.
 - `AActor::SetHitSize` relinks, because the blockmap link radius is
   `MAX(radius, GetAttackRadius())` (`p_maputl.cpp`). Unlike the physical size, the attack
-  extent is **server-authoritative** and not networked — matching the existing property.
+  extent is **server-authoritative** and not networked — matching the existing property. The
+  one exception is debug: while `sv_debugexplosions` and `sv_cheats` are both on,
+  `SVC2_SETTHINGSIZE` also carries `ACTORSIZE_HITRADIUS`/`ACTORSIZE_HITHEIGHT` so the hitbox
+  overlay can draw a truthful attack box on a client (see [`features/hitboxviz`](../hitboxviz/README.md)).
+  Ordinary play never sets those bits.
 
 **ACS ids:** `APROP_HitRadius = 50`, `APROP_HitHeight = 51`. Ids 42–49 are left unused to
 match UZDoom/GZDoom (Friction … WaterDepth), which ZandroX does not implement yet, so ACS
