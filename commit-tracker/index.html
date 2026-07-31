@@ -140,6 +140,8 @@
   .s-pending { color: #9ca3af; }
   a.sha { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #2563eb; text-decoration: none; }
   a.sha:hover { text-decoration: underline; }
+  .sha-done a.sha { text-decoration: line-through; text-decoration-thickness: 1px; opacity: .75; }
+  .sha-done a.sha:hover { text-decoration: line-through underline; opacity: 1; }
   .ours-na { color: #9ca3af; }                                       /* "/" — inapplicable (pending/skip) */
   .ours-inh { color: #64748b; font-style: italic; font-size: 12px; } /* zandronum-base (baseline import) */
   .tag { display: inline-block; background: #eef2ff; color: #3730a3; border: 1px solid #e0e7ff;
@@ -337,6 +339,10 @@ addEventListener("resize", () => { clearTimeout(fitTimer); fitTimer = setTimeout
 
 const columnDefs = [
   { field: "sha", headerName: "their commit", width: 130, minWidth: 92, filter: true,
+    // [rc4l] Struck through once the commit is handled — ported, adapted or skip — so the
+    // outstanding work is what stands out at a glance. Our own sha is never struck: it is a
+    // live pointer into our history, not a to-do that got crossed off.
+    cellClass: p => p.data && p.data.status !== "pending" ? "sha-done" : "",
     cellRenderer: p => `<a class="sha" href="${REPO}${p.value}" target="_blank" rel="noopener">${p.value.slice(0,9)}</a>` },
   { field: "status", headerName: "status", width: 120, minWidth: 78,
     cellClass: p => "s-" + p.value },
