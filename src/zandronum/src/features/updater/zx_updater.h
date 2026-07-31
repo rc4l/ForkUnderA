@@ -31,8 +31,13 @@ const char *Tag();
 void StartCheck();
 
 // Log the async check's verdict, if any, exactly once. MUST be called from the main thread (it uses
-// Printf); call it each frame from the main loop. The worker only sets an atomic status; this drains it.
+// Printf); called by Tick(). The worker only sets an atomic status; this drains it.
 void DrainLog();
+
+// Call once per frame from the main loop (D_DoomLoop). Fires the background check ONCE, a short delay
+// after the loop starts -- NOT during startup, where the worker raced the heavy first-launch init and
+// crashed -- and drains the verdict log. A no-op after it has done both.
+void Tick();
 
 } } // namespace zx::updater
 
