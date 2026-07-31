@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Reusable clang-tidy job, called by test-and-build.yml and release.yml as a job of its
+# own so the platform builds (needs: test) never wait on it. It lived inside _test.yml until
+# profiling showed it was 438s of that job's 588s — 75% of the gate every build queued behind,
+# for a report-only lint (WarningsAsErrors is empty; a parse error already fails _test.yml's
+# Build step). NOTE: it cannot just be a second job inside _test.yml — a caller's `needs: test`
+# waits on the WHOLE called workflow, so it would still gate the builds from there.
+name: tidy (reusable)
+
+on:
+  workflow_call:
+
+jobs:
+  # [rc4l] clang-tidy in parallel with the gate job. Everything that can affect the diagnostics
+  # is hashed into a skip-cache key: identical inputs produce identical diagnostics, so a re-run
+  # on a doc/tracker-only PR is pure waste. The hash is deliberately OVER-approximate (the whole
+  # engine tree + tests + config + tool version) — over-hashing can only cause an unnecessary
+  # re-run, never a missed one, which keeps the skip rigid.
+  tidy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang clang-tidy llvm
+
+      # [rc4l] The key includes the clang-tidy version (an apt bump changes which checks exist
+      # and what they report) and the runner image version (system headers change across image
+      # bumps) — both must invalidate the cache like any other input.
+      - name: Compute tidy input hash
+        id: key
+        run: |
+          ver="$(clang-tidy --version | tr -d '\n' | sha256sum | cut -c1-12)"
+          img="${ImageOS:-linux}-${ImageVersion:-unknown}"
+          echo "key=tidy-v1-${img}-${ver}-${{ hashFiles('src/zandronum/src/**', 'tests/**', '.clang-tidy') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Skip-cache lookup (identical inputs already linted)
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: .tidy-green
+          key: ${{ steps.key.outputs.key }}
+
+      # [rc4l] Identical configure to the test job so compile_commands.json (and therefore what
+      # clang-tidy parses and reports) is byte-identical to what this step saw when it lived there.
+      - name: Configure (ASan + UBSan)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: >
+          cmake -S tests -B build-tests -G Ninja
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DZANDROX_TESTS_SANITIZE=ON
+
+      # [rc4l] Build stays (47s): it guarantees every configure-/build-generated artifact a test
+      # includes exists before the parse, and it is not on the builds' critical path here.
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cmake --build build-tests
+
+      # run-clang-tidy, not clang-tidy: handing all files to one clang-tidy process made it
+      # walk them strictly serially on a single core (~10 min). Profiling showed the cost is
+      # per-file parsing of the vendored engine headers, not the checks themselves (any one
+      # check group costs ~0.6s/file; all six together ~0.86s), so trimming Checks would not
+      # help — parallelising is what does. It selects files by regex against
+      # compile_commands.json; .clang-tidy is picked up per-file, so what gets reported is
+      # unchanged from the in-job days.
+      - name: clang-tidy (report)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: run-clang-tidy -p build-tests -j"$(nproc)" 'src/zandronum/src/.*_test\.cpp$'
+
+      # [rc4l] Written only after a clean run; actions/cache saves it post-job on success, so a
+      # failed tidy can never mint a skip for its input set.
+      - name: Mark inputs linted
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: echo "${{ steps.key.outputs.key }}" > .tidy-green
+
+      - name: Skipped (identical inputs previously linted)
+        if: steps.cache.outputs.cache-hit == 'true'
+        run: echo "clang-tidy inputs identical to a previously linted run (key ${{ steps.key.outputs.key }}) — diagnostics would be identical, skipping."
