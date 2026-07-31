@@ -21,6 +21,7 @@
 #include "c_cvars.h"      // CVAR
 #include "gitinfo.h"      // GIT_DESCRIPTION (the running build's tag)
 #include "doomtype.h"     // Printf
+#include "i_system.h"     // I_MSTime
 #include "features/updater/computation/release_url_compute.h"
 
 // [rc4l] On by default: the client checks GitHub once at startup for a newer release and shows the
@@ -210,6 +211,26 @@ void DrainLog()
 	case 2: Printf("update check: could not reach the update server\n"); break;
 	case 3: Printf("update check: could not read the release info\n"); break;
 	}
+}
+
+void Tick()
+{
+	// Defer the check to a bit after the main loop starts (idle at the title screen), so the worker
+	// never runs during the heavy first-launch init -- that contention crashed on a fresh first launch.
+	static bool started = false;
+	static unsigned firstMs = 0;
+	if (!started)
+	{
+		unsigned now = I_MSTime();
+		if (firstMs == 0)
+			firstMs = now == 0 ? 1 : now; // remember the first frame's time (avoid 0 = "unset")
+		else if (now - firstMs >= 1500)
+		{
+			started = true;
+			StartCheck();
+		}
+	}
+	DrainLog();
 }
 
 } } // namespace zx::updater
