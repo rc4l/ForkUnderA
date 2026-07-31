@@ -141,6 +141,11 @@ void I_GetWelcomeScreenKeyString( char *pszString );
 // Set the title string of the startup window
 void I_SetIWADInfo ();
 
+// [rc4l] Open a URL in the user's default browser. Only http/https pass (re-checked here via
+// zx::IsOpenableURL, defense-in-depth behind the confirmation dialog); anything else is refused and
+// logged. Reachable by mods through the openurl CCMD, so the scheme gate is enforced at this layer.
+void I_OpenURL (const char *url);
+
 // [RC] Show a helpful dialog when no IWADs were found.
 void I_ShowNoIWADsScreen( FIWadManager *IWadMan );
 

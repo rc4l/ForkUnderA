@@ -41,6 +41,9 @@
 #include "d_gui.h"
 #include "d_event.h"
 #include "menu/menu.h"
+#include "v_palette.h"                                        // [rc4l] PalEntry for the update notice
+#include "features/updater/zx_updater.h"                      // [rc4l] update-available state
+#include "features/updater/computation/promptpanel_compute.h" // [rc4l] rounded chip geometry/gradient
 
 IMPLEMENT_CLASS(DListMenu)
 
@@ -560,3 +563,201 @@ int FListMenuItemPatch::GetWidth()
 		: 0;
 }
 
+
+//=============================================================================
+//
+// [rc4l] DUpdateMainMenu -- the main menu with a bottom-right "update available" notice.
+//
+// A DListMenu subclass wired to the main menu via `Class "UpdateMainMenu"` in menudef. When the
+// updater state says a newer release exists (zx::updater::IsAvailable()), it draws a small rounded
+// chip in the bottom-right corner -- same rounded-panel language as the open-link dialog. The chip is
+// reached with Right (Left/Up/Down/Back leave it) or by clicking it; activating it opens the
+// OS-correct download confirmation (M_ConfirmDownloadRelease). With no update pending the menu behaves
+// exactly like a stock DListMenu.
+//
+//=============================================================================
+
+class DUpdateMainMenu : public DListMenu
+{
+	DECLARE_CLASS(DUpdateMainMenu, DListMenu)
+
+	bool mNoticeFocused;
+	int mPrevSelected;   // list item that was selected before the chip took focus, to restore on exit
+	int mLastMouseX, mLastMouseY; // last mouse position, so a still pointer can't fight the keyboard
+	// Chip rectangle in 320x200 virtual coords, cached from the last Drawer for mouse hit-testing.
+	int mChipL, mChipT, mChipR, mChipB;
+
+	void Activate();
+	void FocusChip();    // move focus to the chip, remembering (and clearing) the list selection
+
+public:
+	DUpdateMainMenu() : mNoticeFocused(false), mPrevSelected(0), mLastMouseX(INT_MIN), mLastMouseY(INT_MIN),
+		mChipL(0), mChipT(0), mChipR(0), mChipB(0) {}
+	void Drawer();
+	bool MenuEvent(int mkey, bool fromcontroller);
+	bool MouseEvent(int type, int x, int y);
+};
+
+IMPLEMENT_CLASS(DUpdateMainMenu)
+
+void DUpdateMainMenu::Activate()
+{
+	S_Sound(CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE);
+	M_ConfirmDownloadRelease(zx::updater::Tag());
+}
+
+void DUpdateMainMenu::FocusChip()
+{
+	if (!mNoticeFocused)
+	{
+		if (mDesc->mSelectedItem >= 0)
+			mPrevSelected = mDesc->mSelectedItem; // remember where we were, to restore on exit
+		mNoticeFocused = true;
+		mDesc->mSelectedItem = -1;                // chip owns the selection; nothing in the list
+	}
+}
+
+void DUpdateMainMenu::Drawer()
+{
+	DListMenu::Drawer();
+
+	if (!zx::updater::IsAvailable())
+	{
+		mChipR = 0; // no chip -> no hit target
+		return;
+	}
+
+	// Chip layout in 320x200 virtual space, anchored to the bottom-right with a small margin.
+	const char *text = "Update available";
+	const int th = SmallFont->GetHeight();
+	const int tw = SmallFont->StringWidth(text);
+	const int padX = 6, padY = 3, margin = 5;
+	mChipR = 320 - margin;
+	mChipB = 200 - margin;
+	mChipL = mChipR - (tw + 2 * padX);
+	mChipT = mChipB - (th + 2 * padY);
+
+	// Rounded gradient panel, drawn in screen pixels (like the message-box panel). Not centred -- the
+	// chip lives in the corner -- so we drive ComputeRoundedInset/Gradient directly over our own rect.
+	const int cx = CleanXfac, cy = CleanYfac;
+	const int originX = (screen->GetWidth() - 320 * cx) / 2;
+	const int originY = (screen->GetHeight() - 200 * cy) / 2;
+	const int px = originX + mChipL * cx;
+	const int py = originY + mChipT * cy;
+	const int pw = (mChipR - mChipL) * cx;
+	const int ph = (mChipB - mChipT) * cy;
+	int radius = 4 * cy;
+	const int halfMin = (pw < ph ? pw : ph) / 2;
+	if (radius > halfMin) radius = halfMin;
+
+	// Brighter when focused so it reads as selected.
+	const zx::PanelColor topCol = mNoticeFocused ? zx::PanelColor{ 44, 46, 66, 244 } : zx::PanelColor{ 26, 28, 40, 224 };
+	const zx::PanelColor botCol = mNoticeFocused ? zx::PanelColor{ 18, 19, 30, 250 } : zx::PanelColor{ 8, 9, 15, 236 };
+	for (int row = 0; row < ph; ++row)
+	{
+		int inset = zx::ComputeRoundedInset(row, ph, radius);
+		int rowW = pw - 2 * inset;
+		if (rowW <= 0)
+			continue;
+		zx::PanelColor c = zx::ComputePanelGradient(row, ph, topCol, botCol);
+		screen->Dim(PalEntry(c.r, c.g, c.b), c.a / 255.f, px + inset, py + row, rowW, 1);
+	}
+
+	const int color = mNoticeFocused ? OptionSettings.mFontColorSelection : CR_GOLD;
+	const int textX = mChipL + padX;
+	const int textY = mChipT + padY;
+	screen->DrawText(SmallFont, color, textX, textY, text, DTA_Clean, true, TAG_DONE);
+
+	// When focused, draw the SAME selection cursor the list items use (the menu's mSelector, e.g. the
+	// Doom skull), positioned by the descriptor's offsets relative to the text -- so the chip highlights
+	// exactly like every other main-menu option.
+	if (mNoticeFocused)
+	{
+		const int selx = textX + mDesc->mSelectOfsX;
+		const int sely = textY + mDesc->mSelectOfsY;
+		if (mDesc->mSelector.isNull())
+		{
+			if ((DMenu::MenuTime % 8) < 6)
+				screen->DrawText(ConFont, OptionSettings.mFontColorSelection, selx, sely, "\xd",
+					DTA_Clean, true, TAG_DONE);
+		}
+		else
+		{
+			screen->DrawTexture(TexMan(mDesc->mSelector), selx, sely, DTA_Clean, true, TAG_DONE);
+		}
+	}
+}
+
+bool DUpdateMainMenu::MenuEvent(int mkey, bool fromcontroller)
+{
+	if (!zx::updater::IsAvailable())
+	{
+		mNoticeFocused = false;
+		return DListMenu::MenuEvent(mkey, fromcontroller);
+	}
+
+	if (mNoticeFocused)
+	{
+		switch (mkey)
+		{
+		case MKEY_Enter:
+			Activate();
+			return true;
+		case MKEY_Right:
+			return true; // already at the rightmost element
+		case MKEY_Left:
+		case MKEY_Back:
+			// Hand focus back to the list at the item we left from, so the cursor doesn't jump.
+			mNoticeFocused = false;
+			mDesc->mSelectedItem = mPrevSelected;
+			S_Sound(CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE);
+			return true;
+		case MKEY_Up:
+		case MKEY_Down:
+			mNoticeFocused = false; // step back into the list and let it move from -1
+			return DListMenu::MenuEvent(mkey, fromcontroller);
+		default:
+			return true; // swallow everything else while the chip holds focus
+		}
+	}
+
+	if (mkey == MKEY_Right)
+	{
+		FocusChip();
+		S_Sound(CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE);
+		return true;
+	}
+	return DListMenu::MenuEvent(mkey, fromcontroller);
+}
+
+bool DUpdateMainMenu::MouseEvent(int type, int x, int y)
+{
+	// A pointer that isn't actually moving (or clicking) must have NO effect -- otherwise a parked
+	// cursor keeps re-asserting the mouse selection every frame and fights the keyboard. Only real
+	// movement or a click drives selection; everything else is ignored.
+	const bool moved = (x != mLastMouseX || y != mLastMouseY);
+	const bool clicked = (type == MOUSE_Release || type == MOUSE_Click ||
+		type == MOUSE_Release2 || type == MOUSE_Click2);
+	mLastMouseX = x;
+	mLastMouseY = y;
+	if (!moved && !clicked)
+		return true; // resting pointer: ignore so it can't override the keyboard
+
+	if (zx::updater::IsAvailable() && mChipR > 0)
+	{
+		// Convert to the same 320x200 virtual space the chip rect is stored in.
+		int vx = ((x - (screen->GetWidth() / 2)) / CleanXfac) + 160;
+		int vy = ((y - (screen->GetHeight() / 2)) / CleanYfac) + 100;
+		if (vx >= mChipL && vx <= mChipR && vy >= mChipT && vy <= mChipB)
+		{
+			if (type == MOUSE_Release)
+				Activate();
+			else
+				FocusChip();      // moving onto the chip selects it (and clears the list)
+			return true;          // consume so the base handler doesn't deselect the list underneath
+		}
+	}
+	// Real movement/click away from the chip -> the list owns the selection again.
+	mNoticeFocused = false;
+	return DListMenu::MouseEvent(type, x, y);
+}

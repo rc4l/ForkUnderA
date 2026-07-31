@@ -37,6 +37,7 @@ DEFAULTLISTMENU
 
 LISTMENU "MainMenu"
 {
+	Class "UpdateMainMenu"	// [rc4l] adds the bottom-right "update available" notice (listmenu.cpp)
 	IfGame(Doom, Chex)
 	{
 		StaticPatch 94, 2, "M_DOOM"

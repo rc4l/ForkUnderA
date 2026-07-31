@@ -85,6 +85,7 @@
 #include "g_level.h"
 #include "doomstat.h"
 #include "features/crashreport/zx_crashreport.h" // [rc4l] report graceful fatals to GlitchTip
+#include "features/updater/computation/openurl_compute.h" // [rc4l] scheme allowlist for I_OpenURL
 #include "v_palette.h"
 #include "stats.h"
 #include "textures/bitmap.h"
@@ -1972,6 +1973,20 @@ FString I_GetLongPathName(FString shortpath)
 void I_RunProgram( const char *szPath )
 {
 	ShellExecute( NULL, "open", szPath, NULL, NULL, SW_SHOW );
+}
+
+// [rc4l] Open a URL in the default browser. The scheme allowlist is re-checked here so this can
+// never be turned into a "run arbitrary ShellExecute verb" primitive even if a caller skips the
+// confirmation dialog -- http/https only, no local paths, no other protocol handlers.
+void I_OpenURL( const char *url )
+{
+	if ( !zx::IsOpenableURL( url ) )
+	{
+		Printf( "I_OpenURL: refusing to open %s (only http/https URLs are allowed)\n",
+			url != NULL ? url : "(null)" );
+		return;
+	}
+	ShellExecute( NULL, "open", url, NULL, NULL, SW_SHOW );
 }
 
 #if _MSC_VER == 1900 && defined(_USING_V110_SDK71_)
