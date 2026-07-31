@@ -108,7 +108,8 @@ if( WIN32 )
 		comdlg32
 		ws2_32
 		setupapi
-		oleaut32 
+		oleaut32
+		winhttp
 		DelayImp )
 else( WIN32 )
 	if( APPLE )
