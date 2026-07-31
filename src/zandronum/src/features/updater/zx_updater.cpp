@@ -40,6 +40,10 @@ std::atomic<bool> g_available{ false };
 std::mutex g_mtx;                  // guards g_tag reads/writes
 char g_tag[64] = { 0 };
 
+// The worker records its verdict here for the MAIN thread to log later (Printf is not thread-safe).
+// -1 = not run yet; 0 = up to date; 1 = update available; 2 = no network; 3 = malformed response.
+std::atomic<int> g_verdict{ -1 };
+
 const char *CurrentDescribe() { return GIT_DESCRIPTION; }
 
 // ---- platform HTTPS GET ------------------------------------------------------------------------
@@ -129,32 +133,23 @@ bool HttpsGet(const char *host, const char *path, char *out, int outSize)
 
 #endif
 
-// One check on the worker thread: fetch, decide, update the notice, log the verdict.
+// One check on the worker thread: fetch, decide, update the (thread-safe) notice state, and record a
+// verdict code for the main thread to log. MUST NOT touch the console/CVARs/any engine global that
+// isn't thread-safe -- Printf here crashed on first launch. StartCheck already gated on the cvar.
 void RunCheckOnce()
 {
-	if (!cl_fua_update_notify)
-		return;
-
 	char body[65536];
 	bool ok = HttpsGet(ZX_UPDATE_API_HOST, ZX_UPDATE_API_PATH, body, sizeof body);
 	UpdateCheckResult r = ComputeUpdateCheckResult(ok, ok ? body : "", CurrentDescribe());
+	int verdict = 2; // NoNetwork
 	switch (r.status)
 	{
-	case UpdateCheckStatus::UpdateAvailable:
-		SetLatestTag(r.tag);
-		Printf("update check: a newer ZandroX release is available (%s)\n", r.tag);
-		break;
-	case UpdateCheckStatus::UpToDate:
-		Clear();
-		Printf("update check: up to date\n");
-		break;
-	case UpdateCheckStatus::Malformed:
-		Printf("update check: could not read the release info\n");
-		break;
-	case UpdateCheckStatus::NoNetwork:
-		Printf("update check: could not reach the update server\n");
-		break;
+	case UpdateCheckStatus::UpdateAvailable: SetLatestTag(r.tag); verdict = 1; break;
+	case UpdateCheckStatus::UpToDate:        Clear();             verdict = 0; break;
+	case UpdateCheckStatus::Malformed:                            verdict = 3; break;
+	case UpdateCheckStatus::NoNetwork:                            verdict = 2; break;
 	}
+	g_verdict.store(verdict, std::memory_order_release);
 }
 
 } // namespace
@@ -199,6 +194,22 @@ void StartCheck()
 	if (!cl_fua_update_notify)
 		return;
 	std::thread(RunCheckOnce).detach(); // fire-and-forget; never blocks startup
+}
+
+void DrainLog()
+{
+	static int logged = -1;                             // main-thread only; no locking needed
+	int v = g_verdict.load(std::memory_order_acquire);
+	if (v == -1 || v == logged)
+		return;
+	logged = v;
+	switch (v)
+	{
+	case 0: Printf("update check: up to date\n"); break;
+	case 1: Printf("update check: a newer ZandroX release is available (%s)\n", Tag()); break;
+	case 2: Printf("update check: could not reach the update server\n"); break;
+	case 3: Printf("update check: could not read the release info\n"); break;
+	}
 }
 
 } } // namespace zx::updater
