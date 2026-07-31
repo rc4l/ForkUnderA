@@ -67,6 +67,7 @@
 #include "gstrings.h"
 #include "w_wad.h"
 #include "features/crashreport/zx_crashreport.h"
+#include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
@@ -3082,6 +3083,10 @@ void D_DoomMain (void)
 		// setting. Auto-send/opt-out, no prompt -- runs on dedicated servers too (this is in the
 		// shared D_DoomMain init path, not a client-only branch).
 		ZX_CrashReportCheckPreviousCrash ();
+
+		// [rc4l] Kick off the background auto-update check (GitHub releases/latest -> notice). Detached
+		// worker thread, non-blocking; a no-op if the cl_fua_update_notify cvar is off.
+		zx::updater::StartCheck ();
 
 		Printf ("P_Init: Init Playloop state.\n");
 		StartScreen->LoadingStatus ("Init game engine", 0x3f);
