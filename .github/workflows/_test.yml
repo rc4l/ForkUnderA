@@ -68,22 +68,13 @@ jobs:
       - name: Coverage (100% gate on tested units)
         run: bash tests/coverage.sh --auto
 
-      # [rc4l] compile_commands.json comes from the configure step above. Tests are now
-      # colocated in the engine tree, so lint every *_test.cpp there.
-      #
-      # run-clang-tidy, not clang-tidy: handing all 50 files to one clang-tidy process made it
-      # walk them strictly serially on a single core, which was ~10 min of a ~12 min job — and
-      # since build/ needs: test, every platform build waited on it. Profiling showed the cost is
-      # per-file parsing of the vendored engine headers repeated 50 times, not the checks
-      # themselves (any one check group costs ~0.6s/file; all six together ~0.86s), so trimming
-      # Checks would not have helped — parallelising is what does. run-clang-tidy ships with the
-      # clang-tidy package already installed above, so this needs no new dependency.
-      #
-      # It selects files by regex against compile_commands.json rather than argv; the pattern is
-      # anchored to the same directory the previous find walked so exactly the same 50 files are
-      # linted. .clang-tidy is still picked up per-file, so what gets reported is unchanged.
-      - name: clang-tidy (report)
-        run: run-clang-tidy -p build-tests -j"$(nproc)" 'src/zandronum/src/.*_test\.cpp$'
+      # [rc4l] clang-tidy moved to _tidy.yml, run by the callers as a parallel job. It was 438s
+      # of this job's 588s, and every platform build `needs: test` — so a report-only lint
+      # (WarningsAsErrors is empty; any parse error it could hit already fails the Build step
+      # above) was gating 7+ minutes of every PR's critical path. Same files, same config, same
+      # parallelism — just off the path the builds wait on. (It cannot live as a second job in
+      # THIS file: a caller's `needs: test` waits on the whole called workflow — fine for the
+      # seconds-long test-macos job below, fatal for a 7-minute lint.)
 
   # [rc4l] macOS-only ASan job for the Objective-C updater networking seam. The Linux `test` job above
   # can't compile Cocoa code, so the use-after-free regression test (i_system_cocoa_net_test.mm) that
