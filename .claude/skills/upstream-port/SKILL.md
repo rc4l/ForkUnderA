@@ -81,13 +81,21 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
    reference); grep applied hunks for `fixed_t`, `FRACBITS`, `<<16`, `(int)` casts. Upstream code
    declaring its own `fixed_t` MUST defer to `basictypes.h` — the strong type catches collisions at
    compile time; treat any such error as a real finding, not noise.
-3. **Build everywhere**: local `mac_compile.sh`, then CI (draft PR triggers Linux/Windows — branch
+3. **Client/server netcode** (see the `netcode-adaptation` skill): ZandroX is client/server, upstream
+   is not. Any port touching **actor state, movement/collision, spawning, AI, player state, RNG, or
+   sound** must be server-gated (`NETWORK_InClientMode()`) and broadcast via the matching
+   `SERVERCOMMANDS_*`, with the sync RNG (`P_Random`) preserved and byte/bit-exact wire-format
+   regression tests added. A desync is invisible to a single-player build+run, so this gate is
+   verified only by a **multiplayer** E2E. Beware the inverse trap: an upstream commit that is *itself*
+   a netcode fix targets P2P lockstep (`d_net.cpp`/ticcmd), a mechanism we replaced — skip it unless
+   the gameplay bug reproduces under C/S, then write the C/S equivalent, never the diff.
+4. **Build everywhere**: local `mac_compile.sh`, then CI (draft PR triggers Linux/Windows — branch
    pushes alone skip the build jobs). MSVC flags are spelled per-compiler; MSVC also catches real
    ODR bugs ELF/Mach-O swallow — same-name classes get a `Legacy` prefix rename (precedent:
    `LegacyFRenderState`, `LegacyFlatVertexBuffer`).
-4. **Tests**: `cmake --build build-tests && ctest` all green; new computation units at 100%
+5. **Tests**: `cmake --build build-tests && ctest` all green; new computation units at 100%
    coverage (`bash tests/coverage.sh --auto`).
-5. **Manual E2E by the user is the verification standard** (their eye has overruled screenshot
+6. **Manual E2E by the user is the verification standard** (their eye has overruled screenshot
    reads repeatedly). Drive the engine with the `zandronum-driver` skill; remember the THREE stale
    layers after any change: `cmake --build build`, copy `build/zandronum` AND `build/zandronum.pk3`
    into `build/ZandroX.app/Contents/MacOS/`, re-codesign; wadsrc edits additionally need the pk3
@@ -99,7 +107,7 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
    ledges, check a mirror/portal when the flight touches stencils. `warp x y` teleports; use it
    instead of walking. For visual deltas, A/B against the previous flight: `git stash` +
    rebuild beats reasoning from memory (screenshots of both sides settle it in minutes).
-6. Commit per verified step, plain messages, no attribution (user's global rules). Do not merge
+7. Commit per verified step, plain messages, no attribution (user's global rules). Do not merge
    WIP branches; draft PRs are the CI vehicle.
 
 ## Hard prohibitions
@@ -108,6 +116,8 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
 - No float-sim adoption; the sim stays fixed-point — conversions are draw-side and one-way.
 - No post-2016 `thingdef/*` cherry-picks (upstream DECORATE is VM-backed after 2016-10).
 - No second render pipeline coexisting with the first (the 15-seam lesson).
+- No upstream P2P-lockstep netcode diffs (`d_net.cpp`/ticcmd transport) ported as-is — that mechanism
+  was replaced by client/server; adapt per `netcode-adaptation` or skip.
 
 ## Ledger (staircase flights)
 

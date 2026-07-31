@@ -1,6 +1,6 @@
 # commit tracker | repo https://github.com/UZDoom/UZDoom | commit URL = <repo>/commit/<sha> | status = pending|ported|adapted|skip
 sha	date	title	status	note
-455145d611e0707fbf4f6fbcaf9cf7b82cf1b94e	2014-01-01T11:04:32Z	Stall testing for interpolation	ported	inherited (present 25/25 (inherited))
+455145d611e0707fbf4f6fbcaf9cf7b82cf1b94e	2014-01-01T11:04:32Z	Stall testing for interpolation	skip	P2P-lockstep transport (TryRunTics/Net_CheckLastRecieved resend); not our C/S model, d_net path unused under client/server
 853c1c4f1ec963bb28ab6e02b7f59c763b2806b8	2014-01-01T15:51:27Z	Merge branch 'master' of https://github.com/Edward850/zdoom	skip	merge
 49edd7c60c53376a09c385adf841960f71b81662	2014-01-02T06:59:04Z	- Add support for cross compiling so that OS X PowerPC builds can still be made on systems without rosetta (10.7+). (Compiling x86 binaries on ppc should also be possible.)	ported	inherited (present 25/25 (inherited))
 1e50a0af9ea70967bb4e2d5f343eb23e31e979df	2014-01-02T08:06:06Z	- Hard code gdtoa constants for OS X since the programs can’t always be run on the target.  (The values are the same for GCC and Clang.)	ported	inherited (present 25/25 (inherited))
@@ -87,7 +87,7 @@ e7f427aa60ac3b6b2eb6ef089b14321753b230f3	2014-02-25T01:26:50Z	Merge branch 'main
 f44dc926e6880777f96f884b42e4dd95f665b097	2014-03-09T09:02:07Z	- fixed uniqueTid logic - patch by Edward-San.	ported	inherited (present 5/5 (inherited))
 9dad8bdbbed9a7d8c0779b926613825ec8a92374	2014-03-13T05:27:39Z	Clear old camera from previous level	ported	inherited (present 1/1 (inherited))
 55362d229639e3231c0226b25951cdd19abe834d	2014-03-14T07:59:24Z	Merge remote-tracking branch 'upstream/master'	skip	merge
-40771d22a53dec3f023eae8252f3aaa204267fb1	2014-03-14T15:15:30Z	Player prediction fixes in PIT_CheckThing	ported	inherited (present 24/25 (inherited))
+40771d22a53dec3f023eae8252f3aaa204267fb1	2014-03-14T15:15:30Z	Player prediction fixes in PIT_CheckThing	adapted	adapted: CF_PREDICTING gate superseded by CLIENT_PREDICT_IsPredicting() in PIT_CheckThing [BB]/[RK]
 6aa56202b635c7928c1d7601ac43a8d6340d7e6b	2014-03-15T11:17:22Z	Fix two issues with GL nodes handling	ported	inherited (present 6/6 (inherited))
 f96f4cb0a2312a672fc848824ecdf514c9e82d77	2014-03-15T11:24:16Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
 3c8e9b6dc06cc0fbd2cfeed77e48f58c5438d327	2014-03-16T10:29:04Z	Fix incorrect Maulotaur melee attack sound	ported	inherited (present 1/1 (inherited))

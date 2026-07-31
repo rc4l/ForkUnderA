@@ -154,31 +154,23 @@ tripwire)"`, `"ported: 9811962"`. A future reader (or a re-triage after the tree
 re-run the same existence check and confirm or overturn it. That is what keeps the whole thing from
 silently rotting into a stale drop-list.
 
-## Zandronum client/server sanity check — do this for EVERY gameplay port
+## Zandronum client/server adaptation — see the `netcode-adaptation` skill
 
-Our single biggest porting hazard: Zandronum is **client/server**; GZDoom is not. A gameplay change
-that's correct upstream can **desync multiplayer** here — and it passes a single-player build+run
-clean, so the bug is invisible offline. Any port touching **actor state, movement/collision,
-spawning, targeting/AI, player state, RNG, or sound** must be evaluated against the C/S model *before*
-it lands. Per such a port, ask:
+Our single biggest porting hazard: ZandroX is **client/server**; GZDoom is not. A gameplay change
+that's correct upstream can **desync multiplayer** and pass a single-player build+run clean — the bug
+is invisible offline. **Any port touching actor state, movement/collision, spawning, targeting/AI,
+player state, RNG, or sound must go through the `netcode-adaptation` skill before it lands.** In short:
+server-gate the authoritative logic with `if (NETWORK_InClientMode() == false)`, broadcast the result
+with the matching `SERVERCOMMANDS_*`, keep the sync RNG (`P_Random`) intact, and add byte/bit-exact
+wire-format regression tests. Such a port is recorded `adapted` (note the gate), never `ported` raw,
+and verified with a **multiplayer** E2E — never single-player alone.
 
-- **Server authority:** does it mutate state the server owns? In Zandronum that state changes on the
-  server and is pushed to clients via `SERVERCOMMANDS_*`; a raw port that also runs client-side (or
-  only client-side) desyncs. Grep the surrounding code for `NETWORK_GetState()`, `SERVER_*`,
-  `CLIENT_*`, `SERVERCOMMANDS_*` to see how neighbouring code gates the same kind of change, and match it.
-- **RNG:** does it draw randomness? The game RNG (`P_Random` / `pr_*`) is consistency-critical and must
-  stay identical on server and clients — changing how/when it's drawn desyncs. Confirm the ported code
-  uses the sync RNG where the surrounding code does.
-- **Prediction:** does it affect player movement/collision that runs through client prediction
-  (`CLIENT_PREDICT_*`)? It must hold under predict+correct, not just locally.
-- **Spectators / clientside:** gated by `bSpectating` / `CLIENTSIDEONLY` where neighbours are?
-- **Consistency:** does it change state each client computes independently per tic? Then it must be
-  server-broadcast or made deterministic, or clients drift apart.
-
-If a port trips any of these and you can't confirm the C/S handling, mark it `adapted` (recording the
-gate you added), never `ported` as a raw cherry-pick — and verify with a **multiplayer** E2E (host +
-connect a client), not single-player. `P_LookForPlayers` (server-authoritative AI targeting),
-resurrection/actor-state, and `S_Sound` network variants in the current batch are all in scope.
+**Special case — the upstream commit is *itself* a netcode fix.** Upstream is peer-to-peer lockstep;
+we're client/server. A commit fixing `d_net.cpp` / the ticcmd transport patches a mechanism Zandronum
+replaced → `skip: upstream P2P-lockstep netcode, not our C/S model`. Only if the underlying gameplay
+bug also reproduces under client/server is it real — and then you don't port the diff, you write the
+C/S equivalent per `netcode-adaptation`. The tell is *where the diff lands* (transport → skip; `p_*`
+actor state → maybe adapt), never the title.
 
 ## Gates (per candidate)
 

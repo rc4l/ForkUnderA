@@ -36,6 +36,13 @@ ZandroX is an old Zandronum base, so the fix usually already exists in a tree yo
 The added guard/null-check in their version **is** the fix. Port it per the `upstream-port` and
 `provenance-links` skills; tag it `[rc4l]` with a one-line why and the source it matches.
 
+**If the fix does more than early-return on a bad pointer** — if it changes synced gameplay state
+(actor position/state/flags, spawn/destroy, health, RNG) rather than just guarding a null — route it
+through the `netcode-adaptation` skill: a guard that silently runs on clients too can trade a crash for
+a desync. A pure null-check that prevents the dereference is exempt; anything that alters the outcome is
+not. (The lower frames in step 1 flag this: a crash reached via a net packet / thinker on the server is
+exactly where a naive guard desyncs.)
+
 ## 4. Validate by REPRODUCING, not by a unit test
 A crash fix is proven by "it no longer crashes doing the thing that crashed it." The state is
 engine-wide (actors, sectors, players) and not extractable to a pure `Compute*` helper, so don't force
