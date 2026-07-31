@@ -96,11 +96,11 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
 5. **Tests**: `cmake --build build-tests && ctest` all green; new computation units at 100%
    coverage (`bash tests/coverage.sh --auto`).
 6. **Manual E2E by the user is the verification standard** (their eye has overruled screenshot
-   reads repeatedly). **Rebuild + refresh the bundle with `tools/build-run.sh` (`--run` to launch) —
+   reads repeatedly). **Rebuild + refresh the bundle with `mac_build_run.sh` (`--run` to launch) —
    never hand-roll `cmake --build --target zdoom` + manual copies.** That target does NOT rebuild the
    pk3s (`add_pk3` depends on the zipdir *tool*, not on `wadsrc/` content), so a hand-rolled build
    ships a stale or missing `zandronum.pk3` and a silently-failed link as if they were fine — the
-   exact trap that has burned whole sessions. `build-run.sh` fails CLOSED: it stops on a bad build,
+   exact trap that has burned whole sessions. `mac_build_run.sh` fails CLOSED: it stops on a bad build,
    repacks any pk3 missing or older than its `wadsrc/`, syncs into `build/ZandroX.app/Contents/MacOS/`,
    re-codesigns, and verifies the bundle's binary + pk3 before it ever says "safe to launch." Then
    drive with the `zandronum-driver` skill. E2E must inspect the *artifacts an action leaves behind*,
