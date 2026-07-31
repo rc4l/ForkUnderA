@@ -55,6 +55,33 @@ For upstream commit `C` (`UP` = the UZDoom clone; our source = `src/zandronum/sr
 4. **For candidates, hand off to `upstream-port`:** run `backport-scout.sh` → pick the route
    (staircase batch / post-wall C++ / scriptified / born-in-ZScript) → port or adapt → its gates.
 
+## "Do we already have it?" is the FIRST check — and it's content-based
+
+The verdict comes from the **diff and our tree, never the commit title.** "Fixed: Rampage timer…"
+tells you nothing about whether we have the fix; only grepping our tree does. The test:
+
+> Take the commit's distinctive **added lines** and `git grep -F` them anywhere under
+> `src/zandronum` (substring, whitespace-stripped → survives reindentation and renames). If they're
+> already there, we have it → `ported`. If the change isn't there but the files are → `pending`
+> candidate. If the files themselves are absent → `skip`.
+
+**Base-inheritance is the default below our base date.** Our sim base is ZDoom 2.8pre `458e1b1`
+(2014-05-08), so most commits before that are already in our tree via inheritance — the first 100
+triaged as **57 ported / 41 skip / 2 real ports.** Do not "port" what we've had for a decade; verify
+presence first.
+
+`commit-tracker/triage.py` mechanizes the first pass — merge detection, file-existence, and the
+added-line presence ratio — emitting `ported` / `skip` / `candidate` / `REVIEW`. Run it, trust the
+clear verdicts (all-present, all-absent, merge), and **hand-examine every `REVIEW`, `candidate`, and
+partial** against the real diff. Two shapes it can't call alone, both seen in the first 100:
+
+- **Partial inheritance:** a commit touches two files; one half is in our tree, the other isn't
+  (`2501dc6df`: the ACS `args[1]>=0` guard was inherited, but our `P_FindUniqueTID` still has the old
+  `limit=INT_MAX` signed-overflow UB the commit rewrote). → port the missing half only.
+- **Adapted-present:** the feature exists via a *different* implementation (`a60918f60`:
+  `disablepushwindowcheck` is present as `COMPATF2_PUSHWINDOW`, not upstream's `BCOMPATF_NOWINDOWCHECK`).
+  → `ported`/`adapted`, do **not** re-port and conflict.
+
 ## Order & dependencies
 
 - Oldest→newest, so a commit's prerequisites are already in.
