@@ -68,6 +68,7 @@
 #include "r_sky.h"
 #include "g_game.h"
 #include "g_level.h"
+#include "features/skywire/computation/sky_wire_compute.h"
 #include "sbar.h"
 #include "m_swap.h"
 #include "m_png.h"
@@ -3816,10 +3817,11 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			bSendSkyUpdate = true;
 		}
 
-		snprintf( level.skypic1, sizeof( level.skypic1 ), "%s", pLevelInfo->SkyPic1.GetChars() );
-		snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", pLevelInfo->SkyPic2.GetChars() );
+		// [rc4l] 8-char wire bound -- see features/skywire.
+		zx::CopySkyNameForWire( pLevelInfo->SkyPic1.GetChars(), level.skypic1, sizeof( level.skypic1 ) );
+		zx::CopySkyNameForWire( pLevelInfo->SkyPic2.GetChars(), level.skypic2, sizeof( level.skypic2 ) );
 		if ( level.skypic2[0] == 0 )
-			snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", level.skypic1 );
+			zx::CopySkyNameForWire( level.skypic1, level.skypic2, sizeof( level.skypic2 ) );
 
 		// [rc4l] keep the resolved ids (uzdoom@65e8563cf) in step with the names above.
 		level.skytexture1 = TexMan.GetTexture( level.skypic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
