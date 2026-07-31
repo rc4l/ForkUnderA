@@ -4338,7 +4338,7 @@ c08fc8f5a82d423a641f5303b49d3c49c0bc6360	2016-07-23T15:27:19Z	Fix depth calculat
 4345623e284ba6a169768026565b98acb1df8d28	2016-07-24T11:25:31Z	Fixed incorrect scaling of particles	pending	
 071485b22e60309b09f70727cf9bbc9afa1c3caa	2016-07-25T09:55:47Z	- fixed: If the resulting render style, after all adjustments, is None for the weapon sprite, do not attempt to draw it at all.	pending	
 f67243a40f41ece6c31496ddeb42bb389bb1e721	2016-07-27T06:23:00Z	- fixed: The NO_CHANGE constant shouldn't have been floatified because this is an input value for action specials which will remain integers.	pending	
-aeb7df09de843542c3da7c889e5cc18540e59f87	2016-07-27T09:15:19Z	Added hardware gamma option and improved window handling on Windows	pending	
+aeb7df09de843542c3da7c889e5cc18540e59f87	2016-07-27T09:15:19Z	Added hardware gamma option and improved window handling on Windows	adapted	67d3b09 shader-gamma: took only the present-shader/shader-program path, not the bloom+renderbuffers half
 e82c38e4f94998cabfbe7b2c0f044cb8b1ea1d47	2016-07-27T09:15:20Z	Update copyright and typo fix	pending	
 c9f93d9c88709df84cab902020d1ff6cbf3b9be9	2016-07-27T09:28:55Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
 da1762ac2ca5a485e2a6141f3497adea90ba0416	2016-07-27T14:27:40Z	- fixed: DoSetMapSection could cause a stack overflow on large maps. Made it iterative instead of recursive to avoid that.	pending	
@@ -4810,7 +4810,7 @@ a49e15c5416fae67ed7908e1507acf5c63a38c4b	2016-09-22T06:57:22Z	Added REOPEN scrip
 f0e8e860f1883ef86ae60c379c83414dc54d932d	2016-09-22T07:09:48Z	Merge branch 'master' into json	pending	
 f7b6b1433cf688cefa7a9bd9c05167d04a8e039a	2016-09-22T07:13:32Z	Added exposure pass calculating the bloom/tonemap exposure based on what the eye is seeing	pending	
 af699dcebccb8205eea6b17a9d3b6ed21d4036b0	2016-09-22T07:13:33Z	Make bloom/exposure less aggressive	pending	
-72491049e0b371dff959e567ac88ca6dc733c2c7	2016-09-22T07:23:25Z	Changes to the contrast/brightness/gamma formula for both hardware and shader gamma correction. Mainly makes a correction with the shader version where contrast/brightness being negative values would clip them inappropriately.	pending	
+72491049e0b371dff959e567ac88ca6dc733c2c7	2016-09-22T07:23:25Z	Changes to the contrast/brightness/gamma formula for both hardware and shader gamma correction. Mainly makes a correction with the shader version where contrast/brightness being negative values would clip them inappropriately.	adapted	67d3b09 shader-gamma: brightness folded in before the gamma pow; kept the max() guard this commit dropped
 2339b18b0140005d3d5cbac46cc47004764f732d	2016-09-22T07:23:26Z	Quick fix: prevents negative values being passed to pow.	pending	
 9a257ac158617be196713d0f4b3d9f2b919ce6f3	2016-09-22T07:25:46Z	Implement side-by-side narrow 3D mode.	pending	
 1f79e23d5be7d29d55f0b45977f582dfc3919593	2016-09-22T07:25:46Z	Implement wide side-by-side mode, using adjusted aspect ratio in projection matrix. Use optimal framebuffer size for side-by-side modes.	pending	
@@ -12031,7 +12031,7 @@ bcd03cc5337defaaeb56a948958c2af477c19165	2019-01-23T20:50:10Z	- moved LZMA docs 
 6a9322e67729a8f6e2a2c4fced2b4c0a779af440	2019-01-23T20:50:10Z	- force internal GME with any build environment created after this commit. if anyone is using a build environment from before - you will have to make sure to enable the relevant variable - or simply nuke and recreate. this applies only if you have the GME library installed on your system - if you were using the internal before, anyhow, you don't have to make any changes	pending	
 12c10b5156b9ca8366d9b8e211e748012aba559a	2019-01-23T20:50:10Z	- fixed Identifier resolving for static functions	pending	
 477560e1ef8e68f1a9ca4eb783128b053975d5b9	2019-01-23T20:50:10Z	- swapped order of checks for picking up an item.	pending	
-dc27011370545e619ee0e658da08bcdffc98b669	2019-01-23T20:50:11Z	- remove vid_hwgamma, force always use shader gamma *** note to drfrag: Please don't cherry-pick this commit. Systems that do not use renderbuffers will still need this feature!	pending	
+dc27011370545e619ee0e658da08bcdffc98b669	2019-01-23T20:50:11Z	- remove vid_hwgamma, force always use shader gamma *** note to drfrag: Please don't cherry-pick this commit. Systems that do not use renderbuffers will still need this feature!	adapted	67d3b09 shader-gamma: removed the OS gamma ramp (desktop bleed on alt-tab); GL 2.1 chain is unreachable here
 3f835cd124c9b5b6bcd9575c2584c3684480019d	2019-01-23T20:50:11Z	- removed now unused BuildGammaTable function	pending	
 5c8ae7245373d9bcc20b0e797ca57cc7ce14b9bb	2019-01-23T20:50:11Z	- fixed: ScriptUtil.PlayerAmmo must be declared static.	pending	
 ceb38751f0599d1789d65ef979b24466d40b0b66	2019-01-23T21:01:37Z	- fixed some merging issues.	pending	
