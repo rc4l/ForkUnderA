@@ -212,11 +212,11 @@ CCMD(fua_check_update)
 
 // [rc4l] Force the notice to a specific tag (testing/manual). Real arming comes from the background
 // check above; kept for driving the menu without a live network.
-CCMD(update_notify)
+CCMD(fua_update_notify)
 {
 	if (argv.argc() < 2)
 	{
-		Printf("usage: update_notify <tag>   (e.g. update_notify v0.1.19)\n");
+		Printf("usage: fua_update_notify <tag>   (e.g. fua_update_notify v0.1.19)\n");
 		return;
 	}
 	zx::updater::SetLatestTag(argv[1]);
@@ -226,7 +226,7 @@ CCMD(update_notify)
 		Printf("no notice: %s is not newer than this build\n", argv[1]);
 }
 
-CCMD(update_notify_clear)
+CCMD(fua_update_notify_clear)
 {
 	zx::updater::Clear();
 	Printf("update notice cleared\n");
