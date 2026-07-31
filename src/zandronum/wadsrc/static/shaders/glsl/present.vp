@@ -1,0 +1,16 @@
+// [rc4l] Fullscreen-quad vertex stage for the shader-gamma present pass.
+// Adapted from uzdoom@81fd6c819fd5a6b71a946ba6e95cb67a76e4cac7 (shaders/pp/present.vp),
+// reduced to the plain passthrough this pass needs -- no uniform blocks, no 3D-mode variants.
+// The quad is emitted by the caller as 4 verts in clip space with their texcoords.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+in vec4 aPosition;
+in vec2 aTexCoord;
+
+out vec2 TexCoord;
+
+void main()
+{
+	TexCoord = aTexCoord;
+	gl_Position = aPosition;
+}

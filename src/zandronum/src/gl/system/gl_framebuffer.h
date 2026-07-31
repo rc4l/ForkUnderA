@@ -95,6 +95,8 @@ private:
 	void UpdateScaleBuffer();   // decide active, (re)build the FBO, bind it as the render target
 	void DestroyScaleBuffer();
 	void BlitScaleBuffer();     // blit the FBO to the backbuffer, filling the client rect
+	// [rc4l] shader-gamma: present the FBO, applying gamma in the shader when available.
+	void PresentScaleBuffer();
 	void MaybeResizeForScale(); // per-frame: apply a scale change by resizing the render target live
 	void ResizeRenderInPlace(int w, int h); // resize render target, no window/context teardown
 
