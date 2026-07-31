@@ -15,6 +15,22 @@
   h1 { margin: 0 0 2px; font-size: 17px; }
   .sub { color: #6b7280; font-size: 12px; margin-bottom: 10px; }
   .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  /* [rc4l] Goal bar. Every number in it is precomputed by progress.sh into progress.json —
+     the page never counts rows. That file is a few hundred bytes, so the bar paints while the
+     ~5 MB of table data is still downloading. Retarget the goal in progress.sh, not here. */
+  #progress { margin: 2px 0 10px; max-width: 560px; }
+  #progress .track { height: 8px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
+  #progress .fill { height: 100%; width: 0; border-radius: 999px; background: #047857;
+                    transition: width .6s ease; }
+  #progress .label { display: flex; gap: 8px; align-items: baseline; font-size: 12px;
+                     color: #6b7280; margin-bottom: 5px; }
+  #progress .pct { font-size: 15px; font-weight: 600; color: #1a1a2e;
+                   font-variant-numeric: tabular-nums; }
+  #progress .goal { color: #1a1a2e; font-weight: 600; }
+  #progress .counts { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .release { margin: 0 0 10px; font-size: 12px; }
+  .release a { color: #2563eb; text-decoration: none; font-weight: 700; }
+  .release a:hover { text-decoration: underline; }
   .chip { border: 1px solid #d1d5db; background: #f9fafb; border-radius: 999px;
           padding: 5px 12px; font-size: 13px; cursor: pointer; user-select: none; }
   .chip:hover { background: #f3f4f6; }
@@ -61,8 +77,20 @@
 </head>
 <body>
 <header>
-  <h1>fua &larr; UZDoom commit tracker</h1>
+  <h1>fua commit tracker</h1>
   <div class="sub">One row per upstream commit from anchor <code>ad88cfc5e</code> to UZDoom HEAD &middot; click a sha to open the commit</div>
+  <div id="progress" hidden>
+    <div class="label">
+      <span class="pct"></span> <span>toward</span> <span class="goal"></span>
+      <span class="counts"></span>
+    </div>
+    <div class="track"><div class="fill"></div></div>
+  </div>
+  <!-- [rc4l] /releases/latest is GitHub's own redirect to whatever the newest release is, so
+       this never names a version and never needs regenerating when we ship one. -->
+  <div class="release">
+    <a href="https://github.com/rc4l/ZandroX/releases/latest" target="_blank" rel="noopener">Download latest release &#8599;</a>
+  </div>
   <div class="bar" id="chips"></div>
 </header>
 <div id="grid" class="ag-theme-quartz">
@@ -76,6 +104,23 @@ const REPO = "https://github.com/UZDoom/UZDoom/commit/";
 const REPO_BASE = "https://github.com/UZDoom/UZDoom";
 const STATUSES = ["pending", "ported", "adapted", "skip"];
 let gridApi, active = "all";
+
+// [rc4l] The goal bar. progress.sh computed every figure at regen time; this only renders them.
+// Fired before the TSV fetches on purpose — progress.json is tiny, so the bar is on screen while
+// the table is still loading. Silently stays hidden if the file is missing: a decoration that
+// takes the page down with it would be a bad trade.
+fetch("progress.json")
+  .then(r => r.ok ? r.json() : Promise.reject(new Error("progress.json: HTTP " + r.status)))
+  .then(p => {
+    const el = document.getElementById("progress");
+    el.querySelector(".pct").textContent = p.pct + "%";
+    el.querySelector(".goal").textContent = p.goal;
+    el.querySelector(".counts").textContent =
+      `${p.done.toLocaleString()} / ${p.total.toLocaleString()} commits handled`;
+    el.querySelector(".fill").style.width = p.pct + "%";
+    el.hidden = false;
+  })
+  .catch(err => console.error(err));
 
 // click-to-reveal: the files a commit touched, lazy-loaded on first click so the page stays light
 let filesMap = null, filesLoading = null;
