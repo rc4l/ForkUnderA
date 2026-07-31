@@ -105,8 +105,9 @@ each port:
 
 1. **Commit per verified step** — one upstream commit (or one coherent flight) per commit, with its
    tracker row updated in the same commit.
-2. **Local first:** `mac_compile.sh` builds, `ctest` green, refresh the three stale layers and do the
-   manual E2E for anything runtime-visible (per the `upstream-port` gates).
+2. **Local first:** `mac_compile.sh` builds, `ctest` green, then rebuild+refresh the bundle with
+   `tools/build-run.sh` (fail-closed — never hand-roll `cmake --build` + manual pk3/binary copies)
+   and do the manual E2E for anything runtime-visible (per the `upstream-port` gates).
 3. **Push the branch and prove CI green on ALL platforms.** A **draft PR is the CI vehicle** — a bare
    branch push skips the Linux/Windows build jobs; only a PR triggers them (plus the tripwires,
    `commit-tracker-check`, tests). MSVC catches ODR/ABI bugs ELF/Mach-O swallow, so "green on my Mac"
