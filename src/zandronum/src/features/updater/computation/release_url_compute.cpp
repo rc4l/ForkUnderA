@@ -4,6 +4,7 @@
 #include "features/updater/computation/release_url_compute.h"
 
 #include <cstdio>
+#include <cstring>
 
 namespace zx
 {
@@ -116,6 +117,84 @@ bool IsNewerVersion(const char *current, const char *candidate)
 			return n[i] > c[i];
 	}
 	return false; // equal -> not newer
+}
+
+static bool IsJsonSpace(char c)
+{
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+bool ParseLatestReleaseTag(const char *json, char *out, int outSize)
+{
+	if (out == nullptr || outSize <= 0)
+		return false;
+	out[0] = '\0';
+	if (json == nullptr)
+		return false;
+
+	const char *p = std::strstr(json, "\"tag_name\"");
+	if (p == nullptr)
+		return false;                       // key absent (empty/truncated-before-key/garbage body)
+	p += 10;                                // length of "\"tag_name\""
+
+	while (IsJsonSpace(*p)) ++p;
+	if (*p != ':') return false;
+	++p;
+	while (IsJsonSpace(*p)) ++p;
+	if (*p != '"') return false;            // value isn't a string (e.g. null, or truncated at the key)
+	++p;
+
+	int n = 0;
+	while (*p != '"' && *p != '\0')
+	{
+		if (n >= outSize - 1)               // value longer than the buffer -> refuse rather than truncate
+		{
+			out[0] = '\0';
+			return false;
+		}
+		out[n++] = *p++;
+	}
+	if (*p != '"')                          // ran off the end -> the string was truncated mid-value
+	{
+		out[0] = '\0';
+		return false;
+	}
+	out[n] = '\0';
+	return n > 0;                           // empty tag ("") is not usable
+}
+
+UpdateCheckResult ComputeUpdateCheckResult(bool fetchOk, const char *body, const char *currentDescribe)
+{
+	UpdateCheckResult r;
+	r.tag[0] = '\0';
+
+	if (!fetchOk)                           // timeout / no network / DNS / HTTP error -> we don't know
+	{
+		r.status = UpdateCheckStatus::NoNetwork;
+		return r;
+	}
+
+	char latest[64];
+	if (!ParseLatestReleaseTag(body, latest, sizeof latest))
+	{
+		r.status = UpdateCheckStatus::Malformed; // empty / truncated / no tag_name
+		return r;
+	}
+
+	char current[64];
+	if (!ExtractVersionTag(currentDescribe, current, sizeof current))
+		current[0] = '\0';                  // unknown current -> treat as 0.0.0 (any real tag is newer)
+
+	if (IsNewerVersion(current, latest))
+	{
+		r.status = UpdateCheckStatus::UpdateAvailable;
+		std::snprintf(r.tag, sizeof r.tag, "%s", latest);
+	}
+	else
+	{
+		r.status = UpdateCheckStatus::UpToDate;
+	}
+	return r;
 }
 
 } // namespace zx
