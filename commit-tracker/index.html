@@ -47,10 +47,11 @@
       -webkit-user-select: none; user-select: none;
       -webkit-touch-callout: none;
     }
-    .ag-theme-quartz .ag-body-viewport,
-    .ag-theme-quartz .ag-body-horizontal-scroll-viewport,
-    .ag-theme-quartz .ag-center-cols-viewport {
-      touch-action: pan-x pan-y;
+    /* One axis each, so a swipe is claimed by exactly one scroller: the wrapper pans sideways,
+       the grid body pans vertically. Both run on the compositor. */
+    #gridwrap { touch-action: pan-x; }
+    .ag-theme-quartz .ag-body-viewport {
+      touch-action: pan-y;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior: contain;      /* don't hand the gesture to the page / pull-to-refresh */
     }
@@ -68,7 +69,12 @@
   .chip .n { opacity: .7; margin-left: 5px; font-size: 12px; }
   input.search { margin-left: auto; padding: 6px 10px; border: 1px solid #d1d5db;
                  border-radius: 8px; font-size: 13px; width: 260px; }
-  #grid { flex: 1; width: 100%; }
+  /* [rc4l] The wrapper is the horizontal scroller; the grid inside it is laid out at its full
+     natural width when the screen is narrower. Because the header and the rows are both inside
+     the element that moves, they cannot drift apart the way AG Grid's own scroll-event sync did. */
+  #gridwrap { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden;
+              -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+  #grid { height: 100%; width: 100%; }
   /* [rc4l] Shown from first paint (it is in the static markup, so it does not wait on the
      AG Grid CDN script) and removed just before the grid is created. Without it the page is
      a blank box for the ~5 MB of TSV the table needs, which reads as "nothing is loading". */
@@ -131,9 +137,9 @@
   </div>
   <div class="bar" id="chips"></div>
 </header>
-<div id="grid" class="ag-theme-quartz">
+<div id="gridwrap"><div id="grid" class="ag-theme-quartz">
   <div id="loading"><div class="ring"></div><div>Loading ~5&nbsp;MB of commit data&hellip;</div></div>
-</div>
+</div></div>
 <div id="detail"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.js"></script>
@@ -224,17 +230,23 @@ async function onRowClicked(e) {
 // alignment from CSS. The cure is to not scroll sideways at all on a small screen: drop the
 // columns that don't fit and let the rest fill the width. Nothing is lost, because tapping a row
 // shows the full title, note and tags anyway.
-const NARROW = 760, VERY_NARROW = 520;
+// [rc4l] Why the header used to trail the rows: AG Grid puts the header and the body in two
+// separate scrolling elements and keeps them aligned by re-transforming the header on the body's
+// scroll event. During a compositor-driven touch scroll those events arrive throttled, so the
+// header lagged a frame or two behind. No CSS fixes that — the sync is JavaScript.
+//
+// So remove the sync from the equation: give the grid its full natural width and let an outer
+// wrapper do the horizontal scrolling. Header and rows are then inside ONE moving element and
+// cannot drift apart, however the scroll is driven. Vertical scrolling stays inside the grid,
+// where row virtualisation needs it. Every column stays visible at every width.
+const TABLE_MIN = 1120;   // width the columns lay out in when the screen is narrower than this
 function fitColumns() {
   if (!gridApi) return;
-  const w = window.innerWidth;
-  gridApi.setColumnsVisible(["tags", "note", "ours"], w >= NARROW);
-  gridApi.setColumnsVisible(["date"], w >= VERY_NARROW);
-  // Only narrow screens need this: it spends the exact viewport width, leaving no horizontal
-  // overflow for the header and the body to disagree about. On a wide screen the flex columns
-  // already fill the width, and calling it there just steals room from `title` to pad the
-  // fixed-width columns.
-  if (w < NARROW) gridApi.sizeColumnsToFit();
+  const wrap = document.getElementById("gridwrap");
+  const grid = document.getElementById("grid");
+  // Wider than the table needs? Let it be fluid so the flex columns fill the screen. Narrower?
+  // Pin the natural width and hand the overflow to the wrapper's own scroller.
+  grid.style.width = wrap.clientWidth < TABLE_MIN ? TABLE_MIN + "px" : "100%";
 }
 let fitTimer;
 addEventListener("resize", () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitColumns, 150); });
