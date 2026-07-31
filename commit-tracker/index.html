@@ -63,6 +63,27 @@
     .ag-theme-quartz .ag-cell a { -webkit-touch-callout: default; }
   }
   .release { margin: 0 0 10px; font-size: 12px; }
+  /* [rc4l] Compact-height layout: on a short screen (a phone in landscape, a small split view)
+     the identity block collapses from four stacked rows onto one line and the explanatory
+     subtitle goes away. Same information, a fifth of the height. Keyed on height alone — a wide
+     landscape phone is not a desktop, and that is exactly the case this exists for. */
+  /* [rc4l] The slide-away header: scrolling down through the rows folds the chrome away, any
+     scroll back up brings it straight back — the behaviour Safari's own toolbar, Gmail and
+     Twitter all use. Collapsing max-height (rather than translating) means the grid genuinely
+     reclaims the space instead of having it hidden underneath. Only armed on compact screens. */
+  header { max-height: 400px; overflow: hidden; transition: max-height .22s ease, padding .22s ease; }
+  body.chrome-hidden header { max-height: 0; padding-top: 0; padding-bottom: 0; border-bottom-color: transparent; }
+  @media (prefers-reduced-motion: reduce) { header { transition: none; } }
+  @media (max-height: 500px) {
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 14px 8px; }
+    .sub { display: none; }
+    h1 { font-size: 15px; }
+    #progress { margin: 0; flex: 1 1 220px; max-width: 300px; }
+    #progress .label { margin-bottom: 3px; }
+    #progress .counts { display: none; }   /* the percentage and the goal carry the meaning */
+    .release { margin: 0; }
+    .controls { flex: 1 1 100%; }
+  }
   .release a { color: #2563eb; text-decoration: none; font-weight: 700; }
   .release a:hover { text-decoration: underline; }
   /* [rc4l] Filter chips live on ONE line that scrolls sideways, rather than wrapping. Wrapping
@@ -255,27 +276,62 @@ async function onRowClicked(e) {
 // cannot drift apart, however the scroll is driven. Vertical scrolling stays inside the grid,
 // where row virtualisation needs it. Every column stays visible at every width.
 const NARROW = 760;       // below this we are on a phone-sized screen
+const SHORT = 600;        // below this the screen is short — a phone in landscape, mostly
 const TABLE_MIN = 1120;   // width the columns lay out in when the screen is narrower than this
-// [rc4l] Per-column filter boxes are a desktop idiom: on a phone they cost a whole 49px band
-// above the rows to duplicate what the chip strip and the search box already do. Toggled rather
-// than deleted, so rotating to landscape (or a tablet) gets them back.
-let floatingOn = null;
+// [rc4l] Height is a first-class dimension here, not an afterthought. Keying off width alone
+// meant a phone in LANDSCAPE (844 wide, 390 tall) counted as a desktop and got the full desktop
+// chrome — the per-column filter band included — on the screen with the least room for it. Both
+// iOS (compact vertical size class) and Material (window height classes) size on both axes; so
+// do we. "Compact" = narrow OR short.
+const isCompact = () => innerWidth < NARROW || innerHeight < SHORT;
+
+// Per-column filter boxes are a desktop idiom: they cost a 49px band above the rows to duplicate
+// what the chip strip and the search box already do. Toggled rather than deleted, so a real
+// desktop still gets them.
+let floatingOn = null, headerH = null;
 function syncFloatingFilters() {
-  const want = innerWidth >= NARROW;
+  const want = !isCompact();
   if (want === floatingOn) return;                 // setGridOption rebuilds the columns; only do it on a real change
   floatingOn = want;
   gridApi.setGridOption("defaultColDef",
     { sortable: true, filter: true, resizable: true, floatingFilter: want });
 }
+// A denser column header when vertical space is scarce — the same move as Material's dense tables.
+function syncHeaderHeight() {
+  const want = isCompact() ? 32 : 48;
+  if (want === headerH) return;
+  headerH = want;
+  gridApi.setGridOption("headerHeight", want);
+}
 function fitColumns() {
   if (!gridApi) return;
   syncFloatingFilters();
+  syncHeaderHeight();
   const wrap = document.getElementById("gridwrap");
   const grid = document.getElementById("grid");
   // Wider than the table needs? Let it be fluid so the flex columns fill the screen. Narrower?
   // Pin the natural width and hand the overflow to the wrapper's own scroller.
   grid.style.width = wrap.clientWidth < TABLE_MIN ? TABLE_MIN + "px" : "100%";
 }
+// [rc4l] Hook AG Grid's body viewport, not the window: the rows scroll inside it, so the window
+// never fires a scroll event. Passive listener, and the only work per event is a class toggle —
+// no measuring, no layout reads — so it cannot stall the compositor scroll we spent so long
+// smoothing. Hysteresis (down past 48px hides, any 8px of upward movement shows) stops it
+// flickering when a finger jitters mid-scroll.
+let lastY = 0;
+function armChromeCollapse() {
+  const vp = document.querySelector(".ag-body-viewport");
+  if (!vp || vp.dataset.collapseArmed) return;
+  vp.dataset.collapseArmed = "1";
+  vp.addEventListener("scroll", () => {
+    const y = vp.scrollTop, dy = y - lastY;
+    lastY = y;
+    if (!isCompact()) { document.body.classList.remove("chrome-hidden"); return; }
+    if (dy > 0 && y > 48) document.body.classList.add("chrome-hidden");
+    else if (dy < -8 || y <= 8) document.body.classList.remove("chrome-hidden");
+  }, { passive: true });
+}
+
 let fitTimer;
 addEventListener("resize", () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitColumns, 150); });
 
@@ -416,6 +472,7 @@ Promise.all([
     onRowClicked: onRowClicked,
   });
   fitColumns();
+  armChromeCollapse();
 }).catch(err => {
   // [rc4l] A spinner that never stops is worse than the blank box it replaced: if the fetch or
   // the parse dies, say so instead of spinning for ever.
