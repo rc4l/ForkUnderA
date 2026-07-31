@@ -1,107 +1,107 @@
 # commit tracker | repo https://github.com/UZDoom/UZDoom | commit URL = <repo>/commit/<sha> | status = pending|ported|adapted|skip
 sha	date	title	status	note
-455145d611e0707fbf4f6fbcaf9cf7b82cf1b94e	2014-01-01T11:04:32Z	Stall testing for interpolation	pending	
-853c1c4f1ec963bb28ab6e02b7f59c763b2806b8	2014-01-01T15:51:27Z	Merge branch 'master' of https://github.com/Edward850/zdoom	pending	
-49edd7c60c53376a09c385adf841960f71b81662	2014-01-02T06:59:04Z	- Add support for cross compiling so that OS X PowerPC builds can still be made on systems without rosetta (10.7+). (Compiling x86 binaries on ppc should also be possible.)	pending	
-1e50a0af9ea70967bb4e2d5f343eb23e31e979df	2014-01-02T08:06:06Z	- Hard code gdtoa constants for OS X since the programs can’t always be run on the target.  (The values are the same for GCC and Clang.)	pending	
-50cec119a08d048fc61a38f639a0acbdc1f8f0f3	2014-01-03T00:12:03Z	- Work around GCC 4.8 bug 54570	pending	
-511bdc7208ea0589b059a49b2b43c5f761a53e7b	2014-01-03T00:41:53Z	- Work around GCC 4.8 bug 54570	pending	
-a62996386dc5e4835ff5901f1b159876238fd645	2014-01-03T00:42:15Z	Merge branch 'maint'	pending	
-4770b9b27b0aebf29117ca1345db0cf0d0ea04fc	2014-01-03T06:21:21Z	- Fixed: Rampage timer should only reset when the weapon is ready to be fired.	pending	
-b0f40c07338cea851f03720e7355b4ed71d55705	2014-01-04T05:37:15Z	- So we did end up restoring the variable that the last commit was compensating for.	pending	
-005313c00e61c0ab4bb3934d8dad03fc050c4507	2014-01-04T10:29:02Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-cd3f5db16a8866d7ed2e97a05ab74e1f631feaf2	2014-01-04T21:58:21Z	- Updated gdtoa in order to fix clang warnings.	pending	
-b3f5de356f14e2026cc9e5738e8b58e22e7daa44	2014-01-05T20:46:11Z	- Fixed: SBarInfo's gamemode command used to ignore unknowns (for cross compatibility). On top of restoring the old behavior, generate a warning for only the first ignored instance.	pending	
-d8ff4ec281f97310ac40644cff488b5a7062c256	2014-01-06T00:50:09Z	- Fixed: All clang 5.0 warnings. - Renamed autostart/autozend since Xcode’s build process links in strictly alphabetical order.	pending	
-bbd3106cbb9f44b13694d29e1f7e4ed64a1e888f	2014-01-06T09:04:51Z	Merge commit 'b3f5de356f14e2026cc9e5738e8b58e22e7daa44'	pending	
-fa516c5ee6a1d13ee65484e309a8b3d8a492f1b5	2014-01-07T05:55:32Z	- For some reason __MAC_10_6 is defined in the 10.5 SDK so use MAC_OS_X_VERSION_MAX to check SDK version instead.	pending	
-44c4736de3d49dd0c451504c5544d5692d30828a	2014-01-10T07:16:41Z	- Ignore unknown properties in the GAMEINFO lump instead of throwing an error.	pending	
-db4a23e3c45dbe6db1b4164ad3c18516c9e1e200	2014-01-10T07:19:14Z	Merge branch 'origin/maint'	pending	
-6db974918a67fafd081954714b922e7b2e1d4d30	2014-01-12T05:39:19Z	Treat packets from unknown nodes differently	pending	
-725d3e3f530be44aea34a0ef1acc3915b913c051	2014-01-12T09:53:34Z	Merge branch 'master' of https://github.com/Edward850/zdoom	pending	
-812f2d92300f5f49701dd602fab605f0979ee2ce	2014-01-12T11:02:02Z	- removed all unneeded files from gdtoa/CMakeLists.txt because some compilers seem to throw duplicate symbol errors when strtod gets included.	pending	
-2501dc6df68e749094b4517a48c81f9a7b4fe1d2	2014-01-13T00:48:31Z	Fixed signed overflow issue, which caused a non-intended aggressive optimization by GCC 4.8. Also, negative values of the 'limit' parameter in both ACS UniqueTID() and in 'utid' CCMD are ignored and replaced by 0.	pending	
-af3e619232c05279c7317b5ff74fcccf9b5cd99a	2014-01-16T10:38:53Z	Merge branch 'uniquetid_overflow_fix' of https://github.com/edward-san/zdoom	pending	
-f51fcd90b3f08333fc9c2935cfedfc4c8026a7d9	2014-01-17T17:57:52Z	- Fixed scanf in IWAD picker without GTK	pending	
-aafea851f0fa334efaaafe1271b15dbdb5330854	2014-01-17T18:11:29Z	- Remove clang check from GCC-related workaround	pending	
-884928687dc12967bbb336ee27c09c5396c42896	2014-01-17T18:27:12Z	- Fixed overflow checking in some viewpitch code	pending	
-2d3a80fbd91c9e0d90b460488dc97ce26335bc35	2014-01-17T19:43:00Z	Merge branch 'cmake_clang_flags_fix' of https://github.com/edward-san/zdoom into maint	pending	
-9a74f96702bd14dc2f8a6bff3ca49e2940e2f8ab	2014-01-17T19:43:03Z	Merge branch 'viewpitch_overflow_fix' of https://github.com/edward-san/zdoom into maint	pending	
-e126c3ec2f2b0517b80decfa124f2ed4523b6a17	2014-01-17T19:45:20Z	Merge branch 'maint'	pending	
-b329a34a583933394788bd464ffaddfb0375f169	2014-01-17T22:36:59Z	- Fixed some cmake --warn-uninitialized messages	pending	
-1fd1ac9babc1d779318452614bde76ae3ab5ded0	2014-01-18T00:10:33Z	Merge branch 'cmake_uninitialized_fix' of https://github.com/edward-san/zdoom into maint	pending	
-6824e8c93147313be8d3db342214177afae52546	2014-01-18T00:12:06Z	Merge branch 'maint'	pending	
-dc8f81c2a7ccb53f4e6aab22f5f2dac51c6162d4	2014-01-18T00:18:21Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-7954263f5c2ebd864c2cabc5415159e375bd7b2a	2014-01-18T00:19:36Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-70717cd2fab2183ce27e7eedfc03e77806d76d24	2014-01-18T01:21:49Z	- Cover the ASM_SOURCES fix for NO_ASM users too	pending	
-6f7885210ba804d6f2ad6f5e8c03467ad983fc82	2014-01-18T19:58:39Z	- Fixed: Some setups require the dynamic linking library to be linked explicitly, so specify it when using DYN_FLUIDSYNTH	pending	
-e5d7077d743073c5780087ee1d0b3082674f5f5d	2014-01-18T20:09:12Z	- Fixed: Shareware games couldn't bother with the actor has no frames errors since we don't load mods. - Fixed: Heretic shareware used a different border for the statusbar.	pending	
-7af8b78b9fa5ec066cc6ed7a01d041850e36b07f	2014-01-18T20:18:35Z	- Applied Chilly's patch to fix excessive name change notifications.	pending	
-ebcd0e9c49fc7eb4b284e623244fffb5417c638b	2014-01-18T20:40:48Z	- Removed redundant expression in R_FindPlane.	pending	
-919b9283005a7431cc8c78aabaa1fe0181f6f275	2014-01-18T20:45:11Z	- Fixed: Taking an item in a Strife dialog didn't account for items that have the keep depleted flag set.	pending	
-75fd674d31c53aa68a2e84ad74c0b2310069d084	2014-01-18T21:20:52Z	- If the player doesn't have ` bound to open the console, don't close it with that key.	pending	
-27f6b3c9f37e4fe9cb1fe0b3b308fe9083215a60	2014-01-18T21:23:06Z	Merge branch 'maint' of github.com:rheit/zdoom into maint	pending	
-811a75ebf659fc81969126b8bd1ece82a3e23371	2014-01-18T22:54:46Z	- Minor adjustments to SDL joystick code so that all axes have at least a small deadzone so that button mapping works properly.	pending	
-efa9e0c3eec49f3a2d7aae11d8e4e4e2b4a067db	2014-01-18T23:10:48Z	Merge branch 'maint'	pending	
-0442c51d54d351ef0f497191be91c7410cc96e2c	2014-01-22T01:41:29Z	Fix building with old VC++ 2005 projects.	pending	
-7b63ee8ded88dc1593fd2a0a7b9acdeb2901b218	2014-01-22T01:48:46Z	Add more stuff to .gitignore	pending	
-4e53df8bca5e0dad98c6bdac9b1b5d9acf479d1d	2014-01-26T13:32:44Z	- fixed: The 'load' command in GAMEINFO only worked if the filename contained a slash.	pending	
-5e68e5873c0e0fb9f88c92dde62f92f6a64f891f	2014-01-26T13:33:04Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-8b02bb55aa3561eeb06bf4cc6320b609f7af26b4	2014-01-31T02:30:40Z	Fix compiling with FMOD 4.36	pending	
-3cff307e7756aae6e0f8c255f5a8a6eaf28270ec	2014-02-05T01:53:10Z	Add Get/SetLineActivation ACS functions	pending	
-0db82f02cfb7bdd555a2a45d605bb7af600163a0	2014-02-12T07:30:37Z	P_HitWater ignore extra floors below real floor	pending	
-dd5f2731282a27f811f1c8a5989028dd7922d52b	2014-02-14T01:10:48Z	Added possibly missing brackets	pending	
-02cd6eebf443579bd9ade2e1396400ab49bd398d	2014-02-16T17:29:01Z	A_Log formatted text	pending	
-861a0f0f0995d9de7ecc324216fced54da3511c5	2014-02-16T17:59:02Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	pending	
-3e318e45552f4c88b8c385a16a5a700a4f4a0a32	2014-02-16T20:08:44Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-d7478bcd683d609404ae664342de6e6b7ed94ac2	2014-02-17T23:40:14Z	New Freedoom names	pending	
-24903246520dd4121728de044112eb83053201a7	2014-02-18T08:59:07Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	pending	
-5c23ffb7bc2b6f2c56dcb23a0caf19d3eb7c6f65	2014-02-21T15:09:51Z	Added possibly missing brackets	pending	
-18f2644162734b98b1aa83798eef9940deab32b8	2014-02-21T15:09:52Z	A_Log formatted text	pending	
-5c2620986ea67646a45bf1f0cc7f5e8fee0aa251	2014-02-21T15:09:53Z	New Freedoom names	pending	
-732ee11da1a539fdf68074c2e748d84873728a83	2014-02-23T22:07:10Z	Some DOSBox Raw OPL v2 indices were off by one.	pending	
-bd2334a2d3fa5bda4ae957e408be6301c9ec48ff	2014-02-23T23:43:55Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	pending	
-9dacc9cc8d466e53d3f946dffc1e3601d1cac120	2014-02-24T04:07:37Z	The wrong value was used here.	pending	
-3111f8f93d7a9247b98ae96e67c50e9a6be7bd3f	2014-02-24T21:18:24Z	Merge pull request #19 from edward-san/unix_no_gtk_iwadpicker_fix	pending	
-78f85340d8ceae58c5da9166ed09982466ef307e	2014-02-24T21:19:35Z	Merge pull request #20 from edward-san/cmake_clang_flags_fix	pending	
-d0782d779d1b955e69811fa6052997ab153ed366	2014-02-24T21:20:56Z	Merge pull request #22 from edward-san/cmake_uninitialized_fix	pending	
-3437b08c1ad452f460a8fa416f36a43b23f3d46d	2014-02-24T21:22:20Z	Merge pull request #27 from Gaerzi/master	pending	
-eda6632fa57912b353c179c258dab1b8ca61d18b	2014-02-24T21:35:41Z	Merge branch 'maint'	pending	
-c7301a0fbbb738b84f4281308bdb06380ab256b8	2014-02-24T21:37:42Z	Some DOSBox Raw OPL v2 indices were off by one.	pending	
-d430c18574fd6d72c751f869c4b3cd3312990b46	2014-02-24T21:37:59Z	The wrong value was used here.	pending	
-a72c4bc6428537f8fc5254e3010c37f22860945a	2014-02-24T21:38:16Z	Merge branch 'maint'	pending	
-0f7ad00d9a0ab45b75840f98df059712b48ac394	2014-02-24T21:48:41Z	Ignore the minor version number when checking for DRO v1 files	pending	
-7052d4e14e31328b5f14803b3aca20860f9a7e45	2014-02-24T22:18:10Z	Fixed: userinfo_t::SkinChanged() was unaware of player classes	pending	
-8644a9443a4cbb189aff83fdb958141f602be247	2014-02-24T22:25:29Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-db4763b14a0bfa0196ce41a96e96f5e724927291	2014-02-24T22:27:57Z	Delay skin setting on save load until player class is known.	pending	
-a60918f601aa6bd094568340b26906f0f03772ae	2014-02-24T23:43:28Z	Add NoPushWindowCheck compatibility flag	pending	
-5a5fb9b3d19372d9323ba31fa5689fc95f94250b	2014-02-25T00:16:18Z	Clamp xy angle range in P_SetSlope()	pending	
-1d4f4b25d74fccc8f4c5e42811707e0606ce7adb	2014-02-25T01:01:36Z	Don't free replaced textures that are used as patches.	pending	
-e7f427aa60ac3b6b2eb6ef089b14321753b230f3	2014-02-25T01:26:50Z	Merge branch 'maint'	pending	
-8c6b4c12b689875bfce1469d96ec1c489c20338c	2014-02-28T12:51:59Z	Merge remote-tracking branch 'upstream/master'	pending	
-4a23b97963d8e57d4c62efa41323910df903d36e	2014-03-01T13:41:00Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-1fb757f6f120e2b7d09213b5da3f4976e1443868	2014-03-01T21:27:40Z	- Fixed useless 'array != NULL' check.	pending	
-8924ecbef9c4335c1ba71029387275a5a829d50c	2014-03-01T22:29:10Z	Merge branch 'array_null_comparison_fix' of https://github.com/edward-san/zdoom	pending	
-6d89fdbd5327b1c48bda6c1de471b0fca5d05dde	2014-03-02T11:25:04Z	Merge remote-tracking branch 'upstream/master'	pending	
-79abe2d4e9e4b913c43a05c84396dbbc496441b1	2014-03-02T12:00:47Z	Made onground a player property	pending	
-f44dc926e6880777f96f884b42e4dd95f665b097	2014-03-09T09:02:07Z	- fixed uniqueTid logic - patch by Edward-San.	pending	
-9dad8bdbbed9a7d8c0779b926613825ec8a92374	2014-03-13T05:27:39Z	Clear old camera from previous level	pending	
-55362d229639e3231c0226b25951cdd19abe834d	2014-03-14T07:59:24Z	Merge remote-tracking branch 'upstream/master'	pending	
-40771d22a53dec3f023eae8252f3aaa204267fb1	2014-03-14T15:15:30Z	Player prediction fixes in PIT_CheckThing	pending	
-6aa56202b635c7928c1d7601ac43a8d6340d7e6b	2014-03-15T11:17:22Z	Fix two issues with GL nodes handling	pending	
-f96f4cb0a2312a672fc848824ecdf514c9e82d77	2014-03-15T11:24:16Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending	
-3c8e9b6dc06cc0fbd2cfeed77e48f58c5438d327	2014-03-16T10:29:04Z	Fix incorrect Maulotaur melee attack sound	pending	
-5789ac624549907a7ff4c86edce5142083290876	2014-03-16T12:21:08Z	- Fixed new[]/delete mismatch in FNodeBuilder	pending	
-d7e81d2cb4621ba47a944ce28d367ce7956ee2d3	2014-03-16T12:27:21Z	Merge branch 'fnodebuilder_new_delete_fix' of https://github.com/edward-san/zdoom	pending	
-6a958b032c2d060bf07530aa314c1173a457c9f6	2014-03-18T10:29:14Z	Add NOBLOOD flag to Heresiarch actor	pending	
-697ef02871d10c8cd01be7f445eb6f46681fd73f	2014-03-27T11:23:12Z	Added StencilColor to Set/GetActorProperty	pending	
-d7a2435703f56ce36c00892f31c3a582bb947b7d	2014-03-27T14:34:32Z	- the ACS functions GetSectorFloorZ and GetSectorCeilingZ now interpret tag=0 as 'any sector' and return the z height of whatever sector is at those coordinates.	pending	
+455145d611e0707fbf4f6fbcaf9cf7b82cf1b94e	2014-01-01T11:04:32Z	Stall testing for interpolation	ported	inherited (present 25/25 (inherited))
+853c1c4f1ec963bb28ab6e02b7f59c763b2806b8	2014-01-01T15:51:27Z	Merge branch 'master' of https://github.com/Edward850/zdoom	skip	merge
+49edd7c60c53376a09c385adf841960f71b81662	2014-01-02T06:59:04Z	- Add support for cross compiling so that OS X PowerPC builds can still be made on systems without rosetta (10.7+). (Compiling x86 binaries on ppc should also be possible.)	ported	inherited (present 25/25 (inherited))
+1e50a0af9ea70967bb4e2d5f343eb23e31e979df	2014-01-02T08:06:06Z	- Hard code gdtoa constants for OS X since the programs can’t always be run on the target.  (The values are the same for GCC and Clang.)	ported	inherited (present 25/25 (inherited))
+50cec119a08d048fc61a38f639a0acbdc1f8f0f3	2014-01-03T00:12:03Z	- Work around GCC 4.8 bug 54570	ported	inherited (present 3/3 (inherited))
+511bdc7208ea0589b059a49b2b43c5f761a53e7b	2014-01-03T00:41:53Z	- Work around GCC 4.8 bug 54570	ported	inherited (present 3/3 (inherited))
+a62996386dc5e4835ff5901f1b159876238fd645	2014-01-03T00:42:15Z	Merge branch 'maint'	skip	merge
+4770b9b27b0aebf29117ca1345db0cf0d0ea04fc	2014-01-03T06:21:21Z	- Fixed: Rampage timer should only reset when the weapon is ready to be fired.	ported	ported e8840f6 (rampage-ready guard in sbar_mugshot.cpp)
+b0f40c07338cea851f03720e7355b4ed71d55705	2014-01-04T05:37:15Z	- So we did end up restoring the variable that the last commit was compensating for.	ported	inherited (present 1/1 (inherited))
+005313c00e61c0ab4bb3934d8dad03fc050c4507	2014-01-04T10:29:02Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+cd3f5db16a8866d7ed2e97a05ab74e1f631feaf2	2014-01-04T21:58:21Z	- Updated gdtoa in order to fix clang warnings.	ported	inherited (present 25/25 (inherited))
+b3f5de356f14e2026cc9e5738e8b58e22e7daa44	2014-01-05T20:46:11Z	- Fixed: SBarInfo's gamemode command used to ignore unknowns (for cross compatibility). On top of restoring the old behavior, generate a warning for only the first ignored instance.	ported	inherited (present 9/9 (inherited))
+d8ff4ec281f97310ac40644cff488b5a7062c256	2014-01-06T00:50:09Z	- Fixed: All clang 5.0 warnings. - Renamed autostart/autozend since Xcode’s build process links in strictly alphabetical order.	ported	inherited (present 21/25 (inherited))
+bbd3106cbb9f44b13694d29e1f7e4ed64a1e888f	2014-01-06T09:04:51Z	Merge commit 'b3f5de356f14e2026cc9e5738e8b58e22e7daa44'	skip	merge
+fa516c5ee6a1d13ee65484e309a8b3d8a492f1b5	2014-01-07T05:55:32Z	- For some reason __MAC_10_6 is defined in the 10.5 SDK so use MAC_OS_X_VERSION_MAX to check SDK version instead.	ported	REVIEW->present: MAC_OS_X_VERSION_MAX_ALLOWED SDK check
+44c4736de3d49dd0c451504c5544d5692d30828a	2014-01-10T07:16:41Z	- Ignore unknown properties in the GAMEINFO lump instead of throwing an error.	ported	inherited (present 3/3 (inherited))
+db4a23e3c45dbe6db1b4164ad3c18516c9e1e200	2014-01-10T07:19:14Z	Merge branch 'origin/maint'	skip	merge
+6db974918a67fafd081954714b922e7b2e1d4d30	2014-01-12T05:39:19Z	Treat packets from unknown nodes differently	ported	inherited (present 5/5 (inherited))
+725d3e3f530be44aea34a0ef1acc3915b913c051	2014-01-12T09:53:34Z	Merge branch 'master' of https://github.com/Edward850/zdoom	skip	merge
+812f2d92300f5f49701dd602fab605f0979ee2ce	2014-01-12T11:02:02Z	- removed all unneeded files from gdtoa/CMakeLists.txt because some compilers seem to throw duplicate symbol errors when strtod gets included.	ported	REVIEW->gdtoa unneeded-files removal already applied
+2501dc6df68e749094b4517a48c81f9a7b4fe1d2	2014-01-13T00:48:31Z	Fixed signed overflow issue, which caused a non-intended aggressive optimization by GCC 4.8. Also, negative values of the 'limit' parameter in both ACS UniqueTID() and in 'utid' CCMD are ignored and replaced by 0.	adapted	already present (adapted): P_FindUniqueTID pre-checks INT_MAX-limit+1 == upstream end_tid rewrite; utid CCMD arg>=0 guard + ACS half present
+af3e619232c05279c7317b5ff74fcccf9b5cd99a	2014-01-16T10:38:53Z	Merge branch 'uniquetid_overflow_fix' of https://github.com/edward-san/zdoom	skip	merge
+f51fcd90b3f08333fc9c2935cfedfc4c8026a7d9	2014-01-17T17:57:52Z	- Fixed scanf in IWAD picker without GTK	ported	inherited (present 1/1 (inherited))
+aafea851f0fa334efaaafe1271b15dbdb5330854	2014-01-17T18:11:29Z	- Remove clang check from GCC-related workaround	ported	inherited (present 3/3 (inherited))
+884928687dc12967bbb336ee27c09c5396c42896	2014-01-17T18:27:12Z	- Fixed overflow checking in some viewpitch code	ported	inherited (present 4/4 (inherited))
+2d3a80fbd91c9e0d90b460488dc97ce26335bc35	2014-01-17T19:43:00Z	Merge branch 'cmake_clang_flags_fix' of https://github.com/edward-san/zdoom into maint	skip	merge
+9a74f96702bd14dc2f8a6bff3ca49e2940e2f8ab	2014-01-17T19:43:03Z	Merge branch 'viewpitch_overflow_fix' of https://github.com/edward-san/zdoom into maint	skip	merge
+e126c3ec2f2b0517b80decfa124f2ed4523b6a17	2014-01-17T19:45:20Z	Merge branch 'maint'	skip	merge
+b329a34a583933394788bd464ffaddfb0375f169	2014-01-17T22:36:59Z	- Fixed some cmake --warn-uninitialized messages	skip	cosmetic cmake --warn-uninitialized; our CMake diverged, builds clean
+1fd1ac9babc1d779318452614bde76ae3ab5ded0	2014-01-18T00:10:33Z	Merge branch 'cmake_uninitialized_fix' of https://github.com/edward-san/zdoom into maint	skip	merge
+6824e8c93147313be8d3db342214177afae52546	2014-01-18T00:12:06Z	Merge branch 'maint'	skip	merge
+dc8f81c2a7ccb53f4e6aab22f5f2dac51c6162d4	2014-01-18T00:18:21Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+7954263f5c2ebd864c2cabc5415159e375bd7b2a	2014-01-18T00:19:36Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+70717cd2fab2183ce27e7eedfc03e77806d76d24	2014-01-18T01:21:49Z	- Cover the ASM_SOURCES fix for NO_ASM users too	ported	inherited (present 3/3 (inherited))
+6f7885210ba804d6f2ad6f5e8c03467ad983fc82	2014-01-18T19:58:39Z	- Fixed: Some setups require the dynamic linking library to be linked explicitly, so specify it when using DYN_FLUIDSYNTH	ported	inherited (present 8/8 (inherited))
+e5d7077d743073c5780087ee1d0b3082674f5f5d	2014-01-18T20:09:12Z	- Fixed: Shareware games couldn't bother with the actor has no frames errors since we don't load mods. - Fixed: Heretic shareware used a different border for the statusbar.	ported	inherited (present 6/6 (inherited))
+7af8b78b9fa5ec066cc6ed7a01d041850e36b07f	2014-01-18T20:18:35Z	- Applied Chilly's patch to fix excessive name change notifications.	ported	inherited (present 3/3 (inherited))
+ebcd0e9c49fc7eb4b284e623244fffb5417c638b	2014-01-18T20:40:48Z	- Removed redundant expression in R_FindPlane.	skip	files absent: src/r_plane.cpp
+919b9283005a7431cc8c78aabaa1fe0181f6f275	2014-01-18T20:45:11Z	- Fixed: Taking an item in a Strife dialog didn't account for items that have the keep depleted flag set.	ported	inherited (present 3/3 (inherited))
+75fd674d31c53aa68a2e84ad74c0b2310069d084	2014-01-18T21:20:52Z	- If the player doesn't have ` bound to open the console, don't close it with that key.	ported	inherited (present 5/5 (inherited))
+27f6b3c9f37e4fe9cb1fe0b3b308fe9083215a60	2014-01-18T21:23:06Z	Merge branch 'maint' of github.com:rheit/zdoom into maint	skip	merge
+811a75ebf659fc81969126b8bd1ece82a3e23371	2014-01-18T22:54:46Z	- Minor adjustments to SDL joystick code so that all axes have at least a small deadzone so that button mapping works properly.	ported	inherited (present 7/7 (inherited))
+efa9e0c3eec49f3a2d7aae11d8e4e4e2b4a067db	2014-01-18T23:10:48Z	Merge branch 'maint'	skip	merge
+0442c51d54d351ef0f497191be91c7410cc96e2c	2014-01-22T01:41:29Z	Fix building with old VC++ 2005 projects.	ported	inherited (present 25/25 (inherited))
+7b63ee8ded88dc1593fd2a0a7b9acdeb2901b218	2014-01-22T01:48:46Z	Add more stuff to .gitignore	skip	files absent: .gitignore
+4e53df8bca5e0dad98c6bdac9b1b5d9acf479d1d	2014-01-26T13:32:44Z	- fixed: The 'load' command in GAMEINFO only worked if the filename contained a slash.	ported	inherited (present 6/6 (inherited))
+5e68e5873c0e0fb9f88c92dde62f92f6a64f891f	2014-01-26T13:33:04Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+8b02bb55aa3561eeb06bf4cc6320b609f7af26b4	2014-01-31T02:30:40Z	Fix compiling with FMOD 4.36	skip	files absent: src/sound/fmodsound.cpp
+3cff307e7756aae6e0f8c255f5a8a6eaf28270ec	2014-02-05T01:53:10Z	Add Get/SetLineActivation ACS functions	ported	inherited (present 11/11 (inherited))
+0db82f02cfb7bdd555a2a45d605bb7af600163a0	2014-02-12T07:30:37Z	P_HitWater ignore extra floors below real floor	ported	inherited (present 1/1 (inherited))
+dd5f2731282a27f811f1c8a5989028dd7922d52b	2014-02-14T01:10:48Z	Added possibly missing brackets	ported	inherited (present 1/1 (inherited))
+02cd6eebf443579bd9ade2e1396400ab49bd398d	2014-02-16T17:29:01Z	A_Log formatted text	ported	inherited (present 2/2 (inherited))
+861a0f0f0995d9de7ecc324216fced54da3511c5	2014-02-16T17:59:02Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	skip	merge
+3e318e45552f4c88b8c385a16a5a700a4f4a0a32	2014-02-16T20:08:44Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+d7478bcd683d609404ae664342de6e6b7ed94ac2	2014-02-17T23:40:14Z	New Freedoom names	ported	inherited (present 4/4 (inherited))
+24903246520dd4121728de044112eb83053201a7	2014-02-18T08:59:07Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	skip	merge
+5c23ffb7bc2b6f2c56dcb23a0caf19d3eb7c6f65	2014-02-21T15:09:51Z	Added possibly missing brackets	ported	inherited (present 1/1 (inherited))
+18f2644162734b98b1aa83798eef9940deab32b8	2014-02-21T15:09:52Z	A_Log formatted text	ported	inherited (present 2/2 (inherited))
+5c2620986ea67646a45bf1f0cc7f5e8fee0aa251	2014-02-21T15:09:53Z	New Freedoom names	ported	inherited (present 4/4 (inherited))
+732ee11da1a539fdf68074c2e748d84873728a83	2014-02-23T22:07:10Z	Some DOSBox Raw OPL v2 indices were off by one.	ported	inherited (present 4/4 (inherited))
+bd2334a2d3fa5bda4ae957e408be6301c9ec48ff	2014-02-23T23:43:55Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	skip	merge
+9dacc9cc8d466e53d3f946dffc1e3601d1cac120	2014-02-24T04:07:37Z	The wrong value was used here.	ported	inherited (present 1/1 (inherited))
+3111f8f93d7a9247b98ae96e67c50e9a6be7bd3f	2014-02-24T21:18:24Z	Merge pull request #19 from edward-san/unix_no_gtk_iwadpicker_fix	skip	merge
+78f85340d8ceae58c5da9166ed09982466ef307e	2014-02-24T21:19:35Z	Merge pull request #20 from edward-san/cmake_clang_flags_fix	skip	merge
+d0782d779d1b955e69811fa6052997ab153ed366	2014-02-24T21:20:56Z	Merge pull request #22 from edward-san/cmake_uninitialized_fix	skip	merge
+3437b08c1ad452f460a8fa416f36a43b23f3d46d	2014-02-24T21:22:20Z	Merge pull request #27 from Gaerzi/master	skip	merge
+eda6632fa57912b353c179c258dab1b8ca61d18b	2014-02-24T21:35:41Z	Merge branch 'maint'	skip	merge
+c7301a0fbbb738b84f4281308bdb06380ab256b8	2014-02-24T21:37:42Z	Some DOSBox Raw OPL v2 indices were off by one.	ported	inherited (present 4/4 (inherited))
+d430c18574fd6d72c751f869c4b3cd3312990b46	2014-02-24T21:37:59Z	The wrong value was used here.	ported	inherited (present 1/1 (inherited))
+a72c4bc6428537f8fc5254e3010c37f22860945a	2014-02-24T21:38:16Z	Merge branch 'maint'	skip	merge
+0f7ad00d9a0ab45b75840f98df059712b48ac394	2014-02-24T21:48:41Z	Ignore the minor version number when checking for DRO v1 files	ported	inherited (present 1/1 (inherited))
+7052d4e14e31328b5f14803b3aca20860f9a7e45	2014-02-24T22:18:10Z	Fixed: userinfo_t::SkinChanged() was unaware of player classes	ported	inherited (present 5/6 (inherited))
+8644a9443a4cbb189aff83fdb958141f602be247	2014-02-24T22:25:29Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+db4763b14a0bfa0196ce41a96e96f5e724927291	2014-02-24T22:27:57Z	Delay skin setting on save load until player class is known.	ported	inherited (present 14/14 (inherited))
+a60918f601aa6bd094568340b26906f0f03772ae	2014-02-24T23:43:28Z	Add NoPushWindowCheck compatibility flag	ported	REVIEW->present (adapted: disablepushwindowcheck = COMPATF2_PUSHWINDOW)
+5a5fb9b3d19372d9323ba31fa5689fc95f94250b	2014-02-25T00:16:18Z	Clamp xy angle range in P_SetSlope()	ported	inherited (present 6/6 (inherited))
+1d4f4b25d74fccc8f4c5e42811707e0606ce7adb	2014-02-25T01:01:36Z	Don't free replaced textures that are used as patches.	ported	inherited (present 4/4 (inherited))
+e7f427aa60ac3b6b2eb6ef089b14321753b230f3	2014-02-25T01:26:50Z	Merge branch 'maint'	skip	merge
+8c6b4c12b689875bfce1469d96ec1c489c20338c	2014-02-28T12:51:59Z	Merge remote-tracking branch 'upstream/master'	skip	merge
+4a23b97963d8e57d4c62efa41323910df903d36e	2014-03-01T13:41:00Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+1fb757f6f120e2b7d09213b5da3f4976e1443868	2014-03-01T21:27:40Z	- Fixed useless 'array != NULL' check.	ported	inherited (present 7/7 (inherited))
+8924ecbef9c4335c1ba71029387275a5a829d50c	2014-03-01T22:29:10Z	Merge branch 'array_null_comparison_fix' of https://github.com/edward-san/zdoom	skip	merge
+6d89fdbd5327b1c48bda6c1de471b0fca5d05dde	2014-03-02T11:25:04Z	Merge remote-tracking branch 'upstream/master'	skip	merge
+79abe2d4e9e4b913c43a05c84396dbbc496441b1	2014-03-02T12:00:47Z	Made onground a player property	ported	inherited (present 12/14 (inherited))
+f44dc926e6880777f96f884b42e4dd95f665b097	2014-03-09T09:02:07Z	- fixed uniqueTid logic - patch by Edward-San.	ported	inherited (present 5/5 (inherited))
+9dad8bdbbed9a7d8c0779b926613825ec8a92374	2014-03-13T05:27:39Z	Clear old camera from previous level	ported	inherited (present 1/1 (inherited))
+55362d229639e3231c0226b25951cdd19abe834d	2014-03-14T07:59:24Z	Merge remote-tracking branch 'upstream/master'	skip	merge
+40771d22a53dec3f023eae8252f3aaa204267fb1	2014-03-14T15:15:30Z	Player prediction fixes in PIT_CheckThing	ported	inherited (present 24/25 (inherited))
+6aa56202b635c7928c1d7601ac43a8d6340d7e6b	2014-03-15T11:17:22Z	Fix two issues with GL nodes handling	ported	inherited (present 6/6 (inherited))
+f96f4cb0a2312a672fc848824ecdf514c9e82d77	2014-03-15T11:24:16Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge
+3c8e9b6dc06cc0fbd2cfeed77e48f58c5438d327	2014-03-16T10:29:04Z	Fix incorrect Maulotaur melee attack sound	ported	inherited (present 1/1 (inherited))
+5789ac624549907a7ff4c86edce5142083290876	2014-03-16T12:21:08Z	- Fixed new[]/delete mismatch in FNodeBuilder	ported	inherited (present 1/1 (inherited))
+d7e81d2cb4621ba47a944ce28d367ce7956ee2d3	2014-03-16T12:27:21Z	Merge branch 'fnodebuilder_new_delete_fix' of https://github.com/edward-san/zdoom	skip	merge
+6a958b032c2d060bf07530aa314c1173a457c9f6	2014-03-18T10:29:14Z	Add NOBLOOD flag to Heresiarch actor	ported	REVIEW->present: +NOBLOOD in heresiarch.txt
+697ef02871d10c8cd01be7f445eb6f46681fd73f	2014-03-27T11:23:12Z	Added StencilColor to Set/GetActorProperty	ported	inherited (present 5/5 (inherited))
+d7a2435703f56ce36c00892f31c3a582bb947b7d	2014-03-27T14:34:32Z	- the ACS functions GetSectorFloorZ and GetSectorCeilingZ now interpret tag=0 as 'any sector' and return the z height of whatever sector is at those coordinates.	ported	inherited (present 6/7 (inherited))
 4909aa750fa44853e88647509dac2049522182a1	2014-03-28T00:49:53Z	Use more portable hqx code from googlecode hqx	ported	d2e4479
-bf0b85008835451507d71e4d3e83270fff9cd4e7	2014-03-28T00:54:20Z	look for gme header in the proper location	pending	
+bf0b85008835451507d71e4d3e83270fff9cd4e7	2014-03-28T00:54:20Z	look for gme header in the proper location	ported	inherited (present 1/1 (inherited))
 8f97e96af187d44ae095f35511b6b94491668ddf	2014-03-28T00:54:42Z	silence a noisy warning	ported	d2e4479
-6e87ee80e4e5b4cac6e03fa75e955d924c46505c	2014-03-29T11:04:38Z	Merge branch 'for-upstream' of https://github.com/galtgendo/gzdoom	pending	
-a97b068ed7df7ff0f04d521b69f5d81392a3e8ee	2014-03-30T10:27:27Z	Enable fighting between different types of gargoyles and golems	pending	
-c47d77228d08840503aeeb7c4acd9e431193b9e1	2014-03-30T18:27:05Z	- increased updaterevision's buffer sizes to prevent GIT_BRANCH from cut short	pending	
+6e87ee80e4e5b4cac6e03fa75e955d924c46505c	2014-03-29T11:04:38Z	Merge branch 'for-upstream' of https://github.com/galtgendo/gzdoom	skip	merge
+a97b068ed7df7ff0f04d521b69f5d81392a3e8ee	2014-03-30T10:27:27Z	Enable fighting between different types of gargoyles and golems	ported	inherited (present 3/3 (inherited))
+c47d77228d08840503aeeb7c4acd9e431193b9e1	2014-03-30T18:27:05Z	- increased updaterevision's buffer sizes to prevent GIT_BRANCH from cut short	ported	inherited (present 1/1 (inherited))
 79f6e77e2ba617e3496f7178a94811dbabad3092	2014-03-31T10:51:18Z	Remove garbage characters from info CCMD	pending	
 016cc7ba9608f528a4f57261d093aaf89f3f32d6	2014-03-31T10:57:43Z	Missed space in flags7 line.	pending	
 55844e00e53f6c97ab9994bc6c353d6687079c28	2014-03-31T13:59:21Z	Merge branch 'master' of https://github.com/crimsondusk/zdoom	pending	
