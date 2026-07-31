@@ -84,18 +84,22 @@ partial** against the real diff. Two shapes it can't call alone, both seen in th
 
 ## Order & dependencies
 
-- Oldest→newest, so a commit's prerequisites are already in.
+- **One commit at a time, oldest→newest. Never bundle commits into a "flight" or "cluster."** Each
+  upstream commit was built and shipped on its own upstream, so ported in order, individually, each
+  one builds — the *ordering* supplies the dependency (the commit that introduces a symbol lands
+  before the commit that uses it). A big multi-commit refactor is still done one commit at a time; it
+  is not a reason to batch. (Flights are a renderer-staircase cherry-pick optimization — not this.)
 - **Skipping a prereq can break a later dependent** (it references a symbol the skipped commit
-  added). When a candidate won't apply cleanly, check whether it leans on a skipped commit; port the
+  added). When a commit won't apply cleanly, check whether it leans on a skipped one; port the
   minimal prerequisite or adapt around it. Don't blind-skip a whole subsystem without checking who
   downstream depends on it.
-- Group contiguous commits of one coherent unit into a **flight** (the staircase route) rather than
-  one-at-a-time when they belong together.
 
 ## Cadence — batch, push, prove green, then advance
 
-Never pile up a mountain of unverified ports. Work in **small batches** (a flight, or a handful of
-related commits), and after each one:
+Never pile up a mountain of unverified ports. Port **one commit at a time** (each its own commit with
+its ledger row); a "batch" here is only a **push/CI grouping** — a handful of *already-finished*
+individual ports pushed together so CI runs once, never a bundle of commits ported as a unit. After
+each port:
 
 1. **Commit per verified step** — one upstream commit (or one coherent flight) per commit, with its
    tracker row updated in the same commit.
@@ -149,6 +153,24 @@ belief — `"skip: no software-renderer (r_*) in our tree as of <our-sha>"`, `"s
 tripwire)"`, `"ported: 9811962"`. A future reader (or a re-triage after the tree changes) can then
 re-run the same existence check and confirm or overturn it. That is what keeps the whole thing from
 silently rotting into a stale drop-list.
+
+## Zandronum client/server adaptation — see the `netcode-adaptation` skill
+
+Our single biggest porting hazard: ZandroX is **client/server**; GZDoom is not. A gameplay change
+that's correct upstream can **desync multiplayer** and pass a single-player build+run clean — the bug
+is invisible offline. **Any port touching actor state, movement/collision, spawning, targeting/AI,
+player state, RNG, or sound must go through the `netcode-adaptation` skill before it lands.** In short:
+server-gate the authoritative logic with `if (NETWORK_InClientMode() == false)`, broadcast the result
+with the matching `SERVERCOMMANDS_*`, keep the sync RNG (`P_Random`) intact, and add byte/bit-exact
+wire-format regression tests. Such a port is recorded `adapted` (note the gate), never `ported` raw,
+and verified with a **multiplayer** E2E — never single-player alone.
+
+**Special case — the upstream commit is *itself* a netcode fix.** Upstream is peer-to-peer lockstep;
+we're client/server. A commit fixing `d_net.cpp` / the ticcmd transport patches a mechanism Zandronum
+replaced → `skip: upstream P2P-lockstep netcode, not our C/S model`. Only if the underlying gameplay
+bug also reproduces under client/server is it real — and then you don't port the diff, you write the
+C/S equivalent per `netcode-adaptation`. The tell is *where the diff lands* (transport → skip; `p_*`
+actor state → maybe adapt), never the title.
 
 ## Gates (per candidate)
 
