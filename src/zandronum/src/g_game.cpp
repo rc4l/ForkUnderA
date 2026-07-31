@@ -4194,6 +4194,9 @@ void GAME_ResetMap( bool bRunEnterScripts )
 					SERVERCOMMANDS_SetThingProperty( pNewActor, APROP_Alpha );
 				if ( pNewActor->RenderStyle.AsDWORD != pNewActor->GetDefault()->RenderStyle.AsDWORD )
 					SERVERCOMMANDS_SetThingProperty( pNewActor, APROP_RenderStyle );
+				// [rc4l] MTF_DOUBLEHEALTH (uzdoom@580094a7924e) changes health in HandleSpawnFlags; forward it too.
+				if ( pNewActor->health != pNewActor->GetDefault()->health )
+					SERVERCOMMANDS_SetThingHealth( pNewActor );
 			}
 
 			// [AK] Stop any sounds from this actor before destroying it.
