@@ -83,7 +83,13 @@
             padding: 10px 18px; display: none; overscroll-behavior: contain; }
   @supports (max-height: 34dvh) { #detail { max-height: 34dvh; } }
   #detail.open { display: block; }
-  #detail h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+  #detail h3 { margin: 10px 0 6px; font-size: 13px; font-weight: 600; }
+  #detail .title { font-size: 14px; font-weight: 600; margin-right: 20px; }
+  #detail .meta { color: #6b7280; font-size: 12px; margin-top: 3px; }
+  #detail .note { margin-top: 6px; font-size: 13px; }
+  #detail .note b { color: #6b7280; font-weight: 600; font-size: 11px;
+                    text-transform: uppercase; letter-spacing: .03em; margin-right: 4px; }
+  #detail .dtags { margin-top: 6px; }
   #detail .close { float: right; cursor: pointer; color: #6b7280; font-size: 15px; }
   #detail .files a { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
                      font-size: 12px; color: #2563eb; text-decoration: none; padding: 1px 0; }
@@ -168,16 +174,36 @@ function loadFiles() {
   return filesLoading;
 }
 function closeDetail() { document.getElementById("detail").className = ""; }
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// [rc4l] The full row, untruncated. Cells clip title/note and the hover tooltips that used to
+// carry the rest don't exist on touch, so tapping a row is the only way to read them on a phone
+// — this renders immediately rather than behind the 4.5 MB files.tsv fetch the file list needs.
+function detailHead(d) {
+  const tags = (d.tags || "").split(" ").filter(Boolean);
+  return `<span class="close" onclick="closeDetail()">&times;</span>`
+    + `<div class="title">${esc(d.title)}</div>`
+    + `<div class="meta">`
+      + `<a class="sha" href="${REPO}${d.sha}" target="_blank" rel="noopener">${d.sha.slice(0,9)}</a>`
+      + ` &middot; <span class="s-${esc(d.status)}">${esc(d.status)}</span>`
+      + ` &middot; ${new Date(d.date).toLocaleString("en-US", { year: "numeric", month: "short",
+            day: "numeric", hour: "numeric", minute: "2-digit" })}`
+    + `</div>`
+    + (d.note ? `<div class="note"><b>note</b> ${esc(d.note)}</div>` : "")
+    + (tags.length ? `<div class="dtags">${tags.map(t =>
+        `<span class="tag">${esc(t.replace(/^(fn|acs|lump|f):/, ""))}</span>`).join("")}</div>` : "");
+}
 async function onRowClicked(e) {
-  const sha = e.data.sha, det = document.getElementById("detail");
+  const d = e.data, det = document.getElementById("detail");
   det.className = "open";
-  det.innerHTML = `<span class="close" onclick="closeDetail()">&times;</span><h3>Loading files for ${sha.slice(0,9)}&hellip;</h3>`;
-  const files = (await loadFiles())[sha] || [];
-  det.innerHTML = `<span class="close" onclick="closeDetail()">&times;</span>`
-    + `<h3>${files.length} file${files.length===1?"":"s"} in `
-    + `<a class="sha" href="${REPO}${sha}" target="_blank" rel="noopener">${sha.slice(0,9)}</a></h3>`
+  det.scrollTop = 0;
+  det.innerHTML = detailHead(d) + `<h3>Loading files&hellip;</h3>`;
+  const files = (await loadFiles())[d.sha] || [];
+  det.innerHTML = detailHead(d)
+    + `<h3>${files.length} file${files.length===1?"":"s"} changed</h3>`
     + `<div class="files">`
-    + (files.length ? files.map(f => `<a href="${REPO_BASE}/blob/${sha}/${f}" target="_blank" rel="noopener">${f}</a>`).join("")
+    + (files.length ? files.map(f => `<a href="${REPO_BASE}/blob/${d.sha}/${f}" target="_blank" rel="noopener">${esc(f)}</a>`).join("")
                     : "<i>no files listed (merge or empty commit)</i>")
     + `</div>`;
 }
@@ -293,6 +319,9 @@ Promise.all([
     columnDefs,
     rowData: rows,
     defaultColDef: { sortable: true, filter: true, resizable: true, floatingFilter: true },
+    // [rc4l] Nobody reorders these columns on purpose; on touch the header drag just competed
+    // with the scroll gesture, and on desktop it only ever happened by accident.
+    suppressMovableColumns: true,
     rowHeight: 30,
     tooltipShowDelay: 400,
     onRowClicked: onRowClicked,
