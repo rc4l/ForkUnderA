@@ -2943,8 +2943,10 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 
 	// [BB] If the sky differs from the standard sky, let the client know about it.
 	if ( level.info 
-	     && ( ( stricmp( level.skypic1, level.info->SkyPic1.GetChars() ) != 0 )
-	          || ( stricmp( level.skypic2, level.info->SkyPic2.GetChars() ) != 0 ) )
+	     // [rc4l] uzdoom@65e8563cf: the live sky is a resolved texture id now, so compare ids with
+	     // what the level info resolves to rather than comparing name strings.
+	     && ( ( level.skytexture1 != TexMan.GetTexture( level.info->SkyPic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable ) )
+	          || ( level.skytexture2 != TexMan.GetTexture( level.info->SkyPic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable ) ) )
 	   )
 	{
 		SERVERCOMMANDS_SetMapSky( ulClient, SVCF_ONLYTHISCLIENT );

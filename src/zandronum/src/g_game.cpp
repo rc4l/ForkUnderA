@@ -3811,21 +3811,21 @@ void GAME_ResetMap( bool bRunEnterScripts )
 	if ( pLevelInfo )
 	{
 		bSendSkyUpdate = false;
-		if (( stricmp( level.skypic1, pLevelInfo->SkyPic1.GetChars() ) != 0 ) ||
-			( stricmp( level.skypic2, pLevelInfo->SkyPic2.GetChars() ) != 0 ))
-		{
+		// [rc4l] uzdoom@65e8563cf: the level's sky IS the resolved texture id now, so compare ids
+		// rather than names -- which is also more correct, since two names that resolve to the same
+		// texture are the same sky and no longer trigger a pointless broadcast.
+		FString sky2Name = pLevelInfo->SkyPic2;
+		if ( sky2Name.IsEmpty() )
+			sky2Name = pLevelInfo->SkyPic1;
+
+		const FTextureID newSky1 = TexMan.GetTexture( pLevelInfo->SkyPic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		const FTextureID newSky2 = TexMan.GetTexture( sky2Name, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+
+		if (( level.skytexture1 != newSky1 ) || ( level.skytexture2 != newSky2 ))
 			bSendSkyUpdate = true;
-		}
 
-		// [rc4l] 8-char wire bound -- see features/skywire.
-		zx::CopySkyNameForWire( pLevelInfo->SkyPic1.GetChars(), level.skypic1, sizeof( level.skypic1 ) );
-		zx::CopySkyNameForWire( pLevelInfo->SkyPic2.GetChars(), level.skypic2, sizeof( level.skypic2 ) );
-		if ( level.skypic2[0] == 0 )
-			zx::CopySkyNameForWire( level.skypic1, level.skypic2, sizeof( level.skypic2 ) );
-
-		// [rc4l] keep the resolved ids (uzdoom@65e8563cf) in step with the names above.
-		level.skytexture1 = TexMan.GetTexture( level.skypic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
-		level.skytexture2 = TexMan.GetTexture( level.skypic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		level.skytexture1 = newSky1;
+		level.skytexture2 = newSky2;
 		sky1texture = level.skytexture1;
 		sky2texture = level.skytexture2;
 

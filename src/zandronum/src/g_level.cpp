@@ -2072,10 +2072,6 @@ void G_InitLevelLocals ()
 	level.skyspeed2 = info->skyspeed2;
 	level.skytexture1 = TexMan.GetTexture(info->SkyPic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
 	level.skytexture2 = TexMan.GetTexture(info->SkyPic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
-	// [rc4l] and keep the wire-facing names in step with the ids we just resolved (see g_level.h).
-	// The 8-char bound is the SetMapSky protocol constant, pinned by features/skywire tests.
-	zx::CopySkyNameForWire( info->SkyPic1.GetChars(), level.skypic1, sizeof( level.skypic1 ) );
-	zx::CopySkyNameForWire( info->SkyPic2.GetChars(), level.skypic2, sizeof( level.skypic2 ) );
 	level.fadeto = info->fadeto;
 	level.cdtrack = info->cdtrack;
 	level.cdid = info->cdid;
@@ -2289,16 +2285,6 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 	}
 	if (arc.IsLoading())
 	{
-		// [rc4l] Upstream's save only carries the resolved sky textures (uzdoom@e718a72b4). Our
-		// wire-facing sky NAMES (see g_level.h) are not in it, and a level restored from a save
-		// would otherwise broadcast a stale or empty sky name to clients on the next
-		// SERVERCOMMANDS_SetMapSky. Re-derive them from the textures actually loaded, rather than
-		// widening the save format -- the texture's own name is by definition the right answer.
-		FTexture *pSky1 = TexMan[level.skytexture1];
-		FTexture *pSky2 = TexMan[level.skytexture2];
-		zx::CopySkyNameForWire( pSky1 ? pSky1->Name : "", level.skypic1, sizeof( level.skypic1 ) );
-		zx::CopySkyNameForWire( pSky2 ? pSky2->Name : "", level.skypic2, sizeof( level.skypic2 ) );
-
 		R_InitSkyMap();
 	}
 
