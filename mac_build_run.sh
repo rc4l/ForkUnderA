@@ -47,6 +47,15 @@ die()    { printf '\033[31mBUILD-RUN FAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 [ -x "$ZIPDIR" ]              || die "zipdir tool missing at $ZIPDIR -- run ./mac_compile.sh once first."
 [ -d "$MACOS" ]              || die "no .app bundle at $APP -- run ./mac_compile.sh once to assemble it."
 
+# --- 0. Refresh tags so the stamped version is accurate. -----------------------
+# The build's version label comes from `git describe --tags`. `git pull origin main`
+# (a refspec pull) does NOT fetch tags, so a fresh checkout can be missing the
+# release tags and stamp an OLD version onto CURRENT code -- which then makes the
+# in-engine update-checker falsely prompt "newer available". Fetch just the tag refs,
+# best-effort: fast when up to date, a silent no-op offline. (Paired with the
+# updaterevision fix that regenerates gitinfo.h whenever the describe string changes.)
+git -C "$ROOT" fetch --tags --quiet origin "refs/tags/*:refs/tags/*" 2>/dev/null || true
+
 # --- 1. Build the binary. A failing or empty link is a HARD stop. --------------
 # The screenshots' root cause: the link failed but the build was treated as
 # "Done" and the stale binary got bundled. Here a non-zero build, or a build that
