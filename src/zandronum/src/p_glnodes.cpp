@@ -964,6 +964,7 @@ bool P_LoadGLNodes(MapData * map)
 bool P_CheckNodes(MapData * map, bool rebuilt, int buildtime)
 {
 	bool ret = false;
+	bool loaded = false;
 
 	// If the map loading code has performed a node rebuild we don't need to check for it again.
 	if (!rebuilt && !P_CheckForGLNodes())
@@ -983,7 +984,8 @@ bool P_CheckNodes(MapData * map, bool rebuilt, int buildtime)
 		numsegs = 0;
 
 		// Try to load GL nodes (cached or GWA)
-		if (!P_LoadGLNodes(map))
+		loaded = P_LoadGLNodes(map);
+		if (!loaded)
 		{
 			// none found - we have to build new ones!
 			unsigned int startTime, endTime;
@@ -1011,19 +1013,25 @@ bool P_CheckNodes(MapData * map, bool rebuilt, int buildtime)
 		}
 	}
 
+	// [rc4l] uzdoom@20adcecb1: only write the cache when the nodes were BUILT, not when they were
+	// just loaded from that same cache -- otherwise every load rewrote the file it had just read.
+	// Zandronum's server guard below stays inside the new condition.
+	if (!loaded)
+	{
 #ifdef DEBUG
-	// Building nodes in debug is much slower so let's cache them only if cachetime is 0
-	buildtime = 0;
+		// Building nodes in debug is much slower so let's cache them only if cachetime is 0
+		buildtime = 0;
 #endif
-	// [BB] Reportedly, the server can crash in case "gl_cachenodes true".
-	if ( ( NETWORK_GetState( ) != NETSTATE_SERVER ) && gl_cachenodes && buildtime/1000.f >= gl_cachetime)
-	{
-		DPrintf("Caching nodes\n");
-		CreateCachedNodes(map);
-	}
-	else
-	{
-		DPrintf("Not caching nodes (time = %f)\n", buildtime/1000.f);
+		// [BB] Reportedly, the server can crash in case "gl_cachenodes true".
+		if ( ( NETWORK_GetState( ) != NETSTATE_SERVER ) && gl_cachenodes && buildtime/1000.f >= gl_cachetime)
+		{
+			DPrintf("Caching nodes\n");
+			CreateCachedNodes(map);
+		}
+		else
+		{
+			DPrintf("Not caching nodes (time = %f)\n", buildtime/1000.f);
+		}
 	}
 
 
@@ -1174,8 +1182,21 @@ static void CreateCachedNodes(MapData *map)
 
 	FString path = CreateCacheName(map, true);
 	FILE *f = fopen(path, "wb");
-	fwrite(compressed, 1, outlen+offset, f);
-	fclose(f);
+
+	if (f != NULL)
+	{
+		if (fwrite(compressed, outlen+offset, 1, f) != 1)
+		{
+			Printf("Error saving nodes to file %s\n", path.GetChars());
+		}
+
+		fclose(f);
+	}
+	else
+	{
+		Printf("Cannot open nodes file %s for writing\n", path.GetChars());
+	}
+
 	delete [] compressed;
 }
 
