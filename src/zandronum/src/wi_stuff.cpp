@@ -462,7 +462,7 @@ bool WI_UseSkulltagIntermissionAndMusic( void )
 
 void WI_LoadBackground(bool isenterpic)
 {
-	const char * lumpname = NULL;
+	const char *lumpname;
 	char buffer[10];
 	in_anim_t an;
 	lnode_t pt;
@@ -562,7 +562,7 @@ void WI_LoadBackground(bool isenterpic)
 		default:
 			// Strife doesn't have an intermission pic so choose something neutral.
 			if (isenterpic) return;
-			lumpname = gameinfo.borderFlat;
+			lumpname = gameinfo.BorderFlat;
 			break;
 		}
 	}

@@ -170,11 +170,9 @@ static int DoomSpecificInfo (char *buffer, char *end)
 	}
 	else
 	{
-		char name[9];
-
-		strncpy (name, level.mapname, 8);
-		name[8] = 0;
-		p += snprintf (buffer+p, size-p, "\n\nCurrent map: %s", name);
+		// [rc4l] uzdoom@24886b673 made level.MapName an FString, so the 8-char copy this needed is
+		// gone. Upstream made the same change in its win32 crash dump; this SDL one is Zandronum's.
+		p += snprintf (buffer+p, size-p, "\n\nCurrent map: %s", level.MapName.GetChars());
 
 		if (!viewactive)
 		{

@@ -775,7 +775,7 @@ void BOTCMD_DoChatStringSubstitutions( CSkullBot *pBot, FString &Input )
 			}
 			else if ( strnicmp( pszInString + 1, "map_name", strlen( "map_name" )) == 0 )
 			{				
-				Output.AppendFormat( "%s", level.mapname );
+				Output.AppendFormat( "%s", level.MapName.GetChars() );
 				pszInString += strlen( "map_name" );
 			}
 			else
@@ -2573,9 +2573,9 @@ static void botcmd_ACS_Execute( CSkullBot *pBot )
 	pBot->PopStack( );
 
 	if (( lMap == 0 ) || (( pLevelInfo = FindLevelByNum( lMap )) == NULL ))
-		P_StartScript( pBot->GetPlayer( )->mo, NULL, lScript, level.mapname, lArgs, 3, 0 );
+		P_StartScript( pBot->GetPlayer( )->mo, NULL, lScript, level.MapName, lArgs, 3, 0 );
 	else
-		P_StartScript( pBot->GetPlayer( )->mo, NULL, lScript, pLevelInfo->mapname, lArgs, 3, 0 );
+		P_StartScript( pBot->GetPlayer( )->mo, NULL, lScript, pLevelInfo->MapName, lArgs, 3, 0 );
 }
 
 //*****************************************************************************
@@ -2786,7 +2786,7 @@ static void botcmd_ACS_ExecuteWithResult( CSkullBot *pBot )
 	lScript = pBot->m_ScriptData.alStack[pBot->m_ScriptData.lStackPosition - 1];
 	pBot->PopStack( );
 
-	g_iReturnInt = P_StartScript( pBot->GetPlayer( )->mo, NULL, lScript, level.mapname, lArgs, 4, ACS_ALWAYS|ACS_WANTRESULT );
+	g_iReturnInt = P_StartScript( pBot->GetPlayer( )->mo, NULL, lScript, level.MapName, lArgs, 4, ACS_ALWAYS|ACS_WANTRESULT );
 }
 
 //*****************************************************************************
@@ -2909,5 +2909,5 @@ static void botcmd_ACS_NamedExecuteWithResult( CSkullBot *pBot )
 
 	LONG scriptNum = -FName( lScript );
 
-	g_iReturnInt = P_StartScript( pBot->GetPlayer( )->mo, NULL, scriptNum, level.mapname, lArgs, 4, ACS_ALWAYS|ACS_WANTRESULT );
+	g_iReturnInt = P_StartScript( pBot->GetPlayer( )->mo, NULL, scriptNum, level.MapName, lArgs, 4, ACS_ALWAYS|ACS_WANTRESULT );
 }

@@ -403,7 +403,9 @@ void settings_Dialog_SaveSettings( )
 		if ( MessageBox( g_hDlg_Dialog, fsRestartMessage.GetChars( ), SERVERCONSOLE_TITLESTRING, MB_YESNO|MB_ICONQUESTION ) == IDYES )
 		{
 			FString String;
-			String.Format( "map %s", level.mapname );	
+			// [rc4l] uzdoom@24886b673 made level.MapName an FString; GetChars() because Format is
+			// variadic and passing a non-trivial type through varargs is undefined.
+			String.Format( "map %s", level.MapName.GetChars() );
 			SERVER_AddCommand( String.GetChars( ));
 		}
 	}

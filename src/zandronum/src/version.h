@@ -126,7 +126,10 @@ int GetRevisionNumber();
 // [ZandroX] 4510: APlayerPawn now serializes FullHeight (guarded in APlayerPawn::Serialize).
 // [MGOOOOOO] 4511: AActor now serializes flags9 and the ripper controls + runtime budget state
 // (guarded in AActor::Serialize; see features/ripper).
-#define SAVEVER 4511
+// [rc4l] 4512: level_info_t / FLevelLocals sky, fade, F1, border and background name fields became
+// FStrings and the sky pair became FTextureIDs (uzdoom@65e8563cf), so the serialised layout changed
+// and older saves must not be read back into it.
+#define SAVEVER 4512
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)

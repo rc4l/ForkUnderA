@@ -1933,7 +1933,7 @@ CCMD( changeteam )
 	// Can't change teams in a campaign!
 	if ( CAMPAIGN_InCampaign( ))
 	{
-		CAMPAIGNINFO_s *pInfo = CAMPAIGN_GetCampaignInfo( level.mapname );
+		CAMPAIGNINFO_s *pInfo = CAMPAIGN_GetCampaignInfo( const_cast<char *>( level.MapName.GetChars() ) );
 
 		// [BB] Allow the player to join the team, he is supposed to have.
 		if ( players[consoleplayer].bOnTeam

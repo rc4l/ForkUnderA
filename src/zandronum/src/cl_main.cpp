@@ -7042,11 +7042,11 @@ void ServerCommands::ACSScriptExecute::Execute()
 	level_info_t *levelinfo;
 	if ( levelnum == 0 )
 	{
-		mapname = level.mapname;
+		mapname = level.MapName;
 	}
 	else if (( levelinfo = FindLevelByNum ( levelnum )))
 	{
-		mapname = levelinfo->mapname;
+		mapname = levelinfo->MapName;
 	}
 	else
 	{
@@ -7408,11 +7408,15 @@ void ServerCommands::SetMapMusic::Execute()
 //
 void ServerCommands::SetMapSky::Execute()
 {
-	strncpy( level.skypic1, sky1, 8 );
-	sky1texture = TexMan.GetTexture( sky1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	// [rc4l] uzdoom@65e8563cf replaced the sky name buffers with resolved FTextureIDs, which is what
+	// R_InitSkyMap consumes. The wire still carries the sky BY NAME -- that contract is unchanged --
+	// so the client resolves the received name once and stores the id, exactly as G_InitLevelLocals
+	// does for a normal map start. This handler has no upstream counterpart.
+	level.skytexture1 = TexMan.GetTexture( sky1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	sky1texture = level.skytexture1;
 
-	strncpy( level.skypic2, sky2, 8 );
-	sky2texture = TexMan.GetTexture( sky2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	level.skytexture2 = TexMan.GetTexture( sky2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	sky2texture = level.skytexture2;
 
 	// Set some other sky properties.
 	R_InitSkyMap( );

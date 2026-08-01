@@ -317,7 +317,7 @@ void CALLVOTE_ConvertCustomVoteParameter( const VOTETYPE_s *customVoteType, FStr
 			unsigned int mapIdx = atoi( Parameters.GetChars() );
 			if ( ( mapIdx > 0 && mapIdx < wadlevelinfos.Size() ) || ( ( mapIdx == 0 ) && ( Parameters.Len() == 1 ) && ( Parameters.GetChars()[0] == '0' ) ) )
 			{
-				Parameters.Format( "%s", wadlevelinfos[mapIdx].mapname );
+				Parameters.Format( "%s", wadlevelinfos[mapIdx].MapName.GetChars() );
 			}
 		}
 	}
@@ -419,7 +419,7 @@ void CALLVOTE_Tick( void )
 							arg = ACS_PushAndReturnDynamicString( g_VoteParameters );
 							break;
 						}
-						P_StartScript( PLAYER_IsValidPlayer( g_ulVoteCaller ) ? players[g_ulVoteCaller].mo : nullptr, nullptr, -FName( customVoteType->scriptName ), level.mapname, &arg, 1, ACS_ALWAYS );
+						P_StartScript( PLAYER_IsValidPlayer( g_ulVoteCaller ) ? players[g_ulVoteCaller].mo : nullptr, nullptr, -FName( customVoteType->scriptName ), level.MapName, &arg, 1, ACS_ALWAYS );
 					}
 					else
 					{
@@ -1439,7 +1439,7 @@ static bool callvote_CheckValidity( FString &Command, FString &Parameters )
 				}
 
 				if ( customVoteType->preflightScript.IsNotEmpty() )
-					return P_StartScript( players[SERVER_GetCurrentClient()].mo, nullptr, -FName( customVoteType->preflightScript ), level.mapname, &arg, 1, ACS_ALWAYS | ACS_WANTRESULT ) ? true : false;
+					return P_StartScript( players[SERVER_GetCurrentClient()].mo, nullptr, -FName( customVoteType->preflightScript ), level.MapName, &arg, 1, ACS_ALWAYS | ACS_WANTRESULT ) ? true : false;
 			}
 		}
 	}

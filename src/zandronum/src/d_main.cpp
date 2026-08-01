@@ -1577,7 +1577,7 @@ void D_DoAdvanceDemo (void)
 	static char demoname[8] = "DEMO1";
 	static int democount = 0;
 	static int pagecount;
-	const char *pagename = NULL;
+	FString pagename;
 
 	advancedemo = false;
 
@@ -1642,7 +1642,7 @@ void D_DoAdvanceDemo (void)
 	default:
 	case 0:
 		gamestate = GS_DEMOSCREEN;
-		pagename = gameinfo.titlePage;
+		pagename = gameinfo.TitlePage;
 		pagetic = (int)(gameinfo.titleTime * TICRATE);
 		S_ChangeMusic (gameinfo.titleMusic, gameinfo.titleOrder, false);
 		demosequence = 3;
