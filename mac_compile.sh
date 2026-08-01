@@ -416,6 +416,11 @@ show_results() {
 # ---------------------------------------------------------------------------
 main() {
     status "ZandroX macOS build  (host: $HOST_ARCH, target: $TARGET_ARCH, sound: $WANT_SOUND)"
+    # [rc4l] The build stamps its version from `git describe --tags`; a refspec
+    # `git pull origin main` does not fetch tags, so without this a fresh checkout can
+    # label CURRENT code with an OLD version (and falsely prompt "update available").
+    # Fetch only the tag refs, best-effort: fast when current, silent no-op offline.
+    git -C "$SCRIPT_ROOT" fetch --tags --quiet origin "refs/tags/*:refs/tags/*" 2>/dev/null || true
     ensure_xcode
     ensure_homebrew
     ensure_base_tools
