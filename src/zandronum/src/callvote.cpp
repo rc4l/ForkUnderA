@@ -317,7 +317,7 @@ void CALLVOTE_ConvertCustomVoteParameter( const VOTETYPE_s *customVoteType, FStr
 			unsigned int mapIdx = atoi( Parameters.GetChars() );
 			if ( ( mapIdx > 0 && mapIdx < wadlevelinfos.Size() ) || ( ( mapIdx == 0 ) && ( Parameters.Len() == 1 ) && ( Parameters.GetChars()[0] == '0' ) ) )
 			{
-				Parameters.Format( "%s", wadlevelinfos[mapIdx].mapname );
+				Parameters.Format( "%s", wadlevelinfos[mapIdx].MapName.GetChars() );
 			}
 		}
 	}

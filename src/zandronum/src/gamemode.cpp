@@ -703,7 +703,7 @@ bool GAMEMODE_IsLobbyMap( const char* mapname )
 		return false;
 	}
 
-	return levelinfo->flagsZA & LEVEL_ZA_ISLOBBY || stricmp( levelinfo->mapname, lobby ) == 0;
+	return levelinfo->flagsZA & LEVEL_ZA_ISLOBBY || stricmp( levelinfo->MapName, lobby ) == 0;
 }
 
 //*****************************************************************************

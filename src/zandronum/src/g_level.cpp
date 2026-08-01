@@ -715,12 +715,14 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 			if (nextredir != NULL)
 			{
 				nextinfo = nextredir;
-				levelname = nextinfo->mapname;
 			}
 		}
+		nextlevel = nextinfo->MapName;
 	}
-
-	if (levelname != NULL) nextlevel = levelname;
+	else
+	{
+		nextlevel = levelname;
+	}
 
 	if (nextSkill != -1)
 		NextSkill = nextSkill;
@@ -838,7 +840,7 @@ const char *G_GetExitMap()
 	{
 		// [BB] It's possible that G_GetExitMap() is called multiple times before a map change.
 		// Therefore we may not advance the map, but just peek at it.
-		return ( MAPROTATION_GetNextMap( )->mapname );
+		return ( MAPROTATION_GetNextMap( )->MapName );
 	}
 
 	return level.NextMap;
@@ -946,7 +948,7 @@ void G_DoCompleted (void)
 		}
 		else
 		{
-			wminfo.next = nextinfo->mapname;
+			wminfo.next = nextinfo->MapName;
 			wminfo.LName1 = TexMan[TexMan.CheckForTexture(nextinfo->PName, FTexture::TEX_MiscPatch)];
 		}
 	}
@@ -1127,7 +1129,7 @@ void G_DoLoadLevel (int position, bool autosave)
 		// [BB] It's possible that the entered map doesn't coincide with the next map
 		// in the rotation, e.g. entering a secret map allows to leave the rotation.
 		// In this case, we may not advance to the next map in the rotation.
-		if (( nextMapInRotation != nullptr ) && ( stricmp( nextMapInRotation->mapname, level.MapName ) == 0 ))
+		if (( nextMapInRotation != nullptr ) && ( stricmp( nextMapInRotation->MapName, level.MapName ) == 0 ))
 		{
 			MAPROTATION_SetCurrentPosition( MAPROTATION_GetNextPosition( ));
 			MAPROTATION_SetUsed( MAPROTATION_GetCurrentPosition( ), true );
@@ -1788,7 +1790,7 @@ void G_DoWorldDone (void)
 			const unsigned int nextMapEntry = MAPROTATION_GetNextPosition( );
 			level_info_t* nextMapInfo = MAPROTATION_GetMap( nextMapEntry );
 
-			if (( nextMapInfo ) && ( stricmp( nextMapInfo->mapname, nextlevel.GetChars( )) == 0 ))
+			if (( nextMapInfo ) && ( stricmp( nextMapInfo->MapName, nextlevel.GetChars( )) == 0 ))
 			{
 				// [AK] It's possible the number of players who are playing changed during the intermission
 				// screen, so we must check again if we can still enter the next level. If not, we'll need
@@ -1796,7 +1798,7 @@ void G_DoWorldDone (void)
 				if ( MAPROTATION_CanEnterMap( nextMapEntry, MAPROTATION_CountEligiblePlayers( )) == false )
 				{
 					MAPROTATION_CalcNextMap( false );
-					nextlevel = MAPROTATION_GetNextMap( )->mapname;
+					nextlevel = MAPROTATION_GetNextMap( )->MapName;
 				}
 			}
 		}
@@ -2126,8 +2128,8 @@ void G_InitLevelLocals ()
 	level.musicorder = info->musicorder;
 
 	level.LevelName = level.info->LookupLevelName();
-	level.NextMap = info->nextmap;
-	level.NextSecretMap = info->secretmap;
+	level.NextMap = info->NextMap;
+	level.NextSecretMap = info->NextSecretMap;
 
 	// [BC] Why do we need to do this? For now, just don't do it in server mode.
 	// [EP] Same for compatflags2. Don't make the server print twice.
@@ -2503,7 +2505,7 @@ static void writeMapName (FArchive &arc, const char *name)
 static void writeSnapShot (FArchive &arc, level_info_t *i)
 {
 	arc << i->snapshotVer;
-	writeMapName (arc, i->mapname);
+	writeMapName (arc, i->MapName);
 	i->snapshot->Serialize (arc);
 }
 
@@ -2541,7 +2543,7 @@ void G_WriteSnapshots (FILE *file)
 			{
 				arc = new FPNGChunkArchive (file, VIST_ID);
 			}
-			writeMapName (*arc, wadlevelinfos[i].mapname);
+			writeMapName (*arc, wadlevelinfos[i].MapName);
 		}
 	}
 
@@ -2680,7 +2682,7 @@ CCMD(listsnapshots)
 		{
 			unsigned int comp, uncomp;
 			snapshot->GetSizes(comp, uncomp);
-			Printf("%s (%u -> %u bytes)\n", wadlevelinfos[i].mapname, comp, uncomp);
+			Printf("%s (%u -> %u bytes)\n", wadlevelinfos[i].MapName.GetChars(), comp, uncomp);
 		}
 	}
 }
@@ -2692,7 +2694,7 @@ CCMD(listsnapshots)
 
 static void writeDefereds (FArchive &arc, level_info_t *i)
 {
-	writeMapName (arc, i->mapname);
+	writeMapName (arc, i->MapName);
 	arc << i->defered;
 }
 
@@ -2804,11 +2806,11 @@ CCMD(listmaps)
 	for(unsigned i = 0; i < wadlevelinfos.Size(); i++)
 	{
 		level_info_t *info = &wadlevelinfos[i];
-		MapData *map = P_OpenMapData(info->mapname, true);
+		MapData *map = P_OpenMapData(info->MapName, true);
 
 		if (map != NULL)
 		{
-			Printf("%s: '%s' (%s)\n", info->mapname, info->LookupLevelName().GetChars(),
+			Printf("%s: '%s' (%s)\n", info->MapName.GetChars(), info->LookupLevelName().GetChars(),
 				Wads.GetWadName(Wads.GetLumpFile(map->lumpnum)));
 			delete map;
 		}

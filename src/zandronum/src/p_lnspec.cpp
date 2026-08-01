@@ -875,7 +875,7 @@ FUNC(LS_Teleport_NewMap)
 
 		if (info && CheckIfExitIsGood (it, info))
 		{
-			G_ChangeLevel(info->mapname, arg1, arg2 ? CHANGELEVEL_KEEPFACING : 0);
+			G_ChangeLevel(info->MapName, arg1, arg2 ? CHANGELEVEL_KEEPFACING : 0);
 			return true;
 		}
 	}
@@ -1772,7 +1772,7 @@ FUNC(LS_ACS_Execute)
 	}
 	else if ((info = FindLevelByNum(arg1)) != NULL)
 	{
-		mapname = info->mapname;
+		mapname = info->MapName;
 	}
 	else
 	{
@@ -1803,7 +1803,7 @@ FUNC(LS_ACS_ExecuteAlways)
 	}
 	else if ((info = FindLevelByNum(arg1)) != NULL)
 	{
-		mapname = info->mapname;
+		mapname = info->MapName;
 	}
 	else
 	{
@@ -1858,7 +1858,7 @@ FUNC(LS_ACS_Suspend)
 	if (arg1 == 0)
 		P_SuspendScript (arg0, level.MapName);
 	else if ((info = FindLevelByNum (arg1)) )
-		P_SuspendScript (arg0, info->mapname);
+		P_SuspendScript (arg0, info->MapName);
 
 	return true;
 }
@@ -1871,7 +1871,7 @@ FUNC(LS_ACS_Terminate)
 	if (arg1 == 0)
 		P_TerminateScript (arg0, level.MapName);
 	else if ((info = FindLevelByNum (arg1)) )
-		P_TerminateScript (arg0, info->mapname);
+		P_TerminateScript (arg0, info->MapName);
 
 	return true;
 }

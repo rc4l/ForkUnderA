@@ -100,7 +100,7 @@ void MAPROTATION_StartNewGame( void )
 	// shouldn't. This causes the "Frags" bug. The following is just a workaround,
 	// the behavior of G_InitNew should be fixed.
 	char levelname[10];
-	sprintf( levelname, "%s", MAPROTATION_GetMap( position )->mapname );
+	sprintf( levelname, "%s", MAPROTATION_GetMap( position )->MapName.GetChars() );
 
 	MAPROTATION_SetPositionToMap( levelname, true );
 	G_InitNew( levelname, false );
@@ -379,7 +379,7 @@ void MAPROTATION_SetPositionToMap( const char *mapName, const bool setNextMap )
 {
 	for ( unsigned int i = 0; i < g_MapRotationEntries.size( ); i++ )
 	{
-		if ( stricmp( g_MapRotationEntries[i].map->mapname, mapName ) == 0 )
+		if ( stricmp( g_MapRotationEntries[i].map->MapName, mapName ) == 0 )
 		{
 			g_CurMapInList = i;
 			g_MapRotationEntries[g_CurMapInList].isUsed = true;
@@ -398,7 +398,7 @@ bool MAPROTATION_IsMapInRotation( const char *mapName )
 {
 	for ( unsigned int i = 0; i < g_MapRotationEntries.size( ); i++ )
 	{
-		if ( stricmp( g_MapRotationEntries[i].map->mapname, mapName ) == 0 )
+		if ( stricmp( g_MapRotationEntries[i].map->MapName, mapName ) == 0 )
 			return true;
 	}
 
@@ -503,7 +503,7 @@ void MAPROTATION_AddMap( const char *mapName, int position, unsigned int minPlay
 	if ( !silent )
 	{
 		FString message;
-		message.Format( "%s (%s) added to map rotation list at position %d", map->mapname, map->LookupLevelName( ).GetChars( ), position );
+		message.Format( "%s (%s) added to map rotation list at position %d", map->MapName.GetChars(), map->LookupLevelName( ).GetChars( ), position );
 
 		if (( newEntry.minPlayers > 0 ) || ( newEntry.maxPlayers < MAXPLAYERS ))
 		{
@@ -528,7 +528,7 @@ void MAPROTATION_AddMap( const char *mapName, int position, unsigned int minPlay
 
 	// [AK] If we're the server, tell the clients to add the map on their end.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVERCOMMANDS_AddToMapRotation( map->mapname, originalPosition, newEntry.minPlayers, newEntry.maxPlayers );
+		SERVERCOMMANDS_AddToMapRotation( map->MapName, originalPosition, newEntry.minPlayers, newEntry.maxPlayers );
 }
 
 //*****************************************************************************
@@ -552,7 +552,7 @@ void MAPROTATION_DelMap( const char *mapName, bool silent )
 	{
 		level_info_t *entry = iterator->map;
 
-		if ( !stricmp( entry->mapname, mapName ))
+		if ( !stricmp( entry->MapName, mapName ))
 		{
 			level_info_t *nextEntry = MAPROTATION_GetNextMap( );
 
@@ -570,7 +570,7 @@ void MAPROTATION_DelMap( const char *mapName, bool silent )
 	if ( gotcha )
 	{
 		if ( !silent )
-			Printf( "%s (%s) has been removed from map rotation list.\n", map->mapname, map->LookupLevelName( ).GetChars( ));
+			Printf( "%s (%s) has been removed from map rotation list.\n", map->MapName.GetChars(), map->LookupLevelName( ).GetChars( ));
 
 		// [AK] If we're the server, tell the clients to remove the map on their end.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -621,7 +621,7 @@ CCMD( maplist )
 			message.Format( "%u. ", i + 1 );
 
 			// [AK] Highlight the current position in the map rotation in green, but only if we're actually playing on that map.
-			if (( g_CurMapInList == i ) && ( stricmp( level.MapName, g_MapRotationEntries[g_CurMapInList].map->mapname ) == 0 ))
+			if (( g_CurMapInList == i ) && ( stricmp( level.MapName, g_MapRotationEntries[g_CurMapInList].map->MapName ) == 0 ))
 			{
 				message += "(Current";
 
@@ -656,7 +656,7 @@ CCMD( maplist )
 				message.Insert( 0, TEXTCOLOR_DARKGRAY );
 			}
 
-			message.AppendFormat( "%s - %s", g_MapRotationEntries[i].map->mapname, g_MapRotationEntries[i].map->LookupLevelName( ).GetChars( ));
+			message.AppendFormat( "%s - %s", g_MapRotationEntries[i].map->MapName.GetChars(), g_MapRotationEntries[i].map->LookupLevelName( ).GetChars( ));
 
 			// [AK] Also print the min and max player limits if they're different from the default values.
 			if (( g_MapRotationEntries[i].minPlayers > 0 ) || ( g_MapRotationEntries[i].maxPlayers < MAXPLAYERS ))
@@ -725,7 +725,7 @@ CCMD (delmap_idx) {
 		return;
 	}
 
-	Printf ("%s (%s) has been removed from map rotation list.\n",	g_MapRotationEntries[idx].map->mapname, g_MapRotationEntries[idx].map->LookupLevelName().GetChars());
+	Printf ("%s (%s) has been removed from map rotation list.\n",	g_MapRotationEntries[idx].map->MapName.GetChars(), g_MapRotationEntries[idx].map->LookupLevelName().GetChars());
 	g_MapRotationEntries.erase (g_MapRotationEntries.begin()+idx);
 }
 

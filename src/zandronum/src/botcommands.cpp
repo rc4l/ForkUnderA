@@ -2575,7 +2575,7 @@ static void botcmd_ACS_Execute( CSkullBot *pBot )
 	if (( lMap == 0 ) || (( pLevelInfo = FindLevelByNum( lMap )) == NULL ))
 		P_StartScript( pBot->GetPlayer( )->mo, NULL, lScript, level.MapName, lArgs, 3, 0 );
 	else
-		P_StartScript( pBot->GetPlayer( )->mo, NULL, lScript, pLevelInfo->mapname, lArgs, 3, 0 );
+		P_StartScript( pBot->GetPlayer( )->mo, NULL, lScript, pLevelInfo->MapName, lArgs, 3, 0 );
 }
 
 //*****************************************************************************

@@ -7046,7 +7046,7 @@ void ServerCommands::ACSScriptExecute::Execute()
 	}
 	else if (( levelinfo = FindLevelByNum ( levelnum )))
 	{
-		mapname = levelinfo->mapname;
+		mapname = levelinfo->MapName;
 	}
 	else
 	{
