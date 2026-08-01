@@ -1268,7 +1268,7 @@ protected:
 						break;
 
 					case DRAWSTRING_LEVELLUMP:
-						specialValueText = level.mapname;
+						specialValueText = level.MapName;
 						break;
 
 					case DRAWSTRING_NEXTLEVELNAME:

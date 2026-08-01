@@ -633,10 +633,7 @@ void G_InitNew (const char *mapname, bool bTitleLevel)
 	}
 	*/
 
-	if (mapname != level.mapname)
-	{
-		strcpy (level.mapname, mapname);
-	}
+	level.MapName = mapname;
 	if (bTitleLevel)
 	{
 		gamestate = GS_TITLELEVEL;
@@ -696,15 +693,15 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 	{
 		// end the game
 		levelname = NULL;
-		if (!strncmp(level.nextmap, "enDSeQ",6))
+		if (!level.NextMap.Compare("enDSeQ",6))
 		{
-			levelname = level.nextmap;	// If there is already an end sequence please leave it alone!
+			nextlevel = level.NextMap;	// If there is already an end sequence please leave it alone!
 		}
 		else 
 		{
 			// [BB] The server doesn't support end sequences, so just return to the current map.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				nextlevel = level.mapname;
+				nextlevel = level.MapName;
 			else
 				nextlevel.Format("enDSeQ%04x", int(gameinfo.DefaultEndSequence));
 		}
@@ -816,20 +813,20 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 const char *G_GetExitMap()
 {
 	if ( level.flags & LEVEL_CHANGEMAPCHEAT )
-		return ( level.nextmap );
+		return ( level.NextMap );
 
 	// If we failed a campaign, just stay on the current map.
 	if (( CAMPAIGN_InCampaign( )) &&
 		( invasion == false ) &&
 		( CAMPAIGN_DidPlayerBeatMap( ) == false ))
 	{
-		return ( level.mapname );
+		return ( level.MapName );
 	}
 	// If using the same level dmflag, just stay on the current map.
 	else if (( dmflags & DF_SAME_LEVEL ) &&
 		( deathmatch || teamgame ))
 	{
-		return ( level.mapname );
+		return ( level.MapName );
 	}
 	// If we're using the lobby cvar and we're not in the lobby already, the lobby is the next map.
 	else if ( GAMEMODE_IsNextMapCvarLobby( ) )
@@ -844,7 +841,7 @@ const char *G_GetExitMap()
 		return ( MAPROTATION_GetNextMap( )->mapname );
 	}
 
-	return level.nextmap;
+	return level.NextMap;
 }
 
 const char *G_GetSecretExitMap()
@@ -852,11 +849,11 @@ const char *G_GetSecretExitMap()
 	// [TL] No need to fetch a reference to level.nextmap anymore.
 	const char *nextmap = NULL;
 
-	if (level.secretmap[0] != 0)
+	if (level.NextSecretMap.Len() > 0)
 	{
-		if (P_CheckMapData(level.secretmap))
+		if (P_CheckMapData(level.NextSecretMap))
 		{
-			nextmap = level.secretmap;
+			nextmap = level.NextSecretMap;
 		}
 	}
 	
@@ -914,7 +911,7 @@ void G_DoCompleted (void)
 
 	if (gamestate == GS_TITLELEVEL)
 	{
-		strncpy (level.mapname, nextlevel, 255);
+		level.MapName = nextlevel;
 		G_DoLoadLevel (startpos, false);
 		startpos = 0;
 		viewactive = true;
@@ -923,20 +920,20 @@ void G_DoCompleted (void)
 
 	// [RH] Mark this level as having been visited
 	if (!(level.flags & LEVEL_CHANGEMAPCHEAT))
-		FindLevelInfo (level.mapname)->flags |= LEVEL_VISITED;
+		FindLevelInfo (level.MapName)->flags |= LEVEL_VISITED;
 
 	if (automapactive)
 		AM_Stop ();
 
 	wminfo.finished_ep = level.cluster - 1;
 	wminfo.LName0 = TexMan[TexMan.CheckForTexture(level.info->PName, FTexture::TEX_MiscPatch)];
-	wminfo.current = level.mapname;
+	wminfo.current = level.MapName;
 
 	if (deathmatch &&
 		(dmflags & DF_SAME_LEVEL) &&
 		!(level.flags & LEVEL_CHANGEMAPCHEAT))
 	{
-		wminfo.next = level.mapname;
+		wminfo.next = level.MapName;
 		wminfo.LName1 = wminfo.LName0;
 	}
 	else
@@ -1123,14 +1120,14 @@ void G_DoLoadLevel (int position, bool autosave)
 	{
 		// [BB] We need to update the map rotation if the changemap cheat was used.
 		if ( level.flags & LEVEL_CHANGEMAPCHEAT )
-			MAPROTATION_SetPositionToMap( level.mapname, false );
+			MAPROTATION_SetPositionToMap( level.MapName, false );
 
 		level_info_t *nextMapInRotation = MAPROTATION_GetNextMap( );
 
 		// [BB] It's possible that the entered map doesn't coincide with the next map
 		// in the rotation, e.g. entering a secret map allows to leave the rotation.
 		// In this case, we may not advance to the next map in the rotation.
-		if (( nextMapInRotation != nullptr ) && ( stricmp( nextMapInRotation->mapname, level.mapname ) == 0 ))
+		if (( nextMapInRotation != nullptr ) && ( stricmp( nextMapInRotation->mapname, level.MapName ) == 0 ))
 		{
 			MAPROTATION_SetCurrentPosition( MAPROTATION_GetNextPosition( ));
 			MAPROTATION_SetUsed( MAPROTATION_GetCurrentPosition( ), true );
@@ -1176,7 +1173,7 @@ void G_DoLoadLevel (int position, bool autosave)
 	if ( NETWORK_InClientMode() == false )
 	{
 		// [BB] We clear the teams if either ZADF_YES_KEEP_TEAMS is not on or if the new level is a lobby.
-		const bool bClearTeams = ( !(zadmflags & ZADF_YES_KEEP_TEAMS) || GAMEMODE_IsLobbyMap( level.mapname ) );
+		const bool bClearTeams = ( !(zadmflags & ZADF_YES_KEEP_TEAMS) || GAMEMODE_IsLobbyMap( level.MapName ) );
 
 		if ( bClearTeams )
 		{
@@ -1238,7 +1235,7 @@ void G_DoLoadLevel (int position, bool autosave)
 	// If a campaign is allowed, see if there is one for this map.
 	if ( CAMPAIGN_AllowCampaign( ) && ( savegamerestore == false ))
 	{
-		pInfo = CAMPAIGN_GetCampaignInfo( level.mapname );
+		pInfo = CAMPAIGN_GetCampaignInfo( const_cast<char *>( level.MapName.GetChars() ) );
 		if ( pInfo )
 		{
 			Val.Int = pInfo->lFragLimit;
@@ -1376,7 +1373,7 @@ void G_DoLoadLevel (int position, bool autosave)
 		// [BC] In server mode, display the level name slightly differently.
 		if (NETWORK_GetState() == NETSTATE_SERVER)
 		{
-			Printf("\n*** %s: %s ***\n\n", level.mapname, level.LevelName.GetChars());
+			Printf("\n*** %s: %s ***\n\n", level.MapName.GetChars(), level.LevelName.GetChars());
 		}
 		else
 		{
@@ -1385,10 +1382,10 @@ void G_DoLoadLevel (int position, bool autosave)
 					"\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
 					"\36\36\36\36\36\36\36\36\36\36\36\36\37\n\n"
 					TEXTCOLOR_BOLD "%s - %s\n\n",
-					level.mapname, level.LevelName.GetChars());
+					level.MapName.GetChars(), level.LevelName.GetChars());
 
 			// [RC] Update the G15 display.
-			G15_NextLevel(level.mapname, level.LevelName.GetChars());
+			G15_NextLevel(level.MapName, level.LevelName.GetChars());
 		}
 	}
 
@@ -1517,7 +1514,7 @@ void G_DoLoadLevel (int position, bool autosave)
 			g_ActorNetIDList.clear( );
 	}
 
-	P_SetupLevel (level.mapname, position);
+	P_SetupLevel (level.MapName, position);
 
 	AM_LevelInit();
 
@@ -1617,7 +1614,7 @@ void G_DoLoadLevel (int position, bool autosave)
 		if (( invasion ) &&
 			( sv_usemapsettingswavelimit ))
 		{
-			pInfo = CAMPAIGN_GetCampaignInfo( level.mapname );
+			pInfo = CAMPAIGN_GetCampaignInfo( const_cast<char *>( level.MapName.GetChars() ) );
 			if ( pInfo )
 			{
 				Val.Int = pInfo->lWaveLimit;
@@ -1628,7 +1625,7 @@ void G_DoLoadLevel (int position, bool autosave)
 		if (( possession || teampossession ) &&
 			( sv_usemapsettingspossessionholdtime ))
 		{
-			pInfo = CAMPAIGN_GetCampaignInfo( level.mapname );
+			pInfo = CAMPAIGN_GetCampaignInfo( const_cast<char *>( level.MapName.GetChars() ) );
 			if (( pInfo ) && ( pInfo->lPossessionHoldTime > 0 ))
 			{
 				Val.Int = pInfo->lPossessionHoldTime;
@@ -1649,7 +1646,7 @@ void G_DoLoadLevel (int position, bool autosave)
 	{
 		// Now that we're in a new level, update the mapname/scoreboard.
 		FString string;
-		string.Format( "%s: %s", level.mapname, level.LevelName.GetChars() );
+		string.Format( "%s: %s", level.MapName.GetChars(), level.LevelName.GetChars() );
 		SERVERCONSOLE_SetCurrentMapname( string );
 		SERVERCONSOLE_UpdateScoreboard( );
 
@@ -1657,7 +1654,7 @@ void G_DoLoadLevel (int position, bool autosave)
 		SERVERCONSOLE_SetupColumns( );
 
 		// Also, update the level for all clients.
-		SERVER_LoadNewLevel( level.mapname );
+		SERVER_LoadNewLevel( level.MapName );
 
 	}
 }
@@ -1804,7 +1801,7 @@ void G_DoWorldDone (void)
 			}
 		}
 
-		strncpy (level.mapname, nextlevel, 255);
+		level.MapName = nextlevel;
 	}
 
 	// [Zandronum] Respawn dead spectators now so their inventory can travel.
@@ -2065,7 +2062,7 @@ void G_InitLevelLocals ()
 	// [BB]
 	level.flagsZA = 0;
 
-	info = FindLevelInfo (level.mapname);
+	info = FindLevelInfo (level.MapName);
 
 	level.info = info;
 	level.skyspeed1 = info->skyspeed1;
@@ -2129,10 +2126,8 @@ void G_InitLevelLocals ()
 	level.musicorder = info->musicorder;
 
 	level.LevelName = level.info->LookupLevelName();
-	strncpy (level.nextmap, info->nextmap, 10);
-	level.nextmap[10] = 0;
-	strncpy (level.secretmap, info->secretmap, 10);
-	level.secretmap[10] = 0;
+	level.NextMap = info->nextmap;
+	level.NextSecretMap = info->secretmap;
 
 	// [BC] Why do we need to do this? For now, just don't do it in server mode.
 	// [EP] Same for compatflags2. Don't make the server print twice.
