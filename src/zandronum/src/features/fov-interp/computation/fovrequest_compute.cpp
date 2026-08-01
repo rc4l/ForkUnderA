@@ -51,4 +51,17 @@ FovRequestVerdict FovRequestDecision(bool fovLocked, bool isArbitrator, bool isC
 	return FOV_SET_MINE;
 }
 
+// The engine's historic spawn value, and what every non-local player still gets.
+static const float FOV_SPAWN_DEFAULT = 90.0f;
+
+float FovOnSpawn(bool isLocalPlayer, bool isServer, float playerFovCvar)
+{
+	if (isServer || !isLocalPlayer)
+		return FOV_SPAWN_DEFAULT;
+
+	// Clamped through the same rule a typed/slid value goes through, so a hand-edited config
+	// cannot spawn someone at an FOV the CVAR would have refused.
+	return static_cast<float> (FovRequestClamp (static_cast<int> (playerFovCvar)));
+}
+
 } // namespace zx

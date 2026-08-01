@@ -53,6 +53,21 @@ bool FovCooldownActive(int gametic, int lastChangeTic, int cooldownTics);
 FovRequestVerdict FovRequestDecision(bool fovLocked, bool isArbitrator, bool isClient,
                                      int gametic, int lastChangeTic, int cooldownTics);
 
+// The FOV a player should spawn with. Respawning used to hard-reset everyone to 90, throwing away
+// a preference the player had deliberately set. Their own choice is restored instead — but only
+// for the local player: `fov` is a client CVAR, so on a server (or for any OTHER player in the
+// game) it is not that player's preference and must not be stamped onto them. Each client
+// re-asserts its own FOV over the wire anyway.
+//
+// This restores the player's BASE fov only. Weapon zoom lives in ReadyWeapon->FOVScale and is
+// re-applied per tic, never stored here, so dying with a sniper scope raised and respawning with
+// a pistol correctly comes back unzoomed.
+//
+//   isLocalPlayer - the player being spawned is this machine's own (consoleplayer)
+//   isServer      - NETWORK_GetState() == NETSTATE_SERVER (never has a meaningful local FOV)
+//   playerFovCvar - the `fov` CVAR
+float FovOnSpawn(bool isLocalPlayer, bool isServer, float playerFovCvar);
+
 } // namespace zx
 
 #endif // ZX_FOVREQUEST_COMPUTE_H
