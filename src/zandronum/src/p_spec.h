@@ -194,7 +194,10 @@ void	P_SetSectorFriction (int tag, int amount, bool alterFlag);
 
 // [Zandronum] `allowclient` is Zandronum extension to prevent accidental execution
 // by clients unless explicitly allowed to do so.
-void P_GiveSecret(AActor *actor, bool printmessage, bool playsound, bool allowclient = false);
+// [rc4l] Carries both parameters: Zandronum's `allowclient` (clients must not award a secret
+// unless told to) and upstream's `sectornum` (uzdoom@8f5683e23, for the showsecretsector message).
+// Upstream replaced the 4th argument; we cannot, so sectornum is appended and defaults to -1 = unknown.
+void P_GiveSecret(AActor *actor, bool printmessage, bool playsound, bool allowclient = false, int sectornum = -1);
 
 //
 // getSide()

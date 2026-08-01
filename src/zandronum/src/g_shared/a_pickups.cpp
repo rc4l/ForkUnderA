@@ -1248,7 +1248,7 @@ void AInventory::Touch (AActor *toucher)
 
 	if (flags5 & MF5_COUNTSECRET)
 	{
-		P_GiveSecret(toucher, true, true);
+		P_GiveSecret(toucher, true, true, false, -1);
 	}
 
 	// [BC] If the item has an announcer sound, play it.
