@@ -7,7 +7,7 @@ Real-behavior ports of GAMEINFO keys from UZDoom that our base can honor.
 | `normforwardmove` | a1cc548af | Sets the walk/run forward-move speed defaults. |
 | `normsidemove` | a1cc548af | Sets the walk/run side-move (strafe) speed defaults. |
 | `hidepartimes` | a2f8b7d0d | Suppresses par-time display on the intermission screen. |
-| `dontcrunchcorpses` | a1cc548af | Crushers leave corpses intact instead of gibbing them. |
+| `dontcrunchcorpses` | 388f09f78 | Crushers leave corpses intact instead of gibbing them. |
 
 ## Code hooks (in-place)
 

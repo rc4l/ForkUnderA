@@ -1512,7 +1512,7 @@ void AActor::Touch (AActor *toucher)
 bool AActor::Grind(bool items)
 {
 	// crunch bodies to giblets
-	// [ZandroX] uzdoom@a1cc548af: dontcrunchcorpses leaves corpses intact.
+	// [ZandroX] uzdoom@388f09f78: dontcrunchcorpses leaves corpses intact.
 	if ((flags & MF_CORPSE) && !(flags3 & MF3_DONTGIB) && (health <= 0) && !gameinfo.dontcrunchcorpses)
 	{
 		FState * state = FindState(NAME_Crush);

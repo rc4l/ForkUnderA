@@ -238,8 +238,8 @@ a375454474266fd753863ff09271947d20dfb4d1	2014-05-13T22:52:16Z	- removed 8 charac
 fdfcb728a970113548f6aafb425fc77eacecdfad	2014-05-14T05:50:39Z	- make it easier to spot patch definition errors in console log	ported	2ac01a5 ported: clearer multipatch patch-definition errors	2ac01a5
 8c052818b7acdc428a590a0c0cd8922d5c7aeb94	2014-05-14T08:27:40Z	- fixed: long texture name lookup did not work with TEXMAN_TryAny.	ported	83ea1cb inherited: added lines already present in our tree (1/1); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
 47a9dab56d74fe021f454bccec91e57715f6db94	2014-05-14T10:16:33Z	- allow setting sector planes' plane equations directly from UDMF.	pending		/
-388f09f786d5ab3927d3bb6d76895b043a18bdb6	2014-05-14T10:54:03Z	- fixed: In Heretic corpses do not get crunched to gibs, they just get their size reduced to 0. Handled by a new gameinfo flag. This also gets set for Chex quest which has the gib sprite replaced by something different. Using a Crush state will override this global flag.	pending		/
-51ed68dc7243cf00c285526a8009a2fa2d4c427d	2014-05-14T11:02:04Z	- forgot to save this...	pending		/
+388f09f786d5ab3927d3bb6d76895b043a18bdb6	2014-05-14T10:54:03Z	- fixed: In Heretic corpses do not get crunched to gibs, they just get their size reduced to 0. Handled by a new gameinfo flag. This also gets set for Chex quest which has the gib sprite replaced by something different. Using a Crush state will override this global flag.	adapted	adapted: C++ half was already present (mis-cited as a1cc548af); this lands the missing mapinfo half. chex.txt takes 'true' rather than upstream's '1', which our GAMEINFOKEY_BOOL rejects -- i.e. 51ed68dc7 folded in	6f4b7d3
+51ed68dc7243cf00c285526a8009a2fa2d4c427d	2014-05-14T11:02:04Z	- forgot to save this...	ported	ported: folded into the 388f09f78 completion -- chex.txt written as dontcrunchcorpses = true, never as the '1' this commit corrects	6f4b7d3
 85fb8c4326a0f5ca010f0495275d04ccd4d8860e	2014-05-14T11:04:47Z	- fixed: _M_X64 macro was misnamed _M_IX64.	ported	ported: _M_IX64 -> _M_X64 in x86.cpp and nodebuild.h; MSVC x64 was silently taking the non-SSE2 path	d211205
 802a47876602251c9c7ec6bd7f63da21c3d24165	2014-05-14T12:03:15Z	- Heretic doesn't really need dontcrunchcorpses because there was already some alternative handling for that situation.	pending		/
 2944e4f6ae8601ca567baafbe9b6e80daae138a3	2014-05-14T12:08:14Z	- fixed some Linux issues with recent changes.	pending		/
@@ -258,7 +258,7 @@ e92032e8ffe73da1ce3fe61c94fc2f7e447a09d7	2014-05-16T20:48:37Z	- fixed: The map s
 ae8995e65b6308c53762f61615d93dc7d3a8ea5b	2014-05-17T03:27:57Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	19f9e2e skip: merge commit, no unique content (changes live in the parents)	/
 ff7913ace8156cd8bfda3533f3afcb77897d1646	2014-05-17T07:46:58Z	- fixed: When a level gets loaded the renderer's sky variables need to be set.	ported	19f9e2e inherited: added lines already present (2/2); pre-dates or matches our base	zandronum-base
 26b1abe3dab611001b49ce717853b0accd8c5516	2014-05-18T06:38:54Z	Fix netgame arbitration with long map lump names	pending		/
-cfef89486740cdfca0682dcc60caf2b3cdb5bbc9	2014-05-18T07:41:13Z	This can be done better...	pending		/
+cfef89486740cdfca0682dcc60caf2b3cdb5bbc9	2014-05-18T07:41:13Z	This can be done better...	skip	skip: refines DoArbitrate, same dead upstream P2P-lockstep arbitration as 26b1abe3d -- D_ArbitrateNetStart is commented out at d_net.cpp:1654	/
 4acc04ce68f37a1340de81f0d754fe8951fa47ca	2014-05-18T08:05:35Z	- don't truncate map names stored in demos.	pending		/
 e84dc994755b09c8039d231fe6230eca4d577f4e	2014-05-18T10:46:28Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	19f9e2e skip: merge commit, no unique content (changes live in the parents)	/
 6e6be8ed5b877e2a511b1d933b4ef2ca996b6ddf	2014-05-18T10:47:48Z	Merge branch 'master' into Glew_Version_For_Real	ported	a9b178e	a9b178e
