@@ -1149,6 +1149,62 @@ DEFINE_PROPERTY(bouncecount, I, Actor)
 
 //==========================================================================
 //
+// [MGOOOOOO] Ripper controls -- see features/ripper/README.md. Every budget is clamped
+// non-negative because a negative one has no meaning and 0 already spells "unlimited".
+//
+//==========================================================================
+DEFINE_PROPERTY(rippermaxdamage, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipperMaxDamage = MAX<int>(0, id);
+}
+
+DEFINE_PROPERTY(rippercount, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipperCount = MAX<int>(0, id);
+}
+
+DEFINE_PROPERTY(rippermaxcount, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipperMaxCount = MAX<int>(0, id);
+}
+
+DEFINE_PROPERTY(ripperdamagefactor, F, Actor)
+{
+	PROP_FIXED_PARM(id, 0);
+	defaults->RipperDamageFactor = MAX<fixed_t>(0, id);
+}
+
+DEFINE_PROPERTY(ripperlevel, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipperLevel = id;
+}
+
+DEFINE_PROPERTY(riplevelmin, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipLevelMin = id;
+}
+
+DEFINE_PROPERTY(riplevelmax, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipLevelMax = id;
+}
+
+// [MGOOOOOO] The field already existed for MBF21's DeHackEd "Rip sound"; this just makes it
+// authorable in DECORATE. An empty string leaves it at 0, which means "misc/ripslop".
+DEFINE_PROPERTY(ripsound, S, Actor)
+{
+	PROP_STRING_PARM(str, 0);
+	defaults->RipSound = str;
+}
+
+//==========================================================================
+//
 //==========================================================================
 DEFINE_PROPERTY(weaveindexXY, I, Actor)
 {

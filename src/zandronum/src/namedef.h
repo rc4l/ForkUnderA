@@ -647,3 +647,8 @@ xx(CacoScorch)
 xx(DoomImpScorch)
 xx(GreenPlasmaScorch)
 xx(RedPlasmaScorch)
+
+// [MGOOOOOO] Ripper state name (+USERIPSTATE, features/ripper). Appended, never inserted:
+// namedef indices are sent over the network (see the decal names above), so renumbering an
+// existing entry would break protocol compatibility.
+xx(Rip)

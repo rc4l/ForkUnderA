@@ -5387,6 +5387,15 @@ void ServerCommands::SetThingFlags::Execute()
 
 		actor->flags7 = flags;
 		break;
+	// [MGOOOOOO] flags8 (MBF21) and flags9 (ZandroX's own word, see actor.h MF9_*).
+	case FLAGSET_FLAGS8:
+
+		actor->flags8 = flags;
+		break;
+	case FLAGSET_FLAGS9:
+
+		actor->flags9 = flags;
+		break;
 	case FLAGSET_FLAGSST:
 
 		actor->STFlags = flags;

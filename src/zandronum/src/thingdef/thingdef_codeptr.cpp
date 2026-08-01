@@ -3538,6 +3538,59 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetHitSize)
 
 //===========================================================================
 //
+// A_SetRipperLevel(int level)
+// A_SetRipMin(int minimum)
+// A_SetRipMax(int maximum)
+//
+// [MGOOOOOO] Ported from uzdoom@cc166593e86ec132f92f83283c651135d49686a3: the three
+// tiered-ripping setters from zscript/actors/actor.zs. A_SetRipperLevel sets a
+// projectile's rip tier; A_SetRipMin/A_SetRipMax set a victim's resistance window.
+//
+// These are inputs to a server-authoritative decision (PIT_CheckThing's rip path runs
+// its damage on the server only), so -- like the HitRadius properties above -- they are
+// not broadcast.
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetRipperLevel)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(level, 0);
+
+	self->RipperLevel = level;
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetRipMin)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(minimum, 0);
+
+	self->RipLevelMin = minimum;
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetRipMax)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(maximum, 0);
+
+	self->RipLevelMax = maximum;
+}
+
+//===========================================================================
+//
+// A_ResetRipCounters
+//
+// [MGOOOOOO] Refills this projectile's rip budgets: clears the damage/hit totals and
+// forgets every victim it has already ripped, so RipperCount starts over on all of them.
+// Lets a ripper "recharge" from its own state machine instead of needing ACS.
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION(AActor, A_ResetRipCounters)
+{
+	self->ResetRipCounters();
+}
+
+//===========================================================================
+//
 // A_SpawnDebris
 //
 //===========================================================================
@@ -5005,6 +5058,12 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 					flagset = FLAGSET_FLAGS6;
 				else if ( flagp == &self->flags7 )
 					flagset = FLAGSET_FLAGS7;
+				// [MGOOOOOO] flags8 was never wired up here, so A_ChangeFlag on an MBF21 flag
+				// silently desynced clients. flags9 is ZandroX's own word (see actor.h MF9_*).
+				else if ( flagp == &self->flags8 )
+					flagset = FLAGSET_FLAGS8;
+				else if ( flagp == &self->flags9 )
+					flagset = FLAGSET_FLAGS9;
 				else if ( flagp == &self->STFlags )
 					flagset = FLAGSET_FLAGSST;
 

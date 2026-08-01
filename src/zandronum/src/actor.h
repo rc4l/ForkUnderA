@@ -544,6 +544,18 @@ enum
 	MF8_MAP07BOSS2		= 0x00000100,	// [MBF21] MAP07 tag 667 boss (Arachnotron-like)
 };
 
+// [MGOOOOOO] ZandroX-owned actor flags. flags8 is MBF21's word and its bit values are fixed by
+// that spec, so fork-specific flags get their own word rather than squatting on bits a future
+// MBF21/id24 port may want. See features/ripper/README.md for the ripper set.
+enum
+{
+	MF9_NORIPSOUND		= 0x00000001,	// ripper makes no sound at all when it rips
+	MF9_RIPEXPLODEONLIMIT = 0x00000002,	// spent rip budget detonates the ripper instead of ghosting
+	MF9_RIPPERNOPAIN	= 0x00000004,	// rips never induce pain; the terminal explosion still can
+	MF9_RIPSOUNDNORESTART = 0x00000008,	// let the rip sound finish instead of restarting it every tic
+	MF9_USERIPSTATE		= 0x00000010,	// enter the Rip state after ripping, like +USEBOUNCESTATE
+};
+
 #define TRANSLUC25			(FRACUNIT/4)
 #define TRANSLUC33			(FRACUNIT/3)
 #define TRANSLUC50			(FRACUNIT/2)
@@ -733,7 +745,16 @@ extern FDropItemPtrArray DropItemList;
 void FreeDropItemChain(FDropItem *chain);
 int StoreDropItemChain(FDropItem *chain);
 
+// [MGOOOOOO] One entry in a ripping missile's per-victim ledger: how many times this projectile
+// has already ripped that actor. Only projectiles that actually need it (RipperCount, or a
+// RipperDamageFactor other than 1.0) ever grow the array -- see features/ripper/README.md.
+struct FRipVictim
+{
+	TObjPtr<AActor>	victim;
+	int				hits;
+};
 
+FArchive &operator<< (FArchive &arc, FRipVictim &rv);
 
 // Map Object definition.
 class AActor : public DThinker
@@ -979,6 +1000,13 @@ public:
 	// Calculate amount of missile damage
 	virtual int GetMissileDamage(int mask, int add);
 
+	// [MGOOOOOO] Per-victim rip ledger (features/ripper). RipHitsOn returns how many times this
+	// projectile has already ripped `victim`; RecordRipHit books one more. Both are no-ops when the
+	// projectile authored no per-victim budget, so plain rippers never allocate.
+	int RipHitsOn(AActor *victim);
+	void RecordRipHit(AActor *victim);
+	void ResetRipCounters();
+
 	bool CanSeek(AActor *target) const;
 
 	fixed_t GetGravity() const;
@@ -1045,6 +1073,7 @@ public:
 	DWORD			flags6;			// Shit! Where did all the flags go?
 	DWORD			flags7;			//
 	DWORD			flags8;			// [rc4l] MBF21 needed more of them (see MF8_* above).
+	DWORD			flags9;			// [MGOOOOOO] ZandroX's own flags (see MF9_* above).
 
 	// [BB] If 0, everybody can see the actor, if > 0, only members of team (VisibleToTeam-1) can see it.
 	DWORD			VisibleToTeam;
@@ -1113,7 +1142,26 @@ public:
 	int				InfightingGroup;
 	int				ProjectileGroup;
 	int				SplashGroup;
-	FSoundID		RipSound;		// [rc4l] MBF21: sound a ripper missile makes ripping through a target (0 = default "misc/ripslop").
+	// [rc4l] MBF21: sound a ripper missile makes ripping through a target (0 = default "misc/ripslop").
+	// [MGOOOOOO] Must be FSoundIDNoInit, like every other actor sound field below. PClass::CreateNew
+	// memcpy's the class defaults into the new object and THEN runs the constructor, so a plain
+	// FSoundID (whose ctor sets ID = 0) wipes the authored value on every single spawn -- the sound
+	// was never reachable at play time, from DECORATE or DeHackEd.
+	FSoundIDNoInit	RipSound;
+	// [MGOOOOOO] Ripper controls. RipperLevel is the projectile's rip tier; RipLevelMin/Max are the
+	// victim's resistance window (0 disables a bound). The three budgets are all 0 = unlimited, so
+	// a ripper that sets none of them behaves exactly as it did before this feature existed.
+	// Decision logic lives in features/ripper/computation/ripper_compute.
+	int				RipperLevel;
+	int				RipLevelMin;
+	int				RipLevelMax;
+	int				RipperMaxDamage;	// cumulative rip damage dealt before the Death state is forced
+	int				RipperCount;		// rip hits allowed against any one victim
+	int				RipperMaxCount;		// rip hits allowed over the projectile's whole life
+	fixed_t			RipperDamageFactor;	// compounded per repeat hit on the same victim (FRACUNIT = none)
+	int				RipperDamageDone;	// runtime: rip damage actually dealt so far (server-authoritative)
+	int				RipperHitsDone;		// runtime: rip damage events so far
+	TArray<FRipVictim> RipVictims;		// runtime: per-victim ledger; empty unless a budget needs it
 	fixed_t			bouncefactor;	// Strife's grenades use 50%, Hexen's Flechettes 70.
 	fixed_t			wallbouncefactor;	// The bounce factor for walls can be different.
 	int				bouncecount;	// Strife's grenades only bounce twice before exploding

@@ -81,6 +81,12 @@ void AddStateLight(FState *, const char *)
 
 size_t AActor::PropagateMark()
 {
+	// [MGOOOOOO] Mirrors gl/dynlights/a_dynlight.cpp's copy: the ripper's per-victim ledger holds
+	// TObjPtrs that must be marked in non-GL builds too (features/ripper).
+	for (unsigned i=0; i<RipVictims.Size(); i++)
+	{
+		GC::Mark(RipVictims[i].victim);
+	}
 	return Super::PropagateMark();
 }
 
