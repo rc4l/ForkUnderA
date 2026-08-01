@@ -398,9 +398,6 @@ OptionMenu "FUAFovOptions"
 	// Degrees per tic the view moves toward the value above; the renderer tweens between tics,
 	// so this is the whole duration of a zoom, not its smoothness.
 	Slider	"Change speed",				"cl_fovchangespeed",	1.0, 100.0, 1.0, 2
-	StaticText " "
-	StaticText "Servers can lock FOV (sv_nofov) or rate-limit", 1
-	StaticText "changes (fov_change_cooldown_tics).", 1
 }
 
 // [MGOOOOOO] Debug overlay drawing actor collision boxes, attack boxes (HitRadius/HitHeight) and
