@@ -130,6 +130,21 @@ merge checkpoint → next batch. Sequential means *verified* sequential, not fas
 
 ## Edge cases — cover all of them
 
+- **Upstream version gates carry UPSTREAM's numbers.** A ported hunk containing
+  `if (SaveVersion >= NNNN)` (or any other version threshold) is expressed in upstream's numbering,
+  which describes *their* format history. Ours diverged the moment we serialized something they do
+  not have. Porting the number verbatim is wrong whenever our line has moved past it: the gate is
+  then true for every save we can load, the legacy branch becomes dead code, and existing saves get
+  read in the new layout. **Translate the number to OUR version point** -- the version at which *we*
+  adopted that format -- and add the entry to the SAVEVER history block in `version.h`. Real case:
+  uzdoom@e718a72b4 gates the sky format at 4507; ours changed at 4512, and since `MINSAVEVER` is
+  4507 the verbatim port made every loadable save take the new branch and misparse. It built and
+  passed every test. Audit the whole file's gates when you touch one -- numbers at or below the
+  divergence point are inherited base formats and legitimately shared; everything above must be ours.
+- **`char[]` -> `FString` inside a struct:** check the struct is not `memset`/`memcpy`'d or
+  bulk-cleared anywhere (an `FString` holds a pointer), and that every renamed field is still handled
+  in its `Reset()`/init path. Both were clean for `level_info_t`, but they are the first things to
+  verify, not assume.
 - **Upstream de-virtualizes a method:** when upstream turns a `virtual` into a non-virtual wrapper
   plus a new overridable hook (e.g. `TriggerAction` → non-virtual, calling a virtual
   `DoTriggerAction`), every one of OUR subclasses still overriding the old name silently becomes a
@@ -172,7 +187,10 @@ zandrox sha, which means it is always written *after* the code commit — and re
 (onto a moved `main`, say) rewrites every sha and leaves the rows pointing at commits that are gone.
 `commit-tracker-check` catches this ("our commit ... does not exist") but only once CI runs, so:
 write the rows once the branch's history is settled, and if you rebase afterwards, re-point them in
-a follow-up commit before pushing.
+a follow-up commit before pushing. **Careful: the check PASSES LOCALLY after a rebase** -- the
+pre-rebase commits survive in your clone as dangling objects, so `git cat-file -e` still finds them,
+while CI's fresh checkout does not. Verify with `git merge-base --is-ancestor <sha> HEAD` for every
+row instead, which is what CI can actually see.
 
 Every commit ends as a tracker row: `ported`/`adapted`/`skip`. The note must cite the **check**, not a
 belief — `"skip: no software-renderer (r_*) in our tree as of <our-sha>"`, `"skip: VM symbols (scout
