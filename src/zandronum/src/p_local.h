@@ -425,6 +425,12 @@ struct FCheckPosition
 	bool			DoRipping;
 	AActor			*LastRipped;
 	int				PushTime;
+	// [MGOOOOOO] Set by PIT_CheckThing when a +USERIPSTATE projectile lands a rip. The state
+	// change is deliberately NOT applied there: SetState can run an action or end the state
+	// chain, and AActor::Destroy unlinks from the blockmap -- doing that from inside the
+	// blockmap iterator that is currently walking it is exactly the hazard the RIP_EXPLODE
+	// path avoids. The mover applies it once, after the move (features/ripper).
+	bool			RipStatePending;
 
 	FCheckPosition(bool rip=false)
 	{
@@ -432,6 +438,7 @@ struct FCheckPosition
 		LastRipped = NULL;
 		PushTime = 0;
 		FromPMove = false;
+		RipStatePending = false;
 	}
 };
 
@@ -612,6 +619,10 @@ enum EDmgFlags
 	DMG_NO_FACTOR = 16,
 	DMG_PLAYERATTACK = 32,
 	DMG_FOILINVUL = 64,
+	// [MGOOOOOO] 128/256/512 are deliberately left free: they are DMG_FOILBUDDHA, DMG_NO_PROTECT
+	// and DMG_USEANGLE upstream. ZandroX has none of those yet, and reserving their values keeps
+	// a future port numerically identical to GZDoom/UZDoom instead of silently colliding.
+	DMG_NO_PAIN = 1024,		// skip the victim's pain state entirely (uzdoom p_local.h)
 };
 
 

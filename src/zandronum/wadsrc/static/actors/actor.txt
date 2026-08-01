@@ -19,6 +19,7 @@ ACTOR Actor native //: Thinker
 	FloatBobPhase -1	// randomly initialize by default
 	Gravity 1
 	DamageFactor 1.0
+	RipperDamageFactor 1.0	// no falloff on repeat rips against the same victim
 	PushFactor 0.25
 	WeaveIndexXY 0
 	WeaveIndexZ 16
@@ -62,6 +63,12 @@ ACTOR Actor native //: Thinker
 	native fixed_t radius;
 	native int reactiontime;
 	native fixed_t meleerange;
+	// [MGOOOOOO] Ripper state, readable from DECORATE expressions (features/ripper).
+	native int RipperLevel;
+	native int RipLevelMin;
+	native int RipLevelMax;
+	native int RipperDamageDone;
+	native int RipperHitsDone;
 
 	// Meh, MBF redundant functions. Only for DeHackEd support.
 	action native A_Turn(float angle = 0);
@@ -248,6 +255,12 @@ ACTOR Actor native //: Thinker
 	action native A_SetMass(int mass);
 	action native A_SetSize(float newradius = -1, float newheight = -1, bool testpos = false);
 	action native A_SetHitSize(float hitradius = -1, float hitheight = -1);
+	// [MGOOOOOO] Ripper controls (features/ripper). A_SetRipperLevel/A_SetRipMin/A_SetRipMax match
+	// GZDoom/UZDoom; A_ResetRipCounters clears this projectile's spent budgets and victim ledger.
+	action native A_SetRipperLevel(int level);
+	action native A_SetRipMin(int minimum);
+	action native A_SetRipMax(int maximum);
+	action native A_ResetRipCounters();
 	action native A_SpawnDebris(class<Actor> spawntype, bool transfer_translation = false, float mult_h = 1, float mult_v = 1);
 	action native A_CheckSight(state label);
 	action native A_ExtChase(bool usemelee, bool usemissile, bool playactive = true, bool nightmarefast = false);

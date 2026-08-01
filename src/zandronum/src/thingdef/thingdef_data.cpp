@@ -270,6 +270,13 @@ static FFlagDef ActorFlags[]=
 	DEFINE_FLAG(MF8, MAP07BOSS1, AActor, flags8),
 	DEFINE_FLAG(MF8, MAP07BOSS2, AActor, flags8),
 
+	// [MGOOOOOO] ZandroX's own flags9 word. The ripper set -- see features/ripper/README.md.
+	DEFINE_FLAG(MF9, NORIPSOUND, AActor, flags9),
+	DEFINE_FLAG(MF9, RIPEXPLODEONLIMIT, AActor, flags9),
+	DEFINE_FLAG(MF9, RIPPERNOPAIN, AActor, flags9),
+	DEFINE_FLAG(MF9, RIPSOUNDNORESTART, AActor, flags9),
+	DEFINE_FLAG(MF9, USERIPSTATE, AActor, flags9),
+
 	// [BC] New DECORATE flag defines here.
 	DEFINE_FLAG(STFL, BLUETEAM, AActor, STFlags),
 	DEFINE_FLAG(STFL, REDTEAM, AActor, STFlags),

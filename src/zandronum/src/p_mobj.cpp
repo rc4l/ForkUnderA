@@ -93,6 +93,7 @@
 #include "d_netinf.h"
 #include "domination.h"
 #include "network_enums.h"
+#include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip ledger gating
 #include <set>
 
 // MACROS ------------------------------------------------------------------
@@ -192,6 +193,102 @@ AActor::~AActor ()
 {
 	// Please avoid calling the destructor directly (or through delete)!
 	// Use Destroy() instead.
+}
+
+// [MGOOOOOO] Ripper per-victim ledger (features/ripper). The TObjPtr is what makes an entry
+// safe across the victim's destruction: it reads back as NULL, and RipHitsOn prunes it.
+FArchive &operator<< (FArchive &arc, FRipVictim &rv)
+{
+	arc << rv.victim << rv.hits;
+	return arc;
+}
+
+//==========================================================================
+//
+// AActor :: RipHitsOn
+//
+// [MGOOOOOO] How many times this projectile has already ripped `victim`. Doubles as the
+// ledger's garbage collector: entries whose victim has been destroyed are dropped here
+// rather than in a separate sweep, so a long-lived ripper cannot accumulate dead slots.
+//
+//==========================================================================
+
+int AActor::RipHitsOn (AActor *victim)
+{
+	for (unsigned int i = 0; i < RipVictims.Size(); )
+	{
+		AActor *recorded = RipVictims[i].victim;
+		if (recorded == NULL)
+		{
+			RipVictims.Delete(i);
+			continue;
+		}
+		if (recorded == victim)
+		{
+			return RipVictims[i].hits;
+		}
+		++i;
+	}
+	return 0;
+}
+
+//==========================================================================
+//
+// AActor :: RecordRipHit
+//
+// [MGOOOOOO] Books one rip against `victim`. The lifetime counter always advances; the
+// per-victim ledger is only grown when a budget actually reads it, so a plain +RIPPER
+// projectile never allocates.
+//
+//==========================================================================
+
+void AActor::RecordRipHit (AActor *victim)
+{
+	RipperHitsDone++;
+
+	zx::ripper::FRipLimits limits;
+	limits.perVictimHits = RipperCount;
+	// .Raw() because fixed_t is the strong zx::Fixed type (see basictypes.h).
+	if (!zx::ripper::ComputeNeedsVictimLedger(limits, RipperDamageFactor.Raw()))
+		return;
+
+	for (unsigned int i = 0; i < RipVictims.Size(); ++i)
+	{
+		if (RipVictims[i].victim == victim)
+		{
+			RipVictims[i].hits++;
+			return;
+		}
+	}
+
+	// [MGOOOOOO] Ledger full: drop the oldest entry rather than growing without bound. A
+	// projectile that has already ripped RIP_MAX_VICTIMS distinct actors is pathological, and
+	// forgetting the first of them only refills that actor's per-victim budget.
+	if (RipVictims.Size() >= (unsigned int)zx::ripper::RIP_MAX_VICTIMS)
+	{
+		RipVictims.Delete(0);
+	}
+
+	FRipVictim entry;
+	entry.victim = victim;
+	entry.hits = 1;
+	RipVictims.Push(entry);
+	GC::WriteBarrier(this, victim);
+}
+
+//==========================================================================
+//
+// AActor :: ResetRipCounters
+//
+// [MGOOOOOO] Refills every rip budget. Backs A_ResetRipCounters.
+//
+//==========================================================================
+
+void AActor::ResetRipCounters ()
+{
+	RipperDamageDone = 0;
+	RipperHitsDone = 0;
+	RipVictims.Clear();
 }
 
 void AActor::Serialize (FArchive &arc)
@@ -397,6 +494,25 @@ void AActor::Serialize (FArchive &arc)
 			<< ProjectileGroup
 			<< SplashGroup
 			<< RipSound;
+	}
+
+	// [MGOOOOOO] ZandroX's flags9 word and the ripper controls (features/ripper). Version-guarded
+	// so older snapshots (which never stored them) load with the class defaults -- all budgets 0
+	// (= unlimited) and no falloff, which is exactly pre-feature ripper behaviour. RipVictims is
+	// live per-projectile state, so a ripper saved mid-flight resumes with its budget intact.
+	if (SaveVersion >= 4511)
+	{
+		arc << flags9
+			<< RipperLevel
+			<< RipLevelMin
+			<< RipLevelMax
+			<< RipperMaxDamage
+			<< RipperCount
+			<< RipperMaxCount
+			<< RipperDamageFactor
+			<< RipperDamageDone
+			<< RipperHitsDone
+			<< RipVictims;
 	}
 
 	{
@@ -2522,6 +2638,22 @@ explode:
 			}
 		}
 	} while (++step <= steps);
+
+	// [MGOOOOOO] +USERIPSTATE (features/ripper): apply the rip state now that the whole move is
+	// done and we are outside the blockmap iterator. Once per tic even if the move ripped on
+	// several sub-steps, which matches the once-per-tic cadence of rip damage itself. Every
+	// missile-explode path above returns early, so a projectile that detonated during this move
+	// never reaches here and cannot have its Death state overwritten.
+	if (tm.RipStatePending && !(mo->ObjectFlags & OF_EuthanizeMe))
+	{
+		FState *ripstate = mo->FindState(NAME_Rip);
+		if (ripstate != NULL)
+		{
+			mo->SetState(ripstate);
+			if (mo->ObjectFlags & OF_EuthanizeMe)
+				return oldfloorz;
+		}
+	}
 
 	// Friction
 

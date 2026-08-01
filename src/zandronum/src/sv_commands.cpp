@@ -1818,6 +1818,9 @@ void SERVERCOMMANDS_SetThingFlags( AActor *pActor, FlagSet flagset, ULONG ulPlay
 		case FLAGSET_FLAGS5:	actorFlags = pActor->flags5; break;
 		case FLAGSET_FLAGS6:	actorFlags = pActor->flags6; break;
 		case FLAGSET_FLAGS7:	actorFlags = pActor->flags7; break;
+		// [MGOOOOOO] flags8 (MBF21) had no case here, so it never replicated; flags9 is ZandroX's.
+		case FLAGSET_FLAGS8:	actorFlags = pActor->flags8; break;
+		case FLAGSET_FLAGS9:	actorFlags = pActor->flags9; break;
 		case FLAGSET_FLAGSST:	actorFlags = pActor->STFlags; break;
 		default: return;
 	}
@@ -1860,6 +1863,17 @@ void SERVERCOMMANDS_UpdateThingFlagsNotAtDefaults( AActor *pActor, ULONG ulPlaye
 	if ( pActor->flags7 != pActor->GetDefault( )->flags7 )
 	{
 		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_FLAGS7, ulPlayerExtra, flags );
+	}
+	// [MGOOOOOO] flags8/flags9 are authored from DECORATE and nothing in the engine writes them,
+	// so these comparisons are false unless a mod actually changed one -- no extra late-join
+	// traffic in practice, but a mod that does change them now stays in sync.
+	if ( pActor->flags8 != pActor->GetDefault( )->flags8 )
+	{
+		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_FLAGS8, ulPlayerExtra, flags );
+	}
+	if ( pActor->flags9 != pActor->GetDefault( )->flags9 )
+	{
+		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_FLAGS9, ulPlayerExtra, flags );
 	}
 	// [BB] STFlags is intentionally left out here.
 }

@@ -90,6 +90,13 @@ DEFINE_MEMBER_VARIABLE(height, AActor)
 DEFINE_MEMBER_VARIABLE(radius, AActor)
 DEFINE_MEMBER_VARIABLE(reactiontime, AActor)
 DEFINE_MEMBER_VARIABLE(meleerange, AActor)
+// [MGOOOOOO] Ripper state, so DECORATE can branch on how much a ripper has spent
+// (features/ripper). RipperDamageDone only advances on the server; see the feature README.
+DEFINE_MEMBER_VARIABLE(RipperLevel, AActor)
+DEFINE_MEMBER_VARIABLE(RipLevelMin, AActor)
+DEFINE_MEMBER_VARIABLE(RipLevelMax, AActor)
+DEFINE_MEMBER_VARIABLE(RipperDamageDone, AActor)
+DEFINE_MEMBER_VARIABLE(RipperHitsDone, AActor)
 
 
 //==========================================================================

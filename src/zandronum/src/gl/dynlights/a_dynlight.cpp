@@ -709,6 +709,12 @@ size_t AActor::PropagateMark()
 	{
 		GC::Mark(dynamiclights[i]);
 	}
+	// [MGOOOOOO] The ripper's per-victim ledger holds TObjPtrs too (features/ripper). NOTE: there
+	// is a second AActor::PropagateMark in sdl/glstubs.cpp for non-GL builds -- keep both in step.
+	for (unsigned i=0; i<RipVictims.Size(); i++)
+	{
+		GC::Mark(RipVictims[i].victim);
+	}
 	return Super::PropagateMark();
 }
 

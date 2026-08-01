@@ -203,7 +203,12 @@ enum FlagSet
 	FLAGSET_FLAGS5,
 	FLAGSET_FLAGS6,
 	FLAGSET_FLAGS7,
-	FLAGSET_FLAGSST
+	FLAGSET_FLAGSST,
+	// [MGOOOOOO] Appended, never inserted: this enum is sent as a Byte by SetThingFlags, so
+	// renumbering an existing entry would break protocol compatibility. flags8 (MBF21) had no
+	// entry at all until now, which meant A_ChangeFlag on an MF8_* flag never reached clients.
+	FLAGSET_FLAGS8,
+	FLAGSET_FLAGS9
 };
 
 enum ActorScaleFlag
