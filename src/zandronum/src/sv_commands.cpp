@@ -3854,7 +3854,7 @@ void SERVERCOMMANDS_ClearVote( ULONG ulPlayerExtra, ServerCommandFlags flags )
 void SERVERCOMMANDS_MapLoad( ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	ServerCommands::MapLoad command;
-	command.SetMapName( level.mapname );
+	command.SetMapName( level.MapName.GetChars() );
 	command.SetCurrentPosition( MAPROTATION_GetCurrentPosition() );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }

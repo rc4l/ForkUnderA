@@ -688,7 +688,7 @@ bool GAMEMODE_IsGameInProgressOrResultSequence( void )
 //
 bool GAMEMODE_IsLobbyMap( void )
 {
-	return level.flagsZA & LEVEL_ZA_ISLOBBY || stricmp(level.mapname, lobby) == 0;
+	return level.flagsZA & LEVEL_ZA_ISLOBBY || stricmp(level.MapName, lobby) == 0;
 }
 
 //*****************************************************************************
@@ -712,7 +712,7 @@ bool GAMEMODE_IsNextMapCvarLobby( void )
 {
 	// If we're using a CVAR lobby and we're not on the lobby map, the next map
 	// should always be the lobby.
-	return strcmp(lobby, "") != 0 && stricmp(lobby, level.mapname) != 0;
+	return strcmp(lobby, "") != 0 && stricmp(lobby, level.MapName) != 0;
 }
 
 //*****************************************************************************

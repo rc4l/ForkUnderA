@@ -493,7 +493,7 @@ void MAPROTATION_AddMap( const char *mapName, int position, unsigned int minPlay
 
 	// [AK] Set the current entry in the map rotation to the current level, but
 	// only set the next entry if it's the only one in the rotation.
-	MAPROTATION_SetPositionToMap( level.mapname, g_MapRotationEntries.size( ) == 1 );
+	MAPROTATION_SetPositionToMap( level.MapName, g_MapRotationEntries.size( ) == 1 );
 
 	// [AK] If there's more than one entry in the map rotation now, and the
 	// current and next entries are the same, calculate a new next map.
@@ -621,7 +621,7 @@ CCMD( maplist )
 			message.Format( "%u. ", i + 1 );
 
 			// [AK] Highlight the current position in the map rotation in green, but only if we're actually playing on that map.
-			if (( g_CurMapInList == i ) && ( stricmp( level.mapname, g_MapRotationEntries[g_CurMapInList].map->mapname ) == 0 ))
+			if (( g_CurMapInList == i ) && ( stricmp( level.MapName, g_MapRotationEntries[g_CurMapInList].map->mapname ) == 0 ))
 			{
 				message += "(Current";
 

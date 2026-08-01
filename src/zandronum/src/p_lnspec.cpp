@@ -1768,7 +1768,7 @@ FUNC(LS_ACS_Execute)
 
 	if (arg1 == 0)
 	{
-		mapname = level.mapname;
+		mapname = level.MapName;
 	}
 	else if ((info = FindLevelByNum(arg1)) != NULL)
 	{
@@ -1799,7 +1799,7 @@ FUNC(LS_ACS_ExecuteAlways)
 
 	if (arg1 == 0)
 	{
-		mapname = level.mapname;
+		mapname = level.MapName;
 	}
 	else if ((info = FindLevelByNum(arg1)) != NULL)
 	{
@@ -1847,7 +1847,7 @@ FUNC(LS_ACS_ExecuteWithResult)
 		return ( false );
 	}
 
-	return P_StartScript (it, ln, arg0, level.mapname, args, 4, flags);
+	return P_StartScript (it, ln, arg0, level.MapName, args, 4, flags);
 }
 
 FUNC(LS_ACS_Suspend)
@@ -1856,7 +1856,7 @@ FUNC(LS_ACS_Suspend)
 	level_info_t *info;
 
 	if (arg1 == 0)
-		P_SuspendScript (arg0, level.mapname);
+		P_SuspendScript (arg0, level.MapName);
 	else if ((info = FindLevelByNum (arg1)) )
 		P_SuspendScript (arg0, info->mapname);
 
@@ -1869,7 +1869,7 @@ FUNC(LS_ACS_Terminate)
 	level_info_t *info;
 
 	if (arg1 == 0)
-		P_TerminateScript (arg0, level.mapname);
+		P_TerminateScript (arg0, level.MapName);
 	else if ((info = FindLevelByNum (arg1)) )
 		P_TerminateScript (arg0, info->mapname);
 

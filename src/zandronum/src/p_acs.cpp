@@ -7583,7 +7583,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 				// [AK] We should also reset the current level to apply the new game mode safely.
 				// Do this without showing the intermission screen, and reset everyone's health and items.
-				G_ChangeLevel( level.mapname, 0, CHANGELEVEL_NOINTERMISSION | CHANGELEVEL_RESETHEALTH | CHANGELEVEL_RESETINVENTORY | CHANGELEVEL_HIDENAME );
+				G_ChangeLevel( level.MapName, 0, CHANGELEVEL_NOINTERMISSION | CHANGELEVEL_RESETHEALTH | CHANGELEVEL_RESETINVENTORY | CHANGELEVEL_HIDENAME );
 				return 1;
 			}
 
@@ -7896,7 +7896,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				// [AK] If the map position's level info is invalid, this could mean that there's no maplist
 				// or that the position is invalid, so return zero (or an empty string if we wanted the name).
 				// If we're checking the current map position, make sure it's the current level too.
-				if (( rotationMap == NULL ) || (( args[0] <= 0 ) && ( stricmp( level.mapname, rotationMap->mapname ) != 0 )))
+				if (( rotationMap == NULL ) || (( args[0] <= 0 ) && ( stricmp( level.MapName, rotationMap->mapname ) != 0 )))
 				{
 					if (( args[1] == MAPROTATION_NAME ) || ( args[1] == MAPROTATION_LUMPNAME ))
 						return GlobalACSStrings.AddString( "" );
@@ -7948,7 +7948,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				{
 					level_info_t *rotationMap = MAPROTATION_GetMap( position );
 
-					if (( rotationMap == nullptr ) || ( stricmp( level.mapname, rotationMap->mapname ) != 0 ))
+					if (( rotationMap == nullptr ) || ( stricmp( level.MapName, rotationMap->mapname ) != 0 ))
 						return 0;
 				}
 
@@ -10658,7 +10658,7 @@ scriptwait:
 						break;
 
 					case PRINTNAME_LEVEL:
-						work += level.mapname;
+						work += level.MapName;
 						break;
 
 					case PRINTNAME_SKILL:
@@ -13086,7 +13086,7 @@ EXTERN_CVAR (Bool, sv_cheats)
 
 int P_StartScript (AActor *who, line_t *where, int script, const char *map, const int *args, int argcount, int flags)
 {
-	if (map == NULL || 0 == strnicmp (level.mapname, map, 8))
+	if (map == NULL || 0 == strnicmp (level.MapName, map, 8))
 	{
 		FBehavior *module = NULL;
 		const ScriptPtr *scriptdata;
@@ -13140,17 +13140,17 @@ int P_StartScript (AActor *who, line_t *where, int script, const char *map, cons
 	return false;
 }
 
-void P_SuspendScript (int script, char *map)
+void P_SuspendScript (int script, const char *map)
 {
-	if (strnicmp (level.mapname, map, 8))
+	if (strnicmp (level.MapName, map, 8))
 		addDefered (FindLevelInfo (map), acsdefered_t::defsuspend, script, NULL, 0, NULL);
 	else
 		SetScriptState (script, DLevelScript::SCRIPT_Suspended);
 }
 
-void P_TerminateScript (int script, char *map)
+void P_TerminateScript (int script, const char *map)
 {
-	if (strnicmp (level.mapname, map, 8))
+	if (strnicmp (level.MapName, map, 8))
 		addDefered (FindLevelInfo (map), acsdefered_t::defterminate, script, NULL, 0, NULL);
 	else
 		SetScriptState (script, DLevelScript::SCRIPT_PleaseRemove);

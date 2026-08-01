@@ -792,7 +792,7 @@ void SERVER_Tick( void )
 				}
 				else
 				{
-					string.Format( "map %s", level.mapname );
+					string.Format( "map %s", level.MapName.GetChars() );
 				}
 
 				AddCommandString( string.LockBuffer() );
@@ -847,7 +847,7 @@ void SERVER_Tick( void )
 			// [BB] If the client didn't authenticate the new map by now, likely his authentication packet was lost.
 			// Ask him to authenticate again.
 			if ( ( SERVER_GetClient( i )->State == CLS_SPAWNED_BUT_NEEDS_AUTHENTICATION ) && ( ( level.maptime % ( 2 * TICRATE ) ) == 0 ) )
-				SERVERCOMMANDS_MapAuthenticate ( level.mapname, i, SVCF_ONLYTHISCLIENT );
+				SERVERCOMMANDS_MapAuthenticate ( level.MapName.GetChars(), i, SVCF_ONLYTHISCLIENT );
 		}
 
 		// Do some statistic stuff every second.
@@ -1360,7 +1360,9 @@ void SERVER_RequestClientToAuthenticate( ULONG ulClient )
 {
 	g_aClients[ulClient].PacketBuffer.Clear();
 	g_aClients[ulClient].PacketBuffer.ByteStream.WriteByte( SVCC_AUTHENTICATE );
-	g_aClients[ulClient].PacketBuffer.ByteStream.WriteString( level.mapname );
+	// [rc4l] uzdoom@24886b673: MapName is an FString now. WriteString is NUL-terminated and
+	// variable-length, so the bytes for any name we could previously send are byte-identical.
+	g_aClients[ulClient].PacketBuffer.ByteStream.WriteString( level.MapName.GetChars() );
 	// [CK] This lets the client start off with a reasonable gametic. In case
 	// the client would like to do any kind of prediction from gametics in the
 	// future, we can use the current gametic as the base. This also prevents
@@ -1405,7 +1407,7 @@ void SERVER_AuthenticateClientLevel( BYTESTREAM_s *pByteStream )
 bool SERVER_PerformAuthenticationChecksum( BYTESTREAM_s *pByteStream )
 {
 	// [BB] Since we are already using the map, we won't get a NULL pointer.
-	MapData *map = P_OpenMapData( level.mapname, false );
+	MapData *map = P_OpenMapData( level.MapName, false );
 	assert( map );
 
 	// Compute the checksum for the map on our end.
@@ -1445,7 +1447,7 @@ void SERVER_ConnectNewPlayer( BYTESTREAM_s *pByteStream )
 	// Just ask the client to authenticate again in this case.
 	if ( g_aClients[g_lCurrentClient].State == CLS_SPAWNED_BUT_NEEDS_AUTHENTICATION )
 	{
-		SERVERCOMMANDS_MapAuthenticate ( level.mapname, g_lCurrentClient, SVCF_ONLYTHISCLIENT );
+		SERVERCOMMANDS_MapAuthenticate ( level.MapName.GetChars(), g_lCurrentClient, SVCF_ONLYTHISCLIENT );
 		return;
 	}
 
@@ -4462,8 +4464,8 @@ void SERVER_ErrorCleanup( void )
 
 	FString map;
 	// Reload the map, [BB] but make sure the current map is valid.
-	if ( P_CheckMapData ( level.mapname ) )
-		map = level.mapname;
+	if ( P_CheckMapData ( level.MapName ) )
+		map = level.MapName;
 	// [BB] Try the first map of the first episode as fallback.
 	else if ( ( AllEpisodes.Size() > 0 ) && P_CheckMapData ( AllEpisodes[0].mEpisodeMap ) )
 		map = AllEpisodes[0].mEpisodeMap;
@@ -7204,7 +7206,7 @@ static bool server_AuthenticateLevel( BYTESTREAM_s *pByteStream )
 	// This can happen if the map changes too quickly twice in a row: In that case
 	// we get the authentication data for the first level from the client when
 	// the server already loaded the second level.
-	if ( stricmp ( mapnameString.GetChars(), level.mapname ) != 0 )
+	if ( stricmp ( mapnameString.GetChars(), level.MapName.GetChars() ) != 0 )
 	{
 		// [BB] This eats the authentication strings the client is sending, necessary
 		// because we need to parse the packet completely.
@@ -7216,7 +7218,7 @@ static bool server_AuthenticateLevel( BYTESTREAM_s *pByteStream )
 			return ( true );
 
 		// [BB] Tell the client authenticate again.
-		SERVERCOMMANDS_MapAuthenticate ( level.mapname, g_lCurrentClient, SVCF_ONLYTHISCLIENT );
+		SERVERCOMMANDS_MapAuthenticate ( level.MapName.GetChars(), g_lCurrentClient, SVCF_ONLYTHISCLIENT );
 		return ( false );
 	}
 
@@ -7685,7 +7687,7 @@ static bool server_Puke( BYTESTREAM_s *pByteStream )
 	}
 
 	// [BB] Execute the script as if it was invoked by the puke command.
-	P_StartScript (players[g_lCurrentClient].mo, NULL, scriptNum, level.mapname,
+	P_StartScript (players[g_lCurrentClient].mo, NULL, scriptNum, level.MapName.GetChars(),
 		arg, 4, ( bAlways ? ACS_ALWAYS : 0 ) | ACS_NET );
 
 	return ( false );
@@ -8391,7 +8393,7 @@ CCMD( testchecksumonlevel )
 	BYTE		*pbData;
 
 	// This is the lump number of the current map we're on.
-	lBaseLumpNum = Wads.GetNumForName( level.mapname );
+	lBaseLumpNum = Wads.GetNumForName( level.MapName.GetChars() );
 
 	// Get the vertex lump.
 	lCurLumpNum = lBaseLumpNum + ML_VERTEXES;
