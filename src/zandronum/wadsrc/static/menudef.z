@@ -208,6 +208,10 @@ OptionMenu "VideoOptions"
 	StaticText " "
 	Slider "Screen size",				"screenblocks", 3.0, 12.0, 1.0, 0
 
+	// [rc4l] fov-interp
+	Slider "Field of View",				"fov",							5.0, 179.0, 1.0, 2
+	Slider "FOV change speed",			"cl_fovchangespeed",			1.0, 100.0, 1.0, 2
+
 	Slider "Gamma correction",			"Gamma",						0.75, 3.0, 0.05, 2
 	Slider "Brightness",				"vid_brightness",				-0.8,0.8, 0.05
 	Slider "Contrast",					"vid_contrast",	   				0.1, 3.0, 0.1
