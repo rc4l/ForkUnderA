@@ -295,7 +295,7 @@ a26fbc74f091270bd127cea737d4135074de94d1	2014-06-01T07:27:16Z	Fix compilation er
 7fedaf92215a3407a558d267ae03d6d98d470a55	2014-06-01T10:39:13Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	19f9e2e skip: merge commit, no unique content (changes live in the parents)	/
 2ad47935efac562bf1b1edb3ac014e2a183fc1b2	2014-06-01T10:43:17Z	Merge branch 'master' into Glew_Version_For_Real	ported	20653ed	20653ed
 96e4cb90b7e48d40ae07353a34db60318b87b19c	2014-06-01T12:12:41Z	Fix crash on attempt to save cached OpenGL nodes on OS X	ported	19f9e2e inherited: added lines already present (1/1); pre-dates or matches our base	zandronum-base
-9cd074ddf3cf65fd2192320d34b8e5a05357deb6	2014-06-02T08:51:17Z	- fixed: plane equation vectors must be normalized when being loaded from UDMF.	pending		/
+9cd074ddf3cf65fd2192320d34b8e5a05357deb6	2014-06-02T08:51:17Z	- fixed: plane equation vectors must be normalized when being loaded from UDMF.	adapted	adapted: normalization ported, but the ceiling branch's floorplane target corrected by folding in 2f11a59be rather than landing a known upstream bug	23ef708
 3e7b0c29165114d543669bb00793920412f37c08	2014-06-02T08:53:29Z	Fix crash when GL nodes file cannot be opened for writing	pending		/
 20adcecb1d480724ebccc9448d2bef562c3ba59f	2014-06-02T08:54:52Z	Remove redundant saving of GL nodes if they were loaded from cache	pending		/
 842ef86e73efc3819b61289db0cba5e6c66ff364	2014-06-09T07:54:40Z	Don't reset the inventory of dead players	ported	ported: CHANGELEVEL_RESETINVENTORY skipped for PST_DEAD players; predicate on already-synced playerstate	d8fb270
@@ -896,7 +896,7 @@ c1a0ee9623637984ad01c75521b80bc410d895d2	2014-10-29T09:40:08Z	- fixed last commi
 301092217f42c4db048abcf2b00cc1b6ae495588	2014-10-29T19:12:01Z	Merge branch 'experimental' of https://github.com/MajorCooke/zdoom	pending		/
 31611c17d572e2aab109099d047e157fd51682cc	2014-10-29T21:00:15Z	- fixed RGF_NOSIGHT checking for A_RadiusGive.	pending		/
 1a8da5185753d60f42c6dd83975637d1166cec49	2014-10-29T21:53:58Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-2f11a59be0d743b04d7a7885624ad7925a8f545c	2014-10-31T07:57:43Z	- fixed: UDMF ceiling plane properties set the map's floor plane values.	pending		/
+2f11a59be0d743b04d7a7885624ad7925a8f545c	2014-10-31T07:57:43Z	- fixed: UDMF ceiling plane properties set the map's floor plane values.	ported	ported: folded into the 9cd074ddf port; ceiling plane equation writes ceilingplane, never floorplane	23ef708
 c85105f5520f873f8c32bfddbf612260025b2ae4	2014-10-31T09:50:23Z	Added cl_showsecretmessage	pending		/
 388454255dfbd753b91f668209e85d0e0e38e714	2014-10-31T10:29:25Z	Merge branch 'Secret-notify' of https://github.com/Edward850/zdoom	pending		/
 0ff65bb43089fcae61c272b65a43987a82e11820	2014-10-31T20:08:13Z	- fixed: AActor::Massacre must return true only when it actually kills a monster.	pending		/
