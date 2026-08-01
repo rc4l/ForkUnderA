@@ -57,6 +57,14 @@ For upstream commit `C` (`UP` = the UZDoom clone; our source = `src/zandronum/sr
 4. **For candidates, hand off to `upstream-port`:** run `backport-scout.sh` → pick the route
    (staircase batch / post-wall C++ / scriptified / born-in-ZScript) → port or adapt → its gates.
 
+**Apply with `tools/apply-upstream-diff.sh`, never a bare `patch`.** Upstream's files are CRLF and
+ours are LF, so a diff straight from upstream matches *nothing* and `patch` reports every hunk of
+every file as rejected — which reads exactly like massive divergence and tempts you into a hand-port
+or a wrong `skip`. The script strips CR for you. Real case (2014-05 batch): an 11-file refactor
+reported fully rejected, one of its files a single hunk whose context was byte-identical to ours;
+with CR stripped it came down to two trivial rejects, and a later commit went 17 failing files → 2.
+**A 100% rejection rate is the tell — suspect line endings before you suspect divergence.**
+
 ## "Do we already have it?" is the FIRST check — and it's content-based
 
 The verdict comes from the **diff and our tree, never the commit title.** "Fixed: Rampage timer…"
@@ -122,6 +130,29 @@ merge checkpoint → next batch. Sequential means *verified* sequential, not fas
 
 ## Edge cases — cover all of them
 
+- **Upstream version gates carry UPSTREAM's numbers.** A ported hunk containing
+  `if (SaveVersion >= NNNN)` (or any other version threshold) is expressed in upstream's numbering,
+  which describes *their* format history. Ours diverged the moment we serialized something they do
+  not have. Porting the number verbatim is wrong whenever our line has moved past it: the gate is
+  then true for every save we can load, the legacy branch becomes dead code, and existing saves get
+  read in the new layout. **Translate the number to OUR version point** -- the version at which *we*
+  adopted that format -- and add the entry to the SAVEVER history block in `version.h`. Real case:
+  uzdoom@e718a72b4 gates the sky format at 4507; ours changed at 4512, and since `MINSAVEVER` is
+  4507 the verbatim port made every loadable save take the new branch and misparse. It built and
+  passed every test. Audit the whole file's gates when you touch one -- numbers at or below the
+  divergence point are inherited base formats and legitimately shared; everything above must be ours.
+- **`char[]` -> `FString` inside a struct:** check the struct is not `memset`/`memcpy`'d or
+  bulk-cleared anywhere (an `FString` holds a pointer), and that every renamed field is still handled
+  in its `Reset()`/init path. Both were clean for `level_info_t`, but they are the first things to
+  verify, not assume.
+- **Upstream de-virtualizes a method:** when upstream turns a `virtual` into a non-virtual wrapper
+  plus a new overridable hook (e.g. `TriggerAction` → non-virtual, calling a virtual
+  `DoTriggerAction`), every one of OUR subclasses still overriding the old name silently becomes a
+  **shadow**: it compiles clean, and the behaviour just stops happening when called through a base
+  pointer. Grep our tree for overrides of the old name and convert them in the same commit. Real
+  case: `AMusicChanger` (uzdoom@e49e926bd) would have stopped changing music when fired through the
+  sector-action list. Upstream may never have fixed their own instance — theirs can disappear via
+  scriptification, which is not a fix we can inherit.
 - **Renames / moves:** upstream path ≠ our path. Map by basename + subsystem; `git log --follow`. The
   tracker index stores as-of-commit paths, so an old commit's path may not exist at upstream HEAD *or*
   ours — resolve via the file's identity, not its string.
@@ -150,6 +181,16 @@ merge checkpoint → next batch. Sequential means *verified* sequential, not fas
 - **Empty / whitespace / doc-only commits:** skip, reason recorded.
 
 ## Recording (so the verdict is auditable and re-derivable)
+
+**A row can only cite a commit that already exists, so a rebase invalidates it.** The row names its
+zandrox sha, which means it is always written *after* the code commit — and rebasing the branch
+(onto a moved `main`, say) rewrites every sha and leaves the rows pointing at commits that are gone.
+`commit-tracker-check` catches this ("our commit ... does not exist") but only once CI runs, so:
+write the rows once the branch's history is settled, and if you rebase afterwards, re-point them in
+a follow-up commit before pushing. **Careful: the check PASSES LOCALLY after a rebase** -- the
+pre-rebase commits survive in your clone as dangling objects, so `git cat-file -e` still finds them,
+while CI's fresh checkout does not. Verify with `git merge-base --is-ancestor <sha> HEAD` for every
+row instead, which is what CI can actually see.
 
 Every commit ends as a tracker row: `ported`/`adapted`/`skip`. The note must cite the **check**, not a
 belief — `"skip: no software-renderer (r_*) in our tree as of <our-sha>"`, `"skip: VM symbols (scout
