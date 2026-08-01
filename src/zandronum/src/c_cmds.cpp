@@ -1087,37 +1087,9 @@ CCMD (dir)
 	chdir (curdir);
 }
 
-CCMD (fov)
-{
-	player_t *player = who ? who->player : &players[consoleplayer];
-
-	if (argv.argc() != 2)
-	{
-		Printf ("fov is %g\n", player->DesiredFOV);
-		return;
-	}
-	else if (dmflags & DF_NO_FOV)
-	{
-		if (consoleplayer == Net_Arbitrator)
-		{
-			Net_WriteByte (DEM_FOV);
-		}
-		else
-		{
-			Printf ("A setting controller has disabled FOV changes.\n");
-			return;
-		}
-	}
-	else
-	{
-		// Just do this here in client games.
-		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
-			player->DesiredFOV = static_cast<float> ( clamp (atoi (argv[1]), 5, 179) );
-
-		Net_WriteByte (DEM_MYFOV);
-	}
-	Net_WriteByte (clamp (atoi (argv[1]), 5, 179));
-}
+// [rc4l] fov-interp: the `fov` CCMD became a CVAR so the options menu can offer a slider --
+// see features/fov-interp/fovcvar.cpp, which keeps this command's DF_NO_FOV permission check and
+// its DEM_FOV / DEM_MYFOV network path. `fov 90` still works from the console, as a CVAR set.
 
 //==========================================================================
 //

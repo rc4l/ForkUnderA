@@ -56,7 +56,17 @@ hand-merged on every future flight. Here the flight only has to re-apply **one c
   - `P_PlayerThink`'s "[RH] Zoom the player's FOV" block now calls `FovTargetForWeapon` +
     `FovStepTic` instead of an inline copy of the same arithmetic. Behaviour at the default
     `cl_fovchangespeed` is identical to before.
-- `src/CMakeLists.txt` — `features/fov-interp/fovinterp.cpp` added before `zzautozend.cpp`.
+- `src/c_cmds.cpp`
+  - `CCMD (fov)` **removed** — replaced by the CVAR in `fovcvar.cpp`, which carries its permission
+    check and its DEM path. `fov 90` still works from the console, now as a CVAR set. A comment
+    marks the spot.
+- `src/d_player.h`
+  - `player_t::lastFOVChangeTic` — gametic of the last accepted change, for the cooldown.
+    Client-local, not serialized, never read by the server.
+- `wadsrc/static/menudef.txt`
+  - `VideoOptions`: `Field of View` and `FOV change speed` sliders.
+- `src/CMakeLists.txt` — `features/fov-interp/fovinterp.cpp` and `fovcvar.cpp` added before
+  `zzautozend.cpp`.
 
 ## Gates
 
@@ -64,17 +74,52 @@ hand-merged on every future flight. Here the flight only has to re-apply **one c
   (`FIXED2DBL`, then a cast), per the `fixed64-widening` skill. Q-Zandronum's original ran
   `FixedMul(r_TicFrac, fovDiff)` with a **float** second operand — already loose at 32 bits and
   outright wrong once `fixed_t` is 64-bit. This is the one place the port deliberately diverges.
-- **netcode**: none required. FOV is per-client *view* state — no actor state, movement, spawning,
-  AI, RNG or sound is touched, nothing is written to the wire, and the interpolation is
-  render-side only. Server-side FOV enforcement (`sv_nofov` / `DF_NO_FOV`) is untouched and still
-  clamps what a client may ask for; this feature only changes how smoothly the view gets there.
+- **netcode**: **no new wire format.** The interpolation half is render-side only and touches no
+  actor state, movement, spawning, AI, RNG or sound. The CVAR half reuses the *existing*
+  `DEM_FOV` / `DEM_MYFOV` messages the `fov` CCMD already sent — same bytes, same handlers in
+  `d_net.cpp`, only the trigger moved — so no `SERVERCOMMANDS_*` command and no byte-exact
+  fixture is introduced. `fov_change_cooldown_tics` reaches clients through the standard
+  `CVAR_SERVERINFO` machinery (`SERVER_SettingChanged`, as `sv_aircontrol` does), and
+  `lastFOVChangeTic` is client-local and never serialized. Server-side FOV enforcement
+  (`sv_nofov` / `DF_NO_FOV`) is untouched and still governs what a client may ask for; this
+  feature changes how smoothly the view gets there and who may ask, never what the server allows.
   Note Q-Zandronum went the *opposite* way in 65e0aad7f ("Remove fov enforcement by server") —
   that commit and its follow-up d3cb7f70e are deliberately **not** ported.
 - **ZScript**: none. No VM surface anywhere near this.
 
+## The slider, and why `fov` became a CVAR
+
+A menu slider can only bind to a CVAR, and FOV was a CCMD. Q-Zandronum solved that by turning it
+into `CUSTOM_CVAR(Int, fov, ...)` (65e0aad7f) — but the same commit *deleted* the server's ability
+to lock FOV. We take the CVAR and keep the lock:
+
+- `fovcvar.cpp` holds `CUSTOM_CVAR(Float, fov, 90, CVAR_ARCHIVE)`. It still emits **DEM_FOV /
+  DEM_MYFOV**, exactly as the old CCMD did, so demos, prediction and the server see FOV changes
+  through the existing path — nothing new goes on the wire.
+- `sv_nofov` / `DF_NO_FOV` still decides who may change it: under a lock only the arbitrator can,
+  and their change applies to everyone (DEM_FOV). Non-arbitrators get the same refusal message
+  the CCMD printed.
+- A refused write is rolled back with `ForceSet`, so the slider and the config file can never
+  display an FOV the player was not granted.
+- Ours is a **Float** CVAR (Q-Zandronum's is Int) because `DesiredFOV` is a float and the clamp
+  is applied through the tested `FovRequestClamp`.
+
+`fov_change_cooldown_tics` (`CVAR_SERVERINFO`, 0 = off, ported from Q-Zandronum) is a server-set
+minimum gap between a client's FOV changes — the softer anti-peek measure they introduced *instead
+of* the lock. Here it **stacks with** the lock. The arbitrator is exempt while a lock is in force
+(administrative change, not peeking), and offline play is never rate-limited.
+
+Both rules live in `computation/fovrequest_compute.{h,cpp}` (100% covered) so they are testable
+instead of buried in a CVAR callback: `FovRequestDecision()` returns
+`FOV_SET_MINE` / `FOV_SET_EVERYONE` / `FOV_DENIED_LOCKED` / `FOV_DENIED_COOLDOWN`, and the callback
+does as it is told.
+
+Menu entries (`wadsrc/static/menudef.txt`, `VideoOptions`): **Field of View** (5–179) and **FOV
+change speed** (1–100). The server-side `Allow FOV` option is untouched and still present under
+Gameplay Options — Q-Zandronum removed theirs.
+
 ## Not included
 
-- **A FOV slider in the options menu** (part of issue #143). `fov` is a CCMD writing
-  `player->DesiredFOV`, not a CVAR, so a menu slider needs a CVAR mirror and is separate work —
-  it is not part of the two commits ported here.
 - **Keeping FOV across respawn** (q-zandronum@5d751aff) — independent, still open.
+- q-zandronum@65e0aad7f's removal of `DF_NO_FOV`, and its follow-up d3cb7f70e ("Don't send client
+  FOV to the server"), which only makes sense once the lock is gone.
