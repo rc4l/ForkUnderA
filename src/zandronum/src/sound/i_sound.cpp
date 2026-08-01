@@ -108,39 +108,16 @@ CVAR (Bool, snd_waterreverb, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 void I_CloseSound ();
 
-// [rc4l] The sound backend currently constructed (ZX_SNDBACKEND_OPENAL / _NULL), or
-// ZX_SNDBACKEND_NONE before I_InitSound has ever run. Set at the end of I_InitSound; read by
-// the snd_backend callback below to skip a redundant rebuild when the backend is unchanged.
-static int g_activeSoundBackend = ZX_SNDBACKEND_NONE;
-
-CUSTOM_CVAR(String, snd_backend, DEF_BACKEND, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	// [rc4l] Skip the redundant startup close+reopen. This callback is DEFERRED until
-	// FBaseCVar::EnableCallbacks(), which D_DoomMain runs just after I_Init() has ALREADY
-	// built the correct renderer -- so on the first firing the backend is unchanged and there
-	// is nothing to do. Without this the device was opened (I_Init), closed, and reopened
-	// (this callback), which is the doubled "I_InitSound: Initializing OpenAL" in the log. The
-	// same skip keeps sound alive across a wad_reload restart (I_Init is not re-run there, so
-	// the backend stays put). A genuine runtime snd_backend change still falls through below.
-	#ifndef NO_OPENAL
-	const bool openalCompiledIn = true;
-	const bool openalPresent = IsOpenALPresent();
-	#else
-	const bool openalCompiledIn = false;
-	const bool openalPresent = false;
-	#endif
-	const bool noSound = !!Args->CheckParm("-nosound") || !!Args->CheckParm("-host");
-	if (!SoundBackendReinitNeeded(g_activeSoundBackend, snd_backend, noSound,
-			openalCompiledIn, openalPresent))
-		return;
-
-	I_ShutdownMusic();
-	S_EvictAllChannels();
-	I_CloseSound();
-	I_InitSound();
-	S_RestartMusic();
-	S_RestoreEvictedChannels();
-}
+// [rc4l] Plain CVAR, matching upstream (UZDoom i_sound.cpp) -- NOT a CUSTOM_CVAR.
+// Changing snd_backend just stores the name; it takes effect on the next sound init
+// (startup, or the snd_reset CCMD below for a live switch). We previously made this a
+// CUSTOM_CVAR that auto-applied by doing I_CloseSound()+I_InitSound() on change, but its
+// callback fires from D_DoomMain's EnableCallbacks() right after I_Init() has ALREADY built
+// the renderer -- so it tore that down and rebuilt it, opening the sound device twice every
+// launch (the doubled "I_InitSound: Initializing OpenAL"). Upstream never had the callback,
+// so it never doubled; aligning to the plain CVAR makes the double structurally impossible.
+// Runtime backend switching is unchanged: set snd_backend, then run snd_reset.
+CVAR(String, snd_backend, DEF_BACKEND, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 // killough 2/21/98: optionally use varying pitched sounds
 CVAR (Bool, snd_pitched, false, CVAR_ARCHIVE)
@@ -308,7 +285,6 @@ void I_InitSound ()
 	if (nosound)
 	{
 		GSnd = new NullSoundRenderer;
-		g_activeSoundBackend = ZX_SNDBACKEND_NULL;
 		I_InitMusic ();
 		return;
 	}
@@ -345,20 +321,12 @@ void I_InitSound ()
 		Printf(TEXTCOLOR_RED "%s: Unknown sound system specified\n", *snd_backend);
 		snd_backend = "null";
 	}
-	bool fellBackToNull = false;
 	if (!GSnd || !GSnd->IsValid())
 	{
 		I_CloseSound();
 		GSnd = new NullSoundRenderer;
-		fellBackToNull = true;
 		Printf(TEXTCOLOR_RED "Sound init failed. Using nosound.\n");
 	}
-	// [rc4l] Record which renderer actually ended up running, so the snd_backend callback can
-	// tell an unchanged backend from a real switch. OpenAL only if it was both chosen AND
-	// survived the IsValid() check above; everything else (null choice, unavailable, unknown,
-	// or a failed OpenAL that fell back) runs the null renderer.
-	g_activeSoundBackend = (choice.backend == ZX_SNDBACKEND_OPENAL && !fellBackToNull)
-		? ZX_SNDBACKEND_OPENAL : ZX_SNDBACKEND_NULL;
 	I_InitMusic ();
 	snd_sfxvolume.Callback ();
 }
