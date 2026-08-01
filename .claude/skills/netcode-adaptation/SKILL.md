@@ -96,6 +96,10 @@ A change rarely arrives pre-labelled "netcode." It reaches this skill *through* 
 
 ## Wire-format regression tests — the bytes/bits must match, exactly
 
+**See the `netcode-testing` skill for how to write these** (the `zandrox_tests_net` target, golden +
+round-trip + adversarial patterns, the bit/byte checklist). The rule below is *what* to test; that
+skill is *how*.
+
 A multiplayer E2E proves it *works once*; it does not lock the **wire format**. Every `SERVERCOMMANDS_*`
 serializes a fixed byte layout — a command id then `NETWORK_WriteByte`/`WriteShort`/`WriteLong`/
 `WriteFloat`/`WriteString` fields — that the client decodes field-for-field in the same order. If a
