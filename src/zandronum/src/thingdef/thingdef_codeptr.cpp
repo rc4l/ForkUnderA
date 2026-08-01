@@ -3543,8 +3543,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetHitSize)
 // A_SetRipMax(int maximum)
 //
 // [MGOOOOOO] Ported from uzdoom@cc166593e86ec132f92f83283c651135d49686a3: the three
-// tiered-ripping setters from zscript/actors/actor.zs. A_SetRipperLevel sets a
-// projectile's rip tier; A_SetRipMin/A_SetRipMax set a victim's resistance window.
+// tiered-ripping setters in upstream's actors/actor.zs. Only the semantics are taken --
+// these are native DECORATE codepointers here and pull in no VM surface, so the insulation
+// policy is not touched. A_SetRipperLevel sets a projectile's rip tier; A_SetRipMin and
+// A_SetRipMax set a victim's resistance window.
 //
 // These are inputs to a server-authoritative decision (PIT_CheckThing's rip path runs
 // its damage on the server only), so -- like the HitRadius properties above -- they are
