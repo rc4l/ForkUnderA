@@ -45,3 +45,22 @@ TEST(CrashSafeLabel, EmptyStaysEmpty)
 {
 	EXPECT_EQ(ComputeSafeFileLabel(""), "");
 }
+
+// ---- ComputePendingFatalAction ---------------------------------------------
+
+TEST(PendingFatal, UploadsWhenRecordPresentAndReportingOn)
+{
+	EXPECT_EQ(ComputePendingFatalAction(true, true), PendingFatalAction::Upload);
+}
+
+TEST(PendingFatal, DiscardsWhenRecordPresentButReportingOff)
+{
+	// The player turned reporting off between the crash and this launch -> honor that, drop it.
+	EXPECT_EQ(ComputePendingFatalAction(true, false), PendingFatalAction::Discard);
+}
+
+TEST(PendingFatal, NothingToDoWhenNoRecord)
+{
+	EXPECT_EQ(ComputePendingFatalAction(false, true), PendingFatalAction::None);
+	EXPECT_EQ(ComputePendingFatalAction(false, false), PendingFatalAction::None);
+}

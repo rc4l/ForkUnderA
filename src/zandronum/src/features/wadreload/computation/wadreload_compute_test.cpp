@@ -166,3 +166,42 @@ TEST(MapAssignment, EmptyForNonAssignmentsAndEmptyValue)
 	EXPECT_EQ(ParseMapAssignment("ma"), "");                        // shorter than the key
 	EXPECT_EQ(ParseMapAssignment(""), "");
 }
+
+// ---- IsBootPaletteName ------------------------------------------------------
+
+TEST(BootPalette, MatchesBarePlaypalLumpCaseInsensitively)
+{
+	EXPECT_TRUE(IsBootPaletteName("PLAYPAL"));   // WAD lump name
+	EXPECT_TRUE(IsBootPaletteName("playpal"));   // lowercase
+	EXPECT_TRUE(IsBootPaletteName("PlAyPaL"));   // mixed
+}
+
+TEST(BootPalette, MatchesPk3FileNamesByBasenameSansExtension)
+{
+	EXPECT_TRUE(IsBootPaletteName("PLAYPAL.pal"));            // MM8BDM's mm8bdm-v6b.pk3 form
+	EXPECT_TRUE(IsBootPaletteName("PLAYPAL.lmp"));
+	EXPECT_TRUE(IsBootPaletteName("graphics/PLAYPAL.pal"));   // nested pk3 entry
+	EXPECT_TRUE(IsBootPaletteName("colormaps\\playpal.dat")); // backslash path, lowercase
+}
+
+TEST(BootPalette, RejectsNonPaletteLumps)
+{
+	EXPECT_FALSE(IsBootPaletteName("COLORMAP"));
+	EXPECT_FALSE(IsBootPaletteName("MAPINFO"));       // 7 chars, differs at the first char
+	EXPECT_FALSE(IsBootPaletteName("PLAYPAX"));       // 7 chars, differs at the last char
+	EXPECT_FALSE(IsBootPaletteName("PLAYPALS"));      // 8 chars, not the palette
+	EXPECT_FALSE(IsBootPaletteName("PLAYPA"));        // too short
+	EXPECT_FALSE(IsBootPaletteName("PLAYPAL2"));      // a second palette variant is not THE lump
+	EXPECT_FALSE(IsBootPaletteName("MAP01"));
+	EXPECT_FALSE(IsBootPaletteName("dir/PLAYPALX.x")); // basename PLAYPALX != PLAYPAL
+	EXPECT_FALSE(IsBootPaletteName(""));
+	EXPECT_FALSE(IsBootPaletteName(nullptr));
+}
+
+TEST(BootPalette, TrailingDotStripsToPlaypal)
+{
+	// "PLAYPAL." -> drop the (empty) trailing extension -> "PLAYPAL" -> matches. Harmless: the engine
+	// would never name a lump that way, but the basename/extension logic is defined and covered.
+	EXPECT_TRUE(IsBootPaletteName("PLAYPAL."));
+	EXPECT_FALSE(IsBootPaletteName(".PLAYPAL")); // basename ".PLAYPAL" -> extension "" after last dot? no: last dot at index 0 -> len 0 -> not 7
+}

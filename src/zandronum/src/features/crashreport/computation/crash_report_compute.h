@@ -25,6 +25,15 @@ StartupAction ComputeStartupAction(int crashreportsCvar);
 // (handles both / and \), leaving just the last segment.
 std::string ComputeSafeFileLabel(const std::string &path);
 
+// A graceful fatal (I_FatalError) is NOT a signal, so sentry's crash handler never persists it -- and
+// the in-process upload can lose the race (network torn down mid-restart, or the OS error dialog
+// wedges/kills the process first). So the engine writes a tiny durable "pending fatal" record at
+// fatal time; on the NEXT launch we decide what to do with it from whether it exists and whether
+// reporting is on. Upload when both hold (deliver the fatal we couldn't send last time), discard when
+// it exists but reporting was turned off, otherwise nothing to do.
+enum class PendingFatalAction { None, Upload, Discard };
+PendingFatalAction ComputePendingFatalAction(bool recordExists, bool reportingOn);
+
 } // namespace zx
 
 #endif // ZX_CRASH_REPORT_COMPUTE_H

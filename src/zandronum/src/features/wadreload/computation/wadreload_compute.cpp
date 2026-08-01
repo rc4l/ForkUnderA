@@ -118,4 +118,36 @@ std::string ParseMapAssignment(const std::string &token)
 	return token.substr(klen);
 }
 
+bool IsBootPaletteName(const char *lumpName)
+{
+	if (lumpName == nullptr)
+		return false;
+
+	// Take the basename (a pk3 entry can be "graphics/PLAYPAL.lmp"; a WAD lump is already bare).
+	const char *base = lumpName;
+	for (const char *p = lumpName; *p != '\0'; ++p)
+		if (*p == '/' || *p == '\\')
+			base = p + 1;
+
+	// Drop a single trailing extension ("PLAYPAL.pal" -> "PLAYPAL"); a WAD lump has none.
+	size_t len = 0;
+	while (base[len] != '\0')
+		++len;
+	for (size_t i = len; i > 0; --i)
+		if (base[i - 1] == '.') { len = i - 1; break; }
+
+	static const char kPlaypal[] = "PLAYPAL";
+	if (len != 7)
+		return false;
+	for (size_t i = 0; i < 7; ++i)
+	{
+		char c = base[i];
+		if (c >= 'a' && c <= 'z')
+			c = (char)(c - 'a' + 'A');
+		if (c != kPlaypal[i])
+			return false;
+	}
+	return true;
+}
+
 }} // namespace zx::wadreload
