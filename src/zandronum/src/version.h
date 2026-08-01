@@ -97,7 +97,11 @@ int GetRevisionNumber();
 // Protocol version used in demos.
 // Bump it if you change existing DEM_ commands or add new ones.
 // Otherwise, it should be safe to leave it alone.
-#define DEMOGAMEVERSION 0x21A	// [rc4l] SoundActor gained a pitch field (networked A_StartSound pitch)
+// [rc4l] 0x21B, NOT upstream's 0x21A. Upstream bumped 0x219->0x21A for the un-truncated map name in
+// demos (uzdoom@4acc04ce6); we were ALREADY at 0x21A for an unrelated reason of our own (the
+// SoundActor pitch field below), so reusing their number would mean two different demo formats
+// sharing one version and every existing 0x21A demo being read with the wrong map-name width.
+#define DEMOGAMEVERSION 0x21B	// [rc4l] 0x21A: SoundActor pitch field; 0x21B: full-length map names in demos
 
 // Minimum demo version we can play.
 // Bump it whenever you change or remove existing DEM_ commands.
