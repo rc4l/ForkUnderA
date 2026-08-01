@@ -91,3 +91,32 @@ TEST(FovRequest, LockOutranksCooldownAsTheReportedReason)
 	// Both rules would refuse; the lock is the honest explanation to print.
 	EXPECT_EQ(FOV_DENIED_LOCKED, FovRequestDecision(true, false, true, 100, 100, 35));
 }
+
+// ---------------------------------------------------------------------------
+// FovOnSpawn — respawn keeps the player's own FOV, and only theirs
+// ---------------------------------------------------------------------------
+
+TEST(FovRequest, SpawnRestoresTheLocalPlayersChoice)
+{
+	EXPECT_FLOAT_EQ(110.0f, FovOnSpawn(true, false, 110.0f));
+}
+
+TEST(FovRequest, SpawnLeavesOtherPlayersAtTheDefault)
+{
+	// `fov` is a client CVAR: it is this machine's preference, never another player's.
+	EXPECT_FLOAT_EQ(90.0f, FovOnSpawn(false, false, 110.0f));
+}
+
+TEST(FovRequest, ServerNeverStampsItsOwnFovOnAnyone)
+{
+	// The bug in the reference implementation: it used the local CVAR for every player spawned,
+	// so a server's own fov setting would land on all of them.
+	EXPECT_FLOAT_EQ(90.0f, FovOnSpawn(true,  true, 110.0f));
+	EXPECT_FLOAT_EQ(90.0f, FovOnSpawn(false, true, 110.0f));
+}
+
+TEST(FovRequest, SpawnClampsAHandEditedConfig)
+{
+	EXPECT_FLOAT_EQ(5.0f,   FovOnSpawn(true, false, 1.0f));
+	EXPECT_FLOAT_EQ(179.0f, FovOnSpawn(true, false, 900.0f));
+}

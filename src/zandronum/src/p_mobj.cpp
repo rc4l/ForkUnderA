@@ -96,6 +96,11 @@
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip ledger gating
 #include <set>
 
+#include "features/fov-interp/computation/fovrequest_compute.h"
+
+// [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
+EXTERN_CVAR (Float, fov)
+
 // MACROS ------------------------------------------------------------------
 
 #define WATER_SINK_FACTOR		3
@@ -5786,7 +5791,12 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 		mobj->sprite = skins[lSkin].sprite;
 	}
 
-	p->DesiredFOV = p->FOV = 90.f;
+	// [rc4l] fov-interp: respawn keeps the player's own FOV instead of hard-resetting to 90.
+	// Local player only -- `fov` is a client CVAR, so it is not another player's preference,
+	// and a server has none. Weapon zoom is FOVScale, re-applied per tic, so a scope raised at
+	// death does not survive into the next life.
+	p->DesiredFOV = p->FOV = zx::FovOnSpawn (playernum == consoleplayer,
+		NETWORK_GetState( ) == NETSTATE_SERVER, fov);
 	p->camera = p->mo;
 	p->playerstate = PST_LIVE;
 	p->refire = 0;
