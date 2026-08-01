@@ -2274,7 +2274,14 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 	if (!hubLoad)
 		level.totaltime = i;
 
-	if (SaveVersion >= 4507)
+	// [rc4l] 4512, NOT upstream's 4507. Upstream bumped SAVEVER to 4507 for this format change, but
+	// that number describes THEIR save history -- ours is a separate line that was already at 4511
+	// (MBF21 damage groups, FullHeight, the ripper fields), none of which upstream has. Every save
+	// this engine has ever written stored the sky as two NAMES; the id format starts at our 4512.
+	// Keeping upstream's 4507 here would make every existing 4500-4511 save take the id branch and
+	// read two FTextureIDs out of a stream holding two names, corrupting everything after it.
+	// The rule when porting an upstream version gate: translate the number to OUR version point.
+	if (SaveVersion >= 4512)
 	{
 		arc << level.skytexture1 << level.skytexture2;
 	}
