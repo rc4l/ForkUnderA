@@ -75,6 +75,11 @@
 #include "m_cheat.h"
 #include "network_enums.h"
 
+#include "features/fov-interp/computation/fovrequest_compute.h"
+
+// [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
+EXTERN_CVAR (Float, fov)
+
 //*****************************************************************************
 enum 
 {
@@ -986,7 +991,8 @@ void CLIENTDEMO_SpawnFreeSpectatorPlayer( void )
 
 	p->mo->flags |= (MF_NOGRAVITY);
 	p->mo->player = p;
-	p->DesiredFOV = p->FOV = 90.f;
+	// [rc4l] fov-interp: the free-spectate camera is ours, so it takes our FOV.
+	p->DesiredFOV = p->FOV = zx::FovOnSpawn (true, false, fov);
 	p->crouchfactor = FRACUNIT;
 	PLAYER_SetDefaultSpectatorValues( p );
 	p->camera = p->mo;

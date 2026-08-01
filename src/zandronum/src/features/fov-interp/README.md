@@ -60,6 +60,8 @@ hand-merged on every future flight. Here the flight only has to re-apply **one c
   - `CCMD (fov)` **removed** — replaced by the CVAR in `fovcvar.cpp`, which carries its permission
     check and its DEM path. `fov 90` still works from the console, now as a CVAR set. A comment
     marks the spot.
+- `src/p_mobj.cpp`, `src/cl_main.cpp`, `src/cl_demo.cpp`
+  - the three `DesiredFOV = FOV = 90.f` spawn resets now call `zx::FovOnSpawn(...)`.
 - `src/d_player.h`
   - `player_t::lastFOVChangeTic` — gametic of the last accepted change, for the cooldown.
     Client-local, not serialized, never read by the server.
@@ -118,8 +120,25 @@ Menu entries (`wadsrc/static/menudef.txt`, `VideoOptions`): **Field of View** (5
 change speed** (1–100). The server-side `Allow FOV` option is untouched and still present under
 Gameplay Options — Q-Zandronum removed theirs.
 
-## Not included
+## FOV survives a respawn
 
-- **Keeping FOV across respawn** (q-zandronum@5d751aff) — independent, still open.
+Respawning used to hard-reset everyone to 90, throwing away a preference the player had
+deliberately set (q-zandronum@5d751aff). `FovOnSpawn()` restores the player's own `fov` instead,
+at all three spawn paths.
+
+**It restores the base FOV only, and weapon zoom cannot leak through it.** A scope's zoom lives in
+`ReadyWeapon->FOVScale` and is re-applied every tic (`a_weapons.cpp` writes `player->FOV`, never
+`DesiredFOV`), so dying with a sniper scope raised and respawning with a pistol comes back
+unzoomed. The one case that does persist is a mod that zooms by running the `fov` command itself —
+indistinguishable from a player preference, by construction.
+
+**Local player only** — and this is where we diverge from the reference implementation. Theirs
+used the local `cl_fov` CVAR for *every* player passed to `P_SpawnPlayer`, so a server would stamp
+its own FOV onto everyone it spawned. `fov` is a client CVAR: it is this machine's preference, not
+another player's, and a server has no meaningful one. Each client re-asserts its own FOV over the
+wire regardless. A hand-edited config is clamped through the same `FovRequestClamp` a typed value
+goes through.
+
+## Not included
 - q-zandronum@65e0aad7f's removal of `DF_NO_FOV`, and its follow-up d3cb7f70e ("Don't send client
   FOV to the server"), which only makes sense once the lock is gone.
