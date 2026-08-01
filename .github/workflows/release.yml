@@ -117,6 +117,14 @@ jobs:
     if: github.ref_type == 'tag' || (inputs.release && github.ref_name == github.event.repository.default_branch)
     uses: ./.github/workflows/_test.yml
 
+  # [rc4l] clang-tidy, split out of _test.yml so PR builds stop queueing behind it. Same
+  # stable-path condition as test — it gated stable releases when it lived inside that job,
+  # and it still does; running in parallel from t=0 it finishes long before the builds, so
+  # this preserves the gate at zero added wall time.
+  tidy:
+    if: github.ref_type == 'tag' || (inputs.release && github.ref_name == github.event.repository.default_branch)
+    uses: ./.github/workflows/_tidy.yml
+
   # [rc4l] The three platform builds live in _build.yml so test-and-build.yml runs the same ones on PRs.
   build:
     needs: setup
@@ -132,12 +140,12 @@ jobs:
   # experimental builds — without it, a skipped dependency would skip publish too. The build
   # must always have succeeded; the suite must have passed only on the stable path.
   publish:
-    needs: [setup, test, build]
+    needs: [setup, test, tidy, build]
     if: >-
       always()
       && needs.setup.outputs.publish == 'true'
       && needs.build.result == 'success'
-      && (needs.setup.outputs.channel == 'experimental' || needs.test.result == 'success')
+      && (needs.setup.outputs.channel == 'experimental' || (needs.test.result == 'success' && needs.tidy.result == 'success'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

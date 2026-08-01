@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fua commit tracker</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-grid.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-theme-quartz.css">
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         display: flex; flex-direction: column; height: 100vh; background: #fff; color: #1a1a2e; }
+  /* [rc4l] dvh tracks the visible viewport as mobile browser chrome hides and shows; 100vh is
+     the *largest* viewport, so on a phone the grid ran taller than the screen and the page
+     itself scrolled a few px underneath the grid's own scroller — two scrollers, one gesture. */
+  @supports (height: 100dvh) { body { height: 100dvh; } }
+  header { padding: 14px 18px 10px; border-bottom: 1px solid #e5e7eb; }
+  h1 { margin: 0 0 2px; font-size: 17px; }
+  .sub { color: #6b7280; font-size: 12px; margin-bottom: 10px; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  /* [rc4l] Goal bar. Every number in it is precomputed by progress.sh into progress.json —
+     the page never counts rows. That file is a few hundred bytes, so the bar paints while the
+     ~5 MB of table data is still downloading. Retarget the goal in progress.sh, not here. */
+  #progress { margin: 2px 0 10px; max-width: 560px; }
+  #progress .track { height: 8px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
+  #progress .fill { height: 100%; width: 0; border-radius: 999px; background: #047857;
+                    transition: width .6s ease; }
+  #progress .label { display: flex; gap: 8px; align-items: baseline; font-size: 12px;
+                     color: #6b7280; margin-bottom: 5px; }
+  #progress .pct { font-size: 15px; font-weight: 600; color: #1a1a2e;
+                   font-variant-numeric: tabular-nums; }
+  #progress .goal { color: #1a1a2e; font-weight: 600; }
+  #progress .counts { margin-left: auto; font-variant-numeric: tabular-nums; }
+  /* [rc4l] Dragging across the table must scroll it, never select it. This is deliberately NOT
+     inside a touch media query: it was, and the blue selection still appeared for anyone whose
+     device reports a pointer (desktop, iPad with a trackpad, hybrid laptops). The table is a
+     scroll surface — the text worth copying lives in the detail panel, which stays selectable,
+     and the shas are links. -webkit-touch-callout stops iOS's long-press magnifier; the tap
+     highlight goes too, since a row tap opens the detail panel and the flash reads as a misfire. */
+  .ag-theme-quartz .ag-root-wrapper,
+  .ag-theme-quartz .ag-row,
+  .ag-theme-quartz .ag-cell,
+  .ag-theme-quartz .ag-header-cell,
+  .ag-theme-quartz .ag-floating-filter,
+  .chip {
+    -webkit-user-select: none; -moz-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* The filter inputs are still real text fields — typing and editing there needs selection. */
+  .ag-theme-quartz input, .ag-theme-quartz textarea { -webkit-user-select: text; user-select: text; }
+  @media (hover: none) and (pointer: coarse) {
+    /* One axis each, so a swipe is claimed by exactly one scroller: the wrapper pans sideways,
+       the grid body pans vertically. Both run on the compositor. */
+    #gridwrap { touch-action: pan-x; }
+    .ag-theme-quartz .ag-body-viewport {
+      touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;      /* don't hand the gesture to the page / pull-to-refresh */
+    }
+    /* Links inside cells stay tappable, and the sha is short enough to read without selecting. */
+    .ag-theme-quartz .ag-cell a { -webkit-touch-callout: default; }
+  }
+  .release { margin: 0 0 10px; font-size: 12px; }
+  /* [rc4l] Compact-height layout: on a short screen (a phone in landscape, a small split view)
+     the identity block collapses from four stacked rows onto one line and the explanatory
+     subtitle goes away. Same information, a fifth of the height. Keyed on height alone — a wide
+     landscape phone is not a desktop, and that is exactly the case this exists for. */
+  /* [rc4l] The slide-away header: scrolling down through the rows folds the chrome away, any
+     scroll back up brings it straight back — the behaviour Safari's own toolbar, Gmail and
+     Twitter all use. Collapsing max-height (rather than translating) means the grid genuinely
+     reclaims the space instead of having it hidden underneath. Only armed on compact screens. */
+  header { max-height: 400px; overflow: hidden; transition: max-height .22s ease, padding .22s ease; }
+  body.chrome-hidden header { max-height: 0; padding-top: 0; padding-bottom: 0; border-bottom-color: transparent; }
+  @media (prefers-reduced-motion: reduce) { header { transition: none; } }
+  @media (max-height: 500px) {
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 14px 8px; }
+    .sub { display: none; }
+    h1 { font-size: 15px; }
+    #progress { margin: 0; flex: 1 1 220px; max-width: 300px; }
+    #progress .label { margin-bottom: 3px; }
+    #progress .counts { display: none; }   /* the percentage and the goal carry the meaning */
+    .release { margin: 0; }
+    .controls { flex: 1 1 100%; }
+  }
+  .release a { color: #2563eb; text-decoration: none; font-weight: 700; }
+  .release a:hover { text-decoration: underline; }
+  /* [rc4l] Filter chips live on ONE line that scrolls sideways, rather than wrapping. Wrapping
+     cost three lines (106px) of a phone's viewport before the table even started. The search box
+     is a sibling of the strip, so it stays put while the chips scroll under it. */
+  .controls { display: flex; gap: 8px; align-items: center; }
+  #chips { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 0;
+           overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -ms-overflow-style: none;
+           -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; padding-bottom: 1px; }
+  #chips::-webkit-scrollbar { display: none; }
+  .chip { flex: 0 0 auto; border: 1px solid #d1d5db; background: #f9fafb; border-radius: 999px;
+          padding: 5px 12px; font-size: 13px; cursor: pointer; user-select: none; }
+  .chip:hover { background: #f3f4f6; }
+  .chip.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+  .chip b { font-variant-numeric: tabular-nums; }
+  .chip .n { opacity: .7; margin-left: 5px; font-size: 12px; }
+  input.search { flex: 0 0 auto; padding: 6px 10px; border: 1px solid #d1d5db;
+                 border-radius: 8px; font-size: 13px; width: 260px; }
+  @media (max-width: 760px) { input.search { width: 132px; } }
+  /* [rc4l] The wrapper is the horizontal scroller; the grid inside it is laid out at its full
+     natural width when the screen is narrower. Because the header and the rows are both inside
+     the element that moves, they cannot drift apart the way AG Grid's own scroll-event sync did. */
+  #gridwrap { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden;
+              -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+  #grid { height: 100%; width: 100%; }
+  /* [rc4l] Shown from first paint (it is in the static markup, so it does not wait on the
+     AG Grid CDN script) and removed just before the grid is created. Without it the page is
+     a blank box for the ~5 MB of TSV the table needs, which reads as "nothing is loading". */
+  #loading { height: 100%; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; gap: 14px; color: #6b7280; font-size: 13px; }
+  #loading .ring { width: 34px; height: 34px; border: 3px solid #e5e7eb;
+                   border-top-color: #1a1a2e; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { #loading .ring { animation-duration: 2.4s; } }
+  #loading.error .ring { display: none; }
+  #detail { border-top: 1px solid #e5e7eb; background: #fafafa; max-height: 34vh; overflow: auto;
+            padding: 10px 18px; display: none; overscroll-behavior: contain; }
+  @supports (max-height: 34dvh) { #detail { max-height: 34dvh; } }
+  #detail.open { display: block; }
+  #detail h3 { margin: 10px 0 6px; font-size: 13px; font-weight: 600; }
+  #detail .title { font-size: 14px; font-weight: 600; margin-right: 20px; }
+  #detail .meta { color: #6b7280; font-size: 12px; margin-top: 3px; }
+  #detail .note { margin-top: 6px; font-size: 13px; }
+  #detail .note b { color: #6b7280; font-weight: 600; font-size: 11px;
+                    text-transform: uppercase; letter-spacing: .03em; margin-right: 4px; }
+  #detail .dtags { margin-top: 6px; }
+  #detail .close { float: right; cursor: pointer; color: #6b7280; font-size: 15px; }
+  #detail .files a { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                     font-size: 12px; color: #2563eb; text-decoration: none; padding: 1px 0; }
+  #detail .files a:hover { text-decoration: underline; }
+  .s-ported  { color: #047857; font-weight: 600; }
+  .s-adapted { color: #1d4ed8; font-weight: 600; }
+  .s-skip    { color: #6b7280; }
+  .s-pending { color: #9ca3af; }
+  a.sha { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #2563eb; text-decoration: none; }
+  a.sha:hover { text-decoration: underline; }
+  .sha-done a.sha { text-decoration: line-through; text-decoration-thickness: 1px; opacity: .75; }
+  .sha-done a.sha:hover { text-decoration: line-through underline; opacity: 1; }
+  .ours-na { color: #9ca3af; }                                       /* "/" — inapplicable (pending/skip) */
+  .ours-inh { color: #64748b; font-style: italic; font-size: 12px; } /* zandronum-base (baseline import) */
+  .tag { display: inline-block; background: #eef2ff; color: #3730a3; border: 1px solid #e0e7ff;
+         border-radius: 5px; padding: 0 6px; margin: 1px 3px 1px 0; font-size: 11px; line-height: 18px; white-space: nowrap; }
+  .tag-fn { background: #ecfdf5; color: #065f46; border-color: #d1fae5;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .tag-file { background: #fffbeb; color: #92400e; border-color: #fde68a; }              /* filename subsystem */
+  .tag-lump { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; font-weight: 600; } /* lump */
+  .tag-kw   { background: #fdf2f8; color: #9d174d; border-color: #fbcfe8; }              /* lump keyword */
+  .tag-acs  { background: #fff7ed; color: #9a3412; border-color: #fed7aa;
+              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }            /* ACS builtin */
+</style>
+</head>
+<body>
+<header>
+  <h1>fua commit tracker</h1>
+  <div class="sub">One row per upstream commit from anchor <code>ad88cfc5e</code> to UZDoom HEAD &middot; click a sha to open the commit</div>
+  <div id="progress" hidden>
+    <div class="label">
+      <span class="pct"></span> <span>toward</span> <span class="goal"></span>
+      <span class="counts"></span>
+    </div>
+    <div class="track"><div class="fill"></div></div>
+  </div>
+  <!-- [rc4l] /releases/latest is GitHub's own redirect to whatever the newest release is, so
+       this never names a version and never needs regenerating when we ship one. -->
+  <div class="release">
+    <a href="https://github.com/rc4l/ZandroX/releases/latest" target="_blank" rel="noopener">Download latest release &#8599;</a>
+  </div>
+  <div class="controls">
+    <div id="chips"></div>
+  </div>
+</header>
+<div id="gridwrap"><div id="grid" class="ag-theme-quartz">
+  <div id="loading"><div class="ring"></div><div>Loading ~5&nbsp;MB of commit data&hellip;</div></div>
+</div></div>
+<div id="detail"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.js"></script>
+<script>
+const REPO = "https://github.com/UZDoom/UZDoom/commit/";
+const REPO_BASE = "https://github.com/UZDoom/UZDoom";
+const OUR_REPO = "https://github.com/rc4l/ZandroX/commit/";  // "our commit" column links here
+const STATUSES = ["pending", "ported", "adapted", "skip"];
+let gridApi, active = "all";
+
+// [rc4l] The goal bar. progress.sh computed every figure at regen time; this only renders them.
+// Fired before the TSV fetches on purpose — progress.json is tiny, so the bar is on screen while
+// the table is still loading. Silently stays hidden if the file is missing: a decoration that
+// takes the page down with it would be a bad trade.
+fetch("progress.json")
+  .then(r => r.ok ? r.json() : Promise.reject(new Error("progress.json: HTTP " + r.status)))
+  .then(p => {
+    const el = document.getElementById("progress");
+    el.querySelector(".pct").textContent = p.pct + "%";
+    el.querySelector(".goal").textContent = p.goal;
+    el.querySelector(".counts").textContent =
+      `${p.done.toLocaleString()} / ${p.total.toLocaleString()} commits handled`;
+    el.querySelector(".fill").style.width = p.pct + "%";
+    el.hidden = false;
+  })
+  .catch(err => console.error(err));
+
+// click-to-reveal: the files a commit touched, lazy-loaded on first click so the page stays light
+let filesMap = null, filesLoading = null;
+function loadFiles() {
+  if (filesMap) return Promise.resolve(filesMap);
+  if (!filesLoading) filesLoading = fetch("files.tsv").then(r => r.ok ? r.text() : "").catch(() => "").then(text => {
+    filesMap = {};
+    for (const line of text.split("\n")) {
+      if (!line || line[0] === "#") continue;
+      const i = line.indexOf("\t");
+      if (i > 0) filesMap[line.slice(0, i)] = line.slice(i + 1).split(" ").filter(Boolean);
+    }
+    return filesMap;
+  });
+  return filesLoading;
+}
+function closeDetail() { document.getElementById("detail").className = ""; }
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// [rc4l] The full row, untruncated. Cells clip title/note and the hover tooltips that used to
+// carry the rest don't exist on touch, so tapping a row is the only way to read them on a phone
+// — this renders immediately rather than behind the 4.5 MB files.tsv fetch the file list needs.
+function detailHead(d) {
+  const tags = (d.tags || "").split(" ").filter(Boolean);
+  return `<span class="close" onclick="closeDetail()">&times;</span>`
+    + `<div class="title">${esc(d.title)}</div>`
+    + `<div class="meta">`
+      + `<a class="sha" href="${REPO}${d.sha}" target="_blank" rel="noopener">${d.sha.slice(0,9)}</a>`
+      + ` &middot; <span class="s-${esc(d.status)}">${esc(d.status)}</span>`
+      + ` &middot; ${new Date(d.date).toLocaleString("en-US", { year: "numeric", month: "short",
+            day: "numeric", hour: "numeric", minute: "2-digit" })}`
+    + `</div>`
+    // [rc4l] `ours` is one of the columns hidden on a narrow screen, so it has to appear here or
+    // it would be unreachable on a phone. "/" means inapplicable — not worth a line of its own.
+    + (d.ours && d.ours !== "/" ? `<div class="note"><b>ours</b> ${
+        d.ours === "zandronum-base" ? `<span class="ours-inh">zandronum&#8209;base</span>`
+        : d.ours.split(",").map(s => s.trim()).filter(Boolean).map(s =>
+            `<a class="sha" href="${OUR_REPO}${esc(s)}" target="_blank" rel="noopener">${esc(s.slice(0,9))}</a>`).join(", ")
+      }</div>` : "")
+    + (d.note ? `<div class="note"><b>note</b> ${esc(d.note)}</div>` : "")
+    + (tags.length ? `<div class="dtags">${tags.map(t =>
+        `<span class="tag">${esc(t.replace(/^(fn|acs|lump|f):/, ""))}</span>`).join("")}</div>` : "");
+}
+async function onRowClicked(e) {
+  const d = e.data, det = document.getElementById("detail");
+  det.className = "open";
+  det.scrollTop = 0;
+  det.innerHTML = detailHead(d) + `<h3>Loading files&hellip;</h3>`;
+  const files = (await loadFiles())[d.sha] || [];
+  det.innerHTML = detailHead(d)
+    + `<h3>${files.length} file${files.length===1?"":"s"} changed</h3>`
+    + `<div class="files">`
+    + (files.length ? files.map(f => `<a href="${REPO_BASE}/blob/${d.sha}/${f}" target="_blank" rel="noopener">${esc(f)}</a>`).join("")
+                    : "<i>no files listed (merge or empty commit)</i>")
+    + `</div>`;
+}
+
+// [rc4l] Why this exists: AG Grid's header is a separate scrolling element kept in step with the
+// rows by re-transforming it on the body's scroll event. During a compositor-driven touch scroll
+// those events arrive throttled, so the header visibly trails the rows — you cannot fix that
+// alignment from CSS. The cure is to not scroll sideways at all on a small screen: drop the
+// columns that don't fit and let the rest fill the width. Nothing is lost, because tapping a row
+// shows the full title, note and tags anyway.
+// [rc4l] Why the header used to trail the rows: AG Grid puts the header and the body in two
+// separate scrolling elements and keeps them aligned by re-transforming the header on the body's
+// scroll event. During a compositor-driven touch scroll those events arrive throttled, so the
+// header lagged a frame or two behind. No CSS fixes that — the sync is JavaScript.
+//
+// So remove the sync from the equation: give the grid its full natural width and let an outer
+// wrapper do the horizontal scrolling. Header and rows are then inside ONE moving element and
+// cannot drift apart, however the scroll is driven. Vertical scrolling stays inside the grid,
+// where row virtualisation needs it. Every column stays visible at every width.
+const NARROW = 760;       // below this we are on a phone-sized screen
+const SHORT = 600;        // below this the screen is short — a phone in landscape, mostly
+const TABLE_MIN = 1120;   // width the columns lay out in when the screen is narrower than this
+// [rc4l] Height is a first-class dimension here, not an afterthought. Keying off width alone
+// meant a phone in LANDSCAPE (844 wide, 390 tall) counted as a desktop and got the full desktop
+// chrome — the per-column filter band included — on the screen with the least room for it. Both
+// iOS (compact vertical size class) and Material (window height classes) size on both axes; so
+// do we. "Compact" = narrow OR short.
+const isCompact = () => innerWidth < NARROW || innerHeight < SHORT;
+
+// Per-column filter boxes are a desktop idiom: they cost a 49px band above the rows to duplicate
+// what the chip strip and the search box already do. Toggled rather than deleted, so a real
+// desktop still gets them.
+let floatingOn = null, headerH = null;
+function syncFloatingFilters() {
+  const want = !isCompact();
+  if (want === floatingOn) return;                 // setGridOption rebuilds the columns; only do it on a real change
+  floatingOn = want;
+  gridApi.setGridOption("defaultColDef",
+    { sortable: true, filter: true, resizable: true, floatingFilter: want });
+}
+// A denser column header when vertical space is scarce — the same move as Material's dense tables.
+function syncHeaderHeight() {
+  const want = isCompact() ? 32 : 48;
+  if (want === headerH) return;
+  headerH = want;
+  gridApi.setGridOption("headerHeight", want);
+}
+function fitColumns() {
+  if (!gridApi) return;
+  syncFloatingFilters();
+  syncHeaderHeight();
+  const wrap = document.getElementById("gridwrap");
+  const grid = document.getElementById("grid");
+  // Wider than the table needs? Let it be fluid so the flex columns fill the screen. Narrower?
+  // Pin the natural width and hand the overflow to the wrapper's own scroller.
+  grid.style.width = wrap.clientWidth < TABLE_MIN ? TABLE_MIN + "px" : "100%";
+}
+// [rc4l] Hook AG Grid's body viewport, not the window: the rows scroll inside it, so the window
+// never fires a scroll event. Passive listener, and the only work per event is a class toggle —
+// no measuring, no layout reads — so it cannot stall the compositor scroll we spent so long
+// smoothing. Hysteresis (down past 48px hides, any 8px of upward movement shows) stops it
+// flickering when a finger jitters mid-scroll.
+let lastY = 0, programmaticScroll = false;
+function armChromeCollapse() {
+  const vp = document.querySelector(".ag-body-viewport");
+  if (!vp || vp.dataset.collapseArmed) return;
+  vp.dataset.collapseArmed = "1";
+  vp.addEventListener("scroll", () => {
+    const y = vp.scrollTop, dy = y - lastY;
+    lastY = y;
+    if (programmaticScroll) return;              // the opening jump is not a user gesture
+    if (!isCompact()) { document.body.classList.remove("chrome-hidden"); return; }
+    if (dy > 0 && y > 48) document.body.classList.add("chrome-hidden");
+    else if (dy < -8 || y <= 8) document.body.classList.remove("chrome-hidden");
+  }, { passive: true });
+}
+
+// [rc4l] Land where the work is. The table is oldest-first and the first ~1,100 rows are largely
+// triaged, so opening at row 1 shows a wall of struck-out shas; the first pending commit is the
+// row you actually came for. Order is untouched — this only sets the initial scroll position.
+// 'middle' rather than 'top' keeps the handled rows just above it visible for context.
+function jumpToFirstPending() {
+  const n = gridApi.getDisplayedRowCount();
+  if (!n) return;
+  let target = -1, where = "middle";
+  for (let i = 0; i < n; i++) {
+    if (gridApi.getDisplayedRowAtIndex(i)?.data?.status === "pending") { target = i; break; }
+  }
+  // Nothing pending means the whole tracker is triaged: the end of the list is the frontier, so
+  // land there rather than at the top of a list with no outstanding work in it.
+  if (target < 0) { target = n - 1; where = "bottom"; }
+  programmaticScroll = true;                     // don't let this count as the user scrolling down
+  gridApi.ensureIndexVisible(target, where);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const vp = document.querySelector(".ag-body-viewport");
+    if (vp) lastY = vp.scrollTop;                // rebase the direction tracker at the new position
+    programmaticScroll = false;
+  }));
+  return target;
+}
+
+let fitTimer;
+addEventListener("resize", () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitColumns, 150); });
+
+const columnDefs = [
+  { field: "sha", headerName: "their commit", width: 130, minWidth: 92, filter: true,
+    // [rc4l] Struck through once the commit is handled — ported, adapted or skip — so the
+    // outstanding work is what stands out at a glance. Our own sha is never struck: it is a
+    // live pointer into our history, not a to-do that got crossed off.
+    cellClass: p => p.data && p.data.status !== "pending" ? "sha-done" : "",
+    cellRenderer: p => `<a class="sha" href="${REPO}${p.value}" target="_blank" rel="noopener">${p.value.slice(0,9)}</a>` },
+  { field: "status", headerName: "status", width: 120, minWidth: 78,
+    cellClass: p => "s-" + p.value },
+  { field: "ours", headerName: "our commit", width: 150, filter: true,
+    // OUR repo commit(s) that addressed the row. "/" = inapplicable (pending/skip);
+    // "zandronum-base" = present in the Zandronum 3.2.1 baseline import (no discrete commit
+    // of ours); otherwise one-or-more comma-separated zandrox shas, each linked to our repo.
+    tooltipValueGetter: p => p.value === "/" ? "not applicable (pending / skip)"
+      : p.value === "zandronum-base" ? "present in the Zandronum 3.2.1 baseline — no discrete backport commit of ours (fork import b9495b8, from upstream 28f736fb3)"
+      : (p.value || ""),
+    cellRenderer: p => {
+      const v = p.value || "";
+      if (v === "/")              return `<span class="ours-na">/</span>`;
+      if (v === "zandronum-base") return `<span class="ours-inh">zandronum&#8209;base</span>`;
+      return v.split(",").map(s => s.trim()).filter(Boolean)
+        .map(s => `<a class="sha" href="${OUR_REPO}${s}" target="_blank" rel="noopener">${s.slice(0,9)}</a>`)
+        .join(" ");
+    } },
+  { field: "date", headerName: "date", width: 200, minWidth: 150, sort: "asc",
+    // stored value is a canonical UTC ISO stamp (sorts precisely); the cell shows the
+    // reader's own local time to the minute (am/pm, no "at"); hover for full seconds + UTC.
+    valueFormatter: p => {
+      if (!p.value) return "";
+      const d = new Date(p.value);
+      return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+        + ", " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    },
+    tooltipValueGetter: p => {
+      if (!p.value) return "";
+      const d = new Date(p.value);
+      return d.toLocaleString("en-US", { weekday: "short", year: "numeric", month: "long",
+        day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })
+        + "  ·  " + p.value + " (UTC)";
+    } },
+  { field: "title", headerName: "title", flex: 3, minWidth: 130, tooltipField: "title" },
+  { field: "tags", headerName: "tags (auto-derived)", flex: 2, minWidth: 200, filter: true,
+    tooltipValueGetter: p => (p.value || "").split(" ").filter(Boolean)
+      .map(t => t.replace(/^(fn|acs|lump|f):/, "")).join("   ·   "),
+    // value is a space-joined string (filterable/searchable); rendered as chips.
+    // fn:A_* = a DECORATE action the commit's diff touched; the rest = code areas it changed.
+    cellRenderer: p => (p.value || "").split(" ").filter(Boolean).map(t => {
+      let cls = "tag", label = t;
+      if (t.startsWith("fn:"))        { cls = "tag tag-fn";   label = t.slice(3); }
+      else if (t.startsWith("acs:"))  { cls = "tag tag-acs";  label = t.slice(4); }
+      else if (t.startsWith("lump:")) { cls = "tag tag-lump"; label = t.slice(5); }
+      else if (t.startsWith("f:"))    { cls = "tag tag-file"; label = t.slice(2); }
+      else if (/^[A-Z0-9_]+:[a-z]/.test(t)) { cls = "tag tag-kw"; }   // LUMP:keyword
+      return `<span class="${cls}">${label}</span>`;
+    }).join("") },
+  { field: "note", headerName: "note", flex: 1, minWidth: 130, tooltipField: "note" },
+];
+
+function parseTSV(text) {
+  const rows = [];
+  for (const line of text.split("\n")) {
+    if (!line || line[0] === "#") continue;
+    const f = line.split("\t");
+    if (f[0] === "sha" || f.length < 4) continue;
+    rows.push({ sha: f[0], date: f[1], title: f[2], status: f[3], note: f[4] || "", ours: f[5] || "/" });
+  }
+  return rows;
+}
+
+function renderChips(rows) {
+  const counts = { all: rows.length };
+  for (const s of STATUSES) counts[s] = 0;
+  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
+  const el = document.getElementById("chips");
+  const mk = (key, label) => {
+    const c = document.createElement("div");
+    c.className = "chip" + (key === active ? " active" : "");
+    c.innerHTML = `${label}<span class="n">${counts[key] ?? 0}</span>`;
+    c.onclick = () => setStatus(key);
+    return c;
+  };
+  el.append(mk("all", "all"));
+  for (const s of STATUSES) el.append(mk(s, s));
+  const search = document.createElement("input");
+  search.className = "search";
+  // [rc4l] The long placeholder is what forced the toolbar onto a third line on a phone.
+  search.placeholder = innerWidth < NARROW ? "search…" : "search title / note / sha…";
+  search.oninput = e => gridApi.setGridOption("quickFilterText", e.target.value);
+  // Sibling of #chips, not a child: the chip strip scrolls, the search box must not scroll away.
+  document.querySelector(".controls").append(search);
+}
+
+async function setStatus(key) {
+  active = key;
+  document.querySelectorAll(".chip").forEach((c, i) => {
+    c.classList.toggle("active", (i === 0 && key === "all") || c.textContent.startsWith(key) && key !== "all");
+  });
+  if (key === "all") await gridApi.setColumnFilterModel("status", null);
+  else await gridApi.setColumnFilterModel("status", { filterType: "text", type: "equals", filter: key });
+  gridApi.onFilterChanged();
+}
+
+const loadTags = url => fetch(url).then(r => r.ok ? r.text() : "").catch(() => "");
+Promise.all([
+  // [rc4l] coverage.tsv IS the table — a 404 here used to resolve with the error page's HTML,
+  // parse to zero rows and render an empty grid. Reject so the catch below says so out loud.
+  // The two tag files stay soft-failing (loadTags): they only decorate a column.
+  fetch("coverage.tsv").then(r => r.ok ? r.text() : Promise.reject(new Error("coverage.tsv: HTTP " + r.status))),
+  loadTags("tags.tsv"),           // path/structural tags
+  loadTags("combined_tags.tsv"),  // source-gazetteer tags: lump / keyword / fn / acs
+]).then(([covText, tagText, gazText]) => {
+  const tagmap = {};              // sha -> Set(tags), unioned across both files
+  const ingest = text => {
+    for (const line of text.split("\n")) {
+      if (!line || line[0] === "#") continue;
+      const i = line.indexOf("\t");
+      if (i < 0) continue;
+      const sha = line.slice(0, i);
+      (tagmap[sha] = tagmap[sha] || new Set());
+      for (const t of line.slice(i + 1).split(" ")) if (t) tagmap[sha].add(t);
+    }
+  };
+  ingest(tagText); ingest(gazText);
+  const rows = parseTSV(covText);
+  for (const r of rows) r.tags = tagmap[r.sha] ? [...tagmap[r.sha]].sort().join(" ") : "";
+  renderChips(rows);
+  // [rc4l] Drop the spinner only now — createGrid takes the container over, and leaving the
+  // node in place would have it torn out mid-render rather than cleanly removed.
+  document.getElementById("loading")?.remove();
+  gridApi = agGrid.createGrid(document.getElementById("grid"), {
+    columnDefs,
+    rowData: rows,
+    defaultColDef: { sortable: true, filter: true, resizable: true, floatingFilter: true },
+    // [rc4l] Nobody reorders these columns on purpose; on touch the header drag just competed
+    // with the scroll gesture, and on desktop it only ever happened by accident.
+    suppressMovableColumns: true,
+    rowHeight: 30,
+    tooltipShowDelay: 400,
+    onRowClicked: onRowClicked,
+    onFirstDataRendered: jumpToFirstPending,
+  });
+  fitColumns();
+  armChromeCollapse();
+}).catch(err => {
+  // [rc4l] A spinner that never stops is worse than the blank box it replaced: if the fetch or
+  // the parse dies, say so instead of spinning for ever.
+  console.error(err);
+  const el = document.getElementById("loading");
+  if (el) { el.className = "error"; el.innerHTML = "<div>Couldn&rsquo;t load the commit data. Try reloading.</div>"; }
+});
+</script>
+</body>
+</html>

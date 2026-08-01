@@ -67,6 +67,7 @@
 #include "gstrings.h"
 #include "w_wad.h"
 #include "features/crashreport/zx_crashreport.h"
+#include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
@@ -1291,6 +1292,7 @@ void D_DoomLoop ()
 	{
 		try
 		{
+			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{
@@ -3082,6 +3084,10 @@ void D_DoomMain (void)
 		// setting. Auto-send/opt-out, no prompt -- runs on dedicated servers too (this is in the
 		// shared D_DoomMain init path, not a client-only branch).
 		ZX_CrashReportCheckPreviousCrash ();
+
+		// [rc4l] The background auto-update check is NOT started here -- doing so during the heavy
+		// first-launch init raced and crashed. zx::updater::Tick() (in D_DoomLoop) fires it a short
+		// delay into the main loop instead, when the engine is idle at the title screen.
 
 		Printf ("P_Init: Init Playloop state.\n");
 		StartScreen->LoadingStatus ("Init game engine", 0x3f);

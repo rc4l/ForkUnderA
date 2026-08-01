@@ -37,6 +37,7 @@ DEFAULTLISTMENU
 
 LISTMENU "MainMenu"
 {
+	Class "UpdateMainMenu"	// [rc4l] adds the bottom-right "update available" notice (listmenu.cpp)
 	IfGame(Doom, Chex)
 	{
 		StaticPatch 94, 2, "M_DOOM"
@@ -379,6 +380,10 @@ OptionMenu "FUAOptions"
 	Submenu "Instant Replay Options",	"ReplayOptions"
 	Submenu "Crash Reporting",			"CrashReportOptions"
 	Submenu "Hitbox Visualization",		"HitboxVizOptions"
+	StaticText " "
+	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
+	// notice. On by default; off means no update check and no network call.
+	Option	"Check for updates",		"cl_fua_update_notify",		"OnOff"
 }
 
 // [MGOOOOOO] Debug overlay drawing actor collision boxes, attack boxes (HitRadius/HitHeight) and

@@ -3681,6 +3681,9 @@ void P_NightmareRespawn (AActor *mobj)
 			SERVERCOMMANDS_SetThingProperty( mo, APROP_Alpha );
 		if ( mo->RenderStyle.AsDWORD != mo->GetDefault()->RenderStyle.AsDWORD )
 			SERVERCOMMANDS_SetThingProperty( mo, APROP_RenderStyle );
+		// [rc4l] MTF_DOUBLEHEALTH (uzdoom@580094a7924e) changes health in HandleSpawnFlags; forward it too.
+		if ( mo->health != mo->GetDefault()->health )
+			SERVERCOMMANDS_SetThingHealth( mo );
 	}
 
 	// spawn a teleport fog at old spot because of removal of the body?
@@ -5328,6 +5331,28 @@ void AActor::HandleSpawnFlags ()
 		RenderStyle = STYLE_Translucent;
 		alpha = TRANSLUC25;
 	}
+	// [rc4l] uzdoom@580094a7924e -- PSX/Doom64 render-style spawn flags. These set only
+	// RenderStyle/alpha, which the [EP] broadcast at the SpawnThing sites already forwards to
+	// clients (APROP_RenderStyle/APROP_Alpha); level-placed things compute them identically on
+	// both ends via this same HandleSpawnFlags call, so no dedicated gate is needed here.
+	else if (SpawnFlags & MTF_TRANS)
+	{
+		RenderStyle = STYLE_Translucent;
+		alpha = TRANSLUC50;
+	}
+	else if (SpawnFlags & MTF_ADD)
+	{
+		RenderStyle = STYLE_Add;
+	}
+	else if (SpawnFlags & MTF_SUBTRACT)
+	{
+		RenderStyle = STYLE_Subtract;
+	}
+	else if (SpawnFlags & MTF_SPECTRE)
+	{
+		RenderStyle = STYLE_Add;
+		alpha = TRANSLUC25;
+	}
 	else if (SpawnFlags & MTF_ALTSHADOW)
 	{
 		RenderStyle = STYLE_None;
@@ -5340,6 +5365,14 @@ void AActor::HandleSpawnFlags ()
 			flags5 |= MF5_COUNTSECRET;
 			level.total_secrets++;
 		}
+	}
+	// [rc4l] uzdoom@580094a7924e -- MTF_DOUBLEHEALTH mutates synced state (hit points). Level-placed
+	// things run this same code on server and client, so the doubling stays consistent; the two
+	// SpawnThing broadcast sites additionally forward the changed health (see the [rc4l] health
+	// broadcast beside their [EP] alpha/RenderStyle updates) for network-spawned/reset actors.
+	if (SpawnFlags & MTF_DOUBLEHEALTH)
+	{
+		health *= 2;
 	}
 
 	// [BC]
