@@ -1369,6 +1369,8 @@ add_executable( zdoom WIN32
 	features/hitboxviz/computation/boxedges_compute.cpp
 	features/hitboxviz/computation/blastrecords_compute.cpp
 	features/hitboxviz/computation/vizgate_compute.cpp
+	features/fov-interp/fovinterp.cpp
+	features/fov-interp/fovcvar.cpp
 	zzautozend.cpp
 )
 
