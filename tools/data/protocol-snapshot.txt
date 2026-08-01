@@ -1,0 +1,198 @@
+# AUTO-GENERATED wire-format snapshot -- do not hand-edit.
+# Regenerate with: tools/protocol-snapshot.py --write
+# One line per network command: <id> <enum> [flags] : <field-types-in-order>.
+# A diff here means a backport changed the client/server wire format. Confirm it
+# is intentional AND that older clients can still parse it before updating this file.
+## protocol GameServerToClient
+  0 SVC_HEADER                             : Long
+  1 SVC_PING                               [Unreliable] : ULong
+  2 SVC_BEGINSNAPSHOT                      : (no fields)
+  3 SVC_ENDSNAPSHOT                        : (no fields)
+  0 SVC2_FULLUPDATECOMPLETED               [Extended] : (no fields)
+  4 SVC_MAPLOAD                            : String Short
+  5 SVC_MAPNEW                             : String
+  6 SVC_MAPEXIT                            : Byte String Long
+  7 SVC_MAPAUTHENTICATE                    : String
+  8 SVC_SETMAPTIME                         : Long
+  9 SVC_SETMAPNUMKILLEDMONSTERS            : Variable
+ 10 SVC_SETMAPNUMFOUNDITEMS                : Variable
+ 11 SVC_SETMAPNUMFOUNDSECRETS              : Variable
+ 12 SVC_SETMAPNUMTOTALMONSTERS             : Variable
+ 13 SVC_SETMAPNUMTOTALITEMS                : Variable
+  1 SVC2_SETMAPNUMTOTALSECRETS             [Extended] : Variable
+ 14 SVC_SETMAPMUSIC                        : String Byte
+ 15 SVC_SETMAPSKY                          : String String
+  2 SVC2_SETMAPSKYSCROLLSPEED              [Extended] : Bool Float
+  3 SVC2_SECRETFOUND                       [Extended] : Actor Byte
+  4 SVC2_SECRETMARKSECTORFOUND             [Extended] : Sector
+ 16 SVC_DOSCROLLER                         : Byte Fixed Fixed Long Bool Bool Bool Sector?{hasControl} Byte?{hasPos}
+ 17 SVC_SPAWNPLAYER                        : Player ShortByte<4> Bool Bool Bool Bool NetID Angle Fixed Fixed Fixed Byte Short?{isMorphed} Class?{isMorphed}
+ 18 SVC_MOVEPLAYER                         [Unreliable] : Player Byte Fixed?{flags & PLAYER_VISIBLE} Fixed?{flags & PLAYER_VISIBLE} AproxFixed?{flags & PLAYER_VISIBLE} Angle?{flags & PLAYER_VISIBLE} AproxFixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELX)} AproxFixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELY)} AproxFixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELZ)}
+ 19 SVC_DAMAGEPLAYER                       : Player Variable Variable Actor
+  5 SVC2_DAMAGEPLAYERWITHTYPE              [Extended] : Player Variable Variable String Actor
+ 20 SVC_KILLPLAYER                         : Player Actor Actor Short String<Name> String Class
+ 21 SVC_SETPLAYERHEALTH                    : Player Variable
+ 22 SVC_SETPLAYERARMOR                     : Player Variable String
+ 23 SVC_SETPLAYERSTATE                     : Player Byte
+ 24 SVC_SETPLAYERUSERINFO                  : Player Struct
+  6 SVC2_SETPLAYERCOUNTRY                  [Extended] : Player Byte
+  7 SVC2_SETPLAYERACCOUNTNAME              [Extended] : Player String
+ 25 SVC_SETPLAYERFRAGS                     : Player Variable
+ 26 SVC_SETPLAYERPOINTS                    : Player Variable
+ 27 SVC_SETPLAYERWINS                      : Player Variable
+  8 SVC2_SETPLAYERDEATHS                   [Extended] : Player Variable
+ 28 SVC_SETPLAYERKILLCOUNT                 : Player Variable
+ 29 SVC_SETPLAYERSTATUS                    : Player Byte
+ 30 SVC_SETPLAYERTEAM                      : Player Byte
+ 31 SVC_SETPLAYERCAMERA                    : Actor Bool
+ 32 SVC_SETPLAYERPOISONCOUNT               : Player Short
+ 33 SVC_SETPLAYERAMMOCAPACITY              : Player Class<AAmmo> Long
+ 34 SVC_SETPLAYERCHEATS                    : Player Long
+ 35 SVC_SETPLAYERPENDINGWEAPON             : Player Class<AWeapon>
+ 36 SVC_SETPLAYERPSPRITE                   : Player Class<AActor> Short Byte
+ 37 SVC_SETPLAYERBLEND                     : Player Float Float Float Float
+ 38 SVC_SETPLAYERMAXHEALTH                 : Player Long
+ 39 SVC_SETPLAYERLIVESLEFT                 : Player Byte
+  9 SVC2_SETPLAYERACSSKIN                  [Extended] : Player Name bool
+ 40 SVC_UPDATEPLAYERPING                   [Unreliable] : Player UShort Byte
+ 41 SVC_UPDATEPLAYEREXTRADATA              [Unreliable] : Player Long Byte Byte Long Long
+ 42 SVC_UPDATEPLAYERTIME                   [Unreliable] : Player UShort
+ 43 SVC_MOVELOCALPLAYER                    [Unreliable] : ULong Long Fixed Fixed Fixed Fixed Fixed Fixed
+ 10 SVC2_SETLOCALPLAYERJUMPTICS            [Extended,Unreliable] : ULong SByte
+ 11 SVC2_SETLOCALPLAYERRESPAWNDELAYTIME    [Extended] : ULong Bool
+ 44 SVC_DISCONNECTPLAYER                   : Player
+ 45 SVC_SETCONSOLEPLAYER                   : Byte
+ 46 SVC_CONSOLEPLAYERKICKED                : (no fields)
+ 47 SVC_GIVEPLAYERMEDAL                    : Player Byte Bool
+ 48 SVC_RESETALLPLAYERSFRAGCOUNT           : (no fields)
+ 49 SVC_PLAYERISSPECTATOR                  : Player Bool
+ 50 SVC_PLAYERSAY                          : Byte Byte String
+ 51 SVC_PLAYERVOIPAUDIOPACKET              [Unreliable] : Byte Long Buffer
+ 52 SVC_PLAYERTAUNT                        : Player
+ 53 SVC_PLAYERUSEINVENTORY                 : Player Class<AInventory>
+ 54 SVC_PLAYERDROPINVENTORY                : Player Class<AInventory>
+ 12 SVC2_GIVEWEAPONHOLDER                  [Extended] : Player Short Class
+ 13 SVC2_SETHEXENARMORSLOTS                [Extended] : Player Long Long Long Long Long
+ 14 SVC2_SENDPLAYERCOMMRULE                [Extended] : Player Bool Bool Bool Long?{ignoreChat} Long?{ignoreVoice} Float?{sendVoIPChannelVolume}
+ 15 SVC2_IGNORELOCALPLAYER                 [Extended] : Player Bool Bool Long?{ignore} String?{ignore}
+ 55 SVC_PRINT                              : Byte String
+ 56 SVC_PRINTMID                           : String Bool
+ 57 SVC_PRINTMOTD                          : String
+ 58 SVC_PRINTHUDMESSAGE                    : String Float Float Short Short Float Long Float?{(type & HUDMESSAGETYPE_MASK) == HUDMESSAGETYPE_TYPEONFADEOUT || (type & HUDMESSAGETYPE_MASK) == HUDMESSAGETYPE_FADEINOUT} Float?{(type & HUDMESSAGETYPE_MASK) != HUDMESSAGETYPE_NORMAL} Short?{type & HUDMESSAGE_SEND_HUDSIZE} Short?{type & HUDMESSAGE_SEND_HUDSIZE} Short?{(type & HUDMESSAGE_ACS) && (type & HUDMESSAGE_SEND_CLIPRECT)} Short?{(type & HUDMESSAGE_ACS) && (type & HUDMESSAGE_SEND_CLIPRECT)} Short?{(type & HUDMESSAGE_ACS) && (type & HUDMESSAGE_SEND_CLIPRECT)} Short?{(type & HUDMESSAGE_ACS) && (type & HUDMESSAGE_SEND_CLIPRECT)} Short?{(type & HUDMESSAGE_ACS) && (type & HUDMESSAGE_SEND_WRAPWIDTH)} String?{type & HUDMESSAGE_SEND_FONT} Fixed?{(type & HUDMESSAGE_ACS) && (type & HUDMESSAGE_NET_ALPHA)}
+ 16 SVC2_PRINTTEAMSCORESMESSAGE            [Extended] : Byte Byte Byte Byte
+ 59 SVC_SPAWNTHING                         : AproxFixed AproxFixed AproxFixed Class NetID
+ 60 SVC_SPAWNTHINGNONETID                  : AproxFixed AproxFixed AproxFixed Class
+ 61 SVC_SPAWNTHINGEXACT                    : Fixed Fixed Fixed Class NetID
+ 62 SVC_SPAWNTHINGEXACTNONETID             : Fixed Fixed Fixed Class
+ 17 SVC2_LEVELSPAWNTHING                   [Extended] : AproxFixed AproxFixed AproxFixed Class NetID
+ 18 SVC2_LEVELSPAWNTHINGNONETID            [Extended] : AproxFixed AproxFixed AproxFixed Class
+ 63 SVC_MOVETHING                          : Actor Short AproxFixed?{bits & CM_X} AproxFixed?{bits & CM_Y} AproxFixed?{bits & CM_Z} AproxFixed?{bits & CM_LAST_X} AproxFixed?{bits & CM_LAST_Y} AproxFixed?{bits & CM_LAST_Z} Angle?{bits & CM_ANGLE} AproxFixed?{bits & CM_VELX} AproxFixed?{bits & CM_VELY} AproxFixed?{bits & CM_VELZ} Long?{bits & CM_PITCH} Byte?{bits & CM_MOVEDIR}
+ 64 SVC_MOVETHINGEXACT                     : Actor Short Fixed?{bits & CM_X} Fixed?{bits & CM_Y} Fixed?{bits & CM_Z} Fixed?{bits & CM_LAST_X} Fixed?{bits & CM_LAST_Y} Fixed?{bits & CM_LAST_Z} Angle?{bits & CM_ANGLE} Fixed?{bits & CM_VELX} Fixed?{bits & CM_VELY} Fixed?{bits & CM_VELZ} Long?{bits & CM_PITCH} Byte?{bits & CM_MOVEDIR}
+ 65 SVC_KILLTHING                          : Actor Variable String<Name> Actor Actor
+ 66 SVC_SETTHINGSTATE                      : Actor Byte
+ 67 SVC_SETTHINGTARGET                     : Actor Actor
+ 68 SVC_DESTROYTHING                       : Actor
+ 69 SVC_SETTHINGANGLE                      : Actor AproxAngle
+ 70 SVC_SETTHINGANGLEEXACT                 : Actor Angle
+ 71 SVC_SETTHINGWATERLEVEL                 : Actor Byte
+ 72 SVC_SETTHINGFLAGS                      : Actor Byte ULong
+ 73 SVC_SETTHINGARGUMENTS                  : Actor Long Long Long Long Long
+ 74 SVC_SETTHINGTRANSLATION                : Actor Long
+ 75 SVC_SETTHINGPROPERTY                   : Actor Byte Long
+ 19 SVC2_SETTHINGSTRINGPROPERTY            [Extended] : Actor Byte String
+ 76 SVC_SETTHINGSOUND                      : Actor Byte String
+ 77 SVC_SETTHINGSPAWNPOINT                 : Actor Fixed Fixed Fixed
+ 78 SVC_SETTHINGSPECIAL1                   : Actor Short
+ 79 SVC_SETTHINGSPECIAL2                   : Actor Short
+ 80 SVC_SETTHINGTICS                       : Actor Short
+ 81 SVC_SETTHINGTID                        : Actor Long
+ 20 SVC2_SETTHINGREACTIONTIME              [Extended] : Actor Short
+ 82 SVC_SETTHINGGRAVITY                    : Actor Long
+ 83 SVC_SETTHINGFRAME                      : Actor Class<AActor> Short
+ 84 SVC_SETTHINGFRAMENF                    : Actor Class<AActor> Short
+ 85 SVC_SETWEAPONAMMOGIVE                  : Actor<AWeapon> Short Short
+ 21 SVC2_SETTHINGSCALE                     [Extended] : Actor Byte Long?{scaleflags & ACTORSCALE_X} Long?{scaleflags & ACTORSCALE_Y}
+ 22 SVC2_SETTHINGSIZE                      [Extended] : Actor Byte Long?{sizeflags & ACTORSIZE_RADIUS} Long?{sizeflags & ACTORSIZE_HEIGHT} Long?{sizeflags & ACTORSIZE_HITRADIUS} Long?{sizeflags & ACTORSIZE_HITHEIGHT}
+ 86 SVC_THINGISCORPSE                      : Actor Bool
+ 87 SVC_HIDETHING                          : Actor<AInventory>
+ 88 SVC_TELEPORTTHING                      : Actor AproxFixed AproxFixed AproxFixed AproxFixed AproxFixed AproxFixed Short Angle Bool Bool Bool
+ 89 SVC_THINGACTIVATE                      : Actor Actor
+ 90 SVC_THINGDEACTIVATE                    : Actor Actor
+ 91 SVC_RESPAWNDOOMTHING                   : Actor Bool
+ 92 SVC_RESPAWNRAVENTHING                  : Actor
+ 93 SVC_SPAWNBLOOD                         : AproxFixed AproxFixed AproxFixed AproxAngle Byte Actor
+ 94 SVC_SPAWNBLOODSPLATTER                 : AproxFixed AproxFixed AproxFixed Actor
+ 95 SVC_SPAWNBLOODSPLATTER2                : AproxFixed AproxFixed AproxFixed Actor
+ 96 SVC_SPAWNPUFF                          : AproxFixed AproxFixed AproxFixed Class NetID
+ 97 SVC_SPAWNPUFFNONETID                   : AproxFixed AproxFixed AproxFixed Class Byte Bool Long?{receiveTranslation}
+ 23 SVC2_STARTCONVERSATION                 [Extended] : Actor Player Long Bool Bool
+ 24 SVC2_CONVERSATIONREPLY                 [Extended] : Player Long Long
+ 25 SVC2_ENDCONVERSATION                   [Extended] : Player
+ 98 SVC_SETSECTORFLOORPLANE                : Sector AproxFixed
+ 99 SVC_SETSECTORCEILINGPLANE              : Sector AproxFixed
+100 SVC_SETSECTORFLOORPLANESLOPE           : Sector AproxFixed AproxFixed AproxFixed
+101 SVC_SETSECTORCEILINGPLANESLOPE         : Sector AproxFixed AproxFixed AproxFixed
+102 SVC_SETSECTORLIGHTLEVEL                : Sector Short
+103 SVC_SETSECTORCOLOR                     : Sector Byte Byte Byte Byte
+104 SVC_SETSECTORCOLORBYTAG                : Short Byte Byte Byte Byte
+105 SVC_SETSECTORFADE                      : Sector Byte Byte Byte
+106 SVC_SETSECTORFADEBYTAG                 : Short Byte Byte Byte
+107 SVC_SETSECTORFLAT                      : Sector String String
+108 SVC_SETSECTORPANNING                   : Sector Fixed Fixed Fixed Fixed
+109 SVC_SETSECTORROTATION                  : Sector Short Short
+110 SVC_SETSECTORROTATIONBYTAG             : Short Short Short
+111 SVC_SETSECTORSCALE                     : Sector Fixed Fixed Fixed Fixed
+112 SVC_SETSECTORSPECIAL                   : Sector Short
+113 SVC_SETSECTORFRICTION                  : Sector Fixed Fixed
+114 SVC_SETSECTORANGLEYOFFSET              : Sector Fixed Fixed Fixed Fixed
+115 SVC_SETSECTORGRAVITY                   : Sector Float
+116 SVC_SETSECTORREFLECTION                : Sector Float Float
+117 SVC_SETSECTORLINK                      : Sector Short Byte Byte
+118 SVC_STOPSECTORLIGHTEFFECT              : Sector
+119 SVC_DESTROYALLSECTORMOVERS             : (no fields)
+120 SVC_STARTSECTORSEQUENCE                : Sector Byte String Byte
+121 SVC_STOPSECTORSEQUENCE                 : Sector
+122 SVC_DOSECTORLIGHTFIREFLICKER           : Sector Short Short
+123 SVC_DOSECTORLIGHTFLICKER               : Sector Short Short
+124 SVC_DOSECTORLIGHTLIGHTFLASH            : Sector Short Short
+125 SVC_DOSECTORLIGHTSTROBE                : Sector Short Short Short Short Byte
+126 SVC_DOSECTORLIGHTGLOW                  : Sector
+127 SVC_DOSECTORLIGHTGLOW2                 : Sector Short Short Short Short Bool
+128 SVC_DOSECTORLIGHTPHASED                : Sector Short Byte
+129 SVC_SETLINEALPHA                       : Line Fixed
+130 SVC_SETLINETEXTURE                     : Line String Bool Byte
+131 SVC_SETLINETEXTUREBYID                 : UShort String Bool Byte
+132 SVC_SETLINETEXTUREOFFSET               : Line Fixed Fixed Bool Byte
+ 26 SVC2_SETLINETEXTUREOFFSETBYID          [Extended] : UShort Fixed Fixed Bool Byte
+133 SVC_SETLINETEXTURESCALE                : Line Fixed Fixed Bool Byte
+ 27 SVC2_SETLINETEXTURESCALEBYID           [Extended] : UShort Fixed Fixed Bool Byte
+134 SVC_SETSOMELINEFLAGS                   : Line Long
+135 SVC_SETSIDEFLAGS                       : Side Byte
+136 SVC_SOUND                              : Byte String Byte Byte Short
+137 SVC_SOUNDACTOR                         : Actor Short String Byte Byte Short
+138 SVC_SOUNDACTORIFNOTPLAYING             : Actor Short String Byte Byte Short
+ 28 SVC2_SOUNDSECTOR                       [Extended] : Sector Short String Byte Byte Short
+139 SVC_SOUNDPOINT                         : AproxFixed AproxFixed AproxFixed Byte String Byte Byte Short
+140 SVC_ANNOUNCERSOUND                     : String
+ 29 SVC2_STOPSOUND                         [Extended] : Actor Byte
+ 30 SVC2_STOPORIGINLESSSOUND               [Extended] : Byte
+141 SVC_SPAWNMISSILE                       : AproxFixed AproxFixed AproxFixed Fixed Fixed Fixed Class<AActor> NetID NetID
+142 SVC_SPAWNMISSILEEXACT                  : Fixed Fixed Fixed Fixed Fixed Fixed Class<AActor> NetID NetID
+143 SVC_MISSILEEXPLODE                     : Actor Short AproxFixed AproxFixed AproxFixed
+144 SVC_WEAPONSOUND                        : Player String
+145 SVC_WEAPONCHANGE                       : Player Class<AWeapon>
+146 SVC_WEAPONRAILGUN                      : Actor Vector3 Vector3 Long Long Float ShortByte<7> Bool Long?{extended} Class?{extended} Short?{extended} Float?{extended} Float?{extended}
+ 31 SVC2_SETWEAPONZOOMFACTOR               [Extended] : Player Float Byte
+147 SVC_ACSSCRIPTEXECUTE                   : Short Actor Short Byte Variable Variable Variable Variable Bool Bool
+ 32 SVC2_ACSSENDSTRING                     [Extended] : Short Actor String
+ 33 SVC2_SYNCJOINQUEUE                     [Extended] : Struct
+ 34 SVC2_SYNCMAPROTATION                   [Extended] : Struct Short
+ 35 SVC2_SYNCPLAYERMEDALCOUNTS             [Extended] : Byte Struct
+148 SVC_REPLACETEXTURES                    : String String Byte
+ 36 SVC2_SETCUSTOMPLAYERVALUE              [Extended] : Byte Byte String
+ 37 SVC2_RESETCUSTOMPLAYERVALUE            [Extended] : Byte Byte
+ 38 SVC2_OPENMENU                          [Extended] : String
+ 39 SVC2_CLOSEMENU                         [Extended] : (no fields)
+149 SVC_SETDOMINATIONPOINTOWNER            : Byte Byte Bool
+ 40 SVC2_SETDOMINATIONPOINTSTATE           [Extended] : Byte Bool Byte
+ 41 SVC2_DEBUGEXPLOSION                    [Extended] : AproxFixed AproxFixed AproxFixed Short Short
