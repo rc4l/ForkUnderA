@@ -266,7 +266,7 @@ e84dc994755b09c8039d231fe6230eca4d577f4e	2014-05-18T10:46:28Z	Merge branch 'mast
 d2b0596cd44a2092a39071888d7f1df188b694b1	2014-05-18T22:39:41Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	19f9e2e skip: merge commit, no unique content (changes live in the parents)	/
 582b1990b7f342601a1976c85d0ce2b25343458e	2014-05-18T23:00:31Z	- restore original line endings	ported	19f9e2e inherited: added lines already present (25/25); pre-dates or matches our base	zandronum-base
 8ec95dc58eba6a0197b733ff2a6f7a3dc5b6b36b	2014-05-20T08:14:44Z	- fixed a few places in the savegame code where map names were still truncated to 8 characters.	pending		/
-261bc778467ac07657b35ca92e0d0f69a092a32e	2014-05-20T08:29:27Z	- fixed: when bringing up a new weapon the current flash state needs to be removed.	pending		/
+261bc778467ac07657b35ca92e0d0f69a092a32e	2014-05-20T08:29:27Z	- fixed: when bringing up a new weapon the current flash state needs to be removed.	ported	ported: P_BringUpWeapon clears ps_flash; ClearOverlays does not since ps_flash is reserved. Ungated, mirroring the adjacent P_SetPsprite	0f62c40
 23fbd6996390dc134f8e0d1098a5b4da34542613	2014-05-20T20:20:15Z	- 4 more places where immediate mode drawing has been substituted with a buffer-based alternative.	ported	a9b178e	a9b178e
 09ba62fbef5a858ea5ed35f5926baeca74988441	2014-05-20T20:37:38Z	- put all the common part of buffer based drawing into a separate method of the vertex buffer.	ported	a9b178e	a9b178e
 f5ea31b51810d52642723e626344b5bc05f37ca8	2014-05-20T22:36:04Z	- use vertex buffer for all the common 2D rendering functions.	ported	a9b178e	a9b178e
