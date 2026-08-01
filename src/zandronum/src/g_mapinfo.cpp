@@ -72,9 +72,10 @@ extern TMap<int, FString> HexenMusic;
 static int FindWadLevelInfo (const char *name)
 {
 	for (unsigned int i = 0; i < wadlevelinfos.Size(); i++)
-		if (!strnicmp (name, wadlevelinfos[i].mapname, 8))
+	{
+		if (!wadlevelinfos[i].MapName.CompareNoCase(name))
 			return i;
-		
+	}
 	return -1;
 }
 
@@ -95,8 +96,7 @@ level_info_t *FindLevelInfo (const char *mapname, bool allowdefault)
 	{
 		if (TheDefaultLevelInfo.LevelName.IsEmpty())
 		{
-			uppercopy(TheDefaultLevelInfo.skypic1, "SKY1");
-			uppercopy(TheDefaultLevelInfo.skypic2, "SKY1");
+			TheDefaultLevelInfo.SkyPic2 = TheDefaultLevelInfo.SkyPic1 = "SKY1";
 			TheDefaultLevelInfo.LevelName = "Unnamed";
 		}
 		return &TheDefaultLevelInfo;
@@ -161,7 +161,7 @@ bool CheckWarpTransMap (FString &mapname, bool substitute)
 		level_info_t *lev = FindLevelByWarpTrans (atoi (&mapname[4]));
 		if (lev != NULL)
 		{
-			mapname = lev->mapname;
+			mapname = lev->MapName;
 			return true;
 		}
 		else if (substitute)
@@ -241,14 +241,13 @@ void P_RemoveDefereds (void)
 
 void level_info_t::Reset()
 {
-	mapname[0] = 0;
-	mapbg[0] = 0;
+	MapName = "";
+	MapBackground = "";
 	levelnum = 0;
-	pname[0] = 0;
-	nextmap[0] = 0;
-	secretmap[0] = 0;
-	strcpy (skypic1, "-NOFLAT-");
-	strcpy (skypic2, "-NOFLAT-");
+	PName = "";
+	NextMap = "";
+	NextSecretMap = "";
+	SkyPic1 = SkyPic2 = "-NOFLAT-";
 	cluster = 0;
 	partime = 0;
 	sucktime = 0;
@@ -263,10 +262,10 @@ void level_info_t::Reset()
 	Music = "";
 	LevelName = "";
 	AuthorName = "";
-	strcpy (fadetable, "COLORMAP");
+	FadeTable = "COLORMAP";
 	WallHorizLight = -8;
 	WallVertLight = +8;
-	f1[0] = 0;
+	F1Pic = "";
 	musicorder = 0;
 	snapshot = NULL;
 	snapshotVer = 0;
@@ -284,7 +283,7 @@ void level_info_t::Reset()
 	compatmask = compatmask2 = 0;
 	Translator = "";
 	RedirectType = 0;
-	RedirectMap[0] = 0;
+	RedirectMapName = "";
 	RedirectCVAR = 0;
 	RedirectCVARMap[0] = 0;
 	EnterPic = "";
@@ -300,7 +299,7 @@ void level_info_t::Reset()
 	FinaleFlat = "";
 	FinaleMusic = "";
 	finalemusicorder = 0;
-	bordertexture[0] = 0;
+	BorderTexture = "";
 	teamdamage = 0.f;
 	specialactions.Clear();
 	DefaultEnvironment = 0;
@@ -334,17 +333,17 @@ FString level_info_t::LookupLevelName()
 			char checkstring[32];
 
 			// Strip out the header from the localized string
-			if (mapname[0] == 'E' && mapname[2] == 'M')
+			if (MapName.Len() > 3 && MapName[0] == 'E' && MapName[2] == 'M')
 			{
-				mysnprintf (checkstring, countof(checkstring), "%s: ", mapname);
+				mysnprintf (checkstring, countof(checkstring), "%s: ", MapName.GetChars());
 			}
-			else if (mapname[0] == 'M' && mapname[1] == 'A' && mapname[2] == 'P')
+			else if (MapName.Len() > 3 && MapName[0] == 'M' && MapName[1] == 'A' && MapName[2] == 'P')
 			{
-				mysnprintf (checkstring, countof(checkstring), "%d: ", atoi(mapname + 3));
+				mysnprintf (checkstring, countof(checkstring), "%d: ", atoi(&MapName[3]));
 			}
-			else if (mapname[0] == 'L' && mapname[1] == 'E' && mapname[2] == 'V' && mapname[3] == 'E' && mapname[4] == 'L')
+			else if (MapName.Len() > 5 && MapName[0] == 'L' && MapName[1] == 'E' && MapName[2] == 'V' && MapName[3] == 'E' && MapName[4] == 'L')
 			{
-				mysnprintf (checkstring, countof(checkstring), "%d: ", atoi(mapname + 5));
+				mysnprintf (checkstring, countof(checkstring), "%d: ", atoi(&MapName[5]));
 			}
 			else
 			{
@@ -411,9 +410,9 @@ level_info_t *level_info_t::CheckLevelRedirect ()
 				if (playeringame[i] && players[i].mo->FindInventory (type))
 				{
 					// check for actual presence of the map.
-					if (P_CheckMapData(RedirectMap))
+					if (P_CheckMapData(RedirectMapName))
 					{
-						return FindLevelInfo(RedirectMap);
+						return FindLevelInfo(RedirectMapName);
 					}
 					break;
 				}
@@ -448,7 +447,7 @@ level_info_t *level_info_t::CheckLevelRedirect ()
 
 bool level_info_t::isValid()
 {
-	return mapname[0] != 0 || this == &TheDefaultLevelInfo;
+	return MapName.Len() != 0 || this == &TheDefaultLevelInfo;
 }
 
 //==========================================================================
@@ -851,52 +850,57 @@ void FMapInfoParser::ParseCluster()
 //
 //==========================================================================
 
-void FMapInfoParser::ParseNextMap(char *mapname)
+void FMapInfoParser::ParseNextMap(FString &mapname)
 {
 	if (sc.CheckNumber())
 	{
 		if (HexenHack)
 		{
-			mysnprintf (mapname, 9, "&wt@%02d", sc.Number);
+			mapname.Format("&wt@%02d", sc.Number);
 		}
 		else
 		{
-			mysnprintf (mapname, 9, "MAP%02d", sc.Number);
+			mapname.Format("MAP%02d", sc.Number);
 		}
 	}
 	else
 	{
-		*mapname = 0;
 		sc.MustGetString();
-		strncpy (mapname, sc.String, 8);
-		mapname[8] = 0;
+		mapname = sc.String;
 		FName seq = CheckEndSequence();
 		if (seq != NAME_None)
 		{
-			mysnprintf(mapname, 11, "enDSeQ%04x", int(seq));
+			mapname.Format("enDSeQ%04x", int(seq));
 		}
 		// [BB] If we're in a multiplayer game, don't do the finale, just go back to the
 		// beginning.
 		else if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			if ( strnicmp( mapname, "EndGame", 7 ) == 0 )
+			// [rc4l] uzdoom@a37545447 made this parameter an FString (that is what lifts the
+			// 8-character map-name limit), so these become assignments rather than strcpy into a
+			// fixed buffer. Guard the [7] index too: with a variable-length name "EndGame" itself
+			// is a legal 7-character value and indexing past it would read the NUL at best.
+			if ( strnicmp( mapname.GetChars(), "EndGame", 7 ) == 0 )
 			{
-				switch ( mapname[7] )
+				switch ( mapname.Len() > 7 ? mapname[7] : '\0' )
 				{
-				case '1':	strcpy( mapname, "E1M1" );	break;
-				case '2':	strcpy( mapname, "E2M1" );	break;
-				case '3':	strcpy( mapname, "E3M1" );	break;
-				case '4':	strcpy( mapname, "E4M1" );	break;
-				case 'C':	strcpy( mapname, "MAP01" );	break;
+				case '1':	mapname = "E1M1";	break;
+				case '2':	mapname = "E2M1";	break;
+				case '3':	mapname = "E3M1";	break;
+				case '4':	mapname = "E4M1";	break;
+				case 'C':	mapname = "MAP01";	break;
 //				case 'W':	type = END_Underwater;	break;
 //				case 'S':	type = END_Strife;		break;
-				default:	strcpy( mapname, "MAP01" );	break;
+				default:	mapname = "MAP01";	break;
 				}
 			}
 
 			// [BB] In a multiplayer game, we can't go to the title either.
-			if ( ( stricmp (mapname, "EndTitle") == 0 ) && ( AllEpisodes.Size() > 0 ) )
-				strncpy( mapname, AllEpisodes[0].mEpisodeMap.GetChars(), 8 );
+			// [rc4l] Assignment, not a truncating strncpy: mapname is an FString now, and the
+			// 8-character clamp was only ever the fixed buffer's limit. An episode's start map may
+			// legitimately have a longer name after uzdoom@a37545447.
+			if ( ( stricmp (mapname.GetChars(), "EndTitle") == 0 ) && ( AllEpisodes.Size() > 0 ) )
+				mapname = AllEpisodes[0].mEpisodeMap;
 		}
 	}
 }
@@ -917,19 +921,19 @@ DEFINE_MAP_OPTION(levelnum, true)
 DEFINE_MAP_OPTION(next, true)
 {
 	parse.ParseAssign();
-	parse.ParseNextMap(info->nextmap);
+	parse.ParseNextMap(info->NextMap);
 }
 
 DEFINE_MAP_OPTION(secretnext, true)
 {
 	parse.ParseAssign();
-	parse.ParseNextMap(info->secretmap);
+	parse.ParseNextMap(info->NextSecretMap);
 }
 
 DEFINE_MAP_OPTION(secret, true) // Just an alias for secretnext, for Vavoom compatibility
 {
 	parse.ParseAssign();
-	parse.ParseNextMap(info->secretmap);
+	parse.ParseNextMap(info->NextSecretMap);
 }
 
 DEFINE_MAP_OPTION(cluster, true)
@@ -958,7 +962,7 @@ DEFINE_MAP_OPTION(cluster, true)
 DEFINE_MAP_OPTION(sky1, true)
 {
 	parse.ParseAssign();
-	parse.ParseLumpOrTextureName(info->skypic1);
+	parse.ParseLumpOrTextureName(info->SkyPic1);
 	if (parse.CheckFloat())
 	{
 		if (parse.HexenHack)
@@ -972,7 +976,7 @@ DEFINE_MAP_OPTION(sky1, true)
 DEFINE_MAP_OPTION(sky2, true)
 {
 	parse.ParseAssign();
-	parse.ParseLumpOrTextureName(info->skypic2);
+	parse.ParseLumpOrTextureName(info->SkyPic2);
 	if (parse.CheckFloat())
 	{
 		if (parse.HexenHack)
@@ -987,7 +991,7 @@ DEFINE_MAP_OPTION(sky2, true)
 DEFINE_MAP_OPTION(skybox, true)
 {
 	parse.ParseAssign();
-	parse.ParseLumpOrTextureName(info->skypic1);
+	parse.ParseLumpOrTextureName(info->SkyPic1);
 	info->skyspeed1 = 0;
 }
 
@@ -1008,7 +1012,7 @@ DEFINE_MAP_OPTION(outsidefog, true)
 DEFINE_MAP_OPTION(titlepatch, true)
 {
 	parse.ParseAssign();
-	parse.ParseLumpOrTextureName(info->pname);
+	parse.ParseLumpOrTextureName(info->PName);
 }
 
 DEFINE_MAP_OPTION(partime, true)
@@ -1047,7 +1051,7 @@ DEFINE_MAP_OPTION(intermusic, true)
 DEFINE_MAP_OPTION(fadetable, true)
 {
 	parse.ParseAssign();
-	parse.ParseLumpOrTextureName(info->fadetable);
+	parse.ParseLumpOrTextureName(info->FadeTable);
 }
 
 DEFINE_MAP_OPTION(evenlighting, true)
@@ -1302,7 +1306,7 @@ DEFINE_MAP_OPTION(redirect, true)
 	parse.sc.MustGetString();
 	info->RedirectType = parse.sc.String;
 	parse.ParseComma();
-	parse.ParseLumpOrTextureName(info->RedirectMap);
+	parse.ParseNextMap(info->RedirectMapName);
 }
 
 // [ZandroX] cvar_redirect: redirect to another map when a CVAR is non-zero.
@@ -1361,13 +1365,13 @@ DEFINE_MAP_OPTION(slideshow, false)
 DEFINE_MAP_OPTION(bordertexture, true)
 {
 	parse.ParseAssign();
-	parse.ParseLumpOrTextureName(info->bordertexture);
+	parse.ParseLumpOrTextureName(info->BorderTexture);
 }
 
 DEFINE_MAP_OPTION(f1, true)
 {
 	parse.ParseAssign();
-	parse.ParseLumpOrTextureName(info->f1);
+	parse.ParseLumpOrTextureName(info->F1Pic);
 }
 
 DEFINE_MAP_OPTION(teamdamage, true)
@@ -1380,7 +1384,7 @@ DEFINE_MAP_OPTION(teamdamage, true)
 DEFINE_MAP_OPTION(mapbackground, true)
 {
 	parse.ParseAssign();
-	parse.ParseLumpOrTextureName(info->mapbg);
+	parse.ParseLumpOrTextureName(info->MapBackground);
 }
 
 DEFINE_MAP_OPTION(defaultenvironment, false)
@@ -1930,8 +1934,8 @@ level_info_t *FMapInfoParser::ParseMapHeader(level_info_t &defaultinfo)
 
 	}
 
-	uppercopy (levelinfo->mapname, mapname);
-	levelinfo->mapname[8] = 0;
+	levelinfo->MapName = mapname;
+	levelinfo->MapName.ToUpper();
 	sc.MustGetString ();
 	if (sc.String[0] == '$')
 	{
@@ -1951,7 +1955,7 @@ level_info_t *FMapInfoParser::ParseMapHeader(level_info_t &defaultinfo)
 
 	// Set up levelnum now so that you can use Teleport_NewMap specials
 	// to teleport to maps with standard names without needing a levelnum.
-	levelinfo->levelnum = GetDefaultLevelNum(levelinfo->mapname);
+	levelinfo->levelnum = GetDefaultLevelNum(levelinfo->MapName);
 
 	// Does this map have a song defined via SNDINFO's $map command?
 	// Set that as this map's default music if it does.
@@ -2271,9 +2275,9 @@ void FMapInfoParser::ParseMapInfo (int lump, level_info_t &gamedefaults, level_i
 			ParseMapDefinition(*levelinfo);
 
 			// When the second sky is -NOFLAT-, make it a copy of the first sky
-			if (strcmp (levelinfo->skypic2, "-NOFLAT-") == 0)
+			if (!levelinfo->SkyPic2.CompareNoCase("-NOFLAT-"))
 			{
-				strcpy (levelinfo->skypic2, levelinfo->skypic1);
+				levelinfo->SkyPic2 = levelinfo->SkyPic1;
 			}
 			SetLevelNum (levelinfo, levelinfo->levelnum);	// Wipe out matching levelnums from other maps.
 		}

@@ -68,6 +68,7 @@
 #include "r_sky.h"
 #include "g_game.h"
 #include "g_level.h"
+#include "features/skywire/computation/sky_wire_compute.h"
 #include "sbar.h"
 #include "m_swap.h"
 #include "m_png.h"
@@ -1811,7 +1812,7 @@ void G_Ticker ()
 				if ( duel )
 				{
 					// If the player must win all duels, and lost this one, then he's DONE!
-					if (( DUEL_GetLoser( ) == static_cast<unsigned>( consoleplayer )) && ( CAMPAIGN_InCampaign( )) && ( CAMPAIGN_GetCampaignInfo( level.mapname )->bMustWinAllDuels ))
+					if (( DUEL_GetLoser( ) == static_cast<unsigned>( consoleplayer )) && ( CAMPAIGN_InCampaign( )) && ( CAMPAIGN_GetCampaignInfo( const_cast<char *>( level.MapName.GetChars() ) )->bMustWinAllDuels ))
 					{
 						// Tell the player he loses!
 						Printf( "You lose!\n" );
@@ -2736,7 +2737,7 @@ void G_DoReborn (int playernum, bool freshbot)
 		{ // Reload the level from scratch
 			bool indemo = demoplayback;
 			BackupSaveName = "";
-			G_InitNew (level.mapname, false);
+			G_InitNew (level.MapName, false);
 			demoplayback = indemo;
 //			gameaction = ga_loadlevel;
 		}
@@ -3275,9 +3276,9 @@ void GAME_ResetScripts ( )
 	}
 
 	// Open the current map and load its BEHAVIOR lump.
-	MapData *pMap = P_OpenMapData( level.mapname, false );
+	MapData *pMap = P_OpenMapData( level.MapName, false );
 	if ( pMap == NULL )
-		I_Error( "GAME_ResetMap: Unable to open map '%s'\n", level.mapname );
+		I_Error( "GAME_ResetMap: Unable to open map '%s'\n", level.MapName.GetChars() );
 	else if ( pMap->HasBehavior )
 		P_LoadBehavior( pMap );
 
@@ -3806,23 +3807,27 @@ void GAME_ResetMap( bool bRunEnterScripts )
 	}
 
 	// Reset the sky properties of the map.
-	pLevelInfo = level.info;//FindLevelInfo( level.mapname );
+	pLevelInfo = level.info;//FindLevelInfo( level.MapName );
 	if ( pLevelInfo )
 	{
 		bSendSkyUpdate = false;
-		if (( stricmp( level.skypic1, pLevelInfo->skypic1 ) != 0 ) ||
-			( stricmp( level.skypic2, pLevelInfo->skypic2 ) != 0 ))
-		{
+		// [rc4l] uzdoom@65e8563cf: the level's sky IS the resolved texture id now, so compare ids
+		// rather than names -- which is also more correct, since two names that resolve to the same
+		// texture are the same sky and no longer trigger a pointless broadcast.
+		FString sky2Name = pLevelInfo->SkyPic2;
+		if ( sky2Name.IsEmpty() )
+			sky2Name = pLevelInfo->SkyPic1;
+
+		const FTextureID newSky1 = TexMan.GetTexture( pLevelInfo->SkyPic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		const FTextureID newSky2 = TexMan.GetTexture( sky2Name, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+
+		if (( level.skytexture1 != newSky1 ) || ( level.skytexture2 != newSky2 ))
 			bSendSkyUpdate = true;
-		}
 
-		snprintf( level.skypic1, sizeof( level.skypic1 ), "%s", pLevelInfo->skypic1 );
-		snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", pLevelInfo->skypic2 );
-		if ( level.skypic2[0] == 0 )
-			snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", level.skypic1 );
-
-		sky1texture = TexMan.GetTexture( level.skypic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
-		sky2texture = TexMan.GetTexture( level.skypic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		level.skytexture1 = newSky1;
+		level.skytexture2 = newSky2;
+		sky1texture = level.skytexture1;
+		sky2texture = level.skytexture2;
 
 		R_InitSkyMap( );
 
@@ -4869,7 +4874,7 @@ static void PutSaveComment (FILE *file)
 
 	// Get level name
 	//strcpy (comment, level.level_name);
-	mysnprintf(comment, countof(comment), "%s - %s", level.mapname, level.LevelName.GetChars());
+	mysnprintf(comment, countof(comment), "%s - %s", level.MapName.GetChars(), level.LevelName.GetChars());
 	len = (WORD)strlen (comment);
 	comment[len] = '\n';
 
@@ -4931,7 +4936,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	M_AppendPNGText (stdfile, "Engine", GetEngineString() );
 	M_AppendPNGText (stdfile, "ZDoom Save Version", SAVESIG);
 	M_AppendPNGText (stdfile, "Title", description);
-	M_AppendPNGText (stdfile, "Current Map", level.mapname);
+	M_AppendPNGText (stdfile, "Current Map", level.MapName);
 	PutSaveWads (stdfile);
 	PutSaveComment (stdfile);
 
@@ -5147,7 +5152,7 @@ void G_BeginRecording (const char *startmap)
 
 	if (startmap == NULL)
 	{
-		startmap = level.mapname;
+		startmap = level.MapName;
 	}
 	demo_p = demobuffer;
 

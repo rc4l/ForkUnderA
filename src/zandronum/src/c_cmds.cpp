@@ -638,7 +638,8 @@ CCMD (changemap)
 				// Fuck that DEM shit!
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 				{
-					strncpy( level.nextmap, argv[1], 8 );
+					// [rc4l] uzdoom@24886b673: NextMap is an FString now, so no 8-char copy.
+					level.NextMap = argv[1];
 
 					level.flags |= LEVEL_CHANGEMAPCHEAT;
 
@@ -793,7 +794,7 @@ static bool CheckOnlinePuke ( int script, int args[4], bool always )
 	// is done in P_StartScript, no need to check here.
 	if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) || ACS_IsScriptClientSide ( script ) )
 	{
-		P_StartScript( NETWORK_GetState( ) == NETSTATE_SERVER ? NULL : players[consoleplayer].mo, NULL, script, level.mapname,
+		P_StartScript( NETWORK_GetState( ) == NETSTATE_SERVER ? NULL : players[consoleplayer].mo, NULL, script, level.MapName,
 			args, 4, ( (script < 0 ) ? ACS_ALWAYS : 0 ) | ACS_NET );
 
 		// [BB] If the server (and not any ACS script via ConsoleCommand) calls puke, let the clients know.
@@ -1368,8 +1369,15 @@ CCMD(changesky)
 	sky1name = argv[1];
 	if (sky1name[0] != 0)
 	{
-		strncpy (level.skypic1, sky1name, 8);
-		sky1texture = TexMan.GetTexture (sky1name, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable);
+		FTextureID newsky = TexMan.GetTexture(sky1name, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
+		if (newsky.Exists())
+		{
+			sky1texture = level.skytexture1 = newsky;
+		}
+		else
+		{
+			Printf("changesky: Texture '%s' not found\n", sky1name);
+		}
 	}
 	R_InitSkyMap ();
 }
@@ -1454,14 +1462,10 @@ CCMD(nextmap)
 				TEXTCOLOR_NORMAL " is for single-player only.\n");
 		return;
 	}
-	char *next = NULL;
 	
-	if (*level.nextmap)
-		next = level.nextmap;
-
-	if (next != NULL && strncmp(next, "enDSeQ", 6))
+	if (level.NextMap.Len() > 0 && level.NextMap.Compare("enDSeQ", 6))
 	{
-		G_DeferedInitNew(next);
+		G_DeferedInitNew(level.NextMap);
 	}
 	else
 	{
@@ -1528,12 +1532,9 @@ CCMD(nextsecret)
 	}
 	char *next = NULL;
 	
-	if (*level.secretmap)
-		next = level.secretmap;
-
-	if (next != NULL && strncmp(next, "enDSeQ", 6))
+	if (level.NextSecretMap.Len() > 0 && level.NextSecretMap.Compare("enDSeQ", 6))
 	{
-		G_DeferedInitNew(next);
+		G_DeferedInitNew(level.NextSecretMap);
 	}
 	else
 	{
@@ -1774,8 +1775,8 @@ static void PrintSecretString(const char *string, bool thislevel)
 
 CCMD(secret)
 {
-	const char *mapname = argv.argc() < 2? level.mapname : argv[1];
-	bool thislevel = !stricmp(mapname, level.mapname);
+	const char *mapname = argv.argc() < 2? level.MapName.GetChars() : argv[1];
+	bool thislevel = !stricmp(mapname, level.MapName);
 	bool foundsome = false;
 
 	int lumpno=Wads.CheckNumForName("SECRETS");

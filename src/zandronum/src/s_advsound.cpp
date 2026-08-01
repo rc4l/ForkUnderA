@@ -2383,14 +2383,19 @@ class AMusicChanger : public ASectorAction
 {
 	DECLARE_CLASS (AMusicChanger, ASectorAction)
 public:
-	virtual bool TriggerAction (AActor *triggerer, int activationType);
+	// [rc4l] Overrides DoTriggerAction, not TriggerAction: uzdoom@e49e926bd made the latter a
+	// non-virtual wrapper on ASectorAction. Left as an override of TriggerAction it would merely
+	// SHADOW the base -- so a music changer fired through the sector-action list would run the
+	// base wrapper and never change the music. Upstream shipped that inconsistency here and only
+	// lost it later when the music changer was scriptified, which is not a fix we can inherit.
+	bool DoTriggerAction (AActor *triggerer, int activationType) override;
 	virtual void Tick();
 	virtual void PostBeginPlay();
 };
 
 IMPLEMENT_CLASS(AMusicChanger)
 
-bool AMusicChanger::TriggerAction (AActor *triggerer, int activationType)
+bool AMusicChanger::DoTriggerAction (AActor *triggerer, int activationType)
 {
 	if (activationType & SECSPAC_Enter)
 	{
@@ -2400,7 +2405,7 @@ bool AMusicChanger::TriggerAction (AActor *triggerer, int activationType)
 			reactiontime = 30;
 		}
 	}
-	return Super::TriggerAction (triggerer, activationType);
+	return Super::DoTriggerAction (triggerer, activationType);
 }
  
 void AMusicChanger::Tick()
