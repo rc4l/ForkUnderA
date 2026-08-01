@@ -81,7 +81,7 @@ struct FMapInfoParser
 
 	bool ParseLookupName(FString &dest);
 	void ParseMusic(FString &name, int &order);
-	void ParseLumpOrTextureName(char *name);
+	//void ParseLumpOrTextureName(char *name);
 	void ParseLumpOrTextureName(FString &name);
 
 	void ParseCluster();
@@ -358,7 +358,11 @@ struct level_info_t
 	// [ZandroX] cvar_redirect: like RedirectType, but keyed on a CVAR being
 	// non-zero rather than a player carrying an item. Ported from uzdoom@04ea28def.
 	FName		RedirectCVAR;
-	char		RedirectCVARMap[9];
+	// [rc4l] FString like every other map-name field since uzdoom@a37545447. This one is
+	// Zandronum's (cvar_redirect), so upstream never converted it -- but it is parsed by the same
+	// ParseLumpOrTextureName, which takes an FString& as of uzdoom@bf6a193e5, and it is a map name
+	// so the 8-character ceiling was just as wrong here.
+	FString		RedirectCVARMap;
 
 	FString		EnterPic;
 	FString		ExitPic;
