@@ -236,10 +236,15 @@ public:
 	void BeginPlay ();
 	void Activate (AActor *source);
 	void Deactivate (AActor *source);
-	virtual bool TriggerAction (AActor *triggerer, int activationType);
+	// [rc4l] uzdoom@e49e926bd made TriggerAction non-virtual and moved the overridable part to
+	// DoTriggerAction, so the base can act once around every subclass (that is what lets a sector
+	// action remove itself after triggering). Zandronum's PrepareForHiding and
+	// RemoveFromSectorActionsList below are ours and stay put.
+	bool TriggerAction (AActor *triggerer, int activationType);
 	// [BB] Added PrepareForHiding ();
 	virtual void PrepareForHiding ();
 protected:
+	virtual bool DoTriggerAction (AActor *triggerer, int activationType);
 	bool CheckTrigger (AActor *triggerer) const;
 	// [BB] Added RemoveFromSectorActionsList ();
 	void RemoveFromSectorActionsList ();

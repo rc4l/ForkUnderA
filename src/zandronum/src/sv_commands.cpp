@@ -65,6 +65,7 @@
 #include "r_state.h"
 #include "sbar.h"
 #include "sv_commands.h"
+#include "features/skywire/computation/sky_wire_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "sv_main.h"
 #include "team.h"
@@ -3853,7 +3854,7 @@ void SERVERCOMMANDS_ClearVote( ULONG ulPlayerExtra, ServerCommandFlags flags )
 void SERVERCOMMANDS_MapLoad( ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	ServerCommands::MapLoad command;
-	command.SetMapName( level.mapname );
+	command.SetMapName( level.MapName.GetChars() );
 	command.SetCurrentPosition( MAPROTATION_GetCurrentPosition() );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
@@ -3994,9 +3995,22 @@ void SERVERCOMMANDS_SetMapMusic( const char *pszMusic, int track, ULONG ulPlayer
 //
 void SERVERCOMMANDS_SetMapSky( ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [rc4l] The sky goes on the wire BY NAME, but the level only holds resolved texture ids since
+	// uzdoom@65e8563cf -- so materialise the name here, at the one place that needs it, rather than
+	// keeping a second copy of the sky in FLevelLocals. The bound is FTexture::Name's own char[9],
+	// i.e. the same eight characters clients have always received; features/skywire pins it and the
+	// static_asserts below stop the two definitions drifting.
+	static_assert( sizeof( FTexture::Name ) == zx::ZX_SKY_NAME_SIZE, "sky name wire size changed" );
+
+	char sky1[zx::ZX_SKY_NAME_SIZE], sky2[zx::ZX_SKY_NAME_SIZE];
+	const FTexture *pSky1 = TexMan[level.skytexture1];
+	const FTexture *pSky2 = TexMan[level.skytexture2];
+	zx::CopySkyNameForWire( pSky1 ? pSky1->Name : "", sky1, sizeof( sky1 ) );
+	zx::CopySkyNameForWire( pSky2 ? pSky2->Name : "", sky2, sizeof( sky2 ) );
+
 	ServerCommands::SetMapSky command;
-	command.SetSky1( level.skypic1 );
-	command.SetSky2( level.skypic2 );
+	command.SetSky1( sky1 );
+	command.SetSky2( sky2 );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 
@@ -5431,7 +5445,7 @@ void SERVERCOMMANDS_SyncMapRotation( ULONG ulPlayerExtra, ServerCommandFlags fla
 	for ( unsigned int i = 0; i < numEntries; i++ )
 	{
 		ServerCommands::MapRotationEntry entry;
-		entry.name = MAPROTATION_GetMap( i )->mapname;
+		entry.name = MAPROTATION_GetMap( i )->MapName;
 		entry.isUsed = MAPROTATION_IsUsed( i );
 		entry.minPlayers = MAPROTATION_GetPlayerLimits( i, false );
 		entry.maxPlayers = MAPROTATION_GetPlayerLimits( i, true );

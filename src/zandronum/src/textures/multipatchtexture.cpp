@@ -47,6 +47,7 @@
 #include "colormatcher.h"
 #include "v_palette.h"
 #include "v_video.h"
+#include "v_text.h"
 #include "m_fixed.h"
 #include "textures/textures.h"
 #include "r_data/colormaps.h"
@@ -275,7 +276,7 @@ FMultiPatchTexture::FMultiPatchTexture (const void *texdef, FPatchLookup *patchl
 		Parts[i].Texture = patchlookup[LittleShort(mpatch.d->patch)].Texture;
 		if (Parts[i].Texture == NULL)
 		{
-			Printf ("Unknown patch %s in texture %s\n", patchlookup[LittleShort(mpatch.d->patch)].Name, Name);
+			Printf (TEXTCOLOR_RED "Unknown patch %s in texture %s\n", patchlookup[LittleShort(mpatch.d->patch)].Name, Name);
 			NumParts--;
 			i--;
 		}
@@ -1001,21 +1002,7 @@ void FMultiPatchTexture::ParsePatch(FScanner &sc, TexPart & part, bool silent, i
 
 	if (!texno.isValid())
 	{
-		int lumpnum = Wads.CheckNumForFullName(sc.String);
-		if (lumpnum >= 0)
-		{
-			texno = TexMan.FindTextureByLumpNum(lumpnum);
-			if (texno.isValid ())
-			{
-				part.Texture = TexMan[texno];
-			}
-			else
-			{
-				part.Texture = FTexture::CreateTexture("", lumpnum, usetype);
-				TexMan.AddTexture(part.Texture);
-			}
-		}
-		else if (strlen(sc.String) <= 8 && !strpbrk(sc.String, "./"))
+		if (strlen(sc.String) <= 8 && !strpbrk(sc.String, "./"))
 		{
 			int lumpnum = Wads.CheckNumForName(sc.String, usetype == TEX_MiscPatch? ns_graphics : ns_patches);
 			if (lumpnum >= 0)
@@ -1032,7 +1019,7 @@ void FMultiPatchTexture::ParsePatch(FScanner &sc, TexPart & part, bool silent, i
 	}
 	if (part.Texture == NULL)
 	{
-		if (!silent) Printf("Unknown patch '%s' in texture '%s'\n", sc.String, Name);
+		if (!silent) Printf(TEXTCOLOR_RED "Unknown patch '%s' in texture '%s'\n", sc.String, Name);
 	}
 	sc.MustGetStringName(",");
 	sc.MustGetNumber();

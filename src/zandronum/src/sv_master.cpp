@@ -144,7 +144,7 @@ static void server_master_WriteEmail( const LauncherResponseContext &ctx )
 //
 static void server_master_WriteMapName( const LauncherResponseContext &ctx )
 {
-	ctx.pByteStream->WriteString( level.mapname );
+	ctx.pByteStream->WriteString( level.MapName.GetChars() );
 }
 
 //*****************************************************************************
