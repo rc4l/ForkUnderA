@@ -19,10 +19,11 @@
 
 #include "actor.h"
 #include "c_cvars.h"
-#include "c_dispatch.h"   // CCMD, CheckCheatmode
+#include "c_dispatch.h"   // CCMD
 #include "c_console.h"    // Printf
 #include "d_player.h"     // players, consoleplayer
 #include "doomstat.h"     // gametic
+#include "network.h"      // NETWORK_GetState, NETWORK_InClientMode
 #include "r_utility.h"    // r_TicFrac
 #include "templates.h"
 
@@ -100,9 +101,22 @@ namespace
 
 	BlastRecordStore s_blasts;
 
-	// Re-evaluated once per scene rather than per actor: CheckCheatmode is not free, and a value
-	// that changed mid-frame would draw an inconsistent overlay.
+	// Re-evaluated once per scene rather than per actor: a value that changed mid-frame would draw
+	// an inconsistent overlay.
 	bool s_frameActive = false;
+
+	// "Nobody else is in this game": not a client of someone's server, and not a server ourselves.
+	// This is the same condition CheckCheatmode uses to permit iddqd offline, and it deliberately
+	// includes NETSTATE_SINGLE_MULTIPLAYER -- an offline game merely emulating multiplayer (bots,
+	// an offline deathmatch) is still one machine with no rules to subvert.
+	//
+	// NETWORK_InClientMode() is also true while a client demo plays back, which is what we want:
+	// a recorded netgame keeps the netgame's gate rather than inheriting the viewer's offline
+	// status.
+	inline bool IsOfflineGame()
+	{
+		return ( NETWORK_InClientMode( ) == false ) && ( NETWORK_GetState( ) != NETSTATE_SERVER );
+	}
 
 	// GL_ALIASED_LINE_WIDTH_RANGE, queried lazily on first draw.
 	bool  s_lineRangeKnown = false;
@@ -188,10 +202,10 @@ void BeginFrame()
 	mark.blast    = s_blastVerts.Size();
 	s_marks.Push(mark);
 
-	// Gated on sv_cheats itself, not CheckCheatmode() -- see vizgate_compute.h. CheckCheatmode
-	// reports whether cheats are *permitted here*, which in single-player is yes even with
-	// sv_cheats off, and that let the overlay draw offline with cheats disabled.
-	s_frameActive = ShouldDraw(!!cl_fua_hitbox, !!sv_cheats);
+	// Offline, the toggle alone is enough -- there is no server to protect and cheats are already
+	// permitted (iddqd works there with sv_cheats off). Online, sv_cheats is the sole authority.
+	// See vizgate_compute.h.
+	s_frameActive = ShouldDraw(!!cl_fua_hitbox, !!sv_cheats, IsOfflineGame());
 }
 
 void CollectActor(AActor *thing)
@@ -340,7 +354,9 @@ CCMD(fua_hitbox)
 
 	// sv_cheats is CVAR_LATCH, so telling the user to set it is not enough -- a mid-game change
 	// only takes effect on the next map. Say so, rather than leaving them staring at an empty view.
-	if (cl_fua_hitbox && sv_cheats == false)
+	// Only relevant online: offline the gate never consults sv_cheats, so there is nothing to warn
+	// about and the plain confirmation is the honest message.
+	if (cl_fua_hitbox && sv_cheats == false && !zx::hitboxviz::IsOfflineGame())
 		Printf("Hitbox overlay enabled, but it will not draw until sv_cheats is true (latched: takes effect next map).\n");
 	else
 		Printf("Hitbox overlay %s.\n", *cl_fua_hitbox ? "on" : "off");

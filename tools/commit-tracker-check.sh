@@ -49,5 +49,10 @@ while IFS=$'\t' read -r sha date title status note ours; do
 	done
 done < <(awk -F'\t' '/^#/ || $1=="sha" {next} 1' "$TSV")
 
+# [rc4l] Cross-check that a ported/adapted row's cited commit plausibly IS that port -- this script
+# only proves the sha exists, which a mis-recorded row satisfies happily. Advisory for now; see the
+# script header.
+python3 "$(dirname "$0")/commit-tracker-overlap.py" || fail=1
+
 [ "$fail" -eq 0 ] && echo "commit-tracker-check: clean ($(( $(grep -c "" "$TSV") - 2 )) rows)."
 exit $fail

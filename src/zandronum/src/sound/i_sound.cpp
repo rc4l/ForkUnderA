@@ -108,15 +108,16 @@ CVAR (Bool, snd_waterreverb, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 void I_CloseSound ();
 
-CUSTOM_CVAR(String, snd_backend, DEF_BACKEND, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	I_ShutdownMusic();
-	S_EvictAllChannels();
-	I_CloseSound();
-	I_InitSound();
-	S_RestartMusic();
-	S_RestoreEvictedChannels();
-}
+// [rc4l] Plain CVAR, matching upstream (UZDoom i_sound.cpp) -- NOT a CUSTOM_CVAR.
+// Changing snd_backend just stores the name; it takes effect on the next sound init
+// (startup, or the snd_reset CCMD below for a live switch). We previously made this a
+// CUSTOM_CVAR that auto-applied by doing I_CloseSound()+I_InitSound() on change, but its
+// callback fires from D_DoomMain's EnableCallbacks() right after I_Init() has ALREADY built
+// the renderer -- so it tore that down and rebuilt it, opening the sound device twice every
+// launch (the doubled "I_InitSound: Initializing OpenAL"). Upstream never had the callback,
+// so it never doubled; aligning to the plain CVAR makes the double structurally impossible.
+// Runtime backend switching is unchanged: set snd_backend, then run snd_reset.
+CVAR(String, snd_backend, DEF_BACKEND, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 // killough 2/21/98: optionally use varying pitched sounds
 CVAR (Bool, snd_pitched, false, CVAR_ARCHIVE)

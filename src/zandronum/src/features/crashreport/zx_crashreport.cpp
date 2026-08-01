@@ -69,6 +69,22 @@ static std::string CrashDbPath()
 #endif
 }
 
+// [rc4l] Path of our own durable "pending fatal" record. A graceful I_FatalError is not a signal, so
+// sentry never writes a last_crash marker for it; we write this file at fatal time so the fatal can
+// still be delivered on the next launch even if the process wedges on the OS error dialog and is
+// killed before the in-process upload finishes. Lives beside sentry's own DB.
+static std::string PendingFatalPath()
+{
+#ifdef _WIN32
+	return CrashDbPath() + "\\pending_fatal";
+#else
+	return CrashDbPath() + "/pending_fatal";
+#endif
+}
+
+// Defined below (next to ZX_CrashReportFatal); used by the recovery path in the check function above it.
+static void zx_capture_fatal_event(const char *message);
+
 // sentry writes a "last_crash" marker in the DB dir when it captures a crash. Checking for it on
 // disk tells us we crashed last run, so we can flush hard enough to guarantee that stored crash
 // actually delivers before the process could crash again.
@@ -344,6 +360,42 @@ void ZX_CrashReportCheckPreviousCrash()
 	else
 		snprintf(g_statusLine, sizeof g_statusLine,
 			"Crash reporting: OFF -- enable it in Options > FUA Options > Crash Reporting.");
+
+	// [rc4l] Deliver a graceful fatal recorded on the previous run (see ZX_CrashReportFatal). This is
+	// the reliable path: unlike a signal crash it has no sentry marker/retry of its own, so we persisted
+	// it ourselves and send it now. Runs in addition to the crash handling above (a run can, in
+	// principle, have both). Only touches the status line when no signal crash already claimed it.
+	if (g_sentryInited)
+	{
+		const std::string fpath = PendingFatalPath();
+		bool fatalExists = false;
+		std::string fatalMsg;
+		if (FILE *f = fopen(fpath.c_str(), "rb"))
+		{
+			fatalExists = true;
+			char buf[512];
+			size_t n = fread(buf, 1, sizeof buf - 1, f);
+			buf[n] = '\0';
+			fatalMsg = buf;
+			fclose(f);
+		}
+		switch (zx::ComputePendingFatalAction(fatalExists, on))
+		{
+		case zx::PendingFatalAction::Upload:
+			zx_capture_fatal_event(fatalMsg.empty() ? "fatal error" : fatalMsg.c_str());
+			sentry_flush(5000);
+			remove(fpath.c_str());
+			if (!pending) // don't clobber a signal-crash status line
+				snprintf(g_statusLine, sizeof g_statusLine,
+					TEXTCOLOR_GREEN "Crash reporting: a fatal error from the last run was SENT. Thanks for helping fix ZandroX. (ZandroX@%s)" TEXTCOLOR_NORMAL, GetGitHash());
+			break;
+		case zx::PendingFatalAction::Discard:
+			remove(fpath.c_str());
+			break;
+		case zx::PendingFatalAction::None:
+			break;
+		}
+	}
 }
 
 // Print the crash-reporting status exactly once. Called late (D_DoomLoop) so it shows at the bottom
@@ -389,13 +441,36 @@ void ZX_CrashReportSetLoadedFiles()
 		sentry_set_extra("load_order", sentry_value_new_string(order.c_str()));
 }
 
+// [rc4l] Build and capture the fatal as a fatal-level message event, fingerprinted on the message so
+// distinct reasons form distinct GlitchTip groups (crash-sync then files a GitHub issue titled with
+// the reason) and recurrences of the same one collapse together. Shared by the live-fatal path and
+// the next-launch recovery path. Does NOT flush -- the caller decides how long to wait.
+static void zx_capture_fatal_event(const char *message)
+{
+	sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fatal", message);
+	sentry_value_set_by_key(event, "logger", sentry_value_new_string("I_FatalError"));
+
+	// before_send only sets a fingerprint when there are exception frames, so a message event keeps
+	// this one.
+	sentry_value_t fp = sentry_value_new_list();
+	sentry_value_append(fp, sentry_value_new_string("i_fatalerror"));
+	sentry_value_append(fp, sentry_value_new_string(message));
+	sentry_value_set_by_key(event, "fingerprint", fp);
+
+	sentry_capture_event(event);
+}
+
 // [rc4l] Report a graceful fatal (I_FatalError) to GlitchTip. A signal crash is caught by sentry's
 // handler, but an I_FatalError just calls exit() -- so a bad WAD, a DECORATE/MAPINFO script error, or
-// a missing resource would otherwise vanish with only a stderr line no GUI player ever sees. We
-// capture it as a fatal-level message event, fingerprinted on the message so distinct fatals form
-// distinct GlitchTip groups (crash-sync then files a GitHub issue titled with the reason). The loaded
-// WAD set is already tagged on the event, so the issue shows which wads were up when it died. Blocks
-// briefly to flush, because the caller exits immediately after.
+// a missing resource would otherwise vanish with only a stderr line no GUI player ever sees.
+//
+// Reliability is the whole point here, and the live upload is fragile: this can fire mid-restart
+// (wad_reload has already torn down networking) and on macOS I_FatalError then pops a BLOCKING error
+// dialog that can wedge the process so it is force-killed before the 3s flush finishes -- exactly how
+// a real wad_reload fatal went unreported. So we FIRST write a tiny durable record synchronously,
+// before anything can wedge or kill us; ZX_CrashReportCheckPreviousCrash delivers it on the next
+// launch. Then we still try the immediate upload (it wins when the process exits cleanly), and only
+// if that flush clearly drains do we drop the record, so a delivered fatal is not re-sent next time.
 void ZX_CrashReportFatal(const char *message)
 {
 	if (!g_sentryInited)
@@ -403,19 +478,19 @@ void ZX_CrashReportFatal(const char *message)
 	if (message == NULL || message[0] == '\0')
 		message = "fatal error";
 
-	sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fatal", message);
-	sentry_value_set_by_key(event, "logger", sentry_value_new_string("I_FatalError"));
+	// 1. Durable record first (synchronous; ~one line). Not a hot path -- the process is already dying.
+	const std::string path = PendingFatalPath();
+	if (FILE *f = fopen(path.c_str(), "wb"))
+	{
+		fwrite(message, 1, strlen(message), f);
+		fflush(f);
+		fclose(f);
+	}
 
-	// Group by the message (before_send only sets a fingerprint when there are exception frames, so a
-	// message event keeps this one). Distinct reasons -> distinct issues; recurrences of the same one
-	// collapse together.
-	sentry_value_t fp = sentry_value_new_list();
-	sentry_value_append(fp, sentry_value_new_string("i_fatalerror"));
-	sentry_value_append(fp, sentry_value_new_string(message));
-	sentry_value_set_by_key(event, "fingerprint", fp);
-
-	sentry_capture_event(event);
-	sentry_flush(3000); // wait up to 3s so it uploads before the process exits
+	// 2. Best-effort immediate upload.
+	zx_capture_fatal_event(message);
+	if (sentry_flush(3000) == 0)       // queue drained in time -> delivered; don't double-send next launch
+		remove(path.c_str());
 }
 
 #else // !ZX_ENABLE_SENTRY
