@@ -299,7 +299,7 @@ a26fbc74f091270bd127cea737d4135074de94d1	2014-06-01T07:27:16Z	Fix compilation er
 3e7b0c29165114d543669bb00793920412f37c08	2014-06-02T08:53:29Z	Fix crash when GL nodes file cannot be opened for writing	pending		/
 20adcecb1d480724ebccc9448d2bef562c3ba59f	2014-06-02T08:54:52Z	Remove redundant saving of GL nodes if they were loaded from cache	pending		/
 842ef86e73efc3819b61289db0cba5e6c66ff364	2014-06-09T07:54:40Z	Don't reset the inventory of dead players	ported	ported: CHANGELEVEL_RESETINVENTORY skipped for PST_DEAD players; predicate on already-synced playerstate	d8fb270
-2d8813a1650e6bb2e12a13e275b75444523409f3	2014-06-11T16:58:25Z	- fixed dynamic light definition for Hexen's blue candle.	pending		/
+2d8813a1650e6bb2e12a13e275b75444523409f3	2014-06-11T16:58:25Z	- fixed dynamic light definition for Hexen's blue candle.	adapted	adapted: same one-line sprite fix (CAND -> BCAN), applied at wadsrc/static/hexndefs.txt -- our lights lump lives there, not upstream's wadsrc_lights/static	4e3f9ce
 3c0ba494f99bb309135f776bb90c5990f146ce1c	2014-06-11T16:58:42Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	19f9e2e skip: merge commit, no unique content (changes live in the parents)	/
 67c6690689b98b36bffecf557dffe9dca875a810	2014-06-12T03:30:25Z	Added a check that doesn't print empty obituary strings, as wad's that hide obituary strings in multiplayer games end up spamming a lot of empty lines.	pending		/
 8d9a90cd229edb2ba04e1c82cfd9e24f82be229c	2014-06-13T23:24:28Z	- rewrote sky dome rendering to use a static vertex buffer if not on OpenGL 2.x.	ported	20653ed	20653ed
