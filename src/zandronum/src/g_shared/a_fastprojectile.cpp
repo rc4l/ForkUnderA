@@ -145,13 +145,29 @@ void AFastProjectile::Tick ()
 				P_ExplodeMissile (this, NULL, NULL);
 				return;
 			}
-			if (changexy && ripcount <= 0) 
+			if (changexy && ripcount <= 0)
 			{
 				ripcount = count >> 3;
 				Effect();
 			}
 		}
 	}
+
+	// [MGOOOOOO] +USERIPSTATE (features/ripper): applied here, outside the sub-step loop and so
+	// outside the blockmap iterator, for the same reason as in P_XYMovement. A fast projectile
+	// resets tm.LastRipped each sub-step and can therefore rip several times in one tic; the
+	// state is still entered only once, and the explode paths above have all returned already.
+	if (tm.RipStatePending && !(ObjectFlags & OF_EuthanizeMe))
+	{
+		FState *ripstate = FindState(NAME_Rip);
+		if (ripstate != NULL)
+		{
+			SetState(ripstate);
+			if (ObjectFlags & OF_EuthanizeMe)
+				return;
+		}
+	}
+
 	// Advance the state
 	if (tics != -1)
 	{

@@ -82,6 +82,20 @@ static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync
 #include "unlagged.h"
 #include "d_netinf.h"
 #include "v_video.h"
+#include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip budget decisions
+
+// [MGOOOOOO] Collects a ripping projectile's DECORATE-authored budget for the pure decision
+// helpers. All-zero (the default) means unlimited, so a ripper that sets none of these resolves
+// to RIP_DAMAGE forever and behaves exactly as it did before features/ripper existed.
+static zx::ripper::FRipLimits P_RipLimitsOf( AActor *projectile )
+{
+	zx::ripper::FRipLimits limits;
+	limits.maxDamage = projectile->RipperMaxDamage;
+	limits.perVictimHits = projectile->RipperCount;
+	limits.totalHits = projectile->RipperMaxCount;
+	limits.explodeOnLimit = !!( projectile->flags9 & MF9_RIPEXPLODEONLIMIT );
+	return limits;
+}
 
 // [BB] Helper function to handle ZADF_UNBLOCK_PLAYERS.
 bool P_CheckUnblock ( AActor *pActor1, AActor *pActor2 )
@@ -998,6 +1012,9 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		if (!(tm.thing->flags & MF_MISSILE) ||
 			!(tm.thing->flags2 & MF2_RIP) ||
 			(thing->flags5 & MF5_DONTRIP) ||
+			// [MGOOOOOO] A projectile outside the victim's RipperLevel window can't rip it, so it
+			// must take the pass-over/under branch just like the +DONTRIP case above.
+			!zx::ripper::ComputeRipLevelAllows(tm.thing->RipperLevel, thing->RipLevelMin, thing->RipLevelMax) ||
 			((tm.thing->flags6 & MF6_NOBOSSRIP) && (thing->flags2 & MF2_BOSS)))
 		{
 			if (tm.thing->flags3 & thing->flags3 & MF3_DONTOVERLAP)
@@ -1267,11 +1284,31 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		{
 			return true;
 		}
-		if (tm.DoRipping && !(thing->flags5 & MF5_DONTRIP))
+		// [MGOOOOOO] Tiered ripping: a victim outside the projectile's RipperLevel window is not
+		// rippable, and falls through to the normal missile impact below exactly like +DONTRIP.
+		if (tm.DoRipping && !(thing->flags5 & MF5_DONTRIP) &&
+			zx::ripper::ComputeRipLevelAllows(tm.thing->RipperLevel, thing->RipLevelMin, thing->RipLevelMax))
 		{
 			if (!(tm.thing->flags6 & MF6_NOBOSSRIP) || !(thing->flags2 & MF2_BOSS))
 			{
-				if (tm.LastRipped != thing)
+				// [MGOOOOOO] Resolve the rip budget (features/ripper). RIP_EXPLODE leaves the rip
+				// path entirely and reports the victim as blocking, so P_XYMovement's ordinary
+				// blocked-missile handling detonates us -- deliberately not P_ExplodeMissile from
+				// here, because entering a Death state can Destroy tm.thing mid-blockmap-walk.
+				const zx::ripper::FRipLimits ripLimits = P_RipLimitsOf(tm.thing);
+				zx::ripper::FRipProgress ripProgress;
+				ripProgress.damageDone = tm.thing->RipperDamageDone;
+				ripProgress.hitsDone = tm.thing->RipperHitsDone;
+				ripProgress.hitsOnVictim = tm.thing->RipHitsOn(thing);
+
+				const zx::ripper::ERipOutcome ripOutcome = zx::ripper::ComputeRipOutcome(ripLimits, ripProgress);
+				if (ripOutcome == zx::ripper::RIP_EXPLODE)
+				{
+					return false;
+				}
+
+				// RIP_INERT falls through to the pass-through below without touching the victim.
+				if (ripOutcome == zx::ripper::RIP_DAMAGE && tm.LastRipped != thing)
 				{
 					tm.LastRipped = thing;
 					if (!(thing->flags & MF_NOBLOOD) &&
@@ -1282,10 +1319,28 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						P_RipperBlood(tm.thing, thing);
 					}
 					// [rc4l] MBF21: a ripper can override the default rip sound via its RipSound.
-					if (tm.thing->RipSound != 0)
-						S_Sound(tm.thing, CHAN_BODY, tm.thing->RipSound, 1, ATTN_IDLE);
-					else
-						S_Sound(tm.thing, CHAN_BODY, "misc/ripslop", 1, ATTN_IDLE);
+					// [MGOOOOOO] +NORIPSOUND silences it outright, which RipSound alone cannot do.
+					if (!(tm.thing->flags9 & MF9_NORIPSOUND))
+					{
+						// [MGOOOOOO] Resolve to an id up front so +RIPSOUNDNORESTART can ask
+						// whether this exact sound is still playing. Note misc/ripslop is only
+						// defined for Heretic/Hexen in sndinfo, so on Doom it resolves to 0 and
+						// the fallback is silent -- Doom-based rippers want an explicit RipSound.
+						const FSoundID ripSnd = (tm.thing->RipSound != 0)
+							? FSoundID(tm.thing->RipSound)
+							: FSoundID("misc/ripslop");
+
+						// A rip fires once per tic for as long as the projectile is inside a
+						// victim, and S_StartSound stops the channel before restarting it (there
+						// is no CHAN_NOSTOP here). That machine-guns the short vanilla squelch,
+						// which is the intended shredding effect, but chops any longer sound down
+						// to a few milliseconds. +RIPSOUNDNORESTART lets it run to completion.
+						if (!(tm.thing->flags9 & MF9_RIPSOUNDNORESTART) ||
+							!S_IsActorPlayingSomething(tm.thing, CHAN_BODY, ripSnd))
+						{
+							S_Sound(tm.thing, CHAN_BODY, ripSnd, 1, ATTN_IDLE);
+						}
+					}
 
 					// Do poisoning (if using new style poison)
 					if (tm.thing->PoisonDamage > 0 && tm.thing->PoisonDuration != INT_MIN)
@@ -1293,11 +1348,19 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						P_PoisonMobj(thing, tm.thing, tm.thing->target, tm.thing->PoisonDamage, tm.thing->PoisonDuration, tm.thing->PoisonPeriod, tm.thing->PoisonDamageType);
 					}
 
-					damage = tm.thing->GetMissileDamage(3, 2);
+					// [MGOOOOOO] RipperDamageFactor compounds over the hits this projectile has
+					// already landed on THIS victim. Both sides book the hit, so the roll matches.
+					// .Raw() because fixed_t is the strong zx::Fixed type; the helper takes the
+					// same 16.16 bits as a plain integer so it can stay engine-header-free.
+					damage = zx::ripper::ComputeScaledRipDamage(tm.thing->GetMissileDamage(3, 2),
+						tm.thing->RipperDamageFactor.Raw(), ripProgress.hitsOnVictim);
+					// [MGOOOOOO] +RIPPERNOPAIN suppresses pain for the rip only; the terminal
+					// explosion still goes through P_DamageMobj without the flag.
+					const int ripDmgFlags = (tm.thing->flags9 & MF9_RIPPERNOPAIN) ? DMG_NO_PAIN : 0;
 					// [BB] The server handles the damage of RIPPER weapons.
 					int newdam = 0;
-					if ( NETWORK_InClientMode() == false ) 
-						newdam = P_DamageMobj(thing, tm.thing, tm.thing->target, damage, tm.thing->DamageType);
+					if ( NETWORK_InClientMode() == false )
+						newdam = P_DamageMobj(thing, tm.thing, tm.thing->target, damage, tm.thing->DamageType, ripDmgFlags);
 					if (!(tm.thing->flags3 & MF3_BLOODLESSIMPACT))
 					{
 						P_TraceBleed(newdam > 0 ? newdam : damage, thing, tm.thing);
@@ -1311,6 +1374,28 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 							thing->vely += FixedMul(tm.thing->vely, thing->pushfactor);
 							thing->lastpush = tm.PushTime;
 						}
+					}
+
+					// [MGOOOOOO] Book the hit. The counts advance on clients too (no RNG involved)
+					// so the budget gate stays in sync; RipperDamageDone only moves on the server,
+					// because P_DamageMobj above is server-gated -- clients learn about a
+					// RipperMaxDamage detonation from SERVERCOMMANDS_MissileExplode instead.
+					tm.thing->RecordRipHit(thing);
+					if (newdam > 0)
+						tm.thing->RipperDamageDone += newdam;
+
+					// [MGOOOOOO] +USERIPSTATE: hand the state change to the mover rather than
+					// doing it here -- see FCheckPosition::RipStatePending for why.
+					if (tm.thing->flags9 & MF9_USERIPSTATE)
+						tm.RipStatePending = true;
+
+					// Detonate on the very bite that spends a budget, not on the next contact.
+					ripProgress.damageDone = tm.thing->RipperDamageDone;
+					ripProgress.hitsDone = tm.thing->RipperHitsDone;
+					ripProgress.hitsOnVictim++;
+					if (zx::ripper::ComputeRipSpendsProjectile(ripLimits, ripProgress))
+					{
+						return false;
 					}
 				}
 				spechit.Clear();
@@ -3677,7 +3762,10 @@ extern FRandom pr_bounce;
 bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 {
 	if (mo && BlockingMobj && ((mo->BounceFlags & BOUNCE_AllActors)
-		|| ((mo->flags & MF_MISSILE) && (!(mo->flags2 & MF2_RIP) || (BlockingMobj->flags5 & MF5_DONTRIP) || ((mo->flags6 & MF6_NOBOSSRIP) && (BlockingMobj->flags2 & MF2_BOSS))) && (BlockingMobj->flags2 & MF2_REFLECTIVE))
+		// [MGOOOOOO] The ComputeRipLevelAllows term keeps this in step with PIT_CheckThing: a
+		// projectile the victim's RipperLevel window rejects is not a ripper as far as this
+		// reflective actor is concerned, so it bounces instead of passing through.
+		|| ((mo->flags & MF_MISSILE) && (!(mo->flags2 & MF2_RIP) || (BlockingMobj->flags5 & MF5_DONTRIP) || !zx::ripper::ComputeRipLevelAllows(mo->RipperLevel, BlockingMobj->RipLevelMin, BlockingMobj->RipLevelMax) || ((mo->flags6 & MF6_NOBOSSRIP) && (BlockingMobj->flags2 & MF2_BOSS))) && (BlockingMobj->flags2 & MF2_REFLECTIVE))
 		|| ((BlockingMobj->player == NULL) && (!(BlockingMobj->flags3 & MF3_ISMONSTER)))
 		))
 	{
