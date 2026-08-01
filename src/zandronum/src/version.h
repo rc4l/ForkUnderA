@@ -38,6 +38,10 @@ const char *GetGitDescription();
 const char *GetGitHash();
 const char *GetGitTime();
 const char *GetVersionString();
+// [rc4l] The full `git describe` of this build ("v0.1.19-29-gde55d35"), i.e. OUR version rather
+// than Zandronum's. Separate from GetGitDescription(), which returns the 12-char hash the crash
+// reporter uses to name symbol assets -- changing that would break crash symbolication.
+const char *GetFuaDescribe();
 // [BB]
 const char *GetVersionStringRev();
 int GetRevisionNumber();
@@ -133,6 +137,17 @@ int GetRevisionNumber();
 // This is so that derivates can use the same savegame versions without worrying about engine compatibility
 #define GAMESIG "ZANDRONUM"
 #define BASEWAD "zandronum.pk3"
+
+// [rc4l] THE product display name. Every user-facing place that names this engine -- the console
+// version line, the window/taskbar title -- reads this one macro, so a rebrand is a one-line edit
+// here rather than a hunt through the tree.
+//
+// Deliberately NOT reusing GAMESIG / GAMENAME / GAMENAMELOWERCASE for this. Those look like display
+// names but are load-bearing compatibility values: GAMENAMELOWERCASE is the config FILENAME
+// (m_specialpaths.cpp) so changing it silently orphans everyone's settings, and GAMESIG identifies
+// the engine inside savegames via GetEngineString() (g_game.cpp) so changing it invalidates saves.
+// Renaming the product must not do either of those things.
+#define FUA_NAME "Fua"
 
 // More stuff that needs to be different for derivatives.
 #define GAMENAME "Zandronum"

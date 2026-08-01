@@ -108,7 +108,8 @@ if( WIN32 )
 		comdlg32
 		ws2_32
 		setupapi
-		oleaut32 
+		oleaut32
+		winhttp
 		DelayImp )
 else( WIN32 )
 	if( APPLE )
@@ -675,7 +676,8 @@ set( PLAT_SDL_SOURCES
 	sdl/st_start.cpp )
 set( PLAT_MAC_SOURCES
 	sdl/iwadpicker_cocoa.mm
-	sdl/i_system_cocoa.mm )
+	sdl/i_system_cocoa.mm
+	sdl/i_system_cocoa_net.mm )
 if( WIN32 )
 	set( SYSTEM_SOURCES_DIR win32 )
 	set( SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} )
@@ -1361,6 +1363,8 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
+	features/updater/zx_updater.cpp
+	features/updater/zx_updater_net_win.cpp
 	features/hitboxviz/hitboxviz.cpp
 	features/hitboxviz/computation/boxedges_compute.cpp
 	features/hitboxviz/computation/blastrecords_compute.cpp

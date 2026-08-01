@@ -11,8 +11,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      # [rc4l] Full history (not the default shallow depth-1): staircase-ledger-check.sh verifies
-      # every ledger row's zandrox_sha exists as a commit, which needs the whole history present.
+      # [rc4l] Full history (not the default shallow depth-1): commit-tracker-check.sh verifies
+      # every ported/adapted row's provenance sha exists as a commit, which needs full history.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -45,10 +45,10 @@ jobs:
       # [rc4l] The FF-parity tripwire retired with its subject at the GL 2.x removal
       # (staircase flight 13a): there is no fixed-function branch left to diverge from.
 
-      # [rc4l] Staircase ledger: no upstream commit behind our frontier may be unresolved
-      # (silent-skip guard), and every resolved row's provenance commit must exist.
-      - name: Staircase ledger check
-        run: bash tools/staircase-ledger-check.sh
+      # [rc4l] Commit tracker: coverage.tsv stays machine-parseable (5 fields, 40-hex sha,
+      # valid status vocab) and every ported/adapted row's provenance commit must exist.
+      - name: Commit tracker check
+        run: bash tools/commit-tracker-check.sh
 
       # [rc4l] crash-sync reopen rule: it reopened closed crash issues forever (#79, #85) because it
       # treated "still unresolved in GlitchTip" as "the crash recurred". Pure, stdlib-only, no
@@ -68,19 +68,33 @@ jobs:
       - name: Coverage (100% gate on tested units)
         run: bash tests/coverage.sh --auto
 
-      # [rc4l] compile_commands.json comes from the configure step above. Tests are now
-      # colocated in the engine tree, so lint every *_test.cpp there.
-      #
-      # run-clang-tidy, not clang-tidy: handing all 50 files to one clang-tidy process made it
-      # walk them strictly serially on a single core, which was ~10 min of a ~12 min job — and
-      # since build/ needs: test, every platform build waited on it. Profiling showed the cost is
-      # per-file parsing of the vendored engine headers repeated 50 times, not the checks
-      # themselves (any one check group costs ~0.6s/file; all six together ~0.86s), so trimming
-      # Checks would not have helped — parallelising is what does. run-clang-tidy ships with the
-      # clang-tidy package already installed above, so this needs no new dependency.
-      #
-      # It selects files by regex against compile_commands.json rather than argv; the pattern is
-      # anchored to the same directory the previous find walked so exactly the same 50 files are
-      # linted. .clang-tidy is still picked up per-file, so what gets reported is unchanged.
-      - name: clang-tidy (report)
-        run: run-clang-tidy -p build-tests -j"$(nproc)" 'src/zandronum/src/.*_test\.cpp$'
+      # [rc4l] clang-tidy moved to _tidy.yml, run by the callers as a parallel job. It was 438s
+      # of this job's 588s, and every platform build `needs: test` — so a report-only lint
+      # (WarningsAsErrors is empty; any parse error it could hit already fails the Build step
+      # above) was gating 7+ minutes of every PR's critical path. Same files, same config, same
+      # parallelism — just off the path the builds wait on. (It cannot live as a second job in
+      # THIS file: a caller's `needs: test` waits on the whole called workflow — fine for the
+      # seconds-long test-macos job below, fatal for a 7-minute lint.)
+
+  # [rc4l] macOS-only ASan job for the Objective-C updater networking seam. The Linux `test` job above
+  # can't compile Cocoa code, so the use-after-free regression test (i_system_cocoa_net_test.mm) that
+  # guards the Mac_HttpsGet retain fix runs here instead. Runs in PARALLEL with `test` (no `needs:`),
+  # and builds ONLY the tiny zandrox_tests_objc target (two .mm files + gtest) — not the engine — so it
+  # stays a seconds-long check, not a full macOS build. LeakSanitizer is intentionally absent: macOS
+  # AddressSanitizer does not support detect_leaks (it aborts), unlike the Linux job.
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # [rc4l] cmake and the Xcode clang toolchain are preinstalled on GitHub macOS runners.
+      - name: Configure (ASan + UBSan)
+        run: cmake -S tests -B build-tests -DZANDROX_TESTS_SANITIZE=ON
+
+      - name: Build (Objective-C test target only)
+        run: cmake --build build-tests --target zandrox_tests_objc
+
+      - name: Run tests (ASan + UBSan)
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ./build-tests/zandrox_tests_objc
