@@ -5445,7 +5445,7 @@ void SERVERCOMMANDS_SyncMapRotation( ULONG ulPlayerExtra, ServerCommandFlags fla
 	for ( unsigned int i = 0; i < numEntries; i++ )
 	{
 		ServerCommands::MapRotationEntry entry;
-		entry.name = MAPROTATION_GetMap( i )->mapname;
+		entry.name = MAPROTATION_GetMap( i )->MapName;
 		entry.isUsed = MAPROTATION_IsUsed( i );
 		entry.minPlayers = MAPROTATION_GetPlayerLimits( i, false );
 		entry.maxPlayers = MAPROTATION_GetPlayerLimits( i, true );

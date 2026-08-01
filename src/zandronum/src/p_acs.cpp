@@ -7896,7 +7896,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				// [AK] If the map position's level info is invalid, this could mean that there's no maplist
 				// or that the position is invalid, so return zero (or an empty string if we wanted the name).
 				// If we're checking the current map position, make sure it's the current level too.
-				if (( rotationMap == NULL ) || (( args[0] <= 0 ) && ( stricmp( level.MapName, rotationMap->mapname ) != 0 )))
+				if (( rotationMap == NULL ) || (( args[0] <= 0 ) && ( stricmp( level.MapName.GetChars(), rotationMap->MapName.GetChars() ) != 0 )))
 				{
 					if (( args[1] == MAPROTATION_NAME ) || ( args[1] == MAPROTATION_LUMPNAME ))
 						return GlobalACSStrings.AddString( "" );
@@ -7915,7 +7915,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 					case MAPROTATION_NAME:
 					case MAPROTATION_LUMPNAME:
-						return GlobalACSStrings.AddString( args[1] == MAPROTATION_NAME ? rotationMap->LookupLevelName().GetChars() : rotationMap->mapname );
+						return GlobalACSStrings.AddString( args[1] == MAPROTATION_NAME ? rotationMap->LookupLevelName().GetChars() : rotationMap->MapName.GetChars() );
 				}
 
 				return 0;
@@ -7948,7 +7948,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				{
 					level_info_t *rotationMap = MAPROTATION_GetMap( position );
 
-					if (( rotationMap == nullptr ) || ( stricmp( level.MapName, rotationMap->mapname ) != 0 ))
+					if (( rotationMap == nullptr ) || ( stricmp( level.MapName.GetChars(), rotationMap->MapName.GetChars() ) != 0 ))
 						return 0;
 				}
 
@@ -13078,7 +13078,7 @@ static void addDefered (level_info_t *i, acsdefered_t::EType type, int script, c
 			def->playernum = -1;
 		}
 		i->defered = def;
-		DPrintf ("%s on map %s deferred\n", ScriptPresentation(script).GetChars(), i->mapname);
+		DPrintf ("%s on map %s deferred\n", ScriptPresentation(script).GetChars(), i->MapName.GetChars());
 	}
 }
 
