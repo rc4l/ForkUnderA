@@ -411,3 +411,51 @@ TEST(WireAdversarial, ReadingBitsPastEndFallsBackWithoutOob) {
     for (int i = 0; i < 32; ++i)
         EXPECT_FALSE(wr.r.ReadBit());             // all zero, no crash/OOB (ASan-checked)
 }
+
+// ---------------------------------------------------------------------------
+// NETADDRESS_s wire serialization -- addresses travel the wire in the server
+// browser and connect handshake. Only the pure, DNS-free paths are tested here:
+// WriteToStream/ReadFromStream and Compare. LoadFromString is deliberately NOT
+// tested -- on anything inet_addr rejects it calls gethostbyname (a real DNS
+// lookup), which is non-deterministic and CI-hostile; its 512-byte strncpy bound
+// is verified by inspection, not by a test that would hit the network.
+// ---------------------------------------------------------------------------
+TEST(WireAddress, GoldenIsFourIpBytesThenLittleEndianPort) {
+    Wire wr;
+    NETADDRESS_s a; a.Clear();
+    a.abIP[0] = 1; a.abIP[1] = 2; a.abIP[2] = 3; a.abIP[3] = 4;
+    a.SetPort(0x1234);
+    a.WriteToStream(&wr.w, true);
+    expectBytes(wr, {1, 2, 3, 4, /*port LE*/ 0x34, 0x12});
+}
+
+TEST(WireAddress, RoundTripWithPort) {
+    Wire wr;
+    NETADDRESS_s a; a.Clear();
+    a.abIP[0] = 192; a.abIP[1] = 168; a.abIP[2] = 0; a.abIP[3] = 42;
+    a.SetPort(10666);
+    a.WriteToStream(&wr.w, true);
+    wr.openReader();
+    NETADDRESS_s b; b.Clear();
+    b.ReadFromStream(&wr.r, true);
+    EXPECT_TRUE(b.Compare(a)) << "address+port did not survive the wire";
+}
+
+TEST(WireAddress, RoundTripWithoutPortLeavesPortUntouched) {
+    Wire wr;
+    NETADDRESS_s a; a.Clear();
+    a.abIP[0] = 10; a.abIP[1] = 0; a.abIP[2] = 0; a.abIP[3] = 1;
+    a.WriteToStream(&wr.w, false);          // IP only, 4 bytes
+    EXPECT_EQ(wr.written(), 4u);
+    wr.openReader();
+    NETADDRESS_s b; b.Clear();
+    b.ReadFromStream(&wr.r, false);
+    EXPECT_TRUE(b.CompareNoPort(a));
+}
+
+TEST(WireAddress, ComparePortSensitivity) {
+    NETADDRESS_s a; a.Clear(); a.abIP[0]=1; a.abIP[1]=1; a.abIP[2]=1; a.abIP[3]=1; a.SetPort(1000);
+    NETADDRESS_s b = a; b.SetPort(2000);
+    EXPECT_FALSE(a.Compare(b));             // different port -> not equal
+    EXPECT_TRUE(a.CompareNoPort(b));        // ... but same host
+}
