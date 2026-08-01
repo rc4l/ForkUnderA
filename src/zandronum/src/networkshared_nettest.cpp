@@ -176,6 +176,44 @@ TEST(WireGolden, VariableLargeUsesLengthThree) {
 }
 
 // ---------------------------------------------------------------------------
+// GOLDEN + ROUNDTRIP + ADVERSARIAL: raw byte blocks (WriteBuffer/ReadBuffer),
+// the primitive behind addBuffer.
+// ---------------------------------------------------------------------------
+TEST(WireGolden, BufferWritesRawBytesVerbatim) {
+    Wire wr;
+    const BYTE payload[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    wr.w.WriteBuffer(payload, sizeof(payload));
+    expectBytes(wr, {0xDE, 0xAD, 0xBE, 0xEF});
+}
+
+TEST(WireRoundTrip, Buffer) {
+    const BYTE payload[] = {0x01, 0x00, 0xFF, 0x7F, 0x80, 0x00};
+    Wire wr; wr.w.WriteBuffer(payload, sizeof(payload)); wr.openReader();
+    BYTE out[sizeof(payload)] = {0};
+    wr.r.ReadBuffer(out, sizeof(payload));
+    EXPECT_EQ(0, std::memcmp(out, payload, sizeof(payload)));
+}
+
+TEST(WireAdversarial, WriteBufferPastEndIsRefusedWhole) {
+    Wire wr(3);
+    const BYTE payload[] = {0xAA, 0xBB, 0xCC, 0xDD};   // 4 bytes into a 3-byte buffer
+    wr.w.WriteBuffer(payload, sizeof(payload));
+    EXPECT_EQ(wr.written(), 0u);                        // nothing written, no overflow
+}
+
+TEST(WireAdversarial, ReadBufferPastEndDoesNotCopyOrAdvance) {
+    // A packet claiming more bytes than remain: ReadBuffer must not read OOB
+    // (ASan-checked) and must leave the destination and the read pointer untouched.
+    Wire wr; wr.w.WriteByte(0x11); wr.w.WriteByte(0x22); wr.openReader();
+    BYTE out[8];
+    std::memset(out, 0x5A, sizeof(out));
+    BYTE *before = wr.r.pbStream;
+    wr.r.ReadBuffer(out, sizeof(out));                 // wants 8, only 2 present
+    EXPECT_EQ(wr.r.pbStream, before);                  // pointer not advanced
+    for (BYTE b : out) EXPECT_EQ(b, 0x5A);             // destination untouched
+}
+
+// ---------------------------------------------------------------------------
 // ROUNDTRIP: write then read returns the value, across boundaries.
 // ---------------------------------------------------------------------------
 TEST(WireRoundTrip, Byte) {
