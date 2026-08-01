@@ -120,7 +120,9 @@ int GetRevisionNumber();
 // [rc4l] 4509: AActor now serializes the MBF21 damage-group fields (Infighting/Projectile/Splash
 // group), guarded in AActor::Serialize.
 // [ZandroX] 4510: APlayerPawn now serializes FullHeight (guarded in APlayerPawn::Serialize).
-#define SAVEVER 4510
+// [MGOOOOOO] 4511: AActor now serializes flags9 and the ripper controls + runtime budget state
+// (guarded in AActor::Serialize; see features/ripper).
+#define SAVEVER 4511
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)

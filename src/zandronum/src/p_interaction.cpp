@@ -1132,9 +1132,11 @@ void ApplyCoopDamagefactor(int &damage, AActor *source)
 		damage = int(damage * sv_coop_damagefactor);
 }
 
-static inline bool MustForcePain(AActor *target, AActor *inflictor)
+// [MGOOOOOO] `flags` carries DMG_NO_PAIN, which outranks +FORCEPAIN: a ripper with
+// +RIPPERNOPAIN must not stunlock its victim even through the FORCEPAIN shortcut.
+static inline bool MustForcePain(AActor *target, AActor *inflictor, int flags)
 {
-	return (!(target->flags5 & MF5_NOPAIN) && inflictor != NULL &&
+	return (!(flags & DMG_NO_PAIN) && !(target->flags5 & MF5_NOPAIN) && inflictor != NULL &&
 		(inflictor->flags6 & MF6_FORCEPAIN) && !(inflictor->flags5 & MF5_PAINLESS));
 }
 
@@ -1290,7 +1292,7 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 			source->Inventory->ModifyDamage(olddam, mod, damage, false);
 			if (olddam != damage && damage <= 0)
 			{ // Still allow FORCEPAIN
-				if (MustForcePain(target, inflictor))
+				if (MustForcePain(target, inflictor, flags))
 				{
 					goto dopain;
 				}
@@ -1304,7 +1306,7 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 			target->Inventory->ModifyDamage(olddam, mod, damage, true);
 			if (olddam != damage && damage <= 0)
 			{ // Still allow FORCEPAIN
-				if (MustForcePain(target, inflictor))
+				if (MustForcePain(target, inflictor, flags))
 				{
 					goto dopain;
 				}
@@ -1334,7 +1336,7 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 			}
 			if (damage <= 0)
 			{ // Still allow FORCEPAIN
-				if (MustForcePain(target, inflictor))
+				if (MustForcePain(target, inflictor, flags))
 				{
 					goto dopain;
 				}
@@ -1534,8 +1536,7 @@ thrust:
 						SERVERCOMMANDS_SetPlayerArmor( player - players );
 
 					// If MF6_FORCEPAIN is set, make the player enter the pain state.
-					if (!(target->flags5 & MF5_NOPAIN) && inflictor != NULL &&
-						(inflictor->flags6 & MF6_FORCEPAIN) && !(inflictor->flags5 & MF5_PAINLESS))
+					if (MustForcePain(target, inflictor, flags))
 					{
 						goto dopain;
 					}
@@ -1762,7 +1763,10 @@ thrust:
 	}
 
 	
-	if (!(target->flags5 & MF5_NOPAIN) && (inflictor == NULL || !(inflictor->flags5 & MF5_PAINLESS)) &&
+	// [MGOOOOOO] DMG_NO_PAIN is the per-hit form of +NOPAIN: a ripper with +RIPPERNOPAIN passes it
+	// for its rips only, so the projectile's terminal explosion can still make the victim flinch.
+	if (!(flags & DMG_NO_PAIN) &&
+		!(target->flags5 & MF5_NOPAIN) && (inflictor == NULL || !(inflictor->flags5 & MF5_PAINLESS)) &&
 		(target->player != NULL || !G_SkillProperty(SKILLP_NoPain)) && !(target->flags & MF_SKULLFLY))
 	{
 		pc = target->GetClass()->ActorInfo->PainChances;
