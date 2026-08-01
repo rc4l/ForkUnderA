@@ -85,12 +85,14 @@ jobs:
       # THIS file: a caller's `needs: test` waits on the whole called workflow — fine for the
       # seconds-long test-macos job below, fatal for a 7-minute lint.)
 
-  # [rc4l] macOS-only ASan job for the Objective-C updater networking seam. The Linux `test` job above
-  # can't compile Cocoa code, so the use-after-free regression test (i_system_cocoa_net_test.mm) that
-  # guards the Mac_HttpsGet retain fix runs here instead. Runs in PARALLEL with `test` (no `needs:`),
-  # and builds ONLY the tiny zandrox_tests_objc target (two .mm files + gtest) — not the engine — so it
-  # stays a seconds-long check, not a full macOS build. LeakSanitizer is intentionally absent: macOS
-  # AddressSanitizer does not support detect_leaks (it aborts), unlike the Linux job.
+  # [rc4l] macOS ASan job. Its irreplaceable purpose is the Objective-C updater networking seam
+  # (i_system_cocoa_net_test.mm), which guards the Mac_HttpsGet use-after-free — the Linux `test` job
+  # above can't compile Cocoa code. It ALSO runs the full portable suite (via ctest, which discovers
+  # every target): those tests are pure C++ and already run on Linux, but a second run under Apple
+  # clang catches any macOS-specific compiler/ASan quirk in the helpers. This is free insurance — on a
+  # public repo the macOS runner costs nothing, and the job runs in PARALLEL with `test` (no `needs:`),
+  # finishing well inside the Linux job's window, so it adds ~0 to the gate's wall-clock. LeakSanitizer
+  # is intentionally absent: macOS AddressSanitizer does not support detect_leaks (it aborts).
   test-macos:
     runs-on: macos-latest
     steps:
@@ -100,10 +102,10 @@ jobs:
       - name: Configure (ASan + UBSan)
         run: cmake -S tests -B build-tests -DZANDROX_TESTS_SANITIZE=ON
 
-      - name: Build (Objective-C test target only)
-        run: cmake --build build-tests --target zandrox_tests_objc
+      - name: Build
+        run: cmake --build build-tests
 
       - name: Run tests (ASan + UBSan)
         env:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ./build-tests/zandrox_tests_objc
+        run: ctest --test-dir build-tests --output-on-failure
