@@ -192,6 +192,21 @@ pre-rebase commits survive in your clone as dangling objects, so `git cat-file -
 while CI's fresh checkout does not. Verify with `git merge-base --is-ancestor <sha> HEAD` for every
 row instead, which is what CI can actually see.
 
+**A `skip` or `adapted` row MUST name what would end it.** Both are conditional states, not verdicts:
+a skip rests on something being absent, an adaptation on our tree differing from upstream. Record the
+dependency *and*, when you know it, the upstream commit that dissolves it -- "resolved by <sha> once
+we take X". Without that the row reads as settled and nobody looks again. Real case: three commits
+(`03d4f23a6`, `d925279be`, `a26fbc74f`) were skipped as "GL adaptations to ZDoom's long-texture-names
+change, which Zandronum never took" -- correct at the time. We have since taken that change, so all
+three are portable again, and porting `03d4f23a6` is also what retires the `FindTextureByLumpNum`
+adaptation. None of that was recoverable from the rows; it was only in a commit message.
+
+**Never let a skip be recorded as `ported`.** The ledger migration (919beed) did exactly that to
+those three rows, which is worse than a wrong sha: `ported` deletes the dependency *and* the reason
+to re-check, so an expired skip becomes permanent silence. `tools/commit-tracker-overlap.py` catches
+the blatant shape of this (a cited commit sharing no files with the upstream one) but not the subtle
+one -- it is a smell detector, not a proof.
+
 Every commit ends as a tracker row: `ported`/`adapted`/`skip`. The note must cite the **check**, not a
 belief — `"skip: no software-renderer (r_*) in our tree as of <our-sha>"`, `"skip: VM symbols (scout
 tripwire)"`, `"ported: 9811962"`. A future reader (or a re-triage after the tree changes) can then
