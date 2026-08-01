@@ -59,6 +59,17 @@ ArchiveKind ClassifyArchiveMagic(const unsigned char *bytes, size_t n);
 // unambiguous from wad paths (which never start with "map=").
 std::string ParseMapAssignment(const std::string &token);
 
+// A Doom-engine WAD set can only boot if it supplies a palette: the engine looks up the "PLAYPAL"
+// lump early in startup (V_Init) and a set without it dies with a fatal error ("PLAYPAL not found").
+// That is exactly what happens when a *stub* IWAD is reloaded on its own -- e.g. MM8BDM's
+// megagame.wad, which is the registered IWAD but keeps its palette/content in mm8bdm-v6b.pk3, so it
+// only boots WITH that pk3 loaded too. True if `lumpName` is that palette lump. `lumpName` may be a
+// bare 8-char lump name ("PLAYPAL"), or a pk3 file name/path ("PLAYPAL.pal", "graphics/PLAYPAL.lmp")
+// -- we take the basename and drop any extension before matching, case-insensitively. The engine
+// scans the reloaded IWAD+pwad set with this and, if nothing matches, refuses the reload and keeps
+// the running game (the rollback) instead of crash-rebooting onto an unbootable set.
+bool IsBootPaletteName(const char *lumpName);
+
 }} // namespace zx::wadreload
 
 #endif // ZX_WADRELOAD_COMPUTE_H
