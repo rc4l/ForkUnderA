@@ -1268,7 +1268,7 @@ protected:
 						break;
 
 					case DRAWSTRING_LEVELLUMP:
-						specialValueText = level.mapname;
+						specialValueText = level.MapName;
 						break;
 
 					case DRAWSTRING_NEXTLEVELNAME:
@@ -1280,7 +1280,7 @@ protected:
 							if ( StringChunks[i].specialValue == DRAWSTRING_NEXTLEVELNAME )
 								specialValueText = g_pNextLevel->LookupLevelName( );
 							else
-								specialValueText = g_pNextLevel->mapname;
+								specialValueText = g_pNextLevel->MapName;
 						}
 						else
 						{

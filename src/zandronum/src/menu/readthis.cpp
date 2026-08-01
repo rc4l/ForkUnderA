@@ -88,9 +88,9 @@ void DReadThisMenu::Drawer()
 		tex = TexMan[GAMEMODE_GetF1Texture( GAMEMODE_GetCurrentMode( ))];
 
 	// Did the mapper choose a custom help page via MAPINFO?
-	if ((level.info != NULL) && level.info->f1[0] != 0)
+	if ((level.info != NULL) && level.info->F1Pic.Len() != 0)
 	{
-		tex = TexMan.FindTexture(level.info->f1);
+		tex = TexMan.FindTexture(level.info->F1Pic);
 		mScreen = 1;
 	}
 	
@@ -128,7 +128,7 @@ bool DReadThisMenu::MenuEvent(int mkey, bool fromcontroller)
 		S_Sound (CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE);
 		mScreen++;
 		mInfoTic = gametic;
-		if ((level.info != NULL && level.info->f1[0] != 0) || mScreen > int(gameinfo.infoPages.Size()))
+		if ((level.info != NULL && level.info->F1Pic.Len() != 0) || mScreen > int(gameinfo.infoPages.Size()))
 		{
 			Close();
 		}
