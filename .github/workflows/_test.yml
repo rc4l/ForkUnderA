@@ -56,6 +56,15 @@ jobs:
       - name: crash-sync regression rule
         run: python3 tools/crash_sync_test.py
 
+      # [rc4l] Wire-format snapshot: the client/server protocol is Zandronum's (protocolspec/*.txt).
+      # A backport that changes a command's fields/order/id -- or inserts a command, shifting every
+      # later id -- silently desyncs multiplayer while single-player builds fine. This derives the
+      # protocol signature from the generator's OWN parser and fails if it drifts from the committed
+      # golden. To ACCEPT an intentional change: tools/protocol-snapshot.py --write (and confirm
+      # older clients still parse it). Pure Python, no build needed.
+      - name: Protocol wire-format snapshot
+        run: python3 tools/protocol-snapshot.py --check
+
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:
