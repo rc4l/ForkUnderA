@@ -52,6 +52,54 @@ std::vector<std::string> ToStd(const TArray<FString> &a)
 	return v;
 }
 
+// Open `path` as a resource archive and return true if it contains the boot palette (PLAYPAL) lump.
+// Non-archives / unopenable files return false (they're rejected as not-loadable elsewhere anyway).
+bool FileHasBootPalette(const char *path)
+{
+	if (path == NULL || path[0] == '\0')
+		return false;
+
+	FileReader *reader;
+	try { reader = new FileReader(path); }
+	catch (CRecoverableError &) { return false; }
+
+	// OpenResourceFile takes ownership of the reader on success (freed by ~FResourceFile); on failure
+	// it does not, so we delete it ourselves.
+	FResourceFile *rf = FResourceFile::OpenResourceFile(path, reader, true /*quiet*/);
+	if (rf == NULL)
+	{
+		delete reader;
+		return false;
+	}
+
+	bool found = false;
+	for (DWORD i = 0; i < rf->LumpCount() && !found; ++i)
+	{
+		FResourceLump *lump = rf->GetLump((int)i);
+		if (lump == NULL)
+			continue;
+		// A WAD lump exposes its bare name; a pk3 entry also has a FullName ("PLAYPAL.pal", possibly
+		// in a subdirectory). Either matching is enough -- IsBootPaletteName handles basename + ext.
+		if (IsBootPaletteName(lump->Name) ||
+		    (lump->FullName != NULL && IsBootPaletteName(lump->FullName)))
+			found = true;
+	}
+	delete rf;
+	return found;
+}
+
+// True if the resulting IWAD + pwad set can supply a palette, i.e. it will boot. A stub IWAD (e.g.
+// MM8BDM's megagame.wad) has no palette on its own and must be paired with its content pk3.
+bool SetHasBootPalette(const char *iwad, const TArray<FString> &pwads)
+{
+	if (FileHasBootPalette(iwad))
+		return true;
+	for (unsigned i = 0; i < pwads.Size(); ++i)
+		if (FileHasBootPalette(pwads[i].GetChars()))
+			return true;
+	return false;
+}
+
 } // namespace
 
 bool WadLoadable(const char *path, FString &outWhy)
@@ -158,6 +206,19 @@ ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const
 			Printf(TEXTCOLOR_RED "wad_reload: file '%s' is not loadable (%s).\n", pwads[i].GetChars(), why.GetChars());
 			ok = false;
 		}
+	}
+	// A file being a valid WAD is not enough: the set must actually BOOT. The one failure that a
+	// validated-but-unbootable set hits first is a missing palette (V_Init -> "PLAYPAL not found" ->
+	// I_FatalError), which is exactly what a *stub* IWAD like MM8BDM's megagame.wad does when reloaded
+	// without its content pk3. Catch it here, BEFORE tearing down the running game, and refuse -- same
+	// rollback contract as a missing file. Only meaningful when we're changing the IWAD; keeping the
+	// current one means the palette that is already booted stays put.
+	if (ok && changingIwad && !SetHasBootPalette(iwad, pwads))
+	{
+		Printf(TEXTCOLOR_RED "wad_reload: '%s' can't run on its own -- it needs its other game files "
+		       "loaded with it.\n", iwad);
+		Printf(TEXTCOLOR_RED "wad_reload: add them too, e.g. wad_reload %s <otherfile.pk3>.\n", iwad);
+		ok = false;
 	}
 	if (!ok)
 	{
