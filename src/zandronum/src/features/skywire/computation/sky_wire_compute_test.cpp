@@ -1,11 +1,16 @@
 // [rc4l] Wire-format regression tests for the sky name in SERVERCOMMANDS_SetMapSky.
 //
-// The thing under guard is a PROTOCOL CONSTANT: the sky reaches clients as at most eight
+// The thing under guard is observable protocol behaviour: the sky reaches clients as at most eight
 // characters plus a NUL, and has done for as long as the command has existed. uzdoom@65e8563cf
-// deleted the name fields upstream (they resolve the texture and never look back) and moved the
-// level's own sky names to FString; we kept char[9] precisely so the bytes on the wire did not
-// move. Nothing in a single-player build can catch it if that changes -- an over-long name simply
-// arrives mangled at every client -- so it is pinned here.
+// removed the name from FLevelLocals entirely, so we now derive it at the wire boundary from
+// FTexture::Name -- itself char[9], which is what keeps the bound intact for free. Nothing in a
+// single-player build exercises this, so it is pinned here.
+//
+// Scope, stated honestly: this field is written with WriteString and read with ReadString, which
+// are NUL-terminated and self-delimiting, and ReadString deliberately keeps consuming an over-long
+// string so the packet stays aligned to the next field. A longer name would therefore arrive INTACT
+// and parse fine -- it would NOT corrupt the rest of the packet. What these tests protect is
+// compatibility: clients receiving a name they may not resolve to a texture.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
@@ -48,9 +53,10 @@ TEST(SkyWire, ExactlyEightCharactersIsTheBoundaryAndSurvivesWhole)
 
 TEST(SkyWire, NineCharactersIsTruncatedToEight)
 {
-	// THE protocol constant. level_info_t can now hold a long name (that was the point of the
-	// FString change); the wire still cannot. If this ever returns nine characters, every existing
-	// client is reading a packet whose length it did not expect.
+	// The bound. level_info_t can now hold a long name (that was the point of the FString change);
+	// what reaches clients is still bounded by FTexture::Name. If this ever returns nine characters,
+	// clients start receiving names they have never had to resolve before -- a compatibility change,
+	// and one that should be deliberate rather than a side effect of a refactor.
 	WireBuf w;
 	CopySkyNameForWire("ABCDEFGHI", w.b, sizeof w.b);
 	EXPECT_STREQ(w.b, "ABCDEFGH");
@@ -101,9 +107,10 @@ TEST(SkyWire, OutputIsAlwaysTerminatedWhateverTheInput)
 
 TEST(SkyWire, AWiderBufferWouldChangeTheWireAndIsDetectable)
 {
-	// This is the refactor that must never land silently: widen the destination and a nine-plus
-	// character name suddenly goes out whole. Asserted here so the behaviour is documented as a
-	// deliberate boundary rather than an accident of sizeof.
+	// The refactor that should never land silently: widen the destination and a nine-plus character
+	// name suddenly goes out whole. The transport would carry it (ReadString is variable-length),
+	// so nothing would break loudly -- clients would simply start seeing names they may not resolve.
+	// Asserted here so the boundary is a documented decision rather than an accident of sizeof.
 	char wide[32];
 	memset(wide, 0xAA, sizeof wide);
 	CopySkyNameForWire("ABCDEFGHI", wide, sizeof wide);
