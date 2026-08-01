@@ -17,4 +17,11 @@ std::string ComputeSafeFileLabel(const std::string &path)
 	return slash == std::string::npos ? path : path.substr(slash + 1);
 }
 
+PendingFatalAction ComputePendingFatalAction(bool recordExists, bool reportingOn)
+{
+	if (!recordExists)
+		return PendingFatalAction::None;
+	return reportingOn ? PendingFatalAction::Upload : PendingFatalAction::Discard;
+}
+
 } // namespace zx
