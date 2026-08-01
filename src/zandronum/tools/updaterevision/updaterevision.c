@@ -131,10 +131,17 @@ int main(int argc, char **argv)
 		// Read the revision that's in this file already. If it's the same as
 		// what we've got, then we don't need to modify it and can avoid rebuilding
 		// dependant files.
+		// [rc4l] Compare the FULL `git describe` string (vertag), not just the commit
+		// hash. The version label is <most-recent-tag>-<n>-g<hash>, and fetching new
+		// release tags changes it (e.g. v0.1.19-67-ge0baf33 -> v0.1.24-14-ge0baf33)
+		// WITHOUT the commit changing. Keying on the hash alone left the stamped version
+		// stale after a tag fetch -- a build reported an old version for current code,
+		// and its update-checker then falsely prompted "newer available". So the first
+		// written line is vertag, and this compares against it.
 		if (fgets(lasthash, sizeof lasthash, stream) == lasthash)
 		{
 			stripnl(lasthash);
-			if (strcmp(hash, lasthash + 3) == 0)
+			if (strcmp(vertag, lasthash + 3) == 0)
 			{
 				needupdate = 0;
 			}
@@ -158,7 +165,7 @@ int main(int argc, char **argv)
 "#define GIT_DESCRIPTION \"%s\"\n"
 "#define GIT_HASH \"%s\"\n"
 "#define GIT_TIME \"%s\"\n",
-			hash, vertag, hash, lastlog);
+			vertag, vertag, hash, lastlog);   // [rc4l] first line = vertag (the compare key), not hash
 
 		// [BB] Also save out hg info.
 		fprintf (stream, "#define HG_REVISION_NUMBER %lu\n", (unsigned long)hgdate );
