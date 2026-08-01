@@ -1354,7 +1354,9 @@ AWeapon *FWeaponSlots::PickNextWeapon(player_t *player)
 				return weap;
 			}
 		}
-		while ((slot != startslot || index != startindex) && slotschecked < NUM_WEAPON_SLOTS);
+		// [rc4l] uzdoom@3817bed0b: <= , not <. slotschecked counts slots already visited, so the
+		// strict bound gave up one slot early and the scroll could skip a same-slot weapon.
+		while ((slot != startslot || index != startindex) && slotschecked <= NUM_WEAPON_SLOTS);
 	}
 	return player->ReadyWeapon;
 }
@@ -1414,7 +1416,9 @@ AWeapon *FWeaponSlots::PickPrevWeapon (player_t *player)
 				return weap;
 			}
 		}
-		while ((slot != startslot || index != startindex) && slotschecked < NUM_WEAPON_SLOTS);
+		// [rc4l] uzdoom@3817bed0b: <= , not <. slotschecked counts slots already visited, so the
+		// strict bound gave up one slot early and the scroll could skip a same-slot weapon.
+		while ((slot != startslot || index != startindex) && slotschecked <= NUM_WEAPON_SLOTS);
 	}
 	return player->ReadyWeapon;
 }
