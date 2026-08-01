@@ -378,12 +378,26 @@ OptionMenu "FUAOptions"
 {
 	Title "FUA OPTIONS"
 	Submenu "Instant Replay Options",	"ReplayOptions"
+	Submenu "Field of View",			"FUAFovOptions"
 	Submenu "Crash Reporting",			"CrashReportOptions"
 	Submenu "Hitbox Visualization",		"HitboxVizOptions"
 	StaticText " "
 	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
 	// notice. On by default; off means no update check and no network call.
 	Option	"Check for updates",		"cl_fua_update_notify",		"OnOff"
+}
+
+// [rc4l] fov-interp: FOV and how fast the view tweens to it. Its own submenu rather than rows in
+// Display Options -- that menu is Zandronum's (menudef.z redefines it), and FUA features keep to
+// their own room so a re-sync never has to untangle ours from theirs.
+OptionMenu "FUAFovOptions"
+{
+	Title "FIELD OF VIEW"
+	Slider	"Field of View",			"fov",					5.0, 179.0, 1.0, 2
+	StaticText " "
+	// Degrees per tic the view moves toward the value above; the renderer tweens between tics,
+	// so this is the whole duration of a zoom, not its smoothness.
+	Slider	"Change speed",				"cl_fovchangespeed",	1.0, 100.0, 1.0, 2
 }
 
 // [MGOOOOOO] Debug overlay drawing actor collision boxes, attack boxes (HitRadius/HitHeight) and
