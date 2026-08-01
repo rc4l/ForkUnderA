@@ -240,7 +240,7 @@ fdfcb728a970113548f6aafb425fc77eacecdfad	2014-05-14T05:50:39Z	- make it easier t
 47a9dab56d74fe021f454bccec91e57715f6db94	2014-05-14T10:16:33Z	- allow setting sector planes' plane equations directly from UDMF.	pending		/
 388f09f786d5ab3927d3bb6d76895b043a18bdb6	2014-05-14T10:54:03Z	- fixed: In Heretic corpses do not get crunched to gibs, they just get their size reduced to 0. Handled by a new gameinfo flag. This also gets set for Chex quest which has the gib sprite replaced by something different. Using a Crush state will override this global flag.	pending		/
 51ed68dc7243cf00c285526a8009a2fa2d4c427d	2014-05-14T11:02:04Z	- forgot to save this...	pending		/
-85fb8c4326a0f5ca010f0495275d04ccd4d8860e	2014-05-14T11:04:47Z	- fixed: _M_X64 macro was misnamed _M_IX64.	pending		/
+85fb8c4326a0f5ca010f0495275d04ccd4d8860e	2014-05-14T11:04:47Z	- fixed: _M_X64 macro was misnamed _M_IX64.	ported	ported: _M_IX64 -> _M_X64 in x86.cpp and nodebuild.h; MSVC x64 was silently taking the non-SSE2 path	d211205
 802a47876602251c9c7ec6bd7f63da21c3d24165	2014-05-14T12:03:15Z	- Heretic doesn't really need dontcrunchcorpses because there was already some alternative handling for that situation.	pending		/
 2944e4f6ae8601ca567baafbe9b6e80daae138a3	2014-05-14T12:08:14Z	- fixed some Linux issues with recent changes.	pending		/
 adcdc11360c9672105c9c8fabb989247d1f2cd40	2014-05-14T13:44:05Z	- GCC compile fix.	ported	19f9e2e inherited: added lines already present (1/1); pre-dates or matches our base	zandronum-base

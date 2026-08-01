@@ -347,7 +347,8 @@ inline int FNodeBuilder::ClassifyLine (node_t &node, const FPrivVert *v1, const 
 #ifdef DISABLE_SSE
 	return ClassifyLine2 (node, v1, v2, sidev);
 #else
-#if defined(__SSE2__) || defined(_M_IX64)
+// [rc4l] uzdoom@85fb8c432: _M_IX64 typo -- see x86.cpp. MSVC defines _M_X64.
+#if defined(__SSE2__) || defined(_M_X64)
 	// If compiling with SSE2 support everywhere, just use the SSE2 version.
 	return ClassifyLineSSE2 (node, v1, v2, sidev);
 #elif defined(_MSC_VER) && _MSC_VER < 1300
