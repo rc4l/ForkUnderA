@@ -2102,7 +2102,10 @@ void G_PlayerFinishLevel (int player, EFinishLevelType mode, int flags)
 	}
 
 	// Clears the entire inventory and gives back the defaults for starting a game
-	if (flags & CHANGELEVEL_RESETINVENTORY)
+	// [rc4l] uzdoom@842ef86e7: a dead player must not be handed the starting inventory here -- they
+	// get it on respawn instead. Doing it twice left them holding weapons their corpse never lost.
+	// Pure predicate tightening on playerstate, which is already synced, so both ends still agree.
+	if ((flags & CHANGELEVEL_RESETINVENTORY) && p->playerstate != PST_DEAD)
 	{
 		p->mo->ClearInventory();
 		p->mo->GiveDefaultInventory();
