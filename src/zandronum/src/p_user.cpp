@@ -84,6 +84,7 @@
 #include "d_netinf.h"
 #include "g_shared/pwo.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
+#include "features/fov-interp/computation/fovinterp_compute.h"
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -107,6 +108,15 @@ CUSTOM_CVAR (Float, cl_spectatormove, 1.0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG) {
 		self = 100.0;
 	else if (self < -100.0)
 		self = -100.0;
+}
+
+// [rc4l] fov-interp: degrees per tic the view moves toward its target FOV. 7.0 is the value
+// ZDoom hardcoded here, so the default is exactly the historic behaviour; the renderer tweens
+// between these steps. Ported from Q-Zandronum d2475b676, which made the constant a CVAR.
+CUSTOM_CVAR (Float, cl_fovchangespeed, 7.0f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG) {
+	// Below a degree per tic a zoom takes minutes to converge and reads as a stuck view.
+	if (self < 1.0f)
+		self = 1.0f;
 }
 
 // [AK] Determines which mode to use while spectating.
@@ -3636,35 +3646,16 @@ void P_PlayerThink (player_t *player)
 	if ( CLIENT_PREDICT_IsPredicting( ) == false )
 	{
 		// [RH] Zoom the player's FOV
-		float desired = player->DesiredFOV;
-		// Adjust FOV using on the currently held weapon.
-		if (player->playerstate != PST_DEAD &&		// No adjustment while dead.
-			player->ReadyWeapon != NULL &&			// No adjustment if no weapon.
-			player->ReadyWeapon->FOVScale != 0)		// No adjustment if the adjustment is zero.
-		{
-			// A negative scale is used to prevent G_AddViewAngle/G_AddViewPitch
-			// from scaling with the FOV scale.
-			desired *= fabsf(player->ReadyWeapon->FOVScale);
-		}
-		if (player->FOV != desired)
-	{
-			if (fabsf (player->FOV - desired) < 7.f)
-			{
-				player->FOV = desired;
-			}
-			else
-			{
-				float zoom = MAX(7.f, fabsf(player->FOV - desired) * 0.025f);
-				if (player->FOV > desired)
-				{
-					player->FOV = player->FOV - zoom;
-				}
-				else
-				{
-					player->FOV = player->FOV + zoom;
-				}
-			}
-		}
+		// [rc4l] fov-interp: the step itself is unchanged (and identical to the old hardcoded
+		// 7.0 at the default cl_fovchangespeed) — it just lives in the tested computation unit
+		// now, so the renderer's sub-tic tween is a fraction of exactly this step and the two
+		// can never disagree. See features/fov-interp/.
+		const float desired = zx::FovTargetForWeapon (player->DesiredFOV,
+			player->playerstate != PST_DEAD,
+			player->ReadyWeapon != NULL,
+			player->ReadyWeapon != NULL ? player->ReadyWeapon->FOVScale : 0.f);
+
+		player->FOV = zx::FovStepTic (player->FOV, desired, cl_fovchangespeed);
 	}
 
 	if ( CLIENT_PREDICT_IsPredicting( ) == false )

@@ -78,6 +78,7 @@
 #include "gl/utility/gl_convert.h"
 #include "gl/utility/gl_templates.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/fov-interp/fovinterp.h"
 
 //==========================================================================
 //
@@ -1016,7 +1017,12 @@ void FGLRenderer::RenderView (player_t* player)
 	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
 	GLRenderer->mLightCount = ((it.Next()) != NULL);
 
-	sector_t * viewsector = RenderViewpoint(player->camera, NULL, FieldOfView * 360.0f / FINEANGLES, ratio, fovratio, true, true);
+	// [rc4l] fov-interp: FieldOfView is only updated once per tic (D_Display -> R_SetFOV) and is
+	// quantised to fineangles, so a zoom staircases at anything above 35Hz. Render the sub-tic
+	// position of the very step P_PlayerThink is about to take instead. All the arithmetic lives
+	// in features/fov-interp/computation/ so this stays a single line for the renderer staircase
+	// to re-apply. Ported from Q-Zandronum d2475b676 + 390ea5ac2.
+	sector_t * viewsector = RenderViewpoint(player->camera, NULL, FOV_InterpolatedForFrame(player), ratio, fovratio, true, true);
 
 	All.Unclock();
 }
