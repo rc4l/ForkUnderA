@@ -32,21 +32,4 @@ struct SoundBackendChoice
 SoundBackendChoice ComputeSoundBackendChoice(const char *requested, bool noSound,
 	bool openalCompiledIn, bool openalPresent);
 
-// [rc4l] Sentinel for "no sound renderer built yet" -- the value the engine seeds its
-// active-backend tracker with before I_InitSound has ever run.
-enum { ZX_SNDBACKEND_NONE = -1 };
-
-// [rc4l] Whether the snd_backend cvar callback must tear down and rebuild the renderer.
-// The callback used to unconditionally I_CloseSound()+I_InitSound(); at startup that fired
-// once from EnableCallbacks right after I_Init had ALREADY built the right renderer, so the
-// engine opened the sound device, closed it, and reopened it -- the doubled "Initializing
-// OpenAL" log. This returns false when the already-active backend already matches what the
-// cvar now resolves to (so the callback skips the redundant rebuild -- the startup pass and,
-// importantly, a wad_reload restart, where the backend is unchanged and sound must persist),
-// and true only when the resolved backend actually differs or nothing is active yet. The
-// resolved choice is normalized to what I_InitSound actually CONSTRUCTS: OpenAL only for the
-// OpenAL choice; NULL/UNAVAILABLE/UNKNOWN all end up as the null renderer.
-bool SoundBackendReinitNeeded(int activeBackend, const char *requested, bool noSound,
-	bool openalCompiledIn, bool openalPresent);
-
 #endif // ZX_SOUND_BACKEND_COMPUTE_H

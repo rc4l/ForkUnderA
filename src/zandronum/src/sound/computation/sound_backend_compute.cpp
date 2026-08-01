@@ -75,17 +75,3 @@ SoundBackendChoice ComputeSoundBackendChoice(const char *requested, bool noSound
 	choice.backend = ZX_SNDBACKEND_UNKNOWN;
 	return choice;
 }
-
-bool SoundBackendReinitNeeded(int activeBackend, const char *requested, bool noSound,
-	bool openalCompiledIn, bool openalPresent)
-{
-	const SoundBackendChoice wanted = ComputeSoundBackendChoice(requested, noSound,
-		openalCompiledIn, openalPresent);
-	// Normalize to the renderer I_InitSound actually constructs: OpenAL for the OpenAL
-	// choice, the null renderer for NULL/UNAVAILABLE/UNKNOWN alike. Comparing the raw choice
-	// enum would wrongly rebuild when e.g. an unavailable OpenAL and an explicit "null" both
-	// already run the null renderer.
-	const int wantedActive = (wanted.backend == ZX_SNDBACKEND_OPENAL)
-		? ZX_SNDBACKEND_OPENAL : ZX_SNDBACKEND_NULL;
-	return activeBackend != wantedActive;
-}
