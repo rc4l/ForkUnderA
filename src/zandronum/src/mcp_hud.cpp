@@ -45,8 +45,12 @@ void MCP_HUD_TeeTexture( double x, double y, FTexture *img )
 {
 	if ( img == NULL || g_curHud.Len() > 32000 ) return;
 	if ( img->UseType == FTexture::TEX_FontChar || img->UseType == FTexture::TEX_Null ) return;
-	if ( img->Name[0] == '\0' ) return; // generated/unnamed texture -- nothing to report
-	g_curHud.AppendFormat( "image %d %d %.8s\n", (int)x, (int)y, img->Name );
+	if ( img->Name.IsEmpty() ) return; // generated/unnamed texture -- nothing to report
+	// [rc4l] uzdoom@59885b856: FTexture::Name is an FString now, hence GetChars. Keeping %.8s rather
+	// than widening it -- this dump is a diagnostic format the MCP bridge parses, and changing what
+	// it emits is a separate decision from letting textures hold longer names. A long-named texture
+	// will show here abbreviated.
+	g_curHud.AppendFormat( "image %d %d %.8s\n", (int)x, (int)y, img->Name.GetChars() );
 }
 
 void MCP_HUD_BeginFrame()

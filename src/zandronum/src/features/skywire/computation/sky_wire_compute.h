@@ -5,41 +5,43 @@
 // we do the same and derive the name at the wire boundary from the texture itself. That keeps our
 // struct identical to upstream's (nothing to re-merge later) and leaves ONE source of truth.
 //
-// The 8-character bound is not something we maintain: FTexture::Name is itself char[9], so a name
-// derived from the resolved texture is already bounded exactly as it has always been. This unit
-// exists to state that bound explicitly and pin it with tests, because it IS the observable
-// protocol behaviour -- clients have received at most eight characters for this field since the
-// command existed.
+// THE 8-CHARACTER BOUND IS GONE, DELIBERATELY. It was never a rule we chose: FTexture::Name was
+// char[9], so a name taken from the resolved texture arrived pre-bounded and this unit merely
+// stated that. uzdoom@59885b856 made that field an FString, and the previous version of this header
+// static_asserted sizeof(FTexture::Name) == 9 at the call site precisely so the change could not
+// slip through unnoticed. It did not -- the build broke on that assert, which is the whole point.
 //
-// What over-running it would and would NOT do, since it is easy to overstate: the field is written
-// with WriteString and read with ReadString, which are NUL-terminated and self-delimiting, and
-// ReadString deliberately keeps consuming an over-long string so the packet stays aligned to the
-// next field (see the [BB] comment in networkshared.cpp). A longer name would therefore ARRIVE
-// INTACT and parse fine -- it would not corrupt the rest of the packet. The real consequence is a
-// compatibility one: clients would receive a name they may not resolve to a texture. Worth pinning,
-// not worth dramatising.
+// Sending the WHOLE name is the correct resolution, for three reasons:
+//   - Nothing regresses. Before 59885b856 no texture could hold a name longer than eight
+//     characters, so no existing content is affected by lifting a limit it could never reach.
+//   - The transport already carries it. spec.map.txt declares sky1/sky2 as String -- variable
+//     length, NUL-terminated, self-delimiting, read with ReadString straight into TexMan.GetTexture
+//     with no fixed buffer anywhere on the client. The packet stays aligned regardless of length.
+//   - Truncating is actively worse than not. "skies/night_a" cut to "skies/ni" does not merely fail
+//     to resolve; it may resolve to a DIFFERENT texture, and the client then renders the wrong sky
+//     with no error anywhere. A name the client cannot find is visible and diagnosable. A name that
+//     silently resolves to something else is not.
+//
+// The same reasoning applies to SERVERCOMMANDS_SetCameraToTexture, bounded by the same char[9] and
+// now sent whole for the same reasons (r_utility.cpp).
+//
+// This unit therefore no longer bounds anything. What it still owns is the null/empty handling at
+// the boundary -- an unresolved sky2 is normal and must reach clients as an empty string rather
+// than walking WriteString off a null pointer -- and the tests that pin the pass-through contract,
+// so a later refactor cannot quietly reintroduce truncation.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 #ifndef ZX_SKY_WIRE_COMPUTE_H
 #define ZX_SKY_WIRE_COMPUTE_H
 
-#include <cstddef>
-
 namespace zx
 {
 
-// [rc4l] Bytes of a sky name on the wire: 8 characters + NUL. Mirrors FTexture::Name, which is what
-// the name is derived from; static_asserted at the call site so the two cannot drift.
-enum { ZX_SKY_NAME_SIZE = 9 };
-
-// [rc4l] Copy a sky name into a wire-facing buffer, bounded and always NUL-terminated. Used where a
-// name must be materialised from a resolved texture for the wire or for a comparison.
-void CopySkyNameForWire(const char *src, char *out, size_t outSize);
-
-// [rc4l] True when `name` survives the wire unchanged. Callers can use this to warn a mapper that a
-// long sky texture name will reach clients truncated, now that level_info_t itself can hold one.
-bool SkyNameFitsOnWire(const char *name);
+// [rc4l] The name to put on the wire for a sky texture, whose name may be absent when the sky did
+// not resolve. Returns the name unchanged, or "" -- never null, because WriteString walks to a NUL
+// and would run off a null pointer. Length is the caller's content, not this function's business.
+const char *SkyNameForWire(const char *name);
 
 } // namespace zx
 
