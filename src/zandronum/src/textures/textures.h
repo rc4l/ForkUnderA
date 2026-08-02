@@ -451,11 +451,6 @@ public:
 	FTextureID CheckForTexture (const char *name, int usetype, BITFIELD flags=TEXMAN_TryAny);
 	FTextureID GetTexture (const char *name, int usetype, BITFIELD flags=0);
 	int ListTextures (const char *name, TArray<FTextureID> &list);
-	// [rc4l] uzdoom@ca4179caa deleted this because its ONE upstream caller went away with the new
-	// full-path texture lookup. It is not dead here: gl_skyboxtexture.cpp and gl_texture.cpp both
-	// ask "which texture came from this lump?" (Vavoom skyboxes, brightmap pairing), which the
-	// name-based lookups cannot answer. Kept, with the rest of that commit taken.
-	FTextureID FindTextureByLumpNum (int lumpnum);
 
 	void AddTexturesLump (const void *lumpdata, int lumpsize, int deflumpnum, int patcheslump, int firstdup=0, bool texture1=false);
 	void AddTexturesLumps (int lump1, int lump2, int patcheslump);

@@ -265,32 +265,6 @@ FTextureID FTextureManager::CheckForTexture (const char *name, int usetype, BITF
 
 //==========================================================================
 //
-// FTextureManager :: FindTextureByLumpNum
-//
-// [rc4l] Kept after uzdoom@ca4179caa removed it upstream -- see textures.h for why our tree
-// still has live callers.
-//
-//==========================================================================
-
-FTextureID FTextureManager::FindTextureByLumpNum (int lumpnum)
-{
-	if (lumpnum < 0)
-	{
-		return FTextureID(-1);
-	}
-	// This can't use hashing because using ReplaceTexture would break the hash chains. :(
-	for(unsigned i = 0; i < Textures.Size(); i++)
-	{
-		if (Textures[i].Texture->SourceLump == lumpnum)
-		{
-			return FTextureID(i);
-		}
-	}
-	return FTextureID(-1);
-}
-
-//==========================================================================
-//
 // FTextureManager :: ListTextures
 //
 //==========================================================================
