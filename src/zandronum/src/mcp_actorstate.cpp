@@ -43,12 +43,21 @@ CCMD( dumpactor )
 	Printf( "pos %.1f %.1f %.1f\n", FIXED2FLOAT( mo->x ), FIXED2FLOAT( mo->y ), FIXED2FLOAT( mo->z ) );
 	Printf( "angle %.1f\n", mo->angle / float( ANGLE_1 ) );
 	MCP_PrintState( "state", mo );
+	// [rc4l] Movement-model state (features/quake-movement). mvFlags lives on AActor, so it is
+	// dumped for every actor; MvType is pawn-only. Without these the movement model has no readback
+	// path at all -- A_CheckFlag can see individual mvFlags bits, but nothing could observe MvType.
+	Printf( "mvflags %08x\n", (unsigned int)mo->mvFlags );
 
 	if ( mo->player != NULL )
 	{
 		if ( mo->player->ReadyWeapon != NULL )
 			Printf( "weapon %s\n", mo->player->ReadyWeapon->GetClass()->TypeName.GetChars() );
 		Printf( "morphtics %d\n", mo->player->morphTics );
+		// [rc4l] Type-checked, not a bare static_cast: dumpactor takes an arbitrary TID, and a
+		// debug command must not be the thing that crashes on an actor that carries a player
+		// pointer without being a pawn.
+		if ( mo->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
+			Printf( "mvtype %d\n", static_cast<APlayerPawn *>( mo )->MvType );
 	}
 
 	for ( AInventory *item = mo->Inventory; item != NULL; item = item->Inventory )
