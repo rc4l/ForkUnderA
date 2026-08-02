@@ -293,7 +293,7 @@ void FTexture::CreateDefaultBrightmap()
 				if (GlobalBrightmap.Remap[texbuf[i]] == white)
 				{
 					// Create a brightmap
-					DPrintf("brightmap created for texture '%s'\n", Name);
+					DPrintf("brightmap created for texture '%s'\n", Name.GetChars());
 					gl_info.Brightmap = new FBrightmapTexture(this);
 					gl_info.bBrightmapChecked = 1;
 					TexMan.AddTexture(gl_info.Brightmap);
@@ -301,7 +301,7 @@ void FTexture::CreateDefaultBrightmap()
 				}
 			}
 			// No bright pixels found
-			DPrintf("No bright pixels found in texture '%s'\n", Name);
+			DPrintf("No bright pixels found in texture '%s'\n", Name.GetChars());
 			gl_info.bBrightmapChecked = 1;
 		}
 		else
@@ -615,7 +615,9 @@ bool FTexture::ProcessData(unsigned char * buffer, int w, int h, bool ispatch)
 
 FBrightmapTexture::FBrightmapTexture (FTexture *source)
 {
-	memset(Name, 0, sizeof(Name));
+	// [rc4l] uzdoom@59885b856: FTexture::Name is an FString now; same intent, this texture is
+	// generated and never looked up by name.
+	Name = "";
 	SourcePic = source;
 	CopySize(source);
 	bNoDecals = source->bNoDecals;
@@ -707,13 +709,13 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 
 			if (maplump >= 0)
 			{
-				Printf("Multiple brightmap definitions in texture %s\n", tex? tex->Name : "(null)");
+				Printf("Multiple brightmap definitions in texture %s\n", tex? tex->Name.GetChars() : "(null)");
 			}
 
 			maplump = Wads.CheckNumForFullName(sc.String, true);
 
 			if (maplump==-1) 
-				Printf("Brightmap '%s' not found in texture '%s'\n", sc.String, tex? tex->Name : "(null)");
+				Printf("Brightmap '%s' not found in texture '%s'\n", sc.String, tex? tex->Name.GetChars() : "(null)");
 
 			maplumpname = sc.String;
 		}
@@ -739,7 +741,7 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 	{
 		if (tex->bWarped != 0)
 		{
-			Printf("Cannot combine warping with brightmap on texture '%s'\n", tex->Name);
+			Printf("Cannot combine warping with brightmap on texture '%s'\n", tex->Name.GetChars());
 			return;
 		}
 
@@ -755,11 +757,11 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 			if (!brightmap)
 			{
 				Printf("Unable to create texture from '%s' in brightmap definition for '%s'\n", 
-					maplumpname.GetChars(), tex->Name);
+					maplumpname.GetChars(), tex->Name.GetChars());
 				return;
 			}
 			brightmap->bMasked = false;	// [rc4l] bBrightmap died in 3c7664a46; bMasked=false is its replacement semantic
-			brightmap->Name[0] = 0;	// brightmaps don't have names
+			brightmap->Name = "";	// brightmaps don't have names
 			TexMan.AddTexture(brightmap);
 		}
 		else
@@ -843,7 +845,7 @@ CCMD(textureinfo)
 		if (tex->gl_info.SystemTexture[0] || tex->gl_info.SystemTexture[1] || tex->gl_info.Material[0] || tex->gl_info.Material[1])
 		{
 			int lump = tex->GetSourceLump();
-			Printf(PRINT_LOG, "Texture '%s' (Index %d, Lump %d, Name '%s'):\n", tex->Name, i, lump, Wads.GetLumpFullName(lump));
+			Printf(PRINT_LOG, "Texture '%s' (Index %d, Lump %d, Name '%s'):\n", tex->Name.GetChars(), i, lump, Wads.GetLumpFullName(lump));
 			if (tex->gl_info.Material[0])
 			{
 				Printf(PRINT_LOG, "in use (normal)\n");
