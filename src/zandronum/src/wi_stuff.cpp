@@ -462,7 +462,10 @@ bool WI_UseSkulltagIntermissionAndMusic( void )
 
 void WI_LoadBackground(bool isenterpic)
 {
-	const char *lumpname;
+	// [rc4l] uzdoom@2944e4f6a: must be initialised. If the enterpic branch below leaves li == NULL
+	// this is never assigned, and the "lumpname == NULL || lumpname[0]==0" test a few lines down
+	// then reads an indeterminate pointer.
+	const char *lumpname = NULL;
 	char buffer[10];
 	in_anim_t an;
 	lnode_t pt;
