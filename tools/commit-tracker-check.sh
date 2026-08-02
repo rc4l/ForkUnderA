@@ -39,13 +39,25 @@ while IFS=$'\t' read -r sha date title status note ours; do
 		echo "commit-tracker-check: $sha is $status but ours column is empty"; fail=1; continue
 	fi
 	[ "$ours" = "zandronum-base" ] && continue
-	# one-or-more comma-separated zandrox shas; every one must exist.
+	# one-or-more comma-separated zandrox shas; every one must be REACHABLE FROM HEAD.
+	#
+	# [rc4l] Reachability, not mere existence. `git cat-file -e` is satisfied by any object still in
+	# the local store, including commits nothing points at any more -- so a row citing an orphaned
+	# commit passes on the machine that orphaned it and fails in CI's fresh clone, which is exactly
+	# how this shipped red once. Two ways rows get orphaned, both seen in practice:
+	#   - `git commit --amend` after capturing the sha, so the row cites the pre-amend commit;
+	#   - squash-merging a PR, which collapses every commit its own rows cite (PR #139 did this to
+	#     seven batch-1 rows). Backport PRs should merge with a merge commit for this reason.
 	IFS=',' read -ra parts <<< "$ours"
 	for tok in "${parts[@]}"; do
 		if ! printf '%s' "$tok" | grep -qE '^[0-9a-f]{7,40}$'; then
 			echo "commit-tracker-check: $sha ours='$ours' -> '$tok' is not a sha or 'zandronum-base'"; fail=1; continue
 		fi
-		git cat-file -e "$tok^{commit}" 2>/dev/null || { echo "commit-tracker-check: $sha -> our commit $tok does not exist"; fail=1; }
+		if ! git cat-file -e "$tok^{commit}" 2>/dev/null; then
+			echo "commit-tracker-check: $sha -> our commit $tok does not exist"; fail=1
+		elif ! git merge-base --is-ancestor "$tok" HEAD 2>/dev/null; then
+			echo "commit-tracker-check: $sha -> our commit $tok is not reachable from HEAD (orphaned by an amend or a squash merge?)"; fail=1
+		fi
 	done
 done < <(awk -F'\t' '/^#/ || $1=="sha" {next} 1' "$TSV")
 
