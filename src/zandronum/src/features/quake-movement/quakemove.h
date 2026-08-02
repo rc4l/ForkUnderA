@@ -31,6 +31,11 @@ void MovePlayerQuake( player_t *player, ticcmd_t *cmd );
 // Returns true when it handled friction, so the caller skips the Doom friction path entirely.
 bool ApplyQuakeFriction( AActor *mo );
 
+// The Quake jump model for one tic: the second-jump state machine, wall jump, double-tap dash and
+// edge jump. Replaces the stock jump block for Quake-movement pawns. Returns true when it handled
+// the jump, so the caller skips the Doom jump path.
+bool CheckJumpQuake( player_t *player, ticcmd_t *cmd );
+
 } // namespace quakemove
 } // namespace zx
 
