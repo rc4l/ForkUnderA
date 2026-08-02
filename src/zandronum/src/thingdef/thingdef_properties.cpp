@@ -2535,6 +2535,48 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, mvtype, I, PlayerPawn)
 
 //==========================================================================
 //
+// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: the Quake movement
+// tuning knobs. Every one is inert unless the pawn also sets Player.MvType 1.
+//
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, airacceleration, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(accel, 0);
+	defaults->AirAcceleration = accel;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, velocitycap, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(cap, 0);
+	defaults->VelocityCap = cap;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, groundacceleration, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(accel, 0);
+	defaults->GroundAcceleration = accel;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, groundfriction, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(friction, 0);
+	defaults->GroundFriction = friction;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, cpmairacceleration, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(accel, 0);
+	defaults->CpmAirAcceleration = accel;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, cpmmaxforwardanglerad, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(angle, 0);
+	defaults->CpmMaxForwardAngleRad = angle;
+}
+
+//==========================================================================
+//
 //==========================================================================
 DEFINE_CLASS_PROPERTY_PREFIX(player, GruntSpeed, F, PlayerPawn)
 {

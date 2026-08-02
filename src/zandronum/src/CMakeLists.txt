@@ -1371,6 +1371,7 @@ add_executable( zdoom WIN32
 	features/hitboxviz/computation/vizgate_compute.cpp
 	features/fov-interp/fovinterp.cpp
 	features/fov-interp/fovcvar.cpp
+	features/quake-movement/quakemove.cpp
 	zzautozend.cpp
 )
 

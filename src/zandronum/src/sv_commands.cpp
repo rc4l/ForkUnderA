@@ -67,6 +67,7 @@
 #include "sv_commands.h"
 #include "features/skywire/computation/sky_wire_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/quake-movement/quakemove.h"
 #include "sv_main.h"
 #include "team.h"
 #include "survival.h"
@@ -330,13 +331,24 @@ void SERVERCOMMANDS_MovePlayer( ULONG ulPlayer, ULONG ulPlayerExtra, ServerComma
 	if ( players[ulPlayer].crouchdir >= 0 )
 		ulPlayerFlags |= PLAYER_CROUCHING;
 
+	// [rc4l] features/quake-movement: Quake friction runs AFTER the move, so by the time this
+	// command is built mo->vel* has already been damped this tic. Clients damp it again on receipt,
+	// so send the pre-friction value the client is expected to start from. Same fields, same byte
+	// count -- only the value differs, and only for Quake-movement pawns. Resolved before the
+	// SENDVEL flags below, because those decide whether the value travels at all: deriving them
+	// from the post-friction velocity could clear a component the pre-friction value still has.
+	const bool bQuakeMovement = zx::quakemove::UsesQuakeMovement( players[ulPlayer].mo );
+	const fixed_t velx = bQuakeMovement ? players[ulPlayer].ServerXYZVel[0] : players[ulPlayer].mo->velx;
+	const fixed_t vely = bQuakeMovement ? players[ulPlayer].ServerXYZVel[1] : players[ulPlayer].mo->vely;
+	const fixed_t velz = bQuakeMovement ? players[ulPlayer].ServerXYZVel[2] : players[ulPlayer].mo->velz;
+
 	// [AK] Ideally, we should only need to send the player's velocity if it's not zero.
 	// Otherwise, the client can set the velocity to zero by themselves.
-	if ( players[ulPlayer].mo->velx )
+	if ( velx )
 		ulPlayerFlags |= PLAYER_SENDVELX;
-	if ( players[ulPlayer].mo->vely )
+	if ( vely )
 		ulPlayerFlags |= PLAYER_SENDVELY;
-	if ( players[ulPlayer].mo->velz )
+	if ( velz )
 		ulPlayerFlags |= PLAYER_SENDVELZ;
 
 	// [AK] Check if the player is standing on a moving lift. This tells clients to clamp the player onto
@@ -351,9 +363,9 @@ void SERVERCOMMANDS_MovePlayer( ULONG ulPlayer, ULONG ulPlayerExtra, ServerComma
 	fullCommand.SetY( players[ulPlayer].mo->y );
 	fullCommand.SetZ( players[ulPlayer].mo->z );
 	fullCommand.SetAngle( players[ulPlayer].mo->angle );
-	fullCommand.SetVelx( players[ulPlayer].mo->velx );
-	fullCommand.SetVely( players[ulPlayer].mo->vely );
-	fullCommand.SetVelz( players[ulPlayer].mo->velz );
+	fullCommand.SetVelx( velx );
+	fullCommand.SetVely( vely );
+	fullCommand.SetVelz( velz );
 
 	ServerCommands::MovePlayer stubCommand = fullCommand;
 	stubCommand.SetFlags( ulPlayerFlags );

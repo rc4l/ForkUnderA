@@ -85,6 +85,7 @@
 #include "g_shared/pwo.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
 #include "features/fov-interp/computation/fovinterp_compute.h"
+#include "features/quake-movement/quakemove.h"
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -2962,9 +2963,6 @@ static void P_MovePlayer_Doom (player_t *player, ticcmd_t *cmd)
 {
 	APlayerPawn *mo = player->mo;
 
-	// [Leo] cl_spectatormove is now applied here to avoid code duplication.
-	fixed_t spectatormove = FLOAT2FIXED(cl_spectatormove);
-
 	// killough 10/98:
 	//
 	// We must apply thrust to the player and bobbing separately, to avoid
@@ -3055,6 +3053,15 @@ static void P_MovePlayer_Doom (player_t *player, ticcmd_t *cmd)
 				G_FinishChangeSpy( consoleplayer, true );
 		}
 	}
+}
+
+// [rc4l] features/quake-movement: the jump block, lifted out of P_MovePlayer_Doom verbatim so both
+// movement models share one jump. Stage 3 replaces the body with Q-Zandronum's CheckJump (second
+// jump, wall jump, double-tap dash); until then Quake-movement pawns jump exactly like Doom ones.
+static void P_PlayerJump (player_t *player, ticcmd_t *cmd)
+{
+	// [Leo] cl_spectatormove is now applied here to avoid code duplication.
+	fixed_t spectatormove = FLOAT2FIXED(cl_spectatormove);
 
 	// [RH] check for jump
 	if ( cmd->ucmd.buttons & BT_JUMP )
@@ -3190,11 +3197,15 @@ void P_MovePlayer (player_t *player)
 
 	player->onground = (mo->z <= mo->floorz) || (mo->flags2 & MF2_ONMOBJ) || (mo->BounceFlags & BOUNCE_MBF) || (player->cheats & CF_NOCLIP2);
 
-	// [rc4l] features/quake-movement: pick the movement model. Spectators always take the Doom
-	// path -- spectator movement is a free-fly camera rather than simulated physics, and
-	// Q-Zandronum makes the same exception. MVTYPE_QUAKE lands in a later stage; until then every
-	// pawn resolves to the Doom path, so this dispatch is behaviour-neutral.
-	P_MovePlayer_Doom (player, cmd);
+	// [rc4l] features/quake-movement: pick the movement model. UsesQuakeMovement excludes voodoo
+	// dolls and spectators -- spectator movement is a free-fly camera rather than simulated
+	// physics, and Q-Zandronum makes the same two exceptions.
+	if (zx::quakemove::UsesQuakeMovement (mo))
+		zx::quakemove::MovePlayerQuake (player, cmd);
+	else
+		P_MovePlayer_Doom (player, cmd);
+
+	P_PlayerJump (player, cmd);
 }		
 
 //==========================================================================
