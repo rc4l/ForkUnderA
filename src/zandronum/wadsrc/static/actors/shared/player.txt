@@ -33,6 +33,7 @@ Actor PlayerPawn : Actor native
 	Player.MugShotMaxHealth 0
 	Player.FlechetteType "ArtiPoisonBag3"
 	Player.AirCapacity 1
+	Player.MvType 0 // [rc4l] 0 = Doom physics (see features/quake-movement)
 	Player.MaxSkinSizeFactor 3.44, 1.68 // [TP]
 	Obituary "$OB_MPDEFAULT"
 }

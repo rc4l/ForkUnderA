@@ -791,6 +791,19 @@ void APlayerPawn::Serialize (FArchive &arc)
 	{
 		FullHeight = GetDefault()->height;
 	}
+	// [rc4l] features/quake-movement. Older saves predate the movement model, so fall back to the
+	// class default rather than MVTYPE_DOOM: a pawn whose DECORATE says MvType 1 must still load as
+	// a Quake-movement pawn out of a pre-feature save.
+	if (SaveVersion >= 4513)
+	{
+		arc << MvType;
+	}
+	else
+	{
+		// [rc4l] AActor::GetDefault() is typed AActor*, so downcast to reach the pawn-only field.
+		// Anything reaching APlayerPawn::Serialize has an APlayerPawn class default object.
+		MvType = static_cast<APlayerPawn *>( GetDefault() )->MvType;
+	}
 }
 
 //===========================================================================
@@ -2942,78 +2955,15 @@ CUSTOM_CVAR (Float, sv_aircontrol, 0.00390625f, CVAR_SERVERINFO|CVAR_NOSAVE|CVAR
 	SERVER_SettingChanged( self, false );
 }
 
-void P_MovePlayer (player_t *player)
+// [rc4l] features/quake-movement: the stock Doom movement model, lifted verbatim out of
+// P_MovePlayer so a second model can sit beside it. The only edit is that `spectatormove` is
+// computed here instead of in the caller, because the jump block below is its only consumer.
+static void P_MovePlayer_Doom (player_t *player, ticcmd_t *cmd)
 {
-	// [BB] A client doesn't know enough about the other players to make their movement.
-	if ( NETWORK_InClientMode() &&
-		(( player - players ) != consoleplayer ) && !CLIENTDEMO_IsFreeSpectatorPlayer ( player ))
-	{
-		return;
-	}
-
-	ticcmd_t *cmd = &player->cmd;
 	APlayerPawn *mo = player->mo;
 
 	// [Leo] cl_spectatormove is now applied here to avoid code duplication.
 	fixed_t spectatormove = FLOAT2FIXED(cl_spectatormove);
-
-	// [AK] The player doesn't look around while using the free chasecam,
-	// so while playing a demo, make sure to not update the local player's
-	// angle during the moments they were using it.
-	if ((player != &players[consoleplayer]) || (CLIENTDEMO_IsPlaying() == false) || (FreeChasecam::enabled == false))
-	{
-		// [AK] Save the player's angle before we update it.
-		const bool usingFreeChasecam = FreeChasecam::IsBeingUsed(player);
-		fixed_t oldAngle = fixed_t::FromUnsignedBits(mo->angle);
-
-		// [AK] If using the free chasecam, temporarily set the player's angle
-		// to that of the free chasecam.
-		if (usingFreeChasecam)
-			mo->angle = FreeChasecam::cameraAngle;
-
-		// [RH] 180-degree turn overrides all other yaws
-		if (player->turnticks)
-		{
-			player->turnticks--;
-			mo->angle += (ANGLE_180 / TURN180_TICKS);
-		}
-		else
-		{
-			mo->angle += cmd->ucmd.yaw << 16;
-		}
-
-		// [AK] If being used, update the free chasecam's angle to the new one,
-		// then reset the player's angle back to what it was before. This way,
-		// the player isn't also looking around while using the free chasecam.
-		if (usingFreeChasecam)
-		{
-			FreeChasecam::cameraAngle = mo->angle;
-			mo->angle = (angle_t)(oldAngle);
-		}
-
-		// [AK] Calculate how much the player's angle changed.
-		// [rc4l] The turn delta is an unsigned wrapping BAM difference; read it back as a signed
-		// int32 so a right turn stays a small negative value instead of a huge positive one after
-		// the fixed_t widening (see angle_interp_compute.h).
-		mo->AngleDelta = fixed_t(zx::AngleAsSignedFixed(mo->angle - (angle_t)oldAngle));
-	}
-	// [AK] Their turn ticks still need to be decremented.
-	else if (player->turnticks)
-	{
-		player->turnticks--;
-	}
-
-	// [AK] Stop here if the player is dead. They only reason this should happen
-	// is because they're the local player and they're using the free chasecam,
-	// so their angle had to be updated.
-	if (player->playerstate == PST_DEAD)
-		return;
-
-	// [TP] Allow spectators to move freely even if the game is suspended.
-	if ( GAME_GetEndLevelDelay( ) && ( player->bSpectating == false ))
-		memset( cmd, 0, sizeof( ticcmd_t ));
-
-	player->onground = (mo->z <= mo->floorz) || (mo->flags2 & MF2_ONMOBJ) || (mo->BounceFlags & BOUNCE_MBF) || (player->cheats & CF_NOCLIP2);
 
 	// killough 10/98:
 	//
@@ -3168,6 +3118,83 @@ void P_MovePlayer (player_t *player)
 				SERVERCOMMANDS_SetLocalPlayerJumpTics( player - players );
 		}
 	}
+}
+
+void P_MovePlayer (player_t *player)
+{
+	// [BB] A client doesn't know enough about the other players to make their movement.
+	if ( NETWORK_InClientMode() &&
+		(( player - players ) != consoleplayer ) && !CLIENTDEMO_IsFreeSpectatorPlayer ( player ))
+	{
+		return;
+	}
+
+	ticcmd_t *cmd = &player->cmd;
+	APlayerPawn *mo = player->mo;
+
+	// [AK] The player doesn't look around while using the free chasecam,
+	// so while playing a demo, make sure to not update the local player's
+	// angle during the moments they were using it.
+	if ((player != &players[consoleplayer]) || (CLIENTDEMO_IsPlaying() == false) || (FreeChasecam::enabled == false))
+	{
+		// [AK] Save the player's angle before we update it.
+		const bool usingFreeChasecam = FreeChasecam::IsBeingUsed(player);
+		fixed_t oldAngle = fixed_t::FromUnsignedBits(mo->angle);
+
+		// [AK] If using the free chasecam, temporarily set the player's angle
+		// to that of the free chasecam.
+		if (usingFreeChasecam)
+			mo->angle = FreeChasecam::cameraAngle;
+
+		// [RH] 180-degree turn overrides all other yaws
+		if (player->turnticks)
+		{
+			player->turnticks--;
+			mo->angle += (ANGLE_180 / TURN180_TICKS);
+		}
+		else
+		{
+			mo->angle += cmd->ucmd.yaw << 16;
+		}
+
+		// [AK] If being used, update the free chasecam's angle to the new one,
+		// then reset the player's angle back to what it was before. This way,
+		// the player isn't also looking around while using the free chasecam.
+		if (usingFreeChasecam)
+		{
+			FreeChasecam::cameraAngle = mo->angle;
+			mo->angle = (angle_t)(oldAngle);
+		}
+
+		// [AK] Calculate how much the player's angle changed.
+		// [rc4l] The turn delta is an unsigned wrapping BAM difference; read it back as a signed
+		// int32 so a right turn stays a small negative value instead of a huge positive one after
+		// the fixed_t widening (see angle_interp_compute.h).
+		mo->AngleDelta = fixed_t(zx::AngleAsSignedFixed(mo->angle - (angle_t)oldAngle));
+	}
+	// [AK] Their turn ticks still need to be decremented.
+	else if (player->turnticks)
+	{
+		player->turnticks--;
+	}
+
+	// [AK] Stop here if the player is dead. They only reason this should happen
+	// is because they're the local player and they're using the free chasecam,
+	// so their angle had to be updated.
+	if (player->playerstate == PST_DEAD)
+		return;
+
+	// [TP] Allow spectators to move freely even if the game is suspended.
+	if ( GAME_GetEndLevelDelay( ) && ( player->bSpectating == false ))
+		memset( cmd, 0, sizeof( ticcmd_t ));
+
+	player->onground = (mo->z <= mo->floorz) || (mo->flags2 & MF2_ONMOBJ) || (mo->BounceFlags & BOUNCE_MBF) || (player->cheats & CF_NOCLIP2);
+
+	// [rc4l] features/quake-movement: pick the movement model. Spectators always take the Doom
+	// path -- spectator movement is a free-fly camera rather than simulated physics, and
+	// Q-Zandronum makes the same exception. MVTYPE_QUAKE lands in a later stage; until then every
+	// pawn resolves to the Doom path, so this dispatch is behaviour-neutral.
+	P_MovePlayer_Doom (player, cmd);
 }		
 
 //==========================================================================

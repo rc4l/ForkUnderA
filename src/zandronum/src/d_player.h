@@ -93,6 +93,15 @@ class player_t;
 class	CSkullBot;
 class	AFloatyIcon;
 
+// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: the movement models a
+// player pawn can simulate under (Player.MvType). Named MVTYPE_ rather than Q-Zandronum's MV_ so
+// they don't read as members of the MV_* movement *flag* word in actor.h.
+enum
+{
+	MVTYPE_DOOM			= 0,	// stock Doom physics -- the default, and unchanged by this feature
+	MVTYPE_QUAKE		= 1,	// Quake-style friction/acceleration
+};
+
 class APlayerPawn : public AActor
 {
 	DECLARE_CLASS (APlayerPawn, AActor)
@@ -175,6 +184,11 @@ public:
 	fixed_t		UseRange;				// [NS] Distance at which player can +use
 	fixed_t		AirCapacity;			// Multiplier for air supply underwater.
 	const PClass *FlechetteType;
+
+	// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: which movement model
+	// this pawn simulates under. MVTYPE_DOOM is the default and is stock Doom physics, untouched.
+	// See features/quake-movement/README.md.
+	int			MvType;
 
 	// [CW] Fades for when you are being damaged.
 	PalEntry DamageFade;

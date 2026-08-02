@@ -5404,6 +5404,11 @@ void ServerCommands::SetThingFlags::Execute()
 
 		actor->flags9 = flags;
 		break;
+	// [rc4l] Movement-model flags (see actor.h MV_*).
+	case FLAGSET_MVFLAGS:
+
+		actor->mvFlags = flags;
+		break;
 	case FLAGSET_FLAGSST:
 
 		actor->STFlags = flags;
@@ -5469,6 +5474,13 @@ void ServerCommands::SetThingProperty::Execute()
 	case APROP_StencilColor:
 		// [AK] We can't use DWORD as an unsigned int here, so split the value into its RGB components.
 		actor->SetShade(( value >> 16 ) & 0xFF, ( value >> 8 ) & 0xFF, value & 0xFF );
+		break;
+
+	// [rc4l] features/quake-movement. Range-checked on receipt too: the server is trusted, but a
+	// value outside the enum would put local prediction on a movement model that doesn't exist.
+	case APROP_MvType:
+		if ( actor->IsKindOf( RUNTIME_CLASS( APlayerPawn )) && ( value == MVTYPE_DOOM || value == MVTYPE_QUAKE ))
+			static_cast<APlayerPawn *>( actor )->MvType = value;
 		break;
 
 	default:

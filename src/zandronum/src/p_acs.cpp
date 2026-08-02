@@ -4670,6 +4670,23 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		}
 		break; 	// [GRB]
 
+	// [rc4l] features/quake-movement. Replicated through the existing SetThingProperty command, and
+	// only when the value actually changed -- the same shape APROP_JumpZ above uses. An out-of-range
+	// value is ignored rather than clamped, so a buggy script can't silently land the pawn in a
+	// movement model the mod never authored for.
+	case APROP_MvType:
+		if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)) && (value == MVTYPE_DOOM || value == MVTYPE_QUAKE))
+		{
+			APlayerPawn *playerActor = static_cast<APlayerPawn *>(actor);
+			oldValue = playerActor->MvType;
+
+			playerActor->MvType = value;
+
+			if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( oldValue != playerActor->MvType ) )
+				SERVERCOMMANDS_SetThingProperty( actor, APROP_MvType );
+		}
+		break;
+
 	case APROP_ChaseGoal:
 		if (value)
 			actor->flags5 |= MF5_CHASEGOAL;
@@ -5011,6 +5028,10 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	// [ZandroX] Raw attack-extent fields (0 = unset, falls back to the physical extent).
 	case APROP_HitRadius:	return (int)(actor->projectilepassradius);
 	case APROP_HitHeight:	return (int)(actor->projectilepassheight);
+	// [rc4l] features/quake-movement. Non-pawns report MVTYPE_DOOM, which is what they simulate under.
+	case APROP_MvType:		return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
+								? static_cast<APlayerPawn *>(actor)->MvType
+								: MVTYPE_DOOM;
 	case APROP_ReactionTime:return actor->reactiontime;
 	case APROP_MeleeRange:	return (int)(actor->meleerange);
 	case APROP_ViewHeight:	if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
@@ -5088,6 +5109,7 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_ViewHeight:
 		case APROP_AttackZOffset:
 		case APROP_StencilColor:
+		case APROP_MvType:
 			return (GetActorProperty(tid, property) == value);
 
 		// Boolean values need to compare to a binary version of value

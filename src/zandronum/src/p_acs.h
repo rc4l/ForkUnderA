@@ -430,6 +430,7 @@ enum
 	// Fork-specific properties therefore start at 50.
 	APROP_HitRadius		= 50,	// [ZandroX] projectilepassradius (attack half-width)
 	APROP_HitHeight		= 51,	// [ZandroX] projectilepassheight (attack height)
+	APROP_MvType		= 52,	// [rc4l] Player.MvType (features/quake-movement)
 };
 
 // [Dusk] Enumeration for GetTeamProperty

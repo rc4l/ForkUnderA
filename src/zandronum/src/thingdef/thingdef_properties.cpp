@@ -2518,6 +2518,23 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, jumpz, F, PlayerPawn)
 
 //==========================================================================
 //
+// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: Player.MvType selects the
+// movement model. Anything that isn't MVTYPE_DOOM is rejected rather than silently falling through
+// to Quake movement, so a typo in a mod is a parse error instead of a physics surprise.
+//
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, mvtype, I, PlayerPawn)
+{
+	PROP_INT_PARM(type, 0);
+	if (type != MVTYPE_DOOM && type != MVTYPE_QUAKE)
+	{
+		I_Error ("Player.MvType must be %d (Doom) or %d (Quake), got %d", MVTYPE_DOOM, MVTYPE_QUAKE, type);
+	}
+	defaults->MvType = type;
+}
+
+//==========================================================================
+//
 //==========================================================================
 DEFINE_CLASS_PROPERTY_PREFIX(player, GruntSpeed, F, PlayerPawn)
 {

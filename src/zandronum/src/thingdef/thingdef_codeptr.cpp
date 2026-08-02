@@ -5066,6 +5066,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 					flagset = FLAGSET_FLAGS8;
 				else if ( flagp == &self->flags9 )
 					flagset = FLAGSET_FLAGS9;
+				// [rc4l] Movement-model flags (see actor.h MV_*).
+				else if ( flagp == &self->mvFlags )
+					flagset = FLAGSET_MVFLAGS;
 				else if ( flagp == &self->STFlags )
 					flagset = FLAGSET_FLAGSST;
 
