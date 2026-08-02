@@ -28,8 +28,8 @@ This feature lands in five reviewable stages. **Stage 1 is complete**; the rest 
 1. ✅ **Scaffolding, behaviour-neutral.** `Player.MvType`, the `P_MovePlayer_Doom` split, the
    `mvFlags` word and its replication, property/APROP plumbing. Every default is `0`, so the engine
    behaves identically to before this feature existed.
-2. ⬜ **Quake core.** `QFriction`/`QAcceleration`/`QCrouchWalkFactor`, `P_MovePlayer_Quake`, the
-   `P_XYMovement`/`P_ZMovement` friction branches, velocity cap.
+2. ✅ **Quake core.** `QFriction`/`QAcceleration`/`QCrouchWalkFactor`, `MovePlayerQuake`, the
+   `P_XYMovement` friction branch, CPM air control, velocity cap.
 3. ⬜ **Jump rework.** `CheckJump`: the second-jump state machine, `+WALLJUMP`/`+WALLJUMPV2`,
    `+DOUBLETAPJUMP`, `+EDGEJUMP`, `+ELEVATORJUMP`, `+GROUNDSECONDJUMP`, `+ABSOLUTESECONDJUMP`,
    `+USER4JUMP`, plus their prediction state.
@@ -59,6 +59,41 @@ their own `mvFlags` word on `AActor`, which is also what Q-Zandronum does — me
 Defined in `actor.h` (`MV_*`), registered in `thingdef_data.cpp`, serialized in `AActor::Serialize`
 under `SaveVersion >= 4513`.
 
+## Stage 2: the physics core
+
+`computation/qphysics_compute.{h,cpp}` holds every arithmetic decision and is engine-free: no actor,
+no `player_t`, no CVAR, **no `fixed_t`**. It is float end to end, because Quake movement genuinely is
+— Q-Zandronum runs it in `FVector3` and only converts at the boundary. Keeping the conversion out of
+the compute unit is what makes it safe under our 48.16 `fixed_t`: `quakemove.cpp` does every
+fixed↔float crossing explicitly, so none of the deleted `Fixed`×`float` operators is reachable.
+
+The two properties that describe a *velocity* (`AirAcceleration`, `VelocityCap`) stay `fixed_t` so
+they read in map units like every other speed property; the pure acceleration/friction coefficients
+are plain floats.
+
+**Measured in-engine** (MAP01, `+forward` from rest, deterministic pause/step):
+
+| | 5 tics | 15 tics | plateau |
+|---|---|---|---|
+| `MvType 0` (Doom) | 20.24 | 56.68 | 3.64 u/tic |
+| `MvType 1` (Quake) | 16.19 | 112.83 | ~9.7 u/tic and rising |
+| `MvType 1` + `VelocityCap 4.0` | — | 60.00 | exactly 4.000 u/tic |
+
+That is the Quake signature: slower off the line, then ramping to roughly triple Doom's top speed.
+A 20-tic `MvType 0` run lands on x=452.325, byte-identical to the pre-Stage-2 build.
+
+### Deliberate divergences
+
+- **`wasJustThrustedZ` is not carried over.** Q-Zandronum skips ground acceleration for one tic after
+  a `ThrustThingZ`, via a flag that only exists alongside their thrust-prediction rework. We did not
+  take that rework, so the guard has nothing to hang off. Visible difference: a Z-thrust does not
+  suppress ground acceleration on its landing tic.
+- **`QCrouchWalkFactor` distinguishes only walk vs run.** Q-Zandronum derives it from four
+  `ForwardMove`/`SideMove` tiers; ZandroX has two until stage 5 adds the rest.
+- **No cached `SpeedFactor` on the actor.** Q-Zandronum caches the powerup multiplier so their
+  prediction can replay it; we recompute it each tic, because a cached copy with nothing to sync it
+  would just be a second source of truth.
+
 ## Netcode — what this costs
 
 **No new `SERVERCOMMANDS_*`, no new `CLC_*`, no change to `CLC_CLIENTMOVE`.** The move command's
@@ -77,6 +112,21 @@ Two pieces of state can change at runtime, and both reuse commands that already 
 Both are authored from DECORATE and the engine never writes them, so
 `SERVERCOMMANDS_UpdateThingFlagsNotAtDefaults` compares equal and sends nothing on a late join unless
 a mod genuinely changed one. **A mod that doesn't touch them pays zero bytes.**
+
+### The one place stage 2 touches the send path
+
+Quake friction runs **after** the move, inside `P_XYMovement`. The server therefore moves, frictions,
+and only then builds `SERVERCOMMANDS_MovePlayer` — but the client damps the value it receives too, so
+handing it the post-friction velocity would apply friction twice and the player would visibly
+under-run their own prediction.
+
+So the server caches the pre-friction velocity in `player_t::ServerXYZVel` and `MovePlayer` sends
+that instead, **for Quake-movement pawns only**. Same three fields, same byte count, same command id
+— only the value differs. It is resolved *before* the `PLAYER_SENDVELX/Y/Z` flags are computed,
+because those decide whether a component travels at all: deriving them from the post-friction
+velocity could clear a component the pre-friction value still has.
+
+`ServerXYZVel` is server-side, per-tic, never serialized and never read on a client.
 
 `APROP_MvType` is range-checked on **both** ends. The server is trusted, but a value outside the enum
 would put local prediction on a movement model that doesn't exist, so the client rejects it too.

@@ -97,6 +97,7 @@
 #include <set>
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/quake-movement/quakemove.h"
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -2678,6 +2679,23 @@ explode:
 
 	if (mo->flags & (MF_MISSILE | MF_SKULLFLY))
 	{ // no friction for missiles
+		return oldfloorz;
+	}
+
+	// [rc4l] features/quake-movement. Quake friction is applied AFTER the move rather than before,
+	// so the server has to send the velocity it had BEFORE friction: it moves, frictions, then
+	// transmits, and a client that received the post-friction value would apply friction to it a
+	// second time. Same MovePlayer fields, same byte count -- only the value written changes.
+	if (zx::quakemove::UsesQuakeMovement(mo))
+	{
+		if (NETWORK_GetState() == NETSTATE_SERVER)
+		{
+			player->ServerXYZVel[0] = mo->velx;
+			player->ServerXYZVel[1] = mo->vely;
+			player->ServerXYZVel[2] = mo->velz;
+		}
+
+		zx::quakemove::ApplyQuakeFriction(mo);
 		return oldfloorz;
 	}
 

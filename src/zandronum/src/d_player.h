@@ -190,6 +190,17 @@ public:
 	// See features/quake-movement/README.md.
 	int			MvType;
 
+	// [rc4l] Quake movement tuning. All inert while MvType is MVTYPE_DOOM. Acceleration values are
+	// plain floats because the Quake model is float math end to end (see
+	// features/quake-movement/computation/qphysics_compute.h); the two that describe a *velocity*
+	// stay fixed_t so they read in map units like every other speed property.
+	fixed_t		AirAcceleration;
+	fixed_t		VelocityCap;
+	float		GroundAcceleration;
+	float		GroundFriction;
+	float		CpmAirAcceleration;
+	float		CpmMaxForwardAngleRad;
+
 	// [CW] Fades for when you are being damaged.
 	PalEntry DamageFade;
 
@@ -620,6 +631,12 @@ public:
 	// This only represents the thrust that the player applies himself.
 	// This avoids anomalies with such things as Boom ice and conveyors.
 	fixed_t		velx, vely;				// killough 10/98
+
+	// [rc4l] features/quake-movement: the velocity this pawn had BEFORE this tic's Quake friction.
+	// Quake applies friction after the move, so the server moves, frictions, then transmits -- and
+	// a client handed the post-friction value would apply friction to it a second time. Server-side
+	// and per-tic only; never serialized, never read on a client, and untouched by Doom movement.
+	fixed_t		ServerXYZVel[3];
 
 	bool		centering;
 	BYTE		turnticks;

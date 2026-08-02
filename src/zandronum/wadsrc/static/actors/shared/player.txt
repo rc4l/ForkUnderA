@@ -34,6 +34,13 @@ Actor PlayerPawn : Actor native
 	Player.FlechetteType "ArtiPoisonBag3"
 	Player.AirCapacity 1
 	Player.MvType 0 // [rc4l] 0 = Doom physics (see features/quake-movement)
+	// [rc4l] Quake movement tuning, inert while MvType is 0. Values are Q-Zandronum's defaults.
+	Player.AirAcceleration 0.25
+	Player.VelocityCap 0 // 0 = uncapped
+	Player.GroundAcceleration 10.0
+	Player.GroundFriction 6.0
+	Player.CpmAirAcceleration 12
+	Player.CpmMaxForwardAngleRad 0.122173 // 7 degrees
 	Player.MaxSkinSizeFactor 3.44, 1.68 // [TP]
 	Obituary "$OB_MPDEFAULT"
 }
