@@ -201,6 +201,26 @@ public:
 	float		CpmAirAcceleration;
 	float		CpmMaxForwardAngleRad;
 
+	// [rc4l] Jump tuning (stage 3). JumpZ already exists above; these add the horizontal component
+	// and the whole second-jump system. SecondJumpAmount is -1 for unlimited, 0 to disable.
+	fixed_t		JumpXY;
+	int			JumpDelay;
+	fixed_t		SecondJumpXY;
+	fixed_t		SecondJumpZ;
+	int			SecondJumpDelay;
+	int			SecondJumpAmount;
+	int			DoubleTapMaxTics;
+
+	// [rc4l] Live second-jump state. Client-local and prediction-saved (cl_pred.cpp); none of it is
+	// serialized or networked -- server and client run the same CheckJump from the same inputs, and
+	// the existing position/velocity correction is what reconciles any drift.
+	int			secondJumpTics;			// >0 cooldown; <0 is the double-tap window counting up
+	int			secondJumpsRemaining;
+	int			secondJumpState;		// SJ_* (features/quake-movement/computation/qjump_compute.h)
+	int			lastTapValue;
+	int			lastMoveButtonsBefore;
+	int			JumpSoundDelay;
+
 	// [CW] Fades for when you are being damaged.
 	PalEntry DamageFade;
 

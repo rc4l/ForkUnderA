@@ -97,6 +97,17 @@ static	bool		g_bSavedOnMobj[CLIENT_PREDICTION_TICS];
 static	bool		g_bSavedOnGround[CLIENT_PREDICTION_TICS];
 static	fixed_t		g_SavedFloorZ[CLIENT_PREDICTION_TICS];
 
+// [rc4l] features/quake-movement: the second-jump state machine is live per-tic state, so a
+// re-predicted tic must replay it exactly. Without this a correction silently rearms or spends a
+// double jump -- the player sees "my double jump randomly doesn't fire" under packet loss, which is
+// invisible offline. Client-local memory only: nothing here is ever sent.
+static	int			g_SavedSecondJumpTics[CLIENT_PREDICTION_TICS];
+static	int			g_SavedSecondJumpsRemaining[CLIENT_PREDICTION_TICS];
+static	int			g_SavedSecondJumpState[CLIENT_PREDICTION_TICS];
+static	int			g_SavedLastTapValue[CLIENT_PREDICTION_TICS];
+static	int			g_SavedLastMoveButtonsBefore[CLIENT_PREDICTION_TICS];
+static	int			g_SavedJumpSoundDelay[CLIENT_PREDICTION_TICS];
+
 #ifdef	_DEBUG
 CVAR( Bool, cl_showpredictionsuccess, false, 0 );
 CVAR( Bool, cl_showonetickpredictionerrors, false, 0 );
@@ -383,6 +394,13 @@ static void client_predict_BeginPrediction( player_t *pPlayer )
 	g_SavedCrouchfactor[g_ulGameTick % CLIENT_PREDICTION_TICS] = pPlayer->crouchfactor;
 	g_SavedTurnTicks[g_ulGameTick % CLIENT_PREDICTION_TICS] = pPlayer->turnticks;
 	g_lSavedReactionTime[g_ulGameTick % CLIENT_PREDICTION_TICS] = pPlayer->mo->reactiontime;
+	// [rc4l] features/quake-movement second-jump state.
+	g_SavedSecondJumpTics[g_ulGameTick % CLIENT_PREDICTION_TICS] = pPlayer->mo->secondJumpTics;
+	g_SavedSecondJumpsRemaining[g_ulGameTick % CLIENT_PREDICTION_TICS] = pPlayer->mo->secondJumpsRemaining;
+	g_SavedSecondJumpState[g_ulGameTick % CLIENT_PREDICTION_TICS] = pPlayer->mo->secondJumpState;
+	g_SavedLastTapValue[g_ulGameTick % CLIENT_PREDICTION_TICS] = pPlayer->mo->lastTapValue;
+	g_SavedLastMoveButtonsBefore[g_ulGameTick % CLIENT_PREDICTION_TICS] = pPlayer->mo->lastMoveButtonsBefore;
+	g_SavedJumpSoundDelay[g_ulGameTick % CLIENT_PREDICTION_TICS] = pPlayer->mo->JumpSoundDelay;
 	g_lSavedWaterLevel[g_ulGameTick % CLIENT_PREDICTION_TICS] = pPlayer->mo->waterlevel;
 	memcpy( &g_SavedTiccmd[g_ulGameTick % CLIENT_PREDICTION_TICS], &pPlayer->cmd, sizeof( ticcmd_t ));
 }
@@ -432,6 +450,13 @@ static void client_predict_DoPrediction( player_t *pPlayer, ULONG ulTicks )
 		pPlayer->crouchfactor = g_SavedCrouchfactor[( lTick + 1 )% CLIENT_PREDICTION_TICS];
 		pPlayer->turnticks = g_SavedTurnTicks[lTick % CLIENT_PREDICTION_TICS];
 		pPlayer->mo->reactiontime = g_lSavedReactionTime[lTick % CLIENT_PREDICTION_TICS];
+		// [rc4l] features/quake-movement second-jump state.
+		pPlayer->mo->secondJumpTics = g_SavedSecondJumpTics[lTick % CLIENT_PREDICTION_TICS];
+		pPlayer->mo->secondJumpsRemaining = g_SavedSecondJumpsRemaining[lTick % CLIENT_PREDICTION_TICS];
+		pPlayer->mo->secondJumpState = g_SavedSecondJumpState[lTick % CLIENT_PREDICTION_TICS];
+		pPlayer->mo->lastTapValue = g_SavedLastTapValue[lTick % CLIENT_PREDICTION_TICS];
+		pPlayer->mo->lastMoveButtonsBefore = g_SavedLastMoveButtonsBefore[lTick % CLIENT_PREDICTION_TICS];
+		pPlayer->mo->JumpSoundDelay = g_SavedJumpSoundDelay[lTick % CLIENT_PREDICTION_TICS];
 		pPlayer->mo->waterlevel = g_lSavedWaterLevel[lTick % CLIENT_PREDICTION_TICS];
 		memcpy( &pPlayer->cmd, &g_SavedTiccmd[lTick % CLIENT_PREDICTION_TICS], sizeof( ticcmd_t ));
 
@@ -467,6 +492,13 @@ static void client_predict_EndPrediction( player_t *pPlayer )
 	pPlayer->crouchfactor = g_SavedCrouchfactor[g_ulGameTick % CLIENT_PREDICTION_TICS];
 	pPlayer->turnticks = g_SavedTurnTicks[g_ulGameTick % CLIENT_PREDICTION_TICS];
 	pPlayer->mo->reactiontime = g_lSavedReactionTime[g_ulGameTick % CLIENT_PREDICTION_TICS];
+	// [rc4l] features/quake-movement second-jump state.
+	pPlayer->mo->secondJumpTics = g_SavedSecondJumpTics[g_ulGameTick % CLIENT_PREDICTION_TICS];
+	pPlayer->mo->secondJumpsRemaining = g_SavedSecondJumpsRemaining[g_ulGameTick % CLIENT_PREDICTION_TICS];
+	pPlayer->mo->secondJumpState = g_SavedSecondJumpState[g_ulGameTick % CLIENT_PREDICTION_TICS];
+	pPlayer->mo->lastTapValue = g_SavedLastTapValue[g_ulGameTick % CLIENT_PREDICTION_TICS];
+	pPlayer->mo->lastMoveButtonsBefore = g_SavedLastMoveButtonsBefore[g_ulGameTick % CLIENT_PREDICTION_TICS];
+	pPlayer->mo->JumpSoundDelay = g_SavedJumpSoundDelay[g_ulGameTick % CLIENT_PREDICTION_TICS];
 	pPlayer->mo->waterlevel = g_lSavedWaterLevel[g_ulGameTick % CLIENT_PREDICTION_TICS];
 	memcpy( &pPlayer->cmd, &g_SavedTiccmd[g_ulGameTick % CLIENT_PREDICTION_TICS], sizeof( ticcmd_t ));
 }

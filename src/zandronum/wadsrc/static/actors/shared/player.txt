@@ -41,6 +41,15 @@ Actor PlayerPawn : Actor native
 	Player.GroundFriction 6.0
 	Player.CpmAirAcceleration 12
 	Player.CpmMaxForwardAngleRad 0.122173 // 7 degrees
+	// [rc4l] Jump tuning. SecondJumpAmount 0 means no double jump unless a mod asks for one, so
+	// enabling MvType 1 alone changes nothing about jumping.
+	Player.JumpXY 0
+	Player.JumpDelay 7
+	Player.SecondJumpXY 0
+	Player.SecondJumpZ 8
+	Player.SecondJumpDelay 7
+	Player.SecondJumpAmount 0
+	Player.DoubleTapMaxTics 10
 	Player.MaxSkinSizeFactor 3.44, 1.68 // [TP]
 	Obituary "$OB_MPDEFAULT"
 }

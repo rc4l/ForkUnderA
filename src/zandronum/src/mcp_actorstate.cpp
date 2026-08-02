@@ -57,7 +57,19 @@ CCMD( dumpactor )
 		// debug command must not be the thing that crashes on an actor that carries a player
 		// pointer without being a pawn.
 		if ( mo->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
-			Printf( "mvtype %d\n", static_cast<APlayerPawn *>( mo )->MvType );
+		{
+			APlayerPawn *const pawn = static_cast<APlayerPawn *>( mo );
+			Printf( "mvtype %d\n", pawn->MvType );
+			// [rc4l] Second-jump state (features/quake-movement stage 3). Without this the state
+			// machine is unobservable and a misfiring double jump can only be guessed at.
+			Printf( "secondjump state %d remaining %d tics %d amount %d\n",
+				pawn->secondJumpState, pawn->secondJumpsRemaining, pawn->secondJumpTics,
+				pawn->SecondJumpAmount );
+			Printf( "jumptics %d velz %.2f onground %d\n",
+				mo->player->jumpTics, FIXED2FLOAT( mo->velz ), mo->player->onground ? 1 : 0 );
+			Printf( "buttons %08x oldbuttons %08x\n",
+				(unsigned int)mo->player->cmd.ucmd.buttons, (unsigned int)mo->player->oldbuttons );
+		}
 	}
 
 	for ( AInventory *item = mo->Inventory; item != NULL; item = item->Inventory )

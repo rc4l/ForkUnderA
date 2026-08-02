@@ -12,12 +12,18 @@
 
 #include "features/quake-movement/quakemove.h"
 #include "features/quake-movement/computation/qphysics_compute.h"
+#include "features/quake-movement/computation/qjump_compute.h"
 
 #include "actor.h"
 #include "d_player.h"
 #include "d_event.h"
 #include "p_local.h"
+#include "p_trace.h"
+#include "r_defs.h"
+#include "s_sound.h"
+#include "tables.h"
 #include "g_level.h"
+#include "sv_commands.h"
 #include "cl_main.h"
 #include "cl_demo.h"
 #include "network.h"
@@ -330,6 +336,269 @@ bool ApplyQuakeFriction( AActor *mo )
 
 	player->velx = FixedMul( player->velx, FLOAT2FIXED( result.scale ));
 	player->vely = FixedMul( player->vely, FLOAT2FIXED( result.scale ));
+
+	return true;
+}
+
+namespace {
+
+const int MOVE_BUTTONS = BT_FORWARD | BT_BACK | BT_MOVELEFT | BT_MOVERIGHT;
+
+// Read the pawn's MV_* bits into the engine-free struct the decision functions take.
+JumpFlags FlagsOf( const APlayerPawn *mo )
+{
+	JumpFlags f;
+	f.groundSecondJump = ( mo->mvFlags & MV_GROUNDSECONDJUMP ) != 0;
+	f.doubleTapJump = ( mo->mvFlags & MV_DOUBLETAPJUMP ) != 0;
+	f.user4Jump = ( mo->mvFlags & MV_USER4JUMP ) != 0;
+	f.wallJump = ( mo->mvFlags & MV_WALLJUMP ) != 0;
+	f.wallJumpV2 = ( mo->mvFlags & MV_WALLJUMPV2 ) != 0;
+	f.absoluteSecondJump = ( mo->mvFlags & MV_ABSOLUTESECONDJUMP ) != 0;
+	f.edgeJump = ( mo->mvFlags & MV_EDGEJUMP ) != 0;
+	return f;
+}
+
+// Trace horizontally for a wall at roughly chest height. The 24-unit floor on the distance is
+// Q-Zandronum's: shorter traces produce false hits at diagonal angles.
+void TraceForWall( APlayerPawn *mo, angle_t angle, FTraceResults &trace )
+{
+	const angle_t fineAngle = angle >> ANGLETOFINESHIFT;
+	const fixed_t stepOrView = ( mo->MaxStepHeight < mo->ViewHeight ) ? mo->MaxStepHeight : mo->ViewHeight;
+	const fixed_t offset = stepOrView - 8 * FRACUNIT;
+	const fixed_t traceZ = mo->z + (( offset > FRACUNIT ) ? offset : fixed_t( FRACUNIT ));
+	const fixed_t reach = mo->radius + 8 * FRACUNIT;
+	const fixed_t distance = ( reach > 24 * FRACUNIT ) ? reach : fixed_t( 24 * FRACUNIT );
+
+	Trace( mo->x, mo->y, traceZ, mo->Sector,
+		finecosine[fineAngle], finesine[fineAngle], 0, distance,
+		MF_SOLID, ML_BLOCKING | ML_3DMIDTEX_IMPASS, mo, trace, TRACE_NoSky );
+}
+
+// Sweep 16 evenly spaced directions looking for a wall to kick off. Returns true on the first hit,
+// leaving `trace` describing it (WALLJUMPV2 needs the line to derive its normal).
+bool FindNearbyWall( APlayerPawn *mo, FTraceResults &trace )
+{
+	for ( int i = 0; i < 16; ++i )
+	{
+		const angle_t angle = static_cast<angle_t>( i ) * ( ANGLE_MAX / 16 );
+		TraceForWall( mo, angle, trace );
+		if ( trace.HitType == TRACE_HitWall )
+			return true;
+	}
+	return false;
+}
+
+// The pawn's facing-relative wish direction, scaled to `magnitude`. Shared by the main jump's
+// horizontal component and the second jump's.
+void JumpDirection( APlayerPawn *mo, ticcmd_t *cmd, fixed_t magnitude, fixed_t &outX, fixed_t &outY )
+{
+	outX = 0;
+	outY = 0;
+	if (( magnitude == 0 ) || ( cmd == NULL ))
+		return;
+
+	float x = FIXED2FLOAT( FixedMul( fixed_t( cmd->ucmd.forwardmove ), mo->ForwardMove2 ));
+	float y = FIXED2FLOAT( FixedMul( fixed_t( -cmd->ucmd.sidemove ), mo->SideMove2 ));
+	const QVec3 unit = QMakeUnit( QVec3{ x, y, 0.0f } );
+
+	const angle_t fineAngle = mo->angle >> ANGLETOFINESHIFT;
+	const float cosine = FIXED2FLOAT( finecosine[fineAngle] );
+	const float sine = FIXED2FLOAT( finesine[fineAngle] );
+
+	const float worldX = unit.x * cosine - unit.y * sine;
+	const float worldY = unit.x * sine + unit.y * cosine;
+
+	outX = FixedMul( FLOAT2FIXED( worldX ), magnitude );
+	outY = FixedMul( FLOAT2FIXED( worldY ), magnitude );
+}
+
+void PlayJumpSound( APlayerPawn *mo, const char *sound )
+{
+	if ( mo->mvFlags & MV_SILENT )
+		return;
+	// [BB] We may not play the sound while predicting, otherwise it'll stutter.
+	if ( CLIENT_PREDICT_IsPredicting() == false )
+		S_Sound( mo, CHAN_BODY, sound, 1, ATTN_NORM );
+	// [EP] Inform the other clients to play the sound.
+	if ( NETWORK_GetState() == NETSTATE_SERVER )
+	{
+		SERVERCOMMANDS_SoundActor( mo, CHAN_BODY, sound, 1, ATTN_NORM,
+			mo->player - players, SVCF_SKIPTHISCLIENT );
+	}
+}
+
+} // namespace
+
+bool CheckJumpQuake( player_t *player, ticcmd_t *cmd )
+{
+	APlayerPawn *const mo = player->mo;
+
+	if (( player->bSpectating == false ) && ( level.IsJumpingAllowed() == false ))
+		return true;
+
+	const JumpFlags flags = FlagsOf( mo );
+
+	if ( player->onground )
+	{
+		const GroundedJumpState grounded = ComputeGroundedState( mo->SecondJumpAmount, flags,
+			mo->secondJumpTics, player->jumpTics, int( FIXED2FLOAT( mo->velz )));
+
+		mo->secondJumpsRemaining = grounded.secondJumpsRemaining;
+		mo->secondJumpState = grounded.state;
+		if ( grounded.resetJumpTics )
+			player->jumpTics = mo->JumpDelay;
+	}
+	else if ( ComputeAirborneArming( mo->secondJumpsRemaining, mo->secondJumpTics, flags,
+		( cmd->ucmd.buttons & BT_JUMP ) != 0 ))
+	{
+		mo->secondJumpState = SJ_AVAILABLE;
+	}
+
+	FTraceResults wallTrace;
+	wallTrace.HitType = TRACE_HitNone;
+
+	if ( mo->secondJumpState == SJ_AVAILABLE )
+	{
+		bool doubleTapFired = false;
+		if ( flags.doubleTapJump )
+		{
+			// Spelled out rather than abs(): fixed_strong.h declares abs(Fixed), and the short
+			// operands are convertible to it, so a bare abs() silently returns a Fixed here.
+			const int forwardInput = cmd->ucmd.forwardmove;
+			const int sideInput = cmd->ucmd.sidemove;
+			const int tapValue = ( forwardInput < 0 ? -forwardInput : forwardInput ) +
+				( sideInput < 0 ? -sideInput : sideInput );
+			const DoubleTapResult tap = ComputeDoubleTap( tapValue, mo->lastTapValue,
+				mo->secondJumpTics, cmd->ucmd.buttons & MOVE_BUTTONS,
+				player->oldbuttons & MOVE_BUTTONS, mo->lastMoveButtonsBefore, mo->DoubleTapMaxTics );
+
+			doubleTapFired = tap.fired;
+			mo->lastTapValue = tap.lastTapValue;
+			mo->secondJumpTics = tap.secondJumpTics;
+			mo->lastMoveButtonsBefore = tap.lastMoveButtonsBefore;
+		}
+
+		const bool user4JustPressed = flags.user4Jump &&
+			(( cmd->ucmd.buttons & BT_USER4 ) != 0 ) && (( player->oldbuttons & BT_USER4 ) == 0 );
+		const bool jumpJustPressed =
+			(( cmd->ucmd.buttons & BT_JUMP ) != 0 ) && (( player->oldbuttons & BT_JUMP ) == 0 );
+
+		if ( ComputeSecondJumpTriggered( flags, doubleTapFired, user4JustPressed, jumpJustPressed ))
+			mo->secondJumpState = SJ_READY;
+
+		// A wall jump is only granted next to a wall; without one the jump stays armed rather than
+		// being consumed, so the player can still spend it after they reach a surface.
+		if (( mo->secondJumpState == SJ_READY ) && ( flags.wallJump || flags.wallJumpV2 ) &&
+			( player->onground == false ))
+		{
+			if ( FindNearbyWall( mo, wallTrace ) == false )
+				mo->secondJumpState = SJ_AVAILABLE;
+		}
+	}
+
+	// Crouching while still rising off a ledge trims the climb to a plain jump height, which is how
+	// Q-Zandronum keeps ledge-climbing from stacking with a jump.
+	const bool isClimbingLedge = player->onground && ( mo->velz > 0 ) &&
+		(( cmd->ucmd.buttons & BT_CROUCH ) != 0 );
+
+	if ( isClimbingLedge )
+	{
+		if ( mo->velz > mo->JumpZ )
+			mo->velz = mo->JumpZ;
+	}
+	else if ( player->onground && ( mo->secondJumpState != SJ_READY ) &&
+		(( cmd->ucmd.buttons & BT_JUMP ) != 0 ) &&
+		(( player->jumpTics == 0 ) || ( mo->flags2 & MF2_ONMOBJ )))
+	{
+		const bool isEdgeJump = flags.edgeJump && (( cmd->ucmd.buttons & BT_CROUCH ) == 0 );
+
+		fixed_t jumpVelX, jumpVelY;
+		JumpDirection( mo, cmd, mo->JumpXY, jumpVelX, jumpVelY );
+
+		fixed_t jumpVelZ = mo->JumpZ;
+		if ( player->cheats & CF_HIGHJUMP )
+			jumpVelZ *= 2;
+		if ( mo->floorsector->GetFlags( sector_t::floor ) & PLANEF_SPRINGPAD )
+			jumpVelZ /= 2;
+
+		if ( isEdgeJump && ( mo->velz > 0 ))
+			PlayJumpSound( mo, "*edgejump" );
+		else if ( mo->JumpSoundDelay <= 0 )
+			PlayJumpSound( mo, "*jump" );
+		mo->JumpSoundDelay = 3;
+
+		mo->flags2 &= ~MF2_ONMOBJ;
+
+		mo->velx += jumpVelX;
+		mo->vely += jumpVelY;
+		mo->velz = fixed_t( ComputeMainJumpVelZ( int( FIXED2FLOAT( mo->velz )),
+			int( FIXED2FLOAT( jumpVelZ )), isEdgeJump ) * FRACUNIT );
+
+		player->jumpTics = ComputeJumpTics(
+			( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) != 0,
+			( player->cheats & CF_HIGHJUMP ) != 0,
+			( mo->floorsector->GetFlags( sector_t::floor ) & PLANEF_SPRINGPAD ) != 0,
+			TICRATE );
+
+		// [Leo] Inform the client of the jumpTics change.
+		if ( NETWORK_GetState() == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetLocalPlayerJumpTics( player - players );
+	}
+	else if ( mo->secondJumpState == SJ_READY )
+	{
+		fixed_t pushX = 0, pushY = 0;
+
+		if ( flags.wallJumpV2 && ( wallTrace.HitType == TRACE_HitWall ) && ( wallTrace.Line != NULL ))
+		{
+			// Push along the wall's normal rather than the player's facing -- that is what makes a
+			// V2 wall jump feel like kicking off the surface instead of steering in mid-air.
+			const angle_t lineAngle =
+				R_PointToAngle2( 0, 0, wallTrace.Line->dx, wallTrace.Line->dy ) - ANG90;
+			pushX = FixedMul( finecosine[lineAngle >> ANGLETOFINESHIFT], mo->SecondJumpXY );
+			pushY = FixedMul( finesine[lineAngle >> ANGLETOFINESHIFT], mo->SecondJumpXY );
+		}
+		else
+		{
+			JumpDirection( mo, cmd, mo->SecondJumpXY, pushX, pushY );
+		}
+
+		if ( flags.absoluteSecondJump || flags.wallJumpV2 )
+		{
+			mo->velx = pushX;
+			mo->vely = pushY;
+		}
+		else
+		{
+			mo->velx += pushX;
+			mo->vely += pushY;
+		}
+
+		mo->velz = fixed_t( ComputeSecondJumpVelZ( int( FIXED2FLOAT( mo->velz )),
+			int( FIXED2FLOAT( mo->SecondJumpZ )),
+			( player->cheats & CF_HIGHJUMP ) != 0 ) * FRACUNIT );
+
+		PlayJumpSound( mo, "*secondjump" );
+
+		player->jumpTics = mo->JumpDelay;
+		mo->secondJumpTics = mo->SecondJumpDelay;
+		// A negative remaining count is "unlimited" and must not be decremented into range.
+		if ( mo->secondJumpsRemaining > 0 )
+			mo->secondJumpsRemaining--;
+		mo->secondJumpState = SJ_NOT_AVAILABLE;
+
+		if ( NETWORK_GetState() == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetLocalPlayerJumpTics( player - players );
+	}
+
+	if ( mo->JumpSoundDelay > 0 )
+		mo->JumpSoundDelay--;
+
+	// The cooldown counts down toward 0 from above; a negative value is the double-tap window and
+	// counts UP toward 0, so one decrement here would run it the wrong way.
+	if ( mo->secondJumpTics > 0 )
+		mo->secondJumpTics--;
+	else if ( mo->secondJumpTics < 0 )
+		mo->secondJumpTics++;
 
 	return true;
 }

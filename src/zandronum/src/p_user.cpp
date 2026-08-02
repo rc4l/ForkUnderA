@@ -902,6 +902,17 @@ void APlayerPawn::PostBeginPlay()
 	// in Tick(). A_SetSize/ACS may later change this on a per-instance basis.
 	FullHeight = GetDefault()->height;
 
+	// [rc4l] features/quake-movement: the second-jump system is live state, not a class property,
+	// so it starts from a known point on every (re)spawn rather than inheriting whatever the class
+	// default object happened to hold. secondJumpsRemaining seeds from the authored allowance so a
+	// player who spawns airborne still has their jumps.
+	secondJumpsRemaining = SecondJumpAmount;
+	secondJumpState = 0;			// SJ_NOT_AVAILABLE
+	secondJumpTics = 0;
+	lastTapValue = 0;
+	lastMoveButtonsBefore = 0;
+	JumpSoundDelay = 0;
+
 	// Voodoo dolls: restore original floorz/ceilingz logic
 	if (player == NULL || player->mo != this)
 	{
@@ -3060,6 +3071,13 @@ static void P_MovePlayer_Doom (player_t *player, ticcmd_t *cmd)
 // jump, wall jump, double-tap dash); until then Quake-movement pawns jump exactly like Doom ones.
 static void P_PlayerJump (player_t *player, ticcmd_t *cmd)
 {
+	// [rc4l] features/quake-movement: Quake pawns get the second-jump state machine instead.
+	if (zx::quakemove::UsesQuakeMovement (player->mo) &&
+		zx::quakemove::CheckJumpQuake (player, cmd))
+	{
+		return;
+	}
+
 	// [Leo] cl_spectatormove is now applied here to avoid code duplication.
 	fixed_t spectatormove = FLOAT2FIXED(cl_spectatormove);
 

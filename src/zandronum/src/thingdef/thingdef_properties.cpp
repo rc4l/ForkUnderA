@@ -2577,6 +2577,55 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, cpmmaxforwardanglerad, F, PlayerPawn)
 
 //==========================================================================
 //
+// [rc4l] Jump tuning (stage 3). Player.JumpZ already exists; these add the horizontal component
+// and the second-jump system. Inert unless the pawn sets Player.MvType 1.
+//
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, jumpxy, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(xy, 0);
+	defaults->JumpXY = xy;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, jumpdelay, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->JumpDelay = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, secondjumpxy, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(xy, 0);
+	defaults->SecondJumpXY = xy;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, secondjumpz, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(z, 0);
+	defaults->SecondJumpZ = z;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, secondjumpdelay, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->SecondJumpDelay = tics;
+}
+
+// -1 means unlimited second jumps; 0 disables them.
+DEFINE_CLASS_PROPERTY_PREFIX(player, secondjumpamount, I, PlayerPawn)
+{
+	PROP_INT_PARM(amount, 0);
+	defaults->SecondJumpAmount = amount;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, doubletapmaxtics, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->DoubleTapMaxTics = tics;
+}
+
+//==========================================================================
+//
 //==========================================================================
 DEFINE_CLASS_PROPERTY_PREFIX(player, GruntSpeed, F, PlayerPawn)
 {

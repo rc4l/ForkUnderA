@@ -30,9 +30,9 @@ This feature lands in five reviewable stages. **Stage 1 is complete**; the rest 
    behaves identically to before this feature existed.
 2. ✅ **Quake core.** `QFriction`/`QAcceleration`/`QCrouchWalkFactor`, `MovePlayerQuake`, the
    `P_XYMovement` friction branch, CPM air control, velocity cap.
-3. ⬜ **Jump rework.** `CheckJump`: the second-jump state machine, `+WALLJUMP`/`+WALLJUMPV2`,
-   `+DOUBLETAPJUMP`, `+EDGEJUMP`, `+ELEVATORJUMP`, `+GROUNDSECONDJUMP`, `+ABSOLUTESECONDJUMP`,
-   `+USER4JUMP`, plus their prediction state.
+3. ✅ **Jump rework.** `CheckJumpQuake`: the second-jump state machine, `+WALLJUMP`/`+WALLJUMPV2`,
+   `+DOUBLETAPJUMP`, `+EDGEJUMP`, `+GROUNDSECONDJUMP`, `+ABSOLUTESECONDJUMP`, `+USER4JUMP`, plus
+   their prediction state. **`+ELEVATORJUMP` is deferred** — see below.
 4. ⬜ **Traversal.** Crouch slide, wall climb, air wall run, their looping sounds, and local-player
    client-side effect actors.
 5. ⬜ **Speed tiers.** Four-entry `Player.ForwardMove`/`SideMove`/`FootstepsEnabled`,
@@ -71,16 +71,21 @@ The two properties that describe a *velocity* (`AirAcceleration`, `VelocityCap`)
 they read in map units like every other speed property; the pure acceleration/friction coefficients
 are plain floats.
 
-**Measured in-engine** (MAP01, `+forward` from rest, deterministic pause/step):
+**Verified in-engine:**
 
-| | 5 tics | 15 tics | plateau |
-|---|---|---|---|
-| `MvType 0` (Doom) | 20.24 | 56.68 | 3.64 u/tic |
-| `MvType 1` (Quake) | 16.19 | 112.83 | ~9.7 u/tic and rising |
-| `MvType 1` + `VelocityCap 4.0` | — | 60.00 | exactly 4.000 u/tic |
+- **The Quake path really is driving movement.** With `Player.VelocityCap 4.0` a 15-tic `+forward`
+  run covers exactly 60.00 units — 4.000 u/tic, precisely the authored cap. Doom movement has no
+  `VelocityCap` property at all, so only `MovePlayerQuake` can produce that number.
+- **Friction reaches a genuine stop**, not an asymptotic creep: after releasing input the pawn
+  decelerates and then holds one x position across 40 further tics.
+- **`MvType 0` is unaffected**: a 20-tic `+forward` run lands on x=452.325, the same as the
+  pre-feature build.
 
-That is the Quake signature: slower off the line, then ramping to roughly triple Doom's top speed.
-A 20-tic `MvType 0` run lands on x=452.325, byte-identical to the pre-Stage-2 build.
+⚠️ **Do not compare walk/run distances between pawn classes through the console harness without
+verifying the class and `cl_run` in the same breath.** Two traps bite here: `map MAP01` silently
+reverts the player class to `DoomPlayer`, and `cl_run` is archived, so it can differ between runs.
+Both produce believable-looking "Doom vs Quake" tables that are really walk-vs-run on one model.
+Read the class back out of `dumpactor` immediately before and after every sample.
 
 ### Deliberate divergences
 
@@ -93,6 +98,47 @@ A 20-tic `MvType 0` run lands on x=452.325, byte-identical to the pre-Stage-2 bu
 - **No cached `SpeedFactor` on the actor.** Q-Zandronum caches the powerup multiplier so their
   prediction can replay it; we recompute it each tic, because a cached copy with nothing to sync it
   would just be a second source of truth.
+
+## Stage 3: the second-jump system
+
+`computation/qjump_compute.{h,cpp}` holds the state machine (`SJ_NOT_AVAILABLE` → `SJ_AVAILABLE` →
+`SJ_READY`) and the arming/trigger predicates; `quakemove.cpp` supplies the wall traces, velocities
+and sounds. The behaviours worth knowing:
+
+- **The jump button must be released before the second jump arms.** Without that check one long
+  press spends both jumps on consecutive tics and the double jump reads as "sometimes doesn't work".
+  A dedicated trigger (`+DOUBLETAPJUMP` / `+USER4JUMP`) bypasses it, since the button is then
+  irrelevant.
+- **`SecondJumpAmount` is tri-state:** `0` disables, a positive count limits, and **negative means
+  unlimited** — which is why the arming test is `!= 0` and the decrement is guarded by `> 0`.
+- **`+USER4JUMP` takes the jump button away as a trigger.** That asymmetry is Q-Zandronum's and is
+  preserved deliberately.
+- **The second jump's Z is a floor, not an addition** — using it while already rising faster must
+  not slow you down.
+- **A wall jump that finds no wall stays armed** rather than being consumed, so the player can still
+  spend it once they reach a surface.
+
+**Verified in-engine** (`SecondJumpAmount 1`, `SecondJumpZ 10`, `JumpDelay 20` so the second-jump
+branch is distinguishable by leaving `jumpTics` positive):
+
+| | result |
+|---|---|
+| Hold jump 12 tics | apex ~z 30, no second jump — the release check holds |
+| Press → release → press | `remaining` 1→**0**, `jumpTics` **18** (positive ⇒ second-jump branch), velz rising, z **60** vs the ~36 single-jump apex |
+| A third press, same airtime | nothing: state never re-arms, velz keeps falling — the allowance is spent |
+
+⚠️ **Harness note.** The rising edge (`buttons & BT_JUMP` and not `oldbuttons & BT_JUMP`) cannot be
+driven through `set_pause` + `step`: ticcmds keep being built while the engine sits paused, so
+`oldbuttons` absorbs the press and the edge is gone before the stepped tic runs. Drive jump inputs
+with console `wait` sequences on a *running* engine instead.
+
+### `+ELEVATORJUMP` is deferred
+
+It needs `sector_t::GetFloorMovingSpeed`/`GetCeilingMovingSpeed`, which in turn need
+`GetDirection`/`GetSpeed`/`GetStatus`/`GetType`/`GetFloorSpeed` accessors across `DFloor`, `DPlat`,
+`DElevator` and `DPillar`, a 3D-floor walk, and a per-tic `movingSpeed` cache for client prediction.
+That is sector-mover plumbing rather than jump work, so it gets its own change. The `MV_ELEVATORJUMP`
+flag parses and replicates today; it simply has no effect yet.
 
 ## Netcode — what this costs
 
