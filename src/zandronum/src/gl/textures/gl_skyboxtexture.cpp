@@ -197,16 +197,14 @@ void gl_ParseVavoomSkybox()
 				sc.MustGetStringName("map");
 				sc.MustGetString();
 
-				maplump = Wads.CheckNumForFullName(sc.String, true);
-				if (maplump==-1) 
+				// [rc4l] uzdoom@03d4f23a6: look the face up by name rather than by lump. Textures
+				// carry full names now, so the manager already holds it and there is nothing to
+				// create or register here.
+				FTexture *tex = TexMan.FindTexture(sc.String, FTexture::TEX_Wall, FTextureManager::TEXMAN_TryAny);
+				if (tex == NULL)
 					Printf("Texture '%s' not found in Vavoom skybox '%s'\n", sc.String, sb->Name.GetChars());
 
-				FTextureID tex = TexMan.FindTextureByLumpNum(maplump);
-				if (!tex.isValid())
-				{
-					tex = TexMan.CreateTexture(maplump, FTexture::TEX_MiscPatch);
-				}
-				sb->faces[facecount] = TexMan[tex];
+				sb->faces[facecount] = tex;
 				sc.MustGetStringName("}");
 			}
 			facecount++;

@@ -669,8 +669,7 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 	bool disable_fullbright=false;
 	bool thiswad = false;
 	bool iwad = false;
-	int maplump = -1;
-	FString maplumpname;
+	FTexture *bmtex = NULL;
 
 	sc.MustGetString();
 	if (sc.Compare("texture")) type = FTexture::TEX_Wall;
@@ -707,17 +706,15 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 		{
 			sc.MustGetString();
 
-			if (maplump >= 0)
+			if (bmtex != NULL)
 			{
 				Printf("Multiple brightmap definitions in texture %s\n", tex? tex->Name.GetChars() : "(null)");
 			}
 
-			maplump = Wads.CheckNumForFullName(sc.String, true);
+			bmtex = TexMan.FindTexture(sc.String, FTexture::TEX_Any, FTextureManager::TEXMAN_TryAny);
 
-			if (maplump==-1) 
+			if (bmtex == NULL) 
 				Printf("Brightmap '%s' not found in texture '%s'\n", sc.String, tex? tex->Name.GetChars() : "(null)");
-
-			maplumpname = sc.String;
 		}
 	}
 	if (!tex)
@@ -737,7 +734,7 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 		if (!useme) return;
 	}
 
-	if (maplump != -1)
+	if (bmtex != NULL)
 	{
 		if (tex->bWarped != 0)
 		{
@@ -745,31 +742,16 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 			return;
 		}
 
-		// Brightmap textures are stored in the texture manager so that multiple
-		// instances of the same textures can be avoided.
-		FTexture *brightmap;
-		FTextureID brightmapId = TexMan.FindTextureByLumpNum(maplump);
-
-		if (!brightmapId.isValid())
-		{
-			// a texture for this lump has not been created yet.
-			brightmap = FTexture::CreateTexture(maplump, tex->UseType);
-			if (!brightmap)
-			{
-				Printf("Unable to create texture from '%s' in brightmap definition for '%s'\n", 
-					maplumpname.GetChars(), tex->Name.GetChars());
-				return;
-			}
-			brightmap->bMasked = false;	// [rc4l] bBrightmap died in 3c7664a46; bMasked=false is its replacement semantic
-			brightmap->Name = "";	// brightmaps don't have names
-			TexMan.AddTexture(brightmap);
-		}
-		else
-		{
-			brightmap = TexMan[brightmapId];
-		}
-
-		tex->gl_info.Brightmap = brightmap;
+		// [rc4l] uzdoom@03d4f23a6: the whole find-by-lump / create-and-register dance is gone.
+		// Now that textures carry full names, the brightmap is looked up by name like any other
+		// texture, so the manager already owns it and the de-duplication this block existed to do
+		// happens for free.
+		//
+		// Upstream sets bmtex->gl_info.bBrightmap here. We have no such flag -- it died in
+		// 3c7664a46 and bMasked=false is its replacement semantic -- so that is what we set, which
+		// is exactly what the deleted block above was already doing to the texture it created.
+		bmtex->bMasked = false;
+		tex->gl_info.Brightmap = bmtex;
 	}	
 	tex->gl_info.bDisableFullbright = disable_fullbright;
 }
