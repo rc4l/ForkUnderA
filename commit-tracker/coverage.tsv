@@ -1676,7 +1676,7 @@ ab1d90038cc7bb70b2ce16fde082a4e4b620117a	2015-04-25T17:45:27Z	Merge branch 'mast
 46e975418d9776de580b9e404fe2a100b464d6ae	2015-04-26T06:48:49Z	- fixeed: Sound sequence overrides took the parameter from the wrong data structure.	pending		/
 a23afbd7ce1cc7136459b28f9d1f0141a31a0afb	2015-04-26T07:37:49Z	Merge branch 'master' into openal	pending		/
 8e70a9b894cf4696c9b20c695a1863536987e7b4	2015-04-26T07:58:10Z	- added a NULL check to FMODStreamCapsule destructor, just to be safe.	pending		/
-aecff68a4d78154ac5f9a48b12fed79716f204f0	2015-04-26T10:13:21Z	- cleanup of sound system startup and menu handling:	pending		/
+aecff68a4d78154ac5f9a48b12fed79716f204f0	2015-04-26T10:13:21Z	- cleanup of sound system startup and menu handling:	adapted	adapted: sound_backend_compute reimplements the selection cleanup (DEF_BACKEND, unknown->null, fmod->openal rename); snd_backend aligned to upstream's plain CVAR (008429bc, PR#157). FMOD/menu parts N/A -- FMOD removed	008429bc
 43053b89a5cc3cd4ce717a129005c29433e0db61	2015-04-26T15:06:13Z	- Set the morphing and unmorphing actor as target for the teleport fog. This will allow for better interactions on what should happen between the morphee without needing to make monster AI needing to search for them in particular or rely upon TIDs.	pending		/
 4294b94728bee8e70d0b493fe1e15f7e27fc56ae	2015-04-26T20:09:19Z	- since Wads.ReopenLumpNum already performs caching on the lump data it is not really necessary anymore to maintain a separate musiccache, so this code can be removed.	pending		/
 13fb76db21144e1f89245b075ef4fec13a1bfd09	2015-04-26T21:28:05Z	- changed lump reader setup for music so that for uncompressed data it opens a new FILE instead of caching the lump.	pending		/
