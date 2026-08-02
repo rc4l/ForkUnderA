@@ -1,16 +1,18 @@
 // [rc4l] Wire-format regression tests for the sky name in SERVERCOMMANDS_SetMapSky.
 //
-// The thing under guard is observable protocol behaviour: the sky reaches clients as at most eight
-// characters plus a NUL, and has done for as long as the command has existed. uzdoom@65e8563cf
-// removed the name from FLevelLocals entirely, so we now derive it at the wire boundary from
-// FTexture::Name -- itself char[9], which is what keeps the bound intact for free. Nothing in a
-// single-player build exercises this, so it is pinned here.
+// These tests used to assert the opposite of what they assert now, and that is the point worth
+// recording. They pinned an 8-character truncation, with one test named
+// "AWiderBufferWouldChangeTheWireAndIsDetectable" whose comment said widening "should be a
+// deliberate decision rather than an accident of sizeof". uzdoom@59885b856 turned FTexture::Name
+// into an FString, the static_assert in sv_commands.cpp broke the build, and this is that
+// deliberate decision being made: the sky name now crosses the wire WHOLE.
 //
-// Scope, stated honestly: this field is written with WriteString and read with ReadString, which
-// are NUL-terminated and self-delimiting, and ReadString deliberately keeps consuming an over-long
-// string so the packet stays aligned to the next field. A longer name would therefore arrive INTACT
-// and parse fine -- it would NOT corrupt the rest of the packet. What these tests protect is
-// compatibility: clients receiving a name they may not resolve to a texture.
+// Why widening is safe rather than merely convenient -- spec.map.txt declares sky1/sky2 as String,
+// so the field is variable-length, NUL-terminated and self-delimiting; ReadString hands it straight
+// to TexMan.GetTexture with no fixed buffer on the client. Length never affected packet alignment.
+// And truncation was not a harmless fallback: "skies/night_a" cut to "skies/ni" can resolve to a
+// DIFFERENT texture, so the client renders the wrong sky silently. Nothing regresses either, since
+// before 59885b856 no texture could hold a name longer than eight characters at all.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
@@ -21,129 +23,60 @@
 
 using namespace zx;
 
-namespace
-{
-// [rc4l] Poison the buffer first, so a missing NUL shows up as garbage instead of passing by luck
-// on memory that happened to be zero.
-struct WireBuf
-{
-	char b[ZX_SKY_NAME_SIZE];
-	WireBuf() { memset(b, 0xAA, sizeof b); }
-};
-}
-
 TEST(SkyWire, ShortNamesCrossUnchanged)
 {
-	// The overwhelmingly common case: stock sky names are well under the bound.
-	WireBuf w;
-	CopySkyNameForWire("SKY1", w.b, sizeof w.b);
-	EXPECT_STREQ(w.b, "SKY1");
-	EXPECT_TRUE(SkyNameFitsOnWire("SKY1"));
+	// The overwhelmingly common case: stock sky names, well under the old bound.
+	EXPECT_STREQ(SkyNameForWire("SKY1"), "SKY1");
 }
 
-TEST(SkyWire, ExactlyEightCharactersIsTheBoundaryAndSurvivesWhole)
+TEST(SkyWire, EightCharactersIsNoLongerSpecial)
 {
-	// Eight is the largest name that reaches a client intact -- one character more is the cliff.
-	WireBuf w;
-	CopySkyNameForWire("ABCDEFGH", w.b, sizeof w.b);
-	EXPECT_STREQ(w.b, "ABCDEFGH");
-	EXPECT_EQ(strlen(w.b), 8u);
-	EXPECT_TRUE(SkyNameFitsOnWire("ABCDEFGH"));
+	// Eight used to be the cliff. It is now an unremarkable length like any other.
+	EXPECT_STREQ(SkyNameForWire("ABCDEFGH"), "ABCDEFGH");
 }
 
-TEST(SkyWire, NineCharactersIsTruncatedToEight)
+TEST(SkyWire, NineCharactersSurvivesWhole)
 {
-	// The bound. level_info_t can now hold a long name (that was the point of the FString change);
-	// what reaches clients is still bounded by FTexture::Name. If this ever returns nine characters,
-	// clients start receiving names they have never had to resolve before -- a compatibility change,
-	// and one that should be deliberate rather than a side effect of a refactor.
-	WireBuf w;
-	CopySkyNameForWire("ABCDEFGHI", w.b, sizeof w.b);
-	EXPECT_STREQ(w.b, "ABCDEFGH");
-	EXPECT_EQ(strlen(w.b), 8u);
-	EXPECT_FALSE(SkyNameFitsOnWire("ABCDEFGHI"));
+	// The exact case the old tests asserted would be cut to eight. This assertion flipping is the
+	// behaviour change; if it ever flips back, truncation has been reintroduced.
+	EXPECT_STREQ(SkyNameForWire("ABCDEFGHI"), "ABCDEFGHI");
+	EXPECT_EQ(strlen(SkyNameForWire("ABCDEFGHI")), 9u);
 }
 
-TEST(SkyWire, MuchLongerNamesTruncateToTheSameEight)
+TEST(SkyWire, LongPathStyleNamesSurviveWhole)
 {
-	// A realistic long texture name from a modern wad, not just a one-over case.
-	WireBuf w;
-	CopySkyNameForWire("skies/nightsky_variant_02", w.b, sizeof w.b);
-	EXPECT_STREQ(w.b, "skies/ni");
-	EXPECT_FALSE(SkyNameFitsOnWire("skies/nightsky_variant_02"));
+	// A realistic name from a modern pk3 -- the reason the limit was lifted upstream. Truncating
+	// this to "skies/ni" is what could silently select an unrelated texture on the client.
+	const char *n = "skies/nightsky_variant_02";
+	EXPECT_STREQ(SkyNameForWire(n), n);
+	EXPECT_EQ(strlen(SkyNameForWire(n)), strlen(n));
 }
 
-TEST(SkyWire, EmptyAndNullAreSentAsEmpty)
+TEST(SkyWire, EmptyAndNullBothBecomeEmpty)
 {
-	// An empty sky2 is normal -- G_GetSecretExitMap-style fallbacks rely on it being empty, and the
-	// engine substitutes sky1. It must not become garbage.
-	WireBuf w1;
-	CopySkyNameForWire("", w1.b, sizeof w1.b);
-	EXPECT_STREQ(w1.b, "");
-	EXPECT_TRUE(SkyNameFitsOnWire(""));
-
-	WireBuf w2;
-	CopySkyNameForWire(nullptr, w2.b, sizeof w2.b);
-	EXPECT_STREQ(w2.b, "");
-	EXPECT_TRUE(SkyNameFitsOnWire(nullptr));
+	// An empty sky2 is normal -- the engine substitutes sky1. Null happens when the sky did not
+	// resolve to a texture at all. Neither may reach WriteString as a null pointer, which would
+	// walk off into unrelated memory looking for a NUL.
+	EXPECT_STREQ(SkyNameForWire(""), "");
+	EXPECT_STREQ(SkyNameForWire(nullptr), "");
+	EXPECT_NE(SkyNameForWire(nullptr), nullptr);
 }
 
-TEST(SkyWire, OutputIsAlwaysTerminatedWhateverTheInput)
+TEST(SkyWire, ResultIsAlwaysReadableAsAString)
 {
-	// WriteString walks to the NUL; if none exists inside the buffer it runs off the end of the
-	// field and corrupts every byte after it in the packet. Note the terminator lands at the END OF
-	// THE STRING, not at the last byte -- a short name leaves the tail untouched, exactly as
-	// snprintf did -- so the property to assert is "a NUL exists within the buffer", not "the last
-	// byte is NUL". (Asserting the latter is what this test did first, and it failed on "A".)
-	for (const char *s : { "", "A", "ABCDEFGH", "ABCDEFGHI", "0123456789ABCDEF" })
+	// Whatever goes in, what comes out is a NUL-terminated string safe to hand to WriteString.
+	for (const char *s : { "", "A", "ABCDEFGH", "ABCDEFGHI", "0123456789ABCDEF", "skies/a/b/c" })
 	{
-		WireBuf w;
-		CopySkyNameForWire(s, w.b, sizeof w.b);
-		const size_t len = strnlen(w.b, sizeof w.b);
-		EXPECT_LT(len, sizeof w.b) << "no terminator within the buffer for input: " << s;
-		EXPECT_LE(len, 8u) << "input: " << s;
+		const char *out = SkyNameForWire(s);
+		ASSERT_NE(out, nullptr) << "input: " << s;
+		EXPECT_EQ(strlen(out), strlen(s)) << "input: " << s;
 	}
 }
 
-TEST(SkyWire, AWiderBufferWouldChangeTheWireAndIsDetectable)
+TEST(SkyWire, PassThroughIsIdempotent)
 {
-	// The refactor that should never land silently: widen the destination and a nine-plus character
-	// name suddenly goes out whole. The transport would carry it (ReadString is variable-length),
-	// so nothing would break loudly -- clients would simply start seeing names they may not resolve.
-	// Asserted here so the boundary is a documented decision rather than an accident of sizeof.
-	char wide[32];
-	memset(wide, 0xAA, sizeof wide);
-	CopySkyNameForWire("ABCDEFGHI", wide, sizeof wide);
-	EXPECT_STREQ(wide, "ABCDEFGHI");           // 9 chars -- would be a protocol change
-	EXPECT_NE(strlen(wide), 8u);
-
-	// ...whereas at the real wire size the same input is bounded.
-	WireBuf w;
-	CopySkyNameForWire("ABCDEFGHI", w.b, sizeof w.b);
-	EXPECT_EQ(strlen(w.b), 8u);
-}
-
-TEST(SkyWire, DegenerateBufferSizesDoNotOverrun)
-{
-	char one[1] = { (char)0xAA };
-	CopySkyNameForWire("SKY1", one, 1);
-	EXPECT_EQ(one[0], '\0');
-
-	char guard = (char)0xAA;
-	CopySkyNameForWire("SKY1", &guard, 0);     // no room even for the NUL: must write nothing
-	EXPECT_EQ(guard, (char)0xAA);
-
-	CopySkyNameForWire("SKY1", nullptr, 9);    // must not crash
-}
-
-TEST(SkyWire, TruncationIsIdempotent)
-{
-	// Round-tripping an already-truncated name through the copy again must not shorten it further;
-	// the sky name is re-derived from the loaded texture on savegame load and copied again.
-	WireBuf first;
-	CopySkyNameForWire("ABCDEFGHI", first.b, sizeof first.b);
-	WireBuf second;
-	CopySkyNameForWire(first.b, second.b, sizeof second.b);
-	EXPECT_STREQ(second.b, first.b);
-	EXPECT_STREQ(second.b, "ABCDEFGH");
+	// The name is re-derived from the loaded texture on savegame load and sent again; a second trip
+	// through the boundary must not change it.
+	const char *once = SkyNameForWire("skies/nightsky_variant_02");
+	EXPECT_STREQ(SkyNameForWire(once), once);
 }
