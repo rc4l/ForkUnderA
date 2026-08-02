@@ -1074,7 +1074,10 @@ void NetUpdate (void)
 
 	if (demoplayback)
 	{
-		nettics[0] = (maketic / ticdup);
+		// [rc4l] uzdoom@d3dcc0466: resendto[0] has to advance with nettics[0] here. Leaving it at
+		// its stale value makes the tic accounting run out at the very end of demo playback, so the
+		// last few tics never get consumed and the demo stalls short of its real end.
+		resendto[0] = nettics[0] = (maketic / ticdup);
 		return;			// Don't touch netcmd data while playing a demo, as it'll already exist.
 	}
 

@@ -40,6 +40,7 @@ gameinfo
 	definventorymaxamount = 16
 	defaultrespawntime = 12
 	defaultdropstyle = 1
+	dontcrunchcorpses = true
 	endoom = "ENDTEXT"
 	player5start = 4001
 	pickupcolor = "d7 ba 45"

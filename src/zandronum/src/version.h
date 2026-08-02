@@ -97,7 +97,11 @@ int GetRevisionNumber();
 // Protocol version used in demos.
 // Bump it if you change existing DEM_ commands or add new ones.
 // Otherwise, it should be safe to leave it alone.
-#define DEMOGAMEVERSION 0x21A	// [rc4l] SoundActor gained a pitch field (networked A_StartSound pitch)
+// [rc4l] 0x21B, NOT upstream's 0x21A. Upstream bumped 0x219->0x21A for the un-truncated map name in
+// demos (uzdoom@4acc04ce6); we were ALREADY at 0x21A for an unrelated reason of our own (the
+// SoundActor pitch field below), so reusing their number would mean two different demo formats
+// sharing one version and every existing 0x21A demo being read with the wrong map-name width.
+#define DEMOGAMEVERSION 0x21B	// [rc4l] 0x21A: SoundActor pitch field; 0x21B: full-length map names in demos
 
 // Minimum demo version we can play.
 // Bump it whenever you change or remove existing DEM_ commands.
@@ -129,7 +133,10 @@ int GetRevisionNumber();
 // [rc4l] 4512: level_info_t / FLevelLocals sky, fade, F1, border and background name fields became
 // FStrings and the sky pair became FTextureIDs (uzdoom@65e8563cf), so the serialised layout changed
 // and older saves must not be read back into it.
-#define SAVEVER 4512
+// [rc4l] 4513: map names in level snapshots are stored as full strings rather than a fixed
+// 8-character field (uzdoom@8ec95dc58). Upstream numbered the same change 4508; ours is a separate
+// line that was already past that.
+#define SAVEVER 4513
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)

@@ -235,11 +235,16 @@ FTextureID FTextureManager::CheckForTexture (const char *name, int usetype, BITF
 		{
 			FTexture *const NO_TEXTURE = (FTexture*)-1;
 			int lump = Wads.CheckNumForFullName(name);
-			if (lump != NULL)
+			// [rc4l] uzdoom@2944e4f6a: `lump != NULL` compares a lump INDEX against a null pointer
+			// constant, i.e. against 0 -- so lump 0 read as "not found" while the real not-found
+			// value (-1) read as found and was handed to GetLinkedTexture. Arrived with the
+			// full-path lookup in ca4179caa; upstream fixed it the same day.
+			if (lump >= 0)
 			{
 				FTexture *tex = Wads.GetLinkedTexture(lump);
 				if (tex == NO_TEXTURE) return FTextureID(-1);
 				if (tex != NULL) return tex->id;
+				if (flags & TEXMAN_DontCreate) return FTextureID(-1);	// we only want to check, there's no need to create a texture if we don't have one yet.
 				tex = FTexture::CreateTexture("", lump, FTexture::TEX_Override);
 				if (tex != NULL)
 				{
