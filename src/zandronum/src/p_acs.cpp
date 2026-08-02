@@ -5123,7 +5123,12 @@ bool DLevelScript::DoCheckActorTexture(int tid, AActor *activator, int string, b
 	{
 		return 0;
 	}
-	FTexture *tex = TexMan.FindTexture(FBehavior::StaticLookupString(string));
+	// [rc4l] uzdoom@25f4af734: this is a pure query -- CheckActorFloor/CeilingTexture only compares
+	// names -- so it must not instantiate a texture as a side effect. TEXMAN_DontCreate makes the
+	// lookup read-only, and TEX_Flat/Overridable/TryAny match how the sector planes resolve theirs.
+	FTexture *tex = TexMan.FindTexture(FBehavior::StaticLookupString(string), FTexture::TEX_Flat,
+			FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_TryAny|FTextureManager::TEXMAN_DontCreate);
+
 	if (tex == NULL)
 	{ // If the texture we want to check against doesn't exist, then
 	  // they're obviously not the same.

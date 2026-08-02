@@ -45,8 +45,6 @@
 #include "network.h"
 #include "sv_commands.h"
 
-EXTERN_CVAR(String, secretmessage)
-
 class ASecretTrigger : public AActor
 {
 	DECLARE_CLASS (ASecretTrigger, AActor)
@@ -75,7 +73,7 @@ void ASecretTrigger::PostBeginPlay ()
 
 void ASecretTrigger::Activate (AActor *activator)
 {
-	P_GiveSecret(activator, args[0] <= 1, (args[0] == 0 || args[0] == 2));
+	P_GiveSecret(activator, args[0] <= 1, (args[0] == 0 || args[0] == 2), false, -1);
 	Destroy ();
 }
 

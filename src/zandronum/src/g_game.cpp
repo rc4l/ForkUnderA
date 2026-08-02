@@ -2102,7 +2102,10 @@ void G_PlayerFinishLevel (int player, EFinishLevelType mode, int flags)
 	}
 
 	// Clears the entire inventory and gives back the defaults for starting a game
-	if (flags & CHANGELEVEL_RESETINVENTORY)
+	// [rc4l] uzdoom@842ef86e7: a dead player must not be handed the starting inventory here -- they
+	// get it on respawn instead. Doing it twice left them holding weapons their corpse never lost.
+	// Pure predicate tightening on playerstate, which is already synced, so both ends still agree.
+	if ((flags & CHANGELEVEL_RESETINVENTORY) && p->playerstate != PST_DEAD)
 	{
 		p->mo->ClearInventory();
 		p->mo->GiveDefaultInventory();
@@ -5165,11 +5168,10 @@ void G_BeginRecording (const char *startmap)
 	WriteWord (DEMOGAMEVERSION, &demo_p);			// Write ZDoom version
 	*demo_p++ = 2;							// Write minimum version needed to use this demo.
 	*demo_p++ = 3;							// (Useful?)
-	for (i = 0; i < 8; i++)					// Write name of map demo was recorded on.
-	{
-		*demo_p++ = startmap[i];
-	}
-	WriteLong (rngseed, &demo_p);			// Write RNG seed
+
+	strcpy((char*)demo_p, startmap);		// Write name of map demo was recorded on.
+	demo_p += strlen(startmap) + 1;
+	WriteLong(rngseed, &demo_p);			// Write RNG seed
 	*demo_p++ = consoleplayer;
 	FinishChunk (&demo_p);
 
@@ -5268,7 +5270,7 @@ UNSAFE_CCMD (timedemo)
 
 // [RH] Process all the information in a FORM ZDEM
 //		until a BODY chunk is entered.
-bool G_ProcessIFFDemo (char *mapname)
+bool G_ProcessIFFDemo (FString &mapname)
 {
 	bool headerHit = false;
 	bool bodyHit = false;
@@ -5324,9 +5326,20 @@ bool G_ProcessIFFDemo (char *mapname)
 				Printf ("Demo requires a newer version of ZDoom!\n");
 				return true;
 			}
-			memcpy (mapname, demo_p, 8);	// Read map name
-			mapname[8] = 0;
-			demo_p += 8;
+			// [rc4l] 0x21B, not upstream's 0x21A. Their bump to 0x21A IS this change; ours was
+			// already 0x21A for the SoundActor pitch field, so every demo we have recorded at
+			// 0x21A carries the OLD fixed 8-byte map name. Gating at 0x21A would read those eight
+			// bytes as a NUL-terminated string and take the rng seed with it.
+			if (demover >= 0x21b)
+			{
+				mapname = (char*)demo_p;
+				demo_p += mapname.Len() + 1;
+			}
+			else
+			{
+				mapname = FString((char*)demo_p, 8);
+				demo_p += 8;
+			}
 			rngseed = ReadLong (&demo_p);
 			// Only reset the RNG if this demo is not in conjunction with a savegame.
 			if (mapname[0] != 0)
@@ -5409,7 +5422,7 @@ bool G_ProcessIFFDemo (char *mapname)
 
 void G_DoPlayDemo (void)
 {
-	char mapname[9];
+	FString mapname;
 	int demolump;
 
 	gameaction = ga_nothing;
@@ -5475,7 +5488,7 @@ void G_DoPlayDemo (void)
 		// don't spend a lot of time in loadlevel 
 		precache = false;
 		demonew = true;
-		if (mapname[0] != 0)
+		if (mapname.Len() != 0)
 		{
 			G_InitNew (mapname, false);
 		}
