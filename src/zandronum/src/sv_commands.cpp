@@ -1822,6 +1822,7 @@ void SERVERCOMMANDS_SetThingFlags( AActor *pActor, FlagSet flagset, ULONG ulPlay
 		// [MGOOOOOO] flags8 (MBF21) had no case here, so it never replicated; flags9 is ZandroX's.
 		case FLAGSET_FLAGS8:	actorFlags = pActor->flags8; break;
 		case FLAGSET_FLAGS9:	actorFlags = pActor->flags9; break;
+		case FLAGSET_MVFLAGS:	actorFlags = pActor->mvFlags; break;
 		case FLAGSET_FLAGSST:	actorFlags = pActor->STFlags; break;
 		default: return;
 	}
@@ -1875,6 +1876,12 @@ void SERVERCOMMANDS_UpdateThingFlagsNotAtDefaults( AActor *pActor, ULONG ulPlaye
 	if ( pActor->flags9 != pActor->GetDefault( )->flags9 )
 	{
 		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_FLAGS9, ulPlayerExtra, flags );
+	}
+	// [rc4l] Same reasoning as flags8/flags9: mvFlags comes from DECORATE and the engine never writes
+	// it, so this is false unless a mod changed one at runtime.
+	if ( pActor->mvFlags != pActor->GetDefault( )->mvFlags )
+	{
+		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_MVFLAGS, ulPlayerExtra, flags );
 	}
 	// [BB] STFlags is intentionally left out here.
 }
@@ -1940,6 +1947,12 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 
 	case APROP_StencilColor:
 		value = pActor->fillcolor;
+		break;
+
+	// [rc4l] features/quake-movement.
+	case APROP_MvType:
+		if ( pActor->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
+			value = static_cast<APlayerPawn *>( pActor )->MvType;
 		break;
 
 	default:

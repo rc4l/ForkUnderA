@@ -277,6 +277,22 @@ static FFlagDef ActorFlags[]=
 	DEFINE_FLAG(MF9, RIPSOUNDNORESTART, AActor, flags9),
 	DEFINE_FLAG(MF9, USERIPSTATE, AActor, flags9),
 
+	// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: movement-model flags.
+	// Inert unless the pawn sets Player.MvType 1 -- see features/quake-movement/README.md.
+	DEFINE_FLAG(MV, CPMAIRCONTROL, AActor, mvFlags),
+	DEFINE_FLAG(MV, CROUCHSLIDE, AActor, mvFlags),
+	DEFINE_FLAG(MV, WALLJUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, WALLJUMPV2, AActor, mvFlags),
+	DEFINE_FLAG(MV, DOUBLETAPJUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, WALLCLIMB, AActor, mvFlags),
+	DEFINE_FLAG(MV, EDGEJUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, SILENT, AActor, mvFlags),
+	DEFINE_FLAG(MV, ELEVATORJUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, AIRWALLRUN, AActor, mvFlags),
+	DEFINE_FLAG(MV, USER4JUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, GROUNDSECONDJUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, ABSOLUTESECONDJUMP, AActor, mvFlags),
+
 	// [BC] New DECORATE flag defines here.
 	DEFINE_FLAG(STFL, BLUETEAM, AActor, STFlags),
 	DEFINE_FLAG(STFL, REDTEAM, AActor, STFlags),

@@ -556,6 +556,27 @@ enum
 	MF9_USERIPSTATE		= 0x00000010,	// enter the Rip state after ripping, like +USEBOUNCESTATE
 };
 
+// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: the movement-model flag
+// word. These get their own word rather than a spare bit in flags8/flags9 because Q-Zandronum keeps
+// them separate too, so a mod's +CROUCHSLIDE means the same thing in both engines. Every one of them
+// is inert unless the pawn also sets Player.MvType 1 -- see features/quake-movement/README.md.
+enum
+{
+	MV_CPMAIRCONTROL	= 0x00000001,	// Challenge ProMode air control instead of VQ3-style
+	MV_CROUCHSLIDE		= 0x00000002,	// crouching at speed slides instead of braking
+	MV_WALLJUMP			= 0x00000004,	// the second jump may be spent against a wall
+	MV_WALLJUMPV2		= 0x00000008,	// wall jump pushes along the wall normal
+	MV_DOUBLETAPJUMP	= 0x00000010,	// double-tapping a direction spends the second jump as a dash
+	MV_WALLCLIMB		= 0x00000020,	// hold jump against a wall to climb it
+	MV_EDGEJUMP			= 0x00000040,	// jumping off an edge is not penalised (was +RAMPJUMP)
+	MV_SILENT			= 0x00000080,	// suppress this pawn's movement sounds
+	MV_ELEVATORJUMP		= 0x00000100,	// inherit a rising floor's speed instead of being eaten by it
+	MV_AIRWALLRUN		= 0x00000200,	// crouched and fast enough, run along a wall in mid-air
+	MV_USER4JUMP		= 0x00000400,	// the user4 button also spends the second jump
+	MV_GROUNDSECONDJUMP	= 0x00000800,	// the second jump is available from the ground too
+	MV_ABSOLUTESECONDJUMP = 0x00001000,	// the second jump sets velocity rather than adding to it
+};
+
 #define TRANSLUC25			(FRACUNIT/4)
 #define TRANSLUC33			(FRACUNIT/3)
 #define TRANSLUC50			(FRACUNIT/2)
@@ -1074,6 +1095,7 @@ public:
 	DWORD			flags7;			//
 	DWORD			flags8;			// [rc4l] MBF21 needed more of them (see MF8_* above).
 	DWORD			flags9;			// [MGOOOOOO] ZandroX's own flags (see MF9_* above).
+	DWORD			mvFlags;		// [rc4l] Movement-model flags (see MV_* above).
 
 	// [BB] If 0, everybody can see the actor, if > 0, only members of team (VisibleToTeam-1) can see it.
 	DWORD			VisibleToTeam;

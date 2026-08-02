@@ -520,6 +520,13 @@ void AActor::Serialize (FArchive &arc)
 			<< RipVictims;
 	}
 
+	// [rc4l] Movement-model flags (features/quake-movement). Version-guarded so older snapshots load
+	// with the class default -- 0, i.e. no movement flags, which is exactly pre-feature behaviour.
+	if (SaveVersion >= 4513)
+	{
+		arc << mvFlags;
+	}
+
 	{
 		FString tagstr;
 		if (arc.IsStoring() && Tag != NULL && Tag->Len() > 0) tagstr = *Tag;

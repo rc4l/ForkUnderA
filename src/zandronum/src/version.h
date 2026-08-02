@@ -129,7 +129,9 @@ int GetRevisionNumber();
 // [rc4l] 4512: level_info_t / FLevelLocals sky, fade, F1, border and background name fields became
 // FStrings and the sky pair became FTextureIDs (uzdoom@65e8563cf), so the serialised layout changed
 // and older saves must not be read back into it.
-#define SAVEVER 4512
+// [rc4l] 4513: AActor now serializes mvFlags (guarded in AActor::Serialize; see
+// features/quake-movement).
+#define SAVEVER 4513
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)
