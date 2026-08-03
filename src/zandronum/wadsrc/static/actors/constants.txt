@@ -468,3 +468,13 @@ const int JIF_NOT = 4;
 
 // This is only here to provide one global variable for testing.
 native int testglobalvar;
+
+// Flags for A_Kill (Target/Tracer/Master/Children/Siblings) series
+const int KILS_FOILINVUL =		1;
+const int KILS_KILLMISSILES =	2;
+const int KILS_NOMONSTERS =		4;
+
+// Flags for A_Damage (Self/Target/Tracer/Master/Children/Siblings) series
+const int DMSS_FOILINVUL =		1;
+const int DMSS_AFFECTARMOR =	2;
+const int DMSS_KILL =			4;
