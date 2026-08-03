@@ -398,3 +398,10 @@ B9DFF13207EACAC675C71D82624D0007 // XtheaterIII map01
 	setlinespecial 2410 Sector_Set3DFloor 32002 4 1 0 0
 }
 
+CBDE77E3ACB4B166D53C1812E5C72F54 // Hexen IWAD map04
+{
+	setthingz 49 0
+	setthingz 50 0
+	setthingz 51 0
+	setthingz 52 0
+}

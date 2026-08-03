@@ -2851,6 +2851,15 @@ static int PatchText (int oldSize)
 			{
 				strncpy (deh.PlayerSprite, newStr, 4);
 			}
+			// [rc4l] uzdoom@de68361f2: the original-name table has to be renamed too, or a later
+			// "Sprite number" lookup still matches against the pre-rename name and misses.
+			for (unsigned ii = 0; ii < OrgSprNames.Size(); ii++)
+			{
+				if (!stricmp(OrgSprNames[ii].c, oldStr))
+				{
+					strcpy(OrgSprNames[ii].c, newStr);
+				}
+			}
 			// If this sprite is used by a pickup, then the DehackedPickup sprite map
 			// needs to be updated too.
 			for (i = 0; (size_t)i < countof(DehSpriteMappings); ++i)
