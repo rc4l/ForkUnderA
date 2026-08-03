@@ -356,7 +356,8 @@ MapData *P_OpenMapData(const char * mapname, bool justcheck)
 
 			if (map->Encrypted)
 			{ // If it's encrypted, then it's a Blood file, presumably a map.
-				map->MapLumps[0].Reader = map->file = Wads.ReopenLumpNum(lump_name);
+				// [rc4l] uzdoom@00854dd09: no second ReopenLumpNum here -- the reader opened a few
+				// lines above is still the right one, and reopening leaked it.
 				if (!P_IsBuildMap(map))
 				{
 					delete map;

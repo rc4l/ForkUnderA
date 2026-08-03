@@ -16,6 +16,7 @@
 #include "p_setup.h"
 #include "g_level.h"
 #include "r_data/colormaps.h"
+#include "gi.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -361,9 +362,11 @@ static bool P_LoadBloodMap (BYTE *data, size_t len, FMapThing **mapthings, int *
 	// BUILD info from the map we need. (Sprites are ignored.)
 	LoadSectors (bsec);
 	LoadWalls (bwal, numWalls, bsec);
-	*mapthings = new FMapThing[numsprites + 1];
-	CreateStartSpot ((SDWORD *)infoBlock, *mapthings);
-	*numspr = 1 + LoadSprites (bspr, xspr, numsprites, bsec, *mapthings + 1);
+	// [rc4l] uzdoom@a922ae04c: Blood maps carry their own player starts as lotag 1/2 sprites, so
+	// LoadSprites below produces them; synthesising an extra start from the info block put the
+	// player somewhere arbitrary.
+	*mapthings = new FMapThing[numsprites];
+	*numspr = LoadSprites (bspr, xspr, numsprites, bsec, *mapthings);
 
 	delete[] bsec;
 	delete[] bwal;
@@ -687,6 +690,10 @@ static int LoadSprites (spritetype *sprites, Xsprite *xsprites, int numsprites,
 {
 	int count = 0;
 
+	// [rc4l] uzdoom@f3d8edb4d: the fields assigned below are not all of FMapThing, and the rest
+	// were left holding whatever was on the stack -- which is why Build maps spawned no sprites.
+	memset(mapthings, 0, sizeof(*mapthings)*numsprites);
+
 	for (int i = 0; i < numsprites; ++i)
 	{
 		mapthings[count].thingid = 0;
@@ -699,21 +706,36 @@ static int LoadSprites (spritetype *sprites, Xsprite *xsprites, int numsprites,
 		mapthings[count].flags = MTF_SINGLE|MTF_COOPERATIVE|MTF_DEATHMATCH;
 		mapthings[count].special = 0;
 		mapthings[count].gravity = FRACUNIT;
+		mapthings[count].RenderStyle = STYLE_Count;
+		mapthings[count].alpha = -1;
+		mapthings[count].health = -1;
 
 		if (xsprites != NULL && sprites[i].lotag == 710)
 		{ // Blood ambient sound
 			mapthings[count].args[0] = xsprites[i].Data3;
-			// I am totally guessing abount the volume level. 50 seems to be a pretty
+			// I am totally guessing about the volume level. 50 seems to be a pretty
 			// typical value for Blood's standard maps, so I assume it's 100-based.
 			mapthings[count].args[1] = xsprites[i].Data4;
 			mapthings[count].args[2] = xsprites[i].Data1;
 			mapthings[count].args[3] = xsprites[i].Data2;
-			mapthings[count].args[4] = 0;
 			mapthings[count].type = 14065;
+		}
+		else if (xsprites != NULL && sprites[i].lotag == 1)
+		{ // Blood player start
+			if (xsprites[i].Data1 < 4)
+				mapthings[count].type = 1 + xsprites[i].Data1;
+			else
+				mapthings[count].type = gameinfo.player5start + xsprites[i].Data1 - 4;
+		}
+		else if (xsprites != NULL && sprites[i].lotag == 2)
+		{ // Bloodbath start
+			mapthings[count].type = 11;
 		}
 		else
 		{
-			if (sprites[i].cstat & (16|32|32768)) continue;
+			// [rc4l] uzdoom@e55e7b9a3: only bit 32768 means "not a real sprite". 16 and 32 mark wall
+			// and floor sprites, which do want spawning.
+			if (sprites[i].cstat & 32768) continue;
 			if (sprites[i].xrepeat == 0 || sprites[i].yrepeat == 0) continue;
 
 			mapthings[count].type = 9988;
