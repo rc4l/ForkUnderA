@@ -303,7 +303,7 @@ a26fbc74f091270bd127cea737d4135074de94d1	2014-06-01T07:27:16Z	Fix compilation er
 3c0ba494f99bb309135f776bb90c5990f146ce1c	2014-06-11T16:58:42Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	19f9e2e skip: merge commit, no unique content (changes live in the parents)	/
 67c6690689b98b36bffecf557dffe9dca875a810	2014-06-12T03:30:25Z	Added a check that doesn't print empty obituary strings, as wad's that hide obituary strings in multiplayer games end up spamming a lot of empty lines.	ported	ported: empty obituary strings are no longer printed	577fb8c
 8d9a90cd229edb2ba04e1c82cfd9e24f82be229c	2014-06-13T23:24:28Z	- rewrote sky dome rendering to use a static vertex buffer if not on OpenGL 2.x.	ported	20653ed	20653ed
-4ad1e0b4cb38cfd553c99315ffb9bae2acdf4c1f	2014-06-13T23:24:45Z	Merge branch 'master' into Glew_Version_For_Real	pending		/
+4ad1e0b4cb38cfd553c99315ffb9bae2acdf4c1f	2014-06-13T23:24:45Z	Merge branch 'master' into Glew_Version_For_Real	skip	skip: merge commit, no unique content	/
 5e22c82e79a600c7031d2c86442ab38d857db597	2014-06-14T08:38:30Z	- use buffer for rendering the sky on all GL versions since the differences for making GL2.0 work are rather small.	ported	20653ed	20653ed
 0ce6b406725407420df2a1fd10bd549d3b0e312b	2014-06-14T12:58:17Z	- fixed compile error in gl_skydome.cpp - disable GL_ARB_buffer_storage when a -glversion parameter less than 4.0 is given. According to the spec this extension requires 4.0 so if emulating something lower it should not be used.	ported	20653ed	20653ed
 5b302ed3a6157acb56820c0871b479aba7abd072	2014-06-14T13:16:33Z	- added benchmarking calls for glDrawArrays to see how well issunig draw calls performs on different hardware.	ported	479e375	479e375
@@ -313,114 +313,114 @@ a26fbc74f091270bd127cea737d4135074de94d1	2014-06-01T07:27:16Z	Fix compilation er
 6b038a5daed5a4db7e4452d835957b827f53158e	2014-06-15T08:30:03Z	- fixed: GLPortal::DrawPortalStencil must apply the render state before drawing anything.	ported	a3d1fdf	a3d1fdf
 ea332383a8de95e3d379ae171a6983f023ae8747	2014-06-15T09:50:54Z	- convert skybox rendering to use the buffer interface.	ported	a3d1fdf	a3d1fdf
 1aaa1b7bad8a83ca7689d37b94c4c55e896d969d	2014-06-15T10:12:24Z	- removed gl_usevbo CVAR because with recent code changes it has become useless. If GL_ARB_buffer_storage is present, buffers will always be used.	ported	a3d1fdf	a3d1fdf
-2838c4b25bab4ee375e282e0f7e6aa137f1008bd	2014-06-15T15:34:33Z	Prediction was rebuilding too much thinglist data	pending		/
-160e70f8f27394eccd7d757fd73c9665cdfe1d65	2014-06-15T16:27:00Z	Fix getting the actual device name	pending		/
-0e21057a2a3b4e01975a978929dd6535fba14f70	2014-06-15T16:59:24Z	Merge remote-tracking branch 'origin/openal' into openal	pending		/
+2838c4b25bab4ee375e282e0f7e6aa137f1008bd	2014-06-15T15:34:33Z	Prediction was rebuilding too much thinglist data	skip	skip: patches P_UnPredictPlayer, which Zandronum disabled (d_main.cpp:1023/1029) in favour of CLIENT_PREDICT_*; the sector_list restore it fixes has no counterpart in our prediction path	/
+160e70f8f27394eccd7d757fd73c9665cdfe1d65	2014-06-15T16:27:00Z	Fix getting the actual device name	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+0e21057a2a3b4e01975a978929dd6535fba14f70	2014-06-15T16:59:24Z	Merge remote-tracking branch 'origin/openal' into openal	skip	skip: merge commit, no unique content	/
 e6f14b055a6b10aaea80a952d79b9ec2ee91a621	2014-06-15T18:28:23Z	- use buffer based rendering for dynamic light pass and horizon portals.	ported	a3d1fdf	a3d1fdf
-82de7e6357fde023c81ace8b01574c25ec51dbcb	2014-06-15T18:36:49Z	Convert line-endings	pending		/
-7ff7c151a8a0c390a5eaf1b914a6d0499c51af85	2014-06-15T19:04:15Z	Merge remote-tracking branch 'origin/master' into openal	pending		/
+82de7e6357fde023c81ace8b01574c25ec51dbcb	2014-06-15T18:36:49Z	Convert line-endings	skip	skip: build-system reshuffle of a CMake tree we no longer resemble (FMOD-free, features/ layout, our own OpenAL wiring); nothing here maps onto our build	/
+7ff7c151a8a0c390a5eaf1b914a6d0499c51af85	2014-06-15T19:04:15Z	Merge remote-tracking branch 'origin/master' into openal	skip	skip: merge commit, no unique content	/
 965a2a2d791c9f966f7e0eae4f63eb931d83c176	2014-06-15T19:56:37Z	definition for model vertex buffer.	ported	7233538	7233538
-5a0f1a882a5b1e10c31db0bcdadf5703abbb3bfc	2014-06-15T19:57:06Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-13c4e993ba831a64f437c92a81d402bf878c0ca1	2014-06-15T19:57:59Z	Merge branch 'master' into Glew_Version_For_Real	pending		/
-a3a7ee569f97499df524ba17ad33552daf4cb432	2014-06-17T07:46:10Z	Multi-intermission waits for all players + changes	pending		/
-2d896d2b47b9c752ae010049bb21e7d314d7b2dc	2014-06-17T08:26:49Z	Added wi_autoadvance	pending		/
-cd550cf9b6390e5946564447264a84800818d8c3	2014-06-18T05:08:03Z	Merge remote-tracking branch 'origin/master' into openal	pending		/
-34c9a4743597f50c474de82ac41778ca53b6f9b8	2014-06-18T06:11:19Z	Fix some typos	pending		/
-b94a2949e5f63909597d999104dbfe6d7a440b26	2014-06-19T06:41:45Z	Don't use air absorption for being underwater	pending		/
-5370a1cb46fb795f94601924be8f06a5e7e2de3e	2014-06-19T08:00:46Z	Add a SoundDecoder base class and a stub method to create one	pending		/
-7757755e40c353b931c69fe5ed58af2685f56974	2014-06-19T08:43:37Z	fix detection of libglew library on GNU/Linux	pending		/
-d30bf6768eb4f01acd7de3818aa6ffc0ee90c969	2014-06-19T09:20:38Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-7374cd34cf204fce8eb0ff5ffce3a87fd580ff8b	2014-06-19T09:20:47Z	Merge branch 'master' of https://github.com/darealshinji/gzdoom	pending		/
-6457ced53fa30a2a39eff7f6ba9e9ce7027c51ec	2014-06-19T09:57:36Z	Merge branch 'master' into Glew_Version_For_Real	pending		/
-b38589e2dc404fc22897fab5d87ebdccee96a67d	2014-06-19T11:13:42Z	Implement and use a libsndfile decoder	pending		/
-14618cbf30da671965269303445375b7c7ff3d94	2014-06-19T11:33:00Z	Remove use of SDL_sound	pending		/
+5a0f1a882a5b1e10c31db0bcdadf5703abbb3bfc	2014-06-15T19:57:06Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content	/
+13c4e993ba831a64f437c92a81d402bf878c0ca1	2014-06-15T19:57:59Z	Merge branch 'master' into Glew_Version_For_Real	skip	skip: merge commit, no unique content	/
+a3a7ee569f97499df524ba17ad33552daf4cb432	2014-06-17T07:46:10Z	Multi-intermission waits for all players + changes	ported	ported: present via a different implementation -- Zandronum does the wait-for-all-players intermission authoritatively (CLIENTCOMMANDS_ReadyToGoOn / SERVER_IsEveryoneReadyToGoOn / PLAYERSTATUS_READYTOGOON) rather than upstream's local per-peer wait	zandronum-base
+2d896d2b47b9c752ae010049bb21e7d314d7b2dc	2014-06-17T08:26:49Z	Added wi_autoadvance	adapted	adapted: wi_autoadvance added, but our deathmatch stats use dm_state and have the per-player frag loop commented out by [BC], so upstream's two 'all players ready' hunks have no counterpart	146df9d
+cd550cf9b6390e5946564447264a84800818d8c3	2014-06-18T05:08:03Z	Merge remote-tracking branch 'origin/master' into openal	skip	skip: merge commit, no unique content	/
+34c9a4743597f50c474de82ac41778ca53b6f9b8	2014-06-18T06:11:19Z	Fix some typos	skip	skip: touches only fmodsound.cpp / oalsdlsound.cpp, neither of which exists here -- the FMOD backend is gone and the SDL_sound variant never existed	/
+b94a2949e5f63909597d999104dbfe6d7a440b26	2014-06-19T06:41:45Z	Don't use air absorption for being underwater	ported	ported: superseded by 10b9ebb -- oalsound plus a menudef entry, all from the newer backend	10b9ebb
+5370a1cb46fb795f94601924be8f06a5e7e2de3e	2014-06-19T08:00:46Z	Add a SoundDecoder base class and a stub method to create one	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+7757755e40c353b931c69fe5ed58af2685f56974	2014-06-19T08:43:37Z	fix detection of libglew library on GNU/Linux	skip	skip: build-system reshuffle of a CMake tree we no longer resemble (FMOD-free, features/ layout, our own OpenAL wiring); nothing here maps onto our build	/
+d30bf6768eb4f01acd7de3818aa6ffc0ee90c969	2014-06-19T09:20:38Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content	/
+7374cd34cf204fce8eb0ff5ffce3a87fd580ff8b	2014-06-19T09:20:47Z	Merge branch 'master' of https://github.com/darealshinji/gzdoom	skip	skip: merge commit, no unique content	/
+6457ced53fa30a2a39eff7f6ba9e9ce7027c51ec	2014-06-19T09:57:36Z	Merge branch 'master' into Glew_Version_For_Real	skip	skip: merge commit, no unique content	/
+b38589e2dc404fc22897fab5d87ebdccee96a67d	2014-06-19T11:13:42Z	Implement and use a libsndfile decoder	ported	ported: superseded by 10b9ebb -- the sndfile decoder is present from the newer backend	10b9ebb
+14618cbf30da671965269303445375b7c7ff3d94	2014-06-19T11:33:00Z	Remove use of SDL_sound	ported	ported: superseded by 10b9ebb -- SDL_sound is already gone and the decoders came from the newer backend	10b9ebb
 59522f7065f6d32fb75e8d966e36f88380da51e3	2014-06-19T11:37:30Z	- simplified MD2 drawing code as preparation for a buffer based implementation.	ported	7233538	7233538
 03916d75de18162fb7efb1bb6c6ad25b7b60b4ce	2014-06-19T11:58:49Z	- cleaned up MD3 rendering and merged RenderFrame and RenderFrameInterpolated into one function.	ported	7233538	7233538
 412d6499d967c9ab660c76756df39c1ee7cec0ed	2014-06-19T12:46:55Z	- removed the voxel vertex buffer because it needs to be gone before implementing a model vertex buffer.	ported	7233538	7233538
 3e9b9c280bcddadca4c2b7854535ef4deb3884c5	2014-06-19T13:22:00Z	- initialize model data at engine start, not at level start.	ported	7233538	7233538
-77b1febd0eab6458b55a37a77a2f6b3beb88f277	2014-06-19T13:40:27Z	Add an mp3 decoder using libmpg123	pending		/
+77b1febd0eab6458b55a37a77a2f6b3beb88f277	2014-06-19T13:40:27Z	Add an mp3 decoder using libmpg123	ported	ported: superseded by 10b9ebb -- the mpg123 decoder is present from the newer backend	10b9ebb
 59448941389c01f1b7fcfc2d9b89f28d5e8781b5	2014-06-19T15:06:26Z	- create vertex buffer data for MD2/DMD models.	ported	7233538	7233538
 ca76c2525e63fd9ae5fd6586017bdc3511fff74e	2014-06-19T20:24:33Z	- more vertex buffer stuff for models, still not tested.	ported	7233538	7233538
-73d51a4446d038234b17bf7636a2bf9f8f8fbefa	2014-06-20T00:19:59Z	Check for ID3 tags in MPG123Decoder::open	pending		/
-b1c98acf33c962c7c05be1152fa1ae4bd5daaeb5	2014-06-20T00:50:03Z	Close the file handle in the sndfile decoder	pending		/
-eeae36fbf7f1b980ed7abc47e7631ec679025e9a	2014-06-20T00:53:37Z	Rename the decoder sources	pending		/
-1310a4a8146819ef5b45f1335c21942abf51575c	2014-06-20T01:35:12Z	Fix libsndfile file handler	pending		/
-364065f1217eb6ca38817c7c3edfb80e35005ae2	2014-06-20T03:14:16Z	Handle file sources with mpg123	pending		/
-e39165655da2e06612e2818bf0aa8aff93be9332	2014-06-20T04:51:16Z	Don't call the sfx volume cvar callback in the OpenALSoundRenderer constructor	pending		/
-07a50c604e34d1808ecce5b34def000dae6d5a60	2014-06-20T05:13:20Z	Use the correct formatter type	pending		/
-73d8659f231fd6cae35fd68af4aefee8bdaabc3c	2014-06-20T05:21:05Z	Remove an unnecessary cast	pending		/
-a661797aa87d19e6346fb4cdb8ec6a4d87fa4257	2014-06-20T05:31:19Z	Be less noisey about loop points	pending		/
-72ddc0d935c588e26dbbfa7cab32a3f7c389f41b	2014-06-20T05:33:39Z	Remove a non-existent friend class	pending		/
-9f493fca5ff6dad77739362ea676082e5ec7316e	2014-06-20T05:42:12Z	Move the generic DecodeSample implementation to the base class	pending		/
-e2708c8b3e056d8bf39e79035721ab7d900d743d	2014-06-20T05:46:46Z	Cleanup creating decoders	pending		/
-4f6861d7984d1737103f64fa00aab77d9c4e0667	2014-06-20T06:03:13Z	Move specific decoder classes to separate headers	pending		/
-0f234fb36dc29af4e37111f990901c6a0870c49f	2014-06-20T06:10:36Z	Remove an unused function	pending		/
-42fdc3c0593682288f296fa5da1bd68fe37a9649	2014-06-20T06:49:46Z	Use structs to store available extensions	pending		/
-906b828d877b14efa2fc10570d10a3a3b5167c8b	2014-06-20T07:41:19Z	Partially implement OpenALSoundRenderer::SetInactive	pending		/
-fb07f7ef076dae6fd4f3c2da7742a536d72ce7fc	2014-06-20T08:12:47Z	Cast OpenAL IDs to/from void*	pending		/
-ef7ce41d0786c8c56b1cca7e5e4317fefa593ca8	2014-06-20T08:17:48Z	Don't purge sources in an initial state	pending		/
-f0c9aae6706c770327788599739e50eb992850ad	2014-06-20T11:38:48Z	Rework manual rolloff handling	pending		/
-845e369b875114b0a14cf30fc6810435b620237d	2014-06-20T12:03:20Z	Don't set a room rolloff factor	pending		/
+73d51a4446d038234b17bf7636a2bf9f8f8fbefa	2014-06-20T00:19:59Z	Check for ID3 tags in MPG123Decoder::open	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+b1c98acf33c962c7c05be1152fa1ae4bd5daaeb5	2014-06-20T00:50:03Z	Close the file handle in the sndfile decoder	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+eeae36fbf7f1b980ed7abc47e7631ec679025e9a	2014-06-20T00:53:37Z	Rename the decoder sources	ported	ported: superseded by 10b9ebb -- our decoder sources already carry the settled names	10b9ebb
+1310a4a8146819ef5b45f1335c21942abf51575c	2014-06-20T01:35:12Z	Fix libsndfile file handler	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+364065f1217eb6ca38817c7c3edfb80e35005ae2	2014-06-20T03:14:16Z	Handle file sources with mpg123	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+e39165655da2e06612e2818bf0aa8aff93be9332	2014-06-20T04:51:16Z	Don't call the sfx volume cvar callback in the OpenALSoundRenderer constructor	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+07a50c604e34d1808ecce5b34def000dae6d5a60	2014-06-20T05:13:20Z	Use the correct formatter type	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+73d8659f231fd6cae35fd68af4aefee8bdaabc3c	2014-06-20T05:21:05Z	Remove an unnecessary cast	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+a661797aa87d19e6346fb4cdb8ec6a4d87fa4257	2014-06-20T05:31:19Z	Be less noisey about loop points	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+72ddc0d935c588e26dbbfa7cab32a3f7c389f41b	2014-06-20T05:33:39Z	Remove a non-existent friend class	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+9f493fca5ff6dad77739362ea676082e5ec7316e	2014-06-20T05:42:12Z	Move the generic DecodeSample implementation to the base class	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+e2708c8b3e056d8bf39e79035721ab7d900d743d	2014-06-20T05:46:46Z	Cleanup creating decoders	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+4f6861d7984d1737103f64fa00aab77d9c4e0667	2014-06-20T06:03:13Z	Move specific decoder classes to separate headers	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+0f234fb36dc29af4e37111f990901c6a0870c49f	2014-06-20T06:10:36Z	Remove an unused function	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+42fdc3c0593682288f296fa5da1bd68fe37a9649	2014-06-20T06:49:46Z	Use structs to store available extensions	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+906b828d877b14efa2fc10570d10a3a3b5167c8b	2014-06-20T07:41:19Z	Partially implement OpenALSoundRenderer::SetInactive	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+fb07f7ef076dae6fd4f3c2da7742a536d72ce7fc	2014-06-20T08:12:47Z	Cast OpenAL IDs to/from void*	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+ef7ce41d0786c8c56b1cca7e5e4317fefa593ca8	2014-06-20T08:17:48Z	Don't purge sources in an initial state	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+f0c9aae6706c770327788599739e50eb992850ad	2014-06-20T11:38:48Z	Rework manual rolloff handling	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+845e369b875114b0a14cf30fc6810435b620237d	2014-06-20T12:03:20Z	Don't set a room rolloff factor	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
 d5dceb68748e93d1949136104e8b8a17a21bf84f	2014-06-21T10:52:19Z	- changed alpha texture handling to avoid using the deprecated GL_ALPHA8 texture format unless we have a compatibility context of an older GL version.	ported	7233538	7233538
 2925c96b596ce71a4e01463a611318465e8c4661	2014-06-21T13:50:32Z	removed all GL 2.x code.	adapted	4dec01f	4dec01f
 1f0c69a0e9d7ab988497e2cfaa0501cb20a33045	2014-06-21T14:41:45Z	- some cleanup after GL 2.x code removal - reinstated burn warp with shader based code.	ported	4dec01f	4dec01f
-640a6156e57eb70e53e4498b4d76aef1c2d67a50	2014-06-22T03:38:05Z	Merge pull request #1 from rheit/master	pending		/
-6164807e97764047ef39699a7602ee9860d4d5c7	2014-06-22T05:49:42Z	- fix x64 visual studio linking for common controls	pending		/
-e56e525d0ff9b946031058278013bda688bb60d4	2014-06-22T06:55:21Z	- A_FireCustomMissile transfer tranlsation flag, code submission by jpalomo	pending		/
-4f599b7b4d029d7438f0abf835ac8f1fcc471626	2014-06-22T07:00:23Z	Merge branch 'master' of https://github.com/binarycrusader/zdoom	pending		/
-a434af92ee6b59a61ba9b9e987791b4bc86cad35	2014-06-23T02:35:09Z	Handle sounds marked as 'area sounds'	pending		/
-b2f9430fb15fe4c95f9faf73e74c60338e04f622	2014-06-23T02:38:47Z	Use the correct diffusion value for reverb	pending		/
-075c5d872dd93cc6c44978b6ce0594372576f21d	2014-06-23T05:22:45Z	Always use the pitch multiplier when underwater	pending		/
+640a6156e57eb70e53e4498b4d76aef1c2d67a50	2014-06-22T03:38:05Z	Merge pull request #1 from rheit/master	skip	skip: merge commit, no unique content	/
+6164807e97764047ef39699a7602ee9860d4d5c7	2014-06-22T05:49:42Z	- fix x64 visual studio linking for common controls	ported	ported: already present -- x64 manifest linking verified line-for-line	zandronum-base
+e56e525d0ff9b946031058278013bda688bb60d4	2014-06-22T06:55:21Z	- A_FireCustomMissile transfer tranlsation flag, code submission by jpalomo	ported	ported: A_FireCustomMissile's 6th param widened from bool to an FPF flag word; still an int at upstream HEAD (compatibility.zs)	146df9d
+4f599b7b4d029d7438f0abf835ac8f1fcc471626	2014-06-22T07:00:23Z	Merge branch 'master' of https://github.com/binarycrusader/zdoom	skip	skip: merge commit, no unique content	/
+a434af92ee6b59a61ba9b9e987791b4bc86cad35	2014-06-23T02:35:09Z	Handle sounds marked as 'area sounds'	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+b2f9430fb15fe4c95f9faf73e74c60338e04f622	2014-06-23T02:38:47Z	Use the correct diffusion value for reverb	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+075c5d872dd93cc6c44978b6ce0594372576f21d	2014-06-23T05:22:45Z	Always use the pitch multiplier when underwater	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
 e2e71e072e33a49e1a20277426120b5359323377	2014-06-23T07:26:29Z	removed error suppression code from shader compilation.	ported	4dec01f	4dec01f
-e15f80f64048a37cc4300d7acf9efd0554e98875	2014-06-23T07:27:30Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-0e3bee6f300b9e441161a3f642354750ff603f0c	2014-06-23T18:02:40Z	- Enable 'language' feature on unix targets.	pending		/
-bdddea541f4513999e4a77ec5a2ac4c280b7e68b	2014-06-24T09:22:55Z	update lzma to v9.22 beta	pending		/
-f4afc8cf1ae8fe655090a3c77bbe78f101669d9d	2014-06-24T10:32:29Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-0017e1e6e833ef2490ba16dffafde57aeea7b39e	2014-06-25T11:25:36Z	Use a FileReader to handle music resources and audio decoding	pending		/
-9c12abeb2d17ff4de8796d122c33c71cb061818c	2014-06-25T11:53:08Z	Better report the amount buffered in an OpenAL stream	pending		/
-7f5b5381101512467617be8da623633d94f5b80d	2014-06-25T11:59:18Z	Implement SetPosition for OpenAL streams	pending		/
-0be30c782cab1cf2f8ab18db1e96f2d8eea8fa3d	2014-06-25T17:11:05Z	Fix LZMA compilation on GCC with position-independent code (PIC) generation enabled	pending		/
-8aff59e7047b4973013c34ff5b55dd611c152e85	2014-06-25T20:06:24Z	Merge branch 'language_sdl' of https://github.com/edward-san/zdoom	pending		/
-1a3ac9d0b36fa7dbaefdf2df1246cb8b246026cc	2014-06-25T23:23:41Z	- Simplify CMake GCC and Clang checking.	pending		/
-3d33f565a458ab586d0ffbe49611332ae4bbdd6b	2014-06-26T00:10:17Z	Use a proper, more unique, pointer formatter for the open callback	pending		/
-d761dd1ff69f30239ed2866cd951a5ec495f814b	2014-06-26T00:37:20Z	Merge remote-tracking branch 'zdoom/master' into openal	pending		/
-fd25ec2a625459c2fed7b34a5a28a1e860dc94e6	2014-06-26T03:03:24Z	Implement GetPosition for OpenAL streams, and display it in the stats	pending		/
-c6bb52c866dce8248e6a136f3f59f21708530bac	2014-06-26T04:14:35Z	Get the length from sounds when possible	pending		/
-a6900b48baa584d83239a9234ded3b6f42eaff4e	2014-06-26T04:48:13Z	Use AL_SOFT_deferred_updates to sync updates when availeble	pending		/
-0adfdf31dda641827a69557ef67da3795b8b9b05	2014-06-26T04:50:52Z	Fix calling SetPosition when not playing	pending		/
-270541f9422038c829f673de30a0b4e4562d05f5	2014-06-26T07:43:51Z	fixed compilation with latest LZMA SDK on Windows.	pending		/
-0cb15478908a11fe4b59bd724afa22b9cca17aab	2014-06-26T07:45:27Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-cb9877e7ffa2f48876a4c076398bec2851d92de1	2014-06-26T21:52:26Z	- Using USE_WINDOWS_DWORD on other platforms can cause problems.	pending		/
-1ae53473ff3953f6a337efe09eee60cb5eccf598	2014-06-26T21:54:48Z	Merge branch 'edward-san-cmake_gcc_compatible'	pending		/
-19415668ecfc6b79a9d7ddb72365356db3e33a61	2014-06-26T22:11:32Z	Merge branch 'gcc_aggressive_optimization' of github.com:edward-san/zdoom into edward-san-gcc_agressive_optimization	pending		/
-28afd04aefe52c3fbc5ae376c2bdf09e37167cdd	2014-06-26T23:10:09Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-1a40c95f84eb0114ac25e1b4b7a0f77eddb4eaef	2014-06-26T23:58:18Z	Rename some FMOD references to be generic sound system	pending		/
-d941203ab0d3c583700b8a91c2686ff89916a9e2	2014-06-27T00:37:11Z	- Fixed edward-san's typo. - Cleared a warning.	pending		/
-a16f9d061ce05582faa94af36f29c8936bf0256d	2014-06-27T08:29:34Z	Work around a libsndfile bug related to converting float samples to shorts	pending		/
-6f8545e694ae334184dff5181e24ddce0dd41683	2014-06-28T04:51:05Z	Use a TArray for SoundDecoder::readAll	pending		/
-d55dfcdb1dd2dd834bb1598709d6dba97bec4eaf	2014-06-28T05:05:11Z	Pass the correct size to LoadSoundVoc	pending		/
-a630c47e6a8692fb03e03cbf1a9a52d4b079e4f4	2014-06-28T05:09:03Z	Remove a redundant call	pending		/
-c73d97af44c306c8df7f940bb305b2b2087ac40e	2014-06-28T07:33:15Z	Use TArray and TMap instead of std::vector and std::map	pending		/
-7908116fefc035b173ff7826d3be7b550d0bf362	2014-06-28T07:37:12Z	Use a separate function to update an openal stream's volume	pending		/
-afcada4a3b094bc6275a55a135b96dcbd8d04631	2014-06-28T07:46:45Z	Remove an unused field	pending		/
-e6d468eb3824266f2a068394a8edde2911c20584	2014-06-28T07:59:56Z	Use byte swapping functions from <libkern/OSByteOrder.h> on OS X	pending		/
-7b69c60af13235f8210644a6173bc3b9d038913d	2014-06-28T08:00:01Z	Use correct 'true' keyword	pending		/
-65203760a841629f642c91d92103adbb554837bd	2014-06-28T08:00:08Z	Fix incorrect actor flag handling on big endian platforms	pending		/
-7f3be7bf14eddcec82e89e01f0a25b83b1a64ea1	2014-06-28T08:25:25Z	Show the name of unsupported sound formats with OpenAL	pending		/
-6e64545725061138a45bfad04fc33688d56f2836	2014-06-28T08:32:06Z	Simplify some branching	pending		/
-c4bc5f7b97554f9e5a1f3e622bbe6cfd2d6aff6e	2014-06-28T08:49:37Z	Merge pull request #78 from alexey-lysiuk/fix_osx_build	pending		/
-ae95a2d5cfcc0f4ee7de04158d8c64925e42d990	2014-06-28T12:41:11Z	Fix creating effect map entries	pending		/
-7d7f146ce1ed2edda1ef9f0a345ac6d5456ebdaf	2014-06-28T13:21:19Z	- fixed: transferring a translation to a missile needs to check if the missile was spawned successfully.	pending		/
-77277f4f7509ada7d6874fa62266f88024e77d22	2014-06-28T23:10:51Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-48df515dd12ec445df6285efe8b49a48404b0f79	2014-06-29T06:29:48Z	Merge remote-tracking branch 'zdoom/master' into openal	pending		/
-90fa215da2c797ab02c9292a598dbd5a3ccfdb6c	2014-06-29T06:30:58Z	Replace another std::vector with a TArray	pending		/
-08054ddc34d42635338ed210b90adfc0e8315100	2014-06-29T06:53:43Z	Merge branch 'master' into Glew_Version_For_Real	pending		/
+e15f80f64048a37cc4300d7acf9efd0554e98875	2014-06-23T07:27:30Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content	/
+0e3bee6f300b9e441161a3f642354750ff603f0c	2014-06-23T18:02:40Z	- Enable 'language' feature on unix targets.	adapted	adapted: SetLanguageIDs was an empty stub here so the language CVAR did nothing on SDL targets; landed with d941203ab's '\\0' correction folded in rather than the literal '0'	813c8f3
+bdddea541f4513999e4a77ec5a2ac4c280b7e68b	2014-06-24T09:22:55Z	update lzma to v9.22 beta	skip	skip: vendored LZMA SDK bump to 9.22 beta; we carry 9.20 and it brings no engine-visible change. A re-triage can bump it deliberately	/
+f4afc8cf1ae8fe655090a3c77bbe78f101669d9d	2014-06-24T10:32:29Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content	/
+0017e1e6e833ef2490ba16dffafde57aeea7b39e	2014-06-25T11:25:36Z	Use a FileReader to handle music resources and audio decoding	ported	ported: the sound half came with 10b9ebb, which handles music resources through the modern decoder API. MemoryArrayReader is absent and unreferenced -- adding it here would be dead code	10b9ebb
+9c12abeb2d17ff4de8796d122c33c71cb061818c	2014-06-25T11:53:08Z	Better report the amount buffered in an OpenAL stream	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+7f5b5381101512467617be8da623633d94f5b80d	2014-06-25T11:59:18Z	Implement SetPosition for OpenAL streams	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+0be30c782cab1cf2f8ab18db1e96f2d8eea8fa3d	2014-06-25T17:11:05Z	Fix LZMA compilation on GCC with position-independent code (PIC) generation enabled	ported	ported: already present -- same LZMA PIC path as 98c25deec, verified line-for-line (10/10)	2636198
+8aff59e7047b4973013c34ff5b55dd611c152e85	2014-06-25T20:06:24Z	Merge branch 'language_sdl' of https://github.com/edward-san/zdoom	skip	skip: merge commit, no unique content	/
+1a3ac9d0b36fa7dbaefdf2df1246cb8b246026cc	2014-06-25T23:23:41Z	- Simplify CMake GCC and Clang checking.	skip	skip: build-system reshuffle of a CMake tree we no longer resemble (FMOD-free, features/ layout, our own OpenAL wiring); nothing here maps onto our build	/
+3d33f565a458ab586d0ffbe49611332ae4bbdd6b	2014-06-26T00:10:17Z	Use a proper, more unique, pointer formatter for the open callback	skip	skip: touches only fmodsound.cpp / oalsdlsound.cpp, neither of which exists here -- the FMOD backend is gone and the SDL_sound variant never existed	/
+d761dd1ff69f30239ed2866cd951a5ec495f814b	2014-06-26T00:37:20Z	Merge remote-tracking branch 'zdoom/master' into openal	skip	skip: merge commit, no unique content	/
+fd25ec2a625459c2fed7b34a5a28a1e860dc94e6	2014-06-26T03:03:24Z	Implement GetPosition for OpenAL streams, and display it in the stats	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+c6bb52c866dce8248e6a136f3f59f21708530bac	2014-06-26T04:14:35Z	Get the length from sounds when possible	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+a6900b48baa584d83239a9234ded3b6f42eaff4e	2014-06-26T04:48:13Z	Use AL_SOFT_deferred_updates to sync updates when availeble	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+0adfdf31dda641827a69557ef67da3795b8b9b05	2014-06-26T04:50:52Z	Fix calling SetPosition when not playing	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+270541f9422038c829f673de30a0b4e4562d05f5	2014-06-26T07:43:51Z	fixed compilation with latest LZMA SDK on Windows.	skip	skip: works around windows.h being pulled in by LZMA >= 9.22; our vendored SDK is 9.20, where that does not happen	/
+0cb15478908a11fe4b59bd724afa22b9cca17aab	2014-06-26T07:45:27Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content	/
+cb9877e7ffa2f48876a4c076398bec2851d92de1	2014-06-26T21:52:26Z	- Using USE_WINDOWS_DWORD on other platforms can cause problems.	ported	ported: already present -- USE_WINDOWS_DWORD guard verified line-for-line	zandronum-base
+1ae53473ff3953f6a337efe09eee60cb5eccf598	2014-06-26T21:54:48Z	Merge branch 'edward-san-cmake_gcc_compatible'	skip	skip: merge commit, no unique content	/
+19415668ecfc6b79a9d7ddb72365356db3e33a61	2014-06-26T22:11:32Z	Merge branch 'gcc_aggressive_optimization' of github.com:edward-san/zdoom into edward-san-gcc_agressive_optimization	skip	skip: merge commit, no unique content	/
+28afd04aefe52c3fbc5ae376c2bdf09e37167cdd	2014-06-26T23:10:09Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content	/
+1a40c95f84eb0114ac25e1b4b7a0f77eddb4eaef	2014-06-26T23:58:18Z	Rename some FMOD references to be generic sound system	ported	ported: MDEV_FMOD -> MDEV_SNDSYS, and our ZX_MDEV_ mirror renamed with it so the static_assert cannot drift; SNDINFO still accepts 'fmod'	146df9d
+d941203ab0d3c583700b8a91c2686ff89916a9e2	2014-06-27T00:37:11Z	- Fixed edward-san's typo. - Cleared a warning.	ported	ported: folded into 0e3bee6f3 -- MAKE_ID's fourth argument is '\\0', not the character '0' (0x30); I_Tactile's unused params commented out	813c8f3
+a16f9d061ce05582faa94af36f29c8936bf0256d	2014-06-27T08:29:34Z	Work around a libsndfile bug related to converting float samples to shorts	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+6f8545e694ae334184dff5181e24ddce0dd41683	2014-06-28T04:51:05Z	Use a TArray for SoundDecoder::readAll	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+d55dfcdb1dd2dd834bb1598709d6dba97bec4eaf	2014-06-28T05:05:11Z	Pass the correct size to LoadSoundVoc	ported	ported: LoadSoundVoc gets the lump size, not the DMX length field a VOC does not have	146df9d
+a630c47e6a8692fb03e03cbf1a9a52d4b079e4f4	2014-06-28T05:09:03Z	Remove a redundant call	ported	ported: dropped the redundant LumpLength re-read; size already holds it	146df9d
+c73d97af44c306c8df7f940bb305b2b2087ac40e	2014-06-28T07:33:15Z	Use TArray and TMap instead of std::vector and std::map	ported	ported: the tarray.h half (TArray::Find) is already present; the oalsound half is superseded by 10b9ebb	10b9ebb
+7908116fefc035b173ff7826d3be7b550d0bf362	2014-06-28T07:37:12Z	Use a separate function to update an openal stream's volume	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+afcada4a3b094bc6275a55a135b96dcbd8d04631	2014-06-28T07:46:45Z	Remove an unused field	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+e6d468eb3824266f2a068394a8edde2911c20584	2014-06-28T07:59:56Z	Use byte swapping functions from <libkern/OSByteOrder.h> on OS X	ported	ported: already present -- OSByteOrder byte swaps verified line-for-line (10/10)	zandronum-base
+7b69c60af13235f8210644a6173bc3b9d038913d	2014-06-28T08:00:01Z	Use correct 'true' keyword	ported	ported: X11's True -> true in the SDL video defaults	813c8f3
+65203760a841629f642c91d92103adbb554837bd	2014-06-28T08:00:08Z	Fix incorrect actor flag handling on big endian platforms	ported	ported: already present -- big-endian actor flag handling verified line-for-line	zandronum-base
+7f3be7bf14eddcec82e89e01f0a25b83b1a64ea1	2014-06-28T08:25:25Z	Show the name of unsupported sound formats with OpenAL	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+6e64545725061138a45bfad04fc33688d56f2836	2014-06-28T08:32:06Z	Simplify some branching	ported	ported: one buffer pointer, and the DMX length named dmxlen	146df9d
+c4bc5f7b97554f9e5a1f3e622bbe6cfd2d6aff6e	2014-06-28T08:49:37Z	Merge pull request #78 from alexey-lysiuk/fix_osx_build	skip	skip: merge commit, no unique content	/
+ae95a2d5cfcc0f4ee7de04158d8c64925e42d990	2014-06-28T12:41:11Z	Fix creating effect map entries	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+7d7f146ce1ed2edda1ef9f0a345ac6d5456ebdaf	2014-06-28T13:21:19Z	- fixed: transferring a translation to a missile needs to check if the missile was spawned successfully.	ported	ported: the translation transfer is already conditioned on a spawned missile inside ZX_FireProjectile	146df9d
+77277f4f7509ada7d6874fa62266f88024e77d22	2014-06-28T23:10:51Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content	/
+48df515dd12ec445df6285efe8b49a48404b0f79	2014-06-29T06:29:48Z	Merge remote-tracking branch 'zdoom/master' into openal	skip	skip: merge commit, no unique content	/
+90fa215da2c797ab02c9292a598dbd5a3ccfdb6c	2014-06-29T06:30:58Z	Replace another std::vector with a TArray	ported	ported: superseded by our OpenAL backend port (10b9ebb), which took upstream 7bfbf612d -- twelve years newer than this commit, so our tree already holds its end state and every refactor after it	10b9ebb
+08054ddc34d42635338ed210b90adfc0e8315100	2014-06-29T06:53:43Z	Merge branch 'master' into Glew_Version_For_Real	skip	skip: merge commit, no unique content	/
 ffcb6cb70a5940b45d483a506b5ce0d25b4a3bde	2014-06-29T09:00:21Z	- added second vertex coordinate attribute for model interpolation.	ported	4dec01f	4dec01f
-d0e551060dd0f5a78dcce5a013dc29110874047b	2014-06-29T10:50:42Z	- fixed: When the 3D floor init code was updated 5 years ago for Vavoom's latest changes to its 3D-floor implementation it accidentally set the 3D-floor's alpha as its desaturation.	pending		/
+d0e551060dd0f5a78dcce5a013dc29110874047b	2014-06-29T10:50:42Z	- fixed: When the 3D floor init code was updated 5 years ago for Vavoom's latest changes to its 3D-floor implementation it accidentally set the 3D-floor's alpha as its desaturation.	adapted	adapted: applied as the pair settles with dd05e564c, since that commit partly reverts this one	146df9d
 9d1dbf4eab1ad27390f44e729b1e99d6bc522bd4	2014-06-29T12:08:44Z	- fixed: FBufferedUniform1f didn'T work because it used an int as its buffered value.	ported	4dec01f	4dec01f
-a33b49c2c2ef52701a39bc3b2c4cff97e3a6e9d4	2014-06-29T12:09:55Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-2cd1118aad8580365e6c02bb0ac5c9b08dd68995	2014-06-29T12:11:03Z	Merge branch 'master' into Glew_Version_For_Real	pending		/
-dd05e564cf1c0d1eb6b878c9690e4a3e2fa6cf1e	2014-06-29T12:32:50Z	- this needed more fixes...	pending		/
+a33b49c2c2ef52701a39bc3b2c4cff97e3a6e9d4	2014-06-29T12:09:55Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content	/
+2cd1118aad8580365e6c02bb0ac5c9b08dd68995	2014-06-29T12:11:03Z	Merge branch 'master' into Glew_Version_For_Real	skip	skip: merge commit, no unique content	/
+dd05e564cf1c0d1eb6b878c9690e4a3e2fa6cf1e	2014-06-29T12:32:50Z	- this needed more fixes...	ported	ported: folded into d0e551060 as the settled state -- alpha hoisted out of the loop, full vavoom colour plus the sector's Desaturate	146df9d
 1efc2938b77925bb931b1063e6aa2814aaae6dce	2014-06-29T21:24:16Z	- implement model vertex buffer and draw MD2 models using it instead of using the GLCommands from the model.	ported	4dec01f	4dec01f
 9c5cec0056ca64544293657acb05ce60b7289f74	2014-06-30T08:05:15Z	- draw wipes with buffers	ported	4dec01f	4dec01f
 54297acde4a3bd826e27656387657dab0ce9cfc3	2014-06-30T11:30:10Z	- removed obsolete gl_lightbuffer code.	ported	4dec01f	4dec01f
@@ -429,8 +429,8 @@ f7105189036de62db1ddef10be818c21c20d18bb	2014-06-30T16:10:55Z	- use a uniform ar
 5ee626459d1926fe96e11d3fb7bc47c9520f23e8	2014-06-30T16:57:24Z	- use model vertex buffer to render voxels.	ported	4dec01f	4dec01f
 9a6bc64381434e631c96358cba19159697b873a3	2014-06-30T22:51:02Z	- use vertex array objects to manage vertex buffers.	ported	4dec01f	4dec01f
 92185f96ebf0e7afc8389ba9fb8a0c165082deec	2014-07-01T07:52:41Z	- fixed overflow with storing a sprite's dynamic light color in a PalEntry.	ported	4dec01f	4dec01f
-d83f048858c6ca3be9442dce658a4dae542ebfad	2014-07-01T17:13:05Z	- Miscellaneous CMakeLists.txt fixes.	pending		/
-1aaaac900dc4ae1f452a6018d5aae4dcce9a6470	2014-07-02T05:14:49Z	Merge remote-tracking branch 'zdoom/master' into openal	pending		/
+d83f048858c6ca3be9442dce658a4dae542ebfad	2014-07-01T17:13:05Z	- Miscellaneous CMakeLists.txt fixes.	skip	skip: build-system reshuffle of a CMake tree we no longer resemble (FMOD-free, features/ layout, our own OpenAL wiring); nothing here maps onto our build	/
+1aaaac900dc4ae1f452a6018d5aae4dcce9a6470	2014-07-02T05:14:49Z	Merge remote-tracking branch 'zdoom/master' into openal	skip	skip: merge commit, no unique content	/
 e1729a9ec206b20a8ea0b9c2314d2652c697cd0f	2014-07-09T07:15:51Z	- fixed compilation with VC++2005 solution.	pending		/
 e691341541816122ba09aac8b40d4fd3c50d450f	2014-07-09T07:16:30Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 a936629cec470e3c4bdf6bfcf9481c6bae39e5ec	2014-07-10T08:33:07Z	- use default fragment shader for burn and stencil shader, with the time consuming parts disabled by a #define, to avoid code duplication.	ported	7327ca6	7327ca6
