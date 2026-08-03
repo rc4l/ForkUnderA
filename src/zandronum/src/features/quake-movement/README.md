@@ -153,6 +153,12 @@ or with a property authored away from its default. Full measurements in
    calls and nobody else's. `IsLocalCosmeticPlayer()` now answers no on a server for everyone, and
    sits inside `SpawnEffectActor` as well as at the call sites. Verified by counting `MvDust`
    server-side from ACS: 1 before, 0 after.
+8. **Live movement state loaded from a savegame as zeroes.** It is deliberately unserialized, but
+   `PostBeginPlay` does not run on a load, so the traversal meters and second-jump allowance came
+   back at 0 rather than their authored caps — and 0 is a state play never produces, since the
+   meters spawn full and the slide meter's zero is neither charge nor lockout.
+   `APlayerPawn::Serialize` now seeds them on the read path exactly as a spawn does; nothing extra
+   is written, so the savegame format is unchanged.
 
 ### Deliberate divergences
 

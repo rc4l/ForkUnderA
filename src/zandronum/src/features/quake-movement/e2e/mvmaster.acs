@@ -118,6 +118,34 @@ script 23 (void) net
 	Log(s:"MVLIFT raising");
 }
 
+// +EDGEJUMP preserves upward velocity into a jump, so it needs a pawn that is `onground` AND
+// already rising. Nothing in ZDoom's movement produces that: running up a slope moves the pawn
+// positionally with velz staying 0 (measured -- see MASTERTEST.md), and a rising floor carries it
+// without imparting velocity either. So the precondition is synthesised here. Run against the
+// paired control class, the comparison still isolates the flag: whichever tic this lands on, both
+// pawns get the same treatment, and only one of them is supposed to keep the velocity.
+script 27 (int vz) net
+{
+	SetActorVelocity(0, GetActorVelX(0), GetActorVelY(0), vz * 65536, 0, 0);
+	Log(s:"MVEDGE set velz ", d:vz);
+}
+
+// Hold a small upward velocity on GROUNDED tics only, so whichever tic the jump fires on it sees
+// the pawn rising. Only while grounded: forcing it in the air would mask the jump entirely and
+// make both classes look the same. Keep vz well under JumpZ so it cannot dominate the result --
+// the edge-jump pawn should reach vz + JumpZ, the control just JumpZ.
+script 28 (int tics, int vz) net
+{
+	int i;
+	for (i = 0; i < tics; i++)
+	{
+		if (GetActorZ(0) <= GetActorFloorZ(0))
+			SetActorVelocity(0, GetActorVelX(0), GetActorVelY(0), vz * 65536, 0, 0);
+		Delay(1);
+	}
+	Log(s:"MVEDGE hold done");
+}
+
 // Effect actors are CLIENTSIDEONLY and spawned for the local player only -- the whole reason this
 // port adds no recurring traffic. This runs SERVER-side, so a non-zero count here would mean they
 // are being replicated after all, which is exactly the promise that must not silently break.

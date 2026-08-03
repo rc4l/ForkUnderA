@@ -151,6 +151,17 @@ Walk and crouch-run share a `normforwardmove` entry, so `fwd` alone cannot separ
 | `+USER4JUMP`, jump button | **nothing** — velz decays 7.0 → −8.0 straight through. The flag takes the jump button away as a trigger |
 | `+USER4JUMP`, `user4` button | fires — velz **2.0 → 9.5**. Same class, same airborne timing; only the button differs |
 | `+WALLJUMPV2` | facing **east** along the wall, the second jump sets vx to **0** and vy to **−8.000** — pushed along the wall *normal*. A facing-directed push cannot produce a y component at all, which is what separates V2 from a plain wall jump |
+| `Player.SecondJumpDelay 25` | consecutive second jumps land **28 tics** apart (a 5-tic input cadence rounding up 25), against **12** for the same class with delay 0 |
+| `+EDGEJUMP` | max velz **10.0** and apex **66**, vs **7.0** / **36** on the control — `MAX(0, velz) + JumpZ` against `0 + JumpZ`. See the note below on how the precondition was reached |
+
+**`+EDGEJUMP` and its precondition.** The flag preserves upward velocity into a jump, so it needs a
+pawn that is `onground` *and* already rising. A ramp was added to the map to produce that naturally
+— and it disproved the assumption: running up a 0.12 slope moves the pawn up **1.676 z per tic with
+`velz` staying exactly 0**. ZDoom carries you up a slope positionally, not by velocity, so the
+Quake "ramp jump" scenario does not arise here at all, and neither does riding a lift. The
+precondition is therefore synthesised by ACS (`script 28`) holding a small upward velocity on
+grounded tics only. Both classes get the identical script, so the comparison still isolates the
+flag — and it is the only test here that does not arise from ordinary play.
 
 ## 6b. Air control
 
@@ -172,6 +183,8 @@ constant rather than an arbitrary number.
 | crouch slide, crouched *after* landing | meter stays **−70**, no slide — one tic upright on the ground re-locks it, exactly the documented sign flip |
 | wall climb | z rises **5.000**/tic = `WallClimbSpeed`; `climbing 1`; reached z 456 |
 | air wall run | `wallrunning 1`, `onground 0`, upright, `speed2d 13.141`, **position advancing 13.1/tic** |
+| air wall run below `AirWallRunMinVelocity` | same wall, same spot, airborne and upright, but **walking** at `speed2d 4.828` → `wallrunning 0`. The 10.0 threshold is the only difference from the row above |
+| `Player.CrouchChangeSpeed` | at a fixed 4-tic sample after pressing crouch: **25** at 0.25/tic (already at its floor) vs **58** at the default 0.0833/tic |
 
 ## 8. Elevator jump
 
@@ -188,15 +201,31 @@ Same platform, driven raise at 4 units/tic, jump velz after one gravity tic:
 
 ## 9. Effect actors — and where they are *not*
 
-`MvTiers` running with `Player.EffectActor "Footstep", "MvDust"`:
+All three `Player.EffectActor` slots, each on the class that authors it:
 
-| | |
-|---|---|
-| client, `actorsnear` | `MvDust` present at the player's position |
-| **server**, ACS `ThingCountName("MvDust")` | **0** |
+| slot | client, `actorsnear` | **server**, ACS `ThingCountName("MvDust")` |
+|---|---|---|
+| `Footstep` (`MvTiers`, running) | `MvDust` at 589,128 | **0** |
+| `CrouchSlide` (`MvSlide`, mid-slide) | `MvDust` at 946,128 | **0** |
+| `WallClimb` (`MvClimb`, climbing) | `MvDust` at 2000,1516 | **0** |
 
-That second row is the netcode promise made checkable rather than argued. It read **1** before the
-fix below.
+That right-hand column is the netcode promise made checkable rather than argued. It read **1**
+before the fix below.
+
+## 9b. Savegame round-trip
+
+`SAVEVER 4513` serialization, in single player (Zandronum does not save in netgames). Both
+serialized fields are perturbed **away from their class defaults** first, so a broken read would
+show up as the defaults coming back rather than as an obvious failure:
+
+| | saved | after load |
+|---|---|---|
+| `mvFlags` (class default `1fff`) | `1ffd` | **`1ffd`** |
+| `MvType` (class default 1) | 0 | **0** |
+| `secondJumpsRemaining` | — | **3** = `SecondJumpAmount` |
+| slide / climb / wallrun meters | — | **6500 / 6600 / 6700**, each its own authored cap |
+
+The bottom two rows are the fix below: they came back as **zeroes** before it.
 
 ## 10. Bandwidth
 
@@ -238,23 +267,29 @@ meets engine state it does not own.
    guard is `IsLocalCosmeticPlayer()`, which answers no on a server for everyone, and it lives
    inside `SpawnEffectActor` as well as at the call sites so it is safe by construction.
 
+5. **Live movement state came back as zeroes from a savegame.** It is deliberately not serialized
+   (it is prediction-saved and re-derived per tic), but `PostBeginPlay` does not run on a load — so
+   the traversal meters and second-jump allowance loaded as 0 instead of their authored caps. Zero
+   is not a state that occurs in play: the meters spawn full, and the crouch-slide meter's zero is
+   neither usable charge nor the negative lockout it uses, so a loaded save sat in a third state.
+   `APlayerPawn::Serialize` now seeds them on the read path exactly as a spawn does. No savegame
+   format change — nothing new is written.
+
 Plus a tooling gap that blocked the entire server-side half: **a `-host` server emitted nothing to
 the MCP bridge**, because `PrintString` returns early in the server branch before the tee. Every
 driven command timed out. Fixed in `c_console.cpp`.
 
-## Not covered here
+## Coverage
 
-One behaviour remains unexercised: **`+EDGEJUMP`**. It preserves upward velocity into a jump
-(`ComputeMainJumpVelZ` adds `MAX(0, velz)` rather than discarding it), so reaching it needs a pawn
-that is `onground` **and** already rising. This map cannot produce that state: a flat floor never
-gives upward velocity, and riding the test platform carries the pawn up with `velz` staying 0. It
-needs sloped geometry, which the generated map does not have. The flag is proven to parse and
-replicate (§1, §2), and the friction path's `onground && velz <= 0` condition shows the engine does
-expect the state to exist — but the jump behaviour itself is untested.
+Every `MV_*` flag, every `Player.*` property and both wire paths are now exercised, except:
 
-Everything else in the original gap list is now covered above: `+CPMAIRCONTROL` (§6b),
-`+WALLJUMPV2`, `+DOUBLETAPJUMP`, `+USER4JUMP`, `+ABSOLUTESECONDJUMP` and `Player.JumpXY` (§6),
-effect-actor spawning (§9), and the bandwidth measurement (§10).
+- **`MV_SILENT`** and **`Player.FootstepVolume`** are sound-only. They gate `S_Sound` calls and
+  change no observable state, so a headless run (`-nosound`) cannot distinguish them. Both are
+  proven to parse and replicate (§1, §2); neither can affect gameplay.
+- The remaining tuning coefficients (`CrouchSlideAcceleration`/`Friction`, `WallClimbFriction`, the
+  regen rates, the effect intervals) have their **values** asserted in §1 and their **effects**
+  observed indirectly — the sustained 7.085 slide speed, the 5.000/tic climb, the meters draining
+  and regenerating at their own caps — rather than each coefficient being solved for individually.
 
 ## Harness traps found here
 
