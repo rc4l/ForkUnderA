@@ -224,7 +224,14 @@ void gl_PrintStartupLog()
 {
 	Printf ("GL_VENDOR: %s\n", glGetString(GL_VENDOR));
 	Printf ("GL_RENDERER: %s\n", glGetString(GL_RENDERER));
-	Printf ("GL_VERSION: %s\n", glGetString(GL_VERSION));
+	// [rc4l] uzdoom@bf03d0222: say which profile we actually got -- core vs compatibility changes
+	// what is available, so a bug report without it is much harder to read.
+	{
+		int profilemask = 0;
+		glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profilemask);
+		Printf ("GL_VERSION: %s (%s profile)\n", glGetString(GL_VERSION),
+			(profilemask & GL_CONTEXT_CORE_PROFILE_BIT) ? "Core" : "Compatibility");
+	}
 	Printf ("GL_SHADING_LANGUAGE_VERSION: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
 	// [rc4l] core profile: glGetString(GL_EXTENSIONS) is invalid; enumerate instead ([TDRR] optional via developer CVAR).
 	if (developer) { Printf("GL_EXTENSIONS:"); for (unsigned ext_i = 0; ext_i < m_Extensions.Size(); ext_i++) Printf(" %s", m_Extensions[ext_i].GetChars()); Printf("\n"); }
