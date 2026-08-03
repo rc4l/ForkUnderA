@@ -928,9 +928,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfInput)
 //==========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfHealthLower)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(health, 0);
 	ACTION_PARAM_STATE(jump, 1);
+	// [rc4l] uzdoom@5b71ce6dc: measure any pointed-to actor, not just self.
+	ACTION_PARAM_INT(ptr_selector, 2);
 
 	// [BC] Don't jump here in client mode.
 	if ( NETWORK_InClientMode() )
@@ -939,7 +941,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfHealthLower)
 			return;
 	}
 
-	if (self->health < health) ACTION_JUMP(jump, CLIENTUPDATE_FRAME);	// [BC] Clients don't know what the actor's health is.
+	AActor *measured = COPY_AAPTR(self, ptr_selector);
+
+	// [BC] Clients don't know what the actor's health is.
+	if (measured && measured->health < health) ACTION_JUMP(jump, CLIENTUPDATE_FRAME);
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 }
@@ -4875,6 +4880,61 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
 	{
 		amount = -amount;
 		P_GiveBody(self, amount);
+	}
+}
+
+//===========================================================================
+//
+// A_DamageTarget (int amount, str damagetype)
+// Damages the target of this actor by the specified amount. Negative values heal.
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTarget)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(amount, 0);
+	ACTION_PARAM_NAME(DamageType, 1);
+
+	// [rc4l] uzdoom@422e83a1b. No gating: P_DamageMobj and P_GiveBody are already
+	// server-authoritative here, as the sibling A_Damage* functions rely on.
+	if (self->target != NULL)
+	{
+		if (amount > 0)
+		{
+			P_DamageMobj(self->target, self, self, amount, DamageType, DMG_NO_ARMOR);
+		}
+		else if (amount < 0)
+		{
+			amount = -amount;
+			P_GiveBody(self->target, amount);
+		}
+	}
+}
+
+//===========================================================================
+//
+// A_DamageTracer (int amount, str damagetype)
+// Damages the tracer of this actor by the specified amount. Negative values heal.
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTracer)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(amount, 0);
+	ACTION_PARAM_NAME(DamageType, 1);
+
+	// [rc4l] uzdoom@422e83a1b.
+	if (self->tracer != NULL)
+	{
+		if (amount > 0)
+		{
+			P_DamageMobj(self->tracer, self, self, amount, DamageType, DMG_NO_ARMOR);
+		}
+		else if (amount < 0)
+		{
+			amount = -amount;
+			P_GiveBody(self->tracer, amount);
+		}
 	}
 }
 
