@@ -63,6 +63,11 @@ public:
 	// gl/renderer/gl_renderer.cpp:270 and gl/system/gl_framebuffer.cpp:193,218 still call it --
 	// nine sites in total. Restored exactly as upstream's own 3816b4693 had it.
 	int GetTrueHeight() { return GetHeight(); }
+
+	// [rc4l] Same spelling as SDLGLVideo::IsCoreProfile() on the other backend, so a legacy-renderer
+	// gate can ask either one without caring which is built. Declared at the end of the class to
+	// keep the conflict surface with future upstream diffs small.
+	static bool IsCoreProfile();
 	~SDLGLFB();
 
 	virtual bool Lock(bool buffered = true);

@@ -61,6 +61,8 @@
 #include "v_text.h"
 #include "v_video.h"
 #include "version.h"
+#include "features/fua-branding/computation/fua_version_compute.h"   // [rc4l] FUA title
+#include "features/hwrender/computation/glcontext_compute.h"        // [rc4l] GL profile chain
 
 #include "gl/system/gl_system.h"
 #include "gl/data/gl_vertexbuffer.h"
@@ -135,6 +137,10 @@ int currentrenderer = 0;
 #endif
 
 static int s_currentRenderer;
+
+// [rc4l] Which Apple profile the context actually came up with; backs CocoaVideo::IsCoreProfile(),
+// the same query SDLGLVideo::IsCoreProfile() answers on the other backend.
+static int s_cocoaGLProfile = zx::kNSGLProfileLegacy;
 
 CUSTOM_CVAR(Int, vid_renderer, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
@@ -413,13 +419,10 @@ CocoaWindow* CreateCocoaWindow(const NSUInteger styleMask)
 	return window;
 }
 
-enum OpenGLProfile
-{
-	Core,
-	Legacy
-};
-
-NSOpenGLPixelFormat* CreatePixelFormat(const OpenGLProfile profile)
+// [rc4l] Upstream tried Core then Legacy. We drive the attempt order from zx::ComputeCocoaGLProfileChain
+// so the Cocoa backend negotiates the same 4.1 -> 4.0 -> 3.3 chain the SDL one did, collapsed onto
+// Apple's three profile constants. Takes the raw attribute now instead of a two-valued enum.
+NSOpenGLPixelFormat* CreatePixelFormat(const NSOpenGLPixelFormatAttribute wantProfile)
 {
 	NSOpenGLPixelFormatAttribute attributes[16];
 	size_t i = 0;
@@ -437,9 +440,12 @@ NSOpenGLPixelFormat* CreatePixelFormat(const OpenGLProfile profile)
 		attributes[i++] = NSOpenGLPFAAllowOfflineRenderers;
 	}
 
-	if (NSAppKitVersionNumber >= AppKit10_7 && OpenGLProfile::Core == profile)
+	if (NSAppKitVersionNumber >= AppKit10_7 && NSOpenGLPixelFormatAttribute(zx::kNSGLProfileLegacy) != wantProfile)
 	{
-		NSOpenGLPixelFormatAttribute profile = NSOpenGLProfileVersion3_2Core;
+		NSOpenGLPixelFormatAttribute profile = wantProfile;
+
+		// [rc4l] upstream's -glversion override, kept on the same line so a future diff to it still
+		// applies: asking for below 3.2 means asking for the legacy profile.
 		const char* const glversion = Args->CheckValue("-glversion");
 
 		if (nullptr != glversion)
@@ -477,16 +483,28 @@ CocoaVideo::CocoaVideo()
 
 	// Create OpenGL pixel format
 
-	NSOpenGLPixelFormat* pixelFormat = CreatePixelFormat(OpenGLProfile::Core);
+	int profiles[zx::kMaxCocoaGLProfiles];
+	const int profileCount = zx::ComputeCocoaGLProfileChain(true, profiles, zx::kMaxCocoaGLProfiles);
+
+	NSOpenGLPixelFormat* pixelFormat = nil;
+
+	for (int i = 0; i < profileCount; ++i)
+	{
+		pixelFormat = CreatePixelFormat(NSOpenGLPixelFormatAttribute(profiles[i]));
+
+		if (nil != pixelFormat)
+		{
+			s_cocoaGLProfile = profiles[i];
+			Printf("GL context: %s\n",
+				zx::kNSGLProfileCore41 == profiles[i] ? "4.1 core" :
+				zx::kNSGLProfileCore32 == profiles[i] ? "3.2 core" : "legacy");
+			break;
+		}
+	}
 
 	if (nil == pixelFormat)
 	{
-		pixelFormat = CreatePixelFormat(OpenGLProfile::Legacy);
-
-		if (nil == pixelFormat)
-		{
-			I_FatalError("Cannot OpenGL create pixel format, graphics hardware is not supported");
-		}
+		I_FatalError("Cannot OpenGL create pixel format, graphics hardware is not supported");
 	}
 
 	// Create OpenGL context and view
@@ -768,9 +786,20 @@ void CocoaVideo::SetMode(const int width, const int height, const bool fullscree
 
 	[[NSOpenGLContext currentContext] flushBuffer];
 
-	static NSString* const TITLE_STRING =
-	[NSString stringWithFormat:@"%s %s", GAMESIG, GetVersionString()];
-	[m_window setTitle:TITLE_STRING];
+	// [rc4l] FUA branding: the window title carries OUR version, and for a non-stable build the
+	// commit hash too, so a screenshot of an experimental build always says which one it is. Same
+	// text as the SDL backend produced (posix/sdl/sdlglvideo.cpp). Not cached in a static: the
+	// string is build-constant but the code reads better without pretending otherwise.
+	char caption[100];
+	{
+		char tag[64];
+		zx::FuaVersionTag(GetFuaDescribe(), tag, sizeof tag);
+		if (zx::FuaIsStableBuild(GetFuaDescribe()))
+			mysnprintf(caption, countof(caption), FUA_NAME " %s (stable)", tag);
+		else
+			mysnprintf(caption, countof(caption), FUA_NAME " %s (experimental %s)", tag, GetGitHash());
+	}
+	[m_window setTitle:[NSString stringWithUTF8String:caption]];
 
 	if (![m_window isKeyWindow])
 	{
@@ -801,6 +830,12 @@ CocoaVideo* CocoaVideo::GetInstance()
 // [rc4l] Companion to the DECLARE_CLASS in sdlglvideo.h -- see the note there. Matches how
 // posix/sdl/sdlglvideo.cpp:39 registers the same class for the SDL backend.
 IMPLEMENT_ABSTRACT_CLASS(SDLGLFB)
+
+// [rc4l] See the declaration in sdlglvideo.h.
+bool SDLGLFB::IsCoreProfile()
+{
+	return zx::kNSGLProfileLegacy != s_cocoaGLProfile;
+}
 
 SDLGLFB::SDLGLFB(void*, const int width, const int height, int, int, const bool fullscreen)
 : DFrameBuffer(width, height)
