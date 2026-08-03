@@ -1462,7 +1462,9 @@ static void ZX_SpawnProjectile( AActor *self, const PClass *ti, fixed_t SpawnHei
 	else if (flags & CMF_CHECKTARGETDEAD)
 	{
 		// Target is dead and the attack shall be aborted.
-		if (self->SeeState != NULL) self->SetState(self->SeeState);
+		// [rc4l] uzdoom@2be3b776d: a dead monster must not jump back to its See state -- that
+		// resurrects the animation. Non-monsters are unaffected.
+		if (self->SeeState != NULL && (self->health > 0 || !(self->flags3 & MF3_ISMONSTER))) self->SetState(self->SeeState);
 	}
 }
 
@@ -2650,6 +2652,9 @@ enum SIX_Flags
 	SIXF_TRANSFERSPECIAL		= 1 << 15,
 	SIXF_CLEARCALLERSPECIAL		= 1 << 16,
 	SIXF_TRANSFERSTENCILCOL		= 1 << 17,
+	// [rc4l] uzdoom@5c4ad9be6
+	SIXF_TRANSFERALPHA			= 1 << 18,
+	SIXF_TRANSFERRENDERSTYLE	= 1 << 19,
 };
 
 // [BB] Changed return value to bool (returns false if the actor already was destroyed).
@@ -2766,6 +2771,14 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	if (flags & SIXF_TRANSFERSTENCILCOL)
 	{
 		mo->fillcolor = self->fillcolor;
+	}
+	if (flags & SIXF_TRANSFERALPHA)
+	{
+		mo->alpha = self->alpha;
+	}
+	if (flags & SIXF_TRANSFERRENDERSTYLE)
+	{
+		mo->RenderStyle = self->RenderStyle;
 	}
 
 	return true;
@@ -4842,6 +4855,31 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfInTargetLOS)
 
 //===========================================================================
 //
+// A_DamageSelf (int amount, str damagetype)
+// Damages the calling actor by the specified amount. Negative values heal.
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(amount, 0);
+	ACTION_PARAM_NAME(DamageType, 1);
+
+	// [rc4l] uzdoom@b1f87295b. No gating added: P_DamageMobj and P_GiveBody are already
+	// server-authoritative here, exactly as the sibling A_Damage* functions below rely on.
+	if (amount > 0)
+	{
+		P_DamageMobj(self, self, self, amount, DamageType, DMG_NO_ARMOR);
+	}
+	else if (amount < 0)
+	{
+		amount = -amount;
+		P_GiveBody(self, amount);
+	}
+}
+
+//===========================================================================
+//
 // A_DamageMaster (int amount)
 // Damages the master of this child by the specified amount. Negative values heal.
 //
@@ -6399,6 +6437,27 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RadiusGive)
 	}
 }
 
+
+//==========================================================================
+//
+// A_SetSpeed
+//
+//==========================================================================
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetSpeed)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_FIXED(speed, 0);
+
+	// [rc4l] uzdoom@44683657f, adapted: Speed drives movement, so a client that never heard about
+	// the change predicts against the old value. Same shape APROP_Speed already uses in p_acs.cpp.
+	fixed_t oldSpeed = self->Speed;
+
+	self->Speed = speed;
+
+	if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( oldSpeed != self->Speed ) )
+		SERVERCOMMANDS_SetThingProperty( self, APROP_Speed );
+}
 
 //==========================================================================
 //

@@ -195,6 +195,9 @@ enum SAW_Flags
 	SF_RANDOMLIGHTHIT = 4,
 	SF_NOUSEAMMOMISS = 8,
 	SF_NOUSEAMMO = 16,
+	// [rc4l] uzdoom@cfd24f438
+	SF_NOPULLIN = 32,
+	SF_NOTURN = 64,
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
@@ -327,23 +330,28 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 		SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, S_GetName( hitsound ), 1, ATTN_NORM );
 		
 	// turn to face target
-	angle = R_PointToAngle2 (self->x, self->y,
-							 linetarget->x, linetarget->y);
-	if (angle - self->angle > ANG180)
+	// [rc4l] uzdoom@cfd24f438: both the turn and the pull-in are opt-out now.
+	if (!(Flags & SF_NOTURN))
 	{
-		if (angle - self->angle < (angle_t)(-ANG90/20))
-			self->angle = angle + ANG90/21;
+		angle = R_PointToAngle2 (self->x, self->y,
+								 linetarget->x, linetarget->y);
+		if (angle - self->angle > ANG180)
+		{
+			if (angle - self->angle < (angle_t)(-ANG90/20))
+				self->angle = angle + ANG90/21;
+			else
+				self->angle -= ANG90/20;
+		}
 		else
-			self->angle -= ANG90/20;
+		{
+			if (angle - self->angle > ANG90/20)
+				self->angle = angle - ANG90/21;
+			else
+				self->angle += ANG90/20;
+		}
 	}
-	else
-	{
-		if (angle - self->angle > ANG90/20)
-			self->angle = angle - ANG90/21;
-		else
-			self->angle += ANG90/20;
-	}
-	self->flags |= MF_JUSTATTACKED;
+	if (!(Flags & SF_NOPULLIN))
+		self->flags |= MF_JUSTATTACKED;
 
 	// [BC] If we're the server, tell clients to adjust the player's angle.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )

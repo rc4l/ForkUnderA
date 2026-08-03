@@ -1088,7 +1088,8 @@ public:
 	// [BC] A new set of flags that deal with network games.
 	unsigned int	NetworkFlags;
 
-	int				special1;		// Special info
+	int				special1;
+	int				weaponspecial;	// [rc4l] uzdoom@ee6e87d94: weapon state, split out of special1.		// Special info
 	int				special2;		// Special info
 	int 			health;
 	BYTE			movedir;		// 0-7

@@ -611,7 +611,7 @@ level_info_t *CheckLevelRedirect (level_info_t *info);
 
 FString CalcMapName (int episode, int level);
 
-void G_ParseMapInfo (const char *basemapinfo);
+void G_ParseMapInfo (FString basemapinfo);	// [rc4l] uzdoom@49382a2a1
 
 void G_ClearSnapshots (void);
 void P_RemoveDefereds ();
