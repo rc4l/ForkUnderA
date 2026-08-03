@@ -1129,8 +1129,14 @@ int PrintString (int printlevel, const char *outline)
 	// [BB] If we are coming from I_Quit, Args is possibly already invalid.
 	if ( Args && Args->CheckParm( "-host" ))
 	{
+		// [rc4l] Tee to the MCP bridge before this branch's early return. Without it a -host server
+		// emits nothing to the bridge, so every driven command times out waiting for its completion
+		// marker and the authoritative half of a multiplayer test cannot be read at all.
+		if ( printlevel != PRINT_LOG )
+			MCP_Bridge_TeeOutput( outlinecopy );
+
 		if ( printlevel != PRINT_LOW )
-		{			
+		{
 			// [RC] Send this to any connected RCON clients.
 			SERVER_RCON_Print( outlinecopy );
 			// [AK] We shouldn't broadcast the same message twice for the player who issued an RCON command.

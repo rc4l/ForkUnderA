@@ -26,13 +26,31 @@ static void MCP_PrintState( const char *label, AActor *mo )
 	}
 }
 
+// [rc4l] Scale to an int before printing: ZDoom's Printf renders some ordinary float values as
+// "-NaN", so %f output is not evidence -- see features/quake-movement/README.md.
+static int MCP_Milli( float v ) { return (int)( v * 1000.0f ); }
+static int MCP_MilliFixed( fixed_t v ) { return (int)( FIXED2FLOAT( v ) * 1000.0f ); }
+
+static const char *MCP_ClassName( const PClass *cls ) { return cls ? cls->TypeName.GetChars() : "none"; }
+
 CCMD( dumpactor )
 {
 	AActor *mo = players[consoleplayer].mo;
 	if ( argv.argc() >= 2 )
 	{
-		FActorIterator it( atoi( argv[1] ) );
-		mo = it.Next();
+		// [rc4l] "p<N>" selects players[N].mo. A -host server has no console player at all, so
+		// without this there is no way to read the authoritative side of anything.
+		if ( argv[1][0] == 'p' || argv[1][0] == 'P' )
+		{
+			const int playerIndex = atoi( argv[1] + 1 );
+			mo = ( playerIndex >= 0 && playerIndex < MAXPLAYERS && playeringame[playerIndex] )
+				? players[playerIndex].mo : NULL;
+		}
+		else
+		{
+			FActorIterator it( atoi( argv[1] ) );
+			mo = it.Next();
+		}
 	}
 
 	Printf( "MCP_ACTOR\n" );
@@ -87,6 +105,45 @@ CCMD( dumpactor )
 				sqrtf( FIXED2FLOAT( mo->velx ) * FIXED2FLOAT( mo->velx ) +
 					FIXED2FLOAT( mo->vely ) * FIXED2FLOAT( mo->vely )),
 				(int)mo->player->cmd.ucmd.forwardmove, (int)mo->player->cmd.ucmd.sidemove );
+			// [rc4l] The full authored surface, in thousandths. This is what lets the master E2E
+			// assert that every new Player.* property actually parsed and reached the pawn, rather
+			// than inferring it from behaviour that a default would also produce.
+			Printf( "qjump jumpz %d jumpxy %d jumpdelay %d sjz %d sjxy %d sjdelay %d sjamount %d taptics %d\n",
+				MCP_MilliFixed( pawn->JumpZ ), MCP_MilliFixed( pawn->JumpXY ), pawn->JumpDelay,
+				MCP_MilliFixed( pawn->SecondJumpZ ), MCP_MilliFixed( pawn->SecondJumpXY ),
+				pawn->SecondJumpDelay, pawn->SecondJumpAmount, pawn->DoubleTapMaxTics );
+			Printf( "qslide acc %d fric %d max %d regen %d eff %d\n",
+				MCP_Milli( pawn->CrouchSlideAcceleration ), MCP_Milli( pawn->CrouchSlideFriction ),
+				MCP_Milli( pawn->CrouchSlideMaxTics ), MCP_Milli( pawn->CrouchSlideRegen ),
+				pawn->CrouchSlideEffectInterval );
+			Printf( "qclimb speed %d fric %d max %d regen %d eff %d\n",
+				MCP_MilliFixed( pawn->WallClimbSpeed ), MCP_Milli( pawn->WallClimbFriction ),
+				MCP_Milli( pawn->WallClimbMaxTics ), MCP_Milli( pawn->WallClimbRegen ),
+				pawn->WallClimbEffectInterval );
+			Printf( "qwallrun max %d regen %d minvel %d\n",
+				MCP_Milli( pawn->AirWallRunMaxTics ), MCP_Milli( pawn->AirWallRunRegen ),
+				MCP_MilliFixed( pawn->AirWallRunMinVelocity ));
+			Printf( "qtier fwd %d %d %d %d side %d %d %d %d\n",
+				MCP_MilliFixed( pawn->ForwardMove1 ), MCP_MilliFixed( pawn->ForwardMove2 ),
+				MCP_MilliFixed( pawn->ForwardMove3 ), MCP_MilliFixed( pawn->ForwardMove4 ),
+				MCP_MilliFixed( pawn->SideMove1 ), MCP_MilliFixed( pawn->SideMove2 ),
+				MCP_MilliFixed( pawn->SideMove3 ), MCP_MilliFixed( pawn->SideMove4 ));
+			Printf( "qsteps on %d %d %d %d interval %d vol %d\n",
+				pawn->FootstepsEnabled1 ? 1 : 0, pawn->FootstepsEnabled2 ? 1 : 0,
+				pawn->FootstepsEnabled3 ? 1 : 0, pawn->FootstepsEnabled4 ? 1 : 0,
+				pawn->FootstepInterval, MCP_Milli( pawn->FootstepVolume ));
+			Printf( "qcrouch scale %d changespeed %d\n",
+				MCP_MilliFixed( pawn->CrouchScale ), MCP_MilliFixed( pawn->CrouchChangeSpeed ));
+			Printf( "qeffect slide %s climb %s step %s slidetics %d climbtics %d steptics %d\n",
+				MCP_ClassName( pawn->EffectActors[EA_CROUCH_SLIDE] ),
+				MCP_ClassName( pawn->EffectActors[EA_WALL_CLIMB] ),
+				MCP_ClassName( pawn->EffectActors[EA_FOOTSTEP] ),
+				pawn->crouchSlideEffectTics, pawn->wallClimbEffectTics, pawn->stepInterval );
+			// [rc4l] The pre-friction velocity the server puts on the wire for Quake pawns. Only
+			// the server writes it, so a client dump showing zeroes here is correct, not a failure.
+			Printf( "qsrvvel %d %d %d\n",
+				MCP_MilliFixed( mo->player->ServerXYZVel[0] ), MCP_MilliFixed( mo->player->ServerXYZVel[1] ),
+				MCP_MilliFixed( mo->player->ServerXYZVel[2] ));
 		}
 	}
 

@@ -1,0 +1,302 @@
+// [rc4l] Master E2E pawn matrix for features/quake-movement. See MASTERTEST.md.
+//
+// One class per behaviour, deliberately: a pawn carrying several movement flags at once cannot
+// tell you WHICH flag produced an observed jump. Every class here is reachable by setting the
+// client's `playerclass` CVAR and restarting the map, and `dumpactor` reports the class back so a
+// sample can never be silently attributed to the wrong pawn.
+
+// A visible, harmless puff for the effect-actor slots. CLIENTSIDEONLY because that is how the
+// feature spawns them -- if this ever gets replicated, this actor is the thing that would prove it.
+ACTOR MvDust
+{
+	Radius 2
+	Height 2
+	+NOBLOCKMAP
+	+NOGRAVITY
+	+CLIENTSIDEONLY
+	RenderStyle Translucent
+	Alpha 0.6
+	States
+	{
+	Spawn:
+		PUFF ABCD 3
+		Stop
+	}
+}
+
+// ---------------------------------------------------------------------------------------------
+// Control. Stock Doom physics; every Quake property is left at its default. Any behavioural
+// difference between this class and a pre-feature build is a regression in the port.
+// ---------------------------------------------------------------------------------------------
+ACTOR MvDoomCtl : DoomPlayer
+{
+	Player.DisplayName "MvDoomCtl"
+}
+
+// ---------------------------------------------------------------------------------------------
+// Quake base: the model switched on, everything else at the shipped defaults.
+// ---------------------------------------------------------------------------------------------
+ACTOR MvQBase : DoomPlayer
+{
+	Player.MvType 1
+	Player.DisplayName "MvQBase"
+}
+
+ACTOR MvCore : MvQBase
+{
+	Player.DisplayName "MvCore"
+}
+
+// Velocity cap. 4.0 is well under the 13.141 terminal speed, so a capped run is unmistakable.
+ACTOR MvCap : MvQBase
+{
+	Player.VelocityCap 4.0
+	Player.DisplayName "MvCap"
+}
+
+// CPM air control instead of VQ3-style.
+ACTOR MvCpm : MvQBase
+{
+	+CPMAIRCONTROL
+	Player.DisplayName "MvCpm"
+}
+
+// ---------------------------------------------------------------------------------------------
+// Jump matrix. JumpDelay 20 on every one of these is load-bearing: a second jump leaves jumpTics
+// positive, which is what distinguishes it from a main jump in a dumpactor sample.
+// ---------------------------------------------------------------------------------------------
+ACTOR MvJump : MvQBase
+{
+	Player.SecondJumpAmount 1
+	Player.SecondJumpZ 10
+	Player.SecondJumpDelay 0
+	Player.JumpDelay 20
+	Player.DisplayName "MvJump"
+}
+
+// A JumpDelay far from every other timing constant in the engine, so the ground phase between two
+// held-jump bounces names its own source: 45 tics can be confused with nothing else.
+ACTOR MvJumpSlow : MvJump
+{
+	Player.JumpDelay 45
+	Player.DisplayName "MvJumpSlow"
+}
+
+// SecondJumpAmount is tri-state; -1 is unlimited, and that is a separate code path from a count.
+ACTOR MvJumpInf : MvJump
+{
+	Player.SecondJumpAmount -1
+	Player.DisplayName "MvJumpInf"
+}
+
+// The second jump's Z is a floor, not an addition -- unless +ABSOLUTESECONDJUMP says otherwise.
+ACTOR MvAbsSJ : MvJump
+{
+	+ABSOLUTESECONDJUMP
+	Player.SecondJumpZ 4
+	Player.DisplayName "MvAbsSJ"
+}
+
+ACTOR MvWallJump : MvJump
+{
+	+WALLJUMP
+	Player.DisplayName "MvWallJump"
+}
+
+ACTOR MvWallJumpV2 : MvJump
+{
+	+WALLJUMPV2
+	Player.DisplayName "MvWallJumpV2"
+}
+
+ACTOR MvDoubleTap : MvJump
+{
+	+DOUBLETAPJUMP
+	Player.DoubleTapMaxTics 10
+	Player.SecondJumpXY 12
+	Player.DisplayName "MvDoubleTap"
+}
+
+ACTOR MvEdgeJump : MvJump
+{
+	+EDGEJUMP
+	Player.DisplayName "MvEdgeJump"
+}
+
+ACTOR MvGroundSJ : MvJump
+{
+	+GROUNDSECONDJUMP
+	Player.DisplayName "MvGroundSJ"
+}
+
+ACTOR MvUser4 : MvJump
+{
+	+USER4JUMP
+	Player.DisplayName "MvUser4"
+}
+
+ACTOR MvElevator : MvQBase
+{
+	+ELEVATORJUMP
+	Player.DisplayName "MvElevator"
+}
+
+// The same pawn WITHOUT the flag, so the elevator-jump measurement has a paired control on the
+// very same rising platform rather than a remembered number.
+ACTOR MvElevatorOff : MvQBase
+{
+	Player.DisplayName "MvElevatorOff"
+}
+
+// Horizontal jump thrust.
+ACTOR MvJumpXY : MvQBase
+{
+	Player.JumpXY 8
+	Player.DisplayName "MvJumpXY"
+}
+
+// ---------------------------------------------------------------------------------------------
+// Traversal.
+// ---------------------------------------------------------------------------------------------
+ACTOR MvSlide : MvQBase
+{
+	+CROUCHSLIDE
+	Player.EffectActor "CrouchSlide", "MvDust"
+	Player.DisplayName "MvSlide"
+}
+
+ACTOR MvClimb : MvQBase
+{
+	+WALLCLIMB
+	Player.EffectActor "WallClimb", "MvDust"
+	Player.DisplayName "MvClimb"
+}
+
+ACTOR MvWallRun : MvQBase
+{
+	+AIRWALLRUN
+	Player.DisplayName "MvWallRun"
+}
+
+// ---------------------------------------------------------------------------------------------
+// Speed tiers, crouch tuning, footsteps.
+// ---------------------------------------------------------------------------------------------
+// Four DISTINCT tier values, so the ticcmd forwardmove reported by the server names the tier
+// outright instead of being inferred. Each entry x 12800 is the expected `fwd`.
+ACTOR MvTiers : MvQBase
+{
+	Player.ForwardMove 0.25, 1.0, 0.125, 0.5
+	Player.SideMove 0.25, 1.0, 0.125, 0.5
+	Player.FootstepsEnabled 0, 1, 0, 1
+	Player.FootstepInterval 8
+	Player.EffectActor "Footstep", "MvDust"
+	Player.DisplayName "MvTiers"
+}
+
+// A shallow crouch that also changes at a different rate. Both defaults are the engine's historic
+// constants, so this class is what proves they are actually authorable.
+ACTOR MvCrouch : MvQBase
+{
+	Player.CrouchScale 0.25
+	Player.CrouchChangeSpeed 0.25
+	Player.DisplayName "MvCrouch"
+}
+
+// ---------------------------------------------------------------------------------------------
+// Surface audit. Every new property set to a value distinct from BOTH its default and its
+// neighbours', and all thirteen MV_* flags set (expected mvFlags == 0x00001fff). A property wired
+// to the wrong field, mis-defaulted, or mis-indexed shows up as a wrong number in one dumpactor.
+// ---------------------------------------------------------------------------------------------
+ACTOR MvAll : DoomPlayer
+{
+	Player.MvType 1
+
+	+CPMAIRCONTROL
+	+CROUCHSLIDE
+	+WALLJUMP
+	+WALLJUMPV2
+	+DOUBLETAPJUMP
+	+WALLCLIMB
+	+EDGEJUMP
+	+SILENT
+	+ELEVATORJUMP
+	+AIRWALLRUN
+	+USER4JUMP
+	+GROUNDSECONDJUMP
+	+ABSOLUTESECONDJUMP
+
+	Player.AirAcceleration 0.75
+	Player.VelocityCap 9.5
+	Player.GroundAcceleration 11.5
+	Player.GroundFriction 7.5
+	Player.CpmAirAcceleration 13.5
+	Player.CpmMaxForwardAngleRad 0.25
+
+	Player.JumpZ 9.5
+	Player.JumpXY 3.25
+	Player.JumpDelay 21
+	Player.SecondJumpXY 4.25
+	Player.SecondJumpZ 11.5
+	Player.SecondJumpDelay 22
+	Player.SecondJumpAmount 3
+	Player.DoubleTapMaxTics 13
+
+	Player.CrouchSlideAcceleration 11.25
+	Player.CrouchSlideFriction 1.75
+	Player.CrouchSlideMaxTics 65
+	Player.CrouchSlideRegen 2.75
+	Player.CrouchSlideEffectInterval 13
+	Player.WallClimbSpeed 6.5
+	Player.WallClimbFriction 1.875
+	Player.WallClimbMaxTics 66
+	Player.WallClimbRegen 2.25
+	Player.WallClimbEffectInterval 14
+	Player.AirWallRunMaxTics 67
+	Player.AirWallRunRegen 2.5
+	Player.AirWallRunMinVelocity 10.5
+
+	Player.CrouchScale 0.25
+	Player.CrouchChangeSpeed 0.25
+	Player.FootstepInterval 9
+	Player.FootstepVolume 0.75
+	// Inverted against the default 0,1,0,1 -- a mis-indexed tier lookup cannot pass both.
+	Player.FootstepsEnabled 1, 0, 1, 0
+	Player.ForwardMove 0.125, 0.25, 0.5, 0.75
+	Player.SideMove 0.375, 0.625, 0.875, 1.125
+
+	Player.EffectActor "CrouchSlide", "MvDust"
+	Player.EffectActor "WallClimb", "MvDust"
+	Player.EffectActor "Footstep", "MvDust"
+
+	Player.DisplayName "MvAll"
+}
+
+// ---------------------------------------------------------------------------------------------
+// Runtime mutation, for the two wire paths this feature adds. Given with the `give` cheat, which
+// a client routes to the server (CLC_GIVECHEAT), so A_ChangeFlag runs SERVER-side on the pawn and
+// the resulting SERVERCOMMANDS_SetThingFlags(FLAGSET_MVFLAGS) is a real replication.
+// ---------------------------------------------------------------------------------------------
+ACTOR MvGiveSlideOn : CustomInventory
+{
+	-COUNTITEM
+	Inventory.MaxAmount 0
+	States
+	{
+	Spawn:
+		TNT1 A -1
+		Stop
+	Pickup:
+		TNT1 A 0 A_ChangeFlag("CROUCHSLIDE", 1)
+		Stop
+	}
+}
+
+ACTOR MvGiveSlideOff : MvGiveSlideOn
+{
+	States
+	{
+	Pickup:
+		TNT1 A 0 A_ChangeFlag("CROUCHSLIDE", 0)
+		Stop
+	}
+}

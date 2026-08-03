@@ -41,6 +41,11 @@ This feature lands in five reviewable stages. **Stage 1 is complete**; the rest 
 
 **The port is complete.** `+ELEVATORJUMP` landed with stage 4.
 
+Then **`e2e/` — the master test**: the whole feature against a real dedicated server with real
+connected clients, server-authoritative readback throughout. See [e2e/MASTERTEST.md](e2e/MASTERTEST.md)
+for the design, the measurements, three more bugs it found, and an explicit list of what it does
+*not* cover.
+
 ## The `P_MovePlayer` split (stage 1)
 
 `P_MovePlayer` kept its preamble — the client-mode guard, the free-chasecam angle handling, turn
@@ -124,6 +129,24 @@ the unit tests because each lived in the *glue* between tested pieces.
 The lesson worth keeping: the compute units were all individually correct and green the whole time.
 Every one of these lived where a tested function meets engine state, which is exactly the seam the
 in-engine MCP pass exists to cover.
+
+### Three more, found by the master E2E
+
+The same seam again — and this time all three were only reachable with a **server** in the picture
+or with a property authored away from its default. Full measurements in
+[e2e/MASTERTEST.md](e2e/MASTERTEST.md).
+
+4. **`Player.CrouchScale` below 0.5 did nothing.** `P_CrouchMove` clamps to the authored scale, but
+   the caller in `P_PlayerThink` still decided *whether to call it* against a hardcoded `FRACUNIT/2`.
+   A pawn authoring a deeper crouch stopped at half height. Invisible because the default *is* 0.5.
+5. **`Player.JumpDelay` never gated the main jump.** `P_ZMovement`'s landing handler hardcodes
+   `jumpTics = 7`; Q-Zandronum **deletes that block** and we kept it. It runs before
+   `CheckJumpQuake` sees the grounded tic, so it overwrote the negative sentinel that
+   `ComputeGroundedState`'s re-arm keys off — and the shared ticker had already counted `jumpTics`
+   past `-18` during the airtime anyway. `JumpDelay` 20 and 45 gave an identical 8-tic ground phase.
+   Both halves are now MvType-gated, so Doom pawns keep the stock 7-tic landing delay exactly.
+6. **`PLAYER_SetDefaultSpectatorValues` reset two of four move tiers.** Its stated purpose is
+   spectator speed independent of the player class; stage 5 doubled the tiers and left it behind.
 
 ### Deliberate divergences
 
@@ -337,6 +360,13 @@ would put local prediction on a movement model that doesn't exist, so the client
 - `src/thingdef/thingdef_codeptr.cpp` — the `A_ChangeFlag` flag-word → flagset mapping.
 - `src/version.h` — `SAVEVER` 4513.
 - `wadsrc/static/actors/shared/player.txt` — `Player.MvType 0`.
+- `src/p_mobj.cpp` — `P_ZMovement`'s landing block is skipped for Quake pawns (bug 5 above).
+- `src/p_interaction.cpp` — the spectator move-tier reset covers all four tiers (bug 6 above).
+- `src/c_console.cpp` — the MCP bridge output tee also runs on a `-host` server. Tooling, not
+  gameplay: without it a dedicated server emits nothing to the bridge and cannot be driven at all,
+  which is what blocked the server-side half of the master E2E.
+- `src/mcp_actorstate.cpp` — `dumpactor p<N>` targets `players[N]` (a `-host` server has no console
+  player), plus the full authored-property readback the surface audit asserts against.
 
 ## Gates
 

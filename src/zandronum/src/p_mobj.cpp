@@ -3359,7 +3359,14 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 				{
 					// [BB] ZDoom changed the jumping here revision 2238.
 					// The old behavior is necessary for existing jumpmaze wads.
-					if ( ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) || mo->player->jumpTics < 0 || mo->velz < minvel)
+					// [rc4l] Quake pawns skip this entirely, matching
+					// qzandronum@397272811e4f71b168f1949d21369d3e91a7146c, which deletes the block.
+					// It hardcodes a 7-tic landing cooldown, and because it runs before
+					// CheckJumpQuake sees the grounded tic it overwrote the negative sentinel that
+					// the re-arm keys off -- so Player.JumpDelay was dead for the main jump and
+					// every Quake pawn silently got 7 tics no matter what it authored.
+					if ( zx::quakemove::UsesQuakeMovement( mo ) == false &&
+						( ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) || mo->player->jumpTics < 0 || mo->velz < minvel) )
 					{ // delay any jumping for a short while
 						mo->player->jumpTics = 7;
 
