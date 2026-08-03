@@ -462,6 +462,8 @@ void P_BringUpWeapon (player_t *player)
 	// Ungated on purpose, mirroring the P_SetPsprite right above it: psprites are per-player
 	// presentation state that both ends run locally, with no SERVERCOMMANDS behind them.
 	P_SetPsprite(player, ps_flash, NULL);
+	// [rc4l] uzdoom@ee6e87d94: clear the weapon scratch counter when bringing a weapon up.
+	player->mo->weaponspecial = 0;
 }
 
 

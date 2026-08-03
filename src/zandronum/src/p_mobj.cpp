@@ -456,6 +456,13 @@ void AActor::Serialize (FArchive &arc)
 	{
 		arc << FriendPlayer;
 	}
+
+	// [rc4l] uzdoom@ee6e87d94: weaponspecial holds weapon state that used to live in special1.
+	// Upstream guarded it on their SAVEVER 4511; ours is a separate line already past that.
+	if (SaveVersion >= 4516)
+	{
+		arc << weaponspecial;
+	}
 	
 	// [BB] Zandronum additions.
 	arc << LimitedToTeam // [BB]
