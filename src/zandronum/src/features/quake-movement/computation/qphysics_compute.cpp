@@ -99,6 +99,30 @@ float QVelocityCapScale( float speed, float localCap )
 	return localCap / speed;
 }
 
+int QWalkCrouchTier( bool running, bool crouching )
+{
+	if ( crouching )
+		return running ? QTIER_CROUCH_RUN : QTIER_CROUCH_WALK;
+	return running ? QTIER_RUN : QTIER_WALK;
+}
+
+float QTierScale( int tier )
+{
+	switch ( tier )
+	{
+	case QTIER_RUN:			return 1.0f;
+	case QTIER_CROUCH_WALK:	return 0.25f;
+	case QTIER_CROUCH_RUN:	return 0.5f;
+	case QTIER_WALK:		return 0.5f;
+	default:				return 1.0f;	// unreachable via QWalkCrouchTier; fail open, not to zero
+	}
+}
+
+float QCrouchHalfWay( float crouchScale )
+{
+	return ( 1.0f + crouchScale ) * 0.5f;
+}
+
 float QFloorFrictionForAccel( int frictionFactor )
 {
 	if ( frictionFactor == Q_DEFAULT_FLOOR_MOVEFACTOR )

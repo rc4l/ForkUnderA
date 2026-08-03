@@ -88,6 +88,28 @@ const int Q_DEFAULT_FLOOR_MOVEFACTOR = 2048;
 const float Q_FLOOR_FRICTION_MIN = 1.0f / 16.0f;
 const float Q_FLOOR_FRICTION_MAX = 16.0f;
 
+// The four movement tiers a pawn can be in. These index Player.ForwardMove/SideMove/FootstepsEnabled,
+// so the ORDER is part of the DECORATE contract and must not be rearranged: a mod writing
+// `Player.ForwardMove 1, 1, 0.5, 0.7` is addressing these positionally.
+enum QMoveTier
+{
+	QTIER_WALK = 0,
+	QTIER_RUN = 1,
+	QTIER_CROUCH_WALK = 2,
+	QTIER_CROUCH_RUN = 3,
+};
+
+int QWalkCrouchTier( bool running, bool crouching );
+
+// The extra scaling each tier applies on top of its authored ForwardMove/SideMove entry. Walking is
+// half speed and crouch-walking a quarter; running and crouch-running use their entry as authored
+// and at half respectively. Verbatim from Q-Zandronum's QCrouchWalkFactor.
+float QTierScale( int tier );
+
+// Midpoint between standing (1.0) and the pawn's authored crouch depth. A crouchfactor below this
+// counts as "crouching" for the moves that care -- crouch slide engages, air wall run refuses.
+float QCrouchHalfWay( float crouchScale );
+
 // Floor friction feeds the two halves of the model differently, and both are deliberately blunted.
 // Acceleration takes the 8th root, friction the 16th power, because Quake's own friction is much
 // higher than Doom's and an unmodified custom floor value would otherwise dominate the result.

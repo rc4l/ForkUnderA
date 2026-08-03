@@ -923,6 +923,7 @@ void APlayerPawn::PostBeginPlay()
 	isAirWallRunning = false;
 	crouchSlideEffectTics = 0;
 	wallClimbEffectTics = 0;
+	stepInterval = 0;
 
 	// Voodoo dolls: restore original floorz/ceilingz logic
 	if (player == NULL || player->mo != this)
@@ -3629,7 +3630,9 @@ void P_CrouchMove(player_t * player, int direction)
 {
 	fixed_t defaultheight = player->mo->GetDefault()->height;
 	fixed_t savedheight = player->mo->height;
-	fixed_t crouchspeed = direction * CROUCHSPEED;
+	// [rc4l] features/quake-movement: authored crouch rate. Defaults to CROUCHSPEED, so this is
+	// the historic constant unless a class says otherwise.
+	fixed_t crouchspeed = direction * player->mo->CrouchChangeSpeed;
 	fixed_t oldheight = player->viewheight;
 
 	player->crouchdir = (signed char) direction;
@@ -3649,7 +3652,8 @@ void P_CrouchMove(player_t * player, int direction)
 	}
 	player->mo->height = savedheight;
 
-	player->crouchfactor = clamp<fixed_t>(player->crouchfactor, FRACUNIT/2, FRACUNIT);
+	// [rc4l] features/quake-movement: authored crouch depth, defaulting to the historic FRACUNIT/2.
+	player->crouchfactor = clamp<fixed_t>(player->crouchfactor, player->mo->CrouchScale, FRACUNIT);
 	player->viewheight = FixedMul(player->mo->ViewHeight, player->crouchfactor);
 	player->crouchviewdelta = player->viewheight - player->mo->ViewHeight;
 

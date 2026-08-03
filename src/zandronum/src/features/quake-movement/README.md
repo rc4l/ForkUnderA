@@ -35,9 +35,11 @@ This feature lands in five reviewable stages. **Stage 1 is complete**; the rest 
    their prediction state. **`+ELEVATORJUMP` is deferred** — see below.
 4. ✅ **Traversal.** Crouch slide, wall climb, air wall run, their looping sounds, and local-player
    client-side effect actors. `+ELEVATORJUMP` landed here too.
-5. ⬜ **Speed tiers.** Four-entry `Player.ForwardMove`/`SideMove`/`FootstepsEnabled`,
+5. ✅ **Speed tiers.** Four-entry `Player.ForwardMove`/`SideMove`/`FootstepsEnabled`,
    `Player.CrouchScale`, `Player.CrouchChangeSpeed`, footsteps. (The `BT_SPEED` change was pulled
    forward into the stage 1-3 bug fixes, because `CrouchWalkFactor` could not be correct without it.)
+
+**The port is complete.** `+ELEVATORJUMP` landed with stage 4.
 
 ## The `P_MovePlayer` split (stage 1)
 
@@ -233,6 +235,43 @@ only runs on the airborne branch, so without an explicit clear in the ground bra
 stayed true for as long as the player stood there — ACS and SBARINFO would report a wall run that had
 ended tics ago. The wall-climb and water/fly paths return early, so they clear the other two for the
 same reason.
+
+## Stage 5: move tiers, crouch tuning and footsteps
+
+`Player.ForwardMove`/`SideMove` go from two entries to four — walk, run, crouch-walk, crouch-run —
+and `Player.FootstepsEnabled` is indexed the same way. **That order is DECORATE API**: a mod writes
+`Player.ForwardMove 1, 1, 0.5, 0.7` positionally, so `QTIER_*` cannot be rearranged. Omitted entries
+mirror the ones before them, so `Player.ForwardMove 1` still means exactly what it always did.
+
+**The tier selection is gated on `MvType`.** A stock pawn keeps its two tiers, because its crouch
+slowdown already comes from `crouchfactor` in `P_MovePlayer_Doom` — applying a crouch *tier* on top
+would slow it twice. Only a Quake pawn can reach entries 3 and 4.
+
+`Player.CrouchScale` and `Player.CrouchChangeSpeed` replace the hardcoded `FRACUNIT/2` and
+`CROUCHSPEED` in `P_CrouchMove`. These are **not** MvType-gated, and do not need to be: their
+defaults are those exact constants, so a class that does not override them behaves identically. The
+crouch threshold used by crouch slide and air wall run now derives from the pawn's own `CrouchScale`
+(midpoint between standing and its authored depth) instead of the fixed 3/4 stage 4 used, so a
+shallow-crouching class registers as crouched at its own midpoint.
+
+Footsteps are local-player only, for the same reason as the traversal loops: a step per stride per
+player is exactly the recurring traffic this port refuses to add. They need speed ≥ 3× the pawn's
+`Speed`, which is what stops a player nudging a wall from machine-gunning footsteps.
+
+**Verified in-engine** (`cl_run 1`, class read back each sample):
+
+| tier | ticcmd `fwd` | terminal speed |
+|---|---|---|
+| run | 12800 | 13.141 |
+| crouch-run | 6400 | 5.870 |
+| crouch-walk | 3328 | 2.514 |
+| walk | 6400 | — |
+
+Each `fwd` is exactly its `normforwardmove` entry × 256, so the tier really is being selected in
+`G_BuildTiccmd`. Footsteps respected their per-tier flags: no dust while walking (tier 0 disabled,
+and above the speed gate so the flag was what stopped it), dust while running.
+
+**`MvType 0` is untouched**: the same 15-tic run still covers 112.829 units, the pre-stage-5 figure.
 
 ### Why the sounds and dust are local-player only
 
