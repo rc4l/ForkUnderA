@@ -76,6 +76,7 @@ CVAR(Bool,hud_althud, false, CVAR_ARCHIVE)				// Enable/Disable the alternate HU
 CVAR (Bool,  hud_showsecrets,	true,CVAR_ARCHIVE);		// Show secrets on HUD
 CVAR (Bool,  hud_showmonsters,	true,CVAR_ARCHIVE);		// Show monster stats on HUD
 CVAR (Bool,  hud_showitems,		false,CVAR_ARCHIVE);	// Show item stats on HUD
+CVAR (Bool,  hud_showweapons,	true, CVAR_ARCHIVE);	// Show weapons collected
 CVAR (Bool,  hud_showstats,		false,	CVAR_ARCHIVE);	// for stamina and accuracy. 
 CVAR (Bool,  hud_showscore,		false,	CVAR_ARCHIVE);	// for user maintained score
 CVAR (Int ,  hud_showtime,		0,	    CVAR_ARCHIVE);	// Show time on HUD
@@ -1118,7 +1119,7 @@ void DrawHUD()
 
 		i=DrawKeys(CPlayer, hudwidth-4, hudheight-10);
 		i=DrawAmmo(CPlayer, hudwidth-5, i);
-		DrawWeapons(CPlayer, hudwidth-5, i);
+		if (hud_showweapons) DrawWeapons(CPlayer, hudwidth - 5, i);
 		DrawInventory(CPlayer, 144, hudheight-28);
 		if (CPlayer->camera && CPlayer->camera->player)
 		{
