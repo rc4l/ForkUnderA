@@ -3949,51 +3949,117 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIf)
 
 //===========================================================================
 //
-// A_KillMaster
+// A_Kill*(damagetype, int flags)
+//
+// [rc4l] uzdoom@0735cb955 + e025f4090: the five A_Kill* functions share one DoKill helper
+// and take a flags word. Landed as the settled form rather than replaying the intermediate
+// states, since the consolidation rewrites what the first commit adds.
 //
 //===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillMaster)
+enum KILS
 {
-	ACTION_PARAM_START(1);
-	ACTION_PARAM_NAME(damagetype, 0);
+	KILS_FOILINVUL =	1 << 0,
+	KILS_KILLMISSILES = 1 << 1,
+	KILS_NOMONSTERS =	1 << 2,
+};
 
-	if (self->master != NULL)
-	{
-		P_DamageMobj(self->master, self, self, self->master->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR);
-	}
-}
-
-//===========================================================================
-//
-// A_KillChildren
-//
-//===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillChildren)
+static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags)
 {
-	ACTION_PARAM_START(1);
-	ACTION_PARAM_NAME(damagetype, 0);
-
-	TThinkerIterator<AActor> it;
-	AActor *mo;
-
-	while ( (mo = it.Next()) )
+	if ((killtarget->flags & MF_MISSILE) && (flags & KILS_KILLMISSILES))
 	{
-		if (mo->master == self)
+		//[MC] Now that missiles can set masters, lets put in a check to properly destroy projectiles. BUT FIRST! New feature~!
+		//Check to see if it's invulnerable. Disregarded if foilinvul is on, but never works on a missile with NODAMAGE
+		//since that's the whole point of it.
+		if ((!(killtarget->flags2 & MF2_INVULNERABLE) || (flags & KILS_FOILINVUL)) && !(killtarget->flags5 & MF5_NODAMAGE))
 		{
-			P_DamageMobj(mo, self, self, mo->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR);
+			P_ExplodeMissile(self->target, NULL, NULL);
+		}
+	}
+	if (!(flags & KILS_NOMONSTERS))
+	{
+		if (flags & KILS_FOILINVUL)
+		{
+			P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR | DMG_FOILINVUL);
+		}
+		else
+		{
+			P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR);
 		}
 	}
 }
 
 //===========================================================================
 //
-// A_KillSiblings
+// A_KillTarget(damagetype, int flags)
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTarget)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
+
+	if (self->target != NULL) DoKill(self->target, self, damagetype, flags);
+}
+
+//===========================================================================
+//
+// A_KillTracer(damagetype, int flags)
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTracer)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
+
+	if (self->tracer != NULL) DoKill(self->tracer, self, damagetype, flags);
+}
+
+//===========================================================================
+//
+// A_KillMaster(damagetype, int flags)
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillMaster)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
+
+	if (self->master != NULL) DoKill(self->master, self, damagetype, flags);
+}
+
+//===========================================================================
+//
+// A_KillChildren(damagetype, int flags)
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillChildren)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
+
+	TThinkerIterator<AActor> it;
+	AActor *mo;
+
+	while ( (mo = it.Next()) )
+	{
+		if (mo->master == self) DoKill(mo, self, damagetype, flags);
+	}
+}
+
+//===========================================================================
+//
+// A_KillSiblings(damagetype, int flags)
 //
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillSiblings)
 {
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
 
 	TThinkerIterator<AActor> it;
 	AActor *mo;
@@ -4009,10 +4075,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillSiblings)
 	{
 		while ( (mo = it.Next()) )
 		{
-			if (mo->master == self->master && mo != self)
-			{
-				P_DamageMobj(mo, self, self, mo->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR);
-			}
+			if (mo->master == self->master && mo != self) DoKill(mo, self, damagetype, flags);
 		}
 	}
 }
@@ -4860,175 +4923,126 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfInTargetLOS)
 
 //===========================================================================
 //
-// A_DamageSelf (int amount, str damagetype)
-// Damages the calling actor by the specified amount. Negative values heal.
+// A_Damage*(int amount, str damagetype, int flags)
+//
+// [rc4l] uzdoom@0735cb955 + afaa88a46: the six A_Damage* functions share one DoDamage
+// helper and take a flags word. Landed as the settled form rather than replaying the
+// intermediate states, since the consolidation rewrites what the first commit adds.
+// No netcode gating here: P_DamageMobj and P_GiveBody are already server-authoritative.
 //
 //===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
+enum DMSS
 {
-	ACTION_PARAM_START(2);
-	ACTION_PARAM_INT(amount, 0);
-	ACTION_PARAM_NAME(DamageType, 1);
+	DMSS_FOILINVUL			= 1,
+	DMSS_AFFECTARMOR		= 2,
+	DMSS_KILL				= 4,
+};
 
-	// [rc4l] uzdoom@b1f87295b. No gating added: P_DamageMobj and P_GiveBody are already
-	// server-authoritative here, exactly as the sibling A_Damage* functions below rely on.
-	if (amount > 0)
+static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags)
+{
+	if ((amount > 0) || (flags & DMSS_KILL))
 	{
-		P_DamageMobj(self, self, self, amount, DamageType, DMG_NO_ARMOR);
+		if (!(dmgtarget->flags2 & MF2_INVULNERABLE) || (flags & DMSS_FOILINVUL))
+		{
+			if (flags & DMSS_KILL)
+			{
+				P_DamageMobj(dmgtarget, self, self, dmgtarget->health, DamageType, DMG_NO_FACTOR | DMG_NO_ARMOR | DMG_FOILINVUL);
+			}
+			if (flags & DMSS_AFFECTARMOR)
+			{
+				P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL);
+			}
+			else
+			{
+				//[MC] DMG_FOILINVUL is needed for making the damage occur on the actor.
+				P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL | DMG_NO_ARMOR);
+			}
+		}
 	}
 	else if (amount < 0)
 	{
 		amount = -amount;
-		P_GiveBody(self, amount);
+		P_GiveBody(dmgtarget, amount);
 	}
 }
 
 //===========================================================================
-//
-// A_DamageTarget (int amount, str damagetype)
-// Damages the target of this actor by the specified amount. Negative values heal.
-//
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_INT(amount, 0);
+	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
+
+	DoDamage(self, self, amount, DamageType, flags);
+}
+
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTarget)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
 
-	// [rc4l] uzdoom@422e83a1b. No gating: P_DamageMobj and P_GiveBody are already
-	// server-authoritative here, as the sibling A_Damage* functions rely on.
-	if (self->target != NULL)
-	{
-		if (amount > 0)
-		{
-			P_DamageMobj(self->target, self, self, amount, DamageType, DMG_NO_ARMOR);
-		}
-		else if (amount < 0)
-		{
-			amount = -amount;
-			P_GiveBody(self->target, amount);
-		}
-	}
+	if (self->target != NULL) DoDamage(self->target, self, amount, DamageType, flags);
 }
 
-//===========================================================================
-//
-// A_DamageTracer (int amount, str damagetype)
-// Damages the tracer of this actor by the specified amount. Negative values heal.
-//
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTracer)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
 
-	// [rc4l] uzdoom@422e83a1b.
-	if (self->tracer != NULL)
-	{
-		if (amount > 0)
-		{
-			P_DamageMobj(self->tracer, self, self, amount, DamageType, DMG_NO_ARMOR);
-		}
-		else if (amount < 0)
-		{
-			amount = -amount;
-			P_GiveBody(self->tracer, amount);
-		}
-	}
+	if (self->tracer != NULL) DoDamage(self->tracer, self, amount, DamageType, flags);
 }
 
-//===========================================================================
-//
-// A_DamageMaster (int amount)
-// Damages the master of this child by the specified amount. Negative values heal.
-//
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageMaster)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
 
-	if (self->master != NULL)
-	{
-		if (amount > 0)
-		{
-			P_DamageMobj(self->master, self, self, amount, DamageType, DMG_NO_ARMOR);
-		}
-		else if (amount < 0)
-		{
-			amount = -amount;
-			P_GiveBody(self->master, amount);
-		}
-	}
+	if (self->master != NULL) DoDamage(self->master, self, amount, DamageType, flags);
 }
 
-//===========================================================================
-//
-// A_DamageChildren (amount)
-// Damages the children of this master by the specified amount. Negative values heal.
-//
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageChildren)
 {
-	TThinkerIterator<AActor> it;
-	AActor * mo;
-
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
+
+	TThinkerIterator<AActor> it;
+	AActor *mo;
 
 	while ( (mo = it.Next()) )
 	{
-		if (mo->master == self)
-		{
-			if (amount > 0)
-			{
-				P_DamageMobj(mo, self, self, amount, DamageType, DMG_NO_ARMOR);
-			}
-			else if (amount < 0)
-			{
-				amount = -amount;
-				P_GiveBody(mo, amount);
-			}
-		}
+		if (mo->master == self) DoDamage(mo, self, amount, DamageType, flags);
 	}
 }
 
-// [KS] *** End of my modifications ***
-
-//===========================================================================
-//
-// A_DamageSiblings (amount)
-// Damages the siblings of this master by the specified amount. Negative values heal.
-//
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSiblings)
 {
-	TThinkerIterator<AActor> it;
-	AActor * mo;
-
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
+
+	TThinkerIterator<AActor> it;
+	AActor *mo;
 
 	if (self->master != NULL)
 	{
 		while ( (mo = it.Next()) )
 		{
-			if (mo->master == self->master && mo != self)
-			{
-				if (amount > 0)
-				{
-					P_DamageMobj(mo, self, self, amount, DamageType, DMG_NO_ARMOR);
-				}
-				else if (amount < 0)
-				{
-					amount = -amount;
-					P_GiveBody(mo, amount);
-				}
-			}
+			if (mo->master == self->master && mo != self) DoDamage(mo, self, amount, DamageType, flags);
 		}
 	}
 }

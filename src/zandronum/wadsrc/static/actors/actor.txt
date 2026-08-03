@@ -274,9 +274,11 @@ ACTOR Actor native //: Thinker
 	action native A_RemoveMaster();
 	action native A_RemoveChildren(bool removeall = false);
 	action native A_RemoveSiblings(bool removeall = false);
-	action native A_KillMaster(name damagetype = "none");
-	action native A_KillChildren(name damagetype = "none");
-	action native A_KillSiblings(name damagetype = "none");
+	action native A_KillTarget(name damagetype = "none", int flags = 0);
+	action native A_KillTracer(name damagetype = "none", int flags = 0);
+	action native A_KillMaster(name damagetype = "none", int flags = 0);
+	action native A_KillChildren(name damagetype = "none", int flags = 0);
+	action native A_KillSiblings(name damagetype = "none", int flags = 0);
 	action native A_RaiseMaster();
 	action native A_RaiseChildren();
 	action native A_RaiseSiblings();
@@ -312,12 +314,12 @@ ACTOR Actor native //: Thinker
 	action native A_CheckLOF(state jump, int flags = 0, float range = 0, float minrange = 0, float angle = 0, float pitch = 0, float offsetheight = 0, float offsetwidth = 0, int ptr_target = AAPTR_DEFAULT);
 	action native A_JumpIfTargetInLOS (state label = "", float fov = 0, int flags = 0, float dist_max = 0, float dist_close = 0);	// [rc4l] label default: MBF21/DEHACKED compatibility
 	action native A_JumpIfInTargetLOS (state label, float fov = 0, int flags = 0, float dist_max = 0, float dist_close = 0);
-	action native A_DamageSelf(int amount, name damagetype = "none");
-	action native A_DamageTarget(int amount, name damagetype = "none");
-	action native A_DamageTracer(int amount, name damagetype = "none");
-	action native A_DamageMaster(int amount, name damagetype = "none");
-	action native A_DamageChildren(int amount, name damagetype = "none");
-	action native A_DamageSiblings(int amount, name damagetype = "none");
+	action native A_DamageSelf(int amount, name damagetype = "none", int flags = 0);
+	action native A_DamageTarget(int amount, name damagetype = "none", int flags = 0);
+	action native A_DamageTracer(int amount, name damagetype = "none", int flags = 0);
+	action native A_DamageMaster(int amount, name damagetype = "none", int flags = 0);
+	action native A_DamageChildren(int amount, name damagetype = "none", int flags = 0);
+	action native A_DamageSiblings(int amount, name damagetype = "none", int flags = 0);
 	action native A_SelectWeapon(class<Weapon> whichweapon);
 	action native A_Punch();
 	action native A_Feathers();
