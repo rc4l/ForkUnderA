@@ -6,6 +6,7 @@
 
 #include "doomtype.h"
 #include "doomdef.h"	// [rc4l] uzdoom@48163de8e: for TICRATE, used by Tics2Seconds below
+#include "m_fixed.h"	// [rc4l] uzdoom@df0d3543a: for Scale()
 
 //==========================================================================
 //
@@ -17,12 +18,12 @@
 
 inline int AdjustTics(int tics)
 {
-	return (tics * 98) / 100;
+	return Scale(tics, 98, 100);
 }
 
 inline int Tics2Seconds(int tics)
 {
-	return (tics * 98) / (100 * TICRATE);
+	return Scale(tics, 98, (100 * TICRATE));
 }
 
 #include <stdio.h>

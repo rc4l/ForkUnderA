@@ -11,24 +11,23 @@ DCeiling::ECeiling  (src/zandronum/src/p_spec.h)
     ceilLowerInstant                         4
     ceilRaiseInstant                         5
     ceilCrushAndRaise                        6
-    ceilCrushAndRaiseDist                    7
-    ceilLowerAndCrush                        8
-    ceilLowerAndCrushDist                    9
-    ceilCrushRaiseAndStay                    10
-    ceilRaiseToNearest                       11
-    ceilLowerToLowest                        12
-    ceilLowerToFloor                         13
-    ceilRaiseToHighest                       14
-    ceilLowerToHighest                       15
-    ceilRaiseToLowest                        16
-    ceilLowerToNearest                       17
-    ceilRaiseToHighestFloor                  18
-    ceilRaiseToFloor                         19
-    ceilRaiseByTexture                       20
-    ceilLowerByTexture                       21
-    genCeilingChg0                           22
-    genCeilingChgT                           23
-    genCeilingChg                            24
+    ceilLowerAndCrush                        7
+    ceilLowerAndCrushDist                    8
+    ceilCrushRaiseAndStay                    9
+    ceilRaiseToNearest                       10
+    ceilLowerToLowest                        11
+    ceilLowerToFloor                         12
+    ceilRaiseToHighest                       13
+    ceilLowerToHighest                       14
+    ceilRaiseToLowest                        15
+    ceilLowerToNearest                       16
+    ceilRaiseToHighestFloor                  17
+    ceilRaiseToFloor                         18
+    ceilRaiseByTexture                       19
+    ceilLowerByTexture                       20
+    genCeilingChg0                           21
+    genCeilingChgT                           22
+    genCeilingChg                            23
 DDoor::EVlDoor  (src/zandronum/src/p_spec.h)
     doorClose                                0
     doorOpen                                 1
