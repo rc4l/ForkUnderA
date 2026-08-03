@@ -70,6 +70,14 @@ AActor *COPY_AAPTR(AActor *origin, int selector)
 		case AAPTR_TARGET: return origin->target;
 		case AAPTR_MASTER: return origin->master;
 		case AAPTR_TRACER: return origin->tracer;
+
+		// [rc4l] uzdoom@c4f0f95ec: the aim target of ANY actor, not just a player's.
+		case AAPTR_GET_LINETARGET:
+			{
+				AActor *gettarget = NULL;
+				P_BulletSlope(origin, &gettarget);
+				return gettarget;
+			}
 		case AAPTR_FRIENDPLAYER:
 			return origin->FriendPlayer ? AAPTR_RESOLVE_PLAYERNUM(origin->FriendPlayer - 1) : NULL;
 		}

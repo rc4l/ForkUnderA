@@ -5307,6 +5307,72 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckFlag)
 
 //===========================================================================
 //
+// DoRemove
+//
+// [rc4l] uzdoom@43b86288c with its follow-up 96c6e7d9b folded in: that one drops a stray
+// MF3_ISMONSTER test which also dereferenced tracer while checking target, so the
+// corrected form is written directly.
+//
+// No gating here: P_RemoveThing already broadcasts SERVERCOMMANDS_DestroyThing when we are
+// the server (p_things.cpp:511).
+//
+//===========================================================================
+enum RMVF_flags
+{
+	RMVF_MISSILES = 1 << 0,
+	RMVF_NOMONSTERS = 1 << 1,
+	RMVF_MISC = 1 << 2,
+	RMVF_EVERYTHING = 1 << 3,
+};
+
+static void DoRemove(AActor *removetarget, int flags)
+{
+	if ((flags & RMVF_EVERYTHING))
+	{
+		P_RemoveThing(removetarget);
+	}
+	if ((flags & RMVF_MISC) && !((removetarget->flags3 & MF3_ISMONSTER) && (removetarget->flags & MF_MISSILE)))
+	{
+		P_RemoveThing(removetarget);
+	}
+	if ((removetarget->flags3 & MF3_ISMONSTER) && !(flags & RMVF_NOMONSTERS))
+	{
+		P_RemoveThing(removetarget);
+	}
+	if ((removetarget->flags & MF_MISSILE) && (flags & RMVF_MISSILES))
+	{
+		P_RemoveThing(removetarget);
+	}
+}
+
+//===========================================================================
+//
+// A_RemoveTarget
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION(AActor, A_RemoveTarget)
+{
+	if (self->target != NULL)
+	{
+		P_RemoveThing(self->target);
+	}
+}
+
+//===========================================================================
+//
+// A_RemoveTracer
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION(AActor, A_RemoveTracer)
+{
+	if (self->tracer != NULL)
+	{
+		P_RemoveThing(self->tracer);
+	}
+}
+
+//===========================================================================
+//
 // A_RemoveMaster
 //
 //===========================================================================
@@ -5327,14 +5393,15 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveChildren)
 {
 	TThinkerIterator<AActor> it;
 	AActor *mo;
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_BOOL(removeall,0);
+	ACTION_PARAM_INT(flags, 1);
 
 	while ((mo = it.Next()) != NULL)
 	{
 		if (mo->master == self && (mo->health <= 0 || removeall))
 		{
-			P_RemoveThing(mo);
+			DoRemove(mo, flags);
 		}
 	}
 }
@@ -5348,8 +5415,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveSiblings)
 {
 	TThinkerIterator<AActor> it;
 	AActor *mo;
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_BOOL(removeall,0);
+	ACTION_PARAM_INT(flags, 1);
 
 	if (self->master != NULL)
 	{
@@ -5357,9 +5425,28 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveSiblings)
 		{
 			if (mo->master == self->master && mo != self && (mo->health <= 0 || removeall))
 			{
-				P_RemoveThing(mo);
+				DoRemove(mo, flags);
 			}
 		}
+	}
+}
+
+//===========================================================================
+//
+// A_Remove(int pointer, int flags)
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Remove)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(removee, 0);
+	ACTION_PARAM_INT(flags, 1);
+
+	AActor *reference = COPY_AAPTR(self, removee);
+
+	if (reference != NULL)
+	{
+		DoRemove(reference, flags);
 	}
 }
 
