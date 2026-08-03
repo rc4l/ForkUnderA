@@ -68,8 +68,8 @@ static	TArray<IPList>	g_ServerBanExemptions;
 // [AK] Pending changes to the ban lists from the server console window.
 static	TArray<IPList>	g_ServerConsoleBanUpdates;
 
-static	IPList	g_MasterServerBans;
-static	IPList	g_MasterServerBanExemptions;
+static	IPList	g_RegistryServerBans;
+static	IPList	g_RegistryServerBanExemptions;
 
 static	ULONG	g_ulReParseTicker;
 
@@ -98,7 +98,7 @@ CVAR( Int, sv_banfilereparsetime, 0, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 
 //*****************************************************************************
 //
-CUSTOM_CVAR( Bool, sv_enforcemasterbanlist, true, CVAR_ARCHIVE|CVAR_NOSETBYACS|CVAR_SERVERINFO )
+CUSTOM_CVAR( Bool, sv_fua_serverregistry_enforcebans, true, CVAR_ARCHIVE|CVAR_NOSETBYACS|CVAR_SERVERINFO )
 {
 	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 		return;
@@ -198,7 +198,7 @@ void SERVERBAN_Tick( void )
 bool SERVERBAN_IsIPBanned( const IPStringArray &Address )
 {
 	// Is this address banned on the master server?
-	if ( SERVERBAN_IsIPMasterBanned( Address ))
+	if ( SERVERBAN_IsIPRegistryBanned( Address ))
 		return true;
 
 	// If not, let the server decide.
@@ -234,19 +234,19 @@ bool SERVERBAN_IsIPBanned( const NETADDRESS_s &Address )
 
 //*****************************************************************************
 //
-bool SERVERBAN_IsIPMasterBanned( const IPStringArray &Address )
+bool SERVERBAN_IsIPRegistryBanned( const IPStringArray &Address )
 {
-	return ( sv_enforcemasterbanlist && g_MasterServerBans.isIPInList( Address ) && !g_MasterServerBanExemptions.isIPInList( Address ));
+	return ( sv_fua_serverregistry_enforcebans && g_RegistryServerBans.isIPInList( Address ) && !g_RegistryServerBanExemptions.isIPInList( Address ));
 }
 
 //*****************************************************************************
 //
-bool SERVERBAN_IsIPMasterBanned( const NETADDRESS_s &Address )
+bool SERVERBAN_IsIPRegistryBanned( const NETADDRESS_s &Address )
 {
 	IPStringArray convertedAddress;
 	convertedAddress.SetFrom( Address );
 
-	return SERVERBAN_IsIPMasterBanned( convertedAddress );
+	return SERVERBAN_IsIPRegistryBanned( convertedAddress );
 }
 
 //*****************************************************************************
@@ -309,10 +309,10 @@ void SERVERBAN_ClearBans( unsigned int fileIndex )
 
 //*****************************************************************************
 //
-void SERVERBAN_ReadMasterServerBans( BYTESTREAM_s *pByteStream )
+void SERVERBAN_ReadRegistryServerBans( BYTESTREAM_s *pByteStream )
 {	
-	g_MasterServerBans.clear( );
-	g_MasterServerBanExemptions.clear( );
+	g_RegistryServerBans.clear( );
+	g_RegistryServerBanExemptions.clear( );
 
 	// Read the list of bans.
 	for ( LONG i = 0, lNumEntries = pByteStream->ReadLong(); i < lNumEntries; i++ )
@@ -320,7 +320,7 @@ void SERVERBAN_ReadMasterServerBans( BYTESTREAM_s *pByteStream )
 		const char		*pszBan = pByteStream->ReadString();
 		std::string		Message;
 
-		g_MasterServerBans.addEntry( pszBan, "", "", Message, 0 );
+		g_RegistryServerBans.addEntry( pszBan, "", "", Message, 0 );
 	}
 
 	// Read the list of exemptions.
@@ -329,30 +329,30 @@ void SERVERBAN_ReadMasterServerBans( BYTESTREAM_s *pByteStream )
 		const char		*pszBan = pByteStream->ReadString();
 		std::string		Message;
 
-		g_MasterServerBanExemptions.addEntry( pszBan, "", "", Message, 0 );
+		g_RegistryServerBanExemptions.addEntry( pszBan, "", "", Message, 0 );
 	}
 
 	// [BB] If we are enforcing the master bans, make sure newly master bannded players are kicked now.
-	if ( sv_enforcemasterbanlist )
+	if ( sv_fua_serverregistry_enforcebans )
 		serverban_KickBannedPlayers( );
 
 	// [BB] Inform the master that we received the banlist.
-	SERVER_MASTER_SendBanlistReceipt();
+	SERVER_REGISTRY_SendBanlistReceipt();
 
-	// Printf( "Imported %d bans, %d exceptions from the master.\n", g_MasterServerBans.size( ), g_MasterServerBanExemptions.size( ));
+	// Printf( "Imported %d bans, %d exceptions from the master.\n", g_RegistryServerBans.size( ), g_RegistryServerBanExemptions.size( ));
 }
 
 //*****************************************************************************
 //
-void SERVERBAN_ReadMasterServerBanlistPart( BYTESTREAM_s *pByteStream )
+void SERVERBAN_ReadRegistryServerBanlistPart( BYTESTREAM_s *pByteStream )
 {
 	const ULONG ulPacketNum = pByteStream->ReadByte();
 
 	// [BB] The implementation assumes that the packets arrive in the correct order.
 	if ( ulPacketNum == 0 )
 	{
-		g_MasterServerBans.clear( );
-		g_MasterServerBanExemptions.clear( );
+		g_RegistryServerBans.clear( );
+		g_RegistryServerBanExemptions.clear( );
 	}
 
 	while ( 1 )
@@ -372,9 +372,9 @@ void SERVERBAN_ReadMasterServerBanlistPart( BYTESTREAM_s *pByteStream )
 				std::string Message;
 
 				if ( lCommand == MSB_BAN )
-					g_MasterServerBans.addEntry( pszBan, "", "", Message, 0 );
+					g_RegistryServerBans.addEntry( pszBan, "", "", Message, 0 );
 				else
-					g_MasterServerBanExemptions.addEntry( pszBan, "", "", Message, 0 );
+					g_RegistryServerBanExemptions.addEntry( pszBan, "", "", Message, 0 );
 			}
 			break;
 
@@ -384,11 +384,11 @@ void SERVERBAN_ReadMasterServerBanlistPart( BYTESTREAM_s *pByteStream )
 		case MSB_ENDBANLIST:
 			{
 				// [BB] If we are enforcing the master bans, make sure newly master bannded players are kicked now.
-				if ( sv_enforcemasterbanlist )
+				if ( sv_fua_serverregistry_enforcebans )
 					serverban_KickBannedPlayers( );
 
 				// [BB] Inform the master that we received the banlist.
-				SERVER_MASTER_SendBanlistReceipt();
+				SERVER_REGISTRY_SendBanlistReceipt();
 			}
 			return;
 		}
@@ -919,16 +919,16 @@ CCMD( viewbanexemptionlist )
 
 //*****************************************************************************
 //
-CCMD( viewmasterbanlist )
+CCMD( fua_serverregistry_viewbans )
 {
-	serverban_ListAddresses( g_MasterServerBans );
+	serverban_ListAddresses( g_RegistryServerBans );
 }
 
 //*****************************************************************************
 //
-CCMD( viewmasterexemptionbanlist )
+CCMD( fua_serverregistry_viewexemptions )
 {
-	serverban_ListAddresses( g_MasterServerBanExemptions );
+	serverban_ListAddresses( g_RegistryServerBanExemptions );
 }
 
 //*****************************************************************************
