@@ -101,7 +101,6 @@ bool r_dontmaplines;
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
 
 CVAR (String, r_viewsize, "", CVAR_NOSET)
-CVAR (Int, r_polymost, 0, 0)
 CVAR (Bool, r_shadercolormaps, true, CVAR_ARCHIVE)
 
 // [rc4l] Relocated from the deleted r_swrenderer.cpp. This is a shared cvar: it is
@@ -132,7 +131,6 @@ FDynamicColormap*basecolormap;		// [RH] colormap currently drawing with
 int				fixedlightlev;
 lighttable_t	*fixedcolormap;
 FSpecialColormap *realfixedcolormap;
-float			WallTMapScale;
 float			WallTMapScale2;
 
 
