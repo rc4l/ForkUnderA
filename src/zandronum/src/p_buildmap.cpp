@@ -739,11 +739,12 @@ static int LoadSprites (spritetype *sprites, Xsprite *xsprites, int numsprites,
 			if (sprites[i].xrepeat == 0 || sprites[i].yrepeat == 0) continue;
 
 			mapthings[count].type = 9988;
-			mapthings[count].args[0] = sprites[i].picnum & 255;
-			mapthings[count].args[1] = sprites[i].picnum >> 8;
+			// [rc4l] uzdoom@15251e7a2: keep picnum and cstat whole rather than splitting/masking
+			// them here, so the face/wall/floor bits survive to the spawn side.
+			mapthings[count].args[0] = sprites[i].picnum;
 			mapthings[count].args[2] = sprites[i].xrepeat;
 			mapthings[count].args[3] = sprites[i].yrepeat;
-			mapthings[count].args[4] = (sprites[i].cstat & 14) | ((sprites[i].cstat >> 9) & 1);
+			mapthings[count].args[4] = sprites[i].cstat;
 		}
 		count++;
 	}
@@ -881,22 +882,26 @@ void ACustomSprite::BeginPlay ()
 	char name[9];
 	Super::BeginPlay ();
 
-	mysnprintf (name, countof(name), "BTIL%04d", (args[0] + args[1]*256) & 0xffff);
+	mysnprintf (name, countof(name), "BTIL%04d", args[0] & 0xffff);
 	picnum = TexMan.GetTexture (name, FTexture::TEX_Build);
 
 	scaleX = args[2] * (FRACUNIT/64);
 	scaleY = args[3] * (FRACUNIT/64);
 
-	if (args[4] & 2)
+	// [rc4l] uzdoom@15251e7a2: args[4] now carries Build's whole cstat word, so the
+	// translucency bit is 512 rather than the repacked bit 1, and bits 4-5 are the
+	// face/wall/floor orientation that RF_SPRITETYPEMASK wants at bit 12.
+	int cstat = args[4];
+	if (cstat & 2)
 	{
 		RenderStyle = STYLE_Translucent;
-		if (args[4] & 1)
-			alpha = TRANSLUC66;
-		else
-			alpha = TRANSLUC33;
+		alpha = (cstat & 512) ? TRANSLUC66 : TRANSLUC33;
 	}
-	if (args[4] & 4)
+	if (cstat & 4)
 		renderflags |= RF_XFLIP;
-	if (args[4] & 8)
+	if (cstat & 8)
 		renderflags |= RF_YFLIP;
+
+	// set face/wall/floor flags
+	renderflags |= ((cstat >> 4) & 3) << 12;
 }
