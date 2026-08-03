@@ -1,4 +1,4 @@
-project( Masterserver )
+project( ServerRegistry )
 
 include( CheckFunctionExists )
 include( CheckCXXCompilerFlag )
@@ -51,7 +51,7 @@ add_executable( zandrox-server-registry
 # [rc4l] revision_check lives in the parent (engine) project and regenerates src/gitinfo.h. When this
 # directory is configured on its own -- which the container image does, to avoid pulling in SDL/GL/
 # OpenAL just to build a UDP daemon -- that target does not exist and a standalone build provides
-# gitinfo.h itself (see Dockerfile.master).
+# gitinfo.h itself (see Dockerfile.registry).
 #
 # The test is "am I the top-level project", NOT if( TARGET revision_check ): the parent adds this
 # directory BEFORE src/, so at configure time that target does not exist yet even in the engine
