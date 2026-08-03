@@ -43,6 +43,7 @@
 #include "c_dispatch.h"
 #include "d_event.h"
 #include "d_gui.h"
+#include "chat.h"   // [rc4l] CHAT_GetChatMode
 #include "dikeys.h"
 #include "doomdef.h"
 #include "doomstat.h"
@@ -72,7 +73,9 @@ CUSTOM_CVAR(Int, mouse_capturemode, 1, CVAR_GLOBALCONFIG | CVAR_ARCHIVE)
 }
 
 
-extern int paused, chatmodeon;
+// [rc4l] Zandronum replaced the global chatmodeon with CHAT_GetChatMode(); see the [BC] note
+// at c_bind.cpp:924 and the [BB] one at menu/menu.cpp:719.
+extern int paused;
 extern constate_e ConsoleState;
 
 bool GUICapture;
@@ -91,7 +94,7 @@ size_t s_skipMouseMoves;
 void CheckGUICapture()
 {
 	const bool wantCapture = (MENU_Off == menuactive)
-		? (c_down == ConsoleState || c_falling == ConsoleState || chatmodeon)
+		? (c_down == ConsoleState || c_falling == ConsoleState || CHAT_GetChatMode() != CHATMODE_NONE)
 		: (MENU_On == menuactive || MENU_OnNoPause == menuactive);
 
 	if (wantCapture != GUICapture)

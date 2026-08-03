@@ -49,6 +49,8 @@
 #include "s_sound.h"
 #include "st_console.h"
 #include "version.h"
+#include "features/crashreport/zx_crashreport.h"   // [rc4l] ZX_CrashReportInit
+#include "za_misc.h"                                 // [SB] ZA_PrintVersion
 
 #undef Class
 
@@ -505,6 +507,35 @@ int main(int argc, char** argv)
 			s_argvStorage.Push(argument);
 			s_argv[s_argc++] = s_argvStorage.Last().LockBuffer();
 		}
+	}
+
+	// [rc4l][SB][BB] Zandronum's entry-point work, before any Cocoa object exists.
+	//
+	// --version must print and exit without side effects, so ZA_PrintVersion() runs first and
+	// crash reporting starts only after it has declined to bail.
+	Args = new DArgs(s_argc, s_argv);
+
+	if (ZA_PrintVersion())
+	{
+		return 0;
+	}
+
+	ZX_CrashReportInit();
+
+	printf(GAMENAME" %s - %s - Cocoa version\nCompiled on %s\n",
+		GetVersionString(), GetGitTime(), __DATE__);
+
+	// [rc4l][BB] A dedicated server must never open an NSApplication run loop -- it has no window,
+	// no menu bar and no user, and [NSApp run] would simply never return. Hand straight to the
+	// engine instead. This is the Cocoa equivalent of the -host branch that posix/sdl/i_main.cpp
+	// uses to skip SDL_INIT_VIDEO.
+#ifdef SERVER_ONLY
+	Args->AppendArg( "-host" );
+#endif
+	if ( Args->CheckParm( "-host" ) )
+	{
+		OriginalMainExcept(s_argc, s_argv);
+		return EXIT_SUCCESS;
 	}
 
 	NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];

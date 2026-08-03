@@ -125,6 +125,15 @@ CUSTOM_CVAR(Bool, vid_autoswitch, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_
 	Printf("You must restart " GAMENAME " to apply graphics switching mode\n");
 }
 
+// [rc4l] Zandronum's cl_main.cpp, mcp_renderinfo.cpp and v_video.h all reference a global
+// `currentrenderer`, which posix/sdl/hardware.cpp used to define. The Cocoa backend owns it
+// now. GL-only build, so it is 1 unless this is a renderer-less dedicated server.
+#ifndef NO_GL
+int currentrenderer = 1;
+#else
+int currentrenderer = 0;
+#endif
+
 static int s_currentRenderer;
 
 CUSTOM_CVAR(Int, vid_renderer, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
