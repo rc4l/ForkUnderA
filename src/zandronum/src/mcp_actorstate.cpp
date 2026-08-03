@@ -69,6 +69,15 @@ CCMD( dumpactor )
 				mo->player->jumpTics, FIXED2FLOAT( mo->velz ), mo->player->onground ? 1 : 0 );
 			Printf( "buttons %08x oldbuttons %08x\n",
 				(unsigned int)mo->player->cmd.ucmd.buttons, (unsigned int)mo->player->oldbuttons );
+			// [rc4l] Traversal charges (features/quake-movement stage 4). Scaled to integers because
+			// ZDoom's Printf renders some ordinary float values as "-NaN" -- see the feature README.
+			Printf( "traversal slide_x100 %d climb_x100 %d wallrun_x100 %d\n",
+				(int)( pawn->crouchSlideTics * 100.0f ), (int)( pawn->wallClimbTics * 100.0f ),
+				(int)( pawn->airWallRunTics * 100.0f ));
+			Printf( "traversal sliding %d climbing %d wallrunning %d crouchfactor_x100 %d\n",
+				pawn->isCrouchSliding ? 1 : 0, pawn->isWallClimbing ? 1 : 0,
+				pawn->isAirWallRunning ? 1 : 0,
+				(int)( FIXED2FLOAT( mo->player->crouchfactor ) * 100.0f ));
 			Printf( "qtune gaccel %.3f gfric %.3f cpmaccel %.3f cpmangle %.4f airaccel %.3f cap %.3f\n",
 				pawn->GroundAcceleration, pawn->GroundFriction, pawn->CpmAirAcceleration,
 				pawn->CpmMaxForwardAngleRad, FIXED2FLOAT( pawn->AirAcceleration ),

@@ -102,6 +102,16 @@ enum
 	MVTYPE_QUAKE		= 1,	// Quake-style friction/acceleration
 };
 
+// [rc4l] Cosmetic actors a Quake-movement pawn emits, one class per slot, set with
+// Player.EffectActor "<slot>" "<class>". Spawned CLIENTSIDEONLY for the local player -- see
+// features/quake-movement/README.md for why they are not replicated.
+enum
+{
+	EA_CROUCH_SLIDE = 0,
+	EA_WALL_CLIMB,
+	EA_COUNT
+};
+
 class APlayerPawn : public AActor
 {
 	DECLARE_CLASS (APlayerPawn, AActor)
@@ -220,6 +230,38 @@ public:
 	int			lastTapValue;
 	int			lastMoveButtonsBefore;
 	int			JumpSoundDelay;
+
+	// [rc4l] Traversal tuning (stage 4): crouch slide, wall climb, air wall run. All inert unless
+	// the pawn sets both MvType 1 and the matching MV_* flag.
+	float		CrouchSlideAcceleration;
+	float		CrouchSlideFriction;
+	float		CrouchSlideMaxTics;
+	float		CrouchSlideRegen;
+	int			CrouchSlideEffectInterval;
+	fixed_t		WallClimbSpeed;
+	float		WallClimbFriction;
+	float		WallClimbMaxTics;
+	float		WallClimbRegen;
+	int			WallClimbEffectInterval;
+	float		AirWallRunMaxTics;
+	float		AirWallRunRegen;
+	fixed_t		AirWallRunMinVelocity;
+
+	// [rc4l] Live traversal state. Prediction-saved like the second-jump state; never networked.
+	// The crouch-slide counter is SIGNED: positive is usable charge, negative is a lockout that
+	// only leaving the ground releases (see computation/qtraversal_compute.h).
+	float		crouchSlideTics;
+	float		wallClimbTics;
+	float		airWallRunTics;
+	bool		isCrouchSliding;
+	bool		isWallClimbing;
+	bool		isAirWallRunning;
+	int			crouchSlideEffectTics;
+	int			wallClimbEffectTics;
+
+	// [rc4l] Cosmetic actor classes, indexed by the EA_* slots above. NULL means "emit nothing",
+	// which is the default, so a mod opts in per slot.
+	const PClass *EffectActors[EA_COUNT];
 
 	// [CW] Fades for when you are being damaged.
 	PalEntry DamageFade;

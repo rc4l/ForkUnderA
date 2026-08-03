@@ -23,8 +23,12 @@ namespace quakemove {
 bool UsesQuakeMovement( const AActor *mo );
 
 // The Quake horizontal/vertical acceleration model for one tic. Called from P_MovePlayer in place
-// of the Doom body. Does NOT handle jumping -- the caller still runs the ordinary jump block.
-void MovePlayerQuake( player_t *player, ticcmd_t *cmd );
+// of the Doom body.
+//
+// Returns true when this tic's jump input has already been consumed and the caller must NOT run the
+// jump block: swimming/flying steer with the jump key, and a wall climb is driven by holding it, so
+// letting the jump fire as well would launch the player off the wall they are climbing.
+bool MovePlayerQuake( player_t *player, ticcmd_t *cmd );
 
 // The Quake friction model for one tic, applied from P_XYMovement AFTER the move (which is where
 // Quake friction belongs, and why the server has to send pre-friction velocity -- see the README).

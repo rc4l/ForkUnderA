@@ -2626,6 +2626,114 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, doubletapmaxtics, I, PlayerPawn)
 
 //==========================================================================
 //
+// [rc4l] Traversal tuning (stage 4). Inert unless the pawn sets MvType 1 AND the matching MV_*
+// flag, so adding these to a class changes nothing on its own.
+//
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchslideacceleration, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(accel, 0);
+	defaults->CrouchSlideAcceleration = accel;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchslidefriction, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(friction, 0);
+	defaults->CrouchSlideFriction = friction;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchslidemaxtics, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(tics, 0);
+	defaults->CrouchSlideMaxTics = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchslideregen, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(regen, 0);
+	defaults->CrouchSlideRegen = regen;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchslideeffectinterval, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->CrouchSlideEffectInterval = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, wallclimbspeed, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(speed, 0);
+	defaults->WallClimbSpeed = speed;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, wallclimbfriction, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(friction, 0);
+	defaults->WallClimbFriction = friction;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, wallclimbmaxtics, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(tics, 0);
+	defaults->WallClimbMaxTics = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, wallclimbregen, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(regen, 0);
+	defaults->WallClimbRegen = regen;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, wallclimbeffectinterval, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->WallClimbEffectInterval = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, airwallrunmaxtics, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(tics, 0);
+	defaults->AirWallRunMaxTics = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, airwallrunregen, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(regen, 0);
+	defaults->AirWallRunRegen = regen;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, airwallrunminvelocity, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(velocity, 0);
+	defaults->AirWallRunMinVelocity = velocity;
+}
+
+// [rc4l] Player.EffectActor "<slot>" "<class>" -- the cosmetic actor emitted while a traversal move
+// runs. An unknown slot name is a parse error rather than a silent no-op, since a typo would
+// otherwise look like "my dust just doesn't appear".
+DEFINE_CLASS_PROPERTY_PREFIX(player, effectactor, SS, PlayerPawn)
+{
+	PROP_STRING_PARM(slot, 0);
+	PROP_STRING_PARM(className, 1);
+
+	int index;
+	if ( stricmp( slot, "CrouchSlide" ) == 0 )
+		index = EA_CROUCH_SLIDE;
+	else if ( stricmp( slot, "WallClimb" ) == 0 )
+		index = EA_WALL_CLIMB;
+	else
+	{
+		I_Error( "Unknown Player.EffectActor slot '%s' (expected CrouchSlide or WallClimb)", slot );
+		return;
+	}
+
+	defaults->EffectActors[index] = ( className[0] != '\0' )
+		? PClass::FindClass( className )
+		: NULL;
+}
+
+//==========================================================================
+//
 //==========================================================================
 DEFINE_CLASS_PROPERTY_PREFIX(player, GruntSpeed, F, PlayerPawn)
 {

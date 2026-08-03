@@ -913,6 +913,17 @@ void APlayerPawn::PostBeginPlay()
 	lastMoveButtonsBefore = 0;
 	JumpSoundDelay = 0;
 
+	// [rc4l] Traversal charges start full, so a pawn can slide/climb immediately on spawn rather
+	// than having to earn the first one.
+	crouchSlideTics = CrouchSlideMaxTics;
+	wallClimbTics = WallClimbMaxTics;
+	airWallRunTics = AirWallRunMaxTics;
+	isCrouchSliding = false;
+	isWallClimbing = false;
+	isAirWallRunning = false;
+	crouchSlideEffectTics = 0;
+	wallClimbEffectTics = 0;
+
 	// Voodoo dolls: restore original floorz/ceilingz logic
 	if (player == NULL || player->mo != this)
 	{
@@ -3218,12 +3229,16 @@ void P_MovePlayer (player_t *player)
 	// [rc4l] features/quake-movement: pick the movement model. UsesQuakeMovement excludes voodoo
 	// dolls and spectators -- spectator movement is a free-fly camera rather than simulated
 	// physics, and Q-Zandronum makes the same two exceptions.
+	bool jumpAlreadyConsumed = false;
 	if (zx::quakemove::UsesQuakeMovement (mo))
-		zx::quakemove::MovePlayerQuake (player, cmd);
+		jumpAlreadyConsumed = zx::quakemove::MovePlayerQuake (player, cmd);
 	else
 		P_MovePlayer_Doom (player, cmd);
 
-	P_PlayerJump (player, cmd);
+	// [rc4l] Swimming, flying and wall climbing all steer with the jump key, so running the jump
+	// block as well would fight them -- a climb would kick the player off the wall they are on.
+	if (jumpAlreadyConsumed == false)
+		P_PlayerJump (player, cmd);
 }		
 
 //==========================================================================

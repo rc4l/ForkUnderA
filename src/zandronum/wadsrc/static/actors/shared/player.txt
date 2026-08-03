@@ -50,6 +50,20 @@ Actor PlayerPawn : Actor native
 	Player.SecondJumpDelay 7
 	Player.SecondJumpAmount 0
 	Player.DoubleTapMaxTics 10
+	// [rc4l] Traversal tuning, inert without both MvType 1 and the matching MV_* flag.
+	Player.CrouchSlideAcceleration 10.0
+	Player.CrouchSlideFriction 1.0
+	Player.CrouchSlideMaxTics 70
+	Player.CrouchSlideRegen 2.0
+	Player.CrouchSlideEffectInterval 12
+	Player.WallClimbSpeed 5.0
+	Player.WallClimbFriction 1.25
+	Player.WallClimbMaxTics 70
+	Player.WallClimbRegen 2.0
+	Player.WallClimbEffectInterval 12
+	Player.AirWallRunMaxTics 70
+	Player.AirWallRunRegen 2.0
+	Player.AirWallRunMinVelocity 10.0
 	Player.MaxSkinSizeFactor 3.44, 1.68 // [TP]
 	Obituary "$OB_MPDEFAULT"
 }
