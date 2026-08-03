@@ -76,6 +76,7 @@ CVAR(Bool,hud_althud, false, CVAR_ARCHIVE)				// Enable/Disable the alternate HU
 CVAR (Bool,  hud_showsecrets,	true,CVAR_ARCHIVE);		// Show secrets on HUD
 CVAR (Bool,  hud_showmonsters,	true,CVAR_ARCHIVE);		// Show monster stats on HUD
 CVAR (Bool,  hud_showitems,		false,CVAR_ARCHIVE);	// Show item stats on HUD
+CVAR (Bool,  hud_showweapons,	true, CVAR_ARCHIVE);	// Show weapons collected
 CVAR (Bool,  hud_showstats,		false,	CVAR_ARCHIVE);	// for stamina and accuracy. 
 CVAR (Bool,  hud_showscore,		false,	CVAR_ARCHIVE);	// for user maintained score
 CVAR (Int ,  hud_showtime,		0,	    CVAR_ARCHIVE);	// Show time on HUD
@@ -995,7 +996,7 @@ static void DrawTime()
 				: (hud_showtime < 6
 					? level.time
 					: level.totaltime);
-		const int timeSeconds = timeTicks / TICRATE;
+		const int timeSeconds = Tics2Seconds(timeTicks);
 
 		hours   =  timeSeconds / 3600;
 		minutes = (timeSeconds % 3600) / 60;
@@ -1118,7 +1119,7 @@ void DrawHUD()
 
 		i=DrawKeys(CPlayer, hudwidth-4, hudheight-10);
 		i=DrawAmmo(CPlayer, hudwidth-5, i);
-		DrawWeapons(CPlayer, hudwidth-5, i);
+		if (hud_showweapons) DrawWeapons(CPlayer, hudwidth - 5, i);
 		DrawInventory(CPlayer, 144, hudheight-28);
 		if (CPlayer->camera && CPlayer->camera->player)
 		{
@@ -1139,7 +1140,7 @@ void DrawHUD()
 
 		if (am_showtotaltime)
 		{
-			seconds = level.totaltime / TICRATE;
+			seconds = Tics2Seconds(level.totaltime);
 			mysnprintf(printstr, countof(printstr), "%02i:%02i:%02i", seconds/3600, (seconds%3600)/60, seconds%60);
 			DrawHudText(SmallFont, hudcolor_ttim, printstr, hudwidth-length, bottom,(int)( FRACUNIT));
 			bottom -= fonth;
@@ -1149,14 +1150,14 @@ void DrawHUD()
 		{
 			if (level.clusterflags&CLUSTER_HUB)
 			{
-				seconds = level.time /TICRATE;
+				seconds = Tics2Seconds(level.time);
 				mysnprintf(printstr, countof(printstr), "%02i:%02i:%02i", seconds/3600, (seconds%3600)/60, seconds%60);
 				DrawHudText(SmallFont, hudcolor_time, printstr, hudwidth-length, bottom,(int)( FRACUNIT));
 				bottom -= fonth;
 			}
 
 			// Single level time for hubs
-			seconds= level.maptime /TICRATE;
+			seconds= Tics2Seconds(level.maptime);
 			mysnprintf(printstr, countof(printstr), "%02i:%02i:%02i", seconds/3600, (seconds%3600)/60, seconds%60);
 			DrawHudText(SmallFont, hudcolor_ltim, printstr, hudwidth-length, bottom,(int)( FRACUNIT));
 		}

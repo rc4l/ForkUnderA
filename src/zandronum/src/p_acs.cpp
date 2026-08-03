@@ -4658,16 +4658,19 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		break;
 
 	case APROP_Friendly:
+		// [rc4l] uzdoom@536411635: CountsAsKill() depends on MF_FRIENDLY, so it has to be
+		// evaluated once before the flag changes and once after. Testing it only on the side
+		// being set counted the actor wrong in one direction.
+		if (actor->CountsAsKill()) level.total_monsters--;
 		if (value)
 		{
-			if (actor->CountsAsKill()) level.total_monsters--;
 			actor->flags |= MF_FRIENDLY;
 		}
 		else
 		{
 			actor->flags &= ~MF_FRIENDLY;
-			if (actor->CountsAsKill()) level.total_monsters++;
 		}
+		if (actor->CountsAsKill()) level.total_monsters++;
 		break;
 
 

@@ -74,7 +74,7 @@ static void MyCPUID(UInt32 function, UInt32 *a, UInt32 *b, UInt32 *c, UInt32 *d)
   *c = c2;
   *d = d2;
 
-  #elif __PIC__
+  #elif defined __PIC__ && defined __i386__
 
   /* GCC or Clang WITH position-independent code generation */
 

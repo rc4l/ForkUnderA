@@ -416,9 +416,11 @@ if( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STRE
 	endif( PROFILE )
 
 	set( REL_CXX_FLAGS "-fno-rtti" )
-	if( NOT PROFILE )
+	# [rc4l] uzdoom@9479a89b6: on OS X frame pointers are required for exception handling,
+	# at least with Clang -- omitting them crashes Release builds.
+	if( NOT PROFILE AND NOT APPLE )
 		set( REL_CXX_FLAGS "${REL_CXX_FLAGS} -fomit-frame-pointer" )
-	endif( NOT PROFILE )
+	endif( NOT PROFILE AND NOT APPLE )
 	set( CMAKE_CXX_FLAGS_RELEASE "${REL_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE}" )
 	set( CMAKE_CXX_FLAGS_MINSIZEREL "${REL_CXX_FLAGS} ${CMAKE_CXX_FLAGS_MINSIZEREL}" )
 	set( CMAKE_CXX_FLAGS_RELWITHDEBINFO "${REL_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO}" )
