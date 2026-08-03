@@ -8,15 +8,13 @@
 # CONTENT against upstream, so it needs UZDoom's history, which the build jobs do not have and
 # should not pay to fetch on every push.
 #
-# So it is a sweep: weekly, plus on demand. That cadence is the point -- the errors it looks
-# for (a row marked ported whose code never landed) are silent and accumulate, so what catches
-# them is a periodic full pass, not a per-PR check that only ever sees the newest rows.
+# So it is on demand: run it from the Actions tab (or `gh workflow run convergence.yml`) when
+# closing out a seam or after a batch of staircase ports. Deliberately NOT scheduled -- a weekly
+# artifact nobody opens is not a gate, it is litter.
 
 name: Ledger convergence
 
 on:
-  schedule:
-    - cron: '17 6 * * 1'   # Mondays, off the hour to dodge the scheduler rush
   workflow_dispatch:
     inputs:
       top:
