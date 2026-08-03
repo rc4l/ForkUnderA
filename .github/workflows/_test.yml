@@ -42,6 +42,13 @@ jobs:
       - name: Removed-API tripwire
         run: bash tools/removed-api-tripwire.sh
 
+      # [rc4l] A .ps1 with non-ASCII bytes and no UTF-8 BOM fails to PARSE under Windows PowerShell
+      # 5.1 (the default shell on a stock Windows box) because it decodes as ANSI. CI cannot notice
+      # on its own -- our workflows run `shell: pwsh`, which reads UTF-8 regardless -- so this only
+      # ever breaks a contributor locally. Both Windows build scripts shipped broken this way.
+      - name: PowerShell encoding tripwire
+        run: bash tools/powershell-encoding-tripwire.sh
+
       # [rc4l] The FF-parity tripwire retired with its subject at the GL 2.x removal
       # (staircase flight 13a): there is no fixed-function branch left to diverge from.
 
