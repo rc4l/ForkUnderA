@@ -37,8 +37,8 @@ is explained. A hunk where upstream has code, we do not, and nothing on our side
 responsibility is the actual signal.
 
 This is a heuristic and it is honest about that: it ranks suspicion, it does not prove
-absence. Start it ADVISORY, tune the noise on real data, flip it blocking once the report is
-quiet -- the same path commit-tracker-overlap.py took.
+absence. It is a report you read, not a gate -- nothing runs it automatically, so it always
+exits 0 and the ranking is the whole output.
 
 USAGE
     commit-tracker-convergence.py                 sweep every file with a resolved row
@@ -64,9 +64,6 @@ ROOT = os.path.dirname(HERE)
 TSV = os.path.join(ROOT, "commit-tracker", "coverage.tsv")
 INDEX = os.path.join(ROOT, "commit-tracker", "index.tsv")
 UPSTREAM = os.environ.get("UZDOOM_DIR", os.path.expanduser("~/repos/uzdoom"))
-
-# [rc4l] Flip to False once the sweep is quiet enough that a flag means something.
-ADVISORY = True
 
 # A hunk whose OUR-side lines carry one of these is a divergence someone signed for.
 FORK_TAGS = re.compile(
@@ -281,10 +278,6 @@ def main():
             print("\nEach is either a port that never landed, or a divergence nobody signed for.")
             print("Tag the code with a fork marker, or add 'no-converge: <reason>' to the row note.")
 
-    if findings and not ADVISORY:
-        return 1
-    if findings and ADVISORY and not args.json:
-        print("\nADVISORY: not failing the build. Tune the noise, then set ADVISORY = False.")
     return 0
 
 
