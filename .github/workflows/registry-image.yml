@@ -188,6 +188,13 @@ jobs:
         run: |
           set -euo pipefail
           tag="server-registry-v${{ steps.meta.outputs.version }}"
+          # [rc4l] An annotated tag records a tagger, and a runner has no git identity configured --
+          # `git tag -a` there dies with "empty ident name". Caught the hard way on 0.0.1: the image
+          # published fine and only the tag step failed, leaving a released version with nothing
+          # pointing at the commit it came from. Set the bot identity rather than fall back to a
+          # lightweight tag, so the tag carries who made it and when.
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$tag" -m "server registry image $tag"
           git push origin "$tag"
           echo "tagged $tag at ${GITHUB_SHA}"
