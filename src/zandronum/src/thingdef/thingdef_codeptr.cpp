@@ -2036,13 +2036,20 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 	ACTION_PARAM_BOOL(UseAmmo, 2);
 	ACTION_PARAM_INT(SpawnOfs_XY, 3);
 	ACTION_PARAM_FIXED(SpawnHeight, 4);
-	ACTION_PARAM_BOOL(AimAtAngle, 5);
+	// [rc4l] uzdoom@e56e525d0: this parameter is an FPF_ flag word, not a bool. It was a bool
+	// originally, and reading it as one means a mod passing FPF_TRANSFERTRANSLATION (2) silently
+	// gets AimAtAngle instead. Upstream widened it here and it is still an int at their HEAD --
+	// compatibility.zs declares the deprecated wrapper as `int flags = 0` -- so this is their end
+	// state, not an intermediate one. uzdoom@7d7f146ce's follow-up (apply the translation only to a
+	// missile that actually spawned) is already handled inside ZX_FireProjectile.
+	ACTION_PARAM_INT(Flags, 5);
 	ACTION_PARAM_ANGLE(pitch, 6);
 
 	// [rc4l] Deprecated upstream in favour of A_FireProjectile, kept because the existing mod corpus
 	// calls it. Negates pitch to match upstream's deprecated wrapper (A_FireProjectile(..., -pitch)).
-	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight, AimAtAngle,
-					   -fixed_t::FromSignedBits(pitch) );
+	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
+					   Flags & FPF_AIMATANGLE, -fixed_t::FromSignedBits(pitch),
+					   Flags & FPF_NOAUTOAIM, Flags & FPF_TRANSFERTRANSLATION );
 }
 
 //==========================================================================

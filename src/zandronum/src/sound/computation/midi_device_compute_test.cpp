@@ -18,7 +18,7 @@ TEST(ComputeMidiDeviceDefault, HonorsExplicitDevice)
 // the call site maps it to the OPL synth, so nothing here has to special-case it.
 TEST(ComputeMidiDeviceDefault, ExplicitFmodDeviceStillParses)
 {
-	EXPECT_EQ(ComputeMidiDeviceDefault(ZX_MDEV_FMOD, -1, false, false), ZX_MDEV_FMOD);
+	EXPECT_EQ(ComputeMidiDeviceDefault(ZX_MDEV_SNDSYS, -1, false, false), ZX_MDEV_SNDSYS);
 }
 
 // [rc4l] snd_mididevice -1 picks the default synth, which is OPL now that FMOD is gone.

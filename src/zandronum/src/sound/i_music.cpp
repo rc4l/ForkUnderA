@@ -436,9 +436,9 @@ MusInfo *I_RegisterSong (const char *filename, BYTE *musiccache, int offset, int
 	}
 
 #ifndef _WIN32
-	// non-Windows platforms don't support MDEV_MMAPI so map to MDEV_FMOD
+	// non-Windows platforms don't support MDEV_MMAPI so map to MDEV_SNDSYS
 	if (device == MDEV_MMAPI)
-		device = MDEV_FMOD;
+		device = MDEV_SNDSYS;
 #endif
 
 	// Check for gzip compression. Some formats are expected to have players
@@ -480,17 +480,17 @@ MusInfo *I_RegisterSong (const char *filename, BYTE *musiccache, int offset, int
 	{
 		EMidiDevice devtype = (EMidiDevice)device;
 
-retry_as_fmod:
+retry_as_sndsys:
 		info = CreateMIDIStreamer(file, musiccache, len, devtype, miditype);
 		if (info != NULL && !info->IsValid())
 		{
 			delete info;
 			info = NULL;
 		}
-		if (info == NULL && devtype != MDEV_FMOD && snd_mididevice < 0)
+		if (info == NULL && devtype != MDEV_SNDSYS && snd_mididevice < 0)
 		{
-			devtype = MDEV_FMOD;
-			goto retry_as_fmod;
+			devtype = MDEV_SNDSYS;
+			goto retry_as_sndsys;
 		}
 #ifdef _WIN32
 		if (info == NULL && devtype != MDEV_MMAPI && snd_mididevice >= 0)
