@@ -618,7 +618,7 @@ bf6079af4693bb1e486da4620c4629d9bee730ae	2014-08-22T22:47:05Z	- fixed incorrect 
 5364116354303317922427a8f12764b0846c49ca	2014-08-23T11:24:15Z	- fixed: APROP_Friendly did not manage monster counting correctly.	pending		/
 51d7340288e477d8f44af7992ec2fee439105f6e	2014-08-23T13:35:05Z	Fixed crash on music volume change when no track is played using FluidSynth device	pending		/
 904cc2e158593ca26dcf9698dfc42aca694c0f53	2014-08-23T16:54:24Z	- some code cleanup.	ported	39fea74	39fea74
-bf03d022280a82f27bf947b5854a8f4edbf2d741	2014-08-23T23:09:44Z	- print OpenGL profile type in startup log.	ported	39fea74	39fea74
+bf03d022280a82f27bf947b5854a8f4edbf2d741	2014-08-23T23:09:44Z	- print OpenGL profile type in startup log.	ported	ported: startup log reports the GL profile (Core/Compatibility) alongside GL_VERSION. AUDIT CORRECTION -- previously claimed ported; the profile suffix was absent	a1e8c8d
 a903cbe12e9122ba0b325321cc2ad8e241da73ac	2014-08-24T11:10:45Z	- sorting draw items by light level no longer makes sense so remove all corresponding code from dicmp.	ported	39fea74	39fea74
 1d2aa3df0c6881c74e1ef350b8c9c19c5fc561c4	2014-08-25T08:51:50Z	fixed: The wait console command waited one tic too many because it got 1 added to it twice instead of only once.	pending		/
 8f238f8d3269b579a2d46efbffd4f03095643dd2	2014-08-27T09:06:12Z	- fixed: the Revenant's frame duration in its missile state were wrong.	pending		/
@@ -632,7 +632,7 @@ b96dd6c42142fcd1683e5349480ecd0286522c8f	2014-09-02T08:31:48Z	- fixed: The missi
 4d799cab702cf67ad5d3a101e39b4dd4530555de	2014-09-06T07:17:41Z	Merge branch 'master' of https://github.com/rheit/zdoom into z_osx_clean	pending		/
 45a88780b0db0b2da5839bbd5078236db7fd498c	2014-09-06T07:18:33Z	Fixed build with GCC 4.x / Xcode 3.2.x	pending		/
 e60d181e874bc1d04ef4f5a0ba2d19027987b08f	2014-09-06T07:22:37Z	Removed redundant #include's that broke build of native back-end	ported	ported: taken as part of the 108dcf122 end state, vendored byte-identical at 1f74200. Every change of this commit lives inside posix/cocoa and is present in that snapshot; it was never separately built here (the OpenAL-series precedent) | no-file-overlap: predates upstream's own Dec-2014 split, so it edits files (i_backend_cocoa.mm and friends) that no longer exist at 108dcf122. Its content reached us inside the post-split i_video.mm/i_input.mm/i_main.mm we vendored -- there is simply no shared basename left to match	1f74200
-e29fce6951c70e5c2036e6dfc4ccf0fe38f24f00	2014-09-07T08:52:51Z	Fixed missing transparency on upscaled textures	ported	39fea74	39fea74
+e29fce6951c70e5c2036e6dfc4ccf0fe38f24f00	2014-09-07T08:52:51Z	Fixed missing transparency on upscaled textures	ported	ported: alpha-smoothing now consults the diagonal neighbours too. AUDIT CORRECTION -- the row claimed ported against a staircase commit but our line was still the pre-fix four-neighbour form	a1e8c8d
 4659a87292cbd512fb673dc19c8008d8a2ec1b04	2014-09-07T14:15:44Z	Merge pull request #15 from alexey-lysiuk/fix_upscale_transparency	pending		/
 cfd24f438f0d1f1bc84882d3e2bf9b072bb0881e	2014-09-08T11:02:05Z	- jpalomo's A_Saw flags submission.	pending		/
 3d2646cbaefd1e6411bd04f31c9ac3747ae08aa3	2014-09-08T11:02:39Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
