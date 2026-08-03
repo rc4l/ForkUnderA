@@ -56,9 +56,11 @@ struct sfxinfo_t
 
 	WORD		bRandomHeader:1;
 	WORD		bPlayerReserve:1;
-	WORD		bForce11025:1;
-	WORD		bForce22050:1;
 	WORD		bLoadRAW:1;
+
+	// [rc4l] uzdoom@449a17c2f: replaces bForce11025/bForce22050 -- Blood SFX come in more than
+	// two rates, so the rate is stored rather than encoded as a pair of flags.
+	int			RawRate;
 	WORD		bPlayerCompat:1;
 	WORD		b16bit:1;
 	WORD		bUsed:1;
