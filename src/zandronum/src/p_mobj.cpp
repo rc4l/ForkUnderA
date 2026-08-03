@@ -344,20 +344,14 @@ void AActor::Serialize (FArchive &arc)
 		<< tics
 		<< state
 		<< Damage;
-	if (SaveVersion >= 3227)
-	{
-		arc << projectileKickback;
-	}
+	arc << projectileKickback;
 	arc	<< flags
 		<< flags2
 		<< flags3
 		<< flags4
 		<< flags5
 		<< flags6;
-	if (SaveVersion >= 4504)
-	{
-		arc << flags7;
-	}
+	arc << flags7;
 	// [rc4l] MBF21 flags word. Guarded so older snapshots (which never stored it) load with 0.
 	if (SaveVersion >= 4509)
 	{
@@ -378,10 +372,7 @@ void AActor::Serialize (FArchive &arc)
 		<< player
 		<< SpawnPoint[0] << SpawnPoint[1] << SpawnPoint[2]
 		<< SpawnAngle;
-	if (SaveVersion >= 4506)
-	{
-		arc << StartHealth;
-	}
+	arc << StartHealth;
 	arc << skillrespawncount
 		<< tracer
 		<< floorclip
@@ -396,10 +387,7 @@ void AActor::Serialize (FArchive &arc)
 		arc << args[0];
 	}
 	arc << args[1] << args[2] << args[3] << args[4];
-	if (SaveVersion >= 3427)
-	{
-		arc << accuracy << stamina;
-	}
+	arc << accuracy << stamina;
 	arc << goal
 		<< waterlevel
 		<< MinMissileChance
@@ -436,16 +424,10 @@ void AActor::Serialize (FArchive &arc)
 		<< meleethreshold
 		<< meleerange
 		<< DamageType;
-	if (SaveVersion >= 4501)
-	{
-		arc << DamageTypeReceived;
-	}
-	if (SaveVersion >= 3237) 
-	{
-		arc
-		<< PainType
-		<< DeathType;
-	}
+	arc << DamageTypeReceived;
+	arc
+	<< PainType
+	<< DeathType;
 	arc	<< gravity
 		<< FastChaseStrafeCount
 		<< master
@@ -456,20 +438,14 @@ void AActor::Serialize (FArchive &arc)
 		<< pushfactor
 		<< Species
 		<< Score;
-	if (SaveVersion >= 3113)
-	{
-		arc << DesignatedTeam;
-	}
+	arc << DesignatedTeam;
 	arc << lastpush << lastbump
 		<< PainThreshold
 		<< DamageFactor
 		<< WeaveIndexXY << WeaveIndexZ
 		<< PoisonDamageReceived << PoisonDurationReceived << PoisonPeriodReceived << Poisoner
 		<< PoisonDamage << PoisonDuration << PoisonPeriod;
-	if (SaveVersion >= 3235)
-	{
-		arc << PoisonDamageType << PoisonDamageTypeReceived;
-	}
+	arc << PoisonDamageType << PoisonDamageTypeReceived;
 	arc << ConversationRoot << Conversation;
 	
 	// [BB] Zandronum additions.

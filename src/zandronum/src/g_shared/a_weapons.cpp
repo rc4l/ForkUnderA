@@ -71,15 +71,10 @@ void AWeapon::Serialize (FArchive &arc)
 		<< Ammo1 << Ammo2 << SisterWeapon << GivenAsMorphWeapon
 		<< bAltFire
 		<< ReloadCounter;		
-		if (SaveVersion >= 3615) {
-			arc << BobStyle << BobSpeed << BobRangeX << BobRangeY;
-		}
+		arc << BobStyle << BobSpeed << BobRangeX << BobRangeY;
 	arc << FOVScale
 		<< Crosshair;
-	if (SaveVersion >= 4203)
-	{
-		arc << MinSelAmmo1 << MinSelAmmo2;
-	}
+	arc << MinSelAmmo1 << MinSelAmmo2;
 }
 
 //===========================================================================
@@ -913,10 +908,7 @@ IMPLEMENT_CLASS(AWeaponGiver)
 void AWeaponGiver::Serialize(FArchive &arc)
 {
 	Super::Serialize(arc);
-	if (SaveVersion >= 4246)
-	{
-		arc << DropAmmoFactor;
-	}
+	arc << DropAmmoFactor;
 }
 
 bool AWeaponGiver::TryPickup(AActor *&toucher)
