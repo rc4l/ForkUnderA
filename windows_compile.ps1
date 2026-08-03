@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 
@@ -175,7 +175,7 @@ $dep = $VcpkgInstalled
 # resolved relative to the build dir and fail). The SDK's um\x64 libs were copied into $dx\Lib\x64.
 # [rc4l] avrt/bcrypt cover the audio stack; the mf*/secur32/strmiids/ws2_32 set is what static ffmpeg
 # (libav*) pulls in on Windows for its Media Foundation + networking + DirectShow glue.
-$sysLibs = @('advapi32','bcrypt','ncrypt','avrt','secur32','ws2_32','mfplat','mfuuid','strmiids','ole32','user32') |
+$sysLibs = @('advapi32','bcrypt','ncrypt','avrt','secur32','ws2_32','mfplat','mfuuid','strmiids','ole32','user32','shlwapi') |
     ForEach-Object { Join-Path "$dx\Lib\x64" ($_ + '.lib') }
 $staticLibs = ((Get-ChildItem "$dep\lib\*.lib").FullName + $sysLibs) -join ';'
 # [rc4l] Flight 1 needs GLEW on Windows too. vcpkg names the static lib libglew32.lib (not
