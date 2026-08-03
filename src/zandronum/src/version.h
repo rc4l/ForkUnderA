@@ -136,7 +136,10 @@ int GetRevisionNumber();
 // [rc4l] 4513: map names in level snapshots are stored as full strings rather than a fixed
 // 8-character field (uzdoom@8ec95dc58). Upstream numbered the same change 4508; ours is a separate
 // line that was already past that.
-#define SAVEVER 4513
+// [rc4l] 4514: AActor now serializes FriendPlayer (guarded in AActor::Serialize), so a saved
+// friendly actor keeps the player it belongs to (uzdoom@e1130b860). Upstream numbered the same
+// change 4509; ours is a separate line that was already past that.
+#define SAVEVER 4514
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)

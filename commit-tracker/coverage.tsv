@@ -431,12 +431,12 @@ f7105189036de62db1ddef10be818c21c20d18bb	2014-06-30T16:10:55Z	- use a uniform ar
 92185f96ebf0e7afc8389ba9fb8a0c165082deec	2014-07-01T07:52:41Z	- fixed overflow with storing a sprite's dynamic light color in a PalEntry.	ported	4dec01f	4dec01f
 d83f048858c6ca3be9442dce658a4dae542ebfad	2014-07-01T17:13:05Z	- Miscellaneous CMakeLists.txt fixes.	skip	skip: build-system reshuffle of a CMake tree we no longer resemble (FMOD-free, features/ layout, our own OpenAL wiring); nothing here maps onto our build	/
 1aaaac900dc4ae1f452a6018d5aae4dcce9a6470	2014-07-02T05:14:49Z	Merge remote-tracking branch 'zdoom/master' into openal	skip	skip: merge commit, no unique content	/
-e1729a9ec206b20a8ea0b9c2314d2652c697cd0f	2014-07-09T07:15:51Z	- fixed compilation with VC++2005 solution.	pending		/
+e1729a9ec206b20a8ea0b9c2314d2652c697cd0f	2014-07-09T07:15:51Z	- fixed compilation with VC++2005 solution.	skip	skip: hu_stuff.h here has no comparepoints/compareteams -- Zandronum replaced the scoreboard sorting entirely, so the STACK_ARGS calling-convention fix has no symbol to apply to. The VC++2005 solution it targets is not our build either (CMake only)	/
 e691341541816122ba09aac8b40d4fd3c50d450f	2014-07-09T07:16:30Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 a936629cec470e3c4bdf6bfcf9481c6bae39e5ec	2014-07-10T08:33:07Z	- use default fragment shader for burn and stencil shader, with the time consuming parts disabled by a #define, to avoid code duplication.	ported	7327ca6	7327ca6
 7cbffc7c14e0a3e7b68891bde39263db5e8905a8	2014-07-10T08:35:02Z	- test code removal.	ported	7327ca6	7327ca6
 e1130b860ea5c56b0c0ba2218bf81851e9b5be4c	2014-07-13T02:44:22Z	Serialize FriendPlayer	pending		/
-400a573e6505f4759d98774726a40ac701187d04	2014-07-13T07:12:46Z	- fixed: ACS's LineAttack function with a valid tid still used the activator as the attack's source.	pending		/
+400a573e6505f4759d98774726a40ac701187d04	2014-07-13T07:12:46Z	- fixed: ACS's LineAttack function with a valid tid still used the activator as the attack's source.	ported	ported: already present -- our ACS LineAttack tid branch already passes source, not activator, into P_LineAttack (p_acs.cpp). Inherited via Zandronum rather than ported here; content check against the added line confirms it	zandronum-base
 004cf5748c6a425fea717635c7269608d52c3c61	2014-07-13T07:43:28Z	- fixed: FraggleScript's SpawnedThings array must always be checked for owned inventory items. The 'mapthingnumexist' function forgot to do that.	pending		/
 d868f60f6c21c8df307b569e6dd947449870da09	2014-07-13T10:14:12Z	- since the clip planes for plane mirrors did not work anymore I reimplemented them using shader based logic. It still needs to be seen if this affects performance on older hardware.	ported	7327ca6	7327ca6
 60dc2e112214b623562744d0918a8dd43f635d59	2014-07-13T11:01:35Z	- some shader fixes.	ported	7327ca6	7327ca6
