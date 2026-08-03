@@ -928,9 +928,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfInput)
 //==========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfHealthLower)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(health, 0);
 	ACTION_PARAM_STATE(jump, 1);
+	// [rc4l] uzdoom@5b71ce6dc: measure any pointed-to actor, not just self.
+	ACTION_PARAM_INT(ptr_selector, 2);
 
 	// [BC] Don't jump here in client mode.
 	if ( NETWORK_InClientMode() )
@@ -939,7 +941,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfHealthLower)
 			return;
 	}
 
-	if (self->health < health) ACTION_JUMP(jump, CLIENTUPDATE_FRAME);	// [BC] Clients don't know what the actor's health is.
+	AActor *measured = COPY_AAPTR(self, ptr_selector);
+
+	// [BC] Clients don't know what the actor's health is.
+	if (measured && measured->health < health) ACTION_JUMP(jump, CLIENTUPDATE_FRAME);
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 }
@@ -2655,6 +2660,10 @@ enum SIX_Flags
 	// [rc4l] uzdoom@5c4ad9be6
 	SIXF_TRANSFERALPHA			= 1 << 18,
 	SIXF_TRANSFERRENDERSTYLE	= 1 << 19,
+	// [rc4l] uzdoom@0735cb955 + 68a5db3c8
+	SIXF_SETTARGET				= 1 << 20,
+	SIXF_SETTRACER				= 1 << 21,
+	SIXF_NOPOINTERS				= 1 << 22,
 };
 
 // [BB] Changed return value to bool (returns false if the actor already was destroyed).
@@ -2712,7 +2721,9 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 			mo->Destroy();
 			return false;
 		}
-		else if (originator)
+		// [rc4l] uzdoom@97d5d614c: NOPOINTERS must win here too, or the friendliness transfer
+		// below re-establishes the very pointers it is meant to clear.
+		else if (originator && !(flags & SIXF_NOPOINTERS))
 		{
 			if (originator->flags3 & MF3_ISMONSTER)
 			{
@@ -2743,6 +2754,26 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	{
 		// If this is a missile or something else set the target to the originator
 		mo->target = originator ? originator : self;
+	}
+	if (flags & SIXF_NOPOINTERS)
+	{
+		//[MC]Intentionally eliminate pointers. Overrides TRANSFERPOINTERS, but is overridden by SETMASTER/TARGET/TRACER.
+		mo->LastHeard = NULL; //Sanity check.
+		mo->target = NULL;
+		mo->master = NULL;
+		mo->tracer = NULL;
+	}
+	if (flags & SIXF_SETMASTER)
+	{
+		mo->master = originator;
+	}
+	if (flags & SIXF_SETTARGET)
+	{
+		mo->target = originator;
+	}
+	if (flags & SIXF_SETTRACER)
+	{
+		mo->tracer = originator;
 	}
 	if (flags & SIXF_TRANSFERSCALE)
 	{
@@ -3944,51 +3975,117 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIf)
 
 //===========================================================================
 //
-// A_KillMaster
+// A_Kill*(damagetype, int flags)
+//
+// [rc4l] uzdoom@0735cb955 + e025f4090: the five A_Kill* functions share one DoKill helper
+// and take a flags word. Landed as the settled form rather than replaying the intermediate
+// states, since the consolidation rewrites what the first commit adds.
 //
 //===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillMaster)
+enum KILS
 {
-	ACTION_PARAM_START(1);
-	ACTION_PARAM_NAME(damagetype, 0);
+	KILS_FOILINVUL =	1 << 0,
+	KILS_KILLMISSILES = 1 << 1,
+	KILS_NOMONSTERS =	1 << 2,
+};
 
-	if (self->master != NULL)
-	{
-		P_DamageMobj(self->master, self, self, self->master->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR);
-	}
-}
-
-//===========================================================================
-//
-// A_KillChildren
-//
-//===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillChildren)
+static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags)
 {
-	ACTION_PARAM_START(1);
-	ACTION_PARAM_NAME(damagetype, 0);
-
-	TThinkerIterator<AActor> it;
-	AActor *mo;
-
-	while ( (mo = it.Next()) )
+	if ((killtarget->flags & MF_MISSILE) && (flags & KILS_KILLMISSILES))
 	{
-		if (mo->master == self)
+		//[MC] Now that missiles can set masters, lets put in a check to properly destroy projectiles. BUT FIRST! New feature~!
+		//Check to see if it's invulnerable. Disregarded if foilinvul is on, but never works on a missile with NODAMAGE
+		//since that's the whole point of it.
+		if ((!(killtarget->flags2 & MF2_INVULNERABLE) || (flags & KILS_FOILINVUL)) && !(killtarget->flags5 & MF5_NODAMAGE))
 		{
-			P_DamageMobj(mo, self, self, mo->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR);
+			P_ExplodeMissile(self->target, NULL, NULL);
+		}
+	}
+	if (!(flags & KILS_NOMONSTERS))
+	{
+		if (flags & KILS_FOILINVUL)
+		{
+			P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR | DMG_FOILINVUL);
+		}
+		else
+		{
+			P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR);
 		}
 	}
 }
 
 //===========================================================================
 //
-// A_KillSiblings
+// A_KillTarget(damagetype, int flags)
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTarget)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
+
+	if (self->target != NULL) DoKill(self->target, self, damagetype, flags);
+}
+
+//===========================================================================
+//
+// A_KillTracer(damagetype, int flags)
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTracer)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
+
+	if (self->tracer != NULL) DoKill(self->tracer, self, damagetype, flags);
+}
+
+//===========================================================================
+//
+// A_KillMaster(damagetype, int flags)
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillMaster)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
+
+	if (self->master != NULL) DoKill(self->master, self, damagetype, flags);
+}
+
+//===========================================================================
+//
+// A_KillChildren(damagetype, int flags)
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillChildren)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
+
+	TThinkerIterator<AActor> it;
+	AActor *mo;
+
+	while ( (mo = it.Next()) )
+	{
+		if (mo->master == self) DoKill(mo, self, damagetype, flags);
+	}
+}
+
+//===========================================================================
+//
+// A_KillSiblings(damagetype, int flags)
 //
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillSiblings)
 {
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
 
 	TThinkerIterator<AActor> it;
 	AActor *mo;
@@ -4004,10 +4101,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillSiblings)
 	{
 		while ( (mo = it.Next()) )
 		{
-			if (mo->master == self->master && mo != self)
-			{
-				P_DamageMobj(mo, self, self, mo->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR);
-			}
+			if (mo->master == self->master && mo != self) DoKill(mo, self, damagetype, flags);
 		}
 	}
 }
@@ -4855,120 +4949,126 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfInTargetLOS)
 
 //===========================================================================
 //
-// A_DamageSelf (int amount, str damagetype)
-// Damages the calling actor by the specified amount. Negative values heal.
+// A_Damage*(int amount, str damagetype, int flags)
+//
+// [rc4l] uzdoom@0735cb955 + afaa88a46: the six A_Damage* functions share one DoDamage
+// helper and take a flags word. Landed as the settled form rather than replaying the
+// intermediate states, since the consolidation rewrites what the first commit adds.
+// No netcode gating here: P_DamageMobj and P_GiveBody are already server-authoritative.
 //
 //===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
+enum DMSS
 {
-	ACTION_PARAM_START(2);
-	ACTION_PARAM_INT(amount, 0);
-	ACTION_PARAM_NAME(DamageType, 1);
+	DMSS_FOILINVUL			= 1,
+	DMSS_AFFECTARMOR		= 2,
+	DMSS_KILL				= 4,
+};
 
-	// [rc4l] uzdoom@b1f87295b. No gating added: P_DamageMobj and P_GiveBody are already
-	// server-authoritative here, exactly as the sibling A_Damage* functions below rely on.
-	if (amount > 0)
+static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags)
+{
+	if ((amount > 0) || (flags & DMSS_KILL))
 	{
-		P_DamageMobj(self, self, self, amount, DamageType, DMG_NO_ARMOR);
+		if (!(dmgtarget->flags2 & MF2_INVULNERABLE) || (flags & DMSS_FOILINVUL))
+		{
+			if (flags & DMSS_KILL)
+			{
+				P_DamageMobj(dmgtarget, self, self, dmgtarget->health, DamageType, DMG_NO_FACTOR | DMG_NO_ARMOR | DMG_FOILINVUL);
+			}
+			if (flags & DMSS_AFFECTARMOR)
+			{
+				P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL);
+			}
+			else
+			{
+				//[MC] DMG_FOILINVUL is needed for making the damage occur on the actor.
+				P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL | DMG_NO_ARMOR);
+			}
+		}
 	}
 	else if (amount < 0)
 	{
 		amount = -amount;
-		P_GiveBody(self, amount);
+		P_GiveBody(dmgtarget, amount);
 	}
 }
 
 //===========================================================================
-//
-// A_DamageMaster (int amount)
-// Damages the master of this child by the specified amount. Negative values heal.
-//
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_INT(amount, 0);
+	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
+
+	DoDamage(self, self, amount, DamageType, flags);
+}
+
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTarget)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_INT(amount, 0);
+	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
+
+	if (self->target != NULL) DoDamage(self->target, self, amount, DamageType, flags);
+}
+
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTracer)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_INT(amount, 0);
+	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
+
+	if (self->tracer != NULL) DoDamage(self->tracer, self, amount, DamageType, flags);
+}
+
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageMaster)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
 
-	if (self->master != NULL)
-	{
-		if (amount > 0)
-		{
-			P_DamageMobj(self->master, self, self, amount, DamageType, DMG_NO_ARMOR);
-		}
-		else if (amount < 0)
-		{
-			amount = -amount;
-			P_GiveBody(self->master, amount);
-		}
-	}
+	if (self->master != NULL) DoDamage(self->master, self, amount, DamageType, flags);
 }
 
-//===========================================================================
-//
-// A_DamageChildren (amount)
-// Damages the children of this master by the specified amount. Negative values heal.
-//
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageChildren)
 {
-	TThinkerIterator<AActor> it;
-	AActor * mo;
-
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
+
+	TThinkerIterator<AActor> it;
+	AActor *mo;
 
 	while ( (mo = it.Next()) )
 	{
-		if (mo->master == self)
-		{
-			if (amount > 0)
-			{
-				P_DamageMobj(mo, self, self, amount, DamageType, DMG_NO_ARMOR);
-			}
-			else if (amount < 0)
-			{
-				amount = -amount;
-				P_GiveBody(mo, amount);
-			}
-		}
+		if (mo->master == self) DoDamage(mo, self, amount, DamageType, flags);
 	}
 }
 
-// [KS] *** End of my modifications ***
-
-//===========================================================================
-//
-// A_DamageSiblings (amount)
-// Damages the siblings of this master by the specified amount. Negative values heal.
-//
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSiblings)
 {
-	TThinkerIterator<AActor> it;
-	AActor * mo;
-
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
+	ACTION_PARAM_INT(flags, 2);
+
+	TThinkerIterator<AActor> it;
+	AActor *mo;
 
 	if (self->master != NULL)
 	{
 		while ( (mo = it.Next()) )
 		{
-			if (mo->master == self->master && mo != self)
-			{
-				if (amount > 0)
-				{
-					P_DamageMobj(mo, self, self, amount, DamageType, DMG_NO_ARMOR);
-				}
-				else if (amount < 0)
-				{
-					amount = -amount;
-					P_GiveBody(mo, amount);
-				}
-			}
+			if (mo->master == self->master && mo != self) DoDamage(mo, self, amount, DamageType, flags);
 		}
 	}
 }
@@ -5207,6 +5307,72 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckFlag)
 
 //===========================================================================
 //
+// DoRemove
+//
+// [rc4l] uzdoom@43b86288c with its follow-up 96c6e7d9b folded in: that one drops a stray
+// MF3_ISMONSTER test which also dereferenced tracer while checking target, so the
+// corrected form is written directly.
+//
+// No gating here: P_RemoveThing already broadcasts SERVERCOMMANDS_DestroyThing when we are
+// the server (p_things.cpp:511).
+//
+//===========================================================================
+enum RMVF_flags
+{
+	RMVF_MISSILES = 1 << 0,
+	RMVF_NOMONSTERS = 1 << 1,
+	RMVF_MISC = 1 << 2,
+	RMVF_EVERYTHING = 1 << 3,
+};
+
+static void DoRemove(AActor *removetarget, int flags)
+{
+	if ((flags & RMVF_EVERYTHING))
+	{
+		P_RemoveThing(removetarget);
+	}
+	if ((flags & RMVF_MISC) && !((removetarget->flags3 & MF3_ISMONSTER) && (removetarget->flags & MF_MISSILE)))
+	{
+		P_RemoveThing(removetarget);
+	}
+	if ((removetarget->flags3 & MF3_ISMONSTER) && !(flags & RMVF_NOMONSTERS))
+	{
+		P_RemoveThing(removetarget);
+	}
+	if ((removetarget->flags & MF_MISSILE) && (flags & RMVF_MISSILES))
+	{
+		P_RemoveThing(removetarget);
+	}
+}
+
+//===========================================================================
+//
+// A_RemoveTarget
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION(AActor, A_RemoveTarget)
+{
+	if (self->target != NULL)
+	{
+		P_RemoveThing(self->target);
+	}
+}
+
+//===========================================================================
+//
+// A_RemoveTracer
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION(AActor, A_RemoveTracer)
+{
+	if (self->tracer != NULL)
+	{
+		P_RemoveThing(self->tracer);
+	}
+}
+
+//===========================================================================
+//
 // A_RemoveMaster
 //
 //===========================================================================
@@ -5227,14 +5393,15 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveChildren)
 {
 	TThinkerIterator<AActor> it;
 	AActor *mo;
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_BOOL(removeall,0);
+	ACTION_PARAM_INT(flags, 1);
 
 	while ((mo = it.Next()) != NULL)
 	{
 		if (mo->master == self && (mo->health <= 0 || removeall))
 		{
-			P_RemoveThing(mo);
+			DoRemove(mo, flags);
 		}
 	}
 }
@@ -5248,8 +5415,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveSiblings)
 {
 	TThinkerIterator<AActor> it;
 	AActor *mo;
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_BOOL(removeall,0);
+	ACTION_PARAM_INT(flags, 1);
 
 	if (self->master != NULL)
 	{
@@ -5257,9 +5425,28 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveSiblings)
 		{
 			if (mo->master == self->master && mo != self && (mo->health <= 0 || removeall))
 			{
-				P_RemoveThing(mo);
+				DoRemove(mo, flags);
 			}
 		}
+	}
+}
+
+//===========================================================================
+//
+// A_Remove(int pointer, int flags)
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Remove)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(removee, 0);
+	ACTION_PARAM_INT(flags, 1);
+
+	AActor *reference = COPY_AAPTR(self, removee);
+
+	if (reference != NULL)
+	{
+		DoRemove(reference, flags);
 	}
 }
 

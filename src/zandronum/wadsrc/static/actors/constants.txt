@@ -67,6 +67,9 @@ const int SXF_CLEARCALLERSPECIAL = 65536;
 const int SXF_TRANSFERSTENCILCOL = 131072;
 const int SXF_TRANSFERALPHA = 262144;
 const int SXF_TRANSFERRENDERSTYLE = 524288;
+const int SXF_SETTARGET = 1048576;
+const int SXF_SETTRACER = 2097152;
+const int SXF_NOPOINTERS = 4194304;
 
 // Flags for A_Chase
 const int CHF_FASTCHASE = 1;
@@ -328,6 +331,7 @@ Const Int AAPTR_PLAYER7 = 4096;
 Const Int AAPTR_PLAYER8 = 8192;
 
 Const Int AAPTR_FRIENDPLAYER = 16384;
+Const Int AAPTR_GET_LINETARGET = 32768;
 
 // Pointer operation flags
 
@@ -468,3 +472,19 @@ const int JIF_NOT = 4;
 
 // This is only here to provide one global variable for testing.
 native int testglobalvar;
+
+// Flags for A_Kill (Target/Tracer/Master/Children/Siblings) series
+const int KILS_FOILINVUL =		1;
+const int KILS_KILLMISSILES =	2;
+const int KILS_NOMONSTERS =		4;
+
+// Flags for A_Damage (Self/Target/Tracer/Master/Children/Siblings) series
+const int DMSS_FOILINVUL =		1;
+const int DMSS_AFFECTARMOR =	2;
+const int DMSS_KILL =			4;
+
+// Flags for A_Remove* series
+const int RMVF_MISSILES =		1;
+const int RMVF_NOMONSTERS =		2;
+const int RMVF_MISC =			4;
+const int RMVF_EVERYTHING =		8;

@@ -32,6 +32,7 @@
 #include "doomdef.h"
 #include "s_sound.h"
 #include "p_local.h"
+#include "cl_main.h"	// [rc4l] CLIENT_PREDICT_IsPredicting
 #include "p_terrain.h"
 #include "r_state.h"
 #include "gi.h"
@@ -201,7 +202,14 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 	}
 
 	// Spawn teleport fog at source and destination
-	if (sourceFog)
+	// [rc4l] uzdoom@9e68983b4, adapted: upstream tests player->cheats & CF_PREDICTING. That flag is
+	// never set here -- P_PredictPlayer is commented out because Zandronum predicts differently --
+	// so this asks CLIENT_PREDICT_IsPredicting() instead, the same substitution p_mobj.cpp:2728
+	// already makes. Without it a client replaying a tick that crosses a teleport line spawns a
+	// fresh fog on every replay pass, because nothing gates the spechit SPAC_Cross loop on clients.
+	const bool predicting = CLIENT_PREDICT_IsPredicting( );
+
+	if (sourceFog && !predicting)
 	{
 		fixed_t fogDelta = thing->flags & MF_MISSILE ? 0 : TELEFOGHEIGHT;
 		AActor *fog = Spawn<ATeleportFog> (oldx, oldy, oldz + fogDelta, ALLOW_REPLACE);
@@ -209,11 +217,14 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 	}
 	if (useFog)
 	{
-		fixed_t fogDelta = thing->flags & MF_MISSILE ? 0 : TELEFOGHEIGHT;
-		an = angle >> ANGLETOFINESHIFT;
-		AActor *fog = Spawn<ATeleportFog> (x + 20*finecosine[an],
-			y + 20*finesine[an], thing->z + fogDelta, ALLOW_REPLACE);
-		fog->target = thing;
+		if (!predicting)
+		{
+			fixed_t fogDelta = thing->flags & MF_MISSILE ? 0 : TELEFOGHEIGHT;
+			an = angle >> ANGLETOFINESHIFT;
+			AActor *fog = Spawn<ATeleportFog> (x + 20*finecosine[an],
+				y + 20*finesine[an], thing->z + fogDelta, ALLOW_REPLACE);
+			fog->target = thing;
+		}
 		if (thing->player)
 		{
 			// [RH] Zoom player's field of vision
@@ -257,7 +268,8 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 	return true;
 }
 
-static AActor *SelectTeleDest (int tid, int tag)
+// [rc4l] uzdoom@9e68983b4: norandom -- see the call in EV_Teleport.
+static AActor *SelectTeleDest (int tid, int tag, bool norandom)
 {
 	AActor *searcher;
 
@@ -307,7 +319,7 @@ static AActor *SelectTeleDest (int tid, int tag)
 		}
 		else
 		{
-			if (count != 1)
+			if (count != 1 && !norandom)
 			{
 				count = 1 + (pr_teleport() % count);
 			}
@@ -374,7 +386,10 @@ bool EV_Teleport (int tid, int tag, line_t *line, int side, AActor *thing, bool 
 	{ // Don't teleport if hit back of line, so you can get out of teleporter.
 		return 0;
 	}
-	searcher = SelectTeleDest (tid, tag);
+	// [rc4l] uzdoom@9e68983b4: never draw the sync RNG while predicting -- pr_teleport() inside
+	// SelectTeleDest would both advance it out of step with the server and possibly choose a
+	// different destination than the one the server will send.
+	searcher = SelectTeleDest (tid, tag, CLIENT_PREDICT_IsPredicting( ));
 	if (searcher == NULL)
 	{
 		return false;
