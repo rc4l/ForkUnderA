@@ -20,8 +20,10 @@
 
 // MACROS ------------------------------------------------------------------
 
-//#define SHADE2LIGHT(s) (clamp (160-2*(s), 0, 255))
-#define SHADE2LIGHT(s) (clamp (255-2*s, 0, 255))
+// [rc4l] uzdoom@46592f5f6: no clamp -- Build shades legitimately go outside 0..255 and the
+// renderer wants the real value.
+//#define SHADE2LIGHT(s) (160-2*(s))
+#define SHADE2LIGHT(s) (255-2*s)
 
 // TYPES -------------------------------------------------------------------
 
@@ -249,7 +251,7 @@ static bool P_LoadBloodMap (BYTE *data, size_t len, FMapThing **mapthings, int *
 	BYTE infoBlock[37];
 	int mapver = data[5];
 	DWORD matt;
-	int numRevisions, numWalls, numsprites, skyLen;
+	int numRevisions, numWalls, numsprites, skyLen, visibility, parallaxType;
 	int i;
 	int k;
 
@@ -269,11 +271,15 @@ static bool P_LoadBloodMap (BYTE *data, size_t len, FMapThing **mapthings, int *
 	{
 		memcpy (infoBlock, data + 6, 37);
 	}
+	// [rc4l] uzdoom@e6a1d6b51: visibility and parallax type are in the header too.
+	skyLen = 2 << LittleShort(*(WORD *)(infoBlock + 16));
+	visibility = LittleLong(*(DWORD *)(infoBlock + 18));
+	parallaxType = infoBlock[26];
 	numRevisions = LittleLong(*(DWORD *)(infoBlock + 27));
 	numsectors = LittleShort(*(WORD *)(infoBlock + 31));
 	numWalls = LittleShort(*(WORD *)(infoBlock + 33));
 	numsprites = LittleShort(*(WORD *)(infoBlock + 35));
-	skyLen = 2 << LittleShort(*(WORD *)(infoBlock + 16));
+	Printf("Visibility: %d\n", visibility);
 
 	if (mapver == 7)
 	{
