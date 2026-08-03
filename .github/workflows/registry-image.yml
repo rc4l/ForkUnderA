@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 
-# [rc4l] Builds and publishes the master server container image.
+# [rc4l] Builds and publishes the server registry container image.
 #
 # Deliberately on its OWN tag namespace (master-v*) and cadence, separate from engine releases
 # (v*). The master only needs republishing when the wire protocol moves; a renderer or menu release
@@ -14,16 +14,16 @@
 # invalidate the artefact without any workflow noticing for eleven days. zandrox-registry compiles
 # networkshared.cpp and the huffman codec straight out of the engine tree, so those paths are the
 # coupling and they are listed here.
-name: master server image
+name: server registry image
 
 on:
   push:
     tags: ['master-v*']
   pull_request:
     paths:
-      - Dockerfile.master
-      - Dockerfile.master.dockerignore
-      - .github/workflows/master-image.yml
+      - Dockerfile.registry
+      - Dockerfile.registry.dockerignore
+      - .github/workflows/registry-image.yml
       - src/zandronum/registry/**
       # The protocol surface zandrox-registry shares with the engine:
       - src/zandronum/src/networkshared.cpp
@@ -33,7 +33,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/zandrox-master
+  IMAGE: ghcr.io/${{ github.repository_owner }}/zandrox-registry
 
 jobs:
   image:
@@ -48,7 +48,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # [rc4l] Required for Dockerfile.master.dockerignore to be honoured; the legacy builder only
+      # [rc4l] Required for Dockerfile.registry.dockerignore to be honoured; the legacy builder only
       # reads the root .dockerignore, which excludes everything and would empty the context.
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -81,7 +81,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.master
+          file: Dockerfile.registry
           load: true
           push: false
           tags: ${{ steps.meta.outputs.tags }}
