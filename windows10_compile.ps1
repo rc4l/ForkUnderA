@@ -11,11 +11,11 @@
     the DirectX headers reshaped out of the modern Windows SDK, MSVC via the
     Visual Studio 2022 generator, then packages a runnable dist-windows/ zip.
 
-    This is the "compile from source" path — it (re)builds the dependencies with
+    This is the "compile from source" path - it (re)builds the dependencies with
     vcpkg. For a fast build from prebuilt, committed dependencies, use
     windows_build.ps1 instead.
 
-    De-Zandronum principle — this script is for ZandroX, not upstream Zandronum,
+    De-Zandronum principle - this script is for ZandroX, not upstream Zandronum,
     and must not regress to Zandronumisms:
       * OpenAL only. FMOD is gone; never reintroduce it (NO_FMOD=ON).
       * It compiles the source already in this repo (src/zandronum). It does NOT
@@ -134,7 +134,7 @@ if ($Clean) {
 }
 
 if (-not $Version) { $Version = Get-DefaultVersion }
-Write-Status "ZandroX Windows compile — configuration=$Configuration version=$Version"
+Write-Status "ZandroX Windows compile - configuration=$Configuration version=$Version"
 
 # --- Tooling ---------------------------------------------------------------
 Require-Command "cmake" "Install CMake and Visual Studio 2022 (with the C++ workload)." | Out-Null
@@ -142,7 +142,7 @@ $VcpkgRoot      = Resolve-Vcpkg
 $VcpkgExe       = Join-Path $VcpkgRoot "vcpkg.exe"
 $VcpkgInstalled = Join-Path $VcpkgRoot "installed\x64-windows-static"
 
-# --- Dependencies (OpenAL stack — never FMOD) ------------------------------
+# --- Dependencies (OpenAL stack - never FMOD) ------------------------------
 if ($SkipDeps) {
     Write-Status "Skipping vcpkg install (-SkipDeps)"
 } else {
@@ -158,11 +158,11 @@ if ($SkipDeps) {
 
 # --- DirectX headers/libs from the Windows SDK -----------------------------
 # [rc4l] Zandronum's build wants the legacy DirectX SDK layout ($DXSDK_DIR/Include/d3d9.h,
-# $DXSDK_DIR/Lib/x64/dxguid.lib). Those files live in the modern Windows SDK — reshape them.
+# $DXSDK_DIR/Lib/x64/dxguid.lib). Those files live in the modern Windows SDK - reshape them.
 Write-Status "Setting up DirectX headers/libs from the Windows SDK"
 $kits = "${env:ProgramFiles(x86)}\Windows Kits\10"
 if (-not (Test-Path $kits)) { $kits = "${env:ProgramFiles}\Windows Kits\10" }
-if (-not (Test-Path $kits)) { throw "Windows 10 SDK not found — install it via the Visual Studio installer." }
+if (-not (Test-Path $kits)) { throw "Windows 10 SDK not found - install it via the Visual Studio installer." }
 $ver = (Get-ChildItem "$kits\Include" -Directory |
         Where-Object { $_.Name -match '^\d+\.\d+' } |
         Sort-Object Name -Descending | Select-Object -First 1).Name
@@ -178,7 +178,7 @@ $env:DXSDK_DIR = $dx
 Write-Note "DXSDK_DIR set to $dx"
 
 # --- Configure (MSVC x64, NO_FMOD, OpenAL) ---------------------------------
-# [rc4l] Explicit -D dep paths instead of the vcpkg toolchain file — the toolchain's
+# [rc4l] Explicit -D dep paths instead of the vcpkg toolchain file - the toolchain's
 # cmake_policy() calls collide with Zandronum's old CMake minimums and break the VS generator.
 Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, STATIC deps)"
 $dep = $VcpkgInstalled
@@ -236,7 +236,7 @@ Write-Status "Building ($Configuration)"
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
 $exe = Join-Path $BuildDir "$Configuration\zandronum.exe"
-if (-not (Test-Path $exe)) { throw "zandronum.exe missing — the build failed" }
+if (-not (Test-Path $exe)) { throw "zandronum.exe missing - the build failed" }
 Write-Status "Compiled: $exe"
 
 if ($NoPackage) {
@@ -257,7 +257,7 @@ if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
     Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
     Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
 } else {
-    throw "tools/freedoom/freedoom2.wad missing — the zip would ship without a game"
+    throw "tools/freedoom/freedoom2.wad missing - the zip would ship without a game"
 }
 
 # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and point at the source.
@@ -267,7 +267,7 @@ Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\
 # [rc4l] Deps are statically linked (x64-windows-static), so there are NO runtime DLLs to ship;
 # the app folder is just the exe + pk3s. Guard against a silent regression to dynamic linking.
 if (Get-ChildItem "$DistDir\*.dll" -ErrorAction SilentlyContinue) {
-    throw "unexpected DLL(s) in dist-windows — deps should be static; check the vcpkg triplet"
+    throw "unexpected DLL(s) in dist-windows - deps should be static; check the vcpkg triplet"
 }
 Write-Note "static build: no runtime DLLs in dist-windows"
 
