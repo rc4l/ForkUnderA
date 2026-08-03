@@ -5471,6 +5471,10 @@ void ServerCommands::SetThingProperty::Execute()
 		actor->SetShade(( value >> 16 ) & 0xFF, ( value >> 8 ) & 0xFF, value & 0xFF );
 		break;
 
+	case APROP_Friction:
+		actor->Friction = value;
+		break;
+
 	default:
 		CLIENT_PrintWarning( "client_SetThingProperty: Unknown property, %d!\n", static_cast<unsigned int> (property) );
 		return;

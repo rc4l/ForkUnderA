@@ -1942,6 +1942,10 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 		value = pActor->fillcolor;
 		break;
 
+	case APROP_Friction:
+		value = (int)(pActor->Friction);
+		break;
+
 	default:
 		return;
 	}

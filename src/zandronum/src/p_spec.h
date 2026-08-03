@@ -192,6 +192,27 @@ void	P_PlayerOnSpecialFlat (player_t *player, int floorType);
 void	P_SectorDamage(int tag, int amount, FName type, const PClass *protectClass, int flags);
 void	P_SetSectorFriction (int tag, int amount, bool alterFlag);
 
+// [rc4l] uzdoom@ea7ba9dba: shared by P_SetSectorFriction and per-actor friction, which needs the
+// same friction -> movefactor curve.
+inline fixed_t FrictionToMoveFactor(fixed_t friction)
+{
+	fixed_t movefactor;
+
+	// [RH] Twiddled these values so that velocity on ice (with
+	//		friction 0xf900) is the same as in Heretic/Hexen.
+	if (friction >= ORIG_FRICTION)	// ice
+//		movefactor = ((0x10092 - friction)*(0x70))/0x158;
+		movefactor = ((0x10092 - friction) * 1024) / 4352 + 568;
+	else
+		movefactor = ((friction - 0xDB34)*(0xA))/0x80;
+
+	// killough 8/28/98: prevent odd situations
+	if (movefactor < 32)
+		movefactor = 32;
+
+	return movefactor;
+}
+
 // [Zandronum] `allowclient` is Zandronum extension to prevent accidental execution
 // by clients unless explicitly allowed to do so.
 // [rc4l] Carries both parameters: Zandronum's `allowclient` (clients must not award a secret
