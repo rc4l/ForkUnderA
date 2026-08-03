@@ -1473,7 +1473,7 @@ void WI_UpdateCampaignStats( void )
 			cnt_Rank = WI_CalcRank( );
 			cnt_NumPlayers = SERVER_CountPlayers( true );
 		}
-		cnt_time = plrs[0].stime / TICRATE;
+		cnt_time = Tics2Seconds(plrs[0].stime);
 	}
 
 	if ( cp_state == 2 )
@@ -1636,9 +1636,9 @@ void WI_UpdateCampaignStats( void )
 		if (!(bcnt&3))
 			S_Sound (CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE);
 
-		if (cnt_time >= plrs[0].stime / TICRATE)
+		if (cnt_time >= Tics2Seconds(plrs[0].stime))
 		{
-			cnt_time = plrs[0].stime / TICRATE;
+			cnt_time = Tics2Seconds(plrs[0].stime);
 			S_Sound (CHAN_VOICE, "intermission/nextstage", 1, ATTN_NONE);
 			cp_state++;
 		}
@@ -2336,7 +2336,7 @@ void WI_updateStats ()
 		cnt_kills[0] = plrs[me].skills;
 		cnt_items[0] = plrs[me].sitems;
 		cnt_secret[0] = plrs[me].ssecret;
-		cnt_time = plrs[me].stime / TICRATE;
+		cnt_time = Tics2Seconds(plrs[me].stime);
 		cnt_par = wbs->partime / TICRATE;
 	    cnt_total_time = wbs->totaltime / TICRATE;
 	}
@@ -2401,8 +2401,8 @@ void WI_updateStats ()
 			cnt_total_time += 3;
 		}
 
-		if (!gameinfo.intermissioncounter || cnt_time >= plrs[me].stime / TICRATE)
-			cnt_time = plrs[me].stime / TICRATE;
+		if (!gameinfo.intermissioncounter || cnt_time >= Tics2Seconds(plrs[me].stime))
+			cnt_time = Tics2Seconds(plrs[me].stime);
 
 		if (!gameinfo.intermissioncounter || cnt_total_time >= wbs->totaltime / TICRATE)
 			cnt_total_time = wbs->totaltime / TICRATE;
@@ -2411,7 +2411,7 @@ void WI_updateStats ()
 		{
 			cnt_par = wbs->partime / TICRATE;
 
-			if (cnt_time >= plrs[me].stime / TICRATE)
+			if (cnt_time >= Tics2Seconds(plrs[me].stime))
 			{
 				cnt_total_time = wbs->totaltime / TICRATE;
 				S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);

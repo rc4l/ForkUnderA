@@ -1,0 +1,93 @@
+# Values of enums carried inside network commands. DERIVED -- do not hand-edit.
+# Regenerate with: tools/wire-enum-snapshot.py --write
+# A change here alters what an existing command's bytes MEAN. If it came from an
+# upstream commit, do whatever that commit did about versioning -- no more, no less.
+DCeiling::ECeiling  (src/zandronum/src/p_spec.h)
+    ceilLowerByValue                         0
+    ceilRaiseByValue                         1
+    ceilMoveToValue                          2
+    ceilLowerToHighestFloor                  3
+    ceilLowerInstant                         4
+    ceilRaiseInstant                         5
+    ceilCrushAndRaise                        6
+    ceilLowerAndCrush                        7
+    ceilLowerAndCrushDist                    8
+    ceilCrushRaiseAndStay                    9
+    ceilRaiseToNearest                       10
+    ceilLowerToLowest                        11
+    ceilLowerToFloor                         12
+    ceilRaiseToHighest                       13
+    ceilLowerToHighest                       14
+    ceilRaiseToLowest                        15
+    ceilLowerToNearest                       16
+    ceilRaiseToHighestFloor                  17
+    ceilRaiseToFloor                         18
+    ceilRaiseByTexture                       19
+    ceilLowerByTexture                       20
+    genCeilingChg0                           21
+    genCeilingChgT                           22
+    genCeilingChg                            23
+DDoor::EVlDoor  (src/zandronum/src/p_spec.h)
+    doorClose                                0
+    doorOpen                                 1
+    doorRaise                                2
+    doorRaiseIn5Mins                         3
+    doorCloseWaitOpen                        4
+DElevator::EElevator  (src/zandronum/src/p_spec.h)
+    elevateUp                                0
+    elevateDown                              1
+    elevateCurrent                           2
+    elevateRaise                             3
+    elevateLower                             4
+DFloor::EFloor  (src/zandronum/src/p_spec.h)
+    floorLowerToLowest                       0
+    floorLowerToNearest                      1
+    floorLowerToHighest                      2
+    floorLowerByValue                        3
+    floorRaiseByValue                        4
+    floorRaiseToHighest                      5
+    floorRaiseToNearest                      6
+    floorRaiseAndCrush                       7
+    floorRaiseAndCrushDoom                   8
+    floorCrushStop                           9
+    floorLowerInstant                        10
+    floorRaiseInstant                        11
+    floorMoveToValue                         12
+    floorRaiseToLowestCeiling                13
+    floorRaiseByTexture                      14
+    floorLowerAndChange                      15
+    floorRaiseAndChange                      16
+    floorRaiseToLowest                       17
+    floorRaiseToCeiling                      18
+    floorLowerToLowestCeiling                19
+    floorLowerByTexture                      20
+    floorLowerToCeiling                      21
+    donutRaise                               22
+    buildStair                               23
+    waitStair                                24
+    resetStair                               25
+    genFloorChg0                             26
+    genFloorChgT                             27
+    genFloorChg                              28
+DPillar::EPillar  (src/zandronum/src/p_spec.h)
+    pillarBuild                              0
+    pillarOpen                               1
+DPlat::EPlatState  (src/zandronum/src/p_spec.h)
+    up                                       0
+    down                                     1
+    waiting                                  2
+    in_stasis                                3
+DPlat::EPlatType  (src/zandronum/src/p_spec.h)
+    platPerpetualRaise                       0
+    platDownWaitUpStay                       1
+    platDownWaitUpStayStone                  2
+    platUpWaitDownStay                       3
+    platUpNearestWaitDownStay                4
+    platDownByValue                          5
+    platUpByValue                            6
+    platUpByValueStay                        7
+    platRaiseAndStay                         8
+    platToggle                               9
+    platDownToNearestFloor                   10
+    platDownToLowestCeiling                  11
+    platRaiseAndStayLockout                  12

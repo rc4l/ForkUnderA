@@ -158,7 +158,6 @@ void DCeiling::Tick ()
 			switch (m_Type)
 			{
 			case ceilCrushAndRaise:
-			case ceilCrushAndRaiseDist:
 				m_Direction = -1;
 				m_Speed = m_Speed1;
 				if (!SN_IsMakingLoopingSound (m_Sector))
@@ -234,7 +233,6 @@ void DCeiling::Tick ()
 			switch (m_Type)
 			{
 			case ceilCrushAndRaise:
-			case ceilCrushAndRaiseDist:
 			case ceilCrushRaiseAndStay:
 				m_Speed = m_Speed2;
 				m_Direction = 1;
@@ -294,7 +292,6 @@ void DCeiling::Tick ()
 				switch (m_Type)
 				{
 				case ceilCrushAndRaise:
-				case ceilCrushAndRaiseDist:
 				case ceilLowerAndCrush:
 				case ceilLowerAndCrushDist:
 					if (m_Speed1 == FRACUNIT && m_Speed2 == FRACUNIT)
@@ -455,7 +452,6 @@ DCeiling *DCeiling::Create(sector_t *sec, DCeiling::ECeiling type, line_t *line,
 	switch (type)
 	{
 	case ceilCrushAndRaise:
-	case ceilCrushAndRaiseDist:
 	case ceilCrushRaiseAndStay:
 		ceiling->m_TopHeight = sec->ceilingplane.d;
 	case ceilLowerAndCrush:
@@ -465,7 +461,7 @@ DCeiling *DCeiling::Create(sector_t *sec, DCeiling::ECeiling type, line_t *line,
 		{
 			targheight += 8*FRACUNIT;
 		}
-		else if (type == ceilLowerAndCrushDist || type == ceilCrushAndRaiseDist)
+		else if (type == ceilCrushAndRaise)
 		{
 			targheight += height;
 		}
@@ -716,7 +712,7 @@ bool EV_DoCeiling (DCeiling::ECeiling type, line_t *line,
 	
 	//	Reactivate in-stasis ceilings...for certain types.
 	// This restarts a crusher after it has been stopped
-	if (type == DCeiling::ceilCrushAndRaise || type == DCeiling::ceilCrushAndRaiseDist)
+	if (type == DCeiling::ceilCrushAndRaise)
 	{
 		P_ActivateInStasisCeiling (tag);
 	}

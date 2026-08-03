@@ -600,10 +600,15 @@ private:
 		{
 		case POP_Log:
 			// Draw the latest log message.
+			// [rc4l] uzdoom@259466c3d: a tic is slightly short of 1/35s, so seconds have to be
+			// derived with the adjustment rather than a plain divide. Braced because a
+			// declaration cannot be jumped over by the other case labels.
+		{
+			int seconds = Tics2Seconds(level.time);
 			mysnprintf (buff, countof(buff), "%02d:%02d:%02d",
-				(level.time/TICRATE)/3600,
-				((level.time/TICRATE)%3600)/60,
-				(level.time/TICRATE)%60);
+				seconds / 3600,
+				(seconds % 3600) / 60,
+				seconds % 60);
 
 			screen->DrawText (SmallFont2, CR_UNTRANSLATED, left+210*xscale, top+8*yscale, buff,
 				DTA_CleanNoMove, true, TAG_DONE);
@@ -618,6 +623,7 @@ private:
 				}
 				V_FreeBrokenLines (lines);
 			}
+		}
 			break;
 
 		case POP_Keys:
