@@ -68,6 +68,11 @@ function Get-DefaultVersion {
 if (-not (Test-Path (Join-Path $Deps "lib\OpenAL32.lib"))) {
     throw "windows_assets/ is missing or incomplete (no lib/OpenAL32.lib). Use windows_compile.ps1, or regenerate windows_assets/ — see windows_assets/README.md."
 }
+# [rc4l] GLEW is mandatory for every client build since d2e4479; without it CMake fails at configure
+# with a bare GLEW_INCLUDE_DIR-NOTFOUND. Check it here so the error names the actual cause.
+if (-not (Test-Path (Join-Path $Deps "lib\glew32.lib"))) {
+    throw "windows_assets/ has no lib/glew32.lib. GLEW is required for the client build — regenerate windows_assets/ with the windows-export-deps workflow (it installs glew:x64-windows)."
+}
 
 if ($Clean) {
     Write-Status "Cleaning build and dist directories"
@@ -116,6 +121,8 @@ Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, prebuilt deps)
     "-DMPG123_LIBRARIES=$Deps/lib/mpg123.lib" `
     "-DOPUS_INCLUDE_DIR=$Deps/include/opus" `
     "-DOPUS_LIBRARIES=$Deps/lib/opus.lib" `
+    "-DGLEW_INCLUDE_DIR=$Deps/include" `
+    "-DGLEW_LIBRARY=$Deps/lib/glew32.lib" `
     "-DOPENSSL_ROOT_DIR=$Deps" "-DOPENSSL_USE_STATIC_LIBS=OFF"
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
