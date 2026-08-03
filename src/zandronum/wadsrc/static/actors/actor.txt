@@ -78,7 +78,7 @@ ACTOR Actor native //: Thinker
 	// End of MBF redundant functions.
 
 	action native A_MonsterRail();
-	action native A_BFGSpray(class<Actor> spraytype = "BFGExtra", int numrays = 40, int damagecount = 15);
+	action native A_BFGSpray(class<Actor> spraytype = "BFGExtra", int numrays = 40, int damagecount = 15, float angle = 0, float distance = 0, float vrange = 0, int defdamage = 0);
 	action native A_Pain();
 	action native A_NoBlocking();
 	action native A_XScream();
