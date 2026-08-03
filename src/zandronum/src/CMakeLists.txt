@@ -1225,7 +1225,7 @@ add_executable( zdoom WIN32
 	sv_ban.cpp #ST
 	sv_commands.cpp #ST
 	sv_main.cpp #ST
-	sv_master.cpp #ST
+	features/federated-server-registry/sv_serverregistry.cpp #ST
 	sv_rcon.cpp #ST
 	sv_save.cpp #ST
 	tables.cpp

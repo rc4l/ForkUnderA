@@ -293,7 +293,7 @@ BOOL CALLBACK SERVERCONSOLE_ServerDialogBoxCallback( HWND hDlg, UINT Message, WP
 			{
 				int iIndex = ((LPNMMOUSE) lParam )->dwItemSpec;
 				if ( iIndex == 0 )
-					sv_updatemaster = !sv_updatemaster;
+					sv_fua_serverregistry_announce = !sv_fua_serverregistry_announce;
 				else if ( iIndex == 1 )
 					sv_broadcast = !sv_broadcast;
 				else if ( iIndex == 2 && g_bServerLoaded )
@@ -1876,7 +1876,7 @@ void SERVERCONSOLE_UpdateIP( NETADDRESS_s LocalAddress )
 //
 void SERVERCONSOLE_UpdateBroadcasting( void )
 {
-	SendMessage( g_hDlgStatusBar, SB_SETTEXT, (WPARAM)0, (LPARAM) (sv_updatemaster ? "Public" : "Private" ));
+	SendMessage( g_hDlgStatusBar, SB_SETTEXT, (WPARAM)0, (LPARAM) (sv_fua_serverregistry_announce ? "Public" : "Private" ));
 	SendMessage( g_hDlgStatusBar, SB_SETTEXT, (WPARAM)1, (LPARAM) (sv_broadcast ? "LAN" : "" ));
 }
 

@@ -697,7 +697,7 @@ void		SERVER_HandleWeaponStateJump( ULONG ulPlayer, FState *pState, LONG lPositi
 void		SERVER_SetThingNonZeroAngleAndVelocity( AActor *pActor );
 void		SERVER_IgnoreIP( NETADDRESS_s Address );
 IPList		*SERVER_GetAdminList( void );
-const FString& SERVER_GetMasterBanlistVerificationString( void );
+const FString& SERVER_GetRegistryBanlistVerificationString( void );
 void		SERVER_UpdateThingVelocity( AActor *pActor, bool updateZ, bool updateXY = true );
 void		SERVER_SyncSharedKeys( int playerToSync, bool withmessage );
 void		SERVER_SyncServerModCVars ( const int PlayerToSync );
@@ -712,16 +712,16 @@ void		SERVER_ResetClientTicBuffer( ULONG ulClient );
 void		SERVER_ResetClientExtrapolation( ULONG ulClient, bool bAfterBacktrace = false );
 void		SERVER_DestroyActorIfClientsidedOnly( AActor *actor );
 
-// From sv_master.cpp
-void		SERVER_MASTER_Construct( void );
-void		SERVER_MASTER_Destruct( void );
-void		SERVER_MASTER_Tick( void );
-void		SERVER_MASTER_Broadcast( void );
-void		SERVER_MASTER_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG ulTime, ULONG ulFlags2, bool bBroadcasting, bool bSegmentedResponse );
-const char	*SERVER_MASTER_GetGameName( void );
-NETADDRESS_s SERVER_MASTER_GetMasterAddress( void );
-void		SERVER_MASTER_HandleVerificationRequest( BYTESTREAM_s *pByteStream );
-void		SERVER_MASTER_SendBanlistReceipt( void );
+// From sv_serverregistry.cpp
+void		SERVER_REGISTRY_Construct( void );
+void		SERVER_REGISTRY_Destruct( void );
+void		SERVER_REGISTRY_Tick( void );
+void		SERVER_REGISTRY_Broadcast( void );
+void		SERVER_REGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG ulTime, ULONG ulFlags2, bool bBroadcasting, bool bSegmentedResponse );
+const char	*SERVER_REGISTRY_GetGameName( void );
+NETADDRESS_s SERVER_REGISTRY_GetRegistryAddress( void );
+void		SERVER_REGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream );
+void		SERVER_REGISTRY_SendBanlistReceipt( void );
 
 // Statistic functions.
 LONG		SERVER_STATISTIC_GetTotalSecondsElapsed( void );
@@ -764,13 +764,13 @@ EXTERN_CVAR( Bool, sv_limitcommands )
 EXTERN_CVAR( Int, sv_smoothplayers )
 EXTERN_CVAR( Int, sv_allowprivatechat )
 
-// From sv_master.cpp
-EXTERN_CVAR( Bool, sv_updatemaster );
+// From sv_serverregistry.cpp
+EXTERN_CVAR( Bool, sv_fua_serverregistry_announce );
 EXTERN_CVAR( Bool, sv_broadcast );
 EXTERN_CVAR( String, sv_hostname );
 EXTERN_CVAR( String, sv_website );
 EXTERN_CVAR( String, sv_hostemail );
 EXTERN_CVAR( String, sv_country );
-EXTERN_CVAR( String, masterhostname );
+EXTERN_CVAR( String, fua_serverregistry_host );
 
 #endif	// __SV_MAIN_H__

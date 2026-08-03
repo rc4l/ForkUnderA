@@ -373,7 +373,7 @@ OptionMenu ZA_Browser
 	ServerBrowserSlot 6
 	ServerBrowserSlot 7
 	StaticText	" "
-	Command		"Refresh",			"querymaster"
+	Command		"Refresh",			"fua_serverregistry_refresh"
 	Command		"Clear filter",			"menu_clear_browser_filter"
 	Submenu		"Get server info",			"ZA_ServerInfo"
 	SafeCommand	"Join game!",			"menu_join_selected_server"
