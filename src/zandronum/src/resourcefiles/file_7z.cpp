@@ -285,8 +285,10 @@ bool F7ZFile::Open(bool quiet)
 			continue;
 		}
 
-		nameUTF16.Resize(nameLength);
-		nameASCII.Resize(nameLength);
+		// [rc4l] uzdoom@7280d278d: nameLength is size_t; Resize takes unsigned. Explicit cast so
+		// the narrowing is deliberate rather than a 64-bit MSVC warning.
+		nameUTF16.Resize((unsigned)nameLength);
+		nameASCII.Resize((unsigned)nameLength);
 		SzArEx_GetFileNameUtf16(&Archive->DB, i, &nameUTF16[0]);
 		for (size_t c = 0; c < nameLength; ++c)
 		{

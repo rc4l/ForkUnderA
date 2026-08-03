@@ -1259,22 +1259,27 @@ void C_NewModeAdjust ()
 	C_AdjustBottom ();
 }
 
+// [rc4l] uzdoom@f99a84b49: the console slide is driven by its own counter, not gametic, so it
+// animates at a steady rate even when the game is not ticking (paused, or between levels).
+int consoletic = 0;
+
 void C_Ticker ()
 {
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
 
 	static int lasttic = 0;
+	consoletic++;
 
 	if (lasttic == 0)
-		lasttic = gametic - 1;
+		lasttic = consoletic - 1;
 
 	if (ConsoleState != c_up)
 	{
 		if (ConsoleState == c_falling)
 		{
 			// [AK] Change ConBottom based on con_speed rather than a constant value of 25.
-			ConBottom += (gametic - lasttic) * (SCREENHEIGHT*2/con_speed);
+			ConBottom += (consoletic - lasttic) * (SCREENHEIGHT*2/con_speed);
 			if (ConBottom >= SCREENHEIGHT / 2)
 			{
 				ConBottom = SCREENHEIGHT / 2;
@@ -1288,7 +1293,7 @@ void C_Ticker ()
 		else if (ConsoleState == c_rising)
 		{
 			// [AK] Change ConBottom based on con_speed rather than a constant value of 25.
-			ConBottom -= (gametic - lasttic) * (SCREENHEIGHT*2/con_speed);
+			ConBottom -= (consoletic - lasttic) * (SCREENHEIGHT*2/con_speed);
 			if (ConBottom <= 0)
 			{
 				ConsoleState = c_up;
@@ -1307,7 +1312,7 @@ void C_Ticker ()
 		CursorTicker = C_BLINKRATE;
 	}
 
-	lasttic = gametic;
+	lasttic = consoletic;
 
 	if (NotifyTopGoal > NotifyTop)
 	{

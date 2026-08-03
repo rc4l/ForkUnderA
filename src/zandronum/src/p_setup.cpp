@@ -356,7 +356,8 @@ MapData *P_OpenMapData(const char * mapname, bool justcheck)
 
 			if (map->Encrypted)
 			{ // If it's encrypted, then it's a Blood file, presumably a map.
-				map->MapLumps[0].Reader = map->file = Wads.ReopenLumpNum(lump_name);
+				// [rc4l] uzdoom@00854dd09: no second ReopenLumpNum here -- the reader opened a few
+				// lines above is still the right one, and reopening leaked it.
 				if (!P_IsBuildMap(map))
 				{
 					delete map;
@@ -3605,7 +3606,9 @@ void P_RemoveThings( void )
 			( teamgame == false ) &&
 			( dmflags & DF_NO_COOP_WEAPON_SPAWN ))
 		{
-			if ( pActor->GetClass( )->IsDescendantOf( RUNTIME_CLASS( AWeapon )))
+			// [rc4l] uzdoom@6d4eb7f62: keyed on the WEAPONSPAWN flag rather than descent from AWeapon,
+			// so a CustomInventory standing in for a weapon is suppressed too.
+			if ( pActor->flags7 & MF7_WEAPONSPAWN )
 			{
 				if (( pActor->SpawnFlags & ( MTF_DEATHMATCH|MTF_SINGLE )) == MTF_DEATHMATCH )
 				{

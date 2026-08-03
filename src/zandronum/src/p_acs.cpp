@@ -4472,14 +4472,17 @@ static const int LegacyRenderStyleIndices[] =
 	3,	// STYLE_SoulTrans,
 	4,	// STYLE_OptFuzzy,
 	5,	// STYLE_Stencil,
-	6,	// STYLE_AddStencil
-	7,	// STYLE_AddShaded
+	// [rc4l] uzdoom@84cb49b07: AddStencil/AddShaded belong AFTER Subtract. This array is indexed by
+	// the ERenderStyle enum, and those two were appended to the enum's end, not inserted mid-way --
+	// having them here shifted every entry from Translucent onward by two.
 	64,	// STYLE_Translucent
 	65,	// STYLE_Add,
 	66,	// STYLE_Shaded,
 	67,	// STYLE_TranslucentStencil,
 	68,	// STYLE_Shadow,
 	69,	// STYLE_Subtract,
+	6,	// STYLE_AddStencil
+	7,	// STYLE_AddShaded
 	-1
 };
 
@@ -4908,6 +4911,20 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 			SERVERCOMMANDS_SetThingProperty( actor, APROP_StencilColor );
 		break;
 
+	case APROP_Friction:
+		// [rc4l] Save the original value.
+		oldValue = (int)(actor->Friction);
+
+		actor->Friction = value;
+
+		// [rc4l] Friction feeds P_GetFriction, so it changes how the actor MOVES. A client that
+		// never heard about it would predict movement against the old value and drift, which is why
+		// this is broadcast rather than left to run independently on both ends.
+		// Only bother the clients if the friction has actually changed.
+		if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( oldValue != actor->Friction ) )
+			SERVERCOMMANDS_SetThingProperty( actor, APROP_Friction );
+		break;
+
 	default:
 		// do nothing.
 		break;
@@ -5009,6 +5026,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_Species:		return GlobalACSStrings.AddString(actor->GetSpecies());
 	case APROP_NameTag:		return GlobalACSStrings.AddString(actor->GetTag());
 	case APROP_StencilColor:return actor->fillcolor;
+	case APROP_Friction:	return (int)(actor->Friction);
 
 	default:				return 0;
 	}
