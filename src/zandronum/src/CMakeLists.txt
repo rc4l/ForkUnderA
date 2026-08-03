@@ -691,8 +691,16 @@ set( PLAT_SDL_SOURCES
 # [rc4l] The reason for the CoreAudio sink is that the Cocoa backend has no SDL to pull from -- not
 # that the platform is Apple. Keying it on the backend rather than on APPLE means the SDL fallback
 # build still has a working sink, and makes the two directly comparable.
+#
+# Windows gets NO sink file at all. SDL is not part of the win32 build, and the replay-audio call
+# site in oalsound.cpp is compiled out there (ZX_REPLAY_AUDIO is gated on !_WIN32), so every
+# reference to the sink disappears with it. Compiling the SDL sink anyway is what broke the Windows
+# build: a file that includes <SDL.h> at file scope, on a platform with no SDL, for a call site that
+# never runs. A native win32 sink is the follow-up that would light replay audio up there.
 if( APPLE AND ZX_COCOA_BACKEND )
 	set( FUA_AUDIOSINK_SOURCES features/openal-sound/fua_audiosink_coreaudio.cpp )
+elseif( WIN32 )
+	set( FUA_AUDIOSINK_SOURCES )
 else()
 	set( FUA_AUDIOSINK_SOURCES features/openal-sound/fua_audiosink_sdl.cpp )
 endif()
