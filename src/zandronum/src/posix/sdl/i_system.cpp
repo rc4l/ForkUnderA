@@ -70,6 +70,7 @@
 #include "i_system.h"
 #include "features/updater/computation/openurl_compute.h" // [rc4l] scheme allowlist for I_OpenURL
 #include "c_dispatch.h"
+#include "c_console.h"
 #include "templates.h"
 #include "v_palette.h"
 #include "textures.h"
@@ -364,6 +365,10 @@ void I_Quit (void)
 	// [BC] Support for client-side demos.
 	if ( CLIENTDEMO_IsRecording( ))
 		CLIENTDEMO_FinishRecording( );
+
+	// [rc4l] uzdoom@b6bbdf619: deinit the console HERE rather than via atterm, so anything Printf'd
+	// during the rest of shutdown still reaches a live console.
+	C_DeinitConsole();
 }
 
 
