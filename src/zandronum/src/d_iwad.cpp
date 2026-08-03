@@ -433,27 +433,15 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 				}
 			}
 		}
-#ifdef _WIN32
-		FString steam_path = I_GetSteamPath();
-		if (steam_path.IsNotEmpty())
+		// [rc4l] uzdoom@86372fce3: Steam IWAD detection is no longer Windows-only. The candidate
+		// directories move into each platform's I_GetSteamPath -- the registry on Windows,
+		// Steam's libraryfolders/config VDFs on POSIX (posix/i_steam.cpp) -- so this just walks
+		// whatever it is handed. Before this, macOS and Linux found no Steam IWADs at all.
+		TArray<FString> steam_path = I_GetSteamPath();
+		for (i = 0; i < steam_path.Size(); ++i)
 		{
-			static const char *const steam_dirs[] =
-			{
-				"doom 2/base",
-				"final doom/base",
-				"heretic shadow of the serpent riders/base",
-				"hexen/base",
-				"hexen deathkings of the dark citadel/base",
-				"ultimate doom/base",
-				"DOOM 3 BFG Edition/base/wads"
-			};
-			steam_path += "/SteamApps/common/";
-			for (i = 0; i < countof(steam_dirs); ++i)
-			{
-				CheckIWAD (steam_path + steam_dirs[i], &wads[0]);
-			}
+			CheckIWAD (steam_path[i], &wads[0]);
 		}
-#endif
 	}
 
 	if (iwadparm != NULL && !wads[0].Path.IsEmpty())

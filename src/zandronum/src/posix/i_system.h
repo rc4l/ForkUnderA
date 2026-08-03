@@ -124,6 +124,10 @@ void I_SetIWADInfo ();
 // [rc4l] Open a URL in the user's default browser (macOS: NSWorkspace; Linux: xdg-open). Only
 // http/https pass (re-checked here via zx::IsOpenableURL, defense-in-depth behind the confirmation
 // dialog); anything else is refused and logged. Reachable by mods through the openurl CCMD.
+// [rc4l] uzdoom@86372fce3: Steam IWAD detection on POSIX (posix/i_steam.cpp). Returns every
+// candidate directory, matching the Win32 declaration in win32/i_system.h.
+TArray<FString> I_GetSteamPath();
+
 void I_OpenURL (const char *url);
 
 // Pick from multiple IWADs to use

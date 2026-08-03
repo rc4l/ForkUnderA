@@ -696,7 +696,8 @@ endif()
 
 set( PLAT_POSIX_SOURCES
 	posix/i_cd.cpp
-	posix/i_movie.cpp )
+	posix/i_movie.cpp
+	posix/i_steam.cpp )
 set( PLAT_MAC_SOURCES
 	posix/osx/iwadpicker_cocoa.mm
 	posix/osx/i_system_cocoa.mm
