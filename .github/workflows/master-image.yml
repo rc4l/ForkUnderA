@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Builds and publishes the master server container image.
+#
+# Deliberately on its OWN tag namespace (master-v*) and cadence, separate from engine releases
+# (v*). The master only needs republishing when the wire protocol moves; a renderer or menu release
+# has nothing to do with it, and coupling them would mean re-rolling every master deployment for
+# changes that cannot affect it.
+#
+# The build job is NOT release-only. It also runs on pull requests that touch the daemon or the
+# protocol sources it shares with the engine, because the failure this guards against is exactly the
+# one windows-fast-build.yml suffered: a path filter narrow enough that a source-side change could
+# invalidate the artefact without any workflow noticing for eleven days. master-97 compiles
+# networkshared.cpp and the huffman codec straight out of the engine tree, so those paths are the
+# coupling and they are listed here.
+name: master server image
+
+on:
+  push:
+    tags: ['master-v*']
+  pull_request:
+    paths:
+      - Dockerfile.master
+      - Dockerfile.master.dockerignore
+      - .github/workflows/master-image.yml
+      - src/zandronum/masterserver/**
+      # The protocol surface master-97 shares with the engine:
+      - src/zandronum/src/networkshared.cpp
+      - src/zandronum/src/networkshared.h
+      - src/zandronum/src/platform.cpp
+      - src/zandronum/src/huffman/**
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/zandrox-master
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # [rc4l] Full history: updaterevision runs `git describe --tags`, which needs tags and depth.
+      # A shallow clone would stamp the daemon's banner with a meaningless revision.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # [rc4l] Required for Dockerfile.master.dockerignore to be honoured; the legacy builder only
+      # reads the root .dockerignore, which excludes everything and would empty the context.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # [rc4l] master-v1.2.3 -> 1.2.3 + latest. Operators should pin a version; `latest` exists for
+      # first-run convenience and is not what a federated master ought to be running.
+      - name: Derive tags
+        id: meta
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/master-v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/master-v}"
+            {
+              echo "primary=${IMAGE}:${VERSION}"
+              echo "tags=${IMAGE}:${VERSION},${IMAGE}:latest"
+              echo "publish=true"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "primary=${IMAGE}:ci"
+              echo "tags=${IMAGE}:ci"
+              echo "publish=false"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      # [rc4l] load, never push, at this stage: the smoke test below must run the EXACT image that
+      # gets published, so the build lands in the local daemon first and is pushed only after it has
+      # been proven to start.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.master
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          provenance: false
+
+      # [rc4l] Prove it RUNS, not merely that it compiled. The daemon binds UDP 15300 and blocks
+      # forever, so start it detached and assert it is both still alive and has printed its banner.
+      # A container that dies immediately -- bad permissions on /data, a missing runtime library --
+      # would otherwise publish perfectly green.
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          docker run -d --name master -p 15300:15300/udp "${{ steps.meta.outputs.primary }}"
+          sleep 5
+          docker logs master
+          if [ "$(docker inspect -f '{{.State.Running}}' master)" != "true" ]; then
+            echo "::error::master-97 exited instead of staying up"
+            exit 1
+          fi
+          docker logs master 2>&1 | grep -q "Master server started" \
+            || { echo "::error::no startup banner -- daemon did not initialise"; exit 1; }
+          docker rm -f master
+
+      - name: Log in to GHCR
+        if: steps.meta.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # [rc4l] Pushes the already-built, already-smoke-tested local images by tag.
+      - name: Publish
+        if: steps.meta.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra TAGS <<< "${{ steps.meta.outputs.tags }}"
+          for t in "${TAGS[@]}"; do
+            echo "pushing $t"
+            docker push "$t"
+          done
