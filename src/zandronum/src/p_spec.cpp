@@ -341,7 +341,9 @@ bool P_ActivateLine (line_t *line, AActor *mo, int side, int activationType)
 
 	if (buttonSuccess)
 	{
-		if (activationType == SPAC_Use || activationType == SPAC_Impact)
+		// [rc4l] uzdoom@0276760a2: SPAC_Push counts too -- a switch triggered by bumping into it
+		// changed its special but never swapped its texture, so it kept looking unpressed.
+		if (activationType == SPAC_Use || activationType == SPAC_Impact || activationType == SPAC_Push)
 		{
 			P_ChangeSwitchTexture (line->sidedef[0], repeat, special);
 
