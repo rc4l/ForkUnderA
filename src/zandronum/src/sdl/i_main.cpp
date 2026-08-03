@@ -338,8 +338,9 @@ int main (int argc, char **argv)
 		vid_defwidth  = desktop.w;
 		vid_defheight = desktop.h;
 		vid_defbits   = SDL_BITSPERPIXEL( desktop.format );
-		vid_vsync     = True;
-		fullscreen    = True;
+		// [rc4l] uzdoom@7b69c60af: `true`, not X11's `True`.
+		vid_vsync     = true;
+		fullscreen    = true;
 	}
 	
 #endif // __APPLE__

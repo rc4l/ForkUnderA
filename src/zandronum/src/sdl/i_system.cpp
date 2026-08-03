@@ -99,22 +99,16 @@ extern bool GtkAvailable;
 #elif defined(__APPLE__)
 int I_PickIWad_Cocoa (WadStuff *wads, int numwads, bool showwin, int defaultiwad);
 #endif
-DWORD LanguageIDs[4] =
-{
-	MAKE_ID ('e','n','u',0),
-	MAKE_ID ('e','n','u',0),
-	MAKE_ID ('e','n','u',0),
-	MAKE_ID ('e','n','u',0)
-};
+DWORD LanguageIDs[4];
 	
 int (*I_GetTime) (bool saveMS);
 int (*I_WaitForTic) (int);
 void (*I_FreezeTime) (bool frozen);
 
-void I_Tactile (int on, int off, int total)
+void I_Tactile (int /*on*/, int /*off*/, int /*total*/)
 {
-    // UNUSED.
-    on = off = total = 0;
+	// [rc4l] uzdoom@d941203ab: unused, and assigning the parameters to silence that was itself
+	// the warning.
 }
 
 ticcmd_t emptycmd;
@@ -328,6 +322,17 @@ void I_WaitVBL (int count)
 //
 void SetLanguageIDs ()
 {
+	// [rc4l] uzdoom@0e3bee6f3, as corrected by uzdoom@d941203ab: this was an empty stub, so the
+	// `language` CVAR did nothing at all on the SDL targets -- it only ever worked on Windows.
+	// The fourth MAKE_ID argument is '\0', not '0': the character zero is 0x30, which would put a
+	// stray byte in every language id. That was the bug d941203ab came back for.
+	size_t langlen = strlen(language);
+
+	DWORD lang = (langlen < 2 || langlen > 3) ?
+		MAKE_ID('e','n','u','\0') :
+		MAKE_ID(language[0],language[1],language[2],'\0');
+
+	LanguageIDs[3] = LanguageIDs[2] = LanguageIDs[1] = LanguageIDs[0] = lang;
 }
 
 //
