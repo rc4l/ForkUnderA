@@ -40,9 +40,8 @@ GOLDEN = os.path.join(ROOT, "tools/data/wire-enum-snapshot.txt")
 HEADER = (
     "# Values of enums carried inside network commands. DERIVED -- do not hand-edit.\n"
     "# Regenerate with: tools/wire-enum-snapshot.py --write\n"
-    "# A change here alters what an existing command's bytes MEAN. Bump SAVEVER (these\n"
-    "# enums are serialized) and DEMOGAMEVERSION (demos replay the commands) in the same\n"
-    "# commit.\n"
+    "# A change here alters what an existing command's bytes MEAN. If it came from an\n"
+    "# upstream commit, do whatever that commit did about versioning -- no more, no less.\n"
 )
 
 
@@ -143,10 +142,9 @@ def main():
                                      "golden", "current", lineterm="", n=2):
         print(line, file=sys.stderr)
     print("\nThese values ride inside existing commands, so the command signature is\n"
-          "unchanged and protocol-snapshot will NOT catch this. A client reading the old\n"
-          "numbering acts on the wrong type, and savegames storing it break the same way.\n"
-          "If deliberate: bump SAVEVER and DEMOGAMEVERSION, then\n"
-          "`tools/wire-enum-snapshot.py --write` in the SAME commit.\n", file=sys.stderr)
+          "unchanged and protocol-snapshot will NOT catch this.\n"
+          "If deliberate: `tools/wire-enum-snapshot.py --write` in the SAME commit.\n",
+          file=sys.stderr)
     return 1
 
 

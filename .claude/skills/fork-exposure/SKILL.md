@@ -87,24 +87,14 @@ one, and its own message notes "this change only affects the XLAT mapping, the H
 types behave as before." Follow that instinct — where upstream adds rather than renumbers,
 add rather than renumber, for the reason they did.
 
-## Version bumps: match upstream unless you can demonstrate the break
+## Do what upstream did
 
-Do **not** bump reflexively just because a layout moved. Upstream's judgement is usually
-right and a gratuitous bump invalidates people's files for nothing.
+If upstream bumped a version, bump ours. If upstream did not, do not. Their judgement on
+their own change is the default and it does not get relitigated per port.
 
-Bump when you can **show** the breakage — an actual demonstration, not a worry. The
-demonstration is normally the machine check from the next section printing the damage.
-
-The ceiling-crusher port is the worked example. `uzdoom@df0d3543a` removes an enumerator from
-`DCeiling::ECeiling` and leaves `SAVEVER` alone, which is correct for upstream: the value
-never leaves the savegame there and they were willing to eat it. Here the wire-enum snapshot
-printed eleven later enumerators shifting by one, and `DCeiling` both serializes `m_Type` and
-sends it — so an old save or demo would resume a crusher as the wrong ceiling type. That is a
-demonstrated break, so `SAVEVER` and `DEMOGAMEVERSION` were bumped and the note records that
-upstream did not need to.
-
-Our version lines are already independent of upstream's, so a bump never has to match their
-number — see `version.h`, where each line documents its own history.
+Where upstream *added* rather than renumbered -- a new special, a new flag bit -- add rather
+than renumber, for the reason they did: shipped wads keep running and a renumbered constant
+silently changes what they do.
 
 ## A newly discovered hazard ships with a check, or it does not ship
 
