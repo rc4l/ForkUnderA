@@ -149,7 +149,7 @@ else( WIN32 )
 		endif( NOT NO_GTK )
 
 		# [rc4l] The Xcursor detection is gone: SDL2's native color cursors
-		# (SDL_CreateColorCursor in sdl/i_system.cpp) replaced the USE_XCURSOR hack that
+		# (SDL_CreateColorCursor in posix/i_system.cpp) replaced the USE_XCURSOR hack that
 		# reached into SDL 1.2's private structs for the XDisplay.
 	endif( APPLE )
 	set( NASM_NAMES nasm )
@@ -664,22 +664,23 @@ set( PLAT_WIN32_SOURCES ${PLAT_WIN32_SOURCES}
 	win32/serverconsole/serverconsole_dmflags.cpp
 	win32/serverconsole/serverconsole_settings.cpp )
 set( PLAT_SDL_SOURCES
-	sdl/crashcatcher.c
-	sdl/hardware.cpp
-	sdl/i_cd.cpp
-	sdl/i_input.cpp
-	sdl/i_joystick.cpp
-	sdl/i_main.cpp
-	sdl/i_movie.cpp
-	sdl/i_system.cpp
-	sdl/sdlglvideo.cpp
-	sdl/st_start.cpp )
+	posix/i_cd.cpp
+	posix/i_movie.cpp
+	posix/i_system.cpp
+	posix/st_start.cpp
+	posix/sdl/crashcatcher.c
+	posix/sdl/hardware.cpp
+	posix/sdl/i_input.cpp
+	posix/sdl/i_joystick.cpp
+	posix/sdl/i_main.cpp
+	posix/sdl/sdlglvideo.cpp )
 set( PLAT_MAC_SOURCES
-	sdl/iwadpicker_cocoa.mm
-	sdl/i_system_cocoa.mm
-	sdl/i_system_cocoa_net.mm )
+	posix/osx/iwadpicker_cocoa.mm
+	posix/osx/i_system_cocoa.mm
+	posix/osx/i_system_cocoa_net.mm )
 if( WIN32 )
 	set( SYSTEM_SOURCES_DIR win32 )
+	set( SYSTEM_BACKEND_DIR win32 )
 	set( SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} )
 	set( OTHER_SYSTEM_SOURCES ${PLAT_SDL_SOURCES} ${PLAT_MAC_SOURCES} )
 	
@@ -696,7 +697,11 @@ if( WIN32 )
 	endif( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" )
 
 else( WIN32 )
-	set( SYSTEM_SOURCES_DIR sdl )
+	set( SYSTEM_SOURCES_DIR posix )
+	# [rc4l] uzdoom@1433bf3f7: the shared POSIX tier and the selected backend are separate
+	# include roots -- headers like gl_framebuffer.h include "sdlglvideo.h" unprefixed and
+	# resolve through the backend dir, exactly as they used to through the flat sdl/.
+	set( SYSTEM_BACKEND_DIR posix/sdl )
 	set( SYSTEM_SOURCES ${PLAT_SDL_SOURCES} )
 	if( APPLE )
 		set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${PLAT_MAC_SOURCES} )
@@ -819,7 +824,7 @@ if( NOT NO_GL )
 		gl/models/gl_voxels.cpp
 	)
 else( NOT NO_GL )
-	set( GL_SOURCES sdl/glstubs.cpp )
+	set( GL_SOURCES posix/sdl/glstubs.cpp )
 endif( NOT NO_GL )
 
 
@@ -828,7 +833,7 @@ endif( NOT NO_GL )
 if( WIN32 )
 	set( EXTRA_HEADER_DIRS win32/*.h )
 else( WIN32 )
-	set( EXTRA_HEADER_DIRS sdl/*.h )
+	set( EXTRA_HEADER_DIRS posix/*.h posix/sdl/*.h )
 endif( WIN32 )
 file( GLOB HEADER_FILES
 	${EXTRA_HEADER_DIRS}
@@ -845,7 +850,8 @@ file( GLOB HEADER_FILES
 	oplsynth/dosbox/*.h
 	r_data/*.h
 	resourcefiles/*.h
-	sdl/*.h
+	posix/*.h
+	posix/sdl/*.h
 	sfmt/*.h
 	sound/*.h
 	textures/*.h
@@ -1428,7 +1434,8 @@ include_directories( .
         ../sqlite/ #ZA
 	../upnpnat/ #ST
 	${CMAKE_BINARY_DIR}/gdtoa
-	${SYSTEM_SOURCES_DIR} )
+	${SYSTEM_SOURCES_DIR}
+	${SYSTEM_BACKEND_DIR} )
 
 add_dependencies( zdoom revision_check )
 # [TP]
@@ -1581,7 +1588,7 @@ source_group("Render Data\\Resource Sources" REGULAR_EXPRESSION "^${CMAKE_CURREN
 source_group("Render Data\\Textures" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/textures/.+")
 source_group("Render Interface" FILES r_defs.h r_renderer.h r_sky.cpp r_sky.h r_state.h r_utility.cpp r_utility.h)
 source_group("Resource Files" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/resourcefiles/.+")
-source_group("SDL Files" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/sdl/.+")
+source_group("POSIX Files" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/posix/.+")
 source_group("SFMT" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/sfmt/.+")
 source_group("Shared Game" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/g_shared/.+")
 source_group("Versioning" FILES version.h win32/zdoom.rc)
