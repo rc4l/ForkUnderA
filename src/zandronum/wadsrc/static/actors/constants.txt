@@ -70,6 +70,7 @@ const int SXF_TRANSFERRENDERSTYLE = 524288;
 const int SXF_SETTARGET = 1048576;
 const int SXF_SETTRACER = 2097152;
 const int SXF_NOPOINTERS = 4194304;
+const int SXF_ORIGINATOR = 8388608;
 
 // Flags for A_Chase
 const int CHF_FASTCHASE = 1;
@@ -482,6 +483,7 @@ const int KILS_NOMONSTERS =		4;
 const int DMSS_FOILINVUL =		1;
 const int DMSS_AFFECTARMOR =	2;
 const int DMSS_KILL =			4;
+const int DMSS_NOFACTOR =		8;
 
 // Flags for A_Remove* series
 const int RMVF_MISSILES =		1;

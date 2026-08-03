@@ -779,9 +779,9 @@ c66c49781114286734dd4482eb561de055e6ffbf	2014-09-28T22:43:19Z	Merge branch 'mast
 7a6e704af6d4074bc774c016e5fbbc7daf4da981	2014-09-29T19:23:28Z	Merge pull request #4 from rheit/master	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 3050ea9a6d3a85f89bcb27c5254e26cf0304a3b7	2014-10-02T16:27:22Z	- Fixed: A_RemoveTracer/Target didn't take flags into account.	pending		/
 5030832df0141a7598f5a6d4363f3febf3711829	2014-10-02T16:48:07Z	- Added DMSS_NOFACTOR for all A_Damage functions.	pending		/
-981b5f32e0d3acbd5effa5882b163f77f66b96f9	2014-10-02T16:48:20Z	Merge branch 'master' of https://github.com/MajorCooke/zdoom	pending		/
+981b5f32e0d3acbd5effa5882b163f77f66b96f9	2014-10-02T16:48:20Z	Merge branch 'master' of https://github.com/MajorCooke/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 c6e1ea864f38cb1f267f33fdd5ade5a9903de8f3	2014-10-02T20:03:15Z	- Added scoreboard toggling.	pending		/
-20dea78ce9a16668061cd21d268103f33f96d32f	2014-10-02T20:13:54Z	Merge branch 'master' of https://github.com/ChillyDoom/zdoom into scoreboardtoggle	pending		/
+20dea78ce9a16668061cd21d268103f33f96d32f	2014-10-02T20:13:54Z	Merge branch 'master' of https://github.com/ChillyDoom/zdoom into scoreboardtoggle	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 f54a59fdf8e6d54f6cae8b9bd92f90b81bbf26c3	2014-10-02T22:00:17Z	- Added JLOSF_CHECKTRACER for A_JumpIfTargetInLOS.	pending		/
 0f9a8176f54185d6ee1b73f1819788f2c92491ee	2014-10-05T03:57:31Z	Unprediction needs to restore selected inventory	pending		/
 ae71f94ed2679ac7c8ba45ea83ace50896aa222c	2014-10-05T05:04:11Z	Remove disconnecting players safely	pending		/
@@ -790,56 +790,56 @@ c9d603d1c3313b208d83fc9a3c5a3de54f1c33a3	2014-10-05T05:52:56Z	Unreliable isn't e
 71753743504660e73a25ec29c6328a0818f8fd42	2014-10-05T06:46:34Z	Keep gateway sockets open during handshake	pending		/
 fd3128a1645bbe3990d822d5183ad7830b906ceb	2014-10-05T07:40:36Z	- fixed: When changing enhanced nightvision mode the shaders need to have their fixed colormap state reset to ensure that the new settings get used. - fixed: The shader code for handling special fixed colormaps did not use the color vertex attribute which was most evident with the 'shadow' render style on the spectre.	ported	66abdae	66abdae
 ead8a2874d3b2d9ea4a2b988b8a025352b1ef591	2014-10-05T10:03:55Z	- fixed: The texture mode implied by render style did not work for models.	ported	66abdae	66abdae
-9fe2857dc14697db84d1a3f2c35a6195bc852da1	2014-10-05T16:49:48Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+9fe2857dc14697db84d1a3f2c35a6195bc852da1	2014-10-05T16:49:48Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 e1b8b4a8716e92316d4228469913ab2deb6dcf2b	2014-10-06T02:27:13Z	Started work on prediction lerping	pending		/
 3e2a17538bef6aa291a0b32ec274501a326fc73f	2014-10-06T07:05:42Z	- fixed: HUD weapons were affected by dynamic lights even when the CVARs said that they shouldn't.	ported	66abdae	66abdae
 5d032f3fcfe3317c075778a7c74e0723252a0724	2014-10-06T08:00:02Z	- fixed: Since the engine can no longer change renderers on the fly, thanks to ZDoom's messed up video startup code, we have to abort with a fatal error if we can't create a GL context. Otherwise the user will never see a meaningful message.	ported	66abdae	66abdae
 3eaebabdf114c4ae9d6d8590e4e8681692af704d	2014-10-06T15:40:02Z	- fixed: EV_Teleport must not access the thing's player pointer before ensuring that 'thing' is a valid pointer.	pending		/
 47029a3efca0b61f05477a05ab28f518a61507c6	2014-10-07T16:33:08Z	DoKill bug	pending		/
 f766a1ab388d40769e299b733d0b72e8d6484b09	2014-10-11T21:15:42Z	- Added SXF_ORIGINATOR.	pending		/
-e6f3007befcb653059a78a6bea69cbf630857fd4	2014-10-12T06:27:35Z	Merge branch 'scoreboardtoggle' of https://github.com/ChillyDoom/zdoom	pending		/
-2228dcb32f7b1b76e34aac15799dc1db4a17545f	2014-10-12T06:30:13Z	Merge branch 'experimental' of https://github.com/MajorCooke/zdoom	pending		/
-0f19356e2481055dedb2dc508392e59aab33889a	2014-10-12T06:43:46Z	Merge branch 'master' of https://github.com/MajorCooke/zdoom	pending		/
+e6f3007befcb653059a78a6bea69cbf630857fd4	2014-10-12T06:27:35Z	Merge branch 'scoreboardtoggle' of https://github.com/ChillyDoom/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+2228dcb32f7b1b76e34aac15799dc1db4a17545f	2014-10-12T06:30:13Z	Merge branch 'experimental' of https://github.com/MajorCooke/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+0f19356e2481055dedb2dc508392e59aab33889a	2014-10-12T06:43:46Z	Merge branch 'master' of https://github.com/MajorCooke/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 3e6ad8c1a8944800ad928b6f9b534150eadefbd0	2014-10-12T11:29:15Z	Further work on prediction lerping	pending		/
-25b808cd823a7654edbcdcf8e54b44dccbaa1295	2014-10-12T12:19:11Z	Merge https://github.com/rheit/zdoom into z_osx_clean	pending		/
+25b808cd823a7654edbcdcf8e54b44dccbaa1295	2014-10-12T12:19:11Z	Merge https://github.com/rheit/zdoom into z_osx_clean	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 98904039b77a1c8afa0eb2d2477ea908b72f766e	2014-10-13T03:32:49Z	Final work on prediction lerping	pending		/
 3e4446e46b56eb3688491b7cd601b88fe5038237	2014-10-13T03:49:53Z	Moved prediction lerp reset to cover all cases.	pending		/
 0cd736b48736d6bf8ded7e18acb8eacdc40baf29	2014-10-13T04:09:29Z	Prevent lerping when tic duplication not 1	pending		/
 5de6b535aee1bc152ed2aa7461eaacd0b1d3bbfb	2014-10-13T07:45:36Z	- Removed unnecessary 'id' variable from AActor. - Removed unused 'backpack' variable from player_t. - Removed duplicate code from b_move.cpp. - General cleanup.	pending		/
-952d03da7c608ca483dcfa6f30d0d12ba62bc18e	2014-10-13T08:37:51Z	Merge branch 'multi' of https://github.com/Edward850/zdoom	pending		/
+952d03da7c608ca483dcfa6f30d0d12ba62bc18e	2014-10-13T08:37:51Z	Merge branch 'multi' of https://github.com/Edward850/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 83d84eaae9e4e13e92c1ec585855fddd276eb2dc	2014-10-13T17:40:25Z	- Moved bot related variables from player_t into a new FBot class.	pending		/
 29cf6b0daa63012611cbfed7cee1999cbb1506f0	2014-10-13T23:54:03Z	Fixed PredictionActor size and typo	pending		/
 9f1f17c306222ffb186eccfccb89fdbf78ba7ff1	2014-10-14T06:54:08Z	- fixed: The PolyBSPs weren't fully initialized. Some GZDoom-only fields in the segs were skipped.	ported	66abdae	66abdae
-57895d69f9ebdc133e29afde77ec94c17d299759	2014-10-14T06:54:41Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-c9252d1919fb7f522667c14e5d77aef942380090	2014-10-14T09:54:40Z	Merge branch 'multi' of https://github.com/Edward850/zdoom	pending		/
+57895d69f9ebdc133e29afde77ec94c17d299759	2014-10-14T06:54:41Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+c9252d1919fb7f522667c14e5d77aef942380090	2014-10-14T09:54:40Z	Merge branch 'multi' of https://github.com/Edward850/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 db323643f81cc3649782b5f5995187d2522a69bf	2014-10-14T18:57:11Z	- Renamed FBot to DBot and made it inherit from DThinker. - Fixed: Bots added by players other than the net arbitrator did not have their skill set.	pending		/
 c400dcf7365f5624d8a18881244b6675c64389e4	2014-10-15T16:54:12Z	- Made DBot inherit from DObject.	pending		/
-a6f64500bfa45b1155b805302f9c6cc3baa9de42	2014-10-16T06:59:49Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-c29772de255dffc2cd62b8744b92dd668b07c906	2014-10-18T09:22:10Z	Merge branch 'master' of https://github.com/rheit/zdoom into z_osx_clean	pending		/
-1715b25a3e8c5936d42420412498c64b8d119465	2014-10-18T09:33:39Z	Fixed Unknown CMake command "CHECK_LIBRARY_EXISTS" error on Unix targets	pending		/
-949325df685c0e3671dcbe7e4caa217d311345da	2014-10-18T09:36:09Z	Merge branch 'fix_cmake_unix' into z_osx_clean	pending		/
+a6f64500bfa45b1155b805302f9c6cc3baa9de42	2014-10-16T06:59:49Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+c29772de255dffc2cd62b8744b92dd668b07c906	2014-10-18T09:22:10Z	Merge branch 'master' of https://github.com/rheit/zdoom into z_osx_clean	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+1715b25a3e8c5936d42420412498c64b8d119465	2014-10-18T09:33:39Z	Fixed Unknown CMake command "CHECK_LIBRARY_EXISTS" error on Unix targets	ported	ported: already present -- a content check finds this commit's added lines in our tree (1/1). Inherited via Zandronum	zandronum-base
+949325df685c0e3671dcbe7e4caa217d311345da	2014-10-18T09:36:09Z	Merge branch 'fix_cmake_unix' into z_osx_clean	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 b2110db1f5ff6fdc93113ea48243a22ee53dac88	2014-10-18T11:55:27Z	Extended list of display resolutions	ported	ported: taken as part of the 108dcf122 end state, vendored byte-identical at 1f74200. Every change of this commit lives inside posix/cocoa and is present in that snapshot; it was never separately built here (the OpenAL-series precedent) | no-file-overlap: predates upstream's own Dec-2014 split, so it edits files (i_backend_cocoa.mm and friends) that no longer exist at 108dcf122. Its content reached us inside the post-split i_video.mm/i_input.mm/i_main.mm we vendored -- there is simply no shared basename left to match	1f74200
 82255c4dfd0a7a8bcc92cda6958f4d951147157b	2014-10-20T00:52:48Z	Using PickActor will only set the TID if the picked actor doesn't have a TID already. An optional 8th parameter (bool forceTID) was added to revert to the old behavior.	pending		/
 759f1bb81bd0c91cdd4f8df72bb3a44f18fc4acd	2014-10-21T10:38:45Z	Fix handshakes between GCC and MSVC	pending		/
 ed5108357269f07964a876ba0e893090dc3b3f67	2014-10-21T10:44:14Z	Change u_short as well.	pending		/
-20b740d5fc44418647aff7a5775aee2d6dc16a8b	2014-10-21T12:20:01Z	Merge branch 'DBot' of https://github.com/ChillyDoom/zdoom	pending		/
-09e0758507a9d36b5ac460482d297f93fbb85ef6	2014-10-21T12:27:37Z	Merge branch 'fix_cmake_unix' of https://github.com/alexey-lysiuk/gzdoom	pending		/
-ccbdcfea81b15bdd544661238a0fcfe1878e7cff	2014-10-21T12:28:31Z	Merge branch 'master' of https://github.com/j-palomo/zdoom	pending		/
-fafb0a672c2ae13353b9c287b3ffaf9da5634cbb	2014-10-21T12:28:50Z	Merge branch 'handshake-hotpatch' of https://github.com/Edward850/zdoom	pending		/
-c9bc9b427ca3238324b3f89b690c1c1dbf4be1cf	2014-10-21T18:31:11Z	- Removed p_leader.	pending		/
-6166e83d287136ecc9d68de4beae4b2d2644ec99	2014-10-21T18:32:15Z	- Fixed: Only setting controllers should be able to remove bots.	pending		/
+20b740d5fc44418647aff7a5775aee2d6dc16a8b	2014-10-21T12:20:01Z	Merge branch 'DBot' of https://github.com/ChillyDoom/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+09e0758507a9d36b5ac460482d297f93fbb85ef6	2014-10-21T12:27:37Z	Merge branch 'fix_cmake_unix' of https://github.com/alexey-lysiuk/gzdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+ccbdcfea81b15bdd544661238a0fcfe1878e7cff	2014-10-21T12:28:31Z	Merge branch 'master' of https://github.com/j-palomo/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+fafb0a672c2ae13353b9c287b3ffaf9da5634cbb	2014-10-21T12:28:50Z	Merge branch 'handshake-hotpatch' of https://github.com/Edward850/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+c9bc9b427ca3238324b3f89b690c1c1dbf4be1cf	2014-10-21T18:31:11Z	- Removed p_leader.	skip	skip: touches only files absent from our tree (src/b_bot.h src/b_func.cpp). Re-verify if that subsystem is ever added	/
+6166e83d287136ecc9d68de4beae4b2d2644ec99	2014-10-21T18:32:15Z	- Fixed: Only setting controllers should be able to remove bots.	skip	skip: touches only files absent from our tree (src/b_bot.cpp). Re-verify if that subsystem is ever added	/
 acd4a71de2c9cdc12fe37ac88cdb413b01169ea9	2014-10-21T18:33:48Z	- Fixed: New DBot instances were missing write barriers.	pending		/
 89ce0b8cb77073ed3a18dedb8325153a6f0a4c41	2014-10-22T14:54:26Z	- test if GLSL version 1.4 can handle uniform buffers on old Intel hardware without making problems...	adapted	66abdae	66abdae
-111205a0f5da3ce721532188279cb932a095bd28	2014-10-23T06:51:16Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+111205a0f5da3ce721532188279cb932a095bd28	2014-10-23T06:51:16Z	Merge branch 'master' of https://github.com/rheit/zdoom	ported	ported: already present -- a content check finds this commit's added lines in our tree (1/1). Inherited via Zandronum	zandronum-base
 5302a10a7d0f9ad50bcaf3975dbe09212288a9cb	2014-10-23T07:19:30Z	- diable software lighting for textured automap.	ported	66abdae	66abdae
 618c23303f18cc33f50ef2a6707c29b19fbca96e	2014-10-23T07:57:27Z	- fixed: The interpolation factor for models was never passed to the shader.	ported	66abdae	66abdae
 066e53ae4ca179b9200c94b323d5b90fa5868801	2014-10-23T08:54:26Z	- fixed: sprites rendered as 'bright' should not be affected by dynamic lights.	ported	66abdae	66abdae
 36b35e85f3fc067d0a8316b15bbb4cee91a5d0de	2014-10-23T10:06:00Z	- fixed: overflow checks for dynamic light buffer were not correct.	ported	66abdae	66abdae
 d6a33a601d76748afd636ee77235a9b3cfe95601	2014-10-23T15:33:42Z	- fixed: The sorting of 3D floors was incomplete and missed cases where translucent volumes overlapped non-translucent ones only at their top. It also didn't account for one translucent volume being intersected by more than solid one.	pending		/
-f907de15b0dd15f0573a23dffcd67219159936c4	2014-10-23T15:34:30Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+f907de15b0dd15f0573a23dffcd67219159936c4	2014-10-23T15:34:30Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 bca47bb9bce19e9ae361b5b160bfb15a8fbd63e2	2014-10-23T15:35:58Z	- removed debug code. - fixed: planes that are created by splitting translucent 3D-floors may never be rendered.	ported	66abdae	66abdae
 68246051548602182df480cc280384246b5b2b07	2014-10-23T22:06:18Z	- added pickup sprite and editor number for Heretic's gold wand.	pending		/
-44968853668a6388e8de520e317121c4c0ea2baf	2014-10-24T08:46:43Z	Added Inventory.AlwaysRespawn flag.	pending		/
+44968853668a6388e8de520e317121c4c0ea2baf	2014-10-24T08:46:43Z	Added Inventory.AlwaysRespawn flag.	ported	ported: already present -- a content check finds this commit's added lines in our tree (3/3). Inherited via Zandronum	zandronum-base
 e5cd90f3230b7b4b73499f0d85e525381a54bcef	2014-10-24T09:43:25Z	- use separate vertex buffers per model to avoid large memory usage peaks. Also delete the geometry data for the models once it has been copied into the vertex buffer.	ported	66abdae	66abdae
 f8016bef86910830da3c9fb65c5e7e71009ec8c3	2014-10-24T09:52:45Z	- fixed: voxels didn't set their index count.	ported	66abdae	66abdae
 5a91fd0ad44ef9c7f748ad8b6478b9ceba3a0e3d	2014-10-24T11:03:26Z	- fixed: DMD models didn't load their triangle data. - fixed: MD2 models didn't handle the triangles' byte order.	ported	66abdae	66abdae
@@ -847,7 +847,7 @@ f8016bef86910830da3c9fb65c5e7e71009ec8c3	2014-10-24T09:52:45Z	- fixed: voxels di
 e662e4321ac114fc507da48075ea9e66a990419e	2014-10-24T20:56:10Z	- fixed: Creating an OPL MIDI device can fail if no GENMIDI lump is found, and an exception is thrown. We need to handle this exception to prevent an abort.	pending		/
 15b1c712578351fa523597216fbebcdf9de682a9	2014-10-24T21:02:02Z	- use proper CheckCheatMode semantics for throwing players out of chasecam mode if DF2_CHASECAM gets unset.	pending		/
 6f7b83faa1383be3eee2ca841c67850568093c65	2014-10-24T21:12:38Z	- fixed: EV_DoFloor was a bit too selective about which movement types were allowed to crush. Changed so that the crush parameter is always used. Also changed all non-crushing calls to explicitly pass -1 as crush damage instead of relying on EV_DoFloor to ignore the passed value.	pending		/
-e28234a8b847e2701a596caf40261a8d615e0c29	2014-10-24T21:19:57Z	- replaced pistol pickup sprite.	pending		/
+e28234a8b847e2701a596caf40261a8d615e0c29	2014-10-24T21:19:57Z	- replaced pistol pickup sprite.	skip	skip: replaces wadsrc/static/sprites/pista0.png. Our copy matches neither upstream pre- nor post-state (md5 3a3e2207 vs their 716d2833 / 1b3d8cea), so we already carry our own art there and taking theirs would discard it	/
 e81c404b0489d16049066238ce6e4d53a41abdd3	2014-10-24T22:01:04Z	- fixed some bad logic operations.	pending		/
 b6f4862024d8c9b09145731892a11d9f39aa3548	2014-10-24T22:05:52Z	- fixed: A_Warp didn't initialize oldx/y/z in all situations.	pending		/
 5ac7e4fc386ed7850a18b9b9d2f1a748553ef062	2014-10-24T22:30:36Z	- added HARMFRIENDS flag.	pending		/
@@ -868,18 +868,18 @@ dcc318fdee62eec607978a8864c780ec4575ab62	2014-10-25T10:33:08Z	- print a warning 
 edd53f22a1d67fcc3d7bf2114543e852bcebc540	2014-10-25T10:34:46Z	- fixed: The buddha powerup set the wrong flag.	pending		/
 ad2e16576c078ead9c67219af691f4754d527969	2014-10-25T11:10:38Z	- fixed_ P_ExplodeMissile skipped most of its logic when the missile got destroyed by having no death state.	pending		/
 2e1fa70cbf45e3b3bd89c686265aa9753ce41e96	2014-10-25T11:12:57Z	- some parentheses to silence GCC.	pending		/
-9435cdc5c9d18100fa8a8a7cbe37cd705080220b	2014-10-25T12:09:19Z	Fixed NULL refrence in P_SpawnBlood	pending		/
+9435cdc5c9d18100fa8a8a7cbe37cd705080220b	2014-10-25T12:09:19Z	Fixed NULL refrence in P_SpawnBlood	ported	ported: already present -- a content check finds this commit's added lines in our tree (1/1). Inherited via Zandronum	zandronum-base
 d4c50b1662706b252ecbdceb95cf61a1d528d7f8	2014-10-25T12:59:30Z	- fixed: AActor::IsTeammate must consider monsters friendly to a specific player as members of the same team as the owning player. Such monsters cannot be made members of a designated team, though, because their association needs to change if the player changes teams.	pending		/
-0124d419310416d93d4373c81d159b08be0a05da	2014-10-25T13:07:06Z	Merge branch 'Bloodtype' of https://github.com/Edward850/zdoom	pending		/
-fc0025963b1adc922be803967f36d6eafe7fbbb0	2014-10-25T13:11:29Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-d1c4215fb541a5aaa08b86d7938b57fc449c0828	2014-10-25T13:57:58Z	Merge branch 'master' of https://github.com/rheit/zdoom into z_osx_clean	pending		/
+0124d419310416d93d4373c81d159b08be0a05da	2014-10-25T13:07:06Z	Merge branch 'Bloodtype' of https://github.com/Edward850/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+fc0025963b1adc922be803967f36d6eafe7fbbb0	2014-10-25T13:11:29Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+d1c4215fb541a5aaa08b86d7938b57fc449c0828	2014-10-25T13:57:58Z	Merge branch 'master' of https://github.com/rheit/zdoom into z_osx_clean	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 1b7c07df652b1142853706b7b296546f122a4907	2014-10-25T13:58:10Z	- Fixed: Bots added by different setting controllers could be assigned the same player number.	pending		/
-85fae623c89d38d2404bec17e50ef689525210bf	2014-10-25T14:50:17Z	Merge branch 'BotSpawnFix' of https://github.com/ChillyDoom/zdoom	pending		/
-82ac6c999ef0edd7d2123205252ac152b7d34a41	2014-10-25T15:14:52Z	Destroy old player mobjs when starting new games	pending		/
-b58595734ded02258c269bf4fc42677a74932a65	2014-10-25T15:37:45Z	- removed accidental line duplication.	pending		/
-ebbaf2f1b733b59504c90c9eece36810b01f3400	2014-10-25T15:38:48Z	Merge branch 'OldPlayer-Fix' of https://github.com/Edward850/zdoom	pending		/
+85fae623c89d38d2404bec17e50ef689525210bf	2014-10-25T14:50:17Z	Merge branch 'BotSpawnFix' of https://github.com/ChillyDoom/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+82ac6c999ef0edd7d2123205252ac152b7d34a41	2014-10-25T15:14:52Z	Destroy old player mobjs when starting new games	ported	ported: already present -- a content check finds this commit's added lines in our tree (7/7). Inherited via Zandronum	zandronum-base
+b58595734ded02258c269bf4fc42677a74932a65	2014-10-25T15:37:45Z	- removed accidental line duplication.	ported	ported: already correct -- our gi.cpp has GAMEINFOKEY_STRING(TitlePage) once, so the duplication this removes never existed here	zandronum-base
+ebbaf2f1b733b59504c90c9eece36810b01f3400	2014-10-25T15:38:48Z	Merge branch 'OldPlayer-Fix' of https://github.com/Edward850/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 be4b253215be99ae0de90b7b53bce267db9a685f	2014-10-25T16:18:35Z	- use a separate sound for the net notches on the startup screen.	pending		/
-bd811bea87c208681687c634b5ebd4b6fb2c105e	2014-10-25T16:26:42Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+bd811bea87c208681687c634b5ebd4b6fb2c105e	2014-10-25T16:26:42Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 3c7664a4608ab6f6e963a2b35e971a32245bd80b	2014-10-26T07:41:52Z	- we don't really need a bBrightmap in a texture. All it did was duplicate some functionality of bMasked. - renamed bBrightmapDisablesFullbright flag.	ported	66abdae	66abdae
 3e50db9bf059debc6366f79ecc6e84a16276e433	2014-10-26T14:11:04Z	- fixed: When setting the object color for a shaded decal, the alpha channel must be forced to be 255. The decal's AlphaColor contains the palette index in those bits.	ported	66abdae	66abdae
 5638aab63c72906896ba8dec1a844a758b5423e2	2014-10-26T20:17:29Z	- fixed: Even though the name REDISALPHA implies otherwise, this render mode still needs to respect a texture's alpha channel to ensure that things get rendered properly. Otherwise the SmoothEdges function cannot be used which is necessary to ensure that filtered textures look correct.	ported	66abdae	66abdae
@@ -887,18 +887,18 @@ f802d7a44c172709daccef7364a237960c06d748	2014-10-28T02:35:55Z	- Added +FULLMASS.
 c01d1a8003dcfb90abd3170545ec3891e5f67f79	2014-10-28T03:29:10Z	- Added DMSS_NOPROTECT.	pending		/
 774db445ec815be0099e7b3fba08c4ffb1bc3eb0	2014-10-28T03:40:25Z	-Fixed: WhirlWind was still able to affect actors with the FULLMASS flag.	pending		/
 6073adbeef6cb497084bad8371134648a18fe1a3	2014-10-28T07:40:34Z	- renamed FULLMASS to DONTTHRUST.	pending		/
-65cb662678c29c0d66e817a0d77a18e516994cf8	2014-10-28T20:19:01Z	Missing break in case NAME_FillColor	pending		/
-3fe8dbf66088fb56199ab8a5e41bf0f12f0475a1	2014-10-28T21:10:28Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	pending		/
+65cb662678c29c0d66e817a0d77a18e516994cf8	2014-10-28T20:19:01Z	Missing break in case NAME_FillColor	ported	ported: already present -- p_udmf.cpp:721 already breaks after case NAME_FillColor	zandronum-base
+3fe8dbf66088fb56199ab8a5e41bf0f12f0475a1	2014-10-28T21:10:28Z	Merge branch 'master' of https://github.com/Gaerzi/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 978667143c4acc49e323cb68cad0483a0b665ad8	2014-10-29T07:54:14Z	- fixed: P_RemoveThing must not remove owned inventory items.	pending		/
 c1a0ee9623637984ad01c75521b80bc410d895d2	2014-10-29T09:40:08Z	- fixed last commit.	pending		/
-5977cb04d9d24265b823168ccbb663e9ff9c65a2	2014-10-29T17:33:25Z	- Fixed: A_Die didn't consider missiles for the function.	pending		/
-165d2887fd8bdab5e4f388c5db54e99c83e27488	2014-10-29T19:01:31Z	- Added: A_GiveToChildren	pending		/
-301092217f42c4db048abcf2b00cc1b6ae495588	2014-10-29T19:12:01Z	Merge branch 'experimental' of https://github.com/MajorCooke/zdoom	pending		/
-31611c17d572e2aab109099d047e157fd51682cc	2014-10-29T21:00:15Z	- fixed RGF_NOSIGHT checking for A_RadiusGive.	pending		/
-1a8da5185753d60f42c6dd83975637d1166cec49	2014-10-29T21:53:58Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+5977cb04d9d24265b823168ccbb663e9ff9c65a2	2014-10-29T17:33:25Z	- Fixed: A_Die didn't consider missiles for the function.	ported	ported: already present -- a content check finds this commit's added lines in our tree (3/3). Inherited via Zandronum	zandronum-base
+165d2887fd8bdab5e4f388c5db54e99c83e27488	2014-10-29T19:01:31Z	- Added: A_GiveToChildren	ported	ported: already present -- a content check finds this commit's added lines in our tree (53/55). Inherited via Zandronum	zandronum-base
+301092217f42c4db048abcf2b00cc1b6ae495588	2014-10-29T19:12:01Z	Merge branch 'experimental' of https://github.com/MajorCooke/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
+31611c17d572e2aab109099d047e157fd51682cc	2014-10-29T21:00:15Z	- fixed RGF_NOSIGHT checking for A_RadiusGive.	ported	ported: already present -- a content check finds this commit's added lines in our tree (1/1). Inherited via Zandronum	zandronum-base
+1a8da5185753d60f42c6dd83975637d1166cec49	2014-10-29T21:53:58Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 2f11a59be0d743b04d7a7885624ad7925a8f545c	2014-10-31T07:57:43Z	- fixed: UDMF ceiling plane properties set the map's floor plane values.	ported	ported: folded into the 9cd074ddf port; ceiling plane equation writes ceilingplane, never floorplane	9b7ecf6
 c85105f5520f873f8c32bfddbf612260025b2ae4	2014-10-31T09:50:23Z	Added cl_showsecretmessage	pending		/
-388454255dfbd753b91f668209e85d0e0e38e714	2014-10-31T10:29:25Z	Merge branch 'Secret-notify' of https://github.com/Edward850/zdoom	pending		/
+388454255dfbd753b91f668209e85d0e0e38e714	2014-10-31T10:29:25Z	Merge branch 'Secret-notify' of https://github.com/Edward850/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 0ff65bb43089fcae61c272b65a43987a82e11820	2014-10-31T20:08:13Z	- fixed: AActor::Massacre must return true only when it actually kills a monster.	pending		/
 938b54ccb5f62f864edcc1edf26fcd42304ddb84	2014-10-31T20:51:15Z	- Added TF_FORCED for A_Teleport. Forces the actor to move to the spot.	pending		/
 eceb37aa64d2286ab181768aefbab470de17f257	2014-11-01T04:47:29Z	Added recordmap for recording demos from console	pending		/

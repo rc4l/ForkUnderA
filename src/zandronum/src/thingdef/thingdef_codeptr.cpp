@@ -2664,6 +2664,7 @@ enum SIX_Flags
 	SIXF_SETTARGET				= 1 << 20,
 	SIXF_SETTRACER				= 1 << 21,
 	SIXF_NOPOINTERS				= 1 << 22,
+	SIXF_ORIGINATOR				= 1 << 23,	// [rc4l] uzdoom@f766a1ab3
 };
 
 // [BB] Changed return value to bool (returns false if the actor already was destroyed).
@@ -2700,9 +2701,14 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	{
 		mo->pitch = self->pitch;
 	}
-	while (originator && originator->isMissile())
+	// [rc4l] uzdoom@f766a1ab3: SIXF_ORIGINATOR keeps the immediate spawner as originator instead
+	// of walking up the missile chain to whoever fired it.
+	if (!(flags & SIXF_ORIGINATOR))
 	{
-		originator = originator->target;
+		while (originator && originator->isMissile())
+		{
+			originator = originator->target;
+		}
 	}
 
 	if (flags & SIXF_TELEFRAG) 
@@ -3998,7 +4004,8 @@ static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags
 		//since that's the whole point of it.
 		if ((!(killtarget->flags2 & MF2_INVULNERABLE) || (flags & KILS_FOILINVUL)) && !(killtarget->flags5 & MF5_NODAMAGE))
 		{
-			P_ExplodeMissile(self->target, NULL, NULL);
+			// [rc4l] uzdoom@47029a3ef: explode the actor being killed, not the caller's target.
+			P_ExplodeMissile(killtarget, NULL, NULL);
 		}
 	}
 	if (!(flags & KILS_NOMONSTERS))
@@ -4962,6 +4969,7 @@ enum DMSS
 	DMSS_FOILINVUL			= 1,
 	DMSS_AFFECTARMOR		= 2,
 	DMSS_KILL				= 4,
+	DMSS_NOFACTOR			= 8,	// [rc4l] uzdoom@5030832df
 };
 
 static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags)
@@ -4976,12 +4984,26 @@ static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageTy
 			}
 			if (flags & DMSS_AFFECTARMOR)
 			{
-				P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL);
+				if (flags & DMSS_NOFACTOR)
+				{
+					P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL | DMG_NO_FACTOR);
+				}
+				else
+				{
+					P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL);
+				}
 			}
 			else
 			{
+				if (flags & DMSS_NOFACTOR)
+				{
+					P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL | DMG_NO_ARMOR | DMG_NO_FACTOR);
+				}
 				//[MC] DMG_FOILINVUL is needed for making the damage occur on the actor.
-				P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL | DMG_NO_ARMOR);
+				else
+				{
+					P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL | DMG_NO_ARMOR);
+				}
 			}
 		}
 	}
@@ -5350,11 +5372,17 @@ static void DoRemove(AActor *removetarget, int flags)
 // A_RemoveTarget
 //
 //===========================================================================
-DEFINE_ACTION_FUNCTION(AActor, A_RemoveTarget)
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTarget)
 {
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(flags, 0);
+
+	// [rc4l] uzdoom@3050ea9a6, with its copy-paste bug NOT reproduced: upstream tests
+	// self->master here while removing self->target, which null-derefs whenever master is
+	// set and target is not. Same class of slip as 96c6e7d9b, which they did fix.
 	if (self->target != NULL)
 	{
-		P_RemoveThing(self->target);
+		DoRemove(self->target, flags);
 	}
 }
 
@@ -5363,11 +5391,14 @@ DEFINE_ACTION_FUNCTION(AActor, A_RemoveTarget)
 // A_RemoveTracer
 //
 //===========================================================================
-DEFINE_ACTION_FUNCTION(AActor, A_RemoveTracer)
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTracer)
 {
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(flags, 0);
+
 	if (self->tracer != NULL)
 	{
-		P_RemoveThing(self->tracer);
+		DoRemove(self->tracer, flags);
 	}
 }
 
