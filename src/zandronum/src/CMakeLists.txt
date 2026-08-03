@@ -664,16 +664,18 @@ set( PLAT_WIN32_SOURCES ${PLAT_WIN32_SOURCES}
 	win32/serverconsole/serverconsole_dmflags.cpp
 	win32/serverconsole/serverconsole_settings.cpp )
 set( PLAT_SDL_SOURCES
-	posix/i_cd.cpp
-	posix/i_movie.cpp
-	posix/i_system.cpp
-	posix/st_start.cpp
 	posix/sdl/crashcatcher.c
 	posix/sdl/hardware.cpp
 	posix/sdl/i_input.cpp
 	posix/sdl/i_joystick.cpp
 	posix/sdl/i_main.cpp
-	posix/sdl/sdlglvideo.cpp )
+	posix/sdl/i_system.cpp
+	posix/sdl/sdlglvideo.cpp
+	posix/sdl/st_start.cpp )
+
+set( PLAT_POSIX_SOURCES
+	posix/i_cd.cpp
+	posix/i_movie.cpp )
 set( PLAT_MAC_SOURCES
 	posix/osx/iwadpicker_cocoa.mm
 	posix/osx/i_system_cocoa.mm
@@ -698,39 +700,48 @@ if( WIN32 )
 
 else( WIN32 )
 	set( SYSTEM_SOURCES_DIR posix )
-	# [rc4l] uzdoom@1433bf3f7: the shared POSIX tier and the selected backend are separate
-	# include roots -- headers like gl_framebuffer.h include "sdlglvideo.h" unprefixed and
-	# resolve through the backend dir, exactly as they used to through the flat sdl/.
-	set( SYSTEM_BACKEND_DIR posix/sdl )
-	# [rc4l] Phase 2 of the Cocoa port: compile the vendored posix/cocoa tree without linking it,
-	# so its adaptation can be driven by real compiler errors while macOS keeps running on SDL.
-	# Removed once the backend is selected for real.
+
+	# [rc4l] uzdoom@1433bf3f7: the shared POSIX tier and the selected backend are separate include
+	# roots -- headers like gl_framebuffer.h include "sdlglvideo.h" unprefixed and resolve through
+	# the backend dir, exactly as they used to through the flat sdl/.
+	#
+	# [rc4l] macOS uses upstream's native Cocoa backend (uzdoom@108dcf122); Linux uses SDL2. The
+	# option exists so a bisect can put macOS back on SDL, and goes away once Cocoa has a release
+	# behind it.
+	set( PLAT_COCOA_SOURCES
+		posix/cocoa/critsec.cpp
+		posix/cocoa/i_input.mm
+		posix/cocoa/i_joystick.cpp
+		posix/cocoa/i_main.mm
+		posix/cocoa/i_main_except.cpp
+		posix/cocoa/i_system.mm
+		posix/cocoa/i_timer.cpp
+		posix/cocoa/i_video.mm
+		posix/cocoa/st_console.mm
+		posix/cocoa/st_start.mm )
+
 	if( APPLE )
-		add_library( zandrox_cocoa_syntax OBJECT EXCLUDE_FROM_ALL
-			posix/cocoa/critsec.cpp
-			posix/cocoa/i_input.mm
-			posix/cocoa/i_joystick.cpp
-			posix/cocoa/i_main.mm
-			posix/cocoa/i_main_except.cpp
-			posix/cocoa/i_system.mm
-			posix/cocoa/i_timer.cpp
-			posix/cocoa/i_video.mm
-			posix/cocoa/st_console.mm
-			posix/cocoa/st_start.mm )
-		target_include_directories( zandrox_cocoa_syntax PRIVATE
-			. posix posix/cocoa ../../../deps/sdlsrc/SDL2-2.30.10/include
-			${CMAKE_BINARY_DIR}/gdtoa ../gdtoa ../dumb/include ../rnnoise/ ../sqlite/ ../upnpnat/ )
-		set_source_files_properties( posix/cocoa/i_input.mm posix/cocoa/i_main.mm
-			posix/cocoa/i_system.mm posix/cocoa/i_video.mm posix/cocoa/st_console.mm
-			posix/cocoa/st_start.mm PROPERTIES COMPILE_OPTIONS "-fno-objc-arc" )
+		option( ZX_COCOA_BACKEND "Use the native Cocoa backend on macOS instead of SDL2" ON )
 	endif()
-	set( SYSTEM_SOURCES ${PLAT_SDL_SOURCES} )
-	if( APPLE )
-		set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${PLAT_MAC_SOURCES} )
-		set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} )
-	else( APPLE )
-		set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_MAC_SOURCES} )
-	endif( APPLE )
+
+	if( APPLE AND ZX_COCOA_BACKEND )
+		set( SYSTEM_BACKEND_DIR posix/cocoa )
+		set( SYSTEM_SOURCES ${PLAT_POSIX_SOURCES} ${PLAT_COCOA_SOURCES} ${PLAT_MAC_SOURCES} )
+		set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_SDL_SOURCES} )
+		add_definitions( -DZX_COCOA_BACKEND )
+		# ObjC++ here is manual retain/release, matching upstream and the zandrox_tests_objc target.
+		set_source_files_properties( ${PLAT_COCOA_SOURCES} ${PLAT_MAC_SOURCES}
+			PROPERTIES COMPILE_OPTIONS "-fno-objc-arc" )
+	else()
+		set( SYSTEM_BACKEND_DIR posix/sdl )
+		set( SYSTEM_SOURCES ${PLAT_POSIX_SOURCES} ${PLAT_SDL_SOURCES} )
+		if( APPLE )
+			set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${PLAT_MAC_SOURCES} )
+			set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_COCOA_SOURCES} )
+		else()
+			set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_MAC_SOURCES} ${PLAT_COCOA_SOURCES} )
+		endif()
+	endif()
 endif( WIN32 )
 
 if( NO_ASM )

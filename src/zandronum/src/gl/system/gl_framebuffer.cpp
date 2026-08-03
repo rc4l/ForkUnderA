@@ -288,8 +288,14 @@ void OpenGLFrameBuffer::GetClientSize(int &w, int &h)
 		w = GetWidth();
 		h = GetHeight();
 	}
+#elif defined(ZX_COCOA_BACKEND)
+	// [rc4l] Cocoa backend: upstream's own SDLGLFB exposes the drawable size directly, so this needs
+	// no SDL. GetClientWidth/Height return BACKING PIXELS -- see the invariant in posix/README.md;
+	// mixing them with points renders at quarter size on a Retina display rather than failing.
+	w = GetClientWidth();
+	h = GetClientHeight();
 #else
-	// SDL2 (macOS/Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
+	// SDL2 (Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
 	// desktop; for a window it is the window's drawable.
 	SDL_GL_GetDrawableSize(Screen, &w, &h);
 #endif

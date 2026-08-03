@@ -48,6 +48,7 @@
 #include "st_console.h"
 #include "v_text.h"
 #include "x86.h"
+#include "features/updater/computation/openurl_compute.h"   // [rc4l] zx::IsOpenableURL
 
 
 EXTERN_CVAR(String, language)
@@ -252,6 +253,23 @@ int I_PickIWad(WadStuff* const wads, const int numwads, const bool showwin, cons
 	return result;
 }
 
+
+// [rc4l] I_OpenURL lived in posix/sdl/i_system.cpp, which macOS no longer builds. The scheme
+// allowlist is the point of it -- a URL from a server or an update feed must not be able to launch
+// arbitrary handlers -- so it stays in the shared, tested computation unit and only the platform
+// call differs. Mac_I_OpenURL is our own NSWorkspace wrapper in posix/osx/i_system_cocoa.mm.
+void Mac_I_OpenURL(const char* url);
+
+void I_OpenURL (const char *url)
+{
+	if (!zx::IsOpenableURL(url))
+	{
+		Printf("I_OpenURL: refusing to open %s (only http/https URLs are allowed)\n",
+			url != NULL ? url : "(null)");
+		return;
+	}
+	Mac_I_OpenURL(url);
+}
 
 bool I_WriteIniFailed()
 {
