@@ -341,7 +341,9 @@ bool P_ActivateLine (line_t *line, AActor *mo, int side, int activationType)
 
 	if (buttonSuccess)
 	{
-		if (activationType == SPAC_Use || activationType == SPAC_Impact)
+		// [rc4l] uzdoom@0276760a2: SPAC_Push counts too -- a switch triggered by bumping into it
+		// changed its special but never swapped its texture, so it kept looking unpressed.
+		if (activationType == SPAC_Use || activationType == SPAC_Impact || activationType == SPAC_Push)
 		{
 			P_ChangeSwitchTexture (line->sidedef[0], repeat, special);
 
@@ -2455,26 +2457,13 @@ void P_SetSectorFriction (int tag, int amount, bool alterFlag)
 	friction = (0x1EB8*amount)/0x80 + 0xD001;
 
 	// killough 8/28/98: prevent odd situations
-	if (friction > FRACUNIT)
-		friction = FRACUNIT;
-	if (friction < 0)
-		friction = 0;
+	friction = clamp(friction, 0, FRACUNIT);
 
 	// The following check might seem odd. At the time of movement,
 	// the move distance is multiplied by 'friction/0x10000', so a
 	// higher friction value actually means 'less friction'.
 
-	// [RH] Twiddled these values so that velocity on ice (with
-	//		friction 0xf900) is the same as in Heretic/Hexen.
-	if (friction >= ORIG_FRICTION)	// ice
-//		movefactor = ((0x10092 - friction)*(0x70))/0x158;
-		movefactor = ((0x10092 - friction) * 1024) / 4352 + 568;
-	else
-		movefactor = ((friction - 0xDB34)*(0xA))/0x80;
-
-	// killough 8/28/98: prevent odd situations
-	if (movefactor < 32)
-		movefactor = 32;
+	movefactor = FrictionToMoveFactor(friction);
 
 	for (s = -1; (s = P_FindSectorFromTag (tag,s)) >= 0; )
 	{

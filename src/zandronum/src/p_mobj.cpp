@@ -447,6 +447,15 @@ void AActor::Serialize (FArchive &arc)
 		<< PoisonDamage << PoisonDuration << PoisonPeriod;
 	arc << PoisonDamageType << PoisonDamageTypeReceived;
 	arc << ConversationRoot << Conversation;
+
+	// [rc4l] uzdoom@e1130b860: FriendPlayer records which player a friendly actor belongs to, and it
+	// was never written to the archive -- so a saved friendly monster came back owned by nobody.
+	// Upstream guarded this on their SAVEVER 4509; ours is a separate numbering line that is already
+	// past it, so it is gated on 4514 instead.
+	if (SaveVersion >= 4514)
+	{
+		arc << FriendPlayer;
+	}
 	
 	// [BB] Zandronum additions.
 	arc << LimitedToTeam // [BB]

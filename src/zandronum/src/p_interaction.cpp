@@ -1583,7 +1583,10 @@ thrust:
 			// This does not save the player if damage >= TELEFRAG_DAMAGE, still need to
 			// telefrag him right? ;) (Unfortunately the damage is "absorbed" by armor,
 			// but telefragging should still do enough damage to kill the player)
-			if ((player->cheats & CF_BUDDHA) && damage < TELEFRAG_DAMAGE)
+			if ((player->cheats & CF_BUDDHA) && damage < TELEFRAG_DAMAGE
+				// [rc4l] uzdoom@202076996: ignore players that are already dead, or buddha revives a
+				// corpse to health 1 and the exiting player comes back as a zombie.
+				&& player->playerstate != PST_DEAD)
 			{
 				// If this is a voodoo doll we need to handle the real player as well.
 				player->mo->health = target->health = player->health = 1;
