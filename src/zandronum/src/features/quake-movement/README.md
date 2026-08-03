@@ -71,21 +71,56 @@ The two properties that describe a *velocity* (`AirAcceleration`, `VelocityCap`)
 they read in map units like every other speed property; the pure acceleration/friction coefficients
 are plain floats.
 
-**Verified in-engine:**
+**Verified in-engine** (MAP01, `+forward` from rest, `cl_run 1`, class read back from `dumpactor`):
 
-- **The Quake path really is driving movement.** With `Player.VelocityCap 4.0` a 15-tic `+forward`
-  run covers exactly 60.00 units — 4.000 u/tic, precisely the authored cap. Doom movement has no
-  `VelocityCap` property at all, so only `MovePlayerQuake` can produce that number.
-- **Friction reaches a genuine stop**, not an asymptotic creep: after releasing input the pawn
-  decelerates and then holds one x position across 40 further tics.
-- **`MvType 0` is unaffected**: a 20-tic `+forward` run lands on x=452.325, the same as the
-  pre-feature build.
+| | 15 tics | terminal speed |
+|---|---|---|
+| `MvType 0` (Doom, running) | 112.83 | ~7.5 u/tic |
+| `MvType 1` (Quake) | **189.2** | **13.141 u/tic** |
+| `MvType 1` + `VelocityCap 4.0` | 60.00 | exactly 4.000 u/tic |
 
-⚠️ **Do not compare walk/run distances between pawn classes through the console harness without
-verifying the class and `cl_run` in the same breath.** Two traps bite here: `map MAP01` silently
-reverts the player class to `DoomPlayer`, and `cl_run` is archived, so it can differ between runs.
-Both produce believable-looking "Doom vs Quake" tables that are really walk-vs-run on one model.
-Read the class back out of `dumpactor` immediately before and after every sample.
+13.141 is the model's own prediction: acceleration grants
+`GroundAcceleration × maxSpeed / TICRATE` per tic until the remaining headroom shrinks below the
+friction drop, i.e. equilibrium at `maxSpeed − friction²/TICRATE` = `14.17 − 1.03`. Matching the
+closed form to three decimals is the strongest evidence available that both halves are wired right.
+
+Friction also reaches a genuine stop, not an asymptotic creep: after input is released the pawn
+decelerates and then holds one x position across 40 further tics. `MvType 0` is unaffected — a
+20-tic run lands on x=452.325, the same as the pre-feature build.
+
+⚠️ **Harness traps that produced wrong numbers here more than once.** Verify the class and `cl_run`
+in the same breath as every sample:
+- `map MAP01` silently reverts the player class to `DoomPlayer`, so a "Quake" sample after a map
+  change is really Doom.
+- `cl_run` is archived and can differ between runs, so a class comparison can quietly become a
+  walk-vs-run comparison.
+- **ZDoom's `Printf` renders some ordinary float values as `-NaN`.** `%.4f` output is not evidence.
+  Print `(float)(int)(x * 1000)` instead; integer-valued floats format reliably. Two separate wrong
+  diagnoses here came from believing a raw `%f`.
+- `set_pause` + `step` cannot deliver a rising button edge: ticcmds keep building while paused, so
+  `oldbuttons` absorbs the press. Drive jump inputs with console `wait` on a running engine.
+
+### Three bugs this feature shipped with, and what they teach
+
+All three were found by auditing stages 1–3 before starting stage 4, and all three were invisible to
+the unit tests because each lived in the *glue* between tested pieces.
+
+1. **`BT_SPEED` meant the wrong thing.** The engine sets that bit from the raw `+speed` key, while
+   the effective run state is `Button_Speed.bDown ^ cl_run`. The Quake move tier is picked from the
+   bit **on the server**, which cannot see `cl_run` — so with the default `cl_run 1` and no `+speed`
+   held, a running player looked like a walking one and the pawn accelerated toward half speed.
+   Fixed in `G_BuildTiccmd`, gated on `MvType` so stock pawns keep the vanilla meaning exactly.
+2. **The friction curve overflowed.** `QFloorFrictionForFriction` raised the floor-friction ratio to
+   the 16th power unbounded. In the engine build that reached infinity, making one tic's friction
+   drop exceed any achievable speed — so **velocity was zeroed every single tic** and Quake ground
+   movement was completely broken, while the identical call returned 1.0 under the test build. Now
+   the neutral floor short-circuits to exactly 1.0 and the result is clamped to ±16x.
+3. **Jump velocities truncated to whole map units.** The velocity helpers took `int` map units, so
+   `Player.JumpZ 8.5` became 8. They now work in raw fixed-point units.
+
+The lesson worth keeping: the compute units were all individually correct and green the whole time.
+Every one of these lived where a tested function meets engine state, which is exactly the seam the
+in-engine MCP pass exists to cover.
 
 ### Deliberate divergences
 

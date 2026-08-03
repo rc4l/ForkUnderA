@@ -111,19 +111,19 @@ int ComputeJumpTics( bool skulltagJumping, bool highJump, bool onSpringPad, int 
 	return tics;
 }
 
-int ComputeSecondJumpVelZ( int currentVelZ, int secondJumpZ, bool highJump )
+long long ComputeSecondJumpVelZ( long long currentVelZRaw, long long secondJumpZRaw, bool highJump )
 {
-	int jumpVelZ = secondJumpZ;
+	long long jumpVelZ = secondJumpZRaw;
 	if ( highJump )
 		jumpVelZ *= 2;
 
-	return ( currentVelZ > jumpVelZ ) ? currentVelZ : jumpVelZ;
+	return ( currentVelZRaw > jumpVelZ ) ? currentVelZRaw : jumpVelZ;
 }
 
-int ComputeMainJumpVelZ( int currentVelZ, int jumpVelZ, bool isEdgeJump )
+long long ComputeMainJumpVelZ( long long currentVelZRaw, long long jumpVelZRaw, bool isEdgeJump )
 {
-	const int base = isEdgeJump ? (( currentVelZ > 0 ) ? currentVelZ : 0 ) : 0;
-	return base + jumpVelZ;
+	const long long base = isEdgeJump ? (( currentVelZRaw > 0 ) ? currentVelZRaw : 0 ) : 0;
+	return base + jumpVelZRaw;
 }
 
 } // namespace quakemove

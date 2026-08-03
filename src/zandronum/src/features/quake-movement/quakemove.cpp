@@ -102,6 +102,35 @@ bool IsWaterOrFlying( const AActor *mo )
 	return ( mo->waterlevel >= 2 ) || (( mo->flags & MF_NOGRAVITY ) != 0 );
 }
 
+// [rc4l] The Quake friction branch returns early out of P_XYMovement, which would otherwise skip
+// killough's "come to rest" block -- so a Quake pawn that stopped kept running on the spot forever.
+// Q-Zandronum copies the same block into their branch for the same reason.
+void StopAndIdleIfAtRest( APlayerPawn *mo )
+{
+	// STOPSPEED is p_mobj.cpp-local; 0x1000 is its value and the threshold this mirrors.
+	const fixed_t stopSpeed = fixed_t::FromRaw( 0x1000 );
+	player_t *const player = mo->player;
+
+	if (( mo->velx > -stopSpeed ) && ( mo->velx < stopSpeed ) &&
+		( mo->vely > -stopSpeed ) && ( mo->vely < stopSpeed ) &&
+		(( player->cmd.ucmd.forwardmove | player->cmd.ucmd.sidemove ) == 0 ))
+	{
+		if ( CLIENT_PREDICT_IsPredicting() == false )
+		{
+			// [BC] In client mode we don't know other players' move inputs, so the server tells us
+			// when to idle them; only the local player may decide it for themselves.
+			if (( NETWORK_InClientMode() == false ) || (( player - players ) == consoleplayer ))
+				mo->PlayIdle();
+		}
+
+		mo->velx = 0;
+		mo->vely = 0;
+		mo->flags4 &= ~MF4_SCROLLMOVE;
+		player->velx = 0;
+		player->vely = 0;
+	}
+}
+
 } // namespace
 
 bool UsesQuakeMovement( const AActor *mo )
@@ -337,6 +366,7 @@ bool ApplyQuakeFriction( AActor *mo )
 	player->velx = FixedMul( player->velx, FLOAT2FIXED( result.scale ));
 	player->vely = FixedMul( player->vely, FLOAT2FIXED( result.scale ));
 
+	StopAndIdleIfAtRest( pawn );
 	return true;
 }
 
@@ -531,8 +561,8 @@ bool CheckJumpQuake( player_t *player, ticcmd_t *cmd )
 
 		mo->velx += jumpVelX;
 		mo->vely += jumpVelY;
-		mo->velz = fixed_t( ComputeMainJumpVelZ( int( FIXED2FLOAT( mo->velz )),
-			int( FIXED2FLOAT( jumpVelZ )), isEdgeJump ) * FRACUNIT );
+		mo->velz = fixed_t::FromRaw( ComputeMainJumpVelZ( mo->velz.Raw(), jumpVelZ.Raw(),
+			isEdgeJump ));
 
 		player->jumpTics = ComputeJumpTics(
 			( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) != 0,
@@ -573,9 +603,8 @@ bool CheckJumpQuake( player_t *player, ticcmd_t *cmd )
 			mo->vely += pushY;
 		}
 
-		mo->velz = fixed_t( ComputeSecondJumpVelZ( int( FIXED2FLOAT( mo->velz )),
-			int( FIXED2FLOAT( mo->SecondJumpZ )),
-			( player->cheats & CF_HIGHJUMP ) != 0 ) * FRACUNIT );
+		mo->velz = fixed_t::FromRaw( ComputeSecondJumpVelZ( mo->velz.Raw(),
+			mo->SecondJumpZ.Raw(), ( player->cheats & CF_HIGHJUMP ) != 0 ));
 
 		PlayJumpSound( mo, "*secondjump" );
 

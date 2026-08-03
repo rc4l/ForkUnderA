@@ -69,6 +69,7 @@
 #include "g_game.h"
 #include "g_level.h"
 #include "features/skywire/computation/sky_wire_compute.h"
+#include "features/quake-movement/quakemove.h"
 #include "sbar.h"
 #include "m_swap.h"
 #include "m_png.h"
@@ -826,7 +827,14 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 	if (Button_User3.bDown)			cmd->ucmd.buttons |= BT_USER3;
 	if (Button_User4.bDown)			cmd->ucmd.buttons |= BT_USER4;
 
-	if (Button_Speed.bDown)			cmd->ucmd.buttons |= BT_SPEED;
+	// [rc4l] features/quake-movement: for a Quake pawn, BT_SPEED means "is running", not "+speed is
+	// held". The Quake move tier is picked from this bit on the SERVER, which cannot see cl_run --
+	// so with the default cl_run 1 and no +speed held, the bit was clear while the player was in
+	// fact running, and the pawn accelerated toward walking speed. Gated on MvType so stock pawns
+	// keep the vanilla meaning of the bit exactly.
+	if (zx::quakemove::UsesQuakeMovement (players[consoleplayer].mo)
+		? (Button_Speed.bDown ^ (int)cl_run) != 0
+		: Button_Speed.bDown)		cmd->ucmd.buttons |= BT_SPEED;
 	if (Button_Strafe.bDown)		cmd->ucmd.buttons |= BT_STRAFE;
 	if (Button_MoveRight.bDown)		cmd->ucmd.buttons |= BT_MOVERIGHT;
 	if (Button_MoveLeft.bDown)		cmd->ucmd.buttons |= BT_MOVELEFT;

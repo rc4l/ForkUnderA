@@ -79,6 +79,15 @@ float QAccelerationSpeed( float currentSpeed, float wishspeed, float accel );
 float QLocalVelocityCap( float cap, float speedAtTicStart );
 float QVelocityCapScale( float speed, float localCap );
 
+// The engine's neutral floor values: a floor carrying these must leave the model untouched.
+const int Q_DEFAULT_FLOOR_FRICTION = 59392;	// ORIG_FRICTION
+const int Q_DEFAULT_FLOOR_MOVEFACTOR = 2048;
+
+// How far the friction curve may swing either way. See QFloorFrictionForFriction for why an
+// unbounded 16th power is not survivable.
+const float Q_FLOOR_FRICTION_MIN = 1.0f / 16.0f;
+const float Q_FLOOR_FRICTION_MAX = 16.0f;
+
 // Floor friction feeds the two halves of the model differently, and both are deliberately blunted.
 // Acceleration takes the 8th root, friction the 16th power, because Quake's own friction is much
 // higher than Doom's and an unmodified custom floor value would otherwise dominate the result.

@@ -201,6 +201,23 @@ TEST(ComputeJumpTics, SpringPadWinsOverEverythingElse) {
 	EXPECT_EQ(0, ComputeJumpTics(false, false, /*springPad*/ true, TICRATE));
 }
 
+TEST(ComputeVelZ, WorkInRawFixedUnitsSoFractionalJumpZSurvives) {
+	// The regression this guards: these once took whole map units, so `Player.JumpZ 8.5` was
+	// truncated to 8 and every fractional jump height in every mod silently changed.
+	const long long FRACUNIT = 65536;
+	const long long halfUnit = FRACUNIT / 2;
+
+	// 8.5 units of jump velocity must come back as 8.5, not 8.
+	EXPECT_EQ(8 * FRACUNIT + halfUnit,
+		ComputeMainJumpVelZ(0, 8 * FRACUNIT + halfUnit, false));
+	// An edge jump adds a fractional rise to a fractional jump without losing either.
+	EXPECT_EQ(10 * FRACUNIT + halfUnit,
+		ComputeMainJumpVelZ(2 * FRACUNIT, 8 * FRACUNIT + halfUnit, true));
+	// And the floor comparison is exact at sub-unit differences.
+	EXPECT_EQ(8 * FRACUNIT + halfUnit,
+		ComputeSecondJumpVelZ(8 * FRACUNIT + halfUnit, 8 * FRACUNIT, false));
+}
+
 TEST(ComputeSecondJumpVelZ, IsAFloorNotAnAddition) {
 	// Using a double jump while already rising faster must not SLOW you -- that would make the
 	// double jump a punishment at the top of a rocket jump.
