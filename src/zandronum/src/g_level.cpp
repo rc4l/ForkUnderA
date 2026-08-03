@@ -2180,11 +2180,13 @@ bool FLevelLocals::IsCrouchingAllowed() const
 
 bool FLevelLocals::IsFreelookAllowed() const
 {
-	if (level.flags & LEVEL_FREELOOK_NO)
+	// [rc4l] uzdoom@a21f01bc5: freelook is a 3-state server setting now, so an explicit dmflags
+	// choice outranks MAPINFO -- the same precedence jump and crouch already use.
+	if (dmflags & DF_NO_FREELOOK)
 		return false;
-	if (level.flags & LEVEL_FREELOOK_YES)
+	if (dmflags & DF_YES_FREELOOK)
 		return true;
-	return !(dmflags & DF_NO_FREELOOK);
+	return !(level.flags & LEVEL_FREELOOK_NO);
 }
 
 //==========================================================================
