@@ -7,7 +7,7 @@
 gameinfo
 {
 	playerclasses = "MvDoomCtl", "MvQBase", "MvCore", "MvCap", "MvCpm",
-		"MvJump", "MvJumpSlow", "MvJumpInf", "MvAbsSJ", "MvWallJump", "MvWallJumpV2", "MvDoubleTap",
+		"MvJump", "MvJumpSlow", "MvJumpInf", "MvAbsSJ", "MvAbsSJOff", "MvWallJump", "MvWallJumpV2", "MvDoubleTap",
 		"MvEdgeJump", "MvGroundSJ", "MvUser4", "MvElevator", "MvElevatorOff", "MvJumpXY",
 		"MvSlide", "MvClimb", "MvWallRun", "MvTiers", "MvCrouch", "MvAll"
 }

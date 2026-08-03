@@ -147,6 +147,12 @@ or with a property authored away from its default. Full measurements in
    Both halves are now MvType-gated, so Doom pawns keep the stock 7-tic landing delay exactly.
 6. **`PLAYER_SetDefaultSpectatorValues` reset two of four move tiers.** Its stated purpose is
    spectator speed independent of the player class; stage 5 doubled the tiers and left it behind.
+7. **The server spawned the client-side effect actors.** Both cosmetic call sites gated on
+   `(player - players) != consoleplayer`, which is meaningless on a dedicated server: `consoleplayer`
+   is 0 there, a real connected client, so the server emitted player 0's dust and looping-sound
+   calls and nobody else's. `IsLocalCosmeticPlayer()` now answers no on a server for everyone, and
+   sits inside `SpawnEffectActor` as well as at the call sites. Verified by counting `MvDust`
+   server-side from ACS: 1 before, 0 after.
 
 ### Deliberate divergences
 

@@ -144,6 +144,25 @@ Walk and crouch-run share a `normforwardmove` entry, so `fwd` alone cannot separ
 | `+WALLJUMP` at a wall | fires — apex **88** |
 | `+WALLJUMP` in the open | **does not** fire — apex **36**. Same class, same input, only the wall differs |
 | `Player.JumpDelay` | ground phase between held-jump bounces: **20 → 21 tics, 45 → 46 tics** |
+| `Player.JumpXY 8` | velx steps **13.141 → 21.141** on the jump tic — exactly +8, in the *input* direction (a standstill jump correctly adds nothing, since the direction comes from the ticcmd) |
+| `+ABSOLUTESECONDJUMP` | velx **set** to **6.000** = `SecondJumpXY`… |
+| …its paired control | …vs **19.141** (13.141 + 6) **added**, on a class identical but for the flag |
+| `+DOUBLETAPJUMP` | tap-tap forward in mid-air: velx **13.141 → 25.141** = exactly +12 = `SecondJumpXY`, plus the second-jump Z |
+| `+USER4JUMP`, jump button | **nothing** — velz decays 7.0 → −8.0 straight through. The flag takes the jump button away as a trigger |
+| `+USER4JUMP`, `user4` button | fires — velz **2.0 → 9.5**. Same class, same airborne timing; only the button differs |
+| `+WALLJUMPV2` | facing **east** along the wall, the second jump sets vx to **0** and vy to **−8.000** — pushed along the wall *normal*. A facing-directed push cannot produce a y component at all, which is what separates V2 from a plain wall jump |
+
+## 6b. Air control
+
+Running east at terminal, jump, then release forward and hold pure strafe:
+
+| | sideways velocity |
+|---|---|
+| `+CPMAIRCONTROL` | pinned at exactly **1.500** — which is `Q_CPM_WISHSPEED`, the model's own constant: high acceleration against a tiny wish speed |
+| VQ3 (no flag) | accumulates ~**0.411**/tic, reaching 6.171 and still climbing |
+
+The two air-control models are demonstrably different, and the CPM figure is its own documented
+constant rather than an arbitrary number.
 
 ## 7. Traversal
 
@@ -167,6 +186,30 @@ Same platform, driven raise at 4 units/tic, jump velz after one gravity tic:
 
 `JumpZ 8 + lift 4 − 1` = 11. The rising surface contributes only with the flag.
 
+## 9. Effect actors — and where they are *not*
+
+`MvTiers` running with `Player.EffectActor "Footstep", "MvDust"`:
+
+| | |
+|---|---|
+| client, `actorsnear` | `MvDust` present at the player's position |
+| **server**, ACS `ThingCountName("MvDust")` | **0** |
+
+That second row is the netcode promise made checkable rather than argued. It read **1** before the
+fix below.
+
+## 10. Bandwidth
+
+`stat nettraffic` on a connected client, identical recipe (warp, run 60+ tics), read off the HUD:
+
+| pawn | In (last sec) | Out (last sec) | max/sec |
+|---|---|---|---|
+| `MvDoomCtl` (`MvType 0`) | 1195 | 980 | 1210 / 987 |
+| `MvCore` (`MvType 1`) | 1195 | 980 | 1210 / 987 |
+
+Identical. The movement model adds nothing to steady-state traffic, which is the stipulation the
+whole port was built around.
+
 ---
 
 ## Bugs this test found
@@ -188,25 +231,30 @@ meets engine state it does not own.
    to make spectator speed independent of the player class; this feature extended the tiers from two
    to four and did not extend the reset.
 
+4. **The server spawned cosmetic effect actors.** Both effect call sites gated on
+   `(player - players) != consoleplayer`. On a dedicated server `consoleplayer` is **0** — a real
+   connected client — so the server emitted player 0's footstep dust and ran its looping-sound
+   calls, and *only* player 0's. `ThingCountName("MvDust")` read 1 server-side; it now reads 0. The
+   guard is `IsLocalCosmeticPlayer()`, which answers no on a server for everyone, and it lives
+   inside `SpawnEffectActor` as well as at the call sites so it is safe by construction.
+
 Plus a tooling gap that blocked the entire server-side half: **a `-host` server emitted nothing to
 the MCP bridge**, because `PrintString` returns early in the server branch before the tee. Every
 driven command timed out. Fixed in `c_console.cpp`.
 
 ## Not covered here
 
-Behaviour **not** exercised in-engine. Each one's flag or property is proven to parse, store and
-replicate (§1, §2) — what is missing is confirmation of what it *does*:
+One behaviour remains unexercised: **`+EDGEJUMP`**. It preserves upward velocity into a jump
+(`ComputeMainJumpVelZ` adds `MAX(0, velz)` rather than discarding it), so reaching it needs a pawn
+that is `onground` **and** already rising. This map cannot produce that state: a flat floor never
+gives upward velocity, and riding the test platform carries the pawn up with `velz` staying 0. It
+needs sloped geometry, which the generated map does not have. The flag is proven to parse and
+replicate (§1, §2), and the friction path's `onground && velz <= 0` condition shows the engine does
+expect the state to exist — but the jump behaviour itself is untested.
 
-- `+CPMAIRCONTROL` air control, `+WALLJUMPV2` push direction, `+DOUBLETAPJUMP` dash,
-  `+EDGEJUMP`, `+USER4JUMP`, `+ABSOLUTESECONDJUMP`.
-- `Player.JumpXY` / `SecondJumpXY` horizontal thrust.
-- Footstep sounds and effect-actor *spawning* (the per-move effect counters were observed
-  advancing, which is indirect).
-- The bandwidth measurement (`stat nettraffic`, `MvType 0` vs `1` steady state). The accounting is
-  argued in the feature README and the protocol snapshot is unchanged, but no byte counts were taken.
-
-A double-tap dash in particular resisted console driving — the tap pattern needs a rising edge
-inside `DoubleTapMaxTics` and the console's `wait` granularity kept missing it.
+Everything else in the original gap list is now covered above: `+CPMAIRCONTROL` (§6b),
+`+WALLJUMPV2`, `+DOUBLETAPJUMP`, `+USER4JUMP`, `+ABSOLUTESECONDJUMP` and `Player.JumpXY` (§6),
+effect-actor spawning (§9), and the bandwidth measurement (§10).
 
 ## Harness traps found here
 
@@ -226,3 +274,9 @@ Added to the list the feature README already keeps:
   coordinate. Split the fixed value instead (`Milli()` in `mvmaster.acs`).
 - **The ACS `Delay(1)` sampler occasionally logs twice in one tic.** Steady-state cadence over many
   tics is trustworthy; a single-tic delta is not.
+- **A double tap needs the *second* press inside `DoubleTapMaxTics` of the first**, and the first
+  airborne press is usually consumed opening the window (`lastTapValue` survives from before the
+  jump). Three tap pairs at 3-tic gaps, with the airborne window widened via `sv_gravity`, is what
+  made it fire; one release-press pair never will.
+- **`stat nettraffic` toggles.** Issuing it twice turns the readout back off, and the line only
+  exists in `read_hud` output while it is on.
