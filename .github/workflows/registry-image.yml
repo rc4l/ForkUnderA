@@ -3,9 +3,9 @@
 
 # [rc4l] Builds and publishes the server registry container image.
 #
-# Deliberately on its OWN tag namespace (master-v*) and cadence, separate from engine releases
-# (v*). The master only needs republishing when the wire protocol moves; a renderer or menu release
-# has nothing to do with it, and coupling them would mean re-rolling every master deployment for
+# Deliberately on its OWN tag namespace (server-registry-v*) and cadence, separate from engine releases
+# (v*). The registry only needs republishing when the wire protocol moves; a renderer or menu release
+# has nothing to do with it, and coupling them would mean re-rolling every registry deployment for
 # changes that cannot affect it.
 #
 # The build job is NOT release-only. It also runs on pull requests that touch the daemon or the
@@ -18,7 +18,7 @@ name: server registry image
 
 on:
   push:
-    tags: ['master-v*']
+    tags: ['server-registry-v*']
   pull_request:
     paths:
       - Dockerfile.registry
@@ -53,14 +53,14 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      # [rc4l] master-v1.2.3 -> 1.2.3 + latest. Operators should pin a version; `latest` exists for
-      # first-run convenience and is not what a federated master ought to be running.
+      # [rc4l] server-registry-v1.2.3 -> 1.2.3 + latest. Operators should pin a version; `latest` exists for
+      # first-run convenience and is not what a federated registry ought to be running.
       - name: Derive tags
         id: meta
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF}" == refs/tags/master-v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/master-v}"
+          if [[ "${GITHUB_REF}" == refs/tags/server-registry-v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/server-registry-v}"
             {
               echo "primary=${IMAGE}:${VERSION}"
               echo "tags=${IMAGE}:${VERSION},${IMAGE}:latest"
@@ -94,16 +94,16 @@ jobs:
       - name: Smoke test
         run: |
           set -euo pipefail
-          docker run -d --name master -p 15300:15300/udp "${{ steps.meta.outputs.primary }}"
+          docker run -d --name registry -p 15300:15300/udp "${{ steps.meta.outputs.primary }}"
           sleep 5
-          docker logs master
-          if [ "$(docker inspect -f '{{.State.Running}}' master)" != "true" ]; then
+          docker logs registry
+          if [ "$(docker inspect -f '{{.State.Running}}' registry)" != "true" ]; then
             echo "::error::zandrox-server-registry exited instead of staying up"
             exit 1
           fi
-          docker logs master 2>&1 | grep -q "Master server started" \
+          docker logs registry 2>&1 | grep -q "Server registry started" \
             || { echo "::error::no startup banner -- daemon did not initialise"; exit 1; }
-          docker rm -f master
+          docker rm -f registry
 
       - name: Log in to GHCR
         if: steps.meta.outputs.publish == 'true'

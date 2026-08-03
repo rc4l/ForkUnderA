@@ -44,7 +44,7 @@
 //
 // Filename: i_system.h
 //
-// Description: Contains some stuff that is necessary to let the master share
+// Description: Contains some stuff that is necessary to let the registry share
 // code with Skulltag.
 //
 //-----------------------------------------------------------------------------
