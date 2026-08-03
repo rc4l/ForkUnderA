@@ -2660,6 +2660,10 @@ enum SIX_Flags
 	// [rc4l] uzdoom@5c4ad9be6
 	SIXF_TRANSFERALPHA			= 1 << 18,
 	SIXF_TRANSFERRENDERSTYLE	= 1 << 19,
+	// [rc4l] uzdoom@0735cb955 + 68a5db3c8
+	SIXF_SETTARGET				= 1 << 20,
+	SIXF_SETTRACER				= 1 << 21,
+	SIXF_NOPOINTERS				= 1 << 22,
 };
 
 // [BB] Changed return value to bool (returns false if the actor already was destroyed).
@@ -2717,7 +2721,9 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 			mo->Destroy();
 			return false;
 		}
-		else if (originator)
+		// [rc4l] uzdoom@97d5d614c: NOPOINTERS must win here too, or the friendliness transfer
+		// below re-establishes the very pointers it is meant to clear.
+		else if (originator && !(flags & SIXF_NOPOINTERS))
 		{
 			if (originator->flags3 & MF3_ISMONSTER)
 			{
@@ -2748,6 +2754,26 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	{
 		// If this is a missile or something else set the target to the originator
 		mo->target = originator ? originator : self;
+	}
+	if (flags & SIXF_NOPOINTERS)
+	{
+		//[MC]Intentionally eliminate pointers. Overrides TRANSFERPOINTERS, but is overridden by SETMASTER/TARGET/TRACER.
+		mo->LastHeard = NULL; //Sanity check.
+		mo->target = NULL;
+		mo->master = NULL;
+		mo->tracer = NULL;
+	}
+	if (flags & SIXF_SETMASTER)
+	{
+		mo->master = originator;
+	}
+	if (flags & SIXF_SETTARGET)
+	{
+		mo->target = originator;
+	}
+	if (flags & SIXF_SETTRACER)
+	{
+		mo->tracer = originator;
 	}
 	if (flags & SIXF_TRANSFERSCALE)
 	{
