@@ -1966,7 +1966,9 @@ void D_AddConfigWads (TArray<FString> &wadfiles, const char *section)
 			{
 				// D_AddWildFile resets GameConfig's position, so remember it
 				GameConfig->GetPosition (pos);
-				D_AddWildFile (wadfiles, value);
+				// [rc4l] uzdoom@bd5bf2a40: expand environment variables, so an autoload Path of
+				// $DOOMWADDIR/foo.wad or $HOME/... resolves instead of being taken literally.
+				D_AddWildFile (wadfiles, ExpandEnvVars(value));
 				// Reset GameConfig's position to get next wad
 				GameConfig->SetPosition (pos);
 			}
