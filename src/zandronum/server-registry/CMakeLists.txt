@@ -36,7 +36,7 @@ if( NOT STRNICMP_EXISTS )
    add_definitions( -Dstrnicmp=strncasecmp )
 endif( NOT STRNICMP_EXISTS )
 
-add_executable( master-97
+add_executable( zandrox-server-registry
 	main.cpp
 	network.cpp
 	${ZAN_DIR}/gitinfo.cpp
@@ -48,8 +48,19 @@ add_executable( master-97
 	${ZAN_DIR}/huffman/huffman.cpp
 )
 
-add_dependencies( master-97 revision_check )
+# [rc4l] revision_check lives in the parent (engine) project and regenerates src/gitinfo.h. When this
+# directory is configured on its own -- which the container image does, to avoid pulling in SDL/GL/
+# OpenAL just to build a UDP daemon -- that target does not exist and a standalone build provides
+# gitinfo.h itself (see Dockerfile.master).
+#
+# The test is "am I the top-level project", NOT if( TARGET revision_check ): the parent adds this
+# directory BEFORE src/, so at configure time that target does not exist yet even in the engine
+# build, and the guard would silently drop a dependency the engine needs. add_dependencies resolves
+# at generate time, so the forward reference below is fine.
+if( NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR )
+	add_dependencies( zandrox-server-registry revision_check )
+endif()
 
 if( WIN32 )
-	target_link_libraries( master-97 ws2_32 winmm )
+	target_link_libraries( zandrox-server-registry ws2_32 winmm )
 endif( WIN32 )

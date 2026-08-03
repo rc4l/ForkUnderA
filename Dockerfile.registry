@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Container image for the ZandroX server registry (zandrox-server-registry).
+#
+# The master is a small UDP daemon: game servers heartbeat it every 30s, it expires them after 60s,
+# and launchers ask it for the address list. It holds no database and no disk state beyond the
+# optional IP lists below, so a restart just repopulates within a minute.
+#
+# It is built from THIS repo rather than its own, because it compiles the engine's own
+# networkshared.cpp and huffman codec -- master and engine share the wire format, and splitting them
+# would let the two drift apart silently.
+#
+# Deliberately configured as a standalone CMake project (src/zandronum/server-registry) instead of the
+# engine's: the daemon needs no SDL, GL, OpenAL or game data, and configuring the full project would
+# drag all of that into an image that only ever opens a socket.
+
+# ---- build ---------------------------------------------------------------------------------------
+FROM debian:bookworm-slim AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+# [rc4l] gitinfo.h is normally produced by the engine project's revision_check target, which does not
+# exist in a standalone configure. Build the (dependency-free, 192-line) updaterevision tool and run
+# it here. It shells out to git and degrades gracefully when there is no repository, so the image
+# builds with or without .git in the context -- with it, the binary reports the real revision.
+RUN cc -O2 -o /tmp/updaterevision src/zandronum/tools/updaterevision/updaterevision.c \
+    && cd src/zandronum && /tmp/updaterevision src/gitinfo.h
+
+RUN cmake -S src/zandronum/server-registry -B /tmp/build -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build /tmp/build --parallel
+
+# ---- runtime -------------------------------------------------------------------------------------
+FROM debian:bookworm-slim
+
+# [rc4l] Only libstdc++/libgcc are needed; the daemon links nothing else on Linux.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libstdc++6 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --create-home --home-dir /data --shell /usr/sbin/nologin master
+
+COPY --from=build /tmp/build/zandrox-server-registry /usr/local/bin/zandrox-server-registry
+
+# [rc4l] The daemon reads its four optional IP lists from the working directory and re-reads them
+# every 15 minutes, so editing a mounted file applies without a restart:
+#   banlist.txt               players banned network-wide -- PUSHED to every game server
+#   whitelist.txt             exemptions from that ban list, also pushed
+#   blocklist.txt             hosts blocked from listing a server (they can still browse)
+#   multiserver_whitelist.txt hosts permitted to register more than one server
+# They are deployment state, not source: keep them in a mounted volume, not in this repo. They
+# contain IP addresses, and a public git history of those is neither revertible nor private.
+WORKDIR /data
+VOLUME ["/data"]
+
+USER master
+
+# [rc4l] The listen port is compiled in (DEFAULT_MASTER_PORT, networkshared.h) with no CLI override,
+# so remap on the host if you need a different one.
+EXPOSE 15300/udp
+
+# [rc4l] No arguments, which is the daemon's default: servers whose operator sets
+# sv_enforcemasterbanlist false are HIDDEN from this master's list. That is a policy choice, and the
+# deliberate one -- listing here means accepting this master's bans, and a server that declines can
+# advertise on a master that does not enforce. Federation is what makes that reasonable: refusing a
+# listing is not exile, it is a redirect.
+#
+# Note this is about the operator AGREEING to enforce, not about what banlist.txt currently holds --
+# an empty list still means "this server will honour bans I add later".
+#
+# Pass -DontHideBanIgnoringServers as the command to run a permissive master instead.
+ENTRYPOINT ["/usr/local/bin/zandrox-server-registry"]

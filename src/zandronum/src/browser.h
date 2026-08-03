@@ -183,8 +183,8 @@ void			BROWSER_ClearServerList( void );
 void			BROWSER_DeactivateAllServers( void );
 bool			BROWSER_GetServerList( BYTESTREAM_s *pByteStream );
 void			BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN );
-void			BROWSER_QueryMasterServer( void );
-bool			BROWSER_WaitingForMasterResponse( void );
+void			BROWSER_QueryRegistryServer( void );
+bool			BROWSER_WaitingForRegistryResponse( void );
 void			BROWSER_QueryAllServers( void );
 LONG			BROWSER_CalcNumServers( void );
 
