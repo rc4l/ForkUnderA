@@ -1,11 +1,11 @@
 {
   "goal": "GZDoom 2.0.05",
   "goal_date": "2014-12-27",
-  "done": 798,
+  "done": 800,
   "total": 1179,
-  "pct": 67.7,
+  "pct": 67.9,
   "ported": 527,
   "adapted": 49,
-  "skip": 222,
+  "skip": 224,
   "generated": "2026-08-03"
 }
