@@ -400,7 +400,7 @@ IMPLEMENT_CLASS( DBrowserMenu )
 void M_RefreshServers( void )
 {
 	// Don't do anything if we're still waiting for a response from the master server.
-	if ( BROWSER_WaitingForRegistryResponse( ))
+	if ( BROWSER_WaitingForServerRegistryResponse( ))
 		return;
 
 	g_lSelectedServer = -1;
@@ -410,7 +410,7 @@ void M_RefreshServers( void )
 	BROWSER_ClearServerList( );
 
 	// Then, query the master server.
-	BROWSER_QueryRegistryServer( );
+	BROWSER_QueryServerRegistry( );
 }
 
 //*****************************************************************************
@@ -445,7 +445,7 @@ bool M_ShouldShowServer( LONG lServer )
 		return ( false );
 /*
 	// Don't show servers that don't have the same IWAD we do.
-	if ( stricmp( SERVER_REGISTRY_GetIWADName( ), BROWSER_GetIWADName( lServer )) != 0 )
+	if ( stricmp( SERVER_SERVERREGISTRY_GetIWADName( ), BROWSER_GetIWADName( lServer )) != 0 )
 		return ( false );
 */
 	// Don't show Internet servers if we are only showing LAN servers.

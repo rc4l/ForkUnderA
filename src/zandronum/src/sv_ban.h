@@ -60,13 +60,13 @@
 void			SERVERBAN_Tick( void );
 bool			SERVERBAN_IsIPBanned( const IPStringArray &Address );
 bool			SERVERBAN_IsIPBanned( const NETADDRESS_s &Address );
-bool			SERVERBAN_IsIPRegistryBanned( const IPStringArray &Address );
-bool			SERVERBAN_IsIPRegistryBanned( const NETADDRESS_s &Address );
+bool			SERVERBAN_IsIPServerRegistryBanned( const IPStringArray &Address );
+bool			SERVERBAN_IsIPServerRegistryBanned( const NETADDRESS_s &Address );
 IPADDRESSBAN_s	*SERVERBAN_GetBanInformation( const IPStringArray &Address );
 IPADDRESSBAN_s	*SERVERBAN_GetBanInformation( const NETADDRESS_s &Address );
 void			SERVERBAN_ClearBans( unsigned int fileIndex );
-void			SERVERBAN_ReadRegistryServerBans( BYTESTREAM_s *pByteStream );
-void			SERVERBAN_ReadRegistryServerBanlistPart( BYTESTREAM_s *pByteStream );
+void			SERVERBAN_ReadServerRegistryBans( BYTESTREAM_s *pByteStream );
+void			SERVERBAN_ReadServerRegistryBanlistPart( BYTESTREAM_s *pByteStream );
 time_t			SERVERBAN_ParseBanLength( const char *szLengthString );
 TArray<IPList>	&SERVERBAN_GetBanList( void );
 void			SERVERBAN_BanPlayer( unsigned int player, const char *length, const char *reason, unsigned int fileIndex );
