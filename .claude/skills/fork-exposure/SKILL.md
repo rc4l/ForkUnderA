@@ -46,15 +46,16 @@ never the consumers. Find them yourself, from the value's own name:
    method on the owning class. A value written to an archive is in every savegame ever made.
 2. **Transmitted?** `git grep '<TypeName>' src/zandronum/src/sv_commands.h` — anything
    appearing as a parameter there goes out as bytes. Also `NETWORK_Write*` call sites.
-3. **Published to outside programs?** `git grep '<name>' src/zandronum/src/sv_master.cpp` —
-   that file answers launcher and master-server queries. Whatever it writes, third-party
-   software parses.
+3. **Published to outside programs?** `git grep -l 'WriteLong\|WriteByte' src/zandronum/src/features/federated-server-registry/` — whatever answers launcher and
+   master-server queries. Third-party software parses what it writes. Find that code by what
+   it does, not by a filename: this lived in sv_master.cpp until it was moved into a feature
+   directory, and the path will move again.
 4. **Mod-facing?** Is the value a DECORATE flag, an ACS constant, an `APROP_`, a line
    special number, a lump keyword? Then shipped wads depend on it.
 5. **Config-facing?** Anything archived to the ini and read back on next launch.
 
 If a grep finds nothing, say so in the ledger note — "checked serialization, sv_commands and
-sv_master; no reader outside the process" is a derived result and re-checkable. "Looked
+the server registry; no reader outside the process" is a derived result and re-checkable. "Looked
 fine" is not.
 
 ## What to do when you find one — do not stop

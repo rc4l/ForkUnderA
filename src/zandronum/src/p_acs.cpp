@@ -2914,6 +2914,12 @@ void FBehavior::LoadScriptsDirectory ()
 	default:
 		break;
 	}
+
+// [EP] Clang 3.5.0 optimizer miscompiles this function and causes random
+// crashes in the program. I hope that Clang 3.5.x will fix this.
+#if defined(__clang__) && __clang_major__ == 3 && __clang_minor__ >= 5
+	asm("" : "+g" (NumScripts));
+#endif
 	for (i = 0; i < NumScripts; ++i)
 	{
 		Scripts[i].Flags = 0;
@@ -4912,6 +4918,12 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		// Only bother the clients if the stencil color has actually changed.
 		if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( static_cast<DWORD>( oldValue ) != actor->fillcolor ) )
 			SERVERCOMMANDS_SetThingProperty( actor, APROP_StencilColor );
+		break;
+
+	case APROP_MeleeRange:
+		// [rc4l] uzdoom@79d9a573b. No broadcast: meleerange is read by P_CheckMeleeRange
+		// inside monster AI, which runs only on the server under client/server.
+		actor->meleerange = value;
 		break;
 
 	case APROP_Friction:

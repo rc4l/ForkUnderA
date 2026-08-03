@@ -471,6 +471,17 @@ static void ParseUserVariable (FScanner &sc, PSymbolTable *symt, PClass *cls)
 	}
 	sc.MustGetToken(';');
 
+	// [rc4l] uzdoom@cbf72fe99: reject a name already defined in an ANCESTOR too, not just this
+	// class. The serializer stores user variables by name and cannot tell a child's copy from its
+	// parent's, so a shadowing declaration corrupts the save.
+	if (symt->FindSymbol(symname, true) != NULL)
+	{
+		sc.ScriptMessage ("'%s' is already defined in '%s' or one of its ancestors.",
+			symname.GetChars(), cls ? cls->TypeName.GetChars() : "Global");
+		FScriptPosition::ErrorCounter++;
+		return;
+	}
+
 	PSymbolVariable *sym = new PSymbolVariable(symname);
 	sym->offset = cls->Extend(sizeof(int) * (valuetype.Type == VAL_Array ? valuetype.size : 1));
 	sym->ValueType = valuetype;

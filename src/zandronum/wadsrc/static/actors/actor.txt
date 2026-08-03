@@ -34,6 +34,7 @@ ACTOR Actor native //: Thinker
 	// Internally they are handled as floats.
 	// Variables must be native.
 	native fixed_t alpha;
+	native fixed_t speed;
 	native angle_t angle;
 	native int args[5];
 	native fixed_t ceilingz;
@@ -311,6 +312,7 @@ ACTOR Actor native //: Thinker
 	action native A_CheckLOF(state jump, int flags = 0, float range = 0, float minrange = 0, float angle = 0, float pitch = 0, float offsetheight = 0, float offsetwidth = 0, int ptr_target = AAPTR_DEFAULT);
 	action native A_JumpIfTargetInLOS (state label = "", float fov = 0, int flags = 0, float dist_max = 0, float dist_close = 0);	// [rc4l] label default: MBF21/DEHACKED compatibility
 	action native A_JumpIfInTargetLOS (state label, float fov = 0, int flags = 0, float dist_max = 0, float dist_close = 0);
+	action native A_DamageSelf(int amount, name damagetype = "none");
 	action native A_DamageMaster(int amount, name damagetype = "none");
 	action native A_DamageChildren(int amount, name damagetype = "none");
 	action native A_DamageSiblings(int amount, name damagetype = "none");
@@ -336,6 +338,7 @@ ACTOR Actor native //: Thinker
 	action native A_SetUserArray(name varname, int index, int value);
 	action native A_SetSpecial(int spec, int arg0 = 0, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0);
 	action native A_Quake(int intensity, int duration, int damrad, int tremrad, sound sfx = "world/quake");
+	action native A_SetSpeed(float speed);
 	action native A_SetTics(int tics);
 	action native A_SetDamageType(name damagetype);
 	action native A_DropItem(class<Actor> item, int dropamount = -1, int chance = 256);
