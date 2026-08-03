@@ -762,24 +762,9 @@ void APlayerPawn::Serialize (FArchive &arc)
 		<< DamageFade
 		<< PlayerFlags
 		<< FlechetteType;
-	if (SaveVersion < 3829)
-	{
-		GruntSpeed = 12*FRACUNIT;
-		FallingScreamMinSpeed = 35*FRACUNIT;
-		FallingScreamMaxSpeed = 40*FRACUNIT;
-	}
-	else
-	{
-		arc << GruntSpeed << FallingScreamMinSpeed << FallingScreamMaxSpeed;
-	}
-	if (SaveVersion >= 4502)
-	{
-		arc << UseRange;
-	}
-	if (SaveVersion >= 4503)
-	{
-		arc << AirCapacity;
-	}
+	arc << GruntSpeed << FallingScreamMinSpeed << FallingScreamMaxSpeed;
+	arc << UseRange;
+	arc << AirCapacity;
 	// [ZandroX] Runtime standing height. Older saves predate runtime resizing, so
 	// fall back to the class default (matching PostBeginPlay's initialization).
 	// (SAVEVER 4510: 4509 was taken by upstream's MBF21 damage-group fields.)
@@ -4471,26 +4456,7 @@ void player_t::Serialize (FArchive &arc)
 		<< ACSSkinOverridesWeaponSkin
 		// [BB] Skulltag additions - end
 		;
-	if (SaveVersion < 3427)
-	{
-		WORD oldaccuracy, oldstamina;
-		arc << oldaccuracy << oldstamina;
-		if (mo != NULL)
-		{
-			mo->accuracy = oldaccuracy;
-			mo->stamina = oldstamina;
-		}
-	}
-	if (SaveVersion < 4041)
-	{
-		// Move weapon state flags from cheats and into WeaponState.
-		WeaponState = ((cheats >> 14) & 1) | ((cheats & (0x37 << 24)) >> (24 - 1));
-		cheats &= ~((1 << 14) | (0x37 << 24));
-	}
-	else
-	{
-		arc << WeaponState;
-	}
+	arc << WeaponState;
 	arc << LogText
 		<< ConversationNPC
 		<< ConversationPC
@@ -4514,44 +4480,11 @@ void player_t::Serialize (FArchive &arc)
 	// [BL] is the player unarmed?
 	arc << bUnarmed;
 
-	if (SaveVersion >= 3475)
-	{
-		arc << poisontype << poisonpaintype;
-	}
-	else if (poisoner != NULL)
-	{
-		poisontype = poisoner->DamageType;
-		poisonpaintype = poisoner->PainType != NAME_None ? poisoner->PainType : poisoner->DamageType;
-	}
+	arc << poisontype << poisonpaintype;
 
-	if (SaveVersion >= 3599)
-	{
-		arc << timefreezer;
-	}
-	else
-	{
-		cheats &= ~(1 << 15);	// make sure old CF_TIMEFREEZE bit is cleared
-	}
-	if (SaveVersion < 3640)
-	{
-		cheats &= ~(1 << 17);	// make sure old CF_REGENERATION bit is cleared
-	}
-	if (SaveVersion >= 3780)
-	{
-		arc << settings_controller;
-	}
-	else
-	{
-		settings_controller = (this - players == Net_Arbitrator);
-	}
-	if (SaveVersion >= 4505)
-	{
-		arc << onground;
-	}
-	else
-	{
-		onground = (mo->z <= mo->floorz) || (mo->flags2 & MF2_ONMOBJ) || (mo->BounceFlags & BOUNCE_MBF) || (cheats & CF_NOCLIP2);
-	}
+	arc << timefreezer;
+	arc << settings_controller;
+	arc << onground;
 
 	if (arc.IsLoading ())
 	{

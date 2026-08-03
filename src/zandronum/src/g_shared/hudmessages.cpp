@@ -191,39 +191,16 @@ void DHUDMessage::Serialize (FArchive &arc)
 		<< Tics << State << TextColor
 		<< SBarID << SourceText << Font << Next
 		<< HUDWidth << HUDHeight;
-	if (SaveVersion >= 3960)
-	{
-		 arc << NoWrap;
-		 arc << ClipX << ClipY << ClipWidth << ClipHeight;
-		 arc << WrapWidth;
-	}
-	else
-	{
-		NoWrap = false;
-		ClipX = ClipY = ClipWidth = ClipHeight = WrapWidth = 0;
-	}
+	 arc << NoWrap;
+	 arc << ClipX << ClipY << ClipWidth << ClipHeight;
+	 arc << WrapWidth;
 	if (arc.IsLoading ())
 	{
 		Lines = NULL;
 		ResetText (SourceText);
 	}
-	if (SaveVersion < 3821)
-	{
-		VisibilityFlags = 0;
-	}
-	else
-	{
-		arc << VisibilityFlags;
-	}
-	if (SaveVersion < 3824)
-	{
-		Style = STYLE_Translucent;
-		Alpha = FRACUNIT;
-	}
-	else
-	{
-		arc << Style << Alpha;
-	}
+	arc << VisibilityFlags;
+	arc << Style << Alpha;
 }
 
 //============================================================================
