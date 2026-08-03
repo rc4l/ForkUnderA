@@ -158,9 +158,22 @@ else( WIN32 )
 		add_definitions( -DNO_GTK=1 )
 	endif( NO_GTK )
 	
+	# [rc4l] Declared here rather than beside the platform-source selection because the SDL link
+	# decision below is the first thing that needs it.
+	if( APPLE )
+		option( ZX_COCOA_BACKEND "Use the native Cocoa backend on macOS instead of SDL2" ON )
+	endif()
+
 	# [rc4l] Native SDL2, not the sdl12-compat shim: SDL 1.2 cannot request a GL version or profile, which is what capped macOS at a 2.1 compatibility context.
-	find_package( SDL2 REQUIRED )
-	set( ZDOOM_LIBS ${ZDOOM_LIBS} SDL2::SDL2 SDL2::SDL2main )
+	#
+	# [rc4l] macOS on the Cocoa backend needs no SDL at all -- not the video/input layer, and since
+	# the instant-replay sink moved to AudioQueue, not the audio either. Linking it anyway would
+	# leave a dependency nothing calls, and SDL2main in particular would fight our own main() in
+	# posix/cocoa/i_main.mm for the entry point. Linux still needs both.
+	if( NOT ( APPLE AND ZX_COCOA_BACKEND ) )
+		find_package( SDL2 REQUIRED )
+		set( ZDOOM_LIBS ${ZDOOM_LIBS} SDL2::SDL2 SDL2::SDL2main )
+	endif()
 
 	find_path( FPU_CONTROL_DIR fpu_control.h )
 	if( FPU_CONTROL_DIR )
@@ -727,10 +740,6 @@ else( WIN32 )
 		posix/cocoa/i_video.mm
 		posix/cocoa/st_console.mm
 		posix/cocoa/st_start.mm )
-
-	if( APPLE )
-		option( ZX_COCOA_BACKEND "Use the native Cocoa backend on macOS instead of SDL2" ON )
-	endif()
 
 	if( APPLE AND ZX_COCOA_BACKEND )
 		set( SYSTEM_BACKEND_DIR posix/cocoa )

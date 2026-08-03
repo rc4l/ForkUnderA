@@ -55,8 +55,10 @@ char myGlBeginCharArray[4] = {0,0,0,0};
 #define PROC void*
 #define LPCSTR const char*
 
-#include <SDL.h>
-#define wglGetProcAddress(x) (*SDL_GL_GetProcAddress)(x)
+// [rc4l] This used to pull SDL in purely to alias wglGetProcAddress onto SDL_GL_GetProcAddress.
+// The alias has no users outside win32/win32gliface.cpp, which defines its own -- our GL entry
+// points come from GLEW, which does its own platform loading. Removing it takes SDL out of the
+// hardware renderer entirely, which is what lets the macOS build link none at all.
 #endif
 
 CVAR(Bool, gl_persistent_avail, false, CVAR_NOSET);
