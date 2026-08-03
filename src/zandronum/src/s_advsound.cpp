@@ -1370,7 +1370,9 @@ static void S_AddSNDINFO (int lump)
 				FName nm = sc.String;
 				sc.MustGetString();
 				if (sc.Compare("timidity")) MidiDevices[nm] = MDEV_TIMIDITY;
-				else if (sc.Compare("fmod")) MidiDevices[nm] = MDEV_FMOD;
+				// [rc4l] uzdoom@1a40c95f8: "sndsys" is the name going forward; "fmod" still parses so
+				// existing SNDINFO lumps keep working.
+				else if (sc.Compare("fmod") || sc.Compare("sndsys")) MidiDevices[nm] = MDEV_SNDSYS;
 				else if (sc.Compare("standard")) MidiDevices[nm] = MDEV_MMAPI;
 				else if (sc.Compare("opl")) MidiDevices[nm] = MDEV_OPL;
 				else if (sc.Compare("default")) MidiDevices[nm] = MDEV_DEFAULT;

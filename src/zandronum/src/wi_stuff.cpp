@@ -78,6 +78,7 @@ typedef enum
 CVAR (Bool, wi_percents, true, CVAR_ARCHIVE)
 CVAR (Bool, wi_showtotaltime, true, CVAR_ARCHIVE)
 CVAR (Bool, wi_noautostartmap, false, CVAR_USERINFO|CVAR_UNSYNCED_USERINFO|CVAR_ARCHIVE) // [TP] This CVar is not supported online and is thus not synced online. (Maybe we should just remove it entirely)
+CVAR (Int, wi_autoadvance, 0, CVAR_SERVERINFO)
 CVAR (Int, wi_autoscreenshot, false, CVAR_ARCHIVE) // [CK]
 
 
@@ -1282,6 +1283,7 @@ void WI_updateNoState ()
 	else
 	{
 		bool noauto = noautostartmap;
+		bool autoskip = (wi_autoadvance > 0 && bcnt > (wi_autoadvance * TICRATE));
 
 		for (int i = 0; !noauto && i < MAXPLAYERS; ++i)
 		{
@@ -1290,7 +1292,7 @@ void WI_updateNoState ()
 				noauto |= players[i].userinfo.GetNoAutostartMap();
 			}
 		}
-		if (!noauto)
+		if (!noauto || autoskip)
 		{
 			cnt--;
 		}
@@ -1795,7 +1797,12 @@ void WI_updateDeathmatchStats ()
 
 	WI_updateAnimatedBack();
 
-	if (acceleratestage && dm_state != 4)
+	// [rc4l] uzdoom@2d896d2b4: our state variable is dm_state, not upstream's ng_state -- Zandronum
+	// commented the per-player frag tabulation out of this function entirely ([BC] above), so the
+	// two "all players are ready" hunks upstream also changes have no counterpart here.
+	bool autoskip = (wi_autoadvance > 0 && bcnt > (wi_autoadvance * TICRATE));
+
+	if ((acceleratestage || autoskip) && dm_state != 4)
 	{
 		// [BC] No need to do any of this.
 		/*
@@ -2015,10 +2022,11 @@ void WI_updateNetgameStats ()
 //	int i;
 //	int fsum;
 //	bool stillticking;
+	bool autoskip = (wi_autoadvance > 0 && bcnt > (wi_autoadvance * TICRATE));
 
 	WI_updateAnimatedBack ();
 
-	if (acceleratestage && ng_state != 10)
+	if ((acceleratestage || autoskip) && ng_state != 10)
 	{
 		// [BC] No need to do any of this.
 		/*
