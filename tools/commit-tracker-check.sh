@@ -62,9 +62,28 @@ while IFS=$'\t' read -r sha date title status note ours; do
 done < <(awk -F'\t' '/^#/ || $1=="sha" {next} 1' "$TSV")
 
 # [rc4l] Cross-check that a ported/adapted row's cited commit plausibly IS that port -- this script
-# only proves the sha exists, which a mis-recorded row satisfies happily. Advisory for now; see the
-# script header.
+# only proves the sha exists and is reachable, both of which a mis-recorded row satisfies happily.
 python3 "$(dirname "$0")/commit-tracker-overlap.py" || fail=1
+
+# [rc4l] progress.json is a static file the dashboard draws without counting rows itself, and
+# nothing regenerates it when coverage.tsv is edited by hand -- which is how the published bar came
+# to read 26.5% while the ledger said 47.6%, stale by two months and a hundred-odd decided commits.
+# A wrong number shown publicly is worse than no number, so it fails here rather than drifting.
+PROGRESS="$(dirname "$0")/../commit-tracker/progress.json"
+if [ -f "$PROGRESS" ]; then
+	goal_date=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['goal_date'])" "$PROGRESS")
+	# Counted here rather than by calling progress.sh, which WRITES the file it would be checked
+	# against -- running it would make the comparison trivially pass, every time.
+	want=$(awk -F'\t' -v goal="$goal_date" '
+		$1=="sha" || $1 ~ /^#/ || NF < 4 { next }
+		{ if (substr($2,1,10) > goal) next; total++; if ($4 != "pending") done++ }
+		END { printf "%d %d", done+0, total+0 }' "$TSV")
+	have=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['done'],d['total'])" "$PROGRESS")
+	if [ "$want" != "$have" ]; then
+		echo "commit-tracker-check: progress.json is stale (says '$have' done/total, coverage.tsv says '$want') -- run commit-tracker/progress.sh"
+		fail=1
+	fi
+fi
 
 [ "$fail" -eq 0 ] && echo "commit-tracker-check: clean ($(( $(grep -c "" "$TSV") - 2 )) rows)."
 exit $fail
