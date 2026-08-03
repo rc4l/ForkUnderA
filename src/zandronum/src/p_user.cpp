@@ -814,6 +814,18 @@ void APlayerPawn::BeginPlay ()
 
 		int spritenorm = Wads.CheckNumForName(normspritename + "A1", ns_sprites);
 		int spritecrouch = Wads.CheckNumForName(crouchspritename + "A1", ns_sprites);
+
+		// [rc4l] uzdoom@46ec36444: a sprite may use the rotation-less A0 form instead of A1, so a
+		// crouch sprite that exists only as A0 was wrongly rejected.
+		if (spritenorm==-1)
+		{
+			spritenorm = Wads.CheckNumForName(normspritename + "A0", ns_sprites);
+		}
+
+		if (spritecrouch==-1)
+		{
+			spritecrouch = Wads.CheckNumForName(crouchspritename + "A0", ns_sprites);
+		}
 		
 		if (spritenorm==-1 || spritecrouch ==-1) 
 		{

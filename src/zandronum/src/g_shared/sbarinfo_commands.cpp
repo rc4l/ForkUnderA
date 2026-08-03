@@ -3554,43 +3554,18 @@ class CommandInInventory : public SBarInfoCommandFlowControl
 			AInventory *invItem[2] = { statusBar->CPlayer->mo->FindInventory(item[0]), statusBar->CPlayer->mo->FindInventory(item[1]) };
 			if (invItem[0] != NULL && amount[0] > 0 && invItem[0]->Amount < amount[0]) invItem[0] = NULL;
 			if (invItem[1] != NULL && amount[1] > 0 && invItem[1]->Amount < amount[1]) invItem[1] = NULL;
-			if(invItem[1] != NULL && conditionAnd)
+			// [rc4l] uzdoom@0223b7f46: branch on item[1] -- whether a second item was CONFIGURED --
+			// not on invItem[1], whether one was FOUND. Keying on the latter made a two-item
+			// condition silently collapse to a one-item test whenever the second item was missing.
+			if (item[1])
 			{
-				if((invItem[0] != NULL && invItem[1] != NULL) && !negate)
-				{
-					SetTruth(true, block, statusBar);
-					return;
-				}
-				else if((invItem[0] == NULL || invItem[1] == NULL) && negate)
-				{
-					SetTruth(true, block, statusBar);
-					return;
-				}
+				if (conditionAnd)
+					SetTruth((invItem[0] && invItem[1]) != negate, block, statusBar);
+				else
+					SetTruth((invItem[0] || invItem[1]) != negate, block, statusBar);
 			}
-			else if(invItem[1] != NULL && !conditionAnd)
-			{
-				if((invItem[0] != NULL || invItem[1] != NULL) && !negate)
-				{
-					SetTruth(true, block, statusBar);
-					return;
-				}
-				else if((invItem[0] == NULL && invItem[1] == NULL) && negate)
-				{
-					SetTruth(true, block, statusBar);
-					return;
-				}
-			}
-			else if((invItem[0] != NULL) && !negate)
-			{
-				SetTruth(true, block, statusBar);
-				return;
-			}
-			else if((invItem[0] == NULL) && negate)
-			{
-				SetTruth(true, block, statusBar);
-				return;
-			}
-			SetTruth(false, block, statusBar);
+			else
+				SetTruth((invItem[0] != NULL) != negate, block, statusBar);
 		}
 	protected:
 		bool			conditionAnd;
