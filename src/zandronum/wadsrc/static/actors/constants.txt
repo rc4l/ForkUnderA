@@ -331,6 +331,7 @@ Const Int AAPTR_PLAYER7 = 4096;
 Const Int AAPTR_PLAYER8 = 8192;
 
 Const Int AAPTR_FRIENDPLAYER = 16384;
+Const Int AAPTR_GET_LINETARGET = 32768;
 
 // Pointer operation flags
 
@@ -481,3 +482,9 @@ const int KILS_NOMONSTERS =		4;
 const int DMSS_FOILINVUL =		1;
 const int DMSS_AFFECTARMOR =	2;
 const int DMSS_KILL =			4;
+
+// Flags for A_Remove* series
+const int RMVF_MISSILES =		1;
+const int RMVF_NOMONSTERS =		2;
+const int RMVF_MISC =			4;
+const int RMVF_EVERYTHING =		8;
