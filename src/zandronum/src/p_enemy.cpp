@@ -1794,7 +1794,12 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround, FLookExParams *params)
 
 	if (!(gameinfo.gametype & (GAME_DoomStrifeChex)) &&
 		( NETWORK_GetState( ) == NETSTATE_SINGLE ) &&
-		players[0].health <= 0)
+		players[0].health <= 0 &&
+		// [rc4l] uzdoom@f0e9fde33: not while the actor is heading for a goal, and never on a
+		// titlemap, where there is no real player to chase.
+		actor->goal == NULL &&
+		gamestate != GS_TITLELEVEL
+		)
 	{ // Single player game and player is dead; look for monsters
 		return P_LookForMonsters (actor);
 	}
