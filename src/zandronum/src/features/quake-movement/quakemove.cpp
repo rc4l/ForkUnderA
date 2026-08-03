@@ -165,16 +165,27 @@ bool IsCrouchedEnough( player_t *player )
 void TraceForWall( APlayerPawn *mo, angle_t angle, FTraceResults &trace );
 void SpawnEffectActor( player_t *player, int slot );
 
+// [rc4l] Whether this pawn is the one whose cosmetics WE draw and hear. A dedicated server must
+// answer no for everyone: `consoleplayer` is 0 there, which is a real connected client, so a bare
+// consoleplayer test silently makes the server emit player 0's dust and looping sounds -- and only
+// player 0's. Prediction is excluded too, or a re-predicted tic emits a second puff.
+bool IsLocalCosmeticPlayer( player_t *player )
+{
+	if ( NETWORK_GetState() == NETSTATE_SERVER )
+		return false;
+	if ( CLIENT_PREDICT_IsPredicting() )
+		return false;
+	return ( player - players ) == consoleplayer;
+}
+
 // Whether a footstep should sound this tic. Air-wall-running counts as footing even though the pawn
 // is airborne -- that is the point of running along a wall.
 bool ShouldPlayFootsteps( player_t *player, ticcmd_t *cmd )
 {
 	APlayerPawn *const mo = player->mo;
 
-	if ( CLIENT_PREDICT_IsPredicting() )
-		return false;
 	// Only the local player's own footing is known here; other players' would need replication.
-	if (( player - players ) != consoleplayer )
+	if ( IsLocalCosmeticPlayer( player ) == false )
 		return false;
 
 	if ((( mo->isAirWallRunning == false ) && ( player->onground == false )) ||
@@ -238,6 +249,10 @@ void SpawnEffectActor( player_t *player, int slot )
 	const PClass *const type = mo->EffectActors[slot];
 	if ( type == NULL )
 		return;
+	// [rc4l] Safe by construction rather than trusting every caller: this is the function with the
+	// side effect, so it is the one that must never fire on a server.
+	if ( IsLocalCosmeticPlayer( player ) == false )
+		return;
 
 	AActor *const effect = Spawn( type, mo->x, mo->y, mo->z, ALLOW_REPLACE );
 	if ( effect != NULL )
@@ -258,10 +273,9 @@ void UpdateLoopingMove( player_t *player, bool isActive, bool wasActive, const c
 {
 	APlayerPawn *const mo = player->mo;
 
-	// Never during prediction: a re-predicted tic would restart the loop and stutter it.
-	if ( CLIENT_PREDICT_IsPredicting() )
-		return;
-	if (( player - players ) != consoleplayer )
+	// Local player only, never on the server, and never during prediction: a re-predicted tic would
+	// restart the loop and stutter it.
+	if ( IsLocalCosmeticPlayer( player ) == false )
 		return;
 
 	const bool silent = ( mo->mvFlags & MV_SILENT ) != 0;

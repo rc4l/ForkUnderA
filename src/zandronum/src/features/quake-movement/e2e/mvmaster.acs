@@ -118,6 +118,14 @@ script 23 (void) net
 	Log(s:"MVLIFT raising");
 }
 
+// Effect actors are CLIENTSIDEONLY and spawned for the local player only -- the whole reason this
+// port adds no recurring traffic. This runs SERVER-side, so a non-zero count here would mean they
+// are being replicated after all, which is exactly the promise that must not silently break.
+script 25 (void) net
+{
+	Log(s:"MVDUST server_count ", d:ThingCountName("MvDust", 0));
+}
+
 script 24 (void) net
 {
 	Floor_LowerByValue(1, 32, 256);

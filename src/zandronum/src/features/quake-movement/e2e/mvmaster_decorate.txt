@@ -89,12 +89,21 @@ ACTOR MvJumpInf : MvJump
 	Player.DisplayName "MvJumpInf"
 }
 
-// The second jump's Z is a floor, not an addition -- unless +ABSOLUTESECONDJUMP says otherwise.
+// +ABSOLUTESECONDJUMP SETS horizontal velocity instead of adding to it. SecondJumpXY 6 is well
+// under the 13.141 terminal speed, so "set" and "add" land on unmistakably different numbers:
+// 6.0 with the flag, ~19.1 without.
 ACTOR MvAbsSJ : MvJump
 {
 	+ABSOLUTESECONDJUMP
-	Player.SecondJumpZ 4
+	Player.SecondJumpXY 6
 	Player.DisplayName "MvAbsSJ"
+}
+
+// The paired control: identical apart from the flag, so the comparison is one bit wide.
+ACTOR MvAbsSJOff : MvJump
+{
+	Player.SecondJumpXY 6
+	Player.DisplayName "MvAbsSJOff"
 }
 
 ACTOR MvWallJump : MvJump
@@ -103,9 +112,13 @@ ACTOR MvWallJump : MvJump
 	Player.DisplayName "MvWallJump"
 }
 
+// V2 pushes along the WALL NORMAL rather than the way the player faces. Running east along a wall
+// that also runs east, a V2 jump should convert velocity to the perpendicular axis -- so the test
+// is that vy becomes non-zero, which a facing-directed push could never produce.
 ACTOR MvWallJumpV2 : MvJump
 {
 	+WALLJUMPV2
+	Player.SecondJumpXY 8
 	Player.DisplayName "MvWallJumpV2"
 }
 
