@@ -3496,35 +3496,19 @@ void FBehavior::StaticStopMyScripts (AActor *actor)
 
 void P_SerializeACSScriptNumber(FArchive &arc, int &scriptnum, bool was2byte)
 {
-	if (SaveVersion < 3359)
+	arc << scriptnum;
+	// If the script number is negative, then it's really a name.
+	// So read/store the name after it.
+	if (scriptnum < 0)
 	{
-		if (was2byte)
+		if (arc.IsStoring())
 		{
-			WORD oldver;
-			arc << oldver;
-			scriptnum = oldver;
+			arc.WriteName(FName(ENamedName(-scriptnum)).GetChars());
 		}
 		else
 		{
-			arc << scriptnum;
-		}
-	}
-	else
-	{
-		arc << scriptnum;
-		// If the script number is negative, then it's really a name.
-		// So read/store the name after it.
-		if (scriptnum < 0)
-		{
-			if (arc.IsStoring())
-			{
-				arc.WriteName(FName(ENamedName(-scriptnum)).GetChars());
-			}
-			else
-			{
-				const char *nam = arc.ReadName();
-				scriptnum = -FName(nam);
-			}
+			const char *nam = arc.ReadName();
+			scriptnum = -FName(nam);
 		}
 	}
 }
@@ -3754,23 +3738,9 @@ void DLevelScript::Serialize (FArchive &arc)
 		arc << activefont;
 
 	arc << hudwidth << hudheight;
-	if (SaveVersion >= 3960)
-	{
-		arc << ClipRectLeft << ClipRectTop << ClipRectWidth << ClipRectHeight
-			<< WrapWidth;
-	}
-	else
-	{
-		ClipRectLeft = ClipRectTop = ClipRectWidth = ClipRectHeight = WrapWidth = 0;
-	}
-	if (SaveVersion >= 4058)
-	{
-		arc << InModuleScriptNumber;
-	}
-	else
-	{ // Don't worry about locating profiling info for old saves.
-		InModuleScriptNumber = -1;
-	}
+	arc << ClipRectLeft << ClipRectTop << ClipRectWidth << ClipRectHeight
+		<< WrapWidth;
+	arc << InModuleScriptNumber;
 }
 
 DLevelScript::DLevelScript ()
