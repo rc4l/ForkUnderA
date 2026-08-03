@@ -702,6 +702,28 @@ else( WIN32 )
 	# include roots -- headers like gl_framebuffer.h include "sdlglvideo.h" unprefixed and
 	# resolve through the backend dir, exactly as they used to through the flat sdl/.
 	set( SYSTEM_BACKEND_DIR posix/sdl )
+	# [rc4l] Phase 2 of the Cocoa port: compile the vendored posix/cocoa tree without linking it,
+	# so its adaptation can be driven by real compiler errors while macOS keeps running on SDL.
+	# Removed once the backend is selected for real.
+	if( APPLE )
+		add_library( zandrox_cocoa_syntax OBJECT EXCLUDE_FROM_ALL
+			posix/cocoa/critsec.cpp
+			posix/cocoa/i_input.mm
+			posix/cocoa/i_joystick.cpp
+			posix/cocoa/i_main.mm
+			posix/cocoa/i_main_except.cpp
+			posix/cocoa/i_system.mm
+			posix/cocoa/i_timer.cpp
+			posix/cocoa/i_video.mm
+			posix/cocoa/st_console.mm
+			posix/cocoa/st_start.mm )
+		target_include_directories( zandrox_cocoa_syntax PRIVATE
+			. posix posix/cocoa ../../../deps/sdlsrc/SDL2-2.30.10/include
+			${CMAKE_BINARY_DIR}/gdtoa ../gdtoa ../dumb/include ../rnnoise/ ../sqlite/ ../upnpnat/ )
+		set_source_files_properties( posix/cocoa/i_input.mm posix/cocoa/i_main.mm
+			posix/cocoa/i_system.mm posix/cocoa/i_video.mm posix/cocoa/st_console.mm
+			posix/cocoa/st_start.mm PROPERTIES COMPILE_OPTIONS "-fno-objc-arc" )
+	endif()
 	set( SYSTEM_SOURCES ${PLAT_SDL_SOURCES} )
 	if( APPLE )
 		set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${PLAT_MAC_SOURCES} )

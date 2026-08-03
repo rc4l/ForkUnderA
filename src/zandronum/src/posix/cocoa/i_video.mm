@@ -31,7 +31,9 @@
  **
  */
 
-#include "gl/system/gl_load.h"
+// [rc4l] uzdoom@e132fc5ee (GLEW -> GLLoadGen loader swap) is a recorded skip in the commit
+// tracker; our loader is still GLEW, which gl/system/gl_system.h pulls in.
+#include "gl/system/gl_system.h"
 
 #include "i_common.h"
 
@@ -48,7 +50,9 @@
 #include "m_argv.h"
 #include "m_png.h"
 #include "r_renderer.h"
-#include "r_swrenderer.h"
+// [rc4l] GL-only build: no software renderer here; the dedicated server uses the null one,
+// exactly as posix/sdl/hardware.cpp does.
+#include "r_nullrenderer.h"
 #include "st_console.h"
 #include "stats.h"
 #include "textures.h"
@@ -128,24 +132,11 @@ CUSTOM_CVAR(Int, vid_renderer, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINIT
 	// 0: Software renderer
 	// 1: OpenGL renderer
 
-	if (self != s_currentRenderer)
+	// [rc4l] GL-only build: there is nothing to switch to, so snap back rather than offering the
+	// software renderer. Same body as posix/sdl/hardware.cpp:88-94.
+	if (self != 1)
 	{
-		switch (self)
-		{
-			case 0:
-				Printf("Switching to software renderer...\n");
-				break;
-			case 1:
-				Printf("Switching to OpenGL renderer...\n");
-				break;
-			default:
-				Printf("Unknown renderer (%d). Falling back to software renderer...\n",
-					static_cast<int>(vid_renderer));
-				self = 0;
-				break;
-		}
-
-		Printf("You must restart " GAMENAME " to switch the renderer\n");
+		self = 1;
 	}
 }
 
@@ -277,52 +268,7 @@ private:
 // ---------------------------------------------------------------------------
 
 
-class CocoaFrameBuffer : public DFrameBuffer
-{
-public:
-	CocoaFrameBuffer(int width, int height, bool fullscreen);
-	~CocoaFrameBuffer();
-
-	virtual bool Lock(bool buffer);
-	virtual void Unlock();
-	virtual void Update();
-
-	virtual PalEntry* GetPalette();
-	virtual void GetFlashedPalette(PalEntry pal[256]);
-	virtual void UpdatePalette();
-
-	virtual bool SetGamma(float gamma);
-	virtual bool SetFlash(PalEntry  rgb, int  amount);
-	virtual void GetFlash(PalEntry &rgb, int &amount);
-
-	virtual int GetPageCount();
-
-	virtual bool IsFullscreen();
-
-	virtual void SetVSync(bool vsync);
-
-private:
-	static const size_t BYTES_PER_PIXEL = 4;
-
-	PalEntry m_palette[256];
-	bool     m_needPaletteUpdate;
-
-	BYTE     m_gammaTable[3][256];
-	float    m_gamma;
-	bool     m_needGammaUpdate;
-
-	PalEntry m_flashColor;
-	int      m_flashAmount;
-
-	bool     m_isUpdatePending;
-
-	uint8_t* m_pixelBuffer;
-	GLuint   m_texture;
-
-	void Flip();
-
-	void UpdateColors();
-};
+// [rc4l] GL-only build: class CocoaFrameBuffer removed -- see the note at its implementation.
 
 
 // ---------------------------------------------------------------------------
@@ -438,8 +384,7 @@ VideoModes[] =
 };
 
 
-cycle_t BlitCycles;
-cycle_t FlipCycles;
+// [rc4l] GL-only build: BlitCycles/FlipCycles only ever measured the software framebuffer.
 
 
 CocoaWindow* CreateCocoaWindow(const NSUInteger styleMask)
@@ -614,16 +559,9 @@ DFrameBuffer* CocoaVideo::CreateFrameBuffer(const int width, const int height, c
 		delete old;
 	}
 
-	DFrameBuffer* fb = NULL;
-
-	if (1 == s_currentRenderer)
- 	{
-		fb = new OpenGLFrameBuffer(NULL, width, height, 32, 60, fullscreen);
-	}
-	else
-	{
-		fb = new CocoaFrameBuffer(width, height, fullscreen);
-	}
+	// [rc4l] GL-only build: there is no second renderer to choose between. Mirrors what
+	// posix/sdl/hardware.cpp already does for the SDL backend.
+	DFrameBuffer* fb = new OpenGLFrameBuffer(NULL, width, height, 32, 60, fullscreen);
 
 	fb->SetFlash(flashColor, flashAmount);
 
@@ -843,268 +781,17 @@ CocoaVideo* CocoaVideo::GetInstance()
 }
 
 
-// ---------------------------------------------------------------------------
-
-
-CocoaFrameBuffer::CocoaFrameBuffer(int width, int height, bool fullscreen)
-: DFrameBuffer(width, height)
-, m_needPaletteUpdate(false)
-, m_gamma(0.0f)
-, m_needGammaUpdate(false)
-, m_flashAmount(0)
-, m_isUpdatePending(false)
-, m_pixelBuffer(new uint8_t[width * height * BYTES_PER_PIXEL])
-, m_texture(0)
-{
-	static bool isOpenGLInitialized;
-
-	if (!isOpenGLInitialized)
-	{
-		ogl_LoadFunctions();
-		isOpenGLInitialized = true;
-	}
-
-	glEnable(GL_TEXTURE_RECTANGLE_ARB);
-
-	glGenTextures(1, &m_texture);
-	glBindTexture(GL_TEXTURE_RECTANGLE_ARB, m_texture);
-	glPixelStorei(GL_UNPACK_CLIENT_STORAGE_APPLE, GL_TRUE);
-
-	glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-	glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glOrtho(0.0, width, height, 0.0, -1.0, 1.0);
-
-	GPfx.SetFormat(32, 0x000000FF, 0x0000FF00, 0x00FF0000);
-
-	for (size_t i = 0; i < 256; ++i)
-	{
-		m_gammaTable[0][i] = m_gammaTable[1][i] = m_gammaTable[2][i] = i;
-	}
-
-	memcpy(m_palette, GPalette.BaseColors, sizeof(PalEntry) * 256);
-	UpdateColors();
-
-	SetVSync(vid_vsync);
-}
-
-
-CocoaFrameBuffer::~CocoaFrameBuffer()
-{
-	glBindTexture(GL_TEXTURE_2D, 0);
-	glDeleteTextures(1, &m_texture);
-
-	delete[] m_pixelBuffer;
-}
-
-int CocoaFrameBuffer::GetPageCount()
-{
-	return 1;
-}
-
-bool CocoaFrameBuffer::Lock(bool buffered)
-{
-	return DSimpleCanvas::Lock(buffered);
-}
-
-void CocoaFrameBuffer::Unlock()
-{
-	if (m_isUpdatePending && LockCount == 1)
-	{
-		Update();
-	}
-	else if (--LockCount <= 0)
-	{
-		Buffer = NULL;
-		LockCount = 0;
-	}
-}
-
-void CocoaFrameBuffer::Update()
-{
-	if (LockCount != 1)
-	{
-		if (LockCount > 0)
-		{
-			m_isUpdatePending = true;
-			--LockCount;
-		}
-		return;
-	}
-
-	DrawRateStuff();
-
-	Buffer = NULL;
-	LockCount = 0;
-	m_isUpdatePending = false;
-
-	BlitCycles.Reset();
-	FlipCycles.Reset();
-	BlitCycles.Clock();
-
-	GPfx.Convert(MemBuffer, Pitch, m_pixelBuffer, Width * BYTES_PER_PIXEL,
-		Width, Height, FRACUNIT, FRACUNIT, 0, 0);
-
-	FlipCycles.Clock();
-	Flip();
-	FlipCycles.Unclock();
-
-	BlitCycles.Unclock();
-
-	if (m_needGammaUpdate)
-	{
-		CalcGamma(rgamma == 0.0f ? m_gamma : m_gamma * rgamma, m_gammaTable[0]);
-		CalcGamma(ggamma == 0.0f ? m_gamma : m_gamma * ggamma, m_gammaTable[1]);
-		CalcGamma(bgamma == 0.0f ? m_gamma : m_gamma * bgamma, m_gammaTable[2]);
-
-		m_needGammaUpdate  = false;
-		m_needPaletteUpdate = true;
-	}
-
-	if (m_needPaletteUpdate)
-	{
-		m_needPaletteUpdate = false;
-		UpdateColors();
-	}
-}
-
-void CocoaFrameBuffer::UpdateColors()
-{
-	PalEntry palette[256];
-
-	for (size_t i = 0; i < 256; ++i)
-	{
-		palette[i].r = m_gammaTable[0][m_palette[i].r];
-		palette[i].g = m_gammaTable[1][m_palette[i].g];
-		palette[i].b = m_gammaTable[2][m_palette[i].b];
-	}
-
-	if (0 != m_flashAmount)
-	{
-		DoBlending(palette, palette, 256,
-			m_gammaTable[0][m_flashColor.r],
-			m_gammaTable[1][m_flashColor.g],
-			m_gammaTable[2][m_flashColor.b],
-			m_flashAmount);
-	}
-
-	GPfx.SetPalette(palette);
-}
-
-PalEntry* CocoaFrameBuffer::GetPalette()
-{
-	return m_palette;
-}
-
-void CocoaFrameBuffer::UpdatePalette()
-{
-	m_needPaletteUpdate = true;
-}
-
-bool CocoaFrameBuffer::SetGamma(float gamma)
-{
-	m_gamma           = gamma;
-	m_needGammaUpdate = true;
-
-	return true;
-}
-
-bool CocoaFrameBuffer::SetFlash(PalEntry rgb, int amount)
-{
-	m_flashColor        = rgb;
-	m_flashAmount       = amount;
-	m_needPaletteUpdate = true;
-
-	return true;
-}
-
-void CocoaFrameBuffer::GetFlash(PalEntry &rgb, int &amount)
-{
-	rgb    = m_flashColor;
-	amount = m_flashAmount;
-}
-
-void CocoaFrameBuffer::GetFlashedPalette(PalEntry pal[256])
-{
-	memcpy(pal, m_palette, sizeof m_palette);
-
-	if (0 != m_flashAmount)
-	{
-		DoBlending(pal, pal, 256,
-			m_flashColor.r, m_flashColor.g, m_flashColor.b,
-			m_flashAmount);
-	}
-}
-
-bool CocoaFrameBuffer::IsFullscreen()
-{
-	return CocoaVideo::IsFullscreen();
-}
-
-void CocoaFrameBuffer::SetVSync(bool vsync)
-{
-#if MAC_OS_X_VERSION_MAX_ALLOWED < 1050
-	const long value = vsync ? 1 : 0;
-#else // 10.5 or newer
-	const GLint value = vsync ? 1 : 0;
-#endif // prior to 10.5
-
-	[[NSOpenGLContext currentContext] setValues:&value
-								   forParameter:NSOpenGLCPSwapInterval];
-}
-
-void CocoaFrameBuffer::Flip()
-{
-	assert(NULL != screen);
-
-	if (rbOpts.dirty)
-	{
-		glViewport(rbOpts.shiftX, rbOpts.shiftY, rbOpts.width, rbOpts.height);
-
-		// TODO: Figure out why the following glClear() call is needed
-		// to avoid drawing of garbage in fullscreen mode when
-		// in-game's aspect ratio is different from display one
-		glClear(GL_COLOR_BUFFER_BIT);
-
-		rbOpts.dirty = false;
-	}
-
-#ifdef __LITTLE_ENDIAN__
-	static const GLenum format = GL_RGBA;
-#else // __BIG_ENDIAN__
-	static const GLenum format = GL_ABGR_EXT;
-#endif // __LITTLE_ENDIAN__
-
-	glTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA8,
-		Width, Height, 0, format, GL_UNSIGNED_BYTE, m_pixelBuffer);
-
-	glBegin(GL_QUADS);
-	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex2f(0.0f, 0.0f);
-	glTexCoord2f(Width, 0.0f);
-	glVertex2f(Width, 0.0f);
-	glTexCoord2f(Width, Height);
-	glVertex2f(Width, Height);
-	glTexCoord2f(0.0f, Height);
-	glVertex2f(0.0f, Height);
-	glEnd();
-
-	glFlush();
-
-	[[NSOpenGLContext currentContext] flushBuffer];
-}
-
+// [rc4l] GL-only build: the software CocoaFrameBuffer (a GPfx palette blit through
+// GL_TEXTURE_RECTANGLE_ARB and glBegin/glEnd) is removed here. We have no software
+// renderer -- r_nullrenderer.h replaced FSoftwareRenderer -- and that fixed-function
+// path would be rejected by a core profile anyway. See posix/README.md.
 
 // ---------------------------------------------------------------------------
 
+
+// [rc4l] Companion to the DECLARE_CLASS in sdlglvideo.h -- see the note there. Matches how
+// posix/sdl/sdlglvideo.cpp:39 registers the same class for the SDL backend.
+IMPLEMENT_ABSTRACT_CLASS(SDLGLFB)
 
 SDLGLFB::SDLGLFB(void*, const int width, const int height, int, int, const bool fullscreen)
 : DFrameBuffer(width, height)
@@ -1250,12 +937,8 @@ int SDLGLFB::GetClientHeight()
 // ---------------------------------------------------------------------------
 
 
-ADD_STAT(blit)
-{
-	FString result;
-	result.Format("blit=%04.1f ms  flip=%04.1f ms", BlitCycles.TimeMS(), FlipCycles.TimeMS());
-	return result;
-}
+// [rc4l] GL-only build: the 'blit' stat reported the software framebuffer's blit and flip timings
+// and would now be permanently zero, so it goes with the framebuffer rather than lying.
 
 
 IVideo* Video;
@@ -1303,9 +986,13 @@ void I_CreateRenderer()
 	{
 		extern FRenderer* gl_CreateInterface();
 
-		Renderer = 1 == s_currentRenderer
-			? gl_CreateInterface()
-			: new FSoftwareRenderer;
+#ifndef NO_GL
+		// [rc4l] GL-only build: always the OpenGL renderer.
+		Renderer = gl_CreateInterface();
+#else
+		// [rc4l] Dedicated server (no OpenGL): the trivial null renderer.
+		Renderer = new FNullRenderer;
+#endif
 		atterm(I_DeleteRenderer);
 	}
 }

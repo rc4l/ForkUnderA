@@ -50,9 +50,19 @@
 
 class SDLGLFB : public DFrameBuffer
 {
+	// [rc4l] Our gl/system/gl_framebuffer.h declares DECLARE_CLASS(OpenGLFrameBuffer, SDLGLFB),
+	// which needs SDLGLFB to be a registered DObject type. Upstream had already shed this by
+	// 2016; our base is ZDoom 2.8pre, where it is still required. Without it the failure is a
+	// link error a long way from the cause.
+	DECLARE_CLASS(SDLGLFB, DFrameBuffer)
 public:
 	// This must have the same parameters as the Windows version, even if they are not used!
 	SDLGLFB(void *hMonitor, int width, int height, int, int, bool fullscreen);
+
+	// [rc4l] uzdoom@c817979ea removed GetTrueHeight upstream; we do not take that commit, because
+	// gl/renderer/gl_renderer.cpp:270 and gl/system/gl_framebuffer.cpp:193,218 still call it --
+	// nine sites in total. Restored exactly as upstream's own 3816b4693 had it.
+	int GetTrueHeight() { return GetHeight(); }
 	~SDLGLFB();
 
 	virtual bool Lock(bool buffered = true);
