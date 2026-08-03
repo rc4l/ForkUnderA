@@ -1203,7 +1203,7 @@ c57cc91d7c062b7629abc8f7c4fdaa95086432bf	2014-12-31T09:13:15Z	- cleaned up the R
 26cf383ead2cbf14d268e6edcefe7ce6c58f02fc	2014-12-31T10:48:18Z	Fixed incorrect volume levels of Timidity instruments	pending		/
 e6d59ec429b6196a5d3afc9ddff97bd93570fb8e	2014-12-31T11:04:55Z	- fixed: with aspect ratio compensation in the view matrix it is necessary to adjust the view pitch for this because the playsim does not know anything about pixel ratio.	ported	66abdae	66abdae
 4f08b20df5ae90966429074cd38cd35957823199	2014-12-31T11:53:29Z	- consider pixel stretching when rendering models. For non-voxels an aspect ratio of 1:1 must always be assumed while voxels need to be stretched so that 1 voxel unit == 1 map unit.	ported	66abdae	66abdae
-a8398e70b01dcca803d663d8db807f9c81eeed37	2014-12-31T22:01:06Z	- fixed: The brightfog flag in the GL related map settings was never initialized. - fixed: brightfog should not disable colored lighting for the weapon sprite.	ported	66abdae	66abdae
+a8398e70b01dcca803d663d8db807f9c81eeed37	2014-12-31T22:01:06Z	- fixed: The brightfog flag in the GL related map settings was never initialized. - fixed: brightfog should not disable colored lighting for the weapon sprite.	pending	pending: AUDIT REVERSAL (convergence sweep). Was marked ported. FGLROptions has the brightfog field but its constructor never initialises it, so the MAPINFO option reads uninitialised memory -- the exact bug this commit fixes	/
 ba3988290c245917e8366ea57eef9773938d825a	2015-01-01T19:16:51Z	Added an option to A_Check[SightOr]Range to be able to perform a 2D-based distance check.	pending		/
 86986446a5d5bef67741accc5645fb90919931c5	2015-01-01T23:57:09Z	Fixed: TicSpecial could run out of space when writing data	pending		/
 8c105ff3a0fbb1e0469dca843eaa7fca06641a1f	2015-01-04T04:45:11Z	Use FxVMFunctionCall in FStateTempCall	pending		/
@@ -1659,7 +1659,7 @@ a54404074a290db80cb6789f273cf8715eef94ac	2015-04-23T18:09:12Z	- fixed: IDs that 
 45b006252a145b823505b14089b9403aa822a47f	2015-04-23T19:17:41Z	Merge pull request #316 from Doom2fan/RailgunSpiralOffset	pending		/
 920a4fbf4595ab4f677c19aeb90464b8bdf118ce	2015-04-23T19:27:36Z	- fixed: The HashTags function considered sector and line #0 invalid.	pending		/
 1f2a431d159ed08d6acf2ee398449ea7e37152cc	2015-04-24T07:21:06Z	Merge branch 'master' into openal	pending		/
-baa775b31c59cdc8a3216a0e366706febc3032ec	2015-04-24T14:55:31Z	- fixed: Light level must be clamped before accessing the distfogtable.	ported	66abdae	66abdae
+baa775b31c59cdc8a3216a0e366706febc3032ec	2015-04-24T14:55:31Z	- fixed: Light level must be clamped before accessing the distfogtable.	pending	pending: AUDIT REVERSAL (convergence sweep). Was marked ported. gl_lightdata.cpp:334 still indexes distfogtable[..][lightlevel] with no gl_ClampLight, which is an out-of-bounds read for a light level outside 0..255	/
 c91745c71451150634ecd64a890ecb7635a5a56f	2015-04-24T15:42:56Z	- some fixes to make OpenAL branch compile with VC++ 2013 and OpenAL support.	pending		/
 0da6939e848eb44cc5934a4e8a441c7a59b89ffe	2015-04-24T20:30:28Z	- unmark OpenAL as 'advanced' in CMake so we can set its include and library paths in the IDE without having to enable the advanced display which isn't really helpful.	pending		/
 75471df7877f23fe39a1e1784186388c6622bf00	2015-04-25T03:07:32Z	- Made a few Win32 calls optional in order to restore capatibility with Windows NT 4.0 (not that anyone is using NT 4, but it was a trivial fix)	pending		/
@@ -2040,7 +2040,7 @@ ab85319fbf16476cf2766e42a034b42feca55cca	2015-11-22T15:04:08Z	Merge pull request
 7b017f472aef982a0e4049809f4aefdeb57e6687	2015-11-25T10:49:34Z	- fixed: Due to the default skybox being moved to the global level data, there was insufficient information to distinguish between using the default skybox or the regular sky. Fixed by adding two new sector flags which get set by a 0-tid SkyPicker.	pending		/
 99fbb552969a127329fa03a82743bdeca49f311e	2015-11-25T10:50:03Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 4ed78d78cc30813b5919ae439160feaf81e61f68	2015-11-25T10:51:11Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-b00b49c111bb537ed14c26e83646615f9fc98627	2015-11-25T10:57:53Z	- fixed skybox picking in GL renderer.	ported	db0ea86	db0ea86
+b00b49c111bb537ed14c26e83646615f9fc98627	2015-11-25T10:57:53Z	- fixed skybox picking in GL renderer.	pending	pending: AUDIT REVERSAL (convergence sweep). Was marked ported. gl_sky.cpp still picks the skybox via sector->FloorSkyBox/CeilingSkyBox rather than sector_t::GetSkyBox(plane), which does exist here (r_defs.h:522), so the fix is portable and simply was not taken	/
 4a18a28448a6c99d9b63fa45dd54787330becac3	2015-11-25T11:20:35Z	- fixed: am_showtriggerlines will now ignore any non-activatable linedef types.	pending		/
 da39c869678d1d394888163ba1eb6c74212f5734	2015-11-25T11:27:54Z	Merge pull request #401 from MajorCooke/RadiusGiveMinRange	pending		/
 cd110f67dfd63e92601d274c654001547f365730	2015-11-25T11:28:05Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
@@ -2666,7 +2666,7 @@ c9d81dff53d4983ad4376fa9b1a47b0b05bab6e8	2016-02-02T03:07:09Z	Use absolute value
 046541c7ef26f8299da02a87ef03b102d44e7336	2016-02-02T09:46:50Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 0db679c90d54de0beffcad7a672fc9908724f866	2016-02-02T09:53:56Z	- fixed clang compile error.	pending		/
 22e9fc9b7618d57a1f2b78ed9e361a7e726e33d4	2016-02-02T10:37:39Z	- re-fixed FTexture::CheckTrans	pending	pending: was recorded ported against a renderer-staircase flight commit that touched none of its files, and a content check does not find the change in our tree either. Re-derive before claiming it again	/
-d797415745ba2344d5e1964dfbe6b797cbf2211d	2016-02-02T10:58:00Z	- fixed: dynamic lights did not relink themselves when their position changed.	ported	9811962	9811962
+d797415745ba2344d5e1964dfbe6b797cbf2211d	2016-02-02T10:58:00Z	- fixed: dynamic lights did not relink themselves when their position changed.	pending	pending: AUDIT REVERSAL (convergence sweep). Was marked ported. ADynamicLight::SetOrigin still has no bool moving parameter, so the relink-on-move fix this commit makes is absent	/
 5d19901cb7f296690bf79d3636e43ce2aa0f65d1	2016-02-02T11:01:25Z	Merge pull request #529 from alexey-lysiuk/fix_creative_openal	pending		/
 df9c59bcff5270c8c855b87db8b0428ec71cbccd	2016-02-02T11:07:07Z	- moved gl_builddraw.cpp to a new 'unused' directory and also added gl_sections, which is needed by the Build algorithm to preprocess the level.	pending	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.	/
 c002c2fde912e5a4520228d96a56949c2bfe3d5f	2016-02-02T13:45:32Z	- added a mastervolume setting for DUMB because its default volume is far less than all the other music options.	pending		/
