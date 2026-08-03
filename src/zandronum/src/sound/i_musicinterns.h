@@ -13,7 +13,7 @@
 #include <windows.h>
 #include <mmsystem.h>
 #else
-#include <SDL.h>
+// [rc4l] no SDL symbols are used here; the include was inherited.
 #define FALSE 0
 #define TRUE 1
 #endif

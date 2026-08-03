@@ -37,7 +37,7 @@
 #include <windows.h>
 #include <mmsystem.h>
 #else
-#include <SDL.h>
+// [rc4l] no SDL symbols are used here; the include was inherited.
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
