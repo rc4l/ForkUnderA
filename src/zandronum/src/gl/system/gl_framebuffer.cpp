@@ -83,7 +83,6 @@ EXTERN_CVAR (Float, vid_scale_custompixelaspect)
 EXTERN_CVAR (Bool, vid_cropaspect)
 extern bool setsizeneeded;
 extern int DisplayBits;
-extern bool zx_videoScaleDirty;
 #include "features/video-scale/computation/videoscale_compute.h"
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
@@ -197,9 +196,6 @@ void OpenGLFrameBuffer::InitializeState()
 	// [rc4l] video-scale: decide whether we render into an offscreen scale buffer, (re)build it, and
 	// bind it as the render target so everything below draws into it at the virtual size.
 	UpdateScaleBuffer();
-	// The client/drawable size may differ from the mode-set size (e.g. macOS reports a slightly
-	// different desktop drawable); re-check once on the next frame.
-	zx_videoScaleDirty = true;
 
 	Begin2D(false);
 	GLRenderer->Initialize();
@@ -417,13 +413,18 @@ void OpenGLFrameBuffer::ResizeRenderInPlace(int w, int h)
 
 void OpenGLFrameBuffer::MaybeResizeForScale()
 {
-	// [rc4l] video-scale: event-driven, NOT polled. GetClientSize -> SDL_GL_GetDrawableSize is an
-	// expensive Cocoa/Metal query on macOS (~tens of ms), so calling it every frame tanks FPS.
-	// Only re-check when something actually changed -- a mode set, a window resize, or a scale CVAR
-	// change all raise zx_videoScaleDirty. This matches upstream's event-driven resize.
-	if (!zx_videoScaleDirty)
-		return;
-	zx_videoScaleDirty = false;
+	// [rc4l] uzdoom@c3702ae9e: this reconcile is UNCONDITIONAL, every frame, exactly as upstream's
+	// OpenGLFrameBuffer::Update does it.
+	//
+	// It used to be gated on a zx_videoScaleDirty flag because the old query --
+	// SDL_GL_GetDrawableSize -- cost tens of milliseconds on macOS, so polling it tanked the frame
+	// rate. That reasoning died with the SDL backend: the Cocoa path reads the view's backing
+	// bounds, which is cheap, and upstream polls on every platform including their own SDL one.
+	//
+	// The gate was also wrong, not just conservative. Anything that resized the window WITHOUT
+	// raising the flag -- a drag, a fullscreen toggle, an OS-driven resize -- left the render target
+	// at the old size with no way to notice. Comparing the sizes IS the check; a separate flag can
+	// only ever get out of sync with it, so the flag is gone rather than merely unread.
 
 	int cw = GetWidth(), ch = GetHeight();
 	GetClientSize(cw, ch);
