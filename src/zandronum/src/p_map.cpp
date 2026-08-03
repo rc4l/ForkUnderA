@@ -641,6 +641,16 @@ int P_GetFriction(const AActor *mo, int *frictionfactor)
 		}
 	}
 
+	// [rc4l] uzdoom@ea7ba9dba: an actor can scale the friction it experiences. Applied last so it
+	// modulates whatever the sector/3D-floor logic above settled on.
+	if (mo->Friction != FRACUNIT)
+	{
+		// friction/movefactor are plain ints here, and fixed_t is a strong type, so the round trip
+		// is written out rather than left implicit.
+		friction = (int)clamp<fixed_t>(FixedMul(fixed_t(friction), mo->Friction), 0, FRACUNIT);
+		movefactor = (int)FrictionToMoveFactor(fixed_t(friction));
+	}
+
 	if (frictionfactor)
 		*frictionfactor = movefactor;
 

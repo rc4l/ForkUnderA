@@ -4941,6 +4941,20 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 			SERVERCOMMANDS_SetThingProperty( actor, APROP_StencilColor );
 		break;
 
+	case APROP_Friction:
+		// [rc4l] Save the original value.
+		oldValue = (int)(actor->Friction);
+
+		actor->Friction = value;
+
+		// [rc4l] Friction feeds P_GetFriction, so it changes how the actor MOVES. A client that
+		// never heard about it would predict movement against the old value and drift, which is why
+		// this is broadcast rather than left to run independently on both ends.
+		// Only bother the clients if the friction has actually changed.
+		if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( oldValue != actor->Friction ) )
+			SERVERCOMMANDS_SetThingProperty( actor, APROP_Friction );
+		break;
+
 	default:
 		// do nothing.
 		break;
@@ -5042,6 +5056,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_Species:		return GlobalACSStrings.AddString(actor->GetSpecies());
 	case APROP_NameTag:		return GlobalACSStrings.AddString(actor->GetTag());
 	case APROP_StencilColor:return actor->fillcolor;
+	case APROP_Friction:	return (int)(actor->Friction);
 
 	default:				return 0;
 	}
