@@ -495,10 +495,10 @@ c1d8f235c25e9caaa720dbb47f86eb7defd26fab	2014-07-27T10:33:54Z	- renamed some stu
 97341fcb31b0e0c11f592882f4c4e98fd099e31b	2014-07-27T11:46:35Z	- reenabled the flat vertex buffer for GL 3.x NVidia hardware. On AMD and Intel it'll stay off because past tests have shown that it won't improve performance at all.	ported	bc5384a	bc5384a
 4904abfc1cfc54c54b82207958dd20862c410674	2014-07-27T11:47:37Z	- forgot test stuff.	ported	bc5384a	bc5384a
 7e7219a84ba5822baed56117b20204e000bbff43	2014-07-27T13:59:26Z	Merge remote-tracking branch 'zdoom/master' into openal	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
-754c96a540c1f84706a169aac22f5c6793730dd7	2014-07-27T14:09:47Z	- added default precision settings to shader include because some old ATI drivers complain if they aren't there - even though the spec doesn't require them...	ported	bc5384a	bc5384a
+754c96a540c1f84706a169aac22f5c6793730dd7	2014-07-27T14:09:47Z	- added default precision settings to shader include because some old ATI drivers complain if they aren't there - even though the spec doesn't require them...	ported	ported: shaderdefs.i precision directives. AUDIT CORRECTION -- the row previously claimed ported against a renderer-staircase commit, but the directives were not in the file	709acc5
 925305aa051157709ae6a98f21c6d2497ec4b9f9	2014-07-27T15:58:51Z	- fixed: The code for updating vertex dirty state had been completely missing. I have no idea when it disappeared...	ported	bc5384a	bc5384a
 29a56fe01cf23a1466f6da476baa0281076ec261	2014-07-27T15:59:50Z	Merge branch 'master' into Glew_Version_For_Real	ported	bc5384a	bc5384a
-3d24f58bf05ed4eeaa6e84d2bf9033712f45d51f	2014-07-27T18:18:32Z	- fixed conditions for disabling the flat vertex buffer.	ported	bc5384a	bc5384a
+3d24f58bf05ed4eeaa6e84d2bf9033712f45d51f	2014-07-27T18:18:32Z	- fixed conditions for disabling the flat vertex buffer.	ported	ported: RFL_NOBUFFER moved below the COREPROFILE/BUFFER_STORAGE flags it tests. AUDIT CORRECTION -- previously claimed ported, but our copy still had the old unconditional check at the vendor string	709acc5
 c9c93a58a2129f79a3c53f7bc4102d03f9ea9e69	2014-07-27T19:55:25Z	- fixed bad constant and potential use of uninitialized variable.	ported	bc5384a	bc5384a
 ece10bb57ff0c5b1a708af9c6413af38059098f3	2014-07-27T19:57:05Z	- fixed several incorrect uses of abs instead of fabs.	ported	bc5384a	bc5384a
 192daf1d5a97878691dfed6fc016c9bc48275f8b	2014-07-27T19:57:38Z	Merge branch 'master' into Glew_Version_For_Real	ported	bc5384a	bc5384a
