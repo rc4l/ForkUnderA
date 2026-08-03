@@ -688,7 +688,10 @@ set( PLAT_SDL_SOURCES
 
 # [rc4l] Instant-replay audio sink: AudioQueue on macOS (the Cocoa backend removed SDL from the
 # engine), SDL on Linux and Windows where SDL is the platform layer anyway.
-if( APPLE )
+# [rc4l] The reason for the CoreAudio sink is that the Cocoa backend has no SDL to pull from -- not
+# that the platform is Apple. Keying it on the backend rather than on APPLE means the SDL fallback
+# build still has a working sink, and makes the two directly comparable.
+if( APPLE AND ZX_COCOA_BACKEND )
 	set( FUA_AUDIOSINK_SOURCES features/openal-sound/fua_audiosink_coreaudio.cpp )
 else()
 	set( FUA_AUDIOSINK_SOURCES features/openal-sound/fua_audiosink_sdl.cpp )
