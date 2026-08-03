@@ -1078,17 +1078,17 @@ void CLIENT_GetPackets( void )
 			const char		*pszAddressBuf;
 			NETADDRESS_s	AddressFrom;
 			LONG			lCommand;
-			const char		*pszRegistryPort;
+			const char		*pszServerRegistryPort;
 			// [BB] This conversion potentially does a DNS lookup.
 			// There is absolutely no reason to call this at beginning of the while loop above (like done before). 
 			NETADDRESS_s MasterAddress ( fua_serverregistry_host );
 
 			// Allow the user to specify which port the master server is on.
-			pszRegistryPort = Args->CheckValue( "-masterport" );
-			if ( pszRegistryPort )
-				MasterAddress.usPort = NETWORK_ntohs( atoi( pszRegistryPort ));
+			pszServerRegistryPort = Args->CheckValue( "-masterport" );
+			if ( pszServerRegistryPort )
+				MasterAddress.usPort = NETWORK_ntohs( atoi( pszServerRegistryPort ));
 			else 
-				MasterAddress.usPort = NETWORK_ntohs( DEFAULT_REGISTRY_PORT );
+				MasterAddress.usPort = NETWORK_ntohs( DEFAULT_SERVERREGISTRY_PORT );
 
 
 			pszAddressBuf = NETWORK_GetFromAddress().ToString();
@@ -1113,7 +1113,7 @@ void CLIENT_GetPackets( void )
 				lCommand = pByteStream->ReadLong();
 				switch ( lCommand )
 				{
-				case RSC_BEGINSERVERLISTPART:
+				case SRSC_BEGINSERVERLISTPART:
 					{
 						ULONG ulPacketNum = pByteStream->ReadByte();
 
@@ -1133,17 +1133,17 @@ void CLIENT_GetPackets( void )
 					}
 					break;
 
-				case RSC_REQUESTIGNORED:
+				case SRSC_REQUESTIGNORED:
 
 					Printf( "Refresh request ignored. Please wait 10 seconds before refreshing the list again.\n" );
 					break;
 
-				case RSC_IPISBANNED:
+				case SRSC_IPISBANNED:
 
 					Printf( "You are banned from the master server.\n" );
 					break;
 
-				case RSC_WRONGVERSION:
+				case SRSC_WRONGVERSION:
 
 					Printf( "The master server is using a different version of the launcher-master protocol.\n" );
 					break;

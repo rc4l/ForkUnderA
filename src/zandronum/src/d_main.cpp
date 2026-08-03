@@ -3290,8 +3290,8 @@ void D_DoomMain (void)
 		// [BC] Potentially send an update to the master server.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			SERVER_REGISTRY_Tick( );
-			SERVER_REGISTRY_Broadcast( );
+			SERVER_SERVERREGISTRY_Tick( );
+			SERVER_SERVERREGISTRY_Broadcast( );
 		}
 
 		// [BC] Little hack for +addbot.
