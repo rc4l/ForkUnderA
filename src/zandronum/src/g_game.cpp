@@ -4665,6 +4665,14 @@ void G_DoLoadGame ()
 		BYTE *vars_p = (BYTE *)text;
 		C_ReadCVars (&vars_p);
 		delete[] text;
+		// [rc4l] uzdoom@a21f01bc5: dmflags bit 19 used to mean DF_RESPAWN_SUPER; it is now
+		// DF_YES_FREELOOK and respawn-super lives in dmflags2. Migrate saves written before the move.
+		if (SaveVersion <= 4514)
+		{
+			INTBOOL flag = dmflags & DF_YES_FREELOOK;
+			dmflags = dmflags & ~DF_YES_FREELOOK;
+			if (flag) dmflags2 = dmflags2 | DF2_RESPAWN_SUPER;
+		}
 	}
 
 	// dearchive all the modifications
