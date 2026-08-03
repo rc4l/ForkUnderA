@@ -75,13 +75,17 @@ DoubleTapResult ComputeDoubleTap( int tapValue, int lastTapValue, int secondJump
 // through the doubling below, matching stock behaviour.
 int ComputeJumpTics( bool skulltagJumping, bool highJump, bool onSpringPad, int ticRate );
 
+// The two velocity helpers work in RAW fixed-point units (fixed_t::Raw()), not whole map units.
+// Passing map units would truncate every fractional JumpZ -- and `Player.JumpZ 8.5` is ordinary in
+// mods, so that rounding is a real loss, not a rounding-error quibble.
+
 // The second jump's vertical velocity. It is a floor, not an addition: a player already rising
 // faster than the second jump would grant keeps their speed instead of being slowed by using it.
-int ComputeSecondJumpVelZ( int currentVelZ, int secondJumpZ, bool highJump );
+long long ComputeSecondJumpVelZ( long long currentVelZRaw, long long secondJumpZRaw, bool highJump );
 
 // The main jump's vertical velocity. An edge jump keeps whatever upward velocity is already there
 // (that is the entire point of the flag); an ordinary jump replaces it.
-int ComputeMainJumpVelZ( int currentVelZ, int jumpVelZ, bool isEdgeJump );
+long long ComputeMainJumpVelZ( long long currentVelZRaw, long long jumpVelZRaw, bool isEdgeJump );
 
 } // namespace quakemove
 } // namespace zx

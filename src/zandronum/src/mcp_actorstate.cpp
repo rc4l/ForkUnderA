@@ -69,6 +69,15 @@ CCMD( dumpactor )
 				mo->player->jumpTics, FIXED2FLOAT( mo->velz ), mo->player->onground ? 1 : 0 );
 			Printf( "buttons %08x oldbuttons %08x\n",
 				(unsigned int)mo->player->cmd.ucmd.buttons, (unsigned int)mo->player->oldbuttons );
+			Printf( "qtune gaccel %.3f gfric %.3f cpmaccel %.3f cpmangle %.4f airaccel %.3f cap %.3f\n",
+				pawn->GroundAcceleration, pawn->GroundFriction, pawn->CpmAirAcceleration,
+				pawn->CpmMaxForwardAngleRad, FIXED2FLOAT( pawn->AirAcceleration ),
+				FIXED2FLOAT( pawn->VelocityCap ));
+			Printf( "vel %.3f %.3f speed2d %.3f fwd %d side %d\n",
+				FIXED2FLOAT( mo->velx ), FIXED2FLOAT( mo->vely ),
+				sqrtf( FIXED2FLOAT( mo->velx ) * FIXED2FLOAT( mo->velx ) +
+					FIXED2FLOAT( mo->vely ) * FIXED2FLOAT( mo->vely )),
+				(int)mo->player->cmd.ucmd.forwardmove, (int)mo->player->cmd.ucmd.sidemove );
 		}
 	}
 

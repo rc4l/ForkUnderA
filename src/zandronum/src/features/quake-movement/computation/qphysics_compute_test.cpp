@@ -202,10 +202,28 @@ TEST(QFloorFrictionForAccel, EighthRootBluntsTheEffect) {
 TEST(QFloorFrictionForFriction, SixteenthPowerAmplifiesAnIcyFloor) {
 	// An icier floor (lower friction value) must produce markedly LESS drag, or custom ice does
 	// nothing at all against Quake's much higher base friction.
-	const float icy = QFloorFrictionForFriction(59392 * 2);
-	EXPECT_LT(icy, 0.001f);
-	const float sticky = QFloorFrictionForFriction(59392 / 2);
-	EXPECT_GT(sticky, 1000.0f);
+	EXPECT_LT(QFloorFrictionForFriction(59392 * 2), 1.0f);
+	EXPECT_GT(QFloorFrictionForFriction(59392 / 2), 1.0f);
+}
+
+TEST(QFloorFrictionForFriction, IsClampedSoItCanNeverStallTheModel) {
+	// THE regression this exists for. Unclamped, a floor twice as icy as default gives 2^16 =
+	// 65536; multiplying GroundFriction by that makes one tic's friction drop exceed any speed the
+	// pawn can reach, so it is pinned in place and cannot move at all. The clamp is what keeps an
+	// authored floor expressive without being able to break movement outright.
+	EXPECT_LE(QFloorFrictionForFriction(59392 / 4), Q_FLOOR_FRICTION_MAX);
+	EXPECT_GE(QFloorFrictionForFriction(59392 * 4), Q_FLOOR_FRICTION_MIN);
+	// Even an absurd authored value stays inside the band rather than reaching infinity.
+	const float extreme = QFloorFrictionForFriction(1);
+	EXPECT_LE(extreme, Q_FLOOR_FRICTION_MAX);
+	EXPECT_EQ(extreme, extreme);   // not NaN
+}
+
+TEST(QFloorFrictionForFriction, TheNeutralFloorIsExactByConstruction) {
+	// Short-circuited rather than computed, so the ordinary floor never depends on how the
+	// exponential path happens to round -- 1.0 in, exactly 1.0 out.
+	EXPECT_EQ(1.0f, QFloorFrictionForFriction(Q_DEFAULT_FLOOR_FRICTION));
+	EXPECT_EQ(1.0f, QFloorFrictionForAccel(Q_DEFAULT_FLOOR_MOVEFACTOR));
 }
 
 TEST(QFloorFriction, DegenerateInputsDoNotProduceInfinitiesOrNaNs) {

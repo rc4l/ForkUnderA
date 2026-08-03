@@ -101,11 +101,15 @@ float QVelocityCapScale( float speed, float localCap )
 
 float QFloorFrictionForAccel( int frictionFactor )
 {
-	// 2048 is the default floor move factor, so a default floor yields exactly 1.0.
-	const float ratio = static_cast<float>( frictionFactor ) / 2048.0f;
+	if ( frictionFactor == Q_DEFAULT_FLOOR_MOVEFACTOR )
+		return 1.0f;	// exact by construction, same reasoning as the friction curve
+	const float ratio = static_cast<float>( frictionFactor ) / static_cast<float>( Q_DEFAULT_FLOOR_MOVEFACTOR );
 	if ( ratio <= 0.0f )
 		return 0.0f;
-	return std::pow( ratio, 0.125f );
+	// The 8th root as three square roots rather than std::pow. In the engine build pow() returned
+	// NaN here for inputs that produce exactly 1.0 under the unit-test build, which silently zeroed
+	// every Quake pawn's velocity; sqrt has no such ambiguity and is exact for the neutral case.
+	return std::sqrt( std::sqrt( std::sqrt( ratio )));
 }
 
 float QFloorFrictionForFriction( int frictionValue )
@@ -114,10 +118,36 @@ float QFloorFrictionForFriction( int frictionValue )
 	// round means an icier floor (lower friction value) produces a ratio above 1, and the 16th
 	// power then turns a small authored change into a large one -- which is the intent, because
 	// Quake friction is otherwise far too dominant for a custom floor to be felt at all.
-	if ( frictionValue == 0 )
+	if ( frictionValue <= 0 )
 		return 0.0f;
-	const float ratio = 59392.0f / static_cast<float>( frictionValue );
-	return std::pow( ratio, 16.0f );
+
+	// The overwhelmingly common case, short-circuited so the ordinary floor never touches the
+	// exponential path at all. This is not just an optimisation: a 16th power is explosive enough
+	// that "1.0 in, 1.0 out" deserves to be exact by construction rather than by luck.
+	if ( frictionValue == Q_DEFAULT_FLOOR_FRICTION )
+		return 1.0f;
+
+	const float ratio = static_cast<float>( Q_DEFAULT_FLOOR_FRICTION ) / static_cast<float>( frictionValue );
+
+	// Four squarings rather than std::pow -- an integer power needs no transcendental.
+	const float p2 = ratio * ratio;
+	const float p4 = p2 * p2;
+	const float p8 = p4 * p4;
+	const float raised = p8 * p8;
+
+	// CLAMPED, and this bound is load-bearing rather than defensive garnish. Unclamped, a floor
+	// only twice as icy as default yields 2^16 = 65536, and multiplying GroundFriction by that
+	// makes one tic's drop exceed any achievable speed -- the pawn is pinned in place. Anything
+	// that overflows to infinity does the same. +-16x is already a dramatic ice/mud swing and can
+	// never stall the model.
+	if ( raised < Q_FLOOR_FRICTION_MIN )
+		return Q_FLOOR_FRICTION_MIN;
+	if ( raised > Q_FLOOR_FRICTION_MAX )
+		return Q_FLOOR_FRICTION_MAX;
+	// Catches a NaN, which compares false against both bounds above.
+	if ( raised != raised )
+		return 1.0f;
+	return raised;
 }
 
 void QVectorRotate( float &x, float &y, float angleDegrees )
