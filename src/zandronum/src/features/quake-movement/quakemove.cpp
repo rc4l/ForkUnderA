@@ -304,6 +304,10 @@ bool MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 		vel.z += wish.z * granted;
 
 		StoreVelocity( player, vel );
+		// Same reasoning as the climb path: this returns early, so nothing below would clear these.
+		mo->isCrouchSliding = false;
+		mo->isWallClimbing = false;
+		mo->isAirWallRunning = false;
 		// Swimming and flying already used the jump key as vertical steering this tic.
 		return true;
 	}
@@ -344,6 +348,10 @@ bool MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 		UpdateLoopingMove( player, true, mo->isWallClimbing, "*wallclimb",
 			mo->wallClimbEffectTics, mo->WallClimbEffectInterval, EA_WALL_CLIMB );
 		mo->isWallClimbing = true;
+		// This path returns before the ground/air branches, so the other two states are cleared
+		// here rather than left holding whatever they were when the climb started.
+		mo->isCrouchSliding = false;
+		mo->isAirWallRunning = false;
 		// Holding jump IS the climb input; firing a jump too would kick the player off the wall.
 		return true;
 	}
@@ -412,6 +420,11 @@ bool MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 		// not take that rework, so the guard has nothing to hang off and is omitted; the visible
 		// difference is that a Z-thrust does not suppress ground acceleration on its landing tic.
 		maxSpeed *= Q_MAX_GROUND_SPEED * moveFactor;
+
+		// UpdateAirWallRun is the only writer of this flag and only runs on the airborne path, so
+		// without an explicit clear here it stayed true for the whole time the player was back on
+		// the ground -- ACS and SBARINFO would report a wall run that ended tics ago.
+		mo->isAirWallRunning = false;
 
 		const bool crouchedEnough = ( player->crouchfactor < Q_CROUCH_SLIDE_THRESHOLD );
 		isSliding = CanCrouchSlide( isSlider, crouchedEnough, mo->crouchSlideTics );

@@ -211,15 +211,28 @@ tic, bottom out at zero.
 - **Wall climb**: holding jump at a wall sets `climbing 1` and raises z by exactly 5 units/tic
   (`WallClimbSpeed 5.0`) while spending charge; releasing jump clears the flag and the meter regrows.
 - **Effect actors**: `MvDust` observed spawning at the player during both moves.
-- **Air wall run**: ⚠️ implemented, unit-tested and wired, and every gating condition was confirmed
-  live in-engine (speed 13.141 ≥ the 10 minimum, upright, charge 70) — but MAP01's geometry never put
-  a wall inside the 24-unit trace while moving *along* it, so a positive engagement has **not** been
-  observed. Treat it as unproven rather than working.
+- **Air wall run**: engages. On **MAP02**, running along the 344-unit wall whose face sits at
+  x=940, the pawn was genuinely airborne (`onground 0`, `velz 4.00`), had travelled 157.7 units
+  along the wall at 13.141 u/tic, was upright, and reported `wallrunning 1`. It reads 0 again once
+  grounded.
+
+  Finding that spot took map introspection rather than guesswork: parse `LINEDEFS`/`VERTEXES` for a
+  long one-sided line, take its right-side normal `(dy, -dx)/len`, and stand 20 units off the face
+  (inside the 24-unit trace) facing along it. **Verify the pawn actually moves before trusting a
+  result** — several computed spots in MAP01 put it in blocked space where it held full velocity
+  while its position never changed, which looks exactly like a working wall run in a `dumpactor`
+  dump and is not one. Also run god mode: MAP02's monsters killed the pawn mid-test.
 
 Wall climbing does not hard-stop when the meter empties: the airborne branch regenerates faster than
 the climb spends, so an exhausted climb alternates rather than ending. That oscillation is inherited —
 Q-Zandronum puts the regen in the branch you only reach while *not* climbing — so climbing is
 rate-limited rather than capped.
+
+**The three `is*` state flags are cleared on every path that could skip their writer.** `UpdateAirWallRun`
+only runs on the airborne branch, so without an explicit clear in the ground branch `isAirWallRunning`
+stayed true for as long as the player stood there — ACS and SBARINFO would report a wall run that had
+ended tics ago. The wall-climb and water/fly paths return early, so they clear the other two for the
+same reason.
 
 ### Why the sounds and dust are local-player only
 
