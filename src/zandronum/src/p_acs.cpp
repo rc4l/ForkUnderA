@@ -4920,6 +4920,12 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 			SERVERCOMMANDS_SetThingProperty( actor, APROP_StencilColor );
 		break;
 
+	case APROP_MeleeRange:
+		// [rc4l] uzdoom@79d9a573b. No broadcast: meleerange is read by P_CheckMeleeRange
+		// inside monster AI, which runs only on the server under client/server.
+		actor->meleerange = value;
+		break;
+
 	case APROP_Friction:
 		// [rc4l] Save the original value.
 		oldValue = (int)(actor->Friction);

@@ -4855,6 +4855,31 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfInTargetLOS)
 
 //===========================================================================
 //
+// A_DamageSelf (int amount, str damagetype)
+// Damages the calling actor by the specified amount. Negative values heal.
+//
+//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(amount, 0);
+	ACTION_PARAM_NAME(DamageType, 1);
+
+	// [rc4l] uzdoom@b1f87295b. No gating added: P_DamageMobj and P_GiveBody are already
+	// server-authoritative here, exactly as the sibling A_Damage* functions below rely on.
+	if (amount > 0)
+	{
+		P_DamageMobj(self, self, self, amount, DamageType, DMG_NO_ARMOR);
+	}
+	else if (amount < 0)
+	{
+		amount = -amount;
+		P_GiveBody(self, amount);
+	}
+}
+
+//===========================================================================
+//
 // A_DamageMaster (int amount)
 // Damages the master of this child by the specified amount. Negative values heal.
 //
