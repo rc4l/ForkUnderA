@@ -11,7 +11,7 @@
 # The build job is NOT release-only. It also runs on pull requests that touch the daemon or the
 # protocol sources it shares with the engine, because the failure this guards against is exactly the
 # one windows-fast-build.yml suffered: a path filter narrow enough that a source-side change could
-# invalidate the artefact without any workflow noticing for eleven days. zandrox-registry compiles
+# invalidate the artefact without any workflow noticing for eleven days. zandrox-server-registry compiles
 # networkshared.cpp and the huffman codec straight out of the engine tree, so those paths are the
 # coupling and they are listed here.
 name: server registry image
@@ -24,8 +24,8 @@ on:
       - Dockerfile.registry
       - Dockerfile.registry.dockerignore
       - .github/workflows/registry-image.yml
-      - src/zandronum/registry/**
-      # The protocol surface zandrox-registry shares with the engine:
+      - src/zandronum/server-registry/**
+      # The protocol surface zandrox-server-registry shares with the engine:
       - src/zandronum/src/networkshared.cpp
       - src/zandronum/src/networkshared.h
       - src/zandronum/src/platform.cpp
@@ -33,7 +33,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/zandrox-registry
+  IMAGE: ghcr.io/${{ github.repository_owner }}/zandrox-server-registry
 
 jobs:
   image:
@@ -98,7 +98,7 @@ jobs:
           sleep 5
           docker logs master
           if [ "$(docker inspect -f '{{.State.Running}}' master)" != "true" ]; then
-            echo "::error::zandrox-registry exited instead of staying up"
+            echo "::error::zandrox-server-registry exited instead of staying up"
             exit 1
           fi
           docker logs master 2>&1 | grep -q "Master server started" \

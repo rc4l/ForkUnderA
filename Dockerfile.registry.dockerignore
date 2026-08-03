@@ -9,7 +9,7 @@
 # wadsrc/ (game data), deps/, build dirs and dist output are all irrelevant to a UDP daemon.
 *
 
-!src/zandronum/registry
+!src/zandronum/server-registry
 !src/zandronum/src
 !src/zandronum/tools/updaterevision
 
