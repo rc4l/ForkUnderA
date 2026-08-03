@@ -3880,7 +3880,11 @@ void P_PlayerThink (player_t *player)
 				{
 					P_CrouchMove(player, 1);
 				}
-				else if (crouchdir == -1 && player->crouchfactor > FRACUNIT/2)
+				// [rc4l] Gate on the pawn's own CrouchScale, not a hardcoded FRACUNIT/2. P_CrouchMove
+				// clamps to CrouchScale, but this caller decides whether to call it at all -- so
+				// while this read FRACUNIT/2, any class authoring a deeper crouch than the historic
+				// half height simply stopped descending at half and never reached its own depth.
+				else if (crouchdir == -1 && player->crouchfactor > player->mo->CrouchScale)
 				{
 					P_CrouchMove(player, -1);
 				}
@@ -3918,7 +3922,14 @@ void P_PlayerThink (player_t *player)
 	// [AK] The local player doesn't execute these if using the free chasecam while dead.
 	else
 	{
-		if (player->jumpTics != 0)
+		// [rc4l] A Quake pawn counts its jump delay down only while grounded, matching
+		// qzandronum@397272811e4f71b168f1949d21369d3e91a7146c. That is what makes Player.JumpDelay
+		// reachable at all: this shared ticker otherwise decrements through the entire airtime, so
+		// by the time the pawn lands jumpTics has already passed the -18 sentinel and been zeroed,
+		// and CheckJumpQuake's "jumpTics < 0" re-arm from JumpDelay can never fire. Doom pawns keep
+		// the unconditional countdown exactly as before.
+		if (player->jumpTics != 0 &&
+			(( zx::quakemove::UsesQuakeMovement( player->mo ) == false ) || player->onground ))
 		{
 			player->jumpTics--;
 			if (player->onground && player->jumpTics < -18)
