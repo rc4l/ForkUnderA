@@ -193,17 +193,22 @@ void ST_LoadCrosshair(bool alwaysload)
 	}
 	size = (SCREENWIDTH < 640) ? 'S' : 'B';
 	mysnprintf (name, countof(name), "XHAIR%c%d", size, num);
-	if ((lump = Wads.CheckNumForName (name, ns_graphics)) == -1)
+	// [rc4l] uzdoom@a0f507d18: ask the texture manager, not the lump directory. A crosshair
+	// defined in TEXTURES rather than as a graphics-namespace lump exists as a texture but has no
+	// lump, so the old check fell through to XHAIRS1 and the setting appeared not to take.
+	FTextureID texid = TexMan.CheckForTexture(name, FTexture::TEX_MiscPatch, FTextureManager::TEXMAN_TryAny | FTextureManager::TEXMAN_ShortNameOnly);
+	if (!texid.isValid())
 	{
 		mysnprintf (name, countof(name), "XHAIR%c1", size);
-		if ((lump = Wads.CheckNumForName (name, ns_graphics)) == -1)
+		texid = TexMan.CheckForTexture(name, FTexture::TEX_MiscPatch, FTextureManager::TEXMAN_TryAny | FTextureManager::TEXMAN_ShortNameOnly);
+		if (!texid.isValid())
 		{
-			strcpy (name, "XHAIRS1");
+			texid = TexMan.CheckForTexture("XHAIRS1", FTexture::TEX_MiscPatch, FTextureManager::TEXMAN_TryAny | FTextureManager::TEXMAN_ShortNameOnly);
 		}
 		num = 1;
 	}
 	CrosshairNum = num;
-	CrosshairImage = TexMan[TexMan.CheckForTexture(name, FTexture::TEX_MiscPatch)];
+	CrosshairImage = TexMan[texid];
 }
 
 EXTERN_CVAR( Bool, cl_stfullscreenhud );
