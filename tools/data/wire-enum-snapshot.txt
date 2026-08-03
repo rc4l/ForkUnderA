@@ -1,8 +1,7 @@
 # Values of enums carried inside network commands. DERIVED -- do not hand-edit.
 # Regenerate with: tools/wire-enum-snapshot.py --write
-# A change here alters what an existing command's bytes MEAN. Bump SAVEVER (these
-# enums are serialized) and DEMOGAMEVERSION (demos replay the commands) in the same
-# commit.
+# A change here alters what an existing command's bytes MEAN. If it came from an
+# upstream commit, do whatever that commit did about versioning -- no more, no less.
 DCeiling::ECeiling  (src/zandronum/src/p_spec.h)
     ceilLowerByValue                         0
     ceilRaiseByValue                         1
