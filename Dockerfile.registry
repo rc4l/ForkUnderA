@@ -3,12 +3,12 @@
 
 # [rc4l] Container image for the ZandroX server registry (zandrox-server-registry).
 #
-# The master is a small UDP daemon: game servers heartbeat it every 30s, it expires them after 60s,
+# The registry is a small UDP daemon: game servers heartbeat it every 30s, it expires them after 60s,
 # and launchers ask it for the address list. It holds no database and no disk state beyond the
 # optional IP lists below, so a restart just repopulates within a minute.
 #
 # It is built from THIS repo rather than its own, because it compiles the engine's own
-# networkshared.cpp and huffman codec -- master and engine share the wire format, and splitting them
+# networkshared.cpp and huffman codec -- registry and engine share the wire format, and splitting them
 # would let the two drift apart silently.
 #
 # Deliberately configured as a standalone CMake project (src/zandronum/server-registry) instead of the
@@ -42,7 +42,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libstdc++6 \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --create-home --home-dir /data --shell /usr/sbin/nologin master
+    && useradd --system --create-home --home-dir /data --shell /usr/sbin/nologin registry
 
 COPY --from=build /tmp/build/zandrox-server-registry /usr/local/bin/zandrox-server-registry
 
@@ -57,20 +57,20 @@ COPY --from=build /tmp/build/zandrox-server-registry /usr/local/bin/zandrox-serv
 WORKDIR /data
 VOLUME ["/data"]
 
-USER master
+USER registry
 
-# [rc4l] The listen port is compiled in (DEFAULT_MASTER_PORT, networkshared.h) with no CLI override,
+# [rc4l] The listen port is compiled in (DEFAULT_REGISTRY_PORT, networkshared.h) with no CLI override,
 # so remap on the host if you need a different one.
 EXPOSE 15300/udp
 
 # [rc4l] No arguments, which is the daemon's default: servers whose operator sets
-# sv_enforcemasterbanlist false are HIDDEN from this master's list. That is a policy choice, and the
-# deliberate one -- listing here means accepting this master's bans, and a server that declines can
-# advertise on a master that does not enforce. Federation is what makes that reasonable: refusing a
+# sv_fua_serverregistry_enforcebans false are HIDDEN from this registry's list. That is a policy choice, and the
+# deliberate one -- listing here means accepting this registry's bans, and a server that declines can
+# advertise on a registry that does not enforce. Federation is what makes that reasonable: refusing a
 # listing is not exile, it is a redirect.
 #
 # Note this is about the operator AGREEING to enforce, not about what banlist.txt currently holds --
 # an empty list still means "this server will honour bans I add later".
 #
-# Pass -DontHideBanIgnoringServers as the command to run a permissive master instead.
+# Pass -DontHideBanIgnoringServers as the command to run a permissive registry instead.
 ENTRYPOINT ["/usr/local/bin/zandrox-server-registry"]
