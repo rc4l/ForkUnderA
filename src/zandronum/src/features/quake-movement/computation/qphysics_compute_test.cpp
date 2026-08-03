@@ -184,6 +184,53 @@ TEST(QVelocityCapScale, ZeroSpeedDoesNotDivideByZero) {
 	EXPECT_FALSE(std::isnan(scale));
 }
 
+// -------------------------------------------------------------- move tiers
+
+TEST(QWalkCrouchTier, CoversTheFourCombinations) {
+	EXPECT_EQ(QTIER_WALK, QWalkCrouchTier(false, false));
+	EXPECT_EQ(QTIER_RUN, QWalkCrouchTier(true, false));
+	EXPECT_EQ(QTIER_CROUCH_WALK, QWalkCrouchTier(false, true));
+	EXPECT_EQ(QTIER_CROUCH_RUN, QWalkCrouchTier(true, true));
+}
+
+TEST(QWalkCrouchTier, TheOrderIsTheDecorateContract) {
+	// Player.ForwardMove/SideMove/FootstepsEnabled are addressed POSITIONALLY by mods, so these
+	// indices are API. Rearranging them would silently repoint every authored value.
+	EXPECT_EQ(0, QTIER_WALK);
+	EXPECT_EQ(1, QTIER_RUN);
+	EXPECT_EQ(2, QTIER_CROUCH_WALK);
+	EXPECT_EQ(3, QTIER_CROUCH_RUN);
+}
+
+TEST(QTierScale, RunUsesItsEntryAsAuthoredAndTheOthersScaleDown) {
+	EXPECT_FLOAT_EQ(1.0f, QTierScale(QTIER_RUN));
+	EXPECT_FLOAT_EQ(0.5f, QTierScale(QTIER_WALK));
+	EXPECT_FLOAT_EQ(0.25f, QTierScale(QTIER_CROUCH_WALK));
+	EXPECT_FLOAT_EQ(0.5f, QTierScale(QTIER_CROUCH_RUN));
+}
+
+TEST(QTierScale, CrouchWalkingIsTheSlowestAndRunningTheFastest) {
+	// The ordering is what a player feels; pin it rather than only the literals.
+	EXPECT_LT(QTierScale(QTIER_CROUCH_WALK), QTierScale(QTIER_WALK));
+	EXPECT_LT(QTierScale(QTIER_WALK), QTierScale(QTIER_RUN));
+	EXPECT_LT(QTierScale(QTIER_CROUCH_RUN), QTierScale(QTIER_RUN));
+}
+
+TEST(QTierScale, AnOutOfRangeTierFailsOpenRatherThanToZero) {
+	// Unreachable through QWalkCrouchTier, but returning 0 here would freeze the pawn outright,
+	// which is a far worse failure than moving at full speed.
+	EXPECT_FLOAT_EQ(1.0f, QTierScale(99));
+	EXPECT_FLOAT_EQ(1.0f, QTierScale(-1));
+}
+
+TEST(QCrouchHalfWay, SitsMidwayBetweenStandingAndTheAuthoredCrouchDepth) {
+	EXPECT_FLOAT_EQ(0.75f, QCrouchHalfWay(0.5f));   // the engine default
+	EXPECT_FLOAT_EQ(0.9f, QCrouchHalfWay(0.8f));    // a shallow crouch
+	// A pawn that cannot crouch at all has its threshold at standing height, so nothing counts as
+	// crouched -- crouch slide simply never engages rather than engaging always.
+	EXPECT_FLOAT_EQ(1.0f, QCrouchHalfWay(1.0f));
+}
+
 // ------------------------------------------------------------ floor friction
 
 TEST(QFloorFriction, DefaultFloorIsExactlyNeutralForBothCurves) {

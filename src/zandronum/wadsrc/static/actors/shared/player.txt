@@ -64,6 +64,15 @@ Actor PlayerPawn : Actor native
 	Player.AirWallRunMaxTics 70
 	Player.AirWallRunRegen 2.0
 	Player.AirWallRunMinVelocity 10.0
+	// [rc4l] Crouch tuning. These are the engine's historic constants (FRACUNIT/2 and CROUCHSPEED),
+	// so they change nothing for any existing class -- they only make the values authorable.
+	Player.CrouchScale 0.5
+	Player.CrouchChangeSpeed 0.0833333
+	// [rc4l] Footsteps, Quake movement only. Enabled for running tiers but not walking, so sneaking
+	// stays silent; per tier: walk, run, crouch-walk, crouch-run.
+	Player.FootstepInterval 16
+	Player.FootstepVolume 0.5
+	Player.FootstepsEnabled 0, 1, 0, 1
 	Player.MaxSkinSizeFactor 3.44, 1.68 // [TP]
 	Obituary "$OB_MPDEFAULT"
 }

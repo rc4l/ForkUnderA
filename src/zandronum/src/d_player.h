@@ -109,6 +109,7 @@ enum
 {
 	EA_CROUCH_SLIDE = 0,
 	EA_WALL_CLIMB,
+	EA_FOOTSTEP,
 	EA_COUNT
 };
 
@@ -181,8 +182,11 @@ public:
 	fixed_t		GruntSpeed;
 	fixed_t		FallingScreamMinSpeed, FallingScreamMaxSpeed;
 	fixed_t		ViewHeight;
-	fixed_t		ForwardMove1, ForwardMove2;
-	fixed_t		SideMove1, SideMove2;
+	// [rc4l] Extended from two tiers to four for features/quake-movement: walk, run, crouch-walk,
+	// crouch-run. Tiers 3/4 mirror 1/2 unless a mod authors them, so any existing class keeps
+	// exactly the movement it had.
+	fixed_t		ForwardMove1, ForwardMove2, ForwardMove3, ForwardMove4;
+	fixed_t		SideMove1, SideMove2, SideMove3, SideMove4;
 	FTextureID	ScoreIcon;
 	int			SpawnMask;
 	FNameNoInit	MorphWeapon;
@@ -213,6 +217,18 @@ public:
 
 	// [rc4l] Jump tuning (stage 3). JumpZ already exists above; these add the horizontal component
 	// and the whole second-jump system. SecondJumpAmount is -1 for unlimited, 0 to disable.
+	// [rc4l] Crouch tuning. The defaults match the engine's historic constants exactly
+	// (FRACUNIT/2 and CROUCHSPEED = FRACUNIT/12), so using these unconditionally is
+	// behaviour-identical for a class that does not override them -- no MvType gate needed.
+	fixed_t		CrouchScale;
+	fixed_t		CrouchChangeSpeed;
+
+	// [rc4l] Footstep tuning (Quake movement only). FootstepsEnabled is indexed by move tier.
+	int			FootstepInterval;
+	float		FootstepVolume;
+	bool		FootstepsEnabled1, FootstepsEnabled2, FootstepsEnabled3, FootstepsEnabled4;
+	int			stepInterval;
+
 	fixed_t		JumpXY;
 	int			JumpDelay;
 	fixed_t		SecondJumpXY;

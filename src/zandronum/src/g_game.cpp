@@ -70,6 +70,7 @@
 #include "g_level.h"
 #include "features/skywire/computation/sky_wire_compute.h"
 #include "features/quake-movement/quakemove.h"
+#include "features/quake-movement/computation/qphysics_compute.h"
 #include "sbar.h"
 #include "m_swap.h"
 #include "m_png.h"
@@ -233,10 +234,13 @@ short			consistancy[MAXPLAYERS][BACKUPTICS];
  
 #define TURBOTHRESHOLD	12800
 
-float	 		normforwardmove[2] = {0x19, 0x32};		// [RH] For setting turbo from console
-float	 		normsidemove[2] = {0x18, 0x28};			// [RH] Ditto
+// [rc4l] Extended to four tiers for features/quake-movement: walk, run, crouch-walk,
+// crouch-run. The first two are the historic values untouched; only a Quake pawn can select
+// tiers 2-3, so stock movement never reaches the new entries.
+float	 		normforwardmove[4] = {0x19, 0x32, 0xD, 0x19};	// [RH] For setting turbo from console
+float	 		normsidemove[4] = {0x18, 0x28, 0xC, 0x18};		// [RH] Ditto
 
-fixed_t			forwardmove[2], sidemove[2];
+fixed_t			forwardmove[4], sidemove[4];
 fixed_t 		angleturn[4] = {640, 1280, 320, 320};		// + slow turn
 fixed_t			flyspeed[2] = {1*256, 3*256};
 int				lookspeed[2] = {450, 512};
@@ -322,10 +326,12 @@ CUSTOM_CVAR (Float, turbo, 100.f, 0)
 	{
 		double scale = self * 0.01;
 
-		forwardmove[0] = (int)(normforwardmove[0]*scale);
-		forwardmove[1] = (int)(normforwardmove[1]*scale);
-		sidemove[0] = (int)(normsidemove[0]*scale);
-		sidemove[1] = (int)(normsidemove[1]*scale);
+		// [rc4l] Four tiers now (features/quake-movement); the loop keeps turbo scaling all of them.
+		for (int tier = 0; tier < 4; ++tier)
+		{
+			forwardmove[tier] = (int)(normforwardmove[tier]*scale);
+			sidemove[tier] = (int)(normsidemove[tier]*scale);
+		}
 	}
 }
 
@@ -742,7 +748,22 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 	cmd->consistancy = consistancy[consoleplayer][(maketic/ticdup)%BACKUPTICS];
 
 	strafe = Button_Strafe.bDown;
-	speed = Button_Speed.bDown ^ (int)cl_run;
+	// [rc4l] features/quake-movement: a Quake pawn selects one of FOUR tiers (walk, run,
+	// crouch-walk, crouch-run) so Player.ForwardMove/SideMove entries 3 and 4 become
+	// reachable. Gated on MvType: a stock pawn keeps exactly the two tiers it always had,
+	// because its crouch slowdown already comes from crouchfactor in P_MovePlayer_Doom and
+	// applying a tier as well would slow it twice.
+	const bool running = ( Button_Speed.bDown ^ (int)cl_run ) != 0;
+	if (zx::quakemove::UsesQuakeMovement (players[consoleplayer].mo))
+	{
+		const bool crouching = Button_Crouch.bDown
+			&& players[consoleplayer].CanCrouch() && level.IsCrouchingAllowed();
+		speed = zx::quakemove::QWalkCrouchTier (running, crouching);
+	}
+	else
+	{
+		speed = running ? 1 : 0;
+	}
 
 	forward = side = fly = 0;
 

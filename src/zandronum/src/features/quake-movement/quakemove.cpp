@@ -59,9 +59,19 @@ float SpeedFactorFor( player_t *player )
 	return speedFactor;
 }
 
-// How much of the pawn's top speed this tic's input asks for, as a 0..1-ish scalar. Q-Zandronum
-// derives this from four ForwardMove/SideMove tiers; ZandroX has two until stage 5 adds the rest,
-// so walking vs running is all that is distinguished here.
+// Which of the four move tiers this tic's input represents. BT_SPEED means "is running" for a Quake
+// pawn (see G_BuildTiccmd), and the crouch test is the pawn's own authored depth rather than a
+// fixed constant, so a shallow-crouching class still registers as crouched.
+int MoveTierOf( player_t *player, ticcmd_t *cmd )
+{
+	const bool running = (( cmd->ucmd.buttons & BT_SPEED ) != 0 );
+	const float halfWay = QCrouchHalfWay( FIXED2FLOAT( player->mo->CrouchScale ));
+	const bool crouching = ( FIXED2FLOAT( player->crouchfactor ) < halfWay );
+	return QWalkCrouchTier( running, crouching );
+}
+
+// How much of the pawn's top speed this tic's input asks for, as a 0..1-ish scalar, from the
+// authored ForwardMove/SideMove entry for the current tier.
 float CrouchWalkFactor( player_t *player, ticcmd_t *cmd )
 {
 	QVec3 accel;
@@ -82,12 +92,21 @@ float CrouchWalkFactor( player_t *player, ticcmd_t *cmd )
 	if ( player->mo->health <= player->mo->RunHealth )
 		return QLength2D( accel.x * FIXED2FLOAT( fixed_t( 0x1900 )), accel.y * FIXED2FLOAT( fixed_t( 0x1800 )));
 
-	const bool running = (( cmd->ucmd.buttons & BT_SPEED ) != 0 );
-	const float forward = FIXED2FLOAT( running ? player->mo->ForwardMove2 : player->mo->ForwardMove1 );
-	const float side = FIXED2FLOAT( running ? player->mo->SideMove2 : player->mo->SideMove1 );
-	const float tierScale = running ? 1.0f : 0.5f;
+	const int tier = MoveTierOf( player, cmd );
+	const APlayerPawn *const mo = player->mo;
 
-	return QLength2D( accel.x * forward * tierScale, accel.y * side * tierScale );
+	fixed_t forwardEntry, sideEntry;
+	switch ( tier )
+	{
+	case QTIER_RUN:			forwardEntry = mo->ForwardMove2; sideEntry = mo->SideMove2; break;
+	case QTIER_CROUCH_WALK:	forwardEntry = mo->ForwardMove3; sideEntry = mo->SideMove3; break;
+	case QTIER_CROUCH_RUN:	forwardEntry = mo->ForwardMove4; sideEntry = mo->SideMove4; break;
+	default:				forwardEntry = mo->ForwardMove1; sideEntry = mo->SideMove1; break;
+	}
+
+	const float tierScale = QTierScale( tier );
+	return QLength2D( accel.x * FIXED2FLOAT( forwardEntry ) * tierScale,
+		accel.y * FIXED2FLOAT( sideEntry ) * tierScale );
 }
 
 // Write a float velocity triple back to the actor, and keep player->velx/vely (the bobbing
@@ -133,12 +152,78 @@ void StopAndIdleIfAtRest( APlayerPawn *mo )
 	}
 }
 
-// The crouch depth at which a slide counts as "crouching". crouchfactor runs [FRACUNIT/2, FRACUNIT]
-// in this engine, so the midpoint is 3/4. Stage 5 derives this from Player.CrouchScale instead.
-const fixed_t Q_CROUCH_SLIDE_THRESHOLD = fixed_t::FromRaw( 3 * 65536 / 4 );
+// The crouch depth at which a move counts as "crouching", derived from the pawn's own authored
+// Player.CrouchScale rather than a fixed constant -- a class that only crouches a little still
+// registers as crouched at its own midpoint.
+bool IsCrouchedEnough( player_t *player )
+{
+	const float halfWay = QCrouchHalfWay( FIXED2FLOAT( player->mo->CrouchScale ));
+	return FIXED2FLOAT( player->crouchfactor ) < halfWay;
+}
 
 // Defined with the jump helpers further down; the traversal moves need it first.
 void TraceForWall( APlayerPawn *mo, angle_t angle, FTraceResults &trace );
+void SpawnEffectActor( player_t *player, int slot );
+
+// Whether a footstep should sound this tic. Air-wall-running counts as footing even though the pawn
+// is airborne -- that is the point of running along a wall.
+bool ShouldPlayFootsteps( player_t *player, ticcmd_t *cmd )
+{
+	APlayerPawn *const mo = player->mo;
+
+	if ( CLIENT_PREDICT_IsPredicting() )
+		return false;
+	// Only the local player's own footing is known here; other players' would need replication.
+	if (( player - players ) != consoleplayer )
+		return false;
+
+	if ((( mo->isAirWallRunning == false ) && ( player->onground == false )) ||
+		( mo->waterlevel >= 2 ) || ( mo->flags & MF_NOGRAVITY ))
+	{
+		return false;
+	}
+
+	switch ( MoveTierOf( player, cmd ))
+	{
+	case QTIER_RUN:			if ( mo->FootstepsEnabled2 == false ) return false; break;
+	case QTIER_CROUCH_WALK:	if ( mo->FootstepsEnabled3 == false ) return false; break;
+	case QTIER_CROUCH_RUN:	if ( mo->FootstepsEnabled4 == false ) return false; break;
+	default:				if ( mo->FootstepsEnabled1 == false ) return false; break;
+	}
+
+	// Below a third of the pawn's base speed there is no stride to make a sound for -- this is what
+	// stops a player nudging a wall from machine-gunning footsteps.
+	const float speed2D = QLength2D( FIXED2FLOAT( mo->velx ), FIXED2FLOAT( mo->vely ));
+	return speed2D >= FIXED2FLOAT( mo->Speed ) * 3.0f;
+}
+
+// Footsteps are LOCAL-PLAYER ONLY for the same reason as the traversal loops: replicating a step
+// per stride per player is exactly the recurring traffic this port refuses to add.
+void PlayFootsteps( player_t *player, ticcmd_t *cmd )
+{
+	APlayerPawn *const mo = player->mo;
+	if ( CLIENT_PREDICT_IsPredicting() )
+		return;
+
+	if ( ShouldPlayFootsteps( player, cmd ) == false )
+	{
+		// Re-arm at half the interval so the first step after starting to move lands promptly
+		// rather than a full stride late.
+		mo->stepInterval = mo->FootstepInterval / 2;
+		return;
+	}
+
+	if ( mo->stepInterval > 0 )
+	{
+		mo->stepInterval--;
+		return;
+	}
+
+	if (( mo->mvFlags & MV_SILENT ) == 0 )
+		S_Sound( mo, CHAN_AUTO, "*footstep", mo->FootstepVolume, ATTN_NORM );
+	SpawnEffectActor( player, EA_FOOTSTEP );
+	mo->stepInterval = mo->FootstepInterval;
+}
 
 // Emit a traversal move's cosmetic actor. CLIENTSIDEONLY and local-player-only: nothing is
 // replicated, so this costs zero bytes. The consequence, stated plainly in the README, is that you
@@ -201,7 +286,7 @@ void UpdateAirWallRun( player_t *player, const QVec3 &vel, const QVec3 &wish,
 
 	const fixed_t speed2D = FLOAT2FIXED( QLength2D( vel.x, vel.y ));
 
-	if (( player->crouchfactor >= Q_CROUCH_SLIDE_THRESHOLD ) &&
+	if (( IsCrouchedEnough( player ) == false ) &&
 		( speed2D >= mo->AirWallRunMinVelocity ) &&
 		( QLength3D( wish ) > 0.0f ) &&
 		HasCharge( mo->airWallRunTics ))
@@ -426,7 +511,7 @@ bool MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 		// the ground -- ACS and SBARINFO would report a wall run that ended tics ago.
 		mo->isAirWallRunning = false;
 
-		const bool crouchedEnough = ( player->crouchfactor < Q_CROUCH_SLIDE_THRESHOLD );
+		const bool crouchedEnough = IsCrouchedEnough( player );
 		isSliding = CanCrouchSlide( isSlider, crouchedEnough, mo->crouchSlideTics );
 
 		if ( isSliding )
@@ -496,6 +581,7 @@ bool MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 		mo->PlayRunning();
 	}
 
+	PlayFootsteps( player, cmd );
 	return false;
 }
 

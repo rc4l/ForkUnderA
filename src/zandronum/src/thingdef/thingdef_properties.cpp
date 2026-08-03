@@ -2721,9 +2721,11 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, effectactor, SS, PlayerPawn)
 		index = EA_CROUCH_SLIDE;
 	else if ( stricmp( slot, "WallClimb" ) == 0 )
 		index = EA_WALL_CLIMB;
+	else if ( stricmp( slot, "Footstep" ) == 0 )
+		index = EA_FOOTSTEP;
 	else
 	{
-		I_Error( "Unknown Player.EffectActor slot '%s' (expected CrouchSlide or WallClimb)", slot );
+		I_Error( "Unknown Player.EffectActor slot '%s' (expected CrouchSlide, WallClimb or Footstep)", slot );
 		return;
 	}
 
@@ -2813,7 +2815,10 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, aircapacity, F, PlayerPawn)
 //==========================================================================
 //
 //==========================================================================
-DEFINE_CLASS_PROPERTY_PREFIX(player, forwardmove, F_f, PlayerPawn)
+// [rc4l] Extended to four tiers (walk, run, crouch-walk, crouch-run) for features/quake-movement.
+// Omitted tiers mirror the ones before them, so `Player.ForwardMove 1` and `Player.ForwardMove 1, 1`
+// mean exactly what they always did and no existing class changes.
+DEFINE_CLASS_PROPERTY_PREFIX(player, forwardmove, F_fff, PlayerPawn)
 {
 	PROP_FIXED_PARM(m, 0);
 	defaults->ForwardMove1 = defaults->ForwardMove2 = m;
@@ -2822,12 +2827,24 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, forwardmove, F_f, PlayerPawn)
 		PROP_FIXED_PARM(m2, 1);
 		defaults->ForwardMove2 = m2;
 	}
+	defaults->ForwardMove3 = defaults->ForwardMove1;
+	defaults->ForwardMove4 = defaults->ForwardMove2;
+	if (PROP_PARM_COUNT > 2)
+	{
+		PROP_FIXED_PARM(m3, 2);
+		defaults->ForwardMove3 = m3;
+	}
+	if (PROP_PARM_COUNT > 3)
+	{
+		PROP_FIXED_PARM(m4, 3);
+		defaults->ForwardMove4 = m4;
+	}
 }
 
 //==========================================================================
 //
 //==========================================================================
-DEFINE_CLASS_PROPERTY_PREFIX(player, sidemove, F_f, PlayerPawn)
+DEFINE_CLASS_PROPERTY_PREFIX(player, sidemove, F_fff, PlayerPawn)
 {
 	PROP_FIXED_PARM(m, 0);
 	defaults->SideMove1 = defaults->SideMove2 = m;
@@ -2835,6 +2852,76 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, sidemove, F_f, PlayerPawn)
 	{
 		PROP_FIXED_PARM(m2, 1);
 		defaults->SideMove2 = m2;
+	}
+	defaults->SideMove3 = defaults->SideMove1;
+	defaults->SideMove4 = defaults->SideMove2;
+	if (PROP_PARM_COUNT > 2)
+	{
+		PROP_FIXED_PARM(m3, 2);
+		defaults->SideMove3 = m3;
+	}
+	if (PROP_PARM_COUNT > 3)
+	{
+		PROP_FIXED_PARM(m4, 3);
+		defaults->SideMove4 = m4;
+	}
+}
+
+//==========================================================================
+//
+// [rc4l] Crouch and footstep tuning (features/quake-movement stage 5). CrouchScale and
+// CrouchChangeSpeed default to the engine's historic constants, so they are behaviour-neutral
+// unless a class overrides them; the footstep properties only do anything under MvType 1.
+//
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchscale, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(scale, 0);
+	// A scale above 1 would mean "crouching makes you taller", and 0 would collapse the pawn to
+	// nothing and wedge it in the floor; clamp rather than trust the author.
+	defaults->CrouchScale = clamp<fixed_t>( scale, FRACUNIT / 16, FRACUNIT );
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchchangespeed, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(speed, 0);
+	// Zero would make crouching never complete; negative would invert it.
+	defaults->CrouchChangeSpeed = ( speed > 0 ) ? speed : fixed_t( FRACUNIT / 12 );
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, footstepinterval, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->FootstepInterval = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, footstepvolume, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(volume, 0);
+	defaults->FootstepVolume = volume;
+}
+
+// Per move tier: walk, run, crouch-walk, crouch-run. Omitted tiers mirror the ones before them.
+DEFINE_CLASS_PROPERTY_PREFIX(player, footstepsenabled, I_iii, PlayerPawn)
+{
+	PROP_INT_PARM(e1, 0);
+	defaults->FootstepsEnabled1 = defaults->FootstepsEnabled2 = ( e1 != 0 );
+	if (PROP_PARM_COUNT > 1)
+	{
+		PROP_INT_PARM(e2, 1);
+		defaults->FootstepsEnabled2 = ( e2 != 0 );
+	}
+	defaults->FootstepsEnabled3 = defaults->FootstepsEnabled1;
+	defaults->FootstepsEnabled4 = defaults->FootstepsEnabled2;
+	if (PROP_PARM_COUNT > 2)
+	{
+		PROP_INT_PARM(e3, 2);
+		defaults->FootstepsEnabled3 = ( e3 != 0 );
+	}
+	if (PROP_PARM_COUNT > 3)
+	{
+		PROP_INT_PARM(e4, 3);
+		defaults->FootstepsEnabled4 = ( e4 != 0 );
 	}
 }
 
