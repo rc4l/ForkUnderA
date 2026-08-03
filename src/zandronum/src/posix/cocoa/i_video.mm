@@ -184,6 +184,9 @@ namespace
 // ---------------------------------------------------------------------------
 
 
+// [rc4l] windowed-video: defined below, once CocoaVideo is a complete type.
+static void ZX_CocoaWindowResized();
+
 @interface CocoaWindow : NSWindow<NSWindowDelegate>
 {
 }
@@ -204,35 +207,12 @@ namespace
 	return true;
 }
 
-// [rc4l] windowed-video: the window was resized by dragging an edge, or by vid_setsize. Persist the
-// new size so it reopens the same, matching what posix/sdl/i_input.cpp does on
-// SDL_WINDOWEVENT_SIZE_CHANGED. The render target follows the drawable live via
-// OpenGLFrameBuffer::MaybeResizeForScale, so nothing else is needed here.
-// See features/windowed-video.
+// [rc4l] windowed-video: dragged an edge, or vid_setsize. The work lives on CocoaVideo, which is
+// declared below this class, so it is reached through the ZX_CocoaWindowResized hook.
 - (void)windowDidResize:(NSNotification*)notification
 {
 	(void)notification;
-
-	extern bool zx_videoScaleDirty;
-	zx_videoScaleDirty = true; // re-check the render size against the new drawable
-
-	if (NULL == screen || screen->IsFullscreen())
-	{
-		return;
-	}
-
-	// Backing pixels, per the invariant in posix/README.md -- vid_defwidth/height are pixels, and
-	// the frame is in points.
-	const NSRect content = [[self contentView] frame];
-	const NSSize pixels  = vid_hidpi
-		? [[self contentView] convertSizeToBacking:content.size]
-		: content.size;
-
-	if (pixels.width > 0.0 && pixels.height > 0.0)
-	{
-		vid_defwidth  = static_cast<int>(pixels.width );
-		vid_defheight = static_cast<int>(pixels.height);
-	}
+	ZX_CocoaWindowResized();
 }
 
 @end
@@ -296,6 +276,23 @@ public:
 	static void SetCursor(NSCursor* cursor);
 	static void SetWindowVisible(bool visible);
 
+	// [rc4l] windowed-video. GetInstance moves up from private because SDLGLFB::SetWindowSize and
+	// the window delegate both need it.
+	static CocoaVideo* GetInstance();
+
+	// [rc4l] The view we own. GetClientWidth/Height reached it through
+	// [[NSOpenGLContext currentContext] view], which is only valid on the thread that made the
+	// context current; from the per-frame resize check it came back nil, so the client size fell
+	// back to the OLD render size and window and render could never reconcile.
+	static NSView* GetContentView();
+
+	// [rc4l] Resize the OS window and bring the render target with it.
+	void ResizeWindow(int width, int height);
+
+	// [rc4l] The drawable changed -- a drag, or ResizeWindow. Reconciles rbOpts, the GL context and
+	// the render target with the window's new size.
+	void OnWindowResized();
+
 private:
 	struct ModeIterator
 	{
@@ -318,7 +315,6 @@ private:
 	void SetWindowedMode(int width, int height);
 	void SetMode(int width, int height, bool fullscreen, bool hiDPI);
 
-	static CocoaVideo* GetInstance();
 };
 
 
@@ -522,6 +518,11 @@ CocoaVideo::CocoaVideo()
 , m_hiDPI(false)
 {
 	memset(&m_modeIterator, 0, sizeof m_modeIterator);
+
+	// [rc4l] windowed-video: attach the delegate ONCE, here. It used to be set lazily inside
+	// SetWindowedMode behind an "if the delegate is nil" guard, so it only ever attached during a
+	// mode set -- dragging a window edge fired nothing at all.
+	[m_window setDelegate:m_window];
 
 	// Create OpenGL pixel format
 
@@ -794,12 +795,6 @@ void CocoaVideo::SetWindowedMode(const int width, const int height)
 		[m_window setHidesOnDeactivate:NO];
 	}
 
-	// [rc4l] windowed-video: self-delegating so windowDidResize: fires.
-	if (nil == [m_window delegate])
-	{
-		[m_window setDelegate:m_window];
-	}
-
 	[m_window setContentSize:windowSize];
 	[m_window center];
 	[m_window enterFullscreenOnZoom];
@@ -868,6 +863,81 @@ void CocoaVideo::SetMode(const int width, const int height, const bool fullscree
 }
 
 
+NSView* CocoaVideo::GetContentView()
+{
+	CocoaVideo* const video = GetInstance();
+	return NULL == video ? nil : [video->m_window contentView];
+}
+
+// [rc4l] windowed-video: resize the window, then reconcile. Windowed only -- fullscreen already
+// covers the display.
+void CocoaVideo::ResizeWindow(const int width, const int height)
+{
+	if (m_fullscreen)
+	{
+		return;
+	}
+
+	const NSSize pixels = NSMakeSize(width, height);
+	const NSSize points = vid_hidpi
+		? [[m_window contentView] convertSizeFromBacking:pixels]
+		: pixels;
+
+	[m_window setContentSize:points];
+	[m_window center];
+
+	OnWindowResized();
+}
+
+// [rc4l] windowed-video: the drawable changed.
+//
+// Upstream needs no equivalent: their CocoaView is an NSOpenGLView, which updates its GL context on
+// frame change by itself, and their engine reads the client size every frame. Ours re-checks only
+// when zx_videoScaleDirty is raised (an [rc4l] optimisation, because the equivalent SDL query was
+// expensive here), so on this backend the event must be raised by hand -- and rbOpts, which the
+// Cocoa backend uses for render-buffer geometry, has to come along or the re-check compares against
+// stale values.
+void CocoaVideo::OnWindowResized()
+{
+	if (NULL == screen || m_fullscreen)
+	{
+		return;
+	}
+
+	const NSSize viewSize = I_GetContentViewSize(m_window);
+
+	if (viewSize.width <= 0.0 || viewSize.height <= 0.0)
+	{
+		return;
+	}
+
+	rbOpts.width  = static_cast<float>(viewSize.width );
+	rbOpts.height = static_cast<float>(viewSize.height);
+	rbOpts.shiftX = 0.0f;
+	rbOpts.shiftY = 0.0f;
+	rbOpts.dirty  = true;
+
+	// The context must be told its view changed, or the drawable stays at the old size and the game
+	// keeps rendering into a stale buffer -- "the window resizes but the content doesn't".
+	[[NSOpenGLContext currentContext] update];
+
+	glViewport(0, 0, static_cast<GLsizei>(viewSize.width), static_cast<GLsizei>(viewSize.height));
+
+	extern bool zx_videoScaleDirty;
+	zx_videoScaleDirty = true;
+
+	vid_defwidth  = static_cast<int>(viewSize.width );
+	vid_defheight = static_cast<int>(viewSize.height);
+}
+
+static void ZX_CocoaWindowResized()
+{
+	if (CocoaVideo* const video = CocoaVideo::GetInstance())
+	{
+		video->OnWindowResized();
+	}
+}
+
 CocoaVideo* CocoaVideo::GetInstance()
 {
 	return static_cast<CocoaVideo*>(Video);
@@ -887,6 +957,17 @@ CocoaVideo* CocoaVideo::GetInstance()
 IMPLEMENT_ABSTRACT_CLASS(SDLGLFB)
 
 // [rc4l] See the declaration in sdlglvideo.h.
+// [rc4l] windowed-video: overrides DFrameBuffer::SetWindowSize, a no-op in the base. vid_setsize
+// and the menu's "Apply windowed size" reach the backend only through this virtual, so without the
+// override they silently did nothing on Cocoa.
+void SDLGLFB::SetWindowSize(const int w, const int h)
+{
+	if (CocoaVideo* const video = CocoaVideo::GetInstance())
+	{
+		video->ResizeWindow(w, h);
+	}
+}
+
 bool SDLGLFB::IsCoreProfile()
 {
 	return zx::kNSGLProfileLegacy != s_cocoaGLProfile;
@@ -1018,7 +1099,9 @@ void SDLGLFB::ResetGammaTable()
 
 int SDLGLFB::GetClientWidth()
 {
-	NSView *view = [[NSOpenGLContext currentContext] view];
+	// [rc4l] see CocoaVideo::GetContentView.
+	NSView *view = CocoaVideo::GetContentView();
+	if (nil == view) return Width;
 	NSRect backingBounds = [view convertRectToBacking: [view bounds]];
 	int clientWidth = (int)backingBounds.size.width;
 	return clientWidth > 0 ? clientWidth : Width;
@@ -1026,7 +1109,9 @@ int SDLGLFB::GetClientWidth()
 
 int SDLGLFB::GetClientHeight()
 {
-	NSView *view = [[NSOpenGLContext currentContext] view];
+	// [rc4l] see GetClientWidth.
+	NSView *view = CocoaVideo::GetContentView();
+	if (nil == view) return Height;
 	NSRect backingBounds = [view convertRectToBacking: [view bounds]];
 	int clientHeight = (int)backingBounds.size.height;
 	return clientHeight > 0 ? clientHeight : Height;

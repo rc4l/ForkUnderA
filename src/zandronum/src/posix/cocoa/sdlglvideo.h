@@ -68,6 +68,10 @@ public:
 	// gate can ask either one without caring which is built. Declared at the end of the class to
 	// keep the conflict surface with future upstream diffs small.
 	static bool IsCoreProfile();
+
+	// [rc4l] windowed-video: overrides DFrameBuffer::SetWindowSize (a base no-op). vid_setsize and
+	// the menu's "Apply windowed size" reach the backend only through this virtual.
+	virtual void SetWindowSize(int w, int h);
 	~SDLGLFB();
 
 	virtual bool Lock(bool buffered = true);
