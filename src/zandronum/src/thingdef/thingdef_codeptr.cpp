@@ -1462,7 +1462,9 @@ static void ZX_SpawnProjectile( AActor *self, const PClass *ti, fixed_t SpawnHei
 	else if (flags & CMF_CHECKTARGETDEAD)
 	{
 		// Target is dead and the attack shall be aborted.
-		if (self->SeeState != NULL) self->SetState(self->SeeState);
+		// [rc4l] uzdoom@2be3b776d: a dead monster must not jump back to its See state -- that
+		// resurrects the animation. Non-monsters are unaffected.
+		if (self->SeeState != NULL && (self->health > 0 || !(self->flags3 & MF3_ISMONSTER))) self->SetState(self->SeeState);
 	}
 }
 
