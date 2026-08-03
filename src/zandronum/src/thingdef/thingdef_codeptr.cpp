@@ -2652,6 +2652,9 @@ enum SIX_Flags
 	SIXF_TRANSFERSPECIAL		= 1 << 15,
 	SIXF_CLEARCALLERSPECIAL		= 1 << 16,
 	SIXF_TRANSFERSTENCILCOL		= 1 << 17,
+	// [rc4l] uzdoom@5c4ad9be6
+	SIXF_TRANSFERALPHA			= 1 << 18,
+	SIXF_TRANSFERRENDERSTYLE	= 1 << 19,
 };
 
 // [BB] Changed return value to bool (returns false if the actor already was destroyed).
@@ -2768,6 +2771,14 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	if (flags & SIXF_TRANSFERSTENCILCOL)
 	{
 		mo->fillcolor = self->fillcolor;
+	}
+	if (flags & SIXF_TRANSFERALPHA)
+	{
+		mo->alpha = self->alpha;
+	}
+	if (flags & SIXF_TRANSFERRENDERSTYLE)
+	{
+		mo->RenderStyle = self->RenderStyle;
 	}
 
 	return true;
@@ -6401,6 +6412,27 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RadiusGive)
 	}
 }
 
+
+//==========================================================================
+//
+// A_SetSpeed
+//
+//==========================================================================
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetSpeed)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_FIXED(speed, 0);
+
+	// [rc4l] uzdoom@44683657f, adapted: Speed drives movement, so a client that never heard about
+	// the change predicts against the old value. Same shape APROP_Speed already uses in p_acs.cpp.
+	fixed_t oldSpeed = self->Speed;
+
+	self->Speed = speed;
+
+	if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( oldSpeed != self->Speed ) )
+		SERVERCOMMANDS_SetThingProperty( self, APROP_Speed );
+}
 
 //==========================================================================
 //
