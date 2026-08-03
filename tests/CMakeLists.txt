@@ -89,7 +89,7 @@ if(APPLE)
   if(OBJC_TEST_SOURCES)
     add_executable(zandrox_tests_objc
       ${OBJC_TEST_SOURCES}
-      "${ENGINE_SRC}/sdl/i_system_cocoa_net.mm")
+      "${ENGINE_SRC}/posix/osx/i_system_cocoa_net.mm")
     target_include_directories(zandrox_tests_objc PRIVATE "${ENGINE_SRC}")
     target_link_libraries(zandrox_tests_objc PRIVATE GTest::gtest_main)
     target_link_options(zandrox_tests_objc PRIVATE -framework Foundation)

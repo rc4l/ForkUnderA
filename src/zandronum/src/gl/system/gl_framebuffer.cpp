@@ -43,6 +43,7 @@
 #include "files.h"
 #include "m_swap.h"
 #include "v_video.h"
+#include "sbar.h"   // [rc4l] StatusBar->ScreenSizeChanged on an in-place resize
 #include "doomstat.h"
 #include "m_png.h"
 #include "m_crc32.h"
@@ -288,8 +289,14 @@ void OpenGLFrameBuffer::GetClientSize(int &w, int &h)
 		w = GetWidth();
 		h = GetHeight();
 	}
+#elif defined(ZX_COCOA_BACKEND)
+	// [rc4l] Cocoa backend: upstream's own SDLGLFB exposes the drawable size directly, so this needs
+	// no SDL. GetClientWidth/Height return BACKING PIXELS -- see the invariant in posix/README.md;
+	// mixing them with points renders at quarter size on a Retina display rather than failing.
+	w = GetClientWidth();
+	h = GetClientHeight();
 #else
-	// SDL2 (macOS/Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
+	// SDL2 (Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
 	// desktop; for a window it is the window's drawable.
 	SDL_GL_GetDrawableSize(Screen, &w, &h);
 #endif
@@ -393,6 +400,17 @@ void OpenGLFrameBuffer::ResizeRenderInPlace(int w, int h)
 	// V_OutputResized. No black flash, no keyboard-focus loss (the window never goes away).
 	Resize(w, h);                                // canvas backing store + Width/Height/Pitch
 	V_RecalcVideoModeState(w, h, DisplayBits);   // Clean facs, DisplayW/H, mode-set recompute
+
+	// [rc4l] The status bar caches ST_Y, computed from SCREENHEIGHT in DBaseStatusBar::SetScaled.
+	// Resizing the render target without telling it leaves that cache pointing at the OLD height,
+	// and R_SetWindow then sizes the 3D view against a stale ST_Y -- a view TALLER than the buffer
+	// it draws into, which shows up as the status-bar strip rendering garbage while screenblocks 11
+	// (no status bar) looks fine. A real mode set goes through this; an in-place resize has to too.
+	if (StatusBar != NULL)
+	{
+		StatusBar->ScreenSizeChanged();
+	}
+
 	setsizeneeded = true;                        // recompute the 3D view for the new render size
 	UpdateScaleBuffer();                         // (re)build + bind the scale FBO, or drop to backbuffer
 }

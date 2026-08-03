@@ -33,6 +33,14 @@ typedef	short					SHORT;
 #ifdef __WINE__
 typedef unsigned int ULONG;
 typedef int LONG;
+#elif defined(__COREFOUNDATION_CFPLUGINCOM__)
+// [rc4l] CoreFoundation's COM shim (CFPlugInCOM.h, pulled in by IOKit's HID plugin API) already
+// does `typedef UInt32 ULONG`, so redefining it as unsigned long is a hard error in any Cocoa
+// translation unit that touches IOKit. Defer to theirs THERE ONLY: nothing that uses our ULONG --
+// 151 files -- includes CoreFoundation, and the one TU that does (posix/cocoa/i_joystick.cpp)
+// never names ULONG itself. Widening ours to match would be the wrong fix; Zandronum's ULONG is
+// unsigned long everywhere else and stays that way.
+typedef	long					LONG;
 #else
 typedef	unsigned long			ULONG;
 typedef	long					LONG;

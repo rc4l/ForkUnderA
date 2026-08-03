@@ -59,7 +59,9 @@ NCPU="$(sysctl -n hw.ncpu)"
 # CMake 4.x dropped support for Zandronum's old cmake_minimum_required.
 CMAKE_COMPAT=(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 # Apple frameworks Zandronum's CMake does not auto-link.
-APPLE_FRAMEWORKS="-framework CoreFoundation -framework Carbon -framework Cocoa -framework IOKit -framework OpenGL"
+# [rc4l] AudioToolbox: the instant-replay audio sink (AudioQueue) since the Cocoa backend took
+# SDL out of the engine. ForceFeedback/CoreVideo come with the Cocoa joystick and NSOpenGLView.
+APPLE_FRAMEWORKS="-framework CoreFoundation -framework Carbon -framework Cocoa -framework IOKit -framework OpenGL -framework AudioToolbox -framework ForceFeedback -framework CoreVideo"
 
 # ---------------------------------------------------------------------------
 # Logging
