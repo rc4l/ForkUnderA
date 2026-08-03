@@ -298,8 +298,6 @@ void MessagePump (const SDL_Event &sev)
 		// here. See features/windowed-video.
 		else if (sev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
 		{
-			extern bool zx_videoScaleDirty;
-			zx_videoScaleDirty = true; // re-check the render size against the new drawable
 			if (screen != NULL && !screen->IsFullscreen () && sev.window.data1 > 0 && sev.window.data2 > 0)
 			{
 				vid_defwidth  = sev.window.data1;

@@ -501,8 +501,6 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// client live via OpenGLFrameBuffer::MaybeResizeForScale. See features/windowed-video.
 		if (wParam != SIZE_MINIMIZED && screen != NULL)
 		{
-			extern bool zx_videoScaleDirty;
-			zx_videoScaleDirty = true; // re-check the render size against the new client rect
 			if (!screen->IsFullscreen ())
 			{
 				int cw = LOWORD (lParam);
