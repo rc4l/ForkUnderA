@@ -350,6 +350,7 @@ enum
 	MF7_NOTELESTOMP		= 0x00000002,	// cannot telefrag under any circumstances (even when set by MAPINFO)
 	MF7_ALWAYSTELEFRAG	= 0x00000004,	// will unconditionally be telefragged when in the way. Overrides all other settings.
 	MF7_HANDLENODELAY	= 0x00000008,	// respect NoDelay state flag
+	MF7_WEAPONSPAWN		= 0x00000010,	// subject to DF_NO_COOP_WEAPON_SPAWN dmflag
 
 	MF7_HITTARGET		= 0x00004000,	// The actor the projectile dies on is set to target, provided it's targetable anyway.
 	MF7_HITMASTER		= 0x00008000,	// Same as HITTARGET, except it's master instead of target.

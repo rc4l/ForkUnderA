@@ -3605,7 +3605,9 @@ void P_RemoveThings( void )
 			( teamgame == false ) &&
 			( dmflags & DF_NO_COOP_WEAPON_SPAWN ))
 		{
-			if ( pActor->GetClass( )->IsDescendantOf( RUNTIME_CLASS( AWeapon )))
+			// [rc4l] uzdoom@6d4eb7f62: keyed on the WEAPONSPAWN flag rather than descent from AWeapon,
+			// so a CustomInventory standing in for a weapon is suppressed too.
+			if ( pActor->flags7 & MF7_WEAPONSPAWN )
 			{
 				if (( pActor->SpawnFlags & ( MTF_DEATHMATCH|MTF_SINGLE )) == MTF_DEATHMATCH )
 				{
