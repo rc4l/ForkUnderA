@@ -98,7 +98,7 @@ d7e81d2cb4621ba47a944ce28d367ce7956ee2d3	2014-03-16T12:27:21Z	Merge branch 'fnod
 d7a2435703f56ce36c00892f31c3a582bb947b7d	2014-03-27T14:34:32Z	- the ACS functions GetSectorFloorZ and GetSectorCeilingZ now interpret tag=0 as 'any sector' and return the z height of whatever sector is at those coordinates.	ported	inherited (present 6/7 (inherited))	zandronum-base
 4909aa750fa44853e88647509dac2049522182a1	2014-03-28T00:49:53Z	Use more portable hqx code from googlecode hqx	ported	d2e4479	d2e4479
 bf0b85008835451507d71e4d3e83270fff9cd4e7	2014-03-28T00:54:20Z	look for gme header in the proper location	ported	inherited (present 1/1 (inherited))	zandronum-base
-8f97e96af187d44ae095f35511b6b94491668ddf	2014-03-28T00:54:42Z	silence a noisy warning	ported	d2e4479	d2e4479
+8f97e96af187d44ae095f35511b6b94491668ddf	2014-03-28T00:54:42Z	silence a noisy warning	pending	pending: was recorded ported against a renderer-staircase flight commit that touched none of its files, and a content check does not find the change in our tree either. Re-derive before claiming it again	/
 6e87ee80e4e5b4cac6e03fa75e955d924c46505c	2014-03-29T11:04:38Z	Merge branch 'for-upstream' of https://github.com/galtgendo/gzdoom	skip	merge	/
 a97b068ed7df7ff0f04d521b69f5d81392a3e8ee	2014-03-30T10:27:27Z	Enable fighting between different types of gargoyles and golems	ported	inherited (present 3/3 (inherited))	zandronum-base
 c47d77228d08840503aeeb7c4acd9e431193b9e1	2014-03-30T18:27:05Z	- increased updaterevision's buffer sizes to prevent GIT_BRANCH from cut short	ported	inherited (present 1/1 (inherited))	zandronum-base
@@ -113,16 +113,16 @@ a9bea7d77403fe25b3e6d93ab07011864f551d3a	2014-03-31T17:12:47Z	Merge branch 'gets
 3e41685536b1ee3de64ce905b6770bab54a95bfb	2014-04-01T21:57:42Z	Merge pull request #6 from galtgendo/for-upstream	skip	merge	/
 be33d2894ac59be3d8424f145113cb8248645b2f	2014-04-02T08:25:12Z	Fixed prediction thinglist order restoration	ported	present 25/25 (inherited)	zandronum-base
 546ae759fdf3abb27f01f0b70ff550e703d917b0	2014-04-02T08:25:45Z	Cleanup old prediction fix development code	ported	present 4/4 (inherited)	zandronum-base
-7261af1d9ff3de3d600e8e1815bb19f7e99608e1	2014-04-02T18:23:17Z	Don't define HQX_API to anything on Windows	ported	d2e4479	d2e4479
+7261af1d9ff3de3d600e8e1815bb19f7e99608e1	2014-04-02T18:23:17Z	Don't define HQX_API to anything on Windows	ported	d2e4479 | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	d2e4479
 59eede6e6ced01c08c9e9af4d7f7d02386313289	2014-04-02T21:49:34Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	skip	merge	/
 072db7920df86da942dafa4e438ad92e2e037fa8	2014-04-02T21:51:24Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	merge	/
 3670acbe63f07583d03c165055303f3e76ddc398	2014-04-03T13:44:33Z	Don't compile some unused DUMB tables spotted by Clang	skip	no dumb/ music library in our tree (DUMB decoder absent)	/
 4406578522f991e7f1edcc54a38aa788993edec7	2014-04-03T13:46:47Z	Fixed: DSMF loader wrote outside filename array's bounds	ported	present 1/1 (inherited)	zandronum-base
 1d1289722f14bea9f32fbaad3a0c7a151f838c66	2014-04-03T13:50:09Z	Change , to && in 2 for loops in Oktalyzer loader	ported	present 2/2 (inherited)	zandronum-base
 fbddfbe57658cc3d94d32dc86ecc3b3903ce1858	2014-04-03T14:19:51Z	Upgrade game-music-emu to version 0.6.0	ported	present 25/25 (inherited)	zandronum-base
-0aba6e09f3c53b012e0da38552e42253935aed52	2014-04-03T18:14:38Z	Disambiguate which abs type we want.	ported	d2e4479	d2e4479
+0aba6e09f3c53b012e0da38552e42253935aed52	2014-04-03T18:14:38Z	Disambiguate which abs type we want.	ported	d2e4479 | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	d2e4479
 e446a8eb30102ab5e5f231500d1520111be5dd7a	2014-04-03T20:56:50Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	skip	merge	/
-47406a3406b0048e976edb9d92d69592112ec014	2014-04-03T21:02:43Z	- I don't think it's a good idea to put a 64 MB lookup table into the static data segment, if it's for a piece of code most people will never use...	ported	d2e4479	d2e4479
+47406a3406b0048e976edb9d92d69592112ec014	2014-04-03T21:02:43Z	- I don't think it's a good idea to put a 64 MB lookup table into the static data segment, if it's for a piece of code most people will never use...	ported	d2e4479 | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	d2e4479
 43fe317dbe81545685807423784e945bc1ae2a74	2014-04-03T21:33:33Z	Use flexible array members for structs that end with var-sized arrays	skip	software renderer (r_plane) absent; residual flexible-array-member change cosmetic	/
 fc97584c696ac4b7ab988b978f9fa5798ad21a5d	2014-04-03T21:50:20Z	Disable warning C4200 on VC++	ported	present 3/3 (inherited)	zandronum-base
 138e7ff749281ee33960a16b34163db4783f4919	2014-04-03T22:16:40Z	Redo GME warning-silencing that was undone by commit fbddfbe57	ported	present 25/25 (inherited)	zandronum-base
@@ -175,7 +175,7 @@ a0d4bc0a895620ca2122cad7e248bf0ddda111f5	2014-04-24T23:30:03Z	Merge branch 'mast
 76fdb4905f37735956c1a03d7ad9e7e9a86762d4	2014-04-28T10:06:36Z	Fixed compilation with updated LZMA library using Visual Studio	ported	83ea1cb inherited: added lines already present in our tree (4/4); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
 04c5a38ac639e407b375a5961784337ef63f550e	2014-04-28T10:06:56Z	Merge branch 'master' of https://github.com/rheit/zdoom into lzma2	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
 cc4305e86c37d46f62ff56dbcf43e25164564de9	2014-04-29T23:29:26Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
-314225f1b0b8f95433d4099f35b90dabd4368e62	2014-05-01T10:30:56Z	- don't depend on stdint.h because older MSVC versions do not have it.	ported	d2e4479	d2e4479
+314225f1b0b8f95433d4099f35b90dabd4368e62	2014-05-01T10:30:56Z	- don't depend on stdint.h because older MSVC versions do not have it.	ported	d2e4479 | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	d2e4479
 d6af8dc352f2f87bcbeda11f932a6fbc574fe883	2014-05-02T15:01:40Z	Added static RNGseed control	ported	83ea1cb inherited: added lines already present in our tree (22/25); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
 6183f8125fa4dc00db087b683bc08b8deb68e3d2	2014-05-02T15:01:49Z	Don't change RNG in demos incase they are static	ported	83ea1cb inherited: added lines already present in our tree (4/5); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
 104a07d461bd8f75622a8674a7cb390174c41b9b	2014-05-02T15:27:14Z	Make sure use_staticrng is false if not needed	ported	83ea1cb inherited: added lines already present in our tree (1/1); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
@@ -189,7 +189,7 @@ fcbb72a4d45760c3f4512cea6d535b7ef12ecb15	2014-05-06T07:59:56Z	- removed redundan
 67ebbe3ed4bb2028c8850157d9e551569cc0aaba	2014-05-08T07:15:56Z	made some changes to turn the CF_INTERPVIEW flag when changing angles into an op-in feature instead of making it automatic.	ported	83ea1cb inherited: added lines already present in our tree (12/16); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
 63a0e01c6a62b92256b2d94535d7ef3300b1c70c	2014-05-08T07:17:00Z	Merge branch 'interpview_optin'	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
 2223c12938ab24995a798443bee841b1fa249563	2014-05-08T07:43:58Z	- added new ChangeActorAngle/ChangeActorPitch ACS functions because the new required 'interpolate' parameter cannot be added to the existing SetActorAngle/SetActorPitch functions without breaking old scripts.	ported	83ea1cb inherited: added lines already present in our tree (25/25); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
-1d4ea9f16286c600514982e6d22f2ebc36b6192f	2014-05-08T07:48:39Z	- removed the __asm nop breakpoints for debugging. They not only do not work on non-MSVC but also not on 64 bit.	ported	d2e4479	d2e4479
+1d4ea9f16286c600514982e6d22f2ebc36b6192f	2014-05-08T07:48:39Z	- removed the __asm nop breakpoints for debugging. They not only do not work on non-MSVC but also not on 64 bit.	ported	d2e4479 | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	d2e4479
 6988156d0f6ea0a5fa143a4fe08065ddc364db2f	2014-05-08T07:49:00Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
 ea7fb936a83d66d520ac45b110b0d74f9f29b136	2014-05-08T08:33:32Z	- fixed: memory allocation for file names in 7z archives was broken. Changing it to use TArray instead of alloca makes it work.	ported	83ea1cb inherited: added lines already present in our tree (7/7); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
 a7f8f7c18b5f9b1dacd194ad3d941f0a69d7b254	2014-05-08T08:35:10Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	83ea1cb skip: merge commit, no unique content (changes live in the parents)	/
@@ -445,7 +445,7 @@ d868f60f6c21c8df307b569e6dd947449870da09	2014-07-13T10:14:12Z	- since the clip p
 dbb05c5f339d6e7ca40bfbfe19f96e4709c8b707	2014-07-13T18:41:20Z	- remove use of builtin texture matrices. - make matrix class single precision.	ported	7327ca6	7327ca6
 2214c0ac06081711244beb529703ff381d3b2223	2014-07-13T20:37:34Z	- remove all uses of builtin matrix manipulation. Only glLoadMatrix for view and projection matrix are left.	ported	7327ca6	7327ca6
 ce3653f6e1d2ccba096e2e9f0f59b3ba1c1be715	2014-07-13T21:13:40Z	- remove all uses of builtin matrices.	ported	7327ca6	7327ca6
-150135a07d31a2fd5471a2d9907784ef705f0aee	2014-07-13T21:14:28Z	- reinstate drawcall timing.	ported	7327ca6	7327ca6
+150135a07d31a2fd5471a2d9907784ef705f0aee	2014-07-13T21:14:28Z	- reinstate drawcall timing.	ported	7327ca6 | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	7327ca6
 1f2f7616e17e93b52f2bddf93433ffcb58038a88	2014-07-13T22:31:10Z	- remove timing of matrix application method	ported	f72a9a6	f72a9a6
 4297bd9a518117240dceece3530c908399c4d186	2014-07-13T22:32:16Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 4df25d951b1c4ddc557fded4481ead0bb3bd9473	2014-07-14T14:51:41Z	Merge branch 'master' into Glew_Version_For_Real	pending		/
@@ -1095,7 +1095,7 @@ c6fd4c5aaf50788f80acf9035295db5e7cf17314	2014-12-18T15:46:19Z	- Added the two de
 a150e0686c37956b91d17f1f1e56a72c2416de29	2014-12-18T20:05:59Z	Added 'lifestealmax' parameter and STEALARMOR flag to A_Saw and A_CustomPunch.	pending		/
 80bc95d3bc3b15987074c912bfd9abed68301e94	2014-12-19T08:57:34Z	Added absent cl_capfps and cl_maxdecals entries	pending		/
 7bc2e5c67e339228d1fd56011c7d24d7760b1035	2014-12-19T12:21:37Z	- Tiny fix to ACS.	pending		/
-0bc2c0094a90baef7bac15a068bb079336601ecc	2014-12-19T15:35:34Z	- fixed: For cubemapped skies with one texture for all 4 sides the texture was never set before rendering.	ported	66abdae	66abdae
+0bc2c0094a90baef7bac15a068bb079336601ecc	2014-12-19T15:35:34Z	- fixed: For cubemapped skies with one texture for all 4 sides the texture was never set before rendering.	ported	66abdae | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	66abdae
 86b0065c0bf99b18a0bf95ca5c86b620ec025f0f	2014-12-19T18:37:02Z	- Added a multitude of flags for A_Teleport. - TF_KEEPVELOCITY: Keep the velocity after teleporting. - TF_KEEPANGLE: Don't use the special spot's angle. - TF_USESPOTZ: Normally, this function - TF_NOSRCFOG: Don't leave fog at the previous location. - TF_NODESTFOG: Don't leave fog at the arriving location. - TF_USEACTORFOG: Use the actor's TeleFogSourceType and TeleFogDestType properties. - TF_NOJUMP: Don't require or cause a jump. In this case, put 0 (or "") in for the jump destination when using CustomInventory items to teleport actors around.	pending		/
 31ad6428436216b20bd04bb7810dc261ec287552	2014-12-19T19:43:24Z	- HITTARGET, HITMASTER and HITTRACER now apply to actors that bounce off of other actors.	pending		/
 08cd03dbb7e69820492fde35584bdf54ebc7a5c5	2014-12-20T09:49:19Z	Fixed hanging on startup in native OS X backend when Xbox 360 gamepad is connected	pending		/
@@ -1153,7 +1153,7 @@ ffa069205fa94de5bac2a8bbbe5f891bff2fd79b	2014-12-25T17:30:34Z	- fixed: For fullb
 1a39ac9243b340cdb38a0fb7a0b07a07c8d561d6	2014-12-25T18:56:38Z	- forgot to save this before committing...	pending		/
 a5a17e45cf5377c794dc0ad65581cc1d69ee8aca	2014-12-25T19:43:40Z	- fixed: Checking the terrain for any texture that was created after initializing the terrain data either returned random garbage or could even create an access violation. Added a range check to the array access function to prevent this.	pending		/
 14d7b8b777bae47f81a80f14c2c2646d5c8eeb44	2014-12-25T20:08:31Z	- fixed: Since no DrawText calls actually use the non-functional DTA_DestWidth, DTA_DestHeight or DTA_Translation and GCC cannot handle the fudging of the varargs, these will now trigger an assertion. No need to try to make something work that's always a programming error.	pending		/
-c66a2112008de62d3c89dde570fbeeac26354252	2014-12-25T21:45:40Z	- fixed: The sky renderer must not only alter the light mode but also reset the software light level to a 'disabled' value.	ported	66abdae	66abdae
+c66a2112008de62d3c89dde570fbeeac26354252	2014-12-25T21:45:40Z	- fixed: The sky renderer must not only alter the light mode but also reset the software light level to a 'disabled' value.	ported	66abdae | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	66abdae
 c39e962fd59c08b98ccf55a3054c6d4eb1d54daa	2014-12-25T21:50:15Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 fbfe0f1e7a0f8de19070aa598000a833cbd6fdf7	2014-12-26T10:53:38Z	- fixed: y-clamped textures with negative scale need to shift their texture coordinates into the proper [0..1] range.	ported	66abdae	66abdae
 4f383e5aa711fd6c3076b971150a8f508821d09a	2014-12-26T12:43:49Z	- Nash's force fake contrast submission.	pending		/
@@ -1189,7 +1189,7 @@ e3f92db3956460c5c158241db04a52515b7edbf8	2014-12-29T09:34:57Z	Custom cursor in O
 21d557ee110e175d45f26132ef064fde4a26a5e0	2014-12-29T10:10:18Z	Further cleanup of i_main.mm	pending		/
 1c102ef9c94d15bb1f6a2df9b63289e7d9eeaa19	2014-12-29T10:16:17Z	Internals of native OS X backend event processing are no longer exposed	pending		/
 5c88364300a7c2c4256a1f4ce93ca2ea2ce624c2	2014-12-29T10:17:14Z	Merge branch 'master' of https://github.com/rheit/zdoom into z_osx_refactor	pending		/
-045725de158f5c4452726adf66715f286685f7e0	2014-12-29T15:35:30Z	- use strncpy instead of sprintf tp init static char array to ensure that all elements get initialized.	ported	66abdae	66abdae
+045725de158f5c4452726adf66715f286685f7e0	2014-12-29T15:35:30Z	- use strncpy instead of sprintf tp init static char array to ensure that all elements get initialized.	pending	pending: was recorded ported against a renderer-staircase flight commit that touched none of its files, and a content check does not find the change in our tree either. Re-derive before claiming it again	/
 68dbd56eabcecaa072cdb52a38025ff1b1c8ffc8	2014-12-29T16:03:36Z	Small cleanup in i_video.mm	pending		/
 45cf65afbd4f8b7e7dc35c9c374e5cc6f074eabe	2014-12-29T21:42:19Z	- moved the aspect ratio correction factor from the projection to the view matrix where it should have been from the start. - removed the mCameraPos variable in FGLRenderer because it was only used in one place where it is just as easy to use the global viewx/y/z variables directly.	ported	66abdae	66abdae
 315827015cb0d10780a4e22556d6d3ccdd8a626d	2014-12-29T22:52:20Z	- made aspect ratio correction factor configurable through MAPINFO.	ported	66abdae	66abdae
@@ -1242,7 +1242,7 @@ cab509c4d20f0e5e57099d24792a853a7adaa326	2015-01-08T00:39:29Z	Various improvemen
 df93d1a9f1765f95c702485993cc3b1d81fc04db	2015-01-08T08:27:42Z	Merge branch 'SDL2_gz' of https://github.com/edward-san/zdoom	pending		/
 f3cc872677f49be11398b0315049a88918372a8f	2015-01-08T10:50:23Z	Added Retina/HiDPI option to video mode menu (OS X only)	pending		/
 fb3bf0eb5868742d1771834588a4bbf3c888ac7d	2015-01-08T12:18:00Z	- Oops, forgot to reinclude missing SDL header.	pending		/
-d4d041d5fc5111433939961679a2eb2613f53632	2015-01-08T17:44:55Z	- fixed: FMaterial::ValidateTexture must determine whether to expand sprites before actually constructing the FMaterial object.	ported	66abdae	66abdae
+d4d041d5fc5111433939961679a2eb2613f53632	2015-01-08T17:44:55Z	- fixed: FMaterial::ValidateTexture must determine whether to expand sprites before actually constructing the FMaterial object.	pending	pending: was recorded ported against a renderer-staircase flight commit that touched none of its files, and a content check does not find the change in our tree either. Re-derive before claiming it again	/
 c3c22315d98f57b5e5a10dd73bd6ac8a933800d8	2015-01-08T18:52:23Z	- Added zero tag handling for Pillar actions.	pending		/
 e569c3ab39d4faf4ebac6fc87f7ce61e3a756e58	2015-01-08T18:59:03Z	Merge branch 'pillar_tag0' of https://github.com/edward-san/zdoom	pending		/
 67b68e6b486f06eebfce48dd57a64783c77ec93a	2015-01-08T19:00:43Z	Merge branch 'pillar_tag0' of https://github.com/edward-san/zdoom	pending		/
@@ -1447,8 +1447,8 @@ cf579e4c770cf7974d732ed9b850a2e06a00e2ad	2015-03-14T12:14:27Z	- removed unused '
 16ad440adb837a18bf50aeddf2c6d71bab7df613	2015-03-15T08:51:57Z	- fixed: The distance check in A_RadiusGive could overflow for large distances.	pending		/
 502120e78fc286fea41b5047375b627adaedc3cb	2015-03-15T08:53:24Z	Merge branch 'osx_newmb_res' of https://github.com/alexey-lysiuk/gzdoom	pending		/
 97947f9e109798e054940b6fc2c4cbf292c7321e	2015-03-15T10:42:59Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-fad3a54100fb216f512b4aeef06468afedd91f14	2015-03-15T11:10:22Z	- fixed positioning for sky textures that are less than 128 pixels tall.	ported	66abdae	66abdae
-7701d54b1fe378f09c16353b9d73a7a93deff6a6	2015-03-15T11:24:28Z	- fixed: associated dynamic lights took the sprite/frame info from the actor's current state instead of from the actor's current sprite and frame, which may differ in case some placeholder sprite is used in the state.	ported	66abdae	66abdae
+fad3a54100fb216f512b4aeef06468afedd91f14	2015-03-15T11:10:22Z	- fixed positioning for sky textures that are less than 128 pixels tall.	ported	66abdae | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	66abdae
+7701d54b1fe378f09c16353b9d73a7a93deff6a6	2015-03-15T11:24:28Z	- fixed: associated dynamic lights took the sprite/frame info from the actor's current state instead of from the actor's current sprite and frame, which may differ in case some placeholder sprite is used in the state.	ported	66abdae | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	66abdae
 bf6cdba0bbdfa2ee7874dbebe2e4974b8205596e	2015-03-17T05:07:50Z	Added -hashfiles command	pending		/
 ffbcda206cda9c5d4c0b35b3e779558868be03b9	2015-03-21T11:48:37Z	- allow oscillating for discretely defined animations as well, not just for ranged ones. - add random animations.	pending		/
 7dbabb5ee79afbf91ea4117d35d3b7d7acab6945	2015-03-21T12:08:08Z	- missed a NULL pointer check.	pending		/
@@ -1542,7 +1542,7 @@ a65c9bec40b27d9493fe116c53c63532362cd869	2015-04-04T08:37:31Z	- move video optio
 b0c0012d60b584d944528629a96f7c5384676539	2015-04-04T08:42:44Z	- add dynamic lights to editor number table and remove them from DECORATE definitions.	pending		/
 8b92c45f8478fa61b06fdf733f72beabdf8f26b4	2015-04-04T09:38:37Z	Fixed crash in lump filtering caused by uninitialized variables	pending		/
 67334bfa2bc26c641e1a9705db901af1b4889743	2015-04-04T10:35:10Z	- calculate weapon positions fully in floating point to avoid roundoff errors. - In order to get reliable results the empty border around scaled sprites must be the same scale as the sprite (i.e. 2 pixels for 2x scale and 4 pixels for 4x scale.)	ported	66abdae	66abdae
-91eafed5d374689537f98a16b2671af1f6d463b7	2015-04-04T11:37:55Z	- fixed coordinate calculations for trimmed sprites which were quite a bit broken.	ported	66abdae	66abdae
+91eafed5d374689537f98a16b2671af1f6d463b7	2015-04-04T11:37:55Z	- fixed coordinate calculations for trimmed sprites which were quite a bit broken.	pending	pending: was recorded ported against a renderer-staircase flight commit that touched none of its files, and a content check does not find the change in our tree either. Re-derive before claiming it again	/
 bd96adafda8499d6231c222ed338def7ebde5d66	2015-04-04T12:12:04Z	- cleanup	pending		/
 87229f47878bfc84d9543b80992f221f1fb01f4e	2015-04-04T12:12:13Z	Merge branch 'fix_filter_crash' of https://github.com/alexey-lysiuk/gzdoom	pending		/
 85ef1a11e924acc475241208775417b090c6e252	2015-04-04T12:13:37Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
@@ -1569,7 +1569,7 @@ ebd8f2410347477e774515a53ca402c64e765daa	2015-04-05T08:39:49Z	Fixed compilation 
 0ae74b844d4ab166ff1a32fe706dcc4da9771da5	2015-04-05T10:18:23Z	Merge branch 'osx_text_paste' of https://github.com/alexey-lysiuk/gzdoom	pending		/
 45526c276953355074f845f4531a741ddc542e5e	2015-04-05T16:55:21Z	- basics for using hardware clip planes to split translucent stuff by 3D floor planes.	ported	66abdae	66abdae
 cf7cb4f00f5bcfabfd229ff5650572269889e18f	2015-04-05T17:00:35Z	- use hardware clip planes to split translucent walls and sprites by 3D floor planes.	ported	66abdae	66abdae
-b45c88fc4f9af2808d0df5b9e7c2a53b3e723eda	2015-04-05T18:20:56Z	- changed shaders.	ported	66abdae	66abdae
+b45c88fc4f9af2808d0df5b9e7c2a53b3e723eda	2015-04-05T18:20:56Z	- changed shaders.	pending	pending: was recorded ported against a renderer-staircase flight commit that touched none of its files, and a content check does not find the change in our tree either. Re-derive before claiming it again	/
 a91997d12c41805421dd446fdd6a045b898857d9	2015-04-05T20:07:24Z	- fixed: Don't try to load autoload sections for empty section names.	pending		/
 62d036a63e12cdafb74ff617a5bd58444892284e	2015-04-06T01:24:49Z	Added gametype-based filter	pending		/
 c36222d2ef6c61e5d1693130d6311ff90df41ac6	2015-04-06T02:40:53Z	Externalized default key bindings	pending		/
@@ -1793,7 +1793,7 @@ c9214c1ce98ac5082fc323658e35f265d503c95d	2015-05-20T17:10:08Z	- Fixed: Hexen's s
 7f68d8826854ee9978e584ae25ad7945468c9ff6	2015-05-28T07:04:55Z	Merge pull request #332 from edward-san/pitch_fix	pending		/
 65cc361e9b1dc720950bc5f2e87bb526674260f3	2015-05-28T07:22:48Z	- added Zandronum's text input menu items.	pending		/
 c1e3c16232392d5d825da9adc7b06902c9f18703	2015-05-28T07:23:14Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-065b7f9ad27b66197bcd63111e9483593e67cd64	2015-05-29T10:03:50Z	- fixed: The CollectSectorStack functions had a local sector_t variable used by gl_FakeFlat which caused a stack overflow. Using the global one defined at the top of the file is ok here.	ported	66abdae	66abdae
+065b7f9ad27b66197bcd63111e9483593e67cd64	2015-05-29T10:03:50Z	- fixed: The CollectSectorStack functions had a local sector_t variable used by gl_FakeFlat which caused a stack overflow. Using the global one defined at the top of the file is ok here.	pending	pending: was recorded ported against a renderer-staircase flight commit that touched none of its files, and a content check does not find the change in our tree either. Re-derive before claiming it again	/
 22570e079e50eaf7c6e2c32f43dd4d8c3432bf8c	2015-06-02T17:10:45Z	* Added LAXTELEFRAGDMG. This flag forces all damage to be factored, regardless being above or below the telefrag threshold. - This only affects damage calculations being received by the end result. If the original damage was not a million or more, from the start, it will not hurt invulnerable-flagged or kill buddha-flagged monsters. - Fixed: Damage was inconsistent by the time the function checked for player cheats/invulnerability and (monster and player) buddha, yet monster invulnerability checked the original damage prior to factor processing. This means a damage source that intended to damage another below the threshold could accidentally increase with a powerdamage multiplier or the recipient with a weakness for it, resulting in invulnerability/buddha foiling. Now, checks for telefrag damage using the raw original value on player godmode, player/monster invulnerability and buddha.	pending		/
 4c390d92a4008bd1a6607df9d00ca4ca8b8c8d6e	2015-06-02T17:22:26Z	-...forgot this one.	pending		/
 c1bbd817629263e15b6ad0ce94f8e08258cb863f	2015-06-02T17:46:06Z	Merge pull request #333 from MajorCooke/laxtelefragdmg	pending		/
@@ -2665,7 +2665,7 @@ c9d81dff53d4983ad4376fa9b1a47b0b05bab6e8	2016-02-02T03:07:09Z	Use absolute value
 90dd6b61b45ff6049fac6491896bf84c0fa9b0ba	2016-02-02T08:29:23Z	Fixed build with Creative Labs OpenAL SDK	pending		/
 046541c7ef26f8299da02a87ef03b102d44e7336	2016-02-02T09:46:50Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 0db679c90d54de0beffcad7a672fc9908724f866	2016-02-02T09:53:56Z	- fixed clang compile error.	pending		/
-22e9fc9b7618d57a1f2b78ed9e361a7e726e33d4	2016-02-02T10:37:39Z	- re-fixed FTexture::CheckTrans	ported	9811962	9811962
+22e9fc9b7618d57a1f2b78ed9e361a7e726e33d4	2016-02-02T10:37:39Z	- re-fixed FTexture::CheckTrans	pending	pending: was recorded ported against a renderer-staircase flight commit that touched none of its files, and a content check does not find the change in our tree either. Re-derive before claiming it again	/
 d797415745ba2344d5e1964dfbe6b797cbf2211d	2016-02-02T10:58:00Z	- fixed: dynamic lights did not relink themselves when their position changed.	ported	9811962	9811962
 5d19901cb7f296690bf79d3636e43ce2aa0f65d1	2016-02-02T11:01:25Z	Merge pull request #529 from alexey-lysiuk/fix_creative_openal	pending		/
 df9c59bcff5270c8c855b87db8b0428ec71cbccd	2016-02-02T11:07:07Z	- moved gl_builddraw.cpp to a new 'unused' directory and also added gl_sections, which is needed by the Build algorithm to preprocess the level.	pending	#41-gated: the 3D-light-splitting rework is inseparable from the coordinate refactor / base-engine work in the 2.1.1 codebase.	/
