@@ -92,7 +92,7 @@ typedef struct
 	int		iServerRevision;
 
 	// [BB] String the server has sent to use to verify ban list packets.
-	std::string		MasterBanlistVerificationString;
+	std::string		RegistryBanlistVerificationString;
 
 	// [BB] Number that we send the server along with our verification request.
 	__int32 ServerVerificationInt;

@@ -82,15 +82,15 @@ enum BUFFERTYPE_e
 //*****************************************************************************
 enum
 {
-	MSC_BEGINSERVERLIST,
-	MSC_SERVER,
-	MSC_ENDSERVERLIST,
-	MSC_IPISBANNED,
-	MSC_REQUESTIGNORED,
-	MSC_WRONGVERSION,
-	MSC_BEGINSERVERLISTPART,
-	MSC_ENDSERVERLISTPART,
-	MSC_SERVERBLOCK,
+	RSC_BEGINSERVERLIST,
+	RSC_SERVER,
+	RSC_ENDSERVERLIST,
+	RSC_IPISBANNED,
+	RSC_REQUESTIGNORED,
+	RSC_WRONGVERSION,
+	RSC_BEGINSERVERLISTPART,
+	RSC_ENDSERVERLISTPART,
+	RSC_SERVERBLOCK,
 
 };
 
@@ -98,17 +98,17 @@ enum
 enum
 {
 	// Server is letting master server of its existence.
-	SERVER_MASTER_CHALLENGE = 5660020,
+	SERVER_REGISTRY_CHALLENGE = 5660020,
 
 	// [RC] This is no longer used.
 	/*
 		// Server is letting master server of its existence, along with sending an IP the master server
 		// should use for this server.
-		SERVER_MASTER_CHALLENGE_OVERRIDE = 5660021,
+		SERVER_REGISTRY_CHALLENGE_OVERRIDE = 5660021,
 	*/
 
 	// Server is sending some statistics to the master server.
-	SERVER_MASTER_STATISTICS = 5660022,
+	SERVER_REGISTRY_STATISTICS = 5660022,
 
 	// Server is sending its info to the launcher.
 	SERVER_LAUNCHER_CHALLENGE,
@@ -120,27 +120,27 @@ enum
 	SERVER_LAUNCHER_BANNED,
 
 	// Client is trying to create a new account with the master server.
-	CLIENT_MASTER_NEWACCOUNT,
+	CLIENT_REGISTRY_NEWACCOUNT,
 
 	// Client is trying to log in with the master server.
-	CLIENT_MASTER_LOGIN,
+	CLIENT_REGISTRY_LOGIN,
 
 	// [BB] Launcher is querying the master server for a full server list, possibly split into several packets.
-	LAUNCHER_MASTER_CHALLENGE,
+	LAUNCHER_REGISTRY_CHALLENGE,
 
-	// [BB] Server is answering a MasterBanlistVerificationString verification request.
-	SERVER_MASTER_VERIFICATION,
+	// [BB] Server is answering a RegistryBanlistVerificationString verification request.
+	SERVER_REGISTRY_VERIFICATION,
 
 	// [BB] Server is acknowledging the receipt of a ban list.
-	SERVER_MASTER_BANLIST_RECEIPT,
+	SERVER_REGISTRY_BANLIST_RECEIPT,
 
 	// [SB] Server is sending a launcher a segmented response.
 	// Skipped 5660031 for compatiblity with old segmented implementation.
 	SERVER_LAUNCHER_CHALLENGE_SEGMENTED = 5660032,
 };
 
-// [BB] Protocol version of the master server, currently only used in conjunction with LAUNCHER_MASTER_CHALLENGE.
-#define MASTER_SERVER_VERSION		2
+// [BB] Protocol version of the master server, currently only used in conjunction with LAUNCHER_REGISTRY_CHALLENGE.
+#define REGISTRY_VERSION		2
 
 // Launcher is querying the server, or master server.
 #define	LAUNCHER_SERVER_CHALLENGE	199
@@ -148,16 +148,16 @@ enum
 enum
 {
 	// Master server is sending its banlist to a server.
-	MASTER_SERVER_BANLIST = 205,
+	REGISTRY_BANLIST = 205,
 
-	// [BB] Master is asking the server to verify its MasterBanlistVerificationString.
-	MASTER_SERVER_VERIFICATION,
+	// [BB] Master is asking the server to verify its RegistryBanlistVerificationString.
+	REGISTRY_VERIFICATION,
 
 	// [BB] Master server is sending a part of its banlist to a server.
-	MASTER_SERVER_BANLISTPART,
+	REGISTRY_BANLISTPART,
 };
 
-// [BB] Various enums used in MASTER_SERVER_BANLISTPART packets.
+// [BB] Various enums used in REGISTRY_BANLISTPART packets.
 enum
 {
 	MSB_BAN,
@@ -168,7 +168,7 @@ enum
 
 #define	DEFAULT_SERVER_PORT			10666
 #define	DEFAULT_CLIENT_PORT			10667
-#define	DEFAULT_MASTER_PORT			15300
+#define	DEFAULT_REGISTRY_PORT			15300
 #define	DEFAULT_BROADCAST_PORT		15101
 #define	DEFAULT_STATS_PORT			15201
 
