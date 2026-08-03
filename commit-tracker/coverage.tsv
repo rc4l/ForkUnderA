@@ -544,7 +544,7 @@ a97b58fa27e648afff6f6097896957ba6db0f4d9	2014-08-02T18:41:13Z	- added check for 
 a63871d1709beedb4a8ec34a2f81733e491bdb3d	2014-08-02T19:06:34Z	- at least for Intel GMA we need shaders without 'discard' to render non-transparent stuff. The performance penalty is rather hefty here.	ported	930ff9e	930ff9e
 cd5e429d3b0251b3d6da23e64e2a0d59cd2b9499	2014-08-02T21:12:08Z	- adjust version number.	pending		/
 eef4d1fac18e6918fe8f82c180d846c01e49894c	2014-08-02T23:17:15Z	Merge branch 'fix_build_nonmsvc' of https://github.com/alexey-lysiuk/gzdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
-a1b579e5fccd16b7aaf73d0bb0c8c4018fc11830	2014-08-02T23:20:12Z	- added menu entry for newly added hud_showweapons CVAR.	pending		/
+a1b579e5fccd16b7aaf73d0bb0c8c4018fc11830	2014-08-02T23:20:12Z	- added menu entry for newly added hud_showweapons CVAR.	ported	ported: menudef entry for hud_showweapons (CRLF lump, edited in binary)	9c60e30
 d0043bed78082c7faf749236c9939d90a081b25e	2014-08-03T03:35:57Z	Q&D port of decal code to draw generic wall sprites	skip	skip: software renderer only -- touches r_bsp/r_segs/r_things, none of which exist in our tree (GL-only build). Re-verify if a software renderer is ever added	/
 1d02ad3aa208723d64ff1e7fd837afb33de663db	2014-08-03T03:40:02Z	Merge branch 'master' of github.com:rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 1b55c17379457d10c273a4bdb34afc3dc406c446	2014-08-03T08:08:05Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
@@ -596,7 +596,7 @@ f0eccb9d1541ea1fefcc82cdd02a0b7b2dc73fbe	2014-08-11T08:08:49Z	- BlueShadow's sub
 f482dc094df50a6bf4ae5608dbb564a18bc864fd	2014-08-11T10:27:04Z	fixed: R_PointOnSideSlow had precision issues with very short lines.	ported	ported: already present -- R_PointOnSideSlow already computes left/right as doubles for the short-linedef precision case. Inherited	zandronum-base
 c30cfb3190c08ed866362926e458b8b2be936c55	2014-08-11T11:18:21Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 5d6ef5cb16780f018bcbfdf153c95af1821757e9	2014-08-11T11:19:42Z	Merge branch 'master' into v2.x	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
-b461000795f3c52beed13f90498c2cf80d1a839e	2014-08-13T19:46:08Z	Fixed crash on opening 7z/LZMA archives, x64 only	pending		/
+b461000795f3c52beed13f90498c2cf80d1a839e	2014-08-13T19:46:08Z	Fixed crash on opening 7z/LZMA archives, x64 only	ported	ported: lzma CpuArch.c PIC branch gated on __i386__; its inline asm is i386-only and crashed x86_64 when opening 7z/LZMA archives	9c60e30
 cbe6cf2d411bd3efd5e32de3722aa41768493759	2014-08-16T10:28:55Z	Merge branch 'master' of https://github.com/rheit/zdoom into z_osx_clean	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 9479a89b667af93028e1ea7690431a15f0f48b25	2014-08-16T10:55:05Z	Fixed crash on Release targets	ported	ported: APPLE excluded from the omit-frame-pointer flag; Clang on OS X needs them for exception handling	498ef5c
 38796e7714730ba4836720ef4023b3234fb53e03	2014-08-17T09:41:03Z	- removed some obsolete and useless GL calls.	ported	930ff9e	930ff9e
@@ -615,7 +615,7 @@ eebd5c9d4da705d6fed48cafd21b38a90c54ac7b	2014-08-21T11:38:47Z	- fixed bad edit i
 7a727b68079c94441b759a8fdbbe5c7bae1c879c	2014-08-21T11:44:41Z	Merge branch 'master' into v2.x	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 1050013017a5c37814269f6823cafb0df5b0d49d	2014-08-22T21:50:38Z	major cleanup of the texture manager:	adapted	39fea74	39fea74
 bf6079af4693bb1e486da4620c4629d9bee730ae	2014-08-22T22:47:05Z	- fixed incorrect check for overrideshader.	ported	39fea74	39fea74
-5364116354303317922427a8f12764b0846c49ca	2014-08-23T11:24:15Z	- fixed: APROP_Friendly did not manage monster counting correctly.	pending		/
+5364116354303317922427a8f12764b0846c49ca	2014-08-23T11:24:15Z	- fixed: APROP_Friendly did not manage monster counting correctly.	ported	ported: CountsAsKill() now evaluated either side of the MF_FRIENDLY change so level.total_monsters stays correct in both directions. No new SERVERCOMMANDS -- total_monsters already reaches clients via sv_commands.cpp:3966 and this only fixes the server-side value	9c60e30
 51d7340288e477d8f44af7992ec2fee439105f6e	2014-08-23T13:35:05Z	Fixed crash on music volume change when no track is played using FluidSynth device	ported	ported: both MIDI->FakeVolume() calls guarded with MIDI != NULL; it is null when no track is playing	498ef5c
 904cc2e158593ca26dcf9698dfc42aca694c0f53	2014-08-23T16:54:24Z	- some code cleanup.	ported	39fea74	39fea74
 bf03d022280a82f27bf947b5854a8f4edbf2d741	2014-08-23T23:09:44Z	- print OpenGL profile type in startup log.	ported	ported: startup log reports the GL profile (Core/Compatibility) alongside GL_VERSION. AUDIT CORRECTION -- previously claimed ported; the profile suffix was absent	a1e8c8d
