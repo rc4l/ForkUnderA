@@ -64,6 +64,13 @@
 #include "features/fua-branding/computation/fua_version_compute.h"   // [rc4l] FUA title
 #include "features/hwrender/computation/glcontext_compute.h"        // [rc4l] GL profile chain
 
+// [rc4l] video-scale: client size vs render size (v_video.cpp).
+extern int zx_pendingClientWidth, zx_pendingClientHeight;
+
+// [rc4l] windowed-video: the persisted windowed size, updated on resize.
+EXTERN_CVAR (Int, vid_defwidth)
+EXTERN_CVAR (Int, vid_defheight)
+
 #include "gl/system/gl_system.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/renderer/gl_renderer.h"
@@ -177,11 +184,15 @@ namespace
 // ---------------------------------------------------------------------------
 
 
-@interface CocoaWindow : NSWindow
+@interface CocoaWindow : NSWindow<NSWindowDelegate>
 {
 }
 
 - (BOOL)canBecomeKeyWindow;
+
+// [rc4l] windowed-video: Cocoa has no SDL_WINDOWEVENT_SIZE_CHANGED, so the window is its own
+// delegate and reports resizes itself.
+- (void)windowDidResize:(NSNotification*)notification;
 
 @end
 
@@ -191,6 +202,37 @@ namespace
 - (BOOL)canBecomeKeyWindow
 {
 	return true;
+}
+
+// [rc4l] windowed-video: the window was resized by dragging an edge, or by vid_setsize. Persist the
+// new size so it reopens the same, matching what posix/sdl/i_input.cpp does on
+// SDL_WINDOWEVENT_SIZE_CHANGED. The render target follows the drawable live via
+// OpenGLFrameBuffer::MaybeResizeForScale, so nothing else is needed here.
+// See features/windowed-video.
+- (void)windowDidResize:(NSNotification*)notification
+{
+	(void)notification;
+
+	extern bool zx_videoScaleDirty;
+	zx_videoScaleDirty = true; // re-check the render size against the new drawable
+
+	if (NULL == screen || screen->IsFullscreen())
+	{
+		return;
+	}
+
+	// Backing pixels, per the invariant in posix/README.md -- vid_defwidth/height are pixels, and
+	// the frame is in points.
+	const NSRect content = [[self contentView] frame];
+	const NSSize pixels  = vid_hidpi
+		? [[self contentView] convertSizeToBacking:content.size]
+		: content.size;
+
+	if (pixels.width > 0.0 && pixels.height > 0.0)
+	{
+		vid_defwidth  = static_cast<int>(pixels.width );
+		vid_defheight = static_cast<int>(pixels.height);
+	}
 }
 
 @end
@@ -724,7 +766,14 @@ void CocoaVideo::SetWindowedMode(const int width, const int height)
 	rbOpts.shiftX = 0.0f;
 	rbOpts.shiftY = 0.0f;
 
-	const NSSize windowPixelSize = NSMakeSize(width, height);
+	// [rc4l] video-scale: the OS window is the CLIENT size; the render size (width/height above,
+	// already stored in rbOpts) may be smaller when internal-resolution scaling is on. Both are in
+	// BACKING PIXELS -- see the invariant in posix/README.md -- and only setContentSize: below
+	// converts to points. See features/video-scale.
+	const int clientW = (zx_pendingClientWidth  > 0) ? zx_pendingClientWidth  : width;
+	const int clientH = (zx_pendingClientHeight > 0) ? zx_pendingClientHeight : height;
+
+	const NSSize windowPixelSize = NSMakeSize(clientW, clientH);
 	const NSSize windowSize = vid_hidpi
 		? [[m_window contentView] convertSizeFromBacking:windowPixelSize]
 		: windowPixelSize;
@@ -743,6 +792,12 @@ void CocoaVideo::SetWindowedMode(const int width, const int height)
 		}
 
 		[m_window setHidesOnDeactivate:NO];
+	}
+
+	// [rc4l] windowed-video: self-delegating so windowDidResize: fires.
+	if (nil == [m_window delegate])
+	{
+		[m_window setDelegate:m_window];
 	}
 
 	[m_window setContentSize:windowSize];
