@@ -96,7 +96,11 @@ def enum_values(cls, enum):
                 else:
                     out.append((raw, nxt))
                     nxt = nxt + 1 if isinstance(nxt, int) else nxt
-            return out, os.path.relpath(path, ROOT)
+            # [rc4l] Normalise to forward slashes: os.path.relpath yields backslashes on Windows, so
+            # the recorded path differed from the committed golden (generated on Linux/macOS) and
+            # every Windows contributor was told "A WIRE-CARRIED ENUM CHANGED VALUE" when nothing
+            # had -- only the separator. CI never saw it, which is exactly why it went unnoticed.
+            return out, os.path.relpath(path, ROOT).replace(os.sep, "/")
     return None, None
 
 
