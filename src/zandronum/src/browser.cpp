@@ -67,19 +67,19 @@
 static	SERVER_t		g_BrowserServerList[MAX_BROWSER_SERVERS];
 
 // Address of master server.
-static	NETADDRESS_s	g_AddressRegistryServer;
+static	NETADDRESS_s	g_AddressServerRegistry;
 
 // Message buffer for sending messages to the master server.
-static	NETBUFFER_s		g_RegistryServerBuffer;
+static	NETBUFFER_s		g_ServerRegistryBuffer;
 
 // Message buffer for sending messages to each individual server.
 static	NETBUFFER_s		g_ServerBuffer;
 
 // Port the master server is located on.
-static	USHORT			g_usRegistryPort;
+static	USHORT			g_usServerRegistryPort;
 
 // Are we waiting for master server response?
-static	bool			g_bWaitingForRegistryResponse;
+static	bool			g_bWaitingForServerRegistryResponse;
 
 // [CW] The amount of teams sent to us.
 static ULONG			g_ulNumberOfTeams = 0;
@@ -98,10 +98,10 @@ void BROWSER_Construct( void )
 {
 	const char *pszPort;
 
-	g_bWaitingForRegistryResponse = false;
+	g_bWaitingForServerRegistryResponse = false;
 
 	// Setup our master server message buffer.
-	g_RegistryServerBuffer.Init( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
+	g_ServerRegistryBuffer.Init( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
 
 	// Setup our server message buffer.
 	g_ServerBuffer.Init( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
@@ -110,11 +110,11 @@ void BROWSER_Construct( void )
 	pszPort = Args->CheckValue( "-masterport" );
     if ( pszPort )
     {
-       g_usRegistryPort = atoi( pszPort );
-       Printf( PRINT_HIGH, "Alternate master server port: %d.\n", g_usRegistryPort );
+       g_usServerRegistryPort = atoi( pszPort );
+       Printf( PRINT_HIGH, "Alternate master server port: %d.\n", g_usServerRegistryPort );
     }
 	else 
-	   g_usRegistryPort = DEFAULT_REGISTRY_PORT;
+	   g_usServerRegistryPort = DEFAULT_SERVERREGISTRY_PORT;
 
 	// Initialize the browser list.
 	BROWSER_ClearServerList( );
@@ -128,7 +128,7 @@ void BROWSER_Construct( void )
 void BROWSER_Destruct( void )
 {
 	// Free our local buffers.
-	g_RegistryServerBuffer.Free();
+	g_ServerRegistryBuffer.Free();
 	g_ServerBuffer.Free();
 }
 
@@ -415,12 +415,12 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 }
 
 //*****************************************************************************
-// [BB] Returns true if the server list packet was terminated by RSC_ENDSERVERLIST,
+// [BB] Returns true if the server list packet was terminated by SRSC_ENDSERVERLIST,
 // else it returns false.
 bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 {
 	// No longer waiting for a master server response.
-	g_bWaitingForRegistryResponse = false;
+	g_bWaitingForServerRegistryResponse = false;
 
 	while ( true )
 	{
@@ -428,7 +428,7 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 
 		switch ( lCommand )
 		{
-		case RSC_SERVER:
+		case SRSC_SERVER:
 			{
 				// Read in address information.
 				NETADDRESS_s serverAddress;
@@ -438,7 +438,7 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 			}
 			break;
 
-		case RSC_SERVERBLOCK:
+		case SRSC_SERVERBLOCK:
 			{
 				// Read in address information.
 				NETADDRESS_s serverAddress;
@@ -456,10 +456,10 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 			}
 			break;
 
-		case RSC_ENDSERVERLISTPART:
+		case SRSC_ENDSERVERLISTPART:
 			return false;
 
-		case RSC_ENDSERVERLIST:
+		case SRSC_ENDSERVERLIST:
 			return true;
 
 		default:
@@ -799,30 +799,30 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 
 //*****************************************************************************
 //
-void BROWSER_QueryRegistryServer( void )
+void BROWSER_QueryServerRegistry( void )
 {
 	// We are currently waiting to hear back from the master server.
-	g_bWaitingForRegistryResponse = true;
+	g_bWaitingForServerRegistryResponse = true;
 
 	// Setup the master server IP.
-	g_AddressRegistryServer.LoadFromString( fua_serverregistry_host );
-	g_AddressRegistryServer.SetPort( g_usRegistryPort );
+	g_AddressServerRegistry.LoadFromString( fua_serverregistry_host );
+	g_AddressServerRegistry.SetPort( g_usServerRegistryPort );
 
 	// Clear out the buffer, and write out launcher challenge.
-	g_RegistryServerBuffer.Clear();
-	g_RegistryServerBuffer.ByteStream.WriteLong( LAUNCHER_REGISTRY_CHALLENGE );
-	g_RegistryServerBuffer.ByteStream.WriteShort( REGISTRY_VERSION );
+	g_ServerRegistryBuffer.Clear();
+	g_ServerRegistryBuffer.ByteStream.WriteLong( LAUNCHER_SERVERREGISTRY_CHALLENGE );
+	g_ServerRegistryBuffer.ByteStream.WriteShort( SERVERREGISTRY_VERSION );
 
 	// Send the master server our packet.
-//	NETWORK_LaunchPacket( &g_RegistryServerBuffer, g_AddressRegistryServer, true );
-	NETWORK_LaunchPacket( &g_RegistryServerBuffer, g_AddressRegistryServer );
+//	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistry, true );
+	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistry );
 }
 
 //*****************************************************************************
 //
-bool BROWSER_WaitingForRegistryResponse( void )
+bool BROWSER_WaitingForServerRegistryResponse( void )
 {
-	return ( g_bWaitingForRegistryResponse );
+	return ( g_bWaitingForServerRegistryResponse );
 }
 
 //*****************************************************************************

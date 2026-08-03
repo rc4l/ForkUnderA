@@ -285,7 +285,7 @@ void settings_Dialog_SaveSettings( )
 	GetDlgItemText( hDlg, IDC_EMAIL, szBuffer, 1024 );
 	sv_hostemail = szBuffer;
 
-	sv_fua_serverregistry_announce = !!SendDlgItemMessage( hDlg, IDC_UPDATEREGISTRY, BM_GETCHECK, 0, 0 );
+	sv_fua_serverregistry_announce = !!SendDlgItemMessage( hDlg, IDC_UPDATESERVERREGISTRY, BM_GETCHECK, 0, 0 );
 	sv_broadcast = !!SendDlgItemMessage( hDlg, IDC_BROADCAST, BM_GETCHECK, 0, 0 );
 	sv_motd = g_fsMOTD;
 
@@ -616,7 +616,7 @@ BOOL CALLBACK settings_ServerTab_Callback( HWND hDlg, UINT Message, WPARAM wPara
 		SetDlgItemText( hDlg, IDC_SERVERNAME, sv_hostname.GetGenericRep( CVAR_String ).String );
 		SetDlgItemText( hDlg, IDC_EMAIL, sv_hostemail.GetGenericRep( CVAR_String ).String );
 		SetDlgItemText( hDlg, IDC_WADURL, sv_website.GetGenericRep( CVAR_String ).String );
-		SendDlgItemMessage( hDlg, IDC_UPDATEREGISTRY, BM_SETCHECK, ( sv_fua_serverregistry_announce ? BST_CHECKED : BST_UNCHECKED ), 0 );
+		SendDlgItemMessage( hDlg, IDC_UPDATESERVERREGISTRY, BM_SETCHECK, ( sv_fua_serverregistry_announce ? BST_CHECKED : BST_UNCHECKED ), 0 );
 		SendDlgItemMessage( hDlg, IDC_BROADCAST, BM_SETCHECK, ( sv_broadcast ? BST_CHECKED : BST_UNCHECKED ), 0 );
 		g_fsMOTD = sv_motd.GetGenericRep( CVAR_String ).String;
 
@@ -967,4 +967,4 @@ BOOL CALLBACK settings_AccessTab_Callback( HWND hDlg, UINT Message, WPARAM wPara
 	return FALSE;
 }
 
-#endif
+#endif

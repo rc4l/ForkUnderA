@@ -15,6 +15,6 @@
 
 # [rc4l] .git is admitted so updaterevision can stamp the real revision into the banner; it is the
 # largest single item in the context (~61 MB) but keeps the running daemon self-identifying, which
-# matters when several masters federate and you need to know which build one is. Drop this line if
+# matters when several registries federate and you need to know which build one is. Drop this line if
 # you would rather have a faster build than an accurate `Revision:` line.
 !.git
