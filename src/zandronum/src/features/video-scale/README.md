@@ -29,14 +29,20 @@ at the render/virtual size, and a single `glBlitFramebuffer(..., GL_LINEAR)` tha
 fill the window each frame. One GPU blit per frame — negligible cost. The default (Native, factor
 1.0) skips the FBO entirely and renders straight to the backbuffer, byte-for-byte the old path.
 
-### Event-driven resize (performance)
+### Per-frame resize reconcile
 
-The per-frame present path must never call `GetClientSize` -> `SDL_GL_GetDrawableSize`, which is an
-expensive Cocoa/Metal query on macOS. So the render-size re-check is **event-driven**:
-`MaybeResizeForScale` only queries + resizes when `zx_videoScaleDirty` is raised (a mode set, a
-window resize, or a scale-CVAR change); the client size is cached in `UpdateScaleBuffer`. The scale
-FBO is active only when scaling is actually requested (render size != client size), so 2D-only
-frames (menus, the console) render straight to the backbuffer with no extra blit.
+`MaybeResizeForScale` compares the render size against the client size **every frame** and resizes
+when they differ, exactly as upstream's `OpenGLFrameBuffer::Update` does (uzdoom@c3702ae9e).
+
+This used to be gated on a `zx_videoScaleDirty` flag, because the client-size query then went
+through `SDL_GL_GetDrawableSize`, an expensive Cocoa/Metal call on macOS. That reasoning died with
+the SDL backend -- the Cocoa path reads the view's backing bounds, which is cheap. The gate was also
+wrong: any resize that did not raise the flag (a window drag, a fullscreen toggle, an OS-driven
+resize) left the render target stale with no way to notice. Comparing the sizes *is* the check, so
+the flag was removed rather than left unread.
+
+The scale FBO is active only when scaling is actually requested (render size != client size), so
+2D-only frames (menus, the console) render straight to the backbuffer with no extra blit.
 
 (An earlier experiment forced the FBO always-on on macOS to dodge the GL-on-Metal drawable stall for
 the 3D scene; it hurt pure-2D frames and was reverted. The deeper macOS GL-on-Metal frame-rate

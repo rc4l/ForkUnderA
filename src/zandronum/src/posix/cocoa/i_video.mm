@@ -892,11 +892,9 @@ void CocoaVideo::ResizeWindow(const int width, const int height)
 // [rc4l] windowed-video: the drawable changed.
 //
 // Upstream needs no equivalent: their CocoaView is an NSOpenGLView, which updates its GL context on
-// frame change by itself, and their engine reads the client size every frame. Ours re-checks only
-// when zx_videoScaleDirty is raised (an [rc4l] optimisation, because the equivalent SDL query was
-// expensive here), so on this backend the event must be raised by hand -- and rbOpts, which the
-// Cocoa backend uses for render-buffer geometry, has to come along or the re-check compares against
-// stale values.
+// frame change by itself. Ours is a plain NSView, so the context must be told by hand -- and rbOpts,
+// which the Cocoa backend uses for render-buffer geometry, has to come along or the per-frame
+// reconcile in MaybeResizeForScale compares against stale values.
 void CocoaVideo::OnWindowResized()
 {
 	if (NULL == screen || m_fullscreen)
@@ -922,9 +920,6 @@ void CocoaVideo::OnWindowResized()
 	[[NSOpenGLContext currentContext] update];
 
 	glViewport(0, 0, static_cast<GLsizei>(viewSize.width), static_cast<GLsizei>(viewSize.height));
-
-	extern bool zx_videoScaleDirty;
-	zx_videoScaleDirty = true;
 
 	vid_defwidth  = static_cast<int>(viewSize.width );
 	vid_defheight = static_cast<int>(viewSize.height);
