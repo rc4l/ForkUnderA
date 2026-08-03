@@ -11,7 +11,7 @@
 # The build job is NOT release-only. It also runs on pull requests that touch the daemon or the
 # protocol sources it shares with the engine, because the failure this guards against is exactly the
 # one windows-fast-build.yml suffered: a path filter narrow enough that a source-side change could
-# invalidate the artefact without any workflow noticing for eleven days. master-97 compiles
+# invalidate the artefact without any workflow noticing for eleven days. zandrox-registry compiles
 # networkshared.cpp and the huffman codec straight out of the engine tree, so those paths are the
 # coupling and they are listed here.
 name: master server image
@@ -24,8 +24,8 @@ on:
       - Dockerfile.master
       - Dockerfile.master.dockerignore
       - .github/workflows/master-image.yml
-      - src/zandronum/masterserver/**
-      # The protocol surface master-97 shares with the engine:
+      - src/zandronum/registry/**
+      # The protocol surface zandrox-registry shares with the engine:
       - src/zandronum/src/networkshared.cpp
       - src/zandronum/src/networkshared.h
       - src/zandronum/src/platform.cpp
@@ -98,7 +98,7 @@ jobs:
           sleep 5
           docker logs master
           if [ "$(docker inspect -f '{{.State.Running}}' master)" != "true" ]; then
-            echo "::error::master-97 exited instead of staying up"
+            echo "::error::zandrox-registry exited instead of staying up"
             exit 1
           fi
           docker logs master 2>&1 | grep -q "Master server started" \

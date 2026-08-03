@@ -36,7 +36,7 @@ if( NOT STRNICMP_EXISTS )
    add_definitions( -Dstrnicmp=strncasecmp )
 endif( NOT STRNICMP_EXISTS )
 
-add_executable( master-97
+add_executable( zandrox-registry
 	main.cpp
 	network.cpp
 	${ZAN_DIR}/gitinfo.cpp
@@ -58,9 +58,9 @@ add_executable( master-97
 # build, and the guard would silently drop a dependency the engine needs. add_dependencies resolves
 # at generate time, so the forward reference below is fine.
 if( NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR )
-	add_dependencies( master-97 revision_check )
+	add_dependencies( zandrox-registry revision_check )
 endif()
 
 if( WIN32 )
-	target_link_libraries( master-97 ws2_32 winmm )
+	target_link_libraries( zandrox-registry ws2_32 winmm )
 endif( WIN32 )
