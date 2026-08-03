@@ -2179,7 +2179,10 @@ void Net_DoCommand (int type, BYTE **stream, int player)
 		{
 			DWORD which = ReadLong (stream);
 
-			if (gamestate == GS_LEVEL && !paused)
+			// [rc4l] uzdoom@202076996: a dead player must not use or drop inventory -- doing so is
+			// what let a telefragged buddha player exit as a zombie.
+			if (gamestate == GS_LEVEL && !paused
+				&& players[player].playerstate != PST_DEAD)
 			{
 				AInventory *item = players[player].mo->Inventory;
 				while (item != NULL && item->InventoryID != which)
