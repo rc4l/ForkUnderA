@@ -48,7 +48,13 @@ add_executable( master-97
 	${ZAN_DIR}/huffman/huffman.cpp
 )
 
-add_dependencies( master-97 revision_check )
+# [rc4l] revision_check lives in the parent (engine) project and regenerates src/gitinfo.h. When this
+# directory is configured on its own -- which the container image does, to avoid pulling in SDL/GL/
+# OpenAL just to build a UDP daemon -- that target does not exist, so depend on it only when it does.
+# A standalone build is then responsible for providing src/gitinfo.h itself (see Dockerfile.master).
+if( TARGET revision_check )
+	add_dependencies( master-97 revision_check )
+endif()
 
 if( WIN32 )
 	target_link_libraries( master-97 ws2_32 winmm )
