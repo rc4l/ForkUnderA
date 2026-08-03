@@ -16,16 +16,19 @@ jobs:
       - name: Install the OpenAL dependency set (vcpkg)
         shell: pwsh
         run: |
+          # [rc4l] glew belongs here, not just in windows_compile.ps1's static set: src/CMakeLists.txt
+          # has required GLEW for every client build since d2e4479 (staircase flight 1), so a
+          # windows_assets/ without it cannot configure at all.
           & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install `
             openal-soft:x64-windows libsndfile:x64-windows mpg123:x64-windows `
-            opus:x64-windows openssl:x64-windows
+            opus:x64-windows openssl:x64-windows glew:x64-windows
 
       - name: Export and trim to a committable tree
         shell: pwsh
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" export `
             openal-soft:x64-windows libsndfile:x64-windows mpg123:x64-windows `
-            opus:x64-windows openssl:x64-windows `
+            opus:x64-windows openssl:x64-windows glew:x64-windows `
             --raw --output=export --output-dir="$PWD"
           $src = "$PWD/export/installed/x64-windows"
           # [rc4l] Only release include/lib/bin ship; debug/ (>100 MB), share/ and tools/ do not.
