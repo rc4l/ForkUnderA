@@ -42,7 +42,7 @@
 // File created:  8/27/03
 //
 //
-// Filename: sv_registry.cpp
+// Filename: sv_serverregistry.cpp
 //
 // Description: Server-to-Master and Server-to-Launcher protocol.
 //

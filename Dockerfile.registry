@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 
-# [rc4l] Container image for the ZandroX server registry (zandrox-registry).
+# [rc4l] Container image for the ZandroX server registry (zandrox-server-registry).
 #
 # The master is a small UDP daemon: game servers heartbeat it every 30s, it expires them after 60s,
 # and launchers ask it for the address list. It holds no database and no disk state beyond the
@@ -11,7 +11,7 @@
 # networkshared.cpp and huffman codec -- master and engine share the wire format, and splitting them
 # would let the two drift apart silently.
 #
-# Deliberately configured as a standalone CMake project (src/zandronum/registry) instead of the
+# Deliberately configured as a standalone CMake project (src/zandronum/server-registry) instead of the
 # engine's: the daemon needs no SDL, GL, OpenAL or game data, and configuring the full project would
 # drag all of that into an image that only ever opens a socket.
 
@@ -32,7 +32,7 @@ COPY . .
 RUN cc -O2 -o /tmp/updaterevision src/zandronum/tools/updaterevision/updaterevision.c \
     && cd src/zandronum && /tmp/updaterevision src/gitinfo.h
 
-RUN cmake -S src/zandronum/registry -B /tmp/build -DCMAKE_BUILD_TYPE=Release \
+RUN cmake -S src/zandronum/server-registry -B /tmp/build -DCMAKE_BUILD_TYPE=Release \
     && cmake --build /tmp/build --parallel
 
 # ---- runtime -------------------------------------------------------------------------------------
@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --home-dir /data --shell /usr/sbin/nologin master
 
-COPY --from=build /tmp/build/zandrox-registry /usr/local/bin/zandrox-registry
+COPY --from=build /tmp/build/zandrox-server-registry /usr/local/bin/zandrox-server-registry
 
 # [rc4l] The daemon reads its four optional IP lists from the working directory and re-reads them
 # every 15 minutes, so editing a mounted file applies without a restart:
@@ -73,4 +73,4 @@ EXPOSE 15300/udp
 # an empty list still means "this server will honour bans I add later".
 #
 # Pass -DontHideBanIgnoringServers as the command to run a permissive master instead.
-ENTRYPOINT ["/usr/local/bin/zandrox-registry"]
+ENTRYPOINT ["/usr/local/bin/zandrox-server-registry"]
