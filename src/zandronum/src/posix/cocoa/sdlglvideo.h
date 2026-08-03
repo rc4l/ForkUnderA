@@ -1,0 +1,109 @@
+/*
+ ** sdlglvideo.h
+ **
+ **---------------------------------------------------------------------------
+ ** Copyright 2012-2014 Alexey Lysiuk
+ ** All rights reserved.
+ **
+ ** Redistribution and use in source and binary forms, with or without
+ ** modification, are permitted provided that the following conditions
+ ** are met:
+ **
+ ** 1. Redistributions of source code must retain the above copyright
+ **    notice, this list of conditions and the following disclaimer.
+ ** 2. Redistributions in binary form must reproduce the above copyright
+ **    notice, this list of conditions and the following disclaimer in the
+ **    documentation and/or other materials provided with the distribution.
+ ** 3. The name of the author may not be used to endorse or promote products
+ **    derived from this software without specific prior written permission.
+ **
+ ** THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ ** IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ ** OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ ** IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ ** INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ ** NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ ** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ ** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ ** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ ** THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ **---------------------------------------------------------------------------
+ **
+ */
+
+
+// IMPORTANT NOTE!
+// This file was intentially named sdlglvideo.h but it has nothing with SDL
+// The name was selected to avoid spreding of changes over the project
+// The same applies to SDLGLFB class
+// See gl/system/gl_framebuffer.h for details about its usage
+
+
+#ifndef COCOA_SDLGLVIDEO_H_INCLUDED
+#define COCOA_SDLGLVIDEO_H_INCLUDED
+
+#include "v_video.h"
+
+#include "gl/shaders/gl_shader.h"
+#include "gl/textures/gl_hwtexture.h"
+
+
+class SDLGLFB : public DFrameBuffer
+{
+	// [rc4l] Our gl/system/gl_framebuffer.h declares DECLARE_CLASS(OpenGLFrameBuffer, SDLGLFB),
+	// which needs SDLGLFB to be a registered DObject type. Upstream had already shed this by
+	// 2016; our base is ZDoom 2.8pre, where it is still required. Without it the failure is a
+	// link error a long way from the cause.
+	DECLARE_CLASS(SDLGLFB, DFrameBuffer)
+public:
+	// This must have the same parameters as the Windows version, even if they are not used!
+	SDLGLFB(void *hMonitor, int width, int height, int, int, bool fullscreen);
+
+	// [rc4l] uzdoom@c817979ea removed GetTrueHeight upstream; we do not take that commit, because
+	// gl/renderer/gl_renderer.cpp:270 and gl/system/gl_framebuffer.cpp:193,218 still call it --
+	// nine sites in total. Restored exactly as upstream's own 3816b4693 had it.
+	int GetTrueHeight() { return GetHeight(); }
+
+	// [rc4l] Same spelling as SDLGLVideo::IsCoreProfile() on the other backend, so a legacy-renderer
+	// gate can ask either one without caring which is built. Declared at the end of the class to
+	// keep the conflict surface with future upstream diffs small.
+	static bool IsCoreProfile();
+
+	// [rc4l] windowed-video: overrides DFrameBuffer::SetWindowSize (a base no-op). vid_setsize and
+	// the menu's "Apply windowed size" reach the backend only through this virtual.
+	virtual void SetWindowSize(int w, int h);
+	~SDLGLFB();
+
+	virtual bool Lock(bool buffered = true);
+	virtual void Unlock();
+	virtual bool IsLocked();
+
+	virtual bool IsFullscreen();
+	virtual void SetVSync(bool vsync);
+
+	int GetClientWidth();
+	int GetClientHeight();
+
+protected:
+	int                 m_lock;
+	bool                m_isUpdatePending;
+
+	static const uint32_t GAMMA_CHANNEL_SIZE = 256;
+	static const uint32_t GAMMA_CHANNEL_COUNT = 3;
+	static const uint32_t GAMMA_TABLE_SIZE = GAMMA_CHANNEL_SIZE * GAMMA_CHANNEL_COUNT;
+
+	bool				m_supportsGamma;
+	WORD				m_originalGamma[GAMMA_TABLE_SIZE];
+
+	SDLGLFB();
+
+	void InitializeState();
+
+	bool CanUpdate();
+	void SwapBuffers();
+
+	void SetGammaTable(WORD* table);
+	void ResetGammaTable();
+};
+
+#endif // COCOA_SDLGLVIDEO_H_INCLUDED

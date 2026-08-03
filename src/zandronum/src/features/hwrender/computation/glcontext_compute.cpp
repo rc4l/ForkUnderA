@@ -29,4 +29,48 @@ int ComputeGLContextRequests(bool wantCore, GLContextRequest *out, int capacity)
 	return 2;
 }
 
+int ComputeCocoaGLProfile(const GLContextRequest &req)
+{
+	// A compatibility request has no Apple core profile to land on -- Legacy IS the compatibility
+	// profile there. Only genuinely core requests map upward.
+	if (!req.coreProfile)
+		return kNSGLProfileLegacy;
+	if (req.major > 4 || (req.major == 4 && req.minor >= 1))
+		return kNSGLProfileCore41;
+	if (req.major > 3 || (req.major == 3 && req.minor >= 2))
+		return kNSGLProfileCore32;
+	return kNSGLProfileLegacy;
+}
+
+int ComputeCocoaGLProfileChain(bool wantCore, int *out, int capacity)
+{
+	if (out == nullptr || capacity < kMaxCocoaGLProfiles)
+		return 0;
+
+	GLContextRequest reqs[kMaxGLContextRequests];
+	const int n = ComputeGLContextRequests(wantCore, reqs, kMaxGLContextRequests);
+
+	int count = 0;
+	for (int i = 0; i < n; ++i)
+	{
+		const int profile = ComputeCocoaGLProfile(reqs[i]);
+		// 4.0 and 3.3 both collapse onto Core32; asking the OS twice for the same pixel format
+		// would just be a slower way to get the same answer.
+		if (count > 0 && out[count - 1] == profile)
+			continue;
+		out[count++] = profile;
+	}
+
+	// No bounds check is needed inside that loop, and none is written: there are only three profile
+	// values in existence, consecutive duplicates are dropped, and the guard above already requires
+	// capacity >= kMaxCocoaGLProfiles. A capacity test there would be a branch no input can reach.
+
+	// Legacy is always the last resort, even when the core chain already ended there.
+	if (count > 0 && out[count - 1] == kNSGLProfileLegacy)
+		return count;
+
+	out[count++] = kNSGLProfileLegacy;
+	return count;
+}
+
 } // namespace zx

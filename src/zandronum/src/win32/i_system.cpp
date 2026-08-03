@@ -1881,20 +1881,40 @@ static bool QueryPathKey(HKEY key, const char *keypath, const char *valname, FSt
 //
 //==========================================================================
 
-FString I_GetSteamPath()
+// [rc4l] uzdoom@86372fce3: returns every candidate directory rather than the Steam root, so the
+// POSIX implementation (posix/i_steam.cpp) can answer the same question a different way -- it has
+// to parse Steam's library folders, which have no registry equivalent. Also adds Strife: Veteran
+// Edition to the list.
+TArray<FString> I_GetSteamPath()
 {
+	TArray<FString> result;
+	static const char *const steam_dirs[] =
+	{
+		"doom 2/base",
+		"final doom/base",
+		"heretic shadow of the serpent riders/base",
+		"hexen/base",
+		"hexen deathkings of the dark citadel/base",
+		"ultimate doom/base",
+		"DOOM 3 BFG Edition/base/wads",
+		"Strife"
+	};
+
 	FString path;
 
-	if (QueryPathKey(HKEY_CURRENT_USER, "Software\\Valve\\Steam", "SteamPath", path))
+	if (!QueryPathKey(HKEY_CURRENT_USER, "Software\\Valve\\Steam", "SteamPath", path))
 	{
-		return path;
+		if (!QueryPathKey(HKEY_LOCAL_MACHINE, "Software\\Valve\\Steam", "InstallPath", path))
+			return result;
 	}
-	if (QueryPathKey(HKEY_LOCAL_MACHINE, "Software\\Valve\\Steam", "InstallPath", path))
+	path += "/SteamApps/common/";
+
+	for (unsigned int i = 0; i < countof(steam_dirs); ++i)
 	{
-		return path;
+		result.Push(path + steam_dirs[i]);
 	}
-	path = "";
-	return path;
+
+	return result;
 }
 
 //==========================================================================

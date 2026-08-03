@@ -14,7 +14,7 @@
 #import <Foundation/Foundation.h>
 #include <cstring>
 #include "gtest/gtest.h"
-#include "sdl/i_system_cocoa_net.h"
+#include "posix/osx/i_system_cocoa_net.h"
 
 // The core regression: a body captured in a completion handler must survive that handler's autorelease
 // pool draining. The reads happen AFTER the @autoreleasepool block closes -- exactly as Mac_HttpsGet
