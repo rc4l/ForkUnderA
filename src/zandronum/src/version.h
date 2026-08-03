@@ -101,7 +101,7 @@ int GetRevisionNumber();
 // demos (uzdoom@4acc04ce6); we were ALREADY at 0x21A for an unrelated reason of our own (the
 // SoundActor pitch field below), so reusing their number would mean two different demo formats
 // sharing one version and every existing 0x21A demo being read with the wrong map-name width.
-#define DEMOGAMEVERSION 0x21B	// [rc4l] 0x21A: SoundActor pitch field; 0x21B: full-length map names in demos
+#define DEMOGAMEVERSION 0x21C	// [rc4l] 0x21A: SoundActor pitch field; 0x21B: full-length map names in demos; 0x21C: DCeiling::ECeiling renumbered
 
 // Minimum demo version we can play.
 // Bump it whenever you change or remove existing DEM_ commands.
@@ -141,7 +141,12 @@ int GetRevisionNumber();
 // change 4509; ours is a separate line that was already past that.
 // [rc4l] 4515: dmflags bit 19 changed meaning -- it was DF_RESPAWN_SUPER, it is now DF_YES_FREELOOK,
 // and respawn-super moved to dmflags2 bit 27 (uzdoom@a21f01bc5). G_DoLoadGame migrates older saves.
-#define SAVEVER 4515
+// [rc4l] 4516: DCeiling::ceilCrushAndRaiseDist removed and merged into ceilCrushAndRaise
+// (uzdoom@df0d3543a), shifting every later ECeiling value down by one. DCeiling serializes
+// m_Type, so an older snapshot would resume a crusher as the wrong ceiling type. Upstream did
+// NOT bump for this and was right not to -- the value never leaves the savegame there. Ours
+// also rides SERVERCOMMANDS_DoCeiling, hence the DEMOGAMEVERSION bump alongside.
+#define SAVEVER 4516
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)
