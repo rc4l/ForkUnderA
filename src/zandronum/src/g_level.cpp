@@ -708,7 +708,12 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 	}
 	else if (strncmp(levelname, "enDSeQ", 6) != 0)
 	{
-		nextinfo = FindLevelInfo (levelname, false);
+		// [rc4l] uzdoom@50a829720: resolve a warptrans link (Hexen-style "&wt@nn") BEFORE looking
+		// the level up, and fall back to the name as given when no info is found rather than
+		// dereferencing a null nextinfo.
+		FString reallevelname = levelname;
+		CheckWarpTransMap(reallevelname, true);
+		nextinfo = FindLevelInfo (reallevelname, false);
 		if (nextinfo != NULL)
 		{
 			level_info_t *nextredir = nextinfo->CheckLevelRedirect();
@@ -716,8 +721,12 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 			{
 				nextinfo = nextredir;
 			}
+			nextlevel = nextinfo->MapName;
 		}
-		nextlevel = nextinfo->MapName;
+		else
+		{
+			nextlevel = levelname;
+		}
 	}
 	else
 	{
