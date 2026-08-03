@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Build context for Dockerfile.registry. BuildKit reads <dockerfile>.dockerignore in preference
+# to the root .dockerignore, which excludes everything (that one serves Dockerfile.linux-build, whose
+# image is a toolchain with the source mounted at runtime -- the opposite shape to this one).
+#
+# Start from nothing and re-admit only what the daemon compiles: ~20 MB instead of the whole tree.
+# wadsrc/ (game data), deps/, build dirs and dist output are all irrelevant to a UDP daemon.
+*
+
+!src/zandronum/server-registry
+!src/zandronum/src
+!src/zandronum/tools/updaterevision
+
+# [rc4l] .git is admitted so updaterevision can stamp the real revision into the banner; it is the
+# largest single item in the context (~61 MB) but keeps the running daemon self-identifying, which
+# matters when several masters federate and you need to know which build one is. Drop this line if
+# you would rather have a faster build than an accurate `Revision:` line.
+!.git

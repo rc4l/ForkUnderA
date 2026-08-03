@@ -3283,15 +3283,15 @@ void D_DoomMain (void)
 		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
 			gameaction = ga_fullconsole;
 
-		// [BC] If we specified -private, make sv_updatemaster false.
+		// [BC] If we specified -private, make sv_fua_serverregistry_announce false.
 		if ( Args->CheckParm( "-private" ))
-			sv_updatemaster = false;
+			sv_fua_serverregistry_announce = false;
 
 		// [BC] Potentially send an update to the master server.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			SERVER_MASTER_Tick( );
-			SERVER_MASTER_Broadcast( );
+			SERVER_REGISTRY_Tick( );
+			SERVER_REGISTRY_Broadcast( );
 		}
 
 		// [BC] Little hack for +addbot.
