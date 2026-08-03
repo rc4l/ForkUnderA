@@ -51,6 +51,9 @@
 #include "version.h"
 #include "features/crashreport/zx_crashreport.h"   // [rc4l] ZX_CrashReportInit
 #include "za_misc.h"                                 // [SB] ZA_PrintVersion
+#include "network.h"                                 // [EP] NETWORK_GetState
+
+EXTERN_CVAR (Bool, cl_soundwhennotactive)          // [EP] defined in posix/cocoa/i_input.mm
 
 #undef Class
 
@@ -266,15 +269,20 @@ ApplicationController* appCtrl;
 - (void)applicationDidBecomeActive:(NSNotification*)aNotification
 {
 	ZD_UNUSED(aNotification);
-	
-	S_SetSoundPaused(1);
+
+	// [EP] A client may keep its sound on while it is not the active app; anything else (server,
+	// single player) follows focus as before.
+	if (( NETWORK_GetState() != NETSTATE_CLIENT ) || ( cl_soundwhennotactive == false ))
+		S_SetSoundPaused(1);
 }
 
 - (void)applicationWillResignActive:(NSNotification*)aNotification
 {
 	ZD_UNUSED(aNotification);
-	
-	S_SetSoundPaused(0);
+
+	// [EP] See applicationDidBecomeActive: -- this is the half users actually notice.
+	if (( NETWORK_GetState() != NETSTATE_CLIENT ) || ( cl_soundwhennotactive == false ))
+		S_SetSoundPaused(0);
 }
 
 

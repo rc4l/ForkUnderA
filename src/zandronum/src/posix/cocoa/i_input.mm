@@ -54,6 +54,11 @@
 
 EXTERN_CVAR(Int, m_use_mouse)
 
+// [EP] Allows to keep the sound turned on, when the client is not the active app. Defined here
+// because posix/sdl/i_input.cpp -- its old home -- is not built on macOS any more, and losing
+// the CVAR would silently drop it from every macOS config.
+CVAR (Bool, cl_soundwhennotactive, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+
 CVAR(Bool, use_mouse,    true,  CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Bool, m_noprescale, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Bool, m_filter,     false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)

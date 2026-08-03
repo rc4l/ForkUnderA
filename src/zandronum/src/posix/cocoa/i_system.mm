@@ -49,6 +49,10 @@
 #include "v_text.h"
 #include "x86.h"
 #include "features/updater/computation/openurl_compute.h"   // [rc4l] zx::IsOpenableURL
+#include "features/crashreport/zx_crashreport.h"            // [rc4l] ZX_CrashReportFatal
+#include "cl_demo.h"                                        // [BC] CLIENTDEMO_*
+#include "cl_main.h"                                        // [BB] CLIENT_QuitNetworkGame
+#include "network.h"                                        // [BB] NETWORK_GetState
 
 
 EXTERN_CVAR(String, language)
@@ -120,6 +124,10 @@ void I_Quit()
 		G_CheckDemoStatus();
 	}
 
+	// [BC] Support for client-side demos.
+	if ( CLIENTDEMO_IsRecording( ))
+		CLIENTDEMO_FinishRecording( );
+
 	C_DeinitConsole();
 
 	I_ShutdownTimer();
@@ -144,6 +152,16 @@ void I_FatalError(const char* const error, ...)
 		va_start(argptr, error);
 		index = vsnprintf(errortext, MAX_ERRORTEXT, error, argptr);
 		va_end(argptr);
+
+		// [rc4l] A fatal error is a graceful exit(), not a signal, so sentry's crash handler never
+		// sees it. Report it here (before any blocking dialog) so bad-WAD / script-error fatals reach
+		// GlitchTip/GitHub instead of vanishing. No-op if reporting is off.
+		ZX_CrashReportFatal(errortext);
+
+		// [BB] Tell the server we're leaving the game. Must happen before the dialog blocks, or the
+		// server only learns of it by timeout.
+		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+			CLIENT_QuitNetworkGame( NULL );
 
 		extern void Mac_I_FatalError(const char*);
 		Mac_I_FatalError(errortext);
