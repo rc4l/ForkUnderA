@@ -712,7 +712,7 @@ void		SERVER_ResetClientTicBuffer( ULONG ulClient );
 void		SERVER_ResetClientExtrapolation( ULONG ulClient, bool bAfterBacktrace = false );
 void		SERVER_DestroyActorIfClientsidedOnly( AActor *actor );
 
-// From sv_registry.cpp
+// From sv_serverregistry.cpp
 void		SERVER_REGISTRY_Construct( void );
 void		SERVER_REGISTRY_Destruct( void );
 void		SERVER_REGISTRY_Tick( void );
@@ -764,7 +764,7 @@ EXTERN_CVAR( Bool, sv_limitcommands )
 EXTERN_CVAR( Int, sv_smoothplayers )
 EXTERN_CVAR( Int, sv_allowprivatechat )
 
-// From sv_registry.cpp
+// From sv_serverregistry.cpp
 EXTERN_CVAR( Bool, sv_fua_serverregistry_announce );
 EXTERN_CVAR( Bool, sv_broadcast );
 EXTERN_CVAR( String, sv_hostname );
