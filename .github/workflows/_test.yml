@@ -65,6 +65,15 @@ jobs:
       - name: Protocol wire-format snapshot
         run: python3 tools/protocol-snapshot.py --check
 
+      # [rc4l] The command SHAPE is pinned above; this pins the VALUES of enums carried
+      # inside those commands. SERVERCOMMANDS_DoCeiling and friends send a sector-mover
+      # type as an integer, so renumbering the enum changes what an unchanged command
+      # means -- invisible to the snapshot above, and it breaks savegames too. Upstream
+      # cannot hit this (peer-to-peer, no SERVERCOMMANDS) and renumbers freely, so the
+      # check has to live on our side. Pure Python, no build needed.
+      - name: Wire-carried enum snapshot
+        run: python3 tools/wire-enum-snapshot.py --check
+
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:
