@@ -60,13 +60,13 @@
 void			SERVERBAN_Tick( void );
 bool			SERVERBAN_IsIPBanned( const IPStringArray &Address );
 bool			SERVERBAN_IsIPBanned( const NETADDRESS_s &Address );
-bool			SERVERBAN_IsIPMasterBanned( const IPStringArray &Address );
-bool			SERVERBAN_IsIPMasterBanned( const NETADDRESS_s &Address );
+bool			SERVERBAN_IsIPRegistryBanned( const IPStringArray &Address );
+bool			SERVERBAN_IsIPRegistryBanned( const NETADDRESS_s &Address );
 IPADDRESSBAN_s	*SERVERBAN_GetBanInformation( const IPStringArray &Address );
 IPADDRESSBAN_s	*SERVERBAN_GetBanInformation( const NETADDRESS_s &Address );
 void			SERVERBAN_ClearBans( unsigned int fileIndex );
-void			SERVERBAN_ReadMasterServerBans( BYTESTREAM_s *pByteStream );
-void			SERVERBAN_ReadMasterServerBanlistPart( BYTESTREAM_s *pByteStream );
+void			SERVERBAN_ReadRegistryServerBans( BYTESTREAM_s *pByteStream );
+void			SERVERBAN_ReadRegistryServerBanlistPart( BYTESTREAM_s *pByteStream );
 time_t			SERVERBAN_ParseBanLength( const char *szLengthString );
 TArray<IPList>	&SERVERBAN_GetBanList( void );
 void			SERVERBAN_BanPlayer( unsigned int player, const char *length, const char *reason, unsigned int fileIndex );
@@ -78,7 +78,7 @@ void			SERVERBAN_UpdateBansFromServerConsole( const TArray<IPList> &lists );
 //--------------------------------------------------------------------------------------------------------------------------------------------------
 
 EXTERN_CVAR( Bool, sv_enforcebans );
-EXTERN_CVAR( Bool, sv_enforcemasterbanlist );
+EXTERN_CVAR( Bool, sv_fua_serverregistry_enforcebans );
 EXTERN_CVAR( String, sv_banfile );
 EXTERN_CVAR( String, sv_banexemptionfile );
 EXTERN_CVAR( String, sv_adminlistfile );
