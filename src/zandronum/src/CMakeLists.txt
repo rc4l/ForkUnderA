@@ -673,6 +673,14 @@ set( PLAT_SDL_SOURCES
 	posix/sdl/sdlglvideo.cpp
 	posix/sdl/st_start.cpp )
 
+# [rc4l] Instant-replay audio sink: AudioQueue on macOS (the Cocoa backend removed SDL from the
+# engine), SDL on Linux and Windows where SDL is the platform layer anyway.
+if( APPLE )
+	set( FUA_AUDIOSINK_SOURCES features/openal-sound/fua_audiosink_coreaudio.cpp )
+else()
+	set( FUA_AUDIOSINK_SOURCES features/openal-sound/fua_audiosink_sdl.cpp )
+endif()
+
 set( PLAT_POSIX_SOURCES
 	posix/i_cd.cpp
 	posix/i_movie.cpp )
@@ -1392,6 +1400,7 @@ add_executable( zdoom WIN32
 	# registrations land within the [CRegHead, CRegTail] creg section walked by
 	# PClass::StaticInit (see features/README.md).
 	features/openal-sound/oalsound.cpp
+	${FUA_AUDIOSINK_SOURCES}
 	features/openal-sound/sndfile_decoder.cpp
 	features/openal-sound/mpg123_decoder.cpp
 	features/freeform-menu/freeformmenu.cpp
