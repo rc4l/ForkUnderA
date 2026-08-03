@@ -231,7 +231,7 @@ EMidiDevice MIDIStreamer::SelectMIDIDevice(EMidiDevice device)
 	// flags so every combination is covered. Without FMOD the default falls back to the
 	// always-available OPL2 synth so music still plays.
 	static_assert((int)MDEV_DEFAULT == ZX_MDEV_DEFAULT && (int)MDEV_MMAPI == ZX_MDEV_MMAPI &&
-		(int)MDEV_OPL == ZX_MDEV_OPL && (int)MDEV_FMOD == ZX_MDEV_FMOD &&
+		(int)MDEV_OPL == ZX_MDEV_OPL && (int)MDEV_SNDSYS == ZX_MDEV_SNDSYS &&
 		(int)MDEV_TIMIDITY == ZX_MDEV_TIMIDITY && (int)MDEV_FLUIDSYNTH == ZX_MDEV_FLUIDSYNTH &&
 		(int)MDEV_GUS == ZX_MDEV_GUS, "EMidiDevice values must match ZX_MDEV_*");
 #ifdef HAVE_FLUIDSYNTH
@@ -270,7 +270,7 @@ MIDIDevice *MIDIStreamer::CreateMIDIDevice(EMidiDevice devtype) const
 #endif
 
 	// [rc4l] Kept so existing configs naming this device still load; it maps to the OPL synth now.
-	case MDEV_FMOD:
+	case MDEV_SNDSYS:
 		return new OPLMIDIDevice;
 
 	case MDEV_GUS:

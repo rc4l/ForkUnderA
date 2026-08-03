@@ -1408,29 +1408,35 @@ sfxinfo_t *S_LoadSound(sfxinfo_t *sfx)
 		int size = Wads.LumpLength(sfx->lumpnum);
 		if (size > 0)
 		{
-			BYTE *sfxdata;
+			// [rc4l] uzdoom@6e6454572: sfxstart and sfxdata were the same pointer until the DMX
+			// branch below advances one of them past the 8-byte header, so only that branch needs a
+			// second name. `len` is the DMX length field specifically -- calling it that stops it
+			// being mistaken for the lump size, which is the bug the next two commits fix.
 			BYTE *sfxstart;
 			FWadLump wlump = Wads.OpenLumpNum(sfx->lumpnum);
-			sfxstart = sfxdata = new BYTE[size];
+			BYTE *sfxdata = new BYTE[size];
+			sfxstart = sfxdata;
 			wlump.Read(sfxdata, size);
-			SDWORD len = LittleLong(((SDWORD *)sfxdata)[1]);
+			SDWORD dmxlen = LittleLong(((SDWORD *)sfxdata)[1]);
 
 			// If the sound is voc, use the custom loader.
-			if (strncmp ((const char *)sfxstart, "Creative Voice File", 19) == 0)
+			// [rc4l] uzdoom@d55dfcdb1: size, not len. A Creative Voice File has no DMX length field,
+			// so `len` here was four bytes of VOC header text read as an integer.
+			if (strncmp ((const char *)sfxdata, "Creative Voice File", 19) == 0)
 			{
-				sfx->data = GSnd->LoadSoundVoc(sfxstart, len);
+				sfx->data = GSnd->LoadSoundVoc(sfxdata, size);
 			}
 			// If the sound is raw, just load it as such.
 			// Otherwise, try the sound as DMX format.
 			// If that fails, let FMOD try and figure it out.
 			else if (sfx->bLoadRAW ||
-				(((BYTE *)sfxdata)[0] == 3 && ((BYTE *)sfxdata)[1] == 0 && len <= size - 8))
+				(((BYTE *)sfxdata)[0] == 3 && ((BYTE *)sfxdata)[1] == 0 && dmxlen <= size - 8))
 			{
 				int frequency;
 
 				if (sfx->bLoadRAW)
 				{
-					len = Wads.LumpLength (sfx->lumpnum);
+					dmxlen = size;
 					frequency = (sfx->bForce22050 ? 22050 : 11025);
 				}
 				else
@@ -1442,12 +1448,12 @@ sfxinfo_t *S_LoadSound(sfxinfo_t *sfx)
 					}
 					sfxstart = sfxdata + 8;
 				}
-				sfx->data = GSnd->LoadSoundRaw(sfxstart, len, frequency, 1, 8, sfx->LoopStart);
+				sfx->data = GSnd->LoadSoundRaw(sfxstart, dmxlen, frequency, 1, 8, sfx->LoopStart);
 			}
 			else
 			{
-				len = Wads.LumpLength (sfx->lumpnum);
-				sfx->data = GSnd->LoadSound(sfxstart, len);
+				// [rc4l] uzdoom@a630c47e6: `size` already is Wads.LumpLength(sfx->lumpnum).
+				sfx->data = GSnd->LoadSound(sfxdata, size);
 			}
 			
 			if (sfxdata != NULL)
