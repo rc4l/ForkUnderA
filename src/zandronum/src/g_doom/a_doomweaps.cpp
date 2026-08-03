@@ -1007,14 +1007,23 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BFGSpray)
 		return;
 	}
 
-	ACTION_PARAM_START(3);
+	// [rc4l] uzdoom@68c481945: spread angle, range, vertical aim range and a fixed damage
+	// override are configurable now; the defaults reproduce the old hardcoded behaviour.
+	ACTION_PARAM_START(7);
 	ACTION_PARAM_CLASS(spraytype, 0);
 	ACTION_PARAM_INT(numrays, 1);
 	ACTION_PARAM_INT(damagecnt, 2);
+	ACTION_PARAM_ANGLE(angle, 3);
+	ACTION_PARAM_FIXED(distance, 4);
+	ACTION_PARAM_ANGLE(vrange, 5);
+	ACTION_PARAM_INT(defdamage, 6);
 
 	if (spraytype == NULL) spraytype = PClass::FindClass("BFGExtra");
 	if (numrays <= 0) numrays = 40;
 	if (damagecnt <= 0) damagecnt = 15;
+	if (angle == 0) angle = ANG90;
+	if (distance <= 0) distance = 16 * 64 * FRACUNIT;
+	if (vrange == 0) vrange = ANGLE_1 * 32;
 
 	// [RH] Don't crash if no target
 	if (!self->target)
@@ -1030,10 +1039,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BFGSpray)
 	// offset angles from its attack angle
 	for (i = 0; i < numrays; i++)
 	{
-		an = self->angle - ANG90/2 + ANG90/numrays*i;
+		an = self->angle - angle/2 + angle/numrays*i;
 
 		// self->target is the originator (player) of the missile
-		P_AimLineAttack (self->target, an, 16*64*FRACUNIT, &linetarget, ANGLE_1*32, lineAttackFlags);
+		// [rc4l] vrange arrives as angle_t. fixed_t deletes construction from 32-bit unsigned on
+		// purpose -- that is the width-extending case -- so the raw-bit reading upstream gets
+		// implicitly is spelled out with FromUnsignedBits, matching what the old ANGLE_1*32
+		// literal did through the int constructor.
+		P_AimLineAttack (self->target, an, distance, &linetarget, fixed_t::FromUnsignedBits(vrange), lineAttackFlags);
 
 		if (!linetarget)
 			continue;
@@ -1048,9 +1061,17 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BFGSpray)
 		if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( spray ))
 			SERVERCOMMANDS_SpawnThing( spray );
 
-		damage = 0;
-		for (j = 0; j < damagecnt; ++j)
-			damage += (pr_bfgspray() & 7) + 1;
+		if (defdamage == 0)
+		{
+			damage = 0;
+			for (j = 0; j < damagecnt; ++j)
+				damage += (pr_bfgspray() & 7) + 1;
+		}
+		else
+		{
+			// if this is used, damagecnt will be ignored
+			damage = defdamage;
+		}
 
 		thingToHit = linetarget;
 		int newdam = P_DamageMobj (thingToHit, self->target, self->target, damage, spray != NULL? FName(spray->DamageType) : FName(NAME_BFGSplash), 
