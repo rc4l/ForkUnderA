@@ -89,6 +89,14 @@ ACTOR MvJumpInf : MvJump
 	Player.DisplayName "MvJumpInf"
 }
 
+// Unlimited second jumps but a long cooldown between them, so SecondJumpDelay is measurable as the
+// gap between consecutive second jumps rather than being masked by the one-shot allowance.
+ACTOR MvSJDelay : MvJumpInf
+{
+	Player.SecondJumpDelay 25
+	Player.DisplayName "MvSJDelay"
+}
+
 // +ABSOLUTESECONDJUMP SETS horizontal velocity instead of adding to it. SecondJumpXY 6 is well
 // under the 13.141 terminal speed, so "set" and "add" land on unmistakably different numbers:
 // 6.0 with the flag, ~19.1 without.

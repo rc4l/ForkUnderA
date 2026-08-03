@@ -805,6 +805,30 @@ void APlayerPawn::Serialize (FArchive &arc)
 		// Anything reaching APlayerPawn::Serialize has an APlayerPawn class default object.
 		MvType = static_cast<APlayerPawn *>( GetDefault() )->MvType;
 	}
+
+	// [rc4l] Live movement state stays deliberately unserialized (it is prediction-saved and
+	// re-derived every tic), but PostBeginPlay does NOT run on a savegame load -- so without this
+	// it came back as zeroes. Zero is not a state that occurs in play: the traversal meters spawn
+	// full, and the crouch-slide meter's zero is neither usable charge nor the negative lockout it
+	// uses. Seed exactly as a spawn does, after the properties above have been read.
+	if ( arc.IsLoading() )
+	{
+		secondJumpsRemaining = SecondJumpAmount;
+		secondJumpState = 0;			// SJ_NOT_AVAILABLE
+		secondJumpTics = 0;
+		lastTapValue = 0;
+		lastMoveButtonsBefore = 0;
+		JumpSoundDelay = 0;
+		crouchSlideTics = CrouchSlideMaxTics;
+		wallClimbTics = WallClimbMaxTics;
+		airWallRunTics = AirWallRunMaxTics;
+		isCrouchSliding = false;
+		isWallClimbing = false;
+		isAirWallRunning = false;
+		crouchSlideEffectTics = 0;
+		wallClimbEffectTics = 0;
+		stepInterval = 0;
+	}
 }
 
 //===========================================================================

@@ -36,6 +36,13 @@ LIFT = (3072, 640, 3584, 1024)
 LIFT_FLOOR = -256
 LIFT_TAG = 1
 
+# [rc4l] A ramp, for +EDGEJUMP. That flag preserves upward velocity into a jump, so reaching it at
+# all needs a pawn that is `onground` AND already rising -- a state flat geometry cannot produce.
+# Plane_Align on the ramp's WEST edge ties its floor to the room (0) there and tilts it up to
+# RAMP_FLOOR at the far side, so running east up it is a genuine uphill.
+RAMP = (600, 1100, 1400, 1400)
+RAMP_FLOOR = 96
+
 WALL_TEX = "STARTAN2"
 FLOOR_TEX = "FLOOR4_8"
 CEIL_TEX = "CEIL3_5"
@@ -72,26 +79,36 @@ def build_textmap():
 
     room = sector(ROOM_FLOOR, ROOM_CEIL)
     for v1, v2 in rect_loop(ROOM_X0, ROOM_Y0, ROOM_X1, ROOM_Y1):
-        lines.append((v1, v2, side(room, mid=WALL_TEX), -1, True))
+        lines.append((v1, v2, side(room, mid=WALL_TEX), -1, True, 0))
 
-    for (x0, y0, x1, y1), floor, tag in ((PIT, PIT_FLOOR, 0), (LIFT, LIFT_FLOOR, LIFT_TAG)):
+    inners = (
+        (PIT, PIT_FLOOR, 0, False),
+        (LIFT, LIFT_FLOOR, LIFT_TAG, False),
+        (RAMP, RAMP_FLOOR, 0, True),
+    )
+    for (x0, y0, x1, y1), floor, tag, slope in inners:
         inner = sector(floor, ROOM_CEIL, tag)
-        for v1, v2 in rect_loop(x0, y0, x1, y1):
+        for index, (v1, v2) in enumerate(rect_loop(x0, y0, x1, y1)):
             front = side(inner, bot=WALL_TEX)
             back = side(room, bot=WALL_TEX)
-            lines.append((v1, v2, front, back, False))
+            # rect_loop emits the west edge first, which is the one the ramp is aligned against.
+            special = 181 if (slope and index == 0) else 0  # 181 = Plane_Align
+            lines.append((v1, v2, front, back, False, special))
 
     out = ['namespace = "zdoom";', ""]
     for x, y in verts:
         out.append("vertex { x = %d.0; y = %d.0; }" % (x, y))
     out.append("")
-    for v1, v2, front, back, solid in lines:
+    for v1, v2, front, back, solid, special in lines:
         fields = ["v1 = %d;" % v1, "v2 = %d;" % v2, "sidefront = %d;" % front]
         if back >= 0:
             fields.append("sideback = %d;" % back)
             fields.append("twosided = true;")
         if solid:
             fields.append("blocking = true;")
+        if special:
+            # arg0 = 1 slopes the FRONT sector's floor to meet the back sector at this line.
+            fields.append("special = %d; arg0 = 1;" % special)
         out.append("linedef { %s }" % " ".join(fields))
     out.append("")
     for sec, mid, bot, top in sides:
