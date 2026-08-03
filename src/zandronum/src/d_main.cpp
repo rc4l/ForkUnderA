@@ -2426,7 +2426,6 @@ static void D_DoomInit()
 	Args->CollectFiles("-file", NULL);	// anything left goes after -file
 	Args->CollectFiles( "-optfile", NULL ); // [TP]
 
-	atterm (C_DeinitConsole);
 
 	// [AK] When Zandronum closes, any open lump handles in ACS that mods
 	// forgot to close must be cleared before any resources are deleted.

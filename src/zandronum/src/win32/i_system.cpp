@@ -79,6 +79,7 @@
 #include "i_input.h"
 #include "i_system.h"
 #include "c_dispatch.h"
+#include "c_console.h"
 #include "templates.h"
 #include "gameconfigfile.h"
 #include "v_font.h"
@@ -870,6 +871,10 @@ void I_Quit()
 	// [BC] Support for client-side demos.
 	if ( CLIENTDEMO_IsRecording( ))
 		CLIENTDEMO_FinishRecording( );
+
+	// [rc4l] uzdoom@b6bbdf619: deinit the console HERE rather than via atterm, so anything Printf'd
+	// during the rest of shutdown still reaches a live console.
+	C_DeinitConsole();
 }
 
 
