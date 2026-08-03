@@ -15,7 +15,7 @@ const int SF_RANDOMLIGHTBOTH = 6;
 const int SF_NOUSEAMMOMISS = 8;
 const int SF_NOUSEAMMO = 16;
 
-// Flags for A_CustomMissile
+// Flags for A_SpawnProjectile (and its deprecated predecessor A_CustomMissile)
 const int CMF_AIMOFFSET = 1;
 const int CMF_AIMDIRECTION = 2;
 const int CMF_TRACKOWNER = 4;
@@ -137,6 +137,12 @@ const int WOF_ADD = 4;
 const int WOF_INTERPOLATE = 8;
 
 // [overlay] Render styles for A_OverlayRenderStyle (values match the engine ERenderStyle enum).
+// [rc4l] A mod defining its own STYLE_* no longer fails to load: a duplicate global constant is a
+// console warning now, not a fatal, and the ENGINE value below wins (thingdef_parse.cpp,
+// HandleDuplicateConstant). Note these are the DECORATE ERenderStyle values, which diverge above
+// STYLE_Stencil from the ACS APROP_RenderStyle values (64,65,66… -- LegacyRenderStyleIndices in
+// p_acs.cpp). A mod whose STYLE_Translucent means the ACS 64 therefore gets 6 here and will render
+// differently; the warning names both values so that shows up in the console.
 const int STYLE_None = 0;
 const int STYLE_Normal = 1;
 const int STYLE_Fuzzy = 2;
@@ -272,6 +278,23 @@ enum
 	CHAN_NOPAUSE = 64
 };
 
+// Flags for A_StartSound (uzdoom EChanFlags)
+enum
+{
+	CHANF_DEFAULT = 0,
+	CHANF_LOOP = 256,
+	CHANF_NOSTOP = 4096,
+	CHANF_OVERLAP = 8192
+};
+
+// Flags for A_FireProjectile
+enum
+{
+	FPF_AIMATANGLE = 1,
+	FPF_TRANSFERTRANSLATION = 2,
+	FPF_NOAUTOAIM = 4
+};
+
 // sound attenuation values
 const float ATTN_NONE = 0;
 const float ATTN_NORM = 1;
@@ -403,6 +426,9 @@ const int AMF_EMITFROMTARGET = 4;
 
 // [MGOOOOOO] Input button masks for A_JumpIfInput, mirroring buttoncode_t in src/d_event.h
 // (keep these two lists in sync). Combine with '|' (e.g. BT_ATTACK | BT_ALTATTACK).
+// [rc4l] A mod defining its own BT_*/JIF_* warns rather than failing the load, and the engine values
+// below win -- see the STYLE_* note above and HandleDuplicateConstant in thingdef_parse.cpp. These
+// mirror buttoncode_t, so a mod's own BT_* almost certainly agrees and the warning will say so.
 const int BT_ATTACK = 1;
 const int BT_USE = 2;
 const int BT_JUMP = 4;

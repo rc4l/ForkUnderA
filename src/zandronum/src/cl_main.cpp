@@ -66,6 +66,7 @@
 #include "cl_demo.h"
 #include "cl_statistics.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
+#include "features/hitboxviz/hitboxviz.h"
 #include "cooperative.h"
 #include "doomerrors.h"
 #include "doomtype.h"
@@ -135,6 +136,11 @@
 #include "voicechat.h"
 #include "gameconfigfile.h"
 #include "wi_stuff.h"
+
+#include "features/fov-interp/computation/fovrequest_compute.h"
+
+// [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
+EXTERN_CVAR (Float, fov)
 
 //*****************************************************************************
 //	MISC CRAP THAT SHOULDN'T BE HERE BUT HAS TO BE BECAUSE OF SLOPPY CODING
@@ -3709,7 +3715,10 @@ void ServerCommands::SpawnPlayer::Execute()
 		pActor->sprite = skins[lSkin].sprite;
 	}
 
-	pPlayer->DesiredFOV = pPlayer->FOV = 90.f;
+	// [rc4l] fov-interp: keep our own FOV across a respawn; see p_mobj.cpp.
+	pPlayer->DesiredFOV = pPlayer->FOV = zx::FovOnSpawn (
+		static_cast<ULONG> (consoleplayer) == ulPlayer,
+		NETWORK_GetState( ) == NETSTATE_SERVER, fov);
 	// If the console player was watching another player in demo mode, continue to follow
 	// that other player.
 	// [AK] And also if the console player just became a dead spectator.
@@ -5386,6 +5395,15 @@ void ServerCommands::SetThingFlags::Execute()
 
 		actor->flags7 = flags;
 		break;
+	// [MGOOOOOO] flags8 (MBF21) and flags9 (ZandroX's own word, see actor.h MF9_*).
+	case FLAGSET_FLAGS8:
+
+		actor->flags8 = flags;
+		break;
+	case FLAGSET_FLAGS9:
+
+		actor->flags9 = flags;
+		break;
 	case FLAGSET_FLAGSST:
 
 		actor->STFlags = flags;
@@ -5451,6 +5469,10 @@ void ServerCommands::SetThingProperty::Execute()
 	case APROP_StencilColor:
 		// [AK] We can't use DWORD as an unsigned int here, so split the value into its RGB components.
 		actor->SetShade(( value >> 16 ) & 0xFF, ( value >> 8 ) & 0xFF, value & 0xFF );
+		break;
+
+	case APROP_Friction:
+		actor->Friction = value;
 		break;
 
 	default:
@@ -5638,6 +5660,41 @@ void ServerCommands::SetThingScale::Execute()
 
 	if ( ContainsScaleY() )
 		actor->scaleY = scaleY;
+}
+
+//*****************************************************************************
+//
+void ServerCommands::SetThingSize::Execute()
+{
+	// [ZandroX] Route through AActor::SetSize so the actor is relinked to the
+	// world (and, for a player pawn, FullHeight is updated). Dimensions not
+	// carried by this command keep their current value.
+	fixed_t newradius = ContainsRadius() ? radius : actor->radius;
+	fixed_t newheight = ContainsHeight() ? height : actor->height;
+	actor->SetSize( newradius, newheight );
+
+	// [MGOOOOOO] Attack extent, only ever present while the server has debug explosions enabled
+	// (see network.h ActorSizeFlag). Routed through SetHitSize so the blockmap link radius, which
+	// is MAX(radius, GetAttackRadius()), is recomputed.
+	if ( ContainsHitradius() || ContainsHitheight() )
+	{
+		fixed_t newhitradius = ContainsHitradius() ? hitradius : actor->projectilepassradius;
+		fixed_t newhitheight = ContainsHitheight() ? hitheight : actor->projectilepassheight;
+		actor->SetHitSize( newhitradius, newhitheight );
+	}
+}
+
+//*****************************************************************************
+//
+void ServerCommands::DebugExplosion::Execute()
+{
+	// [ZandroX] Debug-only overlay data. The server already gates the send on sv_cheats, but check
+	// again here rather than trusting the wire: a client must never be shown cheat-gated
+	// information because a packet said so.
+	if ( sv_cheats == false )
+		return;
+
+	zx::hitboxviz::PushBlast( x, y, z, distance, fulldamagedistance );
 }
 
 //*****************************************************************************
@@ -6997,11 +7054,11 @@ void ServerCommands::ACSScriptExecute::Execute()
 	level_info_t *levelinfo;
 	if ( levelnum == 0 )
 	{
-		mapname = level.mapname;
+		mapname = level.MapName;
 	}
 	else if (( levelinfo = FindLevelByNum ( levelnum )))
 	{
-		mapname = levelinfo->mapname;
+		mapname = levelinfo->MapName;
 	}
 	else
 	{
@@ -7039,7 +7096,8 @@ void ServerCommands::Sound::Execute()
 	if ( volume > 127 )
 		volume = 127;
 
-	S_Sound( channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ) );
+	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
+	S_Sound( channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
@@ -7049,7 +7107,8 @@ void ServerCommands::SoundActor::Execute()
 	if ( volume > 127 )
 		volume = 127;
 
-	S_Sound( actor, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ) );
+	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
+	S_Sound( actor, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
@@ -7064,7 +7123,8 @@ void ServerCommands::SoundActorIfNotPlaying::Execute()
 	if ( S_IsActorPlayingSomething (actor, channel & (~CHAN_LOOP), S_FindSound ( sound ) ) )
 		return;
 
-	S_Sound( actor, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ) );
+	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
+	S_Sound( actor, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
@@ -7074,7 +7134,8 @@ void ServerCommands::SoundSector::Execute()
 	if ( volume > 127 )
 		volume = 127;
 
-	S_Sound( sector, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ) );
+	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
+	S_Sound( sector, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), pitch );
 }
 
 //*****************************************************************************
@@ -7085,7 +7146,8 @@ void ServerCommands::SoundPoint::Execute()
 		volume = 127;
 
 	// Finally, play the sound.
-	S_Sound( x, y, z, channel, S_FindSound(sound), (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ) );
+	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
+	S_Sound( x, y, z, channel, S_FindSound(sound), (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
@@ -7358,11 +7420,15 @@ void ServerCommands::SetMapMusic::Execute()
 //
 void ServerCommands::SetMapSky::Execute()
 {
-	strncpy( level.skypic1, sky1, 8 );
-	sky1texture = TexMan.GetTexture( sky1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	// [rc4l] uzdoom@65e8563cf replaced the sky name buffers with resolved FTextureIDs, which is what
+	// R_InitSkyMap consumes. The wire still carries the sky BY NAME -- that contract is unchanged --
+	// so the client resolves the received name once and stores the id, exactly as G_InitLevelLocals
+	// does for a normal map start. This handler has no upstream counterpart.
+	level.skytexture1 = TexMan.GetTexture( sky1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	sky1texture = level.skytexture1;
 
-	strncpy( level.skypic2, sky2, 8 );
-	sky2texture = TexMan.GetTexture( sky2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	level.skytexture2 = TexMan.GetTexture( sky2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+	sky2texture = level.skytexture2;
 
 	// Set some other sky properties.
 	R_InitSkyMap( );

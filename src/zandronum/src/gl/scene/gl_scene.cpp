@@ -77,6 +77,8 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_convert.h"
 #include "gl/utility/gl_templates.h"
+#include "features/hitboxviz/hitboxviz.h"
+#include "features/fov-interp/fovinterp.h"
 
 //==========================================================================
 //
@@ -344,6 +346,10 @@ void FGLRenderer::SetupView(fixed_t viewx, fixed_t viewy, fixed_t viewz, angle_t
 
 void FGLRenderer::CreateScene()
 {
+	// [MGOOOOOO] Debug hitbox overlay: open this scene's geometry range before the BSP walk starts
+	// collecting actors. Paired with the Draw() at the end of RenderTranslucent.
+	zx::hitboxviz::BeginFrame();
+
 	// reset the portal manager
 	GLPortal::StartFrame();
 	PO_LinkToSubsectors();
@@ -527,6 +533,12 @@ void FGLRenderer::RenderTranslucent()
 	glDepthMask(true);
 
 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.5f);
+
+	// [MGOOOOOO] Debug hitbox overlay, drawn last: the 3D projection is still current and the depth
+	// buffer is writable again, so boxes are correctly occluded by world geometry. Closes the
+	// geometry range opened by BeginFrame in CreateScene.
+	zx::hitboxviz::Draw();
+
 	RenderAll.Unclock();
 }
 
@@ -1005,7 +1017,12 @@ void FGLRenderer::RenderView (player_t* player)
 	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
 	GLRenderer->mLightCount = ((it.Next()) != NULL);
 
-	sector_t * viewsector = RenderViewpoint(player->camera, NULL, FieldOfView * 360.0f / FINEANGLES, ratio, fovratio, true, true);
+	// [rc4l] fov-interp: FieldOfView is only updated once per tic (D_Display -> R_SetFOV) and is
+	// quantised to fineangles, so a zoom staircases at anything above 35Hz. Render the sub-tic
+	// position of the very step P_PlayerThink is about to take instead. All the arithmetic lives
+	// in features/fov-interp/computation/ so this stays a single line for the renderer staircase
+	// to re-apply. Ported from Q-Zandronum d2475b676 + 390ea5ac2.
+	sector_t * viewsector = RenderViewpoint(player->camera, NULL, FOV_InterpolatedForFrame(player), ratio, fovratio, true, true);
 
 	All.Unclock();
 }

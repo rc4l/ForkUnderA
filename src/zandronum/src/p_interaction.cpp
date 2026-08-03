@@ -85,6 +85,7 @@
 #include "v_video.h"
 #include "st_hud.h"
 #include "p_terrain.h"
+#include "features/mbf21/computation/damage_groups_compute.h"
 
 // [BC] Ugh.
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
@@ -388,6 +389,11 @@ void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker, int dmgf
 	{
 		message = GStrings("OB_DEFAULT");
 	}
+
+	// [rc4l] uzdoom@67c669068: don't print an empty obituary. A wad that hides a death message by
+	// defining it as an empty string would otherwise produce a blank console line per kill.
+	if (message == NULL || strlen(message) <= 0)
+		return;
 
 	SexMessage (message, gendermessage, gender,
 		self->player->userinfo.GetName(), attacker->player->userinfo.GetName());
@@ -1131,9 +1137,11 @@ void ApplyCoopDamagefactor(int &damage, AActor *source)
 		damage = int(damage * sv_coop_damagefactor);
 }
 
-static inline bool MustForcePain(AActor *target, AActor *inflictor)
+// [MGOOOOOO] `flags` carries DMG_NO_PAIN, which outranks +FORCEPAIN: a ripper with
+// +RIPPERNOPAIN must not stunlock its victim even through the FORCEPAIN shortcut.
+static inline bool MustForcePain(AActor *target, AActor *inflictor, int flags)
 {
-	return (!(target->flags5 & MF5_NOPAIN) && inflictor != NULL &&
+	return (!(flags & DMG_NO_PAIN) && !(target->flags5 & MF5_NOPAIN) && inflictor != NULL &&
 		(inflictor->flags6 & MF6_FORCEPAIN) && !(inflictor->flags5 & MF5_PAINLESS));
 }
 
@@ -1289,7 +1297,7 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 			source->Inventory->ModifyDamage(olddam, mod, damage, false);
 			if (olddam != damage && damage <= 0)
 			{ // Still allow FORCEPAIN
-				if (MustForcePain(target, inflictor))
+				if (MustForcePain(target, inflictor, flags))
 				{
 					goto dopain;
 				}
@@ -1303,7 +1311,7 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 			target->Inventory->ModifyDamage(olddam, mod, damage, true);
 			if (olddam != damage && damage <= 0)
 			{ // Still allow FORCEPAIN
-				if (MustForcePain(target, inflictor))
+				if (MustForcePain(target, inflictor, flags))
 				{
 					goto dopain;
 				}
@@ -1333,7 +1341,7 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 			}
 			if (damage <= 0)
 			{ // Still allow FORCEPAIN
-				if (MustForcePain(target, inflictor))
+				if (MustForcePain(target, inflictor, flags))
 				{
 					goto dopain;
 				}
@@ -1386,6 +1394,9 @@ thrust:
 			kickback = gameinfo.defKickback;
 		else
 			kickback = source->player->ReadyWeapon->Kickback;
+
+		// [rc4l] uzdoom@7267e608c: skill KickbackFactor scales damage kickback.
+		kickback = FixedMul(kickback, G_SkillProperty(SKILLP_KickbackFactor));
 
 		if (kickback)
 		{
@@ -1530,8 +1541,7 @@ thrust:
 						SERVERCOMMANDS_SetPlayerArmor( player - players );
 
 					// If MF6_FORCEPAIN is set, make the player enter the pain state.
-					if (!(target->flags5 & MF5_NOPAIN) && inflictor != NULL &&
-						(inflictor->flags6 & MF6_FORCEPAIN) && !(inflictor->flags5 & MF5_PAINLESS))
+					if (MustForcePain(target, inflictor, flags))
 					{
 						goto dopain;
 					}
@@ -1573,7 +1583,10 @@ thrust:
 			// This does not save the player if damage >= TELEFRAG_DAMAGE, still need to
 			// telefrag him right? ;) (Unfortunately the damage is "absorbed" by armor,
 			// but telefragging should still do enough damage to kill the player)
-			if ((player->cheats & CF_BUDDHA) && damage < TELEFRAG_DAMAGE)
+			if ((player->cheats & CF_BUDDHA) && damage < TELEFRAG_DAMAGE
+				// [rc4l] uzdoom@202076996: ignore players that are already dead, or buddha revives a
+				// corpse to health 1 and the exiting player comes back as a zombie.
+				&& player->playerstate != PST_DEAD)
 			{
 				// If this is a voodoo doll we need to handle the real player as well.
 				player->mo->health = target->health = player->health = 1;
@@ -1758,7 +1771,10 @@ thrust:
 	}
 
 	
-	if (!(target->flags5 & MF5_NOPAIN) && (inflictor == NULL || !(inflictor->flags5 & MF5_PAINLESS)) &&
+	// [MGOOOOOO] DMG_NO_PAIN is the per-hit form of +NOPAIN: a ripper with +RIPPERNOPAIN passes it
+	// for its rips only, so the projectile's terminal explosion can still make the victim flinch.
+	if (!(flags & DMG_NO_PAIN) &&
+		!(target->flags5 & MF5_NOPAIN) && (inflictor == NULL || !(inflictor->flags5 & MF5_PAINLESS)) &&
 		(target->player != NULL || !G_SkillProperty(SKILLP_NoPain)) && !(target->flags & MF_SKULLFLY))
 	{
 		pc = target->GetClass()->ActorInfo->PainChances;
@@ -1957,11 +1973,20 @@ bool AActor::OkayToSwitchTarget (AActor *other)
 	{ // [RH] Friendlies don't target other friendlies
 		return false;
 	}
-	
+
+	// [rc4l] MBF21: never retaliate against a member of your own infighting group.
+	if (zx::mbf21::ComputeInfightingImmune(InfightingGroup, other->InfightingGroup))
+		return false;
+
 	int infight;
-	if (flags5 & MF5_NOINFIGHTING) infight=-1;	
+	// [rc4l] uzdoom@1ad02a6ce: a skill's NoInfighting/TotalInfighting overrides the level/global
+	// setting (but never the per-actor MF5_NOINFIGHTING).
+	const int skillInfight = G_SkillProperty(SKILLP_Infight);
+	if (flags5 & MF5_NOINFIGHTING) infight=-1;
+	else if (skillInfight > 0) infight=1;
+	else if (skillInfight < 0) infight=-1;
 	else if (level.flags2 & LEVEL2_TOTALINFIGHTING) infight=1;
-	else if (level.flags2 & LEVEL2_NOINFIGHTING) infight=-1;	
+	else if (level.flags2 & LEVEL2_NOINFIGHTING) infight=-1;
 	else infight = infighting;
 	
 	// [BC] No infighting during invasion mode.

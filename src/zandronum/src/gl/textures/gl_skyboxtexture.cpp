@@ -139,8 +139,11 @@ void gl_ParseSkybox(FScanner &sc)
 	sc.MustGetString();
 
 	FSkyBox * sb = new FSkyBox;
-	uppercopy(sb->Name, sc.String);
-	sb->Name[8]=0;
+	// [rc4l] uzdoom@59885b856: FTexture::Name is an FString, so the uppercopy-into-char[9] idiom
+	// (which also truncated at eight) becomes a plain assignment plus ToUpper. Skybox names are no
+	// longer cut short, matching how every other texture name is stored since that commit.
+	sb->Name = sc.String;
+	sb->Name.ToUpper();
 	if (sc.CheckString("fliptop"))
 	{
 		sb->fliptop = true;
@@ -157,7 +160,7 @@ void gl_ParseSkybox(FScanner &sc)
 	}
 	if (facecount != 3 && facecount != 6)
 	{
-		sc.ScriptError("%s: Skybox definition requires either 3 or 6 faces", sb->Name);
+		sc.ScriptError("%s: Skybox definition requires either 3 or 6 faces", sb->Name.GetChars());
 	}
 	sb->SetSize();
 	TexMan.AddTexture(sb);
@@ -181,8 +184,9 @@ void gl_ParseVavoomSkybox()
 		int facecount=0;
 		int maplump = -1;
 		FSkyBox * sb = new FSkyBox;
-		uppercopy(sb->Name, sc.String);
-		sb->Name[8]=0;
+		// [rc4l] uzdoom@59885b856: see the note in ParseGldefSkybox above.
+		sb->Name = sc.String;
+		sb->Name.ToUpper();
 		sb->fliptop = true;
 		sc.MustGetStringName("{");
 		while (!sc.CheckString("}"))
@@ -193,23 +197,21 @@ void gl_ParseVavoomSkybox()
 				sc.MustGetStringName("map");
 				sc.MustGetString();
 
-				maplump = Wads.CheckNumForFullName(sc.String, true);
-				if (maplump==-1) 
-					Printf("Texture '%s' not found in Vavoom skybox '%s'\n", sc.String, sb->Name);
+				// [rc4l] uzdoom@03d4f23a6: look the face up by name rather than by lump. Textures
+				// carry full names now, so the manager already holds it and there is nothing to
+				// create or register here.
+				FTexture *tex = TexMan.FindTexture(sc.String, FTexture::TEX_Wall, FTextureManager::TEXMAN_TryAny);
+				if (tex == NULL)
+					Printf("Texture '%s' not found in Vavoom skybox '%s'\n", sc.String, sb->Name.GetChars());
 
-				FTextureID tex = TexMan.FindTextureByLumpNum(maplump);
-				if (!tex.isValid())
-				{
-					tex = TexMan.CreateTexture(maplump, FTexture::TEX_MiscPatch);
-				}
-				sb->faces[facecount] = TexMan[tex];
+				sb->faces[facecount] = tex;
 				sc.MustGetStringName("}");
 			}
 			facecount++;
 		}
 		if (facecount != 6)
 		{
-			sc.ScriptError("%s: Skybox definition requires 6 faces", sb->Name);
+			sc.ScriptError("%s: Skybox definition requires 6 faces", sb->Name.GetChars());
 		}
 		sb->SetSize();
 		TexMan.AddTexture(sb);

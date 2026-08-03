@@ -83,4 +83,8 @@ bool P_CheckMissileRange (AActor *actor);
 #define SKULLSPEED (20*FRACUNIT)
 void A_SkullAttack(AActor *self, fixed_t speed);
 
+// [rc4l] MBF21: exported so A_HealChase (thingdef_codeptr) can resurrect with a custom heal state
+// and sound; the vanilla A_VileChase path passes the defaults.
+bool P_CheckForResurrection(AActor *self, bool usevilestates, FState *customstate = NULL, FSoundID customsound = 0);
+
 #endif //__P_ENEMY_H__

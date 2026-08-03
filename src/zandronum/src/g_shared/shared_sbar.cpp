@@ -140,7 +140,7 @@ void ST_FormatMapName(FString &mapname, const char *mapnamecolor)
 
 	if (am_showmaplabel == 1 || (am_showmaplabel == 2 && !ishub))
 	{
-		mapname << level.mapname << ": ";
+		mapname << level.MapName << ": ";
 	}
 	mapname << mapnamecolor << level.LevelName;
 }
@@ -613,9 +613,13 @@ void DBaseStatusBar::DrawPartialImage (FTexture *img, int wx, int ww) const
 {
 	if (img != NULL)
 	{
-		screen->DrawTexture (img, ST_X, ST_Y,
-			DTA_WindowLeft, wx,
-			DTA_WindowRight, wx + ww,
+		// [ZandroX] Widescreen status bar: the vanilla 320-wide layout is
+		// centered within a wider bar graphic, so read the partial slice from
+		// the centered region and shift the draw origin to compensate.
+		int xoff = (img->GetScaledWidth() > 320) ? (img->GetScaledWidth() - 320) / 2 : 0;
+		screen->DrawTexture (img, ST_X - xoff, ST_Y,
+			DTA_WindowLeft, wx + xoff,
+			DTA_WindowRight, wx + xoff + ww,
 			DTA_Bottom320x200, Scaled,
 			TAG_DONE);
 	}
@@ -1112,12 +1116,12 @@ void DBaseStatusBar::RefreshBackground () const
 
 		if (setblocks >= 10)
 		{
-			const gameborder_t *border = gameinfo.border;
-			FTexture *p;
-
-			p = TexMan[border->b];
-			screen->FlatFill(0, y, x, y + p->GetHeight(), p, true);
-			screen->FlatFill(x2, y, SCREENWIDTH, y + p->GetHeight(), p, true);
+			FTexture *p = TexMan[gameinfo.Border.b];
+			if (p != NULL)
+			{
+				screen->FlatFill(0, y, x, y + p->GetHeight(), p, true);
+				screen->FlatFill(x2, y, SCREENWIDTH, y + p->GetHeight(), p, true);
+			}
 		}
 	}
 }
@@ -1799,17 +1803,9 @@ void DBaseStatusBar::ReceivedWeapon (AWeapon *weapon)
 
 void DBaseStatusBar::Serialize (FArchive &arc)
 {
-	if (SaveVersion < 3821)
+	for (unsigned int i = 0; i < countof(Messages); ++i)
 	{
-		memset(Messages, 0, sizeof(Messages));
-		arc << Messages[HUDMSGLayer_Default];
-	}
-	else
-	{
-		for (unsigned int i = 0; i < countof(Messages); ++i)
-		{
-			arc << Messages[i];
-		}
+		arc << Messages[i];
 	}
 }
 

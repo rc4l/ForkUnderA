@@ -93,7 +93,13 @@
 #include "d_netinf.h"
 #include "domination.h"
 #include "network_enums.h"
+#include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip ledger gating
 #include <set>
+
+#include "features/fov-interp/computation/fovrequest_compute.h"
+
+// [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
+EXTERN_CVAR (Float, fov)
 
 // MACROS ------------------------------------------------------------------
 
@@ -194,6 +200,102 @@ AActor::~AActor ()
 	// Use Destroy() instead.
 }
 
+// [MGOOOOOO] Ripper per-victim ledger (features/ripper). The TObjPtr is what makes an entry
+// safe across the victim's destruction: it reads back as NULL, and RipHitsOn prunes it.
+FArchive &operator<< (FArchive &arc, FRipVictim &rv)
+{
+	arc << rv.victim << rv.hits;
+	return arc;
+}
+
+//==========================================================================
+//
+// AActor :: RipHitsOn
+//
+// [MGOOOOOO] How many times this projectile has already ripped `victim`. Doubles as the
+// ledger's garbage collector: entries whose victim has been destroyed are dropped here
+// rather than in a separate sweep, so a long-lived ripper cannot accumulate dead slots.
+//
+//==========================================================================
+
+int AActor::RipHitsOn (AActor *victim)
+{
+	for (unsigned int i = 0; i < RipVictims.Size(); )
+	{
+		AActor *recorded = RipVictims[i].victim;
+		if (recorded == NULL)
+		{
+			RipVictims.Delete(i);
+			continue;
+		}
+		if (recorded == victim)
+		{
+			return RipVictims[i].hits;
+		}
+		++i;
+	}
+	return 0;
+}
+
+//==========================================================================
+//
+// AActor :: RecordRipHit
+//
+// [MGOOOOOO] Books one rip against `victim`. The lifetime counter always advances; the
+// per-victim ledger is only grown when a budget actually reads it, so a plain +RIPPER
+// projectile never allocates.
+//
+//==========================================================================
+
+void AActor::RecordRipHit (AActor *victim)
+{
+	RipperHitsDone++;
+
+	zx::ripper::FRipLimits limits;
+	limits.perVictimHits = RipperCount;
+	// .Raw() because fixed_t is the strong zx::Fixed type (see basictypes.h).
+	if (!zx::ripper::ComputeNeedsVictimLedger(limits, RipperDamageFactor.Raw()))
+		return;
+
+	for (unsigned int i = 0; i < RipVictims.Size(); ++i)
+	{
+		if (RipVictims[i].victim == victim)
+		{
+			RipVictims[i].hits++;
+			return;
+		}
+	}
+
+	// [MGOOOOOO] Ledger full: drop the oldest entry rather than growing without bound. A
+	// projectile that has already ripped RIP_MAX_VICTIMS distinct actors is pathological, and
+	// forgetting the first of them only refills that actor's per-victim budget.
+	if (RipVictims.Size() >= (unsigned int)zx::ripper::RIP_MAX_VICTIMS)
+	{
+		RipVictims.Delete(0);
+	}
+
+	FRipVictim entry;
+	entry.victim = victim;
+	entry.hits = 1;
+	RipVictims.Push(entry);
+	GC::WriteBarrier(this, victim);
+}
+
+//==========================================================================
+//
+// AActor :: ResetRipCounters
+//
+// [MGOOOOOO] Refills every rip budget. Backs A_ResetRipCounters.
+//
+//==========================================================================
+
+void AActor::ResetRipCounters ()
+{
+	RipperDamageDone = 0;
+	RipperHitsDone = 0;
+	RipVictims.Clear();
+}
+
 void AActor::Serialize (FArchive &arc)
 {
 	Super::Serialize (arc);
@@ -242,19 +344,18 @@ void AActor::Serialize (FArchive &arc)
 		<< tics
 		<< state
 		<< Damage;
-	if (SaveVersion >= 3227)
-	{
-		arc << projectileKickback;
-	}
+	arc << projectileKickback;
 	arc	<< flags
 		<< flags2
 		<< flags3
 		<< flags4
 		<< flags5
 		<< flags6;
-	if (SaveVersion >= 4504)
+	arc << flags7;
+	// [rc4l] MBF21 flags word. Guarded so older snapshots (which never stored it) load with 0.
+	if (SaveVersion >= 4509)
 	{
-		arc << flags7;
+		arc << flags8;
 	}
 	arc	<< special1
 		<< special2
@@ -271,10 +372,7 @@ void AActor::Serialize (FArchive &arc)
 		<< player
 		<< SpawnPoint[0] << SpawnPoint[1] << SpawnPoint[2]
 		<< SpawnAngle;
-	if (SaveVersion >= 4506)
-	{
-		arc << StartHealth;
-	}
+	arc << StartHealth;
 	arc << skillrespawncount
 		<< tracer
 		<< floorclip
@@ -289,10 +387,7 @@ void AActor::Serialize (FArchive &arc)
 		arc << args[0];
 	}
 	arc << args[1] << args[2] << args[3] << args[4];
-	if (SaveVersion >= 3427)
-	{
-		arc << accuracy << stamina;
-	}
+	arc << accuracy << stamina;
 	arc << goal
 		<< waterlevel
 		<< MinMissileChance
@@ -329,16 +424,10 @@ void AActor::Serialize (FArchive &arc)
 		<< meleethreshold
 		<< meleerange
 		<< DamageType;
-	if (SaveVersion >= 4501)
-	{
-		arc << DamageTypeReceived;
-	}
-	if (SaveVersion >= 3237) 
-	{
-		arc
-		<< PainType
-		<< DeathType;
-	}
+	arc << DamageTypeReceived;
+	arc
+	<< PainType
+	<< DeathType;
 	arc	<< gravity
 		<< FastChaseStrafeCount
 		<< master
@@ -349,21 +438,24 @@ void AActor::Serialize (FArchive &arc)
 		<< pushfactor
 		<< Species
 		<< Score;
-	if (SaveVersion >= 3113)
-	{
-		arc << DesignatedTeam;
-	}
+	arc << DesignatedTeam;
 	arc << lastpush << lastbump
 		<< PainThreshold
 		<< DamageFactor
 		<< WeaveIndexXY << WeaveIndexZ
 		<< PoisonDamageReceived << PoisonDurationReceived << PoisonPeriodReceived << Poisoner
 		<< PoisonDamage << PoisonDuration << PoisonPeriod;
-	if (SaveVersion >= 3235)
-	{
-		arc << PoisonDamageType << PoisonDamageTypeReceived;
-	}
+	arc << PoisonDamageType << PoisonDamageTypeReceived;
 	arc << ConversationRoot << Conversation;
+
+	// [rc4l] uzdoom@e1130b860: FriendPlayer records which player a friendly actor belongs to, and it
+	// was never written to the archive -- so a saved friendly monster came back owned by nobody.
+	// Upstream guarded this on their SAVEVER 4509; ours is a separate numbering line that is already
+	// past it, so it is gated on 4514 instead.
+	if (SaveVersion >= 4514)
+	{
+		arc << FriendPlayer;
+	}
 	
 	// [BB] Zandronum additions.
 	arc << LimitedToTeam // [BB]
@@ -382,6 +474,35 @@ void AActor::Serialize (FArchive &arc)
 	if (SaveVersion >= 4508)
 	{
 		arc << projectilepassradius;
+	}
+
+	// [rc4l] MBF21 damage groups. Version-guarded so older snapshots (which never stored them) load
+	// with the class default (0 = vanilla behaviour). These are per-actor state set from DeHackEd.
+	if (SaveVersion >= 4509)
+	{
+		arc << InfightingGroup
+			<< ProjectileGroup
+			<< SplashGroup
+			<< RipSound;
+	}
+
+	// [MGOOOOOO] ZandroX's flags9 word and the ripper controls (features/ripper). Version-guarded
+	// so older snapshots (which never stored them) load with the class defaults -- all budgets 0
+	// (= unlimited) and no falloff, which is exactly pre-feature ripper behaviour. RipVictims is
+	// live per-projectile state, so a ripper saved mid-flight resumes with its budget intact.
+	if (SaveVersion >= 4511)
+	{
+		arc << flags9
+			<< RipperLevel
+			<< RipLevelMin
+			<< RipLevelMax
+			<< RipperMaxDamage
+			<< RipperCount
+			<< RipperMaxCount
+			<< RipperDamageFactor
+			<< RipperDamageDone
+			<< RipperHitsDone
+			<< RipVictims;
 	}
 
 	{
@@ -1381,7 +1502,8 @@ void AActor::Touch (AActor *toucher)
 bool AActor::Grind(bool items)
 {
 	// crunch bodies to giblets
-	if ((flags & MF_CORPSE) && !(flags3 & MF3_DONTGIB) && (health <= 0))
+	// [ZandroX] uzdoom@388f09f78: dontcrunchcorpses leaves corpses intact.
+	if ((flags & MF_CORPSE) && !(flags3 & MF3_DONTGIB) && (health <= 0) && !gameinfo.dontcrunchcorpses)
 	{
 		FState * state = FindState(NAME_Crush);
 		bool isgeneric = false;
@@ -2507,6 +2629,22 @@ explode:
 		}
 	} while (++step <= steps);
 
+	// [MGOOOOOO] +USERIPSTATE (features/ripper): apply the rip state now that the whole move is
+	// done and we are outside the blockmap iterator. Once per tic even if the move ripped on
+	// several sub-steps, which matches the once-per-tic cadence of rip damage itself. Every
+	// missile-explode path above returns early, so a projectile that detonated during this move
+	// never reaches here and cannot have its Death state overwritten.
+	if (tm.RipStatePending && !(mo->ObjectFlags & OF_EuthanizeMe))
+	{
+		FState *ripstate = mo->FindState(NAME_Rip);
+		if (ripstate != NULL)
+		{
+			mo->SetState(ripstate);
+			if (mo->ObjectFlags & OF_EuthanizeMe)
+				return oldfloorz;
+		}
+	}
+
 	// Friction
 
 	if (player && player->mo == mo && player->cheats & CF_NOVELOCITY)
@@ -2884,7 +3022,10 @@ void P_MonsterFallingDamage (AActor *mo)
 	{
 		damage = (int)(((vel - (23*FRACUNIT))*6)>>FRACBITS);
 	}
-	damage = TELEFRAG_DAMAGE;	// always kill 'em
+	// [rc4l] uzdoom@e74b9f195: without 'propermonsterfallingdamage' the monster is instakilled
+	// (historical behaviour); the flag makes it use the real computed falling-damage instead.
+	if (!(level.flags3 & LEVEL3_PROPERMONSTERFALLDMG))
+		damage = TELEFRAG_DAMAGE;	// always kill 'em
 	P_DamageMobj (mo, NULL, NULL, damage, NAME_Falling);
 }
 
@@ -3530,6 +3671,9 @@ void P_NightmareRespawn (AActor *mobj)
 			SERVERCOMMANDS_SetThingProperty( mo, APROP_Alpha );
 		if ( mo->RenderStyle.AsDWORD != mo->GetDefault()->RenderStyle.AsDWORD )
 			SERVERCOMMANDS_SetThingProperty( mo, APROP_RenderStyle );
+		// [rc4l] MTF_DOUBLEHEALTH (uzdoom@580094a7924e) changes health in HandleSpawnFlags; forward it too.
+		if ( mo->health != mo->GetDefault()->health )
+			SERVERCOMMANDS_SetThingHealth( mo );
 	}
 
 	// spawn a teleport fog at old spot because of removal of the body?
@@ -4192,6 +4336,15 @@ void AActor::Tick ()
 				}
 			}
 		}
+		}
+
+		// [rc4l] MBF21: sectors with the kill-monsters bit kill grounded (non-floating) monsters.
+		// Server-authoritative; the death is then replicated to clients like any other.
+		if (( Sector->special & KILL_MONSTERS_MASK ) && z <= floorz &&
+			player == NULL && (flags & MF_SHOOTABLE) && !(flags & MF_FLOAT) &&
+			( NETWORK_InClientMode() == false ))
+		{
+			P_DamageMobj (this, NULL, NULL, TELEFRAG_DAMAGE, NAME_InstantDeath);
 		}
 
 		// [RH] Consider carrying sectors here
@@ -4917,7 +5070,9 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 
 	FRandom &rng = pr_spawnmobj;
 
-	if (actor->isFast() && actor->flags3 & MF3_ISMONSTER)
+	// [rc4l] uzdoom gates instant reaction on the InstantReaction skill flag as well as fast
+	// monsters (p_mobj.cpp), so a skill can zero reaction time without also making monsters fast.
+	if ((actor->isFast() || G_SkillProperty(SKILLP_InstantReaction)) && actor->flags3 & MF3_ISMONSTER)
 		actor->reactiontime = 0;
 
 	if (actor->flags3 & MF3_ISMONSTER)
@@ -5166,6 +5321,28 @@ void AActor::HandleSpawnFlags ()
 		RenderStyle = STYLE_Translucent;
 		alpha = TRANSLUC25;
 	}
+	// [rc4l] uzdoom@580094a7924e -- PSX/Doom64 render-style spawn flags. These set only
+	// RenderStyle/alpha, which the [EP] broadcast at the SpawnThing sites already forwards to
+	// clients (APROP_RenderStyle/APROP_Alpha); level-placed things compute them identically on
+	// both ends via this same HandleSpawnFlags call, so no dedicated gate is needed here.
+	else if (SpawnFlags & MTF_TRANS)
+	{
+		RenderStyle = STYLE_Translucent;
+		alpha = TRANSLUC50;
+	}
+	else if (SpawnFlags & MTF_ADD)
+	{
+		RenderStyle = STYLE_Add;
+	}
+	else if (SpawnFlags & MTF_SUBTRACT)
+	{
+		RenderStyle = STYLE_Subtract;
+	}
+	else if (SpawnFlags & MTF_SPECTRE)
+	{
+		RenderStyle = STYLE_Add;
+		alpha = TRANSLUC25;
+	}
 	else if (SpawnFlags & MTF_ALTSHADOW)
 	{
 		RenderStyle = STYLE_None;
@@ -5178,6 +5355,14 @@ void AActor::HandleSpawnFlags ()
 			flags5 |= MF5_COUNTSECRET;
 			level.total_secrets++;
 		}
+	}
+	// [rc4l] uzdoom@580094a7924e -- MTF_DOUBLEHEALTH mutates synced state (hit points). Level-placed
+	// things run this same code on server and client, so the doubling stays consistent; the two
+	// SpawnThing broadcast sites additionally forward the changed health (see the [rc4l] health
+	// broadcast beside their [EP] alpha/RenderStyle updates) for network-spawned/reset actors.
+	if (SpawnFlags & MTF_DOUBLEHEALTH)
+	{
+		health *= 2;
 	}
 
 	// [BC]
@@ -5591,7 +5776,12 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 		mobj->sprite = skins[lSkin].sprite;
 	}
 
-	p->DesiredFOV = p->FOV = 90.f;
+	// [rc4l] fov-interp: respawn keeps the player's own FOV instead of hard-resetting to 90.
+	// Local player only -- `fov` is a client CVAR, so it is not another player's preference,
+	// and a server has none. Weapon zoom is FOVScale, re-applied per tic, so a scope raised at
+	// death does not survive into the next life.
+	p->DesiredFOV = p->FOV = zx::FovOnSpawn (playernum == consoleplayer,
+		NETWORK_GetState( ) == NETSTATE_SERVER, fov);
 	p->camera = p->mo;
 	p->playerstate = PST_LIVE;
 	p->refire = 0;
@@ -7849,12 +8039,13 @@ int AActor::SpawnHealth()
 	}
 	else if (flags & MF_FRIENDLY)
 	{
-		int adj = FixedMul(defhealth, G_SkillProperty(SKILLP_FriendlyHealth));
+		// [rc4l] uzdoom@f7cdb28ea: skill HealthFactor scales spawn health on top of Friendly/MonsterHealth.
+		int adj = FixedMul(FixedMul(defhealth, G_SkillProperty(SKILLP_FriendlyHealth)), G_SkillProperty(SKILLP_HealthFactor));
 		return (adj <= 0) ? 1 : adj;
 	}
 	else
 	{
-		int adj = FixedMul(defhealth, G_SkillProperty(SKILLP_MonsterHealth));
+		int adj = FixedMul(FixedMul(defhealth, G_SkillProperty(SKILLP_MonsterHealth)), G_SkillProperty(SKILLP_HealthFactor));
 		return (adj <= 0) ? 1 : adj;
 	}
 }

@@ -6,7 +6,7 @@
 [![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/rc4l/ZandroX/badges/tests.json)](https://github.com/rc4l/ZandroX/actions)
 [![License](https://img.shields.io/github/license/rc4l/ZandroX)](LICENSE.txt)
 
-ZandroX is a GPL-compliant fork of Zandronum.
+ZandroX is a GPL-compliant fork of Zandronum. You can track our [development progress here](https://commit-tracker.cantstopscrolling.net).
 
 ## Building
 
@@ -19,5 +19,7 @@ ZandroX is a GPL-compliant fork of Zandronum.
 - Fully GPL Compliant. You can make commercial games with this.
 - OpenGL renderer upgraded to 3.3 (GZDoom 2.0.5)
 - Borderless Windows
+- MBF21 Support
 - Freeform Menus (Ported from QZandronum)
+- In-engine video recording
 - Advanced crash reporter

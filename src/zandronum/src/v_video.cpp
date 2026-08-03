@@ -34,6 +34,8 @@
 #include "doomdef.h"
 #include "doomdata.h"
 #include "doomstat.h"
+#include "g_level.h"
+#include "info.h"
 
 #include "c_console.h"
 #include "hu_stuff.h"
@@ -161,11 +163,6 @@ CVAR (Int, vid_defheight, 480, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 // window, set by I_SetMode before construction. Distinct from the render/virtual size passed as
 // width/height. Shared by both video backends (SDL and Win32). See features/video-scale.
 int zx_pendingClientWidth = 0, zx_pendingClientHeight = 0;
-
-// [rc4l] video-scale: raised when the render size might need recomputing (mode set, window resize,
-// or a scale CVAR change). The framebuffer's MaybeResizeForScale only queries the (expensive on
-// macOS) drawable size and resizes when this is set -- event-driven, not polled every frame.
-bool zx_videoScaleDirty = true;
 CVAR (Int, vid_defbits, 8, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, vid_fps, false, 0)
 CVAR (Bool, ticker, false, 0)
@@ -1284,6 +1281,27 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 
 		while ( (actor = iterator.Next ()) )
 			spritelist[actor->sprite] = 1;
+	}
+
+	// [ZandroX] uzdoom@65e158954: honor the level's PrecacheClasses list by
+	// seeding the sprite list from every state of each named actor class, so
+	// their sprites are precached even if none are currently spawned.
+	if (level.info != NULL)
+	{
+		for (unsigned c = 0; c < level.info->PrecacheClasses.Size(); ++c)
+		{
+			const PClass *cls = PClass::FindClass(level.info->PrecacheClasses[c]);
+			if (cls != NULL && cls->ActorInfo != NULL)
+			{
+				const FActorInfo *ai = cls->ActorInfo;
+				for (int s = 0; s < ai->NumOwnedStates; ++s)
+				{
+					WORD spr = ai->OwnedStates[s].sprite;
+					if (spr < sprites.Size())
+						spritelist[spr] = 1;
+				}
+			}
+		}
 	}
 
 	for (i = (int)(sprites.Size () - 1); i >= 0; i--)

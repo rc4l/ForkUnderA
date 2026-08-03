@@ -481,8 +481,11 @@ FString PlayerValue::ToString( void ) const
 		{
 			FTexture *pTexture = RetrieveValue<FTexture *>( );
 
+			// [rc4l] uzdoom@59885b856: FTexture::Name is an FString now, and %s in a varargs call
+			// needs the char* out of it -- passing the object itself is undefined behaviour that
+			// only clang happened to diagnose.
 			if ( pTexture != NULL )
-				Result.Format( "%s", pTexture->Name );
+				Result.Format( "%s", pTexture->Name.GetChars() );
 
 			break;
 		}

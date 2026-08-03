@@ -79,11 +79,14 @@
 #include "i_input.h"
 #include "i_system.h"
 #include "c_dispatch.h"
+#include "c_console.h"
 #include "templates.h"
 #include "gameconfigfile.h"
 #include "v_font.h"
 #include "g_level.h"
 #include "doomstat.h"
+#include "features/crashreport/zx_crashreport.h" // [rc4l] report graceful fatals to GlitchTip
+#include "features/updater/computation/openurl_compute.h" // [rc4l] scheme allowlist for I_OpenURL
 #include "v_palette.h"
 #include "stats.h"
 #include "textures/bitmap.h"
@@ -868,6 +871,10 @@ void I_Quit()
 	// [BC] Support for client-side demos.
 	if ( CLIENTDEMO_IsRecording( ))
 		CLIENTDEMO_FinishRecording( );
+
+	// [rc4l] uzdoom@b6bbdf619: deinit the console HERE rather than via atterm, so anything Printf'd
+	// during the rest of shutdown still reaches a live console.
+	C_DeinitConsole();
 }
 
 
@@ -892,6 +899,10 @@ void STACK_ARGS I_FatalError(const char *error, ...)
 		va_start(argptr, error);
 		myvsnprintf(errortext, MAX_ERRORTEXT, error, argptr);
 		va_end(argptr);
+
+		// [rc4l] A fatal is a graceful throw/exit, not a signal, so sentry's handler never sees it.
+		// Report it here so bad-WAD / script-error fatals reach GlitchTip/GitHub. No-op if off.
+		ZX_CrashReportFatal(errortext);
 
 		// Record error to log (if logging)
 		if (Logfile)
@@ -1875,20 +1886,40 @@ static bool QueryPathKey(HKEY key, const char *keypath, const char *valname, FSt
 //
 //==========================================================================
 
-FString I_GetSteamPath()
+// [rc4l] uzdoom@86372fce3: returns every candidate directory rather than the Steam root, so the
+// POSIX implementation (posix/i_steam.cpp) can answer the same question a different way -- it has
+// to parse Steam's library folders, which have no registry equivalent. Also adds Strife: Veteran
+// Edition to the list.
+TArray<FString> I_GetSteamPath()
 {
+	TArray<FString> result;
+	static const char *const steam_dirs[] =
+	{
+		"doom 2/base",
+		"final doom/base",
+		"heretic shadow of the serpent riders/base",
+		"hexen/base",
+		"hexen deathkings of the dark citadel/base",
+		"ultimate doom/base",
+		"DOOM 3 BFG Edition/base/wads",
+		"Strife"
+	};
+
 	FString path;
 
-	if (QueryPathKey(HKEY_CURRENT_USER, "Software\\Valve\\Steam", "SteamPath", path))
+	if (!QueryPathKey(HKEY_CURRENT_USER, "Software\\Valve\\Steam", "SteamPath", path))
 	{
-		return path;
+		if (!QueryPathKey(HKEY_LOCAL_MACHINE, "Software\\Valve\\Steam", "InstallPath", path))
+			return result;
 	}
-	if (QueryPathKey(HKEY_LOCAL_MACHINE, "Software\\Valve\\Steam", "InstallPath", path))
+	path += "/SteamApps/common/";
+
+	for (unsigned int i = 0; i < countof(steam_dirs); ++i)
 	{
-		return path;
+		result.Push(path + steam_dirs[i]);
 	}
-	path = "";
-	return path;
+
+	return result;
 }
 
 //==========================================================================
@@ -1967,6 +1998,20 @@ FString I_GetLongPathName(FString shortpath)
 void I_RunProgram( const char *szPath )
 {
 	ShellExecute( NULL, "open", szPath, NULL, NULL, SW_SHOW );
+}
+
+// [rc4l] Open a URL in the default browser. The scheme allowlist is re-checked here so this can
+// never be turned into a "run arbitrary ShellExecute verb" primitive even if a caller skips the
+// confirmation dialog -- http/https only, no local paths, no other protocol handlers.
+void I_OpenURL( const char *url )
+{
+	if ( !zx::IsOpenableURL( url ) )
+	{
+		Printf( "I_OpenURL: refusing to open %s (only http/https URLs are allowed)\n",
+			url != NULL ? url : "(null)" );
+		return;
+	}
+	ShellExecute( NULL, "open", url, NULL, NULL, SW_SHOW );
 }
 
 #if _MSC_VER == 1900 && defined(_USING_V110_SDK71_)

@@ -68,6 +68,7 @@
 #include "a_sharedglobal.h"
 #include "farchive.h"
 #include "a_keys.h"
+#include "c_dispatch.h"
 
 // State.
 #include "r_state.h"
@@ -99,9 +100,6 @@
 static FRandom pr_playerinspecialsector ("PlayerInSpecialSector");
 void P_SetupPortals();
 
-
-// [GrafZahl] Make this message changable by the user! ;)
-CVAR(String, secretmessage, "A Secret is revealed!", CVAR_ARCHIVE)
 
 IMPLEMENT_POINTY_CLASS (DScroller)
  DECLARE_POINTER (m_Interpolations[0])
@@ -343,7 +341,9 @@ bool P_ActivateLine (line_t *line, AActor *mo, int side, int activationType)
 
 	if (buttonSuccess)
 	{
-		if (activationType == SPAC_Use || activationType == SPAC_Impact)
+		// [rc4l] uzdoom@0276760a2: SPAC_Push counts too -- a switch triggered by bumping into it
+		// changed its special but never swapped its texture, so it kept looking unpressed.
+		if (activationType == SPAC_Use || activationType == SPAC_Impact || activationType == SPAC_Push)
 		{
 			P_ChangeSwitchTexture (line->sidedef[0], repeat, special);
 
@@ -656,6 +656,42 @@ void P_PlayerInSpecialSector (player_t *player, sector_t * sector)
 			break;
 		}
 	}
+	else if (special & DEATH_MASK)
+	{
+		// [rc4l] MBF21: the death bit reinterprets the damage bits as instant-death effects.
+		switch (special & DAMAGE_MASK)
+		{
+		case 0x000: // kills the player unless they have a radiation suit or are invulnerable
+			if (ironfeet == NULL)
+				P_DamageMobj (player->mo, NULL, NULL, TELEFRAG_DAMAGE - 1, NAME_InstantDeath);
+			break;
+		case 0x100: // kills the player
+			P_DamageMobj (player->mo, NULL, NULL, TELEFRAG_DAMAGE, NAME_InstantDeath);
+			break;
+		case 0x200: // kills all players and exits the map (normal exit)
+		case 0x300: // kills all players and exits the map (secret exit)
+			{
+				// Check DF_NO_EXIT etc. before killing everyone; if exiting isn't allowed,
+				// CheckIfExitIsGood already kills the activating player.
+				const bool bExitIsGood = CheckIfExitIsGood (player->mo, NULL);
+
+				for (int i = 0; i < MAXPLAYERS; ++i)
+				{
+					if (playeringame[i] && players[i].mo != NULL && players[i].bSpectating == false)
+						P_DamageMobj (players[i].mo, NULL, NULL, TELEFRAG_DAMAGE, NAME_InstantDeath);
+				}
+
+				if (bExitIsGood)
+				{
+					if ((special & DAMAGE_MASK) == 0x200)
+						G_ExitLevel (0, false);
+					else
+						G_SecretExitLevel (0);
+				}
+			}
+			break;
+		}
+	}
 	else
 	{
 		//jff 3/14/98 handle extended sector types for secrets and damage
@@ -707,7 +743,7 @@ void P_PlayerInSpecialSector (player_t *player, sector_t * sector)
 	if (sector->special & SECRET_MASK)
 	{
 		sector->special &= ~SECRET_MASK;
-		P_GiveSecret(player->mo, true, true);
+		P_GiveSecret(player->mo, true, true, false, int(sector - sectors));
 	}
 }
 
@@ -800,7 +836,11 @@ void P_SectorDamage(int tag, int amount, FName type, const PClass *protectClass,
 
 // [Zandronum] `allowclient` is Zandronum extension to prevent accidental execution
 // by clients unless explicitly allowed to do so.
-void P_GiveSecret(AActor *actor, bool printmessage, bool playsound, bool allowclient)
+// [rc4l] uzdoom@8f5683e23 declares this immediately above P_GiveSecret; it arrived in the same
+// hunk our signature reject dropped.
+CVAR(Bool, showsecretsector, false, 0)
+
+void P_GiveSecret(AActor *actor, bool printmessage, bool playsound, bool allowclient, int sectornum)
 {
 	// [Zandronum] client must bail out if not allowed to give secret.
 	if ( !allowclient && NETWORK_InClientMode() )
@@ -831,7 +871,16 @@ void P_GiveSecret(AActor *actor, bool printmessage, bool playsound, bool allowcl
 		}
 		else if (actor->CheckLocalView (consoleplayer))
 		{
-			if (printmessage) C_MidPrint (SmallFont, secretmessage);
+			if (printmessage)
+			{
+				if (!showsecretsector || sectornum < 0) C_MidPrint(SmallFont, GStrings["SECRETMESSAGE"]);
+				else
+				{
+					FString s = GStrings["SECRETMESSAGE"];
+					s.AppendFormat(" (Sector %d)", sectornum);
+					C_MidPrint(SmallFont, s);
+				}
+			}
 			if (playsound) S_Sound (CHAN_AUTO | CHAN_UI, "misc/secret", 1, ATTN_NORM);
 		}
 	}
@@ -1039,16 +1088,7 @@ IMPLEMENT_CLASS (DLightTransfer)
 void DLightTransfer::Serialize (FArchive &arc)
 {
 	Super::Serialize (arc);
-	if (SaveVersion < 3223)
-	{
-		BYTE bytelight;
-		arc << bytelight;
-		LastLight = bytelight;
-	}
-	else
-	{
-		arc << LastLight;
-	}
+	arc << LastLight;
 	arc << Source << TargetTag << CopyFloor;
 }
 
@@ -1132,16 +1172,7 @@ IMPLEMENT_CLASS (DWallLightTransfer)
 void DWallLightTransfer::Serialize (FArchive &arc)
 {
 	Super::Serialize (arc);
-	if (SaveVersion < 3223)
-	{
-		BYTE bytelight;
-		arc << bytelight;
-		LastLight = bytelight;
-	}
-	else
-	{
-		arc << LastLight;
-	}
+	arc << LastLight;
 	arc << Source << TargetID << Flags;
 }
 
@@ -2227,16 +2258,43 @@ static void P_SpawnScrollers(void)
 			break;
 
 		case Scroll_Texture_Offsets:
-
+		{
 			// [WS] The server will update these for us.
 			if ( NETWORK_InClientMode() )
 				break;
 
+			// [rc4l] Extended for MBF21's tagged wall scrollers: args[3] divides the scroll speed,
+			// args[1] is a line ID to scroll instead of this line itself, and args[2] selects
+			// displacement (1) or accelerative (2) scrolling like Scroll_Texture_Model. When all
+			// are 0 this is exactly the old behaviour.
+			fixed_t divider = MAX<int> (1, l->args[3]);
+
+			if (l->args[2] & 3)
+			{
+				control = int(l->sidedef[0]->sector - sectors);
+				if (l->args[2] & 2)
+					accel = 1;
+			}
+
 			// killough 3/2/98: scroll according to sidedef offsets
 			s = int(lines[i].sidedef[0] - sides);
-			new DScroller (DScroller::sc_side, -sides[s].GetTextureXOffset(side_t::mid),
-				sides[s].GetTextureYOffset(side_t::mid), -1, s, accel, SCROLLTYPE(l->args[0]));
+			dx = -sides[s].GetTextureXOffset(side_t::mid) / divider;
+			dy = sides[s].GetTextureYOffset(side_t::mid) / divider;
+
+			if (l->args[1] == 0)
+			{
+				new DScroller (DScroller::sc_side, dx, dy, control, s, accel, SCROLLTYPE(l->args[0]));
+			}
+			else
+			{
+				for (s = -1; (s = P_FindLineFromID (l->args[1], s)) >= 0;)
+				{
+					new DScroller (DScroller::sc_side, dx, dy, control,
+						int(lines[s].sidedef[0] - sides), accel, SCROLLTYPE(l->args[0]));
+				}
+			}
 			break;
+		}
 
 		case Scroll_Texture_Left:
 
@@ -2399,26 +2457,13 @@ void P_SetSectorFriction (int tag, int amount, bool alterFlag)
 	friction = (0x1EB8*amount)/0x80 + 0xD001;
 
 	// killough 8/28/98: prevent odd situations
-	if (friction > FRACUNIT)
-		friction = FRACUNIT;
-	if (friction < 0)
-		friction = 0;
+	friction = clamp(friction, 0, FRACUNIT);
 
 	// The following check might seem odd. At the time of movement,
 	// the move distance is multiplied by 'friction/0x10000', so a
 	// higher friction value actually means 'less friction'.
 
-	// [RH] Twiddled these values so that velocity on ice (with
-	//		friction 0xf900) is the same as in Heretic/Hexen.
-	if (friction >= ORIG_FRICTION)	// ice
-//		movefactor = ((0x10092 - friction)*(0x70))/0x158;
-		movefactor = ((0x10092 - friction) * 1024) / 4352 + 568;
-	else
-		movefactor = ((friction - 0xDB34)*(0xA))/0x80;
-
-	// killough 8/28/98: prevent odd situations
-	if (movefactor < 32)
-		movefactor = 32;
+	movefactor = FrictionToMoveFactor(friction);
 
 	for (s = -1; (s = P_FindSectorFromTag (tag,s)) >= 0; )
 	{

@@ -67,6 +67,7 @@
 #include "gstrings.h"
 #include "w_wad.h"
 #include "features/crashreport/zx_crashreport.h"
+#include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
@@ -229,19 +230,20 @@ CUSTOM_CVAR (String, vid_cursor, "None", CVAR_ARCHIVE | CVAR_NOINITCALL)
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
 
-	bool res = false;
+	// [rc4l] ZandroX default: use the OS cursor, not the game's CursorPic / "cursor" lump (e.g.
+	// Freedoom's rabbit-head). The default value "None" now means "the native OS pointer"; a user can
+	// still opt into a game graphic by setting vid_cursor to a texture name.
+	if (!stricmp(self, "None"))
+	{
+		I_SetCursor(NULL);
+		return;
+	}
 
-	if (!stricmp(self, "None" ) && gameinfo.CursorPic.IsNotEmpty())
+	// An explicit name: use that graphic, falling back to the OS cursor (not a surprise lump) if the
+	// texture can't be found.
+	if (!I_SetCursor(TexMan[self]))
 	{
-		res = I_SetCursor(TexMan[gameinfo.CursorPic]);
-	}
-	else
-	{
-		res = I_SetCursor(TexMan[self]);
-	}
-	if (!res)
-	{
-		I_SetCursor(TexMan["cursor"]);
+		I_SetCursor(NULL);
 	}
 }
 
@@ -257,6 +259,7 @@ bool singletics = false;	// debug flag to cancel adaptiveness
 FString startmap;
 bool autostart;
 FString StoredWarp;
+extern FString StoredReloadMap; // [rc4l] set by wad_reload to boot into a map after a restart
 bool advancedemo;
 FILE *debugfile;
 event_t events[MAXEVENTS];
@@ -474,7 +477,7 @@ CVAR (Flag, sv_fastmonsters,	dmflags, DF_FAST_MONSTERS);
 CVAR (Flag, sv_nojump,			dmflags, DF_NO_JUMP);
 CVAR (Flag, sv_allowjump,		dmflags, DF_YES_JUMP);
 CVAR (Flag, sv_nofreelook,		dmflags, DF_NO_FREELOOK);
-CVAR (Flag, sv_respawnsuper,	dmflags, DF_RESPAWN_SUPER);
+CVAR (Flag, sv_allowfreelook,	dmflags, DF_YES_FREELOOK);
 CVAR (Flag, sv_nofov,			dmflags, DF_NO_FOV);
 CVAR (Flag, sv_noweaponspawn,	dmflags, DF_NO_COOP_WEAPON_SPAWN);
 CVAR (Flag, sv_nocrouch,		dmflags, DF_NO_CROUCH);
@@ -491,6 +494,7 @@ CVAR (Flag, sv_coop_halveammo,		dmflags, DF_COOP_HALVE_AMMO);
 CVAR (Mask, sv_crouch,			dmflags, DF_NO_CROUCH|DF_YES_CROUCH);
 CVAR (Mask, sv_jump,			dmflags, DF_NO_JUMP|DF_YES_JUMP);
 CVAR (Mask, sv_fallingdamage,	dmflags, DF_FORCE_FALLINGHX|DF_FORCE_FALLINGZD);
+CVAR (Mask, sv_freelook,		dmflags, DF_NO_FREELOOK|DF_YES_FREELOOK);
 
 //==========================================================================
 //
@@ -573,6 +577,7 @@ CVAR (Flag, sv_noautoaim,			dmflags2, DF2_NOAUTOAIM);
 CVAR (Flag, sv_dontcheckammo,		dmflags2, DF2_DONTCHECKAMMO);
 CVAR (Flag, sv_killbossmonst,		dmflags2, DF2_KILLBOSSMONST);
 CVAR (Flag, sv_nocountendmonst,		dmflags2, DF2_NOCOUNTENDMONST);
+CVAR (Flag, sv_respawnsuper,		dmflags2, DF2_RESPAWN_SUPER);
 CVAR (Flag, sv_norunes,				dmflags2, DF2_NO_RUNES);
 CVAR (Flag, sv_instantreturn,		dmflags2, DF2_INSTANT_RETURN);
 CVAR (Flag, sv_noteamselect,		dmflags2, DF2_NO_TEAM_SELECT);
@@ -1289,6 +1294,7 @@ void D_DoomLoop ()
 	{
 		try
 		{
+			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{
@@ -1573,7 +1579,7 @@ void D_DoAdvanceDemo (void)
 	static char demoname[8] = "DEMO1";
 	static int democount = 0;
 	static int pagecount;
-	const char *pagename = NULL;
+	FString pagename;
 
 	advancedemo = false;
 
@@ -1638,7 +1644,7 @@ void D_DoAdvanceDemo (void)
 	default:
 	case 0:
 		gamestate = GS_DEMOSCREEN;
-		pagename = gameinfo.titlePage;
+		pagename = gameinfo.TitlePage;
 		pagetic = (int)(gameinfo.titleTime * TICRATE);
 		S_ChangeMusic (gameinfo.titleMusic, gameinfo.titleOrder, false);
 		demosequence = 3;
@@ -1962,7 +1968,9 @@ void D_AddConfigWads (TArray<FString> &wadfiles, const char *section)
 			{
 				// D_AddWildFile resets GameConfig's position, so remember it
 				GameConfig->GetPosition (pos);
-				D_AddWildFile (wadfiles, value);
+				// [rc4l] uzdoom@bd5bf2a40: expand environment variables, so an autoload Path of
+				// $DOOMWADDIR/foo.wad or $HOME/... resolves instead of being taken literally.
+				D_AddWildFile (wadfiles, ExpandEnvVars(value));
 				// Reset GameConfig's position to get next wad
 				GameConfig->SetPosition (pos);
 			}
@@ -2420,7 +2428,6 @@ static void D_DoomInit()
 	Args->CollectFiles("-file", NULL);	// anything left goes after -file
 	Args->CollectFiles( "-optfile", NULL ); // [TP]
 
-	atterm (C_DeinitConsole);
 
 	// [AK] When Zandronum closes, any open lump handles in ACS that mods
 	// forgot to close must be cleared before any resources are deleted.
@@ -3081,6 +3088,10 @@ void D_DoomMain (void)
 		// shared D_DoomMain init path, not a client-only branch).
 		ZX_CrashReportCheckPreviousCrash ();
 
+		// [rc4l] The background auto-update check is NOT started here -- doing so during the heavy
+		// first-launch init raced and crashed. zx::updater::Tick() (in D_DoomLoop) fires it a short
+		// delay into the main loop instead, when the engine is idle at the title screen.
+
 		Printf ("P_Init: Init Playloop state.\n");
 		StartScreen->LoadingStatus ("Init game engine", 0x3f);
 		AM_StaticInit();
@@ -3265,7 +3276,24 @@ void D_DoomMain (void)
 			// These calls from inside V_Init2 are still necessary
 			C_NewModeAdjust();
 			M_InitVideoModesMenu();
-			D_StartTitle ();				// start up intro loop
+			// [rc4l] wad_reload can request booting straight into a map instead of the title screen.
+			// If the map isn't present in the new WAD set, fall back to the title rather than dying.
+			if ( StoredReloadMap.IsNotEmpty() )
+			{
+				FString map = StoredReloadMap;
+				StoredReloadMap = "";
+				if ( Wads.CheckNumForName( map.GetChars() ) != -1 )
+					G_InitNew( map.GetChars(), false );
+				else
+				{
+					Printf( TEXTCOLOR_RED "wad_reload: map '%s' not found in the new WAD set; staying at the title.\n", map.GetChars() );
+					D_StartTitle ();
+				}
+			}
+			else
+			{
+				D_StartTitle ();			// start up intro loop
+			}
 			setmodeneeded = false;			// This may be set to true here, but isn't needed for a restart
 		}
 		// [BB] .. but the server needs to load the new startmap.

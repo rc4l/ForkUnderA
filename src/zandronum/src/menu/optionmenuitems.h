@@ -424,6 +424,13 @@ public:
 		mColor = header? OptionSettings.mFontColorHeader : OptionSettings.mFontColor;
 	}
 
+	// [rc4l] Explicit font colour, for the GZDoom `StaticText "text", <colorname>` form.
+	FOptionMenuItemStaticText(const char *label, EColorRange color)
+		: FOptionMenuItem(label, NAME_None, true)
+	{
+		mColor = color;
+	}
+
 	int Draw(FOptionMenuDescriptor *desc, int y, int indent, bool selected)
 	{
 		drawLabel(indent, y, mColor);

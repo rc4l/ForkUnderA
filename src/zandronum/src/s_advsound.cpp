@@ -514,8 +514,6 @@ int S_AddSoundLump (const char *logicalname, int lump)
 	newsfx.LimitRange = 256*256;
 	newsfx.bRandomHeader = false;
 	newsfx.bPlayerReserve = false;
-	newsfx.bForce11025 = false;
-	newsfx.bForce22050 = false;
 	newsfx.bLoadRAW = false;
 	newsfx.bPlayerCompat = false;
 	newsfx.b16bit = false;
@@ -523,6 +521,7 @@ int S_AddSoundLump (const char *logicalname, int lump)
 	newsfx.bSingular = false;
 	newsfx.bTentative = false;
 	newsfx.bPlayerSilent = false;
+	newsfx.RawRate = 0;
 	newsfx.link = sfxinfo_t::NO_LINK;
 	newsfx.Rolloff.RolloffType = ROLLOFF_Doom;
 	newsfx.Rolloff.MinDistance = 0;
@@ -1370,7 +1369,9 @@ static void S_AddSNDINFO (int lump)
 				FName nm = sc.String;
 				sc.MustGetString();
 				if (sc.Compare("timidity")) MidiDevices[nm] = MDEV_TIMIDITY;
-				else if (sc.Compare("fmod")) MidiDevices[nm] = MDEV_FMOD;
+				// [rc4l] uzdoom@1a40c95f8: "sndsys" is the name going forward; "fmod" still parses so
+				// existing SNDINFO lumps keep working.
+				else if (sc.Compare("fmod") || sc.Compare("sndsys")) MidiDevices[nm] = MDEV_SNDSYS;
 				else if (sc.Compare("standard")) MidiDevices[nm] = MDEV_MMAPI;
 				else if (sc.Compare("opl")) MidiDevices[nm] = MDEV_OPL;
 				else if (sc.Compare("default")) MidiDevices[nm] = MDEV_DEFAULT;
@@ -1417,13 +1418,17 @@ static void S_AddBloodSFX (int lumpnum)
 	{
 		const char *name = Wads.GetLumpFullName(lumpnum);
 		sfxnum = S_AddSound(name, rawlump);
-		if (sfx->Format == 5)
-		{
-			S_sfx[sfxnum].bForce22050 = true;
+		if (sfx->Format < 5 || sfx->Format > 12)
+		{	// [0..4] + invalid formats
+			S_sfx[sfxnum].RawRate = 11025;
 		}
-		else // I don't know any other formats for this
-		{
-			S_sfx[sfxnum].bForce11025 = true;
+		else if (sfx->Format < 9)
+		{	// [5..8]
+			S_sfx[sfxnum].RawRate = 22050;
+		}
+		else
+		{	// [9..12]
+			S_sfx[sfxnum].RawRate = 44100;
 		}
 		S_sfx[sfxnum].bLoadRAW = true;
 		S_sfx[sfxnum].LoopStart = LittleLong(sfx->LoopStart);
@@ -1436,7 +1441,9 @@ static void S_AddBloodSFX (int lumpnum)
 		ambient->periodmax = 0;
 		ambient->volume = 1;
 		ambient->attenuation = 1;
-		ambient->sound = name;
+		// [rc4l] uzdoom@e0e00c4f8: the ambient must reference the sound we just added by id. The
+		// lump name is not a registered logical sound name, so every Blood ambient resolved to nothing.
+		ambient->sound = FSoundID(sfxnum);
 	}
 }
 
@@ -2252,7 +2259,7 @@ void AAmbientSound::BeginPlay ()
 //
 // AmbientSound :: Activate
 //
-// Starts playing a sound (or does nothing of the sound is already playing).
+// Starts playing a sound (or does nothing if the sound is already playing).
 //
 //==========================================================================
 
@@ -2383,14 +2390,19 @@ class AMusicChanger : public ASectorAction
 {
 	DECLARE_CLASS (AMusicChanger, ASectorAction)
 public:
-	virtual bool TriggerAction (AActor *triggerer, int activationType);
+	// [rc4l] Overrides DoTriggerAction, not TriggerAction: uzdoom@e49e926bd made the latter a
+	// non-virtual wrapper on ASectorAction. Left as an override of TriggerAction it would merely
+	// SHADOW the base -- so a music changer fired through the sector-action list would run the
+	// base wrapper and never change the music. Upstream shipped that inconsistency here and only
+	// lost it later when the music changer was scriptified, which is not a fix we can inherit.
+	bool DoTriggerAction (AActor *triggerer, int activationType) override;
 	virtual void Tick();
 	virtual void PostBeginPlay();
 };
 
 IMPLEMENT_CLASS(AMusicChanger)
 
-bool AMusicChanger::TriggerAction (AActor *triggerer, int activationType)
+bool AMusicChanger::DoTriggerAction (AActor *triggerer, int activationType)
 {
 	if (activationType & SECSPAC_Enter)
 	{
@@ -2400,7 +2412,7 @@ bool AMusicChanger::TriggerAction (AActor *triggerer, int activationType)
 			reactiontime = 30;
 		}
 	}
-	return Super::TriggerAction (triggerer, activationType);
+	return Super::DoTriggerAction (triggerer, activationType);
 }
  
 void AMusicChanger::Tick()

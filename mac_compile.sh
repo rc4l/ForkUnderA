@@ -59,7 +59,9 @@ NCPU="$(sysctl -n hw.ncpu)"
 # CMake 4.x dropped support for Zandronum's old cmake_minimum_required.
 CMAKE_COMPAT=(-DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 # Apple frameworks Zandronum's CMake does not auto-link.
-APPLE_FRAMEWORKS="-framework CoreFoundation -framework Carbon -framework Cocoa -framework IOKit -framework OpenGL"
+# [rc4l] AudioToolbox: the instant-replay audio sink (AudioQueue) since the Cocoa backend took
+# SDL out of the engine. ForceFeedback/CoreVideo come with the Cocoa joystick and NSOpenGLView.
+APPLE_FRAMEWORKS="-framework CoreFoundation -framework Carbon -framework Cocoa -framework IOKit -framework OpenGL -framework AudioToolbox -framework ForceFeedback -framework CoreVideo"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -331,6 +333,10 @@ make_app_bundle() {
     for f in "$BUILD_DIR"/*.pk3 "$BUILD_DIR"/*.wad; do
         [[ -e "$f" ]] && cp "$f" "$macos/"
     done
+    # [rc4l] Fail closed: the pk3 copy above is a guarded glob, so a build that never
+    # produced zandronum.pk3 would silently ship a bundle the engine can't start
+    # ("Cannot find zandronum.pk3"). Assert it landed rather than hand off a dud.
+    [[ -f "$macos/zandronum.pk3" ]] || die "zandronum.pk3 missing from $BUILD_DIR -- the pk3 target didn't run. Build the 'pk3' target or use mac_build_run.sh; refusing to ship a bundle the engine can't start."
     # [rc4l] Freedoom's BSD-3-clause license must travel with the WAD it covers, and GPL-3.0
     # sections 4-6 require the license text plus a pointer to the corresponding source; a
     # binary without them is not compliant. Missing files must not abort the build.
@@ -412,6 +418,11 @@ show_results() {
 # ---------------------------------------------------------------------------
 main() {
     status "ZandroX macOS build  (host: $HOST_ARCH, target: $TARGET_ARCH, sound: $WANT_SOUND)"
+    # [rc4l] The build stamps its version from `git describe --tags`; a refspec
+    # `git pull origin main` does not fetch tags, so without this a fresh checkout can
+    # label CURRENT code with an OLD version (and falsely prompt "update available").
+    # Fetch only the tag refs, best-effort: fast when current, silent no-op offline.
+    git -C "$SCRIPT_ROOT" fetch --tags --quiet origin "refs/tags/*:refs/tags/*" 2>/dev/null || true
     ensure_xcode
     ensure_homebrew
     ensure_base_tools

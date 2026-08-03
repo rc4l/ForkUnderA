@@ -55,8 +55,10 @@ char myGlBeginCharArray[4] = {0,0,0,0};
 #define PROC void*
 #define LPCSTR const char*
 
-#include <SDL.h>
-#define wglGetProcAddress(x) (*SDL_GL_GetProcAddress)(x)
+// [rc4l] This used to pull SDL in purely to alias wglGetProcAddress onto SDL_GL_GetProcAddress.
+// The alias has no users outside win32/win32gliface.cpp, which defines its own -- our GL entry
+// points come from GLEW, which does its own platform loading. Removing it takes SDL out of the
+// hardware renderer entirely, which is what lets the macOS build link none at all.
 #endif
 
 CVAR(Bool, gl_persistent_avail, false, CVAR_NOSET);
@@ -165,7 +167,6 @@ void gl_LoadExtensions()
 	gl.version = (float)strtod(version, NULL) + 0.01f;
 	gl.glslversion = (float)strtod((const char*)glGetString(GL_SHADING_LANGUAGE_VERSION), NULL) + 0.01f;
 	gl.vendorstring=(char*)glGetString(GL_VENDOR);
-	if (!strstr(gl.vendorstring, "NVIDIA Corporation")) gl.flags |= RFL_NOBUFFER;
 	// [rc4l] Always 4 on the 3.0 floor; kept for the [BB] map_lightmode gates.
 	gl.shadermodel = 4;
 
@@ -176,6 +177,11 @@ void gl_LoadExtensions()
 	if (CheckExtension("GL_ARB_texture_compression")) gl.flags|=RFL_TEXTURE_COMPRESSION;
 	if (CheckExtension("GL_EXT_texture_compression_s3tc")) gl.flags|=RFL_TEXTURE_COMPRESSION_S3TC;
 	if (!CheckExtension("GL_ARB_compatibility")) gl.flags |= RFL_COREPROFILE;
+
+	// [rc4l] uzdoom@3d24f58bf: this has to come AFTER the flags it tests. A core profile or
+	// persistent buffer storage both make the non-NVIDIA workaround wrong, and deciding it up at
+	// the vendor string meant those flags were not set yet.
+	if (!(gl.flags & (RFL_COREPROFILE|RFL_BUFFER_STORAGE)) && !strstr(gl.vendorstring, "NVIDIA Corporation")) gl.flags |= RFL_NOBUFFER;
 	if (!Args->CheckParm("-gl3"))
 	{
 		// don't use GL 4.x features when running in GL 3 emulation mode.
@@ -218,7 +224,14 @@ void gl_PrintStartupLog()
 {
 	Printf ("GL_VENDOR: %s\n", glGetString(GL_VENDOR));
 	Printf ("GL_RENDERER: %s\n", glGetString(GL_RENDERER));
-	Printf ("GL_VERSION: %s\n", glGetString(GL_VERSION));
+	// [rc4l] uzdoom@bf03d0222: say which profile we actually got -- core vs compatibility changes
+	// what is available, so a bug report without it is much harder to read.
+	{
+		int profilemask = 0;
+		glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profilemask);
+		Printf ("GL_VERSION: %s (%s profile)\n", glGetString(GL_VERSION),
+			(profilemask & GL_CONTEXT_CORE_PROFILE_BIT) ? "Core" : "Compatibility");
+	}
 	Printf ("GL_SHADING_LANGUAGE_VERSION: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
 	// [rc4l] core profile: glGetString(GL_EXTENSIONS) is invalid; enumerate instead ([TDRR] optional via developer CVAR).
 	if (developer) { Printf("GL_EXTENSIONS:"); for (unsigned ext_i = 0; ext_i < m_Extensions.Size(); ext_i++) Printf(" %s", m_Extensions[ext_i].GetChars()); Printf("\n"); }

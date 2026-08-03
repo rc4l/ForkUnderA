@@ -43,6 +43,7 @@
 #include "files.h"
 #include "m_swap.h"
 #include "v_video.h"
+#include "sbar.h"   // [rc4l] StatusBar->ScreenSizeChanged on an in-place resize
 #include "doomstat.h"
 #include "m_png.h"
 #include "m_crc32.h"
@@ -66,6 +67,7 @@
 #include "gl/gl_functions.h"
 #ifdef ZX_ENABLE_REPLAY
 #include "features/replay/zx_replay.h"   // [rc4l] FUA instant-replay frame capture hook
+#include "features/replay/computation/replay_compute.h" // [rc4l] pure readback sizing/lifecycle logic
 #endif
 
 IMPLEMENT_CLASS(OpenGLFrameBuffer)
@@ -81,7 +83,6 @@ EXTERN_CVAR (Float, vid_scale_custompixelaspect)
 EXTERN_CVAR (Bool, vid_cropaspect)
 extern bool setsizeneeded;
 extern int DisplayBits;
-extern bool zx_videoScaleDirty;
 #include "features/video-scale/computation/videoscale_compute.h"
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
@@ -113,6 +114,14 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 	mScaleClientW = mScaleClientH = 0;
 	mScaleActive = false;
 
+#ifdef ZX_ENABLE_REPLAY
+	// [rc4l] instant-replay readback PBOs: none until the first capture allocates them in THIS context.
+	mReplayPbo[0] = mReplayPbo[1] = 0;
+	mReplayPboIndex = 0;
+	mReplayPboW = mReplayPboH = 0;
+	mReplayPboFilled = false;
+#endif
+
 	InitializeState();
 	gl_SetupMenu();
 	gl_GenerateGlobalBrightmapFromColormap();
@@ -126,6 +135,9 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 OpenGLFrameBuffer::~OpenGLFrameBuffer()
 {
 	DestroyScaleBuffer(); // [rc4l] video-scale
+#ifdef ZX_ENABLE_REPLAY
+	DestroyReplayCapture(); // [rc4l] free the replay readback PBOs before the base dtor kills the context
+#endif
 	delete GLRenderer;
 	GLRenderer = NULL;
 }
@@ -184,9 +196,6 @@ void OpenGLFrameBuffer::InitializeState()
 	// [rc4l] video-scale: decide whether we render into an offscreen scale buffer, (re)build it, and
 	// bind it as the render target so everything below draws into it at the virtual size.
 	UpdateScaleBuffer();
-	// The client/drawable size may differ from the mode-set size (e.g. macOS reports a slightly
-	// different desktop drawable); re-check once on the next frame.
-	zx_videoScaleDirty = true;
 
 	Begin2D(false);
 	GLRenderer->Initialize();
@@ -276,8 +285,14 @@ void OpenGLFrameBuffer::GetClientSize(int &w, int &h)
 		w = GetWidth();
 		h = GetHeight();
 	}
+#elif defined(ZX_COCOA_BACKEND)
+	// [rc4l] Cocoa backend: upstream's own SDLGLFB exposes the drawable size directly, so this needs
+	// no SDL. GetClientWidth/Height return BACKING PIXELS -- see the invariant in posix/README.md;
+	// mixing them with points renders at quarter size on a Retina display rather than failing.
+	w = GetClientWidth();
+	h = GetClientHeight();
 #else
-	// SDL2 (macOS/Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
+	// SDL2 (Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
 	// desktop; for a window it is the window's drawable.
 	SDL_GL_GetDrawableSize(Screen, &w, &h);
 #endif
@@ -381,19 +396,35 @@ void OpenGLFrameBuffer::ResizeRenderInPlace(int w, int h)
 	// V_OutputResized. No black flash, no keyboard-focus loss (the window never goes away).
 	Resize(w, h);                                // canvas backing store + Width/Height/Pitch
 	V_RecalcVideoModeState(w, h, DisplayBits);   // Clean facs, DisplayW/H, mode-set recompute
+
+	// [rc4l] The status bar caches ST_Y, computed from SCREENHEIGHT in DBaseStatusBar::SetScaled.
+	// Resizing the render target without telling it leaves that cache pointing at the OLD height,
+	// and R_SetWindow then sizes the 3D view against a stale ST_Y -- a view TALLER than the buffer
+	// it draws into, which shows up as the status-bar strip rendering garbage while screenblocks 11
+	// (no status bar) looks fine. A real mode set goes through this; an in-place resize has to too.
+	if (StatusBar != NULL)
+	{
+		StatusBar->ScreenSizeChanged();
+	}
+
 	setsizeneeded = true;                        // recompute the 3D view for the new render size
 	UpdateScaleBuffer();                         // (re)build + bind the scale FBO, or drop to backbuffer
 }
 
 void OpenGLFrameBuffer::MaybeResizeForScale()
 {
-	// [rc4l] video-scale: event-driven, NOT polled. GetClientSize -> SDL_GL_GetDrawableSize is an
-	// expensive Cocoa/Metal query on macOS (~tens of ms), so calling it every frame tanks FPS.
-	// Only re-check when something actually changed -- a mode set, a window resize, or a scale CVAR
-	// change all raise zx_videoScaleDirty. This matches upstream's event-driven resize.
-	if (!zx_videoScaleDirty)
-		return;
-	zx_videoScaleDirty = false;
+	// [rc4l] uzdoom@c3702ae9e: this reconcile is UNCONDITIONAL, every frame, exactly as upstream's
+	// OpenGLFrameBuffer::Update does it.
+	//
+	// It used to be gated on a zx_videoScaleDirty flag because the old query --
+	// SDL_GL_GetDrawableSize -- cost tens of milliseconds on macOS, so polling it tanked the frame
+	// rate. That reasoning died with the SDL backend: the Cocoa path reads the view's backing
+	// bounds, which is cheap, and upstream polls on every platform including their own SDL one.
+	//
+	// The gate was also wrong, not just conservative. Anything that resized the window WITHOUT
+	// raising the flag -- a drag, a fullscreen toggle, an OS-driven resize -- left the render target
+	// at the old size with no way to notice. Comparing the sizes IS the check; a separate flag can
+	// only ever get out of sync with it, so the flag is gone rather than merely unread.
 
 	int cw = GetWidth(), ch = GetHeight();
 	GetClientSize(cw, ch);
@@ -419,59 +450,75 @@ void OpenGLFrameBuffer::MaybeResizeForScale()
 // we then map the OTHER PBO, whose read was issued a frame ago and is already done, so nothing
 // stalls the render thread the way the synchronous screenshot readback did. The two buffers are
 // reallocated whenever the framebuffer size changes (e.g. a window resize).
-static GLuint s_zxPbo[2] = { 0, 0 };
-static int    s_zxPboIndex = 0;
-static int    s_zxPboW = 0, s_zxPboH = 0;
-static bool   s_zxPboFilled = false;
-
+//
+// The PBOs are per-framebuffer MEMBERS (mReplayPbo), so they belong to THIS GL context and are
+// destroyed with it on a video-mode switch -- see the header note and DestroyReplayCapture(). That
+// is the fix for the Apple-driver crash: a buffer name from a destroyed context is never reused.
+//
 // w,h are the window's drawable (client) size -- we read the DEFAULT framebuffer, which holds the
 // final image the player sees (the staircase/video-scale renderer draws into an offscreen buffer at
 // a virtual size and upscales it into this back buffer before present, so reading the back buffer at
 // the client size captures the whole frame -- reading the virtual size would crop it).
-static void ZX_CaptureFramePBO(int w, int h)
+void OpenGLFrameBuffer::CaptureReplayFramePBO(int w, int h)
 {
 	if (w <= 0 || h <= 0) return;
-	const GLsizeiptr bytes = (GLsizeiptr)w * h * 3;
 
-	if (s_zxPbo[0] == 0 || w != s_zxPboW || h != s_zxPboH)
+	const bool haveBuffers = (mReplayPbo[0] != 0);
+	if (zx::ComputePboAction(haveBuffers, mReplayPboW, mReplayPboH, w, h) == zx::PboAction::Allocate)
 	{
-		if (s_zxPbo[0] == 0) glGenBuffers(2, s_zxPbo);
+		if (!haveBuffers) glGenBuffers(2, mReplayPbo);
+		const GLsizeiptr bytes = (GLsizeiptr)zx::ComputeRgbReadbackBytes(w, h);
 		for (int i = 0; i < 2; ++i)
 		{
-			glBindBuffer(GL_PIXEL_PACK_BUFFER, s_zxPbo[i]);
+			glBindBuffer(GL_PIXEL_PACK_BUFFER, mReplayPbo[i]);
 			glBufferData(GL_PIXEL_PACK_BUFFER, bytes, NULL, GL_STREAM_READ);
 		}
-		s_zxPboW = w; s_zxPboH = h; s_zxPboFilled = false; s_zxPboIndex = 0;
+		mReplayPboW = w; mReplayPboH = h; mReplayPboFilled = false; mReplayPboIndex = 0;
 	}
 
-	const int a = s_zxPboIndex;      // issue this frame's read here
-	const int b = s_zxPboIndex ^ 1;  // this one holds the previous frame's (completed) read
+	const int a = mReplayPboIndex;      // issue this frame's read here
+	const int b = mReplayPboIndex ^ 1;  // this one holds the previous frame's (completed) read
 
 	GLint prevFB = 0;
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFB);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);   // the window back buffer (final, upscaled image)
 
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
-	glBindBuffer(GL_PIXEL_PACK_BUFFER, s_zxPbo[a]);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, mReplayPbo[a]);
 	glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, 0);
 
-	if (s_zxPboFilled)
+	if (mReplayPboFilled)
 	{
-		glBindBuffer(GL_PIXEL_PACK_BUFFER, s_zxPbo[b]);
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, mReplayPbo[b]);
 		const BYTE *data = (const BYTE *)glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
 		if (data != NULL)
 		{
 			// glReadPixels rows are bottom-up; hand off the last row with a negative stride so the
 			// consumer walks it top-to-bottom.
-			zx::replay::SubmitFrame(data + (size_t)(h - 1) * w * 3, w, h, -(w * 3));
+			const zx::BottomUpView view = zx::ComputeBottomUpView(w, h);
+			zx::replay::SubmitFrame(data + view.firstRowOffset, w, h, view.rowStride);
 			glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
 		}
 	}
 
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 	glBindFramebuffer(GL_FRAMEBUFFER, prevFB);   // restore whatever the renderer had bound
-	s_zxPboIndex = b;
-	s_zxPboFilled = true;
+	mReplayPboIndex = b;
+	mReplayPboFilled = true;
+}
+
+// Delete the readback PBOs. Called from ~OpenGLFrameBuffer while the GL context is still current (the
+// base ~SDLGLFB destroys the context afterward), so the names are freed in the context that owns them.
+void OpenGLFrameBuffer::DestroyReplayCapture()
+{
+	if (mReplayPbo[0] != 0)
+	{
+		glDeleteBuffers(2, mReplayPbo);
+		mReplayPbo[0] = mReplayPbo[1] = 0;
+	}
+	mReplayPboW = mReplayPboH = 0;
+	mReplayPboIndex = 0;
+	mReplayPboFilled = false;
 }
 #endif
 
@@ -488,7 +535,7 @@ void OpenGLFrameBuffer::Swap()
 		// Capture at the window's drawable size (the full presented frame), not the virtual render size.
 		const int cw = mScaleClientW > 0 ? mScaleClientW : SCREENWIDTH;
 		const int ch = mScaleClientH > 0 ? mScaleClientH : SCREENHEIGHT;
-		ZX_CaptureFramePBO(cw, ch);
+		CaptureReplayFramePBO(cw, ch);
 	}
 #endif
 	if (needsetgamma)

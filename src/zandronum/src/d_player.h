@@ -168,6 +168,10 @@ public:
 	int			SpawnMask;
 	FNameNoInit	MorphWeapon;
 	fixed_t		AttackZOffset;			// attack height, relative to player center
+	// [ZandroX] Runtime standing height. Defaults to the class default height and
+	// is the base that APlayerPawn::Tick scales by crouchfactor; A_SetSize/ACS
+	// update this so a player's height change survives the per-tic crouch recompute.
+	fixed_t		FullHeight;
 	fixed_t		UseRange;				// [NS] Distance at which player can +use
 	fixed_t		AirCapacity;			// Multiplier for air supply underwater.
 	const PClass *FlechetteType;
@@ -588,6 +592,10 @@ public:
 
 	float		DesiredFOV;				// desired field of vision
 	float		FOV;					// current field of vision
+	// [rc4l] fov-interp: gametic of this player's last accepted FOV change, for the
+	// fov_change_cooldown_tics rate limit. Client-local and not serialized -- the server never
+	// reads it, so it carries no wire or savegame meaning.
+	int			lastFOVChangeTic;
 	fixed_t		viewz;					// focal origin above r.z
 	fixed_t		viewheight;				// base height above floor for viewz
 	fixed_t		deltaviewheight;		// squat speed.

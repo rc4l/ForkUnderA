@@ -228,11 +228,14 @@ static int P_Set3DFloor(line_t * line, int param, int param2, int alpha)
 		if (param==0)
 		{
 			flags=FF_EXISTS|FF_RENDERALL|FF_SOLID|FF_INVERTSECTOR;
+			// [rc4l] uzdoom@d0e551060 as settled by uzdoom@dd05e564c: alpha belongs outside the loop.
+			// Reset per line, a Sector_SetContents on any line after the one that set alpha silently
+			// put it back to opaque.
+			alpha = 255;
 			for (i=0;i<sec->linecount;i++)
 			{
 				line_t * l=sec->lines[i];
 
-				alpha=255;
 				if (l->special==Sector_SetContents && l->frontsector==sec)
 				{
 					alpha=clamp<int>(l->args[1], 0, 100);
@@ -252,11 +255,14 @@ static int P_Set3DFloor(line_t * line, int param, int param2, int alpha)
 							VC_BLOOD, VC_SLUDGE, VC_HAZARD, VC_BOOMWATER};
 						flags|=FF_SWIMMABLE|FF_BOTHPLANES|FF_ALLSIDES|FF_FLOOD;
 
+						// [rc4l] uzdoom@d0e551060 as settled by uzdoom@dd05e564c: pass the whole vavoom
+						// colour, and the sector's own Desaturate as the third argument. The masked
+						// form fed an alpha byte where GetSpecialLights wants desaturation -- the
+						// commented-out line beneath it had been the correct argument all along.
 						l->frontsector->ColorMap = 
 							GetSpecialLights (l->frontsector->ColorMap->Color, 
-											  (unsigned int)(vavoomcolors[l->args[0]]&VC_COLORMASK), 
-											  (unsigned int)(vavoomcolors[l->args[0]]&VC_ALPHAMASK)>>24);
-										//	  l->frontsector->ColorMap->Desaturate);
+											  vavoomcolors[l->args[0]], 
+											  l->frontsector->ColorMap->Desaturate);
 					}
 					alpha=(alpha*255)/100;
 					break;

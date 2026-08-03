@@ -38,6 +38,10 @@ const char *GetGitDescription();
 const char *GetGitHash();
 const char *GetGitTime();
 const char *GetVersionString();
+// [rc4l] The full `git describe` of this build ("v0.1.19-29-gde55d35"), i.e. OUR version rather
+// than Zandronum's. Separate from GetGitDescription(), which returns the 12-char hash the crash
+// reporter uses to name symbol assets -- changing that would break crash symbolication.
+const char *GetFuaDescribe();
 // [BB]
 const char *GetVersionStringRev();
 int GetRevisionNumber();
@@ -93,7 +97,11 @@ int GetRevisionNumber();
 // Protocol version used in demos.
 // Bump it if you change existing DEM_ commands or add new ones.
 // Otherwise, it should be safe to leave it alone.
-#define DEMOGAMEVERSION 0x219
+// [rc4l] 0x21B, NOT upstream's 0x21A. Upstream bumped 0x219->0x21A for the un-truncated map name in
+// demos (uzdoom@4acc04ce6); we were ALREADY at 0x21A for an unrelated reason of our own (the
+// SoundActor pitch field below), so reusing their number would mean two different demo formats
+// sharing one version and every existing 0x21A demo being read with the wrong map-name width.
+#define DEMOGAMEVERSION 0x21B	// [rc4l] 0x21A: SoundActor pitch field; 0x21B: full-length map names in demos
 
 // Minimum demo version we can play.
 // Bump it whenever you change or remove existing DEM_ commands.
@@ -117,7 +125,23 @@ int GetRevisionNumber();
 // Use 4500 as the base git save version, since it's higher than the
 // SVN revision ever got.
 // [MGOOOOOO] 4508: AActor now serializes projectilepassradius (guarded in AActor::Serialize).
-#define SAVEVER 4508
+// [rc4l] 4509: AActor now serializes the MBF21 damage-group fields (Infighting/Projectile/Splash
+// group), guarded in AActor::Serialize.
+// [ZandroX] 4510: APlayerPawn now serializes FullHeight (guarded in APlayerPawn::Serialize).
+// [MGOOOOOO] 4511: AActor now serializes flags9 and the ripper controls + runtime budget state
+// (guarded in AActor::Serialize; see features/ripper).
+// [rc4l] 4512: level_info_t / FLevelLocals sky, fade, F1, border and background name fields became
+// FStrings and the sky pair became FTextureIDs (uzdoom@65e8563cf), so the serialised layout changed
+// and older saves must not be read back into it.
+// [rc4l] 4513: map names in level snapshots are stored as full strings rather than a fixed
+// 8-character field (uzdoom@8ec95dc58). Upstream numbered the same change 4508; ours is a separate
+// line that was already past that.
+// [rc4l] 4514: AActor now serializes FriendPlayer (guarded in AActor::Serialize), so a saved
+// friendly actor keeps the player it belongs to (uzdoom@e1130b860). Upstream numbered the same
+// change 4509; ours is a separate line that was already past that.
+// [rc4l] 4515: dmflags bit 19 changed meaning -- it was DF_RESPAWN_SUPER, it is now DF_YES_FREELOOK,
+// and respawn-super moved to dmflags2 bit 27 (uzdoom@a21f01bc5). G_DoLoadGame migrates older saves.
+#define SAVEVER 4515
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)
@@ -128,6 +152,17 @@ int GetRevisionNumber();
 // This is so that derivates can use the same savegame versions without worrying about engine compatibility
 #define GAMESIG "ZANDRONUM"
 #define BASEWAD "zandronum.pk3"
+
+// [rc4l] THE product display name. Every user-facing place that names this engine -- the console
+// version line, the window/taskbar title -- reads this one macro, so a rebrand is a one-line edit
+// here rather than a hunt through the tree.
+//
+// Deliberately NOT reusing GAMESIG / GAMENAME / GAMENAMELOWERCASE for this. Those look like display
+// names but are load-bearing compatibility values: GAMENAMELOWERCASE is the config FILENAME
+// (m_specialpaths.cpp) so changing it silently orphans everyone's settings, and GAMESIG identifies
+// the engine inside savegames via GetEngineString() (g_game.cpp) so changing it invalidates saves.
+// Renaming the product must not do either of those things.
+#define FUA_NAME "Fua"
 
 // More stuff that needs to be different for derivatives.
 #define GAMENAME "Zandronum"

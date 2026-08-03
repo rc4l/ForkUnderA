@@ -42,6 +42,8 @@
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
+#include "features/mbf21/computation/damage_groups_compute.h"
+#include "features/hitboxviz/hitboxviz.h"
 #include "p_trace.h"
 #include "p_3dmidtex.h"
 #include "computation/rail_puff_compute.h"
@@ -80,6 +82,20 @@ static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync
 #include "unlagged.h"
 #include "d_netinf.h"
 #include "v_video.h"
+#include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip budget decisions
+
+// [MGOOOOOO] Collects a ripping projectile's DECORATE-authored budget for the pure decision
+// helpers. All-zero (the default) means unlimited, so a ripper that sets none of these resolves
+// to RIP_DAMAGE forever and behaves exactly as it did before features/ripper existed.
+static zx::ripper::FRipLimits P_RipLimitsOf( AActor *projectile )
+{
+	zx::ripper::FRipLimits limits;
+	limits.maxDamage = projectile->RipperMaxDamage;
+	limits.perVictimHits = projectile->RipperCount;
+	limits.totalHits = projectile->RipperMaxCount;
+	limits.explodeOnLimit = !!( projectile->flags9 & MF9_RIPEXPLODEONLIMIT );
+	return limits;
+}
 
 // [BB] Helper function to handle ZADF_UNBLOCK_PLAYERS.
 bool P_CheckUnblock ( AActor *pActor1, AActor *pActor2 )
@@ -625,6 +641,16 @@ int P_GetFriction(const AActor *mo, int *frictionfactor)
 		}
 	}
 
+	// [rc4l] uzdoom@ea7ba9dba: an actor can scale the friction it experiences. Applied last so it
+	// modulates whatever the sector/3D-floor logic above settled on.
+	if (mo->Friction != FRACUNIT)
+	{
+		// friction/movefactor are plain ints here, and fixed_t is a strong type, so the round trip
+		// is written out rather than left implicit.
+		friction = (int)clamp<fixed_t>(FixedMul(fixed_t(friction), mo->Friction), 0, FRACUNIT);
+		movefactor = (int)FrictionToMoveFactor(fixed_t(friction));
+	}
+
 	if (frictionfactor)
 		*frictionfactor = movefactor;
 
@@ -752,6 +778,7 @@ bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 		}
 		else if ((ld->flags & (ML_BLOCKING | ML_BLOCKEVERYTHING)) || 				// explicitly blocking everything
 			(!(NotBlocked) && (ld->flags & ML_BLOCKMONSTERS)) || 				// block monsters only
+			(!(NotBlocked) && !(tm.thing->flags & MF_FLOAT) && (ld->flags & ML_BLOCKLANDMONSTERS)) || // [rc4l] MBF21: block non-floating monsters
 			(tm.thing->player != NULL && (ld->flags & ML_BLOCK_PLAYERS)) ||		// block players
 			((Projectile) && (ld->flags & ML_BLOCKPROJECTILE)) ||				// block projectiles
 			((tm.thing->flags & MF_FLOAT) && (ld->flags & ML_BLOCK_FLOATERS)))	// block floaters
@@ -995,6 +1022,9 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		if (!(tm.thing->flags & MF_MISSILE) ||
 			!(tm.thing->flags2 & MF2_RIP) ||
 			(thing->flags5 & MF5_DONTRIP) ||
+			// [MGOOOOOO] A projectile outside the victim's RipperLevel window can't rip it, so it
+			// must take the pass-over/under branch just like the +DONTRIP case above.
+			!zx::ripper::ComputeRipLevelAllows(tm.thing->RipperLevel, thing->RipLevelMin, thing->RipLevelMax) ||
 			((tm.thing->flags6 & MF6_NOBOSSRIP) && (thing->flags2 & MF2_BOSS)))
 		{
 			if (tm.thing->flags3 & thing->flags3 & MF3_DONTOVERLAP)
@@ -1188,8 +1218,22 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 				else if (level.flags2 & LEVEL2_NOINFIGHTING) infight = -1;
 				else infight = infighting;
 
+				// [rc4l] MBF21 projectile groups: an explicitly set group overrides the default
+				// species-immunity rules below. Actors in the same positive group don't take
+				// projectile damage from each other; a groupless (negative) actor is immune to
+				// nothing. Semantics live in features/mbf21/computation/damage_groups_compute.
+				if (thing->ProjectileGroup != zx::mbf21::PG_DEFAULT || tm.thing->target->ProjectileGroup != zx::mbf21::PG_DEFAULT)
+				{
+					if (zx::mbf21::ComputeProjectileImmune(
+							thing->ProjectileGroup, tm.thing->target->ProjectileGroup,
+							thing->GetClass() == tm.thing->target->GetClass(),
+							thing == tm.thing->target))
+					{
+						return false;	// Explode, but do no damage.
+					}
+				}
 				// [BC] No infighting during invasion mode.
-				if (infight < 0 || invasion)
+				else if (infight < 0 || invasion)
 				{
 					// -1: Monsters cannot hurt each other, but make exceptions for
 					//     friendliness and hate status.
@@ -1250,11 +1294,31 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		{
 			return true;
 		}
-		if (tm.DoRipping && !(thing->flags5 & MF5_DONTRIP))
+		// [MGOOOOOO] Tiered ripping: a victim outside the projectile's RipperLevel window is not
+		// rippable, and falls through to the normal missile impact below exactly like +DONTRIP.
+		if (tm.DoRipping && !(thing->flags5 & MF5_DONTRIP) &&
+			zx::ripper::ComputeRipLevelAllows(tm.thing->RipperLevel, thing->RipLevelMin, thing->RipLevelMax))
 		{
 			if (!(tm.thing->flags6 & MF6_NOBOSSRIP) || !(thing->flags2 & MF2_BOSS))
 			{
-				if (tm.LastRipped != thing)
+				// [MGOOOOOO] Resolve the rip budget (features/ripper). RIP_EXPLODE leaves the rip
+				// path entirely and reports the victim as blocking, so P_XYMovement's ordinary
+				// blocked-missile handling detonates us -- deliberately not P_ExplodeMissile from
+				// here, because entering a Death state can Destroy tm.thing mid-blockmap-walk.
+				const zx::ripper::FRipLimits ripLimits = P_RipLimitsOf(tm.thing);
+				zx::ripper::FRipProgress ripProgress;
+				ripProgress.damageDone = tm.thing->RipperDamageDone;
+				ripProgress.hitsDone = tm.thing->RipperHitsDone;
+				ripProgress.hitsOnVictim = tm.thing->RipHitsOn(thing);
+
+				const zx::ripper::ERipOutcome ripOutcome = zx::ripper::ComputeRipOutcome(ripLimits, ripProgress);
+				if (ripOutcome == zx::ripper::RIP_EXPLODE)
+				{
+					return false;
+				}
+
+				// RIP_INERT falls through to the pass-through below without touching the victim.
+				if (ripOutcome == zx::ripper::RIP_DAMAGE && tm.LastRipped != thing)
 				{
 					tm.LastRipped = thing;
 					if (!(thing->flags & MF_NOBLOOD) &&
@@ -1264,7 +1328,29 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 					{ // Ok to spawn blood
 						P_RipperBlood(tm.thing, thing);
 					}
-					S_Sound(tm.thing, CHAN_BODY, "misc/ripslop", 1, ATTN_IDLE);
+					// [rc4l] MBF21: a ripper can override the default rip sound via its RipSound.
+					// [MGOOOOOO] +NORIPSOUND silences it outright, which RipSound alone cannot do.
+					if (!(tm.thing->flags9 & MF9_NORIPSOUND))
+					{
+						// [MGOOOOOO] Resolve to an id up front so +RIPSOUNDNORESTART can ask
+						// whether this exact sound is still playing. Note misc/ripslop is only
+						// defined for Heretic/Hexen in sndinfo, so on Doom it resolves to 0 and
+						// the fallback is silent -- Doom-based rippers want an explicit RipSound.
+						const FSoundID ripSnd = (tm.thing->RipSound != 0)
+							? FSoundID(tm.thing->RipSound)
+							: FSoundID("misc/ripslop");
+
+						// A rip fires once per tic for as long as the projectile is inside a
+						// victim, and S_StartSound stops the channel before restarting it (there
+						// is no CHAN_NOSTOP here). That machine-guns the short vanilla squelch,
+						// which is the intended shredding effect, but chops any longer sound down
+						// to a few milliseconds. +RIPSOUNDNORESTART lets it run to completion.
+						if (!(tm.thing->flags9 & MF9_RIPSOUNDNORESTART) ||
+							!S_IsActorPlayingSomething(tm.thing, CHAN_BODY, ripSnd))
+						{
+							S_Sound(tm.thing, CHAN_BODY, ripSnd, 1, ATTN_IDLE);
+						}
+					}
 
 					// Do poisoning (if using new style poison)
 					if (tm.thing->PoisonDamage > 0 && tm.thing->PoisonDuration != INT_MIN)
@@ -1272,11 +1358,19 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						P_PoisonMobj(thing, tm.thing, tm.thing->target, tm.thing->PoisonDamage, tm.thing->PoisonDuration, tm.thing->PoisonPeriod, tm.thing->PoisonDamageType);
 					}
 
-					damage = tm.thing->GetMissileDamage(3, 2);
+					// [MGOOOOOO] RipperDamageFactor compounds over the hits this projectile has
+					// already landed on THIS victim. Both sides book the hit, so the roll matches.
+					// .Raw() because fixed_t is the strong zx::Fixed type; the helper takes the
+					// same 16.16 bits as a plain integer so it can stay engine-header-free.
+					damage = zx::ripper::ComputeScaledRipDamage(tm.thing->GetMissileDamage(3, 2),
+						tm.thing->RipperDamageFactor.Raw(), ripProgress.hitsOnVictim);
+					// [MGOOOOOO] +RIPPERNOPAIN suppresses pain for the rip only; the terminal
+					// explosion still goes through P_DamageMobj without the flag.
+					const int ripDmgFlags = (tm.thing->flags9 & MF9_RIPPERNOPAIN) ? DMG_NO_PAIN : 0;
 					// [BB] The server handles the damage of RIPPER weapons.
 					int newdam = 0;
-					if ( NETWORK_InClientMode() == false ) 
-						newdam = P_DamageMobj(thing, tm.thing, tm.thing->target, damage, tm.thing->DamageType);
+					if ( NETWORK_InClientMode() == false )
+						newdam = P_DamageMobj(thing, tm.thing, tm.thing->target, damage, tm.thing->DamageType, ripDmgFlags);
 					if (!(tm.thing->flags3 & MF3_BLOODLESSIMPACT))
 					{
 						P_TraceBleed(newdam > 0 ? newdam : damage, thing, tm.thing);
@@ -1290,6 +1384,28 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 							thing->vely += FixedMul(tm.thing->vely, thing->pushfactor);
 							thing->lastpush = tm.PushTime;
 						}
+					}
+
+					// [MGOOOOOO] Book the hit. The counts advance on clients too (no RNG involved)
+					// so the budget gate stays in sync; RipperDamageDone only moves on the server,
+					// because P_DamageMobj above is server-gated -- clients learn about a
+					// RipperMaxDamage detonation from SERVERCOMMANDS_MissileExplode instead.
+					tm.thing->RecordRipHit(thing);
+					if (newdam > 0)
+						tm.thing->RipperDamageDone += newdam;
+
+					// [MGOOOOOO] +USERIPSTATE: hand the state change to the mover rather than
+					// doing it here -- see FCheckPosition::RipStatePending for why.
+					if (tm.thing->flags9 & MF9_USERIPSTATE)
+						tm.RipStatePending = true;
+
+					// Detonate on the very bite that spends a budget, not on the next contact.
+					ripProgress.damageDone = tm.thing->RipperDamageDone;
+					ripProgress.hitsDone = tm.thing->RipperHitsDone;
+					ripProgress.hitsOnVictim++;
+					if (zx::ripper::ComputeRipSpendsProjectile(ripLimits, ripProgress))
+					{
+						return false;
 					}
 				}
 				spechit.Clear();
@@ -1682,6 +1798,80 @@ bool P_TestMobjLocation(AActor *mobj)
 	}
 	mobj->flags = flags;
 	return false;
+}
+
+
+//----------------------------------------------------------------------------
+//
+// AActor :: SetSize
+//
+// [ZandroX] Adjusts the actor's radius/height at runtime. The actor is unlinked
+// from the world before the change and relinked afterwards, because blockmap
+// links and the touching_sectorlist depend on the radius. When testpos is true
+// the change is reverted (and false returned) if the actor no longer fits.
+//
+// Modeled on GZDoom/UZDoom's A_SetSize:
+// https://github.com/UZDoom/UZDoom/blob/master/src/playsim/p_actionfunctions.cpp
+//
+//----------------------------------------------------------------------------
+
+bool AActor::SetSize (fixed_t newradius, fixed_t newheight, bool testpos)
+{
+	fixed_t oldradius = radius;
+	fixed_t oldheight = height;
+
+	UnlinkFromWorld();
+	radius = newradius;
+	height = newheight;
+	LinkToWorld();
+
+	if (testpos && !P_TestMobjLocation(this))
+	{
+		UnlinkFromWorld();
+		radius = oldradius;
+		height = oldheight;
+		LinkToWorld();
+		return false;
+	}
+
+	// [ZandroX] For a player, the pawn's height is re-derived every tic from
+	// FullHeight * crouchfactor (see APlayerPawn::Tick), so update the base
+	// standing height too or the new size would be overwritten next tic.
+	if (player != NULL && player->mo == this)
+		static_cast<APlayerPawn *>(this)->FullHeight = newheight;
+
+	return true;
+}
+
+
+//----------------------------------------------------------------------------
+//
+// AActor :: SetHitSize
+//
+// [ZandroX] Adjusts the attack extent (HitRadius/HitHeight -> projectilepass
+// radius/height) at runtime. The blockmap link radius is MAX(radius,
+// GetAttackRadius()) (see p_maputl.cpp), so a change to the attack radius must
+// relink the actor. Unlike SetSize there is no position test: the attack extent
+// is not the movement radius, so widening it cannot get the actor stuck. The
+// extent is server-authoritative and, like the DECORATE HitRadius/HitHeight
+// properties, is not networked -- except while sv_debugexplosions + sv_cheats
+// are on, where it is replicated purely so the client-side hitbox overlay can
+// draw a truthful attack box (see features/hitboxviz).
+//
+//----------------------------------------------------------------------------
+
+void AActor::SetHitSize (fixed_t hitradius, fixed_t hitheight)
+{
+	UnlinkFromWorld();
+	projectilepassradius = hitradius;
+	projectilepassheight = hitheight;
+	LinkToWorld();
+
+	// [MGOOOOOO] Debug-only replication: without this a netgame client would draw the class-default
+	// attack box and silently miss every runtime change. Costs production servers nothing, since
+	// ServerDebugActive() is false unless an admin has explicitly turned the debug feed on.
+	if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && zx::hitboxviz::ServerDebugActive( ) )
+		SERVERCOMMANDS_SetThingSize( this, ACTORSIZE_HITRADIUS | ACTORSIZE_HITHEIGHT );
 }
 
 
@@ -2887,6 +3077,13 @@ void FSlide::SlideTraverse(fixed_t startx, fixed_t starty, fixed_t endx, fixed_t
 		{
 			goto isblocking;
 		}
+		// [rc4l] MBF21: block non-floating monsters.
+		if (li->flags & ML_BLOCKLANDMONSTERS && !(slidemo->flags & MF_FLOAT)
+			&& !((slidemo->flags3 & MF3_NOBLOCKMONST)
+			|| ((i_compatflags & COMPATF_NOBLOCKFRIENDS) && (slidemo->flags & MF_FRIENDLY))))
+		{
+			goto isblocking;
+		}
 
 		// set openrange, opentop, openbottom
 		P_LineOpening(open, slidemo, li, it.Trace().x + FixedMul(it.Trace().dx, in->frac),
@@ -3500,9 +3697,12 @@ bool FSlide::BounceWall(AActor *mo)
 	}
 	line = bestslideline;
 
-	if (line->special == Line_Horizon)
+	// [DA] -- Bouncing projectiles never bounced off properly from/exploded on line horizons like normal projectiles did.
+	if (line->special == Line_Horizon && !(mo->flags3 & MF3_SKYEXPLODE))
 	{
 		mo->SeeSound = 0;	// it might make a sound otherwise
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_DestroyThing( mo );
 		mo->Destroy();
 		return true;
 	}
@@ -3572,7 +3772,10 @@ extern FRandom pr_bounce;
 bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 {
 	if (mo && BlockingMobj && ((mo->BounceFlags & BOUNCE_AllActors)
-		|| ((mo->flags & MF_MISSILE) && (!(mo->flags2 & MF2_RIP) || (BlockingMobj->flags5 & MF5_DONTRIP) || ((mo->flags6 & MF6_NOBOSSRIP) && (BlockingMobj->flags2 & MF2_BOSS))) && (BlockingMobj->flags2 & MF2_REFLECTIVE))
+		// [MGOOOOOO] The ComputeRipLevelAllows term keeps this in step with PIT_CheckThing: a
+		// projectile the victim's RipperLevel window rejects is not a ripper as far as this
+		// reflective actor is concerned, so it bounces instead of passing through.
+		|| ((mo->flags & MF_MISSILE) && (!(mo->flags2 & MF2_RIP) || (BlockingMobj->flags5 & MF5_DONTRIP) || !zx::ripper::ComputeRipLevelAllows(mo->RipperLevel, BlockingMobj->RipLevelMin, BlockingMobj->RipLevelMax) || ((mo->flags6 & MF6_NOBOSSRIP) && (BlockingMobj->flags2 & MF2_BOSS))) && (BlockingMobj->flags2 & MF2_REFLECTIVE))
 		|| ((BlockingMobj->player == NULL) && (!(BlockingMobj->flags3 & MF3_ISMONSTER)))
 		))
 	{
@@ -5689,6 +5892,22 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 		return;
 	fulldamagedistance = clamp<int>(fulldamagedistance, 0, bombdistance - 1);
 
+	// [MGOOOOOO] Debug hitbox overlay: record the region this blast is about to test. Placed after
+	// the clamp above so the drawn region can never disagree with the simulation that produced it.
+	// A_Explode / A_RadiusThrust return early in client mode, so a client never reaches here on its
+	// own -- the server has to tell it, which also makes what it draws authoritative rather than a
+	// prediction. Locally simulated games (single-player, and the listen host's own view) just
+	// record it directly.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
+		if ( zx::hitboxviz::ServerDebugActive( ) )
+			SERVERCOMMANDS_DebugExplosion( bombspot->x, bombspot->y, bombspot->z, bombdistance, fulldamagedistance );
+	}
+	else if ( NETWORK_InClientMode( ) == false )
+	{
+		zx::hitboxviz::PushBlast( bombspot->x, bombspot->y, bombspot->z, bombdistance, fulldamagedistance );
+	}
+
 	double bombdistancefloat = 1.f / (double)(bombdistance - fulldamagedistance);
 	double bombdamagefloat = (double)bombdamage;
 
@@ -5718,6 +5937,11 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 		{ // don't damage the source of the explosion
 			continue;
 		}
+
+		// [rc4l] MBF21: an explosion doesn't splash-damage actors sharing the exploding thing's
+		// splash group. Semantics in features/mbf21/computation/damage_groups_compute.
+		if (zx::mbf21::ComputeSplashImmune(thing->SplashGroup, bombspot->SplashGroup))
+			continue;
 
 		// a much needed option: monsters that fire explosive projectiles cannot 
 		// be hurt by projectiles fired by a monster of the same type.
@@ -5858,6 +6082,11 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 							{
 								velz *= 0.8f;
 							}
+
+							// [rc4l] COMPATF2_EXPLODE1 (uzdoom p_map.cpp): Doom's radius attack gave no
+							// vertical thrust. When set, drop the z-kick but keep the horizontal push.
+							if ( i_compatflags2 & COMPATF2_EXPLODE1 )
+								velz = 0;
 
 							// [BB] Potentially use the horizontal thrust of old ZDoom versions.
 							if ( zacompatflags & ZACOMPATF_OLD_EXPLOSION_THRUST )

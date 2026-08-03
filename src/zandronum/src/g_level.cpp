@@ -37,6 +37,7 @@
 #include "d_main.h"
 #include "features/crashreport/zx_crashreport.h"
 #include "g_level.h"
+#include "features/skywire/computation/sky_wire_compute.h"
 #include "g_game.h"
 #include "s_sound.h"
 #include "d_event.h"
@@ -632,10 +633,7 @@ void G_InitNew (const char *mapname, bool bTitleLevel)
 	}
 	*/
 
-	if (mapname != level.mapname)
-	{
-		strcpy (level.mapname, mapname);
-	}
+	level.MapName = mapname;
 	if (bTitleLevel)
 	{
 		gamestate = GS_TITLELEVEL;
@@ -684,7 +682,9 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 		Printf (TEXTCOLOR_RED "Unloading scripts cannot exit the level again.\n");
 		return;
 	}
-	if (gameaction == ga_completed)	// do not exit multiple times.
+	// [rc4l] uzdoom@51da78ba2 compat_multiexit: allow the exit to trigger multiple times (some
+	// faulty scripts, e.g. Daedalus's travel tubes, rely on it).
+	if (gameaction == ga_completed && !(i_compatflags2 & COMPATF2_MULTIEXIT))	// do not exit multiple times.
 	{
 		return;
 	}
@@ -693,15 +693,15 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 	{
 		// end the game
 		levelname = NULL;
-		if (!strncmp(level.nextmap, "enDSeQ",6))
+		if (!level.NextMap.Compare("enDSeQ",6))
 		{
-			levelname = level.nextmap;	// If there is already an end sequence please leave it alone!
+			nextlevel = level.NextMap;	// If there is already an end sequence please leave it alone!
 		}
 		else 
 		{
 			// [BB] The server doesn't support end sequences, so just return to the current map.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				nextlevel = level.mapname;
+				nextlevel = level.MapName;
 			else
 				nextlevel.Format("enDSeQ%04x", int(gameinfo.DefaultEndSequence));
 		}
@@ -715,12 +715,14 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 			if (nextredir != NULL)
 			{
 				nextinfo = nextredir;
-				levelname = nextinfo->mapname;
 			}
 		}
+		nextlevel = nextinfo->MapName;
 	}
-
-	if (levelname != NULL) nextlevel = levelname;
+	else
+	{
+		nextlevel = levelname;
+	}
 
 	if (nextSkill != -1)
 		NextSkill = nextSkill;
@@ -813,20 +815,20 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 const char *G_GetExitMap()
 {
 	if ( level.flags & LEVEL_CHANGEMAPCHEAT )
-		return ( level.nextmap );
+		return ( level.NextMap );
 
 	// If we failed a campaign, just stay on the current map.
 	if (( CAMPAIGN_InCampaign( )) &&
 		( invasion == false ) &&
 		( CAMPAIGN_DidPlayerBeatMap( ) == false ))
 	{
-		return ( level.mapname );
+		return ( level.MapName );
 	}
 	// If using the same level dmflag, just stay on the current map.
 	else if (( dmflags & DF_SAME_LEVEL ) &&
 		( deathmatch || teamgame ))
 	{
-		return ( level.mapname );
+		return ( level.MapName );
 	}
 	// If we're using the lobby cvar and we're not in the lobby already, the lobby is the next map.
 	else if ( GAMEMODE_IsNextMapCvarLobby( ) )
@@ -838,10 +840,10 @@ const char *G_GetExitMap()
 	{
 		// [BB] It's possible that G_GetExitMap() is called multiple times before a map change.
 		// Therefore we may not advance the map, but just peek at it.
-		return ( MAPROTATION_GetNextMap( )->mapname );
+		return ( MAPROTATION_GetNextMap( )->MapName );
 	}
 
-	return level.nextmap;
+	return level.NextMap;
 }
 
 const char *G_GetSecretExitMap()
@@ -849,11 +851,11 @@ const char *G_GetSecretExitMap()
 	// [TL] No need to fetch a reference to level.nextmap anymore.
 	const char *nextmap = NULL;
 
-	if (level.secretmap[0] != 0)
+	if (level.NextSecretMap.Len() > 0)
 	{
-		if (P_CheckMapData(level.secretmap))
+		if (P_CheckMapData(level.NextSecretMap))
 		{
-			nextmap = level.secretmap;
+			nextmap = level.NextSecretMap;
 		}
 	}
 	
@@ -911,7 +913,7 @@ void G_DoCompleted (void)
 
 	if (gamestate == GS_TITLELEVEL)
 	{
-		strncpy (level.mapname, nextlevel, 255);
+		level.MapName = nextlevel;
 		G_DoLoadLevel (startpos, false);
 		startpos = 0;
 		viewactive = true;
@@ -920,20 +922,20 @@ void G_DoCompleted (void)
 
 	// [RH] Mark this level as having been visited
 	if (!(level.flags & LEVEL_CHANGEMAPCHEAT))
-		FindLevelInfo (level.mapname)->flags |= LEVEL_VISITED;
+		FindLevelInfo (level.MapName)->flags |= LEVEL_VISITED;
 
 	if (automapactive)
 		AM_Stop ();
 
 	wminfo.finished_ep = level.cluster - 1;
-	wminfo.LName0 = TexMan[TexMan.CheckForTexture(level.info->pname, FTexture::TEX_MiscPatch)];
-	wminfo.current = level.mapname;
+	wminfo.LName0 = TexMan[TexMan.CheckForTexture(level.info->PName, FTexture::TEX_MiscPatch)];
+	wminfo.current = level.MapName;
 
 	if (deathmatch &&
 		(dmflags & DF_SAME_LEVEL) &&
 		!(level.flags & LEVEL_CHANGEMAPCHEAT))
 	{
-		wminfo.next = level.mapname;
+		wminfo.next = level.MapName;
 		wminfo.LName1 = wminfo.LName0;
 	}
 	else
@@ -946,8 +948,8 @@ void G_DoCompleted (void)
 		}
 		else
 		{
-			wminfo.next = nextinfo->mapname;
-			wminfo.LName1 = TexMan[TexMan.CheckForTexture(nextinfo->pname, FTexture::TEX_MiscPatch)];
+			wminfo.next = nextinfo->MapName;
+			wminfo.LName1 = TexMan[TexMan.CheckForTexture(nextinfo->PName, FTexture::TEX_MiscPatch)];
 		}
 	}
 
@@ -1038,8 +1040,10 @@ void G_DoCompleted (void)
 	}
 
 	// [BB] LEVEL_NOINTERMISSION is also respected in deathmatch games
+	// [ZandroX] uzdoom@ed2b73833: allowintermission overrides the hub skip.
 	if ( ((level.flags & LEVEL_NOINTERMISSION) ||
-		 ( !deathmatch && (nextcluster == thiscluster) && (thiscluster->flags & CLUSTER_HUB))))
+		 ( !deathmatch && (nextcluster == thiscluster) && (thiscluster->flags & CLUSTER_HUB)
+		   && !(thiscluster->flags & CLUSTER_ALLOWINTERMISSION))))
 	{
 		G_WorldDone ();
 		return;
@@ -1118,14 +1122,14 @@ void G_DoLoadLevel (int position, bool autosave)
 	{
 		// [BB] We need to update the map rotation if the changemap cheat was used.
 		if ( level.flags & LEVEL_CHANGEMAPCHEAT )
-			MAPROTATION_SetPositionToMap( level.mapname, false );
+			MAPROTATION_SetPositionToMap( level.MapName, false );
 
 		level_info_t *nextMapInRotation = MAPROTATION_GetNextMap( );
 
 		// [BB] It's possible that the entered map doesn't coincide with the next map
 		// in the rotation, e.g. entering a secret map allows to leave the rotation.
 		// In this case, we may not advance to the next map in the rotation.
-		if (( nextMapInRotation != nullptr ) && ( stricmp( nextMapInRotation->mapname, level.mapname ) == 0 ))
+		if (( nextMapInRotation != nullptr ) && ( stricmp( nextMapInRotation->MapName, level.MapName ) == 0 ))
 		{
 			MAPROTATION_SetCurrentPosition( MAPROTATION_GetNextPosition( ));
 			MAPROTATION_SetUsed( MAPROTATION_GetCurrentPosition( ), true );
@@ -1171,7 +1175,7 @@ void G_DoLoadLevel (int position, bool autosave)
 	if ( NETWORK_InClientMode() == false )
 	{
 		// [BB] We clear the teams if either ZADF_YES_KEEP_TEAMS is not on or if the new level is a lobby.
-		const bool bClearTeams = ( !(zadmflags & ZADF_YES_KEEP_TEAMS) || GAMEMODE_IsLobbyMap( level.mapname ) );
+		const bool bClearTeams = ( !(zadmflags & ZADF_YES_KEEP_TEAMS) || GAMEMODE_IsLobbyMap( level.MapName ) );
 
 		if ( bClearTeams )
 		{
@@ -1233,7 +1237,7 @@ void G_DoLoadLevel (int position, bool autosave)
 	// If a campaign is allowed, see if there is one for this map.
 	if ( CAMPAIGN_AllowCampaign( ) && ( savegamerestore == false ))
 	{
-		pInfo = CAMPAIGN_GetCampaignInfo( level.mapname );
+		pInfo = CAMPAIGN_GetCampaignInfo( const_cast<char *>( level.MapName.GetChars() ) );
 		if ( pInfo )
 		{
 			Val.Int = pInfo->lFragLimit;
@@ -1371,7 +1375,7 @@ void G_DoLoadLevel (int position, bool autosave)
 		// [BC] In server mode, display the level name slightly differently.
 		if (NETWORK_GetState() == NETSTATE_SERVER)
 		{
-			Printf("\n*** %s: %s ***\n\n", level.mapname, level.LevelName.GetChars());
+			Printf("\n*** %s: %s ***\n\n", level.MapName.GetChars(), level.LevelName.GetChars());
 		}
 		else
 		{
@@ -1380,10 +1384,10 @@ void G_DoLoadLevel (int position, bool autosave)
 					"\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
 					"\36\36\36\36\36\36\36\36\36\36\36\36\37\n\n"
 					TEXTCOLOR_BOLD "%s - %s\n\n",
-					level.mapname, level.LevelName.GetChars());
+					level.MapName.GetChars(), level.LevelName.GetChars());
 
 			// [RC] Update the G15 display.
-			G15_NextLevel(level.mapname, level.LevelName.GetChars());
+			G15_NextLevel(level.MapName, level.LevelName.GetChars());
 		}
 	}
 
@@ -1409,8 +1413,8 @@ void G_DoLoadLevel (int position, bool autosave)
 	// DOOM determines the sky texture to be used
 	// depending on the current episode and the game version.
 	// [RH] Fetch sky parameters from FLevelLocals.
-	sky1texture = TexMan.GetTexture (level.skypic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_ReturnFirst);
-	sky2texture = TexMan.GetTexture (level.skypic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_ReturnFirst);
+	sky1texture = level.skytexture1;
+	sky2texture = level.skytexture2;
 
 	// [RH] Set up details about sky rendering
 	R_InitSkyMap ();
@@ -1512,7 +1516,7 @@ void G_DoLoadLevel (int position, bool autosave)
 			g_ActorNetIDList.clear( );
 	}
 
-	P_SetupLevel (level.mapname, position);
+	P_SetupLevel (level.MapName, position);
 
 	AM_LevelInit();
 
@@ -1612,7 +1616,7 @@ void G_DoLoadLevel (int position, bool autosave)
 		if (( invasion ) &&
 			( sv_usemapsettingswavelimit ))
 		{
-			pInfo = CAMPAIGN_GetCampaignInfo( level.mapname );
+			pInfo = CAMPAIGN_GetCampaignInfo( const_cast<char *>( level.MapName.GetChars() ) );
 			if ( pInfo )
 			{
 				Val.Int = pInfo->lWaveLimit;
@@ -1623,7 +1627,7 @@ void G_DoLoadLevel (int position, bool autosave)
 		if (( possession || teampossession ) &&
 			( sv_usemapsettingspossessionholdtime ))
 		{
-			pInfo = CAMPAIGN_GetCampaignInfo( level.mapname );
+			pInfo = CAMPAIGN_GetCampaignInfo( const_cast<char *>( level.MapName.GetChars() ) );
 			if (( pInfo ) && ( pInfo->lPossessionHoldTime > 0 ))
 			{
 				Val.Int = pInfo->lPossessionHoldTime;
@@ -1644,7 +1648,7 @@ void G_DoLoadLevel (int position, bool autosave)
 	{
 		// Now that we're in a new level, update the mapname/scoreboard.
 		FString string;
-		string.Format( "%s: %s", level.mapname, level.LevelName.GetChars() );
+		string.Format( "%s: %s", level.MapName.GetChars(), level.LevelName.GetChars() );
 		SERVERCONSOLE_SetCurrentMapname( string );
 		SERVERCONSOLE_UpdateScoreboard( );
 
@@ -1652,7 +1656,7 @@ void G_DoLoadLevel (int position, bool autosave)
 		SERVERCONSOLE_SetupColumns( );
 
 		// Also, update the level for all clients.
-		SERVER_LoadNewLevel( level.mapname );
+		SERVER_LoadNewLevel( level.MapName );
 
 	}
 }
@@ -1709,7 +1713,33 @@ void G_WorldDone (void)
 	{
 		nextcluster = FindClusterInfo (FindLevelInfo (nextlevel)->cluster);
 
-		if (nextcluster->cluster != level.cluster && NETWORK_GetState( ) == NETSTATE_SINGLE )
+		// [ZandroX] uzdoom@49b77f3a1: a level may define its own finale text
+		// (exittext/textflat/textpic/textmusic) that takes precedence over the
+		// cluster's exit/enter text.
+		if (level.info != NULL && level.info->FinaleText.IsNotEmpty()
+			&& NETWORK_GetState( ) == NETSTATE_SINGLE)
+		{
+			const char *music = level.info->FinaleMusic.IsNotEmpty()
+				? level.info->FinaleMusic.GetChars() : thiscluster->MessageMusic.GetChars();
+			int musicorder = level.info->FinaleMusic.IsNotEmpty()
+				? level.info->finalemusicorder : thiscluster->musicorder;
+			const char *flat = level.info->FinaleFlat.IsNotEmpty()
+				? level.info->FinaleFlat.GetChars() : thiscluster->FinaleFlat.GetChars();
+			F_StartFinale (music, musicorder,
+				thiscluster->cdtrack, thiscluster->cdid,
+				flat, level.info->FinaleText,
+				false,
+				level.info->flags3 & LEVEL3_FINALEPIC,
+				level.info->flags3 & LEVEL3_LOOKUPEXITTEXT,
+				false);
+			return;
+		}
+
+		// [rc4l] uzdoom@20b6395cf: 'needclustertext' forces the cluster text even within the same
+		// cluster; 'noclustertext' suppresses it entirely.
+		if ((( nextcluster->cluster != level.cluster ) || ( level.flags3 & LEVEL3_FORCECLUSTERTEXT ))
+			&& !( level.flags3 & LEVEL3_NOCLUSTERTEXT )
+			&& NETWORK_GetState( ) == NETSTATE_SINGLE )
 		{
 			// Only start the finale if the next level's cluster is different
 			// than the current one and we're not in deathmatch. [BC] And we're not in multiplayer
@@ -1760,7 +1790,7 @@ void G_DoWorldDone (void)
 			const unsigned int nextMapEntry = MAPROTATION_GetNextPosition( );
 			level_info_t* nextMapInfo = MAPROTATION_GetMap( nextMapEntry );
 
-			if (( nextMapInfo ) && ( stricmp( nextMapInfo->mapname, nextlevel.GetChars( )) == 0 ))
+			if (( nextMapInfo ) && ( stricmp( nextMapInfo->MapName, nextlevel.GetChars( )) == 0 ))
 			{
 				// [AK] It's possible the number of players who are playing changed during the intermission
 				// screen, so we must check again if we can still enter the next level. If not, we'll need
@@ -1768,12 +1798,12 @@ void G_DoWorldDone (void)
 				if ( MAPROTATION_CanEnterMap( nextMapEntry, MAPROTATION_CountEligiblePlayers( )) == false )
 				{
 					MAPROTATION_CalcNextMap( false );
-					nextlevel = MAPROTATION_GetNextMap( )->mapname;
+					nextlevel = MAPROTATION_GetNextMap( )->MapName;
 				}
 			}
 		}
 
-		strncpy (level.mapname, nextlevel, 255);
+		level.MapName = nextlevel;
 	}
 
 	// [Zandronum] Respawn dead spectators now so their inventory can travel.
@@ -2030,23 +2060,25 @@ void G_InitLevelLocals ()
 	level.teamdamage = teamdamage;
 	level.flags = 0;
 	level.flags2 = 0;
+	level.flags3 = 0;	// [rc4l]
 	// [BB]
 	level.flagsZA = 0;
 
-	info = FindLevelInfo (level.mapname);
+	info = FindLevelInfo (level.MapName);
 
 	level.info = info;
 	level.skyspeed1 = info->skyspeed1;
 	level.skyspeed2 = info->skyspeed2;
-	strncpy (level.skypic2, info->skypic2, 8);
+	level.skytexture1 = TexMan.GetTexture(info->SkyPic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
+	level.skytexture2 = TexMan.GetTexture(info->SkyPic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
 	level.fadeto = info->fadeto;
 	level.cdtrack = info->cdtrack;
 	level.cdid = info->cdid;
 	level.FromSnapshot = false;
 	if (level.fadeto == 0)
 	{
-		R_SetDefaultColormap (info->fadetable);
-		if (strnicmp (info->fadetable, "COLORMAP", 8) != 0)
+		R_SetDefaultColormap (info->FadeTable);
+		if (strnicmp (info->FadeTable, "COLORMAP", 8) != 0)
 		{
 			level.flags |= LEVEL_HASFADETABLE;
 		}
@@ -2084,6 +2116,11 @@ void G_InitLevelLocals ()
 	level.clusterflags = clus ? clus->flags : 0;
 	level.flags |= info->flags;
 	level.flags2 |= info->flags2;
+	level.flags3 |= info->flags3;	// [rc4l]
+	// [rc4l] uzdoom@3781c43ae: a 'nogravity' level runs at zero gravity (applied after the flag copy
+	// so it overrides the sv_gravity/info->gravity default set above).
+	if (level.flags3 & LEVEL3_NOGRAVITY)
+		level.gravity = 0;
 	// [BB]
 	level.flagsZA |= info->flagsZA;
 	level.levelnum = info->levelnum;
@@ -2091,15 +2128,8 @@ void G_InitLevelLocals ()
 	level.musicorder = info->musicorder;
 
 	level.LevelName = level.info->LookupLevelName();
-	strncpy (level.nextmap, info->nextmap, 10);
-	level.nextmap[10] = 0;
-	strncpy (level.secretmap, info->secretmap, 10);
-	level.secretmap[10] = 0;
-	strncpy (level.skypic1, info->skypic1, 8);
-	level.skypic1[8] = 0;
-	if (!level.skypic2[0])
-		strncpy (level.skypic2, level.skypic1, 8);
-	level.skypic2[8] = 0;
+	level.NextMap = info->NextMap;
+	level.NextSecretMap = info->NextSecretMap;
 
 	// [BC] Why do we need to do this? For now, just don't do it in server mode.
 	// [EP] Same for compatflags2. Don't make the server print twice.
@@ -2150,11 +2180,13 @@ bool FLevelLocals::IsCrouchingAllowed() const
 
 bool FLevelLocals::IsFreelookAllowed() const
 {
-	if (level.flags & LEVEL_FREELOOK_NO)
+	// [rc4l] uzdoom@a21f01bc5: freelook is a 3-state server setting now, so an explicit dmflags
+	// choice outranks MAPINFO -- the same precedence jump and crouch already use.
+	if (dmflags & DF_NO_FREELOOK)
 		return false;
-	if (level.flags & LEVEL_FREELOOK_YES)
+	if (dmflags & DF_YES_FREELOOK)
 		return true;
-	return !(dmflags & DF_NO_FREELOOK);
+	return !(level.flags & LEVEL_FREELOOK_NO);
 }
 
 //==========================================================================
@@ -2232,27 +2264,31 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 		<< level.maptime
 		<< i;
 
-	if (SaveVersion >= 3313)
-	{
-		arc << level.nextmusic;
-	}
+	arc << level.nextmusic;
 
 	// Hub transitions must keep the current total time
 	if (!hubLoad)
 		level.totaltime = i;
 
-	if (arc.IsStoring ())
+	// [rc4l] 4512, NOT upstream's 4507. Upstream bumped SAVEVER to 4507 for this format change, but
+	// that number describes THEIR save history -- ours is a separate line that was already at 4511
+	// (MBF21 damage groups, FullHeight, the ripper fields), none of which upstream has. Every save
+	// this engine has ever written stored the sky as two NAMES; the id format starts at our 4512.
+	// Keeping upstream's 4507 here would make every existing 4500-4511 save take the id branch and
+	// read two FTextureIDs out of a stream holding two names, corrupting everything after it.
+	// The rule when porting an upstream version gate: translate the number to OUR version point.
+	if (SaveVersion >= 4512)
 	{
-		arc.WriteName (level.skypic1);
-		arc.WriteName (level.skypic2);
+		arc << level.skytexture1 << level.skytexture2;
 	}
 	else
 	{
-		strncpy (level.skypic1, arc.ReadName(), 8);
-		strncpy (level.skypic2, arc.ReadName(), 8);
-		sky1texture = TexMan.GetTexture (level.skypic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_ReturnFirst);
-		sky2texture = TexMan.GetTexture (level.skypic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_ReturnFirst);
-		R_InitSkyMap ();
+		level.skytexture1 = TexMan.GetTexture(arc.ReadName(), FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
+		level.skytexture2 = TexMan.GetTexture(arc.ReadName(), FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable | FTextureManager::TEXMAN_ReturnFirst);
+	}
+	if (arc.IsLoading())
+	{
+		R_InitSkyMap();
 	}
 
 	G_AirControlChanged ();
@@ -2290,10 +2326,7 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 		StatusBar->Serialize (arc);
 
-	if (SaveVersion >= 4222)
-	{ // This must be done *after* thinkers are serialized.
-		arc << level.DefaultSkybox;
-	}
+	arc << level.DefaultSkybox;
 
 	arc << level.total_monsters << level.total_items << level.total_secrets;
 
@@ -2445,30 +2478,9 @@ void G_UnSnapshotLevel (bool hubLoad)
 //
 //==========================================================================
 
-static void writeMapName (FArchive &arc, const char *name)
-{
-	BYTE size;
-	if (name[7] != 0)
-	{
-		size = 8;
-	}
-	else
-	{
-		size = (BYTE)strlen (name);
-	}
-	arc << size;
-	arc.Write (name, size);
-}
-
-//==========================================================================
-//
-//
-//==========================================================================
-
 static void writeSnapShot (FArchive &arc, level_info_t *i)
 {
-	arc << i->snapshotVer;
-	writeMapName (arc, i->mapname);
+	arc << i->snapshotVer << i->MapName;
 	i->snapshot->Serialize (arc);
 }
 
@@ -2506,14 +2518,14 @@ void G_WriteSnapshots (FILE *file)
 			{
 				arc = new FPNGChunkArchive (file, VIST_ID);
 			}
-			writeMapName (*arc, wadlevelinfos[i].mapname);
+			(*arc) << wadlevelinfos[i].MapName;
 		}
 	}
 
 	if (arc != NULL)
 	{
-		BYTE zero = 0;
-		*arc << zero;
+		FString empty = "";
+		(*arc) << empty;
 		delete arc;
 	}
 
@@ -2554,6 +2566,7 @@ void G_ReadSnapshots (PNGHandle *png)
 	DWORD chunkLen;
 	BYTE namelen;
 	char mapname[256];
+	FString MapName;
 	level_info_t *i;
 
 	G_ClearSnapshots ();
@@ -2565,10 +2578,18 @@ void G_ReadSnapshots (PNGHandle *png)
 		DWORD snapver;
 
 		arc << snapver;
-		arc << namelen;
-		arc.Read (mapname, namelen);
-		mapname[namelen] = 0;
-		i = FindLevelInfo (mapname);
+		// [rc4l] 4513 is OUR version point, not upstream's 4508. Every save this engine has written
+		// from MINSAVEVER (4507) through 4512 carries the old fixed-width map name, so gating at
+		// 4508 would read all of them as the new full-string format.
+		if (SaveVersion < 4513)
+		{
+			arc << namelen;
+			arc.Read(mapname, namelen);
+			mapname[namelen] = 0;
+			MapName = mapname;
+		}
+		else arc << MapName;
+		i = FindLevelInfo (MapName);
 		i->snapshotVer = snapver;
 		i->snapshot = new FCompressedMemFile;
 		i->snapshot->Serialize (arc);
@@ -2594,14 +2615,25 @@ void G_ReadSnapshots (PNGHandle *png)
 	{
 		FPNGChunkArchive arc (png->File->GetFile(), VIST_ID, chunkLen);
 
-		arc << namelen;
-		while (namelen != 0)
+		if (SaveVersion < 4513)
 		{
-			arc.Read (mapname, namelen);
-			mapname[namelen] = 0;
-			i = FindLevelInfo (mapname);
-			i->flags |= LEVEL_VISITED;
 			arc << namelen;
+			while (namelen != 0)
+			{
+				arc.Read(mapname, namelen);
+				mapname[namelen] = 0;
+				i = FindLevelInfo(mapname);
+				i->flags |= LEVEL_VISITED;
+				arc << namelen;
+			}
+		}
+		else
+		{
+			while (arc << MapName, MapName.Len() > 0)
+			{
+				i = FindLevelInfo(MapName);
+				i->flags |= LEVEL_VISITED;
+			}
 		}
 	}
 
@@ -2645,7 +2677,7 @@ CCMD(listsnapshots)
 		{
 			unsigned int comp, uncomp;
 			snapshot->GetSizes(comp, uncomp);
-			Printf("%s (%u -> %u bytes)\n", wadlevelinfos[i].mapname, comp, uncomp);
+			Printf("%s (%u -> %u bytes)\n", wadlevelinfos[i].MapName.GetChars(), comp, uncomp);
 		}
 	}
 }
@@ -2657,8 +2689,7 @@ CCMD(listsnapshots)
 
 static void writeDefereds (FArchive &arc, level_info_t *i)
 {
-	writeMapName (arc, i->mapname);
-	arc << i->defered;
+	arc << i->MapName << i->defered;
 }
 
 //==========================================================================
@@ -2685,8 +2716,8 @@ void P_WriteACSDefereds (FILE *file)
 	if (arc != NULL)
 	{
 		// Signal end of defereds
-		BYTE zero = 0;
-		*arc << zero;
+		FString empty = "";
+		(*arc) << empty;
 		delete arc;
 	}
 }
@@ -2700,6 +2731,7 @@ void P_ReadACSDefereds (PNGHandle *png)
 {
 	BYTE namelen;
 	char mapname[256];
+	FString MapName;
 	size_t chunklen;
 
 	P_RemoveDefereds ();
@@ -2708,18 +2740,33 @@ void P_ReadACSDefereds (PNGHandle *png)
 	{
 		FPNGChunkArchive arc (png->File->GetFile(), ACSD_ID, chunklen);
 
-		arc << namelen;
-		while (namelen)
+		if (SaveVersion < 4513)
 		{
-			arc.Read (mapname, namelen);
-			mapname[namelen] = 0;
-			level_info_t *i = FindLevelInfo (mapname);
-			if (i == NULL)
-			{
-				I_Error ("Unknown map '%s' in savegame", mapname);
-			}
-			arc << i->defered;
 			arc << namelen;
+			while (namelen != 0)
+			{
+				arc.Read(mapname, namelen);
+				mapname[namelen] = 0;
+				level_info_t *i = FindLevelInfo(mapname);
+				if (i == NULL)
+				{
+					I_Error("Unknown map '%s' in savegame", mapname);
+				}
+				arc << i->defered;
+				arc << namelen;
+			}
+		}
+		else
+		{
+			while (arc << MapName, MapName.Len() > 0)
+			{
+				level_info_t *i = FindLevelInfo(MapName);
+				if (i == NULL)
+				{
+					I_Error("Unknown map '%s' in savegame", MapName.GetChars());
+				}
+				arc << i->defered;
+			}
 		}
 	}
 	png->File->ResetFilePtr();
@@ -2769,11 +2816,11 @@ CCMD(listmaps)
 	for(unsigned i = 0; i < wadlevelinfos.Size(); i++)
 	{
 		level_info_t *info = &wadlevelinfos[i];
-		MapData *map = P_OpenMapData(info->mapname, true);
+		MapData *map = P_OpenMapData(info->MapName, true);
 
 		if (map != NULL)
 		{
-			Printf("%s: '%s' (%s)\n", info->mapname, info->LookupLevelName().GetChars(),
+			Printf("%s: '%s' (%s)\n", info->MapName.GetChars(), info->LookupLevelName().GetChars(),
 				Wads.GetWadName(Wads.GetLumpFile(map->lumpnum)));
 			delete map;
 		}

@@ -826,12 +826,12 @@ DEFINE_PROPERTY(renderstyle, S, Actor)
 	PROP_STRING_PARM(str, 0);
 	static const char * renderstyles[]={
 		"NONE", "NORMAL", "FUZZY", "SOULTRANS", "OPTFUZZY", "STENCIL", 
-		"TRANSLUCENT", "ADD", "SHADED", "SHADOW", "SUBTRACT", NULL };
+		"TRANSLUCENT", "ADD", "SHADED", "SHADOW", "SUBTRACT", "ADDSTENCIL", "ADDSHADED", NULL };
 
 	static const int renderstyle_values[]={
 		STYLE_None, STYLE_Normal, STYLE_Fuzzy, STYLE_SoulTrans, STYLE_OptFuzzy,
 			STYLE_TranslucentStencil, STYLE_Translucent, STYLE_Add, STYLE_Shaded,
-			STYLE_Shadow, STYLE_Subtract};
+			STYLE_Shadow, STYLE_Subtract, STYLE_AddStencil, STYLE_AddShaded};
 
 	// make this work for old style decorations, too.
 	if (!strnicmp(str, "style_", 6)) str+=6;
@@ -1149,6 +1149,62 @@ DEFINE_PROPERTY(bouncecount, I, Actor)
 
 //==========================================================================
 //
+// [MGOOOOOO] Ripper controls -- see features/ripper/README.md. Every budget is clamped
+// non-negative because a negative one has no meaning and 0 already spells "unlimited".
+//
+//==========================================================================
+DEFINE_PROPERTY(rippermaxdamage, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipperMaxDamage = MAX<int>(0, id);
+}
+
+DEFINE_PROPERTY(rippercount, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipperCount = MAX<int>(0, id);
+}
+
+DEFINE_PROPERTY(rippermaxcount, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipperMaxCount = MAX<int>(0, id);
+}
+
+DEFINE_PROPERTY(ripperdamagefactor, F, Actor)
+{
+	PROP_FIXED_PARM(id, 0);
+	defaults->RipperDamageFactor = MAX<fixed_t>(0, id);
+}
+
+DEFINE_PROPERTY(ripperlevel, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipperLevel = id;
+}
+
+DEFINE_PROPERTY(riplevelmin, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipLevelMin = id;
+}
+
+DEFINE_PROPERTY(riplevelmax, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->RipLevelMax = id;
+}
+
+// [MGOOOOOO] The field already existed for MBF21's DeHackEd "Rip sound"; this just makes it
+// authorable in DECORATE. An empty string leaves it at 0, which means "misc/ripslop".
+DEFINE_PROPERTY(ripsound, S, Actor)
+{
+	PROP_STRING_PARM(str, 0);
+	defaults->RipSound = str;
+}
+
+//==========================================================================
+//
 //==========================================================================
 DEFINE_PROPERTY(weaveindexXY, I, Actor)
 {
@@ -1333,6 +1389,17 @@ DEFINE_PROPERTY(gravity, F, Actor)
 
 	if (i < 0) I_Error ("Gravity must not be negative.");
 	defaults->gravity = i;
+}
+
+//==========================================================================
+//
+//==========================================================================
+DEFINE_PROPERTY(friction, F, Actor)
+{
+	PROP_FIXED_PARM(i, 0);
+
+	if (i < 0) I_Error ("Friction must not be negative.");
+	defaults->Friction = i;
 }
 
 //==========================================================================

@@ -30,6 +30,7 @@ xx(Cumulative)
 xx(Fuzzy)
 xx(Opaque)
 xx(Stencil)
+xx(AddStencil)
 
 // Render styles
 xx(Normal)
@@ -37,6 +38,7 @@ xx(SoulTrans)
 xx(OptFuzzy)
 xx(Add)
 xx(Shaded)
+xx(AddShaded)
 xx(TranslucentStencil)
 xx(Shadow)
 xx(Subtract)
@@ -393,6 +395,9 @@ xx(Friend)
 xx(Strifeally)
 xx(Standing)
 xx(Countsecret)
+// [rc4l] uzdoom@580094a7924e PSX/Doom64 thing-effect flag keys (Transparent/Additive/Subtractive already defined)
+xx(Spectre)
+xx(Doublehealth)
 xx(Score)
 xx(Roll)
 xx(Scale)
@@ -414,6 +419,7 @@ xx(Blockeverything)
 xx(Zoneboundary)
 xx(Jumpover)
 xx(Blockfloaters)
+xx(Blocklandmonsters) // [rc4l] MBF21
 xx(Clipmidtex)
 xx(Wrapmidtex)
 xx(Midtex3d)
@@ -494,6 +500,15 @@ xx(blocksight)
 xx(blockhitscan)
 
 xx(Renderstyle)
+
+xx(ceilingplane_a)
+xx(ceilingplane_b)
+xx(ceilingplane_c)
+xx(ceilingplane_d)
+xx(floorplane_a)
+xx(floorplane_b)
+xx(floorplane_c)
+xx(floorplane_d)
 
 // USDF keywords
 xx(Amount)
@@ -646,3 +661,8 @@ xx(CacoScorch)
 xx(DoomImpScorch)
 xx(GreenPlasmaScorch)
 xx(RedPlasmaScorch)
+
+// [MGOOOOOO] Ripper state name (+USERIPSTATE, features/ripper). Appended, never inserted:
+// namedef indices are sent over the network (see the decal names above), so renumbering an
+// existing entry would break protocol compatibility.
+xx(Rip)

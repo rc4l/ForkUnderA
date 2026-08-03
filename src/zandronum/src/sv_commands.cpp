@@ -65,6 +65,8 @@
 #include "r_state.h"
 #include "sbar.h"
 #include "sv_commands.h"
+#include "features/skywire/computation/sky_wire_compute.h"
+#include "features/hitboxviz/hitboxviz.h"
 #include "sv_main.h"
 #include "team.h"
 #include "survival.h"
@@ -1817,6 +1819,9 @@ void SERVERCOMMANDS_SetThingFlags( AActor *pActor, FlagSet flagset, ULONG ulPlay
 		case FLAGSET_FLAGS5:	actorFlags = pActor->flags5; break;
 		case FLAGSET_FLAGS6:	actorFlags = pActor->flags6; break;
 		case FLAGSET_FLAGS7:	actorFlags = pActor->flags7; break;
+		// [MGOOOOOO] flags8 (MBF21) had no case here, so it never replicated; flags9 is ZandroX's.
+		case FLAGSET_FLAGS8:	actorFlags = pActor->flags8; break;
+		case FLAGSET_FLAGS9:	actorFlags = pActor->flags9; break;
 		case FLAGSET_FLAGSST:	actorFlags = pActor->STFlags; break;
 		default: return;
 	}
@@ -1859,6 +1864,17 @@ void SERVERCOMMANDS_UpdateThingFlagsNotAtDefaults( AActor *pActor, ULONG ulPlaye
 	if ( pActor->flags7 != pActor->GetDefault( )->flags7 )
 	{
 		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_FLAGS7, ulPlayerExtra, flags );
+	}
+	// [MGOOOOOO] flags8/flags9 are authored from DECORATE and nothing in the engine writes them,
+	// so these comparisons are false unless a mod actually changed one -- no extra late-join
+	// traffic in practice, but a mod that does change them now stays in sync.
+	if ( pActor->flags8 != pActor->GetDefault( )->flags8 )
+	{
+		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_FLAGS8, ulPlayerExtra, flags );
+	}
+	if ( pActor->flags9 != pActor->GetDefault( )->flags9 )
+	{
+		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_FLAGS9, ulPlayerExtra, flags );
 	}
 	// [BB] STFlags is intentionally left out here.
 }
@@ -1924,6 +1940,10 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 
 	case APROP_StencilColor:
 		value = pActor->fillcolor;
+		break;
+
+	case APROP_Friction:
+		value = (int)(pActor->Friction);
 		break;
 
 	default:
@@ -3644,19 +3664,20 @@ void SERVERCOMMANDS_SetSideFlags( ULONG ulSide, ULONG ulPlayerExtra, ServerComma
 //*****************************************************************************
 //*****************************************************************************
 //
-void SERVERCOMMANDS_Sound( LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_Sound( LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, int pitch )
 {
 	ServerCommands::Sound command;
 	command.SetChannel( lChannel );
 	command.SetSound( pszSound );
 	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ) );
+	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, bool bRespectActorPlayingSomething )
+void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, bool bRespectActorPlayingSomething, int pitch )
 {
 	if ( pActor == NULL )
 		return;
@@ -3676,7 +3697,7 @@ void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSo
 	// [BB] If the actor doesn't have a NetID, we have to instruct the clients differently how to play the sound.
 	if ( pActor->NetID == 0 )
 	{
-		SERVERCOMMANDS_SoundPoint((LONG)( pActor->x),(LONG)( pActor->y),(LONG)( pActor->z), lChannel, pszSound, fVolume, fAttenuation, ulPlayerExtra, flags );
+		SERVERCOMMANDS_SoundPoint((LONG)( pActor->x),(LONG)( pActor->y),(LONG)( pActor->z), lChannel, pszSound, fVolume, fAttenuation, ulPlayerExtra, flags, pitch );
 		return;
 	}
 
@@ -3688,12 +3709,13 @@ void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSo
 	command.SetSound( pszSound );
 	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ));
+	command.SetPitch( pitch );	// [rc4l] -1 = default (client computes its own); >=0 = explicit
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SoundSector( sector_t *sector, int channel, const char *sound, float volume, float attenuation, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_SoundSector( sector_t *sector, int channel, const char *sound, float volume, float attenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, int pitch )
 {
 	if ( sector == NULL )
 		return;
@@ -3704,12 +3726,13 @@ void SERVERCOMMANDS_SoundSector( sector_t *sector, int channel, const char *soun
 	command.SetSound( sound );
 	command.SetVolume( LONG ( clamp( volume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( attenuation ));
+	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SoundPoint( LONG lX, LONG lY, LONG lZ, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_SoundPoint( LONG lX, LONG lY, LONG lZ, LONG lChannel, const char *pszSound, float fVolume, float fAttenuation, ULONG ulPlayerExtra, ServerCommandFlags flags, int pitch )
 {
 	ServerCommands::SoundPoint command;
 	command.SetX( lX );
@@ -3719,6 +3742,7 @@ void SERVERCOMMANDS_SoundPoint( LONG lX, LONG lY, LONG lZ, LONG lChannel, const 
 	command.SetSound( pszSound );
 	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ) );
+	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 
@@ -3834,7 +3858,7 @@ void SERVERCOMMANDS_ClearVote( ULONG ulPlayerExtra, ServerCommandFlags flags )
 void SERVERCOMMANDS_MapLoad( ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	ServerCommands::MapLoad command;
-	command.SetMapName( level.mapname );
+	command.SetMapName( level.MapName.GetChars() );
 	command.SetCurrentPosition( MAPROTATION_GetCurrentPosition() );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
@@ -3975,9 +3999,21 @@ void SERVERCOMMANDS_SetMapMusic( const char *pszMusic, int track, ULONG ulPlayer
 //
 void SERVERCOMMANDS_SetMapSky( ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [rc4l] The sky goes on the wire BY NAME, but the level only holds resolved texture ids since
+	// uzdoom@65e8563cf -- so materialise the name here, at the one place that needs it, rather than
+	// keeping a second copy of the sky in FLevelLocals.
+	//
+	// The name is sent WHOLE. It used to be cut to eight characters, which was never a chosen rule:
+	// FTexture::Name was char[9] and the name arrived pre-bounded. uzdoom@59885b856 made that field
+	// an FString, and the static_assert that used to sit here -- sizeof(FTexture::Name) == 9 --
+	// broke the build so the change could not pass unnoticed. See features/skywire for why sending
+	// the full name is the right answer rather than re-imposing the old limit by hand.
+	const FTexture *pSky1 = TexMan[level.skytexture1];
+	const FTexture *pSky2 = TexMan[level.skytexture2];
+
 	ServerCommands::SetMapSky command;
-	command.SetSky1( level.skypic1 );
-	command.SetSky2( level.skypic2 );
+	command.SetSky1( zx::SkyNameForWire( pSky1 ? pSky1->Name.GetChars() : nullptr ) );
+	command.SetSky2( zx::SkyNameForWire( pSky2 ? pSky2->Name.GetChars() : nullptr ) );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 
@@ -4256,6 +4292,96 @@ void SERVERCOMMANDS_UpdateThingScaleNotAtDefault( AActor* pActor, ULONG ulPlayer
 
 	if ( scaleFlags != 0 )
 		SERVERCOMMANDS_SetThingScale( pActor, scaleFlags, ulPlayerExtra, flags  );
+}
+
+//*****************************************************************************
+//
+// [ZandroX] Tells clients about a runtime radius/height change.
+//
+void SERVERCOMMANDS_SetThingSize( AActor* pActor, unsigned int sizeFlags, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	if ( !EnsureActorHasNetID( pActor ) )
+		return;
+
+	if ( sizeFlags == 0 )
+		return;
+
+	// [ZandroX] For a player pawn the live height is re-derived from the base
+	// standing height (FullHeight) every tic, so send FullHeight instead - that
+	// is what the client's crouch recompute needs.
+	fixed_t heightToSend = pActor->height;
+	if ( pActor->player != NULL && pActor->player->mo == pActor )
+		heightToSend = static_cast<APlayerPawn *>( pActor )->FullHeight;
+
+	NetCommand command( SVC2_SETTHINGSIZE );
+	command.addShort( pActor->NetID );
+	command.addByte( sizeFlags );
+	if ( sizeFlags & ACTORSIZE_RADIUS )
+		command.addLong( (SDWORD)( pActor->radius ) );
+	if ( sizeFlags & ACTORSIZE_HEIGHT )
+		command.addLong( (SDWORD)( heightToSend ) );
+	// [MGOOOOOO] Attack extent, debug-only (see network.h ActorSizeFlag). Sent raw: unlike height,
+	// it is not re-derived per tic on the client, and GetAttackHeight applies the crouch scaling
+	// there from the physical height it already has.
+	if ( sizeFlags & ACTORSIZE_HITRADIUS )
+		command.addLong( (SDWORD)( pActor->projectilepassradius ) );
+	if ( sizeFlags & ACTORSIZE_HITHEIGHT )
+		command.addLong( (SDWORD)( pActor->projectilepassheight ) );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
+// [ZandroX] Debug: tells clients the damage region of an explosion so the hitbox overlay can draw
+// it. The server is the only machine that runs P_RadiusAttack (A_Explode returns early in client
+// mode), so without this a client could only guess at where and how big a blast was.
+//
+void SERVERCOMMANDS_DebugExplosion( fixed_t x, fixed_t y, fixed_t z, int distance, int fulldamagedistance, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	ServerCommands::DebugExplosion command;
+	command.SetX( x );
+	command.SetY( y );
+	command.SetZ( z );
+	command.SetDistance( distance );
+	command.SetFulldamagedistance( fulldamagedistance );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
+// [ZandroX] Sends the current size to a (joining) client if it differs from the
+// class default, so late joiners see runtime-resized actors correctly.
+//
+void SERVERCOMMANDS_UpdateThingSizeNotAtDefault( AActor* pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	// [ZandroX] Sanity check.
+	if ( pActor == NULL )
+		return;
+
+	// [ZandroX] Compare against the class defaults. For a player compare the base
+	// standing height (FullHeight) so a merely-crouching player isn't flagged.
+	fixed_t baseHeight = pActor->height;
+	if ( pActor->player != NULL && pActor->player->mo == pActor )
+		baseHeight = static_cast<APlayerPawn *>( pActor )->FullHeight;
+
+	unsigned int sizeFlags = 0;
+	if ( pActor->radius != pActor->GetDefault()->radius )
+		sizeFlags |= ACTORSIZE_RADIUS;
+	if ( baseHeight != pActor->GetDefault()->height )
+		sizeFlags |= ACTORSIZE_HEIGHT;
+
+	// [MGOOOOOO] Debug-only: carry the attack extent too, so a client connecting *after* a
+	// SetHitSize still draws the right attack box instead of the class default.
+	if ( zx::hitboxviz::ServerDebugActive( ) )
+	{
+		if ( pActor->projectilepassradius != pActor->GetDefault()->projectilepassradius )
+			sizeFlags |= ACTORSIZE_HITRADIUS;
+		if ( pActor->projectilepassheight != pActor->GetDefault()->projectilepassheight )
+			sizeFlags |= ACTORSIZE_HITHEIGHT;
+	}
+
+	if ( sizeFlags != 0 )
+		SERVERCOMMANDS_SetThingSize( pActor, sizeFlags, ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
@@ -5033,7 +5159,7 @@ void SERVERCOMMANDS_GenericCheat( ULONG ulPlayer, ULONG ulCheat, ULONG ulPlayerE
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SetCameraToTexture( AActor *pCamera, char *pszTexture, LONG lFOV, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_SetCameraToTexture( AActor *pCamera, const char *pszTexture, LONG lFOV, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	if ((!EnsureActorHasNetID (pCamera) ) ||
 		( pszTexture == NULL ))
@@ -5322,7 +5448,7 @@ void SERVERCOMMANDS_SyncMapRotation( ULONG ulPlayerExtra, ServerCommandFlags fla
 	for ( unsigned int i = 0; i < numEntries; i++ )
 	{
 		ServerCommands::MapRotationEntry entry;
-		entry.name = MAPROTATION_GetMap( i )->mapname;
+		entry.name = MAPROTATION_GetMap( i )->MapName;
 		entry.isUsed = MAPROTATION_IsUsed( i );
 		entry.minPlayers = MAPROTATION_GetPlayerLimits( i, false );
 		entry.maxPlayers = MAPROTATION_GetPlayerLimits( i, true );

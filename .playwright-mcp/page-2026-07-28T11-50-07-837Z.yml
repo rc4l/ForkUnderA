@@ -1,0 +1,54 @@
+- generic [ref=f1e47]:
+  - generic [ref=f1e50]:
+    - generic [ref=f1e51]:
+      - img "GlitchTip" [ref=f1e52] [cursor=pointer]
+      - button [ref=f1e53] [cursor=pointer]:
+        - img [ref=f1e54]: left_panel_close
+    - combobox [ref=f1e60] [cursor=pointer]
+    - navigation [ref=f1e67]:
+      - separator [ref=f1e68]
+      - generic [ref=f1e69]:
+        - img [ref=f1e70]: breaking_news
+        - generic [ref=f1e71]: Issues
+      - generic [ref=f1e73]:
+        - img [ref=f1e74]: avg_pace
+        - generic [ref=f1e75]: Performance
+      - generic [ref=f1e77]:
+        - img [ref=f1e78]: team_dashboard
+        - generic [ref=f1e79]: Projects
+      - generic [ref=f1e81]:
+        - img [ref=f1e82]: rocket_launch
+        - generic [ref=f1e83]: Releases
+      - separator [ref=f1e85]
+      - generic [ref=f1e86]:
+        - button [disabled] [ref=f1e87]:
+          - img [ref=f1e88]: account_tree
+          - img [ref=f1e91]: arrow_drop_down
+        - link:
+          - /url: https://crash.cantstopscrolling.net/null/settings
+        - link:
+          - /url: https://crash.cantstopscrolling.net/null/settings/projects
+        - link:
+          - /url: https://crash.cantstopscrolling.net/null/settings/subscription
+        - link:
+          - /url: https://crash.cantstopscrolling.net/null/settings/teams
+        - link:
+          - /url: https://crash.cantstopscrolling.net/null/settings/members
+      - generic [ref=f1e92]:
+        - button [ref=f1e93] [cursor=pointer]:
+          - img [ref=f1e94]: account_circle
+          - img [ref=f1e97]: arrow_drop_down
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/multi-factor-auth
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/notifications
+        - link:
+          - /url: https://crash.cantstopscrolling.net/profile/auth-tokens
+      - button [ref=f1e98] [cursor=pointer]:
+        - img [ref=f1e99]: help
+        - img [ref=f1e102]: arrow_drop_down
+    - link "GlitchTip" [ref=f1e104]:
+      - /url: https://crash.cantstopscrolling.net/system-info
+  - heading "User Profile" [level=1] [ref=f1e111]

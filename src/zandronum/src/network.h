@@ -203,13 +203,31 @@ enum FlagSet
 	FLAGSET_FLAGS5,
 	FLAGSET_FLAGS6,
 	FLAGSET_FLAGS7,
-	FLAGSET_FLAGSST
+	FLAGSET_FLAGSST,
+	// [MGOOOOOO] Appended, never inserted: this enum is sent as a Byte by SetThingFlags, so
+	// renumbering an existing entry would break protocol compatibility. flags8 (MBF21) had no
+	// entry at all until now, which meant A_ChangeFlag on an MF8_* flag never reached clients.
+	FLAGSET_FLAGS8,
+	FLAGSET_FLAGS9
 };
 
 enum ActorScaleFlag
 {
 	ACTORSCALE_X = 1,
 	ACTORSCALE_Y = 2
+};
+
+// [ZandroX] Which dimensions a SetThingSize command carries.
+enum ActorSizeFlag
+{
+	ACTORSIZE_RADIUS = 1,
+	ACTORSIZE_HEIGHT = 2,
+	// [MGOOOOOO] The attack extent (HitRadius / HitHeight) is server-authoritative and normally not
+	// replicated at all. These two bits are set only while sv_debugexplosions + sv_cheats are on,
+	// so the client-side hitbox overlay can draw a truthful attack box; ordinary play never sets
+	// them and the wire format is unchanged for every existing sender.
+	ACTORSIZE_HITRADIUS = 4,
+	ACTORSIZE_HITHEIGHT = 8
 };
 
 enum SetPlayerStatusFlag

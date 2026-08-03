@@ -84,6 +84,7 @@
 #include "d_netinf.h"
 #include "g_shared/pwo.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
+#include "features/fov-interp/computation/fovinterp_compute.h"
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -107,6 +108,15 @@ CUSTOM_CVAR (Float, cl_spectatormove, 1.0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG) {
 		self = 100.0;
 	else if (self < -100.0)
 		self = -100.0;
+}
+
+// [rc4l] fov-interp: degrees per tic the view moves toward its target FOV. 7.0 is the value
+// ZDoom hardcoded here, so the default is exactly the historic behaviour; the renderer tweens
+// between these steps. Ported from Q-Zandronum d2475b676, which made the constant a CVAR.
+CUSTOM_CVAR (Float, cl_fovchangespeed, 7.0f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG) {
+	// Below a degree per tic a zoom takes minutes to converge and reads as a stuck view.
+	if (self < 1.0f)
+		self = 1.0f;
 }
 
 // [AK] Determines which mode to use while spectating.
@@ -752,23 +762,19 @@ void APlayerPawn::Serialize (FArchive &arc)
 		<< DamageFade
 		<< PlayerFlags
 		<< FlechetteType;
-	if (SaveVersion < 3829)
+	arc << GruntSpeed << FallingScreamMinSpeed << FallingScreamMaxSpeed;
+	arc << UseRange;
+	arc << AirCapacity;
+	// [ZandroX] Runtime standing height. Older saves predate runtime resizing, so
+	// fall back to the class default (matching PostBeginPlay's initialization).
+	// (SAVEVER 4510: 4509 was taken by upstream's MBF21 damage-group fields.)
+	if (SaveVersion >= 4510)
 	{
-		GruntSpeed = 12*FRACUNIT;
-		FallingScreamMinSpeed = 35*FRACUNIT;
-		FallingScreamMaxSpeed = 40*FRACUNIT;
+		arc << FullHeight;
 	}
 	else
 	{
-		arc << GruntSpeed << FallingScreamMinSpeed << FallingScreamMaxSpeed;
-	}
-	if (SaveVersion >= 4502)
-	{
-		arc << UseRange;
-	}
-	if (SaveVersion >= 4503)
-	{
-		arc << AirCapacity;
+		FullHeight = GetDefault()->height;
 	}
 }
 
@@ -841,11 +847,13 @@ void APlayerPawn::Tick()
 		if ( player->bSpectating )
 			height = 0;
 		else
-			height = FixedMul(GetDefault()->height, player->crouchfactor);
+			// [ZandroX] Scale the runtime standing height (FullHeight), not the
+			// class default, so A_SetSize/ACS height changes persist.
+			height = FixedMul(FullHeight, player->crouchfactor);
 	}
 	else
 	{
-		if (health > 0) height = GetDefault()->height;
+		if (health > 0) height = FullHeight;
 	}
 	Super::Tick();
 }
@@ -860,6 +868,10 @@ void APlayerPawn::PostBeginPlay()
 {
 	Super::PostBeginPlay();
 	SetupWeaponSlots();
+
+	// [ZandroX] Establish the runtime standing height used by the crouch recompute
+	// in Tick(). A_SetSize/ACS may later change this on a per-instance basis.
+	FullHeight = GetDefault()->height;
 
 	// Voodoo dolls: restore original floorz/ceilingz logic
 	if (player == NULL || player->mo != this)
@@ -3619,35 +3631,16 @@ void P_PlayerThink (player_t *player)
 	if ( CLIENT_PREDICT_IsPredicting( ) == false )
 	{
 		// [RH] Zoom the player's FOV
-		float desired = player->DesiredFOV;
-		// Adjust FOV using on the currently held weapon.
-		if (player->playerstate != PST_DEAD &&		// No adjustment while dead.
-			player->ReadyWeapon != NULL &&			// No adjustment if no weapon.
-			player->ReadyWeapon->FOVScale != 0)		// No adjustment if the adjustment is zero.
-		{
-			// A negative scale is used to prevent G_AddViewAngle/G_AddViewPitch
-			// from scaling with the FOV scale.
-			desired *= fabsf(player->ReadyWeapon->FOVScale);
-		}
-		if (player->FOV != desired)
-	{
-			if (fabsf (player->FOV - desired) < 7.f)
-			{
-				player->FOV = desired;
-			}
-			else
-			{
-				float zoom = MAX(7.f, fabsf(player->FOV - desired) * 0.025f);
-				if (player->FOV > desired)
-				{
-					player->FOV = player->FOV - zoom;
-				}
-				else
-				{
-					player->FOV = player->FOV + zoom;
-				}
-			}
-		}
+		// [rc4l] fov-interp: the step itself is unchanged (and identical to the old hardcoded
+		// 7.0 at the default cl_fovchangespeed) — it just lives in the tested computation unit
+		// now, so the renderer's sub-tic tween is a fraction of exactly this step and the two
+		// can never disagree. See features/fov-interp/.
+		const float desired = zx::FovTargetForWeapon (player->DesiredFOV,
+			player->playerstate != PST_DEAD,
+			player->ReadyWeapon != NULL,
+			player->ReadyWeapon != NULL ? player->ReadyWeapon->FOVScale : 0.f);
+
+		player->FOV = zx::FovStepTic (player->FOV, desired, cl_fovchangespeed);
 	}
 
 	if ( CLIENT_PREDICT_IsPredicting( ) == false )
@@ -4463,26 +4456,7 @@ void player_t::Serialize (FArchive &arc)
 		<< ACSSkinOverridesWeaponSkin
 		// [BB] Skulltag additions - end
 		;
-	if (SaveVersion < 3427)
-	{
-		WORD oldaccuracy, oldstamina;
-		arc << oldaccuracy << oldstamina;
-		if (mo != NULL)
-		{
-			mo->accuracy = oldaccuracy;
-			mo->stamina = oldstamina;
-		}
-	}
-	if (SaveVersion < 4041)
-	{
-		// Move weapon state flags from cheats and into WeaponState.
-		WeaponState = ((cheats >> 14) & 1) | ((cheats & (0x37 << 24)) >> (24 - 1));
-		cheats &= ~((1 << 14) | (0x37 << 24));
-	}
-	else
-	{
-		arc << WeaponState;
-	}
+	arc << WeaponState;
 	arc << LogText
 		<< ConversationNPC
 		<< ConversationPC
@@ -4506,44 +4480,11 @@ void player_t::Serialize (FArchive &arc)
 	// [BL] is the player unarmed?
 	arc << bUnarmed;
 
-	if (SaveVersion >= 3475)
-	{
-		arc << poisontype << poisonpaintype;
-	}
-	else if (poisoner != NULL)
-	{
-		poisontype = poisoner->DamageType;
-		poisonpaintype = poisoner->PainType != NAME_None ? poisoner->PainType : poisoner->DamageType;
-	}
+	arc << poisontype << poisonpaintype;
 
-	if (SaveVersion >= 3599)
-	{
-		arc << timefreezer;
-	}
-	else
-	{
-		cheats &= ~(1 << 15);	// make sure old CF_TIMEFREEZE bit is cleared
-	}
-	if (SaveVersion < 3640)
-	{
-		cheats &= ~(1 << 17);	// make sure old CF_REGENERATION bit is cleared
-	}
-	if (SaveVersion >= 3780)
-	{
-		arc << settings_controller;
-	}
-	else
-	{
-		settings_controller = (this - players == Net_Arbitrator);
-	}
-	if (SaveVersion >= 4505)
-	{
-		arc << onground;
-	}
-	else
-	{
-		onground = (mo->z <= mo->floorz) || (mo->flags2 & MF2_ONMOBJ) || (mo->BounceFlags & BOUNCE_MBF) || (cheats & CF_NOCLIP2);
-	}
+	arc << timefreezer;
+	arc << settings_controller;
+	arc << onground;
 
 	if (arc.IsLoading ())
 	{

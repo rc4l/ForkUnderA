@@ -16,7 +16,7 @@
 #
 # Env: GLITCHTIP_URL GLITCHTIP_TOKEN GLITCHTIP_ORG  GITHUB_REPOSITORY (or GITHUB_REPO) GITHUB_TOKEN
 #      [LLVM_SYMBOLIZER] [DRY_RUN]
-import io, json, os, re, subprocess, sys, glob, shutil, tempfile, zipfile
+import datetime, io, json, os, re, subprocess, sys, glob, shutil, tempfile, zipfile
 import urllib.request, urllib.error, urllib.parse
 
 GT_URL  = os.environ["GLITCHTIP_URL"].rstrip("/")
@@ -216,6 +216,10 @@ def raw_stack(ev):
     return frames
 
 # ---- issue title/body ------------------------------------------------------
+def _is_real_name(fn):
+    # A resolved function name, not a bare address ("0x1e0b234dc") or the "?" placeholder.
+    return bool(fn) and fn != "?" and not fn.startswith("0x")
+
 def crash_site(frames):
     # First frame (innermost) that resolves to a project source line; else the innermost frame.
     for fr in frames:
@@ -223,9 +227,19 @@ def crash_site(frames):
             short = fr["loc"].split("/")[-1]
             return f"{fr['func']} ({short})"
     for fr in frames:
-        if fr.get("loc"):
+        # A real source location (has a path separator) -- not a bare address the raw fallback parks
+        # in loc.
+        if fr.get("loc") and "/" in fr["loc"]:
             return f"{fr['func']} ({fr['loc'].split('/')[-1]})"
-    return frames[0]["func"] if frames else "<unknown>"
+    # The client names frames via dladdr but without a file:line (system libs, or an un-symbolicated
+    # dev build). Take the innermost frame that has a REAL function name -- so a crash in Apple's GL
+    # driver reads "storeVecColor_RGB_UB", never "<unknown>".
+    for fr in frames:
+        if _is_real_name(fr.get("func") or ""):
+            return fr["func"]
+    # Nothing resolved to a real name (e.g. a pre-fix event that only has raw addresses): never title
+    # with a bare address or "<unknown>".
+    return "native crash (no symbols)"
 
 def fmt_stack(frames):
     return "\n".join(f"  {i}: {f['func']}" + (f"  ({f['loc']})" if f.get("loc") else "")
@@ -241,7 +255,12 @@ def build_issue(iss, ev, frames, symbolicated, skip_reason):
     perma   = iss.get("permalink", "")
     marker  = MARKER_TMPL.format(gid)
 
-    title_site = scrub(crash_site(frames)) if frames else scrub(iss.get("title") or "<unknown>")
+    title_site = scrub(crash_site(frames)) if frames else scrub(iss.get("title") or "")
+    # Never file a "<unknown>" title: fall back to GlitchTip's own group title (now named, since the
+    # client resolves frames), then to a stable no-symbols label.
+    if not title_site or title_site == "<unknown>":
+        gt_title = scrub(iss.get("title") or "")
+        title_site = gt_title if gt_title and gt_title != "<unknown>" else "native crash (no symbols)"
     title = f"[crash] {title_site}"
 
     head = "**Symbolicated stack**" if symbolicated else "**Raw stack** (not symbolicated)"
@@ -281,16 +300,93 @@ def ensure_label():
         except urllib.error.HTTPError:
             pass
 
+# ---- regression detection --------------------------------------------------
+# [rc4l] Whether a closed issue should reopen is decided by comparing timestamps, NOT by the
+# group merely being unresolved in GlitchTip. This is the standard "regression" rule (the same
+# one Sentry's own issue-tracker integrations use): an issue regresses when an event arrives
+# AFTER it was closed.
+#
+# The previous rule reopened whenever GlitchTip still listed the group as unresolved, reasoning
+# that the is:unresolved filter meant "active". It does not: `unresolved` is a triage flag a
+# human sets in GlitchTip's UI, and closing the GitHub issue does not clear it, so the two
+# systems drift apart immediately. Every closed issue whose group was never resolved upstream
+# got reopened on the next run -- every 6h on cron plus on every webhook. Issues #79 and #85
+# were each reopened with an event count and lastSeen IDENTICAL to the previous reopen, i.e.
+# with no new crash at all, and #85's newest event predated its close by two hours.
+def parse_ts(s):
+    """Parse an ISO-8601 UTC timestamp from either API ('...Z' or '+00:00', optional
+    fractional seconds) into an aware datetime. Returns None if absent or unparseable."""
+    if not s:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(str(s).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    # A naive timestamp from either API is documented as UTC; make that explicit so the
+    # comparison below can never raise on mixed aware/naive operands.
+    return dt if dt.tzinfo else dt.replace(tzinfo=datetime.timezone.utc)
+
+def should_reopen(last_seen, closed_at):
+    """Decide whether a closed issue has genuinely regressed.
+
+    Returns (bool, reason). Reopen only when the crash was last seen strictly after the issue
+    was closed. When a timestamp is missing or unparseable we cannot prove the crash is stale,
+    so we reopen -- keeping the original guarantee that a real recurrence is never silently
+    dropped -- and say so, rather than failing closed and hiding a live crash."""
+    seen, closed = parse_ts(last_seen), parse_ts(closed_at)
+    if seen is None or closed is None:
+        return True, "could not compare timestamps (missing or unparseable); reopening to be safe"
+    if seen > closed:
+        return True, f"last seen {seen.isoformat()} is after close {closed.isoformat()}"
+    return False, f"last seen {seen.isoformat()} predates close {closed.isoformat()}"
+
 def main():
     if not DRY_RUN:
         ensure_label()
-    issues = gt(f"/api/0/organizations/{GT_ORG}/issues/?query=&limit=50")
+    # Only active (unresolved) crashes: a resolved group is one someone has already triaged, so it
+    # must not trigger a spurious reopen of its closed GitHub issue.
+    issues = gt(f"/api/0/organizations/{GT_ORG}/issues/?query=is:unresolved&limit=50")
     print(f"GlitchTip returned {len(issues)} group(s)")
     filed = 0
     for iss in issues:
         gid = iss["id"]
-        if not DRY_RUN and existing_issue(gid):
-            print(f"  group {gid}: already mirrored")
+        num = None if DRY_RUN else existing_issue(gid)
+        if num:
+            # Already mirrored. Reopen only on a genuine regression -- a crash seen AFTER the issue
+            # was closed. See should_reopen(): "still unresolved in GlitchTip" is not evidence of a
+            # recurrence, and treating it as such reopened closed issues indefinitely.
+            try:
+                cur = json.loads(gh(f"/repos/{GH_REPO}/issues/{num}"))
+                if cur.get("state") == "closed":
+                    reopen, why = should_reopen(iss.get("lastSeen"), cur.get("closed_at"))
+                    if not reopen:
+                        print(f"  group {gid}: #{num} closed, no new events ({why}); leaving closed")
+                        continue
+                    # [rc4l] A bot silently flipping an issue back open reads as the tracker acting on
+                    # its own, which is how the old always-reopen bug went unnoticed. State the
+                    # decision in full -- what recurred, when it was closed, when it was next seen,
+                    # which run did it -- so a reopen can be judged (or disputed) without reading
+                    # this source.
+                    run = os.environ.get("GITHUB_RUN_ID")
+                    where = (f"[crash-sync run](https://github.com/{GH_REPO}/actions/runs/{run})"
+                             if run else "a crash-sync run")
+                    gh(f"/repos/{GH_REPO}/issues/{num}", "PATCH", {"state": "open"})
+                    gh(f"/repos/{GH_REPO}/issues/{num}/comments", "POST",
+                       {"body":
+                        f"↩️ **Reopened automatically — this crash was seen again after the issue was closed.**\n\n"
+                        f"- Closed at: `{cur.get('closed_at','?')}`\n"
+                        f"- Last seen: `{iss.get('lastSeen','?')}`\n"
+                        f"- Events in this group: {iss.get('count','?')}\n"
+                        f"- Decided by: {where} — {why}\n\n"
+                        f"Reopened only because the crash recurred *after* the close; a closed issue "
+                        f"with no newer events is left closed. If this is unwanted, resolve the group "
+                        f"in GlitchTip so it stops being mirrored."})
+                    print(f"  group {gid}: reopened #{num} ({why})")
+                    filed += 1
+                else:
+                    print(f"  group {gid}: already mirrored (#{num})")
+            except urllib.error.HTTPError:
+                print(f"  group {gid}: already mirrored (#{num})")
             continue
         try:
             ev = gt(f"/api/0/issues/{gid}/events/latest/")

@@ -37,6 +37,7 @@ DEFAULTLISTMENU
 
 LISTMENU "MainMenu"
 {
+	Class "UpdateMainMenu"	// [rc4l] adds the bottom-right "update available" notice (listmenu.cpp)
 	IfGame(Doom, Chex)
 	{
 		StaticPatch 94, 2, "M_DOOM"
@@ -377,7 +378,63 @@ OptionMenu "FUAOptions"
 {
 	Title "FUA OPTIONS"
 	Submenu "Instant Replay Options",	"ReplayOptions"
+	Submenu "Field of View",			"FUAFovOptions"
 	Submenu "Crash Reporting",			"CrashReportOptions"
+	Submenu "Hitbox Visualization",		"HitboxVizOptions"
+	StaticText " "
+	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
+	// notice. On by default; off means no update check and no network call.
+	Option	"Check for updates",		"cl_fua_update_notify",		"OnOff"
+}
+
+// [rc4l] fov-interp: FOV and how fast the view tweens to it. Its own submenu rather than rows in
+// Display Options -- that menu is Zandronum's (menudef.z redefines it), and FUA features keep to
+// their own room so a re-sync never has to untangle ours from theirs.
+OptionMenu "FUAFovOptions"
+{
+	Title "FIELD OF VIEW"
+	Slider	"Field of View",			"fov",					5.0, 179.0, 1.0, 2
+	StaticText " "
+	// Degrees per tic the view moves toward the value above; the renderer tweens between tics,
+	// so this is the whole duration of a zoom, not its smoothness.
+	Slider	"Change speed",				"cl_fovchangespeed",	1.0, 100.0, 1.0, 2
+}
+
+// [MGOOOOOO] Debug overlay drawing actor collision boxes, attack boxes (HitRadius/HitHeight) and
+// explosion damage regions. Enforcement is in C++, not here: the overlay re-checks its gate every
+// frame (ShouldDraw, features/hitboxviz/computation/vizgate_compute.h), so these settings persist
+// but simply draw nothing while cheats are refused. Offline the toggle alone is enough -- nobody
+// else is in the game and cheats are already permitted there; online sv_cheats is the authority.
+// The graycheck argument can't express that: it is a plain bool read, so graying on sv_cheats would
+// also gray the rows offline, which is exactly where the overlay now works unconditionally. Hence
+// the label and the footer text instead.
+OptionMenu "HitboxVizOptions"
+{
+	Title "HITBOX VISUALIZATION"
+	Option	"Enable (sv_cheats if online)",	"cl_fua_hitbox",			"OnOff"
+	StaticText " "
+	Option	"Actor hitboxes",				"cl_fua_hitbox_actors",		"OnOff",	"cl_fua_hitbox"
+	Option	"Projectile hitboxes",			"cl_fua_hitbox_missiles",	"OnOff",	"cl_fua_hitbox"
+	Option	"Attack box (HitRadius/Height)",	"cl_fua_hitbox_attackbox",	"OnOff",	"cl_fua_hitbox"
+	Option	"Explosion regions",			"cl_fua_hitbox_explosions",	"OnOff",	"cl_fua_hitbox"
+	Option	"Own / followed player",		"cl_fua_hitbox_self",		"OnOff",	"cl_fua_hitbox"
+	Option	"See through walls",			"cl_fua_hitbox_xray",		"OnOff",	"cl_fua_hitbox"
+	StaticText " "
+	Slider	"Line width",					"cl_fua_hitbox_linewidth",	1, 8, 1, 1
+	ColorPicker "Collision box color",		"cl_fua_hitbox_color"
+	ColorPicker "Hurtbox color",			"cl_fua_hitbox_attackcolor"
+	ColorPicker "Explosion color",			"cl_fua_hitbox_blastcolor"
+	SafeCommand "Reset colors to default",	"fua_hitbox_resetcolors"
+	StaticText " "
+	StaticText "The attack box is drawn only when it"
+	StaticText "differs from the collision box."
+	StaticText " "
+	StaticText "Offline single player: works as soon"
+	StaticText "as you enable it, no sv_cheats needed."
+	StaticText " "
+	StaticText "On a server: sv_cheats must be true."
+	StaticText "It is latched, so it takes effect on"
+	StaticText "the next map."
 }
 
 // [rc4l] Crash reporting: auto-send / opt-out. There is no per-crash prompt because a prompt can't
@@ -617,6 +674,7 @@ OptionMenu "CustomizeControls"
 	StaticText 	""
 	StaticText 	"FUA", 1
 	Control 	"Save replay clip",		"fua_clip"
+	Control 	"Toggle hitbox overlay",	"fua_hitbox"
 }
 
 //-------------------------------------------------------------------------------------------
@@ -1434,7 +1492,7 @@ OptionValue  FallingDM
 	3, "Strife"
 }
 
-OptionValue  JumpCrouch
+OptionValue  JumpCrouchFreeLook
 {
 	0, "Default"
 	1, "Off"
@@ -1469,9 +1527,9 @@ OptionMenu GameplayOptions
 	Option "Degeneration",			"sv_degeneration", "YesNo"
 	Option "Allow Autoaim",			"sv_noautoaim", "NoYes"
 	Option "Allow Suicide",			"sv_disallowsuicide", "NoYes"
-	Option "Allow jump",			"sv_jump", "JumpCrouch"
-	Option "Allow crouch",			"sv_crouch", "JumpCrouch"
-	Option "Allow freelook",		"sv_nofreelook", "NoYes"
+	Option "Allow jump",			"sv_jump", "JumpCrouchFreeLook"
+	Option "Allow crouch",			"sv_crouch", "JumpCrouchFreeLook"
+	Option "Allow freelook",		"sv_freelook", "JumpCrouchFreeLook"
 	Option "Allow FOV",				"sv_nofov", "NoYes"
 	// [TP] Zandronum has this CVar under a different name
 	// Option "Allow BFG aiming",		"sv_nobfgaim", "NoYes"

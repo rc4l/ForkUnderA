@@ -68,6 +68,7 @@
 #include "r_sky.h"
 #include "g_game.h"
 #include "g_level.h"
+#include "features/skywire/computation/sky_wire_compute.h"
 #include "sbar.h"
 #include "m_swap.h"
 #include "m_png.h"
@@ -1811,7 +1812,7 @@ void G_Ticker ()
 				if ( duel )
 				{
 					// If the player must win all duels, and lost this one, then he's DONE!
-					if (( DUEL_GetLoser( ) == static_cast<unsigned>( consoleplayer )) && ( CAMPAIGN_InCampaign( )) && ( CAMPAIGN_GetCampaignInfo( level.mapname )->bMustWinAllDuels ))
+					if (( DUEL_GetLoser( ) == static_cast<unsigned>( consoleplayer )) && ( CAMPAIGN_InCampaign( )) && ( CAMPAIGN_GetCampaignInfo( const_cast<char *>( level.MapName.GetChars() ) )->bMustWinAllDuels ))
 					{
 						// Tell the player he loses!
 						Printf( "You lose!\n" );
@@ -2101,7 +2102,10 @@ void G_PlayerFinishLevel (int player, EFinishLevelType mode, int flags)
 	}
 
 	// Clears the entire inventory and gives back the defaults for starting a game
-	if (flags & CHANGELEVEL_RESETINVENTORY)
+	// [rc4l] uzdoom@842ef86e7: a dead player must not be handed the starting inventory here -- they
+	// get it on respawn instead. Doing it twice left them holding weapons their corpse never lost.
+	// Pure predicate tightening on playerstate, which is already synced, so both ends still agree.
+	if ((flags & CHANGELEVEL_RESETINVENTORY) && p->playerstate != PST_DEAD)
 	{
 		p->mo->ClearInventory();
 		p->mo->GiveDefaultInventory();
@@ -2736,7 +2740,7 @@ void G_DoReborn (int playernum, bool freshbot)
 		{ // Reload the level from scratch
 			bool indemo = demoplayback;
 			BackupSaveName = "";
-			G_InitNew (level.mapname, false);
+			G_InitNew (level.MapName, false);
 			demoplayback = indemo;
 //			gameaction = ga_loadlevel;
 		}
@@ -3275,9 +3279,9 @@ void GAME_ResetScripts ( )
 	}
 
 	// Open the current map and load its BEHAVIOR lump.
-	MapData *pMap = P_OpenMapData( level.mapname, false );
+	MapData *pMap = P_OpenMapData( level.MapName, false );
 	if ( pMap == NULL )
-		I_Error( "GAME_ResetMap: Unable to open map '%s'\n", level.mapname );
+		I_Error( "GAME_ResetMap: Unable to open map '%s'\n", level.MapName.GetChars() );
 	else if ( pMap->HasBehavior )
 		P_LoadBehavior( pMap );
 
@@ -3806,23 +3810,27 @@ void GAME_ResetMap( bool bRunEnterScripts )
 	}
 
 	// Reset the sky properties of the map.
-	pLevelInfo = level.info;//FindLevelInfo( level.mapname );
+	pLevelInfo = level.info;//FindLevelInfo( level.MapName );
 	if ( pLevelInfo )
 	{
 		bSendSkyUpdate = false;
-		if (( stricmp( level.skypic1, pLevelInfo->skypic1 ) != 0 ) ||
-			( stricmp( level.skypic2, pLevelInfo->skypic2 ) != 0 ))
-		{
+		// [rc4l] uzdoom@65e8563cf: the level's sky IS the resolved texture id now, so compare ids
+		// rather than names -- which is also more correct, since two names that resolve to the same
+		// texture are the same sky and no longer trigger a pointless broadcast.
+		FString sky2Name = pLevelInfo->SkyPic2;
+		if ( sky2Name.IsEmpty() )
+			sky2Name = pLevelInfo->SkyPic1;
+
+		const FTextureID newSky1 = TexMan.GetTexture( pLevelInfo->SkyPic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		const FTextureID newSky2 = TexMan.GetTexture( sky2Name, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+
+		if (( level.skytexture1 != newSky1 ) || ( level.skytexture2 != newSky2 ))
 			bSendSkyUpdate = true;
-		}
 
-		snprintf( level.skypic1, sizeof( level.skypic1 ), "%s", pLevelInfo->skypic1 );
-		snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", pLevelInfo->skypic2 );
-		if ( level.skypic2[0] == 0 )
-			snprintf( level.skypic2, sizeof( level.skypic2 ), "%s", level.skypic1 );
-
-		sky1texture = TexMan.GetTexture( level.skypic1, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
-		sky2texture = TexMan.GetTexture( level.skypic2, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable );
+		level.skytexture1 = newSky1;
+		level.skytexture2 = newSky2;
+		sky1texture = level.skytexture1;
+		sky2texture = level.skytexture2;
 
 		R_InitSkyMap( );
 
@@ -4194,6 +4202,9 @@ void GAME_ResetMap( bool bRunEnterScripts )
 					SERVERCOMMANDS_SetThingProperty( pNewActor, APROP_Alpha );
 				if ( pNewActor->RenderStyle.AsDWORD != pNewActor->GetDefault()->RenderStyle.AsDWORD )
 					SERVERCOMMANDS_SetThingProperty( pNewActor, APROP_RenderStyle );
+				// [rc4l] MTF_DOUBLEHEALTH (uzdoom@580094a7924e) changes health in HandleSpawnFlags; forward it too.
+				if ( pNewActor->health != pNewActor->GetDefault()->health )
+					SERVERCOMMANDS_SetThingHealth( pNewActor );
 			}
 
 			// [AK] Stop any sounds from this actor before destroying it.
@@ -4654,6 +4665,14 @@ void G_DoLoadGame ()
 		BYTE *vars_p = (BYTE *)text;
 		C_ReadCVars (&vars_p);
 		delete[] text;
+		// [rc4l] uzdoom@a21f01bc5: dmflags bit 19 used to mean DF_RESPAWN_SUPER; it is now
+		// DF_YES_FREELOOK and respawn-super lives in dmflags2. Migrate saves written before the move.
+		if (SaveVersion <= 4514)
+		{
+			INTBOOL flag = dmflags & DF_YES_FREELOOK;
+			dmflags = dmflags & ~DF_YES_FREELOOK;
+			if (flag) dmflags2 = dmflags2 | DF2_RESPAWN_SUPER;
+		}
 	}
 
 	// dearchive all the modifications
@@ -4866,7 +4885,7 @@ static void PutSaveComment (FILE *file)
 
 	// Get level name
 	//strcpy (comment, level.level_name);
-	mysnprintf(comment, countof(comment), "%s - %s", level.mapname, level.LevelName.GetChars());
+	mysnprintf(comment, countof(comment), "%s - %s", level.MapName.GetChars(), level.LevelName.GetChars());
 	len = (WORD)strlen (comment);
 	comment[len] = '\n';
 
@@ -4928,7 +4947,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	M_AppendPNGText (stdfile, "Engine", GetEngineString() );
 	M_AppendPNGText (stdfile, "ZDoom Save Version", SAVESIG);
 	M_AppendPNGText (stdfile, "Title", description);
-	M_AppendPNGText (stdfile, "Current Map", level.mapname);
+	M_AppendPNGText (stdfile, "Current Map", level.MapName);
 	PutSaveWads (stdfile);
 	PutSaveComment (stdfile);
 
@@ -5144,7 +5163,7 @@ void G_BeginRecording (const char *startmap)
 
 	if (startmap == NULL)
 	{
-		startmap = level.mapname;
+		startmap = level.MapName;
 	}
 	demo_p = demobuffer;
 
@@ -5157,11 +5176,10 @@ void G_BeginRecording (const char *startmap)
 	WriteWord (DEMOGAMEVERSION, &demo_p);			// Write ZDoom version
 	*demo_p++ = 2;							// Write minimum version needed to use this demo.
 	*demo_p++ = 3;							// (Useful?)
-	for (i = 0; i < 8; i++)					// Write name of map demo was recorded on.
-	{
-		*demo_p++ = startmap[i];
-	}
-	WriteLong (rngseed, &demo_p);			// Write RNG seed
+
+	strcpy((char*)demo_p, startmap);		// Write name of map demo was recorded on.
+	demo_p += strlen(startmap) + 1;
+	WriteLong(rngseed, &demo_p);			// Write RNG seed
 	*demo_p++ = consoleplayer;
 	FinishChunk (&demo_p);
 
@@ -5260,7 +5278,7 @@ UNSAFE_CCMD (timedemo)
 
 // [RH] Process all the information in a FORM ZDEM
 //		until a BODY chunk is entered.
-bool G_ProcessIFFDemo (char *mapname)
+bool G_ProcessIFFDemo (FString &mapname)
 {
 	bool headerHit = false;
 	bool bodyHit = false;
@@ -5316,9 +5334,20 @@ bool G_ProcessIFFDemo (char *mapname)
 				Printf ("Demo requires a newer version of ZDoom!\n");
 				return true;
 			}
-			memcpy (mapname, demo_p, 8);	// Read map name
-			mapname[8] = 0;
-			demo_p += 8;
+			// [rc4l] 0x21B, not upstream's 0x21A. Their bump to 0x21A IS this change; ours was
+			// already 0x21A for the SoundActor pitch field, so every demo we have recorded at
+			// 0x21A carries the OLD fixed 8-byte map name. Gating at 0x21A would read those eight
+			// bytes as a NUL-terminated string and take the rng seed with it.
+			if (demover >= 0x21b)
+			{
+				mapname = (char*)demo_p;
+				demo_p += mapname.Len() + 1;
+			}
+			else
+			{
+				mapname = FString((char*)demo_p, 8);
+				demo_p += 8;
+			}
 			rngseed = ReadLong (&demo_p);
 			// Only reset the RNG if this demo is not in conjunction with a savegame.
 			if (mapname[0] != 0)
@@ -5401,7 +5430,7 @@ bool G_ProcessIFFDemo (char *mapname)
 
 void G_DoPlayDemo (void)
 {
-	char mapname[9];
+	FString mapname;
 	int demolump;
 
 	gameaction = ga_nothing;
@@ -5467,7 +5496,7 @@ void G_DoPlayDemo (void)
 		// don't spend a lot of time in loadlevel 
 		precache = false;
 		demonew = true;
-		if (mapname[0] != 0)
+		if (mapname.Len() != 0)
 		{
 			G_InitNew (mapname, false);
 		}

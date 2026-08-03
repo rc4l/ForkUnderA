@@ -91,6 +91,14 @@ struct mapsidedef_t
 	short	sector;	// Front sector, towards viewer.
 };
 
+struct intmapsidedef_t
+{
+	FString toptexture;
+	FString bottomtexture;
+	FString midtexture;
+};
+
+
 // A LineDef, as used for editing, and as input to the BSP builder.
 struct maplinedef_t
 {
@@ -161,6 +169,7 @@ enum ELineFlags
 	ML_BLOCKSIGHT				= 0x04000000,	// blocks monster line of sight
 	ML_BLOCKHITSCAN				= 0x08000000,	// blocks hitscan attacks
 	ML_3DMIDTEX_IMPASS			= 0x10000000,	// [TP] if 3D midtex, behaves like a height-restricted ML_BLOCKING
+	ML_BLOCKLANDMONSTERS		= 0x20000000,	// [rc4l] MBF21: blocks monsters that aren't MF_FLOAT
 };
 
 
@@ -402,6 +411,14 @@ enum EMapThingFlags
 
 	MTF_SECRET			= 0x080000,	// Secret pickup
 	MTF_NOINFIGHTING	= 0x100000,
+
+	// [rc4l] PSX Doom and Doom 64 effects. Ported from uzdoom@580094a7924e (Gaerzi,
+	// "More editing flags"): boolean thing flags that set a spawn-time render style / hit points.
+	MTF_TRANS			= 0x200000,  // 50% alpha
+	MTF_ADD				= 0x400000,  // 100% additive
+	MTF_SUBTRACT		= 0x800000,  // 100% subtractive
+	MTF_SPECTRE			= 0x1000000, // 25% additive
+	MTF_DOUBLEHEALTH	= 0x2000000, // Double hit points
 
 	// BOOM and DOOM compatible versions of some of the above
 

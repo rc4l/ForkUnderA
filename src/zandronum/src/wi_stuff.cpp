@@ -78,6 +78,7 @@ typedef enum
 CVAR (Bool, wi_percents, true, CVAR_ARCHIVE)
 CVAR (Bool, wi_showtotaltime, true, CVAR_ARCHIVE)
 CVAR (Bool, wi_noautostartmap, false, CVAR_USERINFO|CVAR_UNSYNCED_USERINFO|CVAR_ARCHIVE) // [TP] This CVar is not supported online and is thus not synced online. (Maybe we should just remove it entirely)
+CVAR (Int, wi_autoadvance, 0, CVAR_SERVERINFO)
 CVAR (Int, wi_autoscreenshot, false, CVAR_ARCHIVE) // [CK]
 
 
@@ -292,6 +293,9 @@ static FTexture*		lnames[2];	// Name graphics of each level (centered)
 // [RH] Info to dynamically generate the level name graphics
 static FString			lnametexts[2];
 
+// [ZandroX] uzdoom@3e9921696: author string of the just-finished level.
+static FString			authortext;
+
 static FTexture			*background;
 
 //
@@ -459,7 +463,10 @@ bool WI_UseSkulltagIntermissionAndMusic( void )
 
 void WI_LoadBackground(bool isenterpic)
 {
-	const char * lumpname = NULL;
+	// [rc4l] uzdoom@2944e4f6a: must be initialised. If the enterpic branch below leaves li == NULL
+	// this is never assigned, and the "lumpname == NULL || lumpname[0]==0" test a few lines down
+	// then reads an indeterminate pointer.
+	const char *lumpname = NULL;
 	char buffer[10];
 	in_anim_t an;
 	lnode_t pt;
@@ -559,7 +566,7 @@ void WI_LoadBackground(bool isenterpic)
 		default:
 			// Strife doesn't have an intermission pic so choose something neutral.
 			if (isenterpic) return;
-			lumpname = gameinfo.borderFlat;
+			lumpname = gameinfo.BorderFlat;
 			break;
 		}
 	}
@@ -1008,7 +1015,17 @@ int WI_drawLF ()
 	int y = WI_TITLEY * CleanYfac;
 
 	y = WI_DrawName(y, wbs->LName0, lnametexts[0]);
-	
+
+	// [ZandroX] uzdoom@3e9921696: draw the map author below the level name.
+	if (authortext.IsNotEmpty())
+	{
+		const char *auth = authortext.GetChars();
+		screen->DrawText(SmallFont, CR_GREY,
+			(SCREENWIDTH - SmallFont->StringWidth(auth) * CleanXfac) / 2,
+			y, auth, DTA_CleanNoMove, true, TAG_DONE);
+		y += SmallFont->GetHeight() * CleanYfac;
+	}
+
 	// Adjustment for different font sizes for map name and 'finished'.
 	y -= ((mapname.mFont->GetHeight() - finished.mFont->GetHeight()) * CleanYfac) / 4;
 
@@ -1266,6 +1283,7 @@ void WI_updateNoState ()
 	else
 	{
 		bool noauto = noautostartmap;
+		bool autoskip = (wi_autoadvance > 0 && bcnt > (wi_autoadvance * TICRATE));
 
 		for (int i = 0; !noauto && i < MAXPLAYERS; ++i)
 		{
@@ -1274,7 +1292,7 @@ void WI_updateNoState ()
 				noauto |= players[i].userinfo.GetNoAutostartMap();
 			}
 		}
-		if (!noauto)
+		if (!noauto || autoskip)
 		{
 			cnt--;
 		}
@@ -1779,7 +1797,12 @@ void WI_updateDeathmatchStats ()
 
 	WI_updateAnimatedBack();
 
-	if (acceleratestage && dm_state != 4)
+	// [rc4l] uzdoom@2d896d2b4: our state variable is dm_state, not upstream's ng_state -- Zandronum
+	// commented the per-player frag tabulation out of this function entirely ([BC] above), so the
+	// two "all players are ready" hunks upstream also changes have no counterpart here.
+	bool autoskip = (wi_autoadvance > 0 && bcnt > (wi_autoadvance * TICRATE));
+
+	if ((acceleratestage || autoskip) && dm_state != 4)
 	{
 		// [BC] No need to do any of this.
 		/*
@@ -1999,10 +2022,11 @@ void WI_updateNetgameStats ()
 //	int i;
 //	int fsum;
 //	bool stillticking;
+	bool autoskip = (wi_autoadvance > 0 && bcnt > (wi_autoadvance * TICRATE));
 
 	WI_updateAnimatedBack ();
 
-	if (acceleratestage && ng_state != 10)
+	if ((acceleratestage || autoskip) && ng_state != 10)
 	{
 		// [BC] No need to do any of this.
 		/*
@@ -2443,7 +2467,8 @@ void WI_drawStats (void)
 			WI_drawTime (160 - SP_TIMEX, SP_TIMEY + lh, cnt_total_time, true);	// no 'sucks' for total time ever!
 		}
 
-		if (wbs->partime)
+		// [ZandroX] uzdoom@a2f8b7d0d: gameinfo hidepartimes suppresses par display.
+		if (wbs->partime && !gameinfo.hidepartimes)
 		{
 			screen->DrawTexture (par, 160 + SP_TIMEX, SP_TIMEY, DTA_Clean, true, TAG_DONE);
 			WI_drawTime (320 - SP_TIMEX, SP_TIMEY, cnt_par);
@@ -2601,11 +2626,18 @@ void WI_Ticker(void)
 		{
 			// [BB] Nothing to do. We already changed the music.
 		}
+		// [ZandroX] uzdoom@bb7e19120: mapintermusic — intermission music keyed
+		// to the destination map takes precedence over the level default.
+		else if (level.info != NULL && level.info->MapInterMusic.CheckKey(FName(wbs->next)) != NULL)
+		{
+			const FInterMusicEntry *ime = level.info->MapInterMusic.CheckKey(FName(wbs->next));
+			S_ChangeMusic(ime->music, ime->order);
+		}
 		// intermission music - use the defaults if none specified
-		else if (level.info->InterMusic.IsNotEmpty()) 
+		else if (level.info->InterMusic.IsNotEmpty())
 			S_ChangeMusic(level.info->InterMusic, level.info->intermusicorder);
 		else
-			S_ChangeMusic (gameinfo.intermissionMusic.GetChars(), gameinfo.intermissionOrder); 
+			S_ChangeMusic (gameinfo.intermissionMusic.GetChars(), gameinfo.intermissionOrder);
 
 	}
 	
@@ -2687,7 +2719,10 @@ void WI_loadData(void)
 #endif
 
 	// Use the local level structure which can be overridden by hubs
-	lnametexts[0] = level.LevelName;		
+	lnametexts[0] = level.LevelName;
+
+	// [ZandroX] uzdoom@3e9921696: author of the just-finished level.
+	authortext = (level.info != NULL) ? level.info->AuthorName : FString();
 
 	level_info_t *li = FindLevelInfo(wbs->next);
 	if (li) lnametexts[1] = li->LookupLevelName();

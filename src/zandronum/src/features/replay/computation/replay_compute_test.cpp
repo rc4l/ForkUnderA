@@ -117,3 +117,89 @@ TEST(ClipStartIndex, NothingSaveable)
 	const unsigned char noKeys[6] = { 0, 0, 0, 0, 0, 0 };
 	EXPECT_EQ(ComputeClipStartIndex(kT, noKeys, 6, 5000000, 15), -1);
 }
+
+// ---- async PBO readback --------------------------------------------------------------------------
+
+TEST(PboAction, ReusesOnlyWhenOwnedAndSameSize)
+{
+	EXPECT_EQ(ComputePboAction(true, 1280, 720, 1280, 720), PboAction::Reuse);
+}
+
+TEST(PboAction, ReallocatesWhenSizeChanges)
+{
+	EXPECT_EQ(ComputePboAction(true, 1280, 720, 1920, 1080), PboAction::Allocate);
+	EXPECT_EQ(ComputePboAction(true, 1280, 720, 1280, 1080), PboAction::Allocate); // only height differs
+	EXPECT_EQ(ComputePboAction(true, 1280, 720, 1920, 720),  PboAction::Allocate); // only width differs
+}
+
+TEST(PboAction, AlwaysAllocatesWhenNoBuffersEvenIfSizeMatches)
+{
+	// THE REGRESSION: after a windowed<->fullscreen switch the framebuffer (and its PBOs) were
+	// destroyed with the GL context, so haveBuffers is false. Even though the new fullscreen window
+	// is the SAME size as the old windowed one, we must allocate fresh -- reusing the old context's
+	// buffer name is what crashed Apple's GL driver in storeVecColor_RGB_UB.
+	EXPECT_EQ(ComputePboAction(false, 1280, 720, 1280, 720), PboAction::Allocate);
+	EXPECT_EQ(ComputePboAction(false, 0, 0, 1280, 720), PboAction::Allocate);
+}
+
+TEST(RgbReadbackBytes, ThreeBytesPerPixel)
+{
+	EXPECT_EQ(ComputeRgbReadbackBytes(1280, 720), (int64_t)1280 * 720 * 3);
+	// Large 4K window doesn't overflow (would wrap a 32-bit int: 3840*2160*3 = 24883200, fits, but
+	// the intermediate stays 64-bit regardless).
+	EXPECT_EQ(ComputeRgbReadbackBytes(3840, 2160), (int64_t)3840 * 2160 * 3);
+}
+
+TEST(RgbReadbackBytes, ZeroForNonPositiveDims)
+{
+	EXPECT_EQ(ComputeRgbReadbackBytes(0, 720), 0);
+	EXPECT_EQ(ComputeRgbReadbackBytes(1280, 0), 0);
+	EXPECT_EQ(ComputeRgbReadbackBytes(-4, -4), 0);
+}
+
+TEST(BottomUpView, PointsAtLastRowWithNegativeStride)
+{
+	BottomUpView v = ComputeBottomUpView(1280, 720);
+	EXPECT_EQ(v.rowStride, -(1280 * 3));
+	EXPECT_EQ(v.firstRowOffset, (int64_t)(720 - 1) * 1280 * 3);
+
+	// A 1-row image starts at offset 0 (last row IS the first row) with a negative stride.
+	BottomUpView one = ComputeBottomUpView(4, 1);
+	EXPECT_EQ(one.firstRowOffset, 0);
+	EXPECT_EQ(one.rowStride, -(4 * 3));
+}
+
+TEST(BottomUpView, ZeroForNonPositiveDims)
+{
+	BottomUpView v = ComputeBottomUpView(0, 5);
+	EXPECT_EQ(v.firstRowOffset, 0);
+	EXPECT_EQ(v.rowStride, 0);
+	BottomUpView h = ComputeBottomUpView(5, -1);
+	EXPECT_EQ(h.firstRowOffset, 0);
+	EXPECT_EQ(h.rowStride, 0);
+}
+
+// [ZandroX] Regression guard for the "every clip after the first freezes" bug: SaveClip must not
+// terminally-flush the live FFmpeg encoder (that EOFs it, so later frames are dropped and every clip
+// after the first repeats the first clip's footage -- e.g. one clip per wad_reload all identical).
+TEST(EncodableFramesAcrossSaves, SaveIsNonDestructive)
+{
+	// F F  SAVE  F F  SAVE  F   -> 5 add-frame ops, 2 saves interleaved.
+	const int ops[] = { 0, 0, 1, 0, 0, 1, 0 };
+	const int n = (int)(sizeof(ops) / sizeof(ops[0]));
+
+	// Fixed SaveClip (no terminal flush): all 5 frames stay encodable, so clips 2 and 3 contain the
+	// footage recorded after clip 1 -- capture keeps working across saves and reloads.
+	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(ops, n, false), 5);
+
+	// The bug (terminal flush on save): the encoder EOFs at the first save, so the 3 frames added
+	// afterwards are dropped and every later clip freezes on clip 1.
+	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(ops, n, true), 2);
+
+	// No saves -> every frame encodable, both modes agree.
+	const int noSave[] = { 0, 0, 0 };
+	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(noSave, 3, false), 3);
+	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(noSave, 3, true), 3);
+	// Empty sequence.
+	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(nullptr, 0, true), 0);
+}

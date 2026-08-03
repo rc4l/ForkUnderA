@@ -119,7 +119,7 @@ static void CalcPosVel(int type, const AActor *actor, const sector_t *sector, co
 static void CalcSectorSoundOrg(const sector_t *sec, int channum, fixed_t *x, fixed_t *y, fixed_t *z);
 static void CalcPolyobjSoundOrg(const FPolyObj *poly, fixed_t *x, fixed_t *y, fixed_t *z);
 static FSoundChan *S_StartSound(AActor *mover, const sector_t *sec, const FPolyObj *poly,
-	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation, FRolloffInfo *rolloff);
+	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation, FRolloffInfo *rolloff, int pitch_override);
 static void S_SetListener(SoundListener &listener, AActor *listenactor);
 
 // PRIVATE DATA DEFINITIONS ------------------------------------------------
@@ -147,6 +147,7 @@ int S_SoundCurveSize;
 FBoolCVar noisedebug ("noise", false, 0);	// [RH] Print sound debugging info?
 CVAR (Int, snd_channels, 32, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)	// number of channels available
 CVAR (Bool, snd_flipstereo, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+EXTERN_CVAR (Bool, snd_pitched)	// [rc4l] gates the random PitchMask variation (see S_StartSound)
 
 // [AK] Prevents any music changes as if a playlist was playing, originally from ZCC.
 CVAR (Bool, snd_lockmusic, false, CVAR_ARCHIVE);
@@ -883,7 +884,7 @@ static void CalcPolyobjSoundOrg(const FPolyObj *poly, fixed_t *x, fixed_t *y, fi
 
 static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyObj *poly,
 	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation,
-	FRolloffInfo *forcedrolloff=NULL)
+	FRolloffInfo *forcedrolloff=NULL, int pitch_override=-1)
 {
 	sfxinfo_t *sfx;
 	int chanflags;
@@ -1126,8 +1127,16 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		return NULL;
 	}
 
-	// Vary the sfx pitches.
-	if (sfx->PitchMask != 0)
+	// [rc4l] An explicit pitch (e.g. from A_StartSound, or replicated from the server) always wins
+	// and is applied unconditionally by the backend. The snd_pitched CVar only gates the random
+	// PitchMask variation -- so with snd_pitched off we leave randomised sounds at NORM_PITCH but
+	// still honour an explicit request. (Historically the random value was always computed here and
+	// the OpenAL backend discarded it when snd_pitched was off; that gate now lives here instead.)
+	if (pitch_override >= 0)
+	{
+		pitch = pitch_override;
+	}
+	else if (snd_pitched && sfx->PitchMask != 0)
 	{
 		pitch = NORM_PITCH - (M_Random() & sfx->PitchMask) + (M_Random() & sfx->PitchMask);
 	}
@@ -1271,13 +1280,13 @@ void S_RestartSound(FSoundChan *chan)
 //
 //==========================================================================
 
-void S_Sound (int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient) // [EP] Added bSoundOnClient.
+void S_Sound (int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient, int pitch) // [EP] Added bSoundOnClient. [rc4l] explicit pitch.
 {
-	S_StartSound (NULL, NULL, NULL, NULL, channel, sound_id, volume, attenuation);
+	S_StartSound (NULL, NULL, NULL, NULL, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [EP] If we're the server, tell the clients to make a sound.
 	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
-		SERVERCOMMANDS_Sound( channel, S_GetName( sound_id ), volume, attenuation );
+		SERVERCOMMANDS_Sound( channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, pitch );
 }
 
 //==========================================================================
@@ -1286,15 +1295,16 @@ void S_Sound (int channel, FSoundID sound_id, float volume, float attenuation, b
 //
 //==========================================================================
 
-void S_Sound (AActor *ent, int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient) // [EP] Added bSoundOnClient.
+void S_Sound (AActor *ent, int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient, int pitch) // [EP] Added bSoundOnClient. [rc4l] explicit pitch.
 {
 	if (ent == NULL || ent->Sector->Flags & SECF_SILENT)
 		return;
-	S_StartSound (ent, NULL, NULL, NULL, channel, sound_id, volume, attenuation);
+	S_StartSound (ent, NULL, NULL, NULL, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [EP] If we're the server, tell the clients to make a sound.
+	// [rc4l] Forward the explicit pitch so the client plays it at the same pitch.
 	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
-		SERVERCOMMANDS_SoundActor( ent, channel, S_GetName( sound_id ), volume, attenuation );
+		SERVERCOMMANDS_SoundActor( ent, channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, false, pitch );
 }
 
 //==========================================================================
@@ -1335,14 +1345,14 @@ void S_Sound (const FPolyObj *poly, int channel, FSoundID sound_id, float volume
 //
 //==========================================================================
 
-void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient) // [RK] Added bSoundOnClient.
+void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sound_id, float volume, float attenuation, bool bSoundOnClient, int pitch) // [RK] Added bSoundOnClient. [rc4l] explicit pitch.
 {
 	FVector3 pt(FIXED2FLOAT(x), FIXED2FLOAT(z), FIXED2FLOAT(y));
-	S_StartSound (NULL, NULL, NULL, &pt, channel, sound_id, volume, attenuation);
+	S_StartSound (NULL, NULL, NULL, &pt, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [RK] Instruct the clients to play the sound.
 	if (bSoundOnClient && (NETWORK_GetState() == NETSTATE_SERVER))
-		SERVERCOMMANDS_SoundPoint((LONG)(x),(LONG)( y),(LONG)( z), channel, S_GetName(sound_id), volume, attenuation);
+		SERVERCOMMANDS_SoundPoint((LONG)(x),(LONG)( y),(LONG)( z), channel, S_GetName(sound_id), volume, attenuation, MAXPLAYERS, 0, pitch);
 }
 
 //==========================================================================
@@ -1351,9 +1361,9 @@ void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sound_id, f
 //
 //==========================================================================
 
-void S_Sound (const sector_t *sec, int channel, FSoundID sfxid, float volume, float attenuation)
+void S_Sound (const sector_t *sec, int channel, FSoundID sfxid, float volume, float attenuation, int pitch)
 {
-	S_StartSound (NULL, sec, NULL, NULL, channel, sfxid, volume, attenuation);
+	S_StartSound (NULL, sec, NULL, NULL, channel, sfxid, volume, attenuation, NULL, pitch);
 }
 
 //==========================================================================
@@ -1398,30 +1408,36 @@ sfxinfo_t *S_LoadSound(sfxinfo_t *sfx)
 		int size = Wads.LumpLength(sfx->lumpnum);
 		if (size > 0)
 		{
-			BYTE *sfxdata;
+			// [rc4l] uzdoom@6e6454572: sfxstart and sfxdata were the same pointer until the DMX
+			// branch below advances one of them past the 8-byte header, so only that branch needs a
+			// second name. `len` is the DMX length field specifically -- calling it that stops it
+			// being mistaken for the lump size, which is the bug the next two commits fix.
 			BYTE *sfxstart;
 			FWadLump wlump = Wads.OpenLumpNum(sfx->lumpnum);
-			sfxstart = sfxdata = new BYTE[size];
+			BYTE *sfxdata = new BYTE[size];
+			sfxstart = sfxdata;
 			wlump.Read(sfxdata, size);
-			SDWORD len = LittleLong(((SDWORD *)sfxdata)[1]);
+			SDWORD dmxlen = LittleLong(((SDWORD *)sfxdata)[1]);
 
 			// If the sound is voc, use the custom loader.
-			if (strncmp ((const char *)sfxstart, "Creative Voice File", 19) == 0)
+			// [rc4l] uzdoom@d55dfcdb1: size, not len. A Creative Voice File has no DMX length field,
+			// so `len` here was four bytes of VOC header text read as an integer.
+			if (strncmp ((const char *)sfxdata, "Creative Voice File", 19) == 0)
 			{
-				sfx->data = GSnd->LoadSoundVoc(sfxstart, len);
+				sfx->data = GSnd->LoadSoundVoc(sfxdata, size);
 			}
 			// If the sound is raw, just load it as such.
 			// Otherwise, try the sound as DMX format.
 			// If that fails, let FMOD try and figure it out.
 			else if (sfx->bLoadRAW ||
-				(((BYTE *)sfxdata)[0] == 3 && ((BYTE *)sfxdata)[1] == 0 && len <= size - 8))
+				(((BYTE *)sfxdata)[0] == 3 && ((BYTE *)sfxdata)[1] == 0 && dmxlen <= size - 8))
 			{
 				int frequency;
 
 				if (sfx->bLoadRAW)
 				{
-					len = Wads.LumpLength (sfx->lumpnum);
-					frequency = (sfx->bForce22050 ? 22050 : 11025);
+					dmxlen = size;
+					frequency = sfx->RawRate;
 				}
 				else
 				{
@@ -1432,12 +1448,12 @@ sfxinfo_t *S_LoadSound(sfxinfo_t *sfx)
 					}
 					sfxstart = sfxdata + 8;
 				}
-				sfx->data = GSnd->LoadSoundRaw(sfxstart, len, frequency, 1, 8, sfx->LoopStart);
+				sfx->data = GSnd->LoadSoundRaw(sfxstart, dmxlen, frequency, 1, 8, sfx->LoopStart);
 			}
 			else
 			{
-				len = Wads.LumpLength (sfx->lumpnum);
-				sfx->data = GSnd->LoadSound(sfxstart, len);
+				// [rc4l] uzdoom@a630c47e6: `size` already is Wads.LumpLength(sfx->lumpnum).
+				sfx->data = GSnd->LoadSound(sfxdata, size);
 			}
 			
 			if (sfxdata != NULL)

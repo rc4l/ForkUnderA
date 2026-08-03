@@ -56,9 +56,11 @@ struct sfxinfo_t
 
 	WORD		bRandomHeader:1;
 	WORD		bPlayerReserve:1;
-	WORD		bForce11025:1;
-	WORD		bForce22050:1;
 	WORD		bLoadRAW:1;
+
+	// [rc4l] uzdoom@449a17c2f: replaces bForce11025/bForce22050 -- Blood SFX come in more than
+	// two rates, so the rate is stored rather than encoded as a pair of flags.
+	int			RawRate;
 	WORD		bPlayerCompat:1;
 	WORD		b16bit:1;
 	WORD		bUsed:1;
@@ -232,12 +234,12 @@ void S_PrecacheLevel ();
 void S_CacheSound (sfxinfo_t *sfx);
 
 // Start sound for thing at <ent>
-void S_Sound (int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false); // [EP] Added bSoundOnClient.
-void S_Sound (AActor *ent, int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false); // [EP] Added bSoundOnClient.
+void S_Sound (int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false, int pitch = -1); // [EP] Added bSoundOnClient. [rc4l] explicit pitch (-1 = default).
+void S_Sound (AActor *ent, int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false, int pitch = -1); // [EP] Added bSoundOnClient. [rc4l] explicit pitch (-1 = default).
 void S_SoundMinMaxDist (AActor *ent, int channel, FSoundID sfxid, float volume, float mindist, float maxdist);
 void S_Sound (const FPolyObj *poly, int channel, FSoundID sfxid, float volume, float attenuation);
-void S_Sound (const sector_t *sec, int channel, FSoundID sfxid, float volume, float attenuation);
-void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false); // [RK] Added bSoundOnClient.
+void S_Sound (const sector_t *sec, int channel, FSoundID sfxid, float volume, float attenuation, int pitch = -1); // [rc4l] explicit pitch (-1 = default).
+void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false, int pitch = -1); // [RK] Added bSoundOnClient. [rc4l] explicit pitch.
 
 // sound channels
 // channel 0 never willingly overrides
@@ -410,7 +412,9 @@ enum EMidiDevice
 	MDEV_DEFAULT = -1,
 	MDEV_MMAPI = 0,
 	MDEV_OPL = 1,
-	MDEV_FMOD = 2,
+	// [rc4l] uzdoom@1a40c95f8: this is the generic sound-system device, not FMOD specifically --
+	// doubly true here, where the FMOD backend is gone and OpenAL serves this role.
+	MDEV_SNDSYS = 2,
 	MDEV_TIMIDITY = 3,
 	MDEV_FLUIDSYNTH = 4,
 	MDEV_GUS = 5,

@@ -240,6 +240,7 @@ static FFlagDef ActorFlags[]=
 	DEFINE_FLAG(MF7, NEVERTARGET, AActor, flags7),
 	DEFINE_FLAG(MF7, NOTELESTOMP, AActor, flags7),
 	DEFINE_FLAG(MF7, ALWAYSTELEFRAG, AActor, flags7),
+	DEFINE_FLAG(MF7, WEAPONSPAWN, AActor, flags7),
 
 	DEFINE_FLAG(MF7, HITTARGET, AActor, flags7),
 	DEFINE_FLAG(MF7, HITMASTER, AActor, flags7),
@@ -252,6 +253,30 @@ static FFlagDef ActorFlags[]=
 	// [BB] Out of order ZDoom backport.
 	DEFINE_FLAG(MF7, USEKILLSCRIPTS, AActor, flags7),
 	DEFINE_FLAG(MF7, NOKILLSCRIPTS, AActor, flags7),
+
+	// [rc4l] MBF21 flags8, exposed to DECORATE. The flag and its behavior already exist from the
+	// MBF21 port (actor.h MF8_FULLVOLSEE; p_enemy.cpp plays the see sound at ATTN_NONE when set) --
+	// this row just lets DECORATE set it via +FULLVOLSEE, matching GZDoom's
+	// DEFINE_FLAG(MF8, FULLVOLSEE, AActor, flags8). Needed by e.g. Eviternity II's DECORATE.
+	DEFINE_FLAG(MF8, FULLVOLSEE, AActor, flags8),
+	// [rc4l] The MBF21 boss-action flags, exposed to DECORATE to match GZDoom
+	// (thingdef_data.cpp DEFINE_FLAG(MF8, E1M8BOSS...)). The flags and their behavior already exist
+	// from the MBF21 port (actor.h MF8_*; A_BossDeath in p_enemy.cpp consumes them) -- these rows just
+	// let DECORATE set them by name so a wad can flag a custom actor as, e.g., a MAP07 boss.
+	DEFINE_FLAG(MF8, E1M8BOSS, AActor, flags8),
+	DEFINE_FLAG(MF8, E2M8BOSS, AActor, flags8),
+	DEFINE_FLAG(MF8, E3M8BOSS, AActor, flags8),
+	DEFINE_FLAG(MF8, E4M6BOSS, AActor, flags8),
+	DEFINE_FLAG(MF8, E4M8BOSS, AActor, flags8),
+	DEFINE_FLAG(MF8, MAP07BOSS1, AActor, flags8),
+	DEFINE_FLAG(MF8, MAP07BOSS2, AActor, flags8),
+
+	// [MGOOOOOO] ZandroX's own flags9 word. The ripper set -- see features/ripper/README.md.
+	DEFINE_FLAG(MF9, NORIPSOUND, AActor, flags9),
+	DEFINE_FLAG(MF9, RIPEXPLODEONLIMIT, AActor, flags9),
+	DEFINE_FLAG(MF9, RIPPERNOPAIN, AActor, flags9),
+	DEFINE_FLAG(MF9, RIPSOUNDNORESTART, AActor, flags9),
+	DEFINE_FLAG(MF9, USERIPSTATE, AActor, flags9),
 
 	// [BC] New DECORATE flag defines here.
 	DEFINE_FLAG(STFL, BLUETEAM, AActor, STFlags),

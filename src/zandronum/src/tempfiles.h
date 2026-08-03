@@ -38,6 +38,11 @@
 #pragma once
 #endif
 
+// [rc4l] NULL was arriving transitively via <SDL.h>, which gl_system.h used to include for every
+// non-Windows build. That include had no symbol use behind it and is gone, so this header now
+// declares its own dependency instead of relying on an unrelated one.
+#include <cstddef>
+
 // Returns a file name suitable for use as a temp file.
 // If you create a file with this name (and presumably you
 // will), it will be deleted automatically by this class's
