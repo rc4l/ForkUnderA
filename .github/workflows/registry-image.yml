@@ -14,19 +14,18 @@
 # invalidate the artefact without any workflow noticing for eleven days. zandrox-server-registry compiles
 # networkshared.cpp and the huffman codec straight out of the engine tree, so those paths are the
 # coupling and they are listed here.
-name: server registry image
+name: Release Server Registry Image
 
 on:
-  # [rc4l] Same shape as release.yml: you press Run, the workflow works out the version. A tag push
-  # still publishes, but nobody has to type a version -- see the derivation below for why.
+  # [rc4l] Running this workflow IS the release -- no "actually publish?" checkbox. release.yml needs
+  # one because it also builds artifacts on ordinary pushes; here the build-without-publishing case is
+  # already covered by the pull_request trigger below, so a second way to say it would just be a lever
+  # someone forgets to pull. From the default branch you get a real release; from anywhere else an
+  # experimental image, automatically.
   workflow_dispatch:
     inputs:
-      release:
-        description: 'Publish the image to GHCR. From main it is a real release; from any other branch it is automatically an experimental tag. Leave off to just build and smoke-test.'
-        type: boolean
-        default: false
       bump:
-        description: 'Which part of the version to raise (main only; ignored on other branches)'
+        description: 'Which part of the version to raise (default branch only; ignored elsewhere)'
         type: choice
         options: [patch, minor, major]
         default: patch
@@ -86,7 +85,7 @@ jobs:
             version="${GITHUB_REF#refs/tags/server-registry-v}"
             tags="${IMAGE}:${version},${IMAGE}:latest"
             publish=true
-          elif [ "${{ inputs.release }}" = "true" ] && [ "${GITHUB_REF_NAME}" != "${DEFAULT_BRANCH}" ]; then
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ "${GITHUB_REF_NAME}" != "${DEFAULT_BRANCH}" ]; then
             # [rc4l] Dispatched from a non-default branch: automatically experimental. Named by
             # branch + commit rather than a version, so it can never touch the stable line, and
             # every commit keeps its own image instead of overwriting the branch's last one.
@@ -95,7 +94,7 @@ jobs:
             tags="${IMAGE}:${version}"      # deliberately NOT latest
             publish=true
             echo "experimental image from ${GITHUB_REF_NAME} (${shortsha}) -> ${version}"
-          elif [ "${{ inputs.release }}" = "true" ]; then
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
             # [rc4l] Default branch only: a real release. Derive from the newest existing tag.
             latest="$(git tag -l 'server-registry-v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
             latest="${latest:-server-registry-v0.0.0}"
@@ -116,7 +115,7 @@ jobs:
               exit 1
             fi
           else
-            # [rc4l] PRs and plain dispatches still build and smoke-test; they just do not publish.
+            # [rc4l] Pull requests build and smoke-test only -- this is the "no publish" path.
             version="ci"
             tags="${IMAGE}:ci"
             publish=false
