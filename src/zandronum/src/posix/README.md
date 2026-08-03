@@ -31,7 +31,20 @@ is listed here and tagged `[rc4l]` at the site.
 
 | File:line | Delta | Why |
 |---|---|---|
-| _(none yet — Phase 1 is the pristine baseline)_ | | |
+| `sdlglvideo.h` (class head) | `DECLARE_CLASS(SDLGLFB, DFrameBuffer)` restored | our `gl_framebuffer.h` declares `DECLARE_CLASS(OpenGLFrameBuffer, SDLGLFB)`, which needs SDLGLFB registered as a DObject. Upstream had shed this by 2016; ZDoom 2.8pre still requires it |
+| `sdlglvideo.h` (class head) | `GetTrueHeight()` restored | `uzdoom@c817979ea` removed it upstream; nine sites here still call it (`gl_renderer.cpp:270`, `gl_framebuffer.cpp:193,218`). Recorded as a deliberate skip |
+| `i_video.mm` (IMPLEMENT) | `IMPLEMENT_ABSTRACT_CLASS(SDLGLFB)` added | companion to the above, mirroring `posix/sdl/sdlglvideo.cpp:39` |
+| `i_video.mm:53` | `r_swrenderer.h` → `r_nullrenderer.h` | GL-only build |
+| `i_video.mm:34` | `gl/system/gl_load.h` → `gl/system/gl_system.h` | `uzdoom@e132fc5ee` (GLEW → GLLoadGen) is a recorded skip; our loader is still GLEW |
+| `i_video.mm` (class + impl) | `CocoaFrameBuffer` removed, 306 lines | software framebuffer: a GPfx palette blit through `GL_TEXTURE_RECTANGLE_ARB` and `glBegin/glEnd`, which a core profile would reject anyway |
+| `i_video.mm` `CreateFrameBuffer` | renderer branch collapsed | nothing to choose between |
+| `i_video.mm` `vid_renderer` | snap-back-to-1 body | matches `posix/sdl/hardware.cpp:88-94` |
+| `i_video.mm` `I_CreateRenderer` | `#ifndef NO_GL` / `FNullRenderer` | matches `posix/sdl/hardware.cpp:136-149` |
+| `i_video.mm` | `BlitCycles`/`FlipCycles`/`ADD_STAT(blit)` removed | measured only the software framebuffer; would be permanently zero |
+| `i_timer.cpp:41` | dropped `basicinlines.h` | no such header in our base |
+| `i_timer.cpp` `I_GetTimeFrac` | `double` → `fixed_t`, fixed-point body | our `fixed_t` is a strong 48.16 type; body copied from `posix/i_system.cpp:298-311` rather than converting a double |
+| `basictypes.h:37` (engine, not posix) | `ULONG` typedef deferred when `__COREFOUNDATION_CFPLUGINCOM__` | CoreFoundation's COM shim does `typedef UInt32 ULONG`; IOKit's HID plugin API pulls it into `i_joystick.cpp`. Nothing in that TU names `ULONG`, and none of the 151 files that use ours include CoreFoundation |
+| `d_gui.h:70-74` (engine, not posix) | `GKM_META = 8`, `GKM_LBUTTON` 8 → 16 | `uzdoom@32af6cb0c`; Cocoa reports Command/Meta as its own modifier. Runtime-only flags, never serialised, and `GKM_LBUTTON` had no users |
 
 ## Invariants that are easy to get wrong
 

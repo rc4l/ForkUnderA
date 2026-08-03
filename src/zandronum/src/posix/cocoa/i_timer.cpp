@@ -38,7 +38,7 @@
 #include <libkern/OSAtomic.h>
 
 #include "basictypes.h"
-#include "basicinlines.h"
+// [rc4l] no basicinlines.h in our base; its contents live in basictypes.h here.
 #include "doomdef.h"
 #include "i_system.h"
 #include "templates.h"
@@ -186,7 +186,8 @@ unsigned int I_FPSTime()
 }
 
 
-double I_GetTimeFrac(uint32* ms)
+// [rc4l] ours returns fixed_t (48.16), not upstream's double -- see posix/i_system.h.
+fixed_t I_GetTimeFrac(uint32* ms)
 {
 	const uint32_t now = I_MSTime();
 
@@ -195,9 +196,14 @@ double I_GetTimeFrac(uint32* ms)
 		*ms = s_ticStart + 1000 / TICRATE;
 	}
 
-	return 0 == s_ticStart
-		? 1.
-		: clamp<double>( (now - s_ticStart) * TICRATE / 1000., 0, 1);
+	// [rc4l] fixed-point, matching posix/i_system.cpp:298-311 exactly rather than converting
+	// upstream's double at the end. Our fixed_t is a strong 48.16 type, so the multiply happens in
+	// fixed-point from the start and there is no float round-trip to reason about.
+	if (0 == s_ticStart)
+	{
+		return FRACUNIT;
+	}
+	return clamp<fixed_t>( (now - s_ticStart) * FRACUNIT * TICRATE / 1000, 0, FRACUNIT );
 }
 
 
