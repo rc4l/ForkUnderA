@@ -13,6 +13,8 @@
 #include "features/quake-movement/quakemove.h"
 #include "features/quake-movement/computation/qphysics_compute.h"
 #include "features/quake-movement/computation/qjump_compute.h"
+#include "features/quake-movement/computation/qtraversal_compute.h"
+#include "features/quake-movement/elevatorjump.h"
 
 #include "actor.h"
 #include "d_player.h"
@@ -131,6 +133,110 @@ void StopAndIdleIfAtRest( APlayerPawn *mo )
 	}
 }
 
+// The crouch depth at which a slide counts as "crouching". crouchfactor runs [FRACUNIT/2, FRACUNIT]
+// in this engine, so the midpoint is 3/4. Stage 5 derives this from Player.CrouchScale instead.
+const fixed_t Q_CROUCH_SLIDE_THRESHOLD = fixed_t::FromRaw( 3 * 65536 / 4 );
+
+// Defined with the jump helpers further down; the traversal moves need it first.
+void TraceForWall( APlayerPawn *mo, angle_t angle, FTraceResults &trace );
+
+// Emit a traversal move's cosmetic actor. CLIENTSIDEONLY and local-player-only: nothing is
+// replicated, so this costs zero bytes. The consequence, stated plainly in the README, is that you
+// see your own dust and not other players' -- a client cannot know their slide state without the
+// server telling it, and that telling is exactly the recurring traffic this port refuses to add.
+void SpawnEffectActor( player_t *player, int slot )
+{
+	APlayerPawn *const mo = player->mo;
+	if (( slot < 0 ) || ( slot >= EA_COUNT ))
+		return;
+
+	const PClass *const type = mo->EffectActors[slot];
+	if ( type == NULL )
+		return;
+
+	AActor *const effect = Spawn( type, mo->x, mo->y, mo->z, ALLOW_REPLACE );
+	if ( effect != NULL )
+		effect->NetworkFlags |= NETFL_CLIENTSIDEONLY;
+}
+
+// Start or stop a looping traversal sound on a transition, and emit its dust on the authored
+// interval while it runs. `wasActive` is last tic's answer; only the edges touch the sound channel,
+// because restarting a looping sound every tic is audible as a stutter.
+//
+// LOCAL PLAYER ONLY, and deliberately so. Zandronum has SERVERCOMMANDS_SoundActor but no matching
+// stop-sound command, so a loop started remotely could never be ended -- remote listeners would be
+// left with a slide sound running forever. Broadcasting it would also be recurring traffic, which
+// is what this port is explicitly avoiding. You hear your own traversal; other players' is silent
+// until a stop-sound command exists to pair with it.
+void UpdateLoopingMove( player_t *player, bool isActive, bool wasActive, const char *sound,
+	int &effectTics, int interval, int effectSlot )
+{
+	APlayerPawn *const mo = player->mo;
+
+	// Never during prediction: a re-predicted tic would restart the loop and stutter it.
+	if ( CLIENT_PREDICT_IsPredicting() )
+		return;
+	if (( player - players ) != consoleplayer )
+		return;
+
+	const bool silent = ( mo->mvFlags & MV_SILENT ) != 0;
+
+	if ( isActive && !wasActive && !silent )
+		S_Sound( mo, CHAN_BODY | CHAN_LOOP, sound, 1, ATTN_NORM );
+	else if ( !isActive && wasActive )
+		S_StopSound( mo, CHAN_BODY );
+
+	if ( isActive && ShouldEmitEffect( effectTics, interval ))
+		SpawnEffectActor( player, effectSlot );
+}
+
+// Sweep for a wall to run along, and spend a tic of the meter when one is found. Unlike wall climb
+// this does not change velocity -- it is a state the mod reacts to (via ACS/SBARINFO) plus the
+// footstep and effect hooks, matching Q-Zandronum.
+void UpdateAirWallRun( player_t *player, const QVec3 &vel, const QVec3 &wish,
+	float viewAngleDegrees, ticcmd_t *cmd )
+{
+	APlayerPawn *const mo = player->mo;
+	bool running = false;
+
+	const fixed_t speed2D = FLOAT2FIXED( QLength2D( vel.x, vel.y ));
+
+	if (( player->crouchfactor >= Q_CROUCH_SLIDE_THRESHOLD ) &&
+		( speed2D >= mo->AirWallRunMinVelocity ) &&
+		( QLength3D( wish ) > 0.0f ) &&
+		HasCharge( mo->airWallRunTics ))
+	{
+		QVec3 accelDir;
+		accelDir.x = FIXED2FLOAT( fixed_t( cmd->ucmd.forwardmove ));
+		accelDir.y = -FIXED2FLOAT( fixed_t( cmd->ucmd.sidemove )) * 1.25f;
+		accelDir.z = 0.0f;
+		QVectorRotate( accelDir.x, accelDir.y, viewAngleDegrees );
+		accelDir = QMakeUnit( accelDir );
+
+		FTraceResults trace;
+		for ( int i = 0; i < 16; ++i )
+		{
+			const angle_t angle = static_cast<angle_t>( i ) * ( ANGLE_MAX / 16 );
+			TraceForWall( mo, angle, trace );
+			if (( trace.HitType == TRACE_HitWall ) && ( trace.Line != NULL ))
+			{
+				QVec3 wallDir;
+				wallDir.x = FIXED2FLOAT( trace.Line->dx );
+				wallDir.y = FIXED2FLOAT( trace.Line->dy );
+				wallDir.z = 0.0f;
+				wallDir = QMakeUnit( wallDir );
+
+				running = AirWallRunEngages( QDotProduct( accelDir, wallDir ));
+				break;
+			}
+		}
+	}
+
+	mo->isAirWallRunning = running;
+	if ( running )
+		mo->airWallRunTics = SpendCharge( mo->airWallRunTics );
+}
+
 } // namespace
 
 bool UsesQuakeMovement( const AActor *mo )
@@ -145,7 +251,7 @@ bool UsesQuakeMovement( const AActor *mo )
 	return static_cast<const APlayerPawn *>( mo )->MvType == MVTYPE_QUAKE;
 }
 
-void MovePlayerQuake( player_t *player, ticcmd_t *cmd )
+bool MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 {
 	APlayerPawn *const mo = player->mo;
 
@@ -198,7 +304,8 @@ void MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 		vel.z += wish.z * granted;
 
 		StoreVelocity( player, vel );
-		return;
+		// Swimming and flying already used the jump key as vertical steering this tic.
+		return true;
 	}
 
 	QVectorRotate( wish.x, wish.y, viewAngleDegrees );
@@ -210,6 +317,36 @@ void MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 
 	const bool airborne = ( player->onground == false ) ||
 		((( cmd->ucmd.buttons & BT_JUMP ) != 0 ) && ( player->jumpTics <= 0 ));
+
+	const bool isSlider = ( mo->mvFlags & MV_CROUCHSLIDE ) != 0;
+	const bool isClimber = ( mo->mvFlags & MV_WALLCLIMB ) != 0;
+	const bool isWallRunner = ( mo->mvFlags & MV_AIRWALLRUN ) != 0;
+	bool isSliding = false;
+	bool isClimbing = false;
+
+	// Wall climb pre-empts both the ground and air paths: holding jump against a wall with charge
+	// left replaces horizontal acceleration with a vertical crawl. Deliberately NOT gated on being
+	// grounded -- the whole move is jumping at a wall and climbing it, and `airborne` is true the
+	// moment jump is pressed anyway, so a grounded test would make it unreachable.
+	if ( isClimber && (( cmd->ucmd.buttons & BT_JUMP ) != 0 ) && HasCharge( mo->wallClimbTics ))
+	{
+		FTraceResults climbTrace;
+		TraceForWall( mo, mo->angle, climbTrace );
+		isClimbing = ( climbTrace.HitType == TRACE_HitWall );
+	}
+
+	if ( isClimbing )
+	{
+		vel.z = FIXED2FLOAT( mo->WallClimbSpeed );
+		mo->wallClimbTics = SpendCharge( mo->wallClimbTics );
+		StoreVelocity( player, vel );
+		mo->isWallClimbing = true;
+		UpdateLoopingMove( player, true, mo->isWallClimbing, "*wallclimb",
+			mo->wallClimbEffectTics, mo->WallClimbEffectInterval, EA_WALL_CLIMB );
+		mo->isWallClimbing = true;
+		// Holding jump IS the climb input; firing a jump too would kick the player off the wall.
+		return true;
+	}
 
 	if ( airborne )
 	{
@@ -255,6 +392,18 @@ void MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 			vel.x += wish.x * granted;
 			vel.y += wish.y * granted;
 		}
+
+		if ( isWallRunner )
+			UpdateAirWallRun( player, vel, wish, viewAngleDegrees, cmd );
+
+		// Airborne is where charges come back. The slide meter's sign flip lives here: leaving the
+		// ground is what releases a lockout (see computation/qtraversal_compute.h).
+		if ( isSlider )
+			mo->crouchSlideTics = RegenSlideCharge( mo->crouchSlideTics, mo->CrouchSlideMaxTics, mo->CrouchSlideRegen );
+		if ( isClimber )
+			mo->wallClimbTics = RegenSimpleCharge( mo->wallClimbTics, mo->WallClimbMaxTics, mo->WallClimbRegen );
+		if ( isWallRunner )
+			mo->airWallRunTics = RegenSimpleCharge( mo->airWallRunTics, mo->AirWallRunMaxTics, mo->AirWallRunRegen );
 	}
 	else
 	{
@@ -263,15 +412,43 @@ void MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 		// not take that rework, so the guard has nothing to hang off and is omitted; the visible
 		// difference is that a Z-thrust does not suppress ground acceleration on its landing tic.
 		maxSpeed *= Q_MAX_GROUND_SPEED * moveFactor;
-		// Dividing the authored acceleration by moveFactor keeps time-to-top-speed constant across
-		// walk and run: a walking player has a lower target but reaches it just as promptly.
-		const float accel = ( moveFactor > 0.0f )
-			? ( mo->GroundAcceleration / moveFactor * floorFriction )
-			: ( mo->GroundAcceleration * floorFriction );
 
-		const float granted = QAccelerationSpeed( QDotProduct( wish, vel ), maxSpeed, accel );
-		vel.x += wish.x * granted;
-		vel.y += wish.y * granted;
+		const bool crouchedEnough = ( player->crouchfactor < Q_CROUCH_SLIDE_THRESHOLD );
+		isSliding = CanCrouchSlide( isSlider, crouchedEnough, mo->crouchSlideTics );
+
+		if ( isSliding )
+		{
+			// A slide accelerates against the FULL ground speed with its own acceleration and does
+			// not divide by moveFactor -- that is what makes it carry momentum rather than steer.
+			const float granted = QAccelerationSpeed( QDotProduct( wish, vel ), maxSpeed,
+				mo->CrouchSlideAcceleration * floorFriction );
+			vel.x += wish.x * granted;
+			vel.y += wish.y * granted;
+			mo->crouchSlideTics = SpendCharge( mo->crouchSlideTics );
+		}
+		else
+		{
+			maxSpeed *= moveFactor;
+			// Dividing the authored acceleration by moveFactor keeps time-to-top-speed constant
+			// across walk and run: a walking player has a lower target but reaches it just as
+			// promptly.
+			const float accel = ( moveFactor > 0.0f )
+				? ( mo->GroundAcceleration / moveFactor * floorFriction )
+				: ( mo->GroundAcceleration * floorFriction );
+
+			const float granted = QAccelerationSpeed( QDotProduct( wish, vel ), maxSpeed, accel );
+			vel.x += wish.x * granted;
+			vel.y += wish.y * granted;
+
+			// Standing upright on the ground actively banks the slide meter into lockout.
+			if ( isSlider && !crouchedEnough )
+				mo->crouchSlideTics = DrainSlideCharge( mo->crouchSlideTics, mo->CrouchSlideMaxTics, mo->CrouchSlideRegen );
+		}
+
+		if ( isClimber )
+			mo->wallClimbTics = RegenSimpleCharge( mo->wallClimbTics, mo->WallClimbMaxTics, mo->WallClimbRegen );
+		if ( isWallRunner )
+			mo->airWallRunTics = RegenSimpleCharge( mo->airWallRunTics, mo->AirWallRunMaxTics, mo->AirWallRunRegen );
 	}
 
 	if ( localCap > 0.0f )
@@ -283,12 +460,30 @@ void MovePlayerQuake( player_t *player, ticcmd_t *cmd )
 
 	StoreVelocity( player, vel );
 
+	// The looping sound and its dust only start/stop on a transition, so these are driven every
+	// tic with the current answer rather than only when something changed.
+	if ( isSlider )
+	{
+		UpdateLoopingMove( player, isSliding, mo->isCrouchSliding, "*crouchslide",
+			mo->crouchSlideEffectTics, mo->CrouchSlideEffectInterval, EA_CROUCH_SLIDE );
+		mo->isCrouchSliding = isSliding;
+	}
+	if ( isClimber )
+	{
+		UpdateLoopingMove( player, false, mo->isWallClimbing, "*wallclimb",
+			mo->wallClimbEffectTics, mo->WallClimbEffectInterval, EA_WALL_CLIMB );
+		mo->isWallClimbing = false;
+	}
+
 	// [BB] Spectators shall stay in their spawn state and don't execute any code pointers.
+	// A sliding player is not running, so the run animation is suppressed during a slide.
 	if (( CLIENT_PREDICT_IsPredicting() == false ) && player->onground &&
-		( player->bSpectating == false ) && ( mo->velx || mo->vely ))
+		( player->bSpectating == false ) && ( mo->velx || mo->vely ) && ( isSliding == false ))
 	{
 		mo->PlayRunning();
 	}
+
+	return false;
 }
 
 bool ApplyQuakeFriction( AActor *mo )
@@ -564,6 +759,8 @@ bool CheckJumpQuake( player_t *player, ticcmd_t *cmd )
 		mo->velz = fixed_t::FromRaw( ComputeMainJumpVelZ( mo->velz.Raw(), jumpVelZ.Raw(),
 			isEdgeJump ));
 
+		ApplyElevatorJump( mo );
+
 		player->jumpTics = ComputeJumpTics(
 			( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) != 0,
 			( player->cheats & CF_HIGHJUMP ) != 0,
@@ -605,6 +802,8 @@ bool CheckJumpQuake( player_t *player, ticcmd_t *cmd )
 
 		mo->velz = fixed_t::FromRaw( ComputeSecondJumpVelZ( mo->velz.Raw(),
 			mo->SecondJumpZ.Raw(), ( player->cheats & CF_HIGHJUMP ) != 0 ));
+
+		ApplyElevatorJump( mo );
 
 		PlayJumpSound( mo, "*secondjump" );
 

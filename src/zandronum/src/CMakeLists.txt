@@ -1372,6 +1372,7 @@ add_executable( zdoom WIN32
 	features/fov-interp/fovinterp.cpp
 	features/fov-interp/fovcvar.cpp
 	features/quake-movement/quakemove.cpp
+	features/quake-movement/elevatorjump.cpp
 	zzautozend.cpp
 )
 

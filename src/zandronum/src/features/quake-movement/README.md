@@ -33,10 +33,11 @@ This feature lands in five reviewable stages. **Stage 1 is complete**; the rest 
 3. ✅ **Jump rework.** `CheckJumpQuake`: the second-jump state machine, `+WALLJUMP`/`+WALLJUMPV2`,
    `+DOUBLETAPJUMP`, `+EDGEJUMP`, `+GROUNDSECONDJUMP`, `+ABSOLUTESECONDJUMP`, `+USER4JUMP`, plus
    their prediction state. **`+ELEVATORJUMP` is deferred** — see below.
-4. ⬜ **Traversal.** Crouch slide, wall climb, air wall run, their looping sounds, and local-player
-   client-side effect actors.
+4. ✅ **Traversal.** Crouch slide, wall climb, air wall run, their looping sounds, and local-player
+   client-side effect actors. `+ELEVATORJUMP` landed here too.
 5. ⬜ **Speed tiers.** Four-entry `Player.ForwardMove`/`SideMove`/`FootstepsEnabled`,
-   `Player.CrouchScale`, `Player.CrouchChangeSpeed`, footsteps, and the `BT_SPEED` change.
+   `Player.CrouchScale`, `Player.CrouchChangeSpeed`, footsteps. (The `BT_SPEED` change was pulled
+   forward into the stage 1-3 bug fixes, because `CrouchWalkFactor` could not be correct without it.)
 
 ## The `P_MovePlayer` split (stage 1)
 
@@ -167,13 +168,66 @@ driven through `set_pause` + `step`: ticcmds keep being built while the engine s
 `oldbuttons` absorbs the press and the edge is gone before the stepped tic runs. Drive jump inputs
 with console `wait` sequences on a *running* engine instead.
 
-### `+ELEVATORJUMP` is deferred
+### `+ELEVATORJUMP`
 
-It needs `sector_t::GetFloorMovingSpeed`/`GetCeilingMovingSpeed`, which in turn need
-`GetDirection`/`GetSpeed`/`GetStatus`/`GetType`/`GetFloorSpeed` accessors across `DFloor`, `DPlat`,
-`DElevator` and `DPillar`, a 3D-floor walk, and a per-tic `movingSpeed` cache for client prediction.
-That is sector-mover plumbing rather than jump work, so it gets its own change. The `MV_ELEVATORJUMP`
-flag parses and replicates today; it simply has no effect yet.
+`elevatorjump.cpp` reads the signed vertical rate of whatever surface is carrying the player and adds
+it to the jump, so a rising lift launches you instead of eating the launch. Only a **rising** surface
+contributes — a descending lift must not subtract, or jumping off one would be worse than jumping off
+solid ground.
+
+Which surface counts is not simply "the sector you are in": standing on a 3D floor means being
+carried by that floor's *model* sector, via its **ceiling** mover. `DPlat`, `DFloor`, `DElevator` and
+`DPillar` each report their rate differently, so each is read on its own terms and a mover at rest
+contributes nothing.
+
+This needed three accessors that did not exist — `DPlat::GetSpeed`, `DElevator::GetSpeed` and
+`DElevator::GetDirection` (each class already had the matching *setter*). Q-Zandronum also caches a
+per-tic `movingSpeed` on `secplane_t` for their prediction rework; we read the thinker live instead,
+since sector movers exist on clients too and we did not take that rework.
+
+## Stage 4: traversal
+
+`computation/qtraversal_compute.{h,cpp}` holds the charge bookkeeping. The crouch-slide meter is the
+part worth understanding: **one signed counter carries two states.**
+
+| value | meaning |
+|---|---|
+| `> 0` | usable charge, in tics of slide remaining |
+| `< 0` | locked out; the magnitude is what has been banked while standing |
+
+Standing upright on the ground does not merely stop regeneration — it *flips* usable charge negative,
+and only going airborne flips it back. That is the rule that makes crouch slide a move you set up by
+jumping rather than something you can spam from a standstill. Getting either sign flip wrong yields a
+slide that silently refuses to start, or one that never runs out.
+
+Wall climb and air wall run use the plain model instead: regenerate toward the cap, spend a tic per
+tic, bottom out at zero.
+
+**Verified in-engine:**
+
+- **Crouch slide**, full lifecycle: spawns locked out from standing (−70) → going airborne releases
+  it (+70) → landing crouched sets `sliding 1` and drains the meter → it hits 0 and the slide ends,
+  after carrying the player ~867 units.
+- **Wall climb**: holding jump at a wall sets `climbing 1` and raises z by exactly 5 units/tic
+  (`WallClimbSpeed 5.0`) while spending charge; releasing jump clears the flag and the meter regrows.
+- **Effect actors**: `MvDust` observed spawning at the player during both moves.
+- **Air wall run**: ⚠️ implemented, unit-tested and wired, and every gating condition was confirmed
+  live in-engine (speed 13.141 ≥ the 10 minimum, upright, charge 70) — but MAP01's geometry never put
+  a wall inside the 24-unit trace while moving *along* it, so a positive engagement has **not** been
+  observed. Treat it as unproven rather than working.
+
+Wall climbing does not hard-stop when the meter empties: the airborne branch regenerates faster than
+the climb spends, so an exhausted climb alternates rather than ending. That oscillation is inherited —
+Q-Zandronum puts the regen in the branch you only reach while *not* climbing — so climbing is
+rate-limited rather than capped.
+
+### Why the sounds and dust are local-player only
+
+Zandronum has `SERVERCOMMANDS_SoundActor` but **no matching stop-sound command**, so a looping slide
+sound started remotely could never be ended — every other player would hear it forever. Broadcasting
+the effect actors would likewise be recurring per-transition traffic, which is exactly what this port
+refuses to add. So both are client-side and local-player only: you hear and see your own traversal,
+not other players'. Lifting that needs a stop-sound command to pair with the start.
 
 ## Netcode — what this costs
 
