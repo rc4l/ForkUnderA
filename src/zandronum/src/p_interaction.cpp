@@ -390,6 +390,11 @@ void ClientObituary (AActor *self, AActor *inflictor, AActor *attacker, int dmgf
 		message = GStrings("OB_DEFAULT");
 	}
 
+	// [rc4l] uzdoom@67c669068: don't print an empty obituary. A wad that hides a death message by
+	// defining it as an empty string would otherwise produce a blank console line per kill.
+	if (message == NULL || strlen(message) <= 0)
+		return;
+
 	SexMessage (message, gendermessage, gender,
 		self->player->userinfo.GetName(), attacker->player->userinfo.GetName());
 
