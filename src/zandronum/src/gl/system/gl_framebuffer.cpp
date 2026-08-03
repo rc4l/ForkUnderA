@@ -417,12 +417,18 @@ void OpenGLFrameBuffer::ResizeRenderInPlace(int w, int h)
 
 void OpenGLFrameBuffer::MaybeResizeForScale()
 {
-	// [rc4l] video-scale: event-driven, NOT polled. GetClientSize -> SDL_GL_GetDrawableSize is an
-	// expensive Cocoa/Metal query on macOS (~tens of ms), so calling it every frame tanks FPS.
-	// Only re-check when something actually changed -- a mode set, a window resize, or a scale CVAR
-	// change all raise zx_videoScaleDirty. This matches upstream's event-driven resize.
-	if (!zx_videoScaleDirty)
-		return;
+	// [rc4l] uzdoom@c3702ae9e: this reconcile is UNCONDITIONAL, every frame, exactly as upstream's
+	// OpenGLFrameBuffer::Update does it.
+	//
+	// It used to be gated on zx_videoScaleDirty because the old query -- SDL_GL_GetDrawableSize --
+	// cost tens of milliseconds on macOS, so polling it tanked the frame rate. That reasoning died
+	// with the SDL backend: the Cocoa path reads the view's backing bounds, which is cheap, and
+	// upstream polls on every platform including their own SDL one.
+	//
+	// The gate was also wrong, not just conservative. Anything that resized the window WITHOUT
+	// raising the flag -- a drag, a fullscreen toggle, an OS-driven resize -- left the render target
+	// at the old size with no way to notice. Comparing the sizes IS the check; a separate flag can
+	// only ever get out of sync with it.
 	zx_videoScaleDirty = false;
 
 	int cw = GetWidth(), ch = GetHeight();
