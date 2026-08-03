@@ -2264,10 +2264,7 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 		<< level.maptime
 		<< i;
 
-	if (SaveVersion >= 3313)
-	{
-		arc << level.nextmusic;
-	}
+	arc << level.nextmusic;
 
 	// Hub transitions must keep the current total time
 	if (!hubLoad)
@@ -2329,10 +2326,7 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 		StatusBar->Serialize (arc);
 
-	if (SaveVersion >= 4222)
-	{ // This must be done *after* thinkers are serialized.
-		arc << level.DefaultSkybox;
-	}
+	arc << level.DefaultSkybox;
 
 	arc << level.total_monsters << level.total_items << level.total_secrets;
 

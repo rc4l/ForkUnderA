@@ -1088,16 +1088,7 @@ IMPLEMENT_CLASS (DLightTransfer)
 void DLightTransfer::Serialize (FArchive &arc)
 {
 	Super::Serialize (arc);
-	if (SaveVersion < 3223)
-	{
-		BYTE bytelight;
-		arc << bytelight;
-		LastLight = bytelight;
-	}
-	else
-	{
-		arc << LastLight;
-	}
+	arc << LastLight;
 	arc << Source << TargetTag << CopyFloor;
 }
 
@@ -1181,16 +1172,7 @@ IMPLEMENT_CLASS (DWallLightTransfer)
 void DWallLightTransfer::Serialize (FArchive &arc)
 {
 	Super::Serialize (arc);
-	if (SaveVersion < 3223)
-	{
-		BYTE bytelight;
-		arc << bytelight;
-		LastLight = bytelight;
-	}
-	else
-	{
-		arc << LastLight;
-	}
+	arc << LastLight;
 	arc << Source << TargetID << Flags;
 }
 
