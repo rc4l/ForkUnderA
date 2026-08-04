@@ -99,6 +99,23 @@ partial** against the real diff. Two shapes it can't call alone, both seen in th
   one builds — the *ordering* supplies the dependency (the commit that introduces a symbol lands
   before the commit that uses it). A big multi-commit refactor is still done one commit at a time; it
   is not a reason to batch. (Flights are a renderer-staircase cherry-pick optimization — not this.)
+- **Pull a later fix forward when it makes us MATCH upstream instead of diverge.** The default is
+  strict order, but there is one exception and it is narrow. When a commit you are porting contains
+  a defect, upstream fixed it later, and that fix is *clean* — small, self-contained, no dependency
+  on anything between here and there — take the fix now and record both rows `ported`. The whole
+  point is the verdict: `ported` means our text matches theirs, `adapted` means it does not and a
+  future re-sync will conflict on that hunk forever. Trading a permanent divergence for a few
+  commits of sequence-skipping is a good trade; the ledger note carries the out-of-order reason.
+
+  **Not a licence to range ahead.** It applies only to a fix for a defect in the commit *in hand*.
+  If the later commit refactors, relocates or extends anything, it is ordinary future work — port
+  it when you reach it.
+
+  **Check whether it is already here FIRST.** A repo with any history of ad-hoc backports makes
+  "we don't have it yet" an unsafe assumption. This rule was written after porting a HIT*-pointer
+  fix into `P_LineAttack` that `P_SpawnPuff` had already been doing for years via an earlier
+  out-of-order port — a duplicate that also read the class defaults where the existing code read
+  the instance. Grep for the *destination* shape, not just the source commit.
 - **Skipping a prereq can break a later dependent** (it references a symbol the skipped commit
   added). When a commit won't apply cleanly, check whether it leans on a skipped one; port the
   minimal prerequisite or adapt around it. Don't blind-skip a whole subsystem without checking who
@@ -157,7 +174,10 @@ merge checkpoint → next batch. Sequential means *verified* sequential, not fas
   tracker index stores as-of-commit paths, so an old commit's path may not exist at upstream HEAD *or*
   ours — resolve via the file's identity, not its string.
 - **Already ported out-of-sequence:** our tree may already contain the change (ad-hoc port). Grep our
-  source for it; if present, mark `ported` with the zandrox sha — don't re-port.
+  source for it; if present, mark `ported` with the zandrox sha — don't re-port. Grep for the shape
+  the change *produces*, not the commit that produced it: an earlier backport may have landed a
+  later refactor that already subsumes this commit, in which case the code sits somewhere the
+  original diff never touched.
 - **Reverted / superseded upstream:** the change was undone or replaced by a later commit. Check it
   survives to upstream HEAD (`git -C $UP log --oneline -- <path>`); if it was reverted, skip with that
   reason.
