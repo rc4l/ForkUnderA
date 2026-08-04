@@ -10569,7 +10569,9 @@ scriptwait:
 				while (min <= max)
 				{
 					int mid = (min + max) / 2;
-					SDWORD caseval = pc[mid*2];
+					// [rc4l] uzdoom@8f915c9dc: the case table is little-endian on disk like every other
+					// ACS word, so it must be swapped before comparing.
+					SDWORD caseval = LittleLong(pc[mid*2]);
 					if (caseval == STACK(1))
 					{
 						pc = activeBehavior->Ofs2PC (LittleLong(pc[mid*2+1]));
