@@ -1644,7 +1644,9 @@ void D_DoAdvanceDemo (void)
 		break;
 	}
 
-	if (pagename)
+	// [rc4l] uzdoom@484eb347c: pagename is an FString here, and FString has no operator bool --
+	// this relied on an implicit conversion rather than testing whether it is empty.
+	if (pagename.IsNotEmpty())
 	{
 		if (Page != NULL)
 		{
@@ -2799,7 +2801,7 @@ void D_DoomMain (void)
 
 		// The IWAD selection dialogue does not show in fullscreen so if the
 		// restart is initiated without a defined IWAD assume for now that it's not going to change.
-		if (iwad.Len() == 0) iwad = lastIWAD;
+		if (iwad.IsEmpty()) iwad = lastIWAD;	// [rc4l] uzdoom@484eb347c
 
 		FIWadManager *iwad_man = new FIWadManager;
 		const FIWADInfo *iwad_info = iwad_man->FindIWAD(allwads, iwad, basewad);

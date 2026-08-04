@@ -198,6 +198,7 @@ enum SAW_Flags
 	// [rc4l] uzdoom@cfd24f438
 	SF_NOPULLIN = 32,
 	SF_NOTURN = 64,
+	SF_STEALARMOR = 128,	// [rc4l] uzdoom@a150e0686
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
@@ -214,7 +215,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 		return;
 	}
 	
-	ACTION_PARAM_START(9);
+	ACTION_PARAM_START(11);
 	ACTION_PARAM_SOUND(fullsound, 0);
 	ACTION_PARAM_SOUND(hitsound, 1);
 	ACTION_PARAM_INT(damage, 2);
@@ -224,6 +225,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	ACTION_PARAM_ANGLE(Spread_XY, 6);
 	ACTION_PARAM_ANGLE(Spread_Z, 7);
 	ACTION_PARAM_FIXED(LifeSteal, 8);
+	// [rc4l] uzdoom@a150e0686
+	ACTION_PARAM_INT(lifestealmax, 9);
+	ACTION_PARAM_CLASS(armorbonustype, 10);
 
 
 
@@ -318,7 +322,34 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	const int prevhealth = self->health;
 
 	if (LifeSteal && !(linetarget->flags5 & MF5_DONTDRAIN))
-		P_GiveBody (self,(int)( (actualdamage * LifeSteal) >> FRACBITS));
+	{
+		// [rc4l] uzdoom@a150e0686 with its fix uzdoom@9446edc06 folded in (the flags variable
+		// here is Flags, capitalised -- upstream first wrote `flags` and did not compile).
+		// SF_STEALARMOR converts the drain into armour instead of health, and lifestealmax
+		// caps either form.
+		if (Flags & SF_STEALARMOR)
+		{
+			if (!armorbonustype) armorbonustype = PClass::FindClass("ArmorBonus");
+
+			if (armorbonustype->IsDescendantOf (RUNTIME_CLASS(ABasicArmorBonus)))
+			{
+				ABasicArmorBonus *armorbonus = static_cast<ABasicArmorBonus *>(Spawn (armorbonustype, 0,0,0, NO_REPLACE));
+				armorbonus->SaveAmount *= (int)((actualdamage * LifeSteal) >> FRACBITS);
+				armorbonus->MaxSaveAmount = lifestealmax <= 0 ? armorbonus->MaxSaveAmount : lifestealmax;
+				armorbonus->flags |= MF_DROPPED;
+				armorbonus->ClearCounters();
+
+				if (!armorbonus->CallTryPickup (self))
+				{
+					armorbonus->Destroy ();
+				}
+			}
+		}
+		else
+		{
+			P_GiveBody (self,(int)( (actualdamage * LifeSteal) >> FRACBITS), lifestealmax);
+		}
+	}
 
 	// [EP] Inform the clients about the player health change if needed.
 	if ( ( NETWORK_GetState() == NETSTATE_SERVER ) && self->player && prevhealth != self->health )
