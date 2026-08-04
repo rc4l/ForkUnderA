@@ -323,8 +323,12 @@ void DBaseStatusBar::SetScaled (bool scale, bool force)
 		}
 		else
 		{ // 5:4 resolution
+			// [rc4l] Both halves take the actual aspect. The second term kept BaseRatioSizes[4][3] --
+			// 5:4's hardcoded multiplier, 45 -- so at any other tall ratio the status bar's top was
+			// placed for a screen it is not on: 45 instead of 26 at 0.72, leaving the view stopping
+			// about 115 pixels above where the bar actually draws, with the gap unpainted.
 			::ST_Y = Scale(ST_Y - VirticalResolution/2, SCREENHEIGHT*3, Scale(VirticalResolution, AspectBaseHeight(aspect), 200)) + SCREENHEIGHT/2
-				+ (SCREENHEIGHT - SCREENHEIGHT * BaseRatioSizes[4][3] / 48) / 2;
+				+ (SCREENHEIGHT - SCREENHEIGHT * AspectMultiplier(aspect) / 48) / 2;
 		}
 		Displacement = 0;
 	}
