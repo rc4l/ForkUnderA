@@ -1689,6 +1689,8 @@ CCMD (endgame)
 	{
 		gameaction = ga_fullconsole;
 		demosequence = -1;
+		// [rc4l] uzdoom@eceb37aa6: close out a recording rather than leaving it dangling.
+		G_CheckDemoStatus();
 	}
 }
 
