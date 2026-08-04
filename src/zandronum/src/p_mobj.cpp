@@ -5679,6 +5679,10 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	{
 		spawn_x = mo->x;
 		spawn_y = mo->y;
+		// [rc4l] uzdoom@c631ffc5f: respawning where you died must keep the height you died at.
+		// Otherwise the z below re-derives ONFLOORZ/ONCEILINGZ from the class default and drops
+		// the player to the floor of a spot they may have been standing above.
+		spawn_z = mo->z;
 		spawn_angle = mo->angle;
 	}
 	else
@@ -5698,14 +5702,16 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 		{
 			spawn_angle += 1 << ANGLETOFINESHIFT;
 		}
-	}
 
-	if (GetDefaultByType(p->cls)->flags & MF_SPAWNCEILING)
-		spawn_z = ONCEILINGZ;
-	else if (GetDefaultByType(p->cls)->flags2 & MF2_SPAWNFLOAT)
-		spawn_z = FLOATRANDZ;
-	else
-		spawn_z = ONFLOORZ;
+		// [rc4l] uzdoom@c631ffc5f: only derive the height when spawning at a start spot; the
+		// respawn-in-place branch above already set it.
+		if (GetDefaultByType(p->cls)->flags & MF_SPAWNCEILING)
+			spawn_z = ONCEILINGZ;
+		else if (GetDefaultByType(p->cls)->flags2 & MF2_SPAWNFLOAT)
+			spawn_z = FLOATRANDZ;
+		else
+			spawn_z = ONFLOORZ;
+	}
 
 	mobj = static_cast<APlayerPawn *>
 		(Spawn (p->cls, spawn_x, spawn_y, spawn_z, NO_REPLACE));
