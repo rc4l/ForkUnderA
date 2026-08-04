@@ -1006,7 +1006,7 @@ void FGLRenderer::RenderView (player_t* player)
 	//
 	// No upstream counterpart -- these GL files are not in the commit being ported.
 	float ratio = WidescreenRatio;
-	if (!Is54Aspect(ratio))
+	if (!AspectTallerThanWide(ratio))
 	{
 		fovratio = 1.333333f;
 	}

@@ -124,7 +124,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	// the identical value at those five sizes and a sensible one everywhere between.
 	//
 	// No upstream counterpart -- this GL file is not in the commit being ported.
-	scalex = (!Is54Aspect(WidescreenRatio) ? (4.0f / 3.0f) / WidescreenRatio : 1.0f) * vw / 320;
+	scalex = (!AspectTallerThanWide(WidescreenRatio) ? (4.0f / 3.0f) / WidescreenRatio : 1.0f) * vw / 320;
 
 	// [overlay] A_OverlayScale: the layer scale multiplies the sprite's offset and size so it
 	// scales about its own offset origin (matching GZDoom). psp->scalex/scaley default to FRACUNIT,
