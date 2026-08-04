@@ -96,7 +96,7 @@
 #include "cl_demo.h"
 #include "cl_main.h"
 #include "cl_statistics.h"
-#include "browser.h"
+#include "features/server-browser/browser.h"
 #include "lastmanstanding.h"
 #include "campaign.h"
 #include "callvote.h"

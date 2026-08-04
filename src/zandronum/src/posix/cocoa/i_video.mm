@@ -842,8 +842,7 @@ void CocoaVideo::SetMode(const int width, const int height, const bool fullscree
 	// string is build-constant but the code reads better without pretending otherwise.
 	char caption[100];
 	{
-		char tag[64];
-		zx::FuaVersionTag(GetFuaDescribe(), tag, sizeof tag);
+		const char *tag = GetFuaVersionTag();
 		if (zx::FuaIsStableBuild(GetFuaDescribe()))
 			mysnprintf(caption, countof(caption), FUA_NAME " %s (stable)", tag);
 		else

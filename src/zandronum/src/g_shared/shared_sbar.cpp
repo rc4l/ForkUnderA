@@ -316,14 +316,20 @@ void DBaseStatusBar::SetScaled (bool scale, bool force)
 	{
 		ST_X = 0;
 		ST_Y = VirticalResolution - RelTop;
-		if (CheckRatio(SCREENWIDTH, SCREENHEIGHT) != 4)
+		float aspect = ActiveRatio(SCREENWIDTH, SCREENHEIGHT);
+		if (!AspectTallerThanWide(aspect))
 		{ // Normal resolution
 			::ST_Y = Scale (ST_Y, SCREENHEIGHT, VirticalResolution);
 		}
 		else
 		{ // 5:4 resolution
-			::ST_Y = Scale(ST_Y - VirticalResolution/2, SCREENHEIGHT*3, Scale(VirticalResolution, BaseRatioSizes[4][1], 200)) + SCREENHEIGHT/2
-				+ (SCREENHEIGHT - SCREENHEIGHT * BaseRatioSizes[4][3] / 48) / 2;
+			// [rc4l] PROVENANCE: uzdoom@5b438d220f918e4d5b604e970f0f45f96963e8d1 (hunk I missed on the first pass).
+			// [rc4l] Both halves take the actual aspect. The second term kept BaseRatioSizes[4][3] --
+			// 5:4's hardcoded multiplier, 45 -- so at any other tall ratio the status bar's top was
+			// placed for a screen it is not on: 45 instead of 26 at 0.72, leaving the view stopping
+			// about 115 pixels above where the bar actually draws, with the gap unpainted.
+			::ST_Y = Scale(ST_Y - VirticalResolution/2, SCREENHEIGHT*3, Scale(VirticalResolution, AspectBaseHeight(aspect), 200)) + SCREENHEIGHT/2
+				+ (SCREENHEIGHT - SCREENHEIGHT * AspectMultiplier(aspect) / 48) / 2;
 		}
 		Displacement = 0;
 	}
@@ -1085,16 +1091,75 @@ void DBaseStatusBar::DrSmallNumberOuter (int val, int x, int y, bool center) con
 
 void DBaseStatusBar::RefreshBackground () const
 {
-	int x, x2, y, ratio;
+	int x, x2, y;
 
-	ratio = CheckRatio (SCREENWIDTH, SCREENHEIGHT);
-	x = (!(ratio & 3) || !Scaled) ? ST_X : SCREENWIDTH*(48-BaseRatioSizes[ratio][3])/(48*2);
+	float ratio = ActiveRatio (SCREENWIDTH, SCREENHEIGHT);
+	// [rc4l] PROVENANCE: DEVIATES from uzdoom@5b438d220f918e4d5b604e970f0f45f96963e8d1, which uses 1.5f. See below.
+	// [rc4l] 1.334f, not upstream's 1.5f. That constant replaced !IsRatioWidescreen(), which was
+	// true for the 16:9/16:10/17:10 buckets -- narrowest 1.6 -- so 1.5 was a sensible midpoint
+	// BETWEEN BUCKETS. With a continuous ratio it is simply wrong: everything above 1.334 now has
+	// its content aspect-corrected, so 1.334 to 1.5 drew a narrowed status bar over a background
+	// positioned as if it were full width, leaving unpainted strips down both sides. Reported at
+	// 1499x1049, which is an entirely ordinary window shape.
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+	//   SUPERSEDED BY: the status bar rewrite beginning uzdoom@355570198de0f66b41b5bb61ff517f7d60985a4c (2017-01-20, "moved
+	//   statusbar code to a separate directory before starting work on it") and uzdoom@f5421491ec05a7e7a8b355581fcace2e3e530e65.
+	//   RefreshBackground, SetScaled and ::ST_Y are all gone in the result; the bar is laid out
+	//   by ST_CalcCleanFacs in common/statusbar/base_sbar.cpp instead.
+	//   ON PORT: this whole function is replaced, so drop these local corrections wholesale.
+	// [rc4l] Clamp ultrawide to 16:9 exactly as VirtualToRealCoords and FillBorder do. The bar is
+	// positioned by VirtualToRealCoords (see sbarinfo.cpp), so it is laid out at the CLAMPED ratio;
+	// computing the background from the unclamped one put them 13px apart at 1027x597. Anything that
+	// paints around the bar has to apply the same clamp, or it is measuring a different screen.
+	if (ratio > 1.7f)
+	{
+		ratio = 16.0f / 9.0f;
+	}
+
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+	// [rc4l] The inset is derived from AspectBaseWidth, the same quantity the bar itself is positioned
+	// by, rather than from AspectMultiplier. They are one number rounded two ways: at 1.58 the bar sits
+	// 112px in while this computed 104, leaving an 8px strip that neither the bar nor the border ever
+	// painted -- yellow slivers either side of the status bar, reported at 1439x911 and 1737x1012.
+	//
+	// Same mistake as FillBorder had. Anything that fills around a scaled element has to measure it
+	// the way it was scaled.
+	const int barWidth = SCREENWIDTH * 960 / AspectBaseWidth(ratio);
+	const int barInset = (SCREENWIDTH - barWidth) / 2;
+
+	x = (ratio <= 1.334f || !Scaled) ? ST_X : barInset;
 	y = x == ST_X && x > 0 ? ST_Y : ::ST_Y;
 
 	if(!CompleteBorder)
 	{
 		if(y < SCREENHEIGHT)
 		{
+			//   SUPERSEDED BY: the status bar rewrite from uzdoom@355570198de0f66b41b5bb61ff517f7d60985a4c onward -- RefreshBackground
+			//   does not survive it. ON PORT: delete rather than reconcile.
+			// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+			//
+			// Fill the whole strip from y down, not just its edges. The two lines below paint one
+			// pixel at the top and bottom and the code further on paints the left and right, on the
+			// assumption that the bar itself covers everything between. It does not: the bar is
+			// positioned by VirtualToRealCoords while y comes from ::ST_Y, and when the bar's top
+			// lands below y the band between them is painted by nobody -- a horizontal yellow line
+			// above the bar, reported at 650x350.
+			//
+			// RefreshBackground runs BEFORE the bar draws (see Draw), so filling underneath it is
+			// free of consequence and covers any gap on any edge, rather than the one edge I happen
+			// to have chased. The real repair is a single source for the laid-out rectangle that both
+			// the bar and this share; until then, do not assume where the bar ends up.
+			//
+			// y > 0 is load-bearing. The enclosing guard only bounds y from above, and an alt+enter
+			// mode switch can run a refresh while ::ST_Y is still 0 -- at which point this fills the
+			// ENTIRE screen with the border flat and the frame is a solid brown rectangle. The old
+			// edge-only drawing survived that state because a bogus y merely misplaced a one-pixel
+			// line; a fill has no such tolerance, so it has to check that y means what it should.
+			if (y > 0)
+			{
+				V_DrawBorder (0, y, SCREENWIDTH, SCREENHEIGHT);
+			}
+
 			V_DrawBorder (x+1, y, SCREENWIDTH, y+1);
 			V_DrawBorder (x+1, SCREENHEIGHT-1, SCREENWIDTH, SCREENHEIGHT);
 		}
@@ -1108,8 +1173,7 @@ void DBaseStatusBar::RefreshBackground () const
 	{
 		if(!CompleteBorder)
 		{
-			x2 = !(ratio & 3) || !Scaled ? ST_X+HorizontalResolution :
-				SCREENWIDTH - (SCREENWIDTH*(48-BaseRatioSizes[ratio][3])+48*2-1)/(48*2);
+			x2 = ratio <= 1.334f || !Scaled ? ST_X+HorizontalResolution : barInset + barWidth;
 		}
 		else
 		{
