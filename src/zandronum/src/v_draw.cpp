@@ -777,6 +777,7 @@ void DCanvas::VirtualToRealCoords(double &x, double &y, double &w, double &h,
 {
 	float myratio = handleaspect ? ActiveRatio (Width, Height) : (4.0f / 3.0f);
 
+	// [rc4l] PROVENANCE: uzdoom@5b438d220 (clamp pre-existed upstream; adopted with the switch).
 	// [rc4l] Clamp ultrawide to 16:9, as upstream already did before this commit. Now that the ratio
 	// is the TRUE one rather than a bucket, a 21:9 display would otherwise get a genuinely 21:9
 	// virtual space and stretch fullscreen images across it.
@@ -853,6 +854,7 @@ void DCanvas::FillBorder (FTexture *img)
 {
 	float myratio = ActiveRatio (Width, Height);
 
+	// [rc4l] PROVENANCE: uzdoom@5b438d220.
 	// [rc4l] Ultrawide is treated as 16:9 here too, so the bars it produces match the virtual space
 	// VirtualToRealCoords laid out. If these two disagreed the border would cover the wrong strip.
 	if (myratio > 1.7f)
@@ -860,6 +862,8 @@ void DCanvas::FillBorder (FTexture *img)
 		myratio = 16.0f / 9.0f;
 	}
 
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours. Upstream still has this bug; revisit if a
+	// later upstream commit reworks or deletes FillBorder.
 	// [rc4l] Deviation from upstream, and a fix for a bug upstream still had here.
 	//
 	// Upstream kept this early-out at "1.3 to 1.4" while moving VirtualToRealCoords' own 4:3
@@ -879,6 +883,7 @@ void DCanvas::FillBorder (FTexture *img)
 	if (AspectTallerThanWide(myratio))
 	{ // Screen is taller than it is wide
 		bordleft = bordright = 0;
+		// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
 		// [rc4l] Derived from AspectBaseHeight, the same quantity VirtualToRealCoords scales by,
 		// rather than from AspectMultiplier. The two are the same number rounded differently, and the
 		// difference is a seam of unpainted pixels between the image and its border.

@@ -323,6 +323,7 @@ void DBaseStatusBar::SetScaled (bool scale, bool force)
 		}
 		else
 		{ // 5:4 resolution
+			// [rc4l] PROVENANCE: uzdoom@5b438d220 (hunk I missed on the first pass).
 			// [rc4l] Both halves take the actual aspect. The second term kept BaseRatioSizes[4][3] --
 			// 5:4's hardcoded multiplier, 45 -- so at any other tall ratio the status bar's top was
 			// placed for a screen it is not on: 45 instead of 26 at 0.72, leaving the view stopping
@@ -1093,13 +1094,35 @@ void DBaseStatusBar::RefreshBackground () const
 	int x, x2, y;
 
 	float ratio = ActiveRatio (SCREENWIDTH, SCREENHEIGHT);
+	// [rc4l] PROVENANCE: DEVIATES from uzdoom@5b438d220, which uses 1.5f. See below.
 	// [rc4l] 1.334f, not upstream's 1.5f. That constant replaced !IsRatioWidescreen(), which was
 	// true for the 16:9/16:10/17:10 buckets -- narrowest 1.6 -- so 1.5 was a sensible midpoint
 	// BETWEEN BUCKETS. With a continuous ratio it is simply wrong: everything above 1.334 now has
 	// its content aspect-corrected, so 1.334 to 1.5 drew a narrowed status bar over a background
 	// positioned as if it were full width, leaving unpainted strips down both sides. Reported at
 	// 1499x1049, which is an entirely ordinary window shape.
-	x = (ratio <= 1.334f || !Scaled) ? ST_X : SCREENWIDTH*(48-AspectMultiplier(ratio))/(48*2);
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+	// [rc4l] Clamp ultrawide to 16:9 exactly as VirtualToRealCoords and FillBorder do. The bar is
+	// positioned by VirtualToRealCoords (see sbarinfo.cpp), so it is laid out at the CLAMPED ratio;
+	// computing the background from the unclamped one put them 13px apart at 1027x597. Anything that
+	// paints around the bar has to apply the same clamp, or it is measuring a different screen.
+	if (ratio > 1.7f)
+	{
+		ratio = 16.0f / 9.0f;
+	}
+
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+	// [rc4l] The inset is derived from AspectBaseWidth, the same quantity the bar itself is positioned
+	// by, rather than from AspectMultiplier. They are one number rounded two ways: at 1.58 the bar sits
+	// 112px in while this computed 104, leaving an 8px strip that neither the bar nor the border ever
+	// painted -- yellow slivers either side of the status bar, reported at 1439x911 and 1737x1012.
+	//
+	// Same mistake as FillBorder had. Anything that fills around a scaled element has to measure it
+	// the way it was scaled.
+	const int barWidth = SCREENWIDTH * 960 / AspectBaseWidth(ratio);
+	const int barInset = (SCREENWIDTH - barWidth) / 2;
+
+	x = (ratio <= 1.334f || !Scaled) ? ST_X : barInset;
 	y = x == ST_X && x > 0 ? ST_Y : ::ST_Y;
 
 	if(!CompleteBorder)
@@ -1119,8 +1142,7 @@ void DBaseStatusBar::RefreshBackground () const
 	{
 		if(!CompleteBorder)
 		{
-			x2 = ratio <= 1.334f || !Scaled ? ST_X+HorizontalResolution :
-				SCREENWIDTH - (SCREENWIDTH*(48-AspectMultiplier(ratio))+48*2-1)/(48*2);
+			x2 = ratio <= 1.334f || !Scaled ? ST_X+HorizontalResolution : barInset + barWidth;
 		}
 		else
 		{

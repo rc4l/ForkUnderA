@@ -1000,6 +1000,7 @@ void FGLRenderer::RenderView (player_t* player)
 
 	// now render the main view
 	float fovratio;
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours; this file is not in uzdoom@5b438d220.
 	// [rc4l] `ratios[]` above was a bucket-to-ratio lookup, and WidescreenRatio now IS the ratio, so
 	// the table is redundant. `!(WidescreenRatio & 4)` meant "not the 5:4 bucket", i.e. not taller
 	// than wide; the float test says the same thing without needing a bucket to exist.
