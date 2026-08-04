@@ -767,7 +767,8 @@ void FHexenStartupScreen::NetProgress(int count)
 			y = ST_NETPROGRESS_Y;
 			ST_Util_DrawBlock (StartupBitmap, NetNotchBits, x, y, ST_NETNOTCH_WIDTH / 2, ST_NETNOTCH_HEIGHT);
 		}
-		S_Sound (CHAN_BODY, "Drip", 1, ATTN_NONE);
+		// [rc4l] uzdoom@be4b25321: its own sound rather than borrowing Hexen's Drip.
+		S_Sound (CHAN_BODY, "misc/netnotch", 1, ATTN_NONE);
 		I_GetEvent ();
 	}
 }

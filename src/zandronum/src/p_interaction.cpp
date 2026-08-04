@@ -1533,7 +1533,12 @@ thrust:
 			{
 				int newdam = damage;
 				player->mo->Inventory->AbsorbDamage (damage, mod, newdam);
-				damage = newdam;
+				// [rc4l] uzdoom@83be901ad: if we are telefragging, do not let armour drag the damage
+				// below TELEFRAG_DAMAGE -- later checks compare against that exact value.
+				if (damage < TELEFRAG_DAMAGE)
+				{
+					damage = newdam;
+				}
 				if (damage <= 0)
 				{
 					// [BB] The player didn't lose health but armor. The server needs
@@ -1557,7 +1562,7 @@ thrust:
 
 			bDamageEventHandled = true;
 
-			if (damage >= player->health
+			if (damage >= player->health && damage < TELEFRAG_DAMAGE
 				&& (G_SkillProperty(SKILLP_AutoUseHealth) || deathmatch)
 				&& !player->morphTics)
 			{ // Try to use some inventory health
