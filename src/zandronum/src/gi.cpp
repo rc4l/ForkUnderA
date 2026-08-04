@@ -352,6 +352,18 @@ void FMapInfoParser::ParseGameInfo()
 			}
 			else gameinfo.mCheatMapArrow = "";
 		}
+		// [rc4l] uzdoom@8edace83c: the automap key markers become configurable too, instead of
+		// being hardcoded to the Doom and Raven lumps in AM_StaticInit.
+		else if(nextKey.CompareNoCase("cheatkey") == 0)
+		{
+			sc.MustGetToken(TK_StringConst);
+			gameinfo.mCheatKey = sc.String;
+		}
+		else if(nextKey.CompareNoCase("easykey") == 0)
+		{
+			sc.MustGetToken(TK_StringConst);
+			gameinfo.mEasyKey = sc.String;
+		}
 		// [ZandroX] uzdoom@a1cc548af: default walk/run movement speeds.
 		else if(nextKey.CompareNoCase("normforwardmove") == 0)
 		{

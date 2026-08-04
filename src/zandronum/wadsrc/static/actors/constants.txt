@@ -70,6 +70,7 @@ const int SXF_TRANSFERRENDERSTYLE = 524288;
 const int SXF_SETTARGET = 1048576;
 const int SXF_SETTRACER = 2097152;
 const int SXF_NOPOINTERS = 4194304;
+const int SXF_ORIGINATOR = 8388608;
 
 // Flags for A_Chase
 const int CHF_FASTCHASE = 1;
@@ -104,6 +105,7 @@ const int JLOSF_FLIPFOV = 256;
 const int JLOSF_ALLYNOJUMP = 512;
 const int JLOSF_COMBATANTONLY = 1024;
 const int JLOSF_NOAUTOAIM = 2048;
+const int JLOSF_CHECKTRACER = 4096;
 
 // Flags for A_ChangeVelocity
 const int CVF_RELATIVE = 1;
@@ -214,9 +216,11 @@ const int CPF_USEAMMO = 1;
 const int CPF_DAGGER = 2;
 const int CPF_PULLIN = 4;
 const int CPF_NORANDOMPUFFZ = 8;
+const int CPF_NOTURN = 16;
 
 // Flags for A_Teleport
 const int TF_TELEFRAG = 1;const int TF_RANDOMDECIDE = 2;
+const int TF_FORCED = 4;
 
 // Flags for A_WolfAttack
 const int WAF_NORANDOM = 1;
@@ -379,6 +383,10 @@ Const Int WARPF_COPYINTERPOLATION = 0x40;
 Const Int WARPF_STOP = 0x80;
 Const Int WARPF_TOFLOOR = 0x100;
 Const Int WARPF_TESTONLY = 0x200;
+Const Int WARPF_ABSOLUTEPOSITION = 0x400;
+// [rc4l] uzdoom@364d9069b: the original misspelling, kept as an alias so a mod written
+// against it still parses. Upstream carries it to this day (zscript/constants.zs).
+Const Int WAPRF_ABSOLUTEPOSITION = 0x400;
 
 // flags for A_SetPitch/SetAngle
 const int SPF_FORCECLAMP = 1;
@@ -477,11 +485,19 @@ native int testglobalvar;
 const int KILS_FOILINVUL =		1;
 const int KILS_KILLMISSILES =	2;
 const int KILS_NOMONSTERS =		4;
+const int KILS_FOILBUDDHA =		8;
 
 // Flags for A_Damage (Self/Target/Tracer/Master/Children/Siblings) series
 const int DMSS_FOILINVUL =		1;
 const int DMSS_AFFECTARMOR =	2;
 const int DMSS_KILL =			4;
+const int DMSS_NOFACTOR =		8;
+const int DMSS_FOILBUDDHA =		16;
+const int DMSS_NOPROTECT =		32;
+
+// Flags for A_Fade*
+const int FTF_REMOVE =		1;
+const int FTF_CLAMP =		2;
 
 // Flags for A_Remove* series
 const int RMVF_MISSILES =		1;

@@ -246,6 +246,49 @@ CCMD (map)
 //
 //==========================================================================
 
+// [rc4l] uzdoom@eceb37aa6: start a map and record a demo of it in one step. Single-player
+// only -- Zandronum records client demos through CLIENTDEMO_*, a different path, so the
+// guard is on our network state rather than upstream's bare `netgame`.
+CCMD (recordmap)
+{
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+	{
+		Printf( "You cannot record a new game while in a netgame.\n" );
+		return;
+	}
+	if (argv.argc() > 2)
+	{
+		try
+		{
+			if (!P_CheckMapData(argv[2]))
+			{
+				Printf("No map %s\n", argv[2]);
+			}
+			else
+			{
+				G_DeferedInitNew(argv[2]);
+				gameaction = ga_recordgame;
+				newdemoname = argv[1];
+				newdemomap = argv[2];
+			}
+		}
+		catch (CRecoverableError &error)
+		{
+			if (error.GetMessage())
+				Printf("%s", error.GetMessage());
+		}
+	}
+	else
+	{
+		Printf("Usage: recordmap <filename> <map name>\n");
+	}
+}
+
+//==========================================================================
+//
+//
+//==========================================================================
+
 UNSAFE_CCMD (open)
 {
 	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) ||
@@ -1586,13 +1629,13 @@ void G_DoLoadLevel (int position, bool autosave)
 		{
 			if ( playeringame[i] && ( players[i].bSpectating == false ) && ( players[i].mo ) && ( players[i].mo->Inventory == NULL ) )
 			{
+				// [rc4l] uzdoom@fc40e9723: no ResetStartingHealth() here on purpose. This is a
+				// repair for a player who somehow ended up with no inventory at all, not a
+				// respawn -- and the [BB] comment that used to sit here ("GiveDefaultInventory()
+				// also restores the default health, but we don't want to revive dead players")
+				// says the heal was unwanted. With the reset gone the workaround that forced a
+				// dead player back to 0 health is dead code, so it goes too.
 				players[i].mo->GiveDefaultInventory();
-				// [BB] GiveDefaultInventory() also restores the default health, but we don't want to revive dead players.
-				if ( players[i].playerstate == PST_DEAD )
-				{
-					players[i].health = 0;
-					players[i].mo->health = 0;
-				}
 			}
 		}
 	}
@@ -1985,6 +2028,17 @@ void G_FinishTravel ()
 			pawn->AddToHash ();
 			pawn->SetState(pawn->SpawnState);
 			pawn->player->SendPitchLimits();
+
+			// [rc4l] uzdoom@aa338a4dc: sync the FLY flags. MF2_FLY and CF_FLY are set independently
+			// and travel only carried one of them, so a flying player arrived with them disagreeing.
+			if (pawn->flags2 & MF2_FLY)
+			{
+				pawn->player->cheats |= CF_FLY;
+			}
+			else
+			{
+				pawn->player->cheats &= ~CF_FLY;
+			}
 
 			// [BC]
 			pawn->NetID = savedNetID;

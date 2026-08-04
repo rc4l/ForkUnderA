@@ -839,6 +839,8 @@ void P_SectorDamage(int tag, int amount, FName type, const PClass *protectClass,
 // [rc4l] uzdoom@8f5683e23 declares this immediately above P_GiveSecret; it arrived in the same
 // hunk our signature reject dropped.
 CVAR(Bool, showsecretsector, false, 0)
+// [rc4l] uzdoom@c85105f55: keeps its upstream name -- a ported CVAR is not ours to rename.
+CVAR(Bool, cl_showsecretmessage, true, CVAR_ARCHIVE)
 
 void P_GiveSecret(AActor *actor, bool printmessage, bool playsound, bool allowclient, int sectornum)
 {
@@ -869,7 +871,7 @@ void P_GiveSecret(AActor *actor, bool printmessage, bool playsound, bool allowcl
 				SERVERCOMMANDS_SecretMarkSectorFound( actor->Sector );
 			SERVERCOMMANDS_SecretFound( actor, secretFlags );
 		}
-		else if (actor->CheckLocalView (consoleplayer))
+		else if (cl_showsecretmessage && actor->CheckLocalView (consoleplayer))
 		{
 			if (printmessage)
 			{

@@ -2098,6 +2098,7 @@ enum
 	CPF_DAGGER = 2,
 	CPF_PULLIN = 4,
 	CPF_NORANDOMPUFFZ = 8,
+	CPF_NOTURN = 16,	// [rc4l] uzdoom@fd354dbe9
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomPunch)
@@ -2169,10 +2170,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomPunch)
 			S_Sound (self, CHAN_WEAPON, weapon->AttackSound, 1, ATTN_NORM, true );	// [BC] Inform the clients.
 		}
 
-		self->angle = R_PointToAngle2 (self->x,
-										self->y,
-										linetarget->x,
-										linetarget->y);
+		// [rc4l] uzdoom@fd354dbe9: CPF_NOTURN keeps the attacker's facing.
+		if (!(flags & CPF_NOTURN))
+		{
+			self->angle = R_PointToAngle2 (self->x,
+											self->y,
+											linetarget->x,
+											linetarget->y);
+		}
 
 		if (flags & CPF_PULLIN) self->flags |= MF_JUSTATTACKED;
 		if (flags & CPF_DAGGER) P_DaggerAlert (self, linetarget);
@@ -2664,6 +2669,7 @@ enum SIX_Flags
 	SIXF_SETTARGET				= 1 << 20,
 	SIXF_SETTRACER				= 1 << 21,
 	SIXF_NOPOINTERS				= 1 << 22,
+	SIXF_ORIGINATOR				= 1 << 23,	// [rc4l] uzdoom@f766a1ab3
 };
 
 // [BB] Changed return value to bool (returns false if the actor already was destroyed).
@@ -2700,9 +2706,14 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	{
 		mo->pitch = self->pitch;
 	}
-	while (originator && originator->isMissile())
+	// [rc4l] uzdoom@f766a1ab3: SIXF_ORIGINATOR keeps the immediate spawner as originator instead
+	// of walking up the missile chain to whoever fired it.
+	if (!(flags & SIXF_ORIGINATOR))
 	{
-		originator = originator->target;
+		while (originator && originator->isMissile())
+		{
+			originator = originator->target;
+		}
 	}
 
 	if (flags & SIXF_TELEFRAG) 
@@ -3300,10 +3311,18 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTranslucent)
 // Fades the actor in
 //
 //===========================================================================
+// [rc4l] uzdoom@08570ec48
+enum FadeFlags
+{
+	FTF_REMOVE =	1 << 0,
+	FTF_CLAMP =		1 << 1,
+};
+
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeIn)
 {
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_FIXED(reduce, 0);
+	ACTION_PARAM_INT(flags, 1);
 
 	// [BB] This is handled server-side.
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
@@ -3319,7 +3338,6 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeIn)
 
 	self->RenderStyle.Flags &= ~STYLEF_Alpha1;
 	self->alpha += reduce;
-	// Should this clamp alpha to 1.0?
 
 	// [BB] Inform the clients about the alpha change and possibly about RenderStyle.
 	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
@@ -3329,6 +3347,25 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeIn)
 		SERVERCOMMANDS_SetThingProperty( self, APROP_Alpha );
 	}
 
+	// [rc4l] uzdoom@08570ec48: FTF_CLAMP pins alpha at 1.0, FTF_REMOVE destroys once opaque.
+	// Placed after the broadcast above so clients are told the final alpha before the actor goes.
+	if (self->alpha >= (FRACUNIT * 1))
+	{
+		if (flags & FTF_CLAMP)
+			self->alpha = (FRACUNIT * 1);
+		if (flags & FTF_REMOVE)
+		{
+			// [rc4l] Same guard the other A_Fade* carry: never delete a live player body.
+			if ( self->player && ( self->player->mo == self ) )
+			{
+				Printf ( PRINT_BOLD, "Warning: A_FadeIn may not delete player bodies that are still associated to a player!\n" );
+				return;
+			}
+			if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
+				SERVERCOMMANDS_DestroyThing( self );
+			self->HideOrDestroyIfSafe ();
+		}
+	}
 }
 
 //===========================================================================
@@ -3342,7 +3379,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeOut)
 {
 	ACTION_PARAM_START(2);
 	ACTION_PARAM_FIXED(reduce, 0);
-	ACTION_PARAM_BOOL(remove, 1);
+	ACTION_PARAM_INT(flags, 1);	// [rc4l] uzdoom@08570ec48: was `bool remove`; FTF_REMOVE is bit 0, so the old true/false still means the same thing
 
 	// [BB] This is handled server-side.
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
@@ -3367,7 +3404,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeOut)
 	}
 
 	// [BB] Only destroy the actor if it's not needed for a map reset. Otherwise just hide it.
-	if (self->alpha <= 0 && remove)
+	if (self->alpha <= 0 && (flags & FTF_CLAMP))
+		self->alpha = 0;
+	if (self->alpha <= 0 && (flags & FTF_REMOVE))
 	{
 		// [BB] Deleting player bodies is a very bad idea.
 		if ( self->player && ( self->player->mo == self ) )
@@ -3397,7 +3436,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeTo)
 	ACTION_PARAM_START(3);
 	ACTION_PARAM_FIXED(target, 0);
 	ACTION_PARAM_FIXED(amount, 1);
-	ACTION_PARAM_BOOL(remove, 2);
+	ACTION_PARAM_INT(flags, 2);	// [rc4l] uzdoom@08570ec48
 
 	// [EP] This is handled server-side.
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
@@ -3438,7 +3477,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeTo)
 	}
 
 	// [EP] Only destroy the actor if it's not needed for a map reset. Otherwise just hide it.
-	if (self->alpha == target && remove)
+	if (flags & FTF_CLAMP)
+	{
+		if (self->alpha > (FRACUNIT * 1))
+			self->alpha = (FRACUNIT * 1);
+		else if (self->alpha < 0)
+			self->alpha = 0;
+	}
+	if (self->alpha == target && (flags & FTF_REMOVE))
 	{
 		// [EP] Deleting player bodies is a very bad idea.
 		if ( self->player && ( self->player->mo == self ) )
@@ -3987,30 +4033,38 @@ enum KILS
 	KILS_FOILINVUL =	1 << 0,
 	KILS_KILLMISSILES = 1 << 1,
 	KILS_NOMONSTERS =	1 << 2,
+	KILS_FOILBUDDHA =	1 << 3,	// [rc4l] uzdoom@a19620968
 };
 
 static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags)
 {
+	// [rc4l] uzdoom@a19620968 folds the per-flag P_DamageMobj calls into one accumulated
+	// dmgFlags. THREE DEFECTS in that commit are deliberately not reproduced here: it wrote
+	// `if (KILS_FOILINVUL)` and `if (KILS_FOILBUDDHA)` without `flags &`, so both tested a
+	// non-zero constant and A_Kill* ALWAYS foiled invulnerability and buddha regardless of
+	// what the modder passed; and it checked `flags2 & MF7_BUDDHA`, the wrong flags word.
+	int dmgFlags = DMG_NO_ARMOR + DMG_NO_FACTOR;
+
+	if (flags & KILS_FOILINVUL)
+		dmgFlags += DMG_FOILINVUL;
+	if (flags & KILS_FOILBUDDHA)
+		dmgFlags += DMG_FOILBUDDHA;
+
 	if ((killtarget->flags & MF_MISSILE) && (flags & KILS_KILLMISSILES))
 	{
 		//[MC] Now that missiles can set masters, lets put in a check to properly destroy projectiles. BUT FIRST! New feature~!
 		//Check to see if it's invulnerable. Disregarded if foilinvul is on, but never works on a missile with NODAMAGE
 		//since that's the whole point of it.
-		if ((!(killtarget->flags2 & MF2_INVULNERABLE) || (flags & KILS_FOILINVUL)) && !(killtarget->flags5 & MF5_NODAMAGE))
+		if ((!(killtarget->flags2 & MF2_INVULNERABLE) || (flags & KILS_FOILINVUL)) &&
+			(!(killtarget->flags7 & MF7_BUDDHA) || (flags & KILS_FOILBUDDHA)) && !(killtarget->flags5 & MF5_NODAMAGE))
 		{
-			P_ExplodeMissile(self->target, NULL, NULL);
+			// [rc4l] uzdoom@47029a3ef: explode the actor being killed, not the caller's target.
+			P_ExplodeMissile(killtarget, NULL, NULL);
 		}
 	}
 	if (!(flags & KILS_NOMONSTERS))
 	{
-		if (flags & KILS_FOILINVUL)
-		{
-			P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR | DMG_FOILINVUL);
-		}
-		else
-		{
-			P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR);
-		}
+		P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, dmgFlags);
 	}
 }
 
@@ -4336,6 +4390,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Respawn)
 		self->flags3 = (defs->flags3 & ~(MF3_NOSIGHTCHECK | MF3_HUNTPLAYERS)) | (self->flags3 & (MF3_NOSIGHTCHECK | MF3_HUNTPLAYERS));
 		self->flags4 = (defs->flags4 & ~MF4_NOHATEPLAYERS) | (self->flags4 & MF4_NOHATEPLAYERS);
 		self->flags5 = defs->flags5;
+		// [rc4l] uzdoom@1c500cead: flags6/flags7 were left holding whatever the actor died with.
+		self->flags6 = defs->flags6;
+		self->flags7 = defs->flags7;
 		self->SetState (self->SpawnState);
 		self->renderflags &= ~RF_INVISIBLE;
 
@@ -4736,6 +4793,7 @@ enum JLOS_flags
 	JLOSF_ALLYNOJUMP=512,
 	JLOSF_COMBATANTONLY=1024,
 	JLOSF_NOAUTOAIM=2048,
+	JLOSF_CHECKTRACER=4096,	// [rc4l] uzdoom@f54a59fdf
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfTargetInLOS)
@@ -4760,9 +4818,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfTargetInLOS)
 		{
 			target = self->master;
 		}
-		else if (self->flags & MF_MISSILE && (flags & JLOSF_PROJECTILE))
+		// [rc4l] uzdoom@f54a59fdf: JLOSF_CHECKTRACER lets a non-missile follow its tracer too.
+		else if ((self->flags & MF_MISSILE && (flags & JLOSF_PROJECTILE)) || (flags & JLOSF_CHECKTRACER))
 		{
-			if (self->flags2 & MF2_SEEKERMISSILE)
+			if ((self->flags2 & MF2_SEEKERMISSILE) || (flags & JLOSF_CHECKTRACER))
 				target = self->tracer;
 			else
 				target = NULL;
@@ -4962,29 +5021,33 @@ enum DMSS
 	DMSS_FOILINVUL			= 1,
 	DMSS_AFFECTARMOR		= 2,
 	DMSS_KILL				= 4,
+	DMSS_NOFACTOR			= 8,	// [rc4l] uzdoom@5030832df
+	DMSS_FOILBUDDHA			= 16,	// [rc4l] uzdoom@a19620968
+	DMSS_NOPROTECT			= 32,	// [rc4l] uzdoom@c01d1a800
 };
 
 static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags)
 {
-	if ((amount > 0) || (flags & DMSS_KILL))
-	{
-		if (!(dmgtarget->flags2 & MF2_INVULNERABLE) || (flags & DMSS_FOILINVUL))
-		{
-			if (flags & DMSS_KILL)
-			{
-				P_DamageMobj(dmgtarget, self, self, dmgtarget->health, DamageType, DMG_NO_FACTOR | DMG_NO_ARMOR | DMG_FOILINVUL);
-			}
-			if (flags & DMSS_AFFECTARMOR)
-			{
-				P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL);
-			}
-			else
-			{
-				//[MC] DMG_FOILINVUL is needed for making the damage occur on the actor.
-				P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL | DMG_NO_ARMOR);
-			}
-		}
-	}
+	// [rc4l] uzdoom@a19620968 replaces the nested per-flag P_DamageMobj calls with one
+	// accumulated dmgFlags; the old MF2_INVULNERABLE guard goes with them, because
+	// DMG_FOILINVUL is now conditional and P_DamageMobj already honours invulnerability.
+	int dmgFlags = 0;
+	if (flags & DMSS_FOILINVUL)
+		dmgFlags += DMG_FOILINVUL;
+	if (flags & DMSS_FOILBUDDHA)
+		dmgFlags += DMG_FOILBUDDHA;
+	if ((flags & DMSS_KILL) || (flags & DMSS_NOFACTOR)) //Kill implies NoFactor
+		dmgFlags += DMG_NO_FACTOR;
+	if (!(flags & DMSS_AFFECTARMOR) || (flags & DMSS_KILL)) //Kill overrides AffectArmor
+		dmgFlags += DMG_NO_ARMOR;
+	if (flags & DMSS_KILL) //Kill adds the value of the damage done to it. Allows for more controlled extreme death types.
+		amount += dmgtarget->health;
+	if (flags & DMSS_NOPROTECT) //Ignore PowerProtection.
+		dmgFlags += DMG_NO_PROTECT;
+
+	if (amount > 0)
+		P_DamageMobj(dmgtarget, self, self, amount, DamageType, dmgFlags); //Should wind up passing them through just fine.
+
 	else if (amount < 0)
 	{
 		amount = -amount;
@@ -5350,11 +5413,17 @@ static void DoRemove(AActor *removetarget, int flags)
 // A_RemoveTarget
 //
 //===========================================================================
-DEFINE_ACTION_FUNCTION(AActor, A_RemoveTarget)
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTarget)
 {
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(flags, 0);
+
+	// [rc4l] uzdoom@3050ea9a6, with its copy-paste bug NOT reproduced: upstream tests
+	// self->master here while removing self->target, which null-derefs whenever master is
+	// set and target is not. Same class of slip as 96c6e7d9b, which they did fix.
 	if (self->target != NULL)
 	{
-		P_RemoveThing(self->target);
+		DoRemove(self->target, flags);
 	}
 }
 
@@ -5363,11 +5432,14 @@ DEFINE_ACTION_FUNCTION(AActor, A_RemoveTarget)
 // A_RemoveTracer
 //
 //===========================================================================
-DEFINE_ACTION_FUNCTION(AActor, A_RemoveTracer)
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTracer)
 {
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(flags, 0);
+
 	if (self->tracer != NULL)
 	{
-		P_RemoveThing(self->tracer);
+		DoRemove(self->tracer, flags);
 	}
 }
 
@@ -5839,6 +5911,7 @@ enum T_Flags
 {
 	TF_TELEFRAG = 1, // Allow telefrag in order to teleport.
 	TF_RANDOMDECIDE = 2, // Randomly fail based on health. (A_Srcr2Decide)
+	TF_FORCED = 4, // [rc4l] uzdoom@938b54ccb: forget what is in the way. TF_TELEFRAG takes precedence.
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
@@ -5892,7 +5965,20 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 	fixed_t prevX = self->x;
 	fixed_t prevY = self->y;
 	fixed_t prevZ = self->z;
+	// [rc4l] uzdoom@938b54ccb: telefrag is tried first; TF_FORCED then moves the actor anyway if
+	// that did not work.
+	bool teleResult = false;
+
 	if (P_TeleportMove (self, spot->x, spot->y, spot->z, Flags & TF_TELEFRAG))
+		teleResult = true;
+
+	if (!teleResult && (Flags & TF_FORCED))
+	{
+		self->SetOrigin(spot->x, spot->y, spot->z);
+		teleResult = true;
+	}
+
+	if (teleResult)
 	{
 		ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
@@ -6173,7 +6259,8 @@ enum WARPF
 
 	WARPF_STOP = 0x80,
 	WARPF_TOFLOOR = 0x100,
-	WARPF_TESTONLY = 0x200
+	WARPF_TESTONLY = 0x200,
+	WARPF_ABSOLUTEPOSITION = 0x400,	// [rc4l] uzdoom@68a5db3c8
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
@@ -6188,11 +6275,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 	ACTION_PARAM_INT(flags, 5);
 	ACTION_PARAM_STATE(success_state, 6);
 
-	fixed_t
-
-		oldx,
-		oldy,
-		oldz;
+	// [rc4l] uzdoom@b6f486202: initialise at declaration. The rotation branch below reads oldx
+	// before the assignment further down ever runs, so it was using an uninitialised value.
+	fixed_t	oldx = self->x;
+	fixed_t	oldy = self->y;
+	fixed_t	oldz = self->z;
 
 	// [BB] This is handled server-side.
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
@@ -6212,58 +6299,77 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 		angle += (flags & WARPF_USECALLERANGLE) ? self->angle : reference->angle;
 	}
 
-	if (!(flags & WARPF_ABSOLUTEOFFSET))
-	{
-		angle_t fineangle = angle>>ANGLETOFINESHIFT;
-		oldx = xofs;
-
-		// (borrowed from A_SpawnItemEx, assumed workable)
-		// in relative mode negative y values mean 'left' and positive ones mean 'right'
-		// This is the inverse orientation of the absolute mode!
-
-		xofs = FixedMul(oldx, finecosine[fineangle]) + FixedMul(yofs, finesine[fineangle]);
-		yofs = FixedMul(oldx, finesine[fineangle]) - FixedMul(yofs, finecosine[fineangle]);
-	}
-
+	// [rc4l] uzdoom@68a5db3c8 adds WARPF_ABSOLUTEPOSITION. The save of the old position is
+	// hoisted ABOVE the branch rather than left inside the relative half as upstream wrote it:
+	// WARPF_TESTONLY below restores from oldx/oldy/oldz, and in absolute mode upstream never
+	// assigns them, so a TESTONLY absolute warp would restore a stale position (oldx is reused
+	// as a scratch temp just above). Both paths need the save.
 	oldx = self->x;
 	oldy = self->y;
 	oldz = self->z;
 
-	if (flags & WARPF_TOFLOOR)
+	if (!(flags & WARPF_ABSOLUTEPOSITION))
 	{
-		// set correct xy
-
-		self->SetOrigin(
-			reference->x + xofs,
-			reference->y + yofs,
-			reference->z);
-
-		// now the caller's floorz should be appropriate for the assigned xy-position
-		// assigning position again with
-		
-		if (zofs)
+		if (!(flags & WARPF_ABSOLUTEOFFSET))
 		{
-			// extra unlink, link and environment calculation
+			angle_t fineangle = angle>>ANGLETOFINESHIFT;
+			fixed_t xofs0 = xofs;
+
+			// (borrowed from A_SpawnItemEx, assumed workable)
+			// in relative mode negative y values mean 'left' and positive ones mean 'right'
+			// This is the inverse orientation of the absolute mode!
+
+			xofs = FixedMul(xofs0, finecosine[fineangle]) + FixedMul(yofs, finesine[fineangle]);
+			yofs = FixedMul(xofs0, finesine[fineangle]) - FixedMul(yofs, finecosine[fineangle]);
+		}
+
+		if (flags & WARPF_TOFLOOR)
+		{
+			// set correct xy
+
 			self->SetOrigin(
-				self->x,
-				self->y,
-				self->floorz + zofs);
+				reference->x + xofs,
+				reference->y + yofs,
+				reference->z);
+
+			// now the caller's floorz should be appropriate for the assigned xy-position
+			// assigning position again with
+
+			if (zofs)
+			{
+				// extra unlink, link and environment calculation
+				self->SetOrigin(
+					self->x,
+					self->y,
+					self->floorz + zofs);
+			}
+			else
+			{
+				// if there is no offset, there should be no ill effect from moving down to the
+				// already identified floor
+
+				// A_Teleport does the same thing anyway
+				self->z = self->floorz;
+			}
 		}
 		else
 		{
-			// if there is no offset, there should be no ill effect from moving down to the
-			// already identified floor
-
-			// A_Teleport does the same thing anyway
-			self->z = self->floorz;
+			self->SetOrigin(
+				reference->x + xofs,
+				reference->y + yofs,
+				reference->z + zofs);
 		}
 	}
-	else
+	else //[MC] The idea behind "absolute" is meant to be "absolute". Override everything, just like A_SpawnItemEx's.
 	{
-		self->SetOrigin(
-			reference->x + xofs,
-			reference->y + yofs,
-			reference->z + zofs);
+		if (flags & WARPF_TOFLOOR)
+		{
+			self->SetOrigin(xofs, yofs, self->floorz + zofs);
+		}
+		else
+		{
+			self->SetOrigin(xofs, yofs, zofs);
+		}
 	}
 	
 	if ((flags & WARPF_NOCHECKPOSITION) || P_TestMobjLocation(self))

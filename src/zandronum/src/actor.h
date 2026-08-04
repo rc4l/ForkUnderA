@@ -350,7 +350,16 @@ enum
 	MF7_NOTELESTOMP		= 0x00000002,	// cannot telefrag under any circumstances (even when set by MAPINFO)
 	MF7_ALWAYSTELEFRAG	= 0x00000004,	// will unconditionally be telefragged when in the way. Overrides all other settings.
 	MF7_HANDLENODELAY	= 0x00000008,	// respect NoDelay state flag
+	// [rc4l] uzdoom@d1dc6fd59
+	MF7_BUDDHA			= 0x00000040,	// Behaves just like the buddha cheat.
+	MF7_FOILBUDDHA		= 0x00000080,	// Similar to FOILINVUL, foils buddha mode.
 	MF7_WEAPONSPAWN		= 0x00000010,	// subject to DF_NO_COOP_WEAPON_SPAWN dmflag
+	MF7_HARMFRIENDS		= 0x00000020,	// [rc4l] uzdoom@5ac7e4fc3: is allowed to harm friendly monsters.
+	// [rc4l] uzdoom@f802d7a44, renamed by 6073adbee and fixed by 774db445e -- landed as the
+	// settled DONTTHRUST form rather than replaying FULLMASS and renaming it.
+	MF7_DONTTHRUST		= 0x00000100,	// Thrusting functions do not take, and do not give thrust (damage) to actors with this flag.
+	MF7_ALLOWPAIN		= 0x00000200,	// [rc4l] uzdoom@2e085b231: invulnerable or damage-immune actors still react to being hit.
+	MF7_CAUSEPAIN		= 0x00000400,	// [rc4l] uzdoom@b54b18c8c: damage sources with this can cause the same effect as ALLOWPAIN.
 
 	MF7_HITTARGET		= 0x00004000,	// The actor the projectile dies on is set to target, provided it's targetable anyway.
 	MF7_HITMASTER		= 0x00008000,	// Same as HITTARGET, except it's master instead of target.
@@ -1226,6 +1235,7 @@ public:
 	FNameNoInit DamageType;
 	FNameNoInit DamageTypeReceived;
 	fixed_t DamageFactor;
+	fixed_t DamageMultiply;		// [rc4l] uzdoom@99b2cfa14: scales damage this actor DEALS.
 
 	FNameNoInit PainType;
 	FNameNoInit DeathType;
