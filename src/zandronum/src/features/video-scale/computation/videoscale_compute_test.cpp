@@ -194,3 +194,46 @@ TEST(ScalePresent, UpscaleFactorIsAlsoActive)
 	EXPECT_EQ(1440, p.virtualHeight);
 	EXPECT_EQ(1280, p.destW); EXPECT_EQ(720, p.destH);
 }
+
+// --- ComputeScaleReconcile -------------------------------------------------
+//
+// Regression cover for "the whole game renders in the bottom-left corner of a black window":
+// the Cocoa backend creates its window at a temporary size, so the client size cached when the
+// scale buffer was built is stale from the very first frame, while the render size never changes
+// and a render-size-only check therefore never fires.
+
+TEST(VideoScaleReconcile, NothingChangedIsNoWork)
+{
+	EXPECT_EQ(zx::SCALE_RECONCILE_NONE,
+		zx::ComputeScaleReconcile(1280, 800, 1280, 800, 1280, 800, 1280, 800));
+}
+
+TEST(VideoScaleReconcile, RenderSizeChangeResizes)
+{
+	EXPECT_EQ(zx::SCALE_RECONCILE_RESIZE,
+		zx::ComputeScaleReconcile(1280, 800, 1280, 800, 1280, 800, 640, 400));
+}
+
+TEST(VideoScaleReconcile, StaleCachedClientRebuildsEvenWhenRenderSizeIsUnchanged)
+{
+	// The shipped bug, with its real numbers: the window is 1280x800 and the render size agrees,
+	// but the cache still holds the temporary 319x199 window doubled for a 2x display.
+	EXPECT_EQ(zx::SCALE_RECONCILE_REBUILD,
+		zx::ComputeScaleReconcile(1280, 800, 1280, 800, 638, 398, 1280, 800));
+}
+
+TEST(VideoScaleReconcile, ResizeWinsWhenBothChanged)
+{
+	EXPECT_EQ(zx::SCALE_RECONCILE_RESIZE,
+		zx::ComputeScaleReconcile(1280, 800, 1280, 800, 638, 398, 640, 400));
+}
+
+TEST(VideoScaleReconcile, EachAxisIsCheckedIndependently)
+{
+	EXPECT_EQ(zx::SCALE_RECONCILE_REBUILD,
+		zx::ComputeScaleReconcile(1280, 800, 1280, 800, 1280, 398, 1280, 800));
+	EXPECT_EQ(zx::SCALE_RECONCILE_REBUILD,
+		zx::ComputeScaleReconcile(1280, 800, 1280, 800, 638, 800, 1280, 800));
+	EXPECT_EQ(zx::SCALE_RECONCILE_RESIZE,
+		zx::ComputeScaleReconcile(1280, 800, 1280, 800, 1280, 800, 1280, 400));
+}
