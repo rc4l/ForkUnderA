@@ -150,4 +150,17 @@ ScalePresentPlan ComputeScalePresentPlan(
 	return p;
 }
 
+ScaleReconcile ComputeScaleReconcile(
+	int clientWidth, int clientHeight,
+	int renderWidth, int renderHeight,
+	int cachedClientWidth, int cachedClientHeight,
+	int wantWidth, int wantHeight)
+{
+	if (wantWidth != renderWidth || wantHeight != renderHeight)
+		return SCALE_RECONCILE_RESIZE;
+	if (clientWidth != cachedClientWidth || clientHeight != cachedClientHeight)
+		return SCALE_RECONCILE_REBUILD;
+	return SCALE_RECONCILE_NONE;
+}
+
 } // namespace zx

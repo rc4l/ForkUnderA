@@ -211,6 +211,21 @@ CCMD (god)
 	}
 }
 
+CCMD (god2)
+{
+	if (CheckCheatmode ())
+		return;
+
+	// [rc4l] As with every other cheat here, a client asks the server for it.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_GOD2 );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_GOD2);
+	}
+}
+
 CCMD (iddqd)
 {
 	if (CheckCheatmode ())
@@ -284,6 +299,21 @@ CCMD (buddha)
 
 	Net_WriteByte(DEM_GENERICCHEAT);
 	Net_WriteByte(CHT_BUDDHA);
+}
+
+CCMD (buddha2)
+{
+	if (CheckCheatmode ())
+		return;
+
+	// [rc4l] As with every other cheat here, a client asks the server for it.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		CLIENTCOMMANDS_GenericCheat( CHT_BUDDHA2 );
+	else
+	{
+		Net_WriteByte (DEM_GENERICCHEAT);
+		Net_WriteByte (CHT_BUDDHA2);
+	}
 }
 
 CCMD (notarget)

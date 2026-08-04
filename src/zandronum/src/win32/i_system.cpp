@@ -676,7 +676,7 @@ void I_DetectOS(void)
 				info.dwMajorVersion, info.dwMinorVersion,
 				info.dwBuildNumber & 0xffff, info.szCSDVersion);
 		// [K6/BB]
-		g_VersionWithOS.Format ( "%s on Windows %s (%lu.%lu.%lu)", GetVersionStringRev(), osname,
+		g_VersionWithOS.Format ( "%s on Windows %s (%lu.%lu.%lu)", GetFuaVersionTag(), osname,
 				info.dwMajorVersion, info.dwMinorVersion,
 				info.dwBuildNumber & 0xffff);
 	}
@@ -687,7 +687,7 @@ void I_DetectOS(void)
 				info.dwMajorVersion, info.dwMinorVersion,
 				info.dwBuildNumber, info.szCSDVersion);
 		// [K6/BB]
-		g_VersionWithOS.Format ( "%s on Windows %s (%lu.%lu.%lu)", GetVersionStringRev(), osname,
+		g_VersionWithOS.Format ( "%s on Windows %s (%lu.%lu.%lu)", GetFuaVersionTag(), osname,
 				info.dwMajorVersion, info.dwMinorVersion,
 				info.dwBuildNumber);
 	}

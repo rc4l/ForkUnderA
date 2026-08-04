@@ -482,6 +482,7 @@ doors/dr2_clos			dsbdcls
 //===========================================================================
 
 misc/secret			dssecret
+misc/netnotch			blddrp1
 misc/w_pkup			dswpnup		// Pickup weapon
 misc/p_pkup			dsgetpow	// Pickup powerup
 misc/i_pkup			dsitemup	// Pickup item

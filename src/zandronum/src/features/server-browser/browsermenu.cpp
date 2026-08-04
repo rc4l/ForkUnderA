@@ -65,9 +65,9 @@
 #define NO_IMP
 #include "menu/optionmenuitems.h"
 
-#include "browser.h"
+#include "features/server-browser/browser.h"
 
-static	LONG	g_lSelectedServer = -1;
+
 static	int		g_iSortedServers[MAX_BROWSER_SERVERS];
 static	int		g_sortedServerListOffest = 0;
 
@@ -119,7 +119,7 @@ CUSTOM_CVAR( String, menu_browser_filtername, "", CVAR_ARCHIVE ) // [AK]
 bool FOptionMenuServerBrowserLine::Activate()
 {
 	S_Sound (CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE);
-	g_lSelectedServer = g_iSortedServers[ mSlotNum + g_sortedServerListOffest ];
+	BROWSER_SetSelectedServer( g_iSortedServers[ mSlotNum + g_sortedServerListOffest ] );
 	return true;
 }
 
@@ -147,7 +147,7 @@ int FOptionMenuServerBrowserLine::Draw(FOptionMenuDescriptor *desc, int y, int i
 		return 0;
 
 	char szString[256];
-	int color = ( serverNum == g_lSelectedServer ) ? CR_ORANGE : CR_GRAY;
+	int color = ( serverNum == BROWSER_GetSelectedServer() ) ? CR_ORANGE : CR_GRAY;
 
 	// Draw ping.
 	sprintf( szString, "%d", static_cast<int> (BROWSER_GetPing( serverNum )));
@@ -242,76 +242,76 @@ public:
 		ULONG	ulTextHeight;
 		char	szString[256];
 
-		if ( g_lSelectedServer == -1 )
+		if ( BROWSER_GetSelectedServer() == -1 )
 			return;
 
 		ulCurYPos = 32;
 		ulTextHeight = ( gameinfo.gametype == GAME_Doom ? 8 : 9 );
 
-		sprintf( szString, "Name: \\cc%s", BROWSER_GetHostName( g_lSelectedServer ));
+		sprintf( szString, "Name: \\cc%s", BROWSER_GetHostName( BROWSER_GetSelectedServer() ));
 		V_ColorizeString( szString );
 		screen->DrawText( SmallFont, CR_UNTRANSLATED, 16, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 		ulCurYPos += ulTextHeight;
 
-		sprintf( szString, "IP: \\cc%s", BROWSER_GetAddress( g_lSelectedServer ).ToString() );
+		sprintf( szString, "IP: \\cc%s", BROWSER_GetAddress( BROWSER_GetSelectedServer() ).ToString() );
 		V_ColorizeString( szString );
 		screen->DrawText( SmallFont, CR_UNTRANSLATED, 16, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 		ulCurYPos += ulTextHeight;
 
-		sprintf( szString, "Map: \\cc%s", BROWSER_GetMapname( g_lSelectedServer ));
+		sprintf( szString, "Map: \\cc%s", BROWSER_GetMapname( BROWSER_GetSelectedServer() ));
 		V_ColorizeString( szString );
 		screen->DrawText( SmallFont, CR_UNTRANSLATED, 16, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 		ulCurYPos += ulTextHeight;
 
-		sprintf( szString, "Gametype: \\cc%s", BROWSER_GetGameModeName( g_lSelectedServer ) );
+		sprintf( szString, "Gametype: \\cc%s", BROWSER_GetGameModeName( BROWSER_GetSelectedServer() ) );
 		V_ColorizeString( szString );
 		screen->DrawText( SmallFont, CR_UNTRANSLATED, 16, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 		ulCurYPos += ulTextHeight;
 
-		sprintf( szString, "IWAD: \\cc%s", BROWSER_GetIWADName( g_lSelectedServer ));
+		sprintf( szString, "IWAD: \\cc%s", BROWSER_GetIWADName( BROWSER_GetSelectedServer() ));
 		V_ColorizeString( szString );
 		screen->DrawText( SmallFont, CR_UNTRANSLATED, 16, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 		ulCurYPos += ulTextHeight;
 
-		sprintf( szString, "PWADs: \\cc%d", static_cast<int> (BROWSER_GetNumPWADs( g_lSelectedServer )));
+		sprintf( szString, "PWADs: \\cc%d", static_cast<int> (BROWSER_GetNumPWADs( BROWSER_GetSelectedServer() )));
 		V_ColorizeString( szString );
 		screen->DrawText( SmallFont, CR_UNTRANSLATED, 16, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 		ulCurYPos += ulTextHeight;
 
-		for ( ulIdx = 0; ulIdx < static_cast<unsigned> (MIN( (int)BROWSER_GetNumPWADs( g_lSelectedServer ), 4 )); ulIdx++ )
+		for ( ulIdx = 0; ulIdx < static_cast<unsigned> (MIN( (int)BROWSER_GetNumPWADs( BROWSER_GetSelectedServer() ), 4 )); ulIdx++ )
 		{
-			sprintf( szString, "\\cc%s", BROWSER_GetPWADName( g_lSelectedServer, ulIdx ));
+			sprintf( szString, "\\cc%s", BROWSER_GetPWADName( BROWSER_GetSelectedServer(), ulIdx ));
 			V_ColorizeString( szString );
 			screen->DrawText( SmallFont, CR_UNTRANSLATED, 32, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 			ulCurYPos += ulTextHeight;
 		}
 
-		sprintf( szString, "WAD URL: \\cc%s", BROWSER_GetWadURL( g_lSelectedServer ));
+		sprintf( szString, "WAD URL: \\cc%s", BROWSER_GetWadURL( BROWSER_GetSelectedServer() ));
 		V_ColorizeString( szString );
 		screen->DrawText( SmallFont, CR_UNTRANSLATED, 16, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 		ulCurYPos += ulTextHeight;
 
-		sprintf( szString, "Host e-mail: \\cc%s", BROWSER_GetEmailAddress( g_lSelectedServer ));
+		sprintf( szString, "Host e-mail: \\cc%s", BROWSER_GetEmailAddress( BROWSER_GetSelectedServer() ));
 		V_ColorizeString( szString );
 		screen->DrawText( SmallFont, CR_UNTRANSLATED, 16, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 		ulCurYPos += ulTextHeight;
 
-		sprintf( szString, "Players: \\cc%d/%d", static_cast<int> (BROWSER_GetNumPlayers( g_lSelectedServer )), static_cast<int> (BROWSER_GetMaxClients( g_lSelectedServer )));
+		sprintf( szString, "Players: \\cc%d/%d", static_cast<int> (BROWSER_GetNumPlayers( BROWSER_GetSelectedServer() )), static_cast<int> (BROWSER_GetMaxClients( BROWSER_GetSelectedServer() )));
 		V_ColorizeString( szString );
 		screen->DrawText( SmallFont, CR_UNTRANSLATED, 16, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
 		ulCurYPos += ulTextHeight;
 
-		if ( BROWSER_GetNumPlayers( g_lSelectedServer ))
+		if ( BROWSER_GetNumPlayers( BROWSER_GetSelectedServer() ))
 		{
 			ulCurYPos += ulTextHeight;
 
@@ -321,17 +321,17 @@ public:
 
 			ulCurYPos += ( ulTextHeight * 2 );
 
-			for ( ulIdx = 0; static_cast<signed> (ulIdx) < MIN( (int)BROWSER_GetNumPlayers( g_lSelectedServer ), 4 ); ulIdx++ )
+			for ( ulIdx = 0; static_cast<signed> (ulIdx) < MIN( (int)BROWSER_GetNumPlayers( BROWSER_GetSelectedServer() ), 4 ); ulIdx++ )
 			{
-				sprintf( szString, "%s", BROWSER_GetPlayerName( g_lSelectedServer, ulIdx ));
+				sprintf( szString, "%s", BROWSER_GetPlayerName( BROWSER_GetSelectedServer(), ulIdx ));
 				V_ColorizeString( szString );
 				screen->DrawText( SmallFont, CR_GRAY, 32, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
-				sprintf( szString, "%d", static_cast<int> (BROWSER_GetPlayerFragcount( g_lSelectedServer, ulIdx )));
+				sprintf( szString, "%d", static_cast<int> (BROWSER_GetPlayerFragcount( BROWSER_GetSelectedServer(), ulIdx )));
 				V_ColorizeString( szString );
 				screen->DrawText( SmallFont, CR_GRAY, 192, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
-				sprintf( szString, "%d", static_cast<int> (BROWSER_GetPlayerPing( g_lSelectedServer, ulIdx )));
+				sprintf( szString, "%d", static_cast<int> (BROWSER_GetPlayerPing( BROWSER_GetSelectedServer(), ulIdx )));
 				V_ColorizeString( szString );
 				screen->DrawText( SmallFont, CR_GRAY, 256, ulCurYPos, szString, DTA_Clean, true, TAG_DONE );
 
@@ -370,6 +370,11 @@ public:
 	{
 		Super::Ticker();
 
+		// [rc4l] Before anything else: retry or time out the server registry query. This must run
+		// even after refreshTicker has expired, otherwise a query that got no reply would leave the
+		// browser permanently refusing to refresh.
+		BROWSER_ServerRegistryTick();
+
 		// [BB] Query the servers that didn't respond yet a couple of times.
 
 		if ( refreshTicker >= 10 * TICRATE )
@@ -399,18 +404,18 @@ IMPLEMENT_CLASS( DBrowserMenu )
 //
 void M_RefreshServers( void )
 {
-	// Don't do anything if we're still waiting for a response from the master server.
-	if ( BROWSER_WaitingForMasterResponse( ))
+	// Don't do anything if we're still waiting for a response from the server registry.
+	if ( BROWSER_WaitingForServerRegistryResponse( ))
 		return;
 
-	g_lSelectedServer = -1;
+	BROWSER_SetSelectedServer( -1 );
 	g_sortedServerListOffest = 0;
 
 	// First, clear the existing server list.
 	BROWSER_ClearServerList( );
 
-	// Then, query the master server.
-	BROWSER_QueryMasterServer( );
+	// Then, query the server registry.
+	BROWSER_QueryServerRegistry( );
 }
 
 //*****************************************************************************
@@ -445,7 +450,7 @@ bool M_ShouldShowServer( LONG lServer )
 		return ( false );
 /*
 	// Don't show servers that don't have the same IWAD we do.
-	if ( stricmp( SERVER_MASTER_GetIWADName( ), BROWSER_GetIWADName( lServer )) != 0 )
+	if ( stricmp( SERVER_SERVERREGISTRY_GetIWADName( ), BROWSER_GetIWADName( lServer )) != 0 )
 		return ( false );
 */
 	// Don't show Internet servers if we are only showing LAN servers.
@@ -604,7 +609,7 @@ static int STACK_ARGS browsermenu_PlayersCompareFunc( const void *arg1, const vo
 
 //*****************************************************************************
 //
-CCMD( querymaster )
+CCMD( fua_serverregistry_refresh )
 {
 	M_RefreshServers();
 }
@@ -620,27 +625,27 @@ CCMD ( menu_clear_browser_filter )
 //
 CCMD ( menu_join_selected_server )
 {
-	if ( g_lSelectedServer < 0 )
+	if ( BROWSER_GetSelectedServer() < 0 )
 	{
 		M_StartMessage( "No server selected.\n\npress a key.", 1 );
 		return;
 	}
 
 	FString command;
-	command.Format( "restart -connect %s -iwad %s", BROWSER_GetAddress( g_lSelectedServer ).ToString(), BROWSER_GetIWADName ( g_lSelectedServer ) );
+	command.Format( "restart -connect %s -iwad %s", BROWSER_GetAddress( BROWSER_GetSelectedServer() ).ToString(), BROWSER_GetIWADName ( BROWSER_GetSelectedServer() ) );
 
 	TArray<FString> wadfiles;
 	TArray<FString> missingWadfiles;
 
-	if ( BROWSER_GetNumPWADs( g_lSelectedServer ) > 0 )
+	if ( BROWSER_GetNumPWADs( BROWSER_GetSelectedServer() ) > 0 )
 	{
 		command.AppendFormat ( " -file" );
-		for ( int i = 0; i < BROWSER_GetNumPWADs( g_lSelectedServer ); ++i )
+		for ( int i = 0; i < BROWSER_GetNumPWADs( BROWSER_GetSelectedServer() ); ++i )
 		{
-			if ( D_AddFile ( wadfiles, BROWSER_GetPWADName( g_lSelectedServer, i ) ) == false )
-				missingWadfiles.Push ( BROWSER_GetPWADName( g_lSelectedServer, i ) );
+			if ( D_AddFile ( wadfiles, BROWSER_GetPWADName( BROWSER_GetSelectedServer(), i ) ) == false )
+				missingWadfiles.Push ( BROWSER_GetPWADName( BROWSER_GetSelectedServer(), i ) );
 
-			command.AppendFormat ( " %s", BROWSER_GetPWADName( g_lSelectedServer, i ) );
+			command.AppendFormat ( " %s", BROWSER_GetPWADName( BROWSER_GetSelectedServer(), i ) );
 		}
 	}
 

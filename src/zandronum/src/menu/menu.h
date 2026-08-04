@@ -359,6 +359,7 @@ protected:
 public:
 	FListMenuItemStaticPatch(int x, int y, FTextureID patch, bool centered);
 	void Drawer(bool selected);
+	int GetWidth();	// [rc4l] so layout code (e.g. FUAPanelListMenu) can measure the logo
 };
 
 class FListMenuItemStaticText : public FListMenuItem
@@ -564,6 +565,26 @@ class DListMenu : public DMenu
 protected:
 	FListMenuDescriptor *mDesc;
 	FListMenuItem *mFocusControl;
+
+	// [rc4l] Update-notice ("update available" chip) state, on the BASE class deliberately.
+	//
+	// It lived on a DListMenu subclass wired via `Class "UpdateMainMenu"` in menudef, which silently
+	// stopped every mod from replacing the main menu: ReplaceMenu() rejects an override whose class
+	// does not match the existing descriptor's, and mods declare no class. Keeping the notice here
+	// means the stock MainMenu descriptor needs no class at all, so it stays overridable, AND any
+	// list menu that ends up as the main menu shows the notice -- there is no class left to get
+	// wrong. Everything below is inert unless this menu IS the main menu and an update is pending.
+	bool mNoticeFocused;
+	int mNoticePrevSelected;   // list item selected before the chip took focus, restored on exit
+	int mNoticeLastMouseX, mNoticeLastMouseY; // last pointer position, so a parked cursor can't fight the keyboard
+	int mNoticeL, mNoticeT, mNoticeR, mNoticeB; // chip rect in screen pixels, cached for hit-testing
+
+	bool NoticeApplies() const;      // this is the main menu and an update is pending
+	void NoticeFocusChip();          // focus the chip, remembering (and clearing) the list selection
+	void NoticeActivate();           // open the download confirmation
+	void NoticeDrawer();             // draw the chip (call after the list is drawn)
+	bool NoticeMenuEvent(int mkey, bool fromcontroller, bool &handled);
+	bool NoticeMouseEvent(int type, int x, int y, bool &handled);
 
 public:
 	DListMenu(DMenu *parent = NULL, FListMenuDescriptor *desc = NULL);

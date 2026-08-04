@@ -776,7 +776,6 @@ public:
 		ceilLowerInstant,
 		ceilRaiseInstant,
 		ceilCrushAndRaise,
-		ceilCrushAndRaiseDist,
 		ceilLowerAndCrush,
 		ceilLowerAndCrushDist,
 		ceilCrushRaiseAndStay,

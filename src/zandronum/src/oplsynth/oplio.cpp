@@ -57,7 +57,8 @@ int OPLio::Init(int core, uint32_t numchips, bool stereo, bool initopl3)
 	assert(numchips >= 1 && numchips <= OPL_NUM_VOICES);
 	uint32_t i;
 	// [rc4l] This tree only ships three cores: 0=YM3812 (OPL2), 1=DBOPL, 2=JavaOPL (both OPL3).
-	IsOPL3 = (core == 1 || core == 2);
+	// [rc4l] uzdoom@e9075334a: core 3 is the Nuked OPL3 emulator.
+	IsOPL3 = (core == 1 || core == 2 || core == 3);
 
 	memset(chips, 0, sizeof(chips));
 	if (IsOPL3)
@@ -66,7 +67,7 @@ int OPLio::Init(int core, uint32_t numchips, bool stereo, bool initopl3)
 	}
 	for (i = 0; i < numchips; ++i)
 	{
-		OPLEmul* chip = IsOPL3 ? (core == 1 ? DBOPLCreate(stereo) : JavaOPLCreate(stereo)) : YM3812Create(stereo);
+		OPLEmul* chip = IsOPL3 ? (core == 1 ? DBOPLCreate(stereo) : (core == 2 ? JavaOPLCreate(stereo) : NukedOPL3Create(stereo))) : YM3812Create(stereo);
 		if (chip == NULL)
 		{
 			break;

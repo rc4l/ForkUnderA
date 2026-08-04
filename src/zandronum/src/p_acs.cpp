@@ -2189,19 +2189,30 @@ void FBehavior::StaticSerializeModuleStates (FArchive &arc)
 	for (modnum = 0; modnum < StaticModules.Size(); ++modnum)
 	{
 		FBehavior *module = StaticModules[modnum];
+		// [rc4l] uzdoom@3437f4fca: record each module's size so a save made against a
+		// different build of the same-named BEHAVIOR is refused instead of loading
+		// garbage. Upstream gated on their 4516; ours is a separate line, so 4518.
+		int ModSize = module->GetDataSize();
 
 		if (arc.IsStoring())
 		{
 			arc.WriteString (module->ModuleName);
+			if (SaveVersion >= 4518) arc << ModSize;
 		}
 		else
 		{
 			char *modname = NULL;
 			arc << modname;
+			if (SaveVersion >= 4518) arc << ModSize;
 			if (stricmp (modname, module->ModuleName) != 0)
 			{
 				delete[] modname;
 				I_Error ("Level was saved with a different set of ACS modules.");
+			}
+			else if (ModSize != module->GetDataSize())
+			{
+				delete[] modname;
+				I_Error("ACS module %s has changed from what was saved. (Have %d bytes, save has %d bytes)", module->ModuleName, module->GetDataSize(), ModSize);
 			}
 			delete[] modname;
 		}
@@ -2478,7 +2489,8 @@ FBehavior::FBehavior (int lumpnum, FileReader * fr, int len)
 				funcm->HasReturnValue = funcf->HasReturnValue;
 				funcm->ImportNum = funcf->ImportNum;
 				funcm->LocalCount = funcf->LocalCount;
-				funcm->Address = funcf->Address;
+				// [rc4l] uzdoom@1bda54f3c: every field read out of the ACS blob is little-endian.
+				funcm->Address = LittleLong(funcf->Address);
 			}
 		}
 
@@ -2914,6 +2926,12 @@ void FBehavior::LoadScriptsDirectory ()
 	default:
 		break;
 	}
+
+// [EP] Clang 3.5.0 optimizer miscompiles this function and causes random
+// crashes in the program. I hope that Clang 3.5.x will fix this.
+#if defined(__clang__) && __clang_major__ == 3 && __clang_minor__ >= 5
+	asm("" : "+g" (NumScripts));
+#endif
 	for (i = 0; i < NumScripts; ++i)
 	{
 		Scripts[i].Flags = 0;
@@ -3292,7 +3310,7 @@ BYTE *FBehavior::FindChunk (DWORD id) const
 		{
 			return chunk;
 		}
-		chunk += ((DWORD *)chunk)[1] + 8;
+		chunk += LittleLong(((DWORD *)chunk)[1]) + 8;
 	}
 	return NULL;
 }
@@ -3300,14 +3318,14 @@ BYTE *FBehavior::FindChunk (DWORD id) const
 BYTE *FBehavior::NextChunk (BYTE *chunk) const
 {
 	DWORD id = *(DWORD *)chunk;
-	chunk += ((DWORD *)chunk)[1] + 8;
+	chunk += LittleLong(((DWORD *)chunk)[1]) + 8;
 	while (chunk != NULL && chunk < Data + DataSize)
 	{
 		if (((DWORD *)chunk)[0] == id)
 		{
 			return chunk;
 		}
-		chunk += ((DWORD *)chunk)[1] + 8;
+		chunk += LittleLong(((DWORD *)chunk)[1]) + 8;
 	}
 	return NULL;
 }
@@ -3547,9 +3565,65 @@ DACSThinker::~DACSThinker ()
 void DACSThinker::Serialize (FArchive &arc)
 {
 	int scriptnum;
+	int scriptcount = 0;
 
 	Super::Serialize (arc);
-	arc << Scripts << LastScript;
+	// [rc4l] uzdoom@e3640b5bf with its follow-up uzdoom@5170abfee folded in. Serializing the
+	// Scripts list through the archive's pointer chasing recursed once per script, so a level
+	// with a deep script list blew the stack; this walks the list iteratively instead, storing
+	// it backwards so the links can be rebuilt on load.
+	//
+	// The `while (script)` guard IS the follow-up: upstream first wrote `while (true)` and
+	// dereferenced script->next unconditionally, which crashes when a DACSThinker exists with no
+	// scripts at all. Written correctly here from the start.
+	if (SaveVersion < 4517)
+		arc << Scripts << LastScript;
+	else
+	{
+		if (arc.IsStoring())
+		{
+			DLevelScript *script;
+			script = Scripts;
+			while (script)
+			{
+				scriptcount++;
+
+				// We want to store this list backwards, so we can't lose the last pointer
+				if (script->next == NULL)
+					break;
+				script = script->next;
+			}
+			arc << scriptcount;
+
+			while (script)
+			{
+				arc << script;
+				script = script->prev;
+			}
+		}
+		else
+		{
+			// We are running through this list backwards, so the next entry is the last processed
+			DLevelScript *next = NULL;
+			Scripts = NULL;
+			LastScript = NULL;
+			arc << scriptcount;
+			for (int i = 0; i < scriptcount; i++)
+			{
+				arc << Scripts;
+
+				Scripts->next = next;
+				Scripts->prev = NULL;
+				if (next != NULL)
+					next->prev = Scripts;
+
+				next = Scripts;
+
+				if (i == 0)
+					LastScript = Scripts;
+			}
+		}
+	}
 	if (arc.IsStoring ())
 	{
 		ScriptMap::Iterator it(RunningScripts);
@@ -4658,16 +4732,19 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		break;
 
 	case APROP_Friendly:
+		// [rc4l] uzdoom@536411635: CountsAsKill() depends on MF_FRIENDLY, so it has to be
+		// evaluated once before the flag changes and once after. Testing it only on the side
+		// being set counted the actor wrong in one direction.
+		if (actor->CountsAsKill()) level.total_monsters--;
 		if (value)
 		{
-			if (actor->CountsAsKill()) level.total_monsters--;
 			actor->flags |= MF_FRIENDLY;
 		}
 		else
 		{
 			actor->flags &= ~MF_FRIENDLY;
-			if (actor->CountsAsKill()) level.total_monsters++;
 		}
+		if (actor->CountsAsKill()) level.total_monsters++;
 		break;
 
 
@@ -4899,6 +4976,11 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 			static_cast<APlayerPawn *>(actor)->AttackZOffset = value;
 		break;
 
+	// [rc4l] uzdoom@99b2cfa14
+	case APROP_DamageMultiplier:
+		actor->DamageMultiply = fixed_t::FromRaw(value);
+		break;
+
 	case APROP_StencilColor:
 		// [AK] Save the original value.
 		oldValue = actor->fillcolor;
@@ -4909,6 +4991,12 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		// Only bother the clients if the stencil color has actually changed.
 		if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( static_cast<DWORD>( oldValue ) != actor->fillcolor ) )
 			SERVERCOMMANDS_SetThingProperty( actor, APROP_StencilColor );
+		break;
+
+	case APROP_MeleeRange:
+		// [rc4l] uzdoom@79d9a573b. No broadcast: meleerange is read by P_CheckMeleeRange
+		// inside monster AI, which runs only on the server under client/server.
+		actor->meleerange = value;
 		break;
 
 	case APROP_Friction:
@@ -5025,6 +5113,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_ActiveSound:	return GlobalACSStrings.AddString(actor->ActiveSound);
 	case APROP_Species:		return GlobalACSStrings.AddString(actor->GetSpecies());
 	case APROP_NameTag:		return GlobalACSStrings.AddString(actor->GetTag());
+	case APROP_DamageMultiplier: return actor->DamageMultiply.Raw();	// [rc4l] uzdoom@99b2cfa14
 	case APROP_StencilColor:return actor->fillcolor;
 	case APROP_Friction:	return (int)(actor->Friction);
 
@@ -10554,7 +10643,9 @@ scriptwait:
 				while (min <= max)
 				{
 					int mid = (min + max) / 2;
-					SDWORD caseval = pc[mid*2];
+					// [rc4l] uzdoom@8f915c9dc: the case table is little-endian on disk like every other
+					// ACS word, so it must be swapped before comparing.
+					SDWORD caseval = LittleLong(pc[mid*2]);
 					if (caseval == STACK(1))
 					{
 						pc = activeBehavior->Ofs2PC (LittleLong(pc[mid*2+1]));
@@ -10980,13 +11071,6 @@ scriptwait:
 						AddToConsole (-1, consolecolor);
 						AddToConsole (-1, work);
 						AddToConsole (-1, bar);
-						if (Logfile)
-						{
-							fputs (logbar, Logfile);
-							fputs (work, Logfile);
-							fputs (logbar, Logfile);
-							fflush (Logfile);
-						}
 					}
 				}
 			}

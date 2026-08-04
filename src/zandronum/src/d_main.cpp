@@ -114,7 +114,7 @@
 #include "cl_main.h"
 #include "cl_statistics.h"
 #include "maprotation.h"
-#include "browser.h"
+#include "features/server-browser/browser.h"
 #include "p_spec.h"
 #include "joinqueue.h"
 #include "lastmanstanding.h"
@@ -150,9 +150,6 @@
 #include "resourcefiles/resourcefile.h"
 #include "r_renderer.h"
 #include "p_local.h"
-
-// [rc4l] r_polymost.h removed (GL-only build). The USE_POLYMOST blocks below are
-// dead code (USE_POLYMOST is never defined) and are left only as historical markers.
 
 
 // [ZZ] PWO header file
@@ -219,9 +216,6 @@ extern bool insave;
 
 // [BC] fraglimit/timelimit have been moved to a more appropriate location.
 
-#ifdef USE_POLYMOST
-CVAR(Bool, testpolymost, false, 0)
-#endif
 CVAR (Int, wipetype, 1, CVAR_ARCHIVE);
 CVAR (Int, snd_drawoutput, 0, 0);
 CUSTOM_CVAR (String, vid_cursor, "None", CVAR_ARCHIVE | CVAR_NOINITCALL)
@@ -323,10 +317,6 @@ void D_ProcessEvents (void)
 			continue;				// console ate the event
 		if (M_Responder (ev))
 			continue;				// menu ate the event
-		#ifdef USE_POLYMOST
-			if (testpolymost)
-				Polymost_Responder (ev);
-		#endif
 		G_Responder (ev);
 	}
 }
@@ -347,11 +337,7 @@ void D_PostEvent (const event_t *ev)
 		return;
 	}
 	events[eventhead] = *ev;
-	if (ev->type == EV_Mouse && !paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling
-#ifdef USE_POLYMOST
-		&& !testpolymost		
-#endif
-		)
+	if (ev->type == EV_Mouse && !paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling)
 	{
 		if (Button_Mlook.bDown || freelook)
 		{
@@ -545,7 +531,9 @@ CUSTOM_CVAR (Int, dmflags2, 0, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAMEPL
 		}
 
 		// Come out of chasecam mode if we're not allowed to use chasecam.
-		if (!(dmflags2 & DF2_CHASECAM) && !G_SkillProperty (SKILLP_DisableCheats) && !sv_cheats)
+		// [rc4l] uzdoom@15b1c7125: use CheckCheatmode, which is the single place that decides
+		// whether cheats are allowed, instead of re-deriving it here and drifting from it.
+		if (!(dmflags2 & DF2_CHASECAM) && CheckCheatmode(false))
 		{
 			// Take us out of chasecam mode only.
 			// [AK] Allow spectators to keep using the chasecam.
@@ -832,6 +820,7 @@ CVAR (Flag, compat_badangles,			compatflags2, COMPATF2_BADANGLES);
 CVAR (Flag, compat_floormove,			compatflags2, COMPATF2_FLOORMOVE);
 // [BB] Out of order ZDoom backport.
 CVAR (Flag, compat_pushwindow,			compatflags2, COMPATF2_PUSHWINDOW);
+CVAR (Flag, compat_soundcutoff,			compatflags2, COMPATF2_SOUNDCUTOFF);	// [rc4l] uzdoom@ef5707d73
 // [BB] Skulltag compat flags.
 CVAR (Flag, compat_limited_airmovement, zacompatflags, ZACOMPATF_LIMITED_AIRMOVEMENT);
 CVAR (Flag, compat_plasmabump,	zacompatflags, ZACOMPATF_PLASMA_BUMP_BUG);
@@ -973,15 +962,6 @@ void D_Display ()
 
 	hw2d = false;
 
-#ifdef USE_POLYMOST
-	if (testpolymost)
-	{
-		drawpolymosttest();
-		C_DrawConsole(hw2d);
-		M_Drawer();
-	}
-	else
-#endif
 	{
 		unsigned int nowtime = I_FPSTime();
 		TexMan.UpdateAnimations(nowtime);
@@ -1709,6 +1689,8 @@ CCMD (endgame)
 	{
 		gameaction = ga_fullconsole;
 		demosequence = -1;
+		// [rc4l] uzdoom@eceb37aa6: close out a recording rather than leaving it dangling.
+		G_CheckDemoStatus();
 	}
 }
 
@@ -3306,15 +3288,15 @@ void D_DoomMain (void)
 		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
 			gameaction = ga_fullconsole;
 
-		// [BC] If we specified -private, make sv_updatemaster false.
+		// [BC] If we specified -private, make sv_fua_serverregistry_announce false.
 		if ( Args->CheckParm( "-private" ))
-			sv_updatemaster = false;
+			sv_fua_serverregistry_announce = false;
 
-		// [BC] Potentially send an update to the master server.
+		// [BC] Potentially send an update to the server registry.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			SERVER_MASTER_Tick( );
-			SERVER_MASTER_Broadcast( );
+			SERVER_SERVERREGISTRY_Tick( );
+			SERVER_SERVERREGISTRY_Broadcast( );
 		}
 
 		// [BC] Little hack for +addbot.

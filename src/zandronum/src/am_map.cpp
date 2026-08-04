@@ -932,8 +932,9 @@ void AM_StaticInit()
 
 	if (gameinfo.mMapArrow.IsNotEmpty()) AM_ParseArrow(MapArrow, gameinfo.mMapArrow);
 	if (gameinfo.mCheatMapArrow.IsNotEmpty()) AM_ParseArrow(CheatMapArrow, gameinfo.mCheatMapArrow);
-	AM_ParseArrow(CheatKey, "maparrows/key.txt");
-	AM_ParseArrow(EasyKey, "maparrows/ravenkey.txt");
+	// [rc4l] uzdoom@8edace83c: driven by MAPINFO gameinfo now.
+	if (gameinfo.mCheatKey.IsNotEmpty()) AM_ParseArrow(CheatKey, gameinfo.mCheatKey);
+	if (gameinfo.mEasyKey.IsNotEmpty()) AM_ParseArrow(EasyKey, gameinfo.mEasyKey);
 	if (MapArrow.Size() == 0) I_FatalError("No automap arrow defined");
 
 	char namebuf[9];

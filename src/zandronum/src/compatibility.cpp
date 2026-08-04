@@ -82,6 +82,7 @@ enum
 	CP_SETWALLYSCALE,
 	CP_SETTAG,
 	CP_SETTHINGZ,
+	CP_SETTHINGFLAGS,	// [rc4l] uzdoom@b08fcbf6b
 };
 
 // EXTERNAL FUNCTION PROTOTYPES --------------------------------------------
@@ -317,6 +318,16 @@ void ParseCompatibility()
 				sc.MustGetFloat();
 				CompatParams.Push(FLOAT2FIXED(sc.Float));
 			}
+			// [rc4l] uzdoom@b08fcbf6b
+			else if (sc.Compare("setthingflags"))
+			{
+				if (flags.ExtCommandIndex == ~0u) flags.ExtCommandIndex = CompatParams.Size();
+				CompatParams.Push(CP_SETTHINGFLAGS);
+				sc.MustGetNumber();
+				CompatParams.Push(sc.Number);
+				sc.MustGetNumber();
+				CompatParams.Push(sc.Number);
+			}
 			else 
 			{
 				sc.UnGet();
@@ -535,6 +546,16 @@ void SetCompatibilityParams()
 					if ((unsigned)CompatParams[i+1] < MapThingsConverted.Size())
 					{
 						MapThingsConverted[CompatParams[i+1]].z = CompatParams[i+2];
+					}
+					i += 3;
+					break;
+				}
+				// [rc4l] uzdoom@b08fcbf6b
+				case CP_SETTHINGFLAGS:
+				{
+					if ((unsigned)CompatParams[i + 1] < MapThingsConverted.Size())
+					{
+						MapThingsConverted[CompatParams[i + 1]].flags = CompatParams[i + 2];
 					}
 					i += 3;
 					break;

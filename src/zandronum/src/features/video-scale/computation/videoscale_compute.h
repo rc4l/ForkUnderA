@@ -104,6 +104,26 @@ ScalePresentPlan ComputeScalePresentPlan(
 	bool cropAspect, float activeRatio,
 	int minWidth, int minHeight);
 
+// What the per-frame reconcile must do, given the window's CURRENT client size, the render size
+// in use, and the client size that was cached the last time the scale buffer was rebuilt.
+//
+// The third case is the one that is easy to miss and shipped broken: the window changed but the
+// render size it implies did NOT, so a check that only compares render sizes sees nothing -- while
+// the cached client size (which is the blit destination) is now stale. That is every launch on the
+// Cocoa backend, because the window is deliberately created at a temporary size and resized after.
+enum ScaleReconcile
+{
+	SCALE_RECONCILE_NONE = 0,     // nothing changed
+	SCALE_RECONCILE_RESIZE,       // render size must change -> resize the render target
+	SCALE_RECONCILE_REBUILD,      // render size is right but the cached client size is stale
+};
+
+ScaleReconcile ComputeScaleReconcile(
+	int clientWidth, int clientHeight,
+	int renderWidth, int renderHeight,
+	int cachedClientWidth, int cachedClientHeight,
+	int wantWidth, int wantHeight);
+
 } // namespace zx
 
 #endif // ZX_VIDEOSCALE_COMPUTE_H

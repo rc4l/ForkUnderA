@@ -939,7 +939,10 @@ class CommandDrawString : public SBarInfoCommand
 					}
 					break;
 				case TIME:
-					str.Format("%02d:%02d:%02d", (level.time/TICRATE)/3600, ((level.time/TICRATE)%3600)/60, (level.time/TICRATE)%60);
+				{
+					int sec = Tics2Seconds(level.time);
+					str.Format("%02d:%02d:%02d", sec / 3600, (sec % 3600) / 60, sec % 60);
+				}
 					break;
 				case LOGTEXT:
 					str = statusBar->CPlayer->LogText;
@@ -2027,8 +2030,50 @@ class CommandAspectRatio : public SBarInfoCommandFlowControl
 		{
 			SBarInfoCommandFlowControl::Tick(block, statusBar, hudChanged);
 
-			SetTruth(ratioMap[CheckRatio(screen->GetWidth(), screen->GetHeight())] == ratio, block, statusBar);
+			SetTruth(ratioMap[FindRatio()] == ratio, block, statusBar);
 		}
+
+	private:
+		// [rc4l] Ported from UZDoom 4e58e6626cf0372a3fbca5649a66aa7e2441554c, "Fix buffer overrun in
+		// CommandAspectRatio for 21:9 aspect ratio".
+		//
+		// ratioMap has one entry per supported ratio, and CheckRatio was being used to index it --
+		// which is only safe while the two enumerations happen to agree in length. They no longer do,
+		// and a ratio outside the table read past its end.
+		//
+		// Now the continuous aspect is matched to the NEAREST supported ratio, which is also the right
+		// answer for a freely resized window: a status bar asking "am I on a 16:9 screen?" should get
+		// yes at 1.75 as well as at exactly 1.7778.
+		int FindRatio()
+		{
+			float aspect = ActiveRatio(screen->GetWidth(), screen->GetHeight());
+
+			static std::pair<float, int> ratioTypes[] =
+			{
+				{ 21 / 9.0f , ASPECTRATIO_16_9 },
+				{ 16 / 9.0f , ASPECTRATIO_16_9 },
+				{ 17 / 10.0f , ASPECTRATIO_17_10 },
+				{ 16 / 10.0f , ASPECTRATIO_16_10 },
+				{ 4 / 3.0f , ASPECTRATIO_4_3 },
+				{ 5 / 4.0f , ASPECTRATIO_5_4 },
+				{ 0.0f, 0 }
+			};
+
+			int ratio = ratioTypes[0].second;
+			float distance = fabs(ratioTypes[0].first - aspect);
+			for (int i = 1; ratioTypes[i].first != 0.0f; i++)
+			{
+				float d = fabs(ratioTypes[i].first - aspect);
+				if (d < distance)
+				{
+					ratio = ratioTypes[i].second;
+					distance = d;
+				}
+			}
+
+			return ratio;
+		}
+
 	protected:
 		enum Ratio
 		{
@@ -3551,43 +3596,18 @@ class CommandInInventory : public SBarInfoCommandFlowControl
 			AInventory *invItem[2] = { statusBar->CPlayer->mo->FindInventory(item[0]), statusBar->CPlayer->mo->FindInventory(item[1]) };
 			if (invItem[0] != NULL && amount[0] > 0 && invItem[0]->Amount < amount[0]) invItem[0] = NULL;
 			if (invItem[1] != NULL && amount[1] > 0 && invItem[1]->Amount < amount[1]) invItem[1] = NULL;
-			if(invItem[1] != NULL && conditionAnd)
+			// [rc4l] uzdoom@0223b7f46: branch on item[1] -- whether a second item was CONFIGURED --
+			// not on invItem[1], whether one was FOUND. Keying on the latter made a two-item
+			// condition silently collapse to a one-item test whenever the second item was missing.
+			if (item[1])
 			{
-				if((invItem[0] != NULL && invItem[1] != NULL) && !negate)
-				{
-					SetTruth(true, block, statusBar);
-					return;
-				}
-				else if((invItem[0] == NULL || invItem[1] == NULL) && negate)
-				{
-					SetTruth(true, block, statusBar);
-					return;
-				}
+				if (conditionAnd)
+					SetTruth((invItem[0] && invItem[1]) != negate, block, statusBar);
+				else
+					SetTruth((invItem[0] || invItem[1]) != negate, block, statusBar);
 			}
-			else if(invItem[1] != NULL && !conditionAnd)
-			{
-				if((invItem[0] != NULL || invItem[1] != NULL) && !negate)
-				{
-					SetTruth(true, block, statusBar);
-					return;
-				}
-				else if((invItem[0] == NULL && invItem[1] == NULL) && negate)
-				{
-					SetTruth(true, block, statusBar);
-					return;
-				}
-			}
-			else if((invItem[0] != NULL) && !negate)
-			{
-				SetTruth(true, block, statusBar);
-				return;
-			}
-			else if((invItem[0] == NULL) && negate)
-			{
-				SetTruth(true, block, statusBar);
-				return;
-			}
-			SetTruth(false, block, statusBar);
+			else
+				SetTruth((invItem[0] != NULL) != negate, block, statusBar);
 		}
 	protected:
 		bool			conditionAnd;

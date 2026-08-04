@@ -1,0 +1,206 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Builds and publishes the server registry container image.
+#
+# Deliberately on its OWN tag namespace (server-registry-v*) and cadence, separate from engine releases
+# (v*). The registry only needs republishing when the wire protocol moves; a renderer or menu release
+# has nothing to do with it, and coupling them would mean re-rolling every registry deployment for
+# changes that cannot affect it.
+#
+# The build job is NOT release-only. It also runs on pull requests that touch the daemon or the
+# protocol sources it shares with the engine, because the failure this guards against is exactly the
+# one windows-fast-build.yml suffered: a path filter narrow enough that a source-side change could
+# invalidate the artefact without any workflow noticing for eleven days. zandrox-server-registry compiles
+# networkshared.cpp and the huffman codec straight out of the engine tree, so those paths are the
+# coupling and they are listed here.
+name: Release Server Registry Image
+
+on:
+  # [rc4l] Running this workflow IS the release -- no "actually publish?" checkbox. release.yml needs
+  # one because it also builds artifacts on ordinary pushes; here the build-without-publishing case is
+  # already covered by the pull_request trigger below, so a second way to say it would just be a lever
+  # someone forgets to pull. From the default branch you get a real release; from anywhere else an
+  # experimental image, automatically.
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which part of the version to raise (default branch only; ignored elsewhere)'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+  push:
+    tags: ['server-registry-v*']
+  pull_request:
+    paths:
+      - Dockerfile.registry
+      - Dockerfile.registry.dockerignore
+      - .github/workflows/registry-image.yml
+      - src/zandronum/server-registry/**
+      # The protocol surface zandrox-server-registry shares with the engine:
+      - src/zandronum/src/networkshared.cpp
+      - src/zandronum/src/networkshared.h
+      - src/zandronum/src/platform.cpp
+      - src/zandronum/src/huffman/**
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/zandrox-server-registry
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # [rc4l] to push the release tag below
+      packages: write
+    steps:
+      # [rc4l] Full history: updaterevision runs `git describe --tags`, which needs tags and depth.
+      # A shallow clone would stamp the daemon's banner with a meaningless revision.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # [rc4l] Required for Dockerfile.registry.dockerignore to be honoured; the legacy builder only
+      # reads the root .dockerignore, which excludes everything and would empty the context.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # [rc4l] The version is DERIVED, never typed -- same rule as release.yml, for the same reason:
+      # a hand-entered version is how you publish 0.2.0 twice, or a 0.10.0 that sorts below 0.9.0.
+      # Press Run, choose patch/minor/major, and the newest server-registry-v* tag decides the rest.
+      #
+      # `latest` moves ONLY for a stable release off the default branch. An experimental image from a
+      # feature branch is tagged by branch+sha so it can never take over the tag that operators who
+      # did not pin a version end up running.
+      - name: Derive tags
+        id: meta
+        env:
+          BUMP: ${{ inputs.bump }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          # [rc4l] A container repository name must be lowercase, but github.repository_owner is the
+          # owner's LITERAL login, which may carry capitals (e.g. a fork owned by Doruk-Aksoy). That
+          # made every tag below invalid and failed the build on such forks -- invisible here, because
+          # "rc4l" happens to already be lowercase. Fold it once, up front. (tr, not ${x,,}: the latter
+          # needs bash 4+, so it silently breaks anyone checking this logic on stock macOS bash 3.2.)
+          IMAGE="$(printf '%s' "${IMAGE}" | tr '[:upper:]' '[:lower:]')"
+          shortsha="$(echo "${GITHUB_SHA}" | cut -c1-8)"
+
+          if [[ "${GITHUB_REF}" == refs/tags/server-registry-v* ]]; then
+            # A pushed tag publishes on its own; the tag itself is the version.
+            version="${GITHUB_REF#refs/tags/server-registry-v}"
+            tags="${IMAGE}:${version},${IMAGE}:latest"
+            publish=true
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ "${GITHUB_REF_NAME}" != "${DEFAULT_BRANCH}" ]; then
+            # [rc4l] Dispatched from a non-default branch: automatically experimental. Named by
+            # branch + commit rather than a version, so it can never touch the stable line, and
+            # every commit keeps its own image instead of overwriting the branch's last one.
+            slug="$(echo "${GITHUB_REF_NAME}" | sed 's#[^A-Za-z0-9._-]#-#g')"
+            version="exp-${slug}-${shortsha}"
+            tags="${IMAGE}:${version}"      # deliberately NOT latest
+            publish=true
+            echo "experimental image from ${GITHUB_REF_NAME} (${shortsha}) -> ${version}"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            # [rc4l] Default branch only: a real release. Derive from the newest existing tag.
+            latest="$(git tag -l 'server-registry-v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+            latest="${latest:-server-registry-v0.0.0}"
+            IFS=. read -r major minor patch <<< "${latest#server-registry-v}"
+            case "$BUMP" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              *)     patch=$((patch + 1)) ;;
+            esac
+            version="${major}.${minor}.${patch}"
+            tags="${IMAGE}:${version},${IMAGE}:latest"
+            publish=true
+            echo "newest tag ${latest}, ${BUMP} bump -> ${version}"
+            # [rc4l] Belt and braces: republishing an existing version would move the tag off the
+            # commit whose source the published image was built from.
+            if git rev-parse -q --verify "refs/tags/server-registry-v${version}" >/dev/null; then
+              echo "::error::server-registry-v${version} already exists -- is another release in flight?"
+              exit 1
+            fi
+          else
+            # [rc4l] Pull requests build and smoke-test only -- this is the "no publish" path.
+            version="ci"
+            tags="${IMAGE}:ci"
+            publish=false
+          fi
+
+          {
+            echo "version=${version}"
+            echo "primary=${IMAGE}:${version}"
+            echo "tags=${tags}"
+            echo "publish=${publish}"
+          } >> "$GITHUB_OUTPUT"
+          echo "version=${version} publish=${publish}"
+
+      # [rc4l] load, never push, at this stage: the smoke test below must run the EXACT image that
+      # gets published, so the build lands in the local daemon first and is pushed only after it has
+      # been proven to start.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.registry
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          provenance: false
+
+      # [rc4l] Prove it RUNS, not merely that it compiled. The daemon binds UDP 15300 and blocks
+      # forever, so start it detached and assert it is both still alive and has printed its banner.
+      # A container that dies immediately -- bad permissions on /data, a missing runtime library --
+      # would otherwise publish perfectly green.
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          docker run -d --name registry -p 15300:15300/udp "${{ steps.meta.outputs.primary }}"
+          sleep 5
+          docker logs registry
+          if [ "$(docker inspect -f '{{.State.Running}}' registry)" != "true" ]; then
+            echo "::error::zandrox-server-registry exited instead of staying up"
+            exit 1
+          fi
+          docker logs registry 2>&1 | grep -q "Server registry started" \
+            || { echo "::error::no startup banner -- daemon did not initialise"; exit 1; }
+          docker rm -f registry
+
+      - name: Log in to GHCR
+        if: steps.meta.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # [rc4l] Pushes the already-built, already-smoke-tested local images by tag.
+      - name: Publish
+        if: steps.meta.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra TAGS <<< "${{ steps.meta.outputs.tags }}"
+          for t in "${TAGS[@]}"; do
+            echo "pushing $t"
+            docker push "$t"
+          done
+
+      # [rc4l] Leave a git tag behind for a derived release, so a published image can always be
+      # traced to the commit it was built from. Only for versions this workflow invented: a tag push
+      # already has one, and experimental images are identified by their commit sha already.
+      # Tagged AFTER the push, so a failed publish does not leave a tag claiming an image exists.
+      - name: Tag the release commit
+        if: steps.meta.outputs.publish == 'true' && github.ref_type != 'tag' && github.ref_name == github.event.repository.default_branch
+        run: |
+          set -euo pipefail
+          tag="server-registry-v${{ steps.meta.outputs.version }}"
+          # [rc4l] An annotated tag records a tagger, and a runner has no git identity configured --
+          # `git tag -a` there dies with "empty ident name". Caught the hard way on 0.0.1: the image
+          # published fine and only the tag step failed, leaving a released version with nothing
+          # pointing at the commit it came from. Set the bot identity rather than fall back to a
+          # lightweight tag, so the tag carries who made it and when.
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "server registry image $tag"
+          git push origin "$tag"
+          echo "tagged $tag at ${GITHUB_SHA}"

@@ -328,11 +328,13 @@ if( NOT NO_ASM )
 			set( ASM_FLAGS -f win32 -DWIN32 -i${CMAKE_CURRENT_SOURCE_DIR}/ )
 		endif( X64 )
 	endif( UNIX )
-	if( WIN32 )
+	# [rc4l] uzdoom@601852d22: fixrtext patches 32-bit MSVC object files; Win64 has no
+	# use for it and running it there is wrong.
+	if( WIN32 AND NOT X64 )
 		set( FIXRTEXT fixrtext )
-	else( WIN32 )
+	else( WIN32 AND NOT X64 )
 		set( FIXRTEXT "" )
-	endif( WIN32 )
+	endif( WIN32 AND NOT X64 )
 	message( STATUS "Selected assembler: ${ASSEMBLER}" )
 	MACRO( ADD_ASM_FILE indir infile )
 		set( ASM_OUTPUT_${infile} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/zdoom.dir/${indir}/${infile}${ASM_OUTPUT_EXTENSION}" )
@@ -416,9 +418,11 @@ if( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STRE
 	endif( PROFILE )
 
 	set( REL_CXX_FLAGS "-fno-rtti" )
-	if( NOT PROFILE )
+	# [rc4l] uzdoom@9479a89b6: on OS X frame pointers are required for exception handling,
+	# at least with Clang -- omitting them crashes Release builds.
+	if( NOT PROFILE AND NOT APPLE )
 		set( REL_CXX_FLAGS "${REL_CXX_FLAGS} -fomit-frame-pointer" )
-	endif( NOT PROFILE )
+	endif( NOT PROFILE AND NOT APPLE )
 	set( CMAKE_CXX_FLAGS_RELEASE "${REL_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE}" )
 	set( CMAKE_CXX_FLAGS_MINSIZEREL "${REL_CXX_FLAGS} ${CMAKE_CXX_FLAGS_MINSIZEREL}" )
 	set( CMAKE_CXX_FLAGS_RELWITHDEBINFO "${REL_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO}" )
@@ -1071,7 +1075,6 @@ add_executable( zdoom WIN32
 	botcommands.cpp #ST
 	botpath.cpp #ST
 	bots.cpp #ST
-	browser.cpp #ST
 	callvote.cpp #ST
 	campaign.cpp #ST
 	c_bind.cpp
@@ -1223,7 +1226,7 @@ add_executable( zdoom WIN32
 	sv_ban.cpp #ST
 	sv_commands.cpp #ST
 	sv_main.cpp #ST
-	sv_master.cpp #ST
+	features/federated-server-registry/sv_serverregistry.cpp #ST
 	sv_rcon.cpp #ST
 	sv_save.cpp #ST
 	tables.cpp
@@ -1304,7 +1307,6 @@ add_executable( zdoom WIN32
 	g_shared/st_hud.cpp #ST
 	intermission/intermission.cpp
 	intermission/intermission_parse.cpp
-	menu/browsermenu.cpp #ZA
 	menu/colorpickermenu.cpp
 	menu/joystickmenu.cpp
 	menu/listmenu.cpp
@@ -1321,6 +1323,7 @@ add_executable( zdoom WIN32
 	menu/videomenu.cpp
 	${GL_SOURCES}
 	oplsynth/fmopl.cpp
+	oplsynth/nukedopl3.cpp
 	oplsynth/musicblock.cpp
 	oplsynth/oplio.cpp
 	oplsynth/music_opldumper_mididevice.cpp
@@ -1432,8 +1435,15 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
+	features/net/zx_httpsget.cpp
+	features/server-browser/browser.cpp #ST
+	features/server-browser/browsermenu.cpp #ZA
+	features/server-browser/zx_serverbrowsermenu.cpp
+	features/server-browser/computation/serverbrowser_compute.cpp
 	features/updater/zx_updater.cpp
 	features/updater/zx_updater_net_win.cpp
+	features/federated-server-registry/zx_serverregistrylist.cpp
+	features/federated-server-registry/computation/serverregistrylist_compute.cpp
 	features/hitboxviz/hitboxviz.cpp
 	features/hitboxviz/computation/boxedges_compute.cpp
 	features/hitboxviz/computation/blastrecords_compute.cpp

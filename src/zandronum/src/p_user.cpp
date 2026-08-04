@@ -814,6 +814,18 @@ void APlayerPawn::BeginPlay ()
 
 		int spritenorm = Wads.CheckNumForName(normspritename + "A1", ns_sprites);
 		int spritecrouch = Wads.CheckNumForName(crouchspritename + "A1", ns_sprites);
+
+		// [rc4l] uzdoom@46ec36444: a sprite may use the rotation-less A0 form instead of A1, so a
+		// crouch sprite that exists only as A0 was wrongly rejected.
+		if (spritenorm==-1)
+		{
+			spritenorm = Wads.CheckNumForName(normspritename + "A0", ns_sprites);
+		}
+
+		if (spritecrouch==-1)
+		{
+			spritecrouch = Wads.CheckNumForName(crouchspritename + "A0", ns_sprites);
+		}
 		
 		if (spritenorm==-1 || spritecrouch ==-1) 
 		{
@@ -1568,6 +1580,38 @@ void APlayerPawn::ThrowPoisonBag ()
 //
 //===========================================================================
 
+//===========================================================================
+//
+// APlayerPawn :: ResetStartingHealth
+//
+// [rc4l] uzdoom@fc40e9723. Puts the player back on their class's starting health,
+// applying the deathmatch handicap. Call this wherever a player is (re)born or
+// respawned; do NOT call it merely to hand back the default inventory.
+//
+// Deterministic from synced state (the class default and userinfo handicap), so the
+// server and every client reach the same number without a SERVERCOMMANDS round trip --
+// which is why this needs no netcode gate, exactly as the code it was split out of.
+//
+//===========================================================================
+
+void APlayerPawn::ResetStartingHealth ()
+{
+	if (player == NULL) return;
+
+	// [GRB] Health specified in DECORATE
+	player->health = GetDefault ()->health;
+
+	// [BC] If the user has chosen to handicap himself, do that now.
+	if (( deathmatch || teamgame || alwaysapplydmflags ) && player->userinfo.GetHandicap() )
+	{
+		player->health -= player->userinfo.GetHandicap();
+
+		// Don't allow player to be DOA.
+		if ( player->health <= 0 )
+			player->health = 1;
+	}
+}
+
 void APlayerPawn::GiveDefaultInventory ()
 {
 	if (player == NULL) return;
@@ -1580,24 +1624,21 @@ void APlayerPawn::GiveDefaultInventory ()
 	AWeapon						*pPendingWeapon;
 	AInventory					*pInventory;
 
-	// [GRB] Give inventory specified in DECORATE
-	player->health = GetDefault ()->health;
+	// [rc4l] uzdoom@fc40e9723 moved the starting-health reset OUT of here and into the callers
+	// that actually want it. It only ever made sense for a reborn/respawn; every other caller
+	// wanted the default inventory and got a full heal thrown in. Concretely, that made MAPINFO
+	// 'resetinventory' silently imply 'resethealth', so the two flags could not be used
+	// independently (G_PlayerFinishLevel handles them as separate cases).
+	//
+	// Ours carries more than upstream's one line -- the handicap subtraction reads the value the
+	// reset just wrote, so it belongs with it -- hence ResetStartingHealth() rather than an
+	// inline assignment in G_PlayerReborn.
 
 	// [BB] True spectators are supposed to have no inventory, but they should get their health.
 	if ( player->bSpectating && (!player->bDeadSpectator || !( zadmflags & ZADF_DEAD_PLAYERS_CAN_KEEP_INVENTORY ) ) ) return;
 
 	// [BC] Initialize the max. health bonus.
 	player->MaxHealthBonus = 0;
-
-	// [BC] If the user has chosen to handicap himself, do that now.
-	if (( deathmatch || teamgame || alwaysapplydmflags ) && player->userinfo.GetHandicap() )
-	{
-		player->health -= player->userinfo.GetHandicap();
-
-		// Don't allow player to be DOA.
-		if ( player->health <= 0 )
-			player->health = 1;
-	}
 
 	// HexenArmor must always be the first item in the inventory because
 	// it provides player class based protection that should not affect

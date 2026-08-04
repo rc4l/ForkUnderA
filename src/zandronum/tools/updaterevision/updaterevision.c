@@ -64,7 +64,13 @@ int main(int argc, char **argv)
 	// [rc4l] Three lines to match the parser below: <describe> / <isodate>*<hash>?<epoch> / a
 	// [rc4l] dirty marker whose only job is to contain a '+' when the tree has local changes.
 	// [rc4l] Only && / || are used so the one command works under both /bin/sh and cmd.exe.
-	stream = popen("git describe --tags --long --always && git log -1 \"--format=%ci*%H?%ct\" && git diff --quiet HEAD && echo clean || echo +", "r");
+	// [rc4l] --match "v*" restricts this to GAME release tags. The repo also carries
+	// server-registry-v* tags for the container image, which release on their own schedule; without
+	// the filter the newest of those wins `git describe` and ends up in the window title, the
+	// crash-report footer and the update check -- where it parses as version 0.0.0 and makes every
+	// release look newer. The tag namespaces are independent on purpose, so the query must say which
+	// one it means.
+	stream = popen("git describe --tags --long --always --match \"v*\" && git log -1 \"--format=%ci*%H?%ct\" && git diff --quiet HEAD && echo clean || echo +", "r");
 
 	if (NULL != stream)
 	{

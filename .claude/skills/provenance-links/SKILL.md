@@ -66,6 +66,42 @@ structure: give it a "why"/what-it-does comment. You may still mention which ups
 it mirrors in prose, but the authoritative `<engine>@<sha>` link belongs on the **call site**
 in the backend where the port actually lives.
 
+## Divergent fixes: say what will replace them
+
+Sometimes upstream's real answer exists but is **out of reach** — it lives behind a rewrite, a
+directory restructuring, or thousands of pending commits — so we write our own smaller fix instead.
+That code is ours, but unlike ordinary glue it is **temporary by construction**: one day the
+sequential backport reaches the commit that supersedes it, and whoever is doing that port needs to
+know to *delete* our version rather than merge it, reconcile it, or wonder why it exists.
+
+Say so, in the code, at the point of divergence:
+
+```cpp
+// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+//   SUPERSEDED BY: uzdoom@b77a0eb7cf9eab87aa9abfa3b7789af7c8a67571 (2017-02-01) "let D_PageDrawer
+//   always clear the background". It replaces FillBorder(NULL) with an unconditional Clear of the
+//   whole screen, so no strip can be left unpainted and the band this guards against cannot exist.
+//   ON PORT: take that commit and DELETE this branch outright rather than reconciling it.
+```
+
+Three fields, all load-bearing:
+
+- **`NO UPSTREAM COMMIT -- ours`** — states plainly that no SHA can be cited, so nobody wastes time
+  searching for one or assumes the tag was forgotten.
+- **`SUPERSEDED BY:`** — the full SHA, date and subject of the upstream commit that makes ours
+  redundant, plus one line on *why* it does. If genuinely nothing will ever supersede it (our code
+  touches a file upstream does not have), say `SUPERSEDED BY: nothing.` and why — that is equally
+  useful, because it tells the porter to leave it alone.
+- **`ON PORT:`** — the instruction. Delete, adopt-and-delete, or leave. A porter reading this under
+  time pressure should not have to infer the intent.
+
+Finding the successor is usually a single search of the upstream checkout — `git log -S <symbol>`
+for the code you are working around, or `git log --diff-filter=A -- <file>` for the file that
+replaces yours. Do it while the context is fresh; it is far more expensive to reconstruct later.
+
+Record the same thing in `commit-tracker/coverage.tsv`: leave the superseding commit's row
+`pending`, and note in ours that a local fix will need removing when it lands.
+
 ## Don't over-tag
 
 The goal is traceability, not noise. Block-level links on the units that matter; a clean tree
@@ -76,6 +112,8 @@ one link on the enclosing unit.
 
 1. Is this adapted from upstream? → add `// [rc4l] Ported from <engine>@<full-sha>: <what>`.
 2. Is it our own fix/glue? → add a "why" comment, no upstream link.
+2b. Is it ours *because upstream's fix is out of reach*? → add `PROVENANCE: NO UPSTREAM COMMIT`,
+   `SUPERSEDED BY:` and `ON PORT:` so the sequential backport knows to delete it.
 3. Is the SHA a full 40-char commit hash (not a branch/tag/line)? 
 4. One link per unit, on its header — not per line?
 5. The SHA you tag is a row in `commit-tracker/coverage.tsv` — set that row's status (`ported` /
