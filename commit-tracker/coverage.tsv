@@ -13012,7 +13012,7 @@ c1b0122558a8cd852ab14c6c80285f78d2210bf1	2019-04-21T06:42:27Z	- always construct
 5b6bae409ef6e3823c8210a5ee46d08499fab261	2019-04-21T10:38:43Z	- automated the SmallFont selection based on a filter string in the language table.	pending		/
 68c33a6e4397a21e2eeb80ff38b4df2c3681b9d8	2019-04-21T22:21:01Z	- fixed string prioritization when a mod replaces the default language for a given string.	pending		/
 e0a0be4f7b6f5af7cc08a23acedb2744d98bdfe2	2019-04-22T07:08:43Z	- added a CanPrint function to FFont and used that to handle the statistics display on the automap HUD to only replace the font when actually needed, not based on the language.	pending		/
-e6ab6785157ca04f59cffeb01ad876fb7ec4d83c	2019-04-22T08:20:39Z	- fixed: The minimal window size was not calculated properly.	pending		/
+e6ab6785157ca04f59cffeb01ad876fb7ec4d83c	2019-04-22T08:20:39Z	- fixed: The minimal window size was not calculated properly.	ported	windowed min size now a fixed 320x200 floor instead of SCREENWIDTH/HEIGHT; upstream VID_MIN_WIDTH/HEIGHT substituted with our identical zx::VID_SCALE_MIN_WIDTH/HEIGHT; also swaps hardcoded SM_CXSIZEFRAME maths for AdjustWindowRectEx, which matters for borderless mode	c14bbe8592e3dbb9317685fb94406de059a28f84
 6f3982865f3c30bffde17b230352aaaaf74ff8e4	2019-04-22T08:23:28Z	- refinement of font substitution logic.	pending		/
 ec13d0e4c10bf658384e0d3e0c129af6413c2d62	2019-04-22T08:45:32Z	Merge remote-tracking branch 'remotes/origin/vulkan2'	pending		/
 0640a86c1efeddeebbf86046e91242fbb3f0028a	2019-04-22T09:00:40Z	- removed InitPalette call from VulkanFrameBuffer constructor.	pending		/
