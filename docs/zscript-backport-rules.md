@@ -98,6 +98,25 @@ Two layers keep the server out of the `ui` half:
 Client UI sends a message, the server runs `NetworkProcess`. That is the designed client-to-server
 crossing and it already exists — do not reinvent it.
 
+### Keeping the client out of `play` code
+
+The opposite direction is **not** symmetric, and upstream gives us nothing here: under lockstep every
+peer is *required* to run `play` code, so no mechanism to prevent it exists to port.
+
+We already solve this for ACS. `p_acs.cpp` carries **127** `NETWORK_InClientMode` gates (131 files
+engine-wide use the gate), and `CLIENTSIDE` is the explicit opt-in for scripts that do run on the
+client. ZScript's scopes map straight onto that: `play` is a normal ACS script (server-only), `ui` is
+a `CLIENTSIDE` one.
+
+The mechanism does **not** transfer, though. Those 127 gates are hand-written at hand-audited sites,
+which works only because our C++ is finite and ours. Mod script is neither — you cannot place a gate
+inside code that does not exist yet.
+
+**So for script it must be structural, not per-site: the client never ticks `play`-scope script at
+all.** Not gated in N places — never entered. Client actors stay dumb shells whose state arrives via
+`SERVERCOMMANDS_*`, exactly as today. Same conclusion ACS reached, enforced by construction instead
+of by hand-placed `if`s.
+
 ## Tripwire
 
 `tools/zscript-tripwire.sh` currently fails CI on any VM symbol in `src/zandronum/src`. It gets
