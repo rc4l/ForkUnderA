@@ -1237,7 +1237,13 @@ public:
 			if(Scaled)
 			{
 				if(cx != 0 || cy != 0)
+				{
 					screen->VirtualToRealCoords(dcx, dcy, tmp, tmp, script->resW, script->resH, true);
+					// [rc4l] uzdoom@bce7d1237: VirtualToRealCoords scales BOTH axes, so an unset
+					// one comes back non-zero and clips an edge that was meant to be left alone.
+					if (cx == 0) dcx = 0;
+					if (cy == 0) dcy = 0;
+				}
 				if(cr != 0 || cb != 0 || clearDontDraw)
 					screen->VirtualToRealCoords(dcr, dcb, tmp, tmp, script->resW, script->resH, true);
 				screen->VirtualToRealCoords(dx, dy, w, h, script->resW, script->resH, true);
