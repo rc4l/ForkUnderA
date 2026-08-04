@@ -45,7 +45,6 @@
 #include "features/updater/zx_updater.h"                      // [rc4l] update-available state
 #include "features/updater/computation/promptpanel_compute.h" // [rc4l] rounded chip geometry/gradient
 #include "features/updater/computation/notice_compute.h"      // [rc4l] tested focus state machine
-#include "features/panel-menu/computation/panelmenu_compute.h" // [rc4l] tested list-menu content extent
 
 IMPLEMENT_CLASS(DListMenu)
 
@@ -731,13 +730,21 @@ void FListMenuItemText::Drawer(bool selected)
 	}
 }
 
-int FListMenuItemText::GetWidth() 
-{ 
+// [rc4l] The glyphs' own height, not the row's line box. A descriptor's linespacing is the distance
+// BETWEEN rows and is usually taller than the font, so padding below the line box leaves the leftover
+// leading as extra gap -- which is what made the panel's bottom margin visibly larger than its top.
+int FListMenuItemText::GetDrawnHeight()
+{
+	return mFont != NULL ? mFont->GetHeight() : 0;
+}
+
+int FListMenuItemText::GetWidth()
+{
 	const char *text = mText;
 	if (text != NULL)
 	{
 		if (*text == '$') text = GStrings(text+1);
-		return mFont->StringWidth(text); 
+		return mFont->StringWidth(text);
 	}
 	return 1;
 }
@@ -768,6 +775,27 @@ int FListMenuItemPatch::GetWidth()
 		: 0;
 }
 
+// [rc4l] Same offset correction as the static variant -- this one is drawn by the identical
+// DrawTexture call, so it lands at (x - leftoffset, y - topoffset) too.
+int FListMenuItemPatch::GetDrawnX()
+{
+	return mTexture.isValid()
+		? mXpos - TexMan[mTexture]->GetScaledLeftOffset()
+		: mXpos;
+}
+
+int FListMenuItemPatch::GetDrawnY()
+{
+	return mTexture.isValid()
+		? mYpos - TexMan[mTexture]->GetScaledTopOffset()
+		: mYpos;
+}
+
+int FListMenuItemPatch::GetDrawnHeight()
+{
+	return mTexture.isValid() ? TexMan[mTexture]->GetScaledHeight() : 0;
+}
+
 // [rc4l] The base FListMenuItem::GetWidth returns 0, so a static patch (a menu's logo art) was
 // invisible to anything measuring a menu's extent. Reporting the real width lets panel/backdrop
 // code size itself from the descriptor instead of hardcoding per-game numbers.
@@ -778,138 +806,32 @@ int FListMenuItemStaticPatch::GetWidth()
 		: 0;
 }
 
-// [rc4l] How many rows of the patch are fully transparent before the artwork starts.
+// [rc4l] Where the patch actually paints. DrawTexture subtracts the texture's own offsets, so the
+// drawn corner is (x - leftoffset, y - topoffset) rather than (x, y).
 //
-// A title patch is authored with slack above the letters -- Freedoom's M_DOOM has a lot of it -- so
-// measuring the item's BOX puts far more visible space above the logo than below the rows beneath
-// it, even when the surrounding padding is mathematically symmetric. Reading the ink instead makes
-// the gap the player actually sees match on both sides, for any IWAD's art rather than a number
-// tuned to one.
-//
-// Scanned once and cached: GetColumn decodes the texture, and the panel measures every item every
-// frame.
-int FListMenuItemStaticPatch::GetInkTop()
+// This is not a nicety. Freedoom's M_DOOM is 159x37 with offsets (13,-16), and the menu places it
+// with `StaticPatch 94, 2` -- so it paints at (81, 18). Measuring 94,2 instead put the panel's top
+// sixteen virtual rows too high, which at CleanYfac 4 is 64 screen px: enough that the computed top
+// went negative and ComputePanelRect clamped it flush to the screen edge.
+int FListMenuItemStaticPatch::GetDrawnX()
 {
-	if (mInkTop >= 0)
-		return mInkTop;
-
-	mInkTop = 0;
-	if (!mTexture.isValid())
-		return mInkTop;
-
-	FTexture *tex = TexMan[mTexture];
-	// An opaque texture has no leading gap by definition, and skipping it avoids decoding the
-	// biggest textures for nothing.
-	if (tex == NULL || !tex->bMasked)
-		return mInkTop;
-
-	const int h = tex->GetHeight(), w = tex->GetWidth();
-	int top = h;
-	for (int col = 0; col < w; ++col)
-	{
-		const FTexture::Span *spans;
-		tex->GetColumn(col, &spans);
-		// A zero Length terminates the column, so an all-transparent column contributes nothing.
-		if (spans != NULL && spans[0].Length != 0 && spans[0].TopOffset < top)
-		{
-			top = spans[0].TopOffset;
-			if (top == 0)
-				break;			// cannot do better; stop decoding columns
-		}
-	}
-
-	// Fully transparent art: leave the box alone rather than collapse the panel onto nothing.
-	if (top >= h)
-		return mInkTop;
-
-	// The scan is in texture rows; the item is measured in scaled (menu) coordinates.
-	mInkTop = tex->GetScaledHeight() > 0 && h > 0
-		? Scale(top, tex->GetScaledHeight(), h)
-		: top;
-	return mInkTop;
+	return mTexture.isValid()
+		? mXpos - TexMan[mTexture]->GetScaledLeftOffset()
+		: mXpos;
 }
 
-
-//=============================================================================
-//
-// [rc4l] DFUAPanelListMenu -- a ListMenu that draws the rounded gradient panel behind its own
-// content, so a menu reads as a card floating over the title screen instead of loose art and text
-// on a busy background. Same visual language as the updater's "update available" chip and the
-// open-link dialog, reusing their tested geometry/gradient math.
-//
-// Opt in from menudef with `Class "FUAPanelListMenu"`. The panel is measured from the descriptor's
-// own items, so a menu can add, remove or reposition rows -- and each game can use its own logo and
-// coordinates -- without touching this code.
-//
-//=============================================================================
-
-class DFUAPanelListMenu : public DListMenu
+int FListMenuItemStaticPatch::GetDrawnY()
 {
-	DECLARE_CLASS(DFUAPanelListMenu, DListMenu)
-public:
-	void Drawer();
-};
-IMPLEMENT_CLASS(DFUAPanelListMenu)
-
-void DFUAPanelListMenu::Drawer()
-{
-	// Content extent in the 320x200 virtual page the items are drawn in (DTA_Clean). The decision
-	// itself is in features/panel-menu/computation so it can be tested off-engine; this loop only
-	// flattens the item list into the values it wants.
-	TArray<zx::MenuItemBox> boxes;
-	for (unsigned i = 0; i < mDesc->mItems.Size(); ++i)
-	{
-		FListMenuItem *item = mDesc->mItems[i];
-		if (!item->mEnabled)
-			continue;
-		zx::MenuItemBox b;
-		b.x = item->GetX();
-		b.y = item->GetY();
-		b.w = item->GetWidth();
-		b.inkTop = item->GetInkTop();
-		boxes.Push(b);
-	}
-
-	const zx::MenuExtent ext = zx::ComputeListMenuExtent(
-		boxes.Size() ? &boxes[0] : NULL, (int)boxes.Size(), mDesc->mSelectOfsX, mDesc->mLinespacing);
-
-	// Nothing measurable (a menu of items that all report width 0) -- draw it unpanelled rather
-	// than guess at a rectangle.
-	if (!ext.valid)
-	{
-		Super::Drawer();
-		return;
-	}
-	const int vLeft = ext.left, vRight = ext.right, vTop = ext.top, vBottom = ext.bottom;
-
-	const int padV = 8;					// virtual px of breathing room around the content
-	const int cx = CleanXfac, cy = CleanYfac;
-	const int sw = screen->GetWidth(), sh = screen->GetHeight();
-	// DTA_Clean maps the virtual page onto the screen scaled by Clean*fac and centred, so a virtual
-	// coordinate becomes (v - centre) * fac + screenCentre.
-	const int topPx    = (vTop    - padV - 100) * cy + sh / 2;
-	const int bottomPx = (vBottom + padV - 100) * cy + sh / 2;
-	// ComputePanelRect centres the panel on screen, so its half-width has to reach the further of
-	// the two content edges from the virtual centre -- sizing it to the raw content width would
-	// clip whichever side sticks out more.
-	const int halfV    = MAX(160 - vLeft, vRight - 160);
-	const int panelWpx = (2 * halfV + 2 * padV) * cx;
-
-	zx::PanelRect r = zx::ComputePanelRect(sw, sh, panelWpx, topPx, bottomPx, 0, 6 * cy);
-	const zx::PanelColor topCol = { 26, 28, 40, 236 };
-	const zx::PanelColor botCol = { 8, 9, 15, 248 };
-	for (int row = 0; row < r.h; ++row)
-	{
-		const int inset = zx::ComputeRoundedInset(row, r.h, r.radius);
-		const int rowW = r.w - 2 * inset;
-		if (rowW <= 0)
-			continue;
-		const zx::PanelColor c = zx::ComputePanelGradient(row, r.h, topCol, botCol);
-		screen->Dim(PalEntry(c.r, c.g, c.b), c.a / 255.f, r.x + inset, r.y + row, rowW, 1);
-	}
-
-	Super::Drawer();					// the logo and rows, on top of the panel
+	return mTexture.isValid()
+		? mYpos - TexMan[mTexture]->GetScaledTopOffset()
+		: mYpos;
 }
+
+int FListMenuItemStaticPatch::GetDrawnHeight()
+{
+	return mTexture.isValid() ? TexMan[mTexture]->GetScaledHeight() : 0;
+}
+
 
 //=============================================================================
 //

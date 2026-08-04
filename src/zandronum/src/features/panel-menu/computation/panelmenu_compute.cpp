@@ -30,16 +30,16 @@ MenuExtent ComputeListMenuExtent(const MenuItemBox *items, int count, int select
 
 		const int drawnLeft = it.x + (selectOfsX < 0 ? selectOfsX : 0);
 		const int drawnRight = it.x + it.w;
-		// inkTop only ever moves the top edge DOWN; a negative value would let bad art pull the
-		// panel off the page, so it is floored here rather than trusted.
-		const int drawnTop = it.y + (it.inkTop > 0 ? it.inkTop : 0);
+		const int drawnTop = it.y;
+		// Fall back to linespacing only for items that cannot report their own height.
+		const int drawnBottom = it.y + (it.h > 0 ? it.h : linespacing);
 
 		if (!any)
 		{
 			left = drawnLeft;
 			right = drawnRight;
 			top = drawnTop;
-			bottom = it.y;
+			bottom = drawnBottom;
 			any = true;
 			continue;
 		}
@@ -47,9 +47,7 @@ MenuExtent ComputeListMenuExtent(const MenuItemBox *items, int count, int select
 		if (drawnLeft < left) left = drawnLeft;
 		if (drawnRight > right) right = drawnRight;
 		if (drawnTop < top) top = drawnTop;
-		// Bottom tracks the item BOX, not its ink: the last row's height comes from linespacing
-		// below, and a row's descenders live inside that.
-		if (it.y > bottom) bottom = it.y;
+		if (drawnBottom > bottom) bottom = drawnBottom;
 	}
 
 	if (!any || right <= left)
@@ -59,7 +57,7 @@ MenuExtent ComputeListMenuExtent(const MenuItemBox *items, int count, int select
 	e.left = left;
 	e.right = right;
 	e.top = top;
-	e.bottom = bottom + linespacing;
+	e.bottom = bottom;
 	return e;
 }
 
