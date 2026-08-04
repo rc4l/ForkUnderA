@@ -81,8 +81,6 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	float			scale;
 	float			scalex;
 	float			ftexturemid;
-	                      // 4:3  16:9   16:10  17:10    5:4
-	static float xratio[] = {1.f, 3.f/4, 5.f/6, 40.f/51, 1.f};
 
 	// [BB] In the HUD model step we just render the model and break out. 
 	if ( hudModelStep )
@@ -121,7 +119,12 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	tex->GetSpriteRect(&r);
 
 	// calculate edges of the shape
-	scalex = xratio[WidescreenRatio] * vw / 320;
+	// [rc4l] xratio[] held 4:3 divided by each bucket's ratio, with 5:4 pinned to 1.0 so a
+	// taller-than-wide screen does not squeeze the weapon. Computing it from the float ratio gives
+	// the identical value at those five sizes and a sensible one everywhere between.
+	//
+	// No upstream counterpart -- this GL file is not in the commit being ported.
+	scalex = (WidescreenRatio >= 1.3f ? (4.0f / 3.0f) / WidescreenRatio : 1.0f) * vw / 320;
 
 	// [overlay] A_OverlayScale: the layer scale multiplies the sprite's offset and size so it
 	// scales about its own offset origin (matching GZDoom). psp->scalex/scaley default to FRACUNIT,
