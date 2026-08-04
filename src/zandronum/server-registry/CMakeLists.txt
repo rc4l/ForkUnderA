@@ -40,6 +40,11 @@ add_executable( zandrox-server-registry
 	main.cpp
 	network.cpp
 	${ZAN_DIR}/gitinfo.cpp
+	# [rc4l] gitinfo.cpp's GetFuaVersionTag() calls zx::FuaVersionTag, which lives here. The engine
+	# target picks it up through its own source list; this daemon compiles gitinfo.cpp on its own and
+	# so has to link the definition explicitly or the build fails at link time, on Linux and macOS,
+	# in a target a Windows-only `zdoom` build never touches.
+	${ZAN_DIR}/features/fua-branding/computation/fua_version_compute.cpp
 	${ZAN_DIR}/networkshared.cpp
 	${ZAN_DIR}/platform.cpp
 	${ZAN_DIR}/huffman/bitreader.cpp 

@@ -1075,7 +1075,6 @@ add_executable( zdoom WIN32
 	botcommands.cpp #ST
 	botpath.cpp #ST
 	bots.cpp #ST
-	browser.cpp #ST
 	callvote.cpp #ST
 	campaign.cpp #ST
 	c_bind.cpp
@@ -1308,7 +1307,6 @@ add_executable( zdoom WIN32
 	g_shared/st_hud.cpp #ST
 	intermission/intermission.cpp
 	intermission/intermission_parse.cpp
-	menu/browsermenu.cpp #ZA
 	menu/colorpickermenu.cpp
 	menu/joystickmenu.cpp
 	menu/listmenu.cpp
@@ -1438,6 +1436,10 @@ add_executable( zdoom WIN32
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
 	features/net/zx_httpsget.cpp
+	features/server-browser/browser.cpp #ST
+	features/server-browser/browsermenu.cpp #ZA
+	features/server-browser/zx_serverbrowsermenu.cpp
+	features/server-browser/computation/serverbrowser_compute.cpp
 	features/updater/zx_updater.cpp
 	features/updater/zx_updater_net_win.cpp
 	features/federated-server-registry/zx_serverregistrylist.cpp

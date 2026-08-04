@@ -977,8 +977,7 @@ void DoMain (HINSTANCE hInstance)
 			// alone has to identify exactly which build someone is running. GAMESIG stays as-is; it
 			// identifies the engine inside savegames.
 			{
-				char tag[64];
-				zx::FuaVersionTag(GetFuaDescribe(), tag, sizeof tag);
+				const char *tag = GetFuaVersionTag();
 				if (zx::FuaIsStableBuild(GetFuaDescribe()))
 					mysnprintf(caption, countof(caption), FUA_NAME " %s " X64 " (stable)", tag);
 				else
