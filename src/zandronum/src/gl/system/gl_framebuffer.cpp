@@ -210,6 +210,20 @@ void OpenGLFrameBuffer::InitializeState()
 // Testing only for now. 
 CVAR(Bool, gl_draw_sync, true, 0) //false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
+void ZX_DumpScaleState()
+{
+	OpenGLFrameBuffer *const fb = static_cast<OpenGLFrameBuffer *>(screen);
+	fb->DumpScaleState();
+}
+
+void OpenGLFrameBuffer::DumpScaleState()
+{
+	Printf("scale_active=%d\n", (int)mScaleActive);
+	Printf("scale_fb=%d %dx%d\n", (int)mScaleFB, mScaleFBW, mScaleFBH);
+	Printf("scale_client=%dx%d\n", mScaleClientW, mScaleClientH);
+	Printf("fb_get_size=%dx%d truH=%d\n", GetWidth(), GetHeight(), GetTrueHeight());
+}
+
 void OpenGLFrameBuffer::Update()
 {
 	if (!CanUpdate())
@@ -433,8 +447,31 @@ void OpenGLFrameBuffer::MaybeResizeForScale()
 		vid_scale_customwidth, vid_scale_customheight, vid_scale_custompixelaspect,
 		!!vid_cropaspect, 0.f,
 		zx::VID_SCALE_MIN_WIDTH, zx::VID_SCALE_MIN_HEIGHT);
-	if (v.width != GetWidth() || v.height != GetHeight())
+	switch (zx::ComputeScaleReconcile(cw, ch, GetWidth(), GetHeight(),
+		mScaleClientW, mScaleClientH, v.width, v.height))
+	{
+	case zx::SCALE_RECONCILE_RESIZE:
 		ResizeRenderInPlace(v.width, v.height);
+		break;
+
+	case zx::SCALE_RECONCILE_REBUILD:
+		// [rc4l] The WINDOW changed but the render size did not, so the branch above cannot see it
+		// -- and UpdateScaleBuffer is the only thing that refreshes mScaleClientW/H and mScaleActive,
+		// which BlitScaleBuffer uses as its destination rect.
+		//
+		// This is not an edge case, it is EVERY launch: CreateCocoaWindow deliberately opens the
+		// window at a temporary 319x199 (VideoModes[0] - 1), so the first UpdateScaleBuffer cached
+		// a 638x398 client on a Retina display. SetMode then resized the window to the real size
+		// while the render size stayed put, so nothing re-ran, and every frame was rendered at full
+		// size into the FBO and then blitted into a 638x398 rect at the origin -- the whole game in
+		// the bottom-left corner of a black window, with every size the engine reported correct
+		// because the only wrong number was this cache.
+		UpdateScaleBuffer();
+		break;
+
+	case zx::SCALE_RECONCILE_NONE:
+		break;
+	}
 }
 
 

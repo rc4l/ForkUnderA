@@ -16,6 +16,11 @@
 #include "r_state.h"
 #include "st_stuff.h"
 #include "gl/system/gl_interface.h"
+#if defined( ZX_COCOA_BACKEND ) && !defined( NO_GL )
+#include "gl/system/gl_system.h"
+#include "sdlglvideo.h"
+void I_DumpWindowGeometry();
+#endif
 
 extern int currentrenderer;
 
@@ -36,6 +41,29 @@ CCMD( dumprenderer )
 		Printf( "screen_width=%d\n", screen->GetWidth() );
 		Printf( "screen_height=%d\n", screen->GetHeight() );
 	}
+
+	// [rc4l] The DRAWABLE size in backing pixels, which on a Retina display is not the same
+	// number as screen_width/height. When these two disagree the scene renders into a corner of
+	// the window at a fraction of its size -- see the invariant in posix/README.md -- and there
+	// was no way to see that from inside the engine, which is why it is reported here.
+#if defined( ZX_COCOA_BACKEND ) && !defined( NO_GL )
+	if ( screen != NULL && currentrenderer == 1 )
+	{
+		SDLGLFB *const fb = static_cast<SDLGLFB *>( screen );
+		Printf( "client_width=%d\n", fb->GetClientWidth() );
+		Printf( "client_height=%d\n", fb->GetClientHeight() );
+
+		// What GL is ACTUALLY scissored to, as opposed to what the engine believes. A viewport
+		// smaller than the drawable puts the scene in the bottom-left corner (GL's origin).
+		GLint vp[4] = { 0, 0, 0, 0 };
+		glGetIntegerv( GL_VIEWPORT, vp );
+		Printf( "gl_viewport=%d %d %d %d\n", vp[0], vp[1], vp[2], vp[3] );
+
+		I_DumpWindowGeometry();
+		extern void ZX_DumpScaleState();
+		ZX_DumpScaleState();
+	}
+#endif
 
 	Printf( "view_x=%d\n", viewwindowx );
 	Printf( "view_y=%d\n", viewwindowy );
