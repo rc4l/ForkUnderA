@@ -21,6 +21,8 @@ ACTOR Actor native //: Thinker
 	Friction 1
 	DamageFactor 1.0
 	DamageMultiply 1.0
+	TeleFogSourceType "TeleportFog"
+	TeleFogDestType "TeleportFog"
 	RipperDamageFactor 1.0	// no falloff on repeat rips against the same victim
 	PushFactor 0.25
 	WeaveIndexXY 0

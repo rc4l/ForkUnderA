@@ -1179,6 +1179,29 @@ DEFINE_PROPERTY(ripperdamagefactor, F, Actor)
 
 //==========================================================================
 //
+// [rc4l] uzdoom@30acb7200 + dcab57b23: per-actor teleport fog. An empty string,
+// "none" or "null" means spawn nothing at all, which the original could not say.
+//
+//==========================================================================
+DEFINE_PROPERTY(telefogsourcetype, S, Actor)
+{
+	PROP_STRING_PARM(str, 0);
+	if (!stricmp(str, "") || (!stricmp(str, "none")) || (!stricmp(str, "null")) || *str == 0) defaults->TeleFogSourceType = NULL;
+	else defaults->TeleFogSourceType = FindClassTentative(str, "TeleportFog");
+}
+
+//==========================================================================
+//
+//==========================================================================
+DEFINE_PROPERTY(telefogdesttype, S, Actor)
+{
+	PROP_STRING_PARM(str, 0);
+	if (!stricmp(str, "") || (!stricmp(str, "none")) || (!stricmp(str, "null")) || *str == 0) defaults->TeleFogDestType = NULL;
+	else defaults->TeleFogDestType = FindClassTentative(str, "TeleportFog");
+}
+
+//==========================================================================
+//
 // [rc4l] uzdoom@99b2cfa14: scales the damage this actor DEALS, as opposed to
 // DamageFactor which scales what it TAKES.
 //

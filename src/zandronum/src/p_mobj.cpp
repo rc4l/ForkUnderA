@@ -443,6 +443,8 @@ void AActor::Serialize (FArchive &arc)
 		<< PainThreshold
 		<< DamageFactor
 		<< DamageMultiply		// [rc4l] uzdoom@99b2cfa14
+		<< TeleFogSourceType	// [rc4l] uzdoom@30acb7200
+		<< TeleFogDestType
 		<< WeaveIndexXY << WeaveIndexZ
 		<< PoisonDamageReceived << PoisonDurationReceived << PoisonPeriodReceived << Poisoner
 		<< PoisonDamage << PoisonDuration << PoisonPeriod;
