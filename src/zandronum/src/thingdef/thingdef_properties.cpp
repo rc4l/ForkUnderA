@@ -2197,6 +2197,15 @@ DEFINE_CLASS_PROPERTY_PREFIX(powerup, color, C_f, Inventory)
 			*pBlendColor = MakeSpecialColormap(v);
 			return;
 		}
+		// [rc4l] uzdoom@e6de24a7d with its fix uzdoom@b2452b806 folded in: a PowerupGiver may say
+		// "none" to mean "leave the blend already in effect alone". The sentinel written here is
+		// what APowerup::InitEffect tests for; without the return it fell through and V_GetColor
+		// overwrote it, so the sentinel never reached the actor.
+		else if (!stricmp(name, "none") && info->Class->IsDescendantOf(RUNTIME_CLASS(APowerupGiver)))
+		{
+			*pBlendColor = MakeSpecialColormap(65535);
+			return;
+		}
 
 		color = V_GetColor(NULL, name);
 	}
