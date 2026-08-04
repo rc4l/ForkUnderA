@@ -114,7 +114,7 @@
 #include "cl_main.h"
 #include "cl_statistics.h"
 #include "maprotation.h"
-#include "browser.h"
+#include "features/server-browser/browser.h"
 #include "p_spec.h"
 #include "joinqueue.h"
 #include "lastmanstanding.h"

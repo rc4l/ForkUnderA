@@ -49,13 +49,14 @@
 //-----------------------------------------------------------------------------
 
 #include "networkheaders.h"
-#include "browser.h"
+#include "features/server-browser/browser.h"
 #include "c_dispatch.h"
 #include "cl_main.h"
 #include "deathmatch.h"
 #include "doomtype.h"
 #include "gamemode.h"
 #include "i_system.h"
+#include "network.h"     // [rc4l] NETWORK_GetCountryCodeFromIndex, COUNTRYINDEX_LAN
 #include "teaminfo.h"
 #include "templates.h"
 #include "version.h"
@@ -87,6 +88,10 @@ static	USHORT			g_usServerRegistryPort;
 
 // Are we waiting for server registry response?
 static	bool			g_bWaitingForServerRegistryResponse;
+
+// [rc4l] Which server the player picked. Shared state rather than a menu's private variable, so the
+// join command works whichever browser is on screen.
+static	LONG			g_lSelectedServer = -1;
 
 // [rc4l] When the outstanding query went out, and how many times we have sent it.
 //
@@ -136,6 +141,7 @@ CVAR( String, cl_fua_serverregistry_list, "registry.cantstopscrolling.net", CVAR
 static	LONG	browser_GetNewListID( void );
 static	LONG	browser_GetListIDByAddress( NETADDRESS_s Address );
 static	void	browser_QueryServer( ULONG ulServer );
+static	ULONG	browser_CountryIndexFromCode( const char *pszCode );
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -390,6 +396,136 @@ const char *BROWSER_GetVersion( ULONG ulServer )
 }
 
 //*****************************************************************************
+//
+ULONG BROWSER_GetActiveState( ULONG ulServer )
+{
+	if ( ulServer >= MAX_BROWSER_SERVERS )
+		return ( AS_INACTIVE );
+
+	return ( g_BrowserServerList[ulServer].ulActiveState );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Give up on servers that never answered.
+//
+// The list previously had no way to stop waiting: a server asked once stayed AS_WAITINGFORREPLY for
+// the rest of the session, so "still loading" was permanently true and the browser could not honestly
+// say it had finished. A server that is listed but unreachable is a real and common situation --
+// someone's port forward lapsed, or they went offline between the registry heartbeat and our query.
+//
+// Four seconds is deliberately generous. This is a timeout for "will never answer", not a quality
+// bar; a slow satellite link should still make it in.
+void BROWSER_QueryTick( void )
+{
+	const LONG lNow = I_MSTime( );
+
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if ( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+			continue;
+
+		// Not yet queried: lMSTime is only stamped when a packet actually goes out.
+		if ( g_BrowserServerList[ulIdx].lMSTime <= 0 )
+			continue;
+
+		if (( lNow - g_BrowserServerList[ulIdx].lMSTime ) >= 4000 )
+			g_BrowserServerList[ulIdx].ulActiveState = AS_TIMEDOUT;
+	}
+}
+
+//*****************************************************************************
+//
+void BROWSER_SetSelectedServer( LONG lServer )
+{
+	g_lSelectedServer = lServer;
+}
+
+//*****************************************************************************
+//
+LONG BROWSER_GetSelectedServer( void )
+{
+	return ( g_lSelectedServer );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Resolve an alpha-3 country code to the GeoIP id that indexes the CTRYFLAG sheet.
+//
+// The wire carries a code and the flag sheet is indexed by number, so something has to bridge them.
+// GeoIP ships the table both ways round but only exposes id -> code, hence the scan. It runs once
+// per server on receipt, over ~250 entries, and the result is cached in the server record -- drawing
+// never does this.
+//
+// Unknown codes are normal rather than exceptional: a server may send nothing, may predate the field,
+// or may report something GeoIP does not carry. All of those mean "no flag", not "error".
+static ULONG browser_CountryIndexFromCode( const char *pszCode )
+{
+	if (( pszCode == NULL ) || ( pszCode[0] == '\0' ))
+		return ( COUNTRY_INDEX_UNKNOWN );
+
+	// A LAN server reports this rather than a real country; it has its own well-known index.
+	if ( stricmp( pszCode, "LAN" ) == 0 )
+		return ( COUNTRYINDEX_LAN );
+
+	for ( ULONG ulIdx = 0; ulIdx < COUNTRYINDEX_LAN; ulIdx++ )
+	{
+		const char *pszCandidate = NETWORK_GetCountryCodeFromIndex( ulIdx, true );
+
+		if (( pszCandidate != NULL ) && ( stricmp( pszCandidate, pszCode ) == 0 ))
+			return ( ulIdx );
+	}
+
+	return ( COUNTRY_INDEX_UNKNOWN );
+}
+
+//*****************************************************************************
+//
+const char *BROWSER_GetCountryCode( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( "" );
+
+	return ( g_BrowserServerList[ulServer].CountryCode.GetChars( ));
+}
+
+//*****************************************************************************
+//
+ULONG BROWSER_GetCountryIndex( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( COUNTRY_INDEX_UNKNOWN );
+
+	return ( g_BrowserServerList[ulServer].ulCountryIndex );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Humans only. See the header for why this exists separately.
+//
+// Falls back to the raw count when the server sent no per-player data: an over-count is a better
+// failure than reporting an empty server that is in fact full, since the second sends players away.
+LONG BROWSER_GetNumHumanPlayers( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( 0 );
+
+	const LONG lTotal = MIN( g_BrowserServerList[ulServer].lNumPlayers, static_cast<LONG>( MAXPLAYERS ));
+
+	if ( g_BrowserServerList[ulServer].bHasPlayerData == false )
+		return ( lTotal );
+
+	LONG lHumans = 0;
+	for ( LONG lIdx = 0; lIdx < lTotal; lIdx++ )
+	{
+		if ( g_BrowserServerList[ulServer].Players[lIdx].bIsBot == false )
+			lHumans++;
+	}
+
+	return ( lHumans );
+}
+
+//*****************************************************************************
 // [SB]
 const char *BROWSER_GetGameModeName( ULONG ulServer )
 {
@@ -429,6 +565,11 @@ void BROWSER_ClearServerList( void )
 		g_BrowserServerList[ulIdx].ulActiveState = AS_INACTIVE;
 
 		g_BrowserServerList[ulIdx].Address.Clear();
+
+		// [rc4l] A reused slot must not inherit the previous occupant's flag or bot flags.
+		g_BrowserServerList[ulIdx].CountryCode = "";
+		g_BrowserServerList[ulIdx].ulCountryIndex = COUNTRY_INDEX_UNKNOWN;
+		g_BrowserServerList[ulIdx].bHasPlayerData = false;
 	}
 }
 
@@ -465,6 +606,11 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 
 	// Set the server address.
 	g_BrowserServerList[ulServer].Address = Address;
+
+	// [rc4l] Nothing is known about it yet, and browser_GetNewListID hands back reused slots.
+	g_BrowserServerList[ulServer].CountryCode = "";
+	g_BrowserServerList[ulServer].ulCountryIndex = COUNTRY_INDEX_UNKNOWN;
+	g_BrowserServerList[ulServer].bHasPlayerData = false;
 }
 
 //*****************************************************************************
@@ -582,8 +728,13 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 
 	// If the version doesn't match ours, remove it from the list.
 	{
-		// [BB] Get rid of a trailing 'M' that indicates local source changes.
-		FString ourVersion = GetVersionStringRev();
+		// [rc4l] Compare ZandroX versions, not Zandronum ones. GetVersionStringRev() is identical
+		// across every ZandroX release, so this check used to pass for builds that cannot actually
+		// play together -- it was verifying the thing we inherited rather than the thing we are.
+		//
+		// Must stay in step with what the server sends (sv_serverregistry.cpp / i_system.cpp); the
+		// two halves of this comparison are one decision expressed in two places.
+		FString ourVersion = GetFuaVersionTag();
 		if ( ourVersion[ourVersion.Len()-1] == 'M' )
 			ourVersion = ourVersion.Left ( ourVersion.Len()-1 );
 
@@ -718,6 +869,10 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 	if ( ulFlags & SQF_NUMPLAYERS )
 		g_BrowserServerList[lServer].lNumPlayers = pByteStream->ReadByte();
 
+	// [rc4l] Recorded per response, not once: a server that stops sending player data must not leave
+	// us counting bot flags left over from an earlier reply.
+	g_BrowserServerList[lServer].bHasPlayerData = !!( ulFlags & SQF_PLAYERDATA );
+
 	if ( ulFlags & SQF_PLAYERDATA )
 	{
 		if ( g_BrowserServerList[lServer].lNumPlayers > 0 )
@@ -829,8 +984,35 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		// [SB] Server country code
 		if ( ulFlags2 & SQF2_COUNTRY )
 		{
-			char code[3];
+			// [rc4l] Three bytes, NOT null-terminated on the wire. Read then terminate; the previous
+			// code read it purely to keep the stream aligned and threw the value away.
+			char code[4] = { 0 };
 			pByteStream->ReadBuffer( code, 3 );
+
+			// [rc4l] ISO 3166-1 reserves XAA-XZZ, and the protocol uses two of them as instructions
+			// to the launcher rather than as places:
+			//
+			//   XIP  the server declines to say; work it out from its address yourself
+			//   XUN  unknown, and it does not want us guessing either
+			//
+			// A server whose own GeoIP lookup failed sends XIP, which is the common case rather than
+			// an edge one -- taking it literally is how "XIP" ended up drawn in the country column.
+			if ( stricmp( code, "XIP" ) == 0 )
+			{
+				g_BrowserServerList[lServer].CountryCode = "";
+				g_BrowserServerList[lServer].ulCountryIndex =
+					NETWORK_GetCountryIndexFromAddress( g_BrowserServerList[lServer].Address );
+			}
+			else if ( stricmp( code, "XUN" ) == 0 )
+			{
+				g_BrowserServerList[lServer].CountryCode = "";
+				g_BrowserServerList[lServer].ulCountryIndex = COUNTRY_INDEX_UNKNOWN;
+			}
+			else
+			{
+				g_BrowserServerList[lServer].CountryCode = code;
+				g_BrowserServerList[lServer].ulCountryIndex = browser_CountryIndexFromCode( code );
+			}
 		}
 
 		// [SB] Game mode names
@@ -1060,7 +1242,9 @@ static void browser_QueryServer( ULONG ulServer )
 	g_ServerBuffer.ByteStream.WriteLong( LAUNCHER_SERVER_CHALLENGE );
 	g_ServerBuffer.ByteStream.WriteLong( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_PWADS|SQF_GAMETYPE|SQF_IWAD|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_EXTENDED_INFO );
 	g_ServerBuffer.ByteStream.WriteLong( I_MSTime( ));
-	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME );
+	// [rc4l] SQF2_COUNTRY added: the flag column needs it, and the server has always been willing to
+	// send it -- the old browser asked for everything except the one field it then read and discarded.
+	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY );
 
 	// Send the server our packet.
 	NETWORK_LaunchPacket( &g_ServerBuffer, g_BrowserServerList[ulServer].Address );
