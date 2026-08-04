@@ -246,6 +246,49 @@ CCMD (map)
 //
 //==========================================================================
 
+// [rc4l] uzdoom@eceb37aa6: start a map and record a demo of it in one step. Single-player
+// only -- Zandronum records client demos through CLIENTDEMO_*, a different path, so the
+// guard is on our network state rather than upstream's bare `netgame`.
+CCMD (recordmap)
+{
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+	{
+		Printf( "You cannot record a new game while in a netgame.\n" );
+		return;
+	}
+	if (argv.argc() > 2)
+	{
+		try
+		{
+			if (!P_CheckMapData(argv[2]))
+			{
+				Printf("No map %s\n", argv[2]);
+			}
+			else
+			{
+				G_DeferedInitNew(argv[2]);
+				gameaction = ga_recordgame;
+				newdemoname = argv[1];
+				newdemomap = argv[2];
+			}
+		}
+		catch (CRecoverableError &error)
+		{
+			if (error.GetMessage())
+				Printf("%s", error.GetMessage());
+		}
+	}
+	else
+	{
+		Printf("Usage: recordmap <filename> <map name>\n");
+	}
+}
+
+//==========================================================================
+//
+//
+//==========================================================================
+
 UNSAFE_CCMD (open)
 {
 	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) ||
