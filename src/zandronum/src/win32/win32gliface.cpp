@@ -900,14 +900,13 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 
 	static_cast<Win32GLVideo *>(Video)->GoFullscreen(fullscreen);
 
-	//   SUPERSEDED BY: uzdoom@f8e23500c73b9ba23a48f3cf0829593d22289f12, same as hardware.cpp. ON PORT: delete with it.
-	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours; see the win_w/win_h comment in hardware.cpp.
+	// [rc4l] Deliberately NOT calling I_SaveWindowedPos() here.
 	//
-	// Capture the windowed rect BEFORE the style below changes. I_SaveWindowedPos self-guards on the
-	// window currently being overlapped, so calling it unconditionally here saves only when we are
-	// actually leaving a windowed state -- which is exactly when there is something worth keeping.
-	// It has to happen before SetWindowLong, or the guard sees the new style and declines.
-	I_SaveWindowedPos();
+	// This function runs on EVERY mode set, including the one returning FROM fullscreen -- and at
+	// that point the window is still at fullscreen size, so saving overwrites the size we are about
+	// to restore, and the restore below then reads its own clobbered value back. The save belongs at
+	// the moment the fullscreen CVAR flips, while the window still means something; see the handler
+	// in hardware.cpp.
 
 	// [rc4l] video-scale: the OS window is the CLIENT size; the render size (width/height) may be
 	// smaller when internal-resolution scaling is on. See features/video-scale.
