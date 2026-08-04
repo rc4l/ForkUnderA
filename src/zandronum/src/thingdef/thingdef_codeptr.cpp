@@ -6222,11 +6222,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 	ACTION_PARAM_INT(flags, 5);
 	ACTION_PARAM_STATE(success_state, 6);
 
-	fixed_t
-
-		oldx,
-		oldy,
-		oldz;
+	// [rc4l] uzdoom@b6f486202: initialise at declaration. The rotation branch below reads oldx
+	// before the assignment further down ever runs, so it was using an uninitialised value.
+	fixed_t	oldx = self->x;
+	fixed_t	oldy = self->y;
+	fixed_t	oldz = self->z;
 
 	// [BB] This is handled server-side.
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
