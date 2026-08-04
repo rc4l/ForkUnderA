@@ -183,8 +183,12 @@ void			BROWSER_ClearServerList( void );
 void			BROWSER_DeactivateAllServers( void );
 bool			BROWSER_GetServerList( BYTESTREAM_s *pByteStream );
 void			BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN );
-void			BROWSER_QueryRegistryServer( void );
-bool			BROWSER_WaitingForRegistryResponse( void );
+void			BROWSER_QueryServerRegistry( void );
+// [rc4l] Drives the query retry/give-up clock; call once per tic while the browser is open.
+void			BROWSER_ServerRegistryTick( void );
+// [rc4l] The registry answered but refused; stop retrying (see browser.cpp).
+void			BROWSER_ServerRegistryRefusedQuery( void );
+bool			BROWSER_WaitingForServerRegistryResponse( void );
 void			BROWSER_QueryAllServers( void );
 LONG			BROWSER_CalcNumServers( void );
 

@@ -1434,8 +1434,11 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
+	features/net/zx_httpsget.cpp
 	features/updater/zx_updater.cpp
 	features/updater/zx_updater_net_win.cpp
+	features/federated-server-registry/zx_serverregistrylist.cpp
+	features/federated-server-registry/computation/serverregistrylist_compute.cpp
 	features/hitboxviz/hitboxviz.cpp
 	features/hitboxviz/computation/boxedges_compute.cpp
 	features/hitboxviz/computation/blastrecords_compute.cpp

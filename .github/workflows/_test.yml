@@ -49,6 +49,13 @@ jobs:
       - name: PowerShell encoding tripwire
         run: bash tools/powershell-encoding-tripwire.sh
 
+      # [rc4l] The repo carries two independent tag namespaces (v* for the game, server-registry-v*
+      # for the container image). A bare `git describe --tags` takes whichever is nearest, so tagging
+      # an image silently renamed every later game build -- visible only in the window title, and it
+      # also made the update check think 0.0.0 was running and never stop offering an update.
+      - name: Version tag tripwire
+        run: bash tools/version-tag-tripwire.sh
+
       # [rc4l] The FF-parity tripwire retired with its subject at the GL 2.x removal
       # (staircase flight 13a): there is no fixed-function branch left to diverge from.
 
