@@ -3553,9 +3553,65 @@ DACSThinker::~DACSThinker ()
 void DACSThinker::Serialize (FArchive &arc)
 {
 	int scriptnum;
+	int scriptcount = 0;
 
 	Super::Serialize (arc);
-	arc << Scripts << LastScript;
+	// [rc4l] uzdoom@e3640b5bf with its follow-up uzdoom@5170abfee folded in. Serializing the
+	// Scripts list through the archive's pointer chasing recursed once per script, so a level
+	// with a deep script list blew the stack; this walks the list iteratively instead, storing
+	// it backwards so the links can be rebuilt on load.
+	//
+	// The `while (script)` guard IS the follow-up: upstream first wrote `while (true)` and
+	// dereferenced script->next unconditionally, which crashes when a DACSThinker exists with no
+	// scripts at all. Written correctly here from the start.
+	if (SaveVersion < 4517)
+		arc << Scripts << LastScript;
+	else
+	{
+		if (arc.IsStoring())
+		{
+			DLevelScript *script;
+			script = Scripts;
+			while (script)
+			{
+				scriptcount++;
+
+				// We want to store this list backwards, so we can't lose the last pointer
+				if (script->next == NULL)
+					break;
+				script = script->next;
+			}
+			arc << scriptcount;
+
+			while (script)
+			{
+				arc << script;
+				script = script->prev;
+			}
+		}
+		else
+		{
+			// We are running through this list backwards, so the next entry is the last processed
+			DLevelScript *next = NULL;
+			Scripts = NULL;
+			LastScript = NULL;
+			arc << scriptcount;
+			for (int i = 0; i < scriptcount; i++)
+			{
+				arc << Scripts;
+
+				Scripts->next = next;
+				Scripts->prev = NULL;
+				if (next != NULL)
+					next->prev = Scripts;
+
+				next = Scripts;
+
+				if (i == 0)
+					LastScript = Scripts;
+			}
+		}
+	}
 	if (arc.IsStoring ())
 	{
 		ScriptMap::Iterator it(RunningScripts);
