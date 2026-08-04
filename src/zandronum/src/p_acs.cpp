@@ -4976,6 +4976,11 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 			static_cast<APlayerPawn *>(actor)->AttackZOffset = value;
 		break;
 
+	// [rc4l] uzdoom@99b2cfa14
+	case APROP_DamageMultiplier:
+		actor->DamageMultiply = fixed_t::FromRaw(value);
+		break;
+
 	case APROP_StencilColor:
 		// [AK] Save the original value.
 		oldValue = actor->fillcolor;
@@ -5108,6 +5113,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_ActiveSound:	return GlobalACSStrings.AddString(actor->ActiveSound);
 	case APROP_Species:		return GlobalACSStrings.AddString(actor->GetSpecies());
 	case APROP_NameTag:		return GlobalACSStrings.AddString(actor->GetTag());
+	case APROP_DamageMultiplier: return actor->DamageMultiply.Raw();	// [rc4l] uzdoom@99b2cfa14
 	case APROP_StencilColor:return actor->fillcolor;
 	case APROP_Friction:	return (int)(actor->Friction);
 

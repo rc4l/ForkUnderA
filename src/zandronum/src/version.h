@@ -150,7 +150,9 @@ int GetRevisionNumber();
 // [rc4l] 4518: each ACS module's data size is stored alongside its name, so a save made
 // against a different build of the same-named BEHAVIOR is refused rather than loaded as
 // garbage (uzdoom@3437f4fca + c494063eb). Upstream numbered it 4516; ours is a separate line.
-#define SAVEVER 4518
+// [rc4l] 4519: AActor serializes DamageMultiply, the outgoing-damage scale reachable from
+// DECORATE and from ACS via APROP_DamageMultiplier (uzdoom@99b2cfa14 + e303833e5).
+#define SAVEVER 4519
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)
