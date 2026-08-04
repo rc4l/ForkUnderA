@@ -503,6 +503,12 @@ int P_Thing_Damage (int tid, AActor *whofor0, int amount, FName type)
 
 void P_RemoveThing(AActor * actor)
 {
+	// [rc4l] uzdoom@978667143 with its fix c1a0ee962 folded in: an inventory item that is OWNED
+	// must not be removed here -- doing so leaves the owner holding a destroyed pointer. Upstream
+	// first wrote Owner == NULL and corrected it to != NULL the next commit; the corrected form is
+	// written directly.
+	if (actor->IsKindOf(RUNTIME_CLASS(AInventory)) && static_cast<AInventory*>(actor)->Owner != NULL) return;
+
 	// Don't remove live players.
 	if (actor->player == NULL || actor != actor->player->mo)
 	{
@@ -524,7 +530,7 @@ void P_RemoveThing(AActor * actor)
 // the thing.
 // [EP] Ignore also the checks in AActor::GetRaiseState (in particular the
 // 'tics != -1' one, because the client might get the wrong value).
-bool P_Thing_Raise(AActor *thing, bool byClient)
+bool P_Thing_Raise(AActor *thing, bool byClient, AActor *raiser)
 {
 	FState * RaiseState = byClient ? thing->FindState(NAME_Raise) : thing->GetRaiseState();	// [EP]
 	if (RaiseState == NULL)
@@ -556,6 +562,13 @@ bool P_Thing_Raise(AActor *thing, bool byClient)
 	S_Sound (thing, CHAN_BODY, "vile/raise", 1, ATTN_IDLE);
 
 	thing->Revive();
+
+	// [rc4l] uzdoom@94f08aa59: a monster raised by someone inherits that raiser's
+	// friendliness, so a resurrected ally does not come back hostile.
+	if (raiser != NULL)
+	{
+		thing->CopyFriendliness(raiser, false);
+	}
 
 	// [BC] If we're the server, tell clients to put the thing into its raise state.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )

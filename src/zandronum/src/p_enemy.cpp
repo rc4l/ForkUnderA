@@ -3794,7 +3794,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_BossDeath)
 	{
 		if (type == NAME_Fatso || (self->flags8 & MF8_MAP07BOSS1))
 		{
-			EV_DoFloor (DFloor::floorLowerToLowest, NULL, 666, FRACUNIT, 0, 0, 0, false);
+			EV_DoFloor (DFloor::floorLowerToLowest, NULL, 666, FRACUNIT, 0, -1, 0, false);
 			return;
 		}
 
@@ -3809,11 +3809,11 @@ DEFINE_ACTION_FUNCTION(AActor, A_BossDeath)
 		switch (level.flags & LEVEL_SPECACTIONSMASK)
 		{
 		case LEVEL_SPECLOWERFLOOR:
-			EV_DoFloor (DFloor::floorLowerToLowest, NULL, 666, FRACUNIT, 0, 0, 0, false);
+			EV_DoFloor (DFloor::floorLowerToLowest, NULL, 666, FRACUNIT, 0, -1, 0, false);
 			return;
 		
 		case LEVEL_SPECLOWERFLOORTOHIGHEST:
-			EV_DoFloor (DFloor::floorLowerToHighest, NULL, 666, FRACUNIT, 0, 0, 0, false);
+			EV_DoFloor (DFloor::floorLowerToHighest, NULL, 666, FRACUNIT, 0, -1, 0, false);
 			return;
 		
 		case LEVEL_SPECOPENDOOR:

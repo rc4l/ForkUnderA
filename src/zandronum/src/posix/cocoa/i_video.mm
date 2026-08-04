@@ -890,10 +890,15 @@ void CocoaVideo::ResizeWindow(const int width, const int height)
 
 // [rc4l] windowed-video: the drawable changed.
 //
-// Upstream needs no equivalent: their CocoaView is an NSOpenGLView, which updates its GL context on
-// frame change by itself. Ours is a plain NSView, so the context must be told by hand -- and rbOpts,
-// which the Cocoa backend uses for render-buffer geometry, has to come along or the per-frame
-// reconcile in MaybeResizeForScale compares against stale values.
+// Upstream needs no equivalent because it has no resizable window to react to. rbOpts, which the
+// Cocoa backend uses for render-buffer geometry, has to come along or the per-frame reconcile in
+// MaybeResizeForScale compares against stale values.
+//
+// NOTE: this is NOT the only path that changes the drawable -- SetMode resizes the window
+// programmatically without coming through here, which is why MaybeResizeForScale must detect a
+// changed client size on its own rather than relying on this being called. An earlier version of
+// this comment claimed our CocoaView is a plain NSView needing a manual context update; it is an
+// NSOpenGLView, exactly like upstream's, and that wrong note cost real debugging time.
 void CocoaVideo::OnWindowResized()
 {
 	if (NULL == screen || m_fullscreen)
@@ -1381,6 +1386,29 @@ bool I_SetCursor(FTexture* cursorpic)
 	return true;
 }
 
+
+// [rc4l] Debug readout for the "scene renders into a corner" class of bug: prints the window
+// content rect and the GL view's frame/backing bounds so a points/pixels or view-vs-window size
+// mismatch is visible instead of having to be inferred from a screenshot.
+void I_DumpWindowGeometry()
+{
+	NSView* const view = CocoaVideo::GetContentView();
+	if (nil == view) { Printf("window=none\n"); return; }
+
+	NSWindow* const window = [view window];
+	const NSRect contentRect = [window contentRectForFrameRect:[window frame]];
+	const NSRect viewFrame = [view frame];
+	const NSRect viewBacking = [view convertRectToBacking:[view bounds]];
+	const CGFloat scale = [window backingScaleFactor];
+
+	Printf("window_content_points=%g %g\n", contentRect.size.width, contentRect.size.height);
+	Printf("view_frame_points=%g %g\n", viewFrame.size.width, viewFrame.size.height);
+	Printf("view_backing_pixels=%g %g\n", viewBacking.size.width, viewBacking.size.height);
+	Printf("window_backing_scale=%g\n", scale);
+	Printf("view_wants_best_resolution=%d\n",
+		[view respondsToSelector:@selector(wantsBestResolutionOpenGLSurface)]
+			? (int)[(NSOpenGLView*)view wantsBestResolutionOpenGLSurface] : -1);
+}
 
 NSSize I_GetContentViewSize(const NSWindow* const window)
 {

@@ -531,7 +531,9 @@ CUSTOM_CVAR (Int, dmflags2, 0, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAMEPL
 		}
 
 		// Come out of chasecam mode if we're not allowed to use chasecam.
-		if (!(dmflags2 & DF2_CHASECAM) && !G_SkillProperty (SKILLP_DisableCheats) && !sv_cheats)
+		// [rc4l] uzdoom@15b1c7125: use CheckCheatmode, which is the single place that decides
+		// whether cheats are allowed, instead of re-deriving it here and drifting from it.
+		if (!(dmflags2 & DF2_CHASECAM) && CheckCheatmode(false))
 		{
 			// Take us out of chasecam mode only.
 			// [AK] Allow spectators to keep using the chasecam.
@@ -818,6 +820,7 @@ CVAR (Flag, compat_badangles,			compatflags2, COMPATF2_BADANGLES);
 CVAR (Flag, compat_floormove,			compatflags2, COMPATF2_FLOORMOVE);
 // [BB] Out of order ZDoom backport.
 CVAR (Flag, compat_pushwindow,			compatflags2, COMPATF2_PUSHWINDOW);
+CVAR (Flag, compat_soundcutoff,			compatflags2, COMPATF2_SOUNDCUTOFF);	// [rc4l] uzdoom@ef5707d73
 // [BB] Skulltag compat flags.
 CVAR (Flag, compat_limited_airmovement, zacompatflags, ZACOMPATF_LIMITED_AIRMOVEMENT);
 CVAR (Flag, compat_plasmabump,	zacompatflags, ZACOMPATF_PLASMA_BUMP_BUG);
@@ -1686,6 +1689,8 @@ CCMD (endgame)
 	{
 		gameaction = ga_fullconsole;
 		demosequence = -1;
+		// [rc4l] uzdoom@eceb37aa6: close out a recording rather than leaving it dangling.
+		G_CheckDemoStatus();
 	}
 }
 

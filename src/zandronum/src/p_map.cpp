@@ -144,6 +144,61 @@ msecnode_t* sector_list = NULL;		// phares 3/16/98
 
 //==========================================================================
 //
+// GetCoefficientClosestPointInLine24
+//
+// [rc4l] uzdoom@9ccb839ae -> 4b2af7074 -> cc4e66f97 -> 8fbed78c2 -> 629f3c1a8,
+// taken as the settled form. Formula: (dot(tm - ldv1, ld) << 24) / dot(ld, ld),
+// truncated to [0, 1 << 24].
+//
+// This replaces a float computation. Upstream's motive was that float lost
+// precision on large maps; ours is stronger, because our fixed_t is 48.16 and a
+// float has 24 bits of mantissa -- it cannot represent our coordinates at all
+// once they exceed that, so the old expression was lossy by construction here.
+//
+// The bit budget: dx/dy and the coordinate deltas are fixed_t, and for map
+// geometry within the classic +/-32767-unit range their RAW values stay within
+// +/-2^31 -- widening fixed_t to 64 bits changed the container, not the
+// magnitudes -- so each product occupies at most 62 bits and their sum at most
+// 63. That is the same budget upstream reasoned about, which is why their
+// analysis carries over unchanged.
+//
+//==========================================================================
+
+static fixed_t GetCoefficientClosestPointInLine24(line_t *ld, FCheckPosition &tm)
+{
+	const SQWORD ldx = ld->dx.Raw();
+	const SQWORD ldy = ld->dy.Raw();
+
+	SQWORD r_num = ((tm.x - ld->v1->x).Raw() * ldx) + ((tm.y - ld->v1->y).Raw() * ldy);
+
+	// The denominator is always positive. Use this to avoid useless calculations.
+	SQWORD r_den = (ldx * ldx) + (ldy * ldy);
+
+	if (r_num <= 0)
+	{ // The closest point on the line is the first vertex. Truncate to 0.
+		return fixed_t::FromRaw(0);
+	}
+
+	if (r_num >= r_den)
+	{ // The division is >= 1, so the closest point is the second vertex.
+		return fixed_t::FromRaw(1 << 24);
+	}
+
+	// Deal with the limited bits. The original formula is r = (r_num << 24) / r_den,
+	// but r_num may be big enough that the shift overflows. The numerator cannot be
+	// widened further, so the denominator is right shifted instead -- safe here
+	// because on this path the denominator exceeds the numerator, so checking the
+	// top 24 bits of the numerator rules out a division by zero.
+	if ((r_num >> (63 - 24)) != 0)
+	{
+		return fixed_t::FromRaw(r_num / (r_den >> 24));
+	}
+	return fixed_t::FromRaw((r_num << 24) / r_den);
+}
+
+
+//==========================================================================
+//
 // PIT_FindFloorCeiling
 //
 // only3d set means to only check against 3D floors and midtexes.
@@ -842,11 +897,7 @@ bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 	else
 	{ // Find the point on the line closest to the actor's center, and use
 		// that to calculate openings
-		float dx = (float)ld->dx;
-		float dy = (float)ld->dy;
-		fixed_t r = (fixed_t)(((float)(tm.x - ld->v1->x) * dx +
-			(float)(tm.y - ld->v1->y) * dy) /
-			(dx*dx + dy*dy) * 16777216.f);
+		fixed_t r = GetCoefficientClosestPointInLine24(ld, tm);
 		/*		Printf ("%d:%d: %d  (%d %d %d %d)  (%d %d %d %d)\n", level.time, ld-lines, r,
 		ld->frontsector->floorplane.a,
 		ld->frontsector->floorplane.b,
@@ -1261,24 +1312,29 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 					//     cases where they are clearly supposed to do that
 					if (thing->IsFriend(tm.thing->target))
 					{
-						// Friends never harm each other
-						return false;
+						// [rc4l] uzdoom@5ac7e4fc3: friends never harm each other, unless the shooter
+						// has HARMFRIENDS set. The species and TIDtoHate tests below now only apply
+						// when the two are NOT friends, which is what the else was added for.
+						if (!(thing->flags7 & MF7_HARMFRIENDS)) return false;
 					}
-					if (thing->TIDtoHate != 0 && thing->TIDtoHate == tm.thing->target->TIDtoHate)
+					else
 					{
-						// [RH] Don't hurt monsters that hate the same thing as you do
-						return false;
-					}
-					if (thing->GetSpecies() == tm.thing->target->GetSpecies() && !(thing->flags6 & MF6_DOHARMSPECIES))
-					{
-						// Don't hurt same species or any relative -
-						// but only if the target isn't one's hostile.
-						if (!thing->IsHostile(tm.thing->target))
+						if (thing->TIDtoHate != 0 && thing->TIDtoHate == tm.thing->target->TIDtoHate)
 						{
-							// Allow hurting monsters the shooter hates.
-							if (thing->tid == 0 || tm.thing->target->TIDtoHate != thing->tid)
+							// [RH] Don't hurt monsters that hate the same thing as you do
+							return false;
+						}
+						if (thing->GetSpecies() == tm.thing->target->GetSpecies() && !(thing->flags6 & MF6_DOHARMSPECIES))
+						{
+							// Don't hurt same species or any relative -
+							// but only if the target isn't one's hostile.
+							if (!thing->IsHostile(tm.thing->target))
 							{
-								return false;
+								// Allow hurting monsters the shooter hates.
+								if (thing->tid == 0 || tm.thing->target->TIDtoHate != thing->tid)
+								{
+									return false;
+								}
 							}
 						}
 					}
@@ -5162,8 +5218,10 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 			y = y1 + FixedMul(hitdist, vy);
 			z = shootz + FixedMul(hitdist, vz);
 
+			// [rc4l] uzdoom@71ce4bcf0: a FOILINVUL puff must still draw blood on an
+			// invulnerable target; only DORMANT unconditionally suppresses it.
 			if ((hitactor->flags & MF_NOBLOOD) ||
-				(hitactor->flags2 & (MF2_DORMANT | MF2_INVULNERABLE)))
+				(hitactor->flags2 & MF2_DORMANT || ((hitactor->flags2 & MF2_INVULNERABLE) && !(puffDefaults->flags3 & MF3_FOILINVUL))))
 			{
 				spawnpuff = (puffclass != NULL);
 			}
@@ -5192,7 +5250,12 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 					damage = 999;
 
 				// [RK] If the attack source is a player, send the DMG_PLAYERATTACK flag.
-				int newdam = P_DamageMobj(hitactor, thepuff ? thepuff : source, source, damage, damagetype, DMG_INFLICTOR_IS_PUFF | (source->player ? DMG_PLAYERATTACK : 0));
+				// [rc4l] uzdoom@71ce4bcf0: pass the puff's FOILINVUL/FOILBUDDHA through, which
+				// the old call dropped entirely.
+				int dmgFlagPass = DMG_INFLICTOR_IS_PUFF | (source->player ? DMG_PLAYERATTACK : 0);
+				dmgFlagPass += (puffDefaults->flags3 & MF3_FOILINVUL) ? DMG_FOILINVUL : 0;
+				dmgFlagPass += (puffDefaults->flags7 & MF7_FOILBUDDHA) ? DMG_FOILBUDDHA : 0;
+				int newdam = P_DamageMobj(hitactor, thepuff ? thepuff : source, source, damage, damagetype, dmgFlagPass);
 
 				if (bleed)
 				{
@@ -6037,7 +6100,7 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 				{
 					if (!(flags & RADF_NODAMAGE))
 						newdam = P_DamageMobj(thing, bombspot, bombsource, damage, bombmod);
-					else if (thing->player == NULL && !(flags & RADF_NOIMPACTDAMAGE))
+					else if (thing->player == NULL && (!(flags & RADF_NOIMPACTDAMAGE) && !(thing->flags7 & MF7_DONTTHRUST)))
 					{
 						thing->flags2 |= MF2_BLASTED;
 

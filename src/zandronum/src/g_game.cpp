@@ -207,6 +207,9 @@ int 			consoleplayer;			// player taking events
 int 			gametic;
 
 CVAR(Bool, demo_compress, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
+// [rc4l] uzdoom@eceb37aa6
+FString			newdemoname;
+FString			newdemomap;
 FString			demoname;
 bool 			demorecording;
 bool 			demoplayback;
@@ -1512,6 +1515,15 @@ void G_Ticker ()
 		case ga_loadlevel:
 			G_DoLoadLevel (-1, false);
 			break;
+		// [rc4l] uzdoom@eceb37aa6: NO break -- deliberate fall-through into ga_newgame. The
+		// recordmap CCMD calls G_DeferedInitNew (which sets ga_newgame) and then overwrites
+		// gameaction with ga_recordgame, so the new game still has to be started here.
+		// Upstream annotates this [[fallthrough]] at HEAD; we say it in words.
+		case ga_recordgame:
+			G_CheckDemoStatus();
+			G_RecordDemo(newdemoname);
+			G_BeginRecording(newdemomap);
+			// fall through
 		case ga_newgame2:	// Silence GCC (see above)
 		case ga_newgame:
 			G_DoNewGame ();
@@ -2105,6 +2117,10 @@ void G_PlayerFinishLevel (int player, EFinishLevelType mode, int flags)
 	// [rc4l] uzdoom@842ef86e7: a dead player must not be handed the starting inventory here -- they
 	// get it on respawn instead. Doing it twice left them holding weapons their corpse never lost.
 	// Pure predicate tightening on playerstate, which is already synced, so both ends still agree.
+	// [rc4l] uzdoom@fc40e9723: deliberately NO health reset here. This is the whole point of that
+	// commit -- MAPINFO 'resetinventory' used to imply 'resethealth' because GiveDefaultInventory()
+	// healed as a side effect, so the two flags handled separately just above could not be used
+	// independently. A player crossing into a resetinventory map now keeps the damage they took.
 	if ((flags & CHANGELEVEL_RESETINVENTORY) && p->playerstate != PST_DEAD)
 	{
 		p->mo->ClearInventory();
@@ -2270,13 +2286,16 @@ void G_PlayerReborn (int player, bool bGiveInventory)
 
 	if (gamestate != GS_TITLELEVEL)
 	{
+		// [rc4l] uzdoom@fc40e9723 puts the starting-health reset here, in the one caller that
+		// wants it, rather than inside GiveDefaultInventory(). The [BB] else branch below was
+		// already doing exactly that by hand for the no-inventory case -- it is now the same
+		// call on both paths, so a reborn player gets the handicap applied either way.
+		if ( actor->player )
+			actor->ResetStartingHealth ();
+
 		// [BB] Added bGiveInventory.
 		if ( bGiveInventory )
 			actor->GiveDefaultInventory ();
-		// [BB] Even if we don't give the inventory, we need to give the player the default health.
-		// Otherwise we get a zombie player with 0 health (at least on the clients).
-		else if ( actor->player )
-			actor->player->health = actor->GetDefault ()->health;
 
 		p->ReadyWeapon = p->PendingWeapon;
 	}
@@ -5241,6 +5260,18 @@ void G_DeferedPlayDemo (const char *name)
 extern bool advancedemo;
 CCMD (playdemo)
 {
+	// [rc4l] uzdoom@eceb37aa6: refuse rather than silently clobbering a live game or an
+	// in-progress recording. Our netgame test is the network state, as elsewhere here.
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+	{
+		Printf( "End your current netgame first!\n" );
+		return;
+	}
+	if (demorecording)
+	{
+		Printf( "End your current demo first!\n" );
+		return;
+	}
 	if (argv.argc() > 1)
 	{
 		// [BB] CLIENTDEMO_FinishPlaying() destroy the arguments, so we have to save
