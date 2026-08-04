@@ -4075,11 +4075,15 @@ static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTarget)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
 
-	if (self->target != NULL) DoKill(self->target, self, damagetype, flags);
+	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
+	// exactly this class. NULL (the default) means no filtering, as before.
+	if (self->target != NULL && (filter == NULL || self->target->GetClass() == filter))
+		DoKill(self->target, self, damagetype, flags);
 }
 
 //===========================================================================
@@ -4089,11 +4093,15 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTarget)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTracer)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
 
-	if (self->tracer != NULL) DoKill(self->tracer, self, damagetype, flags);
+	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
+	// exactly this class. NULL (the default) means no filtering, as before.
+	if (self->tracer != NULL && (filter == NULL || self->tracer->GetClass() == filter))
+		DoKill(self->tracer, self, damagetype, flags);
 }
 
 //===========================================================================
@@ -5070,34 +5078,46 @@ static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageTy
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_CLASS(filter, 3);
 
-	DoDamage(self, self, amount, DamageType, flags);
+	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
+	// exactly this class. NULL (the default) means no filtering, as before.
+	if (filter == NULL || self->GetClass() == filter)
+		DoDamage(self, self, amount, DamageType, flags);
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTarget)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_CLASS(filter, 3);
 
-	if (self->target != NULL) DoDamage(self->target, self, amount, DamageType, flags);
+	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
+	// exactly this class. NULL (the default) means no filtering, as before.
+	if (self->target != NULL && (filter == NULL || self->target->GetClass() == filter))
+		DoDamage(self->target, self, amount, DamageType, flags);
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTracer)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_CLASS(filter, 3);
 
-	if (self->tracer != NULL) DoDamage(self->tracer, self, amount, DamageType, flags);
+	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
+	// exactly this class. NULL (the default) means no filtering, as before.
+	if (self->tracer != NULL && (filter == NULL || self->tracer->GetClass() == filter))
+		DoDamage(self->tracer, self, amount, DamageType, flags);
 }
 
 //===========================================================================
