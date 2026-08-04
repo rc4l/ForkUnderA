@@ -5924,6 +5924,14 @@ enum T_Flags
 	TF_TELEFRAG = 1, // Allow telefrag in order to teleport.
 	TF_RANDOMDECIDE = 2, // Randomly fail based on health. (A_Srcr2Decide)
 	TF_FORCED = 4, // [rc4l] uzdoom@938b54ccb: forget what is in the way. TF_TELEFRAG takes precedence.
+	// [rc4l] uzdoom@86b0065c0
+	TF_KEEPVELOCITY =	0x00000008, // Preserve velocity.
+	TF_KEEPANGLE =		0x00000010, // Keep angle.
+	TF_USESPOTZ =		0x00000020, // Set the z to the spot's z, instead of the floor.
+	TF_NOSRCFOG =		0x00000040, // Don't leave any fog behind when teleporting.
+	TF_NODESTFOG =		0x00000080, // Don't spawn any fog at the arrival position.
+	TF_USEACTORFOG =	0x00000100, // Use the actor's TeleFogSourceType/TeleFogDestType.
+	TF_NOJUMP =			0x00000200, // Don't jump after teleporting.
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
@@ -5994,16 +6002,41 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 	{
 		ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
-		if (FogType)
+		// [rc4l] uzdoom@86b0065c0: fog is now controllable per call -- suppress either end, or
+		// defer to the actor's own TeleFogSourceType/TeleFogDestType from the fog cluster.
+		if (FogType || (Flags & TF_USEACTORFOG))
 		{
-			Spawn(FogType, prevX, prevY, prevZ, ALLOW_REPLACE);
+			if (!(Flags & TF_NOSRCFOG))
+			{
+				if (Flags & TF_USEACTORFOG)
+					P_SpawnTeleportFog(self, prevX, prevY, prevZ, true, true);
+				else
+					Spawn(FogType, prevX, prevY, prevZ, ALLOW_REPLACE);
+			}
+			if (!(Flags & TF_NODESTFOG))
+			{
+				if (Flags & TF_USEACTORFOG)
+					P_SpawnTeleportFog(self, self->x, self->y, self->z, false, true);
+				else
+					Spawn(FogType, self->x, self->y, self->z, ALLOW_REPLACE);
+			}
 		}
 
-		ACTION_JUMP(TeleportState, CLIENTUPDATE_FRAME);	// [BB] This may involve randomness.
+		if (Flags & TF_USESPOTZ)
+			self->z = spot->z;
+		else
+			self->z = self->floorz;
 
-		self->z = self->floorz;
-		self->angle = spot->angle;
-		self->velx = self->vely = self->velz = 0;
+		if (!(Flags & TF_KEEPANGLE))
+			self->angle = spot->angle;
+
+		if (!(Flags & TF_KEEPVELOCITY))
+			self->velx = self->vely = self->velz = 0;
+
+		// [rc4l] uzdoom@2a53ebb6b: the jump is last, and TF_NOJUMP skips it -- taking it earlier
+		// meant the z/angle/velocity work above never ran.
+		if (!(Flags & TF_NOJUMP))
+			ACTION_JUMP(TeleportState, CLIENTUPDATE_FRAME);	// [BB] This may involve randomness.
 	}
 }
 
