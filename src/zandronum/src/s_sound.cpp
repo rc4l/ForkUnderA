@@ -1758,7 +1758,8 @@ void S_RelinkSound (AActor *from, AActor *to)
 			{
 				chan->Actor = to;
 			}
-			else if (!(chan->ChanFlags & CHAN_LOOP))
+			// [rc4l] uzdoom@ef5707d73: compat_soundcutoff stops the sound instead of orphaning it.
+			else if (!(chan->ChanFlags & CHAN_LOOP) && !(compatflags2 & COMPATF2_SOUNDCUTOFF))
 			{
 				chan->Actor = NULL;
 				chan->SourceType = SOURCE_Unattached;
