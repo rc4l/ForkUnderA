@@ -241,6 +241,12 @@ static FFlagDef ActorFlags[]=
 	DEFINE_FLAG(MF7, NOTELESTOMP, AActor, flags7),
 	DEFINE_FLAG(MF7, ALWAYSTELEFRAG, AActor, flags7),
 	DEFINE_FLAG(MF7, WEAPONSPAWN, AActor, flags7),
+	DEFINE_FLAG(MF7, DONTTHRUST, AActor, flags7),
+	DEFINE_FLAG(MF7, ALLOWPAIN, AActor, flags7),	// [rc4l] uzdoom@2e085b231
+	DEFINE_FLAG(MF7, CAUSEPAIN, AActor, flags7),	// [rc4l] uzdoom@b54b18c8c
+	DEFINE_FLAG(MF7, HARMFRIENDS, AActor, flags7),
+	DEFINE_FLAG(MF7, BUDDHA, AActor, flags7),
+	DEFINE_FLAG(MF7, FOILBUDDHA, AActor, flags7),
 
 	DEFINE_FLAG(MF7, HITTARGET, AActor, flags7),
 	DEFINE_FLAG(MF7, HITMASTER, AActor, flags7),

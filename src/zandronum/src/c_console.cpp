@@ -2273,13 +2273,6 @@ void C_MidPrint (FFont *font, const char *msg)
 		AddToConsole (-1, bar1);
 		AddToConsole (-1, msg);
 		AddToConsole (-1, bar3);
-		if (Logfile)
-		{
-			fputs (logbar, Logfile);
-			fputs (msg, Logfile);
-			fputs (logbar, Logfile);
-			fflush (Logfile);
-		}
 
 		StatusBar->AttachMessage (new DHUDMessage (font, msg, 1.5f, 0.375f, 0, 0,
 			(EColorRange)PrintColors[PRINTLEVELS], con_midtime), MAKE_ID('C','N','T','R'));
@@ -2300,13 +2293,6 @@ void C_MidPrintBold (FFont *font, const char *msg)
 		AddToConsole (-1, bar2);
 		AddToConsole (-1, msg);
 		AddToConsole (-1, bar3);
-		if (Logfile)
-		{
-			fputs (logbar, Logfile);
-			fputs (msg, Logfile);
-			fputs (logbar, Logfile);
-			fflush (Logfile);
-		}
 
 		StatusBar->AttachMessage (new DHUDMessage (font, msg, 1.5f, 0.375f, 0, 0,
 			(EColorRange)PrintColors[PRINTLEVELS+1], con_midtime), MAKE_ID('C','N','T','R'));

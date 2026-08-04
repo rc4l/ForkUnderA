@@ -1073,6 +1073,7 @@ OptionMenu "AltHUDOptions"
 	Option "Enable alternative HUD",				"hud_althud", "OnOff"
 	Option "Stretch alternative HUD",				"hud_althudscale", "AltHUDScale"
 	Option "Show secret count",						"hud_showsecrets", "OnOff"
+	Option "Show secret notifications",				"cl_showsecretmessage", "OnOff"
 	Option "Show monster count",					"hud_showmonsters", "OnOff"
 	Option "Show item count",						"hud_showitems", "OnOff"
 	Option "Show weapons",							"hud_showweapons", "OnOff"
@@ -1891,6 +1892,7 @@ OptionValue OplCores
 	0, "MAME OPL2"
 	1, "DOSBox OPL3"
 	2, "Java OPL3"
+	3, "Nuked OPL3"
 }
 
 OptionMenu AdvSoundOptions

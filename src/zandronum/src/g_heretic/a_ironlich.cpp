@@ -28,10 +28,15 @@ int AWhirlwind::DoSpecialDamage (AActor *target, int damage, FName damagetype)
 {
 	int randVal;
 
-	target->angle += pr_foo.Random2() << 20;
-	target->velx += pr_foo.Random2() << 10;
-	target->vely += pr_foo.Random2() << 10;
-	if ((level.time & 16) && !(target->flags2 & MF2_BOSS))
+	// [rc4l] uzdoom@774db445e: the whirlwind was still shoving actors that opted out of thrust.
+	if (!(target->flags7 & MF7_DONTTHRUST))
+	{
+		target->angle += pr_foo.Random2() << 20;
+		target->velx += pr_foo.Random2() << 10;
+		target->vely += pr_foo.Random2() << 10;
+	}
+
+	if ((level.time & 16) && !(target->flags2 & MF2_BOSS) && !(target->flags7 & MF7_DONTTHRUST))
 	{
 		randVal = pr_foo();
 		if (randVal > 160)

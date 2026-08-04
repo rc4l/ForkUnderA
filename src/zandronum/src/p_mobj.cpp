@@ -442,6 +442,7 @@ void AActor::Serialize (FArchive &arc)
 	arc << lastpush << lastbump
 		<< PainThreshold
 		<< DamageFactor
+		<< DamageMultiply		// [rc4l] uzdoom@99b2cfa14
 		<< WeaveIndexXY << WeaveIndexZ
 		<< PoisonDamageReceived << PoisonDurationReceived << PoisonPeriodReceived << Poisoner
 		<< PoisonDamage << PoisonDuration << PoisonPeriod;
@@ -1663,7 +1664,9 @@ bool AActor::Massacre ()
 			P_DamageMobj (this, NULL, NULL, TELEFRAG_DAMAGE, NAME_Massacre);
 		}
 		while (health != prevhealth && health > 0);	//abort if the actor wasn't hurt.
-		return true;
+		// [rc4l] uzdoom@0ff65bb43: report whether the actor actually died, not merely that it was
+		// eligible -- callers count kills off this.
+		return health <= 0;
 	}
 	return false;
 }
@@ -5876,6 +5879,9 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 		{
 			if (gamestate != GS_TITLELEVEL)
 			{
+				// [rc4l] uzdoom@fc40e9723: the reset is now explicit. This [BB] code depended on
+				// GiveDefaultInventory() doing it as a side effect, so it has to ask for it.
+				p->mo->ResetStartingHealth ();
 				p->mo->GiveDefaultInventory ();
 				// [BB] The default inventory possibly alters the player's health. Thus we need to make sure
 				// that the health of the player's body matches the player's health.
@@ -7803,8 +7809,16 @@ bool AActor::IsTeammate (AActor *other)
 	// Teamplay deathmatch, CTF, Skulltag, etc.
 	if ( GAMEMODE_GetCurrentFlags() & GMF_PLAYERSONTEAMS )
 	{
+		// [rc4l] uzdoom@d4c50b166, adapted: a monster with no DesignatedTeam but a FriendPlayer
+		// belongs to that player's team. Upstream factored this into AActor::GetTeam() reading
+		// userinfo.GetTeam(); ours reads Zandronum's player->Team and honours bOnTeam, so the
+		// fallback is written here rather than importing a helper that would read the wrong fields.
 		int myTeam = DesignatedTeam;
 		int otherTeam = other->DesignatedTeam;
+		if (myTeam == TEAM_None && FriendPlayer != 0 && players[FriendPlayer - 1].bOnTeam)
+			myTeam = players[FriendPlayer - 1].Team;
+		if (otherTeam == TEAM_None && other->FriendPlayer != 0 && players[other->FriendPlayer - 1].bOnTeam)
+			otherTeam = players[other->FriendPlayer - 1].Team;
 		if (player)
 		{
 			if (!player->bOnTeam)
