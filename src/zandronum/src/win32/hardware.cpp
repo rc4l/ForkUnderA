@@ -71,6 +71,24 @@ extern int zx_pendingClientWidth, zx_pendingClientHeight;
 
 CVAR(Int, win_x, -1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Int, win_y, -1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours, modelled on upstream's approach rather than taken
+// from a commit.
+//
+//   SUPERSEDED BY: uzdoom@f8e23500c73b9ba23a48f3cf0829593d22289f12 (2020-04-23) "moved Windows platform code as well", which
+//   creates common/platform/win32/base_sysfb.cpp. That file keeps win_x/win_y/win_w/win_h together
+//   and calls SaveWindowedPos() on the transition into fullscreen -- properly doing what the two
+//   CVARs below do by hand.
+//   ON PORT: adopt its SaveWindowedPos/RestoreWindowedPos, then delete these two CVARs, the size
+//   capture in I_SaveWindowedPos, and both uses in win32gliface.cpp.
+//
+// We had position but not SIZE. Going fullscreen and back therefore restored where the window was
+// and whatever size the current mode happened to be. That was invisible while a window could only
+// ever BE a video mode -- "the size we left" and "the current mode's size" were the same answer.
+// Free resizing separates them.
+//
+// -1 means "not remembered", matching the convention win_x/win_y already use.
+CVAR(Int, win_w, -1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR(Int, win_h, -1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 extern HWND Window;
 
@@ -367,6 +385,16 @@ void I_SaveWindowedPos ()
 			}
 			win_x = wrect.left;
 			win_y = wrect.top;
+
+			// [rc4l] Remember the CLIENT size, not the window size: that is what the caller sizes
+			// the window by, and the frame it has to add differs with DPI and theme. Saving the
+			// outer rect would drift by the frame thickness on every fullscreen round trip.
+			RECT crect;
+			if (GetClientRect (Window, &crect))
+			{
+				win_w = crect.right - crect.left;
+				win_h = crect.bottom - crect.top;
+			}
 		}
 	}
 }
