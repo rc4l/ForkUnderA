@@ -105,6 +105,7 @@ const int JLOSF_FLIPFOV = 256;
 const int JLOSF_ALLYNOJUMP = 512;
 const int JLOSF_COMBATANTONLY = 1024;
 const int JLOSF_NOAUTOAIM = 2048;
+const int JLOSF_CHECKTRACER = 4096;
 
 // Flags for A_ChangeVelocity
 const int CVF_RELATIVE = 1;
@@ -218,6 +219,7 @@ const int CPF_NORANDOMPUFFZ = 8;
 
 // Flags for A_Teleport
 const int TF_TELEFRAG = 1;const int TF_RANDOMDECIDE = 2;
+const int TF_FORCED = 4;
 
 // Flags for A_WolfAttack
 const int WAF_NORANDOM = 1;

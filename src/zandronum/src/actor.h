@@ -351,6 +351,7 @@ enum
 	MF7_ALWAYSTELEFRAG	= 0x00000004,	// will unconditionally be telefragged when in the way. Overrides all other settings.
 	MF7_HANDLENODELAY	= 0x00000008,	// respect NoDelay state flag
 	MF7_WEAPONSPAWN		= 0x00000010,	// subject to DF_NO_COOP_WEAPON_SPAWN dmflag
+	MF7_HARMFRIENDS		= 0x00000020,	// [rc4l] uzdoom@5ac7e4fc3: is allowed to harm friendly monsters.
 	// [rc4l] uzdoom@f802d7a44, renamed by 6073adbee and fixed by 774db445e -- landed as the
 	// settled DONTTHRUST form rather than replaying FULLMASS and renaming it.
 	MF7_DONTTHRUST		= 0x00000100,	// Thrusting functions do not take, and do not give thrust (damage) to actors with this flag.
