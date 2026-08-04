@@ -58,7 +58,7 @@ ADVISORY = False
 def upstream_files():
     """upstream sha -> set of basenames it touched."""
     out = {}
-    with open(FILES) as fh:
+    with open(FILES, encoding="utf-8") as fh:
         for line in fh:
             if line.startswith("#"):
                 continue
@@ -85,7 +85,7 @@ def main():
     mismatches = []
     checked = 0
 
-    with open(COVERAGE) as fh:
+    with open(COVERAGE, encoding="utf-8") as fh:
         for line in fh:
             f = line.rstrip("\n").split("\t")
             if len(f) != 6 or f[3] not in ("ported", "adapted"):
