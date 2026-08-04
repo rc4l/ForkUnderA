@@ -7805,8 +7805,16 @@ bool AActor::IsTeammate (AActor *other)
 	// Teamplay deathmatch, CTF, Skulltag, etc.
 	if ( GAMEMODE_GetCurrentFlags() & GMF_PLAYERSONTEAMS )
 	{
+		// [rc4l] uzdoom@d4c50b166, adapted: a monster with no DesignatedTeam but a FriendPlayer
+		// belongs to that player's team. Upstream factored this into AActor::GetTeam() reading
+		// userinfo.GetTeam(); ours reads Zandronum's player->Team and honours bOnTeam, so the
+		// fallback is written here rather than importing a helper that would read the wrong fields.
 		int myTeam = DesignatedTeam;
 		int otherTeam = other->DesignatedTeam;
+		if (myTeam == TEAM_None && FriendPlayer != 0 && players[FriendPlayer - 1].bOnTeam)
+			myTeam = players[FriendPlayer - 1].Team;
+		if (otherTeam == TEAM_None && other->FriendPlayer != 0 && players[other->FriendPlayer - 1].bOnTeam)
+			otherTeam = players[other->FriendPlayer - 1].Team;
 		if (player)
 		{
 			if (!player->bOnTeam)
