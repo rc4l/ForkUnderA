@@ -359,6 +359,7 @@ protected:
 public:
 	FListMenuItemStaticPatch(int x, int y, FTextureID patch, bool centered);
 	void Drawer(bool selected);
+	int GetWidth();	// [rc4l] so layout code (e.g. FUAPanelListMenu) can measure the logo
 };
 
 class FListMenuItemStaticText : public FListMenuItem

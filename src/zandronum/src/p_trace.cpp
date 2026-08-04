@@ -376,7 +376,8 @@ bool FTraceInfo::TraceTraverse (int ptflags)
 				Results->HitTexture = CurSector->GetTexture(sector_t::ceiling);
 			}
 			else if (entersector == NULL ||
-				hitz <= bf || hitz >= bc ||
+				// [rc4l] uzdoom@0d3908a4f: exactly at the boundary still crosses.
+				hitz < bf || hitz > bc ||
 				in->d.line->flags & WallMask)
 			{ // hit the wall
 				Results->HitType = TRACE_HitWall;

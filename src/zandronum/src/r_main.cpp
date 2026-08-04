@@ -301,7 +301,7 @@ void R_SetVisibility (float vis)
 	else
 		r_WallVisibility = r_BaseVisibility;
 
-	r_WallVisibility = FixedMul (Scale (InvZtoScale, SCREENWIDTH*BaseRatioSizes[WidescreenRatio][1],
+	r_WallVisibility = FixedMul (Scale (InvZtoScale, SCREENWIDTH*AspectBaseHeight(WidescreenRatio),
 		viewwidth*SCREENHEIGHT*3), FixedMul (r_WallVisibility, FocalTangent));
 
 	// Prevent overflow on floors/ceilings. Note that the calculation of

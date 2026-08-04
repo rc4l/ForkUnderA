@@ -208,7 +208,10 @@ bool	P_Thing_Move (int tid, AActor *source, int mapspot, bool fog);
 int		P_Thing_Damage (int tid, AActor *whofor0, int amount, FName type);
 void	P_Thing_SetVelocity(AActor *actor, fixed_t vx, fixed_t vy, fixed_t vz, bool add, bool setbob);
 void P_RemoveThing(AActor * actor);
-bool P_Thing_Raise(AActor *thing, bool byClient = false); // [BB/EP] Added 'byClient'.
+// [rc4l] uzdoom@94f08aa59 adds `raiser` so a resurrected monster inherits the raiser's
+// friendliness. Upstream put it in the second slot; ours is already Zandronum's byClient,
+// so it goes third and defaults to NULL (the old behaviour).
+bool P_Thing_Raise(AActor *thing, bool byClient = false, AActor *raiser = NULL); // [BB/EP] Added 'byClient'.
 bool P_Thing_CanRaise(AActor *thing);
 const PClass *P_GetSpawnableType(int spawnnum);
 
@@ -619,9 +622,10 @@ enum EDmgFlags
 	DMG_NO_FACTOR = 16,
 	DMG_PLAYERATTACK = 32,
 	DMG_FOILINVUL = 64,
-	// [MGOOOOOO] 128/256/512 are deliberately left free: they are DMG_FOILBUDDHA, DMG_NO_PROTECT
-	// and DMG_USEANGLE upstream. ZandroX has none of those yet, and reserving their values keeps
-	// a future port numerically identical to GZDoom/UZDoom instead of silently colliding.
+	// [rc4l] uzdoom@d1dc6fd59 and c01d1a800: two of the three reserved values are now used, at the
+	// numbers they were reserved for. 512 stays free for DMG_USEANGLE.
+	DMG_FOILBUDDHA = 128,
+	DMG_NO_PROTECT = 256,
 	DMG_NO_PAIN = 1024,		// skip the victim's pain state entirely (uzdoom p_local.h)
 };
 

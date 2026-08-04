@@ -78,6 +78,7 @@ public:
 	void WipeCleanup();
 	void Swap();
 	bool Is8BitMode() { return false; }
+	void DumpScaleState();
 
 
 private:

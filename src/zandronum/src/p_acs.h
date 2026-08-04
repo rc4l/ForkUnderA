@@ -424,8 +424,9 @@ enum
 	APROP_AttackZOffset	= 40,
 	APROP_StencilColor	= 41,
 	APROP_Friction		= 42,	// [rc4l] uzdoom@ea7ba9dba
-	// [ZandroX] 43-49 are left unused on purpose: UZDoom/GZDoom assign them
-	// (DamageMultiplier, MaxStepHeight, MaxDropOffHeight, DamageType, SoundClass,
+	APROP_DamageMultiplier = 43,	// [rc4l] uzdoom@99b2cfa14 -- was reserved below, now implemented
+	// [ZandroX] 44-49 are left unused on purpose: UZDoom/GZDoom assign them
+	// (MaxStepHeight, MaxDropOffHeight, DamageType, SoundClass,
 	// FriendlySeeBlocks, WaterDepth). ZandroX doesn't implement those yet, so
 	// reserving the ids keeps ACS written against UZDoom's constants valid.
 	// Fork-specific properties therefore start at 50.
@@ -521,6 +522,10 @@ private:
 	int LumpNum;
 	BYTE *Data;
 	int DataSize;
+public:
+	// [rc4l] uzdoom@3437f4fca
+	int GetDataSize() const { return DataSize; }
+private:
 	BYTE *Chunks;
 	ScriptPtr *Scripts;
 	int NumScripts;

@@ -69,7 +69,7 @@ LISTMENU "MainMenu"
 	
 	IfGame(Doom, Strife, Chex)
 	{
-		PatchItem "M_NGAME", "n", "PlayerclassMenu"
+		PatchItem "M_NGAME", "n", "FUANewGameMenu"	// [rc4l] Online/Offline first
 		ifOption(SwapMenu)
 		{
 			PatchItem "M_LOADG", "l", "LoadGameMenu"
@@ -91,7 +91,7 @@ LISTMENU "MainMenu"
 	
 	IfGame(Heretic, Hexen)
 	{
-		TextItem "$MNU_NEWGAME", "n", "PlayerclassMenu"
+		TextItem "$MNU_NEWGAME", "n", "FUANewGameMenu"	// [rc4l] Online/Offline first
 		TextItem "$MNU_OPTIONS", "o", "OptionsMenu"
 		TextItem "$MNU_GAMEFILES", "g", "GameFilesMenu"
 		TextItem "$MNU_INFO", "i", "ReadThisMenu"
@@ -365,6 +365,59 @@ OptionMenu "OptionsMenu"
 	SafeCommand "Reset to defaults",	"reset2defaults"
 	SafeCommand	"Reset to last saved",	"reset2saved"
 	Command "Go to console",			"menuconsole"
+}
+
+//-------------------------------------------------------------------------------------------
+//
+// [rc4l] New Game now asks Online or Offline first, instead of going straight to the
+// singleplayer flow. The server browser already existed (ZA_Browser, browsermenu.cpp) but was
+// buried three levels down under Options -> Multiplayer Options -> Browse servers, which is a
+// strange place for the primary way people play this engine.
+//
+// Offline points at PlayerclassMenu -- the exact target New Game used before -- so the
+// singleplayer path is unchanged and simply gains one keypress. Its netgame guard is unaffected:
+// PlayerclassMenu carries its own NetgameMessage.
+//
+// Kept as its own menu (FUA room) rather than restructured into Zandronum's ZA_ menus, so a
+// re-sync never has to untangle ours from theirs.
+//
+//-------------------------------------------------------------------------------------------
+
+// A ListMenu, not an OptionMenu, so it reads as a continuation of the main menu rather than a
+// settings page: same logo art and position per game, and the DEFAULTLISTMENU selector/font/
+// linespacing above (M_SKULL1 + BigFont Red on Doom) apply for free. The two entries are TextItem
+// rather than PatchItem because there is no M_ONLINE/M_OFFLIN art in any IWAD -- BigFont Red is
+// the closest match to the main menu's patches without shipping new graphics.
+LISTMENU "FUANewGameMenu"
+{
+	Class "FUAPanelListMenu"	// [rc4l] rounded panel behind the logo + rows (listmenu.cpp)
+	IfGame(Doom, Chex)
+	{
+		StaticPatch 94, 2, "M_DOOM"
+		Position 97, 72
+	}
+	IfGame(Strife)
+	{
+		StaticPatch 84, 2, "M_STRIFE"
+		Position 97, 45
+	}
+	IfGame(Heretic)
+	{
+		StaticPatch 88, 0, "M_HTIC"
+		StaticPatch 40, 10, "M_SKL01"
+		StaticPatch 232, 10, "M_SKL00"
+		Position 110, 56
+	}
+	IfGame(Hexen)
+	{
+		StaticPatch 88, 0, "M_HTIC"
+		StaticPatch 37, 80, "FBULB0"
+		StaticPatch 278, 80, "FBULA0"
+		Position 110, 56
+	}
+
+	TextItem "Online",	"o", "ZA_Browser"
+	TextItem "Offline",	"f", "PlayerclassMenu"
 }
 
 //-------------------------------------------------------------------------------------------
@@ -1020,6 +1073,7 @@ OptionMenu "AltHUDOptions"
 	Option "Enable alternative HUD",				"hud_althud", "OnOff"
 	Option "Stretch alternative HUD",				"hud_althudscale", "AltHUDScale"
 	Option "Show secret count",						"hud_showsecrets", "OnOff"
+	Option "Show secret notifications",				"cl_showsecretmessage", "OnOff"
 	Option "Show monster count",					"hud_showmonsters", "OnOff"
 	Option "Show item count",						"hud_showitems", "OnOff"
 	Option "Show weapons",							"hud_showweapons", "OnOff"
@@ -1838,6 +1892,7 @@ OptionValue OplCores
 	0, "MAME OPL2"
 	1, "DOSBox OPL3"
 	2, "Java OPL3"
+	3, "Nuked OPL3"
 }
 
 OptionMenu AdvSoundOptions

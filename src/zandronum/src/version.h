@@ -44,6 +44,8 @@ const char *GetVersionString();
 const char *GetFuaDescribe();
 // [BB]
 const char *GetVersionStringRev();
+// [rc4l] This engine's own release tag ("v0.1.29"), as opposed to the Zandronum version above.
+const char *GetFuaVersionTag();
 int GetRevisionNumber();
 
 /** Lots of different version numbers **/
@@ -143,7 +145,16 @@ int GetRevisionNumber();
 // and respawn-super moved to dmflags2 bit 27 (uzdoom@a21f01bc5). G_DoLoadGame migrates older saves.
 // [rc4l] 4516: AActor now serializes weaponspecial, the weapon scratch counter split out of
 // special1 (uzdoom@ee6e87d94). Upstream bumped for the same change; ours is a separate line.
-#define SAVEVER 4516
+// [rc4l] 4517: DACSThinker serializes its script list iteratively, longest-last, with an
+// explicit count, instead of letting the archive chase the linked list recursively
+// (uzdoom@e3640b5bf + 5170abfee). Upstream numbered the same change 4515; ours is a separate
+// line that was already past that.
+// [rc4l] 4518: each ACS module's data size is stored alongside its name, so a save made
+// against a different build of the same-named BEHAVIOR is refused rather than loaded as
+// garbage (uzdoom@3437f4fca + c494063eb). Upstream numbered it 4516; ours is a separate line.
+// [rc4l] 4519: AActor serializes DamageMultiply, the outgoing-damage scale reachable from
+// DECORATE and from ACS via APROP_DamageMultiplier (uzdoom@99b2cfa14 + e303833e5).
+#define SAVEVER 4519
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)
