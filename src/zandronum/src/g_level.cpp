@@ -1986,6 +1986,17 @@ void G_FinishTravel ()
 			pawn->SetState(pawn->SpawnState);
 			pawn->player->SendPitchLimits();
 
+			// [rc4l] uzdoom@aa338a4dc: sync the FLY flags. MF2_FLY and CF_FLY are set independently
+			// and travel only carried one of them, so a flying player arrived with them disagreeing.
+			if (pawn->flags2 & MF2_FLY)
+			{
+				pawn->player->cheats |= CF_FLY;
+			}
+			else
+			{
+				pawn->player->cheats &= ~CF_FLY;
+			}
+
 			// [BC]
 			pawn->NetID = savedNetID;
 			g_ActorNetIDList.useID ( pawn->NetID, pawn );
