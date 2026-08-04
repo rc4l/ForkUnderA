@@ -1129,6 +1129,21 @@ void DBaseStatusBar::RefreshBackground () const
 	{
 		if(y < SCREENHEIGHT)
 		{
+			// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+			//
+			// Fill the whole strip from y down, not just its edges. The two lines below paint one
+			// pixel at the top and bottom and the code further on paints the left and right, on the
+			// assumption that the bar itself covers everything between. It does not: the bar is
+			// positioned by VirtualToRealCoords while y comes from ::ST_Y, and when the bar's top
+			// lands below y the band between them is painted by nobody -- a horizontal yellow line
+			// above the bar, reported at 650x350.
+			//
+			// RefreshBackground runs BEFORE the bar draws (see Draw), so filling underneath it is
+			// free of consequence and covers any gap on any edge, rather than the one edge I happen
+			// to have chased. The real repair is a single source for the laid-out rectangle that both
+			// the bar and this share; until then, do not assume where the bar ends up.
+			V_DrawBorder (0, y, SCREENWIDTH, SCREENHEIGHT);
+
 			V_DrawBorder (x+1, y, SCREENWIDTH, y+1);
 			V_DrawBorder (x+1, SCREENHEIGHT-1, SCREENWIDTH, SCREENHEIGHT);
 		}
