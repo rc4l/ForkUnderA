@@ -207,6 +207,9 @@ int 			consoleplayer;			// player taking events
 int 			gametic;
 
 CVAR(Bool, demo_compress, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
+// [rc4l] uzdoom@eceb37aa6
+FString			newdemoname;
+FString			newdemomap;
 FString			demoname;
 bool 			demorecording;
 bool 			demoplayback;
@@ -1512,6 +1515,15 @@ void G_Ticker ()
 		case ga_loadlevel:
 			G_DoLoadLevel (-1, false);
 			break;
+		// [rc4l] uzdoom@eceb37aa6: NO break -- deliberate fall-through into ga_newgame. The
+		// recordmap CCMD calls G_DeferedInitNew (which sets ga_newgame) and then overwrites
+		// gameaction with ga_recordgame, so the new game still has to be started here.
+		// Upstream annotates this [[fallthrough]] at HEAD; we say it in words.
+		case ga_recordgame:
+			G_CheckDemoStatus();
+			G_RecordDemo(newdemoname);
+			G_BeginRecording(newdemomap);
+			// fall through
 		case ga_newgame2:	// Silence GCC (see above)
 		case ga_newgame:
 			G_DoNewGame ();
@@ -5248,6 +5260,18 @@ void G_DeferedPlayDemo (const char *name)
 extern bool advancedemo;
 CCMD (playdemo)
 {
+	// [rc4l] uzdoom@eceb37aa6: refuse rather than silently clobbering a live game or an
+	// in-progress recording. Our netgame test is the network state, as elsewhere here.
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+	{
+		Printf( "End your current netgame first!\n" );
+		return;
+	}
+	if (demorecording)
+	{
+		Printf( "End your current demo first!\n" );
+		return;
+	}
 	if (argv.argc() > 1)
 	{
 		// [BB] CLIENTDEMO_FinishPlaying() destroy the arguments, so we have to save

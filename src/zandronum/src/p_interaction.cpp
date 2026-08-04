@@ -1145,6 +1145,13 @@ static inline bool MustForcePain(AActor *target, AActor *inflictor, int flags)
 		(inflictor->flags6 & MF6_FORCEPAIN) && !(inflictor->flags5 & MF5_PAINLESS));
 }
 
+// [rc4l] uzdoom@2e085b231 / b54b18c8c: does this hit get to run the pain chance even though the
+// damage itself is going to be refused? ALLOWPAIN on the victim, CAUSEPAIN on the inflictor.
+static inline bool isFakePain(AActor *target, AActor *inflictor)
+{
+	return ((target->flags7 & MF7_ALLOWPAIN) || ((inflictor != NULL) && (inflictor->flags7 & MF7_CAUSEPAIN)));
+}
+
 // Returns the amount of damage actually inflicted upon the target, or -1 if
 // the damage was cancelled.
 int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage, FName mod, int flags)
@@ -1159,6 +1166,15 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 	bool justhit = false;
 	// [BC]
 	LONG	lOldTargetHealth;
+	// [rc4l] uzdoom pain cluster (2e085b231 ALLOWPAIN, b54b18c8c CAUSEPAIN, 7e579a0a2), taken as
+	// one settled form. When a hit would be refused outright, ALLOWPAIN/CAUSEPAIN instead jump to
+	// the `fakepain` label so the pain chance and infighting still run, then return the original
+	// verdict: -1 for an invulnerable victim, otherwise the damage actually calculated.
+	bool plrDontThrust = false;
+	bool invulpain = false;
+	int fakeDamage = 0;
+	int holdDamage = 0;
+	const bool fakedPain = isFakePain(target, inflictor);
 
 	// [BC] Game is currently in a suspended state; don't hurt anyone.
 	if ( GAME_GetEndLevelDelay( ))
@@ -1213,7 +1229,16 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		{
 			if (inflictor == NULL || (!(inflictor->flags3 & MF3_FOILINVUL) && !(flags & DMG_FOILINVUL)))
 			{
-				return -1;
+				// [rc4l] uzdoom pain cluster: an ALLOWPAIN/CAUSEPAIN hit still runs the pain
+				// chance; invulpain makes the function return -1 all the same.
+				if (fakedPain)
+				{
+					invulpain = true;
+					fakeDamage = damage;
+					goto fakepain;
+				}
+				else
+					return -1;
 			}
 		}
 		else
@@ -1221,10 +1246,22 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 			// Players are optionally excluded from getting thrust by damage.
 			if (static_cast<APlayerPawn *>(target)->PlayerFlags & PPF_NOTHRUSTWHENINVUL)
 			{
-				return -1;
+				// [rc4l] uzdoom pain cluster: suppress only the thrust, keep going.
+				if (fakedPain)
+					plrDontThrust = true;
+				else
+					return -1;
 			}
 		}
 		
+	}
+
+	// [rc4l] uzdoom pain cluster: remember the pre-factor damage now. Deliberately does NOT jump
+	// to fakepain -- the damage has not been dealt yet; once it has, the damage factors are no
+	// longer allowed to influence the pain chance.
+	if (fakedPain && (damage < TELEFRAG_DAMAGE))
+	{
+		fakeDamage = damage;
 	}
 	if (inflictor != NULL)
 	{
@@ -1291,16 +1328,26 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 			}
 		}
 		// Handle active damage modifiers (e.g. PowerDamage)
-		if (source != NULL && source->Inventory != NULL)
+		if (source != NULL)
 		{
 			int olddam = damage;
-			source->Inventory->ModifyDamage(olddam, mod, damage, false);
-			if (olddam != damage && damage <= 0)
+			if (source->Inventory != NULL)
+			{
+				source->Inventory->ModifyDamage(olddam, mod, damage, false);
+			}
+			// [rc4l] uzdoom@99b2cfa14 with uzdoom@e303833e5: the multiplier applies AFTER the
+			// inventory modifiers -- that ordering is the whole point of e303833e5.
+			damage = (int)(FixedMul(damage, source->DamageMultiply));
+			// [rc4l] uzdoom pain cluster: a CAUSEPAIN source triggers the pain chance even when
+			// the modified damage came out at nothing.
+			if (((source->flags7 & MF7_CAUSEPAIN) && (fakeDamage <= 0)) || (olddam != damage && damage <= 0))
 			{ // Still allow FORCEPAIN
 				if (MustForcePain(target, inflictor, flags))
 				{
 					goto dopain;
 				}
+				else if (fakedPain)
+					goto fakepain;
 				return -1;
 			}
 		}
@@ -1310,12 +1357,16 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		{
 			int olddam = damage;
 			target->Inventory->ModifyDamage(olddam, mod, damage, true);
-			if (olddam != damage && damage <= 0)
+			// [rc4l] uzdoom pain cluster: the player path is left alone here -- their cheats are
+			// evaluated further down, and jumping early would skip that.
+			if ((olddam != damage && damage <= 0) && target->player == NULL)
 			{ // Still allow FORCEPAIN
 				if (MustForcePain(target, inflictor, flags))
 				{
 					goto dopain;
 				}
+				else if (fakedPain)
+					goto fakepain;
 				return -1;
 			}
 		}
@@ -1340,20 +1391,28 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 			{
 				damage = DamageTypeDefinition::ApplyMobjDamageFactor(damage, mod, target->GetClass()->ActorInfo->DamageFactors);
 			}
-			if (damage <= 0)
+			if (damage <= 0 && target->player == NULL)
 			{ // Still allow FORCEPAIN
 				if (MustForcePain(target, inflictor, flags))
 				{
 					goto dopain;
 				}
+				else if (fakedPain)
+					goto fakepain;
 				return -1;
 			}
 		}
 
-		damage = target->TakeSpecialDamage (inflictor, source, damage, mod);
+		// [rc4l] uzdoom pain cluster: only ask the actor to absorb damage that still exists.
+		if (damage > 0)
+			damage = target->TakeSpecialDamage (inflictor, source, damage, mod);
 	}
-	if (damage == -1)
+	// [rc4l] uzdoom pain cluster: a player's cheats have not been consulted yet, so let them
+	// through to that block rather than returning here.
+	if (damage == -1 && target->player == NULL)
 	{
+		if (fakedPain)
+			goto fakepain;
 		return -1;
 	}
 
@@ -1379,7 +1438,8 @@ thrust:
 	// (i.e. Gauntlets/Chainsaw)
 	// [BB] The server handles this.
 	// [AK] Don't push teammates if ZADF_DONT_PUSH_ALLIES is enabled.
-	if (inflictor && inflictor != target	// [RH] Not if hurting own self
+	// [rc4l] uzdoom pain cluster: PPF_NOTHRUSTWHENINVUL suppressed the thrust above.
+	if (!plrDontThrust && inflictor && inflictor != target	// [RH] Not if hurting own self
 		&& !(target->flags & MF_NOCLIP)
 		&& !(inflictor->flags2 & MF2_NODMGTHRUST)
 		&& !(flags & DMG_THRUSTLESS)
@@ -1526,7 +1586,19 @@ thrust:
 				(player->cheats & CF_GODMODE))) ||
 				(player->cheats & CF_GODMODE2) || (player->mo->flags5 & MF5_NODAMAGE))
 			{ // player is invulnerable, so don't hurt him
-				return -1;
+				// [rc4l] uzdoom@7e579a0a2: godmode and +NOPAIN stop the pain outright. Only then
+				// may NODAMAGE, ALLOWPAIN or a CAUSEPAIN inflictor still run the pain chance.
+				if ((player->cheats & CF_GODMODE) || (player->cheats & CF_GODMODE2) || (player->mo->flags5 & MF5_NOPAIN))
+					return -1;
+				else if ((player->mo->flags7 & MF7_ALLOWPAIN) || (player->mo->flags5 & MF5_NODAMAGE)
+					|| ((inflictor != NULL) && (inflictor->flags7 & MF7_CAUSEPAIN)))
+				{
+					invulpain = true;
+					fakeDamage = damage;
+					goto fakepain;
+				}
+				else
+					return -1;
 			}
 
 			// [AK] Trigger an event script indicating that the player has taken damage before any damage
@@ -1598,7 +1670,11 @@ thrust:
 			// uzdoom@2e1fa70cb supplies the parentheses this condition needs. uzdoom@202076996:
 			// ignore players already dead, or buddha revives a corpse to health 1 and the exiting
 			// player comes back as a zombie.
-			if (((player->cheats & CF_BUDDHA2) || ((player->cheats & CF_BUDDHA) && damage < TELEFRAG_DAMAGE))
+			// [rc4l] uzdoom@c63adf920 adds MF7_BUDDHA here. NOT reproduced: it wrote
+			// `CF_BUDDHA || MF7_BUDDHA && damage < TELEFRAG_DAMAGE`, and && binds tighter than ||,
+			// so cheat buddha would have survived telefrag damage. Its own P_PoisonDamage hunk
+			// parenthesises it correctly and upstream's hasBuddha() at HEAD settles the intent.
+			if (((player->cheats & CF_BUDDHA2) || (((player->cheats & CF_BUDDHA) || (player->mo->flags7 & MF7_BUDDHA)) && damage < TELEFRAG_DAMAGE))
 				&& player->playerstate != PST_DEAD)
 			{
 				// If this is a voodoo doll we need to handle the real player as well.
@@ -1798,6 +1874,18 @@ thrust:
 	}
 
 	
+fakepain: // [rc4l] uzdoom pain cluster: skip everything above, but still obey the rules below.
+
+	// CAUSEPAIN can always attempt the pain chance; ALLOWPAIN only when the unfiltered damage was
+	// positive. Swap the calculated damage out for the original so damage factors cannot influence
+	// the roll, and keep the calculated value to return.
+	if (((target->flags7 & MF7_ALLOWPAIN) && (fakeDamage > 0))
+		|| ((inflictor != NULL) && (inflictor->flags7 & MF7_CAUSEPAIN)))
+	{
+		holdDamage = damage;
+		damage = fakeDamage;
+	}
+
 	// [MGOOOOOO] DMG_NO_PAIN is the per-hit form of +NOPAIN: a ripper with +RIPPERNOPAIN passes it
 	// for its rips only, so the projectile's terminal explosion can still make the victim flinch.
 	if (!(flags & DMG_NO_PAIN) &&
@@ -1916,6 +2004,18 @@ dopain:
 	// killough 11/98: Don't attack a friend, unless hit by that friend.
 	if (justhit && (target->target == source || !target->target || !target->IsFriend(target->target)))
 		target->flags |= MF_JUSTHIT;    // fight back!
+
+	// [rc4l] uzdoom pain cluster: report the verdict the early return would have given. An
+	// invulnerable victim still says -1 even though it flinched; otherwise hand back the damage
+	// actually calculated, not the original value swapped in for the pain roll.
+	if (invulpain)
+	{
+		return -1;
+	}
+	else if (fakedPain)
+	{
+		return holdDamage;
+	}
 
 	return damage;
 }
@@ -2166,7 +2266,8 @@ void P_PoisonDamage (player_t *player, AActor *source, int damage,
 	target->health -= damage;
 	if (target->health <= 0)
 	{ // Death
-		if ((player->cheats & CF_BUDDHA && damage < TELEFRAG_DAMAGE) || (player->cheats & CF_BUDDHA2))
+		// [rc4l] uzdoom@c63adf920: MF7_BUDDHA counts here as well.
+		if ((((player->cheats & CF_BUDDHA) || (player->mo->flags7 & MF7_BUDDHA)) && damage < TELEFRAG_DAMAGE) || (player->cheats & CF_BUDDHA2))
 		{ // [SP] Save the player... 
 			player->health = target->health = 1;
 		}

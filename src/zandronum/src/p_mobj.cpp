@@ -442,6 +442,7 @@ void AActor::Serialize (FArchive &arc)
 	arc << lastpush << lastbump
 		<< PainThreshold
 		<< DamageFactor
+		<< DamageMultiply		// [rc4l] uzdoom@99b2cfa14
 		<< WeaveIndexXY << WeaveIndexZ
 		<< PoisonDamageReceived << PoisonDurationReceived << PoisonPeriodReceived << Poisoner
 		<< PoisonDamage << PoisonDuration << PoisonPeriod;

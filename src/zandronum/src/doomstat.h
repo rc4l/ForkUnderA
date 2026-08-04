@@ -133,6 +133,9 @@ extern	int				consoleplayer;
 // Disable save/end game?
 extern	bool			usergame;
 
+// [rc4l] uzdoom@eceb37aa6: what `recordmap` deferred, consumed by ga_recordgame.
+extern	FString			newdemoname;
+extern	FString			newdemomap;
 extern	bool			demoplayback;
 extern	bool			demorecording;
 extern	int				demover;

@@ -530,7 +530,7 @@ void P_RemoveThing(AActor * actor)
 // the thing.
 // [EP] Ignore also the checks in AActor::GetRaiseState (in particular the
 // 'tics != -1' one, because the client might get the wrong value).
-bool P_Thing_Raise(AActor *thing, bool byClient)
+bool P_Thing_Raise(AActor *thing, bool byClient, AActor *raiser)
 {
 	FState * RaiseState = byClient ? thing->FindState(NAME_Raise) : thing->GetRaiseState();	// [EP]
 	if (RaiseState == NULL)
@@ -562,6 +562,13 @@ bool P_Thing_Raise(AActor *thing, bool byClient)
 	S_Sound (thing, CHAN_BODY, "vile/raise", 1, ATTN_IDLE);
 
 	thing->Revive();
+
+	// [rc4l] uzdoom@94f08aa59: a monster raised by someone inherits that raiser's
+	// friendliness, so a resurrected ally does not come back hostile.
+	if (raiser != NULL)
+	{
+		thing->CopyFriendliness(raiser, false);
+	}
 
 	// [BC] If we're the server, tell clients to put the thing into its raise state.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
