@@ -212,6 +212,8 @@ void P_RemoveThing(AActor * actor);
 // friendliness. Upstream put it in the second slot; ours is already Zandronum's byClient,
 // so it goes third and defaults to NULL (the old behaviour).
 bool P_Thing_Raise(AActor *thing, bool byClient = false, AActor *raiser = NULL); // [BB/EP] Added 'byClient'.
+// [rc4l] uzdoom@30acb7200: per-actor teleport fog; declared here so A_Teleport can reach it.
+void P_SpawnTeleportFog(AActor *mobj, fixed_t x, fixed_t y, fixed_t z, bool beforeTele = true, bool setTarget = false);
 bool P_Thing_CanRaise(AActor *thing);
 const PClass *P_GetSpawnableType(int spawnnum);
 

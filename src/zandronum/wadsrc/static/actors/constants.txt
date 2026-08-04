@@ -221,6 +221,14 @@ const int CPF_NOTURN = 16;
 // Flags for A_Teleport
 const int TF_TELEFRAG = 1;const int TF_RANDOMDECIDE = 2;
 const int TF_FORCED = 4;
+// [rc4l] uzdoom@86b0065c0
+const int TF_KEEPVELOCITY = 8;
+const int TF_KEEPANGLE = 16;
+const int TF_USESPOTZ = 32;
+const int TF_NOSRCFOG = 64;
+const int TF_NODESTFOG = 128;
+const int TF_USEACTORFOG = 256;
+const int TF_NOJUMP = 512;
 
 // Flags for A_WolfAttack
 const int WAF_NORANDOM = 1;
