@@ -1261,24 +1261,29 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 					//     cases where they are clearly supposed to do that
 					if (thing->IsFriend(tm.thing->target))
 					{
-						// Friends never harm each other
-						return false;
+						// [rc4l] uzdoom@5ac7e4fc3: friends never harm each other, unless the shooter
+						// has HARMFRIENDS set. The species and TIDtoHate tests below now only apply
+						// when the two are NOT friends, which is what the else was added for.
+						if (!(thing->flags7 & MF7_HARMFRIENDS)) return false;
 					}
-					if (thing->TIDtoHate != 0 && thing->TIDtoHate == tm.thing->target->TIDtoHate)
+					else
 					{
-						// [RH] Don't hurt monsters that hate the same thing as you do
-						return false;
-					}
-					if (thing->GetSpecies() == tm.thing->target->GetSpecies() && !(thing->flags6 & MF6_DOHARMSPECIES))
-					{
-						// Don't hurt same species or any relative -
-						// but only if the target isn't one's hostile.
-						if (!thing->IsHostile(tm.thing->target))
+						if (thing->TIDtoHate != 0 && thing->TIDtoHate == tm.thing->target->TIDtoHate)
 						{
-							// Allow hurting monsters the shooter hates.
-							if (thing->tid == 0 || tm.thing->target->TIDtoHate != thing->tid)
+							// [RH] Don't hurt monsters that hate the same thing as you do
+							return false;
+						}
+						if (thing->GetSpecies() == tm.thing->target->GetSpecies() && !(thing->flags6 & MF6_DOHARMSPECIES))
+						{
+							// Don't hurt same species or any relative -
+							// but only if the target isn't one's hostile.
+							if (!thing->IsHostile(tm.thing->target))
 							{
-								return false;
+								// Allow hurting monsters the shooter hates.
+								if (thing->tid == 0 || tm.thing->target->TIDtoHate != thing->tid)
+								{
+									return false;
+								}
 							}
 						}
 					}
@@ -6037,7 +6042,7 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 				{
 					if (!(flags & RADF_NODAMAGE))
 						newdam = P_DamageMobj(thing, bombspot, bombsource, damage, bombmod);
-					else if (thing->player == NULL && !(flags & RADF_NOIMPACTDAMAGE))
+					else if (thing->player == NULL && (!(flags & RADF_NOIMPACTDAMAGE) && !(thing->flags7 & MF7_DONTTHRUST)))
 					{
 						thing->flags2 |= MF2_BLASTED;
 

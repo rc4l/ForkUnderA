@@ -1304,8 +1304,9 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 				return -1;
 			}
 		}
-		// Handle passive damage modifiers (e.g. PowerProtection)
-		if (target->Inventory != NULL)
+		// Handle passive damage modifiers (e.g. PowerProtection), provided they are not afflicted with protection penetrating powers.
+		// [rc4l] uzdoom@c01d1a800
+		if ((target->Inventory != NULL) && !(flags & DMG_NO_PROTECT))
 		{
 			int olddam = damage;
 			target->Inventory->ModifyDamage(olddam, mod, damage, true);
@@ -1382,6 +1383,7 @@ thrust:
 		&& !(target->flags & MF_NOCLIP)
 		&& !(inflictor->flags2 & MF2_NODMGTHRUST)
 		&& !(flags & DMG_THRUSTLESS)
+		&& !(target->flags7 & MF7_DONTTHRUST)
 		&& (source == NULL || source->player == NULL || !(source->flags2 & MF2_NODMGTHRUST))
 		&& (( PLAYER_CannotAffectAllyWith( source, target, inflictor, ZADF_DONT_PUSH_ALLIES ) == false ) || ( target->player == COOP_GetVoodooDollDummyPlayer() )) // [RK] Dolls need to be pushed.
 		&& ( NETWORK_InClientMode() == false ) )
@@ -1517,8 +1519,12 @@ thrust:
 		if (!(flags & DMG_FORCED))
 		{
 			// check the real player, not a voodoo doll here for invulnerability effects
-			if (damage < TELEFRAG_DAMAGE && ((player->mo->flags2 & MF2_INVULNERABLE) ||
-				(player->cheats & CF_GODMODE)))
+			// [rc4l] uzdoom@b98006936: GODMODE2 and NODAMAGE are absolute -- unlike GODMODE they
+			// are not subject to the telefrag threshold, and NODAMAGE now also stops a voodoo
+			// doll hurting its owner.
+			if ((damage < TELEFRAG_DAMAGE && ((player->mo->flags2 & MF2_INVULNERABLE) ||
+				(player->cheats & CF_GODMODE))) ||
+				(player->cheats & CF_GODMODE2) || (player->mo->flags5 & MF5_NODAMAGE))
 			{ // player is invulnerable, so don't hurt him
 				return -1;
 			}
@@ -1532,7 +1538,12 @@ thrust:
 			{
 				int newdam = damage;
 				player->mo->Inventory->AbsorbDamage (damage, mod, newdam);
-				damage = newdam;
+				// [rc4l] uzdoom@83be901ad: if we are telefragging, do not let armour drag the damage
+				// below TELEFRAG_DAMAGE -- later checks compare against that exact value.
+				if (damage < TELEFRAG_DAMAGE)
+				{
+					damage = newdam;
+				}
 				if (damage <= 0)
 				{
 					// [BB] The player didn't lose health but armor. The server needs
@@ -1556,7 +1567,7 @@ thrust:
 
 			bDamageEventHandled = true;
 
-			if (damage >= player->health
+			if (damage >= player->health && damage < TELEFRAG_DAMAGE
 				&& (G_SkillProperty(SKILLP_AutoUseHealth) || deathmatch)
 				&& !player->morphTics)
 			{ // Try to use some inventory health
@@ -1583,9 +1594,11 @@ thrust:
 			// This does not save the player if damage >= TELEFRAG_DAMAGE, still need to
 			// telefrag him right? ;) (Unfortunately the damage is "absorbed" by armor,
 			// but telefragging should still do enough damage to kill the player)
-			if ((player->cheats & CF_BUDDHA) && damage < TELEFRAG_DAMAGE
-				// [rc4l] uzdoom@202076996: ignore players that are already dead, or buddha revives a
-				// corpse to health 1 and the exiting player comes back as a zombie.
+			// [rc4l] uzdoom@b98006936 adds CF_BUDDHA2 (absolute buddha -- not even telefrag kills);
+			// uzdoom@2e1fa70cb supplies the parentheses this condition needs. uzdoom@202076996:
+			// ignore players already dead, or buddha revives a corpse to health 1 and the exiting
+			// player comes back as a zombie.
+			if (((player->cheats & CF_BUDDHA2) || ((player->cheats & CF_BUDDHA) && damage < TELEFRAG_DAMAGE))
 				&& player->playerstate != PST_DEAD)
 			{
 				// If this is a voodoo doll we need to handle the real player as well.
@@ -1703,7 +1716,20 @@ thrust:
 	}
 
 	if (target->health <= 0)
-	{ // Death
+	{
+		// [rc4l] uzdoom@d1dc6fd59: MF7_BUDDHA is the actor-flag equivalent of the cheat -- non-lethal
+		// damage leaves it at 1 health. TWO UPSTREAM DEFECTS ARE NOT REPRODUCED HERE: their version
+		// reads inflictor->flags3 & MF7_FOILBUDDHA (an MF7 constant against the flags3 word) and
+		// dereferences inflictor without a null check, which P_DamageMobj explicitly permits.
+		if ((target->flags7 & MF7_BUDDHA) && (damage < TELEFRAG_DAMAGE)
+			&& (inflictor == NULL || !(inflictor->flags7 & MF7_FOILBUDDHA))
+			&& !(flags & DMG_FOILBUDDHA))
+		{ // FOILBUDDHA or telefrag damage must kill it.
+			target->health = 1;
+		}
+		else
+		{
+		// Death
 		target->special1 = damage;
 
 		// use inflictor's death type if it got one.
@@ -1751,6 +1777,7 @@ thrust:
 			target->Die (source, inflictor, flags);
 		}
 		return damage;
+		}	// [rc4l] closes the MF7_BUDDHA else opened above
 	}
 
 	woundstate = target->FindState(NAME_Wound, mod);
@@ -2139,7 +2166,7 @@ void P_PoisonDamage (player_t *player, AActor *source, int damage,
 	target->health -= damage;
 	if (target->health <= 0)
 	{ // Death
-		if (player->cheats & CF_BUDDHA && damage < TELEFRAG_DAMAGE)
+		if ((player->cheats & CF_BUDDHA && damage < TELEFRAG_DAMAGE) || (player->cheats & CF_BUDDHA2))
 		{ // [SP] Save the player... 
 			player->health = target->health = 1;
 		}
@@ -2399,6 +2426,10 @@ void PLAYER_SetTeam( player_t *pPlayer, ULONG ulTeam, bool bNoBroadcast )
 	// [BB] This may be called to set team of a player who wasn't spawned yet (for instance in the CSkullBot constructor).
 	if ( pPlayer->bUnarmed && pPlayer->mo )
 	{
+		// [rc4l] uzdoom@fc40e9723: kept, not dropped. G_DeathMatchSpawnPlayer strips a fresh
+		// player's inventory and flags them bUnarmed, so this is the completion of that spawn
+		// and the health reset it used to get from GiveDefaultInventory() is still wanted.
+		pPlayer->mo->ResetStartingHealth();
 		pPlayer->mo->GiveDefaultInventory();
 		if ( deathmatch )
 			pPlayer->mo->GiveDeathmatchInventory();

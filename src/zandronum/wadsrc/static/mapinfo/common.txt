@@ -1,3 +1,10 @@
+// [rc4l] uzdoom@8edace83c: automap key markers, previously hardcoded in AM_StaticInit.
+Gameinfo
+{
+	CheatKey = "maparrows/key.txt"
+	EasyKey = "maparrows/ravenkey.txt"
+}
+
 
 Intermission Inter_Titlescreen
 {

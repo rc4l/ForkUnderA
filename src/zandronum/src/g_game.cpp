@@ -2105,6 +2105,10 @@ void G_PlayerFinishLevel (int player, EFinishLevelType mode, int flags)
 	// [rc4l] uzdoom@842ef86e7: a dead player must not be handed the starting inventory here -- they
 	// get it on respawn instead. Doing it twice left them holding weapons their corpse never lost.
 	// Pure predicate tightening on playerstate, which is already synced, so both ends still agree.
+	// [rc4l] uzdoom@fc40e9723: deliberately NO health reset here. This is the whole point of that
+	// commit -- MAPINFO 'resetinventory' used to imply 'resethealth' because GiveDefaultInventory()
+	// healed as a side effect, so the two flags handled separately just above could not be used
+	// independently. A player crossing into a resetinventory map now keeps the damage they took.
 	if ((flags & CHANGELEVEL_RESETINVENTORY) && p->playerstate != PST_DEAD)
 	{
 		p->mo->ClearInventory();
@@ -2270,13 +2274,16 @@ void G_PlayerReborn (int player, bool bGiveInventory)
 
 	if (gamestate != GS_TITLELEVEL)
 	{
+		// [rc4l] uzdoom@fc40e9723 puts the starting-health reset here, in the one caller that
+		// wants it, rather than inside GiveDefaultInventory(). The [BB] else branch below was
+		// already doing exactly that by hand for the no-inventory case -- it is now the same
+		// call on both paths, so a reborn player gets the handicap applied either way.
+		if ( actor->player )
+			actor->ResetStartingHealth ();
+
 		// [BB] Added bGiveInventory.
 		if ( bGiveInventory )
 			actor->GiveDefaultInventory ();
-		// [BB] Even if we don't give the inventory, we need to give the player the default health.
-		// Otherwise we get a zombie player with 0 health (at least on the clients).
-		else if ( actor->player )
-			actor->player->health = actor->GetDefault ()->health;
 
 		p->ReadyWeapon = p->PendingWeapon;
 	}
