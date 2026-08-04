@@ -8,10 +8,12 @@ using namespace zx;
 
 namespace
 {
-MenuItemBox Box(int x, int y, int w, int inkTop = 0)
+// x/y are the DRAWN corner -- the caller has already applied any patch offsets. h of 0 means the
+// item cannot report its height, and the extent falls back to linespacing for it.
+MenuItemBox Box(int x, int y, int w, int h = 0)
 {
 	MenuItemBox b;
-	b.x = x; b.y = y; b.w = w; b.inkTop = inkTop;
+	b.x = x; b.y = y; b.w = w; b.h = h;
 	return b;
 }
 }
@@ -70,36 +72,47 @@ TEST(ListMenuExtent, NothingMeasurableIsNotValid)
 	EXPECT_FALSE(ComputeListMenuExtent(items, 2, 0, 10).valid);
 }
 
-// The regression this unit exists for: a logo authored with transparent slack above it used to push
-// the panel's top edge up to the item's box, leaving a visibly bigger gap above the art than below
-// the rows under it.
-TEST(ListMenuExtent, InkTopMovesTopEdgeDownToTheArtwork)
+// The regression this unit exists for. Freedoom's M_DOOM is offset (13,-16) and the menu places it
+// with `StaticPatch 94, 2`, so it paints at (81, 18) -- the caller passes THAT, and the extent must
+// follow the pixels rather than the stated position. Measuring 94,2 put the panel's top sixteen
+// virtual rows too high, which at CleanYfac 4 was enough to drive it off-screen and get clamped
+// flush to the edge.
+TEST(ListMenuExtent, FollowsTheDrawnCornerNotTheStatedPosition)
 {
-	const MenuItemBox withSlack[] = { Box(94, 2, 200, 24), Box(97, 72, 60) };
-	MenuExtent e = ComputeListMenuExtent(withSlack, 2, 0, 16);
+	const MenuItemBox stated[] = { Box(94, 2, 159), Box(97, 72, 60) };
+	const MenuItemBox drawn[]  = { Box(81, 18, 159), Box(97, 72, 60) };
 
-	ASSERT_TRUE(e.valid);
-	EXPECT_EQ(26, e.top);			// 2 + 24, not 2
-	EXPECT_EQ(88, e.bottom);		// unchanged: bottom tracks the box
+	const MenuExtent a = ComputeListMenuExtent(stated, 2, 0, 16);
+	const MenuExtent b = ComputeListMenuExtent(drawn, 2, 0, 16);
+
+	EXPECT_EQ(2, a.top);
+	EXPECT_EQ(18, b.top);			// sixteen rows lower, where the logo actually is
+	EXPECT_EQ(253, a.right);		// 94 + 159, ignoring the leftoffset
+	EXPECT_EQ(240, b.right);		// 81 + 159, which is centred on the 320-wide page
+	EXPECT_EQ(88, b.bottom);		// bottom still tracks the rows, not the logo
 }
 
-TEST(ListMenuExtent, InkTopNeverRaisesTheTopEdge)
+// The second half of the same lesson: pad below the GLYPHS, not below the line box. A descriptor's
+// linespacing is the gap between rows and runs taller than the font, so falling back to it under the
+// last row left the leftover leading as extra margin -- the panel had a visibly bigger gap beneath
+// its last row than above its first even after the top was correct.
+TEST(ListMenuExtent, BottomFollowsDrawnHeightWhenTheItemReportsOne)
 {
-	const MenuItemBox negative[] = { Box(94, 10, 200, -50) };
-	EXPECT_EQ(10, ComputeListMenuExtent(negative, 1, 0, 16).top);
+	const MenuItemBox reported[] = { Box(97, 72, 60, 11) };
+	EXPECT_EQ(83, ComputeListMenuExtent(reported, 1, 0, 16).bottom);		// 72 + 11, not 72 + 16
 
-	const MenuItemBox zero[] = { Box(94, 10, 200, 0) };
-	EXPECT_EQ(10, ComputeListMenuExtent(zero, 1, 0, 16).top);
+	const MenuItemBox silent[] = { Box(97, 72, 60) };
+	EXPECT_EQ(88, ComputeListMenuExtent(silent, 1, 0, 16).bottom);		// falls back to linespacing
 }
 
-TEST(ListMenuExtent, InkTopOnALaterItemStillWins)
+TEST(ListMenuExtent, LowestPaintedEdgeWinsRegardlessOfOrder)
 {
-	// The topmost BOX belongs to the logo, but after its slack the text above it is higher.
-	const MenuItemBox items[] = { Box(94, 0, 200, 40), Box(97, 20, 60) };
-	MenuExtent e = ComputeListMenuExtent(items, 2, 0, 16);
+	// A short row lower down must not be beaten by a tall row above it, and vice versa.
+	const MenuItemBox items[] = { Box(10, 10, 20, 40), Box(10, 60, 20, 5) };
+	EXPECT_EQ(65, ComputeListMenuExtent(items, 2, 0, 16).bottom);
 
-	ASSERT_TRUE(e.valid);
-	EXPECT_EQ(20, e.top);
+	const MenuItemBox tallLast[] = { Box(10, 10, 20, 5), Box(10, 20, 20, 90) };
+	EXPECT_EQ(110, ComputeListMenuExtent(tallLast, 2, 0, 16).bottom);
 }
 
 TEST(ListMenuExtent, SingleItemAndZeroLinespacing)

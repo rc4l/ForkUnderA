@@ -7,32 +7,41 @@ browser.
 
 ## Files (this folder)
 
-- `computation/panelmenu_compute.{h,cpp}` — `ComputeListMenuExtent`: given each item's box, the
+- `panelmenu.cpp` — `DFUAPanelListMenu`, the `DListMenu` subclass that draws the panel.
+- `computation/panelmenu_compute.{h,cpp}` — `ComputeListMenuExtent`: given each item's drawn box, the
   descriptor's cursor offset and its linespacing, the rectangle the panel must enclose.
 - `computation/panelmenu_compute_test.cpp` — its tests.
 
+Nothing upstream draws a panel behind menu items, so none of this merges with anything on a re-sync;
+keeping it out of `menu/listmenu.cpp` is what stops the sequential backport tripping over it.
+
 ## In-place engine edits
 
-The drawing itself is not here. `DFUAPanelListMenu` lives in `src/menu/listmenu.cpp` beside the
-ListMenu machinery it extends, and only the pure decision was lifted out so it could be tested
-off-engine.
+Only the accessors the panel reads, which have to sit on the vendored class hierarchy:
 
-- `src/menu/listmenu.cpp` — `DFUAPanelListMenu::Drawer()` flattens `mDesc->mItems` into
-  `zx::MenuItemBox` values and calls `ComputeListMenuExtent`; `FListMenuItemStaticPatch::GetInkTop()`.
-- `src/menu/menu.h` — `FListMenuItem::GetInkTop()` (virtual, returns 0) and the
-  `FListMenuItemStaticPatch` override + its cache field.
-- `src/CMakeLists.txt` — `features/panel-menu/computation/panelmenu_compute.cpp`.
+- `src/menu/menu.h` — `FListMenuItem::GetDrawnX()` / `GetDrawnY()` (virtual, identity by default) and
+  the `FListMenuItemStaticPatch` overrides.
+- `src/menu/listmenu.cpp` — `FListMenuItemStaticPatch::GetWidth()`, `GetDrawnX()`, `GetDrawnY()`.
+- `src/CMakeLists.txt` — both `.cpp` files above, listed **before `zzautozend.cpp`** (the
+  `IMPLEMENT_CLASS` link-order rule in `features/README.md`).
 
-## Why `GetInkTop` exists
+## Why `GetDrawnX` / `GetDrawnY` exist
 
-A title patch is authored with transparent slack above the letters — Freedoom's `M_DOOM` has a lot of
-it. Measuring the item's *box* therefore put visibly more empty panel above the logo than below the
-rows beneath it (~95px vs ~43px at 1280×800), even though the padding either side of the content was
-mathematically symmetric at 8 virtual px.
+`DrawTexture` honours a patch's own offsets, so a `StaticPatch` paints at
+`(x - leftoffset, y - topoffset)` — not at `(x, y)`. Freedoom's `M_DOOM` is 159×37 with offsets
+`(13, -16)`, and the menu places it with `StaticPatch 94, 2`, so it actually paints at `(81, 18)`.
 
-`GetInkTop` reports how many rows are fully transparent before the artwork starts, read from the
-texture's own column spans, so the extent is measured from the ink. It is scanned once and cached:
-`GetColumn` decodes the texture, and the panel measures every item every frame.
+Measuring the *stated* position was wrong in both axes at once:
 
-This is deliberately general rather than a per-IWAD nudge — Doom's `M_DOOM`, Heretic's and Strife's
-logos all carry different amounts of slack, and a constant tuned to one would be wrong for the others.
+- **Vertically** the extent started sixteen rows too high. At `CleanYfac` 4 that is 64 screen px —
+  enough that the computed top went negative (`topPx = -24` at 1280×800) and `ComputePanelRect`
+  clamped the panel flush to the screen edge, cutting off its rounded corners.
+- **Horizontally** it read the logo as spanning 94→253 (centre 173) when it really spans 81→240
+  (centre 160.5, i.e. dead centre of the 320-wide page), so the panel was sized as though the content
+  leaned right and the rows looked off-centre inside it.
+
+Reading the drawn corner fixes both, for any IWAD's art rather than a constant tuned to one — Doom,
+Heretic and Strife all ship different offsets.
+
+An earlier attempt scanned the texture's column spans for transparent rows above the artwork. That
+was the wrong diagnosis: `M_DOOM` paints from row 0 and has no slack at all. The gap was the offset.

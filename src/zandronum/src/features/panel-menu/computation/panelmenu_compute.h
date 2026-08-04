@@ -16,13 +16,17 @@ namespace zx
 // One measurable menu item, in the menu's own virtual coordinates.
 struct MenuItemBox
 {
+	// The DRAWN corner, not the item's stated position -- a patch paints at
+	// (x - leftoffset, y - topoffset), and measuring the stated position instead builds a rectangle
+	// the content does not sit in. The caller applies that correction (FListMenuItem::GetDrawnX /
+	// GetDrawnY); by the time a box reaches here it is already where the pixels land.
 	int x;
 	int y;
 	int w;
-	// Rows of empty space between y and where the item starts painting. Zero for text, whose box is
-	// its ink; non-zero for artwork authored with slack above it (a title patch). Measuring the box
-	// instead of the ink is what puts a visibly larger gap above a logo than below the rows under it.
-	int inkTop;
+	// The item's own painted height, or 0 when it cannot say -- the extent then falls back to the
+	// descriptor's linespacing for that item. Linespacing is the distance BETWEEN rows and runs
+	// taller than the glyphs, so padding below it leaves the leftover leading as extra gap.
+	int h;
 };
 
 struct MenuExtent
