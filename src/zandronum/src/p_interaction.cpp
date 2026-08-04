@@ -2426,6 +2426,10 @@ void PLAYER_SetTeam( player_t *pPlayer, ULONG ulTeam, bool bNoBroadcast )
 	// [BB] This may be called to set team of a player who wasn't spawned yet (for instance in the CSkullBot constructor).
 	if ( pPlayer->bUnarmed && pPlayer->mo )
 	{
+		// [rc4l] uzdoom@fc40e9723: kept, not dropped. G_DeathMatchSpawnPlayer strips a fresh
+		// player's inventory and flags them bUnarmed, so this is the completion of that spawn
+		// and the health reset it used to get from GiveDefaultInventory() is still wanted.
+		pPlayer->mo->ResetStartingHealth();
 		pPlayer->mo->GiveDefaultInventory();
 		if ( deathmatch )
 			pPlayer->mo->GiveDeathmatchInventory();
