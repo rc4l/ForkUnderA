@@ -3,7 +3,7 @@
 #
 # Keeps the tracker machine-parseable and honest:
 #  1. Format: every data row is exactly 6 tab-separated fields, a 40-hex sha (THEIR
-#     commit), and a status in the vocabulary {pending, ported, adapted, skip}.
+#     commit), and a status in the vocabulary {pending, ported, adapted, skip, deferred}.
 #  2. Provenance (the `ours` column, field 6 = OUR repo commit(s) that addressed it):
 #       - pending / skip   -> must be "/"  (inapplicable; nothing of ours addressed it)
 #       - ported / adapted -> must be "zandronum-base" (base-inherited / adapted-present),

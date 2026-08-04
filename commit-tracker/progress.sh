@@ -9,6 +9,9 @@
 #
 # Progress = commits that are NOT `pending`, over every commit up to the goal.
 # `skip` counts as done: a reviewed-and-rejected commit is handled, not outstanding.
+# `deferred` counts as done too: it is a REVIEWED decision (policy says not now), not a backlog
+# item. It differs from skip in being revisitable -- see the ZScript vocabulary note in
+# .claude/skills/sequential-backport/SKILL.md.
 #
 # ---- THE GOAL: edit these two lines to retarget the bar, then re-run. ----
 GOAL_LABEL="${GOAL_LABEL:-GZDoom 2.0.05}"   # what we're aiming at, shown next to the bar
@@ -47,6 +50,7 @@ awk -F'\t' -v label="$GOAL_LABEL" -v goal="$GOAL_DATE" -v gen="$(date -u +%Y-%m-
     printf "  \"ported\": %d,\n", by["ported"] + 0
     printf "  \"adapted\": %d,\n", by["adapted"] + 0
     printf "  \"skip\": %d,\n", by["skip"] + 0
+    printf "  \"deferred\": %d,\n", by["deferred"] + 0
     printf "  \"generated\": \"%s\"\n", gen
     printf "}\n"
   }' "$TSV" > "$OUT"
