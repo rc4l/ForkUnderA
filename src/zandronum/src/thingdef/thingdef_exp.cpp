@@ -394,6 +394,35 @@ static FxExpression *ParseExpression0 (FScanner &sc, const PClass *cls)
 
 		return new FxFRandom(rng, min, max, sc);
 	}
+	// [rc4l] uzdoom@8c5a8c54f cluster: randompick(a, b, c, ...) -- choose one of N at random.
+	else if (sc.CheckToken(TK_RandomPick))
+	{
+		FRandom *rng;
+		TArray<FxExpression*> list;
+		list.Clear();
+
+		if (sc.CheckToken('['))
+		{
+			sc.MustGetToken(TK_Identifier);
+			rng = FRandom::StaticFindRNG(sc.String);
+			sc.MustGetToken(']');
+		}
+		else
+		{
+			rng = &pr_exrandom;
+		}
+		sc.MustGetToken('(');
+
+		for (;;)
+		{
+			FxExpression *expr = ParseExpressionM(sc, cls);
+			list.Push(expr);
+			if (sc.CheckToken(')'))
+				break;
+			sc.MustGetToken(',');
+		}
+		return new FxRandomPick(rng, list, sc);
+	}
 	else if (sc.CheckToken(TK_Random2))
 	{
 		FRandom *rng;

@@ -1067,6 +1067,19 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 	}
 
 	// [RH] If the other thing is a bridge, then treat the moving thing as if it had MF2_PASSMOBJ, so
+	// [rc4l] uzdoom@e5340ad63: a reflective actor with THRUREFLECT lets missiles pass through
+	// instead of reflecting them, keeping their speed and angle. A seeker retargets so it does
+	// not immediately home back onto what it just passed.
+	if ((thing->flags7 & MF7_THRUREFLECT) && (thing->flags2 & MF2_REFLECTIVE) && (tm.thing->flags & MF_MISSILE))
+	{
+		if (tm.thing->flags2 & MF2_SEEKERMISSILE)
+		{
+			tm.thing->tracer = tm.thing->target;
+		}
+		tm.thing->target = thing;
+		return true;
+	}
+
 	// you can use a scrolling floor to move scenery items underneath a bridge.
 	if ((tm.thing->flags2 & MF2_PASSMOBJ || thing->flags4 & MF4_ACTLIKEBRIDGE) && !(i_compatflags & COMPATF_NO_PASSMOBJ))
 	{ // check if a mobj passed over/under another object
@@ -3827,6 +3840,11 @@ bool P_BounceWall(AActor *mo)
 extern FRandom pr_bounce;
 bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 {
+	// [rc4l] uzdoom@e5340ad63: a reflective actor with THRUREFLECT wants missiles to pass
+	// straight through, so there is nothing here to bounce off.
+	if (BlockingMobj && ((BlockingMobj->flags2 & MF2_REFLECTIVE) && (BlockingMobj->flags7 & MF7_THRUREFLECT)))
+		return true;
+
 	if (mo && BlockingMobj && ((mo->BounceFlags & BOUNCE_AllActors)
 		// [MGOOOOOO] The ComputeRipLevelAllows term keeps this in step with PIT_CheckThing: a
 		// projectile the victim's RipperLevel window rejects is not a ripper as far as this

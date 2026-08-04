@@ -358,7 +358,10 @@ enum
 	// [rc4l] uzdoom@f802d7a44, renamed by 6073adbee and fixed by 774db445e -- landed as the
 	// settled DONTTHRUST form rather than replaying FULLMASS and renaming it.
 	MF7_DONTTHRUST		= 0x00000100,	// Thrusting functions do not take, and do not give thrust (damage) to actors with this flag.
-	MF7_ALLOWPAIN		= 0x00000200,	// [rc4l] uzdoom@2e085b231: invulnerable or damage-immune actors still react to being hit.
+	MF7_ALLOWPAIN		= 0x00000200,	// [rc4l] uzdoom@2e085b231
+	MF7_THRUREFLECT		= 0x00000800,	// [rc4l] uzdoom@e5340ad63: reflective actors let missiles pass without slowing or turning.
+	MF7_MIRRORREFLECT	= 0x00001000,	// [rc4l] uzdoom@533ae9593: reflected missile is turned a flat 180 degrees.
+	MF7_AIMREFLECT		= 0x00002000,	// [rc4l] uzdoom@533ae9593: reflected missile is aimed straight back at whoever fired it.
 	MF7_CAUSEPAIN		= 0x00000400,	// [rc4l] uzdoom@b54b18c8c: damage sources with this can cause the same effect as ALLOWPAIN.
 
 	MF7_HITTARGET		= 0x00004000,	// The actor the projectile dies on is set to target, provided it's targetable anyway.
@@ -1236,6 +1239,9 @@ public:
 	FNameNoInit DamageTypeReceived;
 	fixed_t DamageFactor;
 	fixed_t DamageMultiply;		// [rc4l] uzdoom@99b2cfa14: scales damage this actor DEALS.
+	// [rc4l] uzdoom@30acb7200: per-actor teleport fog. NULL means "spawn nothing".
+	const PClass *TeleFogSourceType;
+	const PClass *TeleFogDestType;
 
 	FNameNoInit PainType;
 	FNameNoInit DeathType;
