@@ -26,13 +26,39 @@ const SOURCE = "https://raw.githubusercontent.com/rc4l/ZandroX/main/serverregist
 const TTL_SECONDS = 6 * 60 * 60;
 
 function plain(body, status) {
+	// Only success is cacheable. Sending `max-age` on an error response caches the ERROR -- the edge
+	// then serves a 502 for six hours after the underlying problem is fixed, and every client that
+	// asks in that window keeps its stale list for no reason. Observed exactly that: the Worker was
+	// already returning the correct file while cached 502s were still going out.
+	const cacheControl = status === 200
+		? `public, max-age=${TTL_SECONDS}`
+		: "no-store";
+
 	return new Response(body, {
 		status,
 		headers: {
 			"content-type": "text/plain; charset=utf-8",
-			"cache-control": `public, max-age=${TTL_SECONDS}`,
+			"cache-control": cacheControl,
 			"x-content-type-options": "nosniff",
 		},
+	});
+}
+
+// `bust` appends a throwaway query parameter so the request misses Cloudflare's cache. GitHub ignores
+// unknown parameters, so the response is identical -- only the cache key differs.
+//
+// cacheTtlByStatus, NOT cacheTtl: the latter caches every status alike, so one upstream 404 or 5xx
+// would be served back for the full six hours. That is precisely the silent-outage shape this design
+// exists to prevent, and it bit on the first real fetch -- the file landed on main and the Worker kept
+// answering with a 404 cached from before the merge.
+function fetchUpstream(bust) {
+	const url = bust ? `${SOURCE}?cb=${Date.now()}` : SOURCE;
+	return fetch(url, {
+		cf: {
+			cacheTtlByStatus: { "200-299": TTL_SECONDS, "300-399": 0, "400-499": 0, "500-599": 0 },
+			cacheEverything: true,
+		},
+		headers: { "user-agent": "ZandroX-serverregistrylist" },
 	});
 }
 
@@ -44,10 +70,16 @@ export default {
 
 		let upstream;
 		try {
-			upstream = await fetch(SOURCE, {
-				cf: { cacheTtl: TTL_SECONDS, cacheEverything: true },
-				headers: { "user-agent": "ZandroX-serverregistrylist" },
-			});
+			upstream = await fetchUpstream(false);
+
+			// A failure here may be the CACHE talking rather than GitHub: an entry stored under an
+			// earlier config, or simply from before the file existed, outlives the condition that
+			// created it. Retrying once past the cache turns a poisoned entry into one extra subrequest
+			// instead of six hours of outage -- and it needs no dashboard access to clear, which matters
+			// because purging is a permission the deploy credentials deliberately do not have.
+			if (!upstream.ok) {
+				upstream = await fetchUpstream(true);
+			}
 		} catch (err) {
 			// Network trouble reaching GitHub. A 5xx tells the client "keep your cache", which is
 			// exactly right -- far better than serving an empty list that would look definitive.
