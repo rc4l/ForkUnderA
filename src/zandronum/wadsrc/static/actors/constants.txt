@@ -497,6 +497,9 @@ const int KILS_FOILINVUL =		1;
 const int KILS_KILLMISSILES =	2;
 const int KILS_NOMONSTERS =		4;
 const int KILS_FOILBUDDHA =		8;
+const int KILS_EXFILTER =		16;
+const int KILS_EXSPECIES =		32;
+const int KILS_EITHER =			64;
 
 // Flags for A_Damage (Self/Target/Tracer/Master/Children/Siblings) series
 const int DMSS_FOILINVUL =		1;
@@ -505,6 +508,9 @@ const int DMSS_KILL =			4;
 const int DMSS_NOFACTOR =		8;
 const int DMSS_FOILBUDDHA =		16;
 const int DMSS_NOPROTECT =		32;
+const int DMSS_EXFILTER =		64;
+const int DMSS_EXSPECIES =		128;
+const int DMSS_EITHER =			256;
 
 // Flags for A_Fade*
 const int FTF_REMOVE =		1;
@@ -515,3 +521,6 @@ const int RMVF_MISSILES =		1;
 const int RMVF_NOMONSTERS =		2;
 const int RMVF_MISC =			4;
 const int RMVF_EVERYTHING =		8;
+const int RMVF_EXFILTER =		16;
+const int RMVF_EXSPECIES =		32;
+const int RMVF_EITHER =			64;
