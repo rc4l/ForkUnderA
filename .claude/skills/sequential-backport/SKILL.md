@@ -89,8 +89,24 @@ inert — 0–5% of commits touch it for the next 22 months. ZScript the *langua
 `deferred` rows cost us almost nothing; after it, the pile of `deferred` rows IS the measure of what
 the policy costs — which is only legible if they were never filed as `skip`.
 
-`deferred` counts as resolved for progress, exactly like `skip`: it is a reviewed decision, not
-backlog. Its `ours` column is `/`.
+**`partially-deferred` — for a commit that is BOTH.** A VM commit that also carries real gameplay is
+common (a branch-landing merge, a feature whose author also fixed a bug in passing). Neither
+`deferred` nor `ported` is honest about it: one hides that code landed, the other hides that
+something was refused. So:
+
+- Port the gameplay half. Refuse the VM half.
+- Status `partially-deferred`, `ours` = the sha that carries the gameplay (it holds real code, so
+  the reachability and overlap gates apply to it exactly like `ported`).
+- The note must say **both** halves explicitly — what landed, and what was refused with which part
+  of the VM. A reader who sees only "partially" learns nothing.
+
+The failure this prevents is the per-hunk one again, in its most likely form: filing a mixed commit
+as `deferred` because its bulk is VM, and silently dropping the gameplay riding along. Run `--stat`
+and classify every file before choosing between the three.
+
+`deferred` and `partially-deferred` both count as resolved for progress, exactly like `skip`: they
+are reviewed decisions, not backlog. `deferred`'s `ours` column is `/`; `partially-deferred` carries
+a sha.
 
 ## A skip is decided per HUNK, never per commit
 

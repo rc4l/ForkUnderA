@@ -51,6 +51,7 @@ awk -F'\t' -v label="$GOAL_LABEL" -v goal="$GOAL_DATE" -v gen="$(date -u +%Y-%m-
     printf "  \"adapted\": %d,\n", by["adapted"] + 0
     printf "  \"skip\": %d,\n", by["skip"] + 0
     printf "  \"deferred\": %d,\n", by["deferred"] + 0
+    printf "  \"partially-deferred\": %d,\n", by["partially-deferred"] + 0
     printf "  \"generated\": \"%s\"\n", gen
     printf "}\n"
   }' "$TSV" > "$OUT"
