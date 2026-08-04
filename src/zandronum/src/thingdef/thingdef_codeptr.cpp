@@ -4517,6 +4517,11 @@ enum CLOF_flags
 
 	CLOFF_JUMP_ON_MISS =		0x200000,
 	CLOFF_AIM_VERT_NOOFFSET =	0x400000,
+
+	// [rc4l] uzdoom@465d9ab89: point the caller at whatever the trace hit.
+	CLOFF_SETTARGET =			0x800000,
+	CLOFF_SETMASTER =			0x1000000,
+	CLOFF_SETTRACER =			0x2000000,
 };
 
 struct LOFData
@@ -4759,6 +4764,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckLOF)
 		if (minrange > 0 && trace.Distance < minrange)
 		{
 			return;
+		}
+		// [rc4l] uzdoom@465d9ab89: adopt the actor the line of fire found, before jumping.
+		if ((trace.HitType == TRACE_HitActor) && (trace.Actor != NULL) && !lof_data.BadActor)
+		{
+			if (flags & CLOFF_SETTARGET)	self->target = trace.Actor;
+			if (flags & CLOFF_SETMASTER)	self->master = trace.Actor;
+			if (flags & CLOFF_SETTRACER)	self->tracer = trace.Actor;
 		}
 		ACTION_JUMP(jump, CLIENTUPDATE_FRAME );	// [EP] Since the actor's target is unknown on the client end, we need to send an update.
 	}
