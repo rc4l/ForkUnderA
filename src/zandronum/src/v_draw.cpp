@@ -801,7 +801,7 @@ void DCanvas::VirtualToRealCoords(double &x, double &y, double &w, double &h,
 		x = x * Width / vwidth;
 		w = right * Width / vwidth - x;
 	}
-	if (myratio < 1.3f)
+	if (Is54Aspect(myratio))
 	{ // The target surface is taller than it is wide (5:4 and anything narrower)
 		y = (y - vheight * 0.5) * Height * 600 / (vheight * AspectBaseHeight(myratio)) + Height * 0.5;
 		h = (bottom - vheight * 0.5) * Height * 600 / (vheight * AspectBaseHeight(myratio)) + Height * 0.5 - y;
@@ -865,7 +865,7 @@ void DCanvas::FillBorder (FTexture *img)
 		return;
 	}
 	int bordtop, bordbottom, bordleft, bordright, bord;
-	if (myratio < 1.3f)
+	if (Is54Aspect(myratio))
 	{ // Screen is taller than it is wide
 		bordleft = bordright = 0;
 		bord = Height - Height * AspectMultiplier(myratio) / 48;

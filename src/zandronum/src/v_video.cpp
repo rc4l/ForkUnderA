@@ -1875,27 +1875,38 @@ int CheckRatio (int width, int height, int *trueratio)
 //
 // Feeding a bucket's exact ratio into these reproduces that bucket's row, so nothing changes for the
 // sizes that already worked -- they simply now also work for every size in between.
+// [rc4l] Ported from UZDoom 172f58c1655848df85d35676a4a5aeb094d05b2c, "Fix 5:4 aspect ratio gun and
+// status bar" (2016-09-13) -- upstream's own follow-up to the enum-to-float switch, one day later.
+//
+// The 5:4 row of BaseRatioSizes never followed the formula the other rows do; it redefined what the
+// columns MEAN. So computing these generically produced an AspectMultiplier above 48 for anything
+// narrower than 4:3, and `bord = Height - Height * mult / 48` then went negative -- which drew the
+// whole screen black at, for instance, 712x568.
+bool Is54Aspect(float aspect)
+{
+	// The 5:4 aspect ratio redefined all the values to mean something else..
+	// Limit the range this is active to try prevent square cam textures inheriting this madness.
+	return aspect > 1.1f && aspect < 1.3f;
+}
+
 int AspectBaseWidth(float aspect)
 {
-	return (int)round(240.0f * aspect * 3.0f);
+	return !Is54Aspect(aspect) ? (int)round(240.0f * aspect * 3.0f) : 960;
 }
 
 int AspectBaseHeight(float aspect)
 {
-	return (int)round(200.0f * (320.0f / (240.0f * aspect)) * 3.0f);
+	return !Is54Aspect(aspect) ? (int)round(200.0f * (320.0f / (240.0f * aspect)) * 3.0f) : 640;
 }
 
-int AspectPspriteOffset(float aspect)
+double AspectPspriteOffset(float aspect)
 {
-	// [rc4l] double(FRACUNIT) rather than upstream's bare FRACUNIT: ours is a zx::Fixed (see
-	// features/fixed64), which has no implicit conversion, and the existing BaseRatioSizes table
-	// below spells it the same way.
-	return aspect < 1.3f ? (int)(6.5*double(FRACUNIT)) : 0;
+	return !Is54Aspect(aspect) ? 0.0 : 6.5;
 }
 
 int AspectMultiplier(float aspect)
 {
-	return (int)round(320.0f / (240.0f * aspect) * 48.0f);
+	return !Is54Aspect(aspect) ? (int)round(320.0f / (240.0f * aspect) * 48.0f) : 48 * 15 / 16;
 }
 
 const int BaseRatioSizes[5][4] =

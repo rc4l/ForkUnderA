@@ -524,8 +524,11 @@ static inline double ActiveRatio (double width, double height) { return ActiveRa
 // columns, which the next commit uses to retire the table.
 int AspectBaseWidth(float aspect);
 int AspectBaseHeight(float aspect);
-int AspectPspriteOffset(float aspect);
+double AspectPspriteOffset(float aspect);
 int AspectMultiplier(float aspect);
+// [rc4l] Ported from UZDoom 172f58c1. True for ratios where the BaseRatioSizes columns meant
+// something different -- see the definition.
+bool Is54Aspect(float aspect);
 extern const int BaseRatioSizes[5][4];
 
 extern int currentrenderer;
