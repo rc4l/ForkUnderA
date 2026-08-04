@@ -6219,7 +6219,8 @@ enum WARPF
 
 	WARPF_STOP = 0x80,
 	WARPF_TOFLOOR = 0x100,
-	WARPF_TESTONLY = 0x200
+	WARPF_TESTONLY = 0x200,
+	WARPF_ABSOLUTEPOSITION = 0x400,	// [rc4l] uzdoom@68a5db3c8
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
@@ -6258,58 +6259,77 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 		angle += (flags & WARPF_USECALLERANGLE) ? self->angle : reference->angle;
 	}
 
-	if (!(flags & WARPF_ABSOLUTEOFFSET))
-	{
-		angle_t fineangle = angle>>ANGLETOFINESHIFT;
-		oldx = xofs;
-
-		// (borrowed from A_SpawnItemEx, assumed workable)
-		// in relative mode negative y values mean 'left' and positive ones mean 'right'
-		// This is the inverse orientation of the absolute mode!
-
-		xofs = FixedMul(oldx, finecosine[fineangle]) + FixedMul(yofs, finesine[fineangle]);
-		yofs = FixedMul(oldx, finesine[fineangle]) - FixedMul(yofs, finecosine[fineangle]);
-	}
-
+	// [rc4l] uzdoom@68a5db3c8 adds WARPF_ABSOLUTEPOSITION. The save of the old position is
+	// hoisted ABOVE the branch rather than left inside the relative half as upstream wrote it:
+	// WARPF_TESTONLY below restores from oldx/oldy/oldz, and in absolute mode upstream never
+	// assigns them, so a TESTONLY absolute warp would restore a stale position (oldx is reused
+	// as a scratch temp just above). Both paths need the save.
 	oldx = self->x;
 	oldy = self->y;
 	oldz = self->z;
 
-	if (flags & WARPF_TOFLOOR)
+	if (!(flags & WARPF_ABSOLUTEPOSITION))
 	{
-		// set correct xy
-
-		self->SetOrigin(
-			reference->x + xofs,
-			reference->y + yofs,
-			reference->z);
-
-		// now the caller's floorz should be appropriate for the assigned xy-position
-		// assigning position again with
-		
-		if (zofs)
+		if (!(flags & WARPF_ABSOLUTEOFFSET))
 		{
-			// extra unlink, link and environment calculation
+			angle_t fineangle = angle>>ANGLETOFINESHIFT;
+			fixed_t xofs0 = xofs;
+
+			// (borrowed from A_SpawnItemEx, assumed workable)
+			// in relative mode negative y values mean 'left' and positive ones mean 'right'
+			// This is the inverse orientation of the absolute mode!
+
+			xofs = FixedMul(xofs0, finecosine[fineangle]) + FixedMul(yofs, finesine[fineangle]);
+			yofs = FixedMul(xofs0, finesine[fineangle]) - FixedMul(yofs, finecosine[fineangle]);
+		}
+
+		if (flags & WARPF_TOFLOOR)
+		{
+			// set correct xy
+
 			self->SetOrigin(
-				self->x,
-				self->y,
-				self->floorz + zofs);
+				reference->x + xofs,
+				reference->y + yofs,
+				reference->z);
+
+			// now the caller's floorz should be appropriate for the assigned xy-position
+			// assigning position again with
+
+			if (zofs)
+			{
+				// extra unlink, link and environment calculation
+				self->SetOrigin(
+					self->x,
+					self->y,
+					self->floorz + zofs);
+			}
+			else
+			{
+				// if there is no offset, there should be no ill effect from moving down to the
+				// already identified floor
+
+				// A_Teleport does the same thing anyway
+				self->z = self->floorz;
+			}
 		}
 		else
 		{
-			// if there is no offset, there should be no ill effect from moving down to the
-			// already identified floor
-
-			// A_Teleport does the same thing anyway
-			self->z = self->floorz;
+			self->SetOrigin(
+				reference->x + xofs,
+				reference->y + yofs,
+				reference->z + zofs);
 		}
 	}
-	else
+	else //[MC] The idea behind "absolute" is meant to be "absolute". Override everything, just like A_SpawnItemEx's.
 	{
-		self->SetOrigin(
-			reference->x + xofs,
-			reference->y + yofs,
-			reference->z + zofs);
+		if (flags & WARPF_TOFLOOR)
+		{
+			self->SetOrigin(xofs, yofs, self->floorz + zofs);
+		}
+		else
+		{
+			self->SetOrigin(xofs, yofs, zofs);
+		}
 	}
 	
 	if ((flags & WARPF_NOCHECKPOSITION) || P_TestMobjLocation(self))
