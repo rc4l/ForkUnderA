@@ -5167,8 +5167,10 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 			y = y1 + FixedMul(hitdist, vy);
 			z = shootz + FixedMul(hitdist, vz);
 
+			// [rc4l] uzdoom@71ce4bcf0: a FOILINVUL puff must still draw blood on an
+			// invulnerable target; only DORMANT unconditionally suppresses it.
 			if ((hitactor->flags & MF_NOBLOOD) ||
-				(hitactor->flags2 & (MF2_DORMANT | MF2_INVULNERABLE)))
+				(hitactor->flags2 & MF2_DORMANT || ((hitactor->flags2 & MF2_INVULNERABLE) && !(puffDefaults->flags3 & MF3_FOILINVUL))))
 			{
 				spawnpuff = (puffclass != NULL);
 			}
@@ -5197,7 +5199,12 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 					damage = 999;
 
 				// [RK] If the attack source is a player, send the DMG_PLAYERATTACK flag.
-				int newdam = P_DamageMobj(hitactor, thepuff ? thepuff : source, source, damage, damagetype, DMG_INFLICTOR_IS_PUFF | (source->player ? DMG_PLAYERATTACK : 0));
+				// [rc4l] uzdoom@71ce4bcf0: pass the puff's FOILINVUL/FOILBUDDHA through, which
+				// the old call dropped entirely.
+				int dmgFlagPass = DMG_INFLICTOR_IS_PUFF | (source->player ? DMG_PLAYERATTACK : 0);
+				dmgFlagPass += (puffDefaults->flags3 & MF3_FOILINVUL) ? DMG_FOILINVUL : 0;
+				dmgFlagPass += (puffDefaults->flags7 & MF7_FOILBUDDHA) ? DMG_FOILBUDDHA : 0;
+				int newdam = P_DamageMobj(hitactor, thepuff ? thepuff : source, source, damage, damagetype, dmgFlagPass);
 
 				if (bleed)
 				{

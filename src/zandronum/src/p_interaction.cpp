@@ -1598,7 +1598,11 @@ thrust:
 			// uzdoom@2e1fa70cb supplies the parentheses this condition needs. uzdoom@202076996:
 			// ignore players already dead, or buddha revives a corpse to health 1 and the exiting
 			// player comes back as a zombie.
-			if (((player->cheats & CF_BUDDHA2) || ((player->cheats & CF_BUDDHA) && damage < TELEFRAG_DAMAGE))
+			// [rc4l] uzdoom@c63adf920 adds MF7_BUDDHA here. NOT reproduced: it wrote
+			// `CF_BUDDHA || MF7_BUDDHA && damage < TELEFRAG_DAMAGE`, and && binds tighter than ||,
+			// so cheat buddha would have survived telefrag damage. Its own P_PoisonDamage hunk
+			// parenthesises it correctly and upstream's hasBuddha() at HEAD settles the intent.
+			if (((player->cheats & CF_BUDDHA2) || (((player->cheats & CF_BUDDHA) || (player->mo->flags7 & MF7_BUDDHA)) && damage < TELEFRAG_DAMAGE))
 				&& player->playerstate != PST_DEAD)
 			{
 				// If this is a voodoo doll we need to handle the real player as well.
@@ -2166,7 +2170,8 @@ void P_PoisonDamage (player_t *player, AActor *source, int damage,
 	target->health -= damage;
 	if (target->health <= 0)
 	{ // Death
-		if ((player->cheats & CF_BUDDHA && damage < TELEFRAG_DAMAGE) || (player->cheats & CF_BUDDHA2))
+		// [rc4l] uzdoom@c63adf920: MF7_BUDDHA counts here as well.
+		if ((((player->cheats & CF_BUDDHA) || (player->mo->flags7 & MF7_BUDDHA)) && damage < TELEFRAG_DAMAGE) || (player->cheats & CF_BUDDHA2))
 		{ // [SP] Save the player... 
 			player->health = target->health = 1;
 		}
