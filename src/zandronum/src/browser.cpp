@@ -59,6 +59,7 @@
 #include "teaminfo.h"
 #include "templates.h"
 #include "version.h"
+#include "features/federated-server-registry/zx_serverregistrylist.h"
 
 //*****************************************************************************
 //	VARIABLES
@@ -66,23 +67,68 @@
 // List of all parsed servers.
 static	SERVER_t		g_BrowserServerList[MAX_BROWSER_SERVERS];
 
-// Address of master server.
-static	NETADDRESS_s	g_AddressRegistryServer;
+// [rc4l] Every server registry this client queries. Plural here and singular on the server side, and
+// that asymmetry is the design: discovery composes, authority does not.
+//
+// A server announces to ONE server registry (fua_serverregistry_host) so exactly one of them can
+// push it a ban list. A client queries MANY and unions the results, so the player still sees the
+// whole network no matter which server registry each server chose to live on. Reading a list of
+// addresses carries no authority, so fanning it out costs nothing.
+static	TArray<NETADDRESS_s>	g_ServerRegistryAddresses;
 
-// Message buffer for sending messages to the master server.
-static	NETBUFFER_s		g_RegistryServerBuffer;
+// Message buffer for sending messages to the server registry.
+static	NETBUFFER_s		g_ServerRegistryBuffer;
 
 // Message buffer for sending messages to each individual server.
 static	NETBUFFER_s		g_ServerBuffer;
 
-// Port the master server is located on.
-static	USHORT			g_usRegistryPort;
+// Port the server registry is located on.
+static	USHORT			g_usServerRegistryPort;
 
-// Are we waiting for master server response?
-static	bool			g_bWaitingForRegistryResponse;
+// Are we waiting for server registry response?
+static	bool			g_bWaitingForServerRegistryResponse;
+
+// [rc4l] When the outstanding query went out, and how many times we have sent it.
+//
+// UDP does not retransmit, so before this a single dropped packet left
+// g_bWaitingForServerRegistryResponse stuck true forever -- and M_RefreshServers() returns early
+// while it is true, so the browser stayed empty and refusing to refresh until the game restarted.
+// That is not a rare case on a lossy connection; it is the normal one.
+static	ULONG			g_ulServerRegistryQuerySentMS;
+static	int				g_lServerRegistryAttempts;
+
+// [rc4l] Four seconds, not the second and a half this started as.
+//
+// A server registry flood-blocks a repeat launcher challenge from the same address for 3 seconds and
+// will not resend a list to it for 10. Retrying inside that window cannot succeed by construction:
+// the best case is a REQUESTIGNORED reply, and the actual effect is putting ourselves on its flood
+// queue. Retries are only useful when the registry never heard us -- and in that case no rate limit
+// applies, so waiting out its window costs nothing.
+//
+// Retrying faster than the thing you are retrying against is willing to answer is not persistence,
+// it is a self-inflicted denial of service.
+static const ULONG		SERVERREGISTRY_QUERY_TIMEOUT_MS = 4000;
+static const int		SERVERREGISTRY_QUERY_MAX_ATTEMPTS = 3;
 
 // [CW] The amount of teams sent to us.
 static ULONG			g_ulNumberOfTeams = 0;
+
+//*****************************************************************************
+//	CONSOLE VARIABLES
+
+// [rc4l] Comma-separated list of server registries the browser asks for servers. Client-side, so it
+// carries no authority: a server registry answering this query only hands back addresses, and every
+// detail shown in the browser comes from querying each server directly afterwards.
+//
+// This is where federation lives. Entries here are ADDED to the curated list -- they do not replace
+// it, so adding a server registry can never cost you the ones you already had. To run on yours and
+// nothing else, also set cl_fua_serverregistrylist_fetch 0; that pair means "my list, exactly".
+// Entries that fail to resolve are skipped, so one dead server registry costs you its servers and
+// nothing more.
+//
+// The server-side counterpart, fua_serverregistry_host, is deliberately singular -- see
+// sv_serverregistry.cpp.
+CVAR( String, cl_fua_serverregistry_list, "registry.cantstopscrolling.net", CVAR_ARCHIVE|CVAR_GLOBALCONFIG )
 
 //*****************************************************************************
 //	PROTOTYPES
@@ -98,23 +144,23 @@ void BROWSER_Construct( void )
 {
 	const char *pszPort;
 
-	g_bWaitingForRegistryResponse = false;
+	g_bWaitingForServerRegistryResponse = false;
 
-	// Setup our master server message buffer.
-	g_RegistryServerBuffer.Init( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
+	// Setup our server registry message buffer.
+	g_ServerRegistryBuffer.Init( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
 
 	// Setup our server message buffer.
 	g_ServerBuffer.Init( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
 
-	// Allow the user to specify which port the master server is on.
-	pszPort = Args->CheckValue( "-masterport" );
+	// Allow the user to specify which port the server registry is on.
+	pszPort = Args->CheckValue( "-serverregistryport" );
     if ( pszPort )
     {
-       g_usRegistryPort = atoi( pszPort );
-       Printf( PRINT_HIGH, "Alternate master server port: %d.\n", g_usRegistryPort );
+       g_usServerRegistryPort = atoi( pszPort );
+       Printf( PRINT_HIGH, "Alternate server registry port: %d.\n", g_usServerRegistryPort );
     }
 	else 
-	   g_usRegistryPort = DEFAULT_REGISTRY_PORT;
+	   g_usServerRegistryPort = DEFAULT_SERVERREGISTRY_PORT;
 
 	// Initialize the browser list.
 	BROWSER_ClearServerList( );
@@ -128,7 +174,7 @@ void BROWSER_Construct( void )
 void BROWSER_Destruct( void )
 {
 	// Free our local buffers.
-	g_RegistryServerBuffer.Free();
+	g_ServerRegistryBuffer.Free();
 	g_ServerBuffer.Free();
 }
 
@@ -403,6 +449,13 @@ void BROWSER_DeactivateAllServers( void )
 //
 void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 {
+	// [rc4l] A server may be announced by more than one server registry, and each answers our query
+	// independently, so the same address legitimately arrives several times. Without this the browser
+	// listed it once per server registry -- the duplicates were harmless before only because there
+	// was exactly one server registry to hear from.
+	if ( browser_GetListIDByAddress( Address ) != -1 )
+		return;
+
 	const ULONG ulServer = browser_GetNewListID( );
 	if ( ulServer >= MAX_BROWSER_SERVERS )
 		I_Error( "BROWSER_GetServerList: Server limit exceeded (>=%d servers)", MAX_BROWSER_SERVERS );
@@ -415,12 +468,12 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 }
 
 //*****************************************************************************
-// [BB] Returns true if the server list packet was terminated by RSC_ENDSERVERLIST,
+// [BB] Returns true if the server list packet was terminated by SRSC_ENDSERVERLIST,
 // else it returns false.
 bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 {
-	// No longer waiting for a master server response.
-	g_bWaitingForRegistryResponse = false;
+	// No longer waiting for a server registry response.
+	g_bWaitingForServerRegistryResponse = false;
 
 	while ( true )
 	{
@@ -428,7 +481,7 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 
 		switch ( lCommand )
 		{
-		case RSC_SERVER:
+		case SRSC_SERVER:
 			{
 				// Read in address information.
 				NETADDRESS_s serverAddress;
@@ -438,7 +491,7 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 			}
 			break;
 
-		case RSC_SERVERBLOCK:
+		case SRSC_SERVERBLOCK:
 			{
 				// Read in address information.
 				NETADDRESS_s serverAddress;
@@ -456,15 +509,15 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 			}
 			break;
 
-		case RSC_ENDSERVERLISTPART:
+		case SRSC_ENDSERVERLISTPART:
 			return false;
 
-		case RSC_ENDSERVERLIST:
+		case SRSC_ENDSERVERLIST:
 			return true;
 
 		default:
 
-			Printf( "Unknown server list command from master server: %d\n", static_cast<int> (lCommand) );
+			Printf( "Unknown server list command from server registry: %d\n", static_cast<int> (lCommand) );
 			return false;
 		}
 	}
@@ -799,30 +852,134 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 
 //*****************************************************************************
 //
-void BROWSER_QueryRegistryServer( void )
+// [rc4l] Rebuild the query list: the player's own entries first, then the fetched/cached/built-in
+// ones. See features/federated-server-registry/zx_serverregistrylist.h for where those come from.
+//
+// An entry that fails to resolve is skipped with a warning rather than aborting the rest: one dead
+// server registry must not stop a player seeing the servers on the others, which is the entire point
+// of querying several.
+static void browser_ResolveServerRegistries( void )
 {
-	// We are currently waiting to hear back from the master server.
-	g_bWaitingForRegistryResponse = true;
+	g_ServerRegistryAddresses.Clear();
 
-	// Setup the master server IP.
-	g_AddressRegistryServer.LoadFromString( fua_serverregistry_host );
-	g_AddressRegistryServer.SetPort( g_usRegistryPort );
+	// Kick a background refresh if the cache is stale. It never blocks and never affects THIS query --
+	// a newly fetched list takes effect the next time the browser is opened.
+	zx::ServerRegistryList_MaybeRefresh();
 
-	// Clear out the buffer, and write out launcher challenge.
-	g_RegistryServerBuffer.Clear();
-	g_RegistryServerBuffer.ByteStream.WriteLong( LAUNCHER_REGISTRY_CHALLENGE );
-	g_RegistryServerBuffer.ByteStream.WriteShort( REGISTRY_VERSION );
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ServerRegistryList_Resolve( *cl_fua_serverregistry_list );
 
-	// Send the master server our packet.
-//	NETWORK_LaunchPacket( &g_RegistryServerBuffer, g_AddressRegistryServer, true );
-	NETWORK_LaunchPacket( &g_RegistryServerBuffer, g_AddressRegistryServer );
+	for ( size_t i = 0; i < entries.size( ); ++i )
+	{
+		NETADDRESS_s address;
+		if ( address.LoadFromString( entries[i].host.c_str( )) == false )
+		{
+			Printf( "Warning: can't resolve server registry \"%s\" -- skipping it.\n", entries[i].host.c_str( ));
+			continue;
+		}
+
+		// [rc4l] The parser already split any ":port" off the host, so an entry either carries its own
+		// port or takes the default. LoadFromString never sees a port here.
+		address.SetPort( entries[i].port != 0 ? static_cast<USHORT>( entries[i].port ) : g_usServerRegistryPort );
+
+		g_ServerRegistryAddresses.Push( address );
+	}
+
+	if ( g_ServerRegistryAddresses.Size( ) == 0 )
+		Printf( "Warning: no server registry could be resolved -- check cl_fua_serverregistry_list.\n" );
 }
 
 //*****************************************************************************
 //
-bool BROWSER_WaitingForRegistryResponse( void )
+// [rc4l] Send the launcher challenge to every known server registry and start the retry clock.
+//
+// They do not know about each other, so a server listed on more than one arrives more than once --
+// BROWSER_AddServerToList de-duplicates by address. Re-sending on timeout has the same property, so
+// a retry that crosses a slow reply costs nothing but a duplicate packet.
+static void browser_SendServerRegistryQuery( void )
 {
-	return ( g_bWaitingForRegistryResponse );
+	g_ServerRegistryBuffer.Clear();
+	g_ServerRegistryBuffer.ByteStream.WriteLong( LAUNCHER_SERVERREGISTRY_CHALLENGE );
+	g_ServerRegistryBuffer.ByteStream.WriteShort( SERVERREGISTRY_VERSION );
+
+	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
+		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_ServerRegistryAddresses[i] );
+
+	g_ulServerRegistryQuerySentMS = I_MSTime( );
+	g_lServerRegistryAttempts++;
+}
+
+//*****************************************************************************
+//
+void BROWSER_QueryServerRegistry( void )
+{
+	browser_ResolveServerRegistries();
+
+	if ( g_ServerRegistryAddresses.Size( ) == 0 )
+		return;
+
+	// We are currently waiting to hear back from the server registries.
+	g_bWaitingForServerRegistryResponse = true;
+	g_lServerRegistryAttempts = 0;
+
+	browser_SendServerRegistryQuery();
+}
+
+//*****************************************************************************
+//
+// [rc4l] Retry, then give up out loud. Called every tic while the browser menu is open.
+//
+// Giving up MUST clear g_bWaitingForServerRegistryResponse: M_RefreshServers() refuses to do anything
+// while that flag is set, so leaving it set is indistinguishable to the player from the browser being
+// broken. Better to say nothing came back and let them press refresh again.
+void BROWSER_ServerRegistryTick( void )
+{
+	if ( g_bWaitingForServerRegistryResponse == false )
+		return;
+
+	// Unsigned arithmetic, so this stays correct across the I_MSTime() wrap.
+	if (( I_MSTime( ) - g_ulServerRegistryQuerySentMS ) < SERVERREGISTRY_QUERY_TIMEOUT_MS )
+		return;
+
+	if ( g_lServerRegistryAttempts < SERVERREGISTRY_QUERY_MAX_ATTEMPTS )
+	{
+		browser_SendServerRegistryQuery();
+		return;
+	}
+
+	g_bWaitingForServerRegistryResponse = false;
+
+	FString names;
+	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
+	{
+		if ( names.IsNotEmpty( ))
+			names += ", ";
+		names += g_ServerRegistryAddresses[i].ToString( );
+	}
+	Printf( "No response from %s after %d tries. The server list may be incomplete.\n",
+		names.GetChars( ), SERVERREGISTRY_QUERY_MAX_ATTEMPTS );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Stop retrying: the server registry answered, just not with a list.
+//
+// REQUESTIGNORED, IPISBANNED and WRONGVERSION are all definitive -- the packet arrived, was
+// understood, and was refused. Retrying can only produce the same refusal, and in the
+// REQUESTIGNORED case it actively makes things worse by landing us on the registry's flood queue.
+//
+// Before this, those three replies only printed a message and left the query outstanding, so the
+// retry loop kept firing at a registry that had already said no.
+void BROWSER_ServerRegistryRefusedQuery( void )
+{
+	g_bWaitingForServerRegistryResponse = false;
+}
+
+//*****************************************************************************
+//
+bool BROWSER_WaitingForServerRegistryResponse( void )
+{
+	return ( g_bWaitingForServerRegistryResponse );
 }
 
 //*****************************************************************************

@@ -89,7 +89,7 @@ static	std::set<SERVER_s, SERVERCompFunc> g_UnverifiedServers;
 // Message buffer we write our commands to.
 static	NETBUFFER_s				g_MessageBuffer;
 
-// This is the current time for the master server.
+// This is the current time for the server registry.
 static	long					g_lCurrentTime;
 
 // Global list of banned IPs.
@@ -115,7 +115,7 @@ static	bool					g_bHideBanIgnoringServers = false;
 //
 // BanlistPacketSender
 //
-// Sends master bans and exemptions to a server. Automatically splits the
+// Sends registry bans and exemptions to a server. Automatically splits the
 // data over several packets if necessary.
 // 
 // @author Benjamin Berkels
@@ -167,7 +167,7 @@ public:
 private:
 	void startPacket ( ) {
 		_netBuffer.Clear();
-		_netBuffer.ByteStream.WriteByte( REGISTRY_BANLISTPART );
+		_netBuffer.ByteStream.WriteByte( SERVERREGISTRY_BANLISTPART );
 		_netBuffer.ByteStream.WriteString( _destServer.RegistryBanlistVerificationString.c_str() );
 		_netBuffer.ByteStream.WriteByte( _ulPacketNum );
 		_ulSizeOfPacket = 2 + _destServer.RegistryBanlistVerificationString.length();
@@ -219,7 +219,7 @@ int I_GetTime (void)
 
 //*****************************************************************************
 //
-void MASTERSERVER_SendBanlistToServer( const SERVER_s &Server )
+void SERVERREGISTRY_SendBanlistToServer( const SERVER_s &Server )
 {
 	// [BB] If the server supports it, potentially split the ban list over multiple packets.
 	if ( Server.iServerRevision >= 2907 )
@@ -240,9 +240,9 @@ void MASTERSERVER_SendBanlistToServer( const SERVER_s &Server )
 	else
 	{
 		g_MessageBuffer.Clear();
-		g_MessageBuffer.ByteStream.WriteByte( REGISTRY_BANLIST );
+		g_MessageBuffer.ByteStream.WriteByte( SERVERREGISTRY_BANLIST );
 		// [BB] If the server sent us a verification string, send it along with the ban list.
-		// This allows the server to verify that the list actually was sent from our master
+		// This allows the server to verify that the list actually was sent from our registry
 		// (and is not just a packet with forged source IP).
 		if ( Server.RegistryBanlistVerificationString.size() )
 			g_MessageBuffer.ByteStream.WriteString( Server.RegistryBanlistVerificationString.c_str() );
@@ -266,26 +266,26 @@ void MASTERSERVER_SendBanlistToServer( const SERVER_s &Server )
 
 //*****************************************************************************
 //
-void MASTERSERVER_RequestServerVerification( const SERVER_s &Server )
+void SERVERREGISTRY_RequestServerVerification( const SERVER_s &Server )
 {
 	g_MessageBuffer.Clear();
-	g_MessageBuffer.ByteStream.WriteByte( REGISTRY_VERIFICATION );
+	g_MessageBuffer.ByteStream.WriteByte( SERVERREGISTRY_VERIFICATION );
 	g_MessageBuffer.ByteStream.WriteString( Server.RegistryBanlistVerificationString.c_str() );
 	g_MessageBuffer.ByteStream.WriteLong( Server.ServerVerificationInt );
 	NETWORK_LaunchPacket( &g_MessageBuffer, Server.Address );
 }
 //*****************************************************************************
 //
-void MASTERSERVER_SendServerIPToLauncher( const NETADDRESS_s &Address, BYTESTREAM_s *pByteStream )
+void SERVERREGISTRY_SendServerIPToLauncher( const NETADDRESS_s &Address, BYTESTREAM_s *pByteStream )
 {
 	// Tell the launcher the IP of this server on the list.
-	pByteStream->WriteByte( RSC_SERVER );
+	pByteStream->WriteByte( SRSC_SERVER );
 	Address.WriteToStream ( pByteStream );
 }
 
 //*****************************************************************************
 //
-unsigned long MASTERSERVER_CalcServerIPBlockNetSize( const NETADDRESS_s &Address, const std::vector<USHORT> &PortList )
+unsigned long SERVERREGISTRY_CalcServerIPBlockNetSize( const NETADDRESS_s &Address, const std::vector<USHORT> &PortList )
 {
 	if ( PortList.size() == 0 )
 		return 0;
@@ -295,7 +295,7 @@ unsigned long MASTERSERVER_CalcServerIPBlockNetSize( const NETADDRESS_s &Address
 
 //*****************************************************************************
 //
-void MASTERSERVER_SendServerIPBlockToLauncher( const NETADDRESS_s &Address, const std::vector<USHORT> &PortList, BYTESTREAM_s *pByteStream )
+void SERVERREGISTRY_SendServerIPBlockToLauncher( const NETADDRESS_s &Address, const std::vector<USHORT> &PortList, BYTESTREAM_s *pByteStream )
 {
 	if ( PortList.size() == 0 )
 		return;
@@ -309,14 +309,14 @@ void MASTERSERVER_SendServerIPBlockToLauncher( const NETADDRESS_s &Address, cons
 
 //*****************************************************************************
 //
-unsigned long MASTERSERVER_NumServers ( void )
+unsigned long SERVERREGISTRY_NumServers ( void )
 {
 	return g_Servers.size();
 }
 
 //*****************************************************************************
 //
-bool MASTERSERVER_RefreshIPList( IPList &List, const char *FileName )
+bool SERVERREGISTRY_RefreshIPList( IPList &List, const char *FileName )
 {
 	std::stringstream oldIPs;
 
@@ -336,10 +336,10 @@ bool MASTERSERVER_RefreshIPList( IPList &List, const char *FileName )
 
 //*****************************************************************************
 //
-void MASTERSERVER_InitializeBans( void )
+void SERVERREGISTRY_InitializeBans( void )
 {
-	const bool BannedIPsChanged = MASTERSERVER_RefreshIPList ( g_BannedIPs, "banlist.txt" );
-	const bool BannedIPExemptionsChanged = MASTERSERVER_RefreshIPList ( g_BannedIPExemptions, "whitelist.txt" );
+	const bool BannedIPsChanged = SERVERREGISTRY_RefreshIPList ( g_BannedIPs, "banlist.txt" );
+	const bool BannedIPExemptionsChanged = SERVERREGISTRY_RefreshIPList ( g_BannedIPExemptions, "whitelist.txt" );
 
 	if ( !(g_MultiServerExceptions.clearAndLoadFromFile( "multiserver_whitelist.txt" )) )
 		std::cerr << g_MultiServerExceptions.getErrorMessage();
@@ -376,7 +376,7 @@ void MASTERSERVER_InitializeBans( void )
 
 //*****************************************************************************
 //
-void MASTERSERVER_AddServer( const SERVER_s &Server, std::set<SERVER_s, SERVERCompFunc> &ServerSet )
+void SERVERREGISTRY_AddServer( const SERVER_s &Server, std::set<SERVER_s, SERVERCompFunc> &ServerSet )
 {
 	std::set<SERVER_s, SERVERCompFunc>::iterator addedServer = ServerSet.insert ( Server ).first;
 
@@ -388,7 +388,7 @@ void MASTERSERVER_AddServer( const SERVER_s &Server, std::set<SERVER_s, SERVERCo
 		if ( &ServerSet == &g_Servers )
 		{
 			printf( "+ Adding %s (revision %d) to the server list.\n", addedServer->Address.ToString(), addedServer->iServerRevision );
-			MASTERSERVER_SendBanlistToServer( *addedServer );
+			SERVERREGISTRY_SendBanlistToServer( *addedServer );
 		}
 		else
 			printf( "+ Adding %s (revision %d) to the verification list.\n", addedServer->Address.ToString(), addedServer->iServerRevision );
@@ -397,7 +397,7 @@ void MASTERSERVER_AddServer( const SERVER_s &Server, std::set<SERVER_s, SERVERCo
 
 //*****************************************************************************
 //
-void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
+void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 {
 	long			lCommand;
 	NETADDRESS_s	AddressFrom;
@@ -416,7 +416,7 @@ void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
 	if ( !g_BannedIPExemptions.isIPInList( AddressFrom ) && g_BannedIPs.isIPInList( AddressFrom ))
 	{
 		g_MessageBuffer.Clear();
-		g_MessageBuffer.ByteStream.WriteLong( RSC_IPISBANNED );
+		g_MessageBuffer.ByteStream.WriteLong( SRSC_IPISBANNED );
 		NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 
 		printf( "* Received challenge from banned IP (%s). Ignoring for 10 seconds.\n", AddressFrom.ToString() );
@@ -428,14 +428,14 @@ void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
 	switch ( lCommand )
 	{
 
-	// Server is telling master server of its existence.
-	case SERVER_REGISTRY_CHALLENGE:
+	// Server is telling the registry of its existence.
+	case SERVER_SERVERREGISTRY_CHALLENGE:
 		{
 			// Certain IPs can be blocked from just hosting.
 			if ( !g_BannedIPExemptions.isIPInList( AddressFrom ) && g_BlockedIPs.isIPInList( AddressFrom ))
 			{
 				g_MessageBuffer.Clear();
-				g_MessageBuffer.ByteStream.WriteLong( RSC_IPISBANNED );
+				g_MessageBuffer.ByteStream.WriteLong( SRSC_IPISBANNED );
 				NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 
 				printf( "* Received server challenge from blocked IP (%s). Ignoring for 10 seconds.\n", AddressFrom.ToString() );
@@ -485,8 +485,8 @@ void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
 							// [BB] We don't send the ban list to unverified servers, so just pretent the server already has the list.
 							newServer.bHasLatestBanList = true;
 
-							MASTERSERVER_RequestServerVerification ( newServer );
-							MASTERSERVER_AddServer( newServer, g_UnverifiedServers );
+							SERVERREGISTRY_RequestServerVerification ( newServer );
+							SERVERREGISTRY_AddServer( newServer, g_UnverifiedServers );
 						}
 					}
 					else
@@ -514,7 +514,7 @@ void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
 		//		g_floodProtectionIPQueue.addAddress( AddressFrom, g_lCurrentTime, &std::cerr );
 			return;
 		}
-	case SERVER_REGISTRY_VERIFICATION:
+	case SERVER_SERVERREGISTRY_VERIFICATION:
 		{
 			SERVER_s newServer;
 			newServer.Address = AddressFrom;
@@ -530,12 +530,12 @@ void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
 			if ( ( stricmp ( newServer.RegistryBanlistVerificationString.c_str(), currentServer->RegistryBanlistVerificationString.c_str() ) == 0 )
 				&& ( newServer.ServerVerificationInt == currentServer->ServerVerificationInt ) )
 			{
-				MASTERSERVER_AddServer( *currentServer, g_Servers );
+				SERVERREGISTRY_AddServer( *currentServer, g_Servers );
 				g_UnverifiedServers.erase ( currentServer );
 			}
 			return;
 		}
-	case SERVER_REGISTRY_BANLIST_RECEIPT:
+	case SERVER_SERVERREGISTRY_BANLIST_RECEIPT:
 		{
 			SERVER_s server;
 			server.Address = AddressFrom;
@@ -554,16 +554,16 @@ void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
 			}
 		}
 		return;
-	// Launcher is asking master server for server list.
+	// Launcher is asking the registry for the server list.
 	case LAUNCHER_SERVER_CHALLENGE:
-	case LAUNCHER_REGISTRY_CHALLENGE:
+	case LAUNCHER_SERVERREGISTRY_CHALLENGE:
 		{
 			g_MessageBuffer.Clear();
 
 			// Did this IP query us recently? If so, send it an explanation, and ignore it completely for 3 seconds.
 			if ( g_queryIPQueue.addressInQueue( AddressFrom ))
 			{
-				g_MessageBuffer.ByteStream.WriteLong( RSC_REQUESTIGNORED );
+				g_MessageBuffer.ByteStream.WriteLong( SRSC_REQUESTIGNORED );
 				NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 
 				printf( "* Extra launcher challenge from %s. Ignoring for 3 seconds.\n", AddressFrom.ToString() );
@@ -571,15 +571,15 @@ void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
 				return;
 			}
 
-			// [BB] The launcher only sends the protocol version with LAUNCHER_REGISTRY_CHALLENGE.
-			if ( lCommand == LAUNCHER_REGISTRY_CHALLENGE )
+			// [BB] The launcher only sends the protocol version with LAUNCHER_SERVERREGISTRY_CHALLENGE.
+			if ( lCommand == LAUNCHER_SERVERREGISTRY_CHALLENGE )
 			{
 				// [BB] Check if the requested version of the protocol matches ours.
 				const unsigned short usVersion = pByteStream->ReadShort();
 
-				if ( usVersion != REGISTRY_VERSION )
+				if ( usVersion != SERVERREGISTRY_VERSION )
 				{
-					g_MessageBuffer.ByteStream.WriteLong( RSC_WRONGVERSION );
+					g_MessageBuffer.ByteStream.WriteLong( SRSC_WRONGVERSION );
 					NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 					return;
 				}
@@ -594,32 +594,32 @@ void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
 			{
 			case LAUNCHER_SERVER_CHALLENGE:
 				// Send the list of servers.
-				g_MessageBuffer.ByteStream.WriteLong( RSC_BEGINSERVERLIST );
+				g_MessageBuffer.ByteStream.WriteLong( SRSC_BEGINSERVERLIST );
 				for( std::set<SERVER_s, SERVERCompFunc>::const_iterator it = g_Servers.begin(); it != g_Servers.end(); ++it )
 				{
 					// [BB] Possibly omit servers that don't enforce our ban list.
 					if ( ( it->bEnforcesBanList == true ) || ( g_bHideBanIgnoringServers == false ) )
-						MASTERSERVER_SendServerIPToLauncher ( it->Address, &g_MessageBuffer.ByteStream );
+						SERVERREGISTRY_SendServerIPToLauncher ( it->Address, &g_MessageBuffer.ByteStream );
 				}
 
 				// Tell the launcher that we're done sending servers.
-				g_MessageBuffer.ByteStream.WriteByte( RSC_ENDSERVERLIST );
+				g_MessageBuffer.ByteStream.WriteByte( SRSC_ENDSERVERLIST );
 
 				// Send the launcher our packet.
 				NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 				return;
 
-			case LAUNCHER_REGISTRY_CHALLENGE:
+			case LAUNCHER_SERVERREGISTRY_CHALLENGE:
 
 				const unsigned long ulMaxPacketSize = 1024;
 				unsigned long ulPacketNum = 0;
 
 				std::set<SERVER_s, SERVERCompFunc>::const_iterator it = g_Servers.begin();
 
-				g_MessageBuffer.ByteStream.WriteLong( RSC_BEGINSERVERLISTPART );
+				g_MessageBuffer.ByteStream.WriteLong( SRSC_BEGINSERVERLISTPART );
 				g_MessageBuffer.ByteStream.WriteByte( ulPacketNum );
-				g_MessageBuffer.ByteStream.WriteByte( RSC_SERVERBLOCK );
-				unsigned long ulSizeOfPacket = 6; // 4 (RSC_BEGINSERVERLISTPART) + 1 (0) + 1 (RSC_SERVERBLOCK)
+				g_MessageBuffer.ByteStream.WriteByte( SRSC_SERVERBLOCK );
+				unsigned long ulSizeOfPacket = 6; // 4 (SRSC_BEGINSERVERLISTPART) + 1 (0) + 1 (SRSC_SERVERBLOCK)
 
 				while ( it != g_Servers.end() )
 				{
@@ -637,28 +637,28 @@ void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
 					if ( serverPortList.size() == 0 )
 						continue;
 
-					const unsigned long ulServerBlockNetSize = MASTERSERVER_CalcServerIPBlockNetSize( serverAddress, serverPortList );
+					const unsigned long ulServerBlockNetSize = SERVERREGISTRY_CalcServerIPBlockNetSize( serverAddress, serverPortList );
 
 					// [BB] If sending this block would cause the current packet to exceed ulMaxPacketSize ...
 					if ( ulSizeOfPacket + ulServerBlockNetSize > ulMaxPacketSize - 1 )
 					{
 						// [BB] ... close the current packet and start a new one.
-						g_MessageBuffer.ByteStream.WriteByte( 0 ); // [BB] Terminate RSC_SERVERBLOCK by sending 0 ports.
-						g_MessageBuffer.ByteStream.WriteByte( RSC_ENDSERVERLISTPART );
+						g_MessageBuffer.ByteStream.WriteByte( 0 ); // [BB] Terminate SRSC_SERVERBLOCK by sending 0 ports.
+						g_MessageBuffer.ByteStream.WriteByte( SRSC_ENDSERVERLISTPART );
 						NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 
 						g_MessageBuffer.Clear();
 						++ulPacketNum;
 						ulSizeOfPacket = 5;
-						g_MessageBuffer.ByteStream.WriteLong( RSC_BEGINSERVERLISTPART );
+						g_MessageBuffer.ByteStream.WriteLong( SRSC_BEGINSERVERLISTPART );
 						g_MessageBuffer.ByteStream.WriteByte( ulPacketNum );
-						g_MessageBuffer.ByteStream.WriteByte( RSC_SERVERBLOCK );
+						g_MessageBuffer.ByteStream.WriteByte( SRSC_SERVERBLOCK );
 					}
 					ulSizeOfPacket += ulServerBlockNetSize;
-					MASTERSERVER_SendServerIPBlockToLauncher ( serverAddress, serverPortList, &g_MessageBuffer.ByteStream );
+					SERVERREGISTRY_SendServerIPBlockToLauncher ( serverAddress, serverPortList, &g_MessageBuffer.ByteStream );
 				}
-				g_MessageBuffer.ByteStream.WriteByte( 0 ); // [BB] Terminate RSC_SERVERBLOCK by sending 0 ports.
-				g_MessageBuffer.ByteStream.WriteByte( RSC_ENDSERVERLIST );
+				g_MessageBuffer.ByteStream.WriteByte( 0 ); // [BB] Terminate SRSC_SERVERBLOCK by sending 0 ports.
+				g_MessageBuffer.ByteStream.WriteByte( SRSC_ENDSERVERLIST );
 				NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 				return;
 			}
@@ -671,7 +671,7 @@ void MASTERSERVER_ParseCommands( BYTESTREAM_s *pByteStream )
 
 //*****************************************************************************
 //
-void MASTERSERVER_CheckTimeouts( std::set<SERVER_s, SERVERCompFunc> &ServerSet )
+void SERVERREGISTRY_CheckTimeouts( std::set<SERVER_s, SERVERCompFunc> &ServerSet )
 {
 	// [BB] Because we are erasing entries from the set, the iterator has to be incremented inside
 	// the loop, depending on whether and element was erased or not.
@@ -692,7 +692,7 @@ void MASTERSERVER_CheckTimeouts( std::set<SERVER_s, SERVERCompFunc> &ServerSet )
 			// This construction has the drawback that all servers are updated at once.
 			// Possibly it will be necessary to do this differently.
 			if ( it->bHasLatestBanList == false )
-				MASTERSERVER_SendBanlistToServer( *it );
+				SERVERREGISTRY_SendBanlistToServer( *it );
 
 			++it;
 		}
@@ -701,10 +701,10 @@ void MASTERSERVER_CheckTimeouts( std::set<SERVER_s, SERVERCompFunc> &ServerSet )
 
 //*****************************************************************************
 //
-void MASTERSERVER_CheckTimeouts( void )
+void SERVERREGISTRY_CheckTimeouts( void )
 {
-	MASTERSERVER_CheckTimeouts ( g_Servers );
-	MASTERSERVER_CheckTimeouts ( g_UnverifiedServers );
+	SERVERREGISTRY_CheckTimeouts ( g_Servers );
+	SERVERREGISTRY_CheckTimeouts ( g_UnverifiedServers );
 }
 
 //*****************************************************************************
@@ -713,20 +713,37 @@ int main( int argc, char **argv )
 {
 	BYTESTREAM_s	*pByteStream;
 
-	std::cerr << "=== Zandronum Master ===\n";
+	// [rc4l] Unbuffer stdout so the log is usable in a container.
+	//
+	// The per-event lines below go through printf, and C stdio switches to FULL buffering when stdout
+	// is a pipe -- which is exactly what Docker gives it. So `docker compose logs` showed the startup
+	// banner (std::cerr, unbuffered) and then nothing, while several KB of the actually interesting
+	// lines sat in a buffer.
+	//
+	// Those lines are the only way to tell an operator whether a server's port forward works: reaching
+	// "verification list" means the announce arrived, and reaching "server list" means we got a reply
+	// BACK to it. Seeing the first without the second is the signature of a blocked inbound port. That
+	// diagnostic is worthless if it does not appear until the buffer happens to fill.
+	//
+	// _IONBF rather than _IOLBF on purpose: MSVC maps _IOLBF to full buffering anyway, and rejects the
+	// (NULL, 0) pairing outright -- it crashed the process on Windows. Unbuffered costs a write syscall
+	// per line, which is nothing at a few lines per heartbeat, and behaves the same everywhere.
+	setvbuf( stdout, NULL, _IONBF, 0 );
+
+	std::cerr << "=== ZandroX Server Registry ===\n";
 	std::cerr << "Revision: " << GetGitTime() << "\n";
 
-	std::cerr << "Port: " << DEFAULT_REGISTRY_PORT << std::endl << std::endl;
+	std::cerr << "Port: " << DEFAULT_SERVERREGISTRY_PORT << std::endl << std::endl;
 
 	// Initialize the network system.
-	NETWORK_Construct( DEFAULT_REGISTRY_PORT, ( ( argc >= 4 ) && ( stricmp ( argv[2], "-useip" ) == 0 ) ) ? argv[3] : NULL );
+	NETWORK_Construct( DEFAULT_SERVERREGISTRY_PORT, ( ( argc >= 4 ) && ( stricmp ( argv[2], "-useip" ) == 0 ) ) ? argv[3] : NULL );
 
 	// Initialize the message buffer we send messages to the launcher in.
 	g_MessageBuffer.Init ( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
 
 	// Initialize the bans subsystem.
 	std::cerr << "Initializing ban list...\n";
-	MASTERSERVER_InitializeBans( );
+	SERVERREGISTRY_InitializeBans( );
 	int lastParsingTime = I_GetTime( );
 	int lastBanlistVerificationTimeout = lastParsingTime;
 
@@ -743,7 +760,7 @@ int main( int argc, char **argv )
 	}
 
 	// Done setting up!
-	std::cerr << "\n=== Master server started! ===\n";
+	std::cerr << "\n=== Server registry started! ===\n";
 
 	while ( 1 )
 	{
@@ -758,7 +775,7 @@ int main( int argc, char **argv )
 			pByteStream->pbStreamEnd = pByteStream->pbStream + NETWORK_GetNetworkMessageBuffer( )->ulCurrentSize;
 
 			// Now parse the packet.
-			MASTERSERVER_ParseCommands( pByteStream );
+			SERVERREGISTRY_ParseCommands( pByteStream );
 		}
 
 		// Update the ignore queues.
@@ -767,7 +784,7 @@ int main( int argc, char **argv )
 		g_ShortFloodQueue.adjustHead ( g_lCurrentTime );
 
 		// See if any servers have timed out.
-		MASTERSERVER_CheckTimeouts( );
+		SERVERREGISTRY_CheckTimeouts( );
 
 		if ( g_lCurrentTime > lastBanlistVerificationTimeout + 10 )
 		{
@@ -786,7 +803,7 @@ int main( int argc, char **argv )
 		if ( g_lCurrentTime > lastParsingTime + 15*60 )
 		{
 			std::cerr << "~ Reparsing the ban lists...\n";
-			MASTERSERVER_InitializeBans( );
+			SERVERREGISTRY_InitializeBans( );
 			lastParsingTime = g_lCurrentTime;
 		}
 	}	

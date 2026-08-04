@@ -697,7 +697,7 @@ void		SERVER_HandleWeaponStateJump( ULONG ulPlayer, FState *pState, LONG lPositi
 void		SERVER_SetThingNonZeroAngleAndVelocity( AActor *pActor );
 void		SERVER_IgnoreIP( NETADDRESS_s Address );
 IPList		*SERVER_GetAdminList( void );
-const FString& SERVER_GetRegistryBanlistVerificationString( void );
+const FString& SERVER_GetServerRegistryBanlistVerificationString( void );
 void		SERVER_UpdateThingVelocity( AActor *pActor, bool updateZ, bool updateXY = true );
 void		SERVER_SyncSharedKeys( int playerToSync, bool withmessage );
 void		SERVER_SyncServerModCVars ( const int PlayerToSync );
@@ -713,15 +713,15 @@ void		SERVER_ResetClientExtrapolation( ULONG ulClient, bool bAfterBacktrace = fa
 void		SERVER_DestroyActorIfClientsidedOnly( AActor *actor );
 
 // From sv_serverregistry.cpp
-void		SERVER_REGISTRY_Construct( void );
-void		SERVER_REGISTRY_Destruct( void );
-void		SERVER_REGISTRY_Tick( void );
-void		SERVER_REGISTRY_Broadcast( void );
-void		SERVER_REGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG ulTime, ULONG ulFlags2, bool bBroadcasting, bool bSegmentedResponse );
-const char	*SERVER_REGISTRY_GetGameName( void );
-NETADDRESS_s SERVER_REGISTRY_GetRegistryAddress( void );
-void		SERVER_REGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream );
-void		SERVER_REGISTRY_SendBanlistReceipt( void );
+void		SERVER_SERVERREGISTRY_Construct( void );
+void		SERVER_SERVERREGISTRY_Destruct( void );
+void		SERVER_SERVERREGISTRY_Tick( void );
+void		SERVER_SERVERREGISTRY_Broadcast( void );
+void		SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG ulTime, ULONG ulFlags2, bool bBroadcasting, bool bSegmentedResponse );
+const char	*SERVER_SERVERREGISTRY_GetGameName( void );
+bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address );
+void		SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream );
+void		SERVER_SERVERREGISTRY_SendBanlistReceipt( void );
 
 // Statistic functions.
 LONG		SERVER_STATISTIC_GetTotalSecondsElapsed( void );

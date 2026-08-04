@@ -56,7 +56,15 @@ file(GLOB_RECURSE COMPUTE_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_compute.cpp
 add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES})
 target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}")
 target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock)
-target_compile_options(zandrox_tests PRIVATE -Wall -Wextra)
+# [rc4l] This target is the portable one -- pure Compute* logic with no engine or platform deps -- so
+# it is the one a Windows dev can actually run before pushing. MSVC rejects -Wextra outright (D8021,
+# a hard error, not a warning), which silently made that impossible; /W4 is its equivalent. The
+# sanitizer/coverage options below stay GCC/Clang-only on purpose: CI measures coverage on Linux.
+if(MSVC)
+  target_compile_options(zandrox_tests PRIVATE /W4)
+else()
+  target_compile_options(zandrox_tests PRIVATE -Wall -Wextra)
+endif()
 
 if(ZANDROX_TESTS_SANITIZE)
   # [rc4l] AddressSanitizer + UBSan catch memory errors and undefined behavior at runtime.

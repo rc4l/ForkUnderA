@@ -3290,11 +3290,11 @@ void D_DoomMain (void)
 		if ( Args->CheckParm( "-private" ))
 			sv_fua_serverregistry_announce = false;
 
-		// [BC] Potentially send an update to the master server.
+		// [BC] Potentially send an update to the server registry.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			SERVER_REGISTRY_Tick( );
-			SERVER_REGISTRY_Broadcast( );
+			SERVER_SERVERREGISTRY_Tick( );
+			SERVER_SERVERREGISTRY_Broadcast( );
 		}
 
 		// [BC] Little hack for +addbot.

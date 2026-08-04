@@ -44,7 +44,7 @@
 //
 // Filename: sv_serverregistry.cpp
 //
-// Description: Server-to-Master and Server-to-Launcher protocol.
+// Description: Server-to-ServerRegistry and Server-to-Launcher protocol.
 //
 //-----------------------------------------------------------------------------
 
@@ -89,15 +89,25 @@ using LauncherFieldFunction = void(*)(const LauncherResponseContext &);
 //-- VARIABLES -------------------------------------------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------------------------------------------------------
 
-// Address of master server.
-static	NETADDRESS_s		g_AddressRegistryServer;
+// [rc4l] The ONE server registry this server announces to. Singular on purpose.
+//
+// Federation happens on the CLIENT: a browser queries many registries and unions the results
+// (cl_fua_serverregistry_list), so a server is discoverable network-wide without announcing to more
+// than one. Authority does not compose the way discovery does -- a registry pushes a ban list to the
+// servers listed on it, and two registries pushing to the same server has no correct resolution:
+// merge them and listing somewhere silently grants it authority over your server; take the last to
+// arrive and which bans apply becomes a race between unsolicited UDP pushes on independent timers.
+//
+// One registry per server means one authority per server, which is a deal an operator can actually
+// reason about: you accept the rules of the registry you chose, and moving is repointing one CVAR.
+static	NETADDRESS_s		g_AddressServerRegistry;
 
-// Message buffer for sending messages to the master server.
-static	NETBUFFER_s			g_RegistryServerBuffer;
+// Message buffer for sending messages to the server registry.
+static	NETBUFFER_s			g_ServerRegistryBuffer;
 static	NETBUFFER_s			g_SegmentBuffer;
 
-// Port the master server is located on.
-static	USHORT				g_usRegistryPort;
+// Port the server registry is located on.
+static	USHORT				g_usServerRegistryPort;
 
 // List of IP address that this server has been queried by recently.
 static	STORED_QUERY_IP_s	g_StoredQueryIPs[MAX_STORED_QUERY_IPS];
@@ -184,7 +194,7 @@ static void server_registry_WriteGameType( const LauncherResponseContext &ctx )
 //
 static void server_registry_WriteGameName( const LauncherResponseContext &ctx )
 {
-	ctx.pByteStream->WriteString( SERVER_REGISTRY_GetGameName( ));
+	ctx.pByteStream->WriteString( SERVER_SERVERREGISTRY_GetGameName( ));
 }
 
 //*****************************************************************************
@@ -541,25 +551,25 @@ static const std::map<ULONG, LauncherFieldFunction> ResponseFunctions[] =
 
 //*****************************************************************************
 //
-void SERVER_REGISTRY_Construct( void )
+void SERVER_SERVERREGISTRY_Construct( void )
 {
 	const char *pszPort;
 
 	// Setup our message buffer.
-	g_RegistryServerBuffer.Init( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
+	g_ServerRegistryBuffer.Init( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
 
 	// [SB] Buffer for assembling segments.
 	g_SegmentBuffer.Init( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
 
-	// Allow the user to specify which port the master server is on.
-	pszPort = Args->CheckValue( "-masterport" );
+	// Allow the user to specify which port the server registry is on.
+	pszPort = Args->CheckValue( "-serverregistryport" );
     if ( pszPort )
     {
-       g_usRegistryPort = atoi( pszPort );
-       Printf( PRINT_HIGH, "Alternate master server port: %d.\n", g_usRegistryPort );
+       g_usServerRegistryPort = atoi( pszPort );
+       Printf( PRINT_HIGH, "Alternate server registry port: %d.\n", g_usServerRegistryPort );
     }
 	else 
-	   g_usRegistryPort = DEFAULT_REGISTRY_PORT;
+	   g_usServerRegistryPort = DEFAULT_SERVERREGISTRY_PORT;
 
 	g_lStoredQueryIPHead = 0;
 	g_lStoredQueryIPTail = 0;
@@ -579,21 +589,21 @@ void SERVER_REGISTRY_Construct( void )
 			g_OptionalWadIndices.Push( i );
 	}
 
-	// Call SERVER_REGISTRY_Destruct() when Skulltag closes.
-	atterm( SERVER_REGISTRY_Destruct );
+	// Call SERVER_SERVERREGISTRY_Destruct() when Skulltag closes.
+	atterm( SERVER_SERVERREGISTRY_Destruct );
 }
 
 //*****************************************************************************
 //
-void SERVER_REGISTRY_Destruct( void )
+void SERVER_SERVERREGISTRY_Destruct( void )
 {
 	// Free our local buffer.
-	g_RegistryServerBuffer.Free();
+	g_ServerRegistryBuffer.Free();
 }
 
 //*****************************************************************************
 //
-void SERVER_REGISTRY_Tick( void )
+void SERVER_SERVERREGISTRY_Tick( void )
 {
 	while (( g_lStoredQueryIPHead != g_lStoredQueryIPTail ) && ( gametic >= g_StoredQueryIPs[g_lStoredQueryIPHead].lNextAllowedGametic ))
 	{
@@ -601,46 +611,45 @@ void SERVER_REGISTRY_Tick( void )
 		g_lStoredQueryIPHead = g_lStoredQueryIPHead % MAX_STORED_QUERY_IPS;
 	}
 
-	// Send an update to the master server every 30 seconds.
+	// Send an update to the server registry every 30 seconds.
 	if ( gametic % ( TICRATE * 30 ))
 		return;
 
-	// User doesn't wish to update the master server.
+	// User doesn't wish to update the server registry.
 	if ( sv_fua_serverregistry_announce == false )
 		return;
 
-	g_RegistryServerBuffer.Clear();
+	g_ServerRegistryBuffer.Clear();
 
-	// [BB] If we can't find the master address, we can't tick the master.
-	bool ok = g_AddressRegistryServer.LoadFromString( fua_serverregistry_host );
-
-	if ( ok == false )
+	// [BB] If we can't find the registry address, we can't announce to it.
+	if ( g_AddressServerRegistry.LoadFromString( fua_serverregistry_host ) == false )
 	{
-		Printf ( "Warning: Can't find fua_serverregistry_host %s! Either correct fua_serverregistry_host or set sv_fua_serverregistry_announce to false.\n", *fua_serverregistry_host );
+		Printf( "Warning: Can't find fua_serverregistry_host %s! Either correct fua_serverregistry_host or set sv_fua_serverregistry_announce to false.\n", *fua_serverregistry_host );
 		return;
 	}
 
-	g_AddressRegistryServer.SetPort( g_usRegistryPort );
+	// [rc4l] Only default the port if the entry did not carry one.
+	if ( g_AddressServerRegistry.usPort == 0 )
+		g_AddressServerRegistry.SetPort( g_usServerRegistryPort );
 
-	// Write to our packet a challenge to the master server.
-	g_RegistryServerBuffer.ByteStream.WriteLong( SERVER_REGISTRY_CHALLENGE );
-	// [BB] Also send a string that will allow us to verify that a master banlist was actually sent from the master.
-	g_RegistryServerBuffer.ByteStream.WriteString( SERVER_GetRegistryBanlistVerificationString().GetChars() );
-	// [BB] Also tell the master whether we are enforcing its ban list.
-	g_RegistryServerBuffer.ByteStream.WriteByte( sv_fua_serverregistry_enforcebans );
+	// Write to our packet a challenge to the server registry.
+	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_SERVERREGISTRY_CHALLENGE );
+	// [BB] Also send a string that will allow us to verify that a registry banlist was actually sent from the registry.
+	g_ServerRegistryBuffer.ByteStream.WriteString( SERVER_GetServerRegistryBanlistVerificationString().GetChars() );
+	// [BB] Also tell the registry whether we are enforcing its ban list.
+	g_ServerRegistryBuffer.ByteStream.WriteByte( sv_fua_serverregistry_enforcebans );
 	// [BB] And tell which code revision number the server was built with.
-	g_RegistryServerBuffer.ByteStream.WriteLong( GetRevisionNumber() );
+	g_ServerRegistryBuffer.ByteStream.WriteLong( GetRevisionNumber() );
 
-	// Send the master server our packet.
-//	NETWORK_LaunchPacket( &g_RegistryServerBuffer, g_AddressRegistryServer, true );
-	NETWORK_LaunchPacket( &g_RegistryServerBuffer, g_AddressRegistryServer );
+	// Send the server registry our packet.
+	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistry );
 }
 
 //*****************************************************************************
 //
-void SERVER_REGISTRY_Broadcast( void )
+void SERVER_SERVERREGISTRY_Broadcast( void )
 {
-	// Send an update to the master server every second.
+	// Send an update to the server registry every second.
 	if ( gametic % TICRATE )
 		return;
 
@@ -648,7 +657,7 @@ void SERVER_REGISTRY_Broadcast( void )
 	if (( sv_broadcast == false ) || ( Args->CheckParm( "-nobroadcast" )))
 		return;
 
-//	g_RegistryServerBuffer.Clear();
+//	g_ServerRegistryBuffer.Clear();
 
 	sockaddr_in broadcast_addr;
 	broadcast_addr.sin_family = AF_INET;
@@ -690,22 +699,22 @@ void SERVER_REGISTRY_Broadcast( void )
 #endif
 
 	// Broadcast our packet.
-	SERVER_REGISTRY_SendServerInfo( AddressBroadcast, SQF_ALL, 0, SQF2_ALL, true, false );
-//	NETWORK_WriteLong( &g_RegistryServerBuffer, MASTER_CHALLENGE );
-//	NETWORK_LaunchPacket( g_RegistryServerBuffer, AddressBroadcast, true );
+	SERVER_SERVERREGISTRY_SendServerInfo( AddressBroadcast, SQF_ALL, 0, SQF2_ALL, true, false );
+//	NETWORK_WriteLong( &g_ServerRegistryBuffer, SERVERREGISTRY_CHALLENGE );
+//	NETWORK_LaunchPacket( g_ServerRegistryBuffer, AddressBroadcast, true );
 }
 
 //*****************************************************************************
 //
-void SERVER_REGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG ulTime, ULONG ulFlags2, bool bBroadcasting, bool bSegmentedResponse )
+void SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG ulTime, ULONG ulFlags2, bool bBroadcasting, bool bSegmentedResponse )
 {
 	IPStringArray szAddress;
 	ULONG		ulIdx;
 	ULONG		ulBits;
 	ULONG 		ulBits2 = 0;
 
-	// Let's just use the master server buffer! It gets cleared again when we need it anyway!
-	g_RegistryServerBuffer.Clear();
+	// Let's just use the server registry buffer! It gets cleared again when we need it anyway!
+	g_ServerRegistryBuffer.Clear();
 
 	if ( bBroadcasting == false )
 	{
@@ -720,14 +729,14 @@ void SERVER_REGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG 
 				if ( Address.CompareNoPort( g_StoredQueryIPs[ulIdx].Address ))
 				{
 					// Write our header.
-					g_RegistryServerBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_IGNORING );
+					g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_IGNORING );
 
 					// Send the time the launcher sent to us.
-					g_RegistryServerBuffer.ByteStream.WriteLong( ulTime );
+					g_ServerRegistryBuffer.ByteStream.WriteLong( ulTime );
 
 					// Send the packet.
-	//				NETWORK_LaunchPacket( &g_RegistryServerBuffer, Address, true );
-					NETWORK_LaunchPacket( &g_RegistryServerBuffer, Address );
+	//				NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Address, true );
+					NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Address );
 
 					if ( sv_showlauncherqueries )
 						Printf( "Ignored IP launcher challenge.\n" );
@@ -746,13 +755,13 @@ void SERVER_REGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG 
 		if ( SERVERBAN_IsIPBanned( szAddress ))
 		{
 			// Write our header.
-			g_RegistryServerBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_BANNED );
+			g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_BANNED );
 
 			// Send the time the launcher sent to us.
-			g_RegistryServerBuffer.ByteStream.WriteLong( ulTime );
+			g_ServerRegistryBuffer.ByteStream.WriteLong( ulTime );
 
 			// Send the packet.
-			NETWORK_LaunchPacket( &g_RegistryServerBuffer, Address );
+			NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Address );
 
 			if ( sv_showlauncherqueries )
 				Printf( "Denied BANNED IP launcher challenge.\n" );
@@ -769,21 +778,21 @@ void SERVER_REGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG 
 		g_lStoredQueryIPTail++;
 		g_lStoredQueryIPTail = g_lStoredQueryIPTail % MAX_STORED_QUERY_IPS;
 		if ( g_lStoredQueryIPTail == g_lStoredQueryIPHead )
-			Printf( "SERVER_REGISTRY_SendServerInfo: WARNING! g_lStoredQueryIPTail == g_lStoredQueryIPHead\n" );
+			Printf( "SERVER_SERVERREGISTRY_SendServerInfo: WARNING! g_lStoredQueryIPTail == g_lStoredQueryIPHead\n" );
 	}
 
 	// Write our header.
 	// [SB] But skip the response code in the segmented response as it's unneeded.
 	if ( !bSegmentedResponse )
 	{
-		g_RegistryServerBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_CHALLENGE );
+		g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_CHALLENGE );
 	}
 
 	// Send the time the launcher sent to us.
-	g_RegistryServerBuffer.ByteStream.WriteLong( ulTime );
+	g_ServerRegistryBuffer.ByteStream.WriteLong( ulTime );
 
 	// Send our version. [K6] ...with OS
-	g_RegistryServerBuffer.ByteStream.WriteString( g_VersionWithOS.GetChars() );
+	g_ServerRegistryBuffer.ByteStream.WriteString( g_VersionWithOS.GetChars() );
 
 	// Send the information about the data that will be sent.
 	ulBits = ulFlags;
@@ -830,9 +839,9 @@ void SERVER_REGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG 
 
 	const ULONG flags[] = { ulBits, ulBits2 }; // [SB] The bits for each field set we'll be sending.
 	ULONG ulCurrentSetNum = 0; // [SB] Current field set. 0 -> SQF_, 1 -> SQF2_
-	const LauncherResponseContext ctx{ &g_RegistryServerBuffer.ByteStream, ulBits, ulBits2 };
+	const LauncherResponseContext ctx{ &g_ServerRegistryBuffer.ByteStream, ulBits, ulBits2 };
 
-	g_RegistryServerBuffer.ByteStream.WriteLong( ulBits );
+	g_ServerRegistryBuffer.ByteStream.WriteLong( ulBits );
 
 	// [SB] Reworked the packet assembly logic so that it tests each field and calls the relevant function,
 	// instead of being a giant list of bit-testing if statements.
@@ -879,7 +888,7 @@ void SERVER_REGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG 
 		// [SB] Size of the segment header, as written in the loop below.
 		constexpr LONG segmentHeaderSize = 12;
 
-		const LONG sourceBufferSize = g_RegistryServerBuffer.CalcSize();
+		const LONG sourceBufferSize = g_ServerRegistryBuffer.CalcSize();
 		const LONG segmentMaxSize = static_cast<LONG>( sv_maxpacketsize ) - segmentHeaderSize;
 		const LONG numSegments = static_cast<LONG>( std::ceil( static_cast<double>( sourceBufferSize ) / static_cast<double>( segmentMaxSize ) ) );
 
@@ -902,8 +911,8 @@ void SERVER_REGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG 
 			g_SegmentBuffer.ByteStream.WriteShort( readSize );
 			g_SegmentBuffer.ByteStream.WriteShort( sourceBufferSize );
 
-			// [SB] Read from the master buffer directly into the segment buffer.
-			memcpy( g_SegmentBuffer.ByteStream.pbStream, g_RegistryServerBuffer.pbData + offset, readSize );
+			// [SB] Read from the server registry buffer directly into the segment buffer.
+			memcpy( g_SegmentBuffer.ByteStream.pbStream, g_ServerRegistryBuffer.pbData + offset, readSize );
 			offset += readSize;
 			g_SegmentBuffer.ByteStream.pbStream += readSize;
 
@@ -913,13 +922,13 @@ void SERVER_REGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG 
 	}
 	else
 	{
-		NETWORK_LaunchPacket( &g_RegistryServerBuffer, Address );
+		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Address );
 	}
 }
 
 //*****************************************************************************
 //
-const char *SERVER_REGISTRY_GetGameName( void )
+const char *SERVER_SERVERREGISTRY_GetGameName( void )
 {	
 	switch ( gameinfo.gametype )
 	{
@@ -947,36 +956,45 @@ const char *SERVER_REGISTRY_GetGameName( void )
 
 //*****************************************************************************
 //
-NETADDRESS_s SERVER_REGISTRY_GetRegistryAddress( void )
+// [rc4l] Is this packet from OUR registry? Named as a question rather than exposing the address,
+// because every caller is asking the same trust question: it gates whether an incoming ban list is
+// accepted (sv_main.cpp). Handing out the address invited callers to compare it themselves, which is
+// how you end up with a check that is subtly wrong in one of two places.
+bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address )
 {
-	return g_AddressRegistryServer;
+	return Address.Compare( g_AddressServerRegistry );
 }
 
 //*****************************************************************************
 //
-void SERVER_REGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream  )
+void SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream  )
 {
 	LONG lVerificationNumber = pByteStream->ReadLong();
 
-	g_RegistryServerBuffer.Clear();
-	g_RegistryServerBuffer.ByteStream.WriteLong( SERVER_REGISTRY_VERIFICATION );
-	g_RegistryServerBuffer.ByteStream.WriteString( SERVER_GetRegistryBanlistVerificationString().GetChars() );
-	g_RegistryServerBuffer.ByteStream.WriteLong( lVerificationNumber );
+	g_ServerRegistryBuffer.Clear();
+	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_SERVERREGISTRY_VERIFICATION );
+	g_ServerRegistryBuffer.ByteStream.WriteString( SERVER_GetServerRegistryBanlistVerificationString().GetChars() );
+	g_ServerRegistryBuffer.ByteStream.WriteLong( lVerificationNumber );
 
-	// [BB] Send the master server our packet.
-	NETWORK_LaunchPacket( &g_RegistryServerBuffer, SERVER_REGISTRY_GetRegistryAddress () );
+	// [rc4l] Answer the registry that ASKED, not a canonical one. With a federation, replying to the
+	// wrong registry means the one waiting on us never sees a verification and hides this server.
+	// Safe to trust the sender here: the caller only reaches this inside the
+	// SERVER_SERVERREGISTRY_IsAddress() check in sv_main.cpp.
+	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, NETWORK_GetFromAddress() );
 }
 
 //*****************************************************************************
 //
-void SERVER_REGISTRY_SendBanlistReceipt ( void )
+void SERVER_SERVERREGISTRY_SendBanlistReceipt ( void )
 {
-	g_RegistryServerBuffer.Clear();
-	g_RegistryServerBuffer.ByteStream.WriteLong( SERVER_REGISTRY_BANLIST_RECEIPT );
-	g_RegistryServerBuffer.ByteStream.WriteString( SERVER_GetRegistryBanlistVerificationString().GetChars() );
+	g_ServerRegistryBuffer.Clear();
+	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_SERVERREGISTRY_BANLIST_RECEIPT );
+	g_ServerRegistryBuffer.ByteStream.WriteString( SERVER_GetServerRegistryBanlistVerificationString().GetChars() );
 
-	// [BB] Send the master server our packet.
-	NETWORK_LaunchPacket( &g_RegistryServerBuffer, SERVER_REGISTRY_GetRegistryAddress () );
+	// [rc4l] Acknowledge to the registry whose ban list we just received. Sending the receipt to a
+	// different one leaves the sender believing we ignored it -- and a registry that hides
+	// ban-ignoring servers would then hide us. Sender is already verified by the caller.
+	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, NETWORK_GetFromAddress() );
 }
 
 //--------------------------------------------------------------------------------------------------------------------------------------------------
@@ -987,7 +1005,7 @@ void SERVER_REGISTRY_SendBanlistReceipt ( void )
 // we need to keep those awful declarations everywhere.
 void SERVERCONSOLE_UpdateBroadcasting( void );
 void SERVERCONSOLE_UpdateTitleString( const char *pszString );
-// Should the server inform the master server of its existence?
+// Should the server inform the server registry of its existence?
 CUSTOM_CVAR( Bool, sv_fua_serverregistry_announce, true, CVAR_SERVERINFO|CVAR_NOSETBYACS )
 {
 	SERVERCONSOLE_UpdateBroadcasting( );
@@ -1057,9 +1075,15 @@ CVAR( String, sv_hostemail, "", CVAR_ARCHIVE|CVAR_NOSETBYACS|CVAR_SERVERINFO )
 // [SB] The country in which this server is located.
 CVAR( String, sv_country, "automatic", CVAR_ARCHIVE|CVAR_NOSETBYACS|CVAR_SERVERINFO )
 
-// IP address of the master server.
+// IP address of the server registry.
 // [BB] Client and server use this now, therefore the name doesn't begin with "sv_"
-CVAR( String, fua_serverregistry_host, "master.zandronum.com", CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOSETBYACS )
+// [rc4l] The ONE registry this server announces to. Not a list: see g_AddressServerRegistry for
+// why authority is kept singular while discovery federates on the client
+// (cl_fua_serverregistry_list).
+//
+// Deliberately no longer master.zandronum.com: this engine announces to its own network. Point it
+// back if you want to appear on theirs.
+CVAR( String, fua_serverregistry_host, "registry.cantstopscrolling.net", CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOSETBYACS )
 
 CCMD( wads )
 {
