@@ -18,8 +18,13 @@ backend (early 2016) → **DECORATE recompiled onto the VM** (2016) → ZScript 
 - **Ported upstream code lands in place**, mirroring upstream's own path (`src/zandronum/src/scripting/`).
   It is a vendored port, not a feature — same as staircase batches editing `gl/` in place.
   `features/` is for things we invent (`features/README.md`).
-- **`jit/` and `dap/` are not ported.** ~16k lines, optional (JIT compiler, debug adapter). Mark
-  those rows `skip` with the reason.
+- **`dap/` is skipped** (~10k lines). A Debug Adapter Protocol server for attaching VS Code to
+  running script — developer tooling, no gameplay effect. Mark those rows `skip`.
+- **`jit/` is deferred, not skipped** (~6k lines). The VM runs on the interpreter without it
+  (`HAVE_VM_JIT` guards it in `vmframe.cpp`; `vm_jit` is a runtime CVAR), and it pulls in `asmjit`
+  as a new x86-64-only dependency. But upstream added the JIT because interpreted ZScript was too
+  slow, and a 35 Hz server running a heavy mod for many players is where that bites. Leave those
+  rows `pending` with the reason — revisit once script is actually under load.
 
 ## The netcode rule, in one line
 
@@ -65,6 +70,33 @@ and let the 2017 commits introduce the split.
 
 There is no "server VM" and "client VM" — one VM, one port, compiled into the engine. Scope decides
 what executes where at runtime: the server runs `play` classes, the client runs `ui` classes.
+
+### Keeping the server out of `ui` code
+
+Scope is per-method, not per-class, and one class routinely has both sides. From
+`wadsrc/static/zscript/events.zs`:
+
+```
+class StaticEventHandler : Object native play      // class defaults to play = server
+    virtual void WorldThingSpawned(WorldEvent e)   // play  -> server
+    virtual ui void RenderOverlay(RenderEvent e)   // ui    -> client
+    virtual ui bool InputProcess(InputEvent e)     // ui    -> client
+    virtual void NetworkProcess(ConsoleEvent e)    // play  -> server
+```
+
+Two layers keep the server out of the `ui` half:
+
+1. **Call sites, automatically.** `RenderOverlay` runs only because the HUD draw path invokes it;
+   a dedicated server has no render path, no menus, no input handling, so it never gets there.
+   This covers almost everything and needs no work from us.
+2. **`FScopeBarrier::ValidateCall`, as backstop.** It is a *runtime* check upstream, because static
+   analysis cannot catch a virtual that resolves to a `ui` override. **On the server, entering
+   `Side_UI` must be a hard error, not a silent pass.** That is the one behavioural change we make
+   to the barrier, and it belongs with the case-3 feature, not scattered through the port.
+
+`NetworkProcess` is `play`, not `ui`, deliberately: it is the receiving end of `SendNetworkEvent`.
+Client UI sends a message, the server runs `NetworkProcess`. That is the designed client-to-server
+crossing and it already exists — do not reinvent it.
 
 ## Tripwire
 
