@@ -4703,7 +4703,7 @@ dcabcaa5b6a5b0deb180ac9eaa067ac62f1b2cc6	2016-09-13T19:10:07Z	Fixed compilation 
 a98f364cc3767503a8e496d450ba7f1c7db266b5	2016-09-13T21:37:19Z	- added another missing nullptr check.	pending		/
 0c0e716ccda931f6fe05d9404ee5c0cfe16e249e	2016-09-13T21:37:30Z	Merge remote-tracking branch 'remotes/zdoom/master'	pending		/
 172f58c1655848df85d35676a4a5aeb094d05b2c	2016-09-13T21:42:05Z	Fix 5:4 aspect ratio gun and status bar	ported	required follow-up to 5b438d2: generic Aspect* returned multiplier > 48 for ratios narrower than 4:3, making FillBorder's bord negative and rendering the whole screen black	841a55dc5c94f56519ed09bc2366c3b45c43f1b4
-017d1cee29adf2b2b479cc26dbb8ac5f461f5f0a	2016-09-13T21:42:05Z	Change canvas rendering to use the aspect ratio of the canvas and generalize 5:4 rendering as AspectTallerThanWide	pending		/
+017d1cee29adf2b2b479cc26dbb8ac5f461f5f0a	2016-09-13T21:42:05Z	Change canvas rendering to use the aspect ratio of the canvas and generalize 5:4 rendering as AspectTallerThanWide	adapted	aspect half ported: Is54Aspect band -> AspectTallerThanWide threshold, fixes stretching below 1.1; canvas half N/A (R_RenderViewToCanvas/R_SWRSetWindow removed with the software renderer)	3604e386fd81605611551ee9cbff323df26e1429
 c54b4e74f5ba85dc5aa989e774c8d7888bd82216	2016-09-13T21:44:12Z	Merge remote-tracking branch 'gzdoom_upstream/master' into lightmath	pending		/
 f1bca9d20e7d36b3057cc9faee7da213d9cbedd0	2016-09-14T00:12:59Z	The old DirectX setup is required to utilize v140_xp.	pending		/
 fd53aefbf27e4ffd2423d027d10f95b3be07dead	2016-09-14T00:55:31Z	Added warning if building on Visual Studio 2015 without v140_xp.	pending		/
