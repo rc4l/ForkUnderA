@@ -3699,13 +3699,10 @@ void DACSThinker::ReplaceActivator (AActor *actor, AActor *newactor)
 
 // [rc4l] uzdoom@30acb7200 / ba346616e / 2747f9a9f: set an actor's teleport fog classes from ACS.
 //
-// UPSTREAM DEFECT not reproduced: their version reads
-//     if (check != NULL || !stricmp(src,"none") || !stricmp(src,"null")) actor->Type = NULL;
-//     else                                                              actor->Type = check;
-// Both arms yield NULL -- the first assigns NULL when the class WAS found, and the else can only
-// be reached when check is already NULL -- so SetActorTeleFog could only ever clear the fog.
-// Written here as the evident intent: a resolvable name sets the class, "none"/"null" clears it,
-// and anything else leaves the actor untouched.
+// uzdoom@ba346616e shipped this with `check != NULL` on both tests, so both arms assigned NULL and
+// the function could only ever clear the fog. uzdoom@7bc2e5c67 fixes it to `check == NULL`, which
+// is the form taken here: an unresolvable name (or "none"/"null") clears the fog, anything that
+// resolves sets it.
 static void SetActorTeleFog(AActor *activator, int tid, FName telefogsrc, FName telefogdest)
 {
 	const PClass *check;
@@ -3714,12 +3711,12 @@ static void SetActorTeleFog(AActor *activator, int tid, FName telefogsrc, FName 
 		if (activator != NULL)
 		{
 			check = PClass::FindClass(telefogsrc);
-			if (check != NULL) activator->TeleFogSourceType = check;
-			else if (!stricmp(telefogsrc, "none") || !stricmp(telefogsrc, "null")) activator->TeleFogSourceType = NULL;
+			if (check == NULL || !stricmp(telefogsrc, "none") || !stricmp(telefogsrc, "null")) activator->TeleFogSourceType = NULL;
+			else activator->TeleFogSourceType = check;
 
 			check = PClass::FindClass(telefogdest);
-			if (check != NULL) activator->TeleFogDestType = check;
-			else if (!stricmp(telefogdest, "none") || !stricmp(telefogdest, "null")) activator->TeleFogDestType = NULL;
+			if (check == NULL || !stricmp(telefogdest, "none") || !stricmp(telefogdest, "null")) activator->TeleFogDestType = NULL;
+			else activator->TeleFogDestType = check;
 		}
 	}
 	else
@@ -3729,12 +3726,12 @@ static void SetActorTeleFog(AActor *activator, int tid, FName telefogsrc, FName 
 		while ((actor = iterator.Next()))
 		{
 			check = PClass::FindClass(telefogsrc);
-			if (check != NULL) actor->TeleFogSourceType = check;
-			else if (!stricmp(telefogsrc, "none") || !stricmp(telefogsrc, "null")) actor->TeleFogSourceType = NULL;
+			if (check == NULL || !stricmp(telefogsrc, "none") || !stricmp(telefogsrc, "null")) actor->TeleFogSourceType = NULL;
+			else actor->TeleFogSourceType = check;
 
 			check = PClass::FindClass(telefogdest);
-			if (check != NULL) actor->TeleFogDestType = check;
-			else if (!stricmp(telefogdest, "none") || !stricmp(telefogdest, "null")) actor->TeleFogDestType = NULL;
+			if (check == NULL || !stricmp(telefogdest, "none") || !stricmp(telefogdest, "null")) actor->TeleFogDestType = NULL;
+			else actor->TeleFogDestType = check;
 		}
 	}
 }

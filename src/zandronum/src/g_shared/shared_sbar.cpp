@@ -1162,7 +1162,9 @@ void DBaseStatusBar::DrawCrosshair ()
 	ST_LoadCrosshair();
 
 	// Don't draw the crosshair if there is none
-	if (CrosshairImage == NULL || gamestate == GS_TITLELEVEL)
+	// [rc4l] uzdoom@3af08f198: no crosshair once the camera's owner is dead -- the death camera
+	// has no weapon to aim.
+	if (CrosshairImage == NULL || gamestate == GS_TITLELEVEL || camera->health <= 0)
 	{
 		return;
 	}
