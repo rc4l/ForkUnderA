@@ -1325,6 +1325,7 @@ add_executable( zdoom WIN32
 	menu/videomenu.cpp
 	${GL_SOURCES}
 	oplsynth/fmopl.cpp
+	oplsynth/nukedopl3.cpp
 	oplsynth/musicblock.cpp
 	oplsynth/oplio.cpp
 	oplsynth/music_opldumper_mididevice.cpp
