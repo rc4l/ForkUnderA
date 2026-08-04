@@ -20,7 +20,8 @@ you ask one question, answered against the tree **as it is right now**:
 - Touches files/symbols we have → **candidate** (port it).
 - Touches only files/symbols we don't have → **skip**, and the reason is the *check result*
   ("no `r_*.cpp` software renderer present as of `<our-sha>`"), never "we dropped it."
-- Mixed → port the slice that applies; record the part that doesn't.
+- Mixed → port the slice that applies; record the part that doesn't. **This is the rule most often
+  broken — see "A skip is decided per HUNK" below.**
 
 Because the verdict is a *function of the current tree*, a commit skipped today auto-becomes
 portable the day we add that subsystem. Re-triage re-derives it; nothing is frozen truth.
@@ -56,6 +57,41 @@ For upstream commit `C` (`UP` = the UZDoom clone; our source = `src/zandronum/sr
    decision to surface — port it and move on.
 4. **For candidates, hand off to `upstream-port`:** run `backport-scout.sh` → pick the route
    (staircase batch / post-wall C++ / scriptified / born-in-ZScript) → port or adapt → its gates.
+
+## A skip is decided per HUNK, never per commit
+
+A commit is not a unit of relevance. Its *hunks* are. "This commit is a software-renderer commit"
+is a statement about its centre of mass, and centre of mass is not a verdict.
+
+**Run `--stat` and classify EVERY file before writing a skip.** Not the title, not the first hunk,
+not the impression from the diff you skimmed. If any file in the list exists in our tree, that part
+has its own verdict and you owe it a sentence.
+
+The dangerous shape is a commit that is overwhelmingly one thing plus a small slice of another:
+
+> `2df45598d` is ~430 lines of software renderer and ~27 lines of `Line_SetPortal` map specials.
+> It was skipped as "software renderer." The specials are renderer-AGNOSTIC — they live in the map
+> loader, every renderer needs them, and they survive to upstream HEAD. The majority reason
+> swallowed them, and the ledger row looked correct forever.
+
+Why this failure is worse than an ordinary miss: a skip row is **terminal**. A `pending` row is a
+promise to come back; a `skip` row says "checked, nothing here for us," and nobody re-opens it. The
+minority slice is not deferred, it is *erased* — and the gap only surfaces years later when the
+feature it belonged to is ported and silently does nothing.
+
+So when the minority slice genuinely cannot be taken yet (it calls a header the commit doesn't add,
+it needs a subsystem we haven't started), the skip may still be right — but the note must:
+
+1. **Say the slice is not part of the skip reason.** Name it, and say it is renderer-agnostic /
+   playsim / shared, so a reader cannot infer it was covered.
+2. **Name what it belongs to** — the commit or feature that will carry it in.
+3. **Give the re-derivation** — the grep that answers "did this ever land?" (`grep Line_SetPortal
+   actionspecials.h`), so the gap is findable without re-reading the original diff.
+
+The same applies to any majority reason, not just the renderer: "upstream P2P netcode", "Cajun
+bots", "SDL backend". Each of those has swallowed a shared-file hunk at least once. When a commit
+touches BOTH a subsystem we lack and files we have, the second half is a decision you make out
+loud.
 
 **Apply with `tools/apply-upstream-diff.sh`, never a bare `patch`.** Upstream's files are CRLF and
 ours are LF, so a diff straight from upstream matches *nothing* and `patch` reports every hunk of
@@ -227,8 +263,9 @@ to re-check, so an expired skip becomes permanent silence. `tools/commit-tracker
 the blatant shape of this (a cited commit sharing no files with the upstream one) but not the subtle
 one -- it is a smell detector, not a proof.
 
-Every commit ends as a tracker row: `ported`/`adapted`/`skip`. The note must cite the **check**, not a
-belief — `"skip: no software-renderer (r_*) in our tree as of <our-sha>"`, `"skip: VM symbols (scout
+Every commit ends as a tracker row: `ported`/`adapted`/`skip`. A skip note must account for the
+**whole** commit, not its majority — if part of it touched files we have, say what happened to that
+part (see "A skip is decided per HUNK"). The note must cite the **check**, not a belief — `"skip: no software-renderer (r_*) in our tree as of <our-sha>"`, `"skip: VM symbols (scout
 tripwire)"`, `"ported: 9811962"`. A future reader (or a re-triage after the tree changes) can then
 re-run the same existence check and confirm or overturn it. That is what keeps the whole thing from
 silently rotting into a stale drop-list.
