@@ -78,6 +78,12 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
+          # [rc4l] A container repository name must be lowercase, but github.repository_owner is the
+          # owner's LITERAL login, which may carry capitals (e.g. a fork owned by Doruk-Aksoy). That
+          # made every tag below invalid and failed the build on such forks -- invisible here, because
+          # "rc4l" happens to already be lowercase. Fold it once, up front. (tr, not ${x,,}: the latter
+          # needs bash 4+, so it silently breaks anyone checking this logic on stock macOS bash 3.2.)
+          IMAGE="$(printf '%s' "${IMAGE}" | tr '[:upper:]' '[:lower:]')"
           shortsha="$(echo "${GITHUB_SHA}" | cut -c1-8)"
 
           if [[ "${GITHUB_REF}" == refs/tags/server-registry-v* ]]; then
