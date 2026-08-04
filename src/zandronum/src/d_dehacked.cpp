@@ -2946,7 +2946,12 @@ static int PatchStrings (int dummy)
 
 		ReplaceSpecialChars (holdstring.LockBuffer());
 		holdstring.UnlockBuffer();
-		GStrings.SetString (Line1, holdstring);
+		// [rc4l] uzdoom@8a98be00d with its follow-up uzdoom@95bed868d folded in: Boom calls the
+		// red skull pickup message GOTREDSKULL, ZDoom calls it GOTREDSKUL. Rewriting through a
+		// local keeps Line1 itself untouched, which is what the follow-up corrects.
+		const char *ll = Line1;
+		if (!stricmp(ll, "GOTREDSKULL")) ll = "GOTREDSKUL";
+		GStrings.SetString (ll, holdstring);
 		DPrintf ("%s set to:\n%s\n", Line1, holdstring.GetChars());
 	}
 

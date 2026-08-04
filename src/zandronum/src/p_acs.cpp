@@ -3696,6 +3696,72 @@ void DACSThinker::ReplaceActivator (AActor *actor, AActor *newactor)
 	}
 }
 
+
+// [rc4l] uzdoom@30acb7200 / ba346616e / 2747f9a9f: set an actor's teleport fog classes from ACS.
+//
+// uzdoom@ba346616e shipped this with `check != NULL` on both tests, so both arms assigned NULL and
+// the function could only ever clear the fog. uzdoom@7bc2e5c67 fixes it to `check == NULL`, which
+// is the form taken here: an unresolvable name (or "none"/"null") clears the fog, anything that
+// resolves sets it.
+static void SetActorTeleFog(AActor *activator, int tid, FName telefogsrc, FName telefogdest)
+{
+	const PClass *check;
+	if (tid == 0)
+	{
+		if (activator != NULL)
+		{
+			check = PClass::FindClass(telefogsrc);
+			if (check == NULL || !stricmp(telefogsrc, "none") || !stricmp(telefogsrc, "null")) activator->TeleFogSourceType = NULL;
+			else activator->TeleFogSourceType = check;
+
+			check = PClass::FindClass(telefogdest);
+			if (check == NULL || !stricmp(telefogdest, "none") || !stricmp(telefogdest, "null")) activator->TeleFogDestType = NULL;
+			else activator->TeleFogDestType = check;
+		}
+	}
+	else
+	{
+		FActorIterator iterator(tid);
+		AActor *actor;
+		while ((actor = iterator.Next()))
+		{
+			check = PClass::FindClass(telefogsrc);
+			if (check == NULL || !stricmp(telefogsrc, "none") || !stricmp(telefogsrc, "null")) actor->TeleFogSourceType = NULL;
+			else actor->TeleFogSourceType = check;
+
+			check = PClass::FindClass(telefogdest);
+			if (check == NULL || !stricmp(telefogdest, "none") || !stricmp(telefogdest, "null")) actor->TeleFogDestType = NULL;
+			else actor->TeleFogDestType = check;
+		}
+	}
+}
+
+// [rc4l] uzdoom@30acb7200 cluster: swap an actor's source and destination fog.
+static int SwapActorTeleFog(AActor *activator, int tid)
+{
+	int count = 0;
+	if (tid == 0)
+	{
+		if ((activator == NULL) || (activator->TeleFogSourceType == activator->TeleFogDestType))
+			return 0;
+		swapvalues(activator->TeleFogSourceType, activator->TeleFogDestType);
+		return 1;
+	}
+	else
+	{
+		FActorIterator iterator(tid);
+		AActor *actor;
+		while ((actor = iterator.Next()))
+		{
+			if (actor->TeleFogSourceType == actor->TeleFogDestType)
+				continue;
+			swapvalues(actor->TeleFogSourceType, actor->TeleFogDestType);
+			count++;
+		}
+	}
+	return count;
+}
+
 //======================================================================
 //
 // [RK] Added bRemoveNow if we're planning for GC soon and 'activation'
@@ -5557,6 +5623,8 @@ enum EACSFunctions
 	ACSF_PickActor,
 	ACSF_IsPointerEqual,
 	ACSF_CanRaiseActor,
+	ACSF_SetActorTeleFog,		// 86 -- [rc4l] uzdoom@30acb7200 cluster
+	ACSF_SwapActorTeleFog,		// 87
 
 	// [BB] Out of order ZDoom backport.
 	ACSF_Warp = 92,
@@ -8982,6 +9050,14 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 			return 0;
 		}
+
+		// [rc4l] uzdoom@30acb7200 cluster
+		case ACSF_SetActorTeleFog:
+			SetActorTeleFog(activator, args[0], FBehavior::StaticLookupString(args[1]), FBehavior::StaticLookupString(args[2]));
+			break;
+
+		case ACSF_SwapActorTeleFog:
+			return SwapActorTeleFog(activator, args[0]);
 
 		case ACSF_GetActorFloorTexture:
 		{
