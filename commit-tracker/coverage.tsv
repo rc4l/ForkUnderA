@@ -4679,10 +4679,10 @@ be647dc7b267e6ee75018218235ca0566f0cd8d7	2016-09-10T22:45:40Z	Merge branch 'mast
 a0b6a0275c5c521455e843709153ed1d7270435b	2016-09-11T09:09:40Z	Fix random texture sampling bug	pending		/
 d3d8180f578924b275defd937e10cd3cb370922e	2016-09-12T11:04:36Z	Resize framebuffer in windowed mode to match the client area	pending		/
 b003c47e3e02bed94b76757a512b195b1d7d70c8	2016-09-12T11:37:05Z	Improve CheckRatio to always return the closest ratio	pending		/
-5720634045b0812bc838eb4671a4039917582a94	2016-09-12T11:59:01Z	Add ActiveRatio to be used where CheckRatio is used today	pending		/
-6d4e4dad25ffa3978f5bf54d0fc60dd59b29d119	2016-09-12T12:37:10Z	BaseRatioSizes replacement functions	pending		/
-5b438d220f918e4d5b604e970f0f45f96963e8d1	2016-09-12T13:51:50Z	Switch from ratio enum to float	pending		/
-4e58e6626cf0372a3fbca5649a66aa7e2441554c	2016-09-12T14:05:42Z	Fix buffer overrun in CommandAspectRatio for 21:9 aspect ratio	pending		/
+5720634045b0812bc838eb4671a4039917582a94	2016-09-12T11:59:01Z	Add ActiveRatio to be used where CheckRatio is used today	ported	ActiveRatio + ActiveFakeRatio added alongside CheckRatio; our vid_aspect guard stays 1-5 (no 21:9 mode) though the forcedRatioTypes table is carried whole	21478520227066578adc2c35d935e62d2933ae71
+6d4e4dad25ffa3978f5bf54d0fc60dd59b29d119	2016-09-12T12:37:10Z	BaseRatioSizes replacement functions	ported	continuous-aspect replacements for the BaseRatioSizes columns; AspectPspriteOffset uses double(FRACUNIT) since ours is a zx::Fixed	fc95a30eaf1a5ba7d4767e0c1d4c6ae6807d8f85
+5b438d220f918e4d5b604e970f0f45f96963e8d1	2016-09-12T13:51:50Z	Switch from ratio enum to float	adapted	consumers switched to float; r_swrenderer/r_things hunks N/A (no software renderer); gl_scene + gl_weapon bucket-indexed tables have no upstream counterpart and were replaced with computed values; ultrawide->16:9 clamp adopted, which we lacked; CheckRatio kept for vid_listmodes/videomenu	6ad974c79dd371ed606ccb50d62deac303b37b2c
+4e58e6626cf0372a3fbca5649a66aa7e2441554c	2016-09-12T14:05:42Z	Fix buffer overrun in CommandAspectRatio for 21:9 aspect ratio	ported	nearest-ratio search replaces the out-of-range ratioMap index; fabs not abs, or the integer overload truncates every distance to zero	b6b8e66bda743a35f8b28593df609bbec64a9275
 01b1efe9eec9877a409d14f749b9934a10224a58	2016-09-12T16:44:04Z	Switch from abs to fabs	pending		/
 7070bded7758f50117e0302e5dabf90484b320f0	2016-09-12T18:03:21Z	Merge remote-tracking branch 'origin/aspectratio' into aspectratio_gzdoom	pending		/
 7bdbaaff22fecb244f2de8fedba45d198650d5e8	2016-09-12T18:29:26Z	GL aspect ratio adjustments	pending		/
@@ -4702,8 +4702,8 @@ ba68cfd61153ed260ae1cf3c8dc7e4986ee4fa69	2016-09-13T19:01:50Z	- do not even allo
 dcabcaa5b6a5b0deb180ac9eaa067ac62f1b2cc6	2016-09-13T19:10:07Z	Fixed compilation on non-Windows platforms	pending		/
 a98f364cc3767503a8e496d450ba7f1c7db266b5	2016-09-13T21:37:19Z	- added another missing nullptr check.	pending		/
 0c0e716ccda931f6fe05d9404ee5c0cfe16e249e	2016-09-13T21:37:30Z	Merge remote-tracking branch 'remotes/zdoom/master'	pending		/
-172f58c1655848df85d35676a4a5aeb094d05b2c	2016-09-13T21:42:05Z	Fix 5:4 aspect ratio gun and status bar	pending		/
-017d1cee29adf2b2b479cc26dbb8ac5f461f5f0a	2016-09-13T21:42:05Z	Change canvas rendering to use the aspect ratio of the canvas and generalize 5:4 rendering as AspectTallerThanWide	pending		/
+172f58c1655848df85d35676a4a5aeb094d05b2c	2016-09-13T21:42:05Z	Fix 5:4 aspect ratio gun and status bar	ported	required follow-up to 5b438d2: generic Aspect* returned multiplier > 48 for ratios narrower than 4:3, making FillBorder's bord negative and rendering the whole screen black	841a55dc5c94f56519ed09bc2366c3b45c43f1b4
+017d1cee29adf2b2b479cc26dbb8ac5f461f5f0a	2016-09-13T21:42:05Z	Change canvas rendering to use the aspect ratio of the canvas and generalize 5:4 rendering as AspectTallerThanWide	adapted	aspect half ported: Is54Aspect band -> AspectTallerThanWide threshold, fixes stretching below 1.1; canvas half N/A (R_RenderViewToCanvas/R_SWRSetWindow removed with the software renderer)	3604e386fd81605611551ee9cbff323df26e1429
 c54b4e74f5ba85dc5aa989e774c8d7888bd82216	2016-09-13T21:44:12Z	Merge remote-tracking branch 'gzdoom_upstream/master' into lightmath	pending		/
 f1bca9d20e7d36b3057cc9faee7da213d9cbedd0	2016-09-14T00:12:59Z	The old DirectX setup is required to utilize v140_xp.	pending		/
 fd53aefbf27e4ffd2423d027d10f95b3be07dead	2016-09-14T00:55:31Z	Added warning if building on Visual Studio 2015 without v140_xp.	pending		/
@@ -13012,7 +13012,7 @@ c1b0122558a8cd852ab14c6c80285f78d2210bf1	2019-04-21T06:42:27Z	- always construct
 5b6bae409ef6e3823c8210a5ee46d08499fab261	2019-04-21T10:38:43Z	- automated the SmallFont selection based on a filter string in the language table.	pending		/
 68c33a6e4397a21e2eeb80ff38b4df2c3681b9d8	2019-04-21T22:21:01Z	- fixed string prioritization when a mod replaces the default language for a given string.	pending		/
 e0a0be4f7b6f5af7cc08a23acedb2744d98bdfe2	2019-04-22T07:08:43Z	- added a CanPrint function to FFont and used that to handle the statistics display on the automap HUD to only replace the font when actually needed, not based on the language.	pending		/
-e6ab6785157ca04f59cffeb01ad876fb7ec4d83c	2019-04-22T08:20:39Z	- fixed: The minimal window size was not calculated properly.	pending		/
+e6ab6785157ca04f59cffeb01ad876fb7ec4d83c	2019-04-22T08:20:39Z	- fixed: The minimal window size was not calculated properly.	ported	windowed min size now a fixed 320x200 floor instead of SCREENWIDTH/HEIGHT; upstream VID_MIN_WIDTH/HEIGHT substituted with our identical zx::VID_SCALE_MIN_WIDTH/HEIGHT; also swaps hardcoded SM_CXSIZEFRAME maths for AdjustWindowRectEx, which matters for borderless mode	c14bbe8592e3dbb9317685fb94406de059a28f84
 6f3982865f3c30bffde17b230352aaaaf74ff8e4	2019-04-22T08:23:28Z	- refinement of font substitution logic.	pending		/
 ec13d0e4c10bf658384e0d3e0c129af6413c2d62	2019-04-22T08:45:32Z	Merge remote-tracking branch 'remotes/origin/vulkan2'	pending		/
 0640a86c1efeddeebbf86046e91242fbb3f0028a	2019-04-22T09:00:40Z	- removed InitPalette call from VulkanFrameBuffer constructor.	pending		/

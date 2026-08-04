@@ -34,8 +34,11 @@
 ** file needs to be recompiled.
 */
 
+#include <string.h>
+
 #include "gitinfo.h"
 #include "version.h"
+#include "features/fua-branding/computation/fua_version_compute.h"
 
 const char *GetGitDescription()
 {
@@ -85,6 +88,32 @@ const char *GetVersionStringRev()
 	//FString s = DOTVERSIONSTR "-r" HG_TIME;
 	//return s.GetChars();
 	return DOTVERSIONSTR_REV;
+}
+
+// [rc4l] The version THIS engine is, as a player would name it: "v0.1.29".
+//
+// GetVersionStringRev() returns Zandronum's ("3.2.1-r36"), which is the wrong answer to every
+// question a ZandroX player asks -- it is the same for every ZandroX release ever made, so it cannot
+// tell you whether a server will let you in, and the server browser was showing it as though it were
+// meaningful.
+//
+// The release tag only, with the commit-distance suffix from git describe stripped: two builds off
+// the same release are compatible, and showing "v0.1.29-21-g249fc98" in a column would be noise.
+const char *GetFuaVersionTag()
+{
+	static char tag[64] = { 0 };
+
+	if ( tag[0] == '\0' )
+	{
+		zx::FuaVersionTag( GetFuaDescribe(), tag, sizeof tag );
+
+		// An untagged build (shallow clone, fresh fork with no releases). Say so plainly rather than
+		// claiming a version we do not have.
+		if ( tag[0] == '\0' )
+			strncpy( tag, "unversioned", sizeof tag - 1 );
+	}
+
+	return tag;
 }
 
 // [BB]

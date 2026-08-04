@@ -44,6 +44,8 @@ const char *GetVersionString();
 const char *GetFuaDescribe();
 // [BB]
 const char *GetVersionStringRev();
+// [rc4l] This engine's own release tag ("v0.1.29"), as opposed to the Zandronum version above.
+const char *GetFuaVersionTag();
 int GetRevisionNumber();
 
 /** Lots of different version numbers **/

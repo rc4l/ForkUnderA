@@ -1508,8 +1508,7 @@ void C_DrawConsole (bool hw2d)
 			// a build timestamp, none of which identify the ZandroX build someone is running or let
 			// them point at the commit it came from. Now: name, our version tag, our commit, and the
 			// release channel, which is what a bug report actually needs.
-			char tag[64];
-			zx::FuaVersionTag( GetFuaDescribe( ), tag, sizeof tag );
+			const char *tag = GetFuaVersionTag();
 			const bool stable = zx::FuaIsStableBuild( GetFuaDescribe( ) );
 
 			versionString.Format( FUA_NAME " %s ", tag );
