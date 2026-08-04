@@ -453,7 +453,7 @@ void R_SetWindow (int windowSize, int fullWidth, int fullHeight, int stHeight)
 
 	centery = viewheight/2;
 	centerx = viewwidth/2;
-	if (Is54Aspect(WidescreenRatio))
+	if (AspectTallerThanWide(WidescreenRatio))
 	{
 		centerxwide = centerx;
 	}

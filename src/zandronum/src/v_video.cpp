@@ -1882,31 +1882,49 @@ int CheckRatio (int width, int height, int *trueratio)
 // columns MEAN. So computing these generically produced an AspectMultiplier above 48 for anything
 // narrower than 4:3, and `bord = Height - Height * mult / 48` then went negative -- which drew the
 // whole screen black at, for instance, 712x568.
-bool Is54Aspect(float aspect)
+// [rc4l] Generalised from the 5:4 special case. Ported from UZDoom
+// 017d1cee29adf2b2b479cc26dbb8ac5f461f5f0a (2016-09-13).
+//
+// Is54Aspect was a band, 1.1 to 1.3, so ratios OUTSIDE it fell back to formulas that assume a screen
+// wider than it is tall. At 484x601 that produced an AspectMultiplier of 79 against a divisor of 48,
+// so the border width went negative and simply was not drawn -- content stretched instead of
+// letterboxing, with nothing to say why.
+//
+// The replacement is a threshold rather than a band, and the tall branch computes the same values the
+// hardcoded 5:4 constants used to hold: at 1.25 this yields base height 640 and multiplier 45,
+// exactly the old numbers. So the special case is not removed so much as derived.
+bool AspectTallerThanWide(float aspect)
 {
-	// The 5:4 aspect ratio redefined all the values to mean something else..
-	// Limit the range this is active to try prevent square cam textures inheriting this madness.
-	return aspect > 1.1f && aspect < 1.3f;
+	return aspect < 1.333f;
 }
 
 int AspectBaseWidth(float aspect)
 {
-	return !Is54Aspect(aspect) ? (int)round(240.0f * aspect * 3.0f) : 960;
+	return (int)round(240.0f * aspect * 3.0f);
 }
 
 int AspectBaseHeight(float aspect)
 {
-	return !Is54Aspect(aspect) ? (int)round(200.0f * (320.0f / (240.0f * aspect)) * 3.0f) : 640;
+	if (!AspectTallerThanWide(aspect))
+		return (int)round(200.0f * (320.0f / (AspectBaseWidth(aspect) / 3.0f)) * 3.0f);
+	else
+		return (int)round((200.0f * (4.0f / 3.0f)) / aspect * 3.0f);
 }
 
 double AspectPspriteOffset(float aspect)
 {
-	return !Is54Aspect(aspect) ? 0.0 : 6.5;
+	if (!AspectTallerThanWide(aspect))
+		return 0.0;
+	else
+		return ((4.0 / 3.0) / aspect - 1.0) * 97.5;
 }
 
 int AspectMultiplier(float aspect)
 {
-	return !Is54Aspect(aspect) ? (int)round(320.0f / (240.0f * aspect) * 48.0f) : 48 * 15 / 16;
+	if (!AspectTallerThanWide(aspect))
+		return (int)round(320.0f / (AspectBaseWidth(aspect) / 3.0f) * 48.0f);
+	else
+		return (int)round(200.0f / (AspectBaseHeight(aspect) / 3.0f) * 48.0f);
 }
 
 const int BaseRatioSizes[5][4] =
