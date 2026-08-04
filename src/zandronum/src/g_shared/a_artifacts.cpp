@@ -1328,6 +1328,18 @@ IMPLEMENT_CLASS (APowerMinotaur)
 
 IMPLEMENT_CLASS (APowerTargeter)
 
+// [rc4l] uzdoom@9402bcf6c: re-picking the powerup while it is active must rebuild the HUD
+// sprites, or the targeter keeps whatever sprites the previous instance left behind.
+bool APowerTargeter::HandlePickup(AInventory *item)
+{
+	if (Super::HandlePickup(item))
+	{
+		InitEffect();	// reset the HUD sprites
+		return true;
+	}
+	return false;
+}
+
 void APowerTargeter::Travelled ()
 {
 	InitEffect ();
