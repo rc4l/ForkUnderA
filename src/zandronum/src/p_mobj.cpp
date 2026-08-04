@@ -1663,7 +1663,9 @@ bool AActor::Massacre ()
 			P_DamageMobj (this, NULL, NULL, TELEFRAG_DAMAGE, NAME_Massacre);
 		}
 		while (health != prevhealth && health > 0);	//abort if the actor wasn't hurt.
-		return true;
+		// [rc4l] uzdoom@0ff65bb43: report whether the actor actually died, not merely that it was
+		// eligible -- callers count kills off this.
+		return health <= 0;
 	}
 	return false;
 }

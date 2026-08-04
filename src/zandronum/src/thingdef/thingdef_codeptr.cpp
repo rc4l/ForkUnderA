@@ -4343,6 +4343,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Respawn)
 		self->flags3 = (defs->flags3 & ~(MF3_NOSIGHTCHECK | MF3_HUNTPLAYERS)) | (self->flags3 & (MF3_NOSIGHTCHECK | MF3_HUNTPLAYERS));
 		self->flags4 = (defs->flags4 & ~MF4_NOHATEPLAYERS) | (self->flags4 & MF4_NOHATEPLAYERS);
 		self->flags5 = defs->flags5;
+		// [rc4l] uzdoom@1c500cead: flags6/flags7 were left holding whatever the actor died with.
+		self->flags6 = defs->flags6;
+		self->flags7 = defs->flags7;
 		self->SetState (self->SpawnState);
 		self->renderflags &= ~RF_INVISIBLE;
 
