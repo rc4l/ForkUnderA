@@ -3287,7 +3287,7 @@ void D_DoomMain (void)
 		if ( Args->CheckParm( "-private" ))
 			sv_fua_serverregistry_announce = false;
 
-		// [BC] Potentially send an update to the master server.
+		// [BC] Potentially send an update to the server registry.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
 			SERVER_SERVERREGISTRY_Tick( );

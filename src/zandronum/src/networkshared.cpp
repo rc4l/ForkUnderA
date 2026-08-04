@@ -43,7 +43,7 @@
 //
 // Filename: networkshared.cpp
 //
-// Description: Contains shared network code shared between Skulltag and its satellites (master server, statsmaker, rcon utility, etc).
+// Description: Contains shared network code shared between Skulltag and its satellites (server registry, statsmaker, rcon utility, etc).
 //
 //-----------------------------------------------------------------------------
 

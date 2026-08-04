@@ -184,6 +184,8 @@ void			BROWSER_DeactivateAllServers( void );
 bool			BROWSER_GetServerList( BYTESTREAM_s *pByteStream );
 void			BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN );
 void			BROWSER_QueryServerRegistry( void );
+// [rc4l] Drives the query retry/give-up clock; call once per tic while the browser is open.
+void			BROWSER_ServerRegistryTick( void );
 bool			BROWSER_WaitingForServerRegistryResponse( void );
 void			BROWSER_QueryAllServers( void );
 LONG			BROWSER_CalcNumServers( void );

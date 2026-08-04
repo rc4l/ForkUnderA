@@ -1081,14 +1081,14 @@ void CLIENT_GetPackets( void )
 			const char		*pszServerRegistryPort;
 			// [BB] This conversion potentially does a DNS lookup.
 			// There is absolutely no reason to call this at beginning of the while loop above (like done before). 
-			NETADDRESS_s MasterAddress ( fua_serverregistry_host );
+			NETADDRESS_s ServerRegistryAddress ( fua_serverregistry_host );
 
-			// Allow the user to specify which port the master server is on.
-			pszServerRegistryPort = Args->CheckValue( "-masterport" );
+			// Allow the user to specify which port the server registry is on.
+			pszServerRegistryPort = Args->CheckValue( "-serverregistryport" );
 			if ( pszServerRegistryPort )
-				MasterAddress.usPort = NETWORK_ntohs( atoi( pszServerRegistryPort ));
+				ServerRegistryAddress.usPort = NETWORK_ntohs( atoi( pszServerRegistryPort ));
 			else 
-				MasterAddress.usPort = NETWORK_ntohs( DEFAULT_SERVERREGISTRY_PORT );
+				ServerRegistryAddress.usPort = NETWORK_ntohs( DEFAULT_SERVERREGISTRY_PORT );
 
 
 			pszAddressBuf = NETWORK_GetFromAddress().ToString();
@@ -1099,7 +1099,7 @@ void CLIENT_GetPackets( void )
 				( strncmp( pszAddressBuf, pszPrefix3, 7 ) == 0 ) ||
 				( strncmp( pszAddressBuf, pszPrefix4, 8 ) == 0 ))
 			{
-				AddressFrom = MasterAddress;
+				AddressFrom = ServerRegistryAddress;
 
 				// Keep the same port as the from address.
 				AddressFrom.usPort = NETWORK_GetFromAddress( ).usPort;
@@ -1107,8 +1107,8 @@ void CLIENT_GetPackets( void )
 			else
 				AddressFrom = NETWORK_GetFromAddress( );
 
-			// If we're receiving info from the master server...
-			if ( AddressFrom.Compare( MasterAddress ))
+			// If we're receiving info from the server registry...
+			if ( AddressFrom.Compare( ServerRegistryAddress ))
 			{
 				lCommand = pByteStream->ReadLong();
 				switch ( lCommand )
@@ -1140,17 +1140,17 @@ void CLIENT_GetPackets( void )
 
 				case SRSC_IPISBANNED:
 
-					Printf( "You are banned from the master server.\n" );
+					Printf( "You are banned from the server registry.\n" );
 					break;
 
 				case SRSC_WRONGVERSION:
 
-					Printf( "The master server is using a different version of the launcher-master protocol.\n" );
+					Printf( "The server registry is using a different version of the launcher-to-server-registry protocol.\n" );
 					break;
 
 				default:
 
-					Printf( "Unknown command from master server: %d\n", static_cast<int> (lCommand) );
+					Printf( "Unknown command from server registry: %d\n", static_cast<int> (lCommand) );
 					break;
 				}
 			}
@@ -1470,10 +1470,10 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 			case NETWORK_ERRORCODE_BANNED:
 
-				// [TP] Is this a master ban?
+				// [TP] Is this a server registry ban?
 				if ( !!pByteStream->ReadByte())
 				{
-					szErrorString = "Couldn't connect. " TEXTCOLOR_RED "You have been banned from " GAMENAME "'s master server!" TEXTCOLOR_NORMAL "\n"
+					szErrorString = "Couldn't connect. " TEXTCOLOR_RED "You have been banned from " GAMENAME "'s server registry!" TEXTCOLOR_NORMAL "\n"
 						"If you feel this is in error, you may contact the staff at " FORUM_URL;
 				}
 				else
