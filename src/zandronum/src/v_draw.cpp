@@ -860,7 +860,18 @@ void DCanvas::FillBorder (FTexture *img)
 		myratio = 16.0f / 9.0f;
 	}
 
-	if (myratio >= 1.3f && myratio <= 1.4f)
+	// [rc4l] Deviation from upstream, and a fix for a bug upstream still had here.
+	//
+	// Upstream kept this early-out at "1.3 to 1.4" while moving VirtualToRealCoords' own 4:3
+	// boundary to 1.334. In the band between them the layout shrinks the image but the border is
+	// never drawn, so the uncovered strip shows whatever the framebuffer last held -- olive bars down
+	// the sides of the title screen at 1016x730, and flicker while dragging the window. It went
+	// unnoticed upstream because that band is unreachable when the window can only be a video mode;
+    // it is reachable the moment windows resize freely, which is the whole point of this work.
+	//
+	// The test is now the exact complement of the one that lays the image out: a border is drawn
+	// whenever the image was scaled, and only genuine 4:3 returns early.
+	if (!AspectTallerThanWide(myratio) && myratio <= 1.334f)
 	{ // This is a 4:3 display, so no border to show
 		return;
 	}
@@ -868,14 +879,17 @@ void DCanvas::FillBorder (FTexture *img)
 	if (AspectTallerThanWide(myratio))
 	{ // Screen is taller than it is wide
 		bordleft = bordright = 0;
-		bord = Height - Height * AspectMultiplier(myratio) / 48;
+		// [rc4l] Derived from AspectBaseHeight, the same quantity VirtualToRealCoords scales by,
+		// rather than from AspectMultiplier. The two are the same number rounded differently, and the
+		// difference is a seam of unpainted pixels between the image and its border.
+		bord = Height - Height * 600 / AspectBaseHeight(myratio);
 		bordtop = bord / 2;
 		bordbottom = bord - bordtop;
 	}
 	else
 	{ // Screen is wider than it is tall
 		bordtop = bordbottom = 0;
-		bord = Width - Width * AspectMultiplier(myratio) / 48;
+		bord = Width - Width * 960 / AspectBaseWidth(myratio);
 		bordleft = bord / 2;
 		bordright = bord - bordleft;
 	}
