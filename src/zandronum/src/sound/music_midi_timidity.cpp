@@ -433,7 +433,9 @@ bool TimidityPPMIDIDevice::LaunchTimidity ()
 	}
 	
 	int forkres;
-	wordexp_t words;
+	// [rc4l] uzdoom@fd85e116e: wordexp() reads we_offs/we_wordv on some libcs before it writes
+	// them, so an uninitialised struct can crash inside the call.
+	wordexp_t words = {};
 
 	switch (wordexp (CommandLine.GetChars(), &words, 0))
 	{

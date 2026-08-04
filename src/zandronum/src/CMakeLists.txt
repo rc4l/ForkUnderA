@@ -328,11 +328,13 @@ if( NOT NO_ASM )
 			set( ASM_FLAGS -f win32 -DWIN32 -i${CMAKE_CURRENT_SOURCE_DIR}/ )
 		endif( X64 )
 	endif( UNIX )
-	if( WIN32 )
+	# [rc4l] uzdoom@601852d22: fixrtext patches 32-bit MSVC object files; Win64 has no
+	# use for it and running it there is wrong.
+	if( WIN32 AND NOT X64 )
 		set( FIXRTEXT fixrtext )
-	else( WIN32 )
+	else( WIN32 AND NOT X64 )
 		set( FIXRTEXT "" )
-	endif( WIN32 )
+	endif( WIN32 AND NOT X64 )
 	message( STATUS "Selected assembler: ${ASSEMBLER}" )
 	MACRO( ADD_ASM_FILE indir infile )
 		set( ASM_OUTPUT_${infile} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/zdoom.dir/${indir}/${infile}${ASM_OUTPUT_EXTENSION}" )
@@ -1323,6 +1325,7 @@ add_executable( zdoom WIN32
 	menu/videomenu.cpp
 	${GL_SOURCES}
 	oplsynth/fmopl.cpp
+	oplsynth/nukedopl3.cpp
 	oplsynth/musicblock.cpp
 	oplsynth/oplio.cpp
 	oplsynth/music_opldumper_mididevice.cpp
