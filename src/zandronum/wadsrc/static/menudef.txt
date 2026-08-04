@@ -37,9 +37,8 @@ DEFAULTLISTMENU
 
 LISTMENU "MainMenu"
 {
-	// [rc4l] Deliberately NO `Class` here, even though the main menu does use a subclass
-	// (DUpdateMainMenu, for the bottom-right "update available" notice). menu.cpp picks that class up
-	// by descriptor name instead.
+	// [rc4l] Deliberately NO `Class` here. The bottom-right "update available" notice is drawn by
+	// DListMenu itself when the descriptor is MainMenu (listmenu.cpp), so it needs no class at all.
 	//
 	// Declaring it here breaks every mod that replaces the main menu. ReplaceMenu() refuses an
 	// override whose class does not match the existing one (CheckCompatible, menudef.cpp), and a mod
