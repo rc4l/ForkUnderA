@@ -1177,6 +1177,18 @@ DEFINE_PROPERTY(ripperdamagefactor, F, Actor)
 	defaults->RipperDamageFactor = MAX<fixed_t>(0, id);
 }
 
+//==========================================================================
+//
+// [rc4l] uzdoom@99b2cfa14: scales the damage this actor DEALS, as opposed to
+// DamageFactor which scales what it TAKES.
+//
+//==========================================================================
+DEFINE_PROPERTY(damagemultiply, F, Actor)
+{
+	PROP_FIXED_PARM(id, 0);
+	defaults->DamageMultiply = id;
+}
+
 DEFINE_PROPERTY(ripperlevel, I, Actor)
 {
 	PROP_INT_PARM(id, 0);
