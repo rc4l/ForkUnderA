@@ -58,6 +58,40 @@ For upstream commit `C` (`UP` = the UZDoom clone; our source = `src/zandronum/sr
 4. **For candidates, hand off to `upstream-port`:** run `backport-scout.sh` → pick the route
    (staircase batch / post-wall C++ / scriptified / born-in-ZScript) → port or adapt → its gates.
 
+## The verdict vocabulary — and why `deferred` is not `skip`
+
+`pending` · `ported` · `adapted` · `skip` · `deferred`
+
+The load-bearing distinction is between the two negatives:
+
+- **`skip` is TERMINAL and about OUR TREE.** It says "the code this touches does not exist here" —
+  a derived fact. Nobody re-opens a skip, and nothing should: if the subsystem later appears, the
+  edge-case rule says re-triage re-derives it, but in practice the row is closed.
+- **`deferred` is REVISITABLE and about POLICY.** It says "this applies to us, and we are choosing
+  not to take it yet." The code is relevant; a standing decision is what holds it back.
+
+Filing a policy decision as `skip` is the failure this vocabulary exists to prevent. A `skip` note
+says "checked, nothing here" — so when the policy later changes, nobody goes looking, and the work
+is silently erased rather than deferred. Same shape as the per-hunk failure below, one level up.
+
+**The case this was written for: ZScript / the VM.** `docs/zscript-insulation.md` is a *policy* —
+ZandroX must not link the VM — not a statement that the code is absent. So a commit refused under
+it is `deferred`, never `skip`, and its note must carry:
+
+1. `deferred: zscript` as the opening token, so the whole class greps out in one shot.
+2. What it would give us, in a sentence — the thing we are choosing to go without.
+3. Which policy refuses it (`docs/zscript-insulation.md`), so the decision is traceable to a
+   document that can be revised rather than to a verdict that looks like a fact.
+
+Timeline that makes this matter: the VM infrastructure lands 2014-12-20 (`2d87eb0ba`) but stays
+inert — 0–5% of commits touch it for the next 22 months. ZScript the *language* arrives 2016-10-13
+(`433bf4601`), and entanglement then runs 316/387/380 scripting commits a year. Before that wall,
+`deferred` rows cost us almost nothing; after it, the pile of `deferred` rows IS the measure of what
+the policy costs — which is only legible if they were never filed as `skip`.
+
+`deferred` counts as resolved for progress, exactly like `skip`: it is a reviewed decision, not
+backlog. Its `ours` column is `/`.
+
 ## A skip is decided per HUNK, never per commit
 
 A commit is not a unit of relevance. Its *hunks* are. "This commit is a software-renderer commit"
@@ -220,7 +254,8 @@ merge checkpoint → next batch. Sequential means *verified* sequential, not fas
 - **Merge commits:** no unique content (their changes live in the parents) → skip as topology.
 - **VM / ZScript:** relevance-negative, but DERIVED via the scout tripwire detecting VM symbols — not a
   feature list. Post-2016 DECORATE (`thingdef/*`) is VM-backed → route as scriptified/born-in-ZScript,
-  never a raw cherry-pick.
+  never a raw cherry-pick. **Record these `deferred`, not `skip`** — see the vocabulary section: the
+  code applies to us and a policy is what refuses it.
 - **The float-sim wall (2016–17):** later renderer commits assume `DVector` positions. Caught by the
   fixed64 audit and the strong `zx::Fixed` type at compile time — you detect it from the code, not a
   hardcoded cutoff date.
