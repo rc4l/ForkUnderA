@@ -45,6 +45,7 @@
 #include "features/updater/zx_updater.h"                      // [rc4l] update-available state
 #include "features/updater/computation/promptpanel_compute.h" // [rc4l] rounded chip geometry/gradient
 #include "features/updater/computation/notice_compute.h"      // [rc4l] tested focus state machine
+#include "features/panel-menu/computation/panelmenu_compute.h" // [rc4l] tested list-menu content extent
 
 IMPLEMENT_CLASS(DListMenu)
 
@@ -777,6 +778,57 @@ int FListMenuItemStaticPatch::GetWidth()
 		: 0;
 }
 
+// [rc4l] How many rows of the patch are fully transparent before the artwork starts.
+//
+// A title patch is authored with slack above the letters -- Freedoom's M_DOOM has a lot of it -- so
+// measuring the item's BOX puts far more visible space above the logo than below the rows beneath
+// it, even when the surrounding padding is mathematically symmetric. Reading the ink instead makes
+// the gap the player actually sees match on both sides, for any IWAD's art rather than a number
+// tuned to one.
+//
+// Scanned once and cached: GetColumn decodes the texture, and the panel measures every item every
+// frame.
+int FListMenuItemStaticPatch::GetInkTop()
+{
+	if (mInkTop >= 0)
+		return mInkTop;
+
+	mInkTop = 0;
+	if (!mTexture.isValid())
+		return mInkTop;
+
+	FTexture *tex = TexMan[mTexture];
+	// An opaque texture has no leading gap by definition, and skipping it avoids decoding the
+	// biggest textures for nothing.
+	if (tex == NULL || !tex->bMasked)
+		return mInkTop;
+
+	const int h = tex->GetHeight(), w = tex->GetWidth();
+	int top = h;
+	for (int col = 0; col < w; ++col)
+	{
+		const FTexture::Span *spans;
+		tex->GetColumn(col, &spans);
+		// A zero Length terminates the column, so an all-transparent column contributes nothing.
+		if (spans != NULL && spans[0].Length != 0 && spans[0].TopOffset < top)
+		{
+			top = spans[0].TopOffset;
+			if (top == 0)
+				break;			// cannot do better; stop decoding columns
+		}
+	}
+
+	// Fully transparent art: leave the box alone rather than collapse the panel onto nothing.
+	if (top >= h)
+		return mInkTop;
+
+	// The scan is in texture rows; the item is measured in scaled (menu) coordinates.
+	mInkTop = tex->GetScaledHeight() > 0 && h > 0
+		? Scale(top, tex->GetScaledHeight(), h)
+		: top;
+	return mInkTop;
+}
+
 
 //=============================================================================
 //
@@ -801,38 +853,34 @@ IMPLEMENT_CLASS(DFUAPanelListMenu)
 
 void DFUAPanelListMenu::Drawer()
 {
-	// Content extent in the 320x200 virtual page the items are drawn in (DTA_Clean).
-	int vLeft = INT_MAX, vRight = INT_MIN, vTop = INT_MAX, vBottom = INT_MIN;
+	// Content extent in the 320x200 virtual page the items are drawn in (DTA_Clean). The decision
+	// itself is in features/panel-menu/computation so it can be tested off-engine; this loop only
+	// flattens the item list into the values it wants.
+	TArray<zx::MenuItemBox> boxes;
 	for (unsigned i = 0; i < mDesc->mItems.Size(); ++i)
 	{
 		FListMenuItem *item = mDesc->mItems[i];
 		if (!item->mEnabled)
 			continue;
-		const int y = item->GetY();
-		if (y < 0)
-			continue;			// negative Y is the CleanNoMove path; not part of the page
-		const int w = item->GetWidth();
-		if (w <= 0)
-			continue;			// an item that cannot report a width contributes no extent
-		const int x = item->GetX();
-		// The selection cursor hangs to the LEFT of its row (mSelectOfsX is negative), so the
-		// row's drawn extent starts there, not at the item's own x -- miss this and the skull
-		// ends up outside the panel.
-		const int drawnLeft = x + (mDesc->mSelectOfsX < 0 ? mDesc->mSelectOfsX : 0);
-		if (drawnLeft < vLeft) vLeft = drawnLeft;
-		if (x + w > vRight) vRight = x + w;
-		if (y < vTop)      vTop = y;
-		if (y > vBottom)   vBottom = y;
+		zx::MenuItemBox b;
+		b.x = item->GetX();
+		b.y = item->GetY();
+		b.w = item->GetWidth();
+		b.inkTop = item->GetInkTop();
+		boxes.Push(b);
 	}
+
+	const zx::MenuExtent ext = zx::ComputeListMenuExtent(
+		boxes.Size() ? &boxes[0] : NULL, (int)boxes.Size(), mDesc->mSelectOfsX, mDesc->mLinespacing);
 
 	// Nothing measurable (a menu of items that all report width 0) -- draw it unpanelled rather
 	// than guess at a rectangle.
-	if (vRight <= vLeft)
+	if (!ext.valid)
 	{
 		Super::Drawer();
 		return;
 	}
-	vBottom += mDesc->mLinespacing;		// the last row's own height
+	const int vLeft = ext.left, vRight = ext.right, vTop = ext.top, vBottom = ext.bottom;
 
 	const int padV = 8;					// virtual px of breathing room around the content
 	const int cx = CleanXfac, cy = CleanYfac;

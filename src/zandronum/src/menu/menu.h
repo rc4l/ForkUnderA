@@ -341,6 +341,11 @@ public:
 	virtual bool MouseEvent(int type, int x, int y);
 	virtual bool CheckHotkey(int c);
 	virtual int GetWidth();
+	// [rc4l] Rows of empty space between this item's y and where it actually starts painting, in the
+	// item's own coordinate space. Zero for anything whose box is its ink (text). Artwork is the
+	// exception: a title patch usually carries transparent padding above the letters, and layout code
+	// that measures the BOX rather than the INK puts a visibly bigger gap above the art than below it.
+	virtual int GetInkTop() { return 0; }
 	void DrawSelector(int xofs, int yofs, FTextureID tex);
 	void OffsetPositionY(int ydelta) { mYpos += ydelta; }
 	int GetY() { return mYpos; }
@@ -360,6 +365,9 @@ public:
 	FListMenuItemStaticPatch(int x, int y, FTextureID patch, bool centered);
 	void Drawer(bool selected);
 	int GetWidth();	// [rc4l] so layout code (e.g. FUAPanelListMenu) can measure the logo
+	int GetInkTop();	// [rc4l] transparent rows above the artwork -- see the base declaration
+private:
+	int mInkTop;		// cached; -1 until measured
 };
 
 class FListMenuItemStaticText : public FListMenuItem

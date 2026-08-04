@@ -9,6 +9,17 @@
 #include "features/fixed64/computation/wide128_compute.h"
 #include <cstdint>
 
+// [rc4l] These checks measure our code against the compiler's OWN 128-bit type, so they only exist
+// where that type does -- GCC and Clang, i.e. the Linux and macOS CI jobs. MSVC has no __int128.
+//
+// Deliberately NOT replaced with a software 128-bit reference on MSVC: the thing under test here IS
+// our software 128-bit path, and checking it against a second hand-written implementation of the
+// same algorithms would let a shared misunderstanding pass as agreement. An oracle has to be
+// independent to be worth anything, and on MSVC there isn't one. Everything else in this binary
+// still builds and runs on Windows.
+#ifdef __SIZEOF_INT128__
+
+
 namespace
 {
 // [rc4l] Small reproducible generator; avoids <random> nondeterminism across libstdc++/libc++.
@@ -177,3 +188,5 @@ TEST(Wide128, MulAdd3ShiftMatchesReference)
 	}
 }
 } // namespace
+
+#endif // __SIZEOF_INT128__
