@@ -620,7 +620,26 @@ void M_SetMenu(FName menu, int param)
 			}
 			else
 			{
-				const PClass *cls = ld->mClass == NULL? RUNTIME_CLASS(DListMenu) : ld->mClass;
+				// [rc4l] The main menu gets DUpdateMainMenu (the bottom-right "update available"
+				// notice) by NAME rather than by a `Class` line in menudef, so that a mod replacing
+				// MainMenu still loads: ReplaceMenu() rejects an override whose class does not match
+				// the existing descriptor's, and mods write a plain `ListMenu "MainMenu"` with no
+				// class. Keying off the name keeps the stock descriptor class-less and overridable.
+				//
+				// A mod that overrides MainMenu therefore keeps the notice, which is safe --
+				// DUpdateMainMenu chains to DListMenu for everything, touches only mSelectedItem, and
+				// is inert while no update is pending. A mod that names its OWN class gets that class
+				// and loses the notice, which is the right trade: it asked for specific behaviour.
+				const PClass *defcls = RUNTIME_CLASS(DListMenu);
+				if ( ld->mMenuName == FName( "MainMenu" ))
+				{
+					// Guarded: a missing class must fall back to a plain list menu, never NULL --
+					// CreateNew() on NULL would crash on the main menu, i.e. on startup.
+					const PClass *notice = PClass::FindClass( "UpdateMainMenu" );
+					if ( notice != NULL )
+						defcls = notice;
+				}
+				const PClass *cls = ld->mClass == NULL? defcls : ld->mClass;
 
 				DListMenu *newmenu = (DListMenu *)cls->CreateNew();
 				newmenu->Init(DMenu::CurrentMenu, ld);
