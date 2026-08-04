@@ -297,6 +297,11 @@ ACTOR PowerTargeter : Powerup native
 	}
 }
 
+ACTOR PowerBuddha : Powerup native
+{
+	Powerup.Duration -60
+}
+
 ACTOR PowerFrightener : Powerup native
 {
 	Powerup.Duration -60

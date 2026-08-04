@@ -1424,6 +1424,36 @@ void APowerTargeter::PositionAccuracy ()
 
 // Frightener Powerup --------------------------------
 
+// Buddha Powerup --------------------------------
+//
+// [rc4l] uzdoom@313245dd7, with its fix edd53f22a folded in: upstream first set CF_FRIGHTENING
+// here by copy-paste and corrected it to CF_BUDDHA the next commit, so the corrected flag is
+// written directly.
+
+IMPLEMENT_CLASS (APowerBuddha)
+
+void APowerBuddha::InitEffect ()
+{
+	Super::InitEffect();
+
+	if (Owner == NULL || Owner->player == NULL)
+		return;
+
+	Owner->player->cheats |= CF_BUDDHA;
+}
+
+void APowerBuddha::EndEffect ()
+{
+	Super::EndEffect();
+
+	if (Owner == NULL || Owner->player == NULL)
+		return;
+
+	Owner->player->cheats &= ~CF_BUDDHA;
+}
+
+// Frightener Powerup ----------------------------
+
 IMPLEMENT_CLASS (APowerFrightener)
 
 //===========================================================================
