@@ -360,7 +360,15 @@ void I_SaveWindowedPos ()
 		return;
 	}
 	// Make sure we only save the window position if it's not fullscreen.
-	if ((GetWindowLong (Window, GWL_STYLE) & WS_OVERLAPPEDWINDOW) == WS_OVERLAPPEDWINDOW)
+	//
+	// [rc4l] Test for the absence of WS_POPUP rather than an exact WS_OVERLAPPEDWINDOW match. The GL
+	// backend builds its windowed style as (WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX), so the equality
+	// below could never hold and this function has been saving nothing at all -- which is why the
+	// window position was not being remembered either, not just the size.
+	//
+	// WS_POPUP is what borderless fullscreen sets (see WindowKindForFullscreen), so its absence is
+	// the accurate test for "we are windowed" given the two window kinds this engine has.
+	if ((GetWindowLong (Window, GWL_STYLE) & WS_POPUP) == 0)
 	{
 		RECT wrect;
 
@@ -433,8 +441,37 @@ CUSTOM_CVAR (Bool, fullscreen, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITC
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
 
-	NewWidth = screen->GetWidth();
-	NewHeight = screen->GetHeight();
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+	//   SUPERSEDED BY: uzdoom@f8e23500c73b9ba23a48f3cf0829593d22289f12, the same commit named on
+	//   win_w/win_h above -- base_sysfb.cpp owns the fullscreen transition there and saves/restores
+	//   the windowed rect itself, so this handler stops needing to know about it.
+	//   ON PORT: delete this branch along with win_w/win_h.
+	//
+	// This is where the windowed size was actually lost. Taking NewWidth/NewHeight from the CURRENT
+	// screen means that on the way BACK from fullscreen we ask for a mode the size of the fullscreen
+	// display -- so the window returns at desktop dimensions no matter what it was before. Restoring
+	// the window later cannot help: the mode set that follows re-sizes it.
+	//
+	// Saving here rather than relying on the backend is deliberate. This runs at the moment the CVAR
+	// flips, while the window is still windowed and its size still means something.
+	if ( self )
+	{
+		I_SaveWindowedPos();
+
+		NewWidth = screen->GetWidth();
+		NewHeight = screen->GetHeight();
+	}
+	else if (( win_w > 0 ) && ( win_h > 0 ))
+	{
+		NewWidth = win_w;
+		NewHeight = win_h;
+	}
+	else
+	{
+		NewWidth = screen->GetWidth();
+		NewHeight = screen->GetHeight();
+	}
+
 	NewBits = DisplayBits;
 	setmodeneeded = true;
 }
