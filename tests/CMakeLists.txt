@@ -23,6 +23,14 @@ FetchContent_Declare(
   GIT_TAG        v1.15.2
   GIT_SHALLOW    TRUE
 )
+# [rc4l] MSVC only: GoogleTest defaults to the STATIC CRT (/MT) while everything else here uses the
+# dynamic one (/MD), and the two cannot link -- LNK2038 on RuntimeLibrary, followed by a few hundred
+# LNK2005 duplicate symbols out of msvcprt.lib that all trace back to it. Must be set BEFORE
+# MakeAvailable, since that is when GoogleTest's own CMake reads it. No effect on GCC/Clang.
+#
+# Not caught locally because an already-configured build-tests/ reuses its cached GoogleTest; only a
+# clean configure trips it, which is what CI does every run.
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 enable_testing()
