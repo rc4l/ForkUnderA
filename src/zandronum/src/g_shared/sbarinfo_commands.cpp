@@ -2030,8 +2030,50 @@ class CommandAspectRatio : public SBarInfoCommandFlowControl
 		{
 			SBarInfoCommandFlowControl::Tick(block, statusBar, hudChanged);
 
-			SetTruth(ratioMap[CheckRatio(screen->GetWidth(), screen->GetHeight())] == ratio, block, statusBar);
+			SetTruth(ratioMap[FindRatio()] == ratio, block, statusBar);
 		}
+
+	private:
+		// [rc4l] Ported from UZDoom 4e58e6626cf0372a3fbca5649a66aa7e2441554c, "Fix buffer overrun in
+		// CommandAspectRatio for 21:9 aspect ratio".
+		//
+		// ratioMap has one entry per supported ratio, and CheckRatio was being used to index it --
+		// which is only safe while the two enumerations happen to agree in length. They no longer do,
+		// and a ratio outside the table read past its end.
+		//
+		// Now the continuous aspect is matched to the NEAREST supported ratio, which is also the right
+		// answer for a freely resized window: a status bar asking "am I on a 16:9 screen?" should get
+		// yes at 1.75 as well as at exactly 1.7778.
+		int FindRatio()
+		{
+			float aspect = ActiveRatio(screen->GetWidth(), screen->GetHeight());
+
+			static std::pair<float, int> ratioTypes[] =
+			{
+				{ 21 / 9.0f , ASPECTRATIO_16_9 },
+				{ 16 / 9.0f , ASPECTRATIO_16_9 },
+				{ 17 / 10.0f , ASPECTRATIO_17_10 },
+				{ 16 / 10.0f , ASPECTRATIO_16_10 },
+				{ 4 / 3.0f , ASPECTRATIO_4_3 },
+				{ 5 / 4.0f , ASPECTRATIO_5_4 },
+				{ 0.0f, 0 }
+			};
+
+			int ratio = ratioTypes[0].second;
+			float distance = fabs(ratioTypes[0].first - aspect);
+			for (int i = 1; ratioTypes[i].first != 0.0f; i++)
+			{
+				float d = fabs(ratioTypes[i].first - aspect);
+				if (d < distance)
+				{
+					ratio = ratioTypes[i].second;
+					distance = d;
+				}
+			}
+
+			return ratio;
+		}
+
 	protected:
 		enum Ratio
 		{

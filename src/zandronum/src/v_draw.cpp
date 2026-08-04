@@ -775,30 +775,40 @@ bool DCanvas::ParseDrawTextureTags (FTexture *img, double x, double y, DWORD tag
 void DCanvas::VirtualToRealCoords(double &x, double &y, double &w, double &h,
 	double vwidth, double vheight, bool vbottom, bool handleaspect) const
 {
-	int myratio = handleaspect ? CheckRatio (Width, Height) : 0;
+	float myratio = handleaspect ? ActiveRatio (Width, Height) : (4.0f / 3.0f);
+
+	// [rc4l] PROVENANCE: uzdoom@5b438d220f918e4d5b604e970f0f45f96963e8d1 (clamp pre-existed upstream; adopted with the switch).
+	// [rc4l] Clamp ultrawide to 16:9, as upstream already did before this commit. Now that the ratio
+	// is the TRUE one rather than a bucket, a 21:9 display would otherwise get a genuinely 21:9
+	// virtual space and stretch fullscreen images across it.
+	if (myratio > 1.7f)
+	{
+		myratio = 16.0f / 9.0f;
+	}
+
 	double right = x + w;
 	double bottom = y + h;
 
-	if (myratio != 0 && myratio != 4)
+	if (myratio > 1.334f)
 	{ // The target surface is either 16:9 or 16:10, so expand the
 	  // specified virtual size to avoid undesired stretching of the
 	  // image. Does not handle non-4:3 virtual sizes. I'll worry about
 	  // those if somebody expresses a desire to use them.
-		x = (x - vwidth * 0.5) * Width * 960 / (vwidth * BaseRatioSizes[myratio][0]) + Width * 0.5;
-		w = (right - vwidth * 0.5) * Width * 960 / (vwidth * BaseRatioSizes[myratio][0]) + Width * 0.5 - x;
+		x = (x - vwidth * 0.5) * Width * 960 / (vwidth * AspectBaseWidth(myratio)) + Width * 0.5;
+		w = (right - vwidth * 0.5) * Width * 960 / (vwidth * AspectBaseWidth(myratio)) + Width * 0.5 - x;
 	}
 	else
 	{
 		x = x * Width / vwidth;
 		w = right * Width / vwidth - x;
 	}
-	if (myratio == 4)
-	{ // The target surface is 5:4
-		y = (y - vheight * 0.5) * Height * 600 / (vheight * BaseRatioSizes[myratio][1]) + Height * 0.5;
-		h = (bottom - vheight * 0.5) * Height * 600 / (vheight * BaseRatioSizes[myratio][1]) + Height * 0.5 - y;
+	if (AspectTallerThanWide(myratio))
+	{ // The target surface is taller than it is wide (5:4 and anything narrower)
+		y = (y - vheight * 0.5) * Height * 600 / (vheight * AspectBaseHeight(myratio)) + Height * 0.5;
+		h = (bottom - vheight * 0.5) * Height * 600 / (vheight * AspectBaseHeight(myratio)) + Height * 0.5 - y;
 		if (vbottom)
 		{
-			y += (Height - Height * BaseRatioSizes[myratio][3] / 48.0) * 0.5;
+			y += (Height - Height * AspectMultiplier(myratio) / 48.0) * 0.5;
 		}
 	}
 	else
@@ -842,23 +852,56 @@ void DCanvas::VirtualToRealCoordsInt(int &x, int &y, int &w, int &h,
 
 void DCanvas::FillBorder (FTexture *img)
 {
-	int myratio = CheckRatio (Width, Height);
-	if (myratio == 0)
+	float myratio = ActiveRatio (Width, Height);
+
+	// [rc4l] PROVENANCE: uzdoom@5b438d220f918e4d5b604e970f0f45f96963e8d1.
+	// [rc4l] Ultrawide is treated as 16:9 here too, so the bars it produces match the virtual space
+	// VirtualToRealCoords laid out. If these two disagreed the border would cover the wrong strip.
+	if (myratio > 1.7f)
+	{
+		myratio = 16.0f / 9.0f;
+	}
+
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours. Upstream still has this bug; revisit if a
+	// later upstream commit reworks or deletes FillBorder.
+	//   SUPERSEDED BY: uzdoom@b77a0eb7cf9eab87aa9abfa3b7789af7c8a67571 (2017-02-01) "let D_PageDrawer always clear the
+	//   background". It replaces FillBorder(NULL) with an unconditional Clear of the whole
+	//   screen before the page is drawn, so no strip can be left unpainted and the band
+	//   this guards against cannot exist.
+	//   ON PORT: take that commit and DELETE this branch outright rather than reconciling it.
+	// [rc4l] Deviation from upstream, and a fix for a bug upstream still had here.
+	//
+	// Upstream kept this early-out at "1.3 to 1.4" while moving VirtualToRealCoords' own 4:3
+	// boundary to 1.334. In the band between them the layout shrinks the image but the border is
+	// never drawn, so the uncovered strip shows whatever the framebuffer last held -- olive bars down
+	// the sides of the title screen at 1016x730, and flicker while dragging the window. It went
+	// unnoticed upstream because that band is unreachable when the window can only be a video mode;
+    // it is reachable the moment windows resize freely, which is the whole point of this work.
+	//
+	// The test is now the exact complement of the one that lays the image out: a border is drawn
+	// whenever the image was scaled, and only genuine 4:3 returns early.
+	if (!AspectTallerThanWide(myratio) && myratio <= 1.334f)
 	{ // This is a 4:3 display, so no border to show
 		return;
 	}
 	int bordtop, bordbottom, bordleft, bordright, bord;
-	if (myratio & 4)
+	if (AspectTallerThanWide(myratio))
 	{ // Screen is taller than it is wide
 		bordleft = bordright = 0;
-		bord = Height - Height * BaseRatioSizes[myratio][3] / 48;
+		// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+		//   SUPERSEDED BY: uzdoom@b77a0eb7cf9eab87aa9abfa3b7789af7c8a67571, same as the branch above -- FillBorder stops being
+		//   called at all. ON PORT: delete with it.
+		// [rc4l] Derived from AspectBaseHeight, the same quantity VirtualToRealCoords scales by,
+		// rather than from AspectMultiplier. The two are the same number rounded differently, and the
+		// difference is a seam of unpainted pixels between the image and its border.
+		bord = Height - Height * 600 / AspectBaseHeight(myratio);
 		bordtop = bord / 2;
 		bordbottom = bord - bordtop;
 	}
 	else
 	{ // Screen is wider than it is tall
 		bordtop = bordbottom = 0;
-		bord = Width - Width * BaseRatioSizes[myratio][3] / 48;
+		bord = Width - Width * 960 / AspectBaseWidth(myratio);
 		bordleft = bord / 2;
 		bordright = bord - bordleft;
 	}

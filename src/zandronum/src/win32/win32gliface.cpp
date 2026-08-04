@@ -900,6 +900,14 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 
 	static_cast<Win32GLVideo *>(Video)->GoFullscreen(fullscreen);
 
+	// [rc4l] Deliberately NOT calling I_SaveWindowedPos() here.
+	//
+	// This function runs on EVERY mode set, including the one returning FROM fullscreen -- and at
+	// that point the window is still at fullscreen size, so saving overwrites the size we are about
+	// to restore, and the restore below then reads its own clobbered value back. The save belongs at
+	// the moment the fullscreen CVAR flips, while the window still means something; see the handler
+	// in hardware.cpp.
+
 	// [rc4l] video-scale: the OS window is the CLIENT size; the render size (width/height) may be
 	// smaller when internal-resolution scaling is on. See features/video-scale.
 	extern int zx_pendingClientWidth, zx_pendingClientHeight;
@@ -962,9 +970,26 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 	}
 	else
 	{
+		//   SUPERSEDED BY: uzdoom@f8e23500c73b9ba23a48f3cf0829593d22289f12, same as hardware.cpp. ON PORT: delete with it.
+		// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours; see hardware.cpp.
+		//
+		// Prefer the size we were at before going fullscreen over the current mode's size. Without
+		// this, coming back from fullscreen resized the window to the fullscreen dimensions, because
+		// clientW/clientH describe the mode we are leaving rather than the window we want back.
+		EXTERN_CVAR (Int, win_w)
+		EXTERN_CVAR (Int, win_h)
+		int restoreW = (win_w > 0) ? int(win_w) : clientW;
+		int restoreH = (win_h > 0) ? int(win_h) : clientH;
+
 		// [rc4l] video-scale: size the window's CLIENT area to the client size, not the (possibly
 		// smaller) render size. The render target follows the client live via MaybeResizeForScale.
-		MoveWindow(Window, r.left, r.top, clientW + (GetSystemMetrics(SM_CXSIZEFRAME) * 2), clientH + (GetSystemMetrics(SM_CYSIZEFRAME) * 2) + GetSystemMetrics(SM_CYCAPTION), FALSE);
+		//
+		// AdjustWindowRectEx against the real style rather than SM_CXSIZEFRAME arithmetic: the frame
+		// differs by DPI and theme, and getting it wrong makes the client a few pixels off, which
+		// then gets SAVED as the new remembered size and drifts a little further every round trip.
+		RECT wr = { 0, 0, restoreW, restoreH };
+		AdjustWindowRectEx(&wr, GetWindowLong(Window, GWL_STYLE), FALSE, GetWindowLong(Window, GWL_EXSTYLE));
+		MoveWindow(Window, r.left, r.top, wr.right - wr.left, wr.bottom - wr.top, FALSE);
 
 		I_RestoreWindowedPos();
 	}

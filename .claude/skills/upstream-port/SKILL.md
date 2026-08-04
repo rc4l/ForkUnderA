@@ -93,17 +93,36 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
    pushes alone skip the build jobs). MSVC flags are spelled per-compiler; MSVC also catches real
    ODR bugs ELF/Mach-O swallow — same-name classes get a `Legacy` prefix rename (precedent:
    `LegacyFRenderState`, `LegacyFlatVertexBuffer`).
+
+   **Build ALL targets, not the one you are iterating on.** `zdoom` is not the project. Several
+   targets compile the same `src/` files with their own source lists — `zandrox-server-registry`
+   compiles `gitinfo.cpp`, the test binaries compile every `*_compute.cpp` — so a function added to a
+   shared file can link fine in the engine and fail in a sibling target that never listed the unit
+   defining it. Iterating with `cmake --build <dir> --target zdoom` will not notice, however many
+   times you run it: the sibling simply never relinks.
+
+   This is a distinct trap from the stale-pk3 one in step 6. That one ships the wrong artifact; this
+   one never builds the artifact at all, so "it compiles" stays true and stays misleading. It has
+   already reached CI once, as three red platforms on a branch verified green locally.
+
+   Before calling a branch done, build the default target (all of them) at least once. The
+   `*_build_run` scripts in step 6 do this for you and are the reason to use them; if you build by
+   hand anyway, it is `cmake --build <dir> --config Release` with **no** `--target`. If you have only
+   ever built one target since a shared file changed, you have not verified the build.
 5. **Tests**: `cmake --build build-tests && ctest` all green; new computation units at 100%
    coverage (`bash tests/coverage.sh --auto`).
 6. **Manual E2E by the user is the verification standard** (their eye has overruled screenshot
-   reads repeatedly). **Rebuild + refresh the bundle with `mac_build_run.sh` (`--run` to launch) —
-   never hand-roll `cmake --build --target zdoom` + manual copies.** That target does NOT rebuild the
-   pk3s (`add_pk3` depends on the zipdir *tool*, not on `wadsrc/` content), so a hand-rolled build
-   ships a stale or missing `zandronum.pk3` and a silently-failed link as if they were fine — the
-   exact trap that has burned whole sessions. `mac_build_run.sh` fails CLOSED: it stops on a bad build,
-   repacks any pk3 missing or older than its `wadsrc/`, syncs into `build/ZandroX.app/Contents/MacOS/`,
-   re-codesigns, and verifies the bundle's binary + pk3 before it ever says "safe to launch." Then
-   drive with the `zandronum-driver` skill. E2E must inspect the *artifacts an action leaves behind*,
+   reads repeatedly). **Rebuild + refresh with `mac_build_run.sh` (`--run`) or `windows_build_run.ps1`
+   (`-Run`) — never hand-roll `cmake --build --target zdoom` + manual copies.** That target does NOT
+   rebuild the pk3s (`add_pk3` depends on the zipdir *tool*, not on `wadsrc/` content), so a
+   hand-rolled build ships a stale or missing `zandronum.pk3` and a silently-failed link as if they
+   were fine — the exact trap that has burned whole sessions. Both scripts fail CLOSED: stop on a bad
+   build, repack any pk3 missing or older than its `wadsrc/`, sync into the launch directory
+   (`build/ZandroX.app/Contents/MacOS/` / `dist-windows/`), and hash-verify the staged binary + pk3
+   against the build tree before either says "safe to launch." The Windows one additionally builds
+   **all** targets and resolves `cmake` out of the VS install, so it does not need a Developer
+   PowerShell. Neither stages runtime deps (dylibs / DLLs, IWADs) — those come from a one-time
+   `mac_compile.sh` / `windows_build.ps1`. Then drive with the `zandronum-driver` skill. E2E must inspect the *artifacts an action leaves behind*,
    not just the action itself: fire at a wall and then WALK UP to the decals; kill and look at the
    corpse; open a door and look at the track (the white-decal miss — the muzzle flash verified,
    the bullet marks it left didn't). And cover the views nobody defaults to: LOOK STRAIGHT UP at

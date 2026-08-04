@@ -620,6 +620,10 @@ void M_SetMenu(FName menu, int param)
 			}
 			else
 			{
+				// [rc4l] Stock: no special-casing for the main menu here. The "update available"
+				// chip is drawn by DListMenu itself when the descriptor is MainMenu (see menu.h), so
+				// it survives whatever class the descriptor names -- or names none, which is what
+				// keeps the main menu replaceable by mods.
 				const PClass *cls = ld->mClass == NULL? RUNTIME_CLASS(DListMenu) : ld->mClass;
 
 				DListMenu *newmenu = (DListMenu *)cls->CreateNew();
