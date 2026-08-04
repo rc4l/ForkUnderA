@@ -572,6 +572,30 @@ public:
 //
 //==========================================================================
 
+// [rc4l] uzdoom@8c5a8c54f -> 785f72d6e -> 3f3aab42f -> 641042871, taken as one settled form and
+// under upstream's final name (uzdoom@3fb9e754f renames it to randompick). Picks one of N
+// expressions at random. Pre-VM: EvalExpression only, no Emit -- the code-emission half arrives
+// with the VM, which we do not link.
+class FxRandomPick : public FxExpression
+{
+	FRandom * rng;
+	TArray<FxExpression*> min;
+
+public:
+
+	FxRandomPick(FRandom *, TArray<FxExpression*> mi, const FScriptPosition &pos);
+	~FxRandomPick();
+	FxExpression *Resolve(FCompileContext&);
+
+	ExpVal EvalExpression (AActor *self);
+};
+
+//==========================================================================
+//
+//	FxRandom2
+//
+//==========================================================================
+
 class FxRandom2 : public FxExpression
 {
 	FRandom * rng;

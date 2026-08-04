@@ -1179,6 +1179,29 @@ DEFINE_PROPERTY(ripperdamagefactor, F, Actor)
 
 //==========================================================================
 //
+// [rc4l] uzdoom@30acb7200 + dcab57b23: per-actor teleport fog. An empty string,
+// "none" or "null" means spawn nothing at all, which the original could not say.
+//
+//==========================================================================
+DEFINE_PROPERTY(telefogsourcetype, S, Actor)
+{
+	PROP_STRING_PARM(str, 0);
+	if (!stricmp(str, "") || (!stricmp(str, "none")) || (!stricmp(str, "null")) || *str == 0) defaults->TeleFogSourceType = NULL;
+	else defaults->TeleFogSourceType = FindClassTentative(str, "TeleportFog");
+}
+
+//==========================================================================
+//
+//==========================================================================
+DEFINE_PROPERTY(telefogdesttype, S, Actor)
+{
+	PROP_STRING_PARM(str, 0);
+	if (!stricmp(str, "") || (!stricmp(str, "none")) || (!stricmp(str, "null")) || *str == 0) defaults->TeleFogDestType = NULL;
+	else defaults->TeleFogDestType = FindClassTentative(str, "TeleportFog");
+}
+
+//==========================================================================
+//
 // [rc4l] uzdoom@99b2cfa14: scales the damage this actor DEALS, as opposed to
 // DamageFactor which scales what it TAKES.
 //
@@ -2172,6 +2195,15 @@ DEFINE_CLASS_PROPERTY_PREFIX(powerup, color, C_f, Inventory)
 		if (v >= 0)
 		{
 			*pBlendColor = MakeSpecialColormap(v);
+			return;
+		}
+		// [rc4l] uzdoom@e6de24a7d with its fix uzdoom@b2452b806 folded in: a PowerupGiver may say
+		// "none" to mean "leave the blend already in effect alone". The sentinel written here is
+		// what APowerup::InitEffect tests for; without the return it fell through and V_GetColor
+		// overwrote it, so the sentinel never reached the actor.
+		else if (!stricmp(name, "none") && info->Class->IsDescendantOf(RUNTIME_CLASS(APowerupGiver)))
+		{
+			*pBlendColor = MakeSpecialColormap(65535);
 			return;
 		}
 
