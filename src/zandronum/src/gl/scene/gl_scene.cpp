@@ -127,7 +127,7 @@ angle_t FGLRenderer::FrustumAngle()
 
 	// ok, this is a gross hack that barely works...
 	// but at least it doesn't overestimate too much...
-	double floatangle=2.0+(45.0+((tilt/1.9)))*mCurrentFoV*48.0/BaseRatioSizes[WidescreenRatio][3]/90.0;
+	double floatangle=2.0+(45.0+((tilt/1.9)))*mCurrentFoV*48.0/AspectMultiplier(WidescreenRatio)/90.0;
 	angle_t a1 = FLOAT_TO_ANGLE(floatangle);
 	if (a1>=ANGLE_180) return 0xffffffff;
 	return a1;
@@ -997,12 +997,16 @@ void FGLRenderer::RenderView (player_t* player)
 
 	// I stopped using BaseRatioSizes here because the information there wasn't well presented.
 	//							4:3				16:9		16:10		17:10		5:4
-	static float ratios[]={1.333333f, 1.777777f, 1.6f, 1.7f, 1.25f};
 
 	// now render the main view
 	float fovratio;
-	float ratio = ratios[WidescreenRatio];
-	if (!(WidescreenRatio&4))
+	// [rc4l] `ratios[]` above was a bucket-to-ratio lookup, and WidescreenRatio now IS the ratio, so
+	// the table is redundant. `!(WidescreenRatio & 4)` meant "not the 5:4 bucket", i.e. not taller
+	// than wide; the float test says the same thing without needing a bucket to exist.
+	//
+	// No upstream counterpart -- these GL files are not in the commit being ported.
+	float ratio = WidescreenRatio;
+	if (ratio >= 1.3f)
 	{
 		fovratio = 1.333333f;
 	}
