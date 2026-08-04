@@ -3311,10 +3311,18 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTranslucent)
 // Fades the actor in
 //
 //===========================================================================
+// [rc4l] uzdoom@08570ec48
+enum FadeFlags
+{
+	FTF_REMOVE =	1 << 0,
+	FTF_CLAMP =		1 << 1,
+};
+
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeIn)
 {
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_FIXED(reduce, 0);
+	ACTION_PARAM_INT(flags, 1);
 
 	// [BB] This is handled server-side.
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
@@ -3330,7 +3338,6 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeIn)
 
 	self->RenderStyle.Flags &= ~STYLEF_Alpha1;
 	self->alpha += reduce;
-	// Should this clamp alpha to 1.0?
 
 	// [BB] Inform the clients about the alpha change and possibly about RenderStyle.
 	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
@@ -3340,6 +3347,25 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeIn)
 		SERVERCOMMANDS_SetThingProperty( self, APROP_Alpha );
 	}
 
+	// [rc4l] uzdoom@08570ec48: FTF_CLAMP pins alpha at 1.0, FTF_REMOVE destroys once opaque.
+	// Placed after the broadcast above so clients are told the final alpha before the actor goes.
+	if (self->alpha >= (FRACUNIT * 1))
+	{
+		if (flags & FTF_CLAMP)
+			self->alpha = (FRACUNIT * 1);
+		if (flags & FTF_REMOVE)
+		{
+			// [rc4l] Same guard the other A_Fade* carry: never delete a live player body.
+			if ( self->player && ( self->player->mo == self ) )
+			{
+				Printf ( PRINT_BOLD, "Warning: A_FadeIn may not delete player bodies that are still associated to a player!\n" );
+				return;
+			}
+			if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
+				SERVERCOMMANDS_DestroyThing( self );
+			self->HideOrDestroyIfSafe ();
+		}
+	}
 }
 
 //===========================================================================
@@ -3353,7 +3379,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeOut)
 {
 	ACTION_PARAM_START(2);
 	ACTION_PARAM_FIXED(reduce, 0);
-	ACTION_PARAM_BOOL(remove, 1);
+	ACTION_PARAM_INT(flags, 1);	// [rc4l] uzdoom@08570ec48: was `bool remove`; FTF_REMOVE is bit 0, so the old true/false still means the same thing
 
 	// [BB] This is handled server-side.
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
@@ -3378,7 +3404,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeOut)
 	}
 
 	// [BB] Only destroy the actor if it's not needed for a map reset. Otherwise just hide it.
-	if (self->alpha <= 0 && remove)
+	if (self->alpha <= 0 && (flags & FTF_CLAMP))
+		self->alpha = 0;
+	if (self->alpha <= 0 && (flags & FTF_REMOVE))
 	{
 		// [BB] Deleting player bodies is a very bad idea.
 		if ( self->player && ( self->player->mo == self ) )
@@ -3408,7 +3436,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeTo)
 	ACTION_PARAM_START(3);
 	ACTION_PARAM_FIXED(target, 0);
 	ACTION_PARAM_FIXED(amount, 1);
-	ACTION_PARAM_BOOL(remove, 2);
+	ACTION_PARAM_INT(flags, 2);	// [rc4l] uzdoom@08570ec48
 
 	// [EP] This is handled server-side.
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
@@ -3449,7 +3477,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeTo)
 	}
 
 	// [EP] Only destroy the actor if it's not needed for a map reset. Otherwise just hide it.
-	if (self->alpha == target && remove)
+	if (flags & FTF_CLAMP)
+	{
+		if (self->alpha > (FRACUNIT * 1))
+			self->alpha = (FRACUNIT * 1);
+		else if (self->alpha < 0)
+			self->alpha = 0;
+	}
+	if (self->alpha == target && (flags & FTF_REMOVE))
 	{
 		// [EP] Deleting player bodies is a very bad idea.
 		if ( self->player && ( self->player->mo == self ) )
