@@ -515,18 +515,18 @@ extern "C" void ASM_PatchPitch (void);
 
 int CheckRatio (int width, int height, int *trueratio=NULL);
 static inline int CheckRatio (double width, double height) { return CheckRatio(int(width), int(height)); }
-// [rc4l] Ported from UZDoom 5720634045b0. Added alongside CheckRatio rather than replacing it, as
+// [rc4l] Ported from UZDoom 5720634045b0812bc838eb4671a4039917582a94. Added alongside CheckRatio rather than replacing it, as
 // upstream did -- the switch of consumers is the next commit.
 int ActiveFakeRatio (int width, int height);
 float ActiveRatio (int width, int height, float *trueratio = NULL);
 static inline double ActiveRatio (double width, double height) { return ActiveRatio(int(width), int(height)); }
-// [rc4l] Ported from UZDoom 6d4e4dad25ff. Continuous-aspect equivalents of the BaseRatioSizes
+// [rc4l] Ported from UZDoom 6d4e4dad25ffa3978f5bf54d0fc60dd59b29d119. Continuous-aspect equivalents of the BaseRatioSizes
 // columns, which the next commit uses to retire the table.
 int AspectBaseWidth(float aspect);
 int AspectBaseHeight(float aspect);
 double AspectPspriteOffset(float aspect);
 int AspectMultiplier(float aspect);
-// [rc4l] Ported from UZDoom 172f58c1. True for ratios where the BaseRatioSizes columns meant
+// [rc4l] Ported from UZDoom 172f58c1655848df85d35676a4a5aeb094d05b2c. True for ratios where the BaseRatioSizes columns meant
 // something different -- see the definition.
 bool AspectTallerThanWide(float aspect);
 extern const int BaseRatioSizes[5][4];

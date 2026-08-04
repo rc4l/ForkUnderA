@@ -777,7 +777,7 @@ void DCanvas::VirtualToRealCoords(double &x, double &y, double &w, double &h,
 {
 	float myratio = handleaspect ? ActiveRatio (Width, Height) : (4.0f / 3.0f);
 
-	// [rc4l] PROVENANCE: uzdoom@5b438d220 (clamp pre-existed upstream; adopted with the switch).
+	// [rc4l] PROVENANCE: uzdoom@5b438d220f918e4d5b604e970f0f45f96963e8d1 (clamp pre-existed upstream; adopted with the switch).
 	// [rc4l] Clamp ultrawide to 16:9, as upstream already did before this commit. Now that the ratio
 	// is the TRUE one rather than a bucket, a 21:9 display would otherwise get a genuinely 21:9
 	// virtual space and stretch fullscreen images across it.
@@ -854,7 +854,7 @@ void DCanvas::FillBorder (FTexture *img)
 {
 	float myratio = ActiveRatio (Width, Height);
 
-	// [rc4l] PROVENANCE: uzdoom@5b438d220.
+	// [rc4l] PROVENANCE: uzdoom@5b438d220f918e4d5b604e970f0f45f96963e8d1.
 	// [rc4l] Ultrawide is treated as 16:9 here too, so the bars it produces match the virtual space
 	// VirtualToRealCoords laid out. If these two disagreed the border would cover the wrong strip.
 	if (myratio > 1.7f)
@@ -864,6 +864,11 @@ void DCanvas::FillBorder (FTexture *img)
 
 	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours. Upstream still has this bug; revisit if a
 	// later upstream commit reworks or deletes FillBorder.
+	//   SUPERSEDED BY: uzdoom@b77a0eb7cf9eab87aa9abfa3b7789af7c8a67571 (2017-02-01) "let D_PageDrawer always clear the
+	//   background". It replaces FillBorder(NULL) with an unconditional Clear of the whole
+	//   screen before the page is drawn, so no strip can be left unpainted and the band
+	//   this guards against cannot exist.
+	//   ON PORT: take that commit and DELETE this branch outright rather than reconciling it.
 	// [rc4l] Deviation from upstream, and a fix for a bug upstream still had here.
 	//
 	// Upstream kept this early-out at "1.3 to 1.4" while moving VirtualToRealCoords' own 4:3
@@ -884,6 +889,8 @@ void DCanvas::FillBorder (FTexture *img)
 	{ // Screen is taller than it is wide
 		bordleft = bordright = 0;
 		// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+		//   SUPERSEDED BY: uzdoom@b77a0eb7cf9eab87aa9abfa3b7789af7c8a67571, same as the branch above -- FillBorder stops being
+		//   called at all. ON PORT: delete with it.
 		// [rc4l] Derived from AspectBaseHeight, the same quantity VirtualToRealCoords scales by,
 		// rather than from AspectMultiplier. The two are the same number rounded differently, and the
 		// difference is a seam of unpainted pixels between the image and its border.

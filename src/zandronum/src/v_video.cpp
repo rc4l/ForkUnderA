@@ -1747,7 +1747,7 @@ CUSTOM_CVAR (Int, vid_aspect, 0, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
 // 3: 17:10
 // 4: 5:4
 // [rc4l] Helper for ActiveRatio and CheckRatio. Returns the forced ratio type, or -1 if none.
-// Ported from UZDoom 5720634045b0 ("Add ActiveRatio to be used where CheckRatio is used today").
+// Ported from UZDoom 5720634045b0812bc838eb4671a4039917582a94 ("Add ActiveRatio to be used where CheckRatio is used today").
 //
 // Extracted verbatim out of CheckRatio so both the old bucket API and the new float one honour
 // vid_aspect / vid_nowidescreen identically -- two copies of this would drift the moment either was
@@ -1786,7 +1786,7 @@ int ActiveFakeRatio(int width, int height)
 	return fakeratio;
 }
 
-// [rc4l] Active screen ratio based on cvars and size. Ported from UZDoom 5720634045b0.
+// [rc4l] Active screen ratio based on cvars and size. Ported from UZDoom 5720634045b0812bc838eb4671a4039917582a94.
 //
 // This is the whole point of the port: a CONTINUOUS ratio rather than the nearest of five buckets.
 // CheckRatio below snaps to a bucket within +/-10 pixels and calls everything else 4:3, so a window
