@@ -1142,7 +1142,16 @@ void DBaseStatusBar::RefreshBackground () const
 			// free of consequence and covers any gap on any edge, rather than the one edge I happen
 			// to have chased. The real repair is a single source for the laid-out rectangle that both
 			// the bar and this share; until then, do not assume where the bar ends up.
-			V_DrawBorder (0, y, SCREENWIDTH, SCREENHEIGHT);
+			//
+			// y > 0 is load-bearing. The enclosing guard only bounds y from above, and an alt+enter
+			// mode switch can run a refresh while ::ST_Y is still 0 -- at which point this fills the
+			// ENTIRE screen with the border flat and the frame is a solid brown rectangle. The old
+			// edge-only drawing survived that state because a bogus y merely misplaced a one-pixel
+			// line; a fill has no such tolerance, so it has to check that y means what it should.
+			if (y > 0)
+			{
+				V_DrawBorder (0, y, SCREENWIDTH, SCREENHEIGHT);
+			}
 
 			V_DrawBorder (x+1, y, SCREENWIDTH, y+1);
 			V_DrawBorder (x+1, SCREENHEIGHT-1, SCREENWIDTH, SCREENHEIGHT);
