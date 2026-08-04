@@ -2098,6 +2098,7 @@ enum
 	CPF_DAGGER = 2,
 	CPF_PULLIN = 4,
 	CPF_NORANDOMPUFFZ = 8,
+	CPF_NOTURN = 16,	// [rc4l] uzdoom@fd354dbe9
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomPunch)
@@ -2169,10 +2170,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomPunch)
 			S_Sound (self, CHAN_WEAPON, weapon->AttackSound, 1, ATTN_NORM, true );	// [BC] Inform the clients.
 		}
 
-		self->angle = R_PointToAngle2 (self->x,
-										self->y,
-										linetarget->x,
-										linetarget->y);
+		// [rc4l] uzdoom@fd354dbe9: CPF_NOTURN keeps the attacker's facing.
+		if (!(flags & CPF_NOTURN))
+		{
+			self->angle = R_PointToAngle2 (self->x,
+											self->y,
+											linetarget->x,
+											linetarget->y);
+		}
 
 		if (flags & CPF_PULLIN) self->flags |= MF_JUSTATTACKED;
 		if (flags & CPF_DAGGER) P_DaggerAlert (self, linetarget);
