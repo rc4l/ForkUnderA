@@ -531,7 +531,9 @@ CUSTOM_CVAR (Int, dmflags2, 0, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAMEPL
 		}
 
 		// Come out of chasecam mode if we're not allowed to use chasecam.
-		if (!(dmflags2 & DF2_CHASECAM) && !G_SkillProperty (SKILLP_DisableCheats) && !sv_cheats)
+		// [rc4l] uzdoom@15b1c7125: use CheckCheatmode, which is the single place that decides
+		// whether cheats are allowed, instead of re-deriving it here and drifting from it.
+		if (!(dmflags2 & DF2_CHASECAM) && CheckCheatmode(false))
 		{
 			// Take us out of chasecam mode only.
 			// [AK] Allow spectators to keep using the chasecam.
