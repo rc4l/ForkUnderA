@@ -143,7 +143,11 @@ int GetRevisionNumber();
 // and respawn-super moved to dmflags2 bit 27 (uzdoom@a21f01bc5). G_DoLoadGame migrates older saves.
 // [rc4l] 4516: AActor now serializes weaponspecial, the weapon scratch counter split out of
 // special1 (uzdoom@ee6e87d94). Upstream bumped for the same change; ours is a separate line.
-#define SAVEVER 4516
+// [rc4l] 4517: DACSThinker serializes its script list iteratively, longest-last, with an
+// explicit count, instead of letting the archive chase the linked list recursively
+// (uzdoom@e3640b5bf + 5170abfee). Upstream numbered the same change 4515; ours is a separate
+// line that was already past that.
+#define SAVEVER 4517
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)
