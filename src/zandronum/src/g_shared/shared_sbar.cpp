@@ -1089,7 +1089,13 @@ void DBaseStatusBar::RefreshBackground () const
 	int x, x2, y;
 
 	float ratio = ActiveRatio (SCREENWIDTH, SCREENHEIGHT);
-	x = (ratio < 1.5f || !Scaled) ? ST_X : SCREENWIDTH*(48-AspectMultiplier(ratio))/(48*2);
+	// [rc4l] 1.334f, not upstream's 1.5f. That constant replaced !IsRatioWidescreen(), which was
+	// true for the 16:9/16:10/17:10 buckets -- narrowest 1.6 -- so 1.5 was a sensible midpoint
+	// BETWEEN BUCKETS. With a continuous ratio it is simply wrong: everything above 1.334 now has
+	// its content aspect-corrected, so 1.334 to 1.5 drew a narrowed status bar over a background
+	// positioned as if it were full width, leaving unpainted strips down both sides. Reported at
+	// 1499x1049, which is an entirely ordinary window shape.
+	x = (ratio <= 1.334f || !Scaled) ? ST_X : SCREENWIDTH*(48-AspectMultiplier(ratio))/(48*2);
 	y = x == ST_X && x > 0 ? ST_Y : ::ST_Y;
 
 	if(!CompleteBorder)
@@ -1109,7 +1115,7 @@ void DBaseStatusBar::RefreshBackground () const
 	{
 		if(!CompleteBorder)
 		{
-			x2 = ratio < 1.5f || !Scaled ? ST_X+HorizontalResolution :
+			x2 = ratio <= 1.334f || !Scaled ? ST_X+HorizontalResolution :
 				SCREENWIDTH - (SCREENWIDTH*(48-AspectMultiplier(ratio))+48*2-1)/(48*2);
 		}
 		else
