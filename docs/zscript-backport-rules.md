@@ -26,6 +26,24 @@ backend (early 2016) → **DECORATE recompiled onto the VM** (2016) → ZScript 
   slow, and a 35 Hz server running a heavy mod for many players is where that bites. Leave those
   rows `pending` with the reason — revisit once script is actually under load.
 
+## We are not porting their netcode
+
+Say it plainly, because the ZScript era contains commits that look like networking worth having and
+are not. `upstream-port` already forbids porting P2P-lockstep transport (`d_net.cpp` / ticcmd); this
+is where that prohibition gets tested.
+
+`SendNetworkEvent` (2017, `3338fb7f3`) and `SendNetworkCommand` (2024, `9565c94cd`) are **mod-facing
+APIs we want**. What sits under them — `DEM_NETEVENT`, `DEM_ZSC_CMD`, entries in the demo command
+stream reconciled by consistency hashes — is **lockstep input transport we must not take**. Porting
+it would pull their whole netcode model in sideways.
+
+**Keep the API, replace the plumbing.** A mod calling `SendNetworkEvent` must see identical
+behaviour; underneath it becomes an ordinary Zandronum client-to-server packet, and the server-side
+`NetworkProcess` handler fires as before. Same contract, our transport.
+
+The same rule covers consistency hashes, `ticcmd` changes, and anything else in `d_net.cpp` that
+these commits touch: mark those hunks `skip` with the reason, and port the script-facing half.
+
 ## The netcode rule, in one line
 
 Upstream is peer-to-peer: every peer runs every line of script, so nothing is replicated. We are
