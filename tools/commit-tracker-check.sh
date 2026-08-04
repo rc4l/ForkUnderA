@@ -26,7 +26,7 @@ badfmt=$(awk -F'\t' '
   $1=="sha" && $2=="date" { next }
   { if (NF!=6)                        { print "  NF="NF": "substr($0,1,60); next }
     if ($1 !~ /^[0-9a-f]{40}$/)       { print "  bad sha: "$1; next }
-    if ($4!="pending" && $4!="ported" && $4!="adapted" && $4!="skip")
+    if ($4!="pending" && $4!="ported" && $4!="adapted" && $4!="skip" && $4!="deferred" && $4!="partially-deferred")
                                       { print "  bad status: "$4" ("$1")"; next }
     if (($4=="pending" || $4=="skip") && $6!="/")
                                       { print "  "$4" row must have ours=/ : "$1" (ours="$6")" } }' "$TSV")
