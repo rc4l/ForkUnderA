@@ -521,6 +521,10 @@ private:
 	int LumpNum;
 	BYTE *Data;
 	int DataSize;
+public:
+	// [rc4l] uzdoom@3437f4fca
+	int GetDataSize() const { return DataSize; }
+private:
 	BYTE *Chunks;
 	ScriptPtr *Scripts;
 	int NumScripts;

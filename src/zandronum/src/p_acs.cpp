@@ -2189,19 +2189,30 @@ void FBehavior::StaticSerializeModuleStates (FArchive &arc)
 	for (modnum = 0; modnum < StaticModules.Size(); ++modnum)
 	{
 		FBehavior *module = StaticModules[modnum];
+		// [rc4l] uzdoom@3437f4fca: record each module's size so a save made against a
+		// different build of the same-named BEHAVIOR is refused instead of loading
+		// garbage. Upstream gated on their 4516; ours is a separate line, so 4518.
+		int ModSize = module->GetDataSize();
 
 		if (arc.IsStoring())
 		{
 			arc.WriteString (module->ModuleName);
+			if (SaveVersion >= 4518) arc << ModSize;
 		}
 		else
 		{
 			char *modname = NULL;
 			arc << modname;
+			if (SaveVersion >= 4518) arc << ModSize;
 			if (stricmp (modname, module->ModuleName) != 0)
 			{
 				delete[] modname;
 				I_Error ("Level was saved with a different set of ACS modules.");
+			}
+			else if (ModSize != module->GetDataSize())
+			{
+				delete[] modname;
+				I_Error("ACS module %s has changed from what was saved. (Have %d bytes, save has %d bytes)", module->ModuleName, module->GetDataSize(), ModSize);
 			}
 			delete[] modname;
 		}
@@ -2478,7 +2489,8 @@ FBehavior::FBehavior (int lumpnum, FileReader * fr, int len)
 				funcm->HasReturnValue = funcf->HasReturnValue;
 				funcm->ImportNum = funcf->ImportNum;
 				funcm->LocalCount = funcf->LocalCount;
-				funcm->Address = funcf->Address;
+				// [rc4l] uzdoom@1bda54f3c: every field read out of the ACS blob is little-endian.
+				funcm->Address = LittleLong(funcf->Address);
 			}
 		}
 
@@ -3298,7 +3310,7 @@ BYTE *FBehavior::FindChunk (DWORD id) const
 		{
 			return chunk;
 		}
-		chunk += ((DWORD *)chunk)[1] + 8;
+		chunk += LittleLong(((DWORD *)chunk)[1]) + 8;
 	}
 	return NULL;
 }
@@ -3306,14 +3318,14 @@ BYTE *FBehavior::FindChunk (DWORD id) const
 BYTE *FBehavior::NextChunk (BYTE *chunk) const
 {
 	DWORD id = *(DWORD *)chunk;
-	chunk += ((DWORD *)chunk)[1] + 8;
+	chunk += LittleLong(((DWORD *)chunk)[1]) + 8;
 	while (chunk != NULL && chunk < Data + DataSize)
 	{
 		if (((DWORD *)chunk)[0] == id)
 		{
 			return chunk;
 		}
-		chunk += ((DWORD *)chunk)[1] + 8;
+		chunk += LittleLong(((DWORD *)chunk)[1]) + 8;
 	}
 	return NULL;
 }
