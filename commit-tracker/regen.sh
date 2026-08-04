@@ -49,7 +49,7 @@ TZ=UTC git -C "$UP" log --reverse --date=format-local:'%Y-%m-%dT%H:%M:%SZ' \
 # "zandronum-base" if present in the Zandronum 3.2.1 baseline import (no discrete commit
 # of ours), else comma-separated zandrox shas. New commits are born pending -> "/".
 {
-  printf '# commit tracker | repo https://github.com/UZDoom/UZDoom | commit URL = <repo>/commit/<sha> | status = pending|ported|adapted|skip|deferred | ours = OUR commit(s), "/" if pending/skip/deferred, "zandronum-base" if baseline\n'
+  printf '# commit tracker | repo https://github.com/UZDoom/UZDoom | commit URL = <repo>/commit/<sha> | status = pending|ported|adapted|skip|deferred|partially-deferred | ours = OUR commit(s), "/" if pending/skip/deferred, "zandronum-base" if baseline\n'
   printf 'sha\tdate\ttitle\tstatus\tnote\tours\n'
   awk -F'\t' -v cur="$CUR" '
       BEGIN{ while((getline l < cur)>0){ split(l,c,"\t"); st[c[1]]=c[2]; nt[c[1]]=c[3]; ou[c[1]]=c[4] } }

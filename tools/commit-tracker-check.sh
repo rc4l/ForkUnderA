@@ -3,7 +3,7 @@
 #
 # Keeps the tracker machine-parseable and honest:
 #  1. Format: every data row is exactly 6 tab-separated fields, a 40-hex sha (THEIR
-#     commit), and a status in the vocabulary {pending, ported, adapted, skip, deferred}.
+#     commit), and a status in the vocabulary {pending, ported, adapted, skip, deferred, partially-deferred}.
 #  2. Provenance (the `ours` column, field 6 = OUR repo commit(s) that addressed it):
 #       - pending / skip   -> must be "/"  (inapplicable; nothing of ours addressed it)
 #       - ported / adapted -> must be "zandronum-base" (base-inherited / adapted-present),
@@ -34,7 +34,7 @@ if [ -n "$badfmt" ]; then echo "commit-tracker-check: format errors:"; echo "$ba
 
 # Provenance: ported/adapted must name a real our-commit (or "zandronum-base").
 while IFS=$'\t' read -r sha date title status note ours; do
-	case "$status" in ported|adapted) ;; *) continue ;; esac
+	case "$status" in ported|adapted|partially-deferred) ;; *) continue ;; esac
 	if [ -z "$ours" ]; then
 		echo "commit-tracker-check: $sha is $status but ours column is empty"; fail=1; continue
 	fi
