@@ -1,0 +1,16 @@
+# [rc4l] Cloudflare Worker that serves serverregistries.txt to clients. See README.md.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+name = "zandrox-serverregistrylist"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# The hostname clients fetch. Deliberately NOT one letter away from registry.cantstopscrolling.net:
+# that one is UDP and must stay unproxied, this one is HTTPS and must be proxied, and a name like
+# "registries." next to "registry." is an invitation to flip the wrong switch. The failure would be
+# silent either way -- servers quietly missing from the browser, or a list that never refreshes.
+[[routes]]
+pattern = "registrylist.cantstopscrolling.net/*"
+zone_name = "cantstopscrolling.net"
+custom_domain = false

@@ -713,6 +713,23 @@ int main( int argc, char **argv )
 {
 	BYTESTREAM_s	*pByteStream;
 
+	// [rc4l] Unbuffer stdout so the log is usable in a container.
+	//
+	// The per-event lines below go through printf, and C stdio switches to FULL buffering when stdout
+	// is a pipe -- which is exactly what Docker gives it. So `docker compose logs` showed the startup
+	// banner (std::cerr, unbuffered) and then nothing, while several KB of the actually interesting
+	// lines sat in a buffer.
+	//
+	// Those lines are the only way to tell an operator whether a server's port forward works: reaching
+	// "verification list" means the announce arrived, and reaching "server list" means we got a reply
+	// BACK to it. Seeing the first without the second is the signature of a blocked inbound port. That
+	// diagnostic is worthless if it does not appear until the buffer happens to fill.
+	//
+	// _IONBF rather than _IOLBF on purpose: MSVC maps _IOLBF to full buffering anyway, and rejects the
+	// (NULL, 0) pairing outright -- it crashed the process on Windows. Unbuffered costs a write syscall
+	// per line, which is nothing at a few lines per heartbeat, and behaves the same everywhere.
+	setvbuf( stdout, NULL, _IONBF, 0 );
+
 	std::cerr << "=== ZandroX Server Registry ===\n";
 	std::cerr << "Revision: " << GetGitTime() << "\n";
 
