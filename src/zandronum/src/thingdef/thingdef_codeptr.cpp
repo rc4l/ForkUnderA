@@ -4746,6 +4746,7 @@ enum JLOS_flags
 	JLOSF_ALLYNOJUMP=512,
 	JLOSF_COMBATANTONLY=1024,
 	JLOSF_NOAUTOAIM=2048,
+	JLOSF_CHECKTRACER=4096,	// [rc4l] uzdoom@f54a59fdf
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfTargetInLOS)
@@ -4770,9 +4771,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfTargetInLOS)
 		{
 			target = self->master;
 		}
-		else if (self->flags & MF_MISSILE && (flags & JLOSF_PROJECTILE))
+		// [rc4l] uzdoom@f54a59fdf: JLOSF_CHECKTRACER lets a non-missile follow its tracer too.
+		else if ((self->flags & MF_MISSILE && (flags & JLOSF_PROJECTILE)) || (flags & JLOSF_CHECKTRACER))
 		{
-			if (self->flags2 & MF2_SEEKERMISSILE)
+			if ((self->flags2 & MF2_SEEKERMISSILE) || (flags & JLOSF_CHECKTRACER))
 				target = self->tracer;
 			else
 				target = NULL;
@@ -5873,6 +5875,7 @@ enum T_Flags
 {
 	TF_TELEFRAG = 1, // Allow telefrag in order to teleport.
 	TF_RANDOMDECIDE = 2, // Randomly fail based on health. (A_Srcr2Decide)
+	TF_FORCED = 4, // [rc4l] uzdoom@938b54ccb: forget what is in the way. TF_TELEFRAG takes precedence.
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
@@ -5926,7 +5929,20 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 	fixed_t prevX = self->x;
 	fixed_t prevY = self->y;
 	fixed_t prevZ = self->z;
+	// [rc4l] uzdoom@938b54ccb: telefrag is tried first; TF_FORCED then moves the actor anyway if
+	// that did not work.
+	bool teleResult = false;
+
 	if (P_TeleportMove (self, spot->x, spot->y, spot->z, Flags & TF_TELEFRAG))
+		teleResult = true;
+
+	if (!teleResult && (Flags & TF_FORCED))
+	{
+		self->SetOrigin(spot->x, spot->y, spot->z);
+		teleResult = true;
+	}
+
+	if (teleResult)
 	{
 		ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
