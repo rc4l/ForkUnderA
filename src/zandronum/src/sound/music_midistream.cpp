@@ -38,6 +38,7 @@
 #include "templates.h"
 #include "doomdef.h"
 #include "m_swap.h"
+#include "doomerrors.h"	// [rc4l] uzdoom@e662e4321
 #include "sound/computation/midi_device_compute.h"
 
 // MACROS ------------------------------------------------------------------
@@ -277,7 +278,20 @@ MIDIDevice *MIDIStreamer::CreateMIDIDevice(EMidiDevice devtype) const
 		return new TimidityMIDIDevice;
 
 	case MDEV_OPL:
-		return new OPLMIDIDevice;
+		// [rc4l] uzdoom@e662e4321: constructing the OPL device aborts with a CRecoverableError when
+		// no GENMIDI lump is present, which propagated out as a fatal error. Upstream falls back to
+		// FModEx; we have no FMOD (our sound is OpenAL), so this returns NULL instead -- the caller
+		// already handles that, printing "Could not open MIDI out device" and giving up on the song
+		// rather than taking the engine down.
+		try
+		{
+			return new OPLMIDIDevice;
+		}
+		catch (CRecoverableError &err)
+		{
+			Printf("Unable to create OPL MIDI device: %s\n", err.GetMessage());
+			return NULL;
+		}
 
 	case MDEV_TIMIDITY:
 		return new TimidityPPMIDIDevice;
