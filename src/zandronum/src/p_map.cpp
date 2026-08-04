@@ -4722,6 +4722,18 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 
 				// We must pass the unreplaced puff type here 
 				puff = P_SpawnPuff(t1, pufftype, hitx, hity, hitz, angle - ANG180, 2, puffFlags | PF_HITTHING, trace.Actor);
+
+				// [rc4l] uzdoom@fc05a3bb2 with uzdoom@24f1bfae9: HITTARGET/HITMASTER/HITTRACER apply
+				// to bullet and rail attacks too, set on the spawned puff rather than its defaults.
+				// UPSTREAM DEFECT not reproduced: they wrote `flags7 && MF7_HITTARGET` -- logical
+				// AND, not bitwise -- so all three fired whenever ANY flags7 bit was set. Upstream
+				// later reworked this into P_SpawnPuff (uzdoom@519ff8b7d), which is past our walk.
+				if (puffDefaults != NULL && trace.Actor != NULL && puff != NULL)
+				{
+					if (puffDefaults->flags7 & MF7_HITTARGET)	puff->target = trace.Actor;
+					if (puffDefaults->flags7 & MF7_HITMASTER)	puff->master = trace.Actor;
+					if (puffDefaults->flags7 & MF7_HITTRACER)	puff->tracer = trace.Actor;
+				}
 			}
 
 			// [CK] The client by this point has predicted their desired
