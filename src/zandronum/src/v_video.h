@@ -520,6 +520,12 @@ static inline int CheckRatio (double width, double height) { return CheckRatio(i
 int ActiveFakeRatio (int width, int height);
 float ActiveRatio (int width, int height, float *trueratio = NULL);
 static inline double ActiveRatio (double width, double height) { return ActiveRatio(int(width), int(height)); }
+// [rc4l] Ported from UZDoom 6d4e4dad25ff. Continuous-aspect equivalents of the BaseRatioSizes
+// columns, which the next commit uses to retire the table.
+int AspectBaseWidth(float aspect);
+int AspectBaseHeight(float aspect);
+int AspectPspriteOffset(float aspect);
+int AspectMultiplier(float aspect);
 extern const int BaseRatioSizes[5][4];
 
 extern int currentrenderer;

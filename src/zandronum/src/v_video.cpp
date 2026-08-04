@@ -1866,6 +1866,38 @@ int CheckRatio (int width, int height, int *trueratio)
 //     base_width = 240 * x / y
 //     multiplier = 320 / base_width
 //     base_height = 200 * multiplier
+// [rc4l] BaseRatioSizes replacement functions. Ported from UZDoom
+// 6d4e4dad25ffa3978f5bf54d0fc60dd59b29d119 (2016-09-12).
+//
+// The table below is indexed by a discrete ratio bucket, so it cannot answer for a ratio that is not
+// one of five. These compute the same four columns from a continuous aspect instead, which is what
+// lets the bucket go away entirely in the next commit.
+//
+// Feeding a bucket's exact ratio into these reproduces that bucket's row, so nothing changes for the
+// sizes that already worked -- they simply now also work for every size in between.
+int AspectBaseWidth(float aspect)
+{
+	return (int)round(240.0f * aspect * 3.0f);
+}
+
+int AspectBaseHeight(float aspect)
+{
+	return (int)round(200.0f * (320.0f / (240.0f * aspect)) * 3.0f);
+}
+
+int AspectPspriteOffset(float aspect)
+{
+	// [rc4l] double(FRACUNIT) rather than upstream's bare FRACUNIT: ours is a zx::Fixed (see
+	// features/fixed64), which has no implicit conversion, and the existing BaseRatioSizes table
+	// below spells it the same way.
+	return aspect < 1.3f ? (int)(6.5*double(FRACUNIT)) : 0;
+}
+
+int AspectMultiplier(float aspect)
+{
+	return (int)round(320.0f / (240.0f * aspect) * 48.0f);
+}
+
 const int BaseRatioSizes[5][4] =
 {
 	{  960, 600, 0,                   48 },			//  4:3   320,      200,      multiplied by three
