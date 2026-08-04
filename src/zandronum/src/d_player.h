@@ -130,6 +130,10 @@ public:
 
 	void SetupWeaponSlots ();
 	void GiveDefaultInventory ();
+	// [rc4l] uzdoom@fc40e9723: the starting-health reset that used to live at the top of
+	// GiveDefaultInventory(). Split out so a caller can hand back the default inventory
+	// WITHOUT also healing the player -- see the comment on the definition.
+	void ResetStartingHealth ();
 	void PlayAttacking ();
 	void PlayAttacking2 ();
 	const char *GetSoundClass () const;

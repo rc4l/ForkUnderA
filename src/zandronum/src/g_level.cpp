@@ -1586,13 +1586,13 @@ void G_DoLoadLevel (int position, bool autosave)
 		{
 			if ( playeringame[i] && ( players[i].bSpectating == false ) && ( players[i].mo ) && ( players[i].mo->Inventory == NULL ) )
 			{
+				// [rc4l] uzdoom@fc40e9723: no ResetStartingHealth() here on purpose. This is a
+				// repair for a player who somehow ended up with no inventory at all, not a
+				// respawn -- and the [BB] comment that used to sit here ("GiveDefaultInventory()
+				// also restores the default health, but we don't want to revive dead players")
+				// says the heal was unwanted. With the reset gone the workaround that forced a
+				// dead player back to 0 health is dead code, so it goes too.
 				players[i].mo->GiveDefaultInventory();
-				// [BB] GiveDefaultInventory() also restores the default health, but we don't want to revive dead players.
-				if ( players[i].playerstate == PST_DEAD )
-				{
-					players[i].health = 0;
-					players[i].mo->health = 0;
-				}
 			}
 		}
 	}

@@ -5878,6 +5878,9 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 		{
 			if (gamestate != GS_TITLELEVEL)
 			{
+				// [rc4l] uzdoom@fc40e9723: the reset is now explicit. This [BB] code depended on
+				// GiveDefaultInventory() doing it as a side effect, so it has to ask for it.
+				p->mo->ResetStartingHealth ();
 				p->mo->GiveDefaultInventory ();
 				// [BB] The default inventory possibly alters the player's health. Thus we need to make sure
 				// that the health of the player's body matches the player's health.
