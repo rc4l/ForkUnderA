@@ -83,19 +83,22 @@ void ATeleportFog::PostBeginPlay ()
 //
 //==========================================================================
 
-void P_SpawnTeleportFog(fixed_t x, fixed_t y, fixed_t z, int spawnid)
+// [rc4l] uzdoom@30acb7200 through 2747f9a9f, taken as one settled form. The fog an actor leaves
+// behind and the fog it arrives in are now its own properties, and either may be NULL to mean
+// "spawn nothing" (uzdoom@dcab57b23 -- the earlier versions could not express that).
+void P_SpawnTeleportFog(AActor *mobj, fixed_t x, fixed_t y, fixed_t z, bool beforeTele, bool setTarget)
 {
-	const PClass *fog = P_GetSpawnableType(spawnid);
+	AActor *mo = NULL;
+	const PClass *fog = beforeTele ? mobj->TeleFogSourceType : mobj->TeleFogDestType;
 
-	if (fog == NULL)
+	if (fog != NULL)
 	{
-		AActor *mo = Spawn ("TeleportFog", x, y, z + TELEFOGHEIGHT, ALLOW_REPLACE);
+		mo = Spawn(fog, x, y, z, ALLOW_REPLACE);
+		if (mo != NULL && mo->SeeSound != 0) S_Sound(mo, CHAN_BODY, mo->SeeSound, 1.f, ATTN_NORM);
 	}
-	else
-	{
-		AActor *mo = Spawn (fog, x, y, z, ALLOW_REPLACE);
-		if (mo != NULL) S_Sound(mo, CHAN_BODY, mo->SeeSound, 1.f, ATTN_NORM);
-	}
+
+	if (mo != NULL && setTarget)
+		mo->target = mobj;
 }
 
 //
@@ -212,8 +215,8 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 	if (sourceFog && !predicting)
 	{
 		fixed_t fogDelta = thing->flags & MF_MISSILE ? 0 : TELEFOGHEIGHT;
-		AActor *fog = Spawn<ATeleportFog> (oldx, oldy, oldz + fogDelta, ALLOW_REPLACE);
-		fog->target = thing;
+		// [rc4l] uzdoom@30acb7200: the departure fog comes from the actor's own property.
+		P_SpawnTeleportFog(thing, oldx, oldy, oldz + fogDelta, true, true);
 	}
 	if (useFog)
 	{
@@ -221,9 +224,9 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 		{
 			fixed_t fogDelta = thing->flags & MF_MISSILE ? 0 : TELEFOGHEIGHT;
 			an = angle >> ANGLETOFINESHIFT;
-			AActor *fog = Spawn<ATeleportFog> (x + 20*finecosine[an],
-				y + 20*finesine[an], thing->z + fogDelta, ALLOW_REPLACE);
-			fog->target = thing;
+			// [rc4l] uzdoom@30acb7200: arrival fog, likewise from the actor's property.
+			P_SpawnTeleportFog(thing, x + 20*finecosine[an],
+				y + 20*finesine[an], thing->z + fogDelta, false, true);
 		}
 		if (thing->player)
 		{

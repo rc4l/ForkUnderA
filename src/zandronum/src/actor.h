@@ -1236,6 +1236,9 @@ public:
 	FNameNoInit DamageTypeReceived;
 	fixed_t DamageFactor;
 	fixed_t DamageMultiply;		// [rc4l] uzdoom@99b2cfa14: scales damage this actor DEALS.
+	// [rc4l] uzdoom@30acb7200: per-actor teleport fog. NULL means "spawn nothing".
+	const PClass *TeleFogSourceType;
+	const PClass *TeleFogDestType;
 
 	FNameNoInit PainType;
 	FNameNoInit DeathType;
