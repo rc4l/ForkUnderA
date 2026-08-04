@@ -1440,6 +1440,7 @@ add_executable( zdoom WIN32
 	features/server-browser/browsermenu.cpp #ZA
 	features/server-browser/zx_serverbrowsermenu.cpp
 	features/server-browser/computation/serverbrowser_compute.cpp
+	features/panel-menu/computation/panelmenu_compute.cpp
 	features/updater/zx_updater.cpp
 	features/updater/zx_updater_net_win.cpp
 	features/federated-server-registry/zx_serverregistrylist.cpp
