@@ -58,6 +58,56 @@ For upstream commit `C` (`UP` = the UZDoom clone; our source = `src/zandronum/sr
 4. **For candidates, hand off to `upstream-port`:** run `backport-scout.sh` → pick the route
    (staircase batch / post-wall C++ / scriptified / born-in-ZScript) → port or adapt → its gates.
 
+## The verdict vocabulary — and why `deferred` is not `skip`
+
+`pending` · `ported` · `adapted` · `skip` · `deferred`
+
+The load-bearing distinction is between the two negatives:
+
+- **`skip` is TERMINAL and about OUR TREE.** It says "the code this touches does not exist here" —
+  a derived fact. Nobody re-opens a skip, and nothing should: if the subsystem later appears, the
+  edge-case rule says re-triage re-derives it, but in practice the row is closed.
+- **`deferred` is REVISITABLE and about POLICY.** It says "this applies to us, and we are choosing
+  not to take it yet." The code is relevant; a standing decision is what holds it back.
+
+Filing a policy decision as `skip` is the failure this vocabulary exists to prevent. A `skip` note
+says "checked, nothing here" — so when the policy later changes, nobody goes looking, and the work
+is silently erased rather than deferred. Same shape as the per-hunk failure below, one level up.
+
+**The case this was written for: ZScript / the VM.** `docs/zscript-insulation.md` is a *policy* —
+ZandroX must not link the VM — not a statement that the code is absent. So a commit refused under
+it is `deferred`, never `skip`, and its note must carry:
+
+1. `deferred: zscript` as the opening token, so the whole class greps out in one shot.
+2. What it would give us, in a sentence — the thing we are choosing to go without.
+3. Which policy refuses it (`docs/zscript-insulation.md`), so the decision is traceable to a
+   document that can be revised rather than to a verdict that looks like a fact.
+
+Timeline that makes this matter: the VM infrastructure lands 2014-12-20 (`2d87eb0ba`) but stays
+inert — 0–5% of commits touch it for the next 22 months. ZScript the *language* arrives 2016-10-13
+(`433bf4601`), and entanglement then runs 316/387/380 scripting commits a year. Before that wall,
+`deferred` rows cost us almost nothing; after it, the pile of `deferred` rows IS the measure of what
+the policy costs — which is only legible if they were never filed as `skip`.
+
+**`partially-deferred` — for a commit that is BOTH.** A VM commit that also carries real gameplay is
+common (a branch-landing merge, a feature whose author also fixed a bug in passing). Neither
+`deferred` nor `ported` is honest about it: one hides that code landed, the other hides that
+something was refused. So:
+
+- Port the gameplay half. Refuse the VM half.
+- Status `partially-deferred`, `ours` = the sha that carries the gameplay (it holds real code, so
+  the reachability and overlap gates apply to it exactly like `ported`).
+- The note must say **both** halves explicitly — what landed, and what was refused with which part
+  of the VM. A reader who sees only "partially" learns nothing.
+
+The failure this prevents is the per-hunk one again, in its most likely form: filing a mixed commit
+as `deferred` because its bulk is VM, and silently dropping the gameplay riding along. Run `--stat`
+and classify every file before choosing between the three.
+
+`deferred` and `partially-deferred` both count as resolved for progress, exactly like `skip`: they
+are reviewed decisions, not backlog. `deferred`'s `ours` column is `/`; `partially-deferred` carries
+a sha.
+
 ## A skip is decided per HUNK, never per commit
 
 A commit is not a unit of relevance. Its *hunks* are. "This commit is a software-renderer commit"
@@ -220,7 +270,8 @@ merge checkpoint → next batch. Sequential means *verified* sequential, not fas
 - **Merge commits:** no unique content (their changes live in the parents) → skip as topology.
 - **VM / ZScript:** relevance-negative, but DERIVED via the scout tripwire detecting VM symbols — not a
   feature list. Post-2016 DECORATE (`thingdef/*`) is VM-backed → route as scriptified/born-in-ZScript,
-  never a raw cherry-pick.
+  never a raw cherry-pick. **Record these `deferred`, not `skip`** — see the vocabulary section: the
+  code applies to us and a policy is what refuses it.
 - **The float-sim wall (2016–17):** later renderer commits assume `DVector` positions. Caught by the
   fixed64 audit and the strong `zx::Fixed` type at compile time — you detect it from the code, not a
   hardcoded cutoff date.

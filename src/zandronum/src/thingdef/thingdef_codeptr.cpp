@@ -1508,16 +1508,19 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SpawnProjectile)
 //==========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 {
-	ACTION_PARAM_START(6);
+	ACTION_PARAM_START(7);
 	ACTION_PARAM_CLASS(ti, 0);
 	ACTION_PARAM_FIXED(SpawnHeight, 1);
 	ACTION_PARAM_INT(Spawnofs_XY, 2);
 	ACTION_PARAM_ANGLE(Angle, 3);
 	ACTION_PARAM_INT(flags, 4);
 	ACTION_PARAM_ANGLE(pitch, 5);
+	// [rc4l] uzdoom@91bfe4cce: aim at any pointer, not just target. ZX_SpawnProjectile already
+	// took a ptr; A_CustomMissile simply hardcoded AAPTR_TARGET, so this only exposes it.
+	ACTION_PARAM_INT(ptr, 6);
 
 	ZX_SpawnProjectile( self, ti, SpawnHeight, Spawnofs_XY, Angle, flags | CMF_BADPITCH, pitch,
-						AAPTR_TARGET );
+						ptr );
 }
 
 //==========================================================================
@@ -1536,7 +1539,7 @@ enum CBA_Flags
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomBulletAttack)
 {
-	ACTION_PARAM_START(7);
+	ACTION_PARAM_START(8);
 	ACTION_PARAM_ANGLE(Spread_XY, 0);
 	ACTION_PARAM_ANGLE(Spread_Z, 1);
 	ACTION_PARAM_INT(NumBullets, 2);
@@ -1544,6 +1547,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomBulletAttack)
 	ACTION_PARAM_CLASS(pufftype, 4);
 	ACTION_PARAM_FIXED(Range, 5);
 	ACTION_PARAM_INT(Flags, 6);
+	// [rc4l] uzdoom@91bfe4cce: aim at any pointer, not just target.
+	ACTION_PARAM_INT(ptr, 7);
+
+	AActor *ref = COPY_AAPTR(self, ptr);
 
 	if(Range==0) Range=MISSILERANGE;
 
@@ -1552,9 +1559,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomBulletAttack)
 	int bslope = 0;
 	int laflags = (Flags & CBAF_NORANDOMPUFFZ)? LAF_NORANDOMPUFFZ : 0;
 
-	if (self->target || (Flags & CBAF_AIMFACING))
+	if (ref != NULL || (Flags & CBAF_AIMFACING))
 	{
-		if (!(Flags & CBAF_AIMFACING)) A_FaceTarget (self);
+		// [rc4l] uzdoom@d7d022144: face the chosen pointer directly through A_Face, rather than
+		// going via A_FaceTarget which can only ever look at target.
+		if (!(Flags & CBAF_AIMFACING)) A_Face(self, ref);
 		bangle = self->angle;
 
 		if (!pufftype) pufftype = PClass::FindClass(NAME_BulletPuff);
@@ -4027,6 +4036,19 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIf)
 // and take a flags word. Landed as the settled form rather than replaying the intermediate
 // states, since the consolidation rewrites what the first commit adds.
 //
+// [rc4l] uzdoom@5a472e815 -> 2c7a3f2eb -> f2551dced, settled form. A_Damage/Kill/Remove may be
+// narrowed by class OR by species, and either test may be inverted with the EX* flags.
+static bool DoCheckSpecies(AActor *mo, FName species, bool exclude)
+{
+	return (!(species) || mo->Species == NAME_None || (species && ((exclude) ? (mo->Species != species) : (mo->Species == species))));
+}
+
+static bool DoCheckFilter(AActor *mo, const PClass *filter, bool exclude)
+{
+	const PClass *c1 = mo->GetClass();
+	return (!(filter) || (filter == NULL) || (filter && ((exclude) ? (c1 != filter) : (c1 == filter))));
+}
+
 //===========================================================================
 enum KILS
 {
@@ -4034,10 +4056,19 @@ enum KILS
 	KILS_KILLMISSILES = 1 << 1,
 	KILS_NOMONSTERS =	1 << 2,
 	KILS_FOILBUDDHA =	1 << 3,	// [rc4l] uzdoom@a19620968
+	KILS_EXFILTER	=	1 << 4,	// [rc4l] uzdoom@5a472e815
+	KILS_EXSPECIES	=	1 << 5,
+	KILS_EITHER		=	1 << 6,	// [rc4l] uzdoom@f2551dced
 };
 
-static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags)
+static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags, const PClass *filter, FName species)
 {
+	// [rc4l] uzdoom@5a472e815 / f2551dced
+	bool filterpass = DoCheckFilter(killtarget, filter, (flags & KILS_EXFILTER) ? true : false),
+		speciespass = DoCheckSpecies(killtarget, species, (flags & KILS_EXSPECIES) ? true : false);
+	if (!((flags & KILS_EITHER) ? (filterpass || speciespass) : (filterpass && speciespass)))
+		return;
+
 	// [rc4l] uzdoom@a19620968 folds the per-flag P_DamageMobj calls into one accumulated
 	// dmgFlags. THREE DEFECTS in that commit are deliberately not reproduced here: it wrote
 	// `if (KILS_FOILINVUL)` and `if (KILS_FOILBUDDHA)` without `flags &`, so both tested a
@@ -4075,15 +4106,16 @@ static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTarget)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
 	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
 	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
 	// exactly this class. NULL (the default) means no filtering, as before.
-	if (self->target != NULL && (filter == NULL || self->target->GetClass() == filter))
-		DoKill(self->target, self, damagetype, flags);
+	if (self->target != NULL)
+		DoKill(self->target, self, damagetype, flags, filter, species);
 }
 
 //===========================================================================
@@ -4093,15 +4125,16 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTarget)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTracer)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
 	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
 	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
 	// exactly this class. NULL (the default) means no filtering, as before.
-	if (self->tracer != NULL && (filter == NULL || self->tracer->GetClass() == filter))
-		DoKill(self->tracer, self, damagetype, flags);
+	if (self->tracer != NULL)
+		DoKill(self->tracer, self, damagetype, flags, filter, species);
 }
 
 //===========================================================================
@@ -4111,14 +4144,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTracer)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillMaster)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
 	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
-	if (self->master != NULL && (filter == NULL || self->master->GetClass() == filter))
-		DoKill(self->master, self, damagetype, flags);
+	if (self->master != NULL)
+		DoKill(self->master, self, damagetype, flags, filter, species);
 }
 
 //===========================================================================
@@ -4128,19 +4161,19 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillMaster)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillChildren)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
 	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
 	TThinkerIterator<AActor> it;
 	AActor *mo;
 
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
 	while ( (mo = it.Next()) )
 	{
-		if (mo->master == self && (filter == NULL || mo->GetClass() == filter))
-			DoKill(mo, self, damagetype, flags);
+		if (mo->master == self)
+			DoKill(mo, self, damagetype, flags, filter, species);
 	}
 }
 
@@ -4151,10 +4184,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillChildren)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillSiblings)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
 	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
 	TThinkerIterator<AActor> it;
 	AActor *mo;
@@ -4166,13 +4200,12 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillSiblings)
 			return;
 	}
 
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
 	if (self->master != NULL)
 	{
 		while ( (mo = it.Next()) )
 		{
-			if (mo->master == self->master && mo != self && (filter == NULL || mo->GetClass() == filter))
-				DoKill(mo, self, damagetype, flags);
+			if (mo->master == self->master && mo != self)
+				DoKill(mo, self, damagetype, flags, filter, species);
 		}
 	}
 }
@@ -5053,10 +5086,19 @@ enum DMSS
 	DMSS_NOFACTOR			= 8,	// [rc4l] uzdoom@5030832df
 	DMSS_FOILBUDDHA			= 16,	// [rc4l] uzdoom@a19620968
 	DMSS_NOPROTECT			= 32,	// [rc4l] uzdoom@c01d1a800
+	DMSS_EXFILTER			= 64,	// [rc4l] uzdoom@5a472e815: invert the class test
+	DMSS_EXSPECIES			= 128,	// [rc4l] uzdoom@5a472e815: invert the species test
+	DMSS_EITHER				= 256,	// [rc4l] uzdoom@f2551dced: pass if EITHER test matches
 };
 
-static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags)
+static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags, const PClass *filter, FName species)
 {
+	// [rc4l] uzdoom@5a472e815 / f2551dced: narrow by class OR species, either test invertible.
+	bool filterpass = DoCheckFilter(dmgtarget, filter, (flags & DMSS_EXFILTER) ? true : false),
+		speciespass = DoCheckSpecies(dmgtarget, species, (flags & DMSS_EXSPECIES) ? true : false);
+	if (!((flags & DMSS_EITHER) ? (filterpass || speciespass) : (filterpass && speciespass)))
+		return;
+
 	// [rc4l] uzdoom@a19620968 replaces the nested per-flag P_DamageMobj calls with one
 	// accumulated dmgFlags; the old MF2_INVULNERABLE guard goes with them, because
 	// DMG_FOILINVUL is now conditional and P_DamageMobj already honours invulnerability.
@@ -5087,101 +5129,103 @@ static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageTy
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
 {
-	ACTION_PARAM_START(4);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
 	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
 	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
 	// exactly this class. NULL (the default) means no filtering, as before.
-	if (filter == NULL || self->GetClass() == filter)
-		DoDamage(self, self, amount, DamageType, flags);
+	DoDamage(self, self, amount, DamageType, flags, filter, species);
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTarget)
 {
-	ACTION_PARAM_START(4);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
 	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
 	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
 	// exactly this class. NULL (the default) means no filtering, as before.
-	if (self->target != NULL && (filter == NULL || self->target->GetClass() == filter))
-		DoDamage(self->target, self, amount, DamageType, flags);
+	if (self->target != NULL)
+		DoDamage(self->target, self, amount, DamageType, flags, filter, species);
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTracer)
 {
-	ACTION_PARAM_START(4);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
 	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
 	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
 	// exactly this class. NULL (the default) means no filtering, as before.
-	if (self->tracer != NULL && (filter == NULL || self->tracer->GetClass() == filter))
-		DoDamage(self->tracer, self, amount, DamageType, flags);
+	if (self->tracer != NULL)
+		DoDamage(self->tracer, self, amount, DamageType, flags, filter, species);
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageMaster)
 {
-	ACTION_PARAM_START(4);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
 	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
-	if (self->master != NULL && (filter == NULL || self->master->GetClass() == filter))
-		DoDamage(self->master, self, amount, DamageType, flags);
+	if (self->master != NULL)
+		DoDamage(self->master, self, amount, DamageType, flags, filter, species);
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageChildren)
 {
-	ACTION_PARAM_START(4);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
 	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
 	TThinkerIterator<AActor> it;
 	AActor *mo;
 
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
 	while ( (mo = it.Next()) )
 	{
-		if (mo->master == self && (filter == NULL || mo->GetClass() == filter))
-			DoDamage(mo, self, amount, DamageType, flags);
+		if (mo->master == self)
+			DoDamage(mo, self, amount, DamageType, flags, filter, species);
 	}
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSiblings)
 {
-	ACTION_PARAM_START(4);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
 	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
 	TThinkerIterator<AActor> it;
 	AActor *mo;
 
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
 	if (self->master != NULL)
 	{
 		while ( (mo = it.Next()) )
 		{
-			if (mo->master == self->master && mo != self && (filter == NULL || mo->GetClass() == filter))
-				DoDamage(mo, self, amount, DamageType, flags);
+			if (mo->master == self->master && mo != self)
+				DoDamage(mo, self, amount, DamageType, flags, filter, species);
 		}
 	}
 }
@@ -5436,10 +5480,19 @@ enum RMVF_flags
 	RMVF_NOMONSTERS = 1 << 1,
 	RMVF_MISC = 1 << 2,
 	RMVF_EVERYTHING = 1 << 3,
+	RMVF_EXFILTER		= 1 << 4,	// [rc4l] uzdoom@5a472e815
+	RMVF_EXSPECIES		= 1 << 5,
+	RMVF_EITHER			= 1 << 6,	// [rc4l] uzdoom@f2551dced
 };
 
-static void DoRemove(AActor *removetarget, int flags)
+static void DoRemove(AActor *removetarget, int flags, const PClass *filter, FName species)
 {
+	// [rc4l] uzdoom@5a472e815 / f2551dced
+	bool filterpass = DoCheckFilter(removetarget, filter, (flags & RMVF_EXFILTER) ? true : false),
+		speciespass = DoCheckSpecies(removetarget, species, (flags & RMVF_EXSPECIES) ? true : false);
+	if (!((flags & RMVF_EITHER) ? (filterpass || speciespass) : (filterpass && speciespass)))
+		return;
+
 	if ((flags & RMVF_EVERYTHING))
 	{
 		P_RemoveThing(removetarget);
@@ -5465,17 +5518,17 @@ static void DoRemove(AActor *removetarget, int flags)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTarget)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(flags, 0);
 	ACTION_PARAM_CLASS(filter, 1);
+	ACTION_PARAM_NAME(species, 2);
 
 	// [rc4l] uzdoom@3050ea9a6, with its copy-paste bug NOT reproduced: upstream tests
 	// self->master here while removing self->target, which null-derefs whenever master is
 	// set and target is not. Same class of slip as 96c6e7d9b, which they did fix.
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
-	if (self->target != NULL && (filter == NULL || self->target->GetClass() == filter))
+	if (self->target != NULL)
 	{
-		DoRemove(self->target, flags);
+		DoRemove(self->target, flags, filter, species);
 	}
 }
 
@@ -5486,14 +5539,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTarget)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTracer)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(flags, 0);
 	ACTION_PARAM_CLASS(filter, 1);
+	ACTION_PARAM_NAME(species, 2);
 
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
-	if (self->tracer != NULL && (filter == NULL || self->tracer->GetClass() == filter))
+	if (self->tracer != NULL)
 	{
-		DoRemove(self->tracer, flags);
+		DoRemove(self->tracer, flags, filter, species);
 	}
 }
 
@@ -5504,16 +5557,17 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTracer)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveMaster)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(flags, 0);
 	ACTION_PARAM_CLASS(filter, 1);
+	ACTION_PARAM_NAME(species, 2);
 
 	// [rc4l] uzdoom@a19620968 gave this the RMVF_ flags and routed it through DoRemove; that half
 	// had never landed here, so it was still the old parameterless P_RemoveThing form.
 	// uzdoom@e5a41a135 adds the optional class filter; NULL means no filtering.
-	if (self->master != NULL && (filter == NULL || self->master->GetClass() == filter))
+	if (self->master != NULL)
 	{
-		DoRemove(self->master, flags);
+		DoRemove(self->master, flags, filter, species);
 	}
 }
 
@@ -5526,17 +5580,17 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveChildren)
 {
 	TThinkerIterator<AActor> it;
 	AActor *mo;
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_BOOL(removeall,0);
 	ACTION_PARAM_INT(flags, 1);
 	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
 	while ((mo = it.Next()) != NULL)
 	{
-		if (mo->master == self && (mo->health <= 0 || removeall) && (filter == NULL || mo->GetClass() == filter))
+		if (mo->master == self && (mo->health <= 0 || removeall))
 		{
-			DoRemove(mo, flags);
+			DoRemove(mo, flags, filter, species);
 		}
 	}
 }
@@ -5550,19 +5604,19 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveSiblings)
 {
 	TThinkerIterator<AActor> it;
 	AActor *mo;
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_BOOL(removeall,0);
 	ACTION_PARAM_INT(flags, 1);
 	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
 	if (self->master != NULL)
 	{
 		while ((mo = it.Next()) != NULL)
 		{
-			if (mo->master == self->master && mo != self && (mo->health <= 0 || removeall) && (filter == NULL || mo->GetClass() == filter))
+			if (mo->master == self->master && mo != self && (mo->health <= 0 || removeall))
 			{
-				DoRemove(mo, flags);
+				DoRemove(mo, flags, filter, species);
 			}
 		}
 	}
@@ -5575,17 +5629,17 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveSiblings)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Remove)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_INT(removee, 0);
 	ACTION_PARAM_INT(flags, 1);
 	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
 	AActor *reference = COPY_AAPTR(self, removee);
 
-	// [rc4l] uzdoom@e5a41a135: optional class filter; NULL means no filtering.
-	if (reference != NULL && (filter == NULL || reference->GetClass() == filter))
+	if (reference != NULL)
 	{
-		DoRemove(reference, flags);
+		DoRemove(reference, flags, filter, species);
 	}
 }
 
