@@ -1133,18 +1133,25 @@ void CLIENT_GetPackets( void )
 					}
 					break;
 
+				// [rc4l] Each of the three below is a definitive answer -- the query arrived and was
+				// refused -- so the outstanding request ends here. Leaving it open made the retry
+				// clock keep firing at a registry that had already said no, which in the
+				// REQUESTIGNORED case is what puts us on its flood queue.
 				case SRSC_REQUESTIGNORED:
 
+					BROWSER_ServerRegistryRefusedQuery( );
 					Printf( "Refresh request ignored. Please wait 10 seconds before refreshing the list again.\n" );
 					break;
 
 				case SRSC_IPISBANNED:
 
+					BROWSER_ServerRegistryRefusedQuery( );
 					Printf( "You are banned from the server registry.\n" );
 					break;
 
 				case SRSC_WRONGVERSION:
 
+					BROWSER_ServerRegistryRefusedQuery( );
 					Printf( "The server registry is using a different version of the launcher-to-server-registry protocol.\n" );
 					break;
 

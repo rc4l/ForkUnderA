@@ -97,9 +97,17 @@ static	bool			g_bWaitingForServerRegistryResponse;
 static	ULONG			g_ulServerRegistryQuerySentMS;
 static	int				g_lServerRegistryAttempts;
 
-// Three tries about a second and a half apart: long enough for a slow transatlantic round trip,
-// short enough that a genuinely dead server registry gives up while the player is still looking.
-static const ULONG		SERVERREGISTRY_QUERY_TIMEOUT_MS = 1500;
+// [rc4l] Four seconds, not the second and a half this started as.
+//
+// A server registry flood-blocks a repeat launcher challenge from the same address for 3 seconds and
+// will not resend a list to it for 10. Retrying inside that window cannot succeed by construction:
+// the best case is a REQUESTIGNORED reply, and the actual effect is putting ourselves on its flood
+// queue. Retries are only useful when the registry never heard us -- and in that case no rate limit
+// applies, so waiting out its window costs nothing.
+//
+// Retrying faster than the thing you are retrying against is willing to answer is not persistence,
+// it is a self-inflicted denial of service.
+static const ULONG		SERVERREGISTRY_QUERY_TIMEOUT_MS = 4000;
 static const int		SERVERREGISTRY_QUERY_MAX_ATTEMPTS = 3;
 
 // [CW] The amount of teams sent to us.
@@ -950,6 +958,21 @@ void BROWSER_ServerRegistryTick( void )
 	}
 	Printf( "No response from %s after %d tries. The server list may be incomplete.\n",
 		names.GetChars( ), SERVERREGISTRY_QUERY_MAX_ATTEMPTS );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Stop retrying: the server registry answered, just not with a list.
+//
+// REQUESTIGNORED, IPISBANNED and WRONGVERSION are all definitive -- the packet arrived, was
+// understood, and was refused. Retrying can only produce the same refusal, and in the
+// REQUESTIGNORED case it actively makes things worse by landing us on the registry's flood queue.
+//
+// Before this, those three replies only printed a message and left the query outstanding, so the
+// retry loop kept firing at a registry that had already said no.
+void BROWSER_ServerRegistryRefusedQuery( void )
+{
+	g_bWaitingForServerRegistryResponse = false;
 }
 
 //*****************************************************************************
