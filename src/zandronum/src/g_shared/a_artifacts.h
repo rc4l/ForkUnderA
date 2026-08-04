@@ -178,6 +178,7 @@ protected:
 	void EndEffect ();
 	void PositionAccuracy ();
 	void Travelled ();
+	bool HandlePickup(AInventory *item);	// [rc4l] uzdoom@9402bcf6c
 };
 
 class APowerFrightener : public APowerup
