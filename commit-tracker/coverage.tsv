@@ -4679,10 +4679,10 @@ be647dc7b267e6ee75018218235ca0566f0cd8d7	2016-09-10T22:45:40Z	Merge branch 'mast
 a0b6a0275c5c521455e843709153ed1d7270435b	2016-09-11T09:09:40Z	Fix random texture sampling bug	pending		/
 d3d8180f578924b275defd937e10cd3cb370922e	2016-09-12T11:04:36Z	Resize framebuffer in windowed mode to match the client area	pending		/
 b003c47e3e02bed94b76757a512b195b1d7d70c8	2016-09-12T11:37:05Z	Improve CheckRatio to always return the closest ratio	pending		/
-5720634045b0812bc838eb4671a4039917582a94	2016-09-12T11:59:01Z	Add ActiveRatio to be used where CheckRatio is used today	pending		/
-6d4e4dad25ffa3978f5bf54d0fc60dd59b29d119	2016-09-12T12:37:10Z	BaseRatioSizes replacement functions	pending		/
-5b438d220f918e4d5b604e970f0f45f96963e8d1	2016-09-12T13:51:50Z	Switch from ratio enum to float	pending		/
-4e58e6626cf0372a3fbca5649a66aa7e2441554c	2016-09-12T14:05:42Z	Fix buffer overrun in CommandAspectRatio for 21:9 aspect ratio	pending		/
+5720634045b0812bc838eb4671a4039917582a94	2016-09-12T11:59:01Z	Add ActiveRatio to be used where CheckRatio is used today	ported	ActiveRatio + ActiveFakeRatio added alongside CheckRatio; our vid_aspect guard stays 1-5 (no 21:9 mode) though the forcedRatioTypes table is carried whole	21478520227066578adc2c35d935e62d2933ae71
+6d4e4dad25ffa3978f5bf54d0fc60dd59b29d119	2016-09-12T12:37:10Z	BaseRatioSizes replacement functions	ported	continuous-aspect replacements for the BaseRatioSizes columns; AspectPspriteOffset uses double(FRACUNIT) since ours is a zx::Fixed	fc95a30eaf1a5ba7d4767e0c1d4c6ae6807d8f85
+5b438d220f918e4d5b604e970f0f45f96963e8d1	2016-09-12T13:51:50Z	Switch from ratio enum to float	adapted	consumers switched to float; r_swrenderer/r_things hunks N/A (no software renderer); gl_scene + gl_weapon bucket-indexed tables have no upstream counterpart and were replaced with computed values; ultrawide->16:9 clamp adopted, which we lacked; CheckRatio kept for vid_listmodes/videomenu	6ad974c79dd371ed606ccb50d62deac303b37b2c
+4e58e6626cf0372a3fbca5649a66aa7e2441554c	2016-09-12T14:05:42Z	Fix buffer overrun in CommandAspectRatio for 21:9 aspect ratio	ported	nearest-ratio search replaces the out-of-range ratioMap index; fabs not abs, or the integer overload truncates every distance to zero	b6b8e66bda743a35f8b28593df609bbec64a9275
 01b1efe9eec9877a409d14f749b9934a10224a58	2016-09-12T16:44:04Z	Switch from abs to fabs	pending		/
 7070bded7758f50117e0302e5dabf90484b320f0	2016-09-12T18:03:21Z	Merge remote-tracking branch 'origin/aspectratio' into aspectratio_gzdoom	pending		/
 7bdbaaff22fecb244f2de8fedba45d198650d5e8	2016-09-12T18:29:26Z	GL aspect ratio adjustments	pending		/
