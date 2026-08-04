@@ -619,9 +619,10 @@ enum EDmgFlags
 	DMG_NO_FACTOR = 16,
 	DMG_PLAYERATTACK = 32,
 	DMG_FOILINVUL = 64,
-	// [MGOOOOOO] 128/256/512 are deliberately left free: they are DMG_FOILBUDDHA, DMG_NO_PROTECT
-	// and DMG_USEANGLE upstream. ZandroX has none of those yet, and reserving their values keeps
-	// a future port numerically identical to GZDoom/UZDoom instead of silently colliding.
+	// [rc4l] uzdoom@d1dc6fd59 and c01d1a800: two of the three reserved values are now used, at the
+	// numbers they were reserved for. 512 stays free for DMG_USEANGLE.
+	DMG_FOILBUDDHA = 128,
+	DMG_NO_PROTECT = 256,
 	DMG_NO_PAIN = 1024,		// skip the victim's pain state entirely (uzdoom p_local.h)
 };
 

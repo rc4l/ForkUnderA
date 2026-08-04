@@ -480,12 +480,15 @@ native int testglobalvar;
 const int KILS_FOILINVUL =		1;
 const int KILS_KILLMISSILES =	2;
 const int KILS_NOMONSTERS =		4;
+const int KILS_FOILBUDDHA =		8;
 
 // Flags for A_Damage (Self/Target/Tracer/Master/Children/Siblings) series
 const int DMSS_FOILINVUL =		1;
 const int DMSS_AFFECTARMOR =	2;
 const int DMSS_KILL =			4;
 const int DMSS_NOFACTOR =		8;
+const int DMSS_FOILBUDDHA =		16;
+const int DMSS_NOPROTECT =		32;
 
 // Flags for A_Remove* series
 const int RMVF_MISSILES =		1;

@@ -189,6 +189,15 @@ protected:
 	void EndEffect ();
 };
 
+// [rc4l] uzdoom@313245dd7
+class APowerBuddha : public APowerup
+{
+	DECLARE_CLASS (APowerBuddha, APowerup)
+protected:
+	void InitEffect ();
+	void EndEffect ();
+};
+
 class APowerTimeFreezer : public APowerup
 {
 	DECLARE_CLASS( APowerTimeFreezer, APowerup )

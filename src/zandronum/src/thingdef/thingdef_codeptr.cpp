@@ -3993,16 +3993,30 @@ enum KILS
 	KILS_FOILINVUL =	1 << 0,
 	KILS_KILLMISSILES = 1 << 1,
 	KILS_NOMONSTERS =	1 << 2,
+	KILS_FOILBUDDHA =	1 << 3,	// [rc4l] uzdoom@a19620968
 };
 
 static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags)
 {
+	// [rc4l] uzdoom@a19620968 folds the per-flag P_DamageMobj calls into one accumulated
+	// dmgFlags. THREE DEFECTS in that commit are deliberately not reproduced here: it wrote
+	// `if (KILS_FOILINVUL)` and `if (KILS_FOILBUDDHA)` without `flags &`, so both tested a
+	// non-zero constant and A_Kill* ALWAYS foiled invulnerability and buddha regardless of
+	// what the modder passed; and it checked `flags2 & MF7_BUDDHA`, the wrong flags word.
+	int dmgFlags = DMG_NO_ARMOR + DMG_NO_FACTOR;
+
+	if (flags & KILS_FOILINVUL)
+		dmgFlags += DMG_FOILINVUL;
+	if (flags & KILS_FOILBUDDHA)
+		dmgFlags += DMG_FOILBUDDHA;
+
 	if ((killtarget->flags & MF_MISSILE) && (flags & KILS_KILLMISSILES))
 	{
 		//[MC] Now that missiles can set masters, lets put in a check to properly destroy projectiles. BUT FIRST! New feature~!
 		//Check to see if it's invulnerable. Disregarded if foilinvul is on, but never works on a missile with NODAMAGE
 		//since that's the whole point of it.
-		if ((!(killtarget->flags2 & MF2_INVULNERABLE) || (flags & KILS_FOILINVUL)) && !(killtarget->flags5 & MF5_NODAMAGE))
+		if ((!(killtarget->flags2 & MF2_INVULNERABLE) || (flags & KILS_FOILINVUL)) &&
+			(!(killtarget->flags7 & MF7_BUDDHA) || (flags & KILS_FOILBUDDHA)) && !(killtarget->flags5 & MF5_NODAMAGE))
 		{
 			// [rc4l] uzdoom@47029a3ef: explode the actor being killed, not the caller's target.
 			P_ExplodeMissile(killtarget, NULL, NULL);
@@ -4010,14 +4024,7 @@ static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags
 	}
 	if (!(flags & KILS_NOMONSTERS))
 	{
-		if (flags & KILS_FOILINVUL)
-		{
-			P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR | DMG_FOILINVUL);
-		}
-		else
-		{
-			P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, DMG_NO_ARMOR | DMG_NO_FACTOR);
-		}
+		P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, dmgFlags);
 	}
 }
 
@@ -4975,43 +4982,32 @@ enum DMSS
 	DMSS_AFFECTARMOR		= 2,
 	DMSS_KILL				= 4,
 	DMSS_NOFACTOR			= 8,	// [rc4l] uzdoom@5030832df
+	DMSS_FOILBUDDHA			= 16,	// [rc4l] uzdoom@a19620968
+	DMSS_NOPROTECT			= 32,	// [rc4l] uzdoom@c01d1a800
 };
 
 static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags)
 {
-	if ((amount > 0) || (flags & DMSS_KILL))
-	{
-		if (!(dmgtarget->flags2 & MF2_INVULNERABLE) || (flags & DMSS_FOILINVUL))
-		{
-			if (flags & DMSS_KILL)
-			{
-				P_DamageMobj(dmgtarget, self, self, dmgtarget->health, DamageType, DMG_NO_FACTOR | DMG_NO_ARMOR | DMG_FOILINVUL);
-			}
-			if (flags & DMSS_AFFECTARMOR)
-			{
-				if (flags & DMSS_NOFACTOR)
-				{
-					P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL | DMG_NO_FACTOR);
-				}
-				else
-				{
-					P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL);
-				}
-			}
-			else
-			{
-				if (flags & DMSS_NOFACTOR)
-				{
-					P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL | DMG_NO_ARMOR | DMG_NO_FACTOR);
-				}
-				//[MC] DMG_FOILINVUL is needed for making the damage occur on the actor.
-				else
-				{
-					P_DamageMobj(dmgtarget, self, self, amount, DamageType, DMG_FOILINVUL | DMG_NO_ARMOR);
-				}
-			}
-		}
-	}
+	// [rc4l] uzdoom@a19620968 replaces the nested per-flag P_DamageMobj calls with one
+	// accumulated dmgFlags; the old MF2_INVULNERABLE guard goes with them, because
+	// DMG_FOILINVUL is now conditional and P_DamageMobj already honours invulnerability.
+	int dmgFlags = 0;
+	if (flags & DMSS_FOILINVUL)
+		dmgFlags += DMG_FOILINVUL;
+	if (flags & DMSS_FOILBUDDHA)
+		dmgFlags += DMG_FOILBUDDHA;
+	if ((flags & DMSS_KILL) || (flags & DMSS_NOFACTOR)) //Kill implies NoFactor
+		dmgFlags += DMG_NO_FACTOR;
+	if (!(flags & DMSS_AFFECTARMOR) || (flags & DMSS_KILL)) //Kill overrides AffectArmor
+		dmgFlags += DMG_NO_ARMOR;
+	if (flags & DMSS_KILL) //Kill adds the value of the damage done to it. Allows for more controlled extreme death types.
+		amount += dmgtarget->health;
+	if (flags & DMSS_NOPROTECT) //Ignore PowerProtection.
+		dmgFlags += DMG_NO_PROTECT;
+
+	if (amount > 0)
+		P_DamageMobj(dmgtarget, self, self, amount, DamageType, dmgFlags); //Should wind up passing them through just fine.
+
 	else if (amount < 0)
 	{
 		amount = -amount;
