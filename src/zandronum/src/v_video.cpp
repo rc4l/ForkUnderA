@@ -1743,10 +1743,18 @@ CUSTOM_CVAR (Int, vid_aspect, 0, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
 // 2: 16:10
 // 3: 17:10
 // 4: 5:4
-int CheckRatio (int width, int height, int *trueratio)
+// [rc4l] Helper for ActiveRatio and CheckRatio. Returns the forced ratio type, or -1 if none.
+// Ported from UZDoom 5720634045b0 ("Add ActiveRatio to be used where CheckRatio is used today").
+//
+// Extracted verbatim out of CheckRatio so both the old bucket API and the new float one honour
+// vid_aspect / vid_nowidescreen identically -- two copies of this would drift the moment either was
+// touched.
+//
+// Our vid_aspect tops out at 5 where upstream's allows 6 (21:9); left as-is, since adding a ratio the
+// menu cannot select is a separate change.
+int ActiveFakeRatio(int width, int height)
 {
 	int fakeratio = -1;
-	int ratio;
 
 	if ((vid_aspect >= 1) && (vid_aspect <= 5))
 	{
@@ -1772,6 +1780,42 @@ int CheckRatio (int width, int height, int *trueratio)
 			fakeratio = (height * 5/4 == width) ? 4 : 0;
 		}
 	}
+	return fakeratio;
+}
+
+// [rc4l] Active screen ratio based on cvars and size. Ported from UZDoom 5720634045b0.
+//
+// This is the whole point of the port: a CONTINUOUS ratio rather than the nearest of five buckets.
+// CheckRatio below snaps to a bucket within +/-10 pixels and calls everything else 4:3, so a window
+// dragged to an arbitrary size gets its contents stretched -- correct only when the size happens to
+// land near a canonical ratio.
+float ActiveRatio(int width, int height, float *trueratio)
+{
+	static float forcedRatioTypes[] =
+	{
+		4 / 3.0f,
+		16 / 9.0f,
+		16 / 10.0f,
+		17 / 10.0f,
+		5 / 4.0f,
+		17 / 10.0f,
+		21 / 9.0f
+	};
+
+	float ratio = width / (float)height;
+	int fakeratio = ActiveFakeRatio(width, height);
+
+	if (trueratio)
+		*trueratio = ratio;
+	return (fakeratio != -1) ? forcedRatioTypes[fakeratio] : ratio;
+}
+
+int CheckRatio (int width, int height, int *trueratio)
+{
+	int ratio;
+
+	int fakeratio = ActiveFakeRatio(width, height);
+
 	// If the size is approximately 16:9, consider it so.
 	if (abs (height * 16/9 - width) < 10)
 	{

@@ -515,6 +515,11 @@ extern "C" void ASM_PatchPitch (void);
 
 int CheckRatio (int width, int height, int *trueratio=NULL);
 static inline int CheckRatio (double width, double height) { return CheckRatio(int(width), int(height)); }
+// [rc4l] Ported from UZDoom 5720634045b0. Added alongside CheckRatio rather than replacing it, as
+// upstream did -- the switch of consumers is the next commit.
+int ActiveFakeRatio (int width, int height);
+float ActiveRatio (int width, int height, float *trueratio = NULL);
+static inline double ActiveRatio (double width, double height) { return ActiveRatio(int(width), int(height)); }
 extern const int BaseRatioSizes[5][4];
 
 extern int currentrenderer;
