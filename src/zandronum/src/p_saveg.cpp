@@ -685,7 +685,7 @@ void P_SerializePolyobjs (FArchive &arc)
 				I_Error ("UnarchivePolyobjs: Invalid polyobj tag");
 			}
 			arc << angle;
-			po->RotatePolyobj (angle);
+			po->RotatePolyobj (angle, true);	// [rc4l] uzdoom@6fd70ff32: fromsave -- do not damage or be blocked
 			arc << deltaX << deltaY << po->interpolation;
 			deltaX -= po->StartSpot.x;
 			deltaY -= po->StartSpot.y;
