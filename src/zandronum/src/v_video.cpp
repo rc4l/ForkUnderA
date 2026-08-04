@@ -1483,20 +1483,23 @@ bool V_DoModeSetup (int width, int height, int bits)
 
 void V_CalcCleanFacs (int designwidth, int designheight, int realwidth, int realheight, int *cleanx, int *cleany, int *_cx1, int *_cx2)
 {
-	int ratio;
+	float ratio;
 	int cwidth;
 	int cheight;
 	int cx1, cy1, cx2, cy2;
 
-	ratio = CheckRatio(realwidth, realheight);
-	if (ratio & 4)
+	// [rc4l] Missed in the enum-to-float switch: this still classified the screen into a bucket and
+	// indexed the old table, so the 2D scale factors every menu and HUD element uses were computed
+	// for the nearest canonical ratio rather than the actual one.
+	ratio = ActiveRatio(realwidth, realheight);
+	if (AspectTallerThanWide(ratio))
 	{
 		cwidth = realwidth;
-		cheight = realheight * BaseRatioSizes[ratio][3] / 48;
+		cheight = realheight * AspectMultiplier(ratio) / 48;
 	}
 	else
 	{
-		cwidth = realwidth * BaseRatioSizes[ratio][3] / 48;
+		cwidth = realwidth * AspectMultiplier(ratio) / 48;
 		cheight = realheight;
 	}
 	// Use whichever pair of cwidth/cheight or width/height that produces less difference
