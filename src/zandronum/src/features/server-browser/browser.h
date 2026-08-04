@@ -60,12 +60,27 @@
 // Maximum number of servers listed in the browser.
 #define		MAX_BROWSER_SERVERS		1024
 
+// [rc4l] No usable country for this server: it sent no code, or sent one we could not place. Drawing
+// treats it as "no flag, no text" rather than guessing.
+#define		COUNTRY_INDEX_UNKNOWN	0xFFFFFFFF
+
 //*****************************************************************************
+// [rc4l] The states below AS_ACTIVE are ours. Existing values keep their numbers so nothing that
+// compares against AS_ACTIVE shifts meaning.
+//
+// Three states could not describe what a browser needs to say. "Never asked", "asked and waiting",
+// "asked and it never answered" and "answered with nonsense" all collapsed into not-AS_ACTIVE, so a
+// server that failed was indistinguishable from one still loading -- and the UI could only show
+// nothing, with no way to explain itself. Doomseeker models the same distinctions (RESPONSE_TIMEOUT
+// vs RESPONSE_BAD vs still refreshing) for exactly this reason.
 enum
 {
-	AS_INACTIVE,
-	AS_WAITINGFORREPLY,
-	AS_ACTIVE,
+	AS_INACTIVE,			// never asked, or cleared
+	AS_WAITINGFORREPLY,		// asked, still within the reply window
+	AS_ACTIVE,				// answered, data is good
+
+	AS_TIMEDOUT,			// asked, gave up waiting -- listed but unreachable
+	AS_BADRESPONSE,			// answered, but we could not make sense of it
 
 	NUM_ACTIVESTATES
 };
@@ -114,6 +129,13 @@ typedef struct
 	// Mapname of the level the server is currently on.
 	FString			Mapname;
 
+	// [rc4l] Alpha-3 country code as the server reported it ("USA", "GBR", "LAN"), and the GeoIP id
+	// that indexes the CTRYFLAG sheet. The wire carries the code; the index is resolved once on
+	// receipt so drawing never has to do a lookup. Index is COUNTRY_INDEX_UNKNOWN when we could not
+	// place the code, which is normal -- an old server may not send one at all.
+	FString			CountryCode;
+	ULONG			ulCountryIndex;
+
 	// Maximum number of players that can join the server.
 	LONG			lMaxClients;
 
@@ -132,6 +154,11 @@ typedef struct
 
 	// Player's playing on the server.
 	SERVERPLAYER_t	Players[MAXPLAYERS];
+
+	// [rc4l] Did the last response actually carry per-player data? We always ask for it, but a server
+	// is free not to send it -- and without it the bot flags in Players[] are stale from whatever was
+	// there before, so "count the humans" would be counting rubbish.
+	bool			bHasPlayerData;
 
 	// Version of the server.
 	FString			Version;
@@ -170,14 +197,37 @@ const char		*BROWSER_GetPWADName( ULONG ulServer, ULONG ulWadIdx );
 const char		*BROWSER_GetIWADName( ULONG ulServer );
 GAMEMODE_e		BROWSER_GetGameMode( ULONG ulServer );
 LONG			BROWSER_GetNumPlayers( ULONG ulServer );
+// [rc4l] Humans only -- BROWSER_GetNumPlayers() counts bots, and a browser that advertises "8/8" for
+// a server holding seven bots and one person is lying about the only number a player reads it for.
+// SQF_PLAYERDATA is already requested, so the bot flag is there for the asking.
+LONG			BROWSER_GetNumHumanPlayers( ULONG ulServer );
 const char		*BROWSER_GetPlayerName( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerFragcount( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerPing( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPing( ULONG ulServer );
 const char		*BROWSER_GetVersion( ULONG ulServer );
+// [rc4l] Alpha-3 code ("USA"), or "" when the server sent none. Always safe to draw as text, which is
+// what the browser falls back to when the CTRYFLAG sheet is absent from the game data.
+const char		*BROWSER_GetCountryCode( ULONG ulServer );
+// [rc4l] Index into the CTRYFLAG sheet, or COUNTRY_INDEX_UNKNOWN.
+ULONG			BROWSER_GetCountryIndex( ULONG ulServer );
 const char		*BROWSER_GetGameModeName( ULONG ulServer ); // [SB]
 const char		*BROWSER_GetGameModeShortName( ULONG ulServer ); // [SB]
+
+// [rc4l] The raw state, for callers that need to tell the failure modes apart rather than just
+// "drawable or not". BROWSER_IsActive() answers the narrower question.
+ULONG			BROWSER_GetActiveState( ULONG ulServer );
+
+// [rc4l] Age out servers that were asked and never answered. Call once per tic while a browser is
+// open. Without this they sit in AS_WAITINGFORREPLY forever and the UI can never stop loading.
+void			BROWSER_QueryTick( void );
+
+// [rc4l] Which server the player has picked. Lives here rather than inside a menu so that more than
+// one menu can share it -- the join command reads it, and previously it was a file-static that only
+// the old browser could reach.
+void			BROWSER_SetSelectedServer( LONG lServer );
+LONG			BROWSER_GetSelectedServer( void );
 
 void			BROWSER_ClearServerList( void );
 void			BROWSER_DeactivateAllServers( void );

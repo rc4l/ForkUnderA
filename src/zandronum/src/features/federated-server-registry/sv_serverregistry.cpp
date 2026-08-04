@@ -577,9 +577,9 @@ void SERVER_SERVERREGISTRY_Construct( void )
 #ifndef _WIN32
 	struct utsname u_name;
 	if ( uname(&u_name) < 0 )
-		g_VersionWithOS.Format ( "%s", GetVersionStringRev() ); //error, no data
+		g_VersionWithOS.Format ( "%s", GetFuaVersionTag() ); //error, no data
 	else
-		g_VersionWithOS.Format ( "%s on %s %s", GetVersionStringRev(), u_name.sysname, u_name.release ); // "Linux 2.6.32.5-amd64" or "FreeBSD 9.0-RELEASE" etc
+		g_VersionWithOS.Format ( "%s on %s %s", GetFuaVersionTag(), u_name.sysname, u_name.release ); // "Linux 2.6.32.5-amd64" or "FreeBSD 9.0-RELEASE" etc
 #endif
 
 	// [TP] Which wads will we broadcast as optional to launchers?
