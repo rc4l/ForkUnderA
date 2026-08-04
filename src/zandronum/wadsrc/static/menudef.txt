@@ -37,7 +37,15 @@ DEFAULTLISTMENU
 
 LISTMENU "MainMenu"
 {
-	Class "UpdateMainMenu"	// [rc4l] adds the bottom-right "update available" notice (listmenu.cpp)
+	// [rc4l] Deliberately NO `Class` here, even though the main menu does use a subclass
+	// (DUpdateMainMenu, for the bottom-right "update available" notice). menu.cpp picks that class up
+	// by descriptor name instead.
+	//
+	// Declaring it here breaks every mod that replaces the main menu. ReplaceMenu() refuses an
+	// override whose class does not match the existing one (CheckCompatible, menudef.cpp), and a mod
+	// writing a plain `ListMenu "MainMenu"` supplies no class -- so its menu is discarded with
+	// "Tried to replace menu 'MainMenu' with a menu of different type" and the game silently keeps
+	// ours. Reported from the wild against v0.1.30; the line was added in e941248.
 	IfGame(Doom, Chex)
 	{
 		StaticPatch 94, 2, "M_DOOM"
