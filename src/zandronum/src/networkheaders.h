@@ -44,7 +44,7 @@
 // Filename: networkshared.h
 //
 // Description: Contains network related code shared between
-// Skulltag and the master server.
+// Skulltag and the server registry.
 //
 //-----------------------------------------------------------------------------
 

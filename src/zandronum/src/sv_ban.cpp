@@ -197,7 +197,7 @@ void SERVERBAN_Tick( void )
 //
 bool SERVERBAN_IsIPBanned( const IPStringArray &Address )
 {
-	// Is this address banned on the master server?
+	// Is this address banned on the server registry?
 	if ( SERVERBAN_IsIPServerRegistryBanned( Address ))
 		return true;
 

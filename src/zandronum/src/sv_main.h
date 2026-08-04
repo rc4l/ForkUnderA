@@ -719,7 +719,7 @@ void		SERVER_SERVERREGISTRY_Tick( void );
 void		SERVER_SERVERREGISTRY_Broadcast( void );
 void		SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG ulTime, ULONG ulFlags2, bool bBroadcasting, bool bSegmentedResponse );
 const char	*SERVER_SERVERREGISTRY_GetGameName( void );
-NETADDRESS_s SERVER_SERVERREGISTRY_GetAddress( void );
+bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address );
 void		SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream );
 void		SERVER_SERVERREGISTRY_SendBanlistReceipt( void );
 

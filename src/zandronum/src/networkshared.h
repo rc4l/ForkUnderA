@@ -43,7 +43,7 @@
 //
 // Filename: networkshared.h
 //
-// Description: Contains shared network code shared between Skulltag and its satellites (master server, statsmaker, rcon utility, etc).
+// Description: Contains shared network code shared between Skulltag and its satellites (server registry, statsmaker, rcon utility, etc).
 //
 //-----------------------------------------------------------------------------
 
@@ -97,17 +97,17 @@ enum
 //*****************************************************************************
 enum
 {
-	// Server is letting master server of its existence.
+	// Server is letting server registry of its existence.
 	SERVER_SERVERREGISTRY_CHALLENGE = 5660020,
 
 	// [RC] This is no longer used.
 	/*
-		// Server is letting master server of its existence, along with sending an IP the master server
+		// Server is letting server registry of its existence, along with sending an IP the server registry
 		// should use for this server.
 		SERVER_SERVERREGISTRY_CHALLENGE_OVERRIDE = 5660021,
 	*/
 
-	// Server is sending some statistics to the master server.
+	// Server is sending some statistics to the server registry.
 	SERVER_SERVERREGISTRY_STATISTICS = 5660022,
 
 	// Server is sending its info to the launcher.
@@ -119,16 +119,16 @@ enum
 	// Server is telling a launcher that his IP is banned from the server.
 	SERVER_LAUNCHER_BANNED,
 
-	// Client is trying to create a new account with the master server.
+	// Client is trying to create a new account with the server registry.
 	CLIENT_SERVERREGISTRY_NEWACCOUNT,
 
-	// Client is trying to log in with the master server.
+	// Client is trying to log in with the server registry.
 	CLIENT_SERVERREGISTRY_LOGIN,
 
-	// [BB] Launcher is querying the master server for a full server list, possibly split into several packets.
+	// [BB] Launcher is querying the server registry for a full server list, possibly split into several packets.
 	LAUNCHER_SERVERREGISTRY_CHALLENGE,
 
-	// [BB] Server is answering a RegistryBanlistVerificationString verification request.
+	// [BB] Server is answering a ServerRegistryBanlistVerificationString verification request.
 	SERVER_SERVERREGISTRY_VERIFICATION,
 
 	// [BB] Server is acknowledging the receipt of a ban list.
@@ -139,21 +139,21 @@ enum
 	SERVER_LAUNCHER_CHALLENGE_SEGMENTED = 5660032,
 };
 
-// [BB] Protocol version of the master server, currently only used in conjunction with LAUNCHER_SERVERREGISTRY_CHALLENGE.
+// [BB] Protocol version of the server registry, currently only used in conjunction with LAUNCHER_SERVERREGISTRY_CHALLENGE.
 #define SERVERREGISTRY_VERSION		2
 
-// Launcher is querying the server, or master server.
+// Launcher is querying the server, or server registry.
 #define	LAUNCHER_SERVER_CHALLENGE	199
 
 enum
 {
-	// Master server is sending its banlist to a server.
+	// Server registry is sending its banlist to a server.
 	SERVERREGISTRY_BANLIST = 205,
 
-	// [BB] Master is asking the server to verify its RegistryBanlistVerificationString.
+	// [BB] Server registry is asking the server to verify its ServerRegistryBanlistVerificationString.
 	SERVERREGISTRY_VERIFICATION,
 
-	// [BB] Master server is sending a part of its banlist to a server.
+	// [BB] Server registry is sending a part of its banlist to a server.
 	SERVERREGISTRY_BANLISTPART,
 };
 

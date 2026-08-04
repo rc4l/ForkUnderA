@@ -370,6 +370,11 @@ public:
 	{
 		Super::Ticker();
 
+		// [rc4l] Before anything else: retry or time out the server registry query. This must run
+		// even after refreshTicker has expired, otherwise a query that got no reply would leave the
+		// browser permanently refusing to refresh.
+		BROWSER_ServerRegistryTick();
+
 		// [BB] Query the servers that didn't respond yet a couple of times.
 
 		if ( refreshTicker >= 10 * TICRATE )
@@ -399,7 +404,7 @@ IMPLEMENT_CLASS( DBrowserMenu )
 //
 void M_RefreshServers( void )
 {
-	// Don't do anything if we're still waiting for a response from the master server.
+	// Don't do anything if we're still waiting for a response from the server registry.
 	if ( BROWSER_WaitingForServerRegistryResponse( ))
 		return;
 
@@ -409,7 +414,7 @@ void M_RefreshServers( void )
 	// First, clear the existing server list.
 	BROWSER_ClearServerList( );
 
-	// Then, query the master server.
+	// Then, query the server registry.
 	BROWSER_QueryServerRegistry( );
 }
 
