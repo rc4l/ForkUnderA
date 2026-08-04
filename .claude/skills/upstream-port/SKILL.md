@@ -93,6 +93,21 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
    pushes alone skip the build jobs). MSVC flags are spelled per-compiler; MSVC also catches real
    ODR bugs ELF/Mach-O swallow — same-name classes get a `Legacy` prefix rename (precedent:
    `LegacyFRenderState`, `LegacyFlatVertexBuffer`).
+
+   **Build ALL targets, not the one you are iterating on.** `zdoom` is not the project. Several
+   targets compile the same `src/` files with their own source lists — `zandrox-server-registry`
+   compiles `gitinfo.cpp`, the test binaries compile every `*_compute.cpp` — so a function added to a
+   shared file can link fine in the engine and fail in a sibling target that never listed the unit
+   defining it. Iterating with `cmake --build <dir> --target zdoom` will not notice, however many
+   times you run it: the sibling simply never relinks.
+
+   This is a distinct trap from the stale-pk3 one in step 6. That one ships the wrong artifact; this
+   one never builds the artifact at all, so "it compiles" stays true and stays misleading. It has
+   already reached CI once, as three red platforms on a branch verified green locally.
+
+   Before calling a branch done, build the default target (all of them) at least once — on Windows
+   `cmake --build build-win --config Release` with no `--target`. If you have only ever built one
+   target since a shared file changed, you have not verified the build.
 5. **Tests**: `cmake --build build-tests && ctest` all green; new computation units at 100%
    coverage (`bash tests/coverage.sh --auto`).
 6. **Manual E2E by the user is the verification standard** (their eye has overruled screenshot
