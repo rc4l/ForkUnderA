@@ -433,12 +433,23 @@ do_stop:
 					}
 					else 
 					{
+						// [rc4l] uzdoom@320fb9aec -- accept an EMPTY parameter list on a function that
+						// takes none, so DECORATE written for later GZDoom ("A_Scream()") parses here.
+						// Passing an actual parameter is still an error. Upstream made this change inside
+						// ParseFunctionParameters(), which our pre-VM parser does not have; the parsing
+						// is inline here, so the same rule is expressed against the scanner directly.
 						sc.MustGetString();
 						if (sc.Compare("("))
 						{
-							sc.ScriptError("You cannot pass parameters to '%s'\n", funcname.GetChars());
+							if (!sc.CheckString(")"))
+							{
+								sc.ScriptError("You cannot pass parameters to '%s'\n", funcname.GetChars());
+							}
 						}
-						sc.UnGet();
+						else
+						{
+							sc.UnGet();
+						}
 					}
 					goto endofstate;
 				}
