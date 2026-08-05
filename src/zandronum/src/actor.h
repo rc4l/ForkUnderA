@@ -534,6 +534,7 @@ enum
 
 	RF_FORCEYBILLBOARD		= 0x10000,	// [BB] OpenGL only: draw with y axis billboard, i.e. anchored to the floor (overrides gl_billboard_mode setting)
 	RF_FORCEXYBILLBOARD		= 0x20000,	// [BB] OpenGL only: draw with xy axis billboard, i.e. unanchored (overrides gl_billboard_mode setting)
+	RF_ROLLSPRITE			= 0x40000,	// [rc4l] uzdoom: [marrub] roll the sprite billboard around the sight vector
 
 // --- dummies for unknown/unimplemented Strife flags ---
 
@@ -1286,6 +1287,7 @@ public:
 	// [RH] Used to interpolate the view to get >35 FPS
 	fixed_t PrevX, PrevY, PrevZ;
 	angle_t PrevAngle;
+	angle_t PrevRoll;	// [rc4l] +ROLLSPRITE interpolation, mirrors PrevAngle
 
 	// [BB] Last tic in which the server sent a xyz-position / movedir update about this actor to the clients.
 	int	lastNetXUpdateTic, lastNetYUpdateTic, lastNetZUpdateTic, lastNetVelXUpdateTic, lastNetVelYUpdateTic, lastNetVelZUpdateTic, lastNetMovedirUpdateTic;
