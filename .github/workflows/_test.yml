@@ -132,3 +132,36 @@ jobs:
         env:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build-tests --output-on-failure
+
+  # [rc4l] MSVC job. Its purpose is PORTABILITY, not coverage: the assertions here already run on
+  # Linux, and the sanitizer/coverage options are GCC/Clang-only by design. What only this job can
+  # catch is the test project failing to CONFIGURE OR COMPILE under MSVC -- which is exactly what had
+  # happened, silently, for as long as the tests existed.
+  #
+  # Windows had a BUILD job (_build.yml) but never a TEST one, so nothing ever pointed cl.exe at
+  # tests/CMakeLists.txt. Five separate breakages accumulated behind that gap -- __int128 in four test
+  # files, M_PI without _USE_MATH_DEFINES, -Wextra passed to cl (D8021, a hard error), a
+  # strnicmp=strncasecmp remap that is backwards on Windows, and missing ws2_32 -- each individually
+  # trivial, together enough that `ctest` had never once run on Windows. Fixing them without adding
+  # this job would just restart the clock.
+  #
+  # No `needs:`, so it runs in PARALLEL with test/test-macos and adds ~nothing to the gate's
+  # wall-clock: the suite itself takes about 5 seconds; the MSVC configure and the GoogleTest fetch
+  # are the cost.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # [rc4l] cmake and the MSVC toolchain are preinstalled on GitHub Windows runners. No sanitizer
+      # flags: ZANDROX_TESTS_SANITIZE wires GCC/Clang-style -fsanitize options that cl does not take.
+      - name: Configure (MSVC)
+        run: cmake -S tests -B build-tests
+
+      - name: Build
+        run: cmake --build build-tests --config Release
+
+      # [rc4l] --config matters here: MSVC is a multi-config generator, and without it ctest looks in
+      # the wrong directory and reports every test as NOT_BUILT rather than failing outright.
+      - name: Run tests
+        run: ctest --test-dir build-tests -C Release --output-on-failure
