@@ -557,6 +557,7 @@ void AActor::Serialize (FArchive &arc)
 		PrevY = y;
 		PrevZ = z;
 		PrevAngle = angle;
+		PrevRoll = roll;	// [rc4l]
 		UpdateWaterLevel(z, false);
 	}
 }
@@ -4214,6 +4215,7 @@ void AActor::Tick ()
 	PrevY = y;
 	PrevZ = z;
 	PrevAngle = angle;
+	PrevRoll = roll;	// [rc4l]
 
 	// [BC] There are times when we don't want to tick this actor if it's a player.
 	// [BB] Voodoo dolls are an exemption.
@@ -5451,6 +5453,7 @@ void AActor::PostBeginPlay ()
 		Renderer->StateChanged(this);
 	}
 	PrevAngle = angle;
+	PrevRoll = roll;	// [rc4l]
 	flags7 |= MF7_HANDLENODELAY;
 
 	// [AK] Trigger an event script indicating that the actor has spawned.
