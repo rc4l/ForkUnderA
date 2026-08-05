@@ -278,6 +278,10 @@ void			BROWSER_ClearServerList( void );
 void			BROWSER_DeactivateAllServers( void );
 bool			BROWSER_GetServerList( BYTESTREAM_s *pByteStream );
 void			BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN );
+
+// [rc4l] One piece of a reply too big for a single datagram. Rebuilds it and, once whole, hands it to
+// BROWSER_ParseServerQuery. See features/launcher-protocol for the wire format.
+void			BROWSER_ParseServerQuerySegment( BYTESTREAM_s *pByteStream, bool bLAN );
 void			BROWSER_QueryServerRegistry( void );
 // [rc4l] Drives the query retry/give-up clock; call once per tic while the browser is open.
 void			BROWSER_ServerRegistryTick( void );

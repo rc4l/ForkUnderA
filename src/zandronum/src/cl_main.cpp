@@ -1167,6 +1167,9 @@ void CLIENT_GetPackets( void )
 				lCommand = pByteStream->ReadLong();
 				if ( lCommand == SERVER_LAUNCHER_CHALLENGE )
 					BROWSER_ParseServerQuery( pByteStream, false );
+				// [rc4l] A reply too big for one datagram, arriving in numbered pieces.
+				else if ( lCommand == SERVER_LAUNCHER_CHALLENGE_SEGMENTED )
+					BROWSER_ParseServerQuerySegment( pByteStream, false );
 				else if ( lCommand == SERVER_LAUNCHER_IGNORING )
 					Printf( "WARNING! Please wait a full 10 seconds before refreshing the server list.\n" );
 				//else
