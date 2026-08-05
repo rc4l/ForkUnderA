@@ -102,8 +102,27 @@ std::vector<std::string> ServerPwadNames(LONG lServer)
 
 bool AttemptJoin(const JoinPlan &plan, bool mayDownload);
 
+// [rc4l] The resume that follows a finished download, held while the browser is asking the player
+// something they have to answer first.
+//
+// Without this a download completing one frame into a "cancel this download?" prompt would tear the
+// engine down for the reload underneath the prompt -- the player is answering a question about a
+// transfer that has already resolved itself, and the answer never lands. A restart appearing out of a
+// dialog you were mid-way through is the kind of thing that reads as a crash.
+bool g_resumeHeld = false;
+bool g_resumePending = false;
+bool g_resumePendingSuccess = false;
+
 void OnDownloadFinished(bool allSucceeded)
 {
+	if (g_resumeHeld)
+	{
+		// Park it. Whatever the player is being asked outranks finishing the join.
+		g_resumePending = true;
+		g_resumePendingSuccess = allSucceeded;
+		return;
+	}
+
 	if (!g_pending.valid)
 		return;
 
@@ -428,6 +447,40 @@ bool JoinSelectedServer()
 
 	plan.valid = true;
 	return AttemptJoin(plan, true);
+}
+
+void HoldJoinResume()
+{
+	g_resumeHeld = true;
+}
+
+void ReleaseJoinResume(bool proceed)
+{
+	g_resumeHeld = false;
+
+	if (!g_resumePending)
+		return;
+
+	const bool succeeded = g_resumePendingSuccess;
+	g_resumePending = false;
+
+	if (proceed)
+	{
+		OnDownloadFinished(succeeded);
+		return;
+	}
+
+	// The player said stop, and the transfer had already finished while they were being asked. The
+	// file stays -- it is downloaded and verified, and throwing it away would only mean fetching it
+	// again -- but the join it was for does not happen, because that is what they answered.
+	g_pending = JoinPlan();
+	Printf(TEXTCOLOR_GOLD "The download had already finished, so the file is kept -- but the join was "
+		"cancelled as you asked.\n" TEXTCOLOR_NORMAL);
+}
+
+bool IsJoinResumeHeld()
+{
+	return g_resumeHeld;
 }
 
 } // namespace zx

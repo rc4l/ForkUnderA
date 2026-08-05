@@ -79,8 +79,18 @@ bool IsRunning();
 bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedFile> &files,
 	CompleteProc onDone);
 
-// Stop the run. The partial file is discarded; the completion callback still fires (with false).
+// Stop the run because the PLAYER asked. The partial file is discarded, any queued replacement is
+// dropped, and the completion callback still fires (with false) so the caller can say so.
 void Cancel();
+
+// [rc4l] Stop the run because the player moved on -- they picked another server, so this transfer is
+// no longer wanted and neither is the join behind it.
+//
+// The difference from Cancel is the completion: Abandon drops it. Firing it would resume a join the
+// player has already walked away from, which is what used to happen -- pick a second server while the
+// first was still downloading and the old transfer would finish minutes later and drag you onto the
+// server you left.
+void Abandon();
 
 // A one-line progress summary for the console or a menu, or "" when idle -- e.g.
 // "brutal.wad  43%  (3.2 of 7.4 MB)".
