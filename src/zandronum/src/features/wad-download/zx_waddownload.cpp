@@ -10,8 +10,20 @@
 // drains on the main thread. Printf off the main thread has already crashed this engine once (see
 // zx_updater.h); it is not a rule to relax.
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#ifdef _WIN32
+  #include <direct.h>
+  #define zx_rmdir _rmdir
+#else
+  #include <unistd.h>
+  #define zx_rmdir rmdir
+#endif
+
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -23,6 +35,7 @@
 #include "cmdlib.h"
 #include "doomtype.h"
 #include "gameconfigfile.h"
+#include "i_system.h"		// [rc4l] findstate_t / I_Find* -- walking the store to prune it
 #include "m_misc.h"
 #include "v_text.h"
 
@@ -34,6 +47,7 @@
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wad-download/computation/downloadplan_compute.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
+#include "features/wad-download/computation/wadstore_compute.h"
 
 //*****************************************************************************
 //	CONSOLE VARIABLES
@@ -65,6 +79,13 @@ CVAR( String, cl_fua_download_dir, "", CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 // legitimate mod is allowed to be. Held in a 64-bit byte count, so raising it further is just a
 // bigger number.
 CVAR( Int, cl_fua_download_maxsize, 2048, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+
+// [rc4l] Ceiling on the content-addressed store, in MB; 0 means keep everything. Downloads are filed
+// under their digest so two servers using the name test.wad no longer overwrite each other, which
+// means old versions survive instead of being clobbered -- for someone iterating on a map that is a
+// new build every few minutes, so something has to bound it. Least recently used goes first, so what
+// survives is what is actually being played.
+CVAR( Int, cl_fua_download_maxstore, 4096, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 
 namespace
 {
@@ -99,6 +120,7 @@ struct Job
 	std::vector<zx::waddownload::WantedFile> files;
 	std::string dir;
 	long long maxBytes;
+	long long storeCapBytes;
 };
 
 void Say(const std::string &line)
@@ -172,6 +194,131 @@ bool SleepUnlessCancelled(int totalMs)
 	return !Cancelled();
 }
 
+//*****************************************************************************
+//	THE CONTENT-ADDRESSED STORE
+//
+// See computation/wadstore_compute.h for why files are filed under their digest. Everything here is
+// confined to OUR download folder: a player's own WADs are read and never moved, renamed or deleted.
+
+// 64-bit stat, because a resource pack can exceed what the 32-bit one reports.
+#ifdef _WIN32
+  typedef struct _stat64 zx_stat_t;
+  #define zx_stat _stat64
+#else
+  typedef struct stat zx_stat_t;
+  #define zx_stat stat
+#endif
+
+bool StatFile(const std::string &path, long long &outSize, long long &outMtime)
+{
+	zx_stat_t info;
+	if (zx_stat(path.c_str(), &info) != 0)
+		return false;
+
+	outSize = static_cast<long long>(info.st_size);
+	outMtime = static_cast<long long>(info.st_mtime);
+	return true;
+}
+
+bool FileExists(const std::string &path)
+{
+	long long size = 0;
+	long long mtime = 0;
+	return StatFile(path, size, mtime);
+}
+
+// Move the file currently under `name` into the store, keyed by ITS digest -- unless it is already
+// the content we are about to write, in which case there is nothing worth keeping.
+void ArchiveExistingCopy(const std::string &dir, const std::string &name,
+	const std::string &incomingMd5)
+{
+	const std::string flatPath = dir + name;
+	if (!FileExists(flatPath))
+		return;
+
+	char existing[33];
+	if (!zx::Md5OfFile(flatPath.c_str(), existing, sizeof existing))
+		return;								// unreadable: leave it alone rather than lose it blindly
+
+	if (!incomingMd5.empty() && EqualsIgnoreCase(existing, incomingMd5))
+		return;								// same bytes; archiving would just duplicate them
+
+	const std::string relative = zx::StoredRelativePath(existing, name, 32);
+	if (relative.empty())
+		return;
+
+	const std::string target = dir + relative;
+	if (FileExists(target))
+	{
+		// Already archived from an earlier round. The flat copy is redundant, and std::rename would
+		// refuse to replace it on Windows anyway.
+		std::remove(flatPath.c_str());
+		return;
+	}
+
+	CreatePath((dir + zx::StoredRelativeDir(existing, 32)).c_str());
+	std::rename(flatPath.c_str(), target.c_str());
+}
+
+// Bring the store within its cap, least recently used first. Only ever walks by-hash/.
+void PruneStore(const std::string &dir, long long capBytes)
+{
+	if (capBytes <= 0)
+		return;
+
+	const std::string storeRoot = dir + zx::kStoreDirName;
+
+	std::vector<zx::StoreEntry> entries;
+	std::vector<std::string> paths;
+	std::vector<std::string> dirs;
+
+	findstate_t digestDir;
+	void *digestHandle = I_FindFirst((storeRoot + "/*").c_str(), &digestDir);
+	if (digestHandle == ((void *)-1))
+		return;
+
+	do
+	{
+		const char *digestName = I_FindName(&digestDir);
+		if ((I_FindAttr(&digestDir) & FA_DIREC) == 0)
+			continue;
+		if ((std::strcmp(digestName, ".") == 0) || (std::strcmp(digestName, "..") == 0))
+			continue;
+
+		const std::string oneDir = storeRoot + "/" + digestName;
+
+		findstate_t fileEntry;
+		void *fileHandle = I_FindFirst((oneDir + "/*").c_str(), &fileEntry);
+		if (fileHandle == ((void *)-1))
+			continue;
+
+		do
+		{
+			if (I_FindAttr(&fileEntry) & FA_DIREC)
+				continue;
+
+			const std::string path = oneDir + "/" + I_FindName(&fileEntry);
+			long long size = 0;
+			long long mtime = 0;
+			if (!StatFile(path, size, mtime))
+				continue;
+
+			entries.push_back(zx::StoreEntry(size, mtime));
+			paths.push_back(path);
+			dirs.push_back(oneDir);
+		} while (I_FindNext(fileHandle, &fileEntry) == 0);
+		I_FindClose(fileHandle);
+	} while (I_FindNext(digestHandle, &digestDir) == 0);
+	I_FindClose(digestHandle);
+
+	const std::vector<size_t> doomed = zx::ComputePruneOrder(entries, capBytes);
+	for (size_t i = 0; i < doomed.size(); ++i)
+	{
+		std::remove(paths[doomed[i]].c_str());
+		zx_rmdir(dirs[doomed[i]].c_str());	// only succeeds once the directory is empty
+	}
+}
+
 // The first bytes of `path`, for the content gate. Short reads are fine -- a file too small to have a
 // header is not an IWAD, and ClassifyDownloadedFile says so.
 size_t ReadHeader(const std::string &path, char *out, size_t want)
@@ -221,6 +368,9 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 	// rejection rather than a bare "not found", because "no site had it" and "every site had the
 	// wrong thing" need completely different responses from whoever reads it.
 	std::string rejectReason;
+
+	// The digest of whatever actually landed, which is what the file gets filed under.
+	std::string contentMd5;
 
 	bool got = false;
 	int busyWaits = 0;
@@ -306,17 +456,21 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 			continue;
 		}
 
-		// Integrity, separately from legality: does this match what the SERVER says it runs? Only
-		// possible when the server sent hashes; an empty expectation means "cannot check", and we do
-		// not pretend otherwise.
-		if (!wanted.expectedMd5.empty())
+		// One hash, two jobs. Integrity, separately from legality: does this match what the SERVER
+		// says it runs? Only possible when the server sent hashes; an empty expectation means
+		// "cannot check", and we do not pretend otherwise. And it is what the file gets filed under
+		// below, so it is computed either way rather than only when there is something to compare to.
 		{
 			char md5[33];
-			if (!zx::Md5OfFile(partPath.c_str(), md5, sizeof md5) ||
-				!EqualsIgnoreCase(md5, wanted.expectedMd5))
+			if (zx::Md5OfFile(partPath.c_str(), md5, sizeof md5))
+				contentMd5 = md5;
+
+			if (!wanted.expectedMd5.empty() &&
+				(contentMd5.empty() || !EqualsIgnoreCase(contentMd5.c_str(), wanted.expectedMd5)))
 			{
 				std::remove(partPath.c_str());
 				rejectReason = "this mirror's copy is not the one the server is running";
+				contentMd5.clear();
 				continue;
 			}
 		}
@@ -333,6 +487,12 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 		return false;
 	}
 
+	// [rc4l] Move whatever was already sitting under this name into the content-addressed store
+	// before overwriting it. test.wad is a common name, and the copy about to be replaced belongs to
+	// some other server that will be joined again -- clobbering it means re-downloading it then, and
+	// re-downloading this one when they switch back, forever.
+	ArchiveExistingCopy(job.dir, wanted.name, contentMd5);
+
 	// std::rename will not replace an existing file on Windows, and a stale same-named file is
 	// exactly what we want to overwrite -- we just proved this one is complete and permitted.
 	std::remove(finalPath.c_str());
@@ -342,6 +502,10 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 		Say(std::string("Couldn't save ") + wanted.name + " to " + job.dir + ".");
 		return false;
 	}
+
+	// Versions accumulate instead of overwriting, which is the point and also the cost. For someone
+	// iterating on a map this is a new build every few minutes, so the archive has to be bounded.
+	PruneStore(job.dir, job.storeCapBytes);
 
 	Say(std::string("Downloaded ") + wanted.name + ".");
 	return true;
@@ -415,6 +579,42 @@ FString DownloadDir()
 
 	FixPathSeperator(dir);
 	return dir;
+}
+
+FString FindLocalCopy(const char *name, const char *md5Hex)
+{
+	FString found;
+
+	if ((name == NULL) || (md5Hex == NULL) || (md5Hex[0] == '\0'))
+		return found;
+
+	const std::string dir = DownloadDir().GetChars();
+	const std::string digest = md5Hex;
+
+	// The store first, because it costs a stat: the path itself claims the content, so a hit needs
+	// no reading at all -- only a size check that nothing edited the file in place.
+	const std::string relative = zx::StoredRelativePath(digest, name, 32);
+	if (!relative.empty())
+	{
+		const std::string stored = dir + relative;
+		if (FileExists(stored))
+		{
+			found = stored.c_str();
+			return found;
+		}
+	}
+
+	// Then the flat working copy, which does cost a hash -- but it is the same hash the join would
+	// have computed for its staleness check, so nothing is read twice.
+	const std::string flat = dir + name;
+	if (FileExists(flat))
+	{
+		char actual[33];
+		if (zx::Md5OfFile(flat.c_str(), actual, sizeof actual) && EqualsIgnoreCase(actual, digest))
+			found = flat.c_str();
+	}
+
+	return found;
 }
 
 bool IsRunning()
@@ -494,6 +694,10 @@ bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedF
 
 	const int capMB = *cl_fua_download_maxsize > 0 ? *cl_fua_download_maxsize : 1;
 	job.maxBytes = (long long)capMB * 1024LL * 1024LL;
+
+	// Snapshotted with everything else: the worker never reads a CVAR.
+	const int storeMB = *cl_fua_download_maxstore;
+	job.storeCapBytes = (storeMB > 0) ? ((long long)storeMB * 1024LL * 1024LL) : 0;
 
 	{
 		std::lock_guard<std::mutex> lock(g_mutex);

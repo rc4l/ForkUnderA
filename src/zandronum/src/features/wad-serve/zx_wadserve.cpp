@@ -141,7 +141,7 @@ struct ServeConfig
 std::mutex g_mutex;
 std::vector<std::string> g_log;					// lines for Tick() to Printf
 std::vector<ServableEntry> g_servable;
-std::string g_servableSignature;				// what the table was built from
+std::vector<std::string> g_servableNames;		// what the table was built from
 ServeConfig g_config;
 
 zx::RateBucket g_globalBucket;
@@ -615,20 +615,46 @@ int FindIwadWadnum()
 	return -1;
 }
 
-// What the loaded WAD set looks like right now, cheap enough to compare every frame. Rebuilding only
-// when this changes means no hook into the wad loader and no way to serve a file the engine has
-// since dropped.
-std::string CurrentWadSignature()
+// Has the loaded WAD set changed since the table was built?
+//
+// Called every frame on the server, so it ALLOCATES NOTHING on the common path -- the answer is
+// almost always "no", and building a signature string to discover that would be a heap allocation
+// per tic for the lifetime of the process. Compare the names in place instead: a count check, then a
+// strcmp each, against the names recorded when the table was last built.
+bool WadSetChanged(const std::vector<std::string> &known)
 {
 	const char *iwad = NETWORK_GetIWAD();
-	std::string signature = (iwad != NULL) ? iwad : "";
 	const TArray<NetworkPWAD> &pwads = NETWORK_GetPWADList();
+
+	if (known.size() != (pwads.Size() + 1))
+		return true;
+
+	if (known[0].compare((iwad != NULL) ? iwad : "") != 0)
+		return true;
+
 	for (unsigned i = 0; i < pwads.Size(); ++i)
 	{
-		signature += '|';
-		signature += pwads[i].name.GetChars();
+		if (known[i + 1].compare(pwads[i].name.GetChars()) != 0)
+			return true;
 	}
-	return signature;
+
+	return false;
+}
+
+// The names the current table was built from, recorded so the check above has something to compare
+// against. Built once per wad-set change, not once per frame.
+std::vector<std::string> CurrentWadNames()
+{
+	const char *iwad = NETWORK_GetIWAD();
+	const TArray<NetworkPWAD> &pwads = NETWORK_GetPWADList();
+
+	std::vector<std::string> names;
+	names.reserve(pwads.Size() + 1);
+	names.push_back((iwad != NULL) ? iwad : "");
+	for (unsigned i = 0; i < pwads.Size(); ++i)
+		names.push_back(pwads[i].name.GetChars());
+
+	return names;
 }
 
 void RebuildServableTable()
@@ -842,16 +868,21 @@ void Tick()
 
 	if (active)
 	{
-		const std::string signature = CurrentWadSignature();
 		bool changed = false;
 		{
 			std::lock_guard<std::mutex> lock(g_mutex);
-			changed = (signature != g_servableSignature);
-			if (changed)
-				g_servableSignature = signature;
+			changed = WadSetChanged(g_servableNames);
 		}
+
 		if (changed)
+		{
+			std::vector<std::string> names = CurrentWadNames();
+			{
+				std::lock_guard<std::mutex> lock(g_mutex);
+				g_servableNames.swap(names);
+			}
 			RebuildServableTable();
+		}
 	}
 
 	// Drain whatever the workers had to say. Copied out under the lock and printed outside it, so a
