@@ -60,6 +60,8 @@ endfunction()
 zx_read_tokens("${IWAD_LIST}" IWADS)
 zx_read_tokens("${SITE_LIST}" SITES)
 zx_read_pairs("${SUBST_LIST}" SUBSTS)
+# Same two-token shape as the substitutes: <sha256> <filename>.
+zx_read_pairs("${HASH_LIST}" HASHES)
 
 list(LENGTH IWADS IWAD_COUNT)
 list(LENGTH SITES SITE_COUNT)
@@ -74,6 +76,46 @@ set(IWAD_ENTRIES "")
 foreach(w IN LISTS IWADS)
 	string(APPEND IWAD_ENTRIES "\t\"${w}\",\n")
 endforeach()
+
+# [rc4l] The IWAD hash allowlist -- the actual gate. Two things are checked here rather than trusted,
+# because a wrong line in this file is a licensing problem rather than a compile error:
+#   - the digest is exactly 64 hex characters, so a truncated or MD5 entry cannot sit in the table
+#     looking plausible and matching nothing (or worse, matching a truncated computed digest);
+#   - the filename is on the IWAD allowlist, so a hash cannot smuggle in a name the name gate refuses.
+set(HASH_ENTRIES "")
+set(HASH_COUNT 0)
+list(LENGTH HASHES HASH_FLAT_LEN)
+if(HASH_FLAT_LEN GREATER 0)
+	math(EXPR HASH_LAST "${HASH_FLAT_LEN} - 1")
+	foreach(i RANGE 0 ${HASH_LAST} 2)
+		list(GET HASHES ${i} digest)
+		math(EXPR j "${i} + 1")
+		list(GET HASHES ${j} fname)
+		string(TOLOWER "${digest}" digest)
+		# Length checked separately from the character class: CMake's regex engine has no {n}
+		# repetition, so "^[0-9a-f]{64}$" silently matches nothing and would reject every valid line.
+		string(LENGTH "${digest}" digestLen)
+		if(NOT digestLen EQUAL 64 OR NOT digest MATCHES "^[0-9a-f]+$")
+			message(FATAL_ERROR
+				"gen-wadlists: ${HASH_LIST}: '${digest}' is not a 64-character hex SHA-256 "
+				"(for ${fname}) -- got ${digestLen} characters")
+		endif()
+		list(FIND IWADS "${fname}" hashAllowIdx)
+		if(hashAllowIdx EQUAL -1)
+			message(FATAL_ERROR
+				"gen-wadlists: ${HASH_LIST} vouches for ${fname}, which is not in ${IWAD_LIST} -- "
+				"a hash cannot admit a filename the allowlist refuses")
+		endif()
+		string(APPEND HASH_ENTRIES "\t{ \"${digest}\", \"${fname}\" },\n")
+		math(EXPR HASH_COUNT "${HASH_COUNT} + 1")
+	endforeach()
+endif()
+if(HASH_COUNT EQUAL 0)
+	# A zero-length array does not compile, and an empty hash list is a legitimate (fully closed)
+	# state -- no IWAD is downloadable. Emit an unmatchable sentinel; kFreeIwadHashCount is 0, so the
+	# lookup never reads it.
+	set(HASH_ENTRIES "\t{ \"\", \"\" },\n")
+endif()
 
 # Every replacement has to be downloadable in its own right, so checking it against the allowlist here
 # turns a silent dud entry (substitute something, then refuse to fetch it) into a build failure.
@@ -108,6 +150,7 @@ file(WRITE "${OUT}"
 //   iwadallowlist.txt     ${IWAD_COUNT} entries
 //   waddownloadsites.txt  ${SITE_COUNT} entries
 //   iwadsubstitutes.txt   ${SUBST_COUNT} entries
+//   iwadhashes.txt        ${HASH_COUNT} entries
 //
 // Edit those, not this. See features/wad-download/README.md.
 
@@ -125,6 +168,12 @@ const char *const kDefaultDownloadSites = \"${SITE_STRING}\";
 // { the IWAD a server asked for, the free IWAD we load instead when it is missing }
 const char *const kIwadSubstitutes[][2] = {
 ${SUBST_ENTRIES}};
+
+// { lowercase hex SHA-256, the filename that build is }. The gate: IWAD-magic bytes are kept only if
+// their digest is in here. An empty table means no IWAD is downloadable, which is a safe state.
+const char *const kFreeIwadHashes[][2] = {
+${HASH_ENTRIES}};
+const int kFreeIwadHashCount = ${HASH_COUNT};
 
 } // namespace zx
 

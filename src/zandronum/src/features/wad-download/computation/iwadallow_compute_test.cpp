@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
+#include <cctype>
 #include <cstring>
+#include <string>
 
 #include "gtest/gtest.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
@@ -21,6 +23,12 @@ namespace
 const char kIwadHeader[] = { 'I', 'W', 'A', 'D', 0x10, 0, 0, 0 };
 const char kPwadHeader[] = { 'P', 'W', 'A', 'D', 0x10, 0, 0, 0 };
 const char kPk3Header[]  = { 'P', 'K', 0x03, 0x04, 0, 0, 0, 0 };
+
+// Real entries from the shipped iwadhashes.txt, so these tests fail if a line is dropped from it.
+const char kFreedoom2_0_13_0[] = "a8772e088847032510d97ba2312406a6998f21cbab44d4ff10696faa9c0ecd4b";
+const char kFreedoom1_0_13_0[] = "7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d";
+const char kFreedoom2_0_12_1[] = "729f100448d0b48e12ecc8004e096a9ea6df024467d962f002bb286805be3a8e";
+const char kNotAnyBuild[]      = "0000000000000000000000000000000000000000000000000000000000000000";
 
 DownloadVerdict WantIwad(const string &name) { return ClassifyWantedFile(name, true); }
 DownloadVerdict WantPwad(const string &name) { return ClassifyWantedFile(name, false); }
@@ -125,7 +133,7 @@ TEST(IwadAllow, AGameListedAsAPwadPassesTheNameGateAndIsCaughtByTheContentGate)
 	// check -- there is no name list to catch it -- and is then refused for what actually arrived.
 	EXPECT_EQ(DownloadVerdict::Allowed, WantPwad("doom2.wad"));
 	EXPECT_EQ(DownloadVerdict::UnlistedIwad,
-		ClassifyDownloadedFile("doom2.wad", kIwadHeader, sizeof kIwadHeader));
+		ClassifyDownloadedFile("doom2.wad", kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
 }
 
 //=============================================================================
@@ -179,23 +187,66 @@ TEST(DownloadedFile, RefusesIwadContentArrivingUnderAnInnocentName)
 	// actually arrived catches it.
 	EXPECT_EQ(DownloadVerdict::Allowed, WantPwad("coolmod.wad"));
 	EXPECT_EQ(DownloadVerdict::UnlistedIwad,
-		ClassifyDownloadedFile("coolmod.wad", kIwadHeader, sizeof kIwadHeader));
+		ClassifyDownloadedFile("coolmod.wad", kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
 }
 
 TEST(DownloadedFile, KeepsAnOrdinaryPwad)
 {
 	EXPECT_EQ(DownloadVerdict::Allowed,
-		ClassifyDownloadedFile("brutal.wad", kPwadHeader, sizeof kPwadHeader));
+		ClassifyDownloadedFile("brutal.wad", kPwadHeader, sizeof kPwadHeader, ""));
 	EXPECT_EQ(DownloadVerdict::Allowed,
-		ClassifyDownloadedFile("skins.pk3", kPk3Header, sizeof kPk3Header));
+		ClassifyDownloadedFile("skins.pk3", kPk3Header, sizeof kPk3Header, ""));
 }
 
 TEST(DownloadedFile, KeepsAnAllowlistedIwadThatReallyIsAnIwad)
 {
+	// The name is on iwadallowlist.txt AND these are bytes iwadhashes.txt vouches for.
 	EXPECT_EQ(DownloadVerdict::Allowed,
-		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader));
+		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader, kFreedoom2_0_13_0));
+}
+
+TEST(DownloadedFile, RefusesAnAllowlistedNameWhoseBytesWeHaveNotVouchedFor)
+{
+	// megagame.wad is on the name allowlist but no build of it has been hashed yet, so downloading it
+	// is refused -- deny-by-default applies to us not having done the work just as it applies to a
+	// game we have never heard of. Also the shape of the doom2-served-as-freedoom2 attack.
+	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
+		ClassifyDownloadedFile("megagame.wad", kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
+	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
+		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
+}
+
+TEST(DownloadedFile, AcceptsAnyVouchedBuildNotJustTheNewest)
+{
+	// Mirrors host whatever they happened to grab, so pinning to the current release alone would
+	// refuse most of what is actually out there.
 	EXPECT_EQ(DownloadVerdict::Allowed,
-		ClassifyDownloadedFile("megagame.wad", kIwadHeader, sizeof kIwadHeader));
+		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader, kFreedoom2_0_12_1));
+}
+
+TEST(DownloadedFile, RefusesAVouchedBuildServedUnderTheWrongName)
+{
+	// Freedoom Phase 1 arriving as freedoom2.wad: both free, so not a licensing problem -- but saving
+	// it would poison the cache with a file that can never load the maps its name promises.
+	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
+		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader, kFreedoom1_0_13_0));
+}
+
+TEST(DownloadedFile, AFailedHashIsNeverTreatedAsAPass)
+{
+	// Sha256OfFile returns "" when it cannot read the file. That has to mean "cannot vouch" -- if it
+	// meant "fine", a read error would be a way through the only check that stops a renamed game.
+	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
+		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader, ""));
+	EXPECT_FALSE(zx::IsVouchedIwadBuild("", "freedoom2.wad"));
+}
+
+TEST(DownloadedFile, TheHashComparisonIgnoresCase)
+{
+	std::string upper = kFreedoom2_0_13_0;
+	for (size_t i = 0; i < upper.size(); ++i)
+		upper[i] = char(toupper((unsigned char)upper[i]));
+	EXPECT_TRUE(zx::IsVouchedIwadBuild(upper, "FreeDoom2.WAD"));
 }
 
 TEST(DownloadedFile, RechecksTheNameRatherThanTrustingTheEarlierPass)
@@ -203,14 +254,14 @@ TEST(DownloadedFile, RechecksTheNameRatherThanTrustingTheEarlierPass)
 	// This is the last gate before a file is kept, so it has to be safe to call on a file that
 	// arrived by any route -- including one that never went through ClassifyWantedFile.
 	EXPECT_EQ(DownloadVerdict::UnsafeName,
-		ClassifyDownloadedFile("../evil.wad", kPwadHeader, sizeof kPwadHeader));
+		ClassifyDownloadedFile("../evil.wad", kPwadHeader, sizeof kPwadHeader, ""));
 	EXPECT_EQ(DownloadVerdict::UnsafeName,
-		ClassifyDownloadedFile("evil.exe", kPwadHeader, sizeof kPwadHeader));
+		ClassifyDownloadedFile("evil.exe", kPwadHeader, sizeof kPwadHeader, ""));
 }
 
 TEST(DownloadedFile, AnEmptyOrTruncatedFileIsNotMistakenForAnIwad)
 {
-	EXPECT_EQ(DownloadVerdict::Allowed, ClassifyDownloadedFile("brutal.wad", "", 0));
+	EXPECT_EQ(DownloadVerdict::Allowed, ClassifyDownloadedFile("brutal.wad", "", 0, ""));
 }
 
 //=============================================================================

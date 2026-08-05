@@ -40,8 +40,29 @@ const char *DownloadVerdictReason(DownloadVerdict verdict)
 	case DownloadVerdict::UnsafeName:	return "not a file name we will download";
 	case DownloadVerdict::UnlistedIwad:	return "that is a game IWAD, and only IWADs known to be free "
 											   "to redistribute can be downloaded";
+	case DownloadVerdict::UnvouchedIwadBuild:
+										return "the file that arrived is not a build of that IWAD we "
+											   "have vouched for";
 	}
 	return "refused";
+}
+
+bool IsVouchedIwadBuild(const std::string &sha256Hex, const std::string &name)
+{
+	const std::string digest = ToLower(sha256Hex);
+	const std::string lowered = ToLower(name);
+
+	// An empty digest means we could not hash the file. That is "cannot vouch", never "fine" -- a
+	// failed read must not be a way through the only check that stops a renamed commercial IWAD.
+	if (digest.empty())
+		return false;
+
+	for (int i = 0; i < kFreeIwadHashCount; ++i)
+	{
+		if (digest == kFreeIwadHashes[i][0] && lowered == kFreeIwadHashes[i][1])
+			return true;
+	}
+	return false;
 }
 
 bool IsFreeIwadName(const std::string &name)
@@ -75,18 +96,27 @@ DownloadVerdict ClassifyWantedFile(const std::string &name, bool isIwadSlot)
 	return DownloadVerdict::Allowed;
 }
 
-DownloadVerdict ClassifyDownloadedFile(const std::string &name, const char *header, size_t len)
+DownloadVerdict ClassifyDownloadedFile(const std::string &name, const char *header, size_t len,
+	const std::string &sha256Hex)
 {
 	// The name is re-checked rather than trusted from the earlier pass: this function is the last gate
 	// before a file is kept, and it should be safe to call on a file that arrived by any route.
 	if (!IsSafeDownloadName(name))
 		return DownloadVerdict::UnsafeName;
 
-	// The check no name-based rule can do, and the reason none is needed. Anything whose own header
-	// says "I am a game" has to be a game we can confirm is free -- so doom2.wad reaches this point
-	// however it was spelled or whichever slot requested it, and is refused for what it is.
-	if (HeaderIsIwadMagic(header, len) && !IsFreeIwadName(name))
+	// Not an IWAD -> it is a mod, and mods cannot be enumerated. Nothing more to ask.
+	if (!HeaderIsIwadMagic(header, len))
+		return DownloadVerdict::Allowed;
+
+	// It is a game. Two questions, in this order, because they fail for different reasons and the
+	// player deserves the right one: is this filename even supposed to be a free IWAD, and are these
+	// actually the bytes of one?
+	if (!IsFreeIwadName(name))
 		return DownloadVerdict::UnlistedIwad;
+
+	// The gate. doom2.wad served under the name freedoom2.wad has passed every check up to this line.
+	if (!IsVouchedIwadBuild(sha256Hex, name))
+		return DownloadVerdict::UnvouchedIwadBuild;
 
 	return DownloadVerdict::Allowed;
 }

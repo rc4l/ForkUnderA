@@ -46,13 +46,22 @@ namespace zx { namespace waddownload {
 // One file a server asked for. `isIwad` is true only for the file the server declared as its IWAD --
 // it selects the strict allowlist gate, so getting it wrong in the permissive direction would let a
 // game through.
+//
+// `expectedMd5` is what the SERVER said this PWAD hashes to (SQF2_PWAD_HASHES), or "" when it told us
+// nothing. It is an integrity check, not a security one: it proves a mirror handed us the file this
+// server is actually running, and forging it means already controlling that server. Empty means
+// "cannot check" and is never treated as "checked and fine". Not used for the IWAD, whose gate is the
+// shipped SHA-256 allowlist -- a hash the server chose could not gate anything the server requested.
 struct WantedFile
 {
 	std::string name;
 	bool isIwad;
+	std::string expectedMd5;
 
 	WantedFile() : isIwad(false) {}
 	WantedFile(const std::string &n, bool iwad) : name(n), isIwad(iwad) {}
+	WantedFile(const std::string &n, bool iwad, const std::string &md5)
+		: name(n), isIwad(iwad), expectedMd5(md5) {}
 };
 
 // Called on the MAIN thread from Tick() when a run finishes, exactly once per Start().

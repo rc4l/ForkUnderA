@@ -295,6 +295,21 @@ const char *BROWSER_GetPWADName( ULONG ulServer, ULONG ulWadIdx )
 
 //*****************************************************************************
 //
+// [rc4l] Empty means "this server told us nothing", which is the normal case for a server that does
+// not send SQF2_PWAD_HASHES. Never conflate that with a hash that matched.
+const char *BROWSER_GetPWADHash( ULONG ulServer, ULONG ulWadIdx )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( "" );
+
+	if ( ulWadIdx >= g_BrowserServerList[ulServer].PWADHashes.Size())
+		return ( "" );
+
+	return ( g_BrowserServerList[ulServer].PWADHashes[ulWadIdx].GetChars( ));
+}
+
+//*****************************************************************************
+//
 const char *BROWSER_GetIWADName( ULONG ulServer )
 {
 	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
@@ -973,10 +988,15 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		ulFlags2 = pByteStream->ReadLong();
 
 		// [SB] PWAD hashes
+		// [rc4l] Kept rather than discarded: this is the server's own MD5 for each of its PWADs, and
+		// it is what lets a download be verified against what the server actually has instead of
+		// trusting that a mirror served the right bytes under the right name.
 		if ( ulFlags2 & SQF2_PWAD_HASHES )
 		{
-			for ( int i = pByteStream->ReadByte(); i > 0; --i )
-				pByteStream->ReadString();
+			const int lNumHashes = pByteStream->ReadByte( );
+			g_BrowserServerList[lServer].PWADHashes.Clear( );
+			for ( int i = 0; i < lNumHashes; ++i )
+				g_BrowserServerList[lServer].PWADHashes.Push( pByteStream->ReadString( ));
 		}
 
 		// [SB] Server country code
@@ -1243,7 +1263,9 @@ static void browser_QueryServer( ULONG ulServer )
 	g_ServerBuffer.ByteStream.WriteLong( I_MSTime( ));
 	// [rc4l] SQF2_COUNTRY added: the flag column needs it, and the server has always been willing to
 	// send it -- the old browser asked for everything except the one field it then read and discarded.
-	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY );
+	// [rc4l] SQF2_PWAD_HASHES added: the downloader verifies each fetched PWAD against the server's
+	// own MD5, so a mirror cannot hand us the wrong file (or a stale version) under the right name.
+	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY|SQF2_PWAD_HASHES );
 
 	// Send the server our packet.
 	NETWORK_LaunchPacket( &g_ServerBuffer, g_BrowserServerList[ulServer].Address );

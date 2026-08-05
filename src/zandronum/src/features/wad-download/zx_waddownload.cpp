@@ -29,6 +29,7 @@
 #include "zx_waddownload_lists.h"
 
 #include "features/net/zx_httpfile.h"
+#include "features/wad-download/zx_filehash.h"
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wad-download/computation/downloadplan_compute.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
@@ -105,6 +106,20 @@ void Say(const std::string &line)
 	g_log.push_back(line);
 }
 
+// Hex digests differ only in case between sources; compare them the way they are meant to be equal.
+bool EqualsIgnoreCase(const char *a, const std::string &b)
+{
+	size_t i = 0;
+	for (; a[i] != '\0' && i < b.size(); ++i)
+	{
+		const char ca = (a[i] >= 'A' && a[i] <= 'Z') ? char(a[i] - 'A' + 'a') : a[i];
+		const char cb = (b[i] >= 'A' && b[i] <= 'Z') ? char(b[i] - 'A' + 'a') : b[i];
+		if (ca != cb)
+			return false;
+	}
+	return a[i] == '\0' && i == b.size();
+}
+
 std::string HumanBytes(long long n)
 {
 	char buf[64];
@@ -176,6 +191,14 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 		g_total = -1;
 	}
 
+	// [rc4l] Why verification lives INSIDE the mirror loop: a site that serves the wrong bytes under
+	// the right name is a bad mirror, not a bad join. Failing outright there would let one stale or
+	// mislabelled copy deny a file that the next site has correctly. So a rejected file falls through
+	// to the next candidate, and only an exhausted list is an error -- reported with the last
+	// rejection rather than a bare "not found", because "no site had it" and "every site had the
+	// wrong thing" need completely different responses from whoever reads it.
+	std::string rejectReason;
+
 	bool got = false;
 	for (size_t i = 0; i < urls.size() && !got; ++i)
 	{
@@ -185,8 +208,7 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 		switch (r)
 		{
 		case zx::HttpFileResult::Ok:
-			got = true;
-			break;
+			break;					// verified below; `got` is only set once it passes
 
 		case zx::HttpFileResult::NotFound:
 			// Silent: with three spellings across half a dozen mirrors, "not here" is the ordinary
@@ -211,23 +233,56 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 
 		if (Cancelled())
 			return false;
+		if (r != zx::HttpFileResult::Ok)
+			continue;
+
+		char header[8];
+		const size_t headerLen = ReadHeader(partPath, header, sizeof header);
+
+		// SHA-256 only when the bytes are actually a game. Hashing every mod would cost a full extra
+		// read of a file we have no list to check it against.
+		std::string sha;
+		if (zx::HeaderIsIwadMagic(header, headerLen))
+		{
+			char hex[65];
+			if (zx::Sha256OfFile(partPath.c_str(), hex, sizeof hex))
+				sha = hex;			// on failure `sha` stays empty, which the gate treats as "cannot vouch"
+		}
+
+		// The gate: a commercial game arriving under a name nobody would question dies here.
+		const zx::DownloadVerdict post =
+			zx::ClassifyDownloadedFile(wanted.name, header, headerLen, sha);
+		if (post != zx::DownloadVerdict::Allowed)
+		{
+			std::remove(partPath.c_str());
+			rejectReason = zx::DownloadVerdictReason(post);
+			continue;
+		}
+
+		// Integrity, separately from legality: does this match what the SERVER says it runs? Only
+		// possible when the server sent hashes; an empty expectation means "cannot check", and we do
+		// not pretend otherwise.
+		if (!wanted.expectedMd5.empty())
+		{
+			char md5[33];
+			if (!zx::Md5OfFile(partPath.c_str(), md5, sizeof md5) ||
+				!EqualsIgnoreCase(md5, wanted.expectedMd5))
+			{
+				std::remove(partPath.c_str());
+				rejectReason = "this mirror's copy is not the one the server is running";
+				continue;
+			}
+		}
+
+		got = true;
 	}
 
 	if (!got)
 	{
-		Say(std::string("Couldn't find ") + wanted.name + " on any download site.");
-		return false;
-	}
-
-	// The gate that catches a commercial game arriving under a name nobody would question.
-	char header[8];
-	const size_t headerLen = ReadHeader(partPath, header, sizeof header);
-	const zx::DownloadVerdict post =
-		zx::ClassifyDownloadedFile(wanted.name, header, headerLen);
-	if (post != zx::DownloadVerdict::Allowed)
-	{
-		std::remove(partPath.c_str());
-		Say(std::string("Discarded ") + wanted.name + ": " + zx::DownloadVerdictReason(post));
+		if (rejectReason.empty())
+			Say(std::string("Couldn't find ") + wanted.name + " on any download site.");
+		else
+			Say(std::string("Discarded every copy of ") + wanted.name + " we found: " + rejectReason);
 		return false;
 	}
 
