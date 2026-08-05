@@ -1109,6 +1109,18 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		// [rc4l] Direct download: a flags byte then the TCP port. Fixed shape whichever way the
 		// answer goes -- port 0 is how "not serving" is spelled, rather than the field being absent,
 		// because a field that is sometimes there is what desynchronises a stream.
+		// [rc4l] Voice chat. The value is not used here, but the BYTE MUST BE CONSUMED: every field
+		// after it in the stream is positioned by it, and this one is answered whenever the echoed
+		// flags2 carries the bit -- whether or not we were the ones who asked for it.
+		//
+		// Skipping it is what made a server's direct-download port read as 6400 instead of 10777.
+		// The arithmetic is exact: the port went out as 0x2A19, and reading one byte early yields
+		// our flags byte (0x00) followed by the port's low byte (0x19), which is 0x1900 = 6400 --
+		// while sv_allowvoicechat's 1 was picked up as the flags byte, setting "prefers mirrors" on
+		// a server that had never asked for it.
+		if ( ulFlags2 & SQF2_VOICECHAT )
+			pByteStream->ReadByte( );
+
 		if ( ulFlags2 & SQF2_FUA_DIRECT_DOWNLOAD )
 		{
 			const int lFlags = pByteStream->ReadByte( );

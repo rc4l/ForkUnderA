@@ -119,37 +119,40 @@ host **has** the file and has no free slot — the ordinary state during a map c
 "try elsewhere" would abandon the only source certain to have a file that may exist nowhere else. The
 same URL is retried for up to four minutes, then the other sites get a turn.
 
-## Known defect: the launcher reply desynchronises, cause not yet found
+## The one-byte bug, and the rule that comes out of it
 
-**BLOCKING. A client can read a corrupted download port**, and then every download from that server
-fails with "couldn't find it on any download site" while the endpoint is demonstrably alive — `curl`
-against it returns 200 for the same file at the same moment.
+Worth writing down, because it cost a long diagnosis and the lesson generalises.
 
-What is established:
+A server's download port read as **6400** instead of 10777, deterministically, and every download
+from it failed with "couldn't find it on any download site" while `curl` got 200 from that exact
+endpoint at that exact moment.
 
-- It is **deterministic, not intermittent**. The same server read through a `192.168.x.x` browser
-  entry reports port **6400** with the prefers-mirrors flag set, every time. A `127.0.0.1` entry for
-  the same server, in the same session, reads 10777 correctly.
-- It is **not a size or MTU problem**, which was the first theory and is wrong. Dropping
-  `SQF_ALL_DMFLAGS` from the request — six longs and a count byte, the largest field we added —
-  changed nothing: still 6400. Any explanation resting on the reply outgrowing a datagram is
-  therefore ruled out.
-- The transport is fine. The engine's own HTTP stack fetches the file from both `127.0.0.1` and
-  `192.168.1.81` when pointed at them by hand, so nothing about the address is unreachable.
+The cause was a byte the browser never consumed. `SQF2_VOICECHAT` is bit 4, immediately before our
+bit 5, and it writes one byte — and the browser parsed every other SQF2 field but not that one. So
+every field after it was read one byte early.
 
-What is not yet known is where the stream loses alignment. Since `SQF2_FUA_DIRECT_DOWNLOAD` is read
-last, any earlier field that consumes the wrong number of bytes lands here, and the suspects are all
-recent: the three-byte non-terminated `SQF2_COUNTRY` read, the length-prefixed `SQF_ALL_DMFLAGS`
-read, and the per-PWAD strings of `SQF2_PWAD_HASHES`. Settling it needs the actual bytes, and the
-request path is Huffman-encoded so a raw UDP probe is rejected — it wants a decode harness rather
-than another guess.
+The arithmetic confirms it exactly. The port goes out as 10777 = `0x2A19`, so the wire holds
+`[flags 0x00][0x19][0x2A]`. Reading one byte early takes `sv_allowvoicechat`'s `1` as the flags byte
+— which is why a server that never asked for it reported "prefers mirrors" — and then reads
+`[0x00][0x19]` as the port, which is `0x1900` = 6400.
 
-Worth noting the browser also never opts into segmented launcher replies (`sv_main.cpp` enables them
+**The rule: a launcher client must consume every field the echoed flags carry, not merely the ones it
+asked for.** Fields are variable-length, so there is no skipping an unknown one — a single unhandled
+bit silently corrupts everything after it, and the corruption looks like a plausible value rather
+than garbage, which is what made it survive so long. The browser now handles all six defined SQF2
+bits; adding a seventh means adding its read at the same time.
+
+Two dead ends recorded so nobody repeats them: it is **not** a size or MTU problem (dropping
+`SQF_ALL_DMFLAGS`, the largest field, changed nothing), and it is **not** a buffer underflow (a guard
+rejecting negative reads never fires — the bytes are real, just misaligned).
+
+The guard stays anyway, because refusing to act on a port we did not receive is right on its own
+terms. And `dumpserverlist` printing the advertised endpoint is what made the bug visible at all:
+when a download fails, the first question is whether the client ever learned an endpoint.
+
+Separately, the browser still never opts into segmented launcher replies (`sv_main.cpp` enables them
 on a trailing `2` byte it does not send) and has no `SERVER_LAUNCHER_CHALLENGE_SEGMENTED` handling.
-That is a real gap and should be closed, but it is **not** this bug.
-
-This is why `dumpserverlist` now prints the advertised endpoint: when a download fails the first
-question is whether the client ever learned one, and that was otherwise invisible.
+A real gap, unrelated to the above, and still open.
 
 ## Layout
 
