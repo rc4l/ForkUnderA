@@ -160,20 +160,33 @@ bool WadLoadable(const char *path, FString &outWhy)
 	return true;
 }
 
-ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const char *startMap)
+ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const char *startMap,
+	const char *connectAddress)
 {
 	const bool changingIwad = (iwad != NULL && iwad[0] != '\0');
 	const bool haveMap = (startMap != NULL && startMap[0] != '\0');
+	const bool haveConnect = (connectAddress != NULL && connectAddress[0] != '\0');
 
-	// 1. Skip the full re-init when the wanted set already matches what's loaded. If a map was asked
-	//    for, still honor it -- just switch maps directly (no teardown needed).
+	// 1. Skip the full re-init when the wanted set already matches what's loaded. If a map or a server
+	//    was asked for, still honor it -- just switch/connect directly (no teardown needed).
 	const FString        curIwadFS = CurrentIwad();
 	const TArray<FString> curFiles = CurrentFiles();
 	const FString wantIwadFS = changingIwad ? FString(iwad) : curIwadFS; // empty iwad => keep current
 	if (WantedMatchesLoaded(curIwadFS.GetChars(), ToStd(curFiles),
 	                        wantIwadFS.GetChars(), ToStd(pwads)))
 	{
-		if (haveMap)
+		if (haveConnect)
+		{
+			// [rc4l] Already running the server's WAD set, so joining costs nothing: connect in place
+			// rather than restarting the engine to arrive at the same state. This is the common case
+			// for hopping between servers on the same mod, and the difference the player sees is a
+			// couple of seconds against a full re-init.
+			Printf("wad_reload: WAD set unchanged; connecting to %s.\n", connectAddress);
+			FString cmd;
+			cmd.Format("connect %s", connectAddress);
+			C_DoCommand(cmd.GetChars());
+		}
+		else if (haveMap)
 		{
 			Printf("wad_reload: WAD set unchanged; switching to map %s.\n", startMap);
 			G_DeferedInitNew(startMap);
@@ -248,6 +261,10 @@ ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const
 		for (unsigned i = 0; i < pwads.Size(); ++i)
 			append.push_back(pwads[i].GetChars());
 	}
+	// [rc4l] -connect is in the strip list above precisely so a plain reload cannot silently rejoin
+	// the last server; putting it back here is what turns this call into "join". The engine's normal
+	// startup consumes it, so nothing extra has to survive the restart.
+	if (haveConnect) { append.push_back("-connect"); append.push_back(connectAddress); }
 
 	std::vector<std::string> newArgv = ComputeReloadArgv(curArgv, remove, append);
 
@@ -259,7 +276,9 @@ ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const
 	// empty to land on the title screen as a restart normally does.
 	StoredReloadMap = haveMap ? FString(startMap) : FString("");
 
-	if (haveMap)
+	if (haveConnect)
+		Printf("wad_reload: restarting onto the new WAD set, connecting to %s...\n", connectAddress);
+	else if (haveMap)
 		Printf("wad_reload: restarting onto the new WAD set, into map %s...\n", startMap);
 	else
 		Printf("wad_reload: restarting onto the new WAD set...\n");

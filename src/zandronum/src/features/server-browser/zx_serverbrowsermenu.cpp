@@ -559,7 +559,9 @@ public:
 			{
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 				BROWSER_SetSelectedServer( g_SortedServers[g_Selected] );
-				AddCommandString( "menu_join_selected_server" );
+				// [rc4l] fua_ variant: resolves the server's WADs locally and joins through the
+				// validated reload, instead of `restart -connect` tearing the game down first.
+				AddCommandString( "fua_join_selected_server" );
 			}
 			return true;
 
