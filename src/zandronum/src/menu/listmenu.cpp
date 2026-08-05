@@ -506,8 +506,16 @@ void FListMenuItem::DrawSelector(int xofs, int yofs, FTextureID tex)
 	{
 		if ((DMenu::MenuTime%8) < 6)
 		{
+			// [rc4l] uzdoom@1aa00f1b0: draw the player-setup cursor the same way the options menu
+			// does -- DTA_Clean rounds the position to whole clean units, so the cursor drifted
+			// out of line with the text beside it.
 			screen->DrawText(ConFont, OptionSettings.mFontColorSelection,
-				mXpos + xofs, mYpos + yofs, "\xd", DTA_Clean, true, TAG_DONE);
+				(mXpos + xofs - 160) * CleanXfac + screen->GetWidth() / 2,
+				(mYpos + yofs - 100) * CleanYfac + screen->GetHeight() / 2,
+				"\xd",
+				DTA_CellX, 8 * CleanXfac,
+				DTA_CellY, 8 * CleanYfac,
+				TAG_DONE);
 		}
 	}
 	else

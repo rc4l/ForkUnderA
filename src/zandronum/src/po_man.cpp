@@ -1392,7 +1392,7 @@ static void RotatePt (int an, fixed_t *x, fixed_t *y, fixed_t startSpotX, fixed_
 //
 //==========================================================================
 
-bool FPolyObj::RotatePolyobj (angle_t angle)
+bool FPolyObj::RotatePolyobj (angle_t angle, bool fromsave)
 {
 	int an;
 	bool blocked;
@@ -1414,11 +1414,16 @@ bool FPolyObj::RotatePolyobj (angle_t angle)
 	validcount++;
 	UpdateBBox();
 
-	for(unsigned i=0;i < Sidedefs.Size(); i++)
+	// [rc4l] uzdoom@6fd70ff32: when a savegame restores a polyobject's rotation we must not damage
+	// or be blocked by actors -- the pawns may be only partly deserialized, which crashes.
+	if (!fromsave)
 	{
-		if (CheckMobjBlocking(Sidedefs[i]))
+		for(unsigned i=0;i < Sidedefs.Size(); i++)
 		{
-			blocked = true;
+			if (CheckMobjBlocking(Sidedefs[i]))
+			{
+				blocked = true;
+			}
 		}
 	}
 	if (blocked)

@@ -2543,20 +2543,47 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 				}
 				if (BlockingMobj && (BlockingMobj->flags2 & MF2_REFLECTIVE))
 				{
-					angle = R_PointToAngle2(BlockingMobj->x, BlockingMobj->y, mo->x, mo->y);
-
-					// Change angle for deflection/reflection
-					if (mo->AdjustReflectionAngle (BlockingMobj, angle))
+					// [rc4l] uzdoom@533ae9593 with its cleanup uzdoom@fdf2d6c49 folded in.
+					// THRUREFLECT suppresses the angle change entirely; MIRRORREFLECT turns the
+					// missile a flat 180; AIMREFLECT sends it straight back at whoever fired it.
+					// Without this the two flags were parsed but inert.
+					if (!(BlockingMobj->flags7 & MF7_THRUREFLECT))
 					{
-						goto explode;
-					}
+						if (BlockingMobj->flags7 & MF7_MIRRORREFLECT)
+							angle = mo->angle + ANG180;
+						else
+							angle = R_PointToAngle2(BlockingMobj->x, BlockingMobj->y, mo->x, mo->y);
 
-					// Reflect the missile along angle
-					mo->angle = angle;
-					angle >>= ANGLETOFINESHIFT;
-					mo->velx = FixedMul (mo->Speed>>1, finecosine[angle]);
-					mo->vely = FixedMul (mo->Speed>>1, finesine[angle]);
-					mo->velz = -mo->velz/2;
+						// Change angle for deflection/reflection
+						if (mo->AdjustReflectionAngle (BlockingMobj, angle))
+						{
+							goto explode;
+						}
+
+						bool tg = (mo->target != NULL);
+						bool blockingtg = (BlockingMobj->target != NULL);
+						if ((BlockingMobj->flags7 & MF7_AIMREFLECT) && (tg || blockingtg))
+						{
+							AActor *origin = tg ? mo->target : BlockingMobj->target;
+
+							float speed = (float)(mo->Speed);
+							FVector3 velocity(FIXED2FLOAT(origin->x - mo->x), FIXED2FLOAT(origin->y - mo->y),
+											  FIXED2FLOAT((origin->z + (origin->height / 2)) - mo->z));
+							velocity.Resize(speed);
+							mo->velx = FLOAT2FIXED(velocity.X);
+							mo->vely = FLOAT2FIXED(velocity.Y);
+							mo->velz = FLOAT2FIXED(velocity.Z);
+						}
+						else
+						{
+							// Reflect the missile along angle
+							mo->angle = angle;
+							angle >>= ANGLETOFINESHIFT;
+							mo->velx = FixedMul (mo->Speed>>1, finecosine[angle]);
+							mo->vely = FixedMul (mo->Speed>>1, finesine[angle]);
+							mo->velz = -mo->velz/2;
+						}
+					}
 					if (mo->flags2 & MF2_SEEKERMISSILE)
 					{
 						mo->tracer = mo->target;
