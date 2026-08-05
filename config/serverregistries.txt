@@ -9,14 +9,8 @@
 # hours -- so a server registry can be added here and reach players without shipping a release, and
 # GitHub never sees per-player traffic.
 #
-# MOVING THIS FILE breaks that chain until the Worker is repointed: rc4l/server-registry-rc4l,
-# serverregistrylist-cdn/worker.js, the SOURCE constant. It pins a raw.githubusercontent path on the
-# main branch, so a move only bites once it reaches main -- update both together.
-#
-# The damage if you forget is bounded but not nil: existing players keep their cached list and notice
-# nothing, while a FRESH install has no cache and falls back to the single registry compiled into the
-# engine (kBuiltinList in zx_serverregistrylist.cpp). Quiet in exactly the population least able to
-# report it.
+# If this file MOVES, repoint rc4l/server-registry-rc4l serverregistrylist-cdn/worker.js (SOURCE) --
+# it pins a raw.githubusercontent path on main. Forgetting breaks fresh installs, silently.
 #
 # A fetch that fails, times out, or comes back as anything other than a list (an error page, a bot
 # challenge) is treated as a failure: the client keeps its cached copy, and failing that, the copy
