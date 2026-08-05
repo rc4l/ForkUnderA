@@ -142,8 +142,8 @@ void OnDownloadFinished(bool allSucceeded)
 	{
 		// The downloader has already said which file and why, on the console. This is the part the
 		// player sees without having opened it.
-		M_StartMessage("Couldn't get everything this server needs.\n\n"
-			"See the console for what was missing.\n\npress a key.", 1);
+		zx::ShowBrowserNotice("Couldn't get everything this server needs.\n\n"
+			"See the console for what was missing.");
 		return;
 	}
 
@@ -362,7 +362,7 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 			msg += "\n";
 		}
 		msg += "\npress a key.";
-		M_StartMessage(msg.GetChars(), 1);
+		zx::ShowBrowserNotice(msg.GetChars());
 		return false;
 	}
 
@@ -380,7 +380,7 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 	if (r == zx::wadreload::ReloadResult::InvalidWads)
 	{
 		zx::NoteJoinSucceeded();	// nothing is in flight; clear the mark so a later quit is not blamed
-		M_StartMessage("Can't join: one of the server's files is not a loadable WAD.\n\npress a key.", 1);
+		zx::ShowBrowserNotice("Can't join: one of the server's files is not a loadable WAD.");
 		return false;
 	}
 	return true;
@@ -396,16 +396,15 @@ bool JoinSelectedServer()
 	const LONG lServer = BROWSER_GetSelectedServer();
 	if (lServer < 0)
 	{
-		M_StartMessage("No server selected.\n\npress a key.", 1);
+		zx::ShowBrowserNotice("No server selected.");
 		return false;
 	}
 
-	if (zx::waddownload::IsRunning())
-	{
-		M_StartMessage("Still downloading this server's files.\n\n"
-			"Use fua_download_stop to give up on it.\n\npress a key.", 1);
-		return false;
-	}
+	// [rc4l] A transfer already running is no longer a refusal. It used to be -- "still downloading,
+	// use fua_download_stop" -- which is what made picking a second server a dead end, and worse, the
+	// FIRST download would then finish and drag the player onto the server they had moved away from.
+	// waddownload::Start now abandons the old run and queues this one, so the guard that prevented it
+	// has to go with it.
 
 	const char *pszIwad = BROWSER_GetIWADName((ULONG)lServer);
 
@@ -427,7 +426,7 @@ bool JoinSelectedServer()
 		msg.Format("%s is full (%d/%d).\n\nNothing has been changed -- try again when a slot opens."
 			"\n\npress a key.", plan.serverName.GetChars(), static_cast<int>( lPlayers ),
 			static_cast<int>( lMaxClients ));
-		M_StartMessage(msg.GetChars(), 1);
+		zx::ShowBrowserNotice(msg.GetChars());
 		return false;
 	}
 	plan.wads = ComputeJoinWadList(plan.iwadName.GetChars(), ServerPwadNames(lServer));
@@ -551,6 +550,14 @@ void JoinTick()
 
 	M_StartControlPanel( false );
 	M_SetMenu( "ZA_Browser", -1 );
+
+	// On the browser's own panel, so the reason arrives with the list rather than over a title screen.
+	FString notice;
+	if ( g_joiningName.IsNotEmpty( ))
+		notice.Format( "Couldn't join %s.\n\n%s", g_joiningName.GetChars( ), g_joinFailReason.GetChars( ));
+	else
+		notice = g_joinFailReason;
+	ShowBrowserNotice( notice.GetChars( ));
 }
 
 void ReleaseJoinResume(bool proceed)

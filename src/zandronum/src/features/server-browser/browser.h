@@ -198,6 +198,11 @@ typedef struct
 	// and only about ordering -- the file is served either way.
 	bool			bPrefersMirrors;
 
+	// [rc4l] Whether a password is needed to get in at all, and whether one is needed to join the
+	// game once connected. The browser's Public/Private tabs treat either as private.
+	bool			bForcePassword;
+	bool			bForceJoinPassword;
+
 	// [rc4l] MD5 of the IWAD this server runs (SQF2_FUA_IWAD_HASH), or "" from a server that did not
 	// send it. SQF_IWAD carries only a name, and doom2.wad has shipped as nine-odd different builds
 	// that are not interchangeable -- so the name alone cannot tell you whether the copy you own is
@@ -259,6 +264,9 @@ bool			BROWSER_PrefersMirrors( ULONG ulServer );
 
 // [rc4l] MD5 of the IWAD build this server runs, or "" when it did not say. Never NULL.
 const char		*BROWSER_GetIWADHash( ULONG ulServer );
+
+// [rc4l] Whether getting in needs a password of either kind. What the Public/Private tabs sort on.
+bool			BROWSER_IsPasswordProtected( ULONG ulServer );
 
 // [rc4l] The raw state, for callers that need to tell the failure modes apart rather than just
 // "drawable or not". BROWSER_IsActive() answers the narrower question.
