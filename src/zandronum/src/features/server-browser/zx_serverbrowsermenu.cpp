@@ -745,16 +745,25 @@ public:
 
 			const int ty = serverbrowser_RowTextY( y, SmallFont->GetHeight( ));
 
+			// [rc4l] White whether selected or not. CR_UNTRANSLATED is the font's own colour, which for
+			// SmallFont is Doom red -- so every unselected server read as a warning about itself, and
+			// the highlight had to carry the selection on its own anyway.
 			const FString name = serverbrowser_FitName( BROWSER_GetHostName( lServer ), SB_NAME_MAX_WIDTH );
-			screen->DrawText( SmallFont, bSelected ? CR_WHITE : CR_UNTRANSLATED,
+			screen->DrawText( SmallFont, CR_WHITE,
 				SB_COL_NAME, ty, name, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 			// Humans only -- a row reading 8/8 for seven bots and one person is a lie the player
 			// only discovers after joining.
+			const int humans = static_cast<int>( BROWSER_GetNumHumanPlayers( lServer ));
+			const int slots = static_cast<int>( BROWSER_GetMaxClients( lServer ));
+
 			FString players;
-			players.Format( "%d/%d", static_cast<int>( BROWSER_GetNumHumanPlayers( lServer )),
-				static_cast<int>( BROWSER_GetMaxClients( lServer )));
-			screen->DrawText( SmallFont, CR_UNTRANSLATED, SB_COL_PLAYERS, ty, players, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			players.Format( "%d/%d", humans, slots );
+
+			// [rc4l] Colour only where it means something, the same way ping does: full is the one
+			// state that changes what you can do about the row, so it is the only one worth marking.
+			const EColorRange playersColor = (( slots > 0 ) && ( humans >= slots )) ? CR_RED : CR_WHITE;
+			screen->DrawText( SmallFont, playersColor, SB_COL_PLAYERS, ty, players, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 			const int ping = static_cast<int>( BROWSER_GetPing( lServer ));
 			FString pingText;
@@ -1115,10 +1124,7 @@ public:
 		y += 5;
 		DrawSeparator( y );
 		y += 6;
-		y = DrawWadList( x, y );
-
-		y += 4;
-		DrawFlagNumbers( x, y );
+		DrawWadList( x, y );
 
 		DrawActionButton( );
 	}
@@ -1287,47 +1293,6 @@ public:
 		}
 
 		return y + SB_DETAIL_LINE;
-	}
-
-	//*************************************************************************
-	//
-	// [rc4l] The gameplay flag words, as numbers.
-	//
-	// Named flags were the obvious thing and the wrong one: 163 of them, most set on most servers, so
-	// the panel filled with a wall of constants that told a player nothing they could act on. The
-	// NUMBER is what people actually trade -- it is what you paste into a config or compare against
-	// somebody else's server -- and six short lines beat six screens of names.
-	void DrawFlagNumbers( int x, int y )
-	{
-		static const char *const kNames[] = {
-			"dmflags", "dmflags2", "zadmflags", "compatflags", "zacompatflags", "compatflags2",
-		};
-
-		const int lServer = g_SortedServers[g_Selected];
-		const LONG lCount = BROWSER_GetNumDMFlags( lServer );
-		if ( lCount <= 0 )
-			return;
-
-		DrawSeparator( y );
-		y += 6;
-
-		for ( LONG i = 0; i < lCount; ++i )
-		{
-			if ( y + SB_DETAIL_LINE > SB_DETAIL_TEXT_BOTTOM )
-				return;
-
-			// A word the server sent that this build has no name for still gets shown -- the number is
-			// the useful part, and inventing "unknown" for it would be less honest than an index.
-			FString line;
-			if ( i < static_cast<LONG>( countof( kNames )))
-				line.Format( "%s: %u", kNames[i], static_cast<unsigned>( BROWSER_GetDMFlag( lServer, i )));
-			else
-				line.Format( "flags%d: %u", static_cast<int>( i ),
-					static_cast<unsigned>( BROWSER_GetDMFlag( lServer, i )));
-
-			DrawInPanel( CR_DARKGRAY, x, y, line );
-			y += SB_DETAIL_LINE;
-		}
 	}
 
 	//*************************************************************************
