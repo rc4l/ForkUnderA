@@ -327,6 +327,16 @@ unsigned int BROWSER_GetPWADSize( ULONG ulServer, ULONG ulWadIdx )
 
 //*****************************************************************************
 //
+unsigned int BROWSER_GetIWADSize( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( 0 );
+
+	return ( g_BrowserServerList[ulServer].IWADSize );
+}
+
+//*****************************************************************************
+//
 // [rc4l] The host half comes from the address WE queried, never from anything the server said. A
 // server that could name its own download host could name someone else's, and every client that
 // joined would fetch from a machine that never agreed to serve them.
@@ -1209,6 +1219,7 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		// [rc4l] What each download would actually cost, which the browser draws beside the filename.
 		if ( ulFlags2 & SQF2_FUA_WAD_SIZES )
 		{
+			g_BrowserServerList[lServer].IWADSize = static_cast<unsigned int>( extended.iwadSize );
 			g_BrowserServerList[lServer].PWADSizes.Clear( );
 			for ( size_t i = 0; i < extended.pwadSizes.size( ); ++i )
 				g_BrowserServerList[lServer].PWADSizes.Push( static_cast<unsigned int>( extended.pwadSizes[i] ));

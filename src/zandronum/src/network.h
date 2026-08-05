@@ -357,6 +357,9 @@ struct NetworkPWAD
 //*****************************************************************************
 //	VARIABLES
 
+// [rc4l] Size of the loaded IWAD in bytes, for SQF2_FUA_WAD_SIZES. 0 when it could not be measured.
+unsigned int	NETWORK_GetIWADSize( void );
+
 extern FString g_lumpsAuthenticationChecksum;
 extern FString g_MapCollectionChecksum;
 

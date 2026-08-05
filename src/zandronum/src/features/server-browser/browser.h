@@ -154,6 +154,10 @@ typedef struct
 	// as "not sent", deliberately: both mean we cannot say how big it is, and neither is a small file.
 	TArray<unsigned int>	PWADSizes;
 
+	// [rc4l] And the IWAD's, which is never downloaded but is listed beside them -- one line lacking
+	// the number every other line has reads as a bug, not as a distinction.
+	unsigned int	IWADSize;
+
 	// Name of the IWAD being used.
 	FString			IWADName;
 
@@ -232,6 +236,7 @@ const char		*BROWSER_GetPWADHash( ULONG ulServer, ULONG ulWadIdx );
 
 // [rc4l] Size in bytes, or 0 when the server did not say. See PWADSizes.
 unsigned int	BROWSER_GetPWADSize( ULONG ulServer, ULONG ulWadIdx );
+unsigned int	BROWSER_GetIWADSize( ULONG ulServer );
 const char		*BROWSER_GetIWADName( ULONG ulServer );
 GAMEMODE_e		BROWSER_GetGameMode( ULONG ulServer );
 LONG			BROWSER_GetNumPlayers( ULONG ulServer );

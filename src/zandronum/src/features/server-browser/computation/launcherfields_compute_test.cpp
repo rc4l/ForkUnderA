@@ -66,6 +66,7 @@ vector<unsigned char> BuildBlock(unsigned flags2)
 		w.Str("cd666466759b5e5f63af93c5f0ffd0a1");
 	if (flags2 & zx::kSqf2WadSizes)
 	{
+		w.Long(28787748UL);					// the IWAD, outside the counted run
 		w.Byte(2);
 		w.Long(14263296UL);					// doom2.wad, comfortably inside a signed int
 		w.Long(3221225472UL);				// 3 GB -- has its top bit set, so a signed read goes negative
@@ -167,6 +168,7 @@ TEST(LauncherFields, EveryCombinationRecoversTheValuesItCarried)
 			EXPECT_EQ(32u, info.iwadHash.size()) << "flags " << flags;
 		if (flags & zx::kSqf2WadSizes)
 		{
+			EXPECT_EQ(28787748ULL, info.iwadSize) << "flags " << flags;
 			ASSERT_EQ(2u, info.pwadSizes.size()) << "flags " << flags;
 			EXPECT_EQ(14263296ULL, info.pwadSizes[0]) << "flags " << flags;
 
@@ -297,7 +299,8 @@ TEST(LauncherFields, ReadsWadSizesLittleEndian)
 	// Spelled out rather than round-tripped through the writer: if the writer and the parser shared a
 	// byte-order mistake they would agree with each other and disagree with every real server.
 	const unsigned char bytes[] = {
-		0x02,								// two files
+		0x64, 0x62, 0x00, 0x00,				// 0x00006264 = 25188 -- the IWAD, first and uncounted
+		0x02,								// two PWADs
 		0x00, 0xA4, 0xD9, 0x00,				// 0x00D9A400 = 14263296 -- doom2.wad
 		0xFF, 0xFF, 0xFF, 0xFF,				// 4294967295 -- the top of the field
 	};
@@ -308,6 +311,7 @@ TEST(LauncherFields, ReadsWadSizesLittleEndian)
 		ParseExtendedInfo(bytes, sizeof(bytes), zx::kSqf2WadSizes, info, consumed));
 
 	EXPECT_EQ(sizeof(bytes), consumed);
+	EXPECT_EQ(25188ULL, info.iwadSize);
 	ASSERT_EQ(2u, info.pwadSizes.size());
 	EXPECT_EQ(14263296ULL, info.pwadSizes[0]);
 
@@ -318,15 +322,17 @@ TEST(LauncherFields, ReadsWadSizesLittleEndian)
 TEST(LauncherFields, AServerWithNoPwadsStillWritesTheCountByte)
 {
 	// The field is present whenever it is asked for, because a field that is sometimes absent is what
-	// desynchronises a stream -- the same rule SQF2_FUA_DIRECT_DOWNLOAD follows with port 0.
-	const unsigned char bytes[] = { 0x00 };
+	// desynchronises a stream -- the same rule SQF2_FUA_DIRECT_DOWNLOAD follows with port 0. The IWAD
+	// size is still there, because a server always has exactly one of those.
+	const unsigned char bytes[] = { 0x01, 0x00, 0x00, 0x00, 0x00 };
 
 	LauncherExtendedInfo info;
 	size_t consumed = 0;
 	ASSERT_EQ(ExtendedParse::Ok,
 		ParseExtendedInfo(bytes, sizeof(bytes), zx::kSqf2WadSizes, info, consumed));
 
-	EXPECT_EQ(1u, consumed);
+	EXPECT_EQ(5u, consumed);
+	EXPECT_EQ(1ULL, info.iwadSize);
 	EXPECT_TRUE(info.pwadSizes.empty());
 }
 
@@ -334,7 +340,11 @@ TEST(LauncherFields, RefusesASizeListCutShortOfItsCount)
 {
 	// A count byte promising four sizes with three and a half on the wire. Reading the half as a whole
 	// would report a file some fraction of its real size, which is worse than reporting nothing.
-	const unsigned char bytes[] = { 0x04, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00 };
+	const unsigned char bytes[] = {
+		0x09, 0x00, 0x00, 0x00,				// the IWAD
+		0x04,								// promises four PWAD sizes...
+		0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00,	// ...and delivers one and three quarters
+	};
 
 	LauncherExtendedInfo info;
 	size_t consumed = 0;
@@ -355,6 +365,7 @@ TEST(LauncherFields, TheSizeFieldSitsAfterTheIwadHashAndBeforeNothing)
 	ASSERT_EQ(ExtendedParse::Ok, Parse(BuildBlock(flags), flags, info, consumed));
 
 	EXPECT_EQ(32u, info.iwadHash.size());
+	EXPECT_EQ(28787748ULL, info.iwadSize);
 	ASSERT_EQ(2u, info.pwadSizes.size());
 	EXPECT_EQ(14263296ULL, info.pwadSizes[0]);
 }
