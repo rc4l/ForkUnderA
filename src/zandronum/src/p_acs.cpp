@@ -6054,6 +6054,10 @@ static void SetActorRoll(AActor *activator, int tid, int angle, bool interpolate
 		if (activator != NULL)
 		{
 			activator->SetRoll(angle << 16, interpolate);
+
+			// [rc4l] Tell the clients about the changed roll.
+			if ( NETWORK_GetState() == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetThingSpriteOrientation( activator, SPRITEORIENT_ROLL );
 		}
 	}
 	else
@@ -6064,6 +6068,10 @@ static void SetActorRoll(AActor *activator, int tid, int angle, bool interpolate
 		while ((actor = iterator.Next()))
 		{
 			actor->SetRoll(angle << 16, interpolate);
+
+			// [rc4l] Tell the clients about the changed roll.
+			if ( NETWORK_GetState() == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetThingSpriteOrientation( actor, SPRITEORIENT_ROLL );
 		}
 	}
 }
@@ -9094,6 +9102,10 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			if (actor != NULL)
 			{
 				actor->SetRoll(args[1] << 16, false);
+
+				// [rc4l] Tell the clients about the changed roll.
+				if ( NETWORK_GetState() == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetThingSpriteOrientation( actor, SPRITEORIENT_ROLL );
 			}
 			return 0;
 

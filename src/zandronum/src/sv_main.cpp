@@ -2829,6 +2829,13 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 					SERVERCOMMANDS_MoveThingExact( pActor, ulBits, ulClient, SVCF_ONLYTHISCLIENT );
 			}
 
+			// [rc4l] Sprite orientation is event-driven -- a script sets it once and nothing resends
+			// it -- so without this a client joining afterwards would draw the actor unrolled
+			// forever, with no mechanism to ever correct itself. Only sent when non-zero, which is
+			// almost always, so this costs nothing on a normal level.
+			if ( pActor->roll != 0 )
+				SERVERCOMMANDS_SetThingSpriteOrientation( pActor, SPRITEORIENT_ROLL, ulClient, SVCF_ONLYTHISCLIENT );
+
 			// If it's important to update this thing's arguments, do that now.
 			// [BB] Wouldn't it be better, if this is done for all things, for which
 			// at least one of the arguments is not equal to zero?
