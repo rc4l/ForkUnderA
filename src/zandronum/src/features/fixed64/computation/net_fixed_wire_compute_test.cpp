@@ -13,6 +13,7 @@
 #include <cstdint>
 
 #include "features/fixed64/computation/net_fixed_wire_compute.h"
+#include "features/fixed64/computation/wide128_compute.h"
 
 using zx::WireRoundtripLong;
 using zx::WireRoundtripShort;
@@ -24,7 +25,10 @@ constexpr int64_t FRACUNIT  = int64_t(1) << FRACBITS;
 constexpr int    FINEANGLES = 8192;
 
 // [rc4l] 64-bit fixed multiply, matching the engine's widened FixedMul ((a*b)>>16 in 128-bit).
-int64_t fmul(int64_t a, int64_t b) { return int64_t((__int128(a) * b) >> FRACBITS); }
+// Goes through wide128 rather than spelling __int128 here: this file is about the WIRE format, the
+// multiply is only scaffolding, and MSVC has no __int128 -- writing it natively kept the whole test
+// binary from compiling on Windows for the sake of one helper.
+int64_t fmul(int64_t a, int64_t b) { return zx::ComputeMulShiftS64(a, b, FRACBITS); }
 
 // [rc4l] The engine's finesine fill (r_utility.cpp R_InitTables), the version we corrected:
 // double(FRACUNIT)*sin, giving a signed 16.16 sine that is negative across the lower half.
