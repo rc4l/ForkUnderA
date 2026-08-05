@@ -1,0 +1,23 @@
+# ZandroX WAD download mirrors.
+#
+# Tried in order, after whatever the server itself advertises (sv_website). A player can replace the
+# whole list with cl_fua_downloadsites. Nothing here is a legal assertion -- see iwadhashes.txt for
+# the part that is.
+#
+#   <url>    <who runs it>
+#
+# Only the first token is read. Blank lines and # ignored. A URL is used as-is if it ends in '/' or
+# '=' (query endpoints); otherwise a '/' is added. Non-http(s) entries are skipped.
+#
+# To add one: check it actually SERVES a file, not merely answers, over a stable hostname without a
+# bot challenge. Deliberately absent: doomshack.org (no longer resolves) and doom.dogsoft.net/getwad
+# (answers 200 with an HTML search page for every query, hit or miss).
+
+https://static.allfearthesentinel.com/wads/    All Fear The Sentinel
+https://euroboros.net/zandronum/wads/          Euroboros
+https://static.audrealms.org/wads/             Aud Realms
+http://grandpachuck.org/files/wads/            Grandpa Chuck
+# doomleague serves AV.WAD and 404s av.wad, where the others do the reverse -- that is why the client
+# tries three spellings of the filename at every site.
+https://wads.doomleague.org/                   Doom League
+https://wads.firestick.games/                  Firestick Games

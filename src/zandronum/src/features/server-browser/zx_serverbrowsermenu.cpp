@@ -31,6 +31,7 @@
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/updater/computation/promptpanel_compute.h"
+#include "features/wad-download/zx_waddownload.h"
 
 //*****************************************************************************
 //	CONSTANTS
@@ -496,6 +497,19 @@ public:
 		const int y = SB_FIRST_ROW_Y + SB_VISIBLE_ROWS * SB_ROW_HEIGHT + 12;
 		FString text;
 
+		// [rc4l] A download for a pending join takes over the footer. Joining leaves the browser open
+		// on purpose (see features/server-browser/zx_joinserver.cpp) precisely so this line has
+		// somewhere to live -- without it, "press enter, nothing happens, for four minutes" is what
+		// the player experiences. The server count can wait; the transfer cannot.
+		const FString download = zx::waddownload::StatusLine( );
+		if ( download.IsNotEmpty( ))
+		{
+			screen->DrawText( SmallFont, CR_GOLD,
+				( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( download ) / 2 ), y, download,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			return;
+		}
+
 		if ( phase == zx::BrowserPhase::Ready )
 			text.Format( "%d servers", static_cast<int>( g_SortedServers.Size( )));
 		else if ( phase == zx::BrowserPhase::Empty )
@@ -569,7 +583,9 @@ public:
 			{
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 				BROWSER_SetSelectedServer( g_SortedServers[g_Selected] );
-				AddCommandString( "menu_join_selected_server" );
+				// [rc4l] fua_ variant: resolves the server's WADs locally and joins through the
+				// validated reload, instead of `restart -connect` tearing the game down first.
+				AddCommandString( "fua_join_selected_server" );
 			}
 			return true;
 

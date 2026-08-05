@@ -604,7 +604,24 @@ void M_SetMenu(FName menu, int param)
 	if (desc != NULL)
 	{
 		// [BB] netgame -> ( NETWORK_GetState( ) == NETSTATE_CLIENT )
-		if ((*desc)->mNetgameMessage.IsNotEmpty() && ( NETWORK_GetState( ) == NETSTATE_CLIENT ) && !demoplayback)
+		//
+		// [rc4l] Restricted to save/load. This used to refuse ANY descriptor carrying a
+		// NetgameMessage, and that is data a MOD owns: a pk3's own MENUDEF replaces ours wholesale,
+		// so the flag arrives from whatever the mod inherited or copied, not from a decision that
+		// this menu is unsafe online. Total conversions route their own setup through those menus --
+		// MM8BDM refuses to let a connected player open its join/class flow and tells them they
+		// "can't start a new game", which is neither true nor actionable -- and nothing we ship can
+		// fix it, because the mod's definitions win over ours.
+		//
+		// Saving and loading are the two where a client genuinely cannot proceed: the server owns
+		// the game state, so both would fail or desync no matter what the menu says. Those keep the
+		// refusal, by NAME, where a mod cannot accidentally opt out of it either.
+		//
+		// Everything else opens. Opening a menu is harmless; the actions inside it that cannot work
+		// as a client are already refused where they are performed -- G_DeferedInitNew is
+		// server-driven, and NAME_Savegamemenu has its own SAVEDEAD check above.
+		const bool bClientOnlyMenu = ( menu == NAME_Savegamemenu ) || ( menu == NAME_Loadgamemenu );
+		if ( bClientOnlyMenu && (*desc)->mNetgameMessage.IsNotEmpty() && ( NETWORK_GetState( ) == NETSTATE_CLIENT ) && !demoplayback)
 		{
 			M_StartMessage((*desc)->mNetgameMessage, 1);
 			return;

@@ -61,8 +61,36 @@ endif()
 # them straight into the test binary — the coverage gate then measures the real .cpp.
 file(GLOB_RECURSE COMPUTE_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_compute.cpp")
 
-add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES})
-target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}")
+# [rc4l] iwadallow_compute.cpp is generated-header-dependent: the downloadable-IWAD allowlist lives in
+# the repo-root iwadallowlist.txt and is compiled in (see tools/gen-wadlists.cmake for why it is not
+# a runtime file). The engine build runs the same generator; running it here too is what lets the
+# tests assert against the SHIPPED list rather than a copy that could quietly disagree with it.
+set(ZX_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
+if(WIN32)
+  set(ZX_WADLIST_PLATFORM windows)
+elseif(APPLE)
+  set(ZX_WADLIST_PLATFORM macos)
+else()
+  set(ZX_WADLIST_PLATFORM linux)
+endif()
+set(ZX_GEN_LISTS "${CMAKE_CURRENT_BINARY_DIR}/generated/zx_waddownload_lists.h")
+add_custom_command(OUTPUT "${ZX_GEN_LISTS}"
+  COMMAND ${CMAKE_COMMAND}
+    "-DIWAD_LIST=${ZX_REPO_ROOT}/config/iwadallowlist.txt"
+    "-DSITE_LIST=${ZX_REPO_ROOT}/config/waddownloadsites.txt"
+    "-DSUBST_LIST=${ZX_REPO_ROOT}/config/iwadsubstitutes.txt"
+    "-DDIR_LIST=${ZX_REPO_ROOT}/config/waddirectories.txt"
+    "-DPLATFORM=${ZX_WADLIST_PLATFORM}"
+    "-DOUT=${ZX_GEN_LISTS}"
+    -P "${ZX_REPO_ROOT}/tools/gen-wadlists.cmake"
+  DEPENDS "${ZX_REPO_ROOT}/config/iwadallowlist.txt" "${ZX_REPO_ROOT}/config/waddownloadsites.txt"
+          "${ZX_REPO_ROOT}/config/iwadsubstitutes.txt"
+          "${ZX_REPO_ROOT}/config/waddirectories.txt"
+          "${ZX_REPO_ROOT}/tools/gen-wadlists.cmake"
+  COMMENT "Generating zx_waddownload_lists.h from iwadallowlist.txt / waddownloadsites.txt")
+
+add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_GEN_LISTS}")
+target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}" "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock)
 # [rc4l] This target is the portable one -- pure Compute* logic with no engine or platform deps -- so
 # it is the one a Windows dev can actually run before pushing. MSVC rejects -Wextra outright (D8021,

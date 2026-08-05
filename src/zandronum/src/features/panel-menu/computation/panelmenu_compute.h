@@ -45,6 +45,21 @@ struct MenuExtent
 // the item's own x. linespacing is added once, to give the last row its own height.
 MenuExtent ComputeListMenuExtent(const MenuItemBox *items, int count, int selectOfsX, int linespacing);
 
+// The panel's screen rectangle, bounded so it always reads as a card over the screen rather than a
+// sheet covering it.
+struct PanelBounds
+{
+	int w;
+	int top;
+	int bottom;
+};
+
+// Clamp a wanted panel size to leave a visible margin on every side. Content is sized from menu items
+// and menu items are mod-supplied -- a replaced logo lump can be arbitrarily large -- so the margin is
+// enforced rather than merely hoped for: oversized artwork is clipped by the panel instead of
+// inflating it past the screen. Degenerate screens (zero/negative) yield an empty rect.
+PanelBounds ComputePanelBounds(int screenW, int screenH, int wantW, int wantTop, int wantBottom);
+
 } // namespace zx
 
 #endif // ZX_PANELMENU_COMPUTE_H

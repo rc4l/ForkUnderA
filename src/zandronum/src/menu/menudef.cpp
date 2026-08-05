@@ -1912,12 +1912,10 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 			desc->mRequiresRCON = true;
 		}
 		// [BB]
-		else if ( sc.Compare ( "ServerBrowserSlot" ) )
-		{
-			sc.MustGetNumber();
-			FOptionMenuItem *it = new FOptionMenuServerBrowserLine(sc.Number);
-			desc->mItems.Push(it);
-		}
+		// [rc4l] "ServerBrowserSlot" removed with the pre-MVP browser. It declared one of that
+		// browser's eight fixed server rows; the MVP browser draws its own list and has no such item.
+		// A MENUDEF still using the keyword now gets a parse error naming it, which is a clearer
+		// failure than a row that silently does nothing.
 		// [AK] Microphone test bar.
 		else if ( sc.Compare ( "MicTestBar" ))
 		{
@@ -1993,6 +1991,9 @@ static void ParseAddOptionMenu(FScanner &sc)
 //
 //
 //=============================================================================
+
+// [rc4l] features/server-browser/zx_mainmenuroute.cpp
+namespace zx { void RouteMainMenuThroughOnlineOffline(); }
 
 void M_ParseMenuDefs()
 {
@@ -2080,6 +2081,11 @@ void M_ParseMenuDefs()
 			}
 		}
 	}
+
+	// [rc4l] Every MENUDEF has now been read, mods' included, so this is the only point where the
+	// main menu is final. Reroute its first entry through the Online/Offline choice -- see
+	// features/server-browser/zx_mainmenuroute.cpp for why it goes by position rather than by name.
+	zx::RouteMainMenuThroughOnlineOffline();
 }
 
 
