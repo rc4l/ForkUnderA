@@ -279,6 +279,29 @@ TEST(QFloorFriction, DegenerateInputsDoNotProduceInfinitiesOrNaNs) {
 	EXPECT_NEAR(0.0f, QFloorFrictionForFriction(0), kEps);
 }
 
+TEST(QFloorFrictionForFriction, AModestlyIcyFloorLandsBetweenTheClampsUntouched) {
+	// The clamp tests above only pin the ENDS. A floor a little off default has to come back as the
+	// computed curve rather than a bound, or the clamps would be silently swallowing the whole
+	// range and every non-default floor would feel identical.
+	const int slightlyIcy = static_cast<int>(Q_DEFAULT_FLOOR_FRICTION / 1.1f);
+	const float value = QFloorFrictionForFriction(slightlyIcy);
+
+	EXPECT_GT(value, Q_FLOOR_FRICTION_MIN);
+	EXPECT_LT(value, Q_FLOOR_FRICTION_MAX);
+	// ratio^16 for a ratio of about 1.1.
+	EXPECT_NEAR(4.59f, value, 0.2f);
+}
+
+TEST(QFriction, ZeroSpeedPastTheStopTestIsNotDividedBy) {
+	// speed2D clears the ground stop test while the 3D speed is zero. The engine cannot produce
+	// that pairing -- 3D speed is never below 2D -- but this is a public function and the guard is
+	// what stops a degenerate caller turning into a division by zero and an infinite drop.
+	const QFrictionResult result = QFriction(0.0f, 5.0f, 10.0f, 6.0f, QFRICTION_GROUND);
+
+	EXPECT_FALSE(result.stop);
+	EXPECT_EQ(1.0f, result.scale) << "an untouched result must not scale velocity";
+}
+
 // ------------------------------------------------------------- vector helpers
 
 TEST(QVectorRotate, RotatesNinetyDegreesCounterClockwise) {
