@@ -76,12 +76,12 @@ chosen-prefix MD5 collisions are practical. So: **SHA-256**, via OpenSSL, which 
 links for csrp.
 
 The cost lands on us instead, and we take it deliberately: free IWADs have versions too, so each
-release needs a line in `iwadhashes.txt`. When one is missing the failure is loud and safe — the
+release needs a line in `config/iwadallowlist.txt`. When one is missing the failure is loud and safe — the
 download is refused, never accepted. Today that means Freedoom and FreeDM (four releases each) are
 downloadable and the other allowlisted IWADs are not, because nobody has hashed them from an
 authoritative source yet. They are unaffected as IWADs a player already owns.
 
-The list lives in **`iwadallowlist.txt` at the repo root** — Freedoom (all spellings), Blasphemer,
+The list lives in **`config/iwadallowlist.txt`** — Freedoom (all spellings), Blasphemer,
 Chex Quest 1–3 incl. the Vanilla edition, HacX 1.2 and 2.0, Harmony, Action Doom 2, The Adventures
 of Square, REKKR, and Mega Man 8-bit Deathmatch (`megagame.wad`). Filenames follow the engine's own
 `wadsrc/static/iwadinfo.txt` "Names" block, so every spelling the loader accepts is covered.
@@ -92,7 +92,7 @@ entire mechanism — no second list to keep in step.
 
 ### Why the allowlist is a repo file and not a setting
 
-`tools/gen-wadlists.cmake` compiles `iwadallowlist.txt` into the binary at build time. Both the
+`tools/gen-wadlists.cmake` compiles `config/iwadallowlist.txt` into the binary at build time. Both the
 engine and the test build run it, so the shipped gate and the tested gate are the same list.
 
 Adding a free IWAD is therefore a **pull request** — open to anyone, reviewable, with a commit
@@ -103,7 +103,7 @@ not a gate. The first thing written to it would be `doom2.wad`, in a server oper
 in a config a player pastes without reading. A pull request is the right amount of friction for a
 claim about someone else's licence.
 
-`waddownloadsites.txt` is generated the same way and *is* overridable by CVAR — nothing in it is a
+`config/waddownloadsites.txt` is generated the same way and *is* overridable by CVAR — nothing in it is a
 legal assertion, so a player replacing the mirror list costs them nothing but their own downloads.
 It is a separate file because it goes stale on a completely different schedule: mirrors come and go,
 licences do not.
@@ -128,7 +128,7 @@ And because Freedoom is on the download allowlist, a player with *neither* the g
 gets Freedoom downloaded and then joins — the one case where "you are missing a commercial IWAD"
 can end in a working join instead of a dead end.
 
-The table is `iwadsubstitutes.txt` at the repo root, PR-able like the others.
+The table is `config/iwadsubstitutes.txt`, PR-able like the others.
 `tools/gen-wadlists.cmake` **fails the build** if a replacement is not in `iwadallowlist.txt`: a
 substitute we are not allowed to download is no use as a stand-in for a game we are not allowed to
 download.
@@ -145,12 +145,11 @@ loop, because "did we remember to reject `../..`?" should be answerable without 
 ## Layout
 
 ```
-<repo root>/iwadallowlist.txt               the downloadable-IWAD allowlist  (PR to add a line)
-<repo root>/waddownloadsites.txt            the default mirror list          (PR to add a line)
-<repo root>/iwadsubstitutes.txt             Freedoom stand-ins               (PR to add a line)
-<repo root>/iwadhashes.txt                  vouched SHA-256 builds           (PR to add a line)
-<repo root>/waddirectories.txt              where other tools keep WADs      (PR to add a line)
-<repo root>/tools/gen-wadlists.cmake        compiles all three into a header at build time
+config/iwadallowlist.txt                    which IWAD names, and which SHA-256 builds  (PR-able)
+config/waddownloadsites.txt                 the default mirror list                     (PR-able)
+config/iwadsubstitutes.txt                  Freedoom stand-ins                          (PR-able)
+config/waddirectories.txt                   where other tools keep WADs                 (PR-able)
+tools/gen-wadlists.cmake                    compiles all four into a header at build time
 
 zx_waddownload.{h,cpp}                      driver: CVARs, CCMDs, worker thread, main-thread Tick
 computation/downloadplan_compute.{h,cpp}    mirror URLs, name safety, escaping     (+ _test.cpp)
@@ -215,7 +214,7 @@ substituted Freedoom — telling someone who owns the game that they don't. `zx_
 fix: after `D_AddFile` misses on an IWAD, walk `IWADSearch.Directories` and the Steam libraries the
 same way `IdentifyVersion` does, and only then consider substituting.
 
-`waddirectories.txt` at the repo root adds the folders other Doom tools use — Doomseeker/Wadseeker's
+`config/waddirectories.txt` adds the folders other Doom tools use — Doomseeker/Wadseeker's
 download target (`DataPaths::localDataLocationPath()`, plus its older `.doomseeker` layout) and
 GZDoom's. Entries are platform-tagged and filtered at generation time, so only the current platform's
 are compiled in; paths keep their `$VAR`/`~` form and go through `NicePath`. Ones that exist are
@@ -236,7 +235,7 @@ needs no special case for a downloaded file — the retry resolves it exactly li
 | Name | Default | What it does |
 |---|---|---|
 | `cl_fua_download` | `true` | Master switch. |
-| `cl_fua_downloadsites` | `waddownloadsites.txt` | Space-separated base URLs, tried after the server's own. |
+| `cl_fua_downloadsites` | `config/waddownloadsites.txt` | Space-separated base URLs, tried after the server's own. |
 | `cl_fua_download_dir` | *(empty)* | Override the download folder. |
 | `cl_fua_download_maxsize` | `2048` | Per-file ceiling in MB. Bounds what a mirror can write to disk. |
 | `cl_fua_iwad_substitute` | `true` | Load Freedoom when the server's IWAD is a game you don't own. |

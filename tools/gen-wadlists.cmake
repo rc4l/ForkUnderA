@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 #
-# [rc4l] Compiles the repo-root WAD lists into one C++ header, so those files are the single source of
+# [rc4l] Compiles the config/ WAD lists into one C++ header, so those files are the single source of
 # truth and cannot drift from hand-maintained arrays:
 #
-#   iwadallowlist.txt     filenames that may be downloaded as IWADs
-#   iwadhashes.txt        the SHA-256 builds we vouch for -- the gate
-#   iwadsubstitutes.txt   what Freedoom stands in for
-#   waddownloadsites.txt  default mirrors
-#   waddirectories.txt    where other Doom tools keep WADs (filtered to PLATFORM)
+#   config/iwadallowlist.txt     which IWAD names may be downloaded, and the SHA-256 builds we vouch
+#                                for -- one row per build, "-" for a name with no vouched build yet
+#   config/iwadsubstitutes.txt   what Freedoom stands in for
+#   config/waddownloadsites.txt  default mirrors
+#   config/waddirectories.txt    where other Doom tools keep WADs (filtered to PLATFORM)
 #
 # Generated at BUILD time rather than checked in, and read from the binary rather than from disk at
 # runtime, because the allowlist is a legal gate: it has to be something we shipped, not something a
@@ -16,9 +16,8 @@
 # the right amount of friction for a claim about someone else's licence.
 #
 # Usage:
-#   cmake -DIWAD_LIST=<path> -DSITE_LIST=<path> -DSUBST_LIST=<path> -DHASH_LIST=<path> \
-#         -DDIR_LIST=<path> -DPLATFORM=windows|macos|linux -DOUT=<path> \
-#         -P tools/gen-wadlists.cmake
+#   cmake -DIWAD_LIST=<path> -DSITE_LIST=<path> -DSUBST_LIST=<path> -DDIR_LIST=<path> \
+#         -DPLATFORM=windows|macos|linux -DOUT=<path> -P tools/gen-wadlists.cmake
 
 # Pull the first whitespace-separated token from each non-comment, non-blank line. Everything after
 # it is documentation for the humans editing the file.
@@ -94,11 +93,53 @@ function(zx_read_dirs PATH PLATFORM OUT_VAR)
 	set(${OUT_VAR} "${dirs}" PARENT_SCOPE)
 endfunction()
 
-zx_read_tokens("${IWAD_LIST}" IWADS)
+# The IWAD list carries both halves of the gate: "<filename> | <sha256 or -> | <note>". Names and
+# vouched builds come out of the one file, so the pair can never disagree -- a hash cannot name a file
+# that is not allowed, because listing the hash IS listing the file.
+function(zx_read_iwads PATH OUT_NAMES OUT_HASHES)
+	set(names "")
+	set(hashes "")
+	if(NOT EXISTS "${PATH}")
+		message(FATAL_ERROR "gen-wadlists: missing input ${PATH}")
+	endif()
+	file(STRINGS "${PATH}" lines)
+	foreach(line IN LISTS lines)
+		string(STRIP "${line}" line)
+		if(line STREQUAL "" OR line MATCHES "^#")
+			continue()
+		endif()
+		if(NOT line MATCHES "^([^|]+)\\|([^|]+)")
+			message(FATAL_ERROR "gen-wadlists: ${PATH}: expected '<filename> | <sha256 or -> | <note>' on '${line}'")
+		endif()
+		string(STRIP "${CMAKE_MATCH_1}" fname)
+		string(STRIP "${CMAKE_MATCH_2}" digest)
+		string(TOLOWER "${fname}" fname)
+		string(TOLOWER "${digest}" digest)
+
+		list(FIND names "${fname}" already)
+		if(already EQUAL -1)
+			list(APPEND names "${fname}")
+		endif()
+
+		if(NOT digest STREQUAL "-")
+			# Length checked separately from the character class: CMake's regex engine has no {n}
+			# repetition, so "^[0-9a-f]{64}$" matches nothing and would reject every valid line.
+			string(LENGTH "${digest}" digestLen)
+			if(NOT digestLen EQUAL 64 OR NOT digest MATCHES "^[0-9a-f]+$")
+				message(FATAL_ERROR
+					"gen-wadlists: ${PATH}: '${digest}' is not a 64-character hex SHA-256 "
+					"(for ${fname}) -- got ${digestLen} characters. Use '-' for no vouched build.")
+			endif()
+			list(APPEND hashes "${digest}" "${fname}")
+		endif()
+	endforeach()
+	set(${OUT_NAMES} "${names}" PARENT_SCOPE)
+	set(${OUT_HASHES} "${hashes}" PARENT_SCOPE)
+endfunction()
+
+zx_read_iwads("${IWAD_LIST}" IWADS HASHES)
 zx_read_tokens("${SITE_LIST}" SITES)
 zx_read_pairs("${SUBST_LIST}" SUBSTS)
-# Same two-token shape as the substitutes: <sha256> <filename>.
-zx_read_pairs("${HASH_LIST}" HASHES)
 zx_read_dirs("${DIR_LIST}" "${PLATFORM}" WADDIRS)
 
 list(LENGTH IWADS IWAD_COUNT)
@@ -125,43 +166,22 @@ foreach(w IN LISTS IWADS)
 	string(APPEND IWAD_ENTRIES "\t\"${w}\",\n")
 endforeach()
 
-# [rc4l] The IWAD hash allowlist -- the actual gate. Two things are checked here rather than trusted,
-# because a wrong line in this file is a licensing problem rather than a compile error:
-#   - the digest is exactly 64 hex characters, so a truncated or MD5 entry cannot sit in the table
-#     looking plausible and matching nothing (or worse, matching a truncated computed digest);
-#   - the filename is on the IWAD allowlist, so a hash cannot smuggle in a name the name gate refuses.
+# Validation already happened in zx_read_iwads; this only formats.
 set(HASH_ENTRIES "")
-set(HASH_COUNT 0)
 list(LENGTH HASHES HASH_FLAT_LEN)
+math(EXPR HASH_COUNT "${HASH_FLAT_LEN} / 2")
 if(HASH_FLAT_LEN GREATER 0)
 	math(EXPR HASH_LAST "${HASH_FLAT_LEN} - 1")
 	foreach(i RANGE 0 ${HASH_LAST} 2)
 		list(GET HASHES ${i} digest)
 		math(EXPR j "${i} + 1")
 		list(GET HASHES ${j} fname)
-		string(TOLOWER "${digest}" digest)
-		# Length checked separately from the character class: CMake's regex engine has no {n}
-		# repetition, so "^[0-9a-f]{64}$" silently matches nothing and would reject every valid line.
-		string(LENGTH "${digest}" digestLen)
-		if(NOT digestLen EQUAL 64 OR NOT digest MATCHES "^[0-9a-f]+$")
-			message(FATAL_ERROR
-				"gen-wadlists: ${HASH_LIST}: '${digest}' is not a 64-character hex SHA-256 "
-				"(for ${fname}) -- got ${digestLen} characters")
-		endif()
-		list(FIND IWADS "${fname}" hashAllowIdx)
-		if(hashAllowIdx EQUAL -1)
-			message(FATAL_ERROR
-				"gen-wadlists: ${HASH_LIST} vouches for ${fname}, which is not in ${IWAD_LIST} -- "
-				"a hash cannot admit a filename the allowlist refuses")
-		endif()
 		string(APPEND HASH_ENTRIES "\t{ \"${digest}\", \"${fname}\" },\n")
-		math(EXPR HASH_COUNT "${HASH_COUNT} + 1")
 	endforeach()
 endif()
 if(HASH_COUNT EQUAL 0)
 	# A zero-length array does not compile, and an empty hash list is a legitimate (fully closed)
-	# state -- no IWAD is downloadable. Emit an unmatchable sentinel; kFreeIwadHashCount is 0, so the
-	# lookup never reads it.
+	# state -- no IWAD is downloadable. kFreeIwadHashCount is 0, so the sentinel is never read.
 	set(HASH_ENTRIES "\t{ \"\", \"\" },\n")
 endif()
 
@@ -194,11 +214,10 @@ string(REPLACE ";" " " SITE_STRING "${SITES}")
 file(WRITE "${OUT}"
 "// GENERATED FILE -- do not edit.
 //
-// Built by tools/gen-wadlists.cmake from the repo-root lists:
-//   iwadallowlist.txt     ${IWAD_COUNT} entries
+// Built by tools/gen-wadlists.cmake from the config/ lists:
+//   iwadallowlist.txt     ${IWAD_COUNT} names, ${HASH_COUNT} vouched builds
 //   waddownloadsites.txt  ${SITE_COUNT} entries
 //   iwadsubstitutes.txt   ${SUBST_COUNT} entries
-//   iwadhashes.txt        ${HASH_COUNT} entries
 //   waddirectories.txt    ${DIR_COUNT} entries for ${PLATFORM}
 //
 // Edit those, not this. See features/wad-download/README.md.
