@@ -828,8 +828,21 @@ FString StatusLine()
 	FString out;
 	if (total > 0)
 	{
-		out.Format("%s  %d%%  (%s of %s)", file.c_str(), int((received * 100) / total),
-			HumanBytes(received).c_str(), HumanBytes(total).c_str());
+		// [rc4l] FIXED WIDTH, deliberately. The band drawn behind this line is sized from it, so a
+		// string that gains a character when the percentage reaches 10 -- and again at 100, and again
+		// every time the received figure gains a digit -- is a panel that twitches while you read it.
+		//
+		// The percentage is padded to three columns and the received figure to the width of the total,
+		// which does not change during a transfer. Doom's SmallFont gives every digit the same advance
+		// and a space a fixed one, so the line is not merely the same LENGTH every frame, it is the
+		// same number of pixels.
+		const std::string totalText = HumanBytes(total);
+		std::string receivedText = HumanBytes(received);
+		while (receivedText.size() < totalText.size())
+			receivedText.insert(receivedText.begin(), ' ');
+
+		out.Format("%s  %3d%%  (%s of %s)", file.c_str(), int((received * 100) / total),
+			receivedText.c_str(), totalText.c_str());
 	}
 	else
 	{
