@@ -20,7 +20,7 @@ bindable command is **`fua_clip`** (commands don't take the `cl_` cvar prefix).
 
 | CVAR | Default | Meaning |
 |---|---|---|
-| `cl_fua_replay` | `0` (off) | master enable — the rolling buffer only runs when on |
+| `cl_fua_replay` | `1` (on) | master enable — opt out with `cl_fua_replay 0` |
 | `cl_fua_replay_duration` | `15` | seconds of history kept |
 | `cl_fua_replay_fps` | `30` | capture rate, independent of game FPS |
 | `cl_fua_replay_maxheight` | `720` | cap capture height (0 = native), width scales to aspect |
@@ -38,8 +38,9 @@ bindable command is **`fua_clip`** (commands don't take the `cl_` cvar prefix).
 
 ## Status
 
-- **Phase 1 (done):** settings + `fua_clip` command + menu + comma bind, dark behind `cl_fua_replay`
-  (default off).
+- **Phase 1 (done):** settings + `fua_clip` command + menu + comma bind, gated on `cl_fua_replay`
+  (default **on**; opt out with `cl_fua_replay 0`). A rolling buffer only helps if it was already
+  running when the moment happened, so an opt-in recorder cannot catch what you did not see coming.
 - **Phase 2 (done, macOS):** capture in `OpenGLFrameBuffer::Swap()`, worker-thread H.264 encode into
   a rolling ring of packets (`ReplayEncoder`, libx264, VBV-capped bitrate), MP4 mux on `fua_clip` →
   the platform video folder (macOS `~/Movies/ZandroX`, Linux `~/Videos/ZandroX`). Verified end-to-end:

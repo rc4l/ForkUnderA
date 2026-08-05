@@ -38,7 +38,7 @@ namespace
 {
 
 // [rc4l] The floor: what a fresh install queries before it has ever reached the network. Kept in sync
-// with serverregistries.txt at the repo root by hand -- there is exactly one line, and a build-time
+// with config/serverregistries.txt by hand -- there is exactly one line, and a build-time
 // generator for one line would cost more than it saves.
 const char *const kBuiltinList = "registry.cantstopscrolling.net    rc4l\n";
 

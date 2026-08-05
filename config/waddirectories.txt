@@ -1,0 +1,12 @@
+# <windows|macos|linux> | <path> | <whose it is>   -- see features/wad-download/README.md
+windows | $LOCALAPPDATA/doomseeker                  | Doomseeker (Wadseeker download target)
+windows | $APPDATA/.doomseeker                      | Doomseeker (legacy layout)
+macos   | ~/Library/Application Support/doomseeker  | Doomseeker (Wadseeker download target)
+macos   | ~/.doomseeker                             | Doomseeker (legacy layout)
+linux   | ~/.local/share/doomseeker                 | Doomseeker (Wadseeker download target)
+linux   | ~/.doomseeker                             | Doomseeker (legacy layout)
+windows | $USERPROFILE/Documents/GZDoom             | GZDoom
+windows | $USERPROFILE/Documents/My Games/Doom      | ZDoom-family "My Games" layout
+macos   | ~/Library/Application Support/gzdoom      | GZDoom
+linux   | ~/.config/gzdoom                          | GZDoom
+linux   | ~/.local/share/games/doom                 | Common Linux WAD location

@@ -68,6 +68,7 @@
 #include "w_wad.h"
 #include "features/crashreport/zx_crashreport.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
+#include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
@@ -89,6 +90,7 @@
 #include "r_utility.h"
 #include "r_sky.h"
 #include "d_main.h"
+#include "features/wadreload/zx_wadreload.h" // [rc4l] ResetStartupStateForRestart()
 #include "d_dehacked.h"
 #include "cmdlib.h"
 #include "s_sound.h"
@@ -1275,6 +1277,7 @@ void D_DoomLoop ()
 		try
 		{
 			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
+			zx::waddownload::Tick(); // [rc4l] drains the WAD downloader's log + fires its completion (main thread)
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{
@@ -2789,6 +2792,11 @@ void D_DoomMain (void)
 		if (restart)
 		{
 			C_InitConsole(SCREENWIDTH, SCREENHEIGHT, false);
+
+			// [rc4l] Startup state that is written once-if-empty and so survives a restart onto a
+			// DIFFERENT WAD set. The reasoning and the reset itself live in features/wadreload, so
+			// this stays a one-line hook in a vendored file.
+			zx::wadreload::ResetStartupStateForRestart();
 		}
 		nospriterename = false;
 

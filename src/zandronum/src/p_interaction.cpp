@@ -2847,8 +2847,13 @@ void PLAYER_SetDefaultSpectatorValues( player_t *pPlayer )
 
 	// [BB] Speed and viewheight of spectators should be independent of the player class.
 	pPlayer->mo->Speed = FRACUNIT;
+	// [rc4l] All four tiers (features/quake-movement extended these from two). Resetting only the
+	// first two would leave the stated intent -- spectator speed independent of the player class --
+	// half true the moment a crouch tier is consulted.
 	pPlayer->mo->ForwardMove1 = pPlayer->mo->ForwardMove2 = FRACUNIT;
+	pPlayer->mo->ForwardMove3 = pPlayer->mo->ForwardMove4 = FRACUNIT;
 	pPlayer->mo->SideMove1 = pPlayer->mo->SideMove2 = FRACUNIT;
+	pPlayer->mo->SideMove3 = pPlayer->mo->SideMove4 = FRACUNIT;
 	pPlayer->mo->ViewHeight = 41*FRACUNIT;
 	// [BB] Also can't hurt to reset gravity.
 	pPlayer->mo->gravity = FRACUNIT;

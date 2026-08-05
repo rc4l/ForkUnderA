@@ -1,0 +1,7 @@
+# <base url>   <who runs it>   -- see features/wad-download/README.md
+https://static.allfearthesentinel.com/wads/    All Fear The Sentinel
+https://euroboros.net/zandronum/wads/          Euroboros
+https://static.audrealms.org/wads/             Aud Realms
+http://grandpachuck.org/files/wads/            Grandpa Chuck
+https://wads.doomleague.org/                   Doom League
+https://wads.firestick.games/                  Firestick Games

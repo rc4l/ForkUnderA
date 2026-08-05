@@ -62,6 +62,12 @@ public:
 	const char *MatchString (const char *string) const;
 	void SetString (const char *name, const char *newString);
 
+	// [rc4l] Drop EVERYTHING, including the DEHACKED-set entries that LoadStrings deliberately
+	// preserves. Only the engine restart path wants this -- see the restart block in D_DoomMain for
+	// why. Additive wrapper rather than making FreeData public, so re-syncing this header stays a
+	// clean merge.
+	void FlushAllForRestart () { FreeData (); }
+
 private:
 	enum { HASH_SIZE = 128 };
 

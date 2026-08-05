@@ -29,8 +29,10 @@
 #include "templates.h"
 
 #include "features/server-browser/browser.h"
+#include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/updater/computation/promptpanel_compute.h"
+#include "features/wad-download/zx_waddownload.h"
 
 //*****************************************************************************
 //	CONSTANTS
@@ -93,6 +95,10 @@ static	TArray<int>		g_SortedServers;
 static	int				g_Selected = -1;
 static	int				g_ScrollFirst = 0;
 
+// [rc4l] Which row the mouse was pressed on, so a release somewhere else cancels instead of joining
+// whatever ended up under the cursor. Reset whenever a release lands anywhere.
+static	int				g_MousePressRow = -1;
+
 //*****************************************************************************
 //	FUNCTIONS
 
@@ -127,6 +133,26 @@ static int serverbrowser_ToScreenY( int vy )
 	int x, y, w, h;
 	serverbrowser_ToScreen( 0, vy, 0, 0, x, y, w, h );
 	return y;
+}
+
+//*****************************************************************************
+//
+// [rc4l] Vertical middle of a row, in virtual units.
+//
+// A row is the box DimRow draws: SB_ROW_HEIGHT tall, starting two above the line coordinate. What
+// goes in it -- glyphs eight units tall, a flag around twelve -- is shorter than that, so drawing it
+// AT the line coordinate left everything hugging the top edge with the slack underneath. Centring
+// instead means the contents sit in the row rather than on it, and a taller font or a different flag
+// sheet stays centred without anyone re-tuning a constant.
+static int serverbrowser_RowMidY( int rowY )
+{
+	return rowY - 2 + SB_ROW_HEIGHT / 2;
+}
+
+// Where text of height `h` starts so that it is centred on that middle.
+static int serverbrowser_RowTextY( int rowY, int h )
+{
+	return serverbrowser_RowMidY( rowY ) - h / 2;
 }
 
 //*****************************************************************************
@@ -214,7 +240,8 @@ static void serverbrowser_DrawCountry( int lServer, int x, int y )
 	// XUN means, and what XIP means once our own lookup also comes up empty.
 	if (( ulIndex == COUNTRY_INDEX_UNKNOWN ) && ( bCodeUsable == false ))
 	{
-		screen->DrawText( SmallFont, CR_DARKGRAY, x, y, "?", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		screen->DrawText( SmallFont, CR_DARKGRAY, x, serverbrowser_RowTextY( y, SmallFont->GetHeight( )),
+			"?", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		return;
 	}
 
@@ -238,10 +265,12 @@ static void serverbrowser_DrawCountry( int lServer, int x, int y )
 			// clip to just that cell.
 			// One flag cell occupies SB_ROW_HEIGHT-ish of virtual space; work out the scale that maps
 			// the sheet's own pixels onto that, then express everything in screen pixels.
+			// Centred on the row like everything else in it, rather than starting at the line.
+			const int flagTop = serverbrowser_RowMidY( y ) - flagH / 2;
 			const int px = serverbrowser_ToScreenX( x );
-			const int py = serverbrowser_ToScreenY( y );
+			const int py = serverbrowser_ToScreenY( flagTop );
 			const int cellWpx = serverbrowser_ToScreenX( x + flagW ) - px;
-			const int cellHpx = serverbrowser_ToScreenY( y + flagH ) - py;
+			const int cellHpx = serverbrowser_ToScreenY( flagTop + flagH ) - py;
 
 			const int cellX = ( ulIndex % SB_FLAGS_PER_SIDE ) * flagW;
 			const int cellY = ( ulIndex / SB_FLAGS_PER_SIDE ) * flagH;
@@ -262,7 +291,8 @@ static void serverbrowser_DrawCountry( int lServer, int x, int y )
 
 	// No sheet, or a country we could not place: the code still tells the player what they need.
 	if ( bCodeUsable )
-		screen->DrawText( SmallFont, CR_DARKGRAY, x, y, pszCode, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		screen->DrawText( SmallFont, CR_DARKGRAY, x, serverbrowser_RowTextY( y, SmallFont->GetHeight( )),
+			pszCode, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 }
 
 //*****************************************************************************
@@ -442,24 +472,26 @@ public:
 
 			serverbrowser_DrawCountry( lServer, SB_COL_FLAG, y );
 
+			const int ty = serverbrowser_RowTextY( y, SmallFont->GetHeight( ));
+
 			const FString name = serverbrowser_FitName( BROWSER_GetHostName( lServer ), SB_NAME_MAX_WIDTH );
 			screen->DrawText( SmallFont, bSelected ? CR_WHITE : CR_UNTRANSLATED,
-				SB_COL_NAME, y, name, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				SB_COL_NAME, ty, name, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 			// Humans only -- a row reading 8/8 for seven bots and one person is a lie the player
 			// only discovers after joining.
 			FString players;
 			players.Format( "%d/%d", static_cast<int>( BROWSER_GetNumHumanPlayers( lServer )),
 				static_cast<int>( BROWSER_GetMaxClients( lServer )));
-			screen->DrawText( SmallFont, CR_UNTRANSLATED, SB_COL_PLAYERS, y, players, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			screen->DrawText( SmallFont, CR_UNTRANSLATED, SB_COL_PLAYERS, ty, players, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_VERSION, y,
+			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_VERSION, ty,
 				serverbrowser_ShortVersion( BROWSER_GetVersion( lServer )), DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 			const int ping = static_cast<int>( BROWSER_GetPing( lServer ));
 			FString pingText;
 			pingText.Format( "%d", ping );
-			DrawRightAligned( SmallFont, serverbrowser_PingColor( ping ), SB_COL_PING, y, pingText );
+			DrawRightAligned( SmallFont, serverbrowser_PingColor( ping ), SB_COL_PING, ty, pingText );
 		}
 
 		// Only mention stragglers once there is something to compare them against.
@@ -495,6 +527,19 @@ public:
 	{
 		const int y = SB_FIRST_ROW_Y + SB_VISIBLE_ROWS * SB_ROW_HEIGHT + 12;
 		FString text;
+
+		// [rc4l] A download for a pending join takes over the footer. Joining leaves the browser open
+		// on purpose (see features/server-browser/zx_joinserver.cpp) precisely so this line has
+		// somewhere to live -- without it, "press enter, nothing happens, for four minutes" is what
+		// the player experiences. The server count can wait; the transfer cannot.
+		const FString download = zx::waddownload::StatusLine( );
+		if ( download.IsNotEmpty( ))
+		{
+			screen->DrawText( SmallFont, CR_GOLD,
+				( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( download ) / 2 ), y, download,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			return;
+		}
 
 		if ( phase == zx::BrowserPhase::Ready )
 			text.Format( "%d servers", static_cast<int>( g_SortedServers.Size( )));
@@ -542,6 +587,77 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] Clicking a row.
+	//
+	// Hit-tested against serverbrowser_ToScreenX/Y with the SAME arguments DimRow draws the highlight
+	// with, rather than by inverting the virtual-to-real mapping. VirtualToRealCoordsInt letterboxes
+	// and rounds per call, so an inverse would agree with the drawn box on most resolutions and be a
+	// pixel out on the rest -- and "the row I clicked is not the row that lit up" is a maddening bug
+	// to be told about. Reusing the forward calls means the clickable box IS the visible box.
+	//
+	// Hover highlights, one click joins. An earlier version made the first click select and the second
+	// join, reasoning that a slip should not restart the engine onto another server's WAD set. In use
+	// that was just annoying: with no detail pane to show, the first click looks like it did nothing.
+	//
+	// Moving the highlight on hover is what makes one click safe instead -- you can see which row you
+	// are about to commit to before you press, which is the feedback the doubled click was standing in
+	// for. Pressing and dragging off the row still cancels, as a button should, so a genuine slip has
+	// somewhere to go.
+	bool MouseEvent( int type, int x, int y )
+	{
+		const int total = static_cast<int>( g_SortedServers.Size( ));
+		const int left = serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 );
+		const int right = serverbrowser_ToScreenX( SB_PANEL_RIGHT - 4 );
+
+		if (( total > 0 ) && ( x >= left ) && ( x < right ))
+		{
+			for ( int slot = 0; slot < SB_VISIBLE_ROWS; ++slot )
+			{
+				const int vy = SB_FIRST_ROW_Y + slot * SB_ROW_HEIGHT;
+				const int top = serverbrowser_ToScreenY( vy - 2 );
+				const int bottom = serverbrowser_ToScreenY( vy - 2 + SB_ROW_HEIGHT );
+				if (( y < top ) || ( y >= bottom ))
+					continue;
+
+				const int row = zx::ComputeServerAtSlot( slot, SB_VISIBLE_ROWS, g_ScrollFirst, total );
+				if ( row < 0 )
+					break;					// an empty slot past the last server
+
+				// Hover moves the highlight, so the row about to be committed to is visible before the
+				// press. The cursor sound is deliberately left off: it would fire on every row the
+				// pointer crosses on the way down the list.
+				if ( row != g_Selected )
+					g_Selected = row;
+
+				if ( type == MOUSE_Click )
+				{
+					g_MousePressRow = row;
+					// True also arms the capture that makes MOUSE_Release arrive at all (DMenu::
+					// Responder only forwards a release while captured).
+					return true;
+				}
+
+				if ( type == MOUSE_Release )
+				{
+					// Only the row the press started on, so dragging off cancels.
+					const bool bJoin = ( row == g_MousePressRow );
+					g_MousePressRow = -1;
+					if ( bJoin )
+						return MenuEvent( MKEY_Enter, false );
+					return true;
+				}
+
+				return true;				// a hover, already handled above
+			}
+		}
+
+		if ( type == MOUSE_Release )
+			g_MousePressRow = -1;
+		return Super::MouseEvent( type, x, y );
+	}
+
+	//*************************************************************************
+	//
 	bool MenuEvent( int mkey, bool fromcontroller )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
@@ -569,7 +685,9 @@ public:
 			{
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 				BROWSER_SetSelectedServer( g_SortedServers[g_Selected] );
-				AddCommandString( "menu_join_selected_server" );
+				// [rc4l] fua_ variant: resolves the server's WADs locally and joins through the
+				// validated reload, instead of `restart -connect` tearing the game down first.
+				AddCommandString( "fua_join_selected_server" );
 			}
 			return true;
 

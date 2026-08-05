@@ -1,0 +1,29 @@
+# <filename> | <sha256, or - for no vouched build> | <what it is>   -- see features/wad-download/README.md
+freedoom1.wad  | 7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d | Freedoom: Phase 1 0.13.0
+freedoom1.wad  | c403ea7c27b5b2b77e4c0ca0b691669186790e572065e7eb2b0382801bcb18cc | Freedoom: Phase 1 0.12.1
+freedoom1.wad  | fe395ab0d40f7e57eb50d32947b538990d3d2894a29c94648d7e6385a17ff2f6 | Freedoom: Phase 1 0.12.0
+freedoom1.wad  | bc5739e88b20788845ce82ac0041effdecb4583ddbcdb05b9f899363eaa69892 | Freedoom: Phase 1 0.11.3
+freedoom2.wad  | a8772e088847032510d97ba2312406a6998f21cbab44d4ff10696faa9c0ecd4b | Freedoom: Phase 2 0.13.0
+freedoom2.wad  | 729f100448d0b48e12ecc8004e096a9ea6df024467d962f002bb286805be3a8e | Freedoom: Phase 2 0.12.1
+freedoom2.wad  | 2b1ff8d46d5c4313bee762f7b32d64b38a05645d32aaf46d168e92aaf837b919 | Freedoom: Phase 2 0.12.0
+freedoom2.wad  | d91080adcdaa14f46977887c044a1213bea92d19d73a87be58ec5c354c2d5962 | Freedoom: Phase 2 0.11.3
+freedm.wad     | d9adc4d792627e7fc47b09067b15486da724010c71dd12831e1cf8e0755b68ad | FreeDM 0.13.0
+freedm.wad     | 55e42c531aff9da02e9767efbc186c6ed9da36cd5294b57fdee7b9faad79ab18 | FreeDM 0.12.1
+freedm.wad     | db8a279392d35ee4888e3db48c1c18683dd506996a5afb12e78ffcb553f5246b | FreeDM 0.12.0
+freedm.wad     | c0b998f0ebd0ce343d56e584546a0d3e177bd7e98e13abecd77e2c00dcd15426 | FreeDM 0.11.3
+freedoomu.wad  | - | Freedoom: Phase 1 (Ultimate-style naming)
+freedoom.wad   | - | Freedoom (legacy single-file naming)
+chex.wad       | d8eb5277918883f490fb1a4be3c9a8588df2dbaee6dc4beb8df4929148bbffb1 | Chex Quest (12361532 bytes)
+chex3.wad      | 81662798c479458a1b2a2071a223e09501386157be5679fa9ec511c437471dd2 | Chex Quest 3 v1.4 (19191031 bytes)
+chex2.wad      | - | Chex Quest 2
+chex3v.wad     | - | Chex Quest 3: Vanilla Edition
+blasphem.wad   | - | Blasphemer
+blasphemer.wad | - | Blasphemer (long filename)
+hacx.wad       | - | HacX 1.2
+hacx2.wad      | - | HacX 2.0
+harm1.wad      | - | Harmony
+action2.wad    | - | Action Doom 2: Urban Brawl
+square1.pk3    | - | The Adventures of Square
+square1.wad    | - | The Adventures of Square (wad packaging)
+rekkr.wad      | - | REKKR
+megagame.wad   | ba6eadf3d054107d449a6e1cc6add58cf2ba33d49ca0f0f91fa47a4a403f1ad0 | Mega Man 8-bit Deathmatch v6b (official cutstuff archive)
