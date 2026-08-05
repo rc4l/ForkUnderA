@@ -133,6 +133,53 @@ The table is `config/iwadsubstitutes.txt`, PR-able like the others.
 substitute we are not allowed to download is no use as a stand-in for a game we are not allowed to
 download.
 
+## Notes on the shipped lists
+
+The `config/*.txt` files are data only; the reasoning is here.
+
+**Mirrors deliberately absent.** `doomshack.org` no longer resolves, so it would cost a connect
+timeout on every lookup. `doom.dogsoft.net` is absent for a subtler reason, worth writing down
+because it looks broken and is not.
+
+Its `getwad.php?search=` endpoint — the one both Wadseeker and Odamex ship — **gates on
+User-Agent**. An unrecognised agent is redirected to the homepage, which is why it appears dead to
+curl and to us; `Wadseeker/1.5.3` gets `200 application/zip` and the real file. The site keeps a
+per-client counter on its front page (Getwad / Wadseeker / Odamex / DoomFetch), so the allowlist is
+deliberate.
+
+Three things would have to be true to use it, and none is free:
+
+1. **A User-Agent it recognises.** Sending `Wadseeker/…` would misreport our client to a service that
+   explicitly distinguishes them, and inflate someone else's usage counter. The honest route is to
+   ask the operator to recognise a ZandroX agent.
+2. **Unzip.** It serves `application/zip`, and the archive holds the WAD
+   (`dwango5.wad` → a 727 KB zip containing the 2,109,396-byte file). `HttpGetToFile` writes bytes
+   straight to disk, so a zip saved as `.wad` is not what the loader wants.
+3. **Care about fuzzy matching.** `search=test.wad` returns a zip containing `test.bmp` — the name is
+   matched loosely, so a request can come back with something that is not the file asked for. Our
+   SHA-256 gate covers IWADs and the server-advertised MD5 covers PWADs, but a PWAD from a server
+   that sent no hashes would be unverified.
+
+A miss returns `200 text/html` with `<a href=_blank>No Wads</a>` rather than a 404, which the
+content-type check already treats as "not here" — so a dead entry costs a round trip and nothing
+worse.
+
+**Three spellings per site** (as given, lowercase, uppercase) is not padding:
+`wads.doomleague.org` serves `AV.WAD` and 404s `av.wad`, where every other mirror does the reverse.
+
+**Hash provenance.** Freedoom 0.13.0 was verified against the project's PGP-signed `CHECKSUM` before
+extraction; 0.12.1/0.12.0/0.11.3 came from the same GitHub releases page, which publishes no
+CHECKSUM for them. Chex Quest has no stable release page, so those two were corroborated
+independently — `chex.wad`'s MD5 matches Odamex's `w_ident.cpp` table, and `chex3.wad`'s MD5, SHA-1
+and byte size match the published v1.4 records — and both were opened to confirm they contain the
+lumps `iwadinfo.txt` identifies them by. `megagame.wad` came from the official cutstuff
+`mm8bdm-v6b-3.2.1-win64` archive; do not be misled by its `ENDOOM`, which is Doom II's sign-off text
+copied into an otherwise empty IWAD skeleton whose real content lives in `mm8bdm-v6b.pk3`.
+
+**PWAD magic on IWADs.** Chex Quest and MM8BDM both ship their IWADs with `PWAD` magic; the engine
+loads them as IWADs by lump matching. That is why the hash gate keys off the IWAD *slot* as well as
+the header — a magic-only test skips exactly those files.
+
 ## The other thing a server-chosen string can do
 
 Every filename here comes from a remote host. `computation/downloadplan_compute.h` holds the two
