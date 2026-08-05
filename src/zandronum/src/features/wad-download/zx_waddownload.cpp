@@ -239,10 +239,11 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 		char header[8];
 		const size_t headerLen = ReadHeader(partPath, header, sizeof header);
 
-		// SHA-256 only when the bytes are actually a game. Hashing every mod would cost a full extra
-		// read of a file we have no list to check it against.
+		// SHA-256 only when this is going to be loaded as a game -- which is the IWAD slot OR IWAD
+		// magic, not magic alone: Chex Quest ships PWAD magic and is still an IWAD. Hashing every mod
+		// would cost a full extra read of a file we have no list to check it against.
 		std::string sha;
-		if (zx::HeaderIsIwadMagic(header, headerLen))
+		if (wanted.isIwad || zx::HeaderIsIwadMagic(header, headerLen))
 		{
 			char hex[65];
 			if (zx::Sha256OfFile(partPath.c_str(), hex, sizeof hex))
@@ -251,7 +252,7 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 
 		// The gate: a commercial game arriving under a name nobody would question dies here.
 		const zx::DownloadVerdict post =
-			zx::ClassifyDownloadedFile(wanted.name, header, headerLen, sha);
+			zx::ClassifyDownloadedFile(wanted.name, wanted.isIwad, header, headerLen, sha);
 		if (post != zx::DownloadVerdict::Allowed)
 		{
 			std::remove(partPath.c_str());

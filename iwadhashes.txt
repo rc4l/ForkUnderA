@@ -66,13 +66,36 @@ bc5739e88b20788845ce82ac0041effdecb4583ddbcdb05b9f899363eaa69892  freedoom1.wad 
 d91080adcdaa14f46977887c044a1213bea92d19d73a87be58ec5c354c2d5962  freedoom2.wad  Freedoom: Phase 2 0.11.3
 c0b998f0ebd0ce343d56e584546a0d3e177bd7e98e13abecd77e2c00dcd15426  freedm.wad     FreeDM 0.11.3
 
+# --- Chex Quest -------------------------------------------------------------------------------
+#
+# Chex Quest has no stable project release page -- chexquest3.com and its predecessors have come and
+# gone -- so these came from a third-party WAD collection, which is normally exactly what the note
+# above says not to trust. They are listed anyway because each was corroborated against sources with
+# no connection to that collection or to each other:
+#
+#   chex.wad   MD5 25485721882b050afa96a56e5758dd52 matches Odamex's own IWAD identification table
+#              (common/w_ident.cpp), published independently and years earlier.
+#   chex3.wad  MD5 bce163d06521f9d15f9686786e64df13, SHA-1
+#              f0581563604543060c1dce2f148fd74412adb8b8 and the exact byte size 19191031 all match
+#              the published records for Chex Quest 3 v1.4.
+#
+# Both were also opened and checked to contain the lumps wadsrc/static/iwadinfo.txt requires to
+# identify them (E1M1/E4M1/W94_1/POSSH0M0 and E1M1/CYCLA1/FLMBA1/MAPINFO), so they are structurally
+# the games they claim to be, not just files with the right digest.
+#
+# Worth knowing: BOTH SHIP WITH PWAD MAGIC. The engine loads them as IWADs by lump matching, not by
+# header. That is why the gate keys off "the server declared this as its IWAD" as well as the magic --
+# a magic-only test would have skipped the hash check on exactly these two files.
+d8eb5277918883f490fb1a4be3c9a8588df2dbaee6dc4beb8df4929148bbffb1  chex.wad   Chex Quest (12361532 bytes)
+81662798c479458a1b2a2071a223e09501386157be5679fa9ec511c437471dd2  chex3.wad  Chex Quest 3 v1.4 (19191031 bytes)
+
 # --- Not yet vouched for ----------------------------------------------------------------------
 #
-# Blasphemer, Chex Quest 1-3, HacX, Harmony, Action Doom 2, The Adventures of Square, REKKR and
+# Blasphemer, Chex Quest 2, HacX, Harmony, Action Doom 2, The Adventures of Square, REKKR and
 # Mega Man 8-bit Deathmatch are all on iwadallowlist.txt, but no build of any of them has been hashed
-# from an authoritative source yet. Until one is, downloading them is REFUSED -- deny-by-default
+# from a source we could corroborate yet. Until one is, downloading them is REFUSED -- deny-by-default
 # applies to us not having done the work, exactly as it applies to a game we have never heard of.
 #
 # They are unaffected as IWADs a player already owns; this only governs downloading. Each needs
 # someone with access to the project's own release (several are behind ModDB/itch download gates that
-# cannot be fetched unattended) to add a line.
+# cannot be fetched unattended), or the same kind of independent corroboration the Chex entries got.

@@ -25,13 +25,20 @@
 //      This is an EARLY-OUT, not the gate. It exists so we do not pull 40 MB of something we would
 //      only delete -- and because transiently writing a commercial IWAD to disk is still downloading
 //      it. A filename is a claim made by the server, so it can never be the thing we rely on.
-//   2. After the bytes land (hash): a file whose header says IWAD is kept only if its SHA-256 is one
-//      we shipped. This is the gate. It is the only check a rename cannot walk past -- doom2.wad
-//      served under the name freedoom2.wad passes every name check ever written and fails this one.
+//   2. After the bytes land (hash): a file that is going to be loaded AS a game is kept only if its
+//      SHA-256 is one we shipped. This is the gate. It is the only check a rename cannot walk past --
+//      doom2.wad served under the name freedoom2.wad passes every name check ever written and fails
+//      this one.
 //
-// The header magic (IWAD vs PWAD) is what selects between them. Without it the only rule would be
-// "not in the hash list -> refuse", which would refuse every PWAD ever made: we can enumerate free
-// IWADs, we cannot enumerate mods.
+// "Going to be loaded as a game" is deliberately NOT just "has IWAD magic", and that cost us a bug.
+// Chex Quest ships chex.wad and chex3.wad with PWAD magic; the engine loads them as IWADs anyway,
+// by matching lumps out of wadsrc/static/iwadinfo.txt. So a magic-only test skips the hash check on
+// exactly the files an allowlist entry was written for. The rule is therefore: the file is gated if
+// the server declared it as its IWAD, OR its header says IWAD whatever slot asked for it. The first
+// catches Chex; the second catches doom2.wad smuggled in as a "PWAD".
+//
+// It still cannot be "everything must be in the hash list", because that would refuse every PWAD ever
+// made: we can enumerate free IWADs, we cannot enumerate mods.
 //
 // Odamex reaches the same place from the opposite direction -- an MD5 DENYlist of commercial files.
 // That works for them because the commercial set they enumerate stopped growing; it does not work
@@ -89,11 +96,13 @@ bool IsVouchedIwadBuild(const std::string &sha256Hex, const std::string &name);
 // PWAD actually turns out to be is settled by ClassifyDownloadedFile.
 DownloadVerdict ClassifyWantedFile(const std::string &name, bool isIwadSlot);
 
-// Verdict on a file AFTER fetching it. `sha256Hex` is the digest of what actually arrived; pass ""
-// when it could not be computed, which is treated as "cannot vouch" rather than "fine". Callers must
-// delete the file on anything but Allowed.
-DownloadVerdict ClassifyDownloadedFile(const std::string &name, const char *header, size_t len,
-	const std::string &sha256Hex);
+// Verdict on a file AFTER fetching it. `isIwadSlot` is the same flag ClassifyWantedFile was given --
+// it has to be re-supplied because a file can be destined to load as a game without saying so in its
+// header (Chex Quest). `sha256Hex` is the digest of what actually arrived; pass "" when it could not
+// be computed, which is treated as "cannot vouch" rather than "fine". Callers must delete the file on
+// anything but Allowed.
+DownloadVerdict ClassifyDownloadedFile(const std::string &name, bool isIwadSlot, const char *header,
+	size_t len, const std::string &sha256Hex);
 
 } // namespace zx
 

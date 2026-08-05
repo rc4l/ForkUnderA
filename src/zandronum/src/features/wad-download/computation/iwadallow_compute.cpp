@@ -96,17 +96,20 @@ DownloadVerdict ClassifyWantedFile(const std::string &name, bool isIwadSlot)
 	return DownloadVerdict::Allowed;
 }
 
-DownloadVerdict ClassifyDownloadedFile(const std::string &name, const char *header, size_t len,
-	const std::string &sha256Hex)
+DownloadVerdict ClassifyDownloadedFile(const std::string &name, bool isIwadSlot, const char *header,
+	size_t len, const std::string &sha256Hex)
 {
 	// The name is re-checked rather than trusted from the earlier pass: this function is the last gate
 	// before a file is kept, and it should be safe to call on a file that arrived by any route.
 	if (!IsSafeDownloadName(name))
 		return DownloadVerdict::UnsafeName;
 
-	// Not an IWAD -> it is a mod, and mods cannot be enumerated. Nothing more to ask.
-	if (!HeaderIsIwadMagic(header, len))
-		return DownloadVerdict::Allowed;
+	// Either reason is enough to treat this as a game. The slot covers the files that ARE games
+	// without saying so -- Chex Quest ships PWAD magic and is loaded as an IWAD by lump matching, so
+	// a magic-only test would skip the check on exactly the files we wrote allowlist entries for. The
+	// magic covers the reverse: a game the server called a "PWAD" to dodge the slot.
+	if (!isIwadSlot && !HeaderIsIwadMagic(header, len))
+		return DownloadVerdict::Allowed;		// an ordinary mod, and mods cannot be enumerated
 
 	// It is a game. Two questions, in this order, because they fail for different reasons and the
 	// player deserves the right one: is this filename even supposed to be a free IWAD, and are these

@@ -133,7 +133,7 @@ TEST(IwadAllow, AGameListedAsAPwadPassesTheNameGateAndIsCaughtByTheContentGate)
 	// check -- there is no name list to catch it -- and is then refused for what actually arrived.
 	EXPECT_EQ(DownloadVerdict::Allowed, WantPwad("doom2.wad"));
 	EXPECT_EQ(DownloadVerdict::UnlistedIwad,
-		ClassifyDownloadedFile("doom2.wad", kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
+		ClassifyDownloadedFile("doom2.wad", false, kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
 }
 
 //=============================================================================
@@ -187,22 +187,22 @@ TEST(DownloadedFile, RefusesIwadContentArrivingUnderAnInnocentName)
 	// actually arrived catches it.
 	EXPECT_EQ(DownloadVerdict::Allowed, WantPwad("coolmod.wad"));
 	EXPECT_EQ(DownloadVerdict::UnlistedIwad,
-		ClassifyDownloadedFile("coolmod.wad", kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
+		ClassifyDownloadedFile("coolmod.wad", false, kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
 }
 
 TEST(DownloadedFile, KeepsAnOrdinaryPwad)
 {
 	EXPECT_EQ(DownloadVerdict::Allowed,
-		ClassifyDownloadedFile("brutal.wad", kPwadHeader, sizeof kPwadHeader, ""));
+		ClassifyDownloadedFile("brutal.wad", false, kPwadHeader, sizeof kPwadHeader, ""));
 	EXPECT_EQ(DownloadVerdict::Allowed,
-		ClassifyDownloadedFile("skins.pk3", kPk3Header, sizeof kPk3Header, ""));
+		ClassifyDownloadedFile("skins.pk3", false, kPk3Header, sizeof kPk3Header, ""));
 }
 
 TEST(DownloadedFile, KeepsAnAllowlistedIwadThatReallyIsAnIwad)
 {
 	// The name is on iwadallowlist.txt AND these are bytes iwadhashes.txt vouches for.
 	EXPECT_EQ(DownloadVerdict::Allowed,
-		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader, kFreedoom2_0_13_0));
+		ClassifyDownloadedFile("freedoom2.wad", false, kIwadHeader, sizeof kIwadHeader, kFreedoom2_0_13_0));
 }
 
 TEST(DownloadedFile, RefusesAnAllowlistedNameWhoseBytesWeHaveNotVouchedFor)
@@ -211,9 +211,9 @@ TEST(DownloadedFile, RefusesAnAllowlistedNameWhoseBytesWeHaveNotVouchedFor)
 	// is refused -- deny-by-default applies to us not having done the work just as it applies to a
 	// game we have never heard of. Also the shape of the doom2-served-as-freedoom2 attack.
 	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
-		ClassifyDownloadedFile("megagame.wad", kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
+		ClassifyDownloadedFile("megagame.wad", false, kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
 	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
-		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
+		ClassifyDownloadedFile("freedoom2.wad", false, kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
 }
 
 TEST(DownloadedFile, AcceptsAnyVouchedBuildNotJustTheNewest)
@@ -221,7 +221,7 @@ TEST(DownloadedFile, AcceptsAnyVouchedBuildNotJustTheNewest)
 	// Mirrors host whatever they happened to grab, so pinning to the current release alone would
 	// refuse most of what is actually out there.
 	EXPECT_EQ(DownloadVerdict::Allowed,
-		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader, kFreedoom2_0_12_1));
+		ClassifyDownloadedFile("freedoom2.wad", false, kIwadHeader, sizeof kIwadHeader, kFreedoom2_0_12_1));
 }
 
 TEST(DownloadedFile, RefusesAVouchedBuildServedUnderTheWrongName)
@@ -229,7 +229,38 @@ TEST(DownloadedFile, RefusesAVouchedBuildServedUnderTheWrongName)
 	// Freedoom Phase 1 arriving as freedoom2.wad: both free, so not a licensing problem -- but saving
 	// it would poison the cache with a file that can never load the maps its name promises.
 	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
-		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader, kFreedoom1_0_13_0));
+		ClassifyDownloadedFile("freedoom2.wad", false, kIwadHeader, sizeof kIwadHeader, kFreedoom1_0_13_0));
+}
+
+TEST(DownloadedFile, GatesAGameThatShipsWithPwadMagicBecauseItWasTheServersIwad)
+{
+	// Chex Quest ships chex.wad and chex3.wad with PWAD magic; the engine loads them as IWADs by
+	// matching lumps out of iwadinfo.txt. A magic-only test skips the hash check on exactly the files
+	// an allowlist entry was written for -- so the IWAD SLOT has to gate too.
+	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
+		ClassifyDownloadedFile("chex.wad", true, kPwadHeader, sizeof kPwadHeader, kNotAnyBuild));
+	// ...and the same bytes requested as an ordinary mod stay an ordinary mod.
+	EXPECT_EQ(DownloadVerdict::Allowed,
+		ClassifyDownloadedFile("somemod.wad", false, kPwadHeader, sizeof kPwadHeader, ""));
+}
+
+TEST(DownloadedFile, AcceptsTheVouchedChexBuilds)
+{
+	// Real digests from iwadhashes.txt, cross-checked against Odamex's table (chex) and the published
+	// MD5/SHA-1/size records (chex3). PWAD magic, gated because they are the server's IWAD.
+	EXPECT_EQ(DownloadVerdict::Allowed,
+		ClassifyDownloadedFile("chex.wad", true, kPwadHeader, sizeof kPwadHeader,
+			"d8eb5277918883f490fb1a4be3c9a8588df2dbaee6dc4beb8df4929148bbffb1"));
+	EXPECT_EQ(DownloadVerdict::Allowed,
+		ClassifyDownloadedFile("chex3.wad", true, kPwadHeader, sizeof kPwadHeader,
+			"81662798c479458a1b2a2071a223e09501386157be5679fa9ec511c437471dd2"));
+}
+
+TEST(DownloadedFile, StillCatchesAGameSmuggledInThroughThePwadSlot)
+{
+	// The other half of the rule: IWAD magic gates regardless of the slot the server claimed.
+	EXPECT_EQ(DownloadVerdict::UnlistedIwad,
+		ClassifyDownloadedFile("coolmod.wad", false, kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
 }
 
 TEST(DownloadedFile, AFailedHashIsNeverTreatedAsAPass)
@@ -237,7 +268,7 @@ TEST(DownloadedFile, AFailedHashIsNeverTreatedAsAPass)
 	// Sha256OfFile returns "" when it cannot read the file. That has to mean "cannot vouch" -- if it
 	// meant "fine", a read error would be a way through the only check that stops a renamed game.
 	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
-		ClassifyDownloadedFile("freedoom2.wad", kIwadHeader, sizeof kIwadHeader, ""));
+		ClassifyDownloadedFile("freedoom2.wad", false, kIwadHeader, sizeof kIwadHeader, ""));
 	EXPECT_FALSE(zx::IsVouchedIwadBuild("", "freedoom2.wad"));
 }
 
@@ -254,14 +285,14 @@ TEST(DownloadedFile, RechecksTheNameRatherThanTrustingTheEarlierPass)
 	// This is the last gate before a file is kept, so it has to be safe to call on a file that
 	// arrived by any route -- including one that never went through ClassifyWantedFile.
 	EXPECT_EQ(DownloadVerdict::UnsafeName,
-		ClassifyDownloadedFile("../evil.wad", kPwadHeader, sizeof kPwadHeader, ""));
+		ClassifyDownloadedFile("../evil.wad", false, kPwadHeader, sizeof kPwadHeader, ""));
 	EXPECT_EQ(DownloadVerdict::UnsafeName,
-		ClassifyDownloadedFile("evil.exe", kPwadHeader, sizeof kPwadHeader, ""));
+		ClassifyDownloadedFile("evil.exe", false, kPwadHeader, sizeof kPwadHeader, ""));
 }
 
 TEST(DownloadedFile, AnEmptyOrTruncatedFileIsNotMistakenForAnIwad)
 {
-	EXPECT_EQ(DownloadVerdict::Allowed, ClassifyDownloadedFile("brutal.wad", "", 0, ""));
+	EXPECT_EQ(DownloadVerdict::Allowed, ClassifyDownloadedFile("brutal.wad", false, "", 0, ""));
 }
 
 //=============================================================================
