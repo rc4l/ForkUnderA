@@ -55,6 +55,16 @@
 #define SB_ROW_HEIGHT		20
 #define SB_VISIBLE_ROWS		12
 
+// [rc4l] The panel's content span, in virtual pixels. ComputePanelRect pads BOTH ends by the corner
+// radius, so the visible gap to the screen edge is ( SB_CONTENT_TOP - radius ) above and
+// ( SB_VIRT_H - SB_CONTENT_BOTTOM - radius ) below. Deriving the top from the bottom is what forces
+// those two to be equal; hardcoding them separately is how the panel ended up 4px from the top edge
+// and 28px from the bottom.
+#define SB_CONTENT_BOTTOM	( SB_FIRST_ROW_Y + SB_VISIBLE_ROWS * SB_ROW_HEIGHT + 28 )
+#define SB_CONTENT_TOP		( SB_VIRT_H - SB_CONTENT_BOTTOM )
+// Title baseline, kept the same distance inside the panel's top edge as it was before.
+#define SB_TITLE_Y			( SB_CONTENT_TOP + 12 )
+
 // Column x positions (left edge of each), virtual pixels.
 #define SB_COL_FLAG			48
 #define SB_COL_NAME			84
@@ -367,7 +377,7 @@ public:
 		DrawPanel( );
 
 		screen->DrawText( BigFont, CR_UNTRANSLATED,
-			( SB_VIRT_W / 2 ) - ( BigFont->StringWidth( "SERVERS" ) / 2 ), 28, "SERVERS", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			( SB_VIRT_W / 2 ) - ( BigFont->StringWidth( "SERVERS" ) / 2 ), SB_TITLE_Y, "SERVERS", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 		if ( phase == zx::BrowserPhase::Ready )
 			DrawRows( counts );
@@ -386,8 +396,8 @@ public:
 		const int screenW = screen->GetWidth( ), screenH = screen->GetHeight( );
 
 		const int panelWpx = serverbrowser_ToScreenX( SB_PANEL_RIGHT ) - serverbrowser_ToScreenX( SB_PANEL_LEFT );
-		const int topPx = serverbrowser_ToScreenY( 16 );
-		const int bottomPx = serverbrowser_ToScreenY( SB_FIRST_ROW_Y + SB_VISIBLE_ROWS * SB_ROW_HEIGHT + 28 );
+		const int topPx = serverbrowser_ToScreenY( SB_CONTENT_TOP );
+		const int bottomPx = serverbrowser_ToScreenY( SB_CONTENT_BOTTOM );
 		const int radiusPx = serverbrowser_ToScreenY( 12 ) - serverbrowser_ToScreenY( 0 );
 
 		zx::PanelRect r = zx::ComputePanelRect( screenW, screenH, panelWpx, topPx, bottomPx, radiusPx, radiusPx );

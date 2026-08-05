@@ -58,6 +58,28 @@ bool JoinSelectedServer()
 	const std::vector<std::string> wanted =
 		ComputeJoinWadList(pszIwad != NULL ? pszIwad : "", ServerPwadNames(lServer));
 
+	// [rc4l] The IWAD needs resolving too, and for the same reason the PWADs do: the server sends a
+	// bare name ("doom2.wad") and the file is wherever the player keeps their WADs. Passing the name
+	// through unresolved made RequestReload's loadability check test it against the working directory
+	// and refuse every join whose IWAD was not sitting next to the exe -- which is nearly all of them,
+	// since the whole point of the search path is that WADs live elsewhere.
+	FString iwadPath;
+	if (pszIwad != NULL && pszIwad[0] != '\0')
+	{
+		TArray<FString> iwadResolved;
+		if (D_AddFile(iwadResolved, pszIwad) && iwadResolved.Size() > 0)
+		{
+			iwadPath = iwadResolved[0];
+		}
+		else
+		{
+			FString msg;
+			msg.Format("Can't join. Missing the IWAD:\n\n%s\n\npress a key.", pszIwad);
+			M_StartMessage(msg.GetChars(), 1);
+			return false;
+		}
+	}
+
 	// Resolve every name to a real file first. D_AddFile pushes the RESOLVED path, so `resolved` ends
 	// up being what we hand the loader -- no second lookup, and no chance of resolving to a different
 	// file than the one we checked.
@@ -90,7 +112,7 @@ bool JoinSelectedServer()
 	// RequestReload either connects in place (already on this WAD set), or throws CRestartException
 	// and does not return. InvalidWads is the only way back here with nothing done.
 	const zx::wadreload::ReloadResult r = zx::wadreload::RequestReload(
-		pszIwad, resolved, NULL, address.GetChars());
+		iwadPath.IsNotEmpty() ? iwadPath.GetChars() : NULL, resolved, NULL, address.GetChars());
 
 	if (r == zx::wadreload::ReloadResult::InvalidWads)
 	{
