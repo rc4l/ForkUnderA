@@ -1,0 +1,65 @@
+# ZandroX downloadable IWAD allowlist
+# format-version: 1
+#
+# The IWADs ZandroX is willing to DOWNLOAD. Nothing else on this list matters as much as what is
+# absent from it, so read this before adding a line.
+#
+# A PWAD is a mod. An IWAD is the game -- and for Doom, Doom II, Final Doom, Heretic, Hexen and
+# Strife the game is something a player buys. Downloading one is redistributing it. So the engine
+# assumes EVERY IWAD is commercial and refuses it, and this file is the list of exceptions.
+#
+# That is the opposite of how other ports do it. Odamex keeps a denylist of commercial files, which
+# can only describe games that already existed when it was written -- the commercial IWAD released
+# next year is not on it, so it downloads. Deny-by-default never has to hear about a new game to
+# refuse it.
+#
+# This file is COMPILED INTO THE BINARY at build time. It is deliberately not a CVAR, not a lump, and
+# not fetched at runtime: a list anyone can append to is not a gate, and the first thing written to
+# one would be "doom2.wad", in a server setup guide, in a config a player pastes without reading.
+# Adding a line here is a pull request with a commit behind it -- which is the right amount of
+# friction for a claim about someone else's licence.
+#
+# The engine ALSO reads the header of every file it downloads: anything whose own bytes say IWAD must
+# appear here too, whatever it was called and whichever slot asked for it. That is what catches
+# doom2.wad renamed to coolmod.wad, and it is why this file does not need a list of games to refuse.
+#
+# One IWAD per line:
+#   <filename>    <what it is>
+#
+# Only the first token is read; the rest is documentation. Blank lines and lines starting with # are
+# ignored. Matching is case-insensitive.
+#
+# To add one, open a PR. The bar is that free redistribution is the author's stated, long-standing
+# position -- not "it is on an archive somewhere", and not "the demo is free". List every filename
+# spelling the engine's own wadsrc/static/iwadinfo.txt accepts, or the entry only half works.
+#
+# Note what is NOT here, and that leaving it out is the entire mechanism: REKKR shipped free as
+# rekkr.wad, while "Sunken Land" (rekkrsa.wad) is the paid Steam edition. There is no second list
+# saying so -- the filename simply is not below.
+
+# Freedoom -- BSD-licensed, the reference free IWAD
+freedoom1.wad     Freedoom: Phase 1
+freedoom2.wad     Freedoom: Phase 2
+freedoomu.wad     Freedoom: Phase 1 (Ultimate-style naming)
+freedoom.wad      Freedoom (legacy single-file naming)
+freedm.wad        FreeDM
+
+# Blasphemer -- the Heretic equivalent, open-licensed
+blasphem.wad      Blasphemer
+blasphemer.wad    Blasphemer (long filename)
+
+# Chex Quest -- never sold; a cereal-box giveaway, sequels released free by their authors
+chex.wad          Chex Quest
+chex2.wad         Chex Quest 2
+chex3.wad         Chex Quest 3
+chex3v.wad        Chex Quest 3: Vanilla Edition
+
+# Freeware total conversions
+hacx.wad          HacX 1.2
+hacx2.wad         HacX 2.0
+harm1.wad         Harmony
+action2.wad       Action Doom 2: Urban Brawl
+square1.pk3       The Adventures of Square
+square1.wad       The Adventures of Square (wad packaging)
+rekkr.wad         REKKR
+megagame.wad      Mega Man 8-bit Deathmatch

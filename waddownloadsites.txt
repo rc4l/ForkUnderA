@@ -1,0 +1,40 @@
+# ZandroX WAD download mirrors
+# format-version: 1
+#
+# The default sites a client fetches missing WADs from, tried in the order below AFTER whatever the
+# server itself advertises (Zandronum's sv_website, which reaches the browser as SQF_URL). A player
+# can replace the whole list with cl_fua_downloadsites; this file is what ships.
+#
+# Unlike iwadallowlist.txt, nothing here is a legal assertion -- these are file hosts, and the worst
+# a bad entry costs is a wasted round trip before the next mirror is tried. It is a separate file
+# because it goes stale on a completely different schedule: mirrors come and go, licences do not.
+#
+# Compiled into the binary at build time, same as the allowlist.
+#
+# One base URL per line:
+#   <url>    <who runs it>
+#
+# Only the first token is read; the rest is documentation. Blank lines and lines starting with # are
+# ignored. A URL is used as-is if it ends in '/' or '=' (the latter for query endpoints where the
+# filename is appended as a value); otherwise a '/' is added. Entries that are not http:// or
+# https:// are skipped.
+#
+# The client tries three spellings of the filename at each site -- as the server spelled it, all
+# lowercase, all uppercase -- because these are ordinary case-sensitive web servers and the same WAD
+# is filed differently across them. That is not defensive padding: wads.doomleague.org serves AV.WAD
+# and 404s av.wad, where every other mirror below does the reverse.
+#
+# Two sites in other ports' equivalent lists are deliberately absent:
+#   doomshack.org             no longer resolves, so it would cost a connect timeout on every lookup
+#   doom.dogsoft.net/getwad   answers 200 with an HTML search page for every query, hit or miss --
+#                             a page for humans, not a file host
+#
+# To add one, open a PR. Check it actually SERVES a file (not merely answers), over a stable
+# hostname, without a bot challenge.
+
+https://static.allfearthesentinel.com/wads/    All Fear The Sentinel
+https://euroboros.net/zandronum/wads/          Euroboros
+https://static.audrealms.org/wads/             Aud Realms
+http://grandpachuck.org/files/wads/            Grandpa Chuck
+https://wads.doomleague.org/                   Doom League (serves UPPERCASE filenames)
+https://wads.firestick.games/                  Firestick Games
