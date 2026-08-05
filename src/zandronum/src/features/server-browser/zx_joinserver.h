@@ -48,6 +48,16 @@ void NoteJoinFailed( const char *reason );
 // Call once per frame from the main loop. Reopens the browser after a failed join.
 void JoinTick();
 
+// [rc4l] Say something on the browser's own panel, rather than through M_StartMessage.
+//
+// A stock message box draws over whatever is behind the menu -- which, when the browser was reached
+// through a console command or a failed join, is the title screen. Being told "that server is full"
+// while looking at cover art reads as having been thrown out of the browser rather than answered by
+// it. Same panel, same dimensions, dismissed by any key or click.
+//
+// Implemented by the browser menu; declared here because the join path is what raises these.
+void ShowBrowserNotice( const char *text );
+
 } // namespace zx
 
 #endif // ZX_JOINSERVER_H

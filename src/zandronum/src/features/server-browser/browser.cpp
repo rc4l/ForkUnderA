@@ -354,6 +354,17 @@ const char *BROWSER_GetIWADHash( ULONG ulServer )
 
 //*****************************************************************************
 //
+bool BROWSER_IsPasswordProtected( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( false );
+
+	return ( g_BrowserServerList[ulServer].bForcePassword ||
+		g_BrowserServerList[ulServer].bForceJoinPassword );
+}
+
+//*****************************************************************************
+//
 LONG BROWSER_GetNumDMFlags( ULONG ulServer )
 {
 	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
@@ -658,6 +669,8 @@ void BROWSER_ClearServerList( void )
 		g_BrowserServerList[ulIdx].usDirectDownloadPort = 0;
 		g_BrowserServerList[ulIdx].bPrefersMirrors = false;
 		g_BrowserServerList[ulIdx].IWADHash = "";
+		g_BrowserServerList[ulIdx].bForcePassword = false;
+		g_BrowserServerList[ulIdx].bForceJoinPassword = false;
 	}
 }
 
@@ -935,13 +948,14 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 	if ( ulFlags & SQF_IWAD )
 		g_BrowserServerList[lServer].IWADName = pByteStream->ReadString();
 
-	// Force password.
+	// [rc4l] Kept rather than discarded: the browser's Public/Private tabs sort on it. Either kind of
+	// password makes a server private -- one gates connecting and the other gates joining the game,
+	// and from the outside both mean "you need to have been told something to get in".
 	if ( ulFlags & SQF_FORCEPASSWORD )
-		pByteStream->ReadByte();
+		g_BrowserServerList[lServer].bForcePassword = !!pByteStream->ReadByte();
 
-	// Force join password.
 	if ( ulFlags & SQF_FORCEJOINPASSWORD )
-		pByteStream->ReadByte();
+		g_BrowserServerList[lServer].bForceJoinPassword = !!pByteStream->ReadByte();
 
 	// Game skill.
 	if ( ulFlags & SQF_GAMESKILL )
@@ -1412,7 +1426,9 @@ static void browser_QueryServer( ULONG ulServer )
 	// [SB] Added extended flags that we want.
 	g_ServerBuffer.Clear();
 	g_ServerBuffer.ByteStream.WriteLong( LAUNCHER_SERVER_CHALLENGE );
-	g_ServerBuffer.ByteStream.WriteLong( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_PWADS|SQF_GAMETYPE|SQF_IWAD|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_ALL_DMFLAGS|SQF_EXTENDED_INFO );
+	// [rc4l] SQF_FORCEPASSWORD / SQF_FORCEJOINPASSWORD added: the Public/Private tabs sort on them.
+	// The parse already consumed both bytes to keep its place; now it keeps the values too.
+	g_ServerBuffer.ByteStream.WriteLong( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_PWADS|SQF_GAMETYPE|SQF_IWAD|SQF_FORCEPASSWORD|SQF_FORCEJOINPASSWORD|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_ALL_DMFLAGS|SQF_EXTENDED_INFO );
 	g_ServerBuffer.ByteStream.WriteLong( I_MSTime( ));
 	// [rc4l] SQF2_COUNTRY added: the flag column needs it, and the server has always been willing to
 	// send it -- the old browser asked for everything except the one field it then read and discarded.

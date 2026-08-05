@@ -57,7 +57,8 @@
 
 #define SB_PANEL_LEFT		36
 #define SB_PANEL_RIGHT		604
-#define SB_HEADER_Y			68
+// [rc4l] Derived from the rule below the tabs rather than hardcoded, so nothing ever sits on it.
+#define SB_HEADER_Y			( SB_TAB_SEP_Y + 8 )
 #define SB_FIRST_ROW_Y		92
 
 // [rc4l] 16 rather than 20. The glyphs are eight units tall, so 20 left six clear above and below --
@@ -79,7 +80,8 @@
 // panel edge -- otherwise a selected row's band runs on underneath the detail panel and shows through
 // it, and clicking the panel selects whatever row happens to be level with the pointer.
 #define SB_LIST_RIGHT		( SB_DETAIL_LEFT - 8 )
-#define SB_DETAIL_TOP		62
+// Clear of the rule under the tabs by the same padding the tabs use, so nothing touches it.
+#define SB_DETAIL_TOP		( SB_TAB_SEP_Y + SB_TAB_PAD )
 #define SB_DETAIL_BOTTOM	( SB_ROWS_BOTTOM + 6 )
 #define SB_DETAIL_PAD		10
 #define SB_DETAIL_LINE		11
@@ -106,8 +108,27 @@
 // and 28px from the bottom.
 #define SB_CONTENT_BOTTOM	( SB_FOOTER_Y + 24 )
 #define SB_CONTENT_TOP		( SB_VIRT_H - SB_CONTENT_BOTTOM )
-// Title baseline, kept the same distance inside the panel's top edge as it was before.
-#define SB_TITLE_Y			( SB_CONTENT_TOP + 12 )
+// [rc4l] The tab row, where the "SERVERS" title used to be.
+//
+// A title that says SERVERS on the server browser is a word doing no work -- the player pressed a
+// thing called Servers to get here. The same band now carries the filters instead, and everything
+// below it keeps exactly the position it had, so the list and the detail panel are untouched.
+//
+// Only two tabs today. The row is deliberately left long: favourites, history and LAN all belong
+// here eventually, and a layout that has to be redesigned to gain a third tab is one that will be.
+// [rc4l] SB_TAB_PAD is the ONE number the band is spaced by, used above the tabs, below them, and
+// below the rule. Three separate literals is how "roughly even" happens; deriving all three from one
+// is how actually even happens, and it survives anyone changing the tab height later.
+#define SB_TAB_PAD			6
+#define SB_TAB_LEFT			48
+#define SB_TAB_W			78
+#define SB_TAB_GAP			6
+#define SB_TAB_H			14
+#define SB_TAB_TOP			( SB_CONTENT_TOP + SB_TAB_PAD )
+
+// The rule under the row, spanning the whole content width so the tabs read as a header band over
+// both the list and the detail panel rather than as something floating above the list alone.
+#define SB_TAB_SEP_Y		( SB_TAB_TOP + SB_TAB_H + SB_TAB_PAD )
 
 // Column x positions (left edge of each), virtual pixels.
 #define SB_COL_FLAG			48
@@ -147,11 +168,26 @@ static	int				g_MousePressRow = -1;
 static	bool			g_ButtonHot = false;
 static	bool			g_ButtonPressed = false;
 
+// [rc4l] The row the pointer is over, which is NOT the selected row. Hovering only hints; clicking
+// selects. Reset every frame the pointer is somewhere else.
+static	int				g_HoverRow = -1;
+
 // [rc4l] Showing "cancel this download?". Drawn and answered by this menu rather than through
 // M_StartMessage, so the browser keeps control of the pairing: the hold placed on the join resume
 // when this goes up MUST be released on exactly one of the two answers, and a message box that can be
 // dismissed by other menu machinery is a way for that to not happen.
 static	bool			g_ConfirmCancel = false;
+
+// [rc4l] Which tab is showing. Public is the default because it is what nearly everyone wants nearly
+// all the time -- a private server is one you were told about, so you already know it is there.
+enum class BrowserTab { Public, Private };
+static	BrowserTab		g_Tab = BrowserTab::Public;
+static	int				g_TabHot = -1;
+
+// [rc4l] A message occupying the browser's own panel instead of a stock message box over the title
+// screen. Same panel, same dimensions, so being refused reads as part of the same screen rather than
+// as having been thrown out of it.
+static	FString			g_Notice;
 
 //*****************************************************************************
 //
@@ -297,10 +333,18 @@ static void serverbrowser_RebuildList( void )
 {
 	g_SortedServers.Clear();
 
+	// [rc4l] The tab is a filter over the same list rather than a second list: everything is still
+	// queried, so switching tabs is instant and never re-fetches anything.
+	const bool bWantPrivate = ( g_Tab == BrowserTab::Private );
+
 	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
-		if ( BROWSER_IsActive( ulIdx ))
-			g_SortedServers.Push( static_cast<int>( ulIdx ));
+		if ( BROWSER_IsActive( ulIdx ) == false )
+			continue;
+		if ( BROWSER_IsPasswordProtected( ulIdx ) != bWantPrivate )
+			continue;
+
+		g_SortedServers.Push( static_cast<int>( ulIdx ));
 	}
 
 	if ( g_SortedServers.Size( ) > 1 )
@@ -559,9 +603,7 @@ public:
 		const zx::BrowserPhase phase = zx::ComputeBrowserPhase( bWaitingRegistry, counts );
 
 		DrawPanel( );
-
-		screen->DrawText( BigFont, CR_UNTRANSLATED,
-			( SB_VIRT_W / 2 ) - ( BigFont->StringWidth( "SERVERS" ) / 2 ), SB_TITLE_Y, "SERVERS", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		DrawTabs( );
 
 		if ( phase == zx::BrowserPhase::Ready )
 			DrawRows( counts );
@@ -571,8 +613,10 @@ public:
 		DrawDetails( );
 		DrawFooter( phase, counts );
 
-		// Last, and over everything: a question the player has to answer before anything else happens.
-		if ( g_ConfirmCancel )
+		// Last, and over everything: something the player has to deal with before anything else.
+		if ( g_Notice.IsNotEmpty( ))
+			DrawNotice( );
+		else if ( g_ConfirmCancel )
 			DrawCancelConfirm( );
 	}
 
@@ -626,7 +670,22 @@ public:
 			const bool bSelected = ( row == g_Selected );
 
 			if ( bSelected )
+			{
 				DimRow( y );
+			}
+			else if ( row == g_HoverRow )
+			{
+				// [rc4l] Hover is a HINT, not a selection. It used to move the selection outright,
+				// which meant sweeping the pointer across the list repainted every row it crossed and
+				// rewrote the whole detail panel each time -- names flicking between red and white,
+				// the panel churning through servers nobody asked about. A faint band says "this is
+				// what you would be clicking" without claiming anything happened.
+				screen->Dim( PalEntry( 150, 170, 215 ), 0.06f,
+					serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 ),
+					serverbrowser_ToScreenY( y - 2 ),
+					serverbrowser_ToScreenX( SB_LIST_RIGHT ) - serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 ),
+					serverbrowser_ToScreenY( y - 2 + SB_ROW_HEIGHT ) - serverbrowser_ToScreenY( y - 2 ));
+			}
 
 			serverbrowser_DrawCountry( lServer, SB_COL_FLAG, y );
 
@@ -721,6 +780,103 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] The tab row: oval buttons where the title used to be, and the rule beneath them.
+	void DrawTabs( )
+	{
+		static const char *const labels[] = { "PUBLIC", "PRIVATE" };
+
+		for ( int i = 0; i < 2; ++i )
+		{
+			const int vLeft = SB_TAB_LEFT + i * ( SB_TAB_W + SB_TAB_GAP );
+			const int left = serverbrowser_ToScreenX( vLeft );
+			const int right = serverbrowser_ToScreenX( vLeft + SB_TAB_W );
+			const int top = serverbrowser_ToScreenY( SB_TAB_TOP );
+			const int bottom = serverbrowser_ToScreenY( SB_TAB_TOP + SB_TAB_H );
+
+			const int w = right - left;
+			const int h = bottom - top;
+			if (( w <= 0 ) || ( h <= 0 ))
+				continue;
+
+			// Fully oval: the radius is half the height, so the ends are semicircles rather than the
+			// softened corners the panels use. Different shape, different job -- these switch what you
+			// are looking at, they are not another surface to put things on.
+			const int radius = h / 2;
+			const bool bSelected = ( static_cast<int>( g_Tab ) == i );
+			const bool bHot = ( g_TabHot == i );
+
+			const int base = bSelected ? 96 : ( bHot ? 62 : 38 );
+			const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+				static_cast<BYTE>( base + 24 ), static_cast<BYTE>( bSelected ? 235 : 190 ) };
+			const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ),
+				static_cast<BYTE>( base / 2 + 18 ), static_cast<BYTE>( bSelected ? 245 : 205 ) };
+
+			for ( int row = 0; row < h; ++row )
+			{
+				const int inset = zx::ComputeRoundedInset( row, h, radius );
+				const int rowW = w - 2 * inset;
+				if ( rowW <= 0 )
+					continue;
+
+				const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
+				screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+			}
+
+			const int textY = SB_TAB_TOP + ( SB_TAB_H - SmallFont->GetHeight( )) / 2 + 1;
+			screen->DrawText( SmallFont, bSelected ? CR_WHITE : CR_DARKGRAY,
+				vLeft + ( SB_TAB_W / 2 ) - ( SmallFont->StringWidth( labels[i] ) / 2 ), textY,
+				labels[i], DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
+
+		DrawSeparatorSpan( SB_TAB_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] A refusal, on the browser's own panel.
+	//
+	// M_StartMessage draws a stock box over whatever is behind the menu -- which, when the browser
+	// reached it through a console command or a failed join, was the title screen. Being told "that
+	// server is full" while staring at Freedoom's cover art reads as having been thrown out of the
+	// browser rather than answered by it. Same panel, same dimensions, so it is the same screen.
+	void DrawNotice( )
+	{
+		// Dim what is behind it rather than hiding it: the list stays visible underneath, which keeps
+		// the sense of place the stock box loses.
+		screen->Dim( PalEntry( 0, 0, 0 ), 0.72f,
+			serverbrowser_ToScreenX( SB_PANEL_LEFT ), serverbrowser_ToScreenY( SB_CONTENT_TOP ),
+			serverbrowser_ToScreenX( SB_DETAIL_RIGHT ) - serverbrowser_ToScreenX( SB_PANEL_LEFT ),
+			serverbrowser_ToScreenY( SB_CONTENT_BOTTOM ) - serverbrowser_ToScreenY( SB_CONTENT_TOP ));
+
+		// Wrapped to the panel, so a server name in the text cannot push a line off the side.
+		const int wrapWidth = SB_DETAIL_RIGHT - SB_PANEL_LEFT - 48;
+		TArray<FBrokenLines *> dummy;
+		FBrokenLines *lines = V_BreakLines( SmallFont, wrapWidth, g_Notice.GetChars( ));
+		(void)dummy;
+
+		int count = 0;
+		while ( lines[count].Width >= 0 )
+			count++;
+
+		int y = ( SB_VIRT_H / 2 ) - (( count * ( SmallFont->GetHeight( ) + 2 )) / 2 );
+		for ( int i = 0; i < count; ++i )
+		{
+			screen->DrawText( SmallFont, CR_WHITE,
+				(( SB_PANEL_LEFT + SB_DETAIL_RIGHT ) / 2 ) - ( lines[i].Width / 2 ), y,
+				lines[i].Text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			y += SmallFont->GetHeight( ) + 2;
+		}
+		V_FreeBrokenLines( lines );
+
+		y += 6;
+		const char *const dismiss = "press a key";
+		screen->DrawText( SmallFont, CR_DARKGRAY,
+			(( SB_PANEL_LEFT + SB_DETAIL_RIGHT ) / 2 ) - ( SmallFont->StringWidth( dismiss ) / 2 ), y,
+			dismiss, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+	}
+
+	//*************************************************************************
+	//
 	// [rc4l] The confirmation, drawn over everything else. Cancelling a transfer that is most of the
 	// way through a 200 MB modpack because of one stray click is worth a question.
 	void DrawCancelConfirm( )
@@ -751,6 +907,21 @@ public:
 	// [rc4l] Both answers, in one place, because the important part is that each releases the hold
 	// exactly once. `stop` false is "keep going", which also covers the download having finished while
 	// the question was on screen -- ReleaseJoinResume then runs the join it was holding.
+	// [rc4l] Switching tabs resets the selection and the scroll: the row that was highlighted belongs
+	// to a list that is no longer on screen, and carrying its INDEX across would highlight whatever
+	// unrelated server happened to land in that position.
+	void SelectTab( BrowserTab tab )
+	{
+		if ( g_Tab == tab )
+			return;
+
+		g_Tab = tab;
+		g_Selected = -1;
+		g_ScrollFirst = 0;
+		serverbrowser_RebuildList( );
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
 	// [rc4l] Committing to the selected server. One implementation, reached from the keyboard and from
 	// the button, so the two can never come to mean different things.
 	void DoJoinSelected( )
@@ -903,10 +1074,12 @@ public:
 	// are different kinds of fact: one you read to choose, the other you read to find out what
 	// choosing costs. A blank line was not enough to say that -- the WAD list just looked like a
 	// fourth detail.
-	void DrawSeparator( int vy )
+	// [rc4l] Spanning an arbitrary width, so the same rule serves the detail panel and the band under
+	// the tab row. Same helper, same fade, so the two read as the same kind of division.
+	void DrawSeparatorSpan( int vy, int vLeft, int vRight )
 	{
-		const int left = serverbrowser_ToScreenX( SB_DETAIL_LEFT + SB_DETAIL_PAD );
-		const int right = serverbrowser_ToScreenX( SB_DETAIL_RIGHT - SB_DETAIL_PAD );
+		const int left = serverbrowser_ToScreenX( vLeft );
+		const int right = serverbrowser_ToScreenX( vRight );
 		const int top = serverbrowser_ToScreenY( vy );
 		// At least one physical pixel: a rule one virtual unit tall rounds to zero on a small window,
 		// and a divider that vanishes at some resolutions is worse than none at all.
@@ -920,6 +1093,11 @@ public:
 				continue;
 			screen->Dim( PalEntry( 150, 170, 215 ), a / 255.f, left + i, top, 1, h );
 		}
+	}
+
+	void DrawSeparator( int vy )
+	{
+		DrawSeparatorSpan( vy, SB_DETAIL_LEFT + SB_DETAIL_PAD, SB_DETAIL_RIGHT - SB_DETAIL_PAD );
 	}
 
 	//*************************************************************************
@@ -1120,10 +1298,41 @@ public:
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 
-		// The confirmation owns the screen while it is up: clicking through it would be answering a
-		// question by pressing something else.
+		// Cleared here and set again below only if the pointer is actually over a row, so the hint
+		// does not linger on a row the pointer left.
+		g_HoverRow = -1;
+
+		// A notice or a question owns the screen while it is up: clicking through would be answering
+		// by pressing something else entirely.
+		if ( g_Notice.IsNotEmpty( ))
+		{
+			if ( type == MOUSE_Release )
+				g_Notice = "";
+			return true;
+		}
 		if ( g_ConfirmCancel )
 			return true;
+
+		// The tabs.
+		{
+			g_TabHot = -1;
+			for ( int i = 0; i < 2; ++i )
+			{
+				const int vLeft = SB_TAB_LEFT + i * ( SB_TAB_W + SB_TAB_GAP );
+				if (( x < serverbrowser_ToScreenX( vLeft )) ||
+					( x >= serverbrowser_ToScreenX( vLeft + SB_TAB_W )) ||
+					( y < serverbrowser_ToScreenY( SB_TAB_TOP )) ||
+					( y >= serverbrowser_ToScreenY( SB_TAB_TOP + SB_TAB_H )))
+				{
+					continue;
+				}
+
+				g_TabHot = i;
+				if ( type == MOUSE_Release )
+					SelectTab( static_cast<BrowserTab>( i ));
+				return true;
+			}
+		}
 
 		// The action button, before the row hit test -- it lives inside the detail panel, which the
 		// row test already excludes, but checking first keeps the two from ever both claiming a click.
@@ -1178,11 +1387,11 @@ public:
 				if ( row < 0 )
 					break;					// an empty slot past the last server
 
-				// Hover moves the highlight, which both previews the row and fills the detail strip
-				// below with what that server is running. The cursor sound is deliberately left off:
-				// it would fire on every row the pointer crosses on the way down the list.
-				if ( row != g_Selected )
-					g_Selected = row;
+				// [rc4l] Hover marks the row and nothing more. Moving the SELECTION on hover meant
+				// dragging the pointer down the list rewrote the detail panel for every row on the
+				// way, so the panel churned through servers nobody had asked about and names flicked
+				// colour under the cursor. Selecting is what a click is for.
+				g_HoverRow = row;
 
 				if ( type == MOUSE_Click )
 				{
@@ -1200,9 +1409,10 @@ public:
 					if ( !bOnPressRow )
 						return true;
 
-					// Now that a selected row shows details, a single click has something to say --
-					// so joining moves to the second click. Same reasoning as any list with a preview
-					// pane: one click to look, two to commit.
+					// One click to look, two to commit -- the ordinary shape of a list with a preview
+					// pane, and now the only way the selection moves by mouse at all.
+					g_Selected = row;
+
 					const int now = static_cast<int>( DMenu::MenuTime );
 					const bool bDouble = ( row == g_LastClickRow ) &&
 						(( now - g_LastClickTime ) <= SB_DOUBLECLICK_TICS );
@@ -1264,6 +1474,14 @@ public:
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 
+		// A notice is dismissed by anything, and consumes it -- so the key that clears it does not
+		// also do whatever it would normally have done underneath.
+		if ( g_Notice.IsNotEmpty( ))
+		{
+			g_Notice = "";
+			return true;
+		}
+
 		// [rc4l] While the question is up it is the only thing that answers: Enter stops the download,
 		// Escape keeps it going. Both release the hold, which is the part that must not be skipped.
 		if ( g_ConfirmCancel )
@@ -1293,6 +1511,16 @@ public:
 			}
 			return true;
 
+		// [rc4l] Left and right move between tabs, which is what those keys do in every tabbed list
+		// and what a controller's shoulder buttons map onto.
+		case MKEY_Left:
+			SelectTab( BrowserTab::Public );
+			return true;
+
+		case MKEY_Right:
+			SelectTab( BrowserTab::Private );
+			return true;
+
 		case MKEY_Enter:
 			PressActionButton( );
 			return true;
@@ -1304,3 +1532,15 @@ public:
 };
 
 IMPLEMENT_CLASS( DFUAServerBrowserMenu )
+
+//*****************************************************************************
+//
+namespace zx
+{
+
+void ShowBrowserNotice( const char *text )
+{
+	g_Notice = ( text != NULL ) ? text : "";
+}
+
+} // namespace zx
