@@ -78,6 +78,7 @@ typedef enum
 CVAR (Bool, wi_percents, true, CVAR_ARCHIVE)
 CVAR (Bool, wi_showtotaltime, true, CVAR_ARCHIVE)
 CVAR (Bool, wi_noautostartmap, false, CVAR_USERINFO|CVAR_UNSYNCED_USERINFO|CVAR_ARCHIVE) // [TP] This CVar is not supported online and is thus not synced online. (Maybe we should just remove it entirely)
+CVAR (Int, wi_autoadvance, 0, CVAR_SERVERINFO)
 CVAR (Int, wi_autoscreenshot, false, CVAR_ARCHIVE) // [CK]
 
 
@@ -462,7 +463,10 @@ bool WI_UseSkulltagIntermissionAndMusic( void )
 
 void WI_LoadBackground(bool isenterpic)
 {
-	const char *lumpname;
+	// [rc4l] uzdoom@2944e4f6a: must be initialised. If the enterpic branch below leaves li == NULL
+	// this is never assigned, and the "lumpname == NULL || lumpname[0]==0" test a few lines down
+	// then reads an indeterminate pointer.
+	const char *lumpname = NULL;
 	char buffer[10];
 	in_anim_t an;
 	lnode_t pt;
@@ -1279,6 +1283,7 @@ void WI_updateNoState ()
 	else
 	{
 		bool noauto = noautostartmap;
+		bool autoskip = (wi_autoadvance > 0 && bcnt > (wi_autoadvance * TICRATE));
 
 		for (int i = 0; !noauto && i < MAXPLAYERS; ++i)
 		{
@@ -1287,7 +1292,7 @@ void WI_updateNoState ()
 				noauto |= players[i].userinfo.GetNoAutostartMap();
 			}
 		}
-		if (!noauto)
+		if (!noauto || autoskip)
 		{
 			cnt--;
 		}
@@ -1468,7 +1473,7 @@ void WI_UpdateCampaignStats( void )
 			cnt_Rank = WI_CalcRank( );
 			cnt_NumPlayers = SERVER_CountPlayers( true );
 		}
-		cnt_time = plrs[0].stime / TICRATE;
+		cnt_time = Tics2Seconds(plrs[0].stime);
 	}
 
 	if ( cp_state == 2 )
@@ -1631,9 +1636,9 @@ void WI_UpdateCampaignStats( void )
 		if (!(bcnt&3))
 			S_Sound (CHAN_VOICE, "weapons/pistol", 1, ATTN_NONE);
 
-		if (cnt_time >= plrs[0].stime / TICRATE)
+		if (cnt_time >= Tics2Seconds(plrs[0].stime))
 		{
-			cnt_time = plrs[0].stime / TICRATE;
+			cnt_time = Tics2Seconds(plrs[0].stime);
 			S_Sound (CHAN_VOICE, "intermission/nextstage", 1, ATTN_NONE);
 			cp_state++;
 		}
@@ -1792,7 +1797,12 @@ void WI_updateDeathmatchStats ()
 
 	WI_updateAnimatedBack();
 
-	if (acceleratestage && dm_state != 4)
+	// [rc4l] uzdoom@2d896d2b4: our state variable is dm_state, not upstream's ng_state -- Zandronum
+	// commented the per-player frag tabulation out of this function entirely ([BC] above), so the
+	// two "all players are ready" hunks upstream also changes have no counterpart here.
+	bool autoskip = (wi_autoadvance > 0 && bcnt > (wi_autoadvance * TICRATE));
+
+	if ((acceleratestage || autoskip) && dm_state != 4)
 	{
 		// [BC] No need to do any of this.
 		/*
@@ -2012,10 +2022,11 @@ void WI_updateNetgameStats ()
 //	int i;
 //	int fsum;
 //	bool stillticking;
+	bool autoskip = (wi_autoadvance > 0 && bcnt > (wi_autoadvance * TICRATE));
 
 	WI_updateAnimatedBack ();
 
-	if (acceleratestage && ng_state != 10)
+	if ((acceleratestage || autoskip) && ng_state != 10)
 	{
 		// [BC] No need to do any of this.
 		/*
@@ -2325,7 +2336,7 @@ void WI_updateStats ()
 		cnt_kills[0] = plrs[me].skills;
 		cnt_items[0] = plrs[me].sitems;
 		cnt_secret[0] = plrs[me].ssecret;
-		cnt_time = plrs[me].stime / TICRATE;
+		cnt_time = Tics2Seconds(plrs[me].stime);
 		cnt_par = wbs->partime / TICRATE;
 	    cnt_total_time = wbs->totaltime / TICRATE;
 	}
@@ -2390,8 +2401,8 @@ void WI_updateStats ()
 			cnt_total_time += 3;
 		}
 
-		if (!gameinfo.intermissioncounter || cnt_time >= plrs[me].stime / TICRATE)
-			cnt_time = plrs[me].stime / TICRATE;
+		if (!gameinfo.intermissioncounter || cnt_time >= Tics2Seconds(plrs[me].stime))
+			cnt_time = Tics2Seconds(plrs[me].stime);
 
 		if (!gameinfo.intermissioncounter || cnt_total_time >= wbs->totaltime / TICRATE)
 			cnt_total_time = wbs->totaltime / TICRATE;
@@ -2400,7 +2411,7 @@ void WI_updateStats ()
 		{
 			cnt_par = wbs->partime / TICRATE;
 
-			if (cnt_time >= plrs[me].stime / TICRATE)
+			if (cnt_time >= Tics2Seconds(plrs[me].stime))
 			{
 				cnt_total_time = wbs->totaltime / TICRATE;
 				S_Sound (CHAN_VOICE | CHAN_UI, "intermission/nextstage", 1, ATTN_NONE);

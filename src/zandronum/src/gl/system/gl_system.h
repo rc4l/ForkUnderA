@@ -90,7 +90,9 @@ inline T max( T a, T b) { return (((a)>(b)) ? (a) : (b)); }
 #define __cdecl
 #define _access(a,b)	access(a,b)
 #endif
-#ifndef _WIN32
+// [rc4l] A bare SDL include with no symbol use behind it. The Cocoa backend has no SDL, and Linux
+// picks it up through its own platform sources, so nothing here needs it.
+#if !defined(_WIN32) && !defined(ZX_COCOA_BACKEND)
 #include <SDL.h>
 #endif
 

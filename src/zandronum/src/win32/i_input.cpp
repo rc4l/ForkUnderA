@@ -106,6 +106,7 @@
 #include "d_event.h"
 #include "v_text.h"
 #include "version.h"
+#include "features/video-scale/computation/videoscale_compute.h" // [rc4l] VID_SCALE_UI_MIN_*
 
 // Prototypes and declarations.
 #include "rawinput.h"
@@ -501,8 +502,6 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// client live via OpenGLFrameBuffer::MaybeResizeForScale. See features/windowed-video.
 		if (wParam != SIZE_MINIMIZED && screen != NULL)
 		{
-			extern bool zx_videoScaleDirty;
-			zx_videoScaleDirty = true; // re-check the render size against the new client rect
 			if (!screen->IsFullscreen ())
 			{
 				int cw = LOWORD (lParam);
@@ -558,10 +557,40 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_GETMINMAXINFO:
 		if (screen && !VidResizing)
 		{
+			// [rc4l] The window's minimum size was the CURRENT RENDER RESOLUTION, so a game running
+			// at 1280x720 could not be dragged smaller than 1280x720 -- the window would simply stop
+			// following the mouse. Resolution and window size are independent now; the backbuffer is
+			// scaled to whatever the client area happens to be.
+			//
+			// Fullscreen still pins to the screen size, where it is correct. Windowed gets a fixed
+			// floor instead, matching upstream's VID_MIN_WIDTH/HEIGHT handling.
+			//
+			// AdjustWindowRectEx with the window's ACTUAL style, rather than the old hardcoded
+			// SM_CXSIZEFRAME/SM_CYCAPTION arithmetic: that arithmetic assumes a titled, framed window
+			// and is wrong the moment there is no border to account for -- which is a mode this
+			// engine has (see features/borderless-video).
 			LPMINMAXINFO mmi = (LPMINMAXINFO)lParam;
-			mmi->ptMinTrackSize.x = SCREENWIDTH + GetSystemMetrics (SM_CXSIZEFRAME) * 2;
-			mmi->ptMinTrackSize.y = SCREENHEIGHT + GetSystemMetrics (SM_CYSIZEFRAME) * 2 +
-									GetSystemMetrics (SM_CYCAPTION);
+			RECT rect;
+
+			if (screen->IsFullscreen())
+			{
+				rect.left = rect.top = 0;
+				rect.right = screen->GetWidth();
+				rect.bottom = screen->GetHeight();
+			}
+			else
+			{
+				// 320x200, the same floor upstream uses (VID_MIN_WIDTH/HEIGHT in its version.h).
+				// Nothing becomes unusable down there because the backbuffer scales to the client
+				// area -- the UI gets small, not broken.
+				rect.left = rect.top = 0;
+				rect.right = zx::VID_SCALE_MIN_WIDTH;
+				rect.bottom = zx::VID_SCALE_MIN_HEIGHT;
+			}
+
+			AdjustWindowRectEx(&rect, GetWindowLongW(hWnd, GWL_STYLE), FALSE, GetWindowLongW(hWnd, GWL_EXSTYLE));
+			mmi->ptMinTrackSize.x = rect.right - rect.left;
+			mmi->ptMinTrackSize.y = rect.bottom - rect.top;
 			return 0;
 		}
 		break;

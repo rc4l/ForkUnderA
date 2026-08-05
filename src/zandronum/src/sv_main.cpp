@@ -215,9 +215,9 @@ static	IPList			g_AdminIPList;
 // List of IP address that we want to ignore for a short amount of time.
 static	QueryIPQueue	g_floodProtectionIPQueue( 10 );
 
-// [BB] String to verify that the ban list was actually sent from the master server.
+// [BB] String to verify that the ban list was actually sent from the server registry.
 // It's generated randomly on startup by the server.
-static	FString			g_MasterBanlistVerificationString;
+static	FString			g_ServerRegistryBanlistVerificationString;
 
 // Statistics.
 static	LONG		g_lTotalServerSeconds = 0;
@@ -553,13 +553,13 @@ void SERVER_Construct( void )
 	g_ServerCommandQueue.Clear( );
 #endif
 
-	// [BB] Initialize g_MasterBanlistVerificationString.
+	// [BB] Initialize g_ServerRegistryBanlistVerificationString.
 	{
 		FString randomString;
 		for ( int i = 0; i < 100; ++i )
 			randomString += static_cast<char>(M_Random( ));
 
-		CMD5Checksum::GetMD5( reinterpret_cast<const BYTE*>(randomString.GetChars()), randomString.Len(), g_MasterBanlistVerificationString );
+		CMD5Checksum::GetMD5( reinterpret_cast<const BYTE*>(randomString.GetChars()), randomString.Len(), g_ServerRegistryBanlistVerificationString );
 	}
 
 	g_lMapRestartTimer = 0;
@@ -598,7 +598,7 @@ void SERVER_Construct( void )
 	atterm( SERVER_Destruct );
 
 	// Setup the child modules.
-	SERVER_MASTER_Construct( );
+	SERVER_SERVERREGISTRY_Construct( );
 	SERVER_SAVE_Construct( );
 	SERVER_RCON_Construct( );
 
@@ -818,14 +818,14 @@ void SERVER_Tick( void )
 			SERVER_GetClient ( i )->SavedPackets.Tick ( );
 		}
 
-		// Potentially send an update to the master server.
-		SERVER_MASTER_Tick( );
+		// Potentially send an update to the server registry.
+		SERVER_SERVERREGISTRY_Tick( );
 
 		// Time out any old RCON sessions.
 		SERVER_RCON_Tick( );
 
 		// Broadcast the server signal so it can be detected on a LAN.
-		SERVER_MASTER_Broadcast( );
+		SERVER_SERVERREGISTRY_Broadcast( );
 
 		// Potentially re-parse the banfile.
 		SERVERBAN_Tick( );
@@ -1824,11 +1824,11 @@ void SERVER_DetermineConnectionType( BYTESTREAM_s *pByteStream )
 	if ( lCommand == -1 )
 		return;
 
-	if ( lCommand == MSC_IPISBANNED
-		&& NETWORK_GetFromAddress().Compare( SERVER_MASTER_GetMasterAddress() )
+	if ( lCommand == SRSC_IPISBANNED
+		&& SERVER_SERVERREGISTRY_IsAddress( NETWORK_GetFromAddress() )
 		&& SERVER_STATISTIC_GetTotalSecondsElapsed( ) < 20 )
 	{
-		Printf( "\n*** ERROR: You are banned from hosting on the master server!\n" );
+		Printf( "\n*** ERROR: You are banned from hosting on the server registry!\n" );
 		return;
 	}
 
@@ -1879,27 +1879,27 @@ void SERVER_DetermineConnectionType( BYTESTREAM_s *pByteStream )
 			if ( sv_showlauncherqueries )
 				Printf( "Launcher challenge from: %s\n", NETWORK_GetFromAddress().ToString() );
 
-			SERVER_MASTER_SendServerInfo( NETWORK_GetFromAddress( ), ulFlags, ulTime, ulFlags2, false, bSendSegmentedResponse );
+			SERVER_SERVERREGISTRY_SendServerInfo( NETWORK_GetFromAddress( ), ulFlags, ulTime, ulFlags2, false, bSendSegmentedResponse );
 			return;
-		// [RC] Master server is sending us the holy banlist.
-		case MASTER_SERVER_BANLIST:
-		case MASTER_SERVER_VERIFICATION:
-		case MASTER_SERVER_BANLISTPART:
+		// [RC] Server registry is sending us the holy banlist.
+		case SERVERREGISTRY_BANLIST:
+		case SERVERREGISTRY_VERIFICATION:
+		case SERVERREGISTRY_BANLISTPART:
 
-			if ( NETWORK_GetFromAddress().Compare( SERVER_MASTER_GetMasterAddress() ))
+			if ( SERVER_SERVERREGISTRY_IsAddress( NETWORK_GetFromAddress() ))
 			{
-				FString MasterBanlistVerificationString = pByteStream->ReadString();
-				if ( SERVER_GetMasterBanlistVerificationString().Compare ( MasterBanlistVerificationString ) == 0 )
+				FString ServerRegistryBanlistVerificationString = pByteStream->ReadString();
+				if ( SERVER_GetServerRegistryBanlistVerificationString().Compare ( ServerRegistryBanlistVerificationString ) == 0 )
 				{
-					if ( lCommand == MASTER_SERVER_BANLIST )
-						SERVERBAN_ReadMasterServerBans( pByteStream );
-					else if ( lCommand == MASTER_SERVER_BANLISTPART )
-						SERVERBAN_ReadMasterServerBanlistPart( pByteStream );
+					if ( lCommand == SERVERREGISTRY_BANLIST )
+						SERVERBAN_ReadServerRegistryBans( pByteStream );
+					else if ( lCommand == SERVERREGISTRY_BANLISTPART )
+						SERVERBAN_ReadServerRegistryBanlistPart( pByteStream );
 					else
-						SERVER_MASTER_HandleVerificationRequest( pByteStream );
+						SERVER_SERVERREGISTRY_HandleVerificationRequest( pByteStream );
 				}
 				else
-					Printf ( "Master server message with wrong verification string received. Ignoring\n" );
+					Printf ( "Server registry message with wrong verification string received. Ignoring\n" );
 			}
 			return;
 		default:
@@ -2486,10 +2486,10 @@ void SERVER_ClientError( ULONG ulClient, ULONG ulErrorCode )
 			else
 				printMessage.Format( "Client banned.\n" );
 
-			bool masterban = SERVERBAN_IsIPMasterBanned( g_aClients[ulClient].Address );
-			g_aClients[ulClient].PacketBuffer.ByteStream.WriteByte( masterban );
+			bool bServerRegistryBan = SERVERBAN_IsIPServerRegistryBanned( g_aClients[ulClient].Address );
+			g_aClients[ulClient].PacketBuffer.ByteStream.WriteByte( bServerRegistryBan );
 
-			if ( masterban == false )
+			if ( bServerRegistryBan == false )
 			{
 				// Tell the client why he was banned, and when his ban expires.
 				g_aClients[ulClient].PacketBuffer.ByteStream.WriteString( banReason );
@@ -4135,9 +4135,9 @@ IPList *SERVER_GetAdminList( void )
 
 //*****************************************************************************
 //
-const FString& SERVER_GetMasterBanlistVerificationString( void )
+const FString& SERVER_GetServerRegistryBanlistVerificationString( void )
 {
-	return g_MasterBanlistVerificationString;
+	return g_ServerRegistryBanlistVerificationString;
 }
 //*****************************************************************************
 //

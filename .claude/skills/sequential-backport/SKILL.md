@@ -20,7 +20,8 @@ you ask one question, answered against the tree **as it is right now**:
 - Touches files/symbols we have → **candidate** (port it).
 - Touches only files/symbols we don't have → **skip**, and the reason is the *check result*
   ("no `r_*.cpp` software renderer present as of `<our-sha>`"), never "we dropped it."
-- Mixed → port the slice that applies; record the part that doesn't.
+- Mixed → port the slice that applies; record the part that doesn't. **This is the rule most often
+  broken — see "A skip is decided per HUNK" below.**
 
 Because the verdict is a *function of the current tree*, a commit skipped today auto-becomes
 portable the day we add that subsystem. Re-triage re-derives it; nothing is frozen truth.
@@ -56,6 +57,91 @@ For upstream commit `C` (`UP` = the UZDoom clone; our source = `src/zandronum/sr
    decision to surface — port it and move on.
 4. **For candidates, hand off to `upstream-port`:** run `backport-scout.sh` → pick the route
    (staircase batch / post-wall C++ / scriptified / born-in-ZScript) → port or adapt → its gates.
+
+## The verdict vocabulary — and why `deferred` is not `skip`
+
+`pending` · `ported` · `adapted` · `skip` · `deferred`
+
+The load-bearing distinction is between the two negatives:
+
+- **`skip` is TERMINAL and about OUR TREE.** It says "the code this touches does not exist here" —
+  a derived fact. Nobody re-opens a skip, and nothing should: if the subsystem later appears, the
+  edge-case rule says re-triage re-derives it, but in practice the row is closed.
+- **`deferred` is REVISITABLE and about POLICY.** It says "this applies to us, and we are choosing
+  not to take it yet." The code is relevant; a standing decision is what holds it back.
+
+Filing a policy decision as `skip` is the failure this vocabulary exists to prevent. A `skip` note
+says "checked, nothing here" — so when the policy later changes, nobody goes looking, and the work
+is silently erased rather than deferred. Same shape as the per-hunk failure below, one level up.
+
+**The case this was written for: ZScript / the VM.** `docs/zscript-insulation.md` is a *policy* —
+ZandroX must not link the VM — not a statement that the code is absent. So a commit refused under
+it is `deferred`, never `skip`, and its note must carry:
+
+1. `deferred: zscript` as the opening token, so the whole class greps out in one shot.
+2. What it would give us, in a sentence — the thing we are choosing to go without.
+3. Which policy refuses it (`docs/zscript-insulation.md`), so the decision is traceable to a
+   document that can be revised rather than to a verdict that looks like a fact.
+
+Timeline that makes this matter: the VM infrastructure lands 2014-12-20 (`2d87eb0ba`) but stays
+inert — 0–5% of commits touch it for the next 22 months. ZScript the *language* arrives 2016-10-13
+(`433bf4601`), and entanglement then runs 316/387/380 scripting commits a year. Before that wall,
+`deferred` rows cost us almost nothing; after it, the pile of `deferred` rows IS the measure of what
+the policy costs — which is only legible if they were never filed as `skip`.
+
+**`partially-deferred` — for a commit that is BOTH.** A VM commit that also carries real gameplay is
+common (a branch-landing merge, a feature whose author also fixed a bug in passing). Neither
+`deferred` nor `ported` is honest about it: one hides that code landed, the other hides that
+something was refused. So:
+
+- Port the gameplay half. Refuse the VM half.
+- Status `partially-deferred`, `ours` = the sha that carries the gameplay (it holds real code, so
+  the reachability and overlap gates apply to it exactly like `ported`).
+- The note must say **both** halves explicitly — what landed, and what was refused with which part
+  of the VM. A reader who sees only "partially" learns nothing.
+
+The failure this prevents is the per-hunk one again, in its most likely form: filing a mixed commit
+as `deferred` because its bulk is VM, and silently dropping the gameplay riding along. Run `--stat`
+and classify every file before choosing between the three.
+
+`deferred` and `partially-deferred` both count as resolved for progress, exactly like `skip`: they
+are reviewed decisions, not backlog. `deferred`'s `ours` column is `/`; `partially-deferred` carries
+a sha.
+
+## A skip is decided per HUNK, never per commit
+
+A commit is not a unit of relevance. Its *hunks* are. "This commit is a software-renderer commit"
+is a statement about its centre of mass, and centre of mass is not a verdict.
+
+**Run `--stat` and classify EVERY file before writing a skip.** Not the title, not the first hunk,
+not the impression from the diff you skimmed. If any file in the list exists in our tree, that part
+has its own verdict and you owe it a sentence.
+
+The dangerous shape is a commit that is overwhelmingly one thing plus a small slice of another:
+
+> `2df45598d` is ~430 lines of software renderer and ~27 lines of `Line_SetPortal` map specials.
+> It was skipped as "software renderer." The specials are renderer-AGNOSTIC — they live in the map
+> loader, every renderer needs them, and they survive to upstream HEAD. The majority reason
+> swallowed them, and the ledger row looked correct forever.
+
+Why this failure is worse than an ordinary miss: a skip row is **terminal**. A `pending` row is a
+promise to come back; a `skip` row says "checked, nothing here for us," and nobody re-opens it. The
+minority slice is not deferred, it is *erased* — and the gap only surfaces years later when the
+feature it belonged to is ported and silently does nothing.
+
+So when the minority slice genuinely cannot be taken yet (it calls a header the commit doesn't add,
+it needs a subsystem we haven't started), the skip may still be right — but the note must:
+
+1. **Say the slice is not part of the skip reason.** Name it, and say it is renderer-agnostic /
+   playsim / shared, so a reader cannot infer it was covered.
+2. **Name what it belongs to** — the commit or feature that will carry it in.
+3. **Give the re-derivation** — the grep that answers "did this ever land?" (`grep Line_SetPortal
+   actionspecials.h`), so the gap is findable without re-reading the original diff.
+
+The same applies to any majority reason, not just the renderer: "upstream P2P netcode", "Cajun
+bots", "SDL backend". Each of those has swallowed a shared-file hunk at least once. When a commit
+touches BOTH a subsystem we lack and files we have, the second half is a decision you make out
+loud.
 
 **Apply with `tools/apply-upstream-diff.sh`, never a bare `patch`.** Upstream's files are CRLF and
 ours are LF, so a diff straight from upstream matches *nothing* and `patch` reports every hunk of
@@ -99,6 +185,23 @@ partial** against the real diff. Two shapes it can't call alone, both seen in th
   one builds — the *ordering* supplies the dependency (the commit that introduces a symbol lands
   before the commit that uses it). A big multi-commit refactor is still done one commit at a time; it
   is not a reason to batch. (Flights are a renderer-staircase cherry-pick optimization — not this.)
+- **Pull a later fix forward when it makes us MATCH upstream instead of diverge.** The default is
+  strict order, but there is one exception and it is narrow. When a commit you are porting contains
+  a defect, upstream fixed it later, and that fix is *clean* — small, self-contained, no dependency
+  on anything between here and there — take the fix now and record both rows `ported`. The whole
+  point is the verdict: `ported` means our text matches theirs, `adapted` means it does not and a
+  future re-sync will conflict on that hunk forever. Trading a permanent divergence for a few
+  commits of sequence-skipping is a good trade; the ledger note carries the out-of-order reason.
+
+  **Not a licence to range ahead.** It applies only to a fix for a defect in the commit *in hand*.
+  If the later commit refactors, relocates or extends anything, it is ordinary future work — port
+  it when you reach it.
+
+  **Check whether it is already here FIRST.** A repo with any history of ad-hoc backports makes
+  "we don't have it yet" an unsafe assumption. This rule was written after porting a HIT*-pointer
+  fix into `P_LineAttack` that `P_SpawnPuff` had already been doing for years via an earlier
+  out-of-order port — a duplicate that also read the class defaults where the existing code read
+  the instance. Grep for the *destination* shape, not just the source commit.
 - **Skipping a prereq can break a later dependent** (it references a symbol the skipped commit
   added). When a commit won't apply cleanly, check whether it leans on a skipped one; port the
   minimal prerequisite or adapt around it. Don't blind-skip a whole subsystem without checking who
@@ -157,14 +260,18 @@ merge checkpoint → next batch. Sequential means *verified* sequential, not fas
   tracker index stores as-of-commit paths, so an old commit's path may not exist at upstream HEAD *or*
   ours — resolve via the file's identity, not its string.
 - **Already ported out-of-sequence:** our tree may already contain the change (ad-hoc port). Grep our
-  source for it; if present, mark `ported` with the zandrox sha — don't re-port.
+  source for it; if present, mark `ported` with the zandrox sha — don't re-port. Grep for the shape
+  the change *produces*, not the commit that produced it: an earlier backport may have landed a
+  later refactor that already subsumes this commit, in which case the code sits somewhere the
+  original diff never touched.
 - **Reverted / superseded upstream:** the change was undone or replaced by a later commit. Check it
   survives to upstream HEAD (`git -C $UP log --oneline -- <path>`); if it was reverted, skip with that
   reason.
 - **Merge commits:** no unique content (their changes live in the parents) → skip as topology.
 - **VM / ZScript:** relevance-negative, but DERIVED via the scout tripwire detecting VM symbols — not a
   feature list. Post-2016 DECORATE (`thingdef/*`) is VM-backed → route as scriptified/born-in-ZScript,
-  never a raw cherry-pick.
+  never a raw cherry-pick. **Record these `deferred`, not `skip`** — see the vocabulary section: the
+  code applies to us and a policy is what refuses it.
 - **The float-sim wall (2016–17):** later renderer commits assume `DVector` positions. Caught by the
   fixed64 audit and the strong `zx::Fixed` type at compile time — you detect it from the code, not a
   hardcoded cutoff date.
@@ -207,8 +314,9 @@ to re-check, so an expired skip becomes permanent silence. `tools/commit-tracker
 the blatant shape of this (a cited commit sharing no files with the upstream one) but not the subtle
 one -- it is a smell detector, not a proof.
 
-Every commit ends as a tracker row: `ported`/`adapted`/`skip`. The note must cite the **check**, not a
-belief — `"skip: no software-renderer (r_*) in our tree as of <our-sha>"`, `"skip: VM symbols (scout
+Every commit ends as a tracker row: `ported`/`adapted`/`skip`. A skip note must account for the
+**whole** commit, not its majority — if part of it touched files we have, say what happened to that
+part (see "A skip is decided per HUNK"). The note must cite the **check**, not a belief — `"skip: no software-renderer (r_*) in our tree as of <our-sha>"`, `"skip: VM symbols (scout
 tripwire)"`, `"ported: 9811962"`. A future reader (or a re-triage after the tree changes) can then
 re-run the same existence check and confirm or overturn it. That is what keeps the whole thing from
 silently rotting into a stale drop-list.

@@ -2851,6 +2851,15 @@ static int PatchText (int oldSize)
 			{
 				strncpy (deh.PlayerSprite, newStr, 4);
 			}
+			// [rc4l] uzdoom@de68361f2: the original-name table has to be renamed too, or a later
+			// "Sprite number" lookup still matches against the pre-rename name and misses.
+			for (unsigned ii = 0; ii < OrgSprNames.Size(); ii++)
+			{
+				if (!stricmp(OrgSprNames[ii].c, oldStr))
+				{
+					strcpy(OrgSprNames[ii].c, newStr);
+				}
+			}
 			// If this sprite is used by a pickup, then the DehackedPickup sprite map
 			// needs to be updated too.
 			for (i = 0; (size_t)i < countof(DehSpriteMappings); ++i)
@@ -2937,7 +2946,12 @@ static int PatchStrings (int dummy)
 
 		ReplaceSpecialChars (holdstring.LockBuffer());
 		holdstring.UnlockBuffer();
-		GStrings.SetString (Line1, holdstring);
+		// [rc4l] uzdoom@8a98be00d with its follow-up uzdoom@95bed868d folded in: Boom calls the
+		// red skull pickup message GOTREDSKULL, ZDoom calls it GOTREDSKUL. Rewriting through a
+		// local keeps Line1 itself untouched, which is what the follow-up corrects.
+		const char *ll = Line1;
+		if (!stricmp(ll, "GOTREDSKULL")) ll = "GOTREDSKUL";
+		GStrings.SetString (ll, holdstring);
 		DPrintf ("%s set to:\n%s\n", Line1, holdstring.GetChars());
 	}
 

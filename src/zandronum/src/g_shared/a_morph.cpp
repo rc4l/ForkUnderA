@@ -9,6 +9,7 @@
 #include "a_sharedglobal.h"
 #include "sbar.h"
 #include "a_morph.h"
+#include "p_enemy.h"	// [rc4l] uzdoom@cfe97b0f0: CALL_ACTION(A_BossDeath)
 #include "doomstat.h"
 #include "g_level.h"
 #include "farchive.h"
@@ -627,11 +628,11 @@ bool P_MorphedDeath(AActor *actor, AActor **morphed, int *morphedstyle, int *mor
 	if (actor->GetClass()->IsDescendantOf(RUNTIME_CLASS(AMorphedMonster)))
 	{
 		AMorphedMonster *fakeme = static_cast<AMorphedMonster *>(actor);
+		AActor *realme = fakeme->UnmorphedMe;
 		if ((fakeme->UnmorphTime) &&
 			(fakeme->MorphStyle & MORPH_UNDOBYDEATH) &&
-			(fakeme->UnmorphedMe))
+			(realme))
 		{
-			AActor *realme = fakeme->UnmorphedMe;
 			int realstyle = fakeme->MorphStyle;
 			int realhealth = fakeme->health;
 			if (P_UndoMonsterMorph(fakeme, !!(fakeme->MorphStyle & MORPH_UNDOBYDEATHFORCED)))
@@ -641,6 +642,13 @@ bool P_MorphedDeath(AActor *actor, AActor **morphed, int *morphedstyle, int *mor
 				*morphedhealth = realhealth;
 				return true;
 			}
+		}
+		// [rc4l] uzdoom@cfe97b0f0: a morphed monster that dies without unmorphing still has to run
+		// A_BossDeath for the real actor, or a boss killed while morphed never triggers its special.
+		if (realme->flags4 & MF4_BOSSDEATH)
+		{
+			realme->health = 0;	// make sure that A_BossDeath considers it dead.
+			CALL_ACTION(A_BossDeath, realme);
 		}
 		fakeme->flags3 |= MF3_STAYMORPHED; // moved here from AMorphedMonster::Die()
 		return false;

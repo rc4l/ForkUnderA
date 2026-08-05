@@ -149,7 +149,7 @@ else( WIN32 )
 		endif( NOT NO_GTK )
 
 		# [rc4l] The Xcursor detection is gone: SDL2's native color cursors
-		# (SDL_CreateColorCursor in sdl/i_system.cpp) replaced the USE_XCURSOR hack that
+		# (SDL_CreateColorCursor in posix/i_system.cpp) replaced the USE_XCURSOR hack that
 		# reached into SDL 1.2's private structs for the XDisplay.
 	endif( APPLE )
 	set( NASM_NAMES nasm )
@@ -158,9 +158,22 @@ else( WIN32 )
 		add_definitions( -DNO_GTK=1 )
 	endif( NO_GTK )
 	
+	# [rc4l] Declared here rather than beside the platform-source selection because the SDL link
+	# decision below is the first thing that needs it.
+	if( APPLE )
+		option( ZX_COCOA_BACKEND "Use the native Cocoa backend on macOS instead of SDL2" ON )
+	endif()
+
 	# [rc4l] Native SDL2, not the sdl12-compat shim: SDL 1.2 cannot request a GL version or profile, which is what capped macOS at a 2.1 compatibility context.
-	find_package( SDL2 REQUIRED )
-	set( ZDOOM_LIBS ${ZDOOM_LIBS} SDL2::SDL2 SDL2::SDL2main )
+	#
+	# [rc4l] macOS on the Cocoa backend needs no SDL at all -- not the video/input layer, and since
+	# the instant-replay sink moved to AudioQueue, not the audio either. Linking it anyway would
+	# leave a dependency nothing calls, and SDL2main in particular would fight our own main() in
+	# posix/cocoa/i_main.mm for the entry point. Linux still needs both.
+	if( NOT ( APPLE AND ZX_COCOA_BACKEND ) )
+		find_package( SDL2 REQUIRED )
+		set( ZDOOM_LIBS ${ZDOOM_LIBS} SDL2::SDL2 SDL2::SDL2main )
+	endif()
 
 	find_path( FPU_CONTROL_DIR fpu_control.h )
 	if( FPU_CONTROL_DIR )
@@ -315,11 +328,13 @@ if( NOT NO_ASM )
 			set( ASM_FLAGS -f win32 -DWIN32 -i${CMAKE_CURRENT_SOURCE_DIR}/ )
 		endif( X64 )
 	endif( UNIX )
-	if( WIN32 )
+	# [rc4l] uzdoom@601852d22: fixrtext patches 32-bit MSVC object files; Win64 has no
+	# use for it and running it there is wrong.
+	if( WIN32 AND NOT X64 )
 		set( FIXRTEXT fixrtext )
-	else( WIN32 )
+	else( WIN32 AND NOT X64 )
 		set( FIXRTEXT "" )
-	endif( WIN32 )
+	endif( WIN32 AND NOT X64 )
 	message( STATUS "Selected assembler: ${ASSEMBLER}" )
 	MACRO( ADD_ASM_FILE indir infile )
 		set( ASM_OUTPUT_${infile} "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/zdoom.dir/${indir}/${infile}${ASM_OUTPUT_EXTENSION}" )
@@ -403,9 +418,11 @@ if( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STRE
 	endif( PROFILE )
 
 	set( REL_CXX_FLAGS "-fno-rtti" )
-	if( NOT PROFILE )
+	# [rc4l] uzdoom@9479a89b6: on OS X frame pointers are required for exception handling,
+	# at least with Clang -- omitting them crashes Release builds.
+	if( NOT PROFILE AND NOT APPLE )
 		set( REL_CXX_FLAGS "${REL_CXX_FLAGS} -fomit-frame-pointer" )
-	endif( NOT PROFILE )
+	endif( NOT PROFILE AND NOT APPLE )
 	set( CMAKE_CXX_FLAGS_RELEASE "${REL_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE}" )
 	set( CMAKE_CXX_FLAGS_MINSIZEREL "${REL_CXX_FLAGS} ${CMAKE_CXX_FLAGS_MINSIZEREL}" )
 	set( CMAKE_CXX_FLAGS_RELWITHDEBINFO "${REL_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO}" )
@@ -664,22 +681,45 @@ set( PLAT_WIN32_SOURCES ${PLAT_WIN32_SOURCES}
 	win32/serverconsole/serverconsole_dmflags.cpp
 	win32/serverconsole/serverconsole_settings.cpp )
 set( PLAT_SDL_SOURCES
-	sdl/crashcatcher.c
-	sdl/hardware.cpp
-	sdl/i_cd.cpp
-	sdl/i_input.cpp
-	sdl/i_joystick.cpp
-	sdl/i_main.cpp
-	sdl/i_movie.cpp
-	sdl/i_system.cpp
-	sdl/sdlglvideo.cpp
-	sdl/st_start.cpp )
+	posix/sdl/crashcatcher.c
+	posix/sdl/hardware.cpp
+	posix/sdl/i_input.cpp
+	posix/sdl/i_joystick.cpp
+	posix/sdl/i_main.cpp
+	posix/sdl/i_system.cpp
+	posix/sdl/sdlglvideo.cpp
+	posix/sdl/st_start.cpp )
+
+# [rc4l] Instant-replay audio sink: AudioQueue on macOS (the Cocoa backend removed SDL from the
+# engine), SDL on Linux and Windows where SDL is the platform layer anyway.
+# [rc4l] The reason for the CoreAudio sink is that the Cocoa backend has no SDL to pull from -- not
+# that the platform is Apple. Keying it on the backend rather than on APPLE means the SDL fallback
+# build still has a working sink, and makes the two directly comparable.
+#
+# Windows gets NO sink file at all. SDL is not part of the win32 build, and the replay-audio call
+# site in oalsound.cpp is compiled out there (ZX_REPLAY_AUDIO is gated on !_WIN32), so every
+# reference to the sink disappears with it. Compiling the SDL sink anyway is what broke the Windows
+# build: a file that includes <SDL.h> at file scope, on a platform with no SDL, for a call site that
+# never runs. A native win32 sink is the follow-up that would light replay audio up there.
+if( APPLE AND ZX_COCOA_BACKEND )
+	set( FUA_AUDIOSINK_SOURCES features/openal-sound/fua_audiosink_coreaudio.cpp )
+elseif( WIN32 )
+	set( FUA_AUDIOSINK_SOURCES )
+else()
+	set( FUA_AUDIOSINK_SOURCES features/openal-sound/fua_audiosink_sdl.cpp )
+endif()
+
+set( PLAT_POSIX_SOURCES
+	posix/i_cd.cpp
+	posix/i_movie.cpp
+	posix/i_steam.cpp )
 set( PLAT_MAC_SOURCES
-	sdl/iwadpicker_cocoa.mm
-	sdl/i_system_cocoa.mm
-	sdl/i_system_cocoa_net.mm )
+	posix/osx/iwadpicker_cocoa.mm
+	posix/osx/i_system_cocoa.mm
+	posix/osx/i_system_cocoa_net.mm )
 if( WIN32 )
 	set( SYSTEM_SOURCES_DIR win32 )
+	set( SYSTEM_BACKEND_DIR win32 )
 	set( SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} )
 	set( OTHER_SYSTEM_SOURCES ${PLAT_SDL_SOURCES} ${PLAT_MAC_SOURCES} )
 	
@@ -696,14 +736,45 @@ if( WIN32 )
 	endif( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" )
 
 else( WIN32 )
-	set( SYSTEM_SOURCES_DIR sdl )
-	set( SYSTEM_SOURCES ${PLAT_SDL_SOURCES} )
-	if( APPLE )
-		set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${PLAT_MAC_SOURCES} )
-		set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} )
-	else( APPLE )
-		set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_MAC_SOURCES} )
-	endif( APPLE )
+	set( SYSTEM_SOURCES_DIR posix )
+
+	# [rc4l] uzdoom@1433bf3f7: the shared POSIX tier and the selected backend are separate include
+	# roots -- headers like gl_framebuffer.h include "sdlglvideo.h" unprefixed and resolve through
+	# the backend dir, exactly as they used to through the flat sdl/.
+	#
+	# [rc4l] macOS uses upstream's native Cocoa backend (uzdoom@108dcf122); Linux uses SDL2. The
+	# option exists so a bisect can put macOS back on SDL, and goes away once Cocoa has a release
+	# behind it.
+	set( PLAT_COCOA_SOURCES
+		posix/cocoa/critsec.cpp
+		posix/cocoa/i_input.mm
+		posix/cocoa/i_joystick.cpp
+		posix/cocoa/i_main.mm
+		posix/cocoa/i_main_except.cpp
+		posix/cocoa/i_system.mm
+		posix/cocoa/i_timer.cpp
+		posix/cocoa/i_video.mm
+		posix/cocoa/st_console.mm
+		posix/cocoa/st_start.mm )
+
+	if( APPLE AND ZX_COCOA_BACKEND )
+		set( SYSTEM_BACKEND_DIR posix/cocoa )
+		set( SYSTEM_SOURCES ${PLAT_POSIX_SOURCES} ${PLAT_COCOA_SOURCES} ${PLAT_MAC_SOURCES} )
+		set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_SDL_SOURCES} )
+		add_definitions( -DZX_COCOA_BACKEND )
+		# ObjC++ here is manual retain/release, matching upstream and the zandrox_tests_objc target.
+		set_source_files_properties( ${PLAT_COCOA_SOURCES} ${PLAT_MAC_SOURCES}
+			PROPERTIES COMPILE_OPTIONS "-fno-objc-arc" )
+	else()
+		set( SYSTEM_BACKEND_DIR posix/sdl )
+		set( SYSTEM_SOURCES ${PLAT_POSIX_SOURCES} ${PLAT_SDL_SOURCES} )
+		if( APPLE )
+			set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${PLAT_MAC_SOURCES} )
+			set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_COCOA_SOURCES} )
+		else()
+			set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_MAC_SOURCES} ${PLAT_COCOA_SOURCES} )
+		endif()
+	endif()
 endif( WIN32 )
 
 if( NO_ASM )
@@ -819,7 +890,7 @@ if( NOT NO_GL )
 		gl/models/gl_voxels.cpp
 	)
 else( NOT NO_GL )
-	set( GL_SOURCES sdl/glstubs.cpp )
+	set( GL_SOURCES posix/sdl/glstubs.cpp )
 endif( NOT NO_GL )
 
 
@@ -828,7 +899,7 @@ endif( NOT NO_GL )
 if( WIN32 )
 	set( EXTRA_HEADER_DIRS win32/*.h )
 else( WIN32 )
-	set( EXTRA_HEADER_DIRS sdl/*.h )
+	set( EXTRA_HEADER_DIRS posix/*.h posix/sdl/*.h )
 endif( WIN32 )
 file( GLOB HEADER_FILES
 	${EXTRA_HEADER_DIRS}
@@ -845,7 +916,8 @@ file( GLOB HEADER_FILES
 	oplsynth/dosbox/*.h
 	r_data/*.h
 	resourcefiles/*.h
-	sdl/*.h
+	posix/*.h
+	posix/sdl/*.h
 	sfmt/*.h
 	sound/*.h
 	textures/*.h
@@ -1003,12 +1075,12 @@ add_executable( zdoom WIN32
 	botcommands.cpp #ST
 	botpath.cpp #ST
 	bots.cpp #ST
-	browser.cpp #ST
 	callvote.cpp #ST
 	campaign.cpp #ST
 	c_bind.cpp
 	c_cmds.cpp
 	c_console.cpp
+	c_consolebuffer.cpp
 	c_cvars.cpp
 	c_dispatch.cpp
 	c_expr.cpp
@@ -1155,7 +1227,7 @@ add_executable( zdoom WIN32
 	sv_ban.cpp #ST
 	sv_commands.cpp #ST
 	sv_main.cpp #ST
-	sv_master.cpp #ST
+	features/federated-server-registry/sv_serverregistry.cpp #ST
 	sv_rcon.cpp #ST
 	sv_save.cpp #ST
 	tables.cpp
@@ -1236,7 +1308,6 @@ add_executable( zdoom WIN32
 	g_shared/st_hud.cpp #ST
 	intermission/intermission.cpp
 	intermission/intermission_parse.cpp
-	menu/browsermenu.cpp #ZA
 	menu/colorpickermenu.cpp
 	menu/joystickmenu.cpp
 	menu/listmenu.cpp
@@ -1253,6 +1324,7 @@ add_executable( zdoom WIN32
 	menu/videomenu.cpp
 	${GL_SOURCES}
 	oplsynth/fmopl.cpp
+	oplsynth/nukedopl3.cpp
 	oplsynth/musicblock.cpp
 	oplsynth/oplio.cpp
 	oplsynth/music_opldumper_mididevice.cpp
@@ -1353,6 +1425,7 @@ add_executable( zdoom WIN32
 	# registrations land within the [CRegHead, CRegTail] creg section walked by
 	# PClass::StaticInit (see features/README.md).
 	features/openal-sound/oalsound.cpp
+	${FUA_AUDIOSINK_SOURCES}
 	features/openal-sound/sndfile_decoder.cpp
 	features/openal-sound/mpg123_decoder.cpp
 	features/freeform-menu/freeformmenu.cpp
@@ -1363,8 +1436,17 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
+	features/net/zx_httpsget.cpp
+	features/server-browser/browser.cpp #ST
+	features/server-browser/browsermenu.cpp #ZA
+	features/server-browser/zx_serverbrowsermenu.cpp
+	features/server-browser/computation/serverbrowser_compute.cpp
+	features/panel-menu/panelmenu.cpp
+	features/panel-menu/computation/panelmenu_compute.cpp
 	features/updater/zx_updater.cpp
 	features/updater/zx_updater_net_win.cpp
+	features/federated-server-registry/zx_serverregistrylist.cpp
+	features/federated-server-registry/computation/serverregistrylist_compute.cpp
 	features/hitboxviz/hitboxviz.cpp
 	features/hitboxviz/computation/boxedges_compute.cpp
 	features/hitboxviz/computation/blastrecords_compute.cpp
@@ -1430,7 +1512,8 @@ include_directories( .
         ../sqlite/ #ZA
 	../upnpnat/ #ST
 	${CMAKE_BINARY_DIR}/gdtoa
-	${SYSTEM_SOURCES_DIR} )
+	${SYSTEM_SOURCES_DIR}
+	${SYSTEM_BACKEND_DIR} )
 
 add_dependencies( zdoom revision_check )
 # [TP]
@@ -1583,7 +1666,7 @@ source_group("Render Data\\Resource Sources" REGULAR_EXPRESSION "^${CMAKE_CURREN
 source_group("Render Data\\Textures" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/textures/.+")
 source_group("Render Interface" FILES r_defs.h r_renderer.h r_sky.cpp r_sky.h r_state.h r_utility.cpp r_utility.h)
 source_group("Resource Files" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/resourcefiles/.+")
-source_group("SDL Files" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/sdl/.+")
+source_group("POSIX Files" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/posix/.+")
 source_group("SFMT" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/sfmt/.+")
 source_group("Shared Game" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/g_shared/.+")
 source_group("Versioning" FILES version.h win32/zdoom.rc)

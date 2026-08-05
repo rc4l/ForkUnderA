@@ -763,24 +763,9 @@ void APlayerPawn::Serialize (FArchive &arc)
 		<< DamageFade
 		<< PlayerFlags
 		<< FlechetteType;
-	if (SaveVersion < 3829)
-	{
-		GruntSpeed = 12*FRACUNIT;
-		FallingScreamMinSpeed = 35*FRACUNIT;
-		FallingScreamMaxSpeed = 40*FRACUNIT;
-	}
-	else
-	{
-		arc << GruntSpeed << FallingScreamMinSpeed << FallingScreamMaxSpeed;
-	}
-	if (SaveVersion >= 4502)
-	{
-		arc << UseRange;
-	}
-	if (SaveVersion >= 4503)
-	{
-		arc << AirCapacity;
-	}
+	arc << GruntSpeed << FallingScreamMinSpeed << FallingScreamMaxSpeed;
+	arc << UseRange;
+	arc << AirCapacity;
 	// [ZandroX] Runtime standing height. Older saves predate runtime resizing, so
 	// fall back to the class default (matching PostBeginPlay's initialization).
 	// (SAVEVER 4510: 4509 was taken by upstream's MBF21 damage-group fields.)
@@ -795,7 +780,7 @@ void APlayerPawn::Serialize (FArchive &arc)
 	// [rc4l] features/quake-movement. Older saves predate the movement model, so fall back to the
 	// class default rather than MVTYPE_DOOM: a pawn whose DECORATE says MvType 1 must still load as
 	// a Quake-movement pawn out of a pre-feature save.
-	if (SaveVersion >= 4513)
+	if (SaveVersion >= 4521)
 	{
 		arc << MvType;
 	}
@@ -867,6 +852,18 @@ void APlayerPawn::BeginPlay ()
 
 		int spritenorm = Wads.CheckNumForName(normspritename + "A1", ns_sprites);
 		int spritecrouch = Wads.CheckNumForName(crouchspritename + "A1", ns_sprites);
+
+		// [rc4l] uzdoom@46ec36444: a sprite may use the rotation-less A0 form instead of A1, so a
+		// crouch sprite that exists only as A0 was wrongly rejected.
+		if (spritenorm==-1)
+		{
+			spritenorm = Wads.CheckNumForName(normspritename + "A0", ns_sprites);
+		}
+
+		if (spritecrouch==-1)
+		{
+			spritecrouch = Wads.CheckNumForName(crouchspritename + "A0", ns_sprites);
+		}
 		
 		if (spritenorm==-1 || spritecrouch ==-1) 
 		{
@@ -1644,6 +1641,38 @@ void APlayerPawn::ThrowPoisonBag ()
 //
 //===========================================================================
 
+//===========================================================================
+//
+// APlayerPawn :: ResetStartingHealth
+//
+// [rc4l] uzdoom@fc40e9723. Puts the player back on their class's starting health,
+// applying the deathmatch handicap. Call this wherever a player is (re)born or
+// respawned; do NOT call it merely to hand back the default inventory.
+//
+// Deterministic from synced state (the class default and userinfo handicap), so the
+// server and every client reach the same number without a SERVERCOMMANDS round trip --
+// which is why this needs no netcode gate, exactly as the code it was split out of.
+//
+//===========================================================================
+
+void APlayerPawn::ResetStartingHealth ()
+{
+	if (player == NULL) return;
+
+	// [GRB] Health specified in DECORATE
+	player->health = GetDefault ()->health;
+
+	// [BC] If the user has chosen to handicap himself, do that now.
+	if (( deathmatch || teamgame || alwaysapplydmflags ) && player->userinfo.GetHandicap() )
+	{
+		player->health -= player->userinfo.GetHandicap();
+
+		// Don't allow player to be DOA.
+		if ( player->health <= 0 )
+			player->health = 1;
+	}
+}
+
 void APlayerPawn::GiveDefaultInventory ()
 {
 	if (player == NULL) return;
@@ -1656,24 +1685,21 @@ void APlayerPawn::GiveDefaultInventory ()
 	AWeapon						*pPendingWeapon;
 	AInventory					*pInventory;
 
-	// [GRB] Give inventory specified in DECORATE
-	player->health = GetDefault ()->health;
+	// [rc4l] uzdoom@fc40e9723 moved the starting-health reset OUT of here and into the callers
+	// that actually want it. It only ever made sense for a reborn/respawn; every other caller
+	// wanted the default inventory and got a full heal thrown in. Concretely, that made MAPINFO
+	// 'resetinventory' silently imply 'resethealth', so the two flags could not be used
+	// independently (G_PlayerFinishLevel handles them as separate cases).
+	//
+	// Ours carries more than upstream's one line -- the handicap subtraction reads the value the
+	// reset just wrote, so it belongs with it -- hence ResetStartingHealth() rather than an
+	// inline assignment in G_PlayerReborn.
 
 	// [BB] True spectators are supposed to have no inventory, but they should get their health.
 	if ( player->bSpectating && (!player->bDeadSpectator || !( zadmflags & ZADF_DEAD_PLAYERS_CAN_KEEP_INVENTORY ) ) ) return;
 
 	// [BC] Initialize the max. health bonus.
 	player->MaxHealthBonus = 0;
-
-	// [BC] If the user has chosen to handicap himself, do that now.
-	if (( deathmatch || teamgame || alwaysapplydmflags ) && player->userinfo.GetHandicap() )
-	{
-		player->health -= player->userinfo.GetHandicap();
-
-		// Don't allow player to be DOA.
-		if ( player->health <= 0 )
-			player->health = 1;
-	}
 
 	// HexenArmor must always be the first item in the inventory because
 	// it provides player class based protection that should not affect
@@ -4581,26 +4607,7 @@ void player_t::Serialize (FArchive &arc)
 		<< ACSSkinOverridesWeaponSkin
 		// [BB] Skulltag additions - end
 		;
-	if (SaveVersion < 3427)
-	{
-		WORD oldaccuracy, oldstamina;
-		arc << oldaccuracy << oldstamina;
-		if (mo != NULL)
-		{
-			mo->accuracy = oldaccuracy;
-			mo->stamina = oldstamina;
-		}
-	}
-	if (SaveVersion < 4041)
-	{
-		// Move weapon state flags from cheats and into WeaponState.
-		WeaponState = ((cheats >> 14) & 1) | ((cheats & (0x37 << 24)) >> (24 - 1));
-		cheats &= ~((1 << 14) | (0x37 << 24));
-	}
-	else
-	{
-		arc << WeaponState;
-	}
+	arc << WeaponState;
 	arc << LogText
 		<< ConversationNPC
 		<< ConversationPC
@@ -4624,44 +4631,11 @@ void player_t::Serialize (FArchive &arc)
 	// [BL] is the player unarmed?
 	arc << bUnarmed;
 
-	if (SaveVersion >= 3475)
-	{
-		arc << poisontype << poisonpaintype;
-	}
-	else if (poisoner != NULL)
-	{
-		poisontype = poisoner->DamageType;
-		poisonpaintype = poisoner->PainType != NAME_None ? poisoner->PainType : poisoner->DamageType;
-	}
+	arc << poisontype << poisonpaintype;
 
-	if (SaveVersion >= 3599)
-	{
-		arc << timefreezer;
-	}
-	else
-	{
-		cheats &= ~(1 << 15);	// make sure old CF_TIMEFREEZE bit is cleared
-	}
-	if (SaveVersion < 3640)
-	{
-		cheats &= ~(1 << 17);	// make sure old CF_REGENERATION bit is cleared
-	}
-	if (SaveVersion >= 3780)
-	{
-		arc << settings_controller;
-	}
-	else
-	{
-		settings_controller = (this - players == Net_Arbitrator);
-	}
-	if (SaveVersion >= 4505)
-	{
-		arc << onground;
-	}
-	else
-	{
-		onground = (mo->z <= mo->floorz) || (mo->flags2 & MF2_ONMOBJ) || (mo->BounceFlags & BOUNCE_MBF) || (cheats & CF_NOCLIP2);
-	}
+	arc << timefreezer;
+	arc << settings_controller;
+	arc << onground;
 
 	if (arc.IsLoading ())
 	{

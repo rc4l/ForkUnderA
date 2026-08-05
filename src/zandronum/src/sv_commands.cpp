@@ -1961,6 +1961,10 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 		value = pActor->fillcolor;
 		break;
 
+	case APROP_Friction:
+		value = (int)(pActor->Friction);
+		break;
+
 	// [rc4l] features/quake-movement.
 	case APROP_MvType:
 		if ( pActor->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
@@ -4022,20 +4026,19 @@ void SERVERCOMMANDS_SetMapSky( ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	// [rc4l] The sky goes on the wire BY NAME, but the level only holds resolved texture ids since
 	// uzdoom@65e8563cf -- so materialise the name here, at the one place that needs it, rather than
-	// keeping a second copy of the sky in FLevelLocals. The bound is FTexture::Name's own char[9],
-	// i.e. the same eight characters clients have always received; features/skywire pins it and the
-	// static_asserts below stop the two definitions drifting.
-	static_assert( sizeof( FTexture::Name ) == zx::ZX_SKY_NAME_SIZE, "sky name wire size changed" );
-
-	char sky1[zx::ZX_SKY_NAME_SIZE], sky2[zx::ZX_SKY_NAME_SIZE];
+	// keeping a second copy of the sky in FLevelLocals.
+	//
+	// The name is sent WHOLE. It used to be cut to eight characters, which was never a chosen rule:
+	// FTexture::Name was char[9] and the name arrived pre-bounded. uzdoom@59885b856 made that field
+	// an FString, and the static_assert that used to sit here -- sizeof(FTexture::Name) == 9 --
+	// broke the build so the change could not pass unnoticed. See features/skywire for why sending
+	// the full name is the right answer rather than re-imposing the old limit by hand.
 	const FTexture *pSky1 = TexMan[level.skytexture1];
 	const FTexture *pSky2 = TexMan[level.skytexture2];
-	zx::CopySkyNameForWire( pSky1 ? pSky1->Name : "", sky1, sizeof( sky1 ) );
-	zx::CopySkyNameForWire( pSky2 ? pSky2->Name : "", sky2, sizeof( sky2 ) );
 
 	ServerCommands::SetMapSky command;
-	command.SetSky1( sky1 );
-	command.SetSky2( sky2 );
+	command.SetSky1( zx::SkyNameForWire( pSky1 ? pSky1->Name.GetChars() : nullptr ) );
+	command.SetSky2( zx::SkyNameForWire( pSky2 ? pSky2->Name.GetChars() : nullptr ) );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 
@@ -5181,7 +5184,7 @@ void SERVERCOMMANDS_GenericCheat( ULONG ulPlayer, ULONG ulCheat, ULONG ulPlayerE
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_SetCameraToTexture( AActor *pCamera, char *pszTexture, LONG lFOV, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_SetCameraToTexture( AActor *pCamera, const char *pszTexture, LONG lFOV, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	if ((!EnsureActorHasNetID (pCamera) ) ||
 		( pszTexture == NULL ))

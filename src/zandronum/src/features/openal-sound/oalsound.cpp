@@ -42,20 +42,22 @@
 #include "doomstat.h"
 #include "templates.h"
 #include "oalsound.h"
-// [rc4l] Instant-replay audio drives its output through SDL. SDL is not part of the win32 build
-// (native Windows audio there), so the loopback capture path is macOS/Linux only for now; the AAC
-// encoder/mux itself (zx_replay_encoder) is cross-platform.
+// [rc4l] Instant-replay audio drives its output through a platform sink (fua_audiosink.h):
+// AudioQueue on macOS, SDL on Linux. Windows uses native audio and has no sink yet, so the loopback
+// capture path stays macOS/Linux for now; the AAC encoder/mux (zx_replay_encoder) is
+// cross-platform regardless.
 #if defined(ZX_ENABLE_REPLAY) && !defined(_WIN32)
 #define ZX_REPLAY_AUDIO 1
 #endif
 
 #ifdef ZX_REPLAY_AUDIO
-#include <SDL.h>
+#include "features/openal-sound/fua_audiosink.h"
+#include "features/openal-sound/computation/fua_audiomix_compute.h"
 #include <cstring>
 #include "features/replay/zx_replay.h"
 
 // [rc4l] Instant-replay audio (cl_fua_replay_audio): the OpenAL device runs in ALC_SOFT_loopback
-// mode, so nothing auto-plays -- an SDL audio callback drives the mix (alcRenderSamplesSOFT renders
+// mode, so nothing auto-plays -- the sink's audio callback drives the mix (alcRenderSamplesSOFT renders
 // the master at the output rate), taps it for the replay recorder, and outputs S16 to the speakers.
 // The bundled OpenAL headers may predate ALC_SOFT_loopback, so we define the enums we need and load
 // the functions at runtime via alcGetProcAddress (openal-soft exports them).
@@ -86,21 +88,24 @@ static void ZX_LoadLoopbackFuncs()
 		zx_alcRenderSamplesSOFT = (ZX_LPALCRENDERSAMPLESSOFT)alcGetProcAddress(NULL, "alcRenderSamplesSOFT");
 }
 
-static void ZX_SDLAudioCallback(void *, Uint8 *stream, int len)
+// [rc4l] The pull. Runs on the OS audio thread via whichever sink is built (AudioQueue on macOS,
+// SDL elsewhere), so it must not block or allocate. The frame maths and the float-to-S16 conversion
+// live in computation/fua_audiomix_compute so they are testable without an audio device.
+static void ZX_ReplayAudioFill(short *out, int frames)
 {
-	static float fbuf[8192];
-	int samples = len / (2 * (int)sizeof(Sint16));      // per-channel stereo frames
-	if (samples * 2 > 8192) samples = 8192 / 2;
-	if (g_zxLoopbackDev && zx_alcRenderSamplesSOFT) zx_alcRenderSamplesSOFT(g_zxLoopbackDev, fbuf, samples);
-	else std::memset(fbuf, 0, (size_t)samples * 2 * sizeof(float));
-	zx::replay::SubmitAudio(fbuf, samples, 44100, 0);   // records only while a clip is buffering
-	Sint16 *out = reinterpret_cast<Sint16 *>(stream);
-	for (int i = 0; i < samples * 2; ++i)
-	{
-		float v = fbuf[i];
-		v = v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
-		out[i] = (Sint16)(v * 32767.0f);
-	}
+	static float fbuf[zx::kFuaAudioScratch];
+
+	frames = zx::FuaClampFramesToScratch(frames, zx::kFuaAudioScratch);
+	if (frames <= 0)
+		return;
+
+	if (g_zxLoopbackDev && zx_alcRenderSamplesSOFT)
+		zx_alcRenderSamplesSOFT(g_zxLoopbackDev, fbuf, frames);
+	else
+		std::memset(fbuf, 0, (size_t)frames * zx::kFuaAudioChannels * sizeof(float));
+
+	zx::replay::SubmitAudio(fbuf, frames, zx::kFuaAudioRate, 0);   // records only while buffering
+	zx::FuaFloatToS16(fbuf, out, frames);
 }
 #endif
 #include "c_cvars.h"
@@ -1159,7 +1164,7 @@ OpenALSoundRenderer::OpenALSoundRenderer()
         if (Loopback)
         {
             // A loopback device has no hardware to infer the format from, so we must specify it:
-            // float stereo 44100 (matches the SDL output + the AAC recorder).
+            // float stereo 44100 (matches the sink output + the AAC recorder).
             attribs.Push(ALC_FORMAT_CHANNELS_SOFT); attribs.Push(ALC_STEREO_SOFT);
             attribs.Push(ALC_FORMAT_TYPE_SOFT);     attribs.Push(ALC_FLOAT_SOFT);
             attribs.Push(ALC_FREQUENCY);            attribs.Push(44100);
@@ -1196,23 +1201,20 @@ OpenALSoundRenderer::OpenALSoundRenderer()
 #ifdef ZX_REPLAY_AUDIO
         if (Loopback)
         {
-            // Drive the loopback mix from an SDL audio callback (pulls at the output rate) and play
+            // Drive the loopback mix from the sink's audio callback (pulls at the output rate) and play
             // the rendered master back to a real device.
             g_zxLoopbackDev = Device;
-            SDL_InitSubSystem(SDL_INIT_AUDIO);
-            SDL_AudioSpec want;
-            std::memset(&want, 0, sizeof(want));
-            want.freq = 44100; want.format = AUDIO_S16SYS; want.channels = 2;
-            want.samples = 1024; want.callback = ZX_SDLAudioCallback; want.userdata = NULL;
-            if (SDL_OpenAudio(&want, NULL) == 0)
+
+            const char *sinkErr = "unknown error";
+            if (zx::FuaAudioSinkOpen(ZX_ReplayAudioFill, &sinkErr))
             {
                 g_zxAudioOpen = true;
-                SDL_PauseAudio(0);
-                Printf("  Instant-replay audio: OpenAL loopback -> SDL output.\n");
+                Printf("  Instant-replay audio: OpenAL loopback -> %s output.\n", zx::FuaAudioSinkName());
             }
             else
             {
-                Printf(TEXTCOLOR_RED "  Instant-replay audio: SDL_OpenAudio failed (%s); game will be silent.\n", SDL_GetError());
+                Printf(TEXTCOLOR_RED "  Instant-replay audio: %s output failed (%s); game will be silent.\n",
+                    zx::FuaAudioSinkName(), sinkErr);
             }
         }
 #endif
@@ -1427,9 +1429,9 @@ OpenALSoundRenderer::~OpenALSoundRenderer()
 
 #ifdef ZX_REPLAY_AUDIO
     // Stop the audio callback before the device it renders from is closed.
-    if (g_zxAudioOpen) { SDL_CloseAudio(); g_zxAudioOpen = false; }
+    // The sink owns its subsystem teardown now, so there is nothing platform-specific left here.
+    if (g_zxAudioOpen) { zx::FuaAudioSinkClose(); g_zxAudioOpen = false; }
     g_zxLoopbackDev = NULL;
-    if (Loopback) SDL_QuitSubSystem(SDL_INIT_AUDIO);
 #endif
 
     while(Streams.Size() > 0)

@@ -104,7 +104,9 @@ public:
 	FLightAssociation(FName actorName, const char *frameName, FName lightName)
 		: m_ActorName(actorName), m_AssocLight(lightName)
 	{
-		mysnprintf(m_FrameName, 8, "%s", frameName);
+		// [rc4l] uzdoom@045725de1: m_FrameName is a fixed 8-byte array, not a C string buffer;
+		// mysnprintf would reserve a byte for a terminator this field does not carry.
+		strncpy(m_FrameName, frameName, 8);
 	}
 
 	FName ActorName() { return m_ActorName; }

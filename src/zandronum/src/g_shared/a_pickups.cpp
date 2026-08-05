@@ -565,7 +565,7 @@ bool AInventory::ShouldRespawn ()
 	// [BB] Force respawning if items with the IF_FORCERESPAWNINSURVIVAL flag in survival.
 	if ( survival && (ItemFlags & IF_FORCERESPAWNINSURVIVAL) ) return true;
 
-	if ((ItemFlags & IF_BIGPOWERUP) && !(dmflags & DF_RESPAWN_SUPER)) return false;
+	if ((ItemFlags & IF_BIGPOWERUP) && !(dmflags2 & DF2_RESPAWN_SUPER)) return false;
 	if (ItemFlags & IF_NEVERRESPAWN) return false;
 	return !!((dmflags & DF_ITEMS_RESPAWN) || (ItemFlags & IF_ALWAYSRESPAWN));
 }
@@ -1248,7 +1248,7 @@ void AInventory::Touch (AActor *toucher)
 
 	if (flags5 & MF5_COUNTSECRET)
 	{
-		P_GiveSecret(toucher, true, true);
+		P_GiveSecret(toucher, true, true, false, -1);
 	}
 
 	// [BC] If the item has an announcer sound, play it.

@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+#
+# [rc4l] Ledger convergence sweep -- did the renderer-staircase ports we claim actually ARRIVE?
+#
+# This is deliberately NOT part of Test & Build. The other two ledger gates run on every PR
+# because they read committed snapshots (coverage.tsv, files.tsv). This one compares file
+# CONTENT against upstream, so it needs UZDoom's history, which the build jobs do not have and
+# should not pay to fetch on every push.
+#
+# So it is on demand: run it from the Actions tab (or `gh workflow run convergence.yml`) when
+# closing out a seam or after a batch of staircase ports. Deliberately NOT scheduled -- a weekly
+# artifact nobody opens is not a gate, it is litter.
+
+name: Ledger convergence
+
+on:
+  workflow_dispatch:
+    inputs:
+      top:
+        description: 'How many findings to print'
+        type: string
+        default: '40'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: convergence
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # [rc4l] Cache the upstream clone by its HEAD; a cold run is a full UZDoom fetch, which is
+      # slow but happens at most once a week.
+      - name: Cache UZDoom clone
+        id: cache-upstream
+        uses: actions/cache@v4
+        with:
+          path: upstream
+          key: uzdoom-clone-v1
+
+      - name: Fetch UZDoom
+        run: |
+          set -euo pipefail
+          if [ -d upstream/.git ]; then
+            git -C upstream fetch --quiet origin
+          else
+            git clone --quiet https://github.com/UZDoom/UZDoom.git upstream
+          fi
+
+      - name: Convergence sweep
+        env:
+          UZDOOM_DIR: ${{ github.workspace }}/upstream
+        run: |
+          set -euo pipefail
+          python3 tools/commit-tracker-convergence.py --top "${{ inputs.top || '40' }}"
+          python3 tools/commit-tracker-convergence.py --json > convergence.json
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: convergence-findings
+          path: convergence.json
+          if-no-files-found: warn

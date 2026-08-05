@@ -38,6 +38,7 @@
 #include "templates.h"
 #include "doomdef.h"
 #include "m_swap.h"
+#include "doomerrors.h"	// [rc4l] uzdoom@e662e4321
 #include "sound/computation/midi_device_compute.h"
 
 // MACROS ------------------------------------------------------------------
@@ -231,7 +232,7 @@ EMidiDevice MIDIStreamer::SelectMIDIDevice(EMidiDevice device)
 	// flags so every combination is covered. Without FMOD the default falls back to the
 	// always-available OPL2 synth so music still plays.
 	static_assert((int)MDEV_DEFAULT == ZX_MDEV_DEFAULT && (int)MDEV_MMAPI == ZX_MDEV_MMAPI &&
-		(int)MDEV_OPL == ZX_MDEV_OPL && (int)MDEV_FMOD == ZX_MDEV_FMOD &&
+		(int)MDEV_OPL == ZX_MDEV_OPL && (int)MDEV_SNDSYS == ZX_MDEV_SNDSYS &&
 		(int)MDEV_TIMIDITY == ZX_MDEV_TIMIDITY && (int)MDEV_FLUIDSYNTH == ZX_MDEV_FLUIDSYNTH &&
 		(int)MDEV_GUS == ZX_MDEV_GUS, "EMidiDevice values must match ZX_MDEV_*");
 #ifdef HAVE_FLUIDSYNTH
@@ -270,14 +271,27 @@ MIDIDevice *MIDIStreamer::CreateMIDIDevice(EMidiDevice devtype) const
 #endif
 
 	// [rc4l] Kept so existing configs naming this device still load; it maps to the OPL synth now.
-	case MDEV_FMOD:
+	case MDEV_SNDSYS:
 		return new OPLMIDIDevice;
 
 	case MDEV_GUS:
 		return new TimidityMIDIDevice;
 
 	case MDEV_OPL:
-		return new OPLMIDIDevice;
+		// [rc4l] uzdoom@e662e4321: constructing the OPL device aborts with a CRecoverableError when
+		// no GENMIDI lump is present, which propagated out as a fatal error. Upstream falls back to
+		// FModEx; we have no FMOD (our sound is OpenAL), so this returns NULL instead -- the caller
+		// already handles that, printing "Could not open MIDI out device" and giving up on the song
+		// rather than taking the engine down.
+		try
+		{
+			return new OPLMIDIDevice;
+		}
+		catch (CRecoverableError &err)
+		{
+			Printf("Unable to create OPL MIDI device: %s\n", err.GetMessage());
+			return NULL;
+		}
 
 	case MDEV_TIMIDITY:
 		return new TimidityPPMIDIDevice;
@@ -542,7 +556,8 @@ bool MIDIStreamer::IsPlaying()
 
 void MIDIStreamer::MusicVolumeChanged()
 {
-	if (MIDI->FakeVolume())
+	// [rc4l] uzdoom@51d734028: MIDI is null when no track is playing.
+	if (MIDI != NULL && MIDI->FakeVolume())
 	{
 		float realvolume = clamp<float>(snd_musicvolume * relative_volume, 0.f, 1.f);
 		Volume = clamp<DWORD>((DWORD)(realvolume * 65535.f), 0, 65535);
@@ -624,7 +639,8 @@ void MIDIStreamer::FluidSettingStr(const char *setting, const char *value)
 
 void MIDIStreamer::OutputVolume (DWORD volume)
 {
-	if (MIDI->FakeVolume())
+	// [rc4l] uzdoom@51d734028: MIDI is null when no track is playing.
+	if (MIDI != NULL && MIDI->FakeVolume())
 	{
 		NewVolume = volume;
 		VolumeChanged = true;

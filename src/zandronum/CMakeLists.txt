@@ -246,7 +246,7 @@ endif( RELEASE_WITH_DEBUG_FILE )
 # [BB] Library that allows to map IP addresses to country names.
 add_subdirectory( GeoIP )
 # [BB]
-add_subdirectory( masterserver )
+add_subdirectory( server-registry )
 # [BB] Library for the database backend.
 add_subdirectory( sqlite )
 add_subdirectory( lzma )

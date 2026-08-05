@@ -81,8 +81,6 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	float			scale;
 	float			scalex;
 	float			ftexturemid;
-	                      // 4:3  16:9   16:10  17:10    5:4
-	static float xratio[] = {1.f, 3.f/4, 5.f/6, 40.f/51, 1.f};
 
 	// [BB] In the HUD model step we just render the model and break out. 
 	if ( hudModelStep )
@@ -121,7 +119,16 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	tex->GetSpriteRect(&r);
 
 	// calculate edges of the shape
-	scalex = xratio[WidescreenRatio] * vw / 320;
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours; this file is not in uzdoom@5b438d220f918e4d5b604e970f0f45f96963e8d1.
+	//   SUPERSEDED BY: nothing. These GL files have no upstream counterpart -- upstream's
+	//   equivalents live in a renderer we do not share -- so this stays ours indefinitely.
+	//   ON PORT: leave alone; only revisit if the GL renderer itself is ever replaced.
+	// [rc4l] xratio[] held 4:3 divided by each bucket's ratio, with 5:4 pinned to 1.0 so a
+	// taller-than-wide screen does not squeeze the weapon. Computing it from the float ratio gives
+	// the identical value at those five sizes and a sensible one everywhere between.
+	//
+	// No upstream counterpart -- this GL file is not in the commit being ported.
+	scalex = (!AspectTallerThanWide(WidescreenRatio) ? (4.0f / 3.0f) / WidescreenRatio : 1.0f) * vw / 320;
 
 	// [overlay] A_OverlayScale: the layer scale multiplies the sprite's offset and size so it
 	// scales about its own offset origin (matching GZDoom). psp->scalex/scaley default to FRACUNIT,

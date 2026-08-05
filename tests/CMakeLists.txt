@@ -23,6 +23,14 @@ FetchContent_Declare(
   GIT_TAG        v1.15.2
   GIT_SHALLOW    TRUE
 )
+# [rc4l] MSVC only: GoogleTest defaults to the STATIC CRT (/MT) while everything else here uses the
+# dynamic one (/MD), and the two cannot link -- LNK2038 on RuntimeLibrary, followed by a few hundred
+# LNK2005 duplicate symbols out of msvcprt.lib that all trace back to it. Must be set BEFORE
+# MakeAvailable, since that is when GoogleTest's own CMake reads it. No effect on GCC/Clang.
+#
+# Not caught locally because an already-configured build-tests/ reuses its cached GoogleTest; only a
+# clean configure trips it, which is what CI does every run.
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 enable_testing()
@@ -56,7 +64,19 @@ file(GLOB_RECURSE COMPUTE_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_compute.cpp
 add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES})
 target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}")
 target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock)
-target_compile_options(zandrox_tests PRIVATE -Wall -Wextra)
+# [rc4l] This target is the portable one -- pure Compute* logic with no engine or platform deps -- so
+# it is the one a Windows dev can actually run before pushing. MSVC rejects -Wextra outright (D8021,
+# a hard error, not a warning), which silently made that impossible; /W4 is its equivalent. The
+# sanitizer/coverage options below stay GCC/Clang-only on purpose: CI measures coverage on Linux.
+if(MSVC)
+  target_compile_options(zandrox_tests PRIVATE /W4)
+  # [rc4l] MSVC hides M_PI and friends behind _USE_MATH_DEFINES; several tests use M_PI to build
+  # trig reference values. Defined on the target rather than #defined in each file, so a new test
+  # does not have to know this.
+  target_compile_definitions(zandrox_tests PRIVATE _USE_MATH_DEFINES)
+else()
+  target_compile_options(zandrox_tests PRIVATE -Wall -Wextra)
+endif()
 
 if(ZANDROX_TESTS_SANITIZE)
   # [rc4l] AddressSanitizer + UBSan catch memory errors and undefined behavior at runtime.
@@ -89,7 +109,7 @@ if(APPLE)
   if(OBJC_TEST_SOURCES)
     add_executable(zandrox_tests_objc
       ${OBJC_TEST_SOURCES}
-      "${ENGINE_SRC}/sdl/i_system_cocoa_net.mm")
+      "${ENGINE_SRC}/posix/osx/i_system_cocoa_net.mm")
     target_include_directories(zandrox_tests_objc PRIVATE "${ENGINE_SRC}")
     target_link_libraries(zandrox_tests_objc PRIVATE GTest::gtest_main)
     target_link_options(zandrox_tests_objc PRIVATE -framework Foundation)
@@ -130,11 +150,29 @@ if(NET_TEST_SOURCES)
   target_include_directories(zandrox_tests_net BEFORE PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/shims/net" "${ENGINE_SRC}")
   # strnicmp is a Windows spelling; the vendored code uses it, POSIX spells it strncasecmp.
-  target_compile_definitions(zandrox_tests_net PRIVATE strnicmp=strncasecmp)
+  # [rc4l] Only remap it AWAY from Windows: on MSVC strnicmp is the one that exists and
+  # strncasecmp is not declared, so defining this unconditionally broke the Windows build.
+  if(NOT WIN32)
+    target_compile_definitions(zandrox_tests_net PRIVATE strnicmp=strncasecmp)
+  endif()
   target_link_libraries(zandrox_tests_net PRIVATE GTest::gtest_main)
+  # [rc4l] networkshared.cpp calls htons/ntohs/inet_addr/gethostbyname. On POSIX those are in libc;
+  # on Windows they live in Winsock, so the target needs it explicitly -- the same ws2_32 the
+  # server-registry executable links for the same reason.
+  if(WIN32)
+    target_link_libraries(zandrox_tests_net PRIVATE ws2_32)
+  endif()
   # -Wall -Wextra but NOT -Werror: this compiles vendored engine .cpp we don't own (it trips
   # legacy warnings like the deprecated sprintf); the value is the assertions under ASan.
-  target_compile_options(zandrox_tests_net PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+  # [rc4l] Same MSVC split as zandrox_tests above -- cl rejects /Wextra with D8021, a hard command
+  # line error, so passing the GCC flags here failed the whole Windows configure even though this
+  # target's own sources are portable. /W4 is the equivalent; the deprecation quieting is /wd4996.
+  if(MSVC)
+    target_compile_options(zandrox_tests_net PRIVATE /W4 /wd4996)
+    target_compile_definitions(zandrox_tests_net PRIVATE _USE_MATH_DEFINES _CRT_SECURE_NO_WARNINGS)
+  else()
+    target_compile_options(zandrox_tests_net PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+  endif()
   if(ZANDROX_TESTS_SANITIZE)
     message(STATUS "zandrox_tests_net: AddressSanitizer + UBSan enabled")
     target_compile_options(zandrox_tests_net PRIVATE

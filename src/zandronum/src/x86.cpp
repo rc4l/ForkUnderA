@@ -299,7 +299,9 @@ void DoBlending_SSE2(const PalEntry *from, PalEntry *to, int count, int r, int g
 	}
 #endif
 
-#if defined(__amd64__) || defined(_M_IX64)
+// [rc4l] uzdoom@85fb8c432: _M_IX64 is not a macro MSVC ever defines -- the real one is _M_X64.
+// The typo meant 64-bit MSVC builds silently took the non-SSE2 path here.
+#if defined(__amd64__) || defined(_M_X64)
 	long long color;
 
 	blending256 = _mm_set_epi64x(0x10001000100ll, 0x10001000100ll);

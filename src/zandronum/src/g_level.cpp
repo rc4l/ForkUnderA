@@ -246,6 +246,49 @@ CCMD (map)
 //
 //==========================================================================
 
+// [rc4l] uzdoom@eceb37aa6: start a map and record a demo of it in one step. Single-player
+// only -- Zandronum records client demos through CLIENTDEMO_*, a different path, so the
+// guard is on our network state rather than upstream's bare `netgame`.
+CCMD (recordmap)
+{
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+	{
+		Printf( "You cannot record a new game while in a netgame.\n" );
+		return;
+	}
+	if (argv.argc() > 2)
+	{
+		try
+		{
+			if (!P_CheckMapData(argv[2]))
+			{
+				Printf("No map %s\n", argv[2]);
+			}
+			else
+			{
+				G_DeferedInitNew(argv[2]);
+				gameaction = ga_recordgame;
+				newdemoname = argv[1];
+				newdemomap = argv[2];
+			}
+		}
+		catch (CRecoverableError &error)
+		{
+			if (error.GetMessage())
+				Printf("%s", error.GetMessage());
+		}
+	}
+	else
+	{
+		Printf("Usage: recordmap <filename> <map name>\n");
+	}
+}
+
+//==========================================================================
+//
+//
+//==========================================================================
+
 UNSAFE_CCMD (open)
 {
 	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) ||
@@ -708,7 +751,12 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 	}
 	else if (strncmp(levelname, "enDSeQ", 6) != 0)
 	{
-		nextinfo = FindLevelInfo (levelname, false);
+		// [rc4l] uzdoom@50a829720: resolve a warptrans link (Hexen-style "&wt@nn") BEFORE looking
+		// the level up, and fall back to the name as given when no info is found rather than
+		// dereferencing a null nextinfo.
+		FString reallevelname = levelname;
+		CheckWarpTransMap(reallevelname, true);
+		nextinfo = FindLevelInfo (reallevelname, false);
 		if (nextinfo != NULL)
 		{
 			level_info_t *nextredir = nextinfo->CheckLevelRedirect();
@@ -716,8 +764,12 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 			{
 				nextinfo = nextredir;
 			}
+			nextlevel = nextinfo->MapName;
 		}
-		nextlevel = nextinfo->MapName;
+		else
+		{
+			nextlevel = levelname;
+		}
 	}
 	else
 	{
@@ -1577,13 +1629,13 @@ void G_DoLoadLevel (int position, bool autosave)
 		{
 			if ( playeringame[i] && ( players[i].bSpectating == false ) && ( players[i].mo ) && ( players[i].mo->Inventory == NULL ) )
 			{
+				// [rc4l] uzdoom@fc40e9723: no ResetStartingHealth() here on purpose. This is a
+				// repair for a player who somehow ended up with no inventory at all, not a
+				// respawn -- and the [BB] comment that used to sit here ("GiveDefaultInventory()
+				// also restores the default health, but we don't want to revive dead players")
+				// says the heal was unwanted. With the reset gone the workaround that forced a
+				// dead player back to 0 health is dead code, so it goes too.
 				players[i].mo->GiveDefaultInventory();
-				// [BB] GiveDefaultInventory() also restores the default health, but we don't want to revive dead players.
-				if ( players[i].playerstate == PST_DEAD )
-				{
-					players[i].health = 0;
-					players[i].mo->health = 0;
-				}
 			}
 		}
 	}
@@ -1977,6 +2029,17 @@ void G_FinishTravel ()
 			pawn->SetState(pawn->SpawnState);
 			pawn->player->SendPitchLimits();
 
+			// [rc4l] uzdoom@aa338a4dc: sync the FLY flags. MF2_FLY and CF_FLY are set independently
+			// and travel only carried one of them, so a flying player arrived with them disagreeing.
+			if (pawn->flags2 & MF2_FLY)
+			{
+				pawn->player->cheats |= CF_FLY;
+			}
+			else
+			{
+				pawn->player->cheats &= ~CF_FLY;
+			}
+
 			// [BC]
 			pawn->NetID = savedNetID;
 			g_ActorNetIDList.useID ( pawn->NetID, pawn );
@@ -2180,11 +2243,13 @@ bool FLevelLocals::IsCrouchingAllowed() const
 
 bool FLevelLocals::IsFreelookAllowed() const
 {
-	if (level.flags & LEVEL_FREELOOK_NO)
+	// [rc4l] uzdoom@a21f01bc5: freelook is a 3-state server setting now, so an explicit dmflags
+	// choice outranks MAPINFO -- the same precedence jump and crouch already use.
+	if (dmflags & DF_NO_FREELOOK)
 		return false;
-	if (level.flags & LEVEL_FREELOOK_YES)
+	if (dmflags & DF_YES_FREELOOK)
 		return true;
-	return !(dmflags & DF_NO_FREELOOK);
+	return !(level.flags & LEVEL_FREELOOK_NO);
 }
 
 //==========================================================================
@@ -2262,10 +2327,7 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 		<< level.maptime
 		<< i;
 
-	if (SaveVersion >= 3313)
-	{
-		arc << level.nextmusic;
-	}
+	arc << level.nextmusic;
 
 	// Hub transitions must keep the current total time
 	if (!hubLoad)
@@ -2327,10 +2389,7 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 		StatusBar->Serialize (arc);
 
-	if (SaveVersion >= 4222)
-	{ // This must be done *after* thinkers are serialized.
-		arc << level.DefaultSkybox;
-	}
+	arc << level.DefaultSkybox;
 
 	arc << level.total_monsters << level.total_items << level.total_secrets;
 
@@ -2482,30 +2541,9 @@ void G_UnSnapshotLevel (bool hubLoad)
 //
 //==========================================================================
 
-static void writeMapName (FArchive &arc, const char *name)
-{
-	BYTE size;
-	if (name[7] != 0)
-	{
-		size = 8;
-	}
-	else
-	{
-		size = (BYTE)strlen (name);
-	}
-	arc << size;
-	arc.Write (name, size);
-}
-
-//==========================================================================
-//
-//
-//==========================================================================
-
 static void writeSnapShot (FArchive &arc, level_info_t *i)
 {
-	arc << i->snapshotVer;
-	writeMapName (arc, i->MapName);
+	arc << i->snapshotVer << i->MapName;
 	i->snapshot->Serialize (arc);
 }
 
@@ -2543,14 +2581,14 @@ void G_WriteSnapshots (FILE *file)
 			{
 				arc = new FPNGChunkArchive (file, VIST_ID);
 			}
-			writeMapName (*arc, wadlevelinfos[i].MapName);
+			(*arc) << wadlevelinfos[i].MapName;
 		}
 	}
 
 	if (arc != NULL)
 	{
-		BYTE zero = 0;
-		*arc << zero;
+		FString empty = "";
+		(*arc) << empty;
 		delete arc;
 	}
 
@@ -2591,6 +2629,7 @@ void G_ReadSnapshots (PNGHandle *png)
 	DWORD chunkLen;
 	BYTE namelen;
 	char mapname[256];
+	FString MapName;
 	level_info_t *i;
 
 	G_ClearSnapshots ();
@@ -2602,10 +2641,18 @@ void G_ReadSnapshots (PNGHandle *png)
 		DWORD snapver;
 
 		arc << snapver;
-		arc << namelen;
-		arc.Read (mapname, namelen);
-		mapname[namelen] = 0;
-		i = FindLevelInfo (mapname);
+		// [rc4l] 4513 is OUR version point, not upstream's 4508. Every save this engine has written
+		// from MINSAVEVER (4507) through 4512 carries the old fixed-width map name, so gating at
+		// 4508 would read all of them as the new full-string format.
+		if (SaveVersion < 4513)
+		{
+			arc << namelen;
+			arc.Read(mapname, namelen);
+			mapname[namelen] = 0;
+			MapName = mapname;
+		}
+		else arc << MapName;
+		i = FindLevelInfo (MapName);
 		i->snapshotVer = snapver;
 		i->snapshot = new FCompressedMemFile;
 		i->snapshot->Serialize (arc);
@@ -2631,14 +2678,25 @@ void G_ReadSnapshots (PNGHandle *png)
 	{
 		FPNGChunkArchive arc (png->File->GetFile(), VIST_ID, chunkLen);
 
-		arc << namelen;
-		while (namelen != 0)
+		if (SaveVersion < 4513)
 		{
-			arc.Read (mapname, namelen);
-			mapname[namelen] = 0;
-			i = FindLevelInfo (mapname);
-			i->flags |= LEVEL_VISITED;
 			arc << namelen;
+			while (namelen != 0)
+			{
+				arc.Read(mapname, namelen);
+				mapname[namelen] = 0;
+				i = FindLevelInfo(mapname);
+				i->flags |= LEVEL_VISITED;
+				arc << namelen;
+			}
+		}
+		else
+		{
+			while (arc << MapName, MapName.Len() > 0)
+			{
+				i = FindLevelInfo(MapName);
+				i->flags |= LEVEL_VISITED;
+			}
 		}
 	}
 
@@ -2694,8 +2752,7 @@ CCMD(listsnapshots)
 
 static void writeDefereds (FArchive &arc, level_info_t *i)
 {
-	writeMapName (arc, i->MapName);
-	arc << i->defered;
+	arc << i->MapName << i->defered;
 }
 
 //==========================================================================
@@ -2722,8 +2779,8 @@ void P_WriteACSDefereds (FILE *file)
 	if (arc != NULL)
 	{
 		// Signal end of defereds
-		BYTE zero = 0;
-		*arc << zero;
+		FString empty = "";
+		(*arc) << empty;
 		delete arc;
 	}
 }
@@ -2737,6 +2794,7 @@ void P_ReadACSDefereds (PNGHandle *png)
 {
 	BYTE namelen;
 	char mapname[256];
+	FString MapName;
 	size_t chunklen;
 
 	P_RemoveDefereds ();
@@ -2745,18 +2803,33 @@ void P_ReadACSDefereds (PNGHandle *png)
 	{
 		FPNGChunkArchive arc (png->File->GetFile(), ACSD_ID, chunklen);
 
-		arc << namelen;
-		while (namelen)
+		if (SaveVersion < 4513)
 		{
-			arc.Read (mapname, namelen);
-			mapname[namelen] = 0;
-			level_info_t *i = FindLevelInfo (mapname);
-			if (i == NULL)
-			{
-				I_Error ("Unknown map '%s' in savegame", mapname);
-			}
-			arc << i->defered;
 			arc << namelen;
+			while (namelen != 0)
+			{
+				arc.Read(mapname, namelen);
+				mapname[namelen] = 0;
+				level_info_t *i = FindLevelInfo(mapname);
+				if (i == NULL)
+				{
+					I_Error("Unknown map '%s' in savegame", mapname);
+				}
+				arc << i->defered;
+				arc << namelen;
+			}
+		}
+		else
+		{
+			while (arc << MapName, MapName.Len() > 0)
+			{
+				level_info_t *i = FindLevelInfo(MapName);
+				if (i == NULL)
+				{
+					I_Error("Unknown map '%s' in savegame", MapName.GetChars());
+				}
+				arc << i->defered;
+			}
 		}
 	}
 	png->File->ResetFilePtr();

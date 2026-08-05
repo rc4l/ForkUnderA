@@ -1445,7 +1445,9 @@ DDoomStatusBar::FDoomStatusBarTexture::FDoomStatusBarTexture ()
 		I_Error("Fatal error: STBAR not found");
 	}
 	UseType = FTexture::TEX_MiscPatch;
-	Name[0]=0;	// doesn't need a name
+	// [rc4l] uzdoom@59885b856: FTexture::Name is an FString, whose operator[] is read-only. Same
+	// intent -- this texture is built in code and never looked up by name.
+	Name = "";
 
 	// now copy all the properties from the base texture
 	CopySize(BaseTexture);

@@ -65,7 +65,7 @@ their own `mvFlags` word on `AActor`, which is also what Q-Zandronum does — me
 `+CROUCHSLIDE` means the same thing in both engines.
 
 Defined in `actor.h` (`MV_*`), registered in `thingdef_data.cpp`, serialized in `AActor::Serialize`
-under `SaveVersion >= 4513`.
+under `SaveVersion >= 4521`.
 
 ## Stage 2: the physics core
 
@@ -370,7 +370,7 @@ would put local prediction on a movement model that doesn't exist, so the client
   `SERVERCOMMANDS_UpdateThingFlagsNotAtDefaults` and `SERVERCOMMANDS_SetThingProperty`.
 - `src/cl_main.cpp` — the receiving cases in `client_SetThingFlags` and `SetThingProperty::Execute`.
 - `src/thingdef/thingdef_codeptr.cpp` — the `A_ChangeFlag` flag-word → flagset mapping.
-- `src/version.h` — `SAVEVER` 4513.
+- `src/version.h` — `SAVEVER` 4521 (above upstream's 4520; see the note in version.h).
 - `wadsrc/static/actors/shared/player.txt` — `Player.MvType 0`.
 - `src/p_mobj.cpp` — `P_ZMovement`'s landing block is skipped for Quake pawns (bug 5 above).
 - `src/p_interaction.cpp` — the spectator move-tier reset covers all four tiers (bug 6 above).

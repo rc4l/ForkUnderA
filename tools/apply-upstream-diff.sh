@@ -15,11 +15,20 @@
 # rejected, including a single-hunk file whose context was byte-identical to ours; with CR
 # stripped the same patch came down to two trivial rejects. Done here so no caller has to
 # remember, and so a bare `patch < foo.diff` is never the tempting shortcut.
+#
+# [rc4l] -N (--forward) is load-bearing and must not be dropped. Without it, patch treats a hunk
+# whose change is ALREADY PRESENT as a reversed patch, and with no tty to prompt at it answers its
+# own "Assume -R?" question and UNDOES the change. That is silent corruption in the exact direction
+# you will not think to check: it reverts correct code while reporting success. Seen for real
+# porting 03d4f23a6, where two of five files were already at the target state -- the apply turned
+# `texture->id` back into `texture->GetID()` and `level.MapName.GetChars()` back into
+# `level.mapname`, a field that no longer exists. Partly-inherited commits are the common case in
+# this tracker, so this is not an edge case. With -N those hunks are skipped and reported instead.
 set -u
 fail=0
 for d in "$@"; do
 	before=$(find src wadsrc -name '*.rej' 2>/dev/null | sort)
-	out=$(tr -d '\r' < "$d" | patch -p1 --no-backup-if-mismatch -F3 2>&1)
+	out=$(tr -d '\r' < "$d" | patch -p1 -N --no-backup-if-mismatch -F3 2>&1)
 	rc=$?
 	after=$(find src wadsrc -name '*.rej' 2>/dev/null | sort)
 	newrej=$(comm -13 <(echo "$before") <(echo "$after"))

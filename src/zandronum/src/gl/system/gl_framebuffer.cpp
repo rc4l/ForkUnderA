@@ -43,6 +43,7 @@
 #include "files.h"
 #include "m_swap.h"
 #include "v_video.h"
+#include "sbar.h"   // [rc4l] StatusBar->ScreenSizeChanged on an in-place resize
 #include "doomstat.h"
 #include "m_png.h"
 #include "m_crc32.h"
@@ -82,7 +83,6 @@ EXTERN_CVAR (Float, vid_scale_custompixelaspect)
 EXTERN_CVAR (Bool, vid_cropaspect)
 extern bool setsizeneeded;
 extern int DisplayBits;
-extern bool zx_videoScaleDirty;
 #include "features/video-scale/computation/videoscale_compute.h"
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
@@ -196,9 +196,6 @@ void OpenGLFrameBuffer::InitializeState()
 	// [rc4l] video-scale: decide whether we render into an offscreen scale buffer, (re)build it, and
 	// bind it as the render target so everything below draws into it at the virtual size.
 	UpdateScaleBuffer();
-	// The client/drawable size may differ from the mode-set size (e.g. macOS reports a slightly
-	// different desktop drawable); re-check once on the next frame.
-	zx_videoScaleDirty = true;
 
 	Begin2D(false);
 	GLRenderer->Initialize();
@@ -212,6 +209,20 @@ void OpenGLFrameBuffer::InitializeState()
 
 // Testing only for now. 
 CVAR(Bool, gl_draw_sync, true, 0) //false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+
+void ZX_DumpScaleState()
+{
+	OpenGLFrameBuffer *const fb = static_cast<OpenGLFrameBuffer *>(screen);
+	fb->DumpScaleState();
+}
+
+void OpenGLFrameBuffer::DumpScaleState()
+{
+	Printf("scale_active=%d\n", (int)mScaleActive);
+	Printf("scale_fb=%d %dx%d\n", (int)mScaleFB, mScaleFBW, mScaleFBH);
+	Printf("scale_client=%dx%d\n", mScaleClientW, mScaleClientH);
+	Printf("fb_get_size=%dx%d truH=%d\n", GetWidth(), GetHeight(), GetTrueHeight());
+}
 
 void OpenGLFrameBuffer::Update()
 {
@@ -288,8 +299,14 @@ void OpenGLFrameBuffer::GetClientSize(int &w, int &h)
 		w = GetWidth();
 		h = GetHeight();
 	}
+#elif defined(ZX_COCOA_BACKEND)
+	// [rc4l] Cocoa backend: upstream's own SDLGLFB exposes the drawable size directly, so this needs
+	// no SDL. GetClientWidth/Height return BACKING PIXELS -- see the invariant in posix/README.md;
+	// mixing them with points renders at quarter size on a Retina display rather than failing.
+	w = GetClientWidth();
+	h = GetClientHeight();
 #else
-	// SDL2 (macOS/Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
+	// SDL2 (Linux): the real drawable in pixels. For a FULLSCREEN_DESKTOP window this is the
 	// desktop; for a window it is the window's drawable.
 	SDL_GL_GetDrawableSize(Screen, &w, &h);
 #endif
@@ -393,19 +410,35 @@ void OpenGLFrameBuffer::ResizeRenderInPlace(int w, int h)
 	// V_OutputResized. No black flash, no keyboard-focus loss (the window never goes away).
 	Resize(w, h);                                // canvas backing store + Width/Height/Pitch
 	V_RecalcVideoModeState(w, h, DisplayBits);   // Clean facs, DisplayW/H, mode-set recompute
+
+	// [rc4l] The status bar caches ST_Y, computed from SCREENHEIGHT in DBaseStatusBar::SetScaled.
+	// Resizing the render target without telling it leaves that cache pointing at the OLD height,
+	// and R_SetWindow then sizes the 3D view against a stale ST_Y -- a view TALLER than the buffer
+	// it draws into, which shows up as the status-bar strip rendering garbage while screenblocks 11
+	// (no status bar) looks fine. A real mode set goes through this; an in-place resize has to too.
+	if (StatusBar != NULL)
+	{
+		StatusBar->ScreenSizeChanged();
+	}
+
 	setsizeneeded = true;                        // recompute the 3D view for the new render size
 	UpdateScaleBuffer();                         // (re)build + bind the scale FBO, or drop to backbuffer
 }
 
 void OpenGLFrameBuffer::MaybeResizeForScale()
 {
-	// [rc4l] video-scale: event-driven, NOT polled. GetClientSize -> SDL_GL_GetDrawableSize is an
-	// expensive Cocoa/Metal query on macOS (~tens of ms), so calling it every frame tanks FPS.
-	// Only re-check when something actually changed -- a mode set, a window resize, or a scale CVAR
-	// change all raise zx_videoScaleDirty. This matches upstream's event-driven resize.
-	if (!zx_videoScaleDirty)
-		return;
-	zx_videoScaleDirty = false;
+	// [rc4l] uzdoom@c3702ae9e: this reconcile is UNCONDITIONAL, every frame, exactly as upstream's
+	// OpenGLFrameBuffer::Update does it.
+	//
+	// It used to be gated on a zx_videoScaleDirty flag because the old query --
+	// SDL_GL_GetDrawableSize -- cost tens of milliseconds on macOS, so polling it tanked the frame
+	// rate. That reasoning died with the SDL backend: the Cocoa path reads the view's backing
+	// bounds, which is cheap, and upstream polls on every platform including their own SDL one.
+	//
+	// The gate was also wrong, not just conservative. Anything that resized the window WITHOUT
+	// raising the flag -- a drag, a fullscreen toggle, an OS-driven resize -- left the render target
+	// at the old size with no way to notice. Comparing the sizes IS the check; a separate flag can
+	// only ever get out of sync with it, so the flag is gone rather than merely unread.
 
 	int cw = GetWidth(), ch = GetHeight();
 	GetClientSize(cw, ch);
@@ -414,8 +447,31 @@ void OpenGLFrameBuffer::MaybeResizeForScale()
 		vid_scale_customwidth, vid_scale_customheight, vid_scale_custompixelaspect,
 		!!vid_cropaspect, 0.f,
 		zx::VID_SCALE_MIN_WIDTH, zx::VID_SCALE_MIN_HEIGHT);
-	if (v.width != GetWidth() || v.height != GetHeight())
+	switch (zx::ComputeScaleReconcile(cw, ch, GetWidth(), GetHeight(),
+		mScaleClientW, mScaleClientH, v.width, v.height))
+	{
+	case zx::SCALE_RECONCILE_RESIZE:
 		ResizeRenderInPlace(v.width, v.height);
+		break;
+
+	case zx::SCALE_RECONCILE_REBUILD:
+		// [rc4l] The WINDOW changed but the render size did not, so the branch above cannot see it
+		// -- and UpdateScaleBuffer is the only thing that refreshes mScaleClientW/H and mScaleActive,
+		// which BlitScaleBuffer uses as its destination rect.
+		//
+		// This is not an edge case, it is EVERY launch: CreateCocoaWindow deliberately opens the
+		// window at a temporary 319x199 (VideoModes[0] - 1), so the first UpdateScaleBuffer cached
+		// a 638x398 client on a Retina display. SetMode then resized the window to the real size
+		// while the render size stayed put, so nothing re-ran, and every frame was rendered at full
+		// size into the FBO and then blitted into a 638x398 rect at the origin -- the whole game in
+		// the bottom-left corner of a black window, with every size the engine reported correct
+		// because the only wrong number was this cache.
+		UpdateScaleBuffer();
+		break;
+
+	case zx::SCALE_RECONCILE_NONE:
+		break;
+	}
 }
 
 

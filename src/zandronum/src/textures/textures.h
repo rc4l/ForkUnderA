@@ -180,11 +180,7 @@ public:
 	int SourceLump;
 	FTextureID id;
 
-	union
-	{
-		char Name[9];
-		DWORD dwName;		// Used with sprites
-	};
+	FString Name;
 	BYTE UseType;	// This texture's primary purpose
 
 	BYTE bNoDecals:1;		// Decals should not stick to texture
@@ -446,17 +442,15 @@ public:
 		TEXMAN_Overridable = 2,
 		TEXMAN_ReturnFirst = 4,
 		TEXMAN_AllowSkins = 8,
-		TEXMAN_ShortNameOnly = 16
+		TEXMAN_ShortNameOnly = 16,
+		// [rc4l] uzdoom@25f4af734: read-only lookup -- CheckForTexture returns -1 rather than
+		// instantiating a texture it had to build from a lump.
+		TEXMAN_DontCreate = 32
 	};
 
 	FTextureID CheckForTexture (const char *name, int usetype, BITFIELD flags=TEXMAN_TryAny);
 	FTextureID GetTexture (const char *name, int usetype, BITFIELD flags=0);
 	int ListTextures (const char *name, TArray<FTextureID> &list);
-	// [rc4l] uzdoom@ca4179caa deleted this because its ONE upstream caller went away with the new
-	// full-path texture lookup. It is not dead here: gl_skyboxtexture.cpp and gl_texture.cpp both
-	// ask "which texture came from this lump?" (Vavoom skyboxes, brightmap pairing), which the
-	// name-based lookups cannot answer. Kept, with the rest of that commit taken.
-	FTextureID FindTextureByLumpNum (int lumpnum);
 
 	void AddTexturesLump (const void *lumpdata, int lumpsize, int deflumpnum, int patcheslump, int firstdup=0, bool texture1=false);
 	void AddTexturesLumps (int lump1, int lump2, int patcheslump);

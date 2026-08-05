@@ -349,34 +349,19 @@ OptionMenu ZA_ServerInfo
 	Indent 80
 }
 
+// [rc4l] The browser draws itself entirely -- rows, columns, spinner and all -- so this descriptor
+// carries no items. It exists only to name the class and give the menu system something to
+// instantiate. Everything the old descriptor listed (filters, sort, show empty/full, the eight fixed
+// slots) is gone by design: the MVP's only verb is picking a server.
 OptionMenu ZA_Browser
 {
 	Title "SERVER BROWSER"
-	Class "BrowserMenu"
+	Class "FUAServerBrowserMenu"
 	Indent 80
 
-	Option		"Servers",		"menu_browser_servers",		"ZA_ServerType"
-	Option		"Gametype",		"menu_browser_gametype",		"ZA_ServerGamemode"
-	Option		"Sort by",		"menu_browser_sortby",		"ZA_ServerSortType"
-	Option		"Show empty",		"menu_browser_showempty",		"YesNo"
-	Option		"Show full",		"menu_browser_showfull",		"YesNo"
-	TextField	"Filter name",		"menu_browser_filtername"
-	StaticText	" "
-	StaticText	" " // Header
-	StaticText	" "
-	ServerBrowserSlot 0
-	ServerBrowserSlot 1
-	ServerBrowserSlot 2
-	ServerBrowserSlot 3
-	ServerBrowserSlot 4
-	ServerBrowserSlot 5
-	ServerBrowserSlot 6
-	ServerBrowserSlot 7
-	StaticText	" "
-	Command		"Refresh",			"querymaster"
-	Command		"Clear filter",			"menu_clear_browser_filter"
-	Submenu		"Get server info",			"ZA_ServerInfo"
-	SafeCommand	"Join game!",			"menu_join_selected_server"
+	// [rc4l] A single placeholder because the menu system will not open a descriptor with no items at
+	// all. The browser never draws it -- Drawer() is fully custom and does not chain to Super.
+	StaticText " "
 }
 
 // =================================================================================================

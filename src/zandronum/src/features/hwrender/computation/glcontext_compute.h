@@ -33,6 +33,27 @@ constexpr int kMaxGLContextRequests = 4;
 // (3.0 -> 2.1). Returns 0 and writes nothing if out is null or capacity is too small.
 int ComputeGLContextRequests(bool wantCore, GLContextRequest *out, int capacity);
 
+// [rc4l] The Cocoa side of the same decision. Apple's NSOpenGLPFAOpenGLProfile takes exactly three
+// values -- there is no 4.0 or 3.3 constant -- so the chain above collapses onto them and must be
+// de-duplicated, or we would ask the OS for the identical pixel format twice. Kept here rather than
+// in i_video.mm so the collapse is testable without AppKit; the values are Apple's, mirrored so
+// this header stays engine-free and C++14.
+enum
+{
+	kNSGLProfileLegacy = 0x1000, // NSOpenGLProfileVersionLegacy   -> GL 2.1
+	kNSGLProfileCore32 = 0x3200, // NSOpenGLProfileVersion3_2Core  -> GL 3.2+
+	kNSGLProfileCore41 = 0x4100  // NSOpenGLProfileVersion4_1Core  -> GL 4.1, 10.10+
+};
+
+// [rc4l] Widest Apple profile that can satisfy `req`. A non-core request is always Legacy.
+constexpr int kMaxCocoaGLProfiles = 3;
+int ComputeCocoaGLProfile(const GLContextRequest &req);
+
+// [rc4l] Maps ComputeGLContextRequests through ComputeCocoaGLProfile, drops consecutive duplicates
+// and appends Legacy as the last resort. Returns the count written to `out` (capacity
+// kMaxCocoaGLProfiles); 0 and nothing written if out is null or capacity too small.
+int ComputeCocoaGLProfileChain(bool wantCore, int *out, int capacity);
+
 } // namespace zx
 
 #endif // ZX_GLCONTEXT_COMPUTE_H

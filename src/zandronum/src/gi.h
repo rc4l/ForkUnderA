@@ -114,7 +114,7 @@ struct gameinfo_t
 	bool noloopfinalemusic;
 	bool intermissioncounter;
 	bool hidepartimes;	// [ZandroX] uzdoom@a2f8b7d0d: hide par times on the intermission
-	bool dontcrunchcorpses;	// [ZandroX] uzdoom@a1cc548af: crushers don't gib corpses
+	bool dontcrunchcorpses;	// [ZandroX] uzdoom@388f09f78: crushers don't gib corpses
 	bool nightmarefast;
 	bool swapmenu;
 	TArray<FName> creditPages;
@@ -172,6 +172,7 @@ struct gameinfo_t
 	int TextScreenY;
 	FName DefaultEndSequence;
 	FString mMapArrow, mCheatMapArrow;
+	FString mEasyKey, mCheatKey;	// [rc4l] uzdoom@8edace83c
 	FString mUpArrow, mDownArrow;	// [rc4l] freeform-menu scroll arrows (empty by default -> console-font fallback)
 	FGIFont mStatscreenMapNameFont;
 	FGIFont mStatscreenFinishedFont;

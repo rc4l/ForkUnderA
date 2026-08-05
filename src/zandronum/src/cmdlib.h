@@ -5,6 +5,26 @@
 
 
 #include "doomtype.h"
+#include "doomdef.h"	// [rc4l] uzdoom@48163de8e: for TICRATE, used by Tics2Seconds below
+#include "m_fixed.h"	// [rc4l] uzdoom@df0d3543a: for Scale()
+
+//==========================================================================
+//
+// [rc4l] uzdoom@259466c3d: functions to compensate for a tic being a bit short.
+// Since ZDoom uses a milliseconds timer for game timing, 35 tics are actually
+// only 0.98 seconds. For real time display this needs to be adjusted.
+//
+//==========================================================================
+
+inline int AdjustTics(int tics)
+{
+	return Scale(tics, 98, 100);
+}
+
+inline int Tics2Seconds(int tics)
+{
+	return Scale(tics, 98, (100 * TICRATE));
+}
 
 #include <stdio.h>
 #include <string.h>

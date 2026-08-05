@@ -70,7 +70,11 @@ enum GUIKeyModifiers
 	GKM_SHIFT	= 1,
 	GKM_CTRL	= 2,
 	GKM_ALT		= 4,
-	GKM_LBUTTON = 8
+	// [rc4l] uzdoom@32af6cb0c: the Cocoa backend reports Command/Meta as its own modifier, so it
+	// takes bit 3 and GKM_LBUTTON moves up. Renumbering is free -- these are runtime-only flags,
+	// never serialised, and GKM_LBUTTON had no users besides this definition.
+	GKM_META	= 8,
+	GKM_LBUTTON = 16
 };
 
 // Special codes for some GUI keys, including a few real ASCII codes.
