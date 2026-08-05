@@ -56,6 +56,21 @@ struct Cursor
 		return false;
 	}
 
+	// Little-endian, matching BYTESTREAM_s::WriteLong. Read UNSIGNED for the same reason as ReadShort:
+	// the engine writes a signed int, so a file over 2 GB arrives with its top bit set and would come
+	// back negative -- and a negative file size is not a smaller file, it is a nonsense one.
+	bool ReadLong(unsigned long &out)
+	{
+		if ((at + 4) > length)
+			return false;
+		out = static_cast<unsigned long>(data[at]) |
+			(static_cast<unsigned long>(data[at + 1]) << 8) |
+			(static_cast<unsigned long>(data[at + 2]) << 16) |
+			(static_cast<unsigned long>(data[at + 3]) << 24);
+		at += 4;
+		return true;
+	}
+
 	bool ReadRaw(size_t count, std::string &out)
 	{
 		if ((at + count) > length)
@@ -71,7 +86,7 @@ struct Cursor
 unsigned KnownExtendedFields()
 {
 	return kSqf2PwadHashes | kSqf2Country | kSqf2GameModeName | kSqf2GameModeShortName |
-		kSqf2VoiceChat | kSqf2DirectDownload | kSqf2IwadHash;
+		kSqf2VoiceChat | kSqf2DirectDownload | kSqf2IwadHash | kSqf2WadSizes;
 }
 
 ExtendedParse ParseExtendedInfo(const unsigned char *data, size_t length, unsigned flags2,
@@ -148,6 +163,21 @@ ExtendedParse ParseExtendedInfo(const unsigned char *data, size_t length, unsign
 	{
 		if (!cursor.ReadString(parsed.iwadHash))
 			return ExtendedParse::Truncated;
+	}
+
+	if (flags2 & kSqf2WadSizes)
+	{
+		int count = 0;
+		if (!cursor.ReadByte(count))
+			return ExtendedParse::Truncated;
+
+		for (int i = 0; i < count; ++i)
+		{
+			unsigned long size = 0;
+			if (!cursor.ReadLong(size))
+				return ExtendedParse::Truncated;
+			parsed.pwadSizes.push_back(size);
+		}
 	}
 
 	outConsumed = cursor.at;

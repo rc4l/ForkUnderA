@@ -556,6 +556,24 @@ static void server_registry_WriteIWADHash( const LauncherResponseContext &ctx )
 }
 
 //*****************************************************************************
+// [rc4l] How big each PWAD is, so a client can see what agreeing to a download costs before it
+// agrees. Same order and same count as SQF_PWADS and SQF2_PWAD_HASHES.
+//
+// The size was measured when the PWAD list was built, not here: this function answers every launcher
+// query, and a stat per file per query is disk work on the hot path to learn something that only
+// changes when the wad set does. 0 means "could not be measured", which is also what a server that
+// has never heard of this field effectively says.
+static void server_registry_WriteWADSizes( const LauncherResponseContext &ctx )
+{
+	const TArray<NetworkPWAD> &pwads = NETWORK_GetPWADList( );
+
+	ctx.pByteStream->WriteByte( pwads.Size( ));
+
+	for ( unsigned i = 0; i < pwads.Size( ); ++i )
+		ctx.pByteStream->WriteLong( static_cast<int>( pwads[i].size ));
+}
+
+//*****************************************************************************
 // [SB] And now the big maps of functions.
 static const std::map<ULONG, LauncherFieldFunction> ResponseFunctions[] =
 {
@@ -601,6 +619,7 @@ static const std::map<ULONG, LauncherFieldFunction> ResponseFunctions[] =
 		{ SQF2_VOICECHAT,			server_registry_WriteVoicechat },
 		{ SQF2_FUA_DIRECT_DOWNLOAD,	server_registry_WriteDirectDownload },
 		{ SQF2_FUA_IWAD_HASH,		server_registry_WriteIWADHash },
+		{ SQF2_FUA_WAD_SIZES,		server_registry_WriteWADSizes },
 	}
 };
 

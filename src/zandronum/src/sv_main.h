@@ -169,12 +169,24 @@
 // not running and level authentication rejects you, reporting nothing you can act on.
 #define SQF2_FUA_IWAD_HASH			0x00000040
 
+// [rc4l] How big each PWAD is, in bytes: a count byte then one 32-bit size per file, in the same
+// order as SQF_PWADS and SQF2_PWAD_HASHES.
+//
+// SQF_PWADS gives names and SQF2_PWAD_HASHES gives digests, so a client could tell WHETHER it needed
+// a file but never how much of a wait agreeing to it was -- a 200 KB map pack and a 400 MB
+// resource wad looked identical in the browser, which is the one number the decision actually turns
+// on. Sent for PWADs only; the IWAD is not downloadable and its size answers nothing.
+//
+// 32 bits, so the ceiling is 4 GB. Anything larger is not a file anyone is going to be served over a
+// launcher query, and a fixed width keeps the field skippable by shape.
+#define SQF2_FUA_WAD_SIZES			0x00000080
+
 #define	SQF_ALL						( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_MAXPLAYERS| \
 									  SQF_PWADS|SQF_GAMETYPE|SQF_GAMENAME|SQF_IWAD|SQF_FORCEPASSWORD|SQF_FORCEJOINPASSWORD|SQF_GAMESKILL| \
 									  SQF_BOTSKILL|SQF_DMFLAGS|SQF_LIMITS|SQF_TEAMDAMAGE|SQF_TEAMSCORES|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_TEAMINFO_NUMBER|SQF_TEAMINFO_NAME|SQF_TEAMINFO_COLOR|SQF_TEAMINFO_SCORE| \
 									  SQF_TESTING_SERVER|SQF_DATA_MD5SUM|SQF_ALL_DMFLAGS|SQF_SECURITY_SETTINGS|SQF_OPTIONAL_WADS|SQF_DEH|SQF_EXTENDED_INFO )
 
-#define SQF2_ALL					( SQF2_PWAD_HASHES|SQF2_COUNTRY|SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_VOICECHAT|SQF2_FUA_DIRECT_DOWNLOAD|SQF2_FUA_IWAD_HASH )
+#define SQF2_ALL					( SQF2_PWAD_HASHES|SQF2_COUNTRY|SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_VOICECHAT|SQF2_FUA_DIRECT_DOWNLOAD|SQF2_FUA_IWAD_HASH|SQF2_FUA_WAD_SIZES )
 
 #define	MAX_STORED_QUERY_IPS		512
 
