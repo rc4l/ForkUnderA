@@ -31,6 +31,15 @@ enum class ReloadResult
 // human reason. (Deep integrity / hash verification is the later download phase's job.)
 bool WadLoadable(const char *path, FString &outWhy);
 
+// [rc4l] Clear the startup state that is written once-if-empty and so survives a restart onto a
+// DIFFERENT WAD set. Call once at the top of D_DoomMain's reinit loop, restart path only.
+//
+// This lives here because reloading is what exposes it: the state is harmless while a restart means
+// "the player asked to change WADs and expects a fresh engine", and wrong once wad_reload makes
+// restarting routine -- joining a server from the browser restarts onto that server's WAD set, and
+// the previous game then bleeds into the new one.
+void ResetStartupStateForRestart();
+
 // Reload the engine onto a new WAD set. `iwad` may be NULL/empty to keep the current IWAD; `pwads`
 // replaces the current -file set (may be empty to run the bare IWAD). `startMap` (NULL/empty = none)
 // makes the reload boot straight into that map instead of the title screen -- if the map isn't in the
