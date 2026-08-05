@@ -1112,8 +1112,23 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		if ( ulFlags2 & SQF2_FUA_DIRECT_DOWNLOAD )
 		{
 			const int lFlags = pByteStream->ReadByte( );
-			g_BrowserServerList[lServer].usDirectDownloadPort = static_cast<USHORT>( pByteStream->ReadShort( ));
-			g_BrowserServerList[lServer].bPrefersMirrors = (( lFlags & 1 ) != 0 );
+			const int lPort = pByteStream->ReadShort( );
+
+			// [rc4l] Underflow reads as -1 from BYTESTREAM_s, and -1 has bit 0 set -- so a stream
+			// that ran out would silently report "serving, and prefers mirrors" from bytes that were
+			// never sent. Refuse to act on a field we did not actually receive: a server we believe
+			// is not serving costs a fall back to the public mirrors, while a wrong port costs every
+			// download from it, which is the failure this is guarding against.
+			if (( lFlags < 0 ) || ( lPort <= 0 ) || ( lPort > 65535 ))
+			{
+				g_BrowserServerList[lServer].usDirectDownloadPort = 0;
+				g_BrowserServerList[lServer].bPrefersMirrors = false;
+			}
+			else
+			{
+				g_BrowserServerList[lServer].usDirectDownloadPort = static_cast<USHORT>( lPort );
+				g_BrowserServerList[lServer].bPrefersMirrors = (( lFlags & 1 ) != 0 );
+			}
 		}
 	}
 
