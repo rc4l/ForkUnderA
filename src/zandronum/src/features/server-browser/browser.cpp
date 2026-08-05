@@ -51,6 +51,7 @@
 #include "networkheaders.h"
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/launcherfields_compute.h"
+#include "features/launcher-protocol/computation/segmentreassembly_compute.h"
 #include "c_dispatch.h"
 #include "cl_main.h"
 #include "deathmatch.h"
@@ -758,6 +759,54 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 
 //*****************************************************************************
 //
+// [rc4l] One reply being rebuilt per server. A datagram has a hard size ceiling, so a reply that
+// outgrew one arrives in numbered pieces -- see features/launcher-protocol for the format and why
+// every UDP query protocol ends up doing this.
+//
+// Kept here rather than in SERVER_t so browser.h, which is included widely, does not gain the
+// dependency. Each entry is empty until a segmented reply actually arrives from that slot.
+static zx::SegmentAssembly g_SegmentAssemblies[MAX_BROWSER_SERVERS];
+
+void BROWSER_ParseServerQuerySegment( BYTESTREAM_s *pByteStream, bool bLAN )
+{
+	const LONG lServer = browser_GetListIDByAddress( NETWORK_GetFromAddress( ));
+
+	// A piece from an address we never queried. Nothing to rebuild it into, and allocating on behalf
+	// of an unsolicited packet is how a query port becomes a memory problem.
+	if ( lServer == -1 )
+		return;
+
+	const size_t availableBytes = ( pByteStream->pbStreamEnd > pByteStream->pbStream )
+		? static_cast<size_t>( pByteStream->pbStreamEnd - pByteStream->pbStream ) : 0;
+	const unsigned char *base = reinterpret_cast<const unsigned char *>( pByteStream->pbStream );
+
+	zx::SegmentHeader header;
+	if ( zx::ReadSegmentHeader( base, availableBytes, header ) != zx::SegmentRead::Ok )
+		return;
+
+	zx::SegmentAssembly &assembly = g_SegmentAssemblies[lServer];
+	const zx::SegmentAdd result = zx::AddSegment( assembly, header,
+		base + zx::kSegmentHeaderBytes, availableBytes - zx::kSegmentHeaderBytes );
+
+	if ( result != zx::SegmentAdd::Complete )
+		return;
+
+	// Whole again. A segmented reply omits the SERVER_LAUNCHER_CHALLENGE long that an unsegmented one
+	// starts with -- see the `if ( !bSegmentedResponse )` guard on the server -- so the rebuilt buffer
+	// begins exactly where BROWSER_ParseServerQuery expects to be handed the stream.
+	BYTESTREAM_s assembled;
+	assembled.pbStream = reinterpret_cast<BYTE *>( &assembly.data[0] );
+	assembled.pbStreamEnd = assembled.pbStream + assembly.data.size( );
+
+	BROWSER_ParseServerQuery( &assembled, bLAN );
+
+	// Done with it either way: holding a completed reply only risks a later piece being merged into
+	// something already consumed.
+	zx::ResetAssembly( assembly );
+}
+
+//*****************************************************************************
+//
 void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 {
 	GAMEMODE_e	GameMode = GAMEMODE_COOPERATIVE;
@@ -1374,6 +1423,14 @@ static void browser_QueryServer( ULONG ulServer )
 	// [rc4l] SQF2_FUA_IWAD_HASH added: tells us which BUILD of the IWAD the server runs, so we can
 	// load the copy that will actually pass level authentication.
 	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY|SQF2_PWAD_HASHES|SQF2_FUA_DIRECT_DOWNLOAD|SQF2_FUA_IWAD_HASH );
+
+	// [rc4l] Ask for a segmented reply if it does not fit one datagram. The server enables it on a
+	// trailing byte of exactly 2 (sv_main.cpp), and an older server simply never reads this far --
+	// which is why the opt-in is a byte on the end rather than a flag in the middle.
+	//
+	// Worth asking for even though most replies fit today: the field set has only ever grown, and the
+	// failure when it stops fitting is a silently truncated reply rather than an error.
+	g_ServerBuffer.ByteStream.WriteByte( 2 );
 
 	// Send the server our packet.
 	NETWORK_LaunchPacket( &g_ServerBuffer, g_BrowserServerList[ulServer].Address );

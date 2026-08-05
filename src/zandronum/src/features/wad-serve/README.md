@@ -150,9 +150,8 @@ The guard stays anyway, because refusing to act on a port we did not receive is 
 terms. And `dumpserverlist` printing the advertised endpoint is what made the bug visible at all:
 when a download fails, the first question is whether the client ever learned an endpoint.
 
-Separately, the browser still never opts into segmented launcher replies (`sv_main.cpp` enables them
-on a trailing `2` byte it does not send) and has no `SERVER_LAUNCHER_CHALLENGE_SEGMENTED` handling.
-A real gap, unrelated to the above, and still open.
+Separately, the browser used not to opt into segmented launcher replies at all, so every reply had to
+fit one datagram while the field set kept growing. That is now `features/launcher-protocol`.
 
 ## Layout
 
