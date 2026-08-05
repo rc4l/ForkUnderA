@@ -9,7 +9,7 @@ gameinfo
 	playerclasses = "MvDoomCtl", "MvQBase", "MvCore", "MvCap", "MvCpm",
 		"MvJump", "MvJumpSlow", "MvJumpInf", "MvSJDelay", "MvAbsSJ", "MvAbsSJOff", "MvWallJump", "MvWallJumpV2", "MvDoubleTap",
 		"MvEdgeJump", "MvGroundSJ", "MvUser4", "MvElevator", "MvElevatorOff", "MvJumpXY",
-		"MvSlide", "MvClimb", "MvWallRun", "MvTiers", "MvCrouch", "MvAll"
+		"MvSlide", "MvClimb", "MvWallRun", "MvTiers", "MvCrouch", "MvAll", "MvSound", "MvSoundQuiet"
 }
 
 map MVTEST "Quake Movement Master Test"

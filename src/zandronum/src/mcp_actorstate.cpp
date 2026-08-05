@@ -15,6 +15,7 @@
 #include "m_fixed.h"
 #include "tables.h"
 #include "p_local.h"
+#include "s_sound.h"
 #include <stdlib.h>
 
 static void MCP_PrintState( const char *label, AActor *mo )
@@ -139,6 +140,13 @@ CCMD( dumpactor )
 				MCP_ClassName( pawn->EffectActors[EA_WALL_CLIMB] ),
 				MCP_ClassName( pawn->EffectActors[EA_FOOTSTEP] ),
 				pawn->crouchSlideEffectTics, pawn->wallClimbEffectTics, pawn->stepInterval );
+			// [rc4l] Which sound channels this pawn currently has running. CHAN_BODY carries the
+			// looping traversal moves and the jump sounds, CHAN_AUTO the footsteps. This is what
+			// makes the sound paths checkable without listening: MV_SILENT must leave BODY idle
+			// during a slide that is otherwise identical.
+			Printf( "qsound body %d auto %d\n",
+				S_IsActorPlayingSomething( mo, CHAN_BODY, -1 ) ? 1 : 0,
+				S_IsActorPlayingSomething( mo, CHAN_AUTO, -1 ) ? 1 : 0 );
 			// [rc4l] The pre-friction velocity the server puts on the wire for Quake pawns. Only
 			// the server writes it, so a client dump showing zeroes here is correct, not a failure.
 			Printf( "qsrvvel %d %d %d\n",

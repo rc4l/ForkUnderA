@@ -431,6 +431,13 @@ enum
 	APROP_HitRadius		= 50,	// [ZandroX] projectilepassradius (attack half-width)
 	APROP_HitHeight		= 51,	// [ZandroX] projectilepassheight (attack height)
 	APROP_MvType		= 52,	// [rc4l] Player.MvType (features/quake-movement)
+	// [rc4l] Read-only traversal state (features/quake-movement). Engine-managed per tic, so
+	// SetActorProperty ignores them. Without these the three states are unobservable from a mod --
+	// and air wall run has no effect of its own, so +AIRWALLRUN was indistinguishable from a
+	// no-op even though it was working.
+	APROP_IsCrouchSliding	= 53,
+	APROP_IsWallClimbing	= 54,
+	APROP_IsAirWallRunning	= 55,
 };
 
 // [Dusk] Enumeration for GetTeamProperty

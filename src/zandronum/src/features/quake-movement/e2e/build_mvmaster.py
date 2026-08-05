@@ -211,6 +211,7 @@ def main():
         ("ENDMAP", b""),
         ("DECORATE", read("mvmaster_decorate.txt")),
         ("MAPINFO", read("mvmaster_mapinfo.txt")),
+        ("SNDINFO", read("mvmaster_sndinfo.txt")),
         ("LOADACS", b"MVMSTR\n"),
         # [rc4l] A_START/A_END is what puts the object lump in ns_acslibrary; LOADACS looks it up
         # in that namespace only, so an unmarked lump is silently never loaded.

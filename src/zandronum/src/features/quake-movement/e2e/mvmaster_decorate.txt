@@ -321,3 +321,58 @@ ACTOR MvGiveSlideOff : MvGiveSlideOn
 		Stop
 	}
 }
+
+// MV_SILENT on/off at runtime, so the sound test can A/B the SAME pawn mid-session instead of
+// comparing two classes across a map restart. Every sound this feature plays goes through the
+// silent gate except footsteps, which is itself worth hearing.
+ACTOR MvGiveSilentOn : MvGiveSlideOn
+{
+	States
+	{
+	Pickup:
+		TNT1 A 0 A_ChangeFlag("SILENT", 1)
+		Stop
+	}
+}
+
+ACTOR MvGiveSilentOff : MvGiveSlideOn
+{
+	States
+	{
+	Pickup:
+		TNT1 A 0 A_ChangeFlag("SILENT", 0)
+		Stop
+	}
+}
+
+// ---------------------------------------------------------------------------------------------
+// The sound-test pawn. Everything that makes noise is enabled at once, because the point is to
+// tell the six sounds APART, not to isolate one. Footsteps are on for every tier so walking is
+// audible too, and the interval is short enough to sound like a stride.
+// ---------------------------------------------------------------------------------------------
+ACTOR MvSound : MvQBase
+{
+	+CROUCHSLIDE
+	+WALLCLIMB
+	+AIRWALLRUN
+	+EDGEJUMP
+	Player.SecondJumpAmount 1
+	Player.SecondJumpZ 10
+	Player.SecondJumpDelay 0
+	Player.JumpDelay 20
+	Player.FootstepInterval 10
+	Player.FootstepVolume 1.0
+	Player.FootstepsEnabled 1, 1, 1, 1
+	Player.EffectActor "CrouchSlide", "MvDust"
+	Player.EffectActor "WallClimb", "MvDust"
+	Player.EffectActor "Footstep", "MvDust"
+	Player.DisplayName "MvSound"
+}
+
+// Identical but for FootstepVolume, which has no runtime setter -- so hearing the difference needs
+// two classes. 0.15 against 1.0 is a gap nobody can mistake for imagination.
+ACTOR MvSoundQuiet : MvSound
+{
+	Player.FootstepVolume 0.15
+	Player.DisplayName "MvSoundQuiet"
+}
