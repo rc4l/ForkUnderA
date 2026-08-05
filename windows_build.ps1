@@ -82,9 +82,25 @@ if ($Clean) {
 if (-not $Version) { $Version = Get-DefaultVersion }
 Write-Status "ZandroX fast Windows build — configuration=$Configuration version=$Version"
 
-if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
-    throw "cmake not found on PATH. Install CMake and Visual Studio 2022 (with the C++ workload)."
+# [rc4l] Visual Studio ships its own cmake and does NOT put it on PATH, so a machine with a perfectly
+# good C++ toolchain fails here with "install CMake" and sends you installing something you already
+# have. Same resolver as windows_build_run.ps1 -- keep the two in step.
+function Resolve-CMake {
+    $onPath = Get-Command cmake -ErrorAction SilentlyContinue
+    if ($onPath) { return $onPath.Source }
+    $candidates = @()
+    foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if (-not $pf) { continue }
+        $candidates += (Join-Path $pf "CMake\bin\cmake.exe")
+        foreach ($ed in @("Community", "Professional", "Enterprise", "BuildTools")) {
+            $candidates += (Join-Path $pf "Microsoft Visual Studio\2022\$ed\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe")
+        }
+    }
+    foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
+    throw "cmake not found on PATH or in any Visual Studio 2022 install. Install CMake, or run from a Developer PowerShell."
 }
+$CMake = Resolve-CMake
+Write-Note "cmake: $CMake"
 
 # --- DirectX headers/libs from the Windows SDK -----------------------------
 # [rc4l] Zandronum's build wants the legacy DirectX SDK layout; reshape it out of the modern SDK.
@@ -107,8 +123,17 @@ $env:DXSDK_DIR = $dx
 Write-Note "DXSDK_DIR set to $dx"
 
 # --- Configure (MSVC x64, NO_FMOD, OpenAL) — deps from windows_assets/ ------
+# [rc4l] Drop out of "Stop" for the two native calls below. Under $ErrorActionPreference = "Stop",
+# PowerShell wraps every stderr line from a native exe in a NativeCommandError and treats it as
+# TERMINATING — so a CMake *warning* (find_package dev warnings, which src/CMakeLists.txt emits on a
+# clean configure) aborts the script as though the build had failed, with a message that names the
+# warning rather than the abort. The exit code is what actually says whether it worked, and both
+# calls check $LASTEXITCODE immediately.
+$PrevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+
 Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, prebuilt deps)"
-& cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
+& $CMake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
     -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
@@ -124,11 +149,13 @@ Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, prebuilt deps)
     "-DGLEW_INCLUDE_DIR=$Deps/include" `
     "-DGLEW_LIBRARY=$Deps/lib/glew32.lib" `
     "-DOPENSSL_ROOT_DIR=$Deps" "-DOPENSSL_USE_STATIC_LIBS=OFF"
-if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
+if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $PrevEAP; throw "cmake configure failed" }
 
 Write-Status "Building ($Configuration)"
-& cmake --build $BuildDir --config $Configuration -- -m
-if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
+& $CMake --build $BuildDir --config $Configuration -- -m
+$BuildExit = $LASTEXITCODE
+$ErrorActionPreference = $PrevEAP
+if ($BuildExit -ne 0) { throw "cmake build failed" }
 
 $exe = Join-Path $BuildDir "$Configuration\zandronum.exe"
 if (-not (Test-Path $exe)) { throw "zandronum.exe missing — the build failed" }

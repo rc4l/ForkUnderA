@@ -1,0 +1,2 @@
+# <host>[:port]   <display name>   -- port defaults to 15300; see features/federated-server-registry/README.md
+registry.cantstopscrolling.net    rc4l

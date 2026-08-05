@@ -19,8 +19,15 @@
 #include "c_dispatch.h"   // CCMD
 #include "features/replay/computation/replay_compute.h"
 
-// Master on/off -- default off so the feature costs nothing until the player opts in.
-CVAR(Bool, cl_fua_replay,           false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// [rc4l] Master on/off, default ON: an instant replay is only useful if it was already running when
+// the thing worth keeping happened. A recorder you have to switch on first cannot catch the shot you
+// did not know you were about to make, which is the whole point of a rolling buffer -- so this is
+// opt-OUT (`cl_fua_replay 0`), not opt-in.
+//
+// The cost is bounded and configurable below: a rolling buffer of cl_fua_replay_duration seconds at
+// cl_fua_replay_fps, capped at cl_fua_replay_maxheight, encoded on a worker thread off the render
+// path. Nothing reaches disk until the player asks for a clip -- the buffer is overwritten in place.
+CVAR(Bool, cl_fua_replay,           true,  CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 // Seconds of history kept in the rolling buffer (the "last N seconds").
 CVAR(Int,  cl_fua_replay_duration,  15,    CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 // Captured frames per second, independent of the game's frame rate.

@@ -208,7 +208,11 @@ enum FlagSet
 	// renumbering an existing entry would break protocol compatibility. flags8 (MBF21) had no
 	// entry at all until now, which meant A_ChangeFlag on an MF8_* flag never reached clients.
 	FLAGSET_FLAGS8,
-	FLAGSET_FLAGS9
+	FLAGSET_FLAGS9,
+	// [rc4l] Appended for the same reason as flags8/flags9 above: this enum goes out as a Byte, so a
+	// new entry may only ever go on the end. mvFlags is authored from DECORATE and only changes at
+	// runtime if a mod calls A_ChangeFlag/SetActorProperty on one, so this costs nothing in practice.
+	FLAGSET_MVFLAGS
 };
 
 enum ActorScaleFlag

@@ -342,12 +342,8 @@ OptionValue ZA_ServerGamemode
 	16, "Domination"
 }
 
-OptionMenu ZA_ServerInfo
-{
-	Title "SERVER INFORMATION"
-	Class "ServerInfoMenu"
-	Indent 80
-}
+// [rc4l] ZA_ServerInfo / ServerInfoMenu removed with the pre-MVP browser: it was the old browser's
+// per-server detail pane and nothing else ever opened it. The MVP browser has no info pane by design.
 
 // [rc4l] The browser draws itself entirely -- rows, columns, spinner and all -- so this descriptor
 // carries no items. It exists only to name the class and give the menu system something to

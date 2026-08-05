@@ -1,4 +1,4 @@
-// [rc4l] Pure parsing for the server registry list (serverregistries.txt), engine-free so it is
+// [rc4l] Pure parsing for the server registry list (config/serverregistries.txt), engine-free so it is
 // unit-tested off-engine.
 //
 // The list tells a CLIENT which server registries to query for servers. It confers no authority: a

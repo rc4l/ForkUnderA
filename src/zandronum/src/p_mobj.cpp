@@ -97,6 +97,7 @@
 #include <set>
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/quake-movement/quakemove.h"
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -513,6 +514,13 @@ void AActor::Serialize (FArchive &arc)
 			<< RipperDamageDone
 			<< RipperHitsDone
 			<< RipVictims;
+	}
+
+	// [rc4l] Movement-model flags (features/quake-movement). Version-guarded so older snapshots load
+	// with the class default -- 0, i.e. no movement flags, which is exactly pre-feature behaviour.
+	if (SaveVersion >= 4521)
+	{
+		arc << mvFlags;
 	}
 
 	{
@@ -2711,6 +2719,23 @@ explode:
 		return oldfloorz;
 	}
 
+	// [rc4l] features/quake-movement. Quake friction is applied AFTER the move rather than before,
+	// so the server has to send the velocity it had BEFORE friction: it moves, frictions, then
+	// transmits, and a client that received the post-friction value would apply friction to it a
+	// second time. Same MovePlayer fields, same byte count -- only the value written changes.
+	if (zx::quakemove::UsesQuakeMovement(mo))
+	{
+		if (NETWORK_GetState() == NETSTATE_SERVER)
+		{
+			player->ServerXYZVel[0] = mo->velx;
+			player->ServerXYZVel[1] = mo->vely;
+			player->ServerXYZVel[2] = mo->velz;
+		}
+
+		zx::quakemove::ApplyQuakeFriction(mo);
+		return oldfloorz;
+	}
+
 	if (mo->z > mo->floorz && !(mo->flags2 & MF2_ONMOBJ) &&
 		!mo->IsNoClip2() &&
 		(!(mo->flags2 & MF2_FLY) || !(mo->flags & MF_NOGRAVITY)) &&
@@ -3371,7 +3396,14 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 				{
 					// [BB] ZDoom changed the jumping here revision 2238.
 					// The old behavior is necessary for existing jumpmaze wads.
-					if ( ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) || mo->player->jumpTics < 0 || mo->velz < minvel)
+					// [rc4l] Quake pawns skip this entirely, matching
+					// qzandronum@397272811e4f71b168f1949d21369d3e91a7146c, which deletes the block.
+					// It hardcodes a 7-tic landing cooldown, and because it runs before
+					// CheckJumpQuake sees the grounded tic it overwrote the negative sentinel that
+					// the re-arm keys off -- so Player.JumpDelay was dead for the main jump and
+					// every Quake pawn silently got 7 tics no matter what it authored.
+					if ( zx::quakemove::UsesQuakeMovement( mo ) == false &&
+						( ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) || mo->player->jumpTics < 0 || mo->velz < minvel) )
 					{ // delay any jumping for a short while
 						mo->player->jumpTics = 7;
 

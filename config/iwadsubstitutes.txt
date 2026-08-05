@@ -1,0 +1,12 @@
+# <server iwad> | <what we load instead> | <notes>   -- see features/wad-download/README.md
+doom2.wad         freedoom2.wad    Doom II
+doom2f.wad        freedoom2.wad    Doom II (French)
+bfgdoom2.wad      freedoom2.wad    Doom II: BFG Edition
+doom2bfg.wad      freedoom2.wad    Doom II: BFG Edition
+tnt.wad           freedoom2.wad    Final Doom: TNT Evilution
+plutonia.wad      freedoom2.wad    Final Doom: The Plutonia Experiment
+doom.wad          freedoom1.wad    The Ultimate Doom
+doom1.wad         freedoom1.wad    Doom shareware
+doomu.wad         freedoom1.wad    The Ultimate Doom
+bfgdoom.wad       freedoom1.wad    Doom: BFG Edition
+doombfg.wad       freedoom1.wad    Doom: BFG Edition
