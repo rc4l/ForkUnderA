@@ -80,6 +80,19 @@ RowWindow ComputeRowWindow( int total, int perPage, int selected, int currentFir
 	return out;
 }
 
+int ComputeRestoredScroll( int remembered, int total, int perPage )
+{
+	if (( total <= 0 ) || ( perPage <= 0 ))
+		return 0;
+
+	const int maxFirst = ( total > perPage ) ? ( total - perPage ) : 0;
+	if ( remembered > maxFirst )
+		return maxFirst;
+	if ( remembered < 0 )
+		return 0;
+	return remembered;
+}
+
 int ComputeClampedSelection( int selected, int total )
 {
 	if ( total <= 0 )
