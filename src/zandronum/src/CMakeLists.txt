@@ -1109,6 +1109,7 @@ add_executable( zdoom WIN32
 	c_bind.cpp
 	c_cmds.cpp
 	c_console.cpp
+	c_consolebuffer.cpp
 	c_cvars.cpp
 	c_dispatch.cpp
 	c_expr.cpp
@@ -1493,6 +1494,8 @@ add_executable( zdoom WIN32
 	features/hitboxviz/computation/vizgate_compute.cpp
 	features/fov-interp/fovinterp.cpp
 	features/fov-interp/fovcvar.cpp
+	features/quake-movement/quakemove.cpp
+	features/quake-movement/elevatorjump.cpp
 	zzautozend.cpp
 )
 

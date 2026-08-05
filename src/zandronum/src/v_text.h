@@ -97,9 +97,9 @@ bool	v_IsCharAcceptableInNames ( char c );
 bool	v_IsCharacterWhitespace ( char c );
 void	V_CleanPlayerName( FString &String, bool bPrintWarning );
 
-FBrokenLines *V_BreakLines (FFont *font, int maxwidth, const BYTE *str);
+FBrokenLines *V_BreakLines (FFont *font, int maxwidth, const BYTE *str, bool preservecolor = false);	// [rc4l] uzdoom@9d846395b
 void V_FreeBrokenLines (FBrokenLines *lines);
-inline FBrokenLines *V_BreakLines (FFont *font, int maxwidth, const char *str)
- { return V_BreakLines (font, maxwidth, (const BYTE *)str); }
+inline FBrokenLines *V_BreakLines (FFont *font, int maxwidth, const char *str, bool preservecolor = false)
+ { return V_BreakLines (font, maxwidth, (const BYTE *)str, preservecolor); }
 
 #endif //__V_TEXT_H__
