@@ -343,6 +343,7 @@ ACTOR Actor native //: Thinker
 	action native A_SetAngle(float angle = 0, int flags = 0);
 	action native A_SetPitch(float pitch, int flags = 0);
 	action native A_SetRoll(float roll, int flags = 0);
+	action native A_SetFloatBobPhase(int bob);
 	action native A_ScaleVelocity(float scale);
 	action native A_ChangeVelocity(float x = 0, float y = 0, float z = 0, int flags = 0);
 	action native A_SetArg(int pos, int value);
