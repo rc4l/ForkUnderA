@@ -5032,6 +5032,13 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_MvType:		return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
 								? static_cast<APlayerPawn *>(actor)->MvType
 								: MVTYPE_DOOM;
+	// [rc4l] features/quake-movement: read-only traversal state. A non-pawn is never traversing.
+	case APROP_IsCrouchSliding:	return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
+								&& static_cast<APlayerPawn *>(actor)->isCrouchSliding;
+	case APROP_IsWallClimbing:	return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
+								&& static_cast<APlayerPawn *>(actor)->isWallClimbing;
+	case APROP_IsAirWallRunning:return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
+								&& static_cast<APlayerPawn *>(actor)->isAirWallRunning;
 	case APROP_ReactionTime:return actor->reactiontime;
 	case APROP_MeleeRange:	return (int)(actor->meleerange);
 	case APROP_ViewHeight:	if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
@@ -5110,6 +5117,9 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_AttackZOffset:
 		case APROP_StencilColor:
 		case APROP_MvType:
+		case APROP_IsCrouchSliding:
+		case APROP_IsWallClimbing:
+		case APROP_IsAirWallRunning:
 			return (GetActorProperty(tid, property) == value);
 
 		// Boolean values need to compare to a binary version of value

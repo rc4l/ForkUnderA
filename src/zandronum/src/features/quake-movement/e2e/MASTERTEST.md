@@ -184,6 +184,30 @@ constant rather than an arbitrary number.
 | wall climb | z rises **5.000**/tic = `WallClimbSpeed`; `climbing 1`; reached z 456 |
 | air wall run | `wallrunning 1`, `onground 0`, upright, `speed2d 13.141`, **position advancing 13.1/tic** |
 | air wall run below `AirWallRunMinVelocity` | same wall, same spot, airborne and upright, but **walking** at `speed2d 4.828` → `wallrunning 0`. The 10.0 threshold is the only difference from the row above |
+| air wall run, head-on into the wall | `speed2d 0.000` → `wallrunning 0`, and `climbtics` advancing instead: running *into* a wall wall-**climbs**, it does not wall-run |
+
+### Why forward+strafe into a wall does not wall-run
+
+Reported from manual play, and worth recording because it looks like a bug and is not. Holding
+forward alone engages; holding forward **and** strafing into the wall does not. Two gates fail at
+once, and both by a hair — same class, same inputs, only the aim differs:
+
+| aim | ticcmd `fwd`/`side` | speed2d | `wallrunning` |
+|---|---|---|---|
+| parallel to the wall | 12800 / −10240 | **8.984** | **0** |
+| 20° along the wall | 12800 / −10240 (identical) | **10.853** | **1** |
+
+1. **Speed.** Strafing into a wall spends half the input on a direction the wall blocks, so
+   along-wall speed falls to ~9.0 — under `AirWallRunMinVelocity` 10.0.
+2. **Direction.** The input vector is `{forwardmove, −sidemove × 1.25}`. At run tier that is
+   `{12800, 10240 × 1.25}` = `{12800, 12800}` — the 1.25 side-scaling makes the components exactly
+   equal, so a full diagonal is precisely **45.000°**, while `abs(dot) > 0.75` admits at most
+   **41.41°**. It misses by 3.6°.
+
+Both are inherited: q-zandronum@3972728 computes the same `accel2D` and hardcodes the same 0.75.
+`AirWallRunMinVelocity` is authorable so a mod can widen gate 1; the 0.75 is the one tuning constant
+in this feature that is not a `Player.*` property, **left hardcoded deliberately to keep the
+mod-facing surface identical to upstream**.
 | `Player.CrouchChangeSpeed` | at a fixed 4-tic sample after pressing crouch: **25** at 0.25/tic (already at its floor) vs **58** at the default 0.0833/tic |
 
 ## 8. Elevator jump

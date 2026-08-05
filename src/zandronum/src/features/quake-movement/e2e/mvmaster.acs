@@ -8,6 +8,9 @@
 
 // [rc4l] Not in zcommon.acs: this APROP is added by features/quake-movement (p_acs.h).
 #define APROP_MvType 52
+#define APROP_IsCrouchSliding 53
+#define APROP_IsWallClimbing 54
+#define APROP_IsAirWallRunning 55
 
 // [rc4l] Deliberately does NOT start a perpetual plat on the +ELEVATORJUMP platform. Tried that
 // first: the plat immediately snaps the sector to the only neighbouring floor it can find and then
@@ -144,6 +147,32 @@ script 28 (int tics, int vz) net
 		Delay(1);
 	}
 	Log(s:"MVEDGE hold done");
+}
+
+// A live HUD readout of horizontal speed and the three traversal states, for evaluating by hand.
+// Air wall run needs this more than the others: it deliberately changes no velocity, so without a
+// readout there is nothing to see or hear and "did it engage?" is unanswerable while playing.
+// Speed is shown against the 10.0 minimum, because being under it is the usual reason it refuses.
+script 30 (int tics) net
+{
+	int i;
+	SetHudSize(640, 480, 1);
+	for (i = 0; i < tics * 35; i++)
+	{
+		int speed = Milli(VectorLength(GetActorVelX(0), GetActorVelY(0)));
+		SetFont("SMALLFONT");
+		// Hold for a full second even though this refreshes every tic: if the script is ever
+		// starved or a HudMessage packet is dropped, a short hold blanks the readout and the
+		// tester is left unable to tell "not engaging" from "readout died".
+		HudMessage(s:"speed ", d:speed / 1000, s:".", d:(speed % 1000) / 100,
+			s:"   (need 10.0)\n",
+			s:"slide ",   d:GetActorProperty(0, APROP_IsCrouchSliding),
+			s:"  climb ", d:GetActorProperty(0, APROP_IsWallClimbing),
+			s:"  WALLRUN ", d:GetActorProperty(0, APROP_IsAirWallRunning);
+			HUDMSG_PLAIN, 900, CR_GOLD, 320.4, 60.1, 1.0);
+		Delay(1);
+	}
+	Log(s:"MVHUD readout ended after ", d:tics, s:" seconds");
 }
 
 // Effect actors are CLIENTSIDEONLY and spawned for the local player only -- the whole reason this
