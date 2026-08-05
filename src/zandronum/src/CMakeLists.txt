@@ -1474,6 +1474,9 @@ add_executable( zdoom WIN32
 	features/wad-download/computation/downloadplan_compute.cpp
 	features/wad-download/computation/iwadallow_compute.cpp
 	features/wad-download/computation/iwadsubstitute_compute.cpp
+	features/wad-serve/computation/ratebucket_compute.cpp
+	features/wad-serve/computation/httpreq_compute.cpp
+	features/wad-serve/computation/servepolicy_compute.cpp
 	# Generated; listed so the custom command above actually runs as part of this target.
 	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	features/server-browser/browser.cpp #ST
