@@ -14,6 +14,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 #include <ctype.h>
+#include <string>
+#include <vector>
 
 #include "menu/menu.h"
 #include "c_dispatch.h"
@@ -24,12 +26,14 @@
 #include "i_system.h"
 #include "d_event.h"
 #include "d_gui.h"
+#include "d_main.h"		// D_AddFile, for the have/have-not colouring
 #include "textures/textures.h"
 #include "r_data/r_translate.h"
 #include "templates.h"
 
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/browserhit_compute.h"
+#include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/updater/computation/promptpanel_compute.h"
 #include "features/wad-download/zx_waddownload.h"
@@ -54,15 +58,41 @@
 #define SB_PANEL_RIGHT		604
 #define SB_HEADER_Y			68
 #define SB_FIRST_ROW_Y		92
-#define SB_ROW_HEIGHT		20
-#define SB_VISIBLE_ROWS		12
+
+// [rc4l] 16 rather than 20. The glyphs are eight units tall, so 20 left six clear above and below --
+// generous to the point of wasting a row and a half of list. At 16 there are still four either side,
+// which reads as comfortable rather than cramped, and the two rows it frees pay for the detail strip
+// with one left over.
+#define SB_ROW_HEIGHT		16
+#define SB_VISIBLE_ROWS		14
+
+// [rc4l] The details panel, beside the list rather than under it.
+//
+// Under it was the first attempt and it cost rows, which is the one thing this layout is short of.
+// Beside it costs name-column width instead -- and a name that no longer fits is a name you can still
+// read most of, whereas a row that does not fit is a server you cannot see at all.
+#define SB_ROWS_BOTTOM		( SB_FIRST_ROW_Y + SB_VISIBLE_ROWS * SB_ROW_HEIGHT )
+#define SB_DETAIL_LEFT		418
+#define SB_DETAIL_RIGHT		596
+// Where the list stops. The row highlight and the click hitbox both end here rather than at the
+// panel edge -- otherwise a selected row's band runs on underneath the detail panel and shows through
+// it, and clicking the panel selects whatever row happens to be level with the pointer.
+#define SB_LIST_RIGHT		( SB_DETAIL_LEFT - 8 )
+#define SB_DETAIL_TOP		62
+#define SB_DETAIL_BOTTOM	( SB_ROWS_BOTTOM + 6 )
+#define SB_DETAIL_PAD		10
+#define SB_DETAIL_LINE		11
+#define SB_DETAIL_TEXT_W	( SB_DETAIL_RIGHT - SB_DETAIL_LEFT - 2 * SB_DETAIL_PAD )
+#define SB_DETAIL_TEXT_BOTTOM	( SB_DETAIL_BOTTOM - SB_DETAIL_PAD )
+
+#define SB_FOOTER_Y			( SB_ROWS_BOTTOM + 20 )
 
 // [rc4l] The panel's content span, in virtual pixels. ComputePanelRect pads BOTH ends by the corner
 // radius, so the visible gap to the screen edge is ( SB_CONTENT_TOP - radius ) above and
 // ( SB_VIRT_H - SB_CONTENT_BOTTOM - radius ) below. Deriving the top from the bottom is what forces
 // those two to be equal; hardcoding them separately is how the panel ended up 4px from the top edge
 // and 28px from the bottom.
-#define SB_CONTENT_BOTTOM	( SB_FIRST_ROW_Y + SB_VISIBLE_ROWS * SB_ROW_HEIGHT + 28 )
+#define SB_CONTENT_BOTTOM	( SB_FOOTER_Y + 24 )
 #define SB_CONTENT_TOP		( SB_VIRT_H - SB_CONTENT_BOTTOM )
 // Title baseline, kept the same distance inside the panel's top edge as it was before.
 #define SB_TITLE_Y			( SB_CONTENT_TOP + 12 )
@@ -70,12 +100,13 @@
 // Column x positions (left edge of each), virtual pixels.
 #define SB_COL_FLAG			48
 #define SB_COL_NAME			84
-#define SB_COL_PLAYERS		400
-#define SB_COL_VERSION		470
-#define SB_COL_PING			592
+#define SB_COL_PLAYERS		286
+#define SB_COL_PING			398
 
-// Version gets the gap up to the ping column, less breathing room for the ping value itself.
-#define SB_VERSION_MAX_WIDTH	( SB_COL_PING - SB_COL_VERSION - 56 )
+// [rc4l] Version left the list and lives in the detail strip instead. It is the column a player reads
+// least often and the one they need least urgently -- and the room it freed goes to the name, which
+// is the column this whole 640-wide layout exists to give space to.
+#define SB_VERSION_MAX_WIDTH	120
 
 // Name gets whatever is left before the players column, less a gap.
 #define SB_NAME_MAX_WIDTH	( SB_COL_PLAYERS - SB_COL_NAME - 12 )
@@ -98,6 +129,23 @@ static	int				g_ScrollFirst = 0;
 // [rc4l] Which row the mouse was pressed on, so a release somewhere else cancels instead of joining
 // whatever ended up under the cursor. Reset whenever a release lands anywhere.
 static	int				g_MousePressRow = -1;
+
+// [rc4l] The previous completed click, for detecting a double one. ZDoom's menu system has no
+// double-click event -- MOUSE_Click2 is the RIGHT button, not the second click -- so the interval is
+// timed here. 20 tics is a little under 0.6s at 35Hz, which is forgiving without joining a server
+// because somebody clicked twice on purpose a moment apart.
+#define SB_DOUBLECLICK_TICS	20
+static	int				g_LastClickRow = -1;
+static	int				g_LastClickTime = -1000;
+
+// [rc4l] The selected server's file set and whether we already hold each one.
+//
+// Cached rather than recomputed per frame because "do we have it" is a filesystem search -- the same
+// BaseFileSearch the join uses -- and doing that for every WAD of every frame would hit the disk sixty
+// times a second to answer a question that only changes when the selection does.
+static	int				g_DetailServer = -1;
+static	TArray<FString>	g_DetailWads;
+static	TArray<bool>	g_DetailHave;
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -153,6 +201,43 @@ static int serverbrowser_RowMidY( int rowY )
 static int serverbrowser_RowTextY( int rowY, int h )
 {
 	return serverbrowser_RowMidY( rowY ) - h / 2;
+}
+
+//*****************************************************************************
+//
+// [rc4l] Rebuild the selected server's file list, and resolve each name to see whether the player
+// already has it.
+//
+// D_AddFile is the same lookup the join performs, so the colours in the panel and the files the join
+// actually downloads can never disagree -- a green entry that then downloaded, or a red one that did
+// not, would be worse than showing nothing. It writes into a scratch array we throw away; only the
+// true/false matters here.
+static void serverbrowser_RefreshWadCache( int lServer )
+{
+	if ( lServer == g_DetailServer )
+		return;
+
+	g_DetailServer = lServer;
+	g_DetailWads.Clear( );
+	g_DetailHave.Clear( );
+
+	const char *pszIwad = BROWSER_GetIWADName( lServer );
+	if (( pszIwad != NULL ) && ( pszIwad[0] != 0 ))
+		g_DetailWads.Push( pszIwad );
+
+	const LONG lPwads = BROWSER_GetNumPWADs( lServer );
+	for ( LONG i = 0; i < lPwads; i++ )
+	{
+		const char *pszPwad = BROWSER_GetPWADName( lServer, i );
+		if (( pszPwad != NULL ) && ( pszPwad[0] != 0 ))
+			g_DetailWads.Push( pszPwad );
+	}
+
+	for ( unsigned i = 0; i < g_DetailWads.Size( ); i++ )
+	{
+		TArray<FString> scratch;
+		g_DetailHave.Push( D_AddFile( scratch, g_DetailWads[i].GetChars( )) );
+	}
 }
 
 //*****************************************************************************
@@ -345,6 +430,15 @@ static EColorRange serverbrowser_PingColor( int ping )
 // Server names carry \c escapes, which occupy no pixels but do occupy characters. Truncating by
 // character count would cut names arbitrarily early and could sever an escape mid-sequence, leaving
 // the rest of the row tinted. So measure the visible width and cut on that.
+// [rc4l] A server-supplied string, colour codes and all, cut to fit `maxWidth`.
+//
+// V_ColorizeString first, because the operator typed "\cd" and that is what arrives on the wire --
+// without it the backslash and the letter are drawn literally. After that the renderer does the work:
+// FFont::StringWidth already skips escapes when measuring and DrawText consumes them when drawing.
+//
+// The cutting is the part that needs care, and why the offsets come from a tested unit: shortening a
+// byte at a time eventually lands between an escape and the character it takes, and the leftover
+// escape then eats the following glyph as a colour code. See computation/colortext_compute.h.
 static FString serverbrowser_FitName( const char *pszName, int maxWidth )
 {
 	FString name = pszName;
@@ -353,12 +447,25 @@ static FString serverbrowser_FitName( const char *pszName, int maxWidth )
 	if ( SmallFont->StringWidth( name ) <= maxWidth )
 		return name;
 
-	while (( name.Len( ) > 1 ) && ( SmallFont->StringWidth( name ) > maxWidth - SmallFont->StringWidth( "..." )))
-		name.Truncate( name.Len( ) - 1 );
+	// Room for the ellipsis BEFORE cutting, so the result including "..." fits.
+	const int budget = maxWidth - SmallFont->StringWidth( "..." );
+	const std::vector<size_t> cuts = zx::ComputeColorSafeCutPoints( std::string( name.GetChars( )));
 
-	name += "...";
-	return name;
+	// Longest first: the widest cut that fits is the most of the name we can show.
+	for ( size_t i = cuts.size( ); i-- > 0; )
+	{
+		FString candidate = name;
+		candidate.Truncate( static_cast<long>( cuts[i] ));
+		if ( SmallFont->StringWidth( candidate ) <= budget )
+		{
+			candidate += "...";
+			return candidate;
+		}
+	}
+
+	return FString( "..." );
 }
+
 
 // =================================================================================================
 //
@@ -414,6 +521,7 @@ public:
 		else
 			DrawPlaceholder( phase );
 
+		DrawDetails( );
 		DrawFooter( phase, counts );
 	}
 
@@ -457,7 +565,6 @@ public:
 		// Column headings, dim so they never compete with the data.
 		screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_HEADER_Y, "SERVER", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_PLAYERS, SB_HEADER_Y, "PLRS", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-		screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_VERSION, SB_HEADER_Y, "VER", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		DrawRightAligned( SmallFont, CR_DARKGRAY, SB_COL_PING, SB_HEADER_Y, "PING" );
 
 		for ( int i = 0; i < window.count; i++ )
@@ -485,9 +592,6 @@ public:
 				static_cast<int>( BROWSER_GetMaxClients( lServer )));
 			screen->DrawText( SmallFont, CR_UNTRANSLATED, SB_COL_PLAYERS, ty, players, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_VERSION, ty,
-				serverbrowser_ShortVersion( BROWSER_GetVersion( lServer )), DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-
 			const int ping = static_cast<int>( BROWSER_GetPing( lServer ));
 			FString pingText;
 			pingText.Format( "%d", ping );
@@ -499,8 +603,8 @@ public:
 		{
 			FString more;
 			more.Format( "%s  querying %d more", Spinner( ), counts.waiting );
-			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME,
-				SB_FIRST_ROW_Y + SB_VISIBLE_ROWS * SB_ROW_HEIGHT + 2, more, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_ROWS_BOTTOM + 2,
+				more, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
 	}
 
@@ -523,9 +627,237 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] The selected server, in its own panel beside the list.
+	//
+	// Same rounded gradient as the main panel so it reads as part of the same surface, but black: it
+	// sits ON that panel, and a second copy of the same blue-grey would have looked like a rendering
+	// mistake rather than a nested surface.
+	//
+	// The WAD list is the reason this exists. Joining downloads, so "which of these do I already have"
+	// is the question a player needs answered BEFORE committing, and no other Doom browser answers it
+	// because no other Doom browser downloads. Green means it resolved locally, red means it is a
+	// transfer you have not agreed to yet.
+	void DrawDetailPanel( )
+	{
+		const int left = serverbrowser_ToScreenX( SB_DETAIL_LEFT );
+		const int right = serverbrowser_ToScreenX( SB_DETAIL_RIGHT );
+		const int top = serverbrowser_ToScreenY( SB_DETAIL_TOP );
+		const int bottom = serverbrowser_ToScreenY( SB_DETAIL_BOTTOM );
+		const int radius = serverbrowser_ToScreenY( 8 ) - serverbrowser_ToScreenY( 0 );
+
+		const int w = right - left;
+		const int h = bottom - top;
+		if (( w <= 0 ) || ( h <= 0 ))
+			return;
+
+		// ComputePanelRect is not used here: it centres its rectangle on the screen, which is right for
+		// the one panel and wrong for anything placed inside it. The rounding and gradient helpers are
+		// the parts worth sharing, and they are.
+		const zx::PanelColor topCol = { 0, 0, 0, 170 };
+		const zx::PanelColor botCol = { 0, 0, 0, 205 };
+
+		for ( int row = 0; row < h; ++row )
+		{
+			const int inset = zx::ComputeRoundedInset( row, h, radius );
+			const int rowW = w - 2 * inset;
+			if ( rowW <= 0 )
+				continue;
+
+			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
+			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+		}
+	}
+
+	//*************************************************************************
+	//
+	void DrawDetails( )
+	{
+		DrawDetailPanel( );
+
+		const int total = static_cast<int>( g_SortedServers.Size( ));
+		if (( g_Selected < 0 ) || ( g_Selected >= total ))
+			return;
+
+		const int lServer = g_SortedServers[g_Selected];
+		serverbrowser_RefreshWadCache( lServer );
+
+		const int x = SB_DETAIL_LEFT + SB_DETAIL_PAD;
+		int y = SB_DETAIL_TOP + SB_DETAIL_PAD;
+
+		// Title: the server's own name, wrapped rather than clipped -- it is the heading, and half a
+		// name with an ellipsis tells you less than two short lines do. Colorized so an operator's
+		// "\cd" reads as colour here exactly as it does in the list.
+		FString title = BROWSER_GetHostName( lServer );
+		V_ColorizeString( title );
+		y = DrawWrapped( title, x, y, CR_WHITE );
+		y += 3;
+
+		FString sub;
+		const char *pszMap = BROWSER_GetMapname( lServer );
+		if (( pszMap != NULL ) && ( pszMap[0] != 0 ))
+			sub << pszMap;
+		const char *pszMode = BROWSER_GetGameModeName( lServer );
+		if (( pszMode != NULL ) && ( pszMode[0] != 0 ))
+			sub << ( sub.IsNotEmpty( ) ? "  -  " : "" ) << pszMode;
+		if ( sub.IsNotEmpty( ))
+			y = DrawWrapped( sub, x, y, CR_GOLD );
+
+		// Trimmed at the first space, as the old VER column did: the server appends its OS and build
+		// number, which is three wrapped lines of noise nobody chose a server on.
+		const char *pszVer = BROWSER_GetVersion( lServer );
+		if (( pszVer != NULL ) && ( pszVer[0] != 0 ))
+			y = DrawWrapped( serverbrowser_ShortVersion( pszVer ), x, y, CR_DARKGRAY );
+
+		y += 5;
+		DrawSeparator( y );
+		y += 6;
+		DrawWadList( x, y );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] A horizontal rule inside the detail panel, fading out towards both ends.
+	//
+	// Separates what the server IS (name, map, mode, version) from what it wants you to LOAD, which
+	// are different kinds of fact: one you read to choose, the other you read to find out what
+	// choosing costs. A blank line was not enough to say that -- the WAD list just looked like a
+	// fourth detail.
+	void DrawSeparator( int vy )
+	{
+		const int left = serverbrowser_ToScreenX( SB_DETAIL_LEFT + SB_DETAIL_PAD );
+		const int right = serverbrowser_ToScreenX( SB_DETAIL_RIGHT - SB_DETAIL_PAD );
+		const int top = serverbrowser_ToScreenY( vy );
+		// At least one physical pixel: a rule one virtual unit tall rounds to zero on a small window,
+		// and a divider that vanishes at some resolutions is worse than none at all.
+		const int h = MAX( 1, serverbrowser_ToScreenY( vy + 1 ) - top );
+		const int w = right - left;
+
+		for ( int i = 0; i < w; i++ )
+		{
+			const int a = zx::ComputeSeparatorAlpha( i, w, 130 );
+			if ( a <= 0 )
+				continue;
+			screen->Dim( PalEntry( 150, 170, 215 ), a / 255.f, left + i, top, 1, h );
+		}
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Every string drawn inside the detail panel goes through here, clipped to the panel.
+	//
+	// The wrapping below TRIES to make text fit; this makes it impossible for it not to. Those are
+	// different guarantees and the panel needs the second one: its contents are server-chosen strings,
+	// so the failure case is not a long name someone picked badly but a name picked deliberately to
+	// spill over the list beside it. Wrapping I can get wrong; a clip rectangle cannot be got wrong.
+	//
+	// DTA_Clip* is in SCREEN pixels even though the position is virtual -- the same asymmetry that put
+	// the country flags in the corner of the display the first time. Hence ToScreen* on the bounds and
+	// raw virtual coordinates on x/y.
+	void DrawInPanel( EColorRange color, int x, int y, const char *pszText )
+	{
+		screen->DrawText( SmallFont, color, x, y, pszText,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
+			DTA_ClipLeft, serverbrowser_ToScreenX( SB_DETAIL_LEFT + 4 ),
+			DTA_ClipRight, serverbrowser_ToScreenX( SB_DETAIL_RIGHT - 4 ),
+			DTA_ClipTop, serverbrowser_ToScreenY( SB_DETAIL_TOP + 4 ),
+			DTA_ClipBottom, serverbrowser_ToScreenY( SB_DETAIL_BOTTOM - 4 ),
+			TAG_DONE );
+	}
+
+	//*************************************************************************
+	//
+	// Word-wrapped text inside the detail panel. Returns the y the next line should start at.
+	int DrawWrapped( const char *pszText, int x, int y, EColorRange color )
+	{
+		if (( pszText == NULL ) || ( pszText[0] == 0 ))
+			return y;
+
+		FString line;
+		const FString text = pszText;
+		long start = 0;
+
+		while ( start < static_cast<long>( text.Len( )))
+		{
+			if ( y + SB_DETAIL_LINE > SB_DETAIL_TEXT_BOTTOM )
+				return y;					// out of panel; the clip would hide it anyway
+
+			long space = text.IndexOf( " ", start );
+			if ( space < 0 )
+				space = static_cast<long>( text.Len( ));
+
+			// A single word wider than the panel never fits by wrapping, so it is cut with an ellipsis
+			// instead. Without this the loop emits it whole and leans on the clip, which slices it
+			// mid-glyph and looks like a rendering fault rather than a truncation.
+			FString word = text.Mid( start, space - start );
+			if ( SmallFont->StringWidth( word ) > SB_DETAIL_TEXT_W )
+				word = serverbrowser_FitName( word, SB_DETAIL_TEXT_W );
+
+			FString candidate = line;
+			if ( candidate.IsNotEmpty( ))
+				candidate << " ";
+			candidate << word;
+
+			if ( line.IsNotEmpty( ) && ( SmallFont->StringWidth( candidate ) > SB_DETAIL_TEXT_W ))
+			{
+				DrawInPanel( color, x, y, line );
+				y += SB_DETAIL_LINE;
+				line = word;
+			}
+			else
+			{
+				line = candidate;
+			}
+			start = space + 1;
+		}
+
+		if ( line.IsNotEmpty( ) && ( y + SB_DETAIL_LINE <= SB_DETAIL_TEXT_BOTTOM ))
+		{
+			DrawInPanel( color, x, y, line );
+			y += SB_DETAIL_LINE;
+		}
+		return y;
+	}
+
+	//*************************************************************************
+	//
+	// Each WAD in its own colour, so the list reads as a checklist rather than a sentence. Drawn name
+	// by name with the comma attached, because the colour has to belong to the file rather than to the
+	// whole line.
+	void DrawWadList( int x, int y )
+	{
+		const int right = SB_DETAIL_RIGHT - SB_DETAIL_PAD;
+		int cx = x;
+
+		for ( unsigned i = 0; i < g_DetailWads.Size( ); i++ )
+		{
+			FString piece = g_DetailWads[i];
+			if ( i + 1 < g_DetailWads.Size( ))
+				piece << ",";
+
+			// Same reasoning as the wrapper: a filename longer than the panel is cut deliberately rather
+			// than left for the clip to sever.
+			if ( SmallFont->StringWidth( piece ) > SB_DETAIL_TEXT_W )
+				piece = serverbrowser_FitName( piece, SB_DETAIL_TEXT_W );
+
+			const int w = SmallFont->StringWidth( piece );
+			if (( cx > x ) && ( cx + w > right ))
+			{
+				cx = x;
+				y += SB_DETAIL_LINE;
+			}
+			if ( y + SB_DETAIL_LINE > SB_DETAIL_TEXT_BOTTOM )
+				return;					// ran out of panel; better truncated than spilling out of it
+
+			DrawInPanel( g_DetailHave[i] ? CR_GREEN : CR_RED, cx, y, piece );
+			cx += w + SmallFont->StringWidth( " " );
+		}
+	}
+
+	//*************************************************************************
+	//
 	void DrawFooter( zx::BrowserPhase phase, const zx::BrowserCounts &counts )
 	{
-		const int y = SB_FIRST_ROW_Y + SB_VISIBLE_ROWS * SB_ROW_HEIGHT + 12;
+		const int y = SB_FOOTER_Y;
 		FString text;
 
 		// [rc4l] A download for a pending join takes over the footer. Joining leaves the browser open
@@ -571,7 +903,7 @@ public:
 	void DimRow( int y )
 	{
 		const int left = serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 );
-		const int right = serverbrowser_ToScreenX( SB_PANEL_RIGHT - 4 );
+		const int right = serverbrowser_ToScreenX( SB_LIST_RIGHT );
 		const int top = serverbrowser_ToScreenY( y - 2 );
 		const int bottom = serverbrowser_ToScreenY( y - 2 + SB_ROW_HEIGHT );
 
@@ -607,7 +939,7 @@ public:
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 		const int left = serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 );
-		const int right = serverbrowser_ToScreenX( SB_PANEL_RIGHT - 4 );
+		const int right = serverbrowser_ToScreenX( SB_LIST_RIGHT );
 
 		if (( total > 0 ) && ( x >= left ) && ( x < right ))
 		{
@@ -623,9 +955,9 @@ public:
 				if ( row < 0 )
 					break;					// an empty slot past the last server
 
-				// Hover moves the highlight, so the row about to be committed to is visible before the
-				// press. The cursor sound is deliberately left off: it would fire on every row the
-				// pointer crosses on the way down the list.
+				// Hover moves the highlight, which both previews the row and fills the detail strip
+				// below with what that server is running. The cursor sound is deliberately left off:
+				// it would fire on every row the pointer crosses on the way down the list.
 				if ( row != g_Selected )
 					g_Selected = row;
 
@@ -640,10 +972,25 @@ public:
 				if ( type == MOUSE_Release )
 				{
 					// Only the row the press started on, so dragging off cancels.
-					const bool bJoin = ( row == g_MousePressRow );
+					const bool bOnPressRow = ( row == g_MousePressRow );
 					g_MousePressRow = -1;
-					if ( bJoin )
+					if ( !bOnPressRow )
+						return true;
+
+					// Now that a selected row shows details, a single click has something to say --
+					// so joining moves to the second click. Same reasoning as any list with a preview
+					// pane: one click to look, two to commit.
+					const int now = static_cast<int>( DMenu::MenuTime );
+					const bool bDouble = ( row == g_LastClickRow ) &&
+						(( now - g_LastClickTime ) <= SB_DOUBLECLICK_TICS );
+					g_LastClickRow = row;
+					g_LastClickTime = now;
+
+					if ( bDouble )
+					{
+						g_LastClickRow = -1;		// so a third click is not a second double
 						return MenuEvent( MKEY_Enter, false );
+					}
 					return true;
 				}
 
