@@ -71,9 +71,9 @@ DECLARE_ACTION(A_FreezeDeathChunks)
 DECLARE_ACTION(A_BossDeath)
 
 void A_Chase(AActor *self);
-void A_FaceTarget (AActor *actor, angle_t max_turn = 0, angle_t max_pitch = ANGLE_270, angle_t ang_offset = 0, angle_t pitch_offset = 0, int flags = 0);
+void A_FaceTarget (AActor *actor);	// [rc4l] uzdoom@c5161ee74
 // [rc4l] uzdoom@d7d022144: face an arbitrary actor, not just target.
-void A_Face (AActor *self, AActor *other, angle_t max_turn = 0, angle_t max_pitch = ANGLE_270, angle_t ang_offset = 0, angle_t pitch_offset = 0, int flags = 0);
+void A_Face (AActor *self, AActor *other, angle_t max_turn = 0, angle_t max_pitch = ANGLE_270, angle_t ang_offset = 0, angle_t pitch_offset = 0, int flags = 0, fixed_t z_add = 0);
 
 bool A_RaiseMobj (AActor *, fixed_t speed);
 bool A_SinkMobj (AActor *, fixed_t speed);
@@ -95,7 +95,7 @@ enum
 	FAF_BOTTOM = 1,
 	FAF_MIDDLE = 2,
 	FAF_TOP = 4,
-	FAF_NODISTFACTOR = 8,
+	FAF_NODISTFACTOR = 8,	// deprecated -- uzdoom@c5161ee74/10fec95cd made both branches unconditional
 };
 
 #endif //__P_ENEMY_H__
