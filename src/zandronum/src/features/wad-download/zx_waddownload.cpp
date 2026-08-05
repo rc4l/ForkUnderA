@@ -121,12 +121,49 @@ struct Job
 	std::string dir;
 	long long maxBytes;
 	long long storeCapBytes;
+
+	Job() : maxBytes(0), storeCapBytes(0) {}
 };
+
+// [rc4l] A job waiting for the previous run to stop.
+//
+// Picking a second server while the first is still downloading used to be a dead end: only one run
+// happens at a time, so the new join could not start one and said "you are missing these" -- and then
+// the OLD download finished and dragged the player onto the server they had just moved away from.
+//
+// Switching now abandons the first run and queues the second. It cannot start immediately, because
+// the worker only notices the cancel between chunks, so the job waits here and Tick launches it once
+// the old run has actually stopped. Deferring beats blocking the main thread on a socket that may be
+// stalled.
+bool g_haveDeferred = false;
+Job g_deferredJob;
+zx::waddownload::CompleteProc g_deferredOnDone = NULL;
 
 void Say(const std::string &line)
 {
 	std::lock_guard<std::mutex> lock(g_mutex);
 	g_log.push_back(line);
+}
+
+// [rc4l] Everything that makes a run "in flight", in ONE place.
+//
+// Two callers start runs -- Start(), and Tick() launching a queued replacement -- and this was
+// written out longhand in both. A field added to the run state and reset in only one of them would
+// leak from the previous run into the next, which is the sort of bug that shows up as a progress bar
+// starting at 40% or a cancel flag that was never cleared.
+//
+// Caller must already hold g_mutex.
+void BeginRunLocked(zx::waddownload::CompleteProc onDone)
+{
+	g_log.clear();
+	g_currentFile.clear();
+	g_received = 0;
+	g_total = -1;
+	g_state = RunState::Running;
+	g_succeeded = false;
+	g_cancel = false;
+	g_completionPending = false;
+	g_onDone = onDone;
 }
 
 // Hex digests differ only in case between sources; compare them the way they are meant to be equal.
@@ -317,6 +354,37 @@ void PruneStore(const std::string &dir, long long capBytes)
 		std::remove(paths[doomed[i]].c_str());
 		zx_rmdir(dirs[doomed[i]].c_str());	// only succeeds once the directory is empty
 	}
+}
+
+// [rc4l] Delete .part files left by a run that died with the process.
+//
+// A transfer writes to <name>.part and renames on success, and cancelling deletes it -- but a crash
+// or a plain quit mid-download has no way out to hook, so the partial file simply stays. Nothing ever
+// removed them: the store prune only walks by-hash/, so they accumulated in the download folder for
+// the life of the install.
+//
+// Swept when a run starts rather than on shutdown, because that is the moment we know nothing is
+// using them: only one run happens at a time, so anything ending in .part here belongs to a dead one.
+// Names are collected before anything is deleted -- removing entries while enumerating a directory is
+// not something to rely on across platforms.
+void SweepStalePartFiles(const std::string &dir)
+{
+	findstate_t entry;
+	void *handle = I_FindFirst((dir + "*.part").c_str(), &entry);
+	if (handle == ((void *)-1))
+		return;
+
+	std::vector<std::string> doomed;
+	do
+	{
+		if (I_FindAttr(&entry) & FA_DIREC)
+			continue;
+		doomed.push_back(dir + I_FindName(&entry));
+	} while (I_FindNext(handle, &entry) == 0);
+	I_FindClose(handle);
+
+	for (size_t i = 0; i < doomed.size(); ++i)
+		std::remove(doomed[i].c_str());
 }
 
 // The first bytes of `path`, for the content gate. Short reads are fine -- a file too small to have a
@@ -633,6 +701,24 @@ void Cancel()
 	std::lock_guard<std::mutex> lock(g_mutex);
 	if (g_state == RunState::Running)
 		g_cancel = true;
+
+	// A queued replacement is cancelled too -- otherwise "stop this download" would start the next
+	// one a moment later, which is the opposite of what was asked.
+	g_haveDeferred = false;
+	g_deferredOnDone = NULL;
+}
+
+void Abandon()
+{
+	std::lock_guard<std::mutex> lock(g_mutex);
+	if (g_state != RunState::Running)
+		return;
+
+	g_cancel = true;
+
+	// Drop the completion. This is the difference from Cancel: the run being abandoned belongs to a
+	// join the player has moved on from, so resuming it would pull them onto a server they left.
+	g_onDone = NULL;
 }
 
 bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedFile> &files,
@@ -646,11 +732,11 @@ bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedF
 		Printf(TEXTCOLOR_ORANGE "Downloading is off (cl_fua_download 0).\n");
 		return false;
 	}
-	if (IsRunning())
-	{
-		Printf(TEXTCOLOR_ORANGE "A download is already in progress.\n");
-		return false;
-	}
+	// [rc4l] A run already going means the player picked another server. Abandon that one and queue
+	// this -- see g_deferredJob for why it is queued rather than started here.
+	const bool replacing = IsRunning();
+	if (replacing)
+		Abandon();
 
 	Job job;
 
@@ -692,6 +778,9 @@ bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedF
 	RegisterDownloadDirInSearchPath(dir);
 	job.dir = dir.GetChars();
 
+	// Clear out anything a previous run left behind when it died with the process.
+	SweepStalePartFiles(job.dir);
+
 	const int capMB = *cl_fua_download_maxsize > 0 ? *cl_fua_download_maxsize : 1;
 	job.maxBytes = (long long)capMB * 1024LL * 1024LL;
 
@@ -699,17 +788,21 @@ bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedF
 	const int storeMB = *cl_fua_download_maxstore;
 	job.storeCapBytes = (storeMB > 0) ? ((long long)storeMB * 1024LL * 1024LL) : 0;
 
+	// Replacing a run in flight: the worker only notices the cancel between chunks, so this waits for
+	// it rather than blocking the main thread on a socket that may be stalled. Tick starts it.
+	if (replacing)
 	{
 		std::lock_guard<std::mutex> lock(g_mutex);
-		g_log.clear();
-		g_currentFile.clear();
-		g_received = 0;
-		g_total = -1;
-		g_state = RunState::Running;
-		g_succeeded = false;
-		g_cancel = false;
-		g_completionPending = false;
-		g_onDone = onDone;
+		g_haveDeferred = true;
+		g_deferredJob = job;
+		g_deferredOnDone = onDone;
+		Printf(TEXTCOLOR_ORANGE "Stopped the previous download; starting this one instead.\n");
+		return true;
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(g_mutex);
+		BeginRunLocked(onDone);
 	}
 
 	Printf("Downloading %u file%s to %s\n", (unsigned)job.files.size(),
@@ -751,10 +844,13 @@ void Tick()
 	std::vector<std::string> lines;
 	CompleteProc done = NULL;
 	bool succeeded = false;
+	bool startDeferred = false;
+	Job deferred;
+	CompleteProc deferredDone = NULL;
 
 	{
 		std::lock_guard<std::mutex> lock(g_mutex);
-		if (g_state == RunState::Idle && g_log.empty())
+		if (g_state == RunState::Idle && g_log.empty() && !g_haveDeferred)
 			return;
 
 		lines.swap(g_log);
@@ -767,12 +863,34 @@ void Tick()
 			succeeded = g_succeeded;
 			g_onDone = NULL;
 		}
+
+		// [rc4l] The abandoned run has stopped, so the job the player actually wants can go. Started
+		// from here rather than from Start() because only the worker knows when it has let go.
+		if (g_haveDeferred && (g_state == RunState::Idle))
+		{
+			startDeferred = true;
+			deferred = g_deferredJob;
+			deferredDone = g_deferredOnDone;
+
+			g_haveDeferred = false;
+			g_deferredJob = Job();
+			g_deferredOnDone = NULL;
+
+			BeginRunLocked(deferredDone);
+		}
 	}
 
 	// Printf outside the lock: it can re-enter a lot of engine machinery, and holding the worker's
 	// mutex across that is how a console command that queries progress would deadlock.
 	for (size_t i = 0; i < lines.size(); ++i)
 		Printf("%s\n", lines[i].c_str());
+
+	if (startDeferred)
+	{
+		Printf("Downloading %u file%s to %s\n", (unsigned)deferred.files.size(),
+			deferred.files.size() == 1 ? "" : "s", deferred.dir.c_str());
+		std::thread(RunJob, deferred).detach();
+	}
 
 	if (done != NULL)
 		done(succeeded);

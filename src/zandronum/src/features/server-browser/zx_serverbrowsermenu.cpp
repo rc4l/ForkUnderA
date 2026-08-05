@@ -35,6 +35,7 @@
 #include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
+#include "features/server-browser/zx_joinserver.h"
 #include "features/updater/computation/promptpanel_compute.h"
 #include "features/wad-download/zx_waddownload.h"
 
@@ -83,7 +84,18 @@
 #define SB_DETAIL_PAD		10
 #define SB_DETAIL_LINE		11
 #define SB_DETAIL_TEXT_W	( SB_DETAIL_RIGHT - SB_DETAIL_LEFT - 2 * SB_DETAIL_PAD )
-#define SB_DETAIL_TEXT_BOTTOM	( SB_DETAIL_BOTTOM - SB_DETAIL_PAD )
+
+// [rc4l] The action button along the bottom of the detail panel: JOIN, or CANCEL while a download for
+// this join is running. Enter has always joined, but a keyboard-only affordance is not one on a
+// screen the player is driving with the mouse -- and cancelling had NO affordance at all, living only
+// in a console command most players will never type.
+#define SB_BUTTON_H			16
+#define SB_BUTTON_LEFT		( SB_DETAIL_LEFT + SB_DETAIL_PAD )
+#define SB_BUTTON_RIGHT		( SB_DETAIL_RIGHT - SB_DETAIL_PAD )
+#define SB_BUTTON_TOP		( SB_DETAIL_BOTTOM - SB_DETAIL_PAD - SB_BUTTON_H )
+
+// The WAD list stops above the button rather than under it.
+#define SB_DETAIL_TEXT_BOTTOM	( SB_BUTTON_TOP - 6 )
 
 #define SB_FOOTER_Y			( SB_ROWS_BOTTOM + 20 )
 
@@ -129,6 +141,26 @@ static	int				g_ScrollFirst = 0;
 // [rc4l] Which row the mouse was pressed on, so a release somewhere else cancels instead of joining
 // whatever ended up under the cursor. Reset whenever a release lands anywhere.
 static	int				g_MousePressRow = -1;
+
+// [rc4l] The action button at the bottom of the detail panel. Hot = pointer over it, pressed = held
+// down on it, so dragging off before releasing cancels the way a button should.
+static	bool			g_ButtonHot = false;
+static	bool			g_ButtonPressed = false;
+
+// [rc4l] Showing "cancel this download?". Drawn and answered by this menu rather than through
+// M_StartMessage, so the browser keeps control of the pairing: the hold placed on the join resume
+// when this goes up MUST be released on exactly one of the two answers, and a message box that can be
+// dismissed by other menu machinery is a way for that to not happen.
+static	bool			g_ConfirmCancel = false;
+
+//*****************************************************************************
+//
+// [rc4l] Whether a transfer is in flight. Decides both what the button says and what pressing it
+// does, so it is asked in one place rather than inferred twice.
+static bool serverbrowser_DownloadRunning( void )
+{
+	return zx::waddownload::IsRunning( );
+}
 
 // [rc4l] The previous completed click, for detecting a double one. ZDoom's menu system has no
 // double-click event -- MOUSE_Click2 is the RIGHT button, not the second click -- so the interval is
@@ -492,6 +524,21 @@ public:
 		BROWSER_QueryServerRegistry( );
 	}
 
+	// [rc4l] The browser can be torn down by machinery that never saw the question -- a console
+	// command, a restart. Leaving the hold in place would strand a finished download forever, so it
+	// is released here as "keep going", which is what a player who never answered "stop" meant.
+	void Destroy( )
+	{
+		if ( g_ConfirmCancel )
+		{
+			g_ConfirmCancel = false;
+			zx::ReleaseJoinResume( true );
+		}
+		Super::Destroy( );
+	}
+
+	//*************************************************************************
+	//
 	void Ticker( )
 	{
 		Super::Ticker( );
@@ -523,6 +570,10 @@ public:
 
 		DrawDetails( );
 		DrawFooter( phase, counts );
+
+		// Last, and over everything: a question the player has to answer before anything else happens.
+		if ( g_ConfirmCancel )
+			DrawCancelConfirm( );
 	}
 
 	//*************************************************************************
@@ -670,6 +721,134 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] The confirmation, drawn over everything else. Cancelling a transfer that is most of the
+	// way through a 200 MB modpack because of one stray click is worth a question.
+	void DrawCancelConfirm( )
+	{
+		screen->Dim( PalEntry( 0, 0, 0 ), 0.6f, 0, 0, SCREENWIDTH, SCREENHEIGHT );
+
+		const char *const lines[] = {
+			"Cancel this download?",
+			"",
+			"Y - stop it        N - keep going",
+		};
+
+		int y = ( SB_VIRT_H / 2 ) - ( SmallFont->GetHeight( ) * 2 );
+		for ( size_t i = 0; i < countof( lines ); ++i )
+		{
+			if ( lines[i][0] != '\0' )
+			{
+				screen->DrawText( SmallFont, ( i == 0 ) ? CR_WHITE : CR_GOLD,
+					( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( lines[i] ) / 2 ), y, lines[i],
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
+			y += SmallFont->GetHeight( ) + 3;
+		}
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Both answers, in one place, because the important part is that each releases the hold
+	// exactly once. `stop` false is "keep going", which also covers the download having finished while
+	// the question was on screen -- ReleaseJoinResume then runs the join it was holding.
+	// [rc4l] Committing to the selected server. One implementation, reached from the keyboard and from
+	// the button, so the two can never come to mean different things.
+	void DoJoinSelected( )
+	{
+		const int total = static_cast<int>( g_SortedServers.Size( ));
+		if (( g_Selected < 0 ) || ( g_Selected >= total ))
+			return;
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+		BROWSER_SetSelectedServer( g_SortedServers[g_Selected] );
+		// [rc4l] fua_ variant: resolves the server's WADs locally and joins through the validated
+		// reload, instead of `restart -connect` tearing the game down first.
+		AddCommandString( "fua_join_selected_server" );
+	}
+
+	// [rc4l] What the one button does, which depends on what is happening. Enter goes through here
+	// too: the button reading CANCEL while Enter still joined would be two controls disagreeing about
+	// the same slot.
+	void PressActionButton( )
+	{
+		if ( serverbrowser_DownloadRunning( ))
+		{
+			// Held BEFORE the question goes up, not after it is answered. A transfer finishing in the
+			// meantime would otherwise restart the engine for the reload while the player is still
+			// reading -- the hold is what makes the answer land on something that still exists.
+			zx::HoldJoinResume( );
+			g_ConfirmCancel = true;
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+			return;
+		}
+
+		DoJoinSelected( );
+	}
+
+	void AnswerCancelConfirm( bool stop )
+	{
+		if ( !g_ConfirmCancel )
+			return;
+
+		g_ConfirmCancel = false;
+
+		if ( stop )
+			zx::waddownload::Cancel( );
+
+		zx::ReleaseJoinResume( !stop );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] JOIN, or CANCEL while a transfer for this join is running. One button rather than two,
+	// because they are the same slot in the player's head -- "the thing I press to make this server
+	// happen" and "the thing I press to stop it".
+	void DrawActionButton( )
+	{
+		const int left = serverbrowser_ToScreenX( SB_BUTTON_LEFT );
+		const int right = serverbrowser_ToScreenX( SB_BUTTON_RIGHT );
+		const int top = serverbrowser_ToScreenY( SB_BUTTON_TOP );
+		const int bottom = serverbrowser_ToScreenY( SB_BUTTON_TOP + SB_BUTTON_H );
+		const int radius = serverbrowser_ToScreenY( 4 ) - serverbrowser_ToScreenY( 0 );
+
+		const int w = right - left;
+		const int h = bottom - top;
+		if (( w <= 0 ) || ( h <= 0 ))
+			return;
+
+		const bool bCancel = serverbrowser_DownloadRunning( );
+
+		// Lighter when the pointer is over it, lighter still while held -- the press feedback a button
+		// needs to feel like one rather than like a label that happens to react.
+		int base = g_ButtonHot ? 70 : 45;
+		if ( g_ButtonHot && g_ButtonPressed )
+			base = 95;
+
+		const zx::PanelColor topCol = { static_cast<BYTE>( bCancel ? base + 30 : base ),
+			static_cast<BYTE>( base ), static_cast<BYTE>( base ), 220 };
+		const zx::PanelColor botCol = { static_cast<BYTE>( bCancel ? base + 15 : base / 2 ),
+			static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ), 235 };
+
+		for ( int row = 0; row < h; ++row )
+		{
+			const int inset = zx::ComputeRoundedInset( row, h, radius );
+			const int rowW = w - 2 * inset;
+			if ( rowW <= 0 )
+				continue;
+
+			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
+			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+		}
+
+		const char *const label = bCancel ? "CANCEL" : "JOIN";
+		const int textY = SB_BUTTON_TOP + ( SB_BUTTON_H - SmallFont->GetHeight( )) / 2 + 1;
+		screen->DrawText( SmallFont, bCancel ? CR_ORANGE : CR_WHITE,
+			( SB_BUTTON_LEFT + SB_BUTTON_RIGHT ) / 2 - ( SmallFont->StringWidth( label ) / 2 ),
+			textY, label, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+	}
+
+	//*************************************************************************
+	//
 	void DrawDetails( )
 	{
 		DrawDetailPanel( );
@@ -712,6 +891,8 @@ public:
 		DrawSeparator( y );
 		y += 6;
 		DrawWadList( x, y );
+
+		DrawActionButton( );
 	}
 
 	//*************************************************************************
@@ -938,6 +1119,48 @@ public:
 	bool MouseEvent( int type, int x, int y )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
+
+		// The confirmation owns the screen while it is up: clicking through it would be answering a
+		// question by pressing something else.
+		if ( g_ConfirmCancel )
+			return true;
+
+		// The action button, before the row hit test -- it lives inside the detail panel, which the
+		// row test already excludes, but checking first keeps the two from ever both claiming a click.
+		{
+			const bool bOverButton = ( g_Selected >= 0 ) && ( g_Selected < total ) &&
+				( x >= serverbrowser_ToScreenX( SB_BUTTON_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_BUTTON_RIGHT )) &&
+				( y >= serverbrowser_ToScreenY( SB_BUTTON_TOP )) &&
+				( y < serverbrowser_ToScreenY( SB_BUTTON_TOP + SB_BUTTON_H ));
+
+			g_ButtonHot = bOverButton;
+
+			if ( bOverButton )
+			{
+				if ( type == MOUSE_Click )
+				{
+					g_ButtonPressed = true;
+					return true;			// arms the capture that makes MOUSE_Release arrive
+				}
+
+				if ( type == MOUSE_Release )
+				{
+					const bool bWasPressed = g_ButtonPressed;
+					g_ButtonPressed = false;
+					if ( bWasPressed )
+						PressActionButton( );
+					return true;
+				}
+
+				return true;				// hover
+			}
+
+			// Released away from the button: a drag off it, which cancels like any button.
+			if ( type == MOUSE_Release )
+				g_ButtonPressed = false;
+		}
+
 		const int left = serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 );
 		const int right = serverbrowser_ToScreenX( SB_LIST_RIGHT );
 
@@ -1005,9 +1228,52 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] Y and N for the confirmation. Menu navigation arrives as MKEY_*, but plain letters do
+	// not, so the character events have to be taken here before DOptionMenu does anything else with
+	// them.
+	bool Responder( event_t *ev )
+	{
+		if ( g_ConfirmCancel && ( ev != NULL ) && ( ev->type == EV_GUI_Event ) &&
+			(( ev->subtype == EV_GUI_KeyDown ) || ( ev->subtype == EV_GUI_KeyRepeat ) ||
+			 ( ev->subtype == EV_GUI_Char )))
+		{
+			const int key = ev->data1;
+
+			if (( key == 'y' ) || ( key == 'Y' ))
+			{
+				AnswerCancelConfirm( true );
+				return true;
+			}
+			if (( key == 'n' ) || ( key == 'N' ))
+			{
+				AnswerCancelConfirm( false );
+				return true;
+			}
+
+			// Anything else is swallowed. A question on screen means the next keypress answers it,
+			// not that it does something underneath.
+			return true;
+		}
+
+		return Super::Responder( ev );
+	}
+
+	//*************************************************************************
+	//
 	bool MenuEvent( int mkey, bool fromcontroller )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
+
+		// [rc4l] While the question is up it is the only thing that answers: Enter stops the download,
+		// Escape keeps it going. Both release the hold, which is the part that must not be skipped.
+		if ( g_ConfirmCancel )
+		{
+			if ( mkey == MKEY_Enter )
+				AnswerCancelConfirm( true );
+			else if ( mkey == MKEY_Back )
+				AnswerCancelConfirm( false );
+			return true;
+		}
 
 		switch ( mkey )
 		{
@@ -1028,14 +1294,7 @@ public:
 			return true;
 
 		case MKEY_Enter:
-			if (( g_Selected >= 0 ) && ( g_Selected < total ))
-			{
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
-				BROWSER_SetSelectedServer( g_SortedServers[g_Selected] );
-				// [rc4l] fua_ variant: resolves the server's WADs locally and joins through the
-				// validated reload, instead of `restart -connect` tearing the game down first.
-				AddCommandString( "fua_join_selected_server" );
-			}
+			PressActionButton( );
 			return true;
 
 		default:
