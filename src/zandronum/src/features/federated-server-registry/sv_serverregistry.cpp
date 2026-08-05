@@ -556,10 +556,11 @@ static void server_registry_WriteIWADHash( const LauncherResponseContext &ctx )
 }
 
 //*****************************************************************************
-// [rc4l] How big each PWAD is, so a client can see what agreeing to a download costs before it
-// agrees. Same order and same count as SQF_PWADS and SQF2_PWAD_HASHES.
+// [rc4l] How big every file is, so a client can see what agreeing to a download costs before it
+// agrees. The IWAD first as a fixed 32 bits, then a count byte and one size per PWAD, in the same
+// order as SQF_PWADS and SQF2_PWAD_HASHES.
 //
-// The size was measured when the PWAD list was built, not here: this function answers every launcher
+// Every size was measured when the wad list was built, not here: this function answers every launcher
 // query, and a stat per file per query is disk work on the hot path to learn something that only
 // changes when the wad set does. 0 means "could not be measured", which is also what a server that
 // has never heard of this field effectively says.
@@ -567,6 +568,7 @@ static void server_registry_WriteWADSizes( const LauncherResponseContext &ctx )
 {
 	const TArray<NetworkPWAD> &pwads = NETWORK_GetPWADList( );
 
+	ctx.pByteStream->WriteLong( static_cast<int>( NETWORK_GetIWADSize( )));
 	ctx.pByteStream->WriteByte( pwads.Size( ));
 
 	for ( unsigned i = 0; i < pwads.Size( ); ++i )

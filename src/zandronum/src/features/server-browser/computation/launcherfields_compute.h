@@ -67,10 +67,12 @@ struct LauncherExtendedInfo
 	bool prefersMirrors;
 	std::string iwadHash;
 
-	// Bytes per PWAD, in the same order as SQF_PWADS. 0 where the server could not measure one.
+	// Bytes. The IWAD is separate because it is a fixed field rather than part of the counted run --
+	// see SQF2_FUA_WAD_SIZES. 0 where the server could not measure one.
+	unsigned long long iwadSize;
 	std::vector<unsigned long long> pwadSizes;
 
-	LauncherExtendedInfo() : voiceChat(0), directDownloadPort(0), prefersMirrors(false) {}
+	LauncherExtendedInfo() : voiceChat(0), directDownloadPort(0), prefersMirrors(false), iwadSize(0) {}
 };
 
 // Every bit this build knows how to consume. Anything outside it makes ParseExtendedInfo refuse.

@@ -169,13 +169,20 @@
 // not running and level authentication rejects you, reporting nothing you can act on.
 #define SQF2_FUA_IWAD_HASH			0x00000040
 
-// [rc4l] How big each PWAD is, in bytes: a count byte then one 32-bit size per file, in the same
-// order as SQF_PWADS and SQF2_PWAD_HASHES.
+// [rc4l] How big every file the server is running is, in bytes:
+//
+//     [u32 IWAD size][u8 PWAD count][u32 per PWAD, in SQF_PWADS order]
 //
 // SQF_PWADS gives names and SQF2_PWAD_HASHES gives digests, so a client could tell WHETHER it needed
 // a file but never how much of a wait agreeing to it was -- a 200 KB map pack and a 400 MB
 // resource wad looked identical in the browser, which is the one number the decision actually turns
-// on. Sent for PWADs only; the IWAD is not downloadable and its size answers nothing.
+// on.
+//
+// The IWAD is measured too even though it is never downloaded: the browser lists it alongside the
+// PWADs, and one line in that list silently lacking the number every other line has reads as a bug
+// rather than as a distinction. It goes FIRST because SQF_IWAD precedes SQF_PWADS everywhere else in
+// this protocol, and it is a fixed 32 bits rather than part of the counted run so that "how many
+// sizes follow" keeps meaning "how many PWADs".
 //
 // 32 bits, so the ceiling is 4 GB. Anything larger is not a file anyone is going to be served over a
 // launcher query, and a fixed width keeps the field skippable by shape.

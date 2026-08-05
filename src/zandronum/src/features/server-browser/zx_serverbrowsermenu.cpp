@@ -253,8 +253,8 @@ static	int				g_DetailServer = -1;
 static	TArray<FString>	g_DetailWads;
 
 // [rc4l] Size in bytes beside each name, 0 where the server did not say (see SQF2_FUA_WAD_SIZES).
-// Parallel to g_DetailWads, with a 0 in front for the IWAD -- which is not downloadable, so its size
-// answers nothing anyone is asking here.
+// Parallel to g_DetailWads, IWAD included: it is never downloaded, but it is listed with the rest,
+// and one line silently lacking the number every other line carries reads as a bug.
 static	TArray<unsigned int>	g_DetailWadSizes;
 
 // [rc4l] The WAD list scrolls on its own. It USED to stop at whatever fitted and print "+7 more",
@@ -367,7 +367,7 @@ static void serverbrowser_RefreshWadCache( int lServer )
 	if (( pszIwad != NULL ) && ( pszIwad[0] != 0 ))
 	{
 		g_DetailWads.Push( pszIwad );
-		g_DetailWadSizes.Push( 0 );		// not downloadable, so its size answers nothing
+		g_DetailWadSizes.Push( BROWSER_GetIWADSize( lServer ));
 	}
 
 	const LONG lPwads = BROWSER_GetNumPWADs( lServer );

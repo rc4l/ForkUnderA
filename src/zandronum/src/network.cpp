@@ -164,6 +164,10 @@ static	TArray<NetworkPWAD>	g_PWADs;
 static	TArray<NetworkPWAD>	g_AuthenticatedWADs; // [SB] All authenticated WAD files, including IWAD and engine PK3
 static	FString		g_IWAD; // [RC/BB] Which IWAD are we using?
 
+// [rc4l] And how big it is, for SQF2_FUA_WAD_SIZES. Measured where the PWAD sizes are, and for the
+// same reason: once per wad set rather than once per launcher query.
+static	unsigned int	g_IWADSize = 0;
+
 FString g_lumpsAuthenticationChecksum;
 FString g_MapCollectionChecksum;
 
@@ -1245,6 +1249,14 @@ const char *NETWORK_GetIWAD( void )
 
 //*****************************************************************************
 //
+// [rc4l] Bytes, or 0 when it could not be measured. See NetworkPWAD::size.
+unsigned int NETWORK_GetIWADSize( void )
+{
+	return g_IWADSize;
+}
+
+//*****************************************************************************
+//
 void NETWORK_AddLumpForAuthentication( const LONG LumpNumber )
 {
 	if ( LumpNumber == -1 )
@@ -1803,6 +1815,7 @@ static void network_InitPWADList( void )
 	}
 
 	g_IWAD = Wads.GetWadName( ulRealIWADIdx );
+	g_IWADSize = network_FileSize( Wads.GetWadFullName( ulRealIWADIdx ));
 
 	// Collect all the PWADs into a list.
 	for ( ULONG ulIdx = 0; Wads.GetWadName( ulIdx ) != NULL; ulIdx++ )

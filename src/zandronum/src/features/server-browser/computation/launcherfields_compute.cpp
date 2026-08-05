@@ -167,6 +167,13 @@ ExtendedParse ParseExtendedInfo(const unsigned char *data, size_t length, unsign
 
 	if (flags2 & kSqf2WadSizes)
 	{
+		// The IWAD first, outside the counted run: it is always exactly one file, so counting it would
+		// only make "how many sizes follow" stop meaning "how many PWADs".
+		unsigned long iwadSize = 0;
+		if (!cursor.ReadLong(iwadSize))
+			return ExtendedParse::Truncated;
+		parsed.iwadSize = iwadSize;
+
 		int count = 0;
 		if (!cursor.ReadByte(count))
 			return ExtendedParse::Truncated;
