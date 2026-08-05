@@ -814,10 +814,11 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	COMMAND ${CMAKE_COMMAND}
 		-DIWAD_LIST=${ZX_REPO_ROOT}/iwadallowlist.txt
 		-DSITE_LIST=${ZX_REPO_ROOT}/waddownloadsites.txt
+		-DSUBST_LIST=${ZX_REPO_ROOT}/iwadsubstitutes.txt
 		-DOUT=${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 		-P ${ZX_REPO_ROOT}/tools/gen-wadlists.cmake
 	DEPENDS ${ZX_REPO_ROOT}/iwadallowlist.txt ${ZX_REPO_ROOT}/waddownloadsites.txt
-		${ZX_REPO_ROOT}/tools/gen-wadlists.cmake
+		${ZX_REPO_ROOT}/iwadsubstitutes.txt ${ZX_REPO_ROOT}/tools/gen-wadlists.cmake
 	COMMENT "Generating zx_waddownload_lists.h from iwadallowlist.txt / waddownloadsites.txt" )
 
 include_directories( ${CMAKE_CURRENT_BINARY_DIR} )
@@ -1457,6 +1458,7 @@ add_executable( zdoom WIN32
 	features/wad-download/zx_waddownload.cpp
 	features/wad-download/computation/downloadplan_compute.cpp
 	features/wad-download/computation/iwadallow_compute.cpp
+	features/wad-download/computation/iwadsubstitute_compute.cpp
 	# Generated; listed so the custom command above actually runs as part of this target.
 	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	features/server-browser/browser.cpp #ST

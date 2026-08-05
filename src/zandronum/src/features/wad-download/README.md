@@ -86,6 +86,31 @@ legal assertion, so a player replacing the mirror list costs them nothing but th
 It is a separate file because it goes stale on a completely different schedule: mirrors come and go,
 licences do not.
 
+## Freedoom as a stand-in
+
+If a server's IWAD is a game you do not own, and Freedoom can replace it, the join loads Freedoom
+and says so rather than failing. Freedoom is a from-scratch BSD-licensed replacement for Doom's
+data — Zandronum's own wiki puts it as "will allow users to connect to almost any server plausible".
+
+Two things this is careful about:
+
+- **It is a fallback, never a preference.** The server's real IWAD is resolved first, through the
+  same `BaseFileSearch` as everything else. Owning `doom2.wad` always means loading `doom2.wad`.
+- **It is not a fix for stock maps.** Freedoom's MAP01 is not Doom II's MAP01, so on a server
+  running stock levels the substituted client loads different geometry and Zandronum's level
+  authentication rejects it. The case it is actually for is the common one — a server running a
+  PWAD that replaces every map, where the IWAD supplies only textures, sounds and actors. The engine
+  prints which IWAD it substituted, and `cl_fua_iwad_substitute 0` turns it off.
+
+And because Freedoom is on the download allowlist, a player with *neither* the game nor Freedoom
+gets Freedoom downloaded and then joins — the one case where "you are missing a commercial IWAD"
+can end in a working join instead of a dead end.
+
+The table is `iwadsubstitutes.txt` at the repo root, PR-able like the others.
+`tools/gen-wadlists.cmake` **fails the build** if a replacement is not in `iwadallowlist.txt`: a
+substitute we are not allowed to download is no use as a stand-in for a game we are not allowed to
+download.
+
 ## The other thing a server-chosen string can do
 
 Every filename here comes from a remote host. `computation/downloadplan_compute.h` holds the two
@@ -100,11 +125,13 @@ loop, because "did we remember to reject `../..`?" should be answerable without 
 ```
 <repo root>/iwadallowlist.txt               the downloadable-IWAD allowlist  (PR to add a line)
 <repo root>/waddownloadsites.txt            the default mirror list          (PR to add a line)
-<repo root>/tools/gen-wadlists.cmake        compiles both into a header at build time
+<repo root>/iwadsubstitutes.txt             Freedoom stand-ins               (PR to add a line)
+<repo root>/tools/gen-wadlists.cmake        compiles all three into a header at build time
 
 zx_waddownload.{h,cpp}                      driver: CVARs, CCMDs, worker thread, main-thread Tick
 computation/downloadplan_compute.{h,cpp}    mirror URLs, name safety, escaping     (+ _test.cpp)
 computation/iwadallow_compute.{h,cpp}       the legality gate                      (+ _test.cpp)
+computation/iwadsubstitute_compute.{h,cpp}  what Freedoom can stand in for         (+ _test.cpp)
 ```
 
 The transfer itself is `features/net/zx_httpfile.{h,cpp}` (+ `zx_httpfile_win.cpp`): WinHTTP on
@@ -142,6 +169,7 @@ needs no special case for a downloaded file — the retry resolves it exactly li
 | `cl_fua_downloadsites` | `waddownloadsites.txt` | Space-separated base URLs, tried after the server's own. |
 | `cl_fua_download_dir` | *(empty)* | Override the download folder. |
 | `cl_fua_download_maxsize` | `2048` | Per-file ceiling in MB. Bounds what a mirror can write to disk. |
+| `cl_fua_iwad_substitute` | `true` | Load Freedoom when the server's IWAD is a game you don't own. |
 | `fua_download <file>` | | Fetch one PWAD by hand. |
 | `fua_download_stop` | | Abandon the running transfer. |
 | `fua_download_status` | | Progress, or where files go when idle. |
@@ -149,6 +177,6 @@ needs no special case for a downloaded file — the retry resolves it exactly li
 ## In-engine hooks
 
 - `d_main.cpp` — one line in `D_DoomLoop`: `zx::waddownload::Tick()`, beside the updater's.
-- `features/server-browser/zx_joinserver.cpp` — starts a download when a join is missing files and
-  resumes the join when it finishes.
+- `features/server-browser/zx_joinserver.cpp` — substitutes Freedoom for an IWAD you do not own,
+  starts a download when a join is still missing files, and resumes the join when it finishes.
 - `features/server-browser/zx_serverbrowsermenu.cpp` — the footer shows the transfer while it runs.
