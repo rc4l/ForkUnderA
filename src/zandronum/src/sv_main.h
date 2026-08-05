@@ -160,12 +160,21 @@
 // Flags bit 0: the operator would rather clients tried public mirrors before this server.
 #define SQF2_FUA_DIRECT_DOWNLOAD	0x00000020
 
+// [rc4l] The MD5 of the IWAD this server is running, as a string ("" when it cannot be determined).
+//
+// SQF_IWAD sends only a NAME, and SQF2_PWAD_HASHES deliberately excludes the IWAD -- see
+// network_InitPWADList, which skips it when building the PWAD list. So "doom2.wad" has until now
+// been all a client could know, and doom2.wad shipped as 1.666, 1.7, 1.8, 1.9, a French build, BFG
+// Edition and the 2024 KEX re-release. They are not interchangeable: join on a build the server is
+// not running and level authentication rejects you, reporting nothing you can act on.
+#define SQF2_FUA_IWAD_HASH			0x00000040
+
 #define	SQF_ALL						( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_MAXPLAYERS| \
 									  SQF_PWADS|SQF_GAMETYPE|SQF_GAMENAME|SQF_IWAD|SQF_FORCEPASSWORD|SQF_FORCEJOINPASSWORD|SQF_GAMESKILL| \
 									  SQF_BOTSKILL|SQF_DMFLAGS|SQF_LIMITS|SQF_TEAMDAMAGE|SQF_TEAMSCORES|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_TEAMINFO_NUMBER|SQF_TEAMINFO_NAME|SQF_TEAMINFO_COLOR|SQF_TEAMINFO_SCORE| \
 									  SQF_TESTING_SERVER|SQF_DATA_MD5SUM|SQF_ALL_DMFLAGS|SQF_SECURITY_SETTINGS|SQF_OPTIONAL_WADS|SQF_DEH|SQF_EXTENDED_INFO )
 
-#define SQF2_ALL					( SQF2_PWAD_HASHES|SQF2_COUNTRY|SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_VOICECHAT|SQF2_FUA_DIRECT_DOWNLOAD )
+#define SQF2_ALL					( SQF2_PWAD_HASHES|SQF2_COUNTRY|SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_VOICECHAT|SQF2_FUA_DIRECT_DOWNLOAD|SQF2_FUA_IWAD_HASH )
 
 #define	MAX_STORED_QUERY_IPS		512
 

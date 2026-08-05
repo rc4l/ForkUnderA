@@ -340,6 +340,18 @@ bool BROWSER_PrefersMirrors( ULONG ulServer )
 
 //*****************************************************************************
 //
+// [rc4l] Empty means "this server told us nothing", which is the normal case for anything that has
+// not heard of SQF2_FUA_IWAD_HASH. Never conflate that with a build that matched.
+const char *BROWSER_GetIWADHash( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( "" );
+
+	return ( g_BrowserServerList[ulServer].IWADHash.GetChars( ));
+}
+
+//*****************************************************************************
+//
 LONG BROWSER_GetNumDMFlags( ULONG ulServer )
 {
 	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
@@ -643,6 +655,7 @@ void BROWSER_ClearServerList( void )
 		// slot -- a wrong address at best, and a stale one that happens to answer at worst.
 		g_BrowserServerList[ulIdx].usDirectDownloadPort = 0;
 		g_BrowserServerList[ulIdx].bPrefersMirrors = false;
+		g_BrowserServerList[ulIdx].IWADHash = "";
 	}
 }
 
@@ -1142,6 +1155,10 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 				g_BrowserServerList[lServer].bPrefersMirrors = (( lFlags & 1 ) != 0 );
 			}
 		}
+
+		// [rc4l] Which BUILD of the IWAD, not just its name.
+		if ( ulFlags2 & SQF2_FUA_IWAD_HASH )
+			g_BrowserServerList[lServer].IWADHash = pByteStream->ReadString( );
 	}
 
 	// [rc4l] The old browser cached a sorted index that had to be rebuilt from here whenever a reply
@@ -1366,7 +1383,9 @@ static void browser_QueryServer( ULONG ulServer )
 	// own MD5, so a mirror cannot hand us the wrong file (or a stale version) under the right name.
 	// [rc4l] SQF2_FUA_DIRECT_DOWNLOAD added: tells us whether this server will serve its own WADs and
 	// on what port, which is the only way to reach a file that exists on no mirror.
-	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY|SQF2_PWAD_HASHES|SQF2_FUA_DIRECT_DOWNLOAD );
+	// [rc4l] SQF2_FUA_IWAD_HASH added: tells us which BUILD of the IWAD the server runs, so we can
+	// load the copy that will actually pass level authentication.
+	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY|SQF2_PWAD_HASHES|SQF2_FUA_DIRECT_DOWNLOAD|SQF2_FUA_IWAD_HASH );
 
 	// Send the server our packet.
 	NETWORK_LaunchPacket( &g_ServerBuffer, g_BrowserServerList[ulServer].Address );
