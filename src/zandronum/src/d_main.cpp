@@ -1155,6 +1155,10 @@ drawfullconsole:
 	{
 		NetUpdate ();			// send out any new accumulation
 		// normal update
+		// [rc4l] "That server is ready to join" -- over the game, under the console and menu, and
+		// capturing no input at all. See features/server-browser/zx_joinserver.h.
+		zx::DrawJoinReadyNotice ();
+
 		C_DrawConsole (hw2d);	// draw console
 		M_Drawer ();			// menu is drawn even on top of everything
 		FStat::PrintStat ();

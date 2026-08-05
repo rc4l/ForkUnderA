@@ -58,6 +58,28 @@ void JoinTick();
 // Implemented by the browser menu; declared here because the join path is what raises these.
 void ShowBrowserNotice( const char *text );
 
+// Whether the server browser is the menu currently on screen. Implemented by the browser menu.
+bool IsServerBrowserOpen();
+
+// [rc4l] Forget which files we have. The detail panel's green/red WAD list caches per server, so
+// after a download the file just fetched still drew red until something else changed.
+void InvalidateBrowserWadCache();
+
+// [rc4l] The "ready to join" line, drawn over whatever the player is doing.
+//
+// A transfer that finishes while the browser is closed used to fire the join by itself: the game
+// reinitialised for the new WAD set out from under whatever was happening, with no sign beforehand
+// that anything was even downloading. Now the join waits and this says so.
+//
+// It CAPTURES NO INPUT, deliberately. There is no key it listens for, so there is no wrong key --
+// which is the whole problem with a prompt appearing over live gameplay. Acting on it happens when
+// the player opens the menu, an act nobody performs by accident mid-fight.
+void DrawJoinReadyNotice();
+
+// Whether a finished download is waiting to be acted on, clearing the flag. Called when the player
+// opens the menu, so they land in the browser rather than the main menu.
+bool ConsumeJoinReady();
+
 } // namespace zx
 
 #endif // ZX_JOINSERVER_H

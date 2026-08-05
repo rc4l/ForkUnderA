@@ -280,10 +280,24 @@ static int serverbrowser_RowTextY( int rowY, int h )
 // actually downloads can never disagree -- a green entry that then downloaded, or a red one that did
 // not, would be worse than showing nothing. It writes into a scratch array we throw away; only the
 // true/false matters here.
+// [rc4l] Bumped whenever what we HAVE on disk might have changed -- which in practice means a
+// download finished. The cache keys off the server index alone, so coming back to the same server
+// after fetching its files showed the WAD list exactly as it was: the file we had just downloaded
+// still drawn in red as missing. Cheap to invalidate, and wrong-looking if we do not.
+static	int				g_WadCacheGeneration = 0;
+static	int				g_DetailGeneration = -1;
+
+void serverbrowser_InvalidateWadCache( void )
+{
+	g_WadCacheGeneration++;
+}
+
 static void serverbrowser_RefreshWadCache( int lServer )
 {
-	if ( lServer == g_DetailServer )
+	if (( lServer == g_DetailServer ) && ( g_DetailGeneration == g_WadCacheGeneration ))
 		return;
+
+	g_DetailGeneration = g_WadCacheGeneration;
 
 	g_DetailServer = lServer;
 	g_DetailWads.Clear( );
@@ -1541,6 +1555,17 @@ namespace zx
 void ShowBrowserNotice( const char *text )
 {
 	g_Notice = ( text != NULL ) ? text : "";
+}
+
+bool IsServerBrowserOpen( void )
+{
+	return ( DMenu::CurrentMenu != NULL ) &&
+		( DMenu::CurrentMenu->IsKindOf( RUNTIME_CLASS( DFUAServerBrowserMenu )));
+}
+
+void InvalidateBrowserWadCache( void )
+{
+	serverbrowser_InvalidateWadCache( );
 }
 
 } // namespace zx

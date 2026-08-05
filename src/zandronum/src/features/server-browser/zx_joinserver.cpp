@@ -30,10 +30,14 @@
 
 #include "cl_main.h"		// CLIENT_GetConnectionState, CTS_ACTIVE
 #include "network.h"		// NETWORK_GetState
+#include "v_video.h"		// screen, DTA_*, SCREENWIDTH/HEIGHT -- the ready-to-join line
+#include "v_font.h"			// SmallFont
+#include "doomstat.h"		// gametic
 
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h"
 #include "features/server-browser/computation/joinplan_compute.h"
+#include "features/server-browser/computation/joinresume_compute.h"
 #include "features/wad-download/computation/iwadsubstitute_compute.h"
 #include "features/wad-download/zx_filehash.h"
 #include "features/wad-download/zx_wadsearch.h"
@@ -119,33 +123,59 @@ bool g_resumeHeld = false;
 bool g_resumePending = false;
 bool g_resumePendingSuccess = false;
 
+// [rc4l] A finished download whose join is waiting for the player to come back to it.
+bool g_readyPending = false;
+FString g_readyName;
+
 void OnDownloadFinished(bool allSucceeded)
 {
-	if (g_resumeHeld)
+	// [rc4l] The decision itself is computation/joinresume_compute.h, where every combination of
+	// "did it work / is the browser open / are they mid-answer" can be asserted. Getting it wrong
+	// throws away whatever the player was doing, and each individual branch reads fine in review,
+	// which is exactly the sort of thing that wants a truth table rather than a chain of ifs.
+	// Files landed on disk, so the browser's green/red WAD list is out of date.
+	if (allSucceeded)
+		zx::InvalidateBrowserWadCache();
+
+	const zx::ResumeAction action = zx::ComputeResumeAction( g_pending.valid, allSucceeded,
+		zx::IsServerBrowserOpen(), g_resumeHeld );
+
+	switch (action)
 	{
-		// Park it. Whatever the player is being asked outranks finishing the join.
+	case zx::ResumeAction::Nothing:
+		return;
+
+	case zx::ResumeAction::Hold:
 		g_resumePending = true;
 		g_resumePendingSuccess = allSucceeded;
 		return;
-	}
 
-	if (!g_pending.valid)
+	case zx::ResumeAction::NotifyReady:
+		// The join WAITS. g_pending is kept, and ConsumeJoinReady picks it up when the player next
+		// opens the menu.
+		g_readyPending = true;
+		g_readyName = g_pending.serverName;
+		Printf(TEXTCOLOR_GREEN "%s is ready to join.\n" TEXTCOLOR_NORMAL,
+			g_readyName.IsNotEmpty() ? g_readyName.GetChars() : "That server");
 		return;
+
+	case zx::ResumeAction::ReportFailure:
+		g_pending = JoinPlan();
+		// The downloader has already said which file and why, on the console. This is the part the
+		// player sees without having opened it.
+		zx::ShowBrowserNotice("Couldn't get everything this server needs.\n\n"
+			"See the console for what was missing.");
+		return;
+
+	case zx::ResumeAction::JoinNow:
+		break;
+	}
 
 	// Taken by value and cleared BEFORE the retry: AttemptJoin does not return on the path that
 	// works (RequestReload throws CRestartException), so anything after the call is unreachable
 	// exactly when it matters.
 	const JoinPlan plan = g_pending;
 	g_pending = JoinPlan();
-
-	if (!allSucceeded)
-	{
-		// The downloader has already said which file and why, on the console. This is the part the
-		// player sees without having opened it.
-		zx::ShowBrowserNotice("Couldn't get everything this server needs.\n\n"
-			"See the console for what was missing.");
-		return;
-	}
 
 	// Second pass, with downloading off: if something is STILL missing after a run that reported
 	// success, retrying the download would loop forever on it.
@@ -587,6 +617,50 @@ void ReleaseJoinResume(bool proceed)
 bool IsJoinResumeHeld()
 {
 	return g_resumeHeld;
+}
+
+bool ConsumeJoinReady()
+{
+	if ( !g_readyPending )
+		return false;
+
+	// Cleared, but g_pending is left alone: the player is being taken to the browser, and pressing
+	// JOIN there starts the join from scratch with files that are now already on disk.
+	g_readyPending = false;
+	g_readyName = "";
+	return true;
+}
+
+void DrawJoinReadyNotice()
+{
+	if ( !g_readyPending )
+		return;
+
+	// [rc4l] Nothing about files or downloads: the transfer was our problem, and what the player
+	// cares about is that the server they picked is now joinable.
+	FString text;
+	text.Format( "%s is ready to join -- open the menu",
+		g_readyName.IsNotEmpty( ) ? g_readyName.GetChars( ) : "Your server" );
+
+	// A slow pulse, never off entirely. Something that vanishes half the time is easy to decide you
+	// imagined; something that only dims is clearly still there.
+	const double phase = ( gametic % 70 ) / 70.0;
+	const float alpha = 0.65f + 0.35f * static_cast<float>( fabs( 1.0 - 2.0 * phase ));
+
+	const int virtW = 640;
+	const int virtH = 400;
+	const int x = ( virtW / 2 ) - ( SmallFont->StringWidth( text ) / 2 );
+	const int y = 12;
+
+	// A backing band, so the line stays readable over a bright wall or a lit sky.
+	screen->Dim( PalEntry( 0, 0, 0 ), 0.45f * alpha,
+		Scale( x - 6, SCREENWIDTH, virtW ), Scale( y - 3, SCREENHEIGHT, virtH ),
+		Scale( SmallFont->StringWidth( text ) + 12, SCREENWIDTH, virtW ),
+		Scale( SmallFont->GetHeight( ) + 6, SCREENHEIGHT, virtH ));
+
+	screen->DrawText( SmallFont, CR_GOLD, x, y, text,
+		DTA_VirtualWidth, virtW, DTA_VirtualHeight, virtH,
+		DTA_Alpha, FLOAT2FIXED( alpha ), TAG_DONE );
 }
 
 } // namespace zx
