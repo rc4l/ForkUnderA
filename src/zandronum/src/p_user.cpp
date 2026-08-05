@@ -85,6 +85,7 @@
 #include "g_shared/pwo.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
 #include "features/fov-interp/computation/fovinterp_compute.h"
+#include "features/quake-movement/quakemove.h"
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -776,6 +777,43 @@ void APlayerPawn::Serialize (FArchive &arc)
 	{
 		FullHeight = GetDefault()->height;
 	}
+	// [rc4l] features/quake-movement. Older saves predate the movement model, so fall back to the
+	// class default rather than MVTYPE_DOOM: a pawn whose DECORATE says MvType 1 must still load as
+	// a Quake-movement pawn out of a pre-feature save.
+	if (SaveVersion >= 4521)
+	{
+		arc << MvType;
+	}
+	else
+	{
+		// [rc4l] AActor::GetDefault() is typed AActor*, so downcast to reach the pawn-only field.
+		// Anything reaching APlayerPawn::Serialize has an APlayerPawn class default object.
+		MvType = static_cast<APlayerPawn *>( GetDefault() )->MvType;
+	}
+
+	// [rc4l] Live movement state stays deliberately unserialized (it is prediction-saved and
+	// re-derived every tic), but PostBeginPlay does NOT run on a savegame load -- so without this
+	// it came back as zeroes. Zero is not a state that occurs in play: the traversal meters spawn
+	// full, and the crouch-slide meter's zero is neither usable charge nor the negative lockout it
+	// uses. Seed exactly as a spawn does, after the properties above have been read.
+	if ( arc.IsLoading() )
+	{
+		secondJumpsRemaining = SecondJumpAmount;
+		secondJumpState = 0;			// SJ_NOT_AVAILABLE
+		secondJumpTics = 0;
+		lastTapValue = 0;
+		lastMoveButtonsBefore = 0;
+		JumpSoundDelay = 0;
+		crouchSlideTics = CrouchSlideMaxTics;
+		wallClimbTics = WallClimbMaxTics;
+		airWallRunTics = AirWallRunMaxTics;
+		isCrouchSliding = false;
+		isWallClimbing = false;
+		isAirWallRunning = false;
+		crouchSlideEffectTics = 0;
+		wallClimbEffectTics = 0;
+		stepInterval = 0;
+	}
 }
 
 //===========================================================================
@@ -884,6 +922,29 @@ void APlayerPawn::PostBeginPlay()
 	// [ZandroX] Establish the runtime standing height used by the crouch recompute
 	// in Tick(). A_SetSize/ACS may later change this on a per-instance basis.
 	FullHeight = GetDefault()->height;
+
+	// [rc4l] features/quake-movement: the second-jump system is live state, not a class property,
+	// so it starts from a known point on every (re)spawn rather than inheriting whatever the class
+	// default object happened to hold. secondJumpsRemaining seeds from the authored allowance so a
+	// player who spawns airborne still has their jumps.
+	secondJumpsRemaining = SecondJumpAmount;
+	secondJumpState = 0;			// SJ_NOT_AVAILABLE
+	secondJumpTics = 0;
+	lastTapValue = 0;
+	lastMoveButtonsBefore = 0;
+	JumpSoundDelay = 0;
+
+	// [rc4l] Traversal charges start full, so a pawn can slide/climb immediately on spawn rather
+	// than having to earn the first one.
+	crouchSlideTics = CrouchSlideMaxTics;
+	wallClimbTics = WallClimbMaxTics;
+	airWallRunTics = AirWallRunMaxTics;
+	isCrouchSliding = false;
+	isWallClimbing = false;
+	isAirWallRunning = false;
+	crouchSlideEffectTics = 0;
+	wallClimbEffectTics = 0;
+	stepInterval = 0;
 
 	// Voodoo dolls: restore original floorz/ceilingz logic
 	if (player == NULL || player->mo != this)
@@ -2968,78 +3029,12 @@ CUSTOM_CVAR (Float, sv_aircontrol, 0.00390625f, CVAR_SERVERINFO|CVAR_NOSAVE|CVAR
 	SERVER_SettingChanged( self, false );
 }
 
-void P_MovePlayer (player_t *player)
+// [rc4l] features/quake-movement: the stock Doom movement model, lifted verbatim out of
+// P_MovePlayer so a second model can sit beside it. The only edit is that `spectatormove` is
+// computed here instead of in the caller, because the jump block below is its only consumer.
+static void P_MovePlayer_Doom (player_t *player, ticcmd_t *cmd)
 {
-	// [BB] A client doesn't know enough about the other players to make their movement.
-	if ( NETWORK_InClientMode() &&
-		(( player - players ) != consoleplayer ) && !CLIENTDEMO_IsFreeSpectatorPlayer ( player ))
-	{
-		return;
-	}
-
-	ticcmd_t *cmd = &player->cmd;
 	APlayerPawn *mo = player->mo;
-
-	// [Leo] cl_spectatormove is now applied here to avoid code duplication.
-	fixed_t spectatormove = FLOAT2FIXED(cl_spectatormove);
-
-	// [AK] The player doesn't look around while using the free chasecam,
-	// so while playing a demo, make sure to not update the local player's
-	// angle during the moments they were using it.
-	if ((player != &players[consoleplayer]) || (CLIENTDEMO_IsPlaying() == false) || (FreeChasecam::enabled == false))
-	{
-		// [AK] Save the player's angle before we update it.
-		const bool usingFreeChasecam = FreeChasecam::IsBeingUsed(player);
-		fixed_t oldAngle = fixed_t::FromUnsignedBits(mo->angle);
-
-		// [AK] If using the free chasecam, temporarily set the player's angle
-		// to that of the free chasecam.
-		if (usingFreeChasecam)
-			mo->angle = FreeChasecam::cameraAngle;
-
-		// [RH] 180-degree turn overrides all other yaws
-		if (player->turnticks)
-		{
-			player->turnticks--;
-			mo->angle += (ANGLE_180 / TURN180_TICKS);
-		}
-		else
-		{
-			mo->angle += cmd->ucmd.yaw << 16;
-		}
-
-		// [AK] If being used, update the free chasecam's angle to the new one,
-		// then reset the player's angle back to what it was before. This way,
-		// the player isn't also looking around while using the free chasecam.
-		if (usingFreeChasecam)
-		{
-			FreeChasecam::cameraAngle = mo->angle;
-			mo->angle = (angle_t)(oldAngle);
-		}
-
-		// [AK] Calculate how much the player's angle changed.
-		// [rc4l] The turn delta is an unsigned wrapping BAM difference; read it back as a signed
-		// int32 so a right turn stays a small negative value instead of a huge positive one after
-		// the fixed_t widening (see angle_interp_compute.h).
-		mo->AngleDelta = fixed_t(zx::AngleAsSignedFixed(mo->angle - (angle_t)oldAngle));
-	}
-	// [AK] Their turn ticks still need to be decremented.
-	else if (player->turnticks)
-	{
-		player->turnticks--;
-	}
-
-	// [AK] Stop here if the player is dead. They only reason this should happen
-	// is because they're the local player and they're using the free chasecam,
-	// so their angle had to be updated.
-	if (player->playerstate == PST_DEAD)
-		return;
-
-	// [TP] Allow spectators to move freely even if the game is suspended.
-	if ( GAME_GetEndLevelDelay( ) && ( player->bSpectating == false ))
-		memset( cmd, 0, sizeof( ticcmd_t ));
-
-	player->onground = (mo->z <= mo->floorz) || (mo->flags2 & MF2_ONMOBJ) || (mo->BounceFlags & BOUNCE_MBF) || (player->cheats & CF_NOCLIP2);
 
 	// killough 10/98:
 	//
@@ -3131,6 +3126,22 @@ void P_MovePlayer (player_t *player)
 				G_FinishChangeSpy( consoleplayer, true );
 		}
 	}
+}
+
+// [rc4l] features/quake-movement: the jump block, lifted out of P_MovePlayer_Doom verbatim so both
+// movement models share one jump. Stage 3 replaces the body with Q-Zandronum's CheckJump (second
+// jump, wall jump, double-tap dash); until then Quake-movement pawns jump exactly like Doom ones.
+static void P_PlayerJump (player_t *player, ticcmd_t *cmd)
+{
+	// [rc4l] features/quake-movement: Quake pawns get the second-jump state machine instead.
+	if (zx::quakemove::UsesQuakeMovement (player->mo) &&
+		zx::quakemove::CheckJumpQuake (player, cmd))
+	{
+		return;
+	}
+
+	// [Leo] cl_spectatormove is now applied here to avoid code duplication.
+	fixed_t spectatormove = FLOAT2FIXED(cl_spectatormove);
 
 	// [RH] check for jump
 	if ( cmd->ucmd.buttons & BT_JUMP )
@@ -3194,6 +3205,91 @@ void P_MovePlayer (player_t *player)
 				SERVERCOMMANDS_SetLocalPlayerJumpTics( player - players );
 		}
 	}
+}
+
+void P_MovePlayer (player_t *player)
+{
+	// [BB] A client doesn't know enough about the other players to make their movement.
+	if ( NETWORK_InClientMode() &&
+		(( player - players ) != consoleplayer ) && !CLIENTDEMO_IsFreeSpectatorPlayer ( player ))
+	{
+		return;
+	}
+
+	ticcmd_t *cmd = &player->cmd;
+	APlayerPawn *mo = player->mo;
+
+	// [AK] The player doesn't look around while using the free chasecam,
+	// so while playing a demo, make sure to not update the local player's
+	// angle during the moments they were using it.
+	if ((player != &players[consoleplayer]) || (CLIENTDEMO_IsPlaying() == false) || (FreeChasecam::enabled == false))
+	{
+		// [AK] Save the player's angle before we update it.
+		const bool usingFreeChasecam = FreeChasecam::IsBeingUsed(player);
+		fixed_t oldAngle = fixed_t::FromUnsignedBits(mo->angle);
+
+		// [AK] If using the free chasecam, temporarily set the player's angle
+		// to that of the free chasecam.
+		if (usingFreeChasecam)
+			mo->angle = FreeChasecam::cameraAngle;
+
+		// [RH] 180-degree turn overrides all other yaws
+		if (player->turnticks)
+		{
+			player->turnticks--;
+			mo->angle += (ANGLE_180 / TURN180_TICKS);
+		}
+		else
+		{
+			mo->angle += cmd->ucmd.yaw << 16;
+		}
+
+		// [AK] If being used, update the free chasecam's angle to the new one,
+		// then reset the player's angle back to what it was before. This way,
+		// the player isn't also looking around while using the free chasecam.
+		if (usingFreeChasecam)
+		{
+			FreeChasecam::cameraAngle = mo->angle;
+			mo->angle = (angle_t)(oldAngle);
+		}
+
+		// [AK] Calculate how much the player's angle changed.
+		// [rc4l] The turn delta is an unsigned wrapping BAM difference; read it back as a signed
+		// int32 so a right turn stays a small negative value instead of a huge positive one after
+		// the fixed_t widening (see angle_interp_compute.h).
+		mo->AngleDelta = fixed_t(zx::AngleAsSignedFixed(mo->angle - (angle_t)oldAngle));
+	}
+	// [AK] Their turn ticks still need to be decremented.
+	else if (player->turnticks)
+	{
+		player->turnticks--;
+	}
+
+	// [AK] Stop here if the player is dead. They only reason this should happen
+	// is because they're the local player and they're using the free chasecam,
+	// so their angle had to be updated.
+	if (player->playerstate == PST_DEAD)
+		return;
+
+	// [TP] Allow spectators to move freely even if the game is suspended.
+	if ( GAME_GetEndLevelDelay( ) && ( player->bSpectating == false ))
+		memset( cmd, 0, sizeof( ticcmd_t ));
+
+	player->onground = (mo->z <= mo->floorz) || (mo->flags2 & MF2_ONMOBJ) || (mo->BounceFlags & BOUNCE_MBF) || (player->cheats & CF_NOCLIP2);
+
+	// [rc4l] features/quake-movement: pick the movement model. UsesQuakeMovement excludes voodoo
+	// dolls and spectators -- spectator movement is a free-fly camera rather than simulated
+	// physics, and Q-Zandronum makes the same two exceptions.
+	bool jumpAlreadyConsumed = false;
+	if (zx::quakemove::UsesQuakeMovement (mo))
+		jumpAlreadyConsumed = zx::quakemove::MovePlayerQuake (player, cmd);
+	else
+		P_MovePlayer_Doom (player, cmd);
+
+	// [rc4l] Swimming, flying and wall climbing all steer with the jump key, so running the jump
+	// block as well would fight them -- a climb would kick the player off the wall they are on.
+	if (jumpAlreadyConsumed == false)
+		P_PlayerJump (player, cmd);
 }		
 
 //==========================================================================
@@ -3584,7 +3680,9 @@ void P_CrouchMove(player_t * player, int direction)
 {
 	fixed_t defaultheight = player->mo->GetDefault()->height;
 	fixed_t savedheight = player->mo->height;
-	fixed_t crouchspeed = direction * CROUCHSPEED;
+	// [rc4l] features/quake-movement: authored crouch rate. Defaults to CROUCHSPEED, so this is
+	// the historic constant unless a class says otherwise.
+	fixed_t crouchspeed = direction * player->mo->CrouchChangeSpeed;
 	fixed_t oldheight = player->viewheight;
 
 	player->crouchdir = (signed char) direction;
@@ -3604,7 +3702,8 @@ void P_CrouchMove(player_t * player, int direction)
 	}
 	player->mo->height = savedheight;
 
-	player->crouchfactor = clamp<fixed_t>(player->crouchfactor, FRACUNIT/2, FRACUNIT);
+	// [rc4l] features/quake-movement: authored crouch depth, defaulting to the historic FRACUNIT/2.
+	player->crouchfactor = clamp<fixed_t>(player->crouchfactor, player->mo->CrouchScale, FRACUNIT);
 	player->viewheight = FixedMul(player->mo->ViewHeight, player->crouchfactor);
 	player->crouchviewdelta = player->viewheight - player->mo->ViewHeight;
 
@@ -3831,7 +3930,11 @@ void P_PlayerThink (player_t *player)
 				{
 					P_CrouchMove(player, 1);
 				}
-				else if (crouchdir == -1 && player->crouchfactor > FRACUNIT/2)
+				// [rc4l] Gate on the pawn's own CrouchScale, not a hardcoded FRACUNIT/2. P_CrouchMove
+				// clamps to CrouchScale, but this caller decides whether to call it at all -- so
+				// while this read FRACUNIT/2, any class authoring a deeper crouch than the historic
+				// half height simply stopped descending at half and never reached its own depth.
+				else if (crouchdir == -1 && player->crouchfactor > player->mo->CrouchScale)
 				{
 					P_CrouchMove(player, -1);
 				}
@@ -3869,7 +3972,14 @@ void P_PlayerThink (player_t *player)
 	// [AK] The local player doesn't execute these if using the free chasecam while dead.
 	else
 	{
-		if (player->jumpTics != 0)
+		// [rc4l] A Quake pawn counts its jump delay down only while grounded, matching
+		// qzandronum@397272811e4f71b168f1949d21369d3e91a7146c. That is what makes Player.JumpDelay
+		// reachable at all: this shared ticker otherwise decrements through the entire airtime, so
+		// by the time the pawn lands jumpTics has already passed the -18 sentinel and been zeroed,
+		// and CheckJumpQuake's "jumpTics < 0" re-arm from JumpDelay can never fire. Doom pawns keep
+		// the unconditional countdown exactly as before.
+		if (player->jumpTics != 0 &&
+			(( zx::quakemove::UsesQuakeMovement( player->mo ) == false ) || player->onground ))
 		{
 			player->jumpTics--;
 			if (player->onground && player->jumpTics < -18)

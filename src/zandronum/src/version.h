@@ -135,6 +135,7 @@ int GetRevisionNumber();
 // [rc4l] 4512: level_info_t / FLevelLocals sky, fade, F1, border and background name fields became
 // FStrings and the sky pair became FTextureIDs (uzdoom@65e8563cf), so the serialised layout changed
 // and older saves must not be read back into it.
+
 // [rc4l] 4513: map names in level snapshots are stored as full strings rather than a fixed
 // 8-character field (uzdoom@8ec95dc58). Upstream numbered the same change 4508; ours is a separate
 // line that was already past that.
@@ -156,7 +157,12 @@ int GetRevisionNumber();
 // DECORATE and from ACS via APROP_DamageMultiplier (uzdoom@99b2cfa14 + e303833e5).
 // [rc4l] 4520: AActor serializes TeleFogSourceType/TeleFogDestType, the per-actor teleport fog
 // classes reachable from DECORATE and from ACS SetTeleFog/SwapTeleFog (uzdoom@30acb7200 cluster).
-#define SAVEVER 4520
+// [rc4l] 4521: AActor serializes mvFlags and APlayerPawn serializes MvType, the Quake movement
+// model and its flag word (features/quake-movement). Numbered above upstream's 4520 rather than
+// reusing the 4513 this branch was written against: saves made by builds 4514-4520 do not contain
+// these fields, and a >= 4513 guard would have read them out of a file that never had them.
+#define SAVEVER 4521
+
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)
