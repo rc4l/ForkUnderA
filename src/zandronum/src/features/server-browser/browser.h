@@ -149,6 +149,12 @@ typedef struct
 	// MD5 because that is what the protocol carries -- see features/wad-download/zx_filehash.h.
 	TArray<FString>	PWADHashes;
 
+	// [rc4l] The server's gameplay flag words, as SQF_ALL_DMFLAGS sends them: dmflags, dmflags2,
+	// zadmflags, compatflags, zacompatflags, compatflags2. Stored as a list rather than six named
+	// fields because the wire format is length-prefixed on purpose -- a newer engine can add a
+	// seventh, and a client that assumed six would silently drop it.
+	TArray<int>		DMFlags;
+
 	// Name of the IWAD being used.
 	FString			IWADName;
 
@@ -203,6 +209,10 @@ const char		*BROWSER_GetPWADName( ULONG ulServer, ULONG ulWadIdx );
 // [rc4l] "" when the server sent no hashes, which is normal -- older servers and any server that
 // chose not to. Callers must treat empty as "cannot check", never as "checked and fine".
 const char		*BROWSER_GetPWADHash( ULONG ulServer, ULONG ulWadIdx );
+// [rc4l] Gameplay flag words. Count is 0 for a server that did not send them (anything older than
+// SQF_ALL_DMFLAGS, or one that chose not to) -- which must read as "unknown", never as "none set".
+LONG			BROWSER_GetNumDMFlags( ULONG ulServer );
+int				BROWSER_GetDMFlag( ULONG ulServer, ULONG ulIdx );
 const char		*BROWSER_GetIWADName( ULONG ulServer );
 GAMEMODE_e		BROWSER_GetGameMode( ULONG ulServer );
 LONG			BROWSER_GetNumPlayers( ULONG ulServer );

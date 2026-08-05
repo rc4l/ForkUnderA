@@ -128,12 +128,20 @@ FString g_VersionWithOS;
 //--------------------------------------------------------------------------------------------------------------------------------------------------
 static void server_registry_WriteName( const LauncherResponseContext &ctx )
 {
-	// [AK] Remove any color codes in the server name first.
-	FString uncolorizedHostname = sv_hostname.GetGenericRep( CVAR_String ).String;
-	V_ColorizeString( uncolorizedHostname );
-	V_RemoveColorCodes( uncolorizedHostname );
+	// [rc4l] The name goes out WITH its colour codes. Upstream stripped them here ([AK]'s
+	// V_RemoveColorCodes), because launchers of the day rendered the escape byte as a control
+	// character rather than a colour -- Doomseeker still has no handling for them at all, so a
+	// coloured name shows up there as boxes.
+	//
+	// We send them anyway. An operator who writes "\cdColourful" meant it to be colourful, and the
+	// browser this engine ships renders it; the cost is that ZandroX servers look odd in a launcher
+	// we are not building for. FFont::StringWidth already skips escapes when measuring, so the only
+	// thing that needed care on the reading side was truncation -- see
+	// features/server-browser/computation/colortext_compute.h.
+	FString hostname = sv_hostname.GetGenericRep( CVAR_String ).String;
+	V_ColorizeString( hostname );
 
-	ctx.pByteStream->WriteString( uncolorizedHostname );
+	ctx.pByteStream->WriteString( hostname );
 }
 
 //*****************************************************************************

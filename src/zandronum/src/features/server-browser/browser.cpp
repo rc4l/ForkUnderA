@@ -310,6 +310,29 @@ const char *BROWSER_GetPWADHash( ULONG ulServer, ULONG ulWadIdx )
 
 //*****************************************************************************
 //
+LONG BROWSER_GetNumDMFlags( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( 0 );
+
+	return ( static_cast<LONG>( g_BrowserServerList[ulServer].DMFlags.Size( )));
+}
+
+//*****************************************************************************
+//
+int BROWSER_GetDMFlag( ULONG ulServer, ULONG ulIdx )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( 0 );
+
+	if ( ulIdx >= g_BrowserServerList[ulServer].DMFlags.Size( ))
+		return ( 0 );
+
+	return ( g_BrowserServerList[ulServer].DMFlags[ulIdx] );
+}
+
+//*****************************************************************************
+//
 const char *BROWSER_GetIWADName( ULONG ulServer )
 {
 	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
@@ -957,11 +980,15 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		pByteStream->ReadString();
 
 	// [BB] All dmflags and compatflags.
+	// [rc4l] Kept rather than discarded: this is what the detail panel lists. Read by the count the
+	// server sent rather than an assumed six, so a newer engine adding a word neither desynchronises
+	// the stream nor loses the value.
 	if ( ulFlags & SQF_ALL_DMFLAGS )
 	{
 		const ULONG ulNumFlags = pByteStream->ReadByte();
+		g_BrowserServerList[lServer].DMFlags.Clear( );
 		for ( ULONG ulIdx = 0; ulIdx < ulNumFlags; ulIdx++ )
-			pByteStream->ReadLong();
+			g_BrowserServerList[lServer].DMFlags.Push( pByteStream->ReadLong( ));
 	}
 
 	// [BB] Get special security settings like sv_fua_serverregistry_enforcebans.
@@ -1259,7 +1286,7 @@ static void browser_QueryServer( ULONG ulServer )
 	// [SB] Added extended flags that we want.
 	g_ServerBuffer.Clear();
 	g_ServerBuffer.ByteStream.WriteLong( LAUNCHER_SERVER_CHALLENGE );
-	g_ServerBuffer.ByteStream.WriteLong( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_PWADS|SQF_GAMETYPE|SQF_IWAD|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_EXTENDED_INFO );
+	g_ServerBuffer.ByteStream.WriteLong( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_PWADS|SQF_GAMETYPE|SQF_IWAD|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_ALL_DMFLAGS|SQF_EXTENDED_INFO );
 	g_ServerBuffer.ByteStream.WriteLong( I_MSTime( ));
 	// [rc4l] SQF2_COUNTRY added: the flag column needs it, and the server has always been willing to
 	// send it -- the old browser asked for everything except the one field it then read and discarded.
