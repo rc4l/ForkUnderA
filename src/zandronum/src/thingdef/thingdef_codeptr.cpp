@@ -5908,21 +5908,35 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ScaleVelocity)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeVelocity)
 {
-	ACTION_PARAM_START(4);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_FIXED(x, 0);
 	ACTION_PARAM_FIXED(y, 1);
 	ACTION_PARAM_FIXED(z, 2);
 	ACTION_PARAM_INT(flags, 3);
+	ACTION_PARAM_INT(ptr, 4);	// [rc4l] uzdoom@105a62cc2
+
+	// [rc4l] uzdoom@105a62cc2 -- the velocity change can now be aimed at a pointer, so `ref` is
+	// the actor actually mutated. Both Zandronum netcode sites follow `ref` rather than `self`:
+	// the client guard, because a client must not simulate whichever actor the server owns, and
+	// the broadcast, because it is ref's velocity the clients need. COPY_AAPTR therefore has to
+	// run BEFORE the guard, unlike the original which could test self immediately.
+	AActor *ref = COPY_AAPTR(self, ptr);
+
+	if (!ref)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
 
 	// [TP] This is handled by the server.
-	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+	if ( NETWORK_InClientModeAndActorNotClientHandled( ref ) )
 		return;
 
-	INTBOOL was_moving = (INTBOOL)(self->velx | self->vely | self->velz);
+	INTBOOL was_moving = (INTBOOL)(ref->velx | ref->vely | ref->velz);
 
 	fixed_t vx = x, vy = y, vz = z;
-	fixed_t sina = finesine[self->angle >> ANGLETOFINESHIFT];
-	fixed_t cosa = finecosine[self->angle >> ANGLETOFINESHIFT];
+	fixed_t sina = finesine[ref->angle >> ANGLETOFINESHIFT];
+	fixed_t cosa = finecosine[ref->angle >> ANGLETOFINESHIFT];
 
 	if (flags & 1)	// relative axes - make x, y relative to actor's current angle
 	{
@@ -5931,25 +5945,25 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeVelocity)
 	}
 	if (flags & 2)	// discard old velocity - replace old velocity with new velocity
 	{
-		self->velx = vx;
-		self->vely = vy;
-		self->velz = vz;
+		ref->velx = vx;
+		ref->vely = vy;
+		ref->velz = vz;
 	}
 	else	// add new velocity to old velocity
 	{
-		self->velx += vx;
-		self->vely += vy;
-		self->velz += vz;
+		ref->velx += vx;
+		ref->vely += vy;
+		ref->velz += vz;
 	}
 
 	if (was_moving)
 	{
-		CheckStopped(self);
+		CheckStopped(ref);
 	}
 
 	// [TP] Inform the clients about the velocity change.
-	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
-		SERVERCOMMANDS_MoveThingExact( self, CM_VELX|CM_VELY|CM_VELZ );
+	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( ref ) == false ))
+		SERVERCOMMANDS_MoveThingExact( ref, CM_VELX|CM_VELY|CM_VELZ );
 }
 
 //===========================================================================
