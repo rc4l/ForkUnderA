@@ -74,6 +74,7 @@
 #include "d_dehacked.h"
 #include "v_text.h"
 #include "voicechat.h"
+#include "features/wad-serve/zx_wadserve.h" // [rc4l] the direct-download port we advertise
 
 // [SB] This is easier than updating the parameters for a load of functions every time I want to add something.
 struct LauncherResponseContext
@@ -511,6 +512,23 @@ static void server_registry_WriteVoicechat( const LauncherResponseContext &ctx )
 }
 
 //*****************************************************************************
+// [rc4l] Where to fetch this server's own WADs, for the files no mirror has because they were built
+// this afternoon. A byte of flags and the TCP port, always both, so the field has one shape whatever
+// the answer -- port 0 says "not serving" rather than the field being absent.
+//
+// The address is not sent: the client already knows it, having just received a reply from it. Sending
+// one would only create a way for a server to point clients at somebody else's machine.
+static void server_registry_WriteDirectDownload( const LauncherResponseContext &ctx )
+{
+	int flags = 0;
+	if ( zx::wadserve::PrefersMirrors( ))
+		flags |= 1;
+
+	ctx.pByteStream->WriteByte( flags );
+	ctx.pByteStream->WriteShort( zx::wadserve::Port( ));
+}
+
+//*****************************************************************************
 // [SB] And now the big maps of functions.
 static const std::map<ULONG, LauncherFieldFunction> ResponseFunctions[] =
 {
@@ -554,6 +572,7 @@ static const std::map<ULONG, LauncherFieldFunction> ResponseFunctions[] =
 		{ SQF2_GAMEMODE_NAME,		server_registry_WriteGameModeName },
 		{ SQF2_GAMEMODE_SHORTNAME,	server_registry_WriteGameModeShortName },
 		{ SQF2_VOICECHAT,			server_registry_WriteVoicechat },
+		{ SQF2_FUA_DIRECT_DOWNLOAD,	server_registry_WriteDirectDownload },
 	}
 };
 
