@@ -1,0 +1,42 @@
+# ZandroX IWAD substitutes
+# format-version: 1
+#
+# What to load when a server's IWAD is a game you do not own. Freedoom is a from-scratch, BSD-licensed
+# replacement for Doom's data, so a client with Freedoom can load a Doom II mod's resources without
+# owning Doom II -- and Zandronum's own wiki says as much: Freedoom "will allow users to connect to
+# almost any server plausible".
+#
+# This only ever applies when the REAL IWAD is missing. If doom2.wad is anywhere the engine looks, the
+# server's actual IWAD is what gets loaded -- a substitute is a fallback, never a preference.
+#
+# WHAT THIS DOES NOT FIX: Freedoom's own maps are not Doom's maps. On a server running stock MAP01
+# out of doom2.wad, a substituted client loads Freedoom's MAP01 -- different geometry -- and
+# Zandronum's level authentication will reject it. The case this is actually for is the common one:
+# a server running a PWAD that replaces every map, where the IWAD supplies only textures, sounds and
+# actor definitions. That is most of the Zandronum browser. The engine says which it did, and
+# cl_fua_iwad_substitute turns it off.
+#
+# Compiled into the binary at build time by tools/gen-wadlists.cmake, same as the other lists.
+#
+# One substitution per line:
+#   <the server's IWAD>    <what we load instead>    <notes>
+#
+# Only the first two tokens are read. The replacement must itself appear in iwadallowlist.txt -- if it
+# is not free to redistribute, it is no use as a substitute for something that is not.
+#
+# Blank lines and lines starting with # are ignored. Matching is case-insensitive.
+
+# Doom II and the Final Doom episodes: MAP01-MAP32 format, so Freedoom: Phase 2 stands in.
+doom2.wad         freedoom2.wad    Doom II
+doom2f.wad        freedoom2.wad    Doom II (French)
+bfgdoom2.wad      freedoom2.wad    Doom II: BFG Edition
+doom2bfg.wad      freedoom2.wad    Doom II: BFG Edition
+tnt.wad           freedoom2.wad    Final Doom: TNT Evilution
+plutonia.wad      freedoom2.wad    Final Doom: The Plutonia Experiment
+
+# Doom 1 and its re-releases: episodic ExMy format, so Freedoom: Phase 1 stands in.
+doom.wad          freedoom1.wad    The Ultimate Doom
+doom1.wad         freedoom1.wad    Doom shareware
+doomu.wad         freedoom1.wad    The Ultimate Doom
+bfgdoom.wad       freedoom1.wad    Doom: BFG Edition
+doombfg.wad       freedoom1.wad    Doom: BFG Edition

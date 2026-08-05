@@ -20,6 +20,8 @@
 #include <vector>
 
 #include "doomtype.h"
+#include "c_console.h"
+#include "c_cvars.h"
 #include "c_dispatch.h"
 #include "v_text.h"
 #include "d_main.h"		// D_AddFile
@@ -27,8 +29,19 @@
 
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/joinplan_compute.h"
+#include "features/wad-download/computation/iwadsubstitute_compute.h"
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wadreload/zx_wadreload.h"
+
+// [rc4l] Load Freedoom when the server's IWAD is a game you do not own. Only ever a fallback -- the
+// server's real IWAD wins whenever it can be found -- and only for the games Freedoom actually
+// replaces; see features/wad-download/computation/iwadsubstitute_compute.h.
+//
+// A CVAR because the player is the one who can tell which case they are in. On a server running a
+// PWAD that replaces every map (most of the browser) substitution just works; on one running stock
+// Doom II levels the geometry differs and Zandronum's level authentication rejects the client, and
+// then this is the switch that gets the plain "you are missing doom2.wad" back.
+CVAR( Bool, cl_fua_iwad_substitute, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 
 namespace
 {
@@ -106,9 +119,38 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 	{
 		TArray<FString> iwadResolved;
 		if (D_AddFile(iwadResolved, plan.iwadName.GetChars()) && iwadResolved.Size() > 0)
+		{
 			iwadPath = iwadResolved[0];
+		}
 		else
-			missing.push_back(zx::waddownload::WantedFile(plan.iwadName.GetChars(), true));
+		{
+			// [rc4l] Owning the server's IWAD always wins -- we only get here having failed to find
+			// it. Freedoom is a from-scratch replacement for Doom's data, so a server on doom2.wad
+			// is joinable without owning Doom II. Substituting is second-best and says so; refusing
+			// the join outright would be worse for the case this mostly hits, which is a server
+			// running a PWAD that replaces every map and uses the IWAD only for its resources.
+			const std::string sub = cl_fua_iwad_substitute
+				? zx::FreeIwadSubstituteFor(plan.iwadName.GetChars()) : std::string();
+
+			TArray<FString> subResolved;
+			if (!sub.empty() && D_AddFile(subResolved, sub.c_str()) && subResolved.Size() > 0)
+			{
+				iwadPath = subResolved[0];
+				Printf(TEXTCOLOR_GOLD "This server wants %s, which you don't have. "
+					"Loading %s instead.\n" TEXTCOLOR_NORMAL
+					"If the server is on its own maps this works; on stock maps it will not, and "
+					"cl_fua_iwad_substitute 0 turns it off.\n",
+					plan.iwadName.GetChars(), sub.c_str());
+			}
+			else
+			{
+				// Ask for the substitute rather than the game itself: the substitute is on the
+				// download allowlist, so this is a join that can actually complete. With no
+				// substitute we ask for the original, and the gate refuses it with the reason.
+				missing.push_back(zx::waddownload::WantedFile(
+					sub.empty() ? plan.iwadName.GetChars() : sub, true));
+			}
+		}
 	}
 
 	// Resolve every name to a real file. D_AddFile pushes the RESOLVED path, so `resolved` ends up

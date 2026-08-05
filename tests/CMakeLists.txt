@@ -71,10 +71,11 @@ add_custom_command(OUTPUT "${ZX_GEN_LISTS}"
   COMMAND ${CMAKE_COMMAND}
     "-DIWAD_LIST=${ZX_REPO_ROOT}/iwadallowlist.txt"
     "-DSITE_LIST=${ZX_REPO_ROOT}/waddownloadsites.txt"
+    "-DSUBST_LIST=${ZX_REPO_ROOT}/iwadsubstitutes.txt"
     "-DOUT=${ZX_GEN_LISTS}"
     -P "${ZX_REPO_ROOT}/tools/gen-wadlists.cmake"
   DEPENDS "${ZX_REPO_ROOT}/iwadallowlist.txt" "${ZX_REPO_ROOT}/waddownloadsites.txt"
-          "${ZX_REPO_ROOT}/tools/gen-wadlists.cmake"
+          "${ZX_REPO_ROOT}/iwadsubstitutes.txt" "${ZX_REPO_ROOT}/tools/gen-wadlists.cmake"
   COMMENT "Generating zx_waddownload_lists.h from iwadallowlist.txt / waddownloadsites.txt")
 
 add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_GEN_LISTS}")
