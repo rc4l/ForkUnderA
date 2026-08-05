@@ -392,6 +392,8 @@ Const Int WARPF_STOP = 0x80;
 Const Int WARPF_TOFLOOR = 0x100;
 Const Int WARPF_TESTONLY = 0x200;
 Const Int WARPF_ABSOLUTEPOSITION = 0x400;
+Const Int WARPF_BOB = 0x800;
+Const Int WARPF_MOVEPTR = 0x1000;
 // [rc4l] uzdoom@364d9069b: the original misspelling, kept as an alias so a mod written
 // against it still parses. Upstream carries it to this day (zscript/constants.zs).
 Const Int WAPRF_ABSOLUTEPOSITION = 0x400;

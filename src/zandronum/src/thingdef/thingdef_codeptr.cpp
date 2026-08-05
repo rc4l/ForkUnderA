@@ -3644,6 +3644,25 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetHitSize)
 
 //===========================================================================
 //
+// A_SetFloatBobPhase
+//
+// Changes the FloatBobPhase of the actor.
+//
+//===========================================================================
+
+// [rc4l] uzdoom@643d37ab7
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetFloatBobPhase)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(bob, 0);
+
+	//Respect float bob phase limits.
+	if (self && (bob >= 0 && bob <= 63))
+		self->FloatBobPhase = bob;
+}
+
+//===========================================================================
+//
 // A_SetRipperLevel(int level)
 // A_SetRipMin(int minimum)
 // A_SetRipMax(int maximum)
@@ -6435,6 +6454,8 @@ enum WARPF
 	WARPF_TOFLOOR = 0x100,
 	WARPF_TESTONLY = 0x200,
 	WARPF_ABSOLUTEPOSITION = 0x400,	// [rc4l] uzdoom@68a5db3c8
+	WARPF_BOB				= 0x800,	// [rc4l] uzdoom@643d37ab7
+	WARPF_MOVEPTR			= 0x1000,
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
@@ -6451,22 +6472,35 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 
 	// [rc4l] uzdoom@b6f486202: initialise at declaration. The rotation branch below reads oldx
 	// before the assignment further down ever runs, so it was using an uninitialised value.
-	fixed_t	oldx = self->x;
-	fixed_t	oldy = self->y;
-	fixed_t	oldz = self->z;
+	fixed_t	oldx = 0, oldy = 0, oldz = 0;
 
 	// [BB] This is handled server-side.
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
 		return;
 
 	AActor *reference = COPY_AAPTR(self, destination_selector);
-	const MOVE_THING_DATA_s oldPositionData ( self ); // [TP]
 
+	//If there is no actor to warp to, fail.
 	if (!reference)
 	{
 		ACTION_SET_RESULT(false);
 		return;
 	}
+
+	// [rc4l] uzdoom@643d37ab7 -- WARPF_MOVEPTR inverts the operation: the POINTED actor is moved
+	// and the original caller only reports success. Everything below therefore acts on `caller`,
+	// which is why the [TP] position snapshot and the SERVERCOMMANDS broadcast at the end follow
+	// `caller` and not `self` -- otherwise the server would tell clients the wrong actor moved.
+	AActor *caller = self;
+
+	if (flags & WARPF_MOVEPTR)
+	{
+		AActor *temp = reference;
+		reference = caller;
+		caller = temp;
+	}
+
+	const MOVE_THING_DATA_s oldPositionData ( caller ); // [TP]
 
 	if (!(flags & WARPF_ABSOLUTEANGLE))
 	{
@@ -6478,9 +6512,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 	// WARPF_TESTONLY below restores from oldx/oldy/oldz, and in absolute mode upstream never
 	// assigns them, so a TESTONLY absolute warp would restore a stale position (oldx is reused
 	// as a scratch temp just above). Both paths need the save.
-	oldx = self->x;
-	oldy = self->y;
-	oldz = self->z;
+	oldx = caller->x;
+	oldy = caller->y;
+	oldz = caller->z;
 
 	if (!(flags & WARPF_ABSOLUTEPOSITION))
 	{
@@ -6501,7 +6535,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 		{
 			// set correct xy
 
-			self->SetOrigin(
+			caller->SetOrigin(
 				reference->x + xofs,
 				reference->y + yofs,
 				reference->z);
@@ -6512,10 +6546,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 			if (zofs)
 			{
 				// extra unlink, link and environment calculation
-				self->SetOrigin(
-					self->x,
-					self->y,
-					self->floorz + zofs);
+				caller->SetOrigin(
+					caller->x,
+					caller->y,
+					caller->floorz + zofs);
 			}
 			else
 			{
@@ -6523,12 +6557,12 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 				// already identified floor
 
 				// A_Teleport does the same thing anyway
-				self->z = self->floorz;
+				caller->z = caller->floorz;
 			}
 		}
 		else
 		{
-			self->SetOrigin(
+			caller->SetOrigin(
 				reference->x + xofs,
 				reference->y + yofs,
 				reference->z + zofs);
@@ -6538,11 +6572,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 	{
 		if (flags & WARPF_TOFLOOR)
 		{
-			self->SetOrigin(xofs, yofs, self->floorz + zofs);
+			caller->SetOrigin(xofs, yofs, caller->floorz + zofs);
 		}
 		else
 		{
-			self->SetOrigin(xofs, yofs, zofs);
+			caller->SetOrigin(xofs, yofs, zofs);
 		}
 	}
 	
@@ -6550,42 +6584,48 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 	{
 		if (flags & WARPF_TESTONLY)
 		{
-			self->SetOrigin(oldx, oldy, oldz);
+			caller->SetOrigin(oldx, oldy, oldz);
 		}
 		else
 		{
-			self->angle = angle;
+			caller->angle = angle;
 
 			if (flags & WARPF_STOP)
 			{
-				self->velx = 0;
-				self->vely = 0;
-				self->velz = 0;
+				caller->velx = 0;
+				caller->vely = 0;
+				caller->velz = 0;
 			}
 
 			if (flags & WARPF_WARPINTERPOLATION)
 			{
-				self->PrevX += self->x - oldx;
-				self->PrevY += self->y - oldy;
-				self->PrevZ += self->z - oldz;
+				caller->PrevX += caller->x - oldx;
+				caller->PrevY += caller->y - oldy;
+				caller->PrevZ += caller->z - oldz;
 			}
 			else if (flags & WARPF_COPYINTERPOLATION)
 			{
-				self->PrevX = self->x + reference->PrevX - reference->x;
-				self->PrevY = self->y + reference->PrevY - reference->y;
-				self->PrevZ = self->z + reference->PrevZ - reference->z;
+				caller->PrevX = caller->x + reference->PrevX - reference->x;
+				caller->PrevY = caller->y + reference->PrevY - reference->y;
+				caller->PrevZ = caller->z + reference->PrevZ - reference->z;
 			}
 			else if (! (flags & WARPF_INTERPOLATE))
 			{
-				self->PrevX = self->x;
-				self->PrevY = self->y;
-				self->PrevZ = self->z;
+				caller->PrevX = caller->x;
+				caller->PrevY = caller->y;
+				caller->PrevZ = caller->z;
+			}
+
+			// [rc4l] uzdoom@643d37ab7
+			if ((flags & WARPF_BOB) && (reference->flags2 & MF2_FLOATBOB))
+			{
+				caller->z += reference->GetBobOffset();
 			}
 		}
 
 		// [BB] Inform the clients.
-		if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
-			SERVERCOMMANDS_MoveThingIfChanged( self, oldPositionData );
+		if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( caller ) == false ))
+			SERVERCOMMANDS_MoveThingIfChanged( caller, oldPositionData );
 
 		if (success_state)
 		{
@@ -6599,7 +6639,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 	}
 	else
 	{
-		self->SetOrigin(oldx, oldy, oldz);
+		caller->SetOrigin(oldx, oldy, oldz);
 		ACTION_SET_RESULT(false);
 	}
 
