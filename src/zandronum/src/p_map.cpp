@@ -5512,7 +5512,8 @@ CUSTOM_CVAR(Float, chase_dist, 90.f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 void P_AimCamera(AActor *t1, fixed_t &CameraX, fixed_t &CameraY, fixed_t &CameraZ, sector_t *&CameraSector)
 {
-	fixed_t distance = (fixed_t)(chase_dist * FRACUNIT);
+	// [rc4l] uzdoom@e0667544d: unclamped these overflow fixed_t and throw the camera off the map.
+	fixed_t distance = FLOAT2FIXED(clamp<float>(chase_dist, 0.f, 30000.f));
 	// [AK] If we're using free chasecam, use the angle and pitch of the camera.
 	// If not, use the passed actor's angle and pitch.
 	const bool usingFreeChasecam = FreeChasecam::IsBeingUsed();
@@ -5525,7 +5526,7 @@ void P_AimCamera(AActor *t1, fixed_t &CameraX, fixed_t &CameraY, fixed_t &Camera
 	vy = FixedMul(finecosine[pitch], finesine[angle]);
 	vz = finesine[pitch];
 
-	sz = t1->z - t1->floorclip + t1->height + (fixed_t)(chase_height * FRACUNIT);
+	sz = t1->z - t1->floorclip + t1->height + FLOAT2FIXED(clamp<float>(chase_height, -1000.f, 1000.f));	// [rc4l] uzdoom@e0667544d
 
 	if (Trace(t1->x, t1->y, sz, t1->Sector,
 		vx, vy, vz, distance, 0, 0, NULL, trace) &&
@@ -6103,7 +6104,9 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 			points *= (double)(double(thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT)) / (double)FRACUNIT);
 
 			// points and bombdamage should be the same sign
-			if ((points * bombdamage) > 0 && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
+			// [rc4l] uzdoom@62a4945ca: a CAUSEPAIN bomb must reach the victim even when the radius
+			// damage works out to zero, or it can never trigger the pain it exists to cause.
+			if (((bombspot->flags7 & MF7_CAUSEPAIN) || (points * bombdamage) > 0) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
 			{ // OK to damage; target is in direct path
 				double velz;
 				double thrust;

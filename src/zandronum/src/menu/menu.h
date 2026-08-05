@@ -341,6 +341,24 @@ public:
 	virtual bool MouseEvent(int type, int x, int y);
 	virtual bool CheckHotkey(int c);
 	virtual int GetWidth();
+	// [rc4l] Where the item actually PAINTS, which is not always where it is positioned.
+	//
+	// DrawTexture honours a patch's own offsets, so a StaticPatch lands at (x - leftoffset,
+	// y - topoffset), not at (x, y). Freedoom's M_DOOM is offset (13,-16): given `StaticPatch 94, 2`
+	// it paints at (81, 18) -- sixteen rows lower and thirteen left of its stated position. Layout
+	// code that measures the stated position therefore computes a rectangle the content does not sit
+	// in: too high (the panel ran off the top of the screen and got clamped to the edge) and skewed
+	// right (the rows looked off-centre inside it).
+	//
+	// Text reports its own position unchanged, so the base is the identity.
+	virtual int GetDrawnX() { return mXpos; }
+	virtual int GetDrawnY() { return mYpos; }
+	// [rc4l] How tall the item's own pixels are, or 0 when it cannot say -- the caller then falls
+	// back to the descriptor's linespacing. Layout that pads below the LINE BOX rather than below the
+	// glyphs leaves the leftover leading as extra gap, so a panel ends up with more space under its
+	// last row than above its first: the same class of error as measuring the stated position instead
+	// of the drawn one.
+	virtual int GetDrawnHeight() { return 0; }
 	void DrawSelector(int xofs, int yofs, FTextureID tex);
 	void OffsetPositionY(int ydelta) { mYpos += ydelta; }
 	int GetY() { return mYpos; }
@@ -360,6 +378,10 @@ public:
 	FListMenuItemStaticPatch(int x, int y, FTextureID patch, bool centered);
 	void Drawer(bool selected);
 	int GetWidth();	// [rc4l] so layout code (e.g. FUAPanelListMenu) can measure the logo
+	// [rc4l] Corrected for the patch's own offsets -- see the base declarations.
+	int GetDrawnX();
+	int GetDrawnY();
+	int GetDrawnHeight();
 };
 
 class FListMenuItemStaticText : public FListMenuItem
@@ -457,6 +479,7 @@ public:
 	~FListMenuItemText();
 	void Drawer(bool selected);
 	int GetWidth();
+	int GetDrawnHeight();	// [rc4l] the font's glyph height, not the row's line box
 };
 
 class FListMenuItemPatch : public FListMenuItemSelectable
@@ -466,6 +489,10 @@ public:
 	FListMenuItemPatch(int x, int y, int height, int hotkey, FTextureID patch, FName child, int param = 0);
 	void Drawer(bool selected);
 	int GetWidth();
+	// [rc4l] Corrected for the patch's own offsets, same as the static variant.
+	int GetDrawnX();
+	int GetDrawnY();
+	int GetDrawnHeight();
 };
 
 //=============================================================================

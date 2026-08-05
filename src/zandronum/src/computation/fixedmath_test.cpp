@@ -11,6 +11,7 @@
 
 namespace
 {
+#ifdef __SIZEOF_INT128__
 TEST(FixedMath, GenericForms)
 {
 	EXPECT_EQ(Scale(1000, 7, 5), (int64_t)(((__int128)1000 * 7) / 5));
@@ -22,6 +23,7 @@ TEST(FixedMath, GenericForms)
 	const int64_t big = 1LL << 40;
 	EXPECT_EQ(Scale(big, 1000, 7), (int64_t)(((__int128)big * 1000) / 7));
 }
+#endif // __SIZEOF_INT128__
 
 TEST(FixedMath, KsgnAllBranches)
 {
@@ -30,12 +32,14 @@ TEST(FixedMath, KsgnAllBranches)
 	EXPECT_EQ(ksgn(0), 0);
 }
 
+#ifdef __SIZEOF_INT128__
 TEST(FixedMath, BoundMulScaleCarriesFullValue)
 {
 	// [rc4l] Now 64-bit: the product that used to clamp to INT32_MAX is carried in full.
 	EXPECT_EQ(BoundMulScale(4, 8, 2), 8);
 	EXPECT_EQ(BoundMulScale(0x40000000, 0x40000000, 0), (int64_t)((__int128)0x40000000 * 0x40000000));
 }
+#endif // __SIZEOF_INT128__
 
 TEST(FixedMath, ClearBuffers)
 {
@@ -53,6 +57,7 @@ TEST(FixedMath, ClearBuffers)
 	EXPECT_EQ(DMulScale##N(11, 22, 33, 44), (int64_t)((((__int128)11 * 22) + ((__int128)33 * 44)) >> N)); \
 	EXPECT_EQ(TMulScale##N(11, 22, 33, 44, 55, 66), (int64_t)((((__int128)11 * 22) + ((__int128)33 * 44) + ((__int128)55 * 66)) >> N));
 
+#ifdef __SIZEOF_INT128__
 TEST(FixedMath, EveryFixedShiftVariant)
 {
 	ZX_CHECK_N(1)  ZX_CHECK_N(2)  ZX_CHECK_N(3)  ZX_CHECK_N(4)
@@ -64,8 +69,10 @@ TEST(FixedMath, EveryFixedShiftVariant)
 	ZX_CHECK_N(25) ZX_CHECK_N(26) ZX_CHECK_N(27) ZX_CHECK_N(28)
 	ZX_CHECK_N(29) ZX_CHECK_N(30) ZX_CHECK_N(31) ZX_CHECK_N(32)
 }
+#endif // __SIZEOF_INT128__
 #undef ZX_CHECK_N
 
+#ifdef __SIZEOF_INT128__
 // [rc4l] The widened forms carry giant operands the old 32-bit intermediate would truncate.
 TEST(FixedMath, WidenedFormsCarryGiantOperands)
 {
@@ -73,4 +80,5 @@ TEST(FixedMath, WidenedFormsCarryGiantOperands)
 	EXPECT_EQ(MulScale16(big, 3), (int64_t)(((__int128)big * 3) >> 16));
 	EXPECT_EQ(DMulScale16(big, 3, 5, 7), (int64_t)((((__int128)big * 3) + ((__int128)5 * 7)) >> 16));
 }
+#endif // __SIZEOF_INT128__
 } // namespace
