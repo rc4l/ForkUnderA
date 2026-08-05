@@ -3662,6 +3662,57 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetFloatBobPhase)
 }
 
 //===========================================================================
+// A_SetHealth
+//
+// Changes the health of the actor.
+// Takes a pointer as well.
+//===========================================================================
+
+// [rc4l] uzdoom@4fd87a1ce
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetHealth)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(health, 0);
+	ACTION_PARAM_INT(ptr, 1);
+
+	AActor *mobj = COPY_AAPTR(self, ptr);
+
+	if (!mobj)
+	{
+		return;
+	}
+
+	// [rc4l] Health is server-authoritative: a client must not set it itself or it will fight
+	// the server's value. The broadcasts below are what actually move it to the clients.
+	if ( NETWORK_InClientMode() )
+		return;
+
+	player_t *player = mobj->player;
+	if (player)
+	{
+		if (health <= 0)
+			player->mo->health = mobj->health = player->health = 1; //Copied from the buddha cheat.
+		else
+			player->mo->health = mobj->health = player->health = health;
+
+		// [rc4l] Tell the clients about the new health.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetPlayerHealth( player - players );
+	}
+	else if (mobj)
+	{
+		if (health <= 0)
+			mobj->health = 1;
+		else
+			mobj->health = health;
+
+		// [rc4l] Tell the clients about the new health.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetThingHealth( mobj );
+	}
+}
+
+//===========================================================================
 //
 // A_SetRipperLevel(int level)
 // A_SetRipMin(int minimum)
