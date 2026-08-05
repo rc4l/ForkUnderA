@@ -10,6 +10,7 @@
 // drains on the main thread. Printf off the main thread has already crashed this engine once (see
 // zx_updater.h); it is not a rule to relax.
 
+#include <chrono>
 #include <cstdio>
 #include <mutex>
 #include <string>
@@ -149,6 +150,28 @@ bool Cancelled()
 	return g_cancel;
 }
 
+// [rc4l] How long to wait out a server that has the file but no free download slot, and how many
+// times. Four minutes total: long enough to outlast the transfer ahead of us at the default slot
+// count, short enough that a player is not left staring at a frozen join if the server never frees
+// one. After that the other mirrors are tried, which is the right order -- the server is the source
+// most likely to have the file, not the only one allowed to.
+const int kMaxBusyWaits = 8;
+const int kBusyWaitMs = 30000;
+
+// Sleep in slices so a cancel is noticed in a third of a second rather than half a minute. Returns
+// false if the run was cancelled while waiting.
+bool SleepUnlessCancelled(int totalMs)
+{
+	const int sliceMs = 250;
+	for (int waited = 0; waited < totalMs; waited += sliceMs)
+	{
+		if (Cancelled())
+			return false;
+		std::this_thread::sleep_for(std::chrono::milliseconds(sliceMs));
+	}
+	return !Cancelled();
+}
+
 // The first bytes of `path`, for the content gate. Short reads are fine -- a file too small to have a
 // header is not an IWAD, and ClassifyDownloadedFile says so.
 size_t ReadHeader(const std::string &path, char *out, size_t want)
@@ -200,10 +223,33 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 	std::string rejectReason;
 
 	bool got = false;
+	int busyWaits = 0;
 	for (size_t i = 0; i < urls.size() && !got; ++i)
 	{
-		const zx::HttpFileResult r =
-			zx::HttpGetToFile(urls[i].c_str(), partPath.c_str(), job.maxBytes, OnProgress, NULL);
+		// [rc4l] 503 is the one failure worth waiting through rather than walking past. It means this
+		// host HAS the file and is out of download slots -- which for a server serving its own WADs
+		// is the ordinary state during a map change, when everyone joins at once. Moving on there
+		// would abandon the only source certain to have a file that may exist nowhere else. So the
+		// SAME url is retried a few times before the rest of the list is considered.
+		zx::HttpFileResult r = zx::HttpFileResult::NetworkError;
+		for (;;)
+		{
+			r = zx::HttpGetToFile(urls[i].c_str(), partPath.c_str(), job.maxBytes, OnProgress, NULL);
+			if (r != zx::HttpFileResult::Busy)
+				break;
+
+			if (busyWaits >= kMaxBusyWaits)
+			{
+				Say("Gave up waiting for a download slot; trying other sites.");
+				break;					// falls into the switch's default: next mirror
+			}
+
+			busyWaits++;
+			Say(std::string("Every download slot on that server is busy; waiting (attempt ")
+				+ std::to_string(busyWaits) + " of " + std::to_string(kMaxBusyWaits) + ").");
+			if (!SleepUnlessCancelled(kBusyWaitMs))
+				return false;
+		}
 
 		switch (r)
 		{
