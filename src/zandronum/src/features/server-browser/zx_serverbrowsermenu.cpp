@@ -183,6 +183,10 @@ static	bool			g_ButtonPressed = false;
 // selects. Reset every frame the pointer is somewhere else.
 static	int				g_HoverRow = -1;
 
+// [rc4l] Held while the scrollbar thumb is being dragged, so the pointer keeps controlling it even
+// after it wanders off the bar -- which is what dragging means everywhere else.
+static	bool			g_DraggingScrollbar = false;
+
 // [rc4l] Showing "cancel this download?". Drawn and answered by this menu rather than through
 // M_StartMessage, so the browser keeps control of the pairing: the hold placed on the join resume
 // when this goes up MUST be released on exactly one of the two answers, and a message box that can be
@@ -1453,8 +1457,48 @@ public:
 				g_ButtonPressed = false;
 		}
 
+		// [rc4l] The scrollbar, BEFORE the rows. The row hit box used to run all the way to
+		// SB_LIST_RIGHT, which is past the bar -- so every click meant for the thumb landed on
+		// whatever row was level with it and the bar could not be grabbed at all.
+		{
+			const bool bOverBar = ( total > SB_VISIBLE_ROWS ) &&
+				( x >= serverbrowser_ToScreenX( SB_SCROLLBAR_X - 2 )) &&
+				( x < serverbrowser_ToScreenX( SB_SCROLLBAR_X + SB_SCROLLBAR_W + 2 )) &&
+				( y >= serverbrowser_ToScreenY( SB_FIRST_ROW_Y - 2 )) &&
+				( y < serverbrowser_ToScreenY( SB_FIRST_ROW_Y - 2 + SB_VISIBLE_ROWS * SB_ROW_HEIGHT ));
+
+			if ( type == MOUSE_Click )
+				g_DraggingScrollbar = bOverBar;
+
+			if ( g_DraggingScrollbar )
+			{
+				// Track the pointer for as long as the button is held, even once it wanders off the
+				// bar -- that is what dragging a scrollbar means everywhere else.
+				const int top = serverbrowser_ToScreenY( SB_FIRST_ROW_Y - 2 );
+				const int height = serverbrowser_ToScreenY( SB_FIRST_ROW_Y - 2 + SB_VISIBLE_ROWS * SB_ROW_HEIGHT ) - top;
+				const int maxFirst = total - SB_VISIBLE_ROWS;
+
+				if ( height > 0 )
+				{
+					int first = (( y - top ) * maxFirst ) / height;
+					if ( first < 0 )
+						first = 0;
+					if ( first > maxFirst )
+						first = maxFirst;
+
+					// The visible window is derived from the selection, so moving the window means
+					// moving the selection to the row that would sit at its top.
+					g_Selected = first;
+				}
+
+				if ( type == MOUSE_Release )
+					g_DraggingScrollbar = false;
+				return true;
+			}
+		}
+
 		const int left = serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 );
-		const int right = serverbrowser_ToScreenX( SB_LIST_RIGHT );
+		const int right = serverbrowser_ToScreenX( SB_ROW_RIGHT );
 
 		if (( total > 0 ) && ( x >= left ) && ( x < right ))
 		{

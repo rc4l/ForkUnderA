@@ -1461,6 +1461,13 @@ CCMD( dumpserverlist )
 		// [rc4l] Whether this server will serve its own WADs, and from where. Worth printing: when a
 		// download fails, the first question is whether the client ever learned an endpoint at all,
 		// and that is otherwise invisible.
+		// [rc4l] What the Public/Private tabs sort on, printed because "why is that server in the
+		// wrong tab" is otherwise unanswerable from outside.
+		Printf( "Password: %s%s\n",
+			g_BrowserServerList[ulIdx].bForcePassword ? "connect " : "",
+			g_BrowserServerList[ulIdx].bForceJoinPassword ? "join" :
+				( g_BrowserServerList[ulIdx].bForcePassword ? "" : "no" ));
+
 		const FString directUrl = BROWSER_GetDirectDownloadURL( ulIdx );
 		Printf( "Direct download: %s%s\n", directUrl.IsEmpty() ? "(none advertised)" : directUrl.GetChars(),
 			( !directUrl.IsEmpty() && g_BrowserServerList[ulIdx].bPrefersMirrors ) ? " (prefers mirrors)" : "" );
