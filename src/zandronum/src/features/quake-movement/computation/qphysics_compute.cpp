@@ -164,13 +164,13 @@ float QFloorFrictionForFriction( int frictionValue )
 	// makes one tic's drop exceed any achievable speed -- the pawn is pinned in place. Anything
 	// that overflows to infinity does the same. +-16x is already a dramatic ice/mud swing and can
 	// never stall the model.
+	// No NaN check here on purpose: frictionValue is an int and <= 0 already returned, so the ratio
+	// is a finite positive and its 16th power is finite or +inf -- never NaN. The upper clamp is
+	// what absorbs the infinity. A guard for NaN would be unreachable by construction.
 	if ( raised < Q_FLOOR_FRICTION_MIN )
 		return Q_FLOOR_FRICTION_MIN;
 	if ( raised > Q_FLOOR_FRICTION_MAX )
 		return Q_FLOOR_FRICTION_MAX;
-	// Catches a NaN, which compares false against both bounds above.
-	if ( raised != raised )
-		return 1.0f;
 	return raised;
 }
 

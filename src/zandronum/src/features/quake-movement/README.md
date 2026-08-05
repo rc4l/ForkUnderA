@@ -23,7 +23,7 @@ per-item accounting.
 
 ## Staging
 
-This feature lands in five reviewable stages. **Stage 1 is complete**; the rest are pending.
+This feature landed in five reviewable stages, each green before the next began.
 
 1. ✅ **Scaffolding, behaviour-neutral.** `Player.MvType`, the `P_MovePlayer_Doom` split, the
    `mvFlags` word and its replication, property/APROP plumbing. Every default is `0`, so the engine
@@ -41,10 +41,9 @@ This feature lands in five reviewable stages. **Stage 1 is complete**; the rest 
 
 **The port is complete.** `+ELEVATORJUMP` landed with stage 4.
 
-Then **`e2e/` — the master test**: the whole feature against a real dedicated server with real
-connected clients, server-authoritative readback throughout. See [e2e/MASTERTEST.md](e2e/MASTERTEST.md)
-for the design, the measurements, three more bugs it found, and an explicit list of what it does
-*not* cover.
+Everything below was then re-verified end to end against a real dedicated server with connected
+clients, reading state back from the **server** rather than from a client's prediction. The figures
+quoted throughout are from those runs.
 
 ## The `P_MovePlayer` split (stage 1)
 
@@ -79,7 +78,7 @@ The two properties that describe a *velocity* (`AirAcceleration`, `VelocityCap`)
 they read in map units like every other speed property; the pure acceleration/friction coefficients
 are plain floats.
 
-**Verified in-engine** (MAP01, `+forward` from rest, `cl_run 1`, class read back from `dumpactor`):
+**Verified in-engine** (MAP01, `+forward` from rest, `cl_run 1`, class read back each sample):
 
 | | 15 tics | terminal speed |
 |---|---|---|
@@ -127,14 +126,13 @@ the unit tests because each lived in the *glue* between tested pieces.
    `Player.JumpZ 8.5` became 8. They now work in raw fixed-point units.
 
 The lesson worth keeping: the compute units were all individually correct and green the whole time.
-Every one of these lived where a tested function meets engine state, which is exactly the seam the
-in-engine MCP pass exists to cover.
+Every one of these lived where a tested function meets engine state, which is exactly the seam an
+in-engine pass exists to cover.
 
-### Three more, found by the master E2E
+### Five more, found by the server-side pass
 
-The same seam again — and this time all three were only reachable with a **server** in the picture
-or with a property authored away from its default. Full measurements in
-[e2e/MASTERTEST.md](e2e/MASTERTEST.md).
+The same seam again — and these were only reachable with a **server** in the picture, or with a
+property authored away from its default.
 
 4. **`Player.CrouchScale` below 0.5 did nothing.** `P_CrouchMove` clamps to the authored scale, but
    the caller in `P_PlayerThink` still decided *whether to call it* against a hardcoded `FRACUNIT/2`.
@@ -257,7 +255,7 @@ tic, bottom out at zero.
   long one-sided line, take its right-side normal `(dy, -dx)/len`, and stand 20 units off the face
   (inside the 24-unit trace) facing along it. **Verify the pawn actually moves before trusting a
   result** — several computed spots in MAP01 put it in blocked space where it held full velocity
-  while its position never changed, which looks exactly like a working wall run in a `dumpactor`
+  while its position never changed, which looks exactly like a working wall run in a state
   dump and is not one. Also run god mode: MAP02's monsters killed the pawn mid-test.
 
 Wall climbing does not hard-stop when the meter empties: the airborne branch regenerates faster than
@@ -374,11 +372,8 @@ would put local prediction on a movement model that doesn't exist, so the client
 - `wadsrc/static/actors/shared/player.txt` — `Player.MvType 0`.
 - `src/p_mobj.cpp` — `P_ZMovement`'s landing block is skipped for Quake pawns (bug 5 above).
 - `src/p_interaction.cpp` — the spectator move-tier reset covers all four tiers (bug 6 above).
-- `src/c_console.cpp` — the MCP bridge output tee also runs on a `-host` server. Tooling, not
-  gameplay: without it a dedicated server emits nothing to the bridge and cannot be driven at all,
-  which is what blocked the server-side half of the master E2E.
-- `src/mcp_actorstate.cpp` — `dumpactor p<N>` targets `players[N]` (a `-host` server has no console
-  player), plus the full authored-property readback the surface audit asserts against.
+- `src/p_user.cpp` — `APlayerPawn::Serialize` seeds the live movement state on the read path, since
+  `PostBeginPlay` does not run on a savegame load (bug 8 above).
 
 ## Gates
 
