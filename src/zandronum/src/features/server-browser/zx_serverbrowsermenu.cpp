@@ -32,6 +32,7 @@
 #include "templates.h"
 
 #include "features/server-browser/browser.h"
+#include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
@@ -189,6 +190,11 @@ static	int				g_HoverRow = -1;
 // after it wanders off the bar -- which is what dragging means everywhere else.
 static	bool			g_DraggingScrollbar = false;
 
+// [rc4l] Set when the SELECTION moved and the view must follow it -- keyboard, or a click on a row.
+// Scrolling does not set it: scrolling moves the view and leaves the selection alone, which is the
+// whole point of them being separate.
+static	bool			g_RevealSelection = false;
+
 // [rc4l] Showing "cancel this download?". Drawn and answered by this menu rather than through
 // M_StartMessage, so the browser keeps control of the pairing: the hold placed on the join resume
 // when this goes up MUST be released on exactly one of the two answers, and a message box that can be
@@ -200,6 +206,14 @@ static	bool			g_ConfirmCancel = false;
 enum class BrowserTab { Public, Private };
 static	BrowserTab		g_Tab = BrowserTab::Public;
 static	int				g_TabHot = -1;
+
+// [rc4l] Which region the arrow keys are addressing. Starts on the tabs: that is the top of the loop
+// and the only region that is occupiable before any server has answered.
+static	zx::BrowserFocus	g_Focus = zx::BrowserFocus::Tabs;
+
+// [rc4l] Where each tab was left. Two entries, indexed by BrowserTab.
+static	int				g_TabScroll[2] = { 0, 0 };
+static	int				g_TabSelected[2] = { -1, -1 };
 
 // [rc4l] A message occupying the browser's own panel instead of a stock message box over the title
 // screen. Same panel, same dimensions, so being refused reads as part of the same screen rather than
@@ -587,6 +601,12 @@ public:
 
 		g_Selected = -1;
 		g_ScrollFirst = 0;
+		g_Focus = zx::BrowserFocus::Tabs;
+
+		// Per-tab memory is per-VISIT: the list is being requeried from nothing, so a position saved
+		// against the last set of servers describes rows that are not there yet.
+		g_TabScroll[0] = g_TabScroll[1] = 0;
+		g_TabSelected[0] = g_TabSelected[1] = -1;
 
 		BROWSER_ClearServerList( );
 		BROWSER_QueryServerRegistry( );
@@ -713,8 +733,35 @@ public:
 	void DrawRows( const zx::BrowserCounts &counts )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
-		const zx::RowWindow window = zx::ComputeRowWindow( total, SB_VISIBLE_ROWS, g_Selected, g_ScrollFirst );
-		g_ScrollFirst = window.first;
+
+		// [rc4l] The SCROLL POSITION is the source of truth for what is on screen, and the selection
+		// only drags it when the selection itself moved.
+		//
+		// It used to be the other way round -- the window was derived from the selection every frame
+		// -- which crossed two separate things. Scrolling then had to move the selection to have any
+		// effect, so the wheel and the scrollbar both changed what was picked; and worse, they could
+		// not actually reach the end of the list, because "keep row 13 visible" is already satisfied
+		// by showing rows 0-13, so dragging the thumb to the bottom moved the selection and left the
+		// view exactly where it was. Both complaints were the same mistake.
+		if ( g_RevealSelection )
+		{
+			const zx::RowWindow window = zx::ComputeRowWindow( total, SB_VISIBLE_ROWS, g_Selected,
+				g_ScrollFirst );
+			g_ScrollFirst = window.first;
+			g_RevealSelection = false;
+		}
+
+		// Every frame, not just after a scroll: servers time out and drop out of the list while it is
+		// open, so a position that was in range a second ago may not be one now.
+		g_ScrollFirst = zx::ComputeRestoredScroll( g_ScrollFirst, total, SB_VISIBLE_ROWS );
+
+		zx::RowWindow window;
+		window.first = g_ScrollFirst;
+		window.count = total - g_ScrollFirst;
+		if ( window.count > SB_VISIBLE_ROWS )
+			window.count = SB_VISIBLE_ROWS;
+		if ( window.count < 0 )
+			window.count = 0;
 
 		DrawListScrollbar( total, window.first );
 
@@ -873,7 +920,11 @@ public:
 			// are looking at, they are not another surface to put things on.
 			const int radius = h / 2;
 			const bool bSelected = ( static_cast<int>( g_Tab ) == i );
-			const bool bHot = ( g_TabHot == i );
+
+			// Keyboard focus lights the tab the same way the pointer does, so "what does an arrow key
+			// do right now" is answered by looking at the screen rather than by pressing one.
+			const bool bHot = ( g_TabHot == i ) ||
+				(( g_Focus == zx::BrowserFocus::Tabs ) && bSelected );
 
 			const int base = bSelected ? 96 : ( bHot ? 62 : 38 );
 			const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
@@ -985,9 +1036,22 @@ public:
 		if ( g_Tab == tab )
 			return;
 
+		// [rc4l] Each tab keeps its own place. Coming back to a tab and finding it scrolled to the
+		// top again means losing your spot every time you glance at the other one -- and the row
+		// INDEX cannot simply be carried across, because it points into a list that is no longer
+		// there and would land on an unrelated server.
+		const int leaving = static_cast<int>( g_Tab );
+		g_TabScroll[leaving] = g_ScrollFirst;
+		g_TabSelected[leaving] = g_Selected;
+
 		g_Tab = tab;
-		g_Selected = -1;
-		g_ScrollFirst = 0;
+
+		const int entering = static_cast<int>( tab );
+		g_ScrollFirst = g_TabScroll[entering];
+		g_Selected = g_TabSelected[entering];
+
+		// Rebuild first, then let the clamp in DrawRows deal with a remembered position that no
+		// longer fits: servers come and go between visits, so the spot we saved may be past the end.
 		serverbrowser_RebuildList( );
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 	}
@@ -1061,7 +1125,9 @@ public:
 
 		// Lighter when the pointer is over it, lighter still while held -- the press feedback a button
 		// needs to feel like one rather than like a label that happens to react.
-		int base = g_ButtonHot ? 70 : 45;
+		const bool bLit = g_ButtonHot || ( g_Focus == zx::BrowserFocus::Action );
+
+		int base = bLit ? 70 : 45;
 		if ( g_ButtonHot && g_ButtonPressed )
 			base = 95;
 
@@ -1419,7 +1485,13 @@ public:
 
 				g_TabHot = i;
 				if ( type == MOUSE_Release )
+				{
+					// The pointer moves the keyboard's focus with it, so picking something up with the
+					// mouse and then reaching for the arrows carries on from where you are looking
+					// rather than from wherever the keyboard was left.
+					g_Focus = zx::BrowserFocus::Tabs;
 					SelectTab( static_cast<BrowserTab>( i ));
+				}
 				return true;
 			}
 		}
@@ -1448,7 +1520,10 @@ public:
 					const bool bWasPressed = g_ButtonPressed;
 					g_ButtonPressed = false;
 					if ( bWasPressed )
+					{
+						g_Focus = zx::BrowserFocus::Action;
 						PressActionButton( );
+					}
 					return true;
 				}
 
@@ -1486,9 +1561,8 @@ public:
 					const int minThumb = serverbrowser_ToScreenY( 8 ) - serverbrowser_ToScreenY( 0 );
 					const int thumbH = zx::ComputeThumbHeight( height, SB_VISIBLE_ROWS, total, minThumb );
 
-					// The visible window is derived from the selection, so moving the window means
-					// moving the selection to the row that would sit at its top.
-					g_Selected = zx::ComputeFirstFromPointer( y - top, height, thumbH,
+					// Moves the VIEW only. What is selected is none of the scrollbar's business.
+					g_ScrollFirst = zx::ComputeFirstFromPointer( y - top, height, thumbH,
 						total - SB_VISIBLE_ROWS );
 				}
 
@@ -1540,6 +1614,8 @@ public:
 					// One click to look, two to commit -- the ordinary shape of a list with a preview
 					// pane, and now the only way the selection moves by mouse at all.
 					g_Selected = row;
+					g_RevealSelection = true;
+					g_Focus = zx::BrowserFocus::Rows;
 
 					const int now = static_cast<int>( DMenu::MenuTime );
 					const bool bDouble = ( row == g_LastClickRow ) &&
@@ -1594,32 +1670,80 @@ public:
 		}
 
 		// [rc4l] The wheel. DOptionMenu's own wheel handling scrolls ITS item list, which this menu
-		// does not use -- so without this the bar was drawn, the list was scrollable by keyboard, and
-		// the wheel did nothing at all.
+		// does not use -- so without this the bar was drawn, the list scrolled by keyboard, and the
+		// wheel did nothing at all.
 		//
-		// Moving the selection rather than the view alone is deliberate: ComputeRowWindow derives the
-		// visible window FROM the selection every frame, so a view scrolled independently would snap
-		// straight back the moment it redrew. Three rows a notch, the usual amount.
+		// Scrolls the VIEW and nothing else. Picking a server is what clicking and the arrow keys are
+		// for; a wheel notch changing what you have selected is how you end up joining something you
+		// only scrolled past. Three rows a notch, the usual amount.
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_ConfirmCancel && g_Notice.IsEmpty( ))
 		{
 			const int total = static_cast<int>( g_SortedServers.Size( ));
 			if (( ev->subtype == EV_GUI_WheelUp ) || ( ev->subtype == EV_GUI_WheelDown ))
 			{
-				if ( total > 0 )
-				{
-					const int step = ( ev->subtype == EV_GUI_WheelUp ) ? -3 : 3;
-					int next = ( g_Selected < 0 ) ? 0 : g_Selected + step;
-					if ( next < 0 )
-						next = 0;
-					if ( next > total - 1 )
-						next = total - 1;
-					g_Selected = next;
-				}
+				const int maxFirst = ( total > SB_VISIBLE_ROWS ) ? ( total - SB_VISIBLE_ROWS ) : 0;
+				int next = g_ScrollFirst + (( ev->subtype == EV_GUI_WheelUp ) ? -3 : 3 );
+
+				if ( next < 0 )
+					next = 0;
+				if ( next > maxFirst )
+					next = maxFirst;
+
+				g_ScrollFirst = next;
 				return true;
 			}
 		}
 
 		return Super::Responder( ev );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] One arrow key, applied to whichever region has focus. The rule itself lives in
+	// computation/browserfocus_compute -- everything here is the part that touches the engine: moving
+	// the selection, switching the tab, and making a noise about it.
+	bool Navigate( zx::NavKey key, int total )
+	{
+		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, total > 0 );
+		const zx::BrowserFocus was = g_Focus;
+		g_Focus = nav.focus;
+
+		if ( nav.tabStep != 0 )
+		{
+			// Two tabs, so either step is the other one. Wraps rather than stopping at the ends,
+			// because with two of them "the other tab" is what both keys mean anyway.
+			SelectTab(( g_Tab == BrowserTab::Public ) ? BrowserTab::Private : BrowserTab::Public );
+			return true;
+		}
+
+		if ( nav.rowStep != 0 )
+		{
+			// The keyboard is the one thing that MOVES the selection through the list, so it is the
+			// one thing that drags the view along with it. Scrolling leaves the selection alone.
+			if ( nav.rowStep < 0 )
+				g_Selected = ( g_Selected <= 0 ) ? total - 1 : g_Selected - 1;
+			else
+				g_Selected = ( g_Selected >= total - 1 ) ? 0 : g_Selected + 1;
+
+			g_RevealSelection = true;
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			return true;
+		}
+
+		if ( g_Focus != was )
+		{
+			// Entering the list with nothing picked yet has to pick something, or the panel and the
+			// button below it have nothing to describe.
+			if (( g_Focus == zx::BrowserFocus::Rows ) && ( g_Selected < 0 ) && ( total > 0 ))
+			{
+				g_Selected = 0;
+				g_RevealSelection = true;
+			}
+
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+		}
+
+		return true;
 	}
 
 	//*************************************************************************
@@ -1649,33 +1773,24 @@ public:
 
 		switch ( mkey )
 		{
-		case MKEY_Up:
-			if ( total > 0 )
-			{
-				g_Selected = ( g_Selected <= 0 ) ? total - 1 : g_Selected - 1;
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-			}
-			return true;
+		case MKEY_Up:		return Navigate( zx::NavKey::Up, total );
+		case MKEY_Down:		return Navigate( zx::NavKey::Down, total );
+		case MKEY_Left:		return Navigate( zx::NavKey::Left, total );
+		case MKEY_Right:	return Navigate( zx::NavKey::Right, total );
 
-		case MKEY_Down:
-			if ( total > 0 )
-			{
-				g_Selected = ( g_Selected >= total - 1 ) ? 0 : g_Selected + 1;
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-			}
-			return true;
-
-		// [rc4l] Left and right move between tabs, which is what those keys do in every tabbed list
-		// and what a controller's shoulder buttons map onto.
-		case MKEY_Left:
-			SelectTab( BrowserTab::Public );
-			return true;
-
-		case MKEY_Right:
-			SelectTab( BrowserTab::Private );
-			return true;
-
+		// [rc4l] Enter acts on whatever has focus. On the tabs that is the tab -- which is already
+		// selected, so it is the way into the list without reaching for Down.
 		case MKEY_Enter:
+			if ( g_Focus == zx::BrowserFocus::Tabs )
+			{
+				if ( total > 0 )
+				{
+					g_Focus = zx::BrowserFocus::Rows;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
 			PressActionButton( );
 			return true;
 
