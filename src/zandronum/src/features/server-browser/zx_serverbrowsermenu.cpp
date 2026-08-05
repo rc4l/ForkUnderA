@@ -36,6 +36,7 @@
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
+#include "features/server-browser/computation/serversort_compute.h"
 #include "features/server-browser/zx_joinserver.h"
 #include "features/updater/computation/promptpanel_compute.h"
 #include "features/wad-download/zx_waddownload.h"
@@ -328,18 +329,26 @@ static void serverbrowser_RefreshWadCache( int lServer )
 // [rc4l] Ping ascending, so the servers a player can actually enjoy are at the top. Ties broken by
 // address so the order is stable -- an unstable sort makes rows swap places as pings jitter, which
 // looks like the list is malfunctioning.
-static int STACK_ARGS serverbrowser_ComparePing( const void *pA, const void *pB )
+// [rc4l] Busiest first, then alphabetically -- see computation/serversort_compute.h for why, and for
+// the two things the name comparison has to strip before it means anything.
+//
+// Humans only, matching the count the row draws: sorting a server to the top for holding seven bots
+// would be ranking it by a number the player can already see is not people.
+static int STACK_ARGS serverbrowser_CompareServers( const void *pA, const void *pB )
 {
 	const int lA = *reinterpret_cast<const int *>( pA );
 	const int lB = *reinterpret_cast<const int *>( pB );
 
-	const LONG lPingA = BROWSER_GetPing( lA );
-	const LONG lPingB = BROWSER_GetPing( lB );
+	const char *pszNameA = BROWSER_GetHostName( lA );
+	const char *pszNameB = BROWSER_GetHostName( lB );
 
-	if ( lPingA != lPingB )
-		return ( lPingA - lPingB );
+	const int lResult = zx::CompareServers(
+		static_cast<int>( BROWSER_GetNumHumanPlayers( lA )), ( pszNameA != NULL ) ? pszNameA : "",
+		static_cast<int>( BROWSER_GetNumHumanPlayers( lB )), ( pszNameB != NULL ) ? pszNameB : "" );
 
-	return ( lA - lB );
+	// Two servers with the same name and the same population still need a stable order, or the list
+	// reshuffles them on every refresh.
+	return ( lResult != 0 ) ? lResult : ( lA - lB );
 }
 
 //*****************************************************************************
@@ -363,7 +372,7 @@ static void serverbrowser_RebuildList( void )
 	}
 
 	if ( g_SortedServers.Size( ) > 1 )
-		qsort( &g_SortedServers[0], g_SortedServers.Size( ), sizeof( int ), serverbrowser_ComparePing );
+		qsort( &g_SortedServers[0], g_SortedServers.Size( ), sizeof( int ), serverbrowser_CompareServers );
 
 	g_Selected = zx::ComputeClampedSelection( g_Selected, static_cast<int>( g_SortedServers.Size( )));
 }
