@@ -165,14 +165,20 @@ ListMenu "PlayerclassMenu"
 
 ListMenu "EpisodeMenu"
 {
-	IfGame(Doom, Heretic, Hexen, Strife)
-	{
-		NetgameMessage "$NEWGAME"
-	}
-	IfGame(Chex)
-	{
-		NetgameMessage "$CNEWGAME"
-	}
+	// [rc4l] NetgameMessage removed. "$NEWGAME" ("you can't start a new game while in a network
+	// game") blocked this menu from OPENING for a connected client, which total conversions run into
+	// constantly: mods route their own setup through the episode list, so a player joining a server
+	// hit a refusal on a menu they had every reason to open.
+	//
+	// The gate was aimed at the wrong thing. Opening the list is harmless -- it is picking an entry
+	// that would try to start a game, and a client cannot do that anyway: the server owns the map.
+	// Keeping the menu shut to prevent an action it is not the only route to just made the mod
+	// unusable online.
+	//
+	// LoadGameMenu, SaveGameMenu and PlayerclassMenu keep theirs. Note PlayerclassMenu carries the
+	// same gate TWICE -- here in menudef and again hardcoded at menu/menudef.cpp:2301, which builds a
+	// generated option menu when a mod has too many classes for a list menu. Anything done to that
+	// one has to change both, or the fix silently misses exactly the mods that need it.
 
 	IfGame(Doom, Chex)
 	{
@@ -424,6 +430,10 @@ LISTMENU "FUANewGameMenu"
 	}
 
 	TextItem "Online",	"o", "ZA_Browser"
+	// [rc4l] "PlayerclassMenu" is only the fallback for the stock menu. At runtime
+	// RouteMainMenuThroughOnlineOffline() overwrites this row's action with whatever the main menu's
+	// first entry pointed at before we took it over -- so under a mod that ships its own main menu,
+	// Offline leads into THAT mod's flow rather than the stock one.
 	TextItem "Offline",	"f", "PlayerclassMenu"
 }
 

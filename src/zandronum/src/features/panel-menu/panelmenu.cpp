@@ -89,7 +89,20 @@ void DFUAPanelListMenu::Drawer()
 	const int halfV    = MAX(160 - vLeft, vRight - 160);
 	const int panelWpx = (2 * halfV + 2 * padV) * cx;
 
-	zx::PanelRect r = zx::ComputePanelRect(sw, sh, panelWpx, topPx, bottomPx, 0, 6 * cy);
+	// [rc4l] Keep the card off the screen edges no matter how large its content is.
+	//
+	// The panel is sized from what it contains, and what it contains is not ours: FUANewGameMenu
+	// draws StaticPatch "M_DOOM", and a mod is free to replace that lump with anything. MM8BDM's is a
+	// full-width banner where Doom's is 159x37, so the computed extent ran past the screen, got
+	// clamped to it, and the "card floating over the title screen" became an opaque sheet covering
+	// everything.
+	//
+	// A card has to read as a card, so the margin wins over fitting the content: oversized artwork
+	// gets clipped by the panel rather than allowed to inflate it. Anything that big was already
+	// going to overflow the 320x200 page it was authored against.
+	const zx::PanelBounds bounds = zx::ComputePanelBounds(sw, sh, panelWpx, topPx, bottomPx);
+
+	zx::PanelRect r = zx::ComputePanelRect(sw, sh, bounds.w, bounds.top, bounds.bottom, 0, 6 * cy);
 	const zx::PanelColor topCol = { 26, 28, 40, 236 };
 	const zx::PanelColor botCol = { 8, 9, 15, 248 };
 	for (int row = 0; row < r.h; ++row)

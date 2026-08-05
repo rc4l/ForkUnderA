@@ -804,6 +804,35 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sc_man_scanner.h
 	COMMAND re2c --no-generation-date -s -o ${CMAKE_CURRENT_BINARY_DIR}/sc_man_scanner.h ${CMAKE_CURRENT_SOURCE_DIR}/sc_man_scanner.re
 	DEPENDS re2c ${CMAKE_CURRENT_SOURCE_DIR}/sc_man_scanner.re )
 
+# [rc4l] Compile the repo-root WAD-download lists into a header. iwadallowlist.txt and
+# waddownloadsites.txt are the single source of truth; generating rather than checking the header in
+# means the two cannot drift, and building it into the binary rather than reading it at runtime is
+# what keeps the IWAD allowlist a gate (a list a player or a mod could append to is not one).
+# See tools/gen-wadlists.cmake and features/wad-download/README.md.
+set( ZX_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../.. )
+# waddirectories.txt is tagged per platform and filtered at generation time, so no runtime check.
+if( WIN32 )
+	set( ZX_WADLIST_PLATFORM windows )
+elseif( APPLE )
+	set( ZX_WADLIST_PLATFORM macos )
+else()
+	set( ZX_WADLIST_PLATFORM linux )
+endif()
+add_custom_command( OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
+	COMMAND ${CMAKE_COMMAND}
+		-DIWAD_LIST=${ZX_REPO_ROOT}/config/iwadallowlist.txt
+		-DSITE_LIST=${ZX_REPO_ROOT}/config/waddownloadsites.txt
+		-DSUBST_LIST=${ZX_REPO_ROOT}/config/iwadsubstitutes.txt
+		-DDIR_LIST=${ZX_REPO_ROOT}/config/waddirectories.txt
+		-DPLATFORM=${ZX_WADLIST_PLATFORM}
+		-DOUT=${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
+		-P ${ZX_REPO_ROOT}/tools/gen-wadlists.cmake
+	DEPENDS ${ZX_REPO_ROOT}/config/iwadallowlist.txt ${ZX_REPO_ROOT}/config/waddownloadsites.txt
+		${ZX_REPO_ROOT}/config/iwadsubstitutes.txt
+		${ZX_REPO_ROOT}/config/waddirectories.txt
+		${ZX_REPO_ROOT}/tools/gen-wadlists.cmake
+	COMMENT "Generating zx_waddownload_lists.h from iwadallowlist.txt / waddownloadsites.txt" )
+
 include_directories( ${CMAKE_CURRENT_BINARY_DIR} )
 
 if( SSE_MATTERS )
@@ -1437,10 +1466,22 @@ add_executable( zdoom WIN32
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
 	features/net/zx_httpsget.cpp
+	features/net/zx_httpfile.cpp
+	features/net/zx_httpfile_win.cpp
+	features/wad-download/zx_waddownload.cpp
+	features/wad-download/zx_filehash.cpp
+	features/wad-download/zx_wadsearch.cpp
+	features/wad-download/computation/downloadplan_compute.cpp
+	features/wad-download/computation/iwadallow_compute.cpp
+	features/wad-download/computation/iwadsubstitute_compute.cpp
+	# Generated; listed so the custom command above actually runs as part of this target.
+	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	features/server-browser/browser.cpp #ST
-	features/server-browser/browsermenu.cpp #ZA
 	features/server-browser/zx_serverbrowsermenu.cpp
+	features/server-browser/zx_joinserver.cpp
+	features/server-browser/zx_mainmenuroute.cpp
 	features/server-browser/computation/serverbrowser_compute.cpp
+	features/server-browser/computation/joinplan_compute.cpp
 	features/panel-menu/panelmenu.cpp
 	features/panel-menu/computation/panelmenu_compute.cpp
 	features/updater/zx_updater.cpp

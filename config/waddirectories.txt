@@ -1,0 +1,34 @@
+# ZandroX well-known WAD directories.
+#
+# Places other Doom tools keep WADs. Any that exist are added to the engine's own search paths, so a
+# player who already downloaded a mod through Doomseeker does not have to download it again.
+#
+#   <platform> | <path> | <whose it is>
+#
+# Pipe-separated, NOT whitespace: real paths contain spaces ("Application Support", "My Games").
+# Platform is windows, macos or linux; only the matching ones are compiled in. Paths go through
+# NicePath, so $VAR and ~ expand. Directories that do not exist are skipped silently. Blank lines
+# and # ignored.
+#
+# Added to BOTH FileSearch.Directories and IWADSearch.Directories, because these folders hold mods
+# and games alike. Registered once into the config, where a player can see and remove them.
+#
+# To add one: it must be a default a tool actually ships, not a place you personally keep WADs.
+
+# Doomseeker / Wadseeker. Its download target defaults to DataPaths::localDataLocationPath(), which is
+# Qt's AppLocalDataLocation for application name "doomseeker" (doomseekerconfig.cpp:779). The
+# .doomseeker entries are its older layout, still what many installs have -- legacyAppDataBaseDir()
+# is %APPDATA% on Windows and the home directory elsewhere.
+windows | $LOCALAPPDATA/doomseeker                  | Doomseeker (Wadseeker download target)
+windows | $APPDATA/.doomseeker                      | Doomseeker (legacy layout)
+macos   | ~/Library/Application Support/doomseeker  | Doomseeker (Wadseeker download target)
+macos   | ~/.doomseeker                             | Doomseeker (legacy layout)
+linux   | ~/.local/share/doomseeker                 | Doomseeker (Wadseeker download target)
+linux   | ~/.doomseeker                             | Doomseeker (legacy layout)
+
+# GZDoom and ZDoom keep user WADs beside their configs.
+windows | $USERPROFILE/Documents/GZDoom             | GZDoom
+windows | $USERPROFILE/Documents/My Games/Doom      | ZDoom-family "My Games" layout
+macos   | ~/Library/Application Support/gzdoom      | GZDoom
+linux   | ~/.config/gzdoom                          | GZDoom
+linux   | ~/.local/share/games/doom                 | Common Linux WAD location
