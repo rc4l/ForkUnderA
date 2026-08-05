@@ -130,3 +130,12 @@ CCMD(fua_join_selected_server)
 {
 	zx::JoinSelectedServer();
 }
+
+// [rc4l] Old spelling, kept alive on purpose. The pre-MVP browser owned this CCMD, and removing a
+// command is a breaking change for anyone who bound it -- so it survives its menu, as a second name
+// for the one validated implementation above rather than the `restart -connect` duplicate it used to
+// be. Nothing in the tree calls it; only a user's config would.
+CCMD ( menu_join_selected_server )
+{
+	zx::JoinSelectedServer();
+}

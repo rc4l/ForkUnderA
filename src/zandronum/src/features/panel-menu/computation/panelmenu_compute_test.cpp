@@ -126,3 +126,52 @@ TEST(ListMenuExtent, SingleItemAndZeroLinespacing)
 	EXPECT_EQ(5, e.top);
 	EXPECT_EQ(5, e.bottom);
 }
+
+// [rc4l] The panel is sized from menu items, and menu items are mod-supplied: FUANewGameMenu draws
+// StaticPatch "M_DOOM", and MM8BDM replaces that lump with a full-width banner where Doom's is
+// 159x37. Unbounded, the card grew past the screen and became an opaque sheet over everything.
+TEST(PanelBounds, OversizedContentIsClampedToLeaveAMargin)
+{
+	// A width far beyond the screen, as a replaced logo produces.
+	const PanelBounds b = ComputePanelBounds(1280, 800, 4000, -300, 2000);
+	EXPECT_EQ(1280 - 2 * (1280 / 16), b.w);		// margin on both sides
+	EXPECT_EQ(800 / 16, b.top);					// pulled down off the top edge
+	EXPECT_EQ(800 - 800 / 16, b.bottom);		// pulled up off the bottom edge
+	EXPECT_LT(b.top, b.bottom);
+}
+
+TEST(PanelBounds, ContentThatAlreadyFitsIsLeftAlone)
+{
+	const PanelBounds b = ComputePanelBounds(1280, 800, 600, 200, 500);
+	EXPECT_EQ(600, b.w);
+	EXPECT_EQ(200, b.top);
+	EXPECT_EQ(500, b.bottom);
+}
+
+TEST(PanelBounds, MarginScalesWithResolution)
+{
+	// A fixed pixel margin would look generous at 4K and swallow the card at 640x480.
+	EXPECT_EQ(640 - 2 * (640 / 16), ComputePanelBounds(640, 480, 9999, 0, 9999).w);
+	EXPECT_EQ(3840 - 2 * (3840 / 16), ComputePanelBounds(3840, 2160, 99999, 0, 99999).w);
+}
+
+TEST(PanelBounds, DegenerateInputsGiveAnEmptyRect)
+{
+	for (int i = 0; i < 3; ++i)
+	{
+		const int w = (i == 0) ? 0 : (i == 1) ? -10 : 1280;
+		const int h = (i == 2) ? -1 : 800;
+		const PanelBounds b = ComputePanelBounds(w, h, 500, 10, 200);
+		EXPECT_EQ(0, b.w);
+		EXPECT_EQ(0, b.top);
+		EXPECT_EQ(0, b.bottom);
+	}
+}
+
+TEST(PanelBounds, NeverReturnsAnInvertedRect)
+{
+	// Content taller than the screen would invert top/bottom without the guard.
+	const PanelBounds b = ComputePanelBounds(1280, 800, 600, 700, 100);
+	EXPECT_LE(b.top, b.bottom);
+	EXPECT_GE(b.w, 0);
+}

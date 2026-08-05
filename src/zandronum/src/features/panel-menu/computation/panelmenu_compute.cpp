@@ -61,4 +61,35 @@ MenuExtent ComputeListMenuExtent(const MenuItemBox *items, int count, int select
 	return e;
 }
 
+// [rc4l] One sixteenth of each axis, so the margin scales with resolution instead of being a pixel
+// count that looks generous at 4K and swallows the card at 640x480.
+static int MarginOf(int extent)
+{
+	const int m = extent / 16;
+	return m > 0 ? m : 0;
+}
+
+PanelBounds ComputePanelBounds(int screenW, int screenH, int wantW, int wantTop, int wantBottom)
+{
+	PanelBounds b;
+	b.w = 0; b.top = 0; b.bottom = 0;
+	if (screenW <= 0 || screenH <= 0)
+		return b;
+
+	const int marginX = MarginOf(screenW);
+	const int marginY = MarginOf(screenH);
+
+	const int maxW = screenW - 2 * marginX;
+	b.w = wantW < maxW ? wantW : maxW;
+	if (b.w < 0) b.w = 0;
+
+	b.top = wantTop < marginY ? marginY : wantTop;
+	const int maxBottom = screenH - marginY;
+	b.bottom = wantBottom > maxBottom ? maxBottom : wantBottom;
+	// A content span taller than the screen would invert here; collapse to the margin band instead of
+	// handing back a negative height.
+	if (b.bottom < b.top) b.bottom = b.top;
+	return b;
+}
+
 } // namespace zx
