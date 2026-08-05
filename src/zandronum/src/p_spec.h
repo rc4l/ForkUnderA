@@ -631,11 +631,12 @@ private:
 	DPillar ();
 
 	// [BC] Make this a friend.
-	friend bool	EV_DoPillar (DPillar::EPillar type, int tag, fixed_t speed, fixed_t height,
+	friend bool	EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, fixed_t height,
 							 fixed_t height2, int crush);
 };
 
-bool EV_DoPillar (DPillar::EPillar type, int tag, fixed_t speed, fixed_t height,
+// [rc4l] uzdoom@c3c22315d -- takes the activating line so a zero tag can act on its back sector.
+bool EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, fixed_t height,
 				  fixed_t height2, int crush, bool hexencrush);
 
 //
