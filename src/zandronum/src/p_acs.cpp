@@ -5625,6 +5625,10 @@ enum EACSFunctions
 	ACSF_CanRaiseActor,
 	ACSF_SetActorTeleFog,		// 86 -- [rc4l] uzdoom@30acb7200 cluster
 	ACSF_SwapActorTeleFog,		// 87
+	// [rc4l] uzdoom@2b12db153 -- 88/89/90, matching upstream numbering.
+	ACSF_SetActorRoll,
+	ACSF_ChangeActorRoll,
+	ACSF_GetActorRoll,
 
 	// [BB] Out of order ZDoom backport.
 	ACSF_Warp = 92,
@@ -6035,6 +6039,31 @@ static void SetActorAngle(AActor *activator, int tid, int angle, bool interpolat
 			// This fixes the "rave room" in SPACEDM5.wad.
 			if( NETWORK_GetState() == NETSTATE_SERVER )
 				SERVERCOMMANDS_SetThingAngleExact( actor );
+		}
+	}
+}
+
+// [rc4l] uzdoom@2b12db153 -- no SERVERCOMMANDS broadcast, unlike SetActorPitch below: there is no
+// CM_ROLL to send it with. The CM_ movement flags in network.h are a full 16 bits (CM_NOLAST = 1<<15,
+// "We do not have enough room for more flags here"), so wiring roll to clients means widening the
+// wire field, which is its own job. Nothing reads AActor::roll yet, so nothing desyncs today.
+static void SetActorRoll(AActor *activator, int tid, int angle, bool interpolate)
+{
+	if (tid == 0)
+	{
+		if (activator != NULL)
+		{
+			activator->SetRoll(angle << 16, interpolate);
+		}
+	}
+	else
+	{
+		FActorIterator iterator(tid);
+		AActor *actor;
+
+		while ((actor = iterator.Next()))
+		{
+			actor->SetRoll(angle << 16, interpolate);
 		}
 	}
 }
@@ -9058,6 +9087,26 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 		case ACSF_SwapActorTeleFog:
 			return SwapActorTeleFog(activator, args[0]);
+
+		// [Nash] Actor roll functions. Let's roll!	// [rc4l] uzdoom@2b12db153
+		case ACSF_SetActorRoll:
+			actor = SingleActorFromTID(args[0], activator);
+			if (actor != NULL)
+			{
+				actor->SetRoll(args[1] << 16, false);
+			}
+			return 0;
+
+		case ACSF_ChangeActorRoll:
+			if (argCount >= 2)
+			{
+				SetActorRoll(activator, args[0], args[1], argCount > 2 ? !!args[2] : false);
+			}
+			break;
+
+		case ACSF_GetActorRoll:
+			actor = SingleActorFromTID(args[0], activator);
+			return actor != NULL ? actor->roll >> 16 : 0;
 
 		case ACSF_GetActorFloorTexture:
 		{
