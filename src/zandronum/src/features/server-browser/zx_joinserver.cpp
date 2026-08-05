@@ -71,6 +71,9 @@ bool join_HexEquals(const char *a, const std::string &b)
 struct JoinPlan
 {
 	FString iwadName;					// bare name, may be empty
+	// [rc4l] MD5 of the BUILD the server runs (SQF2_FUA_IWAD_HASH), empty from a server that did not
+	// send it. A name alone cannot distinguish nine releases of doom2.wad from each other.
+	FString iwadHash;
 	std::vector<std::string> wads;		// bare PWAD names, in the server's order
 	// [rc4l] The server's own MD5 for each PWAD, keyed by the name it goes with rather than by index:
 	// ComputeJoinWadList drops blanks and duplicates, so positions in `wads` no longer line up with
@@ -143,8 +146,53 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 
 	if (plan.iwadName.IsNotEmpty())
 	{
+		// [rc4l] One name is not one file. doom2.wad shipped as 1.666, 1.7, 1.8, 1.9, a French build,
+		// BFG Edition and the 2024 KEX re-release, and a player can easily hold two of them -- one
+		// from Steam, one in their own WAD folder. Taking whichever the search order reaches first
+		// means a coin flip, and losing it costs a join rejected by level authentication with a
+		// message about nothing the player can act on.
+		//
+		// So when the server published its digest (SQF2_FUA_IWAD_HASH), look through every copy and
+		// take the one that matches. Nothing is moved or renamed -- their collection stays theirs.
+		if (plan.iwadHash.IsNotEmpty())
+		{
+			TArray<FString> candidates;
+			zx::FindAllIwadsInEngineSearchPaths(plan.iwadName.GetChars(), candidates);
+
+			for (unsigned i = 0; i < candidates.Size(); ++i)
+			{
+				char hex[33];
+				if (!zx::Md5OfFile(candidates[i].GetChars(), hex, sizeof hex))
+					continue;
+				if (!join_HexEquals(hex, std::string(plan.iwadHash.GetChars())))
+					continue;
+
+				iwadPath = candidates[i];
+				if (i > 0)
+				{
+					Printf(TEXTCOLOR_GREEN "Using the copy of %s that matches this server.\n"
+						TEXTCOLOR_NORMAL, plan.iwadName.GetChars());
+				}
+				break;
+			}
+
+			if (iwadPath.IsEmpty() && candidates.Size() > 0)
+			{
+				// Say it plainly here rather than letting the connection fail later: level
+				// authentication rejects a mismatched IWAD without ever naming the reason.
+				Printf(TEXTCOLOR_GOLD "Your %s is a different build from the one this server runs.\n"
+					TEXTCOLOR_NORMAL "The join may be rejected. Nothing is wrong with your copy -- "
+					"that IWAD has shipped in several versions and they are not interchangeable.\n",
+					plan.iwadName.GetChars());
+			}
+		}
+
 		TArray<FString> iwadResolved;
-		if (D_AddFile(iwadResolved, plan.iwadName.GetChars()) && iwadResolved.Size() > 0)
+		if (iwadPath.IsNotEmpty())
+		{
+			// Already settled by digest.
+		}
+		else if (D_AddFile(iwadResolved, plan.iwadName.GetChars()) && iwadResolved.Size() > 0)
 		{
 			iwadPath = iwadResolved[0];
 		}
@@ -332,6 +380,7 @@ bool JoinSelectedServer()
 
 	JoinPlan plan;
 	plan.iwadName = pszIwad != NULL ? pszIwad : "";
+	plan.iwadHash = BROWSER_GetIWADHash((ULONG)lServer);
 	plan.wads = ComputeJoinWadList(plan.iwadName.GetChars(), ServerPwadNames(lServer));
 
 	// [rc4l] Pair each PWAD with the MD5 the server advertised (SQF2_PWAD_HASHES), so a downloaded

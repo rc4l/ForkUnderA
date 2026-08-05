@@ -529,6 +529,33 @@ static void server_registry_WriteDirectDownload( const LauncherResponseContext &
 }
 
 //*****************************************************************************
+// [rc4l] Which BUILD of the IWAD this server runs, not just its name.
+//
+// The digest is already computed -- network_InitPWADList hashes every loaded file and pushes the ones
+// with authenticated lumps into the authenticated list, which includes the IWAD. So this is a lookup
+// rather than another pass over a 30 MB file, and it costs the query nothing.
+//
+// Empty string when it cannot be found, which the client must read as "cannot tell" and never as
+// "matches". MD5 because that is what the rest of this protocol carries; it is an identity check
+// between cooperating parties, not a gate.
+static void server_registry_WriteIWADHash( const LauncherResponseContext &ctx )
+{
+	const char *iwadName = NETWORK_GetIWAD( );
+	const TArray<NetworkPWAD> &authenticated = NETWORK_GetAuthenticatedWADsList( );
+
+	for ( unsigned i = 0; i < authenticated.Size( ); ++i )
+	{
+		if ( authenticated[i].name.CompareNoCase( iwadName ) == 0 )
+		{
+			ctx.pByteStream->WriteString( authenticated[i].checksum );
+			return;
+		}
+	}
+
+	ctx.pByteStream->WriteString( "" );
+}
+
+//*****************************************************************************
 // [SB] And now the big maps of functions.
 static const std::map<ULONG, LauncherFieldFunction> ResponseFunctions[] =
 {
@@ -573,6 +600,7 @@ static const std::map<ULONG, LauncherFieldFunction> ResponseFunctions[] =
 		{ SQF2_GAMEMODE_SHORTNAME,	server_registry_WriteGameModeShortName },
 		{ SQF2_VOICECHAT,			server_registry_WriteVoicechat },
 		{ SQF2_FUA_DIRECT_DOWNLOAD,	server_registry_WriteDirectDownload },
+		{ SQF2_FUA_IWAD_HASH,		server_registry_WriteIWADHash },
 	}
 };
 

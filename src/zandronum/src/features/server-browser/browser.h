@@ -198,6 +198,12 @@ typedef struct
 	// and only about ordering -- the file is served either way.
 	bool			bPrefersMirrors;
 
+	// [rc4l] MD5 of the IWAD this server runs (SQF2_FUA_IWAD_HASH), or "" from a server that did not
+	// send it. SQF_IWAD carries only a name, and doom2.wad has shipped as nine-odd different builds
+	// that are not interchangeable -- so the name alone cannot tell you whether the copy you own is
+	// the one that will pass level authentication. Empty means "cannot tell", never "matches".
+	FString			IWADHash;
+
 } SERVER_t;
 
 //*****************************************************************************
@@ -250,6 +256,9 @@ FString			BROWSER_GetDirectDownloadURL( ULONG ulServer );
 
 // [rc4l] Whether that URL should be tried after the public mirrors rather than before them.
 bool			BROWSER_PrefersMirrors( ULONG ulServer );
+
+// [rc4l] MD5 of the IWAD build this server runs, or "" when it did not say. Never NULL.
+const char		*BROWSER_GetIWADHash( ULONG ulServer );
 
 // [rc4l] The raw state, for callers that need to tell the failure modes apart rather than just
 // "drawable or not". BROWSER_IsActive() answers the narrower question.

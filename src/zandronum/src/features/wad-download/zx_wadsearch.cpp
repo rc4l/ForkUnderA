@@ -60,10 +60,12 @@ void AddPathOnce( const char *section, const char *value )
 namespace zx
 {
 
-FString FindIwadInEngineSearchPaths( const char *name )
+void FindAllIwadsInEngineSearchPaths( const char *name, TArray<FString> &out )
 {
+	out.Clear( );
+
 	if (( name == NULL ) || ( name[0] == '\0' ) || ( GameConfig == NULL ))
-		return FString( );
+		return;
 
 	// The config's IWAD list first, in its own order -- the same walk IdentifyVersion does.
 	if ( GameConfig->SetSection( "IWADSearch.Directories" ))
@@ -81,7 +83,7 @@ FString FindIwadInEngineSearchPaths( const char *name )
 
 			const FString candidate = JoinPath( dir, name );
 			if ( DirEntryExists( candidate ))
-				return candidate;
+				out.Push( candidate );
 		}
 	}
 
@@ -95,10 +97,15 @@ FString FindIwadInEngineSearchPaths( const char *name )
 
 		const FString candidate = JoinPath( dir, name );
 		if ( DirEntryExists( candidate ))
-			return candidate;
+			out.Push( candidate );
 	}
+}
 
-	return FString( );
+FString FindIwadInEngineSearchPaths( const char *name )
+{
+	TArray<FString> all;
+	FindAllIwadsInEngineSearchPaths( name, all );
+	return ( all.Size( ) > 0 ) ? all[0] : FString( );
 }
 
 void RegisterKnownWadDirectories( void )
