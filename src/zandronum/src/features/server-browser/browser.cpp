@@ -50,6 +50,7 @@
 
 #include "networkheaders.h"
 #include "features/server-browser/browser.h"
+#include "features/server-browser/computation/launcherfields_compute.h"
 #include "c_dispatch.h"
 #include "cl_main.h"
 #include "deathmatch.h"
@@ -1058,30 +1059,48 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 	}
 
 	// [SB] Extended server info
+	// [rc4l] The field walk itself lives in computation/launcherfields_compute.h, which is a compute
+	// unit and not three more lines here for a specific reason: these fields are VARIABLE LENGTH, so
+	// getting one width wrong silently corrupts every field after it, and the corruption reads as a
+	// plausible value rather than as garbage. Skipping the one-byte SQF2_VOICECHAT field made a
+	// server's download port read as 6400 instead of 10777 and took a long time to find. Parsing
+	// where it can be tested against a writer, for every combination of flags, is the fix for the
+	// class rather than the instance.
 	if ( ulFlags & SQF_EXTENDED_INFO )
 	{
 		ulFlags2 = pByteStream->ReadLong();
 
-		// [SB] PWAD hashes
-		// [rc4l] Kept rather than discarded: this is the server's own MD5 for each of its PWADs, and
-		// it is what lets a download be verified against what the server actually has instead of
-		// trusting that a mirror served the right bytes under the right name.
-		if ( ulFlags2 & SQF2_PWAD_HASHES )
+		const size_t availableBytes = ( pByteStream->pbStreamEnd > pByteStream->pbStream )
+			? static_cast<size_t>( pByteStream->pbStreamEnd - pByteStream->pbStream ) : 0;
+
+		zx::LauncherExtendedInfo extended;
+		size_t consumedBytes = 0;
+		const zx::ExtendedParse parseResult = zx::ParseExtendedInfo(
+			reinterpret_cast<const unsigned char *>( pByteStream->pbStream ), availableBytes,
+			static_cast<unsigned>( ulFlags2 ), extended, consumedBytes );
+
+		if ( parseResult != zx::ExtendedParse::Ok )
 		{
-			const int lNumHashes = pByteStream->ReadByte( );
-			g_BrowserServerList[lServer].PWADHashes.Clear( );
-			for ( int i = 0; i < lNumHashes; ++i )
-				g_BrowserServerList[lServer].PWADHashes.Push( pByteStream->ReadString( ));
+			// Refused rather than half-applied. A block we could not walk tells us nothing, and
+			// whatever this entry already held is more trustworthy than values read from a position
+			// we are no longer sure of.
+			return;
 		}
 
-		// [SB] Server country code
+		pByteStream->pbStream += consumedBytes;
+
+		// [rc4l] The server's own MD5 for each of its PWADs -- what lets a download be verified
+		// against what the server actually has, instead of trusting a mirror served the right bytes
+		// under the right name.
+		if ( ulFlags2 & SQF2_PWAD_HASHES )
+		{
+			g_BrowserServerList[lServer].PWADHashes.Clear( );
+			for ( size_t i = 0; i < extended.pwadHashes.size( ); ++i )
+				g_BrowserServerList[lServer].PWADHashes.Push( extended.pwadHashes[i].c_str( ));
+		}
+
 		if ( ulFlags2 & SQF2_COUNTRY )
 		{
-			// [rc4l] Three bytes, NOT null-terminated on the wire. Read then terminate; the previous
-			// code read it purely to keep the stream aligned and threw the value away.
-			char code[4] = { 0 };
-			pByteStream->ReadBuffer( code, 3 );
-
 			// [rc4l] ISO 3166-1 reserves XAA-XZZ, and the protocol uses two of them as instructions
 			// to the launcher rather than as places:
 			//
@@ -1090,6 +1109,8 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 			//
 			// A server whose own GeoIP lookup failed sends XIP, which is the common case rather than
 			// an edge one -- taking it literally is how "XIP" ended up drawn in the country column.
+			const char *code = extended.countryCode.c_str( );
+
 			if ( stricmp( code, "XIP" ) == 0 )
 			{
 				g_BrowserServerList[lServer].CountryCode = "";
@@ -1108,57 +1129,24 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 			}
 		}
 
-		// [SB] Game mode names
 		if ( ulFlags2 & SQF2_GAMEMODE_NAME )
-		{
-			g_BrowserServerList[lServer].GameModeName = pByteStream->ReadString();
-		}
+			g_BrowserServerList[lServer].GameModeName = extended.gameModeName.c_str( );
 
 		if ( ulFlags2 & SQF2_GAMEMODE_SHORTNAME )
-		{
-			g_BrowserServerList[lServer].GameModeShortName = pByteStream->ReadString();
-		}
+			g_BrowserServerList[lServer].GameModeShortName = extended.gameModeShortName.c_str( );
 
-		// [rc4l] Direct download: a flags byte then the TCP port. Fixed shape whichever way the
-		// answer goes -- port 0 is how "not serving" is spelled, rather than the field being absent,
-		// because a field that is sometimes there is what desynchronises a stream.
-		// [rc4l] Voice chat. The value is not used here, but the BYTE MUST BE CONSUMED: every field
-		// after it in the stream is positioned by it, and this one is answered whenever the echoed
-		// flags2 carries the bit -- whether or not we were the ones who asked for it.
-		//
-		// Skipping it is what made a server's direct-download port read as 6400 instead of 10777.
-		// The arithmetic is exact: the port went out as 0x2A19, and reading one byte early yields
-		// our flags byte (0x00) followed by the port's low byte (0x19), which is 0x1900 = 6400 --
-		// while sv_allowvoicechat's 1 was picked up as the flags byte, setting "prefers mirrors" on
-		// a server that had never asked for it.
-		if ( ulFlags2 & SQF2_VOICECHAT )
-			pByteStream->ReadByte( );
-
+		// [rc4l] Port 0 is how "not serving" is spelled -- the field is always present when asked
+		// for, because a field that is sometimes there is what desynchronises a stream.
 		if ( ulFlags2 & SQF2_FUA_DIRECT_DOWNLOAD )
 		{
-			const int lFlags = pByteStream->ReadByte( );
-			const int lPort = pByteStream->ReadShort( );
-
-			// [rc4l] Underflow reads as -1 from BYTESTREAM_s, and -1 has bit 0 set -- so a stream
-			// that ran out would silently report "serving, and prefers mirrors" from bytes that were
-			// never sent. Refuse to act on a field we did not actually receive: a server we believe
-			// is not serving costs a fall back to the public mirrors, while a wrong port costs every
-			// download from it, which is the failure this is guarding against.
-			if (( lFlags < 0 ) || ( lPort <= 0 ) || ( lPort > 65535 ))
-			{
-				g_BrowserServerList[lServer].usDirectDownloadPort = 0;
-				g_BrowserServerList[lServer].bPrefersMirrors = false;
-			}
-			else
-			{
-				g_BrowserServerList[lServer].usDirectDownloadPort = static_cast<USHORT>( lPort );
-				g_BrowserServerList[lServer].bPrefersMirrors = (( lFlags & 1 ) != 0 );
-			}
+			g_BrowserServerList[lServer].usDirectDownloadPort =
+				static_cast<USHORT>( extended.directDownloadPort );
+			g_BrowserServerList[lServer].bPrefersMirrors = extended.prefersMirrors;
 		}
 
 		// [rc4l] Which BUILD of the IWAD, not just its name.
 		if ( ulFlags2 & SQF2_FUA_IWAD_HASH )
-			g_BrowserServerList[lServer].IWADHash = pByteStream->ReadString( );
+			g_BrowserServerList[lServer].IWADHash = extended.iwadHash.c_str( );
 	}
 
 	// [rc4l] The old browser cached a sorted index that had to be rebuilt from here whenever a reply
