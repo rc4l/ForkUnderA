@@ -61,9 +61,6 @@ void ShowBrowserNotice( const char *text );
 // Whether the server browser is the menu currently on screen. Implemented by the browser menu.
 bool IsServerBrowserOpen();
 
-// [rc4l] Forget which files we have. The detail panel's green/red WAD list caches per server, so
-// after a download the file just fetched still drew red until something else changed.
-void InvalidateBrowserWadCache();
 
 // [rc4l] The "ready to join" line, drawn over whatever the player is doing.
 //

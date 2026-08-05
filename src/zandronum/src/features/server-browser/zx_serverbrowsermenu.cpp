@@ -80,6 +80,13 @@
 // panel edge -- otherwise a selected row's band runs on underneath the detail panel and shows through
 // it, and clicking the panel selects whatever row happens to be level with the pointer.
 #define SB_LIST_RIGHT		( SB_DETAIL_LEFT - 8 )
+
+// [rc4l] The scrollbar track, and where the rows have to stop so they do not run under it. A row
+// highlight drawn to SB_LIST_RIGHT covered the bar on the selected row, so the one row you were
+// looking at was the one where the bar vanished.
+#define SB_SCROLLBAR_X		( SB_LIST_RIGHT - 4 )
+#define SB_SCROLLBAR_W		2
+#define SB_ROW_RIGHT		( SB_SCROLLBAR_X - 3 )
 // Clear of the rule under the tabs by the same padding the tabs use, so nothing touches it.
 #define SB_DETAIL_TOP		( SB_TAB_SEP_Y + SB_TAB_PAD )
 #define SB_DETAIL_BOTTOM	( SB_ROWS_BOTTOM + 6 )
@@ -98,6 +105,10 @@
 
 // The WAD list stops above the button rather than under it.
 #define SB_DETAIL_TEXT_BOTTOM	( SB_BUTTON_TOP - 6 )
+
+// [rc4l] How much of the panel the WAD list may take before it gives up and says "+N more". A server
+// running thirty files would otherwise fill the panel and push the flag words out entirely.
+#define SB_WADLIST_MAX_H	88
 
 #define SB_FOOTER_Y			( SB_ROWS_BOTTOM + 20 )
 
@@ -213,7 +224,6 @@ static	int				g_LastClickTime = -1000;
 // times a second to answer a question that only changes when the selection does.
 static	int				g_DetailServer = -1;
 static	TArray<FString>	g_DetailWads;
-static	TArray<bool>	g_DetailHave;
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -280,28 +290,20 @@ static int serverbrowser_RowTextY( int rowY, int h )
 // actually downloads can never disagree -- a green entry that then downloaded, or a red one that did
 // not, would be worse than showing nothing. It writes into a scratch array we throw away; only the
 // true/false matters here.
-// [rc4l] Bumped whenever what we HAVE on disk might have changed -- which in practice means a
-// download finished. The cache keys off the server index alone, so coming back to the same server
-// after fetching its files showed the WAD list exactly as it was: the file we had just downloaded
-// still drawn in red as missing. Cheap to invalidate, and wrong-looking if we do not.
-static	int				g_WadCacheGeneration = 0;
-static	int				g_DetailGeneration = -1;
-
-void serverbrowser_InvalidateWadCache( void )
-{
-	g_WadCacheGeneration++;
-}
-
+// [rc4l] Just the NAMES the server is running -- what it has, not what we have.
+//
+// This used to colour each entry green or red by asking D_AddFile whether we held it, which meant a
+// filesystem search per WAD per server, a cache that then had to be invalidated whenever a download
+// landed, and a list that was quietly wrong whenever that invalidation was missed. It was answering
+// a question the player does not need answered here: if something is missing the join fetches it,
+// and says so while it does. Removing the colour removed all of that machinery with it.
 static void serverbrowser_RefreshWadCache( int lServer )
 {
-	if (( lServer == g_DetailServer ) && ( g_DetailGeneration == g_WadCacheGeneration ))
+	if ( lServer == g_DetailServer )
 		return;
-
-	g_DetailGeneration = g_WadCacheGeneration;
 
 	g_DetailServer = lServer;
 	g_DetailWads.Clear( );
-	g_DetailHave.Clear( );
 
 	const char *pszIwad = BROWSER_GetIWADName( lServer );
 	if (( pszIwad != NULL ) && ( pszIwad[0] != 0 ))
@@ -313,12 +315,6 @@ static void serverbrowser_RefreshWadCache( int lServer )
 		const char *pszPwad = BROWSER_GetPWADName( lServer, i );
 		if (( pszPwad != NULL ) && ( pszPwad[0] != 0 ))
 			g_DetailWads.Push( pszPwad );
-	}
-
-	for ( unsigned i = 0; i < g_DetailWads.Size( ); i++ )
-	{
-		TArray<FString> scratch;
-		g_DetailHave.Push( D_AddFile( scratch, g_DetailWads[i].GetChars( )) );
 	}
 }
 
@@ -665,11 +661,55 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] The list scrollbar: a track down the right edge of the list with a thumb sized to the
+	// fraction visible and placed by how far down we are.
+	//
+	// The list has always scrolled -- ComputeRowWindow has done that from the start -- but with no
+	// indication that it was. Fourteen rows of a twenty-server list looked exactly like a
+	// twenty-server list that was fourteen long, so there was nothing to tell a player there was more
+	// below. Drawn only when it means something: a list that fits needs no bar.
+	void DrawListScrollbar( int total, int first )
+	{
+		if ( total <= SB_VISIBLE_ROWS )
+			return;
+
+		const int vTop = SB_FIRST_ROW_Y - 2;
+		const int vHeight = SB_VISIBLE_ROWS * SB_ROW_HEIGHT;
+
+		const int left = serverbrowser_ToScreenX( SB_SCROLLBAR_X );
+		const int width = MAX( 1, serverbrowser_ToScreenX( SB_SCROLLBAR_X + SB_SCROLLBAR_W ) - left );
+		const int top = serverbrowser_ToScreenY( vTop );
+		const int height = serverbrowser_ToScreenY( vTop + vHeight ) - top;
+		if ( height <= 0 )
+			return;
+
+		screen->Dim( PalEntry( 120, 140, 180 ), 0.14f, left, top, width, height );
+
+		// Proportional, with a floor: on a list of hundreds an exactly-proportional thumb rounds to
+		// nothing and the bar looks broken rather than full.
+		int thumbH = ( height * SB_VISIBLE_ROWS ) / total;
+		const int minThumb = serverbrowser_ToScreenY( 8 ) - serverbrowser_ToScreenY( 0 );
+		if ( thumbH < minThumb )
+			thumbH = minThumb;
+		if ( thumbH > height )
+			thumbH = height;
+
+		const int maxFirst = total - SB_VISIBLE_ROWS;
+		const int travel = height - thumbH;
+		const int thumbY = top + (( maxFirst > 0 ) ? ( travel * first ) / maxFirst : 0 );
+
+		screen->Dim( PalEntry( 170, 190, 230 ), 0.55f, left, thumbY, width, thumbH );
+	}
+
+	//*************************************************************************
+	//
 	void DrawRows( const zx::BrowserCounts &counts )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 		const zx::RowWindow window = zx::ComputeRowWindow( total, SB_VISIBLE_ROWS, g_Selected, g_ScrollFirst );
 		g_ScrollFirst = window.first;
+
+		DrawListScrollbar( total, window.first );
 
 		// Column headings, dim so they never compete with the data.
 		screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_HEADER_Y, "SERVER", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
@@ -697,7 +737,7 @@ public:
 				screen->Dim( PalEntry( 150, 170, 215 ), 0.06f,
 					serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 ),
 					serverbrowser_ToScreenY( y - 2 ),
-					serverbrowser_ToScreenX( SB_LIST_RIGHT ) - serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 ),
+					serverbrowser_ToScreenX( SB_ROW_RIGHT ) - serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 ),
 					serverbrowser_ToScreenY( y - 2 + SB_ROW_HEIGHT ) - serverbrowser_ToScreenY( y - 2 ));
 			}
 
@@ -1075,7 +1115,10 @@ public:
 		y += 5;
 		DrawSeparator( y );
 		y += 6;
-		DrawWadList( x, y );
+		y = DrawWadList( x, y );
+
+		y += 4;
+		DrawFlagNumbers( x, y );
 
 		DrawActionButton( );
 	}
@@ -1196,16 +1239,19 @@ public:
 	// Each WAD in its own colour, so the list reads as a checklist rather than a sentence. Drawn name
 	// by name with the comma attached, because the colour has to belong to the file rather than to the
 	// whole line.
-	void DrawWadList( int x, int y )
+	// [rc4l] Returns the y it finished on, so what follows can be placed under it. Capped in height:
+	// a server running thirty files would otherwise fill the panel and push everything else out, and
+	// the flag words below are worth more than the twentieth filename.
+	int DrawWadList( int x, int y )
 	{
 		const int right = SB_DETAIL_RIGHT - SB_DETAIL_PAD;
+		const int bottom = ( y + SB_WADLIST_MAX_H < SB_DETAIL_TEXT_BOTTOM )
+			? ( y + SB_WADLIST_MAX_H ) : SB_DETAIL_TEXT_BOTTOM;
 		int cx = x;
 
 		for ( unsigned i = 0; i < g_DetailWads.Size( ); i++ )
 		{
 			FString piece = g_DetailWads[i];
-			if ( i + 1 < g_DetailWads.Size( ))
-				piece << ",";
 
 			// Same reasoning as the wrapper: a filename longer than the panel is cut deliberately rather
 			// than left for the clip to sever.
@@ -1218,11 +1264,69 @@ public:
 				cx = x;
 				y += SB_DETAIL_LINE;
 			}
-			if ( y + SB_DETAIL_LINE > SB_DETAIL_TEXT_BOTTOM )
-				return;					// ran out of panel; better truncated than spilling out of it
+			if ( y + SB_DETAIL_LINE > bottom )
+			{
+				// Out of room. Say how many are not shown rather than just stopping, so the list does
+				// not silently look shorter than it is.
+				const int hidden = static_cast<int>( g_DetailWads.Size( )) - static_cast<int>( i );
+				if ( hidden > 0 )
+				{
+					FString more;
+					more.Format( "+%d more", hidden );
+					DrawInPanel( CR_DARKGRAY, x, y, more );
+					y += SB_DETAIL_LINE;
+				}
+				return y;
+			}
 
-			DrawInPanel( g_DetailHave[i] ? CR_GREEN : CR_RED, cx, y, piece );
+			// CR_WHITE, not CR_UNTRANSLATED: untranslated means the font's own colour, and SmallFont's
+			// own colour is Doom red -- which is exactly the "missing" colour this was meant to stop
+			// using.
+			DrawInPanel( CR_WHITE, cx, y, piece );
 			cx += w + SmallFont->StringWidth( " " );
+		}
+
+		return y + SB_DETAIL_LINE;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The gameplay flag words, as numbers.
+	//
+	// Named flags were the obvious thing and the wrong one: 163 of them, most set on most servers, so
+	// the panel filled with a wall of constants that told a player nothing they could act on. The
+	// NUMBER is what people actually trade -- it is what you paste into a config or compare against
+	// somebody else's server -- and six short lines beat six screens of names.
+	void DrawFlagNumbers( int x, int y )
+	{
+		static const char *const kNames[] = {
+			"dmflags", "dmflags2", "zadmflags", "compatflags", "zacompatflags", "compatflags2",
+		};
+
+		const int lServer = g_SortedServers[g_Selected];
+		const LONG lCount = BROWSER_GetNumDMFlags( lServer );
+		if ( lCount <= 0 )
+			return;
+
+		DrawSeparator( y );
+		y += 6;
+
+		for ( LONG i = 0; i < lCount; ++i )
+		{
+			if ( y + SB_DETAIL_LINE > SB_DETAIL_TEXT_BOTTOM )
+				return;
+
+			// A word the server sent that this build has no name for still gets shown -- the number is
+			// the useful part, and inventing "unknown" for it would be less honest than an index.
+			FString line;
+			if ( i < static_cast<LONG>( countof( kNames )))
+				line.Format( "%s: %u", kNames[i], static_cast<unsigned>( BROWSER_GetDMFlag( lServer, i )));
+			else
+				line.Format( "flags%d: %u", static_cast<int>( i ),
+					static_cast<unsigned>( BROWSER_GetDMFlag( lServer, i )));
+
+			DrawInPanel( CR_DARKGRAY, x, y, line );
+			y += SB_DETAIL_LINE;
 		}
 	}
 
@@ -1276,7 +1380,7 @@ public:
 	void DimRow( int y )
 	{
 		const int left = serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 );
-		const int right = serverbrowser_ToScreenX( SB_LIST_RIGHT );
+		const int right = serverbrowser_ToScreenX( SB_ROW_RIGHT );
 		const int top = serverbrowser_ToScreenY( y - 2 );
 		const int bottom = serverbrowser_ToScreenY( y - 2 + SB_ROW_HEIGHT );
 
@@ -1479,6 +1583,32 @@ public:
 			return true;
 		}
 
+		// [rc4l] The wheel. DOptionMenu's own wheel handling scrolls ITS item list, which this menu
+		// does not use -- so without this the bar was drawn, the list was scrollable by keyboard, and
+		// the wheel did nothing at all.
+		//
+		// Moving the selection rather than the view alone is deliberate: ComputeRowWindow derives the
+		// visible window FROM the selection every frame, so a view scrolled independently would snap
+		// straight back the moment it redrew. Three rows a notch, the usual amount.
+		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_ConfirmCancel && g_Notice.IsEmpty( ))
+		{
+			const int total = static_cast<int>( g_SortedServers.Size( ));
+			if (( ev->subtype == EV_GUI_WheelUp ) || ( ev->subtype == EV_GUI_WheelDown ))
+			{
+				if ( total > 0 )
+				{
+					const int step = ( ev->subtype == EV_GUI_WheelUp ) ? -3 : 3;
+					int next = ( g_Selected < 0 ) ? 0 : g_Selected + step;
+					if ( next < 0 )
+						next = 0;
+					if ( next > total - 1 )
+						next = total - 1;
+					g_Selected = next;
+				}
+				return true;
+			}
+		}
+
 		return Super::Responder( ev );
 	}
 
@@ -1563,9 +1693,5 @@ bool IsServerBrowserOpen( void )
 		( DMenu::CurrentMenu->IsKindOf( RUNTIME_CLASS( DFUAServerBrowserMenu )));
 }
 
-void InvalidateBrowserWadCache( void )
-{
-	serverbrowser_InvalidateWadCache( );
-}
 
 } // namespace zx

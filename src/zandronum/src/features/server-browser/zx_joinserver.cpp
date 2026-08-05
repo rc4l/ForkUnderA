@@ -33,6 +33,7 @@
 #include "v_video.h"		// screen, DTA_*, SCREENWIDTH/HEIGHT -- the ready-to-join line
 #include "v_font.h"			// SmallFont
 #include "doomstat.h"		// gametic
+#include "menu/menu.h"		// menuactive -- the notice hides while a menu is up
 
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h"
@@ -133,10 +134,6 @@ void OnDownloadFinished(bool allSucceeded)
 	// "did it work / is the browser open / are they mid-answer" can be asserted. Getting it wrong
 	// throws away whatever the player was doing, and each individual branch reads fine in review,
 	// which is exactly the sort of thing that wants a truth table rather than a chain of ifs.
-	// Files landed on disk, so the browser's green/red WAD list is out of date.
-	if (allSucceeded)
-		zx::InvalidateBrowserWadCache();
-
 	const zx::ResumeAction action = zx::ComputeResumeAction( g_pending.valid, allSucceeded,
 		zx::IsServerBrowserOpen(), g_resumeHeld );
 
@@ -633,19 +630,44 @@ bool ConsumeJoinReady()
 
 void DrawJoinReadyNotice()
 {
-	if ( !g_readyPending )
+	// [rc4l] Not while a menu is up. In the browser the footer already carries the transfer, and
+	// anywhere else -- options, save, load -- the player is doing something deliberate and a line
+	// floating over it is noise. This slot is for when they are actually in the game.
+	if ( menuactive != MENU_Off )
 		return;
 
-	// [rc4l] Nothing about files or downloads: the transfer was our problem, and what the player
-	// cares about is that the server they picked is now joinable.
-	FString text;
-	text.Format( "%s is ready to join -- open the menu",
-		g_readyName.IsNotEmpty( ) ? g_readyName.GetChars( ) : "Your server" );
+	const FString progress = zx::waddownload::StatusLine( );
+	const bool bReady = g_readyPending;
 
-	// A slow pulse, never off entirely. Something that vanishes half the time is easy to decide you
-	// imagined; something that only dims is clearly still there.
-	const double phase = ( gametic % 70 ) / 70.0;
-	const float alpha = 0.65f + 0.35f * static_cast<float>( fabs( 1.0 - 2.0 * phase ));
+	if ( !bReady && progress.IsEmpty( ))
+		return;
+
+	// [rc4l] The same slot carries both states, because they are the same story: the thing you asked
+	// for is on its way, and then it has arrived. Nothing about files or downloads in the ready
+	// wording -- the transfer was our problem, and what the player cares about is the server.
+	FString text;
+	if ( bReady )
+	{
+		text.Format( "%s is ready to join -- open the menu",
+			g_readyName.IsNotEmpty( ) ? g_readyName.GetChars( ) : "Your server" );
+	}
+	else
+	{
+		text = progress;
+	}
+
+	// Ready pulses hard, because it wants to be noticed and then acted on. Progress barely moves --
+	// it is there to be glanced at, not to compete with the game for attention.
+	float alpha = 1.0f;
+	if ( bReady )
+	{
+		const double phase = ( gametic % 46 ) / 46.0;
+		alpha = 0.35f + 0.65f * static_cast<float>( fabs( 1.0 - 2.0 * phase ));
+	}
+	else
+	{
+		alpha = 0.72f;
+	}
 
 	const int virtW = 640;
 	const int virtH = 400;
@@ -658,7 +680,7 @@ void DrawJoinReadyNotice()
 		Scale( SmallFont->StringWidth( text ) + 12, SCREENWIDTH, virtW ),
 		Scale( SmallFont->GetHeight( ) + 6, SCREENHEIGHT, virtH ));
 
-	screen->DrawText( SmallFont, CR_GOLD, x, y, text,
+	screen->DrawText( SmallFont, bReady ? CR_GOLD : CR_GRAY, x, y, text,
 		DTA_VirtualWidth, virtW, DTA_VirtualHeight, virtH,
 		DTA_Alpha, FLOAT2FIXED( alpha ), TAG_DONE );
 }
