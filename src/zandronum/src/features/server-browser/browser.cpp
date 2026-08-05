@@ -671,8 +671,6 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 
 //*****************************************************************************
 //
-void M_BuildServerList( void );
-
 void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 {
 	GAMEMODE_e	GameMode = GAMEMODE_COOPERATIVE;
@@ -1027,9 +1025,10 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		}
 	}
 
-	// Now that this server has been read in, resort the servers in the menu.
-	if ( bResortList )
-		M_BuildServerList( );
+	// [rc4l] The old browser cached a sorted index that had to be rebuilt from here whenever a reply
+	// landed. The MVP browser derives its list every tic in serverbrowser_RebuildList(), precisely so
+	// the data and the view cannot fall out of step -- so there is nothing left to poke.
+	(void)bResortList;
 }
 
 //*****************************************************************************
