@@ -2,7 +2,12 @@
 # format-version: 1
 #
 # The list of server registries a ZandroX client queries to find servers. This file is the source of
-# truth; clients do not read it from here directly. It is served through a CDN that caches this copy,
+# truth; clients do not read it from here directly.
+#
+# Unlike its neighbours in config/, this one is NOT compiled into the binary -- it is published, and
+# the engine keeps only a one-line fallback (kBuiltinList in zx_serverregistrylist.cpp). So if this
+# file moves, whatever serves registrylist.cantstopscrolling.net has to be repointed at the new path
+# or every client silently falls back to that one line. It is served through a CDN that caches this copy,
 # and each client refreshes from the CDN at most every 6 hours -- so a server registry can be added
 # here and reach players without shipping a release, and GitHub never sees per-player traffic.
 #
