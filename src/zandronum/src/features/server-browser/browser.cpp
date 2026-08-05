@@ -1370,5 +1370,12 @@ CCMD( dumpserverlist )
 		Printf( "Num PWADs: %d\n", static_cast<int> (g_BrowserServerList[ulIdx].PWADNames.Size()) );
 		Printf( "Players: %d/%d\n", static_cast<int> (g_BrowserServerList[ulIdx].lNumPlayers), static_cast<int> (g_BrowserServerList[ulIdx].lMaxClients) );
 		Printf( "Ping: %d\n", static_cast<int> (g_BrowserServerList[ulIdx].lPing) );
+
+		// [rc4l] Whether this server will serve its own WADs, and from where. Worth printing: when a
+		// download fails, the first question is whether the client ever learned an endpoint at all,
+		// and that is otherwise invisible.
+		const FString directUrl = BROWSER_GetDirectDownloadURL( ulIdx );
+		Printf( "Direct download: %s%s\n", directUrl.IsEmpty() ? "(none advertised)" : directUrl.GetChars(),
+			( !directUrl.IsEmpty() && g_BrowserServerList[ulIdx].bPrefersMirrors ) ? " (prefers mirrors)" : "" );
 	}
 }
