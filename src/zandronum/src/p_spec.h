@@ -522,6 +522,10 @@ public:
 	EPlatState	GetStatus( void );
 	void		SetStatus( LONG lStatus );
 
+	// [rc4l] features/quake-movement: +ELEVATORJUMP needs the rate a moving floor is
+	// carrying the player at. DPlat had a setter but no getter.
+	fixed_t		GetSpeed( void ) const { return m_Speed; }
+
 	void	SetType( EPlatType Type );
 	void	SetCrush( LONG lCrush );
 	void	SetTag( LONG lTag );
@@ -1057,6 +1061,9 @@ public:
 	void	SetType( EElevator Type );
 	void	SetSpeed( LONG lSpeed );
 	void	SetDirection( LONG lDirection );
+	// [rc4l] features/quake-movement: as DPlat above -- setters existed, getters did not.
+	int		GetDirection( void ) const { return m_Direction; }
+	fixed_t	GetSpeed( void ) const { return m_Speed; }
 	void	SetFloorDestDist( LONG lDestDist );
 	void	SetCeilingDestDist( LONG lDestDist );
 

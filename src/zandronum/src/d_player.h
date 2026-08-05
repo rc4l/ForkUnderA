@@ -93,6 +93,26 @@ class player_t;
 class	CSkullBot;
 class	AFloatyIcon;
 
+// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: the movement models a
+// player pawn can simulate under (Player.MvType). Named MVTYPE_ rather than Q-Zandronum's MV_ so
+// they don't read as members of the MV_* movement *flag* word in actor.h.
+enum
+{
+	MVTYPE_DOOM			= 0,	// stock Doom physics -- the default, and unchanged by this feature
+	MVTYPE_QUAKE		= 1,	// Quake-style friction/acceleration
+};
+
+// [rc4l] Cosmetic actors a Quake-movement pawn emits, one class per slot, set with
+// Player.EffectActor "<slot>" "<class>". Spawned CLIENTSIDEONLY for the local player -- see
+// features/quake-movement/README.md for why they are not replicated.
+enum
+{
+	EA_CROUCH_SLIDE = 0,
+	EA_WALL_CLIMB,
+	EA_FOOTSTEP,
+	EA_COUNT
+};
+
 class APlayerPawn : public AActor
 {
 	DECLARE_CLASS (APlayerPawn, AActor)
@@ -166,8 +186,11 @@ public:
 	fixed_t		GruntSpeed;
 	fixed_t		FallingScreamMinSpeed, FallingScreamMaxSpeed;
 	fixed_t		ViewHeight;
-	fixed_t		ForwardMove1, ForwardMove2;
-	fixed_t		SideMove1, SideMove2;
+	// [rc4l] Extended from two tiers to four for features/quake-movement: walk, run, crouch-walk,
+	// crouch-run. Tiers 3/4 mirror 1/2 unless a mod authors them, so any existing class keeps
+	// exactly the movement it had.
+	fixed_t		ForwardMove1, ForwardMove2, ForwardMove3, ForwardMove4;
+	fixed_t		SideMove1, SideMove2, SideMove3, SideMove4;
 	FTextureID	ScoreIcon;
 	int			SpawnMask;
 	FNameNoInit	MorphWeapon;
@@ -179,6 +202,86 @@ public:
 	fixed_t		UseRange;				// [NS] Distance at which player can +use
 	fixed_t		AirCapacity;			// Multiplier for air supply underwater.
 	const PClass *FlechetteType;
+
+	// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: which movement model
+	// this pawn simulates under. MVTYPE_DOOM is the default and is stock Doom physics, untouched.
+	// See features/quake-movement/README.md.
+	int			MvType;
+
+	// [rc4l] Quake movement tuning. All inert while MvType is MVTYPE_DOOM. Acceleration values are
+	// plain floats because the Quake model is float math end to end (see
+	// features/quake-movement/computation/qphysics_compute.h); the two that describe a *velocity*
+	// stay fixed_t so they read in map units like every other speed property.
+	fixed_t		AirAcceleration;
+	fixed_t		VelocityCap;
+	float		GroundAcceleration;
+	float		GroundFriction;
+	float		CpmAirAcceleration;
+	float		CpmMaxForwardAngleRad;
+
+	// [rc4l] Jump tuning (stage 3). JumpZ already exists above; these add the horizontal component
+	// and the whole second-jump system. SecondJumpAmount is -1 for unlimited, 0 to disable.
+	// [rc4l] Crouch tuning. The defaults match the engine's historic constants exactly
+	// (FRACUNIT/2 and CROUCHSPEED = FRACUNIT/12), so using these unconditionally is
+	// behaviour-identical for a class that does not override them -- no MvType gate needed.
+	fixed_t		CrouchScale;
+	fixed_t		CrouchChangeSpeed;
+
+	// [rc4l] Footstep tuning (Quake movement only). FootstepsEnabled is indexed by move tier.
+	int			FootstepInterval;
+	float		FootstepVolume;
+	bool		FootstepsEnabled1, FootstepsEnabled2, FootstepsEnabled3, FootstepsEnabled4;
+	int			stepInterval;
+
+	fixed_t		JumpXY;
+	int			JumpDelay;
+	fixed_t		SecondJumpXY;
+	fixed_t		SecondJumpZ;
+	int			SecondJumpDelay;
+	int			SecondJumpAmount;
+	int			DoubleTapMaxTics;
+
+	// [rc4l] Live second-jump state. Client-local and prediction-saved (cl_pred.cpp); none of it is
+	// serialized or networked -- server and client run the same CheckJump from the same inputs, and
+	// the existing position/velocity correction is what reconciles any drift.
+	int			secondJumpTics;			// >0 cooldown; <0 is the double-tap window counting up
+	int			secondJumpsRemaining;
+	int			secondJumpState;		// SJ_* (features/quake-movement/computation/qjump_compute.h)
+	int			lastTapValue;
+	int			lastMoveButtonsBefore;
+	int			JumpSoundDelay;
+
+	// [rc4l] Traversal tuning (stage 4): crouch slide, wall climb, air wall run. All inert unless
+	// the pawn sets both MvType 1 and the matching MV_* flag.
+	float		CrouchSlideAcceleration;
+	float		CrouchSlideFriction;
+	float		CrouchSlideMaxTics;
+	float		CrouchSlideRegen;
+	int			CrouchSlideEffectInterval;
+	fixed_t		WallClimbSpeed;
+	float		WallClimbFriction;
+	float		WallClimbMaxTics;
+	float		WallClimbRegen;
+	int			WallClimbEffectInterval;
+	float		AirWallRunMaxTics;
+	float		AirWallRunRegen;
+	fixed_t		AirWallRunMinVelocity;
+
+	// [rc4l] Live traversal state. Prediction-saved like the second-jump state; never networked.
+	// The crouch-slide counter is SIGNED: positive is usable charge, negative is a lockout that
+	// only leaving the ground releases (see computation/qtraversal_compute.h).
+	float		crouchSlideTics;
+	float		wallClimbTics;
+	float		airWallRunTics;
+	bool		isCrouchSliding;
+	bool		isWallClimbing;
+	bool		isAirWallRunning;
+	int			crouchSlideEffectTics;
+	int			wallClimbEffectTics;
+
+	// [rc4l] Cosmetic actor classes, indexed by the EA_* slots above. NULL means "emit nothing",
+	// which is the default, so a mod opts in per slot.
+	const PClass *EffectActors[EA_COUNT];
 
 	// [CW] Fades for when you are being damaged.
 	PalEntry DamageFade;
@@ -613,6 +716,12 @@ public:
 	// This only represents the thrust that the player applies himself.
 	// This avoids anomalies with such things as Boom ice and conveyors.
 	fixed_t		velx, vely;				// killough 10/98
+
+	// [rc4l] features/quake-movement: the velocity this pawn had BEFORE this tic's Quake friction.
+	// Quake applies friction after the move, so the server moves, frictions, then transmits -- and
+	// a client handed the post-friction value would apply friction to it a second time. Server-side
+	// and per-tic only; never serialized, never read on a client, and untouched by Doom movement.
+	fixed_t		ServerXYZVel[3];
 
 	bool		centering;
 	BYTE		turnticks;
