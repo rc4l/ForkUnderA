@@ -2573,6 +2573,224 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, jumpz, F, PlayerPawn)
 
 //==========================================================================
 //
+// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: Player.MvType selects the
+// movement model. Anything that isn't MVTYPE_DOOM is rejected rather than silently falling through
+// to Quake movement, so a typo in a mod is a parse error instead of a physics surprise.
+//
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, mvtype, I, PlayerPawn)
+{
+	PROP_INT_PARM(type, 0);
+	if (type != MVTYPE_DOOM && type != MVTYPE_QUAKE)
+	{
+		I_Error ("Player.MvType must be %d (Doom) or %d (Quake), got %d", MVTYPE_DOOM, MVTYPE_QUAKE, type);
+	}
+	defaults->MvType = type;
+}
+
+//==========================================================================
+//
+// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: the Quake movement
+// tuning knobs. Every one is inert unless the pawn also sets Player.MvType 1.
+//
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, airacceleration, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(accel, 0);
+	defaults->AirAcceleration = accel;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, velocitycap, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(cap, 0);
+	defaults->VelocityCap = cap;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, groundacceleration, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(accel, 0);
+	defaults->GroundAcceleration = accel;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, groundfriction, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(friction, 0);
+	defaults->GroundFriction = friction;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, cpmairacceleration, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(accel, 0);
+	defaults->CpmAirAcceleration = accel;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, cpmmaxforwardanglerad, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(angle, 0);
+	defaults->CpmMaxForwardAngleRad = angle;
+}
+
+//==========================================================================
+//
+// [rc4l] Jump tuning (stage 3). Player.JumpZ already exists; these add the horizontal component
+// and the second-jump system. Inert unless the pawn sets Player.MvType 1.
+//
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, jumpxy, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(xy, 0);
+	defaults->JumpXY = xy;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, jumpdelay, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->JumpDelay = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, secondjumpxy, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(xy, 0);
+	defaults->SecondJumpXY = xy;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, secondjumpz, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(z, 0);
+	defaults->SecondJumpZ = z;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, secondjumpdelay, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->SecondJumpDelay = tics;
+}
+
+// -1 means unlimited second jumps; 0 disables them.
+DEFINE_CLASS_PROPERTY_PREFIX(player, secondjumpamount, I, PlayerPawn)
+{
+	PROP_INT_PARM(amount, 0);
+	defaults->SecondJumpAmount = amount;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, doubletapmaxtics, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->DoubleTapMaxTics = tics;
+}
+
+//==========================================================================
+//
+// [rc4l] Traversal tuning (stage 4). Inert unless the pawn sets MvType 1 AND the matching MV_*
+// flag, so adding these to a class changes nothing on its own.
+//
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchslideacceleration, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(accel, 0);
+	defaults->CrouchSlideAcceleration = accel;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchslidefriction, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(friction, 0);
+	defaults->CrouchSlideFriction = friction;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchslidemaxtics, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(tics, 0);
+	defaults->CrouchSlideMaxTics = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchslideregen, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(regen, 0);
+	defaults->CrouchSlideRegen = regen;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchslideeffectinterval, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->CrouchSlideEffectInterval = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, wallclimbspeed, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(speed, 0);
+	defaults->WallClimbSpeed = speed;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, wallclimbfriction, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(friction, 0);
+	defaults->WallClimbFriction = friction;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, wallclimbmaxtics, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(tics, 0);
+	defaults->WallClimbMaxTics = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, wallclimbregen, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(regen, 0);
+	defaults->WallClimbRegen = regen;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, wallclimbeffectinterval, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->WallClimbEffectInterval = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, airwallrunmaxtics, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(tics, 0);
+	defaults->AirWallRunMaxTics = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, airwallrunregen, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(regen, 0);
+	defaults->AirWallRunRegen = regen;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, airwallrunminvelocity, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(velocity, 0);
+	defaults->AirWallRunMinVelocity = velocity;
+}
+
+// [rc4l] Player.EffectActor "<slot>" "<class>" -- the cosmetic actor emitted while a traversal move
+// runs. An unknown slot name is a parse error rather than a silent no-op, since a typo would
+// otherwise look like "my dust just doesn't appear".
+DEFINE_CLASS_PROPERTY_PREFIX(player, effectactor, SS, PlayerPawn)
+{
+	PROP_STRING_PARM(slot, 0);
+	PROP_STRING_PARM(className, 1);
+
+	int index;
+	if ( stricmp( slot, "CrouchSlide" ) == 0 )
+		index = EA_CROUCH_SLIDE;
+	else if ( stricmp( slot, "WallClimb" ) == 0 )
+		index = EA_WALL_CLIMB;
+	else if ( stricmp( slot, "Footstep" ) == 0 )
+		index = EA_FOOTSTEP;
+	else
+	{
+		I_Error( "Unknown Player.EffectActor slot '%s' (expected CrouchSlide, WallClimb or Footstep)", slot );
+		return;
+	}
+
+	defaults->EffectActors[index] = ( className[0] != '\0' )
+		? PClass::FindClass( className )
+		: NULL;
+}
+
+//==========================================================================
+//
 //==========================================================================
 DEFINE_CLASS_PROPERTY_PREFIX(player, GruntSpeed, F, PlayerPawn)
 {
@@ -2652,7 +2870,10 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, aircapacity, F, PlayerPawn)
 //==========================================================================
 //
 //==========================================================================
-DEFINE_CLASS_PROPERTY_PREFIX(player, forwardmove, F_f, PlayerPawn)
+// [rc4l] Extended to four tiers (walk, run, crouch-walk, crouch-run) for features/quake-movement.
+// Omitted tiers mirror the ones before them, so `Player.ForwardMove 1` and `Player.ForwardMove 1, 1`
+// mean exactly what they always did and no existing class changes.
+DEFINE_CLASS_PROPERTY_PREFIX(player, forwardmove, F_fff, PlayerPawn)
 {
 	PROP_FIXED_PARM(m, 0);
 	defaults->ForwardMove1 = defaults->ForwardMove2 = m;
@@ -2661,12 +2882,24 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, forwardmove, F_f, PlayerPawn)
 		PROP_FIXED_PARM(m2, 1);
 		defaults->ForwardMove2 = m2;
 	}
+	defaults->ForwardMove3 = defaults->ForwardMove1;
+	defaults->ForwardMove4 = defaults->ForwardMove2;
+	if (PROP_PARM_COUNT > 2)
+	{
+		PROP_FIXED_PARM(m3, 2);
+		defaults->ForwardMove3 = m3;
+	}
+	if (PROP_PARM_COUNT > 3)
+	{
+		PROP_FIXED_PARM(m4, 3);
+		defaults->ForwardMove4 = m4;
+	}
 }
 
 //==========================================================================
 //
 //==========================================================================
-DEFINE_CLASS_PROPERTY_PREFIX(player, sidemove, F_f, PlayerPawn)
+DEFINE_CLASS_PROPERTY_PREFIX(player, sidemove, F_fff, PlayerPawn)
 {
 	PROP_FIXED_PARM(m, 0);
 	defaults->SideMove1 = defaults->SideMove2 = m;
@@ -2674,6 +2907,76 @@ DEFINE_CLASS_PROPERTY_PREFIX(player, sidemove, F_f, PlayerPawn)
 	{
 		PROP_FIXED_PARM(m2, 1);
 		defaults->SideMove2 = m2;
+	}
+	defaults->SideMove3 = defaults->SideMove1;
+	defaults->SideMove4 = defaults->SideMove2;
+	if (PROP_PARM_COUNT > 2)
+	{
+		PROP_FIXED_PARM(m3, 2);
+		defaults->SideMove3 = m3;
+	}
+	if (PROP_PARM_COUNT > 3)
+	{
+		PROP_FIXED_PARM(m4, 3);
+		defaults->SideMove4 = m4;
+	}
+}
+
+//==========================================================================
+//
+// [rc4l] Crouch and footstep tuning (features/quake-movement stage 5). CrouchScale and
+// CrouchChangeSpeed default to the engine's historic constants, so they are behaviour-neutral
+// unless a class overrides them; the footstep properties only do anything under MvType 1.
+//
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchscale, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(scale, 0);
+	// A scale above 1 would mean "crouching makes you taller", and 0 would collapse the pawn to
+	// nothing and wedge it in the floor; clamp rather than trust the author.
+	defaults->CrouchScale = clamp<fixed_t>( scale, FRACUNIT / 16, FRACUNIT );
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, crouchchangespeed, F, PlayerPawn)
+{
+	PROP_FIXED_PARM(speed, 0);
+	// Zero would make crouching never complete; negative would invert it.
+	defaults->CrouchChangeSpeed = ( speed > 0 ) ? speed : fixed_t( FRACUNIT / 12 );
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, footstepinterval, I, PlayerPawn)
+{
+	PROP_INT_PARM(tics, 0);
+	defaults->FootstepInterval = tics;
+}
+
+DEFINE_CLASS_PROPERTY_PREFIX(player, footstepvolume, F, PlayerPawn)
+{
+	PROP_FLOAT_PARM(volume, 0);
+	defaults->FootstepVolume = volume;
+}
+
+// Per move tier: walk, run, crouch-walk, crouch-run. Omitted tiers mirror the ones before them.
+DEFINE_CLASS_PROPERTY_PREFIX(player, footstepsenabled, I_iii, PlayerPawn)
+{
+	PROP_INT_PARM(e1, 0);
+	defaults->FootstepsEnabled1 = defaults->FootstepsEnabled2 = ( e1 != 0 );
+	if (PROP_PARM_COUNT > 1)
+	{
+		PROP_INT_PARM(e2, 1);
+		defaults->FootstepsEnabled2 = ( e2 != 0 );
+	}
+	defaults->FootstepsEnabled3 = defaults->FootstepsEnabled1;
+	defaults->FootstepsEnabled4 = defaults->FootstepsEnabled2;
+	if (PROP_PARM_COUNT > 2)
+	{
+		PROP_INT_PARM(e3, 2);
+		defaults->FootstepsEnabled3 = ( e3 != 0 );
+	}
+	if (PROP_PARM_COUNT > 3)
+	{
+		PROP_INT_PARM(e4, 3);
+		defaults->FootstepsEnabled4 = ( e4 != 0 );
 	}
 }
 
