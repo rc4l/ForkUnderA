@@ -623,46 +623,12 @@ CCMD ( menu_clear_browser_filter )
 
 //*****************************************************************************
 //
+// [rc4l] Kept so any existing binding still works, but the implementation is gone: it duplicated the
+// join logic AND used `restart -connect ... -file ...`, which tears the running game down before
+// discovering a bad WAD. Both spellings now run the one validated implementation in zx_joinserver.cpp.
+namespace zx { bool JoinSelectedServer(); }
+
 CCMD ( menu_join_selected_server )
 {
-	if ( BROWSER_GetSelectedServer() < 0 )
-	{
-		M_StartMessage( "No server selected.\n\npress a key.", 1 );
-		return;
-	}
-
-	FString command;
-	command.Format( "restart -connect %s -iwad %s", BROWSER_GetAddress( BROWSER_GetSelectedServer() ).ToString(), BROWSER_GetIWADName ( BROWSER_GetSelectedServer() ) );
-
-	TArray<FString> wadfiles;
-	TArray<FString> missingWadfiles;
-
-	if ( BROWSER_GetNumPWADs( BROWSER_GetSelectedServer() ) > 0 )
-	{
-		command.AppendFormat ( " -file" );
-		for ( int i = 0; i < BROWSER_GetNumPWADs( BROWSER_GetSelectedServer() ); ++i )
-		{
-			if ( D_AddFile ( wadfiles, BROWSER_GetPWADName( BROWSER_GetSelectedServer(), i ) ) == false )
-				missingWadfiles.Push ( BROWSER_GetPWADName( BROWSER_GetSelectedServer(), i ) );
-
-			command.AppendFormat ( " %s", BROWSER_GetPWADName( BROWSER_GetSelectedServer(), i ) );
-		}
-	}
-
-	if ( missingWadfiles.Size() > 0 )
-	{
-		FString errorMessage = "Can't find the following files:\n";
-		for ( unsigned int i = 0; i < missingWadfiles.Size(); ++i )
-		{
-			errorMessage += missingWadfiles[i];
-			errorMessage += "\n";
-		}
-		errorMessage += "\nPress a key.";
-		M_StartMessage( errorMessage.GetChars(), 1 );
-		return;
-	}
-
-	M_ClearMenus();
-	Printf ( "Restarting with command \"%s\"\n", command.GetChars() );
-	C_DoCommand( command );
+	zx::JoinSelectedServer();
 }

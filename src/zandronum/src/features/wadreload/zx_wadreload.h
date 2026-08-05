@@ -38,7 +38,19 @@ bool WadLoadable(const char *path, FString &outWhy);
 // first: if any is not loadable, returns InvalidWads and the running game is untouched. If the wanted
 // set already matches what's loaded, returns AlreadyLoaded. Otherwise rewrites Args and throws
 // CRestartException (so it does not return on that path).
-ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const char *startMap = NULL);
+//
+// [rc4l] `connectAddress` (NULL/empty = none) makes the reload come back up connected to that server
+// instead of at the title screen -- the server browser's "join" is this call. It rides the same
+// mechanism as everything else here: RequestReload already STRIPS -connect from the rewritten Args
+// (a reload must not silently rejoin whatever you were last connected to), so joining is that same
+// argv gaining a -connect the engine's normal startup then acts on. Mutually exclusive with
+// `startMap` in practice -- a server tells you which map you are on.
+//
+// Worth doing through here rather than `restart -connect ... -file ...`: this validates the whole
+// wanted set BEFORE tearing anything down, so a truncated or garbage PWAD refuses the join and
+// leaves you in the running game, instead of discovering it after the engine has already gone.
+ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const char *startMap = NULL,
+	const char *connectAddress = NULL);
 
 }} // namespace zx::wadreload
 
