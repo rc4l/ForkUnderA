@@ -317,12 +317,21 @@ TEST(IwadAllow, UnsafeNamesAreRejectedBeforeAnyLegalQuestionIsAsked)
 
 TEST(IwadAllow, EveryVerdictHasSomethingToShowThePlayer)
 {
+	// Every enumerator, so adding one without a message fails here rather than showing a player the
+	// fallback. Missing UnvouchedIwadBuild off this list is exactly what the coverage gate caught.
 	const DownloadVerdict all[] = { DownloadVerdict::Allowed, DownloadVerdict::UnsafeName,
-		DownloadVerdict::UnlistedIwad };
+		DownloadVerdict::UnlistedIwad, DownloadVerdict::UnvouchedIwadBuild };
 	for (size_t i = 0; i < sizeof all / sizeof all[0]; ++i)
 	{
 		const char *reason = DownloadVerdictReason(all[i]);
 		ASSERT_TRUE(reason != NULL);
 		EXPECT_GT(strlen(reason), 0u);
 	}
+
+	// The fallback after the switch. Unreachable through the enum, which is why it needs reaching
+	// deliberately -- an uncovered line here is a line nobody has read, in the function whose whole
+	// job is telling a player why their download was refused.
+	const char *fallback = DownloadVerdictReason(static_cast<DownloadVerdict>(9999));
+	ASSERT_TRUE(fallback != NULL);
+	EXPECT_GT(strlen(fallback), 0u);
 }
