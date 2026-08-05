@@ -79,6 +79,7 @@
 #include "i_input.h"
 #include "i_system.h"
 #include "c_dispatch.h"
+#include "c_console.h"
 #include "templates.h"
 #include "gameconfigfile.h"
 #include "v_font.h"
@@ -675,7 +676,7 @@ void I_DetectOS(void)
 				info.dwMajorVersion, info.dwMinorVersion,
 				info.dwBuildNumber & 0xffff, info.szCSDVersion);
 		// [K6/BB]
-		g_VersionWithOS.Format ( "%s on Windows %s (%lu.%lu.%lu)", GetVersionStringRev(), osname,
+		g_VersionWithOS.Format ( "%s on Windows %s (%lu.%lu.%lu)", GetFuaVersionTag(), osname,
 				info.dwMajorVersion, info.dwMinorVersion,
 				info.dwBuildNumber & 0xffff);
 	}
@@ -686,7 +687,7 @@ void I_DetectOS(void)
 				info.dwMajorVersion, info.dwMinorVersion,
 				info.dwBuildNumber, info.szCSDVersion);
 		// [K6/BB]
-		g_VersionWithOS.Format ( "%s on Windows %s (%lu.%lu.%lu)", GetVersionStringRev(), osname,
+		g_VersionWithOS.Format ( "%s on Windows %s (%lu.%lu.%lu)", GetFuaVersionTag(), osname,
 				info.dwMajorVersion, info.dwMinorVersion,
 				info.dwBuildNumber);
 	}
@@ -870,6 +871,10 @@ void I_Quit()
 	// [BC] Support for client-side demos.
 	if ( CLIENTDEMO_IsRecording( ))
 		CLIENTDEMO_FinishRecording( );
+
+	// [rc4l] uzdoom@b6bbdf619: deinit the console HERE rather than via atterm, so anything Printf'd
+	// during the rest of shutdown still reaches a live console.
+	C_DeinitConsole();
 }
 
 
@@ -1881,20 +1886,40 @@ static bool QueryPathKey(HKEY key, const char *keypath, const char *valname, FSt
 //
 //==========================================================================
 
-FString I_GetSteamPath()
+// [rc4l] uzdoom@86372fce3: returns every candidate directory rather than the Steam root, so the
+// POSIX implementation (posix/i_steam.cpp) can answer the same question a different way -- it has
+// to parse Steam's library folders, which have no registry equivalent. Also adds Strife: Veteran
+// Edition to the list.
+TArray<FString> I_GetSteamPath()
 {
+	TArray<FString> result;
+	static const char *const steam_dirs[] =
+	{
+		"doom 2/base",
+		"final doom/base",
+		"heretic shadow of the serpent riders/base",
+		"hexen/base",
+		"hexen deathkings of the dark citadel/base",
+		"ultimate doom/base",
+		"DOOM 3 BFG Edition/base/wads",
+		"Strife"
+	};
+
 	FString path;
 
-	if (QueryPathKey(HKEY_CURRENT_USER, "Software\\Valve\\Steam", "SteamPath", path))
+	if (!QueryPathKey(HKEY_CURRENT_USER, "Software\\Valve\\Steam", "SteamPath", path))
 	{
-		return path;
+		if (!QueryPathKey(HKEY_LOCAL_MACHINE, "Software\\Valve\\Steam", "InstallPath", path))
+			return result;
 	}
-	if (QueryPathKey(HKEY_LOCAL_MACHINE, "Software\\Valve\\Steam", "InstallPath", path))
+	path += "/SteamApps/common/";
+
+	for (unsigned int i = 0; i < countof(steam_dirs); ++i)
 	{
-		return path;
+		result.Push(path + steam_dirs[i]);
 	}
-	path = "";
-	return path;
+
+	return result;
 }
 
 //==========================================================================

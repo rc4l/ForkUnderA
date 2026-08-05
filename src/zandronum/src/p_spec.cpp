@@ -68,6 +68,7 @@
 #include "a_sharedglobal.h"
 #include "farchive.h"
 #include "a_keys.h"
+#include "c_dispatch.h"
 
 // State.
 #include "r_state.h"
@@ -99,9 +100,6 @@
 static FRandom pr_playerinspecialsector ("PlayerInSpecialSector");
 void P_SetupPortals();
 
-
-// [GrafZahl] Make this message changable by the user! ;)
-CVAR(String, secretmessage, "A Secret is revealed!", CVAR_ARCHIVE)
 
 IMPLEMENT_POINTY_CLASS (DScroller)
  DECLARE_POINTER (m_Interpolations[0])
@@ -343,7 +341,9 @@ bool P_ActivateLine (line_t *line, AActor *mo, int side, int activationType)
 
 	if (buttonSuccess)
 	{
-		if (activationType == SPAC_Use || activationType == SPAC_Impact)
+		// [rc4l] uzdoom@0276760a2: SPAC_Push counts too -- a switch triggered by bumping into it
+		// changed its special but never swapped its texture, so it kept looking unpressed.
+		if (activationType == SPAC_Use || activationType == SPAC_Impact || activationType == SPAC_Push)
 		{
 			P_ChangeSwitchTexture (line->sidedef[0], repeat, special);
 
@@ -743,7 +743,7 @@ void P_PlayerInSpecialSector (player_t *player, sector_t * sector)
 	if (sector->special & SECRET_MASK)
 	{
 		sector->special &= ~SECRET_MASK;
-		P_GiveSecret(player->mo, true, true);
+		P_GiveSecret(player->mo, true, true, false, int(sector - sectors));
 	}
 }
 
@@ -836,7 +836,13 @@ void P_SectorDamage(int tag, int amount, FName type, const PClass *protectClass,
 
 // [Zandronum] `allowclient` is Zandronum extension to prevent accidental execution
 // by clients unless explicitly allowed to do so.
-void P_GiveSecret(AActor *actor, bool printmessage, bool playsound, bool allowclient)
+// [rc4l] uzdoom@8f5683e23 declares this immediately above P_GiveSecret; it arrived in the same
+// hunk our signature reject dropped.
+CVAR(Bool, showsecretsector, false, 0)
+// [rc4l] uzdoom@c85105f55: keeps its upstream name -- a ported CVAR is not ours to rename.
+CVAR(Bool, cl_showsecretmessage, true, CVAR_ARCHIVE)
+
+void P_GiveSecret(AActor *actor, bool printmessage, bool playsound, bool allowclient, int sectornum)
 {
 	// [Zandronum] client must bail out if not allowed to give secret.
 	if ( !allowclient && NETWORK_InClientMode() )
@@ -865,9 +871,18 @@ void P_GiveSecret(AActor *actor, bool printmessage, bool playsound, bool allowcl
 				SERVERCOMMANDS_SecretMarkSectorFound( actor->Sector );
 			SERVERCOMMANDS_SecretFound( actor, secretFlags );
 		}
-		else if (actor->CheckLocalView (consoleplayer))
+		else if (cl_showsecretmessage && actor->CheckLocalView (consoleplayer))
 		{
-			if (printmessage) C_MidPrint (SmallFont, secretmessage);
+			if (printmessage)
+			{
+				if (!showsecretsector || sectornum < 0) C_MidPrint(SmallFont, GStrings["SECRETMESSAGE"]);
+				else
+				{
+					FString s = GStrings["SECRETMESSAGE"];
+					s.AppendFormat(" (Sector %d)", sectornum);
+					C_MidPrint(SmallFont, s);
+				}
+			}
 			if (playsound) S_Sound (CHAN_AUTO | CHAN_UI, "misc/secret", 1, ATTN_NORM);
 		}
 	}
@@ -1075,16 +1090,7 @@ IMPLEMENT_CLASS (DLightTransfer)
 void DLightTransfer::Serialize (FArchive &arc)
 {
 	Super::Serialize (arc);
-	if (SaveVersion < 3223)
-	{
-		BYTE bytelight;
-		arc << bytelight;
-		LastLight = bytelight;
-	}
-	else
-	{
-		arc << LastLight;
-	}
+	arc << LastLight;
 	arc << Source << TargetTag << CopyFloor;
 }
 
@@ -1168,16 +1174,7 @@ IMPLEMENT_CLASS (DWallLightTransfer)
 void DWallLightTransfer::Serialize (FArchive &arc)
 {
 	Super::Serialize (arc);
-	if (SaveVersion < 3223)
-	{
-		BYTE bytelight;
-		arc << bytelight;
-		LastLight = bytelight;
-	}
-	else
-	{
-		arc << LastLight;
-	}
+	arc << LastLight;
 	arc << Source << TargetID << Flags;
 }
 
@@ -2462,26 +2459,13 @@ void P_SetSectorFriction (int tag, int amount, bool alterFlag)
 	friction = (0x1EB8*amount)/0x80 + 0xD001;
 
 	// killough 8/28/98: prevent odd situations
-	if (friction > FRACUNIT)
-		friction = FRACUNIT;
-	if (friction < 0)
-		friction = 0;
+	friction = clamp(friction, 0, FRACUNIT);
 
 	// The following check might seem odd. At the time of movement,
 	// the move distance is multiplied by 'friction/0x10000', so a
 	// higher friction value actually means 'less friction'.
 
-	// [RH] Twiddled these values so that velocity on ice (with
-	//		friction 0xf900) is the same as in Heretic/Hexen.
-	if (friction >= ORIG_FRICTION)	// ice
-//		movefactor = ((0x10092 - friction)*(0x70))/0x158;
-		movefactor = ((0x10092 - friction) * 1024) / 4352 + 568;
-	else
-		movefactor = ((friction - 0xDB34)*(0xA))/0x80;
-
-	// killough 8/28/98: prevent odd situations
-	if (movefactor < 32)
-		movefactor = 32;
+	movefactor = FrictionToMoveFactor(friction);
 
 	for (s = -1; (s = P_FindSectorFromTag (tag,s)) >= 0; )
 	{

@@ -33,6 +33,10 @@ permissions:
 
 jobs:
   sync:
+    # [rc4l] Main-repo-only infra: it needs our GlitchTip secrets and files issues on THIS repo, so on
+    # a fork (which has neither) it would just fail. Skip it there instead of erroring. Forks enabling
+    # Actions still get a clean run history; only rc4l/ZandroX actually syncs crashes.
+    if: github.repository == 'rc4l/ZandroX'
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

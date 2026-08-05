@@ -56,9 +56,11 @@ struct sfxinfo_t
 
 	WORD		bRandomHeader:1;
 	WORD		bPlayerReserve:1;
-	WORD		bForce11025:1;
-	WORD		bForce22050:1;
 	WORD		bLoadRAW:1;
+
+	// [rc4l] uzdoom@449a17c2f: replaces bForce11025/bForce22050 -- Blood SFX come in more than
+	// two rates, so the rate is stored rather than encoded as a pair of flags.
+	int			RawRate;
 	WORD		bPlayerCompat:1;
 	WORD		b16bit:1;
 	WORD		bUsed:1;
@@ -410,7 +412,9 @@ enum EMidiDevice
 	MDEV_DEFAULT = -1,
 	MDEV_MMAPI = 0,
 	MDEV_OPL = 1,
-	MDEV_FMOD = 2,
+	// [rc4l] uzdoom@1a40c95f8: this is the generic sound-system device, not FMOD specifically --
+	// doubly true here, where the FMOD backend is gone and OpenAL serves this role.
+	MDEV_SNDSYS = 2,
 	MDEV_TIMIDITY = 3,
 	MDEV_FLUIDSYNTH = 4,
 	MDEV_GUS = 5,

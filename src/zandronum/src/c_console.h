@@ -49,6 +49,11 @@ typedef enum cstate_t
 } 
 constate_e;
 
+// [rc4l] uzdoom@9d846395b -- moved out of c_console.cpp so c_consolebuffer.cpp can colour by
+// print level. Zandronum has 7 levels where upstream has 5; PrintColors keeps the extra two.
+#define PRINTLEVELS 7
+extern int PrintColors[PRINTLEVELS + 2];
+
 extern constate_e ConsoleState;
 extern int ConBottom;
 

@@ -71,15 +71,10 @@ void AWeapon::Serialize (FArchive &arc)
 		<< Ammo1 << Ammo2 << SisterWeapon << GivenAsMorphWeapon
 		<< bAltFire
 		<< ReloadCounter;		
-		if (SaveVersion >= 3615) {
-			arc << BobStyle << BobSpeed << BobRangeX << BobRangeY;
-		}
+		arc << BobStyle << BobSpeed << BobRangeX << BobRangeY;
 	arc << FOVScale
 		<< Crosshair;
-	if (SaveVersion >= 4203)
-	{
-		arc << MinSelAmmo1 << MinSelAmmo2;
-	}
+	arc << MinSelAmmo1 << MinSelAmmo2;
 }
 
 //===========================================================================
@@ -913,10 +908,7 @@ IMPLEMENT_CLASS(AWeaponGiver)
 void AWeaponGiver::Serialize(FArchive &arc)
 {
 	Super::Serialize(arc);
-	if (SaveVersion >= 4246)
-	{
-		arc << DropAmmoFactor;
-	}
+	arc << DropAmmoFactor;
 }
 
 bool AWeaponGiver::TryPickup(AActor *&toucher)
@@ -1354,7 +1346,9 @@ AWeapon *FWeaponSlots::PickNextWeapon(player_t *player)
 				return weap;
 			}
 		}
-		while ((slot != startslot || index != startindex) && slotschecked < NUM_WEAPON_SLOTS);
+		// [rc4l] uzdoom@3817bed0b: <= , not <. slotschecked counts slots already visited, so the
+		// strict bound gave up one slot early and the scroll could skip a same-slot weapon.
+		while ((slot != startslot || index != startindex) && slotschecked <= NUM_WEAPON_SLOTS);
 	}
 	return player->ReadyWeapon;
 }
@@ -1414,7 +1408,9 @@ AWeapon *FWeaponSlots::PickPrevWeapon (player_t *player)
 				return weap;
 			}
 		}
-		while ((slot != startslot || index != startindex) && slotschecked < NUM_WEAPON_SLOTS);
+		// [rc4l] uzdoom@3817bed0b: <= , not <. slotschecked counts slots already visited, so the
+		// strict bound gave up one slot early and the scroll could skip a same-slot weapon.
+		while ((slot != startslot || index != startindex) && slotschecked <= NUM_WEAPON_SLOTS);
 	}
 	return player->ReadyWeapon;
 }

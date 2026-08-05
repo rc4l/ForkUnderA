@@ -98,7 +98,7 @@
 #include "cl_demo.h"
 #include "cl_main.h"
 #include "cl_statistics.h"
-#include "browser.h"
+#include "features/server-browser/browser.h"
 #include "lastmanstanding.h"
 #include "campaign.h"
 #include "callvote.h"
@@ -153,6 +153,9 @@ CVAR (Bool, chasedemo, false, 0);
 CVAR (Bool, storesavepic, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, longsavemessages, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (String, save_dir, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
+// [rc4l] uzdoom@c339bb33c: freeze the clock across a save so the world does not advance
+// while the snapshot is being written.
+CVAR (Bool, cl_waitforsave, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
 EXTERN_CVAR (Float, con_midtime);
 
 // [BB]
@@ -209,6 +212,9 @@ int 			consoleplayer;			// player taking events
 int 			gametic;
 
 CVAR(Bool, demo_compress, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
+// [rc4l] uzdoom@eceb37aa6
+FString			newdemoname;
+FString			newdemomap;
 FString			demoname;
 bool 			demorecording;
 bool 			demoplayback;
@@ -1541,6 +1547,15 @@ void G_Ticker ()
 		case ga_loadlevel:
 			G_DoLoadLevel (-1, false);
 			break;
+		// [rc4l] uzdoom@eceb37aa6: NO break -- deliberate fall-through into ga_newgame. The
+		// recordmap CCMD calls G_DeferedInitNew (which sets ga_newgame) and then overwrites
+		// gameaction with ga_recordgame, so the new game still has to be started here.
+		// Upstream annotates this [[fallthrough]] at HEAD; we say it in words.
+		case ga_recordgame:
+			G_CheckDemoStatus();
+			G_RecordDemo(newdemoname);
+			G_BeginRecording(newdemomap);
+			// fall through
 		case ga_newgame2:	// Silence GCC (see above)
 		case ga_newgame:
 			G_DoNewGame ();
@@ -2131,7 +2146,14 @@ void G_PlayerFinishLevel (int player, EFinishLevelType mode, int flags)
 	}
 
 	// Clears the entire inventory and gives back the defaults for starting a game
-	if (flags & CHANGELEVEL_RESETINVENTORY)
+	// [rc4l] uzdoom@842ef86e7: a dead player must not be handed the starting inventory here -- they
+	// get it on respawn instead. Doing it twice left them holding weapons their corpse never lost.
+	// Pure predicate tightening on playerstate, which is already synced, so both ends still agree.
+	// [rc4l] uzdoom@fc40e9723: deliberately NO health reset here. This is the whole point of that
+	// commit -- MAPINFO 'resetinventory' used to imply 'resethealth' because GiveDefaultInventory()
+	// healed as a side effect, so the two flags handled separately just above could not be used
+	// independently. A player crossing into a resetinventory map now keeps the damage they took.
+	if ((flags & CHANGELEVEL_RESETINVENTORY) && p->playerstate != PST_DEAD)
 	{
 		p->mo->ClearInventory();
 		p->mo->GiveDefaultInventory();
@@ -2296,13 +2318,16 @@ void G_PlayerReborn (int player, bool bGiveInventory)
 
 	if (gamestate != GS_TITLELEVEL)
 	{
+		// [rc4l] uzdoom@fc40e9723 puts the starting-health reset here, in the one caller that
+		// wants it, rather than inside GiveDefaultInventory(). The [BB] else branch below was
+		// already doing exactly that by hand for the no-inventory case -- it is now the same
+		// call on both paths, so a reborn player gets the handicap applied either way.
+		if ( actor->player )
+			actor->ResetStartingHealth ();
+
 		// [BB] Added bGiveInventory.
 		if ( bGiveInventory )
 			actor->GiveDefaultInventory ();
-		// [BB] Even if we don't give the inventory, we need to give the player the default health.
-		// Otherwise we get a zombie player with 0 health (at least on the clients).
-		else if ( actor->player )
-			actor->player->health = actor->GetDefault ()->health;
 
 		p->ReadyWeapon = p->PendingWeapon;
 	}
@@ -4691,6 +4716,14 @@ void G_DoLoadGame ()
 		BYTE *vars_p = (BYTE *)text;
 		C_ReadCVars (&vars_p);
 		delete[] text;
+		// [rc4l] uzdoom@a21f01bc5: dmflags bit 19 used to mean DF_RESPAWN_SUPER; it is now
+		// DF_YES_FREELOOK and respawn-super lives in dmflags2. Migrate saves written before the move.
+		if (SaveVersion <= 4514)
+		{
+			INTBOOL flag = dmflags & DF_YES_FREELOOK;
+			dmflags = dmflags & ~DF_YES_FREELOOK;
+			if (flag) dmflags2 = dmflags2 | DF2_RESPAWN_SUPER;
+		}
 	}
 
 	// dearchive all the modifications
@@ -4945,6 +4978,10 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 		filename = G_BuildSaveName ("demosave.zds", -1);
 	}
 
+	// [rc4l] uzdoom@c339bb33c
+	if (cl_waitforsave)
+		I_FreezeTime(true);
+
 	insave = true;
 	G_SnapshotLevel ();
 
@@ -4954,6 +4991,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	{
 		Printf ("Could not create savegame '%s'\n", filename.GetChars());
 		insave = false;
+		I_FreezeTime(false);	// [rc4l] uzdoom@c339bb33c: unfreeze on the failure path too
 		return;
 	}
 
@@ -5042,6 +5080,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	}
 		
 	insave = false;
+	I_FreezeTime(false);	// [rc4l] uzdoom@c339bb33c
 }
 
 
@@ -5194,11 +5233,10 @@ void G_BeginRecording (const char *startmap)
 	WriteWord (DEMOGAMEVERSION, &demo_p);			// Write ZDoom version
 	*demo_p++ = 2;							// Write minimum version needed to use this demo.
 	*demo_p++ = 3;							// (Useful?)
-	for (i = 0; i < 8; i++)					// Write name of map demo was recorded on.
-	{
-		*demo_p++ = startmap[i];
-	}
-	WriteLong (rngseed, &demo_p);			// Write RNG seed
+
+	strcpy((char*)demo_p, startmap);		// Write name of map demo was recorded on.
+	demo_p += strlen(startmap) + 1;
+	WriteLong(rngseed, &demo_p);			// Write RNG seed
 	*demo_p++ = consoleplayer;
 	FinishChunk (&demo_p);
 
@@ -5260,6 +5298,18 @@ void G_DeferedPlayDemo (const char *name)
 extern bool advancedemo;
 CCMD (playdemo)
 {
+	// [rc4l] uzdoom@eceb37aa6: refuse rather than silently clobbering a live game or an
+	// in-progress recording. Our netgame test is the network state, as elsewhere here.
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+	{
+		Printf( "End your current netgame first!\n" );
+		return;
+	}
+	if (demorecording)
+	{
+		Printf( "End your current demo first!\n" );
+		return;
+	}
 	if (argv.argc() > 1)
 	{
 		// [BB] CLIENTDEMO_FinishPlaying() destroy the arguments, so we have to save
@@ -5297,7 +5347,7 @@ UNSAFE_CCMD (timedemo)
 
 // [RH] Process all the information in a FORM ZDEM
 //		until a BODY chunk is entered.
-bool G_ProcessIFFDemo (char *mapname)
+bool G_ProcessIFFDemo (FString &mapname)
 {
 	bool headerHit = false;
 	bool bodyHit = false;
@@ -5353,9 +5403,20 @@ bool G_ProcessIFFDemo (char *mapname)
 				Printf ("Demo requires a newer version of ZDoom!\n");
 				return true;
 			}
-			memcpy (mapname, demo_p, 8);	// Read map name
-			mapname[8] = 0;
-			demo_p += 8;
+			// [rc4l] 0x21B, not upstream's 0x21A. Their bump to 0x21A IS this change; ours was
+			// already 0x21A for the SoundActor pitch field, so every demo we have recorded at
+			// 0x21A carries the OLD fixed 8-byte map name. Gating at 0x21A would read those eight
+			// bytes as a NUL-terminated string and take the rng seed with it.
+			if (demover >= 0x21b)
+			{
+				mapname = (char*)demo_p;
+				demo_p += mapname.Len() + 1;
+			}
+			else
+			{
+				mapname = FString((char*)demo_p, 8);
+				demo_p += 8;
+			}
 			rngseed = ReadLong (&demo_p);
 			// Only reset the RNG if this demo is not in conjunction with a savegame.
 			if (mapname[0] != 0)
@@ -5438,7 +5499,7 @@ bool G_ProcessIFFDemo (char *mapname)
 
 void G_DoPlayDemo (void)
 {
-	char mapname[9];
+	FString mapname;
 	int demolump;
 
 	gameaction = ga_nothing;
@@ -5504,7 +5565,7 @@ void G_DoPlayDemo (void)
 		// don't spend a lot of time in loadlevel 
 		precache = false;
 		demonew = true;
-		if (mapname[0] != 0)
+		if (mapname.Len() != 0)
 		{
 			G_InitNew (mapname, false);
 		}

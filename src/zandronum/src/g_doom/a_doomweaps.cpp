@@ -195,6 +195,10 @@ enum SAW_Flags
 	SF_RANDOMLIGHTHIT = 4,
 	SF_NOUSEAMMOMISS = 8,
 	SF_NOUSEAMMO = 16,
+	// [rc4l] uzdoom@cfd24f438
+	SF_NOPULLIN = 32,
+	SF_NOTURN = 64,
+	SF_STEALARMOR = 128,	// [rc4l] uzdoom@a150e0686
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
@@ -211,7 +215,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 		return;
 	}
 	
-	ACTION_PARAM_START(9);
+	ACTION_PARAM_START(11);
 	ACTION_PARAM_SOUND(fullsound, 0);
 	ACTION_PARAM_SOUND(hitsound, 1);
 	ACTION_PARAM_INT(damage, 2);
@@ -221,6 +225,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	ACTION_PARAM_ANGLE(Spread_XY, 6);
 	ACTION_PARAM_ANGLE(Spread_Z, 7);
 	ACTION_PARAM_FIXED(LifeSteal, 8);
+	// [rc4l] uzdoom@a150e0686
+	ACTION_PARAM_INT(lifestealmax, 9);
+	ACTION_PARAM_CLASS(armorbonustype, 10);
 
 
 
@@ -315,7 +322,34 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	const int prevhealth = self->health;
 
 	if (LifeSteal && !(linetarget->flags5 & MF5_DONTDRAIN))
-		P_GiveBody (self,(int)( (actualdamage * LifeSteal) >> FRACBITS));
+	{
+		// [rc4l] uzdoom@a150e0686 with its fix uzdoom@9446edc06 folded in (the flags variable
+		// here is Flags, capitalised -- upstream first wrote `flags` and did not compile).
+		// SF_STEALARMOR converts the drain into armour instead of health, and lifestealmax
+		// caps either form.
+		if (Flags & SF_STEALARMOR)
+		{
+			if (!armorbonustype) armorbonustype = PClass::FindClass("ArmorBonus");
+
+			if (armorbonustype->IsDescendantOf (RUNTIME_CLASS(ABasicArmorBonus)))
+			{
+				ABasicArmorBonus *armorbonus = static_cast<ABasicArmorBonus *>(Spawn (armorbonustype, 0,0,0, NO_REPLACE));
+				armorbonus->SaveAmount *= (int)((actualdamage * LifeSteal) >> FRACBITS);
+				armorbonus->MaxSaveAmount = lifestealmax <= 0 ? armorbonus->MaxSaveAmount : lifestealmax;
+				armorbonus->flags |= MF_DROPPED;
+				armorbonus->ClearCounters();
+
+				if (!armorbonus->CallTryPickup (self))
+				{
+					armorbonus->Destroy ();
+				}
+			}
+		}
+		else
+		{
+			P_GiveBody (self,(int)( (actualdamage * LifeSteal) >> FRACBITS), lifestealmax);
+		}
+	}
 
 	// [EP] Inform the clients about the player health change if needed.
 	if ( ( NETWORK_GetState() == NETSTATE_SERVER ) && self->player && prevhealth != self->health )
@@ -327,23 +361,28 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 		SERVERCOMMANDS_SoundActor( self, CHAN_WEAPON, S_GetName( hitsound ), 1, ATTN_NORM );
 		
 	// turn to face target
-	angle = R_PointToAngle2 (self->x, self->y,
-							 linetarget->x, linetarget->y);
-	if (angle - self->angle > ANG180)
+	// [rc4l] uzdoom@cfd24f438: both the turn and the pull-in are opt-out now.
+	if (!(Flags & SF_NOTURN))
 	{
-		if (angle - self->angle < (angle_t)(-ANG90/20))
-			self->angle = angle + ANG90/21;
+		angle = R_PointToAngle2 (self->x, self->y,
+								 linetarget->x, linetarget->y);
+		if (angle - self->angle > ANG180)
+		{
+			if (angle - self->angle < (angle_t)(-ANG90/20))
+				self->angle = angle + ANG90/21;
+			else
+				self->angle -= ANG90/20;
+		}
 		else
-			self->angle -= ANG90/20;
+		{
+			if (angle - self->angle > ANG90/20)
+				self->angle = angle - ANG90/21;
+			else
+				self->angle += ANG90/20;
+		}
 	}
-	else
-	{
-		if (angle - self->angle > ANG90/20)
-			self->angle = angle - ANG90/21;
-		else
-			self->angle += ANG90/20;
-	}
-	self->flags |= MF_JUSTATTACKED;
+	if (!(Flags & SF_NOPULLIN))
+		self->flags |= MF_JUSTATTACKED;
 
 	// [BC] If we're the server, tell clients to adjust the player's angle.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -999,14 +1038,23 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BFGSpray)
 		return;
 	}
 
-	ACTION_PARAM_START(3);
+	// [rc4l] uzdoom@68c481945: spread angle, range, vertical aim range and a fixed damage
+	// override are configurable now; the defaults reproduce the old hardcoded behaviour.
+	ACTION_PARAM_START(7);
 	ACTION_PARAM_CLASS(spraytype, 0);
 	ACTION_PARAM_INT(numrays, 1);
 	ACTION_PARAM_INT(damagecnt, 2);
+	ACTION_PARAM_ANGLE(angle, 3);
+	ACTION_PARAM_FIXED(distance, 4);
+	ACTION_PARAM_ANGLE(vrange, 5);
+	ACTION_PARAM_INT(defdamage, 6);
 
 	if (spraytype == NULL) spraytype = PClass::FindClass("BFGExtra");
 	if (numrays <= 0) numrays = 40;
 	if (damagecnt <= 0) damagecnt = 15;
+	if (angle == 0) angle = ANG90;
+	if (distance <= 0) distance = 16 * 64 * FRACUNIT;
+	if (vrange == 0) vrange = ANGLE_1 * 32;
 
 	// [RH] Don't crash if no target
 	if (!self->target)
@@ -1022,10 +1070,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BFGSpray)
 	// offset angles from its attack angle
 	for (i = 0; i < numrays; i++)
 	{
-		an = self->angle - ANG90/2 + ANG90/numrays*i;
+		an = self->angle - angle/2 + angle/numrays*i;
 
 		// self->target is the originator (player) of the missile
-		P_AimLineAttack (self->target, an, 16*64*FRACUNIT, &linetarget, ANGLE_1*32, lineAttackFlags);
+		// [rc4l] vrange arrives as angle_t. fixed_t deletes construction from 32-bit unsigned on
+		// purpose -- that is the width-extending case -- so the raw-bit reading upstream gets
+		// implicitly is spelled out with FromUnsignedBits, matching what the old ANGLE_1*32
+		// literal did through the int constructor.
+		P_AimLineAttack (self->target, an, distance, &linetarget, fixed_t::FromUnsignedBits(vrange), lineAttackFlags);
 
 		if (!linetarget)
 			continue;
@@ -1040,13 +1092,27 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BFGSpray)
 		if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( spray ))
 			SERVERCOMMANDS_SpawnThing( spray );
 
-		damage = 0;
-		for (j = 0; j < damagecnt; ++j)
-			damage += (pr_bfgspray() & 7) + 1;
+		if (defdamage == 0)
+		{
+			damage = 0;
+			for (j = 0; j < damagecnt; ++j)
+				damage += (pr_bfgspray() & 7) + 1;
+		}
+		else
+		{
+			// if this is used, damagecnt will be ignored
+			damage = defdamage;
+		}
 
 		thingToHit = linetarget;
+		// [rc4l] uzdoom@95bd6bde9: build the flags up so FOILBUDDHA is honoured, and so
+		// FOILINVUL is actually passed -- the old expression computed it inline and the
+		// commit notes it "wasn't working".
+		int dmgFlagPass = 0;
+		dmgFlagPass += (spray != NULL && (spray->flags3 & MF3_FOILINVUL)) ? DMG_FOILINVUL : 0;
+		dmgFlagPass += (spray != NULL && (spray->flags7 & MF7_FOILBUDDHA)) ? DMG_FOILBUDDHA : 0;
 		int newdam = P_DamageMobj (thingToHit, self->target, self->target, damage, spray != NULL? FName(spray->DamageType) : FName(NAME_BFGSplash), 
-			spray != NULL && (spray->flags3 & MF3_FOILINVUL)? DMG_FOILINVUL : 0);
+			dmgFlagPass);
 		P_TraceBleed (newdam > 0 ? newdam : damage, thingToHit, self->target);
 	}
 }

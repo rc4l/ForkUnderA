@@ -17,6 +17,11 @@ struct Lcg
 	int64_t range(int64_t lo, int64_t hi) { return lo + (int64_t)(next() % (uint64_t)(hi - lo + 1)); }
 };
 
+// [rc4l] The reference these compare against is the compiler's OWN 128-bit type, so this block only
+// exists where that type does -- GCC and Clang, i.e. the Linux and macOS CI jobs. MSVC has none, and
+// substituting our own software 128-bit path would make the test compare wide128 against wide128.
+// The tests below this block need no 128-bit reference and DO run on Windows.
+#ifdef __SIZEOF_INT128__
 int64_t MulRef(int64_t a, int64_t b, unsigned s) { return (int64_t)(((__int128)a * b) >> s); }
 int64_t DivRef(int64_t a, unsigned s, int64_t b) { return (int64_t)(((__int128)a * ((__int128)1 << s)) / b); }
 
@@ -137,6 +142,8 @@ TEST(Fixed64Scale, FastAndWideAgreeAtBoundary)
 		EXPECT_EQ(zx::MulScale64(a, b, 16), zx::ComputeMulShiftS64(a, b, 16)) << "a=" << a;
 	}
 }
+
+#endif // __SIZEOF_INT128__
 
 // [rc4l] Mul32Wrap must reproduce the 32-bit signed-multiply overflow that
 // BCOMPATF_SETSLOPEOVERFLOW slopes depend on -- not the full 64-bit product.

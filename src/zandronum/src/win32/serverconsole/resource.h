@@ -91,7 +91,7 @@
 #define IDC_MAXPLAYERS                          1178
 #define IDC_SPIN6                               1181
 #define IDC_MOTD                                1182
-#define IDC_UPDATEMASTER                        1184
+#define IDC_UPDATESERVERREGISTRY                        1184
 #define IDC_BROADCAST                           1185
 #define IDC_SERVERNAME                          1188
 #define IDC_WADURL                              1189

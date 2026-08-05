@@ -44,6 +44,8 @@ const char *GetVersionString();
 const char *GetFuaDescribe();
 // [BB]
 const char *GetVersionStringRev();
+// [rc4l] This engine's own release tag ("v0.1.29"), as opposed to the Zandronum version above.
+const char *GetFuaVersionTag();
 int GetRevisionNumber();
 
 /** Lots of different version numbers **/
@@ -97,7 +99,11 @@ int GetRevisionNumber();
 // Protocol version used in demos.
 // Bump it if you change existing DEM_ commands or add new ones.
 // Otherwise, it should be safe to leave it alone.
-#define DEMOGAMEVERSION 0x21A	// [rc4l] SoundActor gained a pitch field (networked A_StartSound pitch)
+// [rc4l] 0x21B, NOT upstream's 0x21A. Upstream bumped 0x219->0x21A for the un-truncated map name in
+// demos (uzdoom@4acc04ce6); we were ALREADY at 0x21A for an unrelated reason of our own (the
+// SoundActor pitch field below), so reusing their number would mean two different demo formats
+// sharing one version and every existing 0x21A demo being read with the wrong map-name width.
+#define DEMOGAMEVERSION 0x21B	// [rc4l] 0x21A: SoundActor pitch field; 0x21B: full-length map names in demos
 
 // Minimum demo version we can play.
 // Bump it whenever you change or remove existing DEM_ commands.
@@ -129,9 +135,34 @@ int GetRevisionNumber();
 // [rc4l] 4512: level_info_t / FLevelLocals sky, fade, F1, border and background name fields became
 // FStrings and the sky pair became FTextureIDs (uzdoom@65e8563cf), so the serialised layout changed
 // and older saves must not be read back into it.
-// [rc4l] 4513: AActor now serializes mvFlags (guarded in AActor::Serialize; see
-// features/quake-movement).
-#define SAVEVER 4513
+
+// [rc4l] 4513: map names in level snapshots are stored as full strings rather than a fixed
+// 8-character field (uzdoom@8ec95dc58). Upstream numbered the same change 4508; ours is a separate
+// line that was already past that.
+// [rc4l] 4514: AActor now serializes FriendPlayer (guarded in AActor::Serialize), so a saved
+// friendly actor keeps the player it belongs to (uzdoom@e1130b860). Upstream numbered the same
+// change 4509; ours is a separate line that was already past that.
+// [rc4l] 4515: dmflags bit 19 changed meaning -- it was DF_RESPAWN_SUPER, it is now DF_YES_FREELOOK,
+// and respawn-super moved to dmflags2 bit 27 (uzdoom@a21f01bc5). G_DoLoadGame migrates older saves.
+// [rc4l] 4516: AActor now serializes weaponspecial, the weapon scratch counter split out of
+// special1 (uzdoom@ee6e87d94). Upstream bumped for the same change; ours is a separate line.
+// [rc4l] 4517: DACSThinker serializes its script list iteratively, longest-last, with an
+// explicit count, instead of letting the archive chase the linked list recursively
+// (uzdoom@e3640b5bf + 5170abfee). Upstream numbered the same change 4515; ours is a separate
+// line that was already past that.
+// [rc4l] 4518: each ACS module's data size is stored alongside its name, so a save made
+// against a different build of the same-named BEHAVIOR is refused rather than loaded as
+// garbage (uzdoom@3437f4fca + c494063eb). Upstream numbered it 4516; ours is a separate line.
+// [rc4l] 4519: AActor serializes DamageMultiply, the outgoing-damage scale reachable from
+// DECORATE and from ACS via APROP_DamageMultiplier (uzdoom@99b2cfa14 + e303833e5).
+// [rc4l] 4520: AActor serializes TeleFogSourceType/TeleFogDestType, the per-actor teleport fog
+// classes reachable from DECORATE and from ACS SetTeleFog/SwapTeleFog (uzdoom@30acb7200 cluster).
+// [rc4l] 4521: AActor serializes mvFlags and APlayerPawn serializes MvType, the Quake movement
+// model and its flag word (features/quake-movement). Numbered above upstream's 4520 rather than
+// reusing the 4513 this branch was written against: saves made by builds 4514-4520 do not contain
+// these fields, and a >= 4513 guard would have read them out of a file that never had them.
+#define SAVEVER 4521
+
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)

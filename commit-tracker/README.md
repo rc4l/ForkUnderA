@@ -59,8 +59,20 @@ GOAL_LABEL="GZDoom 2.1.1"   GOAL_DATE="2016-02-23"   ./progress.sh
 
 | goal | date | note |
 |---|---|---|
-| GZDoom 2.0.05 | 2014-12-27 | current |
-| GZDoom 2.1.1  | 2016-02-23 | next; the renderer half is gated on the base-engine backport (#41) |
+| GZDoom 2.0.05 | 2014-12-27 | **reached 2026-08-04**, 1179/1179 |
+| GZDoom 2.1.1  | 2016-02-23 | **current**; the renderer half is gated on the base-engine backport (#41) |
+| GZDoom 2.3    | 2016-09-19 | after — the last release *before* ZScript exists |
+
+2.1.1 was chosen over jumping straight to 2.3 so the sim lands where the renderer staircase
+already stopped (`db766f9fe`, 2016-02-03) and near the Cocoa backend target (`108dcf122`,
+2016-09), rather than leaving three subsystems at three different points in upstream history.
+
+**Where ZScript actually starts.** Not at the VM — that lands 2014-12-20 (`2d87eb0ba`) and is
+just infrastructure. The ZScript *language* arrives at `433bf4601` (2016-10-13), the commit that
+converts `inventory.txt`/`player.txt`/`specialspot.txt` to ZSCRIPT and drops them from the
+DECORATE include list. `g2.3pre` does not contain it; `g2.4pre` does. So **GZDoom 2.4 is the
+first release with ZScript**, and 2.3 is the wall to walk to — see `deferred` /
+`partially-deferred` below and `docs/zscript-insulation.md`.
 
 ## status vocabulary
 

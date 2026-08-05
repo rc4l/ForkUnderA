@@ -12,6 +12,13 @@ forward, one coherent batch at a time.
 - Every intermediate state was shipped and played upstream — a tested staircase, not a design.
 - There is never a second pipeline, a capture, an adapter, or a convention to re-derive.
 - **The history is small**: only **261 `src/gl` commits** between our anchor and 2016.
+
+> **Coverage, as of 2026-08: this staircase ran to early 2015 and stopped.** `src/gl` commits
+> resolved by year: 2014 **99%** (200/201), 2015 **88%** (38/43), 2016 **4%** (23/575), 2017
+> **0%** (1/324). A newest-resolved-commit query returns 2017 because a few commits were taken
+> out of sequence -- it does NOT mean the walk reached there, and reasoning that treats the
+> renderer as "walked to 2017" is wrong. Anything needing 2016+ renderer work (line portals,
+> for one) is blocked on resuming this staircase, not on a single port.
 - **The staircase is fixed-point-native the whole way**: upstream modernized the GL renderer
   (GLEW/GL2 floor → render-state consolidation → VBO walls/flats → GLSL 1.3 floor → GZDoom 2.x
   shader-only renderer) *before* the 2016–17 float-sim conversion. Every step through ~GZDoom 2.1–2.4

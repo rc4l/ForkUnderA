@@ -345,20 +345,14 @@ void AActor::Serialize (FArchive &arc)
 		<< tics
 		<< state
 		<< Damage;
-	if (SaveVersion >= 3227)
-	{
-		arc << projectileKickback;
-	}
+	arc << projectileKickback;
 	arc	<< flags
 		<< flags2
 		<< flags3
 		<< flags4
 		<< flags5
 		<< flags6;
-	if (SaveVersion >= 4504)
-	{
-		arc << flags7;
-	}
+	arc << flags7;
 	// [rc4l] MBF21 flags word. Guarded so older snapshots (which never stored it) load with 0.
 	if (SaveVersion >= 4509)
 	{
@@ -379,10 +373,7 @@ void AActor::Serialize (FArchive &arc)
 		<< player
 		<< SpawnPoint[0] << SpawnPoint[1] << SpawnPoint[2]
 		<< SpawnAngle;
-	if (SaveVersion >= 4506)
-	{
-		arc << StartHealth;
-	}
+	arc << StartHealth;
 	arc << skillrespawncount
 		<< tracer
 		<< floorclip
@@ -397,10 +388,7 @@ void AActor::Serialize (FArchive &arc)
 		arc << args[0];
 	}
 	arc << args[1] << args[2] << args[3] << args[4];
-	if (SaveVersion >= 3427)
-	{
-		arc << accuracy << stamina;
-	}
+	arc << accuracy << stamina;
 	arc << goal
 		<< waterlevel
 		<< MinMissileChance
@@ -437,16 +425,10 @@ void AActor::Serialize (FArchive &arc)
 		<< meleethreshold
 		<< meleerange
 		<< DamageType;
-	if (SaveVersion >= 4501)
-	{
-		arc << DamageTypeReceived;
-	}
-	if (SaveVersion >= 3237) 
-	{
-		arc
-		<< PainType
-		<< DeathType;
-	}
+	arc << DamageTypeReceived;
+	arc
+	<< PainType
+	<< DeathType;
 	arc	<< gravity
 		<< FastChaseStrafeCount
 		<< master
@@ -457,21 +439,34 @@ void AActor::Serialize (FArchive &arc)
 		<< pushfactor
 		<< Species
 		<< Score;
-	if (SaveVersion >= 3113)
-	{
-		arc << DesignatedTeam;
-	}
+	arc << DesignatedTeam;
 	arc << lastpush << lastbump
 		<< PainThreshold
 		<< DamageFactor
+		<< DamageMultiply		// [rc4l] uzdoom@99b2cfa14
+		<< TeleFogSourceType	// [rc4l] uzdoom@30acb7200
+		<< TeleFogDestType
 		<< WeaveIndexXY << WeaveIndexZ
 		<< PoisonDamageReceived << PoisonDurationReceived << PoisonPeriodReceived << Poisoner
 		<< PoisonDamage << PoisonDuration << PoisonPeriod;
-	if (SaveVersion >= 3235)
-	{
-		arc << PoisonDamageType << PoisonDamageTypeReceived;
-	}
+	arc << PoisonDamageType << PoisonDamageTypeReceived;
 	arc << ConversationRoot << Conversation;
+
+	// [rc4l] uzdoom@e1130b860: FriendPlayer records which player a friendly actor belongs to, and it
+	// was never written to the archive -- so a saved friendly monster came back owned by nobody.
+	// Upstream guarded this on their SAVEVER 4509; ours is a separate numbering line that is already
+	// past it, so it is gated on 4514 instead.
+	if (SaveVersion >= 4514)
+	{
+		arc << FriendPlayer;
+	}
+
+	// [rc4l] uzdoom@ee6e87d94: weaponspecial holds weapon state that used to live in special1.
+	// Upstream guarded it on their SAVEVER 4511; ours is a separate line already past that.
+	if (SaveVersion >= 4516)
+	{
+		arc << weaponspecial;
+	}
 	
 	// [BB] Zandronum additions.
 	arc << LimitedToTeam // [BB]
@@ -523,7 +518,7 @@ void AActor::Serialize (FArchive &arc)
 
 	// [rc4l] Movement-model flags (features/quake-movement). Version-guarded so older snapshots load
 	// with the class default -- 0, i.e. no movement flags, which is exactly pre-feature behaviour.
-	if (SaveVersion >= 4513)
+	if (SaveVersion >= 4521)
 	{
 		arc << mvFlags;
 	}
@@ -1525,7 +1520,7 @@ void AActor::Touch (AActor *toucher)
 bool AActor::Grind(bool items)
 {
 	// crunch bodies to giblets
-	// [ZandroX] uzdoom@a1cc548af: dontcrunchcorpses leaves corpses intact.
+	// [ZandroX] uzdoom@388f09f78: dontcrunchcorpses leaves corpses intact.
 	if ((flags & MF_CORPSE) && !(flags3 & MF3_DONTGIB) && (health <= 0) && !gameinfo.dontcrunchcorpses)
 	{
 		FState * state = FindState(NAME_Crush);
@@ -1679,7 +1674,9 @@ bool AActor::Massacre ()
 			P_DamageMobj (this, NULL, NULL, TELEFRAG_DAMAGE, NAME_Massacre);
 		}
 		while (health != prevhealth && health > 0);	//abort if the actor wasn't hurt.
-		return true;
+		// [rc4l] uzdoom@0ff65bb43: report whether the actor actually died, not merely that it was
+		// eligible -- callers count kills off this.
+		return health <= 0;
 	}
 	return false;
 }
@@ -2554,20 +2551,47 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 				}
 				if (BlockingMobj && (BlockingMobj->flags2 & MF2_REFLECTIVE))
 				{
-					angle = R_PointToAngle2(BlockingMobj->x, BlockingMobj->y, mo->x, mo->y);
-
-					// Change angle for deflection/reflection
-					if (mo->AdjustReflectionAngle (BlockingMobj, angle))
+					// [rc4l] uzdoom@533ae9593 with its cleanup uzdoom@fdf2d6c49 folded in.
+					// THRUREFLECT suppresses the angle change entirely; MIRRORREFLECT turns the
+					// missile a flat 180; AIMREFLECT sends it straight back at whoever fired it.
+					// Without this the two flags were parsed but inert.
+					if (!(BlockingMobj->flags7 & MF7_THRUREFLECT))
 					{
-						goto explode;
-					}
+						if (BlockingMobj->flags7 & MF7_MIRRORREFLECT)
+							angle = mo->angle + ANG180;
+						else
+							angle = R_PointToAngle2(BlockingMobj->x, BlockingMobj->y, mo->x, mo->y);
 
-					// Reflect the missile along angle
-					mo->angle = angle;
-					angle >>= ANGLETOFINESHIFT;
-					mo->velx = FixedMul (mo->Speed>>1, finecosine[angle]);
-					mo->vely = FixedMul (mo->Speed>>1, finesine[angle]);
-					mo->velz = -mo->velz/2;
+						// Change angle for deflection/reflection
+						if (mo->AdjustReflectionAngle (BlockingMobj, angle))
+						{
+							goto explode;
+						}
+
+						bool tg = (mo->target != NULL);
+						bool blockingtg = (BlockingMobj->target != NULL);
+						if ((BlockingMobj->flags7 & MF7_AIMREFLECT) && (tg || blockingtg))
+						{
+							AActor *origin = tg ? mo->target : BlockingMobj->target;
+
+							float speed = (float)(mo->Speed);
+							FVector3 velocity(FIXED2FLOAT(origin->x - mo->x), FIXED2FLOAT(origin->y - mo->y),
+											  FIXED2FLOAT((origin->z + (origin->height / 2)) - mo->z));
+							velocity.Resize(speed);
+							mo->velx = FLOAT2FIXED(velocity.X);
+							mo->vely = FLOAT2FIXED(velocity.Y);
+							mo->velz = FLOAT2FIXED(velocity.Z);
+						}
+						else
+						{
+							// Reflect the missile along angle
+							mo->angle = angle;
+							angle >>= ANGLETOFINESHIFT;
+							mo->velx = FixedMul (mo->Speed>>1, finecosine[angle]);
+							mo->vely = FixedMul (mo->Speed>>1, finesine[angle]);
+							mo->velz = -mo->velz/2;
+						}
+					}
 					if (mo->flags2 & MF2_SEEKERMISSILE)
 					{
 						mo->tracer = mo->target;
@@ -5716,6 +5740,10 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	{
 		spawn_x = mo->x;
 		spawn_y = mo->y;
+		// [rc4l] uzdoom@c631ffc5f: respawning where you died must keep the height you died at.
+		// Otherwise the z below re-derives ONFLOORZ/ONCEILINGZ from the class default and drops
+		// the player to the floor of a spot they may have been standing above.
+		spawn_z = mo->z;
 		spawn_angle = mo->angle;
 	}
 	else
@@ -5735,14 +5763,16 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 		{
 			spawn_angle += 1 << ANGLETOFINESHIFT;
 		}
-	}
 
-	if (GetDefaultByType(p->cls)->flags & MF_SPAWNCEILING)
-		spawn_z = ONCEILINGZ;
-	else if (GetDefaultByType(p->cls)->flags2 & MF2_SPAWNFLOAT)
-		spawn_z = FLOATRANDZ;
-	else
-		spawn_z = ONFLOORZ;
+		// [rc4l] uzdoom@c631ffc5f: only derive the height when spawning at a start spot; the
+		// respawn-in-place branch above already set it.
+		if (GetDefaultByType(p->cls)->flags & MF_SPAWNCEILING)
+			spawn_z = ONCEILINGZ;
+		else if (GetDefaultByType(p->cls)->flags2 & MF2_SPAWNFLOAT)
+			spawn_z = FLOATRANDZ;
+		else
+			spawn_z = ONFLOORZ;
+	}
 
 	mobj = static_cast<APlayerPawn *>
 		(Spawn (p->cls, spawn_x, spawn_y, spawn_z, NO_REPLACE));
@@ -5916,6 +5946,9 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 		{
 			if (gamestate != GS_TITLELEVEL)
 			{
+				// [rc4l] uzdoom@fc40e9723: the reset is now explicit. This [BB] code depended on
+				// GiveDefaultInventory() doing it as a side effect, so it has to ask for it.
+				p->mo->ResetStartingHealth ();
 				p->mo->GiveDefaultInventory ();
 				// [BB] The default inventory possibly alters the player's health. Thus we need to make sure
 				// that the health of the player's body matches the player's health.
@@ -7843,8 +7876,16 @@ bool AActor::IsTeammate (AActor *other)
 	// Teamplay deathmatch, CTF, Skulltag, etc.
 	if ( GAMEMODE_GetCurrentFlags() & GMF_PLAYERSONTEAMS )
 	{
+		// [rc4l] uzdoom@d4c50b166, adapted: a monster with no DesignatedTeam but a FriendPlayer
+		// belongs to that player's team. Upstream factored this into AActor::GetTeam() reading
+		// userinfo.GetTeam(); ours reads Zandronum's player->Team and honours bOnTeam, so the
+		// fallback is written here rather than importing a helper that would read the wrong fields.
 		int myTeam = DesignatedTeam;
 		int otherTeam = other->DesignatedTeam;
+		if (myTeam == TEAM_None && FriendPlayer != 0 && players[FriendPlayer - 1].bOnTeam)
+			myTeam = players[FriendPlayer - 1].Team;
+		if (otherTeam == TEAM_None && other->FriendPlayer != 0 && players[other->FriendPlayer - 1].bOnTeam)
+			otherTeam = players[other->FriendPlayer - 1].Team;
 		if (player)
 		{
 			if (!player->bOnTeam)

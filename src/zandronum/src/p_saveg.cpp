@@ -392,16 +392,7 @@ void P_SerializeWorld (FArchive &arc)
 	{
 		arc << sec->floorplane
 			<< sec->ceilingplane;
-		if (SaveVersion < 3223)
-		{
-			BYTE bytelight;
-			arc << bytelight;
-			sec->lightlevel = bytelight;
-		}
-		else
-		{
-			arc << sec->lightlevel;
-		}
+		arc << sec->lightlevel;
 		arc << sec->special
 			<< sec->tag
 			<< sec->soundtraversed
@@ -694,7 +685,7 @@ void P_SerializePolyobjs (FArchive &arc)
 				I_Error ("UnarchivePolyobjs: Invalid polyobj tag");
 			}
 			arc << angle;
-			po->RotatePolyobj (angle);
+			po->RotatePolyobj (angle, true);	// [rc4l] uzdoom@6fd70ff32: fromsave -- do not damage or be blocked
 			arc << deltaX << deltaY << po->interpolation;
 			deltaX -= po->StartSpot.x;
 			deltaY -= po->StartSpot.y;

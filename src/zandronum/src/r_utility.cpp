@@ -145,7 +145,7 @@ int				LocalViewPitch;
 bool			LocalKeyboardTurner;
 
 float			LastFOV;
-int				WidescreenRatio;
+float			WidescreenRatio;
 int				setblocks;
 int				extralight;
 bool			setsizeneeded;
@@ -423,7 +423,7 @@ void R_SetViewSize (int blocks)
 
 void R_SetWindow (int windowSize, int fullWidth, int fullHeight, int stHeight)
 {
-	int trueratio;
+	float trueratio;
 
 	if (windowSize >= 11)
 	{
@@ -444,7 +444,7 @@ void R_SetWindow (int windowSize, int fullWidth, int fullHeight, int stHeight)
 	}
 
 	// If the screen is approximately 16:9 or 16:10, consider it widescreen.
-	WidescreenRatio = CheckRatio (fullWidth, fullHeight, &trueratio);
+	WidescreenRatio = ActiveRatio (fullWidth, fullHeight, &trueratio);
 
 	DrawFSHUD = (windowSize == 11);
 	
@@ -453,13 +453,13 @@ void R_SetWindow (int windowSize, int fullWidth, int fullHeight, int stHeight)
 
 	centery = viewheight/2;
 	centerx = viewwidth/2;
-	if (WidescreenRatio & 4)
+	if (AspectTallerThanWide(WidescreenRatio))
 	{
 		centerxwide = centerx;
 	}
 	else
 	{
-		centerxwide = centerx * BaseRatioSizes[WidescreenRatio][3] / 48;
+		centerxwide = centerx * AspectMultiplier(WidescreenRatio) / 48;
 	}
 
 
@@ -1039,7 +1039,7 @@ void FCanvasTextureInfo::Add (AActor *viewpoint, FTextureID picnum, int fov)
 	texture = static_cast<FCanvasTexture *>(TexMan[picnum]);
 	if (!texture->bHasCanvas)
 	{
-		Printf ("%s is not a valid target for a camera\n", texture->Name);
+		Printf ("%s is not a valid target for a camera\n", texture->Name.GetChars());
 		return;
 	}
 
@@ -1187,5 +1187,11 @@ void FCanvasTextureInfo::UpdateToClient( ULONG ulClient )
 	FCanvasTextureInfo	*pProbe;
 
 	for ( pProbe = List; pProbe != NULL; pProbe = pProbe->Next )
-		SERVERCOMMANDS_SetCameraToTexture( pProbe->Viewpoint, pProbe->Texture->Name, pProbe->FOV, ulClient, SVCF_ONLYTHISCLIENT );
+		// [rc4l] uzdoom@59885b856: FTexture::Name is an FString now, so the 8-character bound this
+		// command used to get for free from char[9] is gone. Deliberately sending the WHOLE name:
+		// nothing regresses, because before this commit no texture could hold a longer one, and the
+		// client reads it with ReadString into CheckForTexture -- no fixed buffer, and it resolves
+		// long names since this same commit. Truncating instead would hand the client a name that
+		// silently resolves to the WRONG texture, which is worse than one it cannot find.
+		SERVERCOMMANDS_SetCameraToTexture( pProbe->Viewpoint, pProbe->Texture->Name.GetChars(), pProbe->FOV, ulClient, SVCF_ONLYTHISCLIENT );
 }

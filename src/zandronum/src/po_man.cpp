@@ -1282,21 +1282,8 @@ void FPolyObj::UpdateBBox ()
 			line->bbox[BOXTOP] = line->v1->y;
 		}
 
-		// Update the line's slopetype
 		line->dx = line->v2->x - line->v1->x;
 		line->dy = line->v2->y - line->v1->y;
-		if (!line->dx)
-		{
-			line->slopetype = ST_VERTICAL;
-		}
-		else if (!line->dy)
-		{
-			line->slopetype = ST_HORIZONTAL;
-		}
-		else
-		{
-			line->slopetype = ((line->dy ^ line->dx) >= 0) ? ST_POSITIVE : ST_NEGATIVE;
-		}
 	}
 	CalcCenter();
 }
@@ -1405,7 +1392,7 @@ static void RotatePt (int an, fixed_t *x, fixed_t *y, fixed_t startSpotX, fixed_
 //
 //==========================================================================
 
-bool FPolyObj::RotatePolyobj (angle_t angle)
+bool FPolyObj::RotatePolyobj (angle_t angle, bool fromsave)
 {
 	int an;
 	bool blocked;
@@ -1427,11 +1414,16 @@ bool FPolyObj::RotatePolyobj (angle_t angle)
 	validcount++;
 	UpdateBBox();
 
-	for(unsigned i=0;i < Sidedefs.Size(); i++)
+	// [rc4l] uzdoom@6fd70ff32: when a savegame restores a polyobject's rotation we must not damage
+	// or be blocked by actors -- the pawns may be only partly deserialized, which crashes.
+	if (!fromsave)
 	{
-		if (CheckMobjBlocking(Sidedefs[i]))
+		for(unsigned i=0;i < Sidedefs.Size(); i++)
 		{
-			blocked = true;
+			if (CheckMobjBlocking(Sidedefs[i]))
+			{
+				blocked = true;
+			}
 		}
 	}
 	if (blocked)

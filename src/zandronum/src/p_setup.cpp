@@ -356,7 +356,8 @@ MapData *P_OpenMapData(const char * mapname, bool justcheck)
 
 			if (map->Encrypted)
 			{ // If it's encrypted, then it's a Blood file, presumably a map.
-				map->MapLumps[0].Reader = map->file = Wads.ReopenLumpNum(lump_name);
+				// [rc4l] uzdoom@00854dd09: no second ReopenLumpNum here -- the reader opened a few
+				// lines above is still the right one, and reopening leaked it.
 				if (!P_IsBuildMap(map))
 				{
 					delete map;
@@ -582,34 +583,34 @@ void MapData::GetChecksum(BYTE cksum[16])
 {
 	MD5Context md5;
 
-	if (file != NULL)
+	// [rc4l] uzdoom@a2c81f1ca: Seek() unconditionally and guard only the Update(). The old shape
+	// skipped the Seek calls entirely when file was NULL, leaving the lump positions unset for
+	// everything that runs afterwards.
+	if (isText)
 	{
-		if (isText)
+		Seek(ML_TEXTMAP);
+		if (file != NULL) md5.Update(file, Size(ML_TEXTMAP));
+	}
+	else
+	{
+		if (Size(ML_LABEL) != 0)
 		{
-			Seek(ML_TEXTMAP);
-			md5.Update(file, Size(ML_TEXTMAP));
+			Seek(ML_LABEL);
+			if (file != NULL) md5.Update(file, Size(ML_LABEL));
 		}
-		else
-		{
-			if (Size(ML_LABEL) != 0)
-			{
-				Seek(ML_LABEL);
-				md5.Update(file, Size(ML_LABEL));
-			}
-			Seek(ML_THINGS);
-			md5.Update(file, Size(ML_THINGS));
-			Seek(ML_LINEDEFS);
-			md5.Update(file, Size(ML_LINEDEFS));
-			Seek(ML_SIDEDEFS);
-			md5.Update(file, Size(ML_SIDEDEFS));
-			Seek(ML_SECTORS);
-			md5.Update(file, Size(ML_SECTORS));
-		}
-		if (HasBehavior)
-		{
-			Seek(ML_BEHAVIOR);
-			md5.Update(file, Size(ML_BEHAVIOR));
-		}
+		Seek(ML_THINGS);
+		if (file != NULL) md5.Update(file, Size(ML_THINGS));
+		Seek(ML_LINEDEFS);
+		if (file != NULL) md5.Update(file, Size(ML_LINEDEFS));
+		Seek(ML_SIDEDEFS);
+		if (file != NULL) md5.Update(file, Size(ML_SIDEDEFS));
+		Seek(ML_SECTORS);
+		if (file != NULL) md5.Update(file, Size(ML_SECTORS));
+	}
+	if (HasBehavior)
+	{
+		Seek(ML_BEHAVIOR);
+		if (file != NULL) md5.Update(file, Size(ML_BEHAVIOR));
 	}
 	md5.Final(cksum);
 }
@@ -621,13 +622,11 @@ void MapData::GetChecksum(BYTE cksum[16])
 //
 //===========================================================================
 
-static void SetTexture (side_t *side, int position, const char *name8, FMissingTextureTracker &track)
+static void SetTexture (side_t *side, int position, const char *name, FMissingTextureTracker &track)
 {
 	static const char *positionnames[] = { "top", "middle", "bottom" };
 	static const char *sidenames[] = { "first", "second" };
-	char name[9];
-	strncpy (name, name8, 8);
-	name[8] = 0;
+
 	FTextureID texture = TexMan.CheckForTexture (name, FTexture::TEX_Wall,
 			FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_TryAny);
 
@@ -663,12 +662,17 @@ static void SetTexture (side_t *side, int position, const char *name8, FMissingT
 //
 //===========================================================================
 
-void SetTexture (sector_t *sector, int index, int position, const char *name8, FMissingTextureTracker &track)
+void SetTexture (sector_t *sector, int index, int position, const char *name, FMissingTextureTracker &track, bool truncate)
 {
 	static const char *positionnames[] = { "floor", "ceiling" };
-	char name[9];
-	strncpy (name, name8, 8);
-	name[8] = 0;
+	char name8[9];
+	if (truncate)
+	{
+		strncpy(name8, name, 8);
+		name8[8] = 0;
+		name = name8;
+	}
+
 	FTextureID texture = TexMan.CheckForTexture (name, FTexture::TEX_Flat,
 			FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_TryAny);
 
@@ -747,11 +751,8 @@ static void SummarizeMissingTextures(const FMissingTextureTracker &missing)
 //
 //===========================================================================
 
-static void SetTexture (side_t *side, int position, DWORD *blend, char *name8)
+static void SetTexture (side_t *side, int position, DWORD *blend, const char *name)
 {
-	char name[9];
-	strncpy (name, name8, 8);
-	name[8] = 0;
 	FTextureID texture;
 	if ((*blend = R_ColormapNumForName (name)) == 0)
 	{
@@ -778,12 +779,9 @@ static void SetTexture (side_t *side, int position, DWORD *blend, char *name8)
 	side->SetTexture(position, texture);
 }
 
-static void SetTextureNoErr (side_t *side, int position, DWORD *color, char *name8, bool *validcolor, bool isFog)
+static void SetTextureNoErr (side_t *side, int position, DWORD *color, const char *name, bool *validcolor, bool isFog)
 {
-	char name[9];
 	FTextureID texture;
-	strncpy (name, name8, 8);
-	name[8] = 0;
 	*validcolor = false;
 	texture = TexMan.CheckForTexture (name, FTexture::TEX_Wall,	
 		FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_TryAny);
@@ -1595,8 +1593,8 @@ void P_LoadSectors (MapData *map, FMissingTextureTracker &missingtex)
 		ss->ceilingplane.d = ss->GetPlaneTexZ(sector_t::ceiling);
 		ss->ceilingplane.c = -FRACUNIT;
 		ss->ceilingplane.ic = -FRACUNIT;
-		SetTexture(ss, i, sector_t::floor, ms->floorpic, missingtex);
-		SetTexture(ss, i, sector_t::ceiling, ms->ceilingpic, missingtex);
+		SetTexture(ss, i, sector_t::floor, ms->floorpic, missingtex, true);
+		SetTexture(ss, i, sector_t::ceiling, ms->ceilingpic, missingtex, true);
 		ss->lightlevel = LittleShort(ms->lightlevel);
 		if (map->HasBehavior)
 			ss->special = LittleShort(ms->special);
@@ -1995,12 +1993,6 @@ void P_AdjustLine (line_t *ld)
 	ld->dx = v2->x - v1->x;
 	ld->dy = v2->y - v1->y;
 	
-	if (ld->dx == 0)
-		ld->slopetype = ST_VERTICAL;
-	else if (ld->dy == 0)
-		ld->slopetype = ST_HORIZONTAL;
-	else
-		ld->slopetype = ((ld->dy ^ ld->dx) >= 0) ? ST_POSITIVE : ST_NEGATIVE;
 			
 	if (v1->x < v2->x)
 	{
@@ -2603,11 +2595,8 @@ int P_DetermineTranslucency (int lumpnum)
 	return newcolor.r;
 }
 
-void P_ProcessSideTextures(bool checktranmap, side_t *sd, sector_t *sec, mapsidedef_t *msd, int special, int tag, short *alpha, FMissingTextureTracker &missingtex)
+void P_ProcessSideTextures(bool checktranmap, side_t *sd, sector_t *sec, intmapsidedef_t *msd, int special, int tag, short *alpha, FMissingTextureTracker &missingtex)
 {
-	char name[9];
-	name[8] = 0;
-
 	switch (special)
 	{
 	case Transfer_Heights:	// variable colormap via 242 linedef
@@ -2633,7 +2622,6 @@ void P_ProcessSideTextures(bool checktranmap, side_t *sd, sector_t *sec, mapside
 
 			SetTextureNoErr (sd, side_t::bottom, &fog, msd->bottomtexture, &foggood, true);
 			SetTextureNoErr (sd, side_t::top, &color, msd->toptexture, &colorgood, false);
-			strncpy (name, msd->midtexture, 8);
 			SetTexture(sd, side_t::mid, msd->midtexture, missingtex);
 
 			if (colorgood | foggood)
@@ -2664,8 +2652,7 @@ void P_ProcessSideTextures(bool checktranmap, side_t *sd, sector_t *sec, mapside
 	case Sector_Set3DFloor:
 		if (msd->toptexture[0]=='#')
 		{
-			strncpy (name, msd->toptexture, 8);
-			sd->SetTexture(side_t::top, FNullTextureID() +(-strtol(name+1, NULL, 10)));	// store the alpha as a negative texture index
+			sd->SetTexture(side_t::top, FNullTextureID() +(-strtol(&msd->toptexture[1], NULL, 10)));	// store the alpha as a negative texture index
 														// This will be sorted out by the 3D-floor code later.
 		}
 		else
@@ -2771,7 +2758,13 @@ void P_LoadSideDefs2 (MapData *map, FMissingTextureTracker &missingtex)
 		{
 			sd->sector = sec = &sectors[LittleShort(msd->sector)];
 		}
-		P_ProcessSideTextures(!map->HasBehavior, sd, sec, msd, 
+
+		intmapsidedef_t imsd;
+		imsd.toptexture.CopyCStrPart(msd->toptexture, 8);
+		imsd.midtexture.CopyCStrPart(msd->midtexture, 8);
+		imsd.bottomtexture.CopyCStrPart(msd->bottomtexture, 8);
+
+		P_ProcessSideTextures(!map->HasBehavior, sd, sec, &imsd, 
 							  sidetemp[i].a.special, sidetemp[i].a.tag, &sidetemp[i].a.alpha, missingtex);
 	}
 	delete[] msdf;
@@ -3607,7 +3600,9 @@ void P_RemoveThings( void )
 			( teamgame == false ) &&
 			( dmflags & DF_NO_COOP_WEAPON_SPAWN ))
 		{
-			if ( pActor->GetClass( )->IsDescendantOf( RUNTIME_CLASS( AWeapon )))
+			// [rc4l] uzdoom@6d4eb7f62: keyed on the WEAPONSPAWN flag rather than descent from AWeapon,
+			// so a CustomInventory standing in for a weapon is suppressed too.
+			if ( pActor->flags7 & MF7_WEAPONSPAWN )
 			{
 				if (( pActor->SpawnFlags & ( MTF_DEATHMATCH|MTF_SINGLE )) == MTF_DEATHMATCH )
 				{

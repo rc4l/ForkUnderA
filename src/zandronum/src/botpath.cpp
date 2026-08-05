@@ -111,19 +111,10 @@ int P_BoxOnLineSide (const fixed_t *tmbox, const line_t *ld)
 	int p1;
 	int p2;
 		
-	switch (ld->slopetype)
-	{
-	case ST_HORIZONTAL:
-		p1 = tmbox[BOXTOP] > ld->v1->y;
-		p2 = tmbox[BOXBOTTOM] > ld->v1->y;
-		if (ld->dx < 0)
-		{
-			p1 ^= 1;
-			p2 ^= 1;
-		}
-		break;
-		
-	case ST_VERTICAL:
+	// [rc4l] uzdoom@4cf468452: slopetype was a cached line_t field that is just a function of
+	// dx/dy, so it is derived here instead.
+	if (ld->dx == 0)
+	{ // ST_VERTICAL
 		p1 = tmbox[BOXRIGHT] < ld->v1->x;
 		p2 = tmbox[BOXLEFT] < ld->v1->x;
 		if (ld->dy < 0)
@@ -131,18 +122,26 @@ int P_BoxOnLineSide (const fixed_t *tmbox, const line_t *ld)
 			p1 ^= 1;
 			p2 ^= 1;
 		}
-		break;
-		
-	case ST_POSITIVE:
+	}
+	else if (ld->dy == 0)
+	{ // ST_HORIZONTAL
+		p1 = tmbox[BOXTOP] > ld->v1->y;
+		p2 = tmbox[BOXBOTTOM] > ld->v1->y;
+		if (ld->dx < 0)
+		{
+			p1 ^= 1;
+			p2 ^= 1;
+		}
+	}
+	else if ((ld->dy ^ ld->dx) >= 0)
+	{ // ST_POSITIVE
 		p1 = P_PointOnLineSide (tmbox[BOXLEFT], tmbox[BOXTOP], ld);
 		p2 = P_PointOnLineSide (tmbox[BOXRIGHT], tmbox[BOXBOTTOM], ld);
-		break;
-		
-	case ST_NEGATIVE:
-	default:	// Just to assure GCC that p1 and p2 really do get initialized
+	}
+	else
+	{ // ST_NEGATIVE
 		p1 = P_PointOnLineSide (tmbox[BOXRIGHT], tmbox[BOXTOP], ld);
 		p2 = P_PointOnLineSide (tmbox[BOXLEFT], tmbox[BOXBOTTOM], ld);
-		break;
 	}
 
 	return (p1 == p2) ? p1 : -1;

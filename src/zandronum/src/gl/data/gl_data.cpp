@@ -215,6 +215,9 @@ struct FGLROptions : public FOptionalMapinfoData
 		fogdensity = 0;
 		outsidefogdensity = 0;
 		skyfog = 0;
+		// [rc4l] uzdoom@a8398e70b: without this the field holds whatever was on the heap, so the
+		// MAPINFO brightfog option behaved randomly.
+		brightfog = false;
 		lightmode = -1;
 		nocoloredspritelighting = -1;
 		notexturefill = -1;

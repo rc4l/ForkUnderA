@@ -332,7 +332,7 @@ F481922F4881F74760F3C0437FD5EDD0 // map03
 	setactivation 455 16		// SPAC_Push
 }
 
-
+8B2AC8D4DB4A49A5DCCBB067E04434D6 // The Hell Factory Hub One, map04
 65A1EB4C87386F290816660A52932FF1 // Master Levels, garrison.wad
 {
 	rebuildnodes
@@ -398,3 +398,15 @@ B9DFF13207EACAC675C71D82624D0007 // XtheaterIII map01
 	setlinespecial 2410 Sector_Set3DFloor 32002 4 1 0 0
 }
 
+CBDE77E3ACB4B166D53C1812E5C72F54 // Hexen IWAD map04
+{
+	setthingz 49 0
+	setthingz 50 0
+	setthingz 51 0
+	setthingz 52 0
+}
+
+A53AE580A4AF2B5D0B0893F86914781E // TNT: Evilution map31
+{
+	setthingflags 470 2016
+}

@@ -144,6 +144,61 @@ msecnode_t* sector_list = NULL;		// phares 3/16/98
 
 //==========================================================================
 //
+// GetCoefficientClosestPointInLine24
+//
+// [rc4l] uzdoom@9ccb839ae -> 4b2af7074 -> cc4e66f97 -> 8fbed78c2 -> 629f3c1a8,
+// taken as the settled form. Formula: (dot(tm - ldv1, ld) << 24) / dot(ld, ld),
+// truncated to [0, 1 << 24].
+//
+// This replaces a float computation. Upstream's motive was that float lost
+// precision on large maps; ours is stronger, because our fixed_t is 48.16 and a
+// float has 24 bits of mantissa -- it cannot represent our coordinates at all
+// once they exceed that, so the old expression was lossy by construction here.
+//
+// The bit budget: dx/dy and the coordinate deltas are fixed_t, and for map
+// geometry within the classic +/-32767-unit range their RAW values stay within
+// +/-2^31 -- widening fixed_t to 64 bits changed the container, not the
+// magnitudes -- so each product occupies at most 62 bits and their sum at most
+// 63. That is the same budget upstream reasoned about, which is why their
+// analysis carries over unchanged.
+//
+//==========================================================================
+
+static fixed_t GetCoefficientClosestPointInLine24(line_t *ld, FCheckPosition &tm)
+{
+	const SQWORD ldx = ld->dx.Raw();
+	const SQWORD ldy = ld->dy.Raw();
+
+	SQWORD r_num = ((tm.x - ld->v1->x).Raw() * ldx) + ((tm.y - ld->v1->y).Raw() * ldy);
+
+	// The denominator is always positive. Use this to avoid useless calculations.
+	SQWORD r_den = (ldx * ldx) + (ldy * ldy);
+
+	if (r_num <= 0)
+	{ // The closest point on the line is the first vertex. Truncate to 0.
+		return fixed_t::FromRaw(0);
+	}
+
+	if (r_num >= r_den)
+	{ // The division is >= 1, so the closest point is the second vertex.
+		return fixed_t::FromRaw(1 << 24);
+	}
+
+	// Deal with the limited bits. The original formula is r = (r_num << 24) / r_den,
+	// but r_num may be big enough that the shift overflows. The numerator cannot be
+	// widened further, so the denominator is right shifted instead -- safe here
+	// because on this path the denominator exceeds the numerator, so checking the
+	// top 24 bits of the numerator rules out a division by zero.
+	if ((r_num >> (63 - 24)) != 0)
+	{
+		return fixed_t::FromRaw(r_num / (r_den >> 24));
+	}
+	return fixed_t::FromRaw((r_num << 24) / r_den);
+}
+
+
+//==========================================================================
+//
 // PIT_FindFloorCeiling
 //
 // only3d set means to only check against 3D floors and midtexes.
@@ -641,6 +696,16 @@ int P_GetFriction(const AActor *mo, int *frictionfactor)
 		}
 	}
 
+	// [rc4l] uzdoom@ea7ba9dba: an actor can scale the friction it experiences. Applied last so it
+	// modulates whatever the sector/3D-floor logic above settled on.
+	if (mo->Friction != FRACUNIT)
+	{
+		// friction/movefactor are plain ints here, and fixed_t is a strong type, so the round trip
+		// is written out rather than left implicit.
+		friction = (int)clamp<fixed_t>(FixedMul(fixed_t(friction), mo->Friction), 0, FRACUNIT);
+		movefactor = (int)FrictionToMoveFactor(fixed_t(friction));
+	}
+
 	if (frictionfactor)
 		*frictionfactor = movefactor;
 
@@ -832,11 +897,7 @@ bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 	else
 	{ // Find the point on the line closest to the actor's center, and use
 		// that to calculate openings
-		float dx = (float)ld->dx;
-		float dy = (float)ld->dy;
-		fixed_t r = (fixed_t)(((float)(tm.x - ld->v1->x) * dx +
-			(float)(tm.y - ld->v1->y) * dy) /
-			(dx*dx + dy*dy) * 16777216.f);
+		fixed_t r = GetCoefficientClosestPointInLine24(ld, tm);
 		/*		Printf ("%d:%d: %d  (%d %d %d %d)  (%d %d %d %d)\n", level.time, ld-lines, r,
 		ld->frontsector->floorplane.a,
 		ld->frontsector->floorplane.b,
@@ -1006,6 +1067,19 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 	}
 
 	// [RH] If the other thing is a bridge, then treat the moving thing as if it had MF2_PASSMOBJ, so
+	// [rc4l] uzdoom@e5340ad63: a reflective actor with THRUREFLECT lets missiles pass through
+	// instead of reflecting them, keeping their speed and angle. A seeker retargets so it does
+	// not immediately home back onto what it just passed.
+	if ((thing->flags7 & MF7_THRUREFLECT) && (thing->flags2 & MF2_REFLECTIVE) && (tm.thing->flags & MF_MISSILE))
+	{
+		if (tm.thing->flags2 & MF2_SEEKERMISSILE)
+		{
+			tm.thing->tracer = tm.thing->target;
+		}
+		tm.thing->target = thing;
+		return true;
+	}
+
 	// you can use a scrolling floor to move scenery items underneath a bridge.
 	if ((tm.thing->flags2 & MF2_PASSMOBJ || thing->flags4 & MF4_ACTLIKEBRIDGE) && !(i_compatflags & COMPATF_NO_PASSMOBJ))
 	{ // check if a mobj passed over/under another object
@@ -1251,24 +1325,29 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 					//     cases where they are clearly supposed to do that
 					if (thing->IsFriend(tm.thing->target))
 					{
-						// Friends never harm each other
-						return false;
+						// [rc4l] uzdoom@5ac7e4fc3: friends never harm each other, unless the shooter
+						// has HARMFRIENDS set. The species and TIDtoHate tests below now only apply
+						// when the two are NOT friends, which is what the else was added for.
+						if (!(thing->flags7 & MF7_HARMFRIENDS)) return false;
 					}
-					if (thing->TIDtoHate != 0 && thing->TIDtoHate == tm.thing->target->TIDtoHate)
+					else
 					{
-						// [RH] Don't hurt monsters that hate the same thing as you do
-						return false;
-					}
-					if (thing->GetSpecies() == tm.thing->target->GetSpecies() && !(thing->flags6 & MF6_DOHARMSPECIES))
-					{
-						// Don't hurt same species or any relative -
-						// but only if the target isn't one's hostile.
-						if (!thing->IsHostile(tm.thing->target))
+						if (thing->TIDtoHate != 0 && thing->TIDtoHate == tm.thing->target->TIDtoHate)
 						{
-							// Allow hurting monsters the shooter hates.
-							if (thing->tid == 0 || tm.thing->target->TIDtoHate != thing->tid)
+							// [RH] Don't hurt monsters that hate the same thing as you do
+							return false;
+						}
+						if (thing->GetSpecies() == tm.thing->target->GetSpecies() && !(thing->flags6 & MF6_DOHARMSPECIES))
+						{
+							// Don't hurt same species or any relative -
+							// but only if the target isn't one's hostile.
+							if (!thing->IsHostile(tm.thing->target))
 							{
-								return false;
+								// Allow hurting monsters the shooter hates.
+								if (thing->tid == 0 || tm.thing->target->TIDtoHate != thing->tid)
+								{
+									return false;
+								}
 							}
 						}
 					}
@@ -2793,8 +2872,8 @@ void FSlide::HitSlideLine(line_t* ld)
 		slidemo->z <= slidemo->floorz &&
 		P_GetFriction(slidemo, NULL) > ORIG_FRICTION;
 
-	if (ld->slopetype == ST_HORIZONTAL)
-	{
+	if (ld->dy == 0)
+	{ // ST_HORIZONTAL
 		if (icyfloor && (abs(tmymove) > abs(tmxmove)))
 		{
 			tmxmove /= 2; // absorb half the velocity
@@ -2815,8 +2894,8 @@ void FSlide::HitSlideLine(line_t* ld)
 		return;
 	}
 
-	if (ld->slopetype == ST_VERTICAL)
-	{
+	if (ld->dx == 0)
+	{ // ST_VERTICAL
 		if (icyfloor && (abs(tmxmove) > abs(tmymove)))
 		{
 			tmxmove = -tmxmove/2; // absorb half the velocity
@@ -2950,8 +3029,8 @@ void FSlide::OldHitSlideLine(line_t *ld)
 				 slidemo->z <= slidemo->floorz &&
 				 P_GetFriction(slidemo, NULL) > ORIG_FRICTION;
 				 */
-	if (ld->slopetype == ST_HORIZONTAL)
-	{
+	if (ld->dy == 0)
+	{ // ST_HORIZONTAL
 		if (icyfloor && (abs(tmymove) > abs(tmxmove)))
 		{
 			tmxmove /= 2; // absorb half the momentum
@@ -2963,8 +3042,8 @@ void FSlide::OldHitSlideLine(line_t *ld)
 		return;
 	}
 
-	if (ld->slopetype == ST_VERTICAL)
-	{
+	if (ld->dx == 0)
+	{ // ST_VERTICAL
 		if (icyfloor && (abs(tmxmove) > abs(tmymove)))
 		{
 			tmxmove = -tmxmove/2; // absorb half the momentum
@@ -3761,6 +3840,11 @@ bool P_BounceWall(AActor *mo)
 extern FRandom pr_bounce;
 bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 {
+	// [rc4l] uzdoom@e5340ad63: a reflective actor with THRUREFLECT wants missiles to pass
+	// straight through, so there is nothing here to bounce off.
+	if (BlockingMobj && ((BlockingMobj->flags2 & MF2_REFLECTIVE) && (BlockingMobj->flags7 & MF7_THRUREFLECT)))
+		return true;
+
 	if (mo && BlockingMobj && ((mo->BounceFlags & BOUNCE_AllActors)
 		// [MGOOOOOO] The ComputeRipLevelAllows term keeps this in step with PIT_CheckThing: a
 		// projectile the victim's RipperLevel window rejects is not a ripper as far as this
@@ -5152,8 +5236,10 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 			y = y1 + FixedMul(hitdist, vy);
 			z = shootz + FixedMul(hitdist, vz);
 
+			// [rc4l] uzdoom@71ce4bcf0: a FOILINVUL puff must still draw blood on an
+			// invulnerable target; only DORMANT unconditionally suppresses it.
 			if ((hitactor->flags & MF_NOBLOOD) ||
-				(hitactor->flags2 & (MF2_DORMANT | MF2_INVULNERABLE)))
+				(hitactor->flags2 & MF2_DORMANT || ((hitactor->flags2 & MF2_INVULNERABLE) && !(puffDefaults->flags3 & MF3_FOILINVUL))))
 			{
 				spawnpuff = (puffclass != NULL);
 			}
@@ -5182,7 +5268,12 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 					damage = 999;
 
 				// [RK] If the attack source is a player, send the DMG_PLAYERATTACK flag.
-				int newdam = P_DamageMobj(hitactor, thepuff ? thepuff : source, source, damage, damagetype, DMG_INFLICTOR_IS_PUFF | (source->player ? DMG_PLAYERATTACK : 0));
+				// [rc4l] uzdoom@71ce4bcf0: pass the puff's FOILINVUL/FOILBUDDHA through, which
+				// the old call dropped entirely.
+				int dmgFlagPass = DMG_INFLICTOR_IS_PUFF | (source->player ? DMG_PLAYERATTACK : 0);
+				dmgFlagPass += (puffDefaults->flags3 & MF3_FOILINVUL) ? DMG_FOILINVUL : 0;
+				dmgFlagPass += (puffDefaults->flags7 & MF7_FOILBUDDHA) ? DMG_FOILBUDDHA : 0;
+				int newdam = P_DamageMobj(hitactor, thepuff ? thepuff : source, source, damage, damagetype, dmgFlagPass);
 
 				if (bleed)
 				{
@@ -5421,7 +5512,8 @@ CUSTOM_CVAR(Float, chase_dist, 90.f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 void P_AimCamera(AActor *t1, fixed_t &CameraX, fixed_t &CameraY, fixed_t &CameraZ, sector_t *&CameraSector)
 {
-	fixed_t distance = (fixed_t)(chase_dist * FRACUNIT);
+	// [rc4l] uzdoom@e0667544d: unclamped these overflow fixed_t and throw the camera off the map.
+	fixed_t distance = FLOAT2FIXED(clamp<float>(chase_dist, 0.f, 30000.f));
 	// [AK] If we're using free chasecam, use the angle and pitch of the camera.
 	// If not, use the passed actor's angle and pitch.
 	const bool usingFreeChasecam = FreeChasecam::IsBeingUsed();
@@ -5434,7 +5526,7 @@ void P_AimCamera(AActor *t1, fixed_t &CameraX, fixed_t &CameraY, fixed_t &Camera
 	vy = FixedMul(finecosine[pitch], finesine[angle]);
 	vz = finesine[pitch];
 
-	sz = t1->z - t1->floorclip + t1->height + (fixed_t)(chase_height * FRACUNIT);
+	sz = t1->z - t1->floorclip + t1->height + FLOAT2FIXED(clamp<float>(chase_height, -1000.f, 1000.f));	// [rc4l] uzdoom@e0667544d
 
 	if (Trace(t1->x, t1->y, sz, t1->Sector,
 		vx, vy, vz, distance, 0, 0, NULL, trace) &&
@@ -6012,7 +6104,9 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 			points *= (double)(double(thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT)) / (double)FRACUNIT);
 
 			// points and bombdamage should be the same sign
-			if ((points * bombdamage) > 0 && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
+			// [rc4l] uzdoom@62a4945ca: a CAUSEPAIN bomb must reach the victim even when the radius
+			// damage works out to zero, or it can never trigger the pain it exists to cause.
+			if (((bombspot->flags7 & MF7_CAUSEPAIN) || (points * bombdamage) > 0) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
 			{ // OK to damage; target is in direct path
 				double velz;
 				double thrust;
@@ -6027,7 +6121,7 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 				{
 					if (!(flags & RADF_NODAMAGE))
 						newdam = P_DamageMobj(thing, bombspot, bombsource, damage, bombmod);
-					else if (thing->player == NULL && !(flags & RADF_NOIMPACTDAMAGE))
+					else if (thing->player == NULL && (!(flags & RADF_NOIMPACTDAMAGE) && !(thing->flags7 & MF7_DONTTHRUST)))
 					{
 						thing->flags2 |= MF2_BLASTED;
 

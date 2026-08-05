@@ -341,6 +341,24 @@ public:
 	virtual bool MouseEvent(int type, int x, int y);
 	virtual bool CheckHotkey(int c);
 	virtual int GetWidth();
+	// [rc4l] Where the item actually PAINTS, which is not always where it is positioned.
+	//
+	// DrawTexture honours a patch's own offsets, so a StaticPatch lands at (x - leftoffset,
+	// y - topoffset), not at (x, y). Freedoom's M_DOOM is offset (13,-16): given `StaticPatch 94, 2`
+	// it paints at (81, 18) -- sixteen rows lower and thirteen left of its stated position. Layout
+	// code that measures the stated position therefore computes a rectangle the content does not sit
+	// in: too high (the panel ran off the top of the screen and got clamped to the edge) and skewed
+	// right (the rows looked off-centre inside it).
+	//
+	// Text reports its own position unchanged, so the base is the identity.
+	virtual int GetDrawnX() { return mXpos; }
+	virtual int GetDrawnY() { return mYpos; }
+	// [rc4l] How tall the item's own pixels are, or 0 when it cannot say -- the caller then falls
+	// back to the descriptor's linespacing. Layout that pads below the LINE BOX rather than below the
+	// glyphs leaves the leftover leading as extra gap, so a panel ends up with more space under its
+	// last row than above its first: the same class of error as measuring the stated position instead
+	// of the drawn one.
+	virtual int GetDrawnHeight() { return 0; }
 	void DrawSelector(int xofs, int yofs, FTextureID tex);
 	void OffsetPositionY(int ydelta) { mYpos += ydelta; }
 	int GetY() { return mYpos; }
@@ -359,6 +377,11 @@ protected:
 public:
 	FListMenuItemStaticPatch(int x, int y, FTextureID patch, bool centered);
 	void Drawer(bool selected);
+	int GetWidth();	// [rc4l] so layout code (e.g. FUAPanelListMenu) can measure the logo
+	// [rc4l] Corrected for the patch's own offsets -- see the base declarations.
+	int GetDrawnX();
+	int GetDrawnY();
+	int GetDrawnHeight();
 };
 
 class FListMenuItemStaticText : public FListMenuItem
@@ -456,6 +479,7 @@ public:
 	~FListMenuItemText();
 	void Drawer(bool selected);
 	int GetWidth();
+	int GetDrawnHeight();	// [rc4l] the font's glyph height, not the row's line box
 };
 
 class FListMenuItemPatch : public FListMenuItemSelectable
@@ -465,6 +489,10 @@ public:
 	FListMenuItemPatch(int x, int y, int height, int hotkey, FTextureID patch, FName child, int param = 0);
 	void Drawer(bool selected);
 	int GetWidth();
+	// [rc4l] Corrected for the patch's own offsets, same as the static variant.
+	int GetDrawnX();
+	int GetDrawnY();
+	int GetDrawnHeight();
 };
 
 //=============================================================================
@@ -564,6 +592,26 @@ class DListMenu : public DMenu
 protected:
 	FListMenuDescriptor *mDesc;
 	FListMenuItem *mFocusControl;
+
+	// [rc4l] Update-notice ("update available" chip) state, on the BASE class deliberately.
+	//
+	// It lived on a DListMenu subclass wired via `Class "UpdateMainMenu"` in menudef, which silently
+	// stopped every mod from replacing the main menu: ReplaceMenu() rejects an override whose class
+	// does not match the existing descriptor's, and mods declare no class. Keeping the notice here
+	// means the stock MainMenu descriptor needs no class at all, so it stays overridable, AND any
+	// list menu that ends up as the main menu shows the notice -- there is no class left to get
+	// wrong. Everything below is inert unless this menu IS the main menu and an update is pending.
+	bool mNoticeFocused;
+	int mNoticePrevSelected;   // list item selected before the chip took focus, restored on exit
+	int mNoticeLastMouseX, mNoticeLastMouseY; // last pointer position, so a parked cursor can't fight the keyboard
+	int mNoticeL, mNoticeT, mNoticeR, mNoticeB; // chip rect in screen pixels, cached for hit-testing
+
+	bool NoticeApplies() const;      // this is the main menu and an update is pending
+	void NoticeFocusChip();          // focus the chip, remembering (and clearing) the list selection
+	void NoticeActivate();           // open the download confirmation
+	void NoticeDrawer();             // draw the chip (call after the list is drawn)
+	bool NoticeMenuEvent(int mkey, bool fromcontroller, bool &handled);
+	bool NoticeMouseEvent(int type, int x, int y, bool &handled);
 
 public:
 	DListMenu(DMenu *parent = NULL, FListMenuDescriptor *desc = NULL);

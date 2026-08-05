@@ -163,11 +163,6 @@ CVAR (Int, vid_defheight, 480, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 // window, set by I_SetMode before construction. Distinct from the render/virtual size passed as
 // width/height. Shared by both video backends (SDL and Win32). See features/video-scale.
 int zx_pendingClientWidth = 0, zx_pendingClientHeight = 0;
-
-// [rc4l] video-scale: raised when the render size might need recomputing (mode set, window resize,
-// or a scale CVAR change). The framebuffer's MaybeResizeForScale only queries the (expensive on
-// macOS) drawable size and resizes when this is set -- event-driven, not polled every frame.
-bool zx_videoScaleDirty = true;
 CVAR (Int, vid_defbits, 8, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, vid_fps, false, 0)
 CVAR (Bool, ticker, false, 0)
@@ -1488,20 +1483,23 @@ bool V_DoModeSetup (int width, int height, int bits)
 
 void V_CalcCleanFacs (int designwidth, int designheight, int realwidth, int realheight, int *cleanx, int *cleany, int *_cx1, int *_cx2)
 {
-	int ratio;
+	float ratio;
 	int cwidth;
 	int cheight;
 	int cx1, cy1, cx2, cy2;
 
-	ratio = CheckRatio(realwidth, realheight);
-	if (ratio & 4)
+	// [rc4l] Missed in the enum-to-float switch: this still classified the screen into a bucket and
+	// indexed the old table, so the 2D scale factors every menu and HUD element uses were computed
+	// for the nearest canonical ratio rather than the actual one.
+	ratio = ActiveRatio(realwidth, realheight);
+	if (AspectTallerThanWide(ratio))
 	{
 		cwidth = realwidth;
-		cheight = realheight * BaseRatioSizes[ratio][3] / 48;
+		cheight = realheight * AspectMultiplier(ratio) / 48;
 	}
 	else
 	{
-		cwidth = realwidth * BaseRatioSizes[ratio][3] / 48;
+		cwidth = realwidth * AspectMultiplier(ratio) / 48;
 		cheight = realheight;
 	}
 	// Use whichever pair of cwidth/cheight or width/height that produces less difference
@@ -1748,10 +1746,18 @@ CUSTOM_CVAR (Int, vid_aspect, 0, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
 // 2: 16:10
 // 3: 17:10
 // 4: 5:4
-int CheckRatio (int width, int height, int *trueratio)
+// [rc4l] Helper for ActiveRatio and CheckRatio. Returns the forced ratio type, or -1 if none.
+// Ported from UZDoom 5720634045b0812bc838eb4671a4039917582a94 ("Add ActiveRatio to be used where CheckRatio is used today").
+//
+// Extracted verbatim out of CheckRatio so both the old bucket API and the new float one honour
+// vid_aspect / vid_nowidescreen identically -- two copies of this would drift the moment either was
+// touched.
+//
+// Our vid_aspect tops out at 5 where upstream's allows 6 (21:9); left as-is, since adding a ratio the
+// menu cannot select is a separate change.
+int ActiveFakeRatio(int width, int height)
 {
 	int fakeratio = -1;
-	int ratio;
 
 	if ((vid_aspect >= 1) && (vid_aspect <= 5))
 	{
@@ -1777,6 +1783,42 @@ int CheckRatio (int width, int height, int *trueratio)
 			fakeratio = (height * 5/4 == width) ? 4 : 0;
 		}
 	}
+	return fakeratio;
+}
+
+// [rc4l] Active screen ratio based on cvars and size. Ported from UZDoom 5720634045b0812bc838eb4671a4039917582a94.
+//
+// This is the whole point of the port: a CONTINUOUS ratio rather than the nearest of five buckets.
+// CheckRatio below snaps to a bucket within +/-10 pixels and calls everything else 4:3, so a window
+// dragged to an arbitrary size gets its contents stretched -- correct only when the size happens to
+// land near a canonical ratio.
+float ActiveRatio(int width, int height, float *trueratio)
+{
+	static float forcedRatioTypes[] =
+	{
+		4 / 3.0f,
+		16 / 9.0f,
+		16 / 10.0f,
+		17 / 10.0f,
+		5 / 4.0f,
+		17 / 10.0f,
+		21 / 9.0f
+	};
+
+	float ratio = width / (float)height;
+	int fakeratio = ActiveFakeRatio(width, height);
+
+	if (trueratio)
+		*trueratio = ratio;
+	return (fakeratio != -1) ? forcedRatioTypes[fakeratio] : ratio;
+}
+
+int CheckRatio (int width, int height, int *trueratio)
+{
+	int ratio;
+
+	int fakeratio = ActiveFakeRatio(width, height);
+
 	// If the size is approximately 16:9, consider it so.
 	if (abs (height * 16/9 - width) < 10)
 	{
@@ -1827,6 +1869,67 @@ int CheckRatio (int width, int height, int *trueratio)
 //     base_width = 240 * x / y
 //     multiplier = 320 / base_width
 //     base_height = 200 * multiplier
+// [rc4l] BaseRatioSizes replacement functions. Ported from UZDoom
+// 6d4e4dad25ffa3978f5bf54d0fc60dd59b29d119 (2016-09-12).
+//
+// The table below is indexed by a discrete ratio bucket, so it cannot answer for a ratio that is not
+// one of five. These compute the same four columns from a continuous aspect instead, which is what
+// lets the bucket go away entirely in the next commit.
+//
+// Feeding a bucket's exact ratio into these reproduces that bucket's row, so nothing changes for the
+// sizes that already worked -- they simply now also work for every size in between.
+// [rc4l] Ported from UZDoom 172f58c1655848df85d35676a4a5aeb094d05b2c, "Fix 5:4 aspect ratio gun and
+// status bar" (2016-09-13) -- upstream's own follow-up to the enum-to-float switch, one day later.
+//
+// The 5:4 row of BaseRatioSizes never followed the formula the other rows do; it redefined what the
+// columns MEAN. So computing these generically produced an AspectMultiplier above 48 for anything
+// narrower than 4:3, and `bord = Height - Height * mult / 48` then went negative -- which drew the
+// whole screen black at, for instance, 712x568.
+// [rc4l] Generalised from the 5:4 special case. Ported from UZDoom
+// 017d1cee29adf2b2b479cc26dbb8ac5f461f5f0a (2016-09-13).
+//
+// Is54Aspect was a band, 1.1 to 1.3, so ratios OUTSIDE it fell back to formulas that assume a screen
+// wider than it is tall. At 484x601 that produced an AspectMultiplier of 79 against a divisor of 48,
+// so the border width went negative and simply was not drawn -- content stretched instead of
+// letterboxing, with nothing to say why.
+//
+// The replacement is a threshold rather than a band, and the tall branch computes the same values the
+// hardcoded 5:4 constants used to hold: at 1.25 this yields base height 640 and multiplier 45,
+// exactly the old numbers. So the special case is not removed so much as derived.
+bool AspectTallerThanWide(float aspect)
+{
+	return aspect < 1.333f;
+}
+
+int AspectBaseWidth(float aspect)
+{
+	return (int)round(240.0f * aspect * 3.0f);
+}
+
+int AspectBaseHeight(float aspect)
+{
+	if (!AspectTallerThanWide(aspect))
+		return (int)round(200.0f * (320.0f / (AspectBaseWidth(aspect) / 3.0f)) * 3.0f);
+	else
+		return (int)round((200.0f * (4.0f / 3.0f)) / aspect * 3.0f);
+}
+
+double AspectPspriteOffset(float aspect)
+{
+	if (!AspectTallerThanWide(aspect))
+		return 0.0;
+	else
+		return ((4.0 / 3.0) / aspect - 1.0) * 97.5;
+}
+
+int AspectMultiplier(float aspect)
+{
+	if (!AspectTallerThanWide(aspect))
+		return (int)round(320.0f / (AspectBaseWidth(aspect) / 3.0f) * 48.0f);
+	else
+		return (int)round(200.0f / (AspectBaseHeight(aspect) / 3.0f) * 48.0f);
+}
+
 const int BaseRatioSizes[5][4] =
 {
 	{  960, 600, 0,                   48 },			//  4:3   320,      200,      multiplied by three

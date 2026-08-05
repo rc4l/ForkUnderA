@@ -71,7 +71,10 @@ bool APowerupGiver::Use (bool pickup)
 	}
 	if (BlendColor != 0)
 	{
-		power->BlendColor = BlendColor;
+		// [rc4l] uzdoom@fbe14d59b with its correction uzdoom@e6de24a7d: a powerup whose blend is
+		// the 'no colormap' sentinel must not overwrite the one already in effect. The first
+		// version tested alpha != 0, which also rejected legitimate special colormaps.
+		if (BlendColor != MakeSpecialColormap(65535)) power->BlendColor = BlendColor;
 	}
 	if (Mode != NAME_None)
 	{
@@ -1228,14 +1231,7 @@ IMPLEMENT_CLASS (APowerSpeed)
 void APowerSpeed::Serialize(FArchive &arc)
 {
 	Super::Serialize (arc);
-	if (SaveVersion < 4146)
-	{
-		SpeedFlags = 0;
-	}
-	else
-	{
-		arc << SpeedFlags;
-	}
+	arc << SpeedFlags;
 }
 
 //===========================================================================
@@ -1335,6 +1331,18 @@ IMPLEMENT_CLASS (APowerMinotaur)
 
 IMPLEMENT_CLASS (APowerTargeter)
 
+// [rc4l] uzdoom@9402bcf6c: re-picking the powerup while it is active must rebuild the HUD
+// sprites, or the targeter keeps whatever sprites the previous instance left behind.
+bool APowerTargeter::HandlePickup(AInventory *item)
+{
+	if (Super::HandlePickup(item))
+	{
+		InitEffect();	// reset the HUD sprites
+		return true;
+	}
+	return false;
+}
+
 void APowerTargeter::Travelled ()
 {
 	InitEffect ();
@@ -1418,6 +1426,36 @@ void APowerTargeter::PositionAccuracy ()
 }
 
 // Frightener Powerup --------------------------------
+
+// Buddha Powerup --------------------------------
+//
+// [rc4l] uzdoom@313245dd7, with its fix edd53f22a folded in: upstream first set CF_FRIGHTENING
+// here by copy-paste and corrected it to CF_BUDDHA the next commit, so the corrected flag is
+// written directly.
+
+IMPLEMENT_CLASS (APowerBuddha)
+
+void APowerBuddha::InitEffect ()
+{
+	Super::InitEffect();
+
+	if (Owner == NULL || Owner->player == NULL)
+		return;
+
+	Owner->player->cheats |= CF_BUDDHA;
+}
+
+void APowerBuddha::EndEffect ()
+{
+	Super::EndEffect();
+
+	if (Owner == NULL || Owner->player == NULL)
+		return;
+
+	Owner->player->cheats &= ~CF_BUDDHA;
+}
+
+// Frightener Powerup ----------------------------
 
 IMPLEMENT_CLASS (APowerFrightener)
 

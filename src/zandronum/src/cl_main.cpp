@@ -61,7 +61,7 @@
 #include "a_sharedglobal.h"
 #include "a_doomglobal.h"
 #include "announcer.h"
-#include "browser.h"
+#include "features/server-browser/browser.h"
 #include "cl_commands.h"
 #include "cl_demo.h"
 #include "cl_statistics.h"
@@ -1078,17 +1078,17 @@ void CLIENT_GetPackets( void )
 			const char		*pszAddressBuf;
 			NETADDRESS_s	AddressFrom;
 			LONG			lCommand;
-			const char		*pszMasterPort;
+			const char		*pszServerRegistryPort;
 			// [BB] This conversion potentially does a DNS lookup.
 			// There is absolutely no reason to call this at beginning of the while loop above (like done before). 
-			NETADDRESS_s MasterAddress ( masterhostname );
+			NETADDRESS_s ServerRegistryAddress ( fua_serverregistry_host );
 
-			// Allow the user to specify which port the master server is on.
-			pszMasterPort = Args->CheckValue( "-masterport" );
-			if ( pszMasterPort )
-				MasterAddress.usPort = NETWORK_ntohs( atoi( pszMasterPort ));
+			// Allow the user to specify which port the server registry is on.
+			pszServerRegistryPort = Args->CheckValue( "-serverregistryport" );
+			if ( pszServerRegistryPort )
+				ServerRegistryAddress.usPort = NETWORK_ntohs( atoi( pszServerRegistryPort ));
 			else 
-				MasterAddress.usPort = NETWORK_ntohs( DEFAULT_MASTER_PORT );
+				ServerRegistryAddress.usPort = NETWORK_ntohs( DEFAULT_SERVERREGISTRY_PORT );
 
 
 			pszAddressBuf = NETWORK_GetFromAddress().ToString();
@@ -1099,7 +1099,7 @@ void CLIENT_GetPackets( void )
 				( strncmp( pszAddressBuf, pszPrefix3, 7 ) == 0 ) ||
 				( strncmp( pszAddressBuf, pszPrefix4, 8 ) == 0 ))
 			{
-				AddressFrom = MasterAddress;
+				AddressFrom = ServerRegistryAddress;
 
 				// Keep the same port as the from address.
 				AddressFrom.usPort = NETWORK_GetFromAddress( ).usPort;
@@ -1107,13 +1107,13 @@ void CLIENT_GetPackets( void )
 			else
 				AddressFrom = NETWORK_GetFromAddress( );
 
-			// If we're receiving info from the master server...
-			if ( AddressFrom.Compare( MasterAddress ))
+			// If we're receiving info from the server registry...
+			if ( AddressFrom.Compare( ServerRegistryAddress ))
 			{
 				lCommand = pByteStream->ReadLong();
 				switch ( lCommand )
 				{
-				case MSC_BEGINSERVERLISTPART:
+				case SRSC_BEGINSERVERLISTPART:
 					{
 						ULONG ulPacketNum = pByteStream->ReadByte();
 
@@ -1133,24 +1133,31 @@ void CLIENT_GetPackets( void )
 					}
 					break;
 
-				case MSC_REQUESTIGNORED:
+				// [rc4l] Each of the three below is a definitive answer -- the query arrived and was
+				// refused -- so the outstanding request ends here. Leaving it open made the retry
+				// clock keep firing at a registry that had already said no, which in the
+				// REQUESTIGNORED case is what puts us on its flood queue.
+				case SRSC_REQUESTIGNORED:
 
+					BROWSER_ServerRegistryRefusedQuery( );
 					Printf( "Refresh request ignored. Please wait 10 seconds before refreshing the list again.\n" );
 					break;
 
-				case MSC_IPISBANNED:
+				case SRSC_IPISBANNED:
 
-					Printf( "You are banned from the master server.\n" );
+					BROWSER_ServerRegistryRefusedQuery( );
+					Printf( "You are banned from the server registry.\n" );
 					break;
 
-				case MSC_WRONGVERSION:
+				case SRSC_WRONGVERSION:
 
-					Printf( "The master server is using a different version of the launcher-master protocol.\n" );
+					BROWSER_ServerRegistryRefusedQuery( );
+					Printf( "The server registry is using a different version of the launcher-to-server-registry protocol.\n" );
 					break;
 
 				default:
 
-					Printf( "Unknown command from master server: %d\n", static_cast<int> (lCommand) );
+					Printf( "Unknown command from server registry: %d\n", static_cast<int> (lCommand) );
 					break;
 				}
 			}
@@ -1470,10 +1477,10 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 			case NETWORK_ERRORCODE_BANNED:
 
-				// [TP] Is this a master ban?
+				// [TP] Is this a server registry ban?
 				if ( !!pByteStream->ReadByte())
 				{
-					szErrorString = "Couldn't connect. " TEXTCOLOR_RED "You have been banned from " GAMENAME "'s master server!" TEXTCOLOR_NORMAL "\n"
+					szErrorString = "Couldn't connect. " TEXTCOLOR_RED "You have been banned from " GAMENAME "'s server registry!" TEXTCOLOR_NORMAL "\n"
 						"If you feel this is in error, you may contact the staff at " FORUM_URL;
 				}
 				else
@@ -5474,6 +5481,10 @@ void ServerCommands::SetThingProperty::Execute()
 	case APROP_StencilColor:
 		// [AK] We can't use DWORD as an unsigned int here, so split the value into its RGB components.
 		actor->SetShade(( value >> 16 ) & 0xFF, ( value >> 8 ) & 0xFF, value & 0xFF );
+		break;
+
+	case APROP_Friction:
+		actor->Friction = value;
 		break;
 
 	// [rc4l] features/quake-movement. Range-checked on receipt too: the server is trusted, but a

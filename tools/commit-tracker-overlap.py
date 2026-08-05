@@ -24,11 +24,17 @@ into a features/ unit, or folded into a differently-named file). So a row can op
 putting `no-file-overlap: <reason>` in its note. The escape is per-row and must say why, so an
 unexplained mismatch stays loud.
 
-ADVISORY FOR NOW (exit 0), deliberately. It currently flags ~17 pre-existing rows inherited from the
-ledger migration, and none of them have been triaged. Making a new check retroactively fail CI on
-old debt only teaches people to route around it. Triage the backlog -- each is either a real
-mis-attribution (upstream commit goes back to `pending`) or a legitimate elsewhere-landing (annotate
-it) -- and then flip ADVISORY to False so it blocks.
+BLOCKING. It was advisory while ~17 pre-existing rows from the ledger migration sat untriaged, on
+the reasoning that a new check failing CI on old debt only teaches people to route around it. That
+backlog is now cleared: ten were real ports that landed inside renderer-staircase flight commits and
+carry a `no-file-overlap:` note saying so, and seven went back to `pending` because a content check
+could not find them in our tree either.
+
+Blocking matters because this is the one check that catches a WRONG provenance rather than a missing
+one. The sha-existence and reachability checks are both satisfied by a row citing a real commit that
+has nothing to do with the change -- which happened three batches running, always the same way: rows
+recorded in a bookkeeping step cite whichever commit was convenient rather than the one holding the
+code. That is invisible to every other gate here.
 
 LIMITATION, stated because a checker you over-trust is worse than none: one shared basename is
 enough to pass, so a large flight touching many files in a subsystem can coincidentally overlap an
@@ -46,13 +52,13 @@ COVERAGE = os.path.join(ROOT, "commit-tracker/coverage.tsv")
 FILES = os.path.join(ROOT, "commit-tracker/files.tsv")
 ESCAPE = "no-file-overlap:"
 # Flip to False once the inherited backlog below is triaged; then this blocks CI.
-ADVISORY = True
+ADVISORY = False
 
 
 def upstream_files():
     """upstream sha -> set of basenames it touched."""
     out = {}
-    with open(FILES) as fh:
+    with open(FILES, encoding="utf-8") as fh:
         for line in fh:
             if line.startswith("#"):
                 continue
@@ -79,7 +85,7 @@ def main():
     mismatches = []
     checked = 0
 
-    with open(COVERAGE) as fh:
+    with open(COVERAGE, encoding="utf-8") as fh:
         for line in fh:
             f = line.rstrip("\n").split("\t")
             if len(f) != 6 or f[3] not in ("ported", "adapted"):
