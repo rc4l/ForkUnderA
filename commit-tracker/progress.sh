@@ -14,13 +14,19 @@
 # .claude/skills/sequential-backport/SKILL.md.
 #
 # ---- THE GOAL: edit these two lines to retarget the bar, then re-run. ----
-GOAL_LABEL="${GOAL_LABEL:-GZDoom 2.0.05}"   # what we're aiming at, shown next to the bar
-GOAL_DATE="${GOAL_DATE:-2014-12-27}"        # its release date; rows dated <= this are in scope
+GOAL_LABEL="${GOAL_LABEL:-GZDoom 2.1.1}"    # what we're aiming at, shown next to the bar
+GOAL_DATE="${GOAL_DATE:-2016-02-23}"        # its release date; rows dated <= this are in scope
 #
 # The boundary is a date because coverage.tsv is chronological and carries a date per row, so
 # no extra data is needed to place it. Past goals, for the record:
-#   GZDoom 2.0.05  2014-12-27   (current)
-#   GZDoom 2.1.1   2016-02-23   (next; renderer half is gated on the base-engine backport, #41)
+#   GZDoom 2.0.05  2014-12-27   reached 2026-08-04 (1179/1179)
+#   GZDoom 2.1.1   2016-02-23   (current) -- chosen over 2.3 so the sim lands where the renderer
+#                               staircase already stopped (db766f9fe, 2016-02-03) and near the
+#                               Cocoa backend target (108dcf122, 2016-09), rather than leaving
+#                               three subsystems at three different points in upstream history.
+#   GZDoom 2.3     2016-09-19   (after) -- the LAST release before ZScript exists. ZScript's
+#                               language commit is 433bf4601 (2016-10-13): g2.3pre does not
+#                               contain it, g2.4pre does. That is the wall, not 2.1.1.
 #
 # Usage:  ./progress.sh          # run standalone, or automatically at the end of regen.sh
 set -euo pipefail
