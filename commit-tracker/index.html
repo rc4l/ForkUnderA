@@ -138,6 +138,8 @@
   .s-adapted { color: #1d4ed8; font-weight: 600; }
   .s-skip    { color: #6b7280; }
   .s-pending { color: #9ca3af; }
+  .s-deferred           { color: #ea580c; font-weight: 600; }  /* orange -- put off deliberately */
+  .s-partially-deferred { color: #b45309; font-weight: 600; }  /* darker amber -- part done, part deferred */
   a.sha { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #2563eb; text-decoration: none; }
   a.sha:hover { text-decoration: underline; }
   .sha-done a.sha { text-decoration: line-through; text-decoration-thickness: 1px; opacity: .75; }
@@ -185,7 +187,7 @@
 const REPO = "https://github.com/UZDoom/UZDoom/commit/";
 const REPO_BASE = "https://github.com/UZDoom/UZDoom";
 const OUR_REPO = "https://github.com/rc4l/ZandroX/commit/";  // "our commit" column links here
-const STATUSES = ["pending", "ported", "adapted", "skip"];
+const STATUSES = ["pending", "ported", "adapted", "skip", "deferred", "partially-deferred"];
 let gridApi, active = "all";
 
 // [rc4l] The goal bar. progress.sh computed every figure at regen time; this only renders them.
