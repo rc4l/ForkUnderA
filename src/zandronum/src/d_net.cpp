@@ -2640,6 +2640,13 @@ void Net_SkipCommand (int type, BYTE **stream)
 			skip = strlen ((char *)(*stream)) + 26;
 			break;
 
+		// [rc4l] uzdoom@b2fbeb24c -- DEM_CHANGEMAP2 was absent here, so skipping it consumed the
+		// wrong length and every following byte in the stream was misread. One byte of position
+		// then the NUL-terminated map name.
+		case DEM_CHANGEMAP2:
+			skip = strlen((char *)(*stream + 1)) + 2;
+			break;
+
 		case DEM_MUSICCHANGE:
 		case DEM_PRINT:
 		case DEM_CENTERPRINT:
