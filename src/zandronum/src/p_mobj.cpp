@@ -6653,6 +6653,17 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 	puff = Spawn (pufftype, x, y, z, ALLOW_REPLACE);
 	if (puff == NULL) return NULL;
 
+	// [rc4l] uzdoom@db25322b4 -- honour +RANDOMIZE on puffs, as P_ExplodeMissile and
+	// P_CheckMissileSpawn already do. This draws from pr_spawnpuff, which this function
+	// already draws from for the z jitter below, so predicting clients and the server
+	// consume the stream identically.
+	if ((puff->flags4 & MF4_RANDOMIZE) && puff->tics > 0)
+	{
+		puff->tics -= pr_spawnpuff() & 3;
+		if (puff->tics < 1)
+			puff->tics = 1;
+	}
+
 	//Moved puff creation and target/master/tracer setting to here.
 	if (puff && vict)
 	{
