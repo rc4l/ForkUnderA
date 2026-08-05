@@ -31,6 +31,7 @@
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/joinplan_compute.h"
 #include "features/wad-download/computation/iwadsubstitute_compute.h"
+#include "features/wad-download/zx_filehash.h"
 #include "features/wad-download/zx_wadsearch.h"
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wadreload/zx_wadreload.h"
@@ -47,6 +48,21 @@ CVAR( Bool, cl_fua_iwad_substitute, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 
 namespace
 {
+
+// Hex digests differ only in case between sources -- ours are lowercase, a server's are whatever it
+// felt like. Compare them the way they are meant to be equal.
+bool join_HexEquals(const char *a, const std::string &b)
+{
+	size_t i = 0;
+	for (; ( a[i] != '\0' ) && ( i < b.size( )); ++i)
+	{
+		const char ca = (( a[i] >= 'A' ) && ( a[i] <= 'Z' )) ? char( a[i] - 'A' + 'a' ) : a[i];
+		const char cb = (( b[i] >= 'A' ) && ( b[i] <= 'Z' )) ? char( b[i] - 'A' + 'a' ) : b[i];
+		if (ca != cb)
+			return false;
+	}
+	return ( a[i] == '\0' ) && ( i == b.size( ));
+}
 
 // Everything the join needs, in the server's own spelling, held apart from the browser's row index.
 // It has to survive the download: a transfer takes minutes, and by the time it finishes the list may
@@ -189,14 +205,47 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 	TArray<FString> resolved;
 	for (size_t i = 0; i < plan.wads.size(); ++i)
 	{
+		// Fold the case for the lookup: ComputeJoinWadList keeps the server's own spelling, and
+		// the hash map was keyed the same way, but a server is free to be inconsistent.
+		std::map<std::string, std::string>::const_iterator it = plan.wadHashes.find(plan.wads[i]);
+		const std::string md5 = ( it != plan.wadHashes.end( )) ? it->second : std::string( );
+
+		const unsigned beforeAdd = resolved.Size();
 		if (D_AddFile(resolved, plan.wads[i].c_str()) == false)
 		{
-			// Fold the case for the lookup: ComputeJoinWadList keeps the server's own spelling, and
-			// the hash map was keyed the same way, but a server is free to be inconsistent.
-			std::map<std::string, std::string>::const_iterator it = plan.wadHashes.find(plan.wads[i]);
-			const std::string md5 = ( it != plan.wadHashes.end( )) ? it->second : std::string( );
 			missing.push_back(zx::waddownload::WantedFile(plan.wads[i], false, md5));
+			continue;
 		}
+
+		// [rc4l] Having a file by that name is not the same as having THAT file, and the difference
+		// is what makes iterating on a WAD work more than once. Edit test.wad, restart the server,
+		// and the name has not changed -- so a check that stops at "found it" loads yesterday's
+		// bytes and fails level authentication with a message about nothing that is wrong.
+		//
+		// Only checked when the server actually published a digest (SQF2_PWAD_HASHES); an older
+		// server that sent none leaves this empty, which means "cannot compare", never "matches".
+		if (md5.empty() || resolved.Size() <= beforeAdd)
+			continue;
+
+		const FString path = resolved[resolved.Size() - 1];
+		char hex[33];
+		if (zx::Md5OfFile(path.GetChars(), hex, sizeof hex) == false)
+			continue;					// unreadable: let the loader be the one to complain
+
+		if (join_HexEquals(hex, md5))
+			continue;
+
+		// Stale. Roll `resolved` back to where it was before this file so the loader never sees the
+		// old copy -- truncating rather than popping once, because D_AddFile is free to have pushed
+		// more than one entry for a single name.
+		//
+		// This cannot loop: OnDownloadFinished retries with downloading OFF, so a file that is still
+		// wrong after a successful fetch ends as a plain "can't join" instead of a second attempt.
+		Printf(TEXTCOLOR_GOLD "%s is not the copy this server is running; fetching it again.\n"
+			TEXTCOLOR_NORMAL, plan.wads[i].c_str());
+		while (resolved.Size() > beforeAdd)
+			resolved.Pop();
+		missing.push_back(zx::waddownload::WantedFile(plan.wads[i], false, md5));
 	}
 
 	if (missing.size() > 0)
