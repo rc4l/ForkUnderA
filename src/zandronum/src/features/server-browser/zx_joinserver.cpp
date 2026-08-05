@@ -543,6 +543,18 @@ void NoteJoinFailed( const char *reason )
 	if ( !g_joinInFlight )
 		return;
 
+	// [rc4l] A NULL reason is a routine teardown, not a refusal.
+	//
+	// CLIENT_QuitNetworkGame is the disconnect path for EVERYTHING -- including the tidy-up a
+	// successful join does on its way in -- and it is called with no message on those. Treating that
+	// as a failure is what produced "Couldn't join Filler14." on screen while the player was
+	// spectating on Filler14, with no reason under it because there was never a reason to give.
+	//
+	// The engine already draws this distinction: it passes a string exactly when it has something to
+	// say about why the connection ended.
+	if (( reason == NULL ) || ( reason[0] == '\0' ))
+		return;
+
 	g_joinInFlight = false;
 	g_joinFailed = true;
 	g_joinFailReason = ( reason != NULL ) ? reason : "";

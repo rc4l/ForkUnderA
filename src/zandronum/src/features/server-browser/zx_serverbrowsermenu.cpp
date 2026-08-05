@@ -35,6 +35,7 @@
 #include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
+#include "features/server-browser/computation/scrollbar_compute.h"
 #include "features/server-browser/zx_joinserver.h"
 #include "features/updater/computation/promptpanel_compute.h"
 #include "features/wad-download/zx_waddownload.h"
@@ -689,18 +690,11 @@ public:
 
 		screen->Dim( PalEntry( 120, 140, 180 ), 0.14f, left, top, width, height );
 
-		// Proportional, with a floor: on a list of hundreds an exactly-proportional thumb rounds to
-		// nothing and the bar looks broken rather than full.
-		int thumbH = ( height * SB_VISIBLE_ROWS ) / total;
+		// Geometry via computation/scrollbar_compute, which the hit test also uses -- the two working
+		// it out separately is exactly how clicking the bar came to jump somewhere the thumb was not.
 		const int minThumb = serverbrowser_ToScreenY( 8 ) - serverbrowser_ToScreenY( 0 );
-		if ( thumbH < minThumb )
-			thumbH = minThumb;
-		if ( thumbH > height )
-			thumbH = height;
-
-		const int maxFirst = total - SB_VISIBLE_ROWS;
-		const int travel = height - thumbH;
-		const int thumbY = top + (( maxFirst > 0 ) ? ( travel * first ) / maxFirst : 0 );
+		const int thumbH = zx::ComputeThumbHeight( height, SB_VISIBLE_ROWS, total, minThumb );
+		const int thumbY = top + zx::ComputeThumbTop( height, thumbH, first, total - SB_VISIBLE_ROWS );
 
 		screen->Dim( PalEntry( 170, 190, 230 ), 0.55f, left, thumbY, width, thumbH );
 	}
@@ -1476,19 +1470,17 @@ public:
 				// bar -- that is what dragging a scrollbar means everywhere else.
 				const int top = serverbrowser_ToScreenY( SB_FIRST_ROW_Y - 2 );
 				const int height = serverbrowser_ToScreenY( SB_FIRST_ROW_Y - 2 + SB_VISIBLE_ROWS * SB_ROW_HEIGHT ) - top;
-				const int maxFirst = total - SB_VISIBLE_ROWS;
 
 				if ( height > 0 )
 				{
-					int first = (( y - top ) * maxFirst ) / height;
-					if ( first < 0 )
-						first = 0;
-					if ( first > maxFirst )
-						first = maxFirst;
+					// Same geometry the drawing uses, so the thumb lands where it was grabbed.
+					const int minThumb = serverbrowser_ToScreenY( 8 ) - serverbrowser_ToScreenY( 0 );
+					const int thumbH = zx::ComputeThumbHeight( height, SB_VISIBLE_ROWS, total, minThumb );
 
 					// The visible window is derived from the selection, so moving the window means
 					// moving the selection to the row that would sit at its top.
-					g_Selected = first;
+					g_Selected = zx::ComputeFirstFromPointer( y - top, height, thumbH,
+						total - SB_VISIBLE_ROWS );
 				}
 
 				if ( type == MOUSE_Release )
