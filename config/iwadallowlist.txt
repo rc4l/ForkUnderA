@@ -1,0 +1,67 @@
+# ZandroX downloadable IWADs -- which names, and which exact builds.
+#
+# Every IWAD is assumed commercial and refused; these are the exceptions. Why it works this way is in
+# features/wad-download/README.md.
+#
+#   <filename> | <sha256> | <what it is>
+#
+# Pipe-separated. Case-insensitive. Blank lines and # ignored. One row per BUILD, so a filename
+# appears as many times as we have vouched for versions of it.
+#
+# A hash of "-" means the name is allowed but no build has been vouched for, so it is NOT
+# downloadable -- the name only saves us fetching 40 MB we would then delete. The gate is the hash: a
+# file that will be loaded as a game is kept only if its SHA-256 is listed below. The name proves
+# nothing on its own; a mirror can serve doom2.wad under any name it likes.
+#
+# Compiled into the binary, deliberately not a CVAR or a lump: a list anyone can append to is not a
+# gate. Adding a line is a PR, which is the right friction for a claim about someone else's licence.
+#
+# TO ADD A NAME: the bar is that free redistribution is the author's stated, long-standing position --
+# not "it's on an archive somewhere", and not "the demo is free". List every filename spelling
+# wadsrc/static/iwadinfo.txt accepts, or the entry only half works.
+#
+# TO ADD A BUILD: get the file from the project's own release page, not a WAD mirror (hashing a
+# mirror's copy and calling it canonical is circular). Verify a published signature or checksum if
+# there is one, note the provenance in your PR, then sha256sum the extracted IWAD.
+
+# Freedoom -- BSD-licensed. 0.13.0 verified against the project's PGP-signed CHECKSUM; earlier
+# releases from the same GitHub releases page, which publishes no CHECKSUM for them.
+freedoom1.wad  | 7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d | Freedoom: Phase 1 0.13.0
+freedoom1.wad  | c403ea7c27b5b2b77e4c0ca0b691669186790e572065e7eb2b0382801bcb18cc | Freedoom: Phase 1 0.12.1
+freedoom1.wad  | fe395ab0d40f7e57eb50d32947b538990d3d2894a29c94648d7e6385a17ff2f6 | Freedoom: Phase 1 0.12.0
+freedoom1.wad  | bc5739e88b20788845ce82ac0041effdecb4583ddbcdb05b9f899363eaa69892 | Freedoom: Phase 1 0.11.3
+freedoom2.wad  | a8772e088847032510d97ba2312406a6998f21cbab44d4ff10696faa9c0ecd4b | Freedoom: Phase 2 0.13.0
+freedoom2.wad  | 729f100448d0b48e12ecc8004e096a9ea6df024467d962f002bb286805be3a8e | Freedoom: Phase 2 0.12.1
+freedoom2.wad  | 2b1ff8d46d5c4313bee762f7b32d64b38a05645d32aaf46d168e92aaf837b919 | Freedoom: Phase 2 0.12.0
+freedoom2.wad  | d91080adcdaa14f46977887c044a1213bea92d19d73a87be58ec5c354c2d5962 | Freedoom: Phase 2 0.11.3
+freedm.wad     | d9adc4d792627e7fc47b09067b15486da724010c71dd12831e1cf8e0755b68ad | FreeDM 0.13.0
+freedm.wad     | 55e42c531aff9da02e9767efbc186c6ed9da36cd5294b57fdee7b9faad79ab18 | FreeDM 0.12.1
+freedm.wad     | db8a279392d35ee4888e3db48c1c18683dd506996a5afb12e78ffcb553f5246b | FreeDM 0.12.0
+freedm.wad     | c0b998f0ebd0ce343d56e584546a0d3e177bd7e98e13abecd77e2c00dcd15426 | FreeDM 0.11.3
+freedoomu.wad  | - | Freedoom: Phase 1 (Ultimate-style naming)
+freedoom.wad   | - | Freedoom (legacy single-file naming)
+
+# Chex Quest -- never sold; a cereal-box giveaway, sequels released free by their authors. No stable
+# project release page, so these came from a WAD collection and were corroborated elsewhere:
+# chex.wad's MD5 matches Odamex's w_ident.cpp table; chex3.wad's MD5, SHA-1 and byte size match the
+# published v1.4 records. Both contain the lumps iwadinfo.txt identifies them by. Both ship PWAD
+# magic and are loaded as IWADs by lump matching, which is why the gate keys off the IWAD slot too.
+chex.wad       | d8eb5277918883f490fb1a4be3c9a8588df2dbaee6dc4beb8df4929148bbffb1 | Chex Quest (12361532 bytes)
+chex3.wad      | 81662798c479458a1b2a2071a223e09501386157be5679fa9ec511c437471dd2 | Chex Quest 3 v1.4 (19191031 bytes)
+chex2.wad      | - | Chex Quest 2
+chex3v.wad     | - | Chex Quest 3: Vanilla Edition
+
+# Blasphemer -- the Heretic equivalent, open-licensed
+blasphem.wad   | - | Blasphemer
+blasphemer.wad | - | Blasphemer (long filename)
+
+# Freeware total conversions. rekkrsa.wad is deliberately absent -- that is the paid Steam edition,
+# and leaving the filename off this list is the entire mechanism for refusing it.
+hacx.wad       | - | HacX 1.2
+hacx2.wad      | - | HacX 2.0
+harm1.wad      | - | Harmony
+action2.wad    | - | Action Doom 2: Urban Brawl
+square1.pk3    | - | The Adventures of Square
+square1.wad    | - | The Adventures of Square (wad packaging)
+rekkr.wad      | - | REKKR
+megagame.wad   | - | Mega Man 8-bit Deathmatch
