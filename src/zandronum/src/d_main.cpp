@@ -70,6 +70,7 @@
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
 #include "features/wad-serve/zx_wadserve.h" // [rc4l] serving this server's own WADs to joiners
+#include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
@@ -1280,6 +1281,7 @@ void D_DoomLoop ()
 			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
 			zx::waddownload::Tick(); // [rc4l] drains the WAD downloader's log + fires its completion (main thread)
 			zx::wadserve::Tick(); // [rc4l] server side: binds/rebinds the WAD listener, snapshots its config, drains its log
+			zx::JoinTick(); // [rc4l] puts a failed join back in the server browser instead of a bare console
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{

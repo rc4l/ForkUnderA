@@ -62,6 +62,7 @@
 #include "a_doomglobal.h"
 #include "announcer.h"
 #include "features/server-browser/browser.h"
+#include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "cl_commands.h"
 #include "cl_demo.h"
 #include "cl_statistics.h"
@@ -2496,6 +2497,12 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// Clear out our copy of the server address.
 	g_AddressServer.Clear( );
 	CLIENT_SetConnectionState( CTS_DISCONNECTED );
+
+	// [rc4l] If this disconnect ended a join WE started, the browser takes it from here instead of
+	// leaving the player at a bare console with a stranger's WAD set loaded and one line of
+	// explanation about to scroll away. Records only -- the menu is opened from JoinTick once the
+	// teardown below has finished.
+	zx::NoteJoinFailed( pszString );
 
 	// Go back to the full console.
 	// [BB] This is what the CCMD endgame is doing and thus should be
