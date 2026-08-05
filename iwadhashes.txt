@@ -1,0 +1,78 @@
+# ZandroX downloadable IWAD hashes
+# format-version: 1
+#
+# The exact builds of the free IWADs we will keep. This is the gate: a downloaded file whose header
+# says IWAD is kept only if its SHA-256 appears below. Not its name -- its bytes.
+#
+# WHY THIS EXISTS ALONGSIDE iwadallowlist.txt
+#
+# The filename allowlist stops a server ASKING for doom2.wad. It cannot stop a mirror SERVING doom2.wad
+# under the name freedoom2.wad, because a filename is a claim and the WAD header only says "this is a
+# game", not which one. The hash is the only check a rename cannot walk past.
+#
+# The name list is still the pre-fetch early-out -- it stops us pulling 40 MB of something we would
+# only delete, and transiently writing a commercial IWAD to disk is still downloading it. But the
+# security boundary is here.
+#
+# WHY AN ALLOWLIST, WHEN ODAMEX USES A HASH DENYLIST
+#
+# Because the commercial set is not finite. doom2.wad alone shipped as 1.666, 1.666g, 1.7, 1.7a, 1.8,
+# 1.9, a French build, BFG Edition and the 2024 KEX re-release; TNT shipped a bug-fixed second
+# version; and Doom-engine games are still being SOLD today -- Selaco, Beyond Sunset, Hedon. A denylist
+# would have to enumerate every past version and stay ahead of every future release, and one miss
+# means the file downloads. An allowlist never learns any of them: unknown bytes are refused whether
+# they are Doom II 1.666 or a game that ships in 2030.
+#
+# The cost lands here instead, and we accept it: free IWADs have versions too, so each release needs a
+# line. When one is missing the failure is loud and safe -- the download is refused, not accepted.
+#
+# SHA-256, not MD5. Chosen-prefix MD5 collisions are practical, and a crafted commercial IWAD
+# colliding with a free one's digest would defeat the only check that stops it. (Odamex can use MD5
+# because theirs is a denylist, where a collision merely refuses something harmless.)
+#
+# Compiled into the binary at build time by tools/gen-wadlists.cmake, which FAILS THE BUILD if a line
+# names a file that is not in iwadallowlist.txt.
+#
+# One build per line:
+#   <sha256>    <filename>    <what it is>
+#
+# Blank lines and lines starting with # are ignored. Hashes are compared case-insensitively.
+#
+# TO ADD A RELEASE
+#
+# Get the file from the project's OWN release page, never a WAD mirror -- hashing a mirror's copy and
+# calling it canonical is circular, and the mirror is exactly what this defends against. Verify a
+# published signature or checksum if the project offers one, then `sha256sum` the extracted IWAD.
+# Note the provenance in your PR.
+
+# --- Freedoom ---------------------------------------------------------------------------------
+# 0.13.0 verified against the project's PGP-signed freedoom-0.13.0-CHECKSUM before extraction.
+# Earlier releases were taken from the same GitHub releases page, which publishes no CHECKSUM file
+# for them -- authoritative provenance, but not signature-verified. Said plainly so nobody assumes
+# more than was checked.
+7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d  freedoom1.wad  Freedoom: Phase 1 0.13.0
+a8772e088847032510d97ba2312406a6998f21cbab44d4ff10696faa9c0ecd4b  freedoom2.wad  Freedoom: Phase 2 0.13.0
+d9adc4d792627e7fc47b09067b15486da724010c71dd12831e1cf8e0755b68ad  freedm.wad     FreeDM 0.13.0
+
+c403ea7c27b5b2b77e4c0ca0b691669186790e572065e7eb2b0382801bcb18cc  freedoom1.wad  Freedoom: Phase 1 0.12.1
+729f100448d0b48e12ecc8004e096a9ea6df024467d962f002bb286805be3a8e  freedoom2.wad  Freedoom: Phase 2 0.12.1
+55e42c531aff9da02e9767efbc186c6ed9da36cd5294b57fdee7b9faad79ab18  freedm.wad     FreeDM 0.12.1
+
+fe395ab0d40f7e57eb50d32947b538990d3d2894a29c94648d7e6385a17ff2f6  freedoom1.wad  Freedoom: Phase 1 0.12.0
+2b1ff8d46d5c4313bee762f7b32d64b38a05645d32aaf46d168e92aaf837b919  freedoom2.wad  Freedoom: Phase 2 0.12.0
+db8a279392d35ee4888e3db48c1c18683dd506996a5afb12e78ffcb553f5246b  freedm.wad     FreeDM 0.12.0
+
+bc5739e88b20788845ce82ac0041effdecb4583ddbcdb05b9f899363eaa69892  freedoom1.wad  Freedoom: Phase 1 0.11.3
+d91080adcdaa14f46977887c044a1213bea92d19d73a87be58ec5c354c2d5962  freedoom2.wad  Freedoom: Phase 2 0.11.3
+c0b998f0ebd0ce343d56e584546a0d3e177bd7e98e13abecd77e2c00dcd15426  freedm.wad     FreeDM 0.11.3
+
+# --- Not yet vouched for ----------------------------------------------------------------------
+#
+# Blasphemer, Chex Quest 1-3, HacX, Harmony, Action Doom 2, The Adventures of Square, REKKR and
+# Mega Man 8-bit Deathmatch are all on iwadallowlist.txt, but no build of any of them has been hashed
+# from an authoritative source yet. Until one is, downloading them is REFUSED -- deny-by-default
+# applies to us not having done the work, exactly as it applies to a game we have never heard of.
+#
+# They are unaffected as IWADs a player already owns; this only governs downloading. Each needs
+# someone with access to the project's own release (several are behind ModDB/itch download gates that
+# cannot be fetched unattended) to add a line.

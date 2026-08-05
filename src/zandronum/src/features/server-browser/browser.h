@@ -143,6 +143,12 @@ typedef struct
 	// [SB] Converted to a TArray.
 	TArray<FString>	PWADNames;
 
+	// [rc4l] MD5 of each PWAD, as the server reports it (SQF2_PWAD_HASHES), parallel to PWADNames and
+	// empty for a server that did not send them. Lets a download be checked against what the server
+	// actually has, rather than trusting that a mirror served the right file under the right name.
+	// MD5 because that is what the protocol carries -- see features/wad-download/zx_filehash.h.
+	TArray<FString>	PWADHashes;
+
 	// Name of the IWAD being used.
 	FString			IWADName;
 
@@ -194,6 +200,9 @@ const char		*BROWSER_GetMapname( ULONG ulServer );
 LONG			BROWSER_GetMaxClients( ULONG ulServer );
 LONG			BROWSER_GetNumPWADs( ULONG ulServer );
 const char		*BROWSER_GetPWADName( ULONG ulServer, ULONG ulWadIdx );
+// [rc4l] "" when the server sent no hashes, which is normal -- older servers and any server that
+// chose not to. Callers must treat empty as "cannot check", never as "checked and fine".
+const char		*BROWSER_GetPWADHash( ULONG ulServer, ULONG ulWadIdx );
 const char		*BROWSER_GetIWADName( ULONG ulServer );
 GAMEMODE_e		BROWSER_GetGameMode( ULONG ulServer );
 LONG			BROWSER_GetNumPlayers( ULONG ulServer );

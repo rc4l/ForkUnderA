@@ -19,15 +19,26 @@
 // the exceptions is both safer and far less to maintain: we never have to know that doom2.wad is
 // sold, only that freedoom2.wad is not.
 //
-// Two gates implement it, because a name is a claim and the claim comes from the server:
+// Two gates implement it, and only the second is a security boundary:
 //
-//   1. Before fetching: a file the server declares as its IWAD must be on the allowlist.
-//   2. After the bytes land: a file whose header says IWAD must ALSO be on the allowlist, whatever it
-//      was called and whichever slot asked for it. This is the one that actually holds -- it catches
-//      doom2.wad renamed to coolmod.wad and listed as a PWAD, which no name-based rule can, and it
-//      is why gate 1 does not need a list of games to refuse. Odamex reaches the same place by MD5:
-//      exact, but only for the hashes they enumerated, so a fresh release or a differently-patched
-//      copy walks past it. Reading the file's own header needs no table and does not go stale.
+//   1. Before fetching (name): a file the server declares as its IWAD must be on the name allowlist.
+//      This is an EARLY-OUT, not the gate. It exists so we do not pull 40 MB of something we would
+//      only delete -- and because transiently writing a commercial IWAD to disk is still downloading
+//      it. A filename is a claim made by the server, so it can never be the thing we rely on.
+//   2. After the bytes land (hash): a file whose header says IWAD is kept only if its SHA-256 is one
+//      we shipped. This is the gate. It is the only check a rename cannot walk past -- doom2.wad
+//      served under the name freedoom2.wad passes every name check ever written and fails this one.
+//
+// The header magic (IWAD vs PWAD) is what selects between them. Without it the only rule would be
+// "not in the hash list -> refuse", which would refuse every PWAD ever made: we can enumerate free
+// IWADs, we cannot enumerate mods.
+//
+// Odamex reaches the same place from the opposite direction -- an MD5 DENYlist of commercial files.
+// That works for them because the commercial set they enumerate stopped growing; it does not work
+// now, because doom2.wad alone has nine-odd released builds and Doom-engine games are still being
+// sold. It also lets them use MD5, where we cannot: a collision against a denylist merely refuses
+// something harmless, while a collision against an allowlist is the whole gate falling open, and
+// chosen-prefix MD5 collisions are practical. Hence SHA-256.
 //
 // THE ALLOWLIST IS NOT CONFIGURABLE, and that is the point. An earlier draft had a CVAR to extend it,
 // reasoning that free IWADs keep being made and players should not wait on us shipping a build. But a
@@ -53,6 +64,7 @@ enum class DownloadVerdict
 	Allowed,
 	UnsafeName,				// not a bare filename, or not a resource type the engine loads
 	UnlistedIwad,			// an IWAD we cannot confirm is free to redistribute -- assume it is sold
+	UnvouchedIwadBuild,		// the right filename, but bytes no shipped hash vouches for
 };
 
 // A short human sentence for the verdict, for the console and the "can't join" message. Never NULL.
@@ -66,15 +78,22 @@ bool IsFreeIwadName(const std::string &name);
 // small to have a header is not an IWAD.
 bool HeaderIsIwadMagic(const char *header, size_t len);
 
+// Whether `sha256Hex` is a build we shipped a hash for, AND that build is the file `name` claims to
+// be. Case-insensitive on both. The name half is not a security check -- both sides are already free
+// IWADs -- it stops a mirror serving Freedoom Phase 1 as freedoom2.wad and poisoning the cache with a
+// file that will never load the maps its name promises.
+bool IsVouchedIwadBuild(const std::string &sha256Hex, const std::string &name);
+
 // Verdict on a file BEFORE fetching it. `isIwadSlot` is true when the server declared this file as
-// its IWAD rather than as a PWAD. PWADs pass this gate on name alone -- mods are the ordinary case,
-// and what a PWAD actually turns out to be is settled by ClassifyDownloadedFile.
+// its IWAD rather than as a PWAD. PWADs pass on name alone -- mods are the ordinary case, and what a
+// PWAD actually turns out to be is settled by ClassifyDownloadedFile.
 DownloadVerdict ClassifyWantedFile(const std::string &name, bool isIwadSlot);
 
-// Verdict on a file AFTER fetching it, given the bytes that arrived. Re-runs the name check (the name
-// did not become safer) and adds the one that needs the file itself. Callers must delete the file on
-// anything but Allowed.
-DownloadVerdict ClassifyDownloadedFile(const std::string &name, const char *header, size_t len);
+// Verdict on a file AFTER fetching it. `sha256Hex` is the digest of what actually arrived; pass ""
+// when it could not be computed, which is treated as "cannot vouch" rather than "fine". Callers must
+// delete the file on anything but Allowed.
+DownloadVerdict ClassifyDownloadedFile(const std::string &name, const char *header, size_t len,
+	const std::string &sha256Hex);
 
 } // namespace zx
 

@@ -16,6 +16,7 @@
 // truncated download refuses the join and leaves you where you were, instead of being discovered
 // after the engine has already gone.
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,10 @@ struct JoinPlan
 {
 	FString iwadName;					// bare name, may be empty
 	std::vector<std::string> wads;		// bare PWAD names, in the server's order
+	// [rc4l] The server's own MD5 for each PWAD, keyed by the name it goes with rather than by index:
+	// ComputeJoinWadList drops blanks and duplicates, so positions in `wads` no longer line up with
+	// the server's original list. Empty for a server that sent no hashes.
+	std::map<std::string, std::string> wadHashes;
 	FString address;
 	std::vector<std::string> sites;		// the server's own advertised download site, if any
 	bool valid;
@@ -160,7 +165,13 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 	for (size_t i = 0; i < plan.wads.size(); ++i)
 	{
 		if (D_AddFile(resolved, plan.wads[i].c_str()) == false)
-			missing.push_back(zx::waddownload::WantedFile(plan.wads[i], false));
+		{
+			// Fold the case for the lookup: ComputeJoinWadList keeps the server's own spelling, and
+			// the hash map was keyed the same way, but a server is free to be inconsistent.
+			std::map<std::string, std::string>::const_iterator it = plan.wadHashes.find(plan.wads[i]);
+			const std::string md5 = ( it != plan.wadHashes.end( )) ? it->second : std::string( );
+			missing.push_back(zx::waddownload::WantedFile(plan.wads[i], false, md5));
+		}
 	}
 
 	if (missing.size() > 0)
@@ -233,6 +244,20 @@ bool JoinSelectedServer()
 	JoinPlan plan;
 	plan.iwadName = pszIwad != NULL ? pszIwad : "";
 	plan.wads = ComputeJoinWadList(plan.iwadName.GetChars(), ServerPwadNames(lServer));
+
+	// [rc4l] Pair each PWAD with the MD5 the server advertised (SQF2_PWAD_HASHES), so a downloaded
+	// mod can be checked against what the server actually runs. Servers that send no hashes leave
+	// this empty, which the downloader treats as "cannot check" rather than "fine".
+	{
+		const LONG lCount = BROWSER_GetNumPWADs((ULONG)lServer);
+		for (LONG i = 0; i < lCount; ++i)
+		{
+			const char *pszName = BROWSER_GetPWADName((ULONG)lServer, (ULONG)i);
+			const char *pszHash = BROWSER_GetPWADHash((ULONG)lServer, (ULONG)i);
+			if (( pszName != NULL ) && ( pszHash != NULL ) && ( pszHash[0] != '\0' ))
+				plan.wadHashes[pszName] = pszHash;
+		}
+	}
 	plan.address = BROWSER_GetAddress((ULONG)lServer).ToString();
 
 	// [rc4l] Where this server says its files live. Zandronum has advertised this since forever --

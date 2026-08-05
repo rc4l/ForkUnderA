@@ -48,16 +48,38 @@ released next year is not on it, so it downloads — and keeping it accurate mak
 tracking every game in the ecosystem forever. Deny-by-default is both safer and far less to
 maintain: we never have to know that `doom2.wad` is sold, only that `freedoom2.wad` is not.
 
-Two gates implement it (`computation/iwadallow_compute.h`):
+Two gates implement it (`computation/iwadallow_compute.h`), and **only the second is a security
+boundary**:
 
-1. **Before fetching** — a file the server declares as its IWAD must be on the allowlist. PWADs
-   pass on name alone; mods are the ordinary case.
-2. **After the bytes land** — a file whose header says `IWAD` must *also* be on the allowlist,
-   whatever it was called and whichever slot asked for it. This is the gate that actually holds. It
-   catches `doom2.wad` renamed to `coolmod.wad` and listed as a PWAD, which no name check can, and
-   it is why gate 1 needs no list of games to refuse. Odamex reaches the same place by MD5 — exact,
-   but only for the hashes they enumerated, so a fresh release or a differently-patched copy walks
-   past it. Reading the file's own header needs no table and never goes stale.
+1. **Before fetching (name)** — a file the server declares as its IWAD must be on the name
+   allowlist. This is an *early-out*, not the gate: it stops us pulling 40 MB of something we would
+   only delete, and transiently writing a commercial IWAD to disk is still downloading it. A filename
+   is a claim made by the server, so it can never be what we rely on.
+2. **After the bytes land (hash)** — a file whose header says `IWAD` is kept only if its **SHA-256**
+   is one we shipped. This is the gate. `doom2.wad` served by a mirror under the name
+   `freedoom2.wad` passes every name check ever written and fails this one.
+
+The header magic (`IWAD` vs `PWAD`) selects between them. Without it the only rule would be "not in
+the hash list → refuse", which would refuse every PWAD ever made: we can enumerate free IWADs, we
+cannot enumerate mods.
+
+Odamex arrives at the same place from the other direction — an MD5 **denylist** of commercial files.
+That works for them because the set they enumerate stopped growing. It does not work now: `doom2.wad`
+alone shipped as 1.666, 1.666g, 1.7, 1.7a, 1.8, 1.9, a French build, BFG Edition and the 2024 KEX
+re-release, and Doom-engine games are still being *sold* (Selaco, Beyond Sunset, Hedon). A denylist
+has to be complete in both directions — every past version and every future release — and one miss
+means the file downloads. An allowlist has to be complete in neither.
+
+It also settles the hash choice. Odamex can use MD5 because a collision against a denylist merely
+refuses something harmless; a collision against an *allowlist* is the gate falling open, and
+chosen-prefix MD5 collisions are practical. So: **SHA-256**, via OpenSSL, which this build already
+links for csrp.
+
+The cost lands on us instead, and we take it deliberately: free IWADs have versions too, so each
+release needs a line in `iwadhashes.txt`. When one is missing the failure is loud and safe — the
+download is refused, never accepted. Today that means Freedoom and FreeDM (four releases each) are
+downloadable and the other allowlisted IWADs are not, because nobody has hashed them from an
+authoritative source yet. They are unaffected as IWADs a player already owns.
 
 The list lives in **`iwadallowlist.txt` at the repo root** — Freedoom (all spellings), Blasphemer,
 Chex Quest 1–3 incl. the Vanilla edition, HacX 1.2 and 2.0, Harmony, Action Doom 2, The Adventures
@@ -126,12 +148,14 @@ loop, because "did we remember to reject `../..`?" should be answerable without 
 <repo root>/iwadallowlist.txt               the downloadable-IWAD allowlist  (PR to add a line)
 <repo root>/waddownloadsites.txt            the default mirror list          (PR to add a line)
 <repo root>/iwadsubstitutes.txt             Freedoom stand-ins               (PR to add a line)
+<repo root>/iwadhashes.txt                  vouched SHA-256 builds           (PR to add a line)
 <repo root>/tools/gen-wadlists.cmake        compiles all three into a header at build time
 
 zx_waddownload.{h,cpp}                      driver: CVARs, CCMDs, worker thread, main-thread Tick
 computation/downloadplan_compute.{h,cpp}    mirror URLs, name safety, escaping     (+ _test.cpp)
 computation/iwadallow_compute.{h,cpp}       the legality gate                      (+ _test.cpp)
 computation/iwadsubstitute_compute.{h,cpp}  what Freedoom can stand in for         (+ _test.cpp)
+zx_filehash.{h,cpp}                         SHA-256 / MD5 of a file, streamed
 ```
 
 The transfer itself is `features/net/zx_httpfile.{h,cpp}` (+ `zx_httpfile_win.cpp`): WinHTTP on
@@ -146,6 +170,25 @@ no `Printf`, no CVARs, no `FString`, no wad tables. Everything it needs is snaps
 before it starts; everything it wants to say goes into a mutex-guarded queue that `Tick()` drains on
 the main thread. `Printf` off the main thread has already crashed this engine once — see
 `features/updater/zx_updater.h`.
+
+## Verifying mods, separately from licensing
+
+Zandronum already advertises an MD5 per PWAD over the launcher protocol (`SQF2_PWAD_HASHES`). The
+browser used to read those and throw them away; it now stores them, and a downloaded PWAD is checked
+against the hash the server itself published. That closes the lying-mirror hole for mods: a site
+serving the wrong file — or a stale version — under the right name is rejected.
+
+This is **integrity, not authorization**, and the distinction is the reason the IWAD gate does not
+work this way. A hash the server chose cannot gate a file the server requested: a hostile server just
+advertises the name `freedoom2.wad` with whatever digest it likes. It proves "I got the file this
+server runs", which is worth having and is all it claims. MD5 here is not our choice — it is what the
+protocol carries — and it is fine for the job, since forging it means already controlling the server
+that told you the hash.
+
+A file that fails verification falls through to the **next mirror** rather than failing the join: a
+bad copy on one site should not deny a file the next site has correctly. Only an exhausted list is an
+error, and it reports the last rejection so "nobody had it" and "everybody had the wrong thing" are
+distinguishable.
 
 ## Division of labour with features/wadreload
 
