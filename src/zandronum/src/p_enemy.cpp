@@ -3148,7 +3148,8 @@ void A_Chase(AActor *self)
 // A_FaceTracer
 //
 //=============================================================================
-void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
+// [rc4l] uzdoom@53fd57d6b
+void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch, angle_t ang_offset, angle_t pitch_offset, int flags)
 {
 	// [BC] This is handled server-side.
 	if ( NETWORK_InClientMode() )
@@ -3183,28 +3184,28 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 		{
 			if (self->angle - other_angle < ANGLE_180)
 			{
-				self->angle -= max_turn;
+				self->angle -= max_turn + ang_offset;
 			}
 			else
 			{
-				self->angle += max_turn;
+				self->angle += max_turn + ang_offset;
 			}
 		}
 		else
 		{
 			if (other_angle - self->angle < ANGLE_180)
 			{
-				self->angle += max_turn;
+				self->angle += max_turn + ang_offset;
 			}
 			else
 			{
-				self->angle -= max_turn;
+				self->angle -= max_turn + ang_offset;
 			}
 		}
 	}
 	else
 	{
-		self->angle = other_angle;
+		self->angle = other_angle + ang_offset;
 	}
 
 	// [DH] Now set pitch. In order to maintain compatibility, this can be
@@ -3224,6 +3225,23 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 		{
 			target_z = other->z + other->height / 2;
 		}
+
+		// [rc4l] uzdoom@53fd57d6b -- FAF_* pick an explicit aim height. Note there is no
+		// +32*FRACUNIT here on purpose; that is what FAF_BOTTOM exists to opt out of.
+		if (flags & FAF_BOTTOM)
+			target_z = other->z + other->GetBobOffset();
+		if (flags & FAF_MIDDLE)
+			target_z = other->z + (other->height / 2) + other->GetBobOffset();
+		if (flags & FAF_TOP)
+			target_z = other->z + (other->height) + other->GetBobOffset();
+
+		// [rc4l] Upstream wrote `!flags & FAF_NODISTFACTOR`, which parses as (!flags) & 8 and is
+		// therefore always false, so this branch never runs. Reproduced verbatim ON PURPOSE: this
+		// is the behaviour GZDoom shipped for years and the flag is marked deprecated at upstream
+		// HEAD, so "fixing" it here would make mods aim differently than they do in GZDoom.
+		if (!flags & FAF_NODISTFACTOR)
+			target_z += fixed_t::FromUnsignedBits(pitch_offset);
+
 		double dist_z = (double)(target_z - source_z);
 		double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
 
@@ -3246,6 +3264,10 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 		{
 			self->pitch = other_pitch;
 		}
+
+		// [rc4l] uzdoom@53fd57d6b
+		if (flags & FAF_NODISTFACTOR)
+			self->pitch += fixed_t::FromUnsignedBits(pitch_offset);
 	}
 
 	// This will never work well if the turn angle is limited.
@@ -3259,46 +3281,58 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 		SERVERCOMMANDS_SetThingAngle( self );
 }
 
-void A_FaceTarget (AActor *self, angle_t max_turn, angle_t max_pitch)
+// [rc4l] uzdoom@53fd57d6b
+void A_FaceTarget (AActor *self, angle_t max_turn, angle_t max_pitch, angle_t ang_offset, angle_t pitch_offset, int flags)
 {
 	A_Face(self, self->target, max_turn, max_pitch);
 }
 
-void A_FaceMaster (AActor *self, angle_t max_turn, angle_t max_pitch)
+// [rc4l] uzdoom@53fd57d6b
+void A_FaceMaster (AActor *self, angle_t max_turn, angle_t max_pitch, angle_t ang_offset, angle_t pitch_offset, int flags)
 {
-	A_Face(self, self->master, max_turn, max_pitch);
+	A_Face(self, self->master, max_turn, max_pitch, ang_offset, pitch_offset, flags);
 }
 
-void A_FaceTracer (AActor *self, angle_t max_turn, angle_t max_pitch)
+// [rc4l] uzdoom@53fd57d6b
+void A_FaceTracer (AActor *self, angle_t max_turn, angle_t max_pitch, angle_t ang_offset, angle_t pitch_offset, int flags)
 {
-	A_Face(self, self->tracer, max_turn, max_pitch);
+	A_Face(self, self->tracer, max_turn, max_pitch, ang_offset, pitch_offset, flags);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FaceTarget)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(5);	// [rc4l] uzdoom@53fd57d6b
 	ACTION_PARAM_ANGLE(max_turn, 0);
 	ACTION_PARAM_ANGLE(max_pitch, 1);
+	ACTION_PARAM_ANGLE(ang_offset, 2);
+	ACTION_PARAM_ANGLE(pitch_offset, 3);
+	ACTION_PARAM_INT(flags, 4);
 
-	A_FaceTarget(self, max_turn, max_pitch);
+	A_FaceTarget(self, max_turn, max_pitch, ang_offset, pitch_offset, flags);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FaceMaster)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(5);	// [rc4l] uzdoom@53fd57d6b
 	ACTION_PARAM_ANGLE(max_turn, 0);
 	ACTION_PARAM_ANGLE(max_pitch, 1);
+	ACTION_PARAM_ANGLE(ang_offset, 2);
+	ACTION_PARAM_ANGLE(pitch_offset, 3);
+	ACTION_PARAM_INT(flags, 4);
 
-	A_FaceMaster(self, max_turn, max_pitch);
+	A_FaceMaster(self, max_turn, max_pitch, ang_offset, pitch_offset, flags);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FaceTracer)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(5);	// [rc4l] uzdoom@53fd57d6b
 	ACTION_PARAM_ANGLE(max_turn, 0);
 	ACTION_PARAM_ANGLE(max_pitch, 1);
+	ACTION_PARAM_ANGLE(ang_offset, 2);
+	ACTION_PARAM_ANGLE(pitch_offset, 3);
+	ACTION_PARAM_INT(flags, 4);
 
-	A_FaceTracer(self, max_turn, max_pitch);
+	A_FaceTracer(self, max_turn, max_pitch, ang_offset, pitch_offset, flags);
 }
 
 //===========================================================================

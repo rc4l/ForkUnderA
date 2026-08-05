@@ -398,6 +398,12 @@ Const Int WARPF_MOVEPTR = 0x1000;
 // against it still parses. Upstream carries it to this day (zscript/constants.zs).
 Const Int WAPRF_ABSOLUTEPOSITION = 0x400;
 
+// [rc4l] uzdoom@53fd57d6b -- flags for A_Face*
+Const Int FAF_BOTTOM = 1;
+Const Int FAF_MIDDLE = 2;
+Const Int FAF_TOP = 4;
+Const Int FAF_NODISTFACTOR = 8;
+
 // flags for A_SetPitch/SetAngle/SetRoll
 const int SPF_FORCECLAMP = 1;
 const int SPF_INTERPOLATE = 2;

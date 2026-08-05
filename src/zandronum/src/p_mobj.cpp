@@ -2543,16 +2543,16 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 				}
 				if (BlockingMobj && (BlockingMobj->flags2 & MF2_REFLECTIVE))
 				{
-					// [rc4l] uzdoom@533ae9593 with its cleanup uzdoom@fdf2d6c49 folded in.
-					// THRUREFLECT suppresses the angle change entirely; MIRRORREFLECT turns the
-					// missile a flat 180; AIMREFLECT sends it straight back at whoever fired it.
-					// Without this the two flags were parsed but inert.
+					// [rc4l] uzdoom@533ae9593 with its cleanup uzdoom@fdf2d6c49 folded in, then
+					// uzdoom@6bb084998. THRUREFLECT suppresses the angle change entirely;
+					// MIRRORREFLECT turns the missile a flat 180; AIMREFLECT sends it straight back
+					// at whoever fired it. Without this the two flags were parsed but inert.
 					if (!(BlockingMobj->flags7 & MF7_THRUREFLECT))
 					{
-						if (BlockingMobj->flags7 & MF7_MIRRORREFLECT)
-							angle = mo->angle + ANG180;
-						else
-							angle = R_PointToAngle2(BlockingMobj->x, BlockingMobj->y, mo->x, mo->y);
+						// [rc4l] uzdoom@6bb084998 -- the reflection angle is computed the same way
+						// for every case; MIRRORREFLECT is applied to the VELOCITY further down
+						// instead of by pre-loading `angle` here, which is what broke it.
+						angle = R_PointToAngle2(BlockingMobj->x, BlockingMobj->y, mo->x, mo->y);
 
 						// Change angle for deflection/reflection
 						if (mo->AdjustReflectionAngle (BlockingMobj, angle))
@@ -2576,12 +2576,24 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 						}
 						else
 						{
-							// Reflect the missile along angle
-							mo->angle = angle;
-							angle >>= ANGLETOFINESHIFT;
-							mo->velx = FixedMul (mo->Speed>>1, finecosine[angle]);
-							mo->vely = FixedMul (mo->Speed>>1, finesine[angle]);
-							mo->velz = -mo->velz/2;
+							// [rc4l] uzdoom@6bb084998 -- a mirror reverses the velocity it was
+							// given rather than recomputing one from Speed at the flipped angle.
+							if ((BlockingMobj->flags7 & MF7_MIRRORREFLECT) && (tg || blockingtg))
+							{
+								mo->angle += ANGLE_180;
+								mo->velx = -mo->velx / 2;
+								mo->vely = -mo->vely / 2;
+								mo->velz = -mo->velz / 2;
+							}
+							else
+							{
+								// Reflect the missile along angle
+								mo->angle = angle;
+								angle >>= ANGLETOFINESHIFT;
+								mo->velx = FixedMul (mo->Speed>>1, finecosine[angle]);
+								mo->vely = FixedMul (mo->Speed>>1, finesine[angle]);
+								mo->velz = -mo->velz/2;
+							}
 						}
 					}
 					if (mo->flags2 & MF2_SEEKERMISSILE)
