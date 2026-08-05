@@ -1306,8 +1306,10 @@ public:
 			// Translation: No high res.
 			// [rc4l] uzdoom@1c2a6e845 -- decide right/bottom alignment from the INPUT coordinates,
 			// not from rx/ry, which adjustRelCenter has already translated by the offsets.
-			bool xright = *x < 0;
-			bool ybot = *y < 0;
+			// [rc4l] uzdoom@72506fa6e fixes a regression from uzdoom@1c2a6e845: a RelCenter
+			// coordinate is legitimately negative and must not be read as right/bottom alignment.
+			bool xright = *x < 0 && !x.RelCenter();
+			bool ybot = *y < 0 && !y.RelCenter();
 
 			w = (forceWidth < 0 ? texture->GetScaledWidthDouble() : forceWidth);
 			h = (forceHeight < 0 ? texture->GetScaledHeightDouble() : forceHeight);
