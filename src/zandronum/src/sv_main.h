@@ -149,12 +149,23 @@
 #define SQF2_GAMEMODE_SHORTNAME		0x00000008
 #define SQF2_VOICECHAT				0x00000010
 
+// [rc4l] Ours, hence fua_ per the naming rule -- it also flags the one risk in adding a bit here. If
+// upstream ever allocates 0x20 for something of their own, a ZandroX server and a Zandronum launcher
+// would disagree about what these bytes mean. We take that deliberately: the field is a byte of flags
+// and a 16-bit port, fixed shape whatever the answer, so a launcher that does not understand it can
+// still skip it cleanly.
+//
+// Port 0 means "not serving" -- the field is always present when asked for rather than conditionally
+// omitted, because a variable-shape field is what actually breaks a parser.
+// Flags bit 0: the operator would rather clients tried public mirrors before this server.
+#define SQF2_FUA_DIRECT_DOWNLOAD	0x00000020
+
 #define	SQF_ALL						( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_MAXPLAYERS| \
 									  SQF_PWADS|SQF_GAMETYPE|SQF_GAMENAME|SQF_IWAD|SQF_FORCEPASSWORD|SQF_FORCEJOINPASSWORD|SQF_GAMESKILL| \
 									  SQF_BOTSKILL|SQF_DMFLAGS|SQF_LIMITS|SQF_TEAMDAMAGE|SQF_TEAMSCORES|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_TEAMINFO_NUMBER|SQF_TEAMINFO_NAME|SQF_TEAMINFO_COLOR|SQF_TEAMINFO_SCORE| \
 									  SQF_TESTING_SERVER|SQF_DATA_MD5SUM|SQF_ALL_DMFLAGS|SQF_SECURITY_SETTINGS|SQF_OPTIONAL_WADS|SQF_DEH|SQF_EXTENDED_INFO )
 
-#define SQF2_ALL					( SQF2_PWAD_HASHES|SQF2_COUNTRY|SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_VOICECHAT )
+#define SQF2_ALL					( SQF2_PWAD_HASHES|SQF2_COUNTRY|SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_VOICECHAT|SQF2_FUA_DIRECT_DOWNLOAD )
 
 #define	MAX_STORED_QUERY_IPS		512
 

@@ -188,6 +188,16 @@ typedef struct
 	FString			GameModeName;
 	FString			GameModeShortName;
 
+	// [rc4l] Where this server will serve its own WADs from (SQF2_FUA_DIRECT_DOWNLOAD). 0 means it
+	// will not -- either an older server that never sent the field, or one with serving turned off.
+	// The host is the address we queried, never anything the server told us: a server that could
+	// nominate a download host could point every joiner at a third party's machine.
+	USHORT			usDirectDownloadPort;
+
+	// [rc4l] The operator would rather clients tried public mirrors before this server. Only a hint,
+	// and only about ordering -- the file is served either way.
+	bool			bPrefersMirrors;
+
 } SERVER_t;
 
 //*****************************************************************************
@@ -233,6 +243,13 @@ const char		*BROWSER_GetCountryCode( ULONG ulServer );
 ULONG			BROWSER_GetCountryIndex( ULONG ulServer );
 const char		*BROWSER_GetGameModeName( ULONG ulServer ); // [SB]
 const char		*BROWSER_GetGameModeShortName( ULONG ulServer ); // [SB]
+
+// [rc4l] "http://<address>:<port>/" for a server that serves its own WADs, or "" for one that does
+// not. Built from the address we queried rather than anything the server sent.
+FString			BROWSER_GetDirectDownloadURL( ULONG ulServer );
+
+// [rc4l] Whether that URL should be tried after the public mirrors rather than before them.
+bool			BROWSER_PrefersMirrors( ULONG ulServer );
 
 // [rc4l] The raw state, for callers that need to tell the failure modes apart rather than just
 // "drawable or not". BROWSER_IsActive() answers the narrower question.

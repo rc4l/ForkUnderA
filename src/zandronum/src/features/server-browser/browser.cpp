@@ -310,6 +310,36 @@ const char *BROWSER_GetPWADHash( ULONG ulServer, ULONG ulWadIdx )
 
 //*****************************************************************************
 //
+// [rc4l] The host half comes from the address WE queried, never from anything the server said. A
+// server that could name its own download host could name someone else's, and every client that
+// joined would fetch from a machine that never agreed to serve them.
+FString BROWSER_GetDirectDownloadURL( ULONG ulServer )
+{
+	FString url;
+
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( url );
+
+	if ( g_BrowserServerList[ulServer].usDirectDownloadPort == 0 )
+		return ( url );
+
+	url.Format( "http://%s:%u/", g_BrowserServerList[ulServer].Address.ToStringNoPort( ),
+		static_cast<unsigned>( g_BrowserServerList[ulServer].usDirectDownloadPort ));
+	return ( url );
+}
+
+//*****************************************************************************
+//
+bool BROWSER_PrefersMirrors( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( false );
+
+	return ( g_BrowserServerList[ulServer].bPrefersMirrors );
+}
+
+//*****************************************************************************
+//
 LONG BROWSER_GetNumDMFlags( ULONG ulServer )
 {
 	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
@@ -608,6 +638,11 @@ void BROWSER_ClearServerList( void )
 		g_BrowserServerList[ulIdx].CountryCode = "";
 		g_BrowserServerList[ulIdx].ulCountryIndex = COUNTRY_INDEX_UNKNOWN;
 		g_BrowserServerList[ulIdx].bHasPlayerData = false;
+
+		// [rc4l] Nor a download port. Inheriting one would have us fetch from whoever last held the
+		// slot -- a wrong address at best, and a stale one that happens to answer at worst.
+		g_BrowserServerList[ulIdx].usDirectDownloadPort = 0;
+		g_BrowserServerList[ulIdx].bPrefersMirrors = false;
 	}
 }
 
@@ -1070,6 +1105,16 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		{
 			g_BrowserServerList[lServer].GameModeShortName = pByteStream->ReadString();
 		}
+
+		// [rc4l] Direct download: a flags byte then the TCP port. Fixed shape whichever way the
+		// answer goes -- port 0 is how "not serving" is spelled, rather than the field being absent,
+		// because a field that is sometimes there is what desynchronises a stream.
+		if ( ulFlags2 & SQF2_FUA_DIRECT_DOWNLOAD )
+		{
+			const int lFlags = pByteStream->ReadByte( );
+			g_BrowserServerList[lServer].usDirectDownloadPort = static_cast<USHORT>( pByteStream->ReadShort( ));
+			g_BrowserServerList[lServer].bPrefersMirrors = (( lFlags & 1 ) != 0 );
+		}
 	}
 
 	// [rc4l] The old browser cached a sorted index that had to be rebuilt from here whenever a reply
@@ -1292,7 +1337,9 @@ static void browser_QueryServer( ULONG ulServer )
 	// send it -- the old browser asked for everything except the one field it then read and discarded.
 	// [rc4l] SQF2_PWAD_HASHES added: the downloader verifies each fetched PWAD against the server's
 	// own MD5, so a mirror cannot hand us the wrong file (or a stale version) under the right name.
-	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY|SQF2_PWAD_HASHES );
+	// [rc4l] SQF2_FUA_DIRECT_DOWNLOAD added: tells us whether this server will serve its own WADs and
+	// on what port, which is the only way to reach a file that exists on no mirror.
+	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY|SQF2_PWAD_HASHES|SQF2_FUA_DIRECT_DOWNLOAD );
 
 	// Send the server our packet.
 	NETWORK_LaunchPacket( &g_ServerBuffer, g_BrowserServerList[ulServer].Address );
