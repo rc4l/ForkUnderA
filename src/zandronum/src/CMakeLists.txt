@@ -1488,7 +1488,6 @@ add_executable( zdoom WIN32
 	features/server-browser/computation/serverbrowser_compute.cpp
 	features/server-browser/computation/browserhit_compute.cpp
 	features/server-browser/computation/colortext_compute.cpp
-	features/server-browser/computation/dmflagnames_compute.cpp
 	features/server-browser/computation/joinplan_compute.cpp
 	features/server-browser/computation/joinresume_compute.cpp
 	features/server-browser/computation/launcherfields_compute.cpp
