@@ -283,6 +283,17 @@ protected:
 	static FNullStringData NullString;
 
 	friend struct FStringData;
+
+private:
+	// [rc4l] uzdoom@845bcdf14 -- declared but never defined, so any use is a link/compile error.
+	// Without this an FString implicitly converts to const char* and the BUILT-IN pointer
+	// comparison runs, silently comparing addresses instead of text. Use Compare() instead.
+	bool operator == (const FString &illegal) const;
+	bool operator != (const FString &illegal) const;
+	bool operator < (const FString &illegal) const;
+	bool operator > (const FString &illegal) const;
+	bool operator <= (const FString &illegal) const;
+	bool operator >= (const FString &illegal) const;
 };
 
 namespace StringFormat

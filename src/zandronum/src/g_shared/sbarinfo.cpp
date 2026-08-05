@@ -1304,8 +1304,10 @@ public:
 
 			// We can't use DTA_HUDRules since it forces a width and height.
 			// Translation: No high res.
-			bool xright = rx < 0;
-			bool ybot = ry < 0;
+			// [rc4l] uzdoom@1c2a6e845 -- decide right/bottom alignment from the INPUT coordinates,
+			// not from rx/ry, which adjustRelCenter has already translated by the offsets.
+			bool xright = *x < 0;
+			bool ybot = *y < 0;
 
 			w = (forceWidth < 0 ? texture->GetScaledWidthDouble() : forceWidth);
 			h = (forceHeight < 0 ? texture->GetScaledHeightDouble() : forceHeight);
