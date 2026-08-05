@@ -67,6 +67,7 @@
 #include "cl_demo.h"
 #include "cl_commands.h"
 #include "network/cl_auth.h"
+#include "features/server-browser/zx_joinserver.h" // [rc4l] a finished download redirects to the browser
 
 //
 // Todo: Move these elsewhere
@@ -912,7 +913,14 @@ bool M_Responder (event_t *ev)
 				 ConsoleState != c_down && m_use_mouse)
 		{
 			M_StartControlPanel(true);
-			M_SetMenu(NAME_Mainmenu, -1);
+			// [rc4l] A download finished while the player was away, so its join is waiting. Opening
+			// the menu is the one deliberate "I am ready to stop playing" gesture there is, so it is
+			// what we hang this on -- no new key to bind, nothing to conflict with, and impossible to
+			// trigger mid-fight by accident. They land on the list and press JOIN themselves.
+			if (zx::ConsumeJoinReady())
+				M_SetMenu("ZA_Browser", -1);
+			else
+				M_SetMenu(NAME_Mainmenu, -1);
 			return true;
 		}
 	}
@@ -1083,7 +1091,12 @@ bool M_IsValidMenu( const char *name )
 CCMD (menu_main)
 {
 	M_StartControlPanel(true);
-	M_SetMenu(NAME_Mainmenu, -1);
+	// [rc4l] Same redirect as the escape key: opening the main menu is opening the main menu however
+	// the player got there, and a waiting join should not depend on which route they took.
+	if (zx::ConsumeJoinReady())
+		M_SetMenu("ZA_Browser", -1);
+	else
+		M_SetMenu(NAME_Mainmenu, -1);
 }
 
 CCMD (menu_load)
