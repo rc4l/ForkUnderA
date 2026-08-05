@@ -1474,6 +1474,7 @@ add_executable( zdoom WIN32
 	features/wad-download/computation/downloadplan_compute.cpp
 	features/wad-download/computation/iwadallow_compute.cpp
 	features/wad-download/computation/iwadsubstitute_compute.cpp
+	features/wad-download/computation/wadstore_compute.cpp
 	features/wad-serve/zx_wadserve.cpp
 	features/wad-serve/computation/ratebucket_compute.cpp
 	features/wad-serve/computation/httpreq_compute.cpp

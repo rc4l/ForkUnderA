@@ -210,6 +210,21 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 		std::map<std::string, std::string>::const_iterator it = plan.wadHashes.find(plan.wads[i]);
 		const std::string md5 = ( it != plan.wadHashes.end( )) ? it->second : std::string( );
 
+		// [rc4l] Ask for the CONTENT before asking for the name. When the server told us a digest, a
+		// copy we already hold with that digest is the right answer by definition, and going through
+		// the name search instead is how a player's own test.wad -- earlier in
+		// FileSearch.Directories than our download folder -- shadows the copy we just fetched for
+		// this server. That path ends in "can't join" with the correct file sitting on disk.
+		if (!md5.empty())
+		{
+			const FString exact = zx::waddownload::FindLocalCopy(plan.wads[i].c_str(), md5.c_str());
+			if (exact.IsNotEmpty())
+			{
+				resolved.Push(exact);
+				continue;					// already known to be the right bytes; nothing to check
+			}
+		}
+
 		const unsigned beforeAdd = resolved.Size();
 		if (D_AddFile(resolved, plan.wads[i].c_str()) == false)
 		{

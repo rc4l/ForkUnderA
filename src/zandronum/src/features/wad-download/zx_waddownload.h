@@ -94,6 +94,21 @@ void Tick();
 // FileSearch.Directories so BaseFileSearch finds what we downloaded -- this run and every run after.
 FString DownloadDir();
 
+// [rc4l] Full path of a copy of `name` whose MD5 is `md5Hex`, inside our own download folder, or ""
+// if we do not have that exact content. Checks the content-addressed store (a stat) and then the
+// flat working copy (one hash).
+//
+// Meant to be called BEFORE the name search, and that ordering is a bug fix rather than an
+// optimisation. Downloads land in a directory appended to FileSearch.Directories, so a player who
+// already owns a different test.wad earlier in the path shadows the copy we just fetched: we detect
+// the mismatch, download the right file, resolve by NAME, find theirs again, and the loop guard
+// turns that into "can't join" with the correct file sitting on disk. Asking for content instead of
+// for a name cannot go wrong that way.
+//
+// Only ever looks inside our download folder. WADs the player keeps elsewhere are the name search's
+// business, and are never moved, renamed or deleted by us.
+FString FindLocalCopy(const char *name, const char *md5Hex);
+
 }} // namespace zx::waddownload
 
 #endif // ZX_WADDOWNLOAD_H
