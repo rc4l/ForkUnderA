@@ -95,11 +95,9 @@ static	TArray<int>		g_SortedServers;
 static	int				g_Selected = -1;
 static	int				g_ScrollFirst = 0;
 
-// [rc4l] What the mouse was pressed on, so the release can tell "clicked the row that was already
-// selected" (join) from "clicked a different row" (select) and from "pressed here, released
-// elsewhere" (cancel). Reset whenever a release lands anywhere.
+// [rc4l] Which row the mouse was pressed on, so a release somewhere else cancels instead of joining
+// whatever ended up under the cursor. Reset whenever a release lands anywhere.
 static	int				g_MousePressRow = -1;
-static	bool			g_MousePressWasSelected = false;
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -135,6 +133,26 @@ static int serverbrowser_ToScreenY( int vy )
 	int x, y, w, h;
 	serverbrowser_ToScreen( 0, vy, 0, 0, x, y, w, h );
 	return y;
+}
+
+//*****************************************************************************
+//
+// [rc4l] Vertical middle of a row, in virtual units.
+//
+// A row is the box DimRow draws: SB_ROW_HEIGHT tall, starting two above the line coordinate. What
+// goes in it -- glyphs eight units tall, a flag around twelve -- is shorter than that, so drawing it
+// AT the line coordinate left everything hugging the top edge with the slack underneath. Centring
+// instead means the contents sit in the row rather than on it, and a taller font or a different flag
+// sheet stays centred without anyone re-tuning a constant.
+static int serverbrowser_RowMidY( int rowY )
+{
+	return rowY - 2 + SB_ROW_HEIGHT / 2;
+}
+
+// Where text of height `h` starts so that it is centred on that middle.
+static int serverbrowser_RowTextY( int rowY, int h )
+{
+	return serverbrowser_RowMidY( rowY ) - h / 2;
 }
 
 //*****************************************************************************
@@ -222,7 +240,8 @@ static void serverbrowser_DrawCountry( int lServer, int x, int y )
 	// XUN means, and what XIP means once our own lookup also comes up empty.
 	if (( ulIndex == COUNTRY_INDEX_UNKNOWN ) && ( bCodeUsable == false ))
 	{
-		screen->DrawText( SmallFont, CR_DARKGRAY, x, y, "?", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		screen->DrawText( SmallFont, CR_DARKGRAY, x, serverbrowser_RowTextY( y, SmallFont->GetHeight( )),
+			"?", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		return;
 	}
 
@@ -246,10 +265,12 @@ static void serverbrowser_DrawCountry( int lServer, int x, int y )
 			// clip to just that cell.
 			// One flag cell occupies SB_ROW_HEIGHT-ish of virtual space; work out the scale that maps
 			// the sheet's own pixels onto that, then express everything in screen pixels.
+			// Centred on the row like everything else in it, rather than starting at the line.
+			const int flagTop = serverbrowser_RowMidY( y ) - flagH / 2;
 			const int px = serverbrowser_ToScreenX( x );
-			const int py = serverbrowser_ToScreenY( y );
+			const int py = serverbrowser_ToScreenY( flagTop );
 			const int cellWpx = serverbrowser_ToScreenX( x + flagW ) - px;
-			const int cellHpx = serverbrowser_ToScreenY( y + flagH ) - py;
+			const int cellHpx = serverbrowser_ToScreenY( flagTop + flagH ) - py;
 
 			const int cellX = ( ulIndex % SB_FLAGS_PER_SIDE ) * flagW;
 			const int cellY = ( ulIndex / SB_FLAGS_PER_SIDE ) * flagH;
@@ -270,7 +291,8 @@ static void serverbrowser_DrawCountry( int lServer, int x, int y )
 
 	// No sheet, or a country we could not place: the code still tells the player what they need.
 	if ( bCodeUsable )
-		screen->DrawText( SmallFont, CR_DARKGRAY, x, y, pszCode, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		screen->DrawText( SmallFont, CR_DARKGRAY, x, serverbrowser_RowTextY( y, SmallFont->GetHeight( )),
+			pszCode, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 }
 
 //*****************************************************************************
@@ -450,24 +472,26 @@ public:
 
 			serverbrowser_DrawCountry( lServer, SB_COL_FLAG, y );
 
+			const int ty = serverbrowser_RowTextY( y, SmallFont->GetHeight( ));
+
 			const FString name = serverbrowser_FitName( BROWSER_GetHostName( lServer ), SB_NAME_MAX_WIDTH );
 			screen->DrawText( SmallFont, bSelected ? CR_WHITE : CR_UNTRANSLATED,
-				SB_COL_NAME, y, name, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				SB_COL_NAME, ty, name, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 			// Humans only -- a row reading 8/8 for seven bots and one person is a lie the player
 			// only discovers after joining.
 			FString players;
 			players.Format( "%d/%d", static_cast<int>( BROWSER_GetNumHumanPlayers( lServer )),
 				static_cast<int>( BROWSER_GetMaxClients( lServer )));
-			screen->DrawText( SmallFont, CR_UNTRANSLATED, SB_COL_PLAYERS, y, players, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			screen->DrawText( SmallFont, CR_UNTRANSLATED, SB_COL_PLAYERS, ty, players, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_VERSION, y,
+			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_VERSION, ty,
 				serverbrowser_ShortVersion( BROWSER_GetVersion( lServer )), DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 			const int ping = static_cast<int>( BROWSER_GetPing( lServer ));
 			FString pingText;
 			pingText.Format( "%d", ping );
-			DrawRightAligned( SmallFont, serverbrowser_PingColor( ping ), SB_COL_PING, y, pingText );
+			DrawRightAligned( SmallFont, serverbrowser_PingColor( ping ), SB_COL_PING, ty, pingText );
 		}
 
 		// Only mention stragglers once there is something to compare them against.
@@ -571,9 +595,14 @@ public:
 	// pixel out on the rest -- and "the row I clicked is not the row that lit up" is a maddening bug
 	// to be told about. Reusing the forward calls means the clickable box IS the visible box.
 	//
-	// Two clicks to join, not one: the first selects, the second joins. A single click would make an
-	// accidental one restart the engine onto another server's WAD set, which is a lot to do to
-	// somebody who slipped. Pressing and dragging off the row cancels, as a button should.
+	// Hover highlights, one click joins. An earlier version made the first click select and the second
+	// join, reasoning that a slip should not restart the engine onto another server's WAD set. In use
+	// that was just annoying: with no detail pane to show, the first click looks like it did nothing.
+	//
+	// Moving the highlight on hover is what makes one click safe instead -- you can see which row you
+	// are about to commit to before you press, which is the feedback the doubled click was standing in
+	// for. Pressing and dragging off the row still cancels, as a button should, so a genuine slip has
+	// somewhere to go.
 	bool MouseEvent( int type, int x, int y )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
@@ -594,17 +623,15 @@ public:
 				if ( row < 0 )
 					break;					// an empty slot past the last server
 
+				// Hover moves the highlight, so the row about to be committed to is visible before the
+				// press. The cursor sound is deliberately left off: it would fire on every row the
+				// pointer crosses on the way down the list.
+				if ( row != g_Selected )
+					g_Selected = row;
+
 				if ( type == MOUSE_Click )
 				{
-					// Whether it was ALREADY selected is what decides the release, so it has to be
-					// remembered here -- by then g_Selected is this row either way.
 					g_MousePressRow = row;
-					g_MousePressWasSelected = ( row == g_Selected );
-					if ( !g_MousePressWasSelected )
-					{
-						g_Selected = row;
-						S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-					}
 					// True also arms the capture that makes MOUSE_Release arrive at all (DMenu::
 					// Responder only forwards a release while captured).
 					return true;
@@ -612,23 +639,20 @@ public:
 
 				if ( type == MOUSE_Release )
 				{
-					const bool bJoin = ( row == g_MousePressRow ) && g_MousePressWasSelected;
+					// Only the row the press started on, so dragging off cancels.
+					const bool bJoin = ( row == g_MousePressRow );
 					g_MousePressRow = -1;
-					g_MousePressWasSelected = false;
 					if ( bJoin )
 						return MenuEvent( MKEY_Enter, false );
 					return true;
 				}
 
-				return true;				// a move inside the list while captured: nothing to do
+				return true;				// a hover, already handled above
 			}
 		}
 
 		if ( type == MOUSE_Release )
-		{
 			g_MousePressRow = -1;
-			g_MousePressWasSelected = false;
-		}
 		return Super::MouseEvent( type, x, y );
 	}
 
