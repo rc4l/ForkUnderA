@@ -312,6 +312,21 @@ const char *BROWSER_GetPWADHash( ULONG ulServer, ULONG ulWadIdx )
 
 //*****************************************************************************
 //
+// [rc4l] 0 means "we do not know", which covers both a server that does not send
+// SQF2_FUA_WAD_SIZES and one that could not stat the file. Never draw it as a size.
+unsigned int BROWSER_GetPWADSize( ULONG ulServer, ULONG ulWadIdx )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( 0 );
+
+	if ( ulWadIdx >= g_BrowserServerList[ulServer].PWADSizes.Size())
+		return ( 0 );
+
+	return ( g_BrowserServerList[ulServer].PWADSizes[ulWadIdx] );
+}
+
+//*****************************************************************************
+//
 // [rc4l] The host half comes from the address WE queried, never from anything the server said. A
 // server that could name its own download host could name someone else's, and every client that
 // joined would fetch from a machine that never agreed to serve them.
@@ -1190,6 +1205,14 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		// [rc4l] Which BUILD of the IWAD, not just its name.
 		if ( ulFlags2 & SQF2_FUA_IWAD_HASH )
 			g_BrowserServerList[lServer].IWADHash = extended.iwadHash.c_str( );
+
+		// [rc4l] What each download would actually cost, which the browser draws beside the filename.
+		if ( ulFlags2 & SQF2_FUA_WAD_SIZES )
+		{
+			g_BrowserServerList[lServer].PWADSizes.Clear( );
+			for ( size_t i = 0; i < extended.pwadSizes.size( ); ++i )
+				g_BrowserServerList[lServer].PWADSizes.Push( static_cast<unsigned int>( extended.pwadSizes[i] ));
+		}
 	}
 
 	// [rc4l] The old browser cached a sorted index that had to be rebuilt from here whenever a reply
@@ -1418,7 +1441,9 @@ static void browser_QueryServer( ULONG ulServer )
 	// on what port, which is the only way to reach a file that exists on no mirror.
 	// [rc4l] SQF2_FUA_IWAD_HASH added: tells us which BUILD of the IWAD the server runs, so we can
 	// load the copy that will actually pass level authentication.
-	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY|SQF2_PWAD_HASHES|SQF2_FUA_DIRECT_DOWNLOAD|SQF2_FUA_IWAD_HASH );
+	// [rc4l] SQF2_FUA_WAD_SIZES added: how big each PWAD is, so the browser can say what agreeing to
+	// a download costs before the player agrees to it.
+	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY|SQF2_PWAD_HASHES|SQF2_FUA_DIRECT_DOWNLOAD|SQF2_FUA_IWAD_HASH|SQF2_FUA_WAD_SIZES );
 
 	// [rc4l] Ask for a segmented reply if it does not fit one datagram. The server enables it on a
 	// trailing byte of exactly 2 (sv_main.cpp), and an older server simply never reads this far --

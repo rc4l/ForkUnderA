@@ -33,6 +33,7 @@
 
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
+#include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
@@ -112,6 +113,12 @@
 // [rc4l] How much of the panel the WAD list may take before it gives up and says "+N more". A server
 // running thirty files would otherwise fill the panel and push the flag words out entirely.
 #define SB_WADLIST_MAX_H	88
+
+// [rc4l] The WAD list's scrollbar, on the inside edge of the detail panel. Two pixels wide, matching
+// the server list's -- it is a position indicator that happens to be draggable, not a control the eye
+// should be drawn to.
+#define SB_WADBAR_W			2
+#define SB_WADBAR_X			( SB_DETAIL_RIGHT - SB_DETAIL_PAD - SB_WADBAR_W )
 
 #define SB_FOOTER_Y			( SB_ROWS_BOTTOM + 20 )
 
@@ -245,6 +252,32 @@ static	int				g_LastClickTime = -1000;
 static	int				g_DetailServer = -1;
 static	TArray<FString>	g_DetailWads;
 
+// [rc4l] Size in bytes beside each name, 0 where the server did not say (see SQF2_FUA_WAD_SIZES).
+// Parallel to g_DetailWads, with a 0 in front for the IWAD -- which is not downloadable, so its size
+// answers nothing anyone is asking here.
+static	TArray<unsigned int>	g_DetailWadSizes;
+
+// [rc4l] The WAD list scrolls on its own. It USED to stop at whatever fitted and print "+7 more",
+// which named a number the player then had no way to see -- the one place in the browser that
+// admitted it was hiding something and offered nothing to do about it.
+//
+// Mouse only, deliberately: nothing in this list is selectable, so giving it keyboard focus would put
+// a stop on the way to the JOIN button that does nothing when you get there.
+static	int				g_WadScroll = 0;
+static	bool			g_DraggingWadBar = false;
+
+// Where the list was last DRAWN, in virtual coordinates, so the wheel and the drag can be tested
+// against the same box the player is looking at. Recorded rather than derived because the list
+// starts under a variable number of wrapped text lines -- its top is not a constant to test against.
+static	int				g_WadListTop = 0;
+static	int				g_WadListBottom = 0;
+static	int				g_WadListRows = 0;
+
+// [rc4l] The last position the pointer was reported at, in screen pixels. Wheel events do not carry
+// one, and which list a notch belongs to is entirely a question of where the pointer is.
+static	int				g_MouseX = -1;
+static	int				g_MouseY = -1;
+
 //*****************************************************************************
 //	FUNCTIONS
 
@@ -324,17 +357,28 @@ static void serverbrowser_RefreshWadCache( int lServer )
 
 	g_DetailServer = lServer;
 	g_DetailWads.Clear( );
+	g_DetailWadSizes.Clear( );
+
+	// A different server means a different list, so the old scroll position describes nothing.
+	g_WadScroll = 0;
+	g_DraggingWadBar = false;
 
 	const char *pszIwad = BROWSER_GetIWADName( lServer );
 	if (( pszIwad != NULL ) && ( pszIwad[0] != 0 ))
+	{
 		g_DetailWads.Push( pszIwad );
+		g_DetailWadSizes.Push( 0 );		// not downloadable, so its size answers nothing
+	}
 
 	const LONG lPwads = BROWSER_GetNumPWADs( lServer );
 	for ( LONG i = 0; i < lPwads; i++ )
 	{
 		const char *pszPwad = BROWSER_GetPWADName( lServer, i );
 		if (( pszPwad != NULL ) && ( pszPwad[0] != 0 ))
+		{
 			g_DetailWads.Push( pszPwad );
+			g_DetailWadSizes.Push( BROWSER_GetPWADSize( lServer, i ));
+		}
 	}
 }
 
@@ -1315,57 +1359,91 @@ public:
 
 	//*************************************************************************
 	//
-	// Each WAD in its own colour, so the list reads as a checklist rather than a sentence. Drawn name
-	// by name with the comma attached, because the colour has to belong to the file rather than to the
-	// whole line.
-	// [rc4l] Returns the y it finished on, so what follows can be placed under it. Capped in height:
-	// a server running thirty files would otherwise fill the panel and push everything else out, and
-	// the flag words below are worth more than the twentieth filename.
+	// [rc4l] One file per line, with what it would cost to fetch it.
+	//
+	// This used to flow the names into a paragraph and, when it ran out of room, print "+7 more" --
+	// naming a number the player then had no way to see. It scrolls now instead, which is also why one
+	// per line: a size belongs to a file, and a size floating in the middle of a wrapped sentence
+	// belongs to whichever filename you guess it does.
+	//
+	// Returns the y it finished on, so what follows can be placed under it. Still capped in height: a
+	// server running thirty files must not push the JOIN button off the panel.
 	int DrawWadList( int x, int y )
 	{
-		const int right = SB_DETAIL_RIGHT - SB_DETAIL_PAD;
+		const int total = static_cast<int>( g_DetailWads.Size( ));
 		const int bottom = ( y + SB_WADLIST_MAX_H < SB_DETAIL_TEXT_BOTTOM )
 			? ( y + SB_WADLIST_MAX_H ) : SB_DETAIL_TEXT_BOTTOM;
-		int cx = x;
 
-		for ( unsigned i = 0; i < g_DetailWads.Size( ); i++ )
+		int rows = ( bottom - y ) / SB_DETAIL_LINE;
+		if ( rows < 1 )
+			rows = 1;
+
+		// Same clamp the server list uses, and for the same reason: the list can change under a scroll
+		// position that was in range when it was set.
+		g_WadScroll = zx::ComputeRestoredScroll( g_WadScroll, total, rows );
+
+		// Recorded for the wheel and the drag, which cannot work this out for themselves -- the list
+		// begins under a variable number of wrapped lines above it.
+		g_WadListTop = y;
+		g_WadListBottom = y + rows * SB_DETAIL_LINE;
+		g_WadListRows = rows;
+
+		const bool bScrolls = ( total > rows );
+		const int textW = SB_DETAIL_TEXT_W - ( bScrolls ? ( SB_WADBAR_W + 3 ) : 0 );
+
+		for ( int i = 0; ( i < rows ) && (( g_WadScroll + i ) < total ); i++ )
 		{
-			FString piece = g_DetailWads[i];
+			const int entry = g_WadScroll + i;
+			const int lineY = y + i * SB_DETAIL_LINE;
 
-			// Same reasoning as the wrapper: a filename longer than the panel is cut deliberately rather
-			// than left for the clip to sever.
-			if ( SmallFont->StringWidth( piece ) > SB_DETAIL_TEXT_W )
-				piece = serverbrowser_FitName( piece, SB_DETAIL_TEXT_W );
+			// The size first: it is fixed and short, so the name gets whatever is left rather than the
+			// other way round -- truncating "23mb" to save room in a filename helps nobody.
+			FString size;
+			if ( g_DetailWadSizes[entry] > 0 )
+				size.Format( "(%s)", zx::FormatByteSize( g_DetailWadSizes[entry] ).c_str( ));
 
-			const int w = SmallFont->StringWidth( piece );
-			if (( cx > x ) && ( cx + w > right ))
-			{
-				cx = x;
-				y += SB_DETAIL_LINE;
-			}
-			if ( y + SB_DETAIL_LINE > bottom )
-			{
-				// Out of room. Say how many are not shown rather than just stopping, so the list does
-				// not silently look shorter than it is.
-				const int hidden = static_cast<int>( g_DetailWads.Size( )) - static_cast<int>( i );
-				if ( hidden > 0 )
-				{
-					FString more;
-					more.Format( "+%d more", hidden );
-					DrawInPanel( CR_DARKGRAY, x, y, more );
-					y += SB_DETAIL_LINE;
-				}
-				return y;
-			}
+			const int sizeW = size.IsNotEmpty( ) ? SmallFont->StringWidth( size ) : 0;
+			const int gap = size.IsNotEmpty( ) ? SmallFont->StringWidth( " " ) : 0;
+
+			FString name = g_DetailWads[entry];
+			if ( SmallFont->StringWidth( name ) > ( textW - sizeW - gap ))
+				name = serverbrowser_FitName( name, textW - sizeW - gap );
 
 			// CR_WHITE, not CR_UNTRANSLATED: untranslated means the font's own colour, and SmallFont's
-			// own colour is Doom red -- which is exactly the "missing" colour this was meant to stop
-			// using.
-			DrawInPanel( CR_WHITE, cx, y, piece );
-			cx += w + SmallFont->StringWidth( " " );
+			// own colour is Doom red -- which is exactly the "missing" colour this stopped using.
+			DrawInPanel( CR_WHITE, x, lineY, name );
+
+			if ( size.IsNotEmpty( ))
+				DrawInPanel( CR_DARKGRAY, x + SmallFont->StringWidth( name ) + gap, lineY, size );
 		}
 
-		return y + SB_DETAIL_LINE;
+		if ( bScrolls )
+			DrawWadScrollbar( total, rows );
+
+		return g_WadListBottom;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The WAD list's own bar, on the inside edge of the panel. Same geometry unit as the server
+	// list's -- if the two worked their thumbs out separately, they would drift apart the moment one
+	// of them was adjusted.
+	void DrawWadScrollbar( int total, int rows )
+	{
+		const int left = serverbrowser_ToScreenX( SB_WADBAR_X );
+		const int width = MAX( 1, serverbrowser_ToScreenX( SB_WADBAR_X + SB_WADBAR_W ) - left );
+		const int top = serverbrowser_ToScreenY( g_WadListTop );
+		const int height = serverbrowser_ToScreenY( g_WadListBottom ) - top;
+		if ( height <= 0 )
+			return;
+
+		screen->Dim( PalEntry( 120, 140, 180 ), 0.14f, left, top, width, height );
+
+		const int minThumb = serverbrowser_ToScreenY( 6 ) - serverbrowser_ToScreenY( 0 );
+		const int thumbH = zx::ComputeThumbHeight( height, rows, total, minThumb );
+		const int thumbY = top + zx::ComputeThumbTop( height, thumbH, g_WadScroll, total - rows );
+
+		screen->Dim( PalEntry( 170, 190, 230 ), 0.55f, left, thumbY, width, thumbH );
 	}
 
 	//*************************************************************************
@@ -1454,6 +1532,11 @@ public:
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 
+		// Remembered for the wheel, which arrives as a GUI event carrying no position of its own --
+		// and a wheel notch has to scroll whichever list the pointer is sitting over.
+		g_MouseX = x;
+		g_MouseY = y;
+
 		// Cleared here and set again below only if the pointer is actually over a row, so the hint
 		// does not linger on a row the pointer left.
 		g_HoverRow = -1;
@@ -1533,6 +1616,40 @@ public:
 			// Released away from the button: a drag off it, which cancels like any button.
 			if ( type == MOUSE_Release )
 				g_ButtonPressed = false;
+		}
+
+		// [rc4l] The WAD list's bar, which lives inside the detail panel and so is tested before the
+		// server list's -- the two boxes never overlap, but a held drag has to keep being answered by
+		// the bar that started it rather than by whichever one the pointer has wandered over.
+		{
+			const int wadTotal = static_cast<int>( g_DetailWads.Size( ));
+			const int height = serverbrowser_ToScreenY( g_WadListBottom ) - serverbrowser_ToScreenY( g_WadListTop );
+
+			const bool bOverBar = ( wadTotal > g_WadListRows ) && ( g_WadListRows > 0 ) &&
+				( x >= serverbrowser_ToScreenX( SB_WADBAR_X - 3 )) &&
+				( x < serverbrowser_ToScreenX( SB_WADBAR_X + SB_WADBAR_W + 3 )) &&
+				( y >= serverbrowser_ToScreenY( g_WadListTop )) &&
+				( y < serverbrowser_ToScreenY( g_WadListBottom ));
+
+			if ( type == MOUSE_Click )
+				g_DraggingWadBar = bOverBar;
+
+			if ( g_DraggingWadBar && ( height > 0 ) && ( wadTotal > g_WadListRows ))
+			{
+				const int top = serverbrowser_ToScreenY( g_WadListTop );
+				const int minThumb = serverbrowser_ToScreenY( 6 ) - serverbrowser_ToScreenY( 0 );
+				const int thumbH = zx::ComputeThumbHeight( height, g_WadListRows, wadTotal, minThumb );
+
+				g_WadScroll = zx::ComputeFirstFromPointer( y - top, height, thumbH,
+					wadTotal - g_WadListRows );
+			}
+
+			if ( g_DraggingWadBar )
+			{
+				if ( type == MOUSE_Release )
+					g_DraggingWadBar = false;
+				return true;
+			}
 		}
 
 		// [rc4l] The scrollbar, BEFORE the rows. The row hit box used to run all the way to
@@ -1681,8 +1798,24 @@ public:
 			const int total = static_cast<int>( g_SortedServers.Size( ));
 			if (( ev->subtype == EV_GUI_WheelUp ) || ( ev->subtype == EV_GUI_WheelDown ))
 			{
+				const int step = ( ev->subtype == EV_GUI_WheelUp ) ? -3 : 3;
+
+				// Over the WAD list, the notch belongs to the WAD list. Two scrollable things on one
+				// screen and one wheel: the only sane rule is that it drives whichever one you are
+				// pointing at.
+				const int wadTotal = static_cast<int>( g_DetailWads.Size( ));
+				if (( g_WadListRows > 0 ) && ( wadTotal > g_WadListRows ) &&
+					( g_MouseY >= serverbrowser_ToScreenY( g_WadListTop )) &&
+					( g_MouseY < serverbrowser_ToScreenY( g_WadListBottom )) &&
+					( g_MouseX >= serverbrowser_ToScreenX( SB_DETAIL_LEFT )) &&
+					( g_MouseX < serverbrowser_ToScreenX( SB_DETAIL_RIGHT )))
+				{
+					g_WadScroll = zx::ComputeRestoredScroll( g_WadScroll + step, wadTotal, g_WadListRows );
+					return true;
+				}
+
 				const int maxFirst = ( total > SB_VISIBLE_ROWS ) ? ( total - SB_VISIBLE_ROWS ) : 0;
-				int next = g_ScrollFirst + (( ev->subtype == EV_GUI_WheelUp ) ? -3 : 3 );
+				int next = g_ScrollFirst + step;
 
 				if ( next < 0 )
 					next = 0;

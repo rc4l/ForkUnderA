@@ -149,6 +149,11 @@ typedef struct
 	// MD5 because that is what the protocol carries -- see features/wad-download/zx_filehash.h.
 	TArray<FString>	PWADHashes;
 
+	// [rc4l] Size in bytes of each PWAD (SQF2_FUA_WAD_SIZES), parallel to PWADNames and empty for a
+	// server that did not send them. 0 for a file the server could not measure -- which reads the same
+	// as "not sent", deliberately: both mean we cannot say how big it is, and neither is a small file.
+	TArray<unsigned int>	PWADSizes;
+
 	// Name of the IWAD being used.
 	FString			IWADName;
 
@@ -224,6 +229,9 @@ const char		*BROWSER_GetPWADName( ULONG ulServer, ULONG ulWadIdx );
 // [rc4l] "" when the server sent no hashes, which is normal -- older servers and any server that
 // chose not to. Callers must treat empty as "cannot check", never as "checked and fine".
 const char		*BROWSER_GetPWADHash( ULONG ulServer, ULONG ulWadIdx );
+
+// [rc4l] Size in bytes, or 0 when the server did not say. See PWADSizes.
+unsigned int	BROWSER_GetPWADSize( ULONG ulServer, ULONG ulWadIdx );
 const char		*BROWSER_GetIWADName( ULONG ulServer );
 GAMEMODE_e		BROWSER_GetGameMode( ULONG ulServer );
 LONG			BROWSER_GetNumPlayers( ULONG ulServer );

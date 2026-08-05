@@ -47,6 +47,7 @@ const unsigned kSqf2GameModeShortName	= 0x00000008;
 const unsigned kSqf2VoiceChat			= 0x00000010;
 const unsigned kSqf2DirectDownload		= 0x00000020;
 const unsigned kSqf2IwadHash			= 0x00000040;
+const unsigned kSqf2WadSizes			= 0x00000080;
 
 enum class ExtendedParse
 {
@@ -65,6 +66,9 @@ struct LauncherExtendedInfo
 	int directDownloadPort;				// 0 when the server is not serving
 	bool prefersMirrors;
 	std::string iwadHash;
+
+	// Bytes per PWAD, in the same order as SQF_PWADS. 0 where the server could not measure one.
+	std::vector<unsigned long long> pwadSizes;
 
 	LauncherExtendedInfo() : voiceChat(0), directDownloadPort(0), prefersMirrors(false) {}
 };

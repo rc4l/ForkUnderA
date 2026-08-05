@@ -16,7 +16,7 @@ namespace
 
 const unsigned kAllBits =
 	zx::kSqf2PwadHashes | zx::kSqf2Country | zx::kSqf2GameModeName | zx::kSqf2GameModeShortName |
-	zx::kSqf2VoiceChat | zx::kSqf2DirectDownload | zx::kSqf2IwadHash;
+	zx::kSqf2VoiceChat | zx::kSqf2DirectDownload | zx::kSqf2IwadHash | zx::kSqf2WadSizes;
 
 const int kPort = 10777;					// 0x2A19 -- the value from the real bug
 
@@ -28,6 +28,11 @@ struct Writer
 
 	void Byte(int v) { bytes.push_back(static_cast<unsigned char>(v & 0xFF)); }
 	void Short(int v) { Byte(v & 0xFF); Byte((v >> 8) & 0xFF); }
+	void Long(unsigned long v)
+	{
+		for (int shift = 0; shift < 32; shift += 8)
+			Byte(static_cast<int>((v >> shift) & 0xFF));
+	}
 	void Raw(const string &s) { for (size_t i = 0; i < s.size(); ++i) Byte(s[i]); }
 	void Str(const string &s) { Raw(s); Byte(0); }
 };
@@ -59,6 +64,12 @@ vector<unsigned char> BuildBlock(unsigned flags2)
 	}
 	if (flags2 & zx::kSqf2IwadHash)
 		w.Str("cd666466759b5e5f63af93c5f0ffd0a1");
+	if (flags2 & zx::kSqf2WadSizes)
+	{
+		w.Byte(2);
+		w.Long(14263296UL);					// doom2.wad, comfortably inside a signed int
+		w.Long(3221225472UL);				// 3 GB -- has its top bit set, so a signed read goes negative
+	}
 
 	return w.bytes;
 }
@@ -154,6 +165,15 @@ TEST(LauncherFields, EveryCombinationRecoversTheValuesItCarried)
 			EXPECT_EQ(kPort, info.directDownloadPort) << "flags " << flags;
 		if (flags & zx::kSqf2IwadHash)
 			EXPECT_EQ(32u, info.iwadHash.size()) << "flags " << flags;
+		if (flags & zx::kSqf2WadSizes)
+		{
+			ASSERT_EQ(2u, info.pwadSizes.size()) << "flags " << flags;
+			EXPECT_EQ(14263296ULL, info.pwadSizes[0]) << "flags " << flags;
+
+			// The one that would come back negative through a signed read, which is not a smaller
+			// file -- it is a nonsense one, and it would print as garbage next to the filename.
+			EXPECT_EQ(3221225472ULL, info.pwadSizes[1]) << "flags " << flags;
+		}
 	}
 }
 
@@ -164,7 +184,7 @@ TEST(LauncherFields, RefusesABitItCannotConsume)
 	// The structural fix. A variable-length field cannot be stepped over without knowing its width,
 	// so meeting an unknown bit means we have already lost our place -- refuse the block instead of
 	// returning confident nonsense.
-	const unsigned unknown = 0x00000080;
+	const unsigned unknown = 0x00000100;
 	ASSERT_EQ(0u, KnownExtendedFields() & unknown);
 
 	LauncherExtendedInfo info;
@@ -268,4 +288,73 @@ TEST(LauncherFields, AnEmptyBlockWithNoFlagsIsFine)
 	size_t consumed = 0;
 	EXPECT_EQ(ExtendedParse::Ok, ParseExtendedInfo(NULL, 0, 0, info, consumed));
 	EXPECT_EQ(0u, consumed);
+}
+
+// ---------------------------------------------------------------- the size field, byte by byte
+
+TEST(LauncherFields, ReadsWadSizesLittleEndian)
+{
+	// Spelled out rather than round-tripped through the writer: if the writer and the parser shared a
+	// byte-order mistake they would agree with each other and disagree with every real server.
+	const unsigned char bytes[] = {
+		0x02,								// two files
+		0x00, 0xA4, 0xD9, 0x00,				// 0x00D9A400 = 14263296 -- doom2.wad
+		0xFF, 0xFF, 0xFF, 0xFF,				// 4294967295 -- the top of the field
+	};
+
+	LauncherExtendedInfo info;
+	size_t consumed = 0;
+	ASSERT_EQ(ExtendedParse::Ok,
+		ParseExtendedInfo(bytes, sizeof(bytes), zx::kSqf2WadSizes, info, consumed));
+
+	EXPECT_EQ(sizeof(bytes), consumed);
+	ASSERT_EQ(2u, info.pwadSizes.size());
+	EXPECT_EQ(14263296ULL, info.pwadSizes[0]);
+
+	// The one a signed read turns into -1, which is not a size at all.
+	EXPECT_EQ(4294967295ULL, info.pwadSizes[1]);
+}
+
+TEST(LauncherFields, AServerWithNoPwadsStillWritesTheCountByte)
+{
+	// The field is present whenever it is asked for, because a field that is sometimes absent is what
+	// desynchronises a stream -- the same rule SQF2_FUA_DIRECT_DOWNLOAD follows with port 0.
+	const unsigned char bytes[] = { 0x00 };
+
+	LauncherExtendedInfo info;
+	size_t consumed = 0;
+	ASSERT_EQ(ExtendedParse::Ok,
+		ParseExtendedInfo(bytes, sizeof(bytes), zx::kSqf2WadSizes, info, consumed));
+
+	EXPECT_EQ(1u, consumed);
+	EXPECT_TRUE(info.pwadSizes.empty());
+}
+
+TEST(LauncherFields, RefusesASizeListCutShortOfItsCount)
+{
+	// A count byte promising four sizes with three and a half on the wire. Reading the half as a whole
+	// would report a file some fraction of its real size, which is worse than reporting nothing.
+	const unsigned char bytes[] = { 0x04, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00 };
+
+	LauncherExtendedInfo info;
+	size_t consumed = 0;
+	EXPECT_EQ(ExtendedParse::Truncated,
+		ParseExtendedInfo(bytes, sizeof(bytes), zx::kSqf2WadSizes, info, consumed));
+	EXPECT_EQ(0u, consumed);
+}
+
+TEST(LauncherFields, TheSizeFieldSitsAfterTheIwadHashAndBeforeNothing)
+{
+	// Field ORDER is the whole risk with this protocol: it is ascending bit order, and the server's
+	// dispatch table is a std::map keyed by bit value, so bit 7 is emitted last. Read it anywhere else
+	// and the hash before it is consumed as sizes.
+	const unsigned flags = zx::kSqf2IwadHash | zx::kSqf2WadSizes;
+
+	LauncherExtendedInfo info;
+	size_t consumed = 0;
+	ASSERT_EQ(ExtendedParse::Ok, Parse(BuildBlock(flags), flags, info, consumed));
+
+	EXPECT_EQ(32u, info.iwadHash.size());
+	ASSERT_EQ(2u, info.pwadSizes.size());
+	EXPECT_EQ(14263296ULL, info.pwadSizes[0]);
 }
