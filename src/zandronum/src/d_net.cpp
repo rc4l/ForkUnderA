@@ -170,7 +170,7 @@ static struct TicSpecial
 	size_t used[BACKUPTICS];
 	BYTE *streamptr;
 	size_t streamoffs;
-	int   specialsize;
+	size_t specialsize;	// [rc4l] uzdoom@86986446a
 	int	  lastmaketic;
 	bool  okay;
 
@@ -209,11 +209,11 @@ static struct TicSpecial
 	}
 
 	// Make more room for special commands.
-	void GetMoreSpace ()
+	void GetMoreSpace (size_t needed)
 	{
 		int i;
 
-		specialsize <<= 1;
+		specialsize = MAX(specialsize * 2, needed + 30);
 
 		DPrintf ("Expanding special size to %zu\n", specialsize);
 
@@ -225,8 +225,11 @@ static struct TicSpecial
 
 	void CheckSpace (size_t needed)
 	{
-		if (streamoffs >= specialsize - needed)
-			GetMoreSpace ();
+		// [rc4l] uzdoom@86986446a -- specialsize - needed underflows when a single write is larger
+		// than the whole buffer (a long chat line or savegame path), so the old guard passed and
+		// nothing grew. Compare the sum instead, and grow to fit rather than merely doubling.
+		if (streamoffs + needed >= specialsize)
+			GetMoreSpace (streamoffs + needed);
 
 		streamoffs += needed;
 	}
@@ -2635,6 +2638,13 @@ void Net_SkipCommand (int type, BYTE **stream)
 		case DEM_SUMMONFRIEND2:
 		case DEM_SUMMONFOE2:
 			skip = strlen ((char *)(*stream)) + 26;
+			break;
+
+		// [rc4l] uzdoom@b2fbeb24c -- DEM_CHANGEMAP2 was absent here, so skipping it consumed the
+		// wrong length and every following byte in the stream was misread. One byte of position
+		// then the NUL-terminated map name.
+		case DEM_CHANGEMAP2:
+			skip = strlen((char *)(*stream + 1)) + 2;
 			break;
 
 		case DEM_MUSICCHANGE:

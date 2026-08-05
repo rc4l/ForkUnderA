@@ -59,6 +59,7 @@ DEFINE_GLOBAL_VARIABLE(testglobalvar)
 // Accessible actor member variables
 DEFINE_MEMBER_VARIABLE(alpha, AActor)
 DEFINE_MEMBER_VARIABLE(Speed, AActor)	// [rc4l] uzdoom@44683657f
+DEFINE_MEMBER_VARIABLE(roll, AActor)	// [rc4l] uzdoom@2b12db153
 DEFINE_MEMBER_VARIABLE(angle, AActor)
 DEFINE_MEMBER_VARIABLE(args, AActor)
 DEFINE_MEMBER_VARIABLE(ceilingz, AActor)

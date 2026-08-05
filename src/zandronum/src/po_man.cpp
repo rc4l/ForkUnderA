@@ -950,7 +950,10 @@ void DPolyDoor::Tick ()
 		break;
 
 	case PODOOR_SWING:
-		if (poly->RotatePolyobj (m_Speed))
+		// [rc4l] uzdoom@78b4cbdf6 -- a swing door blocked at the very end of its travel never
+		// reached the completion code below, because RotatePolyobj returns false when blocked.
+		// Once the distance is used up the door is done regardless.
+		if (m_Dist <= 0 || poly->RotatePolyobj (m_Speed))
 		{
 
 			// [WS] Inform clients that the door is closing.

@@ -55,7 +55,7 @@
  39 SVC_SETPLAYERLIVESLEFT                 : Player Byte
   9 SVC2_SETPLAYERACSSKIN                  [Extended] : Player Name bool
  40 SVC_UPDATEPLAYERPING                   [Unreliable] : Player UShort Byte
- 41 SVC_UPDATEPLAYEREXTRADATA              [Unreliable] : Player Long Byte Byte Long Long
+ 41 SVC_UPDATEPLAYEREXTRADATA              [Unreliable] : Player Long Byte Byte Long Long Long
  42 SVC_UPDATEPLAYERTIME                   [Unreliable] : Player UShort
  43 SVC_MOVELOCALPLAYER                    [Unreliable] : ULong Long Fixed Fixed Fixed Fixed Fixed Fixed
  10 SVC2_SETLOCALPLAYERJUMPTICS            [Extended,Unreliable] : ULong SByte
@@ -196,3 +196,4 @@
 149 SVC_SETDOMINATIONPOINTOWNER            : Byte Byte Bool
  40 SVC2_SETDOMINATIONPOINTSTATE           [Extended] : Byte Bool Byte
  41 SVC2_DEBUGEXPLOSION                    [Extended] : AproxFixed AproxFixed AproxFixed Short Short
+ 42 SVC2_SETTHINGSPRITEORIENTATION         [Extended] : Actor Byte AproxAngle?{orientflags & SPRITEORIENT_ROLL}

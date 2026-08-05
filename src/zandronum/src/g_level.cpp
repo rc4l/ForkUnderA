@@ -2890,10 +2890,22 @@ CCMD(listmaps)
 	}
 }
 
+// [rc4l] uzdoom@845bcdf14 blocks FString's relational operators, which is what made this bug
+// visible: std::set<FString> fell back on FString's implicit conversion to const char* and
+// ordered by POINTER ADDRESS, so listmusic neither sorted nor deduplicated by name. Order by
+// the text instead.
+struct FStringNameLess
+{
+	bool operator() ( const FString &a, const FString &b ) const
+	{
+		return a.Compare( b ) < 0;
+	}
+};
+
 // [CK] Lists all the music loaded in the wad
 CCMD( listmusic )
 {
-	std::set<FString> musicNames;
+	std::set<FString, FStringNameLess> musicNames;
 
 	for ( unsigned int i = 0; i < wadlevelinfos.Size(); i++ )
 	{
@@ -2911,7 +2923,7 @@ CCMD( listmusic )
 	}
 
 	Printf( "Loaded music:\n" );
-	for ( std::set<FString>::iterator it = musicNames.begin(); it != musicNames.end(); it++ )
+	for ( std::set<FString, FStringNameLess>::iterator it = musicNames.begin(); it != musicNames.end(); it++ )
 	{
 		if ( it->Len() <= 0)
 			continue;
