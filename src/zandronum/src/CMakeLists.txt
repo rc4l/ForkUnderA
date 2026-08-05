@@ -810,16 +810,27 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sc_man_scanner.h
 # what keeps the IWAD allowlist a gate (a list a player or a mod could append to is not one).
 # See tools/gen-wadlists.cmake and features/wad-download/README.md.
 set( ZX_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../.. )
+# waddirectories.txt is tagged per platform and filtered at generation time, so no runtime check.
+if( WIN32 )
+	set( ZX_WADLIST_PLATFORM windows )
+elseif( APPLE )
+	set( ZX_WADLIST_PLATFORM macos )
+else()
+	set( ZX_WADLIST_PLATFORM linux )
+endif()
 add_custom_command( OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	COMMAND ${CMAKE_COMMAND}
 		-DIWAD_LIST=${ZX_REPO_ROOT}/iwadallowlist.txt
 		-DSITE_LIST=${ZX_REPO_ROOT}/waddownloadsites.txt
 		-DSUBST_LIST=${ZX_REPO_ROOT}/iwadsubstitutes.txt
 		-DHASH_LIST=${ZX_REPO_ROOT}/iwadhashes.txt
+		-DDIR_LIST=${ZX_REPO_ROOT}/waddirectories.txt
+		-DPLATFORM=${ZX_WADLIST_PLATFORM}
 		-DOUT=${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 		-P ${ZX_REPO_ROOT}/tools/gen-wadlists.cmake
 	DEPENDS ${ZX_REPO_ROOT}/iwadallowlist.txt ${ZX_REPO_ROOT}/waddownloadsites.txt
 		${ZX_REPO_ROOT}/iwadsubstitutes.txt ${ZX_REPO_ROOT}/iwadhashes.txt
+		${ZX_REPO_ROOT}/waddirectories.txt
 		${ZX_REPO_ROOT}/tools/gen-wadlists.cmake
 	COMMENT "Generating zx_waddownload_lists.h from iwadallowlist.txt / waddownloadsites.txt" )
 
@@ -1459,6 +1470,7 @@ add_executable( zdoom WIN32
 	features/net/zx_httpfile_win.cpp
 	features/wad-download/zx_waddownload.cpp
 	features/wad-download/zx_filehash.cpp
+	features/wad-download/zx_wadsearch.cpp
 	features/wad-download/computation/downloadplan_compute.cpp
 	features/wad-download/computation/iwadallow_compute.cpp
 	features/wad-download/computation/iwadsubstitute_compute.cpp

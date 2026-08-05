@@ -66,6 +66,13 @@ file(GLOB_RECURSE COMPUTE_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_compute.cpp
 # a runtime file). The engine build runs the same generator; running it here too is what lets the
 # tests assert against the SHIPPED list rather than a copy that could quietly disagree with it.
 set(ZX_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
+if(WIN32)
+  set(ZX_WADLIST_PLATFORM windows)
+elseif(APPLE)
+  set(ZX_WADLIST_PLATFORM macos)
+else()
+  set(ZX_WADLIST_PLATFORM linux)
+endif()
 set(ZX_GEN_LISTS "${CMAKE_CURRENT_BINARY_DIR}/generated/zx_waddownload_lists.h")
 add_custom_command(OUTPUT "${ZX_GEN_LISTS}"
   COMMAND ${CMAKE_COMMAND}
@@ -73,10 +80,13 @@ add_custom_command(OUTPUT "${ZX_GEN_LISTS}"
     "-DSITE_LIST=${ZX_REPO_ROOT}/waddownloadsites.txt"
     "-DSUBST_LIST=${ZX_REPO_ROOT}/iwadsubstitutes.txt"
     "-DHASH_LIST=${ZX_REPO_ROOT}/iwadhashes.txt"
+    "-DDIR_LIST=${ZX_REPO_ROOT}/waddirectories.txt"
+    "-DPLATFORM=${ZX_WADLIST_PLATFORM}"
     "-DOUT=${ZX_GEN_LISTS}"
     -P "${ZX_REPO_ROOT}/tools/gen-wadlists.cmake"
   DEPENDS "${ZX_REPO_ROOT}/iwadallowlist.txt" "${ZX_REPO_ROOT}/waddownloadsites.txt"
           "${ZX_REPO_ROOT}/iwadsubstitutes.txt" "${ZX_REPO_ROOT}/iwadhashes.txt"
+          "${ZX_REPO_ROOT}/waddirectories.txt"
           "${ZX_REPO_ROOT}/tools/gen-wadlists.cmake"
   COMMENT "Generating zx_waddownload_lists.h from iwadallowlist.txt / waddownloadsites.txt")
 

@@ -31,6 +31,7 @@
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/joinplan_compute.h"
 #include "features/wad-download/computation/iwadsubstitute_compute.h"
+#include "features/wad-download/zx_wadsearch.h"
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wadreload/zx_wadreload.h"
 
@@ -120,6 +121,10 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 	FString iwadPath;
 	std::vector<zx::waddownload::WantedFile> missing;
 
+	// [rc4l] Teach the file search about Doomseeker's and GZDoom's folders before resolving anything:
+	// a mod already downloaded through another tool should not be downloaded again.
+	zx::RegisterKnownWadDirectories();
+
 	if (plan.iwadName.IsNotEmpty())
 	{
 		TArray<FString> iwadResolved;
@@ -129,6 +134,15 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 		}
 		else
 		{
+			// [rc4l] D_AddFile searches FileSearch.Directories -- the -file path. An IWAD lives
+			// wherever the ENGINE looks for IWADs, which is a different list plus every Steam
+			// library. Missing this told players who own Doom II on Steam that they did not, and
+			// substituted Freedoom for a game sitting on their disk.
+			iwadPath = zx::FindIwadInEngineSearchPaths(plan.iwadName.GetChars());
+		}
+
+		if (iwadPath.IsEmpty())
+		{
 			// [rc4l] Owning the server's IWAD always wins -- we only get here having failed to find
 			// it. Freedoom is a from-scratch replacement for Doom's data, so a server on doom2.wad
 			// is joinable without owning Doom II. Substituting is second-best and says so; refusing
@@ -137,10 +151,21 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 			const std::string sub = cl_fua_iwad_substitute
 				? zx::FreeIwadSubstituteFor(plan.iwadName.GetChars()) : std::string();
 
-			TArray<FString> subResolved;
-			if (!sub.empty() && D_AddFile(subResolved, sub.c_str()) && subResolved.Size() > 0)
+			// The substitute is an IWAD too, so it gets the same widened search -- a player whose
+			// Freedoom came from Doomseeker or Steam should not be told to download it again.
+			FString subPath;
+			if (!sub.empty())
 			{
-				iwadPath = subResolved[0];
+				TArray<FString> subResolved;
+				if (D_AddFile(subResolved, sub.c_str()) && subResolved.Size() > 0)
+					subPath = subResolved[0];
+				else
+					subPath = zx::FindIwadInEngineSearchPaths(sub.c_str());
+			}
+
+			if (subPath.IsNotEmpty())
+			{
+				iwadPath = subPath;
 				Printf(TEXTCOLOR_GOLD "This server wants %s, which you don't have. "
 					"Loading %s instead.\n" TEXTCOLOR_NORMAL
 					"If the server is on its own maps this works; on stock maps it will not, and "
