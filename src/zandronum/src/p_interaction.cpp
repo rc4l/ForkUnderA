@@ -1609,7 +1609,12 @@ thrust:
 			if (!(flags & DMG_NO_ARMOR) && player->mo->Inventory != NULL)
 			{
 				int newdam = damage;
-				player->mo->Inventory->AbsorbDamage (damage, mod, newdam);
+				// [rc4l] uzdoom@67312b907 -- armour absorption only makes sense for positive damage;
+				// with a negative value (healing) it ADDS armour points instead.
+				if (damage > 0)
+				{
+					player->mo->Inventory->AbsorbDamage (damage, mod, newdam);
+				}
 				// [rc4l] uzdoom@83be901ad: if we are telefragging, do not let armour drag the damage
 				// below TELEFRAG_DAMAGE -- later checks compare against that exact value.
 				if (damage < TELEFRAG_DAMAGE)
