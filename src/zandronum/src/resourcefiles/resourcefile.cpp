@@ -150,11 +150,28 @@ void FResourceLump::LumpNameSetup(const char *iname)
 //
 //==========================================================================
 
+// [rc4l] uzdoom@9df56216b (settled form of uzdoom@7ae3678ab) -- a WAD inside a directory in an
+// archive is still an embedded WAD when the directory matches the archive's own name, e.g.
+// <myproject>/<somefile>.wad inside <myproject>.zip. Without this the '/' test rejected it.
+static bool IsWadInFolder(const FResourceFile* const archive, const char* const resPath)
+{
+	if (NULL == archive)
+	{
+		return false;
+	}
+
+	const FString dirName = ExtractFileBase(archive->Filename);
+	const FString fileName = ExtractFileBase(resPath, true);
+	const FString filePath = dirName + '/' + fileName;
+
+	return 0 == filePath.CompareNoCase(resPath);
+}
+
 void FResourceLump::CheckEmbedded()
 {
 	// Checks for embedded archives
 	const char *c = strstr(FullName, ".wad");
-	if (c && strlen(c) == 4 && !strchr(FullName, '/'))
+	if (c && strlen(c) == 4 && (!strchr(FullName, '/') || IsWadInFolder(Owner, FullName)))
 	{
 		// Mark all embedded WADs
 		Flags |= LUMPF_EMBEDDED;

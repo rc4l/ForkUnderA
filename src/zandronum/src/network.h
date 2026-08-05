@@ -221,6 +221,17 @@ enum ActorScaleFlag
 	ACTORSCALE_Y = 2
 };
 
+// [rc4l] Which sprite-orientation fields a SetThingSpriteOrientation command carries.
+//
+// This is deliberately NOT a new CM_ bit on MoveThing: those flags are a full 16 bits (CM_NOLAST is
+// 1<<15) and widening them would cost two bytes on every position update in the game, forever, to
+// carry values a script sets once in a while. A byte of flags here leaves room for the rest of the
+// sprite-orientation group -- SpriteAngle and SpriteRotation -- to arrive without another command.
+enum SpriteOrientationFlag
+{
+	SPRITEORIENT_ROLL = 1
+};
+
 // [ZandroX] Which dimensions a SetThingSize command carries.
 enum ActorSizeFlag
 {

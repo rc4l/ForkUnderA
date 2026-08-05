@@ -4563,6 +4563,9 @@ void ServerCommands::UpdatePlayerExtraData::Execute()
 	player->cmd.ucmd.buttons = buttons;
 	player->viewz = viewZ;
 	player->bob = bob;
+	// [rc4l] View roll of the player being watched. PrevRoll follows so the camera does not sweep
+	// to the new tilt from a stale one -- the same reasoning as the sprite-orientation handler.
+	player->mo->PrevRoll = player->mo->roll = roll;
 }
 
 //*****************************************************************************
@@ -5679,6 +5682,17 @@ void ServerCommands::SetThingScale::Execute()
 
 	if ( ContainsScaleY() )
 		actor->scaleY = scaleY;
+}
+
+//*****************************************************************************
+//
+void ServerCommands::SetThingSpriteOrientation::Execute()
+{
+	// [rc4l] PrevRoll is set alongside roll rather than left at its old value: the client has no
+	// idea how long ago the server changed this, so interpolating from a stale previous angle would
+	// make the sprite sweep to its new orientation instead of simply being there.
+	if ( ContainsRoll() )
+		actor->PrevRoll = actor->roll = roll;
 }
 
 //*****************************************************************************

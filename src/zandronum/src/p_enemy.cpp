@@ -709,41 +709,50 @@ bool P_TryWalk (AActor *actor)
 
 void P_DoNewChaseDir (AActor *actor, fixed_t deltax, fixed_t deltay)
 {
-	dirtype_t	d[3];
+	// [rc4l] uzdoom@455e6cd21 -- `attempts` records which directions P_TryWalk has already been
+	// asked about, so the fallback sweeps below never retry one that just failed. DI_NODIR is not
+	// tracked, hence NUMDIRS-1.
+	dirtype_t	d[2];
 	int			tdir;
 	dirtype_t	olddir, turnaround;
+	bool		attempts[NUMDIRS-1];
 
+	memset(&attempts, false, sizeof(attempts));
 	olddir = (dirtype_t)actor->movedir;
 	turnaround = opposite[olddir];
 
 	if (deltax>10*FRACUNIT)
-		d[1]= DI_EAST;
+		d[0]= DI_EAST;
 	else if (deltax<-10*FRACUNIT)
-		d[1]= DI_WEST;
+		d[0]= DI_WEST;
+	else
+		d[0]=DI_NODIR;
+
+	if (deltay<-10*FRACUNIT)
+		d[1]= DI_SOUTH;
+	else if (deltay>10*FRACUNIT)
+		d[1]= DI_NORTH;
 	else
 		d[1]=DI_NODIR;
 
-	if (deltay<-10*FRACUNIT)
-		d[2]= DI_SOUTH;
-	else if (deltay>10*FRACUNIT)
-		d[2]= DI_NORTH;
-	else
-		d[2]=DI_NODIR;
-
 	// try direct route
-	if (d[1] != DI_NODIR && d[2] != DI_NODIR)
+	if (d[0] != DI_NODIR && d[1] != DI_NODIR)
 	{
 		actor->movedir = diags[((deltay<0)<<1) + (deltax>0)];
-		if (actor->movedir != turnaround && P_TryWalk(actor))
+		if (actor->movedir != turnaround)
 		{
-			// [BC] Set the thing's movement direction. Also, update the thing's
-			// position.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			attempts[actor->movedir] = true;
+			if (P_TryWalk(actor))
 			{
-				SERVERCOMMANDS_MoveThing( actor, CM_X|CM_Y|CM_Z|CM_MOVEDIR );
-			}
+				// [BC] Set the thing's movement direction. Also, update the thing's
+				// position.
+				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+				{
+					SERVERCOMMANDS_MoveThing( actor, CM_X|CM_Y|CM_Z|CM_MOVEDIR );
+				}
 
-			return;
+				return;
+			}
 		}
 	}
 
@@ -752,18 +761,19 @@ void P_DoNewChaseDir (AActor *actor, fixed_t deltax, fixed_t deltay)
 	{
 		if ((pr_newchasedir() > 200 || abs(deltay) > abs(deltax)))
 		{
-			swapvalues (d[1], d[2]);
+			swapvalues (d[0], d[1]);
 		}
 
+		if (d[0] == turnaround)
+			d[0] = DI_NODIR;
 		if (d[1] == turnaround)
 			d[1] = DI_NODIR;
-		if (d[2] == turnaround)
-			d[2] = DI_NODIR;
 	}
 		
-	if (d[1] != DI_NODIR)
+	if (d[0] != DI_NODIR && attempts[d[0]] == false)
 	{
-		actor->movedir = d[1];
+		actor->movedir = d[0];
+		attempts[d[0]] = true;
 		if (P_TryWalk (actor))
 		{
 			// [BC] Set the thing's movement direction. Also, update the thing's
@@ -778,9 +788,10 @@ void P_DoNewChaseDir (AActor *actor, fixed_t deltax, fixed_t deltay)
 		}
 	}
 
-	if (d[2] != DI_NODIR)
+	if (d[1] != DI_NODIR && attempts[d[1]] == false)
 	{
-		actor->movedir = d[2];
+		actor->movedir = d[1];
+		attempts[d[1]] = true;
 		if (P_TryWalk (actor))
 		{
 			// [BC] Set the thing's movement direction. Also, update the thing's
@@ -797,9 +808,10 @@ void P_DoNewChaseDir (AActor *actor, fixed_t deltax, fixed_t deltay)
 	if (!(actor->flags5 & MF5_AVOIDINGDROPOFF))
 	{
 		// there is no direct path to the player, so pick another direction.
-		if (olddir != DI_NODIR)
+		if (olddir != DI_NODIR && attempts[olddir] == false)
 		{
 			actor->movedir = olddir;
+			attempts[olddir] = true;
 			if (P_TryWalk (actor))
 			{
 				// [BC] Set the thing's movement direction. Also, update the thing's
@@ -819,9 +831,10 @@ void P_DoNewChaseDir (AActor *actor, fixed_t deltax, fixed_t deltay)
 	{
 		for (tdir = DI_EAST; tdir <= DI_SOUTHEAST; tdir++)
 		{
-			if (tdir != turnaround)
+			if (tdir != turnaround && attempts[tdir] == false)
 			{
 				actor->movedir = tdir;
+				attempts[tdir] = true;
 				if ( P_TryWalk(actor) )
 				{
 					// [BC] Set the thing's movement direction. Also, update the thing's
@@ -840,9 +853,10 @@ void P_DoNewChaseDir (AActor *actor, fixed_t deltax, fixed_t deltay)
 	{
 		for (tdir = DI_SOUTHEAST; tdir != (DI_EAST-1); tdir--)
 		{
-			if (tdir != turnaround)
+			if (tdir != turnaround && attempts[tdir] == false)
 			{
 				actor->movedir = tdir;
+				attempts[tdir] = true;
 				if ( P_TryWalk(actor) )
 				{
 					// [BC] Set the thing's movement direction. Also, update the thing's
@@ -858,7 +872,7 @@ void P_DoNewChaseDir (AActor *actor, fixed_t deltax, fixed_t deltay)
 		}
 	}
 
-	if (turnaround != DI_NODIR)
+	if (turnaround != DI_NODIR && attempts[turnaround] == false)
 	{
 		actor->movedir =turnaround;
 		if ( P_TryWalk(actor) )
@@ -3134,7 +3148,8 @@ void A_Chase(AActor *self)
 // A_FaceTracer
 //
 //=============================================================================
-void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
+// [rc4l] uzdoom@53fd57d6b, with uzdoom@c5161ee74 + uzdoom@10fec95cd folded in
+void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch, angle_t ang_offset, angle_t pitch_offset, int flags, fixed_t z_add)
 {
 	// [BC] This is handled server-side.
 	if ( NETWORK_InClientMode() )
@@ -3169,28 +3184,28 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 		{
 			if (self->angle - other_angle < ANGLE_180)
 			{
-				self->angle -= max_turn;
+				self->angle -= max_turn + ang_offset;
 			}
 			else
 			{
-				self->angle += max_turn;
+				self->angle += max_turn + ang_offset;
 			}
 		}
 		else
 		{
 			if (other_angle - self->angle < ANGLE_180)
 			{
-				self->angle += max_turn;
+				self->angle += max_turn + ang_offset;
 			}
 			else
 			{
-				self->angle -= max_turn;
+				self->angle -= max_turn + ang_offset;
 			}
 		}
 	}
 	else
 	{
-		self->angle = other_angle;
+		self->angle = other_angle + ang_offset;
 	}
 
 	// [DH] Now set pitch. In order to maintain compatibility, this can be
@@ -3210,6 +3225,21 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 		{
 			target_z = other->z + other->height / 2;
 		}
+
+		// [rc4l] uzdoom@53fd57d6b -- FAF_* pick an explicit aim height. Note there is no
+		// +32*FRACUNIT here on purpose; that is what FAF_BOTTOM exists to opt out of.
+		if (flags & FAF_BOTTOM)
+			target_z = other->z + other->GetBobOffset();
+		if (flags & FAF_MIDDLE)
+			target_z = other->z + (other->height / 2) + other->GetBobOffset();
+		if (flags & FAF_TOP)
+			target_z = other->z + (other->height) + other->GetBobOffset();
+
+		// [rc4l] uzdoom@c5161ee74 -- A_Face used to conflate an angle and a distance in
+		// pitch_offset, gated behind FAF_NODISTFACTOR (whose test was mis-parenthesised and never
+		// fired anyway). The distance is now its own z_add parameter, applied unconditionally.
+		target_z += z_add;
+
 		double dist_z = (double)(target_z - source_z);
 		double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
 
@@ -3232,6 +3262,10 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 		{
 			self->pitch = other_pitch;
 		}
+
+		// [rc4l] uzdoom@10fec95cd -- the last FAF_NODISTFACTOR conditional; the offset is simply
+		// always applied now, which is what the flag was standing in the way of.
+		self->pitch += fixed_t::FromUnsignedBits(pitch_offset);
 	}
 
 	// This will never work well if the turn angle is limited.
@@ -3245,46 +3279,49 @@ void A_Face (AActor *self, AActor *other, angle_t max_turn, angle_t max_pitch)
 		SERVERCOMMANDS_SetThingAngle( self );
 }
 
-void A_FaceTarget (AActor *self, angle_t max_turn, angle_t max_pitch)
+// [rc4l] uzdoom@c5161ee74 -- bare form, all the monster AI needs
+void A_FaceTarget (AActor *self)
 {
-	A_Face(self, self->target, max_turn, max_pitch);
-}
-
-void A_FaceMaster (AActor *self, angle_t max_turn, angle_t max_pitch)
-{
-	A_Face(self, self->master, max_turn, max_pitch);
-}
-
-void A_FaceTracer (AActor *self, angle_t max_turn, angle_t max_pitch)
-{
-	A_Face(self, self->tracer, max_turn, max_pitch);
+	A_Face(self, self->target);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FaceTarget)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(6);	// [rc4l] uzdoom@53fd57d6b + uzdoom@c5161ee74
 	ACTION_PARAM_ANGLE(max_turn, 0);
 	ACTION_PARAM_ANGLE(max_pitch, 1);
+	ACTION_PARAM_ANGLE(ang_offset, 2);
+	ACTION_PARAM_ANGLE(pitch_offset, 3);
+	ACTION_PARAM_INT(flags, 4);
+	ACTION_PARAM_FIXED(z_add, 5);
 
-	A_FaceTarget(self, max_turn, max_pitch);
+	A_Face(self, self->target, max_turn, max_pitch, ang_offset, pitch_offset, flags, z_add);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FaceMaster)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(6);	// [rc4l] uzdoom@53fd57d6b + uzdoom@c5161ee74
 	ACTION_PARAM_ANGLE(max_turn, 0);
 	ACTION_PARAM_ANGLE(max_pitch, 1);
+	ACTION_PARAM_ANGLE(ang_offset, 2);
+	ACTION_PARAM_ANGLE(pitch_offset, 3);
+	ACTION_PARAM_INT(flags, 4);
+	ACTION_PARAM_FIXED(z_add, 5);
 
-	A_FaceMaster(self, max_turn, max_pitch);
+	A_Face(self, self->master, max_turn, max_pitch, ang_offset, pitch_offset, flags, z_add);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FaceTracer)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(6);	// [rc4l] uzdoom@53fd57d6b + uzdoom@c5161ee74
 	ACTION_PARAM_ANGLE(max_turn, 0);
 	ACTION_PARAM_ANGLE(max_pitch, 1);
+	ACTION_PARAM_ANGLE(ang_offset, 2);
+	ACTION_PARAM_ANGLE(pitch_offset, 3);
+	ACTION_PARAM_INT(flags, 4);
+	ACTION_PARAM_FIXED(z_add, 5);
 
-	A_FaceTracer(self, max_turn, max_pitch);
+	A_Face(self, self->tracer, max_turn, max_pitch, ang_offset, pitch_offset, flags, z_add);
 }
 
 //===========================================================================
