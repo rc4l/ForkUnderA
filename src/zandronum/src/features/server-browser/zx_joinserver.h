@@ -71,7 +71,13 @@ bool IsServerBrowserOpen();
 // It CAPTURES NO INPUT, deliberately. There is no key it listens for, so there is no wrong key --
 // which is the whole problem with a prompt appearing over live gameplay. Acting on it happens when
 // the player opens the menu, an act nobody performs by accident mid-fight.
-void DrawJoinReadyNotice();
+// [rc4l] Called TWICE per frame from D_Display, from two different points, and draws at most once.
+//
+// `afterMenus` says which of the two call sites this is. The band has to be drawn from inside the
+// level's own 2D pass to reach the screen during ordinary play -- drawing it later, after the menu
+// pass, silently goes nowhere -- but it also has to sit ON TOP of a menu when there is one. Those are
+// two different points in the frame, so the function is offered both and takes the one that applies.
+void DrawJoinReadyNotice( bool afterMenus );
 
 // Whether a finished download is waiting to be acted on, clearing the flag. Called when the player
 // opens the menu, so they land in the browser rather than the main menu.

@@ -640,12 +640,22 @@ bool ConsumeJoinReady()
 	return true;
 }
 
-void DrawJoinReadyNotice()
+void DrawJoinReadyNotice( bool afterMenus )
 {
-	// [rc4l] Not while a menu is up. In the browser the footer already carries the transfer, and
-	// anywhere else -- options, save, load -- the player is doing something deliberate and a line
-	// floating over it is noise. This slot is for when they are actually in the game.
-	if ( menuactive != MENU_Off )
+	// [rc4l] Drawn over EVERYTHING, menus included.
+	//
+	// It used to bail while a menu was up, on the reasoning that the browser's own footer carried the
+	// transfer and anything else was the player doing something deliberate. That was wrong in the way
+	// that matters: a player who wanders into the options menu mid-download loses the only readout
+	// there is, and the browser then had to duplicate the same line in its footer to cover the one
+	// case it did handle. One band, one place, always visible.
+	//
+	// WHICH PASS. D_Display offers this two moments: inside the level's 2D pass, and after the menu
+	// has been drawn. Neither one alone works. Drawing after the menu is the only way to be on top of
+	// it, but during ordinary play that point is past whatever actually commits 2D drawing -- the band
+	// and the line are issued and never appear, which is precisely the bug this argument exists to
+	// fix. So: menu up, draw after it; no menu, draw with the level.
+	if ( afterMenus != ( menuactive != MENU_Off ))
 		return;
 
 	const FString progress = zx::waddownload::StatusLine( );

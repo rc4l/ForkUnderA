@@ -1074,6 +1074,11 @@ drawfullconsole:
 
 			// Render chat prompt.
 			CHAT_Render( );
+
+			// [rc4l] The download/ready band, drawn here when no menu is up. It has to be inside this
+			// 2D pass to reach the screen during play; the call after M_Drawer below handles the menu
+			// case. See features/server-browser/zx_joinserver.h.
+			zx::DrawJoinReadyNotice ( false );
 			break;
 
 		case GS_INTERMISSION:
@@ -1155,12 +1160,14 @@ drawfullconsole:
 	{
 		NetUpdate ();			// send out any new accumulation
 		// normal update
-		// [rc4l] "That server is ready to join" -- over the game, under the console and menu, and
-		// capturing no input at all. See features/server-browser/zx_joinserver.h.
-		zx::DrawJoinReadyNotice ();
-
 		C_DrawConsole (hw2d);	// draw console
 		M_Drawer ();			// menu is drawn even on top of everything
+
+		// [rc4l] The same band, for when a menu IS up: after M_Drawer so it sits on top of it, since a
+		// download runs while the player wanders through menus and the one readout they have must not
+		// be the thing the options screen covers up. Captures no input at all.
+		// See features/server-browser/zx_joinserver.h.
+		zx::DrawJoinReadyNotice ( true );
 		FStat::PrintStat ();
 		screen->Update ();		// page flip or blit buffer
 	}

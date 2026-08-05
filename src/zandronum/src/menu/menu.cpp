@@ -196,6 +196,18 @@ bool DMenu::MenuEvent (int mkey, bool fromcontroller)
 		Close();
 		S_Sound (CHAN_VOICE | CHAN_UI, 
 			DMenu::CurrentMenu != NULL? "menu/backup" : "menu/clear", snd_menuvolume, ATTN_NONE);
+
+		// [rc4l] A download finished while the player was somewhere else in the menus, so its join is
+		// waiting. Backing out is them leaving whatever they were doing, which is the moment to hand
+		// them the thing they actually asked for -- rather than dropping them at the main menu and
+		// hoping they remember to walk back to the browser.
+		//
+		// After Close(), so this lands wherever backing out would have left them.
+		if (zx::ConsumeJoinReady())
+		{
+			M_StartControlPanel(true);
+			M_SetMenu("ZA_Browser", -1);
+		}
 		return true;
 	}
 	}
@@ -897,7 +909,14 @@ bool M_Responder (event_t *ev)
 			if (ev->data1 == KEY_ESCAPE)
 			{
 				M_StartControlPanel(true);
-				M_SetMenu(NAME_Mainmenu, -1);
+				// [rc4l] Same redirect the mouse path and menu_main already do: a join that finished
+				// while the player was in the game is waiting, and opening the menu is the gesture we
+				// hang it on. Escape is by far the commonest way that happens, and it was the one
+				// route that still landed on the main menu.
+				if (zx::ConsumeJoinReady())
+					M_SetMenu("ZA_Browser", -1);
+				else
+					M_SetMenu(NAME_Mainmenu, -1);
 				return true;
 			}
 			// If devparm is set, pressing F1 always takes a screenshot no matter

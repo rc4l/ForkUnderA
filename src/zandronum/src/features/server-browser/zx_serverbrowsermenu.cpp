@@ -32,6 +32,7 @@
 #include "templates.h"
 
 #include "features/server-browser/browser.h"
+#include "features/server-browser/computation/browserchrome_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
@@ -684,22 +685,38 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] What is on screen is decided in ONE place -- computation/browserchrome_compute -- and both
+	// drawing and hit-testing read the same answer, so a control can never be invisible and still
+	// clickable.
+	unsigned VisibleParts( const zx::BrowserCounts &counts )
+	{
+		const bool bWaitingRegistry = BROWSER_WaitingForServerRegistryResponse( );
+		const zx::BrowserPhase phase = zx::ComputeBrowserPhase( bWaitingRegistry, counts );
+		const int total = static_cast<int>( g_SortedServers.Size( ));
+
+		return zx::ComputeVisibleParts( phase, ( g_Selected >= 0 ) && ( g_Selected < total ),
+			serverbrowser_DownloadRunning( ));
+	}
+
 	void Drawer( )
 	{
 		const zx::BrowserCounts counts = serverbrowser_CountStates( );
 		const bool bWaitingRegistry = BROWSER_WaitingForServerRegistryResponse( );
 		const zx::BrowserPhase phase = zx::ComputeBrowserPhase( bWaitingRegistry, counts );
+		const unsigned parts = VisibleParts( counts );
 
 		DrawPanel( );
-		DrawTabs( );
 
-		if ( phase == zx::BrowserPhase::Ready )
+		if ( parts & zx::kPartTabs )
+			DrawTabs( );
+		if ( parts & zx::kPartList )
 			DrawRows( counts );
-		else
+		if ( parts & zx::kPartPlaceholder )
 			DrawPlaceholder( phase );
-
-		DrawDetails( );
-		DrawFooter( phase, counts );
+		if ( parts & zx::kPartDetail )
+			DrawDetails( );
+		if ( parts & zx::kPartFooter )
+			DrawFooter( phase, counts );
 
 		// Last, and over everything: something the player has to deal with before anything else.
 		if ( g_Notice.IsNotEmpty( ))
@@ -1200,13 +1217,15 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] Only called when kPartDetail says so, which already means there is a selection -- the
+	// bounds check stays as the thing that makes the indexing below safe, not as a policy decision.
 	void DrawDetails( )
 	{
-		DrawDetailPanel( );
-
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 		if (( g_Selected < 0 ) || ( g_Selected >= total ))
 			return;
+
+		DrawDetailPanel( );
 
 		const int lServer = g_SortedServers[g_Selected];
 		serverbrowser_RefreshWadCache( lServer );
@@ -1453,18 +1472,10 @@ public:
 		const int y = SB_FOOTER_Y;
 		FString text;
 
-		// [rc4l] A download for a pending join takes over the footer. Joining leaves the browser open
-		// on purpose (see features/server-browser/zx_joinserver.cpp) precisely so this line has
-		// somewhere to live -- without it, "press enter, nothing happens, for four minutes" is what
-		// the player experiences. The server count can wait; the transfer cannot.
-		const FString download = zx::waddownload::StatusLine( );
-		if ( download.IsNotEmpty( ))
-		{
-			screen->DrawText( SmallFont, CR_GOLD,
-				( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( download ) / 2 ), y, download,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-			return;
-		}
+		// [rc4l] The transfer used to be drawn here as well, because this was the only screen that had
+		// anywhere to put it. It is now in the band at the top of the screen, which is drawn over
+		// everything including this menu -- so repeating it here would just be the same sentence twice
+		// on one screen. See zx::DrawJoinReadyNotice.
 
 		if ( phase == zx::BrowserPhase::Ready )
 			text.Format( "%d servers", static_cast<int>( g_SortedServers.Size( )));
@@ -1532,6 +1543,10 @@ public:
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 
+		// The same answer the drawing uses. A tab that is not on screen must not be clickable, which is
+		// exactly what happens the moment these two work it out separately.
+		const unsigned parts = VisibleParts( serverbrowser_CountStates( ));
+
 		// Remembered for the wheel, which arrives as a GUI event carrying no position of its own --
 		// and a wheel notch has to scroll whichever list the pointer is sitting over.
 		g_MouseX = x;
@@ -1553,6 +1568,7 @@ public:
 			return true;
 
 		// The tabs.
+		if ( parts & zx::kPartTabs )
 		{
 			g_TabHot = -1;
 			for ( int i = 0; i < 2; ++i )
@@ -1581,6 +1597,7 @@ public:
 
 		// The action button, before the row hit test -- it lives inside the detail panel, which the
 		// row test already excludes, but checking first keeps the two from ever both claiming a click.
+		if ( parts & zx::kPartDetail )
 		{
 			const bool bOverButton = ( g_Selected >= 0 ) && ( g_Selected < total ) &&
 				( x >= serverbrowser_ToScreenX( SB_BUTTON_LEFT )) &&
@@ -1621,6 +1638,7 @@ public:
 		// [rc4l] The WAD list's bar, which lives inside the detail panel and so is tested before the
 		// server list's -- the two boxes never overlap, but a held drag has to keep being answered by
 		// the bar that started it rather than by whichever one the pointer has wandered over.
+		if ( parts & zx::kPartDetail )
 		{
 			const int wadTotal = static_cast<int>( g_DetailWads.Size( ));
 			const int height = serverbrowser_ToScreenY( g_WadListBottom ) - serverbrowser_ToScreenY( g_WadListTop );
@@ -1655,6 +1673,7 @@ public:
 		// [rc4l] The scrollbar, BEFORE the rows. The row hit box used to run all the way to
 		// SB_LIST_RIGHT, which is past the bar -- so every click meant for the thumb landed on
 		// whatever row was level with it and the bar could not be grabbed at all.
+		if ( parts & zx::kPartList )
 		{
 			const bool bOverBar = ( total > SB_VISIBLE_ROWS ) &&
 				( x >= serverbrowser_ToScreenX( SB_SCROLLBAR_X - 2 )) &&
@@ -1692,7 +1711,7 @@ public:
 		const int left = serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 );
 		const int right = serverbrowser_ToScreenX( SB_ROW_RIGHT );
 
-		if (( total > 0 ) && ( x >= left ) && ( x < right ))
+		if (( parts & zx::kPartList ) && ( total > 0 ) && ( x >= left ) && ( x < right ))
 		{
 			for ( int slot = 0; slot < SB_VISIBLE_ROWS; ++slot )
 			{
@@ -1837,6 +1856,12 @@ public:
 	// the selection, switching the tab, and making a noise about it.
 	bool Navigate( zx::NavKey key, int total )
 	{
+		// Nothing to steer while the browser is still looking: there are no tabs on screen and no rows
+		// to be on. Swallowed rather than passed up, so an arrow key does not escape into the menu
+		// machinery underneath and move something the player cannot see.
+		if (( VisibleParts( serverbrowser_CountStates( )) & zx::kPartTabs ) == 0 )
+			return true;
+
 		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, total > 0 );
 		const zx::BrowserFocus was = g_Focus;
 		g_Focus = nav.focus;
