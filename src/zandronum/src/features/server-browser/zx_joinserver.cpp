@@ -294,6 +294,25 @@ bool JoinSelectedServer()
 	if (pszWadUrl != NULL && pszWadUrl[0] != '\0')
 		plan.sites.push_back(pszWadUrl);
 
+	// [rc4l] The server's own endpoint, if it serves its files itself (SQF2_FUA_DIRECT_DOWNLOAD).
+	//
+	// FIRST by default, and that ordering is the point of the feature rather than an optimisation.
+	// The case a mirror cannot cover is a WAD built this afternoon, which exists nowhere else; and
+	// even when mirrors do have the file, the server's copy is by definition the one matching the
+	// MD5 it advertises, so it is the copy that verifies on the first try instead of after two
+	// mirrors served a different build under the same name.
+	//
+	// An operator who hosts their WADs somewhere with real bandwidth can flip it, which is what
+	// sv_fua_download_prefermirrors is for -- they are the one paying for the traffic.
+	const FString directUrl = BROWSER_GetDirectDownloadURL((ULONG)lServer);
+	if (directUrl.IsNotEmpty())
+	{
+		if (BROWSER_PrefersMirrors((ULONG)lServer))
+			plan.sites.push_back(directUrl.GetChars());
+		else
+			plan.sites.insert(plan.sites.begin(), directUrl.GetChars());
+	}
+
 	plan.valid = true;
 	return AttemptJoin(plan, true);
 }
