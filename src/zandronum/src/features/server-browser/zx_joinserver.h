@@ -27,6 +27,27 @@ void ReleaseJoinResume(bool proceed);
 
 bool IsJoinResumeHeld();
 
+// [rc4l] A join we started is now in flight -- the WAD set has been reloaded and the connect is
+// being attempted. `serverName` is only for the message if it goes wrong.
+//
+// These three exist because a refused connect used to leave the player at a bare console with a
+// stranger's WAD set loaded and one line of explanation scrolled off. Every port that has a server
+// browser puts you back in it with the reason instead, and that is what this is for. It covers far
+// more than downloads: full, wrong password, banned, version mismatch and just-shut-down all fail
+// the same way and all landed in the same place.
+void NoteJoinStarted( const char *serverName );
+
+// The connect worked. Nothing after this counts as a failed join, so quitting normally later does
+// not reopen the browser.
+void NoteJoinSucceeded();
+
+// The connect failed, with the engine's own reason. Safe to call from the middle of the disconnect --
+// it only records, and Tick acts on it once the teardown has finished.
+void NoteJoinFailed( const char *reason );
+
+// Call once per frame from the main loop. Reopens the browser after a failed join.
+void JoinTick();
+
 } // namespace zx
 
 #endif // ZX_JOINSERVER_H

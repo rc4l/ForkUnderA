@@ -28,7 +28,11 @@
 #include "d_main.h"		// D_AddFile
 #include "menu/menu.h"	// M_StartMessage, M_ClearMenus
 
+#include "cl_main.h"		// CLIENT_GetConnectionState, CTS_ACTIVE
+#include "network.h"		// NETWORK_GetState
+
 #include "features/server-browser/browser.h"
+#include "features/server-browser/zx_joinserver.h"
 #include "features/server-browser/computation/joinplan_compute.h"
 #include "features/wad-download/computation/iwadsubstitute_compute.h"
 #include "features/wad-download/zx_filehash.h"
@@ -80,6 +84,8 @@ struct JoinPlan
 	// the server's original list. Empty for a server that sent no hashes.
 	std::map<std::string, std::string> wadHashes;
 	FString address;
+	// [rc4l] Only ever used to name the server in a message when something goes wrong.
+	FString serverName;
 	std::vector<std::string> sites;		// the server's own advertised download site, if any
 	bool valid;
 
@@ -361,6 +367,11 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 	}
 
 	M_ClearMenus();
+
+	// [rc4l] Marked BEFORE the reload, because the reload does not return: RequestReload throws
+	// CRestartException on the path that works. Anything recorded after it would never run.
+	zx::NoteJoinStarted(plan.serverName.GetChars());
+
 	// RequestReload either connects in place (already on this WAD set), or throws CRestartException
 	// and does not return. InvalidWads is the only way back here with nothing done.
 	const zx::wadreload::ReloadResult r = zx::wadreload::RequestReload(
@@ -368,6 +379,7 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 
 	if (r == zx::wadreload::ReloadResult::InvalidWads)
 	{
+		zx::NoteJoinSucceeded();	// nothing is in flight; clear the mark so a later quit is not blamed
 		M_StartMessage("Can't join: one of the server's files is not a loadable WAD.\n\npress a key.", 1);
 		return false;
 	}
@@ -400,6 +412,24 @@ bool JoinSelectedServer()
 	JoinPlan plan;
 	plan.iwadName = pszIwad != NULL ? pszIwad : "";
 	plan.iwadHash = BROWSER_GetIWADHash((ULONG)lServer);
+	plan.serverName = BROWSER_GetHostName((ULONG)lServer);
+
+	// [rc4l] Cheapest possible pre-flight: the browser queried this server seconds ago, so if it was
+	// full then it is almost certainly full now. Checking here costs nothing and avoids the worst
+	// outcome -- tearing the game down for a reload and then being refused, which used to leave the
+	// player at a bare console. It cannot close the race entirely (someone can take the last slot
+	// while we reload), which is what the failed-join landing is for.
+	const LONG lPlayers = BROWSER_GetNumPlayers((ULONG)lServer);
+	const LONG lMaxClients = BROWSER_GetMaxClients((ULONG)lServer);
+	if (( lMaxClients > 0 ) && ( lPlayers >= lMaxClients ))
+	{
+		FString msg;
+		msg.Format("%s is full (%d/%d).\n\nNothing has been changed -- try again when a slot opens."
+			"\n\npress a key.", plan.serverName.GetChars(), static_cast<int>( lPlayers ),
+			static_cast<int>( lMaxClients ));
+		M_StartMessage(msg.GetChars(), 1);
+		return false;
+	}
 	plan.wads = ComputeJoinWadList(plan.iwadName.GetChars(), ServerPwadNames(lServer));
 
 	// [rc4l] Pair each PWAD with the MD5 the server advertised (SQF2_PWAD_HASHES), so a downloaded
@@ -449,9 +479,78 @@ bool JoinSelectedServer()
 	return AttemptJoin(plan, true);
 }
 
+//*****************************************************************************
+//
+// [rc4l] A join in flight, and where it should land if it fails.
+//
+// These survive the WAD reload deliberately. RequestReload throws CRestartException, which unwinds
+// and re-runs the startup -- the PROCESS lives, so a static here keeps its value across it. That is
+// the only way to know, after the restart, that the connect being attempted is one we started rather
+// than something the player typed.
+bool g_joinInFlight = false;
+FString g_joiningName;
+bool g_joinFailed = false;
+FString g_joinFailReason;
+
 void HoldJoinResume()
 {
 	g_resumeHeld = true;
+}
+
+void NoteJoinStarted( const char *serverName )
+{
+	g_joinInFlight = true;
+	g_joiningName = ( serverName != NULL ) ? serverName : "";
+	g_joinFailed = false;
+	g_joinFailReason = "";
+}
+
+void NoteJoinSucceeded()
+{
+	g_joinInFlight = false;
+}
+
+void NoteJoinFailed( const char *reason )
+{
+	// Only a connect WE started. Quitting a server normally, or being kicked from one an hour later,
+	// is not a failed join and must not drag the player back into the browser.
+	if ( !g_joinInFlight )
+		return;
+
+	g_joinInFlight = false;
+	g_joinFailed = true;
+	g_joinFailReason = ( reason != NULL ) ? reason : "";
+
+	// Recorded rather than acted on: this is called from the middle of the disconnect, and opening a
+	// menu while the game is still tearing itself down is asking for it. JoinTick does the rest.
+}
+
+void JoinTick()
+{
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
+	// Connected and playing -- whatever happens from here is not a failed join.
+	if ( g_joinInFlight && ( CLIENT_GetConnectionState( ) == CTS_ACTIVE ))
+		NoteJoinSucceeded( );
+
+	if ( !g_joinFailed )
+		return;
+	g_joinFailed = false;
+
+	// Back to the list, with the reason, instead of a bare console. The WAD set stays loaded, so
+	// picking another server on the same files needs no second reload.
+	FString message;
+	if ( g_joiningName.IsNotEmpty( ))
+		message.Format( TEXTCOLOR_GOLD "%s: %s" TEXTCOLOR_NORMAL, g_joiningName.GetChars( ),
+			g_joinFailReason.GetChars( ));
+	else
+		message.Format( TEXTCOLOR_GOLD "%s" TEXTCOLOR_NORMAL, g_joinFailReason.GetChars( ));
+
+	Printf( "%s\n", message.GetChars( ));
+
+	M_StartControlPanel( false );
+	M_SetMenu( "ZA_Browser", -1 );
 }
 
 void ReleaseJoinResume(bool proceed)
