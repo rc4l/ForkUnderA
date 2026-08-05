@@ -205,13 +205,22 @@ TEST(DownloadedFile, KeepsAnAllowlistedIwadThatReallyIsAnIwad)
 		ClassifyDownloadedFile("freedoom2.wad", false, kIwadHeader, sizeof kIwadHeader, kFreedoom2_0_13_0));
 }
 
+TEST(DownloadedFile, AcceptsMegaManEightBitDeathmatch)
+{
+	// From the official cutstuff v6b archive. PWAD magic like the Chex IWADs, so it only gets gated at
+	// all because the IWAD SLOT gates too -- the header would have waved it straight through.
+	EXPECT_EQ(DownloadVerdict::Allowed,
+		ClassifyDownloadedFile("megagame.wad", true, kPwadHeader, sizeof kPwadHeader,
+			"ba6eadf3d054107d449a6e1cc6add58cf2ba33d49ca0f0f91fa47a4a403f1ad0"));
+}
+
 TEST(DownloadedFile, RefusesAnAllowlistedNameWhoseBytesWeHaveNotVouchedFor)
 {
-	// megagame.wad is on the name allowlist but no build of it has been hashed yet, so downloading it
-	// is refused -- deny-by-default applies to us not having done the work just as it applies to a
-	// game we have never heard of. Also the shape of the doom2-served-as-freedoom2 attack.
+	// hacx.wad is on the name allowlist but no build of it has been hashed yet, so downloading it is
+	// refused -- deny-by-default applies to us not having done the work just as it applies to a game
+	// we have never heard of. Also the shape of the doom2-served-as-freedoom2 attack.
 	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
-		ClassifyDownloadedFile("megagame.wad", false, kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
+		ClassifyDownloadedFile("hacx.wad", true, kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
 	EXPECT_EQ(DownloadVerdict::UnvouchedIwadBuild,
 		ClassifyDownloadedFile("freedoom2.wad", false, kIwadHeader, sizeof kIwadHeader, kNotAnyBuild));
 }

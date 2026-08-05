@@ -64,4 +64,15 @@ action2.wad    | - | Action Doom 2: Urban Brawl
 square1.pk3    | - | The Adventures of Square
 square1.wad    | - | The Adventures of Square (wad packaging)
 rekkr.wad      | - | REKKR
-megagame.wad   | - | Mega Man 8-bit Deathmatch
+
+# Mega Man 8-bit Deathmatch. Taken from the official cutstuff release archive
+# (mm8bdm-v6b-3.2.1-win64), not a mirror.
+#
+# Do not be alarmed by its ENDOOM: it is Doom II's sign-off text, copied verbatim. The file is a
+# minimal IWAD skeleton -- 605 lumps of menu, border and intermission graphics, ~130 KB, with NO Doom
+# sprites, textures or maps (PLAYA1, POSSA1, CYBRA1 are all absent) -- and every scrap of Mega Man
+# content lives in mm8bdm-v6b.pk3 instead. One copied lump is not the file's provenance, and reading
+# it as such is how this entry nearly did not get written.
+#
+# PWAD magic, like the Chex Quest IWADs, so it is gated on the IWAD slot rather than the header.
+megagame.wad   | ba6eadf3d054107d449a6e1cc6add58cf2ba33d49ca0f0f91fa47a4a403f1ad0 | Mega Man 8-bit Deathmatch (v6b, 139550 bytes)
