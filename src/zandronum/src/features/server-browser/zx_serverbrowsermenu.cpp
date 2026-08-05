@@ -29,6 +29,7 @@
 #include "templates.h"
 
 #include "features/server-browser/browser.h"
+#include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/updater/computation/promptpanel_compute.h"
 #include "features/wad-download/zx_waddownload.h"
@@ -93,6 +94,12 @@
 static	TArray<int>		g_SortedServers;
 static	int				g_Selected = -1;
 static	int				g_ScrollFirst = 0;
+
+// [rc4l] What the mouse was pressed on, so the release can tell "clicked the row that was already
+// selected" (join) from "clicked a different row" (select) and from "pressed here, released
+// elsewhere" (cancel). Reset whenever a release lands anywhere.
+static	int				g_MousePressRow = -1;
+static	bool			g_MousePressWasSelected = false;
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -552,6 +559,77 @@ public:
 	void DrawRightAligned( FFont *font, EColorRange color, int right, int y, const char *text )
 	{
 		screen->DrawText( font, color, right - font->StringWidth( text ), y, text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Clicking a row.
+	//
+	// Hit-tested against serverbrowser_ToScreenX/Y with the SAME arguments DimRow draws the highlight
+	// with, rather than by inverting the virtual-to-real mapping. VirtualToRealCoordsInt letterboxes
+	// and rounds per call, so an inverse would agree with the drawn box on most resolutions and be a
+	// pixel out on the rest -- and "the row I clicked is not the row that lit up" is a maddening bug
+	// to be told about. Reusing the forward calls means the clickable box IS the visible box.
+	//
+	// Two clicks to join, not one: the first selects, the second joins. A single click would make an
+	// accidental one restart the engine onto another server's WAD set, which is a lot to do to
+	// somebody who slipped. Pressing and dragging off the row cancels, as a button should.
+	bool MouseEvent( int type, int x, int y )
+	{
+		const int total = static_cast<int>( g_SortedServers.Size( ));
+		const int left = serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 );
+		const int right = serverbrowser_ToScreenX( SB_PANEL_RIGHT - 4 );
+
+		if (( total > 0 ) && ( x >= left ) && ( x < right ))
+		{
+			for ( int slot = 0; slot < SB_VISIBLE_ROWS; ++slot )
+			{
+				const int vy = SB_FIRST_ROW_Y + slot * SB_ROW_HEIGHT;
+				const int top = serverbrowser_ToScreenY( vy - 2 );
+				const int bottom = serverbrowser_ToScreenY( vy - 2 + SB_ROW_HEIGHT );
+				if (( y < top ) || ( y >= bottom ))
+					continue;
+
+				const int row = zx::ComputeServerAtSlot( slot, SB_VISIBLE_ROWS, g_ScrollFirst, total );
+				if ( row < 0 )
+					break;					// an empty slot past the last server
+
+				if ( type == MOUSE_Click )
+				{
+					// Whether it was ALREADY selected is what decides the release, so it has to be
+					// remembered here -- by then g_Selected is this row either way.
+					g_MousePressRow = row;
+					g_MousePressWasSelected = ( row == g_Selected );
+					if ( !g_MousePressWasSelected )
+					{
+						g_Selected = row;
+						S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					}
+					// True also arms the capture that makes MOUSE_Release arrive at all (DMenu::
+					// Responder only forwards a release while captured).
+					return true;
+				}
+
+				if ( type == MOUSE_Release )
+				{
+					const bool bJoin = ( row == g_MousePressRow ) && g_MousePressWasSelected;
+					g_MousePressRow = -1;
+					g_MousePressWasSelected = false;
+					if ( bJoin )
+						return MenuEvent( MKEY_Enter, false );
+					return true;
+				}
+
+				return true;				// a move inside the list while captured: nothing to do
+			}
+		}
+
+		if ( type == MOUSE_Release )
+		{
+			g_MousePressRow = -1;
+			g_MousePressWasSelected = false;
+		}
+		return Super::MouseEvent( type, x, y );
 	}
 
 	//*************************************************************************
