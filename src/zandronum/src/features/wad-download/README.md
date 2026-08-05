@@ -149,6 +149,7 @@ loop, because "did we remember to reject `../..`?" should be answerable without 
 <repo root>/waddownloadsites.txt            the default mirror list          (PR to add a line)
 <repo root>/iwadsubstitutes.txt             Freedoom stand-ins               (PR to add a line)
 <repo root>/iwadhashes.txt                  vouched SHA-256 builds           (PR to add a line)
+<repo root>/waddirectories.txt              where other tools keep WADs      (PR to add a line)
 <repo root>/tools/gen-wadlists.cmake        compiles all three into a header at build time
 
 zx_waddownload.{h,cpp}                      driver: CVARs, CCMDs, worker thread, main-thread Tick
@@ -156,6 +157,7 @@ computation/downloadplan_compute.{h,cpp}    mirror URLs, name safety, escaping  
 computation/iwadallow_compute.{h,cpp}       the legality gate                      (+ _test.cpp)
 computation/iwadsubstitute_compute.{h,cpp}  what Freedoom can stand in for         (+ _test.cpp)
 zx_filehash.{h,cpp}                         SHA-256 / MD5 of a file, streamed
+zx_wadsearch.{h,cpp}                        IWAD lookup matching the engine's own
 ```
 
 The transfer itself is `features/net/zx_httpfile.{h,cpp}` (+ `zx_httpfile_win.cpp`): WinHTTP on
@@ -195,6 +197,31 @@ distinguishable.
 This feature decides whether a file **may be downloaded** and puts it on disk. `wadreload` decides
 whether a file is **loadable** and refuses to restart onto a bad set. A truncated download is caught
 there, not here, so exactly one place in the tree answers "can the engine load this".
+
+## Where it looks before downloading
+
+Nothing is fetched until the file is genuinely absent, and "absent" means two different searches
+because the engine has two:
+
+| | used by | Windows default |
+|---|---|---|
+| `FileSearch.Directories` | `BaseFileSearch`, i.e. `-file` PWADs | `$PROGDIR`, `$DOOMWADDIR` |
+| `IWADSearch.Directories` | `FIWadManager::IdentifyVersion`, i.e. the IWAD | `.`, `$DOOMWADDIR`, `$HOME`, `$PROGDIR` **+ every Steam library** via `I_GetSteamPath()` |
+
+The join originally resolved *both* the IWAD and the PWADs through `D_AddFile`, so the IWAD lookup
+used the **PWAD** path and never saw Steam. A player who bought Doom II on Steam joined a
+`doom2.wad` server, we failed to find an IWAD the engine locates at startup without trouble, and
+substituted Freedoom — telling someone who owns the game that they don't. `zx_wadsearch.h` is the
+fix: after `D_AddFile` misses on an IWAD, walk `IWADSearch.Directories` and the Steam libraries the
+same way `IdentifyVersion` does, and only then consider substituting.
+
+`waddirectories.txt` at the repo root adds the folders other Doom tools use — Doomseeker/Wadseeker's
+download target (`DataPaths::localDataLocationPath()`, plus its older `.doomseeker` layout) and
+GZDoom's. Entries are platform-tagged and filtered at generation time, so only the current platform's
+are compiled in; paths keep their `$VAR`/`~` form and go through `NicePath`. Ones that exist are
+registered into **both** config sections — unexpanded, once each, visible in the ini where a player
+can remove them. A mod already downloaded through Doomseeker should not be downloaded again for
+anything, not just for a join.
 
 ## Where files go
 

@@ -1,8 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 #
-# [rc4l] Compiles the two repo-root WAD-download lists into a C++ header, so iwadallowlist.txt and
-# waddownloadsites.txt are the single source of truth and cannot drift from a hand-maintained array.
+# [rc4l] Compiles the repo-root WAD lists into one C++ header, so those files are the single source of
+# truth and cannot drift from hand-maintained arrays:
+#
+#   iwadallowlist.txt     filenames that may be downloaded as IWADs
+#   iwadhashes.txt        the SHA-256 builds we vouch for -- the gate
+#   iwadsubstitutes.txt   what Freedoom stands in for
+#   waddownloadsites.txt  default mirrors
+#   waddirectories.txt    where other Doom tools keep WADs (filtered to PLATFORM)
 #
 # Generated at BUILD time rather than checked in, and read from the binary rather than from disk at
 # runtime, because the allowlist is a legal gate: it has to be something we shipped, not something a
@@ -10,7 +16,8 @@
 # the right amount of friction for a claim about someone else's licence.
 #
 # Usage:
-#   cmake -DIWAD_LIST=<path> -DSITE_LIST=<path> -DSUBST_LIST=<path> -DOUT=<path> \
+#   cmake -DIWAD_LIST=<path> -DSITE_LIST=<path> -DSUBST_LIST=<path> -DHASH_LIST=<path> \
+#         -DDIR_LIST=<path> -DPLATFORM=windows|macos|linux -DOUT=<path> \
 #         -P tools/gen-wadlists.cmake
 
 # Pull the first whitespace-separated token from each non-comment, non-blank line. Everything after
@@ -57,11 +64,42 @@ function(zx_read_pairs PATH OUT_VAR)
 	set(${OUT_VAR} "${pairs}" PARENT_SCOPE)
 endfunction()
 
+# The well-known WAD directories are pipe-separated rather than whitespace-separated, because real
+# paths contain spaces ("Application Support", "My Games"). Only entries tagged with this build's
+# platform are collected, so no runtime filtering is needed.
+function(zx_read_dirs PATH PLATFORM OUT_VAR)
+	set(dirs "")
+	if(NOT EXISTS "${PATH}")
+		message(FATAL_ERROR "gen-wadlists: missing input ${PATH}")
+	endif()
+	file(STRINGS "${PATH}" lines)
+	foreach(line IN LISTS lines)
+		string(STRIP "${line}" line)
+		if(line STREQUAL "" OR line MATCHES "^#")
+			continue()
+		endif()
+		if(NOT line MATCHES "^([^|]+)\\|([^|]+)")
+			message(FATAL_ERROR "gen-wadlists: ${PATH}: expected '<platform> | <path> | <note>' on '${line}'")
+		endif()
+		string(STRIP "${CMAKE_MATCH_1}" entryPlatform)
+		string(STRIP "${CMAKE_MATCH_2}" entryPath)
+		string(TOLOWER "${entryPlatform}" entryPlatform)
+		if(NOT entryPlatform MATCHES "^(windows|macos|linux)$")
+			message(FATAL_ERROR "gen-wadlists: ${PATH}: '${entryPlatform}' is not windows/macos/linux")
+		endif()
+		if(entryPlatform STREQUAL "${PLATFORM}")
+			list(APPEND dirs "${entryPath}")
+		endif()
+	endforeach()
+	set(${OUT_VAR} "${dirs}" PARENT_SCOPE)
+endfunction()
+
 zx_read_tokens("${IWAD_LIST}" IWADS)
 zx_read_tokens("${SITE_LIST}" SITES)
 zx_read_pairs("${SUBST_LIST}" SUBSTS)
 # Same two-token shape as the substitutes: <sha256> <filename>.
 zx_read_pairs("${HASH_LIST}" HASHES)
+zx_read_dirs("${DIR_LIST}" "${PLATFORM}" WADDIRS)
 
 list(LENGTH IWADS IWAD_COUNT)
 list(LENGTH SITES SITE_COUNT)
@@ -70,6 +108,16 @@ if(IWAD_COUNT EQUAL 0)
 endif()
 if(SITE_COUNT EQUAL 0)
 	message(FATAL_ERROR "gen-wadlists: ${SITE_LIST} yielded no entries")
+endif()
+
+set(DIR_ENTRIES "")
+foreach(d IN LISTS WADDIRS)
+	string(APPEND DIR_ENTRIES "\t\"${d}\",\n")
+endforeach()
+list(LENGTH WADDIRS DIR_COUNT)
+if(DIR_COUNT EQUAL 0)
+	# Zero-length arrays do not compile; kKnownWadDirCount is 0 so the sentinel is never read.
+	set(DIR_ENTRIES "\t\"\",\n")
 endif()
 
 set(IWAD_ENTRIES "")
@@ -151,6 +199,7 @@ file(WRITE "${OUT}"
 //   waddownloadsites.txt  ${SITE_COUNT} entries
 //   iwadsubstitutes.txt   ${SUBST_COUNT} entries
 //   iwadhashes.txt        ${HASH_COUNT} entries
+//   waddirectories.txt    ${DIR_COUNT} entries for ${PLATFORM}
 //
 // Edit those, not this. See features/wad-download/README.md.
 
@@ -174,6 +223,12 @@ ${SUBST_ENTRIES}};
 const char *const kFreeIwadHashes[][2] = {
 ${HASH_ENTRIES}};
 const int kFreeIwadHashCount = ${HASH_COUNT};
+
+// Well-known WAD folders belonging to other Doom tools, for THIS platform only. Unexpanded -- they
+// carry $VAR and ~ for NicePath to resolve at runtime.
+const char *const kKnownWadDirs[] = {
+${DIR_ENTRIES}};
+const int kKnownWadDirCount = ${DIR_COUNT};
 
 } // namespace zx
 
