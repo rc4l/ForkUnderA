@@ -2400,15 +2400,21 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 //
 //===========================================================================
 
-static void DoGiveInventory(AActor * receiver, DECLARE_PARAMINFO)
+// [rc4l] uzdoom@b69edbbec (the redo of the reverted uzdoom@a4c07a9ee) -- A_GiveToChildren and
+// A_GiveToSiblings share this code but take NO third parameter, so reading one consumed a
+// parameter that was never passed. use_aaptr makes the read conditional.
+static void DoGiveInventory(AActor * receiver, bool use_aaptr, DECLARE_PARAMINFO)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(2+use_aaptr);
 	ACTION_PARAM_CLASS(mi, 0);
 	ACTION_PARAM_INT(amount, 1);
 	bool	bNeedClientUpdate;
-	ACTION_PARAM_INT(setreceiver, 2);
 
-	COPY_AAPTR_NOT_NULL(receiver, receiver, setreceiver);
+	if (use_aaptr)
+	{
+		ACTION_PARAM_INT(setreceiver, 2);
+		COPY_AAPTR_NOT_NULL(receiver, receiver, setreceiver);
+	}
 
 	bool res=true;
 	// [BC] Don't jump here in client mode.
@@ -2464,12 +2470,12 @@ static void DoGiveInventory(AActor * receiver, DECLARE_PARAMINFO)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GiveInventory)
 {
-	DoGiveInventory(self, PUSH_PARAMINFO);
+	DoGiveInventory(self, true, PUSH_PARAMINFO);
 }	
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GiveToTarget)
 {
-	DoGiveInventory(self->target, PUSH_PARAMINFO);
+	DoGiveInventory(self->target, true, PUSH_PARAMINFO);
 }	
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GiveToChildren)
@@ -2479,7 +2485,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GiveToChildren)
 
 	while ((mo = it.Next()))
 	{
-		if (mo->master == self) DoGiveInventory(mo, PUSH_PARAMINFO);
+		if (mo->master == self) DoGiveInventory(mo, false, PUSH_PARAMINFO);
 	}
 }
 
@@ -2492,7 +2498,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GiveToSiblings)
 	{
 		while ((mo = it.Next()))
 		{
-			if (mo->master == self->master && mo != self) DoGiveInventory(mo, PUSH_PARAMINFO);
+			if (mo->master == self->master && mo != self) DoGiveInventory(mo, false, PUSH_PARAMINFO);
 		}
 	}
 }
@@ -2533,9 +2539,11 @@ enum
 	TIF_NOTAKEINFINITE = 1,
 };
 
-void DoTakeInventory(AActor * receiver, DECLARE_PARAMINFO)
+// [rc4l] uzdoom@b69edbbec -- same as DoGiveInventory: the ToChildren/ToSiblings entry points
+// pass no fourth parameter.
+void DoTakeInventory(AActor * receiver, bool use_aaptr, DECLARE_PARAMINFO)
 {
-	ACTION_PARAM_START(4);
+	ACTION_PARAM_START(3+use_aaptr);
 	ACTION_PARAM_CLASS(item, 0);
 	ACTION_PARAM_INT(amount, 1);
 	ACTION_PARAM_INT(flags, 2);
@@ -2557,10 +2565,16 @@ void DoTakeInventory(AActor * receiver, DECLARE_PARAMINFO)
 			return;
 		}
 	}
-	ACTION_PARAM_INT(setreceiver, 3);
-	
-	if (!item) return;
-	COPY_AAPTR_NOT_NULL(receiver, receiver, setreceiver);
+	if (!item)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
+	if (use_aaptr)
+	{
+		ACTION_PARAM_INT(setreceiver, 3);
+		COPY_AAPTR_NOT_NULL(receiver, receiver, setreceiver);
+	}
 
 	bool res = false;
 
@@ -2612,12 +2626,12 @@ void DoTakeInventory(AActor * receiver, DECLARE_PARAMINFO)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeInventory)
 {
-	DoTakeInventory(self, PUSH_PARAMINFO);
+	DoTakeInventory(self, true, PUSH_PARAMINFO);
 }	
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeFromTarget)
 {
-	DoTakeInventory(self->target, PUSH_PARAMINFO);
+	DoTakeInventory(self->target, true, PUSH_PARAMINFO);
 }	
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeFromChildren)
@@ -2627,7 +2641,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeFromChildren)
 
 	while ((mo = it.Next()))
 	{
-		if (mo->master == self) DoTakeInventory(mo, PUSH_PARAMINFO);
+		if (mo->master == self) DoTakeInventory(mo, false, PUSH_PARAMINFO);
 	}
 }
 
@@ -2640,7 +2654,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeFromSiblings)
 	{
 		while ((mo = it.Next()))
 		{
-			if (mo->master == self->master && mo != self) DoTakeInventory(mo, PUSH_PARAMINFO);
+			if (mo->master == self->master && mo != self) DoTakeInventory(mo, false, PUSH_PARAMINFO);
 		}
 	}
 }
