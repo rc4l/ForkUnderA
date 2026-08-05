@@ -6016,6 +6016,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetRoll)
 		return;
 	}
 	ref->SetRoll(roll, !!(flags & SPF_INTERPOLATE));
+
+	// [rc4l] Tell the clients: roll is rendered (+ROLLSPRITE) so they cannot derive it.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SetThingSpriteOrientation( ref, SPRITEORIENT_ROLL );
 }
 
 //===========================================================================
