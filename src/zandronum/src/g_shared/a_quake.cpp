@@ -71,23 +71,20 @@ void DEarthquake::Serialize (FArchive &arc)
 	arc << m_Spot << m_IntensityX << m_Countdown
 		<< m_TremorRadius << m_DamageRadius
 		<< m_QuakeSFX;
-	if (SaveVersion < 4519)
+	// [rc4l] Upstream guards these at its own SAVEVER 4519 and 4520. OUR 4519 and 4520 mean different
+	// things entirely (DamageMultiply and TeleFog types), so reusing upstream's numbers would make a
+	// save written by our 4519 build try to read quake fields it never wrote. Both sets of fields
+	// arrive together here, behind a single guard at our next version.
+	if (SaveVersion < 4522)
 	{
 		m_IntensityY = m_IntensityX;
 		m_IntensityZ = 0;
 		m_Flags = 0;
-	}
-	else
-	{
-		arc << m_IntensityY << m_IntensityZ << m_Flags;
-	}
-	if (SaveVersion < 4520)
-	{
 		m_CountdownStart = 0;
 	}
 	else
 	{
-		arc << m_CountdownStart;
+		arc << m_IntensityY << m_IntensityZ << m_Flags << m_CountdownStart;
 	}
 }
 
