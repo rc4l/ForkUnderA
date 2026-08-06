@@ -2164,6 +2164,11 @@ public:
 	// thing the form exists to reach.
 	void MoveHostFocus( int step )
 	{
+		// [rc4l] Moving between the fields, the row and the button changes whether a FIELD holds the
+		// keyboard -- the same switch SetFocus guards, flipped here without going through it. At the
+		// top, so it covers leaving the button as well as leaving a field.
+		M_ReleaseMenuButtons( );
+
 		// [rc4l] Down the fields, onto the visibility row, then the button, and no further. The
 		// button is the end because it is the thing the form exists to reach.
 		if ( g_HostOnButton )
@@ -4156,7 +4161,20 @@ public:
 	// keyboard is the fix, and it is the same loop M_StartControlPanel already runs when a menu opens.
 	void SetFocus( zx::BrowserFocus focus )
 	{
-		if (( focus == zx::BrowserFocus::Search ) && ( g_Focus != zx::BrowserFocus::Search ))
+		// [rc4l] Let go of every latched menu key whenever the focus actually moves.
+		//
+		// M_Responder latches on the way down and unlatches on the way up, and M_Ticker repeats
+		// whatever is still latched -- but a focus change can turn TranslateKeyboardEvents off
+		// mid-press, and the release then arrives untranslated and never unlatches anything. The
+		// button repeats forever and drags the focus onward while the player has already let go.
+		//
+		// This used to fire only when focus entered the SEARCH box, which was the only field at the
+		// time. The hosting form's fields do exactly the same thing, so the condition is now the one
+		// that was always meant: any real change of focus.
+		//
+		// Releasing more often than strictly necessary is not a cost -- it is the behaviour anyway. A
+		// held arrow that has just moved the focus somewhere else should stop there, not keep going.
+		if ( focus != g_Focus )
 			M_ReleaseMenuButtons( );
 
 		g_Focus = focus;
@@ -4530,6 +4548,25 @@ public:
 		if (( VisibleParts( serverbrowser_CountStates( )) & zx::kPartTabs ) == 0 )
 			return true;
 
+		// [rc4l] On the hosting tab, DOWN off anything that is not the form enters the form.
+		//
+		// ComputeNav cannot answer this: it does not know which tab is showing, so from the search
+		// box it sends DOWN to the rows, finds none on this tab, and falls back to the tabs -- which
+		// looks like the key jumping sideways onto the HOST button instead of going down.
+		//
+		// Checked for every origin rather than just the tabs, because the search box shares that row
+		// and is just as much "above the form" as they are.
+		if (( g_Tab == BrowserTab::Host ) && ( key == zx::NavKey::Down )
+			&& ( g_Focus != zx::BrowserFocus::Host ))
+		{
+			SetFocus( zx::BrowserFocus::Host );
+			g_HostOnButton = false;
+			g_HostOnVisibility = false;
+			g_HostFieldFocus = 0;
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			return true;
+		}
+
 		// [rc4l] The hosting form owns its own arrows, and walks its own fields -- only this side
 		// knows how many there are. Up off the top of it is the one edge that leaves, back to the
 		// tabs; left and right belong to the caret, exactly as in the search box.
@@ -4571,18 +4608,6 @@ public:
 			const int next = static_cast<int>( g_Tab ) + nav.tabStep;
 			if (( next >= 0 ) && ( next < kTabCount ))
 				SelectTab( static_cast<BrowserTab>( next ));
-			return true;
-		}
-
-		// Down from the tabs onto the hosting form lands in it rather than in a list that is not
-		// there. ComputeNav answers for the list because it does not know which tab is showing.
-		if (( g_Tab == BrowserTab::Host ) && ( was == zx::BrowserFocus::Tabs )
-			&& ( key == zx::NavKey::Down ))
-		{
-			SetFocus( zx::BrowserFocus::Host );
-			g_HostOnButton = false;
-			g_HostOnVisibility = false;
-			g_HostFieldFocus = 0;
 			return true;
 		}
 
