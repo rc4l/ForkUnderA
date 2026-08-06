@@ -1986,11 +1986,13 @@ public:
 
 		g_HostFormLoaded = true;
 
-		FString name = cl_fua_hostname;
+		// GetGenericRep rather than assigning the CVAR straight across: MSVC accepts the implicit
+		// conversion and GCC does not, so the direct form builds on one platform and fails on two.
+		FString name = cl_fua_hostname.GetGenericRep( CVAR_String ).String;
 		if ( name.IsEmpty( ))
 			name = "ZandroX Server";
 
-		g_HostFields[kHostFieldName] = zx::TextInput( name.GetChars( ), strlen( name.GetChars( )));
+		g_HostFields[kHostFieldName] = zx::TextInput( name.GetChars( ), name.Len( ));
 
 		FString port;
 		port.Format( "%d", static_cast<int>( cl_fua_hostport ));

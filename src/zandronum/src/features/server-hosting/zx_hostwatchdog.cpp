@@ -23,6 +23,7 @@
 #include <unistd.h>
 #endif
 
+#include <stdint.h>		// intptr_t, which MSVC supplies transitively and GCC does not
 #include <stdlib.h>
 
 namespace zx
