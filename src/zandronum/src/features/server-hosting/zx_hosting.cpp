@@ -59,6 +59,7 @@ namespace
 {
 
 HostLifecycle	g_Life;
+bool			g_bReadyEdge	= false;
 HostConfig		g_Config;
 FString			g_Secret;
 FString			g_Address;
@@ -147,6 +148,7 @@ void HostStop( void )
 
 	g_Secret = "";
 	g_Address = "";
+	g_bReadyEdge = false;
 }
 
 //*****************************************************************************
@@ -176,6 +178,10 @@ void HostTick( void )
 			{
 				g_Life = StepHostLifecycle( g_Life, HostEvent::ReadyObserved, "" );
 				g_Pending.clear( );
+
+				// Raised only on the transition, and only if the transition actually happened.
+				// Whoever is watching gets exactly one chance to act on it.
+				g_bReadyEdge = HostAcceptsClients( g_Life.state );
 			}
 			else if ( g_Pending.size( ) > kMaxRecent )
 			{
@@ -194,6 +200,20 @@ void HostTick( void )
 	}
 
 	g_Life = TickHostLifecycle( g_Life, delta );
+}
+
+//*****************************************************************************
+//
+void HostForget( void )
+{
+	// Refuses while anything is still running: "forget" would then mean losing the handle to a
+	// process we are still responsible for, which is how orphans are made.
+	if ( HostHoldsProcess( g_Life.state ))
+		return;
+
+	g_Life = HostLifecycle( );
+	g_Recent = "";
+	g_Pending.clear( );
 }
 
 //*****************************************************************************
@@ -221,6 +241,13 @@ bool HostIsActive( void )
 bool HostIsReady( void )
 {
 	return HostAcceptsClients( g_Life.state );
+}
+
+bool HostTakeReadyEdge( void )
+{
+	const bool bWas = g_bReadyEdge;
+	g_bReadyEdge = false;
+	return bWas;
 }
 
 FString HostConnectAddress( void )

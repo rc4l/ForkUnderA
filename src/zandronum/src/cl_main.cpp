@@ -63,6 +63,7 @@
 #include "announcer.h"
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
+#include "features/server-hosting/zx_hosting.h" // [rc4l] admin on a server we started ourselves
 #include "cl_commands.h"
 #include "cl_demo.h"
 #include "cl_statistics.h"
@@ -3454,6 +3455,20 @@ void ServerCommands::EndSnapshot::Execute()
 	if (( CLIENTDEMO_IsPlaying( ) == false ) && ( cl_autologin ))
 		CLIENT_RetrieveUserAndLogIn( login_default_user.GetGenericRep( CVAR_String ).String );
 #endif
+
+	// [rc4l] If this is a server WE started, take administrator rights on it now.
+	//
+	// A player who launched a process should not be typing a password back to it. The secret was
+	// generated at spawn, handed to the child on its command line, and never written down; presenting
+	// it here is the last step of a handshake that began before the server existed.
+	//
+	// Bound to the ADDRESS WE STARTED, not to "is this loopback" -- see HostOwnsAddress. Keyed the
+	// loose way, anyone who pointed a client at any local server would be handed admin on it.
+	if ( zx::HostOwnsAddress( g_AddressServer.ToString( )))
+	{
+		CLIENTCOMMANDS_ChangeRCONStatus( true, zx::HostRconSecret( ));
+		Printf( "You are the administrator of this server. Use rcon <command>.\n" );
+	}
 
 	// Display the message of the day.
 	C_MOTDPrint( g_MOTD );
