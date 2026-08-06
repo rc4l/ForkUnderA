@@ -39,6 +39,7 @@
 #include "features/server-browser/zx_joinserver.h"
 #include "features/server-browser/computation/joinplan_compute.h"
 #include "features/server-browser/computation/joinresume_compute.h"
+#include "features/server-browser/computation/stableline_compute.h"
 #include "features/wad-download/computation/iwadsubstitute_compute.h"
 #include "features/wad-download/zx_filehash.h"
 #include "features/wad-download/zx_wadsearch.h"
@@ -640,6 +641,29 @@ bool ConsumeJoinReady()
 	return true;
 }
 
+// [rc4l] The widest digit in SmallFont, measured once. Which one it is depends on the font, so it is
+// found rather than assumed -- and found here rather than per frame, since it cannot change.
+static int WidestDigit( )
+{
+	static char cached = 0;
+	if ( cached != 0 )
+		return cached;
+
+	int best = -1;
+	for ( char c = '0'; c <= '9'; ++c )
+	{
+		char one[2] = { c, 0 };
+		const int w = SmallFont->StringWidth( one );
+		if ( w > best )
+		{
+			best = w;
+			cached = c;
+		}
+	}
+
+	return cached;
+}
+
 void DrawJoinReadyNotice( bool afterMenus )
 {
 	// [rc4l] Drawn over EVERYTHING, menus included.
@@ -693,13 +717,26 @@ void DrawJoinReadyNotice( bool afterMenus )
 
 	const int virtW = 640;
 	const int virtH = 400;
-	const int x = ( virtW / 2 ) - ( SmallFont->StringWidth( text ) / 2 );
 	const int y = 12;
+
+	// [rc4l] The band is laid out from a MASKED copy of the line -- every digit replaced by whichever
+	// digit is widest in this font -- rather than from the line itself.
+	//
+	// Padding the string to a fixed character count was not enough. SmallFont gives '1' a narrower
+	// advance than '0', so "11%" and "80%" are different widths and the panel kept shuffling as the
+	// numbers went by. The mask is the same string every frame whatever the numbers are, so its width
+	// is a constant, and it is never narrower than the real line, so nothing overflows it.
+	const FString stable = zx::MaskVarying( text.GetChars( ), WidestDigit( )).c_str( );
+	const int stableW = SmallFont->StringWidth( stable );
+
+	// The TEXT is placed from the mask too, not from itself -- otherwise the box would hold still
+	// while the line inside it slid about, which is the same complaint one layer down.
+	const int x = ( virtW / 2 ) - ( stableW / 2 );
 
 	// A backing band, so the line stays readable over a bright wall or a lit sky.
 	screen->Dim( PalEntry( 0, 0, 0 ), 0.45f * alpha,
 		Scale( x - 6, SCREENWIDTH, virtW ), Scale( y - 3, SCREENHEIGHT, virtH ),
-		Scale( SmallFont->StringWidth( text ) + 12, SCREENWIDTH, virtW ),
+		Scale( stableW + 12, SCREENWIDTH, virtW ),
 		Scale( SmallFont->GetHeight( ) + 6, SCREENHEIGHT, virtH ));
 
 	screen->DrawText( SmallFont, bReady ? CR_GOLD : CR_GRAY, x, y, text,
