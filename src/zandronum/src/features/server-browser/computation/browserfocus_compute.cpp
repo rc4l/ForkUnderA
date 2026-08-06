@@ -42,11 +42,17 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastT
 		break;
 
 	case BrowserFocus::Search:
-		if ( key == NavKey::Left )
+		// [rc4l] LEFT AND RIGHT ARE NOT NAVIGATION HERE. They belong to the caret -- a text field that
+		// jumped to another control when you tried to move through what you had typed would be
+		// unusable, and it is the one thing a focused field must claim.
+		//
+		// Up and down still leave, because this is a single line: there is nowhere within the field
+		// for them to go, so they mean what they mean everywhere else on the screen. Down lands in the
+		// list; up goes back to the tabs, the only other thing on this row.
+		if ( key == NavKey::Up )
 			out.focus = BrowserFocus::Tabs;
-		else if (( key == NavKey::Down ) && hasRows )
-			out.focus = BrowserFocus::Rows;
-		// Right is nothing: the search box is the end of the row. Up is nothing: it IS the top.
+		else if ( key == NavKey::Down )
+			out.focus = hasRows ? BrowserFocus::Rows : BrowserFocus::Tabs;
 		break;
 
 	case BrowserFocus::Rows:

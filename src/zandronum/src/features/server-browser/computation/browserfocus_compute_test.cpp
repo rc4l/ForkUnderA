@@ -58,19 +58,34 @@ TEST( BrowserNav, SwitchingTabsKeepsFocusOnTheTabs )
 		ComputeNav( BrowserFocus::Tabs, NavKey::Left, kHasRows, kLastTab ).focus );
 }
 
-TEST( BrowserNav, LeftOutOfTheSearchBoxReturnsToTheTabs )
+TEST( BrowserNav, LeftAndRightAreNotNavigationInTheSearchBox )
 {
-	EXPECT_EQ( BrowserFocus::Tabs,
+	// They belong to the caret. A text field that jumped to another control when you tried to move
+	// through what you had typed would be unusable, and this is the one thing a focused field must
+	// claim for itself.
+	EXPECT_EQ( BrowserFocus::Search,
 		ComputeNav( BrowserFocus::Search, NavKey::Left, kHasRows, kLastTab ).focus );
-}
-
-TEST( BrowserNav, TheSearchBoxIsTheEndOfTheRow )
-{
-	// Nothing to its right, and it is already the top, so up does nothing either.
 	EXPECT_EQ( BrowserFocus::Search,
 		ComputeNav( BrowserFocus::Search, NavKey::Right, kHasRows, kLastTab ).focus );
-	EXPECT_EQ( BrowserFocus::Search,
+	EXPECT_EQ( 0, ComputeNav( BrowserFocus::Search, NavKey::Left, kHasRows, kLastTab ).tabStep );
+	EXPECT_EQ( 0, ComputeNav( BrowserFocus::Search, NavKey::Right, kHasRows, kLastTab ).tabStep );
+}
+
+TEST( BrowserNav, UpOutOfTheSearchBoxReturnsToTheTabs )
+{
+	// A single line has nowhere above for the caret to go, so up means what it means everywhere else,
+	// and the tabs are the only other thing on this row.
+	EXPECT_EQ( BrowserFocus::Tabs,
 		ComputeNav( BrowserFocus::Search, NavKey::Up, kHasRows, kLastTab ).focus );
+}
+
+TEST( BrowserNav, DownAlwaysLetsGoOfTheSearchBox )
+{
+	// Into the list when there is one, back to the tabs when there is not -- but OUT either way.
+	EXPECT_EQ( BrowserFocus::Rows,
+		ComputeNav( BrowserFocus::Search, NavKey::Down, kHasRows, kLastTab ).focus );
+	EXPECT_EQ( BrowserFocus::Tabs,
+		ComputeNav( BrowserFocus::Search, NavKey::Down, kEmpty, kLastTab ).focus );
 }
 
 TEST( BrowserNav, DownFromEitherEndOfTheRowEntersTheList )
@@ -166,10 +181,11 @@ TEST( BrowserNav, TheButtonNeverMovesTheSelectionOrTheTab )
 TEST( BrowserNav, DownFromTheRowStaysPutWhenNothingIsListed )
 {
 	// Entering an empty list would focus a region with no row to be on, and the detail panel and the
-	// JOIN button both read a selection that would not exist.
+	// JOIN button both read a selection that would not exist. The search box still LETS GO on down --
+	// it just does not hand the keyboard to a list that is not there.
 	EXPECT_EQ( BrowserFocus::Tabs,
 		ComputeNav( BrowserFocus::Tabs, NavKey::Down, kEmpty, kFirstTab ).focus );
-	EXPECT_EQ( BrowserFocus::Search,
+	EXPECT_NE( BrowserFocus::Rows,
 		ComputeNav( BrowserFocus::Search, NavKey::Down, kEmpty, kLastTab ).focus );
 }
 
@@ -182,7 +198,7 @@ TEST( BrowserNav, TheTopRowStillWorksWhenNothingIsListed )
 	EXPECT_EQ( BrowserFocus::Search,
 		ComputeNav( BrowserFocus::Tabs, NavKey::Right, kEmpty, kLastTab ).focus );
 	EXPECT_EQ( BrowserFocus::Tabs,
-		ComputeNav( BrowserFocus::Search, NavKey::Left, kEmpty, kLastTab ).focus );
+		ComputeNav( BrowserFocus::Search, NavKey::Up, kEmpty, kLastTab ).focus );
 }
 
 TEST( BrowserNav, AFocusOnRowsFallsBackToTheTabsOnceTheListEmpties )
