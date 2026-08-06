@@ -12,14 +12,24 @@
 // the arrows either move within that region or hand it to a neighbour. The loop is deliberately
 // small enough to hold in your head:
 //
-//     TABS  --down-->  ROWS  --right-->  ACTION
-//       ^                ^ |                |
-//       |                | +----left--------+
-//       +----------------|------up----------+
+//     TABS <--> SEARCH
+//       |          |
+//     down       down
+//       v          v
+//      ROWS  --right-->  ACTION
+//       ^ |                |
+//       | +-----left-------+
+//       +---------up-------+   (up from ACTION returns to the tabs)
 //
-//   TABS    left/right switch tab; down enters the list.
+//   TABS    left/right move along the top row; down enters the list.
+//   SEARCH  left returns to the tabs; down enters the list.
 //   ROWS    up/down move the selection; right goes to the button.
 //   ACTION  left goes back to the list; up goes back to the tabs.
+//
+// THE TOP ROW IS A ROW. The tabs and the search box sit side by side on it, so left and right walk
+// along it -- PUBLIC, PRIVATE, then the search box -- rather than the tabs wrapping among
+// themselves. Wrapping was fine when the tabs were the only thing up there; with a third stop on the
+// same line, a key that skipped past it to loop back would leave the box unreachable.
 //
 // Two rules that are easy to get wrong and are pinned by tests here:
 //
@@ -42,6 +52,7 @@ namespace zx
 enum class BrowserFocus
 {
 	Tabs,
+	Search,
 	Rows,
 	Action,
 };
@@ -66,7 +77,12 @@ struct NavResult
 // `hasRows` is whether the list currently has anything in it. A focus of Rows with an empty list is
 // treated as Tabs -- the list can empty out underneath a focus that was legitimate when it was set,
 // and the answer must still be one the caller can act on.
-NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows );
+//
+// `onLastTab` says whether the tab currently selected is the last one on the row, which is what
+// decides whether Right switches tab or steps off the end into the search box. The caller knows
+// which tab it is on; this unit does not need to, and asking for just the one bit keeps it from
+// having to learn how many tabs there are.
+NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastTab );
 
 } // namespace zx
 

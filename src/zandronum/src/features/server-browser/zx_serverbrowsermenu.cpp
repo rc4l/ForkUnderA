@@ -33,6 +33,8 @@
 
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/browserchrome_compute.h"
+#include "features/server-browser/computation/serversearch_compute.h"
+#include "features/server-browser/computation/textinput_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
@@ -150,6 +152,20 @@
 
 // The rule under the row, spanning the whole content width so the tabs read as a header band over
 // both the list and the detail panel rather than as something floating above the list alone.
+// [rc4l] The search box, sharing the tab row and ending where the list does. Right-of-centre in the
+// space the tabs leave, which is the only clear room on that line -- and it reads as belonging to the
+// list underneath it rather than to the panel on the right.
+#define SB_SEARCH_RIGHT		SB_LIST_RIGHT
+#define SB_SEARCH_W			150
+#define SB_SEARCH_LEFT		( SB_SEARCH_RIGHT - SB_SEARCH_W )
+#define SB_SEARCH_TOP		SB_TAB_TOP
+#define SB_SEARCH_H			SB_TAB_H
+#define SB_SEARCH_PAD		5
+
+// A query longer than the box can show is a query nobody can read back. 40 is comfortably past any
+// server name worth typing a fragment of.
+#define SB_SEARCH_MAXLEN	40
+
 #define SB_TAB_SEP_Y		( SB_TAB_TOP + SB_TAB_H + SB_TAB_PAD )
 
 // Column x positions (left edge of each), virtual pixels.
@@ -218,6 +234,15 @@ static	int				g_TabHot = -1;
 // [rc4l] Which region the arrow keys are addressing. Starts on the tabs: that is the top of the loop
 // and the only region that is occupiable before any server has answered.
 static	zx::BrowserFocus	g_Focus = zx::BrowserFocus::Tabs;
+
+// [rc4l] What is typed in the search box, and where the caret is in it. The editing rules are
+// computation/textinput_compute; this is only the value they operate on.
+//
+// Kept ACROSS tab switches on purpose: "show me the brutal doom servers" is a question about servers,
+// not about a tab, and having to retype it to look at the other tab would make the box feel like it
+// belonged to one of them.
+static	zx::TextInput		g_Search;
+static	bool				g_SearchHot = false;
 
 // [rc4l] Where each tab was left. Two entries, indexed by BrowserTab.
 static	int				g_TabScroll[2] = { 0, 0 };
@@ -412,6 +437,21 @@ static int STACK_ARGS serverbrowser_CompareServers( const void *pA, const void *
 
 //*****************************************************************************
 //
+// [rc4l] How many servers answered at all, before the tab and the search narrow them. The footer
+// needs it to say what a filter is hiding; nothing else does.
+static int serverbrowser_CountActive( void )
+{
+	int count = 0;
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if ( BROWSER_IsActive( ulIdx ))
+			++count;
+	}
+	return count;
+}
+
+//*****************************************************************************
+//
 static void serverbrowser_RebuildList( void )
 {
 	g_SortedServers.Clear();
@@ -420,11 +460,21 @@ static void serverbrowser_RebuildList( void )
 	// queried, so switching tabs is instant and never re-fetches anything.
 	const bool bWantPrivate = ( g_Tab == BrowserTab::Private );
 
+	// [rc4l] Folded once here rather than once per server: the query does not change while we walk
+	// the list, and ServerMatchesSearch is called MAX_BROWSER_SERVERS times.
+	const std::string searchKey = zx::SearchKey( g_Search.text );
+
 	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
 		if ( BROWSER_IsActive( ulIdx ) == false )
 			continue;
 		if ( BROWSER_IsPasswordProtected( ulIdx ) != bWantPrivate )
+			continue;
+
+		// The search is a filter over the same list, exactly as the tab is -- nothing is re-queried
+		// and the sort below is untouched, so typing narrows the list without reordering what is left.
+		const char *pszName = BROWSER_GetHostName( ulIdx );
+		if ( !zx::ServerMatchesSearch(( pszName != NULL ) ? pszName : "", searchKey ))
 			continue;
 
 		g_SortedServers.Push( static_cast<int>( ulIdx ));
@@ -648,6 +698,11 @@ public:
 		g_ScrollFirst = 0;
 		g_Focus = zx::BrowserFocus::Tabs;
 
+		// A query left over from last time would silently hide most of the list before the player has
+		// typed anything, and the box that explains it is one line they have no reason to read yet.
+		g_Search = zx::ClearInput( );
+		g_SearchHot = false;
+
 		// Per-tab memory is per-VISIT: the list is being requeried from nothing, so a position saved
 		// against the last set of servers describes rows that are not there yet.
 		g_TabScroll[0] = g_TabScroll[1] = 0;
@@ -688,21 +743,35 @@ public:
 	// [rc4l] What is on screen is decided in ONE place -- computation/browserchrome_compute -- and both
 	// drawing and hit-testing read the same answer, so a control can never be invisible and still
 	// clickable.
-	unsigned VisibleParts( const zx::BrowserCounts &counts )
+	// [rc4l] The phase, with the SEARCH taken into account.
+	//
+	// ComputeBrowserPhase counts servers that answered, which is the right question for "are we still
+	// looking" and the wrong one once a filter is on: twenty servers can have answered and none of
+	// them match what was typed. Ready with nothing to draw would leave a blank slab where the list
+	// goes and no word about why, so a filtered-to-nothing list is an empty list.
+	zx::BrowserPhase EffectivePhase( const zx::BrowserCounts &counts )
 	{
 		const bool bWaitingRegistry = BROWSER_WaitingForServerRegistryResponse( );
 		const zx::BrowserPhase phase = zx::ComputeBrowserPhase( bWaitingRegistry, counts );
+
+		if (( phase == zx::BrowserPhase::Ready ) && ( g_SortedServers.Size( ) == 0 ))
+			return zx::BrowserPhase::Empty;
+
+		return phase;
+	}
+
+	unsigned VisibleParts( const zx::BrowserCounts &counts )
+	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 
-		return zx::ComputeVisibleParts( phase, ( g_Selected >= 0 ) && ( g_Selected < total ),
-			serverbrowser_DownloadRunning( ));
+		return zx::ComputeVisibleParts( EffectivePhase( counts ),
+			( g_Selected >= 0 ) && ( g_Selected < total ), serverbrowser_DownloadRunning( ));
 	}
 
 	void Drawer( )
 	{
 		const zx::BrowserCounts counts = serverbrowser_CountStates( );
-		const bool bWaitingRegistry = BROWSER_WaitingForServerRegistryResponse( );
-		const zx::BrowserPhase phase = zx::ComputeBrowserPhase( bWaitingRegistry, counts );
+		const zx::BrowserPhase phase = EffectivePhase( counts );
 		const unsigned parts = VisibleParts( counts );
 
 		DrawPanel( );
@@ -906,6 +975,12 @@ public:
 
 		if ( phase == zx::BrowserPhase::Loading )
 			text.Format( "%s  Looking for servers", Spinner( ));
+		else if ( !g_Search.text.empty( ))
+		{
+			// There may be plenty of servers -- just none matching what was typed. Saying "no servers
+			// found" here would send the player looking for a network problem they do not have.
+			text.Format( "No servers match \"%s\"", g_Search.text.c_str( ));
+		}
 		else
 			text = "No servers found";
 
@@ -1010,7 +1085,95 @@ public:
 				labels[i], DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
 
+		DrawSearchBox( );
 		DrawSeparatorSpan( SB_TAB_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The search box, sharing the tab row.
+	//
+	// A sunken field rather than another oval: the tabs beside it are things you PRESS, and a control
+	// you type into should not look like one of them. Same rounded corners so it still belongs to the
+	// row, but the gradient runs the other way -- dark at the top -- which is how every toolkit has
+	// drawn a text field since Motif, and it costs nothing to borrow.
+	void DrawSearchBox( )
+	{
+		const int left = serverbrowser_ToScreenX( SB_SEARCH_LEFT );
+		const int right = serverbrowser_ToScreenX( SB_SEARCH_RIGHT );
+		const int top = serverbrowser_ToScreenY( SB_SEARCH_TOP );
+		const int bottom = serverbrowser_ToScreenY( SB_SEARCH_TOP + SB_SEARCH_H );
+
+		const int w = right - left;
+		const int h = bottom - top;
+		if (( w <= 0 ) || ( h <= 0 ))
+			return;
+
+		const bool bFocused = ( g_Focus == zx::BrowserFocus::Search );
+		const int radius = h / 3;
+
+		// Lighter when it has the keyboard, the same lift the tabs and the button use for the same
+		// reason: "what would a key do right now" should be answerable by looking.
+		const int base = bFocused ? 30 : ( g_SearchHot ? 22 : 16 );
+		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+			static_cast<BYTE>( base + 10 ), 225 };
+		const zx::PanelColor botCol = { static_cast<BYTE>( base + 18 ), static_cast<BYTE>( base + 18 ),
+			static_cast<BYTE>( base + 30 ), 210 };
+
+		for ( int row = 0; row < h; ++row )
+		{
+			const int inset = zx::ComputeRoundedInset( row, h, radius );
+			const int rowW = w - 2 * inset;
+			if ( rowW <= 0 )
+				continue;
+
+			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
+			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+		}
+
+		const int textY = SB_SEARCH_TOP + ( SB_SEARCH_H - SmallFont->GetHeight( )) / 2 + 1;
+		const int textX = SB_SEARCH_LEFT + SB_SEARCH_PAD;
+		const int textW = SB_SEARCH_W - 2 * SB_SEARCH_PAD;
+
+		if ( g_Search.text.empty( ) && !bFocused )
+		{
+			// A prompt rather than a blank box: an empty rounded rectangle says nothing about what it
+			// is for, and this one is not obviously a search box until something is in it.
+			screen->DrawText( SmallFont, CR_DARKGRAY, textX, textY, "Search",
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			return;
+		}
+
+		// Scrolled to keep the CARET visible rather than the start of the string: once the query is
+		// longer than the box, what matters is the end you are typing at.
+		FString shown = g_Search.text.c_str( );
+		int caretChars = static_cast<int>( g_Search.caret );
+		while (( shown.Len( ) > 0 ) && ( SmallFont->StringWidth( shown ) > textW ))
+		{
+			shown = shown.Mid( 1 );
+			--caretChars;
+		}
+		if ( caretChars < 0 )
+			caretChars = 0;
+
+		screen->DrawText( SmallFont, CR_WHITE, textX, textY, shown,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+		if ( bFocused )
+		{
+			// Blinks, so a focused empty box is still visibly a place where typing goes.
+			if ((( DMenu::MenuTime / 16 ) % 2 ) == 0 )
+			{
+				const FString before = shown.Left( caretChars );
+				const int caretX = textX + SmallFont->StringWidth( before );
+				const int cx = serverbrowser_ToScreenX( caretX );
+				const int cw = MAX( 1, serverbrowser_ToScreenX( caretX + 1 ) - cx );
+				const int cy = serverbrowser_ToScreenY( textY );
+				const int ch = serverbrowser_ToScreenY( textY + SmallFont->GetHeight( )) - cy;
+
+				screen->Dim( PalEntry( 235, 235, 245 ), 0.85f, cx, cy, cw, ch );
+			}
+		}
 	}
 
 	//*************************************************************************
@@ -1494,7 +1657,21 @@ public:
 		// on one screen. See zx::DrawJoinReadyNotice.
 
 		if ( phase == zx::BrowserPhase::Ready )
-			text.Format( "%d servers", static_cast<int>( g_SortedServers.Size( )));
+		{
+			// [rc4l] With a filter on, the count is of what SURVIVED it -- saying "6 servers" over a
+			// list showing two would be counting something the player cannot see.
+			if ( !g_Search.text.empty( ))
+				text.Format( "%d of %d servers", static_cast<int>( g_SortedServers.Size( )),
+					serverbrowser_CountActive( ));
+			else
+				text.Format( "%d servers", static_cast<int>( g_SortedServers.Size( )));
+		}
+		else if (( phase == zx::BrowserPhase::Empty ) && !g_Search.text.empty( ))
+		{
+			// The placeholder already said nothing matched. Repeating "nothing is being hosted" under
+			// it would be a second, wrong answer to the same question -- there ARE servers.
+			text.Format( "%d hidden by the search", serverbrowser_CountActive( ));
+		}
 		else if ( phase == zx::BrowserPhase::Empty )
 		{
 			// Distinguish "nobody is hosting" from "we asked and got nowhere" -- identical-looking
@@ -1582,6 +1759,25 @@ public:
 		}
 		if ( g_ConfirmCancel )
 			return true;
+
+		// The search box, which shares the row with the tabs.
+		g_SearchHot = false;
+		if ( parts & zx::kPartTabs )
+		{
+			if (( x >= serverbrowser_ToScreenX( SB_SEARCH_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_SEARCH_RIGHT )) &&
+				( y >= serverbrowser_ToScreenY( SB_SEARCH_TOP )) &&
+				( y < serverbrowser_ToScreenY( SB_SEARCH_TOP + SB_SEARCH_H )))
+			{
+				g_SearchHot = true;
+				if ( type == MOUSE_Release )
+				{
+					g_Focus = zx::BrowserFocus::Search;
+					g_Search = zx::CaretEnd( g_Search );
+				}
+				return true;
+			}
+		}
 
 		// The tabs.
 		if ( parts & zx::kPartTabs )
@@ -1826,6 +2022,61 @@ public:
 			return true;
 		}
 
+		// [rc4l] Typing into the search box.
+		//
+		// Taken here, ahead of everything, because a focused text field owns the keyboard: 'y' is a
+		// letter while you are typing a query, not an answer to a question that is not on screen, and
+		// a printable key must never also be a menu shortcut. Only characters and the editing keys are
+		// claimed -- the arrows still navigate, which is what moves focus back OUT of the box.
+		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_ConfirmCancel && g_Notice.IsEmpty( ) &&
+			( g_Focus == zx::BrowserFocus::Search ))
+		{
+			if ( ev->subtype == EV_GUI_Char )
+			{
+				const zx::TextInput next = zx::InsertChar( g_Search, ev->data1, SB_SEARCH_MAXLEN );
+				if ( next.text != g_Search.text )
+				{
+					g_Search = next;
+					OnSearchChanged( );
+				}
+				return true;
+			}
+
+			if (( ev->subtype == EV_GUI_KeyDown ) || ( ev->subtype == EV_GUI_KeyRepeat ))
+			{
+				switch ( ev->data1 )
+				{
+				case GK_BACKSPACE:
+					{
+						const zx::TextInput next = zx::Backspace( g_Search );
+						if ( next.text != g_Search.text )
+						{
+							g_Search = next;
+							OnSearchChanged( );
+						}
+					}
+					return true;
+
+				case GK_DEL:
+					{
+						const zx::TextInput next = zx::DeleteForward( g_Search );
+						if ( next.text != g_Search.text )
+						{
+							g_Search = next;
+							OnSearchChanged( );
+						}
+					}
+					return true;
+
+				case GK_HOME:	g_Search = zx::CaretHome( g_Search ); return true;
+				case GK_END:	g_Search = zx::CaretEnd( g_Search ); return true;
+
+				default:
+					break;
+				}
+			}
+		}
+
 		// [rc4l] The wheel. DOptionMenu's own wheel handling scrolls ITS item list, which this menu
 		// does not use -- so without this the bar was drawn, the list scrolled by keyboard, and the
 		// wheel did nothing at all.
@@ -1872,6 +2123,22 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] The query changed, so the list it filters is a different list.
+	//
+	// The selection is an INDEX into that list, and the row it pointed at may not be in it any more --
+	// or may now be a different server at the same index, which is the one that would actually hurt:
+	// pressing JOIN would connect to something the player never picked. Rebuild, then let the clamp
+	// put the selection somewhere that exists, and put the view back at the top because the list under
+	// it is new.
+	void OnSearchChanged( )
+	{
+		serverbrowser_RebuildList( );
+		g_ScrollFirst = 0;
+		g_RevealSelection = true;
+	}
+
+	//*************************************************************************
+	//
 	// [rc4l] One arrow key, applied to whichever region has focus. The rule itself lives in
 	// computation/browserfocus_compute -- everything here is the part that touches the engine: moving
 	// the selection, switching the tab, and making a noise about it.
@@ -1883,15 +2150,16 @@ public:
 		if (( VisibleParts( serverbrowser_CountStates( )) & zx::kPartTabs ) == 0 )
 			return true;
 
-		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, total > 0 );
+		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, total > 0,
+			g_Tab == BrowserTab::Private );
 		const zx::BrowserFocus was = g_Focus;
 		g_Focus = nav.focus;
 
 		if ( nav.tabStep != 0 )
 		{
-			// Two tabs, so either step is the other one. Wraps rather than stopping at the ends,
-			// because with two of them "the other tab" is what both keys mean anyway.
-			SelectTab(( g_Tab == BrowserTab::Public ) ? BrowserTab::Private : BrowserTab::Public );
+			// A step along the row, not a flip: ComputeNav has already refused to step off either end,
+			// so a non-zero step always has somewhere to land.
+			SelectTab(( nav.tabStep > 0 ) ? BrowserTab::Private : BrowserTab::Public );
 			return true;
 		}
 
@@ -1960,7 +2228,7 @@ public:
 		// [rc4l] Enter acts on whatever has focus. On the tabs that is the tab -- which is already
 		// selected, so it is the way into the list without reaching for Down.
 		case MKEY_Enter:
-			if ( g_Focus == zx::BrowserFocus::Tabs )
+			if (( g_Focus == zx::BrowserFocus::Tabs ) || ( g_Focus == zx::BrowserFocus::Search ))
 			{
 				if ( total > 0 )
 				{
