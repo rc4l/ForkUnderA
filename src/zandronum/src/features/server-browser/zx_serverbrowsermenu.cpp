@@ -162,7 +162,10 @@
 // [rc4l] A row of mutually exclusive choices. Tall enough for the marker to be legible beside the
 // label, which is what decides these two numbers rather than the text.
 #define SB_CHOICE_H			15
-#define SB_CHOICE_GAP		8
+// Wide enough for the focus glow to sit in the gap rather than on the previous cell -- the same
+// number the dialog's buttons needed, and for the same reason: every control in this browser puts
+// the glow five units off its left edge, so anywhere two sit side by side the gap has to hold one.
+#define SB_CHOICE_GAP		22
 
 #define SB_FOOTER_Y			( SB_ROWS_BOTTOM + 20 )
 
@@ -2625,8 +2628,20 @@ public:
 		DrawChoiceRow( rowX, y, rowW, kHostVisCount, labels, g_HostAdvertise ? 1 : 0,
 			g_HostVisHot, ( g_Focus == zx::BrowserFocus::Host ) && g_HostOnVisibility );
 
+		// [rc4l] The glow goes to the SELECTED CELL, not to the label.
+		//
+		// Anchoring it to the label was inherited from the fields above, where it is right because a
+		// field has one focused thing. A choice row has two, and left and right move between them --
+		// so a glow that stayed put gave no feedback at all for the one key that does anything here,
+		// leaving the player to read the markers to find out what they had just changed.
 		if ( g_HostOnVisibility && ( g_Focus == zx::BrowserFocus::Host ))
-			FocusAnchor( zx::BrowserFocus::Host, x - 5, y + SB_CHOICE_H / 2 );
+		{
+			const zx::ChoiceCell chosen = zx::ChoiceCellAt( g_HostAdvertise ? kHostVisGlobal
+				: kHostVisLocal, kHostVisCount, rowX, rowW, SB_CHOICE_GAP );
+
+			if ( chosen.valid )
+				FocusAnchor( zx::BrowserFocus::Host, chosen.x - 5, y + SB_CHOICE_H / 2 );
+		}
 
 		// One tip per cell rather than one for the row: the two answers have different consequences,
 		// and a single tip would have to describe both or neither.
