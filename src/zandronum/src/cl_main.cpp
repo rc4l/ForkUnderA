@@ -1473,11 +1473,14 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 			case NETWORK_ERRORCODE_WRONGVERSION:
 
-				szErrorString.Format( "Failed connect. Your version is different.\nThis server is using version: %s\nPlease check http://www." DOMAIN_NAME "/ for updates.", pByteStream->ReadString() );
+				szErrorString.Format( "Failed connect. Your version is different.\nThis server is using version: %s\nGet a matching " FUA_NAME " build: " FUA_RELEASES_URL, pByteStream->ReadString() );
 				break;
 			case NETWORK_ERRORCODE_WRONGPROTOCOLVERSION:
 
-				szErrorString.Format( "Failed connect. Your protocol version is different.\nServer uses: %s\nYou use:     %s\nPlease check http://www." DOMAIN_NAME "/ for a matching version.", pByteStream->ReadString(), GetVersionStringRev() );
+				// [rc4l] Points at ZandroX, not zandronum.com. A protocol mismatch against a ZandroX
+				// server is a ZandroX build mismatch, and zandronum.com does not publish the build the
+				// player is being sent to go and find.
+				szErrorString.Format( "Failed connect. Your protocol version is different.\nServer uses: %s\nYou use:     %s\nGet a matching " FUA_NAME " build: " FUA_RELEASES_URL, pByteStream->ReadString(), GetVersionStringRev() );
 				break;
 			case NETWORK_ERRORCODE_BANNED:
 
@@ -1606,7 +1609,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 			default:
 
-				szErrorString.Format( "Unknown error code: %d!\n\nYour version may be different. Please check http://www." DOMAIN_NAME "/ for updates.", static_cast<unsigned int> (ulErrorCode) );
+				szErrorString.Format( "Unknown error code: %d!\n\nYour version may be different. Get a matching " FUA_NAME " build: " FUA_RELEASES_URL, static_cast<unsigned int> (ulErrorCode) );
 				break;
 			}
 
