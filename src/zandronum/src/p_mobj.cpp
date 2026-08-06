@@ -5909,7 +5909,8 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	p->mo->ResetAirSupply(false);
 	p->Uncrouch();
 	p->MinPitch = p->MaxPitch = 0;	// will be filled in by PostBeginPlay()/netcode
-	p->cheats &= ~CF_FLY;
+	// [rc4l] uzdoom@337682934 -- the fly state lives on the actor now (MF7_FLYCHEAT), and a freshly
+	// spawned pawn has default flags7, so there is nothing to clear here.
 
 	p->velx = p->vely = 0;		// killough 10/98: initialize bobbing to 0.
 

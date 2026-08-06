@@ -368,6 +368,10 @@ enum
 	MF7_HITMASTER		= 0x00008000,	// Same as HITTARGET, except it's master instead of target.
 	MF7_HITTRACER		= 0x00010000,	// Same as HITTARGET, but for tracer.
 	MF7_NODECAL			= 0x00020000,	// [ZK] Forces puff to have no impact decal
+	// [rc4l] uzdoom@337682934 -- upstream numbered this 0x00020000, taken here by MF7_NODECAL, so it
+	// moves to the next free bit. flags7 IS wire-synced (SERVERCOMMANDS_SetThingFlags FLAGSET_FLAGS7),
+	// but only added bits matter -- no existing value shifts.
+	MF7_FLYCHEAT		= 0x00080000,	// must be part of the actor so that it can be tracked properly
 	MF7_FORCEDECAL		= 0x00040000,	// [ZK] Forces P_LineAttack to use the puff's decal, even if the player's weapon has a decal defined
 
 	// [BB] Out of order ZDoom backport.
