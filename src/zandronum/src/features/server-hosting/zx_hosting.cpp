@@ -12,6 +12,7 @@
 
 #include "features/server-hosting/zx_hosting.h"
 #include "features/server-hosting/zx_hostprocess.h"
+#include "features/port-mapping/zx_portmap.h"
 
 #include "doomtype.h"
 #include "c_dispatch.h"
@@ -147,6 +148,15 @@ bool HostStart( const HostConfig &config )
 	g_Reach = config.advertise ? HostReach::Waiting : HostReach::NotPublic;
 	g_PublicMs = 0;
 
+	// [rc4l] Ask the router to open the port -- ONLY for a public server, which is already an
+	// explicit choice on an explicit tab. A game that quietly opened ports on somebody's network
+	// would be doing the thing routers switch UPnP off to prevent.
+	//
+	// It runs before the registry check and never replaces it: a router agreeing proves a router
+	// agreed, and behind carrier-grade NAT that happens while the server stays invisible.
+	if ( config.advertise )
+		PortMapOpen( ResolveHostPort( g_Config.port, 10666 ), g_Config.hostName.c_str( ));
+
 	g_Address = "127.0.0.1:";
 	g_Address.AppendFormat( "%d", ResolveHostPort( g_Config.port, 10666 ));
 
@@ -166,6 +176,10 @@ void HostStop( void )
 	// waiting for an exit notification that has already happened would hang the UI in Stopping.
 	if ( g_Life.state == HostState::Stopping )
 		g_Life = StepHostLifecycle( g_Life, HostEvent::ChildExited, "" );
+
+	// Give the port back. A mapping left behind is a hole in somebody's network that outlives the
+	// game that asked for it, and the lease is a backstop for the crash case, not a substitute.
+	PortMapClose( );
 
 	g_Secret = "";
 	g_Address = "";
