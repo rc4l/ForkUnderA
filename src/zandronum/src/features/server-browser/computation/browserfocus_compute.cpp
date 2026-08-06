@@ -66,6 +66,10 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastT
 		// would make the two horizontal keys disagree about which way the layout runs.
 		break;
 
+	case BrowserFocus::Dialog:
+		// Modal. Nothing moves out of it, and dialog_compute decides what happens inside.
+		break;
+
 	case BrowserFocus::Action:
 		if ( key == NavKey::Left )
 			out.focus = hasRows ? BrowserFocus::Rows : BrowserFocus::Tabs;

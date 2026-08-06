@@ -57,6 +57,11 @@ enum class BrowserFocus
 	Search,
 	Rows,
 	Action,
+
+	// [rc4l] A modal dialog is up. It is a focus zone so the glow can anchor to its buttons with no
+	// new machinery, but the ARROWS DO NOT TRAVERSE INTO OR OUT OF IT -- that is what modal means,
+	// and computation/dialog_compute owns what the keys do while it is on screen.
+	Dialog,
 };
 
 // The four keys this unit answers for. Enter and Escape are not navigation -- they act on whatever
