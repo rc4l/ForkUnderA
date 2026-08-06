@@ -734,8 +734,9 @@ static void serverbrowser_RefreshWadCache( int lServer )
 // [rc4l] Ping ascending, so the servers a player can actually enjoy are at the top. Ties broken by
 // address so the order is stable -- an unstable sort makes rows swap places as pings jitter, which
 // looks like the list is malfunctioning.
-// [rc4l] Busiest first, then alphabetically -- see computation/serversort_compute.h for why, and for
-// the two things the name comparison has to strip before it means anything.
+// [rc4l] LAN first, then busiest, then alphabetically -- see computation/serversort_compute.h for
+// why LAN is a group rather than a bonus, and for the two things the name comparison has to strip
+// before it means anything.
 //
 // Humans only, matching the count the row draws: sorting a server to the top for holding seven bots
 // would be ranking it by a number the player can already see is not people.
@@ -748,8 +749,10 @@ static int STACK_ARGS serverbrowser_CompareServers( const void *pA, const void *
 	const char *pszNameB = BROWSER_GetHostName( lB );
 
 	const int lResult = zx::CompareServers(
-		static_cast<int>( BROWSER_GetNumHumanPlayers( lA )), ( pszNameA != NULL ) ? pszNameA : "",
-		static_cast<int>( BROWSER_GetNumHumanPlayers( lB )), ( pszNameB != NULL ) ? pszNameB : "" );
+		BROWSER_IsLAN( lA ), static_cast<int>( BROWSER_GetNumHumanPlayers( lA )),
+		( pszNameA != NULL ) ? pszNameA : "",
+		BROWSER_IsLAN( lB ), static_cast<int>( BROWSER_GetNumHumanPlayers( lB )),
+		( pszNameB != NULL ) ? pszNameB : "" );
 
 	// Two servers with the same name and the same population still need a stable order, or the list
 	// reshuffles them on every refresh.

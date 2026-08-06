@@ -45,8 +45,13 @@ std::string ServerSortKey(const std::string &name)
 	return out;
 }
 
-int CompareServers(int playersA, const std::string &nameA, int playersB, const std::string &nameB)
+int CompareServers(bool lanA, int playersA, const std::string &nameA,
+	bool lanB, int playersB, const std::string &nameB)
 {
+	// LAN outranks everything, before population is even looked at.
+	if (lanA != lanB)
+		return lanA ? -1 : 1;
+
 	// Busiest first. Full counts as busy: it is evidence about where people play, which is what the
 	// list is being read for.
 	if (playersA != playersB)

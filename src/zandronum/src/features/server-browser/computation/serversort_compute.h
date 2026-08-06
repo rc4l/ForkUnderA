@@ -3,6 +3,17 @@
 
 // [rc4l] The order servers appear in the browser.
 //
+// LAN FIRST, ALWAYS, ahead of every other rule including population. A server on your own network is
+// a different KIND of result from one on the internet, not a better-scoring one: it is almost
+// certainly someone in the same building, it is the one you just started yourself, and it is the
+// only one where the connection is not in question. Ranking it against internet servers by player
+// count buries it under strangers -- an empty LAN server is still the answer to "who is here", and
+// it would sort last.
+//
+// It is a separate group rather than a bonus for the same reason. A weighting big enough to lift an
+// empty LAN server above a busy internet one is big enough to be a group, and pretending otherwise
+// only makes the number arbitrary. Within each group the ordering below applies unchanged.
+//
 // Busiest first, then alphabetically. The list used to sort by ping, which optimises for a number
 // nobody chose a server on: a 12 ms server with nobody in it is not a better place to play than a
 // 60 ms one with eleven people, and on a local network -- where every ping is 0 -- ping ordering
@@ -36,9 +47,10 @@ namespace zx
 // is worth testing on its own -- it is where both of the subtleties above live.
 std::string ServerSortKey(const std::string &name);
 
-// Negative if A comes first, positive if B does, 0 if they tie completely. More players wins; equal
-// counts fall back to the name; identical names tie.
-int CompareServers(int playersA, const std::string &nameA, int playersB, const std::string &nameB);
+// Negative if A comes first, positive if B does, 0 if they tie completely. LAN wins outright; then
+// more players wins; equal counts fall back to the name; identical names tie.
+int CompareServers(bool lanA, int playersA, const std::string &nameA,
+	bool lanB, int playersB, const std::string &nameB);
 
 } // namespace zx
 
