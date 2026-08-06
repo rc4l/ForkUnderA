@@ -702,11 +702,14 @@ void DrawJoinReadyNotice( bool afterMenus )
 	// [rc4l] The same slot carries both states, because they are the same story: the thing you asked
 	// for is on its way, and then it has arrived. Nothing about files or downloads in the ready
 	// wording -- the transfer was our problem, and what the player cares about is the server.
+	// [rc4l] The server's own name is deliberately NOT in this line. It is a name the server chose,
+	// so it can be long, colourful or blank, and it pushed the one instruction in the sentence off
+	// to the right where the eye reaches it last. The player knows which server they asked for --
+	// they asked for it seconds ago -- and what they do not know is what to do about it.
 	FString text;
 	if ( bReady )
 	{
-		text.Format( "%s is ready to join -- open the menu",
-			g_readyName.IsNotEmpty( ) ? g_readyName.GetChars( ) : "Your server" );
+		text = "Server is ready to join - Open the Menu";
 	}
 	else
 	{
