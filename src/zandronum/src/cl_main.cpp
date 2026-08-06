@@ -9290,7 +9290,9 @@ static void client_EarthQuake( BYTESTREAM_s *pByteStream )
 		return;
 
 	// Create the earthquake. Since this is client-side, damage is always 0.
-	new DEarthquake( pCenter, lIntensityX, lIntensityY, lIntensityZ, lDuration, 0, lTremorRadius, quakesound, lQuakeFlags );
+	// [rc4l] Wave speeds are not on the wire (see the note in DEarthquake's constructor), so a
+	// client reconstructs the quake without wave motion. Zero is the "no wave" value.
+	new DEarthquake( pCenter, lIntensityX, lIntensityY, lIntensityZ, lDuration, 0, lTremorRadius, quakesound, lQuakeFlags, 0, 0, 0 );
 }
 
 //*****************************************************************************

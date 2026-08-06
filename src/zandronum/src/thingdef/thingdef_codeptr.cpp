@@ -3702,7 +3702,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetHitSize)
 // [rc4l] uzdoom@7050d0322, settled by uzdoom@2827c13d0
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_QuakeEx)
 {
-	ACTION_PARAM_START(8);
+	ACTION_PARAM_START(11);	// [rc4l] uzdoom@dca5f0e90..e29b8b209 -- QF_WAVE wave speeds
 	ACTION_PARAM_INT(intensityX, 0);
 	ACTION_PARAM_INT(intensityY, 1);
 	ACTION_PARAM_INT(intensityZ, 2);
@@ -3711,7 +3711,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_QuakeEx)
 	ACTION_PARAM_INT(tremrad, 5);
 	ACTION_PARAM_SOUND(sound, 6);
 	ACTION_PARAM_INT(flags, 7);
-	P_StartQuakeXYZ(self, 0, intensityX, intensityY, intensityZ, duration, damrad, tremrad, sound, flags);
+	ACTION_PARAM_DOUBLE(mulWaveX, 8);
+	ACTION_PARAM_DOUBLE(mulWaveY, 9);
+	ACTION_PARAM_DOUBLE(mulWaveZ, 10);
+	P_StartQuakeXYZ(self, 0, intensityX, intensityY, intensityZ, duration, damrad, tremrad, sound, flags, mulWaveX, mulWaveY, mulWaveZ);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetFloatBobPhase)
