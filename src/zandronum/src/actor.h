@@ -368,6 +368,17 @@ enum
 	MF7_HITMASTER		= 0x00008000,	// Same as HITTARGET, except it's master instead of target.
 	MF7_HITTRACER		= 0x00010000,	// Same as HITTARGET, but for tracer.
 	MF7_NODECAL			= 0x00020000,	// [ZK] Forces puff to have no impact decal
+	//
+	// [rc4l] THE REAL FIX, when someone has time: engine-specific flags of ours should not live in
+	// upstream's flag fields at all. Every time upstream adds a flag it takes the next free bit, and
+	// so did Zandronum, so the two keep landing on the same one -- this is the second rehoming in a
+	// single seam. A dedicated fua_flags field would end it permanently: upstream grows into its own
+	// fields at its own numbers and every future flag port applies verbatim. It is close to free --
+	// flags are sent one flagset at a time and only when they differ from the default, so an unused
+	// field costs nothing on the wire even in a 30k-monster map, and 4 bytes per actor is noise
+	// against an AActor. What it needs first is an accurate list of which flags are genuinely ours,
+	// which is not obvious: comparing against upstream HEAD is noisy because upstream has since
+	// renamed and restructured whole families.
 	// [rc4l] uzdoom@337682934 -- upstream numbered this 0x00020000, taken here by MF7_NODECAL, so it
 	// moves to the next free bit. flags7 IS wire-synced (SERVERCOMMANDS_SetThingFlags FLAGSET_FLAGS7),
 	// but only added bits matter -- no existing value shifts.
