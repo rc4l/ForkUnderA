@@ -36,6 +36,7 @@
 #include "cl_main.h"		// [rc4l] cl_password, handed to the join from the password prompt
 #include "features/server-browser/computation/browserchrome_compute.h"
 #include "features/server-browser/computation/choicerow_compute.h"
+#include "features/server-browser/computation/pointerdrag_compute.h"
 #include "features/server-browser/computation/dialog_compute.h"
 #include "features/server-browser/computation/glowtravel_compute.h"
 #include "features/server-browser/computation/serversearch_compute.h"
@@ -2221,16 +2222,19 @@ public:
 		g_HostButtonHot = false;
 		g_HostVisHot = -1;
 
-		// A drag in progress owns the pointer until it is released -- tracked even once it leaves the
-		// box, because that is what dragging means everywhere else, and a selection that stops the
-		// moment you overshoot the last character is one you can never make in a single gesture.
-		if ( g_HostFieldDragging && ( g_HostFieldFocus >= 0 ) && ( g_HostFieldFocus < kHostFieldCount ))
+		// The rule lives in computation/pointerdrag_compute -- above all, that a PRESS always ends the
+		// previous gesture and is never consumed by it. Inline, that rule had a hole in it and ate a
+		// click; see the unit's header for what that looked like.
+		const zx::DragOutcome drag = zx::StepDrag( g_HostFieldDragging, PointerEventOf( type ));
+		g_HostFieldDragging = drag.dragging;
+
+		if ( drag.consumed && ( g_HostFieldFocus >= 0 ) && ( g_HostFieldFocus < kHostFieldCount ))
 		{
+			// Tracked even once the pointer leaves the box, because that is what dragging means
+			// everywhere else -- a selection that stopped the moment you overshot the last character
+			// is one you could never make in a single gesture.
 			g_HostFields[g_HostFieldFocus] = zx::SetCaret( g_HostFields[g_HostFieldFocus],
 				HostFieldCharAt( g_HostFieldFocus, x ), true );
-
-			if ( type == MOUSE_Release )
-				g_HostFieldDragging = false;
 			return true;
 		}
 
@@ -2297,7 +2301,7 @@ public:
 					else
 					{
 						// Press puts the caret and arms a drag; the drag turns it into a selection.
-						g_HostFieldDragging = true;
+						g_HostFieldDragging = zx::BeginDrag( );
 						g_HostFields[i] = zx::SetCaret( g_HostFields[i], HostFieldCharAt( i, x ),
 							bShiftHeld( ));
 					}
@@ -2354,6 +2358,16 @@ public:
 		}
 
 		return false;
+	}
+
+	// [rc4l] The browser's three mouse types in the drag unit's terms.
+	zx::PointerEvent PointerEventOf( int type )
+	{
+		if ( type == MOUSE_Click )
+			return zx::PointerEvent::Press;
+		if ( type == MOUSE_Release )
+			return zx::PointerEvent::Release;
+		return zx::PointerEvent::Move;
 	}
 
 	// [rc4l] Which character of a host field the pointer is over. The same half-way rule the search
@@ -3684,21 +3698,20 @@ public:
 				else
 				{
 					// Press puts the caret and arms a drag; the drag is what turns it into a selection.
-					g_SearchDragging = true;
+					g_SearchDragging = zx::BeginDrag( );
 					g_Search = zx::SetCaret( g_Search, SearchCharAt( x ), bShiftHeld( ));
 				}
 				return true;
 			}
 
-			if ( g_SearchDragging )
-			{
-				// Tracked even once the pointer leaves the box -- that is what dragging means
-				// everywhere else, and a selection that stops the moment you overshoot the last
-				// character is one you can never make in a single gesture.
-				g_Search = zx::SetCaret( g_Search, SearchCharAt( x ), true );
+			// Same unit, same rule. Two fields sharing one drag rule is the point: the hole that ate a
+			// click was in an inline copy of it.
+			const zx::DragOutcome searchDrag = zx::StepDrag( g_SearchDragging, PointerEventOf( type ));
+			g_SearchDragging = searchDrag.dragging;
 
-				if ( type == MOUSE_Release )
-					g_SearchDragging = false;
+			if ( searchDrag.consumed )
+			{
+				g_Search = zx::SetCaret( g_Search, SearchCharAt( x ), true );
 				return true;
 			}
 
