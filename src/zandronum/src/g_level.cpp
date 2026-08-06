@@ -1439,7 +1439,7 @@ void G_DoLoadLevel (int position, bool autosave)
 					"\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
 					"\36\36\36\36\36\36\36\36\36\36\36\36\37\n\n"
 					TEXTCOLOR_BOLD "%s - %s\n\n",
-					mapname, level.LevelName.GetChars());
+					mapname.GetChars(), level.LevelName.GetChars());	// [rc4l] uzdoom@c7842a8de
 
 			// [RC] Update the G15 display.
 			G15_NextLevel(level.MapName, level.LevelName.GetChars());

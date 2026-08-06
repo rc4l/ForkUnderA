@@ -4808,15 +4808,32 @@ void G_DoLoadGame ()
 //
 void G_SaveGame (const char *filename, const char *description)
 {
+	// [rc4l] uzdoom@5d65b10ae -- these guards used to live in the save CCMD, so only the console
+	// path was checked; anything else reaching G_SaveGame skipped them entirely.
 	if (sendsave || gameaction == ga_savegame)
 	{
 		Printf ("A game save is still pending.\n");
-		return;
 	}
-	savegamefile = filename;
-	strncpy (savedescription, description, sizeof(savedescription)-1);
-	savedescription[sizeof(savedescription)-1] = '\0';
-	sendsave = true;
+	else if (!usergame)
+	{
+		Printf ("not in a saveable game\n");
+	}
+	else if (gamestate != GS_LEVEL)
+	{
+		Printf ("not in a level\n");
+	}
+	// [rc4l] Zandronum has no `multiplayer` global; NETSTATE_SINGLE is the equivalent.
+	else if (players[consoleplayer].health <= 0 && NETWORK_GetState( ) == NETSTATE_SINGLE)
+	{
+		Printf ("player is dead in a single-player game\n");
+	}
+	else
+	{
+		savegamefile = filename;
+		strncpy (savedescription, description, sizeof(savedescription)-1);
+		savedescription[sizeof(savedescription)-1] = '\0';
+		sendsave = true;
+	}
 }
 
 FString G_BuildSaveName (const char *prefix, int slot)
@@ -4968,7 +4985,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 
 	// Do not even try, if we're not in a level. (Can happen after
 	// a demo finishes playback.)
-	if (lines == NULL || sectors == NULL)
+	if (lines == NULL || sectors == NULL || gamestate != GS_LEVEL)	// [rc4l] uzdoom@5d65b10ae
 	{
 		return;
 	}
