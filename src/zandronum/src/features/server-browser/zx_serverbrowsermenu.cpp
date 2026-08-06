@@ -2216,6 +2216,70 @@ public:
 	// Hover moves the keyboard focus with the pointer, the same as everywhere else in the browser --
 	// so picking a field up with the mouse and then reaching for the arrows carries on from what you
 	// are looking at rather than from wherever the keyboard was left.
+	// [rc4l] Is there anything on the hosting panel under this point?
+	//
+	// One answer, read by the click-away rule and matching what the handlers below actually claim --
+	// two functions disagreeing about where a control is would give a field that refuses to let go
+	// over exactly the strip the other one thought was empty.
+	bool HostControlAt( int x, int y )
+	{
+		const zx::HostState state = zx::HostCurrentState( );
+		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
+
+		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
+		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
+		const int btnY = bForm ? HostFormButtonY( ) : ( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
+
+		if (( x >= serverbrowser_ToScreenX( btnX )) &&
+			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
+			( y >= serverbrowser_ToScreenY( btnY )) &&
+			( y < serverbrowser_ToScreenY( btnY + SB_HOST_BTN_H )))
+		{
+			return true;
+		}
+
+		if ( bForm == false )
+			return false;
+
+		int fieldY = HostFirstFieldY( );
+		for ( int i = 0; i < kHostFieldCount; ++i )
+		{
+			if (( y >= serverbrowser_ToScreenY( fieldY )) &&
+				( y < serverbrowser_ToScreenY( fieldY + SB_HOST_FIELD_H )) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+			{
+				return true;
+			}
+
+			fieldY += SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
+		}
+
+		const int visY = HostVisibilityY( );
+		if (( y >= serverbrowser_ToScreenY( visY )) &&
+			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
+		{
+			const int rowX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W;
+			const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
+
+			for ( int i = 0; i < kHostVisCount; ++i )
+			{
+				const zx::ChoiceCell cell = zx::ChoiceCellAt( i, kHostVisCount, rowX, rowW,
+					SB_CHOICE_GAP );
+				if ( !cell.valid )
+					continue;
+
+				if (( x >= serverbrowser_ToScreenX( cell.x )) &&
+					( x < serverbrowser_ToScreenX( cell.x + cell.width )))
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
 	bool HostMouseEvent( int type, int x, int y )
 	{
 		g_HostFieldHot = -1;
@@ -2227,6 +2291,27 @@ public:
 		// click; see the unit's header for what that looked like.
 		const zx::DragOutcome drag = zx::StepDrag( g_HostFieldDragging, PointerEventOf( type ));
 		g_HostFieldDragging = drag.dragging;
+
+		// [rc4l] A CLICK THAT LANDS ON NOTHING LETS THE FIELD GO.
+		//
+		// The search box has had this from the start and the hosting form never got it, which is the
+		// whole bug: click into a box, click away, and the caret is still blinking in it. Worse than
+		// cosmetic -- while a field holds focus TranslateKeyboardEvents hands it the raw keys, so the
+		// arrows stop navigating too and the entire form feels dead.
+		//
+		// Clicking away from a field is how every interface says "I am done with that", and a caret
+		// left in a box you have visibly left is a lie about where the next keystroke will land.
+		//
+		// Decided HERE, before the handlers below, so it applies to clicks that land on nothing at
+		// all and are otherwise ignored -- which is exactly the case that felt broken.
+		const bool bReleasingFocus = ( type == MOUSE_Click )
+			&& ( g_Focus == zx::BrowserFocus::Host ) && ( HostControlAt( x, y ) == false );
+
+		if ( bReleasingFocus )
+		{
+			SetFocus( zx::BrowserFocus::Tabs );
+			g_HostFieldDragging = false;
+		}
 
 		if ( drag.consumed && ( g_HostFieldFocus >= 0 ) && ( g_HostFieldFocus < kHostFieldCount ))
 		{
@@ -4124,6 +4209,19 @@ public:
 		Enter,
 		Up,
 		Down,
+
+		// [rc4l] NOT A KEYBOARD EVENT AT ALL, and therefore none of a text field's business.
+		//
+		// This state exists because leaving it out cost the whole menu its mouse. Mouse events reach
+		// a menu through Responder, not MouseEvent -- menu.cpp hands every non-keyboard GUI event to
+		// CurrentMenu->Responder -- and the guard that routes keys to a focused field tests
+		// ev->type == EV_GUI_Event, which is true for mouse events too. They arrived here, fell past
+		// the character and key-down cases, and were reported as Handled.
+		//
+		// The caller then answered true, the event never reached MouseEvent, and the browser went
+		// deaf to the pointer for as long as any field had focus: frozen tooltip, dead clicks, dead
+		// tabs. Saying "not mine" is what lets it fall through to the mouse path.
+		Unclaimed,
 	};
 
 	// `digitsOnly` is for the port and player-limit boxes. A port with a letter in it is not a port,
@@ -4136,6 +4234,11 @@ public:
 		// expects without a second code path to keep in step.
 		const bool bCtrl = (( ev->data3 & ( GKM_CTRL | GKM_META )) != 0 );
 		const bool bShift = (( ev->data3 & GKM_SHIFT ) != 0 );
+
+		// Anything that is not a key belongs to somebody else -- above all the mouse, which reaches a
+		// menu through this same Responder and must be allowed past.
+		if (( ev->subtype != EV_GUI_Char ) && ( ev->subtype != EV_GUI_KeyDown ))
+			return FieldKey::Unclaimed;
 
 		if ( ev->subtype == EV_GUI_Char )
 		{
@@ -4151,7 +4254,7 @@ public:
 		}
 
 		if ( ev->subtype != EV_GUI_KeyDown )
-			return FieldKey::Handled;
+			return FieldKey::Unclaimed;
 
 		const int key = ev->data1;
 
@@ -4287,6 +4390,9 @@ public:
 			MoveHostFocus( -1 );
 			return true;
 
+		case FieldKey::Unclaimed:
+			return false;			// not a key -- let the mouse path have it
+
 		case FieldKey::Handled:
 			break;
 		}
@@ -4335,6 +4441,9 @@ public:
 		case FieldKey::Down:
 			Navigate( zx::NavKey::Down, static_cast<int>( g_SortedServers.Size( )));
 			return true;
+
+		case FieldKey::Unclaimed:
+			return false;			// not a key -- let the mouse path have it
 
 		case FieldKey::Handled:
 			break;
