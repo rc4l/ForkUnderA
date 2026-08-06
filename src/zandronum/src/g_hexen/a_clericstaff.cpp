@@ -71,30 +71,35 @@ DEFINE_ACTION_FUNCTION(AActor, A_CStaffCheck)
 		if (linetarget)
 		{
 			P_LineAttack (pmo, angle, fixed_t(1.5*double(MELEERANGE)), slope, damage, NAME_Melee, PClass::FindClass ("CStaffPuff"), false, &linetarget);
-			pmo->angle = R_PointToAngle2 (pmo->x, pmo->y, 
-				linetarget->x, linetarget->y);
-			if (((linetarget->player && (!linetarget->IsTeammate (pmo) || level.teamdamage != 0))|| linetarget->flags3&MF3_ISMONSTER)
-				&& (!(linetarget->flags2&(MF2_DORMANT+MF2_INVULNERABLE))))
+			// [rc4l] uzdoom@19ab774dc -- P_LineAttack can clear linetarget, so everything below has to
+			// be guarded; it was dereferenced unconditionally.
+			if (linetarget != NULL)
 			{
-				// [CW] Clients should not set their own health.
-				if ( NETWORK_InClientMode() == false )
+				pmo->angle = R_PointToAngle2 (pmo->x, pmo->y, 
+					linetarget->x, linetarget->y);
+				if (((linetarget->player && (!linetarget->IsTeammate (pmo) || level.teamdamage != 0))|| linetarget->flags3&MF3_ISMONSTER)
+					&& (!(linetarget->flags2&(MF2_DORMANT+MF2_INVULNERABLE))))
 				{
-					newLife = player->health+(damage>>3);
-					newLife = newLife > max ? max : newLife;
-					if (newLife > player->health)
+					// [CW] Clients should not set their own health.
+					if ( NETWORK_InClientMode() == false )
 					{
-						pmo->health = player->health = newLife;
+						newLife = player->health+(damage>>3);
+						newLife = newLife > max ? max : newLife;
+						if (newLife > player->health)
+						{
+							pmo->health = player->health = newLife;
 
-						// [BC] Send the health update.
-						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-							SERVERCOMMANDS_SetPlayerHealth( ULONG( player - players ));
+							// [BC] Send the health update.
+							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+								SERVERCOMMANDS_SetPlayerHealth( ULONG( player - players ));
+						}
 					}
+					P_SetPsprite (player, ps_weapon, weapon->FindState ("Drain"));
 				}
-				P_SetPsprite (player, ps_weapon, weapon->FindState ("Drain"));
-			}
-			if (weapon != NULL)
-			{
-				weapon->DepleteAmmo (weapon->bAltFire, false);
+				if (weapon != NULL)
+				{
+					weapon->DepleteAmmo (weapon->bAltFire, false);
+				}
 			}
 			break;
 		}
@@ -103,25 +108,29 @@ DEFINE_ACTION_FUNCTION(AActor, A_CStaffCheck)
 		if (linetarget)
 		{
 			P_LineAttack (pmo, angle, fixed_t(1.5*double(MELEERANGE)), slope, damage, NAME_Melee, PClass::FindClass ("CStaffPuff"), false, &linetarget);
-			pmo->angle = R_PointToAngle2 (pmo->x, pmo->y, 
-				linetarget->x, linetarget->y);
-			if ((linetarget->player && (!linetarget->IsTeammate (pmo) || level.teamdamage != 0)) || linetarget->flags3&MF3_ISMONSTER)
+			// [rc4l] uzdoom@19ab774dc -- P_LineAttack can clear linetarget.
+			if (linetarget != NULL)
 			{
-				// [CW] Clients should not set their own health.
-				if ( NETWORK_InClientMode() == false )
+				pmo->angle = R_PointToAngle2 (pmo->x, pmo->y, 
+					linetarget->x, linetarget->y);
+				if ((linetarget->player && (!linetarget->IsTeammate (pmo) || level.teamdamage != 0)) || linetarget->flags3&MF3_ISMONSTER)
 				{
-					newLife = player->health+(damage>>4);
-					newLife = newLife > max ? max : newLife;
-					pmo->health = player->health = newLife;
+					// [CW] Clients should not set their own health.
+					if ( NETWORK_InClientMode() == false )
+					{
+						newLife = player->health+(damage>>4);
+						newLife = newLife > max ? max : newLife;
+						pmo->health = player->health = newLife;
+					}
+
+					// [BC] Send the health update.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetPlayerHealth( ULONG( player - players ));
+
+					P_SetPsprite (player, ps_weapon, weapon->FindState ("Drain"));
 				}
-
-				// [BC] Send the health update.
-				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetPlayerHealth( ULONG( player - players ));
-
-				P_SetPsprite (player, ps_weapon, weapon->FindState ("Drain"));
+				weapon->DepleteAmmo (weapon->bAltFire, false);
 			}
-			weapon->DepleteAmmo (weapon->bAltFire, false);
 			break;
 		}
 	}

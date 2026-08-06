@@ -497,7 +497,9 @@ void P_Recalculate3DFloors(sector_t * sector)
 				// by the clipping code below.
 				ffloors.Push(pick);
 			}
-			else if (pick->flags&(FF_SWIMMABLE|FF_TRANSLUCENT) && pick->flags&FF_EXISTS)
+			// [rc4l] uzdoom@5fc6ff130 -- a floor with neither ALLSIDES nor BOTHPLANES draws nothing, so
+			// treating it as solid here clipped the top plane of whatever overlapped it.
+			else if ((pick->flags&(FF_SWIMMABLE|FF_TRANSLUCENT) || (!(pick->flags&(FF_ALLSIDES|FF_BOTHPLANES)))) && pick->flags&FF_EXISTS)
 			{
 				// We must check if this nonsolid segment gets clipped from the top by another 3D floor
 				if (solid != NULL && solid_bottom < height)

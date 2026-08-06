@@ -1047,7 +1047,7 @@ void APowerFlight::EndEffect ()
 	{
 		return;
 	}
-	if (!(Owner->player->cheats & CF_FLY))
+	if (!(Owner->flags7 & MF7_FLYCHEAT))	// [rc4l] uzdoom@337682934
 	{
 		if (Owner->z != Owner->floorz)
 		{
