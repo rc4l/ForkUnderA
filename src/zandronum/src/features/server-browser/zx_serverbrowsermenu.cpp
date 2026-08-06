@@ -42,6 +42,7 @@
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
+#include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/colortext_compute.h"
@@ -2481,18 +2482,41 @@ public:
 				x, y, width, CR_DARKGRAY );
 
 		case zx::HostReach::Waiting:
-			return DrawWrappedIn( "Listed publicly -- checking whether the internet can reach it.",
-				x, y, width, CR_GOLD );
+			{
+				// [rc4l] Say what we asked the router, as well as what we are waiting to learn. A
+				// game that opens ports on somebody's network should say so out loud -- that is the
+				// whole reason routers ship with this switched off.
+				const char *const router = zx::PortMapStatusText( );
+				if (( router != NULL ) && ( router[0] != 0 ))
+					y = DrawWrappedIn( router, x, y, width, CR_DARKGRAY );
+
+				return DrawWrappedIn( "Listed publicly -- checking whether the internet can reach it.",
+					x, y, width, CR_GOLD );
+			}
 
 		case zx::HostReach::Reachable:
 			return DrawWrappedIn( "The internet can reach this server. Anyone can join it.",
 				x, y, width, CR_GREEN );
 
 		case zx::HostReach::Unreachable:
-			y = DrawWrappedIn( "Nothing has reached this server from outside.",
-				x, y, width, CR_ORANGE );
-			return DrawWrappedIn( "It is still working for players on this network. To open it to "
-				"everyone, forward this port on your router.", x, y, width, CR_DARKGRAY );
+			{
+				y = DrawWrappedIn( "Nothing has reached this server from outside.",
+					x, y, width, CR_ORANGE );
+
+				const char *const router = zx::PortMapStatusText( );
+				if (( router != NULL ) && ( router[0] != 0 ))
+					y = DrawWrappedIn( router, x, y, width, CR_DARKGRAY );
+
+				// [rc4l] The port AND both protocols, because the game is UDP and direct downloads
+				// are TCP on the same number -- somebody who forwards only UDP gets a server that
+				// works and downloads that mysteriously do not, which reads as a different bug.
+				FString advice;
+				advice.Format( "It is still working for players on this network. To open it to "
+					"everyone, forward TCP and UDP port %d on your router.",
+					zx::HostCurrentConfig( ).port );
+
+				return DrawWrappedIn( advice, x, y, width, CR_DARKGRAY );
+			}
 		}
 
 		return y;
