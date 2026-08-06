@@ -403,3 +403,18 @@ TEST( GlowTravel, EveryDirectionBowsToOneConsistentSide )
 		EXPECT_TRUE( bowed ) << "direction " << i << " travelled flat";
 	}
 }
+
+TEST( GlowTravel, AnOverrunElapsedIsTreatedAsArrival )
+{
+	// Elapsed is advanced by StepGlowTravel, which clamps -- but the struct is plain data and a caller
+	// can hand one over already past its duration (a travel copied around, a duration shortened after
+	// the fact). Past the end means arrived, not somewhere beyond the destination.
+	GlowTravel travel = BeginGlowTravel( GlowPos( 10, 10 ), GlowPos( 200, 120 ));
+	travel.elapsed = travel.duration + 5000;
+
+	const GlowPos at = GlowTravelPoint( travel );
+
+	EXPECT_EQ( 200, at.x );
+	EXPECT_EQ( 120, at.y );
+	EXPECT_TRUE( GlowTravelDone( travel ));
+}

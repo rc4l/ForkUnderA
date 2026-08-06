@@ -265,3 +265,15 @@ TEST(RateBucket, TwentyClientsShareTheGlobalBudgetRatherThanMultiplyingIt)
 
 	EXPECT_EQ(512LL * 1024, second);
 }
+
+TEST( RateLimit, DefaultsToUnlimited )
+{
+	// A limit that has not been configured yet must not throttle. Zero is how "the operator left this
+	// knob alone" is spelled throughout this unit, so the default has to agree with it -- a default of
+	// anything positive would silently rate-limit a server whose owner set nothing.
+	const RateLimit unset;
+
+	EXPECT_EQ( 0, unset.bytesPerSec );
+	EXPECT_EQ( 0, unset.burstBytes );
+	EXPECT_EQ( kUnlimitedBytes, BucketCapacity( unset ));
+}
