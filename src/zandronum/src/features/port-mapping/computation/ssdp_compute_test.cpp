@@ -110,6 +110,21 @@ TEST( HttpUrlParsing, KeepsAQueryWithThePath )
 	EXPECT_EQ( "/desc?v=2", url.path );
 }
 
+TEST( HttpUrlParsing, GivesAQueryWithNoPathASlashToHangFrom )
+{
+	// [rc4l] Unusual but legal, and firmware does emit it. The authority ends at the '?' rather than
+	// at a '/', so the remainder starts with '?' -- and a request line reading `POST ?v=2 HTTP/1.1`
+	// is malformed. The target has to be a path, so it gets one.
+	const HttpUrl url = ParseHttpUrl( "http://10.0.0.1?v=2" );
+
+	ASSERT_TRUE( url.valid );
+	EXPECT_EQ( "10.0.0.1", url.host );
+	EXPECT_EQ( "/?v=2", url.path );
+
+	// Same for a fragment, which is the other delimiter that ends an authority.
+	EXPECT_EQ( "/#frag", ParseHttpUrl( "http://10.0.0.1#frag" ).path );
+}
+
 TEST( HttpUrlParsing, RefusesWhatItCannotSafelyRead )
 {
 	// https would mean TLS to a device with a self-signed certificate, which is a negotiation
