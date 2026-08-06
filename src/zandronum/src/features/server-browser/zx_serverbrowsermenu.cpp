@@ -33,7 +33,9 @@
 
 #include "features/server-browser/browser.h"
 #include "i_input.h"		// [rc4l] I_PutInClipboard / I_GetFromClipboard, for the search box
+#include "cl_main.h"		// [rc4l] cl_password, handed to the join from the password prompt
 #include "features/server-browser/computation/browserchrome_compute.h"
+#include "features/server-browser/computation/dialog_compute.h"
 #include "features/server-browser/computation/glowtravel_compute.h"
 #include "features/server-browser/computation/serversearch_compute.h"
 #include "features/server-browser/computation/textinput_compute.h"
@@ -109,6 +111,16 @@
 // screen the player is driving with the mouse -- and cancelling had NO affordance at all, living only
 // in a console command most players will never type.
 #define SB_BUTTON_H			16
+
+// [rc4l] The modal. Centred, sized to hold a title, a wrapped message, an optional field and a row
+// of buttons -- generous rather than snug, because a question that looks cramped reads as an error.
+#define SB_DLG_W			280
+#define SB_DLG_LEFT			(( SB_VIRT_W - SB_DLG_W ) / 2 )
+#define SB_DLG_PAD			14
+#define SB_DLG_LINE			11
+#define SB_DLG_BTN_H		16
+#define SB_DLG_BTN_GAP		8
+#define SB_DLG_FIELD_H		16
 #define SB_BUTTON_LEFT		( SB_DETAIL_LEFT + SB_DETAIL_PAD )
 #define SB_BUTTON_RIGHT		( SB_DETAIL_RIGHT - SB_DETAIL_PAD )
 #define SB_BUTTON_TOP		( SB_DETAIL_BOTTOM - SB_DETAIL_PAD - SB_BUTTON_H )
@@ -242,7 +254,54 @@ static	int				g_GlowLastMs = 0;
 // M_StartMessage, so the browser keeps control of the pairing: the hold placed on the join resume
 // when this goes up MUST be released on exactly one of the two answers, and a message box that can be
 // dismissed by other menu machinery is a way for that to not happen.
-static	bool			g_ConfirmCancel = false;
+// [rc4l] The one modal, shared by every question the browser asks.
+//
+// It replaces "Y - stop it   N - keep going" painted on a dim -- the only part of this screen that
+// did not look like the rest of it, and a second set of rules for the player to learn at the exact
+// moment they are being asked something. The decisions live in computation/dialog_compute; this is
+// the state they operate on.
+//
+// TWO SHAPES, ONE DIALOG: a row of choices, and a text field with choices under it. The second is
+// why this is general rather than a cancel-specific box.
+enum class DialogAction
+{
+	None,
+	CancelDownload,
+	JoinPassword,
+};
+
+struct BrowserDialog
+{
+	bool open;
+	FString title;
+	FString message;
+
+	FString labels[3];
+	char shortcuts[3];
+	int count;
+	int focus;
+	int cancelIndex;		// what Escape resolves to; -1 means no way out
+
+	bool hasInput;
+	FString inputLabel;
+	bool masked;			// a password is read over shoulders
+
+	DialogAction action;
+
+	BrowserDialog( ) : open( false ), count( 0 ), focus( 0 ), cancelIndex( -1 ),
+		hasInput( false ), masked( false ), action( DialogAction::None )
+	{
+		shortcuts[0] = shortcuts[1] = shortcuts[2] = 0;
+	}
+};
+
+static	BrowserDialog	g_Dialog;
+
+// What is typed into the dialog's field, edited by the same rules as the search box.
+static	zx::TextInput	g_DialogInput;
+
+// Which button the pointer is over, so hover lights it as it does everywhere else.
+static	int				g_DialogHot = -1;
 
 // [rc4l] Which tab is showing. Public is the default because it is what nearly everyone wants nearly
 // all the time -- a private server is one you were told about, so you already know it is there.
@@ -859,9 +918,9 @@ public:
 	// is released here as "keep going", which is what a player who never answered "stop" meant.
 	void Destroy( )
 	{
-		if ( g_ConfirmCancel )
+		if ( g_Dialog.open )
 		{
-			g_ConfirmCancel = false;
+			g_Dialog = BrowserDialog( );
 			zx::ReleaseJoinResume( true );
 		}
 		Super::Destroy( );
@@ -937,8 +996,8 @@ public:
 		// Last, and over everything: something the player has to deal with before anything else.
 		if ( g_Notice.IsNotEmpty( ))
 			DrawNotice( );
-		else if ( g_ConfirmCancel )
-			DrawCancelConfirm( );
+		else if ( g_Dialog.open )
+			DrawDialog( );
 		else
 		{
 			// Over the browser but under a question, because a question is the thing being answered
@@ -1081,6 +1140,310 @@ public:
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 			y += lineH;
 		}
+	}
+
+	// [rc4l] How tall the dialog needs to be for what it is carrying, worked out before anything is
+	// drawn so the panel is centred on its real height rather than a guess.
+	int DialogHeight( )
+	{
+		int h = SB_DLG_PAD;
+		h += SB_DLG_LINE + 4;
+		h += DialogWrapCount( g_Dialog.message ) * SB_DLG_LINE;
+
+		if ( g_Dialog.hasInput )
+			h += 6 + SB_DLG_LINE + SB_DLG_FIELD_H;
+
+		h += 10 + SB_DLG_BTN_H + SB_DLG_PAD;
+		return h;
+	}
+
+	// One wrapping pass, shared by the measure and the draw so they cannot disagree about how many
+	// lines there are -- which would centre the panel on the wrong height.
+	int DialogWrap( const FString &text, int y, bool draw )
+	{
+		const int width = SB_DLG_W - 2 * SB_DLG_PAD;
+		int lines = 0;
+		FString line;
+		long start = 0;
+
+		while ( start <= static_cast<long>( text.Len( )))
+		{
+			long space = text.IndexOf( " ", start );
+			const bool last = ( space < 0 );
+			if ( last )
+				space = static_cast<long>( text.Len( ));
+
+			const FString word = text.Mid( start, space - start );
+			const FString candidate = line.IsEmpty( ) ? word : ( line + " " + word );
+
+			if ( line.IsNotEmpty( ) && ( SmallFont->StringWidth( candidate ) > width ))
+			{
+				if ( draw )
+					screen->DrawText( SmallFont, CR_GRAY,
+						( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( line ) / 2 ),
+						y + lines * SB_DLG_LINE, line,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				++lines;
+				line = word;
+			}
+			else
+				line = candidate;
+
+			if ( last )
+				break;
+			start = space + 1;
+		}
+
+		if ( line.IsNotEmpty( ))
+		{
+			if ( draw )
+				screen->DrawText( SmallFont, CR_GRAY,
+					( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( line ) / 2 ),
+					y + lines * SB_DLG_LINE, line,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			++lines;
+		}
+
+		return lines;
+	}
+
+	int DialogWrapCount( const FString &text )
+	{
+		return text.IsEmpty( ) ? 0 : DialogWrap( text, 0, false );
+	}
+
+	// Where a button sits. One source for the drawing and the hit test, so a button can never be
+	// somewhere other than where it is clickable.
+	bool DialogButtonRect( int index, int &outX, int &outY, int &outW )
+	{
+		if (( index < 0 ) || ( index >= g_Dialog.count ))
+			return false;
+
+		int widths[3] = { 0, 0, 0 };
+		int total = 0;
+		for ( int i = 0; i < g_Dialog.count; ++i )
+		{
+			widths[i] = MAX( 64, SmallFont->StringWidth( g_Dialog.labels[i] ) + 26 );
+			total += widths[i];
+		}
+		total += SB_DLG_BTN_GAP * ( g_Dialog.count - 1 );
+
+		int x = ( SB_VIRT_W / 2 ) - ( total / 2 );
+		for ( int i = 0; i < index; ++i )
+			x += widths[i] + SB_DLG_BTN_GAP;
+
+		const int h = DialogHeight( );
+		outX = x;
+		outY = (( SB_VIRT_H - h ) / 2 ) + h - SB_DLG_PAD - SB_DLG_BTN_H;
+		outW = widths[index];
+		return true;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The modal, drawn like the rest of the browser rather than like a debug print.
+	void DrawDialog( )
+	{
+		// A heavy dim rather than a blur. The engine has no blur primitive, and faking one means
+		// re-drawing the frame at a lower resolution and scaling it back up -- real cost for a box
+		// that is on screen for two seconds. Darkening until the browser reads as "behind glass" says
+		// the same thing (that is not what you are talking to) for one Dim.
+		screen->Dim( PalEntry( 0, 0, 0 ), 0.72f, 0, 0, SCREENWIDTH, SCREENHEIGHT );
+
+		const int h = DialogHeight( );
+		const int top = ( SB_VIRT_H - h ) / 2;
+
+		const zx::PanelColor topCol = { 30, 32, 46, 246 };
+		const zx::PanelColor botCol = { 12, 13, 20, 252 };
+		DrawRoundedPanel( SB_DLG_LEFT, top, SB_DLG_W, h, topCol, botCol, 10 );
+
+		int y = top + SB_DLG_PAD;
+
+		screen->DrawText( SmallFont, CR_WHITE,
+			( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( g_Dialog.title ) / 2 ), y, g_Dialog.title,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		y += SB_DLG_LINE + 4;
+
+		if ( g_Dialog.message.IsNotEmpty( ))
+			y += DialogWrap( g_Dialog.message, y, true ) * SB_DLG_LINE;
+
+		if ( g_Dialog.hasInput )
+		{
+			y += 6;
+			screen->DrawText( SmallFont, CR_DARKGRAY, SB_DLG_LEFT + SB_DLG_PAD, y, g_Dialog.inputLabel,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			y += SB_DLG_LINE;
+
+			DrawDialogField( y );
+		}
+
+		for ( int i = 0; i < g_Dialog.count; ++i )
+		{
+			int bx, by, bw;
+			if ( !DialogButtonRect( i, bx, by, bw ))
+				continue;
+
+			const bool bFocused = ( g_Dialog.focus == i );
+			DrawRoundedButton( bx, by, bw, SB_DLG_BTN_H, g_Dialog.labels[i], bFocused || ( g_DialogHot == i ));
+
+			if ( bFocused )
+				FocusAnchor( zx::BrowserFocus::Dialog, bx - 5, by + SB_DLG_BTN_H / 2 );
+		}
+	}
+
+	// The field, drawn as the search box is -- sunken, with a caret -- so a field looks like a field
+	// wherever it turns up.
+	void DrawDialogField( int y )
+	{
+		const int fx = SB_DLG_LEFT + SB_DLG_PAD;
+		const int fw = SB_DLG_W - 2 * SB_DLG_PAD;
+
+		const zx::PanelColor topCol = { 14, 14, 22, 235 };
+		const zx::PanelColor botCol = { 34, 34, 48, 220 };
+		DrawRoundedPanel( fx, y, fw, SB_DLG_FIELD_H, topCol, botCol, 5 );
+
+		// MASKED when the caller asked for it. A password typed with other people in the room is the
+		// one string in this browser that must not be legible over a shoulder.
+		FString shown;
+		if ( g_Dialog.masked )
+		{
+			for ( size_t i = 0; i < g_DialogInput.text.size( ); ++i )
+				shown += "*";
+		}
+		else
+			shown = g_DialogInput.text.c_str( );
+
+		const int textY = y + ( SB_DLG_FIELD_H - SmallFont->GetHeight( )) / 2 + 1;
+		screen->DrawText( SmallFont, CR_WHITE, fx + 5, textY, shown,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+		if (( DMenu::MenuTime / 16 ) % 2 == 0 )
+		{
+			const int caretX = fx + 5 + SmallFont->StringWidth( shown );
+			const int cx = serverbrowser_ToScreenX( caretX );
+			const int cw = MAX( 1, serverbrowser_ToScreenX( caretX + 1 ) - cx );
+			const int cy = serverbrowser_ToScreenY( textY );
+			const int ch = serverbrowser_ToScreenY( textY + SmallFont->GetHeight( )) - cy;
+			screen->Dim( PalEntry( 235, 235, 245 ), 0.85f, cx, cy, cw, ch );
+		}
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Put a question up. One entry point for both shapes, so a caller cannot invent a third.
+	void ShowDialog( DialogAction action, const char *title, const char *message,
+		const char *yes, char yesKey, const char *no, char noKey, bool wantsInput = false,
+		const char *inputLabel = NULL, bool masked = false )
+	{
+		g_Dialog = BrowserDialog( );
+		g_Dialog.open = true;
+		g_Dialog.action = action;
+		g_Dialog.title = title;
+		g_Dialog.message = ( message != NULL ) ? message : "";
+
+		g_Dialog.labels[0] = yes;
+		g_Dialog.shortcuts[0] = yesKey;
+		g_Dialog.labels[1] = no;
+		g_Dialog.shortcuts[1] = noKey;
+		g_Dialog.count = 2;
+
+		// Focus starts on the SAFE choice and Escape resolves to it. A question you opened by accident
+		// should take two deliberate acts to answer destructively, not one stray Enter.
+		g_Dialog.cancelIndex = 1;
+		g_Dialog.focus = 1;
+
+		g_Dialog.hasInput = wantsInput;
+		g_Dialog.inputLabel = ( inputLabel != NULL ) ? inputLabel : "";
+		g_Dialog.masked = masked;
+
+		g_DialogInput = zx::ClearInput( );
+		g_DialogHot = -1;
+		SetFocus( zx::BrowserFocus::Dialog );
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+	}
+
+	// [rc4l] What a dialog's answer MEANS, in one place, so the three input routes cannot come to
+	// disagree about it. Every route -- letter, Enter, click -- ends here with an index.
+	void AnswerDialog( int index )
+	{
+		if ( !g_Dialog.open || ( index < 0 ) || ( index >= g_Dialog.count ))
+			return;
+
+		const DialogAction action = g_Dialog.action;
+		const bool bAffirmative = ( index == 0 );
+		const FString typed = g_DialogInput.text.c_str( );
+
+		// Closed BEFORE the action runs. Joining tears the engine down for a WAD reload and never
+		// returns, so anything left until afterwards is never done at all.
+		CloseDialog( );
+
+		switch ( action )
+		{
+		case DialogAction::CancelDownload:
+			// The hold placed when the question went up must be released on exactly one of the two
+			// answers -- that pairing is the whole reason this menu owns the question rather than
+			// handing it to M_StartMessage.
+			if ( bAffirmative )
+				zx::waddownload::Cancel( );
+			zx::ReleaseJoinResume( !bAffirmative );
+			break;
+
+		case DialogAction::JoinPassword:
+			if ( bAffirmative )
+			{
+				// The password goes in before the join, because the connect reads it on its way out.
+				cl_password = typed.GetChars( );
+				DoJoinSelected( );
+			}
+			break;
+
+		case DialogAction::None:
+			break;
+		}
+	}
+
+	// [rc4l] Clicking a dialog. Hover lights a button and a release presses it -- the same
+	// press-then-release pairing the JOIN button uses, so a drag off a button cancels it there too.
+	bool DialogMouseEvent( int type, int x, int y )
+	{
+		g_DialogHot = -1;
+
+		for ( int i = 0; i < g_Dialog.count; ++i )
+		{
+			int bx, by, bw;
+			if ( !DialogButtonRect( i, bx, by, bw ))
+				continue;
+
+			if (( x < serverbrowser_ToScreenX( bx )) || ( x >= serverbrowser_ToScreenX( bx + bw )) ||
+				( y < serverbrowser_ToScreenY( by )) || ( y >= serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+			{
+				continue;
+			}
+
+			g_DialogHot = i;
+
+			// Moving the pointer over a button also moves the FOCUS to it, so the glow follows the
+			// mouse and a player who switches from one to the other is never answering a different
+			// question from the one they were looking at.
+			g_Dialog.focus = i;
+
+			if ( type == MOUSE_Release )
+				AnswerDialog( i );
+			return true;
+		}
+
+		// Swallowed: the dialog is modal, so a click on the browser behind it does nothing at all
+		// rather than quietly operating a control the player cannot see the point of.
+		return true;
+	}
+
+	void CloseDialog( )
+	{
+		g_Dialog = BrowserDialog( );
+		g_DialogInput = zx::ClearInput( );
+		g_DialogHot = -1;
+		SetFocus( zx::BrowserFocus::Rows );
 	}
 
 	//*************************************************************************
@@ -1294,6 +1657,56 @@ public:
 	// is the question a player needs answered BEFORE committing, and no other Doom browser answers it
 	// because no other Doom browser downloads. Green means it resolved locally, red means it is a
 	// transfer you have not agreed to yet.
+	// [rc4l] A rounded, gradient-filled panel in virtual coordinates.
+	//
+	// Extracted rather than copied. The browser panel, the detail panel and now the dialog all draw
+	// the same shape, and three copies of a gradient loop is three places to adjust when the look
+	// changes and two places to forget.
+	void DrawRoundedPanel( int vx, int vy, int vw, int vh, const zx::PanelColor &topCol,
+		const zx::PanelColor &botCol, int vradius )
+	{
+		const int left = serverbrowser_ToScreenX( vx );
+		const int right = serverbrowser_ToScreenX( vx + vw );
+		const int top = serverbrowser_ToScreenY( vy );
+		const int bottom = serverbrowser_ToScreenY( vy + vh );
+		const int radius = serverbrowser_ToScreenY( vradius ) - serverbrowser_ToScreenY( 0 );
+
+		const int w = right - left;
+		const int h = bottom - top;
+		if (( w <= 0 ) || ( h <= 0 ))
+			return;
+
+		for ( int row = 0; row < h; ++row )
+		{
+			const int inset = zx::ComputeRoundedInset( row, h, radius );
+			const int rowW = w - 2 * inset;
+			if ( rowW <= 0 )
+				continue;
+
+			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
+			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+		}
+	}
+
+	// [rc4l] The browser's button, wherever it appears. Same shape as JOIN because it IS the JOIN
+	// drawing -- a dialog whose buttons merely resembled the browser's would drift the first time
+	// either was touched.
+	void DrawRoundedButton( int vx, int vy, int vw, int vh, const char *label, bool lit )
+	{
+		const int base = lit ? 70 : 45;
+		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+			static_cast<BYTE>( base ), 220 };
+		const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ),
+			static_cast<BYTE>( base / 2 ), 235 };
+
+		DrawRoundedPanel( vx, vy, vw, vh, topCol, botCol, 4 );
+
+		const int textY = vy + ( vh - SmallFont->GetHeight( )) / 2 + 1;
+		screen->DrawText( SmallFont, lit ? CR_WHITE : CR_GRAY,
+			vx + ( vw / 2 ) - ( SmallFont->StringWidth( label ) / 2 ), textY, label,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+	}
+
 	void DrawDetailPanel( )
 	{
 		const int left = serverbrowser_ToScreenX( SB_DETAIL_LEFT );
@@ -1639,9 +2052,31 @@ public:
 			// meantime would otherwise restart the engine for the reload while the player is still
 			// reading -- the hold is what makes the answer land on something that still exists.
 			zx::HoldJoinResume( );
-			g_ConfirmCancel = true;
+			ShowDialog( DialogAction::CancelDownload, "Cancel this download?",
+				"The file is part-way here. Stopping keeps what has arrived, so starting again later "
+				"picks up where this left off.",
+				"STOP IT", 's', "KEEP GOING", 'k' );
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 			return;
+		}
+
+		// [rc4l] A protected server wants the password BEFORE anything is downloaded.
+		//
+		// Asking afterwards is the arrangement nobody would choose deliberately: the player waits out
+		// a transfer that may be minutes long, and only then finds out they cannot get in. The
+		// password is also the cheapest thing to check -- it costs one prompt against a download that
+		// costs a connection and a disk.
+		const int total = static_cast<int>( g_SortedServers.Size( ));
+		if (( g_Selected >= 0 ) && ( g_Selected < total ))
+		{
+			const int lServer = g_SortedServers[g_Selected];
+			if ( BROWSER_IsPasswordProtected( lServer ))
+			{
+				ShowDialog( DialogAction::JoinPassword, "This server needs a password",
+					BROWSER_GetHostName( lServer ),
+					"JOIN", 0, "CANCEL", 0, true, "Password", true );
+				return;
+			}
 		}
 
 		DoJoinSelected( );
@@ -1649,10 +2084,10 @@ public:
 
 	void AnswerCancelConfirm( bool stop )
 	{
-		if ( !g_ConfirmCancel )
+		if ( !g_Dialog.open )
 			return;
 
-		g_ConfirmCancel = false;
+		CloseDialog( );
 
 		if ( stop )
 			zx::waddownload::Cancel( );
@@ -2207,8 +2642,8 @@ public:
 				g_Notice = "";
 			return true;
 		}
-		if ( g_ConfirmCancel )
-			return true;
+		if ( g_Dialog.open )
+			return DialogMouseEvent( type, x, y );
 
 		// The search box, which shares the row with the tabs.
 		g_SearchHot = false;
@@ -2509,26 +2944,45 @@ public:
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ))
 			g_LastModifiers = ev->data3;
 
-		if ( g_ConfirmCancel && ( ev != NULL ) && ( ev->type == EV_GUI_Event ) &&
-			(( ev->subtype == EV_GUI_KeyDown ) || ( ev->subtype == EV_GUI_KeyRepeat ) ||
-			 ( ev->subtype == EV_GUI_Char )))
+		// [rc4l] A dialog owns the keyboard outright while it is up, and answers three ways at once:
+		// a shortcut letter, the arrows plus Enter, and the mouse. They are alternatives, not modes --
+		// a player should never have to work out which one this particular box wants.
+		if ( g_Dialog.open && ( ev != NULL ) && ( ev->type == EV_GUI_Event ))
 		{
-			const int key = ev->data1;
-
-			if (( key == 'y' ) || ( key == 'Y' ))
+			if ( ev->subtype == EV_GUI_Char )
 			{
-				AnswerCancelConfirm( true );
+				// A FIELD TAKES PRECEDENCE over the shortcuts. In a password box 's' is a character of
+				// the password, not the STOP button -- a dialog that stole letters out of its own text
+				// field would be unusable.
+				if ( g_Dialog.hasInput )
+				{
+					g_DialogInput = zx::InsertChar( g_DialogInput, ev->data1, 64 );
+					return true;
+				}
+
+				std::vector<char> keys;
+				for ( int i = 0; i < g_Dialog.count; ++i )
+					keys.push_back( g_Dialog.shortcuts[i] );
+
+				const int picked = zx::ComputeDialogShortcut( keys, ev->data1 );
+				if ( picked >= 0 )
+					AnswerDialog( picked );
 				return true;
 			}
-			if (( key == 'n' ) || ( key == 'N' ))
+
+			if ( ev->subtype == EV_GUI_KeyDown )
 			{
-				AnswerCancelConfirm( false );
-				return true;
+				if (( ev->data1 == '' ) && g_Dialog.hasInput )
+				{
+					g_DialogInput = zx::Backspace( g_DialogInput );
+					return true;
+				}
 			}
 
-			// Anything else is swallowed. A question on screen means the next keypress answers it,
+			// Everything else is swallowed. A question on screen means the next keypress answers it,
 			// not that it does something underneath.
-			return true;
+			if (( ev->subtype == EV_GUI_KeyDown ) || ( ev->subtype == EV_GUI_KeyRepeat ))
+				return true;
 		}
 
 		// [rc4l] Typing into the search box.
@@ -2537,7 +2991,7 @@ public:
 		// letter while you are typing a query, not an answer to a question that is not on screen, and
 		// a printable key must never also be a menu shortcut. Only characters and the editing keys are
 		// claimed -- the arrows still navigate, which is what moves focus back OUT of the box.
-		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_ConfirmCancel && g_Notice.IsEmpty( ) &&
+		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
 			( g_Focus == zx::BrowserFocus::Search ))
 		{
 			if ( EditSearchField( ev ))
@@ -2551,7 +3005,7 @@ public:
 		// Scrolls the VIEW and nothing else. Picking a server is what clicking and the arrow keys are
 		// for; a wheel notch changing what you have selected is how you end up joining something you
 		// only scrolled past. Three rows a notch, the usual amount.
-		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_ConfirmCancel && g_Notice.IsEmpty( ))
+		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ))
 		{
 			const int total = static_cast<int>( g_SortedServers.Size( ));
 			if (( ev->subtype == EV_GUI_WheelUp ) || ( ev->subtype == EV_GUI_WheelDown ))
@@ -2621,7 +3075,7 @@ public:
 	// framework already does.
 	bool TranslateKeyboardEvents( )
 	{
-		return ( g_Focus != zx::BrowserFocus::Search ) || g_ConfirmCancel || g_Notice.IsNotEmpty( );
+		return ( g_Focus != zx::BrowserFocus::Search ) || g_Dialog.open || g_Notice.IsNotEmpty( );
 	}
 
 	//*************************************************************************
@@ -2891,14 +3345,41 @@ public:
 			return true;
 		}
 
-		// [rc4l] While the question is up it is the only thing that answers: Enter stops the download,
-		// Escape keeps it going. Both release the hold, which is the part that must not be skipped.
-		if ( g_ConfirmCancel )
+		// [rc4l] While a dialog is up it is the only thing that answers. Arrows walk the buttons, Enter
+		// presses the focused one, and Escape resolves to the SAFE choice rather than the focused one
+		// -- see computation/dialog_compute for why that distinction is worth a function.
+		if ( g_Dialog.open )
 		{
-			if ( mkey == MKEY_Enter )
-				AnswerCancelConfirm( true );
-			else if ( mkey == MKEY_Back )
-				AnswerCancelConfirm( false );
+			switch ( mkey )
+			{
+			case MKEY_Left:
+			case MKEY_Up:
+				g_Dialog.focus = zx::ComputeDialogFocus( g_Dialog.focus, g_Dialog.count, zx::DialogKey::Left );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				break;
+
+			case MKEY_Right:
+			case MKEY_Down:
+				g_Dialog.focus = zx::ComputeDialogFocus( g_Dialog.focus, g_Dialog.count, zx::DialogKey::Right );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				break;
+
+			case MKEY_Enter:
+				AnswerDialog( g_Dialog.focus );
+				break;
+
+			case MKEY_Back:
+				{
+					const int out = zx::ComputeDialogEscape( g_Dialog.cancelIndex, g_Dialog.count );
+					if ( out >= 0 )
+						AnswerDialog( out );
+				}
+				break;
+
+			default:
+				break;
+			}
+
 			return true;
 		}
 
