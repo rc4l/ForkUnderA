@@ -19,22 +19,26 @@ public:
 
 IMPLEMENT_CLASS (ALoreShot)
 
-int ALoreShot::DoSpecialDamage (AActor *target, int damage, FName damagetype)
+// [rc4l] uzdoom@92fbe47ad + 1c375c910 + 04c6c5ca5 (settled form of uzdoom@f374cf514). The
+// parameter was named `target`, shadowing the member of the same name, which is how the original
+// DONTTHRUST fix ended up testing the SHOOTER's flag instead of the actor being thrust. Renamed to
+// `victim` and the flag moved onto it, which is what the thrust actually applies to.
+int ALoreShot::DoSpecialDamage (AActor *victim, int damage, FName damagetype)
 {
 	FVector3 thrust;
 	
-	if (this->target != NULL)
+	if (victim != NULL && target != NULL && !(victim->flags7 & MF7_DONTTHRUST))
 	{
-		thrust.X = float(this->target->x - target->x);
-		thrust.Y = float(this->target->y - target->y);
-		thrust.Z = float(this->target->z - target->z);
+		thrust.X = float(target->x - victim->x);
+		thrust.Y = float(target->y - victim->y);
+		thrust.Z = float(target->z - victim->z);
 	
 		thrust.MakeUnit();
-		thrust *= float((255*50*FRACUNIT) / (target->Mass ? target->Mass : 1));
+		thrust *= float((255*50*FRACUNIT) / (victim->Mass ? victim->Mass : 1));
 	
-		target->velx += fixed_t(thrust.X);
-		target->vely += fixed_t(thrust.Y);
-		target->velz += fixed_t(thrust.Z);
+		victim->velx += fixed_t(thrust.X);
+		victim->vely += fixed_t(thrust.Y);
+		victim->velz += fixed_t(thrust.Z);
 	}
 	return damage;
 }

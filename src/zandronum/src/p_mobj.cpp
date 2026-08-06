@@ -565,6 +565,7 @@ void AActor::Serialize (FArchive &arc)
 		PrevY = y;
 		PrevZ = z;
 		PrevAngle = angle;
+		PrevRoll = roll;	// [rc4l]
 		UpdateWaterLevel(z, false);
 	}
 }
@@ -2551,16 +2552,16 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 				}
 				if (BlockingMobj && (BlockingMobj->flags2 & MF2_REFLECTIVE))
 				{
-					// [rc4l] uzdoom@533ae9593 with its cleanup uzdoom@fdf2d6c49 folded in.
-					// THRUREFLECT suppresses the angle change entirely; MIRRORREFLECT turns the
-					// missile a flat 180; AIMREFLECT sends it straight back at whoever fired it.
-					// Without this the two flags were parsed but inert.
+					// [rc4l] uzdoom@533ae9593 with its cleanup uzdoom@fdf2d6c49 folded in, then
+					// uzdoom@6bb084998. THRUREFLECT suppresses the angle change entirely;
+					// MIRRORREFLECT turns the missile a flat 180; AIMREFLECT sends it straight back
+					// at whoever fired it. Without this the two flags were parsed but inert.
 					if (!(BlockingMobj->flags7 & MF7_THRUREFLECT))
 					{
-						if (BlockingMobj->flags7 & MF7_MIRRORREFLECT)
-							angle = mo->angle + ANG180;
-						else
-							angle = R_PointToAngle2(BlockingMobj->x, BlockingMobj->y, mo->x, mo->y);
+						// [rc4l] uzdoom@6bb084998 -- the reflection angle is computed the same way
+						// for every case; MIRRORREFLECT is applied to the VELOCITY further down
+						// instead of by pre-loading `angle` here, which is what broke it.
+						angle = R_PointToAngle2(BlockingMobj->x, BlockingMobj->y, mo->x, mo->y);
 
 						// Change angle for deflection/reflection
 						if (mo->AdjustReflectionAngle (BlockingMobj, angle))
@@ -2584,12 +2585,24 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 						}
 						else
 						{
-							// Reflect the missile along angle
-							mo->angle = angle;
-							angle >>= ANGLETOFINESHIFT;
-							mo->velx = FixedMul (mo->Speed>>1, finecosine[angle]);
-							mo->vely = FixedMul (mo->Speed>>1, finesine[angle]);
-							mo->velz = -mo->velz/2;
+							// [rc4l] uzdoom@6bb084998 -- a mirror reverses the velocity it was
+							// given rather than recomputing one from Speed at the flipped angle.
+							if ((BlockingMobj->flags7 & MF7_MIRRORREFLECT) && (tg || blockingtg))
+							{
+								mo->angle += ANGLE_180;
+								mo->velx = -mo->velx / 2;
+								mo->vely = -mo->vely / 2;
+								mo->velz = -mo->velz / 2;
+							}
+							else
+							{
+								// Reflect the missile along angle
+								mo->angle = angle;
+								angle >>= ANGLETOFINESHIFT;
+								mo->velx = FixedMul (mo->Speed>>1, finecosine[angle]);
+								mo->vely = FixedMul (mo->Speed>>1, finesine[angle]);
+								mo->velz = -mo->velz/2;
+							}
 						}
 					}
 					if (mo->flags2 & MF2_SEEKERMISSILE)
@@ -4175,6 +4188,19 @@ void AActor::SetAngle(angle_t ang, bool interpolate)
 	}
 }
 
+// [rc4l] uzdoom@2b12db153
+void AActor::SetRoll(angle_t r, bool interpolate)
+{
+	if (r != roll)
+	{
+		roll = r;
+		if (player != NULL && interpolate)
+		{
+			player->cheats |= CF_INTERPVIEW;
+		}
+	}
+}
+
 //
 // P_MobjThinker
 //
@@ -4221,6 +4247,7 @@ void AActor::Tick ()
 	PrevY = y;
 	PrevZ = z;
 	PrevAngle = angle;
+	PrevRoll = roll;	// [rc4l]
 
 	// [BC] There are times when we don't want to tick this actor if it's a player.
 	// [BB] Voodoo dolls are an exemption.
@@ -5458,6 +5485,7 @@ void AActor::PostBeginPlay ()
 		Renderer->StateChanged(this);
 	}
 	PrevAngle = angle;
+	PrevRoll = roll;	// [rc4l]
 	flags7 |= MF7_HANDLENODELAY;
 
 	// [AK] Trigger an event script indicating that the actor has spawned.
@@ -6671,6 +6699,17 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 
 	puff = Spawn (pufftype, x, y, z, ALLOW_REPLACE);
 	if (puff == NULL) return NULL;
+
+	// [rc4l] uzdoom@db25322b4 -- honour +RANDOMIZE on puffs, as P_ExplodeMissile and
+	// P_CheckMissileSpawn already do. This draws from pr_spawnpuff, which this function
+	// already draws from for the z jitter below, so predicting clients and the server
+	// consume the stream identically.
+	if ((puff->flags4 & MF4_RANDOMIZE) && puff->tics > 0)
+	{
+		puff->tics -= pr_spawnpuff() & 3;
+		if (puff->tics < 1)
+			puff->tics = 1;
+	}
 
 	//Moved puff creation and target/master/tracer setting to here.
 	if (puff && vict)
