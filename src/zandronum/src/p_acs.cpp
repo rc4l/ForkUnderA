@@ -5655,6 +5655,7 @@ enum EACSFunctions
 	ACSF_SetActorRoll,
 	ACSF_ChangeActorRoll,
 	ACSF_GetActorRoll,
+	ACSF_QuakeEx,
 
 	// [BB] Out of order ZDoom backport.
 	ACSF_Warp = 92,
@@ -9145,6 +9146,18 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		case ACSF_GetActorRoll:
 			actor = SingleActorFromTID(args[0], activator);
 			return actor != NULL ? actor->roll >> 16 : 0;
+
+		// [rc4l] uzdoom@b6ca1947f, with the fixed->double conversion from uzdoom@e29b8b209.
+		// The three wave-speed arguments arrive from ACS as fixed point and P_StartQuakeXYZ
+		// takes doubles, so they go through FIXED2DBL rather than being passed raw.
+		case ACSF_QuakeEx:
+		{
+			return P_StartQuakeXYZ(activator, args[0], args[1], args[2], args[3], args[4], args[5], args[6], FBehavior::StaticLookupString(args[7]),
+				argCount > 8 ? args[8] : 0,
+				argCount > 9 ? FIXED2DBL(args[9]) : 1.0,
+				argCount > 10 ? FIXED2DBL(args[10]) : 1.0,
+				argCount > 11 ? FIXED2DBL(args[11]) : 1.0 );
+		}
 
 		case ACSF_GetActorFloorTexture:
 		{
