@@ -1951,11 +1951,15 @@ void Net_CheckLastRecieved (int counts)
 		}
 		else
 		{	//Send a resend request to the Arbitrator, as it's obvious we are stuck here.
-			if (debugfile && !players[playerfornode[Net_Arbitrator]].waiting)
+			// [rc4l] uzdoom@3d7934f1a -- Net_Arbitrator is a PLAYER number, but nettics and
+			// remoteresend are indexed by NODE, so these read and wrote the wrong slots. The
+			// players[] lookup is the mirror image: it wanted the arbitrator directly, not the
+			// player owning the node with the same number.
+			if (debugfile && !players[Net_Arbitrator].waiting)
 				fprintf(debugfile, "Arbitrator is slow (%i to %i)\n",
-				nettics[Net_Arbitrator], gametic + counts);
+				nettics[nodeforplayer[Net_Arbitrator]], gametic + counts);
 			//Send resend request to the Arbitrator. Also mark the Arbitrator as waiting to display it in the hud.
-			remoteresend[Net_Arbitrator] = players[playerfornode[Net_Arbitrator]].waiting = hadlate = true;
+			remoteresend[nodeforplayer[Net_Arbitrator]] = players[Net_Arbitrator].waiting = hadlate = true;
 		}
 	}
 }

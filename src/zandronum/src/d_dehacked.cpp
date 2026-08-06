@@ -2889,23 +2889,30 @@ static int PatchText (int oldSize)
 		}
 	}
 
-	if (!good)
-	{	
-		// Search through most other texts
-		const char *str;
-		str = EnglishStrings->MatchString (oldStr);
+	// [rc4l] uzdoom@6423b2fec -- a Dehacked text replacement has to alter EVERY occurrence of the
+	// source string, not just the first. The search now repeats until no match remains, and each
+	// matched entry is poisoned in EnglishStrings so the next pass (or a later replacement) cannot
+	// find it again. Also no longer gated on !good: a string can appear both in the tables searched
+	// above and in the general text list.
+	// Search through most other texts
+	const char *str;
+	do
+	{
+		str = EnglishStrings->MatchString(oldStr);
 		if (str != NULL)
 		{
-			GStrings.SetString (str, newStr);
+			GStrings.SetString(str, newStr);
+			EnglishStrings->SetString(str, "~~");	// set to something invalid so that it won't get found again by the next iteration or  by another replacement later
 			good = true;
 		}
+	} 
+	while (str != NULL);	// repeat search until the text can no longer be found
 
-		if (!good)
-		{
-			DPrintf ("   (Unmatched)\n");
-		}
+	if (!good)
+	{
+		DPrintf ("   (Unmatched)\n");
 	}
-		
+
 
 donewithtext:
 	if (newStr)
