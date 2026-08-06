@@ -395,8 +395,9 @@ static FxExpression *ParseExpression0 (FScanner &sc, const PClass *cls)
 		return new FxFRandom(rng, min, max, sc);
 	}
 	// [rc4l] uzdoom@8c5a8c54f cluster: randompick(a, b, c, ...) -- choose one of N at random.
-	else if (sc.CheckToken(TK_RandomPick))
+	else if (sc.CheckToken(TK_RandomPick) || sc.CheckToken(TK_FRandomPick))	// [rc4l] uzdoom@8e0151b4c
 	{
+		bool floaty = sc.TokenType == TK_FRandomPick;
 		FRandom *rng;
 		TArray<FxExpression*> list;
 		list.Clear();
@@ -421,7 +422,7 @@ static FxExpression *ParseExpression0 (FScanner &sc, const PClass *cls)
 				break;
 			sc.MustGetToken(',');
 		}
-		return new FxRandomPick(rng, list, sc);
+		return new FxRandomPick(rng, list, floaty, sc);
 	}
 	else if (sc.CheckToken(TK_Random2))
 	{
