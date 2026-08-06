@@ -22,7 +22,9 @@
 //       +---------up-------+   (up from ACTION returns to the tabs)
 //
 //   TABS    left/right move along the top row; down enters the list.
-//   SEARCH  left returns to the tabs; down enters the list.
+//   SEARCH  up returns to the tabs; down enters the list. LEFT AND RIGHT ARE NOT NAVIGATION --
+//           they belong to the caret, because a text field that jumped to another control when you
+//           tried to move through what you had typed would be unusable.
 //   ROWS    up/down move the selection; right goes to the button.
 //   ACTION  left goes back to the list; up goes back to the tabs.
 //

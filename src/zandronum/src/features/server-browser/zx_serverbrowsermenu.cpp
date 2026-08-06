@@ -2555,13 +2555,10 @@ public:
 
 		case GK_LEFT:
 		case GK_RIGHT:
-			// With shift they select. Without, they move FOCUS -- which is how the box is left, and
-			// why a field that swallowed them would be one you could never get out of.
-			if ( bShift )
-				g_Search = zx::MoveCaret( g_Search, ( key == GK_LEFT ) ? -1 : 1, true );
-			else
-				Navigate(( key == GK_LEFT ) ? zx::NavKey::Left : zx::NavKey::Right,
-					static_cast<int>( g_SortedServers.Size( )));
+			// [rc4l] ALWAYS the caret, never navigation. Moving through what you have typed is the
+			// thing these keys mean inside a field, and a box that jumped to the next control instead
+			// would be one you could not edit. Up, down, escape and enter are how it is left.
+			g_Search = zx::MoveCaret( g_Search, ( key == GK_LEFT ) ? -1 : 1, bShift );
 			return true;
 
 		default:
