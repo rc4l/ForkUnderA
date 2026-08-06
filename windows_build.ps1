@@ -73,6 +73,14 @@ if (-not (Test-Path (Join-Path $Deps "lib\OpenAL32.lib"))) {
 if (-not (Test-Path (Join-Path $Deps "lib\glew32.lib"))) {
     throw "windows_assets/ has no lib/glew32.lib. GLEW is required for the client build — regenerate windows_assets/ with the windows-export-deps workflow (it installs glew:x64-windows)."
 }
+# [rc4l] FFmpeg is checked here rather than left to CMake because CMake does NOT fail without it —
+# src/CMakeLists.txt treats it as optional and compiles instant replay as a no-capture stub. So a
+# windows_assets/ without ffmpeg configures, builds, packages and ships a binary that answers the
+# clip key with "not built into this binary", and nothing along the way says so. That is exactly how
+# it shipped, which is why the check is a hard failure and not a warning.
+if (-not (Test-Path (Join-Path $Deps "lib\avcodec.lib"))) {
+    throw "windows_assets/ has no lib/avcodec.lib. FFmpeg is required for instant replay — regenerate windows_assets/ with the windows-export-deps workflow (it installs ffmpeg[x264]:x64-windows)."
+}
 
 if ($Clean) {
     Write-Status "Cleaning build and dist directories"
@@ -133,8 +141,23 @@ $PrevEAP = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 
 Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, prebuilt deps)"
+# [rc4l] FFmpeg is pinned by absolute path like every other dependency here, and CMAKE_PREFIX_PATH is
+# a backstop rather than the mechanism. src/CMakeLists.txt locates FFmpeg with a bare
+# find_path/find_library, which does two things we do not want: it searches wherever it likes, and it
+# SKIPS ENTIRELY when the cache already holds a value. So a build directory previously configured by
+# windows_compile.ps1 keeps pointing at that script's vcpkg tree -- the fast path then compiles
+# against a static FFmpeg while linking everything else dynamically, which is a real failure this
+# very tree produced. Naming the five variables the fallback uses makes the answer come from
+# windows_assets/ and nowhere else, stale cache or not.
+#
+# [rc4l] The configure log is kept so the replay assertion below has something to read. CMake reports
+# which optional features it turned on, and that report is the only place the difference between a
+# full build and a feature-stripped one is visible.
+New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+$ConfigureLog = Join-Path $BuildDir "configure.log"
 & $CMake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
+    "-DCMAKE_PREFIX_PATH=$Deps" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
     -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
     -DFORCE_INTERNAL_GME=ON `
@@ -148,8 +171,22 @@ Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, prebuilt deps)
     "-DOPUS_LIBRARIES=$Deps/lib/opus.lib" `
     "-DGLEW_INCLUDE_DIR=$Deps/include" `
     "-DGLEW_LIBRARY=$Deps/lib/glew32.lib" `
-    "-DOPENSSL_ROOT_DIR=$Deps" "-DOPENSSL_USE_STATIC_LIBS=OFF"
+    "-DFFMPEG_INCLUDE_DIRS=$Deps/include" `
+    "-DFFMPEG_AVCODEC_LIB=$Deps/lib/avcodec.lib" `
+    "-DFFMPEG_AVFORMAT_LIB=$Deps/lib/avformat.lib" `
+    "-DFFMPEG_AVUTIL_LIB=$Deps/lib/avutil.lib" `
+    "-DFFMPEG_SWSCALE_LIB=$Deps/lib/swscale.lib" `
+    "-DOPENSSL_ROOT_DIR=$Deps" "-DOPENSSL_USE_STATIC_LIBS=OFF" | Tee-Object -FilePath $ConfigureLog
 if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $PrevEAP; throw "cmake configure failed" }
+
+# [rc4l] Belt and braces over the avcodec.lib check above: the libs can be present and CMake still
+# not enable replay (missing headers, a find_path that lands somewhere else). The lib check catches
+# the deps being absent; this catches them being unusable, and the two failure modes look identical
+# from the outside -- a binary that builds and cannot record.
+if (-not (Select-String -Path $ConfigureLog -Pattern "FUA replay: FFmpeg found" -Quiet)) {
+    $ErrorActionPreference = $PrevEAP
+    throw "CMake did not enable instant replay (no 'FUA replay: FFmpeg found' in $ConfigureLog). The build would ship a no-capture stub — check windows_assets/include/libavcodec."
+}
 
 Write-Status "Building ($Configuration)"
 & $CMake --build $BuildDir --config $Configuration -- -m
@@ -186,6 +223,14 @@ if (-not (Test-Path "$DistDir\OpenAL32.dll")) {
     throw "OpenAL32.dll missing from dist-windows — the build would ship without sound"
 }
 Write-Note "sound OK: OpenAL32.dll present"
+
+# [rc4l] The engine links avcodec by import lib, so a zip without the DLL beside the exe is one that
+# will not start at all -- a louder failure than the stub, but still one to catch before shipping.
+# Versioned name (avcodec-61.dll and friends), so match by pattern rather than by version.
+if (-not (Get-ChildItem "$DistDir\avcodec-*.dll" -ErrorAction SilentlyContinue)) {
+    throw "no avcodec-*.dll in dist-windows — the build would ship unable to start; check windows_assets/bin"
+}
+Write-Note "instant replay OK: FFmpeg runtime present"
 
 $zip = Join-Path $ScriptRoot "ZandroX-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
