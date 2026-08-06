@@ -21,6 +21,7 @@
 #include "templates.h"
 #include "v_text.h"
 
+#include <cstring>		// strlen
 #include <string>
 
 #ifndef _WIN32
