@@ -138,6 +138,10 @@ enum
 	IF_TOSSED			= 1<<22,	// Was spawned by P_DropItem (i.e. as a monster drop)
 	IF_ALWAYSRESPAWN	= 1<<23,	// Always respawn, regardless of dmflag
 	IF_FORCERESPAWNINSURVIVAL = 1<<24,	// [BB] Will be respawned in survival even without DF_ITEMS_RESPAWN.
+	// [rc4l] uzdoom@de4097cc7 -- upstream put this at 1<<24, which is taken here by Zandronum's
+	// IF_FORCERESPAWNINSURVIVAL, so it moves to the next free bit. ItemFlags is never serialised
+	// (it is read locally only), so no existing value shifts and nothing on the wire changes.
+	IF_TRANSFER			= 1<<25,	// All inventory items that the inventory item contains is also transfered to the pickuper
 
 };
 
