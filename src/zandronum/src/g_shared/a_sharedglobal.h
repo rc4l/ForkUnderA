@@ -133,7 +133,7 @@ protected:
 	DFlashFader ();
 };
 
-// [rc4l] uzdoom@7050d0322 .. uzdoom@2827c13d0 -- per-axis quakes and their scaling flags.
+// [rc4l] uzdoom@7050d0322 .. uzdoom@e29b8b209 -- per-axis quakes, scaling flags and QF_WAVE.
 enum
 {
 	QF_RELATIVE =		1,
@@ -141,6 +141,15 @@ enum
 	QF_SCALEUP =		1 << 2,
 	QF_MAX =			1 << 3,
 	QF_FULLINTENSITY =	1 << 4,
+	QF_WAVE =			1 << 5,
+};
+
+struct FQuakeJiggers
+{
+	int IntensityX, IntensityY, IntensityZ;
+	int RelIntensityX, RelIntensityY, RelIntensityZ;
+	int OffsetX, OffsetY, OffsetZ;
+	int RelOffsetX, RelOffsetY, RelOffsetZ;
 };
 
 class DEarthquake : public DThinker
@@ -148,7 +157,9 @@ class DEarthquake : public DThinker
 	DECLARE_CLASS (DEarthquake, DThinker)
 	HAS_OBJECT_POINTERS
 public:
-	DEarthquake(AActor *center, int intensityX, int intensityY, int intensityZ, int duration, int damrad, int tremrad, FSoundID quakesfx, int flags);
+	DEarthquake(AActor *center, int intensityX, int intensityY, int intensityZ, int duration,
+		int damrad, int tremrad, FSoundID quakesfx, int flags, 
+		double waveSpeedX, double waveSpeedY, double waveSpeedZ);
 
 	void Serialize (FArchive &arc);
 	void Tick ();
@@ -158,13 +169,16 @@ public:
 	int m_CountdownStart;
 	FSoundID m_QuakeSFX;
 	int m_Flags;
-	int m_IntensityX, m_IntensityY, m_IntensityZ;
+	fixed_t m_IntensityX, m_IntensityY, m_IntensityZ;
+	float m_WaveSpeedX, m_WaveSpeedY, m_WaveSpeedZ;
 
-	fixed_t GetModIntensity(int intensity) const;
+	// [rc4l] upstream declares these fixed_t and defines them int-valued, which only compiles because
+	// its fixed_t IS int. Ours is the strong zx::Fixed, so they are int here -- matching FQuakeJiggers,
+	// which stores ints -- and the conversion happens once, at the QuakePower call in r_utility.
+	int GetModIntensity(int intensity) const;
+	int GetModWave(double waveMultiplier) const;
 
-	static int StaticGetQuakeIntensities(AActor *viewer,
-		fixed_t &intensityX, fixed_t &intensityY, fixed_t &intensityZ,
-		fixed_t &relIntensityX, fixed_t &relIntensityY, fixed_t &relIntensityZ);
+	static int StaticGetQuakeIntensities(AActor *viewer, FQuakeJiggers &jiggers);
 
 private:
 	DEarthquake ();
