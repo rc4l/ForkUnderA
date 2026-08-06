@@ -604,24 +604,35 @@ void ReleaseJoinResume(bool proceed)
 {
 	g_resumeHeld = false;
 
+	if (!proceed)
+	{
+		// [rc4l] The player said stop, so the JOIN is abandoned here -- unconditionally, not only in
+		// the race below where the transfer had already finished.
+		//
+		// Leaving it pending meant the aborted transfer reached OnDownloadFinished looking exactly
+		// like a failed one, and the player was told "couldn't get everything this server needs, see
+		// the console for what was missing" -- a diagnosis, and a homework assignment, for something
+		// they had just chosen on purpose and confirmed.
+		g_pending = JoinPlan();
+
+		if (g_resumePending)
+		{
+			// It finished while they were being asked. The file stays -- it is downloaded and
+			// verified, and throwing it away would only mean fetching it again -- but the join it was
+			// for does not happen, because that is what they answered.
+			g_resumePending = false;
+			Printf(TEXTCOLOR_GOLD "The download had already finished, so the file is kept -- but the "
+				"join was cancelled as you asked.\n" TEXTCOLOR_NORMAL);
+		}
+		return;
+	}
+
 	if (!g_resumePending)
 		return;
 
 	const bool succeeded = g_resumePendingSuccess;
 	g_resumePending = false;
-
-	if (proceed)
-	{
-		OnDownloadFinished(succeeded);
-		return;
-	}
-
-	// The player said stop, and the transfer had already finished while they were being asked. The
-	// file stays -- it is downloaded and verified, and throwing it away would only mean fetching it
-	// again -- but the join it was for does not happen, because that is what they answered.
-	g_pending = JoinPlan();
-	Printf(TEXTCOLOR_GOLD "The download had already finished, so the file is kept -- but the join was "
-		"cancelled as you asked.\n" TEXTCOLOR_NORMAL);
+	OnDownloadFinished(succeeded);
 }
 
 bool IsJoinResumeHeld()

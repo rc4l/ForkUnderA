@@ -52,6 +52,12 @@ TEST(ResumeAction, ReportsFailureWhereverThePlayerIs)
 
 TEST(ResumeAction, DoesNothingWithNoJoinWaiting)
 {
+	// The two false-downloadSucceeded rows are what a CANCELLED transfer looks like: the player
+	// answered "stop it", the caller dropped the pending join, and the abort then arrives here
+	// looking identical to a failure. It must stay silent -- reporting "couldn't get everything this
+	// server needs, see the console" for something they chose on purpose is a diagnosis nobody asked
+	// for. See ReleaseJoinResume.
+
 	EXPECT_EQ(ResumeAction::Nothing, Act(false, true, true, false));
 	EXPECT_EQ(ResumeAction::Nothing, Act(false, true, false, false));
 	EXPECT_EQ(ResumeAction::Nothing, Act(false, false, true, false));
