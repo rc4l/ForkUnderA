@@ -5076,7 +5076,10 @@ void SERVERCOMMANDS_SetPolyobjRotation( LONG lPolyNum, ULONG ulPlayerExtra, Serv
 //*****************************************************************************
 //*****************************************************************************
 //
-void SERVERCOMMANDS_Earthquake( AActor *pCenter, LONG lIntensity, LONG lDuration, LONG lTemorRadius, FSoundID Quakesound, ULONG ulPlayerExtra, ServerCommandFlags flags )
+// [rc4l] uzdoom@7050d0322..2827c13d0 -- quakes are per-axis now, so a single intensity byte can no
+// longer describe one. The three axes and the QF_ flag word are appended; NETGAMEVERSION derives from
+// the git revision, so a client built before this cannot connect to a server built after it.
+void SERVERCOMMANDS_Earthquake( AActor *pCenter, LONG lIntensityX, LONG lIntensityY, LONG lIntensityZ, LONG lDuration, LONG lTemorRadius, FSoundID Quakesound, LONG lQuakeFlags, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	if ( !EnsureActorHasNetID (pCenter) )
 		return;
@@ -5085,10 +5088,13 @@ void SERVERCOMMANDS_Earthquake( AActor *pCenter, LONG lIntensity, LONG lDuration
 
 	NetCommand command ( SVC_EARTHQUAKE );
 	command.addShort ( pCenter->NetID );
-	command.addByte ( lIntensity );
+	command.addByte ( lIntensityX );
+	command.addByte ( lIntensityY );
+	command.addByte ( lIntensityZ );
 	command.addShort ( lDuration );
 	command.addShort ( lTemorRadius );
 	command.addString ( pszQuakeSound );
+	command.addLong ( lQuakeFlags );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 

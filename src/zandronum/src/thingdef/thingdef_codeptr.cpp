@@ -2692,6 +2692,7 @@ enum SIX_Flags
 	SIXF_NOPOINTERS				= 0x00400000,
 	SIXF_ORIGINATOR				= 0x00800000,	// [rc4l] uzdoom@f766a1ab3
 	SIXF_TRANSFERSPRITEFRAME	= 0x01000000,	// [rc4l] uzdoom@b37a98689
+	SIXF_TRANSFERROLL			= 0x02000000,	// [rc4l] uzdoom@0f4bca860
 };
 
 // [BB] Changed return value to bool (returns false if the actor already was destroyed).
@@ -2851,6 +2852,12 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	{
 		mo->sprite = self->sprite;
 		mo->frame = self->frame;
+	}
+
+	// [rc4l] uzdoom@0f4bca860 -- roll renders here now (+ROLLSPRITE), so this is observable.
+	if (flags & SIXF_TRANSFERROLL)
+	{
+		mo->roll = self->roll;
 	}
 
 	return true;
@@ -3684,6 +3691,29 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetHitSize)
 //===========================================================================
 
 // [rc4l] uzdoom@643d37ab7
+//===========================================================================
+//
+// A_QuakeEx
+//
+// Extended version of A_Quake. Takes individual axis into account and can
+// take a flag.
+//===========================================================================
+
+// [rc4l] uzdoom@7050d0322, settled by uzdoom@2827c13d0
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_QuakeEx)
+{
+	ACTION_PARAM_START(8);
+	ACTION_PARAM_INT(intensityX, 0);
+	ACTION_PARAM_INT(intensityY, 1);
+	ACTION_PARAM_INT(intensityZ, 2);
+	ACTION_PARAM_INT(duration, 3);
+	ACTION_PARAM_INT(damrad, 4);
+	ACTION_PARAM_INT(tremrad, 5);
+	ACTION_PARAM_SOUND(sound, 6);
+	ACTION_PARAM_INT(flags, 7);
+	P_StartQuakeXYZ(self, 0, intensityX, intensityY, intensityZ, duration, damrad, tremrad, sound, flags);
+}
+
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetFloatBobPhase)
 {
 	ACTION_PARAM_START(1);

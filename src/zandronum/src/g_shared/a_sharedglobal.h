@@ -133,23 +133,38 @@ protected:
 	DFlashFader ();
 };
 
+// [rc4l] uzdoom@7050d0322 .. uzdoom@2827c13d0 -- per-axis quakes and their scaling flags.
+enum
+{
+	QF_RELATIVE =		1,
+	QF_SCALEDOWN =		1 << 1,
+	QF_SCALEUP =		1 << 2,
+	QF_MAX =			1 << 3,
+	QF_FULLINTENSITY =	1 << 4,
+};
+
 class DEarthquake : public DThinker
 {
 	DECLARE_CLASS (DEarthquake, DThinker)
 	HAS_OBJECT_POINTERS
 public:
-	DEarthquake (AActor *center, int intensity, int duration, int damrad, int tremrad, FSoundID quakesfx);
+	DEarthquake(AActor *center, int intensityX, int intensityY, int intensityZ, int duration, int damrad, int tremrad, FSoundID quakesfx, int flags);
 
 	void Serialize (FArchive &arc);
 	void Tick ();
-
 	TObjPtr<AActor> m_Spot;
 	fixed_t m_TremorRadius, m_DamageRadius;
-	int m_Intensity;
 	int m_Countdown;
+	int m_CountdownStart;
 	FSoundID m_QuakeSFX;
+	int m_Flags;
+	int m_IntensityX, m_IntensityY, m_IntensityZ;
 
-	static int StaticGetQuakeIntensity (AActor *viewer);
+	fixed_t GetModIntensity(int intensity) const;
+
+	static int StaticGetQuakeIntensities(AActor *viewer,
+		fixed_t &intensityX, fixed_t &intensityY, fixed_t &intensityZ,
+		fixed_t &relIntensityX, fixed_t &relIntensityY, fixed_t &relIntensityZ);
 
 private:
 	DEarthquake ();
