@@ -1128,10 +1128,12 @@ static void CreateCachedNodes(MapData *map)
 	WriteLong(ZNodes, numnodes);
 	for(int i=0;i<numnodes;i++)
 	{
-		WriteWord(ZNodes,(WORD)( nodes[i].x >> FRACBITS));
-		WriteWord(ZNodes,(WORD)( nodes[i].y >> FRACBITS));
-		WriteWord(ZNodes,(WORD)( nodes[i].dx >> FRACBITS));
-		WriteWord(ZNodes,(WORD)( nodes[i].dy >> FRACBITS));
+		// [rc4l] uzdoom@84f8c299c -- cached nodes are ZGL3, which carries full fixed-point
+		// coordinates; truncating them to words lost precision on large maps.
+		WriteLong(ZNodes, nodes[i].x.Raw());
+		WriteLong(ZNodes, nodes[i].y.Raw());
+		WriteLong(ZNodes, nodes[i].dx.Raw());
+		WriteLong(ZNodes, nodes[i].dy.Raw());
 		for (int j = 0; j < 2; ++j)
 		{
 			for (int k = 0; k < 4; ++k)
@@ -1180,7 +1182,7 @@ static void CreateCachedNodes(MapData *map)
 		DWORD ndx[2] = {LittleLong(DWORD(lines[i].v1 - vertexes)), LittleLong(DWORD(lines[i].v2 - vertexes)) };
 		memcpy(compressed+8+16+8*i, ndx, 8);
 	}
-	memcpy(compressed + offset - 4, "ZGL2", 4);
+	memcpy(compressed + offset - 4, "ZGL3", 4);	// [rc4l] uzdoom@84f8c299c -- full-precision node coords
 
 	FString path = CreateCacheName(map, true);
 	FILE *f = fopen(path, "wb");
@@ -1230,7 +1232,7 @@ static bool CheckCachedNodes(MapData *map)
 	if (fread(verts, 8, numlin, f) != numlin) goto errorout;
 
 	if (fread(magic, 1, 4, f) != 4) goto errorout;
-	if (memcmp(magic, "ZGL2", 4))  goto errorout;
+	if (memcmp(magic, "ZGL3", 4))  goto errorout;	// [rc4l] uzdoom@84f8c299c -- rejects stale ZGL2 caches
 
 
 	try

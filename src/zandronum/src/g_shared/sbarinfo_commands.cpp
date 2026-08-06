@@ -3274,8 +3274,9 @@ class CommandHasWeaponPiece : public SBarInfoCommandFlowControl
 					AWeaponHolder *hold = static_cast<AWeaponHolder*>(inv);
 					if(hold->PieceWeapon == weapon)
 					{
-						if(hold->PieceMask & (1 << (piece-1)))
-							SetTruth(true, block, statusBar);
+						// [rc4l] uzdoom@a41af2de7 -- only ever set truth, never cleared it, so a piece
+						// that had been removed still read as held.
+						SetTruth(0 != (hold->PieceMask & (1 << (piece-1))), block, statusBar);
 						return;
 					}
 				}
