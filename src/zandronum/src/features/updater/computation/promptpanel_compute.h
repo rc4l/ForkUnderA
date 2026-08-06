@@ -41,6 +41,15 @@ struct PanelColor
 // Sample a vertical linear gradient at row `row` of a `height`-tall panel (top -> bottom).
 PanelColor ComputePanelGradient(int row, int height, PanelColor top, PanelColor bottom);
 
+// Alpha for one column of a horizontal rule that fades out towards both ends: 0 at the extremes,
+// rising to `peak` in the middle. Returns 0 for anything outside [0, width).
+//
+// Fading rather than a flat line because the rule sits INSIDE a panel with no border of its own -- a
+// hard line would read as the panel being cut in two, where a fade reads as a divider between two
+// parts of one surface. It is also what keeps the ends from colliding with the rounded corners
+// without needing to know where those corners are.
+int ComputeSeparatorAlpha(int x, int width, int peak);
+
 } // namespace zx
 
 #endif

@@ -79,8 +79,18 @@ bool IsRunning();
 bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedFile> &files,
 	CompleteProc onDone);
 
-// Stop the run. The partial file is discarded; the completion callback still fires (with false).
+// Stop the run because the PLAYER asked. The partial file is discarded, any queued replacement is
+// dropped, and the completion callback still fires (with false) so the caller can say so.
 void Cancel();
+
+// [rc4l] Stop the run because the player moved on -- they picked another server, so this transfer is
+// no longer wanted and neither is the join behind it.
+//
+// The difference from Cancel is the completion: Abandon drops it. Firing it would resume a join the
+// player has already walked away from, which is what used to happen -- pick a second server while the
+// first was still downloading and the old transfer would finish minutes later and drag you onto the
+// server you left.
+void Abandon();
 
 // A one-line progress summary for the console or a menu, or "" when idle -- e.g.
 // "brutal.wad  43%  (3.2 of 7.4 MB)".
@@ -93,6 +103,21 @@ void Tick();
 // Where finished files are written. Created on demand, and registered in the config's
 // FileSearch.Directories so BaseFileSearch finds what we downloaded -- this run and every run after.
 FString DownloadDir();
+
+// [rc4l] Full path of a copy of `name` whose MD5 is `md5Hex`, inside our own download folder, or ""
+// if we do not have that exact content. Checks the content-addressed store (a stat) and then the
+// flat working copy (one hash).
+//
+// Meant to be called BEFORE the name search, and that ordering is a bug fix rather than an
+// optimisation. Downloads land in a directory appended to FileSearch.Directories, so a player who
+// already owns a different test.wad earlier in the path shadows the copy we just fetched: we detect
+// the mismatch, download the right file, resolve by NAME, find theirs again, and the loop guard
+// turns that into "can't join" with the correct file sitting on disk. Asking for content instead of
+// for a name cannot go wrong that way.
+//
+// Only ever looks inside our download folder. WADs the player keeps elsewhere are the name search's
+// business, and are never moved, renamed or deleted by us.
+FString FindLocalCopy(const char *name, const char *md5Hex);
 
 }} // namespace zx::waddownload
 

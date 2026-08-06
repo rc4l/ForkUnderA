@@ -951,6 +951,10 @@ void M_ParseMenuDefs();
 void M_StartupSkillMenu(FGameStartup *gs);
 int M_GetDefaultSkill();
 void M_StartControlPanel (bool makeSound);
+
+// [rc4l] Release every latched menu key. Call it when something takes the keyboard away from the
+// menu's own translation -- see the definition for what goes wrong otherwise.
+void M_ReleaseMenuButtons ();
 void M_SetMenu(FName menu, int param = -1);
 void M_NotifyNewSave (const char *file, const char *title, bool okForQuicksave);
 void M_StartMessage(const char *message, int messagemode, FName action = NAME_None);

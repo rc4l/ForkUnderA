@@ -14,6 +14,7 @@ using zx::BrowserCounts;
 using zx::BrowserPhase;
 using zx::ComputeBrowserPhase;
 using zx::ComputeClampedSelection;
+using zx::ComputeRestoredScroll;
 using zx::ComputePingBucket;
 using zx::ComputeRowWindow;
 using zx::ComputeShowsProgress;
@@ -180,4 +181,66 @@ TEST( ClampedSelection, TracksAListChangingUnderIt )
 	EXPECT_EQ( ComputeClampedSelection( 5, 0 ), -1 );   // list emptied -> nothing selected
 	EXPECT_EQ( ComputeClampedSelection( -1, 0 ), -1 );
 	EXPECT_EQ( ComputeClampedSelection( 0, -2 ), -1 );  // nonsense total
+}
+
+// ---------------------------------------------------------- restoring a scroll position
+
+TEST( RestoredScroll, KeepsAPositionThatStillFits )
+{
+	EXPECT_EQ( ComputeRestoredScroll( 12, 60, 14 ), 12 );
+	EXPECT_EQ( ComputeRestoredScroll( 0, 60, 14 ), 0 );
+}
+
+TEST( RestoredScroll, PinsToTheLastFullPageWhenTheListShrank )
+{
+	// The case that matters: 60 servers, scrolled deep, and most of them time out before we look
+	// again. Row 40 is nowhere -- and because the first row is fed back into hit-testing, leaving it
+	// there aims clicks at rows that no longer exist.
+	EXPECT_EQ( ComputeRestoredScroll( 40, 20, 14 ), 6 );
+	EXPECT_EQ( ComputeRestoredScroll( 40, 15, 14 ), 1 );
+}
+
+TEST( RestoredScroll, GoesToTheTopWhenEverythingFitsOnScreen )
+{
+	// Which is also the moment the scrollbar disappears: there is no track left to be positioned on,
+	// so the only position that can be right is the top.
+	EXPECT_EQ( ComputeRestoredScroll( 40, 14, 14 ), 0 );
+	EXPECT_EQ( ComputeRestoredScroll( 40, 3, 14 ), 0 );
+	EXPECT_EQ( ComputeRestoredScroll( 1, 2, 14 ), 0 );
+}
+
+TEST( RestoredScroll, GoesToTheTopWhenEveryServerDied )
+{
+	EXPECT_EQ( ComputeRestoredScroll( 40, 0, 14 ), 0 );
+	EXPECT_EQ( ComputeRestoredScroll( 0, 0, 14 ), 0 );
+}
+
+TEST( RestoredScroll, SurvivesNonsenseInput )
+{
+	EXPECT_EQ( ComputeRestoredScroll( -5, 60, 14 ), 0 );	// never above the first row
+	EXPECT_EQ( ComputeRestoredScroll( 12, -3, 14 ), 0 );	// negative total
+	EXPECT_EQ( ComputeRestoredScroll( 12, 60, 0 ), 0 );		// no page to fit -- no division by it
+	EXPECT_EQ( ComputeRestoredScroll( 12, 60, -4 ), 0 );
+}
+
+TEST( RestoredScroll, AlwaysLeavesTheWindowFullOfRealRows )
+{
+	// The invariant the drawing code depends on, swept rather than spot-checked: whatever comes back
+	// must be a row that exists, and the page starting there must not run off the end.
+	const int perPage = 14;
+	for ( int total = 0; total <= 40; ++total )
+	{
+		for ( int remembered = -3; remembered <= 60; ++remembered )
+		{
+			const int first = ComputeRestoredScroll( remembered, total, perPage );
+
+			EXPECT_GE( first, 0 ) << total << " / " << remembered;
+			EXPECT_LE( first, ( total > 0 ) ? total - 1 : 0 ) << total << " / " << remembered;
+
+			if ( total > perPage )
+				EXPECT_GE( total - first, perPage ) << total << " / " << remembered;
+			else
+				EXPECT_EQ( 0, first ) << total << " / " << remembered;
+		}
+	}
 }

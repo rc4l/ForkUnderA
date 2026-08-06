@@ -139,6 +139,13 @@ HttpFileResult Win_HttpGetToFile(const char *url, const char *destPath, long lon
 				{
 					result = HttpFileResult::NotFound;
 				}
+				// [rc4l] Distinct from HttpError on purpose: 503 means the host HAS the file and is
+				// out of capacity, so moving to the next mirror throws away the one source certain to
+				// have it. A ZandroX server answers this when every download slot is busy.
+				else if (status == 503)
+				{
+					result = HttpFileResult::Busy;
+				}
 				else if (status < 200 || status >= 300)
 				{
 					result = HttpFileResult::HttpError;

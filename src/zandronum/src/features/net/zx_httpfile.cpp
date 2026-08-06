@@ -205,6 +205,11 @@ HttpFileResult HttpGetToFile(const char *url, const char *destPath, long long ma
 		}
 		else if (status == 404 || status == 410)
 			result = HttpFileResult::NotFound;
+		// [rc4l] Distinct from HttpError on purpose: 503 means the host HAS the file and is out of
+		// capacity, so moving to the next mirror throws away the one source certain to have it. A
+		// ZandroX server answers this when every download slot is busy.
+		else if (status == 503)
+			result = HttpFileResult::Busy;
 		else if (status >= 400)
 			result = HttpFileResult::HttpError;
 		else if (rc == CURLE_WRITE_ERROR)
