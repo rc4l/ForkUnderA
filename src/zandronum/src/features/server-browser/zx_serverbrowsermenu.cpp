@@ -352,7 +352,7 @@ static	int				g_TabHot = -1;
 CVAR( String, cl_fua_hostname, "ZandroX Server", CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 CVAR( Int, cl_fua_hostport, 10666, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 CVAR( Int, cl_fua_hostmaxplayers, 8, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
-CVAR( Bool, cl_fua_hostpublic, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+CVAR( Bool, cl_fua_hostpublic, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 
 // [rc4l] THE HOSTING FORM. What the player is about to run, kept across visits to the tab.
 //
@@ -405,7 +405,12 @@ static	int				g_HostVisHot = -1;
 static	bool			g_HostOnVisibility = false;
 
 // Two answers: local, then global. Named so the row and everything that indexes it agree.
-enum { kHostVisLocal = 0, kHostVisGlobal = 1, kHostVisCount = 2 };
+// [rc4l] Internet FIRST, and the default. Hosting to be joined is the ordinary reason to host, and
+// a form that opens on the narrower answer makes the common case the one you have to correct.
+//
+// The values carry the order so that nothing else has to know it -- every index in this file goes
+// through these names, which is what stops a reorder from silently swapping the two answers.
+enum { kHostVisGlobal = 0, kHostVisLocal = 1, kHostVisCount = 2 };
 
 // True once the form has been filled from the CVARs that remember it, so a visit to the tab does not
 // wipe what was typed on the last one.
@@ -2726,10 +2731,11 @@ public:
 		const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
 
 		static const char *const labels[kHostVisCount] = {
-			"This network only", "Anyone on the internet",
+			"Internet", "Local network",
 		};
 
-		DrawChoiceRow( rowX, y, rowW, kHostVisCount, labels, g_HostAdvertise ? 1 : 0,
+		DrawChoiceRow( rowX, y, rowW, kHostVisCount, labels,
+			g_HostAdvertise ? kHostVisGlobal : kHostVisLocal,
 			g_HostVisHot, ( g_Focus == zx::BrowserFocus::Host ) && g_HostOnVisibility );
 
 		// [rc4l] The glow goes to the SELECTED CELL, not to the label.
@@ -2755,9 +2761,10 @@ public:
 			if ( !cell.valid )
 				continue;
 
-			serverbrowser_Tip( cell.x, y, cell.width, SB_CHOICE_H, ( i == 0 )
-				? "Not listed anywhere\nPlayers on your network find it automatically"
-				: "Listed publicly\nZandroX will ask your router to open the port" );
+			serverbrowser_Tip( cell.x, y, cell.width, SB_CHOICE_H,
+				( i == kHostVisGlobal )
+				? "Listed publicly so anyone can join\nZandroX will ask your router to open the port"
+				: "Not listed anywhere\nPlayers on your own network find it automatically" );
 		}
 	}
 
