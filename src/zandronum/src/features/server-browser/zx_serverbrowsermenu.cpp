@@ -35,6 +35,7 @@
 #include "i_input.h"		// [rc4l] I_PutInClipboard / I_GetFromClipboard, for the search box
 #include "cl_main.h"		// [rc4l] cl_password, handed to the join from the password prompt
 #include "features/server-browser/computation/browserchrome_compute.h"
+#include "features/server-browser/computation/choicerow_compute.h"
 #include "features/server-browser/computation/dialog_compute.h"
 #include "features/server-browser/computation/glowtravel_compute.h"
 #include "features/server-browser/computation/serversearch_compute.h"
@@ -157,6 +158,11 @@
 #define SB_HOST_BTN_H		18
 #define SB_HOST_BTN_W		120
 #define SB_HOST_MAXLEN		40
+
+// [rc4l] A row of mutually exclusive choices. Tall enough for the marker to be legible beside the
+// label, which is what decides these two numbers rather than the text.
+#define SB_CHOICE_H			15
+#define SB_CHOICE_GAP		8
 
 #define SB_FOOTER_Y			( SB_ROWS_BOTTOM + 20 )
 
@@ -374,6 +380,11 @@ static	zx::TextInput	g_HostFields[kHostFieldCount];
 static	int				g_HostFieldFocus = 0;
 static	int				g_HostFieldHot = -1;
 
+// Drag-selection in a host field, and when the last click landed -- the two things a field needs to
+// tell a double-click from two clicks, and a drag from a press.
+static	bool			g_HostFieldDragging = false;
+static	int				g_HostClickTime = 0;
+
 // Which control on the hosting panel has the keyboard. The fields come first, then the button, so
 // tabbing down the form and pressing enter is the whole flow.
 static	bool			g_HostOnButton = false;
@@ -383,7 +394,14 @@ static	bool			g_HostButtonHot = false;
 // nothing forwarded, and is what somebody playing with people in the same house wants. Global is a
 // deliberate second step -- see the reachability check.
 static	bool			g_HostAdvertise = false;
-static	bool			g_HostAdvertiseHot = false;
+
+// Which cell of the visibility row the pointer is over, and whether the keyboard is on the row at
+// all -- the row is a stop between the last field and the button, not a field itself.
+static	int				g_HostVisHot = -1;
+static	bool			g_HostOnVisibility = false;
+
+// Two answers: local, then global. Named so the row and everything that indexes it agree.
+enum { kHostVisLocal = 0, kHostVisGlobal = 1, kHostVisCount = 2 };
 
 // True once the form has been filled from the CVARs that remember it, so a visit to the tab does not
 // wipe what was typed on the last one.
@@ -2142,13 +2160,28 @@ public:
 	// thing the form exists to reach.
 	void MoveHostFocus( int step )
 	{
+		// [rc4l] Down the fields, onto the visibility row, then the button, and no further. The
+		// button is the end because it is the thing the form exists to reach.
 		if ( g_HostOnButton )
 		{
 			if ( step < 0 )
 			{
 				g_HostOnButton = false;
-				g_HostFieldFocus = kHostFieldCount - 1;
+				g_HostOnVisibility = true;
 			}
+			return;
+		}
+
+		if ( g_HostOnVisibility )
+		{
+			g_HostOnVisibility = false;
+
+			if ( step > 0 )
+				g_HostOnButton = true;
+			else
+				g_HostFieldFocus = kHostFieldCount - 1;
+
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return;
 		}
 
@@ -2163,7 +2196,8 @@ public:
 
 		if ( next >= kHostFieldCount )
 		{
-			g_HostOnButton = true;
+			g_HostOnVisibility = true;
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return;
 		}
 
@@ -2182,7 +2216,20 @@ public:
 	{
 		g_HostFieldHot = -1;
 		g_HostButtonHot = false;
-		g_HostAdvertiseHot = false;
+		g_HostVisHot = -1;
+
+		// A drag in progress owns the pointer until it is released -- tracked even once it leaves the
+		// box, because that is what dragging means everywhere else, and a selection that stops the
+		// moment you overshoot the last character is one you can never make in a single gesture.
+		if ( g_HostFieldDragging && ( g_HostFieldFocus >= 0 ) && ( g_HostFieldFocus < kHostFieldCount ))
+		{
+			g_HostFields[g_HostFieldFocus] = zx::SetCaret( g_HostFields[g_HostFieldFocus],
+				HostFieldCharAt( g_HostFieldFocus, x ), true );
+
+			if ( type == MOUSE_Release )
+				g_HostFieldDragging = false;
+			return true;
+		}
 
 		const zx::HostState state = zx::HostCurrentState( );
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
@@ -2231,10 +2278,26 @@ public:
 					g_HostOnButton = false;
 					g_HostFieldFocus = i;
 
-					// The caret goes to the end rather than under the pointer. These fields are short
-					// and mostly retyped wholesale; hit-testing a character position would be machinery
-					// earning nothing here, and the search box is where that already exists.
-					g_HostFields[i] = zx::CaretEnd( g_HostFields[i], false );
+					const int now = static_cast<int>( DMenu::MenuTime );
+					const bool bDouble = (( now - g_HostClickTime ) < 15 );
+					g_HostClickTime = now;
+
+					if ( bDouble )
+					{
+						// The word under the pointer, or everything when there is no word there. No
+						// drag afterwards: a second press that started selecting again would undo
+						// what the player just asked for before they let go.
+						g_HostFields[i] = zx::SelectWordOrAll( g_HostFields[i],
+							HostFieldCharAt( i, x ));
+						g_HostFieldDragging = false;
+					}
+					else
+					{
+						// Press puts the caret and arms a drag; the drag turns it into a selection.
+						g_HostFieldDragging = true;
+						g_HostFields[i] = zx::SetCaret( g_HostFields[i], HostFieldCharAt( i, x ),
+							bShiftHeld( ));
+					}
 				}
 				return true;
 			}
@@ -2242,24 +2305,86 @@ public:
 			fieldY += SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
 		}
 
-		// The visibility toggle, which is one line rather than a field.
+		// The visibility row. Which CELL the pointer is in decides the answer -- the gaps belong to
+		// nobody, so a click between the two is not evidence for either.
 		const int visY = HostVisibilityY( );
-		if (( y >= serverbrowser_ToScreenY( visY - 2 )) &&
-			( y < serverbrowser_ToScreenY( visY + SB_HOST_LINE + 2 )) &&
-			( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
-			( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+		if (( y >= serverbrowser_ToScreenY( visY )) &&
+			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
 		{
-			g_HostAdvertiseHot = true;
+			const int rowX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W;
+			const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
 
-			if ( type == MOUSE_Release )
+			// Back into virtual units, because that is what the layout is expressed in.
+			int at = -1;
+			for ( int i = 0; i < kHostVisCount; ++i )
 			{
-				g_HostAdvertise = !g_HostAdvertise;
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				const zx::ChoiceCell cell = zx::ChoiceCellAt( i, kHostVisCount, rowX, rowW,
+					SB_CHOICE_GAP );
+				if ( !cell.valid )
+					continue;
+
+				if (( x >= serverbrowser_ToScreenX( cell.x )) &&
+					( x < serverbrowser_ToScreenX( cell.x + cell.width )))
+				{
+					at = i;
+					break;
+				}
 			}
-			return true;
+
+			g_HostVisHot = at;
+
+			if (( at >= 0 ) && ( type == MOUSE_Release ))
+			{
+				SetFocus( zx::BrowserFocus::Host );
+				g_HostOnButton = false;
+				g_HostOnVisibility = true;
+
+				const bool bWanted = ( at == kHostVisGlobal );
+				if ( bWanted != g_HostAdvertise )
+				{
+					g_HostAdvertise = bWanted;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+			}
+
+			return ( at >= 0 );
 		}
 
 		return false;
+	}
+
+	// [rc4l] Which character of a host field the pointer is over. The same half-way rule the search
+	// box uses -- clicking the left of a glyph puts the caret before it and the right of it after,
+	// which is where the eye says it should go.
+	size_t HostFieldCharAt( int index, int px )
+	{
+		if (( index < 0 ) || ( index >= kHostFieldCount ))
+			return 0;
+
+		const int textX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W + 5;
+
+		// A masked field is measured on what is DRAWN, not on what is stored: the asterisks are a
+		// different width from the characters behind them, and hit-testing the real text would put
+		// the caret somewhere the player is not pointing.
+		FString shown;
+		if ( index == kHostFieldPassword )
+		{
+			for ( size_t i = 0; i < g_HostFields[index].text.size( ); ++i )
+				shown += "*";
+		}
+		else
+			shown = g_HostFields[index].text.c_str( );
+
+		for ( unsigned i = 0; i < shown.Len( ); ++i )
+		{
+			const int glyphW = SmallFont->StringWidth( shown.Mid( i, 1 ));
+			const int leftEdge = textX + SmallFont->StringWidth( shown.Left( i ));
+
+			if ( px < serverbrowser_ToScreenX( leftEdge + glyphW / 2 ))
+				return static_cast<size_t>( i );
+		}
+
+		return shown.Len( );
 	}
 
 	// [rc4l] Where the form's rows land. Worked out once and read by both the drawing and the hit
@@ -2278,6 +2403,67 @@ public:
 	int HostFormButtonY( )
 	{
 		return HostVisibilityY( ) + SB_HOST_LINE + 10;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] A row of mutually exclusive choices, drawn the way the rest of the browser draws things.
+	//
+	// Reusable on purpose: two options here, and a game mode picker is three or four with nothing
+	// changed but the array. The geometry and the hit test both come from choicerow_compute, so a
+	// cell can never be somewhere other than where it is clickable.
+	//
+	// Each option is a rounded cell -- the same DrawRoundedPanel every other surface uses -- with a
+	// filled dot on the chosen one. The dot rather than colour alone, because a row where the only
+	// difference is brightness is a row somebody with a dim screen cannot read.
+	void DrawChoiceRow( int vx, int vy, int vw, int count, const char *const *labels, int selected,
+		int hot, bool bFocused )
+	{
+		selected = zx::ChoiceNormalise( selected, count );
+
+		for ( int i = 0; i < count; ++i )
+		{
+			const zx::ChoiceCell cell = zx::ChoiceCellAt( i, count, vx, vw, SB_CHOICE_GAP );
+			if ( !cell.valid )
+				continue;
+
+			const bool bChosen = ( i == selected );
+			const bool bLit = ( i == hot ) || ( bChosen && bFocused );
+
+			// The chosen one sits higher than the rest, the same lift the tabs and buttons use for
+			// the same reason: what is true here should be answerable by looking.
+			const int base = bChosen ? ( bLit ? 62 : 48 ) : ( bLit ? 30 : 20 );
+			const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+				static_cast<BYTE>( base + 12 ), 225 };
+			const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ),
+				static_cast<BYTE>( base / 2 + 8 ), 235 };
+
+			DrawRoundedPanel( cell.x, vy, cell.width, SB_CHOICE_H, topCol, botCol, 5 );
+
+			// The marker: a filled ring when chosen, an empty one when not. Drawn at a size measured
+			// over several units rather than one, because a radius derived from a single virtual
+			// pixel rounds to 1 or 2 depending on the window and the dot changes size as you resize.
+			const int dotCx = cell.x + 9;
+			const int dotCy = vy + SB_CHOICE_H / 2;
+			const int span = serverbrowser_ToScreenX( 100 ) - serverbrowser_ToScreenX( 0 );
+			const int outer = MAX( 3, ( span * 4 ) / 100 );
+			const int inner = MAX( 1, ( span * 2 ) / 100 );
+
+			const int sx = serverbrowser_ToScreenX( dotCx );
+			const int sy = serverbrowser_ToScreenY( dotCy );
+
+			screen->Dim( PalEntry( 150, 155, 175 ), 0.9f, sx - outer, sy - outer, outer * 2, outer * 2 );
+			if ( bChosen )
+				screen->Dim( PalEntry( 235, 235, 245 ), 1.0f, sx - inner, sy - inner, inner * 2, inner * 2 );
+			else
+				screen->Dim( PalEntry( 18, 19, 27 ), 1.0f, sx - inner, sy - inner, inner * 2, inner * 2 );
+
+			const int textX = cell.x + 18;
+			const int textY = vy + ( SB_CHOICE_H - SmallFont->GetHeight( )) / 2 + 1;
+
+			screen->DrawText( SmallFont, bChosen ? CR_WHITE : CR_GRAY, textX, textY, labels[i],
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
 	}
 
 	void DrawHostPanel( )
@@ -2337,8 +2523,11 @@ public:
 		const int fieldX = x + SB_HOST_LABEL_W;
 		const int fieldW = SB_HOST_RIGHT - SB_HOST_PAD - fieldX;
 
-		const bool bFocused = ( !g_HostOnButton ) && ( g_HostFieldFocus == index )
-			&& ( g_Focus == zx::BrowserFocus::Host );
+		// [rc4l] Every one of these has to be false for a field to look focused. Leaving the
+		// visibility row out meant the last field kept its gold label and its caret while the row had
+		// the keyboard -- two controls claiming the same thing, and the player believing the wrong one.
+		const bool bFocused = ( !g_HostOnButton ) && ( !g_HostOnVisibility )
+			&& ( g_HostFieldFocus == index ) && ( g_Focus == zx::BrowserFocus::Host );
 
 		screen->DrawText( SmallFont, bFocused ? CR_GOLD : CR_DARKGRAY, x,
 			y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1, g_HostFieldLabels[index],
@@ -2369,14 +2558,42 @@ public:
 			shown = g_HostFields[index].text.c_str( );
 
 		const int textY = y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1;
-		screen->DrawText( SmallFont, CR_WHITE, fieldX + 5, textY, shown,
+		const int textX = fieldX + 5;
+
+		// The selection, under the text: a band behind the characters rather than an inversion of
+		// them, so the letters keep the colour they had and stay readable either way. Same treatment
+		// as the search box, because it is the same idea and a player should not have to learn two.
+		if ( bFocused && zx::HasSelection( g_HostFields[index] ))
+		{
+			int from = static_cast<int>( zx::SelectionStart( g_HostFields[index] ));
+			int to = static_cast<int>( zx::SelectionEnd( g_HostFields[index] ));
+			if ( from < 0 )
+				from = 0;
+			if ( to > static_cast<int>( shown.Len( )))
+				to = static_cast<int>( shown.Len( ));
+
+			if ( to > from )
+			{
+				const int selX = textX + SmallFont->StringWidth( shown.Left( from ));
+				const int selW = SmallFont->StringWidth( shown.Mid( from, to - from ));
+
+				const int sx = serverbrowser_ToScreenX( selX );
+				const int sw = MAX( 1, serverbrowser_ToScreenX( selX + selW ) - sx );
+				const int sy = serverbrowser_ToScreenY( textY - 1 );
+				const int sh = serverbrowser_ToScreenY( textY + SmallFont->GetHeight( )) - sy;
+
+				screen->Dim( PalEntry( 70, 95, 165 ), 0.85f, sx, sy, sw, sh );
+			}
+		}
+
+		screen->DrawText( SmallFont, CR_WHITE, textX, textY, shown,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 		if ( bFocused && (( DMenu::MenuTime / 16 ) % 2 == 0 ))
 		{
 			const FString upTo = FString( shown.GetChars( )).Left(
 				static_cast<long>( g_HostFields[index].caret ));
-			const int caretX = fieldX + 5 + SmallFont->StringWidth( upTo );
+			const int caretX = textX + SmallFont->StringWidth( upTo );
 			const int cx = serverbrowser_ToScreenX( caretX );
 			const int cw = MAX( 1, serverbrowser_ToScreenX( caretX + 1 ) - cx );
 			const int cy = serverbrowser_ToScreenY( textY );
@@ -2394,21 +2611,35 @@ public:
 	// predicted.
 	void DrawHostVisibility( int x, int y )
 	{
-		screen->DrawText( SmallFont, CR_DARKGRAY, x, y, "VISIBILITY",
+		screen->DrawText( SmallFont, CR_DARKGRAY, x,
+			y + ( SB_CHOICE_H - SmallFont->GetHeight( )) / 2 + 1, "VISIBILITY",
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-		const int boxX = x + SB_HOST_LABEL_W;
-		const char *const text = g_HostAdvertise
-			? "Anyone on the internet"
-			: "This network only";
+		const int rowX = x + SB_HOST_LABEL_W;
+		const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
 
-		screen->DrawText( SmallFont, g_HostAdvertiseHot ? CR_WHITE : CR_GRAY, boxX, y, text,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		static const char *const labels[kHostVisCount] = {
+			"This network only", "Anyone on the internet",
+		};
 
-		serverbrowser_Tip( x, y - 2, SB_HOST_RIGHT - SB_HOST_PAD - x, SB_HOST_LINE + 4,
-			g_HostAdvertise
-				? "Listed publicly\nNeeds the port forwarded on your router"
-				: "Not listed anywhere\nPlayers on your network find it automatically" );
+		DrawChoiceRow( rowX, y, rowW, kHostVisCount, labels, g_HostAdvertise ? 1 : 0,
+			g_HostVisHot, ( g_Focus == zx::BrowserFocus::Host ) && g_HostOnVisibility );
+
+		if ( g_HostOnVisibility && ( g_Focus == zx::BrowserFocus::Host ))
+			FocusAnchor( zx::BrowserFocus::Host, x - 5, y + SB_CHOICE_H / 2 );
+
+		// One tip per cell rather than one for the row: the two answers have different consequences,
+		// and a single tip would have to describe both or neither.
+		for ( int i = 0; i < kHostVisCount; ++i )
+		{
+			const zx::ChoiceCell cell = zx::ChoiceCellAt( i, kHostVisCount, rowX, rowW, SB_CHOICE_GAP );
+			if ( !cell.valid )
+				continue;
+
+			serverbrowser_Tip( cell.x, y, cell.width, SB_CHOICE_H, ( i == 0 )
+				? "Not listed anywhere\nPlayers on your network find it automatically"
+				: "Listed publicly\nZandroX will ask your router to open the port" );
+		}
 	}
 
 	//*************************************************************************
@@ -2749,6 +2980,7 @@ public:
 		{
 			LoadHostForm( );
 			g_HostOnButton = false;
+			g_HostOnVisibility = false;
 			g_HostFieldFocus = 0;
 		}
 
@@ -3742,7 +3974,8 @@ public:
 		// containing the letter 'p' does not also press something. Only when a FIELD has focus -- on
 		// the button the keys belong to the menu again, which is what makes enter work there.
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
-			( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false ))
+			( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false )
+			&& ( g_HostOnVisibility == false ))
 		{
 			if ( EditHostField( ev ))
 				return true;
@@ -3835,79 +4068,202 @@ public:
 		// A focused text field -- the search box, or any field on the hosting form -- needs the raw
 		// events. On the form's BUTTON it does not: there the keys are navigation again.
 		const bool bInAField = ( g_Focus == zx::BrowserFocus::Search )
-			|| (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false ));
+			|| (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false )
+				&& ( g_HostOnVisibility == false ));
 
 		return ( bInAField == false ) || g_Dialog.open || g_Notice.IsNotEmpty( );
 	}
 
 	//*************************************************************************
 	//
+	// [rc4l] Everything a text field does, in ONE place, for every field in this browser.
+	//
+	// The search box got all of this first -- selection, clipboard, word jumps, ctrl+backspace -- and
+	// the hosting form was written afterwards with a reduced copy, on the reasoning that its fields
+	// are short and mostly retyped whole. That reasoning is how a second-class field happens: nobody
+	// decides a box should be worse to type in, it just never gets the things the other one has, and
+	// the player who tries to paste a server name finds out.
+	//
+	// So the EDITING lives here and the field-specific parts stay outside: what escape leaves to,
+	// what enter commits, and where up and down go are the caller's, because only the caller knows
+	// what is around it. Everything between those is identical by construction.
+	//
+	// Returns what the caller still has to answer.
+	enum class FieldKey
+	{
+		Handled,		// the field took it
+		Escape,
+		Enter,
+		Up,
+		Down,
+	};
+
+	// `digitsOnly` is for the port and player-limit boxes. A port with a letter in it is not a port,
+	// and refusing the keystroke says so at the moment it happens rather than when the server fails
+	// to start.
+	FieldKey EditTextField( zx::TextInput &field, event_t *ev, size_t maxLength, bool digitsOnly )
+	{
+		// [rc4l] Cmd counts as Ctrl. The Cocoa layer reports it as GKM_META, so honouring both here
+		// is the whole of macOS support -- Cmd+A, Cmd+C, Cmd+V and Cmd+X land where a Mac user
+		// expects without a second code path to keep in step.
+		const bool bCtrl = (( ev->data3 & ( GKM_CTRL | GKM_META )) != 0 );
+		const bool bShift = (( ev->data3 & GKM_SHIFT ) != 0 );
+
+		if ( ev->subtype == EV_GUI_Char )
+		{
+			// Ctrl+letter arrives here too on some layouts; those are commands, not text.
+			if ( bCtrl )
+				return FieldKey::Handled;
+
+			if ( digitsOnly && (( ev->data1 < '0' ) || ( ev->data1 > '9' )))
+				return FieldKey::Handled;
+
+			field = zx::InsertChar( field, ev->data1, maxLength );
+			return FieldKey::Handled;
+		}
+
+		if ( ev->subtype != EV_GUI_KeyDown )
+			return FieldKey::Handled;
+
+		const int key = ev->data1;
+
+		if ( bCtrl )
+		{
+			switch ( key )
+			{
+			case 'a': case 'A':
+				field = zx::SelectAll( field );
+				return FieldKey::Handled;
+
+			case 'c': case 'C':
+				if ( zx::HasSelection( field ))
+					I_PutInClipboard( zx::SelectedText( field ).c_str( ));
+				return FieldKey::Handled;
+
+			case 'x': case 'X':
+				if ( zx::HasSelection( field ))
+				{
+					I_PutInClipboard( zx::SelectedText( field ).c_str( ));
+					field = zx::DeleteSelection( field );
+				}
+				return FieldKey::Handled;
+
+			case 'v': case 'V':
+				{
+					FString pasted = I_GetFromClipboard( false );
+
+					// A pasted port is as likely to arrive with a newline as typed one is to arrive
+					// with a letter, and the same rule applies: keep what belongs, drop what does not.
+					if ( digitsOnly )
+					{
+						FString digits;
+						for ( unsigned i = 0; i < pasted.Len( ); ++i )
+						{
+							if (( pasted[i] >= '0' ) && ( pasted[i] <= '9' ))
+								digits += pasted[i];
+						}
+						pasted = digits;
+					}
+
+					field = zx::InsertText( field, pasted.GetChars( ), maxLength );
+					return FieldKey::Handled;
+				}
+
+			case GK_LEFT:
+			case GK_RIGHT:
+				field = zx::MoveWord( field, ( key == GK_RIGHT ), bShift );
+				return FieldKey::Handled;
+
+			case '\b':
+				// Ctrl+Backspace erases the word behind the caret, which is the fastest way to undo a
+				// mistyped entry without holding the key down.
+				if ( !zx::HasSelection( field ))
+					field = zx::MoveWord( field, false, true );
+				field = zx::DeleteSelection( field );
+				return FieldKey::Handled;
+
+			default:
+				// Swallowed: a chord the field does not use is still not a menu shortcut.
+				return FieldKey::Handled;
+			}
+		}
+
+		switch ( key )
+		{
+		case GK_ESCAPE:	return FieldKey::Escape;
+		case GK_RETURN:	return FieldKey::Enter;
+		case GK_UP:		return FieldKey::Up;
+		case GK_DOWN:	return FieldKey::Down;
+
+		case '\b':
+			field = zx::Backspace( field );
+			return FieldKey::Handled;
+
+		case GK_DEL:
+			field = zx::DeleteForward( field );
+			return FieldKey::Handled;
+
+		case GK_HOME:
+			field = zx::CaretHome( field, bShift );
+			return FieldKey::Handled;
+
+		case GK_END:
+			field = zx::CaretEnd( field, bShift );
+			return FieldKey::Handled;
+
+		case GK_LEFT:
+		case GK_RIGHT:
+			// [rc4l] The caret's, always. Moving through what you have typed is the first thing these
+			// keys mean inside a field, and a box that jumped to the next control instead would be one
+			// you could not edit. Up, down, escape and enter are how it is left.
+			field = zx::MoveCaret( field, ( key == GK_LEFT ) ? -1 : 1, bShift );
+			return FieldKey::Handled;
+
+		default:
+			// Everything else is swallowed while the field has the keyboard. A letter is a letter, not
+			// a menu shortcut, and the alternative is 'y' answering a question that is not on screen.
+			return FieldKey::Handled;
+		}
+	}
+
+	//*************************************************************************
+	//
 	// [rc4l] Editing one field of the hosting form.
 	//
-	// A narrower version of EditSearchField: these fields are short, retyped wholesale, and have no
-	// selection to drag, so they answer typing, backspace, delete, home and end and nothing else.
-	// Everything they do NOT claim -- the arrows above all -- goes back to the navigation that walks
-	// the form, which is what keeps the whole thing steerable from the keyboard.
+	// The same editor the search box uses, so a field on this screen is not a lesser one: selection,
+	// clipboard, word jumps and ctrl+backspace all work here because they work there. Only the ways
+	// OUT differ, and those are what this function is for.
 	bool EditHostField( event_t *ev )
 	{
 		if (( g_HostFieldFocus < 0 ) || ( g_HostFieldFocus >= kHostFieldCount ))
 			return false;
 
-		zx::TextInput &field = g_HostFields[g_HostFieldFocus];
-		const bool bCtrl = (( ev->data3 & ( GKM_CTRL | GKM_META )) != 0 );
+		const bool bDigits = ( g_HostFieldFocus == kHostFieldPort )
+			|| ( g_HostFieldFocus == kHostFieldMaxPlayers );
 
-		if ( ev->subtype == EV_GUI_Char )
+		switch ( EditTextField( g_HostFields[g_HostFieldFocus], ev, SB_HOST_MAXLEN, bDigits ))
 		{
-			if ( bCtrl )
-				return true;
-
-			// The numeric fields refuse anything that is not a digit rather than accepting it and
-			// failing later: a port with a letter in it is not a port, and finding that out when the
-			// server does not start is finding out too late.
-			if (( g_HostFieldFocus == kHostFieldPort ) || ( g_HostFieldFocus == kHostFieldMaxPlayers ))
-			{
-				if (( ev->data1 < '0' ) || ( ev->data1 > '9' ))
-					return true;
-			}
-
-			field = zx::InsertChar( field, ev->data1, SB_HOST_MAXLEN );
-			return true;
-		}
-
-		if ( ev->subtype != EV_GUI_KeyDown )
-			return false;
-
-		if ( bCtrl && (( ev->data1 == 'a' ) || ( ev->data1 == 'A' )))
-		{
-			field = zx::SelectAll( field );
-			return true;
-		}
-
-		switch ( ev->data1 )
-		{
-		// Backspace arrives as a character, not a named key -- see EditSearchField for the whole
-		// story. Watching for GK_BACKSPACE here would silently do nothing.
-		case '':
-			field = zx::Backspace( field );
+		case FieldKey::Escape:
+			// Out of the form, not out of the browser -- the same rule the search box follows, so a
+			// second escape then closes the menu.
+			SetFocus( zx::BrowserFocus::Tabs );
+			g_HostFieldDragging = false;
 			return true;
 
-		case GK_DEL:
-			field = zx::DeleteForward( field );
+		case FieldKey::Enter:
+		case FieldKey::Down:
+			MoveHostFocus( 1 );
 			return true;
 
-		case GK_HOME:
-			field = zx::CaretHome( field, false );
+		case FieldKey::Up:
+			MoveHostFocus( -1 );
 			return true;
 
-		case GK_END:
-			field = zx::CaretEnd( field, false );
-			return true;
-
-		default:
+		case FieldKey::Handled:
 			break;
 		}
 
-		return false;
+		return true;
 	}
 
 	//*************************************************************************
@@ -3923,81 +4279,18 @@ public:
 	// without a caret. With shift they select, which is a thing only the field can mean.
 	bool EditSearchField( event_t *ev )
 	{
-		// [rc4l] Cmd counts as Ctrl. The Cocoa layer already reports it as GKM_META, so honouring both
-		// here is the whole of macOS support -- Cmd+A, Cmd+C, Cmd+V and Cmd+X land where a Mac user
-		// expects without a second code path to keep in step.
-		const bool bCtrl = (( ev->data3 & ( GKM_CTRL | GKM_META )) != 0 );
-		const bool bShift = (( ev->data3 & GKM_SHIFT ) != 0 );
+		zx::TextInput next = g_Search;
 
-		if ( ev->subtype == EV_GUI_Char )
+		switch ( EditTextField( next, ev, SB_SEARCH_MAXLEN, false ))
 		{
-			// Ctrl+letter arrives here too on some layouts; those are commands, not text.
-			if ( !bCtrl )
-				return ApplyEdit( zx::InsertChar( g_Search, ev->data1, SB_SEARCH_MAXLEN ));
-			return true;
-		}
-
-		// KeyRepeat is eaten by M_Responder before it gets here, whatever this menu wants -- the
-		// framework does its own repeat handling so that gamepads repeat too.
-		if ( ev->subtype != EV_GUI_KeyDown )
-			return false;
-
-		const int key = ev->data1;
-
-		if ( bCtrl )
-		{
-			switch ( key )
-			{
-			case 'a': case 'A':
-				g_Search = zx::SelectAll( g_Search );
-				return true;
-
-			case 'c': case 'C':
-				if ( zx::HasSelection( g_Search ))
-					I_PutInClipboard( zx::SelectedText( g_Search ).c_str( ));
-				return true;
-
-			case 'x': case 'X':
-				if ( zx::HasSelection( g_Search ))
-				{
-					I_PutInClipboard( zx::SelectedText( g_Search ).c_str( ));
-					return ApplyEdit( zx::DeleteSelection( g_Search ));
-				}
-				return true;
-
-			case 'v': case 'V':
-				{
-					const FString pasted = I_GetFromClipboard( false );
-					return ApplyEdit( zx::InsertText( g_Search, pasted.GetChars( ), SB_SEARCH_MAXLEN ));
-				}
-
-			case GK_LEFT:
-			case GK_RIGHT:
-				g_Search = zx::MoveWord( g_Search, ( key == GK_RIGHT ), bShift );
-				return true;
-
-			case '':
-				// Ctrl+Backspace erases the word behind the caret, which is the fastest way to undo a
-				// mistyped query without holding the key down.
-				if ( !zx::HasSelection( g_Search ))
-					g_Search = zx::MoveWord( g_Search, false, true );
-				return ApplyEdit( zx::DeleteSelection( g_Search ));
-
-			default:
-				return true;		// swallowed: a chord the field does not use is not a menu shortcut
-			}
-		}
-
-		switch ( key )
-		{
-		case GK_ESCAPE:
+		case FieldKey::Escape:
 			// Out of the box, not out of the browser. A second escape then closes the menu, which is
 			// the ordinary meaning restored as soon as the field stops claiming it.
 			SetFocus( zx::BrowserFocus::Tabs );
 			g_SearchDragging = false;
 			return true;
 
-		case GK_RETURN:
+		case FieldKey::Enter:
 			if ( static_cast<int>( g_SortedServers.Size( )) > 0 )
 			{
 				SetFocus( zx::BrowserFocus::Rows );
@@ -4005,41 +4298,21 @@ public:
 			}
 			return true;
 
-		case GK_UP:
-		case GK_DOWN:
-			// Navigation, which the framework would normally have translated for us -- while the field
-			// holds the keyboard it has to pass these on itself.
-			Navigate(( key == GK_UP ) ? zx::NavKey::Up : zx::NavKey::Down,
-				static_cast<int>( g_SortedServers.Size( )));
+		// Navigation, which the framework would normally have translated for us -- while the field
+		// holds the keyboard it has to pass these on itself.
+		case FieldKey::Up:
+			Navigate( zx::NavKey::Up, static_cast<int>( g_SortedServers.Size( )));
 			return true;
 
-		case '':
-			return ApplyEdit( zx::Backspace( g_Search ));
-
-		case GK_DEL:
-			return ApplyEdit( zx::DeleteForward( g_Search ));
-
-		case GK_HOME:
-			g_Search = zx::CaretHome( g_Search, bShift );
+		case FieldKey::Down:
+			Navigate( zx::NavKey::Down, static_cast<int>( g_SortedServers.Size( )));
 			return true;
 
-		case GK_END:
-			g_Search = zx::CaretEnd( g_Search, bShift );
-			return true;
-
-		case GK_LEFT:
-		case GK_RIGHT:
-			// [rc4l] ALWAYS the caret, never navigation. Moving through what you have typed is the
-			// thing these keys mean inside a field, and a box that jumped to the next control instead
-			// would be one you could not edit. Up, down, escape and enter are how it is left.
-			g_Search = zx::MoveCaret( g_Search, ( key == GK_LEFT ) ? -1 : 1, bShift );
-			return true;
-
-		default:
-			// Everything else is swallowed while the field has the keyboard. A letter is a letter, not
-			// a menu shortcut, and the alternative is 'y' answering a question that is not on screen.
-			return true;
+		case FieldKey::Handled:
+			break;
 		}
+
+		return ApplyEdit( next );
 	}
 
 	// [rc4l] Whether shift was down on the event being handled.
@@ -4125,6 +4398,23 @@ public:
 		// tabs; left and right belong to the caret, exactly as in the search box.
 		if ( g_Focus == zx::BrowserFocus::Host )
 		{
+			// On the visibility row, left and right pick the answer. Everywhere else in the form they
+			// belong to the caret, which is why this is the only place they mean anything else.
+			if ( g_HostOnVisibility
+				&& (( key == zx::NavKey::Left ) || ( key == zx::NavKey::Right )))
+			{
+				const int at = zx::ChoiceStep( g_HostAdvertise ? kHostVisGlobal : kHostVisLocal,
+					kHostVisCount, ( key == zx::NavKey::Right ) ? 1 : -1 );
+
+				const bool bWanted = ( at == kHostVisGlobal );
+				if ( bWanted != g_HostAdvertise )
+				{
+					g_HostAdvertise = bWanted;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
 			if ( key == zx::NavKey::Up )
 				MoveHostFocus( -1 );
 			else if ( key == zx::NavKey::Down )
@@ -4154,6 +4444,7 @@ public:
 		{
 			SetFocus( zx::BrowserFocus::Host );
 			g_HostOnButton = false;
+			g_HostOnVisibility = false;
 			g_HostFieldFocus = 0;
 			return true;
 		}
@@ -4262,6 +4553,7 @@ public:
 					MoveHostFocus( 1 );
 				return true;
 			}
+
 
 			if (( g_Focus == zx::BrowserFocus::Tabs ) || ( g_Focus == zx::BrowserFocus::Search ))
 			{

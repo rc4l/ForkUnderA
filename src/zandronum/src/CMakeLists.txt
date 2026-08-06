@@ -1496,6 +1496,7 @@ add_executable( zdoom WIN32
 	features/server-browser/zx_mainmenuroute.cpp
 	features/server-browser/computation/serverbrowser_compute.cpp
 	features/server-browser/computation/browserchrome_compute.cpp
+	features/server-browser/computation/choicerow_compute.cpp
 	features/server-browser/computation/browserfocus_compute.cpp
 	features/server-browser/computation/browserhit_compute.cpp
 	features/server-browser/computation/dialog_compute.cpp
