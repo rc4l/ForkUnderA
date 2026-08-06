@@ -128,8 +128,20 @@ if (-not (Test-Path $DistDir)) {
 $CMake = Resolve-CMake
 Write-Status "Building all targets ($Configuration, parallel)"
 Write-Note "cmake: $CMake"
+
+# [rc4l] Drop out of "Stop" for the native cmake call, the same way windows_build.ps1 does and for
+# the same reason. Under $ErrorActionPreference = "Stop", ANY line a native program writes to stderr
+# becomes a terminating error -- so a CMake *warning* aborted the script mid-build. It only shows up
+# when cmake re-configures (a CMakeLists edit), which made it look intermittent and unrelated to the
+# change that triggered it. The exit code is the thing that says whether the build failed, so that is
+# what is checked.
+$PrevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & $CMake --build $BuildDir --config $Configuration -- -m
-if ($LASTEXITCODE -ne 0) {
+$BuildExit = $LASTEXITCODE
+$ErrorActionPreference = $PrevEAP
+
+if ($BuildExit -ne 0) {
     Die "the build failed (see the compile/link error above). NOT staging -- fix it; do not run a stale dist."
 }
 if (-not (Test-Path $Exe)) {

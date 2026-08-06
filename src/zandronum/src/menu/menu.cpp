@@ -67,6 +67,7 @@
 #include "cl_demo.h"
 #include "cl_commands.h"
 #include "network/cl_auth.h"
+#include "features/server-browser/zx_joinserver.h" // [rc4l] a finished download redirects to the browser
 
 //
 // Todo: Move these elsewhere
@@ -195,6 +196,18 @@ bool DMenu::MenuEvent (int mkey, bool fromcontroller)
 		Close();
 		S_Sound (CHAN_VOICE | CHAN_UI, 
 			DMenu::CurrentMenu != NULL? "menu/backup" : "menu/clear", snd_menuvolume, ATTN_NONE);
+
+		// [rc4l] A download finished while the player was somewhere else in the menus, so its join is
+		// waiting. Backing out is them leaving whatever they were doing, which is the moment to hand
+		// them the thing they actually asked for -- rather than dropping them at the main menu and
+		// hoping they remember to walk back to the browser.
+		//
+		// After Close(), so this lands wherever backing out would have left them.
+		if (zx::ConsumeJoinReady())
+		{
+			M_StartControlPanel(true);
+			M_SetMenu("ZA_Browser", -1);
+		}
 		return true;
 	}
 	}
@@ -393,6 +406,25 @@ void DEnterKey::Drawer()
 //
 //=============================================================================
 
+// [rc4l] Let go of every menu key the framework thinks is held.
+//
+// M_Responder latches a key on the way down and unlatches it on the way up, and M_Ticker repeats
+// whatever is still latched. A menu that turns TranslateKeyboardEvents off mid-press -- which is what
+// happens the moment focus lands in the server browser's search box -- never gets the matching
+// release, because the release is no longer being translated. The button then repeats forever and
+// shoves the focus around while the player is trying to type.
+//
+// Opening the menu already did exactly this loop for the same reason; it just needed a name so
+// anything taking the keyboard can say so.
+void M_ReleaseMenuButtons ()
+{
+	for (int i = 0; i < NUM_MKEYS; ++i)
+	{
+		MenuButtons[i].ReleaseKey(0);
+		MenuButtonTickers[i] = 0;
+	}
+}
+
 void M_StartControlPanel (bool makeSound)
 {
 	// intro might call this repeatedly
@@ -400,10 +432,7 @@ void M_StartControlPanel (bool makeSound)
 		return;
 
 	ResetButtonStates ();
-	for (int i = 0; i < NUM_MKEYS; ++i)
-	{
-		MenuButtons[i].ReleaseKey(0);
-	}
+	M_ReleaseMenuButtons ();
 
 	C_HideConsole ();				// [RH] Make sure console goes bye bye.
 	menuactive = MENU_On;
@@ -896,7 +925,14 @@ bool M_Responder (event_t *ev)
 			if (ev->data1 == KEY_ESCAPE)
 			{
 				M_StartControlPanel(true);
-				M_SetMenu(NAME_Mainmenu, -1);
+				// [rc4l] Same redirect the mouse path and menu_main already do: a join that finished
+				// while the player was in the game is waiting, and opening the menu is the gesture we
+				// hang it on. Escape is by far the commonest way that happens, and it was the one
+				// route that still landed on the main menu.
+				if (zx::ConsumeJoinReady())
+					M_SetMenu("ZA_Browser", -1);
+				else
+					M_SetMenu(NAME_Mainmenu, -1);
 				return true;
 			}
 			// If devparm is set, pressing F1 always takes a screenshot no matter
@@ -912,7 +948,14 @@ bool M_Responder (event_t *ev)
 				 ConsoleState != c_down && m_use_mouse)
 		{
 			M_StartControlPanel(true);
-			M_SetMenu(NAME_Mainmenu, -1);
+			// [rc4l] A download finished while the player was away, so its join is waiting. Opening
+			// the menu is the one deliberate "I am ready to stop playing" gesture there is, so it is
+			// what we hang this on -- no new key to bind, nothing to conflict with, and impossible to
+			// trigger mid-fight by accident. They land on the list and press JOIN themselves.
+			if (zx::ConsumeJoinReady())
+				M_SetMenu("ZA_Browser", -1);
+			else
+				M_SetMenu(NAME_Mainmenu, -1);
 			return true;
 		}
 	}
@@ -1083,7 +1126,12 @@ bool M_IsValidMenu( const char *name )
 CCMD (menu_main)
 {
 	M_StartControlPanel(true);
-	M_SetMenu(NAME_Mainmenu, -1);
+	// [rc4l] Same redirect as the escape key: opening the main menu is opening the main menu however
+	// the player got there, and a waiting join should not depend on which route they took.
+	if (zx::ConsumeJoinReady())
+		M_SetMenu("ZA_Browser", -1);
+	else
+		M_SetMenu(NAME_Mainmenu, -1);
 }
 
 CCMD (menu_load)

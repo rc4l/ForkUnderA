@@ -149,6 +149,15 @@ typedef struct
 	// MD5 because that is what the protocol carries -- see features/wad-download/zx_filehash.h.
 	TArray<FString>	PWADHashes;
 
+	// [rc4l] Size in bytes of each PWAD (SQF2_FUA_WAD_SIZES), parallel to PWADNames and empty for a
+	// server that did not send them. 0 for a file the server could not measure -- which reads the same
+	// as "not sent", deliberately: both mean we cannot say how big it is, and neither is a small file.
+	TArray<unsigned int>	PWADSizes;
+
+	// [rc4l] And the IWAD's, which is never downloaded but is listed beside them -- one line lacking
+	// the number every other line has reads as a bug, not as a distinction.
+	unsigned int	IWADSize;
+
 	// Name of the IWAD being used.
 	FString			IWADName;
 
@@ -182,6 +191,27 @@ typedef struct
 	FString			GameModeName;
 	FString			GameModeShortName;
 
+	// [rc4l] Where this server will serve its own WADs from (SQF2_FUA_DIRECT_DOWNLOAD). 0 means it
+	// will not -- either an older server that never sent the field, or one with serving turned off.
+	// The host is the address we queried, never anything the server told us: a server that could
+	// nominate a download host could point every joiner at a third party's machine.
+	USHORT			usDirectDownloadPort;
+
+	// [rc4l] The operator would rather clients tried public mirrors before this server. Only a hint,
+	// and only about ordering -- the file is served either way.
+	bool			bPrefersMirrors;
+
+	// [rc4l] Whether a password is needed to get in at all, and whether one is needed to join the
+	// game once connected. The browser's Public/Private tabs treat either as private.
+	bool			bForcePassword;
+	bool			bForceJoinPassword;
+
+	// [rc4l] MD5 of the IWAD this server runs (SQF2_FUA_IWAD_HASH), or "" from a server that did not
+	// send it. SQF_IWAD carries only a name, and doom2.wad has shipped as nine-odd different builds
+	// that are not interchangeable -- so the name alone cannot tell you whether the copy you own is
+	// the one that will pass level authentication. Empty means "cannot tell", never "matches".
+	FString			IWADHash;
+
 } SERVER_t;
 
 //*****************************************************************************
@@ -203,6 +233,10 @@ const char		*BROWSER_GetPWADName( ULONG ulServer, ULONG ulWadIdx );
 // [rc4l] "" when the server sent no hashes, which is normal -- older servers and any server that
 // chose not to. Callers must treat empty as "cannot check", never as "checked and fine".
 const char		*BROWSER_GetPWADHash( ULONG ulServer, ULONG ulWadIdx );
+
+// [rc4l] Size in bytes, or 0 when the server did not say. See PWADSizes.
+unsigned int	BROWSER_GetPWADSize( ULONG ulServer, ULONG ulWadIdx );
+unsigned int	BROWSER_GetIWADSize( ULONG ulServer );
 const char		*BROWSER_GetIWADName( ULONG ulServer );
 GAMEMODE_e		BROWSER_GetGameMode( ULONG ulServer );
 LONG			BROWSER_GetNumPlayers( ULONG ulServer );
@@ -224,6 +258,19 @@ ULONG			BROWSER_GetCountryIndex( ULONG ulServer );
 const char		*BROWSER_GetGameModeName( ULONG ulServer ); // [SB]
 const char		*BROWSER_GetGameModeShortName( ULONG ulServer ); // [SB]
 
+// [rc4l] "http://<address>:<port>/" for a server that serves its own WADs, or "" for one that does
+// not. Built from the address we queried rather than anything the server sent.
+FString			BROWSER_GetDirectDownloadURL( ULONG ulServer );
+
+// [rc4l] Whether that URL should be tried after the public mirrors rather than before them.
+bool			BROWSER_PrefersMirrors( ULONG ulServer );
+
+// [rc4l] MD5 of the IWAD build this server runs, or "" when it did not say. Never NULL.
+const char		*BROWSER_GetIWADHash( ULONG ulServer );
+
+// [rc4l] Whether getting in needs a password of either kind. What the Public/Private tabs sort on.
+bool			BROWSER_IsPasswordProtected( ULONG ulServer );
+
 // [rc4l] The raw state, for callers that need to tell the failure modes apart rather than just
 // "drawable or not". BROWSER_IsActive() answers the narrower question.
 ULONG			BROWSER_GetActiveState( ULONG ulServer );
@@ -242,6 +289,10 @@ void			BROWSER_ClearServerList( void );
 void			BROWSER_DeactivateAllServers( void );
 bool			BROWSER_GetServerList( BYTESTREAM_s *pByteStream );
 void			BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN );
+
+// [rc4l] One piece of a reply too big for a single datagram. Rebuilds it and, once whole, hands it to
+// BROWSER_ParseServerQuery. See features/launcher-protocol for the wire format.
+void			BROWSER_ParseServerQuerySegment( BYTESTREAM_s *pByteStream, bool bLAN );
 void			BROWSER_QueryServerRegistry( void );
 // [rc4l] Drives the query retry/give-up clock; call once per tic while the browser is open.
 void			BROWSER_ServerRegistryTick( void );

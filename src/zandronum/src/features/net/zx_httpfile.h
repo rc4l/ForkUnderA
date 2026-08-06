@@ -23,6 +23,7 @@ enum class HttpFileResult
 {
 	Ok,
 	NotFound,		// 404/410, or a 200 that was plainly a web page -- try the next mirror
+	Busy,			// 503: the host has the file but no capacity right now -- wait and ask again
 	HttpError,		// any other non-2xx status
 	NetworkError,	// DNS, connect, TLS, timeout, truncated body
 	TooLarge,		// exceeded the caller's byte cap; the partial file is removed

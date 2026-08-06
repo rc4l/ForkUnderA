@@ -74,6 +74,8 @@
 #include "d_dehacked.h"
 #include "v_text.h"
 #include "voicechat.h"
+#include "features/wad-serve/zx_wadserve.h" // [rc4l] the direct-download port we advertise
+#include "features/server-hosting/zx_hosting.h" // [rc4l] tell the game that started us we are reachable
 
 // [SB] This is easier than updating the parameters for a load of functions every time I want to add something.
 struct LauncherResponseContext
@@ -128,12 +130,20 @@ FString g_VersionWithOS;
 //--------------------------------------------------------------------------------------------------------------------------------------------------
 static void server_registry_WriteName( const LauncherResponseContext &ctx )
 {
-	// [AK] Remove any color codes in the server name first.
-	FString uncolorizedHostname = sv_hostname.GetGenericRep( CVAR_String ).String;
-	V_ColorizeString( uncolorizedHostname );
-	V_RemoveColorCodes( uncolorizedHostname );
+	// [rc4l] The name goes out WITH its colour codes. Upstream stripped them here ([AK]'s
+	// V_RemoveColorCodes), because launchers of the day rendered the escape byte as a control
+	// character rather than a colour -- Doomseeker still has no handling for them at all, so a
+	// coloured name shows up there as boxes.
+	//
+	// We send them anyway. An operator who writes "\cdColourful" meant it to be colourful, and the
+	// browser this engine ships renders it; the cost is that ZandroX servers look odd in a launcher
+	// we are not building for. FFont::StringWidth already skips escapes when measuring, so the only
+	// thing that needed care on the reading side was truncation -- see
+	// features/server-browser/computation/colortext_compute.h.
+	FString hostname = sv_hostname.GetGenericRep( CVAR_String ).String;
+	V_ColorizeString( hostname );
 
-	ctx.pByteStream->WriteString( uncolorizedHostname );
+	ctx.pByteStream->WriteString( hostname );
 }
 
 //*****************************************************************************
@@ -503,6 +513,70 @@ static void server_registry_WriteVoicechat( const LauncherResponseContext &ctx )
 }
 
 //*****************************************************************************
+// [rc4l] Where to fetch this server's own WADs, for the files no mirror has because they were built
+// this afternoon. A byte of flags and the TCP port, always both, so the field has one shape whatever
+// the answer -- port 0 says "not serving" rather than the field being absent.
+//
+// The address is not sent: the client already knows it, having just received a reply from it. Sending
+// one would only create a way for a server to point clients at somebody else's machine.
+static void server_registry_WriteDirectDownload( const LauncherResponseContext &ctx )
+{
+	int flags = 0;
+	if ( zx::wadserve::PrefersMirrors( ))
+		flags |= 1;
+
+	ctx.pByteStream->WriteByte( flags );
+	ctx.pByteStream->WriteShort( zx::wadserve::Port( ));
+}
+
+//*****************************************************************************
+// [rc4l] Which BUILD of the IWAD this server runs, not just its name.
+//
+// The digest is already computed -- network_InitPWADList hashes every loaded file and pushes the ones
+// with authenticated lumps into the authenticated list, which includes the IWAD. So this is a lookup
+// rather than another pass over a 30 MB file, and it costs the query nothing.
+//
+// Empty string when it cannot be found, which the client must read as "cannot tell" and never as
+// "matches". MD5 because that is what the rest of this protocol carries; it is an identity check
+// between cooperating parties, not a gate.
+static void server_registry_WriteIWADHash( const LauncherResponseContext &ctx )
+{
+	const char *iwadName = NETWORK_GetIWAD( );
+	const TArray<NetworkPWAD> &authenticated = NETWORK_GetAuthenticatedWADsList( );
+
+	for ( unsigned i = 0; i < authenticated.Size( ); ++i )
+	{
+		if ( authenticated[i].name.CompareNoCase( iwadName ) == 0 )
+		{
+			ctx.pByteStream->WriteString( authenticated[i].checksum );
+			return;
+		}
+	}
+
+	ctx.pByteStream->WriteString( "" );
+}
+
+//*****************************************************************************
+// [rc4l] How big every file is, so a client can see what agreeing to a download costs before it
+// agrees. The IWAD first as a fixed 32 bits, then a count byte and one size per PWAD, in the same
+// order as SQF_PWADS and SQF2_PWAD_HASHES.
+//
+// Every size was measured when the wad list was built, not here: this function answers every launcher
+// query, and a stat per file per query is disk work on the hot path to learn something that only
+// changes when the wad set does. 0 means "could not be measured", which is also what a server that
+// has never heard of this field effectively says.
+static void server_registry_WriteWADSizes( const LauncherResponseContext &ctx )
+{
+	const TArray<NetworkPWAD> &pwads = NETWORK_GetPWADList( );
+
+	ctx.pByteStream->WriteLong( static_cast<int>( NETWORK_GetIWADSize( )));
+	ctx.pByteStream->WriteByte( pwads.Size( ));
+
+	for ( unsigned i = 0; i < pwads.Size( ); ++i )
+		ctx.pByteStream->WriteLong( static_cast<int>( pwads[i].size ));
+}
+
+//*****************************************************************************
 // [SB] And now the big maps of functions.
 static const std::map<ULONG, LauncherFieldFunction> ResponseFunctions[] =
 {
@@ -546,6 +620,9 @@ static const std::map<ULONG, LauncherFieldFunction> ResponseFunctions[] =
 		{ SQF2_GAMEMODE_NAME,		server_registry_WriteGameModeName },
 		{ SQF2_GAMEMODE_SHORTNAME,	server_registry_WriteGameModeShortName },
 		{ SQF2_VOICECHAT,			server_registry_WriteVoicechat },
+		{ SQF2_FUA_DIRECT_DOWNLOAD,	server_registry_WriteDirectDownload },
+		{ SQF2_FUA_IWAD_HASH,		server_registry_WriteIWADHash },
+		{ SQF2_FUA_WAD_SIZES,		server_registry_WriteWADSizes },
 	}
 };
 
@@ -970,6 +1047,17 @@ bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address )
 void SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream  )
 {
 	LONG lVerificationNumber = pByteStream->ReadLong();
+
+	// [rc4l] THE PORT IS FORWARDED, and this packet is the proof.
+	//
+	// The registry sent it UNPROMPTED, from outside, to the address we announced -- which is exactly
+	// the test a machine cannot run on itself. Checking our own port only proves we can talk to
+	// ourselves; a router agreeing to a UPnP request only proves a router replied. Arriving here
+	// means a stranger on the internet reached this socket.
+	//
+	// So a game that started us learns its answer as a side effect of the listing it already wanted,
+	// with no probe to write and no service to depend on.
+	zx::HostChildAnnounceReachable( );
 
 	g_ServerRegistryBuffer.Clear();
 	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_SERVERREGISTRY_VERIFICATION );

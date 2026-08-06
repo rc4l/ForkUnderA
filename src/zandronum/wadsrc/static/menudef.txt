@@ -403,7 +403,12 @@ OptionMenu "OptionsMenu"
 // the closest match to the main menu's patches without shipping new graphics.
 LISTMENU "FUANewGameMenu"
 {
-	Class "FUAPanelListMenu"	// [rc4l] rounded panel behind the logo + rows (listmenu.cpp)
+	// [rc4l] No Class, matching MainMenu. This used to be FUAPanelListMenu, which drew a rounded
+	// panel behind the logo and rows -- but the menu it sits directly under has no panel, so New Game
+	// grew one out of nowhere and lost it again on the next screen.
+	//
+	// Same compatibility reason as MainMenu above, too: ReplaceMenu refuses an override whose class
+	// does not match, so a mod writing a plain `ListMenu "FUANewGameMenu"` would have been discarded.
 	IfGame(Doom, Chex)
 	{
 		StaticPatch 94, 2, "M_DOOM"
