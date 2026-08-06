@@ -1052,9 +1052,15 @@ void Win32GLFrameBuffer::SetWindowSize (int w, int h)
 	if (Window == NULL || IsFullscreen())
 		return;
 
-	int frameW = w + GetSystemMetrics(SM_CXSIZEFRAME) * 2;
-	int frameH = h + GetSystemMetrics(SM_CYSIZEFRAME) * 2 + GetSystemMetrics(SM_CYCAPTION);
-	SetWindowPos(Window, NULL, 0, 0, frameW, frameH, SWP_NOMOVE | SWP_NOZORDER);
+	// [rc4l] uzdoom@4f04fb4fb -- same reasoning as the WM_GETMINMAXINFO path above: size the frame
+	// with AdjustWindowRectEx against the window's real style, not SM_CXSIZEFRAME arithmetic that
+	// assumes a titled, framed window. This one was missed when that path was fixed, so a
+	// SetWindowSize could still land a few pixels off and get persisted as the remembered size.
+	RECT rect = { 0, 0, w, h };
+	AdjustWindowRectEx(&rect, GetWindowLong(Window, GWL_STYLE), FALSE,
+		GetWindowLong(Window, GWL_EXSTYLE));
+	SetWindowPos(Window, NULL, 0, 0, rect.right - rect.left, rect.bottom - rect.top,
+		SWP_NOMOVE | SWP_NOZORDER);
 }
 
 //==========================================================================
