@@ -34,6 +34,7 @@
 
 #include "templates.h"
 #include "mcp_bridge.h"
+#include "features/server-hosting/zx_hosting.h" // [rc4l] HostChildEcho
 #include "p_setup.h"
 #include <stdarg.h>
 #include <string.h>
@@ -864,7 +865,14 @@ int PrintString (int printlevel, const char *outline)
 		// emits nothing to the bridge, so every driven command times out waiting for its completion
 		// marker and the authoritative half of a multiplayer test cannot be read at all.
 		if ( printlevel != PRINT_LOG )
+		{
 			MCP_Bridge_TeeOutput( outlinecopy );
+
+			// [rc4l] And up the pipe to the game that started us, for the same reason: this branch
+			// returns before I_PrintStr, so a hosted server is otherwise completely silent -- which
+			// is exactly the state in which its owner most needs to hear from it.
+			zx::HostChildEcho( outlinecopy );
+		}
 
 		if ( printlevel != PRINT_LOW )
 		{

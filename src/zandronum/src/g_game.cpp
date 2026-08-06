@@ -1658,6 +1658,9 @@ void G_Ticker ()
 			lCommand = pByteStream->ReadLong();
 			if ( lCommand == SERVER_LAUNCHER_CHALLENGE )
 				BROWSER_ParseServerQuery( pByteStream, true );
+			// [rc4l] A reply too big for one datagram, arriving in numbered pieces.
+			else if ( lCommand == SERVER_LAUNCHER_CHALLENGE_SEGMENTED )
+				BROWSER_ParseServerQuerySegment( pByteStream, true );
 		}
 
 		// Now that we're done parsing the multiple packets the server has sent our way, check

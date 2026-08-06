@@ -164,6 +164,10 @@ static	TArray<NetworkPWAD>	g_PWADs;
 static	TArray<NetworkPWAD>	g_AuthenticatedWADs; // [SB] All authenticated WAD files, including IWAD and engine PK3
 static	FString		g_IWAD; // [RC/BB] Which IWAD are we using?
 
+// [rc4l] And how big it is, for SQF2_FUA_WAD_SIZES. Measured where the PWAD sizes are, and for the
+// same reason: once per wad set rather than once per launcher query.
+static	unsigned int	g_IWADSize = 0;
+
 FString g_lumpsAuthenticationChecksum;
 FString g_MapCollectionChecksum;
 
@@ -1245,6 +1249,14 @@ const char *NETWORK_GetIWAD( void )
 
 //*****************************************************************************
 //
+// [rc4l] Bytes, or 0 when it could not be measured. See NetworkPWAD::size.
+unsigned int NETWORK_GetIWADSize( void )
+{
+	return g_IWADSize;
+}
+
+//*****************************************************************************
+//
 void NETWORK_AddLumpForAuthentication( const LONG LumpNumber )
 {
 	if ( LumpNumber == -1 )
@@ -1755,6 +1767,33 @@ void NETWORK_SetState( LONG lState )
 //
 //*****************************************************************************
 // [RC]
+// [rc4l] Size of a file on disk, for NetworkPWAD::size. 0 when it cannot be measured -- which is how
+// "unknown" is spelled on the wire too, so an unreadable file degrades to the same thing an older
+// server sends rather than to a wrong number.
+//
+// Clamped to 32 bits because that is the width of the SQF2_FUA_WAD_SIZES field. A PWAD over 4 GB is
+// not something a launcher query is going to describe usefully, and reporting its low bits would be
+// worse than reporting the ceiling.
+static unsigned int network_FileSize( const char *pszPath )
+{
+	if ( pszPath == NULL )
+		return 0;
+
+	FILE *pFile = fopen( pszPath, "rb" );
+	if ( pFile == NULL )
+		return 0;
+
+	const int lLength = Q_filelength( pFile );
+	fclose( pFile );
+
+	if ( lLength <= 0 )
+		return 0;
+
+	return static_cast<unsigned int>( lLength );
+}
+
+//*****************************************************************************
+//
 static void network_InitPWADList( void )
 {
 	g_PWADs.Clear();
@@ -1776,6 +1815,7 @@ static void network_InitPWADList( void )
 	}
 
 	g_IWAD = Wads.GetWadName( ulRealIWADIdx );
+	g_IWADSize = network_FileSize( Wads.GetWadFullName( ulRealIWADIdx ));
 
 	// Collect all the PWADs into a list.
 	for ( ULONG ulIdx = 0; Wads.GetWadName( ulIdx ) != NULL; ulIdx++ )
@@ -1796,6 +1836,7 @@ static void network_InitPWADList( void )
 		pwad.name = Wads.GetWadName( ulIdx );
 		pwad.checksum = MD5Sum;
 		pwad.wadnum = ulIdx;
+		pwad.size = network_FileSize( Wads.GetWadFullName( ulIdx ));
 
 		// Skip the IWAD, zandronum.pk3, files that were automatically loaded from subdirectories (such as skin files), and WADs loaded automatically within pk3 files.
 		// [BB] The latter are marked as being loaded automatically.

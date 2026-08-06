@@ -62,6 +62,8 @@
 #include "a_doomglobal.h"
 #include "announcer.h"
 #include "features/server-browser/browser.h"
+#include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
+#include "features/server-hosting/zx_hosting.h" // [rc4l] admin on a server we started ourselves
 #include "cl_commands.h"
 #include "cl_demo.h"
 #include "cl_statistics.h"
@@ -1167,6 +1169,9 @@ void CLIENT_GetPackets( void )
 				lCommand = pByteStream->ReadLong();
 				if ( lCommand == SERVER_LAUNCHER_CHALLENGE )
 					BROWSER_ParseServerQuery( pByteStream, false );
+				// [rc4l] A reply too big for one datagram, arriving in numbered pieces.
+				else if ( lCommand == SERVER_LAUNCHER_CHALLENGE_SEGMENTED )
+					BROWSER_ParseServerQuerySegment( pByteStream, false );
 				else if ( lCommand == SERVER_LAUNCHER_IGNORING )
 					Printf( "WARNING! Please wait a full 10 seconds before refreshing the server list.\n" );
 				//else
@@ -1469,11 +1474,14 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 			case NETWORK_ERRORCODE_WRONGVERSION:
 
-				szErrorString.Format( "Failed connect. Your version is different.\nThis server is using version: %s\nPlease check http://www." DOMAIN_NAME "/ for updates.", pByteStream->ReadString() );
+				szErrorString.Format( "Failed connect. Your version is different.\nThis server is using version: %s\nGet a matching " FUA_NAME " build: " FUA_RELEASES_URL, pByteStream->ReadString() );
 				break;
 			case NETWORK_ERRORCODE_WRONGPROTOCOLVERSION:
 
-				szErrorString.Format( "Failed connect. Your protocol version is different.\nServer uses: %s\nYou use:     %s\nPlease check http://www." DOMAIN_NAME "/ for a matching version.", pByteStream->ReadString(), GetVersionStringRev() );
+				// [rc4l] Points at ZandroX, not zandronum.com. A protocol mismatch against a ZandroX
+				// server is a ZandroX build mismatch, and zandronum.com does not publish the build the
+				// player is being sent to go and find.
+				szErrorString.Format( "Failed connect. Your protocol version is different.\nServer uses: %s\nYou use:     %s\nGet a matching " FUA_NAME " build: " FUA_RELEASES_URL, pByteStream->ReadString(), GetVersionStringRev() );
 				break;
 			case NETWORK_ERRORCODE_BANNED:
 
@@ -1602,7 +1610,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 			default:
 
-				szErrorString.Format( "Unknown error code: %d!\n\nYour version may be different. Please check http://www." DOMAIN_NAME "/ for updates.", static_cast<unsigned int> (ulErrorCode) );
+				szErrorString.Format( "Unknown error code: %d!\n\nYour version may be different. Get a matching " FUA_NAME " build: " FUA_RELEASES_URL, static_cast<unsigned int> (ulErrorCode) );
 				break;
 			}
 
@@ -2465,10 +2473,30 @@ void CLIENT_RestoreServerInfoCVars( void )
 
 //*****************************************************************************
 //
+// [rc4l] Which of our own hosted servers this connection is to, or 0 for somebody else's.
+static unsigned g_ConnectedHostGeneration = 0;
+
 void CLIENT_QuitNetworkGame( const char *pszString )
 {
 	if ( pszString )
 		Printf( "%s\n", pszString );
+
+	// [rc4l] Leaving a server WE are running takes it with us.
+	//
+	// This is the catch-all route out of a network game -- the disconnect command, a kick, a timeout,
+	// joining somewhere else, going back to single player. Putting it here rather than at each of
+	// those means there is no exit that can forget, which matters because the thing being forgotten
+	// is a process holding a port.
+	//
+	// GUARDED BY GENERATION, not by "am I hosting". Stopping a server disconnects the client, but the
+	// client only notices SECONDS later -- by which time the player may have started another one.
+	// Asking the looser question tore that new server down; the addresses are identical, so nothing
+	// but a generation can tell the two apart. Verified by doing exactly that: stop, start, and watch
+	// the second server die to the first one's goodbye.
+	if (( g_ConnectedHostGeneration != 0 ) && ( g_ConnectedHostGeneration == zx::HostGeneration( )))
+		zx::HostStop( );
+
+	g_ConnectedHostGeneration = 0;
 
 	// Set the consoleplayer back to 0 and keep our userinfo to avoid desync if we ever reconnect.
 	if ( consoleplayer != 0 )
@@ -2493,6 +2521,12 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// Clear out our copy of the server address.
 	g_AddressServer.Clear( );
 	CLIENT_SetConnectionState( CTS_DISCONNECTED );
+
+	// [rc4l] If this disconnect ended a join WE started, the browser takes it from here instead of
+	// leaving the player at a bare console with a stranger's WAD set loaded and one line of
+	// explanation about to scroll away. Records only -- the menu is opened from JoinTick once the
+	// teardown below has finished.
+	zx::NoteJoinFailed( pszString );
 
 	// Go back to the full console.
 	// [BB] This is what the CCMD endgame is doing and thus should be
@@ -3441,6 +3475,24 @@ void ServerCommands::EndSnapshot::Execute()
 	if (( CLIENTDEMO_IsPlaying( ) == false ) && ( cl_autologin ))
 		CLIENT_RetrieveUserAndLogIn( login_default_user.GetGenericRep( CVAR_String ).String );
 #endif
+
+	// [rc4l] If this is a server WE started, take administrator rights on it now.
+	//
+	// A player who launched a process should not be typing a password back to it. The secret was
+	// generated at spawn, handed to the child on its command line, and never written down; presenting
+	// it here is the last step of a handshake that began before the server existed.
+	//
+	// Bound to the ADDRESS WE STARTED, not to "is this loopback" -- see HostOwnsAddress. Keyed the
+	// loose way, anyone who pointed a client at any local server would be handed admin on it.
+	if ( zx::HostOwnsAddress( g_AddressServer.ToString( )))
+	{
+		CLIENTCOMMANDS_ChangeRCONStatus( true, zx::HostRconSecret( ));
+		Printf( "You are the administrator of this server. Use rcon <command>.\n" );
+
+		// Remembered so that leaving THIS connection stops THIS server, and a goodbye from an
+		// earlier one cannot take down a later one. See CLIENT_QuitNetworkGame.
+		g_ConnectedHostGeneration = zx::HostGeneration( );
+	}
 
 	// Display the message of the day.
 	C_MOTDPrint( g_MOTD );

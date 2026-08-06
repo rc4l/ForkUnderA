@@ -50,6 +50,8 @@
 
 #include "networkheaders.h"
 #include "features/server-browser/browser.h"
+#include "features/server-browser/computation/launcherfields_compute.h"
+#include "features/launcher-protocol/computation/segmentreassembly_compute.h"
 #include "c_dispatch.h"
 #include "cl_main.h"
 #include "deathmatch.h"
@@ -306,6 +308,84 @@ const char *BROWSER_GetPWADHash( ULONG ulServer, ULONG ulWadIdx )
 		return ( "" );
 
 	return ( g_BrowserServerList[ulServer].PWADHashes[ulWadIdx].GetChars( ));
+}
+
+//*****************************************************************************
+//
+// [rc4l] 0 means "we do not know", which covers both a server that does not send
+// SQF2_FUA_WAD_SIZES and one that could not stat the file. Never draw it as a size.
+unsigned int BROWSER_GetPWADSize( ULONG ulServer, ULONG ulWadIdx )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( 0 );
+
+	if ( ulWadIdx >= g_BrowserServerList[ulServer].PWADSizes.Size())
+		return ( 0 );
+
+	return ( g_BrowserServerList[ulServer].PWADSizes[ulWadIdx] );
+}
+
+//*****************************************************************************
+//
+unsigned int BROWSER_GetIWADSize( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( 0 );
+
+	return ( g_BrowserServerList[ulServer].IWADSize );
+}
+
+//*****************************************************************************
+//
+// [rc4l] The host half comes from the address WE queried, never from anything the server said. A
+// server that could name its own download host could name someone else's, and every client that
+// joined would fetch from a machine that never agreed to serve them.
+FString BROWSER_GetDirectDownloadURL( ULONG ulServer )
+{
+	FString url;
+
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( url );
+
+	if ( g_BrowserServerList[ulServer].usDirectDownloadPort == 0 )
+		return ( url );
+
+	url.Format( "http://%s:%u/", g_BrowserServerList[ulServer].Address.ToStringNoPort( ),
+		static_cast<unsigned>( g_BrowserServerList[ulServer].usDirectDownloadPort ));
+	return ( url );
+}
+
+//*****************************************************************************
+//
+bool BROWSER_PrefersMirrors( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( false );
+
+	return ( g_BrowserServerList[ulServer].bPrefersMirrors );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Empty means "this server told us nothing", which is the normal case for anything that has
+// not heard of SQF2_FUA_IWAD_HASH. Never conflate that with a build that matched.
+const char *BROWSER_GetIWADHash( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( "" );
+
+	return ( g_BrowserServerList[ulServer].IWADHash.GetChars( ));
+}
+
+//*****************************************************************************
+//
+bool BROWSER_IsPasswordProtected( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( false );
+
+	return ( g_BrowserServerList[ulServer].bForcePassword ||
+		g_BrowserServerList[ulServer].bForceJoinPassword );
 }
 
 //*****************************************************************************
@@ -585,6 +665,14 @@ void BROWSER_ClearServerList( void )
 		g_BrowserServerList[ulIdx].CountryCode = "";
 		g_BrowserServerList[ulIdx].ulCountryIndex = COUNTRY_INDEX_UNKNOWN;
 		g_BrowserServerList[ulIdx].bHasPlayerData = false;
+
+		// [rc4l] Nor a download port. Inheriting one would have us fetch from whoever last held the
+		// slot -- a wrong address at best, and a stale one that happens to answer at worst.
+		g_BrowserServerList[ulIdx].usDirectDownloadPort = 0;
+		g_BrowserServerList[ulIdx].bPrefersMirrors = false;
+		g_BrowserServerList[ulIdx].IWADHash = "";
+		g_BrowserServerList[ulIdx].bForcePassword = false;
+		g_BrowserServerList[ulIdx].bForceJoinPassword = false;
 	}
 }
 
@@ -682,6 +770,54 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 			return false;
 		}
 	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] One reply being rebuilt per server. A datagram has a hard size ceiling, so a reply that
+// outgrew one arrives in numbered pieces -- see features/launcher-protocol for the format and why
+// every UDP query protocol ends up doing this.
+//
+// Kept here rather than in SERVER_t so browser.h, which is included widely, does not gain the
+// dependency. Each entry is empty until a segmented reply actually arrives from that slot.
+static zx::SegmentAssembly g_SegmentAssemblies[MAX_BROWSER_SERVERS];
+
+void BROWSER_ParseServerQuerySegment( BYTESTREAM_s *pByteStream, bool bLAN )
+{
+	const LONG lServer = browser_GetListIDByAddress( NETWORK_GetFromAddress( ));
+
+	// A piece from an address we never queried. Nothing to rebuild it into, and allocating on behalf
+	// of an unsolicited packet is how a query port becomes a memory problem.
+	if ( lServer == -1 )
+		return;
+
+	const size_t availableBytes = ( pByteStream->pbStreamEnd > pByteStream->pbStream )
+		? static_cast<size_t>( pByteStream->pbStreamEnd - pByteStream->pbStream ) : 0;
+	const unsigned char *base = reinterpret_cast<const unsigned char *>( pByteStream->pbStream );
+
+	zx::SegmentHeader header;
+	if ( zx::ReadSegmentHeader( base, availableBytes, header ) != zx::SegmentRead::Ok )
+		return;
+
+	zx::SegmentAssembly &assembly = g_SegmentAssemblies[lServer];
+	const zx::SegmentAdd result = zx::AddSegment( assembly, header,
+		base + zx::kSegmentHeaderBytes, availableBytes - zx::kSegmentHeaderBytes );
+
+	if ( result != zx::SegmentAdd::Complete )
+		return;
+
+	// Whole again. A segmented reply omits the SERVER_LAUNCHER_CHALLENGE long that an unsegmented one
+	// starts with -- see the `if ( !bSegmentedResponse )` guard on the server -- so the rebuilt buffer
+	// begins exactly where BROWSER_ParseServerQuery expects to be handed the stream.
+	BYTESTREAM_s assembled;
+	assembled.pbStream = reinterpret_cast<BYTE *>( &assembly.data[0] );
+	assembled.pbStreamEnd = assembled.pbStream + assembly.data.size( );
+
+	BROWSER_ParseServerQuery( &assembled, bLAN );
+
+	// Done with it either way: holding a completed reply only risks a later piece being merged into
+	// something already consumed.
+	zx::ResetAssembly( assembly );
 }
 
 //*****************************************************************************
@@ -814,13 +950,14 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 	if ( ulFlags & SQF_IWAD )
 		g_BrowserServerList[lServer].IWADName = pByteStream->ReadString();
 
-	// Force password.
+	// [rc4l] Kept rather than discarded: the browser's Public/Private tabs sort on it. Either kind of
+	// password makes a server private -- one gates connecting and the other gates joining the game,
+	// and from the outside both mean "you need to have been told something to get in".
 	if ( ulFlags & SQF_FORCEPASSWORD )
-		pByteStream->ReadByte();
+		g_BrowserServerList[lServer].bForcePassword = !!pByteStream->ReadByte();
 
-	// Force join password.
 	if ( ulFlags & SQF_FORCEJOINPASSWORD )
-		pByteStream->ReadByte();
+		g_BrowserServerList[lServer].bForceJoinPassword = !!pByteStream->ReadByte();
 
 	// Game skill.
 	if ( ulFlags & SQF_GAMESKILL )
@@ -957,11 +1094,18 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		pByteStream->ReadString();
 
 	// [BB] All dmflags and compatflags.
+	// [rc4l] Read and DISCARDED. We no longer ask for this -- the detail panel listed the numbers
+	// briefly and they were not worth the room -- but a field still has to be consumed if it turns
+	// up, or everything after it desynchronises. That is not a hypothetical: skipping one byte of
+	// SQF2_VOICECHAT is what made a download port read as 6400 instead of 10777.
+	//
+	// Read by the count the server sent rather than an assumed six, so a newer engine adding a word
+	// does not desynchronise us either.
 	if ( ulFlags & SQF_ALL_DMFLAGS )
 	{
 		const ULONG ulNumFlags = pByteStream->ReadByte();
 		for ( ULONG ulIdx = 0; ulIdx < ulNumFlags; ulIdx++ )
-			pByteStream->ReadLong();
+			pByteStream->ReadLong( );
 	}
 
 	// [BB] Get special security settings like sv_fua_serverregistry_enforcebans.
@@ -983,30 +1127,48 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 	}
 
 	// [SB] Extended server info
+	// [rc4l] The field walk itself lives in computation/launcherfields_compute.h, which is a compute
+	// unit and not three more lines here for a specific reason: these fields are VARIABLE LENGTH, so
+	// getting one width wrong silently corrupts every field after it, and the corruption reads as a
+	// plausible value rather than as garbage. Skipping the one-byte SQF2_VOICECHAT field made a
+	// server's download port read as 6400 instead of 10777 and took a long time to find. Parsing
+	// where it can be tested against a writer, for every combination of flags, is the fix for the
+	// class rather than the instance.
 	if ( ulFlags & SQF_EXTENDED_INFO )
 	{
 		ulFlags2 = pByteStream->ReadLong();
 
-		// [SB] PWAD hashes
-		// [rc4l] Kept rather than discarded: this is the server's own MD5 for each of its PWADs, and
-		// it is what lets a download be verified against what the server actually has instead of
-		// trusting that a mirror served the right bytes under the right name.
-		if ( ulFlags2 & SQF2_PWAD_HASHES )
+		const size_t availableBytes = ( pByteStream->pbStreamEnd > pByteStream->pbStream )
+			? static_cast<size_t>( pByteStream->pbStreamEnd - pByteStream->pbStream ) : 0;
+
+		zx::LauncherExtendedInfo extended;
+		size_t consumedBytes = 0;
+		const zx::ExtendedParse parseResult = zx::ParseExtendedInfo(
+			reinterpret_cast<const unsigned char *>( pByteStream->pbStream ), availableBytes,
+			static_cast<unsigned>( ulFlags2 ), extended, consumedBytes );
+
+		if ( parseResult != zx::ExtendedParse::Ok )
 		{
-			const int lNumHashes = pByteStream->ReadByte( );
-			g_BrowserServerList[lServer].PWADHashes.Clear( );
-			for ( int i = 0; i < lNumHashes; ++i )
-				g_BrowserServerList[lServer].PWADHashes.Push( pByteStream->ReadString( ));
+			// Refused rather than half-applied. A block we could not walk tells us nothing, and
+			// whatever this entry already held is more trustworthy than values read from a position
+			// we are no longer sure of.
+			return;
 		}
 
-		// [SB] Server country code
+		pByteStream->pbStream += consumedBytes;
+
+		// [rc4l] The server's own MD5 for each of its PWADs -- what lets a download be verified
+		// against what the server actually has, instead of trusting a mirror served the right bytes
+		// under the right name.
+		if ( ulFlags2 & SQF2_PWAD_HASHES )
+		{
+			g_BrowserServerList[lServer].PWADHashes.Clear( );
+			for ( size_t i = 0; i < extended.pwadHashes.size( ); ++i )
+				g_BrowserServerList[lServer].PWADHashes.Push( extended.pwadHashes[i].c_str( ));
+		}
+
 		if ( ulFlags2 & SQF2_COUNTRY )
 		{
-			// [rc4l] Three bytes, NOT null-terminated on the wire. Read then terminate; the previous
-			// code read it purely to keep the stream aligned and threw the value away.
-			char code[4] = { 0 };
-			pByteStream->ReadBuffer( code, 3 );
-
 			// [rc4l] ISO 3166-1 reserves XAA-XZZ, and the protocol uses two of them as instructions
 			// to the launcher rather than as places:
 			//
@@ -1015,6 +1177,8 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 			//
 			// A server whose own GeoIP lookup failed sends XIP, which is the common case rather than
 			// an edge one -- taking it literally is how "XIP" ended up drawn in the country column.
+			const char *code = extended.countryCode.c_str( );
+
 			if ( stricmp( code, "XIP" ) == 0 )
 			{
 				g_BrowserServerList[lServer].CountryCode = "";
@@ -1033,15 +1197,32 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 			}
 		}
 
-		// [SB] Game mode names
 		if ( ulFlags2 & SQF2_GAMEMODE_NAME )
-		{
-			g_BrowserServerList[lServer].GameModeName = pByteStream->ReadString();
-		}
+			g_BrowserServerList[lServer].GameModeName = extended.gameModeName.c_str( );
 
 		if ( ulFlags2 & SQF2_GAMEMODE_SHORTNAME )
+			g_BrowserServerList[lServer].GameModeShortName = extended.gameModeShortName.c_str( );
+
+		// [rc4l] Port 0 is how "not serving" is spelled -- the field is always present when asked
+		// for, because a field that is sometimes there is what desynchronises a stream.
+		if ( ulFlags2 & SQF2_FUA_DIRECT_DOWNLOAD )
 		{
-			g_BrowserServerList[lServer].GameModeShortName = pByteStream->ReadString();
+			g_BrowserServerList[lServer].usDirectDownloadPort =
+				static_cast<USHORT>( extended.directDownloadPort );
+			g_BrowserServerList[lServer].bPrefersMirrors = extended.prefersMirrors;
+		}
+
+		// [rc4l] Which BUILD of the IWAD, not just its name.
+		if ( ulFlags2 & SQF2_FUA_IWAD_HASH )
+			g_BrowserServerList[lServer].IWADHash = extended.iwadHash.c_str( );
+
+		// [rc4l] What each download would actually cost, which the browser draws beside the filename.
+		if ( ulFlags2 & SQF2_FUA_WAD_SIZES )
+		{
+			g_BrowserServerList[lServer].IWADSize = static_cast<unsigned int>( extended.iwadSize );
+			g_BrowserServerList[lServer].PWADSizes.Clear( );
+			for ( size_t i = 0; i < extended.pwadSizes.size( ); ++i )
+				g_BrowserServerList[lServer].PWADSizes.Push( static_cast<unsigned int>( extended.pwadSizes[i] ));
 		}
 	}
 
@@ -1259,13 +1440,29 @@ static void browser_QueryServer( ULONG ulServer )
 	// [SB] Added extended flags that we want.
 	g_ServerBuffer.Clear();
 	g_ServerBuffer.ByteStream.WriteLong( LAUNCHER_SERVER_CHALLENGE );
-	g_ServerBuffer.ByteStream.WriteLong( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_PWADS|SQF_GAMETYPE|SQF_IWAD|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_EXTENDED_INFO );
+	// [rc4l] SQF_FORCEPASSWORD / SQF_FORCEJOINPASSWORD added: the Public/Private tabs sort on them.
+	// The parse already consumed both bytes to keep its place; now it keeps the values too.
+	g_ServerBuffer.ByteStream.WriteLong( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_PWADS|SQF_GAMETYPE|SQF_IWAD|SQF_FORCEPASSWORD|SQF_FORCEJOINPASSWORD|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_EXTENDED_INFO );
 	g_ServerBuffer.ByteStream.WriteLong( I_MSTime( ));
 	// [rc4l] SQF2_COUNTRY added: the flag column needs it, and the server has always been willing to
 	// send it -- the old browser asked for everything except the one field it then read and discarded.
 	// [rc4l] SQF2_PWAD_HASHES added: the downloader verifies each fetched PWAD against the server's
 	// own MD5, so a mirror cannot hand us the wrong file (or a stale version) under the right name.
-	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY|SQF2_PWAD_HASHES );
+	// [rc4l] SQF2_FUA_DIRECT_DOWNLOAD added: tells us whether this server will serve its own WADs and
+	// on what port, which is the only way to reach a file that exists on no mirror.
+	// [rc4l] SQF2_FUA_IWAD_HASH added: tells us which BUILD of the IWAD the server runs, so we can
+	// load the copy that will actually pass level authentication.
+	// [rc4l] SQF2_FUA_WAD_SIZES added: how big each PWAD is, so the browser can say what agreeing to
+	// a download costs before the player agrees to it.
+	g_ServerBuffer.ByteStream.WriteLong( SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_COUNTRY|SQF2_PWAD_HASHES|SQF2_FUA_DIRECT_DOWNLOAD|SQF2_FUA_IWAD_HASH|SQF2_FUA_WAD_SIZES );
+
+	// [rc4l] Ask for a segmented reply if it does not fit one datagram. The server enables it on a
+	// trailing byte of exactly 2 (sv_main.cpp), and an older server simply never reads this far --
+	// which is why the opt-in is a byte on the end rather than a flag in the middle.
+	//
+	// Worth asking for even though most replies fit today: the field set has only ever grown, and the
+	// failure when it stops fitting is a silently truncated reply rather than an error.
+	g_ServerBuffer.ByteStream.WriteByte( 2 );
 
 	// Send the server our packet.
 	NETWORK_LaunchPacket( &g_ServerBuffer, g_BrowserServerList[ulServer].Address );
@@ -1296,5 +1493,19 @@ CCMD( dumpserverlist )
 		Printf( "Num PWADs: %d\n", static_cast<int> (g_BrowserServerList[ulIdx].PWADNames.Size()) );
 		Printf( "Players: %d/%d\n", static_cast<int> (g_BrowserServerList[ulIdx].lNumPlayers), static_cast<int> (g_BrowserServerList[ulIdx].lMaxClients) );
 		Printf( "Ping: %d\n", static_cast<int> (g_BrowserServerList[ulIdx].lPing) );
+
+		// [rc4l] Whether this server will serve its own WADs, and from where. Worth printing: when a
+		// download fails, the first question is whether the client ever learned an endpoint at all,
+		// and that is otherwise invisible.
+		// [rc4l] What the Public/Private tabs sort on, printed because "why is that server in the
+		// wrong tab" is otherwise unanswerable from outside.
+		Printf( "Password: %s%s\n",
+			g_BrowserServerList[ulIdx].bForcePassword ? "connect " : "",
+			g_BrowserServerList[ulIdx].bForceJoinPassword ? "join" :
+				( g_BrowserServerList[ulIdx].bForcePassword ? "" : "no" ));
+
+		const FString directUrl = BROWSER_GetDirectDownloadURL( ulIdx );
+		Printf( "Direct download: %s%s\n", directUrl.IsEmpty() ? "(none advertised)" : directUrl.GetChars(),
+			( !directUrl.IsEmpty() && g_BrowserServerList[ulIdx].bPrefersMirrors ) ? " (prefers mirrors)" : "" );
 	}
 }

@@ -20,6 +20,7 @@
 #ifndef ZX_WADSEARCH_H
 #define ZX_WADSEARCH_H
 
+#include "tarray.h"
 #include "zstring.h"
 
 namespace zx
@@ -30,6 +31,17 @@ namespace zx
 // I_GetSteamPath reports. Callers should try D_AddFile FIRST -- this is the widening step, not a
 // replacement for the ordinary file search.
 FString FindIwadInEngineSearchPaths( const char *name );
+
+// [rc4l] Every copy of `name` in those same places, in search order, rather than just the first.
+//
+// One name is not one file. doom2.wad shipped as 1.666, 1.7, 1.8, 1.9, a French build, BFG Edition
+// and the 2024 KEX re-release, and a player can easily have two of them -- one from Steam, one in
+// their own WAD folder. Taking the first match means loading whichever the search order happened to
+// reach, and if that is not the build the server runs, level authentication rejects the join and
+// says nothing about why. Collecting them all lets the caller pick by digest.
+//
+// Read-only: nothing here is moved, renamed or deleted. A player's WAD collection is theirs.
+void FindAllIwadsInEngineSearchPaths( const char *name, TArray<FString> &out );
 
 // Add the well-known WAD folders belonging to other Doom tools (waddirectories.txt, compiled in) to
 // the config's FileSearch.Directories and IWADSearch.Directories. Only ones that actually exist, only

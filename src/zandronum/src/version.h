@@ -193,6 +193,14 @@ int GetRevisionNumber();
 #define BUGS_FORUM_URL	"https://" DOMAIN_NAME "/tracker/"
 #define WIKI_URL "https://wiki." DOMAIN_NAME "/"
 
+// [rc4l] Where a player is sent when their BUILD does not match a server's.
+//
+// Deliberately not DOMAIN_NAME. A protocol mismatch against a ZandroX server is a ZandroX build
+// mismatch, and zandronum.com has nothing to offer that player -- it does not publish the build they
+// are being told to go and find. The other DOMAIN_NAME uses are Zandronum's own services (the
+// buy-Doom and Freedoom redirects) and stay where they are.
+#define FUA_RELEASES_URL "https://github.com/rc4l/ZandroX/releases"
+
 // [BC] This is what's displayed as the title for server windows.
 #define	SERVERCONSOLE_TITLESTRING	GAMENAME " v" DOTVERSIONSTR " Server"
 
