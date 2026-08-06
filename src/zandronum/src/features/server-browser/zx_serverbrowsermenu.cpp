@@ -2087,7 +2087,18 @@ public:
 
 		const int cx = serverbrowser_ToScreenX( vcx );
 		const int cy = serverbrowser_ToScreenY( vcy );
-		const int unit = MAX( 1, serverbrowser_ToScreenX( vcx + 1 ) - cx );
+
+		// [rc4l] The scale is measured over a LONG span, not from one virtual pixel.
+		//
+		// ToScreenX(vcx + 1) - ToScreenX(vcx) looks like the obvious way to ask "how big is a virtual
+		// pixel here", and it is wrong: the mapping is fractional -- the panel's 640 units cover about
+		// 940 real ones -- so that difference rounds to 1 at some x and 2 at others. The glow was
+		// therefore HALF THE SIZE depending on where it landed, and flickered between the two sizes
+		// every tic while it travelled, because travelling is exactly changing x.
+		//
+		// Measuring across 100 units divides the same rounding error by a hundred, so the radius is
+		// the same wherever the glow is. Same trick as serverbrowser_ToVirtualX, for the same reason.
+		const int span = MAX( 1, serverbrowser_ToScreenX( 100 ) - serverbrowser_ToScreenX( 0 ));
 
 		// Four shells, widest and faintest first. Concentric rather than a true radial ramp because
 		// Dim takes rectangles, and at this size the difference is not visible -- what IS visible is
@@ -2095,7 +2106,9 @@ public:
 		const int kShells = 4;
 		for ( int shell = kShells - 1; shell >= 0; --shell )
 		{
-			const int radius = unit * ( shell + 1 ) * 3 / 2;
+			// Virtual radii of 3, 6, 9, 12 -- fixed in the coordinate space the browser is laid out
+			// in, so the glow is the same size beside a tab as beside a row.
+			const int radius = MAX( 1, ( span * ( shell + 1 ) * 3 ) / 100 );
 			const float alpha = breath * ( 0.10f + 0.16f * ( kShells - 1 - shell ));
 
 			for ( int dy = -radius; dy <= radius; ++dy )
