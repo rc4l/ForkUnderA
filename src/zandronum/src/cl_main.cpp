@@ -9207,15 +9207,17 @@ static void client_SetPolyobjRotation( BYTESTREAM_s *pByteStream )
 static void client_EarthQuake( BYTESTREAM_s *pByteStream )
 {
 	AActor	*pCenter;
-	LONG	lIntensity;
+	LONG	lIntensityX, lIntensityY, lIntensityZ;	// [rc4l] per-axis now
 	LONG	lDuration;
 	LONG	lTremorRadius;
 
 	// Read in the center's network ID.
 	unsigned short netID = pByteStream->ReadShort();
 
-	// Read in the intensity of the quake.
-	lIntensity = pByteStream->ReadByte();
+	// Read in the intensity of the quake, one value per axis.
+	lIntensityX = pByteStream->ReadByte();
+	lIntensityY = pByteStream->ReadByte();
+	lIntensityZ = pByteStream->ReadByte();
 
 	// Read in the duration of the quake.
 	lDuration = pByteStream->ReadShort();
@@ -9226,6 +9228,9 @@ static void client_EarthQuake( BYTESTREAM_s *pByteStream )
 	// [BB] Read in the quake sound.
 	FSoundID quakesound = pByteStream->ReadString();
 
+	// [rc4l] Read in the QF_ scaling flags.
+	LONG lQuakeFlags = pByteStream->ReadLong();
+
 	// Find the actor that represents the center of the quake based on the network
 	// ID sent. If we can't find the actor, then the quake has no center.
 	pCenter = CLIENT_FindThingByNetID( netID );
@@ -9233,7 +9238,7 @@ static void client_EarthQuake( BYTESTREAM_s *pByteStream )
 		return;
 
 	// Create the earthquake. Since this is client-side, damage is always 0.
-	new DEarthquake( pCenter, lIntensity, lDuration, 0, lTremorRadius, quakesound );
+	new DEarthquake( pCenter, lIntensityX, lIntensityY, lIntensityZ, lDuration, 0, lTremorRadius, quakesound, lQuakeFlags );
 }
 
 //*****************************************************************************
