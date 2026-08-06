@@ -68,8 +68,9 @@ TEST( XmlEscaping, EscapesTheFiveThatEndAnElementEarly )
 
 TEST( XmlEscaping, LeavesOrdinaryTextAlone )
 {
-	EXPECT_EQ( "Bob's Server", XmlEscape( "Bob&apos;s Server" ).empty()
-		? "Bob's Server" : "Bob's Server" );	// sanity: ordinary letters survive
+	// [rc4l] Ordinary letters survive, and the one character in a plausible server name that does
+	// need escaping is escaped in place rather than taking the rest of the name with it.
+	EXPECT_EQ( "Bob&apos;s Server", XmlEscape( "Bob's Server" ));
 	EXPECT_EQ( "ZandroX 1", XmlEscape( "ZandroX 1" ));
 }
 
