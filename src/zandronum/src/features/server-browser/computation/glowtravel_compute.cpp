@@ -147,7 +147,10 @@ GlowPos GlowTravelPoint( const GlowTravel &travel )
 	// retracing one arc. Pinning the offset to a canonical side makes the return journey follow the
 	// same curve backwards, which is what makes the movement feel like one path between two places
 	// rather than an orbit around them.
-	if (( offsetX < 0 ) || (( offsetX == 0 ) && ( offsetY < 0 )))
+	// The side is OUTWARD -- negative x, away from the list and towards the panel edge. Bowing the
+	// other way sent the glow in under the rows it was travelling past, which reads as the light
+	// ducking behind the content rather than swinging around it.
+	if (( offsetX > 0 ) || (( offsetX == 0 ) && ( offsetY > 0 )))
 	{
 		offsetX = -offsetX;
 		offsetY = -offsetY;
