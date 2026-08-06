@@ -1119,6 +1119,12 @@ public:
 			if ( bSelected )
 			{
 				DimRow( y );
+
+				// [rc4l] And the cursor, only when the ARROW KEYS are on the list. The highlight marks
+				// what is selected and stays put while you click around with the mouse; this marks
+				// where the keyboard is, which is a different question and used to have no answer.
+				if ( g_Focus == zx::BrowserFocus::Rows )
+					DrawRowCursor( y );
 			}
 			else if ( row == g_HoverRow )
 			{
@@ -1266,10 +1272,9 @@ public:
 			const int radius = h / 2;
 			const bool bSelected = ( static_cast<int>( g_Tab ) == i );
 
-			// Keyboard focus lights the tab the same way the pointer does, so "what does an arrow key
-			// do right now" is answered by looking at the screen rather than by pressing one.
-			const bool bHot = ( g_TabHot == i ) ||
-				(( g_Focus == zx::BrowserFocus::Tabs ) && bSelected );
+			// Hover only. Keyboard focus gets a RING instead, because a brighter fill is already what
+			// selected looks like and one picture cannot mean both.
+			const bool bHot = ( g_TabHot == i );
 
 			const int base = bSelected ? 96 : ( bHot ? 62 : 38 );
 			const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
@@ -1292,6 +1297,9 @@ public:
 			screen->DrawText( SmallFont, bSelected ? CR_WHITE : CR_DARKGRAY,
 				vLeft + ( SB_TAB_W / 2 ) - ( SmallFont->StringWidth( labels[i] ) / 2 ), textY,
 				labels[i], DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+			if (( g_Focus == zx::BrowserFocus::Tabs ) && bSelected )
+				DrawFocusRing( vLeft, SB_TAB_TOP, SB_TAB_W, SB_TAB_H );
 
 			serverbrowser_Tip( vLeft, SB_TAB_TOP, SB_TAB_W, SB_TAB_H, ( i == 0 )
 				? "Servers anyone can join"
@@ -1346,6 +1354,9 @@ public:
 			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
 			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
 		}
+
+		if ( bFocused )
+			DrawFocusRing( SB_SEARCH_LEFT, SB_SEARCH_TOP, SB_SEARCH_W, SB_SEARCH_H );
 
 		const int textY = SB_SEARCH_TOP + ( SB_SEARCH_H - SmallFont->GetHeight( )) / 2 + 1;
 		const int textX = SB_SEARCH_LEFT + SB_SEARCH_PAD;
@@ -1593,7 +1604,7 @@ public:
 
 		// Lighter when the pointer is over it, lighter still while held -- the press feedback a button
 		// needs to feel like one rather than like a label that happens to react.
-		const bool bLit = g_ButtonHot || ( g_Focus == zx::BrowserFocus::Action );
+		const bool bLit = g_ButtonHot;
 
 		int base = bLit ? 70 : 45;
 		if ( g_ButtonHot && g_ButtonPressed )
@@ -1618,6 +1629,9 @@ public:
 		serverbrowser_Tip( SB_BUTTON_LEFT, SB_BUTTON_TOP, SB_BUTTON_RIGHT - SB_BUTTON_LEFT, SB_BUTTON_H, bCancel
 			? "Stop the download\nYou will be asked to confirm"
 			: "Join this server\nAnything missing is downloaded first" );
+
+		if ( g_Focus == zx::BrowserFocus::Action )
+			DrawFocusRing( SB_BUTTON_LEFT, SB_BUTTON_TOP, SB_BUTTON_RIGHT - SB_BUTTON_LEFT, SB_BUTTON_H );
 
 		const char *const label = bCancel ? "CANCEL" : "JOIN";
 		const int textY = SB_BUTTON_TOP + ( SB_BUTTON_H - SmallFont->GetHeight( )) / 2 + 1;
@@ -1979,6 +1993,68 @@ public:
 		const int bottom = serverbrowser_ToScreenY( y - 2 + SB_ROW_HEIGHT );
 
 		screen->Dim( PalEntry( 120, 150, 220 ), 0.28f, left, top, right - left, bottom - top );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] "The keyboard is HERE", drawn around whichever region has focus.
+	//
+	// A brighter fill was doing this job and doing it badly, because a brighter fill is also what
+	// SELECTED looks like -- so the tab you are on and the tab the arrows would act on were the same
+	// picture, and following the focus around meant watching for a few percent of brightness.
+	//
+	// A ring instead: one cue, unambiguous, and it fits a 14px tab, a text box and a button alike.
+	// Drawn procedurally like everything else in this browser, so there is no lump to be missing --
+	// the country flag already needed a fallback for exactly that reason.
+	void DrawFocusRing( int vx, int vy, int vw, int vh )
+	{
+		const int left = serverbrowser_ToScreenX( vx );
+		const int right = serverbrowser_ToScreenX( vx + vw );
+		const int top = serverbrowser_ToScreenY( vy );
+		const int bottom = serverbrowser_ToScreenY( vy + vh );
+
+		const int w = right - left;
+		const int h = bottom - top;
+		if (( w <= 0 ) || ( h <= 0 ))
+			return;
+
+		// A pixel at this resolution, not a virtual one -- a hairline that thickens with the window
+		// stops reading as an outline and starts reading as a border.
+		const int t = MAX( 1, serverbrowser_ToScreenY( 1 ) - serverbrowser_ToScreenY( 0 ));
+		const PalEntry ring( 150, 200, 255 );
+
+		screen->Dim( ring, 0.9f, left, top, w, t );
+		screen->Dim( ring, 0.9f, left, bottom - t, w, t );
+		screen->Dim( ring, 0.9f, left, top, t, h );
+		screen->Dim( ring, 0.9f, right - t, top, t, h );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The classic cursor, for the one place the idiom belongs: a vertical list.
+	//
+	// It says something the row highlight cannot -- the highlight marks what is SELECTED, which stays
+	// put while you click around with the mouse, and this marks where the ARROW KEYS are. Drawn as a
+	// triangle of rows rather than M_SKULL so it scales with the row and cannot go missing.
+	void DrawRowCursor( int y )
+	{
+		const int size = SB_ROW_HEIGHT - 6;
+		const int vx = SB_PANEL_LEFT + 6;
+		const int vy = y - 2 + 3;
+
+		for ( int row = 0; row < size; ++row )
+		{
+			// Widest in the middle, tapering to a point at both ends.
+			const int fromMiddle = ( row < size / 2 ) ? row : ( size - 1 - row );
+			const int len = 1 + fromMiddle;
+
+			const int px = serverbrowser_ToScreenX( vx );
+			const int pw = MAX( 1, serverbrowser_ToScreenX( vx + len ) - px );
+			const int py = serverbrowser_ToScreenY( vy + row );
+			const int ph = MAX( 1, serverbrowser_ToScreenY( vy + row + 1 ) - py );
+
+			screen->Dim( PalEntry( 150, 200, 255 ), 0.95f, px, py, pw, ph );
+		}
 	}
 
 	//*************************************************************************
