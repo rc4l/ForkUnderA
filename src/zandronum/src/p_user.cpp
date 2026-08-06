@@ -1398,7 +1398,10 @@ void APlayerPawn::FilterCoopRespawnInventory (APlayerPawn *oldplayer)
 			else if ((dmflags & DF_COOP_LOSE_ARMOR) &&
 				item->IsKindOf(RUNTIME_CLASS(AArmor)))
 			{
-				if (defitem != NULL)
+				// [rc4l] uzdoom@711ac7791 -- inverted. The armour should be destroyed when the new
+				// player class has NO default for it; as written the else branch below went on to
+				// dereference defitem precisely when it was NULL.
+				if (defitem == NULL)
 				{
 					item->Destroy();
 				}
