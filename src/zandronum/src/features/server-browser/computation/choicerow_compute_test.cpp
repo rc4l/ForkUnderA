@@ -111,6 +111,21 @@ TEST( ChoiceRowHit, MissesOutsideTheRowEntirely )
 	EXPECT_EQ( -1, ChoiceHitTest( 10, 0, 0, 100, 10 ));
 }
 
+TEST( ChoiceRowHit, ARowTooNarrowToDrawIsAlsoTooNarrowToClick )
+{
+	// [rc4l] A row that cannot be laid out has no cells, so nothing can be inside one. Reporting a
+	// hit anyway is the invisible-but-clickable bug this browser avoids everywhere else by making
+	// drawing and hit-testing read the same answer -- here that answer is "there is nothing here".
+	//
+	// Reachable rather than defensive: four options in three units of width is what a panel squeezed
+	// by a narrow window hands us.
+	for ( int px = -5; px <= 10; ++px )
+	{
+		EXPECT_EQ( -1, ChoiceHitTest( px, 4, 0, 3, 0 )) << px;
+		EXPECT_EQ( -1, ChoiceHitTest( px, 2, 0, 10, 40 )) << px;
+	}
+}
+
 TEST( ChoiceRowHit, EveryCellIsHittableAtItsOwnEdges )
 {
 	// Swept because an off-by-one here is a control with a dead stripe down it that nobody notices
