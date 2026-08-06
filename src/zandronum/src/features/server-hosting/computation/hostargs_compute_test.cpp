@@ -115,6 +115,18 @@ TEST(HostFileName, RejectsAnythingWithAPathInIt)
 	EXPECT_FALSE(IsBareFileName("a..b.wad"));
 }
 
+TEST(HostFileName, RejectsAColonEvenWithNoSlashInSight)
+{
+	// [rc4l] Two things wear a colon and neither is a filename. `C:x.wad` is a path relative to the
+	// current directory OF THAT DRIVE -- it looks bare and is not. `map.wad:hidden` names an NTFS
+	// alternate data stream, which is a way to read something that is not the file it appears to be.
+	//
+	// Its own test because the obvious case, `C:/x.wad`, carries a slash and is caught one line
+	// earlier -- so the colon rule can look covered while never having fired.
+	EXPECT_FALSE(IsBareFileName("C:x.wad"));
+	EXPECT_FALSE(IsBareFileName("map.wad:hidden"));
+}
+
 TEST(HostFileName, RejectsWhatIsNotASafeValueEither)
 {
 	// Backslash separators are caught by the value rule before the path rule sees them, and either
