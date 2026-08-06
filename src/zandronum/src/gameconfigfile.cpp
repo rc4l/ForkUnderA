@@ -176,6 +176,10 @@ FGameConfigFile::FGameConfigFile ()
 	CreateSectionAtStart("Strife.Autoload");
 	CreateSectionAtStart("HexenDK.Autoload");
 	CreateSectionAtStart("Hexen.Autoload");
+	// [rc4l] Blasphemer is a Zandronum-only IWAD entry, so upstream never grew a
+	// section for it; without one its Autoname matches nothing and its autoload
+	// silently does nothing -- the same bug uzdoom@b47cb9027 fixed for the others.
+	CreateSectionAtStart("Blasphemer.Autoload");
 	CreateSectionAtStart("HereticSR.Autoload");
 	CreateSectionAtStart("Heretic.Autoload");
 	CreateSectionAtStart("FreeDM.Autoload");
@@ -184,8 +188,11 @@ FGameConfigFile::FGameConfigFile ()
 	CreateSectionAtStart("Freedoom.Autoload");
 	CreateSectionAtStart("Plutonia.Autoload");
 	CreateSectionAtStart("TNT.Autoload");
+	CreateSectionAtStart("Doom2BFG.Autoload");
 	CreateSectionAtStart("Doom2.Autoload");
+	CreateSectionAtStart("DoomU.Autoload");
 	CreateSectionAtStart("Doom1.Autoload");
+	CreateSectionAtStart("DoomBFG.Autoload");
 	CreateSectionAtStart("Doom.Autoload");
 	CreateSectionAtStart("Global.Autoload");
 
