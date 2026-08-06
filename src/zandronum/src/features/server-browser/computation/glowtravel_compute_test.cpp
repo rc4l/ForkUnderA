@@ -71,9 +71,16 @@ TEST( GlowTravel, AlwaysArrives )
 
 TEST( GlowTravel, ArrivesQuicklyEnoughToFeelResponsive )
 {
-	// Across the whole virtual screen, in well under a second at 35 tics a second. A marker that takes
-	// longer than the next keypress is a marker that is always behind the player.
+	// TICS, not frames -- the caller advances this from Ticker, so the timing below is the real
+	// timing on every machine rather than a function of the frame rate.
+	//
+	// Across the whole virtual screen in 25 tics is under three quarters of a second at 35Hz. A marker
+	// that takes longer than the next keypress is a marker that is always behind the player.
 	EXPECT_LE( TicsToArrive( GlowPos( 0, 0 ), GlowPos( 640, 400 )), 25 );
+
+	// And a short hop is over almost at once, which is the point of easing on the remaining distance
+	// rather than travelling at a fixed speed.
+	EXPECT_LE( TicsToArrive( GlowPos( 0, 0 ), GlowPos( 16, 0 )), 12 );
 }
 
 TEST( GlowTravel, ArrivingIsStable )

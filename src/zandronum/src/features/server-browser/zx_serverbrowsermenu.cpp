@@ -874,6 +874,19 @@ public:
 		BROWSER_QueryTick( );
 
 		serverbrowser_RebuildList( );
+
+		// [rc4l] The focus glow travels HERE, on the tic, not in Drawer.
+		//
+		// Drawer runs once per rendered frame, so advancing there made the speed a function of the
+		// frame rate: the same slide took a fifth of a second at 240fps and most of a second at 50,
+		// and on a fast machine it was over before the eye could follow it -- which defeats the point
+		// of having it travel at all. The tic is 35Hz whatever the display is doing, and it is already
+		// what the breathing pulse is measured against, so the two now agree.
+		//
+		// The anchor is whatever the last frame drew. One frame stale at worst, and invisible: the
+		// glow is chasing a target it will reach over the following dozen tics anyway.
+		if ( g_FocusGlowValid && g_GlowPlaced )
+			g_GlowAt = zx::AdvanceGlow( g_GlowAt, zx::GlowPos( g_FocusGlowX, g_FocusGlowY ), 1, 3 );
 	}
 
 	//*************************************************************************
@@ -944,16 +957,12 @@ public:
 
 				// The FIRST placement snaps. There is nowhere for it to have travelled from, and
 				// sliding in from a stale position left over from the last visit would be a lie about
-				// where the focus had been.
+				// where the focus had been. Every step after that is Ticker's job -- see there for why
+				// it is not done per frame.
 				if ( !g_GlowPlaced )
 				{
 					g_GlowAt = want;
 					g_GlowPlaced = true;
-				}
-				else
-				{
-					// A third of the remaining distance per tic: away briskly, settling gently.
-					g_GlowAt = zx::AdvanceGlow( g_GlowAt, want, 1, 3 );
 				}
 
 				DrawFocusGlow( g_GlowAt.x, g_GlowAt.y );
