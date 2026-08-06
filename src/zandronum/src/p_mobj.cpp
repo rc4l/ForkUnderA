@@ -4590,11 +4590,15 @@ void AActor::Tick ()
 			velz <= 0 &&
 			floorz == z)
 		{
-			secplane_t floorplane = floorsector->floorplane;
+			// [rc4l] uzdoom@c4b742ebf -- with 3D floors on, the copy from floorsector was immediately
+			// overwritten by P_FindFloorPlane; only the non-3D path ever needed it.
+			secplane_t floorplane;
 
 #ifdef _3DFLOORS
 			// Check 3D floors as well
 			floorplane = P_FindFloorPlane(floorsector, x, y, floorz);
+#else
+			floorplane = floorsector->floorplane;
 #endif
 
 			if (floorplane.c < STEEPSLOPE &&
@@ -7526,6 +7530,11 @@ static fixed_t GetDefaultSpeed(const PClass *type)
 
 AActor *P_SpawnMissile (AActor *source, AActor *dest, const PClass *type, AActor *owner, const bool bSpawnOnClient ) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf -- dereferenced source unconditionally; a DECORATE caller can reach
+	// here with none.
+	if (source == NULL)
+		return NULL;
+
 	return P_SpawnMissileXYZ (source->x, source->y, source->z + 32*FRACUNIT + source->GetBobOffset(),
 		source, dest, type, true, owner, bSpawnOnClient); // [BB] Added bSpawnOnClient.
 }
