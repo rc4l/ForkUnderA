@@ -90,11 +90,18 @@ struct NavResult
 // treated as Tabs -- the list can empty out underneath a focus that was legitimate when it was set,
 // and the answer must still be one the caller can act on.
 //
-// `onLastTab` says whether the tab currently selected is the last one on the row, which is what
-// decides whether Right switches tab or steps off the end into the search box. The caller knows
-// which tab it is on; this unit does not need to, and asking for just the one bit keeps it from
-// having to learn how many tabs there are.
-NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastTab );
+// [rc4l] `tabIndex` and `tabCount` say WHERE on the row the selected tab is, which is what decides
+// whether an arrow steps along it or leaves.
+//
+// This used to be a single bool, onLastTab, and the comment here argued that one bit kept the unit
+// from having to learn how many tabs there are. That was true of two tabs and false of three: with
+// PUBLIC / PRIVATE / HOST, "am I on the last one" cannot answer LEFT, because the middle tab is
+// neither the first nor the last and has somewhere to go in both directions. The bug it produced was
+// exactly that -- PRIVATE could step right and not left.
+//
+// A position and a count answer both directions for any number of tabs, which is what the row
+// actually is.
+NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, int tabIndex, int tabCount );
 
 } // namespace zx
 

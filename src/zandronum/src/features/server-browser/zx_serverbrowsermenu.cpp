@@ -4596,8 +4596,11 @@ public:
 			return true;
 		}
 
+		// The tab's POSITION on the row, not "is it the last one". The bool that used to be passed
+		// here could not describe the middle of a three-tab row, so PRIVATE could step right and not
+		// left -- see the unit's header.
 		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, total > 0,
-			g_Tab == BrowserTab::Host );
+			static_cast<int>( g_Tab ), kTabCount );
 		const zx::BrowserFocus was = g_Focus;
 		SetFocus( nav.focus );
 
