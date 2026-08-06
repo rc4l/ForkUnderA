@@ -148,6 +148,17 @@
 #define SB_WADBAR_W			2
 #define SB_WADBAR_X			( SB_DETAIL_RIGHT - SB_DETAIL_PAD - SB_WADBAR_W )
 
+// [rc4l] The player list sits under the WADs and gets whatever is left, up to this. It is capped for
+// the same reason the WAD list is -- a full server would otherwise be thirty-two names long -- but
+// its cap is the smaller of the two on purpose: the files decide whether you CAN join, and the names
+// only decide whether you want to, so when the panel is tight the files keep their room.
+#define SB_PLAYERLIST_MAX_H	56
+
+// Its bar shares the WADs' column and width. Two scrollbars on one panel that did not line up would
+// read as two different kinds of control.
+#define SB_PLRBAR_X			SB_WADBAR_X
+#define SB_PLRBAR_W			SB_WADBAR_W
+
 // [rc4l] The hosting panel, which stands where the list and the detail panel would be. One column,
 // centred, because there are six fields and nothing to compare them against -- a two-column form
 // would only be filling space it was given.
@@ -578,6 +589,15 @@ static	int				g_WadListTop = 0;
 static	int				g_WadListBottom = 0;
 static	int				g_WadListRows = 0;
 
+// [rc4l] The player list, scrolled and hit-tested exactly as the WAD list above it. Its own scroll
+// rather than a shared one: the two lists are different lengths and a player reading down the names
+// has not asked to lose their place in the files.
+static	int				g_PlayerScroll = 0;
+static	bool			g_DraggingPlayerBar = false;
+static	int				g_PlayerListTop = 0;
+static	int				g_PlayerListBottom = 0;
+static	int				g_PlayerListRows = 0;
+
 // [rc4l] The last position the pointer was reported at, in screen pixels. Wheel events do not carry
 // one, and which list a notch belongs to is entirely a question of where the pointer is.
 static	int				g_MouseX = -1;
@@ -708,6 +728,8 @@ static void serverbrowser_RefreshWadCache( int lServer )
 	// A different server means a different list, so the old scroll position describes nothing.
 	g_WadScroll = 0;
 	g_DraggingWadBar = false;
+	g_PlayerScroll = 0;
+	g_DraggingPlayerBar = false;
 
 	const char *pszIwad = BROWSER_GetIWADName( lServer );
 	if (( pszIwad != NULL ) && ( pszIwad[0] != 0 ))
@@ -3530,7 +3552,27 @@ public:
 		y += 5;
 		DrawSeparator( y );
 		y += 6;
-		DrawWadList( x, y );
+		y = DrawWadList( x, y );
+
+		// [rc4l] Under the files, behind its own rule. Two lists stacked with nothing between them
+		// would read as one list that changed its mind about what it was listing halfway down.
+		//
+		// Only when there is honestly room for it: the files answer whether you CAN join and the names
+		// only answer whether you want to, so on a panel already full of WADs the names are what gives
+		// way rather than what pushes the JOIN button off the bottom.
+		if (( y + 6 + SB_DETAIL_LINE ) <= SB_DETAIL_TEXT_BOTTOM )
+		{
+			y += 3;
+			DrawSeparator( y );
+			y += 6;
+			DrawPlayerList( x, y, lServer );
+		}
+		else
+		{
+			// Nothing was drawn, so nothing may be scrolled -- otherwise a wheel notch over the space
+			// where the list would have been moves an invisible one.
+			g_PlayerListTop = g_PlayerListBottom = g_PlayerListRows = 0;
+		}
 
 		DrawActionButton( );
 	}
@@ -3736,6 +3778,140 @@ public:
 			DrawWadScrollbar( total, rows );
 
 		return g_WadListBottom;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Who is actually in there, under the files.
+	//
+	// The list already says 7/8, and that number is the question "is anyone playing" answered without
+	// saying who -- which is the part that decides whether you join a server with your friends on it
+	// or a server with seven strangers. Names are also the only place a bot-stuffed server gives
+	// itself away by inspection rather than by arithmetic.
+	//
+	// SPECTATORS AND BOTS ARE SHOWN, dimmed and labelled, rather than filtered out. Hiding them would
+	// make the list disagree with the count beside it -- and a name list that is shorter than the
+	// number above it for reasons it does not explain is worse than one that explains itself.
+	//
+	// Frags are omitted for anyone not playing: a spectator's frag count is whatever it was when they
+	// stopped, and a bot's is not a comparison anyone is making.
+	int DrawPlayerList( int x, int y, int lServer )
+	{
+		const int total = static_cast<int>( BROWSER_GetNumPlayers( lServer ));
+
+		// The two silences that are not the same thing. A server that did not send player rows gets
+		// told apart from one that genuinely has nobody in it, because "unknown" and "empty" lead to
+		// different decisions and this panel should not turn one into the other.
+		if ( BROWSER_HasPlayerData( lServer ) == false )
+		{
+			DrawInPanel( CR_DARKGRAY, x, y, "Player list not reported" );
+			return y + SB_DETAIL_LINE;
+		}
+
+		if ( total <= 0 )
+		{
+			DrawInPanel( CR_DARKGRAY, x, y, "No one playing" );
+			return y + SB_DETAIL_LINE;
+		}
+
+		const int bottom = ( y + SB_PLAYERLIST_MAX_H < SB_DETAIL_TEXT_BOTTOM )
+			? ( y + SB_PLAYERLIST_MAX_H ) : SB_DETAIL_TEXT_BOTTOM;
+
+		int rows = ( bottom - y ) / SB_DETAIL_LINE;
+		if ( rows < 1 )
+			rows = 1;
+
+		g_PlayerScroll = zx::ComputeRestoredScroll( g_PlayerScroll, total, rows );
+
+		g_PlayerListTop = y;
+		g_PlayerListBottom = y + rows * SB_DETAIL_LINE;
+		g_PlayerListRows = rows;
+
+		const bool bScrolls = ( total > rows );
+		const int textW = SB_DETAIL_TEXT_W - ( bScrolls ? ( SB_PLRBAR_W + 3 ) : 0 );
+
+		for ( int i = 0; ( i < rows ) && (( g_PlayerScroll + i ) < total ); i++ )
+		{
+			const int entry = g_PlayerScroll + i;
+			const int lineY = y + i * SB_DETAIL_LINE;
+
+			const bool bBot = BROWSER_IsPlayerBot( lServer, entry );
+			const bool bSpec = ( BROWSER_GetPlayerSpectating( lServer, entry ) != 0 );
+
+			// Right-hand column first, exactly as the WAD list sizes its files: it is short and fixed,
+			// so the name gets whatever is left rather than the other way round.
+			FString right;
+			if ( bBot )
+				right = "BOT";
+			else if ( bSpec )
+				right = "SPEC";
+			else
+				right.Format( "%d", static_cast<int>( BROWSER_GetPlayerFragcount( lServer, entry )));
+
+			const int rightW = SmallFont->StringWidth( right );
+			const int gap = SmallFont->StringWidth( " " );
+
+			// [rc4l] Player names run long and carry colour codes, so this is the server-name row's
+			// problem exactly and gets the server-name row's answer. serverbrowser_FitName colorizes,
+			// measures the VISIBLE width -- escapes cost characters but no pixels -- and cuts only at
+			// offsets that cannot land inside an escape, which would otherwise leave a dangling code
+			// to eat the next glyph and tint the rest of the line. It returns the name untouched when
+			// it already fits, so there is nothing to test for first.
+			const FString name = serverbrowser_FitName( BROWSER_GetPlayerName( lServer, entry ),
+				textW - rightW - gap );
+
+			DrawInPanel( ( bBot || bSpec ) ? CR_DARKGRAY : CR_WHITE, x, lineY, name );
+			DrawInPanel( CR_DARKGRAY, x + textW - rightW, lineY, right );
+
+			// The row is not a control, but it is a rectangle, so it can say the things the drawn line
+			// had to drop: the untruncated name, and the ping nothing else has room for.
+			{
+				FString tip;
+				tip << BROWSER_GetPlayerName( lServer, entry );
+
+				if ( bBot )
+					tip << "\nBot";
+				else
+				{
+					if ( bSpec )
+						tip << "\nSpectating";
+					else
+						tip << "\n" << static_cast<int>( BROWSER_GetPlayerFragcount( lServer, entry ))
+							<< " frags";
+
+					tip << "\n" << static_cast<int>( BROWSER_GetPlayerPing( lServer, entry )) << " ms";
+				}
+
+				serverbrowser_Tip( x, lineY, textW, SB_DETAIL_LINE, tip );
+			}
+		}
+
+		if ( bScrolls )
+			DrawPlayerScrollbar( total, rows );
+
+		return g_PlayerListBottom;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The player list's bar. Same column, width and arithmetic as the WAD list's -- see
+	// DrawWadScrollbar; the duplication is two call sites of one unit, not two implementations.
+	void DrawPlayerScrollbar( int total, int rows )
+	{
+		const int left = serverbrowser_ToScreenX( SB_PLRBAR_X );
+		const int width = MAX( 1, serverbrowser_ToScreenX( SB_PLRBAR_X + SB_PLRBAR_W ) - left );
+		const int top = serverbrowser_ToScreenY( g_PlayerListTop );
+		const int height = serverbrowser_ToScreenY( g_PlayerListBottom ) - top;
+		if ( height <= 0 )
+			return;
+
+		screen->Dim( PalEntry( 120, 140, 180 ), 0.14f, left, top, width, height );
+
+		const int minThumb = serverbrowser_ToScreenY( 6 ) - serverbrowser_ToScreenY( 0 );
+		const int thumbH = zx::ComputeThumbHeight( height, rows, total, minThumb );
+		const int thumbY = top + zx::ComputeThumbTop( height, thumbH, g_PlayerScroll, total - rows );
+
+		screen->Dim( PalEntry( 170, 190, 230 ), 0.55f, left, thumbY, width, thumbH );
 	}
 
 	//*************************************************************************
@@ -4150,6 +4326,43 @@ public:
 					g_DraggingWadBar = false;
 				return true;
 			}
+
+			// [rc4l] The player list's bar, same treatment. It shares the WAD bar's column, so the two
+			// are told apart purely by which list's rows the pointer is level with -- which is why the
+			// vertical test uses the recorded box of each list and not the column.
+			const bool bHaveSel = ( g_Selected >= 0 )
+				&& ( g_Selected < static_cast<int>( g_SortedServers.Size( )));
+			const int plrTotal = bHaveSel
+				? static_cast<int>( BROWSER_GetNumPlayers( g_SortedServers[g_Selected] )) : 0;
+			const int plrHeight = serverbrowser_ToScreenY( g_PlayerListBottom )
+				- serverbrowser_ToScreenY( g_PlayerListTop );
+
+			const bool bOverPlrBar = ( plrTotal > g_PlayerListRows ) && ( g_PlayerListRows > 0 ) &&
+				( x >= serverbrowser_ToScreenX( SB_PLRBAR_X - 3 )) &&
+				( x < serverbrowser_ToScreenX( SB_PLRBAR_X + SB_PLRBAR_W + 3 )) &&
+				( y >= serverbrowser_ToScreenY( g_PlayerListTop )) &&
+				( y < serverbrowser_ToScreenY( g_PlayerListBottom ));
+
+			if ( type == MOUSE_Click )
+				g_DraggingPlayerBar = bOverPlrBar;
+
+			if ( g_DraggingPlayerBar && ( plrHeight > 0 ) && ( plrTotal > g_PlayerListRows ))
+			{
+				const int top = serverbrowser_ToScreenY( g_PlayerListTop );
+				const int minThumb = serverbrowser_ToScreenY( 6 ) - serverbrowser_ToScreenY( 0 );
+				const int thumbH = zx::ComputeThumbHeight( plrHeight, g_PlayerListRows, plrTotal,
+					minThumb );
+
+				g_PlayerScroll = zx::ComputeFirstFromPointer( y - top, plrHeight, thumbH,
+					plrTotal - g_PlayerListRows );
+			}
+
+			if ( g_DraggingPlayerBar )
+			{
+				if ( type == MOUSE_Release )
+					g_DraggingPlayerBar = false;
+				return true;
+			}
 		}
 
 		// [rc4l] The scrollbar, BEFORE the rows. The row hit box used to run all the way to
@@ -4375,6 +4588,27 @@ public:
 				{
 					g_WadScroll = zx::ComputeRestoredScroll( g_WadScroll + step, wadTotal, g_WadListRows );
 					return true;
+				}
+
+				// And the player list below it, by the same rule. Its box is tested separately rather
+				// than as "the detail panel" because the two lists sit one above the other inside that
+				// panel, and a notch aimed at the names must not move the files.
+				if (( g_PlayerListRows > 0 ) && ( g_Selected >= 0 ) &&
+					( g_Selected < static_cast<int>( g_SortedServers.Size( ))))
+				{
+					const int plrTotal = static_cast<int>(
+						BROWSER_GetNumPlayers( g_SortedServers[g_Selected] ));
+
+					if (( plrTotal > g_PlayerListRows ) &&
+						( g_MouseY >= serverbrowser_ToScreenY( g_PlayerListTop )) &&
+						( g_MouseY < serverbrowser_ToScreenY( g_PlayerListBottom )) &&
+						( g_MouseX >= serverbrowser_ToScreenX( SB_DETAIL_LEFT )) &&
+						( g_MouseX < serverbrowser_ToScreenX( SB_DETAIL_RIGHT )))
+					{
+						g_PlayerScroll = zx::ComputeRestoredScroll( g_PlayerScroll + step, plrTotal,
+							g_PlayerListRows );
+						return true;
+					}
 				}
 
 				const int maxFirst = ( total > SB_VISIBLE_ROWS ) ? ( total - SB_VISIBLE_ROWS ) : 0;

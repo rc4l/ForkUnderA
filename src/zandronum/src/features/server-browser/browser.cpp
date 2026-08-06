@@ -472,6 +472,34 @@ LONG BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer )
 
 //*****************************************************************************
 //
+// [rc4l] Bots are already told apart for the player COUNT; the detail panel needs the same fact per
+// row, so it can say which of the names on a busy-looking server are people.
+bool BROWSER_IsPlayerBot( ULONG ulServer, ULONG ulPlayer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( false );
+
+	if ( ulPlayer >= (ULONG)g_BrowserServerList[ulServer].lNumPlayers )
+		return ( false );
+
+	return ( g_BrowserServerList[ulServer].Players[ulPlayer].bIsBot );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Whether the server sent player rows at all. Distinct from "nobody is playing": a server that
+// withheld the data and a server that is genuinely empty both report zero names, and a panel that
+// showed the same thing for both would be inventing an empty server out of a silent one.
+bool BROWSER_HasPlayerData( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( false );
+
+	return ( g_BrowserServerList[ulServer].bHasPlayerData );
+}
+
+//*****************************************************************************
+//
 LONG BROWSER_GetPing( ULONG ulServer )
 {
 	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))

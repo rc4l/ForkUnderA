@@ -248,6 +248,11 @@ const char		*BROWSER_GetPlayerName( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerFragcount( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerPing( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer );
+// [rc4l] Per-row version of the fact BROWSER_GetNumHumanPlayers already uses in aggregate.
+bool			BROWSER_IsPlayerBot( ULONG ulServer, ULONG ulPlayer );
+// [rc4l] Did the server send player rows at all? A server that withheld them and one that is empty
+// both report zero names, and they do not mean the same thing.
+bool			BROWSER_HasPlayerData( ULONG ulServer );
 LONG			BROWSER_GetPing( ULONG ulServer );
 const char		*BROWSER_GetVersion( ULONG ulServer );
 // [rc4l] Alpha-3 code ("USA"), or "" when the server sent none. Always safe to draw as text, which is
