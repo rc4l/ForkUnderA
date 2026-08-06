@@ -500,5 +500,7 @@ void SkipChunk (BYTE **stream)
 	int len;
 
 	len = ReadLong (stream);
-	stream += len + (len & 1);
+	// [rc4l] uzdoom@322742d4b -- this advanced the LOCAL pointer variable, not the caller's
+	// stream, so a skipped chunk left the read position exactly where it started.
+	*stream += len + (len & 1);
 }

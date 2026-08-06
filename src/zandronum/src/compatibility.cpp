@@ -448,7 +448,9 @@ void SetCompatibilityParams()
 	{
 		unsigned i = ii_compatparams;
 
-		while (CompatParams[i] != CP_END && i < CompatParams.Size())
+		// [rc4l] uzdoom@322742d4b -- test the bound BEFORE indexing, or the last iteration reads
+		// one past the end of the array.
+		while (i < CompatParams.Size() && CompatParams[i] != CP_END)
 		{
 			switch (CompatParams[i])
 			{
