@@ -108,6 +108,14 @@ TextInput MoveWord( const TextInput &in, bool forward, bool extend );
 // no word there to select and picking a neighbouring one would be a guess.
 TextInput SelectWordAt( const TextInput &in, size_t pos );
 
+// What a double-click in the FIELD means, which is not quite the same question.
+//
+// On a word, that word. Anywhere else -- the blank part of the box past the end of the text, or a
+// gap between words -- EVERYTHING. Selecting nothing there would be technically defensible and
+// useless: a double-click is a request to grab something, and the only sensible thing to grab when
+// the pointer is not on a word is the lot.
+TextInput SelectWordOrAll( const TextInput &in, size_t pos );
+
 // Empty text, caret at 0.
 TextInput ClearInput( );
 

@@ -270,6 +270,15 @@ TextInput SelectWordAt( const TextInput &in, size_t pos )
 	return out;
 }
 
+TextInput SelectWordOrAll( const TextInput &in, size_t pos )
+{
+	const TextInput word = SelectWordAt( in, pos );
+	if ( HasSelection( word ))
+		return word;
+
+	return SelectAll( in );
+}
+
 TextInput ClearInput( )
 {
 	return TextInput( );

@@ -494,3 +494,30 @@ TEST( TextInput, WordOperationsKeepBothEndsInsideTheText )
 		}
 	}
 }
+
+TEST( TextInput, DoubleClickPastTheEndOfTheTextSelectsEverything )
+{
+	// The blank part of the box. Selecting nothing there would be technically defensible and useless:
+	// a double-click is a request to grab something.
+	const TextInput in = Type( "brutal doom" );
+
+	EXPECT_EQ( "brutal doom", zx::SelectedText( zx::SelectWordOrAll( in, 11 )));
+	EXPECT_EQ( "brutal doom", zx::SelectedText( zx::SelectWordOrAll( in, 99 )));
+}
+
+TEST( TextInput, DoubleClickInAGapSelectsEverythingToo )
+{
+	EXPECT_EQ( "brutal doom", zx::SelectedText( zx::SelectWordOrAll( Type( "brutal doom" ), 6 )));
+}
+
+TEST( TextInput, DoubleClickOnAWordStillTakesJustThatWord )
+{
+	const TextInput in = Type( "brutal doom" );
+	EXPECT_EQ( "brutal", zx::SelectedText( zx::SelectWordOrAll( in, 2 )));
+	EXPECT_EQ( "doom", zx::SelectedText( zx::SelectWordOrAll( in, 9 )));
+}
+
+TEST( TextInput, DoubleClickInAnEmptyBoxSelectsNothingBecauseThereIsNothing )
+{
+	EXPECT_FALSE( zx::HasSelection( zx::SelectWordOrAll( TextInput( ), 0 )));
+}

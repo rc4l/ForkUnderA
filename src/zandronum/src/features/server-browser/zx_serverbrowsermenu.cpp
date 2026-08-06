@@ -2041,6 +2041,30 @@ public:
 
 		// The search box, which shares the row with the tabs.
 		g_SearchHot = false;
+		{
+			const bool bOverSearch = (( parts & zx::kPartTabs ) != 0 ) &&
+				( x >= serverbrowser_ToScreenX( SB_SEARCH_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_SEARCH_RIGHT )) &&
+				( y >= serverbrowser_ToScreenY( SB_SEARCH_TOP )) &&
+				( y < serverbrowser_ToScreenY( SB_SEARCH_TOP + SB_SEARCH_H ));
+
+			g_SearchHot = bOverSearch;
+
+			// [rc4l] A click anywhere else lets the box go -- a row, a tab, the button, or the empty
+			// space below the list, which is the one that made this feel broken. Clicking away from a
+			// field is how every interface says "I am done with that", and a caret still blinking in a
+			// box you have visibly left is a lie about where the next keystroke will land.
+			//
+			// Done HERE, before any of the handlers below, so it applies even to clicks that land on
+			// nothing at all and are otherwise ignored.
+			if ( !bOverSearch && ( type == MOUSE_Click ))
+			{
+				if ( g_Focus == zx::BrowserFocus::Search )
+					g_Focus = zx::BrowserFocus::Tabs;
+				g_SearchDragging = false;
+			}
+		}
+
 		if ( parts & zx::kPartTabs )
 		{
 			const bool bOverSearch =
@@ -2048,8 +2072,6 @@ public:
 				( x < serverbrowser_ToScreenX( SB_SEARCH_RIGHT )) &&
 				( y >= serverbrowser_ToScreenY( SB_SEARCH_TOP )) &&
 				( y < serverbrowser_ToScreenY( SB_SEARCH_TOP + SB_SEARCH_H ));
-
-			g_SearchHot = bOverSearch;
 
 			if ( bOverSearch && ( type == MOUSE_Click ))
 			{
@@ -2061,10 +2083,10 @@ public:
 
 				if ( bDouble )
 				{
-					// Double-click takes the word under the pointer, as it does everywhere. No drag
-					// afterwards: a second press that started selecting again would undo the word the
-					// player just asked for before they let go.
-					g_Search = zx::SelectWordAt( g_Search, SearchCharAt( x ));
+					// Double-click takes the word under the pointer, or everything when there is no word
+					// there -- see SelectWordOrAll. No drag afterwards: a second press that started
+					// selecting again would undo what the player just asked for before they let go.
+					g_Search = zx::SelectWordOrAll( g_Search, SearchCharAt( x ));
 					g_SearchDragging = false;
 				}
 				else
