@@ -114,6 +114,7 @@ xx(TK_Abs,					"'abs'")
 xx(TK_Random,				"'random'")
 xx(TK_Random2,				"'random2'")
 xx(TK_RandomPick,			"'randompick'")	// [rc4l] uzdoom@8c5a8c54f cluster
+xx(TK_FRandomPick,			"'frandompick'")	// [rc4l] uzdoom@8e0151b4c
 xx(TK_FRandom,				"'frandom'")
 xx(TK_Is,					"'is'")
 xx(TK_Replaces,				"'replaces'")
