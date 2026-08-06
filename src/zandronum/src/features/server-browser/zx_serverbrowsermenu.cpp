@@ -235,6 +235,9 @@ static	zx::GlowTravel	g_GlowTravel;
 static	zx::GlowPos		g_GlowAt;
 static	bool			g_GlowPlaced = false;
 
+// When the glow was last advanced, so the next frame knows how much time it owes it.
+static	int				g_GlowLastMs = 0;
+
 // [rc4l] Showing "cancel this download?". Drawn and answered by this menu rather than through
 // M_StartMessage, so the browser keeps control of the pairing: the hold placed on the join resume
 // when this goes up MUST be released on exactly one of the two answers, and a message box that can be
@@ -876,29 +879,6 @@ public:
 
 		serverbrowser_RebuildList( );
 
-		// [rc4l] The focus glow travels HERE, on the tic, not in Drawer.
-		//
-		// Drawer runs once per rendered frame, so advancing there made the speed a function of the
-		// frame rate: the same slide took a fifth of a second at 240fps and most of a second at 50,
-		// and on a fast machine it was over before the eye could follow it -- which defeats the point
-		// of having it travel at all. The tic is 35Hz whatever the display is doing, and it is already
-		// what the breathing pulse is measured against, so the two now agree.
-		//
-		// The anchor is whatever the last frame drew. One frame stale at worst, and invisible: the
-		// glow is chasing a target it will reach over the following dozen tics anyway.
-		if ( g_FocusGlowValid && g_GlowPlaced )
-		{
-			const zx::GlowPos want( g_FocusGlowX, g_FocusGlowY );
-
-			// The focus can move again mid-flight. Setting out afresh FROM WHERE THE GLOW IS -- rather
-			// than from where the last journey began -- is what stops it snapping backwards when the
-			// player changes their mind halfway through.
-			if (( g_GlowTravel.to.x != want.x ) || ( g_GlowTravel.to.y != want.y ))
-				g_GlowTravel = zx::BeginGlowTravel( g_GlowAt, want );
-
-			g_GlowTravel = zx::StepGlowTravel( g_GlowTravel );
-			g_GlowAt = zx::GlowTravelPoint( g_GlowTravel );
-		}
 	}
 
 	//*************************************************************************
@@ -975,7 +955,30 @@ public:
 				{
 					g_GlowAt = want;
 					g_GlowTravel = zx::BeginGlowTravel( want, want );
+					g_GlowLastMs = static_cast<int>( I_MSTime( ));
 					g_GlowPlaced = true;
+				}
+				else
+				{
+					// [rc4l] Advanced HERE, once per frame, by however many milliseconds actually
+					// passed -- not once per 35Hz tic.
+					//
+					// The tic was smooth in the sense of being frame-rate independent and steppy in
+					// the sense that mattered: 35 positions a second is a slideshow beside a 144Hz
+					// panel. Real elapsed time is both -- as many positions as there are frames, and
+					// the same wall-clock duration on every machine.
+					const int now = static_cast<int>( I_MSTime( ));
+					const int delta = now - g_GlowLastMs;
+					g_GlowLastMs = now;
+
+					// The focus can move again mid-flight. Setting out afresh FROM WHERE THE GLOW IS --
+					// rather than from where the last journey began -- is what stops it snapping
+					// backwards when the player changes their mind halfway through.
+					if (( g_GlowTravel.to.x != want.x ) || ( g_GlowTravel.to.y != want.y ))
+						g_GlowTravel = zx::BeginGlowTravel( g_GlowAt, want );
+
+					g_GlowTravel = zx::StepGlowTravel( g_GlowTravel, delta );
+					g_GlowAt = zx::GlowTravelPoint( g_GlowTravel );
 				}
 
 				DrawFocusGlow( g_GlowAt.x, g_GlowAt.y );

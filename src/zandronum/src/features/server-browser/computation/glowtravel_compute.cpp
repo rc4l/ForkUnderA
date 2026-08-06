@@ -10,21 +10,27 @@ namespace
 {
 const int kOne = 1000;			// progress is in thousandths
 
-// How long a journey takes, in tics, from how far it goes.
+// How long a journey takes, in MILLISECONDS, from how far it goes.
 //
 // Clamped at both ends and deliberately sub-linear: a hop between two rows must not take as long as
 // crossing the panel, and crossing the panel must not take longer than the player's next keypress.
+// 170ms is quick enough not to feel like lag on a tiny hop; 560ms is comfortably under a second.
 int DurationFor( int distance )
 {
-	int tics = 6 + distance / 24;
+	int ms = 170 + ( distance * 20 ) / 24;
 
-	if ( tics < 6 )
-		tics = 6;
-	if ( tics > 20 )
-		tics = 20;
+	if ( ms < 170 )
+		ms = 170;
+	if ( ms > 560 )
+		ms = 560;
 
-	return tics;
+	return ms;
 }
+
+// The largest step that is a real frame rather than an interruption. Past this the game was not
+// drawing -- alt-tabbed, loading, paused at a breakpoint -- and honouring the gap would teleport the
+// glow, which is the thing the travel exists to prevent.
+const int kMaxStepMs = 200;
 
 // Straight-line distance, near enough. The octagonal approximation -- larger + 3/8 of smaller -- is
 // within a few percent of the true hypotenuse and needs no square root, and this only ever feeds a
@@ -78,14 +84,22 @@ GlowTravel BeginGlowTravel( GlowPos at, GlowPos to )
 	return out;
 }
 
-GlowTravel StepGlowTravel( const GlowTravel &travel )
+GlowTravel StepGlowTravel( const GlowTravel &travel, int deltaMs )
 {
 	GlowTravel out = travel;
 
 	if ( out.duration < 1 )
 		out.duration = 1;
-	if ( out.elapsed < out.duration )
-		++out.elapsed;
+
+	int step = deltaMs;
+	if ( step < 0 )
+		step = 0;
+	if ( step > kMaxStepMs )
+		step = kMaxStepMs;
+
+	out.elapsed += step;
+	if ( out.elapsed > out.duration )
+		out.elapsed = out.duration;
 
 	return out;
 }
@@ -124,6 +138,19 @@ GlowPos GlowTravelPoint( const GlowTravel &travel )
 	{
 		offsetX = ( -dy * bow ) / distance;
 		offsetY = ( dx * bow ) / distance;
+	}
+
+	// [rc4l] THE BOW ALWAYS FALLS ON THE SAME SIDE, whichever way the glow is travelling.
+	//
+	// The perpendicular (-dy, dx) turns with the direction of travel, so going down bowed one way and
+	// coming back up bowed the other -- and a down-then-up pair traced a full circle rather than
+	// retracing one arc. Pinning the offset to a canonical side makes the return journey follow the
+	// same curve backwards, which is what makes the movement feel like one path between two places
+	// rather than an orbit around them.
+	if (( offsetX < 0 ) || (( offsetX == 0 ) && ( offsetY < 0 )))
+	{
+		offsetX = -offsetX;
+		offsetY = -offsetY;
 	}
 
 	const long long controlX = travel.from.x + dx / 2 + offsetX;
