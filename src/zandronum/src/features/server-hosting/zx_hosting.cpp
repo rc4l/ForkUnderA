@@ -55,11 +55,18 @@ int OurProcessId( void )
 //
 const char *const kReadyMarker = "[fua-host] ready";
 
+// [rc4l] And the second one: the registry reached us from outside. See the header for why this is
+// the only reachability test worth trusting.
+const char *const kReachableMarker = "[fua-host] reachable";
+
 namespace
 {
 
 HostLifecycle	g_Life;
 bool			g_bReadyEdge	= false;
+HostReach		g_Reach			= HostReach::NotPublic;
+unsigned		g_Generation	= 0;
+int				g_PublicMs		= 0;
 HostConfig		g_Config;
 FString			g_Secret;
 FString			g_Address;
@@ -69,6 +76,10 @@ int				g_LastTickMs	= 0;
 
 // Enough to explain a failure, little enough that a chatty server cannot grow it without bound.
 const size_t kMaxRecent = 4096;
+
+// A minute. The registry verifies within seconds of an announcement; the rest is slack for a slow
+// round trip and a registry that is briefly busy.
+const int kReachTimeoutMs = 60000;
 
 // [rc4l] Long enough that guessing it is not a strategy, and it only has to survive the lifetime of
 // one process. Drawn from the engine's RNG rather than anything the player can influence, and never
@@ -126,6 +137,15 @@ bool HostStart( const HostConfig &config )
 
 	g_Life = StepHostLifecycle( HostLifecycle( ), HostEvent::Spawned, "" );
 
+	// Never reused, so a stale reference to an earlier host can always be told apart from this one.
+	++g_Generation;
+
+	// A local server was never meant to be reachable from outside, so there is nothing to wait for
+	// and nothing to report -- saying "unreachable" about it would be answering a question nobody
+	// asked, in a way that reads as a fault.
+	g_Reach = config.advertise ? HostReach::Waiting : HostReach::NotPublic;
+	g_PublicMs = 0;
+
 	g_Address = "127.0.0.1:";
 	g_Address.AppendFormat( "%d", ResolveHostPort( g_Config.port, 10666 ));
 
@@ -149,6 +169,8 @@ void HostStop( void )
 	g_Secret = "";
 	g_Address = "";
 	g_bReadyEdge = false;
+	g_Reach = HostReach::NotPublic;
+	g_PublicMs = 0;
 }
 
 //*****************************************************************************
@@ -169,6 +191,14 @@ void HostTick( void )
 	if ( chunk.empty( ) == false )
 	{
 		RememberOutput( chunk );
+
+		// Watched for the whole life of the server, not only while it is starting: the registry
+		// verifies on its own schedule, and it is usually well after the server is up.
+		if (( g_Reach == HostReach::Waiting )
+			&& ( chunk.find( kReachableMarker ) != std::string::npos ))
+		{
+			g_Reach = HostReach::Reachable;
+		}
 
 		if ( g_Life.state == HostState::Starting )
 		{
@@ -199,6 +229,17 @@ void HostTick( void )
 		return;
 	}
 
+	if (( g_Reach == HostReach::Waiting ) && HostAcceptsClients( g_Life.state ))
+	{
+		g_PublicMs += delta;
+
+		// [rc4l] Giving up is a REPORT, not a verdict on the network. The registry verifies within
+		// seconds of an announcement, so a minute of silence means the packet is not arriving -- but
+		// what the panel says is "we did not hear back", because that is the only thing we know.
+		if ( g_PublicMs >= kReachTimeoutMs )
+			g_Reach = HostReach::Unreachable;
+	}
+
 	g_Life = TickHostLifecycle( g_Life, delta );
 }
 
@@ -221,6 +262,16 @@ void HostForget( void )
 void HostShutdown( void )
 {
 	HostStop( );
+}
+
+unsigned HostGeneration( void )
+{
+	return g_Generation;
+}
+
+HostReach HostReachability( void )
+{
+	return g_Reach;
 }
 
 HostState HostCurrentState( void )
@@ -345,6 +396,20 @@ void HostChildEcho( const char *text )
 		return;
 
 	WriteUpThePipe( text );
+}
+
+void HostChildAnnounceReachable( void )
+{
+	static bool bAnnounced = false;
+
+	if ( bAnnounced || ( StartedByAGame( ) == false ))
+		return;
+
+	bAnnounced = true;
+
+	FString line;
+	line.Format( "%s\n", kReachableMarker );
+	WriteUpThePipe( line.GetChars( ));
 }
 
 void HostChildAnnounceReady( void )
