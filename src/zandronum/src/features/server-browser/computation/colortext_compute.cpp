@@ -43,4 +43,45 @@ std::vector<size_t> ComputeColorSafeCutPoints(const std::string &text)
 	return out;
 }
 
+std::string StripColorCodes(const std::string &text)
+{
+	std::string out;
+	out.reserve(text.size());
+
+	// The same walk as above, keeping the letters instead of recording the offsets. Deliberately the
+	// same shape: if the renderer ever accepts a third escape form, both of these have to learn it,
+	// and two loops that already look alike are far likelier to be changed together.
+	size_t i = 0;
+	while (i < text.size())
+	{
+		if (text[i] == kColorEscape)
+		{
+			++i;								// the escape byte itself
+
+			if ((i < text.size()) && (text[i] == '['))
+			{
+				// Unterminated brackets run to the end, matching the renderer -- so everything left is
+				// part of the code and none of it is a name.
+				while ((i < text.size()) && (text[i] != ']'))
+					++i;
+				if (i < text.size())
+					++i;
+			}
+			else if (i < text.size())
+			{
+				++i;							// single-character form
+			}
+			// A trailing escape with nothing after it falls through having consumed only itself, which
+			// is the point: it is dropped rather than kept as a byte nothing will ever consume.
+		}
+		else
+		{
+			out.push_back(text[i]);
+			++i;
+		}
+	}
+
+	return out;
+}
+
 } // namespace zx

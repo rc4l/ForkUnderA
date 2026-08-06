@@ -987,32 +987,44 @@ static EColorRange serverbrowser_PingColor( int ping )
 // Server names carry \c escapes, which occupy no pixels but do occupy characters. Truncating by
 // character count would cut names arbitrarily early and could sever an escape mid-sequence, leaving
 // the rest of the row tinted. So measure the visible width and cut on that.
-// [rc4l] A server-supplied string, colour codes and all, cut to fit `maxWidth`.
+// [rc4l] A server-supplied name as plain text: no colour, whichever way the colour was written.
 //
-// V_ColorizeString first, because the operator typed "\cd" and that is what arrives on the wire --
-// without it the backslash and the letter are drawn literally. After that the renderer does the work:
-// FFont::StringWidth already skips escapes when measuring and DrawText consumes them when drawing.
-//
-// The cutting is the part that needs care, and why the offsets come from a tested unit: shortening a
-// byte at a time eventually lands between an escape and the character it takes, and the leftover
-// escape then eats the following glyph as a colour code. See computation/colortext_compute.h.
-static FString serverbrowser_FitName( const char *pszName, int maxWidth )
+// BOTH STEPS ARE NEEDED and they are not the same step. V_ColorizeString turns the wire form -- the
+// literal "\cd" an operator typed -- into the escape byte the renderer understands; without it those
+// two characters are simply drawn. StripColorCodes then removes the escapes themselves. Doing only
+// the first leaves the browser rendering names in colours it may not have (see
+// computation/colortext_compute.h for why that is worse than it sounds); doing only the second
+// leaves "\cd" sitting in the middle of the name.
+static FString serverbrowser_PlainName( const char *pszName )
 {
 	FString name = pszName;
 	V_ColorizeString( name );
+	return FString( zx::StripColorCodes( std::string( name.GetChars( ))).c_str( ));
+}
+
+//*****************************************************************************
+//
+// [rc4l] A server-supplied name, plain, cut to fit `maxWidth`.
+//
+// The cutting used to need care -- shortening a byte at a time could land between an escape and the
+// character it takes, leaving a dangling escape to eat the next glyph. Stripping first removes that
+// hazard at the source rather than navigating around it: there are no escapes left to cut through,
+// so any offset is a safe offset and the walk is a plain one.
+static FString serverbrowser_FitName( const char *pszName, int maxWidth )
+{
+	FString name = serverbrowser_PlainName( pszName );
 
 	if ( SmallFont->StringWidth( name ) <= maxWidth )
 		return name;
 
 	// Room for the ellipsis BEFORE cutting, so the result including "..." fits.
 	const int budget = maxWidth - SmallFont->StringWidth( "..." );
-	const std::vector<size_t> cuts = zx::ComputeColorSafeCutPoints( std::string( name.GetChars( )));
 
 	// Longest first: the widest cut that fits is the most of the name we can show.
-	for ( size_t i = cuts.size( ); i-- > 0; )
+	for ( long len = static_cast<long>( name.Len( )); len > 0; --len )
 	{
 		FString candidate = name;
-		candidate.Truncate( static_cast<long>( cuts[i] ));
+		candidate.Truncate( len );
 		if ( SmallFont->StringWidth( candidate ) <= budget )
 		{
 			candidate += "...";
@@ -3492,10 +3504,10 @@ public:
 		int y = SB_DETAIL_TOP + SB_DETAIL_PAD;
 
 		// Title: the server's own name, wrapped rather than clipped -- it is the heading, and half a
-		// name with an ellipsis tells you less than two short lines do. Colorized so an operator's
-		// "\cd" reads as colour here exactly as it does in the list.
-		FString title = BROWSER_GetHostName( lServer );
-		V_ColorizeString( title );
+		// name with an ellipsis tells you less than two short lines do. Plain, like every other name
+		// the browser draws: the heading is where a name from a palette mod would be biggest and most
+		// likely to land in an unreadable colour.
+		const FString title = serverbrowser_PlainName( BROWSER_GetHostName( lServer ));
 		y = DrawWrapped( title, x, y, CR_WHITE );
 		y += 3;
 
