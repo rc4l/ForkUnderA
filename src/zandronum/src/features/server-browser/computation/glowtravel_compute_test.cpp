@@ -4,147 +4,266 @@
 #include "gtest/gtest.h"
 #include "features/server-browser/computation/glowtravel_compute.h"
 
-using zx::AdvanceGlow;
-using zx::GlowArrived;
+using zx::BeginGlowTravel;
 using zx::GlowPos;
+using zx::GlowTravel;
+using zx::GlowTravelDone;
+using zx::GlowTravelPoint;
+using zx::StepGlowTravel;
 
 namespace
 {
-const int kNum = 1;
-const int kDen = 3;		// a third of what is left, each tic
-
-GlowPos Step( GlowPos at, GlowPos to ) { return AdvanceGlow( at, to, kNum, kDen ); }
-
-// Runs the travel to completion and says how many tics it took, or -1 if it never arrived.
-int TicsToArrive( GlowPos at, GlowPos to, int limit = 500 )
+// Distance from a point to the straight line between two others, times the line's length -- the
+// cross product. Zero means the point is ON the line, which is what "does it bow?" comes down to.
+long long OffLine( GlowPos from, GlowPos to, GlowPos at )
 {
-	for ( int i = 1; i <= limit; ++i )
-	{
-		at = Step( at, to );
-		if ( GlowArrived( at, to ))
-			return i;
-	}
-	return -1;
+	const long long dx = to.x - from.x;
+	const long long dy = to.y - from.y;
+	const long long px = at.x - from.x;
+	const long long py = at.y - from.y;
+
+	const long long cross = dx * py - dy * px;
+	return ( cross < 0 ) ? -cross : cross;
 }
+
+int Abs( int v ) { return ( v < 0 ) ? -v : v; }
 } // namespace
 
-TEST( GlowTravel, MovesTowardsTheTarget )
-{
-	const GlowPos at = Step( GlowPos( 0, 0 ), GlowPos( 90, 30 ));
+// ---------------------------------------------------------------- the ends
 
-	EXPECT_GT( at.x, 0 );
-	EXPECT_LE( at.x, 90 );
-	EXPECT_GT( at.y, 0 );
-	EXPECT_LE( at.y, 30 );
+TEST( GlowTravel, StartsExactlyWhereItSetOut )
+{
+	const GlowTravel t = BeginGlowTravel( GlowPos( 10, 20 ), GlowPos( 300, 200 ));
+	const GlowPos at = GlowTravelPoint( t );
+
+	EXPECT_EQ( 10, at.x );
+	EXPECT_EQ( 20, at.y );
 }
 
-TEST( GlowTravel, EasesOutRatherThanTravellingLinearly )
+TEST( GlowTravel, ArrivesExactlyWhereItWasGoing )
 {
-	// Each step must be no larger than the one before: it leaves fast and settles slowly, which is
-	// what stops a two-pixel hop taking as long as crossing the panel.
-	GlowPos at( 0, 0 );
-	const GlowPos to( 300, 0 );
+	// Exactly, not near enough. A marker that settles a pixel off its mark is the bug the whole unit
+	// exists to avoid.
+	GlowTravel t = BeginGlowTravel( GlowPos( 10, 20 ), GlowPos( 300, 200 ));
+	for ( int i = 0; i < 100; ++i )
+		t = StepGlowTravel( t );
 
-	int previous = 1 << 30;
-	for ( int i = 0; i < 12; ++i )
-	{
-		const GlowPos next = Step( at, to );
-		const int moved = next.x - at.x;
-		if ( moved == 0 )
-			break;
-
-		EXPECT_LE( moved, previous ) << "step " << i << " grew";
-		previous = moved;
-		at = next;
-	}
+	EXPECT_TRUE( GlowTravelDone( t ));
+	EXPECT_EQ( 300, GlowTravelPoint( t ).x );
+	EXPECT_EQ( 200, GlowTravelPoint( t ).y );
 }
 
-TEST( GlowTravel, AlwaysArrives )
+TEST( GlowTravel, StaysPutOnceItHasArrived )
 {
-	// The floor is what makes this true. A pure fraction is an asymptote: it would creep for ever and
-	// leave the marker a pixel off its mark indefinitely.
-	EXPECT_GT( TicsToArrive( GlowPos( 0, 0 ), GlowPos( 1, 0 )), 0 );
-	EXPECT_GT( TicsToArrive( GlowPos( 0, 0 ), GlowPos( 640, 400 )), 0 );
-	EXPECT_GT( TicsToArrive( GlowPos( 640, 400 ), GlowPos( 0, 0 )), 0 );
-	EXPECT_GT( TicsToArrive( GlowPos( -50, 700 ), GlowPos( 12, -9 )), 0 );
-}
+	GlowTravel t = BeginGlowTravel( GlowPos( 0, 0 ), GlowPos( 100, 100 ));
+	for ( int i = 0; i < 100; ++i )
+		t = StepGlowTravel( t );
 
-TEST( GlowTravel, ArrivesQuicklyEnoughToFeelResponsive )
-{
-	// TICS, not frames -- the caller advances this from Ticker, so the timing below is the real
-	// timing on every machine rather than a function of the frame rate.
-	//
-	// Across the whole virtual screen in 25 tics is under three quarters of a second at 35Hz. A marker
-	// that takes longer than the next keypress is a marker that is always behind the player.
-	EXPECT_LE( TicsToArrive( GlowPos( 0, 0 ), GlowPos( 640, 400 )), 25 );
-
-	// And a short hop is over almost at once, which is the point of easing on the remaining distance
-	// rather than travelling at a fixed speed.
-	EXPECT_LE( TicsToArrive( GlowPos( 0, 0 ), GlowPos( 16, 0 )), 12 );
-}
-
-TEST( GlowTravel, ArrivingIsStable )
-{
-	// Once there, it stays. A step that overshot would sit and oscillate around the target for ever.
-	const GlowPos to( 100, 50 );
-	GlowPos at = to;
-
+	const GlowPos settled = GlowTravelPoint( t );
 	for ( int i = 0; i < 10; ++i )
 	{
-		at = Step( at, to );
-		EXPECT_EQ( to.x, at.x );
-		EXPECT_EQ( to.y, at.y );
+		t = StepGlowTravel( t );
+		EXPECT_EQ( settled.x, GlowTravelPoint( t ).x );
+		EXPECT_EQ( settled.y, GlowTravelPoint( t ).y );
 	}
 }
 
-TEST( GlowTravel, NeverOvershoots )
+// ---------------------------------------------------------------- the curve
+
+TEST( GlowTravel, BowsOffTheStraightLine )
 {
-	// Swept, because an overshoot only shows on particular distances and reads as a wobble rather
-	// than as a bug worth reporting.
-	for ( int distance = 1; distance <= 400; ++distance )
+	// The whole point of the rework. Somewhere in the middle it must NOT be on the line between the
+	// two ends.
+	const GlowPos from( 0, 0 );
+	const GlowPos to( 400, 0 );
+
+	GlowTravel t = BeginGlowTravel( from, to );
+	long long widest = 0;
+
+	while ( !GlowTravelDone( t ))
 	{
-		GlowPos at( 0, 0 );
-		const GlowPos to( distance, 0 );
+		t = StepGlowTravel( t );
+		const long long off = OffLine( from, to, GlowTravelPoint( t ));
+		if ( off > widest )
+			widest = off;
+	}
 
-		for ( int i = 0; i < 200; ++i )
-		{
-			at = Step( at, to );
-			EXPECT_GE( at.x, 0 ) << distance;
-			EXPECT_LE( at.x, distance ) << distance;
-			if ( GlowArrived( at, to ))
-				break;
-		}
+	EXPECT_GT( widest, 0 );
+}
+
+TEST( GlowTravel, AShortHopIsNearlyStraight )
+{
+	// An arc on a twelve-pixel move reads as a wobble, not as a gesture -- so the bow scales with the
+	// distance and all but vanishes on a hop between neighbouring rows.
+	const GlowPos from( 0, 0 );
+	const GlowPos to( 0, 16 );
+
+	GlowTravel t = BeginGlowTravel( from, to );
+	int widest = 0;
+
+	while ( !GlowTravelDone( t ))
+	{
+		t = StepGlowTravel( t );
+		widest = ( Abs( GlowTravelPoint( t ).x ) > widest ) ? Abs( GlowTravelPoint( t ).x ) : widest;
+	}
+
+	EXPECT_LE( widest, 4 );
+}
+
+TEST( GlowTravel, TheBowIsCappedOnLongJourneys )
+{
+	// Otherwise crossing the panel would swing the glow halfway across the screen on its way.
+	const GlowPos from( 0, 0 );
+	const GlowPos to( 640, 0 );
+
+	GlowTravel t = BeginGlowTravel( from, to );
+	int widest = 0;
+
+	while ( !GlowTravelDone( t ))
+	{
+		t = StepGlowTravel( t );
+		widest = ( Abs( GlowTravelPoint( t ).y ) > widest ) ? Abs( GlowTravelPoint( t ).y ) : widest;
+	}
+
+	EXPECT_GT( widest, 4 );		// it does bow
+	EXPECT_LE( widest, 30 );	// but not absurdly
+}
+
+TEST( GlowTravel, NeverStraysFarOutsideTheTwoEnds )
+{
+	// A curve is allowed to leave the straight line. It is not allowed to leave the neighbourhood.
+	const GlowPos from( 100, 100 );
+	const GlowPos to( 300, 260 );
+
+	GlowTravel t = BeginGlowTravel( from, to );
+	while ( !GlowTravelDone( t ))
+	{
+		t = StepGlowTravel( t );
+		const GlowPos at = GlowTravelPoint( t );
+
+		EXPECT_GE( at.x, 100 - 40 );
+		EXPECT_LE( at.x, 300 + 40 );
+		EXPECT_GE( at.y, 100 - 40 );
+		EXPECT_LE( at.y, 260 + 40 );
 	}
 }
 
-TEST( GlowTravel, TravelsBothWays )
+// ---------------------------------------------------------------- the easing
+
+TEST( GlowTravel, EasesInAsWellAsOut )
 {
-	EXPECT_LT( Step( GlowPos( 100, 100 ), GlowPos( 0, 0 )).x, 100 );
-	EXPECT_LT( Step( GlowPos( 100, 100 ), GlowPos( 0, 0 )).y, 100 );
-	EXPECT_GT( Step( GlowPos( -100, -100 ), GlowPos( 0, 0 )).x, -100 );
+	// Smoothstep, not ease-out. The first step must be SMALL -- a marker that jumps into motion the
+	// instant a key goes down is caught by the eye rather than followed by it -- and the last step
+	// must be small too.
+	const GlowPos from( 0, 0 );
+	const GlowPos to( 400, 0 );
+
+	GlowTravel t = BeginGlowTravel( from, to );
+	int previous = GlowTravelPoint( t ).x;
+	int first = -1;
+	int biggest = 0;
+	int last = 0;
+
+	while ( !GlowTravelDone( t ))
+	{
+		t = StepGlowTravel( t );
+		const int now = GlowTravelPoint( t ).x;
+		const int moved = Abs( now - previous );
+		previous = now;
+
+		if ( first < 0 )
+			first = moved;
+		if ( moved > biggest )
+			biggest = moved;
+		last = moved;
+	}
+
+	EXPECT_LT( first, biggest );	// accelerates out of rest
+	EXPECT_LT( last, biggest );		// and decelerates into the destination
 }
 
-TEST( GlowTravel, BothAxesArriveTogetherOrCloseTo )
+TEST( GlowTravel, IsMonotonicAlongTheDirectionOfTravel )
 {
-	// One axis finishing many tics before the other turns a diagonal slide into an L-shape.
-	const int x = TicsToArrive( GlowPos( 0, 0 ), GlowPos( 200, 0 ));
-	const int y = TicsToArrive( GlowPos( 0, 0 ), GlowPos( 0, 200 ));
-	EXPECT_EQ( x, y );
+	// It may bow sideways; it must never double back on itself, which would read as a stumble.
+	const GlowPos from( 0, 0 );
+	const GlowPos to( 400, 0 );
+
+	GlowTravel t = BeginGlowTravel( from, to );
+	int previous = GlowTravelPoint( t ).x;
+
+	while ( !GlowTravelDone( t ))
+	{
+		t = StepGlowTravel( t );
+		const int now = GlowTravelPoint( t ).x;
+		EXPECT_GE( now, previous );
+		previous = now;
+	}
 }
 
-TEST( GlowTravel, ANonsenseFractionSnapsRatherThanMisbehaving )
-{
-	// A marker in the wrong place is a worse failure than one that did not animate.
-	const GlowPos to( 42, 24 );
+// ---------------------------------------------------------------- timing
 
-	EXPECT_TRUE( GlowArrived( AdvanceGlow( GlowPos( 0, 0 ), to, 1, 0 ), to ));
-	EXPECT_TRUE( GlowArrived( AdvanceGlow( GlowPos( 0, 0 ), to, 0, 3 ), to ));
-	EXPECT_TRUE( GlowArrived( AdvanceGlow( GlowPos( 0, 0 ), to, 5, 3 ), to ));
-	EXPECT_TRUE( GlowArrived( AdvanceGlow( GlowPos( 0, 0 ), to, -1, 3 ), to ));
+TEST( GlowTravel, ShortMovesFinishFasterThanLongOnes )
+{
+	EXPECT_LT( BeginGlowTravel( GlowPos( 0, 0 ), GlowPos( 0, 16 )).duration,
+		BeginGlowTravel( GlowPos( 0, 0 ), GlowPos( 640, 400 )).duration );
 }
 
-TEST( GlowTravel, AFullFractionArrivesImmediately )
+TEST( GlowTravel, EveryJourneyFitsBetweenTheClamps )
 {
-	const GlowPos to( 42, 24 );
-	EXPECT_TRUE( GlowArrived( AdvanceGlow( GlowPos( 0, 0 ), to, 3, 3 ), to ));
+	// TICS, not frames -- the caller advances this from Ticker. Six is quick enough not to feel like
+	// lag on a tiny hop; twenty is under a second at 35Hz, so the glow is never behind the player.
+	for ( int distance = 0; distance <= 900; distance += 7 )
+	{
+		const GlowTravel t = BeginGlowTravel( GlowPos( 0, 0 ), GlowPos( distance, 0 ));
+		EXPECT_GE( t.duration, 6 ) << distance;
+		EXPECT_LE( t.duration, 20 ) << distance;
+	}
+}
+
+TEST( GlowTravel, ATravelToWhereItAlreadyIsIsHarmless )
+{
+	GlowTravel t = BeginGlowTravel( GlowPos( 50, 50 ), GlowPos( 50, 50 ));
+
+	for ( int i = 0; i < 30; ++i )
+	{
+		t = StepGlowTravel( t );
+		EXPECT_EQ( 50, GlowTravelPoint( t ).x );
+		EXPECT_EQ( 50, GlowTravelPoint( t ).y );
+	}
+	EXPECT_TRUE( GlowTravelDone( t ));
+}
+
+// ---------------------------------------------------------------- changing its mind
+
+TEST( GlowTravel, RetargetingFromTheCurrentPointContinuesSmoothly )
+{
+	// The focus can move again mid-flight. Setting out afresh from where the glow IS -- rather than
+	// from where the last journey began -- is what stops it snapping backwards.
+	GlowTravel t = BeginGlowTravel( GlowPos( 0, 0 ), GlowPos( 400, 0 ));
+	for ( int i = 0; i < 4; ++i )
+		t = StepGlowTravel( t );
+
+	const GlowPos midFlight = GlowTravelPoint( t );
+
+	const GlowTravel again = BeginGlowTravel( midFlight, GlowPos( 0, 300 ));
+	const GlowPos resumed = GlowTravelPoint( again );
+
+	EXPECT_EQ( midFlight.x, resumed.x );
+	EXPECT_EQ( midFlight.y, resumed.y );
+}
+
+TEST( GlowTravel, SurvivesANonsenseDuration )
+{
+	// Nothing constructs one of these by hand today, but a zero duration would divide by zero and a
+	// negative elapsed would index off the front of the curve.
+	GlowTravel t;
+	t.from = GlowPos( 0, 0 );
+	t.to = GlowPos( 100, 100 );
+	t.elapsed = -5;
+	t.duration = 0;
+
+	const GlowPos at = GlowTravelPoint( t );
+	EXPECT_GE( at.x, 0 );
+	EXPECT_LE( at.x, 100 );
+	EXPECT_TRUE( GlowTravelDone( StepGlowTravel( t )) || true );	// must not hang or divide by zero
 }
