@@ -166,6 +166,9 @@ Write-Note "DXSDK_DIR set to $dx"
 # [rc4l] Explicit -D dep paths instead of the vcpkg toolchain file — the toolchain's
 # cmake_policy() calls collide with Zandronum's old CMake minimums and break the VS generator.
 Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, STATIC deps)"
+# [rc4l] Kept so the replay assertion below has something to read.
+New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+$ConfigureLog = Join-Path $BuildDir "configure.log"
 $dep = $VcpkgInstalled
 # [rc4l] Static deps (x64-windows-static): link the whole vcpkg static lib set -- the linker
 # discards what it doesn't reference -- so libsndfile's transitive codecs (FLAC/vorbis/ogg/opus/
@@ -211,8 +214,16 @@ if ($env:ZX_WITH_SYMBOLS -eq "1") {
     "-DGLEW_INCLUDE_DIR=$dep/include" `
     "-DGLEW_LIBRARY=$($glewLib.FullName)" `
     "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=ON" `
-    @symArgs
+    @symArgs | Tee-Object -FilePath $ConfigureLog
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
+
+# [rc4l] Instant replay is OPTIONAL to CMake -- without FFmpeg it compiles as a no-capture stub and
+# nothing fails -- so the only way to tell a full build from a feature-stripped one is this line in
+# the configure output. CI already asserts on it (_build.yml greps build.log); asserting here too
+# means a local run of this script cannot quietly produce something a release never would.
+if (-not (Select-String -Path $ConfigureLog -Pattern "FUA replay: FFmpeg found" -Quiet)) {
+    throw "CMake did not enable instant replay (no 'FUA replay: FFmpeg found' in $ConfigureLog). Re-run without -SkipDeps so vcpkg installs ffmpeg[x264]."
+}
 
 # --- Build -----------------------------------------------------------------
 Write-Status "Building ($Configuration)"

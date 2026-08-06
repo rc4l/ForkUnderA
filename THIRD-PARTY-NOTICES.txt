@@ -68,10 +68,24 @@ bundles none of them.
   OpenSSL 3.x   Apache-2.0            https://openssl-library.org
   SDL           zlib (SDL2) / LGPL-2.1-or-later (SDL 1.2)
                                       https://libsdl.org
+  FFmpeg        LGPL-2.1-or-later upstream; GPL-2.0-or-later as built here
+                                      https://ffmpeg.org
+  x264          GPL-2.0-or-later      https://www.videolan.org/developers/x264.html
 
 The LGPL components are dynamically linked and shipped unmodified, so they may
 be replaced by the user with compatible builds of their own, as the LGPL
 requires. Source for each is available from the URLs above.
+
+Note on FFmpeg and x264: instant replay encodes video through FFmpeg, and the
+FFmpeg used here is built with libx264 (--enable-gpl). x264 is GPL-2.0-or-later,
+so these FFmpeg binaries are GPL rather than LGPL. Both are compatible with this
+project's own GPL-3.0-or-later.
+
+The two Windows build paths link them differently — the release build statically
+into zandronum.exe, the prebuilt-deps build as DLLs beside it — which changes
+nothing about the obligation, because it is the GPL's either way: complete
+corresponding source and the scripts that built it are published at the URL under
+SOURCE CODE above.
 
 Note on OpenSSL: version 3.x is Apache-2.0, which is compatible with GPL-3.0.
 The older OpenSSL 1.x licence, with its advertising clause, was not — so this
