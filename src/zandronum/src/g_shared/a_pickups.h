@@ -138,6 +138,17 @@ enum
 	IF_TOSSED			= 1<<22,	// Was spawned by P_DropItem (i.e. as a monster drop)
 	IF_ALWAYSRESPAWN	= 1<<23,	// Always respawn, regardless of dmflag
 	IF_FORCERESPAWNINSURVIVAL = 1<<24,	// [BB] Will be respawned in survival even without DF_ITEMS_RESPAWN.
+	//
+	// [rc4l] THE REAL FIX, when someone has time: engine-specific flags of ours should not live in
+	// upstream's flag fields at all. Every time upstream adds a flag it takes the next free bit, and
+	// so did Zandronum, so the two keep landing on the same one -- this is the second rehoming in a
+	// single seam. A dedicated fua_flags field would end it permanently: upstream grows into its own
+	// fields at its own numbers and every future flag port applies verbatim. It is close to free --
+	// flags are sent one flagset at a time and only when they differ from the default, so an unused
+	// field costs nothing on the wire even in a 30k-monster map, and 4 bytes per actor is noise
+	// against an AActor. What it needs first is an accurate list of which flags are genuinely ours,
+	// which is not obvious: comparing against upstream HEAD is noisy because upstream has since
+	// renamed and restructured whole families.
 	// [rc4l] uzdoom@de4097cc7 -- upstream put this at 1<<24, which is taken here by Zandronum's
 	// IF_FORCERESPAWNINSURVIVAL, so it moves to the next free bit. ItemFlags is never serialised
 	// (it is read locally only), so no existing value shifts and nothing on the wire changes.
