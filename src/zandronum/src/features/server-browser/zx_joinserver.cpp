@@ -765,9 +765,21 @@ void DrawJoinReadyNotice( bool afterMenus )
 
 	screen->Dim( PalEntry( 0, 0, 0 ), 0.45f * alpha, bandX, bandY, bandW, bandH );
 
-	screen->DrawText( SmallFont, bReady ? CR_GOLD : CR_GRAY, x, y, text,
-		DTA_VirtualWidth, virtW, DTA_VirtualHeight, virtH,
-		DTA_Alpha, FLOAT2FIXED( alpha ), TAG_DONE );
+	// [rc4l] The text is drawn OPAQUE, and the pulse lives in the band behind it and in the colour.
+	//
+	// It used to carry DTA_Alpha, and the result was a line whose brightness depended on what had been
+	// drawn just before it: full strength while the pointer was over a main-menu item, dimmer when it
+	// was not. Translucent text picks up state the menu leaves behind, and this band is drawn after
+	// everything precisely so it is not part of anyone else's pass.
+	//
+	// Nothing is lost. The backing band still fades with the pulse, and the ready state alternates
+	// between gold and white, which reads harder across a room than an alpha wobble ever did.
+	EColorRange colour = CR_GRAY;
+	if ( bReady )
+		colour = (( gametic % 46 ) < 23 ) ? CR_GOLD : CR_WHITE;
+
+	screen->DrawText( SmallFont, colour, x, y, text,
+		DTA_VirtualWidth, virtW, DTA_VirtualHeight, virtH, TAG_DONE );
 }
 
 } // namespace zx
