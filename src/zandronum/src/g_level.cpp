@@ -1432,11 +1432,14 @@ void G_DoLoadLevel (int position, bool autosave)
 		else
 		{
 
+			// [rc4l] uzdoom@e4a041cb4 -- map names read better lower case in the console banner.
+			FString mapname = level.MapName;
+			mapname.ToLower();
 			Printf (
 					"\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
 					"\36\36\36\36\36\36\36\36\36\36\36\36\37\n\n"
 					TEXTCOLOR_BOLD "%s - %s\n\n",
-					level.MapName.GetChars(), level.LevelName.GetChars());
+					mapname, level.LevelName.GetChars());
 
 			// [RC] Update the G15 display.
 			G15_NextLevel(level.MapName, level.LevelName.GetChars());
