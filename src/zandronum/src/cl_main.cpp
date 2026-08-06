@@ -63,6 +63,7 @@
 #include "announcer.h"
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
+#include "features/server-hosting/zx_hosting.h" // [rc4l] admin on a server we started ourselves
 #include "cl_commands.h"
 #include "cl_demo.h"
 #include "cl_statistics.h"
@@ -2472,10 +2473,30 @@ void CLIENT_RestoreServerInfoCVars( void )
 
 //*****************************************************************************
 //
+// [rc4l] Which of our own hosted servers this connection is to, or 0 for somebody else's.
+static unsigned g_ConnectedHostGeneration = 0;
+
 void CLIENT_QuitNetworkGame( const char *pszString )
 {
 	if ( pszString )
 		Printf( "%s\n", pszString );
+
+	// [rc4l] Leaving a server WE are running takes it with us.
+	//
+	// This is the catch-all route out of a network game -- the disconnect command, a kick, a timeout,
+	// joining somewhere else, going back to single player. Putting it here rather than at each of
+	// those means there is no exit that can forget, which matters because the thing being forgotten
+	// is a process holding a port.
+	//
+	// GUARDED BY GENERATION, not by "am I hosting". Stopping a server disconnects the client, but the
+	// client only notices SECONDS later -- by which time the player may have started another one.
+	// Asking the looser question tore that new server down; the addresses are identical, so nothing
+	// but a generation can tell the two apart. Verified by doing exactly that: stop, start, and watch
+	// the second server die to the first one's goodbye.
+	if (( g_ConnectedHostGeneration != 0 ) && ( g_ConnectedHostGeneration == zx::HostGeneration( )))
+		zx::HostStop( );
+
+	g_ConnectedHostGeneration = 0;
 
 	// Set the consoleplayer back to 0 and keep our userinfo to avoid desync if we ever reconnect.
 	if ( consoleplayer != 0 )
@@ -3454,6 +3475,24 @@ void ServerCommands::EndSnapshot::Execute()
 	if (( CLIENTDEMO_IsPlaying( ) == false ) && ( cl_autologin ))
 		CLIENT_RetrieveUserAndLogIn( login_default_user.GetGenericRep( CVAR_String ).String );
 #endif
+
+	// [rc4l] If this is a server WE started, take administrator rights on it now.
+	//
+	// A player who launched a process should not be typing a password back to it. The secret was
+	// generated at spawn, handed to the child on its command line, and never written down; presenting
+	// it here is the last step of a handshake that began before the server existed.
+	//
+	// Bound to the ADDRESS WE STARTED, not to "is this loopback" -- see HostOwnsAddress. Keyed the
+	// loose way, anyone who pointed a client at any local server would be handed admin on it.
+	if ( zx::HostOwnsAddress( g_AddressServer.ToString( )))
+	{
+		CLIENTCOMMANDS_ChangeRCONStatus( true, zx::HostRconSecret( ));
+		Printf( "You are the administrator of this server. Use rcon <command>.\n" );
+
+		// Remembered so that leaving THIS connection stops THIS server, and a goodbye from an
+		// earlier one cannot take down a later one. See CLIENT_QuitNetworkGame.
+		g_ConnectedHostGeneration = zx::HostGeneration( );
+	}
 
 	// Display the message of the day.
 	C_MOTDPrint( g_MOTD );

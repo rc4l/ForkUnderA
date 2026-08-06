@@ -62,6 +62,11 @@ enum class BrowserFocus
 	// new machinery, but the ARROWS DO NOT TRAVERSE INTO OR OUT OF IT -- that is what modal means,
 	// and computation/dialog_compute owns what the keys do while it is on screen.
 	Dialog,
+
+	// [rc4l] The hosting form. Not modal -- UP off the top of it returns to the tabs, the same way
+	// leaving any other region does -- but it owns everything in between, because the form is a
+	// column and down means "the next field", not "the next region".
+	Host,
 };
 
 // The four keys this unit answers for. Enter and Escape are not navigation -- they act on whatever

@@ -333,3 +333,22 @@ TEST( BrowserNav, ADialogIsModalOnEveryKey )
 				EXPECT_EQ( 0, r.rowStep ) << k;
 			}
 }
+
+// ---------------------------------------------------------------- the hosting form
+
+TEST( BrowserNav, TheHostingFormKeepsItsOwnArrows )
+{
+	// [rc4l] Up and down walk the form's fields, and only the caller knows how many there are; left
+	// and right belong to the caret in whichever field is focused, exactly as in the search box. So
+	// this unit refuses all four rather than guessing -- a form that jumped to another region halfway
+	// through a port number would be unusable.
+	for ( int k = 0; k < kKeyCount; ++k )
+		for ( int e = 0; e < 2; ++e )
+		{
+			const NavResult r = ComputeNav( BrowserFocus::Host, kKeys[k], e != 0, false );
+
+			EXPECT_EQ( BrowserFocus::Host, r.focus ) << k;
+			EXPECT_EQ( 0, r.tabStep ) << k;
+			EXPECT_EQ( 0, r.rowStep ) << k;
+		}
+}

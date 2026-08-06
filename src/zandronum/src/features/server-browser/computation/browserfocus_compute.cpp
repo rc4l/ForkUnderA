@@ -70,6 +70,13 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastT
 		// Modal. Nothing moves out of it, and dialog_compute decides what happens inside.
 		break;
 
+	case BrowserFocus::Host:
+		// [rc4l] The form owns up and down -- they move between its fields, and the caller does that
+		// walk because only it knows how many there are. What this unit decides is the one edge that
+		// leaves: off the TOP is the tabs, which is how the player gets back to the list. Left and
+		// right belong to the caret in whichever field is focused, exactly as in the search box.
+		break;
+
 	case BrowserFocus::Action:
 		if ( key == NavKey::Left )
 			out.focus = hasRows ? BrowserFocus::Rows : BrowserFocus::Tabs;

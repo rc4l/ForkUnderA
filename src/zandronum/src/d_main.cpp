@@ -70,6 +70,8 @@
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
 #include "features/wad-serve/zx_wadserve.h" // [rc4l] serving this server's own WADs to joiners
+#include "features/server-hosting/zx_hosting.h" // [rc4l] hosting a server from inside the game
+#include "features/server-hosting/zx_hostwatchdog.h" // [rc4l] and dying with the game that started us
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "s_sound.h"
 #include "v_video.h"
@@ -1298,6 +1300,7 @@ void D_DoomLoop ()
 			zx::waddownload::Tick(); // [rc4l] drains the WAD downloader's log + fires its completion (main thread)
 			zx::wadserve::Tick(); // [rc4l] server side: binds/rebinds the WAD listener, snapshots its config, drains its log
 			zx::JoinTick(); // [rc4l] puts a failed join back in the server browser instead of a bare console
+			zx::HostTick(); // [rc4l] client side: drains our own server's output and watches it come up or fall over
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{
@@ -1335,6 +1338,12 @@ void D_DoomLoop ()
 				D_Display( );
 				break;
 			case NETSTATE_SERVER:
+
+				// [rc4l] By the time we are ticking, the socket is bound and the map is up -- which
+				// is what "ready" has to mean. Anything earlier and the game connects to a server
+				// that is not listening yet, and the player is shown a network timeout for what was
+				// really just impatience.
+				SERVER_FUA_AnnounceReadyOnce( );
 
 				SERVER_Tick( );
 				break;
@@ -2439,6 +2448,15 @@ static void D_DoomInit()
 	// [AK] When Zandronum closes, any open lump handles in ACS that mods
 	// forgot to close must be cleared before any resources are deleted.
 	atterm( ACS_ClearLumpHandles );
+
+	// [rc4l] Two halves of one promise: a server we started must not outlive us.
+	//
+	// HostShutdown is the tidy half -- an orderly quit takes the child with it. HostWatchdogInit is
+	// the other half, running in the CHILD, for the untidy ones: it is the whole guarantee on macOS,
+	// which has no PR_SET_PDEATHSIG, and a second lock on the door elsewhere. Registered this early
+	// because a startup that fails after the spawn still has to clean up after itself.
+	atterm( zx::HostShutdown );
+	zx::HostWatchdogInit( );
 
 	gamestate = GS_STARTUP;
 
