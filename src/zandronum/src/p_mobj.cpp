@@ -7541,6 +7541,13 @@ AActor *P_SpawnMissile (AActor *source, AActor *dest, const PClass *type, AActor
 
 AActor *P_SpawnMissileZ (AActor *source, fixed_t z, AActor *dest, const PClass *type, const bool bSpawnOnClient) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	return P_SpawnMissileXYZ (source->x, source->y, z, source, dest, type,
 		true, NULL, bSpawnOnClient ); // [BB] Added bSpawnOnClient.
 }
@@ -7548,6 +7555,13 @@ AActor *P_SpawnMissileZ (AActor *source, fixed_t z, AActor *dest, const PClass *
 AActor *P_SpawnMissileXYZ (fixed_t x, fixed_t y, fixed_t z,
 	AActor *source, AActor *dest, const PClass *type, bool checkspawn, AActor *owner, const bool bSpawnOnClient ) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	if (dest == NULL)
 	{
 		Printf ("P_SpawnMissilyXYZ: Tried to shoot %s from %s with no dest\n",
@@ -7665,6 +7679,13 @@ AActor * P_OldSpawnMissile(AActor * source, AActor * owner, AActor * dest, const
 AActor *P_SpawnMissileAngle (AActor *source, const PClass *type,
 	angle_t angle, fixed_t velz, bool bSpawnOnClient) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	return P_SpawnMissileAngleZSpeed (source, source->z + 32*FRACUNIT + source->GetBobOffset(),
 		type, angle, velz, GetDefaultSpeed (type),
 		NULL, true, bSpawnOnClient ); // [BB] Added bSpawnOnClient.
@@ -7680,6 +7701,13 @@ AActor *P_SpawnMissileAngleZ (AActor *source, fixed_t z,
 
 AActor *P_SpawnMissileZAimed (AActor *source, fixed_t z, AActor *dest, const PClass *type, bool bSpawnOnClient ) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	angle_t an;
 	fixed_t dist;
 	fixed_t speed;
@@ -7710,6 +7738,13 @@ AActor *P_SpawnMissileZAimed (AActor *source, fixed_t z, AActor *dest, const PCl
 AActor *P_SpawnMissileAngleSpeed (AActor *source, const PClass *type,
 	angle_t angle, fixed_t velz, fixed_t speed)
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	return P_SpawnMissileAngleZSpeed (source, source->z + 32*FRACUNIT + source->GetBobOffset(),
 		type, angle, velz, speed);
 }
