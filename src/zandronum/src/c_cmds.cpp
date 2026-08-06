@@ -1335,8 +1335,10 @@ CCMD(info)
 			linetarget->SpawnHealth());
 		PrintMiscActorInfo(linetarget);
 	}
-	else Printf("No target found. Info cannot find actors that have\
-				the NOBLOCKMAP flag or have height/radius of 0.\n");
+	// [rc4l] uzdoom@4ea918ab3 -- a backslash line continuation folds the newline AND the leading
+	// tabs into the string; adjacent literals do not.
+	else Printf("No target found. Info cannot find actors that have "
+				"the NOBLOCKMAP flag or have height/radius of 0.\n");
 }
 
 //-----------------------------------------------------------------------------

@@ -105,3 +105,17 @@ Command DebugExplosion
 	Short distance
 	Short fulldamagedistance
 EndCommand
+
+# [rc4l] Sprite orientation -- roll now, SpriteAngle/SpriteRotation later through the same flag
+# byte. Defined HERE, in the last spec file the generator reads, because command ids are assigned in
+# spec-file order rather than from network_enums.h: putting this in spec.things.txt inserted it at
+# id 26 and shifted every command after it, which protocol-snapshot caught.
+Command SetThingSpriteOrientation
+	ExtendedCommand
+	Actor actor
+	Byte orientflags
+
+	If (orientflags & SPRITEORIENT_ROLL)
+		AproxAngle roll
+	EndIf
+EndCommand

@@ -65,6 +65,7 @@
 // [BB] New #includes.
 #include "gamemode.h"
 #include "c_console.h"
+#include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
 
 CVAR(Bool, gl_usecolorblending, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_spritebrightfog, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
@@ -226,6 +227,13 @@ void GLSprite::Draw(int pass)
 		const bool drawWithXYBillboard = ( (particle && gl_billboard_particles) || (!(actor && actor->renderflags & RF_FORCEYBILLBOARD)
 		                                   //&& GLRenderer->mViewActor != NULL
 		                                   && (gl_billboard_mode == 1 || (actor && actor->renderflags & RF_FORCEXYBILLBOARD ))) );
+
+		// [rc4l] uzdoom: [Nash]/[fgsfds] +ROLLSPRITE rotates the billboard about the sight vector.
+		// Upstream's copy of this is float-sim (actor->Angles.Roll.Degrees); ours converts from the
+		// fixed-point angle_t instead. Interpolated against PrevRoll so the sprite turns smoothly
+		// between tics rather than stepping.
+		const bool drawRollSpriteActor = ( actor != NULL && ( actor->renderflags & RF_ROLLSPRITE ) );
+
 		gl_RenderState.Apply();
 
 		Vector v1;
@@ -233,7 +241,7 @@ void GLSprite::Draw(int pass)
 		Vector v3;
 		Vector v4;
 
-		if (drawWithXYBillboard)
+		if (drawWithXYBillboard || drawRollSpriteActor)
 		{
 			// Rotate the sprite about the vector starting at the center of the sprite
 			// triangle strip and with direction orthogonal to where the player is looking
@@ -246,7 +254,17 @@ void GLSprite::Draw(int pass)
 			Matrix3x4 mat;
 			mat.MakeIdentity();
 			mat.Translate(xcenter, zcenter, ycenter);
-			mat.Rotate(-sin(angleRad), 0, cos(angleRad), -GLRenderer->mAngles.Pitch);
+			if (drawWithXYBillboard)
+			{
+				mat.Rotate(-sin(angleRad), 0, cos(angleRad), -GLRenderer->mAngles.Pitch);
+			}
+			if (drawRollSpriteActor)
+			{
+				mat.Rotate(cos(angleRad), 0, sin(angleRad),
+					zx::ComputeSpriteRollDegrees( actor->PrevRoll, actor->roll,
+						// [rc4l] strong fixed_t -> the unit takes the raw 16.16 bits.
+						( C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac ).Raw() ));
+			}
 			mat.Translate(-xcenter, -zcenter, -ycenter);
 			v1 = mat * Vector(x1, z1, y1);
 			v2 = mat * Vector(x2, z1, y2);

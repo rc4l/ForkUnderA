@@ -581,9 +581,20 @@ void FWadFile::SkinHack ()
 				namespc++;
 			}
 		}
-		if (lump->Name[0] == 'M' &&
-			lump->Name[1] == 'A' &&
-			lump->Name[2] == 'P')
+		// [rc4l] uzdoom@cce5066be -- require an actual MAPxx or ExMx name. A bare "MAP" prefix
+		// matched lumps like MAPINFO, so a skin WAD carrying one looked like it contained maps.
+		if ((lump->Name[0] == 'M' &&
+			 lump->Name[1] == 'A' &&
+			 lump->Name[2] == 'P' &&
+			 lump->Name[3] >= '0' && lump->Name[3] <= '9' &&
+			 lump->Name[4] >= '0' && lump->Name[4] <= '9' &&
+			 lump->Name[5] >= '\0')
+			||
+			(lump->Name[0] == 'E' &&
+			 lump->Name[1] >= '0' && lump->Name[1] <= '9' &&
+			 lump->Name[2] == 'M' &&
+			 lump->Name[3] >= '0' && lump->Name[3] <= '9' &&
+			 lump->Name[4] >= '\0'))
 		{
 			hasmap = true;
 		}

@@ -2047,6 +2047,11 @@ OptionMenu VideoModeMenu
 	Title "VIDEO MODE"
 
 	Option "Fullscreen",			"fullscreen", "YesNo"
+	// [rc4l] uzdoom@f3cc87267
+	IfOption(Mac)
+	{
+		Option "Retina/HiDPI support", "vid_hidpi", "YesNo"
+	}
 	Option "Aspect ratio",			"menu_screenratios", "Ratios"
 	// [rc4l] Renderer option removed: ZandroX is OpenGL-only (software renderer dropped).
 	Option "Force aspect ratio",	"vid_aspect", "ForceRatios"

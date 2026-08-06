@@ -1033,6 +1033,7 @@ void SERVERCOMMANDS_UpdatePlayerExtraData( ULONG ulPlayer, ULONG ulDisplayPlayer
 	command.SetButtons( players[ulDisplayPlayer].cmd.ucmd.buttons );
 	command.SetViewZ( (int)(players[ulDisplayPlayer].viewz) );
 	command.SetBob( (int)(players[ulDisplayPlayer].bob) );
+	command.SetRoll( players[ulDisplayPlayer].mo->roll );	// [rc4l]
 	command.sendCommandToClients( ulPlayer, SVCF_ONLYTHISCLIENT );
 }
 
@@ -4298,6 +4299,29 @@ void SERVERCOMMANDS_SetThingScale( AActor* mobj, unsigned int scaleFlags, ULONG 
 		command.addLong( (SDWORD)(mobj->scaleX) );
 	if ( scaleFlags & ACTORSCALE_Y )
 		command.addLong( (SDWORD)(mobj->scaleY) );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Sprite orientation -- roll now, SpriteAngle/SpriteRotation later through the same flag
+// byte. Deliberately its own command rather than a CM_ bit on MoveThing: those flags are a full 16
+// bits, so a 17th would cost two bytes on every position update in the game to carry something a
+// script sets occasionally. AproxAngle (2 bytes) rather than a full Angle (4) because this is a
+// billboard tilt -- 16 bits of arc is far finer than the eye can resolve on a sprite.
+void SERVERCOMMANDS_SetThingSpriteOrientation( AActor *mobj, unsigned int orientFlags, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	if ( !EnsureActorHasNetID( mobj ) )
+		return;
+
+	if ( orientFlags == 0 )
+		return;
+
+	ServerCommands::SetThingSpriteOrientation command;
+	command.SetActor( mobj );
+	command.SetOrientflags( orientFlags );
+	if ( orientFlags & SPRITEORIENT_ROLL )
+		command.SetRoll( mobj->roll );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
