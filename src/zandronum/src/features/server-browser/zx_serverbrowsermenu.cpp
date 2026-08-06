@@ -36,6 +36,8 @@
 #include "cl_main.h"		// [rc4l] cl_password, handed to the join from the password prompt
 #include "features/server-browser/computation/browserchrome_compute.h"
 #include "features/server-browser/computation/choicerow_compute.h"
+#include "features/server-browser/computation/scrollbar_compute.h"
+#include "features/server-browser/computation/scrollview_compute.h"
 #include "features/server-browser/computation/pointerdrag_compute.h"
 #include "features/server-browser/computation/dialog_compute.h"
 #include "features/server-browser/computation/glowtravel_compute.h"
@@ -50,6 +52,7 @@
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
+#include "features/server-browser/computation/scrollview_compute.h"
 #include "features/server-browser/computation/serversort_compute.h"
 #include "features/server-browser/zx_joinserver.h"
 #include "features/updater/computation/promptpanel_compute.h"
@@ -162,6 +165,18 @@
 
 // [rc4l] A row of mutually exclusive choices. Tall enough for the marker to be legible beside the
 // label, which is what decides these two numbers rather than the text.
+// [rc4l] The scrolling viewport, and the button below it.
+//
+// The button is pinned to the bottom of the panel rather than following the last setting. It is the
+// one thing on this screen you always want to reach, and a control that moves every time a row is
+// added is one you have to go looking for. The settings scroll behind it.
+#define SB_HOST_BTN_Y		( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H )
+#define SB_HOST_VIEW_TOP	( SB_HOST_TOP + SB_HOST_PAD + SB_HOST_LINE + 8 )
+#define SB_HOST_VIEW_BOTTOM	( SB_HOST_BTN_Y - 10 )
+#define SB_HOST_VIEW_H		( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP )
+#define SB_HOST_BAR_W		2
+#define SB_HOST_BAR_X		( SB_HOST_RIGHT - 6 )
+
 #define SB_CHOICE_H			15
 // Wide enough for the focus glow to sit in the gap rather than on the previous cell -- the same
 // number the dialog's buttons needed, and for the same reason: every control in this browser puts
@@ -388,6 +403,17 @@ static	int				g_HostFieldHot = -1;
 // tell a double-click from two clicks, and a drag from a press.
 static	bool			g_HostFieldDragging = false;
 static	int				g_HostClickTime = 0;
+
+// [rc4l] The clip rectangle DimClipped intersects against, in screen pixels. -1 means no clip.
+// File scope beside the rest of the browser's state rather than inside the menu class, which is
+// where every other global here lives.
+static	int				g_ClipTopPx = -1;
+static	int				g_ClipBottomPx = -1;
+
+// [rc4l] How far the settings are scrolled, in virtual units. The form outgrew its panel the moment
+// a fifth row was imagined, and a form that simply overflows is one whose last setting cannot be
+// reached at all.
+static	int				g_HostScroll = 0;
 
 // Which control on the hosting panel has the keyboard. The fields come first, then the button, so
 // tabbing down the form and pressing enter is the whole flow.
@@ -1500,7 +1526,7 @@ public:
 			const int cw = MAX( 1, serverbrowser_ToScreenX( caretX + 1 ) - cx );
 			const int cy = serverbrowser_ToScreenY( textY );
 			const int ch = serverbrowser_ToScreenY( textY + SmallFont->GetHeight( )) - cy;
-			screen->Dim( PalEntry( 235, 235, 245 ), 0.85f, cx, cy, cw, ch );
+			DimClipped( PalEntry( 235, 235, 245 ), 0.85f, cx, cy, cw, ch );
 		}
 	}
 
@@ -1843,6 +1869,48 @@ public:
 	// Extracted rather than copied. The browser panel, the detail panel and now the dialog all draw
 	// the same shape, and three copies of a gradient loop is three places to adjust when the look
 	// changes and two places to forget.
+	//*************************************************************************
+	//
+	// [rc4l] A clip rectangle for screen->Dim, which takes no DTA tags of its own.
+	//
+	// DrawText can be clipped with DTA_ClipTop and DTA_ClipBottom, but every panel, field and marker
+	// in this browser is a Dim -- a raw rectangle with no tag list to attach a clip to. A scrolling
+	// area whose text stopped at the boundary while its backgrounds carried on would not be a mask,
+	// it would be a smear.
+	//
+	// So the rectangle is intersected here instead, once, and everything that draws inside a viewport
+	// goes through DimClipped rather than Dim.
+	void PushClip( int topPx, int bottomPx )
+	{
+		g_ClipTopPx = topPx;
+		g_ClipBottomPx = bottomPx;
+	}
+
+	void PopClip( )
+	{
+		g_ClipTopPx = -1;
+		g_ClipBottomPx = -1;
+	}
+
+	void DimClipped( PalEntry colour, float alpha, int x, int y, int w, int h )
+	{
+		if ( g_ClipTopPx >= 0 )
+		{
+			const int top = MAX( y, g_ClipTopPx );
+			const int bottom = MIN( y + h, g_ClipBottomPx );
+			if ( bottom <= top )
+				return;
+
+			y = top;
+			h = bottom - top;
+		}
+
+		if (( w <= 0 ) || ( h <= 0 ))
+			return;
+
+		screen->Dim( colour, alpha, x, y, w, h );
+	}
+
 	void DrawRoundedPanel( int vx, int vy, int vw, int vh, const zx::PanelColor &topCol,
 		const zx::PanelColor &botCol, int vradius )
 	{
@@ -1865,7 +1933,7 @@ public:
 				continue;
 
 			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
-			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+			DimClipped( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
 		}
 	}
 
@@ -2195,6 +2263,7 @@ public:
 			else
 				g_HostFieldFocus = kHostFieldCount - 1;
 
+			RevealHostFocus( );
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return;
 		}
@@ -2211,11 +2280,13 @@ public:
 		if ( next >= kHostFieldCount )
 		{
 			g_HostOnVisibility = true;
+			RevealHostFocus( );
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return;
 		}
 
 		g_HostFieldFocus = next;
+		RevealHostFocus( );
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 	}
 
@@ -2254,7 +2325,8 @@ public:
 		int fieldY = HostFirstFieldY( );
 		for ( int i = 0; i < kHostFieldCount; ++i )
 		{
-			if (( y >= serverbrowser_ToScreenY( fieldY )) &&
+			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
+				( y >= serverbrowser_ToScreenY( fieldY )) &&
 				( y < serverbrowser_ToScreenY( fieldY + SB_HOST_FIELD_H )) &&
 				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
 				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
@@ -2262,11 +2334,12 @@ public:
 				return true;
 			}
 
-			fieldY += SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
+			fieldY += HostRowPitch( );
 		}
 
 		const int visY = HostVisibilityY( );
-		if (( y >= serverbrowser_ToScreenY( visY )) &&
+		if ( HostRowVisible( visY, SB_CHOICE_H ) &&
+			( y >= serverbrowser_ToScreenY( visY )) &&
 			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
 		{
 			const int rowX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W;
@@ -2368,7 +2441,8 @@ public:
 			const int rowTop = serverbrowser_ToScreenY( fieldY );
 			const int rowBottom = serverbrowser_ToScreenY( fieldY + SB_HOST_FIELD_H );
 
-			if (( y >= rowTop ) && ( y < rowBottom ) &&
+			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
+				( y >= rowTop ) && ( y < rowBottom ) &&
 				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
 				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
 			{
@@ -2404,13 +2478,14 @@ public:
 				return true;
 			}
 
-			fieldY += SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
+			fieldY += HostRowPitch( );
 		}
 
 		// The visibility row. Which CELL the pointer is in decides the answer -- the gaps belong to
 		// nobody, so a click between the two is not evidence for either.
 		const int visY = HostVisibilityY( );
-		if (( y >= serverbrowser_ToScreenY( visY )) &&
+		if ( HostRowVisible( visY, SB_CHOICE_H ) &&
+			( y >= serverbrowser_ToScreenY( visY )) &&
 			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
 		{
 			const int rowX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W;
@@ -2502,19 +2577,123 @@ public:
 	// [rc4l] Where the form's rows land. Worked out once and read by both the drawing and the hit
 	// test, because a field that is somewhere other than where it is clickable is the bug that this
 	// browser already avoids everywhere else by sharing its geometry.
+	//*************************************************************************
+	//
+	// [rc4l] Keep the scroll inside what there is to scroll. The rule lives in scrollview_compute;
+	// this only supplies the measurement, which is the part that moves.
+	//
+	// Called on every frame rather than only when the scroll changes, because what it is measured
+	// against changes underneath it: the form is one row shorter while a server is running.
+	void ClampHostScroll( )
+	{
+		g_HostScroll = zx::ClampScroll( g_HostScroll, HostMaxScroll( ));
+	}
+
+	// [rc4l] Bring a row into view, for the keyboard.
+	//
+	// Arrowing onto a field that is scrolled out of sight would move a focus the player cannot see --
+	// the glow would travel to somewhere off the panel and the caret would be somewhere they are not
+	// looking. So the view follows the focus, by the least it can.
+	void RevealHostRow( int vy, int vh )
+	{
+		g_HostScroll = zx::ScrollToReveal( g_HostScroll, vy, vh, SB_HOST_VIEW_TOP,
+			SB_HOST_VIEW_BOTTOM, HostMaxScroll( ));
+	}
+
+	// Whichever row the keyboard is on, brought into view.
+	void RevealHostFocus( )
+	{
+		if ( g_HostOnButton )
+			return;					// pinned to the panel; it is always visible
+
+		if ( g_HostOnVisibility )
+		{
+			RevealHostRow( HostVisibilityY( ), SB_CHOICE_H );
+			return;
+		}
+
+		if (( g_HostFieldFocus >= 0 ) && ( g_HostFieldFocus < kHostFieldCount ))
+		{
+			RevealHostRow( HostFirstFieldY( ) + g_HostFieldFocus * HostRowPitch( ),
+				SB_HOST_FIELD_H );
+		}
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The settings' own scrollbar. Drawn only when there is something to scroll, because a
+	// full-height thumb on a list that fits is a control that looks live and does nothing.
+	void DrawHostScrollBar( )
+	{
+		if ( HostMaxScroll( ) <= 0 )
+			return;
+
+		const int trackTop = serverbrowser_ToScreenY( SB_HOST_VIEW_TOP );
+		const int trackBottom = serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM );
+		const int trackH = trackBottom - trackTop;
+		if ( trackH <= 0 )
+			return;
+
+		const int x = serverbrowser_ToScreenX( SB_HOST_BAR_X );
+		const int w = MAX( 1, serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W ) - x );
+
+		// Same arithmetic as the server list's bar -- one unit, so the two behave identically.
+		const int thumbH = zx::ComputeThumbHeight( trackH, SB_HOST_VIEW_H, HostContentH( ), 8 );
+		const int thumbTop = zx::ComputeThumbTop( trackH, thumbH, g_HostScroll, HostMaxScroll( ));
+
+		screen->Dim( PalEntry( 40, 42, 58 ), 0.55f, x, trackTop, w, trackH );
+		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
+	}
+
+	// One row's pitch, so the count below and the loops above cannot drift apart.
+	int HostRowPitch( )
+	{
+		return SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
+	}
+
+	// How tall the settings are, viewport or no viewport. What decides whether they scroll.
+	int HostContentH( )
+	{
+		return kHostFieldCount * HostRowPitch( ) + 4 + SB_CHOICE_H;
+	}
+
+	int HostMaxScroll( )
+	{
+		const int over = HostContentH( ) - SB_HOST_VIEW_H;
+		return ( over > 0 ) ? over : 0;
+	}
+
+	// [rc4l] Where the rows land ON SCREEN -- content position less the scroll. Both the drawing and
+	// the hit test read these, so a row can never be somewhere other than where it is clickable, and
+	// scrolling cannot separate the two.
 	int HostFirstFieldY( )
 	{
-		return SB_HOST_TOP + SB_HOST_PAD + SB_HOST_LINE + 8;
+		return SB_HOST_VIEW_TOP - g_HostScroll;
 	}
 
 	int HostVisibilityY( )
 	{
-		return HostFirstFieldY( ) + kHostFieldCount * ( SB_HOST_ROW_H + SB_HOST_FIELD_H - 4 ) + 4;
+		return HostFirstFieldY( ) + kHostFieldCount * HostRowPitch( ) + 4;
 	}
 
+	// The button no longer follows the content: it is pinned to the bottom of the panel.
 	int HostFormButtonY( )
 	{
-		return HostVisibilityY( ) + SB_HOST_LINE + 10;
+		return SB_HOST_BTN_Y;
+	}
+
+	// Whether a row at `vy` is inside the viewport at all. A control scrolled out of sight must not
+	// be clickable -- that is the invisible-but-clickable bug this browser avoids everywhere else.
+	bool HostRowVisible( int vy, int vh )
+	{
+		return zx::RowIntersectsView( vy, vh, SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM );
+	}
+
+	// [rc4l] Whether a row is ENTIRELY inside the viewport, which is what decides whether its text is
+	// drawn at all. See scrollview_compute.h for why that is a different question from the above.
+	bool HostRowFullyVisible( int vy, int vh )
+	{
+		return zx::RowFullyInView( vy, vh, SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM );
 	}
 
 	//*************************************************************************
@@ -2564,17 +2743,20 @@ public:
 			const int sx = serverbrowser_ToScreenX( dotCx );
 			const int sy = serverbrowser_ToScreenY( dotCy );
 
-			screen->Dim( PalEntry( 150, 155, 175 ), 0.9f, sx - outer, sy - outer, outer * 2, outer * 2 );
+			DimClipped( PalEntry( 150, 155, 175 ), 0.9f, sx - outer, sy - outer, outer * 2, outer * 2 );
 			if ( bChosen )
-				screen->Dim( PalEntry( 235, 235, 245 ), 1.0f, sx - inner, sy - inner, inner * 2, inner * 2 );
+				DimClipped( PalEntry( 235, 235, 245 ), 1.0f, sx - inner, sy - inner, inner * 2, inner * 2 );
 			else
-				screen->Dim( PalEntry( 18, 19, 27 ), 1.0f, sx - inner, sy - inner, inner * 2, inner * 2 );
+				DimClipped( PalEntry( 18, 19, 27 ), 1.0f, sx - inner, sy - inner, inner * 2, inner * 2 );
 
 			const int textX = cell.x + 18;
 			const int textY = vy + ( SB_CHOICE_H - SmallFont->GetHeight( )) / 2 + 1;
 
-			screen->DrawText( SmallFont, bChosen ? CR_WHITE : CR_GRAY, textX, textY, labels[i],
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			if ( HostRowFullyVisible( vy, SB_CHOICE_H ))
+			{
+				screen->DrawText( SmallFont, bChosen ? CR_WHITE : CR_GRAY, textX, textY, labels[i],
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
 		}
 	}
 
@@ -2604,17 +2786,29 @@ public:
 			return;
 		}
 
-		// [rc4l] Every row's position comes from the same three helpers the hit test uses. A field
-		// drawn somewhere other than where it is clickable is the one bug this browser has avoided
-		// everywhere else by never letting those two work it out separately.
+		// [rc4l] The settings are a MASKED, SCROLLING area. Everything between these two calls is
+		// drawn at its scrolled position and cut off at the viewport edges -- so a row half in and
+		// half out is half drawn, rather than spilling over the heading or the button.
+		//
+		// Every row's position comes from the same helpers the hit test uses. A field drawn somewhere
+		// other than where it is clickable is the one bug this browser has avoided everywhere else by
+		// never letting those two work it out separately, and scrolling is the easiest way to
+		// reintroduce it.
+		ClampHostScroll( );
+		PushClip( serverbrowser_ToScreenY( SB_HOST_VIEW_TOP ),
+			serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM ));
+
 		int y = HostFirstFieldY( );
 		for ( int i = 0; i < kHostFieldCount; ++i )
 		{
 			DrawHostField( i, x, y );
-			y += SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
+			y += HostRowPitch( );
 		}
 
 		DrawHostVisibility( x, HostVisibilityY( ));
+
+		PopClip( );
+		DrawHostScrollBar( );
 
 		const int btnY = HostFormButtonY( );
 		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
@@ -2641,9 +2835,14 @@ public:
 		const bool bFocused = ( !g_HostOnButton ) && ( !g_HostOnVisibility )
 			&& ( g_HostFieldFocus == index ) && ( g_Focus == zx::BrowserFocus::Host );
 
-		screen->DrawText( SmallFont, bFocused ? CR_GOLD : CR_DARKGRAY, x,
-			y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1, g_HostFieldLabels[index],
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		const bool bLettering = HostRowFullyVisible( y, SB_HOST_FIELD_H );
+
+		if ( bLettering )
+		{
+			screen->DrawText( SmallFont, bFocused ? CR_GOLD : CR_DARKGRAY, x,
+				y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1, g_HostFieldLabels[index],
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
 
 		const int base = bFocused ? 30 : (( g_HostFieldHot == index ) ? 22 : 16 );
 		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
@@ -2694,14 +2893,17 @@ public:
 				const int sy = serverbrowser_ToScreenY( textY - 1 );
 				const int sh = serverbrowser_ToScreenY( textY + SmallFont->GetHeight( )) - sy;
 
-				screen->Dim( PalEntry( 70, 95, 165 ), 0.85f, sx, sy, sw, sh );
+				DimClipped( PalEntry( 70, 95, 165 ), 0.85f, sx, sy, sw, sh );
 			}
 		}
 
-		screen->DrawText( SmallFont, CR_WHITE, textX, textY, shown,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		if ( bLettering )
+		{
+			screen->DrawText( SmallFont, CR_WHITE, textX, textY, shown,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
 
-		if ( bFocused && (( DMenu::MenuTime / 16 ) % 2 == 0 ))
+		if ( bLettering && bFocused && (( DMenu::MenuTime / 16 ) % 2 == 0 ))
 		{
 			const FString upTo = FString( shown.GetChars( )).Left(
 				static_cast<long>( g_HostFields[index].caret ));
@@ -2723,9 +2925,12 @@ public:
 	// predicted.
 	void DrawHostVisibility( int x, int y )
 	{
-		screen->DrawText( SmallFont, CR_DARKGRAY, x,
-			y + ( SB_CHOICE_H - SmallFont->GetHeight( )) / 2 + 1, "VISIBILITY",
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		if ( HostRowFullyVisible( y, SB_CHOICE_H ))
+		{
+			screen->DrawText( SmallFont, CR_DARKGRAY, x,
+				y + ( SB_CHOICE_H - SmallFont->GetHeight( )) / 2 + 1, "VISIBILITY",
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
 
 		const int rowX = x + SB_HOST_LABEL_W;
 		const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
@@ -4126,6 +4331,22 @@ public:
 			if (( ev->subtype == EV_GUI_WheelUp ) || ( ev->subtype == EV_GUI_WheelDown ))
 			{
 				const int step = ( ev->subtype == EV_GUI_WheelUp ) ? -3 : 3;
+
+				// [rc4l] Over the hosting settings, the notch belongs to them. Same rule as the WAD
+				// list below: one wheel and more than one scrollable thing means it drives whichever
+				// one the pointer is actually over.
+				if (( g_Tab == BrowserTab::Host ) && ( HostMaxScroll( ) > 0 ) &&
+					( g_MouseY >= serverbrowser_ToScreenY( SB_HOST_VIEW_TOP )) &&
+					( g_MouseY < serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM )) &&
+					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_LEFT )) &&
+					( g_MouseX < serverbrowser_ToScreenX( SB_HOST_RIGHT )))
+				{
+					// Three rows' worth per notch, measured in the units the layout is in rather
+					// than in rows -- the settings are not all the same height.
+					g_HostScroll += step * 6;
+					ClampHostScroll( );
+					return true;
+				}
 
 				// Over the WAD list, the notch belongs to the WAD list. Two scrollable things on one
 				// screen and one wheel: the only sane rule is that it drives whichever one you are
