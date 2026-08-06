@@ -137,6 +137,14 @@ enum
 	// [SB] Server is sending a launcher a segmented response.
 	// Skipped 5660031 for compatiblity with old segmented implementation.
 	SERVER_LAUNCHER_CHALLENGE_SEGMENTED = 5660032,
+
+	// [rc4l] A client asking the registry "can you reach me on this port?", before it hosts anything.
+	//
+	// Two of these are sent. The first carries an empty cookie and gets one back; the second echoes
+	// that cookie, which is what proves the sender really is at the source address rather than having
+	// forged it -- see features/server-hosting/computation/reachprobe_compute.h. Only after the echo
+	// does the registry send anything unsolicited.
+	CLIENT_SERVERREGISTRY_REACHTEST = 5660033,
 };
 
 // [BB] Protocol version of the server registry, currently only used in conjunction with LAUNCHER_SERVERREGISTRY_CHALLENGE.
@@ -155,6 +163,15 @@ enum
 
 	// [BB] Server registry is sending a part of its banlist to a server.
 	SERVERREGISTRY_BANLISTPART,
+
+	// [rc4l] The cookie leg of a reachability test: sent back to the SOURCE of the request, down the
+	// path that request just opened. Needs no port forwarding, which is the point -- it proves the
+	// address is real without presupposing the thing being measured.
+	SERVERREGISTRY_REACHCOOKIE,
+
+	// [rc4l] The probe itself: sent UNSOLICITED to the source address on the port it named, carrying
+	// the client's own nonce. Arriving at all is the answer.
+	SERVERREGISTRY_REACHPROBE,
 };
 
 // [BB] Various enums used in SERVERREGISTRY_BANLISTPART packets.
