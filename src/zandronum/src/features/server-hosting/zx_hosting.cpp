@@ -19,6 +19,9 @@
 #include "i_system.h"
 #include "m_argv.h"
 #include "m_random.h"
+// [rc4l] NETWORK_GetLocalPort: the port the server ACTUALLY bound, which is what the ready line
+// carries. networkheaders.h is already first above, so this is safe to add here.
+#include "network.h"
 #include "templates.h"
 #include "v_text.h"
 
@@ -219,8 +222,26 @@ void HostTick( void )
 		{
 			g_Pending += chunk;
 
-			if ( g_Pending.find( kReadyMarker ) != std::string::npos )
+			int boundPort = 0;
+			if ( ParseHostReadyLine( g_Pending, &boundPort ))
 			{
+				// [rc4l] Believe the child over our own request. Asking for a port that is already
+				// taken does not fail -- NETWORK_Construct binds the next one free -- so the address
+				// built at launch from g_Config.port can point at somebody ELSE'S server. When it did,
+				// the panel advertised their address and the auto-join walked the player into their
+				// game, where the file check failed and read as "it hosted the wrong thing".
+				if ( boundPort > 0 )
+				{
+					g_Address.Format( "127.0.0.1:%d", boundPort );
+
+					if ( boundPort != ResolveHostPort( g_Config.port, 10666 ))
+					{
+						Printf( TEXTCOLOR_GOLD "Port %d was already in use, so the server is on %d "
+							"instead.\n" TEXTCOLOR_NORMAL,
+							ResolveHostPort( g_Config.port, 10666 ), boundPort );
+					}
+				}
+
 				g_Life = StepHostLifecycle( g_Life, HostEvent::ReadyObserved, "" );
 				g_Pending.clear( );
 
@@ -436,8 +457,11 @@ void HostChildAnnounceReady( void )
 
 	bAnnounced = true;
 
+	// [rc4l] The port we ACTUALLY bound, which is not necessarily the one we were told to use:
+	// NETWORK_Construct falls back to the next free port rather than failing. The parent cannot know
+	// this and has no way to ask, so it is said here, on the one channel that is definitely ours.
 	FString line;
-	line.Format( "%s\n", kReadyMarker );
+	line.Format( "%s %u\n", kReadyMarker, static_cast<unsigned int>( NETWORK_GetLocalPort( )));
 	WriteUpThePipe( line.GetChars( ));
 }
 

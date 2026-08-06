@@ -97,6 +97,27 @@ const char *HostStateSummary(HostState state);
 // than replaced, because a strange message is still better evidence than a generic one.
 std::string ExplainHostFailure(const std::string &childOutput, int exitCode);
 
+// [rc4l] The server's "I am up" line, and the PORT IT ACTUALLY GOT.
+//
+// The port cannot be assumed from the one we asked for. NETWORK_Construct does not fail when a port
+// is taken -- it binds the next free one and prints a line about it -- so a server started on a busy
+// 10666 comes up perfectly happily on 10667. The parent had been building the join address from the
+// REQUESTED port, which meant that when 10666 belonged to somebody else's server, the host panel
+// advertised their address and the auto-join connected the player to their game. It looked like the
+// wrong game had been hosted; what really happened is that we hosted correctly and then handed out
+// an address that was never ours.
+//
+// So the child reports the number and the parent believes the child rather than its own request.
+//
+// PARTIAL READS ARE THE WHOLE DIFFICULTY. This is a pipe, so the marker, the digits and the newline
+// arrive in whatever pieces the OS feels like. Returning as soon as the marker is seen would take
+// "[fua-host] ready 106" as port 106. Nothing is reported until the terminating newline is present,
+// which is the only proof the number is finished.
+//
+// `portOut` is left alone unless a port was actually parsed; a ready line without one is still a
+// ready line, from a server that has not been taught to say (and the caller keeps its own guess).
+bool ParseHostReadyLine(const std::string &pending, int *portOut);
+
 } // namespace zx
 
 #endif // ZX_HOSTLIFECYCLE_COMPUTE_H
