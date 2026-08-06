@@ -33,7 +33,16 @@ unsigned ComputeVisibleParts( BrowserPhase phase, bool hasSelection, bool downlo
 	}
 
 	if ( downloadRunning )
+	{
 		parts |= kPartFooter;
+
+		// [rc4l] And the panel, whatever the phase and whether or not anything is selected -- because
+		// the CANCEL button lives in it, and the server a transfer belongs to can DIE while the
+		// transfer is still running. It then times out of the list, the selection goes with it, and
+		// the player is left watching a frozen progress line with no way to stop it. The one control
+		// that can end a download must not depend on the thing that started it still existing.
+		parts |= kPartDetail;
+	}
 
 	return parts;
 }

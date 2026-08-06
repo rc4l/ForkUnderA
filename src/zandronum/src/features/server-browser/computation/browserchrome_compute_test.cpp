@@ -49,10 +49,25 @@ TEST( BrowserChrome, KeepsTheFooterWhileLookingIfATransferIsRunning )
 	EXPECT_TRUE( Shows( parts, zx::kPartFooter ));
 	EXPECT_TRUE( Shows( parts, zx::kPartPlaceholder ));
 
-	// And nothing else comes back with it.
+	// The panel comes back with it, because CANCEL is in there. Nothing else does.
+	EXPECT_TRUE( Shows( parts, zx::kPartDetail ));
 	EXPECT_FALSE( Shows( parts, zx::kPartTabs ));
 	EXPECT_FALSE( Shows( parts, zx::kPartList ));
-	EXPECT_FALSE( Shows( parts, zx::kPartDetail ));
+}
+
+TEST( BrowserChrome, KeepsTheCancelButtonWhenTheServerItBelongsToDies )
+{
+	// The edge case this rule exists for. A server can die mid-transfer: it times out of the list, the
+	// selection goes with it, and the download is still running. Without the panel there is no CANCEL
+	// on screen at all, and the player watches a frozen progress line with nothing to press.
+	const zx::BrowserPhase phases[] = { zx::BrowserPhase::Loading, zx::BrowserPhase::Empty,
+		zx::BrowserPhase::Ready };
+
+	for ( int p = 0; p < 3; ++p )
+	{
+		const unsigned parts = ComputeVisibleParts( phases[p], kNothingSelected, kDownloading );
+		EXPECT_TRUE( Shows( parts, zx::kPartDetail )) << "no way to cancel at phase " << p;
+	}
 }
 
 // ---------------------------------------------------------------- nothing out there
@@ -109,9 +124,11 @@ TEST( BrowserChrome, NeverShowsTheListAndThePlaceholderAtOnce )
 			}
 }
 
-TEST( BrowserChrome, NeverShowsTheDetailPanelWithoutTheListItBelongsTo )
+TEST( BrowserChrome, ShowsTheDetailPanelOnlyWithTheListOrWithATransfer )
 {
-	// The panel sits beside the list and describes a row in it. On its own it describes nothing.
+	// The panel normally sits beside the list and describes a row in it, so on its own it would
+	// describe nothing -- EXCEPT while a transfer is running, when it is carrying the CANCEL button
+	// and has a job of its own to do.
 	const BrowserPhase phases[] = { BrowserPhase::Loading, BrowserPhase::Empty, BrowserPhase::Ready };
 
 	for ( int p = 0; p < 3; ++p )
@@ -120,7 +137,8 @@ TEST( BrowserChrome, NeverShowsTheDetailPanelWithoutTheListItBelongsTo )
 			{
 				const unsigned parts = ComputeVisibleParts( phases[p], sel != 0, dl != 0 );
 				if ( Shows( parts, zx::kPartDetail ))
-					EXPECT_TRUE( Shows( parts, zx::kPartList )) << p << "," << sel << "," << dl;
+					EXPECT_TRUE( Shows( parts, zx::kPartList ) || ( dl != 0 ))
+						<< p << "," << sel << "," << dl;
 			}
 }
 
@@ -148,10 +166,13 @@ TEST( BrowserChrome, TabsAndListAreNeverHiddenByADownload )
 			const unsigned idle = ComputeVisibleParts( phases[p], sel != 0, false );
 			const unsigned busy = ComputeVisibleParts( phases[p], sel != 0, true );
 
-			// Everything visible when idle is still visible when busy, and the only thing that can be
-			// added is the footer.
+			// Everything visible when idle is still visible when busy, and the only things a download
+			// may ADD are the footer (its progress) and the panel (its CANCEL button).
+			const unsigned mayAdd = static_cast<unsigned>( zx::kPartFooter ) |
+				static_cast<unsigned>( zx::kPartDetail );
+
 			EXPECT_EQ( 0u, idle & ~busy ) << "a download removed a part at phase " << p;
-			EXPECT_EQ( 0u, busy & ~idle & ~static_cast<unsigned>( zx::kPartFooter ))
-				<< "a download added something other than the footer at phase " << p;
+			EXPECT_EQ( 0u, busy & ~idle & ~mayAdd )
+				<< "a download added something it has no business adding at phase " << p;
 		}
 }
