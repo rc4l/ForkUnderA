@@ -184,6 +184,17 @@ typedef struct
 	// MS time of when we queried this server.
 	LONG			lMSTime;
 
+	// [rc4l] A re-query sent while this server was ALREADY listed, so the row stays on screen and
+	// stays joinable while it is checked. lRefreshMS is when the packet went out, or 0 for "queued,
+	// not sent yet"; both only mean anything while bRefreshing.
+	//
+	// This is what lets the browser reopen without emptying itself. The ordinary states cannot carry
+	// it: AS_WAITINGFORREPLY is how a server that has never answered is drawn, so reusing it for a
+	// re-check would make every known server vanish for four seconds -- which is the exact problem
+	// this exists to remove.
+	bool			bRefreshing;
+	LONG			lRefreshMS;
+
 	// Ping to this server.
 	LONG			lPing;
 
@@ -248,6 +259,17 @@ const char		*BROWSER_GetPlayerName( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerFragcount( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerPing( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer );
+// [rc4l] Re-check every server already on the list, WITHOUT emptying it.
+//
+// Opening the browser used to clear the list and query from nothing, so the player watched a spinner
+// before they could click anything -- including a server they had just downloaded files for and were
+// only coming back to join. The rows are still good the moment the menu opens; they are simply not
+// known to be current, which is a reason to verify them, not to hide them.
+//
+// Each carried-over server is re-queried at its own address, so culling a dead one does not wait on
+// the registry: it fails its own check and drops out on its own timeout.
+void			BROWSER_RefreshListedServers( void );
+
 // [rc4l] Per-row version of the fact BROWSER_GetNumHumanPlayers already uses in aggregate.
 bool			BROWSER_IsPlayerBot( ULONG ulServer, ULONG ulPlayer );
 // [rc4l] Did the server send player rows at all? A server that withheld them and one that is empty
