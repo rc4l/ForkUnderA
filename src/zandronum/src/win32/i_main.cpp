@@ -925,6 +925,34 @@ void DoMain (HINSTANCE hInstance)
 		progdir.Truncate((long)strlen(program));
 		progdir.UnlockBuffer();
 
+		// [rc4l] HEADLESS: a server with no window of any kind, for one started by the game itself.
+		//
+		// The alternative was to create the dialog and hide it, which does keep it out of the taskbar
+		// -- but leaves a real window, a real message pump, and a list view being updated for nobody
+		// to look at. A server the player never sees should not be paying to draw itself, and a
+		// window that exists only to be hidden is one somebody eventually shows by accident.
+		//
+		// This runs D_DoomMain on the main thread, exactly as the client path below does, minus the
+		// window. The serverconsole entry points all tolerate g_hDlg being NULL -- see the guard
+		// there -- so the rest of the server does not know or care which mode it is in.
+		//
+		// It is also useful on its own: -host -fua_hidden is a genuinely headless Windows server, no
+		// GUI, output on stdout, which is what anyone running one in a container or under a service
+		// manager actually wants.
+		if ( Args->CheckParm( "-host" ) && Args->CheckParm( "-fua_hidden" ))
+		{
+			CoInitialize( NULL );
+			atterm( UnCOM );
+
+			// A console buffer still has to exist for Printf to have somewhere to go; nothing draws
+			// it. The size is arbitrary and only decides where lines wrap in the log.
+			C_InitConsole( 80 * 8, 25 * 8, false );
+
+			I_DetectOS( );
+			D_DoomMain( );
+			return;
+		}
+
 		// [BC] When hosting, spawn a console dialog box instead of creating a window.
 		if ( Args->CheckParm( "-host" ))
 		{
