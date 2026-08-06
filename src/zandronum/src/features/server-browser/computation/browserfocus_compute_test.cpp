@@ -313,3 +313,23 @@ TEST( BrowserNav, AKeyThatMovesSomethingLeavesFocusWhereItWas )
 					EXPECT_EQ( kZones[z], r.focus ) << z << "," << k;
 			}
 }
+
+// ---------------------------------------------------------------- the modal
+
+TEST( BrowserNav, ADialogIsModalOnEveryKey )
+{
+	// A dialog is a question, and the arrows belong to it while it is up. Letting one of them walk the
+	// focus back into the browser would leave the panel on screen with the highlight somewhere behind
+	// it -- the player arrowing over controls they cannot reach, and a question nobody is answering.
+	// What happens INSIDE the dialog is dialog_compute's job; this only has to refuse to leave.
+	for ( int k = 0; k < kKeyCount; ++k )
+		for ( int e = 0; e < 2; ++e )
+			for ( int lastTab = 0; lastTab < 2; ++lastTab )
+			{
+				const NavResult r = ComputeNav( BrowserFocus::Dialog, kKeys[k], e != 0, lastTab != 0 );
+
+				EXPECT_EQ( BrowserFocus::Dialog, r.focus ) << k;
+				EXPECT_EQ( 0, r.tabStep ) << k;
+				EXPECT_EQ( 0, r.rowStep ) << k;
+			}
+}
