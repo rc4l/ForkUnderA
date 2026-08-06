@@ -406,6 +406,25 @@ void DEnterKey::Drawer()
 //
 //=============================================================================
 
+// [rc4l] Let go of every menu key the framework thinks is held.
+//
+// M_Responder latches a key on the way down and unlatches it on the way up, and M_Ticker repeats
+// whatever is still latched. A menu that turns TranslateKeyboardEvents off mid-press -- which is what
+// happens the moment focus lands in the server browser's search box -- never gets the matching
+// release, because the release is no longer being translated. The button then repeats forever and
+// shoves the focus around while the player is trying to type.
+//
+// Opening the menu already did exactly this loop for the same reason; it just needed a name so
+// anything taking the keyboard can say so.
+void M_ReleaseMenuButtons ()
+{
+	for (int i = 0; i < NUM_MKEYS; ++i)
+	{
+		MenuButtons[i].ReleaseKey(0);
+		MenuButtonTickers[i] = 0;
+	}
+}
+
 void M_StartControlPanel (bool makeSound)
 {
 	// intro might call this repeatedly
@@ -413,10 +432,7 @@ void M_StartControlPanel (bool makeSound)
 		return;
 
 	ResetButtonStates ();
-	for (int i = 0; i < NUM_MKEYS; ++i)
-	{
-		MenuButtons[i].ReleaseKey(0);
-	}
+	M_ReleaseMenuButtons ();
 
 	C_HideConsole ();				// [RH] Make sure console goes bye bye.
 	menuactive = MENU_On;

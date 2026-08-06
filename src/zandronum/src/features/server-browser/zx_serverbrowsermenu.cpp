@@ -2060,7 +2060,7 @@ public:
 			if ( !bOverSearch && ( type == MOUSE_Click ))
 			{
 				if ( g_Focus == zx::BrowserFocus::Search )
-					g_Focus = zx::BrowserFocus::Tabs;
+					SetFocus( zx::BrowserFocus::Tabs );
 				g_SearchDragging = false;
 			}
 		}
@@ -2079,7 +2079,7 @@ public:
 				const bool bDouble = (( now - g_SearchClickTime ) < 15 );
 				g_SearchClickTime = now;
 
-				g_Focus = zx::BrowserFocus::Search;
+				SetFocus( zx::BrowserFocus::Search );
 
 				if ( bDouble )
 				{
@@ -2135,7 +2135,7 @@ public:
 					// The pointer moves the keyboard's focus with it, so picking something up with the
 					// mouse and then reaching for the arrows carries on from where you are looking
 					// rather than from wherever the keyboard was left.
-					g_Focus = zx::BrowserFocus::Tabs;
+					SetFocus( zx::BrowserFocus::Tabs );
 					SelectTab( static_cast<BrowserTab>( i ));
 				}
 				return true;
@@ -2173,7 +2173,7 @@ public:
 					g_ButtonPressed = false;
 					if ( bWasPressed )
 					{
-						g_Focus = zx::BrowserFocus::Action;
+						SetFocus( zx::BrowserFocus::Action );
 						PressActionButton( );
 					}
 					return true;
@@ -2303,7 +2303,7 @@ public:
 					// pane, and now the only way the selection moves by mouse at all.
 					g_Selected = row;
 					g_RevealSelection = true;
-					g_Focus = zx::BrowserFocus::Rows;
+					SetFocus( zx::BrowserFocus::Rows );
 
 					const int now = static_cast<int>( DMenu::MenuTime );
 					const bool bDouble = ( row == g_LastClickRow ) &&
@@ -2419,6 +2419,23 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] Every assignment to the focus goes through here.
+	//
+	// Landing in the search box turns TranslateKeyboardEvents off, and the key that BROUGHT us here is
+	// still physically down. Its release will not be translated either, so the framework never
+	// unlatches it and M_Ticker repeats it forever -- which is a right-arrow shoving the focus around
+	// while the player is trying to type. Letting go of every menu key at the moment we take the
+	// keyboard is the fix, and it is the same loop M_StartControlPanel already runs when a menu opens.
+	void SetFocus( zx::BrowserFocus focus )
+	{
+		if (( focus == zx::BrowserFocus::Search ) && ( g_Focus != zx::BrowserFocus::Search ))
+			M_ReleaseMenuButtons( );
+
+		g_Focus = focus;
+	}
+
+	//*************************************************************************
+	//
 	// [rc4l] Raw keys, but only while the search box has focus.
 	//
 	// This is the engine's OWN mechanism for text entry -- DTextEnterMenu returns false here for
@@ -2519,14 +2536,14 @@ public:
 		case GK_ESCAPE:
 			// Out of the box, not out of the browser. A second escape then closes the menu, which is
 			// the ordinary meaning restored as soon as the field stops claiming it.
-			g_Focus = zx::BrowserFocus::Tabs;
+			SetFocus( zx::BrowserFocus::Tabs );
 			g_SearchDragging = false;
 			return true;
 
 		case GK_RETURN:
 			if ( static_cast<int>( g_SortedServers.Size( )) > 0 )
 			{
-				g_Focus = zx::BrowserFocus::Rows;
+				SetFocus( zx::BrowserFocus::Rows );
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			}
 			return true;
@@ -2649,7 +2666,7 @@ public:
 		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, total > 0,
 			g_Tab == BrowserTab::Private );
 		const zx::BrowserFocus was = g_Focus;
-		g_Focus = nav.focus;
+		SetFocus( nav.focus );
 
 		if ( nav.tabStep != 0 )
 		{
@@ -2728,7 +2745,7 @@ public:
 			{
 				if ( total > 0 )
 				{
-					g_Focus = zx::BrowserFocus::Rows;
+					SetFocus( zx::BrowserFocus::Rows );
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 					return true;
 				}
