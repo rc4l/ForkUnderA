@@ -44,7 +44,6 @@ add_library( dumb
     src/helpers/clickrem.c
     src/helpers/barray.c
     src/helpers/tarray.c
-    src/it/filter.cpp
     src/it/xmeffect.c
     src/it/readxm2.c
     src/it/readxm.c
@@ -113,9 +112,4 @@ add_library( dumb
 target_link_libraries( dumb )
 
 if( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" )
-	CHECK_CXX_COMPILER_FLAG( -msse DUMB_CAN_USE_SSE )
-
-	if( DUMB_CAN_USE_SSE )
-		set_source_files_properties( src/it/filter.cpp PROPERTIES COMPILE_FLAGS -msse )
-	endif( DUMB_CAN_USE_SSE )
 endif( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" )
