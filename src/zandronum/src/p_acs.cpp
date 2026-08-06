@@ -407,7 +407,7 @@ FACSStack::~FACSStack()
 //
 // When the string table needs to grow to hold more strings, a garbage
 // collection is first attempted to see if more room can be made to store
-// strings without growing. A string is concidered in use if any value
+// strings without growing. A string is considered in use if any value
 // in any of these variable blocks contains a valid ID in the global string
 // table:
 //   * The active area of the ACS stack
@@ -416,7 +416,7 @@ FACSStack::~FACSStack()
 //   * All world variables
 //   * All global variables
 // It's not important whether or not they are really used as strings, only
-// that they might be. A string is also concidered in use if its lock count
+// that they might be. A string is also considered in use if its lock count
 // is non-zero, even if none of the above variable blocks referenced it.
 //
 // To keep track of local and map variables for nonresident maps in a hub,
@@ -1291,14 +1291,8 @@ static void ClearInventory (AActor *activator)
 	item->ClearCounters();
 	if (info->IsDescendantOf (RUNTIME_CLASS(ABasicArmorPickup)))
 	{
-		if (static_cast<ABasicArmorPickup*>(item)->SaveAmount != 0)
-		{
-			static_cast<ABasicArmorPickup*>(item)->SaveAmount *= amount;
-		}
-		else
-		{
-			static_cast<ABasicArmorPickup*>(item)->SaveAmount *= amount;
-		}
+		// [rc4l] uzdoom@c3227729e -- both branches did the same thing.
+		static_cast<ABasicArmorPickup*>(item)->SaveAmount *= amount;
 	}
 	else if (info->IsDescendantOf (RUNTIME_CLASS(ABasicArmorBonus)))
 	{

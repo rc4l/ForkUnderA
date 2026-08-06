@@ -365,14 +365,16 @@ void APathFollower::Tick ()
 		bJustStepped = false;
 		if (CurrNode->args[2])
 		{
-			HoldTime = gametic + CurrNode->args[2] * TICRATE / 8;
+			// [rc4l] uzdoom@5164b78c3 -- gametic counts from engine start and never resets, so a hold
+			// time computed from it is meaningless after a level change; level.time restarts per level.
+			HoldTime = level.time + CurrNode->args[2] * TICRATE / 8;
 			x = CurrNode->x;
 			y = CurrNode->y;
 			z = CurrNode->z;
 		}
 	}
 
-	if (HoldTime > gametic)
+	if (HoldTime > level.time)	// [rc4l] uzdoom@5164b78c3
 		return;
 
 	// Splines must have a previous node.

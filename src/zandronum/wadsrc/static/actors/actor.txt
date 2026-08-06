@@ -344,6 +344,7 @@ ACTOR Actor native //: Thinker
 	action native A_SetPitch(float pitch, int flags = 0, int ptr = AAPTR_DEFAULT);
 	action native A_SetRoll(float roll, int flags = 0, int ptr = AAPTR_DEFAULT);
 	action native A_SetFloatBobPhase(int bob);
+	action native A_QuakeEx(int intensityX, int intensityY, int intensityZ, int duration, int damrad, int tremrad, sound sfx = "world/quake", int flags = 0);
 	action native A_SetHealth(int health, int ptr = AAPTR_DEFAULT);
 	action native A_ResetHealth(int ptr = AAPTR_DEFAULT);
 	action native A_ScaleVelocity(float scale, int ptr = AAPTR_DEFAULT);

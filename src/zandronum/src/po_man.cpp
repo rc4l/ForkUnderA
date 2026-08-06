@@ -964,11 +964,9 @@ void DPolyDoor::Tick ()
 				SERVERCOMMANDS_SetPolyDoorSpeedRotation( m_PolyObj, m_Speed, poly->angle );
 			}
 
+			// [rc4l] uzdoom@60b735dc6 -- redundant: a perpetual swing door (m_Dist == -1) can never
+			// reach the m_Dist <= 0 completion below, so the early return guarded nothing.
 			absSpeed = abs (m_Speed);
-			if (m_Dist == -1)
-			{ // perpetual polyobj
-				return;
-			}
 			m_Dist -= absSpeed;
 			if (m_Dist <= 0)
 			{

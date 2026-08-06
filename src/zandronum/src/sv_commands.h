@@ -411,7 +411,7 @@ void	SERVERCOMMANDS_SetPolyobjPosition( LONG lPolyNum, ULONG ulPlayerExtra = MAX
 void	SERVERCOMMANDS_SetPolyobjRotation( LONG lPolyNum, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 
 // Miscellaneous commands. These are commands that don't fit into any other group.
-void	SERVERCOMMANDS_Earthquake( AActor *pCenter, LONG lIntensity, LONG lDuration, LONG lTemorRadius, FSoundID Quakesound, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+void	SERVERCOMMANDS_Earthquake( AActor *pCenter, LONG lIntensityX, LONG lIntensityY, LONG lIntensityZ, LONG lDuration, LONG lTemorRadius, FSoundID Quakesound, LONG lQuakeFlags, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );	// [rc4l]
 void	SERVERCOMMANDS_SyncJoinQueue( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_PushToJoinQueue( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_RemoveFromJoinQueue( unsigned int index, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );

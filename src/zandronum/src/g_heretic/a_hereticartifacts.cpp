@@ -48,6 +48,8 @@ bool AArtiTomeOfPower::Use (bool pickup)
 DEFINE_ACTION_FUNCTION(AActor, A_TimeBomb)
 {
 	self->z += 32*FRACUNIT;
+	self->PrevZ = self->z;	// no interpolation!	// [rc4l] uzdoom@c0eb39ec7 -- without this the
+	// renderer tweens the 32-unit jump, smearing the explosion frames up from the old position.
 	self->RenderStyle = STYLE_Add;
 	self->alpha = FRACUNIT;
 	P_RadiusAttack (self, self->target, 128, 128, self->DamageType, RADF_HURTSOURCE);
