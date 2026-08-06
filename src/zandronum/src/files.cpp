@@ -47,7 +47,7 @@
 //==========================================================================
 
 FileReader::FileReader ()
-: File(NULL), Length(0), StartPos(0), CloseOnDestruct(false)
+: File(NULL), Length(0), StartPos(0), FilePos(0), CloseOnDestruct(false)	// [rc4l] uzdoom@322742d4b
 {
 }
 
