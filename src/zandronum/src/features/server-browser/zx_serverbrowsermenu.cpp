@@ -1217,13 +1217,29 @@ public:
 
 	//*************************************************************************
 	//
-	// [rc4l] Only called when kPartDetail says so, which already means there is a selection -- the
-	// bounds check stays as the thing that makes the indexing below safe, not as a policy decision.
 	void DrawDetails( )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
+
+		// [rc4l] No selection, but we are here -- which kPartDetail only allows while a transfer is
+		// running. The server that started it has gone (timed out, shut down, whatever), and the panel
+		// is on screen for one reason: to carry the button that stops the download. Say so, and draw
+		// the button, and nothing else -- every other line in here describes a server that is no
+		// longer there to describe.
 		if (( g_Selected < 0 ) || ( g_Selected >= total ))
+		{
+			DrawDetailPanel( );
+
+			const int x = SB_DETAIL_LEFT + SB_DETAIL_PAD;
+			int y = SB_DETAIL_TOP + SB_DETAIL_PAD;
+			y = DrawWrapped( "That server is no longer listed.", x, y, CR_WHITE );
+			y += 3;
+			DrawWrapped( "The download is still running -- stop it, or let it finish and use the file.",
+				x, y, CR_DARKGRAY );
+
+			DrawActionButton( );
 			return;
+		}
 
 		DrawDetailPanel( );
 
@@ -1599,7 +1615,12 @@ public:
 		// row test already excludes, but checking first keeps the two from ever both claiming a click.
 		if ( parts & zx::kPartDetail )
 		{
-			const bool bOverButton = ( g_Selected >= 0 ) && ( g_Selected < total ) &&
+			// A running transfer keeps the button live even with nothing selected -- that is the whole
+			// point of the panel still being here. See computation/browserchrome_compute.h.
+			const bool bHaveAction = (( g_Selected >= 0 ) && ( g_Selected < total )) ||
+				serverbrowser_DownloadRunning( );
+
+			const bool bOverButton = bHaveAction &&
 				( x >= serverbrowser_ToScreenX( SB_BUTTON_LEFT )) &&
 				( x < serverbrowser_ToScreenX( SB_BUTTON_RIGHT )) &&
 				( y >= serverbrowser_ToScreenY( SB_BUTTON_TOP )) &&
@@ -1945,8 +1966,15 @@ public:
 				{
 					g_Focus = zx::BrowserFocus::Rows;
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					return true;
 				}
-				return true;
+
+				// [rc4l] Nothing to enter, but a transfer may still be running -- the server it belongs
+				// to can die and take the whole list with it. Enter then means the only thing left on
+				// screen that does anything: stop the download. Without this the keyboard has no route
+				// to a button the mouse can reach.
+				if ( !serverbrowser_DownloadRunning( ))
+					return true;
 			}
 
 			PressActionButton( );

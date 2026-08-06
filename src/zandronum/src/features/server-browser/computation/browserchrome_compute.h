@@ -45,10 +45,15 @@ enum BrowserPart
 // `hasSelection` is whether a server is actually selected -- there is no panel without one, since
 // every line in it describes that server.
 //
-// `downloadRunning` keeps the FOOTER alive through a phase that otherwise has none. A transfer
-// started from this browser reports its progress there, and reopening the browser mid-download puts
-// it back in the loading phase for a moment; hiding the footer then would blank the only progress
-// readout the player has, which is the one thing they are watching.
+// `downloadRunning` keeps two things alive that a phase would otherwise take away.
+//
+// The FOOTER, because reopening the browser mid-download puts it back in the loading phase for a
+// moment and blanking the progress readout then hides the one thing the player is watching.
+//
+// And the DETAIL PANEL, because the CANCEL button lives in it. A server can die while its transfer
+// is still running: it times out of the list, the selection goes with it, and without this the
+// player is left watching a frozen progress bar with no control that can stop it. The one button
+// that ends a download must not depend on the thing that started it still existing.
 unsigned ComputeVisibleParts( BrowserPhase phase, bool hasSelection, bool downloadRunning );
 
 } // namespace zx

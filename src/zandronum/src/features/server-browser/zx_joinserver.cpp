@@ -729,15 +729,30 @@ void DrawJoinReadyNotice( bool afterMenus )
 	const FString stable = zx::MaskVarying( text.GetChars( ), WidestDigit( )).c_str( );
 	const int stableW = SmallFont->StringWidth( stable );
 
-	// The TEXT is placed from the mask too, not from itself -- otherwise the box would hold still
-	// while the line inside it slid about, which is the same complaint one layer down.
-	const int x = ( virtW / 2 ) - ( stableW / 2 );
+	// BOTH are centred on the same axis, each on its own width. Placing the text at the box's left
+	// edge instead left every pixel the mask over-measured sitting on one side, so the line looked
+	// shoved against the end of its own panel.
+	//
+	// The text can still shift by a pixel or two as the digits change, since the mask is an upper
+	// bound rather than an exact match -- but the character count is fixed, so that is glyph-width
+	// variance and nothing more. The box, which is the thing that was moving, does not move at all.
+	const int x = ( virtW / 2 ) - ( SmallFont->StringWidth( text ) / 2 );
+	const int bandLeft = ( virtW / 2 ) - ( stableW / 2 );
 
 	// A backing band, so the line stays readable over a bright wall or a lit sky.
-	screen->Dim( PalEntry( 0, 0, 0 ), 0.45f * alpha,
-		Scale( x - 6, SCREENWIDTH, virtW ), Scale( y - 3, SCREENHEIGHT, virtH ),
-		Scale( stableW + 12, SCREENWIDTH, virtW ),
-		Scale( SmallFont->GetHeight( ) + 6, SCREENHEIGHT, virtH ));
+	//
+	// Placed through VirtualToRealCoordsInt, the SAME conversion DTA_VirtualWidth puts the text
+	// through -- NOT Scale(), which is a plain stretch. DTA_Virtual* corrects for aspect ratio,
+	// letterboxing the virtual space inside the window, so scaling by SCREENWIDTH/virtW agreed with
+	// the text only on a display that happened to be 16:10 and put the band visibly off-centre under
+	// it everywhere else. Same mistake, same fix, as the browser's own panel edges.
+	int bandX = bandLeft - 6;
+	int bandY = y - 3;
+	int bandW = stableW + 12;
+	int bandH = SmallFont->GetHeight( ) + 6;
+	screen->VirtualToRealCoordsInt( bandX, bandY, bandW, bandH, virtW, virtH, false, true );
+
+	screen->Dim( PalEntry( 0, 0, 0 ), 0.45f * alpha, bandX, bandY, bandW, bandH );
 
 	screen->DrawText( SmallFont, bReady ? CR_GOLD : CR_GRAY, x, y, text,
 		DTA_VirtualWidth, virtW, DTA_VirtualHeight, virtH,
