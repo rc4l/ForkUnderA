@@ -1495,6 +1495,7 @@ add_executable( zdoom WIN32
 	features/server-browser/computation/joinresume_compute.cpp
 	features/server-browser/computation/scrollbar_compute.cpp
 	features/server-browser/computation/serversort_compute.cpp
+	features/server-browser/computation/stableline_compute.cpp
 	features/server-browser/computation/launcherfields_compute.cpp
 	features/launcher-protocol/computation/segmentreassembly_compute.cpp
 	features/panel-menu/panelmenu.cpp

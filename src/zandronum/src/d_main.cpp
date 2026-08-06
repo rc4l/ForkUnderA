@@ -979,6 +979,9 @@ drawfullconsole:
 			hw2d = screen->Begin2D(false);
 			C_DrawConsole (false);
 			M_Drawer ();
+			// [rc4l] This case returns before the shared call below ever runs, so the band needs its
+			// own -- a download outlives dropping to the full console.
+			zx::DrawJoinReadyNotice ( menuactive != MENU_Off );
 			screen->Update ();
 			return;
 
@@ -1074,11 +1077,6 @@ drawfullconsole:
 
 			// Render chat prompt.
 			CHAT_Render( );
-
-			// [rc4l] The download/ready band, drawn here when no menu is up. It has to be inside this
-			// 2D pass to reach the screen during play; the call after M_Drawer below handles the menu
-			// case. See features/server-browser/zx_joinserver.h.
-			zx::DrawJoinReadyNotice ( false );
 			break;
 
 		case GS_INTERMISSION:
@@ -1105,6 +1103,13 @@ drawfullconsole:
 		default:
 			break;
 		}
+
+		// [rc4l] The download/ready band, when no menu is up. AFTER the switch rather than inside the
+		// GS_LEVEL case, because a transfer does not stop for the intermission, the finale or the demo
+		// screen -- and each of those sets up its own 2D pass in that switch, which this has to be
+		// inside of to reach the screen at all. The call after M_Drawer handles the menu case.
+		// See features/server-browser/zx_joinserver.h.
+		zx::DrawJoinReadyNotice ( false );
 	}
 	if ( NETWORK_InClientMode() )
 	{
