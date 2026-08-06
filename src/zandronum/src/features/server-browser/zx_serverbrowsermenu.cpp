@@ -415,6 +415,14 @@ static	int				g_LastClickTime = -1000;
 static	int				g_DetailServer = -1;
 static	TArray<FString>	g_DetailWads;
 
+// [rc4l] What the cache was built FROM, so it can tell it has gone stale.
+//
+// The slot index alone cannot: the browser reuses slots, and a slot also fills in stages -- the name
+// arrives with the first reply and the file list can land later. Both leave the index unchanged while
+// the server behind it is a different one, which put a server's name over another server's WADs.
+static	FString			g_DetailAddress;
+static	LONG			g_DetailPwadCount = -1;
+
 // [rc4l] Size in bytes beside each name, 0 where the server did not say (see SQF2_FUA_WAD_SIZES).
 // Parallel to g_DetailWads, IWAD included: it is never downloaded, but it is listed with the rest,
 // and one line silently lacking the number every other line carries reads as a bug.
@@ -547,10 +555,22 @@ static int serverbrowser_RowTextY( int rowY, int h )
 // and says so while it does. Removing the colour removed all of that machinery with it.
 static void serverbrowser_RefreshWadCache( int lServer )
 {
-	if ( lServer == g_DetailServer )
+	// [rc4l] Checked against WHAT THE SERVER IS, not which slot it landed in. The address says it is
+	// still the same server; the file count says the reply that carries the files has arrived since we
+	// last looked. Both are cheap -- what the cache exists to avoid is the per-WAD work below, not
+	// these two comparisons.
+	const FString address = BROWSER_GetAddress( lServer ).ToString( );
+	const LONG lPwadCount = BROWSER_GetNumPWADs( lServer );
+
+	if (( lServer == g_DetailServer ) && ( address.Compare( g_DetailAddress ) == 0 )
+		&& ( lPwadCount == g_DetailPwadCount ))
+	{
 		return;
+	}
 
 	g_DetailServer = lServer;
+	g_DetailAddress = address;
+	g_DetailPwadCount = lPwadCount;
 	g_DetailWads.Clear( );
 	g_DetailWadSizes.Clear( );
 	g_DetailWadHashes.Clear( );
@@ -567,8 +587,7 @@ static void serverbrowser_RefreshWadCache( int lServer )
 		g_DetailWadHashes.Push( BROWSER_GetIWADHash( lServer ));
 	}
 
-	const LONG lPwads = BROWSER_GetNumPWADs( lServer );
-	for ( LONG i = 0; i < lPwads; i++ )
+	for ( LONG i = 0; i < lPwadCount; i++ )
 	{
 		const char *pszPwad = BROWSER_GetPWADName( lServer, i );
 		if (( pszPwad != NULL ) && ( pszPwad[0] != 0 ))
