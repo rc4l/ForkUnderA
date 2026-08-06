@@ -7,6 +7,7 @@
 using zx::Backspace;
 using zx::CaretEnd;
 using zx::CaretHome;
+using zx::ClearInput;
 using zx::DeleteForward;
 using zx::InsertChar;
 using zx::IsTypable;
@@ -520,4 +521,15 @@ TEST( TextInput, DoubleClickOnAWordStillTakesJustThatWord )
 TEST( TextInput, DoubleClickInAnEmptyBoxSelectsNothingBecauseThereIsNothing )
 {
 	EXPECT_FALSE( zx::HasSelection( zx::SelectWordOrAll( TextInput( ), 0 )));
+}
+
+TEST( TextInput, ClearingGivesBackAnEmptyFieldWithNoSelection )
+{
+	// Used whenever a field is opened or reused -- a dialog put up twice must not present the last
+	// answer, and a leftover anchor would make the first keystroke overwrite text that is not there.
+	const TextInput cleared = ClearInput( );
+
+	EXPECT_TRUE( cleared.text.empty( ));
+	EXPECT_EQ( 0u, cleared.caret );
+	EXPECT_EQ( 0u, cleared.anchor );
 }

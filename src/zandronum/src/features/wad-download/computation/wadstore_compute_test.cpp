@@ -159,3 +159,14 @@ TEST(ComputePruneOrder, HandlesAnEmptyStore)
 {
 	EXPECT_TRUE(ComputePruneOrder(vector<StoreEntry>(), 1000).empty());
 }
+
+TEST( StoreEntry, DefaultsToTheOldestPossibleEmptyFile )
+{
+	// Pruning sorts on these two fields, so an entry the caller has not filled in yet must not read as
+	// large (evicting real files to make room for nothing) or as recently used (surviving a prune it
+	// should have lost).
+	const StoreEntry fresh;
+
+	EXPECT_EQ( 0, fresh.sizeBytes );
+	EXPECT_EQ( 0, fresh.lastUsedMs );
+}

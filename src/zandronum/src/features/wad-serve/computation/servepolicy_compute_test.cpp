@@ -204,3 +204,16 @@ TEST(ComputeRetryAfter, SurvivesNonsensicalInputs)
 	EXPECT_EQ(1, ComputeRetryAfterSeconds(-5, 0, -1));
 	EXPECT_GE(ComputeRetryAfterSeconds(-5, 4, 30), 1);
 }
+
+TEST( ServableFile, DefaultsToSomethingThatCannotBeServedByAccident )
+{
+	// The table is filled in by the engine as it walks its loaded WADs, so entries exist before they
+	// are described. An entry that defaulted to "IWAD" would put the allowlist gate in front of a
+	// nameless file; one that defaulted to a non-zero size would be a ceiling check against a number
+	// nobody supplied.
+	const ServableFile fresh;
+
+	EXPECT_TRUE( fresh.name.empty( ));
+	EXPECT_FALSE( fresh.isIwad );
+	EXPECT_EQ( 0, fresh.size );
+}

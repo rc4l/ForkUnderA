@@ -15,12 +15,14 @@ const int kOne = 1000;			// progress is in thousandths
 // Clamped at both ends and deliberately sub-linear: a hop between two rows must not take as long as
 // crossing the panel, and crossing the panel must not take longer than the player's next keypress.
 // 170ms is quick enough not to feel like lag on a tiny hop; 560ms is comfortably under a second.
+// The floor is the base term, not a clamp: `distance` comes from RoughDistance, which is built out
+// of absolute values and cannot be negative, so 170 + something-non-negative is already >= 170. A
+// clamp under it would be a line no input can reach, which reads as a guarded case and is really
+// just an untestable claim about the caller.
 int DurationFor( int distance )
 {
 	int ms = 170 + ( distance * 20 ) / 24;
 
-	if ( ms < 170 )
-		ms = 170;
 	if ( ms > 560 )
 		ms = 560;
 
@@ -52,12 +54,13 @@ int RoughDistance( int dx, int dy )
 // the eye catches the start rather than following it. Smoothstep accelerates out of rest, cruises
 // through the middle where the curve's bow is widest, and decelerates into the destination, which
 // is what makes the whole move read as one gesture instead of a launch and a drift.
+// Only the low end is guarded. The one caller divides an elapsed time by a duration it has already
+// established is the larger of the two, so `t` never reaches kOne here -- a finished journey returns
+// its destination outright rather than asking for the eased value at 1.0.
 int Smoothstep( int t )
 {
 	if ( t <= 0 )
 		return 0;
-	if ( t >= kOne )
-		return kOne;
 
 	// t*t*(3 - 2t) with everything kept in thousandths. Long long because the numerator reaches
 	// 1000 * 1000 * 3000, which is comfortably past what an int holds.

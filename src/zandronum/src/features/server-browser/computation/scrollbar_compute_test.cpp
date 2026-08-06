@@ -166,3 +166,12 @@ TEST(Scrollbar, RoundTripsAcrossManyListShapes)
 		}
 	}
 }
+
+TEST( ThumbHeight, NeverGrowsPastTheTrackItRunsIn )
+{
+	// The minimum wins over the proportional size, so a caller asking for a minimum taller than the
+	// track would otherwise get a thumb hanging off the end of it. The track is the harder limit: a
+	// thumb longer than its own track cannot indicate a position.
+	EXPECT_EQ( 20, ComputeThumbHeight( 20, 1, 100, 50 ));
+	EXPECT_EQ( 20, ComputeThumbHeight( 20, 1, 100, 20 ));
+}
