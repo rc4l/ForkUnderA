@@ -279,9 +279,9 @@ int DEarthquake::StaticGetQuakeIntensities(AActor *victim, FQuakeJiggers &jigger
 				}
 				else
 				{
-					fixed_t mx = FixedMul(x, quake->GetModWave(quake->m_WaveSpeedX));
-					fixed_t my = FixedMul(y, quake->GetModWave(quake->m_WaveSpeedY));
-					fixed_t mz = FixedMul(z, quake->GetModWave(quake->m_WaveSpeedZ));
+					int mx = FixedMul(fixed_t::FromRaw(x), fixed_t::FromRaw(quake->GetModWave(quake->m_WaveSpeedX))).Raw();
+					int my = FixedMul(fixed_t::FromRaw(y), fixed_t::FromRaw(quake->GetModWave(quake->m_WaveSpeedY))).Raw();
+					int mz = FixedMul(fixed_t::FromRaw(z), fixed_t::FromRaw(quake->GetModWave(quake->m_WaveSpeedZ))).Raw();
 
 					// [RH] This only gives effect to the last sine quake. I would
 					// prefer if some way was found to make multiples coexist

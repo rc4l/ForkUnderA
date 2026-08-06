@@ -1328,7 +1328,9 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						// [rc4l] uzdoom@5ac7e4fc3: friends never harm each other, unless the shooter
 						// has HARMFRIENDS set. The species and TIDtoHate tests below now only apply
 						// when the two are NOT friends, which is what the else was added for.
-						if (!(thing->flags7 & MF7_HARMFRIENDS)) return false;
+						// [rc4l] uzdoom@123da6873 -- the flag belongs to the SHOOTER, not the victim;
+						// it was read off `thing` (the thing being hit) until now.
+						if (!(tm.thing->target->flags7 & MF7_HARMFRIENDS)) return false;
 					}
 					else
 					{
