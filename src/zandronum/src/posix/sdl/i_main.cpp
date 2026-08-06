@@ -293,7 +293,11 @@ int main (int argc, char **argv)
 	}
 	else
 	{
-		if (SDL_Init (SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_NOPARACHUTE|SDL_INIT_JOYSTICK) == -1)
+		// [rc4l] uzdoom@8e1b1aa20 -- video and joystick are initialised by their own subsystems now
+		// (I_InitGraphics, I_StartupJoysticks), because bringing SDL's video subsystem up this early
+		// conflicts with GUI toolkits on some systems. TIMER stays here: upstream moved it into
+		// I_InitTimer, which only exists in the Cocoa backend for us, so there is nowhere to defer it.
+		if (SDL_Init (SDL_INIT_TIMER|SDL_INIT_NOPARACHUTE) == -1)
 		{
 			fprintf (stderr, "Could not initialize SDL:\n%s\n", SDL_GetError());
 			return -1;

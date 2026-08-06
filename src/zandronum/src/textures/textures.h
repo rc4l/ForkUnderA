@@ -256,6 +256,8 @@ public:
 
 	int GetScaledWidth () { int foo = (Width << 17) / (int)xScale; return (foo >> 1) + (foo & 1); }
 	int GetScaledHeight () { int foo = (Height << 17) / (int)yScale; return (foo >> 1) + (foo & 1); }
+	// [rc4l] uzdoom@a3bdbff05 -- same, against a caller-supplied scale rather than the texture's own.
+	int GetScaledHeight (fixed_t scale) { int foo = (Height << 17) / (int)scale; return (foo >> 1) + (foo & 1); }
 	double GetScaledWidthDouble () { return (Width * 65536.) / double(xScale); }
 	double GetScaledHeightDouble () { return (Height * 65536.) / double(yScale); }
 

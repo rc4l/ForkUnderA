@@ -146,7 +146,11 @@ void P_SerializePlayers (FArchive &arc, bool skipload)
 				if (P_IsSpectatorUnrestricted (players[consoleplayer].mo))
 				{
 					players[consoleplayer].mo->flags |= MF_NOCLIP;
-					players[consoleplayer].cheats |= (CF_FLY | CF_NOCLIP | CF_NOCLIP2);
+	// [rc4l] uzdoom@337682934 moved the fly state from player_t::cheats to the actor's flags7, and
+	// nothing reads CF_FLY any more. This is a Zandronum call site upstream has no equivalent of, so
+	// it has to be carried across by hand or flight is silently lost here.
+					players[consoleplayer].cheats |= (CF_NOCLIP | CF_NOCLIP2);
+					players[consoleplayer].mo->flags7 |= MF7_FLYCHEAT;
 				}
 				else
 				{

@@ -71,6 +71,18 @@ const int SXF_SETTARGET = 1048576;
 const int SXF_SETTRACER = 2097152;
 const int SXF_NOPOINTERS = 4194304;
 const int SXF_ORIGINATOR = 8388608;
+const int SXF_TRANSFERSPRITEFRAME = 16777216;	// [rc4l] uzdoom@b37a98689
+const int SXF_TRANSFERROLL = 33554432;	// [rc4l] uzdoom@0f4bca860
+
+// Flags for A_QuakeEx	// [rc4l] uzdoom@7050d0322
+enum
+{
+	QF_RELATIVE =		1,
+	QF_SCALEDOWN =		1 << 1,
+	QF_SCALEUP =		1 << 2,
+	QF_MAX =			1 << 3,
+	QF_FULLINTENSITY =	1 << 4,
+};
 
 // Flags for A_Chase
 const int CHF_FASTCHASE = 1;

@@ -108,6 +108,7 @@ static FCompatOption Options[] =
 	{ "ignoreteleporttags",		BCOMPATF_BADTELEPORTERS, SLOT_BCOMPAT },
 	{ "rebuildnodes",			BCOMPATF_REBUILDNODES, SLOT_BCOMPAT },
 	{ "linkfrozenprops",		BCOMPATF_LINKFROZENPROPS, SLOT_BCOMPAT },
+	{ "floatbob",				BCOMPATF_FLOATBOB, SLOT_BCOMPAT },	// [rc4l] uzdoom@93c12cf25
 
 	// list copied from g_mapinfo.cpp
 	{ "shorttex",				COMPATF_SHORTTEX, SLOT_COMPAT },
@@ -434,6 +435,14 @@ void CheckCompatibility(MapData *map)
 	// Reset i_compatflags
 	compatflags.Callback();
 	compatflags2.Callback();
+	// [rc4l] uzdoom@93c12cf25 -- Hexen yanked every item to the floor except those the map placed in
+	// the air, which kept their height. Rather than shipping +NOGRAVITY on every floatbob item (and
+	// per-map setthingz hacks), the behaviour is restored only for maps with an original Hexen
+	// MAPINFO.
+	if (level.flags2 & LEVEL2_HEXENHACK)
+	{
+		ib_compatflags |= BCOMPATF_FLOATBOB;
+	}
 }
 
 //==========================================================================
@@ -448,7 +457,9 @@ void SetCompatibilityParams()
 	{
 		unsigned i = ii_compatparams;
 
-		while (CompatParams[i] != CP_END && i < CompatParams.Size())
+		// [rc4l] uzdoom@322742d4b -- test the bound BEFORE indexing, or the last iteration reads
+		// one past the end of the array.
+		while (i < CompatParams.Size() && CompatParams[i] != CP_END)
 		{
 			switch (CompatParams[i])
 			{

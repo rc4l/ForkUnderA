@@ -405,6 +405,7 @@ static FFlagDef InventoryFlags[] =
 	DEFINE_FLAG(IF, NOSCREENFLASH, AInventory, ItemFlags),
 	DEFINE_FLAG(IF, TOSSED, AInventory, ItemFlags),
 	DEFINE_FLAG(IF, ALWAYSRESPAWN, AInventory, ItemFlags),
+	DEFINE_FLAG(IF, TRANSFER, AInventory, ItemFlags),	// [rc4l] uzdoom@de4097cc7
 	// [BB] New ST flags.
 	DEFINE_FLAG(IF, FORCERESPAWNINSURVIVAL, AInventory, ItemFlags),
 

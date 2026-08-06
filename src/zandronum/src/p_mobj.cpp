@@ -3223,6 +3223,13 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 	// [BC] Mark this item as having moved.
 	if ( mo->z != oldz )
 		mo->STFlags |= STFL_POSITIONCHANGED;
+	// [rc4l] uzdoom@93c12cf25 -- Hexen compatibility handling for floatbobbing. Only for an item the
+	// map actually placed above ground (special1 > 0), so ordinary items are unaffected.
+	if (mo->special1 > 0 && (mo->flags2 & MF2_FLOATBOB) && (ib_compatflags & BCOMPATF_FLOATBOB))
+	{
+		mo->z = mo->floorz + fixed_t::FromRaw(mo->special1);
+	}
+
 //
 // adjust height
 //
@@ -3659,8 +3666,8 @@ void P_NightmareRespawn (AActor *mobj)
 		z = ONCEILINGZ;
 	else if (info->flags2 & MF2_SPAWNFLOAT)
 		z = FLOATRANDZ;
-	else if (info->flags2 & MF2_FLOATBOB)
-		z = mobj->SpawnPoint[2];
+	// [rc4l] uzdoom@93c12cf25 -- floatbob items are ordinary ONFLOORZ spawns now; the Hexen height is
+	// handled by the compat path in P_ZMovement instead.
 	else
 		z = ONFLOORZ;
 
@@ -4590,11 +4597,15 @@ void AActor::Tick ()
 			velz <= 0 &&
 			floorz == z)
 		{
-			secplane_t floorplane = floorsector->floorplane;
+			// [rc4l] uzdoom@c4b742ebf -- with 3D floors on, the copy from floorsector was immediately
+			// overwritten by P_FindFloorPlane; only the non-3D path ever needed it.
+			secplane_t floorplane;
 
 #ifdef _3DFLOORS
 			// Check 3D floors as well
 			floorplane = P_FindFloorPlane(floorsector, x, y, floorz);
+#else
+			floorplane = floorsector->floorplane;
 #endif
 
 			if (floorplane.c < STEEPSLOPE &&
@@ -4787,18 +4798,12 @@ void AActor::Tick ()
 		flags7 &= ~MF7_HANDLENODELAY;
 		if (state->GetNoDelay())
 		{
+			// [rc4l] uzdoom@5aba252b8 -- calling the state's function directly avoids the
+			// re-entry into SetState and the tic fudging that went with it.
 			// For immediately spawned objects with the NoDelay flag set for their
-			// Spawn state, explicitly set the current state so that it calls its
-			// action and chains 0-tic states.
-			int starttics = tics;
-			if (!SetState(state))
+			// Spawn state, explicitly call the current state's function.
+			if (state->CallAction(this, this) && (ObjectFlags & OF_EuthanizeMe))
 				return;				// freed itself
-			// If the initial state had a duration of 0 tics, let the next state run
-			// normally. Otherwise, increment tics by 1 so that we don't double up ticks.
-			else if (starttics > 0 && tics >= 0)
-			{
-				tics++;
-			}
 		}
 	}
 	// cycle through states, calling action functions at transitions
@@ -5905,7 +5910,8 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	p->mo->ResetAirSupply(false);
 	p->Uncrouch();
 	p->MinPitch = p->MaxPitch = 0;	// will be filled in by PostBeginPlay()/netcode
-	p->cheats &= ~CF_FLY;
+	// [rc4l] uzdoom@337682934 -- the fly state lives on the actor now (MF7_FLYCHEAT), and a freshly
+	// spawned pawn has default flags7, so there is nothing to clear here.
 
 	p->velx = p->vely = 0;		// killough 10/98: initialize bobbing to 0.
 
@@ -6548,7 +6554,17 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	mobj = AActor::StaticSpawn (i, x, y, z, NO_REPLACE, true);
 
 	if (z == ONFLOORZ)
+	{
 		mobj->z += mthing->z;
+		// [rc4l] uzdoom@93c12cf25 -- remember the map-given height so the Hexen compat path in
+		// P_ZMovement can hold the item there instead of letting it settle to the floor.
+		if ((mobj->flags2 & MF2_FLOATBOB) && (ib_compatflags & BCOMPATF_FLOATBOB))
+		{
+			// [rc4l] special1 is a plain int and mthing->z is our strong fixed_t; upstream converted
+			// implicitly. The value is a raw 16.16 height, compared against floorz the same way below.
+			mobj->special1 = mthing->z.Raw();
+		}
+	}
 	else if (z == ONCEILINGZ)
 		mobj->z -= mthing->z;
 
@@ -6561,7 +6577,11 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	else if (mthing->gravity > 0) mobj->gravity = FixedMul(mobj->gravity, mthing->gravity);
 	else mobj->flags &= ~MF_NOGRAVITY;
 
-	P_FindFloorCeiling(mobj, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT);
+	// [rc4l] uzdoom@93c12cf25 -- for Hexen floatbob compatibility we do not want to alter floorz.
+	if (mobj->special1 == 0 || !(mobj->flags2 & MF2_FLOATBOB) || !(ib_compatflags & BCOMPATF_FLOATBOB))
+	{
+		P_FindFloorCeiling(mobj, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT);
+	}
 
 	if (!(mobj->flags2 & MF2_ARGSDEFINED))
 	{
@@ -7526,12 +7546,24 @@ static fixed_t GetDefaultSpeed(const PClass *type)
 
 AActor *P_SpawnMissile (AActor *source, AActor *dest, const PClass *type, AActor *owner, const bool bSpawnOnClient ) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf -- dereferenced source unconditionally; a DECORATE caller can reach
+	// here with none.
+	if (source == NULL)
+		return NULL;
+
 	return P_SpawnMissileXYZ (source->x, source->y, source->z + 32*FRACUNIT + source->GetBobOffset(),
 		source, dest, type, true, owner, bSpawnOnClient); // [BB] Added bSpawnOnClient.
 }
 
 AActor *P_SpawnMissileZ (AActor *source, fixed_t z, AActor *dest, const PClass *type, const bool bSpawnOnClient) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	return P_SpawnMissileXYZ (source->x, source->y, z, source, dest, type,
 		true, NULL, bSpawnOnClient ); // [BB] Added bSpawnOnClient.
 }
@@ -7539,6 +7571,13 @@ AActor *P_SpawnMissileZ (AActor *source, fixed_t z, AActor *dest, const PClass *
 AActor *P_SpawnMissileXYZ (fixed_t x, fixed_t y, fixed_t z,
 	AActor *source, AActor *dest, const PClass *type, bool checkspawn, AActor *owner, const bool bSpawnOnClient ) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	if (dest == NULL)
 	{
 		Printf ("P_SpawnMissilyXYZ: Tried to shoot %s from %s with no dest\n",
@@ -7656,6 +7695,13 @@ AActor * P_OldSpawnMissile(AActor * source, AActor * owner, AActor * dest, const
 AActor *P_SpawnMissileAngle (AActor *source, const PClass *type,
 	angle_t angle, fixed_t velz, bool bSpawnOnClient) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	return P_SpawnMissileAngleZSpeed (source, source->z + 32*FRACUNIT + source->GetBobOffset(),
 		type, angle, velz, GetDefaultSpeed (type),
 		NULL, true, bSpawnOnClient ); // [BB] Added bSpawnOnClient.
@@ -7671,6 +7717,13 @@ AActor *P_SpawnMissileAngleZ (AActor *source, fixed_t z,
 
 AActor *P_SpawnMissileZAimed (AActor *source, fixed_t z, AActor *dest, const PClass *type, bool bSpawnOnClient ) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	angle_t an;
 	fixed_t dist;
 	fixed_t speed;
@@ -7701,6 +7754,13 @@ AActor *P_SpawnMissileZAimed (AActor *source, fixed_t z, AActor *dest, const PCl
 AActor *P_SpawnMissileAngleSpeed (AActor *source, const PClass *type,
 	angle_t angle, fixed_t velz, fixed_t speed)
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	return P_SpawnMissileAngleZSpeed (source, source->z + 32*FRACUNIT + source->GetBobOffset(),
 		type, angle, velz, speed);
 }
