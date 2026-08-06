@@ -103,11 +103,13 @@ HostLifecycle StepHostLifecycle(const HostLifecycle &host, HostEvent event, cons
 			detail.empty() ? "The server stopped unexpectedly." : detail);
 
 	case HostEvent::StopRequested:
+		// Both arms return, and there is no third case: the terminal states left at the top of this
+		// function, which leaves only the three that hold a process and Idle. A `break` under here
+		// would be a line no input can reach -- a guarded case that is really an untestable claim
+		// about the enum.
 		if (HostHoldsProcess(host.state))
 			return Enter(HostState::Stopping, "");
-		if (host.state == HostState::Idle)
-			return Enter(HostState::Stopped, "");
-		break;
+		return Enter(HostState::Stopped, "");
 
 	case HostEvent::Timeout:
 		if (host.state == HostState::Starting)
