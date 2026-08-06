@@ -151,14 +151,12 @@ bool HostStart( const HostConfig &config )
 	g_Reach = config.advertise ? HostReach::Waiting : HostReach::NotPublic;
 	g_PublicMs = 0;
 
-	// [rc4l] Ask the router to open the port -- ONLY for a public server, which is already an
-	// explicit choice on an explicit tab. A game that quietly opened ports on somebody's network
-	// would be doing the thing routers switch UPnP off to prevent.
-	//
-	// It runs before the registry check and never replaces it: a router agreeing proves a router
-	// agreed, and behind carrier-grade NAT that happens while the server stays invisible.
-	if ( config.advertise )
-		PortMapOpen( ResolveHostPort( g_Config.port, 10666 ), g_Config.hostName.c_str( ));
+	// [rc4l] The router is NOT asked yet, deliberately. Nothing here knows which port the server will
+	// end up on -- NETWORK_Construct falls back to the next free one and only the child finds out --
+	// so mapping the requested port now would forward a port the server may never listen on: a hole
+	// in somebody's network leading nowhere, and a public server unreachable for a reason the
+	// reachability check cannot explain. The mapping is opened on the ready line, where the real port
+	// is known.
 
 	g_Address = "127.0.0.1:";
 	g_Address.AppendFormat( "%d", ResolveHostPort( g_Config.port, 10666 ));
@@ -240,6 +238,20 @@ void HostTick( void )
 							"instead.\n" TEXTCOLOR_NORMAL,
 							ResolveHostPort( g_Config.port, 10666 ), boundPort );
 					}
+				}
+
+				// [rc4l] Now the router can be asked, and asked for the RIGHT port -- ONLY for a
+				// public server, which is already an explicit choice on an explicit tab. A game that
+				// quietly opened ports on somebody's network would be doing the thing routers switch
+				// UPnP off to prevent.
+				//
+				// It still runs before the registry check and still never replaces it: a router
+				// agreeing proves a router agreed, and behind carrier-grade NAT that happens while the
+				// server stays invisible.
+				if ( g_Config.advertise )
+				{
+					PortMapOpen( ( boundPort > 0 ) ? boundPort
+						: ResolveHostPort( g_Config.port, 10666 ), g_Config.hostName.c_str( ));
 				}
 
 				g_Life = StepHostLifecycle( g_Life, HostEvent::ReadyObserved, "" );

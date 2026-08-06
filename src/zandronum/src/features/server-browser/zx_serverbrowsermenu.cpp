@@ -169,7 +169,11 @@
 #define SB_HOST_LINE		11
 #define SB_HOST_ROW_H		15		// one field and the space under it
 #define SB_HOST_FIELD_H		16
-#define SB_HOST_LABEL_W		92		// label column; the field takes the rest
+// [rc4l] Wide enough for the longest label, which is PREFERRED PORT. At 92 it fitted every label
+// there was and then clipped the moment one grew -- the label is drawn from the left, so a label too
+// long for its column runs under the field rather than being visibly cut, which reads as a typo
+// ("PREFERRED POR") instead of as a layout problem.
+#define SB_HOST_LABEL_W		112		// label column; the field takes the rest
 #define SB_HOST_BTN_H		18
 #define SB_HOST_BTN_W		120
 #define SB_HOST_MAXLEN		40
@@ -395,13 +399,17 @@ enum HostField
 	kHostFieldCount,
 };
 
+// [rc4l] PREFERRED, because that is what it is. A busy port does not stop the server -- the engine
+// binds the next free one -- so this is what we ask for, not what we are guaranteed. Calling it PORT
+// stated something the code could not honour, and the panel already shows the port actually in use
+// once the server is up.
 static const char *const g_HostFieldLabels[kHostFieldCount] = {
-	"SERVER NAME", "PORT", "MAX PLAYERS", "PASSWORD",
+	"SERVER NAME", "PREFERRED PORT", "MAX PLAYERS", "PASSWORD",
 };
 
 static const char *const g_HostFieldTips[kHostFieldCount] = {
 	"What other players see in their browser",
-	"UDP port to listen on\nLeave it alone unless something else is using it",
+	"If it's already in use the server takes the next free one",
 	"How many can be in at once",
 	"Leave empty for a server anyone can join",
 };
