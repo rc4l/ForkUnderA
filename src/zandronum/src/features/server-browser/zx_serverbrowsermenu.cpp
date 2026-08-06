@@ -4468,12 +4468,19 @@ public:
 		// deaf to the pointer for as long as any field had focus: frozen tooltip, dead clicks, dead
 		// tabs. Saying "not mine" is what lets it fall through to the mouse path.
 		Unclaimed,
+
+		// [rc4l] The caret ran out of text and there is something beside the box, so the arrow means
+		// what it means everywhere else on the screen. Only ever returned when the caller said there
+		// was somewhere to go -- a field with nothing beside it keeps the key.
+		Left,
+		Right,
 	};
 
 	// `digitsOnly` is for the port and player-limit boxes. A port with a letter in it is not a port,
 	// and refusing the keystroke says so at the moment it happens rather than when the server fails
 	// to start.
-	FieldKey EditTextField( zx::TextInput &field, event_t *ev, size_t maxLength, bool digitsOnly )
+	FieldKey EditTextField( zx::TextInput &field, event_t *ev, size_t maxLength, bool digitsOnly,
+		bool canExitLeft, bool canExitRight )
 	{
 		// [rc4l] Cmd counts as Ctrl. The Cocoa layer reports it as GKM_META, so honouring both here
 		// is the whole of macOS support -- Cmd+A, Cmd+C, Cmd+V and Cmd+X land where a Mac user
@@ -4590,11 +4597,21 @@ public:
 
 		case GK_LEFT:
 		case GK_RIGHT:
-			// [rc4l] The caret's, always. Moving through what you have typed is the first thing these
-			// keys mean inside a field, and a box that jumped to the next control instead would be one
-			// you could not edit. Up, down, escape and enter are how it is left.
-			field = zx::MoveCaret( field, ( key == GK_LEFT ) ? -1 : 1, bShift );
-			return FieldKey::Handled;
+			{
+				// [rc4l] The caret's FIRST, and the row's once the caret runs out.
+				//
+				// Moving through what you typed is what these keys mean inside a field, and a box
+				// that jumped to the next control immediately would be one you could not edit. But a
+				// box that never gave them back is one the keyboard goes into and cannot leave
+				// sideways -- so at the edge, with something actually beside us, the press moves on.
+				// ArrowLeavesField owns when that is; see its header for shift and selections.
+				const bool bRight = ( key == GK_RIGHT );
+				if ( zx::ArrowLeavesField( field, bRight, bRight ? canExitRight : canExitLeft, bShift ))
+					return bRight ? FieldKey::Right : FieldKey::Left;
+
+				field = zx::MoveCaret( field, bRight ? 1 : -1, bShift );
+				return FieldKey::Handled;
+			}
 
 		default:
 			// Everything else is swallowed while the field has the keyboard. A letter is a letter, not
@@ -4618,7 +4635,8 @@ public:
 		const bool bDigits = ( g_HostFieldFocus == kHostFieldPort )
 			|| ( g_HostFieldFocus == kHostFieldMaxPlayers );
 
-		switch ( EditTextField( g_HostFields[g_HostFieldFocus], ev, SB_HOST_MAXLEN, bDigits ))
+		switch ( EditTextField( g_HostFields[g_HostFieldFocus], ev, SB_HOST_MAXLEN, bDigits,
+			false, false ))
 		{
 		case FieldKey::Escape:
 			// Out of the form, not out of the browser -- the same rule the search box follows, so a
@@ -4636,8 +4654,12 @@ public:
 			MoveHostFocus( -1 );
 			return true;
 
+		case FieldKey::Left:
+		case FieldKey::Right:
 		case FieldKey::Unclaimed:
-			return false;			// not a key -- let the mouse path have it
+			// Nothing sits beside these fields, so the editor never reports the first two -- and a
+			// non-key belongs to the mouse.
+			return false;
 
 		case FieldKey::Handled:
 			break;
@@ -4661,7 +4683,7 @@ public:
 	{
 		zx::TextInput next = g_Search;
 
-		switch ( EditTextField( next, ev, SB_SEARCH_MAXLEN, false ))
+		switch ( EditTextField( next, ev, SB_SEARCH_MAXLEN, false, true, false ))
 		{
 		case FieldKey::Escape:
 			// Out of the box, not out of the browser. A second escape then closes the menu, which is
@@ -4688,8 +4710,15 @@ public:
 			Navigate( zx::NavKey::Down, static_cast<int>( g_SortedServers.Size( )));
 			return true;
 
+		case FieldKey::Left:
+			// Off the left of the search box is the tab row it shares.
+			SetFocus( zx::BrowserFocus::Tabs );
+			g_SearchDragging = false;
+			return ApplyEdit( next );
+
+		case FieldKey::Right:
 		case FieldKey::Unclaimed:
-			return false;			// not a key -- let the mouse path have it
+			return false;			// nothing to the right, and non-keys belong to the mouse
 
 		case FieldKey::Handled:
 			break;
