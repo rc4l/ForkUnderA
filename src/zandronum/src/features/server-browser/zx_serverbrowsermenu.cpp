@@ -119,7 +119,10 @@
 #define SB_DLG_PAD			14
 #define SB_DLG_LINE			11
 #define SB_DLG_BTN_H		16
-#define SB_DLG_BTN_GAP		8
+// [rc4l] Wide enough for the focus glow to sit in. Every other control in the browser has the glow
+// five units off its left edge, and this is the only place two of them stand side by side -- at the
+// gap that merely LOOKS right, the glow lands on the previous button and points at the wrong answer.
+#define SB_DLG_BTN_GAP		22
 #define SB_DLG_FIELD_H		16
 #define SB_BUTTON_LEFT		( SB_DETAIL_LEFT + SB_DETAIL_PAD )
 #define SB_BUTTON_RIGHT		( SB_DETAIL_RIGHT - SB_DETAIL_PAD )
@@ -996,60 +999,68 @@ public:
 		// Last, and over everything: something the player has to deal with before anything else.
 		if ( g_Notice.IsNotEmpty( ))
 			DrawNotice( );
-		else if ( g_Dialog.open )
-			DrawDialog( );
 		else
 		{
-			// Over the browser but under a question, because a question is the thing being answered
-			// and the glow would be pointing at a control the player cannot reach until they have.
-			if ( g_FocusGlowValid )
-			{
-				const zx::GlowPos want( g_FocusGlowX, g_FocusGlowY );
+			// A question is drawn BEFORE the glow so its own anchor is the live one -- the glow then
+			// travels from whatever the player was on to the button they are being asked about,
+			// rather than being stranded behind the panel on a control they cannot reach.
+			if ( g_Dialog.open )
+				DrawDialog( );
 
-				// The FIRST placement snaps. There is nowhere for it to have travelled from, and
-				// sliding in from a stale position left over from the last visit would be a lie about
-				// where the focus had been. Every step after that is Ticker's job -- see there for why
-				// it is not done per frame.
-				if ( !g_GlowPlaced )
-				{
-					g_GlowAt = want;
-					g_GlowTravel = zx::BeginGlowTravel( want, want );
-					g_GlowLastMs = static_cast<int>( I_MSTime( ));
-					g_GlowPlaced = true;
-				}
-				else
-				{
-					// [rc4l] Advanced HERE, once per frame, by however many milliseconds actually
-					// passed -- not once per 35Hz tic.
-					//
-					// The tic was smooth in the sense of being frame-rate independent and steppy in
-					// the sense that mattered: 35 positions a second is a slideshow beside a 144Hz
-					// panel. Real elapsed time is both -- as many positions as there are frames, and
-					// the same wall-clock duration on every machine.
-					const int now = static_cast<int>( I_MSTime( ));
-					const int delta = now - g_GlowLastMs;
-					g_GlowLastMs = now;
+			DrawFocusTravel( );
 
-					// The focus can move again mid-flight. Setting out afresh FROM WHERE THE GLOW IS --
-					// rather than from where the last journey began -- is what stops it snapping
-					// backwards when the player changes their mind halfway through.
-					if (( g_GlowTravel.to.x != want.x ) || ( g_GlowTravel.to.y != want.y ))
-						g_GlowTravel = zx::BeginGlowTravel( g_GlowAt, want );
-
-					g_GlowTravel = zx::StepGlowTravel( g_GlowTravel, delta );
-					g_GlowAt = zx::GlowTravelPoint( g_GlowTravel );
-				}
-
-				DrawFocusGlow( g_GlowAt.x, g_GlowAt.y );
-			}
-			else
-			{
-				// Nothing has focus, so there is nothing to travel from next time either.
-				g_GlowPlaced = false;
-			}
-
-			DrawTooltip( );
+			// A tooltip about a control behind the modal is about something not being asked.
+			if ( !g_Dialog.open )
+				DrawTooltip( );
 		}
+	}
+
+	// [rc4l] Move the glow to wherever this frame's focused control said it wanted it, and draw it.
+	void DrawFocusTravel( )
+	{
+		if ( !g_FocusGlowValid )
+		{
+			// Nothing has focus, so there is nothing to travel from next time either.
+			g_GlowPlaced = false;
+			return;
+		}
+
+		const zx::GlowPos want( g_FocusGlowX, g_FocusGlowY );
+
+		// The FIRST placement snaps. There is nowhere for it to have travelled from, and sliding in
+		// from a stale position left over from the last visit would be a lie about where the focus
+		// had been.
+		if ( !g_GlowPlaced )
+		{
+			g_GlowAt = want;
+			g_GlowTravel = zx::BeginGlowTravel( want, want );
+			g_GlowLastMs = static_cast<int>( I_MSTime( ));
+			g_GlowPlaced = true;
+		}
+		else
+		{
+			// [rc4l] Advanced HERE, once per frame, by however many milliseconds actually passed --
+			// not once per 35Hz tic.
+			//
+			// The tic was smooth in the sense of being frame-rate independent and steppy in the sense
+			// that mattered: 35 positions a second is a slideshow beside a 144Hz panel. Real elapsed
+			// time is both -- as many positions as there are frames, and the same wall-clock duration
+			// on every machine.
+			const int now = static_cast<int>( I_MSTime( ));
+			const int delta = now - g_GlowLastMs;
+			g_GlowLastMs = now;
+
+			// The focus can move again mid-flight. Setting out afresh FROM WHERE THE GLOW IS --
+			// rather than from where the last journey began -- is what stops it snapping backwards
+			// when the player changes their mind halfway through.
+			if (( g_GlowTravel.to.x != want.x ) || ( g_GlowTravel.to.y != want.y ))
+				g_GlowTravel = zx::BeginGlowTravel( g_GlowAt, want );
+
+			g_GlowTravel = zx::StepGlowTravel( g_GlowTravel, delta );
+			g_GlowAt = zx::GlowTravelPoint( g_GlowTravel );
+		}
+
+		DrawFocusGlow( g_GlowAt.x, g_GlowAt.y );
 	}
 
 	//*************************************************************************
@@ -1968,33 +1979,6 @@ public:
 
 	//*************************************************************************
 	//
-	// [rc4l] The confirmation, drawn over everything else. Cancelling a transfer that is most of the
-	// way through a 200 MB modpack because of one stray click is worth a question.
-	void DrawCancelConfirm( )
-	{
-		screen->Dim( PalEntry( 0, 0, 0 ), 0.6f, 0, 0, SCREENWIDTH, SCREENHEIGHT );
-
-		const char *const lines[] = {
-			"Cancel this download?",
-			"",
-			"Y - stop it        N - keep going",
-		};
-
-		int y = ( SB_VIRT_H / 2 ) - ( SmallFont->GetHeight( ) * 2 );
-		for ( size_t i = 0; i < countof( lines ); ++i )
-		{
-			if ( lines[i][0] != '\0' )
-			{
-				screen->DrawText( SmallFont, ( i == 0 ) ? CR_WHITE : CR_GOLD,
-					( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( lines[i] ) / 2 ), y, lines[i],
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-			}
-			y += SmallFont->GetHeight( ) + 3;
-		}
-	}
-
-	//*************************************************************************
-	//
 	// [rc4l] Both answers, in one place, because the important part is that each releases the hold
 	// exactly once. `stop` false is "keep going", which also covers the download having finished while
 	// the question was on screen -- ReleaseJoinResume then runs the join it was holding.
@@ -2052,10 +2036,12 @@ public:
 			// meantime would otherwise restart the engine for the reload while the player is still
 			// reading -- the hold is what makes the answer land on something that still exists.
 			zx::HoldJoinResume( );
-			ShowDialog( DialogAction::CancelDownload, "Cancel this download?",
-				"The file is part-way here. Stopping keeps what has arrived, so starting again later "
-				"picks up where this left off.",
-				"STOP IT", 's', "KEEP GOING", 'k' );
+			// The player asked to JOIN; the download is only how that is being carried out. Asking about
+			// the join is asking about the thing they chose. What has already arrived is kept either
+			// way, which is the one fact that changes the answer.
+			ShowDialog( DialogAction::CancelDownload, "Cancel join?",
+				"Any download in progress stops. What has arrived so far is kept.",
+				"YES", 'y', "NO", 'n' );
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 			return;
 		}
@@ -2072,8 +2058,9 @@ public:
 			const int lServer = g_SortedServers[g_Selected];
 			if ( BROWSER_IsPasswordProtected( lServer ))
 			{
-				ShowDialog( DialogAction::JoinPassword, "This server needs a password",
-					BROWSER_GetHostName( lServer ),
+				// No server name in the body. The row is selected, its name is in the detail panel behind
+			// this, and repeating it here only pushes the field further from the question.
+			ShowDialog( DialogAction::JoinPassword, "This server needs a password", NULL,
 					"JOIN", 0, "CANCEL", 0, true, "Password", true );
 				return;
 			}
@@ -2140,7 +2127,7 @@ public:
 		}
 
 		serverbrowser_Tip( SB_BUTTON_LEFT, SB_BUTTON_TOP, SB_BUTTON_RIGHT - SB_BUTTON_LEFT, SB_BUTTON_H, bCancel
-			? "Stop the download\nYou will be asked to confirm"
+			? "Cancel joining this server\nYou will be asked to confirm"
 			: "Join this server\nAnything missing is downloaded first" );
 
 		FocusAnchor( zx::BrowserFocus::Action, SB_BUTTON_LEFT - 5, SB_BUTTON_TOP + SB_BUTTON_H / 2 );
