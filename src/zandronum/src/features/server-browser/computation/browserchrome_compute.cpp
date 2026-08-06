@@ -47,4 +47,16 @@ unsigned ComputeVisibleParts( BrowserPhase phase, bool hasSelection, bool downlo
 	return parts;
 }
 
+unsigned ComputeHostParts( bool downloadRunning )
+{
+	// The tabs stay -- they are how the player gets back -- and the hosting panel takes the space the
+	// list and the detail panel would have had.
+	unsigned parts = kPartTabs | kPartHost;
+
+	if ( downloadRunning )
+		parts |= kPartFooter | kPartDetail;
+
+	return parts;
+}
+
 } // namespace zx

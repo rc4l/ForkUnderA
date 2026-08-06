@@ -40,7 +40,18 @@ enum BrowserPart
 	kPartDetail      = 1u << 2,   // the black panel, its contents, and the JOIN/CANCEL button
 	kPartPlaceholder = 1u << 3,   // the spinner, or "No servers found"
 	kPartFooter      = 1u << 4,   // the server count, or a running transfer's progress
+	kPartHost        = 1u << 5,   // the hosting panel, which stands in place of the list and detail
 };
+
+// [rc4l] The HOST tab is not a filter over the same list, the way PUBLIC and PRIVATE are -- it is a
+// different screen that happens to hang off the same row of tabs. So it does not narrow what is
+// listed; it replaces it. Everything about a server you might join is meaningless on the screen
+// where you are making one.
+//
+// A transfer still running is the exception, and the same exception as everywhere else: its progress
+// and the control that stops it survive any change of tab, because the download does not care which
+// screen the player wandered onto and losing the CANCEL button would strand them.
+unsigned ComputeHostParts( bool downloadRunning );
 
 // `hasSelection` is whether a server is actually selected -- there is no panel without one, since
 // every line in it describes that server.

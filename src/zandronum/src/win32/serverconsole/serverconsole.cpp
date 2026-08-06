@@ -65,6 +65,7 @@
 #include "duel.h"
 #include "g_level.h"
 #include "lastmanstanding.h"
+#include "m_argv.h"
 #include "maprotation.h"
 #include "network.h"
 #include "resource.h"
@@ -634,6 +635,11 @@ BOOL CALLBACK SERVERCONSOLE_ServerDialogBoxCallback( HWND hDlg, UINT Message, WP
 //
 void SERVERCONSOLE_Hide( void )
 {
+	// [rc4l] Headless: no dialog was ever created, so there is nothing here to update. One
+	// guard per entry point rather than a check at every call site, because the callers are
+	// scattered through the server and none of them should have to know how it was started.
+	if ( g_hDlg == NULL )
+		return;
 	ShowWindow( g_hDlg, SW_HIDE );
 }
 
@@ -1851,6 +1857,11 @@ BOOL CALLBACK SERVERCONSOLE_ServerStatisticsCallback( HWND hDlg, UINT Message, W
 //
 void SERVERCONSOLE_UpdateTitleString( const char *pszString )
 {
+	// [rc4l] Headless: no dialog was ever created, so there is nothing here to update. One
+	// guard per entry point rather than a check at every call site, because the callers are
+	// scattered through the server and none of them should have to know how it was started.
+	if ( g_hDlg == NULL )
+		return;
 	if ( !g_bServerLoaded )
 		return;
 
@@ -1867,7 +1878,13 @@ void SERVERCONSOLE_UpdateTitleString( const char *pszString )
 //
 void SERVERCONSOLE_UpdateIP( NETADDRESS_s LocalAddress )
 {
+	// The address is remembered either way -- other code reads it -- but only the GUI build has
+	// anywhere to show it.
 	g_LocalAddress = LocalAddress;
+
+	if ( g_hDlg == NULL )
+		return;
+
 	SendMessage( g_hDlgStatusBar, SB_SETTEXT, (WPARAM)2, (LPARAM) LocalAddress.ToString() );
 	SERVERCONSOLE_UpdateBroadcasting( );
 }
@@ -1876,6 +1893,11 @@ void SERVERCONSOLE_UpdateIP( NETADDRESS_s LocalAddress )
 //
 void SERVERCONSOLE_UpdateBroadcasting( void )
 {
+	// [rc4l] Headless: no dialog was ever created, so there is nothing here to update. One
+	// guard per entry point rather than a check at every call site, because the callers are
+	// scattered through the server and none of them should have to know how it was started.
+	if ( g_hDlg == NULL )
+		return;
 	SendMessage( g_hDlgStatusBar, SB_SETTEXT, (WPARAM)0, (LPARAM) (sv_fua_serverregistry_announce ? "Public" : "Private" ));
 	SendMessage( g_hDlgStatusBar, SB_SETTEXT, (WPARAM)1, (LPARAM) (sv_broadcast ? "LAN" : "" ));
 }
@@ -1884,6 +1906,11 @@ void SERVERCONSOLE_UpdateBroadcasting( void )
 //
 void SERVERCONSOLE_UpdateScoreboard( void )
 {
+	// [rc4l] Headless: no dialog was ever created, so there is nothing here to update. One
+	// guard per entry point rather than a check at every call site, because the callers are
+	// scattered through the server and none of them should have to know how it was started.
+	if ( g_hDlg == NULL )
+		return;
 	int labels[4] = { IDC_SCOREBOARD1, IDC_SCOREBOARD2, IDC_SCOREBOARD3, IDC_SCOREBOARD4, };
 
 	// Clear the labels.
@@ -1939,8 +1966,16 @@ void SERVERCONSOLE_UpdateScoreboard( void )
 //
 void SERVERCONSOLE_Quit( void )
 {
+	// [rc4l] Headless: there is no dialog to end, no GUI thread to suspend, and nobody to answer a
+	// confirmation box -- asking one would hang the shutdown on a MessageBox nobody can see.
+	if ( g_hDlg == NULL )
+	{
+		exit( 0 );
+		return;
+	}
+
 	if ( SERVER_CalcNumConnectedClients( ) > 0 )
-	{	
+	{
 		FString fsQuitMessage = "Are you sure you want to shut down this server?";
 		fsQuitMessage.AppendFormat( "\nThere %s %d player%s connected.", ( SERVER_CalcNumConnectedClients( ) == 1 ? "is" : "are" ), SERVER_CalcNumConnectedClients( ), ( SERVER_CalcNumConnectedClients( ) == 1 ? "" : "s" ));
 		if ( MessageBox( g_hDlg, fsQuitMessage.GetChars( ), SERVERCONSOLE_TITLESTRING, MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 ) != IDYES )
@@ -2009,6 +2044,11 @@ void serverconsole_UpdateTraffic_Rate( int label, LONG lData, const char *pszLab
 //
 void SERVERCONSOLE_UpdateStatistics( void )
 {
+	// [rc4l] Headless: no dialog was ever created, so there is nothing here to update. One
+	// guard per entry point rather than a check at every call site, because the callers are
+	// scattered through the server and none of them should have to know how it was started.
+	if ( g_hDlg == NULL )
+		return;
 	char szString[256];
 
 	// Update average players for the statusbar.
@@ -2066,6 +2106,11 @@ void SERVERCONSOLE_UpdateStatistics( void )
 //
 void SERVERCONSOLE_SetCurrentMapname( const char *pszString )
 {
+	// [rc4l] Headless: no dialog was ever created, so there is nothing here to update. One
+	// guard per entry point rather than a check at every call site, because the callers are
+	// scattered through the server and none of them should have to know how it was started.
+	if ( g_hDlg == NULL )
+		return;
 	if ( !g_bServerLoaded )
 	{
 		g_bServerLoaded = true;
@@ -2086,6 +2131,11 @@ void SERVERCONSOLE_SetCurrentMapname( const char *pszString )
 //
 void SERVERCONSOLE_SetupColumns( void )
 {
+	// [rc4l] Headless: no dialog was ever created, so there is nothing here to update. One
+	// guard per entry point rather than a check at every call site, because the callers are
+	// scattered through the server and none of them should have to know how it was started.
+	if ( g_hDlg == NULL )
+		return;
 	LVCOLUMN	ColumnData;
 
 	if ( SendDlgItemMessage( g_hDlg, IDC_PLAYERLIST, LVM_GETCOLUMN, SERVERCONSOLE_COLUMN_FRAGS, (LPARAM)&ColumnData ))
@@ -2111,6 +2161,11 @@ void SERVERCONSOLE_SetupColumns( void )
 //
 void SERVERCONSOLE_ReListPlayers( void )
 {
+	// [rc4l] Headless: no dialog was ever created, so there is nothing here to update. One
+	// guard per entry point rather than a check at every call site, because the callers are
+	// scattered through the server and none of them should have to know how it was started.
+	if ( g_hDlg == NULL )
+		return;
 	LVITEM		Item;
 	FString		playerName;
 	LONG		lIndex;
@@ -2154,6 +2209,11 @@ void SERVERCONSOLE_ReListPlayers( void )
 //
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags )
 {
+	// [rc4l] Headless: no dialog was ever created, so there is nothing here to update. One
+	// guard per entry point rather than a check at every call site, because the callers are
+	// scattered through the server and none of them should have to know how it was started.
+	if ( g_hDlg == NULL )
+		return;
 	LVITEM		Item;
 	FString		message;
 	LONG		lIndex = -1;
@@ -2257,6 +2317,11 @@ void serverconsole_InsertTimestamp( char *pszBuffer )
 //
 void SERVERCONSOLE_Print( char *pszString )
 {
+	// [rc4l] Headless: no dialog was ever created, so there is nothing here to update. One
+	// guard per entry point rather than a check at every call site, because the callers are
+	// scattered through the server and none of them should have to know how it was started.
+	if ( g_hDlg == NULL )
+		return;
 	V_StripColors( pszString );
 	bool bAppendChatMessage = ( strstr( pszString, "Unknown command" ) == pszString );
 

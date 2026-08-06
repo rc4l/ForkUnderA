@@ -5,6 +5,7 @@
 #include "features/server-browser/computation/browserchrome_compute.h"
 
 using zx::BrowserPhase;
+using zx::ComputeHostParts;
 using zx::ComputeVisibleParts;
 
 namespace
@@ -175,4 +176,40 @@ TEST( BrowserChrome, TabsAndListAreNeverHiddenByADownload )
 			EXPECT_EQ( 0u, busy & ~idle & ~mayAdd )
 				<< "a download added something it has no business adding at phase " << p;
 		}
+}
+
+// ---------------------------------------------------------------- the hosting tab
+
+TEST( HostParts, ReplacesTheListRatherThanFilteringIt )
+{
+	// [rc4l] PUBLIC and PRIVATE are two views of one list; HOST is a different screen. Everything
+	// about a server you might join -- the rows, the detail panel, the count -- is meaningless on the
+	// screen where you are making one, so none of it is drawn.
+	const unsigned parts = ComputeHostParts( false );
+
+	EXPECT_TRUE( Shows( parts, zx::kPartHost ));
+	EXPECT_TRUE( Shows( parts, zx::kPartTabs ));
+
+	EXPECT_FALSE( Shows( parts, zx::kPartList ));
+	EXPECT_FALSE( Shows( parts, zx::kPartDetail ));
+	EXPECT_FALSE( Shows( parts, zx::kPartPlaceholder ));
+	EXPECT_FALSE( Shows( parts, zx::kPartFooter ));
+}
+
+TEST( HostParts, KeepsTheTabsSoThereIsAWayBack )
+{
+	// A screen with no way off it is a trap, and the tabs are the only route.
+	EXPECT_TRUE( Shows( ComputeHostParts( false ), zx::kPartTabs ));
+	EXPECT_TRUE( Shows( ComputeHostParts( true ), zx::kPartTabs ));
+}
+
+TEST( HostParts, ARunningTransferSurvivesTheChangeOfTab )
+{
+	// The download does not care which screen the player wandered onto, and the button that stops it
+	// lives in the detail panel. Taking that away would strand a transfer with no way to cancel it.
+	const unsigned parts = ComputeHostParts( true );
+
+	EXPECT_TRUE( Shows( parts, zx::kPartHost ));
+	EXPECT_TRUE( Shows( parts, zx::kPartFooter ));
+	EXPECT_TRUE( Shows( parts, zx::kPartDetail ));
 }

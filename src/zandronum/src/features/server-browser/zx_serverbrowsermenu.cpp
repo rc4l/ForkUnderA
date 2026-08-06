@@ -41,6 +41,7 @@
 #include "features/server-browser/computation/textinput_compute.h"
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
+#include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/colortext_compute.h"
@@ -140,6 +141,21 @@
 // should be drawn to.
 #define SB_WADBAR_W			2
 #define SB_WADBAR_X			( SB_DETAIL_RIGHT - SB_DETAIL_PAD - SB_WADBAR_W )
+
+// [rc4l] The hosting panel, which stands where the list and the detail panel would be. One column,
+// centred, because there are six fields and nothing to compare them against -- a two-column form
+// would only be filling space it was given.
+#define SB_HOST_LEFT		( SB_PANEL_LEFT + 40 )
+#define SB_HOST_RIGHT		( SB_PANEL_RIGHT - 40 )
+#define SB_HOST_TOP			( SB_TAB_SEP_Y + 14 )
+#define SB_HOST_PAD			16
+#define SB_HOST_LINE		11
+#define SB_HOST_ROW_H		15		// one field and the space under it
+#define SB_HOST_FIELD_H		16
+#define SB_HOST_LABEL_W		92		// label column; the field takes the rest
+#define SB_HOST_BTN_H		18
+#define SB_HOST_BTN_W		120
+#define SB_HOST_MAXLEN		40
 
 #define SB_FOOTER_Y			( SB_ROWS_BOTTOM + 20 )
 
@@ -271,6 +287,7 @@ enum class DialogAction
 	None,
 	CancelDownload,
 	JoinPassword,
+	StopHosting,
 };
 
 struct BrowserDialog
@@ -308,9 +325,68 @@ static	int				g_DialogHot = -1;
 
 // [rc4l] Which tab is showing. Public is the default because it is what nearly everyone wants nearly
 // all the time -- a private server is one you were told about, so you already know it is there.
-enum class BrowserTab { Public, Private };
+//
+// HOST is on this row rather than in a menu of its own because it is the same question continued:
+// the player is here to get into a game, and making one is what you do when none of the listed ones
+// is what you wanted. It is last because it is the least common answer.
+enum class BrowserTab { Public, Private, Host };
+const int kTabCount = 3;
 static	BrowserTab		g_Tab = BrowserTab::Public;
 static	int				g_TabHot = -1;
+
+
+// [rc4l] What the hosting form was left holding. Archived so a player who hosts the same game every
+// evening is not retyping it every evening; the password is deliberately absent, because one saved
+// in a config file anybody with the machine can read is a worse promise than no password at all.
+CVAR( String, cl_fua_hostname, "ZandroX Server", CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+CVAR( Int, cl_fua_hostport, 10666, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+CVAR( Int, cl_fua_hostmaxplayers, 8, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+CVAR( Bool, cl_fua_hostpublic, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+
+// [rc4l] THE HOSTING FORM. What the player is about to run, kept across visits to the tab.
+//
+// Fields rather than one blob of config because each one is a separate decision with a separate
+// failure: a name nobody can read, a port already taken, a password on a server meant to be open.
+// The values live here and the editing rules live in textinput_compute, the same split the search
+// box uses.
+enum HostField
+{
+	kHostFieldName,
+	kHostFieldPort,
+	kHostFieldMaxPlayers,
+	kHostFieldPassword,
+	kHostFieldCount,
+};
+
+static const char *const g_HostFieldLabels[kHostFieldCount] = {
+	"SERVER NAME", "PORT", "MAX PLAYERS", "PASSWORD",
+};
+
+static const char *const g_HostFieldTips[kHostFieldCount] = {
+	"What other players see in their browser",
+	"UDP port to listen on\nLeave it alone unless something else is using it",
+	"How many can be in at once",
+	"Leave empty for a server anyone can join",
+};
+
+static	zx::TextInput	g_HostFields[kHostFieldCount];
+static	int				g_HostFieldFocus = 0;
+static	int				g_HostFieldHot = -1;
+
+// Which control on the hosting panel has the keyboard. The fields come first, then the button, so
+// tabbing down the form and pressing enter is the whole flow.
+static	bool			g_HostOnButton = false;
+static	bool			g_HostButtonHot = false;
+
+// [rc4l] Whether to announce to the registry. Local hosting is the default: it always works, needs
+// nothing forwarded, and is what somebody playing with people in the same house wants. Global is a
+// deliberate second step -- see the reachability check.
+static	bool			g_HostAdvertise = false;
+static	bool			g_HostAdvertiseHot = false;
+
+// True once the form has been filled from the CVARs that remember it, so a visit to the tab does not
+// wipe what was typed on the last one.
+static	bool			g_HostFormLoaded = false;
 
 // [rc4l] Which region the arrow keys are addressing. Starts on the tabs: that is the top of the loop
 // and the only region that is occupiable before any server has answered.
@@ -382,8 +458,8 @@ static void serverbrowser_Tip( int x, int y, int w, int h, const char *text )
 }
 
 // [rc4l] Where each tab was left. Two entries, indexed by BrowserTab.
-static	int				g_TabScroll[2] = { 0, 0 };
-static	int				g_TabSelected[2] = { -1, -1 };
+static	int				g_TabScroll[kTabCount] = { 0, 0, 0 };
+static	int				g_TabSelected[kTabCount] = { -1, -1, -1 };
 
 // [rc4l] A message occupying the browser's own panel instead of a stock message box over the title
 // screen. Same panel, same dimensions, so being refused reads as part of the same screen rather than
@@ -928,8 +1004,11 @@ public:
 
 		// Per-tab memory is per-VISIT: the list is being requeried from nothing, so a position saved
 		// against the last set of servers describes rows that are not there yet.
-		g_TabScroll[0] = g_TabScroll[1] = 0;
-		g_TabSelected[0] = g_TabSelected[1] = -1;
+		for ( int i = 0; i < kTabCount; ++i )
+		{
+			g_TabScroll[i] = 0;
+			g_TabSelected[i] = -1;
+		}
 
 		BROWSER_ClearServerList( );
 		BROWSER_QueryServerRegistry( );
@@ -960,6 +1039,38 @@ public:
 
 		serverbrowser_RebuildList( );
 
+		// [rc4l] Our own server has finished coming up, so go and play on it. The player pressed
+		// START SERVER, and starting a server you are then left staring at is only half of what that
+		// button says -- the tooltip promises "start the server and join it".
+		//
+		// Taken as an EDGE rather than a state so this fires exactly once. Asking "is it ready" every
+		// tic would keep trying to connect to a server we are already on.
+		if ( zx::HostTakeReadyEdge( ))
+			JoinOwnServer( );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Connect to the server we just started.
+	//
+	// Straight to the address rather than through the browser's own join path: that one resolves WADs
+	// and may start downloads, and neither can apply here. Our server is running the files WE are
+	// running -- that is where its command line came from -- so there is by construction nothing to
+	// fetch and nothing to check.
+	void JoinOwnServer( )
+	{
+		const FString address = zx::HostConnectAddress( );
+		if ( address.IsEmpty( ))
+			return;
+
+		FString command;
+		command.Format( "connect %s", address.GetChars( ));
+		C_DoCommand( command.GetChars( ));
+
+		// [rc4l] And get out of the way. Joining a server the player asked for means they are done
+		// with the browser -- leaving it open over the game they just joined would make them dismiss
+		// a menu to reach the thing the menu just gave them.
+		M_ClearMenus( );
 	}
 
 	//*************************************************************************
@@ -986,6 +1097,11 @@ public:
 
 	unsigned VisibleParts( const zx::BrowserCounts &counts )
 	{
+		// The hosting tab is a different screen, not a filter, so it does not ask the phase at all --
+		// "still looking for servers" has no meaning on the page where you are making one.
+		if ( g_Tab == BrowserTab::Host )
+			return zx::ComputeHostParts( serverbrowser_DownloadRunning( ));
+
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 
 		return zx::ComputeVisibleParts( EffectivePhase( counts ),
@@ -1006,6 +1122,8 @@ public:
 
 		if ( parts & zx::kPartTabs )
 			DrawTabs( );
+		if ( parts & zx::kPartHost )
+			DrawHostPanel( );
 		if ( parts & zx::kPartList )
 			DrawRows( counts );
 		if ( parts & zx::kPartPlaceholder )
@@ -1419,6 +1537,11 @@ public:
 			zx::ReleaseJoinResume( !bAffirmative );
 			break;
 
+		case DialogAction::StopHosting:
+			if ( bAffirmative )
+				zx::HostStop( );
+			break;
+
 		case DialogAction::JoinPassword:
 			if ( bAffirmative )
 			{
@@ -1773,9 +1896,9 @@ public:
 	// [rc4l] The tab row: oval buttons where the title used to be, and the rule beneath them.
 	void DrawTabs( )
 	{
-		static const char *const labels[] = { "PUBLIC", "PRIVATE" };
+		static const char *const labels[] = { "PUBLIC", "PRIVATE", "HOST" };
 
-		for ( int i = 0; i < 2; ++i )
+		for ( int i = 0; i < kTabCount; ++i )
 		{
 			const int vLeft = SB_TAB_LEFT + i * ( SB_TAB_W + SB_TAB_GAP );
 			const int left = serverbrowser_ToScreenX( vLeft );
@@ -1823,9 +1946,12 @@ public:
 			if ( bSelected )
 				FocusAnchor( zx::BrowserFocus::Tabs, vLeft - 5, SB_TAB_TOP + SB_TAB_H / 2 );
 
-			serverbrowser_Tip( vLeft, SB_TAB_TOP, SB_TAB_W, SB_TAB_H, ( i == 0 )
-				? "Servers anyone can join"
-				: "These servers are password-protected" );
+			static const char *const tips[] = {
+				"Servers anyone can join",
+				"These servers are password-protected",
+				"Run a server on this machine\nOthers join it while you play",
+			};
+			serverbrowser_Tip( vLeft, SB_TAB_TOP, SB_TAB_W, SB_TAB_H, tips[i] );
 		}
 
 		DrawSearchBox( );
@@ -1840,6 +1966,580 @@ public:
 	// you type into should not look like one of them. Same rounded corners so it still belongs to the
 	// row, but the gradient runs the other way -- dark at the top -- which is how every toolkit has
 	// drawn a text field since Motif, and it costs nothing to borrow.
+	//*************************************************************************
+	//
+	// [rc4l] The hosting form. Same panel, same field, same button as everywhere else in the browser,
+	// because a screen that looked different would be teaching a second set of rules to somebody who
+	// has just learned the first.
+	//*************************************************************************
+	//
+	// [rc4l] Fill the form from what was used last time.
+	//
+	// Retyping a server name and a port on every visit is the kind of small friction that stops
+	// people hosting at all, and none of these values is a secret worth forgetting -- except the
+	// password, which is deliberately NOT remembered: a password saved in a config file that anyone
+	// with the machine can read is a worse promise than no password.
+	void LoadHostForm( )
+	{
+		if ( g_HostFormLoaded )
+			return;
+
+		g_HostFormLoaded = true;
+
+		// GetGenericRep rather than assigning the CVAR straight across: MSVC accepts the implicit
+		// conversion and GCC does not, so the direct form builds on one platform and fails on two.
+		FString name = cl_fua_hostname.GetGenericRep( CVAR_String ).String;
+		if ( name.IsEmpty( ))
+			name = "ZandroX Server";
+
+		g_HostFields[kHostFieldName] = zx::TextInput( name.GetChars( ), name.Len( ));
+
+		FString port;
+		port.Format( "%d", static_cast<int>( cl_fua_hostport ));
+		g_HostFields[kHostFieldPort] = zx::TextInput( port.GetChars( ), port.Len( ));
+
+		FString players;
+		players.Format( "%d", static_cast<int>( cl_fua_hostmaxplayers ));
+		g_HostFields[kHostFieldMaxPlayers] = zx::TextInput( players.GetChars( ), players.Len( ));
+
+		g_HostFields[kHostFieldPassword] = zx::ClearInput( );
+		g_HostAdvertise = ( cl_fua_hostpublic != 0 );
+	}
+
+	void SaveHostForm( )
+	{
+		cl_fua_hostname = g_HostFields[kHostFieldName].text.c_str( );
+		cl_fua_hostport = atoi( g_HostFields[kHostFieldPort].text.c_str( ));
+		cl_fua_hostmaxplayers = atoi( g_HostFields[kHostFieldMaxPlayers].text.c_str( ));
+		cl_fua_hostpublic = g_HostAdvertise ? 1 : 0;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Start the server the form describes, and go to it.
+	//
+	// The IWAD and the loaded PWADs are taken from what THIS client is running rather than asked for:
+	// a host who is already playing something has already answered that question, and a file picker
+	// here would be a second way to get it wrong. Whatever we are running is what our server runs, so
+	// the host can never fail to have the files for their own game.
+	void StartHosting( )
+	{
+		zx::HostConfig config;
+
+		config.hostName = g_HostFields[kHostFieldName].text;
+		config.password = g_HostFields[kHostFieldPassword].text;
+		config.port = atoi( g_HostFields[kHostFieldPort].text.c_str( ));
+		config.maxPlayers = atoi( g_HostFields[kHostFieldMaxPlayers].text.c_str( ));
+		config.advertise = g_HostAdvertise;
+		config.serveWads = true;
+		config.map = "map01";
+
+		if ( config.maxPlayers < 2 )
+			config.maxPlayers = 2;
+		if ( config.maxPlayers > MAXPLAYERS )
+			config.maxPlayers = MAXPLAYERS;
+
+		// What we are playing is what we will serve. FWadCollection knows the files by the names they
+		// were loaded under, which is exactly the form a command line wants.
+		config.iwad = ExtractFileBase( Wads.GetWadFullName( 1 ), true ).GetChars( );
+
+		for ( int i = 2; i < Wads.GetNumWads( ); ++i )
+		{
+			const char *pszName = Wads.GetWadName( i );
+			if (( pszName == NULL ) || ( pszName[0] == 0 ))
+				continue;
+
+			// zandronum.pk3 and friends come with the engine; the server loads its own copies.
+			if ( stricmp( pszName, "zandronum.pk3" ) == 0 )
+				continue;
+			if ( stricmp( pszName, "skulltag_actors.pk3" ) == 0 )
+				continue;
+
+			config.pwads.push_back( pszName );
+		}
+
+		SaveHostForm( );
+
+		if ( zx::HostStart( config ) == false )
+		{
+			// HostStart has already put the reason in the lifecycle; the panel draws it. Nothing to
+			// announce here that the screen is not about to say better.
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+			return;
+		}
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+	}
+
+	// [rc4l] How many people other than us are on the server we are connected to.
+	//
+	// Counted from OUR OWN player table rather than asked of the server, because we are a client of
+	// it and the table is what the server has already told us. Asking would mean a round trip, and a
+	// question about whether to disconnect cannot wait on the connection it is about.
+	int CountOtherPlayersHere( )
+	{
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			return 0;
+
+		int count = 0;
+		for ( int i = 0; i < MAXPLAYERS; ++i )
+		{
+			if ( playeringame[i] && ( i != consoleplayer ))
+				++count;
+		}
+
+		return count;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Whatever the button under the pointer means right now.
+	void PressHostButton( )
+	{
+		const zx::HostState state = zx::HostCurrentState( );
+
+		if ( state == zx::HostState::Failed )
+		{
+			// BACK: clear the failure so the form returns, with what was typed still in it.
+			zx::HostForget( );
+			g_HostOnButton = false;
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/backup", snd_menuvolume, ATTN_NONE );
+			return;
+		}
+
+		if ( zx::HostIsActive( ))
+		{
+			// [rc4l] Ask, because the cost is not ours. Stopping a server with people on it ends
+			// THEIR game, and the host is the one person on the machine who cannot see how many that
+			// is by looking at their own screen. A count in the question is the whole difference
+			// between an informed decision and a stray click.
+			//
+			// Asked only when it would actually cost somebody something: an empty server is one
+			// nobody is playing on, and a confirmation for that is a dialog that trains people to
+			// dismiss dialogs.
+			const int others = CountOtherPlayersHere( );
+			if ( others > 0 )
+			{
+				FString message;
+				message.Format( "%d %s playing on it. Stopping ends their game as well as yours.",
+					others, ( others == 1 ) ? "person is" : "people are" );
+
+				ShowDialog( DialogAction::StopHosting, "Stop the server?", message.GetChars( ),
+					"STOP IT", 's', "KEEP IT UP", 'k' );
+				return;
+			}
+
+			zx::HostStop( );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/backup", snd_menuvolume, ATTN_NONE );
+			return;
+		}
+
+		StartHosting( );
+	}
+
+	// Down the form, then onto the button, and no further. The button is the end because it is the
+	// thing the form exists to reach.
+	void MoveHostFocus( int step )
+	{
+		if ( g_HostOnButton )
+		{
+			if ( step < 0 )
+			{
+				g_HostOnButton = false;
+				g_HostFieldFocus = kHostFieldCount - 1;
+			}
+			return;
+		}
+
+		const int next = g_HostFieldFocus + step;
+
+		if ( next < 0 )
+		{
+			// Off the top of the form is the tabs -- the way back to the list.
+			SetFocus( zx::BrowserFocus::Tabs );
+			return;
+		}
+
+		if ( next >= kHostFieldCount )
+		{
+			g_HostOnButton = true;
+			return;
+		}
+
+		g_HostFieldFocus = next;
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The hosting panel's share of a click. Returns true when it took it.
+	//
+	// Hover moves the keyboard focus with the pointer, the same as everywhere else in the browser --
+	// so picking a field up with the mouse and then reaching for the arrows carries on from what you
+	// are looking at rather than from wherever the keyboard was left.
+	bool HostMouseEvent( int type, int x, int y )
+	{
+		g_HostFieldHot = -1;
+		g_HostButtonHot = false;
+		g_HostAdvertiseHot = false;
+
+		const zx::HostState state = zx::HostCurrentState( );
+		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
+
+		// The button, wherever it is: the form's START sits under the fields, and the running panel's
+		// STOP sits at the bottom of the panel.
+		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
+		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
+		const int btnY = bForm ? HostFormButtonY( ) : ( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
+
+		if (( x >= serverbrowser_ToScreenX( btnX )) &&
+			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
+			( y >= serverbrowser_ToScreenY( btnY )) &&
+			( y < serverbrowser_ToScreenY( btnY + SB_HOST_BTN_H )))
+		{
+			g_HostButtonHot = true;
+
+			if ( type == MOUSE_Release )
+			{
+				SetFocus( zx::BrowserFocus::Host );
+				g_HostOnButton = true;
+				PressHostButton( );
+			}
+			return true;
+		}
+
+		if ( bForm == false )
+			return false;
+
+		// The fields.
+		int fieldY = HostFirstFieldY( );
+		for ( int i = 0; i < kHostFieldCount; ++i )
+		{
+			const int rowTop = serverbrowser_ToScreenY( fieldY );
+			const int rowBottom = serverbrowser_ToScreenY( fieldY + SB_HOST_FIELD_H );
+
+			if (( y >= rowTop ) && ( y < rowBottom ) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+			{
+				g_HostFieldHot = i;
+
+				if ( type == MOUSE_Click )
+				{
+					SetFocus( zx::BrowserFocus::Host );
+					g_HostOnButton = false;
+					g_HostFieldFocus = i;
+
+					// The caret goes to the end rather than under the pointer. These fields are short
+					// and mostly retyped wholesale; hit-testing a character position would be machinery
+					// earning nothing here, and the search box is where that already exists.
+					g_HostFields[i] = zx::CaretEnd( g_HostFields[i], false );
+				}
+				return true;
+			}
+
+			fieldY += SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
+		}
+
+		// The visibility toggle, which is one line rather than a field.
+		const int visY = HostVisibilityY( );
+		if (( y >= serverbrowser_ToScreenY( visY - 2 )) &&
+			( y < serverbrowser_ToScreenY( visY + SB_HOST_LINE + 2 )) &&
+			( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+		{
+			g_HostAdvertiseHot = true;
+
+			if ( type == MOUSE_Release )
+			{
+				g_HostAdvertise = !g_HostAdvertise;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+			return true;
+		}
+
+		return false;
+	}
+
+	// [rc4l] Where the form's rows land. Worked out once and read by both the drawing and the hit
+	// test, because a field that is somewhere other than where it is clickable is the bug that this
+	// browser already avoids everywhere else by sharing its geometry.
+	int HostFirstFieldY( )
+	{
+		return SB_HOST_TOP + SB_HOST_PAD + SB_HOST_LINE + 8;
+	}
+
+	int HostVisibilityY( )
+	{
+		return HostFirstFieldY( ) + kHostFieldCount * ( SB_HOST_ROW_H + SB_HOST_FIELD_H - 4 ) + 4;
+	}
+
+	int HostFormButtonY( )
+	{
+		return HostVisibilityY( ) + SB_HOST_LINE + 10;
+	}
+
+	void DrawHostPanel( )
+	{
+		const zx::HostState state = zx::HostCurrentState( );
+		const bool bLive = zx::HostIsActive( );
+
+		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
+		const int h = SB_DETAIL_BOTTOM - SB_HOST_TOP;
+
+		const zx::PanelColor topCol = { 22, 24, 34, 235 };
+		const zx::PanelColor botCol = { 10, 11, 17, 245 };
+		DrawRoundedPanel( SB_HOST_LEFT, SB_HOST_TOP, w, h, topCol, botCol, 8 );
+
+		const int x = SB_HOST_LEFT + SB_HOST_PAD;
+
+		// The heading says what the screen does, not what it is called. "HOST" is already on the tab.
+		screen->DrawText( SmallFont, CR_WHITE, x, SB_HOST_TOP + SB_HOST_PAD,
+			"RUN A SERVER ON THIS MACHINE",
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+		// While something of ours is running, the form is not the point any more -- what it is doing is.
+		if ( bLive || ( state == zx::HostState::Failed ))
+		{
+			DrawHostStatus( x, HostFirstFieldY( ), state );
+			return;
+		}
+
+		// [rc4l] Every row's position comes from the same three helpers the hit test uses. A field
+		// drawn somewhere other than where it is clickable is the one bug this browser has avoided
+		// everywhere else by never letting those two work it out separately.
+		int y = HostFirstFieldY( );
+		for ( int i = 0; i < kHostFieldCount; ++i )
+		{
+			DrawHostField( i, x, y );
+			y += SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
+		}
+
+		DrawHostVisibility( x, HostVisibilityY( ));
+
+		const int btnY = HostFormButtonY( );
+		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
+		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, "START SERVER",
+			g_HostOnButton || g_HostButtonHot );
+
+		if ( g_HostOnButton && ( g_Focus == zx::BrowserFocus::Host ))
+			FocusAnchor( zx::BrowserFocus::Host, btnX - 5, btnY + SB_HOST_BTN_H / 2 );
+
+		serverbrowser_Tip( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
+			"Start the server and join it\nIt closes when you leave" );
+	}
+
+	// One labelled field. The label sits to the left rather than above so six of them fit without the
+	// form scrolling, which would put the START button somewhere the player has to go looking for it.
+	void DrawHostField( int index, int x, int y )
+	{
+		const int fieldX = x + SB_HOST_LABEL_W;
+		const int fieldW = SB_HOST_RIGHT - SB_HOST_PAD - fieldX;
+
+		const bool bFocused = ( !g_HostOnButton ) && ( g_HostFieldFocus == index )
+			&& ( g_Focus == zx::BrowserFocus::Host );
+
+		screen->DrawText( SmallFont, bFocused ? CR_GOLD : CR_DARKGRAY, x,
+			y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1, g_HostFieldLabels[index],
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+		const int base = bFocused ? 30 : (( g_HostFieldHot == index ) ? 22 : 16 );
+		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+			static_cast<BYTE>( base + 10 ), 225 };
+		const zx::PanelColor botCol = { static_cast<BYTE>( base + 18 ), static_cast<BYTE>( base + 18 ),
+			static_cast<BYTE>( base + 30 ), 210 };
+		DrawRoundedPanel( fieldX, y, fieldW, SB_HOST_FIELD_H, topCol, botCol, 5 );
+
+		if ( bFocused )
+			FocusAnchor( zx::BrowserFocus::Host, x - 5, y + SB_HOST_FIELD_H / 2 );
+
+		serverbrowser_Tip( x, y, SB_HOST_RIGHT - SB_HOST_PAD - x, SB_HOST_FIELD_H,
+			g_HostFieldTips[index] );
+
+		// A password is masked here for the same reason it is masked when joining: it is the one
+		// string on this screen that must not be legible over a shoulder.
+		FString shown;
+		if ( index == kHostFieldPassword )
+		{
+			for ( size_t i = 0; i < g_HostFields[index].text.size( ); ++i )
+				shown += "*";
+		}
+		else
+			shown = g_HostFields[index].text.c_str( );
+
+		const int textY = y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1;
+		screen->DrawText( SmallFont, CR_WHITE, fieldX + 5, textY, shown,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+		if ( bFocused && (( DMenu::MenuTime / 16 ) % 2 == 0 ))
+		{
+			const FString upTo = FString( shown.GetChars( )).Left(
+				static_cast<long>( g_HostFields[index].caret ));
+			const int caretX = fieldX + 5 + SmallFont->StringWidth( upTo );
+			const int cx = serverbrowser_ToScreenX( caretX );
+			const int cw = MAX( 1, serverbrowser_ToScreenX( caretX + 1 ) - cx );
+			const int cy = serverbrowser_ToScreenY( textY );
+			const int ch = serverbrowser_ToScreenY( textY + SmallFont->GetHeight( )) - cy;
+			screen->Dim( PalEntry( 235, 235, 245 ), 0.85f, cx, cy, cw, ch );
+		}
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Local or global, as a choice the player makes rather than one we make for them.
+	//
+	// Local is the default and always works. Global depends on a port being forwarded, which we cannot
+	// know from in here -- so it is offered, attempted, and then reported honestly rather than being
+	// predicted.
+	void DrawHostVisibility( int x, int y )
+	{
+		screen->DrawText( SmallFont, CR_DARKGRAY, x, y, "VISIBILITY",
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+		const int boxX = x + SB_HOST_LABEL_W;
+		const char *const text = g_HostAdvertise
+			? "Anyone on the internet"
+			: "This network only";
+
+		screen->DrawText( SmallFont, g_HostAdvertiseHot ? CR_WHITE : CR_GRAY, boxX, y, text,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+		serverbrowser_Tip( x, y - 2, SB_HOST_RIGHT - SB_HOST_PAD - x, SB_HOST_LINE + 4,
+			g_HostAdvertise
+				? "Listed publicly\nNeeds the port forwarded on your router"
+				: "Not listed anywhere\nPlayers on your network find it automatically" );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] What our server is doing, once there is one. Replaces the form rather than sitting under
+	// it: while a server is running, the fields describe something that has already happened.
+	void DrawHostStatus( int x, int y, zx::HostState state )
+	{
+		screen->DrawText( SmallFont, CR_GOLD, x, y, zx::HostStateSummary( state ),
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		y += SB_HOST_LINE + 6;
+
+		const int wrapW = SB_HOST_RIGHT - SB_HOST_PAD - x;
+
+		if ( state == zx::HostState::Failed )
+		{
+			y = DrawWrappedIn( zx::HostReason( ), x, y, wrapW, CR_WHITE );
+		}
+		else
+		{
+			FString line;
+			line.Format( "%s on %s", g_HostFields[kHostFieldName].text.c_str( ),
+				zx::HostConnectAddress( ).GetChars( ));
+			y = DrawWrappedIn( line, x, y, wrapW, CR_WHITE );
+
+			if ( state == zx::HostState::Running )
+			{
+				y += 6;
+				y = DrawHostReach( x, y, wrapW );
+
+				y += 4;
+				y = DrawWrappedIn( "You are the administrator of this server. Use the console -- "
+					"rcon <command> -- to run anything on it.", x, y, wrapW, CR_DARKGRAY );
+			}
+		}
+
+		y += 10;
+
+		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
+		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
+		const int btnY = SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H;
+
+		const char *const label = ( state == zx::HostState::Failed ) ? "BACK" : "STOP SERVER";
+		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, label,
+			g_HostOnButton || g_HostButtonHot );
+
+		if ( g_Focus == zx::BrowserFocus::Host )
+			FocusAnchor( zx::BrowserFocus::Host, btnX - 5, btnY + SB_HOST_BTN_H / 2 );
+
+		serverbrowser_Tip( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
+			( state == zx::HostState::Failed )
+				? "Go back to the form"
+				: "Shut the server down\nAnyone playing on it is disconnected" );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Whether the outside world can reach this server -- reported, never predicted.
+	//
+	// The three states are what we actually know, and no more. WAITING is honest about the fact that
+	// nothing has happened yet; REACHABLE is only ever said because a stranger already reached us;
+	// and the failure says "we did not hear back" rather than "your port is closed", because a
+	// registry that was briefly down looks identical from in here and blaming the player's router for
+	// it would send them to configure something that was never wrong.
+	int DrawHostReach( int x, int y, int width )
+	{
+		switch ( zx::HostReachability( ))
+		{
+		case zx::HostReach::NotPublic:
+			return DrawWrappedIn( "Visible on this network only. Players elsewhere cannot see it.",
+				x, y, width, CR_DARKGRAY );
+
+		case zx::HostReach::Waiting:
+			return DrawWrappedIn( "Listed publicly -- checking whether the internet can reach it.",
+				x, y, width, CR_GOLD );
+
+		case zx::HostReach::Reachable:
+			return DrawWrappedIn( "The internet can reach this server. Anyone can join it.",
+				x, y, width, CR_GREEN );
+
+		case zx::HostReach::Unreachable:
+			y = DrawWrappedIn( "Nothing has reached this server from outside.",
+				x, y, width, CR_ORANGE );
+			return DrawWrappedIn( "It is still working for players on this network. To open it to "
+				"everyone, forward this port on your router.", x, y, width, CR_DARKGRAY );
+		}
+
+		return y;
+	}
+
+	// Wrapped text inside an arbitrary width, returning the y below it. DrawWrapped is fixed to the
+	// detail panel's column; this one takes the width because the hosting panel is a different shape.
+	int DrawWrappedIn( const FString &text, int x, int y, int width, EColorRange colour )
+	{
+		FString line;
+		long start = 0;
+
+		while ( start <= static_cast<long>( text.Len( )))
+		{
+			long space = text.IndexOf( " ", start );
+			const bool last = ( space < 0 );
+			if ( last )
+				space = static_cast<long>( text.Len( ));
+
+			const FString word = text.Mid( start, space - start );
+			const FString candidate = line.IsEmpty( ) ? word : ( line + " " + word );
+
+			if ( line.IsNotEmpty( ) && ( SmallFont->StringWidth( candidate ) > width ))
+			{
+				screen->DrawText( SmallFont, colour, x, y, line,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				y += SB_HOST_LINE;
+				line = word;
+			}
+			else
+				line = candidate;
+
+			if ( last )
+				break;
+			start = space + 1;
+		}
+
+		if ( line.IsNotEmpty( ))
+		{
+			screen->DrawText( SmallFont, colour, x, y, line,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			y += SB_HOST_LINE;
+		}
+
+		return y;
+	}
+
 	void DrawSearchBox( )
 	{
 		const int left = serverbrowser_ToScreenX( SB_SEARCH_LEFT );
@@ -2018,6 +2718,15 @@ public:
 		g_TabSelected[leaving] = g_Selected;
 
 		g_Tab = tab;
+
+		// Arriving at the hosting tab: fill the form from what was used last time, and put the
+		// keyboard on its first field rather than on a list that is not there.
+		if ( tab == BrowserTab::Host )
+		{
+			LoadHostForm( );
+			g_HostOnButton = false;
+			g_HostFieldFocus = 0;
+		}
 
 		const int entering = static_cast<int>( tab );
 		g_ScrollFirst = g_TabScroll[entering];
@@ -2730,7 +3439,7 @@ public:
 		if ( parts & zx::kPartTabs )
 		{
 			g_TabHot = -1;
-			for ( int i = 0; i < 2; ++i )
+			for ( int i = 0; i < kTabCount; ++i )
 			{
 				const int vLeft = SB_TAB_LEFT + i * ( SB_TAB_W + SB_TAB_GAP );
 				if (( x < serverbrowser_ToScreenX( vLeft )) ||
@@ -2752,6 +3461,14 @@ public:
 				}
 				return true;
 			}
+		}
+
+		// The hosting panel, which stands where the list and the detail panel would be. Checked before
+		// them so a click cannot be claimed twice.
+		if ( parts & zx::kPartHost )
+		{
+			if ( HostMouseEvent( type, x, y ))
+				return true;
 		}
 
 		// The action button, before the row hit test -- it lives inside the detail panel, which the
@@ -2997,6 +3714,16 @@ public:
 		// letter while you are typing a query, not an answer to a question that is not on screen, and
 		// a printable key must never also be a menu shortcut. Only characters and the editing keys are
 		// claimed -- the arrows still navigate, which is what moves focus back OUT of the box.
+		// [rc4l] Same rule for the hosting form: a focused field owns the keyboard, so a server name
+		// containing the letter 'p' does not also press something. Only when a FIELD has focus -- on
+		// the button the keys belong to the menu again, which is what makes enter work there.
+		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
+			( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false ))
+		{
+			if ( EditHostField( ev ))
+				return true;
+		}
+
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
 			( g_Focus == zx::BrowserFocus::Search ))
 		{
@@ -3081,7 +3808,82 @@ public:
 	// framework already does.
 	bool TranslateKeyboardEvents( )
 	{
-		return ( g_Focus != zx::BrowserFocus::Search ) || g_Dialog.open || g_Notice.IsNotEmpty( );
+		// A focused text field -- the search box, or any field on the hosting form -- needs the raw
+		// events. On the form's BUTTON it does not: there the keys are navigation again.
+		const bool bInAField = ( g_Focus == zx::BrowserFocus::Search )
+			|| (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false ));
+
+		return ( bInAField == false ) || g_Dialog.open || g_Notice.IsNotEmpty( );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Editing one field of the hosting form.
+	//
+	// A narrower version of EditSearchField: these fields are short, retyped wholesale, and have no
+	// selection to drag, so they answer typing, backspace, delete, home and end and nothing else.
+	// Everything they do NOT claim -- the arrows above all -- goes back to the navigation that walks
+	// the form, which is what keeps the whole thing steerable from the keyboard.
+	bool EditHostField( event_t *ev )
+	{
+		if (( g_HostFieldFocus < 0 ) || ( g_HostFieldFocus >= kHostFieldCount ))
+			return false;
+
+		zx::TextInput &field = g_HostFields[g_HostFieldFocus];
+		const bool bCtrl = (( ev->data3 & ( GKM_CTRL | GKM_META )) != 0 );
+
+		if ( ev->subtype == EV_GUI_Char )
+		{
+			if ( bCtrl )
+				return true;
+
+			// The numeric fields refuse anything that is not a digit rather than accepting it and
+			// failing later: a port with a letter in it is not a port, and finding that out when the
+			// server does not start is finding out too late.
+			if (( g_HostFieldFocus == kHostFieldPort ) || ( g_HostFieldFocus == kHostFieldMaxPlayers ))
+			{
+				if (( ev->data1 < '0' ) || ( ev->data1 > '9' ))
+					return true;
+			}
+
+			field = zx::InsertChar( field, ev->data1, SB_HOST_MAXLEN );
+			return true;
+		}
+
+		if ( ev->subtype != EV_GUI_KeyDown )
+			return false;
+
+		if ( bCtrl && (( ev->data1 == 'a' ) || ( ev->data1 == 'A' )))
+		{
+			field = zx::SelectAll( field );
+			return true;
+		}
+
+		switch ( ev->data1 )
+		{
+		// Backspace arrives as a character, not a named key -- see EditSearchField for the whole
+		// story. Watching for GK_BACKSPACE here would silently do nothing.
+		case '':
+			field = zx::Backspace( field );
+			return true;
+
+		case GK_DEL:
+			field = zx::DeleteForward( field );
+			return true;
+
+		case GK_HOME:
+			field = zx::CaretHome( field, false );
+			return true;
+
+		case GK_END:
+			field = zx::CaretEnd( field, false );
+			return true;
+
+		default:
+			break;
+		}
+
+		return false;
 	}
 
 	//*************************************************************************
@@ -3294,8 +4096,20 @@ public:
 		if (( VisibleParts( serverbrowser_CountStates( )) & zx::kPartTabs ) == 0 )
 			return true;
 
+		// [rc4l] The hosting form owns its own arrows, and walks its own fields -- only this side
+		// knows how many there are. Up off the top of it is the one edge that leaves, back to the
+		// tabs; left and right belong to the caret, exactly as in the search box.
+		if ( g_Focus == zx::BrowserFocus::Host )
+		{
+			if ( key == zx::NavKey::Up )
+				MoveHostFocus( -1 );
+			else if ( key == zx::NavKey::Down )
+				MoveHostFocus( 1 );
+			return true;
+		}
+
 		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, total > 0,
-			g_Tab == BrowserTab::Private );
+			g_Tab == BrowserTab::Host );
 		const zx::BrowserFocus was = g_Focus;
 		SetFocus( nav.focus );
 
@@ -3303,7 +4117,20 @@ public:
 		{
 			// A step along the row, not a flip: ComputeNav has already refused to step off either end,
 			// so a non-zero step always has somewhere to land.
-			SelectTab(( nav.tabStep > 0 ) ? BrowserTab::Private : BrowserTab::Public );
+			const int next = static_cast<int>( g_Tab ) + nav.tabStep;
+			if (( next >= 0 ) && ( next < kTabCount ))
+				SelectTab( static_cast<BrowserTab>( next ));
+			return true;
+		}
+
+		// Down from the tabs onto the hosting form lands in it rather than in a list that is not
+		// there. ComputeNav answers for the list because it does not know which tab is showing.
+		if (( g_Tab == BrowserTab::Host ) && ( was == zx::BrowserFocus::Tabs )
+			&& ( key == zx::NavKey::Down ))
+		{
+			SetFocus( zx::BrowserFocus::Host );
+			g_HostOnButton = false;
+			g_HostFieldFocus = 0;
 			return true;
 		}
 
@@ -3399,6 +4226,19 @@ public:
 		// [rc4l] Enter acts on whatever has focus. On the tabs that is the tab -- which is already
 		// selected, so it is the way into the list without reaching for Down.
 		case MKEY_Enter:
+			// [rc4l] On the hosting form, enter presses whatever the form is offering: from a field
+			// it walks on, from the button it starts the server. Enter in a field meaning "start"
+			// would fire the moment somebody finished typing a name, which is not what finishing
+			// typing a name means.
+			if ( g_Focus == zx::BrowserFocus::Host )
+			{
+				if ( g_HostOnButton )
+					PressHostButton( );
+				else
+					MoveHostFocus( 1 );
+				return true;
+			}
+
 			if (( g_Focus == zx::BrowserFocus::Tabs ) || ( g_Focus == zx::BrowserFocus::Search ))
 			{
 				if ( total > 0 )
