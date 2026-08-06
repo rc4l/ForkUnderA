@@ -144,6 +144,7 @@ static	LONG	browser_GetNewListID( void );
 static	LONG	browser_GetListIDByAddress( NETADDRESS_s Address );
 static	void	browser_QueryServer( ULONG ulServer );
 static	ULONG	browser_CountryIndexFromCode( const char *pszCode );
+static	void	browser_ResolveServerRegistries( void );
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -698,6 +699,23 @@ const char *BROWSER_GetGameModeShortName( ULONG ulServer )
 }
 
 //*****************************************************************************
+//*****************************************************************************
+//
+// [rc4l] See browser.h. The list is resolved when the browser opens, so this is usually already
+// populated; a probe asked for before any refresh simply gets false and reports that it could not
+// reach us rather than guessing.
+bool BROWSER_GetServerRegistryAddress( NETADDRESS_s &out )
+{
+	if ( g_ServerRegistryAddresses.Size( ) == 0 )
+		browser_ResolveServerRegistries( );
+
+	if ( g_ServerRegistryAddresses.Size( ) == 0 )
+		return false;
+
+	out = g_ServerRegistryAddresses[0];
+	return true;
+}
+
 //*****************************************************************************
 //
 // [rc4l] See browser.h. Marks every listed server for a re-check while leaving it on the list.

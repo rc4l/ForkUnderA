@@ -92,6 +92,11 @@ enum
 	SRSC_ENDSERVERLISTPART,
 	SRSC_SERVERBLOCK,
 
+	// [rc4l] The cookie leg of a reachability test, answered to a launcher rather than to a server --
+	// which is why it lives here and not with SERVERREGISTRY_*, whose commands are read as bytes by
+	// servers. This one is read as a long by the client, on the socket that asked.
+	SRSC_REACHCOOKIE,
+
 };
 
 //*****************************************************************************
@@ -164,13 +169,12 @@ enum
 	// [BB] Server registry is sending a part of its banlist to a server.
 	SERVERREGISTRY_BANLISTPART,
 
-	// [rc4l] The cookie leg of a reachability test: sent back to the SOURCE of the request, down the
-	// path that request just opened. Needs no port forwarding, which is the point -- it proves the
-	// address is real without presupposing the thing being measured.
-	SERVERREGISTRY_REACHCOOKIE,
-
 	// [rc4l] The probe itself: sent UNSOLICITED to the source address on the port it named, carrying
 	// the client's own nonce. Arriving at all is the answer.
+	//
+	// A byte, like its neighbours here, because it lands on a bare socket the client opened for this
+	// and nothing else -- there is no launcher framing around it to match. (The cookie leg answers a
+	// launcher instead, so it lives in the SRSC_ enum and is read as a long.)
 	SERVERREGISTRY_REACHPROBE,
 };
 

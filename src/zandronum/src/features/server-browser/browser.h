@@ -259,6 +259,14 @@ const char		*BROWSER_GetPlayerName( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerFragcount( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerPing( ULONG ulServer, ULONG ulPlayer );
 LONG			BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer );
+// [rc4l] One resolved server registry to talk to, or false when none could be resolved.
+//
+// Exposed for the reachability probe, which needs somewhere to ask "can you reach me?" and has no
+// business re-resolving a list the browser has already built. First entry rather than all of them:
+// one answer is the answer, and asking several would only mean several strangers sending unsolicited
+// packets at a port we opened for two seconds.
+bool			BROWSER_GetServerRegistryAddress( NETADDRESS_s &out );
+
 // [rc4l] Re-check every server already on the list, WITHOUT emptying it.
 //
 // Opening the browser used to clear the list and query from nothing, so the player watched a spinner
