@@ -3223,6 +3223,13 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 	// [BC] Mark this item as having moved.
 	if ( mo->z != oldz )
 		mo->STFlags |= STFL_POSITIONCHANGED;
+	// [rc4l] uzdoom@93c12cf25 -- Hexen compatibility handling for floatbobbing. Only for an item the
+	// map actually placed above ground (special1 > 0), so ordinary items are unaffected.
+	if (mo->special1 > 0 && (mo->flags2 & MF2_FLOATBOB) && (ib_compatflags & BCOMPATF_FLOATBOB))
+	{
+		mo->z = mo->floorz + fixed_t::FromRaw(mo->special1);
+	}
+
 //
 // adjust height
 //
@@ -3659,8 +3666,8 @@ void P_NightmareRespawn (AActor *mobj)
 		z = ONCEILINGZ;
 	else if (info->flags2 & MF2_SPAWNFLOAT)
 		z = FLOATRANDZ;
-	else if (info->flags2 & MF2_FLOATBOB)
-		z = mobj->SpawnPoint[2];
+	// [rc4l] uzdoom@93c12cf25 -- floatbob items are ordinary ONFLOORZ spawns now; the Hexen height is
+	// handled by the compat path in P_ZMovement instead.
 	else
 		z = ONFLOORZ;
 
@@ -6553,7 +6560,17 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	mobj = AActor::StaticSpawn (i, x, y, z, NO_REPLACE, true);
 
 	if (z == ONFLOORZ)
+	{
 		mobj->z += mthing->z;
+		// [rc4l] uzdoom@93c12cf25 -- remember the map-given height so the Hexen compat path in
+		// P_ZMovement can hold the item there instead of letting it settle to the floor.
+		if ((mobj->flags2 & MF2_FLOATBOB) && (ib_compatflags & BCOMPATF_FLOATBOB))
+		{
+			// [rc4l] special1 is a plain int and mthing->z is our strong fixed_t; upstream converted
+			// implicitly. The value is a raw 16.16 height, compared against floorz the same way below.
+			mobj->special1 = mthing->z.Raw();
+		}
+	}
 	else if (z == ONCEILINGZ)
 		mobj->z -= mthing->z;
 
@@ -6566,7 +6583,11 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	else if (mthing->gravity > 0) mobj->gravity = FixedMul(mobj->gravity, mthing->gravity);
 	else mobj->flags &= ~MF_NOGRAVITY;
 
-	P_FindFloorCeiling(mobj, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT);
+	// [rc4l] uzdoom@93c12cf25 -- for Hexen floatbob compatibility we do not want to alter floorz.
+	if (mobj->special1 == 0 || !(mobj->flags2 & MF2_FLOATBOB) || !(ib_compatflags & BCOMPATF_FLOATBOB))
+	{
+		P_FindFloorCeiling(mobj, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT);
+	}
 
 	if (!(mobj->flags2 & MF2_ARGSDEFINED))
 	{
