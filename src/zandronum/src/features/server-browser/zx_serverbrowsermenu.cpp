@@ -34,6 +34,7 @@
 #include "features/server-browser/browser.h"
 #include "i_input.h"		// [rc4l] I_PutInClipboard / I_GetFromClipboard, for the search box
 #include "features/server-browser/computation/browserchrome_compute.h"
+#include "features/server-browser/computation/glowtravel_compute.h"
 #include "features/server-browser/computation/serversearch_compute.h"
 #include "features/server-browser/computation/textinput_compute.h"
 #include "features/server-browser/computation/tooltip_compute.h"
@@ -220,6 +221,18 @@ static	bool			g_DraggingScrollbar = false;
 // Scrolling does not set it: scrolling moves the view and leaves the selection alone, which is the
 // whole point of them being separate.
 static	bool			g_RevealSelection = false;
+
+// [rc4l] Where the focus glow goes this frame, in virtual coordinates. Set by whichever component
+// owns the focus as it draws itself; see FocusAnchor.
+static	int				g_FocusGlowX = 0;
+static	int				g_FocusGlowY = 0;
+static	bool			g_FocusGlowValid = false;
+
+// Where the glow actually IS, as opposed to where it belongs. It travels between the two -- see
+// computation/glowtravel_compute.h for why a marker that teleports has to be found again after every
+// keypress, and one that slides is simply followed.
+static	zx::GlowPos		g_GlowAt;
+static	bool			g_GlowPlaced = false;
 
 // [rc4l] Showing "cancel this download?". Drawn and answered by this menu rather than through
 // M_StartMessage, so the browser keeps control of the pairing: the hold placed on the join resume
@@ -826,6 +839,7 @@ public:
 		// mouse has been touched. Forgotten until it moves again.
 		g_TipPointerValid = false;
 		g_Tips.Clear( );
+		g_GlowPlaced = false;
 
 		// Per-tab memory is per-VISIT: the list is being requeried from nothing, so a position saved
 		// against the last set of servers describes rows that are not there yet.
@@ -900,6 +914,7 @@ public:
 
 		// Every frame, before anything is drawn. Nothing survives from the last one.
 		g_Tips.Clear( );
+		g_FocusGlowValid = false;
 
 		DrawPanel( );
 
@@ -920,7 +935,37 @@ public:
 		else if ( g_ConfirmCancel )
 			DrawCancelConfirm( );
 		else
-			DrawTooltip( );		// never over a question -- that is the thing being answered
+		{
+			// Over the browser but under a question, because a question is the thing being answered
+			// and the glow would be pointing at a control the player cannot reach until they have.
+			if ( g_FocusGlowValid )
+			{
+				const zx::GlowPos want( g_FocusGlowX, g_FocusGlowY );
+
+				// The FIRST placement snaps. There is nowhere for it to have travelled from, and
+				// sliding in from a stale position left over from the last visit would be a lie about
+				// where the focus had been.
+				if ( !g_GlowPlaced )
+				{
+					g_GlowAt = want;
+					g_GlowPlaced = true;
+				}
+				else
+				{
+					// A third of the remaining distance per tic: away briskly, settling gently.
+					g_GlowAt = zx::AdvanceGlow( g_GlowAt, want, 1, 3 );
+				}
+
+				DrawFocusGlow( g_GlowAt.x, g_GlowAt.y );
+			}
+			else
+			{
+				// Nothing has focus, so there is nothing to travel from next time either.
+				g_GlowPlaced = false;
+			}
+
+			DrawTooltip( );
+		}
 	}
 
 	//*************************************************************************
@@ -1120,11 +1165,10 @@ public:
 			{
 				DimRow( y );
 
-				// [rc4l] And the cursor, only when the ARROW KEYS are on the list. The highlight marks
+				// [rc4l] And the glow, only when the ARROW KEYS are on the list. The highlight marks
 				// what is selected and stays put while you click around with the mouse; this marks
 				// where the keyboard is, which is a different question and used to have no answer.
-				if ( g_Focus == zx::BrowserFocus::Rows )
-					DrawRowCursor( y );
+				FocusAnchor( zx::BrowserFocus::Rows, SB_PANEL_LEFT + 9, serverbrowser_RowTextY( y, 0 ) + 1 );
 			}
 			else if ( row == g_HoverRow )
 			{
@@ -1298,8 +1342,8 @@ public:
 				vLeft + ( SB_TAB_W / 2 ) - ( SmallFont->StringWidth( labels[i] ) / 2 ), textY,
 				labels[i], DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-			if (( g_Focus == zx::BrowserFocus::Tabs ) && bSelected )
-				DrawFocusRing( vLeft, SB_TAB_TOP, SB_TAB_W, SB_TAB_H );
+			if ( bSelected )
+				FocusAnchor( zx::BrowserFocus::Tabs, vLeft - 5, SB_TAB_TOP + SB_TAB_H / 2 );
 
 			serverbrowser_Tip( vLeft, SB_TAB_TOP, SB_TAB_W, SB_TAB_H, ( i == 0 )
 				? "Servers anyone can join"
@@ -1355,8 +1399,7 @@ public:
 			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
 		}
 
-		if ( bFocused )
-			DrawFocusRing( SB_SEARCH_LEFT, SB_SEARCH_TOP, SB_SEARCH_W, SB_SEARCH_H );
+		FocusAnchor( zx::BrowserFocus::Search, SB_SEARCH_LEFT - 5, SB_SEARCH_TOP + SB_SEARCH_H / 2 );
 
 		const int textY = SB_SEARCH_TOP + ( SB_SEARCH_H - SmallFont->GetHeight( )) / 2 + 1;
 		const int textX = SB_SEARCH_LEFT + SB_SEARCH_PAD;
@@ -1630,8 +1673,7 @@ public:
 			? "Stop the download\nYou will be asked to confirm"
 			: "Join this server\nAnything missing is downloaded first" );
 
-		if ( g_Focus == zx::BrowserFocus::Action )
-			DrawFocusRing( SB_BUTTON_LEFT, SB_BUTTON_TOP, SB_BUTTON_RIGHT - SB_BUTTON_LEFT, SB_BUTTON_H );
+		FocusAnchor( zx::BrowserFocus::Action, SB_BUTTON_LEFT - 5, SB_BUTTON_TOP + SB_BUTTON_H / 2 );
 
 		const char *const label = bCancel ? "CANCEL" : "JOIN";
 		const int textY = SB_BUTTON_TOP + ( SB_BUTTON_H - SmallFont->GetHeight( )) / 2 + 1;
@@ -1997,71 +2039,76 @@ public:
 
 	//*************************************************************************
 	//
-	// [rc4l] "The keyboard is HERE", drawn around whichever region has focus.
-	//
-	// A brighter fill was doing this job and doing it badly, because a brighter fill is also what
-	// SELECTED looks like -- so the tab you are on and the tab the arrows would act on were the same
-	// picture, and following the focus around meant watching for a few percent of brightness.
-	//
-	// A ring instead: one cue, unambiguous, and it fits a 14px tab, a text box and a button alike.
-	// Drawn procedurally like everything else in this browser, so there is no lump to be missing --
-	// the country flag already needed a fallback for exactly that reason.
-	void DrawFocusRing( int vx, int vy, int vw, int vh )
-	{
-		const int left = serverbrowser_ToScreenX( vx );
-		const int right = serverbrowser_ToScreenX( vx + vw );
-		const int top = serverbrowser_ToScreenY( vy );
-		const int bottom = serverbrowser_ToScreenY( vy + vh );
-
-		const int w = right - left;
-		const int h = bottom - top;
-		if (( w <= 0 ) || ( h <= 0 ))
-			return;
-
-		// A pixel at this resolution, not a virtual one -- a hairline that thickens with the window
-		// stops reading as an outline and starts reading as a border.
-		const int t = MAX( 1, serverbrowser_ToScreenY( 1 ) - serverbrowser_ToScreenY( 0 ));
-		const PalEntry ring( 150, 200, 255 );
-
-		screen->Dim( ring, 0.9f, left, top, w, t );
-		screen->Dim( ring, 0.9f, left, bottom - t, w, t );
-		screen->Dim( ring, 0.9f, left, top, t, h );
-		screen->Dim( ring, 0.9f, right - t, top, t, h );
-	}
-
-	//*************************************************************************
-	//
-	// [rc4l] The classic cursor, for the one place the idiom belongs: a vertical list.
-	//
-	// It says something the row highlight cannot -- the highlight marks what is SELECTED, which stays
-	// put while you click around with the mouse, and this marks where the ARROW KEYS are. Drawn as a
-	// triangle of rows rather than M_SKULL so it scales with the row and cannot go missing.
-	void DrawRowCursor( int y )
-	{
-		const int size = SB_ROW_HEIGHT - 6;
-		const int vx = SB_PANEL_LEFT + 6;
-		const int vy = y - 2 + 3;
-
-		for ( int row = 0; row < size; ++row )
-		{
-			// Widest in the middle, tapering to a point at both ends.
-			const int fromMiddle = ( row < size / 2 ) ? row : ( size - 1 - row );
-			const int len = 1 + fromMiddle;
-
-			const int px = serverbrowser_ToScreenX( vx );
-			const int pw = MAX( 1, serverbrowser_ToScreenX( vx + len ) - px );
-			const int py = serverbrowser_ToScreenY( vy + row );
-			const int ph = MAX( 1, serverbrowser_ToScreenY( vy + row + 1 ) - py );
-
-			screen->Dim( PalEntry( 150, 200, 255 ), 0.95f, px, py, pw, ph );
-		}
-	}
-
-	//*************************************************************************
-	//
 	void DrawRightAligned( FFont *font, EColorRange color, int right, int y, const char *text )
 	{
 		screen->DrawText( font, color, right - font->StringWidth( text ), y, text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] "The keyboard is HERE": a soft dot of light beside whatever has focus.
+	//
+	// A brighter fill was doing this job and doing it badly, because a brighter fill is also what
+	// SELECTED looks like -- the tab you were on and the tab the arrows would act on were the same
+	// picture. A hard outline fixed the ambiguity and read as a border rather than a marker.
+	//
+	// So: a firefly. One glow, always in the same relation to the thing it marks, drawn concentrically
+	// with the alpha falling off towards the edge so it has no boundary to be mistaken for a frame. It
+	// breathes slowly, because a light that moves is followed by the eye without being looked for --
+	// which is the whole job.
+	//
+	// Procedural like everything else here, so there is no lump to go missing. That is also why the
+	// classic skull cursor was not the answer: this browser has no art dependency and the country flag
+	// already needed a fallback for exactly that reason.
+	// EACH COMPONENT SAYS WHERE ITS OWN GLOW GOES, in its own coordinates, as it draws itself -- the
+	// same shape as the tooltip registry a few functions up, and for the same reason. A tab knows it
+	// wants the light off its left edge at half its height; a row knows it wants it in the margin
+	// beside the text. Nothing central has to hold a table of offsets that goes stale the moment one
+	// of them moves, and a new focusable thing is one call rather than a case in a switch.
+	//
+	// Recorded rather than drawn on the spot so the glow lands ON TOP of everything: it is drawn once
+	// at the end of the frame, not buried under whatever the component painted after it.
+	void FocusAnchor( zx::BrowserFocus owner, int vcx, int vcy )
+	{
+		if ( g_Focus != owner )
+			return;
+
+		g_FocusGlowX = vcx;
+		g_FocusGlowY = vcy;
+		g_FocusGlowValid = true;
+	}
+
+	void DrawFocusGlow( int vcx, int vcy )
+	{
+		// Slow breath, never all the way out -- a marker that vanishes is a marker you have to hunt
+		// for on the frame it happens to be invisible.
+		const double phase = ( DMenu::MenuTime % 70 ) / 70.0;
+		const float breath = 0.72f + 0.28f * static_cast<float>( fabs( 1.0 - 2.0 * phase ));
+
+		const int cx = serverbrowser_ToScreenX( vcx );
+		const int cy = serverbrowser_ToScreenY( vcy );
+		const int unit = MAX( 1, serverbrowser_ToScreenX( vcx + 1 ) - cx );
+
+		// Four shells, widest and faintest first. Concentric rather than a true radial ramp because
+		// Dim takes rectangles, and at this size the difference is not visible -- what IS visible is
+		// the absence of a hard edge.
+		const int kShells = 4;
+		for ( int shell = kShells - 1; shell >= 0; --shell )
+		{
+			const int radius = unit * ( shell + 1 ) * 3 / 2;
+			const float alpha = breath * ( 0.10f + 0.16f * ( kShells - 1 - shell ));
+
+			for ( int dy = -radius; dy <= radius; ++dy )
+			{
+				// A circle, row by row: half-width falls off as the square root, which is what stops
+				// the shells reading as stacked squares.
+				const int half = static_cast<int>( sqrt( double( radius * radius - dy * dy )));
+				if ( half <= 0 )
+					continue;
+
+				screen->Dim( PalEntry( 190, 225, 255 ), alpha, cx - half, cy + dy, half * 2, 1 );
+			}
+		}
 	}
 
 	//*************************************************************************
