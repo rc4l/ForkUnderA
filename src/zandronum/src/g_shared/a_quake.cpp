@@ -36,22 +36,27 @@ DEarthquake::DEarthquake()
 //
 //==========================================================================
 
-DEarthquake::DEarthquake (AActor *center, int intensity, int duration,
-						  int damrad, int tremrad, FSoundID quakesound)
+DEarthquake::DEarthquake (AActor *center, int intensityX, int intensityY, int intensityZ, int duration,
+						  int damrad, int tremrad, FSoundID quakesound, int flags)
 						  : DThinker(STAT_EARTHQUAKE)
 {
-
 	// [BC] If we're the server, tell clients to do the earthquake.
+	// [rc4l] Extended to carry the per-axis intensities and the QF_ flags -- a single intensity can
+	// no longer describe the quake, so the wire command grew with it.
 	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( center ))
-		SERVERCOMMANDS_Earthquake( center, intensity, duration, tremrad, quakesound );
+		SERVERCOMMANDS_Earthquake( center, intensityX, intensityY, intensityZ, duration, tremrad, quakesound, flags );
 
 	m_QuakeSFX = quakesound;
 	m_Spot = center;
 	// Radii are specified in tile units (64 pixels)
 	m_DamageRadius = damrad << (FRACBITS);
 	m_TremorRadius = tremrad << (FRACBITS);
-	m_Intensity = intensity;
+	m_IntensityX = intensityX;
+	m_IntensityY = intensityY;
+	m_IntensityZ = intensityZ;
+	m_CountdownStart = duration;
 	m_Countdown = duration;
+	m_Flags = flags;
 }
 
 //==========================================================================
@@ -63,9 +68,24 @@ DEarthquake::DEarthquake (AActor *center, int intensity, int duration,
 void DEarthquake::Serialize (FArchive &arc)
 {
 	Super::Serialize (arc);
-	arc << m_Spot << m_Intensity << m_Countdown
+	arc << m_Spot << m_IntensityX << m_Countdown
 		<< m_TremorRadius << m_DamageRadius
 		<< m_QuakeSFX;
+	// [rc4l] Upstream guards these at its own SAVEVER 4519 and 4520. OUR 4519 and 4520 mean different
+	// things entirely (DamageMultiply and TeleFog types), so reusing upstream's numbers would make a
+	// save written by our 4519 build try to read quake fields it never wrote. Both sets of fields
+	// arrive together here, behind a single guard at our next version.
+	if (SaveVersion < 4522)
+	{
+		m_IntensityY = m_IntensityX;
+		m_IntensityZ = 0;
+		m_Flags = 0;
+		m_CountdownStart = 0;
+	}
+	else
+	{
+		arc << m_IntensityY << m_IntensityZ << m_Flags << m_CountdownStart;
+	}
 }
 
 //==========================================================================
@@ -86,7 +106,7 @@ void DEarthquake::Tick ()
 		Destroy ();
 		return;
 	}
-
+	
 	if (!S_IsActorPlayingSomething (m_Spot, CHAN_BODY, m_QuakeSFX))
 	{
 		S_Sound (m_Spot, CHAN_BODY | CHAN_LOOP, m_QuakeSFX, 1, ATTN_NORM);
@@ -110,11 +130,23 @@ void DEarthquake::Tick ()
 					}
 					// Thrust player around
 					angle_t an = victim->angle + ANGLE_1*pr_quake();
-					P_ThrustMobj (victim, an, m_Intensity << (FRACBITS-1));
+					if (m_IntensityX == m_IntensityY)
+					{ // Thrust in a circle
+						P_ThrustMobj (victim, an, m_IntensityX << (FRACBITS-1));
+					}
+					else
+					{ // Thrust in an ellipse
+						an >>= ANGLETOFINESHIFT;
+						// So this is actually completely wrong, but it ought to be good
+						// enough. Otherwise, I'd have to use tangents and square roots.
+						victim->velx += FixedMul(m_IntensityX << (FRACBITS-1), finecosine[an]);
+						victim->vely += FixedMul(m_IntensityY << (FRACBITS-1), finesine[an]);
+					}
 				}
 			}
 		}
 	}
+	
 	if (--m_Countdown == 0)
 	{
 		if (S_IsActorPlayingSomething(m_Spot, CHAN_BODY, m_QuakeSFX))
@@ -127,6 +159,48 @@ void DEarthquake::Tick ()
 
 //==========================================================================
 //
+// DEarthquake :: GetModIntensity
+//
+// Given a base intensity, modify it according to the quake's flags.
+//
+//==========================================================================
+
+fixed_t DEarthquake::GetModIntensity(int intensity) const
+{
+	assert(m_CountdownStart >= m_Countdown);
+	intensity += intensity;		// always doubled
+	if (m_Flags & (QF_SCALEDOWN | QF_SCALEUP))
+	{
+		int scalar;
+		if ((m_Flags & (QF_SCALEDOWN | QF_SCALEUP)) == (QF_SCALEDOWN | QF_SCALEUP))
+		{
+			scalar = (m_Flags & QF_MAX) ? MAX(m_Countdown, m_CountdownStart - m_Countdown)
+										: MIN(m_Countdown, m_CountdownStart - m_Countdown);
+			if (m_Flags & QF_FULLINTENSITY)
+			{
+				scalar *= 2;
+			}
+		}
+		else if (m_Flags & QF_SCALEDOWN)
+		{
+			scalar = m_Countdown;
+		}
+		else			// QF_SCALEUP
+		{
+			scalar = m_CountdownStart - m_Countdown;
+		}
+		assert(m_CountdownStart > 0);
+		intensity = intensity * (scalar << FRACBITS) / m_CountdownStart;
+	}
+	else
+	{
+		intensity <<= FRACBITS;
+	}
+	return intensity;
+}
+
+//==========================================================================
+//
 // DEarthquake::StaticGetQuakeIntensity
 //
 // Searches for all quakes near the victim and returns their combined
@@ -134,16 +208,19 @@ void DEarthquake::Tick ()
 //
 //==========================================================================
 
-int DEarthquake::StaticGetQuakeIntensity (AActor *victim)
+int DEarthquake::StaticGetQuakeIntensities(AActor *victim,
+	fixed_t &intensityX, fixed_t &intensityY, fixed_t &intensityZ,
+	fixed_t &relIntensityX, fixed_t &relIntensityY, fixed_t &relIntensityZ)
 {
-	int intensity = 0;
-	TThinkerIterator<DEarthquake> iterator (STAT_EARTHQUAKE);
-	DEarthquake *quake;
-
 	if (victim->player != NULL && (victim->player->cheats & CF_NOCLIP))
 	{
 		return 0;
 	}
+	intensityX = intensityY = intensityZ = relIntensityX = relIntensityY = relIntensityZ = 0;
+
+	TThinkerIterator<DEarthquake> iterator(STAT_EARTHQUAKE);
+	DEarthquake *quake;
+	int count = 0;
 
 	while ( (quake = iterator.Next()) != NULL)
 	{
@@ -153,12 +230,26 @@ int DEarthquake::StaticGetQuakeIntensity (AActor *victim)
 				victim->y - quake->m_Spot->y);
 			if (dist < quake->m_TremorRadius)
 			{
-				if (intensity < quake->m_Intensity)
-					intensity = quake->m_Intensity;
+				++count;
+				fixed_t x = quake->GetModIntensity(quake->m_IntensityX);
+				fixed_t y = quake->GetModIntensity(quake->m_IntensityY);
+				fixed_t z = quake->GetModIntensity(quake->m_IntensityZ);
+				if (quake->m_Flags & QF_RELATIVE)
+				{
+					relIntensityX = MAX(relIntensityX, x);
+					relIntensityY = MAX(relIntensityY, y);
+					relIntensityZ = MAX(relIntensityZ, z);
+				}
+				else
+				{
+					intensityX = MAX(intensityX, x);
+					intensityY = MAX(intensityY, y);
+					intensityZ = MAX(intensityZ, z);
+				}
 			}
 		}
 	}
-	return intensity;
+	return count;
 }
 
 //==========================================================================
@@ -167,18 +258,20 @@ int DEarthquake::StaticGetQuakeIntensity (AActor *victim)
 //
 //==========================================================================
 
-bool P_StartQuake (AActor *activator, int tid, int intensity, int duration, int damrad, int tremrad, FSoundID quakesfx)
+bool P_StartQuakeXYZ(AActor *activator, int tid, int intensityX, int intensityY, int intensityZ, int duration, int damrad, int tremrad, FSoundID quakesfx, int flags)
 {
 	AActor *center;
 	bool res = false;
 
-	intensity = clamp (intensity, 1, 9);
+	if (intensityX)		intensityX = clamp(intensityX, 1, 9);
+	if (intensityY)		intensityY = clamp(intensityY, 1, 9);
+	if (intensityZ)		intensityZ = clamp(intensityZ, 1, 9);
 
 	if (tid == 0)
 	{
 		if (activator != NULL)
 		{
-			new DEarthquake(activator, intensity, duration, damrad, tremrad, quakesfx);
+			new DEarthquake(activator, intensityX, intensityY, intensityZ, duration, damrad, tremrad, quakesfx, flags);
 			return true;
 		}
 	}
@@ -188,9 +281,14 @@ bool P_StartQuake (AActor *activator, int tid, int intensity, int duration, int 
 		while ( (center = iterator.Next ()) )
 		{
 			res = true;
-			new DEarthquake (center, intensity, duration, damrad, tremrad, quakesfx);
+			new DEarthquake(center, intensityX, intensityY, intensityZ, duration, damrad, tremrad, quakesfx, flags);
 		}
 	}
 	
 	return res;
+}
+
+bool P_StartQuake(AActor *activator, int tid, int intensity, int duration, int damrad, int tremrad, FSoundID quakesfx)
+{	//Maintains original behavior by passing 0 to intensityZ, and flags.
+	return P_StartQuakeXYZ(activator, tid, intensity, intensity, 0, duration, damrad, tremrad, quakesfx, 0);
 }

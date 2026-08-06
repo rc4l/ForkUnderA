@@ -71,7 +71,7 @@ if( WIN32 )
 		PATHS ENV DXSDK_DIR
 		PATH_SUFFIXES Include )
 	if( NOT XINPUT_INCLUDE_DIR )
-		message( SEND_ERROR "Could not find xinput.h. XInput will be disabled." )
+		message( WARNING "Could not find xinput.h. XInput will be disabled." )	# [rc4l] uzdoom@719dfbe5a -- a missing optional SDK header should not fail configuration
 		add_definitions( -DNO_XINPUT )
 	else( NOT XINPUT_INCLUDE_DIR )
 		include_directories( ${XINPUT_INCLUDE_DIR} )

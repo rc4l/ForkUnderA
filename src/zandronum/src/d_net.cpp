@@ -1796,7 +1796,7 @@ void TryRunTics (void)
 	if (counts == 0 && !doWait)
 	{
 		// Check possible stall conditions
-		Net_CheckLastRecieved(counts);
+		Net_CheckLastReceived(counts);
 		return;
 	}
 
@@ -1878,7 +1878,7 @@ void TryRunTics (void)
 				I_Error ("TryRunTics: lowtic < gametic");
 
 		// Check possible stall conditions
-		Net_CheckLastRecieved (counts);
+		Net_CheckLastReceived (counts);
 
 			// don't stay in here forever -- give the menu a chance to work
 			if (I_GetTime (false) - entertic >= TICRATE/3)
@@ -1922,7 +1922,7 @@ void TryRunTics (void)
 	}
 }
 
-void Net_CheckLastRecieved (int counts)
+void Net_CheckLastReceived (int counts)
 {
 	// [Ed850] Check to see the last time a packet was recieved.
 	// If it's longer then 3 seconds, a node has likely stalled.
@@ -1951,11 +1951,15 @@ void Net_CheckLastRecieved (int counts)
 		}
 		else
 		{	//Send a resend request to the Arbitrator, as it's obvious we are stuck here.
-			if (debugfile && !players[playerfornode[Net_Arbitrator]].waiting)
+			// [rc4l] uzdoom@3d7934f1a -- Net_Arbitrator is a PLAYER number, but nettics and
+			// remoteresend are indexed by NODE, so these read and wrote the wrong slots. The
+			// players[] lookup is the mirror image: it wanted the arbitrator directly, not the
+			// player owning the node with the same number.
+			if (debugfile && !players[Net_Arbitrator].waiting)
 				fprintf(debugfile, "Arbitrator is slow (%i to %i)\n",
-				nettics[Net_Arbitrator], gametic + counts);
+				nettics[nodeforplayer[Net_Arbitrator]], gametic + counts);
 			//Send resend request to the Arbitrator. Also mark the Arbitrator as waiting to display it in the hud.
-			remoteresend[Net_Arbitrator] = players[playerfornode[Net_Arbitrator]].waiting = hadlate = true;
+			remoteresend[nodeforplayer[Net_Arbitrator]] = players[Net_Arbitrator].waiting = hadlate = true;
 		}
 	}
 }
@@ -2032,7 +2036,13 @@ void FDynamicBuffer::SetData (const BYTE *data, int len)
 	}
 	else
 	{
-		len = 0;
+		// [rc4l] uzdoom@2c06987f6 -- `len = 0` assigned the LOCAL parameter, so a NULL data pointer
+		// left m_Len stale and the buffer still looked like it held its old contents.
+		//
+		// That commit also added M_Free(m_Data) here, which is NOT taken: it leaves m_Data dangling
+		// while m_BufferLen keeps its old value, so the next call with a small len skips the realloc
+		// and memcpys into freed memory. Upstream removed it again -- HEAD has only the m_Len reset.
+		m_Len = 0;
 	}
 }
 

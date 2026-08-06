@@ -226,11 +226,14 @@ bool P_GetMidTexturePosition(const line_t *line, int sideno, fixed_t *ptextop, f
 	FTexture * tex= TexMan(texnum);
 	if (!tex) return false;
 
+	// [rc4l] uzdoom@a3bdbff05 -- the opening was computed from the texture's own scale only, so a
+	// sidedef with its own Y scaling got the wrong height and offset.
+	fixed_t totalscale = FixedMul(side->GetTextureYScale(side_t::mid), tex->yScale);
 	fixed_t y_offset = side->GetTextureYOffset(side_t::mid);
-	fixed_t textureheight = tex->GetScaledHeight() << FRACBITS;
-	if (tex->yScale != FRACUNIT && !tex->bWorldPanning)
+	fixed_t textureheight = tex->GetScaledHeight(totalscale) << FRACBITS;
+	if (totalscale != FRACUNIT && !tex->bWorldPanning)
 	{ 
-		y_offset = FixedDiv(y_offset, tex->yScale);
+		y_offset = FixedDiv(y_offset, totalscale);
 	}
 
 	if(line->flags & ML_DONTPEGBOTTOM)

@@ -565,6 +565,7 @@ enum
 	BCOMPATF_BADPORTALS			= 1 << 4,	// Restores the old unstable portal behavior
 	BCOMPATF_REBUILDNODES		= 1 << 5,	// Force node rebuild
 	BCOMPATF_LINKFROZENPROPS	= 1 << 6,	// Clearing PROP_TOTALLYFROZEN or PROP_FROZEN also clears the other
+	BCOMPATF_FLOATBOB			= 1 << 7,	// [rc4l] uzdoom@93c12cf25 -- Hexen's floatbob z handling
 };
 
 // phares 3/20/98:

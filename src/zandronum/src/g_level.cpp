@@ -1432,11 +1432,14 @@ void G_DoLoadLevel (int position, bool autosave)
 		else
 		{
 
+			// [rc4l] uzdoom@e4a041cb4 -- map names read better lower case in the console banner.
+			FString mapname = level.MapName;
+			mapname.ToLower();
 			Printf (
 					"\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
 					"\36\36\36\36\36\36\36\36\36\36\36\36\37\n\n"
 					TEXTCOLOR_BOLD "%s - %s\n\n",
-					level.MapName.GetChars(), level.LevelName.GetChars());
+					mapname.GetChars(), level.LevelName.GetChars());	// [rc4l] uzdoom@c7842a8de
 
 			// [RC] Update the G15 display.
 			G15_NextLevel(level.MapName, level.LevelName.GetChars());
@@ -2029,16 +2032,10 @@ void G_FinishTravel ()
 			pawn->SetState(pawn->SpawnState);
 			pawn->player->SendPitchLimits();
 
-			// [rc4l] uzdoom@aa338a4dc: sync the FLY flags. MF2_FLY and CF_FLY are set independently
-			// and travel only carried one of them, so a flying player arrived with them disagreeing.
-			if (pawn->flags2 & MF2_FLY)
-			{
-				pawn->player->cheats |= CF_FLY;
-			}
-			else
-			{
-				pawn->player->cheats &= ~CF_FLY;
-			}
+			// [rc4l] uzdoom@337682934 removes the uzdoom@aa338a4dc FLY sync that used to sit here. It
+			// existed only because CF_FLY lived on player_t while MF2_FLY lived on the actor, so
+			// travel carried one and not the other. Both are actor flags now and travel keeps them
+			// together for free.
 
 			// [BC]
 			pawn->NetID = savedNetID;
