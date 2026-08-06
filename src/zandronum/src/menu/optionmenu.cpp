@@ -197,10 +197,12 @@ bool DOptionMenu::MenuEvent (int mkey, bool fromcontroller)
 		{
 			--mDesc->mSelectedItem;
 
+			// [rc4l] uzdoom@dc6b45804 -- jumping several items at once (a disabled run of entries)
+			// overshot the equality test, so the cursor scrolled off the visible window entirely.
 			if (mDesc->mScrollPos > 0 &&
-				mDesc->mSelectedItem == mDesc->mScrollTop + mDesc->mScrollPos)
+				mDesc->mSelectedItem <= mDesc->mScrollTop + mDesc->mScrollPos)
 			{
-				mDesc->mScrollPos--;
+				mDesc->mScrollPos = MAX(mDesc->mSelectedItem - mDesc->mScrollTop - 1, 0);
 			}
 
 			if (mDesc->mSelectedItem < 0) 
