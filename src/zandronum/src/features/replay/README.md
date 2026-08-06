@@ -48,6 +48,11 @@ bindable command is **`fua_clip`** (commands don't take the `cl_` cvar prefix).
   bundles the libav* stack (+x264/vpx/…) into the .app, so it's self-contained.
 - **Build wiring (done):** FFmpeg is provisioned in all three builds (brew / apt / vcpkg
   `ffmpeg[x264]`); CMake detects it via pkg-config or a find_path/find_library fallback (Windows).
+  Windows has **two** build paths and both need it: `windows_compile.ps1` (vcpkg) and
+  `windows_build.ps1` (prebuilt `windows_assets/`). The second shipped without FFmpeg for a while and
+  nobody noticed, because CMake treats this feature as optional and silently compiles the stub —
+  both scripts now assert on `FUA replay: FFmpeg found` in the configure output rather than trusting
+  that a build which succeeded is a build that can record.
 - **Capture perf (done):** the capture hook uses a **double-buffered PBO async readback** — it issues
   `glReadPixels` into one pixel-pack buffer (returns immediately) and hands the previous frame's
   already-completed readback to the encoder, so the render thread never stalls (design §3.1).
