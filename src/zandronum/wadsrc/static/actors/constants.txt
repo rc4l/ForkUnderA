@@ -71,6 +71,7 @@ const int SXF_SETTARGET = 1048576;
 const int SXF_SETTRACER = 2097152;
 const int SXF_NOPOINTERS = 4194304;
 const int SXF_ORIGINATOR = 8388608;
+const int SXF_TRANSFERSPRITEFRAME = 16777216;	// [rc4l] uzdoom@b37a98689
 
 // Flags for A_Chase
 const int CHF_FASTCHASE = 1;

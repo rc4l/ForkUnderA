@@ -2693,6 +2693,7 @@ enum SIX_Flags
 	SIXF_SETTRACER				= 1 << 21,
 	SIXF_NOPOINTERS				= 1 << 22,
 	SIXF_ORIGINATOR				= 1 << 23,	// [rc4l] uzdoom@f766a1ab3
+	SIXF_TRANSFERSPRITEFRAME	= 1 << 24,	// [rc4l] uzdoom@b37a98689
 };
 
 // [BB] Changed return value to bool (returns false if the actor already was destroyed).
@@ -2844,6 +2845,14 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	if (flags & SIXF_TRANSFERRENDERSTYLE)
 	{
 		mo->RenderStyle = self->RenderStyle;
+	}
+
+	// [rc4l] uzdoom@b37a98689 -- lets a spawned actor inherit the caller's current sprite and frame,
+	// so a static prop can be made to match whatever the spawner was showing.
+	if (flags & SIXF_TRANSFERSPRITEFRAME)
+	{
+		mo->sprite = self->sprite;
+		mo->frame = self->frame;
 	}
 
 	return true;
