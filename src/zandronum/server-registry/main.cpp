@@ -685,9 +685,19 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 				if ( issued.empty() )
 					return;			// too many in flight; saying nothing is the safe refusal
 
+				// [rc4l] The observed source address rides along. We are the only party that can see
+				// it, the client cannot learn it any other way, and it costs nothing to say -- it
+				// also lets the client tell "same network as last time" from "the ISP moved me",
+				// which is what makes caching a forwarding verdict safe.
+				std::string seenAs = AddressFrom.ToString();
+				const size_t colon = seenAs.find( ':' );
+				if ( colon != std::string::npos )
+					seenAs = seenAs.substr( 0, colon );
+
 				g_MessageBuffer.Clear();
-				g_MessageBuffer.ByteStream.WriteByte( SERVERREGISTRY_REACHCOOKIE );
+				g_MessageBuffer.ByteStream.WriteLong( SRSC_REACHCOOKIE );
 				g_MessageBuffer.ByteStream.WriteString( issued.c_str() );
+				g_MessageBuffer.ByteStream.WriteString( seenAs.c_str() );
 				NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 				return;
 			}

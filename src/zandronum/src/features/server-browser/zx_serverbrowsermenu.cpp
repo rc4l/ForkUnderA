@@ -46,6 +46,7 @@
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
+#include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
@@ -1184,6 +1185,15 @@ public:
 		// Drives the registry query's retry/give-up clock and ages out servers that never answered.
 		BROWSER_ServerRegistryTick( );
 		BROWSER_QueryTick( );
+
+		// [rc4l] Only while the HOST tab is up. The check opens a socket on the port the player is
+		// about to host on, and doing that behind their back -- while they browse someone else's
+		// server -- would be taking a port nobody asked us to take.
+		if ( g_Tab == BrowserTab::Host )
+		{
+			zx::ReachProbeRequest( HostConfiguredPort( ));
+			zx::ReachProbeTick( );
+		}
 
 		serverbrowser_RebuildList( );
 
@@ -2746,6 +2756,14 @@ public:
 		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
 	}
 
+	// [rc4l] The port as typed, falling back to the default. Read by the reachability check, which is
+	// a question about one specific port and must follow the field as it is edited.
+	int HostConfiguredPort( )
+	{
+		const int typed = atoi( g_HostFields[kHostFieldPort].text.c_str( ));
+		return (( typed > 0 ) && ( typed <= 65535 )) ? typed : 10666;
+	}
+
 	// One row's pitch, so the count below and the loops above cannot drift apart.
 	int HostRowPitch( )
 	{
@@ -2808,8 +2826,11 @@ public:
 	// Each option is a rounded cell -- the same DrawRoundedPanel every other surface uses -- with a
 	// filled dot on the chosen one. The dot rather than colour alone, because a row where the only
 	// difference is brightness is a row somebody with a dim screen cannot read.
+	// [rc4l] `cellColors` overrides the label colour per cell, or NULL for the usual chosen/unchosen
+	// pair. It exists so a cell can say something about ITSELF -- that this option is not currently
+	// available -- without that meaning having to be smuggled into the label text.
 	void DrawChoiceRow( int vx, int vy, int vw, int count, const char *const *labels, int selected,
-		int hot, bool bFocused )
+		int hot, bool bFocused, const EColorRange *cellColors = NULL )
 	{
 		selected = zx::ChoiceNormalise( selected, count );
 
@@ -2855,7 +2876,10 @@ public:
 
 			if ( HostRowFullyVisible( vy, SB_CHOICE_H ))
 			{
-				screen->DrawText( SmallFont, bChosen ? CR_WHITE : CR_GRAY, textX, textY, labels[i],
+				const EColorRange color = ( cellColors != NULL ) ? cellColors[i]
+					: ( bChosen ? CR_WHITE : CR_GRAY );
+
+				screen->DrawText( SmallFont, color, textX, textY, labels[i],
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 			}
 		}
@@ -3040,9 +3064,21 @@ public:
 			"Internet", "Local network",
 		};
 
+		// [rc4l] INTERNET says whether it will actually work, before anyone commits to it.
+		//
+		// Green once the registry has reached this port from outside, grey while that is unknown or
+		// has come back no. Deliberately NOT disabled: the check can be wrong in the player's favour
+		// -- a router that only opens on demand, a registry we could not reach -- and a form that
+		// refuses to let someone try their own network is worse than one that warns them.
+		const zx::ProbePhase reach = zx::ReachProbeStatus( HostConfiguredPort( ));
+
+		EColorRange visColors[kHostVisCount];
+		visColors[kHostVisGlobal] = zx::ProbeSaysReachable( reach ) ? CR_GREEN : CR_DARKGRAY;
+		visColors[kHostVisLocal] = ( g_HostAdvertise == false ) ? CR_WHITE : CR_GRAY;
+
 		DrawChoiceRow( rowX, y, rowW, kHostVisCount, labels,
 			g_HostAdvertise ? kHostVisGlobal : kHostVisLocal,
-			g_HostVisHot, ( g_Focus == zx::BrowserFocus::Host ) && g_HostOnVisibility );
+			g_HostVisHot, ( g_Focus == zx::BrowserFocus::Host ) && g_HostOnVisibility, visColors );
 
 		// [rc4l] The glow goes to the SELECTED CELL, not to the label.
 		//
@@ -3067,10 +3103,26 @@ public:
 			if ( !cell.valid )
 				continue;
 
-			serverbrowser_Tip( cell.x, y, cell.width, SB_CHOICE_H,
-				( i == kHostVisGlobal )
-				? "Listed publicly so anyone can join\nZandroX will ask your router to open the port"
-				: "Not listed anywhere\nPlayers on your own network find it automatically" );
+			if ( i == kHostVisGlobal )
+			{
+				// [rc4l] One line, and it says which of the four states this is -- the colour alone
+				// cannot tell "we have not asked yet" from "we asked and the answer was no", and
+				// those lead to different actions.
+				const char *pszWhy =
+					( reach == zx::ProbePhase::Reachable ) ? "Your port is open"
+					: ( reach == zx::ProbePhase::Unreachable ) ? "Nothing outside reached this port. Forward it, or host locally"
+					: ( reach == zx::ProbePhase::Failed ) ? "Untested, but it may still work"
+					: "Checking the port...";
+
+				FString tip;
+				tip << "Listed publicly so anyone can join\n" << pszWhy;
+				serverbrowser_Tip( cell.x, y, cell.width, SB_CHOICE_H, tip );
+			}
+			else
+			{
+				serverbrowser_Tip( cell.x, y, cell.width, SB_CHOICE_H,
+					"Not listed anywhere\nPlayers on your own network find it automatically" );
+			}
 		}
 	}
 
@@ -3103,8 +3155,8 @@ public:
 				y = DrawHostReach( x, y, wrapW );
 
 				y += 4;
-				y = DrawWrappedIn( "You are the administrator of this server. Use the console -- "
-					"rcon <command> -- to run anything on it.", x, y, wrapW, CR_DARKGRAY );
+				y = DrawWrappedIn( "You are the administrator of this server. Use the console, "
+					"rcon <command>, to run anything on it.", x, y, wrapW, CR_DARKGRAY );
 			}
 		}
 
@@ -3153,7 +3205,7 @@ public:
 				if (( router != NULL ) && ( router[0] != 0 ))
 					y = DrawWrappedIn( router, x, y, width, CR_DARKGRAY );
 
-				return DrawWrappedIn( "Listed publicly -- checking whether the internet can reach it.",
+				return DrawWrappedIn( "Listed publicly. Checking whether the internet can reach it.",
 					x, y, width, CR_GOLD );
 			}
 
@@ -3574,7 +3626,7 @@ public:
 			int y = SB_DETAIL_TOP + SB_DETAIL_PAD;
 			y = DrawWrapped( "That server is no longer listed.", x, y, CR_WHITE );
 			y += 3;
-			DrawWrapped( "The download is still running -- stop it, or let it finish and use the file.",
+			DrawWrapped( "The download is still running. Stop it, or let it finish and use the file.",
 				x, y, CR_DARKGRAY );
 
 			DrawActionButton( );
