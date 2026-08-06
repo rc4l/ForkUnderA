@@ -5,6 +5,10 @@
 #include "features/server-browser/computation/serversort_compute.h"
 
 using zx::CompareServers;
+
+// [rc4l] Named so a row of bare true/false does not read as a puzzle at the call site.
+const bool kLan = true;
+const bool kNet = false;
 using zx::ServerSortKey;
 using std::string;
 
@@ -58,44 +62,84 @@ TEST(ServerSortKey, LeavesAPlainNameAlone)
 
 TEST(CompareServers, PutsMorePlayersFirst)
 {
-	EXPECT_LT(CompareServers(11, "zzz", 2, "aaa"), 0);
-	EXPECT_GT(CompareServers(2, "aaa", 11, "zzz"), 0);
+	EXPECT_LT(CompareServers(kNet, 11, "zzz", kNet, 2, "aaa"), 0);
+	EXPECT_GT(CompareServers(kNet, 2, "aaa", kNet, 11, "zzz"), 0);
 }
 
 TEST(CompareServers, KeepsFullServersAtTheTopRatherThanBuryingThem)
 {
 	// Deliberate: a full server is evidence about where people play, and the player count already
 	// reads red. Sorting it below an empty one answers a question nobody asked.
-	EXPECT_LT(CompareServers(32, "packed", 0, "empty"), 0);
+	EXPECT_LT(CompareServers(kNet, 32, "packed", kNet, 0, "empty"), 0);
 }
 
 TEST(CompareServers, BreaksTiesAlphabetically)
 {
-	EXPECT_LT(CompareServers(4, "alpha", 4, "beta"), 0);
-	EXPECT_GT(CompareServers(4, "beta", 4, "alpha"), 0);
+	EXPECT_LT(CompareServers(kNet, 4, "alpha", kNet, 4, "beta"), 0);
+	EXPECT_GT(CompareServers(kNet, 4, "beta", kNet, 4, "alpha"), 0);
 }
 
 TEST(CompareServers, BreaksTiesRegardlessOfCaseOrColour)
 {
-	EXPECT_LT(CompareServers(4, "Alpha", 4, "beta"), 0);
-	EXPECT_LT(CompareServers(4, ESC + "dAlpha", 4, "beta"), 0);
-	EXPECT_GT(CompareServers(4, ESC + "dzulu", 4, "Beta"), 0);
+	EXPECT_LT(CompareServers(kNet, 4, "Alpha", kNet, 4, "beta"), 0);
+	EXPECT_LT(CompareServers(kNet, 4, ESC + "dAlpha", kNet, 4, "beta"), 0);
+	EXPECT_GT(CompareServers(kNet, 4, ESC + "dzulu", kNet, 4, "Beta"), 0);
 }
 
 TEST(CompareServers, TiesCompletelyOnIdenticalServers)
 {
-	EXPECT_EQ(0, CompareServers(4, "same", 4, "same"));
-	EXPECT_EQ(0, CompareServers(4, "Same", 4, ESC + "dsame"));
+	EXPECT_EQ(0, CompareServers(kNet, 4, "same", kNet, 4, "same"));
+	EXPECT_EQ(0, CompareServers(kNet, 4, "Same", kNet, 4, ESC + "dsame"));
+}
+
+// ---------------------------------------------------------------- the LAN group
+
+TEST(CompareServers, PutsLanAboveTheInternetEvenWhenItIsEmpty)
+{
+	// [rc4l] THE POINT OF THE RULE, and the case a mere weighting would get wrong. An empty server on
+	// your own network still outranks a packed one across the internet: it is the one you just started
+	// and the one the person next to you is on, and no player count changes which of those you meant.
+	EXPECT_LT(CompareServers(kLan, 0, "empty", kNet, 32, "packed"), 0);
+	EXPECT_GT(CompareServers(kNet, 32, "packed", kLan, 0, "empty"), 0);
+}
+
+TEST(CompareServers, SortsWithinTheLanGroupExactlyAsBefore)
+{
+	// LAN is a group, not a replacement for the ordering. Inside it, everything below still holds.
+	EXPECT_LT(CompareServers(kLan, 11, "zzz", kLan, 2, "aaa"), 0);
+	EXPECT_LT(CompareServers(kLan, 4, "alpha", kLan, 4, "beta"), 0);
+	EXPECT_LT(CompareServers(kLan, 4, "Alpha", kLan, 4, "beta"), 0);
+	EXPECT_EQ(0, CompareServers(kLan, 4, "same", kLan, 4, "same"));
+}
+
+TEST(CompareServers, LeavesTheInternetGroupAlone)
+{
+	// The other half of the same statement: nothing about the internet ordering changed, so a list
+	// with no LAN server on it looks exactly as it did.
+	EXPECT_LT(CompareServers(kNet, 11, "zzz", kNet, 2, "aaa"), 0);
+	EXPECT_LT(CompareServers(kNet, 4, "alpha", kNet, 4, "beta"), 0);
+}
+
+TEST(CompareServers, DoesNotTieALanServerWithAnIdenticalInternetOne)
+{
+	// Same name, same population, different network. Returning 0 here would let qsort put them in
+	// either order, which is the one outcome the rule exists to rule out.
+	EXPECT_LT(CompareServers(kLan, 4, "same", kNet, 4, "same"), 0);
+	EXPECT_GT(CompareServers(kNet, 4, "same", kLan, 4, "same"), 0);
 }
 
 TEST(CompareServers, IsAntisymmetric)
 {
 	// A comparator that disagrees with itself makes qsort's behaviour undefined, which shows up as a
 	// list that reorders on every refresh rather than as a crash.
-	struct Row { int players; const char *name; };
+	// [rc4l] Both LAN and internet rows, because the LAN rule is a whole extra dimension for the
+	// ordering to be inconsistent in -- and the pairs that would expose it are exactly the ones where
+	// LAN and population disagree.
+	struct Row { bool lan; int players; const char *name; };
 	const Row rows[] = {
-		{ 0, "empty" }, { 4, "alpha" }, { 4, "Beta" }, { 32, "packed" },
-		{ 1, "\034dcoloured" }, { 4, "alpha" }, { 7, "zeta" },
+		{ kNet, 0, "empty" }, { kNet, 4, "alpha" }, { kNet, 4, "Beta" }, { kNet, 32, "packed" },
+		{ kNet, 1, "\034dcoloured" }, { kNet, 4, "alpha" }, { kNet, 7, "zeta" },
+		{ kLan, 0, "empty" }, { kLan, 4, "alpha" }, { kLan, 32, "packed" },
 	};
 	const int count = static_cast<int>( sizeof(rows) / sizeof(rows[0]) );
 
@@ -103,8 +147,10 @@ TEST(CompareServers, IsAntisymmetric)
 	{
 		for (int j = 0; j < count; ++j)
 		{
-			const int ab = CompareServers(rows[i].players, rows[i].name, rows[j].players, rows[j].name);
-			const int ba = CompareServers(rows[j].players, rows[j].name, rows[i].players, rows[i].name);
+			const int ab = CompareServers(rows[i].lan, rows[i].players, rows[i].name,
+				rows[j].lan, rows[j].players, rows[j].name);
+			const int ba = CompareServers(rows[j].lan, rows[j].players, rows[j].name,
+				rows[i].lan, rows[i].players, rows[i].name);
 
 			if (ab == 0)
 				EXPECT_EQ(0, ba) << i << " vs " << j;
@@ -116,9 +162,11 @@ TEST(CompareServers, IsAntisymmetric)
 
 TEST(CompareServers, IsTransitive)
 {
-	struct Row { int players; const char *name; };
+	struct Row { bool lan; int players; const char *name; };
 	const Row rows[] = {
-		{ 0, "empty" }, { 4, "alpha" }, { 4, "Beta" }, { 32, "packed" }, { 7, "zeta" },
+		{ kNet, 0, "empty" }, { kNet, 4, "alpha" }, { kNet, 4, "Beta" }, { kNet, 32, "packed" },
+		{ kNet, 7, "zeta" },
+		{ kLan, 0, "empty" }, { kLan, 4, "alpha" }, { kLan, 32, "packed" },
 	};
 	const int count = static_cast<int>( sizeof(rows) / sizeof(rows[0]) );
 
@@ -126,9 +174,12 @@ TEST(CompareServers, IsTransitive)
 		for (int j = 0; j < count; ++j)
 			for (int k = 0; k < count; ++k)
 			{
-				const int ij = CompareServers(rows[i].players, rows[i].name, rows[j].players, rows[j].name);
-				const int jk = CompareServers(rows[j].players, rows[j].name, rows[k].players, rows[k].name);
-				const int ik = CompareServers(rows[i].players, rows[i].name, rows[k].players, rows[k].name);
+				const int ij = CompareServers(rows[i].lan, rows[i].players, rows[i].name,
+					rows[j].lan, rows[j].players, rows[j].name);
+				const int jk = CompareServers(rows[j].lan, rows[j].players, rows[j].name,
+					rows[k].lan, rows[k].players, rows[k].name);
+				const int ik = CompareServers(rows[i].lan, rows[i].players, rows[i].name,
+					rows[k].lan, rows[k].players, rows[k].name);
 
 				if ((ij < 0) && (jk < 0))
 					EXPECT_LT(ik, 0) << i << "," << j << "," << k;
