@@ -55,6 +55,10 @@
 #include "main.h"
 #include <sstream>
 #include <set>
+// [rc4l] The reach-cookie table. Named rather than leaned on transitively -- this builds on GCC in a
+// container as well as MSVC, and the two disagree about what <set> drags in.
+#include <string>
+#include <vector>
 
 // [BB] Needed for I_GetTime.
 #ifdef _MSC_VER
@@ -262,6 +266,98 @@ void SERVERREGISTRY_SendBanlistToServer( const SERVER_s &Server )
 	Server.bHasLatestBanList = true;
 	Server.bVerifiedLatestBanList = false;
 	printf( "-> Banlist sent to %s.\n", Server.Address.ToString() );
+}
+
+//*****************************************************************************
+//
+//*****************************************************************************
+//
+// [rc4l] Cookies for reachability tests, held rather than computed.
+//
+// A stateless token would have to be a keyed hash, and a hand-rolled one is a cryptographic
+// primitive written by someone who is not writing a cryptographic primitive. Holding them is duller
+// and provably correct: the only costs are memory and expiry, and both are bounded here.
+//
+// The cap is what stops this being a memory-exhaustion lever. Past it we issue nothing, which fails
+// the feature rather than the daemon -- a player briefly cannot pre-check a port, and everybody's
+// server list keeps working.
+namespace
+{
+struct REACHCOOKIE_s
+{
+	NETADDRESS_s	Address;
+	std::string		Cookie;
+	long			lIssuedTime;
+};
+
+// Ten seconds is far longer than the round trip and far shorter than a useful attack window.
+const long kReachCookieLifetimeSeconds = 10;
+const size_t kMaxReachCookies = 256;
+
+std::vector<REACHCOOKIE_s> g_ReachCookies;
+
+void ExpireReachCookies( long lNow )
+{
+	std::vector<REACHCOOKIE_s> kept;
+	kept.reserve( g_ReachCookies.size() );
+
+	for ( size_t i = 0; i < g_ReachCookies.size(); ++i )
+	{
+		if (( lNow - g_ReachCookies[i].lIssuedTime ) < kReachCookieLifetimeSeconds )
+			kept.push_back( g_ReachCookies[i] );
+	}
+
+	g_ReachCookies.swap( kept );
+}
+} // namespace
+
+// Returns the cookie issued, or "" when we are refusing to issue any more.
+std::string SERVERREGISTRY_IssueReachCookie( const NETADDRESS_s &Address )
+{
+	ExpireReachCookies( g_lCurrentTime );
+
+	if ( g_ReachCookies.size() >= kMaxReachCookies )
+		return "";
+
+	// One in flight per address. Without this a single client could fill the table by itself, and the
+	// cap would then be a denial of service against everyone else rather than a defence.
+	for ( size_t i = 0; i < g_ReachCookies.size(); ++i )
+	{
+		if ( g_ReachCookies[i].Address.Compare( Address ))
+			return g_ReachCookies[i].Cookie;
+	}
+
+	REACHCOOKIE_s entry;
+	entry.Address = Address;
+	entry.lIssuedTime = g_lCurrentTime;
+
+	char buffer[64];
+	sprintf( buffer, "%x%x%x", rand(), rand(), rand() );
+	entry.Cookie = buffer;
+
+	g_ReachCookies.push_back( entry );
+	return entry.Cookie;
+}
+
+// Whether this address really was issued this cookie. Consumed on success, so one cookie buys one
+// probe and a replay earns nothing.
+bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::string &Cookie )
+{
+	ExpireReachCookies( g_lCurrentTime );
+
+	if ( Cookie.empty() )
+		return false;
+
+	for ( size_t i = 0; i < g_ReachCookies.size(); ++i )
+	{
+		if ( g_ReachCookies[i].Address.Compare( Address ) && ( g_ReachCookies[i].Cookie == Cookie ))
+		{
+			g_ReachCookies.erase( g_ReachCookies.begin() + i );
+			return true;
+		}
+	}
+
+	return false;
 }
 
 //*****************************************************************************
@@ -554,6 +650,69 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			}
 		}
 		return;
+
+	// [rc4l] A client asking whether we can reach it on a port, BEFORE it hosts anything there.
+	//
+	// The dangerous shape of this request is obvious once stated: it asks us to send a packet, and
+	// anything that sends a packet on request is a weapon aimed at whoever the request names. Three
+	// things keep it from being one, and none of them is optional.
+	//
+	//   THE ADDRESS IS NEVER TAKEN FROM THE PACKET. Only AddressFrom is ever used. A body-supplied
+	//   address is what turns a service like this into a reflector.
+	//
+	//   A COOKIE COMES FIRST, because UDP sources are forgeable. The first request gets a cookie sent
+	//   to the source and nothing else; only a second request echoing it earns an unsolicited packet.
+	//   Someone spoofing a victim's address gets our cookie sent to that victim -- one small packet,
+	//   no amplification -- and can go no further, because the reply went to the victim, not to them.
+	//
+	//   THE PROBE CARRIES THE CLIENT'S OWN NONCE, so the client can tell our packet from a stranger's
+	//   and cannot be fooled into believing it is reachable when it is not.
+	//
+	// Flood protection above already applies: this arrives through the same queues as every other
+	// command, so a client hammering it is throttled without anything special here.
+	case CLIENT_SERVERREGISTRY_REACHTEST:
+		{
+			const char *pszCookie = pByteStream->ReadString();
+			const std::string cookie = ( pszCookie != NULL ) ? pszCookie : "";
+			const long lPort = pByteStream->ReadShort();
+			const char *pszNonce = pByteStream->ReadString();
+			const std::string nonce = ( pszNonce != NULL ) ? pszNonce : "";
+
+			if ( cookie.empty() )
+			{
+				// First leg. Issue a cookie to the SOURCE address and stop there.
+				const std::string issued = SERVERREGISTRY_IssueReachCookie( AddressFrom );
+				if ( issued.empty() )
+					return;			// too many in flight; saying nothing is the safe refusal
+
+				g_MessageBuffer.Clear();
+				g_MessageBuffer.ByteStream.WriteByte( SERVERREGISTRY_REACHCOOKIE );
+				g_MessageBuffer.ByteStream.WriteString( issued.c_str() );
+				NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
+				return;
+			}
+
+			// Second leg. The echo proves the sender is really at this address, because the cookie
+			// only ever went there.
+			if ( SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie ) == false )
+				return;
+
+			// A port of zero, or one we would not dial, is not worth a packet.
+			if (( lPort <= 0 ) || ( lPort > 65535 ))
+				return;
+
+			NETADDRESS_s Target = AddressFrom;
+			Target.SetPort( static_cast<USHORT>( lPort ));
+
+			g_MessageBuffer.Clear();
+			g_MessageBuffer.ByteStream.WriteByte( SERVERREGISTRY_REACHPROBE );
+			g_MessageBuffer.ByteStream.WriteString( nonce.c_str() );
+			NETWORK_LaunchPacket( &g_MessageBuffer, Target );
+
+			printf( "-> Reach probe sent to %s.\n", Target.ToString() );
+		}
+		return;
+
 	// Launcher is asking the registry for the server list.
 	case LAUNCHER_SERVER_CHALLENGE:
 	case LAUNCHER_SERVERREGISTRY_CHALLENGE:
