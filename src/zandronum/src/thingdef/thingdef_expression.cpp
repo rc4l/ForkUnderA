@@ -2073,6 +2073,7 @@ FxExpression *FxGlobalVariable::Resolve(FCompileContext&)
 	case VAL_Fixed:
 	case VAL_Angle:
 		ValueType = VAL_Float;
+		break;	// [rc4l] uzdoom@79791629e -- fell through into the object/class cases
 
 	case VAL_Object:
 	case VAL_Class:
