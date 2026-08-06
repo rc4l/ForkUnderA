@@ -367,13 +367,13 @@ TEST( GlowTravel, TheReturnJourneyRetracesTheSameArc )
 		upMin = ( off < upMin ) ? off : upMin;
 	}
 
-	// It bows at all...
-	EXPECT_GT( downMax, 0 );
-	EXPECT_GT( upMax, 0 );
+	// It bows at all, outward -- negative x, away from the list...
+	EXPECT_LT( downMin, 0 );
+	EXPECT_LT( upMin, 0 );
 
 	// ...and neither direction strays to the other side of the line.
-	EXPECT_EQ( 0, downMin );
-	EXPECT_EQ( 0, upMin );
+	EXPECT_EQ( 0, downMax );
+	EXPECT_EQ( 0, upMax );
 }
 
 TEST( GlowTravel, EveryDirectionBowsToOneConsistentSide )
