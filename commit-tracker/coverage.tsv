@@ -1409,13 +1409,13 @@ d880b84ea08717cf59d1c3449b052ac7166bb33a	2015-02-27T14:24:22Z	- Fixed build with
 719dfbe5a90aa66f38f8dd17f1c7a5b8efd9ce7a	2015-02-28T03:51:04Z	Don't die on configuration if xinput.h is not found	ported	ported: a missing xinput.h now warns instead of failing configuration with SEND_ERROR. It is an optional SDK header and XInput is disabled cleanly without it. src/CMakeLists.txt:74.	1d20a45f9
 dca5f0e908dfeeff636ee8a55272b91a7689f16f	2015-03-02T00:53:34Z	Added QF_SINE	pending		/
 6b83dcab89f5d45d5f54cd10a4c019098a9dd1e0	2015-03-02T03:40:03Z	- Fixed broken regular quakes.	pending		/
-b6a5515ad73d36110f334e31ba89750e20b1ff58	2015-03-02T05:00:27Z	Merge pull request #283 from MajorCooke/quakefix	pending		/
+b6a5515ad73d36110f334e31ba89750e20b1ff58	2015-03-02T05:00:27Z	Merge pull request #283 from MajorCooke/quakefix	skip	skip: merge commit -- no unique content, its changes live in the parents	/
 123da687350e58645d07e21bafe8184afaa5e1ad	2015-03-02T09:02:49Z	- took out the part of PIT_CheckThing that determines whether a missile should hurt its target and moved it to a separate function. - fixed: MF7_HARMFRIENDS was checked on the victim of an attack, but needs to be checked on the shooter.	pending		/
 7a543a71e1277ba2fe260b4678c53c517088688b	2015-03-02T21:43:25Z	- Fixed: Buddha mode zombie bug returned. (Also fixes compiler warning.) - Fixed: Missing include for FreeBSD compile.	pending		/
 f941fa9e40d7aebad38e6569bba9fa20972b0eac	2015-03-02T22:25:35Z	- Fixed: SwapActorTeleFog didn't work with tid 0 (activator).	pending		/
 156d1e61fdf2cef56442be33fd404e174a41d5a0	2015-03-03T01:23:24Z	Use sub-tic accuracy for smooth sine quakes	pending		/
 d61c48db25c95b18a2d309e3246c8d855dcc4412	2015-03-04T19:37:49Z	- Fixed imprecise bound checking in ACS code.	pending		/
-464931a865cd55465dc1506eb5a5dc4345be7fb7	2015-03-04T19:57:37Z	Merge pull request #287 from edward-san/acs_overflow_fix	pending		/
+464931a865cd55465dc1506eb5a5dc4345be7fb7	2015-03-04T19:57:37Z	Merge pull request #287 from edward-san/acs_overflow_fix	skip	skip: merge commit -- no unique content, its changes live in the parents	/
 b47cb9027aad95390e3b6abdd4fcb4f958edb7b9	2015-03-04T23:07:19Z	- completing Autoload sections	pending		/
 5973568bd2a93a00a6bc87e109e752327a72768f	2015-03-04T23:07:19Z	- add Group feature to handle Autoload-groups	pending		/
 1e3dc9c84110b28560ae94d8b67442ef0e128c8b	2015-03-04T23:07:19Z	- use Group feature for Freedoom games	pending		/
@@ -1437,16 +1437,16 @@ bc206f21af342073fdb750ef57d45f77afdc40d5	2015-03-11T19:24:31Z	A_FireCustomMissil
 b6ca1947ff3485c6bdba5dd8656bf40c79769107	2015-03-12T08:26:47Z	Added QuakeEx for ACS.  ACC is ready as well.	pending		/
 9a09fbd7edd92edb0e2e30f945fe308ea8e11acb	2015-03-12T08:34:25Z	Added MTHRUSPECIES support for rails and sprays.	pending		/
 433744d0fd0e7a60c0e42c2aa58de687c734c8c4	2015-03-12T18:41:38Z	Fix old warning on VC 2005	pending		/
-5d2cbf4ecb1752f0cf10b39bee21c1921a3682f1	2015-03-14T04:26:33Z	Improve disassembly of branch instructions	pending		/
+5d2cbf4ecb1752f0cf10b39bee21c1921a3682f1	2015-03-14T04:26:33Z	Improve disassembly of branch instructions	deferred	deferred: ZScript VM. Improves disassembly of branch instructions in the VM debugger (src/zscript/vmdisasm.cpp and friends), which our base predates. Nothing here is gameplay.	/
 da26e1095118631ba7cefa21101a123ff5258647	2015-03-14T08:34:55Z	- fixed: The FBoundingBox constructor taking a point and a radius needs to restrict the resulting values to the fixed point range.	pending		/
-6012950230e614c8090837d60b920491af94924a	2015-03-14T08:35:23Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+6012950230e614c8090837d60b920491af94924a	2015-03-14T08:35:23Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents	/
 64d663397bc8345648d5772f3234d37070997f75	2015-03-14T09:39:47Z	Added video resolution of new 12" MacBook, 2304-by-1440	ported	ported: taken as part of the 108dcf122 end state, vendored byte-identical at 1f74200. Every change of this commit lives inside posix/cocoa and is present in that snapshot; it was never separately built here (the OpenAL-series precedent)	1f74200
 cf579e4c770cf7974d732ed9b850a2e06a00e2ad	2015-03-14T12:14:27Z	- removed unused 'bombvec' variable from P_RadiusAttack.	pending		/
 1e7cce5a2c0923ea78879f82ae6d7ac665d233ff	2015-03-15T03:04:53Z	Add missing NewPointer() function	pending		/
 8cb269388e331d35e36194b580bb1d4014d9f81e	2015-03-15T03:16:05Z	Eliminate .mreg section	pending		/
 16ad440adb837a18bf50aeddf2c6d71bab7df613	2015-03-15T08:51:57Z	- fixed: The distance check in A_RadiusGive could overflow for large distances.	pending		/
-502120e78fc286fea41b5047375b627adaedc3cb	2015-03-15T08:53:24Z	Merge branch 'osx_newmb_res' of https://github.com/alexey-lysiuk/gzdoom	pending		/
-97947f9e109798e054940b6fc2c4cbf292c7321e	2015-03-15T10:42:59Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+502120e78fc286fea41b5047375b627adaedc3cb	2015-03-15T08:53:24Z	Merge branch 'osx_newmb_res' of https://github.com/alexey-lysiuk/gzdoom	skip	skip: merge commit -- no unique content, its changes live in the parents	/
+97947f9e109798e054940b6fc2c4cbf292c7321e	2015-03-15T10:42:59Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents	/
 fad3a54100fb216f512b4aeef06468afedd91f14	2015-03-15T11:10:22Z	- fixed positioning for sky textures that are less than 128 pixels tall.	ported	66abdae | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	66abdae
 7701d54b1fe378f09c16353b9d73a7a93deff6a6	2015-03-15T11:24:28Z	- fixed: associated dynamic lights took the sprite/frame info from the actor's current state instead of from the actor's current sprite and frame, which may differ in case some placeholder sprite is used in the state.	ported	66abdae | no-file-overlap: landed inside a renderer-staircase flight commit, so the cited commit's files do not share a basename with the upstream commit's; every added line verified present by content check	66abdae
 bf6cdba0bbdfa2ee7874dbebe2e4974b8205596e	2015-03-17T05:07:50Z	Added -hashfiles command	pending		/
@@ -1457,19 +1457,19 @@ ffbcda206cda9c5d4c0b35b3e779558868be03b9	2015-03-21T11:48:37Z	- allow oscillatin
 b958e930cf69c7db47e257a66987a8b1d6899f16	2015-03-24T03:28:18Z	- Cleared developer warnings with modern (3.0+) versions of CMake.	pending		/
 e29b8b2094c0aab57a63801bf2bb55a4e8205f4a	2015-03-24T04:02:25Z	- Fixed: QuakeEx ACS function didn't handle fixed->double conversion.	pending		/
 7b6d245444d13b99b277373c5d61b69184768a0e	2015-03-24T08:22:51Z	- added NULL pointer checks to A_CheckStaff.	pending		/
-c249157876075b1076d27461f9a5a56189150bb2	2015-03-24T16:59:08Z	Merge branch 'master' into openal	pending		/
+c249157876075b1076d27461f9a5a56189150bb2	2015-03-24T16:59:08Z	Merge branch 'master' into openal	skip	skip: merge commit -- no unique content, its changes live in the parents	/
 890fb39d25023aca7651c15f6ea46121ff842940	2015-03-24T22:28:59Z	- Apparently cmake_policy doesn't ignore unknown policies (which seems to defeat the purpose to me) so we must wrap them in code to detect if the policy is known.	pending		/
 f161c0c501622af829dbd505d5927b3370468f3d	2015-03-25T19:19:50Z	- Fixed: Projectile impacts never called P_DamageMobj when damage was 0 without the CAUSEPAIN flag.	pending		/
 d45d45583bcda1469ac7af07f68060a9a5cb161a	2015-03-25T19:27:12Z	Take PainThresholds into account.	pending		/
 9eda15c280994411982bc2a370ba9316efa7db55	2015-03-25T19:33:24Z	- fixed: The recent ANIMDEFS extension missed adjusting the call to AddSimpleAnim for ANIMATED-defined animations.	pending		/
 d1a972ff3d25d54fd9432d362d5e8cf1f96e3f53	2015-03-25T19:34:26Z	- fixed: The recent ANIMDEFS extension missed adjusting the call to AddSimpleAnim for ANIMATED-defined animations.	pending		/
-21314fe8671e646e302ede770a9dd425865572b7	2015-03-25T19:36:09Z	Merge branch 'causepainfix' of https://github.com/MajorCooke/zdoom	pending		/
+21314fe8671e646e302ede770a9dd425865572b7	2015-03-25T19:36:09Z	Merge branch 'causepainfix' of https://github.com/MajorCooke/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents	/
 66b090cd44df7626a71de4d5bcc15c8645e5eb8e	2015-03-25T21:25:00Z	- Improvements to some of the actor debug CCMDs.	pending		/
 98b2475fb87c6029ea5fd65ff17969694db0ee3a	2015-03-25T21:28:05Z	- Fixed: Loading music from an external file was broken.	pending		/
-3d2eaf81db1f5b9c3326f1d0d86f7ff06fa33143	2015-03-25T22:20:20Z	Merge branch 'hashing' of https://github.com/Edward850/zdoom	pending		/
-d206e423b67e008abc0db814bd2c22a2cbae69c4	2015-03-25T22:21:14Z	Merge branch 'countitems' of https://github.com/edward-san/zdoom	pending		/
+3d2eaf81db1f5b9c3326f1d0d86f7ff06fa33143	2015-03-25T22:20:20Z	Merge branch 'hashing' of https://github.com/Edward850/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents	/
+d206e423b67e008abc0db814bd2c22a2cbae69c4	2015-03-25T22:21:14Z	Merge branch 'countitems' of https://github.com/edward-san/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents	/
 2c978bc6f72d738d6e06988c09af0e19e82963ee	2015-03-26T10:38:09Z	Change hashfiles filename string to a cstr	pending		/
-29c5071672bb9e66bea69e1e338cc43a9fc477d4	2015-03-26T12:05:42Z	Merge branch 'hashing' of https://github.com/Edward850/zdoom	pending		/
+29c5071672bb9e66bea69e1e338cc43a9fc477d4	2015-03-26T12:05:42Z	Merge branch 'hashing' of https://github.com/Edward850/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents	/
 32a55c9229d4604f4f931bfae73dde8ab36f7c65	2015-03-27T01:57:12Z	Revert "- Fixed: A_Die didn't consider missiles for the function."	pending		/
 93c7f4b4b5cfa8baf1a8699b5201b41e045861f7	2015-03-27T02:46:14Z	Don't accelerate BOOM colormaped player sprites	pending		/
 ee9f64427c608ed3283caea97b46b6f2a83e6c61	2015-03-27T03:01:57Z	Add wad name to mapchecksum output	pending		/
@@ -1493,8 +1493,8 @@ eb78c241406a7f84fc11ee799133a5a8c8a0a589	2015-03-27T13:37:13Z	- small oversight:
 3849cb86231ce24131a86e9c29795a8cf3706a3d	2015-03-29T11:02:45Z	- added precaching of textures via MAPINFO.	pending		/
 5f56fb5a16156a0e227ae9263eedba67141d0a51	2015-03-31T01:54:58Z	Changed the behavior of SetActorTeleFog. - Don't force "null" to resolve to no actor since "none" is already defined as NULL (via FindClass). (This change also applies to the decorate properties.) - Passing an empty actor name will keep the existing fog since there's otherwise no way set only one fog. Since "none" works to remove the fog, I see no reason not to have this option.	pending		/
 4d59190446c60aed6ed37394d9b06d0a3ac86a47	2015-03-31T07:24:16Z	- redit commit 5f56fb5a16156a0e227ae9263eedba67141d0a51 without altering the line endings throughout thingdef_codeptr.cpp.	pending		/
-5febac09944fc74c5ce8a72653547aa7835bd6b1	2015-03-31T13:21:15Z	- removed incorrect multiplication from FraggleScript's PointToDist function. The problem was introduced by replacing a (fixed_t) type cast with FLOATTOFIXED without removing the value range adjustment.	pending		/
-6eb4e2a22498bd300a97d276f139a29a25a50d76	2015-03-31T16:25:31Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+5febac09944fc74c5ce8a72653547aa7835bd6b1	2015-03-31T13:21:15Z	- removed incorrect multiplication from FraggleScript's PointToDist function. The problem was introduced by replacing a (fixed_t) type cast with FLOATTOFIXED without removing the value range adjustment.	skip	skip: FraggleScript (src/fragglescript/t_func.cpp). Zandronum does not carry FraggleScript at all -- there is no fragglescript directory here. Re-derive by checking for it.	/
+6eb4e2a22498bd300a97d276f139a29a25a50d76	2015-03-31T16:25:31Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents	/
 d481ba7b5a6ec90234b8ea6ca7fef0e8d6e447d1	2015-03-31T20:11:16Z	- fixed: The replacement actors for A_SetTelefog should not require inheriting from TeleportFog.	pending		/
 d940c6a2eecb2b4897433791d897a8712cfe8e3b	2015-03-31T21:15:43Z	- fixed: With the recent changes to the damage code, the check for MF5_NODAMAGE was too early. Putting it into AActor::TakeSpecialDamage is also not the best idea because that limits that function's potential.	pending		/
 34aeb428a1cd8be2558b532fc85136928e7bac20	2015-04-01T08:01:48Z	- Removed the check for this flag from P_RadiusAttack because MF7_CAUSEPAIN cannot be used for radius attacks. Their logic is too different from regular attacks.	pending		/
