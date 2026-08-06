@@ -287,6 +287,7 @@ enum class DialogAction
 	None,
 	CancelDownload,
 	JoinPassword,
+	StopHosting,
 };
 
 struct BrowserDialog
@@ -1536,6 +1537,11 @@ public:
 			zx::ReleaseJoinResume( !bAffirmative );
 			break;
 
+		case DialogAction::StopHosting:
+			if ( bAffirmative )
+				zx::HostStop( );
+			break;
+
 		case DialogAction::JoinPassword:
 			if ( bAffirmative )
 			{
@@ -2063,6 +2069,26 @@ public:
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 	}
 
+	// [rc4l] How many people other than us are on the server we are connected to.
+	//
+	// Counted from OUR OWN player table rather than asked of the server, because we are a client of
+	// it and the table is what the server has already told us. Asking would mean a round trip, and a
+	// question about whether to disconnect cannot wait on the connection it is about.
+	int CountOtherPlayersHere( )
+	{
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			return 0;
+
+		int count = 0;
+		for ( int i = 0; i < MAXPLAYERS; ++i )
+		{
+			if ( playeringame[i] && ( i != consoleplayer ))
+				++count;
+		}
+
+		return count;
+	}
+
 	//*************************************************************************
 	//
 	// [rc4l] Whatever the button under the pointer means right now.
@@ -2081,6 +2107,26 @@ public:
 
 		if ( zx::HostIsActive( ))
 		{
+			// [rc4l] Ask, because the cost is not ours. Stopping a server with people on it ends
+			// THEIR game, and the host is the one person on the machine who cannot see how many that
+			// is by looking at their own screen. A count in the question is the whole difference
+			// between an informed decision and a stray click.
+			//
+			// Asked only when it would actually cost somebody something: an empty server is one
+			// nobody is playing on, and a confirmation for that is a dialog that trains people to
+			// dismiss dialogs.
+			const int others = CountOtherPlayersHere( );
+			if ( others > 0 )
+			{
+				FString message;
+				message.Format( "%d %s playing on it. Stopping ends their game as well as yours.",
+					others, ( others == 1 ) ? "person is" : "people are" );
+
+				ShowDialog( DialogAction::StopHosting, "Stop the server?", message.GetChars( ),
+					"STOP IT", 's', "KEEP IT UP", 'k' );
+				return;
+			}
+
 			zx::HostStop( );
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/backup", snd_menuvolume, ATTN_NONE );
 			return;
@@ -2387,6 +2433,9 @@ public:
 
 			if ( state == zx::HostState::Running )
 			{
+				y += 6;
+				y = DrawHostReach( x, y, wrapW );
+
 				y += 4;
 				y = DrawWrappedIn( "You are the administrator of this server. Use the console -- "
 					"rcon <command> -- to run anything on it.", x, y, wrapW, CR_DARKGRAY );
@@ -2410,6 +2459,41 @@ public:
 			( state == zx::HostState::Failed )
 				? "Go back to the form"
 				: "Shut the server down\nAnyone playing on it is disconnected" );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Whether the outside world can reach this server -- reported, never predicted.
+	//
+	// The three states are what we actually know, and no more. WAITING is honest about the fact that
+	// nothing has happened yet; REACHABLE is only ever said because a stranger already reached us;
+	// and the failure says "we did not hear back" rather than "your port is closed", because a
+	// registry that was briefly down looks identical from in here and blaming the player's router for
+	// it would send them to configure something that was never wrong.
+	int DrawHostReach( int x, int y, int width )
+	{
+		switch ( zx::HostReachability( ))
+		{
+		case zx::HostReach::NotPublic:
+			return DrawWrappedIn( "Visible on this network only. Players elsewhere cannot see it.",
+				x, y, width, CR_DARKGRAY );
+
+		case zx::HostReach::Waiting:
+			return DrawWrappedIn( "Listed publicly -- checking whether the internet can reach it.",
+				x, y, width, CR_GOLD );
+
+		case zx::HostReach::Reachable:
+			return DrawWrappedIn( "The internet can reach this server. Anyone can join it.",
+				x, y, width, CR_GREEN );
+
+		case zx::HostReach::Unreachable:
+			y = DrawWrappedIn( "Nothing has reached this server from outside.",
+				x, y, width, CR_ORANGE );
+			return DrawWrappedIn( "It is still working for players on this network. To open it to "
+				"everyone, forward this port on your router.", x, y, width, CR_DARKGRAY );
+		}
+
+		return y;
 	}
 
 	// Wrapped text inside an arbitrary width, returning the y below it. DrawWrapped is fixed to the

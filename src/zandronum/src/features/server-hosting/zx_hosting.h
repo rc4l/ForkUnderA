@@ -48,11 +48,31 @@ void HostShutdown( void );
 
 HostState HostCurrentState( void );
 
+// [rc4l] Whether the outside world has been shown to reach this server.
+enum class HostReach
+{
+	NotPublic,		// local hosting -- nobody outside was ever meant to reach it
+	Waiting,		// announced, nothing has come back yet
+	Reachable,		// the registry reached us unprompted, which is proof
+	Unreachable,	// long enough with silence that a forwarded port would have shown by now
+};
+
+HostReach HostReachability( void );
+
 // Why the last host failed, or "" when it did not. Player-facing.
 const char *HostReason( void );
 
 // True while we hold a server process, in any state. This is what teardown must consult.
 bool HostIsActive( void );
+
+// [rc4l] Which server we are on -- a counter bumped by every HostStart, never reused.
+//
+// "Am I hosting?" is the wrong question for teardown, and answering it cost a server: stopping one
+// disconnects the client, the client notices SECONDS later, and by then the player may have started
+// another -- which the stale disconnect then tore down. The right question is "am I leaving the very
+// server I am hosting", and only a generation can answer that, because the address is identical.
+// Zero means we have never hosted.
+unsigned HostGeneration( void );
 
 // True once the server is listening and the client may connect.
 bool HostIsReady( void );
@@ -93,6 +113,15 @@ namespace zx
 
 // Mirror one console line up the pipe. Does nothing in a server a person started themselves.
 void HostChildEcho( const char *text );
+
+// [rc4l] Say, once, that the registry reached us unprompted.
+//
+// This is the ONLY honest answer to "is my port forwarded". A machine cannot tell from the inside:
+// checking your own port proves you can talk to yourself, and a router agreeing to a UPnP request
+// proves a router replied. What proves it is an outside party opening a connection you did not ask
+// for -- and the registry already does exactly that before it will list a server. So we do not test
+// reachability; we notice that it has been tested for us.
+void HostChildAnnounceReachable( void );
 
 // Say once, up the same pipe, that this server is listening.
 void HostChildAnnounceReady( void );

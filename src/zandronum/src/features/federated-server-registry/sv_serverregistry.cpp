@@ -75,6 +75,7 @@
 #include "v_text.h"
 #include "voicechat.h"
 #include "features/wad-serve/zx_wadserve.h" // [rc4l] the direct-download port we advertise
+#include "features/server-hosting/zx_hosting.h" // [rc4l] tell the game that started us we are reachable
 
 // [SB] This is easier than updating the parameters for a load of functions every time I want to add something.
 struct LauncherResponseContext
@@ -1046,6 +1047,17 @@ bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address )
 void SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream  )
 {
 	LONG lVerificationNumber = pByteStream->ReadLong();
+
+	// [rc4l] THE PORT IS FORWARDED, and this packet is the proof.
+	//
+	// The registry sent it UNPROMPTED, from outside, to the address we announced -- which is exactly
+	// the test a machine cannot run on itself. Checking our own port only proves we can talk to
+	// ourselves; a router agreeing to a UPnP request only proves a router replied. Arriving here
+	// means a stranger on the internet reached this socket.
+	//
+	// So a game that started us learns its answer as a side effect of the listing it already wanted,
+	// with no probe to write and no service to depend on.
+	zx::HostChildAnnounceReachable( );
 
 	g_ServerRegistryBuffer.Clear();
 	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_SERVERREGISTRY_VERIFICATION );
