@@ -1998,7 +1998,8 @@ enum
 static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Angle, const INTBOOL UseAmmo,
 							   const int SpawnOfs_XY, const fixed_t SpawnHeight, const INTBOOL AimAtAngle,
 							   const fixed_t PitchAdjust, const INTBOOL NoAutoAim = false,
-							   const INTBOOL TransferTranslation = false )
+							   const INTBOOL TransferTranslation = false,
+							   const bool CalledFromWeapon = true )
 {
 	if (!self->player) return;
 
@@ -2006,7 +2007,12 @@ static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Ang
 	AWeapon * weapon=player->ReadyWeapon;
 	AActor *linetarget;
 
-	if (UseAmmo && weapon)
+	// [rc4l] uzdoom@bc206f21a -- only use ammo when called from a weapon, not when an actor
+	// state or an inventory item calls this. ACTION_CALL_FROM_WEAPON() reads CallingState and
+	// statecall, which are only in scope inside DEFINE_ACTION_FUNCTION, so the callers evaluate
+	// it and pass the answer in. Upstream's modern A_FireProjectile gates the same way, on
+	// stateinfo.mStateType == STATE_Psprite.
+	if (UseAmmo && CalledFromWeapon && weapon)
 	{
 		if (!weapon->DepleteAmmo(weapon->bAltFire, true)) return;	// out of ammo
 	}
@@ -2065,7 +2071,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 	// calls it. Negates pitch to match upstream's deprecated wrapper (A_FireProjectile(..., -pitch)).
 	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
 					   Flags & FPF_AIMATANGLE, -fixed_t::FromSignedBits(pitch),
-					   Flags & FPF_NOAUTOAIM, Flags & FPF_TRANSFERTRANSLATION );
+					   Flags & FPF_NOAUTOAIM, Flags & FPF_TRANSFERTRANSLATION,
+					   ACTION_CALL_FROM_WEAPON() );
 }
 
 //==========================================================================
@@ -2089,7 +2096,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireProjectile)
 
 	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
 					   flags & FPF_AIMATANGLE, fixed_t::FromSignedBits(pitch),
-					   flags & FPF_NOAUTOAIM, flags & FPF_TRANSFERTRANSLATION );
+					   flags & FPF_NOAUTOAIM, flags & FPF_TRANSFERTRANSLATION,
+					   ACTION_CALL_FROM_WEAPON() );
 }
 
 
