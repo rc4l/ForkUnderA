@@ -2032,7 +2032,13 @@ void FDynamicBuffer::SetData (const BYTE *data, int len)
 	}
 	else
 	{
-		len = 0;
+		// [rc4l] uzdoom@2c06987f6 -- `len = 0` assigned the LOCAL parameter, so a NULL data pointer
+		// left m_Len stale and the buffer still looked like it held its old contents.
+		//
+		// That commit also added M_Free(m_Data) here, which is NOT taken: it leaves m_Data dangling
+		// while m_BufferLen keeps its old value, so the next call with a small len skips the realloc
+		// and memcpys into freed memory. Upstream removed it again -- HEAD has only the m_Len reset.
+		m_Len = 0;
 	}
 }
 
