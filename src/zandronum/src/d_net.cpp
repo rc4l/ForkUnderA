@@ -1796,7 +1796,7 @@ void TryRunTics (void)
 	if (counts == 0 && !doWait)
 	{
 		// Check possible stall conditions
-		Net_CheckLastRecieved(counts);
+		Net_CheckLastReceived(counts);
 		return;
 	}
 
@@ -1878,7 +1878,7 @@ void TryRunTics (void)
 				I_Error ("TryRunTics: lowtic < gametic");
 
 		// Check possible stall conditions
-		Net_CheckLastRecieved (counts);
+		Net_CheckLastReceived (counts);
 
 			// don't stay in here forever -- give the menu a chance to work
 			if (I_GetTime (false) - entertic >= TICRATE/3)
@@ -1922,7 +1922,7 @@ void TryRunTics (void)
 	}
 }
 
-void Net_CheckLastRecieved (int counts)
+void Net_CheckLastReceived (int counts)
 {
 	// [Ed850] Check to see the last time a packet was recieved.
 	// If it's longer then 3 seconds, a node has likely stalled.
