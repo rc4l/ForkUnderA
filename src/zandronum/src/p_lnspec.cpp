@@ -3145,7 +3145,7 @@ FUNC(LS_SetPlayerProperty)
 		mask = CF_INSTANTWEAPSWITCH;
 		break;
 	case PROP_FLY:
-		mask = CF_FLY;
+		//mask = CF_FLY;	// [rc4l] uzdoom@337682934 -- now carried on the actor, set below
 		break;
 	case PROP_TOTALLYFROZEN:
 		mask = CF_TOTALLYFROZEN;
@@ -3165,6 +3165,7 @@ FUNC(LS_SetPlayerProperty)
 			it->player->cheats |= mask;
 			if (arg2 == PROP_FLY)
 			{
+				it->flags7 |= MF7_FLYCHEAT;	// [rc4l] uzdoom@337682934
 				it->flags2 |= MF2_FLY;
 				it->flags |= MF_NOGRAVITY;
 			}
@@ -3174,6 +3175,7 @@ FUNC(LS_SetPlayerProperty)
 			it->player->cheats &= ~mask;
 			if (arg2 == PROP_FLY)
 			{
+				it->flags7 &= ~MF7_FLYCHEAT;	// [rc4l] uzdoom@337682934
 				it->flags2 &= ~MF2_FLY;
 				it->flags &= ~MF_NOGRAVITY;
 			}
@@ -3209,6 +3211,7 @@ FUNC(LS_SetPlayerProperty)
 				players[i].cheats |= mask;
 				if (arg2 == PROP_FLY)
 				{
+					players[i].mo->flags7 |= MF7_FLYCHEAT;	// [rc4l] uzdoom@337682934
 					players[i].mo->flags2 |= MF2_FLY;
 					players[i].mo->flags |= MF_NOGRAVITY;
 				}
@@ -3218,6 +3221,7 @@ FUNC(LS_SetPlayerProperty)
 				players[i].cheats &= ~mask;
 				if (arg2 == PROP_FLY)
 				{
+					players[i].mo->flags7 &= ~MF7_FLYCHEAT;	// [rc4l] uzdoom@337682934
 					players[i].mo->flags2 &= ~MF2_FLY;
 					players[i].mo->flags &= ~MF_NOGRAVITY;
 				}
