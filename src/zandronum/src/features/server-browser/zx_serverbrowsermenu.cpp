@@ -2918,6 +2918,24 @@ public:
 				if ( !serverbrowser_DownloadRunning( ))
 					return true;
 			}
+			else if ( g_Focus == zx::BrowserFocus::Rows )
+			{
+				// [rc4l] Enter on a row COMMITS TO THE ROW, it does not join. Focus moves to the button
+				// and a second Enter presses it.
+				//
+				// Same shape as the mouse, which has always taken one click to look and two to commit:
+				// joining is a minutes-long download and a reload of the whole game, and a single
+				// keystroke that starts all of that from a list you are still arrowing through is one
+				// fumbled keypress away from a mistake you cannot take back. The second press is also
+				// where the button gets to say CANCEL instead of JOIN, so what is about to happen is on
+				// screen before it happens.
+				if (( g_Selected >= 0 ) && ( g_Selected < total ))
+				{
+					SetFocus( zx::BrowserFocus::Action );
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
 
 			PressActionButton( );
 			return true;
