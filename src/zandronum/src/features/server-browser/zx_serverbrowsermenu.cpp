@@ -1017,10 +1017,18 @@ static EColorRange serverbrowser_PingColor( int ping )
 // the first leaves the browser rendering names in colours it may not have (see
 // computation/colortext_compute.h for why that is worse than it sounds); doing only the second
 // leaves "\cd" sitting in the middle of the name.
+// [rc4l] The escape scan is worth its keep. This runs per drawn row per frame, and the crossing into
+// the compute unit costs two more allocations -- an std::string in and an FString back out -- on top
+// of the one V_ColorizeString may already have caused. Most names have no colour code at all, so
+// checking for one byte buys the common case its way out of both.
 static FString serverbrowser_PlainName( const char *pszName )
 {
 	FString name = pszName;
 	V_ColorizeString( name );
+
+	if ( name.IndexOf( zx::kColorEscape ) < 0 )
+		return name;
+
 	return FString( zx::StripColorCodes( std::string( name.GetChars( ))).c_str( ));
 }
 
@@ -1031,30 +1039,56 @@ static FString serverbrowser_PlainName( const char *pszName )
 // The cutting used to need care -- shortening a byte at a time could land between an escape and the
 // character it takes, leaving a dangling escape to eat the next glyph. Stripping first removes that
 // hazard at the source rather than navigating around it: there are no escapes left to cut through,
-// so any offset is a safe offset and the walk is a plain one.
+// so any offset is a safe offset.
+//
+// [rc4l] Which also makes the search BINARY, and that is the part that mattered. The old walk tried
+// every length from longest down, copying the string and measuring it each time -- O(n) allocations
+// and O(n^2) character work for one name, repeated per row per frame. Width only ever grows with
+// length, so the longest prefix that fits can be found in about six probes instead of sixty, and the
+// one string being shortened is reused rather than recopied.
 static FString serverbrowser_FitName( const char *pszName, int maxWidth )
 {
 	FString name = serverbrowser_PlainName( pszName );
 
+	// The common case, and the cheap one: it already fits, so nothing is cut, copied or searched.
 	if ( SmallFont->StringWidth( name ) <= maxWidth )
 		return name;
 
 	// Room for the ellipsis BEFORE cutting, so the result including "..." fits.
 	const int budget = maxWidth - SmallFont->StringWidth( "..." );
+	if ( budget <= 0 )
+		return FString( "..." );
 
-	// Longest first: the widest cut that fits is the most of the name we can show.
-	for ( long len = static_cast<long>( name.Len( )); len > 0; --len )
+	long lo = 0;
+	long hi = static_cast<long>( name.Len( ));
+	long best = 0;
+
+	FString probe;
+	while ( lo <= hi )
 	{
-		FString candidate = name;
-		candidate.Truncate( len );
-		if ( SmallFont->StringWidth( candidate ) <= budget )
+		const long mid = lo + ( hi - lo ) / 2;
+
+		probe = name;
+		probe.Truncate( mid );
+
+		if ( SmallFont->StringWidth( probe ) <= budget )
 		{
-			candidate += "...";
-			return candidate;
+			best = mid;
+			lo = mid + 1;
+		}
+		else
+		{
+			hi = mid - 1;
 		}
 	}
 
-	return FString( "..." );
+	if ( best <= 0 )
+		return FString( "..." );
+
+	FString out = name;
+	out.Truncate( best );
+	out += "...";
+	return out;
 }
 
 
@@ -3865,21 +3899,30 @@ public:
 
 			// The row is not a control, but it is a rectangle, so it can say the things the drawn line
 			// had to drop: the untruncated name, and the ping nothing else has room for.
+			//
+			// [rc4l] Plain here too. A tooltip is the panel explaining itself, so it is the last place
+			// that should be rendering a colour it got from somewhere else.
+			//
+			// [rc4l] AND FORMATTED, NOT STREAMED. FString::operator<< has overloads for FString, const
+			// char *, char and FName -- and none for int. Streaming a number therefore converts it to
+			// char and appends one byte: a ping of 0 appends NUL, which DrawText treats as the end of
+			// the string, so the rest of that line silently vanishes. It compiles without a murmur.
 			{
-				FString tip;
-				tip << BROWSER_GetPlayerName( lServer, entry );
+				FString tip = serverbrowser_PlainName( BROWSER_GetPlayerName( lServer, entry ));
 
 				if ( bBot )
 					tip << "\nBot";
 				else
 				{
+					FString detail;
 					if ( bSpec )
-						tip << "\nSpectating";
+						detail.Format( "\nSpectating\n%d ms",
+							static_cast<int>( BROWSER_GetPlayerPing( lServer, entry )));
 					else
-						tip << "\n" << static_cast<int>( BROWSER_GetPlayerFragcount( lServer, entry ))
-							<< " frags";
-
-					tip << "\n" << static_cast<int>( BROWSER_GetPlayerPing( lServer, entry )) << " ms";
+						detail.Format( "\n%d frags\n%d ms",
+							static_cast<int>( BROWSER_GetPlayerFragcount( lServer, entry )),
+							static_cast<int>( BROWSER_GetPlayerPing( lServer, entry )));
+					tip << detail;
 				}
 
 				serverbrowser_Tip( x, lineY, textW, SB_DETAIL_LINE, tip );
