@@ -35,6 +35,7 @@
 #include "features/server-browser/computation/browserchrome_compute.h"
 #include "features/server-browser/computation/serversearch_compute.h"
 #include "features/server-browser/computation/textinput_compute.h"
+#include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
@@ -244,6 +245,46 @@ static	zx::BrowserFocus	g_Focus = zx::BrowserFocus::Tabs;
 static	zx::TextInput		g_Search;
 static	bool				g_SearchHot = false;
 
+// [rc4l] The tooltip registry. See computation/tooltip_compute.h for why it is shaped like this.
+//
+// CLEARED AT THE START OF EVERY FRAME and appended to by whatever draws each element, as it draws
+// it. A region exists here only because something put it here this frame, which is what makes a
+// lingering tooltip impossible: close the menu, reload the WADs, scroll the row away, switch tabs --
+// whatever stops being drawn stops being registered, in the same frame, with nothing to remember to
+// tear down.
+struct BrowserTip
+{
+	int x, y, w, h;			// virtual coordinates, the same ones the drawing used
+	FString text;
+};
+
+static	TArray<BrowserTip>	g_Tips;
+static	int					g_TipPointerX = -1;
+static	int					g_TipPointerY = -1;
+
+// Whether the pointer has been seen at all. A keyboard-only player never moves it, and a tooltip
+// parked wherever the mouse happened to be left is exactly the ghost this must not produce.
+static	bool				g_TipPointerValid = false;
+
+// [rc4l] Register a hoverable region, in the same virtual coordinates the drawing used. Called by
+// the draw code as it draws; see the registry's comment for why that is the whole trick.
+//
+// A free function rather than a menu method so that anything which draws can register one -- the
+// country flag is drawn by a helper outside the class, and a WAD row is not a control at all.
+static void serverbrowser_Tip( int x, int y, int w, int h, const char *text )
+{
+	if (( text == NULL ) || ( text[0] == 0 ) || ( w <= 0 ) || ( h <= 0 ))
+		return;
+
+	BrowserTip tip;
+	tip.x = x;
+	tip.y = y;
+	tip.w = w;
+	tip.h = h;
+	tip.text = text;
+	g_Tips.Push( tip );
+}
+
 // [rc4l] Where each tab was left. Two entries, indexed by BrowserTab.
 static	int				g_TabScroll[2] = { 0, 0 };
 static	int				g_TabSelected[2] = { -1, -1 };
@@ -282,6 +323,10 @@ static	TArray<FString>	g_DetailWads;
 // Parallel to g_DetailWads, IWAD included: it is never downloaded, but it is listed with the rest,
 // and one line silently lacking the number every other line carries reads as a bug.
 static	TArray<unsigned int>	g_DetailWadSizes;
+
+// [rc4l] The server's MD5 for each PWAD, for the tooltip. Empty where it did not send one, and empty
+// for the IWAD -- SQF2_PWAD_HASHES excludes it, and its build is identified by SQF2_FUA_IWAD_HASH.
+static	TArray<FString>		g_DetailWadHashes;
 
 // [rc4l] The WAD list scrolls on its own. It USED to stop at whatever fitted and print "+7 more",
 // which named a number the player then had no way to see -- the one place in the browser that
@@ -340,6 +385,34 @@ static int serverbrowser_ToScreenY( int vy )
 	return y;
 }
 
+// [rc4l] Screen pixels back to virtual units, for the one thing that genuinely needs it: the mouse
+// arrives in screen pixels and the tooltip is laid out in virtual ones.
+//
+// DERIVED FROM THE FORWARD MAPPING rather than reimplemented. VirtualToRealCoordsInt is affine --
+// a scale and an offset -- so evaluating it at two points recovers both, and the inverse is then
+// exact by construction. Reimplementing it would be a second copy of the letterboxing rule that
+// agrees with the first only until one of them is touched, which is precisely the bug the forward
+// helpers were written to end.
+static int serverbrowser_ToVirtualX( int px )
+{
+	const int at0 = serverbrowser_ToScreenX( 0 );
+	const int at100 = serverbrowser_ToScreenX( 100 );
+	if ( at100 == at0 )
+		return 0;
+
+	return (( px - at0 ) * 100 ) / ( at100 - at0 );
+}
+
+static int serverbrowser_ToVirtualY( int py )
+{
+	const int at0 = serverbrowser_ToScreenY( 0 );
+	const int at100 = serverbrowser_ToScreenY( 100 );
+	if ( at100 == at0 )
+		return 0;
+
+	return (( py - at0 ) * 100 ) / ( at100 - at0 );
+}
+
 //*****************************************************************************
 //
 // [rc4l] Vertical middle of a row, in virtual units.
@@ -384,6 +457,7 @@ static void serverbrowser_RefreshWadCache( int lServer )
 	g_DetailServer = lServer;
 	g_DetailWads.Clear( );
 	g_DetailWadSizes.Clear( );
+	g_DetailWadHashes.Clear( );
 
 	// A different server means a different list, so the old scroll position describes nothing.
 	g_WadScroll = 0;
@@ -394,6 +468,7 @@ static void serverbrowser_RefreshWadCache( int lServer )
 	{
 		g_DetailWads.Push( pszIwad );
 		g_DetailWadSizes.Push( BROWSER_GetIWADSize( lServer ));
+		g_DetailWadHashes.Push( BROWSER_GetIWADHash( lServer ));
 	}
 
 	const LONG lPwads = BROWSER_GetNumPWADs( lServer );
@@ -404,6 +479,7 @@ static void serverbrowser_RefreshWadCache( int lServer )
 		{
 			g_DetailWads.Push( pszPwad );
 			g_DetailWadSizes.Push( BROWSER_GetPWADSize( lServer, i ));
+			g_DetailWadHashes.Push( BROWSER_GetPWADHash( lServer, i ));
 		}
 	}
 }
@@ -527,6 +603,26 @@ static void serverbrowser_DrawCountry( int lServer, int x, int y )
 	{
 		if ( isalpha( static_cast<unsigned char>( pszCode[i] )) == 0 )
 			bCodeUsable = false;
+	}
+
+	// [rc4l] The flag is a picture of a fact nobody can read off a picture. Two letters of a code, or
+	// twenty pixels of a flag, is not a country you can name -- so hovering says it in words.
+	{
+		FString where;
+		if ( ulIndex != COUNTRY_INDEX_UNKNOWN )
+		{
+			const char *pszName = NETWORK_GetCountryNameFromIndex( ulIndex );
+			if (( pszName != NULL ) && ( pszName[0] != 0 ))
+				where = pszName;
+		}
+
+		if ( where.IsEmpty( ) && bCodeUsable )
+			where.Format( "%c%c%c", pszCode[0], pszCode[1], pszCode[2] );
+
+		if ( where.IsEmpty( ))
+			where = "Where this server is, nobody could say";
+
+		serverbrowser_Tip( x, y - 2, SB_COL_PLAYERS - x, SB_ROW_HEIGHT, where );
 	}
 
 	// [rc4l] Unknown is a real answer and gets shown as one. A blank column reads as "the browser
@@ -703,6 +799,11 @@ public:
 		g_Search = zx::ClearInput( );
 		g_SearchHot = false;
 
+		// A pointer position remembered from the last visit would put a tooltip on screen before the
+		// mouse has been touched. Forgotten until it moves again.
+		g_TipPointerValid = false;
+		g_Tips.Clear( );
+
 		// Per-tab memory is per-VISIT: the list is being requeried from nothing, so a position saved
 		// against the last set of servers describes rows that are not there yet.
 		g_TabScroll[0] = g_TabScroll[1] = 0;
@@ -774,6 +875,9 @@ public:
 		const zx::BrowserPhase phase = EffectivePhase( counts );
 		const unsigned parts = VisibleParts( counts );
 
+		// Every frame, before anything is drawn. Nothing survives from the last one.
+		g_Tips.Clear( );
+
 		DrawPanel( );
 
 		if ( parts & zx::kPartTabs )
@@ -792,6 +896,88 @@ public:
 			DrawNotice( );
 		else if ( g_ConfirmCancel )
 			DrawCancelConfirm( );
+		else
+			DrawTooltip( );		// never over a question -- that is the thing being answered
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Whichever registered region the pointer is inside, drawn where Windows would put it.
+	//
+	// Searched in REVERSE, so something drawn on top of something else wins -- the same order the eye
+	// resolves them in, and it costs nothing to get right.
+	void DrawTooltip( )
+	{
+		if ( !g_TipPointerValid || ( g_Tips.Size( ) == 0 ))
+			return;
+
+		const BrowserTip *found = NULL;
+		for ( int i = static_cast<int>( g_Tips.Size( )) - 1; i >= 0; --i )
+		{
+			const BrowserTip &tip = g_Tips[i];
+			if ( zx::TooltipRectContains( serverbrowser_ToScreenX( tip.x ), serverbrowser_ToScreenY( tip.y ),
+				serverbrowser_ToScreenX( tip.x + tip.w ) - serverbrowser_ToScreenX( tip.x ),
+				serverbrowser_ToScreenY( tip.y + tip.h ) - serverbrowser_ToScreenY( tip.y ),
+				g_TipPointerX, g_TipPointerY ))
+			{
+				found = &tip;
+				break;
+			}
+		}
+
+		if ( found == NULL )
+			return;
+
+		const std::vector<std::string> lines = zx::TooltipLines( found->text.GetChars( ));
+		if ( lines.empty( ))
+			return;
+
+		// Sized to its content, in virtual units, so a tooltip can be as long or as tall as whatever
+		// it has to say -- a WAD's full name, its hash and its size is three lines and nothing had to
+		// be told about it in advance.
+		const int lineH = SmallFont->GetHeight( ) + 1;
+		const int padX = 4;
+		const int padY = 3;
+
+		int contentW = 0;
+		for ( size_t i = 0; i < lines.size( ); ++i )
+			contentW = MAX( contentW, SmallFont->StringWidth( lines[i].c_str( )));
+
+		const int boxW = contentW + 2 * padX;
+		const int boxH = static_cast<int>( lines.size( )) * lineH + 2 * padY;
+
+		// The pointer is in screen pixels and the box is laid out in virtual ones, so the placement is
+		// done in virtual space -- the same space the text will be drawn in.
+		const int pointerVX = serverbrowser_ToVirtualX( g_TipPointerX );
+		const int pointerVY = serverbrowser_ToVirtualY( g_TipPointerY );
+
+		const zx::TooltipBox box = zx::ComputeTooltipPlacement( pointerVX, pointerVY, boxW, boxH,
+			SB_VIRT_W, SB_VIRT_H, 10, 3 );
+
+		// A panel of its own, darker and more opaque than anything under it, so the text on it is
+		// readable over the list, the detail panel or the game behind both.
+		const int left = serverbrowser_ToScreenX( box.x );
+		const int top = serverbrowser_ToScreenY( box.y );
+		const int right = serverbrowser_ToScreenX( box.x + box.w );
+		const int bottom = serverbrowser_ToScreenY( box.y + box.h );
+
+		screen->Dim( PalEntry( 18, 19, 26 ), 0.94f, left, top, right - left, bottom - top );
+
+		// A hairline edge, because a dark box on a dark list needs a boundary to read as a box.
+		screen->Dim( PalEntry( 120, 130, 165 ), 0.55f, left, top, right - left, 1 );
+		screen->Dim( PalEntry( 120, 130, 165 ), 0.55f, left, bottom - 1, right - left, 1 );
+		screen->Dim( PalEntry( 120, 130, 165 ), 0.55f, left, top, 1, bottom - top );
+		screen->Dim( PalEntry( 120, 130, 165 ), 0.55f, right - 1, top, 1, bottom - top );
+
+		int y = box.y + padY;
+		for ( size_t i = 0; i < lines.size( ); ++i )
+		{
+			// First line white, the rest dimmer: the thing hovered, then what is known about it.
+			screen->DrawText( SmallFont, ( i == 0 ) ? CR_WHITE : CR_GRAY,
+				box.x + padX, y, lines[i].c_str( ),
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			y += lineH;
+		}
 	}
 
 	//*************************************************************************
@@ -1083,6 +1269,10 @@ public:
 			screen->DrawText( SmallFont, bSelected ? CR_WHITE : CR_DARKGRAY,
 				vLeft + ( SB_TAB_W / 2 ) - ( SmallFont->StringWidth( labels[i] ) / 2 ), textY,
 				labels[i], DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+			serverbrowser_Tip( vLeft, SB_TAB_TOP, SB_TAB_W, SB_TAB_H, ( i == 0 )
+				? "Servers anyone can join"
+				: "These servers are password-protected" );
 		}
 
 		DrawSearchBox( );
@@ -1111,6 +1301,9 @@ public:
 
 		const bool bFocused = ( g_Focus == zx::BrowserFocus::Search );
 		const int radius = h / 3;
+
+		serverbrowser_Tip( SB_SEARCH_LEFT, SB_SEARCH_TOP, SB_SEARCH_W, SB_SEARCH_H,
+			"Filter the list by name\nUpper and lower case are the same" );
 
 		// Lighter when it has the keyboard, the same lift the tabs and the button use for the same
 		// reason: "what would a key do right now" should be answerable by looking.
@@ -1371,6 +1564,10 @@ public:
 			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
 		}
 
+		serverbrowser_Tip( SB_BUTTON_LEFT, SB_BUTTON_TOP, SB_BUTTON_RIGHT - SB_BUTTON_LEFT, SB_BUTTON_H, bCancel
+			? "Stop the download\nYou will be asked to confirm"
+			: "Join this server\nAnything missing is downloaded first" );
+
 		const char *const label = bCancel ? "CANCEL" : "JOIN";
 		const int textY = SB_BUTTON_TOP + ( SB_BUTTON_H - SmallFont->GetHeight( )) / 2 + 1;
 		screen->DrawText( SmallFont, bCancel ? CR_ORANGE : CR_WHITE,
@@ -1609,6 +1806,28 @@ public:
 
 			// CR_WHITE, not CR_UNTRANSLATED: untranslated means the font's own colour, and SmallFont's
 			// own colour is Doom red -- which is exactly the "missing" colour this stopped using.
+			// [rc4l] The row is not a control -- there is nothing to click -- but it IS a rectangle, so
+			// it can explain itself. The full name matters because the drawn one is truncated to fit;
+			// the exact byte count matters because the drawn one is rounded to the nearest whole unit.
+			{
+				FString tip;
+				tip << g_DetailWads[entry];
+
+				if ( g_DetailWadHashes[entry].IsNotEmpty( ))
+					tip << "\nMD5 " << g_DetailWadHashes[entry];
+
+				if ( g_DetailWadSizes[entry] > 0 )
+				{
+					FString exact;
+					exact.Format( "%u bytes", g_DetailWadSizes[entry] );
+					tip << "\n" << exact;
+				}
+				else
+					tip << "\nSize not reported by this server";
+
+				serverbrowser_Tip( x, lineY, textW, SB_DETAIL_LINE, tip );
+			}
+
 			DrawInPanel( CR_WHITE, x, lineY, name );
 
 			if ( size.IsNotEmpty( ))
@@ -1744,6 +1963,11 @@ public:
 		// and a wheel notch has to scroll whichever list the pointer is sitting over.
 		g_MouseX = x;
 		g_MouseY = y;
+
+		// And for the tooltip, which is a question about where the pointer is and nothing else.
+		g_TipPointerX = x;
+		g_TipPointerY = y;
+		g_TipPointerValid = true;
 
 		// Cleared here and set again below only if the pointer is actually over a row, so the hint
 		// does not linger on a row the pointer left.
