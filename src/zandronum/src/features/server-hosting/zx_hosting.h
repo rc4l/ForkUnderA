@@ -36,6 +36,10 @@ bool HostStart( const HostConfig &config );
 // Stop whatever we are hosting. Safe when nothing is.
 void HostStop( void );
 
+// Discard a finished host's record, so the UI can go back to offering a new one. Only meaningful
+// once it has stopped or failed -- a running server is not something to forget about.
+void HostForget( void );
+
 // Called every frame. Drains the child's output, advances the clock, and moves the state machine.
 void HostTick( void );
 
@@ -52,6 +56,11 @@ bool HostIsActive( void );
 
 // True once the server is listening and the client may connect.
 bool HostIsReady( void );
+
+// [rc4l] True exactly ONCE, on the frame the server first became ready. An edge rather than a level,
+// because the caller's job is to join -- and a level would have it trying to join again on every
+// frame after that, on a connection it already has.
+bool HostTakeReadyEdge( void );
 
 // The address to connect to, once ready.
 FString HostConnectAddress( void );
