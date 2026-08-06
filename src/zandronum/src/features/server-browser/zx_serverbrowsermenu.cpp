@@ -21,6 +21,9 @@
 #include "c_dispatch.h"
 #include "v_font.h"
 #include "v_video.h"
+// [rc4l] level.MapName and gamestate: a hosted server starts on the map the host is standing on.
+#include "doomstat.h"
+#include "g_level.h"
 #include "v_text.h"
 #include "gi.h"
 #include "i_system.h"
@@ -2239,7 +2242,18 @@ public:
 		config.maxPlayers = atoi( g_HostFields[kHostFieldMaxPlayers].text.c_str( ));
 		config.advertise = g_HostAdvertise;
 		config.serveWads = true;
+
+		// [rc4l] Start on the map we are standing on, for the same reason the WADs are taken from what
+		// we are running: the host has already answered this question by playing. "map01" is a poor
+		// guess for anything but stock Doom -- MM8BDM's maps are MM3HAR and friends, and a mod whose
+		// map01 does not exist would start the server on nothing.
+		//
+		// Falls back when there is no map to read: hosting straight from the title screen is normal,
+		// and MapName is empty there.
 		config.map = "map01";
+
+		if (( gamestate == GS_LEVEL ) && level.MapName.IsNotEmpty( ))
+			config.map = level.MapName.GetChars( );
 
 		if ( config.maxPlayers < 2 )
 			config.maxPlayers = 2;
