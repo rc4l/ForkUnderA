@@ -32,6 +32,7 @@
 #include "templates.h"
 
 #include "features/server-browser/browser.h"
+#include "i_input.h"		// [rc4l] I_PutInClipboard / I_GetFromClipboard, for the search box
 #include "features/server-browser/computation/browserchrome_compute.h"
 #include "features/server-browser/computation/serversearch_compute.h"
 #include "features/server-browser/computation/textinput_compute.h"
@@ -156,7 +157,7 @@
 // [rc4l] The search box, sharing the tab row and ending where the list does. Right-of-centre in the
 // space the tabs leave, which is the only clear room on that line -- and it reads as belonging to the
 // list underneath it rather than to the panel on the right.
-#define SB_SEARCH_RIGHT		SB_LIST_RIGHT
+#define SB_SEARCH_RIGHT		SB_DETAIL_RIGHT
 #define SB_SEARCH_W			150
 #define SB_SEARCH_LEFT		( SB_SEARCH_RIGHT - SB_SEARCH_W )
 #define SB_SEARCH_TOP		SB_TAB_TOP
@@ -244,6 +245,22 @@ static	zx::BrowserFocus	g_Focus = zx::BrowserFocus::Tabs;
 // belonged to one of them.
 static	zx::TextInput		g_Search;
 static	bool				g_SearchHot = false;
+
+// [rc4l] Held while the pointer is dragging out a selection in the search box, so a drag that
+// wanders off the field keeps selecting -- which is what dragging means everywhere else.
+static	bool				g_SearchDragging = false;
+
+// How much of the query is scrolled off the left of the box. Recorded by the drawing, because it is
+// the drawing that decides it, and read by the hit test so a click lands on the character under it
+// rather than the one that would be there if nothing had scrolled.
+static	int					g_SearchFirstChar = 0;
+
+// When the last click in the box landed, so a quick second one is a double-click.
+static	int					g_SearchClickTime = -1000;
+
+// Modifiers from the most recent GUI event, captured in Responder because MouseEvent is handed only
+// a type and a position.
+static	int					g_LastModifiers = 0;
 
 // [rc4l] The tooltip registry. See computation/tooltip_compute.h for why it is shaped like this.
 //
@@ -622,7 +639,11 @@ static void serverbrowser_DrawCountry( int lServer, int x, int y )
 		if ( where.IsEmpty( ))
 			where = "Where this server is, nobody could say";
 
-		serverbrowser_Tip( x, y - 2, SB_COL_PLAYERS - x, SB_ROW_HEIGHT, where );
+		// [rc4l] The FLAG's cell and nothing else. It used to run all the way to the players column,
+		// which meant hovering a server's NAME produced a sentence about which country it was in --
+		// a region far bigger than the thing it describes is the same bug as a tooltip on the wrong
+		// control.
+		serverbrowser_Tip( x - 1, y - 2, SB_COL_NAME - x, SB_ROW_HEIGHT, where );
 	}
 
 	// [rc4l] Unknown is a real answer and gets shown as one. A blank column reads as "the browser
@@ -798,6 +819,8 @@ public:
 		// typed anything, and the box that explains it is one line they have no reason to read yet.
 		g_Search = zx::ClearInput( );
 		g_SearchHot = false;
+		g_SearchDragging = false;
+		g_SearchFirstChar = 0;
 
 		// A pointer position remembered from the last visit would put a tooltip on screen before the
 		// mouse has been touched. Forgotten until it moves again.
@@ -1340,14 +1363,42 @@ public:
 		// Scrolled to keep the CARET visible rather than the start of the string: once the query is
 		// longer than the box, what matters is the end you are typing at.
 		FString shown = g_Search.text.c_str( );
-		int caretChars = static_cast<int>( g_Search.caret );
+		int first = 0;
 		while (( shown.Len( ) > 0 ) && ( SmallFont->StringWidth( shown ) > textW ))
 		{
 			shown = shown.Mid( 1 );
-			--caretChars;
+			++first;
 		}
+		g_SearchFirstChar = first;
+
+		int caretChars = static_cast<int>( g_Search.caret ) - first;
 		if ( caretChars < 0 )
 			caretChars = 0;
+
+		// The selection, under the text: a band behind the characters rather than an inversion of
+		// them, so the letters keep the colour they had and stay readable either way.
+		if ( zx::HasSelection( g_Search ))
+		{
+			int from = static_cast<int>( zx::SelectionStart( g_Search )) - first;
+			int to = static_cast<int>( zx::SelectionEnd( g_Search )) - first;
+			if ( from < 0 )
+				from = 0;
+			if ( to > static_cast<int>( shown.Len( )))
+				to = static_cast<int>( shown.Len( ));
+
+			if ( to > from )
+			{
+				const int selX = textX + SmallFont->StringWidth( shown.Left( from ));
+				const int selW = SmallFont->StringWidth( shown.Mid( from, to - from ));
+
+				const int sx = serverbrowser_ToScreenX( selX );
+				const int sw = MAX( 1, serverbrowser_ToScreenX( selX + selW ) - sx );
+				const int sy = serverbrowser_ToScreenY( textY - 1 );
+				const int sh = serverbrowser_ToScreenY( textY + SmallFont->GetHeight( )) - sy;
+
+				screen->Dim( PalEntry( 70, 95, 165 ), 0.85f, sx, sy, sw, sh );
+			}
+		}
 
 		screen->DrawText( SmallFont, CR_WHITE, textX, textY, shown,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
@@ -1818,8 +1869,12 @@ public:
 
 				if ( g_DetailWadSizes[entry] > 0 )
 				{
+					// The unit first, because that is the part anyone reads: "402mb" answers "is this
+					// worth waiting for" and "421527552" does not. The exact count follows it for the
+					// one person who wants to check a byte-for-byte match.
 					FString exact;
-					exact.Format( "%u bytes", g_DetailWadSizes[entry] );
+					exact.Format( "%s  (%u bytes)",
+						zx::FormatByteSize( g_DetailWadSizes[entry] ).c_str( ), g_DetailWadSizes[entry] );
 					tip << "\n" << exact;
 				}
 				else
@@ -1988,19 +2043,53 @@ public:
 		g_SearchHot = false;
 		if ( parts & zx::kPartTabs )
 		{
-			if (( x >= serverbrowser_ToScreenX( SB_SEARCH_LEFT )) &&
+			const bool bOverSearch =
+				( x >= serverbrowser_ToScreenX( SB_SEARCH_LEFT )) &&
 				( x < serverbrowser_ToScreenX( SB_SEARCH_RIGHT )) &&
 				( y >= serverbrowser_ToScreenY( SB_SEARCH_TOP )) &&
-				( y < serverbrowser_ToScreenY( SB_SEARCH_TOP + SB_SEARCH_H )))
+				( y < serverbrowser_ToScreenY( SB_SEARCH_TOP + SB_SEARCH_H ));
+
+			g_SearchHot = bOverSearch;
+
+			if ( bOverSearch && ( type == MOUSE_Click ))
 			{
-				g_SearchHot = true;
-				if ( type == MOUSE_Release )
+				const int now = static_cast<int>( DMenu::MenuTime );
+				const bool bDouble = (( now - g_SearchClickTime ) < 15 );
+				g_SearchClickTime = now;
+
+				g_Focus = zx::BrowserFocus::Search;
+
+				if ( bDouble )
 				{
-					g_Focus = zx::BrowserFocus::Search;
-					g_Search = zx::CaretEnd( g_Search );
+					// Double-click takes the word under the pointer, as it does everywhere. No drag
+					// afterwards: a second press that started selecting again would undo the word the
+					// player just asked for before they let go.
+					g_Search = zx::SelectWordAt( g_Search, SearchCharAt( x ));
+					g_SearchDragging = false;
+				}
+				else
+				{
+					// Press puts the caret and arms a drag; the drag is what turns it into a selection.
+					g_SearchDragging = true;
+					g_Search = zx::SetCaret( g_Search, SearchCharAt( x ), bShiftHeld( ));
 				}
 				return true;
 			}
+
+			if ( g_SearchDragging )
+			{
+				// Tracked even once the pointer leaves the box -- that is what dragging means
+				// everywhere else, and a selection that stops the moment you overshoot the last
+				// character is one you can never make in a single gesture.
+				g_Search = zx::SetCaret( g_Search, SearchCharAt( x ), true );
+
+				if ( type == MOUSE_Release )
+					g_SearchDragging = false;
+				return true;
+			}
+
+			if ( bOverSearch )
+				return true;
 		}
 
 		// The tabs.
@@ -2224,6 +2313,9 @@ public:
 	// them.
 	bool Responder( event_t *ev )
 	{
+		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ))
+			g_LastModifiers = ev->data3;
+
 		if ( g_ConfirmCancel && ( ev != NULL ) && ( ev->type == EV_GUI_Event ) &&
 			(( ev->subtype == EV_GUI_KeyDown ) || ( ev->subtype == EV_GUI_KeyRepeat ) ||
 			 ( ev->subtype == EV_GUI_Char )))
@@ -2255,50 +2347,8 @@ public:
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_ConfirmCancel && g_Notice.IsEmpty( ) &&
 			( g_Focus == zx::BrowserFocus::Search ))
 		{
-			if ( ev->subtype == EV_GUI_Char )
-			{
-				const zx::TextInput next = zx::InsertChar( g_Search, ev->data1, SB_SEARCH_MAXLEN );
-				if ( next.text != g_Search.text )
-				{
-					g_Search = next;
-					OnSearchChanged( );
-				}
+			if ( EditSearchField( ev ))
 				return true;
-			}
-
-			if (( ev->subtype == EV_GUI_KeyDown ) || ( ev->subtype == EV_GUI_KeyRepeat ))
-			{
-				switch ( ev->data1 )
-				{
-				case GK_BACKSPACE:
-					{
-						const zx::TextInput next = zx::Backspace( g_Search );
-						if ( next.text != g_Search.text )
-						{
-							g_Search = next;
-							OnSearchChanged( );
-						}
-					}
-					return true;
-
-				case GK_DEL:
-					{
-						const zx::TextInput next = zx::DeleteForward( g_Search );
-						if ( next.text != g_Search.text )
-						{
-							g_Search = next;
-							OnSearchChanged( );
-						}
-					}
-					return true;
-
-				case GK_HOME:	g_Search = zx::CaretHome( g_Search ); return true;
-				case GK_END:	g_Search = zx::CaretEnd( g_Search ); return true;
-
-				default:
-					break;
-				}
-			}
 		}
 
 		// [rc4l] The wheel. DOptionMenu's own wheel handling scrolls ITS item list, which this menu
@@ -2343,6 +2393,209 @@ public:
 		}
 
 		return Super::Responder( ev );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Raw keys, but only while the search box has focus.
+	//
+	// This is the engine's OWN mechanism for text entry -- DTextEnterMenu returns false here for
+	// exactly the same reason -- and finding it explained two bugs at once. M_Responder otherwise
+	// translates keys into MKEY_* before Responder ever runs, and GK_BACKSPACE becomes MKEY_Clear:
+	// the backspace handler was not merely watching for the wrong constant, it was in a function the
+	// key never reached. EV_GUI_KeyRepeat is swallowed in the same place, which is why holding a key
+	// did nothing either.
+	//
+	// Only while focused, because the translated events are what the rest of the browser navigates
+	// with. A menu that took raw keys all the time would have to reimplement the arrow handling the
+	// framework already does.
+	bool TranslateKeyboardEvents( )
+	{
+		return ( g_Focus != zx::BrowserFocus::Search ) || g_ConfirmCancel || g_Notice.IsNotEmpty( );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Every key a text field is expected to answer, in one place.
+	//
+	// BACKSPACE ARRIVES AS A CHARACTER, not as a named key: the engine sends EV_GUI_KeyDown with
+	// data1 == '', exactly as DTextEnterMenu reads it. Watching for GK_BACKSPACE instead is why it
+	// did nothing at all -- the case simply never matched.
+	//
+	// Returns true when the key belonged to the field. Arrows without shift are deliberately NOT
+	// claimed: they are how focus leaves the box, and a field you cannot get out of is worse than one
+	// without a caret. With shift they select, which is a thing only the field can mean.
+	bool EditSearchField( event_t *ev )
+	{
+		// [rc4l] Cmd counts as Ctrl. The Cocoa layer already reports it as GKM_META, so honouring both
+		// here is the whole of macOS support -- Cmd+A, Cmd+C, Cmd+V and Cmd+X land where a Mac user
+		// expects without a second code path to keep in step.
+		const bool bCtrl = (( ev->data3 & ( GKM_CTRL | GKM_META )) != 0 );
+		const bool bShift = (( ev->data3 & GKM_SHIFT ) != 0 );
+
+		if ( ev->subtype == EV_GUI_Char )
+		{
+			// Ctrl+letter arrives here too on some layouts; those are commands, not text.
+			if ( !bCtrl )
+				return ApplyEdit( zx::InsertChar( g_Search, ev->data1, SB_SEARCH_MAXLEN ));
+			return true;
+		}
+
+		// KeyRepeat is eaten by M_Responder before it gets here, whatever this menu wants -- the
+		// framework does its own repeat handling so that gamepads repeat too.
+		if ( ev->subtype != EV_GUI_KeyDown )
+			return false;
+
+		const int key = ev->data1;
+
+		if ( bCtrl )
+		{
+			switch ( key )
+			{
+			case 'a': case 'A':
+				g_Search = zx::SelectAll( g_Search );
+				return true;
+
+			case 'c': case 'C':
+				if ( zx::HasSelection( g_Search ))
+					I_PutInClipboard( zx::SelectedText( g_Search ).c_str( ));
+				return true;
+
+			case 'x': case 'X':
+				if ( zx::HasSelection( g_Search ))
+				{
+					I_PutInClipboard( zx::SelectedText( g_Search ).c_str( ));
+					return ApplyEdit( zx::DeleteSelection( g_Search ));
+				}
+				return true;
+
+			case 'v': case 'V':
+				{
+					const FString pasted = I_GetFromClipboard( false );
+					return ApplyEdit( zx::InsertText( g_Search, pasted.GetChars( ), SB_SEARCH_MAXLEN ));
+				}
+
+			case GK_LEFT:
+			case GK_RIGHT:
+				g_Search = zx::MoveWord( g_Search, ( key == GK_RIGHT ), bShift );
+				return true;
+
+			case '':
+				// Ctrl+Backspace erases the word behind the caret, which is the fastest way to undo a
+				// mistyped query without holding the key down.
+				if ( !zx::HasSelection( g_Search ))
+					g_Search = zx::MoveWord( g_Search, false, true );
+				return ApplyEdit( zx::DeleteSelection( g_Search ));
+
+			default:
+				return true;		// swallowed: a chord the field does not use is not a menu shortcut
+			}
+		}
+
+		switch ( key )
+		{
+		case GK_ESCAPE:
+			// Out of the box, not out of the browser. A second escape then closes the menu, which is
+			// the ordinary meaning restored as soon as the field stops claiming it.
+			g_Focus = zx::BrowserFocus::Tabs;
+			g_SearchDragging = false;
+			return true;
+
+		case GK_RETURN:
+			if ( static_cast<int>( g_SortedServers.Size( )) > 0 )
+			{
+				g_Focus = zx::BrowserFocus::Rows;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+			return true;
+
+		case GK_UP:
+		case GK_DOWN:
+			// Navigation, which the framework would normally have translated for us -- while the field
+			// holds the keyboard it has to pass these on itself.
+			Navigate(( key == GK_UP ) ? zx::NavKey::Up : zx::NavKey::Down,
+				static_cast<int>( g_SortedServers.Size( )));
+			return true;
+
+		case '':
+			return ApplyEdit( zx::Backspace( g_Search ));
+
+		case GK_DEL:
+			return ApplyEdit( zx::DeleteForward( g_Search ));
+
+		case GK_HOME:
+			g_Search = zx::CaretHome( g_Search, bShift );
+			return true;
+
+		case GK_END:
+			g_Search = zx::CaretEnd( g_Search, bShift );
+			return true;
+
+		case GK_LEFT:
+		case GK_RIGHT:
+			// With shift they select. Without, they move FOCUS -- which is how the box is left, and
+			// why a field that swallowed them would be one you could never get out of.
+			if ( bShift )
+				g_Search = zx::MoveCaret( g_Search, ( key == GK_LEFT ) ? -1 : 1, true );
+			else
+				Navigate(( key == GK_LEFT ) ? zx::NavKey::Left : zx::NavKey::Right,
+					static_cast<int>( g_SortedServers.Size( )));
+			return true;
+
+		default:
+			// Everything else is swallowed while the field has the keyboard. A letter is a letter, not
+			// a menu shortcut, and the alternative is 'y' answering a question that is not on screen.
+			return true;
+		}
+	}
+
+	// [rc4l] Whether shift was down on the event being handled.
+	//
+	// MouseEvent is handed only a type and a position, so the modifiers are captured in Responder --
+	// which sees the same event first -- rather than queried from the OS. Shift+click extending the
+	// selection is the one thing that needs it.
+	bool bShiftHeld( )
+	{
+		return (( g_LastModifiers & GKM_SHIFT ) != 0 );
+	}
+
+	// [rc4l] Which character of the query a screen x lands on, for click and drag.
+	//
+	// Walks the drawn text measuring as it goes rather than dividing by an average width, because
+	// SmallFont is not monospace -- dividing would put the caret a character or two off in a query
+	// with any 'i' or 'm' in it, which is exactly where a click has to be exact.
+	size_t SearchCharAt( int px )
+	{
+		const int textX = SB_SEARCH_LEFT + SB_SEARCH_PAD;
+		const FString all = g_Search.text.c_str( );
+		const int first = ( g_SearchFirstChar < static_cast<int>( all.Len( ))) ? g_SearchFirstChar : 0;
+
+		for ( int i = first; i < static_cast<int>( all.Len( )); ++i )
+		{
+			const FString upTo = all.Mid( first, i - first );
+			const int glyphW = SmallFont->StringWidth( all.Mid( i, 1 ));
+			const int leftEdge = textX + SmallFont->StringWidth( upTo );
+
+			// The half-way point, so clicking the left of a character puts the caret before it and the
+			// right of it puts the caret after -- which is where the eye says it should go.
+			if ( px < serverbrowser_ToScreenX( leftEdge + glyphW / 2 ))
+				return static_cast<size_t>( i );
+		}
+
+		return all.Len( );
+	}
+
+	// Applies an edit and rebuilds the list if the text actually changed. Always returns true: the key
+	// was the field's whether or not it altered anything.
+	bool ApplyEdit( const zx::TextInput &next )
+	{
+		const bool bChanged = ( next.text != g_Search.text );
+		g_Search = next;
+
+		if ( bChanged )
+			OnSearchChanged( );
+
+		return true;
 	}
 
 	//*************************************************************************
