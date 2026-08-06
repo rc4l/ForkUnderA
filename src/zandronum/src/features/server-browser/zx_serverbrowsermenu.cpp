@@ -231,6 +231,7 @@ static	bool			g_FocusGlowValid = false;
 // Where the glow actually IS, as opposed to where it belongs. It travels between the two -- see
 // computation/glowtravel_compute.h for why a marker that teleports has to be found again after every
 // keypress, and one that slides is simply followed.
+static	zx::GlowTravel	g_GlowTravel;
 static	zx::GlowPos		g_GlowAt;
 static	bool			g_GlowPlaced = false;
 
@@ -886,7 +887,18 @@ public:
 		// The anchor is whatever the last frame drew. One frame stale at worst, and invisible: the
 		// glow is chasing a target it will reach over the following dozen tics anyway.
 		if ( g_FocusGlowValid && g_GlowPlaced )
-			g_GlowAt = zx::AdvanceGlow( g_GlowAt, zx::GlowPos( g_FocusGlowX, g_FocusGlowY ), 1, 3 );
+		{
+			const zx::GlowPos want( g_FocusGlowX, g_FocusGlowY );
+
+			// The focus can move again mid-flight. Setting out afresh FROM WHERE THE GLOW IS -- rather
+			// than from where the last journey began -- is what stops it snapping backwards when the
+			// player changes their mind halfway through.
+			if (( g_GlowTravel.to.x != want.x ) || ( g_GlowTravel.to.y != want.y ))
+				g_GlowTravel = zx::BeginGlowTravel( g_GlowAt, want );
+
+			g_GlowTravel = zx::StepGlowTravel( g_GlowTravel );
+			g_GlowAt = zx::GlowTravelPoint( g_GlowTravel );
+		}
 	}
 
 	//*************************************************************************
@@ -962,6 +974,7 @@ public:
 				if ( !g_GlowPlaced )
 				{
 					g_GlowAt = want;
+					g_GlowTravel = zx::BeginGlowTravel( want, want );
 					g_GlowPlaced = true;
 				}
 

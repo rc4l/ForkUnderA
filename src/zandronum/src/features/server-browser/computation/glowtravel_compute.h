@@ -1,20 +1,31 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-// [rc4l] Moving the focus glow from where it was to where it now belongs.
+// [rc4l] Moving the focus glow from where it was to where it now belongs, along a curve.
 //
 // A marker that teleports has to be FOUND again after every keypress. One that travels is followed,
-// because the eye tracks motion without being asked to -- which is the entire reason Kingdom Hearts
-// slides its cursor instead of blinking it from item to item, and the reason this exists rather than
-// simply drawing at the new anchor.
+// because the eye tracks motion without being asked to.
 //
-// EASE-OUT, not linear: it covers a fixed FRACTION of whatever distance is left each tic, so it
-// leaves fast and settles slowly. Linear travel reads mechanical and, worse, takes the same time
-// across a two-pixel hop as across the whole panel.
+// WHY A JOURNEY RATHER THAN A CHASE. The first version simply moved a fraction of the remaining
+// distance each tic -- exponential smoothing, which eases beautifully and can only ever go in a
+// straight line, because it has no memory of where it set out from. A curve needs three things a
+// chase does not have: a start, an end, and how far along it is. So that is what this holds.
 //
-// The floor is what makes it terminate. A pure fraction is an asymptote -- it would creep for ever
-// and never arrive, leaving the glow a pixel off its mark indefinitely. So the step is at least one
-// pixel, and anything within that distance snaps.
+// THE CURVE is a quadratic Bezier whose control point sits off to one side of the straight line, so
+// the glow bows out and comes back rather than sliding flat. The bow is proportional to the distance
+// travelled and capped, which means a hop between two rows is very nearly straight -- an arc on a
+// twelve-pixel move would read as a wobble -- while crossing the panel visibly swings.
+//
+// THE PROGRESS is smoothstepped -- eased at BOTH ends, not just the far one. A pure ease-out leaves
+// at full speed, and a marker that jumps into motion the instant a key goes down is jarring in the
+// same way teleporting is: the eye catches the start instead of following it. Accelerating out of
+// rest and decelerating into the destination makes the whole move read as one gesture.
+//
+// Duration scales with distance and is clamped at both ends: short moves must not take as long as
+// long ones, and long moves must not take longer than the player's next keypress.
+//
+// Integer arithmetic throughout, in thousandths, so the same input gives the same pixel on every
+// machine and every test run.
 //
 // Header-pure by the features/ rules -- no engine types.
 
@@ -32,16 +43,28 @@ struct GlowPos
 	GlowPos(int px, int py) : x(px), y(py) {}
 };
 
-// One tic of travel from `at` towards `to`.
-//
-// `numerator`/`denominator` is the fraction of the remaining distance covered per tic -- 1/3 leaves
-// briskly and settles in a handful of tics. A nonsense fraction (zero or negative denominator, or a
-// numerator past the denominator) snaps rather than misbehaving: a marker in the wrong place is a
-// worse failure than one that did not animate.
-GlowPos AdvanceGlow( GlowPos at, GlowPos to, int numerator, int denominator );
+struct GlowTravel
+{
+	GlowPos from;
+	GlowPos to;
+	int elapsed;		// tics since it set out
+	int duration;		// tics the whole journey takes; never zero
 
-// True once the glow is close enough that further travel would be invisible.
-bool GlowArrived( GlowPos at, GlowPos to );
+	GlowTravel() : elapsed(0), duration(1) {}
+};
+
+// Set out from `at` towards `to`. Called again mid-flight when the focus moves on -- passing the
+// glow's CURRENT position as `at` is what makes a change of mind continue smoothly instead of
+// snapping back to wherever the last journey began.
+GlowTravel BeginGlowTravel( GlowPos at, GlowPos to );
+
+// One tic older. Stops at the duration rather than running past it.
+GlowTravel StepGlowTravel( const GlowTravel &travel );
+
+// Where the glow is now: a point on the bowed curve at the eased progress.
+GlowPos GlowTravelPoint( const GlowTravel &travel );
+
+bool GlowTravelDone( const GlowTravel &travel );
 
 } // namespace zx
 
