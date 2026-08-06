@@ -62,6 +62,7 @@
 #include "a_doomglobal.h"
 #include "announcer.h"
 #include "features/server-browser/browser.h"
+#include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "cl_commands.h"
 #include "cl_demo.h"
 #include "cl_statistics.h"
@@ -1167,6 +1168,9 @@ void CLIENT_GetPackets( void )
 				lCommand = pByteStream->ReadLong();
 				if ( lCommand == SERVER_LAUNCHER_CHALLENGE )
 					BROWSER_ParseServerQuery( pByteStream, false );
+				// [rc4l] A reply too big for one datagram, arriving in numbered pieces.
+				else if ( lCommand == SERVER_LAUNCHER_CHALLENGE_SEGMENTED )
+					BROWSER_ParseServerQuerySegment( pByteStream, false );
 				else if ( lCommand == SERVER_LAUNCHER_IGNORING )
 					Printf( "WARNING! Please wait a full 10 seconds before refreshing the server list.\n" );
 				//else
@@ -1469,11 +1473,14 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 			case NETWORK_ERRORCODE_WRONGVERSION:
 
-				szErrorString.Format( "Failed connect. Your version is different.\nThis server is using version: %s\nPlease check http://www." DOMAIN_NAME "/ for updates.", pByteStream->ReadString() );
+				szErrorString.Format( "Failed connect. Your version is different.\nThis server is using version: %s\nGet a matching " FUA_NAME " build: " FUA_RELEASES_URL, pByteStream->ReadString() );
 				break;
 			case NETWORK_ERRORCODE_WRONGPROTOCOLVERSION:
 
-				szErrorString.Format( "Failed connect. Your protocol version is different.\nServer uses: %s\nYou use:     %s\nPlease check http://www." DOMAIN_NAME "/ for a matching version.", pByteStream->ReadString(), GetVersionStringRev() );
+				// [rc4l] Points at ZandroX, not zandronum.com. A protocol mismatch against a ZandroX
+				// server is a ZandroX build mismatch, and zandronum.com does not publish the build the
+				// player is being sent to go and find.
+				szErrorString.Format( "Failed connect. Your protocol version is different.\nServer uses: %s\nYou use:     %s\nGet a matching " FUA_NAME " build: " FUA_RELEASES_URL, pByteStream->ReadString(), GetVersionStringRev() );
 				break;
 			case NETWORK_ERRORCODE_BANNED:
 
@@ -1602,7 +1609,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 			default:
 
-				szErrorString.Format( "Unknown error code: %d!\n\nYour version may be different. Please check http://www." DOMAIN_NAME "/ for updates.", static_cast<unsigned int> (ulErrorCode) );
+				szErrorString.Format( "Unknown error code: %d!\n\nYour version may be different. Get a matching " FUA_NAME " build: " FUA_RELEASES_URL, static_cast<unsigned int> (ulErrorCode) );
 				break;
 			}
 
@@ -2493,6 +2500,12 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// Clear out our copy of the server address.
 	g_AddressServer.Clear( );
 	CLIENT_SetConnectionState( CTS_DISCONNECTED );
+
+	// [rc4l] If this disconnect ended a join WE started, the browser takes it from here instead of
+	// leaving the player at a bare console with a stranger's WAD set loaded and one line of
+	// explanation about to scroll away. Records only -- the menu is opened from JoinTick once the
+	// teardown below has finished.
+	zx::NoteJoinFailed( pszString );
 
 	// Go back to the full console.
 	// [BB] This is what the CCMD endgame is doing and thus should be

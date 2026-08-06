@@ -353,10 +353,23 @@ struct NetworkPWAD
 	FString name;
 	FString checksum;
 	int wadnum; // [TP] Added wadnum
+
+	// [rc4l] Size on disk in bytes, for SQF2_FUA_WAD_SIZES; 0 when it could not be measured.
+	//
+	// Recorded HERE, when the list is built, rather than measured when a launcher asks: the list is
+	// rebuilt once per wad set, and this loop already reads every one of these files end to end to
+	// checksum it. Measuring at query time would instead put a stat per PWAD on the path that answers
+	// every launcher in the world, several times a minute.
+	unsigned int size;
+
+	NetworkPWAD( ) : wadnum( 0 ), size( 0 ) { }
 };
 
 //*****************************************************************************
 //	VARIABLES
+
+// [rc4l] Size of the loaded IWAD in bytes, for SQF2_FUA_WAD_SIZES. 0 when it could not be measured.
+unsigned int	NETWORK_GetIWADSize( void );
 
 extern FString g_lumpsAuthenticationChecksum;
 extern FString g_MapCollectionChecksum;

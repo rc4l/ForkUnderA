@@ -1474,6 +1474,11 @@ add_executable( zdoom WIN32
 	features/wad-download/computation/downloadplan_compute.cpp
 	features/wad-download/computation/iwadallow_compute.cpp
 	features/wad-download/computation/iwadsubstitute_compute.cpp
+	features/wad-download/computation/wadstore_compute.cpp
+	features/wad-serve/zx_wadserve.cpp
+	features/wad-serve/computation/ratebucket_compute.cpp
+	features/wad-serve/computation/httpreq_compute.cpp
+	features/wad-serve/computation/servepolicy_compute.cpp
 	# Generated; listed so the custom command above actually runs as part of this target.
 	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	features/server-browser/browser.cpp #ST
@@ -1481,8 +1486,23 @@ add_executable( zdoom WIN32
 	features/server-browser/zx_joinserver.cpp
 	features/server-browser/zx_mainmenuroute.cpp
 	features/server-browser/computation/serverbrowser_compute.cpp
+	features/server-browser/computation/browserchrome_compute.cpp
+	features/server-browser/computation/browserfocus_compute.cpp
 	features/server-browser/computation/browserhit_compute.cpp
+	features/server-browser/computation/dialog_compute.cpp
+	features/server-browser/computation/glowtravel_compute.cpp
+	features/server-browser/computation/bytesize_compute.cpp
+	features/server-browser/computation/colortext_compute.cpp
 	features/server-browser/computation/joinplan_compute.cpp
+	features/server-browser/computation/joinresume_compute.cpp
+	features/server-browser/computation/scrollbar_compute.cpp
+	features/server-browser/computation/serversearch_compute.cpp
+	features/server-browser/computation/serversort_compute.cpp
+	features/server-browser/computation/textinput_compute.cpp
+	features/server-browser/computation/tooltip_compute.cpp
+	features/server-browser/computation/stableline_compute.cpp
+	features/server-browser/computation/launcherfields_compute.cpp
+	features/launcher-protocol/computation/segmentreassembly_compute.cpp
 	features/panel-menu/panelmenu.cpp
 	features/panel-menu/computation/panelmenu_compute.cpp
 	features/updater/zx_updater.cpp

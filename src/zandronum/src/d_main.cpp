@@ -69,6 +69,8 @@
 #include "features/crashreport/zx_crashreport.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
+#include "features/wad-serve/zx_wadserve.h" // [rc4l] serving this server's own WADs to joiners
+#include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
@@ -977,6 +979,9 @@ drawfullconsole:
 			hw2d = screen->Begin2D(false);
 			C_DrawConsole (false);
 			M_Drawer ();
+			// [rc4l] This case returns before the shared call below ever runs, so the band needs its
+			// own -- a download outlives dropping to the full console.
+			zx::DrawJoinReadyNotice ( menuactive != MENU_Off );
 			screen->Update ();
 			return;
 
@@ -1098,6 +1103,13 @@ drawfullconsole:
 		default:
 			break;
 		}
+
+		// [rc4l] The download/ready band, when no menu is up. AFTER the switch rather than inside the
+		// GS_LEVEL case, because a transfer does not stop for the intermission, the finale or the demo
+		// screen -- and each of those sets up its own 2D pass in that switch, which this has to be
+		// inside of to reach the screen at all. The call after M_Drawer handles the menu case.
+		// See features/server-browser/zx_joinserver.h.
+		zx::DrawJoinReadyNotice ( false );
 	}
 	if ( NETWORK_InClientMode() )
 	{
@@ -1155,6 +1167,12 @@ drawfullconsole:
 		// normal update
 		C_DrawConsole (hw2d);	// draw console
 		M_Drawer ();			// menu is drawn even on top of everything
+
+		// [rc4l] The same band, for when a menu IS up: after M_Drawer so it sits on top of it, since a
+		// download runs while the player wanders through menus and the one readout they have must not
+		// be the thing the options screen covers up. Captures no input at all.
+		// See features/server-browser/zx_joinserver.h.
+		zx::DrawJoinReadyNotice ( true );
 		FStat::PrintStat ();
 		screen->Update ();		// page flip or blit buffer
 	}
@@ -1278,6 +1296,8 @@ void D_DoomLoop ()
 		{
 			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
 			zx::waddownload::Tick(); // [rc4l] drains the WAD downloader's log + fires its completion (main thread)
+			zx::wadserve::Tick(); // [rc4l] server side: binds/rebinds the WAD listener, snapshots its config, drains its log
+			zx::JoinTick(); // [rc4l] puts a failed join back in the server browser instead of a bare console
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{
