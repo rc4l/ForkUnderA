@@ -1004,6 +1004,16 @@ public:
 		if ( !g_TipPointerValid || ( g_Tips.Size( ) == 0 ))
 			return;
 
+		// [rc4l] Not while the player is DRAGGING something.
+		//
+		// A tooltip answers "what is this?", which is a question you ask by resting the pointer
+		// somewhere. Mid-drag you are not asking it -- you are selecting text, or pulling a scrollbar
+		// -- and the box is big enough to land on top of the very thing being manipulated. It showed
+		// up over the list while a selection was being dragged out in the search box, which is the
+		// tooltip getting in the way of the gesture it is meant to be explaining.
+		if ( g_SearchDragging || g_DraggingScrollbar || g_DraggingWadBar || g_ButtonPressed )
+			return;
+
 		const BrowserTip *found = NULL;
 		for ( int i = static_cast<int>( g_Tips.Size( )) - 1; i >= 0; --i )
 		{
