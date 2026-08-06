@@ -1127,15 +1127,30 @@ public:
 		g_Tips.Clear( );
 		g_GlowPlaced = false;
 
-		// Per-tab memory is per-VISIT: the list is being requeried from nothing, so a position saved
-		// against the last set of servers describes rows that are not there yet.
+		// Per-tab memory is per-VISIT. The rows survive now, but their INDICES do not: the refresh
+		// below re-sorts as fresh replies land, so a saved position points at whichever server has
+		// since moved into that slot rather than at the one it was saved against.
 		for ( int i = 0; i < kTabCount; ++i )
 		{
 			g_TabScroll[i] = 0;
 			g_TabSelected[i] = -1;
 		}
 
-		BROWSER_ClearServerList( );
+		// [rc4l] THE LIST IS NOT CLEARED. It used to be, and that made every visit start on a spinner
+		// -- worst of all the visit that matters most, coming back to join a server whose files you
+		// just spent time downloading. The rows were still on screen a moment ago and are still very
+		// probably true; they are not KNOWN to be current, which is an argument for checking them,
+		// not for hiding them while we do.
+		//
+		// So the servers stay listed and clickable, and are verified underneath: each is re-queried
+		// at its own address and drops out on its own timeout if it has gone. Nothing waits on the
+		// registry, which is only asked so that servers we do not know about yet can appear.
+		//
+		// What this cannot promise is that a row is live at the instant it is clicked -- but nothing
+		// ever could, because the list is a snapshot of other people's machines. Joining already
+		// re-contacts the server and already fails when it cannot, so a stale row leads to the same
+		// place it always did rather than to a new kind of surprise.
+		BROWSER_RefreshListedServers( );
 		BROWSER_QueryServerRegistry( );
 	}
 
@@ -1893,8 +1908,15 @@ public:
 		// Only mention stragglers once there is something to compare them against.
 		if ( zx::ComputeShowsProgress( BROWSER_WaitingForServerRegistryResponse( ), counts ))
 		{
+			// [rc4l] Two different waits, and only one of them is a count. Servers that have never
+			// answered are stragglers worth numbering; the registry being outstanding is not, and
+			// wording it as one produced "querying 0 more" every time the browser was reopened onto a
+			// list it had kept -- which is now the ordinary case rather than a rare one.
 			FString more;
-			more.Format( "%s  querying %d more", Spinner( ), counts.waiting );
+			if ( counts.waiting > 0 )
+				more.Format( "%s  querying %d more", Spinner( ), counts.waiting );
+			else
+				more.Format( "%s  refreshing", Spinner( ));
 			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_ROWS_BOTTOM + 2,
 				more, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}

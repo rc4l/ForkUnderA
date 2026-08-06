@@ -545,6 +545,27 @@ void BROWSER_QueryTick( void )
 
 	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
+		// [rc4l] A server carried over from the last time the browser was open, being re-checked
+		// while it stays listed. It answered once, so it is shown until it fails to answer again --
+		// and then it goes, rather than lingering as a row nobody can join.
+		//
+		// Removed outright instead of marked AS_TIMEDOUT: that state means "we asked and never heard
+		// anything", which is a thing worth saying about a server the registry still lists. This one
+		// is simply gone, and the registry will not be offering it next time either.
+		if ( g_BrowserServerList[ulIdx].bRefreshing )
+		{
+			if ( g_BrowserServerList[ulIdx].lRefreshMS <= 0 )
+				continue;			// queued, not sent yet -- nothing to time out
+
+			if (( lNow - g_BrowserServerList[ulIdx].lRefreshMS ) >= 4000 )
+			{
+				g_BrowserServerList[ulIdx].bRefreshing = false;
+				g_BrowserServerList[ulIdx].lRefreshMS = 0;
+				g_BrowserServerList[ulIdx].ulActiveState = AS_INACTIVE;
+			}
+			continue;
+		}
+
 		if ( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
 			continue;
 
@@ -679,6 +700,28 @@ const char *BROWSER_GetGameModeShortName( ULONG ulServer )
 //*****************************************************************************
 //*****************************************************************************
 //
+// [rc4l] See browser.h. Marks every listed server for a re-check while leaving it on the list.
+void BROWSER_RefreshListedServers( void )
+{
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if ( g_BrowserServerList[ulIdx].ulActiveState != AS_ACTIVE )
+			continue;
+
+		// SENT HERE, not queued for BROWSER_QueryAllServers. That pump only runs when the registry
+		// answers (cl_main.cpp), so queueing would tie a re-check of servers we can already reach to
+		// a reply from a machine we may not be able to reach at all -- and on a LAN with no registry,
+		// the re-checks would simply never go out. This is the whole point of re-querying each server
+		// at its own address, so it must not route through the registry's timing.
+		browser_QueryServer( ulIdx );
+
+		g_BrowserServerList[ulIdx].bRefreshing = true;
+		g_BrowserServerList[ulIdx].lRefreshMS = I_MSTime( );
+	}
+}
+
+//*****************************************************************************
+//
 void BROWSER_ClearServerList( void )
 {
 	ULONG	ulIdx;
@@ -686,6 +729,8 @@ void BROWSER_ClearServerList( void )
 	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
 		g_BrowserServerList[ulIdx].ulActiveState = AS_INACTIVE;
+		g_BrowserServerList[ulIdx].bRefreshing = false;
+		g_BrowserServerList[ulIdx].lRefreshMS = 0;
 
 		g_BrowserServerList[ulIdx].Address.Clear();
 
@@ -742,6 +787,11 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 	g_BrowserServerList[ulServer].CountryCode = "";
 	g_BrowserServerList[ulServer].ulCountryIndex = COUNTRY_INDEX_UNKNOWN;
 	g_BrowserServerList[ulServer].bHasPlayerData = false;
+
+	// A slot arriving here is new, not being re-checked; inheriting a re-check would have this server
+	// culled on the previous occupant's deadline.
+	g_BrowserServerList[ulServer].bRefreshing = false;
+	g_BrowserServerList[ulServer].lRefreshMS = 0;
 }
 
 //*****************************************************************************
@@ -883,6 +933,11 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 
 	// This server is now active.
 	g_BrowserServerList[lServer].ulActiveState = AS_ACTIVE;
+
+	// [rc4l] It answered, so any re-check outstanding against it is settled. Clearing this is what
+	// stops BROWSER_QueryTick from dropping a server that replied perfectly well.
+	g_BrowserServerList[lServer].bRefreshing = false;
+	g_BrowserServerList[lServer].lRefreshMS = 0;
 
 	// Is this a LAN server?
 	g_BrowserServerList[lServer].bLAN = bLAN;
