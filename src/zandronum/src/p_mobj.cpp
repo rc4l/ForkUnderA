@@ -6211,18 +6211,10 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	if (mthing->type == 0 || mthing->type == -1)
 		return NULL;
 
-	// count deathmatch start positions
-	if (mthing->type == 11)
-	{
-		FPlayerStart start(mthing);
-		deathmatchstarts.Push(start);
-		return NULL;
-	}
-
 	// [BC] Count temporary team starts.
 	if ( mthing->type == 5082 )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->type );
 		TemporaryTeamStarts.Push( start );
 		return NULL;
 	}
@@ -6232,7 +6224,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	{
 		if ( mthing->type == static_cast<int> (teams[i].ulPlayerStartThingNumber) )
 		{
-			FPlayerStart start( mthing );
+			FPlayerStart start( mthing, mthing->type );
 			teams[i].TeamStarts.Push( start );
 			return NULL;
 		}
@@ -6241,7 +6233,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	// [RC] Catalog possession starts
 	if ( mthing->type == 6000 )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->type );
 		PossessionStarts.Push( start );
 		return NULL;
 	}
@@ -6249,7 +6241,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	// [RC] Catalog terminator starts
 	if ( mthing->type == 6001 )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->type );
 		TerminatorStarts.Push( start );
 		return NULL;
 	}
@@ -6257,59 +6249,22 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	// [BC/BB] Count invasion starts.
 	if ( INVASION_IsMapThingInvasionSpot( mthing ) )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->type );
 		GenericInvasionStarts.Push( start );
 	}
 
-	// Convert Strife starts to Hexen-style starts
-	if (gameinfo.gametype == GAME_Strife && mthing->type >= 118 && mthing->type <= 127)
-	{
-		mthing->args[0] = mthing->type - 117;
-		mthing->type = 1;
-	}
-
-	// [RH] Record polyobject-related things
-	if (gameinfo.gametype == GAME_Hexen)
-	{
-		switch (mthing->type)
-		{
-		case PO_HEX_ANCHOR_TYPE:
-			mthing->type = PO_ANCHOR_TYPE;
-			break;
-		case PO_HEX_SPAWN_TYPE:
-			mthing->type = PO_SPAWN_TYPE;
-			break;
-		case PO_HEX_SPAWNCRUSH_TYPE:
-			mthing->type = PO_SPAWNCRUSH_TYPE;
-			break;
-		}
-	}
-
-	if (mthing->type == PO_ANCHOR_TYPE ||
-		mthing->type == PO_SPAWN_TYPE ||
-		mthing->type == PO_SPAWNCRUSH_TYPE ||
-		mthing->type == PO_SPAWNHURT_TYPE)
-	{
-		polyspawns_t *polyspawn = new polyspawns_t;
-		polyspawn->next = polyspawns;
-		polyspawn->x = mthing->x;
-		polyspawn->y = mthing->y;
-		polyspawn->angle = mthing->angle;
-		polyspawn->type = mthing->type;
-		polyspawns = polyspawn;
-		if (mthing->type != PO_ANCHOR_TYPE)
-			po_NumPolyobjs++;
-		return NULL;
-	}
-
-	// check for players specially
+	// [rc4l] uzdoom@9e5bf3812 -- the editor-number lookup moves up to here, after Zandronum's own
+	// special mapthings. Those must stay ahead of it: the team start numbers come from
+	// teams[].ulPlayerStartThingNumber, which is configurable at runtime and so can never be a
+	// static MAPINFO entry. Everything upstream recognised by hardcoded number -- player and
+	// deathmatch starts, the Strife start conversion, the polyobject spots and the sound sequence
+	// overrides -- is a MAPINFO entry carrying an ESpecialMapthings code now.
+	// [rc4l] Zandronum supports more players than upstream's eight, and those extra starts are
+	// computed from gameinfo.player5start rather than listed anywhere, so they can never be static
+	// MAPINFO entries. Work the player number out before the lookup, so such a start is not
+	// reported as an unknown type. This also covers starts 5 to 8, which makes the MAPINFO entries
+	// for those redundant but harmless.
 	int pnum = -1;
-
-	if (mthing->type <= 4 && mthing->type > 0)
-	{
-		pnum = mthing->type - 1;
-	}
-	else
 	{
 		// [BC] We can't use the value of 32 for MAXPLAYERS here, otherwise it
 		// messes with Strife items.
@@ -6318,6 +6273,80 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 		if (mthing->type >= gameinfo.player5start && mthing->type < gameinfo.player5start + maxPlayerStarts - 4)
 		{
 			pnum = mthing->type - gameinfo.player5start + 4;
+		}
+	}
+
+	FDoomEdEntry *mentry = DoomEdMap.CheckKey(mthing->type);
+
+	if (mentry == NULL)
+	{
+		// [RH] Don't die if the map tries to spawn an unknown thing
+		if (pnum == -1)
+		Printf ("Unknown type %i at (%i, %i)\n",
+				 mthing->type,
+				 mthing->x>>FRACBITS, mthing->y>>FRACBITS);
+		mentry = DoomEdMap.CheckKey(0);
+		if (mentry == NULL)	// we need a valid entry for the rest of this function so if we can't find a default, let's exit right away.
+		{
+			return NULL;
+		}
+	}
+	if (mentry->Type == NULL && mentry->Special <= 0)
+	{
+		// has been explicitly set to not spawning anything.
+		return NULL;
+	}
+
+	// copy args to mapthing so that we have them in one place for the rest of this function
+	if (mentry->Special >= 0)
+	{
+		mthing->special = mentry->Special;
+		memcpy(mthing->args, mentry->Args, sizeof(mthing->args));
+	}
+
+	if (pnum == -1 && mentry->Type == NULL)
+	{
+		switch (mentry->Special)
+		{
+		case SMT_DEATHMATCHSTART:
+		{
+			// count deathmatch start positions
+			FPlayerStart start(mthing, 0);
+			deathmatchstarts.Push(start);
+			return NULL;
+		}
+
+		case SMT_POLYANCHOR:
+		case SMT_POLYSPAWN:
+		case SMT_POLYSPAWNCRUSH:
+		case SMT_POLYSPAWNHURT:
+		{
+			polyspawns_t *polyspawn = new polyspawns_t;
+			polyspawn->next = polyspawns;
+			polyspawn->x = mthing->x;
+			polyspawn->y = mthing->y;
+			polyspawn->angle = mthing->angle;
+			polyspawn->type = mentry->Special;
+			polyspawns = polyspawn;
+			if (mentry->Special != SMT_POLYANCHOR)
+				po_NumPolyobjs++;
+			return NULL;
+		}
+
+		case SMT_PLAYER1START:
+		case SMT_PLAYER2START:
+		case SMT_PLAYER3START:
+		case SMT_PLAYER4START:
+		case SMT_PLAYER5START:
+		case SMT_PLAYER6START:
+		case SMT_PLAYER7START:
+		case SMT_PLAYER8START:
+			pnum = mentry->Special - SMT_PLAYER1START;
+			break;
+
+		// Sound sequence override will be handled later
+		default:
+			break;
 		}
 	}
 
@@ -6390,7 +6419,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 			return NULL;
 
 		// save spots for respawning in network games
-		FPlayerStart start(mthing);
+		FPlayerStart start(mthing, pnum+1);
 		playerstarts[pnum] = start;
 		AllPlayerStarts.Push(start);
 
@@ -6406,20 +6435,12 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	}
 
 	// [RH] sound sequence overriders
-	if (mthing->type >= 1400 && mthing->type < 1410)
+	// [rc4l] uzdoom@9e5bf3812 -- 1400-1409 and 1411 are MAPINFO $SSeqOverride entries now, the
+	// first ten carrying their sequence number as an argument.
+	if (mentry->Type == NULL && mentry->Special == SMT_SSEQOVERRIDE)
 	{
-		P_PointInSector (mthing->x, mthing->y)->seqType = mthing->type - 1400;
-		return NULL;
-	}
-	else if (mthing->type == 1411)
-	{
-		int type;
-
-		if (mthing->args[0] == 255)
-			type = -1;
-		else
-			type = mthing->args[0];
-
+		int type = mentry->Args[0];
+		if (type == 255) type = -1;
 		if (type > 63)
 		{
 			Printf ("Sound sequence %d out of range\n", type);
@@ -6443,32 +6464,6 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 		mthing->args[0] = mthing->type - 14100;
 		mthing->type = 14165;
 	}
-	// [rc4l] uzdoom@15dbbc913 moved this lookup to the top of the function, but that only works
-	// once the player starts and other hardcoded special mapthings are themselves in the table --
-	// which is uzdoom@9e5bf3812, not yet ported. Done at the top here it reported "Unknown type"
-	// for every player start, deathmatch start and Zandronum team/possession start on every map
-	// load, since those are recognised by the hardcoded checks above and are not in the table.
-	// So the lookup stays where the old FindType call was until that commit lands.
-	FDoomEdEntry *mentry = DoomEdMap.CheckKey(mthing->type);
-
-	if (mentry == NULL)
-	{
-		// [RH] Don't die if the map tries to spawn an unknown thing
-		Printf ("Unknown type %i at (%i, %i)\n",
-				 mthing->type,
-				 mthing->x>>FRACBITS, mthing->y>>FRACBITS);
-		mentry = DoomEdMap.CheckKey(0);
-		if (mentry == NULL)
-		{
-			return NULL;
-		}
-	}
-	if (mentry->Type == NULL && mentry->Special <= 0)
-	{
-		// has been explicitly set to not spawning anything.
-		return NULL;
-	}
-
 	// [RH] If the thing's corresponding sprite has no frames, also map
 	//		it to the unknown thing.
 	// Handle decorate replacements explicitly here
