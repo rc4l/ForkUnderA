@@ -649,10 +649,10 @@ cluster 6
 	flat = "FLOOR25"
 }
 
-// [rc4l] uzdoom@bd77f83ba, with the corrections from uzdoom@937d79335, uzdoom@9617b4afa and
-// uzdoom@463d495b8 already folded in -- the intermediate states of that migration had the
-// Hexen and Strife tables mangled by a search and replace. A DECORATE doomed number still
-// overrides anything set here, so our own actors are unaffected.
+// [rc4l] uzdoom@bd77f83ba with its corrections, then uzdoom@9e5bf3812, which adds the $-prefixed
+// special mapthings -- player starts, deathmatch starts, polyobject spots and sound sequence
+// overrides -- that P_SpawnMapThing used to recognise by hardcoded number. A DECORATE doomed
+// number still overrides anything set here.
 DoomEdNums
 {
      5 = HereticImpLeader
@@ -746,5 +746,9 @@ DoomEdNums
   2004 = SkullRod
   2005 = Gauntlets
   2035 = Pod
+  4001 = "$Player5Start"
+  4002 = "$Player6Start"
+  4003 = "$Player7Start"
+  4004 = "$Player8Start"
   9042 = GoldWand
 }

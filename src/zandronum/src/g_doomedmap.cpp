@@ -47,6 +47,28 @@
 #include "v_text.h"
 #include "i_system.h"
 
+// [rc4l] uzdoom@9e5bf3812 -- the names MAPINFO uses for the special mapthings; the index into
+// this table plus one is the ESpecialMapthings code.
+const char *SpecialMapthingNames[] = {
+	"$PLAYER1START",
+	"$PLAYER2START",
+	"$PLAYER3START",
+	"$PLAYER4START",
+	"$PLAYER5START",
+	"$PLAYER6START",
+	"$PLAYER7START",
+	"$PLAYER8START",
+	"$DEATHMATCHSTART",
+	"$SSEQOVERRIDE",
+	"$POLYANCHOR",
+	"$POLYSPAWN",
+	"$POLYSPAWNCRUSH",
+	"$POLYSPAWNHURT",
+	// [rc4l] FScanner::MatchString walks this until it hits a NULL, so the sentinel is required.
+	// Upstream has never had one -- it reads past the array there, which happens not to bite them.
+	NULL
+};
+
 //==========================================================================
 //
 // Stuff that's only valid during definition time
@@ -100,8 +122,20 @@ CCMD (dumpmapthings)
 
 		for (unsigned i = 0; i < infos.Size (); ++i)
 		{
-			Printf ("%6d %s\n",
-				infos[i]->Key, infos[i]->Value.Type->TypeName.GetChars());
+			// [rc4l] uzdoom@4f7ec3ad8 -- a MAPINFO entry can name a special rather than a class, so
+			// Type is legitimately NULL now and dereferencing it here crashed the command outright.
+			if (infos[i]->Value.Type != NULL)
+			{
+				Printf("%6d %s\n", infos[i]->Key, infos[i]->Value.Type->TypeName.GetChars());
+			}
+			else if (infos[i]->Value.Special > 0)
+			{
+				Printf("%6d %s\n", infos[i]->Key, SpecialMapthingNames[infos[i]->Value.Special - 1]);
+			}
+			else
+			{
+				Printf("%6d none\n", infos[i]->Key);
+			}
 		}
 	}
 }
@@ -116,7 +150,10 @@ void FMapInfoParser::ParseDoomEdNums()
 
 	editem.filename = sc.ScriptName;
 
-	sc.MustGetStringName("{");
+	// [rc4l] uzdoom@9e5bf3812 switched this from MustGetStringName("{") to ParseOpenBrace, which
+	// also puts the scanner in C mode. That matters: without it "AmbientSound," scans as a single
+	// token and every entry carrying arguments desynchronises the stream.
+	ParseOpenBrace();
 	while (true)
 	{
 		if (sc.CheckString("}")) return;
@@ -135,9 +172,8 @@ void FMapInfoParser::ParseDoomEdNums()
 			defined[ednum] = true;
 			if (sc.String[0] == '$')
 			{
-				// todo: add special stuff like playerstarts and sound sequence overrides here, too.
 				editem.classname = NAME_None;
-				editem.special = 1; // todo: assign proper constants
+				editem.special = sc.MustMatchString(SpecialMapthingNames) + 1;
 			}
 			else
 			{
@@ -151,8 +187,7 @@ void FMapInfoParser::ParseDoomEdNums()
 			FString specialname;
 			if (sc.CheckString(","))
 			{
-				// todo: parse a special or args
-				editem.special = 0;	// mark args as used - if this is done we need to prevent assignment of map args in P_SpawnMapThing.
+				if (editem.special < 0) editem.special = 0;	// mark args as used - if this is done we need to prevent assignment of map args in P_SpawnMapThing.
 				if (!sc.CheckNumber())
 				{
 					sc.MustGetString();

@@ -287,6 +287,26 @@ struct FDoomEdEntry
 	int Args[5];
 };
 
+// [rc4l] uzdoom@9e5bf3812 -- the special mapthings that used to be recognised by hardcoded
+// number checks in P_SpawnMapThing are now MAPINFO entries carrying one of these codes.
+enum ESpecialMapthings
+{
+	SMT_PLAYER1START = 1,
+	SMT_PLAYER2START,
+	SMT_PLAYER3START,
+	SMT_PLAYER4START,
+	SMT_PLAYER5START,
+	SMT_PLAYER6START,
+	SMT_PLAYER7START,
+	SMT_PLAYER8START,
+	SMT_DEATHMATCHSTART,
+	SMT_SSEQOVERRIDE,
+	SMT_POLYANCHOR,
+	SMT_POLYSPAWN,
+	SMT_POLYSPAWNCRUSH,
+	SMT_POLYSPAWNHURT,
+};
+
 typedef TMap<int, FDoomEdEntry> FDoomEdMap;
 
 extern FDoomEdMap DoomEdMap;
