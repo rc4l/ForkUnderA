@@ -720,22 +720,21 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 				Printf("Brightmap '%s' not found in texture '%s'\n", sc.String, tex? tex->Name.GetChars() : "(null)");
 		}
 	}
+	// [rc4l] Upstream returns silently in both of these cases, so an author gets an unlit texture and
+	// no reason for it. Both checks are parse-time only, once per definition, and run after the name
+	// has already been looked up, so they cost nothing that matters.
 	if (!tex)
 	{
-		// [rc4l] Upstream returns silently here, and that silence is why a mod author can stare at an
-		// unlit texture for hours with a perfectly valid-looking definition. Say which target missed.
-		Printf("Brightmap target texture '%s' not found\n", texname.GetChars());
+		Printf("Brightmap: target texture '%s' not found.\n", texname.GetChars());
 		return;
 	}
-	// [rc4l] A full path resolves through CheckForTexture's by-lump branch, which MINTS A NEW
-	// TEX_Override texture rather than handing back the short-name texture the map actually draws.
-	// The brightmap then lands on a duplicate nothing renders, and says nothing about it. Upstream
-	// has the same hole and admits it in ca4179caa ("may result in double textures if the same
-	// graphics lump is also referenced by its short texture name") -- so warn instead of pretending.
-	if (tex->UseType == FTexture::TEX_Override && tex->Name.IsEmpty() && strchr(texname, '/'))
+	// A full path resolves through CheckForTexture's by-lump branch, which creates a fresh
+	// TEX_Override copy instead of returning the short-name texture the map draws. The brightmap
+	// then attaches to a copy nothing renders. Upstream has the same hole, noted in ca4179caa.
+	if (tex->UseType == FTexture::TEX_Override && tex->Name.IsEmpty())
 	{
-		Printf("Brightmap target '%s' resolved to a duplicate of that lump, not the texture the map "
-			"uses -- it will have no effect. Use the short texture name instead.\n", texname.GetChars());
+		Printf("Brightmap: target '%s' is a full path, which matches a copy the map never draws. "
+			"Use the short texture name instead.\n", texname.GetChars());
 	}
 	if (thiswad || iwad)
 	{
