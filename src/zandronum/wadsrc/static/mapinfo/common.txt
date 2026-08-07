@@ -594,3 +594,5 @@ SpawnNums
 	63 = SGShard0
 	130 = Blood
 }
+
+include "mapinfo/conversationids.txt"

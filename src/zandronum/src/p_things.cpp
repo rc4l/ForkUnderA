@@ -71,8 +71,10 @@ struct MapinfoSpawnItem
 
 typedef TMap<int, MapinfoSpawnItem> SpawnMap;
 static SpawnMap SpawnablesFromMapinfo;
+static SpawnMap ConversationIDsFromMapinfo;
 
-void FMapInfoParser::ParseSpawnNums()
+// [rc4l] uzdoom@b6a4511dd -- shared by spawnnums and conversationids.
+static void ParseSpawnMap(FScanner &sc, SpawnMap & themap, const char *descript)
 {
 	TMap<int, bool> defined;
 	int error = 0;
@@ -81,7 +83,6 @@ void FMapInfoParser::ParseSpawnNums()
 
 	editem.filename = sc.ScriptName;
 
-	ParseOpenBrace();
 	while (true)
 	{
 		if (sc.CheckString("}")) return;
@@ -94,19 +95,19 @@ void FMapInfoParser::ParseSpawnNums()
 			bool *def = defined.CheckKey(ednum);
 			if (def != NULL)
 			{
-				sc.ScriptMessage("Spawn Number %d defined more than once", ednum);
+				sc.ScriptMessage("%s %d defined more than once", descript, ednum);
 				error++;
 			}
 			else if (ednum < 0)
 			{
-				sc.ScriptMessage("Spawn Number must be positive, got %d", ednum);
+				sc.ScriptMessage("%s must be positive, got %d", descript, ednum);
 				error++;
 			}
 			defined[ednum] = true;
 			editem.linenum = sc.Line;
 			editem.classname = sc.String;
 
-			SpawnablesFromMapinfo.Insert(ednum, editem);
+			themap.Insert(ednum, editem);
 		}
 		else
 		{
@@ -115,10 +116,22 @@ void FMapInfoParser::ParseSpawnNums()
 	}
 }
 
-void InitSpawnablesFromMapinfo()
+void FMapInfoParser::ParseSpawnNums()
 {
-	SpawnableThings.Clear();
-	SpawnMap::Iterator it(SpawnablesFromMapinfo);
+	ParseOpenBrace();
+	ParseSpawnMap(sc, SpawnablesFromMapinfo, "Spawn number");
+}
+
+void FMapInfoParser::ParseConversationIDs()
+{
+	ParseOpenBrace();
+	ParseSpawnMap(sc, ConversationIDsFromMapinfo, "Conversation ID");
+}
+
+static void InitClassMap(FClassMap &themap, SpawnMap &thedata)
+{
+	themap.Clear();
+	SpawnMap::Iterator it(thedata);
 	SpawnMap::Pair *pair;
 	int error = 0;
 
@@ -135,13 +148,19 @@ void InitSpawnablesFromMapinfo()
 				error++;
 			}
 		}
-		SpawnableThings.Insert(pair->Key, cls);
+		themap.Insert(pair->Key, cls);
 	}
 	if (error > 0)
 	{
 		I_Error("%d unknown actor classes found", error);
 	}
-	SpawnablesFromMapinfo.Clear();	// we do not need this any longer
+	thedata.Clear();	// we do not need this any longer
+}
+
+void InitSpawnablesFromMapinfo()
+{
+	InitClassMap(SpawnableThings, SpawnablesFromMapinfo);
+	InitClassMap(StrifeTypes, ConversationIDsFromMapinfo);
 }
 
 static FRandom pr_leadtarget ("LeadTarget");
@@ -742,22 +761,23 @@ const PClass *P_GetSpawnableType(int spawnnum)
 	return NULL;
 }
 
-typedef TMap<int, const PClass *>::Pair SpawnablePair;
+
 
 static int STACK_ARGS SpawnableSort(const void *a, const void *b)
 {
-	return (*((SpawnablePair **)a))->Key - (*((SpawnablePair **)b))->Key;
+	return (*((FClassMap::Pair **)a))->Key - (*((FClassMap::Pair **)b))->Key;
 }
 
-CCMD (dumpspawnables)
+// [rc4l] uzdoom@b6a4511dd -- shared by dumpspawnables and the new dumpconversationids.
+static void DumpClassMap(FClassMap &themap)
 {
-	TMapIterator<int, const PClass *> it(SpawnableThings);
-	SpawnablePair *pair, **allpairs;
+	FClassMap::Iterator it(themap);
+	FClassMap::Pair *pair, **allpairs;
 	int i = 0;
 
 	// Sort into numerical order, since their arrangement in the map can
 	// be in an unspecified order.
-	allpairs = new TMap<int, const PClass *>::Pair *[SpawnableThings.CountUsed()];
+	allpairs = new FClassMap::Pair *[themap.CountUsed()];
 	while (it.NextPair(pair))
 	{
 		allpairs[i++] = pair;
@@ -769,5 +789,15 @@ CCMD (dumpspawnables)
 		Printf ("%d %s\n", pair->Key, pair->Value->TypeName.GetChars());
 	}
 	delete[] allpairs;
+}
+
+CCMD (dumpspawnables)
+{
+	DumpClassMap(SpawnableThings);
+}
+
+CCMD (dumpconversationids)
+{
+	DumpClassMap(StrifeTypes);
 }
 
