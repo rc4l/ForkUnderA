@@ -5529,10 +5529,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 			if ( NETWORK_InClientMode() )
 				return;
 
-			DWORD *flagp = (DWORD*) (((char*)self) + fd->structoffset);
+			ActorFlags *flagp = (ActorFlags*) (((char*)self) + fd->structoffset);
 
 			// [EP] Store the old value in order to save bandwidth
-			DWORD oldflag = *flagp;
+			// [rc4l] uzdoom@ca012bc9b typed the flag words. This [BB] block identifies which word
+			// was touched by comparing addresses, and those are distinct types now, so the
+			// comparisons go through void* and the value is read as a raw integer.
+			const DWORD oldflag = flagp->GetValue();
 
 			// If these 2 flags get changed we need to update the blockmap and sector links.
 			bool linkchange = flagp == &self->flags && (fd->flagbit == MF_NOBLOCKMAP || fd->flagbit == MF_NOSECTOR);
@@ -5542,32 +5545,32 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 			if (linkchange) self->LinkToWorld();
 
 			// [BB] Let the clients know about the flag change.
-			if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( *flagp != oldflag ) ) {
+			if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( flagp->GetValue() != oldflag ) ) {
 				FlagSet flagset = FLAGSET_UNKNOWN;
-				if ( flagp == &self->flags )
+				if ( (void*)flagp == (void*)&self->flags )
 					flagset = FLAGSET_FLAGS;
-				else if ( flagp == &self->flags2 )
+				else if ( (void*)flagp == (void*)&self->flags2 )
 					flagset = FLAGSET_FLAGS2;
-				else if ( flagp == &self->flags3 )
+				else if ( (void*)flagp == (void*)&self->flags3 )
 					flagset = FLAGSET_FLAGS3;
-				else if ( flagp == &self->flags4 )
+				else if ( (void*)flagp == (void*)&self->flags4 )
 					flagset = FLAGSET_FLAGS4;
-				else if ( flagp == &self->flags5 )
+				else if ( (void*)flagp == (void*)&self->flags5 )
 					flagset = FLAGSET_FLAGS5;
-				else if ( flagp == &self->flags6 )
+				else if ( (void*)flagp == (void*)&self->flags6 )
 					flagset = FLAGSET_FLAGS6;
-				else if ( flagp == &self->flags7 )
+				else if ( (void*)flagp == (void*)&self->flags7 )
 					flagset = FLAGSET_FLAGS7;
 				// [MGOOOOOO] flags8 was never wired up here, so A_ChangeFlag on an MBF21 flag
 				// silently desynced clients. flags9 is ZandroX's own word (see actor.h MF9_*).
-				else if ( flagp == &self->flags8 )
+				else if ( (void*)flagp == (void*)&self->flags8 )
 					flagset = FLAGSET_FLAGS8;
-				else if ( flagp == &self->flags9 )
+				else if ( (void*)flagp == (void*)&self->flags9 )
 					flagset = FLAGSET_FLAGS9;
 				// [rc4l] Movement-model flags (see actor.h MV_*).
-				else if ( flagp == &self->mvFlags )
+				else if ( (void*)flagp == (void*)&self->mvFlags )
 					flagset = FLAGSET_MVFLAGS;
-				else if ( flagp == &self->STFlags )
+				else if ( (void*)flagp == (void*)&self->STFlags )
 					flagset = FLAGSET_FLAGSST;
 
 				SERVERCOMMANDS_SetThingFlags( self, flagset );

@@ -805,7 +805,26 @@ void SetDehParams(FState * state, int codepointer)
 // Most MBF21 bits map onto existing flags2/3/4 words or a property (gravity / target range / melee
 // threshold); the nine that have no ZDoom equivalent live in flags8 (MF8_*). Mapping follows
 // Zandronum lz/mbf21 and the MBF21 spec v1.4.
+// [rc4l] uzdoom@ca012bc9b typed the actor flag words, so this takes the flagset and its enum
+// rather than a pair of DWORDs.
+// [rc4l] WeaponFlags is still a plain integer word, so the original form stays for it.
 static inline void Deh21SetFlag (DWORD &flagword, DWORD flag, bool set)
+{
+	if (set) flagword |= flag;
+	else flagword &= ~flag;
+}
+
+template<typename T, typename TT>
+static inline void Deh21SetFlag (TFlags<T, TT> &flagword, T flag, bool set)
+{
+	if (set) flagword |= flag;
+	else flagword &= ~flag;
+}
+
+// [rc4l] a caller may pass two bits or'd together, which yields the flagset type rather than the
+// enum, so it needs its own overload.
+template<typename T, typename TT>
+static inline void Deh21SetFlag (TFlags<T, TT> &flagword, TFlags<T, TT> flag, bool set)
 {
 	if (set) flagword |= flag;
 	else flagword &= ~flag;
@@ -1147,8 +1166,8 @@ void DEH_ChangeVanillaFlags (AActor *actor, DWORD bits, bool set)
 	const DWORD directmask = 0x03ffdfff;
 	if (bits & directmask)
 	{
-		if (set) actor->flags |= (bits & directmask);
-		else actor->flags &= ~(bits & directmask);
+		if (set) actor->flags |= ActorFlags::FromInt (bits & directmask);
+		else actor->flags &= ActorFlags::FromInt (~(bits & directmask));
 	}
 	if (bits & 0x10000000)	// MBF TOUCHY
 		Deh21SetFlag(actor->flags6, MF6_TOUCHY, set);
@@ -1652,31 +1671,31 @@ static int PatchThing (int thingy)
 						// triggering line effects and can teleport when the missile flag is removed.
 						info->flags2 &= ~MF2_NOTELEPORT;
 					}
-					info->flags = value[0];
+					info->flags = ActorFlags::FromInt (value[0]);
 				}
 				if (vchanged[1])
 				{
-					info->flags2 = value[1];
+					info->flags2 = ActorFlags2::FromInt (value[1]);
 					if (info->flags2 & 0x00000004)	// old BOUNCE1
 					{ 	
-						info->flags2 &= ~4;
+						info->flags2 &= ActorFlags2::FromInt (~4);
 						info->BounceFlags = BOUNCE_DoomCompat;
 					}
 					// Damage types that once were flags but now are not
 					if (info->flags2 & 0x20000000)
 					{
 						info->DamageType = NAME_Ice;
-						info->flags2 &= ~0x20000000;
+						info->flags2 &= ActorFlags2::FromInt (~0x20000000);
 					}
 					if (info->flags2 & 0x10000)
 					{
 						info->DamageType = NAME_Fire;
-						info->flags2 &= ~0x10000;
+						info->flags2 &= ActorFlags2::FromInt (~0x10000);
 					}
 					if (info->flags2 & 1)
 					{
 						info->gravity = FRACUNIT/4;
-						info->flags2 &= ~1;
+						info->flags2 &= ActorFlags2::FromInt (~1);
 					}
 				}
 				if (vchanged[2])
@@ -1697,8 +1716,8 @@ static int PatchThing (int thingy)
 					else
 						info->renderflags &= ~RF_INVISIBLE;
 				}
-				DPrintf ("Bits: %d,%d (0x%08x,0x%08x)\n", info->flags, info->flags2,
-													      info->flags, info->flags2);
+				DPrintf ("Bits: %d,%d (0x%08x,0x%08x)\n", info->flags.GetValue(), info->flags2.GetValue(),
+													      info->flags.GetValue(), info->flags2.GetValue());
 			}
 			else if (stricmp (Line1, "ID #") == 0)
 			{

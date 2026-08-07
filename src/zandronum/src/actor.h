@@ -45,6 +45,7 @@
 #include "s_sound.h"
 #include "memarena.h"
 #include "g_level.h"
+#include "tflags.h"
 #include "p_attackextent.h"
 
 // [AK] Needed for std::numeric_limits in the IDList class.
@@ -115,9 +116,9 @@ struct subsector_t;
 // Any questions?
 //
 
-enum
-{
 // --- mobj.flags ---
+enum ActorFlag
+{
 
 	MF_SPECIAL			= 0x00000001,	// call P_SpecialThing when touched
 	MF_SOLID			= 0x00000002,
@@ -162,7 +163,16 @@ enum
 	MF_STEALTH			= 0x40000000,	// [RH] Andy Baker's stealth monsters
 	MF_ICECORPSE		= 0x80000000,	// a frozen corpse (for blasting) [RH] was 0x800000
 
+	// --- dummies for unknown/unimplemented Strife flags ---
+	// [rc4l] uzdoom@ca012bc9b moved this into the flags word: it is or'd with MF_SHADOW, and once
+	// the words are typed it cannot live in the renderflags enum.
+	MF_STRIFEx8000000 = 0,		// seems related to MF_SHADOW
+
+};
+
 // --- mobj.flags2 ---
+enum ActorFlag2
+{
 
 	MF2_DONTREFLECT		= 0x00000001,	// this projectile cannot be reflected
 	MF2_WINDTHRUST		= 0x00000002,	// gets pushed around by the wind specials
@@ -202,7 +212,11 @@ enum
 	MF2_SEEKERMISSILE	= 0x40000000,	// is a seeker (for reflection)
 	MF2_REFLECTIVE		= 0x80000000,	// reflects missiles
 
+};
+
 // --- mobj.flags3 ---
+enum ActorFlag3
+{
 
 	MF3_FLOORHUGGER		= 0x00000001,	// Missile stays on floor
 	MF3_CEILINGHUGGER	= 0x00000002,	// Missile stays on ceiling
@@ -237,7 +251,11 @@ enum
 	MF3_PUFFONACTORS	= 0x40000000,	// Puff appears even when hit bleeding actors
 	MF3_HUNTPLAYERS		= 0x80000000,	// Used with TIDtoHate, means to hate players too
 
+};
+
 // --- mobj.flags4 ---
+enum ActorFlag4
+{
 
 	MF4_NOHATEPLAYERS	= 0x00000001,	// Ignore player attacks
 	MF4_QUICKTORETALIATE= 0x00000002,	// Always switch targets when hurt
@@ -273,7 +291,11 @@ enum
 	MF4_FRIGHTENED		= 0x40000000,	// Monster runs away from player
 	MF4_BOSSSPAWNED		= 0x80000000,	// Spawned by a boss spawn cube
 	
+};
+
 // --- mobj.flags5 ---
+enum ActorFlag5
+{
 
 	MF5_DONTDRAIN		= 0x00000001,	// cannot be drained health from.
 	/*					= 0x00000002,	   reserved for use by scripting branch */
@@ -309,7 +331,11 @@ enum
 	MF5_PAINLESS		= 0x40000000,	// Actor always inflicts painless damage.
 	MF5_MOVEWITHSECTOR	= 0x80000000,	// P_ChangeSector() will still process this actor if it has MF_NOBLOCKMAP
 
+};
+
 // --- mobj.flags6 ---
+enum ActorFlag6
+{
 
 	MF6_NOBOSSRIP		= 0x00000001,	// For rippermissiles: Don't rip through bosses.
 	MF6_THRUSPECIES		= 0x00000002,	// Actors passes through other of the same species.
@@ -344,7 +370,11 @@ enum
 	MF6_NOTONAUTOMAP	= 0x40000000,	// will not be shown on automap with the 'scanner' powerup.
 	MF6_RELATIVETOFLOOR	= 0x80000000,	// [RC] Make flying actors be affected by lifts.
 
+};
+
 // --- mobj.flags7 ---
+enum ActorFlag7
+{
 
 	MF7_NEVERTARGET		= 0x00000001,	// can not be targetted at all, even if monster friendliness is considered.
 	MF7_NOTELESTOMP		= 0x00000002,	// cannot telefrag under any circumstances (even when set by MAPINFO)
@@ -518,7 +548,11 @@ enum
 
 	// [BC] End of new ST flags.
 
+};
+
 // --- mobj.renderflags ---
+enum ActorRenderFlag
+{
 
 	RF_XFLIP			= 0x0001,	// Flip sprite horizontally
 	RF_YFLIP			= 0x0002,	// Flip sprite vertically
@@ -550,17 +584,13 @@ enum
 	RF_FORCEYBILLBOARD		= 0x10000,	// [BB] OpenGL only: draw with y axis billboard, i.e. anchored to the floor (overrides gl_billboard_mode setting)
 	RF_FORCEXYBILLBOARD		= 0x20000,	// [BB] OpenGL only: draw with xy axis billboard, i.e. unanchored (overrides gl_billboard_mode setting)
 	RF_ROLLSPRITE			= 0x40000,	// [rc4l] uzdoom: [marrub] roll the sprite billboard around the sight vector
-
-// --- dummies for unknown/unimplemented Strife flags ---
-
-	MF_STRIFEx8000000 = 0,		// seems related to MF_SHADOW
 };
 
 // [rc4l] MBF21 needed more flag bits. These back the MBF21 thing flags that have no existing
 // ZDoom equivalent (the episode/MAP07 boss actions and full-volume sounds); the rest of the
 // MBF21 "Bits" mnemonics map onto the flags2/3/4 words above. Values match Zandronum lz/mbf21.
 // Ported behaviour: DSDA-Doom + Zandronum lz/mbf21; MBF21 spec v1.4.
-enum
+enum ActorFlag8
 {
 	MF8_FULLVOLDEATH	= 0x00000001,	// [MBF21] death sound plays at full volume
 	MF8_FULLVOLSEE		= 0x00000002,	// [MBF21] see sound plays at full volume
@@ -576,7 +606,7 @@ enum
 // [MGOOOOOO] ZandroX-owned actor flags. flags8 is MBF21's word and its bit values are fixed by
 // that spec, so fork-specific flags get their own word rather than squatting on bits a future
 // MBF21/id24 port may want. See features/ripper/README.md for the ripper set.
-enum
+enum ActorFlag9
 {
 	MF9_NORIPSOUND		= 0x00000001,	// ripper makes no sound at all when it rips
 	MF9_RIPEXPLODEONLIMIT = 0x00000002,	// spent rip budget detonates the ripper instead of ghosting
@@ -632,7 +662,7 @@ enum replace_t
 	ALLOW_REPLACE = 1
 };
 
-enum EBounceFlags
+enum ActorBounceFlag
 {
 	BOUNCE_Walls = 1<<0,		// bounces off of walls
 	BOUNCE_Floors = 1<<1,		// bounces off of floors
@@ -685,6 +715,31 @@ enum EBounceFlags
 
 
 };
+
+// [TP] Flagset definitions -- [rc4l] uzdoom@ca012bc9b. ActorFlags8 is MBF21's word and
+// ActorFlags9 is ZandroX's own; upstream has neither, so those two typedefs are ours.
+typedef TFlags<ActorFlag> ActorFlags;
+typedef TFlags<ActorFlag2> ActorFlags2;
+typedef TFlags<ActorFlag3> ActorFlags3;
+typedef TFlags<ActorFlag4> ActorFlags4;
+typedef TFlags<ActorFlag5> ActorFlags5;
+typedef TFlags<ActorFlag6> ActorFlags6;
+typedef TFlags<ActorFlag7> ActorFlags7;
+typedef TFlags<ActorFlag8> ActorFlags8;
+typedef TFlags<ActorFlag9> ActorFlags9;
+typedef TFlags<ActorRenderFlag> ActorRenderFlags;
+typedef TFlags<ActorBounceFlag, WORD> ActorBounceFlags;
+DEFINE_TFLAGS_OPERATORS (ActorFlags)
+DEFINE_TFLAGS_OPERATORS (ActorFlags2)
+DEFINE_TFLAGS_OPERATORS (ActorFlags3)
+DEFINE_TFLAGS_OPERATORS (ActorFlags4)
+DEFINE_TFLAGS_OPERATORS (ActorFlags5)
+DEFINE_TFLAGS_OPERATORS (ActorFlags6)
+DEFINE_TFLAGS_OPERATORS (ActorFlags7)
+DEFINE_TFLAGS_OPERATORS (ActorFlags8)
+DEFINE_TFLAGS_OPERATORS (ActorFlags9)
+DEFINE_TFLAGS_OPERATORS (ActorRenderFlags)
+DEFINE_TFLAGS_OPERATORS (ActorBounceFlags)
 
 // Used to affect the logic for thing activation through death, USESPECIAL and BUMPSPECIAL
 // "thing" refers to what has the flag and the special, "trigger" refers to what used or bumped it
@@ -1077,7 +1132,7 @@ public:
 	BYTE			frame;				// sprite frame to draw
 	fixed_t			scaleX, scaleY;		// Scaling values; FRACUNIT is normal size
 	FRenderStyle	RenderStyle;		// Style to draw this actor with
-	DWORD			renderflags;		// Different rendering flags
+	ActorRenderFlags	renderflags;		// Different rendering flags
 	FTextureID		picnum;				// Draw this instead of sprite if valid
 	DWORD			effects;			// [RH] see p_effect.h
 	fixed_t			alpha;
@@ -1116,15 +1171,15 @@ public:
 	FState			*state;
 	SDWORD			Damage;			// For missiles and monster railgun
 	int				projectileKickback;
-	DWORD			flags;
-	DWORD			flags2;			// Heretic flags
-	DWORD			flags3;			// [RH] Hexen/Heretic actor-dependant behavior made flaggable
-	DWORD			flags4;			// [RH] Even more flags!
-	DWORD			flags5;			// OMG! We need another one.
-	DWORD			flags6;			// Shit! Where did all the flags go?
-	DWORD			flags7;			//
-	DWORD			flags8;			// [rc4l] MBF21 needed more of them (see MF8_* above).
-	DWORD			flags9;			// [MGOOOOOO] ZandroX's own flags (see MF9_* above).
+	ActorFlags		flags;
+	ActorFlags2		flags2;			// Heretic flags
+	ActorFlags3		flags3;			// [RH] Hexen/Heretic actor-dependant behavior made flaggable
+	ActorFlags4		flags4;			// [RH] Even more flags!
+	ActorFlags5		flags5;			// OMG! We need another one.
+	ActorFlags6		flags6;			// Shit! Where did all the flags go?
+	ActorFlags7		flags7;			//
+	ActorFlags8		flags8;			// [rc4l] MBF21 needed more of them (see MF8_* above).
+	ActorFlags9		flags9;			// [MGOOOOOO] ZandroX's own flags (see MF9_* above).
 	DWORD			mvFlags;		// [rc4l] Movement-model flags (see MV_* above).
 
 	// [BB] If 0, everybody can see the actor, if > 0, only members of team (VisibleToTeam-1) can see it.
