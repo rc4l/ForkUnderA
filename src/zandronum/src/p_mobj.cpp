@@ -6211,29 +6211,6 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	if (mthing->type == 0 || mthing->type == -1)
 		return NULL;
 
-	// [rc4l] uzdoom@15dbbc913 -- the editor-number lookup happens up front now, because an entry
-	// can name a map special with no class at all, and that has to be recognised before any of
-	// the type-specific handling below.
-	FDoomEdEntry *mentry = DoomEdMap.CheckKey(mthing->type);
-
-	if (mentry == NULL)
-	{
-		// [RH] Don't die if the map tries to spawn an unknown thing
-		Printf ("Unknown type %i at (%i, %i)\n",
-				 mthing->type,
-				 mthing->x>>FRACBITS, mthing->y>>FRACBITS);
-		mentry = DoomEdMap.CheckKey(0);
-		if (mentry == NULL)	// we need a valid entry for the rest of this function so if we can't find a default, let's exit right away.
-		{
-			return NULL;
-		}
-	}
-	if (mentry->Type == NULL && mentry->Special <= 0)
-	{
-		// has been explicitly set to not spawning anything.
-		return NULL;
-	}
-
 	// count deathmatch start positions
 	if (mthing->type == 11)
 	{
@@ -6466,6 +6443,32 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 		mthing->args[0] = mthing->type - 14100;
 		mthing->type = 14165;
 	}
+	// [rc4l] uzdoom@15dbbc913 moved this lookup to the top of the function, but that only works
+	// once the player starts and other hardcoded special mapthings are themselves in the table --
+	// which is uzdoom@9e5bf3812, not yet ported. Done at the top here it reported "Unknown type"
+	// for every player start, deathmatch start and Zandronum team/possession start on every map
+	// load, since those are recognised by the hardcoded checks above and are not in the table.
+	// So the lookup stays where the old FindType call was until that commit lands.
+	FDoomEdEntry *mentry = DoomEdMap.CheckKey(mthing->type);
+
+	if (mentry == NULL)
+	{
+		// [RH] Don't die if the map tries to spawn an unknown thing
+		Printf ("Unknown type %i at (%i, %i)\n",
+				 mthing->type,
+				 mthing->x>>FRACBITS, mthing->y>>FRACBITS);
+		mentry = DoomEdMap.CheckKey(0);
+		if (mentry == NULL)
+		{
+			return NULL;
+		}
+	}
+	if (mentry->Type == NULL && mentry->Special <= 0)
+	{
+		// has been explicitly set to not spawning anything.
+		return NULL;
+	}
+
 	// [RH] If the thing's corresponding sprite has no frames, also map
 	//		it to the unknown thing.
 	// Handle decorate replacements explicitly here

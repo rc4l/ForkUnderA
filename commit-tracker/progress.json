@@ -5,9 +5,9 @@
   "total": 2980,
   "pct": 55.9,
   "ported": 893,
-  "adapted": 172,
+  "adapted": 171,
   "skip": 586,
   "deferred": 16,
-  "partially-deferred": 0,
+  "partially-deferred": 1,
   "generated": "2026-08-07"
 }
