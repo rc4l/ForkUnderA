@@ -555,6 +555,18 @@ DoomEdNums
   9823 = SectorPointLightSubtractive
   9824 = PointLightFlickerRandomSubtractive
   9825 = VavoomLight
+  // [rc4l] uzdoom@51591d10b -- the slope and vertex-height things become specials too, so
+  // the code that runs outside P_SpawnMapThing can recognise them from the stored entry.
+  1500 = "$VavoomFloor"
+  1501 = "$VavoomCeiling"
+  1504 = "$VertexFloorZ"
+  1505 = "$VertexCeilingZ"
+  9500 = "$SlopeFloorPointLine"
+  9501 = "$SlopeCeilingPointLine"
+  9502 = "$SetFloorSlope"
+  9503 = "$SetCeilingSlope"
+  9510 = "$CopyFloorPlane"
+  9511 = "$CopyCeilingPlane"
 }
 
 // [rc4l] uzdoom@2ec8e2c2a -- spawn numbers (Thing_Spawn / Thing_Projectile) move out of

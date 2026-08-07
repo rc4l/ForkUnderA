@@ -1518,7 +1518,7 @@ bool INVASION_IsMapThingInvasionSpot( const FMapThing *mthing )
 
 	// [rc4l] uzdoom@15dbbc913 turned DoomEdMap into a TMap; an entry can now name a map special
 	// rather than a class, so Type may legitimately be NULL.
-	FDoomEdEntry *pEntry = DoomEdMap.CheckKey( mthing->type );
+	FDoomEdEntry *pEntry = DoomEdMap.CheckKey( mthing->EdNum );
 	const PClass *pType = ( pEntry != NULL ) ? pEntry->Type : NULL;
 	if ( pType )
 	{
