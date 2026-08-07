@@ -49,6 +49,7 @@
 #include "thingdef/thingdef.h"
 #include "d_dehacked.h"
 #include "g_level.h"
+#include "r_data/r_translate.h"
 #include "teaminfo.h"
 // [BB] New #includes.
 #include "cl_demo.h"
@@ -3028,7 +3029,10 @@ bool P_CheckForResurrection(AActor *self, bool usevilestates, FState *customstat
 					S_Sound(corpsehit, CHAN_BODY, "vile/raise", 1, ATTN_IDLE);
 				info = corpsehit->GetDefault();
 
-				if (corpsehit->state == corpsehit->FindState(NAME_GenericCrush))
+				// [rc4l] uzdoom@25e5ac7e2 -- ask whether the corpse actually carries a blood
+				// translation, rather than guessing from its state. A corpse crushed into a
+				// GenericCrush state is not the only way to pick one up.
+				if (GetTranslationType(corpsehit->Translation) == TRANSLATION_Blood)
 				{
 					corpsehit->Translation = info->Translation; // Clean up bloodcolor translation from crushed corpses
 				}

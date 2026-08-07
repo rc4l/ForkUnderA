@@ -1172,8 +1172,6 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 	// verdict: -1 for an invulnerable victim, otherwise the damage actually calculated.
 	bool plrDontThrust = false;
 	bool invulpain = false;
-	int fakeDamage = 0;
-	int holdDamage = 0;
 	const bool fakedPain = isFakePain(target, inflictor, damage);
 
 	// [BC] Game is currently in a suspended state; don't hurt anyone.
@@ -1233,8 +1231,10 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 				// chance; invulpain makes the function return -1 all the same.
 				if (fakedPain)
 				{
+					// big mess here: What do we use for the pain threshold?
+					// We cannot run the various damage filters below so for consistency it needs to be 0.
+					damage = 0;
 					invulpain = true;
-					fakeDamage = damage;
 					goto fakepain;
 				}
 				else
@@ -1256,13 +1256,6 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		
 	}
 
-	// [rc4l] uzdoom pain cluster: remember the pre-factor damage now. Deliberately does NOT jump
-	// to fakepain -- the damage has not been dealt yet; once it has, the damage factors are no
-	// longer allowed to influence the pain chance.
-	if (fakedPain && (damage < TELEFRAG_DAMAGE))
-	{
-		fakeDamage = damage;
-	}
 	if (inflictor != NULL)
 	{
 		if (inflictor->flags5 & MF5_PIERCEARMOR)
@@ -1291,129 +1284,123 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			SERVERCOMMANDS_MoveThing( target, CM_VELX|CM_VELY|CM_VELZ );
 	}
-	if (!(flags & DMG_FORCED))	// DMG_FORCED skips all special damage checks
+	if (!(flags & DMG_FORCED))	// DMG_FORCED skips all special damage checks, TELEFRAG_DAMAGE may not be reduced at all
 	{
 		if (target->flags2 & MF2_DORMANT)
 		{
 			// Invulnerable, and won't wake up
 			return -1;
 		}
-		player = target->player;
-		if (player && damage > 1 && damage < TELEFRAG_DAMAGE)
+		// [rc4l] uzdoom@94a04f36e settles the whole filter chain: TELEFRAG_DAMAGE is exempt from
+		// every reduction below, each step only runs while damage is still positive, and a single
+		// "reduced to nothing" test at the end replaces the four near-identical FORCEPAIN escapes.
+		// The DamageMultiply now applies BEFORE the inventory modifiers, reversing uzdoom@e303833e5
+		// which we had ported in sequence -- upstream's HEAD still multiplies first, so this is
+		// their lasting answer rather than an accident of the rewrite.
+		if (damage < TELEFRAG_DAMAGE) // TELEFRAG_DAMAGE may not be reduced at all or it may not guarantee its effect.
 		{
-			// Take half damage in trainer mode
-			damage = FixedMul(damage, G_SkillProperty(SKILLP_DamageFactor));
-		}
-		// Special damage types
-		if (inflictor)
-		{
-			if (inflictor->flags4 & MF4_SPECTRAL)
+			player = target->player;
+			if (player && damage > 1)
 			{
-				if (player != NULL)
+				// Take half damage in trainer mode
+				damage = (int)(FixedMul(damage, G_SkillProperty(SKILLP_DamageFactor)));
+			}
+			// Special damage types
+			if (inflictor)
+			{
+				if (inflictor->flags4 & MF4_SPECTRAL)
 				{
-					if (!deathmatch && inflictor->FriendPlayer > 0)
-						return -1;
+					if (player != NULL)
+					{
+						if (!deathmatch && inflictor->FriendPlayer > 0)
+							return -1;
+					}
+					else if (target->flags4 & MF4_SPECTRAL)
+					{
+						if (inflictor->FriendPlayer == 0 && !target->IsHostile(inflictor))
+							return -1;
+					}
 				}
-				else if (target->flags4 & MF4_SPECTRAL)
+
+				damage = inflictor->DoSpecialDamage(target, damage, mod);
+				if (damage < 0)
 				{
-					if (inflictor->FriendPlayer == 0 && !target->IsHostile(inflictor))
-						return -1;
+					return -1;
 				}
 			}
 
-			damage = inflictor->DoSpecialDamage (target, damage, mod);
-			if (damage == -1)
-			{
-				return -1;
-			}
-		}
-		// Handle active damage modifiers (e.g. PowerDamage)
-		if (source != NULL)
-		{
 			int olddam = damage;
-			if (source->Inventory != NULL)
+
+			if (damage > 0 && source != NULL)
 			{
-				source->Inventory->ModifyDamage(olddam, mod, damage, false);
-			}
-			// [rc4l] uzdoom@99b2cfa14 with uzdoom@e303833e5: the multiplier applies AFTER the
-			// inventory modifiers -- that ordering is the whole point of e303833e5.
-			damage = (int)(FixedMul(damage, source->DamageMultiply));
-			// [rc4l] uzdoom pain cluster: a CAUSEPAIN source triggers the pain chance even when
-			// the modified damage came out at nothing.
-			if (((source->flags7 & MF7_CAUSEPAIN) && (fakeDamage <= 0)) || (olddam != damage && damage <= 0))
-			{ // Still allow FORCEPAIN
-				if (MustForcePain(target, inflictor, flags))
+				damage = (int)(FixedMul(damage, source->DamageMultiply));
+
+				// Handle active damage modifiers (e.g. PowerDamage)
+				if (damage > 0 && source->Inventory != NULL)
 				{
-					goto dopain;
+					source->Inventory->ModifyDamage(damage, mod, damage, false);
 				}
-				else if (fakedPain)
-					goto fakepain;
+			}
+			// Handle passive damage modifiers (e.g. PowerProtection), provided they are not afflicted with protection penetrating powers.
+			// [rc4l] uzdoom@c01d1a800 supplies the DMG_NO_PROTECT exemption.
+			if (damage > 0 && (target->Inventory != NULL) && !(flags & DMG_NO_PROTECT))
+			{
+				target->Inventory->ModifyDamage(damage, mod, damage, true);
+			}
+
+			// [Dusk] Unblocked players don't telefrag each other, they
+			// just pass through each other.
+			// [BB] Voodoo dolls still telefrag.
+			if ( P_CheckUnblock ( source, target )
+				&& ( source->player )
+				&& ( source->player->mo == source )
+				&& ( target->player )
+				&& ( target->player->mo == target )
+				&& ( mod == NAME_Telefrag || mod == NAME_SpawnTelefrag ))
+			{
 				return -1;
 			}
-		}
-		// Handle passive damage modifiers (e.g. PowerProtection), provided they are not afflicted with protection penetrating powers.
-		// [rc4l] uzdoom@c01d1a800
-		if ((target->Inventory != NULL) && !(flags & DMG_NO_PROTECT))
-		{
-			int olddam = damage;
-			target->Inventory->ModifyDamage(olddam, mod, damage, true);
-			// [rc4l] uzdoom pain cluster: the player path is left alone here -- their cheats are
-			// evaluated further down, and jumping early would skip that.
-			if ((olddam != damage && damage <= 0) && target->player == NULL)
-			{ // Still allow FORCEPAIN
-				if (MustForcePain(target, inflictor, flags))
+
+			if (damage > 0 && !(flags & DMG_NO_FACTOR))
+			{
+				damage = (int)(FixedMul(damage, target->DamageFactor));
+				if (damage > 0)
 				{
-					goto dopain;
+					damage = DamageTypeDefinition::ApplyMobjDamageFactor(damage, mod, target->GetClass()->ActorInfo->DamageFactors);
 				}
-				else if (fakedPain)
-					goto fakepain;
-				return -1;
 			}
-		}
 
-		// [Dusk] Unblocked players don't telefrag each other, they
-		// just pass through each other.
-		// [BB] Voodoo dolls still telefrag.
-		if ( P_CheckUnblock ( source, target )
-			&& ( source->player )
-			&& ( source->player->mo == source )
-			&& ( target->player )
-			&& ( target->player->mo == target )
-			&& ( mod == NAME_Telefrag || mod == NAME_SpawnTelefrag ))
-		{
-			return -1;
-		}
-
-		if (!(flags & DMG_NO_FACTOR))
-		{
-			damage = (int)(FixedMul(damage, target->DamageFactor));
+			// [rc4l] uzdoom@66c3c9352 -- called even for zero damage, so an actor can still react
+			// (and raise the damage) when the incoming amount is 0.
 			if (damage >= 0)
 			{
-				damage = DamageTypeDefinition::ApplyMobjDamageFactor(damage, mod, target->GetClass()->ActorInfo->DamageFactors);
+				damage = target->TakeSpecialDamage(inflictor, source, damage, mod);
 			}
-			if (damage <= 0 && target->player == NULL)
+
+			// '<0' is handled below. This only handles the case where damage gets reduced to 0.
+			if (damage == 0 && olddam > 0)
 			{ // Still allow FORCEPAIN
 				if (MustForcePain(target, inflictor, flags))
 				{
 					goto dopain;
 				}
 				else if (fakedPain)
+				{
 					goto fakepain;
+				}
 				return -1;
 			}
+			// [rc4l] uzdoom@d940c6a2e -- after the reduced-to-zero test, not before it, so a
+			// NODAMAGE target does not take the FORCEPAIN escape above.
+			if (target->flags5 & MF5_NODAMAGE)
+			{
+				damage = 0;
+			}
 		}
-
-		// [rc4l] uzdoom pain cluster: only ask the actor to absorb damage that still exists.
-		// [rc4l] uzdoom@66c3c9352 -- called even for zero damage, so an actor can still react
-		// (and raise the damage) when the incoming amount is 0.
-		damage = target->TakeSpecialDamage (inflictor, source, damage, mod);
 	}
-	// [rc4l] uzdoom pain cluster: a player's cheats have not been consulted yet, so let them
-	// through to that block rather than returning here.
-	if (damage == -1 && target->player == NULL)
+	if (damage < 0)
 	{
-		if (fakedPain)
-			goto fakepain;
+		// any negative value means that something in the above chain has cancelled out all damage and all damage effects, including pain.
 		return -1;
 	}
 
@@ -1595,7 +1582,6 @@ thrust:
 					|| ((inflictor != NULL) && (inflictor->flags7 & MF7_CAUSEPAIN)))
 				{
 					invulpain = true;
-					fakeDamage = damage;
 					goto fakepain;
 				}
 				else
@@ -1882,15 +1868,9 @@ thrust:
 	
 fakepain: // [rc4l] uzdoom pain cluster: skip everything above, but still obey the rules below.
 
-	// CAUSEPAIN can always attempt the pain chance; ALLOWPAIN only when the unfiltered damage was
-	// positive. Swap the calculated damage out for the original so damage factors cannot influence
-	// the roll, and keep the calculated value to return.
-	if (((target->flags7 & MF7_ALLOWPAIN) && (fakeDamage > 0))
-		|| ((inflictor != NULL) && (inflictor->flags7 & MF7_CAUSEPAIN)))
-	{
-		holdDamage = damage;
-		damage = fakeDamage;
-	}
+	// [rc4l] uzdoom@94a04f36e dropped the fakeDamage/holdDamage swap that used to sit here. The
+	// filter chain above now leaves `damage` at the value the pain chance should see, so there is
+	// nothing left to swap back in or to return separately.
 
 	// [MGOOOOOO] DMG_NO_PAIN is the per-hit form of +NOPAIN: a ripper with +RIPPERNOPAIN passes it
 	// for its rips only, so the projectile's terminal explosion can still make the victim flinch.
@@ -2021,11 +2001,6 @@ dopain:
 	{
 		return -1;
 	}
-	else if (fakedPain)
-	{
-		return holdDamage;
-	}
-
 	return damage;
 }
 
