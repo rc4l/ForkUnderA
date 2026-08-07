@@ -54,9 +54,13 @@ ProbePhase StepProbe(ProbePhase phase, bool cookieArrived, bool probeArrived, in
 	case ProbePhase::Reachable:
 	case ProbePhase::Unreachable:
 	case ProbePhase::Failed:
-		// Terminal, or not started. Late packets keep arriving after a verdict -- a retransmitted
-		// probe, a duplicate cookie -- and none of them may restart or rewrite a finished answer.
-		return phase;
+		// Terminal, or not started. Late packets keep arriving after a verdict: a retransmitted
+		// probe, a duplicate cookie. None of them may restart or rewrite a finished answer.
+		//
+		// [rc4l] Falls out to the return below rather than returning here. Returning from every case
+		// would leave the closing statement unreachable, which is a line no test can cover and a
+		// coverage gate can only be lied to about.
+		break;
 	}
 
 	return phase;

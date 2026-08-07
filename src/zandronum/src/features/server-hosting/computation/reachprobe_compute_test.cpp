@@ -46,6 +46,17 @@ TEST( ReachProbe, WaitsForTheCookieThenTheProbe )
 		StepProbe( ProbePhase::AwaitingProbe, kNothing, kProbe, 100 ));
 }
 
+TEST( ReachProbe, KeepsWaitingWhileThereIsTimeLeft )
+{
+	// Both legs, unchanged, mid-wait. The ordinary case and the one easiest to leave untested,
+	// because nothing happens in it.
+	EXPECT_EQ( ProbePhase::AwaitingProbe,
+		StepProbe( ProbePhase::AwaitingProbe, kNothing, kNothing, kProbeTimeoutMs - 1 ));
+
+	EXPECT_EQ( ProbePhase::AwaitingCookie,
+		StepProbe( ProbePhase::AwaitingCookie, kNothing, kNothing, kCookieTimeoutMs - 1 ));
+}
+
 TEST( ReachProbe, ANoShowOnEachLegMeansADIFFERENTThing )
 {
 	// [rc4l] The distinction the whole enum exists for. No cookie means the REGISTRY did not answer,
