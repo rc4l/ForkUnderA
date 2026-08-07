@@ -37,6 +37,7 @@
 #include "cmdlib.h"
 #include "c_dispatch.h"
 #include "c_bind.h"
+#include "w_wad.h"
 #include "g_level.h"
 #include "hu_stuff.h"
 #include "gi.h"
@@ -53,174 +54,13 @@
 
 /* Default keybindings for Doom (and all other games)
  */
-static const FBinding DefBindings[] =
-{
-	{ "`", "toggleconsole" },
-	{ "1", "slot 1" },
-	{ "2", "slot 2" },
-	{ "3", "slot 3" },
-	{ "4", "slot 4" },
-	{ "5", "slot 5" },
-	{ "6", "slot 6" },
-	{ "7", "slot 7" },
-	{ "8", "slot 8" },
-	{ "9", "slot 9" },
-	{ "0", "slot 0" },
-	{ "[", "invprev" },
-	{ "]", "invnext" },
-	{ "mwheelleft", "invprev" },
-	{ "mwheelright", "invnext" },
-	{ "\\", "invuse" }, // [AK]
-	{ "-", "sizedown" },
-	{ "=", "sizeup" },
-	{ "ctrl", "+crouch" }, // [AK]
-	{ "alt", "+strafe" },
-	{ "shift", "+speed" },
-	{ "space", "+jump" }, // [AK]
-	{ "e", "+use" }, // [AK]
-	{ "rightarrow", "+right" },
-	{ "leftarrow", "+left" },
-	{ "uparrow", "+forward" },
-	{ "downarrow", "+back" },
-	// [AK] Added WASD controls to replace "," and "." for movement.
-	{ "w", "+forward" },
-	{ "s", "+back" },
-	{ "a", "+moveleft" },
-	{ "d", "+moveright" },
-	{ "mouse1", "+attack" },
-	{ "mouse2", "+altattack" }, // [AK]
-	{ "mouse3", "+forward" },
-	{ "mouse4", "+speed" },
-	{ "capslock", "toggle cl_run" },
-	{ "f1", "menu_help" },
-	{ "f2", "menu_save" },
-	{ "f3", "menu_load" },
-	{ "f4", "menu_options" },
-	{ "f5", "menu_display" },
-	{ "f6", "quicksave" },
-	{ "f7", "menu_endgame" },
-	{ "f8", "togglemessages" },
-	{ "f9", "quickload" },
-	{ "f11", "bumpgamma" },
-	{ "f10", "menu_quit" },
-	{ "enter", "togglemap" }, // [AK]
-	{ "pause", "pause" },
-	{ "sysrq", "screenshot" },
-	{ ",", "fua_clip" },	// [rc4l] FUA instant replay -- save the last N seconds as a shareable clip (comma is free; WASD replaced the old comma/period turn keys)
-	// [AK] Added/changed binds for global, team, and private chat modes.
-	{ "y", "messagemode" },
-	{ "t", "messagemode2" },
-	{ "p", "messagemode3" },
-	{ "tab", "+showscores" }, // [AK] 
-	{ "f12", "spynext" },
-	{ "mwheeldown", "weapnext" },
-	{ "mwheelup", "weapprev" },
-	// [AK] Added default binds for "weapswap", "weapdrop", and "reload".
-	{ "q", "weapswap" },
-	{ "g", "weapdrop" },
-	{ "r", "+reload" },
-	{ "u", "taunt" },
-	{ "pgup", "vote_yes" },
-	{ "pgdn", "vote_no" },
 
-	// Generic joystick buttons
-	{ "joy1", "+attack" },
-	{ "joy2", "+strafe" },
-	{ "joy3", "+speed" },
-	{ "joy4", "+use" },
 
-	// Xbox 360 / PS2 controllers
-	{ "pad_a", "+use" },
-	{ "pad_y", "+jump" },
-	{ "rtrigger", "+attack" },
-	{ "ltrigger", "+altattack" },
-	{ "lshoulder", "weapprev" },
-	{ "rshoulder", "weapnext" },
-	{ "dpadleft", "invprev" },
-	{ "dpadright", "invnext" },
-	{ "dpaddown", "invuse" },
-	{ "dpadup", "togglemap" },
-	{ "pad_start", "pause" },
-	{ "pad_back", "menu_main" },
-	{ "lthumb", "crouch" },
-	{ NULL, NULL }
-};
 
-static const FBinding DefRavenBindings[] =
-{
-	{ "pgup", "+moveup" },
-	{ "ins", "+movedown" },
-	{ "home", "land" },
-	{ "pgdn", "+lookup" },
-	{ "del", "+lookdown" },
-	{ "end", "centerview" },
-	{ NULL, NULL }
-};
 
-static const FBinding DefHereticBindings[] =
-{
-	{ "backspace", "use ArtiTomeOfPower" },
-	{ NULL, NULL }
-};
 
-static const FBinding DefHexenBindings[] =
-{
-	{ "/", "+jump" },
-	{ "backspace", "invuseall" },
-	{ "\\", "use ArtiHealth" },
-	{ "0", "useflechette" },
-	{ "9", "use ArtiBlastRadius" },
-	{ "8", "use ArtiTeleport" },
-	{ "7", "use ArtiTeleportOther" },
-	{ "6", "use ArtiPork" },
-	{ "5", "use ArtiInvulnerability2" },
-	{ "scroll", "+showscores" },
-	{ NULL, NULL }
-};
-
-static const FBinding DefStrifeBindings[] =
-{
-	{ "a", "+jump" },
-	{ "w", "showpop 1" },
-	{ "backspace", "invdrop" },
-	{ "z", "showpop 3" },
-	{ "k", "showpop 2" },
-	{ "q", "invquery" },
-	{ NULL, NULL }
-	// not done
-	// h - use health
-};
-
-static const FBinding DefAutomapBindings[] =
-{
-	{ "f", "am_togglefollow" },
-	{ "g", "am_togglegrid" },
-	{ "p", "am_toggletexture" },
-	{ "m", "am_setmark" },
-	{ "c", "am_clearmarks" },
-	{ "0", "am_gobig" },
-	{ "rightarrow", "+am_panright" },
-	{ "leftarrow", "+am_panleft" },
-	{ "uparrow", "+am_panup" },
-	{ "downarrow", "+am_pandown" },
-	{ "-", "+am_zoomout" },
-	{ "=", "+am_zoomin" },
-	{ "kp-", "+am_zoomout" },
-	{ "kp+", "+am_zoomin" },
-	{ "mwheelup", "am_zoom 1.2" },
-	{ "mwheeldown", "am_zoom -1.2" },
-	{ NULL, NULL }
-};
 
 // [BB] WASD control layout (clashes with Strife's default controls).
-static const FBinding DefNonStrifeBindings[] =
-{
-	{ "w", "+forward" },
-	{ "s", "+back" },
-	{ "a", "+moveleft" },
-	{ "d", "+moveright" },
-	{ NULL }
-};
 
 
 
@@ -324,6 +164,8 @@ const char *KeyNames[NUM_KEYS] =
 	"pad_a", "pad_b", "pad_x", "pad_y"
 };
 
+// [rc4l] uzdoom@c36222d2e -- the default binding tables that used to live here are now the
+// DEFBINDS lumps in wadsrc (defbinds.txt plus the filter/game-*/ ones).
 FKeyBindings Bindings;
 FKeyBindings DoubleBindings;
 FKeyBindings AutomapBindings;
@@ -822,32 +664,39 @@ CCMD (rebind)
 
 void C_BindDefaults ()
 {
-	Bindings.SetBinds (DefBindings);
+	// [rc4l] uzdoom@c36222d2e -- the defaults come from DEFBINDS lumps now, with the per-game ones
+	// selected by the filter/game-<type>/ directories rather than by gametype checks here.
+	int lump, lastlump = 0;
 
-	if (gameinfo.gametype & (GAME_Raven|GAME_Strife))
+	while ((lump = Wads.FindLump("DEFBINDS", &lastlump)) != -1)
 	{
-		Bindings.SetBinds (DefRavenBindings);
-	}
+		FScanner sc(lump);
 
-	if (gameinfo.gametype == GAME_Heretic)
-	{
-		Bindings.SetBinds (DefHereticBindings);
-	}
+		while (sc.GetString())
+		{
+			FKeyBindings *dest = &Bindings;
+			int key;
 
-	if (gameinfo.gametype == GAME_Hexen)
-	{
-		Bindings.SetBinds (DefHexenBindings);
+			// bind destination is optional and is the same as the console command
+			if (sc.Compare("bind"))
+			{
+				sc.MustGetString();
+			}
+			else if (sc.Compare("doublebind"))
+			{
+				dest = &DoubleBindings;
+				sc.MustGetString();
+			}
+			else if (sc.Compare("mapbind"))
+			{
+				dest = &AutomapBindings;
+				sc.MustGetString();
+			}
+			key = GetConfigKeyFromName(sc.String);
+			sc.MustGetString();
+			dest->SetBind(key, sc.String);
+		}
 	}
-
-	if (gameinfo.gametype == GAME_Strife)
-	{
-		Bindings.SetBinds (DefStrifeBindings);
-	}
-	// [BB] WASD control layout (clashes with Strife's default controls).
-	else
-		Bindings.SetBinds (DefNonStrifeBindings);
-
-	AutomapBindings.SetBinds(DefAutomapBindings);
 }
 
 CCMD(binddefaults)

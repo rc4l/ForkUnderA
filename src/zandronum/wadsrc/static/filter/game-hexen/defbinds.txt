@@ -1,0 +1,14 @@
+/* [rc4l] uzdoom@c36222d2e -- default bindings moved out of c_bind.cpp. Generated from our
+   own tables so Zandronum's defaults come across exactly. Keys are written bare, as
+   upstream does; block comments only, since the scanner reads // as a token. */
+
+/ "+jump"
+backspace "invuseall"
+\ "use ArtiHealth"
+0 "useflechette"
+9 "use ArtiBlastRadius"
+8 "use ArtiTeleport"
+7 "use ArtiTeleportOther"
+6 "use ArtiPork"
+5 "use ArtiInvulnerability2"
+scroll "+showscores"
