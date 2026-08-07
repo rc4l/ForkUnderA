@@ -93,3 +93,22 @@ distribution must stay on OpenSSL 3.x or later.
 
 FMOD, which upstream Zandronum uses for audio, is proprietary and is NOT part of
 this distribution; it has been replaced by the OpenAL stack listed above.
+
+IP GEOLOCATION DATA
+-------------------
+The country table shipped inside zandronum.pk3 as fua_geoip.dat is derived from
+the DB-IP IP to Country Lite database, used under the Creative Commons
+Attribution 4.0 International licence (CC BY 4.0):
+
+    IP Geolocation by DB-IP -- https://db-ip.com
+    Licence: https://creativecommons.org/licenses/by/4.0/
+
+Only the IPv4 country ranges are used, converted to the compact sorted form the
+browser reads. The conversion script is published with the source at
+tools/gen_geoip_table.py, so the table can be rebuilt from a current DB-IP
+release without touching the engine.
+
+This replaces the MaxMind GeoIP legacy database, which upstream Zandronum
+expects the packager to supply and which MaxMind discontinued in 2019. The
+GeoIP library itself is still built in and is still preferred at runtime when a
+system database is present, which is the usual case on Linux.
