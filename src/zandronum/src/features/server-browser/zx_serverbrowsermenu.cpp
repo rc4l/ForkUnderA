@@ -55,6 +55,7 @@
 #include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
+#include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
 #include "features/server-browser/computation/scrollview_compute.h"
 #include "features/server-browser/computation/serversort_compute.h"
@@ -4106,20 +4107,37 @@ public:
 			else
 				text.Format( "%d servers", static_cast<int>( g_SortedServers.Size( )));
 		}
-		else if (( phase == zx::BrowserPhase::Empty ) && !g_Search.text.empty( ))
-		{
-			// The placeholder already said nothing matched. Repeating "nothing is being hosted" under
-			// it would be a second, wrong answer to the same question -- there ARE servers.
-			text.Format( "%d hidden by the search", serverbrowser_CountActive( ));
-		}
 		else if ( phase == zx::BrowserPhase::Empty )
 		{
-			// Distinguish "nobody is hosting" from "we asked and got nowhere" -- identical-looking
-			// outcomes with completely different remedies.
-			if (( counts.timedOut > 0 ) || ( counts.badResponse > 0 ))
-				text.Format( "%d did not respond", counts.timedOut + counts.badResponse );
-			else
+			// [rc4l] Which of several true things to say, decided in replyrouting_compute.h so the
+			// ordering is tested rather than argued about. The ordering matters: each answer sends the
+			// player somewhere different, and only one of them is where the problem actually is.
+			const int active = serverbrowser_CountActive( );
+			const int mismatched = static_cast<int>( BROWSER_CountVersionMismatched( ));
+			const int silent = counts.timedOut + counts.badResponse;
+
+			switch ( zx::ExplainEmptyList( !g_Search.text.empty( ), active, mismatched, silent ))
+			{
+			case zx::EmptyReason::HiddenBySearch:
+				// The placeholder already said nothing matched. Repeating "nothing is being hosted"
+				// under it would be a second, wrong answer to the same question -- there ARE servers.
+				text.Format( "%d hidden by the search", active );
+				break;
+
+			case zx::EmptyReason::WrongVersion:
+				// These answered us. Hiding them without saying so is what makes one player insist a
+				// server exists while another cannot find it anywhere.
+				text.Format( "%d hidden, running a different version", mismatched );
+				break;
+
+			case zx::EmptyReason::NoResponse:
+				text.Format( "%d did not respond", silent );
+				break;
+
+			case zx::EmptyReason::NothingHosted:
 				text = "Nothing is being hosted right now";
+				break;
+			}
 		}
 
 		if ( text.IsNotEmpty( ))

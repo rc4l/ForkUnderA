@@ -810,6 +810,9 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 	// culled on the previous occupant's deadline.
 	g_BrowserServerList[ulServer].bRefreshing = false;
 	g_BrowserServerList[ulServer].lRefreshMS = 0;
+
+	// Likewise the previous occupant's verdict about a build that has nothing to do with this one.
+	g_BrowserServerList[ulServer].bVersionMismatch = false;
 }
 
 //*****************************************************************************
@@ -991,6 +994,10 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		// [BB] Check whether the server version starts with our version.
 		if ( g_BrowserServerList[lServer].Version.IndexOf ( ourVersion ) != 0 )
 		{
+			// [rc4l] Remember WHY this one went quiet, so the footer can say so. Hiding a server that
+			// answered us, with no trace that it did, is how "I can see it and you cannot" turns into
+			// a bug report about the server registry.
+			g_BrowserServerList[lServer].bVersionMismatch = true;
 			g_BrowserServerList[lServer].ulActiveState = AS_INACTIVE;
 			while ( 1 )
 			{
@@ -1528,14 +1535,50 @@ static LONG browser_GetListIDByAddress( NETADDRESS_s Address )
 
 //*****************************************************************************
 //
+// [rc4l] Is a launcher reply from this address something we are waiting for?
+//
+// The client's packet loop needs this: a reply from the server we are PLAYING on arrives from the
+// same address as game traffic, so it has to be told apart from it, and "we asked this address a
+// question and have not had an answer" is the only honest way to tell.
+// [rc4l] How many servers answered and were hidden for running a different build.
+LONG BROWSER_CountVersionMismatched( void )
+{
+	LONG lCount = 0;
+
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if ( g_BrowserServerList[ulIdx].bVersionMismatch )
+			lCount++;
+	}
+
+	return ( lCount );
+}
+
+//*****************************************************************************
+//
+bool BROWSER_IsAwaitingReplyFrom( const NETADDRESS_s &Address )
+{
+	const LONG lServer = browser_GetListIDByAddress( Address );
+	if ( lServer == -1 )
+		return ( false );
+
+	return ( g_BrowserServerList[lServer].ulActiveState == AS_WAITINGFORREPLY );
+}
+
+//*****************************************************************************
+//
 static void browser_QueryServer( ULONG ulServer )
 {
-	// Don't query a server that we're already connected to.
-	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) &&
-		( g_BrowserServerList[ulServer].Address.Compare( CLIENT_GetServerAddress() )))
-	{
-		return;
-	}
+	// [rc4l] The server we are connected to USED to be skipped here, and that is how a server you
+	// were standing on appeared in your own browser as "did not respond".
+	//
+	// The slot has already been marked AS_WAITINGFORREPLY by the caller, so returning without
+	// sending anything did not skip the server, it condemned it: nothing could ever answer, and the
+	// row aged out on its own timeout and was counted as a failure. A player would join a server,
+	// open the list while playing on it, and be told it was not there.
+	//
+	// So it is queried like any other. The reply arrives from the address the game connection also
+	// uses, which the client's packet loop now separates by asking BROWSER_IsAwaitingReplyFrom.
 
 	// Clear out the buffer, and write out launcher challenge.
 	// [SB] Added extended flags that we want.

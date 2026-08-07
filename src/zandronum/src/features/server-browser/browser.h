@@ -195,6 +195,14 @@ typedef struct
 	bool			bRefreshing;
 	LONG			lRefreshMS;
 
+	// [rc4l] This server answered, and we hid it because it runs a different build.
+	//
+	// Kept separately because the hiding is done by setting AS_INACTIVE, which is also what an empty
+	// slot looks like -- so once hidden, a real server that replied is indistinguishable from a slot
+	// nobody ever used. That made the list drop servers with no count, no message and no way to tell
+	// "nobody is hosting" from "everyone here is on another version".
+	bool			bVersionMismatch;
+
 	// Ping to this server.
 	LONG			lPing;
 
@@ -266,6 +274,13 @@ LONG			BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer );
 // one answer is the answer, and asking several would only mean several strangers sending unsolicited
 // packets at a port we opened for two seconds.
 bool			BROWSER_GetServerRegistryAddress( NETADDRESS_s &out );
+
+// [rc4l] True if we have an outstanding launcher query to this address. Lets the client's packet
+// loop tell a launcher reply from game traffic when both arrive from the server we are playing on.
+bool			BROWSER_IsAwaitingReplyFrom( const NETADDRESS_s &Address );
+
+// [rc4l] How many servers answered and were then hidden for running a different build.
+LONG			BROWSER_CountVersionMismatched( void );
 
 // [rc4l] Re-check every server already on the list, WITHOUT emptying it.
 //
