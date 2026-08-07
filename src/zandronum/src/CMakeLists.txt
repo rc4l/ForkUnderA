@@ -1475,11 +1475,17 @@ add_executable( zdoom WIN32
 	features/wad-download/computation/iwadallow_compute.cpp
 	features/wad-download/computation/iwadsubstitute_compute.cpp
 	features/wad-download/computation/wadstore_compute.cpp
+	features/port-mapping/zx_portmap.cpp
+	features/port-mapping/computation/ssdp_compute.cpp
+	features/port-mapping/computation/upnpsoap_compute.cpp
+	features/port-mapping/computation/natpmp_compute.cpp
 	features/server-hosting/zx_hosting.cpp
 	features/server-hosting/zx_hostprocess.cpp
 	features/server-hosting/zx_hostwatchdog.cpp
 	features/server-hosting/computation/hostargs_compute.cpp
 	features/server-hosting/computation/hostlifecycle_compute.cpp
+	features/server-hosting/computation/reachprobe_compute.cpp
+	features/server-hosting/zx_reachprobe.cpp
 	features/wad-serve/zx_wadserve.cpp
 	features/wad-serve/computation/ratebucket_compute.cpp
 	features/wad-serve/computation/httpreq_compute.cpp
@@ -1492,6 +1498,8 @@ add_executable( zdoom WIN32
 	features/server-browser/zx_mainmenuroute.cpp
 	features/server-browser/computation/serverbrowser_compute.cpp
 	features/server-browser/computation/browserchrome_compute.cpp
+	features/server-browser/computation/choicerow_compute.cpp
+	features/server-browser/computation/pointerdrag_compute.cpp
 	features/server-browser/computation/browserfocus_compute.cpp
 	features/server-browser/computation/browserhit_compute.cpp
 	features/server-browser/computation/dialog_compute.cpp
@@ -1501,6 +1509,7 @@ add_executable( zdoom WIN32
 	features/server-browser/computation/joinplan_compute.cpp
 	features/server-browser/computation/joinresume_compute.cpp
 	features/server-browser/computation/scrollbar_compute.cpp
+	features/server-browser/computation/scrollview_compute.cpp
 	features/server-browser/computation/serversearch_compute.cpp
 	features/server-browser/computation/serversort_compute.cpp
 	features/server-browser/computation/textinput_compute.cpp

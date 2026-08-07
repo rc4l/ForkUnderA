@@ -37,6 +37,27 @@ const char kColorEscape = '\034';
 // character, and the escape plus a bracketed name.
 std::vector<size_t> ComputeColorSafeCutPoints(const std::string &text);
 
+// [rc4l] The same string with every colour escape removed, leaving the letters.
+//
+// The browser draws names it did not write, from clients it does not share a mod set with. A server
+// running NewTextColours or any other palette mod hands out names carrying codes for colours THIS
+// client has never heard of, and an unresolved code does not politely do nothing -- it falls back to
+// the font's own colour, which for SmallFont is Doom red on a dark panel. So the names that stand out
+// most are the ones from the mods we understand least.
+//
+// Nor is it only a matter of taste. The panel picks colours to say things -- white for a name, grey
+// for a bot or a spectator, gold for the map line -- and a name that arrives with its own colour
+// overrides that, so a bot can render in exactly the colour the panel uses for a person.
+//
+// Stripping settles both: names read as text, the panel's own colours keep meaning what they mean,
+// and nothing depends on which mods happen to be loaded when the browser is open. The escapes still
+// have to be REMOVED rather than ignored, because they are bytes in the string -- left in, they get
+// drawn as stray glyphs by anything that does not consume them.
+//
+// Handles both escape forms, and a truncated escape at the end of the string, which is what a name
+// cut by a length limit somewhere upstream looks like.
+std::string StripColorCodes(const std::string &text);
+
 } // namespace zx
 
 #endif // ZX_COLORTEXT_COMPUTE_H

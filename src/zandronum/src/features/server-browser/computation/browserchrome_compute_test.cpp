@@ -20,17 +20,29 @@ bool Shows( unsigned parts, unsigned part ) { return ( parts & part ) != 0; }
 
 // ---------------------------------------------------------------- still looking
 
-TEST( BrowserChrome, ShowsNothingButTheSpinnerWhileLooking )
+TEST( BrowserChrome, ShowsTheSpinnerAndNothingThatPromisesContent )
 {
-	// The state this unit exists for. Tabs, a rule, column headings and an empty black panel around
-	// the word "Looking for servers" are four promises that there is something there.
+	// The state this unit exists for. A list, a detail panel and a footer would each be promising
+	// something that genuinely is not there yet.
 	const unsigned parts = ComputeVisibleParts( BrowserPhase::Loading, kNothingSelected, kIdle );
 
 	EXPECT_TRUE( Shows( parts, zx::kPartPlaceholder ));
-	EXPECT_FALSE( Shows( parts, zx::kPartTabs ));
 	EXPECT_FALSE( Shows( parts, zx::kPartList ));
 	EXPECT_FALSE( Shows( parts, zx::kPartDetail ));
 	EXPECT_FALSE( Shows( parts, zx::kPartFooter ));
+}
+
+TEST( BrowserChrome, KeepsTheTabsWhileLookingSoThePlayerIsNotTrapped )
+{
+	// [rc4l] The tabs are not part of the ANSWER, they are how the player asks a different question
+	// -- so a query in flight is no reason to take them away.
+	//
+	// This was the spinner alone until HOST existed, which was defensible while every tab was a
+	// filter over the same not-yet-arrived list. HOST never depended on the query, and hiding it
+	// during one strands a player away from the panel holding the button that stops their own
+	// server. With no internet, that lasts until the query times out.
+	EXPECT_TRUE( Shows( ComputeVisibleParts( BrowserPhase::Loading, kNothingSelected, kIdle ),
+		zx::kPartTabs ));
 }
 
 TEST( BrowserChrome, DrawsNoDetailPanelWhileLookingEvenIfSomethingIsStillSelected )
@@ -50,9 +62,9 @@ TEST( BrowserChrome, KeepsTheFooterWhileLookingIfATransferIsRunning )
 	EXPECT_TRUE( Shows( parts, zx::kPartFooter ));
 	EXPECT_TRUE( Shows( parts, zx::kPartPlaceholder ));
 
-	// The panel comes back with it, because CANCEL is in there. Nothing else does.
+	// The panel comes back with it, because CANCEL is in there. The LIST does not -- it is the one
+	// thing here that would be promising content that has not arrived.
 	EXPECT_TRUE( Shows( parts, zx::kPartDetail ));
-	EXPECT_FALSE( Shows( parts, zx::kPartTabs ));
 	EXPECT_FALSE( Shows( parts, zx::kPartList ));
 }
 

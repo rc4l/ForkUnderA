@@ -64,6 +64,7 @@
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "features/server-hosting/zx_hosting.h" // [rc4l] admin on a server we started ourselves
+#include "features/server-hosting/zx_reachprobe.h" // [rc4l] the cookie leg lands on this socket
 #include "cl_commands.h"
 #include "cl_demo.h"
 #include "cl_statistics.h"
@@ -1149,6 +1150,25 @@ void CLIENT_GetPackets( void )
 
 					BROWSER_ServerRegistryRefusedQuery( );
 					Printf( "You are banned from the server registry.\n" );
+					break;
+
+				// [rc4l] The cookie leg of a reachability test. It arrives here because the request
+				// went out on this socket -- deliberately NOT the socket bound to the port under
+				// test, so that this exchange cannot open a NAT mapping for that port and make an
+				// unforwarded port look open. See features/server-hosting/zx_reachprobe.h.
+				case SRSC_REACHCOOKIE:
+					{
+						// [rc4l] COPIED, not held. BYTESTREAM_s::ReadString returns a pointer into one
+						// static buffer that every call reuses, so reading the second string rewrites
+						// what the first pointer is looking at. Holding both meant echoing the public
+						// IP back as the cookie, which the registry then rejected -- a rejection that
+						// looks exactly like a closed port from the outside.
+						const FString cookie = pByteStream->ReadString( );
+						const FString seenAs = pByteStream->ReadString( );
+
+						zx::ReachProbeSetPublicIp( seenAs.GetChars( ));
+						zx::ReachProbeCookieArrived( cookie.GetChars( ));
+					}
 					break;
 
 				case SRSC_WRONGVERSION:

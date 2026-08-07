@@ -234,7 +234,7 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 				// Say it plainly here rather than letting the connection fail later: level
 				// authentication rejects a mismatched IWAD without ever naming the reason.
 				Printf(TEXTCOLOR_GOLD "Your %s is a different build from the one this server runs.\n"
-					TEXTCOLOR_NORMAL "The join may be rejected. Nothing is wrong with your copy -- "
+					TEXTCOLOR_NORMAL "The join may be rejected. Nothing is wrong with your copy, "
 					"that IWAD has shipped in several versions and they are not interchangeable.\n",
 					plan.iwadName.GetChars());
 			}
@@ -451,7 +451,7 @@ bool JoinSelectedServer()
 	if (( lMaxClients > 0 ) && ( lPlayers >= lMaxClients ))
 	{
 		FString msg;
-		msg.Format("%s is full (%d/%d).\n\nNothing has been changed -- try again when a slot opens."
+		msg.Format("%s is full (%d/%d).\n\nNothing has been changed. Try again when a slot opens."
 			"\n\npress a key.", plan.serverName.GetChars(), static_cast<int>( lPlayers ),
 			static_cast<int>( lMaxClients ));
 		zx::ShowBrowserNotice(msg.GetChars());
@@ -621,7 +621,7 @@ void ReleaseJoinResume(bool proceed)
 			// verified, and throwing it away would only mean fetching it again -- but the join it was
 			// for does not happen, because that is what they answered.
 			g_resumePending = false;
-			Printf(TEXTCOLOR_GOLD "The download had already finished, so the file is kept -- but the "
+			Printf(TEXTCOLOR_GOLD "The download had already finished, so the file is kept, but the "
 				"join was cancelled as you asked.\n" TEXTCOLOR_NORMAL);
 		}
 		return;
@@ -702,11 +702,14 @@ void DrawJoinReadyNotice( bool afterMenus )
 	// [rc4l] The same slot carries both states, because they are the same story: the thing you asked
 	// for is on its way, and then it has arrived. Nothing about files or downloads in the ready
 	// wording -- the transfer was our problem, and what the player cares about is the server.
+	// [rc4l] The server's own name is deliberately NOT in this line. It is a name the server chose,
+	// so it can be long, colourful or blank, and it pushed the one instruction in the sentence off
+	// to the right where the eye reaches it last. The player knows which server they asked for --
+	// they asked for it seconds ago -- and what they do not know is what to do about it.
 	FString text;
 	if ( bReady )
 	{
-		text.Format( "%s is ready to join -- open the menu",
-			g_readyName.IsNotEmpty( ) ? g_readyName.GetChars( ) : "Your server" );
+		text = "Server is ready to join - Open the Menu";
 	}
 	else
 	{
