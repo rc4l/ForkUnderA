@@ -1490,6 +1490,7 @@ add_executable( zdoom WIN32
 	features/addon-catalogue/computation/addonfile_compute.cpp
 	features/addon-catalogue/computation/iwadpick_compute.cpp
 	features/addon-catalogue/computation/pickerview_compute.cpp
+	features/addon-catalogue/computation/hostplan_compute.cpp
 	features/addon-catalogue/computation/compat_compute.cpp
 	features/wad-serve/zx_wadserve.cpp
 	features/wad-serve/computation/ratebucket_compute.cpp
