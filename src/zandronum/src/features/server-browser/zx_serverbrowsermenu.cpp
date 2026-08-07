@@ -184,7 +184,12 @@
 // long for its column runs under the field rather than being visibly cut, which reads as a typo
 // ("PREFERRED POR") instead of as a layout problem.
 #define SB_HOST_BTN_H		18
-#define SB_HOST_BTN_W		120
+// [rc4l] Inset from its column rather than filling it. A button spanning every pixel of its column
+// reads as a bar the panel is made of instead of as a thing to press, and the two of them edge to
+// edge lost the gutter that says they are separate controls.
+#define SB_HOST_BTN_INSET	14
+#define SB_HOST_BTN_W		( SB_HOST_LIST_RIGHT - SB_HOST_LIST_LEFT - 2 * SB_HOST_BTN_INSET )
+#define SB_HOST_BTN_X		( SB_HOST_LIST_LEFT + SB_HOST_BTN_INSET )
 #define SB_HOST_MAXLEN		40
 
 // [rc4l] A row of mutually exclusive choices. Tall enough for the marker to be legible beside the
@@ -222,7 +227,7 @@
 // pixels apart and content bleeding across the boundary between them, and the second bar was
 // answering a question ("which of these two am I scrolling") that nobody should have to ask.
 #define SB_HOST_RTOGGLE_H	SB_HOST_BTN_H
-#define SB_HOST_RTOGGLE_Y	( SB_HOST_VIEW_BOTTOM - SB_HOST_RTOGGLE_H )
+#define SB_HOST_RTOGGLE_Y	SB_HOST_BTN_Y
 #define SB_HOST_RTOP_TOP	SB_HOST_VIEW_TOP
 #define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOGGLE_Y - 6 )
 #define SB_HOST_RTOP_H		( SB_HOST_RTOP_BOTTOM - SB_HOST_RTOP_TOP )
@@ -2630,7 +2635,7 @@ public:
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
 
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
-		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
+		const int btnX = SB_HOST_BTN_X;
 		const int btnY = bForm ? HostFormButtonY( ) : ( SB_HOST_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
 
 		if (( x >= serverbrowser_ToScreenX( btnX )) &&
@@ -2661,8 +2666,8 @@ public:
 		// The toggle, which is present on both faces.
 		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
 			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
-			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
-			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )))
 		{
 			return true;
 		}
@@ -2761,7 +2766,7 @@ public:
 		// The button, wherever it is: the form's START sits under the fields, and the running panel's
 		// STOP sits at the bottom of the panel.
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
-		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
+		const int btnX = SB_HOST_BTN_X;
 		const int btnY = bForm ? HostFormButtonY( ) : ( SB_HOST_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
 
 		if (( x >= serverbrowser_ToScreenX( btnX )) &&
@@ -2812,8 +2817,8 @@ public:
 		g_HostOnSettingsToggle = false;
 		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
 			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
-			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
-			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )))
 		{
 			g_HostOnSettingsToggle = true;
 
@@ -3026,8 +3031,8 @@ public:
 	{
 		// [rc4l] DrawRoundedButton, which IS the JOIN and START drawing. A button that merely
 		// resembled them would drift apart from them the first time either was touched.
-		DrawRoundedButton( SB_HOST_RCOL_LEFT, SB_HOST_RTOGGLE_Y,
-			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, SB_HOST_RTOGGLE_H,
+		DrawRoundedButton( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET, SB_HOST_RTOGGLE_Y,
+			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT - 2 * SB_HOST_BTN_INSET, SB_HOST_RTOGGLE_H,
 			g_HostShowSettings ? "BACK TO DESCRIPTION" : "SERVER SETTINGS",
 			g_HostOnSettingsToggle );
 	}
@@ -3251,10 +3256,18 @@ public:
 			return;
 		}
 
-		// The heading says what the screen does, not what it is called. "HOST" is already on the tab.
-		screen->DrawText( SmallFont, CR_WHITE, x, SB_HOST_TOP + SB_HOST_PAD,
-			"RUN A SERVER ON THIS MACHINE",
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		// [rc4l] The heading names the ACTION, not the screen: "HOST" is already on the tab, and what
+		// someone arriving here has to do is pick something. Centred over both columns, since it
+		// belongs to the panel rather than to either one of them.
+		{
+			const char *const heading = "SELECT AN EXPERIENCE TO HOST";
+			const int headingW = SmallFont->StringWidth( heading );
+
+			screen->DrawText( SmallFont, CR_WHITE,
+				SB_HOST_LEFT + (( SB_HOST_RIGHT - SB_HOST_LEFT ) - headingW ) / 2,
+				SB_HOST_TOP + SB_HOST_PAD, heading,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
 
 		// [rc4l] The settings are a MASKED, SCROLLING area. Everything between these two calls is
 		// drawn at its scrolled position and cut off at the viewport edges -- so a row half in and
@@ -3288,13 +3301,16 @@ public:
 			DrawHostDetail( );
 		}
 
-		DrawHostSettingsToggle( );
-
 		PopClip( );
 		DrawHostScrollBar( );
 
+		// [rc4l] OUTSIDE the clip, like START SERVER beside it. Both buttons sit at the panel's foot,
+		// which is below the scrolling viewport, so drawing this one inside it cost the button its
+		// background and left the label floating.
+		DrawHostSettingsToggle( );
+
 		const int btnY = HostFormButtonY( );
-		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
+		const int btnX = SB_HOST_BTN_X;
 		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, "START SERVER",
 			g_HostOnButton || g_HostButtonHot );
 
@@ -3728,7 +3744,7 @@ public:
 		y += 10;
 
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
-		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
+		const int btnX = SB_HOST_BTN_X;
 		const int btnY = SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H;
 
 		const char *const label = ( state == zx::HostState::Failed ) ? "BACK" : "STOP SERVER";
