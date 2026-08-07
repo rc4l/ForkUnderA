@@ -311,6 +311,19 @@ ProbePhase ReachProbeStatus( int port )
 	return ProbePhase::Idle;
 }
 
+void ReachProbeRelease( void )
+{
+	CloseListener( );
+
+	// An unfinished check is abandoned rather than recorded. It was interrupted, so it knows nothing,
+	// and writing a verdict here would cache "unreachable" for a port that was never actually tested.
+	if ( ProbeIsFinished( g_Phase ) == false )
+	{
+		g_Phase = ProbePhase::Idle;
+		g_Port = 0;
+	}
+}
+
 void ReachProbeForget( void )
 {
 	g_HaveCached = false;
