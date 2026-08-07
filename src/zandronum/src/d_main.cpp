@@ -2547,7 +2547,8 @@ static void AddAutoloadFiles(const char *group, const char *autoname)
 		D_AddConfigWads (allwads, file);
 
 		// Add group-specific wads
-		if (group != NULL)
+		// [rc4l] uzdoom@a91997d12 -- an empty name would ask for a ".Autoload" section.
+		if (group != NULL && group[0] != 0)
 		{
 			file = group;
 			file += ".Autoload";
@@ -2555,7 +2556,7 @@ static void AddAutoloadFiles(const char *group, const char *autoname)
 		}
 
 		// Add IWAD-specific wads
-		if (autoname != NULL)
+		if (autoname != NULL && autoname[0] != 0)
 		{
 			file = autoname;
 			file += ".Autoload";
