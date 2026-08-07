@@ -386,4 +386,26 @@ DoomEdNums
  14067 = AmbientSoundNoGravity
  14165 = MusicChanger
  32000 = DoomBuilderCamera
+  // [rc4l] uzdoom@b0c0012d6 -- the dynamic lights move out of decorate.z to here.
+  // uzdoom@338a220df later rewrote these as '= none', but that was ZDoom declaring it has
+  // no dynamic lights; we do, and upstream's own HEAD has the real classes back, so the
+  // stopgap is deliberately not taken.
+  1502 = VavoomLightWhite
+  1503 = VavoomLightColor
+  9800 = PointLight
+  9801 = PointLightPulse
+  9802 = PointLightFlicker
+  9803 = SectorPointLight
+  9804 = PointLightFlickerRandom
+  9810 = PointLightAdditive
+  9811 = PointLightPulseAdditive
+  9812 = PointLightFlickerAdditive
+  9813 = SectorPointLightAdditive
+  9814 = PointLightFlickerRandomAdditive
+  9820 = PointLightSubtractive
+  9821 = PointLightPulseSubtractive
+  9822 = PointLightFlickerSubtractive
+  9823 = SectorPointLightSubtractive
+  9824 = PointLightFlickerRandomSubtractive
+  9825 = VavoomLight
 }
