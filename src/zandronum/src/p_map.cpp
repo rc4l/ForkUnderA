@@ -5102,6 +5102,7 @@ struct RailData
 	TArray<SRailHit> RailHits;
 	bool StopAtOne;
 	bool StopAtInvul;
+	bool ThruSpecies;
 
 	// [AK] Added caller and hitscan puff actor pointers.
 	AActor *pCaller;
@@ -5126,6 +5127,12 @@ static ETraceStatus ProcessRailHit(FTraceResults &res, void *userdata)
 	if (data->StopAtInvul && res.Actor->flags2 & MF2_INVULNERABLE)
 	{
 		return TRACE_Stop;
+	}
+
+	// Skip actors with the same species if the puff has MTHRUSPECIES.
+	if (data->ThruSpecies && res.Actor->GetSpecies() == data->pCaller->GetSpecies())
+	{
+		return TRACE_Skip;
 	}
 
 	// Save this thing for damaging later, and continue the trace
@@ -5198,6 +5205,7 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 
 	flags = (puffDefaults->flags6 & MF6_NOTRIGGER) ? 0 : TRACE_PCross | TRACE_Impact;
 	rail_data.StopAtInvul = (puffDefaults->flags3 & MF3_FOILINVUL) ? false : true;
+	rail_data.ThruSpecies = (puffDefaults->flags6 & MF6_MTHRUSPECIES) ? true : false;
 
 	// [AK] Remember the actor who fired the rail and the puff actor that is supposed to spawn.
 	rail_data.pCaller = source;
@@ -5994,8 +6002,6 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 
 	double bombdistancefloat = 1.f / (double)(bombdistance - fulldamagedistance);
 	double bombdamagefloat = (double)bombdamage;
-
-	FVector3 bombvec(FIXED2FLOAT(bombspot->x), FIXED2FLOAT(bombspot->y), FIXED2FLOAT(bombspot->z));
 
 	FBlockThingsIterator it(FBoundingBox(bombspot->x, bombspot->y, bombdistance << FRACBITS));
 	AActor *thing;
