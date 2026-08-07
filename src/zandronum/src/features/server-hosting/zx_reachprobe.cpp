@@ -31,15 +31,10 @@ namespace
 // is hand-rolled here. That is not a shortcut, it is the design: the engine's socket is bound to a
 // DIFFERENT port from the one under test, so the conversation cannot open a NAT mapping for the port
 // we are asking about.
-#ifdef _WIN32
-typedef SOCKET probe_socket_t;
-#define PROBE_INVALID_SOCKET INVALID_SOCKET
-#define probe_close_socket   closesocket
-#else
-typedef int probe_socket_t;
-#define PROBE_INVALID_SOCKET (-1)
-#define probe_close_socket   close
-#endif
+//
+// [rc4l] SOCKET, INVALID_SOCKET, closesocket and ioctlsocket all come from networkheaders.h, which
+// defines the POSIX spellings for us. Rolling a private set of those here duplicated something the
+// engine already had and got it wrong on the platforms this machine cannot build.
 
 ProbePhase		g_Phase = ProbePhase::Idle;
 int				g_Port = 0;
@@ -47,7 +42,7 @@ std::string		g_Nonce;
 std::string		g_Cookie;
 int				g_PhaseStartMs = 0;
 
-probe_socket_t	g_Listen = PROBE_INVALID_SOCKET;
+SOCKET			g_Listen = INVALID_SOCKET;
 
 // The last finished verdict, and what it was about.
 bool			g_HaveCached = false;
@@ -90,10 +85,10 @@ ProbeCacheKey CurrentKey( int port )
 
 void CloseListener( void )
 {
-	if ( g_Listen != PROBE_INVALID_SOCKET )
+	if ( g_Listen != INVALID_SOCKET )
 	{
-		probe_close_socket( g_Listen );
-		g_Listen = PROBE_INVALID_SOCKET;
+		closesocket( g_Listen );
+		g_Listen = INVALID_SOCKET;
 	}
 }
 
@@ -104,7 +99,7 @@ bool OpenListener( int port )
 	CloseListener( );
 
 	g_Listen = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
-	if ( g_Listen == PROBE_INVALID_SOCKET )
+	if ( g_Listen == INVALID_SOCKET )
 		return false;
 
 	sockaddr_in address;
@@ -120,12 +115,12 @@ bool OpenListener( int port )
 	}
 
 	// Non-blocking: this is polled from the menu ticker and must never stall a frame.
-#ifdef _WIN32
-	u_long nonBlocking = 1;
+	//
+	// [rc4l] ioctlsocket on both platforms, exactly as network.cpp does it. The fcntl version this
+	// started as needed <fcntl.h>, which networkheaders.h does not pull in -- so it compiled on
+	// Windows, where the branch is dead, and broke on the two platforms that actually take it.
+	unsigned long nonBlocking = 1;
 	ioctlsocket( g_Listen, FIONBIO, &nonBlocking );
-#else
-	fcntl( g_Listen, F_SETFL, O_NONBLOCK | fcntl( g_Listen, F_GETFL, 0 ));
-#endif
 
 	return true;
 }
@@ -170,7 +165,7 @@ void Finish( ProbePhase phase )
 // Drain the listening socket. Only a packet carrying OUR nonce counts, see reachprobe_compute.h.
 void PollListener( void )
 {
-	if ( g_Listen == PROBE_INVALID_SOCKET )
+	if ( g_Listen == INVALID_SOCKET )
 		return;
 
 	for ( ;; )
