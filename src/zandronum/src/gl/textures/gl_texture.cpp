@@ -680,6 +680,7 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 	else sc.UnGet();
 
 	sc.MustGetString();
+	const FString texname = sc.String;
 	FTextureID no = TexMan.CheckForTexture(sc.String, type);
 	FTexture *tex = TexMan[no];
 
@@ -721,7 +722,20 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 	}
 	if (!tex)
 	{
+		// [rc4l] Upstream returns silently here, and that silence is why a mod author can stare at an
+		// unlit texture for hours with a perfectly valid-looking definition. Say which target missed.
+		Printf("Brightmap target texture '%s' not found\n", texname.GetChars());
 		return;
+	}
+	// [rc4l] A full path resolves through CheckForTexture's by-lump branch, which MINTS A NEW
+	// TEX_Override texture rather than handing back the short-name texture the map actually draws.
+	// The brightmap then lands on a duplicate nothing renders, and says nothing about it. Upstream
+	// has the same hole and admits it in ca4179caa ("may result in double textures if the same
+	// graphics lump is also referenced by its short texture name") -- so warn instead of pretending.
+	if (tex->UseType == FTexture::TEX_Override && tex->Name.IsEmpty() && strchr(texname, '/'))
+	{
+		Printf("Brightmap target '%s' resolved to a duplicate of that lump, not the texture the map "
+			"uses -- it will have no effect. Use the short texture name instead.\n", texname.GetChars());
 	}
 	if (thiswad || iwad)
 	{
