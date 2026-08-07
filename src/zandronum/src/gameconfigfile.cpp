@@ -174,19 +174,28 @@ FGameConfigFile::FGameConfigFile ()
 	// Create auto-load sections, so users know what's available.
 	// Note that this totem pole is the reverse of the order that
 	// they will appear in the file.
+	// [rc4l] uzdoom@a5c75c1b1 gave these IWADs Autonames but never added matching sections, so
+	// they are absent from the generated config and a user would have to know to add them by
+	// hand. Upstream still has none of them.
+	CreateSectionAtStart("Hacx2.Autoload");
+	CreateSectionAtStart("Hacx12.Autoload");
 	CreateSectionAtStart("Harmony.Autoload");
 	CreateSectionAtStart("UrbanBrawl.Autoload");
 	CreateSectionAtStart("Chex3.Autoload");
 	CreateSectionAtStart("Chex1.Autoload");
 	CreateSectionAtStart("Chex.Autoload");
+	CreateSectionAtStart("Strifeteaser2.Autoload");
+	CreateSectionAtStart("Strifeteaser1.Autoload");
 	CreateSectionAtStart("Strife.Autoload");
 	CreateSectionAtStart("HexenDK.Autoload");
+	CreateSectionAtStart("Hexen1.Autoload");
 	CreateSectionAtStart("Hexen.Autoload");
 	// [rc4l] Blasphemer is a Zandronum-only IWAD entry, so upstream never grew a
 	// section for it; without one its Autoname matches nothing and its autoload
 	// silently does nothing -- the same bug uzdoom@b47cb9027 fixed for the others.
 	CreateSectionAtStart("Blasphemer.Autoload");
 	CreateSectionAtStart("HereticSR.Autoload");
+	CreateSectionAtStart("Heretic1.Autoload");
 	CreateSectionAtStart("Heretic.Autoload");
 	CreateSectionAtStart("FreeDM.Autoload");
 	CreateSectionAtStart("Freedoom2.Autoload");
