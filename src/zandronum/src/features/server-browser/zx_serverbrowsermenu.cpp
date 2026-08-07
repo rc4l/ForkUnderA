@@ -211,6 +211,17 @@
 // At the server list's 418 split the column had ~130px for a label AND a field, so the label was cut
 // mid-word and the box was drawn over what was left of it.
 #define SB_HOST_RLABEL_W	100
+
+// [rc4l] The right column is two regions, not one: what the selection IS on top, how to run it
+// underneath, with a rule between them. They scroll separately because their contents are unrelated
+// -- an entry with a dozen files should not push the port field off the panel.
+#define SB_HOST_RTOP_TOP	SB_HOST_VIEW_TOP
+#define SB_HOST_RTOP_H		68
+#define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOP_TOP + SB_HOST_RTOP_H )
+#define SB_HOST_RULE_Y		( SB_HOST_RTOP_BOTTOM + 4 )
+#define SB_HOST_RBOT_TOP	( SB_HOST_RULE_Y + 8 )
+#define SB_HOST_RBOT_BOTTOM	SB_HOST_VIEW_BOTTOM
+#define SB_HOST_RBOT_H		( SB_HOST_RBOT_BOTTOM - SB_HOST_RBOT_TOP )
 #define SB_HOST_VIEW_BOTTOM	( SB_HOST_BTN_Y - 10 )
 #define SB_HOST_VIEW_H		( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP )
 #define SB_HOST_BAR_W		2
@@ -477,6 +488,9 @@ static	FString			g_HostEntryReload;
 // [rc4l] The list scrolls independently of the settings: it grows with the catalogue and they never
 // do, so sharing one offset would drag the form off screen as entries were added.
 static	int				g_HostListScroll = 0;
+
+// The detail region's own offset. An entry with many files scrolls here without moving the form.
+static	int				g_HostDetailScroll = 0;
 
 // Drag-selection in a host field, and when the last click landed -- the two things a field needs to
 // tell a double-click from two clicks, and a drag from a press.
@@ -2957,13 +2971,49 @@ public:
 	//
 	// [rc4l] The settings' own scrollbar. Drawn only when there is something to scroll, because a
 	// full-height thumb on a list that fits is a control that looks live and does nothing.
+	// [rc4l] The line between "what this is" and "how to run it". Two regions sharing an edge with
+	// nothing between them read as one long column that happens to change subject.
+	void DrawHostRule( )
+	{
+		const int x0 = serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT );
+		const int x1 = serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT );
+		const int y0 = serverbrowser_ToScreenY( SB_HOST_RULE_Y );
+
+		screen->Dim( PalEntry( 120, 130, 165 ), 0.35f, x0, y0, x1 - x0,
+			MAX( 1, serverbrowser_ToScreenY( SB_HOST_RULE_Y + 1 ) - y0 ));
+	}
+
+	// The detail region's bar, drawn on the same rules as the settings' one: only when there is
+	// something to scroll.
+	void DrawHostDetailScrollBar( )
+	{
+		if ( HostDetailMaxScroll( ) <= 0 )
+			return;
+
+		const int trackTop = serverbrowser_ToScreenY( SB_HOST_RTOP_TOP );
+		const int trackBottom = serverbrowser_ToScreenY( SB_HOST_RTOP_BOTTOM );
+		const int trackH = trackBottom - trackTop;
+		if ( trackH <= 0 )
+			return;
+
+		const int x = serverbrowser_ToScreenX( SB_HOST_BAR_X );
+		const int w = MAX( 1, serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W ) - x );
+
+		const int thumbH = zx::ComputeThumbHeight( trackH, SB_HOST_RTOP_H, HostDetailH( ), 8 );
+		const int thumbTop = zx::ComputeThumbTop( trackH, thumbH, g_HostDetailScroll,
+			HostDetailMaxScroll( ));
+
+		screen->Dim( PalEntry( 40, 42, 58 ), 0.55f, x, trackTop, w, trackH );
+		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
+	}
+
 	void DrawHostScrollBar( )
 	{
 		if ( HostMaxScroll( ) <= 0 )
 			return;
 
-		const int trackTop = serverbrowser_ToScreenY( SB_HOST_VIEW_TOP );
-		const int trackBottom = serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM );
+		const int trackTop = serverbrowser_ToScreenY( SB_HOST_RBOT_TOP );
+		const int trackBottom = serverbrowser_ToScreenY( SB_HOST_RBOT_BOTTOM );
 		const int trackH = trackBottom - trackTop;
 		if ( trackH <= 0 )
 			return;
@@ -2972,7 +3022,7 @@ public:
 		const int w = MAX( 1, serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W ) - x );
 
 		// Same arithmetic as the server list's bar -- one unit, so the two behave identically.
-		const int thumbH = zx::ComputeThumbHeight( trackH, SB_HOST_VIEW_H, HostContentH( ), 8 );
+		const int thumbH = zx::ComputeThumbHeight( trackH, SB_HOST_RBOT_H, HostContentH( ), 8 );
 		const int thumbTop = zx::ComputeThumbTop( trackH, thumbH, g_HostScroll, HostMaxScroll( ));
 
 		screen->Dim( PalEntry( 40, 42, 58 ), 0.55f, x, trackTop, w, trackH );
@@ -2996,12 +3046,18 @@ public:
 	// How tall the settings are, viewport or no viewport. What decides whether they scroll.
 	int HostContentH( )
 	{
-		return HostDetailH( ) + kHostFieldCount * HostRowPitch( ) + 4 + SB_CHOICE_H;
+		return kHostFieldCount * HostRowPitch( ) + 4 + SB_CHOICE_H;
 	}
 
 	int HostMaxScroll( )
 	{
-		const int over = HostContentH( ) - SB_HOST_VIEW_H;
+		const int over = HostContentH( ) - SB_HOST_RBOT_H;
+		return ( over > 0 ) ? over : 0;
+	}
+
+	int HostDetailMaxScroll( )
+	{
+		const int over = HostDetailH( ) - SB_HOST_RTOP_H;
 		return ( over > 0 ) ? over : 0;
 	}
 
@@ -3038,7 +3094,7 @@ public:
 	// below the list. They keep their own scroll for the case where the panel is short.
 	int HostFirstFieldY( )
 	{
-		return SB_HOST_VIEW_TOP + HostDetailH( ) - g_HostScroll;
+		return SB_HOST_RBOT_TOP - g_HostScroll;
 	}
 
 	int HostVisibilityY( )
@@ -3064,6 +3120,13 @@ public:
 	bool HostRowFullyVisible( int vy, int vh )
 	{
 		return zx::RowFullyInView( vy, vh, SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM );
+	}
+
+	// The detail region clips to its own box, so a file list longer than the box stops at the rule
+	// instead of running into the form below it.
+	bool HostDetailRowVisible( int vy, int vh )
+	{
+		return zx::RowFullyInView( vy, vh, SB_HOST_RTOP_TOP, SB_HOST_RTOP_BOTTOM );
 	}
 
 	//*************************************************************************
@@ -3180,6 +3243,8 @@ public:
 
 		DrawHostCatalogue( SB_HOST_LIST_LEFT );
 		DrawHostDetail( );
+		DrawHostRule( );
+		DrawHostDetailScrollBar( );
 
 		int y = HostFirstFieldY( );
 		for ( int i = 0; i < kHostFieldCount; ++i )
@@ -3386,18 +3451,18 @@ public:
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
 		const int x = SB_HOST_RCOL_LEFT;
-		int y = SB_HOST_VIEW_TOP - g_HostScroll;
+		int y = SB_HOST_RTOP_TOP - g_HostDetailScroll;
 
 		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
 		{
-			if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
 				screen->DrawText( SmallFont, CR_WHITE, x, y, "Custom setup",
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 			}
 			y += SB_HOST_LINE;
 
-			if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
 				screen->DrawText( SmallFont, CR_DARKGRAY, x, y, HostFitToColumn( "Serves what you are playing" ),
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
@@ -3407,14 +3472,14 @@ public:
 
 		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
 
-		if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 		{
 			screen->DrawText( SmallFont, CR_WHITE, x, y, HostFitToColumn( addon.name.c_str( )),
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
 		y += SB_HOST_LINE;
 
-		if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 		{
 			screen->DrawText( SmallFont, CR_DARKGRAY, x, y,
 				HostFitToColumn( addon.summary.c_str( )),
@@ -3422,7 +3487,7 @@ public:
 		}
 		y += SB_HOST_LINE;
 
-		if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 		{
 			const FString iwadLine = HostFitToColumn( HostDetailIwadLine( addon ));
 			screen->DrawText( SmallFont, CR_GOLD, x, y, iwadLine,
@@ -3434,7 +3499,7 @@ public:
 		// rather than only when the button is pressed.
 		for ( size_t i = 0; i < addon.files.size( ); ++i )
 		{
-			if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
 				TArray<FString> resolved;
 				const bool bHave = D_AddFile( resolved, addon.files[i].name.c_str( ), false ) &&
@@ -3462,7 +3527,7 @@ public:
 		const int headY = HostCatalogueY( );
 		if ( HostRowFullyVisible( headY, SB_HOST_LINE ))
 		{
-			screen->DrawText( SmallFont, CR_DARKGRAY, x, headY, "WHAT TO RUN",
+			screen->DrawText( SmallFont, CR_ORANGE, x, headY, "EXPERIENCES",
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
 
@@ -3500,26 +3565,9 @@ public:
 			screen->DrawText( SmallFont, col, x, rowY, label,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-			// What the row actually costs you, on the row itself. A player choosing between two
-			// entries is choosing between two downloads as much as between two mods.
-			FString note;
-			if ( row == SB_HOST_CATALOGUE_CUSTOM )
-			{
-				// The long form of this was written when the row owned the panel's full width; in a
-				// narrow list it ran under its own label. The detail panel says it properly.
-				note = "current";
-			}
-			else
-			{
-				const zx::AddonEntry &a = entries[row].addon;
-				note.Format( "%d file%s", static_cast<int>( a.files.size( )),
-					( a.files.size( ) == 1 ) ? "" : "s" );
-			}
-
-			const int noteW = SmallFont->StringWidth( note );
-			screen->DrawText( SmallFont, CR_DARKGRAY,
-				SB_HOST_LIST_RIGHT - noteW, rowY, note,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			// No file count or "current" here on purpose: the detail panel beside this already says
+			// the files, the IWAD and what Custom means, and a narrow list repeating it crowded
+			// itself for no new information.
 		}
 	}
 
