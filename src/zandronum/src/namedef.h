@@ -539,6 +539,8 @@ xx(Skillmenu)
 xx(Startgame)
 xx(StartgameConfirm)
 xx(StartgameConfirmed)
+// [rc4l] Answered yes to "starting a game closes the server you are running".
+xx(FuaStopHostAndStartgame)
 xx(CrashConsentMenu)
 xx(Loadgamemenu)
 xx(Savegamemenu)

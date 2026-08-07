@@ -55,6 +55,7 @@
 #include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
+#include "features/server-browser/computation/joinintent_compute.h"
 #include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
 #include "features/server-browser/computation/scrollview_compute.h"
@@ -341,6 +342,7 @@ enum class DialogAction
 	CancelDownload,
 	JoinPassword,
 	StopHosting,
+	StopHostingAndJoin,
 };
 
 struct BrowserDialog
@@ -1715,6 +1717,17 @@ public:
 		case DialogAction::StopHosting:
 			if ( bAffirmative )
 				zx::HostStop( );
+			break;
+
+		// [rc4l] Stop first, then go. The order is the point: joining reloads the engine and never
+		// comes back here, so a HostStop left until afterwards would never run and the server would be
+		// orphaned rather than closed.
+		case DialogAction::StopHostingAndJoin:
+			if ( bAffirmative )
+			{
+				zx::HostStop( );
+				DoJoinSelected( );
+			}
 			break;
 
 		case DialogAction::JoinPassword:
@@ -3557,6 +3570,44 @@ public:
 				"YES", 'y', "NO", 'n' );
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 			return;
+		}
+
+		// [rc4l] Where the player is now, and what going somewhere else would cost them. See
+		// joinintent_compute.h -- the case that matters is a host pressing JOIN on their own row.
+		{
+			const int total = static_cast<int>( g_SortedServers.Size( ));
+			bool bTargetIsCurrent = false;
+
+			const bool bConnected = ( NETWORK_GetState( ) == NETSTATE_CLIENT );
+
+			if ( bConnected && ( g_Selected >= 0 ) && ( g_Selected < total ))
+			{
+				bTargetIsCurrent = BROWSER_GetAddress( g_SortedServers[g_Selected] )
+					.Compare( CLIENT_GetServerAddress( ));
+			}
+
+			const zx::HostState hostState = zx::HostCurrentState( );
+			const bool bHoldsServer = (( hostState == zx::HostState::Starting )
+				|| ( hostState == zx::HostState::Running )
+				|| ( hostState == zx::HostState::Stopping ));
+
+			switch ( zx::DecideJoinIntent( bHoldsServer, bConnected, bTargetIsCurrent ))
+			{
+			case zx::JoinIntent::AlreadyThere:
+				// Just leave. No sound of a decision being made, because none was.
+				M_ClearMenus( );
+				return;
+
+			case zx::JoinIntent::ConfirmStopHosting:
+				ShowDialog( DialogAction::StopHostingAndJoin, "Stop your server?",
+					"Joining another server closes the one you are running. Anyone playing on it will "
+					"be disconnected.", "JOIN", 'j', "CANCEL", 'c' );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+				return;
+
+			case zx::JoinIntent::Join:
+				break;
+			}
 		}
 
 		// [rc4l] A protected server wants the password BEFORE anything is downloaded.
