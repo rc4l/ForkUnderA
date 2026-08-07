@@ -459,6 +459,9 @@ void FGameConfigFile::DoKeySetup(const char *gamename)
 		{ "Bindings", &Bindings },
 		{ "DoubleBindings", &DoubleBindings },
 		{ "AutomapBindings", &AutomapBindings },
+		// [rc4l] uzdoom@7d2ab461d -- terminated and walked to the sentinel; GCC rejects countof on
+		// a static array of a local anonymous struct type.
+		NULL, NULL
 	};
 	const char *key, *value;
 
@@ -468,7 +471,7 @@ void FGameConfigFile::DoKeySetup(const char *gamename)
 
 	C_SetDefaultBindings ();
 
-	for (int i = 0; i < countof(binders); ++i)
+	for (int i = 0; binders[i].label != NULL; ++i)
 	{
 		strncpy(subsection, binders[i].label, sublen);
 		if (SetSection(section))

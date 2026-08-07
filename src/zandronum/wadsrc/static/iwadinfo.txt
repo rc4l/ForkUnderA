@@ -14,7 +14,7 @@ IWad
 IWad
 {
 	Name = "Hacx 2.0"
-	Autoname = "hacx.2_0"
+	Autoname = "hacx.2"
 	Game = "Doom"
 	Config = "Hacx"
 	Mapinfo = "mapinfo/hacxharm.txt"
@@ -25,7 +25,7 @@ IWad
 IWad
 {
 	Name = "Hacx: Twitch'n Kill"
-	Autoname = "hacx.1_2"
+	Autoname = "hacx.1"
 	Game = "Doom"
 	Config = "Hacx"
 	Mapinfo = "mapinfo/hacxharm.txt"
