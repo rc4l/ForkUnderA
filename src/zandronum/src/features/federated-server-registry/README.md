@@ -14,6 +14,20 @@ So anything named `serverregistry` talks to a single instance; anything named `f
 with the set of them. `SERVER_REGISTRY_CHALLENGE` is a packet to one registry;
 `FederatedServerRegistry` decides which registries exist in the first place.
 
+## Operators: update before your users do
+
+The client asks a registry to prove it can reach a port, so the HOST tab can say whether the
+internet will actually see a server *before* one is started. That is `CLIENT_SERVERREGISTRY_REACHTEST`,
+added in image `server-registry-v0.1.0`.
+
+**An older registry does not merely ignore it.** An unknown command lands in the daemon's
+`Received unknown challenge` path, which puts the sender in the flood queue and drops everything from
+that address for 10 seconds, including their server-list query. So a current client pointed at an
+out-of-date registry gets a browser that intermittently fails to refresh, which reads as the registry
+being down rather than being old.
+
+If you run a registry that clients list, update it before they update.
+
 ## What a registry actually stores
 
 Only addresses. Game servers heartbeat every 30s, the registry expires them after 60s, and a
