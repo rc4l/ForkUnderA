@@ -70,6 +70,8 @@
 #include <vector>
 #include <string>
 #include "../GeoIP/GeoIP.h"
+#include "w_wad.h" // [rc4l] the shipped country table is a lump in zandronum.pk3
+#include "features/server-browser/computation/geoiptable_compute.h"
 
 #include "c_console.h"
 #include "c_dispatch.h"
@@ -1180,6 +1182,71 @@ bool NETWORK_IsGeoIPAvailable ( void )
 
 //*****************************************************************************
 // [BB/AK]
+//*****************************************************************************
+//
+// [rc4l] Our own country table, used when no GeoIP database is present.
+//
+// The GeoIP library has always been compiled in and a database never shipped, so on every platform
+// but a Linux box that happened to install one, NETWORK_IsGeoIPAvailable was false and every
+// internet server in the browser drew "?" instead of a flag. MaxMind discontinued the legacy .dat
+// format in 2019, so there was nothing to ship even if we had remembered to.
+//
+// The table lives as a lump inside zandronum.pk3 rather than as a file beside the exe. That is the
+// whole point: a loose data file is precisely what a packaging step forgets, which is the bug this
+// is fixing. Parsing is in geoiptable_compute.cpp, where the bounds checks are tested.
+static TArray<BYTE>		g_FuaGeoBuffer;
+static zx::GeoTable		g_FuaGeoTable;
+static bool				g_bFuaGeoLoaded = false;
+
+static void network_EnsureFuaGeoTable( void )
+{
+	if ( g_bFuaGeoLoaded )
+		return;
+
+	g_bFuaGeoLoaded = true;		// one attempt, whatever happens; a missing lump is not worth retrying
+
+	const int lump = Wads.CheckNumForFullName( "fua_geoip.dat" );
+	if ( lump < 0 )
+		return;
+
+	const int length = Wads.LumpLength( lump );
+	if ( length <= 0 )
+		return;
+
+	g_FuaGeoBuffer.Resize( length );
+	Wads.ReadLump( lump, &g_FuaGeoBuffer[0] );
+
+	g_FuaGeoTable = zx::ParseGeoTable( &g_FuaGeoBuffer[0], static_cast<size_t>( length ));
+
+	// Refusing the table means the lump is corrupt, so the memory is given back rather than held for
+	// the rest of the session by something that will never be read.
+	if ( g_FuaGeoTable.valid == false )
+		g_FuaGeoBuffer.Clear( );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Our table stores ISO alpha-2, and the rest of the engine speaks GeoIP's index. Walked once
+// per lookup rather than cached: it runs when a server row is parsed, not per frame, and a 250-entry
+// string compare is not worth a second table to keep in step.
+static ULONG network_FuaCountryIndexFromAlpha2( const char *pszCode )
+{
+	if (( pszCode == NULL ) || ( pszCode[0] == '\0' ))
+		return ( 0 );
+
+	for ( ULONG ulIdx = 0; ulIdx < COUNTRYINDEX_LAN; ulIdx++ )
+	{
+		const char *pszCandidate = NETWORK_GetCountryCodeFromIndex( ulIdx, false );
+
+		if (( pszCandidate != NULL ) && ( stricmp( pszCandidate, pszCode ) == 0 ))
+			return ( ulIdx );
+	}
+
+	return ( 0 );
+}
+
+//*****************************************************************************
+//
 ULONG NETWORK_GetCountryIndexFromAddress( NETADDRESS_s Address )
 {
 	const char *addressString = Address.ToStringNoPort();
@@ -1194,10 +1261,24 @@ ULONG NETWORK_GetCountryIndexFromAddress( NETADDRESS_s Address )
 		return COUNTRYINDEX_LAN;
 	}
 
-	if ( NETWORK_IsGeoIPAvailable() == false )
+	// A real GeoIP database wins when there is one: it is finer-grained than what we ship, and a
+	// Linux box with the distribution package installed should keep using it.
+	if ( NETWORK_IsGeoIPAvailable() )
+		return GeoIP_id_by_addr ( g_GeoIPDB, addressString );
+
+	network_EnsureFuaGeoTable( );
+
+	// Big-endian on the wire, and the table is sorted by the same numeric order.
+	const unsigned int ip = ( static_cast<unsigned int>( Address.abIP[0] ) << 24 )
+		| ( static_cast<unsigned int>( Address.abIP[1] ) << 16 )
+		| ( static_cast<unsigned int>( Address.abIP[2] ) << 8 )
+		| static_cast<unsigned int>( Address.abIP[3] );
+
+	char code[3];
+	if ( zx::GeoCodeForIndex( g_FuaGeoTable, zx::GeoLookupCodeIndex( g_FuaGeoTable, ip ), code ) == false )
 		return 0;
 
-	return GeoIP_id_by_addr ( g_GeoIPDB, addressString );
+	return network_FuaCountryIndexFromAlpha2( code );
 }
 
 //*****************************************************************************
