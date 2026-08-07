@@ -183,7 +183,6 @@
 // there was and then clipped the moment one grew -- the label is drawn from the left, so a label too
 // long for its column runs under the field rather than being visibly cut, which reads as a typo
 // ("PREFERRED POR") instead of as a layout problem.
-#define SB_HOST_LABEL_W		112		// label column; the field takes the rest
 #define SB_HOST_BTN_H		18
 #define SB_HOST_BTN_W		120
 #define SB_HOST_MAXLEN		40
@@ -197,6 +196,21 @@
 // added is one you have to go looking for. The settings scroll behind it.
 #define SB_HOST_BTN_Y		( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H )
 #define SB_HOST_VIEW_TOP	( SB_HOST_TOP + SB_HOST_PAD + SB_HOST_LINE + 8 )
+
+// [rc4l] Two columns: WHAT to run on the left, how to run it on the right.
+//
+// Split at the same x the server list uses, so the HOST tab lines up with PUBLIC and PRIVATE and
+// switching tabs does not shift the layout under the pointer. The list has its own scroll because it
+// grows with the catalogue while the settings never do.
+#define SB_HOST_LIST_LEFT	( SB_HOST_LEFT + SB_HOST_PAD )
+#define SB_HOST_LIST_RIGHT	( SB_HOST_RCOL_LEFT - 12 )
+#define SB_HOST_RCOL_LEFT	296
+#define SB_HOST_RCOL_RIGHT	( SB_HOST_RIGHT - SB_HOST_PAD )
+
+// [rc4l] Wide enough for PREFERRED PORT, which is the longest label and the one that decides this.
+// At the server list's 418 split the column had ~130px for a label AND a field, so the label was cut
+// mid-word and the box was drawn over what was left of it.
+#define SB_HOST_RLABEL_W	100
 #define SB_HOST_VIEW_BOTTOM	( SB_HOST_BTN_Y - 10 )
 #define SB_HOST_VIEW_H		( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP )
 #define SB_HOST_BAR_W		2
@@ -459,6 +473,10 @@ static	int				g_HostEntryHot = -2;	// -2 is "none"; -1 is the Custom row
 // refused for protected-lump authentication. So when an entry decided the files, the client reloads
 // onto them first.
 static	FString			g_HostEntryReload;
+
+// [rc4l] The list scrolls independently of the settings: it grows with the catalogue and they never
+// do, so sharing one offset would drag the form off screen as entries were added.
+static	int				g_HostListScroll = 0;
 
 // Drag-selection in a host field, and when the last click landed -- the two things a field needs to
 // tell a double-click from two clicks, and a drag from a press.
@@ -2599,15 +2617,15 @@ public:
 		if ( bForm == false )
 			return false;
 
-		// The catalogue rows, using the same y helper the drawing uses.
+		// The catalogue rows, using the same y helper the drawing uses, bounded to the left column.
 		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
 		{
 			const int rowY = HostCatalogueRowY( row );
 			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
 				( y >= serverbrowser_ToScreenY( rowY )) &&
 				( y < serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H )) &&
-				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
-				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+				( x >= serverbrowser_ToScreenX( SB_HOST_LIST_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT )))
 			{
 				return true;
 			}
@@ -2619,8 +2637,8 @@ public:
 			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
 				( y >= serverbrowser_ToScreenY( fieldY )) &&
 				( y < serverbrowser_ToScreenY( fieldY + SB_HOST_FIELD_H )) &&
-				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
-				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+				( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
 			{
 				return true;
 			}
@@ -2633,7 +2651,7 @@ public:
 			( y >= serverbrowser_ToScreenY( visY )) &&
 			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
 		{
-			const int rowX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W;
+			const int rowX = SB_HOST_RCOL_LEFT + SB_HOST_RLABEL_W;
 			const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
 
 			for ( int i = 0; i < kHostVisCount; ++i )
@@ -2734,8 +2752,8 @@ public:
 			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
 				( y >= serverbrowser_ToScreenY( rowY )) &&
 				( y < serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H )) &&
-				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
-				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+				( x >= serverbrowser_ToScreenX( SB_HOST_LIST_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT )))
 			{
 				g_HostEntryHot = row;
 
@@ -2759,8 +2777,8 @@ public:
 
 			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
 				( y >= rowTop ) && ( y < rowBottom ) &&
-				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
-				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+				( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
 			{
 				g_HostFieldHot = i;
 
@@ -2804,7 +2822,7 @@ public:
 			( y >= serverbrowser_ToScreenY( visY )) &&
 			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
 		{
-			const int rowX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W;
+			const int rowX = SB_HOST_RCOL_LEFT + SB_HOST_RLABEL_W;
 			const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
 
 			// Back into virtual units, because that is what the layout is expressed in.
@@ -2864,7 +2882,7 @@ public:
 		if (( index < 0 ) || ( index >= kHostFieldCount ))
 			return 0;
 
-		const int textX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W + 5;
+		const int textX = SB_HOST_RCOL_LEFT + SB_HOST_RLABEL_W + 5;
 
 		// A masked field is measured on what is DRAWN, not on what is stored: the asterisks are a
 		// different width from the characters behind them, and hit-testing the real text would put
@@ -2978,7 +2996,7 @@ public:
 	// How tall the settings are, viewport or no viewport. What decides whether they scroll.
 	int HostContentH( )
 	{
-		return HostCatalogueH( ) + kHostFieldCount * HostRowPitch( ) + 4 + SB_CHOICE_H;
+		return HostDetailH( ) + kHostFieldCount * HostRowPitch( ) + 4 + SB_CHOICE_H;
 	}
 
 	int HostMaxScroll( )
@@ -3000,7 +3018,7 @@ public:
 
 	int HostCatalogueY( )
 	{
-		return SB_HOST_VIEW_TOP - g_HostScroll;
+		return SB_HOST_VIEW_TOP - g_HostListScroll;
 	}
 
 	// Heading, the rows, and the gap before the settings.
@@ -3016,9 +3034,11 @@ public:
 		return HostCatalogueY( ) + SB_HOST_LINE + 3 + ( row + 1 ) * SB_HOST_ENTRY_H;
 	}
 
+	// The settings live in the right column now, so they start at the top of the viewport rather than
+	// below the list. They keep their own scroll for the case where the panel is short.
 	int HostFirstFieldY( )
 	{
-		return HostCatalogueY( ) + HostCatalogueH( );
+		return SB_HOST_VIEW_TOP + HostDetailH( ) - g_HostScroll;
 	}
 
 	int HostVisibilityY( )
@@ -3158,16 +3178,17 @@ public:
 		PushClip( serverbrowser_ToScreenY( SB_HOST_VIEW_TOP ),
 			serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM ));
 
-		DrawHostCatalogue( x );
+		DrawHostCatalogue( SB_HOST_LIST_LEFT );
+		DrawHostDetail( );
 
 		int y = HostFirstFieldY( );
 		for ( int i = 0; i < kHostFieldCount; ++i )
 		{
-			DrawHostField( i, x, y );
+			DrawHostField( i, SB_HOST_RCOL_LEFT, y );
 			y += HostRowPitch( );
 		}
 
-		DrawHostVisibility( x, HostVisibilityY( ));
+		DrawHostVisibility( SB_HOST_RCOL_LEFT, HostVisibilityY( ));
 
 		PopClip( );
 		DrawHostScrollBar( );
@@ -3188,8 +3209,10 @@ public:
 	// form scrolling, which would put the START button somewhere the player has to go looking for it.
 	void DrawHostField( int index, int x, int y )
 	{
-		const int fieldX = x + SB_HOST_LABEL_W;
-		const int fieldW = SB_HOST_RIGHT - SB_HOST_PAD - fieldX;
+		// [rc4l] Measured from the right COLUMN, not the panel. Using the panel's edge here is what
+		// pushed the boxes off the end of it when the form stopped owning the full width.
+		const int fieldX = x + SB_HOST_RLABEL_W;
+		const int fieldW = SB_HOST_RCOL_RIGHT - fieldX;
 
 		// [rc4l] Every one of these has to be false for a field to look focused. Leaving the
 		// visibility row out meant the last field kept its gold label and its caret while the row had
@@ -3285,7 +3308,150 @@ public:
 	// Local is the default and always works. Global depends on a port being forwarded, which we cannot
 	// know from in here -- so it is offered, attempted, and then reported honestly rather than being
 	// predicted.
-	// [rc4l] WHAT to run. The catalogue answers this; the fields below answer how.
+	// [rc4l] What the selected entry will actually do, above the settings in the right column.
+	//
+	// Everything here is already computed for the START press -- PickIwad decides the IWAD and
+	// HostPlan decides the files -- and none of it was shown anywhere. A player choosing between two
+	// entries was choosing blind.
+	int HostDetailLineCount( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return 2;	// Custom: a title and one line saying what it means
+
+		// Title, summary, the IWAD line, then one per file.
+		return 3 + static_cast<int>( entries[g_HostEntrySel].addon.files.size( ));
+	}
+
+	int HostDetailH( )
+	{
+		return HostDetailLineCount( ) * SB_HOST_LINE + 10;
+	}
+
+	// The IWAD this entry would land on, said in the words the host cares about.
+	FString HostDetailIwadLine( const zx::AddonEntry &addon )
+	{
+		std::vector<std::string> iwads;
+		static const char *const kCandidates[] = {
+			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
+			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
+		};
+
+		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
+		{
+			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
+				iwads.push_back( kCandidates[i] );
+		}
+
+		const zx::IwadPick pick = zx::PickIwad( addon.iwad, iwads );
+		FString line;
+
+		switch ( pick.choice )
+		{
+		case zx::IwadChoice::Preferred:
+			line.Format( "On %s", pick.iwad.c_str( ));
+			break;
+
+		case zx::IwadChoice::Substitute:
+			// Naming both is the whole point: the host asked for one game and is getting another.
+			line.Format( "On %s, standing in for %s", pick.iwad.c_str( ), pick.wanted.c_str( ));
+			break;
+
+		default:
+			line.Format( "You need %s", pick.wanted.empty( ) ? "a game" : pick.wanted.c_str( ));
+			break;
+		}
+
+		return line;
+	}
+
+	// Cut to the column, with an ellipsis so it reads as truncated rather than as a typo.
+	FString HostFitToColumn( const char *text )
+	{
+		const int limit = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
+
+		FString out = text;
+		if ( SmallFont->StringWidth( out ) <= limit )
+			return out;
+
+		while (( out.Len( ) > 1 ) && ( SmallFont->StringWidth( out + "..." ) > limit ))
+			out.Truncate( out.Len( ) - 1 );
+
+		out += "...";
+		return out;
+	}
+
+	void DrawHostDetail( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		const int x = SB_HOST_RCOL_LEFT;
+		int y = SB_HOST_VIEW_TOP - g_HostScroll;
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+		{
+			if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+			{
+				screen->DrawText( SmallFont, CR_WHITE, x, y, "Custom setup",
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
+			y += SB_HOST_LINE;
+
+			if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+			{
+				screen->DrawText( SmallFont, CR_DARKGRAY, x, y, HostFitToColumn( "Serves what you are playing" ),
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
+			return;
+		}
+
+		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+
+		if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+		{
+			screen->DrawText( SmallFont, CR_WHITE, x, y, HostFitToColumn( addon.name.c_str( )),
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
+		y += SB_HOST_LINE;
+
+		if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+		{
+			screen->DrawText( SmallFont, CR_DARKGRAY, x, y,
+				HostFitToColumn( addon.summary.c_str( )),
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
+		y += SB_HOST_LINE;
+
+		if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+		{
+			const FString iwadLine = HostFitToColumn( HostDetailIwadLine( addon ));
+			screen->DrawText( SmallFont, CR_GOLD, x, y, iwadLine,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
+		y += SB_HOST_LINE;
+
+		// Which files, and whether you actually have them. A row you cannot host should say so here
+		// rather than only when the button is pressed.
+		for ( size_t i = 0; i < addon.files.size( ); ++i )
+		{
+			if ( HostRowFullyVisible( y, SB_HOST_LINE ))
+			{
+				TArray<FString> resolved;
+				const bool bHave = D_AddFile( resolved, addon.files[i].name.c_str( ), false ) &&
+					( resolved.Size( ) > 0 );
+
+				FString line;
+				line.Format( "%s %s", bHave ? "+" : "-", addon.files[i].name.c_str( ));
+
+				screen->DrawText( SmallFont, bHave ? CR_GRAY : CR_DARKRED, x, y,
+					HostFitToColumn( line ),
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
+			y += SB_HOST_LINE;
+		}
+	}
+
+	// [rc4l] WHAT to run. The catalogue answers this; the fields beside it answer how.
 	//
 	// Custom is a ROW rather than a mode, so the manual form is one of the choices instead of a
 	// separate place to go. Menu depth is what stops people finding things, and this screen has none.
@@ -3317,7 +3483,7 @@ public:
 				screen->Dim( PalEntry( 60, 70, 96 ), 0.55f,
 					serverbrowser_ToScreenX( x - 4 ),
 					serverbrowser_ToScreenY( rowY - 1 ),
-					serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD ) -
+					serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT ) -
 						serverbrowser_ToScreenX( x - 4 ),
 					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H - 1 ) -
 						serverbrowser_ToScreenY( rowY - 1 ));
@@ -3339,7 +3505,9 @@ public:
 			FString note;
 			if ( row == SB_HOST_CATALOGUE_CUSTOM )
 			{
-				note = "what you are running now";
+				// The long form of this was written when the row owned the panel's full width; in a
+				// narrow list it ran under its own label. The detail panel says it properly.
+				note = "current";
 			}
 			else
 			{
@@ -3350,7 +3518,7 @@ public:
 
 			const int noteW = SmallFont->StringWidth( note );
 			screen->DrawText( SmallFont, CR_DARKGRAY,
-				SB_HOST_RIGHT - SB_HOST_PAD - noteW, rowY, note,
+				SB_HOST_LIST_RIGHT - noteW, rowY, note,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
 	}
@@ -3364,8 +3532,8 @@ public:
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
 
-		const int rowX = x + SB_HOST_LABEL_W;
-		const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
+		const int rowX = x + SB_HOST_RLABEL_W;
+		const int rowW = SB_HOST_RCOL_RIGHT - rowX;
 
 		static const char *const labels[kHostVisCount] = {
 			"Internet", "Local network",
