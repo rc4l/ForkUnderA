@@ -25,6 +25,17 @@ const char *kDuel40 =
 	"  ]\n"
 	"}\n";
 
+const char *kDuel40Mapped =
+	"{\n"
+	"  \"schema\": 1,\n"
+	"  \"name\": \"Duel 40\",\n"
+	"  \"iwad\": \"doom2.wad\",\n"
+	"  \"map\": \"START\",\n"
+	"  \"files\": [\n"
+	"    { \"name\": \"duel40b.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }\n"
+	"  ]\n"
+	"}\n";
+
 AddonEntry Parse(const char *json)
 {
 	return ParseAddonFile("duel40", json);
@@ -175,6 +186,42 @@ TEST(AddonFile, AnEntryWithNoNameHasNothingToShow)
 TEST(AddonFile, AnEmptyObjectIsRefused)
 {
 	EXPECT_FALSE(Parse("{}").valid);
+}
+
+TEST(AddonFile, AnEntryMayNameTheMapItOpensOn)
+{
+	// Duel 40 opens on START, a welcome map it deliberately leaves OUT of its rotation, so this
+	// cannot be derived from server.cfg without landing players on a duel map they never picked.
+	const AddonEntry e = Parse(kDuel40Mapped);
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_EQ("START", e.map);
+}
+
+TEST(AddonFile, TheMapIsOptional)
+{
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_TRUE(e.map.empty()) << "no map means the cfg rotation decides";
+}
+
+TEST(AddonFile, AMapThatIsNotAPlainLumpNameIsRefused)
+{
+	// It reaches a command line, so it gets the same treatment as a WAD name: no path, and nothing
+	// that reads as another flag.
+	const char *bad[] = { "../secret", "maps/START", "-host", "+map", "C:START" };
+
+	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
+	{
+		std::string json = std::string("{ \"schema\": 1, \"name\": \"X\", \"map\": \"") + bad[i] +
+			"\"," +
+			"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
+
+		EXPECT_FALSE(Parse(json.c_str()).valid) << "accepted " << bad[i];
+	}
 }
 
 TEST(AddonFile, TheIwadIsOptional)

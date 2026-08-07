@@ -2451,9 +2451,12 @@ public:
 			for ( size_t i = 0; i < plan.pwads.size( ); ++i )
 				g_HostEntryPwads.Push( FString( plan.pwads[i].c_str( )));
 
-			// The entry's cfg carries its own rotation and is exec'd first, so naming a map here
-			// would override the entry's opening one.
-			config.map = plan.execCfg.empty( ) ? std::string( "map01" ) : std::string( );
+			// [rc4l] The entry's own opening map, which is NOT the first of its rotation: Duel 40
+			// opens on START, a welcome map deliberately left out of the rotation. Falling back to
+			// the cfg means the rotation decides, and to map01 only when there is neither.
+			config.map = plan.map;
+			if ( config.map.empty( ) && plan.execCfg.empty( ))
+				config.map = "map01";
 
 			SaveHostForm( );
 			zx::ReachProbeRelease( );

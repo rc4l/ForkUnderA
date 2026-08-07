@@ -50,6 +50,7 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
 	plan.port = choices.port;
 	plan.advertise = choices.advertise;
 	plan.execCfg = serverCfgPath;
+	plan.map = addon.map;
 
 	if (!addon.valid)
 	{

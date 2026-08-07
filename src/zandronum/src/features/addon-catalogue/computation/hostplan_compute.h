@@ -37,6 +37,7 @@ struct HostPlan
 	std::string iwad;				// what to start on, after substitution
 	std::vector<std::string> pwads;	// bare filenames, in the entry's load order
 	std::string execCfg;			// the entry's server.cfg, or "" when it has none
+	std::string map;				// the map to open on, or "" to let the cfg's rotation decide
 	std::string serverName;
 	int maxPlayers;
 	int port;
