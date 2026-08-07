@@ -44,6 +44,13 @@ ProbePhase ReachProbeStatus( int port );
 // Throw away any cached verdict, so the next request re-checks. For the manual re-check.
 void ReachProbeForget( void );
 
+// [rc4l] Let go of the port RIGHT NOW, keeping whatever verdict was already reached.
+//
+// The check holds the very port the player is about to host on, so a server started while it is
+// still bound finds its own port taken and quietly moves to the next one -- the fallback doing
+// exactly what it is for, against a squatter that is us. Called before spawning a server.
+void ReachProbeRelease( void );
+
 // Close sockets and forget everything. Registered with atterm.
 void ReachProbeShutdown( void );
 
