@@ -1085,8 +1085,20 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BFGSpray)
 		AActor *spray = Spawn (spraytype, linetarget->x, linetarget->y,
 			linetarget->z + (linetarget->height>>2), ALLOW_REPLACE);
 
-		if (spray && (spray->flags5 & MF5_PUFFGETSOWNER))
-			spray->target = self->target;
+		if (spray)
+		{
+			if (spray->flags6 & MF6_MTHRUSPECIES && spray->GetSpecies() == linetarget->GetSpecies())
+			{
+				// [MC] Remove it because technically, the spray isn't trying to "hit" them.
+				// [rc4l] Destroyed before the [BC] broadcast below, and the continue skips that
+				// broadcast entirely -- otherwise the server would tell clients to spawn a spray
+				// it has already destroyed.
+				spray->Destroy();
+				continue;
+			}
+			if (spray->flags5 & MF5_PUFFGETSOWNER)
+				spray->target = self->target;
+		}
 		
 		// [BC] Tell clients to spawn the tracers.
 		if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( spray ))
