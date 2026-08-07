@@ -49,6 +49,10 @@
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
+#include "features/addon-catalogue/zx_catalogue.h"
+#include "features/addon-catalogue/computation/hostplan_compute.h"
+#include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/wad-download/zx_wadsearch.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
@@ -434,6 +438,27 @@ static const char *const g_HostFieldTips[kHostFieldCount] = {
 static	zx::TextInput	g_HostFields[kHostFieldCount];
 static	int				g_HostFieldFocus = 0;
 static	int				g_HostFieldHot = -1;
+
+// [rc4l] WHAT to run, above the settings that say how. The catalogue answers the first question and
+// the fields answer the second, which is the same split as an entry's addon.json against the host's
+// own choices: the entry never names the server and the form never picks the files.
+//
+// -1 is Custom, meaning "whatever this client is running", which is what the form did before the
+// catalogue existed and still does for anything not in it.
+#define SB_HOST_CATALOGUE_CUSTOM	( -1 )
+#define SB_HOST_ENTRY_H				12
+
+static	int				g_HostEntrySel = SB_HOST_CATALOGUE_CUSTOM;
+static	int				g_HostEntryHot = -2;	// -2 is "none"; -1 is the Custom row
+
+// [rc4l] What we told the server to load, kept so the client can match it before joining.
+//
+// JoinOwnServer connected straight to the address, and the reason it could was that the server was
+// always running the files WE were running -- its command line came from ours. A catalogue entry
+// breaks that: the server loads the entry, this client is still on whatever it had, and the join is
+// refused for protected-lump authentication. So when an entry decided the files, the client reloads
+// onto them first.
+static	FString			g_HostEntryReload;
 
 // Drag-selection in a host field, and when the last click landed -- the two things a field needs to
 // tell a double-click from two clicks, and a drag from a press.
@@ -1239,6 +1264,22 @@ public:
 		const FString address = zx::HostConnectAddress( );
 		if ( address.IsEmpty( ))
 			return;
+
+		// [rc4l] A catalogue entry is the one case where the server is NOT running what we are, so
+		// connecting straight to it fails protected-lump authentication. Reloading onto the entry
+		// first does load the right files -- and then loses the connect, because wad_reload restarts
+		// the game loop and the queued command dies with it.
+		//
+		// So an entry does not auto-join at all. The server comes up and announces itself, and the
+		// player joins it from the list like any other, which goes through the validated reload in
+		// fua_join_selected_server -- the one path that already resolves a server's WADs before
+		// connecting. Auto-joining was only ever safe because the old flow hosted what we were
+		// already running.
+		if ( g_HostEntryReload.IsNotEmpty( ))
+		{
+			g_HostEntryReload = "";
+			return;
+		}
 
 		FString command;
 		command.Format( "connect %s", address.GetChars( ));
@@ -2287,6 +2328,85 @@ public:
 		if ( config.maxPlayers > MAXPLAYERS )
 			config.maxPlayers = MAXPLAYERS;
 
+		// [rc4l] A catalogue entry decides the content; the fields above decided the identity. The
+		// two never overlap, which is why an entry has no server name and the form has no file list.
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
+		{
+			const zx::CatalogueEntry &chosen = entries[g_HostEntrySel];
+
+			std::vector<std::string> have;
+			for ( size_t i = 0; i < chosen.addon.files.size( ); ++i )
+			{
+				TArray<FString> resolved;
+				if ( D_AddFile( resolved, chosen.addon.files[i].name.c_str( ), false ) &&
+					( resolved.Size( ) > 0 ))
+					have.push_back( chosen.addon.files[i].name );
+			}
+
+			std::vector<std::string> iwads;
+			{
+				static const char *const kCandidates[] = {
+					"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
+					"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
+				};
+
+				for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
+				{
+					if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
+						iwads.push_back( kCandidates[i] );
+				}
+			}
+
+			zx::HostChoices choices;
+			choices.serverName = config.hostName;
+			choices.maxPlayers = config.maxPlayers;
+			choices.port = config.port;
+			choices.advertise = config.advertise;
+
+			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon,
+				zx::PickIwad( chosen.addon.iwad, iwads ),
+				zx::CatalogueServerCfgPath( chosen ), choices, have );
+
+			if ( !plan.blocker.empty( ) || !plan.ready )
+			{
+				// Said on the panel rather than only in the console, because the console is not where
+				// anyone pressing this button is looking.
+				FString why = plan.blocker.empty( )
+					? FString( "missing files; they are not downloadable from here yet" )
+					: FString( plan.blocker.c_str( ));
+
+				Printf( TEXTCOLOR_ORANGE "Cannot host %s: %s\n" TEXTCOLOR_NORMAL,
+					chosen.addon.name.c_str( ), why.GetChars( ));
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+				return;
+			}
+
+			config.iwad = plan.iwad;
+			config.pwads = plan.pwads;
+			config.execCfg = plan.execCfg;
+
+			g_HostEntryReload.Format( "wad_reload %s", plan.iwad.c_str( ));
+			for ( size_t i = 0; i < plan.pwads.size( ); ++i )
+				g_HostEntryReload.AppendFormat( " %s", plan.pwads[i].c_str( ));
+
+			// The entry's cfg carries its own rotation and is exec'd first, so naming a map here
+			// would override the entry's opening one.
+			config.map = plan.execCfg.empty( ) ? std::string( "map01" ) : std::string( );
+
+			SaveHostForm( );
+			zx::ReachProbeRelease( );
+
+			if ( zx::HostStart( config ) == false )
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+
+			return;
+		}
+
+		// Custom: the server takes what this client is running, so there is nothing to reload onto.
+		g_HostEntryReload = "";
+
 		// What we are playing is what we will serve. FWadCollection knows the files by the names they
 		// were loaded under, which is exactly the form a command line wants.
 		config.iwad = ExtractFileBase( Wads.GetWadFullName( 1 ), true ).GetChars( );
@@ -2479,6 +2599,20 @@ public:
 		if ( bForm == false )
 			return false;
 
+		// The catalogue rows, using the same y helper the drawing uses.
+		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
+		{
+			const int rowY = HostCatalogueRowY( row );
+			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
+				( y >= serverbrowser_ToScreenY( rowY )) &&
+				( y < serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H )) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+			{
+				return true;
+			}
+		}
+
 		int fieldY = HostFirstFieldY( );
 		for ( int i = 0; i < kHostFieldCount; ++i )
 		{
@@ -2590,6 +2724,31 @@ public:
 
 		if ( bForm == false )
 			return false;
+
+		// The catalogue, before the fields: it is above them on screen and it decides what the rest
+		// of the panel is about.
+		g_HostEntryHot = -2;
+		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
+		{
+			const int rowY = HostCatalogueRowY( row );
+			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
+				( y >= serverbrowser_ToScreenY( rowY )) &&
+				( y < serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H )) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+			{
+				g_HostEntryHot = row;
+
+				if ( type == MOUSE_Click )
+				{
+					SetFocus( zx::BrowserFocus::Host );
+					g_HostOnButton = false;
+					g_HostEntrySel = row;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+		}
 
 		// The fields.
 		int fieldY = HostFirstFieldY( );
@@ -2819,7 +2978,7 @@ public:
 	// How tall the settings are, viewport or no viewport. What decides whether they scroll.
 	int HostContentH( )
 	{
-		return kHostFieldCount * HostRowPitch( ) + 4 + SB_CHOICE_H;
+		return HostCatalogueH( ) + kHostFieldCount * HostRowPitch( ) + 4 + SB_CHOICE_H;
 	}
 
 	int HostMaxScroll( )
@@ -2831,9 +2990,35 @@ public:
 	// [rc4l] Where the rows land ON SCREEN -- content position less the scroll. Both the drawing and
 	// the hit test read these, so a row can never be somewhere other than where it is clickable, and
 	// scrolling cannot separate the two.
-	int HostFirstFieldY( )
+	// [rc4l] The catalogue list, and everything below it. One anchor, so a row drawn somewhere other
+	// than where it is clickable stays impossible -- the same rule the fields already follow.
+	int HostCatalogueRowCount( )
+	{
+		// Custom plus whatever is on disk.
+		return 1 + static_cast<int>( zx::CatalogueLoad( ).size( ));
+	}
+
+	int HostCatalogueY( )
 	{
 		return SB_HOST_VIEW_TOP - g_HostScroll;
+	}
+
+	// Heading, the rows, and the gap before the settings.
+	int HostCatalogueH( )
+	{
+		return SB_HOST_LINE + 3 + HostCatalogueRowCount( ) * SB_HOST_ENTRY_H + 8;
+	}
+
+	// The y of one catalogue row. `row` is -1 for Custom, then 0.. for entries, so the selection
+	// value and the row index are the same number and cannot drift apart.
+	int HostCatalogueRowY( int row )
+	{
+		return HostCatalogueY( ) + SB_HOST_LINE + 3 + ( row + 1 ) * SB_HOST_ENTRY_H;
+	}
+
+	int HostFirstFieldY( )
+	{
+		return HostCatalogueY( ) + HostCatalogueH( );
 	}
 
 	int HostVisibilityY( )
@@ -2973,6 +3158,8 @@ public:
 		PushClip( serverbrowser_ToScreenY( SB_HOST_VIEW_TOP ),
 			serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM ));
 
+		DrawHostCatalogue( x );
+
 		int y = HostFirstFieldY( );
 		for ( int i = 0; i < kHostFieldCount; ++i )
 		{
@@ -3098,6 +3285,76 @@ public:
 	// Local is the default and always works. Global depends on a port being forwarded, which we cannot
 	// know from in here -- so it is offered, attempted, and then reported honestly rather than being
 	// predicted.
+	// [rc4l] WHAT to run. The catalogue answers this; the fields below answer how.
+	//
+	// Custom is a ROW rather than a mode, so the manual form is one of the choices instead of a
+	// separate place to go. Menu depth is what stops people finding things, and this screen has none.
+	void DrawHostCatalogue( int x )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		const int headY = HostCatalogueY( );
+		if ( HostRowFullyVisible( headY, SB_HOST_LINE ))
+		{
+			screen->DrawText( SmallFont, CR_DARKGRAY, x, headY, "WHAT TO RUN",
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
+
+		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < static_cast<int>( entries.size( )); ++row )
+		{
+			const int rowY = HostCatalogueRowY( row );
+			if ( !HostRowVisible( rowY, SB_HOST_ENTRY_H ))
+				continue;
+
+			const bool bSel = ( row == g_HostEntrySel );
+			const bool bHot = ( row == g_HostEntryHot );
+
+			// The selected row gets a bar behind it rather than only a colour: on a dark panel a
+			// colour change alone is easy to miss, and this is the one choice that decides what the
+			// whole rest of the screen is about.
+			if ( bSel )
+			{
+				screen->Dim( PalEntry( 60, 70, 96 ), 0.55f,
+					serverbrowser_ToScreenX( x - 4 ),
+					serverbrowser_ToScreenY( rowY - 1 ),
+					serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD ) -
+						serverbrowser_ToScreenX( x - 4 ),
+					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H - 1 ) -
+						serverbrowser_ToScreenY( rowY - 1 ));
+			}
+
+			const EColorRange col = bSel ? CR_WHITE : ( bHot ? CR_GOLD : CR_GRAY );
+
+			FString label;
+			if ( row == SB_HOST_CATALOGUE_CUSTOM )
+				label = "Custom setup";
+			else
+				label = entries[row].addon.name.c_str( );
+
+			screen->DrawText( SmallFont, col, x, rowY, label,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+			// What the row actually costs you, on the row itself. A player choosing between two
+			// entries is choosing between two downloads as much as between two mods.
+			FString note;
+			if ( row == SB_HOST_CATALOGUE_CUSTOM )
+			{
+				note = "what you are running now";
+			}
+			else
+			{
+				const zx::AddonEntry &a = entries[row].addon;
+				note.Format( "%d file%s", static_cast<int>( a.files.size( )),
+					( a.files.size( ) == 1 ) ? "" : "s" );
+			}
+
+			const int noteW = SmallFont->StringWidth( note );
+			screen->DrawText( SmallFont, CR_DARKGRAY,
+				SB_HOST_RIGHT - SB_HOST_PAD - noteW, rowY, note,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
+	}
+
 	void DrawHostVisibility( int x, int y )
 	{
 		if ( HostRowFullyVisible( y, SB_CHOICE_H ))
