@@ -909,5 +909,5 @@ void ACustomSprite::BeginPlay ()
 		renderflags |= RF_YFLIP;
 
 	// set face/wall/floor flags
-	renderflags |= ((cstat >> 4) & 3) << 12;
+	renderflags |= ActorRenderFlags::FromInt (((cstat >> 4) & 3) << 12);
 }
