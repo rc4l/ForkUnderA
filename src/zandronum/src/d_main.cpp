@@ -262,6 +262,7 @@ FString StoredWarp;
 extern FString StoredReloadMap; // [rc4l] set by wad_reload to boot into a map after a restart
 bool advancedemo;
 FILE *debugfile;
+FILE *hashfile;
 event_t events[MAXEVENTS];
 int eventhead;
 int eventtail;
@@ -2816,6 +2817,26 @@ void D_DoomMain (void)
 	}
   */
 
+	if (Args->CheckParm("-hashfiles"))
+	{
+		FString filename = "fileinfo.txt";
+		Printf("Hashing loaded content to: %s\n", filename.GetChars());
+		hashfile = fopen(filename, "w");
+		if (hashfile)
+		{
+			fprintf(hashfile, "%s version %s (%s)\n", GAMENAME, GetVersionString(), GetGitHash());
+#ifdef __VERSION__
+			fprintf(hashfile, "Compiler version: %s\n", __VERSION__);
+#endif
+			fprintf(hashfile, "Command line:");
+			for (int i = 0; i < Args->NumArgs(); ++i)
+			{
+				fprintf(hashfile, " %s", Args->GetArg(i));
+			}
+			fprintf(hashfile, "\n");
+		}
+	}
+
 	D_DoomInit();
 	PClass::StaticInit ();
 	atterm(FinalGC);
@@ -2900,6 +2921,11 @@ void D_DoomMain (void)
 		// Since this function will never leave we must delete this array here manually.
 		pwads.Clear();
 		pwads.ShrinkToFit();
+
+		if (hashfile)
+		{
+			Printf("Notice: File hashing is incredibly verbose. Expect loading files to take much longer then usual.\n");
+		}
 
 		Printf ("W_Init: Init WADfiles.\n");
 		Wads.InitMultipleFiles (/*allwads*/); // [BB] Removed argument.
