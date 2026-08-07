@@ -194,7 +194,12 @@
 // The button is pinned to the bottom of the panel rather than following the last setting. It is the
 // one thing on this screen you always want to reach, and a control that moves every time a row is
 // added is one you have to go looking for. The settings scroll behind it.
-#define SB_HOST_BTN_Y		( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H )
+// [rc4l] The host panel runs lower than the server list's detail box. That box stops where it does
+// to leave room for JOIN underneath it; this panel's button lives INSIDE it, so the same stopping
+// point was simply wasted height -- and the settings, which are the tallest thing here, were the
+// ones paying for it.
+#define SB_HOST_BOTTOM		( SB_DETAIL_BOTTOM + 26 )
+#define SB_HOST_BTN_Y		( SB_HOST_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H )
 #define SB_HOST_VIEW_TOP	( SB_HOST_TOP + SB_HOST_PAD + SB_HOST_LINE + 8 )
 
 // [rc4l] Two columns: WHAT to run on the left, how to run it on the right.
@@ -212,16 +217,18 @@
 // mid-word and the box was drawn over what was left of it.
 #define SB_HOST_RLABEL_W	100
 
-// [rc4l] The right column is two regions, not one: what the selection IS on top, how to run it
-// underneath, with a rule between them. They scroll separately because their contents are unrelated
-// -- an entry with a dozen files should not push the port field off the panel.
+// [rc4l] The right column is ONE region showing one thing at a time: what the selection is, or the
+// settings behind a button. Stacking both and giving each a scrollbar meant two thin bars a few
+// pixels apart and content bleeding across the boundary between them, and the second bar was
+// answering a question ("which of these two am I scrolling") that nobody should have to ask.
+#define SB_HOST_RTOGGLE_H	SB_HOST_BTN_H
+#define SB_HOST_RTOGGLE_Y	( SB_HOST_VIEW_BOTTOM - SB_HOST_RTOGGLE_H )
 #define SB_HOST_RTOP_TOP	SB_HOST_VIEW_TOP
-#define SB_HOST_RTOP_H		68
-#define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOP_TOP + SB_HOST_RTOP_H )
-#define SB_HOST_RULE_Y		( SB_HOST_RTOP_BOTTOM + 4 )
-#define SB_HOST_RBOT_TOP	( SB_HOST_RULE_Y + 8 )
-#define SB_HOST_RBOT_BOTTOM	SB_HOST_VIEW_BOTTOM
-#define SB_HOST_RBOT_H		( SB_HOST_RBOT_BOTTOM - SB_HOST_RBOT_TOP )
+#define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOGGLE_Y - 6 )
+#define SB_HOST_RTOP_H		( SB_HOST_RTOP_BOTTOM - SB_HOST_RTOP_TOP )
+#define SB_HOST_RBOT_TOP	SB_HOST_RTOP_TOP
+#define SB_HOST_RBOT_BOTTOM	SB_HOST_RTOP_BOTTOM
+#define SB_HOST_RBOT_H		SB_HOST_RTOP_H
 #define SB_HOST_VIEW_BOTTOM	( SB_HOST_BTN_Y - 10 )
 #define SB_HOST_VIEW_H		( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP )
 #define SB_HOST_BAR_W		2
@@ -491,6 +498,12 @@ static	int				g_HostListScroll = 0;
 
 // The detail region's own offset. An entry with many files scrolls here without moving the form.
 static	int				g_HostDetailScroll = 0;
+
+// [rc4l] The right column shows the description by default. The settings are one click away rather
+// than always on screen: almost nobody changes them, and the thing worth reading before pressing
+// START is what the selection will actually load.
+static	bool			g_HostShowSettings = false;
+static	bool			g_HostOnSettingsToggle = false;
 
 // Drag-selection in a host field, and when the last click landed -- the two things a field needs to
 // tell a double-click from two clicks, and a drag from a press.
@@ -2618,7 +2631,7 @@ public:
 
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
 		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
-		const int btnY = bForm ? HostFormButtonY( ) : ( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
+		const int btnY = bForm ? HostFormButtonY( ) : ( SB_HOST_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
 
 		if (( x >= serverbrowser_ToScreenX( btnX )) &&
 			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
@@ -2644,6 +2657,19 @@ public:
 				return true;
 			}
 		}
+
+		// The toggle, which is present on both faces.
+		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
+			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+		{
+			return true;
+		}
+
+		// The settings only exist while they are showing, so they only claim clicks then.
+		if ( !g_HostShowSettings )
+			return false;
 
 		int fieldY = HostFirstFieldY( );
 		for ( int i = 0; i < kHostFieldCount; ++i )
@@ -2736,7 +2762,7 @@ public:
 		// STOP sits at the bottom of the panel.
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
 		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
-		const int btnY = bForm ? HostFormButtonY( ) : ( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
+		const int btnY = bForm ? HostFormButtonY( ) : ( SB_HOST_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
 
 		if (( x >= serverbrowser_ToScreenX( btnX )) &&
 			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
@@ -2781,6 +2807,28 @@ public:
 				return true;
 			}
 		}
+
+		// The toggle.
+		g_HostOnSettingsToggle = false;
+		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
+			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+		{
+			g_HostOnSettingsToggle = true;
+
+			if ( type == MOUSE_Click )
+			{
+				SetFocus( zx::BrowserFocus::Host );
+				g_HostOnButton = false;
+				g_HostShowSettings = !g_HostShowSettings;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+			return true;
+		}
+
+		if ( !g_HostShowSettings )
+			return false;
 
 		// The fields.
 		int fieldY = HostFirstFieldY( );
@@ -2971,44 +3019,23 @@ public:
 	//
 	// [rc4l] The settings' own scrollbar. Drawn only when there is something to scroll, because a
 	// full-height thumb on a list that fits is a control that looks live and does nothing.
-	// [rc4l] The line between "what this is" and "how to run it". Two regions sharing an edge with
-	// nothing between them read as one long column that happens to change subject.
-	void DrawHostRule( )
+	// [rc4l] The one control that swaps the right column between what the selection is and how to
+	// run it. Drawn as a row rather than a pill so it reads as part of the column instead of
+	// competing with START SERVER below it.
+	void DrawHostSettingsToggle( )
 	{
-		const int x0 = serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT );
-		const int x1 = serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT );
-		const int y0 = serverbrowser_ToScreenY( SB_HOST_RULE_Y );
-
-		screen->Dim( PalEntry( 120, 130, 165 ), 0.35f, x0, y0, x1 - x0,
-			MAX( 1, serverbrowser_ToScreenY( SB_HOST_RULE_Y + 1 ) - y0 ));
-	}
-
-	// The detail region's bar, drawn on the same rules as the settings' one: only when there is
-	// something to scroll.
-	void DrawHostDetailScrollBar( )
-	{
-		if ( HostDetailMaxScroll( ) <= 0 )
-			return;
-
-		const int trackTop = serverbrowser_ToScreenY( SB_HOST_RTOP_TOP );
-		const int trackBottom = serverbrowser_ToScreenY( SB_HOST_RTOP_BOTTOM );
-		const int trackH = trackBottom - trackTop;
-		if ( trackH <= 0 )
-			return;
-
-		const int x = serverbrowser_ToScreenX( SB_HOST_BAR_X );
-		const int w = MAX( 1, serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W ) - x );
-
-		const int thumbH = zx::ComputeThumbHeight( trackH, SB_HOST_RTOP_H, HostDetailH( ), 8 );
-		const int thumbTop = zx::ComputeThumbTop( trackH, thumbH, g_HostDetailScroll,
-			HostDetailMaxScroll( ));
-
-		screen->Dim( PalEntry( 40, 42, 58 ), 0.55f, x, trackTop, w, trackH );
-		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
+		// [rc4l] DrawRoundedButton, which IS the JOIN and START drawing. A button that merely
+		// resembled them would drift apart from them the first time either was touched.
+		DrawRoundedButton( SB_HOST_RCOL_LEFT, SB_HOST_RTOGGLE_Y,
+			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, SB_HOST_RTOGGLE_H,
+			g_HostShowSettings ? "BACK TO DESCRIPTION" : "SERVER SETTINGS",
+			g_HostOnSettingsToggle );
 	}
 
 	void DrawHostScrollBar( )
 	{
+		if ( !g_HostShowSettings )
+			return;
 		if ( HostMaxScroll( ) <= 0 )
 			return;
 
@@ -3046,7 +3073,7 @@ public:
 	// How tall the settings are, viewport or no viewport. What decides whether they scroll.
 	int HostContentH( )
 	{
-		return kHostFieldCount * HostRowPitch( ) + 4 + SB_CHOICE_H;
+		return kHostFieldCount * HostRowPitch( ) + 4 + SB_HOST_LINE + SB_CHOICE_H;
 	}
 
 	int HostMaxScroll( )
@@ -3099,7 +3126,7 @@ public:
 
 	int HostVisibilityY( )
 	{
-		return HostFirstFieldY( ) + kHostFieldCount * HostRowPitch( ) + 4;
+		return HostFirstFieldY( ) + kHostFieldCount * HostRowPitch( ) + 4 + SB_HOST_LINE;
 	}
 
 	// The button no longer follows the content: it is pinned to the bottom of the panel.
@@ -3205,7 +3232,7 @@ public:
 		const bool bLive = zx::HostIsActive( );
 
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
-		const int h = SB_DETAIL_BOTTOM - SB_HOST_TOP;
+		const int h = SB_HOST_BOTTOM - SB_HOST_TOP;
 
 		const zx::PanelColor topCol = { 22, 24, 34, 235 };
 		const zx::PanelColor botCol = { 10, 11, 17, 245 };
@@ -3242,18 +3269,26 @@ public:
 			serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM ));
 
 		DrawHostCatalogue( SB_HOST_LIST_LEFT );
-		DrawHostDetail( );
-		DrawHostRule( );
-		DrawHostDetailScrollBar( );
 
-		int y = HostFirstFieldY( );
-		for ( int i = 0; i < kHostFieldCount; ++i )
+		// One face at a time. Both used to be on screen at once, each with its own bar, and the
+		// settings bled over the boundary because two regions in one clip cannot mask each other.
+		if ( g_HostShowSettings )
 		{
-			DrawHostField( i, SB_HOST_RCOL_LEFT, y );
-			y += HostRowPitch( );
+			int y = HostFirstFieldY( );
+			for ( int i = 0; i < kHostFieldCount; ++i )
+			{
+				DrawHostField( i, SB_HOST_RCOL_LEFT, y );
+				y += HostRowPitch( );
+			}
+
+			DrawHostVisibility( SB_HOST_RCOL_LEFT, HostVisibilityY( ));
+		}
+		else
+		{
+			DrawHostDetail( );
 		}
 
-		DrawHostVisibility( SB_HOST_RCOL_LEFT, HostVisibilityY( ));
+		DrawHostSettingsToggle( );
 
 		PopClip( );
 		DrawHostScrollBar( );
@@ -3573,15 +3608,14 @@ public:
 
 	void DrawHostVisibility( int x, int y )
 	{
-		if ( HostRowFullyVisible( y, SB_CHOICE_H ))
+		if ( HostRowFullyVisible( y - SB_HOST_LINE, SB_HOST_LINE ))
 		{
-			screen->DrawText( SmallFont, CR_DARKGRAY, x,
-				y + ( SB_CHOICE_H - SmallFont->GetHeight( )) / 2 + 1, "VISIBILITY",
+			screen->DrawText( SmallFont, CR_DARKGRAY, x, y - SB_HOST_LINE, "VISIBILITY",
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
 
-		const int rowX = x + SB_HOST_RLABEL_W;
-		const int rowW = SB_HOST_RCOL_RIGHT - rowX;
+		const int rowX = x;
+		const int rowW = SB_HOST_RCOL_RIGHT - x;
 
 		static const char *const labels[kHostVisCount] = {
 			"Internet", "Local network",
