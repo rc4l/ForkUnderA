@@ -27,6 +27,8 @@
 
 #include "features/server-hosting/computation/reachprobe_compute.h"
 
+#include <string>
+
 namespace zx
 {
 
@@ -53,6 +55,10 @@ void ReachProbeRelease( void );
 
 // Close sockets and forget everything. Registered with atterm.
 void ReachProbeShutdown( void );
+
+// Everything the check knows about itself, for the fua_portstatus console command. A white INTERNET
+// option covers four different failures and they need different fixes.
+std::string ReachProbeDebugText( void );
 
 // [rc4l] The cookie leg, handed over by the engine's normal packet handling -- it arrives on the
 // engine's own socket, because that is the socket the request went out on.

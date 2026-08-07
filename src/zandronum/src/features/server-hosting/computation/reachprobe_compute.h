@@ -108,7 +108,15 @@ bool ProbeCacheKeyMatches(const ProbeCacheKey &a, const ProbeCacheKey &b);
 // buys accuracy nobody asked for at the price of a wait everybody notices.
 extern const int kProbeCacheTtlMs;
 
-bool ProbeCacheUsable(const ProbeCacheKey &cached, const ProbeCacheKey &now, int ageMs);
+// [rc4l] Failed keeps its own, much shorter life. It is not an answer, it is the absence of one, and
+// holding it for the full TTL made a single lost request paint the INTERNET option white for ten
+// minutes. The registry drops every command from an address in its short flood queue, and the
+// browser's own refresh puts us there for three seconds, so losing that first request is routine.
+extern const int kFailedCacheTtlMs;
+
+// The phase is part of the question because Failed expires on the shorter clock above.
+bool ProbeCacheUsable(const ProbeCacheKey &cached, const ProbeCacheKey &now, int ageMs,
+	ProbePhase cachedPhase);
 
 } // namespace zx
 
