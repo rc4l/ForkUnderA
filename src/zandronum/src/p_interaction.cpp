@@ -1147,9 +1147,9 @@ static inline bool MustForcePain(AActor *target, AActor *inflictor, int flags)
 
 // [rc4l] uzdoom@2e085b231 / b54b18c8c: does this hit get to run the pain chance even though the
 // damage itself is going to be refused? ALLOWPAIN on the victim, CAUSEPAIN on the inflictor.
-static inline bool isFakePain(AActor *target, AActor *inflictor)
+static inline bool isFakePain(AActor *target, AActor *inflictor, int damage)
 {
-	return ((target->flags7 & MF7_ALLOWPAIN) || ((inflictor != NULL) && (inflictor->flags7 & MF7_CAUSEPAIN)));
+	return ((target->flags7 & MF7_ALLOWPAIN && damage > 0) || ((inflictor != NULL) && (inflictor->flags7 & MF7_CAUSEPAIN)));
 }
 
 // Returns the amount of damage actually inflicted upon the target, or -1 if
@@ -1174,7 +1174,7 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 	bool invulpain = false;
 	int fakeDamage = 0;
 	int holdDamage = 0;
-	const bool fakedPain = isFakePain(target, inflictor);
+	const bool fakedPain = isFakePain(target, inflictor, damage);
 
 	// [BC] Game is currently in a suspended state; don't hurt anyone.
 	if ( GAME_GetEndLevelDelay( ))
@@ -1908,7 +1908,10 @@ fakepain: // [rc4l] uzdoom pain cluster: skip everything above, but still obey t
 			}
 		}
 
-		if (((damage >= target->PainThreshold && pr_damagemobj() < painchance) ||
+		// [rc4l] uzdoom@f161c0c50 -- fakedPain lets ALLOWPAIN/CAUSEPAIN reach the pain chance
+		// even when the filtered damage is below the threshold. The pr_damagemobj() draw stays on
+		// the same side of the short circuit for server and client, so both consume it alike.
+		if ((((damage >= target->PainThreshold || fakedPain) && pr_damagemobj() < painchance) ||
 			(inflictor != NULL && (inflictor->flags6 & MF6_FORCEPAIN))) &&
 			( NETWORK_InClientMode() == false ))
 		{
