@@ -381,6 +381,26 @@ FTextureID FTextureManager::AddTexture (FTexture *texture)
 
 	if (texture == NULL) return FTextureID(-1);
 
+	// [rc4l] Claim this texture as THE texture for its lump, so a later lookup by full path finds it
+	// instead of minting a second texture from the same image. Nothing but the by-lump branch of
+	// CheckForTexture used to populate this link, so a texture built during normal init was invisible
+	// to it and every full-path lookup produced a copy the map never draws. Upstream has the same
+	// hole and documents it in ca4179caa rather than closing it.
+	//
+	// Costs nothing: LinkedTexture is a pointer that already exists on every lump.
+	//
+	// First writer wins, and multipatch textures are skipped because their source lump is the
+	// TEXTURE1/TEXTURES lump they were DEFINED in, not an image they own -- linking those would point
+	// a whole wad's worth of walls at one definition lump. Measured on the mods in hand, sharing of a
+	// real graphic lump is rare (0 shared lumps in Freedoom and in lightscape; 8 of 23,097 in
+	// brutal22test6, all of them a decal or a second name for one image), and in those cases
+	// returning the first texture is still closer than fabricating a duplicate.
+	if (!texture->bMultiPatch && texture->SourceLump >= 0 &&
+		Wads.GetLinkedTexture(texture->SourceLump) == NULL)
+	{
+		Wads.SetLinkedTexture(texture->SourceLump, texture);
+	}
+
 	// Later textures take precedence over earlier ones
 
 	// Textures without name can't be looked for
