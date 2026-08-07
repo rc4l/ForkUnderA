@@ -1500,9 +1500,9 @@ d940c6a2eecb2b4897433791d897a8712cfe8e3b	2015-03-31T21:15:43Z	- fixed: With the 
 34aeb428a1cd8be2558b532fc85136928e7bac20	2015-04-01T08:01:48Z	- Removed the check for this flag from P_RadiusAttack because MF7_CAUSEPAIN cannot be used for radius attacks. Their logic is too different from regular attacks.	adapted	adapted: negative damage is clamped to 0 on entry to P_DamageMobj, and P_RadiusAttack drops its CAUSEPAIN test -- the sign check there is about damage and thrust agreeing, and CAUSEPAIN is honoured inside P_DamageMobj anyway. Placed after our [BC] suspended-game early-out rather than at upstream's exact line.	aa0720b86
 ad9e4413fa3a4b9458d39bf9183db2de0d26a05f	2015-04-01T09:48:47Z	- made the texture precaching code a bit more self-descriptive after finding a discrepancy in handling between ZDoom and GZDoom's versions.	ported	ported: the HIT_Wall/HIT_Flat/HIT_Sky/HIT_Sprite/HIT_Columnmode enum is already in textures.h, having come in with the GL precache work. The software renderer half (r_swrenderer.cpp, cache & 1) does not apply -- no software renderer here.	zandronum-base
 74f4ae86d804b6fdada69133a759850ea41b0e67	2015-04-01T09:57:10Z	- forgot to save this...	adapted	adapted: names the precache hit classes in DFrameBuffer::GetHitlist. This is a real fix here, not a readability change: our GetHitlist marked sprites with a literal 5, which is HIT_Wall|HIT_Sky and has no HIT_Sprite bit, while FMaterial::PrecacheGL tests cache & HIT_Sprite -- so the sprite precache branch was unreachable and sprites were precached as walls. Sides were 3 (HIT_Wall|HIT_Flat) where upstream marks HIT_Wall. The enum arrived here with the GL renderer but GetHitlist was never converted with it.	f86e5ecef
-60d9f3808499bcae10f0287228b8353b8be4f139	2015-04-01T09:59:20Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+60d9f3808499bcae10f0287228b8353b8be4f139	2015-04-01T09:59:20Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 1e9a6e667e4b6e620b7f3a8a1e20638f20ec7d8f	2015-04-01T09:59:41Z	- GL code adjustments for reworked precaching.	ported	66abdae	66abdae
-bf490d8dcdda216fc00824a4ba20b9a3be04ec5b	2015-04-01T09:59:57Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+bf490d8dcdda216fc00824a4ba20b9a3be04ec5b	2015-04-01T09:59:57Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 48e21f6759b4dfb5bb17a29dd1088c0fc13e6d02	2015-04-01T10:08:42Z	- consider MBF sky transfers when checking for skybox precaching.	ported	66abdae	66abdae
 e70aae91e3dced125206c4b3bbcb7d0bfe6f9743	2015-04-01T15:31:47Z	- Fixed NODAMAGE not ignoring telefrag damage.	ported	ported: the NODAMAGE zeroing moves out of the sub-TELEFRAG_DAMAGE branch, so a NODAMAGE target ignores telefrag damage too.	aa0720b86
 0a16855232f8a35748052c7ba70c46baf3af48a9	2015-04-02T08:05:32Z	- fixed: The assignment to the 'player' variable in P_DamageMobj occured too late, skipping a few cases. - changed monster unblocking logic to include players as well (i.e. a player being stuck inside another actor is allowed to move away from that other actor.)	ported	ported: `player` is assigned before the DMG_FORCED block instead of inside the sub-TELEFRAG_DAMAGE branch -- everything below reads it, and telefrag damage skips that branch, so it stayed NULL for exactly the hits most likely to involve a player. Also gives players the same PIT_CheckThing unstick handling as a P_PlayerMove, so two overlapping players can separate.	f86e5ecef
@@ -1513,9 +1513,9 @@ a88f515364c1cfa67b67833181bdee040d252559	2015-04-02T11:27:52Z	- Import GAMENAMEL
 d37f9cbcaeadf97f87371be985e2562c490b90b4	2015-04-02T22:52:54Z	Add flies (doomed #112) from the Hexen retail beta	adapted	adapted: the Hexen retail beta fly (LittleFly, doomed #112) with A_FlySearch and A_FlyBuzz, plus AActor::SetIdle gaining the nofunction argument it needs. Adapted for client/server following a_bats.cpp's A_BatMove, the closest analogue here: both actions are gated with NETWORK_InClientMode() since they draw the sync RNG, move the actor and change its state. A_FlySearch broadcasts the "Buzz" state with SERVERCOMMANDS_SetThingFrame rather than SetThingState, because Buzz is a named state with no NetworkActorState of its own; the SetIdle paths broadcast STATE_IDLE, the movement goes out as MoveThingExact with position, velocity and angle, and the buzz sound passes true so clients hear it. No new net command, so the protocol and wire-enum snapshots are unchanged.	fad804766
 ef562c0341ce57202d500c315a8fe17c49404620	2015-04-02T22:53:15Z	Add dot sprites for Hexen beta flies	ported	ported: the four AFLY sprite frames, verified present in the built zandronum.pk3.	fad804766
 27c1434585f62811b8024a1a58616791d31cc7ef	2015-04-03T01:52:51Z	- Fixed: Buddha never took forced damage into account.	ported	ported: buddha no longer rescues from DMG_FORCED damage, for both the player cheat and the monster MF7_BUDDHA flag. DMG_FORCED means the caller asked to bypass every special check, so buddha honouring it was the one gap left.	0545554bc
-4c06e7153608e4c04ceebcac997ac37ed67c6795	2015-04-03T07:32:46Z	Merge branch 'dmgforcedfix' of https://github.com/MajorCooke/zdoom	pending		/
-6c603b3c78ace96e396fb4b1834119b3815d7031	2015-04-03T07:33:33Z	Merge branch 'misc_code_improvements' of https://github.com/edward-san/zdoom	pending		/
-f0886ce1f182418febc182caafa18b82d10c19f4	2015-04-03T07:45:04Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+4c06e7153608e4c04ceebcac997ac37ed67c6795	2015-04-03T07:32:46Z	Merge branch 'dmgforcedfix' of https://github.com/MajorCooke/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+6c603b3c78ace96e396fb4b1834119b3815d7031	2015-04-03T07:33:33Z	Merge branch 'misc_code_improvements' of https://github.com/edward-san/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+f0886ce1f182418febc182caafa18b82d10c19f4	2015-04-03T07:45:04Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 ccd9fb9c2325ead68f977a97d21a4832e437b266	2015-04-03T08:54:55Z	- moved FDoomEdMap to its own file to make the upcoming changes a bit nicer to handle.	pending		/
 bd77f83bab48e6f241a79b14a62dbf139b0ccc38	2015-04-03T11:54:38Z	- added editor number definitions to MAPINFO.	pending		/
 937d793353f020e5692c7aa46d2fd278f29bc64f	2015-04-03T13:34:41Z	- fixed Hexen editor numbers.	pending		/
@@ -1535,26 +1535,26 @@ fc6f983c136ec01aa4759bd9eb896c310222d74f	2015-04-04T02:50:08Z	Fix memory leak wh
 a5e67f7332c7838dbe375ab04daaf8ceb020f2f3	2015-04-04T03:58:58Z	Split sndinfo.txt up into multiple files using filter directories.	pending		/
 51591d10b0240ec39013677b866b66e326bff27b	2015-04-04T08:25:01Z	- handle slope things through new definition tables as well. Since these get processed outside P_SpawnMapThing it required some restructuring so that the actual spawn data is present when slope things get processed. - removed FMapThing::Serialize because it isn't used anywhere - it was rather broken anyway.	pending		/
 338a220df84b8f4391197e87c47422a7475e47a3	2015-04-04T08:30:09Z	- add empty editor number mapping for GZDoom's dynamic lights so that these will no longer produce errors when loaded with ZDoom.	pending		/
-747e160c96e2fbb76a33133aa3645f6060ba09d0	2015-04-04T08:30:37Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-5f2f11a43b157191c45e4618e2bc370c76f7437e	2015-04-04T08:32:23Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+747e160c96e2fbb76a33133aa3645f6060ba09d0	2015-04-04T08:30:37Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+5f2f11a43b157191c45e4618e2bc370c76f7437e	2015-04-04T08:32:23Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 a65c9bec40b27d9493fe116c53c63532362cd869	2015-04-04T08:37:31Z	- move video options override out of menudef.z.	pending		/
-39b5bcc4f0952d7eb709d2b75b8240acfe083c14	2015-04-04T08:38:28Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+39b5bcc4f0952d7eb709d2b75b8240acfe083c14	2015-04-04T08:38:28Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 b0c0012d60b584d944528629a96f7c5384676539	2015-04-04T08:42:44Z	- add dynamic lights to editor number table and remove them from DECORATE definitions.	pending		/
 8b92c45f8478fa61b06fdf733f72beabdf8f26b4	2015-04-04T09:38:37Z	Fixed crash in lump filtering caused by uninitialized variables	pending		/
 67334bfa2bc26c641e1a9705db901af1b4889743	2015-04-04T10:35:10Z	- calculate weapon positions fully in floating point to avoid roundoff errors. - In order to get reliable results the empty border around scaled sprites must be the same scale as the sprite (i.e. 2 pixels for 2x scale and 4 pixels for 4x scale.)	ported	66abdae	66abdae
 91eafed5d374689537f98a16b2671af1f6d463b7	2015-04-04T11:37:55Z	- fixed coordinate calculations for trimmed sprites which were quite a bit broken.	pending	pending: was recorded ported against a renderer-staircase flight commit that touched none of its files, and a content check does not find the change in our tree either. Re-derive before claiming it again	/
 bd96adafda8499d6231c222ed338def7ebde5d66	2015-04-04T12:12:04Z	- cleanup	pending		/
-87229f47878bfc84d9543b80992f221f1fb01f4e	2015-04-04T12:12:13Z	Merge branch 'fix_filter_crash' of https://github.com/alexey-lysiuk/gzdoom	pending		/
-85ef1a11e924acc475241208775417b090c6e252	2015-04-04T12:13:37Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+87229f47878bfc84d9543b80992f221f1fb01f4e	2015-04-04T12:12:13Z	Merge branch 'fix_filter_crash' of https://github.com/alexey-lysiuk/gzdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+85ef1a11e924acc475241208775417b090c6e252	2015-04-04T12:13:37Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 193b491b63c5b2f1c6fcca100f747b8fd936be7e	2015-04-04T14:36:55Z	Added control of automatic graphics switching on OS X	adapted	adapted: its posix/cocoa half is present via the 108dcf122 end state vendored at 1f74200, but this commit ALSO touches files outside that directory and those slices were NOT taken. Scoped-down, so adapted rather than ported	1f74200
 bead3e046bd5c440254143a74a96c290a8e41299	2015-04-04T15:50:22Z	- fixed weapon positioning again, after finding out that the first fix just worked around the actual problem: The entire coordinate calculation must be done in floating point with no integer math at all. Due to roundoff errors the stored int values needed for wall and flat placement significantly lack precision and with the high scaling factor that needs to be used for weapon HUD sprites these can easily become several pixels. After fixing this the border around sprite textures could be reverted to one pixel again. - fixed: The 'may not be expanded' state should be stored in the texture and reused later. This also needs to revalidate the material if it decides that expansion should be disallowed.	ported	66abdae	66abdae
 830a7ee003069cc998277edb2c5e93a31f74829f	2015-04-04T16:19:17Z	- added TFlags	pending		/
 ca012bc9be9a2165b4dcf86588d0767da4ba5ea8	2015-04-04T16:40:43Z	- adapted AActor to use TFlags	pending		/
 a5c75c1b1a089d0c875588eb41c84e701abda867	2015-04-04T18:44:27Z	- added some missing autoload sections (Hacx 1.2 vs. Hacx 2, Hexen vs Deathkings and Heretic vs. Shadows of the Serpent Riders.) and filter names for Strifeteaser1 and Strifeteaser2 which are needed for exporting the conversation IDs to MAPINFO	pending		/
 6e45c565a0bc8d05279b0b2458a3fb718ae0924c	2015-04-04T18:52:55Z	- fixed: FResourceLump::LumpNameSetup's iname parameter can point to the FullName variable's stringbuffer so any assignment to that variable must be done indirectly.	pending		/
-60a0966f0fab795905a37051e12968737058bd89	2015-04-04T20:41:18Z	Merge pull request #306 from alexey-lysiuk/osx_vid_autoswitch	pending		/
+60a0966f0fab795905a37051e12968737058bd89	2015-04-04T20:41:18Z	Merge pull request #306 from alexey-lysiuk/osx_vid_autoswitch	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 b6a4511dd1e74440fad99bc673c1f2b3680dba48	2015-04-04T22:31:15Z	- move conversation ID definition to MAPINFO as well. Uses the newly added filter feature to handle the teaser differences.	pending		/
-25e19ab47143e4eb5057ba8053a0f4172293970b	2015-04-04T22:31:55Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+25e19ab47143e4eb5057ba8053a0f4172293970b	2015-04-04T22:31:55Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 1fddd1859e6b6aca3e7e8cb603f798a8329385f1	2015-04-04T22:38:29Z	- fixed: FResourceFile::FilterLumps must use a proper copy of the filename to pass to LumpNameSetup instead of a pointer to the file name's stringbuffer, because that function will overwrite the variable it is taken from.	pending		/
 bbbbb7ac9d513c11c44ca5aa78303fa8bd1cfdd7	2015-04-04T23:20:03Z	Reorder FMapThing to remove padding	pending		/
 2103fe2a14aed2a1fd61cc3fd936f19229e7652b	2015-04-04T23:20:03Z	Make FResourceLump::LumpNameSetup's argument an FString	pending		/
@@ -1562,11 +1562,11 @@ bbbbb7ac9d513c11c44ca5aa78303fa8bd1cfdd7	2015-04-04T23:20:03Z	Reorder FMapThing 
 6da887c34fcbc55cfd0115cfe3ebcc3001bf0c4a	2015-04-04T23:20:05Z	Use Truncate to chop off extension in LumpNameSetup.	pending		/
 e451faa1ccaa66feb05c2425cc3c5b2a12ca9d3d	2015-04-04T23:20:05Z	Fixed: FString::ReallocBuffer could write to unallocated memory	pending		/
 89054f5d60908440b9e5592cf00dbb2ef9304a34	2015-04-04T23:40:48Z	Use filtering and LOADACS to autoload strfhelp.o	pending		/
-8762ab48d381c904cb1c990abb92e185bfb107d3	2015-04-05T07:47:27Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+8762ab48d381c904cb1c990abb92e185bfb107d3	2015-04-05T07:47:27Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 82f7b439c889500ad2e8bececb8cebe595886381	2015-04-05T07:59:07Z	Improved text pasting on OS X	pending		/
 ebd8f2410347477e774515a53ca402c64e765daa	2015-04-05T08:39:49Z	Fixed compilation with OS X SDK 10.4	ported	ported: taken as part of the 108dcf122 end state, vendored byte-identical at 1f74200. Every change of this commit lives inside posix/cocoa and is present in that snapshot; it was never separately built here (the OpenAL-series precedent)	1f74200
 7b8931292318c145ce34ec53d4ee8f6a3291274e	2015-04-05T08:52:57Z	Fixed potential issue with read beyond buffer boundaries	pending		/
-0ae74b844d4ab166ff1a32fe706dcc4da9771da5	2015-04-05T10:18:23Z	Merge branch 'osx_text_paste' of https://github.com/alexey-lysiuk/gzdoom	pending		/
+0ae74b844d4ab166ff1a32fe706dcc4da9771da5	2015-04-05T10:18:23Z	Merge branch 'osx_text_paste' of https://github.com/alexey-lysiuk/gzdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 45526c276953355074f845f4531a741ddc542e5e	2015-04-05T16:55:21Z	- basics for using hardware clip planes to split translucent stuff by 3D floor planes.	ported	66abdae	66abdae
 cf7cb4f00f5bcfabfd229ff5650572269889e18f	2015-04-05T17:00:35Z	- use hardware clip planes to split translucent walls and sprites by 3D floor planes.	ported	66abdae	66abdae
 b45c88fc4f9af2808d0df5b9e7c2a53b3e723eda	2015-04-05T18:20:56Z	- changed shaders.	pending	pending: was recorded ported against a renderer-staircase flight commit that touched none of its files, and a content check does not find the change in our tree either. Re-derive before claiming it again	/
@@ -1587,58 +1587,58 @@ c584e9ec9525799af10cd81fbb35e03f565f290b	2015-04-06T21:23:50Z	- fixed destructor
 cf7c04b6053800e86f187f72367269c9fec34625	2015-04-07T06:41:45Z	- more autoload name changing: hacx.1/2 -> hacx.hacx1/2 and chex.1/3 -> chex.chex1/3	pending		/
 e75bdf86dbc419434f9cf833245a75a06a4ec831	2015-04-07T06:46:42Z	- move section renaming code into FGameConfigFile's constructor so renaming of the old and creation of the new autoload sections can be done in one step, not two.	pending		/
 6f5dbdefb05587dbe07e9b044f5af9b5ec93d221	2015-04-07T06:51:21Z	- fixed: args of non-actor mapthings were ignored.	pending		/
-1d0706cb61fcb9b968495fa4cc029855c8f4afdc	2015-04-07T06:54:17Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+1d0706cb61fcb9b968495fa4cc029855c8f4afdc	2015-04-07T06:54:17Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 dd91141b357d10adc35e9a1959c15ee1dc197d67	2015-04-07T07:11:46Z	- updated the blurb that's being put above the IWAD specific autoload sections.	pending		/
-131b6ad12cdf5bfffb328f50c3c4424d754b988f	2015-04-07T11:14:51Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+131b6ad12cdf5bfffb328f50c3c4424d754b988f	2015-04-07T11:14:51Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 268e7df992f8cb15029e21bfa67094b550e08de2	2015-04-07T12:09:55Z	- fixed: We must not allow the engine to start without a default MAPINFO definition.	pending		/
 c5a4221b587bf7d5a9f7cfc42c1a6ead720c2722	2015-04-07T14:27:57Z	- fixed handling of args for non-actor mapthings again. As it turns out there was insufficient information in the data to properly decide this case so a new flag was added to make it all more reliable.	pending		/
 e4cadc90a5aa9eff55fe4bc4a3b5a0d1d046fb3c	2015-04-07T16:08:28Z	Fix grammar: then -> than	pending		/
 1799ae91c92f24b03036c29ee7570f4679902a5f	2015-04-07T16:14:02Z	- Allow teleport fogs to set the teleporting actors as their targets, so modders can create interactions between the two. - Fixed: P_MoveThing had source and destination fog spawning backwards. - Fixed a case where the NOTELEPORT flag would be ignored on A_Teleport. - Added pointer selection to A_Teleport. Defaults to AAPTR_DEFAULT (calling actor). State jumps will only be done by the calling actor.	pending		/
 6428b399d6a931471f3d7bf1620599cb0e4193d1	2015-04-07T17:55:50Z	Try to sanitize the exec+pullin mess	pending		/
-fe769bbdc52f5ac14a12c20c288ab6965a0a31ed	2015-04-07T22:40:40Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+fe769bbdc52f5ac14a12c20c288ab6965a0a31ed	2015-04-07T22:40:40Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 9b95c134a766995dbb90a38fcad618384c3170df	2015-04-09T07:14:53Z	- fixed: Lumps from a directory need to store the full file path so that they still can be accessed when the internal path is changed due to a filter directory.	pending		/
 0c5d55d0a3f35889d9f51fc3dd8317eea7cbd5d4	2015-04-09T19:16:59Z	- More GAMENAME replacements in strings.	pending		/
-1e8f3622170ebacac0b35d295e26f29652051dff	2015-04-10T23:29:40Z	Merge pull request #312 from edward-san/gamename_more	pending		/
+1e8f3622170ebacac0b35d295e26f29652051dff	2015-04-10T23:29:40Z	Merge pull request #312 from edward-san/gamename_more	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 a81dd798a82acc12ec1c561964b46ec30672e29d	2015-04-11T12:35:32Z	- fixed incorrect memset argument.	pending		/
 0a1d1db0ba4e4f23c655b9b1a84da56324683495	2015-04-11T15:40:26Z	- fixed missing #incöudes of version.h for GAMENAME.	pending		/
 9f2b3efd13c513d06ad7a647766d6618d64deb82	2015-04-11T16:09:18Z	- fixed: The terrain types array needs to be extended if a texture outside its bounds is processed - this can happen for textures with long names.	pending		/
-7af458223e7bd698e71f6d627f8df6ac0f2d5093	2015-04-11T17:24:18Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+7af458223e7bd698e71f6d627f8df6ac0f2d5093	2015-04-11T17:24:18Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 a6287a47068689f0732c5658d566e5940d3ab4e9	2015-04-11T23:11:51Z	Fix compilation with CMake on Windows when some other building tool than msbuild is used.	pending		/
-e40f3c73501ce2395ff3de6fe2e19d1f11027ccf	2015-04-11T23:16:34Z	Merge branch 'master' of https://github.com/crimsondusk/zdoom	pending		/
+e40f3c73501ce2395ff3de6fe2e19d1f11027ccf	2015-04-11T23:16:34Z	Merge branch 'master' of https://github.com/crimsondusk/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 810a1dc28d8dfdf5ab141bb6492d775324ea2bbf	2015-04-11T23:44:12Z	Fixed the way mt.exe is invoked	pending		/
 feeebf52659f7aa43e20bf52e3ecd95c2b9dd920	2015-04-12T16:26:52Z	- rework MD2 code for reloading/precaching of geometry data.	ported	66abdae	66abdae
 052dda0fdd96edb7da138558465203a72ace846c	2015-04-12T17:42:03Z	- made MD3 models reloadable.	ported	66abdae	66abdae
 7217c69be433dcb47963ced1d4963d679caf8395	2015-04-12T19:22:39Z	- Fixed portability issue in ANIMATED with systems that treat char as unsigned.	pending		/
 6fc63daabd41a4dffbd63045ee72f1f3eb07bf82	2015-04-13T20:08:44Z	- fixed: Zips whose central directory cannot be read need to print an error message.	pending		/
-d7092f40a37fea1f536e4c5a2ba4336b728ee7fb	2015-04-13T20:09:18Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+d7092f40a37fea1f536e4c5a2ba4336b728ee7fb	2015-04-13T20:09:18Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 ccb49a4242f9b06d3c01daba86ed3893f4ce1f26	2015-04-14T16:13:25Z	Fixed: missing '=' in conversation ID defs	pending		/
 238046655c13329a150d65e27d344bf93f38792c	2015-04-14T16:32:14Z	- wrapped all accesses to the sector tag into accessor functions, as preparation for allowing multiple tags per sector.	pending		/
 2faf836aa143afa2fd378a8fc90effb029d3ce23	2015-04-14T16:48:19Z	- some minor rework of tag access interface after I realized that some stuff (e.g. Strife's scrolling sector special) need the primary tag to treated specially.	pending		/
-7b4f950330855acb72f920fb293baaee975e124a	2015-04-14T17:51:37Z	Merge pull request #314 from Blue-Shadow/conv_id_fix	pending		/
+7b4f950330855acb72f920fb293baaee975e124a	2015-04-14T17:51:37Z	Merge pull request #314 from Blue-Shadow/conv_id_fix	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 425e5b9ffcba30d8bf212a7a76759bab2dc0e73b	2015-04-14T20:39:57Z	- replaced P_FindSectorFromTag with an FSectorTagIterator class.	pending		/
 47543bb7669b6791a98b6f195fd98afa1d539829	2015-04-14T22:47:06Z	- while we're at it, let's also wrap line ID searches in an iterator class so that we can do multiple IDs per line later as well.	pending		/
 006868c072f6bbaf995078ec4c8718aab396afd6	2015-04-14T23:02:15Z	Miscellaneous warning fixes	pending		/
 902593198b3b8f7cb5314375707085d483b9e85b	2015-04-15T07:37:06Z	- wrapped all line ID accesss just like sector tags	pending		/
 418e6a16b85fb84833a65c80d89110e9c3406577	2015-04-15T07:43:43Z	- fixed UDMF user variables could be set for the base namespaces which do not define them.	pending		/
-5d819036b3d3910b378ada0f6ccd29c68b543a88	2015-04-15T07:45:09Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+5d819036b3d3910b378ada0f6ccd29c68b543a88	2015-04-15T07:45:09Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 203f88ce6efb0811c06ce2b88085f876102ba42d	2015-04-15T18:10:27Z	- some sanitizing of sector tag/line id management:	pending		/
 3cb4eb44a854a90cf621274a80fe1faf2de93b22	2015-04-16T06:29:21Z	- fixed: APowerRegeneration::DoEffect did not call the super method.	pending		/
 e30958f44315c15f7c69122c85629a3b09985fe1	2015-04-16T16:07:45Z	- fixed: The check for completely invisible 3D floor in the sorting code checked the wrong flags.	pending		/
-45f893f8fc38a5b62544f99bfb911ec36542c14e	2015-04-16T16:08:23Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+45f893f8fc38a5b62544f99bfb911ec36542c14e	2015-04-16T16:08:23Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 d166211ce073cbbcfc96de87edfdc7d24daccefc	2015-04-16T17:55:46Z	- reverted changes from copying over p_3dfloors.cpp with GZDoom's version.	pending		/
-4432ce5686a614e6ddeaaad5ff03d149d6299a0b	2015-04-16T17:56:19Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+4432ce5686a614e6ddeaaad5ff03d149d6299a0b	2015-04-16T17:56:19Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 a602e47261d7f814d34f4b6daeb299922a63711c	2015-04-16T17:57:18Z	- commit of the correct version of p_3dfloors.cpp	pending		/
 df6ffe64180e85d5ca1faf73ae2290a0b1da737b	2015-04-16T20:50:26Z	- adjustments for recent ZDoom changes.	adapted	66abdae	66abdae
 9b6756114b89c37d607705713bd7705cf08c8a20	2015-04-16T22:45:57Z	Scale mouse coordinates based on window size	pending		/
 1fa1e26cf9c91f6eb41f967e76799323541080ff	2015-04-17T04:24:33Z	- SDL backend could use the new ScaleCoordsFromWindow since it does similarly for fullscreen.	pending		/
 6e28963141cf02da2ca108b0104b65fc90b649ff	2015-04-17T17:40:45Z	- added a sanity check to GL nodes loader for a potential crash.	pending		/
-f57e08102cc32c510aad3cd3a8d22568436ed5aa	2015-04-17T17:41:08Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-550d1e342161e3480deccdef1f05af0927a2ee12	2015-04-17T19:20:16Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+f57e08102cc32c510aad3cd3a8d22568436ed5aa	2015-04-17T17:41:08Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+550d1e342161e3480deccdef1f05af0927a2ee12	2015-04-17T19:20:16Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 f983f778f27ca17b1a45f62d367c174ab0c0b5c5	2015-04-17T19:39:07Z	- moved ScaleCoordsFromWindow to the BaseWinFB base class to eliminate two identical implementations.	pending		/
-887014c32268966557b00f012e92e6744e108409	2015-04-17T19:39:35Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+887014c32268966557b00f012e92e6744e108409	2015-04-17T19:39:35Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 b3c7b9679a8bf1eadba047ac15e59916b4edd674	2015-04-19T03:51:28Z	Fixed: writeopl broke when the OPL3 cores were added	pending		/
 f65a07c952d6ed3da49abb06ca8cd7375bd467e7	2015-04-19T06:48:20Z	- minor bit of cleanup of tags code.	pending		/
-2719ce86dc07c9f7b1ad6d61a9a49c974896abf2	2015-04-19T06:48:41Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+2719ce86dc07c9f7b1ad6d61a9a49c974896abf2	2015-04-19T06:48:41Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 6326cd74b444ec668f6db4ab72b841b78ebada8a	2015-04-19T07:07:05Z	- moved tag iterators to their own file.	pending		/
 b921157f57783003a82842d689c099029320bcc1	2015-04-19T10:33:27Z	- uncouple sector tag storage from the sector data to allow multiple tags per sector.	pending		/
 db61c1cb57581876d31bc9dcf01c882767480237	2015-04-19T15:51:34Z	- allow multiple line IDs as well using the same method as for sector tags.	pending		/
@@ -1656,25 +1656,25 @@ ca16d99445f881ba3b2dac1a37f2fa720a07cde2	2015-04-23T03:57:15Z	Fixed: FOptionMenu
 8d501fdb9f1003ba839f697ec4c27dc9d5dc8f4c	2015-04-23T04:22:27Z	Fix some issues with changing player viewheight at runtime	pending		/
 a54404074a290db80cb6789f273cf8715eef94ac	2015-04-23T18:09:12Z	- fixed: IDs that map to nothing must be removed from the spawn/conversation ID maps.	pending		/
 6a6836b1e7a4e558313ffd630b839ddaf890bb46	2015-04-23T18:11:54Z	Added SpiralOffset to railgun functions.	pending		/
-45b006252a145b823505b14089b9403aa822a47f	2015-04-23T19:17:41Z	Merge pull request #316 from Doom2fan/RailgunSpiralOffset	pending		/
+45b006252a145b823505b14089b9403aa822a47f	2015-04-23T19:17:41Z	Merge pull request #316 from Doom2fan/RailgunSpiralOffset	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 920a4fbf4595ab4f677c19aeb90464b8bdf118ce	2015-04-23T19:27:36Z	- fixed: The HashTags function considered sector and line #0 invalid.	pending		/
-1f2a431d159ed08d6acf2ee398449ea7e37152cc	2015-04-24T07:21:06Z	Merge branch 'master' into openal	pending		/
+1f2a431d159ed08d6acf2ee398449ea7e37152cc	2015-04-24T07:21:06Z	Merge branch 'master' into openal	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 baa775b31c59cdc8a3216a0e366706febc3032ec	2015-04-24T14:55:31Z	- fixed: Light level must be clamped before accessing the distfogtable.	ported	ported: distfogtable index clamped with gl_ClampLight; it was an out-of-bounds read. Found by the convergence sweep after the row wrongly claimed ported	ae2d1da
 c91745c71451150634ecd64a890ecb7635a5a56f	2015-04-24T15:42:56Z	- some fixes to make OpenAL branch compile with VC++ 2013 and OpenAL support.	pending		/
 0da6939e848eb44cc5934a4e8a441c7a59b89ffe	2015-04-24T20:30:28Z	- unmark OpenAL as 'advanced' in CMake so we can set its include and library paths in the IDE without having to enable the advanced display which isn't really helpful.	pending		/
 75471df7877f23fe39a1e1784186388c6622bf00	2015-04-25T03:07:32Z	- Made a few Win32 calls optional in order to restore capatibility with Windows NT 4.0 (not that anyone is using NT 4, but it was a trivial fix)	pending		/
 0fd93cc033d9a40f1b7e9e73fb532897cc710a10	2015-04-25T06:10:26Z	Slightly more information on ACS serialize errors	pending		/
 682f3e230a382f72342e43ee8f0c603f211c3314	2015-04-25T07:08:59Z	- fixed: We should not try calling unicode functions on ASCII strings.	pending		/
-54c2a14145f3255d2c68f0805b43daac790e4f7b	2015-04-25T07:13:11Z	Merge branch 'master' into openal	pending		/
+54c2a14145f3255d2c68f0805b43daac790e4f7b	2015-04-25T07:13:11Z	Merge branch 'master' into openal	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 dccd35ef294c1b67f5d0e38d4eaa31ffe2ef7cfa	2015-04-25T08:26:14Z	- uncoupled OpenAL music updates from UpdateSounds.	pending		/
 12118550d29a54e9e43c45a036cb9049e0fd5c93	2015-04-25T08:34:47Z	- fixed some warnings in OpenAL code.	pending		/
 d880783784391346de9a96df831d11bc76216093	2015-04-25T10:25:10Z	- make OpenAL and the decoder libraries delay loaded so that ZDoom can still start without them being present.	pending		/
-b9fdc21547e6acb6728abdc5a37ba3502fc008fc	2015-04-25T11:14:58Z	Merge pull request #317 from Edward850/master	pending		/
+b9fdc21547e6acb6728abdc5a37ba3502fc008fc	2015-04-25T11:14:58Z	Merge pull request #317 from Edward850/master	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 6bb79be85c940793d50e5c25fabba73e6d309094	2015-04-25T15:50:57Z	- got rid of std::auto_ptr, courtesy of Blzut3's patch.	pending		/
-ab1d90038cc7bb70b2ce16fde082a4e4b620117a	2015-04-25T17:45:27Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+ab1d90038cc7bb70b2ce16fde082a4e4b620117a	2015-04-25T17:45:27Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 364e8811134ca096f3a0d35c3ce4ade695ae9b73	2015-04-25T18:30:10Z	- this was still in the repo...?	pending		/
 46e975418d9776de580b9e404fe2a100b464d6ae	2015-04-26T06:48:49Z	- fixeed: Sound sequence overrides took the parameter from the wrong data structure.	pending		/
-a23afbd7ce1cc7136459b28f9d1f0141a31a0afb	2015-04-26T07:37:49Z	Merge branch 'master' into openal	pending		/
+a23afbd7ce1cc7136459b28f9d1f0141a31a0afb	2015-04-26T07:37:49Z	Merge branch 'master' into openal	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 8e70a9b894cf4696c9b20c695a1863536987e7b4	2015-04-26T07:58:10Z	- added a NULL check to FMODStreamCapsule destructor, just to be safe.	pending		/
 aecff68a4d78154ac5f9a48b12fed79716f204f0	2015-04-26T10:13:21Z	- cleanup of sound system startup and menu handling:	adapted	adapted: sound_backend_compute reimplements the selection cleanup (DEF_BACKEND, unknown->null, fmod->openal rename); snd_backend aligned to upstream's plain CVAR (008429bc, PR#157). FMOD/menu parts N/A -- FMOD removed	008429bc
 43053b89a5cc3cd4ce717a129005c29433e0db61	2015-04-26T15:06:13Z	- Set the morphing and unmorphing actor as target for the teleport fog. This will allow for better interactions on what should happen between the morphee without needing to make monster AI needing to search for them in particular or rely upon TIDs.	pending		/
@@ -1683,36 +1683,36 @@ aecff68a4d78154ac5f9a48b12fed79716f204f0	2015-04-26T10:13:21Z	- cleanup of sound
 0380ba642b8e9bd66214154cfbc3f30ee6d8dbf3	2015-04-27T01:43:01Z	Blur de hur	pending		/
 68e43fe65d326f3f6a925bb8e9bc16e98dcd7c4a	2015-04-27T01:53:16Z	You never want to blindly switch between widechar and ANSI functions	pending		/
 020808ff40801bca57db005bc7fb804285fa8217	2015-04-27T06:57:36Z	- updated pistol pickup sprite with one from original beta graphics.	pending		/
-aedd8f89cb94b37d58c5b65967b62229ac93a3ef	2015-04-27T06:58:06Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-3ddc3d8febfa631b031dbd7073a29bfde55967e4	2015-04-27T07:41:06Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+aedd8f89cb94b37d58c5b65967b62229ac93a3ef	2015-04-27T06:58:06Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+3ddc3d8febfa631b031dbd7073a29bfde55967e4	2015-04-27T07:41:06Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 8b3045e255d91b94eb62fa9282e27b891e3be1bb	2015-04-27T07:51:39Z	- seems some OpenGL related stuff got lost during merge. Reinstated checks for OpenGL itself but since GLU is no longer needed it was removed for good from the project files.	pending		/
 d46ba7bfb72562604bba4e4a2573362c8183ee1c	2015-04-27T08:24:49Z	- added pickup sprite for Chex Quest's Mini Zorcher (i.e. pistol replacement.)	pending		/
 0132c639b106574efcd01bd073e1bf83d429cd82	2015-04-27T09:00:50Z	- fixed: The display mode enumeration code could add a screen size multiple times if later ones had lower refresh rates.	pending		/
 47e7a30cab2a48825c5c908e90891f16f2ac322c	2015-04-27T11:19:34Z	- reshuffled some stuff to satisfy Linux compilers (hopefully)	pending		/
 6b1e7522e6c5177cc4f7ebf509766217009c5a8b	2015-04-27T13:14:01Z	- Assigned editor number 5006 to SkyCamCompat class, to match Eternity's definition.	pending		/
 346fcf584cd338b7d1642dfcb23dd19a8a785e1c	2015-04-27T13:22:09Z	- Fixed C++11 warnings from recent commits.	pending		/
-f3105797f4f3b926f48d81ff6a03c436153354f2	2015-04-27T15:38:50Z	Merge pull request #318 from edward-san/c++11_fixes	pending		/
+f3105797f4f3b926f48d81ff6a03c436153354f2	2015-04-27T15:38:50Z	Merge pull request #318 from edward-san/c++11_fixes	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 ae16e5d195ab16ca03404a60b65815d8a1df9855	2015-04-27T16:18:46Z	- Assigned editor number 5006 to SkyCamCompat class, to match Eternity's definition.	pending		/
-98029a12ecb02728cbc082aceb480e0f742dab0a	2015-04-27T16:19:44Z	Merge branch 'master' of https://github.com/rheit/zdoom into zmaster	pending		/
-b4cdcef159323bbbdbb50ca99cd87fe932dd6557	2015-04-27T16:20:37Z	Merge branch 'zmaster'	pending		/
+98029a12ecb02728cbc082aceb480e0f742dab0a	2015-04-27T16:19:44Z	Merge branch 'master' of https://github.com/rheit/zdoom into zmaster	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+b4cdcef159323bbbdbb50ca99cd87fe932dd6557	2015-04-27T16:20:37Z	Merge branch 'zmaster'	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 9ba5e30bed6d42c958fdf4b8a9e4cb46eb0545b8	2015-04-27T18:15:03Z	- Moved autoload initialization to a separate function so that the rest of the ini can be loaded as before. Some platforms do indeed place zdoom.pk3 elsewhere.	pending		/
 c6fe0835d3fdba2509403c82d9c21dfa78a4c5cd	2015-04-27T18:37:01Z	- fixed: The check for unblocking overlapping actors was a bit too lax.	pending		/
-a93c30238b0f87f8bfbec9c2d6fa3bf5a193a45b	2015-04-27T18:38:09Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+a93c30238b0f87f8bfbec9c2d6fa3bf5a193a45b	2015-04-27T18:38:09Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 f273b6c46d9d663584a51561bc4f12ca2bc7b83e	2015-04-27T19:25:16Z	- fix uninitialized variable.	ported	66abdae	66abdae
-56989d3422368669f0541bda7d340142357530b3	2015-04-28T07:34:51Z	Merge commit 'ec5817869592660af6837b9f4e20ed140972a2b2' into scripting	pending		/
+56989d3422368669f0541bda7d340142357530b3	2015-04-28T07:34:51Z	Merge commit 'ec5817869592660af6837b9f4e20ed140972a2b2' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 7898e189dffe2a46d834c07ea161e6327389869e	2015-04-28T07:40:57Z	- fixed problems in CMake project files:	pending		/
-d6e3fc0567ace7f5d5754d0f43f1ef09685121de	2015-04-28T07:57:01Z	Merge commit 'fb9231a38db2025eb77bfd246f36d985cbbccd2e' into scripting	pending		/
-e9cbb0b2235bdd95db01a52f2f8f01725e29f4cb	2015-04-28T08:37:23Z	Merge commit '173dbd6bcee02a9e9c12a4a74d1fffe3e081d162' into scripting	pending		/
+d6e3fc0567ace7f5d5754d0f43f1ef09685121de	2015-04-28T07:57:01Z	Merge commit 'fb9231a38db2025eb77bfd246f36d985cbbccd2e' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+e9cbb0b2235bdd95db01a52f2f8f01725e29f4cb	2015-04-28T08:37:23Z	Merge commit '173dbd6bcee02a9e9c12a4a74d1fffe3e081d162' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 a13ada3b2d6460c418b3480a729a5857c533e482	2015-04-28T08:39:35Z	Revert "Merge commit '173dbd6bcee02a9e9c12a4a74d1fffe3e081d162' into scripting"	pending		/
-6ebdf7396cb1e09213789b425a95f81be18e257b	2015-04-28T08:59:50Z	Merge commit '8e0151b4c1b88eaf295042ea2d545a83b4b99acc' into scripting	pending		/
-792cad89b31dd12b624c0b367dd76b99ddf3c379	2015-04-28T09:59:33Z	Merge commit '3849cb86231ce24131a86e9c29795a8cf3706a3d' into scripting	pending		/
+6ebdf7396cb1e09213789b425a95f81be18e257b	2015-04-28T08:59:50Z	Merge commit '8e0151b4c1b88eaf295042ea2d545a83b4b99acc' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+792cad89b31dd12b624c0b367dd76b99ddf3c379	2015-04-28T09:59:33Z	Merge commit '3849cb86231ce24131a86e9c29795a8cf3706a3d' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 2604905b0c55ba5b2fdc9f4fc11a5c643a734540	2015-04-28T10:03:06Z	- missed one compile error in last merge.	pending		/
-065c0a79cdb052c3ad4132d0ebc4c84cb380b892	2015-04-28T10:48:33Z	Merge commit '4f7ec3ad891d556c0d3f680e209a120ed38e9cdb' into scripting	pending		/
-0474560ac6dee282b1cb50cfdbf3e9d586f43738	2015-04-28T10:54:01Z	Merge commit '2ec8e2c2ac61d30f7f1d666ec58ca0fd37e2e3b0' into scripting	pending		/
-ddced06be209efb67bf96ef6a5a942a0b1140fc5	2015-04-28T10:59:20Z	Merge commit '6e45c565a0bc8d05279b0b2458a3fb718ae0924c' into scripting	pending		/
-f7834061dfc3f0228e60a988f3d152f220d0dd4f	2015-04-28T11:08:18Z	Merge commit 'b6a4511dd1e74440fad99bc673c1f2b3680dba48' into scripting	pending		/
-844799088925b86001fe2661afed248fe2dfc1ca	2015-04-28T11:32:50Z	Merge commit '2719ce86dc07c9f7b1ad6d61a9a49c974896abf2' into scripting	pending		/
-2e0f999fea2fdbdb71fc5463345698557ec194e4	2015-04-28T12:45:13Z	Merge branch 'master' into scripting	pending		/
+065c0a79cdb052c3ad4132d0ebc4c84cb380b892	2015-04-28T10:48:33Z	Merge commit '4f7ec3ad891d556c0d3f680e209a120ed38e9cdb' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+0474560ac6dee282b1cb50cfdbf3e9d586f43738	2015-04-28T10:54:01Z	Merge commit '2ec8e2c2ac61d30f7f1d666ec58ca0fd37e2e3b0' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+ddced06be209efb67bf96ef6a5a942a0b1140fc5	2015-04-28T10:59:20Z	Merge commit '6e45c565a0bc8d05279b0b2458a3fb718ae0924c' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+f7834061dfc3f0228e60a988f3d152f220d0dd4f	2015-04-28T11:08:18Z	Merge commit 'b6a4511dd1e74440fad99bc673c1f2b3680dba48' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+844799088925b86001fe2661afed248fe2dfc1ca	2015-04-28T11:32:50Z	Merge commit '2719ce86dc07c9f7b1ad6d61a9a49c974896abf2' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+2e0f999fea2fdbdb71fc5463345698557ec194e4	2015-04-28T12:45:13Z	Merge branch 'master' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 137e624b55df76b07e28af8ce8ea251575a8f585	2015-04-28T13:12:21Z	- needed one more fix in CMake project.	pending		/
 2d0f6339f7f7dde2d74dc9dee0085a500774b02d	2015-04-28T13:34:48Z	- fixed some memory leaks: The global symbol table and the argument list for DECORATE called action specials were never freed.	pending		/
 450e5aec52e8885dec0b6b89ae630826ec8e27db	2015-04-28T13:45:10Z	- this shouldn't have been committed.	pending		/
@@ -1723,37 +1723,37 @@ afa022605a3698e099c7a7db2376f8a46fd26349	2015-04-28T17:03:52Z	- some more fixes 
 0f8972c96b1b5ae56415613f28f02b3f38290a1c	2015-04-28T19:30:12Z	- don't delete any DObjects	pending		/
 407d38f3d6df2cbbf399ce305033766d099cf94a	2015-04-28T19:54:30Z	- add a bit more stuff that needs to be done before a restart to ensure that all obsolete data is taken down.	pending		/
 319671b54aca93575747c2da34f8cf608f2e1f04	2015-04-28T20:05:43Z	- let cheats only give weapons in weapon slots.	pending		/
-ce4adc48a777eaae2a7652e3d65b1311fb185df6	2015-04-28T20:06:31Z	Merge pull request #319 from edward-san/inventory	pending		/
-15fbf2510a1ebef0627990b19a1b9572c0b6c2f0	2015-04-28T20:06:50Z	Merge pull request #320 from edward-san/clang_3_5_crash_solved	pending		/
+ce4adc48a777eaae2a7652e3d65b1311fb185df6	2015-04-28T20:06:31Z	Merge pull request #319 from edward-san/inventory	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+15fbf2510a1ebef0627990b19a1b9572c0b6c2f0	2015-04-28T20:06:50Z	Merge pull request #320 from edward-san/clang_3_5_crash_solved	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 f087903fca9b6fab526746bf535d3966e7bd806b	2015-04-28T20:11:43Z	- remove some redundancy from TeleportFog code.	pending		/
 a2100410f247192ca9828c7f1ef11a3adc1e4cea	2015-04-28T20:13:50Z	- fix in GL nodes loader.	pending		/
-646c135eff02f601bedb229f2a1c500d030fd0a5	2015-04-28T21:04:10Z	Merge branch 'master' into scripting	pending		/
+646c135eff02f601bedb229f2a1c500d030fd0a5	2015-04-28T21:04:10Z	Merge branch 'master' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 e42b688afa1937707c8620e652b67371c709c194	2015-04-28T21:37:04Z	- finally found the reason why the garbage collector went haywire after a restart: PClass::StaticShutdown set the PClass::bShutdown variable which disables much of the garbage collector. This needs to be cleared after successful cleanup. Restart works now, except for some random CCMDs being executed right afterward. - fixed incorrect variable init in A_Face* functions which was missed before.	pending		/
 3c1fa3bed961a39ce18f0e77349ae5e75a29edf0	2015-04-28T22:19:21Z	- fixed some GCC warnings.	pending		/
 4c17bd65a45c49675a5347e8f68b453090477756	2015-04-28T23:03:50Z	- parameters for FRandomPick should not be added up.	pending		/
 7d90c65427be37c94176c630f6200d81f7663ffa	2015-04-29T06:42:54Z	- mask out Strife mapthing flags when starting an original Hexen map.	pending		/
-1effaa4c8e11f8ad88ad54aab5bb01dc7fa318d2	2015-04-29T08:53:37Z	Merge branch 'master' into scripting	pending		/
+1effaa4c8e11f8ad88ad54aab5bb01dc7fa318d2	2015-04-29T08:53:37Z	Merge branch 'master' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 7b6b473ec4f218a92868eeb8275c093dc5e2693e	2015-04-29T09:28:04Z	- some GCC fixed by Edward-san.	pending		/
-21993b3481fb274cfb8220652b3399fe2438fb41	2015-04-29T14:27:46Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-c2e91293d2c4146b999e18f7d23d23147924e025	2015-04-30T07:02:10Z	Merge pull request #310 from MajorCooke/telefogfix	pending		/
-691855e19b916d8cce92ce1880a28fa47785c25f	2015-04-30T07:05:41Z	Merge pull request #304 from MajorCooke/morphundoalways	pending		/
-405fc31e817d4cbbdc60c0bdf73205c6c007559a	2015-04-30T07:14:31Z	Merge branch 'master' of https://github.com/DaZombieKiller/zdoom	pending		/
+21993b3481fb274cfb8220652b3399fe2438fb41	2015-04-29T14:27:46Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+c2e91293d2c4146b999e18f7d23d23147924e025	2015-04-30T07:02:10Z	Merge pull request #310 from MajorCooke/telefogfix	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+691855e19b916d8cce92ce1880a28fa47785c25f	2015-04-30T07:05:41Z	Merge pull request #304 from MajorCooke/morphundoalways	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+405fc31e817d4cbbdc60c0bdf73205c6c007559a	2015-04-30T07:14:31Z	Merge branch 'master' of https://github.com/DaZombieKiller/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 9880af1b0c66324dcc058e4c07115b12d099e3e9	2015-04-30T07:18:13Z	- this line got lost during conflict resolution.	pending		/
-84351419a3028e4bbf9f1caa17ea5a9bcebd78a8	2015-04-30T08:03:50Z	Merge branch 'master' of https://github.com/crimsondusk/zdoom	pending		/
-5f1c4d157c399dbaa1a9c5d796b5ae5727543397	2015-04-30T10:30:36Z	Merge branch 'master' into scripting	pending		/
+84351419a3028e4bbf9f1caa17ea5a9bcebd78a8	2015-04-30T08:03:50Z	Merge branch 'master' of https://github.com/crimsondusk/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+5f1c4d157c399dbaa1a9c5d796b5ae5727543397	2015-04-30T10:30:36Z	Merge branch 'master' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 50a3f8a3d2eed2b463457f2cdceef866ed8e8d07	2015-04-30T10:31:47Z	- fixed copy/paste error.	pending		/
-d96edb5c688bdd542cc6fbccf6ebd3ed4a405d49	2015-04-30T10:32:50Z	Merge branch 'master' into scripting	pending		/
+d96edb5c688bdd542cc6fbccf6ebd3ed4a405d49	2015-04-30T10:32:50Z	Merge branch 'master' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 cda4fece1b41b0675feed62cb270640aa3933873	2015-04-30T10:35:29Z	- Fixed compiler errors and warnings from TFlags.	pending		/
 24a096fb27eb0959366c605499c7819352cc501c	2015-04-30T10:52:04Z	- Plug some lemon leaks during xlat generation.	pending		/
 97e63b13199cedd82ee8c1afb9755b744c5432b3	2015-04-30T10:53:44Z	- split up FBehavior constructor to better be able to weed out broken ACS modules.	pending		/
 4316740ee917c930bff6a2364936c7ed272259a2	2015-04-30T10:59:26Z	- some color coding of error messages during ACS loading. (not that I expect that the people these are meant for will read them anyway...)	pending		/
-a6dcd2044774430a0f3d93c4bfd648c04187fd05	2015-04-30T11:01:59Z	Merge pull request #321 from edward-san/tflags_fix	pending		/
-033712d044ca566c0814b20318cf163ced62e8b9	2015-04-30T12:57:08Z	Merge pull request #322 from edward-san/lemon_leak	pending		/
+a6dcd2044774430a0f3d93c4bfd648c04187fd05	2015-04-30T11:01:59Z	Merge pull request #321 from edward-san/tflags_fix	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+033712d044ca566c0814b20318cf163ced62e8b9	2015-04-30T12:57:08Z	Merge pull request #322 from edward-san/lemon_leak	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 492ef1b7168d2f6055dd29d7cf5f1f510ea44e1e	2015-04-30T13:15:48Z	- Added A_JumpIfHigherOrLower. - (int ptr = AAPTR_TARGET, state high, state low, float offsethigh = 0, float offsetlow = 0, bool includeHeight = true) - Jumps if the pointer of the calling actor is higher or lower than itself, adding offsethigh or offsetlow depending on the circumstance. - includeHeight works twofold. - Includes the height of the calling actor if the pointer is higher to truly determine if they are completely above them or not. - Includes the height of the pointer if the pointer is lower. - Disable it to only check z differences without adding height.	pending		/
 1ecc048441681c52cd63baabf4335b51f65b2768	2015-04-30T13:28:41Z	- Change the pointer to be at the end instead of the start.	pending		/
-9b128638eaa4e34f76755366c747cb8d5bbbcd91	2015-04-30T13:54:45Z	Merge pull request #323 from MajorCooke/jumpifhigherorlower	pending		/
-1b29c3b6cfb40cbdbe2e6fcc594c3b21dec5c4fd	2015-04-30T14:13:32Z	Merge branch 'master' into scripting	pending		/
-bb85625d52adfc1d523ed8efdfba5f067b62168f	2015-04-30T22:08:42Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
+9b128638eaa4e34f76755366c747cb8d5bbbcd91	2015-04-30T13:54:45Z	Merge pull request #323 from MajorCooke/jumpifhigherorlower	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+1b29c3b6cfb40cbdbe2e6fcc594c3b21dec5c4fd	2015-04-30T14:13:32Z	Merge branch 'master' into scripting	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
+bb85625d52adfc1d523ed8efdfba5f067b62168f	2015-04-30T22:08:42Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 dc00d61f4d40adc91669e6e81e41502a908c77c2	2015-05-01T13:32:07Z	- Added TF_OVERRIDE to A_Teleport. - Overrides the NOTELEPORT flag so actors with velocity don't need to disable it in order to perform A_Teleport, which could be screwed up by a teleporting line or sudden ACS interference. - Ensure that the result is set to false if it fails prematurely. Wasn't sure if this was needed, but with the upcoming if/else statements, better safe than sorry.	pending		/
 fd2bff45e6a630e39ebdddea021541e8a3836b21	2015-05-01T14:42:35Z	Merge pull request #324 from MajorCooke/teleoverride	pending		/
 247fd5b00857c42c51a4b5f94ed30dfd36e67ed3	2015-05-01T18:27:04Z	- added missing 'id' property to udmf_zdoom.txt.	pending		/
