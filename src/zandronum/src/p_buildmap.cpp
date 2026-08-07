@@ -724,18 +724,18 @@ static int LoadSprites (spritetype *sprites, Xsprite *xsprites, int numsprites,
 			mapthings[count].args[1] = xsprites[i].Data4;
 			mapthings[count].args[2] = xsprites[i].Data1;
 			mapthings[count].args[3] = xsprites[i].Data2;
-			mapthings[count].type = 14065;
+			mapthings[count].EdNum = 14065;
 		}
 		else if (xsprites != NULL && sprites[i].lotag == 1)
 		{ // Blood player start
 			if (xsprites[i].Data1 < 4)
-				mapthings[count].type = 1 + xsprites[i].Data1;
+				mapthings[count].EdNum = 1 + xsprites[i].Data1;
 			else
-				mapthings[count].type = gameinfo.player5start + xsprites[i].Data1 - 4;
+				mapthings[count].EdNum = gameinfo.player5start + xsprites[i].Data1 - 4;
 		}
 		else if (xsprites != NULL && sprites[i].lotag == 2)
 		{ // Bloodbath start
-			mapthings[count].type = 11;
+			mapthings[count].EdNum = 11;
 		}
 		else
 		{
@@ -744,7 +744,7 @@ static int LoadSprites (spritetype *sprites, Xsprite *xsprites, int numsprites,
 			if (sprites[i].cstat & 32768) continue;
 			if (sprites[i].xrepeat == 0 || sprites[i].yrepeat == 0) continue;
 
-			mapthings[count].type = 9988;
+			mapthings[count].EdNum = 9988;
 			// [rc4l] uzdoom@15251e7a2: keep picnum and cstat whole rather than splitting/masking
 			// them here, so the face/wall/floor bits survive to the spawn side.
 			mapthings[count].args[0] = sprites[i].picnum;
@@ -795,7 +795,7 @@ static void CreateStartSpot (SDWORD *pos, FMapThing *start)
 	FMapThing mt =
 	{
 		0, (LittleLong(pos[0])<<12), ((-LittleLong(pos[1]))<<12), 0,// tid, x, y, z
-		short(Scale ((2048-angle)&2047, 360, 2048)), 1,	// angle, type
+		short(Scale ((2048-angle)&2047, 360, 2048)), DoomEdMap.CheckKey(1), 1,	// angle, info, EdNum
 		0, 0,							// Skillfilter, Classfilter
 		7|MTF_SINGLE|224,				// flags
 		0, {0}, 0 						// special is 0, args and Conversation are 0

@@ -344,6 +344,7 @@ struct mapthinghexen_t
 };
 
 class FArchive;
+struct FDoomEdEntry;
 
 // Internal representation of a mapthing
 struct FMapThing
@@ -353,7 +354,11 @@ struct FMapThing
 	fixed_t		y;
 	fixed_t		z;
 	short		angle;
-	short		type;
+	// [rc4l] uzdoom@51591d10b -- the editor number and the entry it resolves to are both kept, so
+	// code that runs outside P_SpawnMapThing (slope things, polyobject spots) can consult the
+	// entry without repeating the lookup.
+	FDoomEdEntry *info;
+	short		EdNum;
 	WORD		SkillFilter;
 	WORD		ClassFilter;
 	DWORD		flags;
@@ -371,7 +376,7 @@ struct FMapThing
 	short		roll;
 	DWORD		RenderStyle;
 
-	void Serialize (FArchive &);
+	//void Serialize (FArchive &);
 };
 
 
