@@ -7136,9 +7136,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RadiusGive)
 
 		if (flags & RGF_CUBE)
 		{ // check if inside a cube
-			if (abs(thing->x - self->x) > distance ||
-				abs(thing->y - self->y) > distance ||
-				abs((thing->z + thing->height/2) - (self->z + self->height/2)) > distance)
+			// [rc4l] uzdoom@16ad440ad -- compare in doubles. Upstream took abs() of a fixed_t
+			// difference, which is the abs(unsigned)-style trap in fixed point: the subtraction
+			// can wrap before abs ever sees it. Both operands are cast explicitly because our
+			// fixed_t is the strong zx::Fixed, so casting only the left one leaves
+			// double - Fixed ambiguous.
+			if (fabs((double)thing->x - (double)self->x) > (double)distance ||
+				fabs((double)thing->y - (double)self->y) > (double)distance ||
+				fabs((double)(thing->z + thing->height/2) - (double)(self->z + self->height/2)) > (double)distance)
 			{
 				continue;
 			}
@@ -7152,7 +7157,6 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RadiusGive)
 				continue;
 			}
 		}
-		fixed_t dz = abs ((thing->z + thing->height/2) - (self->z + self->height/2));
 
 		if ((flags & RGF_NOSIGHT) || P_CheckSight (thing, self, SF_IGNOREVISIBILITY|SF_IGNOREWATERBOUNDARY))
 		{ // OK to give; target is in direct path, or the monster doesn't care about it being in line of sight.
