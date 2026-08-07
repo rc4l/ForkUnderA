@@ -5910,6 +5910,8 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	p->mo->ResetAirSupply(false);
 	p->Uncrouch();
 	p->MinPitch = p->MaxPitch = 0;	// will be filled in by PostBeginPlay()/netcode
+	p->MUSINFOactor = NULL;
+	p->MUSINFOtics = -1;
 	// [rc4l] uzdoom@337682934 -- the fly state lives on the actor now (MF7_FLYCHEAT), and a freshly
 	// spawned pawn has default flags7, so there is nothing to clear here.
 
