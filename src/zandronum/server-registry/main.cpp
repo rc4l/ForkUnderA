@@ -368,7 +368,13 @@ void SERVERREGISTRY_RequestServerVerification( const SERVER_s &Server )
 	g_MessageBuffer.ByteStream.WriteByte( SERVERREGISTRY_VERIFICATION );
 	g_MessageBuffer.ByteStream.WriteString( Server.RegistryBanlistVerificationString.c_str() );
 	g_MessageBuffer.ByteStream.WriteLong( Server.ServerVerificationInt );
-	NETWORK_LaunchPacket( &g_MessageBuffer, Server.Address );
+
+	// [rc4l] From the PROBE socket. This packet is what the engine treats as proof that the outside
+	// world can reach a server, and sent from the socket the server announced to it proved no such
+	// thing: the announce had already opened a NAT mapping for us, so it arrived however closed the
+	// port was to everyone else. A player's server showed "the internet can reach this server" while
+	// nobody else could see it at all.
+	NETWORK_LaunchProbePacket( &g_MessageBuffer, Server.Address );
 }
 //*****************************************************************************
 //
@@ -717,7 +723,10 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			g_MessageBuffer.Clear();
 			g_MessageBuffer.ByteStream.WriteByte( SERVERREGISTRY_REACHPROBE );
 			g_MessageBuffer.ByteStream.WriteString( nonce.c_str() );
-			NETWORK_LaunchPacket( &g_MessageBuffer, Target );
+
+			// Probe socket for the same reason: the client just talked to our main port, and a packet
+			// coming back from it could arrive through that mapping rather than through a real forward.
+			NETWORK_LaunchProbePacket( &g_MessageBuffer, Target );
 
 			printf( "-> Reach probe sent to %s.\n", Target.ToString() );
 		}

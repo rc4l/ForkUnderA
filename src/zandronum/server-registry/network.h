@@ -73,6 +73,20 @@ int				NETWORK_GetPackets( void );
 int				NETWORK_GetLANPackets( void );
 NETADDRESS_s	NETWORK_GetFromAddress( void );
 void			NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
+
+// [rc4l] Send from a DIFFERENT socket than the one everybody talks to us on.
+//
+// This exists because of a false positive that shipped. A server announces itself to us, which makes
+// its NAT open a mapping for the conversation; our verification packet then travels back through
+// that mapping and arrives no matter how closed the port is to anyone else. We concluded "the port is
+// forwarded" and told the operator so, while a stranger querying the same address got nothing --
+// which is exactly what happened to a player whose server nobody could see.
+//
+// A second socket has no such mapping. A packet from here reaches the server only if the port is
+// genuinely open to the world, which is the thing being claimed. Bound to an ephemeral port on
+// purpose: any port will do so long as it is not the one they announced to, and picking a fixed
+// second number would just be another thing for an operator to have to open.
+void			NETWORK_LaunchProbePacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
 //AActor			*NETWORK_FindThingByNetID( LONG lID );
 NETADDRESS_s	NETWORK_GetLocalAddress( void );
 NETBUFFER_s		*NETWORK_GetNetworkMessageBuffer( void );
