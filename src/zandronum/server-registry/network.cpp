@@ -73,6 +73,9 @@ static	NETADDRESS_s	g_AddressFrom;
 // Our network socket.
 static	SOCKET			g_NetworkSocket;
 
+// [rc4l] See network.h. Sends reachability probes from a port nobody announced to.
+static	SOCKET			g_ProbeSocket;
+
 // Our local port.
 static	USHORT			g_usLocalPort;
 
@@ -169,6 +172,23 @@ void NETWORK_Construct( USHORT usPort, const char *pszIPAddress )
 	ulArg = true;
 	if ( ioctlsocket( g_NetworkSocket, FIONBIO, &ulArg ) == -1 )
 		printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
+
+	// [rc4l] The probe socket. See network.h: verification sent from the socket servers announce to
+	// proves only that WE can reach them, because their NAT already has a mapping for us.
+	//
+	// Port 0 asks the OS for any free port, which is all that matters -- it simply must not be the
+	// one they talked to. A failure here is not fatal: probes fall back to the main socket, which is
+	// how it behaved before, so the daemon keeps working and only the strictness is lost.
+	g_ProbeSocket = network_AllocateSocket( );
+	if ( network_BindSocketToPort( g_ProbeSocket, ulInAddr, 0, false ) == false )
+	{
+		printf( "NETWORK_Construct: couldn't open a probe socket; reachability checks will be weaker.\n" );
+		g_ProbeSocket = g_NetworkSocket;
+	}
+	else if ( ioctlsocket( g_ProbeSocket, FIONBIO, &ulArg ) == -1 )
+	{
+		printf( "NETWORK_Construct: ioctl FIONBIO on probe socket: %s\n", strerror( errno ));
+	}
 
 	// Init our read buffer.
 	// [BB] Vortex Cortex pointed us to the fact that the smallest huffman code is only 3 bits
@@ -268,6 +288,28 @@ int NETWORK_GetPackets( void )
 NETADDRESS_s NETWORK_GetFromAddress( void )
 {
 	return ( g_AddressFrom );
+}
+
+//*****************************************************************************
+//
+// [rc4l] See network.h. Identical to NETWORK_LaunchPacket except for the socket it leaves by, which
+// is the entire point: a different source port means no NAT mapping to ride in on.
+void NETWORK_LaunchProbePacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
+{
+	INT iNumBytesOut = sizeof( g_ucHuffmanBuffer );
+
+	pBuffer->ulCurrentSize = pBuffer->CalcSize();
+	if ( pBuffer->ulCurrentSize == 0 )
+		return;
+
+	struct sockaddr_in SocketAddress;
+	Address.ToSocketAddress( reinterpret_cast<sockaddr&>( SocketAddress ));
+
+	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize,
+		&iNumBytesOut );
+
+	sendto( g_ProbeSocket, (const char *)g_ucHuffmanBuffer, iNumBytesOut, 0,
+		reinterpret_cast<sockaddr *>( &SocketAddress ), sizeof( SocketAddress ));
 }
 
 //*****************************************************************************
