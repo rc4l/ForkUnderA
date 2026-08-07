@@ -161,6 +161,17 @@ void FActorInfo::StaticSetActorNums ()
 void FActorInfo::RegisterIDs ()
 {
 	const PClass *cls = PClass::FindClass(Class->TypeName);
+
+	// [rc4l] uzdoom@b6a4511dd -- Conversation IDs have never been filtered by game so we cannot
+	// start doing that; this sits outside the GameFilter check deliberately.
+	if (ConversationID > 0)
+	{
+		StrifeTypes[ConversationID] = cls;
+		if (cls != Class) 
+		{
+			Printf(TEXTCOLOR_RED"Conversation ID %d refers to hidden class type '%s'\n", ConversationID, cls->TypeName.GetChars());
+		}
+	}
 	bool set = false;
 
 	if (GameFilter == GAME_Any || (GameFilter & gameinfo.gametype))

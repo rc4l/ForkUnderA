@@ -217,6 +217,7 @@ void P_SpawnTeleportFog(AActor *mobj, fixed_t x, fixed_t y, fixed_t z, bool befo
 bool P_Thing_CanRaise(AActor *thing);
 const PClass *P_GetSpawnableType(int spawnnum);
 void InitSpawnablesFromMapinfo();
+extern FClassMap StrifeTypes;
 
 //
 // P_MAPUTL

@@ -432,8 +432,10 @@ DEFINE_INFO_PROPERTY(conversationid, IiI, Actor)
 
 	}
 
+	// [rc4l] uzdoom@b6a4511dd -- record it on the actor info and let RegisterIDs enter it, the
+	// same way spawn and editor numbers work, so a MAPINFO definition can be overridden by DECORATE.
 	if (convid <= 0) return;	// 0 is not usable because the dialogue scripts use it as 'no object'.
-	SetStrifeType(convid, info->Class);
+	info->ConversationID = convid;
 }
 
 //==========================================================================
