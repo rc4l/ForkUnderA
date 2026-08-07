@@ -21,6 +21,9 @@
 #include "c_dispatch.h"
 #include "v_font.h"
 #include "v_video.h"
+// [rc4l] level.MapName and gamestate: a hosted server starts on the map the host is standing on.
+#include "doomstat.h"
+#include "g_level.h"
 #include "v_text.h"
 #include "gi.h"
 #include "i_system.h"
@@ -35,6 +38,10 @@
 #include "i_input.h"		// [rc4l] I_PutInClipboard / I_GetFromClipboard, for the search box
 #include "cl_main.h"		// [rc4l] cl_password, handed to the join from the password prompt
 #include "features/server-browser/computation/browserchrome_compute.h"
+#include "features/server-browser/computation/choicerow_compute.h"
+#include "features/server-browser/computation/scrollbar_compute.h"
+#include "features/server-browser/computation/scrollview_compute.h"
+#include "features/server-browser/computation/pointerdrag_compute.h"
 #include "features/server-browser/computation/dialog_compute.h"
 #include "features/server-browser/computation/glowtravel_compute.h"
 #include "features/server-browser/computation/serversearch_compute.h"
@@ -42,11 +49,14 @@
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
+#include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
+#include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
+#include "features/server-browser/computation/scrollview_compute.h"
 #include "features/server-browser/computation/serversort_compute.h"
 #include "features/server-browser/zx_joinserver.h"
 #include "features/updater/computation/promptpanel_compute.h"
@@ -142,6 +152,17 @@
 #define SB_WADBAR_W			2
 #define SB_WADBAR_X			( SB_DETAIL_RIGHT - SB_DETAIL_PAD - SB_WADBAR_W )
 
+// [rc4l] The player list sits under the WADs and gets whatever is left, up to this. It is capped for
+// the same reason the WAD list is -- a full server would otherwise be thirty-two names long -- but
+// its cap is the smaller of the two on purpose: the files decide whether you CAN join, and the names
+// only decide whether you want to, so when the panel is tight the files keep their room.
+#define SB_PLAYERLIST_MAX_H	56
+
+// Its bar shares the WADs' column and width. Two scrollbars on one panel that did not line up would
+// read as two different kinds of control.
+#define SB_PLRBAR_X			SB_WADBAR_X
+#define SB_PLRBAR_W			SB_WADBAR_W
+
 // [rc4l] The hosting panel, which stands where the list and the detail panel would be. One column,
 // centred, because there are six fields and nothing to compare them against -- a two-column form
 // would only be filling space it was given.
@@ -152,10 +173,34 @@
 #define SB_HOST_LINE		11
 #define SB_HOST_ROW_H		15		// one field and the space under it
 #define SB_HOST_FIELD_H		16
-#define SB_HOST_LABEL_W		92		// label column; the field takes the rest
+// [rc4l] Wide enough for the longest label, which is PREFERRED PORT. At 92 it fitted every label
+// there was and then clipped the moment one grew -- the label is drawn from the left, so a label too
+// long for its column runs under the field rather than being visibly cut, which reads as a typo
+// ("PREFERRED POR") instead of as a layout problem.
+#define SB_HOST_LABEL_W		112		// label column; the field takes the rest
 #define SB_HOST_BTN_H		18
 #define SB_HOST_BTN_W		120
 #define SB_HOST_MAXLEN		40
+
+// [rc4l] A row of mutually exclusive choices. Tall enough for the marker to be legible beside the
+// label, which is what decides these two numbers rather than the text.
+// [rc4l] The scrolling viewport, and the button below it.
+//
+// The button is pinned to the bottom of the panel rather than following the last setting. It is the
+// one thing on this screen you always want to reach, and a control that moves every time a row is
+// added is one you have to go looking for. The settings scroll behind it.
+#define SB_HOST_BTN_Y		( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H )
+#define SB_HOST_VIEW_TOP	( SB_HOST_TOP + SB_HOST_PAD + SB_HOST_LINE + 8 )
+#define SB_HOST_VIEW_BOTTOM	( SB_HOST_BTN_Y - 10 )
+#define SB_HOST_VIEW_H		( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP )
+#define SB_HOST_BAR_W		2
+#define SB_HOST_BAR_X		( SB_HOST_RIGHT - 6 )
+
+#define SB_CHOICE_H			15
+// Wide enough for the focus glow to sit in the gap rather than on the previous cell -- the same
+// number the dialog's buttons needed, and for the same reason: every control in this browser puts
+// the glow five units off its left edge, so anywhere two sit side by side the gap has to hold one.
+#define SB_CHOICE_GAP		22
 
 #define SB_FOOTER_Y			( SB_ROWS_BOTTOM + 20 )
 
@@ -341,7 +386,7 @@ static	int				g_TabHot = -1;
 CVAR( String, cl_fua_hostname, "ZandroX Server", CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 CVAR( Int, cl_fua_hostport, 10666, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 CVAR( Int, cl_fua_hostmaxplayers, 8, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
-CVAR( Bool, cl_fua_hostpublic, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+CVAR( Bool, cl_fua_hostpublic, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 
 // [rc4l] THE HOSTING FORM. What the player is about to run, kept across visits to the tab.
 //
@@ -358,13 +403,17 @@ enum HostField
 	kHostFieldCount,
 };
 
+// [rc4l] PREFERRED, because that is what it is. A busy port does not stop the server -- the engine
+// binds the next free one -- so this is what we ask for, not what we are guaranteed. Calling it PORT
+// stated something the code could not honour, and the panel already shows the port actually in use
+// once the server is up.
 static const char *const g_HostFieldLabels[kHostFieldCount] = {
-	"SERVER NAME", "PORT", "MAX PLAYERS", "PASSWORD",
+	"SERVER NAME", "PREFERRED PORT", "MAX PLAYERS", "PASSWORD",
 };
 
 static const char *const g_HostFieldTips[kHostFieldCount] = {
 	"What other players see in their browser",
-	"UDP port to listen on\nLeave it alone unless something else is using it",
+	"If it's already in use the server takes the next free one",
 	"How many can be in at once",
 	"Leave empty for a server anyone can join",
 };
@@ -372,6 +421,22 @@ static const char *const g_HostFieldTips[kHostFieldCount] = {
 static	zx::TextInput	g_HostFields[kHostFieldCount];
 static	int				g_HostFieldFocus = 0;
 static	int				g_HostFieldHot = -1;
+
+// Drag-selection in a host field, and when the last click landed -- the two things a field needs to
+// tell a double-click from two clicks, and a drag from a press.
+static	bool			g_HostFieldDragging = false;
+static	int				g_HostClickTime = 0;
+
+// [rc4l] The clip rectangle DimClipped intersects against, in screen pixels. -1 means no clip.
+// File scope beside the rest of the browser's state rather than inside the menu class, which is
+// where every other global here lives.
+static	int				g_ClipTopPx = -1;
+static	int				g_ClipBottomPx = -1;
+
+// [rc4l] How far the settings are scrolled, in virtual units. The form outgrew its panel the moment
+// a fifth row was imagined, and a form that simply overflows is one whose last setting cannot be
+// reached at all.
+static	int				g_HostScroll = 0;
 
 // Which control on the hosting panel has the keyboard. The fields come first, then the button, so
 // tabbing down the form and pressing enter is the whole flow.
@@ -382,7 +447,19 @@ static	bool			g_HostButtonHot = false;
 // nothing forwarded, and is what somebody playing with people in the same house wants. Global is a
 // deliberate second step -- see the reachability check.
 static	bool			g_HostAdvertise = false;
-static	bool			g_HostAdvertiseHot = false;
+
+// Which cell of the visibility row the pointer is over, and whether the keyboard is on the row at
+// all -- the row is a stop between the last field and the button, not a field itself.
+static	int				g_HostVisHot = -1;
+static	bool			g_HostOnVisibility = false;
+
+// Two answers: local, then global. Named so the row and everything that indexes it agree.
+// [rc4l] Internet FIRST, and the default. Hosting to be joined is the ordinary reason to host, and
+// a form that opens on the narrower answer makes the common case the one you have to correct.
+//
+// The values carry the order so that nothing else has to know it -- every index in this file goes
+// through these names, which is what stops a reorder from silently swapping the two answers.
+enum { kHostVisGlobal = 0, kHostVisLocal = 1, kHostVisCount = 2 };
 
 // True once the form has been filled from the CVARs that remember it, so a visit to the tab does not
 // wipe what was typed on the last one.
@@ -524,6 +601,15 @@ static	int				g_WadListTop = 0;
 static	int				g_WadListBottom = 0;
 static	int				g_WadListRows = 0;
 
+// [rc4l] The player list, scrolled and hit-tested exactly as the WAD list above it. Its own scroll
+// rather than a shared one: the two lists are different lengths and a player reading down the names
+// has not asked to lose their place in the files.
+static	int				g_PlayerScroll = 0;
+static	bool			g_DraggingPlayerBar = false;
+static	int				g_PlayerListTop = 0;
+static	int				g_PlayerListBottom = 0;
+static	int				g_PlayerListRows = 0;
+
 // [rc4l] The last position the pointer was reported at, in screen pixels. Wheel events do not carry
 // one, and which list a notch belongs to is entirely a question of where the pointer is.
 static	int				g_MouseX = -1;
@@ -654,6 +740,8 @@ static void serverbrowser_RefreshWadCache( int lServer )
 	// A different server means a different list, so the old scroll position describes nothing.
 	g_WadScroll = 0;
 	g_DraggingWadBar = false;
+	g_PlayerScroll = 0;
+	g_DraggingPlayerBar = false;
 
 	const char *pszIwad = BROWSER_GetIWADName( lServer );
 	if (( pszIwad != NULL ) && ( pszIwad[0] != 0 ))
@@ -680,8 +768,9 @@ static void serverbrowser_RefreshWadCache( int lServer )
 // [rc4l] Ping ascending, so the servers a player can actually enjoy are at the top. Ties broken by
 // address so the order is stable -- an unstable sort makes rows swap places as pings jitter, which
 // looks like the list is malfunctioning.
-// [rc4l] Busiest first, then alphabetically -- see computation/serversort_compute.h for why, and for
-// the two things the name comparison has to strip before it means anything.
+// [rc4l] LAN first, then busiest, then alphabetically -- see computation/serversort_compute.h for
+// why LAN is a group rather than a bonus, and for the two things the name comparison has to strip
+// before it means anything.
 //
 // Humans only, matching the count the row draws: sorting a server to the top for holding seven bots
 // would be ranking it by a number the player can already see is not people.
@@ -694,8 +783,10 @@ static int STACK_ARGS serverbrowser_CompareServers( const void *pA, const void *
 	const char *pszNameB = BROWSER_GetHostName( lB );
 
 	const int lResult = zx::CompareServers(
-		static_cast<int>( BROWSER_GetNumHumanPlayers( lA )), ( pszNameA != NULL ) ? pszNameA : "",
-		static_cast<int>( BROWSER_GetNumHumanPlayers( lB )), ( pszNameB != NULL ) ? pszNameB : "" );
+		BROWSER_IsLAN( lA ), static_cast<int>( BROWSER_GetNumHumanPlayers( lA )),
+		( pszNameA != NULL ) ? pszNameA : "",
+		BROWSER_IsLAN( lB ), static_cast<int>( BROWSER_GetNumHumanPlayers( lB )),
+		( pszNameB != NULL ) ? pszNameB : "" );
 
 	// Two servers with the same name and the same population still need a stable order, or the list
 	// reshuffles them on every refresh.
@@ -930,40 +1021,86 @@ static EColorRange serverbrowser_PingColor( int ping )
 // Server names carry \c escapes, which occupy no pixels but do occupy characters. Truncating by
 // character count would cut names arbitrarily early and could sever an escape mid-sequence, leaving
 // the rest of the row tinted. So measure the visible width and cut on that.
-// [rc4l] A server-supplied string, colour codes and all, cut to fit `maxWidth`.
+// [rc4l] A server-supplied name as plain text: no colour, whichever way the colour was written.
 //
-// V_ColorizeString first, because the operator typed "\cd" and that is what arrives on the wire --
-// without it the backslash and the letter are drawn literally. After that the renderer does the work:
-// FFont::StringWidth already skips escapes when measuring and DrawText consumes them when drawing.
-//
-// The cutting is the part that needs care, and why the offsets come from a tested unit: shortening a
-// byte at a time eventually lands between an escape and the character it takes, and the leftover
-// escape then eats the following glyph as a colour code. See computation/colortext_compute.h.
-static FString serverbrowser_FitName( const char *pszName, int maxWidth )
+// BOTH STEPS ARE NEEDED and they are not the same step. V_ColorizeString turns the wire form -- the
+// literal "\cd" an operator typed -- into the escape byte the renderer understands; without it those
+// two characters are simply drawn. StripColorCodes then removes the escapes themselves. Doing only
+// the first leaves the browser rendering names in colours it may not have (see
+// computation/colortext_compute.h for why that is worse than it sounds); doing only the second
+// leaves "\cd" sitting in the middle of the name.
+// [rc4l] The escape scan is worth its keep. This runs per drawn row per frame, and the crossing into
+// the compute unit costs two more allocations -- an std::string in and an FString back out -- on top
+// of the one V_ColorizeString may already have caused. Most names have no colour code at all, so
+// checking for one byte buys the common case its way out of both.
+static FString serverbrowser_PlainName( const char *pszName )
 {
 	FString name = pszName;
 	V_ColorizeString( name );
 
+	if ( name.IndexOf( zx::kColorEscape ) < 0 )
+		return name;
+
+	return FString( zx::StripColorCodes( std::string( name.GetChars( ))).c_str( ));
+}
+
+//*****************************************************************************
+//
+// [rc4l] A server-supplied name, plain, cut to fit `maxWidth`.
+//
+// The cutting used to need care -- shortening a byte at a time could land between an escape and the
+// character it takes, leaving a dangling escape to eat the next glyph. Stripping first removes that
+// hazard at the source rather than navigating around it: there are no escapes left to cut through,
+// so any offset is a safe offset.
+//
+// [rc4l] Which also makes the search BINARY, and that is the part that mattered. The old walk tried
+// every length from longest down, copying the string and measuring it each time -- O(n) allocations
+// and O(n^2) character work for one name, repeated per row per frame. Width only ever grows with
+// length, so the longest prefix that fits can be found in about six probes instead of sixty, and the
+// one string being shortened is reused rather than recopied.
+static FString serverbrowser_FitName( const char *pszName, int maxWidth )
+{
+	FString name = serverbrowser_PlainName( pszName );
+
+	// The common case, and the cheap one: it already fits, so nothing is cut, copied or searched.
 	if ( SmallFont->StringWidth( name ) <= maxWidth )
 		return name;
 
 	// Room for the ellipsis BEFORE cutting, so the result including "..." fits.
 	const int budget = maxWidth - SmallFont->StringWidth( "..." );
-	const std::vector<size_t> cuts = zx::ComputeColorSafeCutPoints( std::string( name.GetChars( )));
+	if ( budget <= 0 )
+		return FString( "..." );
 
-	// Longest first: the widest cut that fits is the most of the name we can show.
-	for ( size_t i = cuts.size( ); i-- > 0; )
+	long lo = 0;
+	long hi = static_cast<long>( name.Len( ));
+	long best = 0;
+
+	FString probe;
+	while ( lo <= hi )
 	{
-		FString candidate = name;
-		candidate.Truncate( static_cast<long>( cuts[i] ));
-		if ( SmallFont->StringWidth( candidate ) <= budget )
+		const long mid = lo + ( hi - lo ) / 2;
+
+		probe = name;
+		probe.Truncate( mid );
+
+		if ( SmallFont->StringWidth( probe ) <= budget )
 		{
-			candidate += "...";
-			return candidate;
+			best = mid;
+			lo = mid + 1;
+		}
+		else
+		{
+			hi = mid - 1;
 		}
 	}
 
-	return FString( "..." );
+	if ( best <= 0 )
+		return FString( "..." );
+
+	FString out = name;
+	out.Truncate( best );
+	out += "...";
+	return out;
 }
 
 
@@ -1002,15 +1139,30 @@ public:
 		g_Tips.Clear( );
 		g_GlowPlaced = false;
 
-		// Per-tab memory is per-VISIT: the list is being requeried from nothing, so a position saved
-		// against the last set of servers describes rows that are not there yet.
+		// Per-tab memory is per-VISIT. The rows survive now, but their INDICES do not: the refresh
+		// below re-sorts as fresh replies land, so a saved position points at whichever server has
+		// since moved into that slot rather than at the one it was saved against.
 		for ( int i = 0; i < kTabCount; ++i )
 		{
 			g_TabScroll[i] = 0;
 			g_TabSelected[i] = -1;
 		}
 
-		BROWSER_ClearServerList( );
+		// [rc4l] THE LIST IS NOT CLEARED. It used to be, and that made every visit start on a spinner
+		// -- worst of all the visit that matters most, coming back to join a server whose files you
+		// just spent time downloading. The rows were still on screen a moment ago and are still very
+		// probably true; they are not KNOWN to be current, which is an argument for checking them,
+		// not for hiding them while we do.
+		//
+		// So the servers stay listed and clickable, and are verified underneath: each is re-queried
+		// at its own address and drops out on its own timeout if it has gone. Nothing waits on the
+		// registry, which is only asked so that servers we do not know about yet can appear.
+		//
+		// What this cannot promise is that a row is live at the instant it is clicked -- but nothing
+		// ever could, because the list is a snapshot of other people's machines. Joining already
+		// re-contacts the server and already fails when it cannot, so a stale row leads to the same
+		// place it always did rather than to a new kind of surprise.
+		BROWSER_RefreshListedServers( );
 		BROWSER_QueryServerRegistry( );
 	}
 
@@ -1036,6 +1188,15 @@ public:
 		// Drives the registry query's retry/give-up clock and ages out servers that never answered.
 		BROWSER_ServerRegistryTick( );
 		BROWSER_QueryTick( );
+
+		// [rc4l] Only while the HOST tab is up. The check opens a socket on the port the player is
+		// about to host on, and doing that behind their back -- while they browse someone else's
+		// server -- would be taking a port nobody asked us to take.
+		if ( g_Tab == BrowserTab::Host )
+		{
+			zx::ReachProbeRequest( HostConfiguredPort( ));
+			zx::ReachProbeTick( );
+		}
 
 		serverbrowser_RebuildList( );
 
@@ -1472,7 +1633,7 @@ public:
 			const int cw = MAX( 1, serverbrowser_ToScreenX( caretX + 1 ) - cx );
 			const int cy = serverbrowser_ToScreenY( textY );
 			const int ch = serverbrowser_ToScreenY( textY + SmallFont->GetHeight( )) - cy;
-			screen->Dim( PalEntry( 235, 235, 245 ), 0.85f, cx, cy, cw, ch );
+			DimClipped( PalEntry( 235, 235, 245 ), 0.85f, cx, cy, cw, ch );
 		}
 	}
 
@@ -1768,8 +1929,15 @@ public:
 		// Only mention stragglers once there is something to compare them against.
 		if ( zx::ComputeShowsProgress( BROWSER_WaitingForServerRegistryResponse( ), counts ))
 		{
+			// [rc4l] Two different waits, and only one of them is a count. Servers that have never
+			// answered are stragglers worth numbering; the registry being outstanding is not, and
+			// wording it as one produced "querying 0 more" every time the browser was reopened onto a
+			// list it had kept -- which is now the ordinary case rather than a rare one.
 			FString more;
-			more.Format( "%s  querying %d more", Spinner( ), counts.waiting );
+			if ( counts.waiting > 0 )
+				more.Format( "%s  querying %d more", Spinner( ), counts.waiting );
+			else
+				more.Format( "%s  refreshing", Spinner( ));
 			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_ROWS_BOTTOM + 2,
 				more, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
@@ -1815,6 +1983,48 @@ public:
 	// Extracted rather than copied. The browser panel, the detail panel and now the dialog all draw
 	// the same shape, and three copies of a gradient loop is three places to adjust when the look
 	// changes and two places to forget.
+	//*************************************************************************
+	//
+	// [rc4l] A clip rectangle for screen->Dim, which takes no DTA tags of its own.
+	//
+	// DrawText can be clipped with DTA_ClipTop and DTA_ClipBottom, but every panel, field and marker
+	// in this browser is a Dim -- a raw rectangle with no tag list to attach a clip to. A scrolling
+	// area whose text stopped at the boundary while its backgrounds carried on would not be a mask,
+	// it would be a smear.
+	//
+	// So the rectangle is intersected here instead, once, and everything that draws inside a viewport
+	// goes through DimClipped rather than Dim.
+	void PushClip( int topPx, int bottomPx )
+	{
+		g_ClipTopPx = topPx;
+		g_ClipBottomPx = bottomPx;
+	}
+
+	void PopClip( )
+	{
+		g_ClipTopPx = -1;
+		g_ClipBottomPx = -1;
+	}
+
+	void DimClipped( PalEntry colour, float alpha, int x, int y, int w, int h )
+	{
+		if ( g_ClipTopPx >= 0 )
+		{
+			const int top = MAX( y, g_ClipTopPx );
+			const int bottom = MIN( y + h, g_ClipBottomPx );
+			if ( bottom <= top )
+				return;
+
+			y = top;
+			h = bottom - top;
+		}
+
+		if (( w <= 0 ) || ( h <= 0 ))
+			return;
+
+		screen->Dim( colour, alpha, x, y, w, h );
+	}
+
 	void DrawRoundedPanel( int vx, int vy, int vw, int vh, const zx::PanelColor &topCol,
 		const zx::PanelColor &botCol, int vradius )
 	{
@@ -1837,7 +2047,7 @@ public:
 				continue;
 
 			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
-			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+			DimClipped( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
 		}
 	}
 
@@ -2032,7 +2242,18 @@ public:
 		config.maxPlayers = atoi( g_HostFields[kHostFieldMaxPlayers].text.c_str( ));
 		config.advertise = g_HostAdvertise;
 		config.serveWads = true;
+
+		// [rc4l] Start on the map we are standing on, for the same reason the WADs are taken from what
+		// we are running: the host has already answered this question by playing. "map01" is a poor
+		// guess for anything but stock Doom -- MM8BDM's maps are MM3HAR and friends, and a mod whose
+		// map01 does not exist would start the server on nothing.
+		//
+		// Falls back when there is no map to read: hosting straight from the title screen is normal,
+		// and MapName is empty there.
 		config.map = "map01";
+
+		if (( gamestate == GS_LEVEL ) && level.MapName.IsNotEmpty( ))
+			config.map = level.MapName.GetChars( );
 
 		if ( config.maxPlayers < 2 )
 			config.maxPlayers = 2;
@@ -2141,13 +2362,34 @@ public:
 	// thing the form exists to reach.
 	void MoveHostFocus( int step )
 	{
+		// [rc4l] Moving between the fields, the row and the button changes whether a FIELD holds the
+		// keyboard -- the same switch SetFocus guards, flipped here without going through it. At the
+		// top, so it covers leaving the button as well as leaving a field.
+		M_ReleaseMenuButtons( );
+
+		// [rc4l] Down the fields, onto the visibility row, then the button, and no further. The
+		// button is the end because it is the thing the form exists to reach.
 		if ( g_HostOnButton )
 		{
 			if ( step < 0 )
 			{
 				g_HostOnButton = false;
-				g_HostFieldFocus = kHostFieldCount - 1;
+				g_HostOnVisibility = true;
 			}
+			return;
+		}
+
+		if ( g_HostOnVisibility )
+		{
+			g_HostOnVisibility = false;
+
+			if ( step > 0 )
+				g_HostOnButton = true;
+			else
+				g_HostFieldFocus = kHostFieldCount - 1;
+
+			RevealHostFocus( );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return;
 		}
 
@@ -2162,11 +2404,14 @@ public:
 
 		if ( next >= kHostFieldCount )
 		{
-			g_HostOnButton = true;
+			g_HostOnVisibility = true;
+			RevealHostFocus( );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return;
 		}
 
 		g_HostFieldFocus = next;
+		RevealHostFocus( );
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 	}
 
@@ -2177,11 +2422,114 @@ public:
 	// Hover moves the keyboard focus with the pointer, the same as everywhere else in the browser --
 	// so picking a field up with the mouse and then reaching for the arrows carries on from what you
 	// are looking at rather than from wherever the keyboard was left.
+	// [rc4l] Is there anything on the hosting panel under this point?
+	//
+	// One answer, read by the click-away rule and matching what the handlers below actually claim --
+	// two functions disagreeing about where a control is would give a field that refuses to let go
+	// over exactly the strip the other one thought was empty.
+	bool HostControlAt( int x, int y )
+	{
+		const zx::HostState state = zx::HostCurrentState( );
+		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
+
+		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
+		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
+		const int btnY = bForm ? HostFormButtonY( ) : ( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
+
+		if (( x >= serverbrowser_ToScreenX( btnX )) &&
+			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
+			( y >= serverbrowser_ToScreenY( btnY )) &&
+			( y < serverbrowser_ToScreenY( btnY + SB_HOST_BTN_H )))
+		{
+			return true;
+		}
+
+		if ( bForm == false )
+			return false;
+
+		int fieldY = HostFirstFieldY( );
+		for ( int i = 0; i < kHostFieldCount; ++i )
+		{
+			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
+				( y >= serverbrowser_ToScreenY( fieldY )) &&
+				( y < serverbrowser_ToScreenY( fieldY + SB_HOST_FIELD_H )) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+			{
+				return true;
+			}
+
+			fieldY += HostRowPitch( );
+		}
+
+		const int visY = HostVisibilityY( );
+		if ( HostRowVisible( visY, SB_CHOICE_H ) &&
+			( y >= serverbrowser_ToScreenY( visY )) &&
+			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
+		{
+			const int rowX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W;
+			const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
+
+			for ( int i = 0; i < kHostVisCount; ++i )
+			{
+				const zx::ChoiceCell cell = zx::ChoiceCellAt( i, kHostVisCount, rowX, rowW,
+					SB_CHOICE_GAP );
+				if ( !cell.valid )
+					continue;
+
+				if (( x >= serverbrowser_ToScreenX( cell.x )) &&
+					( x < serverbrowser_ToScreenX( cell.x + cell.width )))
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
 	bool HostMouseEvent( int type, int x, int y )
 	{
 		g_HostFieldHot = -1;
 		g_HostButtonHot = false;
-		g_HostAdvertiseHot = false;
+		g_HostVisHot = -1;
+
+		// The rule lives in computation/pointerdrag_compute -- above all, that a PRESS always ends the
+		// previous gesture and is never consumed by it. Inline, that rule had a hole in it and ate a
+		// click; see the unit's header for what that looked like.
+		const zx::DragOutcome drag = zx::StepDrag( g_HostFieldDragging, PointerEventOf( type ));
+		g_HostFieldDragging = drag.dragging;
+
+		// [rc4l] A CLICK THAT LANDS ON NOTHING LETS THE FIELD GO.
+		//
+		// The search box has had this from the start and the hosting form never got it, which is the
+		// whole bug: click into a box, click away, and the caret is still blinking in it. Worse than
+		// cosmetic -- while a field holds focus TranslateKeyboardEvents hands it the raw keys, so the
+		// arrows stop navigating too and the entire form feels dead.
+		//
+		// Clicking away from a field is how every interface says "I am done with that", and a caret
+		// left in a box you have visibly left is a lie about where the next keystroke will land.
+		//
+		// Decided HERE, before the handlers below, so it applies to clicks that land on nothing at
+		// all and are otherwise ignored -- which is exactly the case that felt broken.
+		const bool bReleasingFocus = ( type == MOUSE_Click )
+			&& ( g_Focus == zx::BrowserFocus::Host ) && ( HostControlAt( x, y ) == false );
+
+		if ( bReleasingFocus )
+		{
+			SetFocus( zx::BrowserFocus::Tabs );
+			g_HostFieldDragging = false;
+		}
+
+		if ( drag.consumed && ( g_HostFieldFocus >= 0 ) && ( g_HostFieldFocus < kHostFieldCount ))
+		{
+			// Tracked even once the pointer leaves the box, because that is what dragging means
+			// everywhere else -- a selection that stopped the moment you overshot the last character
+			// is one you could never make in a single gesture.
+			g_HostFields[g_HostFieldFocus] = zx::SetCaret( g_HostFields[g_HostFieldFocus],
+				HostFieldCharAt( g_HostFieldFocus, x ), true );
+			return true;
+		}
 
 		const zx::HostState state = zx::HostCurrentState( );
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
@@ -2218,7 +2566,8 @@ public:
 			const int rowTop = serverbrowser_ToScreenY( fieldY );
 			const int rowBottom = serverbrowser_ToScreenY( fieldY + SB_HOST_FIELD_H );
 
-			if (( y >= rowTop ) && ( y < rowBottom ) &&
+			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
+				( y >= rowTop ) && ( y < rowBottom ) &&
 				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
 				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
 			{
@@ -2230,53 +2579,324 @@ public:
 					g_HostOnButton = false;
 					g_HostFieldFocus = i;
 
-					// The caret goes to the end rather than under the pointer. These fields are short
-					// and mostly retyped wholesale; hit-testing a character position would be machinery
-					// earning nothing here, and the search box is where that already exists.
-					g_HostFields[i] = zx::CaretEnd( g_HostFields[i], false );
+					const int now = static_cast<int>( DMenu::MenuTime );
+					const bool bDouble = (( now - g_HostClickTime ) < 15 );
+					g_HostClickTime = now;
+
+					if ( bDouble )
+					{
+						// The word under the pointer, or everything when there is no word there. No
+						// drag afterwards: a second press that started selecting again would undo
+						// what the player just asked for before they let go.
+						g_HostFields[i] = zx::SelectWordOrAll( g_HostFields[i],
+							HostFieldCharAt( i, x ));
+						g_HostFieldDragging = false;
+					}
+					else
+					{
+						// Press puts the caret and arms a drag; the drag turns it into a selection.
+						g_HostFieldDragging = zx::BeginDrag( );
+						g_HostFields[i] = zx::SetCaret( g_HostFields[i], HostFieldCharAt( i, x ),
+							bShiftHeld( ));
+					}
 				}
 				return true;
 			}
 
-			fieldY += SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
+			fieldY += HostRowPitch( );
 		}
 
-		// The visibility toggle, which is one line rather than a field.
+		// The visibility row. Which CELL the pointer is in decides the answer -- the gaps belong to
+		// nobody, so a click between the two is not evidence for either.
 		const int visY = HostVisibilityY( );
-		if (( y >= serverbrowser_ToScreenY( visY - 2 )) &&
-			( y < serverbrowser_ToScreenY( visY + SB_HOST_LINE + 2 )) &&
-			( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
-			( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+		if ( HostRowVisible( visY, SB_CHOICE_H ) &&
+			( y >= serverbrowser_ToScreenY( visY )) &&
+			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
 		{
-			g_HostAdvertiseHot = true;
+			const int rowX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W;
+			const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
 
-			if ( type == MOUSE_Release )
+			// Back into virtual units, because that is what the layout is expressed in.
+			int at = -1;
+			for ( int i = 0; i < kHostVisCount; ++i )
 			{
-				g_HostAdvertise = !g_HostAdvertise;
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				const zx::ChoiceCell cell = zx::ChoiceCellAt( i, kHostVisCount, rowX, rowW,
+					SB_CHOICE_GAP );
+				if ( !cell.valid )
+					continue;
+
+				if (( x >= serverbrowser_ToScreenX( cell.x )) &&
+					( x < serverbrowser_ToScreenX( cell.x + cell.width )))
+				{
+					at = i;
+					break;
+				}
 			}
-			return true;
+
+			g_HostVisHot = at;
+
+			if (( at >= 0 ) && ( type == MOUSE_Release ))
+			{
+				SetFocus( zx::BrowserFocus::Host );
+				g_HostOnButton = false;
+				g_HostOnVisibility = true;
+
+				const bool bWanted = ( at == kHostVisGlobal );
+				if ( bWanted != g_HostAdvertise )
+				{
+					g_HostAdvertise = bWanted;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+			}
+
+			return ( at >= 0 );
 		}
 
 		return false;
 	}
 
+	// [rc4l] The browser's three mouse types in the drag unit's terms.
+	zx::PointerEvent PointerEventOf( int type )
+	{
+		if ( type == MOUSE_Click )
+			return zx::PointerEvent::Press;
+		if ( type == MOUSE_Release )
+			return zx::PointerEvent::Release;
+		return zx::PointerEvent::Move;
+	}
+
+	// [rc4l] Which character of a host field the pointer is over. The same half-way rule the search
+	// box uses -- clicking the left of a glyph puts the caret before it and the right of it after,
+	// which is where the eye says it should go.
+	size_t HostFieldCharAt( int index, int px )
+	{
+		if (( index < 0 ) || ( index >= kHostFieldCount ))
+			return 0;
+
+		const int textX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W + 5;
+
+		// A masked field is measured on what is DRAWN, not on what is stored: the asterisks are a
+		// different width from the characters behind them, and hit-testing the real text would put
+		// the caret somewhere the player is not pointing.
+		FString shown;
+		if ( index == kHostFieldPassword )
+		{
+			for ( size_t i = 0; i < g_HostFields[index].text.size( ); ++i )
+				shown += "*";
+		}
+		else
+			shown = g_HostFields[index].text.c_str( );
+
+		for ( unsigned i = 0; i < shown.Len( ); ++i )
+		{
+			const int glyphW = SmallFont->StringWidth( shown.Mid( i, 1 ));
+			const int leftEdge = textX + SmallFont->StringWidth( shown.Left( i ));
+
+			if ( px < serverbrowser_ToScreenX( leftEdge + glyphW / 2 ))
+				return static_cast<size_t>( i );
+		}
+
+		return shown.Len( );
+	}
+
 	// [rc4l] Where the form's rows land. Worked out once and read by both the drawing and the hit
 	// test, because a field that is somewhere other than where it is clickable is the bug that this
 	// browser already avoids everywhere else by sharing its geometry.
+	//*************************************************************************
+	//
+	// [rc4l] Keep the scroll inside what there is to scroll. The rule lives in scrollview_compute;
+	// this only supplies the measurement, which is the part that moves.
+	//
+	// Called on every frame rather than only when the scroll changes, because what it is measured
+	// against changes underneath it: the form is one row shorter while a server is running.
+	void ClampHostScroll( )
+	{
+		g_HostScroll = zx::ClampScroll( g_HostScroll, HostMaxScroll( ));
+	}
+
+	// [rc4l] Bring a row into view, for the keyboard.
+	//
+	// Arrowing onto a field that is scrolled out of sight would move a focus the player cannot see --
+	// the glow would travel to somewhere off the panel and the caret would be somewhere they are not
+	// looking. So the view follows the focus, by the least it can.
+	void RevealHostRow( int vy, int vh )
+	{
+		g_HostScroll = zx::ScrollToReveal( g_HostScroll, vy, vh, SB_HOST_VIEW_TOP,
+			SB_HOST_VIEW_BOTTOM, HostMaxScroll( ));
+	}
+
+	// Whichever row the keyboard is on, brought into view.
+	void RevealHostFocus( )
+	{
+		if ( g_HostOnButton )
+			return;					// pinned to the panel; it is always visible
+
+		if ( g_HostOnVisibility )
+		{
+			RevealHostRow( HostVisibilityY( ), SB_CHOICE_H );
+			return;
+		}
+
+		if (( g_HostFieldFocus >= 0 ) && ( g_HostFieldFocus < kHostFieldCount ))
+		{
+			RevealHostRow( HostFirstFieldY( ) + g_HostFieldFocus * HostRowPitch( ),
+				SB_HOST_FIELD_H );
+		}
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The settings' own scrollbar. Drawn only when there is something to scroll, because a
+	// full-height thumb on a list that fits is a control that looks live and does nothing.
+	void DrawHostScrollBar( )
+	{
+		if ( HostMaxScroll( ) <= 0 )
+			return;
+
+		const int trackTop = serverbrowser_ToScreenY( SB_HOST_VIEW_TOP );
+		const int trackBottom = serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM );
+		const int trackH = trackBottom - trackTop;
+		if ( trackH <= 0 )
+			return;
+
+		const int x = serverbrowser_ToScreenX( SB_HOST_BAR_X );
+		const int w = MAX( 1, serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W ) - x );
+
+		// Same arithmetic as the server list's bar -- one unit, so the two behave identically.
+		const int thumbH = zx::ComputeThumbHeight( trackH, SB_HOST_VIEW_H, HostContentH( ), 8 );
+		const int thumbTop = zx::ComputeThumbTop( trackH, thumbH, g_HostScroll, HostMaxScroll( ));
+
+		screen->Dim( PalEntry( 40, 42, 58 ), 0.55f, x, trackTop, w, trackH );
+		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
+	}
+
+	// [rc4l] The port as typed, falling back to the default. Read by the reachability check, which is
+	// a question about one specific port and must follow the field as it is edited.
+	int HostConfiguredPort( )
+	{
+		const int typed = atoi( g_HostFields[kHostFieldPort].text.c_str( ));
+		return (( typed > 0 ) && ( typed <= 65535 )) ? typed : 10666;
+	}
+
+	// One row's pitch, so the count below and the loops above cannot drift apart.
+	int HostRowPitch( )
+	{
+		return SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
+	}
+
+	// How tall the settings are, viewport or no viewport. What decides whether they scroll.
+	int HostContentH( )
+	{
+		return kHostFieldCount * HostRowPitch( ) + 4 + SB_CHOICE_H;
+	}
+
+	int HostMaxScroll( )
+	{
+		const int over = HostContentH( ) - SB_HOST_VIEW_H;
+		return ( over > 0 ) ? over : 0;
+	}
+
+	// [rc4l] Where the rows land ON SCREEN -- content position less the scroll. Both the drawing and
+	// the hit test read these, so a row can never be somewhere other than where it is clickable, and
+	// scrolling cannot separate the two.
 	int HostFirstFieldY( )
 	{
-		return SB_HOST_TOP + SB_HOST_PAD + SB_HOST_LINE + 8;
+		return SB_HOST_VIEW_TOP - g_HostScroll;
 	}
 
 	int HostVisibilityY( )
 	{
-		return HostFirstFieldY( ) + kHostFieldCount * ( SB_HOST_ROW_H + SB_HOST_FIELD_H - 4 ) + 4;
+		return HostFirstFieldY( ) + kHostFieldCount * HostRowPitch( ) + 4;
 	}
 
+	// The button no longer follows the content: it is pinned to the bottom of the panel.
 	int HostFormButtonY( )
 	{
-		return HostVisibilityY( ) + SB_HOST_LINE + 10;
+		return SB_HOST_BTN_Y;
+	}
+
+	// Whether a row at `vy` is inside the viewport at all. A control scrolled out of sight must not
+	// be clickable -- that is the invisible-but-clickable bug this browser avoids everywhere else.
+	bool HostRowVisible( int vy, int vh )
+	{
+		return zx::RowIntersectsView( vy, vh, SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM );
+	}
+
+	// [rc4l] Whether a row is ENTIRELY inside the viewport, which is what decides whether its text is
+	// drawn at all. See scrollview_compute.h for why that is a different question from the above.
+	bool HostRowFullyVisible( int vy, int vh )
+	{
+		return zx::RowFullyInView( vy, vh, SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] A row of mutually exclusive choices, drawn the way the rest of the browser draws things.
+	//
+	// Reusable on purpose: two options here, and a game mode picker is three or four with nothing
+	// changed but the array. The geometry and the hit test both come from choicerow_compute, so a
+	// cell can never be somewhere other than where it is clickable.
+	//
+	// Each option is a rounded cell -- the same DrawRoundedPanel every other surface uses -- with a
+	// filled dot on the chosen one. The dot rather than colour alone, because a row where the only
+	// difference is brightness is a row somebody with a dim screen cannot read.
+	// [rc4l] `cellColors` overrides the label colour per cell, or NULL for the usual chosen/unchosen
+	// pair. It exists so a cell can say something about ITSELF -- that this option is not currently
+	// available -- without that meaning having to be smuggled into the label text.
+	void DrawChoiceRow( int vx, int vy, int vw, int count, const char *const *labels, int selected,
+		int hot, bool bFocused, const EColorRange *cellColors = NULL )
+	{
+		selected = zx::ChoiceNormalise( selected, count );
+
+		for ( int i = 0; i < count; ++i )
+		{
+			const zx::ChoiceCell cell = zx::ChoiceCellAt( i, count, vx, vw, SB_CHOICE_GAP );
+			if ( !cell.valid )
+				continue;
+
+			const bool bChosen = ( i == selected );
+			const bool bLit = ( i == hot ) || ( bChosen && bFocused );
+
+			// The chosen one sits higher than the rest, the same lift the tabs and buttons use for
+			// the same reason: what is true here should be answerable by looking.
+			const int base = bChosen ? ( bLit ? 62 : 48 ) : ( bLit ? 30 : 20 );
+			const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+				static_cast<BYTE>( base + 12 ), 225 };
+			const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ),
+				static_cast<BYTE>( base / 2 + 8 ), 235 };
+
+			DrawRoundedPanel( cell.x, vy, cell.width, SB_CHOICE_H, topCol, botCol, 5 );
+
+			// The marker: a filled ring when chosen, an empty one when not. Drawn at a size measured
+			// over several units rather than one, because a radius derived from a single virtual
+			// pixel rounds to 1 or 2 depending on the window and the dot changes size as you resize.
+			const int dotCx = cell.x + 9;
+			const int dotCy = vy + SB_CHOICE_H / 2;
+			const int span = serverbrowser_ToScreenX( 100 ) - serverbrowser_ToScreenX( 0 );
+			const int outer = MAX( 3, ( span * 4 ) / 100 );
+			const int inner = MAX( 1, ( span * 2 ) / 100 );
+
+			const int sx = serverbrowser_ToScreenX( dotCx );
+			const int sy = serverbrowser_ToScreenY( dotCy );
+
+			DimClipped( PalEntry( 150, 155, 175 ), 0.9f, sx - outer, sy - outer, outer * 2, outer * 2 );
+			if ( bChosen )
+				DimClipped( PalEntry( 235, 235, 245 ), 1.0f, sx - inner, sy - inner, inner * 2, inner * 2 );
+			else
+				DimClipped( PalEntry( 18, 19, 27 ), 1.0f, sx - inner, sy - inner, inner * 2, inner * 2 );
+
+			const int textX = cell.x + 18;
+			const int textY = vy + ( SB_CHOICE_H - SmallFont->GetHeight( )) / 2 + 1;
+
+			if ( HostRowFullyVisible( vy, SB_CHOICE_H ))
+			{
+				const EColorRange color = ( cellColors != NULL ) ? cellColors[i]
+					: ( bChosen ? CR_WHITE : CR_GRAY );
+
+				screen->DrawText( SmallFont, color, textX, textY, labels[i],
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
+		}
 	}
 
 	void DrawHostPanel( )
@@ -2305,17 +2925,29 @@ public:
 			return;
 		}
 
-		// [rc4l] Every row's position comes from the same three helpers the hit test uses. A field
-		// drawn somewhere other than where it is clickable is the one bug this browser has avoided
-		// everywhere else by never letting those two work it out separately.
+		// [rc4l] The settings are a MASKED, SCROLLING area. Everything between these two calls is
+		// drawn at its scrolled position and cut off at the viewport edges -- so a row half in and
+		// half out is half drawn, rather than spilling over the heading or the button.
+		//
+		// Every row's position comes from the same helpers the hit test uses. A field drawn somewhere
+		// other than where it is clickable is the one bug this browser has avoided everywhere else by
+		// never letting those two work it out separately, and scrolling is the easiest way to
+		// reintroduce it.
+		ClampHostScroll( );
+		PushClip( serverbrowser_ToScreenY( SB_HOST_VIEW_TOP ),
+			serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM ));
+
 		int y = HostFirstFieldY( );
 		for ( int i = 0; i < kHostFieldCount; ++i )
 		{
 			DrawHostField( i, x, y );
-			y += SB_HOST_ROW_H + SB_HOST_FIELD_H - 4;
+			y += HostRowPitch( );
 		}
 
 		DrawHostVisibility( x, HostVisibilityY( ));
+
+		PopClip( );
+		DrawHostScrollBar( );
 
 		const int btnY = HostFormButtonY( );
 		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
@@ -2336,12 +2968,20 @@ public:
 		const int fieldX = x + SB_HOST_LABEL_W;
 		const int fieldW = SB_HOST_RIGHT - SB_HOST_PAD - fieldX;
 
-		const bool bFocused = ( !g_HostOnButton ) && ( g_HostFieldFocus == index )
-			&& ( g_Focus == zx::BrowserFocus::Host );
+		// [rc4l] Every one of these has to be false for a field to look focused. Leaving the
+		// visibility row out meant the last field kept its gold label and its caret while the row had
+		// the keyboard -- two controls claiming the same thing, and the player believing the wrong one.
+		const bool bFocused = ( !g_HostOnButton ) && ( !g_HostOnVisibility )
+			&& ( g_HostFieldFocus == index ) && ( g_Focus == zx::BrowserFocus::Host );
 
-		screen->DrawText( SmallFont, bFocused ? CR_GOLD : CR_DARKGRAY, x,
-			y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1, g_HostFieldLabels[index],
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		const bool bLettering = HostRowFullyVisible( y, SB_HOST_FIELD_H );
+
+		if ( bLettering )
+		{
+			screen->DrawText( SmallFont, bFocused ? CR_GOLD : CR_DARKGRAY, x,
+				y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1, g_HostFieldLabels[index],
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
 
 		const int base = bFocused ? 30 : (( g_HostFieldHot == index ) ? 22 : 16 );
 		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
@@ -2368,14 +3008,45 @@ public:
 			shown = g_HostFields[index].text.c_str( );
 
 		const int textY = y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1;
-		screen->DrawText( SmallFont, CR_WHITE, fieldX + 5, textY, shown,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		const int textX = fieldX + 5;
 
-		if ( bFocused && (( DMenu::MenuTime / 16 ) % 2 == 0 ))
+		// The selection, under the text: a band behind the characters rather than an inversion of
+		// them, so the letters keep the colour they had and stay readable either way. Same treatment
+		// as the search box, because it is the same idea and a player should not have to learn two.
+		if ( bFocused && zx::HasSelection( g_HostFields[index] ))
+		{
+			int from = static_cast<int>( zx::SelectionStart( g_HostFields[index] ));
+			int to = static_cast<int>( zx::SelectionEnd( g_HostFields[index] ));
+			if ( from < 0 )
+				from = 0;
+			if ( to > static_cast<int>( shown.Len( )))
+				to = static_cast<int>( shown.Len( ));
+
+			if ( to > from )
+			{
+				const int selX = textX + SmallFont->StringWidth( shown.Left( from ));
+				const int selW = SmallFont->StringWidth( shown.Mid( from, to - from ));
+
+				const int sx = serverbrowser_ToScreenX( selX );
+				const int sw = MAX( 1, serverbrowser_ToScreenX( selX + selW ) - sx );
+				const int sy = serverbrowser_ToScreenY( textY - 1 );
+				const int sh = serverbrowser_ToScreenY( textY + SmallFont->GetHeight( )) - sy;
+
+				DimClipped( PalEntry( 70, 95, 165 ), 0.85f, sx, sy, sw, sh );
+			}
+		}
+
+		if ( bLettering )
+		{
+			screen->DrawText( SmallFont, CR_WHITE, textX, textY, shown,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
+
+		if ( bLettering && bFocused && (( DMenu::MenuTime / 16 ) % 2 == 0 ))
 		{
 			const FString upTo = FString( shown.GetChars( )).Left(
 				static_cast<long>( g_HostFields[index].caret ));
-			const int caretX = fieldX + 5 + SmallFont->StringWidth( upTo );
+			const int caretX = textX + SmallFont->StringWidth( upTo );
 			const int cx = serverbrowser_ToScreenX( caretX );
 			const int cw = MAX( 1, serverbrowser_ToScreenX( caretX + 1 ) - cx );
 			const int cy = serverbrowser_ToScreenY( textY );
@@ -2393,21 +3064,80 @@ public:
 	// predicted.
 	void DrawHostVisibility( int x, int y )
 	{
-		screen->DrawText( SmallFont, CR_DARKGRAY, x, y, "VISIBILITY",
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		if ( HostRowFullyVisible( y, SB_CHOICE_H ))
+		{
+			screen->DrawText( SmallFont, CR_DARKGRAY, x,
+				y + ( SB_CHOICE_H - SmallFont->GetHeight( )) / 2 + 1, "VISIBILITY",
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
 
-		const int boxX = x + SB_HOST_LABEL_W;
-		const char *const text = g_HostAdvertise
-			? "Anyone on the internet"
-			: "This network only";
+		const int rowX = x + SB_HOST_LABEL_W;
+		const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
 
-		screen->DrawText( SmallFont, g_HostAdvertiseHot ? CR_WHITE : CR_GRAY, boxX, y, text,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		static const char *const labels[kHostVisCount] = {
+			"Internet", "Local network",
+		};
 
-		serverbrowser_Tip( x, y - 2, SB_HOST_RIGHT - SB_HOST_PAD - x, SB_HOST_LINE + 4,
-			g_HostAdvertise
-				? "Listed publicly\nNeeds the port forwarded on your router"
-				: "Not listed anywhere\nPlayers on your network find it automatically" );
+		// [rc4l] INTERNET says whether it will actually work, before anyone commits to it.
+		//
+		// Green once the registry has reached this port from outside, grey while that is unknown or
+		// has come back no. Deliberately NOT disabled: the check can be wrong in the player's favour
+		// -- a router that only opens on demand, a registry we could not reach -- and a form that
+		// refuses to let someone try their own network is worse than one that warns them.
+		const zx::ProbePhase reach = zx::ReachProbeStatus( HostConfiguredPort( ));
+
+		EColorRange visColors[kHostVisCount];
+		visColors[kHostVisGlobal] = zx::ProbeSaysReachable( reach ) ? CR_GREEN : CR_DARKGRAY;
+		visColors[kHostVisLocal] = ( g_HostAdvertise == false ) ? CR_WHITE : CR_GRAY;
+
+		DrawChoiceRow( rowX, y, rowW, kHostVisCount, labels,
+			g_HostAdvertise ? kHostVisGlobal : kHostVisLocal,
+			g_HostVisHot, ( g_Focus == zx::BrowserFocus::Host ) && g_HostOnVisibility, visColors );
+
+		// [rc4l] The glow goes to the SELECTED CELL, not to the label.
+		//
+		// Anchoring it to the label was inherited from the fields above, where it is right because a
+		// field has one focused thing. A choice row has two, and left and right move between them --
+		// so a glow that stayed put gave no feedback at all for the one key that does anything here,
+		// leaving the player to read the markers to find out what they had just changed.
+		if ( g_HostOnVisibility && ( g_Focus == zx::BrowserFocus::Host ))
+		{
+			const zx::ChoiceCell chosen = zx::ChoiceCellAt( g_HostAdvertise ? kHostVisGlobal
+				: kHostVisLocal, kHostVisCount, rowX, rowW, SB_CHOICE_GAP );
+
+			if ( chosen.valid )
+				FocusAnchor( zx::BrowserFocus::Host, chosen.x - 5, y + SB_CHOICE_H / 2 );
+		}
+
+		// One tip per cell rather than one for the row: the two answers have different consequences,
+		// and a single tip would have to describe both or neither.
+		for ( int i = 0; i < kHostVisCount; ++i )
+		{
+			const zx::ChoiceCell cell = zx::ChoiceCellAt( i, kHostVisCount, rowX, rowW, SB_CHOICE_GAP );
+			if ( !cell.valid )
+				continue;
+
+			if ( i == kHostVisGlobal )
+			{
+				// [rc4l] One line, and it says which of the four states this is -- the colour alone
+				// cannot tell "we have not asked yet" from "we asked and the answer was no", and
+				// those lead to different actions.
+				const char *pszWhy =
+					( reach == zx::ProbePhase::Reachable ) ? "Your port is open"
+					: ( reach == zx::ProbePhase::Unreachable ) ? "Nothing outside reached this port. Forward it, or host locally"
+					: ( reach == zx::ProbePhase::Failed ) ? "Untested, but it may still work"
+					: "Checking the port...";
+
+				FString tip;
+				tip << "Listed publicly so anyone can join\n" << pszWhy;
+				serverbrowser_Tip( cell.x, y, cell.width, SB_CHOICE_H, tip );
+			}
+			else
+			{
+				serverbrowser_Tip( cell.x, y, cell.width, SB_CHOICE_H,
+					"Not listed anywhere\nPlayers on your own network find it automatically" );
+			}
+		}
 	}
 
 	//*************************************************************************
@@ -2439,8 +3169,8 @@ public:
 				y = DrawHostReach( x, y, wrapW );
 
 				y += 4;
-				y = DrawWrappedIn( "You are the administrator of this server. Use the console -- "
-					"rcon <command> -- to run anything on it.", x, y, wrapW, CR_DARKGRAY );
+				y = DrawWrappedIn( "You are the administrator of this server. Use the console, "
+					"rcon <command>, to run anything on it.", x, y, wrapW, CR_DARKGRAY );
 			}
 		}
 
@@ -2481,18 +3211,41 @@ public:
 				x, y, width, CR_DARKGRAY );
 
 		case zx::HostReach::Waiting:
-			return DrawWrappedIn( "Listed publicly -- checking whether the internet can reach it.",
-				x, y, width, CR_GOLD );
+			{
+				// [rc4l] Say what we asked the router, as well as what we are waiting to learn. A
+				// game that opens ports on somebody's network should say so out loud -- that is the
+				// whole reason routers ship with this switched off.
+				const char *const router = zx::PortMapStatusText( );
+				if (( router != NULL ) && ( router[0] != 0 ))
+					y = DrawWrappedIn( router, x, y, width, CR_DARKGRAY );
+
+				return DrawWrappedIn( "Listed publicly. Checking whether the internet can reach it.",
+					x, y, width, CR_GOLD );
+			}
 
 		case zx::HostReach::Reachable:
 			return DrawWrappedIn( "The internet can reach this server. Anyone can join it.",
 				x, y, width, CR_GREEN );
 
 		case zx::HostReach::Unreachable:
-			y = DrawWrappedIn( "Nothing has reached this server from outside.",
-				x, y, width, CR_ORANGE );
-			return DrawWrappedIn( "It is still working for players on this network. To open it to "
-				"everyone, forward this port on your router.", x, y, width, CR_DARKGRAY );
+			{
+				y = DrawWrappedIn( "Nothing has reached this server from outside.",
+					x, y, width, CR_ORANGE );
+
+				const char *const router = zx::PortMapStatusText( );
+				if (( router != NULL ) && ( router[0] != 0 ))
+					y = DrawWrappedIn( router, x, y, width, CR_DARKGRAY );
+
+				// [rc4l] The port AND both protocols, because the game is UDP and direct downloads
+				// are TCP on the same number -- somebody who forwards only UDP gets a server that
+				// works and downloads that mysteriously do not, which reads as a different bug.
+				FString advice;
+				advice.Format( "It is still working for players on this network. To open it to "
+					"everyone, forward TCP and UDP port %d on your router.",
+					zx::HostCurrentConfig( ).port );
+
+				return DrawWrappedIn( advice, x, y, width, CR_DARKGRAY );
+			}
 		}
 
 		return y;
@@ -2725,6 +3478,7 @@ public:
 		{
 			LoadHostForm( );
 			g_HostOnButton = false;
+			g_HostOnVisibility = false;
 			g_HostFieldFocus = 0;
 		}
 
@@ -2886,7 +3640,7 @@ public:
 			int y = SB_DETAIL_TOP + SB_DETAIL_PAD;
 			y = DrawWrapped( "That server is no longer listed.", x, y, CR_WHITE );
 			y += 3;
-			DrawWrapped( "The download is still running -- stop it, or let it finish and use the file.",
+			DrawWrapped( "The download is still running. Stop it, or let it finish and use the file.",
 				x, y, CR_DARKGRAY );
 
 			DrawActionButton( );
@@ -2902,10 +3656,10 @@ public:
 		int y = SB_DETAIL_TOP + SB_DETAIL_PAD;
 
 		// Title: the server's own name, wrapped rather than clipped -- it is the heading, and half a
-		// name with an ellipsis tells you less than two short lines do. Colorized so an operator's
-		// "\cd" reads as colour here exactly as it does in the list.
-		FString title = BROWSER_GetHostName( lServer );
-		V_ColorizeString( title );
+		// name with an ellipsis tells you less than two short lines do. Plain, like every other name
+		// the browser draws: the heading is where a name from a palette mod would be biggest and most
+		// likely to land in an unreadable colour.
+		const FString title = serverbrowser_PlainName( BROWSER_GetHostName( lServer ));
 		y = DrawWrapped( title, x, y, CR_WHITE );
 		y += 3;
 
@@ -2928,7 +3682,27 @@ public:
 		y += 5;
 		DrawSeparator( y );
 		y += 6;
-		DrawWadList( x, y );
+		y = DrawWadList( x, y );
+
+		// [rc4l] Under the files, behind its own rule. Two lists stacked with nothing between them
+		// would read as one list that changed its mind about what it was listing halfway down.
+		//
+		// Only when there is honestly room for it: the files answer whether you CAN join and the names
+		// only answer whether you want to, so on a panel already full of WADs the names are what gives
+		// way rather than what pushes the JOIN button off the bottom.
+		if (( y + 6 + SB_DETAIL_LINE ) <= SB_DETAIL_TEXT_BOTTOM )
+		{
+			y += 3;
+			DrawSeparator( y );
+			y += 6;
+			DrawPlayerList( x, y, lServer );
+		}
+		else
+		{
+			// Nothing was drawn, so nothing may be scrolled -- otherwise a wheel notch over the space
+			// where the list would have been moves an invisible one.
+			g_PlayerListTop = g_PlayerListBottom = g_PlayerListRows = 0;
+		}
 
 		DrawActionButton( );
 	}
@@ -3134,6 +3908,149 @@ public:
 			DrawWadScrollbar( total, rows );
 
 		return g_WadListBottom;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Who is actually in there, under the files.
+	//
+	// The list already says 7/8, and that number is the question "is anyone playing" answered without
+	// saying who -- which is the part that decides whether you join a server with your friends on it
+	// or a server with seven strangers. Names are also the only place a bot-stuffed server gives
+	// itself away by inspection rather than by arithmetic.
+	//
+	// SPECTATORS AND BOTS ARE SHOWN, dimmed and labelled, rather than filtered out. Hiding them would
+	// make the list disagree with the count beside it -- and a name list that is shorter than the
+	// number above it for reasons it does not explain is worse than one that explains itself.
+	//
+	// Frags are omitted for anyone not playing: a spectator's frag count is whatever it was when they
+	// stopped, and a bot's is not a comparison anyone is making.
+	int DrawPlayerList( int x, int y, int lServer )
+	{
+		const int total = static_cast<int>( BROWSER_GetNumPlayers( lServer ));
+
+		// The two silences that are not the same thing. A server that did not send player rows gets
+		// told apart from one that genuinely has nobody in it, because "unknown" and "empty" lead to
+		// different decisions and this panel should not turn one into the other.
+		if ( BROWSER_HasPlayerData( lServer ) == false )
+		{
+			DrawInPanel( CR_DARKGRAY, x, y, "Player list not reported" );
+			return y + SB_DETAIL_LINE;
+		}
+
+		if ( total <= 0 )
+		{
+			DrawInPanel( CR_DARKGRAY, x, y, "No one playing" );
+			return y + SB_DETAIL_LINE;
+		}
+
+		const int bottom = ( y + SB_PLAYERLIST_MAX_H < SB_DETAIL_TEXT_BOTTOM )
+			? ( y + SB_PLAYERLIST_MAX_H ) : SB_DETAIL_TEXT_BOTTOM;
+
+		int rows = ( bottom - y ) / SB_DETAIL_LINE;
+		if ( rows < 1 )
+			rows = 1;
+
+		g_PlayerScroll = zx::ComputeRestoredScroll( g_PlayerScroll, total, rows );
+
+		g_PlayerListTop = y;
+		g_PlayerListBottom = y + rows * SB_DETAIL_LINE;
+		g_PlayerListRows = rows;
+
+		const bool bScrolls = ( total > rows );
+		const int textW = SB_DETAIL_TEXT_W - ( bScrolls ? ( SB_PLRBAR_W + 3 ) : 0 );
+
+		for ( int i = 0; ( i < rows ) && (( g_PlayerScroll + i ) < total ); i++ )
+		{
+			const int entry = g_PlayerScroll + i;
+			const int lineY = y + i * SB_DETAIL_LINE;
+
+			const bool bBot = BROWSER_IsPlayerBot( lServer, entry );
+			const bool bSpec = ( BROWSER_GetPlayerSpectating( lServer, entry ) != 0 );
+
+			// Right-hand column first, exactly as the WAD list sizes its files: it is short and fixed,
+			// so the name gets whatever is left rather than the other way round.
+			FString right;
+			if ( bBot )
+				right = "BOT";
+			else if ( bSpec )
+				right = "SPEC";
+			else
+				right.Format( "%d", static_cast<int>( BROWSER_GetPlayerFragcount( lServer, entry )));
+
+			const int rightW = SmallFont->StringWidth( right );
+			const int gap = SmallFont->StringWidth( " " );
+
+			// [rc4l] Player names run long and carry colour codes, so this is the server-name row's
+			// problem exactly and gets the server-name row's answer. serverbrowser_FitName colorizes,
+			// measures the VISIBLE width -- escapes cost characters but no pixels -- and cuts only at
+			// offsets that cannot land inside an escape, which would otherwise leave a dangling code
+			// to eat the next glyph and tint the rest of the line. It returns the name untouched when
+			// it already fits, so there is nothing to test for first.
+			const FString name = serverbrowser_FitName( BROWSER_GetPlayerName( lServer, entry ),
+				textW - rightW - gap );
+
+			DrawInPanel( ( bBot || bSpec ) ? CR_DARKGRAY : CR_WHITE, x, lineY, name );
+			DrawInPanel( CR_DARKGRAY, x + textW - rightW, lineY, right );
+
+			// The row is not a control, but it is a rectangle, so it can say the things the drawn line
+			// had to drop: the untruncated name, and the ping nothing else has room for.
+			//
+			// [rc4l] Plain here too. A tooltip is the panel explaining itself, so it is the last place
+			// that should be rendering a colour it got from somewhere else.
+			//
+			// [rc4l] AND FORMATTED, NOT STREAMED. FString::operator<< has overloads for FString, const
+			// char *, char and FName -- and none for int. Streaming a number therefore converts it to
+			// char and appends one byte: a ping of 0 appends NUL, which DrawText treats as the end of
+			// the string, so the rest of that line silently vanishes. It compiles without a murmur.
+			{
+				FString tip = serverbrowser_PlainName( BROWSER_GetPlayerName( lServer, entry ));
+
+				if ( bBot )
+					tip << "\nBot";
+				else
+				{
+					FString detail;
+					if ( bSpec )
+						detail.Format( "\nSpectating\n%d ms",
+							static_cast<int>( BROWSER_GetPlayerPing( lServer, entry )));
+					else
+						detail.Format( "\n%d frags\n%d ms",
+							static_cast<int>( BROWSER_GetPlayerFragcount( lServer, entry )),
+							static_cast<int>( BROWSER_GetPlayerPing( lServer, entry )));
+					tip << detail;
+				}
+
+				serverbrowser_Tip( x, lineY, textW, SB_DETAIL_LINE, tip );
+			}
+		}
+
+		if ( bScrolls )
+			DrawPlayerScrollbar( total, rows );
+
+		return g_PlayerListBottom;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The player list's bar. Same column, width and arithmetic as the WAD list's -- see
+	// DrawWadScrollbar; the duplication is two call sites of one unit, not two implementations.
+	void DrawPlayerScrollbar( int total, int rows )
+	{
+		const int left = serverbrowser_ToScreenX( SB_PLRBAR_X );
+		const int width = MAX( 1, serverbrowser_ToScreenX( SB_PLRBAR_X + SB_PLRBAR_W ) - left );
+		const int top = serverbrowser_ToScreenY( g_PlayerListTop );
+		const int height = serverbrowser_ToScreenY( g_PlayerListBottom ) - top;
+		if ( height <= 0 )
+			return;
+
+		screen->Dim( PalEntry( 120, 140, 180 ), 0.14f, left, top, width, height );
+
+		const int minThumb = serverbrowser_ToScreenY( 6 ) - serverbrowser_ToScreenY( 0 );
+		const int thumbH = zx::ComputeThumbHeight( height, rows, total, minThumb );
+		const int thumbY = top + zx::ComputeThumbTop( height, thumbH, g_PlayerScroll, total - rows );
+
+		screen->Dim( PalEntry( 170, 190, 230 ), 0.55f, left, thumbY, width, thumbH );
 	}
 
 	//*************************************************************************
@@ -3413,21 +4330,20 @@ public:
 				else
 				{
 					// Press puts the caret and arms a drag; the drag is what turns it into a selection.
-					g_SearchDragging = true;
+					g_SearchDragging = zx::BeginDrag( );
 					g_Search = zx::SetCaret( g_Search, SearchCharAt( x ), bShiftHeld( ));
 				}
 				return true;
 			}
 
-			if ( g_SearchDragging )
-			{
-				// Tracked even once the pointer leaves the box -- that is what dragging means
-				// everywhere else, and a selection that stops the moment you overshoot the last
-				// character is one you can never make in a single gesture.
-				g_Search = zx::SetCaret( g_Search, SearchCharAt( x ), true );
+			// Same unit, same rule. Two fields sharing one drag rule is the point: the hole that ate a
+			// click was in an inline copy of it.
+			const zx::DragOutcome searchDrag = zx::StepDrag( g_SearchDragging, PointerEventOf( type ));
+			g_SearchDragging = searchDrag.dragging;
 
-				if ( type == MOUSE_Release )
-					g_SearchDragging = false;
+			if ( searchDrag.consumed )
+			{
+				g_Search = zx::SetCaret( g_Search, SearchCharAt( x ), true );
 				return true;
 			}
 
@@ -3547,6 +4463,43 @@ public:
 			{
 				if ( type == MOUSE_Release )
 					g_DraggingWadBar = false;
+				return true;
+			}
+
+			// [rc4l] The player list's bar, same treatment. It shares the WAD bar's column, so the two
+			// are told apart purely by which list's rows the pointer is level with -- which is why the
+			// vertical test uses the recorded box of each list and not the column.
+			const bool bHaveSel = ( g_Selected >= 0 )
+				&& ( g_Selected < static_cast<int>( g_SortedServers.Size( )));
+			const int plrTotal = bHaveSel
+				? static_cast<int>( BROWSER_GetNumPlayers( g_SortedServers[g_Selected] )) : 0;
+			const int plrHeight = serverbrowser_ToScreenY( g_PlayerListBottom )
+				- serverbrowser_ToScreenY( g_PlayerListTop );
+
+			const bool bOverPlrBar = ( plrTotal > g_PlayerListRows ) && ( g_PlayerListRows > 0 ) &&
+				( x >= serverbrowser_ToScreenX( SB_PLRBAR_X - 3 )) &&
+				( x < serverbrowser_ToScreenX( SB_PLRBAR_X + SB_PLRBAR_W + 3 )) &&
+				( y >= serverbrowser_ToScreenY( g_PlayerListTop )) &&
+				( y < serverbrowser_ToScreenY( g_PlayerListBottom ));
+
+			if ( type == MOUSE_Click )
+				g_DraggingPlayerBar = bOverPlrBar;
+
+			if ( g_DraggingPlayerBar && ( plrHeight > 0 ) && ( plrTotal > g_PlayerListRows ))
+			{
+				const int top = serverbrowser_ToScreenY( g_PlayerListTop );
+				const int minThumb = serverbrowser_ToScreenY( 6 ) - serverbrowser_ToScreenY( 0 );
+				const int thumbH = zx::ComputeThumbHeight( plrHeight, g_PlayerListRows, plrTotal,
+					minThumb );
+
+				g_PlayerScroll = zx::ComputeFirstFromPointer( y - top, plrHeight, thumbH,
+					plrTotal - g_PlayerListRows );
+			}
+
+			if ( g_DraggingPlayerBar )
+			{
+				if ( type == MOUSE_Release )
+					g_DraggingPlayerBar = false;
 				return true;
 			}
 		}
@@ -3718,7 +4671,8 @@ public:
 		// containing the letter 'p' does not also press something. Only when a FIELD has focus -- on
 		// the button the keys belong to the menu again, which is what makes enter work there.
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
-			( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false ))
+			( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false )
+			&& ( g_HostOnVisibility == false ))
 		{
 			if ( EditHostField( ev ))
 				return true;
@@ -3745,6 +4699,22 @@ public:
 			{
 				const int step = ( ev->subtype == EV_GUI_WheelUp ) ? -3 : 3;
 
+				// [rc4l] Over the hosting settings, the notch belongs to them. Same rule as the WAD
+				// list below: one wheel and more than one scrollable thing means it drives whichever
+				// one the pointer is actually over.
+				if (( g_Tab == BrowserTab::Host ) && ( HostMaxScroll( ) > 0 ) &&
+					( g_MouseY >= serverbrowser_ToScreenY( SB_HOST_VIEW_TOP )) &&
+					( g_MouseY < serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM )) &&
+					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_LEFT )) &&
+					( g_MouseX < serverbrowser_ToScreenX( SB_HOST_RIGHT )))
+				{
+					// Three rows' worth per notch, measured in the units the layout is in rather
+					// than in rows -- the settings are not all the same height.
+					g_HostScroll += step * 6;
+					ClampHostScroll( );
+					return true;
+				}
+
 				// Over the WAD list, the notch belongs to the WAD list. Two scrollable things on one
 				// screen and one wheel: the only sane rule is that it drives whichever one you are
 				// pointing at.
@@ -3757,6 +4727,27 @@ public:
 				{
 					g_WadScroll = zx::ComputeRestoredScroll( g_WadScroll + step, wadTotal, g_WadListRows );
 					return true;
+				}
+
+				// And the player list below it, by the same rule. Its box is tested separately rather
+				// than as "the detail panel" because the two lists sit one above the other inside that
+				// panel, and a notch aimed at the names must not move the files.
+				if (( g_PlayerListRows > 0 ) && ( g_Selected >= 0 ) &&
+					( g_Selected < static_cast<int>( g_SortedServers.Size( ))))
+				{
+					const int plrTotal = static_cast<int>(
+						BROWSER_GetNumPlayers( g_SortedServers[g_Selected] ));
+
+					if (( plrTotal > g_PlayerListRows ) &&
+						( g_MouseY >= serverbrowser_ToScreenY( g_PlayerListTop )) &&
+						( g_MouseY < serverbrowser_ToScreenY( g_PlayerListBottom )) &&
+						( g_MouseX >= serverbrowser_ToScreenX( SB_DETAIL_LEFT )) &&
+						( g_MouseX < serverbrowser_ToScreenX( SB_DETAIL_RIGHT )))
+					{
+						g_PlayerScroll = zx::ComputeRestoredScroll( g_PlayerScroll + step, plrTotal,
+							g_PlayerListRows );
+						return true;
+					}
 				}
 
 				const int maxFirst = ( total > SB_VISIBLE_ROWS ) ? ( total - SB_VISIBLE_ROWS ) : 0;
@@ -3786,7 +4777,20 @@ public:
 	// keyboard is the fix, and it is the same loop M_StartControlPanel already runs when a menu opens.
 	void SetFocus( zx::BrowserFocus focus )
 	{
-		if (( focus == zx::BrowserFocus::Search ) && ( g_Focus != zx::BrowserFocus::Search ))
+		// [rc4l] Let go of every latched menu key whenever the focus actually moves.
+		//
+		// M_Responder latches on the way down and unlatches on the way up, and M_Ticker repeats
+		// whatever is still latched -- but a focus change can turn TranslateKeyboardEvents off
+		// mid-press, and the release then arrives untranslated and never unlatches anything. The
+		// button repeats forever and drags the focus onward while the player has already let go.
+		//
+		// This used to fire only when focus entered the SEARCH box, which was the only field at the
+		// time. The hosting form's fields do exactly the same thing, so the condition is now the one
+		// that was always meant: any real change of focus.
+		//
+		// Releasing more often than strictly necessary is not a cost -- it is the behaviour anyway. A
+		// held arrow that has just moved the focus somewhere else should stop there, not keep going.
+		if ( focus != g_Focus )
 			M_ReleaseMenuButtons( );
 
 		g_Focus = focus;
@@ -3811,79 +4815,245 @@ public:
 		// A focused text field -- the search box, or any field on the hosting form -- needs the raw
 		// events. On the form's BUTTON it does not: there the keys are navigation again.
 		const bool bInAField = ( g_Focus == zx::BrowserFocus::Search )
-			|| (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false ));
+			|| (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false )
+				&& ( g_HostOnVisibility == false ));
 
 		return ( bInAField == false ) || g_Dialog.open || g_Notice.IsNotEmpty( );
 	}
 
 	//*************************************************************************
 	//
+	// [rc4l] Everything a text field does, in ONE place, for every field in this browser.
+	//
+	// The search box got all of this first -- selection, clipboard, word jumps, ctrl+backspace -- and
+	// the hosting form was written afterwards with a reduced copy, on the reasoning that its fields
+	// are short and mostly retyped whole. That reasoning is how a second-class field happens: nobody
+	// decides a box should be worse to type in, it just never gets the things the other one has, and
+	// the player who tries to paste a server name finds out.
+	//
+	// So the EDITING lives here and the field-specific parts stay outside: what escape leaves to,
+	// what enter commits, and where up and down go are the caller's, because only the caller knows
+	// what is around it. Everything between those is identical by construction.
+	//
+	// Returns what the caller still has to answer.
+	enum class FieldKey
+	{
+		Handled,		// the field took it
+		Escape,
+		Enter,
+		Up,
+		Down,
+
+		// [rc4l] NOT A KEYBOARD EVENT AT ALL, and therefore none of a text field's business.
+		//
+		// This state exists because leaving it out cost the whole menu its mouse. Mouse events reach
+		// a menu through Responder, not MouseEvent -- menu.cpp hands every non-keyboard GUI event to
+		// CurrentMenu->Responder -- and the guard that routes keys to a focused field tests
+		// ev->type == EV_GUI_Event, which is true for mouse events too. They arrived here, fell past
+		// the character and key-down cases, and were reported as Handled.
+		//
+		// The caller then answered true, the event never reached MouseEvent, and the browser went
+		// deaf to the pointer for as long as any field had focus: frozen tooltip, dead clicks, dead
+		// tabs. Saying "not mine" is what lets it fall through to the mouse path.
+		Unclaimed,
+
+		// [rc4l] The caret ran out of text and there is something beside the box, so the arrow means
+		// what it means everywhere else on the screen. Only ever returned when the caller said there
+		// was somewhere to go -- a field with nothing beside it keeps the key.
+		Left,
+		Right,
+	};
+
+	// `digitsOnly` is for the port and player-limit boxes. A port with a letter in it is not a port,
+	// and refusing the keystroke says so at the moment it happens rather than when the server fails
+	// to start.
+	FieldKey EditTextField( zx::TextInput &field, event_t *ev, size_t maxLength, bool digitsOnly,
+		bool canExitLeft, bool canExitRight )
+	{
+		// [rc4l] Cmd counts as Ctrl. The Cocoa layer reports it as GKM_META, so honouring both here
+		// is the whole of macOS support -- Cmd+A, Cmd+C, Cmd+V and Cmd+X land where a Mac user
+		// expects without a second code path to keep in step.
+		const bool bCtrl = (( ev->data3 & ( GKM_CTRL | GKM_META )) != 0 );
+		const bool bShift = (( ev->data3 & GKM_SHIFT ) != 0 );
+
+		// Anything that is not a key belongs to somebody else -- above all the mouse, which reaches a
+		// menu through this same Responder and must be allowed past.
+		if (( ev->subtype != EV_GUI_Char ) && ( ev->subtype != EV_GUI_KeyDown ))
+			return FieldKey::Unclaimed;
+
+		if ( ev->subtype == EV_GUI_Char )
+		{
+			// Ctrl+letter arrives here too on some layouts; those are commands, not text.
+			if ( bCtrl )
+				return FieldKey::Handled;
+
+			if ( digitsOnly && (( ev->data1 < '0' ) || ( ev->data1 > '9' )))
+				return FieldKey::Handled;
+
+			field = zx::InsertChar( field, ev->data1, maxLength );
+			return FieldKey::Handled;
+		}
+
+		if ( ev->subtype != EV_GUI_KeyDown )
+			return FieldKey::Unclaimed;
+
+		const int key = ev->data1;
+
+		if ( bCtrl )
+		{
+			switch ( key )
+			{
+			case 'a': case 'A':
+				field = zx::SelectAll( field );
+				return FieldKey::Handled;
+
+			case 'c': case 'C':
+				if ( zx::HasSelection( field ))
+					I_PutInClipboard( zx::SelectedText( field ).c_str( ));
+				return FieldKey::Handled;
+
+			case 'x': case 'X':
+				if ( zx::HasSelection( field ))
+				{
+					I_PutInClipboard( zx::SelectedText( field ).c_str( ));
+					field = zx::DeleteSelection( field );
+				}
+				return FieldKey::Handled;
+
+			case 'v': case 'V':
+				{
+					FString pasted = I_GetFromClipboard( false );
+
+					// A pasted port is as likely to arrive with a newline as typed one is to arrive
+					// with a letter, and the same rule applies: keep what belongs, drop what does not.
+					if ( digitsOnly )
+					{
+						FString digits;
+						for ( unsigned i = 0; i < pasted.Len( ); ++i )
+						{
+							if (( pasted[i] >= '0' ) && ( pasted[i] <= '9' ))
+								digits += pasted[i];
+						}
+						pasted = digits;
+					}
+
+					field = zx::InsertText( field, pasted.GetChars( ), maxLength );
+					return FieldKey::Handled;
+				}
+
+			case GK_LEFT:
+			case GK_RIGHT:
+				field = zx::MoveWord( field, ( key == GK_RIGHT ), bShift );
+				return FieldKey::Handled;
+
+			case '\b':
+				// Ctrl+Backspace erases the word behind the caret, which is the fastest way to undo a
+				// mistyped entry without holding the key down.
+				if ( !zx::HasSelection( field ))
+					field = zx::MoveWord( field, false, true );
+				field = zx::DeleteSelection( field );
+				return FieldKey::Handled;
+
+			default:
+				// Swallowed: a chord the field does not use is still not a menu shortcut.
+				return FieldKey::Handled;
+			}
+		}
+
+		switch ( key )
+		{
+		case GK_ESCAPE:	return FieldKey::Escape;
+		case GK_RETURN:	return FieldKey::Enter;
+		case GK_UP:		return FieldKey::Up;
+		case GK_DOWN:	return FieldKey::Down;
+
+		case '\b':
+			field = zx::Backspace( field );
+			return FieldKey::Handled;
+
+		case GK_DEL:
+			field = zx::DeleteForward( field );
+			return FieldKey::Handled;
+
+		case GK_HOME:
+			field = zx::CaretHome( field, bShift );
+			return FieldKey::Handled;
+
+		case GK_END:
+			field = zx::CaretEnd( field, bShift );
+			return FieldKey::Handled;
+
+		case GK_LEFT:
+		case GK_RIGHT:
+			{
+				// [rc4l] The caret's FIRST, and the row's once the caret runs out.
+				//
+				// Moving through what you typed is what these keys mean inside a field, and a box
+				// that jumped to the next control immediately would be one you could not edit. But a
+				// box that never gave them back is one the keyboard goes into and cannot leave
+				// sideways -- so at the edge, with something actually beside us, the press moves on.
+				// ArrowLeavesField owns when that is; see its header for shift and selections.
+				const bool bRight = ( key == GK_RIGHT );
+				if ( zx::ArrowLeavesField( field, bRight, bRight ? canExitRight : canExitLeft, bShift ))
+					return bRight ? FieldKey::Right : FieldKey::Left;
+
+				field = zx::MoveCaret( field, bRight ? 1 : -1, bShift );
+				return FieldKey::Handled;
+			}
+
+		default:
+			// Everything else is swallowed while the field has the keyboard. A letter is a letter, not
+			// a menu shortcut, and the alternative is 'y' answering a question that is not on screen.
+			return FieldKey::Handled;
+		}
+	}
+
+	//*************************************************************************
+	//
 	// [rc4l] Editing one field of the hosting form.
 	//
-	// A narrower version of EditSearchField: these fields are short, retyped wholesale, and have no
-	// selection to drag, so they answer typing, backspace, delete, home and end and nothing else.
-	// Everything they do NOT claim -- the arrows above all -- goes back to the navigation that walks
-	// the form, which is what keeps the whole thing steerable from the keyboard.
+	// The same editor the search box uses, so a field on this screen is not a lesser one: selection,
+	// clipboard, word jumps and ctrl+backspace all work here because they work there. Only the ways
+	// OUT differ, and those are what this function is for.
 	bool EditHostField( event_t *ev )
 	{
 		if (( g_HostFieldFocus < 0 ) || ( g_HostFieldFocus >= kHostFieldCount ))
 			return false;
 
-		zx::TextInput &field = g_HostFields[g_HostFieldFocus];
-		const bool bCtrl = (( ev->data3 & ( GKM_CTRL | GKM_META )) != 0 );
+		const bool bDigits = ( g_HostFieldFocus == kHostFieldPort )
+			|| ( g_HostFieldFocus == kHostFieldMaxPlayers );
 
-		if ( ev->subtype == EV_GUI_Char )
+		switch ( EditTextField( g_HostFields[g_HostFieldFocus], ev, SB_HOST_MAXLEN, bDigits,
+			false, false ))
 		{
-			if ( bCtrl )
-				return true;
-
-			// The numeric fields refuse anything that is not a digit rather than accepting it and
-			// failing later: a port with a letter in it is not a port, and finding that out when the
-			// server does not start is finding out too late.
-			if (( g_HostFieldFocus == kHostFieldPort ) || ( g_HostFieldFocus == kHostFieldMaxPlayers ))
-			{
-				if (( ev->data1 < '0' ) || ( ev->data1 > '9' ))
-					return true;
-			}
-
-			field = zx::InsertChar( field, ev->data1, SB_HOST_MAXLEN );
+		case FieldKey::Escape:
+			// Out of the form, not out of the browser -- the same rule the search box follows, so a
+			// second escape then closes the menu.
+			SetFocus( zx::BrowserFocus::Tabs );
+			g_HostFieldDragging = false;
 			return true;
-		}
 
-		if ( ev->subtype != EV_GUI_KeyDown )
+		case FieldKey::Enter:
+		case FieldKey::Down:
+			MoveHostFocus( 1 );
+			return true;
+
+		case FieldKey::Up:
+			MoveHostFocus( -1 );
+			return true;
+
+		case FieldKey::Left:
+		case FieldKey::Right:
+		case FieldKey::Unclaimed:
+			// Nothing sits beside these fields, so the editor never reports the first two -- and a
+			// non-key belongs to the mouse.
 			return false;
 
-		if ( bCtrl && (( ev->data1 == 'a' ) || ( ev->data1 == 'A' )))
-		{
-			field = zx::SelectAll( field );
-			return true;
-		}
-
-		switch ( ev->data1 )
-		{
-		// Backspace arrives as a character, not a named key -- see EditSearchField for the whole
-		// story. Watching for GK_BACKSPACE here would silently do nothing.
-		case '':
-			field = zx::Backspace( field );
-			return true;
-
-		case GK_DEL:
-			field = zx::DeleteForward( field );
-			return true;
-
-		case GK_HOME:
-			field = zx::CaretHome( field, false );
-			return true;
-
-		case GK_END:
-			field = zx::CaretEnd( field, false );
-			return true;
-
-		default:
+		case FieldKey::Handled:
 			break;
 		}
 
-		return false;
+		return true;
 	}
 
 	//*************************************************************************
@@ -3899,81 +5069,18 @@ public:
 	// without a caret. With shift they select, which is a thing only the field can mean.
 	bool EditSearchField( event_t *ev )
 	{
-		// [rc4l] Cmd counts as Ctrl. The Cocoa layer already reports it as GKM_META, so honouring both
-		// here is the whole of macOS support -- Cmd+A, Cmd+C, Cmd+V and Cmd+X land where a Mac user
-		// expects without a second code path to keep in step.
-		const bool bCtrl = (( ev->data3 & ( GKM_CTRL | GKM_META )) != 0 );
-		const bool bShift = (( ev->data3 & GKM_SHIFT ) != 0 );
+		zx::TextInput next = g_Search;
 
-		if ( ev->subtype == EV_GUI_Char )
+		switch ( EditTextField( next, ev, SB_SEARCH_MAXLEN, false, true, false ))
 		{
-			// Ctrl+letter arrives here too on some layouts; those are commands, not text.
-			if ( !bCtrl )
-				return ApplyEdit( zx::InsertChar( g_Search, ev->data1, SB_SEARCH_MAXLEN ));
-			return true;
-		}
-
-		// KeyRepeat is eaten by M_Responder before it gets here, whatever this menu wants -- the
-		// framework does its own repeat handling so that gamepads repeat too.
-		if ( ev->subtype != EV_GUI_KeyDown )
-			return false;
-
-		const int key = ev->data1;
-
-		if ( bCtrl )
-		{
-			switch ( key )
-			{
-			case 'a': case 'A':
-				g_Search = zx::SelectAll( g_Search );
-				return true;
-
-			case 'c': case 'C':
-				if ( zx::HasSelection( g_Search ))
-					I_PutInClipboard( zx::SelectedText( g_Search ).c_str( ));
-				return true;
-
-			case 'x': case 'X':
-				if ( zx::HasSelection( g_Search ))
-				{
-					I_PutInClipboard( zx::SelectedText( g_Search ).c_str( ));
-					return ApplyEdit( zx::DeleteSelection( g_Search ));
-				}
-				return true;
-
-			case 'v': case 'V':
-				{
-					const FString pasted = I_GetFromClipboard( false );
-					return ApplyEdit( zx::InsertText( g_Search, pasted.GetChars( ), SB_SEARCH_MAXLEN ));
-				}
-
-			case GK_LEFT:
-			case GK_RIGHT:
-				g_Search = zx::MoveWord( g_Search, ( key == GK_RIGHT ), bShift );
-				return true;
-
-			case '':
-				// Ctrl+Backspace erases the word behind the caret, which is the fastest way to undo a
-				// mistyped query without holding the key down.
-				if ( !zx::HasSelection( g_Search ))
-					g_Search = zx::MoveWord( g_Search, false, true );
-				return ApplyEdit( zx::DeleteSelection( g_Search ));
-
-			default:
-				return true;		// swallowed: a chord the field does not use is not a menu shortcut
-			}
-		}
-
-		switch ( key )
-		{
-		case GK_ESCAPE:
+		case FieldKey::Escape:
 			// Out of the box, not out of the browser. A second escape then closes the menu, which is
 			// the ordinary meaning restored as soon as the field stops claiming it.
 			SetFocus( zx::BrowserFocus::Tabs );
 			g_SearchDragging = false;
 			return true;
 
-		case GK_RETURN:
+		case FieldKey::Enter:
 			if ( static_cast<int>( g_SortedServers.Size( )) > 0 )
 			{
 				SetFocus( zx::BrowserFocus::Rows );
@@ -3981,41 +5088,31 @@ public:
 			}
 			return true;
 
-		case GK_UP:
-		case GK_DOWN:
-			// Navigation, which the framework would normally have translated for us -- while the field
-			// holds the keyboard it has to pass these on itself.
-			Navigate(( key == GK_UP ) ? zx::NavKey::Up : zx::NavKey::Down,
-				static_cast<int>( g_SortedServers.Size( )));
+		// Navigation, which the framework would normally have translated for us -- while the field
+		// holds the keyboard it has to pass these on itself.
+		case FieldKey::Up:
+			Navigate( zx::NavKey::Up, static_cast<int>( g_SortedServers.Size( )));
 			return true;
 
-		case '':
-			return ApplyEdit( zx::Backspace( g_Search ));
-
-		case GK_DEL:
-			return ApplyEdit( zx::DeleteForward( g_Search ));
-
-		case GK_HOME:
-			g_Search = zx::CaretHome( g_Search, bShift );
+		case FieldKey::Down:
+			Navigate( zx::NavKey::Down, static_cast<int>( g_SortedServers.Size( )));
 			return true;
 
-		case GK_END:
-			g_Search = zx::CaretEnd( g_Search, bShift );
-			return true;
+		case FieldKey::Left:
+			// Off the left of the search box is the tab row it shares.
+			SetFocus( zx::BrowserFocus::Tabs );
+			g_SearchDragging = false;
+			return ApplyEdit( next );
 
-		case GK_LEFT:
-		case GK_RIGHT:
-			// [rc4l] ALWAYS the caret, never navigation. Moving through what you have typed is the
-			// thing these keys mean inside a field, and a box that jumped to the next control instead
-			// would be one you could not edit. Up, down, escape and enter are how it is left.
-			g_Search = zx::MoveCaret( g_Search, ( key == GK_LEFT ) ? -1 : 1, bShift );
-			return true;
+		case FieldKey::Right:
+		case FieldKey::Unclaimed:
+			return false;			// nothing to the right, and non-keys belong to the mouse
 
-		default:
-			// Everything else is swallowed while the field has the keyboard. A letter is a letter, not
-			// a menu shortcut, and the alternative is 'y' answering a question that is not on screen.
-			return true;
+		case FieldKey::Handled:
+			break;
 		}
+
+		return ApplyEdit( next );
 	}
 
 	// [rc4l] Whether shift was down on the event being handled.
@@ -4096,11 +5193,47 @@ public:
 		if (( VisibleParts( serverbrowser_CountStates( )) & zx::kPartTabs ) == 0 )
 			return true;
 
+		// [rc4l] On the hosting tab, DOWN off anything that is not the form enters the form.
+		//
+		// ComputeNav cannot answer this: it does not know which tab is showing, so from the search
+		// box it sends DOWN to the rows, finds none on this tab, and falls back to the tabs -- which
+		// looks like the key jumping sideways onto the HOST button instead of going down.
+		//
+		// Checked for every origin rather than just the tabs, because the search box shares that row
+		// and is just as much "above the form" as they are.
+		if (( g_Tab == BrowserTab::Host ) && ( key == zx::NavKey::Down )
+			&& ( g_Focus != zx::BrowserFocus::Host ))
+		{
+			SetFocus( zx::BrowserFocus::Host );
+			g_HostOnButton = false;
+			g_HostOnVisibility = false;
+			g_HostFieldFocus = 0;
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			return true;
+		}
+
 		// [rc4l] The hosting form owns its own arrows, and walks its own fields -- only this side
 		// knows how many there are. Up off the top of it is the one edge that leaves, back to the
 		// tabs; left and right belong to the caret, exactly as in the search box.
 		if ( g_Focus == zx::BrowserFocus::Host )
 		{
+			// On the visibility row, left and right pick the answer. Everywhere else in the form they
+			// belong to the caret, which is why this is the only place they mean anything else.
+			if ( g_HostOnVisibility
+				&& (( key == zx::NavKey::Left ) || ( key == zx::NavKey::Right )))
+			{
+				const int at = zx::ChoiceStep( g_HostAdvertise ? kHostVisGlobal : kHostVisLocal,
+					kHostVisCount, ( key == zx::NavKey::Right ) ? 1 : -1 );
+
+				const bool bWanted = ( at == kHostVisGlobal );
+				if ( bWanted != g_HostAdvertise )
+				{
+					g_HostAdvertise = bWanted;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
 			if ( key == zx::NavKey::Up )
 				MoveHostFocus( -1 );
 			else if ( key == zx::NavKey::Down )
@@ -4108,8 +5241,11 @@ public:
 			return true;
 		}
 
+		// The tab's POSITION on the row, not "is it the last one". The bool that used to be passed
+		// here could not describe the middle of a three-tab row, so PRIVATE could step right and not
+		// left -- see the unit's header.
 		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, total > 0,
-			g_Tab == BrowserTab::Host );
+			static_cast<int>( g_Tab ), kTabCount );
 		const zx::BrowserFocus was = g_Focus;
 		SetFocus( nav.focus );
 
@@ -4120,17 +5256,6 @@ public:
 			const int next = static_cast<int>( g_Tab ) + nav.tabStep;
 			if (( next >= 0 ) && ( next < kTabCount ))
 				SelectTab( static_cast<BrowserTab>( next ));
-			return true;
-		}
-
-		// Down from the tabs onto the hosting form lands in it rather than in a list that is not
-		// there. ComputeNav answers for the list because it does not know which tab is showing.
-		if (( g_Tab == BrowserTab::Host ) && ( was == zx::BrowserFocus::Tabs )
-			&& ( key == zx::NavKey::Down ))
-		{
-			SetFocus( zx::BrowserFocus::Host );
-			g_HostOnButton = false;
-			g_HostFieldFocus = 0;
 			return true;
 		}
 
@@ -4238,6 +5363,7 @@ public:
 					MoveHostFocus( 1 );
 				return true;
 			}
+
 
 			if (( g_Focus == zx::BrowserFocus::Tabs ) || ( g_Focus == zx::BrowserFocus::Search ))
 			{

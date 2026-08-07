@@ -6,6 +6,7 @@
 
 using zx::Backspace;
 using zx::CaretEnd;
+using zx::ArrowLeavesField;
 using zx::CaretHome;
 using zx::ClearInput;
 using zx::DeleteForward;
@@ -532,4 +533,85 @@ TEST( TextInput, ClearingGivesBackAnEmptyFieldWithNoSelection )
 	EXPECT_TRUE( cleared.text.empty( ));
 	EXPECT_EQ( 0u, cleared.caret );
 	EXPECT_EQ( 0u, cleared.anchor );
+}
+
+// ---------------------------------------------------------------- leaving by arrow
+
+TEST( ArrowLeaves, StaysInTheTextUntilTheCaretRunsOut )
+{
+	// The first job of these keys is moving through what you typed. A box that handed them over
+	// early would be one you could not edit the middle of.
+	const TextInput middle( "hello", 2 );
+
+	EXPECT_FALSE( ArrowLeavesField( middle, false, true, false ));
+	EXPECT_FALSE( ArrowLeavesField( middle, true, true, false ));
+}
+
+TEST( ArrowLeaves, GoesAtTheEdgeItIsHeadingFor )
+{
+	const TextInput atStart( "hello", 0 );
+	const TextInput atEnd( "hello", 5 );
+
+	EXPECT_TRUE( ArrowLeavesField( atStart, false, true, false ));
+	EXPECT_TRUE( ArrowLeavesField( atEnd, true, true, false ));
+
+	// And not at the other one -- the caret still has somewhere to go that way.
+	EXPECT_FALSE( ArrowLeavesField( atStart, true, true, false ));
+	EXPECT_FALSE( ArrowLeavesField( atEnd, false, true, false ));
+}
+
+TEST( ArrowLeaves, AnEmptyFieldIsAtBothEdgesAtOnce )
+{
+	const TextInput empty;
+
+	EXPECT_TRUE( ArrowLeavesField( empty, false, true, false ));
+	EXPECT_TRUE( ArrowLeavesField( empty, true, true, false ));
+}
+
+TEST( ArrowLeaves, NeverLeavesWhenThereIsNowhereToGo )
+{
+	// [rc4l] The caller owns this: only it knows what is beside the box. A field with nothing there
+	// keeps the key rather than handing it to nobody, which would be a press that does nothing at
+	// all and reads as the menu having missed it.
+	const TextInput atStart( "hello", 0 );
+	const TextInput atEnd( "hello", 5 );
+
+	EXPECT_FALSE( ArrowLeavesField( atStart, false, false, false ));
+	EXPECT_FALSE( ArrowLeavesField( atEnd, true, false, false ));
+}
+
+TEST( ArrowLeaves, ShiftIsAlwaysASelection )
+{
+	// [rc4l] Shift+arrow selects, and a selection gesture that jumped to another control halfway
+	// through would be unusable -- so this holds even at the very edge, where an unshifted arrow
+	// would leave.
+	const TextInput atStart( "hello", 0 );
+	const TextInput atEnd( "hello", 5 );
+
+	EXPECT_FALSE( ArrowLeavesField( atStart, false, true, true ));
+	EXPECT_FALSE( ArrowLeavesField( atEnd, true, true, true ));
+}
+
+TEST( ArrowLeaves, ALiveSelectionGetsTheFirstPress )
+{
+	// That press collapses the selection, which is a move in its own right. Only the press after it
+	// reaches the edge -- otherwise selecting to the end and tapping right would leave the field
+	// with the selection still on screen.
+	const TextInput selectedToEnd( "hello", 5, 0 );
+
+	EXPECT_FALSE( ArrowLeavesField( selectedToEnd, true, true, false ));
+
+	const TextInput selectedToStart( "hello", 0, 5 );
+	EXPECT_FALSE( ArrowLeavesField( selectedToStart, false, true, false ));
+}
+
+TEST( ArrowLeaves, ACaretPastTheEndStillCountsAsTheEnd )
+{
+	// Defensive but reachable: the struct is plain data and a caller can hand over a caret that no
+	// longer fits the text it was measured against.
+	TextInput overrun( "hi", 2 );
+	overrun.caret = 99;
+	overrun.anchor = 99;
+
+	EXPECT_TRUE( ArrowLeavesField( overrun, true, true, false ));
 }

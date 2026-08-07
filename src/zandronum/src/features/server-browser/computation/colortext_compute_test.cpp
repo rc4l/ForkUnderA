@@ -5,6 +5,7 @@
 #include "features/server-browser/computation/colortext_compute.h"
 
 using zx::ComputeColorSafeCutPoints;
+using zx::StripColorCodes;
 using zx::kColorEscape;
 using std::size_t;
 using std::string;
@@ -108,4 +109,55 @@ TEST(ColorSafeCutPoints, CutPointsAreAscendingAndUnique)
 	for (size_t i = 1; i < got.size(); ++i)
 		EXPECT_GT(got[i], got[i - 1]) << "not ascending at " << i;
 	EXPECT_EQ(s.size(), got.back());
+}
+
+// ---------------------------------------------------------------- stripping
+
+TEST(StripColorCodes, LeavesPlainTextAlone)
+{
+	EXPECT_EQ("Bob", StripColorCodes("Bob"));
+	EXPECT_EQ("", StripColorCodes(""));
+}
+
+TEST(StripColorCodes, RemovesTheSingleCharacterForm)
+{
+	EXPECT_EQ("Red", StripColorCodes(ESC + "gRed"));
+	EXPECT_EQ("AB", StripColorCodes(ESC + "dA" + ESC + "hB"));
+}
+
+TEST(StripColorCodes, RemovesTheBracketedForm)
+{
+	// [rc4l] THE FORM THIS EXISTS FOR. A palette mod's colour is named, not lettered, and the name is
+	// meaningless to a client without that mod -- so the whole code goes, brackets and all.
+	EXPECT_EQ("Fancy", StripColorCodes(ESC + "[Rainbow]Fancy"));
+	EXPECT_EQ("AB", StripColorCodes("A" + ESC + "[Some Long Name]B"));
+}
+
+TEST(StripColorCodes, DoesNotEatTheLetterAfterABracketedCode)
+{
+	// The off-by-one that a naive "skip to ]" gets wrong, and it is invisible in short names: the
+	// bracket's own closing byte is part of the code, the next byte is the name.
+	EXPECT_EQ("x", StripColorCodes(ESC + "[Gold]x"));
+}
+
+TEST(StripColorCodes, DropsATrailingEscapeRatherThanKeepingIt)
+{
+	// A name cut by a length limit upstream can end mid-escape. Keeping the stray byte would draw it
+	// as a glyph in a list that is supposed to be plain text.
+	EXPECT_EQ("Bob", StripColorCodes("Bob" + ESC));
+	EXPECT_EQ("Bob", StripColorCodes("Bob" + ESC + "["));
+}
+
+TEST(StripColorCodes, RunsToTheEndOfAnUnterminatedBracket)
+{
+	// Matching ComputeColorSafeCutPoints and the renderer: an unclosed code swallows the rest.
+	EXPECT_EQ("", StripColorCodes(ESC + "[Unclosed"));
+}
+
+TEST(StripColorCodes, AgreesWithTheCutPointWalk)
+{
+	// [rc4l] The two walks must classify bytes identically -- they are the same parse written twice.
+	// Every byte the stripper keeps has to be one the cutter would let you cut just after.
+	const string s = ESC + "dA" + ESC + "[Gold]B" + ESC + "-C" + ESC;
+	EXPECT_EQ("ABC", StripColorCodes(s));
 }

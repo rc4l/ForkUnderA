@@ -12,6 +12,7 @@ using zx::HostLifecycle;
 using zx::HostState;
 using zx::HostStateSummary;
 using zx::IsHostFinished;
+using zx::ParseHostReadyLine;
 using zx::kReadyTimeoutMs;
 using zx::kStopTimeoutMs;
 using zx::StepHostLifecycle;
@@ -406,4 +407,84 @@ TEST(HostFailure, ANegativeExitCodeStillReads)
 {
 	// Windows returns these for a process killed by an exception.
 	EXPECT_NE(string::npos, ExplainHostFailure("", -1073741819).find("-1073741819"));
+}
+
+// ---------------------------------------------------------------- the ready line and its port
+
+TEST( HostReadyLine, ReportsNothingUntilTheMarkerArrives )
+{
+	int port = 0;
+	EXPECT_FALSE( ParseHostReadyLine( "", &port ));
+	EXPECT_FALSE( ParseHostReadyLine( "starting up\n", &port ));
+	EXPECT_EQ( 0, port );
+}
+
+TEST( HostReadyLine, ReadsThePortTheServerActuallyBound )
+{
+	int port = 0;
+	EXPECT_TRUE( ParseHostReadyLine( "[fua-host] ready 10667\n", &port ));
+	EXPECT_EQ( 10667, port );
+}
+
+TEST( HostReadyLine, WAITS_FOR_THE_NEWLINE_BEFORE_TRUSTING_THE_DIGITS )
+{
+	// [rc4l] THE BUG THIS FUNCTION EXISTS FOR, in miniature. This is a pipe: the number can arrive in
+	// pieces. Acting on the marker alone would read "10" out of a port that is going to be 10667, and
+	// a wrong port here sends the player to whatever server happens to own it.
+	int port = 0;
+	EXPECT_FALSE( ParseHostReadyLine( "[fua-host] ready 10", &port ));
+	EXPECT_EQ( 0, port ) << "reported a port from an unterminated line";
+
+	// The rest turns up and it becomes trustworthy.
+	EXPECT_TRUE( ParseHostReadyLine( "[fua-host] ready 10667\n", &port ));
+	EXPECT_EQ( 10667, port );
+}
+
+TEST( HostReadyLine, FindsTheLineAmongOtherOutput )
+{
+	// The server is chatty; the marker is never alone in the buffer.
+	int port = 0;
+	EXPECT_TRUE( ParseHostReadyLine(
+		"Resolving...\nUDP initialised\n[fua-host] ready 10666\nMAP01 - Entryway\n", &port ));
+	EXPECT_EQ( 10666, port );
+}
+
+TEST( HostReadyLine, AReadyLineWithoutAPortIsStillReady )
+{
+	// It means "up, but not saying where" -- so the caller keeps whatever it already assumed rather
+	// than being handed a zero to connect to.
+	int port = 4321;
+	EXPECT_TRUE( ParseHostReadyLine( "[fua-host] ready\n", &port ));
+	EXPECT_EQ( 4321, port ) << "clobbered the caller's port with nothing";
+}
+
+TEST( HostReadyLine, IgnoresAPortThatCannotBeOne )
+{
+	// Malformed means say nothing, not guess. A truncated or corrupted line must not produce a port
+	// number that is merely plausible.
+	int port = 1234;
+	EXPECT_TRUE( ParseHostReadyLine( "[fua-host] ready 99999999\n", &port ));
+	EXPECT_EQ( 1234, port );
+
+	EXPECT_TRUE( ParseHostReadyLine( "[fua-host] ready 0\n", &port ));
+	EXPECT_EQ( 1234, port );
+
+	EXPECT_TRUE( ParseHostReadyLine( "[fua-host] ready abc\n", &port ));
+	EXPECT_EQ( 1234, port );
+}
+
+TEST( HostReadyLine, ToleratesCarriageReturnsAndExtraSpacing )
+{
+	// Windows pipes carry CRLF, and the child formats with a single space today -- neither is
+	// something the parser should depend on.
+	int port = 0;
+	EXPECT_TRUE( ParseHostReadyLine( "[fua-host] ready   10668\n", &port ));
+	EXPECT_EQ( 10668, port );
+}
+
+TEST( HostReadyLine, SurvivesANullPortPointer )
+{
+	// The readiness fact is useful on its own; a caller that only wants that must not have to supply
+	// somewhere to put a number it will not read.
+	EXPECT_TRUE( ParseHostReadyLine( "[fua-host] ready 10666\n", NULL ));
 }

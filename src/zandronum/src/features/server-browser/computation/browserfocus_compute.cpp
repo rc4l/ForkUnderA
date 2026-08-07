@@ -6,7 +6,7 @@
 namespace zx
 {
 
-NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastTab )
+NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, int tabIndex, int tabCount )
 {
 	NavResult out;
 	out.focus = focus;
@@ -23,19 +23,19 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastT
 	case BrowserFocus::Tabs:
 		if ( key == NavKey::Left )
 		{
-			// The start of the row is the start of the row. Only a tab that has something to its left
-			// steps left; the first one stays put rather than wrapping to the far end, for the same
-			// reason Right does not wrap.
-			out.tabStep = onLastTab ? -1 : 0;
+			// The start of the row is the start of the row. A tab with something to its left steps
+			// left; the first one stays put rather than wrapping to the far end, for the same reason
+			// Right does not wrap.
+			out.tabStep = ( tabIndex > 0 ) ? -1 : 0;
 		}
 		else if ( key == NavKey::Right )
 		{
 			// Off the end of the tabs is the search box, not a wrap back to the first one -- they are
 			// stops on the same row, and looping among the tabs would leave the box unreachable.
-			if ( onLastTab )
-				out.focus = BrowserFocus::Search;
-			else
+			if ( tabIndex < tabCount - 1 )
 				out.tabStep = 1;
+			else
+				out.focus = BrowserFocus::Search;
 		}
 		else if (( key == NavKey::Down ) && hasRows )
 			out.focus = BrowserFocus::Rows;

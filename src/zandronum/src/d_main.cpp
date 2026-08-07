@@ -72,6 +72,7 @@
 #include "features/wad-serve/zx_wadserve.h" // [rc4l] serving this server's own WADs to joiners
 #include "features/server-hosting/zx_hosting.h" // [rc4l] hosting a server from inside the game
 #include "features/server-hosting/zx_hostwatchdog.h" // [rc4l] and dying with the game that started us
+#include "features/port-mapping/zx_portmap.h" // [rc4l] and giving back any port we asked for
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "s_sound.h"
 #include "v_video.h"
@@ -2456,6 +2457,10 @@ static void D_DoomInit()
 	// which has no PR_SET_PDEATHSIG, and a second lock on the door elsewhere. Registered this early
 	// because a startup that fails after the spawn still has to clean up after itself.
 	atterm( zx::HostShutdown );
+
+	// A port mapping outlives the game unless something gives it back, and a quit is the commonest
+	// way for one to be forgotten.
+	atterm( zx::PortMapShutdown );
 	zx::HostWatchdogInit( );
 
 	gamestate = GS_STARTUP;
