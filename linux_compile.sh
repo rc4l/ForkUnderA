@@ -129,6 +129,11 @@ if [ -f tools/freedoom/freedoom2.wad ]; then
   cp tools/freedoom/License.txt "$STAGE"/FREEDOOM-LICENSE.txt
 fi
 
+# [rc4l] The addon catalogue. Required rather than best-effort: the HOST tab reads it from beside
+# the binary, and a build without it offers nothing to host.
+[ -d catalogue ] || { echo "ERROR: catalogue/ missing -- the HOST tab would have nothing to offer" >&2; exit 1; }
+cp -r catalogue "$STAGE"/
+
 # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and say where the
 # corresponding source is, so these are required rather than best-effort.
 cp LICENSE.txt "$STAGE"/
