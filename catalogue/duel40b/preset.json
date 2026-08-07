@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "duel40b",
+  "name": "Duel 40 (b)",
+  "summary": "Forty-map duel pack.",
+
+  "fills": ["maps"],
+  "locks": [],
+
+  "actors": "additive",
+  "_actors_why": "DECORATE defines four CustomInventory pickups (InfiniCell and friends) and replaces nothing, so a gameplay mod has nothing to fight it for.",
+
+  "iwad": "doom2.wad",
+  "_iwad_why": "config/iwadsubstitutes.txt already maps doom2.wad to freedoom2.wad, so Freedoom slots in with no work here.",
+
+  "files": [
+    {
+      "name": "duel40b.pk3",
+      "md5": "aa3896cb47c781facab7ea7f39395201",
+      "size": 6759900
+    }
+  ],
+
+  "conflictsWith": []
+}

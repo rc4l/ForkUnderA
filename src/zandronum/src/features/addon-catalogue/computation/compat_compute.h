@@ -33,15 +33,17 @@ enum class AddonSlot
 	Count,
 };
 
-// Whether an addon's maps carry their own actors. A mappack using only stock monsters composes with
-// any gameplay mod; one shipping its own DECORATE fights that mod for the same actor names. This one
-// flag is the difference between "mappacks work with Brutal Doom" being true and being a support
-// burden.
-enum class ActorStyle
+// What an addon's DECORATE does to the actors a gameplay mod also wants to define.
+//
+// The distinction is REPLACEMENT, not the mere presence of DECORATE. duel40b ships four
+// CustomInventory pickups of its own and replaces nothing, so it sits under Brutal Doom perfectly
+// happily. An earlier cut of this called that "custom actors" and would have warned about it
+// forever, because anyone labelling it would open the pk3, see a DECORATE lump, and tick the box.
+enum class ActorImpact
 {
-	Unknown,	// not declared; treated as Custom, because guessing wrong the safe way costs a warning
-	Vanilla,
-	Custom,
+	Unknown,	// not declared; treated as Replaces, since guessing wrong the safe way costs a warning
+	Additive,	// defines its own actors, replaces none: composes with anything
+	Replaces,	// replaces stock actors, so a gameplay mod will fight it for the same names
 };
 
 struct Addon
@@ -49,16 +51,16 @@ struct Addon
 	std::string id;
 	std::vector<AddonSlot> fills;	// slots this occupies
 	std::vector<AddonSlot> locks;	// slots nothing else may occupy alongside it
-	ActorStyle actors;
+	ActorImpact actors;
 	std::vector<std::string> conflictsWith;	// ids, for the specific pairs no rule predicts
 
-	Addon() : actors(ActorStyle::Unknown) {}
+	Addon() : actors(ActorImpact::Unknown) {}
 };
 
 enum class Verdict
 {
 	Allowed,	// including combinations nobody has tried; silence on an untried pair is correct
-	Warned,		// loads, but a declared conflict or custom actors under a gameplay mod
+	Warned,		// loads, but a declared conflict or actor-replacing maps under a gameplay mod
 	Blocked,	// arity or a lock; cannot proceed
 };
 
@@ -82,7 +84,7 @@ std::vector<std::string> LoadOrder(const std::vector<Addon> &selected);
 // guessing, so an entry written for a newer schema is skipped instead of misread.
 bool SlotFromName(const char *name, AddonSlot &out);
 const char *NameForSlot(AddonSlot slot);
-bool ActorStyleFromName(const char *name, ActorStyle &out);
+bool ActorImpactFromName(const char *name, ActorImpact &out);
 
 } // namespace zx
 
