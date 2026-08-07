@@ -445,3 +445,54 @@ TEST(HostPort, AnUnusableDefaultStillYieldsSomethingBindable)
 	// bind failure the player gets blamed for.
 	EXPECT_TRUE(IsUsablePort(ResolveHostPort(0, 80)));
 }
+
+// ---------------------------------------------------------------- a catalogue entry's server.cfg
+
+TEST(HostArgs, ExecsACatalogueEntrysConfig)
+{
+	HostConfig config = Basic();
+	config.execCfg = "F:/ZandroX/catalogue/duel40/server.cfg";
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	ASSERT_TRUE(Has(args, "+exec"));
+	EXPECT_EQ("F:/ZandroX/catalogue/duel40/server.cfg", ValueAfter(args, "+exec"));
+}
+
+TEST(HostArgs, TheConfigIsExecdBeforeTheMapIsChosen)
+{
+	// The server applies these in order, and an entry's cfg is a pile of addmap lines. Exec'ing it
+	// after +map would let the entry decide where the host lands instead of the host.
+	HostConfig config = Basic();
+	config.execCfg = "catalogue/duel40/server.cfg";
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	ASSERT_TRUE(Has(args, "+exec"));
+	ASSERT_TRUE(Has(args, "+map"));
+	EXPECT_LT(IndexOf(args, "+exec"), IndexOf(args, "+map"));
+}
+
+TEST(HostArgs, NoConfigMeansNoExecAtAll)
+{
+	// Most hosts are the manual form, which has no entry and therefore no cfg. An empty +exec would
+	// be the server trying to read a file called nothing.
+	EXPECT_FALSE(Has(BuildHostArgs("z", Basic()), "+exec"));
+}
+
+TEST(HostArgs, AConfigPathIsAllowedToBeAPathButNotAnArgument)
+{
+	// Unlike a WAD name this is deliberately a path, since the file lives in the entry's own folder.
+	// What it still may not be is something that reads as another flag.
+	HostConfig config = Basic();
+
+	config.execCfg = "-host";
+	EXPECT_FALSE(Has(BuildHostArgs("z", config), "+exec")) << "a value that reads as a flag";
+
+	config.execCfg = "cat/a b/server.cfg";
+	EXPECT_TRUE(Has(BuildHostArgs("z", config), "+exec")) << "a space is fine; args are a vector";
+
+	config.execCfg = "cat/\"quoted\"/server.cfg";
+	EXPECT_FALSE(Has(BuildHostArgs("z", config), "+exec")) << "a quote is not";
+}
+

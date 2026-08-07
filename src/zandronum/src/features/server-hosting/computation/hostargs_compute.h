@@ -37,6 +37,11 @@ struct HostConfig
 	std::string iwad;				// bare filename
 	std::vector<std::string> pwads;	// bare filenames, in load order
 	std::string map;				// starting map lump
+	// [rc4l] A catalogue entry's server.cfg, exec'd by the server so it can set its own gamemode,
+	// map rotation and flags. A PATH rather than a bare filename, which is why it is checked with
+	// IsSafeArgValue rather than IsBareFileName: the file lives in the entry's own folder and the
+	// server has no reason to go looking for it anywhere else.
+	std::string execCfg;
 	std::string password;			// empty for an open server
 	std::string joinPassword;		// empty unless the operator wants a join gate
 	std::string rconSecret;			// the one-shot secret the host authenticates with
