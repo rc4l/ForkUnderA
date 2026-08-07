@@ -1404,8 +1404,9 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		}
 
 		// [rc4l] uzdoom pain cluster: only ask the actor to absorb damage that still exists.
-		if (damage > 0)
-			damage = target->TakeSpecialDamage (inflictor, source, damage, mod);
+		// [rc4l] uzdoom@66c3c9352 -- called even for zero damage, so an actor can still react
+		// (and raise the damage) when the incoming amount is 0.
+		damage = target->TakeSpecialDamage (inflictor, source, damage, mod);
 	}
 	// [rc4l] uzdoom pain cluster: a player's cheats have not been consulted yet, so let them
 	// through to that block rather than returning here.
