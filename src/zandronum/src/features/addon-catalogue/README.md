@@ -1,79 +1,91 @@
 # features/addon-catalogue
 
-An offline catalogue of addons, so hosting Brutal Doom is a pick from a list rather than a hunt for
-six files in the right order.
+An offline catalogue of things you can play, so hosting Duel 40 is a pick from a list rather than a
+hunt for the right files in the right order.
 
-## The shape
+## An entry
 
-An addon is a **descriptor, not content**. We cannot legally ship Brutal Doom, and we do not need to:
-the entry names files by hash, and `features/wad-download` already fetches them from mirrors into the
-by-hash store. A catalogue entry is a pre-filled `HostConfig` plus a download plan.
+A folder in `catalogue/`, complete and hostable on its own.
 
 ```
-catalogue/                  next to the exe, shipped in the release
-  index.json                generated at packaging time; scan the folder if absent
-  brutal-doom/
-    preset.json             what it is: slots, hashes, compatibility
-    server.cfg              how it launches: dmflags, gamemode, cvars
-<userdir>/catalogue/        the player's own entries, and the pressure valve when a shipped hash
-                            goes stale
+catalogue/duel40/
+  addon.json     what to load: name, iwad, files with their md5
+  server.cfg     how it plays: gamemode, map rotation, dmflags
 ```
 
-Folders are flat and id-keyed. The taxonomy lives in `preset.json`, never in the path, because the
-picker already groups by role at runtime and a path-borne category is a second source of truth that
-drifts the first time something is recategorised.
+**We read `addon.json`. Zandronum reads `server.cfg`.** We hand the second over with `+exec` and
+never parse it, which is why reusing its own format was worth doing: a format we cannot get wrong,
+and one operators already know how to write.
 
-## Why slots instead of combinations
+The **folder name is the id**. It is never read from inside the file, because the folder is what a
+player renames and two sources for one identity can only disagree.
 
-N mappacks against M gameplay mods is N×M pairings and nobody can author that. So an entry declares
-what it **fills** and what it **locks**, and the combination is composed at pick time. That is N+M of
-curation for N×M of coverage.
+An entry is **N files in load order**, not one. Skulltag is its content pk3 then a spree announcer.
+Anything that is not something you would pick on its own is a line in some entry's `files[]` rather
+than an entry of its own, which is what keeps `catalogue/` a list of choices.
 
-| addon | fills | locks |
-|---|---|---|
-| Alien Vendetta, Scythe | `maps` | |
-| Brutal Doom, Complex Doom | `gameplay` | |
-| Skulltag | `gameplay`, `maps` | |
-| Stronghold, All Out War | `gameplay`, `maps` | `gameplay`, `maps` |
+Entries **ship manifests, not content**. We cannot legally ship Brutal Doom and do not need to: the
+md5 goes to `features/wad-download`, which already fetches from mirrors into the by-hash store.
 
-`locks` is the whole difference between a total conversion that tolerates a mappack and one that is
-its own game. A lock is only violated by somebody *else* filling the slot, so an entry filling and
-locking the same slot is legal, which is the point of locking it.
+## No composition, for now
 
-Load order comes from the slot and never from the user: iwad, maps, gameplay, patch, cosmetic. That
-ordering is what makes a gameplay mod's actors win over the mappack under it.
+Every entry is complete. Nothing combines with anything. "Brutal Doom on Sunlust" is its own folder
+if someone wants it.
 
-## What this will and will not tell you
+That is a deliberate cut. A slot model paying for itself needs a catalogue big enough that authoring
+the popular pairs by hand costs more than the machinery does, and at the tens of entries this starts
+at, it does not. `compat_compute` is in the tree, tested and unwired, for the day that changes.
 
-It answers **"will this load and work"**, never "is this a good idea". A duel mappack under a weapons
-mod is legal and usually unwise; a validator that editorialises about taste does not get believed
-about correctness either.
+## Presentation
 
-Three verdicts, because two is not enough:
+The picker is its **own screen, not a deeper menu**. People do not dig through menus, so it is a tab
+beside PUBLIC and PRIVATE rather than a level below HOST, and everything happens on it.
 
-- **Blocked** on arity or a lock, and it cannot proceed.
-- **Warned** on a declared conflict, or custom-actor maps under a gameplay mod.
-- **Allowed** for everything else, *including pairs nobody has tried*. Silence on an untried
-  combination is the correct answer, not a gap, and it is why this scales.
+```
+PUBLIC   PRIVATE   [ HOST ]
+--------------------------------------------
+ search: ___          | Duel 40
+                      | Forty-map duel pack.
+ > Duel 40            |
+   Skulltag           | Loads 2 files, 42 maps
+   Custom setup...    | On freedoom2 (wants doom2)
+                      |
+                      | Name    My Server
+                      | Players 8
+                      |   [ START SERVER ]
+```
 
-## Where the rules live
+Same list-and-detail shape the browser already uses, so no new interaction to learn. Custom is a row
+rather than a mode, so the manual form costs a step only for the people who want it.
 
-Facts in data, rules in code. `compat_compute.cpp` holds arity, locks, ordering and nothing else. A
-per-pair rule must never appear there: the moment `if (brutal && duel40)` is written in C++, every
-new mod becomes a code change. Known-bad specific pairs are `conflictsWith` in the entries, a list
-proportional to the problems people actually hit rather than to the matrix.
+**The picker knows nothing about hosting.** It answers "what do you want to play" and returns an id.
+That one rule is what lets an offline picker reuse it later with only the right-hand panel differing.
 
-## Notes for later
+**Search is the interface at scale.** Past a few screens nobody browses, so it is built in from the
+start rather than added once the list is already too long, and selection follows the entry rather
+than the row so typing never moves the highlight onto something else.
 
-- Slot and actor-style names are parsed **by name, never by ordinal**, because they are written into
-  files that ship on players' disks. Renumbering would silently change what an unchanged entry means.
-  Same hazard `tools/wire-enum-snapshot.py` guards on the wire.
-- The shipped catalogue and the engine always ship together and so cannot drift. Only
-  `<userdir>/catalogue/` can be stale, which is what the per-file `schema` version is for, and an
-  unknown entry there must be skipped with a message rather than failing startup.
-- Offline is deliberate. Reading `index.json` from disk and fetching it from GitHub Pages later are
-  the same file and the same parse, so nothing here forecloses that.
+## The units
+
+| unit | answers |
+|---|---|
+| `addonfile_compute` | what one `addon.json` says, or why it was refused |
+| `iwadpick_compute` | which IWAD to actually host on |
+| `pickerview_compute` | which rows are visible and which is selected |
+| `compat_compute` | whether a set may load together (unwired) |
+
+## Notes
+
+- The reader takes a **restricted JSON**: one flat object, strings and ints, one array of flat
+  objects. Widening it past the schema would only widen what can go wrong, and these files come off a
+  player's disk as readily as out of our release. Unknown keys are skipped so a later optional field
+  cannot orphan older entries.
+- Entries carry a `schema`. The shipped catalogue and the engine always ship together and cannot
+  drift, so this exists for `<userdir>/catalogue/`, and an entry from the future is skipped with a
+  message rather than read with today's meanings.
+- Offline is deliberate. Reading an index from disk and fetching one from GitHub Pages later are the
+  same parse, so nothing here forecloses it.
 
 ## Status
 
-`compat_compute` only. No parser, no resolver, no UI yet.
+Parsing and picking. No loader walking the folder yet, no UI, nothing wired.
