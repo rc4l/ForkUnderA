@@ -357,10 +357,10 @@ struct FMapThing
 	// [rc4l] uzdoom@51591d10b -- the editor number and the entry it resolves to are both kept, so
 	// code that runs outside P_SpawnMapThing (slope things, polyobject spots) can consult the
 	// entry without repeating the lookup.
-	FDoomEdEntry *info;
-	short		EdNum;
 	WORD		SkillFilter;
 	WORD		ClassFilter;
+	short		EdNum;
+	FDoomEdEntry *info;
 	DWORD		flags;
 	int			special;
 	int			args[5];

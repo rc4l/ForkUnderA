@@ -792,14 +792,16 @@ vertex_t *FindVertex (fixed_t x, fixed_t y)
 static void CreateStartSpot (SDWORD *pos, FMapThing *start)
 {
 	short angle = LittleShort(*(WORD *)(&pos[3]));
-	FMapThing mt =
-	{
-		0, (LittleLong(pos[0])<<12), ((-LittleLong(pos[1]))<<12), 0,// tid, x, y, z
-		short(Scale ((2048-angle)&2047, 360, 2048)), DoomEdMap.CheckKey(1), 1,	// angle, info, EdNum
-		0, 0,							// Skillfilter, Classfilter
-		7|MTF_SINGLE|224,				// flags
-		0, {0}, 0 						// special is 0, args and Conversation are 0
-	};
+	// [rc4l] uzdoom@bbbbb7ac9 -- named assignments instead of a positional initialiser, which
+	// silently binds to the wrong members the moment the struct is reordered.
+	FMapThing mt = { 0, };
+
+	mt.x = LittleLong(pos[0])<<12;
+	mt.y = (-LittleLong(pos[1]))<<12;
+	mt.angle = short(Scale((2048-angle)&2047, 360, 2048));
+	mt.info = DoomEdMap.CheckKey(1);
+	mt.EdNum = 1;
+	mt.flags = 7|MTF_SINGLE|224;
 
 	*start = mt;
 }

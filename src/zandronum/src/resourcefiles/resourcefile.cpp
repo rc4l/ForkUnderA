@@ -385,7 +385,11 @@ int FResourceFile::FilterLumps(FString filtername, void *lumps, size_t lumpsize,
 		{
 			FResourceLump *lump = (FResourceLump *)lump_p;
 			assert(lump->FullName.CompareNoCase(filter, (int)filter.Len()) == 0);
-			lump->LumpNameSetup(&lump->FullName[filter.Len()]);
+			// [rc4l] uzdoom@1fddd1859 -- Mid() hands over a copy. Passing a pointer into FullName's
+			// own buffer meant LumpNameSetup was reading the string it was in the middle of
+			// reassigning. uzdoom@6e45c565a first worked around that with a temporary inside
+			// LumpNameSetup; this is the fix that replaced it.
+			lump->LumpNameSetup(lump->FullName.Mid(filter.Len()));
 		}
 
 		// Move filtered lumps to the end of the lump list.

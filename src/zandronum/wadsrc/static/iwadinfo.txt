@@ -13,6 +13,7 @@ IWad
 IWad
 {
 	Name = "Hacx 2.0"
+	Autoname = "Hacx2"
 	Game = "Doom"
 	Config = "Hacx"
 	Mapinfo = "mapinfo/hacxharm.txt"
@@ -23,6 +24,7 @@ IWad
 IWad
 {
 	Name = "Hacx: Twitch'n Kill"
+	Autoname = "Hacx12"
 	Game = "Doom"
 	Config = "Hacx"
 	Mapinfo = "mapinfo/hacxharm.txt"
@@ -77,6 +79,7 @@ IWad
 IWad
 {
 	Name = "Strife: Teaser (New Version)"
+	Autoname = "Strifeteaser2"
 	Game = "Strife"
 	Config = "Strife"
 	Mapinfo = "mapinfo/strife.txt"
@@ -88,6 +91,7 @@ IWad
 IWad
 {
 	Name = "Strife: Teaser (Old Version)"
+	Autoname = "Strifeteaser1"
 	Game = "Strife"
 	Config = "Strife"
 	Mapinfo = "mapinfo/strife.txt"
@@ -99,6 +103,7 @@ IWad
 IWad
 {
 	Name = "Hexen: Beyond Heretic"
+	Autoname = "Hexen1"
 	Game = "Hexen"
 	Config = "Hexen"
 	Mapinfo = "mapinfo/hexen.txt"
@@ -157,6 +162,7 @@ IWad
 IWad
 {
 	Name = "Heretic"
+	Autoname = "Heretic1"
 	Game = "Heretic"
 	Config = "Heretic"
 	Mapinfo = "mapinfo/heretic.txt"
