@@ -61,6 +61,7 @@ extern HWND Window;
 #include "doomstat.h"
 #include "i_system.h"
 #include "gi.h"
+#include "d_main.h"
 // [BC] New #includes.
 #include "network.h"
 #include "g_shared/pwo.h"
@@ -80,7 +81,7 @@ EXTERN_CVAR (Color, am_cdwallcolor)
 EXTERN_CVAR (Float, spc_amp)
 EXTERN_CVAR (Bool, wi_percents)
 
-FGameConfigFile::FGameConfigFile ()
+FGameConfigFile::FGameConfigFile (FIWadManager *iwad_man)
 {
 #ifdef __APPLE__
 	FString user_docs, user_app_support, local_app_support;
@@ -168,46 +169,37 @@ FGameConfigFile::FGameConfigFile ()
 	// Create auto-load sections, so users know what's available.
 	// Note that this totem pole is the reverse of the order that
 	// they will appear in the file.
-	// [rc4l] uzdoom@a5c75c1b1 gave these IWADs Autonames but never added matching sections, so
-	// they are absent from the generated config and a user would have to know to add them by
-	// hand. Upstream still has none of them.
-	CreateSectionAtStart("Hacx2.Autoload");
-	CreateSectionAtStart("Hacx12.Autoload");
-#if 0
-	// [rc4l] uzdoom@258822ef3 disabled this block rather than renaming every entry to the new
-	// dotted form. The sections are created on demand instead, so nothing is pre-seeded --
-	// which also retires the six I added for the Hacx and teaser IWADs a few commits back.
-	CreateSectionAtStart("Harmony.Autoload");
-	CreateSectionAtStart("UrbanBrawl.Autoload");
-	CreateSectionAtStart("Chex3.Autoload");
-	CreateSectionAtStart("Chex1.Autoload");
-	CreateSectionAtStart("Chex.Autoload");
-	CreateSectionAtStart("Strifeteaser2.Autoload");
-	CreateSectionAtStart("Strifeteaser1.Autoload");
-	CreateSectionAtStart("Strife.Autoload");
-	CreateSectionAtStart("HexenDK.Autoload");
-	CreateSectionAtStart("Hexen1.Autoload");
-	CreateSectionAtStart("Hexen.Autoload");
-	// [rc4l] Blasphemer is a Zandronum-only IWAD entry, so upstream never grew a
-	// section for it; without one its Autoname matches nothing and its autoload
-	// silently does nothing -- the same bug uzdoom@b47cb9027 fixed for the others.
-	CreateSectionAtStart("Blasphemer.Autoload");
-	CreateSectionAtStart("HereticSR.Autoload");
-	CreateSectionAtStart("Heretic1.Autoload");
-	CreateSectionAtStart("Heretic.Autoload");
-	CreateSectionAtStart("FreeDM.Autoload");
-	CreateSectionAtStart("Freedoom2.Autoload");
-	CreateSectionAtStart("Freedoom1.Autoload");
-	CreateSectionAtStart("Freedoom.Autoload");
-	CreateSectionAtStart("Plutonia.Autoload");
-	CreateSectionAtStart("TNT.Autoload");
-	CreateSectionAtStart("Doom2BFG.Autoload");
-	CreateSectionAtStart("Doom2.Autoload");
-	CreateSectionAtStart("DoomU.Autoload");
-	CreateSectionAtStart("Doom1.Autoload");
-	CreateSectionAtStart("DoomBFG.Autoload");
-	CreateSectionAtStart("Doom.Autoload");
-#endif
+	// [rc4l] uzdoom@dfda74ffe -- the sections are generated from the IWAD list instead of being
+	// listed by hand, one per dotted prefix, which is why the config needs the IWAD manager.
+	double last = 0;
+	if (SetSection ("LastRun"))
+	{
+		const char *lastver = GetValueForKey ("Version");
+		if (lastver != NULL) last = atof(lastver);
+	}
+
+	// don't create the autoload section if we are about to migrate an old config because it'd mess up the upcoming migration step.
+	// This will be taken care of once the game runs again with the migrated config file.
+	if (last >= 211)
+	{
+		const FString *pAuto;
+		for (int num = 0; (pAuto = iwad_man->GetAutoname(num)) != NULL; num++)
+		{
+			if (!(iwad_man->GetIWadFlags(num) & GI_SHAREWARE))	// we do not want autoload sections for shareware IWADs (which may have an autoname for resource filtering)
+			{
+				FString workname = *pAuto;
+
+				while (workname.IsNotEmpty())
+				{
+					FString section = workname + ".Autoload";
+					CreateSectionAtStart(section.GetChars());
+					long dotpos = workname.LastIndexOf('.');
+					if (dotpos < 0) break;
+					workname.Truncate(dotpos);
+				}
+			}
+		}
+	}
 	CreateSectionAtStart("Global.Autoload");
 
 	// The same goes for auto-exec files.

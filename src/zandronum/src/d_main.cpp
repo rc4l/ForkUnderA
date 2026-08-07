@@ -2500,9 +2500,6 @@ static void D_DoomInit()
 
 	FRandom::StaticClearRandom ();
 
-	Printf ("M_LoadDefaults: Load system defaults.\n");
-	M_LoadDefaults ();			// load before initing other systems
-
 }
 
 //==========================================================================
@@ -2803,6 +2800,7 @@ void D_DoomMain (void)
 	const char *v;
 	const char *wad;
 	DArgs *execFiles;
+	FIWadManager *iwad_man = NULL;
 	TArray<FString> pwads;
 	/* [BB] Zandronum uses different bot code and thus doesn't need these.
 	FString *args;
@@ -2839,8 +2837,6 @@ void D_DoomMain (void)
 	}
 
 	D_DoomInit();
-	PClass::StaticInit ();
-	atterm(FinalGC);
 
 	// [RH] Make sure zdoom.pk3 is always loaded,
 	// as it contains magic stuff we need.
@@ -2851,6 +2847,19 @@ void D_DoomMain (void)
 		I_FatalError ("Cannot find " BASEWAD);
 	}
 	FString basewad = wad;
+
+	// [rc4l] uzdoom@dfda74ffe -- the IWAD list is parsed before the config loads, so the config
+	// can generate an autoload section per IWAD. M_LoadDefaults moves out of D_DoomInit to here;
+	// Zandronum's map rotation, pathing and callvote constructors still run ahead of it inside
+	// D_DoomInit, which is what the comment there requires.
+	iwad_man = new FIWadManager;
+	iwad_man->ParseIWadInfos(basewad);
+
+	Printf ("M_LoadDefaults: Load system defaults.\n");
+	M_LoadDefaults (iwad_man);			// load before initing other systems
+
+	PClass::StaticInit ();
+	atterm(FinalGC);
 
 
 	// reinit from here
@@ -2879,7 +2888,7 @@ void D_DoomMain (void)
 		// restart is initiated without a defined IWAD assume for now that it's not going to change.
 		if (iwad.IsEmpty()) iwad = lastIWAD;	// [rc4l] uzdoom@484eb347c
 
-		FIWadManager *iwad_man = new FIWadManager;
+		if (iwad_man == NULL) iwad_man = new FIWadManager;
 		const FIWADInfo *iwad_info = iwad_man->FindIWAD(allwads, iwad, basewad);
 		gameinfo.gametype = iwad_info->gametype;
 		gameinfo.flags = iwad_info->flags;
