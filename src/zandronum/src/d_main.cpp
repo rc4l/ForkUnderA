@@ -2819,8 +2819,8 @@ void D_DoomMain (void)
 
 	if (Args->CheckParm("-hashfiles"))
 	{
-		FString filename = "fileinfo.txt";
-		Printf("Hashing loaded content to: %s\n", filename.GetChars());
+		const char *filename = "fileinfo.txt";
+		Printf("Hashing loaded content to: %s\n", filename);
 		hashfile = fopen(filename, "w");
 		if (hashfile)
 		{
