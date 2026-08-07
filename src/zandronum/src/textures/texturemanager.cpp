@@ -218,12 +218,17 @@ FTextureID FTextureManager::CheckForTexture (const char *name, int usetype, BITF
 	if ((flags & TEXMAN_TryAny) && usetype != FTexture::TEX_Any)
 	{
 		// Never return the index of NULL textures.
+		// [rc4l] uzdoom@8c052818b: the return used to sit out here, so a miss returned -1 and the
+		// full-path lookup below was dead for every caller that passed a specific use type with
+		// TEXMAN_TryAny -- which is what GLDEFS uses for `brightmap texture "some/path.png"`.
+		// The brightmap silently did nothing, because ParseBrightmap's `if (!tex) return;` says
+		// nothing either. Only the short-name form worked. Falling through is the whole fix.
 		if (firstfound != -1)
 		{
 			if (firsttype == FTexture::TEX_Null) return FTextureID(0);
 			if (firsttype == FTexture::TEX_FirstDefined && !(flags & TEXMAN_ReturnFirst)) return FTextureID(0);
+			return FTextureID(firstfound);
 		}
-		return FTextureID(firstfound);
 	}
 
 	
