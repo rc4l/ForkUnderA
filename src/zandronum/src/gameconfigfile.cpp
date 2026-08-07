@@ -178,6 +178,28 @@ FGameConfigFile::FGameConfigFile (FIWadManager *iwad_man)
 		if (lastver != NULL) last = atof(lastver);
 	}
 
+	// [rc4l] uzdoom@e75bdf86d -- the renaming moves out of DoGlobalSetup to here, so it happens
+	// before the generation guard is evaluated. Generation itself still waits for the next run,
+	// as the comment below says; what this buys is that the next run sees migrated names.
+	if (last < 211)
+	{
+		RenameSection("Chex3.Autoload", "chex.chex3.Autoload");
+		RenameSection("Chex1.Autoload", "chex.chex1.Autoload");
+		RenameSection("HexenDK.Autoload", "hexen.deathkings.Autoload");
+		RenameSection("HereticSR.Autoload", "heretic.shadow.Autoload");
+		RenameSection("FreeDM.Autoload", "doom.freedoom.freedm.Autoload");
+		RenameSection("Freedoom2.Autoload", "doom.freedoom.phase2.Autoload");
+		RenameSection("Freedoom1.Autoload", "doom.freedoom.phase1.Autoload");
+		RenameSection("Freedoom.Autoload", "doom.freedoom.Autoload");
+		RenameSection("DoomBFG.Autoload", "doom.doom1.bfg.Autoload");
+		RenameSection("DoomU.Autoload", "doom.doom1.ultimate.Autoload");
+		RenameSection("Doom1.Autoload", "doom.doom1.registered.Autoload");
+		RenameSection("TNT.Autoload", "doom.doom2.tnt.Autoload");
+		RenameSection("Plutonia.Autoload", "doom.doom2.plutonia.Autoload");
+		RenameSection("Doom2BFG.Autoload", "doom.doom2.bfg.Autoload");
+		RenameSection("Doom2.Autoload", "doom.doom2.commercial.Autoload");
+	}
+
 	// don't create the autoload section if we are about to migrate an old config because it'd mess up the upcoming migration step.
 	// This will be taken care of once the game runs again with the migrated config file.
 	if (last >= 211)
@@ -232,9 +254,10 @@ FGameConfigFile::FGameConfigFile (FIWadManager *iwad_man)
 		"# Wad files to automatically load depending on the game and IWAD you are\n"
 		"# playing.  You may have have files that are loaded for all similar IWADs\n"
 		"# (the game) and files that are only loaded for particular IWADs. For example,\n"
-		"# any files listed under Doom.Autoload will be loaded for any version of Doom,\n"
-		"# but files listed under Doom2.Autoload will only load when you are\n"
-		"# playing Doom 2.\n\n");
+		"# any files listed under 'doom.Autoload' will be loaded for any version of Doom,\n"
+		"# but files listed under 'doom.doom2.Autoload' will only load when you are\n"
+		"# playing a Doom 2 based game (doom2.wad, tnt.wad or plutonia.wad), and files listed under\n"
+		"# 'doom.doom2.commercial.Autoload' only when playing doom2.wad.\n\n");
 }
 
 FGameConfigFile::~FGameConfigFile ()
@@ -269,26 +292,6 @@ void FGameConfigFile::DoGlobalSetup ()
 				{
 					noblitter->ResetToDefault ();
 				}
-			}
-			if (last < 211)
-			{
-				// [rc4l] uzdoom@3114a26bc -- the autoload sections take dotted hierarchical names,
-				// so an existing config keeps its contents rather than silently starting empty.
-				// Upstream leaves the first three commented out; kept as they had them.
-				RenameSection("Chex3.Autoload", "chex.3.Autoload");
-				RenameSection("Chex1.Autoload", "chex.1.Autoload");
-				RenameSection("HexenDK.Autoload", "hexen.deathkings.Autoload");
-				RenameSection("HereticSR.Autoload", "heretic.shadow.Autoload");
-				RenameSection("FreeDM.Autoload", "doom.freedoom.freedm.Autoload");
-				RenameSection("Freedoom2.Autoload", "doom.freedoom.phase2.Autoload");
-				RenameSection("Freedoom1.Autoload", "doom.freedoom.phase1.Autoload");
-				RenameSection("DoomBFG.Autoload", "doom.doom1.bfg.Autoload");
-				RenameSection("DoomU.Autoload", "doom.doom1.ultimate.Autoload");
-				RenameSection("Doom1.Autoload", "doom.doom1.registered.Autoload");
-				RenameSection("TNT.Autoload", "doom.doom2.tnt.Autoload");
-				RenameSection("Plutonia.Autoload", "doom.doom2.plutonia.Autoload");
-				RenameSection("Doom2BFG.Autoload", "doom.doom2.bfg.Autoload");
-				RenameSection("Doom2.Autoload", "doom.doom2.commercial.Autoload");
 			}
 			if (last < 202)
 			{
