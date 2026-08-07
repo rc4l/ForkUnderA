@@ -369,12 +369,22 @@ void SERVERREGISTRY_RequestServerVerification( const SERVER_s &Server )
 	g_MessageBuffer.ByteStream.WriteString( Server.RegistryBanlistVerificationString.c_str() );
 	g_MessageBuffer.ByteStream.WriteLong( Server.ServerVerificationInt );
 
-	// [rc4l] From the PROBE socket. This packet is what the engine treats as proof that the outside
-	// world can reach a server, and sent from the socket the server announced to it proved no such
-	// thing: the announce had already opened a NAT mapping for us, so it arrived however closed the
-	// port was to everyone else. A player's server showed "the internet can reach this server" while
-	// nobody else could see it at all.
-	NETWORK_LaunchProbePacket( &g_MessageBuffer, Server.Address );
+	// [rc4l] From the MAIN socket, and it has to stay that way. Do not "fix" this to use the probe
+	// socket, which was tried and took the whole registry down for forty minutes.
+	//
+	// The temptation is real: sent from the socket the server announced to, this packet proves less
+	// than it appears to, because the announce already opened a NAT mapping for us and the reply
+	// arrives however closed the port is to everyone else.
+	//
+	// But servers refuse it. SERVER_SERVERREGISTRY_IsAddress compares with NETADDRESS_s::Compare,
+	// which includes the port, so a request from any other port of ours is dropped before it reaches
+	// the handler -- no reply, no verification, and nothing gets listed. Making that work needs a
+	// change on the SERVER side, which would leave every server built before it unlistable, so it
+	// cannot be done from here alone.
+	//
+	// Honesty about reachability lives in the reach probe below instead, which needs no cooperation
+	// from anything but the client that asked.
+	NETWORK_LaunchPacket( &g_MessageBuffer, Server.Address );
 }
 //*****************************************************************************
 //
