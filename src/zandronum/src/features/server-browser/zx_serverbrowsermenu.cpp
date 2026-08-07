@@ -205,6 +205,13 @@
 
 #define SB_FOOTER_Y			( SB_ROWS_BOTTOM + 20 )
 
+// [rc4l] The refresh button, bottom left, beneath the list rather than beside it. The footer text is
+// centred, so the left corner is the one piece of that line nothing else wants.
+#define SB_REFRESH_W		74
+#define SB_REFRESH_H		14
+#define SB_REFRESH_X		( SB_PANEL_LEFT + 12 )
+#define SB_REFRESH_Y		( SB_FOOTER_Y - 3 )
+
 // [rc4l] The panel's content span, in virtual pixels. ComputePanelRect pads BOTH ends by the corner
 // radius, so the visible gap to the screen edge is ( SB_CONTENT_TOP - radius ) above and
 // ( SB_VIRT_H - SB_CONTENT_BOTTOM - radius ) below. Deriving the top from the bottom is what forces
@@ -379,6 +386,9 @@ enum class BrowserTab { Public, Private, Host };
 const int kTabCount = 3;
 static	BrowserTab		g_Tab = BrowserTab::Public;
 static	int				g_TabHot = -1;
+
+// [rc4l] Hover state for the refresh button, matching how the tabs carry theirs.
+static	bool			g_RefreshHot = false;
 
 
 // [rc4l] What the hosting form was left holding. Archived so a player who hosts the same game every
@@ -4087,9 +4097,71 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] Bottom left, and it does two jobs.
+	//
+	// It gives the player a way to ask, which is what was missing. But the re-check on open already
+	// ran silently under a list that kept its rows -- correct behaviour that is indistinguishable
+	// from nothing happening, and therefore read as an over-eager cache. So the button also REPORTS,
+	// and an automatic refresh lights it up exactly as a pressed one does. The complaint was never
+	// that the list was stale; it was that the work was invisible.
+	void DrawRefreshButton( void )
+	{
+		const bool bBusy = BROWSER_IsRefreshInFlight( );
+
+		const int left = serverbrowser_ToScreenX( SB_REFRESH_X );
+		const int right = serverbrowser_ToScreenX( SB_REFRESH_X + SB_REFRESH_W );
+		const int top = serverbrowser_ToScreenY( SB_REFRESH_Y );
+		const int bottom = serverbrowser_ToScreenY( SB_REFRESH_Y + SB_REFRESH_H );
+
+		const int w = right - left;
+		const int h = bottom - top;
+		if (( w <= 0 ) || ( h <= 0 ))
+			return;
+
+		// Same oval as the tabs: this switches nothing and is not a surface, it is a thing you press.
+		const int radius = h / 2;
+		const int base = bBusy ? 74 : ( g_RefreshHot ? 62 : 38 );
+
+		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+			static_cast<BYTE>( base + 24 ), 200 };
+		const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ),
+			static_cast<BYTE>( base / 2 + 18 ), 215 };
+
+		for ( int row = 0; row < h; ++row )
+		{
+			const int inset = zx::ComputeRoundedInset( row, h, radius );
+			const int rowW = w - 2 * inset;
+			if ( rowW <= 0 )
+				continue;
+
+			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
+			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+		}
+
+		// While busy the label says what is happening rather than what to press: the button is not
+		// disabled, and pressing it again while it works is harmless, but it should not be the only
+		// thing on screen claiming nothing is going on.
+		const char *const label = bBusy ? "CHECKING" : "REFRESH";
+		const int textW = SmallFont->StringWidth( label );
+
+		screen->DrawText( SmallFont, bBusy ? CR_GOLD : CR_GRAY,
+			SB_REFRESH_X + ( SB_REFRESH_W - textW ) / 2, SB_REFRESH_Y + 3, label,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+		// Says what the button does AND what it already does by itself, because the second half is the
+		// part nobody can see.
+		serverbrowser_Tip( SB_REFRESH_X, SB_REFRESH_Y, SB_REFRESH_W, SB_REFRESH_H,
+			bBusy ? "Checking the servers on this list now" :
+			"Check for new servers\nThe list is already re-checked whenever you open it" );
+	}
+
+	//*************************************************************************
+	//
 	void DrawFooter( zx::BrowserPhase phase, const zx::BrowserCounts &counts )
 	{
 		const int y = SB_FOOTER_Y;
+
+		DrawRefreshButton( );
 		FString text;
 
 		// [rc4l] The transfer used to be drawn here as well, because this was the only screen that had
@@ -4375,6 +4447,30 @@ public:
 
 			if ( bOverSearch )
 				return true;
+		}
+
+		// [rc4l] The refresh button. Checked before everything else because it sits under the list, on
+		// the footer line, where nothing else claims a click -- and being first means it can never
+		// lose one to a hit test that happens to be generous at its edges.
+		{
+			g_RefreshHot = (( x >= serverbrowser_ToScreenX( SB_REFRESH_X )) &&
+				( x < serverbrowser_ToScreenX( SB_REFRESH_X + SB_REFRESH_W )) &&
+				( y >= serverbrowser_ToScreenY( SB_REFRESH_Y )) &&
+				( y < serverbrowser_ToScreenY( SB_REFRESH_Y + SB_REFRESH_H )));
+
+			if ( g_RefreshHot )
+			{
+				if ( type == MOUSE_Release )
+				{
+					// Exactly what opening the browser does. Rows are kept and re-checked underneath,
+					// so pressing this never empties the screen -- it just makes the checking visible,
+					// and picks up servers that have appeared since.
+					BROWSER_RefreshListedServers( );
+					BROWSER_QueryServerRegistry( );
+				}
+
+				return true;
+			}
 		}
 
 		// The tabs.

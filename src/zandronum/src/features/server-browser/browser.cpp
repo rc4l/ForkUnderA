@@ -1540,6 +1540,31 @@ static LONG browser_GetListIDByAddress( NETADDRESS_s Address )
 // The client's packet loop needs this: a reply from the server we are PLAYING on arrives from the
 // same address as game traffic, so it has to be told apart from it, and "we asked this address a
 // question and have not had an answer" is the only honest way to tell.
+// [rc4l] Is anything actually being checked right now?
+//
+// Exists so the refresh button can show it. The re-check runs silently underneath a list that keeps
+// its rows, which is the right behaviour and looks exactly like nothing happening -- and a player
+// who cannot see the work concludes the list is a stale cache and asks for a refresh button. This
+// is what makes the button they press honest about the work that was already under way.
+bool BROWSER_IsRefreshInFlight( void )
+{
+	if ( g_bWaitingForServerRegistryResponse )
+		return ( true );
+
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if ( g_BrowserServerList[ulIdx].bRefreshing )
+			return ( true );
+
+		if ( g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY )
+			return ( true );
+	}
+
+	return ( false );
+}
+
+//*****************************************************************************
+//
 // [rc4l] How many servers answered and were hidden for running a different build.
 LONG BROWSER_CountVersionMismatched( void )
 {
