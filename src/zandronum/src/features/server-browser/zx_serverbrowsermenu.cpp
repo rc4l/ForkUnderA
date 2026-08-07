@@ -53,6 +53,7 @@
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
 #include "features/wad-download/zx_wadsearch.h"
+#include "features/wadreload/zx_wadreload.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
@@ -495,7 +496,8 @@ static	int				g_HostEntryHot = -2;	// -2 is "none"; -1 is the Custom row
 // breaks that: the server loads the entry, this client is still on whatever it had, and the join is
 // refused for protected-lump authentication. So when an entry decided the files, the client reloads
 // onto them first.
-static	FString			g_HostEntryReload;
+static	FString			g_HostEntryIwad;
+static	TArray<FString>	g_HostEntryPwads;
 
 // [rc4l] The list scrolls independently of the settings: it grows with the catalogue and they never
 // do, so sharing one offset would drag the form off screen as entries were added.
@@ -1316,18 +1318,25 @@ public:
 			return;
 
 		// [rc4l] A catalogue entry is the one case where the server is NOT running what we are, so
-		// connecting straight to it fails protected-lump authentication. Reloading onto the entry
-		// first does load the right files -- and then loses the connect, because wad_reload restarts
-		// the game loop and the queued command dies with it.
+		// connecting straight to it fails protected-lump authentication: the server has the entry's
+		// files and this client does not.
 		//
-		// So an entry does not auto-join at all. The server comes up and announces itself, and the
-		// player joins it from the list like any other, which goes through the validated reload in
-		// fua_join_selected_server -- the one path that already resolves a server's WADs before
-		// connecting. Auto-joining was only ever safe because the old flow hosted what we were
-		// already running.
-		if ( g_HostEntryReload.IsNotEmpty( ))
+		// RequestReload is what the browser's own join uses, and it is the reason this works where an
+		// earlier attempt did not. Queueing `wad_reload` and a `connect` behind it loses the connect,
+		// because the reload restarts the game loop and takes the queued command with it. This
+		// instead rewrites argv and throws CRestartException, so the connect RIDES the restart rather
+		// than waiting for it. It also validates every file before tearing anything down, so a bad
+		// PWAD leaves the running game alone.
+		if ( g_HostEntryIwad.IsNotEmpty( ))
 		{
-			g_HostEntryReload = "";
+			const FString iwad = g_HostEntryIwad;
+			TArray<FString> pwads = g_HostEntryPwads;
+
+			g_HostEntryIwad = "";
+			g_HostEntryPwads.Clear( );
+
+			M_ClearMenus( );
+			zx::wadreload::RequestReload( iwad.GetChars( ), pwads, NULL, address.GetChars( ));
 			return;
 		}
 
@@ -2437,9 +2446,10 @@ public:
 			config.pwads = plan.pwads;
 			config.execCfg = plan.execCfg;
 
-			g_HostEntryReload.Format( "wad_reload %s", plan.iwad.c_str( ));
+			g_HostEntryIwad = plan.iwad.c_str( );
+			g_HostEntryPwads.Clear( );
 			for ( size_t i = 0; i < plan.pwads.size( ); ++i )
-				g_HostEntryReload.AppendFormat( " %s", plan.pwads[i].c_str( ));
+				g_HostEntryPwads.Push( FString( plan.pwads[i].c_str( )));
 
 			// The entry's cfg carries its own rotation and is exec'd first, so naming a map here
 			// would override the entry's opening one.
@@ -2455,7 +2465,8 @@ public:
 		}
 
 		// Custom: the server takes what this client is running, so there is nothing to reload onto.
-		g_HostEntryReload = "";
+		g_HostEntryIwad = "";
+		g_HostEntryPwads.Clear( );
 
 		// What we are playing is what we will serve. FWadCollection knows the files by the names they
 		// were loaded under, which is exactly the form a command line wants.
@@ -3027,24 +3038,36 @@ public:
 	// [rc4l] The one control that swaps the right column between what the selection is and how to
 	// run it. Drawn as a row rather than a pill so it reads as part of the column instead of
 	// competing with START SERVER below it.
-	// [rc4l] The line between the two columns. Same colour and weight as the tab separator above it,
-	// because a second divider style would read as a different KIND of boundary rather than as the
-	// same idea applied twice.
+	// [rc4l] The line between the two columns: DrawSeparatorSpan turned on its side.
 	//
-	// Stops short of the buttons at its foot: running it down to them would box each button into its
-	// own cell, and they are a pair sitting under the panel rather than two things in two cells.
+	// Same colour, same peak alpha, same ComputeSeparatorAlpha fade, so it is the horizontal rule
+	// rotated rather than a second divider style that would read as a different KIND of boundary.
+	// The fade also does the work the old flat line could not: it ends the rule without an edge, so
+	// nothing has to decide where a hard stop looks deliberate.
+	//
+	// Stops short of the buttons at its foot. Running it down to them would box each into its own
+	// cell, and they are a pair sitting under the panel rather than two things in two cells.
 	void DrawHostColumnDivider( )
 	{
 		const int vx = ( SB_HOST_LIST_RIGHT + SB_HOST_RCOL_LEFT ) / 2;
-		const int top = SB_HOST_VIEW_TOP - 4;
-		const int bottom = SB_HOST_BTN_Y - 10;
 
 		const int x = serverbrowser_ToScreenX( vx );
-		const int y0 = serverbrowser_ToScreenY( top );
-		const int y1 = serverbrowser_ToScreenY( bottom );
+		const int top = serverbrowser_ToScreenY( SB_HOST_VIEW_TOP - 4 );
+		const int bottom = serverbrowser_ToScreenY( SB_HOST_BTN_Y - 10 );
 
-		screen->Dim( PalEntry( 120, 130, 165 ), 0.35f, x,
-			y0, MAX( 1, serverbrowser_ToScreenX( vx + 1 ) - x ), MAX( 1, y1 - y0 ));
+		// At least one physical pixel, for the same reason the horizontal rule insists on it: one
+		// virtual unit rounds to zero on a small window.
+		const int w = MAX( 1, serverbrowser_ToScreenX( vx + 1 ) - x );
+		const int h = bottom - top;
+
+		for ( int i = 0; i < h; i++ )
+		{
+			const int a = zx::ComputeSeparatorAlpha( i, h, 130 );
+			if ( a <= 0 )
+				continue;
+
+			screen->Dim( PalEntry( 150, 170, 215 ), a / 255.f, x, top + i, w, 1 );
+		}
 	}
 
 	void DrawHostSettingsToggle( )
