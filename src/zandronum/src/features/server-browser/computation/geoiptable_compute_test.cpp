@@ -163,6 +163,35 @@ TEST(GeoTable, NoTableAnswersUnknownRatherThanCrashing)
 	EXPECT_FALSE(GeoCodeForIndex(table, 1, code));
 }
 
+TEST(GeoTable, AnAddressBelowTheFirstRangeIsUnknown)
+{
+	// The shipped table starts at 0.0.0.0 so this cannot arise from it, but a hand-built or
+	// truncated-at-the-front table can, and the search must not read entry[-1] looking for it.
+	std::vector<unsigned char> raw;
+	const char magic[8] = { 'F', 'U', 'A', 'G', 'E', 'O', '1', '\0' };
+	raw.insert(raw.end(), magic, magic + 8);
+
+	PutU32(raw, 1);
+	raw.push_back(2); raw.push_back(0);
+	const char codes[4] = { 'Z', 'Z', 'U', 'S' };
+	raw.insert(raw.end(), codes, codes + 4);
+	PutU32(raw, 0x40000000); raw.push_back(1);		// nothing at all below 64.0.0.0
+
+	const GeoTable table = ParseGeoTable(&raw[0], raw.size());
+	ASSERT_TRUE(table.valid);
+
+	EXPECT_EQ(0u, GeoLookupCodeIndex(table, Ip(1, 2, 3, 4)));
+	EXPECT_EQ(1u, GeoLookupCodeIndex(table, Ip(64, 0, 0, 0)));
+}
+
+TEST(GeoTable, ANullDestinationIsRefusedRatherThanWritten)
+{
+	const std::vector<unsigned char> raw = Build();
+	const GeoTable table = ParseGeoTable(&raw[0], raw.size());
+
+	EXPECT_FALSE(GeoCodeForIndex(table, 1, 0));
+}
+
 TEST(GeoTable, ACorruptCodeIndexReadsAsUnknown)
 {
 	// The per-entry index is one byte from the file and is used to index the code array.
