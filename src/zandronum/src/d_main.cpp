@@ -69,6 +69,7 @@
 #include "features/crashreport/zx_crashreport.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
+#include "features/wad-download/zx_wadsearch.h" // [rc4l] where to look for IWADs and PWADs
 #include "features/wad-serve/zx_wadserve.h" // [rc4l] serving this server's own WADs to joiners
 #include "features/server-hosting/zx_hosting.h" // [rc4l] hosting a server from inside the game
 #include "features/server-hosting/zx_hostwatchdog.h" // [rc4l] and dying with the game that started us
@@ -2853,6 +2854,17 @@ void D_DoomMain (void)
 		// The IWAD selection dialogue does not show in fullscreen so if the
 		// restart is initiated without a defined IWAD assume for now that it's not going to change.
 		if (iwad.IsEmpty()) iwad = lastIWAD;	// [rc4l] uzdoom@484eb347c
+
+		// [rc4l] Teach the IWAD search about Doomseeker's and GZDoom's folders BEFORE it looks.
+		//
+		// This used to happen only when joining a server, which left a gap nobody would guess at: a
+		// new player whose IWADs live in a Doomseeker or GZDoom folder, and who has no Steam copy,
+		// got an empty IWAD picker on first launch -- and then a full one later, because joining once
+		// wrote those paths into their ini for good. The list appearing to fix itself is worse than
+		// it being wrong, so the paths are registered here too, before anything is searched.
+		//
+		// Registering twice is free: AddPathOnce is idempotent and only adds directories that exist.
+		zx::RegisterKnownWadDirectories();
 
 		FIWadManager *iwad_man = new FIWadManager;
 		const FIWADInfo *iwad_info = iwad_man->FindIWAD(allwads, iwad, basewad);
