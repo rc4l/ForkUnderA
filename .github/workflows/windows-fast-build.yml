@@ -12,6 +12,24 @@ on:
       - windows_build.ps1
       - windows_assets/**
       - .github/workflows/windows-fast-build.yml
+      # [rc4l] The source-side coupling, added after registry-image.yml made the same mistake
+      # visible: a filter listing only a path's OWN files cannot see a change elsewhere that
+      # invalidates it, and nothing goes red for however long it takes someone to notice.
+      #
+      # Here that change is a new library. windows_compile.ps1 installs its deps from vcpkg on
+      # demand, while this path links whatever was frozen into windows_assets/, so a dependency
+      # added to the CMake files or to that vcpkg list is satisfied for one path and missing for
+      # the other. ffmpeg already did this once (windows-export-deps.yml): the fast path still
+      # configured, still built, and quietly shipped a binary whose instant replay was the
+      # no-capture stub. A missing dependency that breaks the build announces itself; one that
+      # only removes a feature does not.
+      #
+      # Deliberately NOT src/** -- that is every PR, and a Windows runner each time. Only the
+      # files that can DECLARE a dependency are listed, which is where this failure enters.
+      - src/zandronum/CMakeLists.txt
+      - src/zandronum/src/CMakeLists.txt
+      - windows_compile.ps1
+      - .github/workflows/windows-export-deps.yml
   workflow_dispatch:
 
 jobs:

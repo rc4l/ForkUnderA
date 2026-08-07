@@ -13,6 +13,17 @@ on:
   pull_request:
   workflow_dispatch:
 
+# [rc4l] Pushing again to a PR supersedes the run already going, so cancel it instead of building
+# all three platforms twice for a commit nobody will look at. This is the most frequently triggered
+# workflow here and was the only one without this.
+#
+# Keyed on the ref, so different PRs never cancel each other. Main is deliberately EXCLUDED from
+# cancellation: its runs are what the badge and the merge history attest to, and a quick succession
+# of merges must not leave the earlier commit with a cancelled, inconclusive result.
+concurrency:
+  group: test-and-build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   test:
     uses: ./.github/workflows/_test.yml
