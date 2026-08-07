@@ -1189,10 +1189,13 @@ public:
 		BROWSER_ServerRegistryTick( );
 		BROWSER_QueryTick( );
 
-		// [rc4l] Only while the HOST tab is up. The check opens a socket on the port the player is
-		// about to host on, and doing that behind their back -- while they browse someone else's
-		// server -- would be taking a port nobody asked us to take.
-		if ( g_Tab == BrowserTab::Host )
+		// [rc4l] Only while the HOST tab is up, and only while nothing is being hosted.
+		//
+		// The check opens a socket on the port the player is about to host on. Doing that while they
+		// browse someone else's server would be taking a port nobody asked us to take -- and doing it
+		// while a server of ours is running takes the port from that server, or fails and records
+		// "unreachable" about a port our own process is holding.
+		if (( g_Tab == BrowserTab::Host ) && ( zx::HostCurrentState( ) == zx::HostState::Idle ))
 		{
 			zx::ReachProbeRequest( HostConfiguredPort( ));
 			zx::ReachProbeTick( );
@@ -2280,6 +2283,11 @@ public:
 		}
 
 		SaveHostForm( );
+
+		// [rc4l] Let go of the port before the server asks for it. The reachability check binds the
+		// very port being hosted on, so starting while it is still open made the server find its own
+		// port taken and slide to the next one -- start, stop, start and the number climbed.
+		zx::ReachProbeRelease( );
 
 		if ( zx::HostStart( config ) == false )
 		{
