@@ -226,7 +226,9 @@ bool P_Thing_Spawn (int tid, AActor *source, int type, angle_t angle, bool fog, 
 					// [BC]
 					AActor	*pFog;
 
-					pFog = Spawn<ATeleportFog> (spot->x, spot->y, spot->z + TELEFOGHEIGHT, ALLOW_REPLACE);
+					// [rc4l] uzdoom@30acb7200 / uzdoom@1799ae91c: per-actor fog types, and the fog
+					// points back at what it is fogging for.
+					pFog = P_SpawnTeleportFog(mobj, spot->x, spot->y, spot->z + TELEFOGHEIGHT, false, true);
 
 					// [BC] If we're the server, tell clients to spawn the thing.
 					if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog ))
@@ -282,16 +284,23 @@ bool P_MoveThing(AActor *source, fixed_t x, fixed_t y, fixed_t z, bool fog)
 	{
 		if (fog)
 		{
-			pFog = Spawn<ATeleportFog> (x, y, z + TELEFOGHEIGHT, ALLOW_REPLACE);
+			// [rc4l] uzdoom@1799ae91c: this pair was the wrong way round -- the arrival fog belongs
+			// at the destination and the departure fog at the old spot, which only became visible
+			// once the two could be different types.
+			pFog = P_SpawnTeleportFog(source, x, y, z + TELEFOGHEIGHT, false, true);
 
 			// [BC] If we're the server, tell clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			// [rc4l] P_SpawnTeleportFog returns NULL when the actor's fog type is none, which a mod
+			// can set -- so this null check is load-bearing now in a way the old Spawn call's was not.
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 
-			pFog = Spawn<ATeleportFog> (oldx, oldy, oldz + TELEFOGHEIGHT, ALLOW_REPLACE);
+			pFog = P_SpawnTeleportFog(source, oldx, oldy, oldz + TELEFOGHEIGHT, true, true);
 
 			// [BC] If we're the server, tell clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			// [rc4l] P_SpawnTeleportFog returns NULL when the actor's fog type is none, which a mod
+			// can set -- so this null check is load-bearing now in a way the old Spawn call's was not.
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 		source->PrevX = x;
