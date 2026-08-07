@@ -3079,7 +3079,7 @@ public:
 		// resembled them would drift apart from them the first time either was touched.
 		DrawRoundedButton( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET, SB_HOST_RTOGGLE_Y,
 			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT - 2 * SB_HOST_BTN_INSET, SB_HOST_RTOGGLE_H,
-			g_HostShowSettings ? "BACK TO DESCRIPTION" : "SERVER SETTINGS",
+			g_HostShowSettings ? "BACK" : "SETTINGS",
 			g_HostOnSettingsToggle );
 	}
 
@@ -3155,17 +3155,18 @@ public:
 		return SB_HOST_VIEW_TOP - g_HostListScroll;
 	}
 
-	// Heading, the rows, and the gap before the settings.
 	int HostCatalogueH( )
 	{
-		return SB_HOST_LINE + 3 + HostCatalogueRowCount( ) * SB_HOST_ENTRY_H + 8;
+		return HostCatalogueRowCount( ) * SB_HOST_ENTRY_H + 8;
 	}
 
 	// The y of one catalogue row. `row` is -1 for Custom, then 0.. for entries, so the selection
 	// value and the row index are the same number and cannot drift apart.
 	int HostCatalogueRowY( int row )
 	{
-		return HostCatalogueY( ) + SB_HOST_LINE + 3 + ( row + 1 ) * SB_HOST_ENTRY_H;
+		// [rc4l] No heading offset: EXPERIENCES is gone and the rows begin where it was. A label over
+		// three obvious rows was a line spent saying what the rows already said.
+		return HostCatalogueY( ) + ( row + 1 ) * SB_HOST_ENTRY_H;
 	}
 
 	// The settings live in the right column now, so they start at the top of the viewport rather than
@@ -3358,7 +3359,7 @@ public:
 
 		const int btnY = HostFormButtonY( );
 		const int btnX = SB_HOST_BTN_X;
-		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, "START SERVER",
+		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, "PLAY NOW!",
 			g_HostOnButton || g_HostButtonHot );
 
 		if ( g_HostOnButton && ( g_Focus == zx::BrowserFocus::Host ))
@@ -3476,20 +3477,46 @@ public:
 	// Everything here is already computed for the START press -- PickIwad decides the IWAD and
 	// HostPlan decides the files -- and none of it was shown anywhere. A player choosing between two
 	// entries was choosing blind.
-	int HostDetailLineCount( )
+	// [rc4l] The description column: what the selection IS, in the order someone reads it.
+	//
+	// Title, the description in full, then a rule, then the files. The rule earns its place: the
+	// description is prose about the mod and the file list is a fact about your disk, and with
+	// nothing between them the WADs read as a fourth sentence.
+	int HostDetailWrapWidth( )
 	{
-		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		return SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
+	}
 
-		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
-			return 2;	// Custom: a title and one line saying what it means
+	// How many lines the summary needs once wrapped, so the height and the drawing agree.
+	int HostDetailSummaryLines( const std::string &summary )
+	{
+		if ( summary.empty( ))
+			return 0;
 
-		// Title, summary, the IWAD line, then one per file.
-		return 3 + static_cast<int>( entries[g_HostEntrySel].addon.files.size( ));
+		FBrokenLines *lines = V_BreakLines( SmallFont, HostDetailWrapWidth( ), summary.c_str( ));
+		int count = 0;
+		while ( lines[count].Width >= 0 )
+			count++;
+		V_FreeBrokenLines( lines );
+
+		return count;
 	}
 
 	int HostDetailH( )
 	{
-		return HostDetailLineCount( ) * SB_HOST_LINE + 10;
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return BigFont->GetHeight( ) + 6 + SB_HOST_LINE + 10;
+
+		const zx::AddonEntry &a = entries[g_HostEntrySel].addon;
+
+		return BigFont->GetHeight( ) + 6
+			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
+			+ SB_HOST_LINE + 4				// the IWAD line
+			+ 6								// the rule and its breathing room
+			+ static_cast<int>( a.files.size( )) * SB_HOST_LINE
+			+ 10;
 	}
 
 	// The IWAD this entry would land on, said in the words the host cares about.
@@ -3529,20 +3556,17 @@ public:
 		return line;
 	}
 
-	// Cut to the column, with an ellipsis so it reads as truncated rather than as a typo.
-	FString HostFitToColumn( const char *text )
+	// The title names what the whole column is about, so it is the one line that should not look like
+	// the rest: BigFont, centred over the column.
+	void DrawHostDetailTitle( const char *title, int y )
 	{
-		const int limit = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
+		if ( !HostDetailRowVisible( y, BigFont->GetHeight( )))
+			return;
 
-		FString out = text;
-		if ( SmallFont->StringWidth( out ) <= limit )
-			return out;
-
-		while (( out.Len( ) > 1 ) && ( SmallFont->StringWidth( out + "..." ) > limit ))
-			out.Truncate( out.Len( ) - 1 );
-
-		out += "...";
-		return out;
+		const int w = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
+		screen->DrawText( BigFont, CR_WHITE,
+			SB_HOST_RCOL_LEFT + ( w - BigFont->StringWidth( title )) / 2, y, title,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 	}
 
 	void DrawHostDetail( )
@@ -3553,16 +3577,12 @@ public:
 
 		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
 		{
-			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
-			{
-				screen->DrawText( SmallFont, CR_WHITE, x, y, "Custom setup",
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-			}
-			y += SB_HOST_LINE;
+			DrawHostDetailTitle( "Custom setup", y );
+			y += BigFont->GetHeight( ) + 6;
 
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
-				screen->DrawText( SmallFont, CR_DARKGRAY, x, y, HostFitToColumn( "Serves what you are playing" ),
+				screen->DrawText( SmallFont, CR_WHITE, x, y, "Serves what you are playing",
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 			}
 			return;
@@ -3570,31 +3590,41 @@ public:
 
 		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
 
-		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+		DrawHostDetailTitle( addon.name.c_str( ), y );
+		y += BigFont->GetHeight( ) + 6;
+
+		// Wrapped rather than cut. A summary is a sentence, and truncating one reads as a bug.
+		if ( !addon.summary.empty( ))
 		{
-			screen->DrawText( SmallFont, CR_WHITE, x, y, HostFitToColumn( addon.name.c_str( )),
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			FBrokenLines *lines = V_BreakLines( SmallFont, HostDetailWrapWidth( ),
+				addon.summary.c_str( ));
+
+			for ( int i = 0; lines[i].Width >= 0; ++i )
+			{
+				if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+				{
+					screen->DrawText( SmallFont, CR_WHITE, x, y, lines[i].Text,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				}
+				y += SB_HOST_LINE;
+			}
+
+			V_FreeBrokenLines( lines );
 		}
-		y += SB_HOST_LINE;
 
 		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 		{
-			screen->DrawText( SmallFont, CR_DARKGRAY, x, y,
-				HostFitToColumn( addon.summary.c_str( )),
+			screen->DrawText( SmallFont, CR_WHITE, x, y, HostDetailIwadLine( addon ),
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
-		y += SB_HOST_LINE;
+		y += SB_HOST_LINE + 4;
 
-		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
-		{
-			const FString iwadLine = HostFitToColumn( HostDetailIwadLine( addon ));
-			screen->DrawText( SmallFont, CR_GOLD, x, y, iwadLine,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-		}
-		y += SB_HOST_LINE;
+		// The same faded rule the server detail panel puts between what a server IS and what it wants
+		// you to load, for exactly the same reason.
+		if ( HostDetailRowVisible( y, 2 ))
+			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+		y += 6;
 
-		// Which files, and whether you actually have them. A row you cannot host should say so here
-		// rather than only when the button is pressed.
 		for ( size_t i = 0; i < addon.files.size( ); ++i )
 		{
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
@@ -3606,8 +3636,7 @@ public:
 				FString line;
 				line.Format( "%s %s", bHave ? "+" : "-", addon.files[i].name.c_str( ));
 
-				screen->DrawText( SmallFont, bHave ? CR_GRAY : CR_DARKRED, x, y,
-					HostFitToColumn( line ),
+				screen->DrawText( SmallFont, bHave ? CR_GRAY : CR_DARKRED, x, y, line,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 			}
 			y += SB_HOST_LINE;
@@ -3621,13 +3650,6 @@ public:
 	void DrawHostCatalogue( int x )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
-
-		const int headY = HostCatalogueY( );
-		if ( HostRowFullyVisible( headY, SB_HOST_LINE ))
-		{
-			screen->DrawText( SmallFont, CR_ORANGE, x, headY, "EXPERIENCES",
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-		}
 
 		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < static_cast<int>( entries.size( )); ++row )
 		{
@@ -3660,7 +3682,11 @@ public:
 			else
 				label = entries[row].addon.name.c_str( );
 
-			screen->DrawText( SmallFont, col, x, rowY, label,
+			// [rc4l] Centred in the row rather than drawn at its top edge. The highlight bar is
+			// SB_HOST_ENTRY_H tall and the glyphs are shorter, so drawing at rowY sat the text high
+			// inside its own bar.
+			screen->DrawText( SmallFont, col, x,
+				rowY + ( SB_HOST_ENTRY_H - SmallFont->GetHeight( )) / 2, label,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 			// No file count or "current" here on purpose: the detail panel beside this already says
@@ -3681,7 +3707,7 @@ public:
 		const int rowW = SB_HOST_RCOL_RIGHT - x;
 
 		static const char *const labels[kHostVisCount] = {
-			"Internet", "Local network",
+			"Internet", "Home",
 		};
 
 		// [rc4l] INTERNET says whether it will actually work, before anyone commits to it.
