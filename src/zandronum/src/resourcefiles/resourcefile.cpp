@@ -74,11 +74,6 @@ public:
 
 FResourceLump::~FResourceLump()
 {
-	if (FullName != NULL)
-	{
-		delete [] FullName;
-		FullName = NULL;
-	}
 	if (Cache != NULL && RefCount >= 0)
 	{
 		delete [] Cache;
@@ -102,7 +97,7 @@ void FResourceLump::LumpNameSetup(const char *iname)
 	base = base.Left(base.LastIndexOf('.'));
 	uppercopy(Name, base);
 	Name[8] = 0;
-	FullName = copystring(iname);
+	FullName = iname;
 
 	// Map some directories to WAD namespaces.
 	// Note that some of these namespaces don't exist in WADS.
@@ -321,6 +316,30 @@ FResourceFile::~FResourceFile()
 {
 	if (Filename != NULL) delete [] Filename;
 	delete Reader;
+}
+
+// [rc4l] uzdoom@efa82cf38 -- every archive type sorted its own lumps with a private copy of this;
+// they share one now.
+int STACK_ARGS lumpcmp(const void * a, const void * b)
+{
+	FResourceLump * rec1 = (FResourceLump *)a;
+	FResourceLump * rec2 = (FResourceLump *)b;
+
+	return rec1->FullName.CompareNoCase(rec2->FullName);
+}
+
+//==========================================================================
+//
+// FResourceFile :: PostProcessArchive
+//
+// Sorts files by name.
+//
+//==========================================================================
+
+void FResourceFile::PostProcessArchive(void *lumps, size_t lumpsize)
+{
+	// Entries in archives are sorted alphabetically
+	qsort(lumps, NumLumps, lumpsize, lumpcmp);
 }
 
 
