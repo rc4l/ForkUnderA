@@ -94,7 +94,13 @@ DEFINE_ACTION_FUNCTION(AActor, A_CStaffCheck)
 								SERVERCOMMANDS_SetPlayerHealth( ULONG( player - players ));
 						}
 					}
-					P_SetPsprite (player, ps_weapon, weapon->FindState ("Drain"));
+					// [rc4l] uzdoom@7b6d24544 -- weapon can be NULL here, and FindState can return
+					// NULL for a weapon with no Drain state.
+					if (weapon != NULL)
+					{
+						FState *newstate = weapon->FindState("Drain");
+						if (newstate != NULL) P_SetPsprite(player, ps_weapon, newstate);
+					}
 				}
 				if (weapon != NULL)
 				{
@@ -127,7 +133,13 @@ DEFINE_ACTION_FUNCTION(AActor, A_CStaffCheck)
 					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 						SERVERCOMMANDS_SetPlayerHealth( ULONG( player - players ));
 
-					P_SetPsprite (player, ps_weapon, weapon->FindState ("Drain"));
+					// [rc4l] uzdoom@7b6d24544 -- weapon can be NULL here, and FindState can return
+					// NULL for a weapon with no Drain state.
+					if (weapon != NULL)
+					{
+						FState *newstate = weapon->FindState("Drain");
+						if (newstate != NULL) P_SetPsprite(player, ps_weapon, newstate);
+					}
 				}
 				weapon->DepleteAmmo (weapon->bAltFire, false);
 			}
