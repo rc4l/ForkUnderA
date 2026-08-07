@@ -1908,10 +1908,10 @@ fakepain: // [rc4l] uzdoom pain cluster: skip everything above, but still obey t
 			}
 		}
 
-		// [rc4l] uzdoom@f161c0c50 -- fakedPain lets ALLOWPAIN/CAUSEPAIN reach the pain chance
-		// even when the filtered damage is below the threshold. The pr_damagemobj() draw stays on
-		// the same side of the short circuit for server and client, so both consume it alike.
-		if ((((damage >= target->PainThreshold || fakedPain) && pr_damagemobj() < painchance) ||
+		// [rc4l] uzdoom@f161c0c50 briefly let fakedPain reach the pain chance below the
+		// threshold; uzdoom@d45d45583 took that back eight minutes later so PainThreshold is
+		// honoured again. This is the settled form -- do not reintroduce the || fakedPain.
+		if (((damage >= target->PainThreshold && pr_damagemobj() < painchance) ||
 			(inflictor != NULL && (inflictor->flags6 & MF6_FORCEPAIN))) &&
 			( NETWORK_InClientMode() == false ))
 		{
