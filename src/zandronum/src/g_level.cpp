@@ -2324,7 +2324,10 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 		<< level.maptime
 		<< i;
 
-	arc << level.nextmusic;
+	// [rc4l] uzdoom@3463b8787 -- MUSINFO state is a player property now. The field stays in
+	// the stream so the format is unchanged and old saves still parse.
+	int nextmusic;
+	arc << nextmusic;
 
 	// Hub transitions must keep the current total time
 	if (!hubLoad)

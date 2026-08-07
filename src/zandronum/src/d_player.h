@@ -794,6 +794,9 @@ public:
 							// pointed to by this. Allows bot to roam to it if
 							// necessary.
 	*/
+	TObjPtr<AActor> MUSINFOactor;		// For MUSINFO purposes
+	SBYTE		MUSINFOtics;
+
 	bool		settings_controller;	// Player can control game settings.
 
 	float		BlendR;		// [RH] Final blending values
