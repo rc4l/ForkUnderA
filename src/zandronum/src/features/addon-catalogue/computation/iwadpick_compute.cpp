@@ -43,9 +43,7 @@ bool Has(const std::vector<std::string> &available, const std::string &name)
 
 } // namespace
 
-IwadPick PickIwad(const std::string &preferred,
-                  const std::vector<std::string> &available,
-                  bool selectionSuppliesMaps)
+IwadPick PickIwad(const std::string &preferred, const std::vector<std::string> &available)
 {
 	IwadPick pick;
 	pick.wanted = preferred;
@@ -64,7 +62,7 @@ IwadPick PickIwad(const std::string &preferred,
 		return pick;	// None: nothing to host on
 
 	pick.iwad = substitute;
-	pick.choice = selectionSuppliesMaps ? IwadChoice::Substitute : IwadChoice::SubstituteOwnMaps;
+	pick.choice = IwadChoice::Substitute;
 	return pick;
 }
 

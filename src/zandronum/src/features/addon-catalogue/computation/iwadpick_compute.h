@@ -12,10 +12,9 @@
 // host that substitutes makes no such mistake: the server runs freedoom2, advertises freedoom2, and
 // every client loads freedoom2.
 //
-// What is left is a content surprise, and only when the selection has no maps of its own: the host
-// asked for Doom II's levels and will get Freedoom's, which are different levels. A selection that
-// brings its own maps never touches a stock level and nobody can tell. That distinction is already
-// in the slot model, so it is derived rather than declared.
+// Naming the substitute is therefore the whole story. If a selection has no maps of its own the
+// levels come from the IWAD, so "hosting on freedoom2.wad" already says they will be Freedoom's;
+// a caller wanting to spell that out knows whether it picked any maps without being told.
 
 #ifndef ZX_IWADPICK_COMPUTE_H
 #define ZX_IWADPICK_COMPUTE_H
@@ -28,10 +27,9 @@ namespace zx
 
 enum class IwadChoice
 {
-	Preferred,			// the entry's own IWAD is present; nothing to explain
-	Substitute,			// standing in a free IWAD, and the selection supplies its own maps
-	SubstituteOwnMaps,	// standing in for STOCK levels: it works, but they are Freedoom's levels
-	None,				// neither is present, so this cannot be hosted
+	Preferred,	// the entry's own IWAD is present; nothing to explain
+	Substitute,	// a free IWAD stands in, and `iwad` says which
+	None,		// neither is present, so this cannot be hosted
 };
 
 struct IwadPick
@@ -45,13 +43,7 @@ struct IwadPick
 
 // `available` is the bare IWAD filenames the host actually has, matched case-insensitively because
 // doom2.WAD and doom2.wad are the same file to everyone except a string compare.
-//
-// `selectionSuppliesMaps` should be true when any selected addon fills the `maps` slot. Passing it
-// in rather than reaching for the selection keeps this unit pure and keeps the slot rule in one
-// place.
-IwadPick PickIwad(const std::string &preferred,
-                  const std::vector<std::string> &available,
-                  bool selectionSuppliesMaps);
+IwadPick PickIwad(const std::string &preferred, const std::vector<std::string> &available);
 
 } // namespace zx
 
