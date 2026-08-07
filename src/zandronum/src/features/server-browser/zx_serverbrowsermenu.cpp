@@ -3507,53 +3507,16 @@ public:
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
 
 		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
-			return BigFont->GetHeight( ) + 6 + SB_HOST_LINE + 10;
+			return BigFont->GetHeight( ) + 4 + 6 + SB_HOST_LINE + 10;
 
 		const zx::AddonEntry &a = entries[g_HostEntrySel].addon;
 
-		return BigFont->GetHeight( ) + 6
+		return BigFont->GetHeight( ) + 4
+			+ 6								// the rule under the title
 			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
-			+ SB_HOST_LINE + 4				// the IWAD line
-			+ 6								// the rule and its breathing room
+			+ 4 + 6							// the rule above the files
 			+ static_cast<int>( a.files.size( )) * SB_HOST_LINE
 			+ 10;
-	}
-
-	// The IWAD this entry would land on, said in the words the host cares about.
-	FString HostDetailIwadLine( const zx::AddonEntry &addon )
-	{
-		std::vector<std::string> iwads;
-		static const char *const kCandidates[] = {
-			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
-			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
-		};
-
-		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
-		{
-			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
-				iwads.push_back( kCandidates[i] );
-		}
-
-		const zx::IwadPick pick = zx::PickIwad( addon.iwad, iwads );
-		FString line;
-
-		switch ( pick.choice )
-		{
-		case zx::IwadChoice::Preferred:
-			line.Format( "On %s", pick.iwad.c_str( ));
-			break;
-
-		case zx::IwadChoice::Substitute:
-			// Naming both is the whole point: the host asked for one game and is getting another.
-			line.Format( "On %s, standing in for %s", pick.iwad.c_str( ), pick.wanted.c_str( ));
-			break;
-
-		default:
-			line.Format( "You need %s", pick.wanted.empty( ) ? "a game" : pick.wanted.c_str( ));
-			break;
-		}
-
-		return line;
 	}
 
 	// The title names what the whole column is about, so it is the one line that should not look like
@@ -3578,7 +3541,11 @@ public:
 		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
 		{
 			DrawHostDetailTitle( "Custom setup", y );
-			y += BigFont->GetHeight( ) + 6;
+			y += BigFont->GetHeight( ) + 4;
+
+			if ( HostDetailRowVisible( y, 2 ))
+				DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+			y += 6;
 
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
@@ -3591,7 +3558,13 @@ public:
 		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
 
 		DrawHostDetailTitle( addon.name.c_str( ), y );
-		y += BigFont->GetHeight( ) + 6;
+		y += BigFont->GetHeight( ) + 4;
+
+		// [rc4l] A rule under the title as well, so the column reads as three bands -- what it is
+		// called, what it is, what it loads -- rather than a heading with a paragraph stuck to it.
+		if ( HostDetailRowVisible( y, 2 ))
+			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+		y += 6;
 
 		// Wrapped rather than cut. A summary is a sentence, and truncating one reads as a bug.
 		if ( !addon.summary.empty( ))
@@ -3612,15 +3585,9 @@ public:
 			V_FreeBrokenLines( lines );
 		}
 
-		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
-		{
-			screen->DrawText( SmallFont, CR_WHITE, x, y, HostDetailIwadLine( addon ),
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-		}
-		y += SB_HOST_LINE + 4;
-
 		// The same faded rule the server detail panel puts between what a server IS and what it wants
 		// you to load, for exactly the same reason.
+		y += 4;
 		if ( HostDetailRowVisible( y, 2 ))
 			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
 		y += 6;
