@@ -1247,6 +1247,50 @@ static ULONG network_FuaCountryIndexFromAlpha2( const char *pszCode )
 
 //*****************************************************************************
 //
+// [rc4l] Ask where an address is, without needing a server there to ask about.
+//
+// The browser draws the answer as twenty pixels of flag, which is not something you can check. This
+// prints it, so "why is that server showing the wrong country" has an answer that does not require
+// finding a server in that country first.
+CCMD( fua_whereis )
+{
+	if ( argv.argc( ) < 2 )
+	{
+		Printf( "usage: fua_whereis <ip address>\n" );
+		return;
+	}
+
+	NETADDRESS_s address;
+	if ( address.LoadFromString( argv[1] ) == false )
+	{
+		Printf( "%s is not an address I can read.\n", argv[1] );
+		return;
+	}
+
+	const ULONG ulIndex = NETWORK_GetCountryIndexFromAddress( address );
+
+	if ( ulIndex == COUNTRYINDEX_LAN )
+	{
+		Printf( "%s is on a local network.\n", argv[1] );
+		return;
+	}
+
+	if ( ulIndex == 0 )
+	{
+		Printf( "%s could not be placed. (GeoIP database: %s)\n", argv[1],
+			NETWORK_IsGeoIPAvailable( ) ? "system" : "the table shipped in zandronum.pk3" );
+		return;
+	}
+
+	Printf( "%s is in %s (%s / %s), via %s.\n", argv[1],
+		NETWORK_GetCountryNameFromIndex( ulIndex ),
+		NETWORK_GetCountryCodeFromIndex( ulIndex, false ),
+		NETWORK_GetCountryCodeFromIndex( ulIndex, true ),
+		NETWORK_IsGeoIPAvailable( ) ? "the system GeoIP database" : "the table in zandronum.pk3" );
+}
+
+//*****************************************************************************
+//
 ULONG NETWORK_GetCountryIndexFromAddress( NETADDRESS_s Address )
 {
 	const char *addressString = Address.ToStringNoPort();
