@@ -46,14 +46,14 @@ TEST(IwadPick, FreedoomStandsInWhenTheSelectionBringsItsOwnMaps)
 	EXPECT_EQ("doom2.wad", p.wanted);
 }
 
-TEST(IwadPick, StandingInForStockLevelsIsFlaggedAsRisky)
+TEST(IwadPick, StandingInForStockLevelsIsCalledOut)
 {
-	// A gameplay mod alone plays the IWAD's own levels, and Freedoom's MAP01 is not Doom II's MAP01.
-	// Different geometry, and Zandronum's level authentication rejects the join. Still offered, since
-	// the host is the one who can tell whether they care, but never silently.
+	// A gameplay mod alone plays the IWAD's own levels, so the host asked for Doom II's and will get
+	// Freedoom's. The server still works and every client agrees with it, because the server both
+	// runs and advertises freedoom2. Worth saying, not worth refusing.
 	const IwadPick p = PickIwad("doom2.wad", Have("freedoom2.wad"), false);
 
-	EXPECT_EQ(IwadChoice::SubstituteRisky, p.choice);
+	EXPECT_EQ(IwadChoice::SubstituteOwnMaps, p.choice);
 	EXPECT_EQ("freedoom2.wad", p.iwad);
 }
 

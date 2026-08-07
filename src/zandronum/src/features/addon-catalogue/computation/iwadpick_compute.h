@@ -7,14 +7,15 @@
 // not a requirement. Owning doom2.wad always means hosting on doom2.wad. Only when it is absent does
 // features/wad-download's substitute table get asked, and it answers freedoom2.wad.
 //
-// The part that is not obvious: whether that substitution is safe depends on the whole selection,
-// not on the IWAD. Freedoom's MAP01 is not Doom II's MAP01, so a selection playing STOCK levels
-// under Freedoom loads different geometry and Zandronum's level authentication rejects the join. A
-// selection that brings its own maps never touches a stock level, so the IWAD supplies only
-// textures, sounds and actor definitions and nobody can tell.
+// Nothing about this breaks a join. The join-side warning in zx_joinserver.cpp exists because the
+// CLIENT substitutes while the SERVER runs the real thing, so the two disagree about the level. A
+// host that substitutes makes no such mistake: the server runs freedoom2, advertises freedoom2, and
+// every client loads freedoom2.
 //
-// That distinction is already in the slot model, so it is derived rather than declared: if anything
-// selected fills `maps`, the levels are its own.
+// What is left is a content surprise, and only when the selection has no maps of its own: the host
+// asked for Doom II's levels and will get Freedoom's, which are different levels. A selection that
+// brings its own maps never touches a stock level and nobody can tell. That distinction is already
+// in the slot model, so it is derived rather than declared.
 
 #ifndef ZX_IWADPICK_COMPUTE_H
 #define ZX_IWADPICK_COMPUTE_H
@@ -27,10 +28,10 @@ namespace zx
 
 enum class IwadChoice
 {
-	Preferred,		// the entry's own IWAD is present; nothing to explain
-	Substitute,		// standing in a free IWAD, and the selection supplies its own maps
-	SubstituteRisky,// standing in a free IWAD for STOCK levels: different geometry, joins will fail
-	None,			// neither is present, so this cannot be hosted
+	Preferred,			// the entry's own IWAD is present; nothing to explain
+	Substitute,			// standing in a free IWAD, and the selection supplies its own maps
+	SubstituteOwnMaps,	// standing in for STOCK levels: it works, but they are Freedoom's levels
+	None,				// neither is present, so this cannot be hosted
 };
 
 struct IwadPick

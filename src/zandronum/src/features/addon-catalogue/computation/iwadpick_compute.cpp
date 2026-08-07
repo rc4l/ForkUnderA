@@ -64,7 +64,7 @@ IwadPick PickIwad(const std::string &preferred,
 		return pick;	// None: nothing to host on
 
 	pick.iwad = substitute;
-	pick.choice = selectionSuppliesMaps ? IwadChoice::Substitute : IwadChoice::SubstituteRisky;
+	pick.choice = selectionSuppliesMaps ? IwadChoice::Substitute : IwadChoice::SubstituteOwnMaps;
 	return pick;
 }
 
