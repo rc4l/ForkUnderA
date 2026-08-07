@@ -282,6 +282,10 @@ bool			BROWSER_IsAwaitingReplyFrom( const NETADDRESS_s &Address );
 // [rc4l] How many servers answered and were then hidden for running a different build.
 LONG			BROWSER_CountVersionMismatched( void );
 
+// [rc4l] True while any server is being re-checked or a registry query is outstanding. Lets the
+// refresh button show the work that otherwise happens invisibly.
+bool			BROWSER_IsRefreshInFlight( void );
+
 // [rc4l] Re-check every server already on the list, WITHOUT emptying it.
 //
 // Opening the browser used to clear the list and query from nothing, so the player watched a spinner
