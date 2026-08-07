@@ -17,13 +17,18 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <algorithm>
 #include <vector>
 
 #ifdef _WIN32
+// [rc4l] IP_MULTICAST_IF lives here, not in what networkheaders.h pulls in. Needed to choose the
+// interface an SSDP search leaves by; see DiscoverGateways.
+#include <ws2tcpip.h>
 typedef SOCKET zx_socket_t;
 #define ZX_INVALID_SOCKET INVALID_SOCKET
 #define zx_close_socket closesocket
 #else
+#include <netinet/in.h>
 #include <unistd.h>
 typedef int zx_socket_t;
 #define ZX_INVALID_SOCKET (-1)
@@ -169,13 +174,46 @@ std::string HttpExchange( const std::string &host, int port, const std::string &
 //
 // Every reply is put through IsAcceptableLocation before it is believed -- anything on the LAN can
 // answer this, and the whole point of that check is that we are about to fetch what it says.
-std::string DiscoverGateway( void )
+std::vector<std::string> DiscoverGateways( void )
 {
+	std::vector<std::string> found;
+
 	const zx_socket_t sock = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
 	if ( sock == ZX_INVALID_SOCKET )
-		return "";
+		return found;
 
 	SetTimeout( sock, SO_RCVTIMEO, kDiscoverMs );
+
+	// [rc4l] CHOOSE THE INTERFACE. Without this the whole feature is a coin toss.
+	//
+	// A multicast send with no interface set goes out whichever one the routing table ranks first,
+	// and on any real machine that is not the LAN: five phantom Wi-Fi adapters on 169.254 addresses,
+	// a Bluetooth PAN, a Tailscale device. Measured on the machine this was written on, an unbound
+	// search got ZERO replies while the identical search bound to the LAN address got dozens -- so
+	// we were reporting "your router will not open ports automatically" without the question ever
+	// having reached the router.
+	//
+	// The address that routes to the internet is the one the router is on, and LocalAddressFor
+	// answers that without sending anything. Failing to set it is not fatal: it leaves the old
+	// coin-toss behaviour rather than refusing to look at all.
+	const std::string localAddress = LocalAddressFor( "8.8.8.8" );
+	if ( localAddress.empty( ) == false )
+	{
+		in_addr iface;
+		memset( &iface, 0, sizeof( iface ));
+		iface.s_addr = inet_addr( localAddress.c_str( ));
+
+		setsockopt( sock, IPPROTO_IP, IP_MULTICAST_IF,
+			reinterpret_cast<const char *>( &iface ), sizeof( iface ));
+
+		// Bind it too, so the replies come back on the interface we asked from.
+		sockaddr_in local;
+		memset( &local, 0, sizeof( local ));
+		local.sin_family = AF_INET;
+		local.sin_port = 0;
+		local.sin_addr.s_addr = iface.s_addr;
+		bind( sock, reinterpret_cast<sockaddr *>( &local ), sizeof( local ));
+	}
 
 	sockaddr_in target;
 	memset( &target, 0, sizeof( target ));
@@ -190,16 +228,22 @@ std::string DiscoverGateway( void )
 		"upnp:rootdevice",
 	};
 
-	std::string location;
-
-	for ( int t = 0; ( t < 2 ) && location.empty( ); ++t )
+	for ( int t = 0; t < 2; ++t )
 	{
 		const std::string search = BuildSsdpSearch( kTargets[t], 2 );
 		sendto( sock, search.c_str( ), static_cast<int>( search.size( )), 0,
 			reinterpret_cast<sockaddr *>( &target ), sizeof( target ));
 
-		// Several devices may answer; take the first that survives the check.
-		for ( int i = 0; i < 8; ++i )
+		// [rc4l] EVERY answer is kept, not just the first.
+		//
+		// The first reply used to win outright, and on a normal home network the first reply is not
+		// the router: a smart TV answers upnp:rootdevice enthusiastically and repeatedly. We would
+		// take its description URL, find no WAN connection service in it, and conclude the network
+		// could not forward ports -- having never spoken to the router at all.
+		//
+		// So the caller gets the whole list and keeps looking until one of them actually offers the
+		// service we need.
+		for ( int i = 0; i < 16; ++i )
 		{
 			char buffer[2048];
 			const int n = static_cast<int>( recv( sock, buffer, sizeof( buffer ) - 1, 0 ));
@@ -207,14 +251,20 @@ std::string DiscoverGateway( void )
 				break;
 
 			buffer[n] = '\0';
-			location = LocationFromSsdpReply( std::string( buffer, static_cast<size_t>( n )));
-			if ( location.empty( ) == false )
-				break;
+			const std::string location = LocationFromSsdpReply(
+				std::string( buffer, static_cast<size_t>( n )));
+
+			if ( location.empty( ))
+				continue;
+
+			// Devices answer both searches, and repeat themselves within one.
+			if ( std::find( found.begin( ), found.end( ), location ) == found.end( ))
+				found.push_back( location );
 		}
 	}
 
 	zx_close_socket( sock );
-	return location;
+	return found;
 }
 
 //*****************************************************************************
@@ -313,13 +363,56 @@ void MapThread( int port, std::string description )
 {
 	g_State.store( static_cast<int>( PortMapState::Trying ));
 
-	const std::string location = DiscoverGateway( );
-	if ( location.empty( ))
+	const std::vector<std::string> locations = DiscoverGateways( );
+	if ( locations.empty( ))
 	{
 		g_State.store( static_cast<int>( PortMapState::Unsupported ));
 		g_Busy.store( false );
 		return;
 	}
+
+	// [rc4l] Walk the responders until one of them is actually a gateway. Anything on the network may
+	// answer an SSDP search, and most of what answers cannot forward a port.
+	std::string location;
+	std::string controlUrlFound;
+	std::string serviceTypeFound;
+
+	const char *const kServicesProbe[] = { kServiceWanIp, kServiceWanPpp };
+
+	for ( size_t d = 0; ( d < locations.size( )) && controlUrlFound.empty( ); ++d )
+	{
+		const HttpUrl candidateUrl = ParseHttpUrl( locations[d] );
+		if ( candidateUrl.valid == false )
+			continue;
+
+		const std::string get = "GET " + candidateUrl.path + " HTTP/1.1\r\nHOST: " + candidateUrl.host
+			+ "\r\nCONNECTION: close\r\n\r\n";
+		const std::string xml = HttpExchange( candidateUrl.host, candidateUrl.port, get );
+
+		for ( int i = 0; ( i < 2 ) && controlUrlFound.empty( ); ++i )
+		{
+			const std::string service = ControlUrlForService( xml, kServicesProbe[i] );
+			if ( service.empty( ))
+				continue;
+
+			const std::string resolved = ResolveUrl( locations[d], service );
+
+			// Resolved or not, it still came off the network -- so it goes through the same gate as
+			// the location did rather than being trusted for having been mentioned in a document we
+			// fetched.
+			if ( IsAcceptableLocation( resolved ) == false )
+				continue;
+
+			controlUrlFound = resolved;
+			serviceTypeFound = kServicesProbe[i];
+			location = locations[d];
+		}
+	}
+
+	// Nothing offered a WAN service. Fall back to the first responder purely as a NAT-PMP target:
+	// a router that speaks NAT-PMP but not UPnP still answers a search, and asking costs one packet.
+	if ( location.empty( ))
+		location = locations[0];
 
 	const HttpUrl locationUrl = ParseHttpUrl( location );
 	const std::string routerHost = locationUrl.host;
@@ -333,31 +426,9 @@ void MapThread( int port, std::string description )
 		return;
 	}
 
-	// Fetch the description and find the connection service.
-	const std::string get = "GET " + locationUrl.path + " HTTP/1.1\r\nHOST: " + locationUrl.host
-		+ "\r\nCONNECTION: close\r\n\r\n";
-	const std::string deviceXml = HttpExchange( locationUrl.host, locationUrl.port, get );
-
-	std::string controlUrl;
-	std::string serviceType;
-
-	const char *const kServices[] = { kServiceWanIp, kServiceWanPpp };
-	for ( int i = 0; ( i < 2 ) && controlUrl.empty( ); ++i )
-	{
-		const std::string found = ControlUrlForService( deviceXml, kServices[i] );
-		if ( found.empty( ))
-			continue;
-
-		const std::string resolved = ResolveUrl( location, found );
-
-		// Resolved or not, it still came off the network -- so it goes through the same gate as the
-		// location did rather than being trusted for having been mentioned in a document we fetched.
-		if ( IsAcceptableLocation( resolved ) == false )
-			continue;
-
-		controlUrl = resolved;
-		serviceType = kServices[i];
-	}
+	// Already established above, while working out which responder was the gateway.
+	const std::string controlUrl = controlUrlFound;
+	const std::string serviceType = serviceTypeFound;
 
 	MapResult udp = MapResult::Failed;
 	MapResult tcp = MapResult::Failed;

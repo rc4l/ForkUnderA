@@ -56,6 +56,21 @@ bool ProbeIsFinished(ProbePhase phase);
 // Whether a finished probe means the player may host to the internet.
 bool ProbeSaysReachable(ProbePhase phase);
 
+// How the INTERNET option should read, which is not the same question as the phase.
+//
+// Three answers, not six, because the player only cares about three: it works, it does not, or we
+// do not know. Failed collapses into Unknown deliberately -- a registry that never answered has told
+// us something about ITSELF, and colouring the option as though the player's router were shut would
+// be blaming them for our outage.
+enum class ProbeDisplay
+{
+	Unknown,		// untested, still running, or the check itself could not be completed
+	Reachable,		// the probe arrived: this port is genuinely open
+	Unreachable,	// the check ran and nothing arrived
+};
+
+ProbeDisplay ProbeDisplayFor(ProbePhase phase);
+
 // How long to wait for each leg, in milliseconds.
 //
 // The cookie leg is short: it travels the path we KNOW works, so a slow answer means the registry is

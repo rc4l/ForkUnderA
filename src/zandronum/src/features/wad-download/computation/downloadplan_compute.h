@@ -58,6 +58,17 @@ bool IsSafeDownloadName(const std::string &name);
 // as the server spelled it, all-lowercase, all-uppercase -- because mirrors are case-sensitive web
 // servers and the same WAD is filed under all three across the ecosystem. Spellings that coincide are
 // emitted once. Returns empty if the name is unsafe or no site survives normalisation.
+// [rc4l] The part of a URL worth showing a player: the host, with scheme, path and any credentials
+// stripped. Used for the console line that says where a download is coming from.
+//
+// A whole URL is the wrong thing to print. It wraps in the console, buries the one field that
+// answers "who am I downloading from", and a signed mirror URL can carry a token in its query
+// string that has no business in a log a player may paste into a bug report.
+//
+// Returns the input unchanged if there is nothing that looks like a host in it, so an odd entry in
+// cl_fua_downloadsites is still named rather than silently becoming an empty string.
+std::string DownloadSourceName(const std::string &url);
+
 std::vector<std::string> BuildCandidateUrls(const std::vector<std::string> &sites,
 	const std::string &filename);
 

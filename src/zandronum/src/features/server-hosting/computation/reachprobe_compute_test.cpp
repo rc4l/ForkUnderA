@@ -10,6 +10,8 @@ using zx::kProbeTimeoutMs;
 using zx::ProbeCacheKey;
 using zx::ProbeCacheKeyMatches;
 using zx::ProbeCacheUsable;
+using zx::ProbeDisplay;
+using zx::ProbeDisplayFor;
 using zx::ProbeIsFinished;
 using zx::ProbeNonceMatches;
 using zx::ProbePhase;
@@ -190,4 +192,33 @@ TEST( ReachProbe, AFreshAnswerToADIFFERENTQuestionIsStillUnusable )
 	// Freshness does not rescue a key mismatch; both have to hold.
 	EXPECT_FALSE( ProbeCacheUsable( Key( "1.2.3.4", "192.168.1", 10666 ),
 		Key( "1.2.3.4", "192.168.1", 10667 ), 0 ));
+}
+
+// ---------------------------------------------------------------- what the INTERNET option shows
+
+TEST( ReachProbe, OnlyAnArrivedProbeReadsAsReachable )
+{
+	EXPECT_EQ( ProbeDisplay::Reachable, ProbeDisplayFor( ProbePhase::Reachable ));
+}
+
+TEST( ReachProbe, ACompletedCheckThatFoundNothingReadsAsUnreachable )
+{
+	EXPECT_EQ( ProbeDisplay::Unreachable, ProbeDisplayFor( ProbePhase::Unreachable ));
+}
+
+TEST( ReachProbe, AFailedCheckIsNotTheSameAsAClosedPort )
+{
+	// [rc4l] The one that matters. Failed means the REGISTRY never answered, so it says nothing about
+	// the player's router -- showing it as unreachable would blame them for our outage, and would do
+	// it at exactly the moment our service is already broken.
+	EXPECT_EQ( ProbeDisplay::Unknown, ProbeDisplayFor( ProbePhase::Failed ));
+	EXPECT_NE( ProbeDisplay::Unreachable, ProbeDisplayFor( ProbePhase::Failed ));
+}
+
+TEST( ReachProbe, NothingIsClaimedBeforeTheCheckHasFinished )
+{
+	// Untested and mid-flight both mean "we do not know", and neither may be drawn as an answer.
+	EXPECT_EQ( ProbeDisplay::Unknown, ProbeDisplayFor( ProbePhase::Idle ));
+	EXPECT_EQ( ProbeDisplay::Unknown, ProbeDisplayFor( ProbePhase::AwaitingCookie ));
+	EXPECT_EQ( ProbeDisplay::Unknown, ProbeDisplayFor( ProbePhase::AwaitingProbe ));
 }

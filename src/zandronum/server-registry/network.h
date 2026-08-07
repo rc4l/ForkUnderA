@@ -72,6 +72,9 @@ void			NETWORK_Construct( USHORT usPort, const char *pszIPAddress = NULL );
 int				NETWORK_GetPackets( void );
 int				NETWORK_GetLANPackets( void );
 NETADDRESS_s	NETWORK_GetFromAddress( void );
+
+// [rc4l] Highest of the sockets we receive on, for select's nfds argument.
+SOCKET			NETWORK_MaxSocket( void );
 void			NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
 
 // [rc4l] Send from a DIFFERENT socket than the one everybody talks to us on.

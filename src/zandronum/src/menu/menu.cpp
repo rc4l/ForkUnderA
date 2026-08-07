@@ -68,6 +68,7 @@
 #include "cl_commands.h"
 #include "network/cl_auth.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a finished download redirects to the browser
+#include "features/server-hosting/zx_hosting.h" // [rc4l] starting a game closes a server we are running
 
 //
 // Todo: Move these elsewhere
@@ -557,6 +558,27 @@ void M_SetMenu(FName menu, int param)
 			}
 		}
 	case NAME_StartgameConfirmed:
+
+		// [rc4l] A server of ours is a thing other people are standing in, and starting a game takes
+		// it away from them without a word. Everywhere else that ends a hosted server asks first --
+		// the HOST tab's STOP button, and now joining someone else's server -- so this asks too.
+		//
+		// Placed on Confirmed rather than earlier so it is the LAST question, after the skill
+		// prompts: being asked about your server and then still having to pick a skill would leave
+		// the answer stale by the time anything happened.
+		if ( zx::HostCurrentState( ) != zx::HostState::Idle )
+		{
+			M_StartMessage( "starting a game closes the server\nyou are running, and disconnects\n"
+				"anyone playing on it.\n\npress y or n.", 0, NAME_FuaStopHostAndStartgame );
+			return;
+		}
+
+		// Falls through: the server is gone, so this is now an ordinary start.
+	case NAME_FuaStopHostAndStartgame:
+
+		// [rc4l] Stop before the game starts, not after. G_DeferedInitNew below does not come back
+		// here, so a stop deferred past it would never run and the server would outlive the menu.
+		zx::HostStop( );
 
 		// [BC/BB] Put us back in single player mode, and reset our dmflags.
 		{
