@@ -55,7 +55,12 @@ Carsten Bormann
 /* Input : n elements of time doamin data
    Output: m lpc coefficients, excitation energy */
 
-float vorbis_lpc_from_data(float *data,float *lpci,int n,int m){
+/* [rc4l] Given internal linkage and a dumb_ prefix: these are byte-identical to libvorbis's
+   own vorbis_lpc_from_data/vorbis_lpc_predict, and we link vcpkg's libvorbis for OGG music, so
+   at global scope MSVC fails the link with LNK2005 (Mach-O and ELF quietly pick one). Nothing
+   outside this file uses them. Upstream has the same clash unresolved at HEAD -- they simply do
+   not link libvorbis into the same binary. */
+static float dumb_vorbis_lpc_from_data(float *data,float *lpci,int n,int m){
   double *aut=alloca(sizeof(*aut)*(m+1));
   double *lpc=alloca(sizeof(*lpc)*(m));
   double error;
@@ -127,7 +132,7 @@ float vorbis_lpc_from_data(float *data,float *lpci,int n,int m){
   return (float)error;
 }
 
-void vorbis_lpc_predict(float *coeff,float *prime,int m,
+static void dumb_vorbis_lpc_predict(float *coeff,float *prime,int m,
                      float *data,long n){
 
   /* in: coeff[0...m-1] LPC coefficients
@@ -209,11 +214,11 @@ void dumb_it_add_lpc(struct DUMB_IT_SIGDATA *sigdata){
                         }
                     }
 
-                    vorbis_lpc_from_data( lpc_input, lpc, lpc_samples, lpc_order );
-                    vorbis_lpc_from_data( lpc_input + lpc_max, lpc + lpc_order, lpc_samples, lpc_order );
+                    dumb_vorbis_lpc_from_data( lpc_input, lpc, lpc_samples, lpc_order );
+                    dumb_vorbis_lpc_from_data( lpc_input + lpc_max, lpc + lpc_order, lpc_samples, lpc_order );
 
-                    vorbis_lpc_predict( lpc, lpc_input + lpc_samples - lpc_order, lpc_order, lpc_output, lpc_extra );
-                    vorbis_lpc_predict( lpc + lpc_order, lpc_input + lpc_max + lpc_samples - lpc_order, lpc_order, lpc_output + lpc_extra, lpc_extra );
+                    dumb_vorbis_lpc_predict( lpc, lpc_input + lpc_samples - lpc_order, lpc_order, lpc_output, lpc_extra );
+                    dumb_vorbis_lpc_predict( lpc + lpc_order, lpc_input + lpc_max + lpc_samples - lpc_order, lpc_order, lpc_output + lpc_extra, lpc_extra );
 
                     if ( sample->flags & IT_SAMPLE_16BIT )
                     {
@@ -265,9 +270,9 @@ void dumb_it_add_lpc(struct DUMB_IT_SIGDATA *sigdata){
                         }
                     }
 
-                    vorbis_lpc_from_data( lpc_input, lpc, lpc_samples, lpc_order );
+                    dumb_vorbis_lpc_from_data( lpc_input, lpc, lpc_samples, lpc_order );
 
-                    vorbis_lpc_predict( lpc, lpc_input + lpc_samples - lpc_order, lpc_order, lpc_output, lpc_extra );
+                    dumb_vorbis_lpc_predict( lpc, lpc_input + lpc_samples - lpc_order, lpc_order, lpc_output, lpc_extra );
 
                     if ( sample->flags & IT_SAMPLE_16BIT )
                     {

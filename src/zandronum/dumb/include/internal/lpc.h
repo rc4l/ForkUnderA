@@ -19,10 +19,10 @@
 #define _V_LPC_H_
 
 /* simple linear scale LPC code */
-extern float vorbis_lpc_from_data(float *data,float *lpc,int n,int m);
+/* [rc4l] vorbis_lpc_from_data/vorbis_lpc_predict are now file-static inside lpc.c to avoid
+   clashing with libvorbis at link time; they were never used outside it. */
 
-extern void vorbis_lpc_predict(float *coeff,float *prime,int m,
-                               float *data,long n);
+
 
 struct DUMB_IT_SIGDATA;
 extern void dumb_it_add_lpc(struct DUMB_IT_SIGDATA *sigdata);
