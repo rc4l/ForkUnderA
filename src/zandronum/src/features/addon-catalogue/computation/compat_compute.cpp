@@ -79,12 +79,12 @@ const char *NameForSlot(AddonSlot slot)
 	return "";
 }
 
-bool ActorStyleFromName(const char *name, ActorStyle &out)
+bool ActorImpactFromName(const char *name, ActorImpact &out)
 {
 	if (name == 0)
 		return false;
-	if (strcmp(name, "vanilla") == 0) { out = ActorStyle::Vanilla; return true; }
-	if (strcmp(name, "custom") == 0)  { out = ActorStyle::Custom;  return true; }
+	if (strcmp(name, "additive") == 0) { out = ActorImpact::Additive; return true; }
+	if (strcmp(name, "replaces") == 0) { out = ActorImpact::Replaces; return true; }
 	return false;
 }
 
@@ -155,7 +155,7 @@ CompatResult CheckSelection(const std::vector<Addon> &selected)
 		}
 	}
 
-	// Custom-actor maps under a gameplay mod. A warning and never a block: it is the single most
+	// Actor-REPLACING maps under a gameplay mod. A warning and never a block: it is the single most
 	// common real-world combination that half works, and refusing it would be wrong far more often
 	// than it would be right.
 	bool hasGameplay = false;
@@ -168,11 +168,11 @@ CompatResult CheckSelection(const std::vector<Addon> &selected)
 		{
 			if (!Fills(selected[i], AddonSlot::Maps) || Fills(selected[i], AddonSlot::Gameplay))
 				continue;
-			if (selected[i].actors == ActorStyle::Vanilla)
+			if (selected[i].actors == ActorImpact::Additive)
 				continue;
 
 			result.reasons.push_back(selected[i].id +
-				" brings its own actors, which a gameplay mod may replace or fight over");
+				" replaces stock actors, which a gameplay mod will fight it for");
 			if (result.verdict != Verdict::Blocked)
 				result.verdict = Verdict::Warned;
 		}

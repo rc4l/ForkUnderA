@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-using zx::ActorStyle;
-using zx::ActorStyleFromName;
+using zx::ActorImpact;
+using zx::ActorImpactFromName;
 using zx::Addon;
 using zx::AddonSlot;
 using zx::CheckSelection;
@@ -22,7 +22,7 @@ namespace
 
 // The real mods this model was designed against, so a rule change is read against names someone
 // recognises rather than against addon_a and addon_b.
-Addon Maps(const char *id, ActorStyle actors)
+Addon Maps(const char *id, ActorImpact actors)
 {
 	Addon a;
 	a.id = id;
@@ -86,7 +86,7 @@ TEST(AddonCompat, ADuelMapPackUnderAWeaponsModIsAllowed)
 	// idea and a legal load, and the difference matters: this answers "will it run", not "is it
 	// wise". A validator that editorialises about taste is not believed about correctness either.
 	std::vector<Addon> sel;
-	sel.push_back(Maps("duel40", ActorStyle::Vanilla));
+	sel.push_back(Maps("duel40", ActorImpact::Additive));
 	sel.push_back(Gameplay("brutal-doom"));
 
 	const zx::CompatResult r = CheckSelection(sel);
@@ -94,12 +94,53 @@ TEST(AddonCompat, ADuelMapPackUnderAWeaponsModIsAllowed)
 	EXPECT_TRUE(r.reasons.empty());
 }
 
+TEST(AddonCompat, TheRealDuelSetupComposes)
+{
+	// Read off the actual files: duel40b.pk3 is 42 maps under maps/ plus a DECORATE defining four
+	// CustomInventory pickups and replacing nothing, and zandrospree2rc2.pk3 is ACS, SNDINFO, KEYCONF
+	// and one SpreeCheck actor, also replacing nothing.
+	//
+	// duel40b is why ActorImpact asks about REPLACEMENT and not about having a DECORATE lump. Anyone
+	// labelling it under the old wording would have opened the pk3, seen DECORATE, ticked "custom",
+	// and earned a warning on a combination that is completely fine.
+	std::vector<Addon> sel;
+	sel.push_back(Maps("duel40b", ActorImpact::Additive));
+	sel.push_back(Cosmetic("zandrospree2"));
+
+	const zx::CompatResult r = CheckSelection(sel);
+	EXPECT_EQ(Verdict::Allowed, r.verdict);
+	EXPECT_TRUE(r.reasons.empty());
+
+	const std::vector<std::string> order = LoadOrder(sel);
+	ASSERT_EQ(2u, order.size());
+	EXPECT_EQ("duel40b", order[0]);
+	EXPECT_EQ("zandrospree2", order[1]);
+}
+
+TEST(AddonCompat, TheRealDuelSetupStillTakesAWeaponsMod)
+{
+	// Adding Brutal Doom to it is legal and a terrible idea for a duel pack. Legal is the answer this
+	// gives, because the other one is a matter of taste.
+	std::vector<Addon> sel;
+	sel.push_back(Maps("duel40b", ActorImpact::Additive));
+	sel.push_back(Cosmetic("zandrospree2"));
+	sel.push_back(Gameplay("brutal-doom"));
+
+	EXPECT_EQ(Verdict::Allowed, CheckSelection(sel).verdict);
+
+	const std::vector<std::string> order = LoadOrder(sel);
+	ASSERT_EQ(3u, order.size());
+	EXPECT_EQ("duel40b", order[0]);
+	EXPECT_EQ("brutal-doom", order[1]);	// after the maps, so its actors win
+	EXPECT_EQ("zandrospree2", order[2]);
+}
+
 TEST(AddonCompat, AnUntriedCombinationIsSilentRatherThanFlagged)
 {
 	// Nobody authored this pair. Silence is the correct answer, not a gap to be filled: the model
 	// scales precisely because it does not need an opinion on every pair.
 	std::vector<Addon> sel;
-	sel.push_back(Maps("scythe", ActorStyle::Vanilla));
+	sel.push_back(Maps("scythe", ActorImpact::Additive));
 	sel.push_back(Gameplay("complex-doom"));
 	sel.push_back(Cosmetic("some-hud"));
 
@@ -136,8 +177,8 @@ TEST(AddonCompat, TwoIwadsAreRefused)
 TEST(AddonCompat, TwoMapPacksAreFineBecauseAMapFixIsNormal)
 {
 	std::vector<Addon> sel;
-	sel.push_back(Maps("alien-vendetta", ActorStyle::Vanilla));
-	sel.push_back(Maps("alien-vendetta-fix", ActorStyle::Vanilla));
+	sel.push_back(Maps("alien-vendetta", ActorImpact::Additive));
+	sel.push_back(Maps("alien-vendetta-fix", ActorImpact::Additive));
 
 	EXPECT_EQ(Verdict::Allowed, CheckSelection(sel).verdict);
 }
@@ -146,7 +187,7 @@ TEST(AddonCompat, AStrictStandaloneRefusesCompany)
 {
 	std::vector<Addon> sel;
 	sel.push_back(StrictStandalone("stronghold"));
-	sel.push_back(Maps("scythe", ActorStyle::Vanilla));
+	sel.push_back(Maps("scythe", ActorImpact::Additive));
 
 	const zx::CompatResult r = CheckSelection(sel);
 	EXPECT_EQ(Verdict::Blocked, r.verdict);
@@ -179,7 +220,7 @@ TEST(AddonCompat, ATotalConversionThatDoesNotLockTakesCompany)
 	// the line between "standalone" and "strict standalone".
 	std::vector<Addon> sel;
 	sel.push_back(TotalConversion("skulltag"));
-	sel.push_back(Maps("scythe", ActorStyle::Vanilla));
+	sel.push_back(Maps("scythe", ActorImpact::Additive));
 
 	EXPECT_EQ(Verdict::Allowed, CheckSelection(sel).verdict);
 }
@@ -224,33 +265,33 @@ TEST(AddonCompat, EitherSideOfAConflictIsEnoughToDeclareIt)
 	EXPECT_EQ(Verdict::Warned, CheckSelection(sel).verdict);
 }
 
-TEST(AddonCompat, CustomActorMapsUnderAGameplayModWarn)
+TEST(AddonCompat, ActorReplacingMapsUnderAGameplayModWarn)
 {
 	std::vector<Addon> sel;
-	sel.push_back(Maps("mappack-with-monsters", ActorStyle::Custom));
+	sel.push_back(Maps("mappack-with-monsters", ActorImpact::Replaces));
 	sel.push_back(Gameplay("brutal-doom"));
 
 	const zx::CompatResult r = CheckSelection(sel);
 	EXPECT_EQ(Verdict::Warned, r.verdict);
-	EXPECT_TRUE(Mentions(r, "own actors"));
+	EXPECT_TRUE(Mentions(r, "replaces stock actors"));
 }
 
-TEST(AddonCompat, AnUndeclaredActorStyleIsTreatedAsCustom)
+TEST(AddonCompat, AnUndeclaredActorImpactIsTreatedAsReplacing)
 {
 	// Guessing wrong the safe way costs a warning; guessing wrong the other way costs a broken
 	// server the host cannot diagnose.
 	std::vector<Addon> sel;
-	sel.push_back(Maps("unknown-pack", ActorStyle::Unknown));
+	sel.push_back(Maps("unknown-pack", ActorImpact::Unknown));
 	sel.push_back(Gameplay("brutal-doom"));
 
 	EXPECT_EQ(Verdict::Warned, CheckSelection(sel).verdict);
 }
 
-TEST(AddonCompat, CustomActorMapsAloneAreFine)
+TEST(AddonCompat, ActorReplacingMapsAloneAreFine)
 {
 	// Nothing to fight with.
 	std::vector<Addon> sel;
-	sel.push_back(Maps("mappack-with-monsters", ActorStyle::Custom));
+	sel.push_back(Maps("mappack-with-monsters", ActorImpact::Replaces));
 
 	EXPECT_EQ(Verdict::Allowed, CheckSelection(sel).verdict);
 }
@@ -292,7 +333,7 @@ TEST(AddonCompat, LoadOrderFollowsTheSlotAndNotTheSelection)
 	std::vector<Addon> sel;
 	sel.push_back(Cosmetic("hud"));
 	sel.push_back(Gameplay("brutal-doom"));
-	sel.push_back(Maps("scythe", ActorStyle::Vanilla));
+	sel.push_back(Maps("scythe", ActorImpact::Additive));
 
 	const std::vector<std::string> order = LoadOrder(sel);
 	ASSERT_EQ(3u, order.size());
@@ -318,8 +359,8 @@ TEST(AddonCompat, TwoInTheSameSlotKeepTheirSelectionOrder)
 	// The slot rule is not negotiable; ties inside a slot stay the caller's business, which is how a
 	// mappack and its fix end up the right way round.
 	std::vector<Addon> sel;
-	sel.push_back(Maps("alien-vendetta", ActorStyle::Vanilla));
-	sel.push_back(Maps("alien-vendetta-fix", ActorStyle::Vanilla));
+	sel.push_back(Maps("alien-vendetta", ActorImpact::Additive));
+	sel.push_back(Maps("alien-vendetta-fix", ActorImpact::Additive));
 
 	const std::vector<std::string> order = LoadOrder(sel);
 	ASSERT_EQ(2u, order.size());
@@ -363,16 +404,16 @@ TEST(AddonCompat, NamingASlotThatIsNotOneYieldsEmpty)
 	EXPECT_STREQ("", NameForSlot(AddonSlot::Count));
 }
 
-TEST(AddonCompat, ActorStyleParsesByNameAndRefusesTheRest)
+TEST(AddonCompat, ActorImpactParsesByNameAndRefusesTheRest)
 {
-	ActorStyle out = ActorStyle::Unknown;
+	ActorImpact out = ActorImpact::Unknown;
 
-	ASSERT_TRUE(ActorStyleFromName("vanilla", out));
-	EXPECT_EQ(ActorStyle::Vanilla, out);
+	ASSERT_TRUE(ActorImpactFromName("additive", out));
+	EXPECT_EQ(ActorImpact::Additive, out);
 
-	ASSERT_TRUE(ActorStyleFromName("custom", out));
-	EXPECT_EQ(ActorStyle::Custom, out);
+	ASSERT_TRUE(ActorImpactFromName("replaces", out));
+	EXPECT_EQ(ActorImpact::Replaces, out);
 
-	EXPECT_FALSE(ActorStyleFromName("mixed", out));
-	EXPECT_FALSE(ActorStyleFromName(0, out));
+	EXPECT_FALSE(ActorImpactFromName("mixed", out));
+	EXPECT_FALSE(ActorImpactFromName(0, out));
 }

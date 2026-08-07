@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "zandrospree2",
+  "name": "ZandroSpree 2",
+  "summary": "Killing-spree announcer.",
+
+  "fills": ["cosmetic"],
+  "locks": [],
+
+  "actors": "additive",
+  "_actors_why": "ACS, SNDINFO and KEYCONF plus one SpreeCheck actor. Replaces nothing.",
+
+  "files": [
+    {
+      "name": "zandrospree2rc2.pk3",
+      "md5": "25b2a3c4f46e50f4016b640119aefae6",
+      "size": 1012005
+    }
+  ],
+
+  "conflictsWith": []
+}
