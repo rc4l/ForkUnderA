@@ -350,9 +350,16 @@ void FResourceFile::PostProcessArchive(void *lumps, size_t lumpsize)
 	// each one so that we don't risk refiltering already filtered lumps.
 	DWORD max = NumLumps;
 	max -= FilterLumpsByGameType(gameinfo.gametype, lumps, lumpsize, max);
-	max -= FilterLumps(gameinfo.ConfigName, lumps, lumpsize, max);
-	max -= FilterLumps(LumpFilterGroup, lumps, lumpsize, max);
-	max -= FilterLumps(LumpFilterIWAD, lumps, lumpsize, max);
+	// [rc4l] uzdoom@258822ef3 -- one filter pass per dotted prefix of the IWAD name, so
+	// filter/doom/, filter/doom.doom2/ and filter/doom.doom2.commercial/ all apply.
+	long len;
+	int lastpos = -1;
+
+	while ((len = LumpFilterIWAD.IndexOf('.', lastpos+1)) > 0)
+	{
+		max -= FilterLumps(LumpFilterIWAD.Left(len), lumps, lumpsize, max);
+		lastpos = len;
+	}
 	JunkLeftoverFilters(lumps, lumpsize, max);
 }
 
