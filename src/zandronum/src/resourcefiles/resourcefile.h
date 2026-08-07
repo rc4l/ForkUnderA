@@ -13,7 +13,7 @@ struct FResourceLump
 	friend class FResourceFile;
 
 	int				LumpSize;
-	char *			FullName;		// only valid for files loaded from a .zip file
+	FString			FullName;		// only valid for files loaded from a non-wad archive
 	union
 	{
 		char		Name[9];
@@ -30,7 +30,6 @@ struct FResourceLump
 
 	FResourceLump()
 	{
-		FullName = NULL;
 		Cache = NULL;
 		Owner = NULL;
 		Flags = 0;
@@ -79,6 +78,7 @@ public:
 	DWORD LumpCount() const { return NumLumps; }
 	DWORD GetFirstLump() const { return FirstLump; }
 	void SetFirstLump(DWORD f) { FirstLump = f; }
+	void PostProcessArchive(void *lumps, size_t lumpsize);	// for archives that can contain directories
 
 	virtual void FindStrifeTeaserVoices ();
 	virtual bool Open(bool quiet) = 0;

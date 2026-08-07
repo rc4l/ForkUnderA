@@ -83,7 +83,7 @@ bool FileHasBootPalette(const char *path)
 		// A WAD lump exposes its bare name; a pk3 entry also has a FullName ("PLAYPAL.pal", possibly
 		// in a subdirectory). Either matching is enough -- IsBootPaletteName handles basename + ext.
 		if (IsBootPaletteName(lump->Name) ||
-		    (lump->FullName != NULL && IsBootPaletteName(lump->FullName)))
+		    (lump->FullName.IsNotEmpty() && IsBootPaletteName(lump->FullName.GetChars())))
 			found = true;
 	}
 	delete rf;
