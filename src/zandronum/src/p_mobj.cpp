@@ -3765,22 +3765,20 @@ void P_NightmareRespawn (AActor *mobj)
 	}
 
 	// spawn a teleport fog at old spot because of removal of the body?
-	mo = Spawn ("TeleportFog", mobj->x, mobj->y, mobj->z, ALLOW_REPLACE);
+	// [rc4l] uzdoom@30acb7200: route this through P_SpawnTeleportFog so the actor's own
+	// TeleFogSourceType/TeleFogDestType are honoured here too, not just in P_Teleport.
+	mo = P_SpawnTeleportFog(mobj, mobj->x, mobj->y, mobj->z + TELEFOGHEIGHT, true, true);
 	if (mo != NULL)
 	{
-		mo->z += TELEFOGHEIGHT;
-
 		// [BC] If we're the server, tell clients to spawn the thing.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			SERVERCOMMANDS_SpawnThing( mo );
 	}
 
 	// spawn a teleport fog at the new spot
-	mo = Spawn ("TeleportFog", x, y, z, ALLOW_REPLACE);
+	mo = P_SpawnTeleportFog(mobj, x, y, z + TELEFOGHEIGHT, false, true);
 	if (mo != NULL)
 	{
-		mo->z += TELEFOGHEIGHT;
-
 		// [BC] If we're the server, tell clients to spawn the thing.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			SERVERCOMMANDS_SpawnThing( mo );

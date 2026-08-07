@@ -6327,16 +6327,31 @@ enum T_Flags
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 {
-	ACTION_PARAM_START(6);
+	ACTION_PARAM_START(7);
 	ACTION_PARAM_STATE(TeleportState, 0);
 	ACTION_PARAM_CLASS(TargetType, 1);
 	ACTION_PARAM_CLASS(FogType, 2);
 	ACTION_PARAM_INT(Flags, 3);
 	ACTION_PARAM_FIXED(MinDist, 4);
 	ACTION_PARAM_FIXED(MaxDist, 5);
+	ACTION_PARAM_INT(ptr, 6);
 
 	// [BB] This is handled by the server.
 	if ( NETWORK_InClientMode() && ( ( self->NetworkFlags & NETFL_CLIENTSIDEONLY ) == false ) )
+		return;
+
+	// [rc4l] uzdoom@1799ae91c: the actor that moves is now selectable; it defaults to the caller.
+	// The state jump at the end still belongs to the caller either way.
+	AActor *ref = COPY_AAPTR(self, ptr);
+
+	if (!ref)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
+
+	// [rc4l] uzdoom@1799ae91c: NOTELEPORT was being ignored here.
+	if (ref->flags2 & MF2_NOTELEPORT)
 		return;
 
 	// Randomly choose not to teleport like A_Srcr2Decide.
@@ -6347,7 +6362,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 			192, 120, 120, 120, 64, 64, 32, 16, 0
 		};
 
-		unsigned int chanceindex = self->health / ((self->SpawnHealth()/8 == 0) ? 1 : self->SpawnHealth()/8);
+		unsigned int chanceindex = ref->health / ((ref->SpawnHealth()/8 == 0) ? 1 : ref->SpawnHealth()/8);
 
 		if (chanceindex >= countof(chance))
 		{
@@ -6370,22 +6385,33 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 
 	if (!TargetType) TargetType = PClass::FindClass("BossSpot");
 
-	AActor * spot = state->GetSpotWithMinMaxDistance(TargetType, self->x, self->y, MinDist, MaxDist);
+	AActor * spot = state->GetSpotWithMinMaxDistance(TargetType, ref->x, ref->y, MinDist, MaxDist);
 	if (spot == NULL) return;
 
-	fixed_t prevX = self->x;
-	fixed_t prevY = self->y;
-	fixed_t prevZ = self->z;
+	fixed_t prevX = ref->x;
+	fixed_t prevY = ref->y;
+	fixed_t prevZ = ref->z;
+	// [rc4l] uzdoom@c168761ed: land the actor at a height it actually fits at, rather than the
+	// spot's raw z. Dropping it into a floor or ceiling left the engine to unstick it, which cost
+	// the actor its velocity.
+	fixed_t aboveFloor = spot->z - spot->floorz;
+	fixed_t finalz = spot->floorz + aboveFloor;
+
+	if (spot->z + ref->height > spot->ceilingz)
+		finalz = spot->ceilingz - ref->height;
+	else if (spot->z < spot->floorz)
+		finalz = spot->floorz;
+
 	// [rc4l] uzdoom@938b54ccb: telefrag is tried first; TF_FORCED then moves the actor anyway if
 	// that did not work.
 	bool teleResult = false;
 
-	if (P_TeleportMove (self, spot->x, spot->y, spot->z, Flags & TF_TELEFRAG))
+	if (P_TeleportMove (ref, spot->x, spot->y, finalz, Flags & TF_TELEFRAG))
 		teleResult = true;
 
 	if (!teleResult && (Flags & TF_FORCED))
 	{
-		self->SetOrigin(spot->x, spot->y, spot->z);
+		ref->SetOrigin(spot->x, spot->y, finalz);
 		teleResult = true;
 	}
 
@@ -6395,37 +6421,71 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 
 		// [rc4l] uzdoom@86b0065c0: fog is now controllable per call -- suppress either end, or
 		// defer to the actor's own TeleFogSourceType/TeleFogDestType from the fog cluster.
+		// [rc4l] uzdoom@1799ae91c: an explicit fog type now points back at the actor that
+		// teleported, the same way P_SpawnTeleportFog's setTarget does, so a mod can react to who
+		// came through. The destination fog spawns at the destination -- upstream's own commit
+		// passed prevX/prevY/prevZ here, which put both fogs on the departure spot; the form
+		// upstream settled on (and has at HEAD) is the actor's position, which is what this uses.
+		AActor *fog1 = NULL, *fog2 = NULL;
 		if (FogType || (Flags & TF_USEACTORFOG))
 		{
 			if (!(Flags & TF_NOSRCFOG))
 			{
 				if (Flags & TF_USEACTORFOG)
-					P_SpawnTeleportFog(self, prevX, prevY, prevZ, true, true);
+					P_SpawnTeleportFog(ref, prevX, prevY, prevZ, true, true);
 				else
-					Spawn(FogType, prevX, prevY, prevZ, ALLOW_REPLACE);
+				{
+					fog1 = Spawn(FogType, prevX, prevY, prevZ, ALLOW_REPLACE);
+					if (fog1 != NULL)
+					{
+						fog1->target = ref;
+
+						// [rc4l] the server owns the spawn; clients only draw what they are told.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_SpawnThing( fog1 );
+					}
+				}
 			}
 			if (!(Flags & TF_NODESTFOG))
 			{
 				if (Flags & TF_USEACTORFOG)
-					P_SpawnTeleportFog(self, self->x, self->y, self->z, false, true);
+					P_SpawnTeleportFog(ref, ref->x, ref->y, ref->z, false, true);
 				else
-					Spawn(FogType, self->x, self->y, self->z, ALLOW_REPLACE);
+				{
+					fog2 = Spawn(FogType, ref->x, ref->y, ref->z, ALLOW_REPLACE);
+					if (fog2 != NULL)
+					{
+						fog2->target = ref;
+
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_SpawnThing( fog2 );
+					}
+				}
 			}
 		}
 
 		if (Flags & TF_USESPOTZ)
-			self->z = spot->z;
+			ref->z = spot->z;
 		else
-			self->z = self->floorz;
+			ref->z = ref->floorz;
 
 		if (!(Flags & TF_KEEPANGLE))
-			self->angle = spot->angle;
+			ref->angle = spot->angle;
 
 		if (!(Flags & TF_KEEPVELOCITY))
-			self->velx = self->vely = self->velz = 0;
+			ref->velx = ref->vely = ref->velz = 0;
+
+		// [rc4l] the state jump below carries the caller's own update to clients, so when the actor
+		// that actually moved is a different one it would otherwise get no update at all until the
+		// server's next routine position broadcast -- long enough to be visible. Tell clients where
+		// it went.
+		if ( ( ref != self ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ) )
+			SERVERCOMMANDS_MoveThingExact( ref, CM_X|CM_Y|CM_Z|CM_ANGLE|CM_VELX|CM_VELY|CM_VELZ );
 
 		// [rc4l] uzdoom@2a53ebb6b: the jump is last, and TF_NOJUMP skips it -- taking it earlier
 		// meant the z/angle/velocity work above never ran.
+		// [rc4l] uzdoom@1799ae91c: the jump only ever belongs to the calling actor, never to a
+		// pointer-selected one.
 		if (!(Flags & TF_NOJUMP))
 			ACTION_JUMP(TeleportState, CLIENTUPDATE_FRAME);	// [BB] This may involve randomness.
 	}
