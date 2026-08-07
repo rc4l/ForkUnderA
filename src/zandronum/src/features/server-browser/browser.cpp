@@ -718,6 +718,24 @@ bool BROWSER_GetServerRegistryAddress( NETADDRESS_s &out )
 
 //*****************************************************************************
 //
+// [rc4l] See browser.h. Whether a packet came from a registry this client actually talks to.
+//
+// Deliberately the WHOLE list, because browser_QueryServerRegistries sends to the whole list. Judging
+// a reply by one address, or by the server-side announce cvar, meant we could send to a registry and
+// then throw its answer away.
+bool BROWSER_IsServerRegistryAddress( const NETADDRESS_s &address )
+{
+	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
+	{
+		if ( g_ServerRegistryAddresses[i].Compare( address ))
+			return true;
+	}
+
+	return false;
+}
+
+//*****************************************************************************
+//
 // [rc4l] See browser.h. Marks every listed server for a re-check while leaving it on the list.
 void BROWSER_RefreshListedServers( void )
 {

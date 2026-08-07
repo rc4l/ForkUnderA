@@ -275,6 +275,14 @@ LONG			BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer );
 // packets at a port we opened for two seconds.
 bool			BROWSER_GetServerRegistryAddress( NETADDRESS_s &out );
 
+// [rc4l] Whether a reply came from a registry this client actually queries.
+//
+// The receive path used to judge that by fua_serverregistry_host, which is the SERVER's announce
+// target and a different setting entirely. Point the two at different hosts, as any local-registry
+// test does, and every reply from the real registry was silently dropped: the reachability cookie
+// never arrived and the INTERNET option stayed white with nothing to say why.
+bool			BROWSER_IsServerRegistryAddress( const NETADDRESS_s &address );
+
 // [rc4l] True if we have an outstanding launcher query to this address. Lets the client's packet
 // loop tell a launcher reply from game traffic when both arrive from the server we are playing on.
 bool			BROWSER_IsAwaitingReplyFrom( const NETADDRESS_s &Address );

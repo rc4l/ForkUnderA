@@ -1137,7 +1137,15 @@ void CLIENT_GetPackets( void )
 				AddressFrom = NETWORK_GetFromAddress( );
 
 			// If we're receiving info from the server registry...
-			if ( AddressFrom.Compare( ServerRegistryAddress ))
+			//
+			// [rc4l] Either the announce target above, or any registry the BROWSER queries. Those are
+			// two different settings: fua_serverregistry_host is where a server announces, and
+			// cl_fua_serverregistry_list is where this client asks. Only the first was checked here,
+			// so pointing them at different hosts, which every local-registry test does, meant we
+			// sent to one registry and discarded its answer. The reachability cookie never arrived
+			// and INTERNET stayed white with nothing on screen to say why.
+			if ( AddressFrom.Compare( ServerRegistryAddress ) ||
+				BROWSER_IsServerRegistryAddress( NETWORK_GetFromAddress( )))
 			{
 				lCommand = pByteStream->ReadLong();
 				switch ( lCommand )
