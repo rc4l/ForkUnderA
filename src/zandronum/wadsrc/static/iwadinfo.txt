@@ -14,7 +14,7 @@ IWad
 IWad
 {
 	Name = "Hacx 2.0"
-	Autoname = "hacx.2"
+	Autoname = "hacx.hacx2"
 	Game = "Doom"
 	Config = "Hacx"
 	Mapinfo = "mapinfo/hacxharm.txt"
@@ -25,7 +25,7 @@ IWad
 IWad
 {
 	Name = "Hacx: Twitch'n Kill"
-	Autoname = "hacx.1"
+	Autoname = "hacx.hacx1"
 	Game = "Doom"
 	Config = "Hacx"
 	Mapinfo = "mapinfo/hacxharm.txt"
@@ -47,7 +47,7 @@ IWad
 IWad
 {
 	Name = "Chex(R) Quest 3"
-	Autoname = "chex.3"
+	Autoname = "chex.chex3"
 	Game = "Chex"
 	Config = "Chex"
 	Mapinfo = "mapinfo/chex.txt"
@@ -59,7 +59,7 @@ IWad
 IWad
 {
 	Name = "Chex(R) Quest"
-	Autoname = "chex.1"
+	Autoname = "chex.chex1"
 	Game = "Chex"
 	Config = "Chex"
 	Mapinfo = "mapinfo/chex.txt"

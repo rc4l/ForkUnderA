@@ -116,8 +116,9 @@ FConfigFile::~FConfigFile ()
 			delete[] (char *)entry;
 			entry = nextentry;
 		}
-		section->~FConfigSection();
-		delete[] (char *)section;
+		// [rc4l] uzdoom@c584e9ec9 -- FConfigSection holds an FString now, so it is deleted
+		// rather than destructed by hand over a char array.
+		delete section;
 		section = nextsection;
 	}
 }
