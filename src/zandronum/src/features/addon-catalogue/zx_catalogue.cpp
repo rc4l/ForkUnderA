@@ -338,9 +338,10 @@ CCMD( fua_host )
 	config.advertise = plan.advertise;
 	config.serveWads = true;
 
-	// [rc4l] The entry's cfg carries its own rotation, and it is exec'd BEFORE this, so naming a map
-	// here would override the entry's first one. Left empty on purpose when there is a cfg.
-	if ( plan.execCfg.empty( ))
+	// [rc4l] Same rule as the menu: the entry's own opening map first, then the cfg's rotation, then
+	// map01 only when there is neither.
+	config.map = plan.map;
+	if ( config.map.empty( ) && plan.execCfg.empty( ))
 		config.map = "map01";
 
 	Printf( "Hosting " TEXTCOLOR_GOLD "%s" TEXTCOLOR_NORMAL " on %s\n",

@@ -277,6 +277,7 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			else if (key == "name")		{ ok = ReadString(r, entry.name); }
 			else if (key == "summary")	{ ok = ReadString(r, entry.summary); }
 			else if (key == "iwad")		{ ok = ReadString(r, entry.iwad); }
+			else if (key == "map")		{ ok = ReadString(r, entry.map); }
 			else if (key == "files")	{ ok = ReadFilesArray(r, entry.files); }
 			else						{ ok = SkipValue(r); }
 
@@ -319,6 +320,10 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 
 	if (!entry.iwad.empty() && !IsBareFilename(entry.iwad))
 		return Fail(id, "iwad is not a bare filename");
+
+	// A map lump name reaches a command line, so it may not carry a path or read as another flag.
+	if (!entry.map.empty() && (!IsBareFilename(entry.map) || (entry.map[0] == '-') || (entry.map[0] == '+')))
+		return Fail(id, "map is not a plain lump name");
 
 	entry.valid = true;
 	return entry;

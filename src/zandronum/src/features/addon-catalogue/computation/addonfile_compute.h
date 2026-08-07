@@ -37,6 +37,10 @@ struct AddonEntry
 	std::string name;		// what the picker shows
 	std::string summary;
 	std::string iwad;		// preferred; PickIwad decides what actually gets used
+	// [rc4l] Which map to open on. Not the same as the first of server.cfg's rotation: Duel 40 opens
+	// on START, a welcome map it deliberately leaves OUT of the rotation, so deriving this from the
+	// cfg would land players on a duel map they never chose.
+	std::string map;
 	std::vector<AddonFileRef> files;	// load order, as listed
 
 	bool valid;
