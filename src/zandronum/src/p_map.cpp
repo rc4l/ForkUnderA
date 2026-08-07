@@ -6119,7 +6119,10 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 			// points and bombdamage should be the same sign
 			// [rc4l] uzdoom@62a4945ca: a CAUSEPAIN bomb must reach the victim even when the radius
 			// damage works out to zero, or it can never trigger the pain it exists to cause.
-			if (((bombspot->flags7 & MF7_CAUSEPAIN) || (points * bombdamage) > 0) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
+			// [rc4l] uzdoom@34aeb428a dropped the CAUSEPAIN test here: the sign check is about
+			// whether damage and thrust agree, not about pain, and CAUSEPAIN is honoured inside
+			// P_DamageMobj anyway.
+			if (((points * bombdamage) > 0) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
 			{ // OK to damage; target is in direct path
 				double velz;
 				double thrust;

@@ -1174,6 +1174,10 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 	bool invulpain = false;
 	const bool fakedPain = isFakePain(target, inflictor, damage);
 
+	// [rc4l] uzdoom@34aeb428a -- a negative amount is not healing; clamp it before anything
+	// downstream reads it, since the chain now treats a negative value as "cancel everything".
+	if (damage < 0) damage = 0;
+
 	// [BC] Game is currently in a suspended state; don't hurt anyone.
 	if ( GAME_GetEndLevelDelay( ))
 		return -1;
@@ -1390,12 +1394,13 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 				}
 				return -1;
 			}
-			// [rc4l] uzdoom@d940c6a2e -- after the reduced-to-zero test, not before it, so a
-			// NODAMAGE target does not take the FORCEPAIN escape above.
-			if (target->flags5 & MF5_NODAMAGE)
-			{
-				damage = 0;
-			}
+		}
+		// [rc4l] uzdoom@d940c6a2e placed this after the reduced-to-zero test so a NODAMAGE target
+		// does not take the FORCEPAIN escape; uzdoom@e70aae91e then lifted it out of the
+		// sub-TELEFRAG_DAMAGE branch so NODAMAGE also ignores telefrag damage.
+		if (target->flags5 & MF5_NODAMAGE)
+		{
+			damage = 0;
 		}
 	}
 	if (damage < 0)
