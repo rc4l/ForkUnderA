@@ -117,13 +117,10 @@ jobs:
     if: github.ref_type == 'tag' || (inputs.release && github.ref_name == github.event.repository.default_branch)
     uses: ./.github/workflows/_test.yml
 
-  # [rc4l] clang-tidy, split out of _test.yml so PR builds stop queueing behind it. Same
-  # stable-path condition as test — it gated stable releases when it lived inside that job,
-  # and it still does; running in parallel from t=0 it finishes long before the builds, so
-  # this preserves the gate at zero added wall time.
-  tidy:
-    if: github.ref_type == 'tag' || (inputs.release && github.ref_name == github.event.repository.default_branch)
-    uses: ./.github/workflows/_tidy.yml
+  # [rc4l] There was a clang-tidy job here. It was deleted, not disabled -- see the note in
+  # test-and-build.yml for why. It had stopped being free: the claim above that it "finishes long
+  # before the builds" had quietly stopped being true, and it was holding publish for ~13 minutes
+  # after every other job was green.
 
   # [rc4l] The three platform builds live in _build.yml so test-and-build.yml runs the same ones on PRs.
   build:
@@ -140,12 +137,12 @@ jobs:
   # experimental builds — without it, a skipped dependency would skip publish too. The build
   # must always have succeeded; the suite must have passed only on the stable path.
   publish:
-    needs: [setup, test, tidy, build]
+    needs: [setup, test, build]
     if: >-
       always()
       && needs.setup.outputs.publish == 'true'
       && needs.build.result == 'success'
-      && (needs.setup.outputs.channel == 'experimental' || (needs.test.result == 'success' && needs.tidy.result == 'success'))
+      && (needs.setup.outputs.channel == 'experimental' || needs.test.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

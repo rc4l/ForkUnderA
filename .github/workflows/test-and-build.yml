@@ -17,12 +17,24 @@ jobs:
   test:
     uses: ./.github/workflows/_test.yml
 
-  # [rc4l] clang-tidy runs in PARALLEL with test and the builds — deliberately not a `needs`
-  # of anything. It was 75% of the test job's wall time, and `build: needs: test` made every
-  # platform build queue behind a report-only lint. As its own top-level job the report still
-  # lands on every push/PR (same files, same config), it just no longer gates the builds.
-  tidy:
-    uses: ./.github/workflows/_tidy.yml
+  # [rc4l] A clang-tidy job used to run here, and in release.yml where it gated publish. Deleted
+  # after measuring what it actually did:
+  #
+  #   - 17m53s per run, of which 953s was one clang-tidy invocation. Every other job in the release
+  #     finished in 5m35s, so publish sat waiting on it for ~13 minutes.
+  #   - The skip-cache never hit. Its key hashed all 1391 files under src/zandronum/src/**, and 678
+  #     of those are .cpp files that no test can include, so any engine edit re-linted all 110 test
+  #     files for nothing.
+  #   - It reported 2196 diagnostics and passed anyway, because WarningsAsErrors was empty. 1308 of
+  #     them were literal-suffix casing.
+  #   - Every one of those 2196 was inside a *_test.cpp. HeaderFilterRegex '$^' dropped headers and
+  #     the file selector only matched tests, so it never saw the engine OR our own compute code.
+  #   - Nothing ran it locally, so nobody ever read the output.
+  #
+  # A lint worth having would point at features/*/computation/*.cpp and put real checks in
+  # WarningsAsErrors. That is a different job from this one, so this one goes rather than lingering
+  # as something people assume is protecting them. .clang-tidy is deliberately KEPT: editors and
+  # clangd read it, which is where these diagnostics are actually useful.
 
   # [rc4l] PRs and main, but not every feature-branch push — the builds are the slow part.
   # Main is covered as well as PRs because an admin can push straight past the PR gate.
