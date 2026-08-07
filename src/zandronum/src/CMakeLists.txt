@@ -1486,6 +1486,11 @@ add_executable( zdoom WIN32
 	features/server-hosting/computation/hostlifecycle_compute.cpp
 	features/server-hosting/computation/reachprobe_compute.cpp
 	features/server-hosting/zx_reachprobe.cpp
+	features/addon-catalogue/zx_catalogue.cpp
+	features/addon-catalogue/computation/addonfile_compute.cpp
+	features/addon-catalogue/computation/iwadpick_compute.cpp
+	features/addon-catalogue/computation/pickerview_compute.cpp
+	features/addon-catalogue/computation/compat_compute.cpp
 	features/wad-serve/zx_wadserve.cpp
 	features/wad-serve/computation/ratebucket_compute.cpp
 	features/wad-serve/computation/httpreq_compute.cpp
