@@ -1675,7 +1675,10 @@ thrust:
 			// `CF_BUDDHA || MF7_BUDDHA && damage < TELEFRAG_DAMAGE`, and && binds tighter than ||,
 			// so cheat buddha would have survived telefrag damage. Its own P_PoisonDamage hunk
 			// parenthesises it correctly and upstream's hasBuddha() at HEAD settles the intent.
-			if (((player->cheats & CF_BUDDHA2) || (((player->cheats & CF_BUDDHA) || (player->mo->flags7 & MF7_BUDDHA)) && damage < TELEFRAG_DAMAGE))
+			// [rc4l] uzdoom@27c1434585 -- DMG_FORCED means the caller has asked for the damage to
+			// bypass every special check, so buddha must not rescue the player from it either.
+			if (!(flags & DMG_FORCED)
+				&& ((player->cheats & CF_BUDDHA2) || (((player->cheats & CF_BUDDHA) || (player->mo->flags7 & MF7_BUDDHA)) && damage < TELEFRAG_DAMAGE))
 				&& player->playerstate != PST_DEAD)
 			{
 				// If this is a voodoo doll we need to handle the real player as well.
@@ -1798,7 +1801,9 @@ thrust:
 		// damage leaves it at 1 health. TWO UPSTREAM DEFECTS ARE NOT REPRODUCED HERE: their version
 		// reads inflictor->flags3 & MF7_FOILBUDDHA (an MF7 constant against the flags3 word) and
 		// dereferences inflictor without a null check, which P_DamageMobj explicitly permits.
-		if ((target->flags7 & MF7_BUDDHA) && (damage < TELEFRAG_DAMAGE)
+		// [rc4l] uzdoom@27c1434585 -- DMG_FORCED bypasses the monster buddha flag too.
+		if (!(flags & DMG_FORCED)
+			&& (target->flags7 & MF7_BUDDHA) && (damage < TELEFRAG_DAMAGE)
 			&& (inflictor == NULL || !(inflictor->flags7 & MF7_FOILBUDDHA))
 			&& !(flags & DMG_FOILBUDDHA))
 		{ // FOILBUDDHA or telefrag damage must kill it.
