@@ -6298,9 +6298,9 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	// copy args to mapthing so that we have them in one place for the rest of this function
 	// [rc4l] uzdoom@6f5dbdefb -- only for entries that name an actor. A special-only entry
 	// carries no args of its own, and copying them wiped the ones the map supplied.
-	if (mentry->Type != NULL && mentry->Special >= 0)
+	if (mentry->ArgsDefined)
 	{
-		mthing->special = mentry->Special;
+		if (mentry->Type != NULL) mthing->special = mentry->Special;
 		memcpy(mthing->args, mentry->Args, sizeof(mthing->args));
 	}
 

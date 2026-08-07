@@ -221,6 +221,12 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize)
 					sc.ScriptError("Unknown keyword '%s'", sc.String);
 				}
 			}
+			if (iwad->MapInfo.IsEmpty())
+			{
+				// [rc4l] uzdoom@268e7df99 -- an IWAD that names no MAPINFO gets the minimum set, or it starts
+				// with no editor numbers defined at all and every thing in its maps is unknown.
+				iwad->MapInfo = "mapinfo/mindefaults.txt";
+			}
 		}
 		else if (sc.Compare("NAMES"))
 		{
