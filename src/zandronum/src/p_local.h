@@ -216,6 +216,7 @@ bool P_Thing_Raise(AActor *thing, bool byClient = false, AActor *raiser = NULL);
 void P_SpawnTeleportFog(AActor *mobj, fixed_t x, fixed_t y, fixed_t z, bool beforeTele = true, bool setTarget = false);
 bool P_Thing_CanRaise(AActor *thing);
 const PClass *P_GetSpawnableType(int spawnnum);
+void InitSpawnablesFromMapinfo();
 
 //
 // P_MAPUTL

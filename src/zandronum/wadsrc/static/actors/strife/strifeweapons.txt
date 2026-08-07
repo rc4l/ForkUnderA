@@ -45,7 +45,6 @@ ACTOR StrifeSpark : StrifePuff
 
 ACTOR PunchDagger : StrifeWeapon
 {
-	Game Strife
 	Weapon.SelectionOrder 3900
 	+WEAPON.NOALERT
 	+WEAPON.ALLOW_WITH_RESPAWN_INVUL // [AK]
@@ -153,7 +152,6 @@ ACTOR PoisonBolt native
 
 ACTOR StrifeCrossbow : StrifeWeapon
 {
-	Game Strife
 	+FLOORCLIP
 	ConversationID 194, 188, 192
 	Weapon.SelectionOrder 1200
@@ -204,7 +202,6 @@ ACTOR StrifeCrossbow : StrifeWeapon
 
 ACTOR StrifeCrossbow2 : StrifeCrossbow
 {
-	Game Strife
 	Weapon.SelectionOrder 2700
 	Weapon.AmmoUse1 1
 	Weapon.AmmoGive1 0
@@ -241,7 +238,6 @@ ACTOR StrifeCrossbow2 : StrifeCrossbow
 
 actor AssaultGun : StrifeWeapon
 {
-	Game Strife
 	ConversationID 188, 182, 186
 	+FLOORCLIP
 	Weapon.SelectionOrder 600
@@ -280,7 +276,6 @@ actor AssaultGun : StrifeWeapon
 
 ACTOR AssaultGunStanding : WeaponGiver
 {
-	Game Strife
 	ConversationID 189, 183, 187
 	DropItem "AssaultGun"
 	Inventory.PickupMessage "$TXT_ASSAULTGUN"
@@ -298,7 +293,6 @@ ACTOR AssaultGunStanding : WeaponGiver
 
 ACTOR MiniMissileLauncher : StrifeWeapon
 {
-	Game Strife
 	ConversationID 192, 186, 190
 	+FLOORCLIP
 	Weapon.SelectionOrder 1800
@@ -372,7 +366,6 @@ ACTOR MiniMissilePuff : StrifePuff
 
 ACTOR MiniMissile
 {
-	Game Strife
 	ConversationID 99,-1,-1
 	Speed 20
 	Radius 10
@@ -404,7 +397,6 @@ ACTOR MiniMissile
 
 ACTOR FlameThrower : StrifeWeapon
 {
-	Game Strife
 	ConversationID 190, 184, 188
 	+FLOORCLIP
 	Weapon.SelectionOrder 2100
@@ -483,7 +475,6 @@ ACTOR FlameMissile
 
 ACTOR Mauler : StrifeWeapon
 {
-	Game Strife
 	ConversationID 193, 187, 191
 	+FLOORCLIP
 	Weapon.SelectionOrder 300
@@ -529,7 +520,6 @@ ACTOR Mauler : StrifeWeapon
 
 ACTOR Mauler2 : Mauler
 {
-	Game Strife
 	Weapon.SelectionOrder 3300
 	Weapon.AmmoUse1 30
 	Weapon.AmmoGive1 0
@@ -644,7 +634,6 @@ ACTOR MaulerTorpedoWave
 
 ACTOR HEGrenade
 {
-	Game Strife
 	ConversationID 106,-1,-1
 	Speed 15
 	Radius 13
@@ -682,7 +671,6 @@ ACTOR HEGrenade
 
 ACTOR PhosphorousGrenade
 {
-	Game Strife
 	ConversationID 107,-1,-1
 	Speed 15
 	Radius 13
@@ -755,7 +743,6 @@ ACTOR PhosphorousFire native
 
 ACTOR StrifeGrenadeLauncher : StrifeWeapon
 {
-	Game Strife
 	ConversationID 195, 189, 193
 	+FLOORCLIP
 	Weapon.SelectionOrder 2400
@@ -804,7 +791,6 @@ ACTOR StrifeGrenadeLauncher : StrifeWeapon
 
 ACTOR StrifeGrenadeLauncher2 : StrifeGrenadeLauncher
 {
-	Game Strife
 	Weapon.SelectionOrder 3200
 	Weapon.AmmoUse1 1
 	Weapon.AmmoGive1 0

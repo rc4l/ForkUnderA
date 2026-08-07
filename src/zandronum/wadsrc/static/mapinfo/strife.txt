@@ -863,3 +863,21 @@ DoomEdNums
   3005 = Crusader
   3006 = Sentinel
 }
+
+// [rc4l] uzdoom@2ec8e2c2a -- spawn numbers (Thing_Spawn / Thing_Projectile) move out of
+// DECORATE to here, the same way the editor numbers did.
+SpawnNums
+{
+	11 = ClipOfBullets
+	68 = LeatherArmor
+	69 = MetalArmor
+	75 = EnergyPod
+	135 = ShadowArmor
+	136 = EnvironmentalSuit
+	137 = StrifeMap
+	139 = BoxOfBullets
+	140 = MiniMissiles
+	141 = CrateOfMissiles
+	142 = EnergyPack
+	144 = AmmoSatchel
+}
