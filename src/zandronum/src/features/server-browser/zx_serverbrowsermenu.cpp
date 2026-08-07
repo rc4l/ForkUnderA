@@ -3027,6 +3027,26 @@ public:
 	// [rc4l] The one control that swaps the right column between what the selection is and how to
 	// run it. Drawn as a row rather than a pill so it reads as part of the column instead of
 	// competing with START SERVER below it.
+	// [rc4l] The line between the two columns. Same colour and weight as the tab separator above it,
+	// because a second divider style would read as a different KIND of boundary rather than as the
+	// same idea applied twice.
+	//
+	// Stops short of the buttons at its foot: running it down to them would box each button into its
+	// own cell, and they are a pair sitting under the panel rather than two things in two cells.
+	void DrawHostColumnDivider( )
+	{
+		const int vx = ( SB_HOST_LIST_RIGHT + SB_HOST_RCOL_LEFT ) / 2;
+		const int top = SB_HOST_VIEW_TOP - 4;
+		const int bottom = SB_HOST_BTN_Y - 10;
+
+		const int x = serverbrowser_ToScreenX( vx );
+		const int y0 = serverbrowser_ToScreenY( top );
+		const int y1 = serverbrowser_ToScreenY( bottom );
+
+		screen->Dim( PalEntry( 120, 130, 165 ), 0.35f, x,
+			y0, MAX( 1, serverbrowser_ToScreenX( vx + 1 ) - x ), MAX( 1, y1 - y0 ));
+	}
+
 	void DrawHostSettingsToggle( )
 	{
 		// [rc4l] DrawRoundedButton, which IS the JOIN and START drawing. A button that merely
@@ -3303,6 +3323,7 @@ public:
 
 		PopClip( );
 		DrawHostScrollBar( );
+		DrawHostColumnDivider( );
 
 		// [rc4l] OUTSIDE the clip, like START SERVER beside it. Both buttons sit at the panel's foot,
 		// which is below the scrolling viewport, so drawing this one inside it cost the button its
