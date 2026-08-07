@@ -2510,10 +2510,11 @@ static void D_DoomInit()
 //
 //==========================================================================
 
-static void AddAutoloadFiles(const char *group, const char *autoname)
+static void AddAutoloadFiles(const char *autoname)
 {
-	LumpFilterGroup = group;
-	LumpFilterIWAD = autoname;
+	// [rc4l] uzdoom@258822ef3 -- the Autoname is a dotted hierarchy now, walked prefix by
+	// prefix, so the separate Group mechanism is gone. The trailing dot simplifies that walk.
+	LumpFilterIWAD.Format("%s.", autoname);
 
 	if (!(gameinfo.flags & GI_SHAREWARE) && !Args->CheckParm("-noautoload"))
 	{
@@ -2546,21 +2547,16 @@ static void AddAutoloadFiles(const char *group, const char *autoname)
 		file += ".Autoload";
 		D_AddConfigWads (allwads, file);
 
-		// Add group-specific wads
-		// [rc4l] uzdoom@a91997d12 -- an empty name would ask for a ".Autoload" section.
-		if (group != NULL && group[0] != 0)
-		{
-			file = group;
-			file += ".Autoload";
-			D_AddConfigWads(allwads, file);
-		}
+		// Add IWAD-specific wads, one section per dotted prefix. This supersedes both the group
+		// section and the uzdoom@a91997d12 empty-name guard: an empty name yields no prefixes.
+		long len;
+		int lastpos = -1;
 
-		// Add IWAD-specific wads
-		if (autoname != NULL && autoname[0] != 0)
+		while ((len = LumpFilterIWAD.IndexOf('.', lastpos+1)) > 0)
 		{
-			file = autoname;
-			file += ".Autoload";
+			file = LumpFilterIWAD.Left(len) + ".Autoload";
 			D_AddConfigWads(allwads, file);
+			lastpos = len;
 		}
 	}
 }
@@ -2897,7 +2893,7 @@ void D_DoomMain (void)
 		FBaseCVar::DisableCallbacks();
 		GameConfig->DoGameSetup (gameinfo.ConfigName);
 
-		AddAutoloadFiles(iwad_info->Group, iwad_info->Autoname);
+		AddAutoloadFiles(iwad_info->Autoname);
 
 		// Process automatically executed files
 		FExecList *exec;

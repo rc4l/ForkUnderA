@@ -66,15 +66,13 @@ FConfigFile::FConfigFile ()
 //
 //====================================================================
 
-FConfigFile::FConfigFile (const char *pathname,
-	void (*nosechandler)(const char *pathname, FConfigFile *config, void *userdata),
-	void *userdata)
+FConfigFile::FConfigFile (const char *pathname)
 {
 	Sections = CurrentSection = NULL;
 	LastSectionPtr = &Sections;
 	CurrentEntry = NULL;
 	ChangePathName (pathname);
-	LoadConfigFile (nosechandler, userdata);
+	LoadConfigFile ();
 	OkayToWrite = true;
 	FileExisted = true;
 }
@@ -517,6 +515,22 @@ FConfigFile::FConfigSection *FConfigFile::FindSection (const char *name) const
 
 //====================================================================
 //
+// FConfigFile :: RenameSection
+//
+//====================================================================
+
+void FConfigFile::RenameSection (const char *oldname, const char *newname) const
+{
+	FConfigSection *section = FindSection(oldname);
+
+	if (section != NULL)
+	{
+		section->SectionName = newname;
+	}
+}
+
+//====================================================================
+//
 // FConfigFile :: FindEntry
 //
 //====================================================================
@@ -587,7 +601,7 @@ FConfigFile::FConfigEntry *FConfigFile::NewConfigEntry (
 //
 //====================================================================
 
-void FConfigFile::LoadConfigFile (void (*nosechandler)(const char *pathname, FConfigFile *config, void *userdata), void *userdata)
+void FConfigFile::LoadConfigFile ()
 {
 	FILE *file = fopen (PathName, "r");
 	bool succ;
@@ -601,14 +615,6 @@ void FConfigFile::LoadConfigFile (void (*nosechandler)(const char *pathname, FCo
 	succ = ReadConfig (file);
 	fclose (file);
 	FileExisted = succ;
-
-	if (!succ)
-	{ // First valid line did not define a section
-		if (nosechandler != NULL)
-		{
-			nosechandler (PathName, this, userdata);
-		}
-	}
 }
 
 //====================================================================
