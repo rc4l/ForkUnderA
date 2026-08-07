@@ -146,7 +146,6 @@ void FActorInfo::StaticInit ()
 
 void FActorInfo::StaticSetActorNums ()
 {
-	SpawnableThings.Clear();
 
 	for (unsigned int i = 0; i < PClass::m_RuntimeActors.Size(); ++i)
 	{

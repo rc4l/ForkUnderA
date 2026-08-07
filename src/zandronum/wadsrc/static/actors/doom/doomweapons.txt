@@ -17,7 +17,6 @@ ACTOR DoomWeapon : Weapon
 
 ACTOR Fist : Weapon
 {
-	Game Doom
 	Weapon.SelectionOrder 3700
 	Weapon.Kickback 100
 	Obituary "$OB_MPFIST"
@@ -55,7 +54,6 @@ ACTOR Fist : Weapon
 
 ACTOR Pistol : DoomWeapon
 {
-	Game Doom
 	Weapon.SelectionOrder 1900
 	Weapon.AmmoUse 1
 	Weapon.AmmoGive 20
@@ -103,8 +101,6 @@ ACTOR Pistol : DoomWeapon
 
 ACTOR Chainsaw : Weapon
 {
-	Game Doom
-	SpawnID 32
 	Weapon.Kickback 0
 	Weapon.SelectionOrder 2200
 	Weapon.UpSound "weapons/sawup"
@@ -144,8 +140,6 @@ ACTOR Chainsaw : Weapon
 
 ACTOR Shotgun : DoomWeapon
 {
-	Game Doom
-	SpawnID 27
 	Weapon.SelectionOrder 1300
 	Weapon.AmmoUse 1
 	Weapon.AmmoGive 8
@@ -191,8 +185,6 @@ ACTOR Shotgun : DoomWeapon
 
 ACTOR SuperShotgun : DoomWeapon
 {
-	Game Doom
-	SpawnID 33
 	Weapon.SelectionOrder 400
 	Weapon.AmmoUse 2
 	Weapon.AmmoGive 8
@@ -245,8 +237,6 @@ ACTOR SuperShotgun : DoomWeapon
 
 ACTOR Chaingun : DoomWeapon
 {
-	Game Doom
-	SpawnID 28
 	Weapon.SelectionOrder 700
 	Weapon.AmmoUse 1
 	Weapon.AmmoGive 20
@@ -288,8 +278,6 @@ ACTOR Chaingun : DoomWeapon
 
 ACTOR RocketLauncher : DoomWeapon
 {
-	Game Doom
-	SpawnID 29
 	Weapon.SelectionOrder 2500
 	Weapon.AmmoUse 1
 	Weapon.AmmoGive 2
@@ -326,8 +314,6 @@ ACTOR RocketLauncher : DoomWeapon
 
 ACTOR Rocket
 {
-	Game Doom
-	SpawnID 127
 	Radius 11
 	Height 8
 	Speed 20
@@ -362,8 +348,6 @@ ACTOR Rocket
 
 ACTOR Grenade native
 {
-	Game Doom
-	SpawnID 216
 	Radius 8
 	Height 8
 	Speed 25
@@ -418,8 +402,6 @@ ACTOR Grenade native
 
 ACTOR PlasmaRifle : DoomWeapon
 {
-	Game Doom
-	SpawnID 30
 	Weapon.SelectionOrder 100
 	Weapon.AmmoUse 1
 	Weapon.AmmoGive 40
@@ -454,8 +436,6 @@ ACTOR PlasmaRifle : DoomWeapon
 
 ACTOR PlasmaBall
 {
-	Game Doom
-	SpawnID 51
 	Radius 13
 	Height 8
 	Speed 25
@@ -522,9 +502,7 @@ ACTOR PlasmaBall2 : PlasmaBall1
 
 ACTOR BFG9000 : DoomWeapon
 {
-	Game Doom
 	Height 20
-	SpawnID 31
 	Weapon.SelectionOrder 2800
 	Weapon.AmmoUse 40
 	Weapon.AmmoGive 40
@@ -569,8 +547,6 @@ ACTOR BFG9000 : DoomWeapon
 
 ACTOR BFGBall
 {
-	Game Doom
-	SpawnID 128
 	Radius 13
 	Height 8
 	Speed 25

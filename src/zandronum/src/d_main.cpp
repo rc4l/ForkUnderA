@@ -3120,6 +3120,7 @@ void D_DoomMain (void)
 		// [rc4l] uzdoom@15dbbc913 -- seed the map from MAPINFO first, then let DECORATE's numbers
 		// overwrite it. That order is what makes a DECORATE doomed number win.
 		InitActorNumsFromMapinfo();
+		InitSpawnablesFromMapinfo();
 		FActorInfo::StaticSetActorNums ();
 
 		// [TP] Init preferred weapon order

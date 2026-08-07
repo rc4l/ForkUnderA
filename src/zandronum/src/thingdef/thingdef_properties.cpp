@@ -1014,7 +1014,10 @@ DEFINE_PROPERTY(translation, L, Actor)
 	if (type == 0)
 	{
 		PROP_INT_PARM(trans, 1);
-		int max = (gameinfo.gametype==GAME_Strife || (info->GameFilter&GAME_Strife)) ? 6:2;
+		// [rc4l] uzdoom@2ec8e2c2a -- the Game directives are gone from DECORATE, so this can no
+		// longer narrow the range by game filter: every actor is parsed under every game now, and
+		// Strife's Translation 3 to 6 would be rejected while running Doom.
+		int max = 6;// (gameinfo.gametype == GAME_Strife || (info->GameFilter&GAME_Strife)) ? 6 : 2;
 		if (trans < 0 || trans > max)
 		{
 			I_Error ("Translation must be in the range [0,%d]", max);
