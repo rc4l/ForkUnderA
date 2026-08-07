@@ -4228,15 +4228,21 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIf)
 //
 // [rc4l] uzdoom@5a472e815 -> 2c7a3f2eb -> f2551dced, settled form. A_Damage/Kill/Remove may be
 // narrowed by class OR by species, and either test may be inverted with the EX* flags.
-static bool DoCheckSpecies(AActor *mo, FName species, bool exclude)
+static bool DoCheckSpecies(AActor *mo, FName filterSpecies, bool exclude)
 {
-	return (!(species) || mo->Species == NAME_None || (species && ((exclude) ? (mo->Species != species) : (mo->Species == species))));
+	// [rc4l] uzdoom@19cea0f62 -- GetSpecies() resolves the inherited species; reading mo->Species
+	// directly missed it. The old "mo->Species == NAME_None" early-true also made a speciesless
+	// actor satisfy every filter, including an exclude one.
+	FName actorSpecies = mo->GetSpecies();
+	if (filterSpecies == NAME_None) return true;
+	return exclude ? (actorSpecies != filterSpecies) : (actorSpecies == filterSpecies);
 }
 
-static bool DoCheckFilter(AActor *mo, const PClass *filter, bool exclude)
+static bool DoCheckClass(AActor *mo, const PClass *filterClass, bool exclude)
 {
-	const PClass *c1 = mo->GetClass();
-	return (!(filter) || (filter == NULL) || (filter && ((exclude) ? (c1 != filter) : (c1 == filter))));
+	const PClass *actorClass = mo->GetClass();
+	if (filterClass == NULL) return true;
+	return exclude ? (actorClass != filterClass) : (actorClass == filterClass);
 }
 
 //===========================================================================
@@ -4254,7 +4260,7 @@ enum KILS
 static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags, const PClass *filter, FName species)
 {
 	// [rc4l] uzdoom@5a472e815 / f2551dced
-	bool filterpass = DoCheckFilter(killtarget, filter, (flags & KILS_EXFILTER) ? true : false),
+	bool filterpass = DoCheckClass(killtarget, filter, (flags & KILS_EXFILTER) ? true : false),
 		speciespass = DoCheckSpecies(killtarget, species, (flags & KILS_EXSPECIES) ? true : false);
 	if (!((flags & KILS_EITHER) ? (filterpass || speciespass) : (filterpass && speciespass)))
 		return;
@@ -4264,12 +4270,12 @@ static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags
 	// `if (KILS_FOILINVUL)` and `if (KILS_FOILBUDDHA)` without `flags &`, so both tested a
 	// non-zero constant and A_Kill* ALWAYS foiled invulnerability and buddha regardless of
 	// what the modder passed; and it checked `flags2 & MF7_BUDDHA`, the wrong flags word.
-	int dmgFlags = DMG_NO_ARMOR + DMG_NO_FACTOR;
+	int dmgFlags = DMG_NO_ARMOR | DMG_NO_FACTOR;
 
 	if (flags & KILS_FOILINVUL)
-		dmgFlags += DMG_FOILINVUL;
+		dmgFlags |= DMG_FOILINVUL;
 	if (flags & KILS_FOILBUDDHA)
-		dmgFlags += DMG_FOILBUDDHA;
+		dmgFlags |= DMG_FOILBUDDHA;
 
 	if ((killtarget->flags & MF_MISSILE) && (flags & KILS_KILLMISSILES))
 	{
@@ -5284,7 +5290,7 @@ enum DMSS
 static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags, const PClass *filter, FName species)
 {
 	// [rc4l] uzdoom@5a472e815 / f2551dced: narrow by class OR species, either test invertible.
-	bool filterpass = DoCheckFilter(dmgtarget, filter, (flags & DMSS_EXFILTER) ? true : false),
+	bool filterpass = DoCheckClass(dmgtarget, filter, (flags & DMSS_EXFILTER) ? true : false),
 		speciespass = DoCheckSpecies(dmgtarget, species, (flags & DMSS_EXSPECIES) ? true : false);
 	if (!((flags & DMSS_EITHER) ? (filterpass || speciespass) : (filterpass && speciespass)))
 		return;
@@ -5294,17 +5300,17 @@ static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageTy
 	// DMG_FOILINVUL is now conditional and P_DamageMobj already honours invulnerability.
 	int dmgFlags = 0;
 	if (flags & DMSS_FOILINVUL)
-		dmgFlags += DMG_FOILINVUL;
+		dmgFlags |= DMG_FOILINVUL;
 	if (flags & DMSS_FOILBUDDHA)
-		dmgFlags += DMG_FOILBUDDHA;
-	if ((flags & DMSS_KILL) || (flags & DMSS_NOFACTOR)) //Kill implies NoFactor
-		dmgFlags += DMG_NO_FACTOR;
+		dmgFlags |= DMG_FOILBUDDHA;
+	if (flags & (DMSS_KILL | DMSS_NOFACTOR)) //Kill implies NoFactor
+		dmgFlags |= DMG_NO_FACTOR;
 	if (!(flags & DMSS_AFFECTARMOR) || (flags & DMSS_KILL)) //Kill overrides AffectArmor
-		dmgFlags += DMG_NO_ARMOR;
+		dmgFlags |= DMG_NO_ARMOR;
 	if (flags & DMSS_KILL) //Kill adds the value of the damage done to it. Allows for more controlled extreme death types.
 		amount += dmgtarget->health;
 	if (flags & DMSS_NOPROTECT) //Ignore PowerProtection.
-		dmgFlags += DMG_NO_PROTECT;
+		dmgFlags |= DMG_NO_PROTECT;
 
 	if (amount > 0)
 		P_DamageMobj(dmgtarget, self, self, amount, DamageType, dmgFlags); //Should wind up passing them through just fine.
@@ -5681,7 +5687,7 @@ enum RMVF_flags
 static void DoRemove(AActor *removetarget, int flags, const PClass *filter, FName species)
 {
 	// [rc4l] uzdoom@5a472e815 / f2551dced
-	bool filterpass = DoCheckFilter(removetarget, filter, (flags & RMVF_EXFILTER) ? true : false),
+	bool filterpass = DoCheckClass(removetarget, filter, (flags & RMVF_EXFILTER) ? true : false),
 		speciespass = DoCheckSpecies(removetarget, species, (flags & RMVF_EXSPECIES) ? true : false);
 	if (!((flags & RMVF_EITHER) ? (filterpass || speciespass) : (filterpass && speciespass)))
 		return;
