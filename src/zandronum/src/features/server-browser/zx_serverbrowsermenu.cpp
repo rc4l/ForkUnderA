@@ -4148,11 +4148,8 @@ public:
 			SB_REFRESH_X + ( SB_REFRESH_W - textW ) / 2, SB_REFRESH_Y + 3, label,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-		// Says what the button does AND what it already does by itself, because the second half is the
-		// part nobody can see.
 		serverbrowser_Tip( SB_REFRESH_X, SB_REFRESH_Y, SB_REFRESH_W, SB_REFRESH_H,
-			bBusy ? "Checking the servers on this list now" :
-			"Check for new servers\nThe list is already re-checked whenever you open it" );
+			"Refresh all servers" );
 	}
 
 	//*************************************************************************
