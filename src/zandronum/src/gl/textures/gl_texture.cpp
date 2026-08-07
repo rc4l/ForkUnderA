@@ -680,7 +680,6 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 	else sc.UnGet();
 
 	sc.MustGetString();
-	const FString texname = sc.String;
 	FTextureID no = TexMan.CheckForTexture(sc.String, type);
 	FTexture *tex = TexMan[no];
 
@@ -720,21 +719,9 @@ void gl_ParseBrightmap(FScanner &sc, int deflump)
 				Printf("Brightmap '%s' not found in texture '%s'\n", sc.String, tex? tex->Name.GetChars() : "(null)");
 		}
 	}
-	// [rc4l] Upstream returns silently in both of these cases, so an author gets an unlit texture and
-	// no reason for it. Both checks are parse-time only, once per definition, and run after the name
-	// has already been looked up, so they cost nothing that matters.
 	if (!tex)
 	{
-		Printf("Brightmap: target texture '%s' not found.\n", texname.GetChars());
 		return;
-	}
-	// A full path resolves through CheckForTexture's by-lump branch, which creates a fresh
-	// TEX_Override copy instead of returning the short-name texture the map draws. The brightmap
-	// then attaches to a copy nothing renders. Upstream has the same hole, noted in ca4179caa.
-	if (tex->UseType == FTexture::TEX_Override && tex->Name.IsEmpty())
-	{
-		Printf("Brightmap: target '%s' is a full path, which matches a copy the map never draws. "
-			"Use the short texture name instead.\n", texname.GetChars());
 	}
 	if (thiswad || iwad)
 	{
