@@ -218,11 +218,8 @@ FTextureID FTextureManager::CheckForTexture (const char *name, int usetype, BITF
 	if ((flags & TEXMAN_TryAny) && usetype != FTexture::TEX_Any)
 	{
 		// Never return the index of NULL textures.
-		// [rc4l] uzdoom@8c052818b: the return used to sit out here, so a miss returned -1 and the
-		// full-path lookup below was dead for every caller that passed a specific use type with
-		// TEXMAN_TryAny -- which is what GLDEFS uses for `brightmap texture "some/path.png"`.
-		// The brightmap silently did nothing, because ParseBrightmap's `if (!tex) return;` says
-		// nothing either. Only the short-name form worked. Falling through is the whole fix.
+		// [rc4l] uzdoom@8c052818b: this return used to sit outside the if, so a miss returned -1 and
+		// the full-path lookup below was unreachable. Falling through is the whole fix.
 		if (firstfound != -1)
 		{
 			if (firsttype == FTexture::TEX_Null) return FTextureID(0);
@@ -381,20 +378,9 @@ FTextureID FTextureManager::AddTexture (FTexture *texture)
 
 	if (texture == NULL) return FTextureID(-1);
 
-	// [rc4l] Claim this texture as THE texture for its lump, so a later lookup by full path finds it
-	// instead of minting a second texture from the same image. Nothing but the by-lump branch of
-	// CheckForTexture used to populate this link, so a texture built during normal init was invisible
-	// to it and every full-path lookup produced a copy the map never draws. Upstream has the same
-	// hole and documents it in ca4179caa rather than closing it.
-	//
-	// Costs nothing: LinkedTexture is a pointer that already exists on every lump.
-	//
-	// First writer wins, and multipatch textures are skipped because their source lump is the
-	// TEXTURE1/TEXTURES lump they were DEFINED in, not an image they own -- linking those would point
-	// a whole wad's worth of walls at one definition lump. Measured on the mods in hand, sharing of a
-	// real graphic lump is rare (0 shared lumps in Freedoom and in lightscape; 8 of 23,097 in
-	// brutal22test6, all of them a decal or a second name for one image), and in those cases
-	// returning the first texture is still closer than fabricating a duplicate.
+	// [rc4l] Claim this texture as THE texture for its lump, so a full-path lookup finds it instead
+	// of minting a copy the map never draws. Multipatch is skipped because its source lump is the
+	// TEXTURE1 lump it was defined in, not an image it owns. See f31d90b.
 	if (!texture->bMultiPatch && texture->SourceLump >= 0 &&
 		Wads.GetLinkedTexture(texture->SourceLump) == NULL)
 	{

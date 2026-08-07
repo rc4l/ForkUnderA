@@ -100,9 +100,7 @@ jobs:
       - name: Coverage (100% gate on tested units)
         run: bash tests/coverage.sh --auto
 
-      # [rc4l] clang-tidy used to run here, then moved to its own _tidy.yml, and is now gone
-      # entirely. See test-and-build.yml for the measurements behind that. .clang-tidy stays for
-      # editors and clangd.
+      # [rc4l] clang-tidy ran here, then moved to _tidy.yml, and is now gone. Deleted in 50d64db.
 
   # [rc4l] macOS ASan job. Its irreplaceable purpose is the Objective-C updater networking seam
   # (i_system_cocoa_net_test.mm), which guards the Mac_HttpsGet use-after-free — the Linux `test` job

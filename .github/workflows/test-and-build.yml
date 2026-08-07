@@ -13,13 +13,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-# [rc4l] Pushing again to a PR supersedes the run already going, so cancel it instead of building
-# all three platforms twice for a commit nobody will look at. This is the most frequently triggered
-# workflow here and was the only one without this.
-#
-# Keyed on the ref, so different PRs never cancel each other. Main is deliberately EXCLUDED from
-# cancellation: its runs are what the badge and the merge history attest to, and a quick succession
-# of merges must not leave the earlier commit with a cancelled, inconclusive result.
+# [rc4l] Cancel a superseded PR run rather than build three platforms for a commit nobody reads.
+# Main is excluded because its runs back the badge and the merge history.
 concurrency:
   group: test-and-build-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -28,24 +23,8 @@ jobs:
   test:
     uses: ./.github/workflows/_test.yml
 
-  # [rc4l] A clang-tidy job used to run here, and in release.yml where it gated publish. Deleted
-  # after measuring what it actually did:
-  #
-  #   - 17m53s per run, of which 953s was one clang-tidy invocation. Every other job in the release
-  #     finished in 5m35s, so publish sat waiting on it for ~13 minutes.
-  #   - The skip-cache never hit. Its key hashed all 1391 files under src/zandronum/src/**, and 678
-  #     of those are .cpp files that no test can include, so any engine edit re-linted all 110 test
-  #     files for nothing.
-  #   - It reported 2196 diagnostics and passed anyway, because WarningsAsErrors was empty. 1308 of
-  #     them were literal-suffix casing.
-  #   - Every one of those 2196 was inside a *_test.cpp. HeaderFilterRegex '$^' dropped headers and
-  #     the file selector only matched tests, so it never saw the engine OR our own compute code.
-  #   - Nothing ran it locally, so nobody ever read the output.
-  #
-  # A lint worth having would point at features/*/computation/*.cpp and put real checks in
-  # WarningsAsErrors. That is a different job from this one, so this one goes rather than lingering
-  # as something people assume is protecting them. .clang-tidy is deliberately KEPT: editors and
-  # clangd read it, which is where these diagnostics are actually useful.
+  # [rc4l] A clang-tidy job ran here and gated publish in release.yml. Deleted in 50d64db, which
+  # has the measurements. .clang-tidy stays for editors and clangd.
 
   # [rc4l] PRs and main, but not every feature-branch push — the builds are the slow part.
   # Main is covered as well as PRs because an admin can push straight past the PR gate.

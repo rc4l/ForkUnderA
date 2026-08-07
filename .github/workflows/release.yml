@@ -117,10 +117,8 @@ jobs:
     if: github.ref_type == 'tag' || (inputs.release && github.ref_name == github.event.repository.default_branch)
     uses: ./.github/workflows/_test.yml
 
-  # [rc4l] There was a clang-tidy job here. It was deleted, not disabled -- see the note in
-  # test-and-build.yml for why. It had stopped being free: the claim above that it "finishes long
-  # before the builds" had quietly stopped being true, and it was holding publish for ~13 minutes
-  # after every other job was green.
+  # [rc4l] A clang-tidy job here used to gate publish, holding it ~13 minutes after every other job
+  # was green. Deleted in 50d64db.
 
   # [rc4l] The three platform builds live in _build.yml so test-and-build.yml runs the same ones on PRs.
   build:
