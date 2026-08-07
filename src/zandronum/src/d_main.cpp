@@ -2939,6 +2939,10 @@ void D_DoomMain (void)
 		allwads.ShrinkToFit();
 		SetMapxxFlag();
 
+		// [rc4l] uzdoom@c36222d2e -- key setup happens here now, after the wads are loaded,
+		// because the default bindings come from DEFBINDS lumps.
+		GameConfig->DoKeySetup(gameinfo.ConfigName);
+
 		// Now that wads are loaded, define mod-specific cvars.
 		ParseCVarInfo();
 
