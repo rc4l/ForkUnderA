@@ -3515,8 +3515,37 @@ public:
 			+ 6								// the rule under the title
 			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
 			+ 4 + 6							// the rule above the files
+			+ SB_HOST_LINE					// the IWAD, listed with them
 			+ static_cast<int>( a.files.size( )) * SB_HOST_LINE
 			+ 10;
+	}
+
+	// Which IWAD this entry will land on, in the same shape as the files below it, because it is one
+	// of them: the game the PWADs sit on top of. Named plainly, so a host who wanted Doom II and is
+	// getting Freedoom sees freedoom2.wad and knows.
+	FString HostDetailIwadRow( const zx::AddonEntry &addon )
+	{
+		std::vector<std::string> iwads;
+		static const char *const kCandidates[] = {
+			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
+			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
+		};
+
+		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
+		{
+			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
+				iwads.push_back( kCandidates[i] );
+		}
+
+		const zx::IwadPick pick = zx::PickIwad( addon.iwad, iwads );
+
+		FString row;
+		if ( pick.choice == zx::IwadChoice::None )
+			row.Format( "- %s", pick.wanted.empty( ) ? "no game to run on" : pick.wanted.c_str( ));
+		else
+			row.Format( "+ %s", pick.iwad.c_str( ));
+
+		return row;
 	}
 
 	// The title names what the whole column is about, so it is the one line that should not look like
@@ -3591,6 +3620,15 @@ public:
 		if ( HostDetailRowVisible( y, 2 ))
 			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
 		y += 6;
+
+		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+		{
+			const FString iwadRow = HostDetailIwadRow( addon );
+			screen->DrawText( SmallFont, ( iwadRow[0] == '+' ) ? CR_GRAY : CR_DARKRED,
+				x, y, iwadRow,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
+		y += SB_HOST_LINE;
 
 		for ( size_t i = 0; i < addon.files.size( ); ++i )
 		{
