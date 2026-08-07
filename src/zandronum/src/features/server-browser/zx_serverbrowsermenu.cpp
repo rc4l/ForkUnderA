@@ -2932,17 +2932,21 @@ public:
 
 		const int x = SB_HOST_LEFT + SB_HOST_PAD;
 
+		// While something of ours is running, the form is not the point any more -- what it is doing is.
+		//
+		// [rc4l] The heading is drawn only on the form, below. It answers "what is this screen for",
+		// which is a question that has stopped applying once a server of yours is up: at that point
+		// the screen is about that server, and telling someone they can run one is a page behind them.
+		if ( bLive || ( state == zx::HostState::Failed ))
+		{
+			DrawHostStatus( x, SB_HOST_TOP + SB_HOST_PAD, state );
+			return;
+		}
+
 		// The heading says what the screen does, not what it is called. "HOST" is already on the tab.
 		screen->DrawText( SmallFont, CR_WHITE, x, SB_HOST_TOP + SB_HOST_PAD,
 			"RUN A SERVER ON THIS MACHINE",
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-
-		// While something of ours is running, the form is not the point any more -- what it is doing is.
-		if ( bLive || ( state == zx::HostState::Failed ))
-		{
-			DrawHostStatus( x, HostFirstFieldY( ), state );
-			return;
-		}
 
 		// [rc4l] The settings are a MASKED, SCROLLING area. Everything between these two calls is
 		// drawn at its scrolled position and cut off at the viewport edges -- so a row half in and
@@ -3099,14 +3103,25 @@ public:
 
 		// [rc4l] INTERNET says whether it will actually work, before anyone commits to it.
 		//
-		// Green once the registry has reached this port from outside, grey while that is unknown or
-		// has come back no. Deliberately NOT disabled: the check can be wrong in the player's favour
-		// -- a router that only opens on demand, a registry we could not reach -- and a form that
-		// refuses to let someone try their own network is worse than one that warns them.
+		// Green when the registry has reached this port from outside, red when the check ran and it
+		// could not, and plain white when we do not know -- untested, still running, or the check
+		// itself failed. That last case is white and not red on purpose: a registry that never
+		// answered has told us about our own service, and painting the player's router as shut on
+		// that basis would be blaming them for our outage.
+		//
+		// Deliberately NOT disabled even when red: the check can be wrong in the player's favour, and
+		// a form that refuses to let someone try their own network is worse than one that warns them.
 		const zx::ProbePhase reach = zx::ReachProbeStatus( HostConfiguredPort( ));
 
 		EColorRange visColors[kHostVisCount];
-		visColors[kHostVisGlobal] = zx::ProbeSaysReachable( reach ) ? CR_GREEN : CR_DARKGRAY;
+
+		switch ( zx::ProbeDisplayFor( reach ))
+		{
+		case zx::ProbeDisplay::Reachable:	visColors[kHostVisGlobal] = CR_GREEN; break;
+		case zx::ProbeDisplay::Unreachable:	visColors[kHostVisGlobal] = CR_DARKRED; break;
+		default:							visColors[kHostVisGlobal] = CR_WHITE; break;
+		}
+
 		visColors[kHostVisLocal] = ( g_HostAdvertise == false ) ? CR_WHITE : CR_GRAY;
 
 		DrawChoiceRow( rowX, y, rowW, kHostVisCount, labels,
@@ -3177,14 +3192,11 @@ public:
 		}
 		else
 		{
-			FString line;
-			line.Format( "%s on %s", g_HostFields[kHostFieldName].text.c_str( ),
-				zx::HostConnectAddress( ).GetChars( ));
-			y = DrawWrappedIn( line, x, y, wrapW, CR_WHITE );
-
+			// [rc4l] The server's own name and loopback address used to be printed here. Both are gone:
+			// 127.0.0.1 is the address for the one person who cannot need it, and putting an address on
+			// screen invites it to be shared, when the thing worth sharing is not this one.
 			if ( state == zx::HostState::Running )
 			{
-				y += 6;
 				y = DrawHostReach( x, y, wrapW );
 
 				y += 4;
