@@ -208,6 +208,37 @@ bool IsSafeDownloadName(const std::string &name)
 	return true;
 }
 
+std::string DownloadSourceName(const std::string &url)
+{
+	std::string rest = url;
+
+	// Drop the scheme.
+	const size_t scheme = rest.find("://");
+	if (scheme != std::string::npos)
+		rest = rest.substr(scheme + 3);
+
+	// Everything from the first slash onward is the path, and the path is not the source.
+	const size_t slash = rest.find('/');
+	if (slash != std::string::npos)
+		rest = rest.substr(0, slash);
+
+	// A query or fragment can appear before any slash on a bare host, and may carry a token.
+	const size_t query = rest.find_first_of("?#");
+	if (query != std::string::npos)
+		rest = rest.substr(0, query);
+
+	// user:password@host -- credentials are exactly what must not reach a log.
+	const size_t at = rest.rfind('@');
+	if (at != std::string::npos)
+		rest = rest.substr(at + 1);
+
+	// Nothing host-shaped survived; name the original rather than print an empty string.
+	if (rest.empty())
+		return url;
+
+	return rest;
+}
+
 std::vector<std::string> BuildCandidateUrls(const std::vector<std::string> &sites,
 	const std::string &filename)
 {
