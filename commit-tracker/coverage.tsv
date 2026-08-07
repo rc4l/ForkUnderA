@@ -1512,7 +1512,7 @@ a88f515364c1cfa67b67833181bdee040d252559	2015-04-02T11:27:52Z	- Import GAMENAMEL
 7c7c3fb54ec941a99ff15592031b15f7df11365b	2015-04-02T18:14:33Z	- Make the 'crashout' CCMD available in non-win32.	pending		/
 d37f9cbcaeadf97f87371be985e2562c490b90b4	2015-04-02T22:52:54Z	Add flies (doomed #112) from the Hexen retail beta	pending		/
 ef562c0341ce57202d500c315a8fe17c49404620	2015-04-02T22:53:15Z	Add dot sprites for Hexen beta flies	pending		/
-27c1434585f62811b8024a1a58616791d31cc7ef	2015-04-03T01:52:51Z	- Fixed: Buddha never took forced damage into account.	ported	ported: buddha no longer rescues from DMG_FORCED damage, for both the player cheat and the monster MF7_BUDDHA flag. DMG_FORCED means the caller asked to bypass every special check, so buddha honouring it was the one gap left.	SHA_PLACEHOLDER
+27c1434585f62811b8024a1a58616791d31cc7ef	2015-04-03T01:52:51Z	- Fixed: Buddha never took forced damage into account.	ported	ported: buddha no longer rescues from DMG_FORCED damage, for both the player cheat and the monster MF7_BUDDHA flag. DMG_FORCED means the caller asked to bypass every special check, so buddha honouring it was the one gap left.	0545554bc
 4c06e7153608e4c04ceebcac997ac37ed67c6795	2015-04-03T07:32:46Z	Merge branch 'dmgforcedfix' of https://github.com/MajorCooke/zdoom	pending		/
 6c603b3c78ace96e396fb4b1834119b3815d7031	2015-04-03T07:33:33Z	Merge branch 'misc_code_improvements' of https://github.com/edward-san/zdoom	pending		/
 f0886ce1f182418febc182caafa18b82d10c19f4	2015-04-03T07:45:04Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
