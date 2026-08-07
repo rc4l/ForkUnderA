@@ -284,7 +284,8 @@ struct FActorInfo
 struct FDoomEdEntry
 {
 	const PClass *Type;
-	int Special;
+	short Special;
+	bool ArgsDefined;
 	int Args[5];
 };
 

@@ -88,7 +88,8 @@ const char *SpecialMapthingNames[] = {
 struct MapinfoEdMapItem
 {
 	FName classname;	// DECORATE is read after MAPINFO so we do not have the actual classes available here yet.
-	int special;
+	short special;
+	bool argsdefined;
 	int args[5];
 	// These are for error reporting. We must store the file information because it's no longer available when these items get resolved.
 	FString filename;
@@ -191,13 +192,16 @@ void FMapInfoParser::ParseDoomEdNums()
 				editem.special = -1;
 			}
 			memset(editem.args, 0, sizeof(editem.args));
+			editem.argsdefined = false;
 
 			int minargs = 0;
 			int maxargs = 5;
 			FString specialname;
 			if (sc.CheckString(","))
 			{
-				if (editem.special < 0) editem.special = 0;	// mark args as used - if this is done we need to prevent assignment of map args in P_SpawnMapThing.
+				// mark args as used - if this is done we need to prevent assignment of map args in P_SpawnMapThing.
+				editem.argsdefined = true;
+				if (editem.special < 0) editem.special = 0;
 				if (!sc.CheckNumber())
 				{
 					sc.MustGetString();
@@ -274,6 +278,7 @@ void InitActorNumsFromMapinfo()
 		FDoomEdEntry ent;
 		ent.Type = cls;
 		ent.Special = pair->Value.special;
+		ent.ArgsDefined = pair->Value.argsdefined;
 		memcpy(ent.Args, pair->Value.args, sizeof(ent.Args));
 		DoomEdMap.Insert(pair->Key, ent);
 	}
