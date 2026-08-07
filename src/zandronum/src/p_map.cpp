@@ -1044,7 +1044,9 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 	// Both things overlap in x or y direction
 	bool unblocking = false;
 
-	if (tm.FromPMove)
+	// [rc4l] uzdoom@0a16855232 -- players get the same unstick handling as a P_PlayerMove, so two
+	// overlapping players can separate instead of staying wedged together.
+	if (tm.FromPMove || tm.thing->player != NULL)
 	{
 		// Both actors already overlap. To prevent them from remaining stuck allow the move if it
 		// takes them further apart or the move does not change the position (when called from P_ChangeSector.)

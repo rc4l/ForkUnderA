@@ -1288,6 +1288,11 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			SERVERCOMMANDS_MoveThing( target, CM_VELX|CM_VELY|CM_VELZ );
 	}
+	// [rc4l] uzdoom@0a16855232 -- assigned out here, not inside the sub-TELEFRAG_DAMAGE branch:
+	// everything below this point reads `player`, and telefrag damage skips that branch entirely,
+	// which left it NULL for exactly the hits most likely to involve a player.
+	player = target->player;
+
 	if (!(flags & DMG_FORCED))	// DMG_FORCED skips all special damage checks, TELEFRAG_DAMAGE may not be reduced at all
 	{
 		if (target->flags2 & MF2_DORMANT)
@@ -1303,7 +1308,6 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		// their lasting answer rather than an accident of the rewrite.
 		if (damage < TELEFRAG_DAMAGE) // TELEFRAG_DAMAGE may not be reduced at all or it may not guarantee its effect.
 		{
-			player = target->player;
 			if (player && damage > 1)
 			{
 				// Take half damage in trainer mode
