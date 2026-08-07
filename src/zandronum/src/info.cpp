@@ -147,7 +147,6 @@ void FActorInfo::StaticInit ()
 void FActorInfo::StaticSetActorNums ()
 {
 	SpawnableThings.Clear();
-	DoomEdMap.Empty ();
 
 	for (unsigned int i = 0; i < PClass::m_RuntimeActors.Size(); ++i)
 	{
@@ -177,21 +176,23 @@ void FActorInfo::RegisterIDs ()
 		}
 		if (DoomEdNum != -1)
 		{
-			DoomEdMap.AddType (DoomEdNum, cls);
+			// [rc4l] uzdoom@15dbbc913 -- Special == -2 marks a DECORATE-defined entry, so a second
+			// DECORATE definition for the same number is reported while a MAPINFO one is silently
+			// overridden. That override is what keeps our own actors' DECORATE numbers working.
+			FDoomEdEntry *oldent = DoomEdMap.CheckKey(DoomEdNum);
+			if (oldent != NULL && oldent->Special == -2)
+			{
+				Printf(TEXTCOLOR_RED"Editor number %d defined twice for classes '%s' and '%s'\n", DoomEdNum, cls->TypeName.GetChars(), oldent->Type->TypeName.GetChars());
+			}
+			FDoomEdEntry ent;
+			memset(&ent, 0, sizeof(ent));
+			ent.Type = cls;
+			ent.Special = -2;
+			DoomEdMap.Insert(DoomEdNum, ent);
 			if (cls != Class) 
 			{
 				Printf(TEXTCOLOR_RED"Editor number %d refers to hidden class type '%s'\n", DoomEdNum, cls->TypeName.GetChars());
 			}
-		}
-	}
-	// Fill out the list for Chex Quest with Doom's actors
-	if (gameinfo.gametype == GAME_Chex && DoomEdMap.FindType(DoomEdNum) == NULL &&
-		(GameFilter & GAME_Doom))
-	{
-		DoomEdMap.AddType (DoomEdNum, Class, true);
-		if (cls != Class) 
-		{
-			Printf(TEXTCOLOR_RED"Editor number %d refers to hidden class type '%s'\n", DoomEdNum, cls->TypeName.GetChars());
 		}
 	}
 }

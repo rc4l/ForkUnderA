@@ -6211,6 +6211,29 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	if (mthing->type == 0 || mthing->type == -1)
 		return NULL;
 
+	// [rc4l] uzdoom@15dbbc913 -- the editor-number lookup happens up front now, because an entry
+	// can name a map special with no class at all, and that has to be recognised before any of
+	// the type-specific handling below.
+	FDoomEdEntry *mentry = DoomEdMap.CheckKey(mthing->type);
+
+	if (mentry == NULL)
+	{
+		// [RH] Don't die if the map tries to spawn an unknown thing
+		Printf ("Unknown type %i at (%i, %i)\n",
+				 mthing->type,
+				 mthing->x>>FRACBITS, mthing->y>>FRACBITS);
+		mentry = DoomEdMap.CheckKey(0);
+		if (mentry == NULL)	// we need a valid entry for the rest of this function so if we can't find a default, let's exit right away.
+		{
+			return NULL;
+		}
+	}
+	if (mentry->Type == NULL && mentry->Special <= 0)
+	{
+		// has been explicitly set to not spawning anything.
+		return NULL;
+	}
+
 	// count deathmatch start positions
 	if (mthing->type == 11)
 	{
@@ -6443,24 +6466,12 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 		mthing->args[0] = mthing->type - 14100;
 		mthing->type = 14165;
 	}
-	// find which type to spawn
-	i = DoomEdMap.FindType (mthing->type);
-
-	if (i == NULL)
-	{
-		// [RH] Don't die if the map tries to spawn an unknown thing
-		Printf ("Unknown type %i at (%i, %i)\n",
-				 mthing->type,
-				 mthing->x>>FRACBITS, mthing->y>>FRACBITS);
-		i = PClass::FindClass("Unknown");
-	}
 	// [RH] If the thing's corresponding sprite has no frames, also map
 	//		it to the unknown thing.
-	else
+	// Handle decorate replacements explicitly here
+	// to check for missing frames in the replacement object.
 	{
-		// Handle decorate replacements explicitly here
-		// to check for missing frames in the replacement object.
-		i = i->GetReplacement();
+		i = mentry->Type->GetReplacement();
 
 		const AActor *defaults = GetDefaultByType (i);
 		if (defaults->SpawnState == NULL ||
