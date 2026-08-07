@@ -55,6 +55,8 @@
 #include "features/server-browser/computation/browserhit_compute.h"
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
+#include "features/server-browser/computation/joinintent_compute.h"
+#include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
 #include "features/server-browser/computation/scrollview_compute.h"
 #include "features/server-browser/computation/serversort_compute.h"
@@ -204,6 +206,13 @@
 
 #define SB_FOOTER_Y			( SB_ROWS_BOTTOM + 20 )
 
+// [rc4l] The refresh button, bottom left, beneath the list rather than beside it. The footer text is
+// centred, so the left corner is the one piece of that line nothing else wants.
+#define SB_REFRESH_W		74
+#define SB_REFRESH_H		14
+#define SB_REFRESH_X		( SB_PANEL_LEFT + 12 )
+#define SB_REFRESH_Y		( SB_FOOTER_Y - 3 )
+
 // [rc4l] The panel's content span, in virtual pixels. ComputePanelRect pads BOTH ends by the corner
 // radius, so the visible gap to the screen edge is ( SB_CONTENT_TOP - radius ) above and
 // ( SB_VIRT_H - SB_CONTENT_BOTTOM - radius ) below. Deriving the top from the bottom is what forces
@@ -333,6 +342,7 @@ enum class DialogAction
 	CancelDownload,
 	JoinPassword,
 	StopHosting,
+	StopHostingAndJoin,
 };
 
 struct BrowserDialog
@@ -378,6 +388,9 @@ enum class BrowserTab { Public, Private, Host };
 const int kTabCount = 3;
 static	BrowserTab		g_Tab = BrowserTab::Public;
 static	int				g_TabHot = -1;
+
+// [rc4l] Hover state for the refresh button, matching how the tabs carry theirs.
+static	bool			g_RefreshHot = false;
 
 
 // [rc4l] What the hosting form was left holding. Archived so a player who hosts the same game every
@@ -1706,6 +1719,17 @@ public:
 				zx::HostStop( );
 			break;
 
+		// [rc4l] Stop first, then go. The order is the point: joining reloads the engine and never
+		// comes back here, so a HostStop left until afterwards would never run and the server would be
+		// orphaned rather than closed.
+		case DialogAction::StopHostingAndJoin:
+			if ( bAffirmative )
+			{
+				zx::HostStop( );
+				DoJoinSelected( );
+			}
+			break;
+
 		case DialogAction::JoinPassword:
 			if ( bAffirmative )
 			{
@@ -2921,17 +2945,21 @@ public:
 
 		const int x = SB_HOST_LEFT + SB_HOST_PAD;
 
+		// While something of ours is running, the form is not the point any more -- what it is doing is.
+		//
+		// [rc4l] The heading is drawn only on the form, below. It answers "what is this screen for",
+		// which is a question that has stopped applying once a server of yours is up: at that point
+		// the screen is about that server, and telling someone they can run one is a page behind them.
+		if ( bLive || ( state == zx::HostState::Failed ))
+		{
+			DrawHostStatus( x, SB_HOST_TOP + SB_HOST_PAD, state );
+			return;
+		}
+
 		// The heading says what the screen does, not what it is called. "HOST" is already on the tab.
 		screen->DrawText( SmallFont, CR_WHITE, x, SB_HOST_TOP + SB_HOST_PAD,
 			"RUN A SERVER ON THIS MACHINE",
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-
-		// While something of ours is running, the form is not the point any more -- what it is doing is.
-		if ( bLive || ( state == zx::HostState::Failed ))
-		{
-			DrawHostStatus( x, HostFirstFieldY( ), state );
-			return;
-		}
 
 		// [rc4l] The settings are a MASKED, SCROLLING area. Everything between these two calls is
 		// drawn at its scrolled position and cut off at the viewport edges -- so a row half in and
@@ -3088,14 +3116,25 @@ public:
 
 		// [rc4l] INTERNET says whether it will actually work, before anyone commits to it.
 		//
-		// Green once the registry has reached this port from outside, grey while that is unknown or
-		// has come back no. Deliberately NOT disabled: the check can be wrong in the player's favour
-		// -- a router that only opens on demand, a registry we could not reach -- and a form that
-		// refuses to let someone try their own network is worse than one that warns them.
+		// Green when the registry has reached this port from outside, red when the check ran and it
+		// could not, and plain white when we do not know -- untested, still running, or the check
+		// itself failed. That last case is white and not red on purpose: a registry that never
+		// answered has told us about our own service, and painting the player's router as shut on
+		// that basis would be blaming them for our outage.
+		//
+		// Deliberately NOT disabled even when red: the check can be wrong in the player's favour, and
+		// a form that refuses to let someone try their own network is worse than one that warns them.
 		const zx::ProbePhase reach = zx::ReachProbeStatus( HostConfiguredPort( ));
 
 		EColorRange visColors[kHostVisCount];
-		visColors[kHostVisGlobal] = zx::ProbeSaysReachable( reach ) ? CR_GREEN : CR_DARKGRAY;
+
+		switch ( zx::ProbeDisplayFor( reach ))
+		{
+		case zx::ProbeDisplay::Reachable:	visColors[kHostVisGlobal] = CR_GREEN; break;
+		case zx::ProbeDisplay::Unreachable:	visColors[kHostVisGlobal] = CR_DARKRED; break;
+		default:							visColors[kHostVisGlobal] = CR_WHITE; break;
+		}
+
 		visColors[kHostVisLocal] = ( g_HostAdvertise == false ) ? CR_WHITE : CR_GRAY;
 
 		DrawChoiceRow( rowX, y, rowW, kHostVisCount, labels,
@@ -3166,14 +3205,11 @@ public:
 		}
 		else
 		{
-			FString line;
-			line.Format( "%s on %s", g_HostFields[kHostFieldName].text.c_str( ),
-				zx::HostConnectAddress( ).GetChars( ));
-			y = DrawWrappedIn( line, x, y, wrapW, CR_WHITE );
-
+			// [rc4l] The server's own name and loopback address used to be printed here. Both are gone:
+			// 127.0.0.1 is the address for the one person who cannot need it, and putting an address on
+			// screen invites it to be shared, when the thing worth sharing is not this one.
 			if ( state == zx::HostState::Running )
 			{
-				y += 6;
 				y = DrawHostReach( x, y, wrapW );
 
 				y += 4;
@@ -3534,6 +3570,44 @@ public:
 				"YES", 'y', "NO", 'n' );
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 			return;
+		}
+
+		// [rc4l] Where the player is now, and what going somewhere else would cost them. See
+		// joinintent_compute.h -- the case that matters is a host pressing JOIN on their own row.
+		{
+			const int total = static_cast<int>( g_SortedServers.Size( ));
+			bool bTargetIsCurrent = false;
+
+			const bool bConnected = ( NETWORK_GetState( ) == NETSTATE_CLIENT );
+
+			if ( bConnected && ( g_Selected >= 0 ) && ( g_Selected < total ))
+			{
+				bTargetIsCurrent = BROWSER_GetAddress( g_SortedServers[g_Selected] )
+					.Compare( CLIENT_GetServerAddress( ));
+			}
+
+			const zx::HostState hostState = zx::HostCurrentState( );
+			const bool bHoldsServer = (( hostState == zx::HostState::Starting )
+				|| ( hostState == zx::HostState::Running )
+				|| ( hostState == zx::HostState::Stopping ));
+
+			switch ( zx::DecideJoinIntent( bHoldsServer, bConnected, bTargetIsCurrent ))
+			{
+			case zx::JoinIntent::AlreadyThere:
+				// Just leave. No sound of a decision being made, because none was.
+				M_ClearMenus( );
+				return;
+
+			case zx::JoinIntent::ConfirmStopHosting:
+				ShowDialog( DialogAction::StopHostingAndJoin, "Stop your server?",
+					"Joining another server closes the one you are running. Anyone playing on it will "
+					"be disconnected.", "JOIN", 'j', "CANCEL", 'c' );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+				return;
+
+			case zx::JoinIntent::Join:
+				break;
+			}
 		}
 
 		// [rc4l] A protected server wants the password BEFORE anything is downloaded.
@@ -4086,9 +4160,68 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] Bottom left, and it does two jobs.
+	//
+	// It gives the player a way to ask, which is what was missing. But the re-check on open already
+	// ran silently under a list that kept its rows -- correct behaviour that is indistinguishable
+	// from nothing happening, and therefore read as an over-eager cache. So the button also REPORTS,
+	// and an automatic refresh lights it up exactly as a pressed one does. The complaint was never
+	// that the list was stale; it was that the work was invisible.
+	void DrawRefreshButton( void )
+	{
+		const bool bBusy = BROWSER_IsRefreshInFlight( );
+
+		const int left = serverbrowser_ToScreenX( SB_REFRESH_X );
+		const int right = serverbrowser_ToScreenX( SB_REFRESH_X + SB_REFRESH_W );
+		const int top = serverbrowser_ToScreenY( SB_REFRESH_Y );
+		const int bottom = serverbrowser_ToScreenY( SB_REFRESH_Y + SB_REFRESH_H );
+
+		const int w = right - left;
+		const int h = bottom - top;
+		if (( w <= 0 ) || ( h <= 0 ))
+			return;
+
+		// Same oval as the tabs: this switches nothing and is not a surface, it is a thing you press.
+		const int radius = h / 2;
+		const int base = bBusy ? 74 : ( g_RefreshHot ? 62 : 38 );
+
+		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+			static_cast<BYTE>( base + 24 ), 200 };
+		const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ),
+			static_cast<BYTE>( base / 2 + 18 ), 215 };
+
+		for ( int row = 0; row < h; ++row )
+		{
+			const int inset = zx::ComputeRoundedInset( row, h, radius );
+			const int rowW = w - 2 * inset;
+			if ( rowW <= 0 )
+				continue;
+
+			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
+			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+		}
+
+		// While busy the label says what is happening rather than what to press: the button is not
+		// disabled, and pressing it again while it works is harmless, but it should not be the only
+		// thing on screen claiming nothing is going on.
+		const char *const label = bBusy ? "CHECKING" : "REFRESH";
+		const int textW = SmallFont->StringWidth( label );
+
+		screen->DrawText( SmallFont, bBusy ? CR_GOLD : CR_GRAY,
+			SB_REFRESH_X + ( SB_REFRESH_W - textW ) / 2, SB_REFRESH_Y + 3, label,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+		serverbrowser_Tip( SB_REFRESH_X, SB_REFRESH_Y, SB_REFRESH_W, SB_REFRESH_H,
+			"Refresh all servers" );
+	}
+
+	//*************************************************************************
+	//
 	void DrawFooter( zx::BrowserPhase phase, const zx::BrowserCounts &counts )
 	{
 		const int y = SB_FOOTER_Y;
+
+		DrawRefreshButton( );
 		FString text;
 
 		// [rc4l] The transfer used to be drawn here as well, because this was the only screen that had
@@ -4106,20 +4239,37 @@ public:
 			else
 				text.Format( "%d servers", static_cast<int>( g_SortedServers.Size( )));
 		}
-		else if (( phase == zx::BrowserPhase::Empty ) && !g_Search.text.empty( ))
-		{
-			// The placeholder already said nothing matched. Repeating "nothing is being hosted" under
-			// it would be a second, wrong answer to the same question -- there ARE servers.
-			text.Format( "%d hidden by the search", serverbrowser_CountActive( ));
-		}
 		else if ( phase == zx::BrowserPhase::Empty )
 		{
-			// Distinguish "nobody is hosting" from "we asked and got nowhere" -- identical-looking
-			// outcomes with completely different remedies.
-			if (( counts.timedOut > 0 ) || ( counts.badResponse > 0 ))
-				text.Format( "%d did not respond", counts.timedOut + counts.badResponse );
-			else
+			// [rc4l] Which of several true things to say, decided in replyrouting_compute.h so the
+			// ordering is tested rather than argued about. The ordering matters: each answer sends the
+			// player somewhere different, and only one of them is where the problem actually is.
+			const int active = serverbrowser_CountActive( );
+			const int mismatched = static_cast<int>( BROWSER_CountVersionMismatched( ));
+			const int silent = counts.timedOut + counts.badResponse;
+
+			switch ( zx::ExplainEmptyList( !g_Search.text.empty( ), active, mismatched, silent ))
+			{
+			case zx::EmptyReason::HiddenBySearch:
+				// The placeholder already said nothing matched. Repeating "nothing is being hosted"
+				// under it would be a second, wrong answer to the same question -- there ARE servers.
+				text.Format( "%d hidden by the search", active );
+				break;
+
+			case zx::EmptyReason::WrongVersion:
+				// These answered us. Hiding them without saying so is what makes one player insist a
+				// server exists while another cannot find it anywhere.
+				text.Format( "%d hidden, running a different version", mismatched );
+				break;
+
+			case zx::EmptyReason::NoResponse:
+				text.Format( "%d did not respond", silent );
+				break;
+
+			case zx::EmptyReason::NothingHosted:
 				text = "Nothing is being hosted right now";
+				break;
+			}
 		}
 
 		if ( text.IsNotEmpty( ))
@@ -4357,6 +4507,30 @@ public:
 
 			if ( bOverSearch )
 				return true;
+		}
+
+		// [rc4l] The refresh button. Checked before everything else because it sits under the list, on
+		// the footer line, where nothing else claims a click -- and being first means it can never
+		// lose one to a hit test that happens to be generous at its edges.
+		{
+			g_RefreshHot = (( x >= serverbrowser_ToScreenX( SB_REFRESH_X )) &&
+				( x < serverbrowser_ToScreenX( SB_REFRESH_X + SB_REFRESH_W )) &&
+				( y >= serverbrowser_ToScreenY( SB_REFRESH_Y )) &&
+				( y < serverbrowser_ToScreenY( SB_REFRESH_Y + SB_REFRESH_H )));
+
+			if ( g_RefreshHot )
+			{
+				if ( type == MOUSE_Release )
+				{
+					// Exactly what opening the browser does. Rows are kept and re-checked underneath,
+					// so pressing this never empties the screen -- it just makes the checking visible,
+					// and picks up servers that have appeared since.
+					BROWSER_RefreshListedServers( );
+					BROWSER_QueryServerRegistry( );
+				}
+
+				return true;
+			}
 		}
 
 		// The tabs.

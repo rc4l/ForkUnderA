@@ -215,53 +215,74 @@ void NETWORK_Construct( USHORT usPort, const char *pszIPAddress )
 
 //*****************************************************************************
 //
+// [rc4l] One socket's worth of receiving. Returns the byte count, or -1 for "nothing to read", which
+// covers both an empty non-blocking socket and the errors that are not worth stopping over.
+//
+// Split out from NETWORK_GetPackets because there are now two sockets to drain, and draining only the
+// first one is exactly the bug this exists to prevent.
+static LONG network_ReceiveFromSocket( SOCKET Socket, sockaddr &SocketFrom )
+{
+	INT iSocketFromLength = sizeof( SocketFrom );
+	LONG lNumBytes;
+
+#ifdef	WIN32
+	lNumBytes = recvfrom( Socket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, &iSocketFromLength );
+#else
+	lNumBytes = recvfrom( Socket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, (socklen_t *)&iSocketFromLength );
+#endif
+
+	// If the number of bytes returned is -1, an error has occured.
+    if ( lNumBytes == -1 )
+    {
+#ifdef __WIN32__
+        errno = WSAGetLastError( );
+
+        if ( errno == WSAEWOULDBLOCK )
+            return ( -1 );
+
+		// Connection reset by peer. Doesn't mean anything to the server.
+		if ( errno == WSAECONNRESET )
+			return ( -1 );
+
+        if ( errno == WSAEMSGSIZE )
+		{
+             printf( "NETWORK_GetPackets:  WARNING! Oversize packet from %s\n", g_AddressFrom.ToString() );
+             return ( -1 );
+        }
+
+        printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
+		return ( -1 );
+#else
+        if ( errno == EWOULDBLOCK )
+            return ( -1 );
+
+        if ( errno == ECONNREFUSED )
+            return ( -1 );
+
+        printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
+        return ( -1 );
+#endif
+    }
+
+	return ( lNumBytes );
+}
+
+//*****************************************************************************
+//
 int NETWORK_GetPackets( void )
 {
 	LONG				lNumBytes;
 	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
 	sockaddr			SocketFrom;
-	INT					iSocketFromLength;
 
-    iSocketFromLength = sizeof( SocketFrom );
+	lNumBytes = network_ReceiveFromSocket( g_NetworkSocket, SocketFrom );
 
-#ifdef	WIN32
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, &iSocketFromLength );
-#else
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, (socklen_t *)&iSocketFromLength );
-#endif
-
-	// If the number of bytes returned is -1, an error has occured.
-    if ( lNumBytes == -1 ) 
-    { 
-#ifdef __WIN32__
-        errno = WSAGetLastError( );
-
-        if ( errno == WSAEWOULDBLOCK )
-            return ( false );
-
-		// Connection reset by peer. Doesn't mean anything to the server.
-		if ( errno == WSAECONNRESET )
-			return ( false );
-
-        if ( errno == WSAEMSGSIZE )
-		{
-             printf( "NETWORK_GetPackets:  WARNING! Oversize packet from %s\n", g_AddressFrom.ToString() );
-             return ( false );
-        }
-
-        printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-		return ( false );
-#else
-        if ( errno == EWOULDBLOCK )
-            return ( false );
-
-        if ( errno == ECONNREFUSED )
-            return ( false );
-
-        printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-        return ( false );
-#endif
-    }
+	// [rc4l] The probe socket is NOT write-only, and treating it as though it were took the whole
+	// registry down: verification requests leave by it, servers reply to whatever address the request
+	// arrived from, and so every verification reply lands here and nowhere else. Draining only the
+	// main socket meant no server could ever verify, and therefore none could ever be listed.
+	if (( lNumBytes <= 0 ) && ( g_ProbeSocket != g_NetworkSocket ))
+		lNumBytes = network_ReceiveFromSocket( g_ProbeSocket, SocketFrom );
 
 	// No packets or an error, so don't process anything.
 	if ( lNumBytes <= 0 )
@@ -288,6 +309,15 @@ int NETWORK_GetPackets( void )
 NETADDRESS_s NETWORK_GetFromAddress( void )
 {
 	return ( g_AddressFrom );
+}
+
+//*****************************************************************************
+//
+// [rc4l] The higher of the two descriptors, for select's nfds argument. On Windows nfds is ignored,
+// but it is computed there too rather than left as a platform-shaped difference to trip over later.
+SOCKET NETWORK_MaxSocket( void )
+{
+	return (( g_ProbeSocket > g_NetworkSocket ) ? g_ProbeSocket : g_NetworkSocket );
 }
 
 //*****************************************************************************
@@ -494,9 +524,13 @@ void I_DoSelect (void)
 
     FD_ZERO(&fdset);
     FD_SET(g_NetworkSocket, &fdset);
+    // [rc4l] Verification replies arrive on the probe socket, so it has to be waited on too. The
+    // one second timeout below would have polled it eventually, but "eventually" against a four
+    // second verification window is not a margin worth keeping.
+    FD_SET(g_ProbeSocket, &fdset);
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
-    if (select (static_cast<int>(g_NetworkSocket)+1, &fdset, NULL, NULL, &timeout) == -1)
+    if (select (static_cast<int>(NETWORK_MaxSocket())+1, &fdset, NULL, NULL, &timeout) == -1)
         return;
 #else
     struct timeval   timeout;
@@ -507,9 +541,12 @@ void I_DoSelect (void)
     	FD_SET(0, &fdset);
 
     FD_SET(g_NetworkSocket, &fdset);
+    // [rc4l] Same reason as the Windows branch above: replies to a verification request come back on
+    // the probe socket, so it belongs in the wait set.
+    FD_SET(g_ProbeSocket, &fdset);
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
-    if (select (static_cast<int>(g_NetworkSocket)+1, &fdset, NULL, NULL, &timeout) == -1)
+    if (select (static_cast<int>(NETWORK_MaxSocket())+1, &fdset, NULL, NULL, &timeout) == -1)
         return;
 
     stdin_ready = FD_ISSET(0, &fdset);

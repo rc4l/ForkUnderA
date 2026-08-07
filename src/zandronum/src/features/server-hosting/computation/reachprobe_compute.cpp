@@ -29,6 +29,20 @@ bool ProbeSaysReachable(ProbePhase phase)
 	return phase == ProbePhase::Reachable;
 }
 
+ProbeDisplay ProbeDisplayFor(ProbePhase phase)
+{
+	if (phase == ProbePhase::Reachable)
+		return ProbeDisplay::Reachable;
+
+	if (phase == ProbePhase::Unreachable)
+		return ProbeDisplay::Unreachable;
+
+	// Idle, both waiting states, and Failed. Failed belongs here rather than with Unreachable: it
+	// means the registry never answered, which is a fact about our service and not about the
+	// player's port, and saying "not forwarded" on the strength of it would be a confident lie.
+	return ProbeDisplay::Unknown;
+}
+
 ProbePhase StepProbe(ProbePhase phase, bool cookieArrived, bool probeArrived, int elapsedMs)
 {
 	switch (phase)

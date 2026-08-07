@@ -5,6 +5,7 @@
 #include "features/wad-download/computation/downloadplan_compute.h"
 
 using zx::BuildCandidateUrls;
+using zx::DownloadSourceName;
 using zx::IsSafeDownloadName;
 using zx::NormalizeDownloadSites;
 using zx::SplitOnWhitespace;
@@ -262,4 +263,40 @@ TEST(BuildCandidateUrls, YieldsNothingWhenNoSiteSurvivesNormalisation)
 {
 	EXPECT_TRUE(BuildCandidateUrls({ "not a url", "ftp://x/" }, "brutal.wad").empty());
 	EXPECT_TRUE(BuildCandidateUrls({}, "brutal.wad").empty());
+}
+
+// ---------------------------------------------------------------- naming a download source
+
+TEST(DownloadSourceName, NamesTheHostAndNothingElse)
+{
+	EXPECT_EQ("wads.example.net", DownloadSourceName("https://wads.example.net/doom/brutal.wad"));
+	EXPECT_EQ("wads.example.net", DownloadSourceName("http://wads.example.net/"));
+	EXPECT_EQ("wads.example.net", DownloadSourceName("wads.example.net/doom/brutal.wad"));
+}
+
+TEST(DownloadSourceName, KeepsThePortBecauseAServerServingItsOwnWadsIsIdentifiedByIt)
+{
+	// Two servers on one address are told apart only by port, and this line exists so a player can
+	// see which machine a file came from.
+	EXPECT_EQ("203.0.113.7:10666", DownloadSourceName("http://203.0.113.7:10666/wads/brutal.wad"));
+}
+
+TEST(DownloadSourceName, StripsCredentials)
+{
+	// [rc4l] The reason this is not just "print the URL". A player pastes a console log into a bug
+	// report, and anything in it is published.
+	EXPECT_EQ("mirror.example.org", DownloadSourceName("https://user:secret@mirror.example.org/x.wad"));
+}
+
+TEST(DownloadSourceName, StripsAQueryThatCouldCarryAToken)
+{
+	EXPECT_EQ("cdn.example.com", DownloadSourceName("https://cdn.example.com?token=abc123"));
+	EXPECT_EQ("cdn.example.com", DownloadSourceName("https://cdn.example.com/a.wad?token=abc123"));
+}
+
+TEST(DownloadSourceName, FallsBackToTheInputRatherThanGoingBlank)
+{
+	// An odd cl_fua_downloadsites entry should still be nameable in the log.
+	EXPECT_EQ("https:///a.wad", DownloadSourceName("https:///a.wad"));
+	EXPECT_EQ("", DownloadSourceName(""));
 }

@@ -62,6 +62,7 @@
 #include "a_doomglobal.h"
 #include "announcer.h"
 #include "features/server-browser/browser.h"
+#include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "features/server-hosting/zx_hosting.h" // [rc4l] admin on a server we started ourselves
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] the cookie leg lands on this socket
@@ -1021,7 +1022,32 @@ void CLIENT_GetPackets( void )
 		pByteStream = &NETWORK_GetNetworkMessageBuffer( )->ByteStream;
 
 		// If we're a client and receiving a message from the server...
-		if ( NETWORK_GetState() == NETSTATE_CLIENT
+		// [rc4l] A launcher reply from the server we are PLAYING on arrives from the same address as
+		// its game traffic, so without this it went to the game parser, which has no idea what it is.
+		// The browser then waited out its timeout and reported the server the player was standing on
+		// as "did not respond".
+		//
+		// Gated on an outstanding query rather than on the command alone: the command is read out of a
+		// packet that has not been authenticated as a launcher reply yet, and a game packet is free to
+		// begin with any bytes at all. Having asked this exact address a question we have not had an
+		// answer to is what makes the reading meaningful.
+		bool bLauncherReply = false;
+		{
+			const bool bAwaiting = BROWSER_IsAwaitingReplyFrom( NETWORK_GetFromAddress( ));
+
+			BYTE *const pSavedStream = pByteStream->pbStream;
+			const LONG lPeeked = bAwaiting ? pByteStream->ReadLong( ) : 0;
+
+			// Put it back either way; whoever handles this packet reads from the start.
+			pByteStream->pbStream = pSavedStream;
+
+			const zx::LauncherCommands commands = {
+				SERVER_LAUNCHER_CHALLENGE, SERVER_LAUNCHER_CHALLENGE_SEGMENTED };
+			bLauncherReply = zx::ShouldRouteToBrowser( bAwaiting, lPeeked, commands );
+		}
+
+		if ( bLauncherReply == false
+			&& NETWORK_GetState() == NETSTATE_CLIENT
 			&& NETWORK_GetFromAddress().Compare( CLIENT_GetServerAddress() ))
 		{
 			// Statistics.

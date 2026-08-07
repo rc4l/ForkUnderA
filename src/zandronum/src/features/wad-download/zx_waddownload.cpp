@@ -449,6 +449,16 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 		// is the ordinary state during a map change, when everyone joins at once. Moving on there
 		// would abandon the only source certain to have a file that may exist nowhere else. So the
 		// SAME url is retried a few times before the rest of the list is considered.
+		// [rc4l] Say where this is coming from, before it starts rather than after it finishes.
+		//
+		// A download that stalls is the case that needs this: without it the console shows a file
+		// name and a progress bar that stopped, and no way to tell whether the culprit is a mirror
+		// worth skipping or the player's own connection. Host only, never the whole URL -- see
+		// DownloadSourceName for why a signed mirror URL must not reach a log.
+		Say(std::string("Downloading ") + wanted.name + " from "
+			+ zx::DownloadSourceName(urls[i]) + " (source " + std::to_string(i + 1)
+			+ " of " + std::to_string(urls.size()) + ")");
+
 		zx::HttpFileResult r = zx::HttpFileResult::NetworkError;
 		for (;;)
 		{
