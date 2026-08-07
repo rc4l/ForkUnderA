@@ -5269,20 +5269,25 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 			// [BC] Damage is server side.
 			if ( NETWORK_InClientMode() == false )
 			{
-				if (puffDefaults && puffDefaults->PoisonDamage > 0 && puffDefaults->PoisonDuration != INT_MIN)
-				{
-					P_PoisonMobj(hitactor, thepuff ? thepuff : source, source, puffDefaults->PoisonDamage, puffDefaults->PoisonDuration, puffDefaults->PoisonPeriod, puffDefaults->PoisonDamageType);
-				}
 				// [BC/BB] Support for instagib.
 				if ( instagib )
 					damage = 999;
 
 				// [RK] If the attack source is a player, send the DMG_PLAYERATTACK flag.
 				// [rc4l] uzdoom@71ce4bcf0: pass the puff's FOILINVUL/FOILBUDDHA through, which
-				// the old call dropped entirely.
+				// the old call dropped entirely. uzdoom@375c0ac73 then folded the poison check and
+				// the flag reads under one puffDefaults guard -- the flag reads were dereferencing
+				// it unconditionally, immediately after a line that admits it can be NULL.
 				int dmgFlagPass = DMG_INFLICTOR_IS_PUFF | (source->player ? DMG_PLAYERATTACK : 0);
-				dmgFlagPass += (puffDefaults->flags3 & MF3_FOILINVUL) ? DMG_FOILINVUL : 0;
-				dmgFlagPass += (puffDefaults->flags7 & MF7_FOILBUDDHA) ? DMG_FOILBUDDHA : 0;
+				if (puffDefaults != NULL)	// is this even possible?
+				{
+					if (puffDefaults->PoisonDamage > 0 && puffDefaults->PoisonDuration != INT_MIN)
+					{
+						P_PoisonMobj(hitactor, thepuff ? thepuff : source, source, puffDefaults->PoisonDamage, puffDefaults->PoisonDuration, puffDefaults->PoisonPeriod, puffDefaults->PoisonDamageType);
+					}
+					if (puffDefaults->flags3 & MF3_FOILINVUL) dmgFlagPass |= DMG_FOILINVUL;
+					if (puffDefaults->flags7 & MF7_FOILBUDDHA) dmgFlagPass |= DMG_FOILBUDDHA;
+				}
 				int newdam = P_DamageMobj(hitactor, thepuff ? thepuff : source, source, damage, damagetype, dmgFlagPass);
 
 				if (bleed)
