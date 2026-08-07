@@ -5,10 +5,17 @@
 
 #include "cmdlib.h"
 #include "c_dispatch.h"
+#include "d_main.h"
 #include "doomtype.h"
 #include "m_misc.h"
 #include "templates.h"
 #include "v_text.h"
+
+#include "features/addon-catalogue/computation/hostplan_compute.h"
+#include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/server-hosting/zx_hosting.h"
+#include "features/server-hosting/zx_reachprobe.h"
+#include "features/wad-download/zx_wadsearch.h"
 
 #include <stdio.h>
 
@@ -229,3 +236,123 @@ CCMD( fua_catalogue )
 		Printf( "    cfg:  %s\n", e.hasServerCfg ? zx::CatalogueServerCfgPath( e ).c_str( ) : "(none)" );
 	}
 }
+
+// [rc4l] Hosting a catalogue entry from the console. The whole chain in one place -- read the entry,
+// pick an IWAD, plan, start -- so it can be exercised before any of it has a menu, and so a player
+// on a headless box has a way in that never depended on one.
+CCMD( fua_host )
+{
+	if ( argv.argc( ) < 2 )
+	{
+		Printf( "fua_host <id>: host a catalogue entry. fua_catalogue lists them.\n" );
+		return;
+	}
+
+	const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+	const zx::CatalogueEntry *chosen = NULL;
+	for ( size_t i = 0; i < entries.size( ); ++i )
+	{
+		if ( stricmp( entries[i].addon.id.c_str( ), argv[1] ) == 0 )
+		{
+			chosen = &entries[i];
+			break;
+		}
+	}
+
+	if ( chosen == NULL )
+	{
+		Printf( TEXTCOLOR_ORANGE "No catalogue entry called '%s'. Try fua_catalogue.\n" TEXTCOLOR_NORMAL,
+			argv[1] );
+		return;
+	}
+
+	// What the player already has, in the two places a file can be: the ordinary search path and the
+	// by-hash store the downloader fills. Asking both is what stops us fetching something twice.
+	std::vector<std::string> have;
+	for ( size_t i = 0; i < chosen->addon.files.size( ); ++i )
+	{
+		const std::string &name = chosen->addon.files[i].name;
+
+		TArray<FString> resolved;
+		if ( D_AddFile( resolved, name.c_str( ), false ) && ( resolved.Size( ) > 0 ))
+			have.push_back( name );
+	}
+
+	// Every IWAD the engine can actually see, which is a wider list than the working directory:
+	// Steam libraries and the launcher's own folders count.
+	std::vector<std::string> iwads;
+	{
+		const char *const kCandidates[] = {
+			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
+			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
+		};
+
+		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
+		{
+			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
+				iwads.push_back( kCandidates[i] );
+		}
+	}
+
+	const zx::IwadPick pick = zx::PickIwad( chosen->addon.iwad, iwads );
+
+	zx::HostChoices choices;
+	choices.serverName = chosen->addon.name + " (ZandroX)";
+	choices.maxPlayers = 8;
+	choices.port = 0;
+	choices.advertise = false;
+
+	const zx::HostPlan plan = zx::BuildHostPlan( chosen->addon, pick,
+		zx::CatalogueServerCfgPath( *chosen ), choices, have );
+
+	if ( !plan.blocker.empty( ))
+	{
+		Printf( TEXTCOLOR_ORANGE "Cannot host %s: %s\n" TEXTCOLOR_NORMAL,
+			chosen->addon.name.c_str( ), plan.blocker.c_str( ));
+		return;
+	}
+
+	if ( pick.choice == zx::IwadChoice::Substitute )
+	{
+		Printf( TEXTCOLOR_GOLD "%s wants %s, which you do not have. Hosting on %s instead.\n"
+			TEXTCOLOR_NORMAL, chosen->addon.name.c_str( ), pick.wanted.c_str( ), pick.iwad.c_str( ));
+	}
+
+	if ( !plan.ready )
+	{
+		Printf( TEXTCOLOR_ORANGE "Not hosting yet -- %d file(s) still to fetch:\n" TEXTCOLOR_NORMAL,
+			static_cast<int>( plan.missing.size( )));
+		for ( size_t i = 0; i < plan.missing.size( ); ++i )
+			Printf( "    %s\n", plan.missing[i].c_str( ));
+		return;
+	}
+
+	zx::HostConfig config;
+	config.hostName = plan.serverName;
+	config.iwad = plan.iwad;
+	config.pwads = plan.pwads;
+	config.execCfg = plan.execCfg;
+	config.maxPlayers = plan.maxPlayers;
+	config.port = plan.port;
+	config.advertise = plan.advertise;
+	config.serveWads = true;
+
+	// [rc4l] The entry's cfg carries its own rotation, and it is exec'd BEFORE this, so naming a map
+	// here would override the entry's first one. Left empty on purpose when there is a cfg.
+	if ( plan.execCfg.empty( ))
+		config.map = "map01";
+
+	Printf( "Hosting " TEXTCOLOR_GOLD "%s" TEXTCOLOR_NORMAL " on %s\n",
+		chosen->addon.name.c_str( ), config.iwad.c_str( ));
+	for ( size_t i = 0; i < config.pwads.size( ); ++i )
+		Printf( "    -file %s\n", config.pwads[i].c_str( ));
+	if ( !config.execCfg.empty( ))
+		Printf( "    +exec %s\n", config.execCfg.c_str( ));
+
+	zx::ReachProbeRelease( );
+
+	if ( zx::HostStart( config ) == false )
+		Printf( TEXTCOLOR_ORANGE "The server did not start.\n" TEXTCOLOR_NORMAL );
+}
+
