@@ -90,12 +90,12 @@ FResourceLump::~FResourceLump()
 //
 //==========================================================================
 
-void FResourceLump::LumpNameSetup(const char *iname)
+void FResourceLump::LumpNameSetup(FString iname)
 {
-	const char *lname = strrchr(iname,'/');
-	lname = (lname == NULL) ? iname : lname + 1;
-	FString base = lname;
-	base = base.Left(base.LastIndexOf('.'));
+	// [rc4l] uzdoom@2103fe2a1 takes an FString here and uzdoom@6da887c34 truncates in place.
+	long slash = iname.LastIndexOf('/');
+	FString base = (slash >= 0) ? iname.Mid(slash + 1) : iname;
+	base.Truncate(base.LastIndexOf('.'));
 	uppercopy(Name, base);
 	Name[8] = 0;
 	FullName = iname;
@@ -437,7 +437,7 @@ void FResourceFile::JunkLeftoverFilters(void *lumps, size_t lumpsize, DWORD max)
 			FResourceLump *lump = (FResourceLump *)p;
 			lump->FullName = 0;
 			lump->Name[0] = '\0';
-			lump->Namespace = ns_invalid;
+			lump->Namespace = ns_hidden;
 		}
 	}
 }
