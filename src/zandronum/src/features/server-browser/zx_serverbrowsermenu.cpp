@@ -235,6 +235,15 @@
 #define SB_HOST_RBOT_TOP	SB_HOST_RTOP_TOP
 #define SB_HOST_RBOT_BOTTOM	SB_HOST_RTOP_BOTTOM
 #define SB_HOST_RBOT_H		SB_HOST_RTOP_H
+
+// [rc4l] While a server is running the right column carries TWO things: what you are looking at, and
+// what you are running. Split down the middle, each half scrolling on its own, with the rule at the
+// seam. STOP sits below both and is never scrolled away from.
+#define SB_HOST_RUN_SPLIT	( SB_HOST_RTOP_TOP + SB_HOST_RTOP_H / 2 )
+#define SB_HOST_RUN_TOP_BOT	( SB_HOST_RUN_SPLIT - 5 )
+#define SB_HOST_RUN_BOT_TOP	( SB_HOST_RUN_SPLIT + 5 )
+#define SB_HOST_RUN_TOP_H	( SB_HOST_RUN_TOP_BOT - SB_HOST_RTOP_TOP )
+#define SB_HOST_RUN_BOT_H	( SB_HOST_RTOP_BOTTOM - SB_HOST_RUN_BOT_TOP )
 #define SB_HOST_VIEW_BOTTOM	( SB_HOST_BTN_Y - 10 )
 #define SB_HOST_VIEW_H		( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP )
 #define SB_HOST_BAR_W		2
@@ -393,6 +402,7 @@ enum class DialogAction
 	JoinPassword,
 	StopHosting,
 	StopHostingAndJoin,
+	SwitchHosting,
 };
 
 struct BrowserDialog
@@ -514,11 +524,26 @@ static	int				g_HostListScroll = 0;
 // The detail region's own offset. An entry with many files scrolls here without moving the form.
 static	int				g_HostDetailScroll = 0;
 
+// [rc4l] The running status scrolls independently of the details above it, and its height is measured
+// as it is drawn: the text wraps, so the line count is not something the layout can know in advance.
+static	int				g_HostStatusScroll = 0;
+
+// [rc4l] The band the status text may draw in, or an empty range for "anywhere". Set around the
+// status half only; see HostTextRowVisible for why a rectangle would not have done.
+static	int				g_HostTextClipTop = 0;
+static	int				g_HostTextClipBottom = 0;
+static	int				g_HostStatusH = 0;
+
 // [rc4l] The right column shows the description by default. The settings are one click away rather
 // than always on screen: almost nobody changes them, and the thing worth reading before pressing
 // START is what the selection will actually load.
 static	bool			g_HostShowSettings = false;
 static	bool			g_HostOnSettingsToggle = false;
+
+// [rc4l] Which catalogue row the RUNNING server was started from, so the list can mark it and SWITCH
+// knows there is nothing to switch to. -2 is "custom setup", matching g_HostEntrySel's own spelling.
+static	int				g_HostingEntry = -2;
+static	bool			g_HostSwitchHot = false;
 
 // Drag-selection in a host field, and when the last click landed -- the two things a field needs to
 // tell a double-click from two clicks, and a drag from a press.
@@ -1827,6 +1852,11 @@ public:
 				zx::HostStop( );
 			break;
 
+		case DialogAction::SwitchHosting:
+			if ( bAffirmative )
+				DoHostSwitch( );
+			break;
+
 		// [rc4l] Stop first, then go. The order is the point: joining reloads the engine and never
 		// comes back here, so a HostStop left until afterwards would never run and the server would be
 		// orphaned rather than closed.
@@ -2191,18 +2221,27 @@ public:
 	// [rc4l] The browser's button, wherever it appears. Same shape as JOIN because it IS the JOIN
 	// drawing -- a dialog whose buttons merely resembled the browser's would drift the first time
 	// either was touched.
-	void DrawRoundedButton( int vx, int vy, int vw, int vh, const char *label, bool lit )
+	// [rc4l] `warn` tints the button the way CANCEL is tinted while a download runs: warmer, with the
+	// label in orange. Reserved for buttons that TAKE SOMETHING AWAY, so the one that ends a running
+	// thing looks the same wherever it appears rather than only on the download.
+	void DrawRoundedButton( int vx, int vy, int vw, int vh, const char *label, bool lit,
+		bool warn = false )
 	{
 		const int base = lit ? 70 : 45;
-		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+		const int warmTop = warn ? base + 30 : base;
+		const int warmBot = warn ? base + 15 : base / 2;
+
+		const zx::PanelColor topCol = { static_cast<BYTE>( warmTop ), static_cast<BYTE>( base ),
 			static_cast<BYTE>( base ), 220 };
-		const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ),
+		const zx::PanelColor botCol = { static_cast<BYTE>( warmBot ), static_cast<BYTE>( base / 2 ),
 			static_cast<BYTE>( base / 2 ), 235 };
 
 		DrawRoundedPanel( vx, vy, vw, vh, topCol, botCol, 4 );
 
+		const EColorRange textCol = warn ? CR_ORANGE : ( lit ? CR_WHITE : CR_GRAY );
+
 		const int textY = vy + ( vh - SmallFont->GetHeight( )) / 2 + 1;
-		screen->DrawText( SmallFont, lit ? CR_WHITE : CR_GRAY,
+		screen->DrawText( SmallFont, textCol,
 			vx + ( vw / 2 ) - ( SmallFont->StringWidth( label ) / 2 ), textY, label,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 	}
@@ -2369,8 +2408,21 @@ public:
 	// a host who is already playing something has already answered that question, and a file picker
 	// here would be a second way to get it wrong. Whatever we are running is what our server runs, so
 	// the host can never fail to have the files for their own game.
+	// [rc4l] Down, then up on the selected entry. Stopping FIRST because the new server wants the same
+	// port, and the old one is still holding it: starting into an occupied port is what made the
+	// number climb, start after start, before ReachProbeRelease existed for the same reason.
+	void DoHostSwitch( )
+	{
+		zx::HostStop( );
+		StartHosting( );
+	}
+
 	void StartHosting( )
 	{
+		// Remembered before anything can fail: the list marks THIS row as the one being served, and
+		// SWITCH compares against it.
+		g_HostingEntry = g_HostEntrySel;
+
 		zx::HostConfig config;
 
 		config.hostName = g_HostFields[kHostFieldName].text;
@@ -2584,6 +2636,31 @@ public:
 		StartHosting( );
 	}
 
+	// [rc4l] SWITCH: stop what is running and stand the selected entry up in its place.
+	//
+	// Confirmed on the same terms as STOP, because it IS a stop as far as anyone playing is
+	// concerned. Offering it without the question would let a stray click on the list column end
+	// other people's game more quietly than the button that says it does.
+	void PressHostSwitchButton( )
+	{
+		if ( zx::HostIsActive( ) == false )
+			return;
+
+		const int others = CountOtherPlayersHere( );
+		if ( others > 0 )
+		{
+			FString message;
+			message.Format( "%d %s playing on it. Switching ends their game as well as yours.",
+				others, ( others == 1 ) ? "person is" : "people are" );
+
+			ShowDialog( DialogAction::SwitchHosting, "Switch to this?", message.GetChars( ),
+				"SWITCH", 's', "KEEP IT UP", 'k' );
+			return;
+		}
+
+		DoHostSwitch( );
+	}
+
 	// Down the form, then onto the button, and no further. The button is the end because it is the
 	// thing the form exists to reach.
 	void MoveHostFocus( int step )
@@ -2658,9 +2735,9 @@ public:
 		const zx::HostState state = zx::HostCurrentState( );
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
 
-		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
+		// Both states put the left button in the same slot: PLAY NOW! on the form, SWITCH while live.
 		const int btnX = SB_HOST_BTN_X;
-		const int btnY = bForm ? HostFormButtonY( ) : HostRunningButtonY( );
+		const int btnY = HostFormButtonY( );
 
 		if (( x >= serverbrowser_ToScreenX( btnX )) &&
 			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
@@ -2670,8 +2747,14 @@ public:
 			return true;
 		}
 
-		if ( bForm == false )
-			return false;
+		// The right slot is a control in both states as well: SETTINGS on the form, STOP while live.
+		if (( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )) &&
+			( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )))
+		{
+			return true;
+		}
 
 		// The catalogue rows, using the same y helper the drawing uses, bounded to the left column.
 		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
@@ -2687,17 +2770,10 @@ public:
 			}
 		}
 
-		// The toggle, which is present on both faces.
-		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
-			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
-			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )) &&
-			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )))
-		{
-			return true;
-		}
-
-		// The settings only exist while they are showing, so they only claim clicks then.
-		if ( !g_HostShowSettings )
+		// The settings only exist while they are showing AND while the form is the thing on screen:
+		// g_HostShowSettings survives across a start, so without the bForm test the fields would go
+		// on claiming clicks from behind the running panel.
+		if ( !g_HostShowSettings || !bForm )
 			return false;
 
 		int fieldY = HostFirstFieldY( );
@@ -2787,30 +2863,67 @@ public:
 		const zx::HostState state = zx::HostCurrentState( );
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
 
-		// The button, wherever it is: the form's START sits under the fields, and the running panel's
-		// STOP sits at the bottom of the panel.
-		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
+		// [rc4l] The LEFT button, under the list, in the same slot in both states. On the form it is
+		// PLAY NOW!; while hosting it is SWITCH TO THIS, which is the same idea aimed at a server
+		// that already exists.
 		const int btnX = SB_HOST_BTN_X;
-		const int btnY = bForm ? HostFormButtonY( ) : HostRunningButtonY( );
+		const int btnY = HostFormButtonY( );
+		const bool bCanSwitch = bForm ||
+			(( state != zx::HostState::Failed ) && !HostSelectionIsWhatIsRunning( ));
 
-		if (( x >= serverbrowser_ToScreenX( btnX )) &&
+		g_HostSwitchHot = false;
+		if ( bCanSwitch &&
+			( x >= serverbrowser_ToScreenX( btnX )) &&
 			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
 			( y >= serverbrowser_ToScreenY( btnY )) &&
 			( y < serverbrowser_ToScreenY( btnY + SB_HOST_BTN_H )))
 		{
-			g_HostButtonHot = true;
+			if ( bForm )
+				g_HostButtonHot = true;
+			else
+				g_HostSwitchHot = true;
 
 			if ( type == MOUSE_Release )
 			{
 				SetFocus( zx::BrowserFocus::Host );
-				g_HostOnButton = true;
-				PressHostButton( );
+
+				if ( bForm )
+				{
+					g_HostOnButton = true;
+					PressHostButton( );
+				}
+				else
+				{
+					PressHostSwitchButton( );
+				}
 			}
 			return true;
 		}
 
+		// [rc4l] While hosting, the RIGHT slot is STOP rather than the settings toggle, and it is the
+		// button the keyboard is on. Handled before the toggle below, which owns the same rectangle
+		// on the form.
 		if ( bForm == false )
-			return false;
+		{
+			const int stopX = SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET;
+			const int stopRight = SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET;
+
+			if (( x >= serverbrowser_ToScreenX( stopX )) &&
+				( x < serverbrowser_ToScreenX( stopRight )) &&
+				( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+				( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )))
+			{
+				g_HostButtonHot = true;
+
+				if ( type == MOUSE_Release )
+				{
+					SetFocus( zx::BrowserFocus::Host );
+					g_HostOnButton = true;
+					PressHostButton( );
+				}
+				return true;
+			}
+		}
 
 		// The catalogue, before the fields: it is above them on screen and it decides what the rest
 		// of the panel is about.
@@ -2856,7 +2969,9 @@ public:
 			return true;
 		}
 
-		if ( !g_HostShowSettings )
+		// [rc4l] bForm as well as the toggle: g_HostShowSettings survives a start, so without this the
+		// fields would keep taking clicks from behind the running panel.
+		if ( !g_HostShowSettings || !bForm )
 			return false;
 
 		// The fields.
@@ -3083,6 +3198,55 @@ public:
 		}
 	}
 
+	// [rc4l] Whether the selected entry is the one already being served, so SWITCH does not offer to
+	// restart a server onto what it is already running.
+	bool HostSelectionIsWhatIsRunning( )
+	{
+		return g_HostEntrySel == g_HostingEntry;
+	}
+
+	// [rc4l] The two buttons of the running panel, in the same slots the form uses.
+	//
+	// Deliberately NOT a geometry of their own: STOP had one, measured from a different constant than
+	// the drawing, and it could not be clicked at all as a result. Sharing the form's slots means the
+	// hit test that already works for PLAY NOW! and SETTINGS works for these too.
+	void DrawHostRunningButtons( zx::HostState state )
+	{
+		const int btnY = HostFormButtonY( );
+
+		// Left, under the list: act on the list. Nothing to switch to while the failure panel is up,
+		// and nothing to switch to when the selection is already the thing running.
+		const bool bCanSwitch = ( state != zx::HostState::Failed ) && !HostSelectionIsWhatIsRunning( );
+		if ( bCanSwitch )
+		{
+			DrawRoundedButton( SB_HOST_BTN_X, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
+				"SWITCH TO THIS", g_HostSwitchHot );
+
+			serverbrowser_Tip( SB_HOST_BTN_X, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
+				"Stop this server and start the selected one instead\nAnyone playing is disconnected" );
+		}
+
+		// Right, under the status: act on the server.
+		const int stopX = SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET;
+		const int stopW = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT - 2 * SB_HOST_BTN_INSET;
+		const char *const label = ( state == zx::HostState::Failed ) ? "BACK" : "STOP SERVER";
+
+		// Tinted like CANCEL: it ends something that is running, which is the same promise that button
+		// makes, so it should not look like an ordinary one.
+		DrawRoundedButton( stopX, SB_HOST_RTOGGLE_Y, stopW, SB_HOST_RTOGGLE_H, label,
+			g_HostOnButton || g_HostButtonHot, state != zx::HostState::Failed );
+
+		// [rc4l] The keyboard's button is STOP, not SWITCH. Enter should not be able to tear a running
+		// server down and stand another one up in its place by accident.
+		if ( g_Focus == zx::BrowserFocus::Host )
+			FocusAnchor( zx::BrowserFocus::Host, stopX - 5, SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H / 2 );
+
+		serverbrowser_Tip( stopX, SB_HOST_RTOGGLE_Y, stopW, SB_HOST_RTOGGLE_H,
+			( state == zx::HostState::Failed )
+				? "Go back to the form"
+				: "Shut the server down\nAnyone playing on it is disconnected" );
+	}
+
 	void DrawHostSettingsToggle( )
 	{
 		// [rc4l] DrawRoundedButton, which IS the JOIN and START drawing. A button that merely
@@ -3117,6 +3281,33 @@ public:
 		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
 	}
 
+	// [rc4l] A scrollbar for an arbitrary region of the right column, given what it holds and where it
+	// has been scrolled to.
+	//
+	// The settings bar above is hard-wired to the settings; the running panel has two scrollable
+	// regions and neither of them is that, so the arithmetic is taken as parameters instead of read
+	// from globals. Same compute helpers, so all three thumbs behave identically.
+	void DrawHostRegionScrollBar( int viewTop, int viewBottom, int contentH, int scroll )
+	{
+		const int viewH = viewBottom - viewTop;
+		if (( viewH <= 0 ) || ( contentH <= viewH ))
+			return;
+
+		const int trackTop = serverbrowser_ToScreenY( viewTop );
+		const int trackH = serverbrowser_ToScreenY( viewBottom ) - trackTop;
+		if ( trackH <= 0 )
+			return;
+
+		const int x = serverbrowser_ToScreenX( SB_HOST_BAR_X );
+		const int w = MAX( 1, serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W ) - x );
+
+		const int thumbH = zx::ComputeThumbHeight( trackH, viewH, contentH, 8 );
+		const int thumbTop = zx::ComputeThumbTop( trackH, thumbH, scroll, contentH - viewH );
+
+		screen->Dim( PalEntry( 40, 42, 58 ), 0.55f, x, trackTop, w, trackH );
+		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
+	}
+
 	// [rc4l] The port as typed, falling back to the default. Read by the reachability check, which is
 	// a question about one specific port and must follow the field as it is edited.
 	int HostConfiguredPort( )
@@ -3145,8 +3336,35 @@ public:
 
 	int HostDetailMaxScroll( )
 	{
-		const int over = HostDetailH( ) - SB_HOST_RTOP_H;
+		const int over = HostDetailH( ) - HostDetailViewH( );
 		return ( over > 0 ) ? over : 0;
+	}
+
+	// [rc4l] The status half. Its height is measured while drawing rather than derived, because the
+	// text is wrapped and how many lines it becomes depends on the wrap width and on what the server
+	// is currently doing. Last frame's measurement is what the scrollbar and the clamp read.
+	int HostStatusMaxScroll( )
+	{
+		const int over = g_HostStatusH - SB_HOST_RUN_BOT_H;
+		return ( over > 0 ) ? over : 0;
+	}
+
+	void ClampHostDetailScroll( )
+	{
+		const int maxScroll = HostDetailMaxScroll( );
+		if ( g_HostDetailScroll > maxScroll )
+			g_HostDetailScroll = maxScroll;
+		if ( g_HostDetailScroll < 0 )
+			g_HostDetailScroll = 0;
+	}
+
+	void ClampHostStatusScroll( )
+	{
+		const int maxScroll = HostStatusMaxScroll( );
+		if ( g_HostStatusScroll > maxScroll )
+			g_HostStatusScroll = maxScroll;
+		if ( g_HostStatusScroll < 0 )
+			g_HostStatusScroll = 0;
 	}
 
 	// [rc4l] Where the rows land ON SCREEN -- content position less the scroll. Both the drawing and
@@ -3197,16 +3415,9 @@ public:
 		return SB_HOST_BTN_Y;
 	}
 
-	// [rc4l] Where the running panel's button sits, in ONE place.
-	//
-	// It was written out twice, and the two copies disagreed: the drawing measured from
-	// SB_DETAIL_BOTTOM and the hit test from SB_HOST_BOTTOM, which is 26 units lower. The button is
-	// 18 tall, so the clickable region did not overlap the button at all and STOP SERVER could not be
-	// pressed by mouse at any point on it.
-	int HostRunningButtonY( )
-	{
-		return SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H;
-	}
+	// [rc4l] The running panel's buttons now sit in the FORM's two slots rather than a geometry of
+	// their own. The old private position was written out twice and the copies disagreed, which is
+	// how STOP SERVER ended up unclickable; sharing the slots removes the chance to disagree.
 
 	// Whether a row at `vy` is inside the viewport at all. A control scrolled out of sight must not
 	// be clickable -- that is the invisible-but-clickable bug this browser avoids everywhere else.
@@ -3222,11 +3433,24 @@ public:
 		return zx::RowFullyInView( vy, vh, SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM );
 	}
 
+	// [rc4l] Where the detail region stops, which is not a constant: while a server is running it
+	// gives up its lower half to the status, so the details scroll inside what is left rather than
+	// running underneath it.
+	int HostDetailViewBottom( )
+	{
+		return zx::HostIsActive( ) ? SB_HOST_RUN_TOP_BOT : SB_HOST_RTOP_BOTTOM;
+	}
+
+	int HostDetailViewH( )
+	{
+		return HostDetailViewBottom( ) - SB_HOST_RTOP_TOP;
+	}
+
 	// The detail region clips to its own box, so a file list longer than the box stops at the rule
 	// instead of running into the form below it.
 	bool HostDetailRowVisible( int vy, int vh )
 	{
-		return zx::RowFullyInView( vy, vh, SB_HOST_RTOP_TOP, SB_HOST_RTOP_BOTTOM );
+		return zx::RowFullyInView( vy, vh, SB_HOST_RTOP_TOP, HostDetailViewBottom( ));
 	}
 
 	//*************************************************************************
@@ -3313,14 +3537,50 @@ public:
 
 		const int x = SB_HOST_LEFT + SB_HOST_PAD;
 
-		// While something of ours is running, the form is not the point any more -- what it is doing is.
+		// [rc4l] Running is a state of the RIGHT column, not a different screen.
 		//
-		// [rc4l] The heading is drawn only on the form, below. It answers "what is this screen for",
-		// which is a question that has stopped applying once a server of yours is up: at that point
-		// the screen is about that server, and telling someone they can run one is a page behind them.
+		// It used to replace the whole panel and return, which took the experience list away for as
+		// long as you were hosting: you could not look at what else you might run without stopping
+		// what you were already running first. The list stays; only the column that was describing
+		// your selection now describes your server.
 		if ( bLive || ( state == zx::HostState::Failed ))
 		{
-			DrawHostStatus( x, SB_HOST_TOP + SB_HOST_PAD, state );
+			DrawHostCatalogue( SB_HOST_LIST_LEFT );
+
+			// Top half: whatever is SELECTED, so the list is worth browsing. Clipped and scrolled on
+			// its own, exactly as on the form.
+			ClampHostDetailScroll( );
+			PushClip( serverbrowser_ToScreenY( SB_HOST_RTOP_TOP ),
+				serverbrowser_ToScreenY( SB_HOST_RUN_TOP_BOT ));
+			DrawHostDetail( );
+			PopClip( );
+			DrawHostRegionScrollBar( SB_HOST_RTOP_TOP, SB_HOST_RUN_TOP_BOT,
+				HostDetailH( ), g_HostDetailScroll );
+
+			// The seam, in the same faded rule the panel uses everywhere else.
+			DrawSeparatorSpan( SB_HOST_RUN_SPLIT, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+
+			// Bottom half: what is RUNNING. Measured as it draws, so the scrollbar above knows what
+			// it is looking at next frame.
+			ClampHostStatusScroll( );
+
+			// [rc4l] The text masks itself by skipping rows, because PushClip does not reach
+			// screen->DrawText. See HostTextRowVisible.
+			g_HostTextClipTop = SB_HOST_RUN_BOT_TOP;
+			g_HostTextClipBottom = SB_HOST_RTOP_BOTTOM;
+
+			const int statusTop = SB_HOST_RUN_BOT_TOP - g_HostStatusScroll;
+			const int endY = DrawHostStatus( SB_HOST_RCOL_LEFT, statusTop, state );
+
+			g_HostTextClipTop = 0;
+			g_HostTextClipBottom = 0;
+
+			g_HostStatusH = endY - statusTop;
+			DrawHostRegionScrollBar( SB_HOST_RUN_BOT_TOP, SB_HOST_RTOP_BOTTOM,
+				g_HostStatusH, g_HostStatusScroll );
+
+			DrawHostColumnDivider( );
+			DrawHostRunningButtons( state );
 			return;
 		}
 
@@ -3686,12 +3946,19 @@ public:
 			const bool bSel = ( row == g_HostEntrySel );
 			const bool bHot = ( row == g_HostEntryHot );
 
+			// [rc4l] The row being SERVED is tinted green, the same way CANCEL is tinted while a
+			// download runs: a state the row is in, said in colour rather than in another word.
+			// It survives the selection moving away, which is the whole point of showing it.
+			const bool bRunning = zx::HostIsActive( ) && ( row == g_HostingEntry );
+
 			// The selected row gets a bar behind it rather than only a colour: on a dark panel a
 			// colour change alone is easy to miss, and this is the one choice that decides what the
 			// whole rest of the screen is about.
-			if ( bSel )
+			if ( bSel || bRunning )
 			{
-				screen->Dim( PalEntry( 60, 70, 96 ), 0.55f,
+				const PalEntry bar = bRunning ? PalEntry( 40, 96, 52 ) : PalEntry( 60, 70, 96 );
+
+				screen->Dim( bar, bSel ? 0.55f : 0.4f,
 					serverbrowser_ToScreenX( x - 4 ),
 					serverbrowser_ToScreenY( rowY - 1 ),
 					serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT ) -
@@ -3700,7 +3967,9 @@ public:
 						serverbrowser_ToScreenY( rowY - 1 ));
 			}
 
-			const EColorRange col = bSel ? CR_WHITE : ( bHot ? CR_GOLD : CR_GRAY );
+			EColorRange col = bSel ? CR_WHITE : ( bHot ? CR_GOLD : CR_GRAY );
+			if ( bRunning && !bHot )
+				col = CR_GREEN;
 
 			FString label;
 			if ( row == SB_HOST_CATALOGUE_CUSTOM )
@@ -3813,13 +4082,20 @@ public:
 	//
 	// [rc4l] What our server is doing, once there is one. Replaces the form rather than sitting under
 	// it: while a server is running, the fields describe something that has already happened.
-	void DrawHostStatus( int x, int y, zx::HostState state )
+	// [rc4l] Returns the y it finished at, so the caller can measure how tall it turned out. The text
+	// wraps, so the height is not something the layout can work out without drawing it.
+	int DrawHostStatus( int x, int y, zx::HostState state )
 	{
-		screen->DrawText( SmallFont, CR_GOLD, x, y, zx::HostStateSummary( state ),
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		if ( HostTextRowVisible( y, SB_HOST_LINE ))
+		{
+			screen->DrawText( SmallFont, CR_GOLD, x, y, zx::HostStateSummary( state ),
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
 		y += SB_HOST_LINE + 6;
 
-		const int wrapW = SB_HOST_RIGHT - SB_HOST_PAD - x;
+		// Wrapped to the COLUMN now, not to the panel: the status shares the right column with the
+		// details above it rather than owning the full width.
+		const int wrapW = SB_HOST_RCOL_RIGHT - x;
 
 		if ( state == zx::HostState::Failed )
 		{
@@ -3840,23 +4116,10 @@ public:
 			}
 		}
 
-		y += 10;
-
-		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
-		const int btnX = SB_HOST_BTN_X;
-		const int btnY = HostRunningButtonY( );
-
-		const char *const label = ( state == zx::HostState::Failed ) ? "BACK" : "STOP SERVER";
-		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, label,
-			g_HostOnButton || g_HostButtonHot );
-
-		if ( g_Focus == zx::BrowserFocus::Host )
-			FocusAnchor( zx::BrowserFocus::Host, btnX - 5, btnY + SB_HOST_BTN_H / 2 );
-
-		serverbrowser_Tip( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
-			( state == zx::HostState::Failed )
-				? "Go back to the form"
-				: "Shut the server down\nAnyone playing on it is disconnected" );
+		// The buttons belong to the panel rather than to this text, so DrawHostRunningButtons draws
+		// them: they sit at the panel's foot, under both columns, not under whatever this happened to
+		// write last.
+		return y;
 	}
 
 	//*************************************************************************
@@ -3919,6 +4182,20 @@ public:
 
 	// Wrapped text inside an arbitrary width, returning the y below it. DrawWrapped is fixed to the
 	// detail panel's column; this one takes the width because the hosting panel is a different shape.
+	// [rc4l] Whether a line at `vy` may be drawn at all.
+	//
+	// PushClip only feeds DimClipped; it does NOT clip screen->DrawText, which is why every scrolling
+	// region here masks itself by SKIPPING rows rather than by setting a rectangle. The status half
+	// had a PushClip around it and nothing else, so its text scrolled straight up over the seam and
+	// out of the panel.
+	bool HostTextRowVisible( int vy, int vh )
+	{
+		if ( g_HostTextClipBottom <= g_HostTextClipTop )
+			return true;			// no region set: draw normally, which is every other caller
+
+		return zx::RowFullyInView( vy, vh, g_HostTextClipTop, g_HostTextClipBottom );
+	}
+
 	int DrawWrappedIn( const FString &text, int x, int y, int width, EColorRange colour )
 	{
 		FString line;
@@ -3936,8 +4213,11 @@ public:
 
 			if ( line.IsNotEmpty( ) && ( SmallFont->StringWidth( candidate ) > width ))
 			{
-				screen->DrawText( SmallFont, colour, x, y, line,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				if ( HostTextRowVisible( y, SB_HOST_LINE ))
+				{
+					screen->DrawText( SmallFont, colour, x, y, line,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				}
 				y += SB_HOST_LINE;
 				line = word;
 			}
@@ -5556,6 +5836,30 @@ public:
 			if (( ev->subtype == EV_GUI_WheelUp ) || ( ev->subtype == EV_GUI_WheelDown ))
 			{
 				const int step = ( ev->subtype == EV_GUI_WheelUp ) ? -3 : 3;
+
+				// [rc4l] While hosting, the right column is two scrollable halves, so the notch goes
+				// to whichever half the pointer is in. Checked before the settings below, which are
+				// not on screen in this state at all.
+				if (( g_Tab == BrowserTab::Host ) && zx::HostIsActive( ) &&
+					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 6 )) &&
+					( g_MouseX < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT + 6 )))
+				{
+					if (( g_MouseY >= serverbrowser_ToScreenY( SB_HOST_RTOP_TOP )) &&
+						( g_MouseY < serverbrowser_ToScreenY( SB_HOST_RUN_TOP_BOT )))
+					{
+						g_HostDetailScroll += step * 6;
+						ClampHostDetailScroll( );
+						return true;
+					}
+
+					if (( g_MouseY >= serverbrowser_ToScreenY( SB_HOST_RUN_BOT_TOP )) &&
+						( g_MouseY < serverbrowser_ToScreenY( SB_HOST_RTOP_BOTTOM )))
+					{
+						g_HostStatusScroll += step * 6;
+						ClampHostStatusScroll( );
+						return true;
+					}
+				}
 
 				// [rc4l] Over the hosting settings, the notch belongs to them. Same rule as the WAD
 				// list below: one wheel and more than one scrollable thing means it drives whichever
