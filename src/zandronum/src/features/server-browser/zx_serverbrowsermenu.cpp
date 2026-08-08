@@ -2660,7 +2660,7 @@ public:
 
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
 		const int btnX = SB_HOST_BTN_X;
-		const int btnY = bForm ? HostFormButtonY( ) : ( SB_HOST_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
+		const int btnY = bForm ? HostFormButtonY( ) : HostRunningButtonY( );
 
 		if (( x >= serverbrowser_ToScreenX( btnX )) &&
 			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
@@ -2791,7 +2791,7 @@ public:
 		// STOP sits at the bottom of the panel.
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
 		const int btnX = SB_HOST_BTN_X;
-		const int btnY = bForm ? HostFormButtonY( ) : ( SB_HOST_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
+		const int btnY = bForm ? HostFormButtonY( ) : HostRunningButtonY( );
 
 		if (( x >= serverbrowser_ToScreenX( btnX )) &&
 			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
@@ -3195,6 +3195,17 @@ public:
 	int HostFormButtonY( )
 	{
 		return SB_HOST_BTN_Y;
+	}
+
+	// [rc4l] Where the running panel's button sits, in ONE place.
+	//
+	// It was written out twice, and the two copies disagreed: the drawing measured from
+	// SB_DETAIL_BOTTOM and the hit test from SB_HOST_BOTTOM, which is 26 units lower. The button is
+	// 18 tall, so the clickable region did not overlap the button at all and STOP SERVER could not be
+	// pressed by mouse at any point on it.
+	int HostRunningButtonY( )
+	{
+		return SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H;
 	}
 
 	// Whether a row at `vy` is inside the viewport at all. A control scrolled out of sight must not
@@ -3833,7 +3844,7 @@ public:
 
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
 		const int btnX = SB_HOST_BTN_X;
-		const int btnY = SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H;
+		const int btnY = HostRunningButtonY( );
 
 		const char *const label = ( state == zx::HostState::Failed ) ? "BACK" : "STOP SERVER";
 		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, label,
