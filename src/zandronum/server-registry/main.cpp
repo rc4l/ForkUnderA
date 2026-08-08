@@ -55,6 +55,7 @@
 #include "main.h"
 // [rc4l] Who may be introduced to whom, and why a refusal is answered rather than dropped.
 #include "features/server-hosting/computation/punchbroker_compute.h"
+#include "features/federated-server-registry/computation/reachcookie_compute.h"
 #include <sstream>
 #include <set>
 // [rc4l] The reach-cookie table. Named rather than leaned on transitively -- this builds on GCC in a
@@ -325,16 +326,39 @@ std::string SERVERREGISTRY_IssueReachCookie( const NETADDRESS_s &Address )
 {
 	ExpireReachCookies( g_lCurrentTime );
 
-	if ( g_ReachCookies.size() >= kMaxReachCookies )
-		return "";
+	// [rc4l] Count by ADDRESS, and separately by address and port.
+	//
+	// The port is the part an attacker picks freely, so a share keyed on it is not a share: the
+	// previous "one in flight per address" compared the port too, which let one client hold every
+	// slot by rebinding, turning the cap into the denial of service it was written to prevent.
+	// computation/reachcookie_compute owns the rule and the reasoning.
+	int nFromSameIP = 0;
+	bool bSameSourceHasOne = false;
+	std::string SameSourceCookie;
 
-	// One in flight per address. Without this a single client could fill the table by itself, and the
-	// cap would then be a denial of service against everyone else rather than a defence.
 	for ( size_t i = 0; i < g_ReachCookies.size(); ++i )
 	{
+		if ( g_ReachCookies[i].Address.CompareNoPort( Address ) == false )
+			continue;
+
+		++nFromSameIP;
+
 		if ( g_ReachCookies[i].Address.Compare( Address ))
-			return g_ReachCookies[i].Cookie;
+		{
+			bSameSourceHasOne = true;
+			SameSourceCookie = g_ReachCookies[i].Cookie;
+		}
 	}
+
+	const zx::CookieVerdict Verdict = zx::DecideIssueCookie( bSameSourceHasOne, nFromSameIP,
+		static_cast<int>( g_ReachCookies.size() ), zx::kMaxCookiesPerSource,
+		static_cast<int>( kMaxReachCookies ));
+
+	if ( Verdict == zx::CookieVerdict::Reissue )
+		return SameSourceCookie;
+
+	if ( Verdict != zx::CookieVerdict::Issue )
+		return "";
 
 	REACHCOOKIE_s entry;
 	entry.Address = Address;
