@@ -213,6 +213,11 @@ extern int restart;
 // [AK] Did we need to authenticate a lump that has a duplicate?
 static bool g_bDuplicateLumpAuthenticated = false;
 
+// [rc4l] Whether our sockets ended up speaking both families. Two things need it: the bind has to
+// hand a socket the matching kind of address, and every SEND to a v4 peer has to be dressed as
+// ::ffff:a.b.c.d, because an AF_INET6 socket refuses a sockaddr_in outright.
+static bool g_bSocketIsDualStack = false;
+
 // [TP] Named ACS scripts share the name pool with all other names in the engine, which means named script numbers may
 // differ wildly between systems, e.g. if the server and client have different vid_renderer values the names will
 // already be off. So we create a special index of script names here.
@@ -755,7 +760,13 @@ int NETWORK_GetPackets( void )
 {
 	LONG				lNumBytes;
 	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
-	sockaddr			SocketFrom;
+	// [rc4l] BIG ENOUGH FOR THE FAMILY THAT ACTUALLY ARRIVES.
+	//
+	// A plain sockaddr is sixteen bytes and a sockaddr_in6 is twenty-eight, so once the socket went
+	// dual-stack every recvfrom failed outright with WSAEFAULT: the kernel will not write a v6 sender
+	// into a v4-sized buffer, and it refuses rather than truncating. The symptom is the whole of
+	// networking silently dead behind a warning, because there is no packet to point at.
+	sockaddr_storage	SocketFrom;
 	INT					iSocketFromLength;
 
 	iSocketFromLength = sizeof( SocketFrom );
@@ -765,9 +776,9 @@ int NETWORK_GetPackets( void )
 		return ( 0 );
 
 #ifdef	WIN32
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, &iSocketFromLength );
+	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
 #else
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, (socklen_t *)&iSocketFromLength );
+	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
 
 	// If the number of bytes returned is -1, an error has occured.
@@ -816,7 +827,7 @@ int NETWORK_GetPackets( void )
 		return ( 0 );
 
 	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( SocketFrom );
+	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	// Decode the huffman-encoded message we received.
 	// [BB] Communication with the auth server is not Huffman-encoded.
@@ -850,15 +861,16 @@ int NETWORK_GetLANPackets( void )
 
 	LONG				lNumBytes;
 	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
-	sockaddr			SocketFrom;
+	// [rc4l] Room for a v6 sender, for the reason spelled out in NETWORK_GetPackets above.
+	sockaddr_storage	SocketFrom;
 	INT					iSocketFromLength;
 
     iSocketFromLength = sizeof( SocketFrom );
 
 #ifdef	WIN32
-	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, &iSocketFromLength );
+	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
 #else
-	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, (socklen_t *)&iSocketFromLength );
+	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
 
 	// If the number of bytes returned is -1, an error has occured.
@@ -907,7 +919,7 @@ int NETWORK_GetLANPackets( void )
 		return ( 0 );
 
 	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( SocketFrom );
+	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	// Decode the huffman-encoded message we received.
 	// [BB] Communication with the auth server is not Huffman-encoded.
@@ -953,7 +965,7 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
 	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
 	struct sockaddr_storage SocketAddress;
-	Address.ToSocketAddress( SocketAddress );
+	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
 
 	// [BB] Communication with the auth server is not Huffman-encoded.
 	if ( Address.Compare( NETWORK_AUTH_GetCachedServerAddress() ) == false )
@@ -966,7 +978,7 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 		iNumBytesOut = pBuffer->ulCurrentSize;
 	}
 
-	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), sizeof( SocketAddress ));
+	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), iAddressLength );
 
 	// If sendto returns -1, there was an error.
 	if ( lNumBytes == -1 )
@@ -1984,12 +1996,6 @@ void network_Error( const char *pszError )
 {
 	Printf( TEXTCOLOR_GREEN "%s\n", pszError );
 }
-
-//*****************************************************************************
-//
-// [rc4l] Whether our sockets ended up speaking both families. The bind below has to hand a socket
-// the matching kind of address, and only this knows which it got.
-static bool g_bSocketIsDualStack = false;
 
 //*****************************************************************************
 //

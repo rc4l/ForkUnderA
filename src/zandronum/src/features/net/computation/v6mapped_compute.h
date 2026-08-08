@@ -33,6 +33,15 @@ bool IsV4MappedV6( const unsigned char *sixteen );
 // deliberately separate from it so a caller cannot extract without having asked.
 void ExtractMappedV4( const unsigned char *sixteen, unsigned char *four );
 
+// [rc4l] The other direction, and it is not optional on a dual-stack socket.
+//
+// A socket opened AF_INET6 speaks v6 and nothing else. Handing it a sockaddr_in for an ordinary v4
+// destination does not fall back, it fails outright with EAFNOSUPPORT, so every packet to a v4 peer
+// is refused before it leaves. Wearing the v6 hat is how a v4 address is addressed on that socket.
+//
+// Writes `four` into `sixteen` as ::ffff:a.b.c.d (RFC 4291).
+void MakeV4MappedV6( const unsigned char *four, unsigned char *sixteen );
+
 } // namespace zx
 
 #endif // ZX_V6MAPPED_COMPUTE_H

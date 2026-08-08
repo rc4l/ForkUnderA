@@ -368,7 +368,16 @@ public:
 	// so the old signature could not hold what this now writes: passing the narrow type would have
 	// overwritten whatever sat after it on the caller's stack, which is a corruption bug that
 	// reproduces as unrelated networking nonsense somewhere else entirely.
-	void ToSocketAddress( struct sockaddr_storage &SocketAddress ) const;
+	// [rc4l] `bMapV4ToV6` is what the SOCKET needs, not what the address is.
+	//
+	// A dual-stack socket is AF_INET6 and speaks nothing else, so an ordinary v4 destination has to be
+	// dressed as ::ffff:a.b.c.d before it can be sent to. Handing such a socket a sockaddr_in does not
+	// quietly work, it fails with EAFNOSUPPORT and the packet never leaves.
+	//
+	// Returns how many bytes of SocketAddress are meaningful, because that is what sendto and bind
+	// actually want: sizeof(sockaddr_storage) is 128 bytes of mostly padding and passing it is wrong
+	// even where it is tolerated.
+	int ToSocketAddress( struct sockaddr_storage &SocketAddress, bool bMapV4ToV6 = false ) const;
 	void SetPort ( USHORT port );
 	const char* ToString() const;
 

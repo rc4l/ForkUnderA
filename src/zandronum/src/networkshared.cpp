@@ -778,23 +778,29 @@ void NETADDRESS_s::LoadFromSocketAddress ( const struct sockaddr& sockaddr )
 
 //*****************************************************************************
 //
-void NETADDRESS_s::ToSocketAddress( struct sockaddr_storage &SocketAddress ) const
+int NETADDRESS_s::ToSocketAddress( struct sockaddr_storage &SocketAddress, bool bMapV4ToV6 ) const
 {
 	memset( &SocketAddress, 0, sizeof SocketAddress );
 
-	if ( bIsIPv6 )
+	if ( bIsIPv6 || bMapV4ToV6 )
 	{
 		struct sockaddr_in6 *ipv6 = reinterpret_cast <struct sockaddr_in6 *> ( &SocketAddress );
-		memcpy( &ipv6->sin6_addr, abIP6, sizeof( abIP6 ));
+
+		if ( bIsIPv6 )
+			memcpy( &ipv6->sin6_addr, abIP6, sizeof( abIP6 ));
+		else
+			zx::MakeV4MappedV6( abIP, reinterpret_cast<unsigned char *>( &ipv6->sin6_addr ));
+
 		ipv6->sin6_port = usPort;
 		ipv6->sin6_family = AF_INET6;
-		return;
+		return static_cast<int>( sizeof( *ipv6 ));
 	}
 
 	struct sockaddr_in *ipv4 = reinterpret_cast <struct sockaddr_in *> ( &SocketAddress );
 	*(int *)&ipv4->sin_addr = *(int *)&abIP;
 	ipv4->sin_port = usPort;
 	ipv4->sin_family = AF_INET;
+	return static_cast<int>( sizeof( *ipv4 ));
 }
 
 //*****************************************************************************

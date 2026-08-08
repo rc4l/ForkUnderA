@@ -79,6 +79,11 @@ static	SOCKET			g_ProbeSocket;
 // Our local port.
 static	USHORT			g_usLocalPort;
 
+// [rc4l] Whether our sockets ended up speaking both families. Two things need it: the bind has to
+// hand a socket the matching kind of address, and every SEND to a v4 peer has to be dressed as
+// ::ffff:a.b.c.d, because an AF_INET6 socket refuses a sockaddr_in outright.
+static	bool			g_bSocketIsDualStack = false;
+
 // Buffer for the Huffman encoding.
 static	UCHAR			g_ucHuffmanBuffer[131072];
 
@@ -220,15 +225,18 @@ void NETWORK_Construct( USHORT usPort, const char *pszIPAddress )
 //
 // Split out from NETWORK_GetPackets because there are now two sockets to drain, and draining only the
 // first one is exactly the bug this exists to prevent.
-static LONG network_ReceiveFromSocket( SOCKET Socket, sockaddr &SocketFrom )
+// [rc4l] sockaddr_storage, because a sockaddr is sixteen bytes and a sockaddr_in6 is twenty-eight.
+// A dual-stack socket hands back the larger one, and the kernel refuses with EFAULT rather than
+// truncating it, so a v4-sized buffer here does not lose the address: it loses every packet.
+static LONG network_ReceiveFromSocket( SOCKET Socket, sockaddr_storage &SocketFrom )
 {
 	INT iSocketFromLength = sizeof( SocketFrom );
 	LONG lNumBytes;
 
 #ifdef	WIN32
-	lNumBytes = recvfrom( Socket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, &iSocketFromLength );
+	lNumBytes = recvfrom( Socket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
 #else
-	lNumBytes = recvfrom( Socket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, (socklen_t *)&iSocketFromLength );
+	lNumBytes = recvfrom( Socket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
 
 	// If the number of bytes returned is -1, an error has occured.
@@ -273,7 +281,7 @@ int NETWORK_GetPackets( void )
 {
 	LONG				lNumBytes;
 	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
-	sockaddr			SocketFrom;
+	sockaddr_storage	SocketFrom;
 
 	lNumBytes = network_ReceiveFromSocket( g_NetworkSocket, SocketFrom );
 
@@ -299,7 +307,7 @@ int NETWORK_GetPackets( void )
 	g_NetworkMessage.ByteStream.pbStreamEnd = g_NetworkMessage.ByteStream.pbStream + g_NetworkMessage.ulCurrentSize;
 
 	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( SocketFrom );
+	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	return ( g_NetworkMessage.ulCurrentSize );
 }
@@ -335,13 +343,13 @@ void NETWORK_LaunchProbePacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
 	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
 	struct sockaddr_storage SocketAddress;
-	Address.ToSocketAddress( SocketAddress );
+	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
 
 	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize,
 		&iNumBytesOut );
 
 	sendto( g_ProbeSocket, (const char *)g_ucHuffmanBuffer, iNumBytesOut, 0,
-		reinterpret_cast<sockaddr *>( &SocketAddress ), sizeof( SocketAddress ));
+		reinterpret_cast<sockaddr *>( &SocketAddress ), iAddressLength );
 }
 
 //*****************************************************************************
@@ -361,11 +369,11 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
 	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
 	struct sockaddr_storage SocketAddress;
-	Address.ToSocketAddress( SocketAddress );
+	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
 
 	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
 
-	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), sizeof( SocketAddress ));
+	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), iAddressLength );
 
 	// If sendto returns -1, there was an error.
 	if ( lNumBytes == -1 )
@@ -473,7 +481,7 @@ void network_Error( const char *pszError )
 //
 // [rc4l] Whether our sockets speak both families. The bind below has to hand a socket the matching
 // kind of address, and only this knows which kind it got.
-static bool g_bSocketIsDualStack = false;
+
 
 //*****************************************************************************
 //
