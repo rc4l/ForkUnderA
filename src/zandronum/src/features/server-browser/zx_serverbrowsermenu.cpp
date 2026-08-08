@@ -554,6 +554,11 @@ static	int				g_HostDetailScroll = 0;
 // as it is drawn: the text wraps, so the line count is not something the layout can know in advance.
 static	int				g_HostStatusScroll = 0;
 
+// Which of the running panel's two bars a held drag belongs to, so sliding off one sideways does not
+// hand the grab to the other.
+static	bool			g_DraggingHostDetailBar = false;
+static	bool			g_DraggingHostStatusBar = false;
+
 // [rc4l] The band the status text may draw in, or an empty range for "anywhere". Set around the
 // status half only; see HostTextRowVisible for why a rectangle would not have done.
 static	int				g_HostTextClipTop = 0;
@@ -3106,6 +3111,12 @@ public:
 		g_HostButtonHot = false;
 		g_HostVisHot = -1;
 
+		// [rc4l] FIRST, and before the click-away rule below. A bar lives over the same column the
+		// details and the status draw in, and a drag along it must not read as "clicked on nothing"
+		// and drop the keyboard focus every frame it moves.
+		if ( HostRegionBarsMouseEvent( type, x, y ))
+			return true;
+
 		// The rule lives in computation/pointerdrag_compute -- above all, that a PRESS always ends the
 		// previous gesture and is never consumed by it. Inline, that rule had a hole in it and ate a
 		// click; see the unit's header for what that looked like.
@@ -3634,6 +3645,118 @@ public:
 
 		screen->Dim( PalEntry( 40, 42, 58 ), 0.55f, x, trackTop, w, trackH );
 		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
+	}
+
+	// [rc4l] A click or drag on one of those bars, mapped to a scroll position.
+	//
+	// The DRAWING of these two shared the compute helpers from the start; the INTERACTION was never
+	// written at all, so the thumbs looked exactly like the server list's and did nothing when
+	// grabbed. Only the wheel moved them.
+	//
+	// Every number here comes from the same expressions DrawHostRegionScrollBar uses, for the reason
+	// scrollbar_compute exists: a bar whose hit test works out its own thumb height disagrees with
+	// the one on screen, and the error grows with the thumb.
+	//
+	// The compute unit talks about rows and this scrolls by pixels, which costs nothing -- the
+	// mapping is linear and unit-agnostic, so "first row" is "pixels down" with no conversion.
+	bool HostRegionBarDrag( int viewTop, int viewBottom, int contentH, int maxScroll,
+		int x, int y, int &scroll )
+	{
+		const int viewH = viewBottom - viewTop;
+		if (( viewH <= 0 ) || ( contentH <= viewH ) || ( maxScroll <= 0 ))
+			return false;
+
+		const int trackTop = serverbrowser_ToScreenY( viewTop );
+		const int trackH = serverbrowser_ToScreenY( viewBottom ) - trackTop;
+		if ( trackH <= 0 )
+			return false;
+
+		// Wider than the bar is drawn, by the same few pixels the WAD list's bar allows. A two-pixel
+		// target is one nobody hits on the first try.
+		if (( x < serverbrowser_ToScreenX( SB_HOST_BAR_X - 3 )) ||
+			( x >= serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W + 3 )))
+		{
+			return false;
+		}
+
+		if (( y < trackTop ) || ( y >= trackTop + trackH ))
+			return false;
+
+		const int thumbH = zx::ComputeThumbHeight( trackH, viewH, contentH, 8 );
+		scroll = zx::ComputeFirstFromPointer( y - trackTop, trackH, thumbH, maxScroll );
+		return true;
+	}
+
+	// [rc4l] The two running-panel bars, answered in the order they are drawn. Returns true when one
+	// of them took the event, so the panel underneath does not also act on it.
+	bool HostRegionBarsMouseEvent( int type, int x, int y )
+	{
+		if ( zx::HostIsActive( ) == false )
+			return false;			// only the running panel splits the column in two
+
+		if ( type == MOUSE_Click )
+		{
+			int scroll = g_HostDetailScroll;
+			if ( HostRegionBarDrag( SB_HOST_RTOP_TOP, SB_HOST_RUN_TOP_BOT, HostDetailH( ),
+				HostDetailMaxScroll( ), x, y, scroll ))
+			{
+				g_HostDetailScroll = scroll;
+				g_DraggingHostDetailBar = true;
+				return true;
+			}
+
+			scroll = g_HostStatusScroll;
+			if ( HostRegionBarDrag( SB_HOST_RUN_BOT_TOP, SB_HOST_RTOP_BOTTOM, g_HostStatusH,
+				HostStatusMaxScroll( ), x, y, scroll ))
+			{
+				g_HostStatusScroll = scroll;
+				g_DraggingHostStatusBar = true;
+				return true;
+			}
+
+			return false;
+		}
+
+		// [rc4l] A held drag keeps being answered by the bar that STARTED it, without re-testing
+		// whether the pointer is still over it. Dragging a scrollbar and sliding off it sideways is
+		// how everyone uses one, and re-testing would drop the grab the moment they did.
+		if ( g_DraggingHostDetailBar || g_DraggingHostStatusBar )
+		{
+			const int trackTop = g_DraggingHostDetailBar
+				? serverbrowser_ToScreenY( SB_HOST_RTOP_TOP )
+				: serverbrowser_ToScreenY( SB_HOST_RUN_BOT_TOP );
+			const int trackBot = g_DraggingHostDetailBar
+				? serverbrowser_ToScreenY( SB_HOST_RUN_TOP_BOT )
+				: serverbrowser_ToScreenY( SB_HOST_RTOP_BOTTOM );
+
+			const int viewH = g_DraggingHostDetailBar
+				? ( SB_HOST_RUN_TOP_BOT - SB_HOST_RTOP_TOP )
+				: SB_HOST_RUN_BOT_H;
+			const int contentH = g_DraggingHostDetailBar ? HostDetailH( ) : g_HostStatusH;
+			const int maxScroll = g_DraggingHostDetailBar
+				? HostDetailMaxScroll( ) : HostStatusMaxScroll( );
+
+			const int trackH = trackBot - trackTop;
+			if (( trackH > 0 ) && ( maxScroll > 0 ))
+			{
+				const int thumbH = zx::ComputeThumbHeight( trackH, viewH, contentH, 8 );
+				const int at = zx::ComputeFirstFromPointer( y - trackTop, trackH, thumbH, maxScroll );
+
+				if ( g_DraggingHostDetailBar )
+					g_HostDetailScroll = at;
+				else
+					g_HostStatusScroll = at;
+			}
+
+			if ( type == MOUSE_Release )
+			{
+				g_DraggingHostDetailBar = false;
+				g_DraggingHostStatusBar = false;
+			}
+			return true;
+		}
+
+		return false;
 	}
 
 	// [rc4l] The port as typed, falling back to the default. Read by the reachability check, which is
