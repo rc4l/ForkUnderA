@@ -526,13 +526,16 @@ static	int				g_HostFieldHot = -1;
 // the fields answer the second, which is the same split as an entry's addon.json against the host's
 // own choices: the entry never names the server and the form never picks the files.
 //
-// -1 is Custom, meaning "whatever this client is running", which is what the form did before the
-// catalogue existed and still does for anything not in it.
-#define SB_HOST_CATALOGUE_CUSTOM	( -1 )
+// [rc4l] Every row is a catalogue entry now. There used to be a "Custom setup" row above them at -1,
+// meaning "serve whatever this client is running", which is what the form did before the catalogue
+// existed -- it went because it is not an experience. It described no content, its name told a player
+// nothing about what they would be hosting, and it sat at the top of a list whose whole job is to
+// answer "what do you want to play".
+#define SB_HOST_CATALOGUE_FIRST		( 0 )
 #define SB_HOST_ENTRY_H				12
 
-static	int				g_HostEntrySel = SB_HOST_CATALOGUE_CUSTOM;
-static	int				g_HostEntryHot = -2;	// -2 is "none"; -1 is the Custom row
+static	int				g_HostEntrySel = SB_HOST_CATALOGUE_FIRST;
+static	int				g_HostEntryHot = -2;	// -2 is "none"
 
 // [rc4l] What we told the server to load, kept so the client can match it before joining.
 //
@@ -2702,52 +2705,9 @@ public:
 			return;
 		}
 
-		// Custom: the server takes what this client is running, so there is nothing to reload onto.
-		g_HostEntryIwad = "";
-		g_HostEntryPwads.Clear( );
-
-		// [rc4l] What we are playing is what we will serve, named by the PATH it was loaded from
-		// rather than by its base name.
-		//
-		// FWadCollection knows both, and the base name used to be the obvious choice because it is
-		// the form a command line wants. It also makes the server go and look the file up again, in
-		// its own config, which is not this one -- the same mistake the catalogue path made, and it
-		// bites hardest here: a file you are playing right now might have come from a folder this
-		// session added in memory and has not written out yet, so the server would search for it and
-		// come back empty while it sat open in our own process.
-		config.iwad = HostServeName( 1 );
-
-		for ( int i = 2; i < Wads.GetNumWads( ); ++i )
-		{
-			const char *pszName = Wads.GetWadName( i );
-			if (( pszName == NULL ) || ( pszName[0] == 0 ))
-				continue;
-
-			// zandronum.pk3 and friends come with the engine; the server loads its own copies.
-			if ( stricmp( pszName, "zandronum.pk3" ) == 0 )
-				continue;
-			if ( stricmp( pszName, "skulltag_actors.pk3" ) == 0 )
-				continue;
-
-			config.pwads.push_back( HostServeName( i ));
-		}
-
-		SaveHostForm( );
-
-		// [rc4l] Let go of the port before the server asks for it. The reachability check binds the
-		// very port being hosted on, so starting while it is still open made the server find its own
-		// port taken and slide to the next one -- start, stop, start and the number climbed.
-		zx::ReachProbeRelease( );
-
-		if ( zx::HostStart( config ) == false )
-		{
-			// HostStart has already put the reason in the lifecycle; the panel draws it. Nothing to
-			// announce here that the screen is not about to say better.
-			S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
-			return;
-		}
-
-		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+		// [rc4l] Nothing selected, which the list no longer allows: every row is an entry and one is
+		// always current. Reached only if the catalogue is empty, and then there is nothing to host.
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
 	}
 
 	// [rc4l] How many people other than us are on the server we are connected to.
@@ -3046,7 +3006,7 @@ public:
 		}
 
 		// The catalogue rows, using the same y helper the drawing uses, bounded to the left column.
-		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
+		for ( int row = SB_HOST_CATALOGUE_FIRST; row < HostCatalogueRowCount( ); ++row )
 		{
 			const int rowY = HostCatalogueRowY( row );
 			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
@@ -3182,7 +3142,7 @@ public:
 		// The catalogue, before the fields: it is above them on screen and it decides what the rest
 		// of the panel is about.
 		g_HostEntryHot = -2;
-		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
+		for ( int row = SB_HOST_CATALOGUE_FIRST; row < HostCatalogueRowCount( ); ++row )
 		{
 			const int rowY = HostCatalogueRowY( row );
 			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
@@ -3826,8 +3786,8 @@ public:
 	// than where it is clickable stays impossible -- the same rule the fields already follow.
 	int HostCatalogueRowCount( )
 	{
-		// Custom plus whatever is on disk.
-		return 1 + static_cast<int>( zx::CatalogueLoad( ).size( ));
+		// Whatever is on disk, and nothing else.
+		return static_cast<int>( zx::CatalogueLoad( ).size( ));
 	}
 
 	int HostCatalogueY( )
@@ -3840,13 +3800,13 @@ public:
 		return HostCatalogueRowCount( ) * SB_HOST_ENTRY_H + 8;
 	}
 
-	// The y of one catalogue row. `row` is -1 for Custom, then 0.. for entries, so the selection
-	// value and the row index are the same number and cannot drift apart.
+	// The y of one catalogue row. The selection value and the row index are the same number, so
+	// the two cannot drift apart.
 	int HostCatalogueRowY( int row )
 	{
 		// [rc4l] No heading offset: EXPERIENCES is gone and the rows begin where it was. A label over
 		// three obvious rows was a line spent saying what the rows already said.
-		return HostCatalogueY( ) + ( row + 1 ) * SB_HOST_ENTRY_H;
+		return HostCatalogueY( ) + row * SB_HOST_ENTRY_H;
 	}
 
 	// The settings live in the right column now, so they start at the top of the viewport rather than
@@ -4324,9 +4284,11 @@ public:
 		const int x = SB_HOST_RCOL_LEFT;
 		int y = SB_HOST_RTOP_TOP - g_HostDetailScroll;
 
+		// [rc4l] Reached only when there is nothing to describe. This used to be the Custom row's
+		// panel; with that row gone, an out-of-range selection means the catalogue is empty.
 		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
 		{
-			DrawHostDetailTitle( "Custom setup", y );
+			DrawHostDetailTitle( "Nothing to host", y );
 			y += BigFont->GetHeight( ) + 4;
 
 			if ( HostDetailRowVisible( y, 2 ))
@@ -4335,7 +4297,7 @@ public:
 
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
-				screen->DrawText( SmallFont, CR_WHITE, x, y, "Serves what you are playing",
+				screen->DrawText( SmallFont, CR_WHITE, x, y, "No experiences are installed",
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 			}
 			return;
@@ -4406,14 +4368,11 @@ public:
 	}
 
 	// [rc4l] WHAT to run. The catalogue answers this; the fields beside it answer how.
-	//
-	// Custom is a ROW rather than a mode, so the manual form is one of the choices instead of a
-	// separate place to go. Menu depth is what stops people finding things, and this screen has none.
 	void DrawHostCatalogue( int x )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
 
-		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < static_cast<int>( entries.size( )); ++row )
+		for ( int row = SB_HOST_CATALOGUE_FIRST; row < static_cast<int>( entries.size( )); ++row )
 		{
 			const int rowY = HostCatalogueRowY( row );
 			if ( !HostRowVisible( rowY, SB_HOST_ENTRY_H ))
@@ -4466,11 +4425,7 @@ public:
 			// is all the label has to say.
 			EColorRange col = bSel ? CR_WHITE : ( bRunning ? CR_GREEN : CR_GRAY );
 
-			FString label;
-			if ( row == SB_HOST_CATALOGUE_CUSTOM )
-				label = "Custom setup";
-			else
-				label = entries[row].addon.name.c_str( );
+			const FString label = entries[row].addon.name.c_str( );
 
 			// [rc4l] Centred in the row rather than drawn at its top edge. The highlight bar is
 			// SB_HOST_ENTRY_H tall and the glyphs are shorter, so drawing at rowY sat the text high
@@ -4479,9 +4434,8 @@ public:
 				rowY + ( SB_HOST_ENTRY_H - SmallFont->GetHeight( )) / 2, label,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-			// No file count or "current" here on purpose: the detail panel beside this already says
-			// the files, the IWAD and what Custom means, and a narrow list repeating it crowded
-			// itself for no new information.
+			// No file count here on purpose: the detail panel beside this already says the files and
+			// the IWAD, and a narrow list repeating it crowded itself for no new information.
 		}
 	}
 
