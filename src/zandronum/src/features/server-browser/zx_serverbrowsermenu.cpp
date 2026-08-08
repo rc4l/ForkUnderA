@@ -1368,8 +1368,26 @@ public:
 			g_HostEntryIwad = "";
 			g_HostEntryPwads.Clear( );
 
+			// [rc4l] The menu is NOT cleared first any more. RequestReload returns instead of throwing
+			// when the set will not load -- a file that is present but truncated, or one that went
+			// missing between starting the server and joining it -- and clearing the menu ahead of the
+			// call meant that refusal landed on an empty screen while the panel behind it went on
+			// saying we were hosting. We were: the server was up and we simply could not join it.
+			const zx::wadreload::ReloadResult r = zx::wadreload::RequestReload(
+				iwad.GetChars( ), pwads, NULL, address.GetChars( ));
+
+			if ( r == zx::wadreload::ReloadResult::InvalidWads )
+			{
+				// Take the server down with it. Leaving it running would advertise a game to other
+				// people that its own host cannot get into.
+				zx::HostStop( );
+				ShowNotice( "Cannot join your own server",
+					"Some of its files will not load on this machine, so the server has been stopped. "
+					"The console says which one." );
+				return;
+			}
+
 			M_ClearMenus( );
-			zx::wadreload::RequestReload( iwad.GetChars( ), pwads, NULL, address.GetChars( ));
 			return;
 		}
 
@@ -1819,6 +1837,33 @@ public:
 		SetFocus( zx::BrowserFocus::Dialog );
 
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+	}
+
+	// [rc4l] The same dialog with nothing to decide: something went wrong and the player has to be
+	// told, not asked. One button, and Escape resolves to it.
+	//
+	// Worth having rather than printing to the console. A refusal only the console mentions is a
+	// button that made a noise and did nothing as far as anyone looking at the screen can tell, which
+	// is how hosting an entry with missing files felt.
+	void ShowNotice( const char *title, const char *message )
+	{
+		g_Dialog = BrowserDialog( );
+		g_Dialog.open = true;
+		g_Dialog.action = DialogAction::None;
+		g_Dialog.title = title;
+		g_Dialog.message = ( message != NULL ) ? message : "";
+
+		g_Dialog.labels[0] = "OK";
+		g_Dialog.shortcuts[0] = 'o';
+		g_Dialog.count = 1;
+		g_Dialog.cancelIndex = 0;
+		g_Dialog.focus = 0;
+
+		g_DialogInput = zx::ClearInput( );
+		g_DialogHot = -1;
+		SetFocus( zx::BrowserFocus::Dialog );
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
 	}
 
 	// [rc4l] What a dialog's answer MEANS, in one place, so the three input routes cannot come to
@@ -2457,12 +2502,14 @@ public:
 		{
 			const zx::CatalogueEntry &chosen = entries[g_HostEntrySel];
 
+			// The same answer the panel draws from, so a file shown as missing is a file this refuses
+			// to host on. See HostEntryFilesPresent for what these two used to disagree about.
+			const std::vector<bool> &present = HostEntryFilesPresent( g_HostEntrySel, chosen.addon );
+
 			std::vector<std::string> have;
 			for ( size_t i = 0; i < chosen.addon.files.size( ); ++i )
 			{
-				TArray<FString> resolved;
-				if ( D_AddFile( resolved, chosen.addon.files[i].name.c_str( ), false ) &&
-					( resolved.Size( ) > 0 ))
+				if (( i < present.size( )) && present[i] )
 					have.push_back( chosen.addon.files[i].name );
 			}
 
@@ -2492,15 +2539,35 @@ public:
 
 			if ( !plan.blocker.empty( ) || !plan.ready )
 			{
-				// Said on the panel rather than only in the console, because the console is not where
-				// anyone pressing this button is looking.
-				FString why = plan.blocker.empty( )
-					? FString( "missing files; they are not downloadable from here yet" )
-					: FString( plan.blocker.c_str( ));
+				// [rc4l] NAMES the files. "Missing files" alone leaves the player to work out which
+				// of a dozen it meant, and the entry beside them already marks each with a + or a -.
+				FString why = FString( plan.blocker.c_str( ));
+
+				if ( plan.blocker.empty( ))
+				{
+					// One sentence rather than a list on its own lines: the dialog wraps on spaces
+					// and has no idea what a newline is, so a list would come out as one run-on row.
+					why = "You do not have ";
+
+					for ( size_t i = 0; i < plan.missing.size( ); ++i )
+					{
+						if ( i > 0 )
+							why += ( i + 1 == plan.missing.size( )) ? " or " : ", ";
+						why += plan.missing[i].c_str( );
+					}
+
+					why += ". Downloading from here is not possible yet.";
+				}
+
+				// On the PANEL, not just in the console. Refusing silently is what made this look
+				// like it had started: the server never came up, the console said so, and the only
+				// thing on screen was a button that had made a noise.
+				FString title;
+				title.Format( "Cannot host %s", chosen.addon.name.c_str( ));
+				ShowNotice( title.GetChars( ), why.GetChars( ));
 
 				Printf( TEXTCOLOR_ORANGE "Cannot host %s: %s\n" TEXTCOLOR_NORMAL,
 					chosen.addon.name.c_str( ), why.GetChars( ));
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
 				return;
 			}
 
@@ -2508,10 +2575,26 @@ public:
 			config.pwads = plan.pwads;
 			config.execCfg = plan.execCfg;
 
-			g_HostEntryIwad = plan.iwad.c_str( );
+			// [rc4l] RESOLVED to full paths, not left as bare names. These are what the CLIENT
+			// reloads onto in order to join, and RequestReload's loadability check opens exactly
+			// what it is handed -- so a name is tested against the working directory, and a file
+			// living anywhere else on the search path comes back "not found" with the file sitting
+			// on disk. The spawned server may be given names because its own -file handling
+			// searches; this side has no such step. The join path has always resolved first (see
+			// zx_joinserver.cpp) and hosting never did.
+			g_HostEntryIwad = zx::FindFileInEngineSearchPaths( plan.iwad.c_str( ));
+			if ( g_HostEntryIwad.IsEmpty( ))
+				g_HostEntryIwad = zx::FindIwadInEngineSearchPaths( plan.iwad.c_str( ));
+			if ( g_HostEntryIwad.IsEmpty( ))
+				g_HostEntryIwad = plan.iwad.c_str( );	// nothing found; let the reload say so
+
 			g_HostEntryPwads.Clear( );
 			for ( size_t i = 0; i < plan.pwads.size( ); ++i )
-				g_HostEntryPwads.Push( FString( plan.pwads[i].c_str( )));
+			{
+				const FString path = zx::FindFileInEngineSearchPaths( plan.pwads[i].c_str( ));
+				g_HostEntryPwads.Push( path.IsNotEmpty( ) ? path
+					: FString( plan.pwads[i].c_str( )));
+			}
 
 			// [rc4l] The entry's own opening map, which is NOT the first of its rotation: Duel 40
 			// opens on START, a welcome map deliberately left out of the rotation. Falling back to
@@ -3783,6 +3866,38 @@ public:
 		return count;
 	}
 
+	// [rc4l] Which of the selected entry's files this machine actually has, one entry per file.
+	//
+	// ONE answer, shared by the panel that colours the list and by the button that starts the server,
+	// because they were disagreeing. Both used to ask D_AddFile with `check` set to false, and false
+	// there does not mean "look quietly" -- it means do not look at all, so the call said yes to every
+	// file including ones that were not on disk. Hosting Skulltag therefore passed its own missing-file
+	// guard, spawned a server, and left the client's wad_reload to discover the truth and abort, with
+	// the panel still claiming to be hosting.
+	//
+	// Cached per selection: the lookup touches the filesystem once per file and this is read while
+	// drawing, so doing it fresh every frame would stat the whole list sixty times a second. A file
+	// that appears while you are looking at the entry is picked up the next time the selection moves.
+	const std::vector<bool> &HostEntryFilesPresent( int entry, const zx::AddonEntry &addon )
+	{
+		static int cached = -2;
+		static std::vector<bool> present;
+
+		if (( entry != cached ) || ( present.size( ) != addon.files.size( )))
+		{
+			cached = entry;
+			present.clear( );
+
+			for ( size_t i = 0; i < addon.files.size( ); ++i )
+			{
+				present.push_back(
+					zx::FindFileInEngineSearchPaths( addon.files[i].name.c_str( )).IsNotEmpty( ));
+			}
+		}
+
+		return present;
+	}
+
 	int HostDetailH( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -3911,13 +4026,13 @@ public:
 		}
 		y += SB_HOST_LINE;
 
+		const std::vector<bool> &present = HostEntryFilesPresent( g_HostEntrySel, addon );
+
 		for ( size_t i = 0; i < addon.files.size( ); ++i )
 		{
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
-				TArray<FString> resolved;
-				const bool bHave = D_AddFile( resolved, addon.files[i].name.c_str( ), false ) &&
-					( resolved.Size( ) > 0 );
+				const bool bHave = ( i < present.size( )) && present[i];
 
 				FString line;
 				line.Format( "%s %s", bHave ? "+" : "-", addon.files[i].name.c_str( ));
