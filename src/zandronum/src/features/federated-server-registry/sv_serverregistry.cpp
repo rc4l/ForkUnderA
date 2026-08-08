@@ -681,6 +681,10 @@ void SERVER_SERVERREGISTRY_Destruct( void )
 
 //*****************************************************************************
 //
+static void server_registry_TickPunches( void );
+
+//*****************************************************************************
+//
 void SERVER_SERVERREGISTRY_Tick( void )
 {
 	while (( g_lStoredQueryIPHead != g_lStoredQueryIPTail ) && ( gametic >= g_StoredQueryIPs[g_lStoredQueryIPHead].lNextAllowedGametic ))
@@ -688,6 +692,10 @@ void SERVER_SERVERREGISTRY_Tick( void )
 		g_lStoredQueryIPHead++;
 		g_lStoredQueryIPHead = g_lStoredQueryIPHead % MAX_STORED_QUERY_IPS;
 	}
+
+	// [rc4l] Above the thirty-second gate below, because a punch is measured in milliseconds. Putting
+	// it after would mean the retries and the keepalive fired twice a minute, which is neither.
+	server_registry_TickPunches( );
 
 	// Send an update to the server registry every 30 seconds.
 	if ( gametic % ( TICRATE * 30 ))
@@ -1053,6 +1061,81 @@ bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address )
 
 //*****************************************************************************
 //
+// [rc4l] Punches in flight, walked by the tick.
+//
+// Bounded, because it is fed by the network: sixteen joiners being helped through a router at once is
+// far past anything a home server sees, and a fixed array cannot be grown by anybody sending packets.
+#define MAX_PENDING_PUNCHES 16
+
+struct PendingPunch_t
+{
+	NETADDRESS_s	Target;
+	unsigned int	ulFirstMS;			// when the request arrived; the burst is scheduled from this
+	unsigned int	ulLastSendMS;		// when the last packet left; the keepalive is scheduled from this
+	LONG			lAttemptsSent;
+	bool			bActive;
+
+	PendingPunch_t( ) : ulFirstMS( 0 ), ulLastSendMS( 0 ), lAttemptsSent( 0 ), bActive( false ) { }
+};
+
+static PendingPunch_t	g_PendingPunches[MAX_PENDING_PUNCHES];
+
+//*****************************************************************************
+//
+// [rc4l] Out of the GAME socket, not the registry one. The hole has to open on the port the joiner is
+// about to connect to, and a router maps per source port: punching from any other socket would open a
+// door beside the one they are knocking on.
+static void server_registry_SendPunch( const NETADDRESS_s &Target )
+{
+	g_ServerRegistryBuffer.Clear();
+	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVERREGISTRY_PUNCH );
+	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Target );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Walk the punches, sending whatever is due.
+//
+// The schedule itself lives in computation/punchbroker_compute so it can be tested without a socket;
+// this only owns the clock and the sending.
+static void server_registry_TickPunches( void )
+{
+	const unsigned int ulNow = I_MSTime( );
+
+	for ( int i = 0; i < MAX_PENDING_PUNCHES; ++i )
+	{
+		if ( g_PendingPunches[i].bActive == false )
+			continue;
+
+		PendingPunch_t &Punch = g_PendingPunches[i];
+
+		// They made it. Ordinary game traffic holds the mapping open from here.
+		const bool bConnected = ( SERVER_FindClientByAddress( Punch.Target ) != -1 );
+
+		// Unsigned subtraction, so the millisecond clock wrapping reads as a small elapsed time rather
+		// than a huge negative one.
+		const zx::PunchStep Step = zx::NextPunchStep( Punch.lAttemptsSent,
+			static_cast<int>( ulNow - Punch.ulFirstMS ),
+			static_cast<int>( ulNow - Punch.ulLastSendMS ),
+			bConnected );
+
+		if ( Step == zx::PunchStep::Done )
+		{
+			Punch.bActive = false;
+			continue;
+		}
+
+		if ( Step == zx::PunchStep::Wait )
+			continue;
+
+		server_registry_SendPunch( Punch.Target );
+		Punch.ulLastSendMS = ulNow;
+		Punch.lAttemptsSent++;
+	}
+}
+
+//*****************************************************************************
+//
 // [rc4l] Open a hole for somebody who cannot reach us.
 //
 // Our router drops packets from strangers because it has never seen us talk to them. It does accept
@@ -1063,6 +1146,11 @@ bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address )
 // Repeated rather than sent once, ICE-style: the two ends act on separate messages from the registry
 // and do not start together, so a single packet can easily leave before the other side is listening,
 // and UDP may drop it besides. computation/punchbroker_compute owns the schedule.
+//
+// SPREAD OVER TIME, not fired as a burst. Sending all five in one loop looks like a retry and is not
+// one: they leave in the same instant, down the same path, so a joiner who is not listening yet misses
+// every one and a moment of packet loss takes the lot. Retries only buy anything if they are spaced,
+// which is why this becomes an entry the tick walks rather than a loop here.
 void SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream )
 {
 	const char *pszTarget = pByteStream->ReadString();
@@ -1077,14 +1165,40 @@ void SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream )
 	if ( Target.usPort == 0 )
 		return;
 
-	g_ServerRegistryBuffer.Clear();
-	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVERREGISTRY_PUNCH );
+	const unsigned int ulNow = I_MSTime( );
+	LONG lSlot = -1;
 
-	// [rc4l] Out of the GAME socket, not the registry one. The hole has to open on the port the
-	// joiner is about to connect to, and a router maps per source port: punching from any other
-	// socket would open a door beside the one they are knocking on.
-	for ( int i = 0; i < zx::kPunchAttempts; ++i )
-		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Target );
+	// Reuse the entry for this joiner if one is already running, so somebody retrying cannot take a
+	// second slot, and take a free one otherwise.
+	for ( int i = 0; i < MAX_PENDING_PUNCHES; ++i )
+	{
+		if ( g_PendingPunches[i].bActive && g_PendingPunches[i].Target.Compare( Target ))
+		{
+			lSlot = i;
+			break;
+		}
+
+		if (( lSlot == -1 ) && ( g_PendingPunches[i].bActive == false ))
+			lSlot = i;
+	}
+
+	// [rc4l] A full table drops the request rather than evicting somebody.
+	//
+	// Every entry here belongs to a joiner who got through the cookie gate seconds ago, and the one
+	// asking now has no better claim than the one already being helped. Dropping the newcomer costs
+	// them the punch and nothing else, because the direct connection they are racing is untouched;
+	// evicting instead would let a stream of requests knock real joins out one after another.
+	if ( lSlot == -1 )
+		return;
+
+	g_PendingPunches[lSlot].Target = Target;
+	g_PendingPunches[lSlot].ulFirstMS = ulNow;
+	g_PendingPunches[lSlot].ulLastSendMS = ulNow;
+	g_PendingPunches[lSlot].lAttemptsSent = 0;
+	g_PendingPunches[lSlot].bActive = true;
+
+	// The first punch goes now rather than on the next tick. The joiner is already trying.
+	server_registry_TickPunches( );
 }
 
 //*****************************************************************************

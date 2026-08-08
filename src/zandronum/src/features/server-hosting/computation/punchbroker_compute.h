@@ -119,6 +119,30 @@ int PunchAttemptDelayMs(int attempt);
 // comfortably inside the shortest timeouts seen in the wild.
 const int kPunchKeepaliveMs = 15000;
 
+// [rc4l] How long to hold a hole open for a joiner who never turns up, in milliseconds.
+//
+// It has to outlast a slow join and it has to END. A punch nobody used is a mapping we are paying to
+// keep and a trickle of packets at somebody who is not listening, so an entry that cannot expire is
+// a leak with a timer on it. Everything that works is finished long before this.
+const int kPunchLifetimeMs = 45000;
+
+// [rc4l] What a pending punch should do at this moment.
+//
+// The burst and the keepalive are one job at two speeds, open the hole and then stop it closing, so
+// one function owns the whole life of a punch and the caller only ever asks "now what?". Splitting
+// them would mean two places that each know part of the schedule, which is how the two drift apart.
+enum class PunchStep
+{
+	Wait,	// too early to send again
+	Send,
+	Done,	// stop tracking this one
+};
+
+// `attemptsSent` counts packets already sent, `msSinceFirst` runs from the request arriving, and
+// `msSinceLastSend` from the most recent packet. `connected` ends it early: the hole did its job and
+// ordinary game traffic holds the mapping open from there.
+PunchStep NextPunchStep(int attemptsSent, int msSinceFirst, int msSinceLastSend, bool connected);
+
 } // namespace zx
 
 #endif // ZX_PUNCHBROKER_COMPUTE_H

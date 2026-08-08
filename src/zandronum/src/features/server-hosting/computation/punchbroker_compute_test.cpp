@@ -116,6 +116,13 @@ TEST(PunchBroker, NoRefusalIsEverMistakenForConsent)
 	}
 }
 
+TEST(PunchBroker, AnAskWithNothingFilledInIsRefused)
+{
+	// The default means "we know nothing about this", and knowing nothing must never broker. A caller
+	// that forgets to fill the ask in gets a refusal rather than a packet at whoever asked.
+	EXPECT_EQ(PunchVerdict::NoSupport, DecidePunch(PunchAsk(), 5));
+}
+
 // ---------------------------------------------------------------- asking at all
 
 TEST(PunchBroker, AsksForAListedServerWhileTheRegistryAnswers)
@@ -193,4 +200,76 @@ TEST(PunchBroker, TheKeepaliveSitsInsideTheShortestMappingsSeenInTheWild)
 	// comfortably inside that rather than near it.
 	EXPECT_LT(kPunchKeepaliveMs, 30000);
 	EXPECT_GT(kPunchKeepaliveMs, 0);
+}
+
+// ---------------------------------------------------------------- the life of a punch
+
+TEST(PunchBroker, TheFirstPunchGoesOutImmediately)
+{
+	// Nothing to wait for. The joiner is already trying.
+	EXPECT_EQ(PunchStep::Send, NextPunchStep(0, 0, 0, false));
+}
+
+TEST(PunchBroker, TheBurstFollowsTheBackoffSchedule)
+{
+	// Each attempt waits for its own delay measured from the request, and not a tick sooner.
+	for (int sent = 1; sent < kPunchAttempts; ++sent)
+	{
+		const int due = PunchAttemptDelayMs(sent);
+		EXPECT_EQ(PunchStep::Wait, NextPunchStep(sent, due - 1, due - 1, false)) << sent;
+		EXPECT_EQ(PunchStep::Send, NextPunchStep(sent, due, due, false)) << sent;
+	}
+}
+
+TEST(PunchBroker, TheBurstIsScheduledFromTheRequestNotTheLastPacket)
+{
+	// A tick that runs late must not push the rest of the schedule out behind it. With four sent and
+	// the fourth delay already passed, the next one is due however recently the last packet left.
+	const int due = PunchAttemptDelayMs(kPunchAttempts - 1);
+	EXPECT_EQ(PunchStep::Send, NextPunchStep(kPunchAttempts - 1, due + 500, 0, false));
+}
+
+TEST(PunchBroker, OnceTheBurstIsSpentItFallsBackToTheKeepalive)
+{
+	// The mapping is presumed open now, so the only job left is stopping it closing.
+	EXPECT_EQ(PunchStep::Wait, NextPunchStep(kPunchAttempts, 5000, kPunchKeepaliveMs - 1, false));
+	EXPECT_EQ(PunchStep::Send, NextPunchStep(kPunchAttempts, 5000, kPunchKeepaliveMs, false));
+}
+
+TEST(PunchBroker, TheKeepaliveRepeatsRatherThanFiringOnce)
+{
+	// It is the elapsed time since the LAST packet, so it comes round again every interval for as
+	// long as the entry lives. A one-shot here would let the hole close on a slow joiner.
+	EXPECT_EQ(PunchStep::Send, NextPunchStep(kPunchAttempts + 3, 40000, kPunchKeepaliveMs, false));
+}
+
+TEST(PunchBroker, ConnectingEndsItEvenWhenAPacketIsDue)
+{
+	// Checked before anything else. Once they are talking to us, game traffic holds the mapping and
+	// another punch is a packet at somebody who is already here.
+	EXPECT_EQ(PunchStep::Done, NextPunchStep(0, 0, 0, true));
+	EXPECT_EQ(PunchStep::Done, NextPunchStep(kPunchAttempts, 5000, kPunchKeepaliveMs, true));
+}
+
+TEST(PunchBroker, AJoinerWhoNeverArrivesIsEventuallyDroppedRatherThanPunchedForever)
+{
+	EXPECT_EQ(PunchStep::Done, NextPunchStep(kPunchAttempts, kPunchLifetimeMs, 0, false));
+	EXPECT_EQ(PunchStep::Done, NextPunchStep(kPunchAttempts, kPunchLifetimeMs + 60000, 0, false));
+}
+
+TEST(PunchBroker, TheLifetimeOutlastsTheBurstAndHoldsForSeveralKeepalives)
+{
+	// Too short and it expires mid-join; unbounded and it is a leak with a timer on it.
+	EXPECT_GT(kPunchLifetimeMs, PunchAttemptDelayMs(kPunchAttempts - 1));
+	EXPECT_GT(kPunchLifetimeMs, 2 * kPunchKeepaliveMs);
+}
+
+TEST(PunchBroker, ANonsenseEntryIsEndedRatherThanGuessedAt)
+{
+	// A backwards clock or a count past the end means the caller lost track. Ending is the safe half:
+	// one punch too few costs a joiner nothing they were not already doing, and an entry that cannot
+	// expire never stops sending.
+	EXPECT_EQ(PunchStep::Done, NextPunchStep(-1, 0, 0, false));
+	EXPECT_EQ(PunchStep::Done, NextPunchStep(0, -1, 0, false));
+	EXPECT_EQ(PunchStep::Done, NextPunchStep(0, 0, -1, false));
 }

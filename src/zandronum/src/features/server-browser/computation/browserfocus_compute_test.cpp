@@ -342,3 +342,24 @@ TEST( BrowserNav, TheTabsAreAlwaysReachableGoingUp )
 	EXPECT_EQ( BrowserFocus::SubTabs,
 		ComputeNav( BrowserFocus::Action, NavKey::Up, Browsing( ) ).focus );
 }
+
+TEST( BrowserNav, AnEmptyWhereIsAMenuWithNothingInIt )
+{
+	// The default is "no rows, no tabs, no sub-tabs", which is what a caller gets if it forgets to
+	// describe the menu. Nothing may move, because there is nowhere to move to, and the alternative is
+	// stepping to a tab that is not on the screen.
+	const NavWhere Nothing;
+
+	EXPECT_FALSE( Nothing.hasRows );
+	EXPECT_EQ( 0, Nothing.tabCount );
+	EXPECT_EQ( 0, Nothing.subCount );
+
+	const NavKey keys[] = { NavKey::Up, NavKey::Down, NavKey::Left, NavKey::Right };
+	for ( int i = 0; i < 4; ++i )
+	{
+		const NavResult r = ComputeNav( BrowserFocus::Tabs, keys[i], Nothing );
+		EXPECT_EQ( BrowserFocus::Tabs, r.focus ) << i;
+		EXPECT_EQ( 0, r.tabStep ) << i;
+		EXPECT_EQ( 0, r.subStep ) << i;
+	}
+}
