@@ -189,8 +189,6 @@
 // reads as a bar the panel is made of instead of as a thing to press, and the two of them edge to
 // edge lost the gutter that says they are separate controls.
 #define SB_HOST_BTN_INSET	14
-#define SB_HOST_BTN_W		( SB_HOST_LIST_RIGHT - SB_HOST_LIST_LEFT - 2 * SB_HOST_BTN_INSET )
-#define SB_HOST_BTN_X		( SB_HOST_LIST_LEFT + SB_HOST_BTN_INSET )
 #define SB_HOST_MAXLEN		40
 
 // [rc4l] A row of mutually exclusive choices. Tall enough for the marker to be legible beside the
@@ -229,6 +227,20 @@
 // answering a question ("which of these two am I scrolling") that nobody should have to ask.
 #define SB_HOST_RTOGGLE_H	SB_HOST_BTN_H
 #define SB_HOST_RTOGGLE_Y	SB_HOST_BTN_Y
+
+// [rc4l] BOTH buttons live at the foot of the right column now: what to do, and the settings beside
+// it. They used to be one per column, which put the thing you press furthest from the thing you were
+// reading and left the action button hanging under a list it does not act on.
+//
+// The action takes the left half while the toggle is beside it and the whole row when it is not:
+// while a server is running there are no settings to toggle, and half a row with a hole beside it
+// reads as a button that failed to draw rather than as the only one there.
+#define SB_HOST_FOOT_GAP	10
+#define SB_HOST_FOOT_LEFT	( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )
+#define SB_HOST_FOOT_RIGHT	( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )
+#define SB_HOST_FOOT_W		( SB_HOST_FOOT_RIGHT - SB_HOST_FOOT_LEFT )
+#define SB_HOST_FOOT_HALF	(( SB_HOST_FOOT_W - SB_HOST_FOOT_GAP ) / 2 )
+#define SB_HOST_TOGGLE_X	( SB_HOST_FOOT_RIGHT - SB_HOST_FOOT_HALF )
 #define SB_HOST_RTOP_TOP	SB_HOST_VIEW_TOP
 #define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOGGLE_Y - 6 )
 #define SB_HOST_RTOP_H		( SB_HOST_RTOP_BOTTOM - SB_HOST_RTOP_TOP )
@@ -395,6 +407,19 @@ static	int				g_GlowLastMs = 0;
 //
 // TWO SHAPES, ONE DIALOG: a row of choices, and a text field with choices under it. The second is
 // why this is general rather than a cancel-specific box.
+// [rc4l] What the hosting panel's one action button means right now.
+//
+// Named as a state rather than worked out at each of the four places that care, because they were
+// disagreeing: the label came from one test, the tint from another, and what pressing it did from a
+// third. STOP being unclickable was the same class of mistake one step further out.
+enum class HostAction
+{
+	Play,		// nothing is running: start the selected entry and join it
+	Stop,		// the selected entry IS what is running: shut it down
+	Switch,		// something else is running: stop that and stand this one up instead
+	Back,		// the last attempt failed: dismiss the failure and get the form back
+};
+
 enum class DialogAction
 {
 	None,
@@ -543,7 +568,6 @@ static	bool			g_HostOnSettingsToggle = false;
 // [rc4l] Which catalogue row the RUNNING server was started from, so the list can mark it and SWITCH
 // knows there is nothing to switch to. -2 is "custom setup", matching g_HostEntrySel's own spelling.
 static	int				g_HostingEntry = -2;
-static	bool			g_HostSwitchHot = false;
 
 // Drag-selection in a host field, and when the last click landed -- the two things a field needs to
 // tell a double-click from two clicks, and a drag from a press.
@@ -2818,23 +2842,13 @@ public:
 		const zx::HostState state = zx::HostCurrentState( );
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
 
-		// Both states put the left button in the same slot: PLAY NOW! on the form, SWITCH while live.
-		const int btnX = SB_HOST_BTN_X;
-		const int btnY = HostFormButtonY( );
-
-		if (( x >= serverbrowser_ToScreenX( btnX )) &&
-			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
-			( y >= serverbrowser_ToScreenY( btnY )) &&
-			( y < serverbrowser_ToScreenY( btnY + SB_HOST_BTN_H )))
-		{
-			return true;
-		}
-
-		// The right slot is a control in both states as well: SETTINGS on the form, STOP while live.
-		if (( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )) &&
-			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )) &&
-			( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
-			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )))
+		// The whole foot row: the action, and the settings toggle when there is one. Taken as one
+		// band because the two are edge to edge apart from the gutter between them, and a click in
+		// that gutter is still a click on the panel rather than on nothing.
+		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
+			( x >= serverbrowser_ToScreenX( SB_HOST_FOOT_LEFT )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_FOOT_RIGHT )))
 		{
 			return true;
 		}
@@ -2946,66 +2960,25 @@ public:
 		const zx::HostState state = zx::HostCurrentState( );
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
 
-		// [rc4l] The LEFT button, under the list, in the same slot in both states. On the form it is
-		// PLAY NOW!; while hosting it is SWITCH TO THIS, which is the same idea aimed at a server
-		// that already exists.
-		const int btnX = SB_HOST_BTN_X;
-		const int btnY = HostFormButtonY( );
-		const bool bCanSwitch = bForm ||
-			(( state != zx::HostState::Failed ) && !HostSelectionIsWhatIsRunning( ));
+		// [rc4l] The ACTION button, at the foot of the right column beside the settings toggle. Its
+		// rectangle comes from the same helpers the drawing uses, so the two cannot come to disagree
+		// about where it is -- which is exactly how STOP SERVER ended up unclickable.
+		const int actW = HostActionW( );
 
-		g_HostSwitchHot = false;
-		if ( bCanSwitch &&
-			( x >= serverbrowser_ToScreenX( btnX )) &&
-			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
-			( y >= serverbrowser_ToScreenY( btnY )) &&
-			( y < serverbrowser_ToScreenY( btnY + SB_HOST_BTN_H )))
+		if (( x >= serverbrowser_ToScreenX( SB_HOST_FOOT_LEFT )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_FOOT_LEFT + actW )) &&
+			( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )))
 		{
-			if ( bForm )
-				g_HostButtonHot = true;
-			else
-				g_HostSwitchHot = true;
+			g_HostButtonHot = true;
 
 			if ( type == MOUSE_Release )
 			{
 				SetFocus( zx::BrowserFocus::Host );
-
-				if ( bForm )
-				{
-					g_HostOnButton = true;
-					PressHostButton( );
-				}
-				else
-				{
-					PressHostSwitchButton( );
-				}
+				g_HostOnButton = true;
+				PressHostAction( );
 			}
 			return true;
-		}
-
-		// [rc4l] While hosting, the RIGHT slot is STOP rather than the settings toggle, and it is the
-		// button the keyboard is on. Handled before the toggle below, which owns the same rectangle
-		// on the form.
-		if ( bForm == false )
-		{
-			const int stopX = SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET;
-			const int stopRight = SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET;
-
-			if (( x >= serverbrowser_ToScreenX( stopX )) &&
-				( x < serverbrowser_ToScreenX( stopRight )) &&
-				( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
-				( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )))
-			{
-				g_HostButtonHot = true;
-
-				if ( type == MOUSE_Release )
-				{
-					SetFocus( zx::BrowserFocus::Host );
-					g_HostOnButton = true;
-					PressHostButton( );
-				}
-				return true;
-			}
 		}
 
 		// The catalogue, before the fields: it is above them on screen and it decides what the rest
@@ -3033,12 +3006,15 @@ public:
 			}
 		}
 
-		// The toggle.
+		// The toggle, in the other half of the foot row. Only when it is DRAWN: while a server is
+		// running the action button spans the whole row, and a toggle still taking clicks from under
+		// it would be the invisible-but-clickable bug in its purest form.
 		g_HostOnSettingsToggle = false;
-		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+		if ( HostFootHasToggle( ) &&
+			( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
 			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
-			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )) &&
-			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )))
+			( x >= serverbrowser_ToScreenX( SB_HOST_TOGGLE_X )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_FOOT_RIGHT )))
 		{
 			g_HostOnSettingsToggle = true;
 
@@ -3288,56 +3264,115 @@ public:
 		return g_HostEntrySel == g_HostingEntry;
 	}
 
-	// [rc4l] The two buttons of the running panel, in the same slots the form uses.
+	// [rc4l] Which of the four the action button is, worked out ONCE.
 	//
-	// Deliberately NOT a geometry of their own: STOP had one, measured from a different constant than
-	// the drawing, and it could not be clicked at all as a result. Sharing the form's slots means the
-	// hit test that already works for PLAY NOW! and SETTINGS works for these too.
-	void DrawHostRunningButtons( zx::HostState state )
+	// Everything else about that button -- its label, its tooltip, its tint, and what pressing it
+	// does -- reads this, so the four can never describe four different buttons. They did: the label
+	// said STOP while the press handler was still asking its own question about the same state.
+	HostAction HostActionNow( )
 	{
-		const int btnY = HostFormButtonY( );
+		if ( zx::HostCurrentState( ) == zx::HostState::Failed )
+			return HostAction::Back;
 
-		// Left, under the list: act on the list. Nothing to switch to while the failure panel is up,
-		// and nothing to switch to when the selection is already the thing running.
-		const bool bCanSwitch = ( state != zx::HostState::Failed ) && !HostSelectionIsWhatIsRunning( );
-		if ( bCanSwitch )
-		{
-			DrawRoundedButton( SB_HOST_BTN_X, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
-				"SWITCH TO THIS", g_HostSwitchHot );
+		if ( zx::HostIsActive( ) == false )
+			return HostAction::Play;
 
-			serverbrowser_Tip( SB_HOST_BTN_X, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
-				"Stop this server and start the selected one instead\nAnyone playing is disconnected" );
-		}
-
-		// Right, under the status: act on the server.
-		const int stopX = SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET;
-		const int stopW = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT - 2 * SB_HOST_BTN_INSET;
-		const char *const label = ( state == zx::HostState::Failed ) ? "BACK" : "STOP SERVER";
-
-		// Tinted like CANCEL: it ends something that is running, which is the same promise that button
-		// makes, so it should not look like an ordinary one.
-		DrawRoundedButton( stopX, SB_HOST_RTOGGLE_Y, stopW, SB_HOST_RTOGGLE_H, label,
-			g_HostOnButton || g_HostButtonHot, state != zx::HostState::Failed );
-
-		// [rc4l] The keyboard's button is STOP, not SWITCH. Enter should not be able to tear a running
-		// server down and stand another one up in its place by accident.
-		if ( g_Focus == zx::BrowserFocus::Host )
-			FocusAnchor( zx::BrowserFocus::Host, stopX - 5, SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H / 2 );
-
-		serverbrowser_Tip( stopX, SB_HOST_RTOGGLE_Y, stopW, SB_HOST_RTOGGLE_H,
-			( state == zx::HostState::Failed )
-				? "Go back to the form"
-				: "Shut the server down\nAnyone playing on it is disconnected" );
+		return HostSelectionIsWhatIsRunning( ) ? HostAction::Stop : HostAction::Switch;
 	}
 
-	void DrawHostSettingsToggle( )
+	// The settings toggle is beside the action only while there are settings to reach. While a server
+	// is running the right column is showing what it is doing, and the form behind that button is not
+	// the thing to offer.
+	bool HostFootHasToggle( )
 	{
+		const HostAction action = HostActionNow( );
+		return ( action == HostAction::Play );
+	}
+
+	int HostActionW( )
+	{
+		return HostFootHasToggle( ) ? SB_HOST_FOOT_HALF : SB_HOST_FOOT_W;
+	}
+
+	const char *HostActionLabel( )
+	{
+		switch ( HostActionNow( ))
+		{
+		case HostAction::Stop:		return "STOP SERVER";
+		case HostAction::Switch:	return "SWITCH TO THIS";
+		case HostAction::Back:		return "BACK";
+		default:					return "PLAY NOW!";
+		}
+	}
+
+	const char *HostActionTip( )
+	{
+		switch ( HostActionNow( ))
+		{
+		case HostAction::Stop:
+			return "Shut the server down\nAnyone playing on it is disconnected";
+		case HostAction::Switch:
+			return "Stop this server and start the selected one instead\n"
+				"Anyone playing is disconnected";
+		case HostAction::Back:
+			return "Go back to the form";
+		default:
+			return "Start the server and join it\nIt closes when you leave";
+		}
+	}
+
+	// [rc4l] Whatever the action button means right now, done.
+	void PressHostAction( )
+	{
+		if ( HostActionNow( ) == HostAction::Switch )
+		{
+			PressHostSwitchButton( );
+			return;
+		}
+
+		// Play, Stop and Back are all PressHostButton's business, and it asks the same question of
+		// the same state to tell them apart.
+		PressHostButton( );
+	}
+
+	// [rc4l] The panel's foot: the action, and the settings toggle beside it when there is one.
+	//
+	// ONE function draws both, from the same constants the hit test reads. The last time these were
+	// worked out separately STOP ended up drawn in one place and clickable in another, which is to
+	// say not clickable at all.
+	void DrawHostFootButtons( )
+	{
+		const HostAction action = HostActionNow( );
+		const int actW = HostActionW( );
+
+		// Tinted like CANCEL whenever it ENDS something that is running -- the same promise that
+		// button makes. BACK dismisses a failure and PLAY NOW! starts something, so neither is.
+		const bool bWarn = ( action == HostAction::Stop ) || ( action == HostAction::Switch );
+
+		DrawRoundedButton( SB_HOST_FOOT_LEFT, SB_HOST_RTOGGLE_Y, actW, SB_HOST_RTOGGLE_H,
+			HostActionLabel( ), g_HostOnButton || g_HostButtonHot, bWarn );
+
+		if (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton || !HostFootHasToggle( )))
+		{
+			FocusAnchor( zx::BrowserFocus::Host, SB_HOST_FOOT_LEFT - 5,
+				SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H / 2 );
+		}
+
+		serverbrowser_Tip( SB_HOST_FOOT_LEFT, SB_HOST_RTOGGLE_Y, actW, SB_HOST_RTOGGLE_H,
+			HostActionTip( ));
+
+		if ( !HostFootHasToggle( ))
+			return;
+
 		// [rc4l] DrawRoundedButton, which IS the JOIN and START drawing. A button that merely
 		// resembled them would drift apart from them the first time either was touched.
-		DrawRoundedButton( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET, SB_HOST_RTOGGLE_Y,
-			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT - 2 * SB_HOST_BTN_INSET, SB_HOST_RTOGGLE_H,
-			g_HostShowSettings ? "BACK" : "SETTINGS",
-			g_HostOnSettingsToggle );
+		DrawRoundedButton( SB_HOST_TOGGLE_X, SB_HOST_RTOGGLE_Y, SB_HOST_FOOT_HALF, SB_HOST_RTOGGLE_H,
+			g_HostShowSettings ? "BACK" : "SETTINGS", g_HostOnSettingsToggle );
+
+		serverbrowser_Tip( SB_HOST_TOGGLE_X, SB_HOST_RTOGGLE_Y, SB_HOST_FOOT_HALF, SB_HOST_RTOGGLE_H,
+			g_HostShowSettings
+				? "Back to what the selected experience is"
+				: "Name, port, player limit and who can see it" );
 	}
 
 	void DrawHostScrollBar( )
@@ -3492,15 +3527,8 @@ public:
 		return HostFirstFieldY( ) + kHostFieldCount * HostRowPitch( ) + 4 + SB_HOST_LINE;
 	}
 
-	// The button no longer follows the content: it is pinned to the bottom of the panel.
-	int HostFormButtonY( )
-	{
-		return SB_HOST_BTN_Y;
-	}
-
-	// [rc4l] The running panel's buttons now sit in the FORM's two slots rather than a geometry of
-	// their own. The old private position was written out twice and the copies disagreed, which is
-	// how STOP SERVER ended up unclickable; sharing the slots removes the chance to disagree.
+	// [rc4l] Both buttons now sit at the foot of the RIGHT column, in one row, drawn and hit-tested
+	// from the same SB_HOST_FOOT_* constants. See DrawHostFootButtons.
 
 	// Whether a row at `vy` is inside the viewport at all. A control scrolled out of sight must not
 	// be clickable -- that is the invisible-but-clickable bug this browser avoids everywhere else.
@@ -3663,7 +3691,7 @@ public:
 				g_HostStatusH, g_HostStatusScroll );
 
 			DrawHostColumnDivider( );
-			DrawHostRunningButtons( state );
+			DrawHostFootButtons( );
 			return;
 		}
 
@@ -3716,21 +3744,10 @@ public:
 		DrawHostScrollBar( );
 		DrawHostColumnDivider( );
 
-		// [rc4l] OUTSIDE the clip, like START SERVER beside it. Both buttons sit at the panel's foot,
-		// which is below the scrolling viewport, so drawing this one inside it cost the button its
-		// background and left the label floating.
-		DrawHostSettingsToggle( );
-
-		const int btnY = HostFormButtonY( );
-		const int btnX = SB_HOST_BTN_X;
-		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, "PLAY NOW!",
-			g_HostOnButton || g_HostButtonHot );
-
-		if ( g_HostOnButton && ( g_Focus == zx::BrowserFocus::Host ))
-			FocusAnchor( zx::BrowserFocus::Host, btnX - 5, btnY + SB_HOST_BTN_H / 2 );
-
-		serverbrowser_Tip( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
-			"Start the server and join it\nIt closes when you leave" );
+		// [rc4l] OUTSIDE the clip. Both buttons sit at the panel's foot, which is below the scrolling
+		// viewport, so drawing them inside it cost them their backgrounds and left the labels
+		// floating.
+		DrawHostFootButtons( );
 	}
 
 	// One labelled field. The label sits to the left rather than above so six of them fit without the
@@ -4231,9 +4248,8 @@ public:
 			}
 		}
 
-		// The buttons belong to the panel rather than to this text, so DrawHostRunningButtons draws
-		// them: they sit at the panel's foot, under both columns, not under whatever this happened to
-		// write last.
+		// The buttons belong to the panel rather than to this text, so DrawHostFootButtons draws them:
+		// they sit at the panel's foot, not under whatever this happened to write last.
 		return y;
 	}
 
@@ -6634,8 +6650,12 @@ public:
 			// typing a name means.
 			if ( g_Focus == zx::BrowserFocus::Host )
 			{
-				if ( g_HostOnButton )
-					PressHostButton( );
+				// [rc4l] The same test the focus glow is drawn under, so Enter presses the button the
+				// glow is sitting on. While a server is running the action is the only control at the
+				// panel's foot, and the glow was already parked on it while Enter went on asking a
+				// different question and doing nothing.
+				if ( g_HostOnButton || !HostFootHasToggle( ))
+					PressHostAction( );
 				else
 					MoveHostFocus( 1 );
 				return true;
