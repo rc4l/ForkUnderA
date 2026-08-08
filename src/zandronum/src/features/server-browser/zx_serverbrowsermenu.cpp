@@ -255,6 +255,14 @@
 #define SB_REFRESH_X		( SB_PANEL_LEFT + 12 )
 #define SB_REFRESH_Y		( SB_FOOTER_Y - 3 )
 
+// [rc4l] The registry bars, sitting just right of the refresh button: they are about where the list
+// came from, which is what that button goes and fetches.
+#define SB_REGBAR_W			3
+#define SB_REGBAR_H			10
+#define SB_REGBAR_GAP		3
+#define SB_REGBAR_X			( SB_REFRESH_X + SB_REFRESH_W + 8 )
+#define SB_REGBAR_Y			( SB_REFRESH_Y + 2 )
+
 // [rc4l] The panel's content span, in virtual pixels. ComputePanelRect pads BOTH ends by the corner
 // radius, so the visible gap to the screen edge is ( SB_CONTENT_TOP - radius ) above and
 // ( SB_VIRT_H - SB_CONTENT_BOTTOM - radius ) below. Deriving the top from the bottom is what forces
@@ -2056,17 +2064,19 @@ public:
 		// Only mention stragglers once there is something to compare them against.
 		if ( zx::ComputeShowsProgress( BROWSER_WaitingForServerRegistryResponse( ), counts ))
 		{
-			// [rc4l] Two different waits, and only one of them is a count. Servers that have never
-			// answered are stragglers worth numbering; the registry being outstanding is not, and
-			// wording it as one produced "querying 0 more" every time the browser was reopened onto a
-			// list it had kept -- which is now the ordinary case rather than a rare one.
-			FString more;
+			// [rc4l] Only the count says anything the rest of the footer does not.
+			//
+			// This used to fall back to "refreshing" when there was nothing to count, which is the
+			// same thing the button already says while it reads CHECKING: two labels for one fact,
+			// a few pixels apart. Stragglers ARE worth numbering, so that half stays; the bare
+			// restatement goes.
 			if ( counts.waiting > 0 )
+			{
+				FString more;
 				more.Format( "%s  querying %d more", Spinner( ), counts.waiting );
-			else
-				more.Format( "%s  refreshing", Spinner( ));
-			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_ROWS_BOTTOM + 2,
-				more, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_ROWS_BOTTOM + 2,
+					more, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
 		}
 	}
 
@@ -4818,11 +4828,65 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] One small bar per configured server registry, beside the refresh button.
+	//
+	// The browser queries several registries and unions the results, and until now the screen said
+	// nothing about which ones answered. A mistyped registry, a dead local one and a healthy network
+	// all produced the same list, so there was no way to tell "nobody is hosting" from "we never
+	// heard back". Each bar carries its address and its status code on hover.
+	//
+	// Bars rather than text because the count is open-ended: a player may list several registries, and
+	// names as long as registry.cantstopscrolling.net do not fit a footer three times over.
+	void DrawRegistryBars( )
+	{
+		const unsigned int count = BROWSER_GetServerRegistryCount( );
+		if ( count == 0 )
+			return;
+
+		int x = SB_REGBAR_X;
+
+		for ( unsigned int i = 0; i < count; ++i )
+		{
+			std::string host;
+			int port = 0;
+			zx::RegistryStatus status = zx::RegistryStatus::Pending;
+
+			if ( BROWSER_GetServerRegistryStatus( i, host, port, status ) == false )
+				continue;
+
+			PalEntry colour;
+			switch ( zx::RegistryToneFor( status ))
+			{
+			case zx::RegistryTone::Good:	colour = PalEntry( 80, 200, 80 ); break;
+			case zx::RegistryTone::Warn:	colour = PalEntry( 220, 170, 60 ); break;
+			case zx::RegistryTone::Bad:		colour = PalEntry( 200, 60, 60 ); break;
+			default:						colour = PalEntry( 110, 110, 110 ); break;
+			}
+
+			const int left = serverbrowser_ToScreenX( x );
+			const int right = serverbrowser_ToScreenX( x + SB_REGBAR_W );
+			const int top = serverbrowser_ToScreenY( SB_REGBAR_Y );
+			const int bottom = serverbrowser_ToScreenY( SB_REGBAR_Y + SB_REGBAR_H );
+
+			screen->Dim( colour, 0.85f, left, top, MAX( right - left, 1 ), MAX( bottom - top, 1 ));
+
+			// [rc4l] The hover target is padded either side of the bar itself, which is only a few
+			// pixels wide: a two pixel target is one nobody can hit on purpose.
+			serverbrowser_Tip( x - 2, SB_REGBAR_Y - 2, SB_REGBAR_W + 4, SB_REGBAR_H + 4,
+				zx::RegistryTooltip( host, port, status ).c_str( ));
+
+			x += SB_REGBAR_W + SB_REGBAR_GAP;
+		}
+	}
+
+	//*************************************************************************
+	//
 	void DrawFooter( zx::BrowserPhase phase, const zx::BrowserCounts &counts )
 	{
 		const int y = SB_FOOTER_Y;
 
 		DrawRefreshButton( );
+		DrawRegistryBars( );
 		FString text;
 
 		// [rc4l] The transfer used to be drawn here as well, because this was the only screen that had
