@@ -415,6 +415,7 @@ static	int				g_GlowLastMs = 0;
 enum class HostAction
 {
 	Play,		// nothing is running: start the selected entry and join it
+	Cancel,		// fetching what the entry needs: stop the transfer
 	Stop,		// the selected entry IS what is running: shut it down
 	Switch,		// something else is running: stop that and stand this one up instead
 	Back,		// the last attempt failed: dismiss the failure and get the form back
@@ -568,6 +569,38 @@ static	bool			g_HostOnSettingsToggle = false;
 // [rc4l] Which catalogue row the RUNNING server was started from, so the list can mark it and SWITCH
 // knows there is nothing to switch to. -2 is "custom setup", matching g_HostEntrySel's own spelling.
 static	int				g_HostingEntry = -2;
+
+// [rc4l] A transfer fetching what an entry needs before it can be hosted.
+//
+// The catalogue ships an md5 per file precisely so this is possible, and BuildHostPlan has always
+// returned `missing` rather than treating an absent file as fatal -- and then the button refused
+// anyway, because nobody wired the two together. Hosting an entry you do not have yet said
+// "downloading from here is not possible" while the join beside it downloaded the same file happily.
+//
+// `entry` is the catalogue row the transfer is FOR, so what resumes is the thing the player asked
+// for rather than whatever is selected by the time it lands. -1 means nothing of ours is waiting.
+//
+// The WAITING itself is not ours: zx::SetPendingResume parks this in the same slot a pending join
+// uses, so the hold while a prompt is up, the "you have wandered off, so it waits" band, and the
+// cancel that keeps the file but drops the intent are the same code for both. See zx_joinserver.h.
+static	int				g_HostDownloadEntry = -1;
+
+// [rc4l] Set on the frame the resume fires, and acted on by the Ticker one frame later. The resume
+// arrives from inside waddownload::Tick, and starting a server from there would re-enter it.
+static	bool			g_HostDownloadResumed = false;
+static	bool			g_HostDownloadSucceeded = false;
+
+// Free function because ResumeProc is a plain pointer and this menu is a class.
+static void serverbrowser_HostDownloadResume( bool allSucceeded )
+{
+	g_HostDownloadResumed = true;
+	g_HostDownloadSucceeded = allSucceeded;
+}
+
+// [rc4l] Bumped whenever files may have appeared on disk, which invalidates the have-cache behind the
+// file list. Without it a download would land and the panel would go on saying the file was missing,
+// because the cache only noticed the SELECTION changing and the selection had not.
+static	int				g_HostHaveGeneration = 0;
 
 // Drag-selection in a host field, and when the last click landed -- the two things a field needs to
 // tell a double-click from two clicks, and a drag from a press.
@@ -1336,6 +1369,11 @@ public:
 		BROWSER_ServerRegistryTick( );
 		BROWSER_QueryTick( );
 
+		// [rc4l] A finished download for an entry we were about to host, acted on here rather than in
+		// the callback: that arrives from inside waddownload::Tick, and starting a server from there
+		// would re-enter it.
+		ResumeHostAfterDownload( );
+
 		// [rc4l] Only while the HOST tab is up, and only while nothing is being hosted.
 		//
 		// The check opens a socket on the port the player is about to host on. Doing that while they
@@ -1452,7 +1490,9 @@ public:
 		// The hosting tab is a different screen, not a filter, so it does not ask the phase at all --
 		// "still looking for servers" has no meaning on the page where you are making one.
 		if ( g_Tab == BrowserTab::Host )
-			return zx::ComputeHostParts( serverbrowser_DownloadRunning( ));
+			// Ours does not count: the host panel's own button is the CANCEL for it.
+			return zx::ComputeHostParts( serverbrowser_DownloadRunning( )
+				&& !HostDownloadRunning( ));
 
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 
@@ -2561,6 +2601,15 @@ public:
 				zx::PickIwad( chosen.addon.iwad, iwads ),
 				zx::CatalogueServerCfgPath( chosen ), choices, have );
 
+			// [rc4l] Missing files are a DOWNLOAD, which is what the catalogue's per-file md5 was
+			// shipped for and what BuildHostPlan has always meant by returning `missing` rather than
+			// calling it fatal. The button refused anyway until now, so hosting an entry said
+			// downloading was impossible while the JOIN beside it fetched the same file happily.
+			//
+			// A blocker is different and still refuses: no IWAD to run on cannot be downloaded.
+			if ( plan.blocker.empty( ) && !plan.ready && BeginHostDownload( chosen, plan ))
+				return;
+
 			if ( !plan.blocker.empty( ) || !plan.ready )
 			{
 				// [rc4l] NAMES the files. "Missing files" alone leaves the player to work out which
@@ -2580,7 +2629,10 @@ public:
 						why += plan.missing[i].c_str( );
 					}
 
-					why += ". Downloading from here is not possible yet.";
+					// We only reach this having ALREADY tried to fetch them and been refused, so the
+					// reason is downloading's rather than hosting's. Start prints which one on the
+					// console; there is no point guessing at it a second time here.
+					why += ", and they could not be downloaded. The console says why.";
 				}
 
 				// On the PANEL, not just in the console. Refusing silently is what made this look
@@ -2695,6 +2747,109 @@ public:
 		}
 
 		return count;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Fetch what `plan` says is missing, so the entry can be hosted once it lands. True when a
+	// transfer started and the caller should stand down.
+	//
+	// The catalogue's md5 per file goes with each request, so the transfer is CHECKED rather than
+	// trusted: a mirror handing us a different build of the same filename is caught here rather than
+	// discovered by the server refusing to start on it.
+	bool BeginHostDownload( const zx::CatalogueEntry &chosen, const zx::HostPlan &plan )
+	{
+		if ( plan.missing.empty( ) || !zx::waddownload::IsAvailable( ))
+			return false;
+
+		std::vector<zx::waddownload::WantedFile> wanted;
+		for ( size_t i = 0; i < plan.missing.size( ); ++i )
+		{
+			std::string md5;
+			for ( size_t j = 0; j < chosen.addon.files.size( ); ++j )
+			{
+				if ( chosen.addon.files[j].name == plan.missing[i] )
+				{
+					md5 = chosen.addon.files[j].md5;
+					break;
+				}
+			}
+
+			// Never an IWAD: an entry's `files` are its PWADs, and the game underneath them is
+			// PickIwad's business and is not ours to fetch.
+			wanted.push_back( zx::waddownload::WantedFile( plan.missing[i], false, md5 ));
+		}
+
+		// No extra sites. A join gets to put the server's own mirror first because that server
+		// certainly has its own files; there is no server here yet, so the shipped list is all there
+		// is, and it is where a catalogue entry's files are published anyway.
+		// [rc4l] zx::NoteDownloadFinished, not our own resume: that is the callback carrying the
+		// truth table. Handing waddownload our resume directly would fire it the instant the bytes
+		// landed, wherever the player happened to be, which is the bug the shared path exists to
+		// stop.
+		if ( !zx::waddownload::Start( std::vector<std::string>( ), wanted,
+			zx::NoteDownloadFinished ))
+		{
+			return false;
+		}
+
+		g_HostDownloadEntry = g_HostEntrySel;
+		g_HostDownloadResumed = false;
+
+		// Parked in the same slot a downloading JOIN uses, which is the whole point: while this runs
+		// the player can close the menu and carry on playing, and everything that makes that safe --
+		// the hold while a prompt is up, the waiting band if they have wandered off, the cancel that
+		// keeps the file and drops the intent -- is code they already share.
+		zx::SetPendingResume( serverbrowser_HostDownloadResume, chosen.addon.name.c_str( ));
+
+		// The panel stays put rather than putting up a modal, the same as the join: the transfer runs
+		// for minutes and a box you cannot dismiss without cancelling is a worse way to spend them
+		// than a progress line under a list you can still read.
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+		return true;
+	}
+
+	// Files may have appeared on disk; look again next time anything asks.
+	void HostFilesChanged( )
+	{
+		++g_HostHaveGeneration;
+	}
+
+	// [rc4l] Whether a transfer OF OURS is in flight -- ours meaning one this panel started. A join's
+	// download running behind us must not turn the host button into a cancel for it.
+	bool HostDownloadRunning( )
+	{
+		return ( g_HostDownloadEntry >= 0 ) && zx::waddownload::IsRunning( );
+	}
+
+	// One frame after the resume fires, because it arrives from inside waddownload::Tick and starting
+	// a server from there would re-enter it.
+	void ResumeHostAfterDownload( )
+	{
+		if ( !g_HostDownloadResumed )
+			return;
+
+		g_HostDownloadResumed = false;
+
+		const int entry = g_HostDownloadEntry;
+		const bool bOk = g_HostDownloadSucceeded;
+		g_HostDownloadEntry = -1;
+
+		if ( entry < 0 )
+			return;
+
+		// A failure has already been reported by the shared path, on the browser's own panel. Saying
+		// it again here would be the same news twice.
+		if ( !bOk )
+			return;
+
+		// [rc4l] Straight back into the same button. StartHosting rebuilds the plan from scratch, so
+		// the files that just landed are found by the ordinary lookup and the whole thing proceeds as
+		// though they had been there all along -- there is no second, download-shaped path to keep
+		// working.
+		g_HostEntrySel = entry;
+		HostFilesChanged( );
+		StartHosting( );
 	}
 
 	//*************************************************************************
@@ -3274,6 +3429,11 @@ public:
 		if ( zx::HostCurrentState( ) == zx::HostState::Failed )
 			return HostAction::Back;
 
+		// Before the idle test: nothing is running yet, and will not be until the files land, but the
+		// button must not go on offering to start something that is already on its way.
+		if ( HostDownloadRunning( ))
+			return HostAction::Cancel;
+
 		if ( zx::HostIsActive( ) == false )
 			return HostAction::Play;
 
@@ -3298,6 +3458,7 @@ public:
 	{
 		switch ( HostActionNow( ))
 		{
+		case HostAction::Cancel:	return "CANCEL";
 		case HostAction::Stop:		return "STOP SERVER";
 		case HostAction::Switch:	return "SWITCH TO THIS";
 		case HostAction::Back:		return "BACK";
@@ -3309,6 +3470,8 @@ public:
 	{
 		switch ( HostActionNow( ))
 		{
+		case HostAction::Cancel:
+			return "Stop downloading what this needs\nYou will be asked to confirm";
 		case HostAction::Stop:
 			return "Shut the server down\nAnyone playing on it is disconnected";
 		case HostAction::Switch:
@@ -3317,14 +3480,28 @@ public:
 		case HostAction::Back:
 			return "Go back to the form";
 		default:
-			return "Start the server and join it\nIt closes when you leave";
+			return "Start the server and join it\nAnything missing is downloaded first";
 		}
 	}
 
 	// [rc4l] Whatever the action button means right now, done.
 	void PressHostAction( )
 	{
-		if ( HostActionNow( ) == HostAction::Switch )
+		const HostAction action = HostActionNow( );
+
+		if ( action == HostAction::Cancel )
+		{
+			// [rc4l] The join's question, word for word, because it is the same question. HELD while
+			// it is up: a transfer that finished one frame into this prompt would otherwise start the
+			// server underneath it, and the answer would land on something already decided.
+			zx::HoldJoinResume( );
+			ShowDialog( DialogAction::CancelDownload, "Cancel?",
+				"The download stops. What has arrived so far is kept.",
+				"YES", 'y', "NO", 'n' );
+			return;
+		}
+
+		if ( action == HostAction::Switch )
 		{
 			PressHostSwitchButton( );
 			return;
@@ -3345,9 +3522,11 @@ public:
 		const HostAction action = HostActionNow( );
 		const int actW = HostActionW( );
 
-		// Tinted like CANCEL whenever it ENDS something that is running -- the same promise that
-		// button makes. BACK dismisses a failure and PLAY NOW! starts something, so neither is.
-		const bool bWarn = ( action == HostAction::Stop ) || ( action == HostAction::Switch );
+		// Tinted like CANCEL whenever it ENDS something that is running -- which for the CANCEL face
+		// is not a resemblance, it IS that button. BACK dismisses a failure and PLAY NOW! starts
+		// something, so neither is.
+		const bool bWarn = ( action == HostAction::Stop ) || ( action == HostAction::Switch )
+			|| ( action == HostAction::Cancel );
 
 		DrawRoundedButton( SB_HOST_FOOT_LEFT, SB_HOST_RTOGGLE_Y, actW, SB_HOST_RTOGGLE_H,
 			HostActionLabel( ), g_HostOnButton || g_HostButtonHot, bWarn );
@@ -3699,10 +3878,17 @@ public:
 		// someone arriving here has to do is pick something. Centred over both columns, since it
 		// belongs to the panel rather than to either one of them.
 		{
-			const char *const heading = "SELECT AN EXPERIENCE TO HOST";
+			// [rc4l] While the files are coming down, the heading IS the transfer. It already spans
+			// both columns and is the one line on this panel nothing else is using, so the progress
+			// goes there rather than into a strip squeezed between the list and the buttons.
+			const FString status = HostDownloadRunning( )
+				? zx::waddownload::StatusLine( ) : FString( );
+
+			const bool bBusy = status.IsNotEmpty( );
+			const FString heading = bBusy ? status : FString( "SELECT AN EXPERIENCE TO HOST" );
 			const int headingW = SmallFont->StringWidth( heading );
 
-			screen->DrawText( SmallFont, CR_WHITE,
+			screen->DrawText( SmallFont, bBusy ? CR_GOLD : CR_WHITE,
 				SB_HOST_LEFT + (( SB_HOST_RIGHT - SB_HOST_LEFT ) - headingW ) / 2,
 				SB_HOST_TOP + SB_HOST_PAD, heading,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
@@ -3898,11 +4084,14 @@ public:
 	const std::vector<bool> &HostEntryFilesPresent( int entry, const zx::AddonEntry &addon )
 	{
 		static int cached = -2;
+		static int cachedGeneration = -1;
 		static std::vector<bool> present;
 
-		if (( entry != cached ) || ( present.size( ) != addon.files.size( )))
+		if (( entry != cached ) || ( cachedGeneration != g_HostHaveGeneration )
+			|| ( present.size( ) != addon.files.size( )))
 		{
 			cached = entry;
+			cachedGeneration = g_HostHaveGeneration;
 			present.clear( );
 
 			for ( size_t i = 0; i < addon.files.size( ); ++i )

@@ -129,13 +129,37 @@ bool g_resumePendingSuccess = false;
 bool g_readyPending = false;
 FString g_readyName;
 
+// [rc4l] A resume that is NOT a join -- hosting, which wants every part of this except the last
+// step. See SetPendingResume. Exactly one of this and g_pending is ever set.
+zx::ResumeProc g_pendingProc = NULL;
+FString g_pendingProcName;
+
+// Whether anything at all is waiting on the current transfer.
+bool HaveSomethingPending()
+{
+	return g_pending.valid || ( g_pendingProc != NULL );
+}
+
+// What the waiting band should call it.
+FString PendingName()
+{
+	return ( g_pendingProc != NULL ) ? g_pendingProcName : g_pending.serverName;
+}
+
+void ForgetPending()
+{
+	g_pending = JoinPlan();
+	g_pendingProc = NULL;
+	g_pendingProcName = "";
+}
+
 void OnDownloadFinished(bool allSucceeded)
 {
 	// [rc4l] The decision itself is computation/joinresume_compute.h, where every combination of
 	// "did it work / is the browser open / are they mid-answer" can be asserted. Getting it wrong
 	// throws away whatever the player was doing, and each individual branch reads fine in review,
 	// which is exactly the sort of thing that wants a truth table rather than a chain of ifs.
-	const zx::ResumeAction action = zx::ComputeResumeAction( g_pending.valid, allSucceeded,
+	const zx::ResumeAction action = zx::ComputeResumeAction( HaveSomethingPending(), allSucceeded,
 		zx::IsServerBrowserOpen(), g_resumeHeld );
 
 	switch (action)
@@ -149,31 +173,41 @@ void OnDownloadFinished(bool allSucceeded)
 		return;
 
 	case zx::ResumeAction::NotifyReady:
-		// The join WAITS. g_pending is kept, and ConsumeJoinReady picks it up when the player next
+		// It WAITS. The pending thing is kept, and ConsumeJoinReady picks it up when the player next
 		// opens the menu.
 		g_readyPending = true;
-		g_readyName = g_pending.serverName;
-		Printf(TEXTCOLOR_GREEN "%s is ready to join.\n" TEXTCOLOR_NORMAL,
-			g_readyName.IsNotEmpty() ? g_readyName.GetChars() : "That server");
+		g_readyName = PendingName();
+		Printf(TEXTCOLOR_GREEN "%s is ready.\n" TEXTCOLOR_NORMAL,
+			g_readyName.IsNotEmpty() ? g_readyName.GetChars() : "It");
 		return;
 
 	case zx::ResumeAction::ReportFailure:
-		g_pending = JoinPlan();
+		ForgetPending();
 		// The downloader has already said which file and why, on the console. This is the part the
 		// player sees without having opened it.
-		zx::ShowBrowserNotice("Couldn't get everything this server needs.\n\n"
+		zx::ShowBrowserNotice("Couldn't get everything that was needed.\n\n"
 			"See the console for what was missing.");
 		return;
 
-	case zx::ResumeAction::JoinNow:
+	case zx::ResumeAction::ProceedNow:
 		break;
+	}
+
+	// [rc4l] A resume belonging to somebody else -- hosting. Cleared BEFORE the call, for the same
+	// reason the join plan is: what it does next may not return either.
+	if (g_pendingProc != NULL)
+	{
+		const zx::ResumeProc proc = g_pendingProc;
+		ForgetPending();
+		proc(allSucceeded);
+		return;
 	}
 
 	// Taken by value and cleared BEFORE the retry: AttemptJoin does not return on the path that
 	// works (RequestReload throws CRestartException), so anything after the call is unreachable
 	// exactly when it matters.
 	const JoinPlan plan = g_pending;
-	g_pending = JoinPlan();
+	ForgetPending();
 
 	// Second pass, with downloading off: if something is STILL missing after a run that reported
 	// success, retrying the download would loop forever on it.
@@ -373,6 +407,16 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 			// progress line under a list you can still read. The join resumes on its own.
 			if (zx::waddownload::Start(plan.sites, missing, OnDownloadFinished))
 			{
+				// [rc4l] The host resume goes with it. Start ABANDONS whatever was in flight, so a
+				// transfer that was fetching an experience to host is over the moment this one
+				// begins, and leaving its resume parked would fire it when THIS download lands -- we
+				// would download a server's files and stand up somebody's duel server with them.
+				//
+				// Exactly one of these two is ever set. That is the invariant; this is the only place
+				// a join could have broken it.
+				g_pendingProc = NULL;
+				g_pendingProcName = "";
+
 				g_pending = plan;
 				g_pending.valid = true;
 				return false;
@@ -519,6 +563,20 @@ FString g_joiningName;
 bool g_joinFailed = false;
 FString g_joinFailReason;
 
+void NoteDownloadFinished( bool allSucceeded )
+{
+	OnDownloadFinished( allSucceeded );
+}
+
+void SetPendingResume( ResumeProc proc, const char *readyName )
+{
+	// Replaces whatever was pending. Two things cannot be waiting on one transfer, and the last one
+	// asked for is the one the player is looking at.
+	g_pending = JoinPlan();
+	g_pendingProc = proc;
+	g_pendingProcName = ( readyName != NULL ) ? readyName : "";
+}
+
 void HoldJoinResume()
 {
 	g_resumeHeld = true;
@@ -606,23 +664,23 @@ void ReleaseJoinResume(bool proceed)
 
 	if (!proceed)
 	{
-		// [rc4l] The player said stop, so the JOIN is abandoned here -- unconditionally, not only in
-		// the race below where the transfer had already finished.
+		// [rc4l] The player said stop, so whatever was waiting is abandoned here -- unconditionally,
+		// not only in the race below where the transfer had already finished.
 		//
 		// Leaving it pending meant the aborted transfer reached OnDownloadFinished looking exactly
-		// like a failed one, and the player was told "couldn't get everything this server needs, see
-		// the console for what was missing" -- a diagnosis, and a homework assignment, for something
-		// they had just chosen on purpose and confirmed.
-		g_pending = JoinPlan();
+		// like a failed one, and the player was told "couldn't get everything, see the console for
+		// what was missing" -- a diagnosis, and a homework assignment, for something they had just
+		// chosen on purpose and confirmed.
+		ForgetPending();
 
 		if (g_resumePending)
 		{
 			// It finished while they were being asked. The file stays -- it is downloaded and
-			// verified, and throwing it away would only mean fetching it again -- but the join it was
+			// verified, and throwing it away would only mean fetching it again -- but what it was
 			// for does not happen, because that is what they answered.
 			g_resumePending = false;
-			Printf(TEXTCOLOR_GOLD "The download had already finished, so the file is kept, but the "
-				"join was cancelled as you asked.\n" TEXTCOLOR_NORMAL);
+			Printf(TEXTCOLOR_GOLD "The download had already finished, so the file is kept, but it "
+				"was cancelled as you asked.\n" TEXTCOLOR_NORMAL);
 		}
 		return;
 	}
