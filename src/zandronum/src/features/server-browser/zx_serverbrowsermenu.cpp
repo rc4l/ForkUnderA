@@ -3648,7 +3648,16 @@ public:
 		// [rc4l] DrawRoundedButton, which IS the JOIN and START drawing. A button that merely
 		// resembled them would drift apart from them the first time either was touched.
 		DrawRoundedButton( SB_HOST_TOGGLE_X, SB_HOST_RTOGGLE_Y, SB_HOST_FOOT_HALF, SB_HOST_RTOGGLE_H,
-			g_HostShowSettings ? "BACK" : "SETTINGS", g_HostOnSettingsToggle );
+			g_HostShowSettings ? "BACK" : "SETTINGS", HostOnToggle( ) || g_HostOnSettingsToggle );
+
+		// [rc4l] And the glow, which it never had -- it had no keyboard to mark until the toggle
+		// became a focus slot, so arrowing onto it lit nothing and the marker stayed on the button
+		// beside it.
+		if ( HostOnToggle( ))
+		{
+			FocusAnchor( zx::BrowserFocus::Host, SB_HOST_TOGGLE_X - 5,
+				SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H / 2 );
+		}
 
 		serverbrowser_Tip( SB_HOST_TOGGLE_X, SB_HOST_RTOGGLE_Y, SB_HOST_FOOT_HALF, SB_HOST_RTOGGLE_H,
 			g_HostShowSettings
@@ -4487,6 +4496,19 @@ public:
 
 			const bool bSel = ( row == g_HostEntrySel );
 			const bool bHot = ( row == g_HostEntryHot );
+
+			// [rc4l] The travelling marker, on the selected row -- the same one the server list puts
+			// beside its own rows, in the same place relative to the text.
+			//
+			// The list never had it, because until the arrows could reach these rows there was no
+			// keyboard position to mark. Anchoring it here rather than drawing it here is what makes
+			// it LERP: DrawFocusTravel moves the one marker toward whatever asked for it this frame,
+			// so crossing from a row to the button slides instead of jumping.
+			if ( bSel && ( g_Focus == zx::BrowserFocus::Host ) && HostOnList( ))
+			{
+				FocusAnchor( zx::BrowserFocus::Host, SB_HOST_LIST_LEFT - 9,
+					rowY + SB_HOST_ENTRY_H / 2 );
+			}
 
 			// [rc4l] The row being SERVED is tinted green, the same way CANCEL is tinted while a
 			// download runs: a state the row is in, said in colour rather than in another word.
