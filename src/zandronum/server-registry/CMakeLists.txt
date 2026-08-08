@@ -48,6 +48,8 @@ add_executable( zandrox-server-registry
 	# [rc4l] The punch broker's decision half, shared with the engine so both ends agree about
 	# who may be introduced to whom.
 	${ZAN_DIR}/features/server-hosting/computation/punchbroker_compute.cpp
+	# [rc4l] networkshared.cpp unmaps ::ffff:a.b.c.d through this, so the registry needs it too.
+	${ZAN_DIR}/features/net/computation/v6mapped_compute.cpp
 	${ZAN_DIR}/networkshared.cpp
 	${ZAN_DIR}/platform.cpp
 	${ZAN_DIR}/huffman/bitreader.cpp 

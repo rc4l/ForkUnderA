@@ -168,6 +168,9 @@ if(NET_TEST_SOURCES)
   add_executable(zandrox_tests_net
     ${NET_TEST_SOURCES}
     "${ENGINE_SRC}/networkshared.cpp"
+    # [rc4l] networkshared.cpp unmaps ::ffff:a.b.c.d through this, so the target that links it
+    # needs it as well.
+    "${ENGINE_SRC}/features/net/computation/v6mapped_compute.cpp"
     "${ENGINE_SRC}/platform.cpp"
     "${ENGINE_SRC}/huffman/bitreader.cpp"
     "${ENGINE_SRC}/huffman/bitwriter.cpp"
