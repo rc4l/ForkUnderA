@@ -45,6 +45,9 @@ add_executable( zandrox-server-registry
 	# so has to link the definition explicitly or the build fails at link time, on Linux and macOS,
 	# in a target a Windows-only `zdoom` build never touches.
 	${ZAN_DIR}/features/fua-branding/computation/fua_version_compute.cpp
+	# [rc4l] The punch broker's decision half, shared with the engine so both ends agree about
+	# who may be introduced to whom.
+	${ZAN_DIR}/features/server-hosting/computation/punchbroker_compute.cpp
 	${ZAN_DIR}/networkshared.cpp
 	${ZAN_DIR}/platform.cpp
 	${ZAN_DIR}/huffman/bitreader.cpp 

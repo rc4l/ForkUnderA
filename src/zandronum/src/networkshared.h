@@ -97,6 +97,18 @@ enum
 	// servers. This one is read as a long by the client, on the socket that asked.
 	SRSC_REACHCOOKIE,
 
+	// [rc4l] The registry's answer to a punch request: whether it introduced us, and if not, why.
+	//
+	// A reason rather than a bool because saying no FAST is the point. Every Zandronum server ever
+	// shipped is a NoSupport, and a client that learns that immediately connects the ordinary way
+	// instead of sitting out a timeout to discover what the registry already knew.
+	SRSC_PUNCHRESULT,
+
+	// [rc4l] Written in the verdict slot of SRSC_PUNCHRESULT to mean "this is the cookie leg,
+	// echo it back" rather than a decision. Negative so it can never collide with a PunchVerdict,
+	// which is an enum counting up from zero.
+	SERVERREGISTRY_PUNCH_COOKIE = -1,
+
 };
 
 //*****************************************************************************
@@ -150,6 +162,18 @@ enum
 	// forged it -- see features/server-hosting/computation/reachprobe_compute.h. Only after the echo
 	// does the registry send anything unsolicited.
 	CLIENT_SERVERREGISTRY_REACHTEST = 5660033,
+
+	// [rc4l] A client asking the registry to introduce it to a server it cannot otherwise reach.
+	//
+	// Two legs, exactly like REACHTEST above and for exactly the same reason: the first carries an
+	// empty cookie and gets one back, the second echoes it, and only then will the registry send
+	// anything unsolicited. Without that echo the source address could be forged and the HOST would
+	// be aimed at a victim who never asked for a packet.
+	//
+	// Carries the address of the server to be introduced to. That address is only ever used to look
+	// up a server we have already verified; it is never dialled on the strength of the client saying
+	// so. The only address anybody dials is the observed source of this request.
+	CLIENT_SERVERREGISTRY_PUNCH = 5660034,
 };
 
 // [BB] Protocol version of the server registry, currently only used in conjunction with LAUNCHER_SERVERREGISTRY_CHALLENGE.
@@ -176,6 +200,16 @@ enum
 	// and nothing else -- there is no launcher framing around it to match. (The cookie leg answers a
 	// launcher instead, so it lives in the SRSC_ enum and is read as a long.)
 	SERVERREGISTRY_REACHPROBE,
+
+	// [rc4l] The registry telling a SERVER that somebody wants in, and where they are.
+	//
+	// The server answers by sending one small packet to that address. The packet's content does not
+	// matter and it will very likely be dropped at the far end; sending it is the entire point,
+	// because that is what makes the server's own router accept the reply that follows.
+	//
+	// A server built before this ignores the unknown byte, which is exactly the desired behaviour:
+	// the punch is an optimisation attempted alongside the ordinary connection, never instead of it.
+	SERVERREGISTRY_PUNCH,
 };
 
 // [BB] Various enums used in SERVERREGISTRY_BANLISTPART packets.
