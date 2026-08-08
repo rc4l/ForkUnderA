@@ -27,10 +27,10 @@ HostTone HostToneFor(HostStatus status)
 	case HostStatus::Open:		return HostTone::Good;
 	case HostStatus::Checking:	return HostTone::Waiting;
 	case HostStatus::LanOnly:	return HostTone::Info;
-	case HostStatus::NoReply:	return HostTone::Bad;
+	case HostStatus::NoReply:	break;
 	}
 
-	return HostTone::Waiting;
+	return HostTone::Bad;
 }
 
 const char *HostStatusCode(HostStatus status)
@@ -40,10 +40,10 @@ const char *HostStatusCode(HostStatus status)
 	case HostStatus::Open:		return "HOST_OPEN";
 	case HostStatus::Checking:	return "HOST_CHECKING";
 	case HostStatus::LanOnly:	return "HOST_LAN_ONLY";
-	case HostStatus::NoReply:	return "HOST_NO_REPLY";
+	case HostStatus::NoReply:	break;
 	}
 
-	return "HOST_CHECKING";
+	return "HOST_NO_REPLY";
 }
 
 const char *HostStatusText(HostStatus status)
@@ -60,10 +60,10 @@ const char *HostStatusText(HostStatus status)
 		return "Visible on this network only. Players elsewhere cannot see it.";
 
 	case HostStatus::NoReply:
-		return "Nothing has reached this server from outside.";
+		break;
 	}
 
-	return "";
+	return "Nothing has reached this server from outside.";
 }
 
 std::string HostStatusTooltip(HostStatus status, int port, const std::string &router)
