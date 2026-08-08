@@ -17,6 +17,11 @@ HostFocusPos Foot()
 
 } // namespace
 
+HostFocusPos HostLeftOfTheForm()
+{
+	return HostFocusPos(HostSlot::List, 0);
+}
+
 HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bool hasToggle)
 {
 	if ((pos.slot == HostSlot::Field) || (pos.slot == HostSlot::Visibility))
