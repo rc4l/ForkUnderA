@@ -104,17 +104,19 @@ void FindAllIwadsInEngineSearchPaths( const char *name, TArray<FString> &out )
 	}
 }
 
-FString FindFileInEngineSearchPaths( const char *name )
+void FindAllFilesInEngineSearchPaths( const char *name, TArray<FString> &out )
 {
+	out.Clear( );
+
 	if (( name == NULL ) || ( name[0] == '\0' ))
-		return FString( );
+		return;
 
 	// The name as given, which covers an absolute path and a file beside the exe.
 	if ( DirEntryExists( name ))
-		return FString( name );
+		out.Push( FString( name ));
 
 	if ( GameConfig == NULL )
-		return FString( );
+		return;
 
 	// Then the -file search path, which is where a download lands and where the spawned server will
 	// look. Same list, same order, so this answer and the server's agree by construction.
@@ -133,11 +135,16 @@ FString FindFileInEngineSearchPaths( const char *name )
 
 			const FString candidate = JoinPath( dir, name );
 			if ( DirEntryExists( candidate ))
-				return candidate;
+				out.Push( candidate );
 		}
 	}
+}
 
-	return FString( );
+FString FindFileInEngineSearchPaths( const char *name )
+{
+	TArray<FString> all;
+	FindAllFilesInEngineSearchPaths( name, all );
+	return ( all.Size( ) > 0 ) ? all[0] : FString( );
 }
 
 unsigned long long FileSizeOnDisk( const char *path )
