@@ -1176,13 +1176,13 @@ void CLIENT_GetPackets( void )
 				// REQUESTIGNORED case is what puts us on its flood queue.
 				case SRSC_REQUESTIGNORED:
 
-					BROWSER_ServerRegistryRefusedQuery( );
+					BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus::Throttled );
 					Printf( "Refresh request ignored. Please wait 10 seconds before refreshing the list again.\n" );
 					break;
 
 				case SRSC_IPISBANNED:
 
-					BROWSER_ServerRegistryRefusedQuery( );
+					BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus::Banned );
 					Printf( "You are banned from the server registry.\n" );
 					break;
 
@@ -1207,7 +1207,7 @@ void CLIENT_GetPackets( void )
 
 				case SRSC_WRONGVERSION:
 
-					BROWSER_ServerRegistryRefusedQuery( );
+					BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus::Version );
 					Printf( "The server registry is using a different version of the launcher-to-server-registry protocol.\n" );
 					break;
 
