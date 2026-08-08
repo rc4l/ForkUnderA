@@ -471,9 +471,42 @@ void network_Error( const char *pszError )
 
 //*****************************************************************************
 //
+// [rc4l] Whether our sockets speak both families. The bind below has to hand a socket the matching
+// kind of address, and only this knows which kind it got.
+static bool g_bSocketIsDualStack = false;
+
+//*****************************************************************************
+//
+// [rc4l] A socket that hears v6 AND v4, matching what the engine does.
+//
+// The registry has to be reachable by every server and every launcher, so it is the last thing that
+// should be picky about families. Turning IPV6_V6ONLY off makes one v6 socket accept v4 peers too,
+// arriving as ::ffff:a.b.c.d, which NETADDRESS_s::LoadFromSocketAddress puts straight back into v4 so
+// nothing downstream sees the mapped form. The ban list, the server set and the reach cookies all
+// key on addresses, and every one of them would break if the same host were two different addresses
+// depending on which way it came in.
+//
+// Falls back to a plain v4 socket for the same reasons it does in the engine: the option defaults
+// differently across platforms, the stack can be disabled outright, and a registry that only hears
+// v6 would be invisible to every server that exists today.
 static SOCKET network_AllocateSocket( void )
 {
 	SOCKET	Socket;
+
+	Socket = socket( PF_INET6, SOCK_DGRAM, IPPROTO_UDP );
+	if ( Socket != INVALID_SOCKET )
+	{
+		int off = 0;
+		if ( setsockopt( Socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&off, sizeof( off )) == 0 )
+		{
+			g_bSocketIsDualStack = true;
+			return ( Socket );
+		}
+
+		closesocket( Socket );
+	}
+
+	g_bSocketIsDualStack = false;
 
 	// Allocate a socket.
 	Socket = socket( PF_INET, SOCK_DGRAM, IPPROTO_UDP );
@@ -488,20 +521,35 @@ static SOCKET network_AllocateSocket( void )
 bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse )
 {
 	int		iErrorCode;
-	struct sockaddr_in address;
 
 	// setsockopt needs an int, bool won't work
 	int		enable = 1;
 
+	// Allow the network socket to broadcast. Meaningless on a v6 socket, which has multicast and no
+	// broadcast at all, and harmless: the call simply fails there.
+	setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof( enable ));
+	if ( bReUse )
+		setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof( enable ));
+
+	// [rc4l] Bind to match the SOCKET'S family. in6addr_any covers every v4 address as well on a
+	// dual-stack socket; handing it a sockaddr_in fails outright and the registry never comes up.
+	if ( g_bSocketIsDualStack )
+	{
+		struct sockaddr_in6 address6;
+		memset( &address6, 0, sizeof( address6 ));
+		address6.sin6_family = AF_INET6;
+		address6.sin6_addr = in6addr_any;
+		address6.sin6_port = htons( usPort );
+
+		iErrorCode = bind( Socket, (sockaddr *)&address6, sizeof( address6 ));
+		return ( iErrorCode != SOCKET_ERROR );
+	}
+
+	struct sockaddr_in address;
 	memset (&address, 0, sizeof(address));
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = ulInAddr;
 	address.sin_port = htons( usPort );
-
-	// Allow the network socket to broadcast.
-	setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof( enable ));
-	if ( bReUse )
-		setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof( enable ));
 
 	iErrorCode = bind( Socket, (sockaddr *)&address, sizeof( address ));
 	if ( iErrorCode == SOCKET_ERROR )
