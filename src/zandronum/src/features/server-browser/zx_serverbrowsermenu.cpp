@@ -4028,8 +4028,11 @@ public:
 	// [rc4l] `cellColors` overrides the label colour per cell, or NULL for the usual chosen/unchosen
 	// pair. It exists so a cell can say something about ITSELF -- that this option is not currently
 	// available -- without that meaning having to be smuggled into the label text.
+	// [rc4l] `hot` is the cell under the POINTER; `cursor` is the cell the KEYBOARD is on, or -1 when
+	// the keyboard is elsewhere. Both light a cell, because both mean "this is the one you are about
+	// to act on" and the row cannot tell which hand the player is using.
 	void DrawChoiceRow( int vx, int vy, int vw, int count, const char *const *labels, int selected,
-		int hot, bool bFocused, const EColorRange *cellColors = NULL )
+		int hot, int cursor, const EColorRange *cellColors = NULL )
 	{
 		selected = zx::ChoiceNormalise( selected, count );
 
@@ -4040,7 +4043,14 @@ public:
 				continue;
 
 			const bool bChosen = ( i == selected );
-			const bool bLit = ( i == hot ) || ( bChosen && bFocused );
+
+			// [rc4l] The CURSOR lights, not the chosen cell.
+			//
+			// This was `bChosen && bFocused`, which was the same thing back when the arrows changed
+			// the answer as they moved -- there was no cursor to be anywhere else. Now that they do
+			// not, arrowing onto the cell you have NOT chosen lit nothing at all: the glow moved and
+			// the cell under it stayed dark, so the pointer got a highlight the keyboard never did.
+			const bool bLit = ( i == hot ) || ( i == cursor );
 
 			// The chosen one sits higher than the rest, the same lift the tabs and buttons use for
 			// the same reason: what is true here should be answerable by looking.
@@ -4661,7 +4671,9 @@ public:
 
 		DrawChoiceRow( rowX, y, rowW, kHostVisCount, labels,
 			g_HostAdvertise ? kHostVisGlobal : kHostVisLocal,
-			g_HostVisHot, ( g_Focus == zx::BrowserFocus::Host ) && HostOnVisibility( ), visColors );
+			g_HostVisHot,
+			(( g_Focus == zx::BrowserFocus::Host ) && HostOnVisibility( )) ? g_HostVisCursor : -1,
+			visColors );
 
 		// [rc4l] The glow goes to the SELECTED CELL, not to the label.
 		//
