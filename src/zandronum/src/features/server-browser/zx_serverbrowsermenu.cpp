@@ -56,6 +56,7 @@
 #include "features/wadreload/zx_wadreload.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
 #include "features/server-hosting/computation/hoststatus_compute.h"
+#include "features/server-hosting/computation/hostfocus_compute.h"
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
@@ -519,8 +520,17 @@ static const char *const g_HostFieldTips[kHostFieldCount] = {
 };
 
 static	zx::TextInput	g_HostFields[kHostFieldCount];
-static	int				g_HostFieldFocus = 0;
 static	int				g_HostFieldHot = -1;
+
+// [rc4l] WHERE THE KEYBOARD IS ON THE HOST PANEL, as one value.
+//
+// This was three: an int for the field, a bool for the visibility row, a bool for the button, with an
+// unwritten rule that at most one counted. Four places forgot to clear the others, and the symptoms
+// were a caret in a box that would not type, two things glowing at once, and DOWN doing nothing.
+//
+// One value cannot disagree with itself. What each key does is computation/hostfocus_compute, the
+// same shape browserfocus_compute gives the rest of the browser.
+static	zx::HostFocusPos	g_HostFocus( zx::HostSlot::List, 0 );
 
 // [rc4l] WHAT to run, above the settings that say how. The catalogue answers the first question and
 // the fields answer the second, which is the same split as an entry's addon.json against the host's
@@ -627,9 +637,6 @@ static	int				g_ClipBottomPx = -1;
 // reached at all.
 static	int				g_HostScroll = 0;
 
-// Which control on the hosting panel has the keyboard. The fields come first, then the button, so
-// tabbing down the form and pressing enter is the whole flow.
-static	bool			g_HostOnButton = false;
 static	bool			g_HostButtonHot = false;
 
 // [rc4l] Whether to announce to the registry. Local hosting is the default: it always works, needs
@@ -637,10 +644,8 @@ static	bool			g_HostButtonHot = false;
 // deliberate second step -- see the reachability check.
 static	bool			g_HostAdvertise = false;
 
-// Which cell of the visibility row the pointer is over, and whether the keyboard is on the row at
-// all -- the row is a stop between the last field and the button, not a field itself.
+// Which cell of the visibility row the pointer is over. Whether the KEYBOARD is on it is g_HostFocus.
 static	int				g_HostVisHot = -1;
-static	bool			g_HostOnVisibility = false;
 
 // Two answers: local, then global. Named so the row and everything that indexes it agree.
 // [rc4l] Internet FIRST, and the default. Hosting to be joined is the ordinary reason to host, and
@@ -2860,7 +2865,6 @@ public:
 		{
 			// BACK: clear the failure so the form returns, with what was typed still in it.
 			zx::HostForget( );
-			g_HostOnButton = false;
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/backup", snd_menuvolume, ATTN_NONE );
 			return;
 		}
@@ -2922,59 +2926,128 @@ public:
 
 	// Down the form, then onto the button, and no further. The button is the end because it is the
 	// thing the form exists to reach.
-	void MoveHostFocus( int step )
+	//*************************************************************************
+	//
+	// [rc4l] The focus, asked as the questions the rest of this file wants answered.
+	//
+	// Reads look the way they did when there were three variables; what changed is that there is one
+	// now, so no caller can leave two of them disagreeing.
+	bool HostOnList( )			{ return g_HostFocus.slot == zx::HostSlot::List; }
+	bool HostOnVisibility( )	{ return g_HostFocus.slot == zx::HostSlot::Visibility; }
+	bool HostOnButton( )		{ return g_HostFocus.slot == zx::HostSlot::Action; }
+	bool HostOnToggle( )		{ return g_HostFocus.slot == zx::HostSlot::Toggle; }
+
+	// Which field, or -1 when the keyboard is somewhere else. Every caller already range-checks,
+	// so -1 is the answer they were all written to handle.
+	int HostFieldFocus( )
 	{
-		// [rc4l] Moving between the fields, the row and the button changes whether a FIELD holds the
-		// keyboard -- the same switch SetFocus guards, flipped here without going through it. At the
-		// top, so it covers leaving the button as well as leaving a field.
+		return ( g_HostFocus.slot == zx::HostSlot::Field ) ? g_HostFocus.field : -1;
+	}
+
+	// Whether a text box can be typed into at all -- which is the fields, and nothing else.
+	bool HostInAField( )		{ return HostFieldFocus( ) >= 0; }
+
+	// [rc4l] What the form currently OFFERS, handed to the compute unit so focus can never land on
+	// something that is not drawn. The settings take the fields and the visibility row with them, and
+	// a running server takes the toggle.
+	bool HostHasFields( )
+	{
+		const zx::HostState state = zx::HostCurrentState( );
+		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
+		return bForm && g_HostShowSettings;
+	}
+
+	// Corrects a focus that named something no longer on screen. Called before anything reads it,
+	// because the panel can change underneath a position that was legitimate when it was set.
+	void ClampHostFocus( )
+	{
+		g_HostFocus = zx::ClampHostFocus( g_HostFocus, kHostFieldCount,
+			HostHasFields( ), HostFootHasToggle( ));
+	}
+
+	// [rc4l] One key, answered by computation/hostfocus_compute and applied here.
+	//
+	// This used to be the whole rule, written out as a chain of ifs over three variables: which field,
+	// on the row, on the button. It could not be tested, it did not know whether the settings were
+	// even open -- so DOWN walked five boxes that were not on screen -- and every other place that
+	// moved focus had to reproduce its clearing by hand.
+	void NavigateHostFocus( zx::HostNavKey key )
+	{
+		// Moving between regions changes whether a FIELD holds the keyboard, which is the switch
+		// SetFocus guards. At the top, so it covers leaving the button as well as leaving a field.
 		M_ReleaseMenuButtons( );
 
-		// [rc4l] Down the fields, onto the visibility row, then the button, and no further. The
-		// button is the end because it is the thing the form exists to reach.
-		if ( g_HostOnButton )
+		ClampHostFocus( );
+
+		const zx::HostNavResult r = zx::ComputeHostNav( g_HostFocus, key, kHostFieldCount,
+			HostHasFields( ), HostFootHasToggle( ));
+
+		// [rc4l] The list moves its SELECTION rather than focus, so it is applied here and focus is
+		// left alone -- the movement/traversal split the unit reports separately.
+		if ( r.rowStep != 0 )
 		{
-			if ( step < 0 )
+			const int rows = HostCatalogueRowCount( );
+
+			if ( rows > 0 )
 			{
-				g_HostOnButton = false;
-				g_HostOnVisibility = true;
+				const int next = g_HostEntrySel + r.rowStep;
+
+				// Up off the first row is the one edge that leaves, back to the tabs. Down off the
+				// last simply stops, the same as the server list.
+				if ( next < 0 )
+				{
+					SetFocus( zx::BrowserFocus::Tabs );
+					return;
+				}
+
+				if ( next < rows )
+				{
+					g_HostEntrySel = next;
+					RevealHostCatalogueRow( next );
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
 			}
 			return;
 		}
 
-		if ( g_HostOnVisibility )
+		// The visibility row's left and right pick the answer without moving.
+		if ( r.choiceStep != 0 )
 		{
-			g_HostOnVisibility = false;
+			const int at = zx::ChoiceStep( g_HostAdvertise ? kHostVisGlobal : kHostVisLocal,
+				kHostVisCount, r.choiceStep );
 
-			if ( step > 0 )
-				g_HostOnButton = true;
-			else
-				g_HostFieldFocus = kHostFieldCount - 1;
-
-			RevealHostFocus( );
-			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			const bool bWanted = ( at == kHostVisGlobal );
+			if ( bWanted != g_HostAdvertise )
+			{
+				g_HostAdvertise = bWanted;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
 			return;
 		}
 
-		const int next = g_HostFieldFocus + step;
+		// In a field, left and right are the caret's. The field itself handles them.
+		if ( r.caret )
+			return;
 
-		if ( next < 0 )
+		if ( r.pos.slot == zx::HostSlot::Away )
 		{
-			// Off the top of the form is the tabs -- the way back to the list.
 			SetFocus( zx::BrowserFocus::Tabs );
 			return;
 		}
 
-		if ( next >= kHostFieldCount )
-		{
-			g_HostOnVisibility = true;
-			RevealHostFocus( );
-			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-			return;
-		}
+		const bool bMoved = ( r.pos.slot != g_HostFocus.slot ) || ( r.pos.field != g_HostFocus.field );
 
-		g_HostFieldFocus = next;
+		g_HostFocus = r.pos;
 		RevealHostFocus( );
-		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+
+		if ( bMoved )
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	// Kept for the two callers that think in steps rather than keys.
+	void MoveHostFocus( int step )
+	{
+		NavigateHostFocus( ( step < 0 ) ? zx::HostNavKey::Up : zx::HostNavKey::Down );
 	}
 
 	//*************************************************************************
@@ -3105,13 +3178,13 @@ public:
 			g_HostFieldDragging = false;
 		}
 
-		if ( drag.consumed && ( g_HostFieldFocus >= 0 ) && ( g_HostFieldFocus < kHostFieldCount ))
+		if ( drag.consumed && HostInAField( ))
 		{
 			// Tracked even once the pointer leaves the box, because that is what dragging means
 			// everywhere else -- a selection that stopped the moment you overshot the last character
 			// is one you could never make in a single gesture.
-			g_HostFields[g_HostFieldFocus] = zx::SetCaret( g_HostFields[g_HostFieldFocus],
-				HostFieldCharAt( g_HostFieldFocus, x ), true );
+			g_HostFields[HostFieldFocus( )] = zx::SetCaret( g_HostFields[HostFieldFocus( )],
+				HostFieldCharAt( HostFieldFocus( ), x ), true );
 			return true;
 		}
 
@@ -3133,7 +3206,7 @@ public:
 			if ( type == MOUSE_Release )
 			{
 				SetFocus( zx::BrowserFocus::Host );
-				g_HostOnButton = true;
+				g_HostFocus = zx::HostFocusPos( zx::HostSlot::Action, 0 );
 				PressHostAction( );
 			}
 			return true;
@@ -3156,7 +3229,7 @@ public:
 				if ( type == MOUSE_Click )
 				{
 					SetFocus( zx::BrowserFocus::Host );
-					g_HostOnButton = false;
+					g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
 					g_HostEntrySel = row;
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
@@ -3179,9 +3252,11 @@ public:
 			if ( type == MOUSE_Click )
 			{
 				SetFocus( zx::BrowserFocus::Host );
-				g_HostOnButton = false;
-				g_HostShowSettings = !g_HostShowSettings;
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				g_HostFocus = zx::HostFocusPos( zx::HostSlot::Toggle, 0 );
+
+				// The same function the keyboard presses, so the two cannot come to mean different
+				// things -- which is how the mouse ended up being the only way to open the settings.
+				PressHostSettingsToggle( );
 			}
 			return true;
 		}
@@ -3209,17 +3284,7 @@ public:
 				{
 					SetFocus( zx::BrowserFocus::Host );
 
-					// [rc4l] BOTH of the other two things that can hold the form's focus, not just
-					// the button.
-					//
-					// g_HostOnVisibility was left set, and it gates every keystroke: pick INTERNET or
-					// HOME and then click into the server name, and the caret appeared but nothing
-					// typed. Neither field was broken -- the keyboard was still being handed to the
-					// row above them, because clicking a field said "not the button any more" and
-					// forgot to say "not the row either".
-					g_HostOnButton = false;
-					g_HostOnVisibility = false;
-					g_HostFieldFocus = i;
+					g_HostFocus = zx::HostFocusPos( zx::HostSlot::Field, i );
 
 					const int now = static_cast<int>( DMenu::MenuTime );
 					const bool bDouble = (( now - g_HostClickTime ) < 15 );
@@ -3280,8 +3345,7 @@ public:
 			if (( at >= 0 ) && ( type == MOUSE_Release ))
 			{
 				SetFocus( zx::BrowserFocus::Host );
-				g_HostOnButton = false;
-				g_HostOnVisibility = true;
+				g_HostFocus = zx::HostFocusPos( zx::HostSlot::Visibility, 0 );
 
 				const bool bWanted = ( at == kHostVisGlobal );
 				if ( bWanted != g_HostAdvertise )
@@ -3368,20 +3432,36 @@ public:
 	}
 
 	// Whichever row the keyboard is on, brought into view.
+	// [rc4l] Bring a catalogue row into view. The LIST has its own scroll, separate from the
+	// settings' -- they are two columns that scroll independently -- so it needs its own reveal.
+	// Same ScrollToReveal underneath, so both move by the least they can.
+	void RevealHostCatalogueRow( int row )
+	{
+		g_HostListScroll = zx::ScrollToReveal( g_HostListScroll,
+			HostCatalogueRowY( row ), SB_HOST_ENTRY_H,
+			SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM, HostListMaxScroll( ));
+	}
+
 	void RevealHostFocus( )
 	{
-		if ( g_HostOnButton )
-			return;					// pinned to the panel; it is always visible
+		if ( HostOnButton( ) || HostOnToggle( ))
+			return;					// pinned to the panel's foot; always visible
 
-		if ( g_HostOnVisibility )
+		if ( HostOnList( ))
+		{
+			RevealHostCatalogueRow( g_HostEntrySel );
+			return;
+		}
+
+		if ( HostOnVisibility( ))
 		{
 			RevealHostRow( HostVisibilityY( ), SB_CHOICE_H );
 			return;
 		}
 
-		if (( g_HostFieldFocus >= 0 ) && ( g_HostFieldFocus < kHostFieldCount ))
+		if ( HostInAField( ))
 		{
-			RevealHostRow( HostFirstFieldY( ) + g_HostFieldFocus * HostRowPitch( ),
+			RevealHostRow( HostFirstFieldY( ) + HostFieldFocus( ) * HostRowPitch( ),
 				SB_HOST_FIELD_H );
 		}
 	}
@@ -3497,6 +3577,15 @@ public:
 		}
 	}
 
+	// [rc4l] The settings toggle, pressed. Its own function because the keyboard can reach it now,
+	// so opening the settings is no longer something only the mouse path knows how to do.
+	void PressHostSettingsToggle( )
+	{
+		g_HostShowSettings = !g_HostShowSettings;
+		ClampHostFocus( );
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
 	// [rc4l] Whatever the action button means right now, done.
 	void PressHostAction( )
 	{
@@ -3542,9 +3631,9 @@ public:
 			|| ( action == HostAction::Cancel );
 
 		DrawRoundedButton( SB_HOST_FOOT_LEFT, SB_HOST_RTOGGLE_Y, actW, SB_HOST_RTOGGLE_H,
-			HostActionLabel( ), g_HostOnButton || g_HostButtonHot, bWarn );
+			HostActionLabel( ), HostOnButton( ) || g_HostButtonHot, bWarn );
 
-		if (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton || !HostFootHasToggle( )))
+		if (( g_Focus == zx::BrowserFocus::Host ) && HostOnButton( ))
 		{
 			FocusAnchor( zx::BrowserFocus::Host, SB_HOST_FOOT_LEFT - 5,
 				SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H / 2 );
@@ -3810,6 +3899,14 @@ public:
 		return HostCatalogueRowCount( ) * SB_HOST_ENTRY_H + 8;
 	}
 
+	// How far the experience list can scroll. Zero when every row already fits, which is the usual
+	// case with a handful of entries.
+	int HostListMaxScroll( )
+	{
+		const int over = HostCatalogueH( ) - ( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP );
+		return ( over > 0 ) ? over : 0;
+	}
+
 	// The y of one catalogue row. The selection value and the row index are the same number, so
 	// the two cannot drift apart.
 	int HostCatalogueRowY( int row )
@@ -4073,8 +4170,8 @@ public:
 		// [rc4l] Every one of these has to be false for a field to look focused. Leaving the
 		// visibility row out meant the last field kept its gold label and its caret while the row had
 		// the keyboard -- two controls claiming the same thing, and the player believing the wrong one.
-		const bool bFocused = ( !g_HostOnButton ) && ( !g_HostOnVisibility )
-			&& ( g_HostFieldFocus == index ) && ( g_Focus == zx::BrowserFocus::Host );
+		const bool bFocused = ( HostFieldFocus( ) == index )
+			&& ( g_Focus == zx::BrowserFocus::Host );
 
 		const bool bLettering = HostRowFullyVisible( y, SB_HOST_FIELD_H );
 
@@ -4489,7 +4586,7 @@ public:
 
 		DrawChoiceRow( rowX, y, rowW, kHostVisCount, labels,
 			g_HostAdvertise ? kHostVisGlobal : kHostVisLocal,
-			g_HostVisHot, ( g_Focus == zx::BrowserFocus::Host ) && g_HostOnVisibility, visColors );
+			g_HostVisHot, ( g_Focus == zx::BrowserFocus::Host ) && HostOnVisibility( ), visColors );
 
 		// [rc4l] The glow goes to the SELECTED CELL, not to the label.
 		//
@@ -4497,7 +4594,7 @@ public:
 		// field has one focused thing. A choice row has two, and left and right move between them --
 		// so a glow that stayed put gave no feedback at all for the one key that does anything here,
 		// leaving the player to read the markers to find out what they had just changed.
-		if ( g_HostOnVisibility && ( g_Focus == zx::BrowserFocus::Host ))
+		if ( HostOnVisibility( ) && ( g_Focus == zx::BrowserFocus::Host ))
 		{
 			const zx::ChoiceCell chosen = zx::ChoiceCellAt( g_HostAdvertise ? kHostVisGlobal
 				: kHostVisLocal, kHostVisCount, rowX, rowW, SB_CHOICE_GAP );
@@ -4893,9 +4990,7 @@ public:
 		if ( tab == BrowserTab::Host )
 		{
 			LoadHostForm( );
-			g_HostOnButton = false;
-			g_HostOnVisibility = false;
-			g_HostFieldFocus = 0;
+			g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
 		}
 
 		const int entering = static_cast<int>( tab );
@@ -6334,8 +6429,7 @@ public:
 		// containing the letter 'p' does not also press something. Only when a FIELD has focus -- on
 		// the button the keys belong to the menu again, which is what makes enter work there.
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
-			( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false )
-			&& ( g_HostOnVisibility == false ))
+			( g_Focus == zx::BrowserFocus::Host ) && HostInAField( ))
 		{
 			if ( EditHostField( ev ))
 				return true;
@@ -6502,8 +6596,7 @@ public:
 		// A focused text field -- the search box, or any field on the hosting form -- needs the raw
 		// events. On the form's BUTTON it does not: there the keys are navigation again.
 		const bool bInAField = ( g_Focus == zx::BrowserFocus::Search )
-			|| (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostOnButton == false )
-				&& ( g_HostOnVisibility == false ));
+			|| (( g_Focus == zx::BrowserFocus::Host ) && HostInAField( ));
 
 		return ( bInAField == false ) || g_Dialog.open || g_Notice.IsNotEmpty( );
 	}
@@ -6704,13 +6797,13 @@ public:
 	// OUT differ, and those are what this function is for.
 	bool EditHostField( event_t *ev )
 	{
-		if (( g_HostFieldFocus < 0 ) || ( g_HostFieldFocus >= kHostFieldCount ))
+		if ( HostInAField( ) == false )
 			return false;
 
-		const bool bDigits = ( g_HostFieldFocus == kHostFieldPort )
-			|| ( g_HostFieldFocus == kHostFieldMaxPlayers );
+		const bool bDigits = ( HostFieldFocus( ) == kHostFieldPort )
+			|| ( HostFieldFocus( ) == kHostFieldMaxPlayers );
 
-		switch ( EditTextField( g_HostFields[g_HostFieldFocus], ev, SB_HOST_MAXLEN, bDigits,
+		switch ( EditTextField( g_HostFields[HostFieldFocus( )], ev, SB_HOST_MAXLEN, bDigits,
 			false, false ))
 		{
 		case FieldKey::Escape:
@@ -6892,39 +6985,26 @@ public:
 			&& ( g_Focus != zx::BrowserFocus::Host ))
 		{
 			SetFocus( zx::BrowserFocus::Host );
-			g_HostOnButton = false;
-			g_HostOnVisibility = false;
-			g_HostFieldFocus = 0;
+			g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return true;
 		}
 
-		// [rc4l] The hosting form owns its own arrows, and walks its own fields -- only this side
-		// knows how many there are. Up off the top of it is the one edge that leaves, back to the
-		// tabs; left and right belong to the caret, exactly as in the search box.
+		// [rc4l] ALL FOUR arrows, through computation/hostfocus_compute.
+		//
+		// Up and down used to be the only two handled here, and left and right were special-cased for
+		// the visibility row right above them -- so the list could not be reached at all and the
+		// settings toggle had no keyboard. What each key means is now one answer from one place, the
+		// way the rest of the browser gets its answer from browserfocus_compute.
 		if ( g_Focus == zx::BrowserFocus::Host )
 		{
-			// On the visibility row, left and right pick the answer. Everywhere else in the form they
-			// belong to the caret, which is why this is the only place they mean anything else.
-			if ( g_HostOnVisibility
-				&& (( key == zx::NavKey::Left ) || ( key == zx::NavKey::Right )))
+			switch ( key )
 			{
-				const int at = zx::ChoiceStep( g_HostAdvertise ? kHostVisGlobal : kHostVisLocal,
-					kHostVisCount, ( key == zx::NavKey::Right ) ? 1 : -1 );
-
-				const bool bWanted = ( at == kHostVisGlobal );
-				if ( bWanted != g_HostAdvertise )
-				{
-					g_HostAdvertise = bWanted;
-					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-				}
-				return true;
+			case zx::NavKey::Up:	NavigateHostFocus( zx::HostNavKey::Up ); break;
+			case zx::NavKey::Down:	NavigateHostFocus( zx::HostNavKey::Down ); break;
+			case zx::NavKey::Left:	NavigateHostFocus( zx::HostNavKey::Left ); break;
+			case zx::NavKey::Right:	NavigateHostFocus( zx::HostNavKey::Right ); break;
 			}
-
-			if ( key == zx::NavKey::Up )
-				MoveHostFocus( -1 );
-			else if ( key == zx::NavKey::Down )
-				MoveHostFocus( 1 );
 			return true;
 		}
 
@@ -7044,14 +7124,19 @@ public:
 			// typing a name means.
 			if ( g_Focus == zx::BrowserFocus::Host )
 			{
-				// [rc4l] The same test the focus glow is drawn under, so Enter presses the button the
-				// glow is sitting on. While a server is running the action is the only control at the
-				// panel's foot, and the glow was already parked on it while Enter went on asking a
-				// different question and doing nothing.
-				if ( g_HostOnButton || !HostFootHasToggle( ))
+				// [rc4l] Enter acts on whatever the glow is sitting on, which is now something this
+				// can simply ask. It used to guess -- "the button, or the only control at the foot"
+				// -- and got the toggle wrong, because the toggle had no keyboard to be on.
+				ClampHostFocus( );
+
+				if ( HostOnButton( ))
 					PressHostAction( );
+				else if ( HostOnToggle( ))
+					PressHostSettingsToggle( );
+				else if ( HostOnList( ))
+					PressHostAction( );		// the list's enter is "host this one"
 				else
-					MoveHostFocus( 1 );
+					NavigateHostFocus( zx::HostNavKey::Down );
 				return true;
 			}
 
