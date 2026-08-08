@@ -331,8 +331,18 @@ extern std::ostream &operator<< ( std::ostream &os, const IPStringArray &input )
 struct NETADDRESS_s
 {
 public:
-	// Four digit IP address.
+	// Four digit IP address. Meaningful only while bIsIPv6 is false.
 	BYTE		abIP[4];
+
+	// [rc4l] The v6 address, and which of the two families this is.
+	//
+	// A second field rather than a widened first one, deliberately. Five files read abIP a byte at a
+	// time, and every one of those reads is about a v4 address in a v4 context: a ban wildcard, a
+	// private-range test, a broadcast address. Reinterpreting that storage would have made all of
+	// them silently wrong for v6 rather than loudly absent, and quiet wrongness in the network layer
+	// is the worst outcome available. Costing 17 bytes per address to keep them honest is nothing.
+	BYTE		abIP6[16];
+	bool		bIsIPv6;
 
 	// The IP address's port extension.
 	USHORT		usPort;
@@ -343,9 +353,17 @@ public:
 	void Clear ();
 	bool Compare ( const NETADDRESS_s& other, bool ignorePort = false ) const;
 	bool CompareNoPort ( const NETADDRESS_s& other ) const { return Compare( other, true ); }
-	void ToSocketAddress( struct sockaddr &SocketAddress ) const;
+	// [rc4l] sockaddr_storage, NOT sockaddr. The latter is 16 bytes and a v6 socket address is 28,
+	// so the old signature could not hold what this now writes: passing the narrow type would have
+	// overwritten whatever sat after it on the caller's stack, which is a corruption bug that
+	// reproduces as unrelated networking nonsense somewhere else entirely.
+	void ToSocketAddress( struct sockaddr_storage &SocketAddress ) const;
 	void SetPort ( USHORT port );
 	const char* ToString() const;
+
+	// The v6 address as text, unbracketed and without a port. Writes into the caller's buffer rather
+	// than a static one, so ToString can build the bracketed form without the two fighting over it.
+	const char* AddressToStringNoPort( char *buffer, size_t len ) const;
 	const char* ToStringNoPort() const;
 	bool LoadFromString( const char* string );
 	void LoadFromSocketAddress ( const struct sockaddr& sockaddr );
