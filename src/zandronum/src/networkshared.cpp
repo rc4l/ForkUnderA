@@ -49,6 +49,7 @@
 
 #include "networkheaders.h"
 #include "networkshared.h"
+#include "features/net/computation/v6mapped_compute.h"
 #include <sstream>
 #include <errno.h>
 #include <iostream>
@@ -746,26 +747,11 @@ void NETADDRESS_s::LoadFromSocketAddress ( const struct sockaddr& sockaddr )
 		const BYTE *raw = reinterpret_cast<const BYTE *>( &ipv6.sin6_addr );
 
 		// [rc4l] A v4 PEER ON A DUAL-STACK SOCKET ARRIVES AS ::ffff:a.b.c.d, and has to be put back
-		// into v4 before anybody sees it.
-		//
-		// Otherwise the same machine is one address when it reaches a dual-stack listener and another
-		// when it reaches a v4 one, and the two never compare equal. Everything keyed on an address
-		// then quietly stops working for exactly the players who are not using v6: bans miss, the
-		// registry lists one server twice, and a punch cookie is claimed against an address nobody
-		// will match. The prefix is ten zero bytes and then two 0xff.
-		bool bMapped = ( raw[10] == 0xff ) && ( raw[11] == 0xff );
-		for ( int i = 0; bMapped && ( i < 10 ); ++i )
+		// into v4 before anybody sees it. See features/net/computation/v6mapped_compute.h for what
+		// goes wrong when it is not, and for the tests that pin the byte pattern.
+		if ( zx::IsV4MappedV6( raw ))
 		{
-			if ( raw[i] != 0 )
-				bMapped = false;
-		}
-
-		if ( bMapped )
-		{
-			this->abIP[0] = raw[12];
-			this->abIP[1] = raw[13];
-			this->abIP[2] = raw[14];
-			this->abIP[3] = raw[15];
+			zx::ExtractMappedV4( raw, this->abIP );
 			memset( this->abIP6, 0, sizeof( this->abIP6 ));
 			this->bIsIPv6 = false;
 			this->usPort = ipv6.sin6_port;
