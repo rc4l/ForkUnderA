@@ -527,6 +527,11 @@ static	int				g_HostDetailScroll = 0;
 // [rc4l] The running status scrolls independently of the details above it, and its height is measured
 // as it is drawn: the text wraps, so the line count is not something the layout can know in advance.
 static	int				g_HostStatusScroll = 0;
+
+// [rc4l] The band the status text may draw in, or an empty range for "anywhere". Set around the
+// status half only; see HostTextRowVisible for why a rectangle would not have done.
+static	int				g_HostTextClipTop = 0;
+static	int				g_HostTextClipBottom = 0;
 static	int				g_HostStatusH = 0;
 
 // [rc4l] The right column shows the description by default. The settings are one click away rather
@@ -3558,12 +3563,19 @@ public:
 			// Bottom half: what is RUNNING. Measured as it draws, so the scrollbar above knows what
 			// it is looking at next frame.
 			ClampHostStatusScroll( );
-			PushClip( serverbrowser_ToScreenY( SB_HOST_RUN_BOT_TOP ),
-				serverbrowser_ToScreenY( SB_HOST_RTOP_BOTTOM ));
-			const int endY = DrawHostStatus( SB_HOST_RCOL_LEFT,
-				SB_HOST_RUN_BOT_TOP - g_HostStatusScroll, state );
-			PopClip( );
-			g_HostStatusH = endY - ( SB_HOST_RUN_BOT_TOP - g_HostStatusScroll );
+
+			// [rc4l] The text masks itself by skipping rows, because PushClip does not reach
+			// screen->DrawText. See HostTextRowVisible.
+			g_HostTextClipTop = SB_HOST_RUN_BOT_TOP;
+			g_HostTextClipBottom = SB_HOST_RTOP_BOTTOM;
+
+			const int statusTop = SB_HOST_RUN_BOT_TOP - g_HostStatusScroll;
+			const int endY = DrawHostStatus( SB_HOST_RCOL_LEFT, statusTop, state );
+
+			g_HostTextClipTop = 0;
+			g_HostTextClipBottom = 0;
+
+			g_HostStatusH = endY - statusTop;
 			DrawHostRegionScrollBar( SB_HOST_RUN_BOT_TOP, SB_HOST_RTOP_BOTTOM,
 				g_HostStatusH, g_HostStatusScroll );
 
@@ -4074,8 +4086,11 @@ public:
 	// wraps, so the height is not something the layout can work out without drawing it.
 	int DrawHostStatus( int x, int y, zx::HostState state )
 	{
-		screen->DrawText( SmallFont, CR_GOLD, x, y, zx::HostStateSummary( state ),
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		if ( HostTextRowVisible( y, SB_HOST_LINE ))
+		{
+			screen->DrawText( SmallFont, CR_GOLD, x, y, zx::HostStateSummary( state ),
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
 		y += SB_HOST_LINE + 6;
 
 		// Wrapped to the COLUMN now, not to the panel: the status shares the right column with the
@@ -4167,6 +4182,20 @@ public:
 
 	// Wrapped text inside an arbitrary width, returning the y below it. DrawWrapped is fixed to the
 	// detail panel's column; this one takes the width because the hosting panel is a different shape.
+	// [rc4l] Whether a line at `vy` may be drawn at all.
+	//
+	// PushClip only feeds DimClipped; it does NOT clip screen->DrawText, which is why every scrolling
+	// region here masks itself by SKIPPING rows rather than by setting a rectangle. The status half
+	// had a PushClip around it and nothing else, so its text scrolled straight up over the seam and
+	// out of the panel.
+	bool HostTextRowVisible( int vy, int vh )
+	{
+		if ( g_HostTextClipBottom <= g_HostTextClipTop )
+			return true;			// no region set: draw normally, which is every other caller
+
+		return zx::RowFullyInView( vy, vh, g_HostTextClipTop, g_HostTextClipBottom );
+	}
+
 	int DrawWrappedIn( const FString &text, int x, int y, int width, EColorRange colour )
 	{
 		FString line;
@@ -4184,8 +4213,11 @@ public:
 
 			if ( line.IsNotEmpty( ) && ( SmallFont->StringWidth( candidate ) > width ))
 			{
-				screen->DrawText( SmallFont, colour, x, y, line,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				if ( HostTextRowVisible( y, SB_HOST_LINE ))
+				{
+					screen->DrawText( SmallFont, colour, x, y, line,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				}
 				y += SB_HOST_LINE;
 				line = word;
 			}
