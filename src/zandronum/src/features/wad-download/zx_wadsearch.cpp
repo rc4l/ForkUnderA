@@ -101,6 +101,42 @@ void FindAllIwadsInEngineSearchPaths( const char *name, TArray<FString> &out )
 	}
 }
 
+FString FindFileInEngineSearchPaths( const char *name )
+{
+	if (( name == NULL ) || ( name[0] == '\0' ))
+		return FString( );
+
+	// The name as given, which covers an absolute path and a file beside the exe.
+	if ( DirEntryExists( name ))
+		return FString( name );
+
+	if ( GameConfig == NULL )
+		return FString( );
+
+	// Then the -file search path, which is where a download lands and where the spawned server will
+	// look. Same list, same order, so this answer and the server's agree by construction.
+	if ( GameConfig->SetSection( "FileSearch.Directories" ))
+	{
+		const char *key, *value;
+		while ( GameConfig->NextInSection( key, value ))
+		{
+			if ( stricmp( key, "Path" ) != 0 )
+				continue;
+
+			FString dir = NicePath( value );
+			if ( dir.IsEmpty( ))
+				continue;
+			FixPathSeperator( dir );
+
+			const FString candidate = JoinPath( dir, name );
+			if ( DirEntryExists( candidate ))
+				return candidate;
+		}
+	}
+
+	return FString( );
+}
+
 FString FindIwadInEngineSearchPaths( const char *name )
 {
 	TArray<FString> all;
