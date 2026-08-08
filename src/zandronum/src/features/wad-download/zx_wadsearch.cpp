@@ -3,6 +3,9 @@
 //
 // [rc4l] See zx_wadsearch.h. Main thread only -- it reads and writes GameConfig.
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #include "cmdlib.h"
 #include "doomtype.h"
 #include "gameconfigfile.h"
@@ -101,17 +104,19 @@ void FindAllIwadsInEngineSearchPaths( const char *name, TArray<FString> &out )
 	}
 }
 
-FString FindFileInEngineSearchPaths( const char *name )
+void FindAllFilesInEngineSearchPaths( const char *name, TArray<FString> &out )
 {
+	out.Clear( );
+
 	if (( name == NULL ) || ( name[0] == '\0' ))
-		return FString( );
+		return;
 
 	// The name as given, which covers an absolute path and a file beside the exe.
 	if ( DirEntryExists( name ))
-		return FString( name );
+		out.Push( FString( name ));
 
 	if ( GameConfig == NULL )
-		return FString( );
+		return;
 
 	// Then the -file search path, which is where a download lands and where the spawned server will
 	// look. Same list, same order, so this answer and the server's agree by construction.
@@ -130,11 +135,38 @@ FString FindFileInEngineSearchPaths( const char *name )
 
 			const FString candidate = JoinPath( dir, name );
 			if ( DirEntryExists( candidate ))
-				return candidate;
+				out.Push( candidate );
 		}
 	}
+}
 
-	return FString( );
+FString FindFileInEngineSearchPaths( const char *name )
+{
+	TArray<FString> all;
+	FindAllFilesInEngineSearchPaths( name, all );
+	return ( all.Size( ) > 0 ) ? all[0] : FString( );
+}
+
+unsigned long long FileSizeOnDisk( const char *path )
+{
+	if (( path == NULL ) || ( path[0] == 0 ))
+		return 0;
+
+	// 64-bit, because a resource pack can exceed what the 32-bit stat reports.
+#ifdef _WIN32
+	struct _stat64 info;
+	if ( _stat64( path, &info ) != 0 )
+		return 0;
+#else
+	struct stat info;
+	if ( stat( path, &info ) != 0 )
+		return 0;
+#endif
+
+	if ( info.st_size < 0 )
+		return 0;
+
+	return static_cast<unsigned long long>( info.st_size );
 }
 
 FString FindIwadInEngineSearchPaths( const char *name )

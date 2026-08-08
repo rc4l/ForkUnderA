@@ -1474,6 +1474,7 @@ add_executable( zdoom WIN32
 	features/wad-download/computation/downloadplan_compute.cpp
 	features/wad-download/computation/iwadallow_compute.cpp
 	features/wad-download/computation/iwadsubstitute_compute.cpp
+	features/wad-download/computation/fileresolve_compute.cpp
 	features/wad-download/computation/wadstore_compute.cpp
 	features/port-mapping/zx_portmap.cpp
 	features/port-mapping/computation/ssdp_compute.cpp
@@ -1485,6 +1486,7 @@ add_executable( zdoom WIN32
 	features/server-hosting/computation/hostargs_compute.cpp
 	features/server-hosting/computation/hostlifecycle_compute.cpp
 	features/server-hosting/computation/hoststatus_compute.cpp
+	features/server-hosting/computation/hostfocus_compute.cpp
 	features/server-hosting/computation/reachprobe_compute.cpp
 	features/server-hosting/zx_reachprobe.cpp
 	features/addon-catalogue/zx_catalogue.cpp
