@@ -1036,7 +1036,11 @@ return;
 NETADDRESS_s NETWORK_GetLocalAddress( void )
 {
 	char				szBuffer[512];
-	struct sockaddr_in	SocketAddress;
+	// [rc4l] sockaddr_storage, for the reason in NETWORK_GetPackets: a dual-stack socket names
+	// itself with a sockaddr_in6, and the smaller struct makes getsockname fail rather than
+	// truncate. Only the port is wanted here, and LoadFromSocketAddress knows how to find it in
+	// either family instead of trusting the two layouts to agree.
+	struct sockaddr_storage	SocketAddress;
 	int					iNameLength;
 
 #ifndef __WINE__
@@ -1155,7 +1159,9 @@ NETADDRESS_s NETWORK_GetLocalAddress( void )
 	}
 #endif
 
-	Address.usPort = SocketAddress.sin_port;
+	NETADDRESS_s Named;
+	Named.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketAddress ));
+	Address.usPort = Named.usPort;
 	return ( Address );
 }
 
