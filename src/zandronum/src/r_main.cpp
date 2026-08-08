@@ -364,6 +364,30 @@ CCMD (r_visibility)
 
 //==========================================================================
 //
+// [rc4l] Renderer switches that outlived the renderer they switched.
+//
+// These belonged to the SOFTWARE renderer and went with it in 7c03210. Each one names a feature the
+// GL renderer draws unconditionally and always has, so on this build they were already doing nothing
+// before they were deleted -- deleting them changed "silently ignored" into "Unknown command".
+//
+// That distinction matters because MODS SET THEM. The Eon Collection ships an ACS script called
+// Always_3Dfloors that issues r_3dfloors every tic while you are alive, so joining a game filled the
+// console with errors about a setting that could not have had an effect either way. The map is not
+// doing anything unreasonable; it is asking for 3D floors, and it gets them.
+//
+// Kept with their original types and flags so anything reading them sees exactly what it used to.
+// They are inert by design, not by oversight: there is no GL switch to wire them to, because GL has
+// no way to turn these off.
+//
+//==========================================================================
+
+CVAR (Int, r_3dfloors, true, 0)
+CVAR (Bool, r_skyboxes, true, 0)
+CVAR (Bool, r_drawmirrors, true, 0)
+CVAR (Bool, r_fogboundary, true, 0)
+
+//==========================================================================
+//
 // CVAR r_columnmethod
 //
 // Selects which version of the seg renderers to use.
