@@ -68,6 +68,12 @@ void ReachProbeCookieArrived( const char *pszCookie );
 // one connection says nothing after the ISP has moved us.
 void ReachProbeSetPublicIp( const char *pszIp );
 
+// [rc4l] That same address, for anyone who needs to recognise US from the outside. Empty until the
+// registry has told us. The browser reads it to tell our own server's row apart from a stranger's:
+// the registry lists us on this address while we are connected to ourselves on 127.0.0.1, and
+// without it the two look like two different servers.
+std::string ReachProbePublicIp( void );
+
 } // namespace zx
 
 #endif // ZX_REACHPROBE_H

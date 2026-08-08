@@ -241,6 +241,11 @@ void ReachProbeSetPublicIp( const char *pszIp )
 	g_PublicIp = ( pszIp != NULL ) ? pszIp : "";
 }
 
+std::string ReachProbePublicIp( void )
+{
+	return g_PublicIp;
+}
+
 void ReachProbeRequest( int port )
 {
 	if (( port <= 0 ) || ( port > 65535 ))

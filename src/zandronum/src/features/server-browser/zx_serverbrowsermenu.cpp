@@ -4590,6 +4590,40 @@ public:
 
 	// [rc4l] Committing to the selected server. One implementation, reached from the keyboard and from
 	// the button, so the two can never come to mean different things.
+	// [rc4l] The port out of an "ip:port" string. Taken from the text rather than from usPort because
+	// that field is in network byte order and this file has no business knowing that.
+	int PortOfAddress( const FString &address )
+	{
+		const long colon = address.LastIndexOf( ":" );
+		if ( colon < 0 )
+			return 0;
+
+		return atoi( address.Mid( colon + 1, address.Len( )).GetChars( ));
+	}
+
+	// The port our running server actually holds, taken from the address we join it on rather than
+	// from the form field beside it: the field is editable while the server runs, so it can be
+	// describing a server that does not exist yet. 0 when we hold nothing.
+	int HostRunningPort( )
+	{
+		return PortOfAddress( zx::HostConnectAddress( ));
+	}
+
+	// Whether a row in the list is the server WE are running. See RowIsOwnServer for why the address
+	// on the row is not enough on its own.
+	bool RowIsOurOwnServer( int lServer )
+	{
+		const NETADDRESS_s address = BROWSER_GetAddress( lServer );
+		const FString full = address.ToString( );
+
+		FString localIp;
+		if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+			localIp = NETWORK_GetLocalAddress( ).ToStringNoPort( );
+
+		return zx::RowIsOwnServer( address.ToStringNoPort( ), PortOfAddress( full ),
+			HostRunningPort( ), localIp.GetChars( ), zx::ReachProbePublicIp( ));
+	}
+
 	void DoJoinSelected( )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
@@ -4643,11 +4677,32 @@ public:
 				|| ( hostState == zx::HostState::Running )
 				|| ( hostState == zx::HostState::Stopping ));
 
-			switch ( zx::DecideJoinIntent( bHoldsServer, bConnected, bTargetIsCurrent ))
+			// [rc4l] The wider "is this row OURS", because the narrow test above never says yes about
+			// our own server. We connect to it on 127.0.0.1, LAN discovery lists it on this machine's
+			// local address and the registry lists it on our public one, so the browser shows two rows
+			// and neither matches what we are connected on. JOIN therefore read our own server as
+			// somewhere else and offered to stop it in order to go there.
+			const bool bTargetIsOwn = bHoldsServer && ( g_Selected >= 0 ) && ( g_Selected < total )
+				&& RowIsOurOwnServer( g_SortedServers[g_Selected] );
+
+			// And whether the connection we are holding is to that server, which is what separates
+			// "you are already here" from "then go there".
+			const bool bOnOwnServer = bConnected
+				&& zx::HostOwnsAddress( FString( CLIENT_GetServerAddress( ).ToString( )));
+
+			switch ( zx::DecideJoinIntent( bHoldsServer, bConnected, bTargetIsCurrent,
+				bTargetIsOwn, bOnOwnServer ))
 			{
 			case zx::JoinIntent::AlreadyThere:
 				// Just leave. No sound of a decision being made, because none was.
 				M_ClearMenus( );
+				return;
+
+			case zx::JoinIntent::RejoinOwnServer:
+				// Our server, and we are not in it. Connect on the address we know works rather than
+				// on whichever of its several spellings the row happened to be listed under, and stop
+				// nothing on the way.
+				JoinOwnServer( );
 				return;
 
 			case zx::JoinIntent::ConfirmStopHosting:
