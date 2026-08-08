@@ -65,9 +65,19 @@ struct HostConfig
 bool IsSafeArgValue(const std::string &value);
 
 // Whether `name` is a bare filename we are willing to name on a command line: no directory
-// separators, no `..`, no drive letters. The engine resolves WADs from its own search path, so a
-// path here is either a mistake or an attempt to load something from elsewhere on the disk.
+// separators, no `..`, no drive letters.
 bool IsBareFileName(const std::string &name);
+
+// [rc4l] Whether a resolved PATH may be named on a command line: everything IsSafeArgValue requires,
+// plus no `..` anywhere in it.
+//
+// The WAD arguments take this rather than IsBareFileName, and the difference is a bug fix. A bare
+// name makes the SERVER search for the file, using its own config -- which is not the one the client
+// just wrote a download folder into. So a freshly downloaded pk3 was invisible to the server it had
+// been fetched for: the server came up without it and the client that joined was told its lumps did
+// not match. We have already resolved the file; handing over the path removes the second search and
+// with it the chance of the two disagreeing.
+bool IsSafeFilePath(const std::string &path);
 
 // The full argv for a hosted server, `exePath` first. Unsafe values are dropped rather than escaped;
 // see the header comment for why that is the kinder failure.

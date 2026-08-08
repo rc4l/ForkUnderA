@@ -8,6 +8,7 @@ using zx::BuildHostArgs;
 using zx::HostConfig;
 using zx::IsBareFileName;
 using zx::IsSafeArgValue;
+using zx::IsSafeFilePath;
 using zx::IsUsablePort;
 using zx::JoinWindowsCommandLine;
 using zx::QuoteWindowsArg;
@@ -494,5 +495,74 @@ TEST(HostArgs, AConfigPathIsAllowedToBeAPathButNotAnArgument)
 
 	config.execCfg = "cat/\"quoted\"/server.cfg";
 	EXPECT_FALSE(Has(BuildHostArgs("z", config), "+exec")) << "a quote is not";
+}
+
+// ---------------------------------------------------------------- WADs go over as PATHS
+
+TEST(SafeFilePath, AcceptsAResolvedAbsolutePath)
+{
+	// [rc4l] The shape that matters: what FindFileInEngineSearchPaths hands back on Windows, drive
+	// letter and all. IsBareFileName refuses this on purpose, which is why the WAD arguments no
+	// longer use it.
+	EXPECT_TRUE(IsSafeFilePath("F:/ZandroX/dist-windows/Downloads/skulltag_content.pk3"));
+	EXPECT_FALSE(IsBareFileName("F:/ZandroX/dist-windows/Downloads/skulltag_content.pk3"));
+}
+
+TEST(SafeFilePath, StillAcceptsABareName)
+{
+	// The fallback for when nothing resolved: hand over the name and let the server try its search.
+	EXPECT_TRUE(IsSafeFilePath("duel40b.pk3"));
+}
+
+TEST(SafeFilePath, RefusesTraversalAndAnythingThatStopsBeingAValue)
+{
+	EXPECT_FALSE(IsSafeFilePath("wads/../../etc/passwd"));
+	EXPECT_FALSE(IsSafeFilePath("-host"));
+	EXPECT_FALSE(IsSafeFilePath("+map"));
+	EXPECT_FALSE(IsSafeFilePath(""));
+	EXPECT_FALSE(IsSafeFilePath("a\"b.pk3"));
+	EXPECT_FALSE(IsSafeFilePath("a\\b.pk3"));
+	EXPECT_FALSE(IsSafeFilePath("a\nb.pk3"));
+}
+
+TEST(HostArgs, HandsTheServerResolvedPathsRatherThanNames)
+{
+	// [rc4l] The bug this fixes. A bare name makes the SERVER search, and it searches its own config
+	// -- not the one this client just registered a download folder in. So a pk3 we had only just
+	// downloaded was invisible to the server it was downloaded for: the server started without it,
+	// came up with one PWAD instead of two, and the client that joined was told its lumps did not
+	// match.
+	HostConfig config = Basic();
+	config.iwad = "F:/wads/freedoom2.wad";
+	config.pwads.clear();
+	config.pwads.push_back("F:/ZandroX/dist-windows/Downloads/skulltag_content.pk3");
+	config.pwads.push_back("zandrospree2rc2.pk3");
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_EQ("F:/wads/freedoom2.wad", ValueAfter(args, "-iwad"));
+
+	// Both survive: the resolved one and the bare fallback.
+	int seen = 0;
+	for (size_t i = 0; i < args.size(); ++i)
+	{
+		if (args[i] == "-file")
+			++seen;
+	}
+	EXPECT_EQ(2, seen) << "every wanted PWAD reached the command line";
+}
+
+TEST(HostArgs, ADangerousWadPathIsStillDropped)
+{
+	// Dropped rather than escaped, the same as every other unsafe value here.
+	HostConfig config = Basic();
+	config.iwad = "-host";
+	config.pwads.clear();
+	config.pwads.push_back("wads/../../secret.pk3");
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_FALSE(Has(args, "-iwad"));
+	EXPECT_FALSE(Has(args, "-file"));
 }
 

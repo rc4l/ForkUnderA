@@ -2647,8 +2647,6 @@ public:
 				return;
 			}
 
-			config.iwad = plan.iwad;
-			config.pwads = plan.pwads;
 			config.execCfg = plan.execCfg;
 
 			// [rc4l] RESOLVED to full paths, not left as bare names. These are what the CLIENT
@@ -2671,6 +2669,16 @@ public:
 				g_HostEntryPwads.Push( path.IsNotEmpty( ) ? path
 					: FString( plan.pwads[i].c_str( )));
 			}
+
+			// [rc4l] The SERVER gets the same resolved paths, and for the same reason it gets them
+			// rather than names: it searches its OWN config, which is not the one this client just
+			// registered a download folder in. Handing it a name meant a file we had just fetched was
+			// invisible to the server we fetched it for -- it started without the pk3, and the client
+			// that joined was told its lumps did not match. One resolution, used by both.
+			config.iwad = g_HostEntryIwad.GetChars( );
+			config.pwads.clear( );
+			for ( unsigned i = 0; i < g_HostEntryPwads.Size( ); ++i )
+				config.pwads.push_back( g_HostEntryPwads[i].GetChars( ));
 
 			// [rc4l] The entry's own opening map, which is NOT the first of its rotation: Duel 40
 			// opens on START, a welcome map deliberately left out of the rotation. Falling back to
