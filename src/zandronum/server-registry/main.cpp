@@ -607,6 +607,27 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 							SERVERREGISTRY_RequestServerVerification ( newServer );
 							SERVERREGISTRY_AddServer( newServer, g_UnverifiedServers );
 						}
+						// [rc4l] Still unverified on a later heartbeat, so ask again. This used to do
+						// nothing at all, which made the handshake one shot over UDP: lose that single
+						// packet, or its reply, and the server was never verified and never asked a
+						// second time. It sat here until the 60 second timeout swept it out.
+						//
+						// A host watching from the game gives up on exactly the same 60 seconds, so the
+						// retry could not arrive before the verdict. One dropped datagram and somebody
+						// with a correctly forwarded port was told nothing outside had reached it. That
+						// is the worst thing this can say, because it sends people to go and re-check a
+						// router that was right all along.
+						//
+						// Announcements are every 30 seconds, so this costs one small packet per server
+						// per heartbeat and buys a second attempt inside the window.
+						//
+						// The EXISTING verification number is reused, deliberately. Rolling a new one
+						// would invalidate a reply already in flight and turn a slow handshake into a
+						// failed one.
+						else
+						{
+							SERVERREGISTRY_RequestServerVerification ( *currentUnverifiedServer );
+						}
 					}
 					else
 					{

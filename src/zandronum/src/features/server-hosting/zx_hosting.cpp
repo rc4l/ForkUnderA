@@ -82,9 +82,18 @@ int				g_LastTickMs	= 0;
 // Enough to explain a failure, little enough that a chatty server cannot grow it without bound.
 const size_t kMaxRecent = 4096;
 
-// A minute. The registry verifies within seconds of an announcement; the rest is slack for a slow
-// round trip and a registry that is briefly busy.
-const int kReachTimeoutMs = 60000;
+// [rc4l] Ninety seconds, which is three announcements rather than the two a minute allowed.
+//
+// A minute was the same 60 seconds the registry uses to sweep a server it never managed to verify,
+// so the two clocks ran together and the retry could never beat the verdict. Servers announce every
+// 30 seconds and each announcement now gets a fresh verification request, so the question is simply
+// how many attempts fit before we answer. Two is not enough when the first can be lost in transit
+// and the countdown does not start until the server is up, part way into the first interval.
+//
+// Waiting longer is cheap because the panel says "checking" meanwhile, which is true. Saying
+// "nothing reached this port" to somebody whose port forward works is not, and it costs them an
+// evening in their router.
+const int kReachTimeoutMs = 90000;
 
 // [rc4l] Long enough that guessing it is not a strategy, and it only has to survive the lifetime of
 // one process. Drawn from the engine's RNG rather than anything the player can influence, and never
