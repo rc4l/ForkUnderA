@@ -501,10 +501,9 @@ const int kTabCount = 2;
 enum class BrowseKind { Public, Private };
 const int kBrowseCount = 2;
 
-// Browse rather than Play, because opening the browser means looking for a game to join far more
-// often than deciding to run one. Play is first on the row because it is the more deliberate act,
-// not because it is the more common one.
-static	BrowserTab		g_Tab = BrowserTab::Browse;
+// Play, matching where it sits on the row. Not reset per visit: the tab you left on is the tab you
+// come back to, so this is only where a fresh session starts.
+static	BrowserTab		g_Tab = BrowserTab::Play;
 static	BrowseKind		g_Browse = BrowseKind::Public;
 static	int				g_TabHot = -1;
 static	int				g_SubTabHot = -1;
@@ -1373,13 +1372,26 @@ public:
 		g_Tips.Clear( );
 		g_GlowPlaced = false;
 
-		// Per-tab memory is per-VISIT. The rows survive now, but their INDICES do not: the refresh
+		// Per-list memory is per-VISIT. The rows survive now, but their INDICES do not: the refresh
 		// below re-sorts as fresh replies land, so a saved position points at whichever server has
 		// since moved into that slot rather than at the one it was saved against.
-		for ( int i = 0; i < kTabCount; ++i )
+		//
+		// kBrowseCount, because these belong to the LIST and there is one per sub-tab. It read
+		// kTabCount while the two happened to be equal, which is the kind of agreement that holds
+		// until somebody adds a tab and then silently walks off the end of the array.
+		for ( int i = 0; i < kBrowseCount; ++i )
 		{
 			g_TabScroll[i] = 0;
 			g_TabSelected[i] = -1;
+		}
+
+		// [rc4l] The form has to be filled HERE as well as in SelectTab. A fresh session starts on
+		// PLAY without ever switching to it, so SelectTab never runs and the fields would come up
+		// empty on the one tab the browser now opens to.
+		if ( g_Tab == BrowserTab::Play )
+		{
+			LoadHostForm( );
+			g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
 		}
 
 		// [rc4l] THE LIST IS NOT CLEARED. It used to be, and that made every visit start on a spinner
