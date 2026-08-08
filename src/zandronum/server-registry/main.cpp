@@ -821,12 +821,19 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			const char *pszTarget = pByteStream->ReadString();
 			const std::string target = ( pszTarget != NULL ) ? pszTarget : "";
 
+			printf( "-> Punch: %s asked about %s (%s).\n", AddressFrom.ToString(), target.c_str(),
+				cookie.empty() ? "first leg, wants a cookie" : "second leg, with a cookie" );
+
 			if ( cookie.empty() )
 			{
 				// First leg: a cookie to the source, and nothing else.
 				const std::string issued = SERVERREGISTRY_IssueReachCookie( AddressFrom );
 				if ( issued.empty() )
-					return;			// too many in flight; silence is the safe refusal
+				{
+					printf( "-> Punch: no cookie for %s; the table is full or they hold too many.\n",
+						AddressFrom.ToString() );
+					return;			// too many in flight; silence is the safe refusal to THEM
+				}
 
 				g_MessageBuffer.Clear();
 				g_MessageBuffer.ByteStream.WriteLong( SRSC_PUNCHRESULT );
@@ -889,8 +896,27 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			g_MessageBuffer.ByteStream.WriteLong( static_cast<int>( verdict ));
 			NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 
+			// [rc4l] SAY WHY, INCLUDING WHEN THE ANSWER IS NO.
+			//
+			// Only the yes was ever logged, which meant a punch that quietly never happened looked
+			// exactly like a punch nobody asked for. There is no way to tell those apart from the
+			// outside, and "it should have worked" is not something an operator can act on. Every
+			// refusal has a reason and the reason is the interesting part.
 			if ( verdict != zx::PunchVerdict::Broker )
+			{
+				const char *pszWhy = "refused";
+				switch ( verdict )
+				{
+				case zx::PunchVerdict::NoSupport:	pszWhy = "the server cannot punch"; break;
+				case zx::PunchVerdict::NotListed:	pszWhy = "no verified entry for that server"; break;
+				case zx::PunchVerdict::RateLimited:	pszWhy = "too many requests from this address"; break;
+				case zx::PunchVerdict::BadCookie:	pszWhy = "the cookie was missing or wrong"; break;
+				default: break;
+				}
+
+				printf( "-> Punch: told %s no (%s).\n", AddressFrom.ToString(), pszWhy );
 				return;
+			}
 
 			// Tell the server where to aim. From the MAIN socket, because a server only accepts our
 			// instructions from the address it announced to: see the note on
