@@ -29,16 +29,6 @@ struct AddonFileRef
 {
 	std::string name;	// bare filename, as the loader will ask for it
 	std::string md5;	// lower-case hex; what the by-hash store is keyed on
-
-	// [rc4l] Bytes, or 0 when the entry does not say. Shown beside the name so the panel can answer
-	// "how big is this" before anything is fetched -- the same question the server list answers from
-	// SQF2_WAD_SIZES, which is not available here because there is no server to ask yet.
-	//
-	// Optional on purpose: an entry written before this existed still loads, and simply says nothing
-	// about size rather than claiming zero.
-	unsigned long long size;
-
-	AddonFileRef() : size(0) {}
 };
 
 struct AddonEntry

@@ -192,16 +192,6 @@ bool ReadFilesArray(Reader &r, std::vector<AddonFileRef> &out)
 					if (!ReadString(r, ref.md5))
 						return false;
 				}
-				else if (key == "size")
-				{
-					// Negative is not a size. Refusing rather than clamping keeps a typo visible
-					// instead of turning it into a plausible-looking zero.
-					int bytes = 0;
-					if (!ReadInt(r, bytes) || (bytes < 0))
-						return false;
-
-					ref.size = static_cast<unsigned long long>(bytes);
-				}
 				else if (!SkipValue(r))
 				{
 					return false;

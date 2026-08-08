@@ -41,6 +41,10 @@ FString FindIwadInEngineSearchPaths( const char *name );
 // entry whose files were missing started a server anyway and only wad_reload found out.
 FString FindFileInEngineSearchPaths( const char *name );
 
+// [rc4l] Bytes on disk, or 0 if it is not there. One stat, no reading -- which is what makes it
+// affordable to ask about every file of an entry while drawing.
+unsigned long long FileSizeOnDisk( const char *path );
+
 // [rc4l] Every copy of `name` in those same places, in search order, rather than just the first.
 //
 // One name is not one file. doom2.wad shipped as 1.666, 1.7, 1.8, 1.9, a French build, BFG Edition
