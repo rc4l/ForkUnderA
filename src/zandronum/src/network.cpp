@@ -256,8 +256,8 @@ static const std::vector<std::string> g_FreedoomDehackedHashes = {
 
 static	void			network_InitPWADList( void );
 static	void			network_Error( const char *pszError );
-static	SOCKET			network_AllocateSocket( void );
-static	bool			network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse );
+static	SOCKET			network_AllocateSocket( bool bWantDualStack, bool &bGotDualStack );
+static	bool			network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse, bool bDualStack );
 static	bool			network_GenerateLumpMD5HashAndWarnIfNeeded( const int LumpNum, const char *LumpName, FString &MD5Hash );
 static	void			network_CheckIfDuplicateLump( const int LumpNum ); // [AK]
 static	void			network_AddSpritesToList( std::set<AUTHENTICATELUMP_s> &list, const char *name, const std::set<char> frames, const LumpAuthenticationMode mode ); // [AK]
@@ -305,16 +305,16 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 		g_usLocalPort = usPort;
 
 		// Allocate a socket, and attempt to bind it to the given port.
-		g_NetworkSocket = network_AllocateSocket( );
+		g_NetworkSocket = network_AllocateSocket( true, g_bSocketIsDualStack );
 		// [BB] If we can't allocate a socket, sending / receiving net packets won't work.
 		if ( g_NetworkSocket == INVALID_SOCKET )
 			network_Error( "NETWORK_Construct: Couldn't allocate socket. You will not be able to host or join servers.\n" );
-		else if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false ) == false )
+		else if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false, g_bSocketIsDualStack ) == false )
 		{
 			bSuccess = true;
 			bool bSuccessIP = true;
 			usNewPort = g_usLocalPort;
-			while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false ) == false )
+			while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false, g_bSocketIsDualStack ) == false )
 			{
 				// Didn't find an available port. Oh well...
 				if ( usNewPort == g_usLocalPort )
@@ -355,8 +355,12 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 		// If we're not starting a server, setup a socket to listen for LAN servers.
 		if ( bAllocateLANSocket )
 		{
-			g_LANSocket = network_AllocateSocket( );
-			if ( network_BindSocketToPort( g_LANSocket, ulInAddr, DEFAULT_BROADCAST_PORT, true ) == false )
+			// [rc4l] v4 ON PURPOSE. LAN discovery is a broadcast to 255.255.255.255, and IPv6 has no
+			// broadcast at all -- it has multicast instead, which is a different protocol and a
+			// different address. A dual-stack socket here simply never sees a LAN server.
+			bool bLANDualStack = false;
+			g_LANSocket = network_AllocateSocket( false, bLANDualStack );
+			if ( network_BindSocketToPort( g_LANSocket, ulInAddr, DEFAULT_BROADCAST_PORT, true, bLANDualStack ) == false )
 			{
 				sprintf( szString, "network_BindSocketToPort: Couldn't bind LAN socket to port: %d. You will not be able to see LAN servers in the browser.", DEFAULT_BROADCAST_PORT );
 				network_Error( szString );
@@ -2016,24 +2020,33 @@ void network_Error( const char *pszError )
 // host can have the v6 stack disabled outright, and a socket that exists but will only ever hear v6
 // would make us invisible to every v4 player. If any part of that fails we close it and open exactly
 // the socket we always opened.
-static SOCKET network_AllocateSocket( void )
+// [rc4l] Reports what it got instead of writing the global itself.
+//
+// Two sockets are allocated and they do not have to agree: the LAN one asks for v4 outright, and
+// either can fall back on a machine with v6 switched off. While this assigned the global directly,
+// whichever socket was allocated LAST decided how EVERY packet was addressed, so a v4 LAN socket
+// silently told the main socket to stop mapping and the reverse broke LAN discovery just as quietly.
+static SOCKET network_AllocateSocket( bool bWantDualStack, bool &bGotDualStack )
 {
 	SOCKET	Socket;
 
-	Socket = socket( PF_INET6, SOCK_DGRAM, IPPROTO_UDP );
-	if ( Socket != INVALID_SOCKET )
+	bGotDualStack = false;
+
+	if ( bWantDualStack )
 	{
-		int off = 0;
-		if ( setsockopt( Socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&off, sizeof( off )) == 0 )
+		Socket = socket( PF_INET6, SOCK_DGRAM, IPPROTO_UDP );
+		if ( Socket != INVALID_SOCKET )
 		{
-			g_bSocketIsDualStack = true;
-			return ( Socket );
+			int off = 0;
+			if ( setsockopt( Socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&off, sizeof( off )) == 0 )
+			{
+				bGotDualStack = true;
+				return ( Socket );
+			}
+
+			closesocket( Socket );
 		}
-
-		closesocket( Socket );
 	}
-
-	g_bSocketIsDualStack = false;
 
 	// Allocate a socket.
 	Socket = socket( PF_INET, SOCK_DGRAM, IPPROTO_UDP );
@@ -2048,7 +2061,7 @@ static SOCKET network_AllocateSocket( void )
 
 //*****************************************************************************
 //
-bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse )
+bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse, bool bDualStack )
 {
 	int		iErrorCode;
 
@@ -2065,7 +2078,7 @@ bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, boo
 	// [rc4l] The bind has to match the SOCKET'S family rather than the caller's expectations. A
 	// dual-stack socket binds in6addr_any, which covers every v4 address too; handing it a
 	// sockaddr_in fails outright and the server never comes up at all.
-	if ( g_bSocketIsDualStack )
+	if ( bDualStack )
 	{
 		struct sockaddr_in6 address6;
 		memset( &address6, 0, sizeof( address6 ));
