@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] Route the main menu's FIRST entry through the Online/Offline choice, whatever that entry is.
+// [rc4l] Keep the main menu's FIRST entry leading somewhere useful, whatever a mod has done to it.
+//
+// Two cases, and the difference is whether anyone replaced our main menu.
+//
+// NOBODY DID. Our own menudef.txt makes index 0 "Play Now!" pointing straight at the browser, and
+// this file does nothing at all. One keypress, no question in between.
+//
+// A MOD DID. Then index 0 is theirs, leads into their flow, and taking it would be taking their game
+// away. It is rerouted through the Online/Offline choice instead, with their original destination
+// moved onto Offline, so nothing is lost and the browser becomes reachable.
 //
 // The problem this solves: the server browser hung off our own FUANewGameMenu, wired in by editing
 // the stock MENUDEF's "New Game" item. A mod's MENUDEF replaces ours wholesale -- MM8BDM and most
@@ -73,6 +82,21 @@ void RouteMainMenuThroughOnlineOffline()
 	// Idempotent: re-running (a second MENUDEF pass, a restart) must not capture our own menu as the
 	// "original", which would make Offline reopen the Online/Offline choice forever.
 	if (action == FName("FUANewGameMenu"))
+		return;
+
+	// [rc4l] NOBODY REPLACED THE MAIN MENU, so leave it alone: our own menudef.txt already sends
+	// "Play Now!" straight to the browser, and the Online/Offline step exists only to preserve a
+	// destination we would otherwise be taking away.
+	//
+	// Reaching the browser in two keypresses when one would do is a step that asks a question the
+	// player has already answered by pressing the first row of a menu called Play Now. The choice is
+	// worth keeping only where there IS something else to choose: under a mod that ships its own main
+	// menu, index 0 leads into that mod's flow, and Offline is what stops us stealing it.
+	//
+	// Testing the action rather than counting MENUDEF lumps is the more exact question. Plenty of
+	// mods add an OptionMenu and never touch MainMenu, and those should still get the direct route.
+	// What matters is whether index 0 is still ours, not whether a lump exists somewhere.
+	if (action == FName("ZA_Browser"))
 		return;
 
 	g_OriginalFirstAction = action;
