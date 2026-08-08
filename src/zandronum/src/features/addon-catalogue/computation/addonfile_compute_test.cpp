@@ -438,11 +438,16 @@ TEST(AddonFile, AFileFieldOfTheWrongShapeIsRefused)
 	const char *bad[] = {
 		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": 5 }] }",
 		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"md5\": 5 }] }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"size\": }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"notes\": }] }",
 		// [rc4l] An unknown key inside a file whose value cannot be skipped at all: the string never
 		// closes, so the skip fails rather than quietly swallowing the rest of the file.
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"size\": \"unterminated }] }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"size\": [1, 2 }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"notes\": \"unterminated }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"notes\": [1, 2 }] }",
+
+		// A size that is not a number, and one that is negative. Refused rather than clamped, so a
+		// typo stays visible instead of becoming a plausible zero.
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"size\": \"big\" }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"size\": -1 }] }",
 		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\" \"a.pk3\" }] }",
 		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\" \"md5\": \"x\" }] }",
 		"{ \"schema\": 1, \"name\": \"X\", \"files\": [ 5 ] }",
@@ -454,4 +459,41 @@ TEST(AddonFile, AFileFieldOfTheWrongShapeIsRefused)
 		EXPECT_FALSE(e.valid) << "accepted: " << bad[i];
 		EXPECT_FALSE(e.error.empty()) << "no reason given for: " << bad[i];
 	}
+}
+
+// ---------------------------------------------------------------- file sizes
+
+TEST(AddonFile, ReadsTheSizeOfEachFile)
+{
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": ["
+		"  { \"name\": \"big.pk3\",   \"md5\": \"aa3896cb47c781facab7ea7f39395201\", \"size\": 240857647 },"
+		"  { \"name\": \"small.pk3\", \"md5\": \"25b2a3c4f46e50f4016b640119aefae6\", \"size\": 1012005 }"
+		"] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(2u, e.files.size());
+	EXPECT_EQ(240857647ull, e.files[0].size);
+	EXPECT_EQ(1012005ull, e.files[1].size);
+}
+
+TEST(AddonFile, AnEntryWithoutSizesStillLoads)
+{
+	// [rc4l] Optional on purpose. Every entry written before sizes existed must keep working, and
+	// say nothing about size rather than claiming zero bytes.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(1u, e.files.size());
+	EXPECT_EQ(0ull, e.files[0].size) << "0 means unknown, and the panel draws nothing for it";
+}
+
+TEST(AddonFile, ZeroIsAcceptedAndMeansTheSameAsAbsent)
+{
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\", \"size\": 0 }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_EQ(0ull, e.files[0].size);
 }
