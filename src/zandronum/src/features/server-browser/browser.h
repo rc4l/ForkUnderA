@@ -54,6 +54,10 @@
 #include "gamemode.h"
 #include "network.h"
 
+#include "features/server-browser/computation/registrystatus_compute.h"
+
+#include <string>
+
 //*****************************************************************************
 //  DEFINES
 
@@ -275,6 +279,14 @@ LONG			BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer );
 // packets at a port we opened for two seconds.
 bool			BROWSER_GetServerRegistryAddress( NETADDRESS_s &out );
 
+// [rc4l] Whether a reply came from a registry this client actually queries.
+//
+// The receive path used to judge that by fua_serverregistry_host, which is the SERVER's announce
+// target and a different setting entirely. Point the two at different hosts, as any local-registry
+// test does, and every reply from the real registry was silently dropped: the reachability cookie
+// never arrived and the INTERNET option stayed white with nothing to say why.
+bool			BROWSER_IsServerRegistryAddress( const NETADDRESS_s &address );
+
 // [rc4l] True if we have an outstanding launcher query to this address. Lets the client's packet
 // loop tell a launcher reply from game traffic when both arrive from the server we are playing on.
 bool			BROWSER_IsAwaitingReplyFrom( const NETADDRESS_s &Address );
@@ -351,8 +363,18 @@ void			BROWSER_QueryServerRegistry( void );
 // [rc4l] Drives the query retry/give-up clock; call once per tic while the browser is open.
 void			BROWSER_ServerRegistryTick( void );
 // [rc4l] The registry answered but refused; stop retrying (see browser.cpp).
-void			BROWSER_ServerRegistryRefusedQuery( void );
+// [rc4l] Takes the reason now, rather than just "it said no". All three refusals are the registry's
+// own words about why, and throwing that away at the door is why a refused query and an unreachable
+// one looked identical on screen.
+void			BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus why );
 bool			BROWSER_WaitingForServerRegistryResponse( void );
+
+// [rc4l] What became of each registry in cl_fua_serverregistry_list, in list order, so the browser can
+// draw one bar per registry. Includes entries whose name never looked up: those used to be dropped
+// silently, which made a mistyped registry indistinguishable from an empty network.
+unsigned int	BROWSER_GetServerRegistryCount( void );
+bool			BROWSER_GetServerRegistryStatus( unsigned int index, std::string &host, int &port,
+					zx::RegistryStatus &status );
 void			BROWSER_QueryAllServers( void );
 LONG			BROWSER_CalcNumServers( void );
 

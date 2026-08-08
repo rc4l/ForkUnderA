@@ -49,6 +49,11 @@
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
+#include "features/addon-catalogue/zx_catalogue.h"
+#include "features/addon-catalogue/computation/hostplan_compute.h"
+#include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/wad-download/zx_wadsearch.h"
+#include "features/wadreload/zx_wadreload.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
@@ -179,9 +184,13 @@
 // there was and then clipped the moment one grew -- the label is drawn from the left, so a label too
 // long for its column runs under the field rather than being visibly cut, which reads as a typo
 // ("PREFERRED POR") instead of as a layout problem.
-#define SB_HOST_LABEL_W		112		// label column; the field takes the rest
 #define SB_HOST_BTN_H		18
-#define SB_HOST_BTN_W		120
+// [rc4l] Inset from its column rather than filling it. A button spanning every pixel of its column
+// reads as a bar the panel is made of instead of as a thing to press, and the two of them edge to
+// edge lost the gutter that says they are separate controls.
+#define SB_HOST_BTN_INSET	14
+#define SB_HOST_BTN_W		( SB_HOST_LIST_RIGHT - SB_HOST_LIST_LEFT - 2 * SB_HOST_BTN_INSET )
+#define SB_HOST_BTN_X		( SB_HOST_LIST_LEFT + SB_HOST_BTN_INSET )
 #define SB_HOST_MAXLEN		40
 
 // [rc4l] A row of mutually exclusive choices. Tall enough for the marker to be legible beside the
@@ -191,8 +200,41 @@
 // The button is pinned to the bottom of the panel rather than following the last setting. It is the
 // one thing on this screen you always want to reach, and a control that moves every time a row is
 // added is one you have to go looking for. The settings scroll behind it.
-#define SB_HOST_BTN_Y		( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H )
+// [rc4l] The host panel runs lower than the server list's detail box. That box stops where it does
+// to leave room for JOIN underneath it; this panel's button lives INSIDE it, so the same stopping
+// point was simply wasted height -- and the settings, which are the tallest thing here, were the
+// ones paying for it.
+#define SB_HOST_BOTTOM		( SB_DETAIL_BOTTOM + 26 )
+#define SB_HOST_BTN_Y		( SB_HOST_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H )
 #define SB_HOST_VIEW_TOP	( SB_HOST_TOP + SB_HOST_PAD + SB_HOST_LINE + 8 )
+
+// [rc4l] Two columns: WHAT to run on the left, how to run it on the right.
+//
+// Split at the same x the server list uses, so the HOST tab lines up with PUBLIC and PRIVATE and
+// switching tabs does not shift the layout under the pointer. The list has its own scroll because it
+// grows with the catalogue while the settings never do.
+#define SB_HOST_LIST_LEFT	( SB_HOST_LEFT + SB_HOST_PAD )
+#define SB_HOST_LIST_RIGHT	( SB_HOST_RCOL_LEFT - 12 )
+#define SB_HOST_RCOL_LEFT	296
+#define SB_HOST_RCOL_RIGHT	( SB_HOST_RIGHT - SB_HOST_PAD )
+
+// [rc4l] Wide enough for PREFERRED PORT, which is the longest label and the one that decides this.
+// At the server list's 418 split the column had ~130px for a label AND a field, so the label was cut
+// mid-word and the box was drawn over what was left of it.
+#define SB_HOST_RLABEL_W	100
+
+// [rc4l] The right column is ONE region showing one thing at a time: what the selection is, or the
+// settings behind a button. Stacking both and giving each a scrollbar meant two thin bars a few
+// pixels apart and content bleeding across the boundary between them, and the second bar was
+// answering a question ("which of these two am I scrolling") that nobody should have to ask.
+#define SB_HOST_RTOGGLE_H	SB_HOST_BTN_H
+#define SB_HOST_RTOGGLE_Y	SB_HOST_BTN_Y
+#define SB_HOST_RTOP_TOP	SB_HOST_VIEW_TOP
+#define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOGGLE_Y - 6 )
+#define SB_HOST_RTOP_H		( SB_HOST_RTOP_BOTTOM - SB_HOST_RTOP_TOP )
+#define SB_HOST_RBOT_TOP	SB_HOST_RTOP_TOP
+#define SB_HOST_RBOT_BOTTOM	SB_HOST_RTOP_BOTTOM
+#define SB_HOST_RBOT_H		SB_HOST_RTOP_H
 #define SB_HOST_VIEW_BOTTOM	( SB_HOST_BTN_Y - 10 )
 #define SB_HOST_VIEW_H		( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP )
 #define SB_HOST_BAR_W		2
@@ -212,6 +254,14 @@
 #define SB_REFRESH_H		14
 #define SB_REFRESH_X		( SB_PANEL_LEFT + 12 )
 #define SB_REFRESH_Y		( SB_FOOTER_Y - 3 )
+
+// [rc4l] The registry bars, sitting just right of the refresh button: they are about where the list
+// came from, which is what that button goes and fetches.
+#define SB_REGBAR_W			3
+#define SB_REGBAR_H			10
+#define SB_REGBAR_GAP		3
+#define SB_REGBAR_X			( SB_REFRESH_X + SB_REFRESH_W + 8 )
+#define SB_REGBAR_Y			( SB_REFRESH_Y + 2 )
 
 // [rc4l] The panel's content span, in virtual pixels. ComputePanelRect pads BOTH ends by the corner
 // radius, so the visible gap to the screen edge is ( SB_CONTENT_TOP - radius ) above and
@@ -434,6 +484,41 @@ static const char *const g_HostFieldTips[kHostFieldCount] = {
 static	zx::TextInput	g_HostFields[kHostFieldCount];
 static	int				g_HostFieldFocus = 0;
 static	int				g_HostFieldHot = -1;
+
+// [rc4l] WHAT to run, above the settings that say how. The catalogue answers the first question and
+// the fields answer the second, which is the same split as an entry's addon.json against the host's
+// own choices: the entry never names the server and the form never picks the files.
+//
+// -1 is Custom, meaning "whatever this client is running", which is what the form did before the
+// catalogue existed and still does for anything not in it.
+#define SB_HOST_CATALOGUE_CUSTOM	( -1 )
+#define SB_HOST_ENTRY_H				12
+
+static	int				g_HostEntrySel = SB_HOST_CATALOGUE_CUSTOM;
+static	int				g_HostEntryHot = -2;	// -2 is "none"; -1 is the Custom row
+
+// [rc4l] What we told the server to load, kept so the client can match it before joining.
+//
+// JoinOwnServer connected straight to the address, and the reason it could was that the server was
+// always running the files WE were running -- its command line came from ours. A catalogue entry
+// breaks that: the server loads the entry, this client is still on whatever it had, and the join is
+// refused for protected-lump authentication. So when an entry decided the files, the client reloads
+// onto them first.
+static	FString			g_HostEntryIwad;
+static	TArray<FString>	g_HostEntryPwads;
+
+// [rc4l] The list scrolls independently of the settings: it grows with the catalogue and they never
+// do, so sharing one offset would drag the form off screen as entries were added.
+static	int				g_HostListScroll = 0;
+
+// The detail region's own offset. An entry with many files scrolls here without moving the form.
+static	int				g_HostDetailScroll = 0;
+
+// [rc4l] The right column shows the description by default. The settings are one click away rather
+// than always on screen: almost nobody changes them, and the thing worth reading before pressing
+// START is what the selection will actually load.
+static	bool			g_HostShowSettings = false;
+static	bool			g_HostOnSettingsToggle = false;
 
 // Drag-selection in a host field, and when the last click landed -- the two things a field needs to
 // tell a double-click from two clicks, and a drag from a press.
@@ -1240,6 +1325,29 @@ public:
 		if ( address.IsEmpty( ))
 			return;
 
+		// [rc4l] A catalogue entry is the one case where the server is NOT running what we are, so
+		// connecting straight to it fails protected-lump authentication: the server has the entry's
+		// files and this client does not.
+		//
+		// RequestReload is what the browser's own join uses, and it is the reason this works where an
+		// earlier attempt did not. Queueing `wad_reload` and a `connect` behind it loses the connect,
+		// because the reload restarts the game loop and takes the queued command with it. This
+		// instead rewrites argv and throws CRestartException, so the connect RIDES the restart rather
+		// than waiting for it. It also validates every file before tearing anything down, so a bad
+		// PWAD leaves the running game alone.
+		if ( g_HostEntryIwad.IsNotEmpty( ))
+		{
+			const FString iwad = g_HostEntryIwad;
+			TArray<FString> pwads = g_HostEntryPwads;
+
+			g_HostEntryIwad = "";
+			g_HostEntryPwads.Clear( );
+
+			M_ClearMenus( );
+			zx::wadreload::RequestReload( iwad.GetChars( ), pwads, NULL, address.GetChars( ));
+			return;
+		}
+
 		FString command;
 		command.Format( "connect %s", address.GetChars( ));
 		C_DoCommand( command.GetChars( ));
@@ -1956,17 +2064,19 @@ public:
 		// Only mention stragglers once there is something to compare them against.
 		if ( zx::ComputeShowsProgress( BROWSER_WaitingForServerRegistryResponse( ), counts ))
 		{
-			// [rc4l] Two different waits, and only one of them is a count. Servers that have never
-			// answered are stragglers worth numbering; the registry being outstanding is not, and
-			// wording it as one produced "querying 0 more" every time the browser was reopened onto a
-			// list it had kept -- which is now the ordinary case rather than a rare one.
-			FString more;
+			// [rc4l] Only the count says anything the rest of the footer does not.
+			//
+			// This used to fall back to "refreshing" when there was nothing to count, which is the
+			// same thing the button already says while it reads CHECKING: two labels for one fact,
+			// a few pixels apart. Stragglers ARE worth numbering, so that half stays; the bare
+			// restatement goes.
 			if ( counts.waiting > 0 )
+			{
+				FString more;
 				more.Format( "%s  querying %d more", Spinner( ), counts.waiting );
-			else
-				more.Format( "%s  refreshing", Spinner( ));
-			screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_ROWS_BOTTOM + 2,
-				more, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_ROWS_BOTTOM + 2,
+					more, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
 		}
 	}
 
@@ -2287,6 +2397,90 @@ public:
 		if ( config.maxPlayers > MAXPLAYERS )
 			config.maxPlayers = MAXPLAYERS;
 
+		// [rc4l] A catalogue entry decides the content; the fields above decided the identity. The
+		// two never overlap, which is why an entry has no server name and the form has no file list.
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
+		{
+			const zx::CatalogueEntry &chosen = entries[g_HostEntrySel];
+
+			std::vector<std::string> have;
+			for ( size_t i = 0; i < chosen.addon.files.size( ); ++i )
+			{
+				TArray<FString> resolved;
+				if ( D_AddFile( resolved, chosen.addon.files[i].name.c_str( ), false ) &&
+					( resolved.Size( ) > 0 ))
+					have.push_back( chosen.addon.files[i].name );
+			}
+
+			std::vector<std::string> iwads;
+			{
+				static const char *const kCandidates[] = {
+					"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
+					"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
+				};
+
+				for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
+				{
+					if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
+						iwads.push_back( kCandidates[i] );
+				}
+			}
+
+			zx::HostChoices choices;
+			choices.serverName = config.hostName;
+			choices.maxPlayers = config.maxPlayers;
+			choices.port = config.port;
+			choices.advertise = config.advertise;
+
+			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon,
+				zx::PickIwad( chosen.addon.iwad, iwads ),
+				zx::CatalogueServerCfgPath( chosen ), choices, have );
+
+			if ( !plan.blocker.empty( ) || !plan.ready )
+			{
+				// Said on the panel rather than only in the console, because the console is not where
+				// anyone pressing this button is looking.
+				FString why = plan.blocker.empty( )
+					? FString( "missing files; they are not downloadable from here yet" )
+					: FString( plan.blocker.c_str( ));
+
+				Printf( TEXTCOLOR_ORANGE "Cannot host %s: %s\n" TEXTCOLOR_NORMAL,
+					chosen.addon.name.c_str( ), why.GetChars( ));
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+				return;
+			}
+
+			config.iwad = plan.iwad;
+			config.pwads = plan.pwads;
+			config.execCfg = plan.execCfg;
+
+			g_HostEntryIwad = plan.iwad.c_str( );
+			g_HostEntryPwads.Clear( );
+			for ( size_t i = 0; i < plan.pwads.size( ); ++i )
+				g_HostEntryPwads.Push( FString( plan.pwads[i].c_str( )));
+
+			// [rc4l] The entry's own opening map, which is NOT the first of its rotation: Duel 40
+			// opens on START, a welcome map deliberately left out of the rotation. Falling back to
+			// the cfg means the rotation decides, and to map01 only when there is neither.
+			config.map = plan.map;
+			if ( config.map.empty( ) && plan.execCfg.empty( ))
+				config.map = "map01";
+
+			SaveHostForm( );
+			zx::ReachProbeRelease( );
+
+			if ( zx::HostStart( config ) == false )
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+
+			return;
+		}
+
+		// Custom: the server takes what this client is running, so there is nothing to reload onto.
+		g_HostEntryIwad = "";
+		g_HostEntryPwads.Clear( );
+
 		// What we are playing is what we will serve. FWadCollection knows the files by the names they
 		// were loaded under, which is exactly the form a command line wants.
 		config.iwad = ExtractFileBase( Wads.GetWadFullName( 1 ), true ).GetChars( );
@@ -2465,8 +2659,8 @@ public:
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
 
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
-		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
-		const int btnY = bForm ? HostFormButtonY( ) : ( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
+		const int btnX = SB_HOST_BTN_X;
+		const int btnY = bForm ? HostFormButtonY( ) : HostRunningButtonY( );
 
 		if (( x >= serverbrowser_ToScreenX( btnX )) &&
 			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
@@ -2479,14 +2673,41 @@ public:
 		if ( bForm == false )
 			return false;
 
+		// The catalogue rows, using the same y helper the drawing uses, bounded to the left column.
+		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
+		{
+			const int rowY = HostCatalogueRowY( row );
+			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
+				( y >= serverbrowser_ToScreenY( rowY )) &&
+				( y < serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H )) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_LIST_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT )))
+			{
+				return true;
+			}
+		}
+
+		// The toggle, which is present on both faces.
+		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
+			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )))
+		{
+			return true;
+		}
+
+		// The settings only exist while they are showing, so they only claim clicks then.
+		if ( !g_HostShowSettings )
+			return false;
+
 		int fieldY = HostFirstFieldY( );
 		for ( int i = 0; i < kHostFieldCount; ++i )
 		{
 			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
 				( y >= serverbrowser_ToScreenY( fieldY )) &&
 				( y < serverbrowser_ToScreenY( fieldY + SB_HOST_FIELD_H )) &&
-				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
-				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+				( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
 			{
 				return true;
 			}
@@ -2499,7 +2720,7 @@ public:
 			( y >= serverbrowser_ToScreenY( visY )) &&
 			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
 		{
-			const int rowX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W;
+			const int rowX = SB_HOST_RCOL_LEFT + SB_HOST_RLABEL_W;
 			const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
 
 			for ( int i = 0; i < kHostVisCount; ++i )
@@ -2569,8 +2790,8 @@ public:
 		// The button, wherever it is: the form's START sits under the fields, and the running panel's
 		// STOP sits at the bottom of the panel.
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
-		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
-		const int btnY = bForm ? HostFormButtonY( ) : ( SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H );
+		const int btnX = SB_HOST_BTN_X;
+		const int btnY = bForm ? HostFormButtonY( ) : HostRunningButtonY( );
 
 		if (( x >= serverbrowser_ToScreenX( btnX )) &&
 			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
@@ -2591,6 +2812,53 @@ public:
 		if ( bForm == false )
 			return false;
 
+		// The catalogue, before the fields: it is above them on screen and it decides what the rest
+		// of the panel is about.
+		g_HostEntryHot = -2;
+		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
+		{
+			const int rowY = HostCatalogueRowY( row );
+			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
+				( y >= serverbrowser_ToScreenY( rowY )) &&
+				( y < serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H )) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_LIST_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT )))
+			{
+				g_HostEntryHot = row;
+
+				if ( type == MOUSE_Click )
+				{
+					SetFocus( zx::BrowserFocus::Host );
+					g_HostOnButton = false;
+					g_HostEntrySel = row;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+		}
+
+		// The toggle.
+		g_HostOnSettingsToggle = false;
+		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
+			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )))
+		{
+			g_HostOnSettingsToggle = true;
+
+			if ( type == MOUSE_Click )
+			{
+				SetFocus( zx::BrowserFocus::Host );
+				g_HostOnButton = false;
+				g_HostShowSettings = !g_HostShowSettings;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+			return true;
+		}
+
+		if ( !g_HostShowSettings )
+			return false;
+
 		// The fields.
 		int fieldY = HostFirstFieldY( );
 		for ( int i = 0; i < kHostFieldCount; ++i )
@@ -2600,8 +2868,8 @@ public:
 
 			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
 				( y >= rowTop ) && ( y < rowBottom ) &&
-				( x >= serverbrowser_ToScreenX( SB_HOST_LEFT + SB_HOST_PAD )) &&
-				( x < serverbrowser_ToScreenX( SB_HOST_RIGHT - SB_HOST_PAD )))
+				( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
 			{
 				g_HostFieldHot = i;
 
@@ -2645,7 +2913,7 @@ public:
 			( y >= serverbrowser_ToScreenY( visY )) &&
 			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
 		{
-			const int rowX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W;
+			const int rowX = SB_HOST_RCOL_LEFT + SB_HOST_RLABEL_W;
 			const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
 
 			// Back into virtual units, because that is what the layout is expressed in.
@@ -2705,7 +2973,7 @@ public:
 		if (( index < 0 ) || ( index >= kHostFieldCount ))
 			return 0;
 
-		const int textX = SB_HOST_LEFT + SB_HOST_PAD + SB_HOST_LABEL_W + 5;
+		const int textX = SB_HOST_RCOL_LEFT + SB_HOST_RLABEL_W + 5;
 
 		// A masked field is measured on what is DRAWN, not on what is stored: the asterisks are a
 		// different width from the characters behind them, and hit-testing the real text would put
@@ -2780,13 +3048,60 @@ public:
 	//
 	// [rc4l] The settings' own scrollbar. Drawn only when there is something to scroll, because a
 	// full-height thumb on a list that fits is a control that looks live and does nothing.
+	// [rc4l] The one control that swaps the right column between what the selection is and how to
+	// run it. Drawn as a row rather than a pill so it reads as part of the column instead of
+	// competing with START SERVER below it.
+	// [rc4l] The line between the two columns: DrawSeparatorSpan turned on its side.
+	//
+	// Same colour, same peak alpha, same ComputeSeparatorAlpha fade, so it is the horizontal rule
+	// rotated rather than a second divider style that would read as a different KIND of boundary.
+	// The fade also does the work the old flat line could not: it ends the rule without an edge, so
+	// nothing has to decide where a hard stop looks deliberate.
+	//
+	// Stops short of the buttons at its foot. Running it down to them would box each into its own
+	// cell, and they are a pair sitting under the panel rather than two things in two cells.
+	void DrawHostColumnDivider( )
+	{
+		const int vx = ( SB_HOST_LIST_RIGHT + SB_HOST_RCOL_LEFT ) / 2;
+
+		const int x = serverbrowser_ToScreenX( vx );
+		const int top = serverbrowser_ToScreenY( SB_HOST_VIEW_TOP - 4 );
+		const int bottom = serverbrowser_ToScreenY( SB_HOST_BTN_Y - 10 );
+
+		// At least one physical pixel, for the same reason the horizontal rule insists on it: one
+		// virtual unit rounds to zero on a small window.
+		const int w = MAX( 1, serverbrowser_ToScreenX( vx + 1 ) - x );
+		const int h = bottom - top;
+
+		for ( int i = 0; i < h; i++ )
+		{
+			const int a = zx::ComputeSeparatorAlpha( i, h, 130 );
+			if ( a <= 0 )
+				continue;
+
+			screen->Dim( PalEntry( 150, 170, 215 ), a / 255.f, x, top + i, w, 1 );
+		}
+	}
+
+	void DrawHostSettingsToggle( )
+	{
+		// [rc4l] DrawRoundedButton, which IS the JOIN and START drawing. A button that merely
+		// resembled them would drift apart from them the first time either was touched.
+		DrawRoundedButton( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET, SB_HOST_RTOGGLE_Y,
+			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT - 2 * SB_HOST_BTN_INSET, SB_HOST_RTOGGLE_H,
+			g_HostShowSettings ? "BACK" : "SETTINGS",
+			g_HostOnSettingsToggle );
+	}
+
 	void DrawHostScrollBar( )
 	{
+		if ( !g_HostShowSettings )
+			return;
 		if ( HostMaxScroll( ) <= 0 )
 			return;
 
-		const int trackTop = serverbrowser_ToScreenY( SB_HOST_VIEW_TOP );
-		const int trackBottom = serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM );
+		const int trackTop = serverbrowser_ToScreenY( SB_HOST_RBOT_TOP );
+		const int trackBottom = serverbrowser_ToScreenY( SB_HOST_RBOT_BOTTOM );
 		const int trackH = trackBottom - trackTop;
 		if ( trackH <= 0 )
 			return;
@@ -2795,7 +3110,7 @@ public:
 		const int w = MAX( 1, serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W ) - x );
 
 		// Same arithmetic as the server list's bar -- one unit, so the two behave identically.
-		const int thumbH = zx::ComputeThumbHeight( trackH, SB_HOST_VIEW_H, HostContentH( ), 8 );
+		const int thumbH = zx::ComputeThumbHeight( trackH, SB_HOST_RBOT_H, HostContentH( ), 8 );
 		const int thumbTop = zx::ComputeThumbTop( trackH, thumbH, g_HostScroll, HostMaxScroll( ));
 
 		screen->Dim( PalEntry( 40, 42, 58 ), 0.55f, x, trackTop, w, trackH );
@@ -2819,32 +3134,78 @@ public:
 	// How tall the settings are, viewport or no viewport. What decides whether they scroll.
 	int HostContentH( )
 	{
-		return kHostFieldCount * HostRowPitch( ) + 4 + SB_CHOICE_H;
+		return kHostFieldCount * HostRowPitch( ) + 4 + SB_HOST_LINE + SB_CHOICE_H;
 	}
 
 	int HostMaxScroll( )
 	{
-		const int over = HostContentH( ) - SB_HOST_VIEW_H;
+		const int over = HostContentH( ) - SB_HOST_RBOT_H;
+		return ( over > 0 ) ? over : 0;
+	}
+
+	int HostDetailMaxScroll( )
+	{
+		const int over = HostDetailH( ) - SB_HOST_RTOP_H;
 		return ( over > 0 ) ? over : 0;
 	}
 
 	// [rc4l] Where the rows land ON SCREEN -- content position less the scroll. Both the drawing and
 	// the hit test read these, so a row can never be somewhere other than where it is clickable, and
 	// scrolling cannot separate the two.
+	// [rc4l] The catalogue list, and everything below it. One anchor, so a row drawn somewhere other
+	// than where it is clickable stays impossible -- the same rule the fields already follow.
+	int HostCatalogueRowCount( )
+	{
+		// Custom plus whatever is on disk.
+		return 1 + static_cast<int>( zx::CatalogueLoad( ).size( ));
+	}
+
+	int HostCatalogueY( )
+	{
+		return SB_HOST_VIEW_TOP - g_HostListScroll;
+	}
+
+	int HostCatalogueH( )
+	{
+		return HostCatalogueRowCount( ) * SB_HOST_ENTRY_H + 8;
+	}
+
+	// The y of one catalogue row. `row` is -1 for Custom, then 0.. for entries, so the selection
+	// value and the row index are the same number and cannot drift apart.
+	int HostCatalogueRowY( int row )
+	{
+		// [rc4l] No heading offset: EXPERIENCES is gone and the rows begin where it was. A label over
+		// three obvious rows was a line spent saying what the rows already said.
+		return HostCatalogueY( ) + ( row + 1 ) * SB_HOST_ENTRY_H;
+	}
+
+	// The settings live in the right column now, so they start at the top of the viewport rather than
+	// below the list. They keep their own scroll for the case where the panel is short.
 	int HostFirstFieldY( )
 	{
-		return SB_HOST_VIEW_TOP - g_HostScroll;
+		return SB_HOST_RBOT_TOP - g_HostScroll;
 	}
 
 	int HostVisibilityY( )
 	{
-		return HostFirstFieldY( ) + kHostFieldCount * HostRowPitch( ) + 4;
+		return HostFirstFieldY( ) + kHostFieldCount * HostRowPitch( ) + 4 + SB_HOST_LINE;
 	}
 
 	// The button no longer follows the content: it is pinned to the bottom of the panel.
 	int HostFormButtonY( )
 	{
 		return SB_HOST_BTN_Y;
+	}
+
+	// [rc4l] Where the running panel's button sits, in ONE place.
+	//
+	// It was written out twice, and the two copies disagreed: the drawing measured from
+	// SB_DETAIL_BOTTOM and the hit test from SB_HOST_BOTTOM, which is 26 units lower. The button is
+	// 18 tall, so the clickable region did not overlap the button at all and STOP SERVER could not be
+	// pressed by mouse at any point on it.
+	int HostRunningButtonY( )
+	{
+		return SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H;
 	}
 
 	// Whether a row at `vy` is inside the viewport at all. A control scrolled out of sight must not
@@ -2859,6 +3220,13 @@ public:
 	bool HostRowFullyVisible( int vy, int vh )
 	{
 		return zx::RowFullyInView( vy, vh, SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM );
+	}
+
+	// The detail region clips to its own box, so a file list longer than the box stops at the rule
+	// instead of running into the form below it.
+	bool HostDetailRowVisible( int vy, int vh )
+	{
+		return zx::RowFullyInView( vy, vh, SB_HOST_RTOP_TOP, SB_HOST_RTOP_BOTTOM );
 	}
 
 	//*************************************************************************
@@ -2937,7 +3305,7 @@ public:
 		const bool bLive = zx::HostIsActive( );
 
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
-		const int h = SB_DETAIL_BOTTOM - SB_HOST_TOP;
+		const int h = SB_HOST_BOTTOM - SB_HOST_TOP;
 
 		const zx::PanelColor topCol = { 22, 24, 34, 235 };
 		const zx::PanelColor botCol = { 10, 11, 17, 245 };
@@ -2956,10 +3324,18 @@ public:
 			return;
 		}
 
-		// The heading says what the screen does, not what it is called. "HOST" is already on the tab.
-		screen->DrawText( SmallFont, CR_WHITE, x, SB_HOST_TOP + SB_HOST_PAD,
-			"RUN A SERVER ON THIS MACHINE",
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		// [rc4l] The heading names the ACTION, not the screen: "HOST" is already on the tab, and what
+		// someone arriving here has to do is pick something. Centred over both columns, since it
+		// belongs to the panel rather than to either one of them.
+		{
+			const char *const heading = "SELECT AN EXPERIENCE TO HOST";
+			const int headingW = SmallFont->StringWidth( heading );
+
+			screen->DrawText( SmallFont, CR_WHITE,
+				SB_HOST_LEFT + (( SB_HOST_RIGHT - SB_HOST_LEFT ) - headingW ) / 2,
+				SB_HOST_TOP + SB_HOST_PAD, heading,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
 
 		// [rc4l] The settings are a MASKED, SCROLLING area. Everything between these two calls is
 		// drawn at its scrolled position and cut off at the viewport edges -- so a row half in and
@@ -2973,21 +3349,38 @@ public:
 		PushClip( serverbrowser_ToScreenY( SB_HOST_VIEW_TOP ),
 			serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM ));
 
-		int y = HostFirstFieldY( );
-		for ( int i = 0; i < kHostFieldCount; ++i )
-		{
-			DrawHostField( i, x, y );
-			y += HostRowPitch( );
-		}
+		DrawHostCatalogue( SB_HOST_LIST_LEFT );
 
-		DrawHostVisibility( x, HostVisibilityY( ));
+		// One face at a time. Both used to be on screen at once, each with its own bar, and the
+		// settings bled over the boundary because two regions in one clip cannot mask each other.
+		if ( g_HostShowSettings )
+		{
+			int y = HostFirstFieldY( );
+			for ( int i = 0; i < kHostFieldCount; ++i )
+			{
+				DrawHostField( i, SB_HOST_RCOL_LEFT, y );
+				y += HostRowPitch( );
+			}
+
+			DrawHostVisibility( SB_HOST_RCOL_LEFT, HostVisibilityY( ));
+		}
+		else
+		{
+			DrawHostDetail( );
+		}
 
 		PopClip( );
 		DrawHostScrollBar( );
+		DrawHostColumnDivider( );
+
+		// [rc4l] OUTSIDE the clip, like START SERVER beside it. Both buttons sit at the panel's foot,
+		// which is below the scrolling viewport, so drawing this one inside it cost the button its
+		// background and left the label floating.
+		DrawHostSettingsToggle( );
 
 		const int btnY = HostFormButtonY( );
-		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
-		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, "START SERVER",
+		const int btnX = SB_HOST_BTN_X;
+		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, "PLAY NOW!",
 			g_HostOnButton || g_HostButtonHot );
 
 		if ( g_HostOnButton && ( g_Focus == zx::BrowserFocus::Host ))
@@ -3001,8 +3394,10 @@ public:
 	// form scrolling, which would put the START button somewhere the player has to go looking for it.
 	void DrawHostField( int index, int x, int y )
 	{
-		const int fieldX = x + SB_HOST_LABEL_W;
-		const int fieldW = SB_HOST_RIGHT - SB_HOST_PAD - fieldX;
+		// [rc4l] Measured from the right COLUMN, not the panel. Using the panel's edge here is what
+		// pushed the boxes off the end of it when the form stopped owning the full width.
+		const int fieldX = x + SB_HOST_RLABEL_W;
+		const int fieldW = SB_HOST_RCOL_RIGHT - fieldX;
 
 		// [rc4l] Every one of these has to be false for a field to look focused. Leaving the
 		// visibility row out meant the last field kept its gold label and its caret while the row had
@@ -3098,20 +3493,247 @@ public:
 	// Local is the default and always works. Global depends on a port being forwarded, which we cannot
 	// know from in here -- so it is offered, attempted, and then reported honestly rather than being
 	// predicted.
+	// [rc4l] What the selected entry will actually do, above the settings in the right column.
+	//
+	// Everything here is already computed for the START press -- PickIwad decides the IWAD and
+	// HostPlan decides the files -- and none of it was shown anywhere. A player choosing between two
+	// entries was choosing blind.
+	// [rc4l] The description column: what the selection IS, in the order someone reads it.
+	//
+	// Title, the description in full, then a rule, then the files. The rule earns its place: the
+	// description is prose about the mod and the file list is a fact about your disk, and with
+	// nothing between them the WADs read as a fourth sentence.
+	int HostDetailWrapWidth( )
+	{
+		return SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
+	}
+
+	// How many lines the summary needs once wrapped, so the height and the drawing agree.
+	int HostDetailSummaryLines( const std::string &summary )
+	{
+		if ( summary.empty( ))
+			return 0;
+
+		FBrokenLines *lines = V_BreakLines( SmallFont, HostDetailWrapWidth( ), summary.c_str( ));
+		int count = 0;
+		while ( lines[count].Width >= 0 )
+			count++;
+		V_FreeBrokenLines( lines );
+
+		return count;
+	}
+
+	int HostDetailH( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return BigFont->GetHeight( ) + 4 + 6 + SB_HOST_LINE + 10;
+
+		const zx::AddonEntry &a = entries[g_HostEntrySel].addon;
+
+		return BigFont->GetHeight( ) + 4
+			+ 6								// the rule under the title
+			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
+			+ 4 + 6							// the rule above the files
+			+ SB_HOST_LINE					// the IWAD, listed with them
+			+ static_cast<int>( a.files.size( )) * SB_HOST_LINE
+			+ 10;
+	}
+
+	// Which IWAD this entry will land on, in the same shape as the files below it, because it is one
+	// of them: the game the PWADs sit on top of. Named plainly, so a host who wanted Doom II and is
+	// getting Freedoom sees freedoom2.wad and knows.
+	FString HostDetailIwadRow( const zx::AddonEntry &addon )
+	{
+		std::vector<std::string> iwads;
+		static const char *const kCandidates[] = {
+			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
+			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
+		};
+
+		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
+		{
+			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
+				iwads.push_back( kCandidates[i] );
+		}
+
+		const zx::IwadPick pick = zx::PickIwad( addon.iwad, iwads );
+
+		FString row;
+		if ( pick.choice == zx::IwadChoice::None )
+			row.Format( "- %s", pick.wanted.empty( ) ? "no game to run on" : pick.wanted.c_str( ));
+		else
+			row.Format( "+ %s", pick.iwad.c_str( ));
+
+		return row;
+	}
+
+	// The title names what the whole column is about, so it is the one line that should not look like
+	// the rest: BigFont, centred over the column.
+	void DrawHostDetailTitle( const char *title, int y )
+	{
+		if ( !HostDetailRowVisible( y, BigFont->GetHeight( )))
+			return;
+
+		const int w = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
+		screen->DrawText( BigFont, CR_WHITE,
+			SB_HOST_RCOL_LEFT + ( w - BigFont->StringWidth( title )) / 2, y, title,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+	}
+
+	void DrawHostDetail( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		const int x = SB_HOST_RCOL_LEFT;
+		int y = SB_HOST_RTOP_TOP - g_HostDetailScroll;
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+		{
+			DrawHostDetailTitle( "Custom setup", y );
+			y += BigFont->GetHeight( ) + 4;
+
+			if ( HostDetailRowVisible( y, 2 ))
+				DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+			y += 6;
+
+			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+			{
+				screen->DrawText( SmallFont, CR_WHITE, x, y, "Serves what you are playing",
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
+			return;
+		}
+
+		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+
+		DrawHostDetailTitle( addon.name.c_str( ), y );
+		y += BigFont->GetHeight( ) + 4;
+
+		// [rc4l] A rule under the title as well, so the column reads as three bands -- what it is
+		// called, what it is, what it loads -- rather than a heading with a paragraph stuck to it.
+		if ( HostDetailRowVisible( y, 2 ))
+			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+		y += 6;
+
+		// Wrapped rather than cut. A summary is a sentence, and truncating one reads as a bug.
+		if ( !addon.summary.empty( ))
+		{
+			FBrokenLines *lines = V_BreakLines( SmallFont, HostDetailWrapWidth( ),
+				addon.summary.c_str( ));
+
+			for ( int i = 0; lines[i].Width >= 0; ++i )
+			{
+				if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+				{
+					screen->DrawText( SmallFont, CR_WHITE, x, y, lines[i].Text,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				}
+				y += SB_HOST_LINE;
+			}
+
+			V_FreeBrokenLines( lines );
+		}
+
+		// The same faded rule the server detail panel puts between what a server IS and what it wants
+		// you to load, for exactly the same reason.
+		y += 4;
+		if ( HostDetailRowVisible( y, 2 ))
+			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+		y += 6;
+
+		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+		{
+			const FString iwadRow = HostDetailIwadRow( addon );
+			screen->DrawText( SmallFont, ( iwadRow[0] == '+' ) ? CR_GRAY : CR_DARKRED,
+				x, y, iwadRow,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		}
+		y += SB_HOST_LINE;
+
+		for ( size_t i = 0; i < addon.files.size( ); ++i )
+		{
+			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+			{
+				TArray<FString> resolved;
+				const bool bHave = D_AddFile( resolved, addon.files[i].name.c_str( ), false ) &&
+					( resolved.Size( ) > 0 );
+
+				FString line;
+				line.Format( "%s %s", bHave ? "+" : "-", addon.files[i].name.c_str( ));
+
+				screen->DrawText( SmallFont, bHave ? CR_GRAY : CR_DARKRED, x, y, line,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
+			y += SB_HOST_LINE;
+		}
+	}
+
+	// [rc4l] WHAT to run. The catalogue answers this; the fields beside it answer how.
+	//
+	// Custom is a ROW rather than a mode, so the manual form is one of the choices instead of a
+	// separate place to go. Menu depth is what stops people finding things, and this screen has none.
+	void DrawHostCatalogue( int x )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < static_cast<int>( entries.size( )); ++row )
+		{
+			const int rowY = HostCatalogueRowY( row );
+			if ( !HostRowVisible( rowY, SB_HOST_ENTRY_H ))
+				continue;
+
+			const bool bSel = ( row == g_HostEntrySel );
+			const bool bHot = ( row == g_HostEntryHot );
+
+			// The selected row gets a bar behind it rather than only a colour: on a dark panel a
+			// colour change alone is easy to miss, and this is the one choice that decides what the
+			// whole rest of the screen is about.
+			if ( bSel )
+			{
+				screen->Dim( PalEntry( 60, 70, 96 ), 0.55f,
+					serverbrowser_ToScreenX( x - 4 ),
+					serverbrowser_ToScreenY( rowY - 1 ),
+					serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT ) -
+						serverbrowser_ToScreenX( x - 4 ),
+					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H - 1 ) -
+						serverbrowser_ToScreenY( rowY - 1 ));
+			}
+
+			const EColorRange col = bSel ? CR_WHITE : ( bHot ? CR_GOLD : CR_GRAY );
+
+			FString label;
+			if ( row == SB_HOST_CATALOGUE_CUSTOM )
+				label = "Custom setup";
+			else
+				label = entries[row].addon.name.c_str( );
+
+			// [rc4l] Centred in the row rather than drawn at its top edge. The highlight bar is
+			// SB_HOST_ENTRY_H tall and the glyphs are shorter, so drawing at rowY sat the text high
+			// inside its own bar.
+			screen->DrawText( SmallFont, col, x,
+				rowY + ( SB_HOST_ENTRY_H - SmallFont->GetHeight( )) / 2, label,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+			// No file count or "current" here on purpose: the detail panel beside this already says
+			// the files, the IWAD and what Custom means, and a narrow list repeating it crowded
+			// itself for no new information.
+		}
+	}
+
 	void DrawHostVisibility( int x, int y )
 	{
-		if ( HostRowFullyVisible( y, SB_CHOICE_H ))
+		if ( HostRowFullyVisible( y - SB_HOST_LINE, SB_HOST_LINE ))
 		{
-			screen->DrawText( SmallFont, CR_DARKGRAY, x,
-				y + ( SB_CHOICE_H - SmallFont->GetHeight( )) / 2 + 1, "VISIBILITY",
+			screen->DrawText( SmallFont, CR_DARKGRAY, x, y - SB_HOST_LINE, "VISIBILITY",
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
 
-		const int rowX = x + SB_HOST_LABEL_W;
-		const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
+		const int rowX = x;
+		const int rowW = SB_HOST_RCOL_RIGHT - x;
 
 		static const char *const labels[kHostVisCount] = {
-			"Internet", "Local network",
+			"Internet", "Home",
 		};
 
 		// [rc4l] INTERNET says whether it will actually work, before anyone commits to it.
@@ -3221,8 +3843,8 @@ public:
 		y += 10;
 
 		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
-		const int btnX = SB_HOST_LEFT + ( w / 2 ) - ( SB_HOST_BTN_W / 2 );
-		const int btnY = SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H;
+		const int btnX = SB_HOST_BTN_X;
+		const int btnY = HostRunningButtonY( );
 
 		const char *const label = ( state == zx::HostState::Failed ) ? "BACK" : "STOP SERVER";
 		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, label,
@@ -4217,11 +4839,65 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] One small bar per configured server registry, beside the refresh button.
+	//
+	// The browser queries several registries and unions the results, and until now the screen said
+	// nothing about which ones answered. A mistyped registry, a dead local one and a healthy network
+	// all produced the same list, so there was no way to tell "nobody is hosting" from "we never
+	// heard back". Each bar carries its address and its status code on hover.
+	//
+	// Bars rather than text because the count is open-ended: a player may list several registries, and
+	// names as long as registry.cantstopscrolling.net do not fit a footer three times over.
+	void DrawRegistryBars( )
+	{
+		const unsigned int count = BROWSER_GetServerRegistryCount( );
+		if ( count == 0 )
+			return;
+
+		int x = SB_REGBAR_X;
+
+		for ( unsigned int i = 0; i < count; ++i )
+		{
+			std::string host;
+			int port = 0;
+			zx::RegistryStatus status = zx::RegistryStatus::Pending;
+
+			if ( BROWSER_GetServerRegistryStatus( i, host, port, status ) == false )
+				continue;
+
+			PalEntry colour;
+			switch ( zx::RegistryToneFor( status ))
+			{
+			case zx::RegistryTone::Good:	colour = PalEntry( 80, 200, 80 ); break;
+			case zx::RegistryTone::Warn:	colour = PalEntry( 220, 170, 60 ); break;
+			case zx::RegistryTone::Bad:		colour = PalEntry( 200, 60, 60 ); break;
+			default:						colour = PalEntry( 110, 110, 110 ); break;
+			}
+
+			const int left = serverbrowser_ToScreenX( x );
+			const int right = serverbrowser_ToScreenX( x + SB_REGBAR_W );
+			const int top = serverbrowser_ToScreenY( SB_REGBAR_Y );
+			const int bottom = serverbrowser_ToScreenY( SB_REGBAR_Y + SB_REGBAR_H );
+
+			screen->Dim( colour, 0.85f, left, top, MAX( right - left, 1 ), MAX( bottom - top, 1 ));
+
+			// [rc4l] The hover target is padded either side of the bar itself, which is only a few
+			// pixels wide: a two pixel target is one nobody can hit on purpose.
+			serverbrowser_Tip( x - 2, SB_REGBAR_Y - 2, SB_REGBAR_W + 4, SB_REGBAR_H + 4,
+				zx::RegistryTooltip( host, port, status ).c_str( ));
+
+			x += SB_REGBAR_W + SB_REGBAR_GAP;
+		}
+	}
+
+	//*************************************************************************
+	//
 	void DrawFooter( zx::BrowserPhase phase, const zx::BrowserCounts &counts )
 	{
 		const int y = SB_FOOTER_Y;
 
 		DrawRefreshButton( );
+		DrawRegistryBars( );
 		FString text;
 
 		// [rc4l] The transfer used to be drawn here as well, because this was the only screen that had

@@ -251,7 +251,7 @@ void ReachProbeRequest( int port )
 		return;
 
 	// A usable cached answer for this exact question.
-	if ( g_HaveCached && ProbeCacheUsable( g_CachedKey, CurrentKey( port ), I_MSTime( ) - g_CachedAtMs ))
+	if ( g_HaveCached && ProbeCacheUsable( g_CachedKey, CurrentKey( port ), I_MSTime( ) - g_CachedAtMs, g_CachedPhase ))
 	{
 		g_Port = port;
 		g_Phase = g_CachedPhase;
@@ -305,7 +305,7 @@ ProbePhase ReachProbeStatus( int port )
 	if (( g_Port == port ) && ( g_Phase != ProbePhase::Idle ))
 		return g_Phase;
 
-	if ( g_HaveCached && ProbeCacheUsable( g_CachedKey, CurrentKey( port ), I_MSTime( ) - g_CachedAtMs ))
+	if ( g_HaveCached && ProbeCacheUsable( g_CachedKey, CurrentKey( port ), I_MSTime( ) - g_CachedAtMs, g_CachedPhase ))
 		return g_CachedPhase;
 
 	return ProbePhase::Idle;
@@ -338,6 +338,33 @@ void ReachProbeShutdown( void )
 	ReachProbeForget( );
 }
 
+// [rc4l] Everything the check knows about itself, for fua_portstatus. A white INTERNET option covers
+// four different failures and they want different fixes, so the state has to be readable.
+std::string ReachProbeDebugText( void )
+{
+	static const char *const phases[] = {
+		"idle", "waiting for the registry's cookie", "waiting for the probe", "reachable",
+		"unreachable", "the registry never answered",
+	};
+
+	std::string out = "port " + std::to_string( g_Port ) + ": "
+		+ phases[static_cast<int>( g_Phase )] + "\n";
+
+	out += "cookie: " + ( g_Cookie.empty( ) ? std::string( "(none yet)" ) : g_Cookie ) + "\n";
+	out += "public ip as the registry sees us: "
+		+ ( g_PublicIp.empty( ) ? std::string( "(never told)" ) : g_PublicIp ) + "\n";
+	out += std::string( "listener on the port under test: " )
+		+ (( g_Listen != INVALID_SOCKET ) ? "open" : "closed" ) + "\n";
+
+	NETADDRESS_s registry;
+	if ( BROWSER_GetServerRegistryAddress( registry ))
+		out += std::string( "registry resolves to " ) + registry.ToString( ) + "\n";
+	else
+		out += "registry does NOT resolve, so no request can leave\n";
+
+	return out;
+}
+
 } // namespace zx
 
 //*****************************************************************************
@@ -348,4 +375,13 @@ CCMD( fua_recheckport )
 {
 	zx::ReachProbeForget( );
 	Printf( "Port reachability will be checked again next time the HOST tab asks.\n" );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Which leg the check is on, because "the button is white" covers four different failures and
+// they need different fixes. Reads state, changes none.
+CCMD( fua_portstatus )
+{
+	Printf( "%s", zx::ReachProbeDebugText( ).c_str( ));
 }

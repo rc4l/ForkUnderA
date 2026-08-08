@@ -51,6 +51,7 @@
 #include "networkheaders.h"
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/launcherfields_compute.h"
+#include "features/server-browser/computation/registrystatus_compute.h"
 #include "features/launcher-protocol/computation/segmentreassembly_compute.h"
 #include "c_dispatch.h"
 #include "cl_main.h"
@@ -78,6 +79,23 @@ static	SERVER_t		g_BrowserServerList[MAX_BROWSER_SERVERS];
 // whole network no matter which server registry each server chose to live on. Reading a list of
 // addresses carries no authority, so fanning it out costs nothing.
 static	TArray<NETADDRESS_s>	g_ServerRegistryAddresses;
+
+// [rc4l] What became of each registry in the list, kept so the browser can SHOW it.
+//
+// One row per entry in cl_fua_serverregistry_list, including the ones that never produced an address:
+// a name that will not look up is exactly the case that used to vanish into a console warning nobody
+// reads, so it has to survive here or the bar for it can never be drawn. See
+// computation/registrystatus_compute.h for why each status exists.
+struct SERVERREGISTRYSTATE_s
+{
+	std::string			host;			// as written in the list
+	int					port;			// 0 when the lookup never got that far
+	NETADDRESS_s		address;
+	bool				bResolved;
+	zx::RegistryStatus	status;
+};
+
+static	std::vector<SERVERREGISTRYSTATE_s>	g_ServerRegistryStates;
 
 // Message buffer for sending messages to the server registry.
 static	NETBUFFER_s		g_ServerRegistryBuffer;
@@ -116,6 +134,56 @@ static	int				g_lServerRegistryAttempts;
 // it is a self-inflicted denial of service.
 static const ULONG		SERVERREGISTRY_QUERY_TIMEOUT_MS = 4000;
 static const int		SERVERREGISTRY_QUERY_MAX_ATTEMPTS = 3;
+
+// Mark every registry we are still waiting on, without disturbing one that already answered.
+static void browser_SetPendingRegistryStates( void )
+{
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		if ( g_ServerRegistryStates[i].bResolved )
+			g_ServerRegistryStates[i].status = zx::RegistryStatus::Pending;
+	}
+}
+
+// [rc4l] Turn "still waiting" into "nothing came back" once no further attempt will be made to that
+// registry, and the last one we did make has timed out.
+//
+// Two ways there will be no further attempt: we ran out of retries, or somebody else answered and the
+// retry loop stopped. Both leave a silent registry that deserves a verdict.
+static void browser_ExpirePendingRegistries( void )
+{
+	const bool bNoMoreTries = ( g_bWaitingForServerRegistryResponse == false ) ||
+		( g_lServerRegistryAttempts >= SERVERREGISTRY_QUERY_MAX_ATTEMPTS );
+
+	if ( bNoMoreTries == false )
+		return;
+
+	// Unsigned arithmetic, so this stays correct across the I_MSTime() wrap.
+	if (( I_MSTime( ) - g_ulServerRegistryQuerySentMS ) < SERVERREGISTRY_QUERY_TIMEOUT_MS )
+		return;
+
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		if ( g_ServerRegistryStates[i].status == zx::RegistryStatus::Pending )
+			g_ServerRegistryStates[i].status = zx::RegistryStatus::NoAnswer;
+	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] Record what one registry did, found by the address the packet came from. A sender we do not
+// have a row for is ignored rather than guessed at.
+static void browser_NoteRegistryStatus( const NETADDRESS_s &from, zx::RegistryStatus status )
+{
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		if ( g_ServerRegistryStates[i].bResolved && g_ServerRegistryStates[i].address.Compare( from ))
+		{
+			g_ServerRegistryStates[i].status = status;
+			return;
+		}
+	}
+}
 
 // [CW] The amount of teams sent to us.
 static ULONG			g_ulNumberOfTeams = 0;
@@ -718,6 +786,24 @@ bool BROWSER_GetServerRegistryAddress( NETADDRESS_s &out )
 
 //*****************************************************************************
 //
+// [rc4l] See browser.h. Whether a packet came from a registry this client actually talks to.
+//
+// Deliberately the WHOLE list, because browser_QueryServerRegistries sends to the whole list. Judging
+// a reply by one address, or by the server-side announce cvar, meant we could send to a registry and
+// then throw its answer away.
+bool BROWSER_IsServerRegistryAddress( const NETADDRESS_s &address )
+{
+	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
+	{
+		if ( g_ServerRegistryAddresses[i].Compare( address ))
+			return true;
+	}
+
+	return false;
+}
+
+//*****************************************************************************
+//
 // [rc4l] See browser.h. Marks every listed server for a re-check while leaving it on the list.
 void BROWSER_RefreshListedServers( void )
 {
@@ -822,6 +908,9 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 {
 	// No longer waiting for a server registry response.
 	g_bWaitingForServerRegistryResponse = false;
+
+	// This one answered, whatever the others are doing.
+	browser_NoteRegistryStatus( NETWORK_GetFromAddress( ), zx::RegistryStatus::Ok );
 
 	while ( true )
 	{
@@ -1351,6 +1440,7 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 static void browser_ResolveServerRegistries( void )
 {
 	g_ServerRegistryAddresses.Clear();
+	g_ServerRegistryStates.clear();
 
 	// Kick a background refresh if the cache is stale. It never blocks and never affects THIS query --
 	// a newly fetched list takes effect the next time the browser is opened.
@@ -1361,10 +1451,20 @@ static void browser_ResolveServerRegistries( void )
 
 	for ( size_t i = 0; i < entries.size( ); ++i )
 	{
+		// [rc4l] Recorded BEFORE the lookup, so an entry that never produces an address still has a
+		// row. It used to be skipped outright, which is why "your registry name is wrong" and "there
+		// are no servers" looked identical on screen.
+		SERVERREGISTRYSTATE_s state;
+		state.host = entries[i].host;
+		state.port = 0;
+		state.bResolved = false;
+		state.status = zx::RegistryStatus::LookupFailed;
+
 		NETADDRESS_s address;
 		if ( address.LoadFromString( entries[i].host.c_str( )) == false )
 		{
 			Printf( "Warning: can't resolve server registry \"%s\" -- skipping it.\n", entries[i].host.c_str( ));
+			g_ServerRegistryStates.push_back( state );
 			continue;
 		}
 
@@ -1372,6 +1472,12 @@ static void browser_ResolveServerRegistries( void )
 		// port or takes the default. LoadFromString never sees a port here.
 		address.SetPort( entries[i].port != 0 ? static_cast<USHORT>( entries[i].port ) : g_usServerRegistryPort );
 
+		state.address = address;
+		state.bResolved = true;
+		state.port = ( entries[i].port != 0 ) ? entries[i].port : static_cast<int>( g_usServerRegistryPort );
+		state.status = zx::RegistryStatus::Pending;
+
+		g_ServerRegistryStates.push_back( state );
 		g_ServerRegistryAddresses.Push( address );
 	}
 
@@ -1411,6 +1517,7 @@ void BROWSER_QueryServerRegistry( void )
 	// We are currently waiting to hear back from the server registries.
 	g_bWaitingForServerRegistryResponse = true;
 	g_lServerRegistryAttempts = 0;
+	browser_SetPendingRegistryStates( );
 
 	browser_SendServerRegistryQuery();
 }
@@ -1424,6 +1531,14 @@ void BROWSER_QueryServerRegistry( void )
 // broken. Better to say nothing came back and let them press refresh again.
 void BROWSER_ServerRegistryTick( void )
 {
+	// [rc4l] Registry bars age out on their own clock, BEFORE the early return below.
+	//
+	// g_bWaitingForServerRegistryResponse is one flag for the whole fan-out, and it clears the moment
+	// any single registry answers. Hanging the expiry off it meant that with several configured, the
+	// first reply stopped the clock for everybody: a dead registry sat on "waiting for an answer"
+	// forever and its bar never went red. Caught with a real list of three, one of them 127.0.0.1.
+	browser_ExpirePendingRegistries( );
+
 	if ( g_bWaitingForServerRegistryResponse == false )
 		return;
 
@@ -1439,6 +1554,7 @@ void BROWSER_ServerRegistryTick( void )
 
 	g_bWaitingForServerRegistryResponse = false;
 
+	// browser_ExpirePendingRegistries above has already given the silent ones their verdict.
 	FString names;
 	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
 	{
@@ -1460,9 +1576,35 @@ void BROWSER_ServerRegistryTick( void )
 //
 // Before this, those three replies only printed a message and left the query outstanding, so the
 // retry loop kept firing at a registry that had already said no.
-void BROWSER_ServerRegistryRefusedQuery( void )
+void BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus why )
 {
 	g_bWaitingForServerRegistryResponse = false;
+
+	// [rc4l] Against the address it came from, so with several registries configured the bar that
+	// turns red is the one that actually refused. The refusal codes are the registry's own words, and
+	// until now they reached a Printf and nothing else.
+	browser_NoteRegistryStatus( NETWORK_GetFromAddress( ), why );
+}
+
+//*****************************************************************************
+//
+bool BROWSER_GetServerRegistryStatus( unsigned int index, std::string &host, int &port,
+	zx::RegistryStatus &status )
+{
+	if ( index >= g_ServerRegistryStates.size( ))
+		return false;
+
+	host = g_ServerRegistryStates[index].host;
+	port = g_ServerRegistryStates[index].port;
+	status = g_ServerRegistryStates[index].status;
+	return true;
+}
+
+//*****************************************************************************
+//
+unsigned int BROWSER_GetServerRegistryCount( void )
+{
+	return static_cast<unsigned int>( g_ServerRegistryStates.size( ));
 }
 
 //*****************************************************************************

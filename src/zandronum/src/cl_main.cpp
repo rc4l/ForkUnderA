@@ -1137,7 +1137,15 @@ void CLIENT_GetPackets( void )
 				AddressFrom = NETWORK_GetFromAddress( );
 
 			// If we're receiving info from the server registry...
-			if ( AddressFrom.Compare( ServerRegistryAddress ))
+			//
+			// [rc4l] Either the announce target above, or any registry the BROWSER queries. Those are
+			// two different settings: fua_serverregistry_host is where a server announces, and
+			// cl_fua_serverregistry_list is where this client asks. Only the first was checked here,
+			// so pointing them at different hosts, which every local-registry test does, meant we
+			// sent to one registry and discarded its answer. The reachability cookie never arrived
+			// and INTERNET stayed white with nothing on screen to say why.
+			if ( AddressFrom.Compare( ServerRegistryAddress ) ||
+				BROWSER_IsServerRegistryAddress( NETWORK_GetFromAddress( )))
 			{
 				lCommand = pByteStream->ReadLong();
 				switch ( lCommand )
@@ -1168,13 +1176,13 @@ void CLIENT_GetPackets( void )
 				// REQUESTIGNORED case is what puts us on its flood queue.
 				case SRSC_REQUESTIGNORED:
 
-					BROWSER_ServerRegistryRefusedQuery( );
+					BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus::Throttled );
 					Printf( "Refresh request ignored. Please wait 10 seconds before refreshing the list again.\n" );
 					break;
 
 				case SRSC_IPISBANNED:
 
-					BROWSER_ServerRegistryRefusedQuery( );
+					BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus::Banned );
 					Printf( "You are banned from the server registry.\n" );
 					break;
 
@@ -1199,7 +1207,7 @@ void CLIENT_GetPackets( void )
 
 				case SRSC_WRONGVERSION:
 
-					BROWSER_ServerRegistryRefusedQuery( );
+					BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus::Version );
 					Printf( "The server registry is using a different version of the launcher-to-server-registry protocol.\n" );
 					break;
 
