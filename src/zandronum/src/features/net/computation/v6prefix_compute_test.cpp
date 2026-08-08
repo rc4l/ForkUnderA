@@ -220,3 +220,45 @@ TEST(V6Prefix, NullIsMatchedByNothing)
 	EXPECT_FALSE( ParseV6Prefix( "2001:db8::/64", 0, &bits ));
 	EXPECT_FALSE( ParseV6Prefix( "2001:db8::/64", a, 0 ));
 }
+
+// ---------------------------------------------------------------- spellings and limits
+
+TEST(V6Prefix, UppercaseHexIsTheSameAddress)
+{
+	// People paste addresses from wherever they found them, and RFC 4291 does not care about case.
+	EXPECT_TRUE( Under( "2001:DB8::/32", "2001:db8::1" ));
+	EXPECT_TRUE( Under( "2001:db8::/32", "2001:DB8::1" ));
+}
+
+TEST(V6Prefix, AnAsteriskWithAbsurdlyManyGroupsIsRefused)
+{
+	// Longer than any address can be. Refused rather than truncated, because a truncated prefix is a
+	// different ban from the one somebody wrote down.
+	EXPECT_FALSE( Rule( "2001:2001:2001:2001:2001:2001:2001:2001:2001:2001:*" ).ok );
+}
+
+TEST(V6Prefix, AnAddressTooLongToBeOneIsRefused)
+{
+	EXPECT_FALSE( Rule( "2001:2001:2001:2001:2001:2001:2001:2001:2001:2001:2001:2001:2001:2001/64" ).ok );
+}
+
+TEST(V6Prefix, AMissingAddressIsRefused)
+{
+	// A length on its own. /64 of nothing would be everybody, which is the mistake this list exists
+	// not to make.
+	EXPECT_FALSE( Rule( "/64" ).ok );
+}
+
+TEST(V6Prefix, RubbishAfterTheDoubleColonIsRefused)
+{
+	// The groups after "::" are parsed exactly as strictly as the ones before it.
+	EXPECT_FALSE( Rule( "2001::zzzz/64" ).ok );
+	EXPECT_FALSE( Rule( "2001::1:2:3:4:5:6:7:8:9/64" ).ok ) << "more groups than an address has";
+}
+
+TEST(V6Prefix, MoreGroupsThanFitAroundADoubleColonIsRefused)
+{
+	// Five before and four after is nine, and "::" still has to stand for at least one more. The whole
+	// point of the shorthand is that it replaces groups, so a rule leaving no room for it is malformed.
+	EXPECT_FALSE( Rule( "1:2:3:4:5::6:7:8:9/64" ).ok );
+}

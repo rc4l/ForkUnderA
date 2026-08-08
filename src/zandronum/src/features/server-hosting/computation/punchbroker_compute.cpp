@@ -72,4 +72,29 @@ int PunchAttemptDelayMs(int attempt)
 	return 100 * (span - 1);
 }
 
+PunchStep NextPunchStep(int attemptsSent, int msSinceFirst, int msSinceLastSend, bool connected)
+{
+	// The hole did what it was for. Game traffic keeps the mapping open from here, so anything more
+	// is a packet at somebody who is already talking to us.
+	if (connected)
+		return PunchStep::Done;
+
+	// A clock that runs backwards or a count past the end means the caller lost track of this entry.
+	// Ending it is the safe half of that: one punch too few costs a joiner the direct connection they
+	// were making anyway, and an entry that cannot expire never stops sending.
+	if ((attemptsSent < 0) || (msSinceFirst < 0) || (msSinceLastSend < 0))
+		return PunchStep::Done;
+
+	if (msSinceFirst >= kPunchLifetimeMs)
+		return PunchStep::Done;
+
+	// The opening burst is scheduled from when the request arrived, not from the last packet, so a
+	// tick that runs late cannot stretch the whole schedule out behind it.
+	if (attemptsSent < kPunchAttempts)
+		return (msSinceFirst >= PunchAttemptDelayMs(attemptsSent)) ? PunchStep::Send : PunchStep::Wait;
+
+	// Burst over, mapping presumed open. Now it only has to not close.
+	return (msSinceLastSend >= kPunchKeepaliveMs) ? PunchStep::Send : PunchStep::Wait;
+}
+
 } // namespace zx
