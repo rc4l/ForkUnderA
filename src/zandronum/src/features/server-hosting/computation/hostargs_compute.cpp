@@ -118,6 +118,15 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 		out.push_back(config.pwads[i]);
 	}
 
+	// [rc4l] BEFORE +map, so an entry's cfg cannot overwrite the map we were asked to start on: the
+	// server applies these in order, and a cfg full of addmap lines would otherwise decide where the
+	// host lands rather than the host deciding.
+	if (IsSafeArgValue(config.execCfg))
+	{
+		out.push_back("+exec");
+		out.push_back(config.execCfg);
+	}
+
 	if (IsSafeArgValue(config.map))
 	{
 		out.push_back("+map");

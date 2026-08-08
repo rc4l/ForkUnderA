@@ -344,6 +344,11 @@ make_app_bundle() {
     cp -f "$SCRIPT_ROOT/LICENSE.txt" "$macos/" 2>/dev/null || true
     cp -f "$SCRIPT_ROOT/THIRD-PARTY-NOTICES.txt" "$macos/" 2>/dev/null || true
 
+    # [rc4l] The addon catalogue, into MacOS/ with the rest of the game data so progdir finds it.
+    # Required, not best-effort: without it the HOST tab has nothing to offer.
+    [[ -d "$SCRIPT_ROOT/catalogue" ]] || die "catalogue/ missing -- the HOST tab would have nothing to offer"
+    cp -R "$SCRIPT_ROOT/catalogue" "$macos/"
+
     # Stage and re-point dylibs. The recursive pass follows the link graph (OpenAL,
     # sndfile, mpg123, opus, sdl12-compat's libSDL-1.2, GLEW, openssl all resolve
     # via their absolute install ids). sdl12-compat dlopens libSDL2 by leaf name at

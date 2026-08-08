@@ -18,6 +18,11 @@ const int kProbeTimeoutMs = 8000;
 // every visit, short enough that a router reboot or a lease change is noticed in the same sitting.
 const int kProbeCacheTtlMs = 600000;
 
+// 5 seconds, which clears the registry's 3 second flood window with room to spare. Long enough that
+// a registry which is genuinely down is not hammered, short enough that the player never sees the
+// retry happen.
+const int kFailedCacheTtlMs = 5000;
+
 bool ProbeIsFinished(ProbePhase phase)
 {
 	return (phase == ProbePhase::Reachable) || (phase == ProbePhase::Unreachable)
@@ -96,14 +101,19 @@ bool ProbeCacheKeyMatches(const ProbeCacheKey &a, const ProbeCacheKey &b)
 	return (a.port == b.port) && (a.publicIp == b.publicIp) && (a.localSubnet == b.localSubnet);
 }
 
-bool ProbeCacheUsable(const ProbeCacheKey &cached, const ProbeCacheKey &now, int ageMs)
+bool ProbeCacheUsable(const ProbeCacheKey &cached, const ProbeCacheKey &now, int ageMs,
+	ProbePhase cachedPhase)
 {
-	// Never usable before it was recorded. Clocks go backwards -- a resync, a laptop waking -- and a
+	// Never usable before it was recorded. Clocks go backwards, a resync or a laptop waking, and a
 	// negative age would otherwise pass the TTL test and keep a stale answer alive indefinitely.
 	if (ageMs < 0)
 		return false;
 
-	if (ageMs >= kProbeCacheTtlMs)
+	// Failed expires on its own short clock, so the next visit re-asks instead of repeating a verdict
+	// that only ever meant "we did not hear back". See kFailedCacheTtlMs.
+	const int ttl = (cachedPhase == ProbePhase::Failed) ? kFailedCacheTtlMs : kProbeCacheTtlMs;
+
+	if (ageMs >= ttl)
 		return false;
 
 	return ProbeCacheKeyMatches(cached, now);

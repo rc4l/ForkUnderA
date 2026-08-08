@@ -10,6 +10,7 @@ using zx::kProbeTimeoutMs;
 using zx::ProbeCacheKey;
 using zx::ProbeCacheKeyMatches;
 using zx::ProbeCacheUsable;
+using zx::kFailedCacheTtlMs;
 using zx::ProbeDisplay;
 using zx::ProbeDisplayFor;
 using zx::ProbeIsFinished;
@@ -170,13 +171,13 @@ TEST( ReachProbe, TheSameQuestionMatches )
 TEST( ReachProbe, AFreshAnswerForTheSameQuestionIsUsable )
 {
 	EXPECT_TRUE( ProbeCacheUsable( Key( "1.2.3.4", "192.168.1", 10666 ),
-		Key( "1.2.3.4", "192.168.1", 10666 ), 1000 ));
+		Key( "1.2.3.4", "192.168.1", 10666 ), 1000, ProbePhase::Reachable ));
 }
 
 TEST( ReachProbe, AnExpiredAnswerIsNot )
 {
 	EXPECT_FALSE( ProbeCacheUsable( Key( "1.2.3.4", "192.168.1", 10666 ),
-		Key( "1.2.3.4", "192.168.1", 10666 ), kProbeCacheTtlMs ));
+		Key( "1.2.3.4", "192.168.1", 10666 ), kProbeCacheTtlMs, ProbePhase::Reachable ));
 }
 
 TEST( ReachProbe, ANegativeAgeIsNeverUsable )
@@ -184,14 +185,38 @@ TEST( ReachProbe, ANegativeAgeIsNeverUsable )
 	// [rc4l] Clocks move backwards -- an NTP resync, a laptop waking. A negative age would sail past
 	// a "less than the TTL" test and keep a stale verdict alive for as long as the clock stayed wrong.
 	EXPECT_FALSE( ProbeCacheUsable( Key( "1.2.3.4", "192.168.1", 10666 ),
-		Key( "1.2.3.4", "192.168.1", 10666 ), -1 ));
+		Key( "1.2.3.4", "192.168.1", 10666 ), -1, ProbePhase::Reachable ));
 }
 
 TEST( ReachProbe, AFreshAnswerToADIFFERENTQuestionIsStillUnusable )
 {
 	// Freshness does not rescue a key mismatch; both have to hold.
 	EXPECT_FALSE( ProbeCacheUsable( Key( "1.2.3.4", "192.168.1", 10666 ),
-		Key( "1.2.3.4", "192.168.1", 10667 ), 0 ));
+		Key( "1.2.3.4", "192.168.1", 10667 ), 0, ProbePhase::Reachable ));
+}
+
+// [rc4l] Failed is not a verdict, it is the absence of one, so it expires on its own short clock.
+// Holding it for the full TTL painted the INTERNET option white for ten minutes over a single
+// request the registry's flood queue happened to swallow.
+TEST( ReachProbe, AFailedAnswerExpiresOnTheShortClock )
+{
+	EXPECT_FALSE( ProbeCacheUsable( Key( "1.2.3.4", "192.168.1", 10666 ),
+		Key( "1.2.3.4", "192.168.1", 10666 ), kFailedCacheTtlMs, ProbePhase::Failed ));
+}
+
+TEST( ReachProbe, AFailedAnswerIsStillUsedWhileItIsFresh )
+{
+	// Briefly, so a registry that is genuinely down is re-asked every few seconds rather than every
+	// frame.
+	EXPECT_TRUE( ProbeCacheUsable( Key( "1.2.3.4", "192.168.1", 10666 ),
+		Key( "1.2.3.4", "192.168.1", 10666 ), kFailedCacheTtlMs - 1, ProbePhase::Failed ));
+}
+
+TEST( ReachProbe, ARealVerdictOutlivesTheFailedClock )
+{
+	// The short clock is for Failed alone. Unreachable is an answer and keeps the full TTL.
+	EXPECT_TRUE( ProbeCacheUsable( Key( "1.2.3.4", "192.168.1", 10666 ),
+		Key( "1.2.3.4", "192.168.1", 10666 ), kFailedCacheTtlMs, ProbePhase::Unreachable ));
 }
 
 // ---------------------------------------------------------------- what the INTERNET option shows

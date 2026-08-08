@@ -255,6 +255,12 @@ if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
     throw "tools/freedoom/freedoom2.wad missing — the zip would ship without a game"
 }
 
+# [rc4l] The addon catalogue. Required rather than best-effort: the HOST tab reads it from beside the
+# exe, and a build without it offers nothing to host.
+$catalogue = Join-Path $ScriptRoot "catalogue"
+if (-not (Test-Path $catalogue)) { throw "catalogue/ missing -- the HOST tab would have nothing to offer" }
+Copy-Item $catalogue $DistDir -Recurse -Force
+
 # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and point at the source.
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\
 Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\
