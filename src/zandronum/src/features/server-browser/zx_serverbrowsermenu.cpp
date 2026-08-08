@@ -55,6 +55,7 @@
 #include "features/wad-download/zx_wadsearch.h"
 #include "features/wadreload/zx_wadreload.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
+#include "features/server-hosting/computation/hoststatus_compute.h"
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
@@ -4580,9 +4581,14 @@ public:
 	// wraps, so the height is not something the layout can work out without drawing it.
 	int DrawHostStatus( int x, int y, zx::HostState state )
 	{
+		// [rc4l] GREEN once it is up. The heading is the one line on this panel that is unambiguously
+		// good news, and it was gold -- the same colour the panel uses for "still waiting", so the
+		// state everyone is looking for wore the colour of the state before it.
 		if ( HostTextRowVisible( y, SB_HOST_LINE ))
 		{
-			screen->DrawText( SmallFont, CR_GOLD, x, y, zx::HostStateSummary( state ),
+			const EColorRange headColour = ( state == zx::HostState::Running ) ? CR_GREEN : CR_GOLD;
+
+			screen->DrawText( SmallFont, headColour, x, y, zx::HostStateSummary( state ),
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
 		y += SB_HOST_LINE + 6;
@@ -4617,60 +4623,58 @@ public:
 
 	//*************************************************************************
 	//
-	// [rc4l] Whether the outside world can reach this server -- reported, never predicted.
-	//
-	// The three states are what we actually know, and no more. WAITING is honest about the fact that
-	// nothing has happened yet; REACHABLE is only ever said because a stranger already reached us;
-	// and the failure says "we did not hear back" rather than "your port is closed", because a
-	// registry that was briefly down looks identical from in here and blaming the player's router for
-	// it would send them to configure something that was never wrong.
-	int DrawHostReach( int x, int y, int width )
+	// [rc4l] Which of the four reachability states we are in.
+	int HostStatusNow( )
 	{
 		switch ( zx::HostReachability( ))
 		{
-		case zx::HostReach::NotPublic:
-			return DrawWrappedIn( "Visible on this network only. Players elsewhere cannot see it.",
-				x, y, width, CR_DARKGRAY );
+		case zx::HostReach::NotPublic:		return static_cast<int>( zx::HostStatus::LanOnly );
+		case zx::HostReach::Reachable:		return static_cast<int>( zx::HostStatus::Open );
+		case zx::HostReach::Unreachable:	return static_cast<int>( zx::HostStatus::NoReply );
+		default:							return static_cast<int>( zx::HostStatus::Checking );
+		}
+	}
 
-		case zx::HostReach::Waiting:
-			{
-				// [rc4l] Say what we asked the router, as well as what we are waiting to learn. A
-				// game that opens ports on somebody's network should say so out loud -- that is the
-				// whole reason routers ship with this switched off.
-				const char *const router = zx::PortMapStatusText( );
-				if (( router != NULL ) && ( router[0] != 0 ))
-					y = DrawWrappedIn( router, x, y, width, CR_DARKGRAY );
+	// [rc4l] Whether the outside world can reach this server -- ONE LINE, and a hover for the rest.
+	//
+	// This was five wrapped lines: the verdict, what the router said, that the server still works
+	// locally, and which port to forward on which protocols. All of it true, all of it in a region
+	// that also has to carry what the server is and how to administer it, for a question with four
+	// possible answers. The useful part ended up the smallest thing on screen.
+	//
+	// The code is the line; the paragraph is the tooltip. Same trade the registry bars make, and for
+	// the same reason: a state that is usually fine does not deserve permanent prose.
+	int DrawHostReach( int x, int y, int width )
+	{
+		const zx::HostStatus status = static_cast<zx::HostStatus>( HostStatusNow( ));
 
-				return DrawWrappedIn( "Listed publicly. Checking whether the internet can reach it.",
-					x, y, width, CR_GOLD );
-			}
+		const char *const router = zx::PortMapStatusText( );
+		const std::string tip = zx::HostStatusTooltip( status,
+			zx::HostCurrentConfig( ).port,
+			(( router != NULL ) && ( router[0] != 0 )) ? std::string( router ) : std::string( ));
 
-		case zx::HostReach::Reachable:
-			return DrawWrappedIn( "The internet can reach this server. Anyone can join it.",
-				x, y, width, CR_GREEN );
-
-		case zx::HostReach::Unreachable:
-			{
-				y = DrawWrappedIn( "Nothing has reached this server from outside.",
-					x, y, width, CR_ORANGE );
-
-				const char *const router = zx::PortMapStatusText( );
-				if (( router != NULL ) && ( router[0] != 0 ))
-					y = DrawWrappedIn( router, x, y, width, CR_DARKGRAY );
-
-				// [rc4l] The port AND both protocols, because the game is UDP and direct downloads
-				// are TCP on the same number -- somebody who forwards only UDP gets a server that
-				// works and downloads that mysteriously do not, which reads as a different bug.
-				FString advice;
-				advice.Format( "It is still working for players on this network. To open it to "
-					"everyone, forward TCP and UDP port %d on your router.",
-					zx::HostCurrentConfig( ).port );
-
-				return DrawWrappedIn( advice, x, y, width, CR_DARKGRAY );
-			}
+		EColorRange colour = CR_GOLD;
+		switch ( zx::HostToneFor( status ))
+		{
+		case zx::HostTone::Good:	colour = CR_GREEN; break;
+		case zx::HostTone::Bad:		colour = CR_ORANGE; break;
+		case zx::HostTone::Info:	colour = CR_DARKGRAY; break;
+		default:					colour = CR_GOLD; break;
 		}
 
-		return y;
+		const char *const code = zx::HostStatusCode( status );
+
+		if ( HostTextRowVisible( y, SB_HOST_LINE ))
+		{
+			screen->DrawText( SmallFont, colour, x, y, code,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+			// Only while the row is actually on screen. A tooltip for a line the mask is hiding is a
+			// hover target over something the player cannot see.
+			serverbrowser_Tip( x, y, SmallFont->StringWidth( code ), SB_HOST_LINE, tip.c_str( ));
+		}
+
+		return y + SB_HOST_LINE;
 	}
 
 	// Wrapped text inside an arbitrary width, returning the y below it. DrawWrapped is fixed to the

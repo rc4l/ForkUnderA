@@ -1484,6 +1484,7 @@ add_executable( zdoom WIN32
 	features/server-hosting/zx_hostwatchdog.cpp
 	features/server-hosting/computation/hostargs_compute.cpp
 	features/server-hosting/computation/hostlifecycle_compute.cpp
+	features/server-hosting/computation/hoststatus_compute.cpp
 	features/server-hosting/computation/reachprobe_compute.cpp
 	features/server-hosting/zx_reachprobe.cpp
 	features/addon-catalogue/zx_catalogue.cpp
