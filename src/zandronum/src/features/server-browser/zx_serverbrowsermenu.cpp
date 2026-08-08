@@ -2981,11 +2981,11 @@ public:
 	// moved focus had to reproduce its clearing by hand.
 	void NavigateHostFocus( zx::HostNavKey key )
 	{
-		// Moving between regions changes whether a FIELD holds the keyboard, which is the switch
-		// SetFocus guards. At the top, so it covers leaving the button as well as leaving a field.
-		M_ReleaseMenuButtons( );
-
 		ClampHostFocus( );
+
+		// [rc4l] What the keyboard OWNS before the key is answered, so the release below can tell a
+		// move that changes it from one that does not.
+		const bool bWasInField = HostInAField( );
 
 		const zx::HostNavResult r = zx::ComputeHostNav( g_HostFocus, key, kHostFieldCount,
 			HostHasFields( ), HostFootHasToggle( ));
@@ -3044,6 +3044,23 @@ public:
 		}
 
 		const bool bMoved = ( r.pos.slot != g_HostFocus.slot ) || ( r.pos.field != g_HostFocus.field );
+
+		// [rc4l] LET GO OF THE HELD KEY ONLY WHEN RAW-KEY OWNERSHIP CHANGES.
+		//
+		// This released on every arrow, which killed auto-repeat dead: M_Ticker repeats whatever is
+		// still latched, and unlatching on each press meant one step per press and no more. Holding
+		// down through the experience list moved one row.
+		//
+		// The release is still needed where it was aimed -- crossing into or out of a text field
+		// turns TranslateKeyboardEvents over mid-press, and the key-up then arrives untranslated and
+		// unlatches nothing, so the button would repeat forever. That is a change of ownership, not
+		// a change of position, and only the first has to stop the repeat.
+		//
+		// The rule for any list added later: MOVING WITHIN a region keeps the key, LEAVING it does
+		// not. SetFocus does the leaving half for regions; this does it for the panel's own halves.
+		// Compared against where the key LANDS, not where it started -- g_HostFocus has not moved yet.
+		if ((( r.pos.slot == zx::HostSlot::Field ) ? true : false ) != bWasInField )
+			M_ReleaseMenuButtons( );
 
 		// Arriving on the row starts the cursor on the answer that is already given, so the first
 		// thing the player sees marked is what they currently have.
@@ -4488,19 +4505,32 @@ public:
 		}
 		y += SB_HOST_LINE;
 
-		const std::vector<bool> &present = HostEntryFilesPresent( g_HostEntrySel, addon );
-
+		// [rc4l] WHAT it loads, and how big. Not whether you have it.
+		//
+		// Every row used to be marked + or - and coloured for it, which answered a question nobody
+		// standing here is asking: missing files are fetched when you press the button, so the list
+		// was reporting an inventory the player has no use for and colouring half of it like a
+		// fault. Size is the fact that changes what someone decides -- the server list has shown it
+		// for the same reason, from SQF2_WAD_SIZES, and this is the same answer from the catalogue.
 		for ( size_t i = 0; i < addon.files.size( ); ++i )
 		{
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
-				const bool bHave = ( i < present.size( )) && present[i];
+				const FString name = addon.files[i].name.c_str( );
 
-				FString line;
-				line.Format( "%s %s", bHave ? "+" : "-", addon.files[i].name.c_str( ));
-
-				screen->DrawText( SmallFont, bHave ? CR_GRAY : CR_DARKRED, x, y, line,
+				screen->DrawText( SmallFont, CR_GRAY, x, y, name,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+				// Right-aligned, so a column of sizes reads down the edge rather than ragged after
+				// names of every length. Nothing is drawn when the entry did not say.
+				if ( addon.files[i].size > 0 )
+				{
+					const FString size = zx::FormatByteSize( addon.files[i].size ).c_str( );
+
+					screen->DrawText( SmallFont, CR_DARKGRAY,
+						SB_HOST_RCOL_RIGHT - SmallFont->StringWidth( size ), y, size,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				}
 			}
 			y += SB_HOST_LINE;
 		}
@@ -6831,8 +6861,16 @@ public:
 				// box that never gave them back is one the keyboard goes into and cannot leave
 				// sideways -- so at the edge, with something actually beside us, the press moves on.
 				// ArrowLeavesField owns when that is; see its header for shift and selections.
+				// [rc4l] A HELD key never leaves, it stops at the end of the text.
+				//
+				// Running the caret to the edge and then sliding out of the box on the next repeat
+				// means you cannot hold left to get to the start without overshooting into another
+				// control. Leaving is a decision, and holding a key is not how decisions are made --
+				// the press AFTER the release is.
 				const bool bRight = ( key == GK_RIGHT );
-				if ( zx::ArrowLeavesField( field, bRight, bRight ? canExitRight : canExitLeft, bShift ))
+				const bool bMayLeave = !bRepeat && ( bRight ? canExitRight : canExitLeft );
+
+				if ( zx::ArrowLeavesField( field, bRight, bMayLeave, bShift ))
 					return bRight ? FieldKey::Right : FieldKey::Left;
 
 				field = zx::MoveCaret( field, bRight ? 1 : -1, bShift );
