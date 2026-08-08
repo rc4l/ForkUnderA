@@ -8,405 +8,337 @@ using zx::BrowserFocus;
 using zx::ComputeNav;
 using zx::NavKey;
 using zx::NavResult;
+using zx::NavWhere;
 
 namespace
 {
-const bool kHasRows = true;
-const bool kEmpty = false;
-// [rc4l] A three-tab row -- PUBLIC, PRIVATE, HOST -- because that is what the browser has, and
-// because the middle one is the position the old two-tab bool could not describe.
-const int kTabCount = 3;
-const int kFirstTab = 0;
-const int kMiddleTab = 1;
-const int kLastTab = 2;
+
+// The browser as shipped: two tabs on top (PLAY, BROWSE) and two sub-tabs under BROWSE (Public,
+// Private) with the search box past the end of them.
+const int kTabCount = 2;
+const int kPlayTab = 0;
+const int kBrowseTab = 1;
+
+const int kSubCount = 2;
+const int kPublic = 0;
+const int kPrivate = 1;
+
+// On BROWSE, with servers listed.
+NavWhere Browsing( int sub = kPublic )
+{
+	return NavWhere( true, kBrowseTab, kTabCount, sub, kSubCount );
+}
+
+// On BROWSE, but nothing came back.
+NavWhere BrowsingEmpty( int sub = kPublic )
+{
+	return NavWhere( false, kBrowseTab, kTabCount, sub, kSubCount );
+}
+
+// On PLAY, which has a form rather than a list, so no sub-tabs and no rows.
+NavWhere Playing( )
+{
+	return NavWhere( false, kPlayTab, kTabCount, 0, 0 );
+}
+
+// Where a focus actually settles before a key is applied. A region that has gone away hands over to
+// the nearest one that has not, and the key then acts from THERE, so the sweep below has to compare
+// against this rather than against the zone it asked for.
+BrowserFocus Settled( BrowserFocus zone, const NavWhere &where )
+{
+	if ( !where.hasRows && ( zone == BrowserFocus::Rows ))
+		return ( where.subCount > 0 ) ? BrowserFocus::SubTabs : BrowserFocus::Tabs;
+
+	if (( where.subCount <= 0 ) && ( zone == BrowserFocus::SubTabs ))
+		return BrowserFocus::Tabs;
+
+	return zone;
+}
 
 const BrowserFocus kZones[] = {
-	BrowserFocus::Tabs, BrowserFocus::Search, BrowserFocus::Rows, BrowserFocus::Action,
+	BrowserFocus::Tabs, BrowserFocus::SubTabs, BrowserFocus::Search, BrowserFocus::Rows,
+	BrowserFocus::Action,
 };
 const NavKey kKeys[] = { NavKey::Up, NavKey::Down, NavKey::Left, NavKey::Right };
-const int kZoneCount = 4;
+const int kZoneCount = 5;
 const int kKeyCount = 4;
+
 } // namespace
 
 // ---------------------------------------------------------------- the top row
 
 TEST( BrowserNav, StepsAlongTheTabsWithLeftAndRight )
 {
-	EXPECT_EQ( 1, ComputeNav( BrowserFocus::Tabs, NavKey::Right, kHasRows, kFirstTab, kTabCount ).tabStep );
-	EXPECT_EQ( -1, ComputeNav( BrowserFocus::Tabs, NavKey::Left, kHasRows, kLastTab, kTabCount ).tabStep );
+	// PLAY is index 0 and BROWSE index 1, so right moves off PLAY and left moves off BROWSE.
+	EXPECT_EQ( 1, ComputeNav( BrowserFocus::Tabs, NavKey::Right, Playing( ) ).tabStep );
+	EXPECT_EQ( -1, ComputeNav( BrowserFocus::Tabs, NavKey::Left, Browsing( ) ).tabStep );
 }
 
-TEST( BrowserNav, DoesNotWrapOffEitherEndOfTheRow )
+TEST( BrowserNav, DoesNotWrapOffEitherEndOfTheTopRow )
 {
-	// Left on the first tab has nothing to its left; right on the last has the search box, which is a
-	// move and not a tab switch. Wrapping either way would make the row a loop with no ends, and the
-	// search box the thing the loop skips.
-	EXPECT_EQ( 0, ComputeNav( BrowserFocus::Tabs, NavKey::Left, kHasRows, kFirstTab, kTabCount ).tabStep );
-	EXPECT_EQ( 0, ComputeNav( BrowserFocus::Tabs, NavKey::Right, kHasRows, kLastTab, kTabCount ).tabStep );
+	// Right off BROWSE, the last tab, stays put. Nothing sits past it any more: the search box moved
+	// down to the row it filters.
+	const NavResult right = ComputeNav( BrowserFocus::Tabs, NavKey::Right, Browsing( ) );
+	EXPECT_EQ( 0, right.tabStep );
+	EXPECT_EQ( BrowserFocus::Tabs, right.focus ) << "and it must not fall through to the search box";
+
+	// Left off PLAY, the first tab, likewise.
+	const NavResult left = ComputeNav( BrowserFocus::Tabs, NavKey::Left, Playing( ) );
+	EXPECT_EQ( 0, left.tabStep );
+	EXPECT_EQ( BrowserFocus::Tabs, left.focus );
 }
 
-TEST( BrowserNav, RightOffTheLastTabReachesTheSearchBox )
+TEST( BrowserNav, StepsBackFromBrowseToPlay )
 {
-	const NavResult r = ComputeNav( BrowserFocus::Tabs, NavKey::Right, kHasRows, kLastTab, kTabCount );
+	EXPECT_EQ( -1, ComputeNav( BrowserFocus::Tabs, NavKey::Left, Browsing( ) ).tabStep );
+}
+
+TEST( BrowserNav, DownFromTheTabsEntersTheSubTabs )
+{
+	EXPECT_EQ( BrowserFocus::SubTabs,
+		ComputeNav( BrowserFocus::Tabs, NavKey::Down, Browsing( ) ).focus );
+}
+
+TEST( BrowserNav, DownFromTheTabsSkipsASubRowThatIsNotThere )
+{
+	// PLAY has a form, not a list, so there is no sub-tab row to land on. Focus stays put and the
+	// caller hands down to the hosting form.
+	EXPECT_EQ( BrowserFocus::Tabs, ComputeNav( BrowserFocus::Tabs, NavKey::Down, Playing( ) ).focus );
+}
+
+TEST( BrowserNav, ATabWithNoSubRowButWithRowsGoesStraightToTheList )
+{
+	// Not a shipped combination today, but the rule has to be stated: skipping the sub-row must not
+	// mean skipping the list as well.
+	const NavWhere where( true, kPlayTab, kTabCount, 0, 0 );
+	EXPECT_EQ( BrowserFocus::Rows, ComputeNav( BrowserFocus::Tabs, NavKey::Down, where ).focus );
+}
+
+// ---------------------------------------------------------------- the sub-tab row
+
+TEST( BrowserNav, StepsAlongTheSubTabsWithLeftAndRight )
+{
+	EXPECT_EQ( 1, ComputeNav( BrowserFocus::SubTabs, NavKey::Right, Browsing( kPublic ) ).subStep );
+	EXPECT_EQ( -1, ComputeNav( BrowserFocus::SubTabs, NavKey::Left, Browsing( kPrivate ) ).subStep );
+}
+
+TEST( BrowserNav, DoesNotWrapOffTheStartOfTheSubRow )
+{
+	const NavResult r = ComputeNav( BrowserFocus::SubTabs, NavKey::Left, Browsing( kPublic ) );
+	EXPECT_EQ( 0, r.subStep );
+	EXPECT_EQ( BrowserFocus::SubTabs, r.focus );
+}
+
+TEST( BrowserNav, RightOffTheLastSubTabReachesTheSearchBox )
+{
+	// The reason the sub-tabs must not wrap: the box is a stop on the same row, and looping among
+	// them would leave it unreachable from the keyboard.
+	const NavResult r = ComputeNav( BrowserFocus::SubTabs, NavKey::Right, Browsing( kPrivate ) );
+	EXPECT_EQ( 0, r.subStep );
 	EXPECT_EQ( BrowserFocus::Search, r.focus );
-	EXPECT_EQ( 0, r.tabStep );
 }
 
-TEST( BrowserNav, SwitchingTabsKeepsFocusOnTheTabs )
+TEST( BrowserNav, UpFromTheSubTabsReturnsToTheTabs )
 {
-	// Otherwise every tab switch would throw you somewhere else, and the second tab would be
-	// impossible to reach with the same key that reached the first.
 	EXPECT_EQ( BrowserFocus::Tabs,
-		ComputeNav( BrowserFocus::Tabs, NavKey::Right, kHasRows, kFirstTab, kTabCount ).focus );
-	EXPECT_EQ( BrowserFocus::Tabs,
-		ComputeNav( BrowserFocus::Tabs, NavKey::Left, kHasRows, kLastTab, kTabCount ).focus );
+		ComputeNav( BrowserFocus::SubTabs, NavKey::Up, Browsing( ) ).focus );
 }
 
-TEST( BrowserNav, LeftAndRightAreNotNavigationInTheSearchBox )
-{
-	// They belong to the caret. A text field that jumped to another control when you tried to move
-	// through what you had typed would be unusable, and this is the one thing a focused field must
-	// claim for itself.
-	EXPECT_EQ( BrowserFocus::Search,
-		ComputeNav( BrowserFocus::Search, NavKey::Left, kHasRows, kLastTab, kTabCount ).focus );
-	EXPECT_EQ( BrowserFocus::Search,
-		ComputeNav( BrowserFocus::Search, NavKey::Right, kHasRows, kLastTab, kTabCount ).focus );
-	EXPECT_EQ( 0, ComputeNav( BrowserFocus::Search, NavKey::Left, kHasRows, kLastTab, kTabCount ).tabStep );
-	EXPECT_EQ( 0, ComputeNav( BrowserFocus::Search, NavKey::Right, kHasRows, kLastTab, kTabCount ).tabStep );
-}
-
-TEST( BrowserNav, UpOutOfTheSearchBoxReturnsToTheTabs )
-{
-	// A single line has nowhere above for the caret to go, so up means what it means everywhere else,
-	// and the tabs are the only other thing on this row.
-	EXPECT_EQ( BrowserFocus::Tabs,
-		ComputeNav( BrowserFocus::Search, NavKey::Up, kHasRows, kLastTab, kTabCount ).focus );
-}
-
-TEST( BrowserNav, DownAlwaysLetsGoOfTheSearchBox )
-{
-	// Into the list when there is one, back to the tabs when there is not -- but OUT either way.
-	EXPECT_EQ( BrowserFocus::Rows,
-		ComputeNav( BrowserFocus::Search, NavKey::Down, kHasRows, kLastTab, kTabCount ).focus );
-	EXPECT_EQ( BrowserFocus::Tabs,
-		ComputeNav( BrowserFocus::Search, NavKey::Down, kEmpty, kLastTab, kTabCount ).focus );
-}
-
-TEST( BrowserNav, DownFromEitherEndOfTheRowEntersTheList )
+TEST( BrowserNav, DownFromTheSubTabsEntersTheList )
 {
 	EXPECT_EQ( BrowserFocus::Rows,
-		ComputeNav( BrowserFocus::Tabs, NavKey::Down, kHasRows, kFirstTab, kTabCount ).focus );
+		ComputeNav( BrowserFocus::SubTabs, NavKey::Down, Browsing( ) ).focus );
+}
+
+TEST( BrowserNav, DownFromTheSubTabsStaysPutWhenNothingIsListed )
+{
+	EXPECT_EQ( BrowserFocus::SubTabs,
+		ComputeNav( BrowserFocus::SubTabs, NavKey::Down, BrowsingEmpty( ) ).focus );
+}
+
+TEST( BrowserNav, ASubTabFocusOnATabWithoutOneAnswersAsTheTabs )
+{
+	// Switching to PLAY pulls the sub-row out from under the focus. Every key must still answer
+	// something the caller can act on.
+	for ( int k = 0; k < kKeyCount; ++k )
+	{
+		const NavResult r = ComputeNav( BrowserFocus::SubTabs, kKeys[k], Playing( ) );
+		EXPECT_NE( BrowserFocus::SubTabs, r.focus )
+			<< "key " << k << " left focus on a row that is not drawn";
+		EXPECT_EQ( 0, r.subStep ) << "key " << k << " stepped along a row that is not there";
+	}
+}
+
+// ---------------------------------------------------------------- the search box
+
+TEST( BrowserNav, TheSearchBoxKeepsLeftAndRightForItsCaret )
+{
+	const NavResult left = ComputeNav( BrowserFocus::Search, NavKey::Left, Browsing( ) );
+	EXPECT_EQ( BrowserFocus::Search, left.focus );
+	EXPECT_EQ( 0, left.subStep );
+	EXPECT_EQ( 0, left.tabStep );
+
+	const NavResult right = ComputeNav( BrowserFocus::Search, NavKey::Right, Browsing( ) );
+	EXPECT_EQ( BrowserFocus::Search, right.focus );
+}
+
+TEST( BrowserNav, UpFromTheSearchBoxReturnsToTheSubTabs )
+{
+	// Its own row, not the one above it. Going to the top row would skip a whole row of controls on
+	// the way out of a box you reached by walking along that row.
+	EXPECT_EQ( BrowserFocus::SubTabs,
+		ComputeNav( BrowserFocus::Search, NavKey::Up, Browsing( ) ).focus );
+}
+
+TEST( BrowserNav, DownFromTheSearchBoxEntersTheList )
+{
 	EXPECT_EQ( BrowserFocus::Rows,
-		ComputeNav( BrowserFocus::Search, NavKey::Down, kHasRows, kLastTab, kTabCount ).focus );
+		ComputeNav( BrowserFocus::Search, NavKey::Down, Browsing( ) ).focus );
 }
 
-TEST( BrowserNav, EnteringTheListDoesNotAlsoStepThroughIt )
+TEST( BrowserNav, DownFromTheSearchBoxFallsBackToTheSubTabsWhenEmpty )
 {
-	EXPECT_EQ( 0, ComputeNav( BrowserFocus::Tabs, NavKey::Down, kHasRows, kFirstTab, kTabCount ).rowStep );
-	EXPECT_EQ( 0, ComputeNav( BrowserFocus::Search, NavKey::Down, kHasRows, kLastTab, kTabCount ).rowStep );
-}
-
-TEST( BrowserNav, UpFromTheTabsGoesNowhere )
-{
-	const NavResult r = ComputeNav( BrowserFocus::Tabs, NavKey::Up, kHasRows, kFirstTab, kTabCount );
-	EXPECT_EQ( BrowserFocus::Tabs, r.focus );
-	EXPECT_EQ( 0, r.tabStep );
-	EXPECT_EQ( 0, r.rowStep );
+	// Typing a filter that matches nothing must not strand the focus below the last row.
+	EXPECT_EQ( BrowserFocus::SubTabs,
+		ComputeNav( BrowserFocus::Search, NavKey::Down, BrowsingEmpty( ) ).focus );
 }
 
 // ---------------------------------------------------------------- the list
 
 TEST( BrowserNav, MovesTheSelectionWithUpAndDown )
 {
-	EXPECT_EQ( -1, ComputeNav( BrowserFocus::Rows, NavKey::Up, kHasRows, kFirstTab, kTabCount ).rowStep );
-	EXPECT_EQ( 1, ComputeNav( BrowserFocus::Rows, NavKey::Down, kHasRows, kFirstTab, kTabCount ).rowStep );
+	EXPECT_EQ( -1, ComputeNav( BrowserFocus::Rows, NavKey::Up, Browsing( ) ).rowStep );
+	EXPECT_EQ( 1, ComputeNav( BrowserFocus::Rows, NavKey::Down, Browsing( ) ).rowStep );
 }
 
 TEST( BrowserNav, MovingTheSelectionDoesNotChangeFocus )
 {
-	EXPECT_EQ( BrowserFocus::Rows,
-		ComputeNav( BrowserFocus::Rows, NavKey::Up, kHasRows, kFirstTab, kTabCount ).focus );
-	EXPECT_EQ( BrowserFocus::Rows,
-		ComputeNav( BrowserFocus::Rows, NavKey::Down, kHasRows, kFirstTab, kTabCount ).focus );
+	// The rule that stops the caller inventing its own answer for the overlap.
+	EXPECT_EQ( BrowserFocus::Rows, ComputeNav( BrowserFocus::Rows, NavKey::Down, Browsing( ) ).focus );
 }
 
 TEST( BrowserNav, RightFromTheListReachesTheButton )
 {
-	const NavResult r = ComputeNav( BrowserFocus::Rows, NavKey::Right, kHasRows, kFirstTab, kTabCount );
-	EXPECT_EQ( BrowserFocus::Action, r.focus );
-	EXPECT_EQ( 0, r.rowStep );
-	EXPECT_EQ( 0, r.tabStep );		// and emphatically does not also switch tabs, which it used to
+	EXPECT_EQ( BrowserFocus::Action,
+		ComputeNav( BrowserFocus::Rows, NavKey::Right, Browsing( ) ).focus );
 }
 
 TEST( BrowserNav, LeftFromTheListDoesNothing )
 {
-	const NavResult r = ComputeNav( BrowserFocus::Rows, NavKey::Left, kHasRows, kFirstTab, kTabCount );
+	const NavResult r = ComputeNav( BrowserFocus::Rows, NavKey::Left, Browsing( ) );
 	EXPECT_EQ( BrowserFocus::Rows, r.focus );
-	EXPECT_EQ( 0, r.tabStep );
 	EXPECT_EQ( 0, r.rowStep );
+}
+
+TEST( BrowserNav, AnEmptyListIsNotEnterableAndNotStayable )
+{
+	// The list can empty out under a focus that was legitimate when it was set.
+	for ( int k = 0; k < kKeyCount; ++k )
+	{
+		const NavResult r = ComputeNav( BrowserFocus::Rows, kKeys[k], BrowsingEmpty( ) );
+		EXPECT_NE( BrowserFocus::Rows, r.focus ) << "key " << k;
+		EXPECT_EQ( 0, r.rowStep ) << "key " << k << " moved a selection that does not exist";
+	}
 }
 
 // ---------------------------------------------------------------- the button
 
-TEST( BrowserNav, LeftFromTheButtonGoesBackToTheList )
+TEST( BrowserNav, LeftFromTheButtonReturnsToTheList )
 {
 	EXPECT_EQ( BrowserFocus::Rows,
-		ComputeNav( BrowserFocus::Action, NavKey::Left, kHasRows, kFirstTab, kTabCount ).focus );
+		ComputeNav( BrowserFocus::Action, NavKey::Left, Browsing( ) ).focus );
 }
 
-TEST( BrowserNav, UpFromTheButtonGoesBackToTheTabs )
+TEST( BrowserNav, UpFromTheButtonReturnsToTheSubTabs )
 {
-	EXPECT_EQ( BrowserFocus::Tabs,
-		ComputeNav( BrowserFocus::Action, NavKey::Up, kHasRows, kFirstTab, kTabCount ).focus );
+	EXPECT_EQ( BrowserFocus::SubTabs,
+		ComputeNav( BrowserFocus::Action, NavKey::Up, Browsing( ) ).focus );
 }
 
-TEST( BrowserNav, DownAndRightFromTheButtonGoNowhere )
+TEST( BrowserNav, LeavingTheButtonSkipsAnEmptyList )
 {
-	// There is nothing past the button in either direction, and a key that silently wrapped to the
-	// far side of the screen is worse than one that does nothing.
-	EXPECT_EQ( BrowserFocus::Action,
-		ComputeNav( BrowserFocus::Action, NavKey::Down, kHasRows, kFirstTab, kTabCount ).focus );
-	EXPECT_EQ( BrowserFocus::Action,
-		ComputeNav( BrowserFocus::Action, NavKey::Right, kHasRows, kFirstTab, kTabCount ).focus );
+	EXPECT_EQ( BrowserFocus::SubTabs,
+		ComputeNav( BrowserFocus::Action, NavKey::Left, BrowsingEmpty( ) ).focus );
 }
 
-TEST( BrowserNav, TheButtonNeverMovesTheSelectionOrTheTab )
+TEST( BrowserNav, UpFromTheButtonReachesTheTabsWhenThereIsNoSubRow )
+{
+	const NavWhere where( true, kPlayTab, kTabCount, 0, 0 );
+	EXPECT_EQ( BrowserFocus::Tabs, ComputeNav( BrowserFocus::Action, NavKey::Up, where ).focus );
+}
+
+// ---------------------------------------------------------------- modal and the form
+
+TEST( BrowserNav, TheDialogIsModalAndNothingLeavesIt )
 {
 	for ( int k = 0; k < kKeyCount; ++k )
 	{
-		const NavResult r = ComputeNav( BrowserFocus::Action, kKeys[k], kHasRows, kFirstTab, kTabCount );
-		EXPECT_EQ( 0, r.tabStep ) << k;
-		EXPECT_EQ( 0, r.rowStep ) << k;
+		const NavResult r = ComputeNav( BrowserFocus::Dialog, kKeys[k], Browsing( ) );
+		EXPECT_EQ( BrowserFocus::Dialog, r.focus ) << "key " << k << " escaped a modal dialog";
+		EXPECT_EQ( 0, r.rowStep );
+		EXPECT_EQ( 0, r.tabStep );
+		EXPECT_EQ( 0, r.subStep );
 	}
 }
 
-// ---------------------------------------------------------------- an empty list
-
-TEST( BrowserNav, DownFromTheRowStaysPutWhenNothingIsListed )
+TEST( BrowserNav, TheHostFormOwnsItsOwnArrowsHere )
 {
-	// Entering an empty list would focus a region with no row to be on, and the detail panel and the
-	// JOIN button both read a selection that would not exist. The search box still LETS GO on down --
-	// it just does not hand the keyboard to a list that is not there.
-	EXPECT_EQ( BrowserFocus::Tabs,
-		ComputeNav( BrowserFocus::Tabs, NavKey::Down, kEmpty, kFirstTab, kTabCount ).focus );
-	EXPECT_NE( BrowserFocus::Rows,
-		ComputeNav( BrowserFocus::Search, NavKey::Down, kEmpty, kLastTab, kTabCount ).focus );
-}
-
-TEST( BrowserNav, TheTopRowStillWorksWhenNothingIsListed )
-{
-	// The likeliest reasons the list is empty are the wrong tab and too narrow a search, so both have
-	// to stay reachable from the screen that reports the problem.
-	EXPECT_EQ( 1, ComputeNav( BrowserFocus::Tabs, NavKey::Right, kEmpty, kFirstTab, kTabCount ).tabStep );
-	EXPECT_EQ( -1, ComputeNav( BrowserFocus::Tabs, NavKey::Left, kEmpty, kLastTab, kTabCount ).tabStep );
-	EXPECT_EQ( BrowserFocus::Search,
-		ComputeNav( BrowserFocus::Tabs, NavKey::Right, kEmpty, kLastTab, kTabCount ).focus );
-	EXPECT_EQ( BrowserFocus::Tabs,
-		ComputeNav( BrowserFocus::Search, NavKey::Up, kEmpty, kLastTab, kTabCount ).focus );
-}
-
-TEST( BrowserNav, AFocusOnRowsFallsBackToTheTabsOnceTheListEmpties )
-{
-	// Servers time out while the browser is open, so this focus was legitimate when it was set.
+	// This unit answers nothing for the form: the caller walks its fields, because only it knows how
+	// many there are.
 	for ( int k = 0; k < kKeyCount; ++k )
 	{
-		const NavResult r = ComputeNav( BrowserFocus::Rows, kKeys[k], kEmpty, kFirstTab, kTabCount );
-		EXPECT_NE( BrowserFocus::Rows, r.focus ) << k;
-		EXPECT_EQ( 0, r.rowStep ) << k;
+		const NavResult r = ComputeNav( BrowserFocus::Host, kKeys[k], Playing( ) );
+		EXPECT_EQ( BrowserFocus::Host, r.focus ) << "key " << k;
+		EXPECT_EQ( 0, r.rowStep );
+		EXPECT_EQ( 0, r.tabStep );
+		EXPECT_EQ( 0, r.subStep );
 	}
-
-	// And having fallen back, it behaves as the tabs do.
-	EXPECT_EQ( 1, ComputeNav( BrowserFocus::Rows, NavKey::Right, kEmpty, kFirstTab, kTabCount ).tabStep );
 }
 
-TEST( BrowserNav, LeavingTheButtonSkipsTheListWhenItIsEmpty )
+// ---------------------------------------------------------------- invariants
+
+TEST( BrowserNav, EveryZoneAndKeyAnswersSomethingUsable )
 {
-	EXPECT_EQ( BrowserFocus::Tabs,
-		ComputeNav( BrowserFocus::Action, NavKey::Left, kEmpty, kFirstTab, kTabCount ).focus );
-	EXPECT_EQ( BrowserFocus::Tabs,
-		ComputeNav( BrowserFocus::Action, NavKey::Up, kEmpty, kFirstTab, kTabCount ).focus );
-}
+	// The sweep that catches a zone added without a case: no key may both move something and change
+	// focus, and no answer may point at a region that is not currently occupiable.
+	const NavWhere cases[] = { Browsing( kPublic ), Browsing( kPrivate ), BrowsingEmpty( ), Playing( ) };
 
-// ---------------------------------------------------------------- the loop as a whole
-
-TEST( BrowserNav, WalksTheWholeLoopAndBack )
-{
-	// Tabs -> search -> list -> button -> list -> tabs, in one go.
-	BrowserFocus f = BrowserFocus::Tabs;
-
-	f = ComputeNav( f, NavKey::Right, kHasRows, kLastTab, kTabCount ).focus;
-	EXPECT_EQ( BrowserFocus::Search, f );
-
-	f = ComputeNav( f, NavKey::Down, kHasRows, kLastTab, kTabCount ).focus;
-	EXPECT_EQ( BrowserFocus::Rows, f );
-
-	f = ComputeNav( f, NavKey::Right, kHasRows, kLastTab, kTabCount ).focus;
-	EXPECT_EQ( BrowserFocus::Action, f );
-
-	f = ComputeNav( f, NavKey::Left, kHasRows, kLastTab, kTabCount ).focus;
-	EXPECT_EQ( BrowserFocus::Rows, f );
-
-	f = ComputeNav( f, NavKey::Right, kHasRows, kLastTab, kTabCount ).focus;
-	f = ComputeNav( f, NavKey::Up, kHasRows, kLastTab, kTabCount ).focus;
-	EXPECT_EQ( BrowserFocus::Tabs, f );
-}
-
-TEST( BrowserNav, EverySettingIsReachableFromEveryOther )
-{
-	// A zone nothing can reach is a control nobody can use. Breadth-first over the whole graph.
-	for ( int start = 0; start < kZoneCount; ++start )
+	for ( int c = 0; c < 4; ++c )
 	{
-		bool seen[kZoneCount] = { false, false, false, false };
-		BrowserFocus frontier[16];
-		int count = 0;
-
-		frontier[count++] = kZones[start];
-		seen[start] = true;
-
-		for ( int i = 0; i < count; ++i )
+		for ( int z = 0; z < kZoneCount; ++z )
 		{
 			for ( int k = 0; k < kKeyCount; ++k )
-				for ( int lastTab = 0; lastTab < kTabCount; ++lastTab )
-				{
-					const BrowserFocus next =
-						ComputeNav( frontier[i], kKeys[k], kHasRows, lastTab, kTabCount ).focus;
-
-					for ( int z = 0; z < kZoneCount; ++z )
-					{
-						if (( kZones[z] == next ) && !seen[z] )
-						{
-							seen[z] = true;
-							frontier[count++] = next;
-						}
-					}
-				}
-		}
-
-		for ( int z = 0; z < kZoneCount; ++z )
-			EXPECT_TRUE( seen[z] ) << "zone " << z << " unreachable from zone " << start;
-	}
-}
-
-TEST( BrowserNav, NeverMovesBothTheTabAndTheSelection )
-{
-	// One key, one meaning. If this ever fired, the caller would be applying a tab switch and a row
-	// step from the same press, on a list the tab switch just replaced.
-	for ( int z = 0; z < kZoneCount; ++z )
-		for ( int k = 0; k < kKeyCount; ++k )
-			for ( int e = 0; e < 2; ++e )
-				for ( int lastTab = 0; lastTab < kTabCount; ++lastTab )
-				{
-					const NavResult r = ComputeNav( kZones[z], kKeys[k], e != 0, lastTab, kTabCount );
-
-					EXPECT_FALSE(( r.tabStep != 0 ) && ( r.rowStep != 0 )) << z << "," << k;
-					EXPECT_GE( r.tabStep, -1 );
-					EXPECT_LE( r.tabStep, 1 );
-					EXPECT_GE( r.rowStep, -1 );
-					EXPECT_LE( r.rowStep, 1 );
-				}
-}
-
-TEST( BrowserNav, AKeyThatMovesSomethingLeavesFocusWhereItWas )
-{
-	for ( int z = 0; z < kZoneCount; ++z )
-		for ( int k = 0; k < kKeyCount; ++k )
-			for ( int lastTab = 0; lastTab < kTabCount; ++lastTab )
 			{
-				const NavResult r = ComputeNav( kZones[z], kKeys[k], kHasRows, lastTab, kTabCount );
-				if (( r.tabStep != 0 ) || ( r.rowStep != 0 ))
-					EXPECT_EQ( kZones[z], r.focus ) << z << "," << k;
+				const NavResult r = ComputeNav( kZones[z], kKeys[k], cases[c] );
+
+				const int moves = ( r.tabStep != 0 ) + ( r.subStep != 0 ) + ( r.rowStep != 0 );
+				EXPECT_LE( moves, 1 ) << "case " << c << " zone " << z << " key " << k
+					<< " moved two things at once";
+
+				if ( moves > 0 )
+				{
+					EXPECT_EQ( Settled( kZones[z], cases[c] ), r.focus )
+						<< "case " << c << " zone " << z << " key " << k
+						<< " moved something AND changed focus";
+				}
+
+				if ( r.focus == BrowserFocus::Rows )
+					EXPECT_TRUE( cases[c].hasRows ) << "case " << c << " landed on an empty list";
+
+				if ( r.focus == BrowserFocus::SubTabs )
+					EXPECT_GT( cases[c].subCount, 0 ) << "case " << c << " landed on a missing sub-row";
 			}
-}
-
-// ---------------------------------------------------------------- the modal
-
-TEST( BrowserNav, ADialogIsModalOnEveryKey )
-{
-	// A dialog is a question, and the arrows belong to it while it is up. Letting one of them walk the
-	// focus back into the browser would leave the panel on screen with the highlight somewhere behind
-	// it -- the player arrowing over controls they cannot reach, and a question nobody is answering.
-	// What happens INSIDE the dialog is dialog_compute's job; this only has to refuse to leave.
-	for ( int k = 0; k < kKeyCount; ++k )
-		for ( int e = 0; e < 2; ++e )
-			for ( int lastTab = 0; lastTab < kTabCount; ++lastTab )
-			{
-				const NavResult r = ComputeNav( BrowserFocus::Dialog, kKeys[k], e != 0, lastTab, kTabCount );
-
-				EXPECT_EQ( BrowserFocus::Dialog, r.focus ) << k;
-				EXPECT_EQ( 0, r.tabStep ) << k;
-				EXPECT_EQ( 0, r.rowStep ) << k;
-			}
-}
-
-// ---------------------------------------------------------------- the hosting form
-
-TEST( BrowserNav, TheHostingFormKeepsItsOwnArrows )
-{
-	// [rc4l] Up and down walk the form's fields, and only the caller knows how many there are; left
-	// and right belong to the caret in whichever field is focused, exactly as in the search box. So
-	// this unit refuses all four rather than guessing -- a form that jumped to another region halfway
-	// through a port number would be unusable.
-	for ( int k = 0; k < kKeyCount; ++k )
-		for ( int e = 0; e < 2; ++e )
-		{
-			const NavResult r = ComputeNav( BrowserFocus::Host, kKeys[k], e != 0, kFirstTab, kTabCount );
-
-			EXPECT_EQ( BrowserFocus::Host, r.focus ) << k;
-			EXPECT_EQ( 0, r.tabStep ) << k;
-			EXPECT_EQ( 0, r.rowStep ) << k;
-		}
-}
-
-// ---------------------------------------------------------------- a row longer than two
-
-TEST( BrowserNav, AMiddleTabCanGoBothWays )
-{
-	// [rc4l] THE BUG THIS SIGNATURE CHANGE EXISTS FOR, and it shipped.
-	//
-	// The tab argument used to be a single bool, onLastTab, and the header argued that one bit spared
-	// this unit from having to know how many tabs there were. True of two. False of three: the middle
-	// tab is neither the first nor the last, and "am I on the last one" cannot answer LEFT for it.
-	//
-	// PRIVATE could step right to HOST and could not step left to PUBLIC, because the only question
-	// being asked was one the middle of a row does not answer.
-	EXPECT_EQ( -1, ComputeNav( BrowserFocus::Tabs, NavKey::Left, kHasRows, kMiddleTab,
-		kTabCount ).tabStep );
-	EXPECT_EQ( 1, ComputeNav( BrowserFocus::Tabs, NavKey::Right, kHasRows, kMiddleTab,
-		kTabCount ).tabStep );
-}
-
-TEST( BrowserNav, EveryTabCanReachItsNeighbours )
-{
-	// Swept over the whole row rather than at the two ends, which is where the old bool was tested
-	// and is exactly where a three-tab row is least interesting.
-	for ( int at = 0; at < kTabCount; ++at )
-	{
-		const NavResult left = ComputeNav( BrowserFocus::Tabs, NavKey::Left, kHasRows, at, kTabCount );
-		const NavResult right = ComputeNav( BrowserFocus::Tabs, NavKey::Right, kHasRows, at, kTabCount );
-
-		// Left moves unless there is nothing to the left of it.
-		EXPECT_EQ(( at > 0 ) ? -1 : 0, left.tabStep ) << at;
-
-		// Right moves along the row until it runs out, and then steps off into the search box.
-		if ( at < kTabCount - 1 )
-		{
-			EXPECT_EQ( 1, right.tabStep ) << at;
-			EXPECT_EQ( BrowserFocus::Tabs, right.focus ) << at;
-		}
-		else
-		{
-			EXPECT_EQ( 0, right.tabStep ) << at;
-			EXPECT_EQ( BrowserFocus::Search, right.focus ) << at;
 		}
 	}
 }
 
-TEST( BrowserNav, ARowOfOneTabHasNowhereToStep )
+TEST( BrowserNav, TheTabsAreAlwaysReachableGoingUp )
 {
-	// A count the browser does not currently use, checked because the unit now takes one and a
-	// caller that ever passes it must not get a step into a tab that is not there.
-	EXPECT_EQ( 0, ComputeNav( BrowserFocus::Tabs, NavKey::Left, kHasRows, 0, 1 ).tabStep );
-	EXPECT_EQ( 0, ComputeNav( BrowserFocus::Tabs, NavKey::Right, kHasRows, 0, 1 ).tabStep );
-	EXPECT_EQ( BrowserFocus::Search, ComputeNav( BrowserFocus::Tabs, NavKey::Right, kHasRows, 0,
-		1 ).focus );
+	// Whatever else changes, there must be a way back to the top with the keyboard alone.
+	EXPECT_EQ( BrowserFocus::Tabs,
+		ComputeNav( BrowserFocus::SubTabs, NavKey::Up, Browsing( ) ).focus );
+	EXPECT_EQ( BrowserFocus::SubTabs,
+		ComputeNav( BrowserFocus::Search, NavKey::Up, Browsing( ) ).focus );
+	EXPECT_EQ( BrowserFocus::SubTabs,
+		ComputeNav( BrowserFocus::Action, NavKey::Up, Browsing( ) ).focus );
 }
