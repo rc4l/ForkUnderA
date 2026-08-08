@@ -53,6 +53,8 @@
 #include "version.h"
 #include "network.h"
 #include "main.h"
+// [rc4l] Who may be introduced to whom, and why a refusal is answered rather than dropped.
+#include "features/server-hosting/computation/punchbroker_compute.h"
 #include <sstream>
 #include <set>
 // [rc4l] The reach-cookie table. Named rather than leaned on transitively -- this builds on GCC in a
@@ -574,6 +576,13 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			newServer.bNewFormatServer = ( temp != -1 );
 			newServer.iServerRevision = ( ( pByteStream->pbStreamEnd - pByteStream->pbStream ) >= 4 ) ? pByteStream->ReadLong() : pByteStream->ReadShort();
 
+			// [rc4l] One optional trailing byte: can this server punch a hole when we ask it to?
+			//
+			// Same trick the ban flag above uses. ReadByte returns -1 on an exhausted stream, so a
+			// server built before this says nothing and lands on false, which is exactly right: we
+			// must never instruct something that cannot answer.
+			newServer.bSupportsPunch = ( pByteStream->ReadByte() > 0 );
+
 			std::set<SERVER_s, SERVERCompFunc>::iterator currentServer = g_Servers.find ( newServer );
 
 			// This is a new server; add it to the list.
@@ -646,6 +655,7 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 					currentServer->lLastReceived = g_lCurrentTime;
 					// [BB] The server possibly changed the ban setting, so update it.
 					currentServer->bEnforcesBanList = newServer.bEnforcesBanList;
+					currentServer->bSupportsPunch = newServer.bSupportsPunch;
 				}
 			}
 
@@ -767,6 +777,87 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			NETWORK_LaunchProbePacket( &g_MessageBuffer, Target );
 
 			printf( "-> Reach probe sent to %s.\n", Target.ToString() );
+		}
+		return;
+
+	// [rc4l] A client asking to be introduced to a server it cannot reach directly.
+	//
+	// The security is the reach test's, verbatim, because the danger is the same one: this ends with
+	// somebody being sent a packet they did not ask for, so the requester must first prove it really
+	// is where it says it is. A cookie goes to the SOURCE address and must come back. Anyone spoofing
+	// a victim gets our cookie delivered to that victim, one small packet, and can go no further.
+	//
+	// THE SERVER ADDRESS IN THIS REQUEST IS ONLY EVER A LOOKUP KEY. It is used to find a server we
+	// have already verified and never dialled on the client's say-so. The single address anybody
+	// dials is AddressFrom, which we observed rather than were told.
+	case CLIENT_SERVERREGISTRY_PUNCH:
+		{
+			const char *pszCookie = pByteStream->ReadString();
+			const std::string cookie = ( pszCookie != NULL ) ? pszCookie : "";
+			const char *pszTarget = pByteStream->ReadString();
+			const std::string target = ( pszTarget != NULL ) ? pszTarget : "";
+
+			if ( cookie.empty() )
+			{
+				// First leg: a cookie to the source, and nothing else.
+				const std::string issued = SERVERREGISTRY_IssueReachCookie( AddressFrom );
+				if ( issued.empty() )
+					return;			// too many in flight; silence is the safe refusal
+
+				g_MessageBuffer.Clear();
+				g_MessageBuffer.ByteStream.WriteLong( SRSC_PUNCHRESULT );
+				g_MessageBuffer.ByteStream.WriteLong( SERVERREGISTRY_PUNCH_COOKIE );
+				g_MessageBuffer.ByteStream.WriteString( issued.c_str() );
+				NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
+				return;
+			}
+
+			const bool bProven = SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie );
+
+			// Find the server, if we know it at all. A malformed or unknown address simply fails to
+			// match, which lands on the same refusal as anything else we have not verified.
+			bool bListed = false;
+			bool bSupports = false;
+			NETADDRESS_s ServerAddress;
+
+			if ( ServerAddress.LoadFromString( target.c_str() ))
+			{
+				SERVER_s key;
+				key.Address = ServerAddress;
+				std::set<SERVER_s, SERVERCompFunc>::const_iterator it = g_Servers.find( key );
+				if ( it != g_Servers.end() )
+				{
+					bListed = true;
+					bSupports = it->bSupportsPunch;
+				}
+			}
+
+			const zx::PunchVerdict verdict = zx::DecidePunch(
+				zx::PunchAsk( bListed, bSupports, bProven, 0 ), 0 );
+
+			// [rc4l] ANSWER EVEN WHEN REFUSING, and answer at once. A client that hears "no" connects
+			// the ordinary way immediately; a client that hears nothing waits out a timeout to reach
+			// the same place. Refusing quickly is most of what makes this safe to put in front of
+			// every join.
+			g_MessageBuffer.Clear();
+			g_MessageBuffer.ByteStream.WriteLong( SRSC_PUNCHRESULT );
+			g_MessageBuffer.ByteStream.WriteLong( static_cast<int>( verdict ));
+			NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
+
+			if ( verdict != zx::PunchVerdict::Broker )
+				return;
+
+			// Tell the server where to aim. From the MAIN socket, because a server only accepts our
+			// instructions from the address it announced to: see the note on
+			// SERVERREGISTRY_RequestServerVerification about why the probe socket cannot be used here.
+			g_MessageBuffer.Clear();
+			g_MessageBuffer.ByteStream.WriteByte( SERVERREGISTRY_PUNCH );
+			g_MessageBuffer.ByteStream.WriteString( AddressFrom.ToString() );
+			NETWORK_LaunchPacket( &g_MessageBuffer, ServerAddress );
+
+			printf( "-> Punch: told %s to open for %s.
+", ServerAddress.ToString(),
+				AddressFrom.ToString() );
 		}
 		return;
 

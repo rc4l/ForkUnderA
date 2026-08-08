@@ -85,6 +85,14 @@ typedef struct
 	// [BB] Does the server enforce the holy banlist locally?
 	mutable bool	bEnforcesBanList;
 
+	// [rc4l] Can this server open a hole for a joiner when asked?
+	//
+	// Mutable and set from the announce, where old builds simply say nothing and land on false. That
+	// false is the whole point: it is what lets the registry refuse a punch request INSTANTLY for
+	// every server that predates the feature, instead of instructing something that will never
+	// answer and leaving the client to time out.
+	mutable bool	bSupportsPunch;
+
 	// [BB] Is the server using the latest Skulltag version
 	bool	bNewFormatServer;
 

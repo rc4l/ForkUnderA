@@ -76,6 +76,7 @@
 #include "voicechat.h"
 #include "features/wad-serve/zx_wadserve.h" // [rc4l] the direct-download port we advertise
 #include "features/server-hosting/zx_hosting.h" // [rc4l] tell the game that started us we are reachable
+#include "features/server-hosting/computation/punchbroker_compute.h" // [rc4l] how many punches, and when
 
 // [SB] This is easier than updating the parameters for a load of functions every time I want to add something.
 struct LauncherResponseContext
@@ -718,6 +719,14 @@ void SERVER_SERVERREGISTRY_Tick( void )
 	// [BB] And tell which code revision number the server was built with.
 	g_ServerRegistryBuffer.ByteStream.WriteLong( GetRevisionNumber() );
 
+	// [rc4l] And that we can open a hole for a joiner who cannot reach us.
+	//
+	// A trailing byte, so a registry that predates it reads the packet exactly as it always did and
+	// simply stops before this. On our own registry the absence of it reads as false, which is what
+	// lets a punch request against an older server be refused instantly rather than instructing
+	// something that will never answer.
+	g_ServerRegistryBuffer.ByteStream.WriteByte( 1 );
+
 	// Send the server registry our packet.
 	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistry );
 }
@@ -1040,6 +1049,42 @@ const char *SERVER_SERVERREGISTRY_GetGameName( void )
 bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address )
 {
 	return Address.Compare( g_AddressServerRegistry );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Open a hole for somebody who cannot reach us.
+//
+// Our router drops packets from strangers because it has never seen us talk to them. It does accept
+// replies to traffic that already left, so sending one packet to the joiner first is enough to turn
+// their next packet from unsolicited into expected. The content is irrelevant and this will very
+// likely be discarded at the far end. SENDING IT is the entire point.
+//
+// Repeated rather than sent once, ICE-style: the two ends act on separate messages from the registry
+// and do not start together, so a single packet can easily leave before the other side is listening,
+// and UDP may drop it besides. computation/punchbroker_compute owns the schedule.
+void SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream )
+{
+	const char *pszTarget = pByteStream->ReadString();
+	if (( pszTarget == NULL ) || ( pszTarget[0] == 0 ))
+		return;
+
+	NETADDRESS_s Target;
+	if ( Target.LoadFromString( pszTarget ) == false )
+		return;
+
+	// A port of zero is not somewhere to send anything.
+	if ( Target.usPort == 0 )
+		return;
+
+	g_ServerRegistryBuffer.Clear();
+	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVERREGISTRY_PUNCH );
+
+	// [rc4l] Out of the GAME socket, not the registry one. The hole has to open on the port the
+	// joiner is about to connect to, and a router maps per source port: punching from any other
+	// socket would open a door beside the one they are knocking on.
+	for ( int i = 0; i < zx::kPunchAttempts; ++i )
+		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Target );
 }
 
 //*****************************************************************************
