@@ -4098,10 +4098,29 @@ public:
 					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H - 1 ) -
 						serverbrowser_ToScreenY( rowY - 1 ));
 			}
+			else if ( bHot )
+			{
+				// [rc4l] The SERVER LIST's hover, to the pixel: the same faint band at the same
+				// colour and alpha, and no change to the text.
+				//
+				// This used to recolour the label gold, which said the wrong thing twice over. Gold
+				// is what a FOCUSED field wears elsewhere in this browser, so sweeping the pointer
+				// down the list looked like the keyboard was following it; and a row that changes
+				// colour under the pointer claims something happened, when hovering is only a hint
+				// about what clicking would do. It also fought the green: a running row went gold
+				// while hovered, so the one state worth marking vanished when you pointed at it.
+				screen->Dim( PalEntry( 150, 170, 215 ), 0.06f,
+					serverbrowser_ToScreenX( x - 4 ),
+					serverbrowser_ToScreenY( rowY - 1 ),
+					serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT ) -
+						serverbrowser_ToScreenX( x - 4 ),
+					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H - 1 ) -
+						serverbrowser_ToScreenY( rowY - 1 ));
+			}
 
-			EColorRange col = bSel ? CR_WHITE : ( bHot ? CR_GOLD : CR_GRAY );
-			if ( bRunning && !bHot )
-				col = CR_GREEN;
+			// Hover is deliberately not in here. What a row IS -- selected, being served, neither --
+			// is all the label has to say.
+			EColorRange col = bSel ? CR_WHITE : ( bRunning ? CR_GREEN : CR_GRAY );
 
 			FString label;
 			if ( row == SB_HOST_CATALOGUE_CUSTOM )
