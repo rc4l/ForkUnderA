@@ -10,6 +10,26 @@
 namespace zx
 {
 
+// [rc4l] Something OTHER than a join waiting on a download: hosting an experience whose files had to
+// be fetched first. `proc` is called with whether the transfer worked, at the moment the truth table
+// in joinresume_compute says to act -- which may be now, or when the player comes back to the menu,
+// or never if they cancel.
+//
+// It goes through this rather than growing its own copy because every hard part is shared: the same
+// hold while a prompt is up, the same "you are away, so it waits" band, the same cancel that keeps
+// the file and drops the intent. Two copies of that would be two chances to get it wrong, and the
+// half that was got wrong the first time is the half nobody reviews.
+//
+// `readyName` is what the waiting band calls it. Replaces any pending resume, join or host.
+typedef void ( *ResumeProc )( bool succeeded );
+void SetPendingResume( ResumeProc proc, const char *readyName );
+
+// [rc4l] The completion callback that DRIVES all of the above. Hand this to waddownload::Start for
+// any transfer something is waiting on, then say what to do with SetPendingResume. Passing your own
+// resume proc to Start instead would skip the truth table entirely and fire the moment the bytes
+// landed, wherever the player happened to be -- which is the exact bug this path exists to prevent.
+void NoteDownloadFinished( bool allSucceeded );
+
 // Hold the resume that follows a finished download, because the player is being asked something they
 // have to answer first.
 //

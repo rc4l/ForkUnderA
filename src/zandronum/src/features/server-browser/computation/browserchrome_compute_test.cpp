@@ -215,13 +215,25 @@ TEST( HostParts, KeepsTheTabsSoThereIsAWayBack )
 	EXPECT_TRUE( Shows( ComputeHostParts( true ), zx::kPartTabs ));
 }
 
-TEST( HostParts, ARunningTransferSurvivesTheChangeOfTab )
+TEST( HostParts, AForeignTransferSurvivesTheChangeOfTab )
 {
-	// The download does not care which screen the player wandered onto, and the button that stops it
-	// lives in the detail panel. Taking that away would strand a transfer with no way to cancel it.
+	// A JOIN's download does not care which screen the player wandered onto, and the button that
+	// stops it lives in the detail panel. Taking that away would strand it with no way to cancel.
 	const unsigned parts = ComputeHostParts( true );
 
 	EXPECT_TRUE( Shows( parts, zx::kPartHost ));
 	EXPECT_TRUE( Shows( parts, zx::kPartFooter ));
 	EXPECT_TRUE( Shows( parts, zx::kPartDetail ));
+}
+
+TEST( HostParts, ThePanelsOwnTransferDoesNotDragInASecondCancel )
+{
+	// [rc4l] Hosting downloads too, and its own action button becomes CANCEL while it does. Treating
+	// that as a reason to draw the server-list detail panel as well put two CANCEL buttons on screen
+	// for one download, over a panel explaining that the server was no longer listed -- there was no
+	// server; the player was hosting.
+	const unsigned parts = ComputeHostParts( false );
+
+	EXPECT_TRUE( Shows( parts, zx::kPartHost ));
+	EXPECT_FALSE( Shows( parts, zx::kPartDetail ));
 }

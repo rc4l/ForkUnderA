@@ -57,13 +57,20 @@ unsigned ComputeVisibleParts( BrowserPhase phase, bool hasSelection, bool downlo
 	return parts;
 }
 
-unsigned ComputeHostParts( bool downloadRunning )
+unsigned ComputeHostParts( bool foreignDownloadRunning )
 {
 	// The tabs stay -- they are how the player gets back -- and the hosting panel takes the space the
 	// list and the detail panel would have had.
 	unsigned parts = kPartTabs | kPartHost;
 
-	if ( downloadRunning )
+	// [rc4l] Only for a transfer that is NOT this panel's own.
+	//
+	// The detail panel is dragged in here to carry the CANCEL button for a download the player
+	// started on another tab, which would otherwise have nowhere to be stopped from. Hosting now
+	// downloads too, and its own button says CANCEL while it does -- so doing this for its own
+	// transfer drew the server-list panel straight over the host panel, with two CANCELs on screen
+	// describing one download and a "that server is no longer listed" underneath them.
+	if ( foreignDownloadRunning )
 		parts |= kPartFooter | kPartDetail;
 
 	return parts;

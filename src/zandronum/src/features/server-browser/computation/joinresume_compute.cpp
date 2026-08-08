@@ -6,7 +6,7 @@
 namespace zx
 {
 
-ResumeAction ComputeResumeAction(bool havePendingJoin, bool downloadSucceeded, bool browserOpen,
+ResumeAction ComputeResumeAction(bool havePendingAction, bool downloadSucceeded, bool browserOpen,
 	bool answeringPrompt)
 {
 	// A prompt on screen outranks everything, including the join being ready and including the
@@ -15,7 +15,7 @@ ResumeAction ComputeResumeAction(bool havePendingJoin, bool downloadSucceeded, b
 	if (answeringPrompt)
 		return ResumeAction::Hold;
 
-	if (!havePendingJoin)
+	if (!havePendingAction)
 		return ResumeAction::Nothing;
 
 	// Failure is told immediately wherever they are. Unlike success it tears nothing down, so there
@@ -25,7 +25,7 @@ ResumeAction ComputeResumeAction(bool havePendingJoin, bool downloadSucceeded, b
 
 	// Browser open means they are watching the progress bar. Asking them to confirm the thing they
 	// are visibly waiting for is friction; anywhere else, taking the game away unannounced is worse.
-	return browserOpen ? ResumeAction::JoinNow : ResumeAction::NotifyReady;
+	return browserOpen ? ResumeAction::ProceedNow : ResumeAction::NotifyReady;
 }
 
 } // namespace zx
