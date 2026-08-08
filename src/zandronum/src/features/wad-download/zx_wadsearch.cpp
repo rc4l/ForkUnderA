@@ -3,6 +3,9 @@
 //
 // [rc4l] See zx_wadsearch.h. Main thread only -- it reads and writes GameConfig.
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #include "cmdlib.h"
 #include "doomtype.h"
 #include "gameconfigfile.h"
@@ -135,6 +138,28 @@ FString FindFileInEngineSearchPaths( const char *name )
 	}
 
 	return FString( );
+}
+
+unsigned long long FileSizeOnDisk( const char *path )
+{
+	if (( path == NULL ) || ( path[0] == 0 ))
+		return 0;
+
+	// 64-bit, because a resource pack can exceed what the 32-bit stat reports.
+#ifdef _WIN32
+	struct _stat64 info;
+	if ( _stat64( path, &info ) != 0 )
+		return 0;
+#else
+	struct stat info;
+	if ( stat( path, &info ) != 0 )
+		return 0;
+#endif
+
+	if ( info.st_size < 0 )
+		return 0;
+
+	return static_cast<unsigned long long>( info.st_size );
 }
 
 FString FindIwadInEngineSearchPaths( const char *name )

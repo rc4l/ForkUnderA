@@ -2590,12 +2590,13 @@ public:
 
 			// The same answer the panel draws from, so a file shown as missing is a file this refuses
 			// to host on. See HostEntryFilesPresent for what these two used to disagree about.
-			const std::vector<bool> &present = HostEntryFilesPresent( g_HostEntrySel, chosen.addon );
+			const std::vector<unsigned long long> &sizes =
+				HostEntryFileSizes( g_HostEntrySel, chosen.addon );
 
 			std::vector<std::string> have;
 			for ( size_t i = 0; i < chosen.addon.files.size( ); ++i )
 			{
-				if (( i < present.size( )) && present[i] )
+				if (( i < sizes.size( )) && ( sizes[i] > 0 ))
 					have.push_back( chosen.addon.files[i].name );
 			}
 
@@ -4362,27 +4363,39 @@ public:
 	// Cached per selection: the lookup touches the filesystem once per file and this is read while
 	// drawing, so doing it fresh every frame would stat the whole list sixty times a second. A file
 	// that appears while you are looking at the entry is picked up the next time the selection moves.
-	const std::vector<bool> &HostEntryFilesPresent( int entry, const zx::AddonEntry &addon )
+	// [rc4l] SIZE, which doubles as the answer to "do I have it": 0 means it is not on this machine.
+	//
+	// Measured off the disk rather than declared by the entry. A number baked into the catalogue
+	// would describe the mirror's copy, not yours, and would go on claiming a size for a file you do
+	// not have -- which is the opposite of what the column is for.
+	//
+	// By NAME, not by hash. The join matches PWADs on md5, but the only local-copy lookup that does
+	// so searches our own download folder alone and falls back to hashing the whole file: it would
+	// miss everything in the player's own WAD folders and cost a 240MB read on the entry that needs
+	// it least. So this answers "there is a loadable file by this name", which is what the panel can
+	// afford and all it claims. A different build under the right name still reads as present.
+	const std::vector<unsigned long long> &HostEntryFileSizes( int entry, const zx::AddonEntry &addon )
 	{
 		static int cached = -2;
 		static int cachedGeneration = -1;
-		static std::vector<bool> present;
+		static std::vector<unsigned long long> sizes;
 
 		if (( entry != cached ) || ( cachedGeneration != g_HostHaveGeneration )
-			|| ( present.size( ) != addon.files.size( )))
+			|| ( sizes.size( ) != addon.files.size( )))
 		{
 			cached = entry;
 			cachedGeneration = g_HostHaveGeneration;
-			present.clear( );
+			sizes.clear( );
 
 			for ( size_t i = 0; i < addon.files.size( ); ++i )
 			{
-				present.push_back(
-					zx::FindFileInEngineSearchPaths( addon.files[i].name.c_str( )).IsNotEmpty( ));
+				// The search is stats only; the size is one more on the path it just resolved.
+				const FString at = zx::FindFileInEngineSearchPaths( addon.files[i].name.c_str( ));
+				sizes.push_back( at.IsEmpty( ) ? 0 : zx::FileSizeOnDisk( at.GetChars( )));
 			}
 		}
 
-		return present;
+		return sizes;
 	}
 
 	int HostDetailH( )
@@ -4522,6 +4535,8 @@ public:
 		// was reporting an inventory the player has no use for and colouring half of it like a
 		// fault. Size is the fact that changes what someone decides -- the server list has shown it
 		// for the same reason, from SQF2_WAD_SIZES, and this is the same answer from the catalogue.
+		const std::vector<unsigned long long> &sizes = HostEntryFileSizes( g_HostEntrySel, addon );
+
 		for ( size_t i = 0; i < addon.files.size( ); ++i )
 		{
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
@@ -4531,11 +4546,15 @@ public:
 				screen->DrawText( SmallFont, CR_GRAY, x, y, name,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-				// Right-aligned, so a column of sizes reads down the edge rather than ragged after
-				// names of every length. Nothing is drawn when the entry did not say.
-				if ( addon.files[i].size > 0 )
+				// [rc4l] Right-aligned, so a column of sizes reads down the edge rather than ragged
+				// after names of every length. A file this machine does not have has no size to
+				// show, which is the whole indicator: a number means you have it, blank means the
+				// button will fetch it.
+				const unsigned long long bytes = ( i < sizes.size( )) ? sizes[i] : 0;
+
+				if ( bytes > 0 )
 				{
-					const FString size = zx::FormatByteSize( addon.files[i].size ).c_str( );
+					const FString size = zx::FormatByteSize( bytes ).c_str( );
 
 					screen->DrawText( SmallFont, CR_DARKGRAY,
 						SB_HOST_RCOL_RIGHT - SmallFont->StringWidth( size ), y, size,
