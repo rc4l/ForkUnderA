@@ -2700,9 +2700,16 @@ public:
 		g_HostEntryIwad = "";
 		g_HostEntryPwads.Clear( );
 
-		// What we are playing is what we will serve. FWadCollection knows the files by the names they
-		// were loaded under, which is exactly the form a command line wants.
-		config.iwad = ExtractFileBase( Wads.GetWadFullName( 1 ), true ).GetChars( );
+		// [rc4l] What we are playing is what we will serve, named by the PATH it was loaded from
+		// rather than by its base name.
+		//
+		// FWadCollection knows both, and the base name used to be the obvious choice because it is
+		// the form a command line wants. It also makes the server go and look the file up again, in
+		// its own config, which is not this one -- the same mistake the catalogue path made, and it
+		// bites hardest here: a file you are playing right now might have come from a folder this
+		// session added in memory and has not written out yet, so the server would search for it and
+		// come back empty while it sat open in our own process.
+		config.iwad = HostServeName( 1 );
 
 		for ( int i = 2; i < Wads.GetNumWads( ); ++i )
 		{
@@ -2716,7 +2723,7 @@ public:
 			if ( stricmp( pszName, "skulltag_actors.pk3" ) == 0 )
 				continue;
 
-			config.pwads.push_back( pszName );
+			config.pwads.push_back( HostServeName( i ));
 		}
 
 		SaveHostForm( );
@@ -2862,6 +2869,22 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] How to name loaded wad `i` to the server: the path it was loaded from when that path can
+	// be put on a command line, and its bare name when it cannot.
+	//
+	// The path is what stops the server searching for a file we already have open. The fallback
+	// matters because a name that fails IsSafeFilePath is DROPPED from the argv, and a server missing
+	// a file is worse than a server that has to go and look for it.
+	std::string HostServeName( int i )
+	{
+		const char *const pszFull = Wads.GetWadFullName( i );
+		if (( pszFull != NULL ) && ( pszFull[0] != 0 ) && zx::IsSafeFilePath( pszFull ))
+			return pszFull;
+
+		const char *const pszName = Wads.GetWadName( i );
+		return ( pszName != NULL ) ? pszName : "";
+	}
+
 	// [rc4l] Whatever the button under the pointer means right now.
 	void PressHostButton( )
 	{
