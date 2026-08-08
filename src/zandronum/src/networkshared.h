@@ -245,6 +245,17 @@ struct BYTESTREAM_s;
 //
 //==========================================================================
 
+// [rc4l] STILL IPv4 ONLY, deliberately and temporarily.
+//
+// Four decimal octets, so a ban can be written 1.2.3.* and matched a field at a time. v6 does not
+// fit that shape: it has eight groups, and the thing people ban is a /64 prefix, which is a length
+// rather than a wildcard. Replacing this means storing a prefix and a length and rewriting the ban
+// FILE, which is a format change and wants deciding rather than inventing halfway through a socket
+// migration.
+//
+// Until then SetFrom refuses a v6 address rather than flattening one into 0.0.0.0, so a v6 player is
+// unbannable here instead of being wrongly matched against somebody else's rule. That is the safe
+// direction of the two, and it is the whole reason this note exists rather than a silent gap.
 class IPStringArray
 {
 private:

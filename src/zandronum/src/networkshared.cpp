@@ -927,6 +927,26 @@ void NETADDRESS_s::ReadFromStream ( BYTESTREAM_s *pByteStream, bool IncludePort 
 //
 void IPStringArray::SetFrom ( const NETADDRESS_s &Address )
 {
+	// [rc4l] A V6 ADDRESS IS NOT REPRESENTABLE HERE, AND MUST NOT BE APPROXIMATED.
+	//
+	// This holds four decimal octets so a ban can say 1.2.3.*, and there is no v6 shape that fits
+	// it: v6 has eight groups and the unit people actually ban is a /64 prefix, which is a length
+	// rather than a wildcard.
+	//
+	// The dangerous part is what happens if this is left alone. abIP is zeroed for a v6 address, so
+	// every v6 player would come out as 0.0.0.0: identical to each other, matching a 0.* rule, and
+	// banning any one of them would ban all of them. Enabling v6 is what created that, so it is
+	// closed here rather than left as a surprise for whoever ships the first v6 ban.
+	//
+	// Cleared means "no address", which every comparison already treats as matching nothing. A v6
+	// player is therefore unbannable by this list rather than wrongly bannable, which is the right
+	// way round for a failure: see the note in networkshared.h about what replacing this needs.
+	if ( Address.bIsIPv6 )
+	{
+		Clear();
+		return;
+	}
+
 	for ( int i = 0; i < 4; ++i )
 		itoa( Address.abIP[i], szAddress[i], 10 );
 }
