@@ -832,8 +832,29 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 				}
 			}
 
+			// [rc4l] A REAL per-source limit, over the window the cookies already define.
+			//
+			// Every punch request needs a fresh cookie, cookies carry the address they were issued
+			// to, and they expire after ten seconds. So counting the ones outstanding for this
+			// source IS the count of requests it has made recently, with no second table to keep
+			// and nothing new to expire.
+			//
+			// Without this the cookie only proves WHO is asking, never HOW OFTEN, and each request
+			// makes us send a packet to a third party. That is the shape of the abuse the handshake
+			// exists to prevent, so leaving the limit switched off undid most of the point of it.
+			int recent = 0;
+			for ( size_t i = 0; i < g_ReachCookies.size(); ++i )
+			{
+				if ( g_ReachCookies[i].Address.CompareNoPort( AddressFrom ))
+					++recent;
+			}
+
+			// Five in ten seconds. A person joining servers does not go near it; something dialling
+			// strangers through us hits it immediately.
+			const int kMaxPunchesPerWindow = 5;
+
 			const zx::PunchVerdict verdict = zx::DecidePunch(
-				zx::PunchAsk( bListed, bSupports, bProven, 0 ), 0 );
+				zx::PunchAsk( bListed, bSupports, bProven, recent ), kMaxPunchesPerWindow );
 
 			// [rc4l] ANSWER EVEN WHEN REFUSING, and answer at once. A client that hears "no" connects
 			// the ordinary way immediately; a client that hears nothing waits out a timeout to reach
