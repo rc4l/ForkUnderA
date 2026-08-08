@@ -950,8 +950,10 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 		return;
 
 	// Convert the IP address to a socket address.
-	struct sockaddr_in SocketAddress;
-	Address.ToSocketAddress( reinterpret_cast<sockaddr&>(SocketAddress) );
+	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
+	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
+	struct sockaddr_storage SocketAddress;
+	Address.ToSocketAddress( SocketAddress );
 
 	// [BB] Communication with the auth server is not Huffman-encoded.
 	if ( Address.Compare( NETWORK_AUTH_GetCachedServerAddress() ) == false )
@@ -1985,9 +1987,41 @@ void network_Error( const char *pszError )
 
 //*****************************************************************************
 //
+// [rc4l] Whether our sockets ended up speaking both families. The bind below has to hand a socket
+// the matching kind of address, and only this knows which it got.
+static bool g_bSocketIsDualStack = false;
+
+//*****************************************************************************
+//
+// [rc4l] A socket that hears v6 AND v4, or a plain v4 one where the first is not available.
+//
+// ONE socket rather than two. Turning IPV6_V6ONLY off makes a v6 socket accept v4 peers as well,
+// delivered as ::ffff:a.b.c.d, which NETADDRESS_s::LoadFromSocketAddress puts straight back into v4
+// so nothing downstream ever sees the mapped form. Two listeners would have meant two read loops and
+// a new question, which socket did that arrive on, for no gain.
+//
+// The fallback is not defensive padding. IPV6_V6ONLY defaults on in some places and off in others, a
+// host can have the v6 stack disabled outright, and a socket that exists but will only ever hear v6
+// would make us invisible to every v4 player. If any part of that fails we close it and open exactly
+// the socket we always opened.
 static SOCKET network_AllocateSocket( void )
 {
 	SOCKET	Socket;
+
+	Socket = socket( PF_INET6, SOCK_DGRAM, IPPROTO_UDP );
+	if ( Socket != INVALID_SOCKET )
+	{
+		int off = 0;
+		if ( setsockopt( Socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&off, sizeof( off )) == 0 )
+		{
+			g_bSocketIsDualStack = true;
+			return ( Socket );
+		}
+
+		closesocket( Socket );
+	}
+
+	g_bSocketIsDualStack = false;
 
 	// Allocate a socket.
 	Socket = socket( PF_INET, SOCK_DGRAM, IPPROTO_UDP );
@@ -2005,20 +2039,37 @@ static SOCKET network_AllocateSocket( void )
 bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse )
 {
 	int		iErrorCode;
-	struct sockaddr_in address;
 
 	// setsockopt needs an int, bool won't work
 	int		enable = 1;
 
+	// Allow the network socket to broadcast. Meaningless on a v6 socket, which has multicast and no
+	// broadcast at all, and harmless: the call simply fails there, and LAN discovery keeps its own
+	// separate socket either way.
+	setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof( enable ));
+	if ( bReUse )
+		setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof( enable ));
+
+	// [rc4l] The bind has to match the SOCKET'S family rather than the caller's expectations. A
+	// dual-stack socket binds in6addr_any, which covers every v4 address too; handing it a
+	// sockaddr_in fails outright and the server never comes up at all.
+	if ( g_bSocketIsDualStack )
+	{
+		struct sockaddr_in6 address6;
+		memset( &address6, 0, sizeof( address6 ));
+		address6.sin6_family = AF_INET6;
+		address6.sin6_addr = in6addr_any;
+		address6.sin6_port = htons( usPort );
+
+		iErrorCode = bind( Socket, (sockaddr *)&address6, sizeof( address6 ));
+		return ( iErrorCode != SOCKET_ERROR );
+	}
+
+	struct sockaddr_in address;
 	memset (&address, 0, sizeof(address));
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = ulInAddr;
 	address.sin_port = htons( usPort );
-
-	// Allow the network socket to broadcast.
-	setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof( enable ));
-	if ( bReUse )
-		setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof( enable ));
 
 	iErrorCode = bind( Socket, (sockaddr *)&address, sizeof( address ));
 	if ( iErrorCode == SOCKET_ERROR )

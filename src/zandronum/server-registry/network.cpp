@@ -332,8 +332,10 @@ void NETWORK_LaunchProbePacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 	if ( pBuffer->ulCurrentSize == 0 )
 		return;
 
-	struct sockaddr_in SocketAddress;
-	Address.ToSocketAddress( reinterpret_cast<sockaddr&>( SocketAddress ));
+	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
+	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
+	struct sockaddr_storage SocketAddress;
+	Address.ToSocketAddress( SocketAddress );
 
 	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize,
 		&iNumBytesOut );
@@ -356,8 +358,10 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 		return;
 
 	// Convert the IP address to a socket address.
-	struct sockaddr_in SocketAddress;
-	Address.ToSocketAddress( reinterpret_cast<sockaddr&>(SocketAddress) );
+	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
+	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
+	struct sockaddr_storage SocketAddress;
+	Address.ToSocketAddress( SocketAddress );
 
 	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
 
