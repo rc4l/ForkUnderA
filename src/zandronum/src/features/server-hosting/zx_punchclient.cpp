@@ -14,6 +14,7 @@
 
 #include "doomtype.h"
 #include "c_console.h"
+#include "c_dispatch.h"		// [rc4l] CCMD, for fua_punchtest at the foot of this file
 #include "network.h"
 #include "networkshared.h"
 
@@ -121,4 +122,46 @@ void PunchResultArrived( int verdict )
 	g_Target = "";
 }
 
+void PunchRequestForced( const NETADDRESS_s &server )
+{
+	g_Target = server.ToString( );
+	Send( FString( ));
+}
+
 } // namespace zx
+
+//*****************************************************************************
+//
+// [rc4l] Ask for a punch at an address of your choosing, skipping the "is it worth it" question.
+//
+// NAT traversal cannot be reproduced on one machine, which is the whole difficulty of working on it:
+// two engines on the same computer are on the same network, so PunchRequestFor correctly declines
+// and there is nothing to watch. That is right in play and useless for finding out whether the rest
+// of the chain works at all.
+//
+// This forces only the ASKING. Every gate that matters lives on the registry -- the server has to be
+// listed, it has to have said it can punch, the cookie has to come back from the address the
+// registry itself saw, and the rate limit still applies -- so this cannot reach anything an ordinary
+// join could not. It buys a way to exercise registry, server and schedule from one desk, and nothing
+// else.
+CCMD( fua_punchtest )
+{
+	if ( argv.argc( ) < 2 )
+	{
+		Printf( "usage: fua_punchtest <address[:port]>\n" );
+		return;
+	}
+
+	NETADDRESS_s Target;
+	if ( Target.LoadFromString( argv[1] ) == false )
+	{
+		Printf( "fua_punchtest: %s is not an address.\n", argv[1] );
+		return;
+	}
+
+	if ( Target.usPort == 0 )
+		Target.SetPort( DEFAULT_SERVER_PORT );
+
+	Printf( "fua_punchtest: asking the registry to introduce us to %s.\n", Target.ToString( ));
+	zx::PunchRequestForced( Target );
+}

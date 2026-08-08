@@ -30,6 +30,12 @@ struct NETADDRESS_s;
 namespace zx
 {
 
+// [rc4l] Ask regardless of whether asking is worth it. Backs the fua_punchtest console command, and
+// exists because two engines on one machine are on the same network, so the ordinary path correctly
+// declines and the rest of the chain cannot be exercised from one desk. Forces only the asking:
+// every gate that matters is on the registry and still applies.
+void PunchRequestForced( const NETADDRESS_s &server );
+
 // [rc4l] Ask for an introduction to `server`, if asking is worth it at all.
 //
 // `bFromList` is false for an address the player typed or pasted: the registry has no entry for it,
