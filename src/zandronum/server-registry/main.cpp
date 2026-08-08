@@ -68,6 +68,13 @@
 #include <sys/time.h>
 #endif
 
+// [rc4l] isatty, for the stdin check in main. Guarded on WIN32 rather than _WIN32 to match where
+// do_stdin is actually defined (platform.cpp), so the declaration and the definition agree.
+#ifndef WIN32
+#include <unistd.h>
+extern int do_stdin;
+#endif
+
 //*****************************************************************************
 //	VARIABLES
 
@@ -917,6 +924,21 @@ int main( int argc, char **argv )
 	// (NULL, 0) pairing outright -- it crashed the process on Windows. Unbuffered costs a write syscall
 	// per line, which is nothing at a few lines per heartbeat, and behaves the same everywhere.
 	setvbuf( stdout, NULL, _IONBF, 0 );
+
+	// [rc4l] Only watch stdin when it is a terminal, or the daemon burns a whole core doing nothing.
+	//
+	// I_DoSelect exists to sleep until a packet arrives, and it adds fd 0 to the wait set whenever
+	// do_stdin is set. platform.cpp defines that as 1 and nothing here ever changed it. Under Docker
+	// stdin is /dev/null, which is ALWAYS ready to read, so select returned instantly on every pass
+	// instead of waiting its full second and the main loop spun at 100% CPU. On the live droplet that
+	// was 94% of the only core, with 7 voluntary context switches in 16 hours: a process that never
+	// once slept while serving under a gigabyte a month.
+	//
+	// Nothing here reads console input anyway, so the terminal case only preserves the behaviour for
+	// somebody running it by hand.
+#ifndef WIN32
+	do_stdin = isatty( STDIN_FILENO );
+#endif
 
 	std::cerr << "=== ZandroX Server Registry ===\n";
 	std::cerr << "Revision: " << GetGitTime() << "\n";

@@ -438,11 +438,12 @@ TEST(AddonFile, AFileFieldOfTheWrongShapeIsRefused)
 	const char *bad[] = {
 		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": 5 }] }",
 		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"md5\": 5 }] }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"size\": }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"notes\": }] }",
 		// [rc4l] An unknown key inside a file whose value cannot be skipped at all: the string never
 		// closes, so the skip fails rather than quietly swallowing the rest of the file.
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"size\": \"unterminated }] }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"size\": [1, 2 }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"notes\": \"unterminated }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"notes\": [1, 2 }] }",
+
 		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\" \"a.pk3\" }] }",
 		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\" \"md5\": \"x\" }] }",
 		"{ \"schema\": 1, \"name\": \"X\", \"files\": [ 5 ] }",

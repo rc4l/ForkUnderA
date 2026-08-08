@@ -44,8 +44,10 @@
 
 #include "features/net/zx_httpfile.h"
 #include "features/wad-download/zx_filehash.h"
+#include "features/wad-download/zx_wadsearch.h"
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wad-download/computation/downloadplan_compute.h"
+#include "features/wad-download/computation/fileresolve_compute.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/wad-download/computation/wadstore_compute.h"
 
@@ -659,40 +661,53 @@ FString DownloadDir()
 	return dir;
 }
 
-FString FindLocalCopy(const char *name, const char *md5Hex)
+// Walk a resolve plan and return the first step that holds the wanted bytes. A Stat step is taken on
+// the strength of its path, since the digest names the folder. Only a Hash step is read.
+static FString WalkResolvePlan(const std::vector<zx::ResolveStep> &steps, const std::string &digest)
 {
-	FString found;
-
-	if ((name == NULL) || (md5Hex == NULL) || (md5Hex[0] == '\0'))
-		return found;
-
-	const std::string dir = DownloadDir().GetChars();
-	const std::string digest = md5Hex;
-
-	// The store first, because it costs a stat: the path itself claims the content, so a hit needs
-	// no reading at all -- only a size check that nothing edited the file in place.
-	const std::string relative = zx::StoredRelativePath(digest, name, 32);
-	if (!relative.empty())
+	for (size_t i = 0; i < steps.size(); ++i)
 	{
-		const std::string stored = dir + relative;
-		if (FileExists(stored))
+		if (!FileExists(steps[i].path))
+			continue;
+
+		if (steps[i].check == zx::ResolveCheck::Stat)
+			return FString(steps[i].path.c_str());
+
+		char actual[33];
+		if (zx::Md5OfFile(steps[i].path.c_str(), actual, sizeof actual) &&
+			EqualsIgnoreCase(actual, digest))
 		{
-			found = stored.c_str();
-			return found;
+			return FString(steps[i].path.c_str());
 		}
 	}
 
-	// Then the flat working copy, which does cost a hash -- but it is the same hash the join would
-	// have computed for its staleness check, so nothing is read twice.
-	const std::string flat = dir + name;
-	if (FileExists(flat))
-	{
-		char actual[33];
-		if (zx::Md5OfFile(flat.c_str(), actual, sizeof actual) && EqualsIgnoreCase(actual, digest))
-			found = flat.c_str();
-	}
+	return FString();
+}
 
-	return found;
+FString FindLocalCopy(const char *name, const char *md5Hex)
+{
+	if ((name == NULL) || (md5Hex == NULL) || (md5Hex[0] == '\0'))
+		return FString();
+
+	// No search hits: our own folder is the whole of this question by contract.
+	return WalkResolvePlan(zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(),
+		std::vector<std::string>()), md5Hex);
+}
+
+FString FindVerifiedCopy(const char *name, const char *md5Hex)
+{
+	if ((name == NULL) || (md5Hex == NULL) || (md5Hex[0] == '\0'))
+		return FString();
+
+	TArray<FString> found;
+	zx::FindAllFilesInEngineSearchPaths(name, found);
+
+	std::vector<std::string> hits;
+	hits.reserve(found.Size());
+	for (unsigned i = 0; i < found.Size(); ++i)
+		hits.push_back(found[i].GetChars());
+
+	return WalkResolvePlan(zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(), hits), md5Hex);
 }
 
 bool IsRunning()
