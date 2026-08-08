@@ -119,6 +119,25 @@ FString DownloadDir();
 // business, and are never moved, renamed or deleted by us.
 FString FindLocalCopy(const char *name, const char *md5Hex);
 
+// [rc4l] The same question asked of the WHOLE machine: the copy of `name` whose MD5 is `md5Hex`
+// anywhere the engine looks, or "" if no copy on this disk has those bytes.
+//
+// FindLocalCopy plus every hit from the engine's file search, in one plan, cheapest step first,
+// so anything we downloaded is still answered by a stat and never read. The extra reads only ever
+// fall on a file the player put there by hand, which is the one copy whose bytes we have no other
+// reason to trust.
+//
+// This is what hosting must ask. Resolving by name alone takes the first test.wad on the path, and
+// since the spawned server is handed the path the client resolved, both sides load the same wrong
+// file and authentication compares them and passes. The result is a server quietly not running
+// the experience it advertises, with the host the last person able to tell.
+//
+// "" does NOT mean the file is absent, it means no copy here matches. Both answers lead to the same
+// place: fetch the right bytes.
+//
+// Main thread only: the search reads GameConfig. Read-only on anything outside our own folder.
+FString FindVerifiedCopy(const char *name, const char *md5Hex);
+
 }} // namespace zx::waddownload
 
 #endif // ZX_WADDOWNLOAD_H

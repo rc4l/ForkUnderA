@@ -41,6 +41,12 @@ FString FindIwadInEngineSearchPaths( const char *name );
 // entry whose files were missing started a server anyway and only wad_reload found out.
 FString FindFileInEngineSearchPaths( const char *name );
 
+// [rc4l] Every copy of `name` in those same places, in search order, rather than just the first.
+// The PWAD counterpart of FindAllIwadsInEngineSearchPaths, and for the same reason: one name is not
+// one file. Which of them is meant is a question only a digest can answer, so the caller is given
+// all of them to choose from instead of whichever the search order reached first.
+void FindAllFilesInEngineSearchPaths( const char *name, TArray<FString> &out );
+
 // [rc4l] Bytes on disk, or 0 if it is not there. One stat, no reading -- which is what makes it
 // affordable to ask about every file of an entry while drawing.
 unsigned long long FileSizeOnDisk( const char *path );

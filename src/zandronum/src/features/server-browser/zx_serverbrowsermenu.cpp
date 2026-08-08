@@ -2588,15 +2588,19 @@ public:
 		{
 			const zx::CatalogueEntry &chosen = entries[g_HostEntrySel];
 
-			// The same answer the panel draws from, so a file shown as missing is a file this refuses
-			// to host on. See HostEntryFilesPresent for what these two used to disagree about.
-			const std::vector<unsigned long long> &sizes =
-				HostEntryFileSizes( g_HostEntrySel, chosen.addon );
+			// [rc4l] By CONTENT, not by name. The panel asks by name because it must stay free, but
+			// having a file called eonweapons.pk3 is not the same as having the one this entry means,
+			// and pressing the button is where that difference starts to matter: the resolved path
+			// goes to the spawned server as well as to our own reload, so both sides load the same
+			// wrong file, authentication compares them and passes, and the server quietly is not the
+			// experience it advertises. A mismatch is treated as missing, which routes it into the
+			// downloader that was already sitting here for the absent case.
+			const std::vector<FString> verified = HostEntryVerifiedPaths( chosen.addon );
 
 			std::vector<std::string> have;
 			for ( size_t i = 0; i < chosen.addon.files.size( ); ++i )
 			{
-				if (( i < sizes.size( )) && ( sizes[i] > 0 ))
+				if (( i < verified.size( )) && verified[i].IsNotEmpty( ))
 					have.push_back( chosen.addon.files[i].name );
 			}
 
@@ -2688,7 +2692,13 @@ public:
 			g_HostEntryPwads.Clear( );
 			for ( size_t i = 0; i < plan.pwads.size( ); ++i )
 			{
-				const FString path = zx::FindFileInEngineSearchPaths( plan.pwads[i].c_str( ));
+				// The copy whose md5 matched, if we checked this one above. Re-resolving by name here
+				// would undo the check: the verified file can sit later on the search path than an
+				// impostor of the same name, and the first hit is what a name search returns.
+				FString path = VerifiedPathFor( chosen.addon, verified, plan.pwads[i].c_str( ));
+				if ( path.IsEmpty( ))
+					path = zx::FindFileInEngineSearchPaths( plan.pwads[i].c_str( ));
+
 				g_HostEntryPwads.Push( path.IsNotEmpty( ) ? path
 					: FString( plan.pwads[i].c_str( )));
 			}
@@ -4369,11 +4379,13 @@ public:
 	// would describe the mirror's copy, not yours, and would go on claiming a size for a file you do
 	// not have -- which is the opposite of what the column is for.
 	//
-	// By NAME, not by hash. The join matches PWADs on md5, but the only local-copy lookup that does
-	// so searches our own download folder alone and falls back to hashing the whole file: it would
-	// miss everything in the player's own WAD folders and cost a 240MB read on the entry that needs
-	// it least. So this answers "there is a loadable file by this name", which is what the panel can
-	// afford and all it claims. A different build under the right name still reads as present.
+	// By NAME, not by hash, and that limit is the price of running on every selection: checking the
+	// content can mean reading a 240MB file, which is not something to do while someone arrows down
+	// a list. So this answers "there is a loadable file by this name" and claims nothing more. A
+	// different build under the right name still reads as present here.
+	//
+	// The button is where that gets settled. HostEntryVerifiedPaths asks by md5 once, on the press,
+	// and a mismatch goes to the downloader like any other missing file.
 	const std::vector<unsigned long long> &HostEntryFileSizes( int entry, const zx::AddonEntry &addon )
 	{
 		static int cached = -2;
@@ -4396,6 +4408,50 @@ public:
 		}
 
 		return sizes;
+	}
+
+	// [rc4l] The path of each of the entry's files whose CONTENT matches what the catalogue asked
+	// for, "" where no copy on this disk does. Parallel to addon.files.
+	//
+	// Deliberately not what the panel draws from. The panel asks by name because it asks on every
+	// selection and must stay free; this asks once, when the button is pressed, and is allowed to
+	// read a file to be sure. Anything we downloaded is still a stat, since the store is keyed on
+	// the same md5 the catalogue carries.
+	//
+	// Uncached on purpose. It runs once per press, and caching a verdict about files on disk is how
+	// you end up hosting on a copy the player replaced since.
+	std::vector<FString> HostEntryVerifiedPaths( const zx::AddonEntry &addon )
+	{
+		std::vector<FString> paths;
+		paths.reserve( addon.files.size( ));
+
+		for ( size_t i = 0; i < addon.files.size( ); ++i )
+		{
+			const zx::AddonFileRef &file = addon.files[i];
+
+			// An entry that ships no md5 cannot be checked, so fall back to the name rather than
+			// call a file we have no opinion about missing and download it forever.
+			if ( file.md5.empty( ))
+				paths.push_back( zx::FindFileInEngineSearchPaths( file.name.c_str( )));
+			else
+				paths.push_back( zx::waddownload::FindVerifiedCopy( file.name.c_str( ),
+					file.md5.c_str( )));
+		}
+
+		return paths;
+	}
+
+	// The verified path for `name`, or "" if that file was not one of the entry's or did not match.
+	FString VerifiedPathFor( const zx::AddonEntry &addon, const std::vector<FString> &paths,
+		const char *name )
+	{
+		for ( size_t i = 0; i < addon.files.size( ); ++i )
+		{
+			if (( i < paths.size( )) && ( stricmp( addon.files[i].name.c_str( ), name ) == 0 ))
+				return paths[i];
+		}
+
+		return FString( );
 	}
 
 	int HostDetailH( )
