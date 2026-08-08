@@ -91,10 +91,10 @@
 #define SB_PANEL_RIGHT		604
 // [rc4l] Derived from the rule below the tabs rather than hardcoded, so nothing ever sits on it.
 #define SB_HEADER_Y			( SB_TAB_SEP_Y + 8 )
-// [rc4l] 100 rather than 92: the sub-tab row costs 8 virtual pixels above the list. Everything else
-// on this screen derives from this number through SB_CONTENT_TOP, so moving it is what keeps the
-// margins even, and 100 is the value that lands them at 32 top and bottom with all 14 rows intact.
-#define SB_FIRST_ROW_Y		100
+// [rc4l] 103 rather than 92: the sub-tab row and its two rules cost 11 virtual pixels. Everything
+// else on this screen derives from this number through SB_CONTENT_TOP, so moving it is what keeps the
+// margins even, and 103 is the value that lands them at 29 top and bottom with all 14 rows intact.
+#define SB_FIRST_ROW_Y		103
 
 // [rc4l] 16 rather than 20. The glyphs are eight units tall, so 20 left six clear above and below --
 // generous to the point of wasting a row and a half of list. At 16 there are still four either side,
@@ -180,7 +180,7 @@
 // would only be filling space it was given.
 #define SB_HOST_LEFT		( SB_PANEL_LEFT + 40 )
 #define SB_HOST_RIGHT		( SB_PANEL_RIGHT - 40 )
-#define SB_HOST_TOP			( SB_TAB_SEP_Y + 14 )
+#define SB_HOST_TOP			( SB_TAB_ROW_SEP_Y + 14 )
 #define SB_HOST_PAD			16
 #define SB_HOST_LINE		11
 #define SB_HOST_ROW_H		15		// one field and the space under it
@@ -309,7 +309,10 @@
 // is how actually even happens, and it survives anyone changing the tab height later.
 #define SB_TAB_PAD			6
 #define SB_TAB_LEFT			48
-#define SB_TAB_W			78
+// [rc4l] Pills are sized to their own text rather than to one shared width. MULTIPLAYER is nearly
+// three times the length of PLAY, and a width that fits the longer is mostly empty space around the
+// shorter. The pad is the room either side of the label.
+#define SB_TAB_PILL_PAD		13
 #define SB_TAB_GAP			6
 #define SB_TAB_H			14
 #define SB_TAB_TOP			( SB_CONTENT_TOP + SB_TAB_PAD )
@@ -329,10 +332,28 @@
 // compete with them for the eye. The search box sits on this row rather than the one above because it
 // filters this list: putting it beside PLAY would have it visible on a page where it filters nothing.
 #define SB_SUBTAB_LEFT		SB_TAB_LEFT
-#define SB_SUBTAB_W			64
+#define SB_SUBTAB_PILL_PAD	10
 #define SB_SUBTAB_GAP		5
 #define SB_SUBTAB_H			12
-#define SB_SUBTAB_TOP		( SB_TAB_TOP + SB_TAB_H + 4 )
+
+// [rc4l] The gap between the two rows, and the rule that sits in the middle of it. 8 rather than 4
+// so the rows read as two bands with a break between them instead of one crowded block. It costs a
+// virtual pixel of margin at each end of the screen, which is the whole price: everything derives
+// from SB_FIRST_ROW_Y, and widening the gap by two moves that by two and the margins by one.
+// [rc4l] The rule under the TAB ROW, and it is drawn on every tab at the same height, always.
+//
+// It used to sit at the bottom of the whole header, which meant it stood in one place on BROWSE and
+// another on PLAY, and switching tabs slid it up and down the screen. A divider that moves when you
+// change what you are looking at reads as the page rebuilding itself underneath you. The fix is not
+// to compute it more carefully, it is to have only ONE answer: this rule closes the tab row, the tab
+// row is on every tab, so the rule never moves.
+#define SB_TAB_ROW_SEP_Y	( SB_TAB_TOP + SB_TAB_H + SB_TAB_PAD )
+
+// [rc4l] The sub-tab row is CENTRED between its two rules by construction: the same pad sits above
+// and below it, so the two can never drift apart the way they did when the top was derived from the
+// tab row above and the bottom from a separate constant.
+#define SB_SUBTAB_PAD		5
+#define SB_SUBTAB_TOP		( SB_TAB_ROW_SEP_Y + SB_SUBTAB_PAD )
 
 #define SB_SEARCH_TOP		SB_SUBTAB_TOP
 #define SB_SEARCH_H			SB_SUBTAB_H
@@ -342,9 +363,14 @@
 // server name worth typing a fragment of.
 #define SB_SEARCH_MAXLEN	40
 
-// The rule now sits under BOTH rows, so the band it closes is the whole header rather than the tabs
-// alone. Derived from the sub-tab row so that changing either height keeps it in the right place.
-#define SB_TAB_SEP_Y		( SB_SUBTAB_TOP + SB_SUBTAB_H + SB_TAB_PAD )
+// [rc4l] The second rule, under the sub-tab row, and it exists only on BROWSE. Everything that tab
+// puts below it (the column header, the list, the detail panel) hangs off this rather than off the
+// first rule.
+//
+// Nothing on PLAY reads it, which is what keeps the two tabs from fighting over one number: PLAY
+// starts its panel from the rule that is always there, BROWSE starts its list from the one that only
+// it draws, and neither has to know what the other does.
+#define SB_TAB_SEP_Y		( SB_SUBTAB_TOP + SB_SUBTAB_H + SB_SUBTAB_PAD )
 
 // Column x positions (left edge of each), virtual pixels.
 #define SB_COL_FLAG			48
@@ -497,9 +523,14 @@ static	int				g_DialogHot = -1;
 enum class BrowserTab { Play, Browse };
 const int kTabCount = 2;
 
-// Which servers BROWSE is showing. Only meaningful while that tab is selected.
+// Which servers MULTIPLAYER is showing. Only meaningful while that tab is selected.
 enum class BrowseKind { Public, Private };
 const int kBrowseCount = 2;
+
+// [rc4l] The row labels, at file scope because three things have to agree about them: what is
+// drawn, what is clicked, and the widths both of those are measured from.
+const char *const kTabLabels[kTabCount] = { "PLAY", "MULTIPLAYER" };
+const char *const kSubTabLabels[kBrowseCount] = { "PUBLIC", "PRIVATE" };
 
 // Play, matching where it sits on the row. Not reset per visit: the tab you left on is the tab you
 // come back to, so this is only where a fresh session starts.
@@ -2454,6 +2485,37 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] Where each pill sits, asked by BOTH the drawing and the hit testing.
+	//
+	// Those two used to each carry their own copy of `left + i * ( width + gap )`, which was fine
+	// only while every pill was the same width. Measured pills make that formula wrong, and two
+	// copies of a wrong formula is a click that lands one button away from the one under the pointer.
+	int PillW( const char *label, int pad )
+	{
+		return SmallFont->StringWidth( label ) + 2 * pad;
+	}
+
+	int TabW( int i )		{ return PillW( kTabLabels[i], SB_TAB_PILL_PAD ); }
+	int SubTabW( int i )	{ return PillW( kSubTabLabels[i], SB_SUBTAB_PILL_PAD ); }
+
+	int TabLeft( int i )
+	{
+		int x = SB_TAB_LEFT;
+		for ( int k = 0; k < i; ++k )
+			x += TabW( k ) + SB_TAB_GAP;
+		return x;
+	}
+
+	int SubTabLeft( int i )
+	{
+		int x = SB_SUBTAB_LEFT;
+		for ( int k = 0; k < i; ++k )
+			x += SubTabW( k ) + SB_SUBTAB_GAP;
+		return x;
+	}
+
+	//*************************************************************************
+	//
 	// [rc4l] One oval button on one of the two header rows.
 	//
 	// Shared because there are two rows of these now, and a gradient written out twice is a colour
@@ -2506,7 +2568,6 @@ public:
 	// controls that do nothing sitting where the eye expects the thing it just chose.
 	void DrawSubTabs( )
 	{
-		static const char *const labels[] = { "PUBLIC", "PRIVATE" };
 		static const char *const tips[] = {
 			"Servers anyone can join",
 			"These servers are password-protected",
@@ -2514,18 +2575,19 @@ public:
 
 		for ( int i = 0; i < kBrowseCount; ++i )
 		{
-			const int vLeft = SB_SUBTAB_LEFT + i * ( SB_SUBTAB_W + SB_SUBTAB_GAP );
+			const int vLeft = SubTabLeft( i );
+			const int vW = SubTabW( i );
 			const bool bSelected = ( static_cast<int>( g_Browse ) == i );
 
 			// Hover only. Keyboard focus gets a RING instead, because a brighter fill is already what
 			// selected looks like and one picture cannot mean both.
-			DrawPill( vLeft, SB_SUBTAB_TOP, SB_SUBTAB_W, SB_SUBTAB_H, labels[i], bSelected,
+			DrawPill( vLeft, SB_SUBTAB_TOP, vW, SB_SUBTAB_H, kSubTabLabels[i], bSelected,
 				( g_SubTabHot == i ));
 
 			if ( bSelected )
 				FocusAnchor( zx::BrowserFocus::SubTabs, vLeft - 5, SB_SUBTAB_TOP + SB_SUBTAB_H / 2 );
 
-			serverbrowser_Tip( vLeft, SB_SUBTAB_TOP, SB_SUBTAB_W, SB_SUBTAB_H, tips[i] );
+			serverbrowser_Tip( vLeft, SB_SUBTAB_TOP, vW, SB_SUBTAB_H, tips[i] );
 		}
 
 		DrawSearchBox( );
@@ -2536,7 +2598,6 @@ public:
 	// [rc4l] The tab row: what you are doing here, and the rule that closes the header band.
 	void DrawTabs( )
 	{
-		static const char *const labels[] = { "PLAY", "BROWSE" };
 		static const char *const tips[] = {
 			"Run a server on this machine\nOthers join it while you play",
 			"Find a server to join",
@@ -2544,21 +2605,29 @@ public:
 
 		for ( int i = 0; i < kTabCount; ++i )
 		{
-			const int vLeft = SB_TAB_LEFT + i * ( SB_TAB_W + SB_TAB_GAP );
+			const int vLeft = TabLeft( i );
+			const int vW = TabW( i );
 			const bool bSelected = ( static_cast<int>( g_Tab ) == i );
 
-			DrawPill( vLeft, SB_TAB_TOP, SB_TAB_W, SB_TAB_H, labels[i], bSelected, ( g_TabHot == i ));
+			DrawPill( vLeft, SB_TAB_TOP, vW, SB_TAB_H, kTabLabels[i], bSelected, ( g_TabHot == i ));
 
 			if ( bSelected )
 				FocusAnchor( zx::BrowserFocus::Tabs, vLeft - 5, SB_TAB_TOP + SB_TAB_H / 2 );
 
-			serverbrowser_Tip( vLeft, SB_TAB_TOP, SB_TAB_W, SB_TAB_H, tips[i] );
+			serverbrowser_Tip( vLeft, SB_TAB_TOP, vW, SB_TAB_H, tips[i] );
 		}
 
-		if ( g_Tab == BrowserTab::Browse )
-			DrawSubTabs( );
+		// Always, and always here. This one closes the tab row, which every tab has, so it is the one
+		// thing in the header that must not move when the tab changes.
+		DrawSeparatorSpan( SB_TAB_ROW_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
 
-		DrawSeparatorSpan( SB_TAB_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
+		// The second row and the rule under it belong to BROWSE alone. They appear BELOW a divider
+		// that has not moved, so arriving on this tab adds to the header rather than rearranging it.
+		if ( g_Tab == BrowserTab::Browse )
+		{
+			DrawSubTabs( );
+			DrawSeparatorSpan( SB_TAB_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
+		}
 	}
 
 	//*************************************************************************
@@ -6396,9 +6465,9 @@ public:
 			g_TabHot = -1;
 			for ( int i = 0; i < kTabCount; ++i )
 			{
-				const int vLeft = SB_TAB_LEFT + i * ( SB_TAB_W + SB_TAB_GAP );
+				const int vLeft = TabLeft( i );
 				if (( x < serverbrowser_ToScreenX( vLeft )) ||
-					( x >= serverbrowser_ToScreenX( vLeft + SB_TAB_W )) ||
+					( x >= serverbrowser_ToScreenX( vLeft + TabW( i ))) ||
 					( y < serverbrowser_ToScreenY( SB_TAB_TOP )) ||
 					( y >= serverbrowser_ToScreenY( SB_TAB_TOP + SB_TAB_H )))
 				{
@@ -6424,9 +6493,9 @@ public:
 			{
 				for ( int i = 0; i < kBrowseCount; ++i )
 				{
-					const int vLeft = SB_SUBTAB_LEFT + i * ( SB_SUBTAB_W + SB_SUBTAB_GAP );
+					const int vLeft = SubTabLeft( i );
 					if (( x < serverbrowser_ToScreenX( vLeft )) ||
-						( x >= serverbrowser_ToScreenX( vLeft + SB_SUBTAB_W )) ||
+						( x >= serverbrowser_ToScreenX( vLeft + SubTabW( i ))) ||
 						( y < serverbrowser_ToScreenY( SB_SUBTAB_TOP )) ||
 						( y >= serverbrowser_ToScreenY( SB_SUBTAB_TOP + SB_SUBTAB_H )))
 					{
