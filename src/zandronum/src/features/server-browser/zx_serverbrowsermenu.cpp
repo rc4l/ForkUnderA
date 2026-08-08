@@ -393,6 +393,7 @@ enum class DialogAction
 	JoinPassword,
 	StopHosting,
 	StopHostingAndJoin,
+	SwitchHosting,
 };
 
 struct BrowserDialog
@@ -519,6 +520,11 @@ static	int				g_HostDetailScroll = 0;
 // START is what the selection will actually load.
 static	bool			g_HostShowSettings = false;
 static	bool			g_HostOnSettingsToggle = false;
+
+// [rc4l] Which catalogue row the RUNNING server was started from, so the list can mark it and SWITCH
+// knows there is nothing to switch to. -2 is "custom setup", matching g_HostEntrySel's own spelling.
+static	int				g_HostingEntry = -2;
+static	bool			g_HostSwitchHot = false;
 
 // Drag-selection in a host field, and when the last click landed -- the two things a field needs to
 // tell a double-click from two clicks, and a drag from a press.
@@ -1827,6 +1833,11 @@ public:
 				zx::HostStop( );
 			break;
 
+		case DialogAction::SwitchHosting:
+			if ( bAffirmative )
+				DoHostSwitch( );
+			break;
+
 		// [rc4l] Stop first, then go. The order is the point: joining reloads the engine and never
 		// comes back here, so a HostStop left until afterwards would never run and the server would be
 		// orphaned rather than closed.
@@ -2369,8 +2380,21 @@ public:
 	// a host who is already playing something has already answered that question, and a file picker
 	// here would be a second way to get it wrong. Whatever we are running is what our server runs, so
 	// the host can never fail to have the files for their own game.
+	// [rc4l] Down, then up on the selected entry. Stopping FIRST because the new server wants the same
+	// port, and the old one is still holding it: starting into an occupied port is what made the
+	// number climb, start after start, before ReachProbeRelease existed for the same reason.
+	void DoHostSwitch( )
+	{
+		zx::HostStop( );
+		StartHosting( );
+	}
+
 	void StartHosting( )
 	{
+		// Remembered before anything can fail: the list marks THIS row as the one being served, and
+		// SWITCH compares against it.
+		g_HostingEntry = g_HostEntrySel;
+
 		zx::HostConfig config;
 
 		config.hostName = g_HostFields[kHostFieldName].text;
@@ -2584,6 +2608,31 @@ public:
 		StartHosting( );
 	}
 
+	// [rc4l] SWITCH: stop what is running and stand the selected entry up in its place.
+	//
+	// Confirmed on the same terms as STOP, because it IS a stop as far as anyone playing is
+	// concerned. Offering it without the question would let a stray click on the list column end
+	// other people's game more quietly than the button that says it does.
+	void PressHostSwitchButton( )
+	{
+		if ( zx::HostIsActive( ) == false )
+			return;
+
+		const int others = CountOtherPlayersHere( );
+		if ( others > 0 )
+		{
+			FString message;
+			message.Format( "%d %s playing on it. Switching ends their game as well as yours.",
+				others, ( others == 1 ) ? "person is" : "people are" );
+
+			ShowDialog( DialogAction::SwitchHosting, "Switch to this?", message.GetChars( ),
+				"SWITCH", 's', "KEEP IT UP", 'k' );
+			return;
+		}
+
+		DoHostSwitch( );
+	}
+
 	// Down the form, then onto the button, and no further. The button is the end because it is the
 	// thing the form exists to reach.
 	void MoveHostFocus( int step )
@@ -2658,9 +2707,9 @@ public:
 		const zx::HostState state = zx::HostCurrentState( );
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
 
-		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
+		// Both states put the left button in the same slot: PLAY NOW! on the form, SWITCH while live.
 		const int btnX = SB_HOST_BTN_X;
-		const int btnY = bForm ? HostFormButtonY( ) : HostRunningButtonY( );
+		const int btnY = HostFormButtonY( );
 
 		if (( x >= serverbrowser_ToScreenX( btnX )) &&
 			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
@@ -2670,8 +2719,14 @@ public:
 			return true;
 		}
 
-		if ( bForm == false )
-			return false;
+		// The right slot is a control in both states as well: SETTINGS on the form, STOP while live.
+		if (( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )) &&
+			( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )))
+		{
+			return true;
+		}
 
 		// The catalogue rows, using the same y helper the drawing uses, bounded to the left column.
 		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
@@ -2687,17 +2742,10 @@ public:
 			}
 		}
 
-		// The toggle, which is present on both faces.
-		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
-			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
-			( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET )) &&
-			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET )))
-		{
-			return true;
-		}
-
-		// The settings only exist while they are showing, so they only claim clicks then.
-		if ( !g_HostShowSettings )
+		// The settings only exist while they are showing AND while the form is the thing on screen:
+		// g_HostShowSettings survives across a start, so without the bForm test the fields would go
+		// on claiming clicks from behind the running panel.
+		if ( !g_HostShowSettings || !bForm )
 			return false;
 
 		int fieldY = HostFirstFieldY( );
@@ -2787,30 +2835,67 @@ public:
 		const zx::HostState state = zx::HostCurrentState( );
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
 
-		// The button, wherever it is: the form's START sits under the fields, and the running panel's
-		// STOP sits at the bottom of the panel.
-		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
+		// [rc4l] The LEFT button, under the list, in the same slot in both states. On the form it is
+		// PLAY NOW!; while hosting it is SWITCH TO THIS, which is the same idea aimed at a server
+		// that already exists.
 		const int btnX = SB_HOST_BTN_X;
-		const int btnY = bForm ? HostFormButtonY( ) : HostRunningButtonY( );
+		const int btnY = HostFormButtonY( );
+		const bool bCanSwitch = bForm ||
+			(( state != zx::HostState::Failed ) && !HostSelectionIsWhatIsRunning( ));
 
-		if (( x >= serverbrowser_ToScreenX( btnX )) &&
+		g_HostSwitchHot = false;
+		if ( bCanSwitch &&
+			( x >= serverbrowser_ToScreenX( btnX )) &&
 			( x < serverbrowser_ToScreenX( btnX + SB_HOST_BTN_W )) &&
 			( y >= serverbrowser_ToScreenY( btnY )) &&
 			( y < serverbrowser_ToScreenY( btnY + SB_HOST_BTN_H )))
 		{
-			g_HostButtonHot = true;
+			if ( bForm )
+				g_HostButtonHot = true;
+			else
+				g_HostSwitchHot = true;
 
 			if ( type == MOUSE_Release )
 			{
 				SetFocus( zx::BrowserFocus::Host );
-				g_HostOnButton = true;
-				PressHostButton( );
+
+				if ( bForm )
+				{
+					g_HostOnButton = true;
+					PressHostButton( );
+				}
+				else
+				{
+					PressHostSwitchButton( );
+				}
 			}
 			return true;
 		}
 
+		// [rc4l] While hosting, the RIGHT slot is STOP rather than the settings toggle, and it is the
+		// button the keyboard is on. Handled before the toggle below, which owns the same rectangle
+		// on the form.
 		if ( bForm == false )
-			return false;
+		{
+			const int stopX = SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET;
+			const int stopRight = SB_HOST_RCOL_RIGHT - SB_HOST_BTN_INSET;
+
+			if (( x >= serverbrowser_ToScreenX( stopX )) &&
+				( x < serverbrowser_ToScreenX( stopRight )) &&
+				( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+				( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )))
+			{
+				g_HostButtonHot = true;
+
+				if ( type == MOUSE_Release )
+				{
+					SetFocus( zx::BrowserFocus::Host );
+					g_HostOnButton = true;
+					PressHostButton( );
+				}
+				return true;
+			}
+		}
 
 		// The catalogue, before the fields: it is above them on screen and it decides what the rest
 		// of the panel is about.
@@ -2856,7 +2941,9 @@ public:
 			return true;
 		}
 
-		if ( !g_HostShowSettings )
+		// [rc4l] bForm as well as the toggle: g_HostShowSettings survives a start, so without this the
+		// fields would keep taking clicks from behind the running panel.
+		if ( !g_HostShowSettings || !bForm )
 			return false;
 
 		// The fields.
@@ -3083,6 +3170,53 @@ public:
 		}
 	}
 
+	// [rc4l] Whether the selected entry is the one already being served, so SWITCH does not offer to
+	// restart a server onto what it is already running.
+	bool HostSelectionIsWhatIsRunning( )
+	{
+		return g_HostEntrySel == g_HostingEntry;
+	}
+
+	// [rc4l] The two buttons of the running panel, in the same slots the form uses.
+	//
+	// Deliberately NOT a geometry of their own: STOP had one, measured from a different constant than
+	// the drawing, and it could not be clicked at all as a result. Sharing the form's slots means the
+	// hit test that already works for PLAY NOW! and SETTINGS works for these too.
+	void DrawHostRunningButtons( zx::HostState state )
+	{
+		const int btnY = HostFormButtonY( );
+
+		// Left, under the list: act on the list. Nothing to switch to while the failure panel is up,
+		// and nothing to switch to when the selection is already the thing running.
+		const bool bCanSwitch = ( state != zx::HostState::Failed ) && !HostSelectionIsWhatIsRunning( );
+		if ( bCanSwitch )
+		{
+			DrawRoundedButton( SB_HOST_BTN_X, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
+				"SWITCH TO THIS", g_HostSwitchHot );
+
+			serverbrowser_Tip( SB_HOST_BTN_X, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
+				"Stop this server and start the selected one instead\nAnyone playing is disconnected" );
+		}
+
+		// Right, under the status: act on the server.
+		const int stopX = SB_HOST_RCOL_LEFT + SB_HOST_BTN_INSET;
+		const int stopW = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT - 2 * SB_HOST_BTN_INSET;
+		const char *const label = ( state == zx::HostState::Failed ) ? "BACK" : "STOP SERVER";
+
+		DrawRoundedButton( stopX, SB_HOST_RTOGGLE_Y, stopW, SB_HOST_RTOGGLE_H, label,
+			g_HostOnButton || g_HostButtonHot );
+
+		// [rc4l] The keyboard's button is STOP, not SWITCH. Enter should not be able to tear a running
+		// server down and stand another one up in its place by accident.
+		if ( g_Focus == zx::BrowserFocus::Host )
+			FocusAnchor( zx::BrowserFocus::Host, stopX - 5, SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H / 2 );
+
+		serverbrowser_Tip( stopX, SB_HOST_RTOGGLE_Y, stopW, SB_HOST_RTOGGLE_H,
+			( state == zx::HostState::Failed )
+				? "Go back to the form"
+				: "Shut the server down\nAnyone playing on it is disconnected" );
+	}
+
 	void DrawHostSettingsToggle( )
 	{
 		// [rc4l] DrawRoundedButton, which IS the JOIN and START drawing. A button that merely
@@ -3197,16 +3331,9 @@ public:
 		return SB_HOST_BTN_Y;
 	}
 
-	// [rc4l] Where the running panel's button sits, in ONE place.
-	//
-	// It was written out twice, and the two copies disagreed: the drawing measured from
-	// SB_DETAIL_BOTTOM and the hit test from SB_HOST_BOTTOM, which is 26 units lower. The button is
-	// 18 tall, so the clickable region did not overlap the button at all and STOP SERVER could not be
-	// pressed by mouse at any point on it.
-	int HostRunningButtonY( )
-	{
-		return SB_DETAIL_BOTTOM - SB_HOST_PAD - SB_HOST_BTN_H;
-	}
+	// [rc4l] The running panel's buttons now sit in the FORM's two slots rather than a geometry of
+	// their own. The old private position was written out twice and the copies disagreed, which is
+	// how STOP SERVER ended up unclickable; sharing the slots removes the chance to disagree.
 
 	// Whether a row at `vy` is inside the viewport at all. A control scrolled out of sight must not
 	// be clickable -- that is the invisible-but-clickable bug this browser avoids everywhere else.
@@ -3313,14 +3440,18 @@ public:
 
 		const int x = SB_HOST_LEFT + SB_HOST_PAD;
 
-		// While something of ours is running, the form is not the point any more -- what it is doing is.
+		// [rc4l] Running is a state of the RIGHT column, not a different screen.
 		//
-		// [rc4l] The heading is drawn only on the form, below. It answers "what is this screen for",
-		// which is a question that has stopped applying once a server of yours is up: at that point
-		// the screen is about that server, and telling someone they can run one is a page behind them.
+		// It used to replace the whole panel and return, which took the experience list away for as
+		// long as you were hosting: you could not look at what else you might run without stopping
+		// what you were already running first. The list stays; only the column that was describing
+		// your selection now describes your server.
 		if ( bLive || ( state == zx::HostState::Failed ))
 		{
-			DrawHostStatus( x, SB_HOST_TOP + SB_HOST_PAD, state );
+			DrawHostCatalogue( SB_HOST_LIST_LEFT );
+			DrawHostStatus( SB_HOST_RCOL_LEFT, SB_HOST_TOP + SB_HOST_PAD, state );
+			DrawHostColumnDivider( );
+			DrawHostRunningButtons( state );
 			return;
 		}
 
@@ -3708,6 +3839,20 @@ public:
 			else
 				label = entries[row].addon.name.c_str( );
 
+			// [rc4l] A dot on the row being served, so browsing the list while hosting still says
+			// which of them you are actually running. Green because it is the same "this is up and
+			// reachable" the status column is saying in words beside it.
+			if ( zx::HostIsActive( ) && ( row == g_HostingEntry ))
+			{
+				const int dotX = SB_HOST_LIST_RIGHT - 8;
+				screen->Dim( PalEntry( 80, 200, 80 ), 0.9f,
+					serverbrowser_ToScreenX( dotX ),
+					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H / 2 - 2 ),
+					MAX( serverbrowser_ToScreenX( dotX + 3 ) - serverbrowser_ToScreenX( dotX ), 1 ),
+					MAX( serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H / 2 + 1 ) -
+						serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H / 2 - 2 ), 1 ));
+			}
+
 			// [rc4l] Centred in the row rather than drawn at its top edge. The highlight bar is
 			// SB_HOST_ENTRY_H tall and the glyphs are shorter, so drawing at rowY sat the text high
 			// inside its own bar.
@@ -3840,23 +3985,9 @@ public:
 			}
 		}
 
-		y += 10;
-
-		const int w = SB_HOST_RIGHT - SB_HOST_LEFT;
-		const int btnX = SB_HOST_BTN_X;
-		const int btnY = HostRunningButtonY( );
-
-		const char *const label = ( state == zx::HostState::Failed ) ? "BACK" : "STOP SERVER";
-		DrawRoundedButton( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H, label,
-			g_HostOnButton || g_HostButtonHot );
-
-		if ( g_Focus == zx::BrowserFocus::Host )
-			FocusAnchor( zx::BrowserFocus::Host, btnX - 5, btnY + SB_HOST_BTN_H / 2 );
-
-		serverbrowser_Tip( btnX, btnY, SB_HOST_BTN_W, SB_HOST_BTN_H,
-			( state == zx::HostState::Failed )
-				? "Go back to the form"
-				: "Shut the server down\nAnyone playing on it is disconnected" );
+		// The buttons belong to the panel rather than to this text, so DrawHostRunningButtons draws
+		// them: they sit at the panel's foot, under both columns, not under whatever this happened to
+		// write last.
 	}
 
 	//*************************************************************************
