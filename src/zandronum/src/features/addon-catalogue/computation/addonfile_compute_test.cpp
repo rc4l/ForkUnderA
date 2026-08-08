@@ -355,3 +355,99 @@ TEST(AddonFile, ANegativeSchemaIsRefused)
 {
 	EXPECT_FALSE(Parse("{ \"schema\": -1, \"name\": \"X\" }").valid);
 }
+
+TEST(AddonFile, EveryEscapeTheSchemaAcceptsIsUnderstood)
+{
+	// [rc4l] All of them, not a sample. Each is its own line in the reader, and an untested one is a
+	// filename we would silently mangle the first time somebody used it.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"summary\": \"a\\/b\\bc\\fd\\ne\\rf\","
+		"  \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_EQ("a/b\bc\fd\ne\rf", e.summary);
+}
+
+TEST(AddonFile, AStringCutOffMidEscapeIsRefused)
+{
+	// The backslash promises another character and the file ends instead.
+	EXPECT_FALSE(Parse("{ \"schema\": 1, \"name\": \"X\\").valid);
+}
+
+TEST(AddonFile, ASignedSchemaIsStillANumber)
+{
+	// JSON does not allow a leading +, but the reader accepts one rather than mis-reading the rest of
+	// the file, and 1 is 1 however it was written.
+	EXPECT_TRUE(Parse(
+		"{ \"schema\": +1, \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
+}
+
+TEST(AddonFile, AnEmptyFileListIsReadAndThenRefusedForBeingEmpty)
+{
+	// It PARSES: [] is well formed. It is refused a step later, for loading nothing, and the
+	// distinction is what keeps the reason accurate.
+	const AddonEntry e = Parse("{ \"schema\": 1, \"name\": \"X\", \"files\": [] }");
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_EQ("no files", e.error);
+}
+
+TEST(AddonFile, AFileEntryWithNoKeysHasNoNameToLoad)
+{
+	const AddonEntry e = Parse("{ \"schema\": 1, \"name\": \"X\", \"files\": [{}] }");
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_FALSE(e.error.empty());
+}
+
+TEST(AddonFile, ADotDotWithNoSlashIsStillRefused)
+{
+	// [rc4l] The existing path cases all carry a separator, so the separator check refused them first
+	// and this one never ran. A name is refused for containing "..", separator or not, because the
+	// resolver it feeds is not the only thing that will ever read these.
+	EXPECT_FALSE(Parse(
+		"{ \"schema\": 1, \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"a..pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
+}
+
+TEST(AddonFile, AnEmptyFileNameIsRefused)
+{
+	// Not a path, but not a filename either, and the loader would search for nothing.
+	EXPECT_FALSE(Parse(
+		"{ \"schema\": 1, \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
+}
+
+TEST(AddonFile, AnUnknownKeyWithNothingAfterItIsRefused)
+{
+	// The skip has to notice it ran out rather than report success on an empty remainder.
+	EXPECT_FALSE(Parse("{ \"schema\": 1, \"x\":").valid);
+}
+
+TEST(AddonFile, AnUnterminatedStringInsideASkippedValueIsRefused)
+{
+	// Inside a container we are skipping wholesale, a string still has to close: without that the
+	// scan would run past a brace hidden in the text and re-sync somewhere meaningless.
+	EXPECT_FALSE(Parse("{ \"schema\": 1, \"x\": { \"a\": \"never closed } }").valid);
+}
+
+TEST(AddonFile, AFileFieldOfTheWrongShapeIsRefused)
+{
+	const char *bad[] = {
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": 5 }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"md5\": 5 }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"size\": }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\" \"a.pk3\" }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\" \"md5\": \"x\" }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [ 5 ] }",
+	};
+
+	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
+	{
+		const AddonEntry e = Parse(bad[i]);
+		EXPECT_FALSE(e.valid) << "accepted: " << bad[i];
+		EXPECT_FALSE(e.error.empty()) << "no reason given for: " << bad[i];
+	}
+}

@@ -201,3 +201,38 @@ TEST(HostPlan, CaseDoesNotDecideWhetherYouHaveAFile)
 	EXPECT_TRUE(p.ready);
 	EXPECT_TRUE(p.missing.empty());
 }
+
+TEST(HostPlan, AnEntryThatNamesNoIwadStillSaysWhyItCannotRun)
+{
+	// [rc4l] The other half of the blocker. An entry that names a game gets "you need doom2.wad";
+	// one that names none has nothing to name, and saying "you need " with a blank after it would be
+	// worse than saying nothing.
+	AddonEntry anyGame = Duel40();
+	anyGame.iwad = "";
+
+	IwadPick nothing;
+	nothing.choice = IwadChoice::None;
+
+	const HostPlan p = BuildHostPlan(anyGame, nothing, "", Mine(),
+		Files("duel40b.pk3", "zandrospree2rc2.pk3"));
+
+	EXPECT_FALSE(p.ready);
+	EXPECT_EQ("no IWAD to run on", p.blocker);
+}
+
+TEST(HostPlan, TwoNamesOfTheSameLengthAreStillDifferentFiles)
+{
+	// Same length, so the cheap size test cannot separate them and the comparison has to actually
+	// read the characters.
+	AddonEntry a = Duel40();
+	a.files.resize(1);
+	a.files[0].name = "aaaaaaaa.pk3";
+
+	const HostPlan p = BuildHostPlan(a,
+		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(),
+		Files("bbbbbbbb.pk3"));
+
+	EXPECT_FALSE(p.ready);
+	ASSERT_EQ(1u, p.missing.size());
+	EXPECT_EQ("aaaaaaaa.pk3", p.missing[0]);
+}
