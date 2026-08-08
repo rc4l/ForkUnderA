@@ -107,6 +107,13 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 // unchanged when it is already valid.
 HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bool hasToggle);
 
+// [rc4l] Where LEFT lands when a text field finally gives it back.
+//
+// The field owns WHEN -- only it knows whether the caret still has anywhere to go, and that rule is
+// textinput_compute's ArrowLeavesField. This owns WHERE, so the destination is written once and the
+// answer cannot drift from the one the action button gives for the same key.
+HostFocusPos HostLeftOfTheForm();
+
 } // namespace zx
 
 #endif // ZX_HOSTFOCUS_COMPUTE_H

@@ -6678,9 +6678,16 @@ public:
 		const bool bCtrl = (( ev->data3 & ( GKM_CTRL | GKM_META )) != 0 );
 		const bool bShift = (( ev->data3 & GKM_SHIFT ) != 0 );
 
+		// [rc4l] A HELD key repeats, the way it does in every other text box on the machine.
+		//
+		// EV_GUI_KeyRepeat was rejected here, so holding left did nothing at all -- one press, one
+		// character, and a long name had to be walked one keystroke at a time. Backspace, delete,
+		// home and end were the same.
+		const bool bRepeat = ( ev->subtype == EV_GUI_KeyRepeat );
+
 		// Anything that is not a key belongs to somebody else -- above all the mouse, which reaches a
 		// menu through this same Responder and must be allowed past.
-		if (( ev->subtype != EV_GUI_Char ) && ( ev->subtype != EV_GUI_KeyDown ))
+		if (( ev->subtype != EV_GUI_Char ) && ( ev->subtype != EV_GUI_KeyDown ) && !bRepeat )
 			return FieldKey::Unclaimed;
 
 		if ( ev->subtype == EV_GUI_Char )
@@ -6696,7 +6703,7 @@ public:
 			return FieldKey::Handled;
 		}
 
-		if ( ev->subtype != EV_GUI_KeyDown )
+		if (( ev->subtype != EV_GUI_KeyDown ) && !bRepeat )
 			return FieldKey::Unclaimed;
 
 		const int key = ev->data1;
@@ -6764,8 +6771,11 @@ public:
 
 		switch ( key )
 		{
-		case GK_ESCAPE:	return FieldKey::Escape;
-		case GK_RETURN:	return FieldKey::Enter;
+		// [rc4l] These two do NOT repeat. Everything else here is a movement or a deletion, which is
+		// exactly what holding a key should do more of; leaving and submitting are decisions, and a
+		// held key must not make one twice.
+		case GK_ESCAPE:	return bRepeat ? FieldKey::Handled : FieldKey::Escape;
+		case GK_RETURN:	return bRepeat ? FieldKey::Handled : FieldKey::Enter;
 		case GK_UP:		return FieldKey::Up;
 		case GK_DOWN:	return FieldKey::Down;
 
@@ -6825,8 +6835,11 @@ public:
 		const bool bDigits = ( HostFieldFocus( ) == kHostFieldPort )
 			|| ( HostFieldFocus( ) == kHostFieldMaxPlayers );
 
+		// [rc4l] There IS something to the left: the experience list. Passing false here is what made
+		// the form a place the keyboard could go and not come out of sideways -- LEFT moved the caret
+		// forever and never reached the rows. Nothing sits to the right, so that one stays shut.
 		switch ( EditTextField( g_HostFields[HostFieldFocus( )], ev, SB_HOST_MAXLEN, bDigits,
-			false, false ))
+			true, false ))
 		{
 		case FieldKey::Escape:
 			// Out of the form, not out of the browser -- the same rule the search box follows, so a
@@ -6845,6 +6858,15 @@ public:
 			return true;
 
 		case FieldKey::Left:
+			// The caret ran out and the list is beside us, so the arrow means what it means
+			// everywhere else on this screen. Where it lands is the unit's answer, not one written
+			// out again here.
+			M_ReleaseMenuButtons( );
+			g_HostFocus = zx::HostLeftOfTheForm( );
+			RevealHostFocus( );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			return true;
+
 		case FieldKey::Right:
 		case FieldKey::Unclaimed:
 			// Nothing sits beside these fields, so the editor never reports the first two -- and a

@@ -104,6 +104,14 @@ TEST(HostFocus, LeftOffTheActionGoesBackToTheList)
 	EXPECT_EQ(HostSlot::List, Nav(Action(), HostNavKey::Left).pos.slot);
 }
 
+TEST(HostFocus, AFieldGivingLeftBackLandsWhereTheActionDoes)
+{
+	// [rc4l] The field decides WHEN left stops being the caret's; this decides WHERE it goes. Pinned
+	// together so the two ways out of the right column cannot come to disagree.
+	EXPECT_EQ(HostSlot::List, zx::HostLeftOfTheForm().slot);
+	EXPECT_EQ(Nav(Action(), HostNavKey::Left).pos.slot, zx::HostLeftOfTheForm().slot);
+}
+
 TEST(HostFocus, DownFromTheFootGoesNowhereRatherThanWrapping)
 {
 	// [rc4l] Not a wrap. Jumping back to the top of a form because you pressed down once more is a
