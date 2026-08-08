@@ -4599,10 +4599,19 @@ public:
 			start = space + 1;
 		}
 
+		// [rc4l] The leftover, and it needs the SAME gate the loop above uses.
+		//
+		// It did not have one, so the mask worked on every line of a paragraph except its last. That
+		// is a strange enough shape to be worth naming: the top of the region masked correctly, whole
+		// paragraphs masked correctly, and then one trailing line per paragraph drew straight through
+		// the bottom edge and over the STOP SERVER button.
 		if ( line.IsNotEmpty( ))
 		{
-			screen->DrawText( SmallFont, colour, x, y, line,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			if ( HostTextRowVisible( y, SB_HOST_LINE ))
+			{
+				screen->DrawText( SmallFont, colour, x, y, line,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
 			y += SB_HOST_LINE;
 		}
 
