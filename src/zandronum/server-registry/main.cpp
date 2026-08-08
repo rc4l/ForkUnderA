@@ -855,8 +855,7 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			g_MessageBuffer.ByteStream.WriteString( AddressFrom.ToString() );
 			NETWORK_LaunchPacket( &g_MessageBuffer, ServerAddress );
 
-			printf( "-> Punch: told %s to open for %s.
-", ServerAddress.ToString(),
+			printf( "-> Punch: told %s to open for %s.\n", ServerAddress.ToString(),
 				AddressFrom.ToString() );
 		}
 		return;
