@@ -810,6 +810,20 @@ bool M_Responder (event_t *ev)
 			fromcontroller = false;
 			if (ev->subtype == EV_GUI_KeyRepeat)
 			{
+				// [rc4l] A menu that asked for RAW keys gets the OS's repeats.
+				//
+				// This returned true unconditionally, so a held key was eaten here and no menu ever
+				// saw a repeat. That is right for menu NAVIGATION -- the repetition below is done by
+				// hand so gamepads behave like keyboards -- and wrong for a text field, which is not
+				// navigating anything and wants exactly what the OS sends. Holding left in the search
+				// box or on the hosting form moved the caret one character and then stopped.
+				//
+				// TranslateKeyboardEvents is already the question "does this menu want raw keys",
+				// and a menu answers no only while a field has focus, so this hands repeats to the
+				// one case that needs them and changes nothing for every other menu.
+				if (!DMenu::CurrentMenu->TranslateKeyboardEvents())
+					return DMenu::CurrentMenu->Responder(ev);
+
 				// We do our own key repeat handling but still want to eat the
 				// OS's repeated keys.
 				return true;
