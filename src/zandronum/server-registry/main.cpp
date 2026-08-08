@@ -926,8 +926,15 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			g_MessageBuffer.ByteStream.WriteString( AddressFrom.ToString() );
 			NETWORK_LaunchPacket( &g_MessageBuffer, ServerAddress );
 
-			printf( "-> Punch: told %s to open for %s.\n", ServerAddress.ToString(),
-				AddressFrom.ToString() );
+			// [rc4l] ToString() hands back a STATIC buffer, so two of them in one printf is one
+			// address printed twice: the second call overwrites the first before printf ever runs.
+			// This line claimed the registry had told a server to open a hole for itself, which is
+			// alarming, wrong, and entirely a trick of the logging.
+			char szServer[64];
+			strncpy( szServer, ServerAddress.ToString(), sizeof( szServer ) - 1 );
+			szServer[sizeof( szServer ) - 1] = 0;
+
+			printf( "-> Punch: told %s to open for %s.\n", szServer, AddressFrom.ToString() );
 		}
 		return;
 
