@@ -497,6 +497,59 @@ TEST(HostArgs, AConfigPathIsAllowedToBeAPathButNotAnArgument)
 	EXPECT_FALSE(Has(BuildHostArgs("z", config), "+exec")) << "a quote is not";
 }
 
+// ---------------------------------------------------------------- the settings menu wins
+
+TEST(HostArgs, TheSettingsMenuBeatsTheExperienceConfig)
+{
+	// [rc4l] THE RULE, pinned. An experience says what to PLAY; the settings menu says how to RUN
+	// it, and where the two speak about the same thing the menu wins.
+	//
+	// The engine applies arguments left to right and the last one wins, so the rule reduces to a
+	// single fact about ordering: +exec is the FIRST '+' argument. Asserted that way on purpose
+	// rather than as a list of the flags it must precede -- the list grows every time a setting is
+	// added to the form, and a list would go stale silently while this cannot. Anything appended
+	// later is after the exec by construction and therefore overrides the cfg for free.
+	HostConfig config = Basic();
+	config.execCfg = "catalogue/eoncollection/server.cfg";
+	config.map = "DBAB01";
+	config.hostName = "someone's server";
+	config.maxPlayers = 8;
+	config.password = "pw";
+	config.joinPassword = "jp";
+	config.rconSecret = "rc";
+	config.gameMode = 2;
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	const int exec = IndexOf(args, "+exec");
+	ASSERT_GE(exec, 0) << "the config has to be exec'd at all";
+
+	for (size_t i = 0; i < args.size(); ++i)
+	{
+		if (args[i].empty() || args[i][0] != '+')
+			continue;
+
+		EXPECT_GE(static_cast<int>(i), exec)
+			<< args[i] << " is set BEFORE the experience config is exec'd, so the config overrides "
+			<< "it and the settings menu silently loses";
+	}
+}
+
+TEST(HostArgs, APlayerLimitInTheConfigDoesNotBeatTheForm)
+{
+	// The concrete case that prompted the rule: a pasted config carrying sv_maxclients. Ours is
+	// applied after the exec, so the number typed into the form is the one that survives.
+	HostConfig config = Basic();
+	config.execCfg = "catalogue/eoncollection/server.cfg";
+	config.maxPlayers = 8;
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_GT(IndexOf(args, "+sv_maxclients"), IndexOf(args, "+exec"));
+	EXPECT_GT(IndexOf(args, "+sv_maxplayers"), IndexOf(args, "+exec"));
+	EXPECT_EQ("8", ValueAfter(args, "+sv_maxplayers"));
+}
+
 // ---------------------------------------------------------------- WADs go over as PATHS
 
 TEST(SafeFilePath, AcceptsAResolvedAbsolutePath)

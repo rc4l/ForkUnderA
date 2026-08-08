@@ -140,9 +140,17 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 		out.push_back(config.pwads[i]);
 	}
 
-	// [rc4l] BEFORE +map, so an entry's cfg cannot overwrite the map we were asked to start on: the
-	// server applies these in order, and a cfg full of addmap lines would otherwise decide where the
-	// host lands rather than the host deciding.
+	// [rc4l] THE FIRST '+' ARGUMENT, AND IT HAS TO STAY THAT WAY.
+	//
+	// The engine applies these left to right, so whatever comes last wins. Putting the entry's cfg
+	// ahead of every setting means the SETTINGS MENU BEATS THE EXPERIENCE, always: an entry describes
+	// what to play, and the host decides how to run it. A cfg full of addmap lines would otherwise
+	// choose where the host lands, and a cfg naming a player limit would quietly overrule the number
+	// the host just typed into the form.
+	//
+	// It is stated as "first '+'" rather than as a list of the settings it must precede, because the
+	// list grows. A new +setting appended anywhere below is after this by construction and therefore
+	// wins for free. TheSettingsMenuBeatsTheExperienceConfig in the tests pins exactly that.
 	if (IsSafeArgValue(config.execCfg))
 	{
 		out.push_back("+exec");
