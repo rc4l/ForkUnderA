@@ -61,6 +61,20 @@ bool IsSafeArgValue(const std::string &value)
 	return true;
 }
 
+bool IsSafeFilePath(const std::string &path)
+{
+	// [rc4l] Everything IsSafeArgValue refuses, plus traversal. A path we hand the server is one WE
+	// resolved off the filesystem, so it is not attacker-chosen -- but the filename inside it came
+	// out of a catalogue json, and ".." in an argument is never something we meant to write.
+	if (!IsSafeArgValue(path))
+		return false;
+
+	if (path.find("..") != std::string::npos)
+		return false;
+
+	return true;
+}
+
 bool IsBareFileName(const std::string &name)
 {
 	if (!IsSafeArgValue(name))
@@ -103,7 +117,15 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 		out.push_back(IntToString(config.parentPid));
 	}
 
-	if (IsBareFileName(config.iwad))
+	// [rc4l] PATHS, not just bare names, and that is the fix rather than a loosening.
+	//
+	// A bare name makes the SERVER go and find the file, and it searches its own config -- which is
+	// not the one the client just wrote. Download an experience and host it and the freshly fetched
+	// pk3 sat in a folder registered in the client's FileSearch.Directories and nowhere the server
+	// looked: it skipped the file, came up with one PWAD instead of two, and the client that joined
+	// it was told its lumps did not match. Two processes searching separately for the same file is
+	// the whole bug; handing over what we already resolved removes the second search.
+	if (IsSafeFilePath(config.iwad))
 	{
 		out.push_back("-iwad");
 		out.push_back(config.iwad);
@@ -111,16 +133,24 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 
 	for (size_t i = 0; i < config.pwads.size(); ++i)
 	{
-		if (!IsBareFileName(config.pwads[i]))
+		if (!IsSafeFilePath(config.pwads[i]))
 			continue;
 
 		out.push_back("-file");
 		out.push_back(config.pwads[i]);
 	}
 
-	// [rc4l] BEFORE +map, so an entry's cfg cannot overwrite the map we were asked to start on: the
-	// server applies these in order, and a cfg full of addmap lines would otherwise decide where the
-	// host lands rather than the host deciding.
+	// [rc4l] THE FIRST '+' ARGUMENT, AND IT HAS TO STAY THAT WAY.
+	//
+	// The engine applies these left to right, so whatever comes last wins. Putting the entry's cfg
+	// ahead of every setting means the SETTINGS MENU BEATS THE EXPERIENCE, always: an entry describes
+	// what to play, and the host decides how to run it. A cfg full of addmap lines would otherwise
+	// choose where the host lands, and a cfg naming a player limit would quietly overrule the number
+	// the host just typed into the form.
+	//
+	// It is stated as "first '+'" rather than as a list of the settings it must precede, because the
+	// list grows. A new +setting appended anywhere below is after this by construction and therefore
+	// wins for free. TheSettingsMenuBeatsTheExperienceConfig in the tests pins exactly that.
 	if (IsSafeArgValue(config.execCfg))
 	{
 		out.push_back("+exec");

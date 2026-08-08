@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-// [rc4l] What to do when a download for a pending join finishes.
+// [rc4l] What to do when a download that something was waiting on finishes.
+//
+// Two things wait this way: a JOIN whose server wanted files we did not have, and HOSTING an
+// experience whose files we did not have. The timing question is identical for both -- did it work,
+// is the player still looking at the browser, are they mid-answer to a prompt -- so they share this
+// rather than growing two copies of a truth table that would drift apart.
 //
 // Four things can be true at that moment and they interact, which is why this is a function with a
 // truth table rather than a chain of ifs buried in a callback:
@@ -30,30 +35,31 @@ namespace zx
 
 enum class ResumeAction
 {
-	// Nothing to do -- there was no join waiting on this.
+	// Nothing to do -- there was nothing waiting on this.
 	Nothing,
 
 	// Park it. The player is being asked something they have to answer first, and the answer decides
 	// what happens to this.
 	Hold,
 
-	// Say the server is ready and wait to be come back to. The player is elsewhere, and taking the
-	// game away from them unannounced is the behaviour this whole path exists to stop.
+	// Say it is ready and wait to be come back to. The player is elsewhere, and taking the game away
+	// from them unannounced is the behaviour this whole path exists to stop.
 	NotifyReady,
 
-	// Join now. The browser is on screen, so the player is visibly waiting for exactly this.
-	JoinNow,
+	// Go ahead now -- join, or host. The browser is on screen, so the player is visibly waiting for
+	// exactly this.
+	ProceedNow,
 
 	// The transfer failed. Say so, wherever they are.
 	ReportFailure,
 };
 
-// `havePendingJoin` false means nothing was waiting and everything else is irrelevant.
+// `havePendingAction` false means nothing was waiting and everything else is irrelevant.
 //
 // Note failure is reported rather than notified even when the player is away: "it did not work" is
 // not something to sit on until they wander back, and unlike a success it costs them nothing to be
 // told immediately -- there is no game state to tear down.
-ResumeAction ComputeResumeAction(bool havePendingJoin, bool downloadSucceeded, bool browserOpen,
+ResumeAction ComputeResumeAction(bool havePendingAction, bool downloadSucceeded, bool browserOpen,
 	bool answeringPrompt);
 
 } // namespace zx

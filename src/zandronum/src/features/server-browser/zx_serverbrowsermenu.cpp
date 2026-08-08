@@ -55,6 +55,7 @@
 #include "features/wad-download/zx_wadsearch.h"
 #include "features/wadreload/zx_wadreload.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
+#include "features/server-hosting/computation/hoststatus_compute.h"
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
@@ -415,6 +416,7 @@ static	int				g_GlowLastMs = 0;
 enum class HostAction
 {
 	Play,		// nothing is running: start the selected entry and join it
+	Cancel,		// fetching what the entry needs: stop the transfer
 	Stop,		// the selected entry IS what is running: shut it down
 	Switch,		// something else is running: stop that and stand this one up instead
 	Back,		// the last attempt failed: dismiss the failure and get the form back
@@ -524,13 +526,16 @@ static	int				g_HostFieldHot = -1;
 // the fields answer the second, which is the same split as an entry's addon.json against the host's
 // own choices: the entry never names the server and the form never picks the files.
 //
-// -1 is Custom, meaning "whatever this client is running", which is what the form did before the
-// catalogue existed and still does for anything not in it.
-#define SB_HOST_CATALOGUE_CUSTOM	( -1 )
+// [rc4l] Every row is a catalogue entry now. There used to be a "Custom setup" row above them at -1,
+// meaning "serve whatever this client is running", which is what the form did before the catalogue
+// existed -- it went because it is not an experience. It described no content, its name told a player
+// nothing about what they would be hosting, and it sat at the top of a list whose whole job is to
+// answer "what do you want to play".
+#define SB_HOST_CATALOGUE_FIRST		( 0 )
 #define SB_HOST_ENTRY_H				12
 
-static	int				g_HostEntrySel = SB_HOST_CATALOGUE_CUSTOM;
-static	int				g_HostEntryHot = -2;	// -2 is "none"; -1 is the Custom row
+static	int				g_HostEntrySel = SB_HOST_CATALOGUE_FIRST;
+static	int				g_HostEntryHot = -2;	// -2 is "none"
 
 // [rc4l] What we told the server to load, kept so the client can match it before joining.
 //
@@ -553,6 +558,11 @@ static	int				g_HostDetailScroll = 0;
 // as it is drawn: the text wraps, so the line count is not something the layout can know in advance.
 static	int				g_HostStatusScroll = 0;
 
+// Which of the running panel's two bars a held drag belongs to, so sliding off one sideways does not
+// hand the grab to the other.
+static	bool			g_DraggingHostDetailBar = false;
+static	bool			g_DraggingHostStatusBar = false;
+
 // [rc4l] The band the status text may draw in, or an empty range for "anywhere". Set around the
 // status half only; see HostTextRowVisible for why a rectangle would not have done.
 static	int				g_HostTextClipTop = 0;
@@ -568,6 +578,38 @@ static	bool			g_HostOnSettingsToggle = false;
 // [rc4l] Which catalogue row the RUNNING server was started from, so the list can mark it and SWITCH
 // knows there is nothing to switch to. -2 is "custom setup", matching g_HostEntrySel's own spelling.
 static	int				g_HostingEntry = -2;
+
+// [rc4l] A transfer fetching what an entry needs before it can be hosted.
+//
+// The catalogue ships an md5 per file precisely so this is possible, and BuildHostPlan has always
+// returned `missing` rather than treating an absent file as fatal -- and then the button refused
+// anyway, because nobody wired the two together. Hosting an entry you do not have yet said
+// "downloading from here is not possible" while the join beside it downloaded the same file happily.
+//
+// `entry` is the catalogue row the transfer is FOR, so what resumes is the thing the player asked
+// for rather than whatever is selected by the time it lands. -1 means nothing of ours is waiting.
+//
+// The WAITING itself is not ours: zx::SetPendingResume parks this in the same slot a pending join
+// uses, so the hold while a prompt is up, the "you have wandered off, so it waits" band, and the
+// cancel that keeps the file but drops the intent are the same code for both. See zx_joinserver.h.
+static	int				g_HostDownloadEntry = -1;
+
+// [rc4l] Set on the frame the resume fires, and acted on by the Ticker one frame later. The resume
+// arrives from inside waddownload::Tick, and starting a server from there would re-enter it.
+static	bool			g_HostDownloadResumed = false;
+static	bool			g_HostDownloadSucceeded = false;
+
+// Free function because ResumeProc is a plain pointer and this menu is a class.
+static void serverbrowser_HostDownloadResume( bool allSucceeded )
+{
+	g_HostDownloadResumed = true;
+	g_HostDownloadSucceeded = allSucceeded;
+}
+
+// [rc4l] Bumped whenever files may have appeared on disk, which invalidates the have-cache behind the
+// file list. Without it a download would land and the panel would go on saying the file was missing,
+// because the cache only noticed the SELECTION changing and the selection had not.
+static	int				g_HostHaveGeneration = 0;
 
 // Drag-selection in a host field, and when the last click landed -- the two things a field needs to
 // tell a double-click from two clicks, and a drag from a press.
@@ -1336,6 +1378,11 @@ public:
 		BROWSER_ServerRegistryTick( );
 		BROWSER_QueryTick( );
 
+		// [rc4l] A finished download for an entry we were about to host, acted on here rather than in
+		// the callback: that arrives from inside waddownload::Tick, and starting a server from there
+		// would re-enter it.
+		ResumeHostAfterDownload( );
+
 		// [rc4l] Only while the HOST tab is up, and only while nothing is being hosted.
 		//
 		// The check opens a socket on the port the player is about to host on. Doing that while they
@@ -1452,7 +1499,9 @@ public:
 		// The hosting tab is a different screen, not a filter, so it does not ask the phase at all --
 		// "still looking for servers" has no meaning on the page where you are making one.
 		if ( g_Tab == BrowserTab::Host )
-			return zx::ComputeHostParts( serverbrowser_DownloadRunning( ));
+			// Ours does not count: the host panel's own button is the CANCEL for it.
+			return zx::ComputeHostParts( serverbrowser_DownloadRunning( )
+				&& !HostDownloadRunning( ));
 
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 
@@ -2561,6 +2610,15 @@ public:
 				zx::PickIwad( chosen.addon.iwad, iwads ),
 				zx::CatalogueServerCfgPath( chosen ), choices, have );
 
+			// [rc4l] Missing files are a DOWNLOAD, which is what the catalogue's per-file md5 was
+			// shipped for and what BuildHostPlan has always meant by returning `missing` rather than
+			// calling it fatal. The button refused anyway until now, so hosting an entry said
+			// downloading was impossible while the JOIN beside it fetched the same file happily.
+			//
+			// A blocker is different and still refuses: no IWAD to run on cannot be downloaded.
+			if ( plan.blocker.empty( ) && !plan.ready && BeginHostDownload( chosen, plan ))
+				return;
+
 			if ( !plan.blocker.empty( ) || !plan.ready )
 			{
 				// [rc4l] NAMES the files. "Missing files" alone leaves the player to work out which
@@ -2580,7 +2638,10 @@ public:
 						why += plan.missing[i].c_str( );
 					}
 
-					why += ". Downloading from here is not possible yet.";
+					// We only reach this having ALREADY tried to fetch them and been refused, so the
+					// reason is downloading's rather than hosting's. Start prints which one on the
+					// console; there is no point guessing at it a second time here.
+					why += ", and they could not be downloaded. The console says why.";
 				}
 
 				// On the PANEL, not just in the console. Refusing silently is what made this look
@@ -2595,8 +2656,6 @@ public:
 				return;
 			}
 
-			config.iwad = plan.iwad;
-			config.pwads = plan.pwads;
 			config.execCfg = plan.execCfg;
 
 			// [rc4l] RESOLVED to full paths, not left as bare names. These are what the CLIENT
@@ -2620,6 +2679,16 @@ public:
 					: FString( plan.pwads[i].c_str( )));
 			}
 
+			// [rc4l] The SERVER gets the same resolved paths, and for the same reason it gets them
+			// rather than names: it searches its OWN config, which is not the one this client just
+			// registered a download folder in. Handing it a name meant a file we had just fetched was
+			// invisible to the server we fetched it for -- it started without the pk3, and the client
+			// that joined was told its lumps did not match. One resolution, used by both.
+			config.iwad = g_HostEntryIwad.GetChars( );
+			config.pwads.clear( );
+			for ( unsigned i = 0; i < g_HostEntryPwads.Size( ); ++i )
+				config.pwads.push_back( g_HostEntryPwads[i].GetChars( ));
+
 			// [rc4l] The entry's own opening map, which is NOT the first of its rotation: Duel 40
 			// opens on START, a welcome map deliberately left out of the rotation. Falling back to
 			// the cfg means the rotation decides, and to map01 only when there is neither.
@@ -2636,45 +2705,9 @@ public:
 			return;
 		}
 
-		// Custom: the server takes what this client is running, so there is nothing to reload onto.
-		g_HostEntryIwad = "";
-		g_HostEntryPwads.Clear( );
-
-		// What we are playing is what we will serve. FWadCollection knows the files by the names they
-		// were loaded under, which is exactly the form a command line wants.
-		config.iwad = ExtractFileBase( Wads.GetWadFullName( 1 ), true ).GetChars( );
-
-		for ( int i = 2; i < Wads.GetNumWads( ); ++i )
-		{
-			const char *pszName = Wads.GetWadName( i );
-			if (( pszName == NULL ) || ( pszName[0] == 0 ))
-				continue;
-
-			// zandronum.pk3 and friends come with the engine; the server loads its own copies.
-			if ( stricmp( pszName, "zandronum.pk3" ) == 0 )
-				continue;
-			if ( stricmp( pszName, "skulltag_actors.pk3" ) == 0 )
-				continue;
-
-			config.pwads.push_back( pszName );
-		}
-
-		SaveHostForm( );
-
-		// [rc4l] Let go of the port before the server asks for it. The reachability check binds the
-		// very port being hosted on, so starting while it is still open made the server find its own
-		// port taken and slide to the next one -- start, stop, start and the number climbed.
-		zx::ReachProbeRelease( );
-
-		if ( zx::HostStart( config ) == false )
-		{
-			// HostStart has already put the reason in the lifecycle; the panel draws it. Nothing to
-			// announce here that the screen is not about to say better.
-			S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
-			return;
-		}
-
-		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+		// [rc4l] Nothing selected, which the list no longer allows: every row is an entry and one is
+		// always current. Reached only if the catalogue is empty, and then there is nothing to host.
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
 	}
 
 	// [rc4l] How many people other than us are on the server we are connected to.
@@ -2699,6 +2732,125 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] Fetch what `plan` says is missing, so the entry can be hosted once it lands. True when a
+	// transfer started and the caller should stand down.
+	//
+	// The catalogue's md5 per file goes with each request, so the transfer is CHECKED rather than
+	// trusted: a mirror handing us a different build of the same filename is caught here rather than
+	// discovered by the server refusing to start on it.
+	bool BeginHostDownload( const zx::CatalogueEntry &chosen, const zx::HostPlan &plan )
+	{
+		if ( plan.missing.empty( ) || !zx::waddownload::IsAvailable( ))
+			return false;
+
+		std::vector<zx::waddownload::WantedFile> wanted;
+		for ( size_t i = 0; i < plan.missing.size( ); ++i )
+		{
+			std::string md5;
+			for ( size_t j = 0; j < chosen.addon.files.size( ); ++j )
+			{
+				if ( chosen.addon.files[j].name == plan.missing[i] )
+				{
+					md5 = chosen.addon.files[j].md5;
+					break;
+				}
+			}
+
+			// Never an IWAD: an entry's `files` are its PWADs, and the game underneath them is
+			// PickIwad's business and is not ours to fetch.
+			wanted.push_back( zx::waddownload::WantedFile( plan.missing[i], false, md5 ));
+		}
+
+		// No extra sites. A join gets to put the server's own mirror first because that server
+		// certainly has its own files; there is no server here yet, so the shipped list is all there
+		// is, and it is where a catalogue entry's files are published anyway.
+		// [rc4l] zx::NoteDownloadFinished, not our own resume: that is the callback carrying the
+		// truth table. Handing waddownload our resume directly would fire it the instant the bytes
+		// landed, wherever the player happened to be, which is the bug the shared path exists to
+		// stop.
+		if ( !zx::waddownload::Start( std::vector<std::string>( ), wanted,
+			zx::NoteDownloadFinished ))
+		{
+			return false;
+		}
+
+		g_HostDownloadEntry = g_HostEntrySel;
+		g_HostDownloadResumed = false;
+
+		// Parked in the same slot a downloading JOIN uses, which is the whole point: while this runs
+		// the player can close the menu and carry on playing, and everything that makes that safe --
+		// the hold while a prompt is up, the waiting band if they have wandered off, the cancel that
+		// keeps the file and drops the intent -- is code they already share.
+		zx::SetPendingResume( serverbrowser_HostDownloadResume, chosen.addon.name.c_str( ));
+
+		// The panel stays put rather than putting up a modal, the same as the join: the transfer runs
+		// for minutes and a box you cannot dismiss without cancelling is a worse way to spend them
+		// than a progress line under a list you can still read.
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+		return true;
+	}
+
+	// Files may have appeared on disk; look again next time anything asks.
+	void HostFilesChanged( )
+	{
+		++g_HostHaveGeneration;
+	}
+
+	// [rc4l] Whether a transfer OF OURS is in flight -- ours meaning one this panel started. A join's
+	// download running behind us must not turn the host button into a cancel for it.
+	bool HostDownloadRunning( )
+	{
+		return ( g_HostDownloadEntry >= 0 ) && zx::waddownload::IsRunning( );
+	}
+
+	// One frame after the resume fires, because it arrives from inside waddownload::Tick and starting
+	// a server from there would re-enter it.
+	void ResumeHostAfterDownload( )
+	{
+		if ( !g_HostDownloadResumed )
+			return;
+
+		g_HostDownloadResumed = false;
+
+		const int entry = g_HostDownloadEntry;
+		const bool bOk = g_HostDownloadSucceeded;
+		g_HostDownloadEntry = -1;
+
+		if ( entry < 0 )
+			return;
+
+		// A failure has already been reported by the shared path, on the browser's own panel. Saying
+		// it again here would be the same news twice.
+		if ( !bOk )
+			return;
+
+		// [rc4l] Straight back into the same button. StartHosting rebuilds the plan from scratch, so
+		// the files that just landed are found by the ordinary lookup and the whole thing proceeds as
+		// though they had been there all along -- there is no second, download-shaped path to keep
+		// working.
+		g_HostEntrySel = entry;
+		HostFilesChanged( );
+		StartHosting( );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] How to name loaded wad `i` to the server: the path it was loaded from when that path can
+	// be put on a command line, and its bare name when it cannot.
+	//
+	// The path is what stops the server searching for a file we already have open. The fallback
+	// matters because a name that fails IsSafeFilePath is DROPPED from the argv, and a server missing
+	// a file is worse than a server that has to go and look for it.
+	std::string HostServeName( int i )
+	{
+		const char *const pszFull = Wads.GetWadFullName( i );
+		if (( pszFull != NULL ) && ( pszFull[0] != 0 ) && zx::IsSafeFilePath( pszFull ))
+			return pszFull;
+
+		const char *const pszName = Wads.GetWadName( i );
+		return ( pszName != NULL ) ? pszName : "";
+	}
+
 	// [rc4l] Whatever the button under the pointer means right now.
 	void PressHostButton( )
 	{
@@ -2854,7 +3006,7 @@ public:
 		}
 
 		// The catalogue rows, using the same y helper the drawing uses, bounded to the left column.
-		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
+		for ( int row = SB_HOST_CATALOGUE_FIRST; row < HostCatalogueRowCount( ); ++row )
 		{
 			const int rowY = HostCatalogueRowY( row );
 			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
@@ -2920,6 +3072,12 @@ public:
 		g_HostButtonHot = false;
 		g_HostVisHot = -1;
 
+		// [rc4l] FIRST, and before the click-away rule below. A bar lives over the same column the
+		// details and the status draw in, and a drag along it must not read as "clicked on nothing"
+		// and drop the keyboard focus every frame it moves.
+		if ( HostRegionBarsMouseEvent( type, x, y ))
+			return true;
+
 		// The rule lives in computation/pointerdrag_compute -- above all, that a PRESS always ends the
 		// previous gesture and is never consumed by it. Inline, that rule had a hole in it and ate a
 		// click; see the unit's header for what that looked like.
@@ -2984,7 +3142,7 @@ public:
 		// The catalogue, before the fields: it is above them on screen and it decides what the rest
 		// of the panel is about.
 		g_HostEntryHot = -2;
-		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < HostCatalogueRowCount( ) - 1; ++row )
+		for ( int row = SB_HOST_CATALOGUE_FIRST; row < HostCatalogueRowCount( ); ++row )
 		{
 			const int rowY = HostCatalogueRowY( row );
 			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
@@ -3050,7 +3208,17 @@ public:
 				if ( type == MOUSE_Click )
 				{
 					SetFocus( zx::BrowserFocus::Host );
+
+					// [rc4l] BOTH of the other two things that can hold the form's focus, not just
+					// the button.
+					//
+					// g_HostOnVisibility was left set, and it gates every keystroke: pick INTERNET or
+					// HOME and then click into the server name, and the caret appeared but nothing
+					// typed. Neither field was broken -- the keyboard was still being handed to the
+					// row above them, because clicking a field said "not the button any more" and
+					// forgot to say "not the row either".
 					g_HostOnButton = false;
+					g_HostOnVisibility = false;
 					g_HostFieldFocus = i;
 
 					const int now = static_cast<int>( DMenu::MenuTime );
@@ -3274,6 +3442,11 @@ public:
 		if ( zx::HostCurrentState( ) == zx::HostState::Failed )
 			return HostAction::Back;
 
+		// Before the idle test: nothing is running yet, and will not be until the files land, but the
+		// button must not go on offering to start something that is already on its way.
+		if ( HostDownloadRunning( ))
+			return HostAction::Cancel;
+
 		if ( zx::HostIsActive( ) == false )
 			return HostAction::Play;
 
@@ -3298,6 +3471,7 @@ public:
 	{
 		switch ( HostActionNow( ))
 		{
+		case HostAction::Cancel:	return "CANCEL";
 		case HostAction::Stop:		return "STOP SERVER";
 		case HostAction::Switch:	return "SWITCH TO THIS";
 		case HostAction::Back:		return "BACK";
@@ -3309,6 +3483,8 @@ public:
 	{
 		switch ( HostActionNow( ))
 		{
+		case HostAction::Cancel:
+			return "Stop downloading what this needs\nYou will be asked to confirm";
 		case HostAction::Stop:
 			return "Shut the server down\nAnyone playing on it is disconnected";
 		case HostAction::Switch:
@@ -3317,14 +3493,28 @@ public:
 		case HostAction::Back:
 			return "Go back to the form";
 		default:
-			return "Start the server and join it\nIt closes when you leave";
+			return "Start the server and join it\nAnything missing is downloaded first";
 		}
 	}
 
 	// [rc4l] Whatever the action button means right now, done.
 	void PressHostAction( )
 	{
-		if ( HostActionNow( ) == HostAction::Switch )
+		const HostAction action = HostActionNow( );
+
+		if ( action == HostAction::Cancel )
+		{
+			// [rc4l] The join's question, word for word, because it is the same question. HELD while
+			// it is up: a transfer that finished one frame into this prompt would otherwise start the
+			// server underneath it, and the answer would land on something already decided.
+			zx::HoldJoinResume( );
+			ShowDialog( DialogAction::CancelDownload, "Cancel?",
+				"The download stops. What has arrived so far is kept.",
+				"YES", 'y', "NO", 'n' );
+			return;
+		}
+
+		if ( action == HostAction::Switch )
 		{
 			PressHostSwitchButton( );
 			return;
@@ -3345,9 +3535,11 @@ public:
 		const HostAction action = HostActionNow( );
 		const int actW = HostActionW( );
 
-		// Tinted like CANCEL whenever it ENDS something that is running -- the same promise that
-		// button makes. BACK dismisses a failure and PLAY NOW! starts something, so neither is.
-		const bool bWarn = ( action == HostAction::Stop ) || ( action == HostAction::Switch );
+		// Tinted like CANCEL whenever it ENDS something that is running -- which for the CANCEL face
+		// is not a resemblance, it IS that button. BACK dismisses a failure and PLAY NOW! starts
+		// something, so neither is.
+		const bool bWarn = ( action == HostAction::Stop ) || ( action == HostAction::Switch )
+			|| ( action == HostAction::Cancel );
 
 		DrawRoundedButton( SB_HOST_FOOT_LEFT, SB_HOST_RTOGGLE_Y, actW, SB_HOST_RTOGGLE_H,
 			HostActionLabel( ), g_HostOnButton || g_HostButtonHot, bWarn );
@@ -3426,6 +3618,118 @@ public:
 		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
 	}
 
+	// [rc4l] A click or drag on one of those bars, mapped to a scroll position.
+	//
+	// The DRAWING of these two shared the compute helpers from the start; the INTERACTION was never
+	// written at all, so the thumbs looked exactly like the server list's and did nothing when
+	// grabbed. Only the wheel moved them.
+	//
+	// Every number here comes from the same expressions DrawHostRegionScrollBar uses, for the reason
+	// scrollbar_compute exists: a bar whose hit test works out its own thumb height disagrees with
+	// the one on screen, and the error grows with the thumb.
+	//
+	// The compute unit talks about rows and this scrolls by pixels, which costs nothing -- the
+	// mapping is linear and unit-agnostic, so "first row" is "pixels down" with no conversion.
+	bool HostRegionBarDrag( int viewTop, int viewBottom, int contentH, int maxScroll,
+		int x, int y, int &scroll )
+	{
+		const int viewH = viewBottom - viewTop;
+		if (( viewH <= 0 ) || ( contentH <= viewH ) || ( maxScroll <= 0 ))
+			return false;
+
+		const int trackTop = serverbrowser_ToScreenY( viewTop );
+		const int trackH = serverbrowser_ToScreenY( viewBottom ) - trackTop;
+		if ( trackH <= 0 )
+			return false;
+
+		// Wider than the bar is drawn, by the same few pixels the WAD list's bar allows. A two-pixel
+		// target is one nobody hits on the first try.
+		if (( x < serverbrowser_ToScreenX( SB_HOST_BAR_X - 3 )) ||
+			( x >= serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W + 3 )))
+		{
+			return false;
+		}
+
+		if (( y < trackTop ) || ( y >= trackTop + trackH ))
+			return false;
+
+		const int thumbH = zx::ComputeThumbHeight( trackH, viewH, contentH, 8 );
+		scroll = zx::ComputeFirstFromPointer( y - trackTop, trackH, thumbH, maxScroll );
+		return true;
+	}
+
+	// [rc4l] The two running-panel bars, answered in the order they are drawn. Returns true when one
+	// of them took the event, so the panel underneath does not also act on it.
+	bool HostRegionBarsMouseEvent( int type, int x, int y )
+	{
+		if ( zx::HostIsActive( ) == false )
+			return false;			// only the running panel splits the column in two
+
+		if ( type == MOUSE_Click )
+		{
+			int scroll = g_HostDetailScroll;
+			if ( HostRegionBarDrag( SB_HOST_RTOP_TOP, SB_HOST_RUN_TOP_BOT, HostDetailH( ),
+				HostDetailMaxScroll( ), x, y, scroll ))
+			{
+				g_HostDetailScroll = scroll;
+				g_DraggingHostDetailBar = true;
+				return true;
+			}
+
+			scroll = g_HostStatusScroll;
+			if ( HostRegionBarDrag( SB_HOST_RUN_BOT_TOP, SB_HOST_RTOP_BOTTOM, g_HostStatusH,
+				HostStatusMaxScroll( ), x, y, scroll ))
+			{
+				g_HostStatusScroll = scroll;
+				g_DraggingHostStatusBar = true;
+				return true;
+			}
+
+			return false;
+		}
+
+		// [rc4l] A held drag keeps being answered by the bar that STARTED it, without re-testing
+		// whether the pointer is still over it. Dragging a scrollbar and sliding off it sideways is
+		// how everyone uses one, and re-testing would drop the grab the moment they did.
+		if ( g_DraggingHostDetailBar || g_DraggingHostStatusBar )
+		{
+			const int trackTop = g_DraggingHostDetailBar
+				? serverbrowser_ToScreenY( SB_HOST_RTOP_TOP )
+				: serverbrowser_ToScreenY( SB_HOST_RUN_BOT_TOP );
+			const int trackBot = g_DraggingHostDetailBar
+				? serverbrowser_ToScreenY( SB_HOST_RUN_TOP_BOT )
+				: serverbrowser_ToScreenY( SB_HOST_RTOP_BOTTOM );
+
+			const int viewH = g_DraggingHostDetailBar
+				? ( SB_HOST_RUN_TOP_BOT - SB_HOST_RTOP_TOP )
+				: SB_HOST_RUN_BOT_H;
+			const int contentH = g_DraggingHostDetailBar ? HostDetailH( ) : g_HostStatusH;
+			const int maxScroll = g_DraggingHostDetailBar
+				? HostDetailMaxScroll( ) : HostStatusMaxScroll( );
+
+			const int trackH = trackBot - trackTop;
+			if (( trackH > 0 ) && ( maxScroll > 0 ))
+			{
+				const int thumbH = zx::ComputeThumbHeight( trackH, viewH, contentH, 8 );
+				const int at = zx::ComputeFirstFromPointer( y - trackTop, trackH, thumbH, maxScroll );
+
+				if ( g_DraggingHostDetailBar )
+					g_HostDetailScroll = at;
+				else
+					g_HostStatusScroll = at;
+			}
+
+			if ( type == MOUSE_Release )
+			{
+				g_DraggingHostDetailBar = false;
+				g_DraggingHostStatusBar = false;
+			}
+			return true;
+		}
+
+		return false;
+	}
+
 	// [rc4l] The port as typed, falling back to the default. Read by the reachability check, which is
 	// a question about one specific port and must follow the field as it is edited.
 	int HostConfiguredPort( )
@@ -3492,8 +3796,8 @@ public:
 	// than where it is clickable stays impossible -- the same rule the fields already follow.
 	int HostCatalogueRowCount( )
 	{
-		// Custom plus whatever is on disk.
-		return 1 + static_cast<int>( zx::CatalogueLoad( ).size( ));
+		// Whatever is on disk, and nothing else.
+		return static_cast<int>( zx::CatalogueLoad( ).size( ));
 	}
 
 	int HostCatalogueY( )
@@ -3506,13 +3810,13 @@ public:
 		return HostCatalogueRowCount( ) * SB_HOST_ENTRY_H + 8;
 	}
 
-	// The y of one catalogue row. `row` is -1 for Custom, then 0.. for entries, so the selection
-	// value and the row index are the same number and cannot drift apart.
+	// The y of one catalogue row. The selection value and the row index are the same number, so
+	// the two cannot drift apart.
 	int HostCatalogueRowY( int row )
 	{
 		// [rc4l] No heading offset: EXPERIENCES is gone and the rows begin where it was. A label over
 		// three obvious rows was a line spent saying what the rows already said.
-		return HostCatalogueY( ) + ( row + 1 ) * SB_HOST_ENTRY_H;
+		return HostCatalogueY( ) + row * SB_HOST_ENTRY_H;
 	}
 
 	// The settings live in the right column now, so they start at the top of the viewport rather than
@@ -3699,10 +4003,17 @@ public:
 		// someone arriving here has to do is pick something. Centred over both columns, since it
 		// belongs to the panel rather than to either one of them.
 		{
-			const char *const heading = "SELECT AN EXPERIENCE TO HOST";
+			// [rc4l] While the files are coming down, the heading IS the transfer. It already spans
+			// both columns and is the one line on this panel nothing else is using, so the progress
+			// goes there rather than into a strip squeezed between the list and the buttons.
+			const FString status = HostDownloadRunning( )
+				? zx::waddownload::StatusLine( ) : FString( );
+
+			const bool bBusy = status.IsNotEmpty( );
+			const FString heading = bBusy ? status : FString( "SELECT AN EXPERIENCE TO HOST" );
 			const int headingW = SmallFont->StringWidth( heading );
 
-			screen->DrawText( SmallFont, CR_WHITE,
+			screen->DrawText( SmallFont, bBusy ? CR_GOLD : CR_WHITE,
 				SB_HOST_LEFT + (( SB_HOST_RIGHT - SB_HOST_LEFT ) - headingW ) / 2,
 				SB_HOST_TOP + SB_HOST_PAD, heading,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
@@ -3898,11 +4209,14 @@ public:
 	const std::vector<bool> &HostEntryFilesPresent( int entry, const zx::AddonEntry &addon )
 	{
 		static int cached = -2;
+		static int cachedGeneration = -1;
 		static std::vector<bool> present;
 
-		if (( entry != cached ) || ( present.size( ) != addon.files.size( )))
+		if (( entry != cached ) || ( cachedGeneration != g_HostHaveGeneration )
+			|| ( present.size( ) != addon.files.size( )))
 		{
 			cached = entry;
+			cachedGeneration = g_HostHaveGeneration;
 			present.clear( );
 
 			for ( size_t i = 0; i < addon.files.size( ); ++i )
@@ -3980,9 +4294,11 @@ public:
 		const int x = SB_HOST_RCOL_LEFT;
 		int y = SB_HOST_RTOP_TOP - g_HostDetailScroll;
 
+		// [rc4l] Reached only when there is nothing to describe. This used to be the Custom row's
+		// panel; with that row gone, an out-of-range selection means the catalogue is empty.
 		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
 		{
-			DrawHostDetailTitle( "Custom setup", y );
+			DrawHostDetailTitle( "Nothing to host", y );
 			y += BigFont->GetHeight( ) + 4;
 
 			if ( HostDetailRowVisible( y, 2 ))
@@ -3991,7 +4307,7 @@ public:
 
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
-				screen->DrawText( SmallFont, CR_WHITE, x, y, "Serves what you are playing",
+				screen->DrawText( SmallFont, CR_WHITE, x, y, "No experiences are installed",
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 			}
 			return;
@@ -4062,14 +4378,11 @@ public:
 	}
 
 	// [rc4l] WHAT to run. The catalogue answers this; the fields beside it answer how.
-	//
-	// Custom is a ROW rather than a mode, so the manual form is one of the choices instead of a
-	// separate place to go. Menu depth is what stops people finding things, and this screen has none.
 	void DrawHostCatalogue( int x )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
 
-		for ( int row = SB_HOST_CATALOGUE_CUSTOM; row < static_cast<int>( entries.size( )); ++row )
+		for ( int row = SB_HOST_CATALOGUE_FIRST; row < static_cast<int>( entries.size( )); ++row )
 		{
 			const int rowY = HostCatalogueRowY( row );
 			if ( !HostRowVisible( rowY, SB_HOST_ENTRY_H ))
@@ -4098,16 +4411,31 @@ public:
 					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H - 1 ) -
 						serverbrowser_ToScreenY( rowY - 1 ));
 			}
+			else if ( bHot )
+			{
+				// [rc4l] The SERVER LIST's hover, to the pixel: the same faint band at the same
+				// colour and alpha, and no change to the text.
+				//
+				// This used to recolour the label gold, which said the wrong thing twice over. Gold
+				// is what a FOCUSED field wears elsewhere in this browser, so sweeping the pointer
+				// down the list looked like the keyboard was following it; and a row that changes
+				// colour under the pointer claims something happened, when hovering is only a hint
+				// about what clicking would do. It also fought the green: a running row went gold
+				// while hovered, so the one state worth marking vanished when you pointed at it.
+				screen->Dim( PalEntry( 150, 170, 215 ), 0.06f,
+					serverbrowser_ToScreenX( x - 4 ),
+					serverbrowser_ToScreenY( rowY - 1 ),
+					serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT ) -
+						serverbrowser_ToScreenX( x - 4 ),
+					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H - 1 ) -
+						serverbrowser_ToScreenY( rowY - 1 ));
+			}
 
-			EColorRange col = bSel ? CR_WHITE : ( bHot ? CR_GOLD : CR_GRAY );
-			if ( bRunning && !bHot )
-				col = CR_GREEN;
+			// Hover is deliberately not in here. What a row IS -- selected, being served, neither --
+			// is all the label has to say.
+			EColorRange col = bSel ? CR_WHITE : ( bRunning ? CR_GREEN : CR_GRAY );
 
-			FString label;
-			if ( row == SB_HOST_CATALOGUE_CUSTOM )
-				label = "Custom setup";
-			else
-				label = entries[row].addon.name.c_str( );
+			const FString label = entries[row].addon.name.c_str( );
 
 			// [rc4l] Centred in the row rather than drawn at its top edge. The highlight bar is
 			// SB_HOST_ENTRY_H tall and the glyphs are shorter, so drawing at rowY sat the text high
@@ -4116,9 +4444,8 @@ public:
 				rowY + ( SB_HOST_ENTRY_H - SmallFont->GetHeight( )) / 2, label,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-			// No file count or "current" here on purpose: the detail panel beside this already says
-			// the files, the IWAD and what Custom means, and a narrow list repeating it crowded
-			// itself for no new information.
+			// No file count here on purpose: the detail panel beside this already says the files and
+			// the IWAD, and a narrow list repeating it crowded itself for no new information.
 		}
 	}
 
@@ -4218,9 +4545,14 @@ public:
 	// wraps, so the height is not something the layout can work out without drawing it.
 	int DrawHostStatus( int x, int y, zx::HostState state )
 	{
+		// [rc4l] GREEN once it is up. The heading is the one line on this panel that is unambiguously
+		// good news, and it was gold -- the same colour the panel uses for "still waiting", so the
+		// state everyone is looking for wore the colour of the state before it.
 		if ( HostTextRowVisible( y, SB_HOST_LINE ))
 		{
-			screen->DrawText( SmallFont, CR_GOLD, x, y, zx::HostStateSummary( state ),
+			const EColorRange headColour = ( state == zx::HostState::Running ) ? CR_GREEN : CR_GOLD;
+
+			screen->DrawText( SmallFont, headColour, x, y, zx::HostStateSummary( state ),
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 		}
 		y += SB_HOST_LINE + 6;
@@ -4255,60 +4587,58 @@ public:
 
 	//*************************************************************************
 	//
-	// [rc4l] Whether the outside world can reach this server -- reported, never predicted.
-	//
-	// The three states are what we actually know, and no more. WAITING is honest about the fact that
-	// nothing has happened yet; REACHABLE is only ever said because a stranger already reached us;
-	// and the failure says "we did not hear back" rather than "your port is closed", because a
-	// registry that was briefly down looks identical from in here and blaming the player's router for
-	// it would send them to configure something that was never wrong.
-	int DrawHostReach( int x, int y, int width )
+	// [rc4l] Which of the four reachability states we are in.
+	int HostStatusNow( )
 	{
 		switch ( zx::HostReachability( ))
 		{
-		case zx::HostReach::NotPublic:
-			return DrawWrappedIn( "Visible on this network only. Players elsewhere cannot see it.",
-				x, y, width, CR_DARKGRAY );
+		case zx::HostReach::NotPublic:		return static_cast<int>( zx::HostStatus::LanOnly );
+		case zx::HostReach::Reachable:		return static_cast<int>( zx::HostStatus::Open );
+		case zx::HostReach::Unreachable:	return static_cast<int>( zx::HostStatus::NoReply );
+		default:							return static_cast<int>( zx::HostStatus::Checking );
+		}
+	}
 
-		case zx::HostReach::Waiting:
-			{
-				// [rc4l] Say what we asked the router, as well as what we are waiting to learn. A
-				// game that opens ports on somebody's network should say so out loud -- that is the
-				// whole reason routers ship with this switched off.
-				const char *const router = zx::PortMapStatusText( );
-				if (( router != NULL ) && ( router[0] != 0 ))
-					y = DrawWrappedIn( router, x, y, width, CR_DARKGRAY );
+	// [rc4l] Whether the outside world can reach this server -- ONE LINE, and a hover for the rest.
+	//
+	// This was five wrapped lines: the verdict, what the router said, that the server still works
+	// locally, and which port to forward on which protocols. All of it true, all of it in a region
+	// that also has to carry what the server is and how to administer it, for a question with four
+	// possible answers. The useful part ended up the smallest thing on screen.
+	//
+	// The code is the line; the paragraph is the tooltip. Same trade the registry bars make, and for
+	// the same reason: a state that is usually fine does not deserve permanent prose.
+	int DrawHostReach( int x, int y, int width )
+	{
+		const zx::HostStatus status = static_cast<zx::HostStatus>( HostStatusNow( ));
 
-				return DrawWrappedIn( "Listed publicly. Checking whether the internet can reach it.",
-					x, y, width, CR_GOLD );
-			}
+		const char *const router = zx::PortMapStatusText( );
+		const std::string tip = zx::HostStatusTooltip( status,
+			zx::HostCurrentConfig( ).port,
+			(( router != NULL ) && ( router[0] != 0 )) ? std::string( router ) : std::string( ));
 
-		case zx::HostReach::Reachable:
-			return DrawWrappedIn( "The internet can reach this server. Anyone can join it.",
-				x, y, width, CR_GREEN );
-
-		case zx::HostReach::Unreachable:
-			{
-				y = DrawWrappedIn( "Nothing has reached this server from outside.",
-					x, y, width, CR_ORANGE );
-
-				const char *const router = zx::PortMapStatusText( );
-				if (( router != NULL ) && ( router[0] != 0 ))
-					y = DrawWrappedIn( router, x, y, width, CR_DARKGRAY );
-
-				// [rc4l] The port AND both protocols, because the game is UDP and direct downloads
-				// are TCP on the same number -- somebody who forwards only UDP gets a server that
-				// works and downloads that mysteriously do not, which reads as a different bug.
-				FString advice;
-				advice.Format( "It is still working for players on this network. To open it to "
-					"everyone, forward TCP and UDP port %d on your router.",
-					zx::HostCurrentConfig( ).port );
-
-				return DrawWrappedIn( advice, x, y, width, CR_DARKGRAY );
-			}
+		EColorRange colour = CR_GOLD;
+		switch ( zx::HostToneFor( status ))
+		{
+		case zx::HostTone::Good:	colour = CR_GREEN; break;
+		case zx::HostTone::Bad:		colour = CR_ORANGE; break;
+		case zx::HostTone::Info:	colour = CR_DARKGRAY; break;
+		default:					colour = CR_GOLD; break;
 		}
 
-		return y;
+		const char *const code = zx::HostStatusCode( status );
+
+		if ( HostTextRowVisible( y, SB_HOST_LINE ))
+		{
+			screen->DrawText( SmallFont, colour, x, y, code,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+			// Only while the row is actually on screen. A tooltip for a line the mask is hiding is a
+			// hover target over something the player cannot see.
+			serverbrowser_Tip( x, y, SmallFont->StringWidth( code ), SB_HOST_LINE, tip.c_str( ));
+		}
+
+		return y + SB_HOST_LINE;
 	}
 
 	// Wrapped text inside an arbitrary width, returning the y below it. DrawWrapped is fixed to the
@@ -4360,10 +4690,19 @@ public:
 			start = space + 1;
 		}
 
+		// [rc4l] The leftover, and it needs the SAME gate the loop above uses.
+		//
+		// It did not have one, so the mask worked on every line of a paragraph except its last. That
+		// is a strange enough shape to be worth naming: the top of the region masked correctly, whole
+		// paragraphs masked correctly, and then one trailing line per paragraph drew straight through
+		// the bottom edge and over the STOP SERVER button.
 		if ( line.IsNotEmpty( ))
 		{
-			screen->DrawText( SmallFont, colour, x, y, line,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			if ( HostTextRowVisible( y, SB_HOST_LINE ))
+			{
+				screen->DrawText( SmallFont, colour, x, y, line,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			}
 			y += SB_HOST_LINE;
 		}
 
@@ -4571,6 +4910,40 @@ public:
 
 	// [rc4l] Committing to the selected server. One implementation, reached from the keyboard and from
 	// the button, so the two can never come to mean different things.
+	// [rc4l] The port out of an "ip:port" string. Taken from the text rather than from usPort because
+	// that field is in network byte order and this file has no business knowing that.
+	int PortOfAddress( const FString &address )
+	{
+		const long colon = address.LastIndexOf( ":" );
+		if ( colon < 0 )
+			return 0;
+
+		return atoi( address.Mid( colon + 1, address.Len( )).GetChars( ));
+	}
+
+	// The port our running server actually holds, taken from the address we join it on rather than
+	// from the form field beside it: the field is editable while the server runs, so it can be
+	// describing a server that does not exist yet. 0 when we hold nothing.
+	int HostRunningPort( )
+	{
+		return PortOfAddress( zx::HostConnectAddress( ));
+	}
+
+	// Whether a row in the list is the server WE are running. See RowIsOwnServer for why the address
+	// on the row is not enough on its own.
+	bool RowIsOurOwnServer( int lServer )
+	{
+		const NETADDRESS_s address = BROWSER_GetAddress( lServer );
+		const FString full = address.ToString( );
+
+		FString localIp;
+		if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+			localIp = NETWORK_GetLocalAddress( ).ToStringNoPort( );
+
+		return zx::RowIsOwnServer( address.ToStringNoPort( ), PortOfAddress( full ),
+			HostRunningPort( ), localIp.GetChars( ), zx::ReachProbePublicIp( ));
+	}
+
 	void DoJoinSelected( )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
@@ -4624,11 +4997,32 @@ public:
 				|| ( hostState == zx::HostState::Running )
 				|| ( hostState == zx::HostState::Stopping ));
 
-			switch ( zx::DecideJoinIntent( bHoldsServer, bConnected, bTargetIsCurrent ))
+			// [rc4l] The wider "is this row OURS", because the narrow test above never says yes about
+			// our own server. We connect to it on 127.0.0.1, LAN discovery lists it on this machine's
+			// local address and the registry lists it on our public one, so the browser shows two rows
+			// and neither matches what we are connected on. JOIN therefore read our own server as
+			// somewhere else and offered to stop it in order to go there.
+			const bool bTargetIsOwn = bHoldsServer && ( g_Selected >= 0 ) && ( g_Selected < total )
+				&& RowIsOurOwnServer( g_SortedServers[g_Selected] );
+
+			// And whether the connection we are holding is to that server, which is what separates
+			// "you are already here" from "then go there".
+			const bool bOnOwnServer = bConnected
+				&& zx::HostOwnsAddress( FString( CLIENT_GetServerAddress( ).ToString( )));
+
+			switch ( zx::DecideJoinIntent( bHoldsServer, bConnected, bTargetIsCurrent,
+				bTargetIsOwn, bOnOwnServer ))
 			{
 			case zx::JoinIntent::AlreadyThere:
 				// Just leave. No sound of a decision being made, because none was.
 				M_ClearMenus( );
+				return;
+
+			case zx::JoinIntent::RejoinOwnServer:
+				// Our server, and we are not in it. Connect on the address we know works rather than
+				// on whichever of its several spellings the row happened to be listed under, and stop
+				// nothing on the way.
+				JoinOwnServer( );
 				return;
 
 			case zx::JoinIntent::ConfirmStopHosting:
