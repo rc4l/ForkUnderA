@@ -32,4 +32,19 @@ void ExtractMappedV4( const unsigned char *sixteen, unsigned char *four )
 		four[i] = sixteen[12 + i];
 }
 
+void MakeV4MappedV6( const unsigned char *four, unsigned char *sixteen )
+{
+	if (( four == 0 ) || ( sixteen == 0 ))
+		return;
+
+	for ( int i = 0; i < 10; ++i )
+		sixteen[i] = 0;
+
+	sixteen[10] = 0xff;
+	sixteen[11] = 0xff;
+
+	for ( int i = 0; i < 4; ++i )
+		sixteen[12 + i] = four[i];
+}
+
 } // namespace zx

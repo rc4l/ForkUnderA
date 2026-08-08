@@ -132,3 +132,65 @@ TEST(V6Mapped, NullIsNotMappedAndExtractingIsSafe)
 	Mapped( addr, 5, 6, 7, 8 );
 	ExtractMappedV4( addr, 0 );
 }
+
+// ---------------------------------------------------------------- putting the hat on
+
+TEST(V6Mapped, WrapsAV4AddressForADualStackSocket)
+{
+	const unsigned char four[4] = { 192, 168, 1, 7 };
+	unsigned char sixteen[16];
+	memset( sixteen, 0xaa, sizeof( sixteen ));
+
+	MakeV4MappedV6( four, sixteen );
+
+	unsigned char expected[16];
+	Mapped( expected, 192, 168, 1, 7 );
+	EXPECT_EQ( 0, memcmp( sixteen, expected, 16 ));
+}
+
+TEST(V6Mapped, WrappingThenUnwrappingIsTheSameAddress)
+{
+	// The property that matters, because the two run at opposite ends of every packet: what the send
+	// path dresses up, the receive path has to strip back to exactly what went in.
+	static const unsigned char cases[][4] = {
+		{ 0, 0, 0, 0 }, { 127, 0, 0, 1 }, { 8, 8, 8, 8 }, { 255, 255, 255, 255 },
+	};
+
+	for ( int i = 0; i < 4; ++i )
+	{
+		unsigned char sixteen[16];
+		MakeV4MappedV6( cases[i], sixteen );
+
+		EXPECT_TRUE( IsV4MappedV6( sixteen )) << i;
+
+		unsigned char back[4];
+		ExtractMappedV4( sixteen, back );
+		EXPECT_EQ( 0, memcmp( back, cases[i], 4 )) << i;
+	}
+}
+
+TEST(V6Mapped, WrappingClearsWhateverWasInTheBufferBefore)
+{
+	// The first ten bytes have to end up zero rather than keeping the caller's leftovers, or the
+	// result stops being a mapped address and starts being a real v6 one pointed somewhere else.
+	unsigned char sixteen[16];
+	memset( sixteen, 0xff, sizeof( sixteen ));
+
+	const unsigned char four[4] = { 1, 2, 3, 4 };
+	MakeV4MappedV6( four, sixteen );
+
+	for ( int i = 0; i < 10; ++i )
+		EXPECT_EQ( 0, sixteen[i] ) << i;
+}
+
+TEST(V6Mapped, WrappingNullIsSafe)
+{
+	unsigned char sixteen[16];
+	memset( sixteen, 0x11, sizeof( sixteen ));
+
+	const unsigned char four[4] = { 1, 2, 3, 4 };
+	MakeV4MappedV6( 0, sixteen );
+	EXPECT_EQ( 0x11, sixteen[0] ) << "a refused wrap must leave the caller's buffer alone";
+
+	MakeV4MappedV6( four, 0 );
+}
