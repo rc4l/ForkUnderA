@@ -3208,7 +3208,17 @@ public:
 				if ( type == MOUSE_Click )
 				{
 					SetFocus( zx::BrowserFocus::Host );
+
+					// [rc4l] BOTH of the other two things that can hold the form's focus, not just
+					// the button.
+					//
+					// g_HostOnVisibility was left set, and it gates every keystroke: pick INTERNET or
+					// HOME and then click into the server name, and the caret appeared but nothing
+					// typed. Neither field was broken -- the keyboard was still being handed to the
+					// row above them, because clicking a field said "not the button any more" and
+					// forgot to say "not the row either".
 					g_HostOnButton = false;
+					g_HostOnVisibility = false;
 					g_HostFieldFocus = i;
 
 					const int now = static_cast<int>( DMenu::MenuTime );
