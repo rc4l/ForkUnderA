@@ -79,10 +79,15 @@ static	SOCKET			g_ProbeSocket;
 // Our local port.
 static	USHORT			g_usLocalPort;
 
-// [rc4l] Whether our sockets ended up speaking both families. Two things need it: the bind has to
-// hand a socket the matching kind of address, and every SEND to a v4 peer has to be dressed as
+// [rc4l] Whether a socket ended up speaking both families. Two things need it: the bind has to hand
+// a socket the matching kind of address, and every SEND to a v4 peer has to be dressed as
 // ::ffff:a.b.c.d, because an AF_INET6 socket refuses a sockaddr_in outright.
+//
+// One per socket, not one for the pair. They are allocated separately and either can fall back on
+// its own, so a single flag would let whichever was allocated last decide how the other addressed
+// every packet it sent.
 static	bool			g_bSocketIsDualStack = false;
+static	bool			g_bProbeSocketIsDualStack = false;
 
 // Buffer for the Huffman encoding.
 static	UCHAR			g_ucHuffmanBuffer[131072];
@@ -91,8 +96,8 @@ static	UCHAR			g_ucHuffmanBuffer[131072];
 //	PROTOTYPES
 
 static	void			network_Error( const char *pszError );
-static	SOCKET			network_AllocateSocket( void );
-static	bool			network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse );
+static	SOCKET			network_AllocateSocket( bool &bGotDualStack );
+static	bool			network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse, bool bDualStack );
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -134,13 +139,13 @@ void NETWORK_Construct( USHORT usPort, const char *pszIPAddress )
 	g_usLocalPort = usPort;
 
 	// Allocate a socket, and attempt to bind it to the given port.
-	g_NetworkSocket = network_AllocateSocket( );
-	if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false ) == false )
+	g_NetworkSocket = network_AllocateSocket( g_bSocketIsDualStack );
+	if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false, g_bSocketIsDualStack ) == false )
 	{
 		bSuccess = true;
 		bool bSuccessIP = true;
 		usNewPort = g_usLocalPort;
-		while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false ) == false )
+		while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false, g_bSocketIsDualStack ) == false )
 		{
 			// Didn't find an available port. Oh well...
 			if ( usNewPort == g_usLocalPort )
@@ -184,11 +189,12 @@ void NETWORK_Construct( USHORT usPort, const char *pszIPAddress )
 	// Port 0 asks the OS for any free port, which is all that matters -- it simply must not be the
 	// one they talked to. A failure here is not fatal: probes fall back to the main socket, which is
 	// how it behaved before, so the daemon keeps working and only the strictness is lost.
-	g_ProbeSocket = network_AllocateSocket( );
-	if ( network_BindSocketToPort( g_ProbeSocket, ulInAddr, 0, false ) == false )
+	g_ProbeSocket = network_AllocateSocket( g_bProbeSocketIsDualStack );
+	if ( network_BindSocketToPort( g_ProbeSocket, ulInAddr, 0, false, g_bProbeSocketIsDualStack ) == false )
 	{
 		printf( "NETWORK_Construct: couldn't open a probe socket; reachability checks will be weaker.\n" );
 		g_ProbeSocket = g_NetworkSocket;
+		g_bProbeSocketIsDualStack = g_bSocketIsDualStack;
 	}
 	else if ( ioctlsocket( g_ProbeSocket, FIONBIO, &ulArg ) == -1 )
 	{
@@ -343,7 +349,7 @@ void NETWORK_LaunchProbePacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
 	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
 	struct sockaddr_storage SocketAddress;
-	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
+	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bProbeSocketIsDualStack );
 
 	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize,
 		&iNumBytesOut );
@@ -503,7 +509,9 @@ void network_Error( const char *pszError )
 // Falls back to a plain v4 socket for the same reasons it does in the engine: the option defaults
 // differently across platforms, the stack can be disabled outright, and a registry that only hears
 // v6 would be invisible to every server that exists today.
-static SOCKET network_AllocateSocket( void )
+// [rc4l] Reports what it got instead of writing a global, so two sockets cannot overwrite each
+// other's answer.
+static SOCKET network_AllocateSocket( bool &bGotDualStack )
 {
 	SOCKET	Socket;
 
@@ -513,14 +521,14 @@ static SOCKET network_AllocateSocket( void )
 		int off = 0;
 		if ( setsockopt( Socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&off, sizeof( off )) == 0 )
 		{
-			g_bSocketIsDualStack = true;
+			bGotDualStack = true;
 			return ( Socket );
 		}
 
 		closesocket( Socket );
 	}
 
-	g_bSocketIsDualStack = false;
+	bGotDualStack = false;
 
 	// Allocate a socket.
 	Socket = socket( PF_INET, SOCK_DGRAM, IPPROTO_UDP );
@@ -532,7 +540,7 @@ static SOCKET network_AllocateSocket( void )
 
 //*****************************************************************************
 //
-bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse )
+bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse, bool bDualStack )
 {
 	int		iErrorCode;
 
@@ -547,7 +555,7 @@ bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, boo
 
 	// [rc4l] Bind to match the SOCKET'S family. in6addr_any covers every v4 address as well on a
 	// dual-stack socket; handing it a sockaddr_in fails outright and the registry never comes up.
-	if ( g_bSocketIsDualStack )
+	if ( bDualStack )
 	{
 		struct sockaddr_in6 address6;
 		memset( &address6, 0, sizeof( address6 ));
