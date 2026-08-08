@@ -647,6 +647,7 @@ static	bool			g_HostAdvertise = false;
 // Which cell of the visibility row the pointer is over. Whether the KEYBOARD is on it is g_HostFocus.
 static	int				g_HostVisHot = -1;
 
+
 // Two answers: local, then global. Named so the row and everything that indexes it agree.
 // [rc4l] Internet FIRST, and the default. Hosting to be joined is the ordinary reason to host, and
 // a form that opens on the narrower answer makes the common case the one you have to correct.
@@ -654,6 +655,13 @@ static	int				g_HostVisHot = -1;
 // The values carry the order so that nothing else has to know it -- every index in this file goes
 // through these names, which is what stops a reorder from silently swapping the two answers.
 enum { kHostVisGlobal = 0, kHostVisLocal = 1, kHostVisCount = 2 };
+
+// [rc4l] Which cell the keyboard is POINTING AT, which is not the same as which one is chosen.
+//
+// Left and right used to set the value as they moved, so there was no way to look along the row
+// without changing the answer -- arrowing past INTERNET to read what HOME said had already switched
+// you to it. A checkbox row is navigated and then committed, like every other one.
+static	int				g_HostVisCursor = kHostVisGlobal;
 
 // True once the form has been filled from the CVARs that remember it, so a visit to the tab does not
 // wipe what was typed on the last one.
@@ -3010,16 +3018,16 @@ public:
 			return;
 		}
 
-		// The visibility row's left and right pick the answer without moving.
+		// [rc4l] The visibility row's left and right move the CURSOR along it. They do not answer the
+		// question -- enter does. Moving and choosing are different acts, and a row that decided as
+		// you passed over it could not be read without being changed.
 		if ( r.choiceStep != 0 )
 		{
-			const int at = zx::ChoiceStep( g_HostAdvertise ? kHostVisGlobal : kHostVisLocal,
-				kHostVisCount, r.choiceStep );
+			const int at = zx::ChoiceStep( g_HostVisCursor, kHostVisCount, r.choiceStep );
 
-			const bool bWanted = ( at == kHostVisGlobal );
-			if ( bWanted != g_HostAdvertise )
+			if ( at != g_HostVisCursor )
 			{
-				g_HostAdvertise = bWanted;
+				g_HostVisCursor = at;
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			}
 			return;
@@ -3036,6 +3044,11 @@ public:
 		}
 
 		const bool bMoved = ( r.pos.slot != g_HostFocus.slot ) || ( r.pos.field != g_HostFocus.field );
+
+		// Arriving on the row starts the cursor on the answer that is already given, so the first
+		// thing the player sees marked is what they currently have.
+		if (( r.pos.slot == zx::HostSlot::Visibility ) && ( g_HostFocus.slot != zx::HostSlot::Visibility ))
+			g_HostVisCursor = g_HostAdvertise ? kHostVisGlobal : kHostVisLocal;
 
 		g_HostFocus = r.pos;
 		RevealHostFocus( );
@@ -3347,12 +3360,10 @@ public:
 				SetFocus( zx::BrowserFocus::Host );
 				g_HostFocus = zx::HostFocusPos( zx::HostSlot::Visibility, 0 );
 
-				const bool bWanted = ( at == kHostVisGlobal );
-				if ( bWanted != g_HostAdvertise )
-				{
-					g_HostAdvertise = bWanted;
-					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-				}
+				// A click is not navigation -- it names a cell and answers in one act, so it does
+				// both. The cursor follows so the keyboard carries on from where the pointer left.
+				g_HostVisCursor = at;
+				PressHostVisibility( );
 			}
 
 			return ( at >= 0 );
@@ -3574,6 +3585,18 @@ public:
 			return "Go back to the form";
 		default:
 			return "Start the server and join it\nAnything missing is downloaded first";
+		}
+	}
+
+	// [rc4l] The visibility row, answered. The arrows moved the cursor; this is what takes it.
+	void PressHostVisibility( )
+	{
+		const bool bWanted = ( g_HostVisCursor == kHostVisGlobal );
+
+		if ( bWanted != g_HostAdvertise )
+		{
+			g_HostAdvertise = bWanted;
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 		}
 	}
 
@@ -4618,11 +4641,14 @@ public:
 		// leaving the player to read the markers to find out what they had just changed.
 		if ( HostOnVisibility( ) && ( g_Focus == zx::BrowserFocus::Host ))
 		{
-			const zx::ChoiceCell chosen = zx::ChoiceCellAt( g_HostAdvertise ? kHostVisGlobal
-				: kHostVisLocal, kHostVisCount, rowX, rowW, SB_CHOICE_GAP );
+			// The CURSOR, not the answer. They were the same thing while the arrows decided as they
+			// moved; now that they do not, the marker has to follow the key rather than the value,
+			// or moving along the row would look like nothing had happened.
+			const zx::ChoiceCell at = zx::ChoiceCellAt( g_HostVisCursor, kHostVisCount, rowX, rowW,
+				SB_CHOICE_GAP );
 
-			if ( chosen.valid )
-				FocusAnchor( zx::BrowserFocus::Host, chosen.x - 5, y + SB_CHOICE_H / 2 );
+			if ( at.valid )
+				FocusAnchor( zx::BrowserFocus::Host, at.x - 5, y + SB_CHOICE_H / 2 );
 		}
 
 		// One tip per cell rather than one for the row: the two answers have different consequences,
@@ -7179,6 +7205,8 @@ public:
 					PressHostSettingsToggle( );
 				else if ( HostOnList( ))
 					PressHostAction( );		// the list's enter is "host this one"
+				else if ( HostOnVisibility( ))
+					PressHostVisibility( );
 				else
 					NavigateHostFocus( zx::HostNavKey::Down );
 				return true;
