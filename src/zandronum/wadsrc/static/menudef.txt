@@ -76,7 +76,9 @@ LISTMENU "MainMenu"
 	
 	IfGame(Doom, Strife, Chex)
 	{
-		PatchItem "M_NGAME", "n", "FUANewGameMenu"	// [rc4l] Online/Offline first
+		// [rc4l] A TextItem where the other rows are patches, because no IWAD ships a "Play Now"
+		// graphic and M_NGAME reads "New Game", which is no longer what this does.
+		TextItem "Play Now!", "p", "ZA_Browser"
 		ifOption(SwapMenu)
 		{
 			PatchItem "M_LOADG", "l", "LoadGameMenu"
@@ -98,7 +100,7 @@ LISTMENU "MainMenu"
 	
 	IfGame(Heretic, Hexen)
 	{
-		TextItem "$MNU_NEWGAME", "n", "FUANewGameMenu"	// [rc4l] Online/Offline first
+		TextItem "Play Now!", "p", "ZA_Browser"
 		TextItem "$MNU_OPTIONS", "o", "OptionsMenu"
 		TextItem "$MNU_GAMEFILES", "g", "GameFilesMenu"
 		TextItem "$MNU_INFO", "i", "ReadThisMenu"

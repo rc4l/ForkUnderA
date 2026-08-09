@@ -97,6 +97,18 @@ enum
 	// servers. This one is read as a long by the client, on the socket that asked.
 	SRSC_REACHCOOKIE,
 
+	// [rc4l] The registry's answer to a punch request: whether it introduced us, and if not, why.
+	//
+	// A reason rather than a bool because saying no FAST is the point. Every Zandronum server ever
+	// shipped is a NoSupport, and a client that learns that immediately connects the ordinary way
+	// instead of sitting out a timeout to discover what the registry already knew.
+	SRSC_PUNCHRESULT,
+
+	// [rc4l] Written in the verdict slot of SRSC_PUNCHRESULT to mean "this is the cookie leg,
+	// echo it back" rather than a decision. Negative so it can never collide with a PunchVerdict,
+	// which is an enum counting up from zero.
+	SERVERREGISTRY_PUNCH_COOKIE = -1,
+
 };
 
 //*****************************************************************************
@@ -150,6 +162,18 @@ enum
 	// forged it -- see features/server-hosting/computation/reachprobe_compute.h. Only after the echo
 	// does the registry send anything unsolicited.
 	CLIENT_SERVERREGISTRY_REACHTEST = 5660033,
+
+	// [rc4l] A client asking the registry to introduce it to a server it cannot otherwise reach.
+	//
+	// Two legs, exactly like REACHTEST above and for exactly the same reason: the first carries an
+	// empty cookie and gets one back, the second echoes it, and only then will the registry send
+	// anything unsolicited. Without that echo the source address could be forged and the HOST would
+	// be aimed at a victim who never asked for a packet.
+	//
+	// Carries the address of the server to be introduced to. That address is only ever used to look
+	// up a server we have already verified; it is never dialled on the strength of the client saying
+	// so. The only address anybody dials is the observed source of this request.
+	CLIENT_SERVERREGISTRY_PUNCH = 5660034,
 };
 
 // [BB] Protocol version of the server registry, currently only used in conjunction with LAUNCHER_SERVERREGISTRY_CHALLENGE.
@@ -176,6 +200,16 @@ enum
 	// and nothing else -- there is no launcher framing around it to match. (The cookie leg answers a
 	// launcher instead, so it lives in the SRSC_ enum and is read as a long.)
 	SERVERREGISTRY_REACHPROBE,
+
+	// [rc4l] The registry telling a SERVER that somebody wants in, and where they are.
+	//
+	// The server answers by sending one small packet to that address. The packet's content does not
+	// matter and it will very likely be dropped at the far end; sending it is the entire point,
+	// because that is what makes the server's own router accept the reply that follows.
+	//
+	// A server built before this ignores the unknown byte, which is exactly the desired behaviour:
+	// the punch is an optimisation attempted alongside the ordinary connection, never instead of it.
+	SERVERREGISTRY_PUNCH,
 };
 
 // [BB] Various enums used in SERVERREGISTRY_BANLISTPART packets.
@@ -211,6 +245,17 @@ struct BYTESTREAM_s;
 //
 //==========================================================================
 
+// [rc4l] STILL IPv4 ONLY, deliberately and temporarily.
+//
+// Four decimal octets, so a ban can be written 1.2.3.* and matched a field at a time. v6 does not
+// fit that shape: it has eight groups, and the thing people ban is a /64 prefix, which is a length
+// rather than a wildcard. Replacing this means storing a prefix and a length and rewriting the ban
+// FILE, which is a format change and wants deciding rather than inventing halfway through a socket
+// migration.
+//
+// Until then SetFrom refuses a v6 address rather than flattening one into 0.0.0.0, so a v6 player is
+// unbannable here instead of being wrongly matched against somebody else's rule. That is the safe
+// direction of the two, and it is the whole reason this note exists rather than a silent gap.
 class IPStringArray
 {
 private:
@@ -297,8 +342,18 @@ extern std::ostream &operator<< ( std::ostream &os, const IPStringArray &input )
 struct NETADDRESS_s
 {
 public:
-	// Four digit IP address.
+	// Four digit IP address. Meaningful only while bIsIPv6 is false.
 	BYTE		abIP[4];
+
+	// [rc4l] The v6 address, and which of the two families this is.
+	//
+	// A second field rather than a widened first one, deliberately. Five files read abIP a byte at a
+	// time, and every one of those reads is about a v4 address in a v4 context: a ban wildcard, a
+	// private-range test, a broadcast address. Reinterpreting that storage would have made all of
+	// them silently wrong for v6 rather than loudly absent, and quiet wrongness in the network layer
+	// is the worst outcome available. Costing 17 bytes per address to keep them honest is nothing.
+	BYTE		abIP6[16];
+	bool		bIsIPv6;
 
 	// The IP address's port extension.
 	USHORT		usPort;
@@ -309,9 +364,26 @@ public:
 	void Clear ();
 	bool Compare ( const NETADDRESS_s& other, bool ignorePort = false ) const;
 	bool CompareNoPort ( const NETADDRESS_s& other ) const { return Compare( other, true ); }
-	void ToSocketAddress( struct sockaddr &SocketAddress ) const;
+	// [rc4l] sockaddr_storage, NOT sockaddr. The latter is 16 bytes and a v6 socket address is 28,
+	// so the old signature could not hold what this now writes: passing the narrow type would have
+	// overwritten whatever sat after it on the caller's stack, which is a corruption bug that
+	// reproduces as unrelated networking nonsense somewhere else entirely.
+	// [rc4l] `bMapV4ToV6` is what the SOCKET needs, not what the address is.
+	//
+	// A dual-stack socket is AF_INET6 and speaks nothing else, so an ordinary v4 destination has to be
+	// dressed as ::ffff:a.b.c.d before it can be sent to. Handing such a socket a sockaddr_in does not
+	// quietly work, it fails with EAFNOSUPPORT and the packet never leaves.
+	//
+	// Returns how many bytes of SocketAddress are meaningful, because that is what sendto and bind
+	// actually want: sizeof(sockaddr_storage) is 128 bytes of mostly padding and passing it is wrong
+	// even where it is tolerated.
+	int ToSocketAddress( struct sockaddr_storage &SocketAddress, bool bMapV4ToV6 = false ) const;
 	void SetPort ( USHORT port );
 	const char* ToString() const;
+
+	// The v6 address as text, unbracketed and without a port. Writes into the caller's buffer rather
+	// than a static one, so ToString can build the bracketed form without the two fighting over it.
+	const char* AddressToStringNoPort( char *buffer, size_t len ) const;
 	const char* ToStringNoPort() const;
 	bool LoadFromString( const char* string );
 	void LoadFromSocketAddress ( const struct sockaddr& sockaddr );

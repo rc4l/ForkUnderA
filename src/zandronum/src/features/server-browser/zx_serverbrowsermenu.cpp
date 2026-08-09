@@ -56,6 +56,7 @@
 #include "features/wadreload/zx_wadreload.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
 #include "features/server-hosting/computation/hoststatus_compute.h"
+#include "features/server-hosting/computation/hostport_compute.h" // [rc4l] which port the check asks about
 #include "features/server-hosting/computation/hostfocus_compute.h"
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
@@ -91,7 +92,10 @@
 #define SB_PANEL_RIGHT		604
 // [rc4l] Derived from the rule below the tabs rather than hardcoded, so nothing ever sits on it.
 #define SB_HEADER_Y			( SB_TAB_SEP_Y + 8 )
-#define SB_FIRST_ROW_Y		92
+// [rc4l] 103 rather than 92: the sub-tab row and its two rules cost 11 virtual pixels. Everything
+// else on this screen derives from this number through SB_CONTENT_TOP, so moving it is what keeps the
+// margins even, and 103 is the value that lands them at 29 top and bottom with all 14 rows intact.
+#define SB_FIRST_ROW_Y		103
 
 // [rc4l] 16 rather than 20. The glyphs are eight units tall, so 20 left six clear above and below --
 // generous to the point of wasting a row and a half of list. At 16 there are still four either side,
@@ -177,7 +181,7 @@
 // would only be filling space it was given.
 #define SB_HOST_LEFT		( SB_PANEL_LEFT + 40 )
 #define SB_HOST_RIGHT		( SB_PANEL_RIGHT - 40 )
-#define SB_HOST_TOP			( SB_TAB_SEP_Y + 14 )
+#define SB_HOST_TOP			( SB_TAB_ROW_SEP_Y + 14 )
 #define SB_HOST_PAD			16
 #define SB_HOST_LINE		11
 #define SB_HOST_ROW_H		15		// one field and the space under it
@@ -306,7 +310,10 @@
 // is how actually even happens, and it survives anyone changing the tab height later.
 #define SB_TAB_PAD			6
 #define SB_TAB_LEFT			48
-#define SB_TAB_W			78
+// [rc4l] Pills are sized to their own text rather than to one shared width. MULTIPLAYER is nearly
+// three times the length of PLAY, and a width that fits the longer is mostly empty space around the
+// shorter. The pad is the room either side of the label.
+#define SB_TAB_PILL_PAD		13
 #define SB_TAB_GAP			6
 #define SB_TAB_H			14
 #define SB_TAB_TOP			( SB_CONTENT_TOP + SB_TAB_PAD )
@@ -319,15 +326,52 @@
 #define SB_SEARCH_RIGHT		SB_DETAIL_RIGHT
 #define SB_SEARCH_W			150
 #define SB_SEARCH_LEFT		( SB_SEARCH_RIGHT - SB_SEARCH_W )
-#define SB_SEARCH_TOP		SB_TAB_TOP
-#define SB_SEARCH_H			SB_TAB_H
+
+// [rc4l] The sub-tab row: which servers BROWSE is showing, and the box that filters them.
+//
+// Smaller than the tabs above, because it is a choice WITHIN the thing the tabs chose and should not
+// compete with them for the eye. The search box sits on this row rather than the one above because it
+// filters this list: putting it beside PLAY would have it visible on a page where it filters nothing.
+#define SB_SUBTAB_LEFT		SB_TAB_LEFT
+#define SB_SUBTAB_PILL_PAD	10
+#define SB_SUBTAB_GAP		5
+#define SB_SUBTAB_H			12
+
+// [rc4l] The gap between the two rows, and the rule that sits in the middle of it. 8 rather than 4
+// so the rows read as two bands with a break between them instead of one crowded block. It costs a
+// virtual pixel of margin at each end of the screen, which is the whole price: everything derives
+// from SB_FIRST_ROW_Y, and widening the gap by two moves that by two and the margins by one.
+// [rc4l] The rule under the TAB ROW, and it is drawn on every tab at the same height, always.
+//
+// It used to sit at the bottom of the whole header, which meant it stood in one place on BROWSE and
+// another on PLAY, and switching tabs slid it up and down the screen. A divider that moves when you
+// change what you are looking at reads as the page rebuilding itself underneath you. The fix is not
+// to compute it more carefully, it is to have only ONE answer: this rule closes the tab row, the tab
+// row is on every tab, so the rule never moves.
+#define SB_TAB_ROW_SEP_Y	( SB_TAB_TOP + SB_TAB_H + SB_TAB_PAD )
+
+// [rc4l] The sub-tab row is CENTRED between its two rules by construction: the same pad sits above
+// and below it, so the two can never drift apart the way they did when the top was derived from the
+// tab row above and the bottom from a separate constant.
+#define SB_SUBTAB_PAD		5
+#define SB_SUBTAB_TOP		( SB_TAB_ROW_SEP_Y + SB_SUBTAB_PAD )
+
+#define SB_SEARCH_TOP		SB_SUBTAB_TOP
+#define SB_SEARCH_H			SB_SUBTAB_H
 #define SB_SEARCH_PAD		5
 
 // A query longer than the box can show is a query nobody can read back. 40 is comfortably past any
 // server name worth typing a fragment of.
 #define SB_SEARCH_MAXLEN	40
 
-#define SB_TAB_SEP_Y		( SB_TAB_TOP + SB_TAB_H + SB_TAB_PAD )
+// [rc4l] The second rule, under the sub-tab row, and it exists only on BROWSE. Everything that tab
+// puts below it (the column header, the list, the detail panel) hangs off this rather than off the
+// first rule.
+//
+// Nothing on PLAY reads it, which is what keeps the two tabs from fighting over one number: PLAY
+// starts its panel from the rule that is always there, BROWSE starts its list from the one that only
+// it draws, and neither has to know what the other does.
+#define SB_TAB_SEP_Y		( SB_SUBTAB_TOP + SB_SUBTAB_H + SB_SUBTAB_PAD )
 
 // Column x positions (left edge of each), virtual pixels.
 #define SB_COL_FLAG			48
@@ -472,10 +516,29 @@ static	int				g_DialogHot = -1;
 // HOST is on this row rather than in a menu of its own because it is the same question continued:
 // the player is here to get into a game, and making one is what you do when none of the listed ones
 // is what you wanted. It is last because it is the least common answer.
-enum class BrowserTab { Public, Private, Host };
-const int kTabCount = 3;
-static	BrowserTab		g_Tab = BrowserTab::Public;
+// [rc4l] The top row picks WHAT YOU ARE DOING; the row under it picks which servers.
+//
+// These used to be one row of three: PUBLIC, PRIVATE, HOST. Hosting is not a filter on a list of
+// servers, so sitting it beside two things that are made the row mean two jobs at once, and the
+// keyboard had to walk past hosting to get from one filter to the other.
+enum class BrowserTab { Play, Browse };
+const int kTabCount = 2;
+
+// Which servers MULTIPLAYER is showing. Only meaningful while that tab is selected.
+enum class BrowseKind { Public, Private };
+const int kBrowseCount = 2;
+
+// [rc4l] The row labels, at file scope because three things have to agree about them: what is
+// drawn, what is clicked, and the widths both of those are measured from.
+const char *const kTabLabels[kTabCount] = { "PLAY", "MULTIPLAYER" };
+const char *const kSubTabLabels[kBrowseCount] = { "PUBLIC", "PRIVATE" };
+
+// Play, matching where it sits on the row. Not reset per visit: the tab you left on is the tab you
+// come back to, so this is only where a fresh session starts.
+static	BrowserTab		g_Tab = BrowserTab::Play;
+static	BrowseKind		g_Browse = BrowseKind::Public;
 static	int				g_TabHot = -1;
+static	int				g_SubTabHot = -1;
 
 // [rc4l] Hover state for the refresh button, matching how the tabs carry theirs.
 static	bool			g_RefreshHot = false;
@@ -737,8 +800,8 @@ static void serverbrowser_Tip( int x, int y, int w, int h, const char *text )
 }
 
 // [rc4l] Where each tab was left. Two entries, indexed by BrowserTab.
-static	int				g_TabScroll[kTabCount] = { 0, 0, 0 };
-static	int				g_TabSelected[kTabCount] = { -1, -1, -1 };
+static	int				g_TabScroll[kBrowseCount] = { 0, 0 };
+static	int				g_TabSelected[kBrowseCount] = { -1, -1 };
 
 // [rc4l] A message occupying the browser's own panel instead of a stock message box over the title
 // screen. Same panel, same dimensions, so being refused reads as part of the same screen rather than
@@ -1018,7 +1081,7 @@ static void serverbrowser_RebuildList( void )
 
 	// [rc4l] The tab is a filter over the same list rather than a second list: everything is still
 	// queried, so switching tabs is instant and never re-fetches anything.
-	const bool bWantPrivate = ( g_Tab == BrowserTab::Private );
+	const bool bWantPrivate = ( g_Browse == BrowseKind::Private );
 
 	// [rc4l] Folded once here rather than once per server: the query does not change while we walk
 	// the list, and ServerMatchesSearch is called MAX_BROWSER_SERVERS times.
@@ -1341,13 +1404,26 @@ public:
 		g_Tips.Clear( );
 		g_GlowPlaced = false;
 
-		// Per-tab memory is per-VISIT. The rows survive now, but their INDICES do not: the refresh
+		// Per-list memory is per-VISIT. The rows survive now, but their INDICES do not: the refresh
 		// below re-sorts as fresh replies land, so a saved position points at whichever server has
 		// since moved into that slot rather than at the one it was saved against.
-		for ( int i = 0; i < kTabCount; ++i )
+		//
+		// kBrowseCount, because these belong to the LIST and there is one per sub-tab. It read
+		// kTabCount while the two happened to be equal, which is the kind of agreement that holds
+		// until somebody adds a tab and then silently walks off the end of the array.
+		for ( int i = 0; i < kBrowseCount; ++i )
 		{
 			g_TabScroll[i] = 0;
 			g_TabSelected[i] = -1;
+		}
+
+		// [rc4l] The form has to be filled HERE as well as in SelectTab. A fresh session starts on
+		// PLAY without ever switching to it, so SelectTab never runs and the fields would come up
+		// empty on the one tab the browser now opens to.
+		if ( g_Tab == BrowserTab::Play )
+		{
+			LoadHostForm( );
+			g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
 		}
 
 		// [rc4l] THE LIST IS NOT CLEARED. It used to be, and that made every visit start on a spinner
@@ -1402,7 +1478,7 @@ public:
 		// browse someone else's server would be taking a port nobody asked us to take -- and doing it
 		// while a server of ours is running takes the port from that server, or fails and records
 		// "unreachable" about a port our own process is holding.
-		if (( g_Tab == BrowserTab::Host ) && ( zx::HostCurrentState( ) == zx::HostState::Idle ))
+		if (( g_Tab == BrowserTab::Play ) && ( zx::HostCurrentState( ) == zx::HostState::Idle ))
 		{
 			zx::ReachProbeRequest( HostConfiguredPort( ));
 			zx::ReachProbeTick( );
@@ -1511,7 +1587,7 @@ public:
 	{
 		// The hosting tab is a different screen, not a filter, so it does not ask the phase at all --
 		// "still looking for servers" has no meaning on the page where you are making one.
-		if ( g_Tab == BrowserTab::Host )
+		if ( g_Tab == BrowserTab::Play )
 			// Ours does not count: the host panel's own button is the CANCEL for it.
 			return zx::ComputeHostParts( serverbrowser_DownloadRunning( )
 				&& !HostDownloadRunning( ));
@@ -2410,69 +2486,149 @@ public:
 
 	//*************************************************************************
 	//
-	// [rc4l] The tab row: oval buttons where the title used to be, and the rule beneath them.
-	void DrawTabs( )
+	// [rc4l] Where each pill sits, asked by BOTH the drawing and the hit testing.
+	//
+	// Those two used to each carry their own copy of `left + i * ( width + gap )`, which was fine
+	// only while every pill was the same width. Measured pills make that formula wrong, and two
+	// copies of a wrong formula is a click that lands one button away from the one under the pointer.
+	int PillW( const char *label, int pad )
 	{
-		static const char *const labels[] = { "PUBLIC", "PRIVATE", "HOST" };
+		return SmallFont->StringWidth( label ) + 2 * pad;
+	}
 
-		for ( int i = 0; i < kTabCount; ++i )
+	int TabW( int i )		{ return PillW( kTabLabels[i], SB_TAB_PILL_PAD ); }
+	int SubTabW( int i )	{ return PillW( kSubTabLabels[i], SB_SUBTAB_PILL_PAD ); }
+
+	int TabLeft( int i )
+	{
+		int x = SB_TAB_LEFT;
+		for ( int k = 0; k < i; ++k )
+			x += TabW( k ) + SB_TAB_GAP;
+		return x;
+	}
+
+	int SubTabLeft( int i )
+	{
+		int x = SB_SUBTAB_LEFT;
+		for ( int k = 0; k < i; ++k )
+			x += SubTabW( k ) + SB_SUBTAB_GAP;
+		return x;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] One oval button on one of the two header rows.
+	//
+	// Shared because there are two rows of these now, and a gradient written out twice is a colour
+	// that gets changed in one of them.
+	void DrawPill( int vLeft, int vTop, int vW, int vH, const char *label, bool bSelected, bool bHot )
+	{
+		const int left = serverbrowser_ToScreenX( vLeft );
+		const int right = serverbrowser_ToScreenX( vLeft + vW );
+		const int top = serverbrowser_ToScreenY( vTop );
+		const int bottom = serverbrowser_ToScreenY( vTop + vH );
+
+		const int w = right - left;
+		const int h = bottom - top;
+		if (( w <= 0 ) || ( h <= 0 ))
+			return;
+
+		// Fully oval: the radius is half the height, so the ends are semicircles rather than the
+		// softened corners the panels use. Different shape, different job, these switch what you are
+		// looking at, they are not another surface to put things on.
+		const int radius = h / 2;
+
+		const int base = bSelected ? 96 : ( bHot ? 62 : 38 );
+		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+			static_cast<BYTE>( base + 24 ), static_cast<BYTE>( bSelected ? 235 : 190 ) };
+		const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ),
+			static_cast<BYTE>( base / 2 + 18 ), static_cast<BYTE>( bSelected ? 245 : 205 ) };
+
+		for ( int row = 0; row < h; ++row )
 		{
-			const int vLeft = SB_TAB_LEFT + i * ( SB_TAB_W + SB_TAB_GAP );
-			const int left = serverbrowser_ToScreenX( vLeft );
-			const int right = serverbrowser_ToScreenX( vLeft + SB_TAB_W );
-			const int top = serverbrowser_ToScreenY( SB_TAB_TOP );
-			const int bottom = serverbrowser_ToScreenY( SB_TAB_TOP + SB_TAB_H );
-
-			const int w = right - left;
-			const int h = bottom - top;
-			if (( w <= 0 ) || ( h <= 0 ))
+			const int inset = zx::ComputeRoundedInset( row, h, radius );
+			const int rowW = w - 2 * inset;
+			if ( rowW <= 0 )
 				continue;
 
-			// Fully oval: the radius is half the height, so the ends are semicircles rather than the
-			// softened corners the panels use. Different shape, different job -- these switch what you
-			// are looking at, they are not another surface to put things on.
-			const int radius = h / 2;
-			const bool bSelected = ( static_cast<int>( g_Tab ) == i );
+			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
+			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+		}
+
+		const int textY = vTop + ( vH - SmallFont->GetHeight( )) / 2 + 1;
+		screen->DrawText( SmallFont, bSelected ? CR_WHITE : CR_DARKGRAY,
+			vLeft + ( vW / 2 ) - ( SmallFont->StringWidth( label ) / 2 ), textY,
+			label, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The second header row: which servers BROWSE is showing, and the box that filters them.
+	//
+	// Drawn only under BROWSE. On PLAY there is no list to filter, so a row of filters would be two
+	// controls that do nothing sitting where the eye expects the thing it just chose.
+	void DrawSubTabs( )
+	{
+		static const char *const tips[] = {
+			"Servers anyone can join",
+			"These servers are password-protected",
+		};
+
+		for ( int i = 0; i < kBrowseCount; ++i )
+		{
+			const int vLeft = SubTabLeft( i );
+			const int vW = SubTabW( i );
+			const bool bSelected = ( static_cast<int>( g_Browse ) == i );
 
 			// Hover only. Keyboard focus gets a RING instead, because a brighter fill is already what
 			// selected looks like and one picture cannot mean both.
-			const bool bHot = ( g_TabHot == i );
+			DrawPill( vLeft, SB_SUBTAB_TOP, vW, SB_SUBTAB_H, kSubTabLabels[i], bSelected,
+				( g_SubTabHot == i ));
 
-			const int base = bSelected ? 96 : ( bHot ? 62 : 38 );
-			const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
-				static_cast<BYTE>( base + 24 ), static_cast<BYTE>( bSelected ? 235 : 190 ) };
-			const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ),
-				static_cast<BYTE>( base / 2 + 18 ), static_cast<BYTE>( bSelected ? 245 : 205 ) };
+			if ( bSelected )
+				FocusAnchor( zx::BrowserFocus::SubTabs, vLeft - 5, SB_SUBTAB_TOP + SB_SUBTAB_H / 2 );
 
-			for ( int row = 0; row < h; ++row )
-			{
-				const int inset = zx::ComputeRoundedInset( row, h, radius );
-				const int rowW = w - 2 * inset;
-				if ( rowW <= 0 )
-					continue;
+			serverbrowser_Tip( vLeft, SB_SUBTAB_TOP, vW, SB_SUBTAB_H, tips[i] );
+		}
 
-				const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
-				screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
-			}
+		DrawSearchBox( );
+	}
 
-			const int textY = SB_TAB_TOP + ( SB_TAB_H - SmallFont->GetHeight( )) / 2 + 1;
-			screen->DrawText( SmallFont, bSelected ? CR_WHITE : CR_DARKGRAY,
-				vLeft + ( SB_TAB_W / 2 ) - ( SmallFont->StringWidth( labels[i] ) / 2 ), textY,
-				labels[i], DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+	//*************************************************************************
+	//
+	// [rc4l] The tab row: what you are doing here, and the rule that closes the header band.
+	void DrawTabs( )
+	{
+		static const char *const tips[] = {
+			"Run a server on this machine\nOthers join it while you play",
+			"Find a server to join",
+		};
+
+		for ( int i = 0; i < kTabCount; ++i )
+		{
+			const int vLeft = TabLeft( i );
+			const int vW = TabW( i );
+			const bool bSelected = ( static_cast<int>( g_Tab ) == i );
+
+			DrawPill( vLeft, SB_TAB_TOP, vW, SB_TAB_H, kTabLabels[i], bSelected, ( g_TabHot == i ));
 
 			if ( bSelected )
 				FocusAnchor( zx::BrowserFocus::Tabs, vLeft - 5, SB_TAB_TOP + SB_TAB_H / 2 );
 
-			static const char *const tips[] = {
-				"Servers anyone can join",
-				"These servers are password-protected",
-				"Run a server on this machine\nOthers join it while you play",
-			};
-			serverbrowser_Tip( vLeft, SB_TAB_TOP, SB_TAB_W, SB_TAB_H, tips[i] );
+			serverbrowser_Tip( vLeft, SB_TAB_TOP, vW, SB_TAB_H, tips[i] );
 		}
 
-		DrawSearchBox( );
-		DrawSeparatorSpan( SB_TAB_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
+		// Always, and always here. This one closes the tab row, which every tab has, so it is the one
+		// thing in the header that must not move when the tab changes.
+		DrawSeparatorSpan( SB_TAB_ROW_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
+
+		// The second row and the rule under it belong to BROWSE alone. They appear BELOW a divider
+		// that has not moved, so arriving on this tab adds to the header rather than rearranging it.
+		if ( g_Tab == BrowserTab::Browse )
+		{
+			DrawSubTabs( );
+			DrawSeparatorSpan( SB_TAB_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
+		}
 	}
 
 	//*************************************************************************
@@ -3879,8 +4035,9 @@ public:
 		return false;
 	}
 
-	// [rc4l] The port as typed, falling back to the default. Read by the reachability check, which is
-	// a question about one specific port and must follow the field as it is edited.
+	// [rc4l] The port as typed, falling back to the default. Read by the reachability check before
+	// anything is running, which is a question about one specific port and must follow the field as
+	// it is edited. Once a server exists, PortToCheck prefers the port it actually holds.
 	int HostConfiguredPort( )
 	{
 		const int typed = atoi( g_HostFields[kHostFieldPort].text.c_str( ));
@@ -4731,7 +4888,24 @@ public:
 		//
 		// Deliberately NOT disabled even when red: the check can be wrong in the player's favour, and
 		// a form that refuses to let someone try their own network is worse than one that warns them.
-		const zx::ProbePhase reach = zx::ReachProbeStatus( HostConfiguredPort( ));
+		// [rc4l] Ask about the port the server actually holds, not the one in the form.
+		//
+		// A server takes the next free port when the one you set is busy, and the check is a question
+		// about ONE port. Asking about the configured one while running elsewhere is how a forwarded
+		// 10666 reported "reachable" with the server on 10670: true of the port tested, useless to
+		// the player, and it reads as "hosting is fine" while nobody outside can get in.
+		//
+		// There is usually no cached answer for the port it moved to, so this shows unknown rather
+		// than green. That is the honest state, and an honest unknown beats a confident wrong.
+		const int runningPort = HostRunningPort( );
+		const int configuredPort = HostConfiguredPort( );
+
+		const zx::ProbePhase reach = zx::ReachProbeStatus(
+			zx::PortToCheck( runningPort, configuredPort ));
+
+		// The drift itself is announced where it happens, at the child's ready line in zx_hosting.cpp.
+		// Saying it from a draw would mean saying it every frame, and this panel is not even on screen
+		// while a server runs.
 
 		EColorRange visColors[kHostVisCount];
 
@@ -4835,6 +5009,27 @@ public:
 			if ( state == zx::HostState::Running )
 			{
 				y = DrawHostReach( x, y, wrapW );
+
+				// [rc4l] SAY IT WHERE IT SURVIVES.
+				//
+				// This was already reported when the child announced its port, and that message is
+				// destroyed seconds later: joining restarts the engine, and the fresh console begins
+				// at V_INIT with the warning gone. We told the player something they could never read.
+				//
+				// A port nobody forwarded is the likeliest reason a working setup stops working, it
+				// cannot be seen from inside the game, and only the player can fix it. So it belongs
+				// on the panel that stays up for as long as the server does, not in a log that a
+				// restart eats.
+				if ( zx::PortDriftNeedsWarning( HostRunningPort( ), HostConfiguredPort( )))
+				{
+					FString drift;
+					drift.Format( "Port %d was busy, so this server is on %d. If you forwarded %d, "
+						"players outside your network cannot reach it.",
+						HostConfiguredPort( ), HostRunningPort( ), HostConfiguredPort( ));
+
+					y += 4;
+					y = DrawWrappedIn( drift.GetChars( ), x, y, wrapW, CR_ORANGE );
+				}
 
 				y += 4;
 				y = DrawWrappedIn( "You are the administrator of this server. Use the console, "
@@ -5135,36 +5330,63 @@ public:
 	// [rc4l] Switching tabs resets the selection and the scroll: the row that was highlighted belongs
 	// to a list that is no longer on screen, and carrying its INDEX across would highlight whatever
 	// unrelated server happened to land in that position.
-	void SelectTab( BrowserTab tab )
+	// [rc4l] Each LIST keeps its own place, which is the sub-tab now rather than the tab. Coming back
+	// and finding it scrolled to the top again means losing your spot every time you glance at the
+	// other one, and the row INDEX cannot simply be carried across, because it points into a list that
+	// is no longer there and would land on an unrelated server.
+	void SelectSubTab( BrowseKind kind )
 	{
-		if ( g_Tab == tab )
+		if ( g_Browse == kind )
 			return;
 
-		// [rc4l] Each tab keeps its own place. Coming back to a tab and finding it scrolled to the
-		// top again means losing your spot every time you glance at the other one -- and the row
-		// INDEX cannot simply be carried across, because it points into a list that is no longer
-		// there and would land on an unrelated server.
-		const int leaving = static_cast<int>( g_Tab );
+		const int leaving = static_cast<int>( g_Browse );
 		g_TabScroll[leaving] = g_ScrollFirst;
 		g_TabSelected[leaving] = g_Selected;
 
-		g_Tab = tab;
+		g_Browse = kind;
 
-		// Arriving at the hosting tab: fill the form from what was used last time, and put the
-		// keyboard on its first field rather than on a list that is not there.
-		if ( tab == BrowserTab::Host )
-		{
-			LoadHostForm( );
-			g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
-		}
-
-		const int entering = static_cast<int>( tab );
+		const int entering = static_cast<int>( kind );
 		g_ScrollFirst = g_TabScroll[entering];
 		g_Selected = g_TabSelected[entering];
 
 		// Rebuild first, then let the clamp in DrawRows deal with a remembered position that no
 		// longer fits: servers come and go between visits, so the spot we saved may be past the end.
 		serverbrowser_RebuildList( );
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	void SelectTab( BrowserTab tab )
+	{
+		if ( g_Tab == tab )
+			return;
+
+		// [rc4l] Leaving BROWSE takes its second row with it, so anything focused down there has to
+		// come up to the tabs before it goes. The sub-tabs and the search box are both drawn only
+		// under BROWSE, and a caret blinking in a box that is no longer on screen is a lie about
+		// where the next keystroke lands. ComputeNav cannot fix this after the fact: it is told what
+		// exists NOW, and by then the focus is already pointing at nothing.
+		if (( tab != BrowserTab::Browse ) &&
+			(( g_Focus == zx::BrowserFocus::SubTabs ) || ( g_Focus == zx::BrowserFocus::Search )))
+		{
+			SetFocus( zx::BrowserFocus::Tabs );
+		}
+
+		g_Tab = tab;
+
+		// Arriving at the hosting tab: fill the form from what was used last time, and put the
+		// keyboard on its first field rather than on a list that is not there.
+		if ( tab == BrowserTab::Play )
+		{
+			LoadHostForm( );
+			g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
+		}
+
+		// The list belongs to BROWSE, so arriving there rebuilds it for whichever sub-tab was last
+		// chosen. Leaving does not need to save anything: the sub-tab owns that now, and it has not
+		// changed underneath us.
+		if ( tab == BrowserTab::Browse )
+			serverbrowser_RebuildList( );
+
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 	}
 
@@ -6180,6 +6402,7 @@ public:
 		g_SearchHot = false;
 		{
 			const bool bOverSearch = (( parts & zx::kPartTabs ) != 0 ) &&
+				( g_Tab == BrowserTab::Browse ) &&
 				( x >= serverbrowser_ToScreenX( SB_SEARCH_LEFT )) &&
 				( x < serverbrowser_ToScreenX( SB_SEARCH_RIGHT )) &&
 				( y >= serverbrowser_ToScreenY( SB_SEARCH_TOP )) &&
@@ -6204,7 +6427,9 @@ public:
 
 		if ( parts & zx::kPartTabs )
 		{
-			const bool bOverSearch =
+			// Only under BROWSE: the box is not drawn on PLAY, and a hit test for something that is
+			// not there would swallow clicks in the empty space beside the tabs.
+			const bool bOverSearch = ( g_Tab == BrowserTab::Browse ) &&
 				( x >= serverbrowser_ToScreenX( SB_SEARCH_LEFT )) &&
 				( x < serverbrowser_ToScreenX( SB_SEARCH_RIGHT )) &&
 				( y >= serverbrowser_ToScreenY( SB_SEARCH_TOP )) &&
@@ -6280,9 +6505,9 @@ public:
 			g_TabHot = -1;
 			for ( int i = 0; i < kTabCount; ++i )
 			{
-				const int vLeft = SB_TAB_LEFT + i * ( SB_TAB_W + SB_TAB_GAP );
+				const int vLeft = TabLeft( i );
 				if (( x < serverbrowser_ToScreenX( vLeft )) ||
-					( x >= serverbrowser_ToScreenX( vLeft + SB_TAB_W )) ||
+					( x >= serverbrowser_ToScreenX( vLeft + TabW( i ))) ||
 					( y < serverbrowser_ToScreenY( SB_TAB_TOP )) ||
 					( y >= serverbrowser_ToScreenY( SB_TAB_TOP + SB_TAB_H )))
 				{
@@ -6299,6 +6524,32 @@ public:
 					SelectTab( static_cast<BrowserTab>( i ));
 				}
 				return true;
+			}
+
+			// [rc4l] The sub-tabs, and only while the row they belong to is on screen. Hit testing a
+			// row that is not drawn would claim clicks in empty space above the hosting panel.
+			g_SubTabHot = -1;
+			if ( g_Tab == BrowserTab::Browse )
+			{
+				for ( int i = 0; i < kBrowseCount; ++i )
+				{
+					const int vLeft = SubTabLeft( i );
+					if (( x < serverbrowser_ToScreenX( vLeft )) ||
+						( x >= serverbrowser_ToScreenX( vLeft + SubTabW( i ))) ||
+						( y < serverbrowser_ToScreenY( SB_SUBTAB_TOP )) ||
+						( y >= serverbrowser_ToScreenY( SB_SUBTAB_TOP + SB_SUBTAB_H )))
+					{
+						continue;
+					}
+
+					g_SubTabHot = i;
+					if ( type == MOUSE_Release )
+					{
+						SetFocus( zx::BrowserFocus::SubTabs );
+						SelectSubTab( static_cast<BrowseKind>( i ));
+					}
+					return true;
+				}
 			}
 		}
 
@@ -6624,7 +6875,7 @@ public:
 				// [rc4l] While hosting, the right column is two scrollable halves, so the notch goes
 				// to whichever half the pointer is in. Checked before the settings below, which are
 				// not on screen in this state at all.
-				if (( g_Tab == BrowserTab::Host ) && zx::HostIsActive( ) &&
+				if (( g_Tab == BrowserTab::Play ) && zx::HostIsActive( ) &&
 					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 6 )) &&
 					( g_MouseX < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT + 6 )))
 				{
@@ -6648,7 +6899,7 @@ public:
 				// [rc4l] Over the hosting settings, the notch belongs to them. Same rule as the WAD
 				// list below: one wheel and more than one scrollable thing means it drives whichever
 				// one the pointer is actually over.
-				if (( g_Tab == BrowserTab::Host ) && ( HostMaxScroll( ) > 0 ) &&
+				if (( g_Tab == BrowserTab::Play ) && ( HostMaxScroll( ) > 0 ) &&
 					( g_MouseY >= serverbrowser_ToScreenY( SB_HOST_VIEW_TOP )) &&
 					( g_MouseY < serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM )) &&
 					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_LEFT )) &&
@@ -7176,7 +7427,7 @@ public:
 		//
 		// Checked for every origin rather than just the tabs, because the search box shares that row
 		// and is just as much "above the form" as they are.
-		if (( g_Tab == BrowserTab::Host ) && ( key == zx::NavKey::Down )
+		if (( g_Tab == BrowserTab::Play ) && ( key == zx::NavKey::Down )
 			&& ( g_Focus != zx::BrowserFocus::Host ))
 		{
 			SetFocus( zx::BrowserFocus::Host );
@@ -7203,11 +7454,14 @@ public:
 			return true;
 		}
 
-		// The tab's POSITION on the row, not "is it the last one". The bool that used to be passed
-		// here could not describe the middle of a three-tab row, so PRIVATE could step right and not
-		// left -- see the unit's header.
-		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, total > 0,
-			static_cast<int>( g_Tab ), kTabCount );
+		// [rc4l] WHERE BOTH ROWS STAND, not just the top one. A position and a count per row is what
+		// lets the unit answer left and right for either of them, and `subCount` of zero is how it is
+		// told that PLAY has no sub-tab row to walk into at all.
+		const zx::NavWhere where( total > 0, static_cast<int>( g_Tab ), kTabCount,
+			static_cast<int>( g_Browse ),
+			( g_Tab == BrowserTab::Browse ) ? kBrowseCount : 0 );
+
+		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, where );
 		const zx::BrowserFocus was = g_Focus;
 		SetFocus( nav.focus );
 
@@ -7218,6 +7472,14 @@ public:
 			const int next = static_cast<int>( g_Tab ) + nav.tabStep;
 			if (( next >= 0 ) && ( next < kTabCount ))
 				SelectTab( static_cast<BrowserTab>( next ));
+			return true;
+		}
+
+		if ( nav.subStep != 0 )
+		{
+			const int next = static_cast<int>( g_Browse ) + nav.subStep;
+			if (( next >= 0 ) && ( next < kBrowseCount ))
+				SelectSubTab( static_cast<BrowseKind>( next ));
 			return true;
 		}
 
