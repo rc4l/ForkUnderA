@@ -53,6 +53,9 @@
 #include "version.h"
 #include "network.h"
 #include "main.h"
+// [rc4l] Who may be introduced to whom, and why a refusal is answered rather than dropped.
+#include "features/server-hosting/computation/punchbroker_compute.h"
+#include "features/federated-server-registry/computation/reachcookie_compute.h"
 #include <sstream>
 #include <set>
 // [rc4l] The reach-cookie table. Named rather than leaned on transitively -- this builds on GCC in a
@@ -323,16 +326,39 @@ std::string SERVERREGISTRY_IssueReachCookie( const NETADDRESS_s &Address )
 {
 	ExpireReachCookies( g_lCurrentTime );
 
-	if ( g_ReachCookies.size() >= kMaxReachCookies )
-		return "";
+	// [rc4l] Count by ADDRESS, and separately by address and port.
+	//
+	// The port is the part an attacker picks freely, so a share keyed on it is not a share: the
+	// previous "one in flight per address" compared the port too, which let one client hold every
+	// slot by rebinding, turning the cap into the denial of service it was written to prevent.
+	// computation/reachcookie_compute owns the rule and the reasoning.
+	int nFromSameIP = 0;
+	bool bSameSourceHasOne = false;
+	std::string SameSourceCookie;
 
-	// One in flight per address. Without this a single client could fill the table by itself, and the
-	// cap would then be a denial of service against everyone else rather than a defence.
 	for ( size_t i = 0; i < g_ReachCookies.size(); ++i )
 	{
+		if ( g_ReachCookies[i].Address.CompareNoPort( Address ) == false )
+			continue;
+
+		++nFromSameIP;
+
 		if ( g_ReachCookies[i].Address.Compare( Address ))
-			return g_ReachCookies[i].Cookie;
+		{
+			bSameSourceHasOne = true;
+			SameSourceCookie = g_ReachCookies[i].Cookie;
+		}
 	}
+
+	const zx::CookieVerdict Verdict = zx::DecideIssueCookie( bSameSourceHasOne, nFromSameIP,
+		static_cast<int>( g_ReachCookies.size() ), zx::kMaxCookiesPerSource,
+		static_cast<int>( kMaxReachCookies ));
+
+	if ( Verdict == zx::CookieVerdict::Reissue )
+		return SameSourceCookie;
+
+	if ( Verdict != zx::CookieVerdict::Issue )
+		return "";
 
 	REACHCOOKIE_s entry;
 	entry.Address = Address;
@@ -574,6 +600,13 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			newServer.bNewFormatServer = ( temp != -1 );
 			newServer.iServerRevision = ( ( pByteStream->pbStreamEnd - pByteStream->pbStream ) >= 4 ) ? pByteStream->ReadLong() : pByteStream->ReadShort();
 
+			// [rc4l] One optional trailing byte: can this server punch a hole when we ask it to?
+			//
+			// Same trick the ban flag above uses. ReadByte returns -1 on an exhausted stream, so a
+			// server built before this says nothing and lands on false, which is exactly right: we
+			// must never instruct something that cannot answer.
+			newServer.bSupportsPunch = ( pByteStream->ReadByte() > 0 );
+
 			std::set<SERVER_s, SERVERCompFunc>::iterator currentServer = g_Servers.find ( newServer );
 
 			// This is a new server; add it to the list.
@@ -607,6 +640,27 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 							SERVERREGISTRY_RequestServerVerification ( newServer );
 							SERVERREGISTRY_AddServer( newServer, g_UnverifiedServers );
 						}
+						// [rc4l] Still unverified on a later heartbeat, so ask again. This used to do
+						// nothing at all, which made the handshake one shot over UDP: lose that single
+						// packet, or its reply, and the server was never verified and never asked a
+						// second time. It sat here until the 60 second timeout swept it out.
+						//
+						// A host watching from the game gives up on exactly the same 60 seconds, so the
+						// retry could not arrive before the verdict. One dropped datagram and somebody
+						// with a correctly forwarded port was told nothing outside had reached it. That
+						// is the worst thing this can say, because it sends people to go and re-check a
+						// router that was right all along.
+						//
+						// Announcements are every 30 seconds, so this costs one small packet per server
+						// per heartbeat and buys a second attempt inside the window.
+						//
+						// The EXISTING verification number is reused, deliberately. Rolling a new one
+						// would invalidate a reply already in flight and turn a slow handshake into a
+						// failed one.
+						else
+						{
+							SERVERREGISTRY_RequestServerVerification ( *currentUnverifiedServer );
+						}
 					}
 					else
 					{
@@ -625,6 +679,7 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 					currentServer->lLastReceived = g_lCurrentTime;
 					// [BB] The server possibly changed the ban setting, so update it.
 					currentServer->bEnforcesBanList = newServer.bEnforcesBanList;
+					currentServer->bSupportsPunch = newServer.bSupportsPunch;
 				}
 			}
 
@@ -746,6 +801,140 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			NETWORK_LaunchProbePacket( &g_MessageBuffer, Target );
 
 			printf( "-> Reach probe sent to %s.\n", Target.ToString() );
+		}
+		return;
+
+	// [rc4l] A client asking to be introduced to a server it cannot reach directly.
+	//
+	// The security is the reach test's, verbatim, because the danger is the same one: this ends with
+	// somebody being sent a packet they did not ask for, so the requester must first prove it really
+	// is where it says it is. A cookie goes to the SOURCE address and must come back. Anyone spoofing
+	// a victim gets our cookie delivered to that victim, one small packet, and can go no further.
+	//
+	// THE SERVER ADDRESS IN THIS REQUEST IS ONLY EVER A LOOKUP KEY. It is used to find a server we
+	// have already verified and never dialled on the client's say-so. The single address anybody
+	// dials is AddressFrom, which we observed rather than were told.
+	case CLIENT_SERVERREGISTRY_PUNCH:
+		{
+			const char *pszCookie = pByteStream->ReadString();
+			const std::string cookie = ( pszCookie != NULL ) ? pszCookie : "";
+			const char *pszTarget = pByteStream->ReadString();
+			const std::string target = ( pszTarget != NULL ) ? pszTarget : "";
+
+			printf( "-> Punch: %s asked about %s (%s).\n", AddressFrom.ToString(), target.c_str(),
+				cookie.empty() ? "first leg, wants a cookie" : "second leg, with a cookie" );
+
+			if ( cookie.empty() )
+			{
+				// First leg: a cookie to the source, and nothing else.
+				const std::string issued = SERVERREGISTRY_IssueReachCookie( AddressFrom );
+				if ( issued.empty() )
+				{
+					printf( "-> Punch: no cookie for %s; the table is full or they hold too many.\n",
+						AddressFrom.ToString() );
+					return;			// too many in flight; silence is the safe refusal to THEM
+				}
+
+				g_MessageBuffer.Clear();
+				g_MessageBuffer.ByteStream.WriteLong( SRSC_PUNCHRESULT );
+				g_MessageBuffer.ByteStream.WriteLong( SERVERREGISTRY_PUNCH_COOKIE );
+				g_MessageBuffer.ByteStream.WriteString( issued.c_str() );
+				NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
+				return;
+			}
+
+			const bool bProven = SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie );
+
+			// Find the server, if we know it at all. A malformed or unknown address simply fails to
+			// match, which lands on the same refusal as anything else we have not verified.
+			bool bListed = false;
+			bool bSupports = false;
+			NETADDRESS_s ServerAddress;
+
+			if ( ServerAddress.LoadFromString( target.c_str() ))
+			{
+				SERVER_s key;
+				key.Address = ServerAddress;
+				std::set<SERVER_s, SERVERCompFunc>::const_iterator it = g_Servers.find( key );
+				if ( it != g_Servers.end() )
+				{
+					bListed = true;
+					bSupports = it->bSupportsPunch;
+				}
+			}
+
+			// [rc4l] A REAL per-source limit, over the window the cookies already define.
+			//
+			// Every punch request needs a fresh cookie, cookies carry the address they were issued
+			// to, and they expire after ten seconds. So counting the ones outstanding for this
+			// source IS the count of requests it has made recently, with no second table to keep
+			// and nothing new to expire.
+			//
+			// Without this the cookie only proves WHO is asking, never HOW OFTEN, and each request
+			// makes us send a packet to a third party. That is the shape of the abuse the handshake
+			// exists to prevent, so leaving the limit switched off undid most of the point of it.
+			int recent = 0;
+			for ( size_t i = 0; i < g_ReachCookies.size(); ++i )
+			{
+				if ( g_ReachCookies[i].Address.CompareNoPort( AddressFrom ))
+					++recent;
+			}
+
+			// Five in ten seconds. A person joining servers does not go near it; something dialling
+			// strangers through us hits it immediately.
+			const int kMaxPunchesPerWindow = 5;
+
+			const zx::PunchVerdict verdict = zx::DecidePunch(
+				zx::PunchAsk( bListed, bSupports, bProven, recent ), kMaxPunchesPerWindow );
+
+			// [rc4l] ANSWER EVEN WHEN REFUSING, and answer at once. A client that hears "no" connects
+			// the ordinary way immediately; a client that hears nothing waits out a timeout to reach
+			// the same place. Refusing quickly is most of what makes this safe to put in front of
+			// every join.
+			g_MessageBuffer.Clear();
+			g_MessageBuffer.ByteStream.WriteLong( SRSC_PUNCHRESULT );
+			g_MessageBuffer.ByteStream.WriteLong( static_cast<int>( verdict ));
+			NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
+
+			// [rc4l] SAY WHY, INCLUDING WHEN THE ANSWER IS NO.
+			//
+			// Only the yes was ever logged, which meant a punch that quietly never happened looked
+			// exactly like a punch nobody asked for. There is no way to tell those apart from the
+			// outside, and "it should have worked" is not something an operator can act on. Every
+			// refusal has a reason and the reason is the interesting part.
+			if ( verdict != zx::PunchVerdict::Broker )
+			{
+				const char *pszWhy = "refused";
+				switch ( verdict )
+				{
+				case zx::PunchVerdict::NoSupport:	pszWhy = "the server cannot punch"; break;
+				case zx::PunchVerdict::NotListed:	pszWhy = "no verified entry for that server"; break;
+				case zx::PunchVerdict::RateLimited:	pszWhy = "too many requests from this address"; break;
+				case zx::PunchVerdict::BadCookie:	pszWhy = "the cookie was missing or wrong"; break;
+				default: break;
+				}
+
+				printf( "-> Punch: told %s no (%s).\n", AddressFrom.ToString(), pszWhy );
+				return;
+			}
+
+			// Tell the server where to aim. From the MAIN socket, because a server only accepts our
+			// instructions from the address it announced to: see the note on
+			// SERVERREGISTRY_RequestServerVerification about why the probe socket cannot be used here.
+			g_MessageBuffer.Clear();
+			g_MessageBuffer.ByteStream.WriteByte( SERVERREGISTRY_PUNCH );
+			g_MessageBuffer.ByteStream.WriteString( AddressFrom.ToString() );
+			NETWORK_LaunchPacket( &g_MessageBuffer, ServerAddress );
+
+			// [rc4l] ToString() hands back a STATIC buffer, so two of them in one printf is one
+			// address printed twice: the second call overwrites the first before printf ever runs.
+			// This line claimed the registry had told a server to open a hole for itself, which is
+			// alarming, wrong, and entirely a trick of the logging.
+			char szServer[64];
+			strncpy( szServer, ServerAddress.ToString(), sizeof( szServer ) - 1 );
+			szServer[sizeof( szServer ) - 1] = 0;
+
+			printf( "-> Punch: told %s to open for %s.\n", szServer, AddressFrom.ToString() );
 		}
 		return;
 

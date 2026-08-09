@@ -28,6 +28,7 @@
 #include "d_main.h"		// D_AddFile
 #include "menu/menu.h"	// M_StartMessage, M_ClearMenus
 
+#include "features/server-hosting/zx_punchclient.h"
 #include "cl_main.h"		// CLIENT_GetConnectionState, CTS_ACTIVE
 #include "network.h"		// NETWORK_GetState
 #include "v_video.h"		// screen, DTA_*, SCREENWIDTH/HEIGHT -- the ready-to-join line
@@ -439,6 +440,22 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 	}
 
 	M_ClearMenus();
+
+	// [rc4l] Ask the server's router to let us in, and carry straight on without waiting.
+	//
+	// Racing rather than waiting is the whole point. The connection below goes out exactly as it
+	// always did; this runs beside it, and if it lands the connection already in flight starts
+	// working. Nothing here can delay or refuse a join, which is what makes it safe to do on every
+	// one: a registry that is down, a server too old to punch, or a punch that simply fails all end
+	// where we would have been anyway.
+	//
+	// Before the reload because the reload does not return, and outbound-first because the packet has
+	// to leave OUR side too for the reply to be accepted coming back.
+	{
+		NETADDRESS_s target;
+		if ( target.LoadFromString( plan.address.GetChars( )))
+			zx::PunchRequestFor( target, true );
+	}
 
 	// [rc4l] Marked BEFORE the reload, because the reload does not return: RequestReload throws
 	// CRestartException on the path that works. Anything recorded after it would never run.

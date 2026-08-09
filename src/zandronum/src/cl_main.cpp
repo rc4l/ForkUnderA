@@ -62,6 +62,7 @@
 #include "a_doomglobal.h"
 #include "announcer.h"
 #include "features/server-browser/browser.h"
+#include "features/server-hosting/zx_punchclient.h"
 #include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "features/server-hosting/zx_hosting.h" // [rc4l] admin on a server we started ourselves
@@ -1202,6 +1203,29 @@ void CLIENT_GetPackets( void )
 
 						zx::ReachProbeSetPublicIp( seenAs.GetChars( ));
 						zx::ReachProbeCookieArrived( cookie.GetChars( ));
+					}
+					break;
+
+				// [rc4l] The registry answering a punch request: either the cookie leg, or a verdict.
+				//
+				// One message for both because they are the same conversation, and the marker in the
+				// first slot says which. Negative can never be a verdict, since PunchVerdict counts
+				// up from zero.
+				case SRSC_PUNCHRESULT:
+					{
+						const int marker = pByteStream->ReadLong( );
+
+						if ( marker == SERVERREGISTRY_PUNCH_COOKIE )
+						{
+							// COPIED rather than held, for the reason spelled out on SRSC_REACHCOOKIE
+							// above: ReadString hands back a pointer into one shared static buffer.
+							const FString cookie = pByteStream->ReadString( );
+							zx::PunchCookieArrived( cookie.GetChars( ));
+						}
+						else
+						{
+							zx::PunchResultArrived( marker );
+						}
 					}
 					break;
 

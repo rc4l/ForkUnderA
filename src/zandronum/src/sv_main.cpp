@@ -1881,6 +1881,25 @@ void SERVER_DetermineConnectionType( BYTESTREAM_s *pByteStream )
 
 			SERVER_SERVERREGISTRY_SendServerInfo( NETWORK_GetFromAddress( ), ulFlags, ulTime, ulFlags2, false, bSendSegmentedResponse );
 			return;
+		// [rc4l] The registry telling us somebody wants in, and where they are.
+		//
+		// Gated on the registry's address like everything else here, which is what stops a stranger
+		// aiming us at an arbitrary target: this is the one place we send a packet to an address we
+		// were TOLD rather than observed, so the instruction has to come from the one party allowed
+		// to give it. The registry in turn only ever passes on an address that proved itself with a
+		// cookie, so the chain from "somebody claims to be at X" to "we send to X" is closed at both
+		// ends.
+		//
+		// No verification string on this one: it carries nothing worth protecting and grants nothing.
+		// The worst a forged instruction achieves, if it got past the address check, is one small
+		// packet sent once.
+		case SERVERREGISTRY_PUNCH:
+
+			if ( SERVER_SERVERREGISTRY_IsAddress( NETWORK_GetFromAddress() ))
+				SERVER_SERVERREGISTRY_HandlePunchRequest( pByteStream );
+
+			return;
+
 		// [RC] Server registry is sending us the holy banlist.
 		case SERVERREGISTRY_BANLIST:
 		case SERVERREGISTRY_VERIFICATION:

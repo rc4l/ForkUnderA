@@ -213,6 +213,11 @@ extern int restart;
 // [AK] Did we need to authenticate a lump that has a duplicate?
 static bool g_bDuplicateLumpAuthenticated = false;
 
+// [rc4l] Whether our sockets ended up speaking both families. Two things need it: the bind has to
+// hand a socket the matching kind of address, and every SEND to a v4 peer has to be dressed as
+// ::ffff:a.b.c.d, because an AF_INET6 socket refuses a sockaddr_in outright.
+static bool g_bSocketIsDualStack = false;
+
 // [TP] Named ACS scripts share the name pool with all other names in the engine, which means named script numbers may
 // differ wildly between systems, e.g. if the server and client have different vid_renderer values the names will
 // already be off. So we create a special index of script names here.
@@ -251,8 +256,8 @@ static const std::vector<std::string> g_FreedoomDehackedHashes = {
 
 static	void			network_InitPWADList( void );
 static	void			network_Error( const char *pszError );
-static	SOCKET			network_AllocateSocket( void );
-static	bool			network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse );
+static	SOCKET			network_AllocateSocket( bool bWantDualStack, bool &bGotDualStack );
+static	bool			network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse, bool bDualStack );
 static	bool			network_GenerateLumpMD5HashAndWarnIfNeeded( const int LumpNum, const char *LumpName, FString &MD5Hash );
 static	void			network_CheckIfDuplicateLump( const int LumpNum ); // [AK]
 static	void			network_AddSpritesToList( std::set<AUTHENTICATELUMP_s> &list, const char *name, const std::set<char> frames, const LumpAuthenticationMode mode ); // [AK]
@@ -300,16 +305,16 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 		g_usLocalPort = usPort;
 
 		// Allocate a socket, and attempt to bind it to the given port.
-		g_NetworkSocket = network_AllocateSocket( );
+		g_NetworkSocket = network_AllocateSocket( true, g_bSocketIsDualStack );
 		// [BB] If we can't allocate a socket, sending / receiving net packets won't work.
 		if ( g_NetworkSocket == INVALID_SOCKET )
 			network_Error( "NETWORK_Construct: Couldn't allocate socket. You will not be able to host or join servers.\n" );
-		else if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false ) == false )
+		else if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false, g_bSocketIsDualStack ) == false )
 		{
 			bSuccess = true;
 			bool bSuccessIP = true;
 			usNewPort = g_usLocalPort;
-			while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false ) == false )
+			while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false, g_bSocketIsDualStack ) == false )
 			{
 				// Didn't find an available port. Oh well...
 				if ( usNewPort == g_usLocalPort )
@@ -350,8 +355,12 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 		// If we're not starting a server, setup a socket to listen for LAN servers.
 		if ( bAllocateLANSocket )
 		{
-			g_LANSocket = network_AllocateSocket( );
-			if ( network_BindSocketToPort( g_LANSocket, ulInAddr, DEFAULT_BROADCAST_PORT, true ) == false )
+			// [rc4l] v4 ON PURPOSE. LAN discovery is a broadcast to 255.255.255.255, and IPv6 has no
+			// broadcast at all -- it has multicast instead, which is a different protocol and a
+			// different address. A dual-stack socket here simply never sees a LAN server.
+			bool bLANDualStack = false;
+			g_LANSocket = network_AllocateSocket( false, bLANDualStack );
+			if ( network_BindSocketToPort( g_LANSocket, ulInAddr, DEFAULT_BROADCAST_PORT, true, bLANDualStack ) == false )
 			{
 				sprintf( szString, "network_BindSocketToPort: Couldn't bind LAN socket to port: %d. You will not be able to see LAN servers in the browser.", DEFAULT_BROADCAST_PORT );
 				network_Error( szString );
@@ -755,7 +764,13 @@ int NETWORK_GetPackets( void )
 {
 	LONG				lNumBytes;
 	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
-	sockaddr			SocketFrom;
+	// [rc4l] BIG ENOUGH FOR THE FAMILY THAT ACTUALLY ARRIVES.
+	//
+	// A plain sockaddr is sixteen bytes and a sockaddr_in6 is twenty-eight, so once the socket went
+	// dual-stack every recvfrom failed outright with WSAEFAULT: the kernel will not write a v6 sender
+	// into a v4-sized buffer, and it refuses rather than truncating. The symptom is the whole of
+	// networking silently dead behind a warning, because there is no packet to point at.
+	sockaddr_storage	SocketFrom;
 	INT					iSocketFromLength;
 
 	iSocketFromLength = sizeof( SocketFrom );
@@ -765,9 +780,9 @@ int NETWORK_GetPackets( void )
 		return ( 0 );
 
 #ifdef	WIN32
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, &iSocketFromLength );
+	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
 #else
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, (socklen_t *)&iSocketFromLength );
+	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
 
 	// If the number of bytes returned is -1, an error has occured.
@@ -816,7 +831,7 @@ int NETWORK_GetPackets( void )
 		return ( 0 );
 
 	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( SocketFrom );
+	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	// Decode the huffman-encoded message we received.
 	// [BB] Communication with the auth server is not Huffman-encoded.
@@ -850,15 +865,16 @@ int NETWORK_GetLANPackets( void )
 
 	LONG				lNumBytes;
 	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
-	sockaddr			SocketFrom;
+	// [rc4l] Room for a v6 sender, for the reason spelled out in NETWORK_GetPackets above.
+	sockaddr_storage	SocketFrom;
 	INT					iSocketFromLength;
 
     iSocketFromLength = sizeof( SocketFrom );
 
 #ifdef	WIN32
-	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, &iSocketFromLength );
+	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
 #else
-	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, (socklen_t *)&iSocketFromLength );
+	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
 
 	// If the number of bytes returned is -1, an error has occured.
@@ -907,7 +923,7 @@ int NETWORK_GetLANPackets( void )
 		return ( 0 );
 
 	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( SocketFrom );
+	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	// Decode the huffman-encoded message we received.
 	// [BB] Communication with the auth server is not Huffman-encoded.
@@ -950,8 +966,10 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 		return;
 
 	// Convert the IP address to a socket address.
-	struct sockaddr_in SocketAddress;
-	Address.ToSocketAddress( reinterpret_cast<sockaddr&>(SocketAddress) );
+	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
+	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
+	struct sockaddr_storage SocketAddress;
+	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
 
 	// [BB] Communication with the auth server is not Huffman-encoded.
 	if ( Address.Compare( NETWORK_AUTH_GetCachedServerAddress() ) == false )
@@ -964,7 +982,7 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 		iNumBytesOut = pBuffer->ulCurrentSize;
 	}
 
-	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), sizeof( SocketAddress ));
+	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), iAddressLength );
 
 	// If sendto returns -1, there was an error.
 	if ( lNumBytes == -1 )
@@ -1022,7 +1040,11 @@ return;
 NETADDRESS_s NETWORK_GetLocalAddress( void )
 {
 	char				szBuffer[512];
-	struct sockaddr_in	SocketAddress;
+	// [rc4l] sockaddr_storage, for the reason in NETWORK_GetPackets: a dual-stack socket names
+	// itself with a sockaddr_in6, and the smaller struct makes getsockname fail rather than
+	// truncate. Only the port is wanted here, and LoadFromSocketAddress knows how to find it in
+	// either family instead of trusting the two layouts to agree.
+	struct sockaddr_storage	SocketAddress;
 	int					iNameLength;
 
 #ifndef __WINE__
@@ -1141,7 +1163,9 @@ NETADDRESS_s NETWORK_GetLocalAddress( void )
 	}
 #endif
 
-	Address.usPort = SocketAddress.sin_port;
+	NETADDRESS_s Named;
+	Named.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketAddress ));
+	Address.usPort = Named.usPort;
 	return ( Address );
 }
 
@@ -1985,9 +2009,44 @@ void network_Error( const char *pszError )
 
 //*****************************************************************************
 //
-static SOCKET network_AllocateSocket( void )
+// [rc4l] A socket that hears v6 AND v4, or a plain v4 one where the first is not available.
+//
+// ONE socket rather than two. Turning IPV6_V6ONLY off makes a v6 socket accept v4 peers as well,
+// delivered as ::ffff:a.b.c.d, which NETADDRESS_s::LoadFromSocketAddress puts straight back into v4
+// so nothing downstream ever sees the mapped form. Two listeners would have meant two read loops and
+// a new question, which socket did that arrive on, for no gain.
+//
+// The fallback is not defensive padding. IPV6_V6ONLY defaults on in some places and off in others, a
+// host can have the v6 stack disabled outright, and a socket that exists but will only ever hear v6
+// would make us invisible to every v4 player. If any part of that fails we close it and open exactly
+// the socket we always opened.
+// [rc4l] Reports what it got instead of writing the global itself.
+//
+// Two sockets are allocated and they do not have to agree: the LAN one asks for v4 outright, and
+// either can fall back on a machine with v6 switched off. While this assigned the global directly,
+// whichever socket was allocated LAST decided how EVERY packet was addressed, so a v4 LAN socket
+// silently told the main socket to stop mapping and the reverse broke LAN discovery just as quietly.
+static SOCKET network_AllocateSocket( bool bWantDualStack, bool &bGotDualStack )
 {
 	SOCKET	Socket;
+
+	bGotDualStack = false;
+
+	if ( bWantDualStack )
+	{
+		Socket = socket( PF_INET6, SOCK_DGRAM, IPPROTO_UDP );
+		if ( Socket != INVALID_SOCKET )
+		{
+			int off = 0;
+			if ( setsockopt( Socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&off, sizeof( off )) == 0 )
+			{
+				bGotDualStack = true;
+				return ( Socket );
+			}
+
+			closesocket( Socket );
+		}
+	}
 
 	// Allocate a socket.
 	Socket = socket( PF_INET, SOCK_DGRAM, IPPROTO_UDP );
@@ -2002,23 +2061,40 @@ static SOCKET network_AllocateSocket( void )
 
 //*****************************************************************************
 //
-bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse )
+bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse, bool bDualStack )
 {
 	int		iErrorCode;
-	struct sockaddr_in address;
 
 	// setsockopt needs an int, bool won't work
 	int		enable = 1;
 
+	// Allow the network socket to broadcast. Meaningless on a v6 socket, which has multicast and no
+	// broadcast at all, and harmless: the call simply fails there, and LAN discovery keeps its own
+	// separate socket either way.
+	setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof( enable ));
+	if ( bReUse )
+		setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof( enable ));
+
+	// [rc4l] The bind has to match the SOCKET'S family rather than the caller's expectations. A
+	// dual-stack socket binds in6addr_any, which covers every v4 address too; handing it a
+	// sockaddr_in fails outright and the server never comes up at all.
+	if ( bDualStack )
+	{
+		struct sockaddr_in6 address6;
+		memset( &address6, 0, sizeof( address6 ));
+		address6.sin6_family = AF_INET6;
+		address6.sin6_addr = in6addr_any;
+		address6.sin6_port = htons( usPort );
+
+		iErrorCode = bind( Socket, (sockaddr *)&address6, sizeof( address6 ));
+		return ( iErrorCode != SOCKET_ERROR );
+	}
+
+	struct sockaddr_in address;
 	memset (&address, 0, sizeof(address));
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = ulInAddr;
 	address.sin_port = htons( usPort );
-
-	// Allow the network socket to broadcast.
-	setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof( enable ));
-	if ( bReUse )
-		setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof( enable ));
 
 	iErrorCode = bind( Socket, (sockaddr *)&address, sizeof( address ));
 	if ( iErrorCode == SOCKET_ERROR )
