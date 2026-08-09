@@ -21,8 +21,9 @@
 // field: sv_website is advertised over the launcher protocol as SQF_URL and the browser stores it as
 // SERVER_t::WadURL, described in browser.h as "Website URL of the wad the server is using". That is
 // exactly sv_downloadsites, already deployed on every Zandronum server in the world. So the mirror
-// list is the server's own WadURL first, then cl_fua_downloadsites -- and this works against servers
-// that have never heard of us.
+// list is the server's own WadURL first, then cl_fua_downloadsites, then any last-resort sources
+// such as the hosting machine's own direct endpoint -- and this works against servers that have
+// never heard of us.
 //
 // What is ours rather than copied: the legality gate. Odamex keeps a denylist of commercial files;
 // we assume every IWAD is commercial and keep an allowlist of the free ones instead. See
@@ -72,11 +73,14 @@ bool IsAvailable();
 
 bool IsRunning();
 
-// Begin fetching `files`, in order, from `extraSites` followed by cl_fua_downloadsites. Returns false
-// (having done nothing) if downloading is off, a run is already in flight, the file list is empty, or
-// every wanted file is refused by the legality gate -- refusals are printed either way. `onDone` may
-// be NULL.
-bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedFile> &files,
+// Begin fetching `files`, in order, from `extraSites`, then cl_fua_downloadsites, then
+// `lastResortSites` (see AssembleSiteOrder for why the last group exists: the hosting machine's own
+// endpoint goes there, AFTER the public mirrors, so one residential upload is the fallback rather
+// than the first hop). Returns false (having done nothing) if downloading is off, a run is already
+// in flight, the file list is empty, or every wanted file is refused by the legality gate --
+// refusals are printed either way. `onDone` may be NULL.
+bool Start(const std::vector<std::string> &extraSites,
+	const std::vector<std::string> &lastResortSites, const std::vector<WantedFile> &files,
 	CompleteProc onDone);
 
 // Stop the run because the PLAYER asked. The partial file is discarded, any queued replacement is
