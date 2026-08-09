@@ -1186,6 +1186,15 @@ add_executable( zdoom WIN32
 	network/servercommands.cpp #ZA
 	network/srp.cpp #ZA
 	network/sv_auth.cpp #ZA
+	# [rc4l] Vendored Cephes portable math (from UZDoom common/thirdparty/math): bit-exact
+	# c_atan2 for the node builder, so GL node building is deterministic across platforms.
+	# Apple ARM libm's atan2 rounds differently from MSVC's, which flipped seg orderings at
+	# near-ties and assembled corrupt subsector rings (holes in floors/walls) on macOS only.
+	math/atan.c
+	math/const.c
+	math/isnan.c
+	math/mtherr.c
+	math/polevl.c
 	nodebuild.cpp
 	nodebuild_classify_nosse2.cpp
 	nodebuild_events.cpp
