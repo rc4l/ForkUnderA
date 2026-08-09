@@ -94,6 +94,9 @@ struct JoinPlan
 	// [rc4l] Only ever used to name the server in a message when something goes wrong.
 	FString serverName;
 	std::vector<std::string> sites;		// the server's own advertised download site, if any
+	// [rc4l] Sources tried only after the public mirrors have missed -- the hosting machine's own
+	// direct endpoint lives here, so one residential upload is the fallback, not the first hop.
+	std::vector<std::string> lastResortSites;
 	bool valid;
 
 	JoinPlan() : valid(false) {}
@@ -406,7 +409,7 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 			// The browser stays open rather than putting up a modal: the transfer runs for minutes,
 			// and a dialog you cannot dismiss without cancelling is a worse way to spend them than a
 			// progress line under a list you can still read. The join resumes on its own.
-			if (zx::waddownload::Start(plan.sites, missing, OnDownloadFinished))
+			if (zx::waddownload::Start(plan.sites, plan.lastResortSites, missing, OnDownloadFinished))
 			{
 				// [rc4l] The host resume goes with it. Start ABANDONS whatever was in flight, so a
 				// transfer that was fetching an experience to host is over the moment this one
@@ -546,22 +549,17 @@ bool JoinSelectedServer()
 
 	// [rc4l] The server's own endpoint, if it serves its files itself (SQF2_FUA_DIRECT_DOWNLOAD).
 	//
-	// FIRST by default, and that ordering is the point of the feature rather than an optimisation.
-	// The case a mirror cannot cover is a WAD built this afternoon, which exists nowhere else; and
-	// even when mirrors do have the file, the server's copy is by definition the one matching the
-	// MD5 it advertises, so it is the copy that verifies on the first try instead of after two
-	// mirrors served a different build under the same name.
-	//
-	// An operator who hosts their WADs somewhere with real bandwidth can flip it, which is what
-	// sv_fua_download_prefermirrors is for -- they are the one paying for the traffic.
+	// LAST, after the public mirrors. This used to be first by default -- "the server's copy is the
+	// one matching the MD5 it advertises" -- but in practice that put every join's whole download on
+	// one residential upload, the same link carrying the game's netcode, while six real file hosts
+	// sat idle. The md5 gate makes mirrors-first safe (a mirror's wrong copy is deleted and the walk
+	// continues), so preferring the host buys nothing but the slowest pipe; a brand-new WAD that
+	// exists nowhere else costs only a few fast 404s before the walk reaches the host anyway. The
+	// sv_fua_download_prefermirrors hint asked for exactly this order, so it needs no branch now --
+	// every client behaves as if it were set.
 	const FString directUrl = BROWSER_GetDirectDownloadURL((ULONG)lServer);
 	if (directUrl.IsNotEmpty())
-	{
-		if (BROWSER_PrefersMirrors((ULONG)lServer))
-			plan.sites.push_back(directUrl.GetChars());
-		else
-			plan.sites.insert(plan.sites.begin(), directUrl.GetChars());
-	}
+		plan.lastResortSites.push_back(directUrl.GetChars());
 
 	plan.valid = true;
 	return AttemptJoin(plan, true);

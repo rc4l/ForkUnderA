@@ -119,9 +119,17 @@ EXTERN_CVAR(Bool, ticker   )
 EXTERN_CVAR(Bool, vid_vsync)
 EXTERN_CVAR(Bool, vid_hidpi)
 
-CUSTOM_CVAR(Bool, fullscreen, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// [rc4l] CVAR_NOINITCALL and the null guard, mirroring the SDL backend (posix/sdl/hardware.cpp),
+// which has carried both for years while this Cocoa copy had neither. The hosting feature spawns a
+// `-host` server child that never initialises video; loading the config still queues this callback,
+// so EnableCallbacks() during the child's D_DoomMain called screen->GetWidth() on a null screen and
+// every hosted game crashed at startup on macOS before the server could say a word.
+CUSTOM_CVAR(Bool, fullscreen, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 	extern int NewWidth, NewHeight, NewBits, DisplayBits;
+
+	if (screen == NULL)
+		return;
 
 	NewWidth      = screen->GetWidth();
 	NewHeight     = screen->GetHeight();
@@ -559,7 +567,10 @@ CocoaVideo::CocoaVideo()
 
 	[m_window setContentView:glView];
 
-	FConsoleWindow::GetInstance().Show(false);
+	if (FConsoleWindow::InstanceExists())
+	{
+		FConsoleWindow::GetInstance().Show(false);
+	}
 }
 
 void CocoaVideo::StartModeIterator(const int bits, const bool fullscreen)

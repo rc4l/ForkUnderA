@@ -52,6 +52,8 @@
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/launcherfields_compute.h"
 #include "features/server-browser/computation/registrystatus_compute.h"
+#include "features/server-browser/computation/querypunch_compute.h"   // [rc4l] punch-on-query schedule
+#include "features/server-hosting/zx_punchclient.h"                   // [rc4l] PunchRequestFor
 #include "features/launcher-protocol/computation/segmentreassembly_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] which rows are the server WE started
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] ReachProbePublicIp
@@ -124,6 +126,12 @@ static	LONG			g_lSelectedServer = -1;
 // That is not a rare case on a lossy connection; it is the normal one.
 static	ULONG			g_ulServerRegistryQuerySentMS;
 static	int				g_lServerRegistryAttempts;
+
+// [rc4l] Punch-on-query budget for one refresh sweep. The registry rate-limits punch requests to
+// five per ten seconds per client; four leaves one for the join the player is presumably about to
+// make on whichever of those servers appears. Reset wherever a sweep of queries starts.
+static	LONG			g_lPunchesThisSweep;
+static	const LONG		kMaxPunchesPerSweep = 4;
 
 // [rc4l] Four seconds, not the second and a half this started as.
 //
@@ -646,8 +654,47 @@ void BROWSER_QueryTick( void )
 		if ( g_BrowserServerList[ulIdx].lMSTime <= 0 )
 			continue;
 
-		if (( lNow - g_BrowserServerList[ulIdx].lMSTime ) >= 4000 )
-			g_BrowserServerList[ulIdx].ulActiveState = AS_TIMEDOUT;
+		// [rc4l] Punch-on-query. A registry-listed server behind carrier NAT can announce OUT but
+		// cannot receive our challenge, so before this it timed out here every refresh and the row
+		// was silently dropped -- the ONLY unreachable-host case the punch machinery cannot help,
+		// because punching used to run at join, and joining needs the row this timeout was deleting.
+		// The schedule (querypunch_compute) asks the registry to have the server punch toward us,
+		// then re-sends the challenge so one lands in the hole. LAN rows and rows past the per-sweep
+		// budget keep the old four-second lifetime to the millisecond.
+		{
+			const bool bEligible = ( g_BrowserServerList[ulIdx].bLAN == false )
+				&& ( g_BrowserServerList[ulIdx].bPunchRequested
+					|| ( g_lPunchesThisSweep < kMaxPunchesPerSweep ));
+
+			const zx::QueryPunchStep step = zx::StepQueryPunch(
+				static_cast<int>( lNow - g_BrowserServerList[ulIdx].lMSTime ), bEligible,
+				g_BrowserServerList[ulIdx].bPunchRequested,
+				static_cast<int>( g_BrowserServerList[ulIdx].lPunchResendsSent ));
+
+			if ( step.requestPunch )
+			{
+				// Spend budget only on an ask that actually went out -- PunchRequestFor declines
+				// local addresses and registry-less sessions on its own.
+				if ( zx::PunchRequestFor( g_BrowserServerList[ulIdx].Address, true ))
+				{
+					g_BrowserServerList[ulIdx].bPunchRequested = true;
+					g_lPunchesThisSweep++;
+				}
+			}
+			else if ( step.resendChallenge )
+			{
+				// Re-send WITHOUT restamping lMSTime: the ladder is positioned by time since the
+				// FIRST challenge, and browser_QueryServer stamps unconditionally.
+				const LONG lFirstMS = g_BrowserServerList[ulIdx].lMSTime;
+				browser_QueryServer( ulIdx );
+				g_BrowserServerList[ulIdx].lMSTime = lFirstMS;
+				g_BrowserServerList[ulIdx].lPunchResendsSent++;
+			}
+			else if ( step.timeOut )
+			{
+				g_BrowserServerList[ulIdx].ulActiveState = AS_TIMEDOUT;
+			}
+		}
 	}
 }
 
@@ -830,6 +877,40 @@ void BROWSER_RefreshListedServers( void )
 
 //*****************************************************************************
 //
+// [rc4l] See browser.h. Only slots that ASKED for a punch are eligible: an unsolicited packet must
+// not be able to redirect a row we never invited, and a spoofed knock against an invited row costs
+// one wasted re-query and its own timeout -- the same as any dropped packet.
+void BROWSER_PunchKnockFrom( const NETADDRESS_s &From )
+{
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		// The eligibility rule lives in querypunch_compute, where its security property -- an
+		// uninvited row can never be redirected -- is asserted for every state.
+		if ( zx::ShouldAdoptPunchKnock(
+				g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY,
+				g_BrowserServerList[ulIdx].bPunchRequested,
+				g_BrowserServerList[ulIdx].Address.CompareNoPort( From )) == false )
+		{
+			continue;
+		}
+
+		// The knock's source port is the mapping the server's NAT actually opened; the listed port
+		// is only what its NAT once told the registry. Adopt the real one.
+		g_BrowserServerList[ulIdx].Address.usPort = From.usPort;
+
+		// Re-send into the open hole NOW rather than waiting for the next ladder rung -- the
+		// mapping is freshest this instant. Preserve the first-challenge stamp; the ladder's
+		// position is measured from it.
+		const LONG lFirstMS = g_BrowserServerList[ulIdx].lMSTime;
+		browser_QueryServer( ulIdx );
+		if ( lFirstMS > 0 )
+			g_BrowserServerList[ulIdx].lMSTime = lFirstMS;
+		return;
+	}
+}
+
+//*****************************************************************************
+//
 void BROWSER_ClearServerList( void )
 {
 	ULONG	ulIdx;
@@ -969,8 +1050,26 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 	// independently, so the same address legitimately arrives several times. Without this the browser
 	// listed it once per server registry -- the duplicates were harmless before only because there
 	// was exactly one server registry to hear from.
-	if ( browser_GetListIDByAddress( Address ) != -1 )
+	const LONG lExisting = browser_GetListIDByAddress( Address );
+	if ( lExisting != -1 )
+	{
+		// [rc4l] A slot that gave up earlier keeps its address, so this dedupe used to eat the
+		// registry's RE-announcement of it -- one missed reply window and the server was gone for
+		// the whole session, however many refreshes followed. If the registry still lists it, it is
+		// still worth asking: re-arm the slot for this sweep's query, with a fresh punch ladder.
+		// The rule itself lives in querypunch_compute, where every state is asserted.
+		if ( zx::ShouldRearmListedSlot(
+				g_BrowserServerList[lExisting].ulActiveState == AS_TIMEDOUT,
+				g_BrowserServerList[lExisting].ulActiveState == AS_INACTIVE,
+				g_BrowserServerList[lExisting].bRefreshing ))
+		{
+			g_BrowserServerList[lExisting].ulActiveState = AS_WAITINGFORREPLY;
+			g_BrowserServerList[lExisting].lMSTime = 0;
+			g_BrowserServerList[lExisting].bPunchRequested = false;
+			g_BrowserServerList[lExisting].lPunchResendsSent = 0;
+		}
 		return;
+	}
 
 	const ULONG ulServer = browser_GetNewListID( );
 	if ( ulServer >= MAX_BROWSER_SERVERS )
@@ -986,6 +1085,8 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 	g_BrowserServerList[ulServer].CountryCode = "";
 	g_BrowserServerList[ulServer].ulCountryIndex = COUNTRY_INDEX_UNKNOWN;
 	g_BrowserServerList[ulServer].bHasPlayerData = false;
+	g_BrowserServerList[ulServer].bPunchRequested = false;
+	g_BrowserServerList[ulServer].lPunchResendsSent = 0;
 
 	// A slot arriving here is new, not being re-checked; inheriting a re-check would have this server
 	// culled on the previous occupant's deadline.
@@ -1630,6 +1731,7 @@ void BROWSER_QueryServerRegistry( void )
 	// We are currently waiting to hear back from the server registries.
 	g_bWaitingForServerRegistryResponse = true;
 	g_lServerRegistryAttempts = 0;
+	g_lPunchesThisSweep = 0;	// [rc4l] fresh refresh, fresh punch budget
 	browser_SetPendingRegistryStates( );
 
 	browser_SendServerRegistryQuery();
@@ -1776,6 +1878,8 @@ bool BROWSER_WaitingForServerRegistryResponse( void )
 void BROWSER_QueryAllServers( void )
 {
 	ULONG	ulIdx;
+
+	g_lPunchesThisSweep = 0;	// [rc4l] fresh sweep, fresh punch budget
 
 	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{

@@ -210,7 +210,12 @@ void I_DebugPrint(const char *cp)
 
 void I_PrintStr(const char* const message)
 {
-	FConsoleWindow::GetInstance().AddText(message);
+	// [rc4l] No window in a -host server child; the stdout copy below is its whole console, and it
+	// is what the hosting parent reads (the ready/reachable markers travel this way).
+	if (FConsoleWindow::InstanceExists())
+	{
+		FConsoleWindow::GetInstance().AddText(message);
+	}
 
 	// Strip out any color escape sequences before writing to output
 	char* const copy = new char[strlen(message) + 1];
