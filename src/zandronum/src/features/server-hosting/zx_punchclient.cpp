@@ -24,9 +24,21 @@ namespace zx
 namespace
 {
 
-// The server this run is about. Kept because the second leg has to name it again, and because a
-// verdict arriving for a join we have already abandoned is worth ignoring rather than reporting.
-FString g_Target;
+// [rc4l] The servers whose first legs are out, oldest first. A queue rather than the single
+// target it used to be: the browser's punch-on-query path can find several unanswered servers in
+// one refresh, and with one global the second cookie overwrote the first target -- every punch but
+// the last went to the wrong server. The registry answers each first leg with exactly one cookie,
+// so matching cookies to targets oldest-first is exact up to UDP reordering, which over one path
+// costs at most a punch aimed at the wrong queued server -- a wasted packet, not a wrong action.
+TArray<FString> g_AwaitingCookie;
+
+// Second legs out, verdicts not yet back. Only so a verdict with nothing in flight is ignored
+// rather than reported.
+int g_AwaitingResults;
+
+// One refresh can queue a handful; anything past that is a sign something is looping, not a
+// bigger browser. Drop, don't grow.
+const unsigned int kMaxAwaitingCookie = 8;
 
 // [rc4l] Whether the address is on this machine or this network.
 //
@@ -35,6 +47,21 @@ FString g_Target;
 // ranges are the private ones from RFC 1918 plus loopback and link-local.
 bool IsLocalAddress( const NETADDRESS_s &address )
 {
+	// [rc4l] The v6 equivalents of the private ranges below: loopback, link-local (fe80::/10) and
+	// unique-local (fc00::/7). Read from abIP6 -- abIP is meaningless while bIsIPv6 is set, and
+	// judging a v6 address by four bytes of another field would punch for machines in this house.
+	if ( address.bIsIPv6 )
+	{
+		static const BYTE abLoopback6[16] = { 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1 };
+		if ( memcmp( address.abIP6, abLoopback6, 16 ) == 0 )
+			return true;
+		if (( address.abIP6[0] == 0xfe ) && (( address.abIP6[1] & 0xc0 ) == 0x80 ))
+			return true;
+		if (( address.abIP6[0] & 0xfe ) == 0xfc )
+			return true;
+		return false;
+	}
+
 	const BYTE a = address.abIP[0];
 	const BYTE b = address.abIP[1];
 
@@ -52,7 +79,7 @@ bool IsLocalAddress( const NETADDRESS_s &address )
 	return false;
 }
 
-void Send( const FString &cookie )
+void Send( const FString &cookie, const FString &target )
 {
 	NETADDRESS_s registry;
 	if ( BROWSER_GetServerRegistryAddress( registry ) == false )
@@ -63,7 +90,7 @@ void Send( const FString &cookie )
 	buffer.Clear( );
 	buffer.ByteStream.WriteLong( CLIENT_SERVERREGISTRY_PUNCH );
 	buffer.ByteStream.WriteString( cookie.GetChars( ));
-	buffer.ByteStream.WriteString( g_Target.GetChars( ));
+	buffer.ByteStream.WriteString( target.GetChars( ));
 
 	NETWORK_LaunchPacket( &buffer, registry );
 	buffer.Free( );
@@ -71,34 +98,44 @@ void Send( const FString &cookie )
 
 } // namespace
 
-void PunchRequestFor( const NETADDRESS_s &server, bool bFromList )
+bool PunchRequestFor( const NETADDRESS_s &server, bool bFromList )
 {
 	NETADDRESS_s registry;
 	const bool bRegistryKnown = BROWSER_GetServerRegistryAddress( registry );
 
 	if ( DecidePunchIntent( bFromList, IsLocalAddress( server ), bRegistryKnown ) != PunchIntent::Ask )
-		return;
+		return false;
 
-	g_Target = server.ToString( );
+	if ( g_AwaitingCookie.Size( ) >= kMaxAwaitingCookie )
+		return false;
+
+	g_AwaitingCookie.Push( server.ToString( ));
 
 	// First leg carries no cookie, which is what asks for one.
-	Send( FString( ));
+	Send( FString( ), g_AwaitingCookie.Last( ));
+	return true;
 }
 
 void PunchCookieArrived( const char *pszCookie )
 {
-	if (( pszCookie == NULL ) || ( pszCookie[0] == 0 ) || g_Target.IsEmpty( ))
+	if (( pszCookie == NULL ) || ( pszCookie[0] == 0 ) || ( g_AwaitingCookie.Size( ) == 0 ))
 		return;
+
+	// Oldest first: the registry answers each first leg with one cookie, in order.
+	const FString target = g_AwaitingCookie[0];
+	g_AwaitingCookie.Delete( 0 );
+	++g_AwaitingResults;
 
 	// Second leg. Echoing the cookie proves we are really at the address the registry saw, which is
 	// the only thing that will make it instruct anybody.
-	Send( FString( pszCookie ));
+	Send( FString( pszCookie ), target );
 }
 
 void PunchResultArrived( int verdict )
 {
-	if ( g_Target.IsEmpty( ))
+	if ( g_AwaitingResults <= 0 )
 		return;
+	--g_AwaitingResults;
 
 	// [rc4l] Console only, and quiet about it. The connection attempt went out alongside the
 	// request and has either succeeded or failed on its own by now, so there is nothing here to act
@@ -118,14 +155,15 @@ void PunchResultArrived( int verdict )
 
 	if ( pszWhy != NULL )
 		DPrintf( "Hole punch: %s.\n", pszWhy );
-
-	g_Target = "";
 }
 
 void PunchRequestForced( const NETADDRESS_s &server )
 {
-	g_Target = server.ToString( );
-	Send( FString( ));
+	if ( g_AwaitingCookie.Size( ) >= kMaxAwaitingCookie )
+		return;
+
+	g_AwaitingCookie.Push( server.ToString( ));
+	Send( FString( ), g_AwaitingCookie.Last( ));
 }
 
 } // namespace zx

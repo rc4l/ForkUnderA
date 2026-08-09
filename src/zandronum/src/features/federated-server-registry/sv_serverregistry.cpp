@@ -105,6 +105,44 @@ using LauncherFieldFunction = void(*)(const LauncherResponseContext &);
 // reason about: you accept the rules of the registry you chose, and moving is repointing one CVAR.
 static	NETADDRESS_s		g_AddressServerRegistry;
 
+// [rc4l] The registry's IPv6 address, when its hostname has one. Announced to IN ADDITION to the
+// v4 address: the registry lists a server under the address it OBSERVES the announce from, so a
+// host on an IPv6-native carrier (where the v4 address is carrier NAT that nobody can reach) gets
+// listed under its real, reachable v6 address as well. LoadFromString resolves through
+// gethostbyname, which is A-records only -- this is the AAAA half it can never see.
+static	NETADDRESS_s		g_AddressServerRegistryV6;
+static	bool				g_bServerRegistryV6Valid = false;
+
+//*****************************************************************************
+//
+// [rc4l] Resolve the AAAA record of `pszHost` (which may carry a :port suffix that a v6 LOOKUP
+// must not see). Returns false when the name has no v6 address, which is the common case and not
+// an error.
+static bool server_registry_ResolveV6( const char *pszHost, NETADDRESS_s &Out )
+{
+	char szName[512];
+	strncpy( szName, pszHost, sizeof szName - 1 );
+	szName[sizeof szName - 1] = 0;
+
+	// Strip a trailing :port exactly as LoadFromString does; a bare hostname has no colons.
+	char *pszColon = strchr( szName, ':' );
+	if ( pszColon != NULL )
+		*pszColon = 0;
+
+	struct addrinfo hints;
+	struct addrinfo *pResult = NULL;
+	memset( &hints, 0, sizeof hints );
+	hints.ai_family = AF_INET6;
+	hints.ai_socktype = SOCK_DGRAM;
+
+	if (( getaddrinfo( szName, NULL, &hints, &pResult ) != 0 ) || ( pResult == NULL ))
+		return false;
+
+	Out.LoadFromSocketAddress( *pResult->ai_addr );
+	freeaddrinfo( pResult );
+	return true;
+}
+
 // Message buffer for sending messages to the server registry.
 static	NETBUFFER_s			g_ServerRegistryBuffer;
 static	NETBUFFER_s			g_SegmentBuffer;
@@ -737,6 +775,21 @@ void SERVER_SERVERREGISTRY_Tick( void )
 
 	// Send the server registry our packet.
 	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistry );
+
+	// [rc4l] And the same announce over IPv6, when the registry has an AAAA record and our socket
+	// can speak v6. The registry keys a server on the address the announce ARRIVES from, so this is
+	// what gets an IPv6-native host (cellular especially: real public v6, unreachable carrier-NAT
+	// v4) listed under an address other players can actually reach. Same packet, second family --
+	// to the registry these are simply two servers, one per address, which is exactly the truth.
+	g_bServerRegistryV6Valid = server_registry_ResolveV6( fua_serverregistry_host,
+		g_AddressServerRegistryV6 );
+	if ( g_bServerRegistryV6Valid )
+	{
+		if ( g_AddressServerRegistryV6.usPort == 0 )
+			g_AddressServerRegistryV6.SetPort( g_AddressServerRegistry.usPort );
+
+		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistryV6 );
+	}
 }
 
 //*****************************************************************************
@@ -1056,7 +1109,11 @@ const char *SERVER_SERVERREGISTRY_GetGameName( void )
 // how you end up with a check that is subtly wrong in one of two places.
 bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address )
 {
-	return Address.Compare( g_AddressServerRegistry );
+	// [rc4l] Either family: the registry answers an announce from the address the announce reached
+	// it on, so a v6 announce earns a v6 verification and a v6 punch instruction, and refusing
+	// those here would undo the second announce entirely.
+	return Address.Compare( g_AddressServerRegistry )
+		|| ( g_bServerRegistryV6Valid && Address.Compare( g_AddressServerRegistryV6 ));
 }
 
 //*****************************************************************************

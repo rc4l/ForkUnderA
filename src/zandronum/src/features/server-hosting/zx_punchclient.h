@@ -42,8 +42,14 @@ void PunchRequestForced( const NETADDRESS_s &server );
 // so the only answer available is NotListed and the round trip would buy nothing.
 //
 // Cheap and silent when it decides not to ask, so callers can call it on every join without
-// checking anything first.
-void PunchRequestFor( const NETADDRESS_s &server, bool bFromList );
+// checking anything first. Returns whether it actually asked -- the browser's punch-on-query path
+// budgets its asks against the registry's rate limit, and a declined ask must not spend budget.
+//
+// Several asks may be in flight at once (a browser refresh can find several unanswered servers);
+// cookies are matched to targets oldest-first, which is exact because the registry answers each
+// first leg with exactly one cookie and UDP reordering over one path is rare enough to cost only a
+// wasted punch when it happens.
+bool PunchRequestFor( const NETADDRESS_s &server, bool bFromList );
 
 // The registry answering the first leg. Sends the second, which is the one that earns a punch.
 void PunchCookieArrived( const char *pszCookie );
