@@ -466,10 +466,26 @@ void NSEventToGameMousePosition(NSEvent* inEvent, event_t* outEvent)
 		? [view convertPointToBacking:windowPos]
 		: [view convertPoint:windowPos fromView:nil];
 
-	const CGFloat frameHeight = I_GetContentViewSize(window).height;
+	// [rc4l] Map window backing pixels straight to the game screen, PER AXIS, from the real content
+	// size and the render size -- not through rbOpts.pixelScale.
+	//
+	// The scale buffer is blitted to FILL the whole content view (gl_framebuffer BlitScaleBuffer:
+	// dst = 0,0,clientW,clientH), so with internal-resolution scaling on (vid_scalemode), the window
+	// is several times larger than the 640x400-ish render buffer. rbOpts.pixelScale is pinned to 1
+	// in windowed mode, so the old mapping treated one backing pixel as one game pixel: every menu
+	// hover landed Nx too far right and down, and the only place a centred button could be reached
+	// was the top-left corner of the window -- the exact symptom reported. A single scale also
+	// cannot express the fill, whose aspect (window) differs from the render buffer's; per-axis can.
+	// Stays identity when render == window (scaling off), so nothing changes for the common case.
+	const NSSize content = I_GetContentViewSize(window);   // backing pixels, same space as viewPos
+	const CGFloat contentW = (content.width  > 0.0) ? content.width  : 1.0;
+	const CGFloat contentH = (content.height > 0.0) ? content.height : 1.0;
 
-	const CGFloat posX = (              viewPos.x - rbOpts.shiftX) / rbOpts.pixelScale;
-	const CGFloat posY = (frameHeight - viewPos.y - rbOpts.shiftY) / rbOpts.pixelScale;
+	const CGFloat screenW = (screen != NULL) ? screen->GetWidth()  : contentW;
+	const CGFloat screenH = (screen != NULL) ? screen->GetHeight() : contentH;
+
+	const CGFloat posX =              viewPos.x  * screenW / contentW;
+	const CGFloat posY = (contentH - viewPos.y)  * screenH / contentH;
 
 	outEvent->data1 = static_cast<int>(posX);
 	outEvent->data2 = static_cast<int>(posY);
