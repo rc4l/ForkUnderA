@@ -72,6 +72,17 @@ enum class BrowserFocus
 	Rows,
 	Action,
 
+	// [rc4l] The refresh button, in the footer at the bottom LEFT.
+	//
+	// It had no focus zone at all, so it was mouse-only: no arrow key reached it from anywhere, and
+	// no amount of scrolling the list helped, because it is not in the list. A control that can only
+	// be pressed with a pointer is not reachable for anyone driving the menu by keyboard or pad.
+	//
+	// Entered from the action button by going DOWN, which is a jump across the screen -- the button
+	// is bottom left, the action button is on the right-hand panel -- but it is the only thing below
+	// the action button, so down has nowhere else to mean.
+	Refresh,
+
 	// [rc4l] A modal dialog is up. It is a focus zone so the glow can anchor to its buttons with no
 	// new machinery, but the ARROWS DO NOT TRAVERSE INTO OR OUT OF IT, that is what modal means, and
 	// computation/dialog_compute owns what the keys do while it is on screen.
