@@ -13,6 +13,7 @@
 #include "features/server-hosting/zx_hosting.h"
 #include "features/server-hosting/zx_hostprocess.h"
 #include "features/port-mapping/zx_portmap.h"
+#include "features/server-hosting/computation/hostport_compute.h" // [rc4l] shared with the reach panel
 
 #include "doomtype.h"
 #include "c_dispatch.h"
@@ -241,11 +242,21 @@ void HostTick( void )
 				{
 					g_Address.Format( "127.0.0.1:%d", boundPort );
 
-					if ( boundPort != ResolveHostPort( g_Config.port, 10666 ))
+					// [rc4l] Through the shared decision, so the message and the reachability panel
+					// can never disagree about whether the server moved. PortDriftNeedsWarning is the
+					// same call the panel uses to pick which port it reports on.
+					const int wantedPort = ResolveHostPort( g_Config.port, 10666 );
+
+					if ( PortDriftNeedsWarning( boundPort, wantedPort ))
 					{
+						// [rc4l] Say what it MEANS, not just what happened. "The server is on 10668"
+						// is a fact nobody can act on; a forwarded port that no longer matches is the
+						// likeliest reason a setup that used to work stops working, and the player is
+						// the only one who can fix it because we cannot forward a port for them.
 						Printf( TEXTCOLOR_GOLD "Port %d was already in use, so the server is on %d "
-							"instead.\n" TEXTCOLOR_NORMAL,
-							ResolveHostPort( g_Config.port, 10666 ), boundPort );
+							"instead. If you forwarded %d on your router, players outside your "
+							"network will not be able to reach this server.\n" TEXTCOLOR_NORMAL,
+							wantedPort, boundPort, wantedPort );
 					}
 				}
 

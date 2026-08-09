@@ -56,6 +56,7 @@
 #include "features/wadreload/zx_wadreload.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
 #include "features/server-hosting/computation/hoststatus_compute.h"
+#include "features/server-hosting/computation/hostport_compute.h" // [rc4l] which port the check asks about
 #include "features/server-hosting/computation/hostfocus_compute.h"
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
@@ -4034,8 +4035,9 @@ public:
 		return false;
 	}
 
-	// [rc4l] The port as typed, falling back to the default. Read by the reachability check, which is
-	// a question about one specific port and must follow the field as it is edited.
+	// [rc4l] The port as typed, falling back to the default. Read by the reachability check before
+	// anything is running, which is a question about one specific port and must follow the field as
+	// it is edited. Once a server exists, PortToCheck prefers the port it actually holds.
 	int HostConfiguredPort( )
 	{
 		const int typed = atoi( g_HostFields[kHostFieldPort].text.c_str( ));
@@ -4886,7 +4888,24 @@ public:
 		//
 		// Deliberately NOT disabled even when red: the check can be wrong in the player's favour, and
 		// a form that refuses to let someone try their own network is worse than one that warns them.
-		const zx::ProbePhase reach = zx::ReachProbeStatus( HostConfiguredPort( ));
+		// [rc4l] Ask about the port the server actually holds, not the one in the form.
+		//
+		// A server takes the next free port when the one you set is busy, and the check is a question
+		// about ONE port. Asking about the configured one while running elsewhere is how a forwarded
+		// 10666 reported "reachable" with the server on 10670: true of the port tested, useless to
+		// the player, and it reads as "hosting is fine" while nobody outside can get in.
+		//
+		// There is usually no cached answer for the port it moved to, so this shows unknown rather
+		// than green. That is the honest state, and an honest unknown beats a confident wrong.
+		const int runningPort = HostRunningPort( );
+		const int configuredPort = HostConfiguredPort( );
+
+		const zx::ProbePhase reach = zx::ReachProbeStatus(
+			zx::PortToCheck( runningPort, configuredPort ));
+
+		// The drift itself is announced where it happens, at the child's ready line in zx_hosting.cpp.
+		// Saying it from a draw would mean saying it every frame, and this panel is not even on screen
+		// while a server runs.
 
 		EColorRange visColors[kHostVisCount];
 
@@ -4990,6 +5009,27 @@ public:
 			if ( state == zx::HostState::Running )
 			{
 				y = DrawHostReach( x, y, wrapW );
+
+				// [rc4l] SAY IT WHERE IT SURVIVES.
+				//
+				// This was already reported when the child announced its port, and that message is
+				// destroyed seconds later: joining restarts the engine, and the fresh console begins
+				// at V_INIT with the warning gone. We told the player something they could never read.
+				//
+				// A port nobody forwarded is the likeliest reason a working setup stops working, it
+				// cannot be seen from inside the game, and only the player can fix it. So it belongs
+				// on the panel that stays up for as long as the server does, not in a log that a
+				// restart eats.
+				if ( zx::PortDriftNeedsWarning( HostRunningPort( ), HostConfiguredPort( )))
+				{
+					FString drift;
+					drift.Format( "Port %d was busy, so this server is on %d. If you forwarded %d, "
+						"players outside your network cannot reach it.",
+						HostConfiguredPort( ), HostRunningPort( ), HostConfiguredPort( ));
+
+					y += 4;
+					y = DrawWrappedIn( drift.GetChars( ), x, y, wrapW, CR_ORANGE );
+				}
 
 				y += 4;
 				y = DrawWrappedIn( "You are the administrator of this server. Use the console, "
