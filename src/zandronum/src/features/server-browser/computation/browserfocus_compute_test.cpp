@@ -150,9 +150,12 @@ TEST( BrowserNav, DownFromTheSubTabsEntersTheList )
 		ComputeNav( BrowserFocus::SubTabs, NavKey::Down, Browsing( ) ).focus );
 }
 
-TEST( BrowserNav, DownFromTheSubTabsStaysPutWhenNothingIsListed )
+TEST( BrowserNav, DownFromTheSubTabsCarriesOnToRefreshWhenNothingIsListed )
 {
-	EXPECT_EQ( BrowserFocus::SubTabs,
+	// It used to stay put, which read as correct -- there is no list to enter -- and left the refresh
+	// button unreachable in the one state where somebody needs it. Down carries on to the next thing
+	// that IS on screen instead of stopping at a gap.
+	EXPECT_EQ( BrowserFocus::Refresh,
 		ComputeNav( BrowserFocus::SubTabs, NavKey::Down, BrowsingEmpty( ) ).focus );
 }
 
@@ -196,10 +199,12 @@ TEST( BrowserNav, DownFromTheSearchBoxEntersTheList )
 		ComputeNav( BrowserFocus::Search, NavKey::Down, Browsing( ) ).focus );
 }
 
-TEST( BrowserNav, DownFromTheSearchBoxFallsBackToTheSubTabsWhenEmpty )
+TEST( BrowserNav, DownFromTheSearchBoxReachesRefreshWhenEmpty )
 {
-	// Typing a filter that matches nothing must not strand the focus below the last row.
-	EXPECT_EQ( BrowserFocus::SubTabs,
+	// Typing a filter that matches nothing must not strand the focus, and it used to bounce back up
+	// to the sub-tabs. Down means down: past the empty list to the button in the footer, which is
+	// very likely what someone whose filter matched nothing wants next.
+	EXPECT_EQ( BrowserFocus::Refresh,
 		ComputeNav( BrowserFocus::Search, NavKey::Down, BrowsingEmpty( ) ).focus );
 }
 
@@ -399,10 +404,49 @@ TEST( BrowserNav, RefreshIsReachableWithNoServersAtAll )
 	NavWhere empty = Browsing( );
 	empty.hasRows = false;
 
+	// THE BUG THE FIRST ATTEMPT SHIPPED. Down from the action button is not a route when the list is
+	// empty, because an empty list has no selected server and therefore no action button to stand on.
+	// Walking an edge from a zone the test handed itself proved nothing about whether anything can
+	// ARRIVE there. So the real route is asserted from the zones that exist with nothing listed.
 	EXPECT_EQ( BrowserFocus::Refresh,
-		ComputeNav( BrowserFocus::Action, NavKey::Down, empty ).focus );
-	EXPECT_EQ( BrowserFocus::Action,
-		ComputeNav( BrowserFocus::Refresh, NavKey::Up, empty ).focus );
+		ComputeNav( BrowserFocus::SubTabs, NavKey::Down, empty ).focus );
+	EXPECT_EQ( BrowserFocus::Refresh,
+		ComputeNav( BrowserFocus::Search, NavKey::Down, empty ).focus );
+
+	// And back out again, to something that is actually on screen rather than to the button that is
+	// not there.
+	const BrowserFocus back = ComputeNav( BrowserFocus::Refresh, NavKey::Up, empty ).focus;
+	EXPECT_NE( BrowserFocus::Action, back ) << "there is no action button with an empty list";
+	EXPECT_EQ( BrowserFocus::SubTabs, back );
+}
+
+TEST( BrowserNav, EveryZoneOnScreenWithAnEmptyListCanStillReachRefresh )
+{
+	// Stated as reachability rather than as a list of edges: from each zone that exists when nothing
+	// is listed, pressing Down enough times must arrive at the button. The first fix passed its own
+	// tests while leaving the button unreachable in this exact state.
+	NavWhere empty = Browsing( );
+	empty.hasRows = false;
+
+	const BrowserFocus starts[] = { BrowserFocus::Tabs, BrowserFocus::SubTabs, BrowserFocus::Search };
+
+	for ( int i = 0; i < 3; ++i )
+	{
+		BrowserFocus at = starts[i];
+		bool arrived = false;
+
+		for ( int step = 0; step < 6; ++step )
+		{
+			at = ComputeNav( at, NavKey::Down, empty ).focus;
+			if ( at == BrowserFocus::Refresh )
+			{
+				arrived = true;
+				break;
+			}
+		}
+
+		EXPECT_TRUE( arrived ) << "zone " << i << " cannot reach refresh with an empty list";
+	}
 }
 
 TEST( BrowserNav, AnEmptyWhereIsAMenuWithNothingInIt )
