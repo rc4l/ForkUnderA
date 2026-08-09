@@ -174,6 +174,17 @@ enum
 	// up a server we have already verified; it is never dialled on the strength of the client saying
 	// so. The only address anybody dials is the observed source of this request.
 	CLIENT_SERVERREGISTRY_PUNCH = 5660034,
+
+	// [rc4l] A server announcing itself on the LAN via subnet broadcast.
+	//
+	// This exists only because the game socket is now dual-stack IPv6 and a v6 socket cannot send a
+	// v4 broadcast. The announce therefore leaves a dedicated, ephemeral, send-only v4 socket -- so
+	// its SOURCE port is NOT the game port. A LAN client derives a server's address from the packet
+	// source (browser.cpp), so this header carries the real game port as a USHORT right after it; the
+	// client patches that onto the from-address before parsing. The remainder of the packet is byte-
+	// for-byte a SERVER_LAUNCHER_CHALLENGE reply, so BROWSER_ParseServerQuery reads it unchanged.
+	// Only our own client (bound to DEFAULT_BROADCAST_PORT) ever sees this; external launchers do not.
+	SERVER_LAUNCHER_LAN_CHALLENGE = 5660035,
 };
 
 // [BB] Protocol version of the server registry, currently only used in conjunction with LAUNCHER_SERVERREGISTRY_CHALLENGE.
