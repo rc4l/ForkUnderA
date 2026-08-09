@@ -725,29 +725,6 @@ bool ConsumeJoinReady()
 	return true;
 }
 
-// [rc4l] The widest digit in SmallFont, measured once. Which one it is depends on the font, so it is
-// found rather than assumed -- and found here rather than per frame, since it cannot change.
-static int WidestDigit( )
-{
-	static char cached = 0;
-	if ( cached != 0 )
-		return cached;
-
-	int best = -1;
-	for ( char c = '0'; c <= '9'; ++c )
-	{
-		char one[2] = { c, 0 };
-		const int w = SmallFont->StringWidth( one );
-		if ( w > best )
-		{
-			best = w;
-			cached = c;
-		}
-	}
-
-	return cached;
-}
-
 void DrawJoinReadyNotice( bool afterMenus )
 {
 	// [rc4l] Drawn over EVERYTHING, menus included.
@@ -806,25 +783,8 @@ void DrawJoinReadyNotice( bool afterMenus )
 	const int virtH = 400;
 	const int y = 12;
 
-	// [rc4l] The band is laid out from a MASKED copy of the line -- every digit replaced by whichever
-	// digit is widest in this font -- rather than from the line itself.
-	//
-	// Padding the string to a fixed character count was not enough. SmallFont gives '1' a narrower
-	// advance than '0', so "11%" and "80%" are different widths and the panel kept shuffling as the
-	// numbers went by. The mask is the same string every frame whatever the numbers are, so its width
-	// is a constant, and it is never narrower than the real line, so nothing overflows it.
-	const FString stable = zx::MaskVarying( text.GetChars( ), WidestDigit( )).c_str( );
-	const int stableW = SmallFont->StringWidth( stable );
-
-	// BOTH are centred on the same axis, each on its own width. Placing the text at the box's left
-	// edge instead left every pixel the mask over-measured sitting on one side, so the line looked
-	// shoved against the end of its own panel.
-	//
-	// The text can still shift by a pixel or two as the digits change, since the mask is an upper
-	// bound rather than an exact match -- but the character count is fixed, so that is glyph-width
-	// variance and nothing more. The box, which is the thing that was moving, does not move at all.
+	// Centred on its own width. The band no longer has one, so there is no second axis to agree with.
 	const int x = ( virtW / 2 ) - ( SmallFont->StringWidth( text ) / 2 );
-	const int bandLeft = ( virtW / 2 ) - ( stableW / 2 );
 
 	// A backing band, so the line stays readable over a bright wall or a lit sky.
 	//
@@ -833,13 +793,26 @@ void DrawJoinReadyNotice( bool afterMenus )
 	// letterboxing the virtual space inside the window, so scaling by SCREENWIDTH/virtW agreed with
 	// the text only on a display that happened to be 16:10 and put the band visibly off-centre under
 	// it everywhere else. Same mistake, same fix, as the browser's own panel edges.
-	int bandX = bandLeft - 6;
+	// [rc4l] EDGE TO EDGE, so the band stops depending on the string at all.
+	//
+	// Only the vertical extent is converted from virtual space. The horizontal is the real surface,
+	// 0 to SCREENWIDTH, which is the one measurement that cannot be pulled off-centre by the aspect
+	// correction DTA_Virtual* applies -- and the measurement that is right at every resolution
+	// without anybody working it out.
+	//
+	// This is what retires the masked-string machinery above. Sizing a box to text meant fighting
+	// the font: '1' is narrower than '0', so the panel shuffled as the percentage ticked, and the
+	// fix was to measure a copy of the line with every digit replaced by the widest one. A band that
+	// spans the screen has no width to get wrong, so the whole class of problem goes away rather
+	// than being compensated for.
 	int bandY = y - 3;
-	int bandW = stableW + 12;
 	int bandH = SmallFont->GetHeight( ) + 6;
-	screen->VirtualToRealCoordsInt( bandX, bandY, bandW, bandH, virtW, virtH, false, true );
 
-	screen->Dim( PalEntry( 0, 0, 0 ), 0.45f * alpha, bandX, bandY, bandW, bandH );
+	int ignoreX = 0;
+	int ignoreW = virtW;
+	screen->VirtualToRealCoordsInt( ignoreX, bandY, ignoreW, bandH, virtW, virtH, false, true );
+
+	screen->Dim( PalEntry( 0, 0, 0 ), 0.45f * alpha, 0, bandY, SCREENWIDTH, bandH );
 
 	// [rc4l] The text is drawn OPAQUE, and the pulse lives in the band behind it and in the colour.
 	//
