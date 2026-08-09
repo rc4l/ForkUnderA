@@ -23,6 +23,21 @@ BrowserFocus IntoTheList( const NavWhere &where, BrowserFocus stay )
 	return where.hasRows ? BrowserFocus::Rows : stay;
 }
 
+// [rc4l] Down from the row above the list: into the list, or PAST it to the refresh button.
+//
+// An empty list has no rows to enter and no action button either -- that button belongs to a
+// selected server -- so the only way into the footer was through a zone that does not exist. Down
+// simply stopped, and the one control that fixes an empty list could not be reached in exactly the
+// situation it exists for. The first fix gave refresh an entrance from the action button and missed
+// this, because a test can walk the edge from a zone it was handed without noticing nothing can
+// arrive there.
+//
+// So when the list is empty, down carries on to the next thing that IS on screen.
+BrowserFocus DownFromAboveTheList( const NavWhere &where )
+{
+	return where.hasRows ? BrowserFocus::Rows : BrowserFocus::Refresh;
+}
+
 } // namespace
 
 NavResult ComputeNav( BrowserFocus focus, NavKey key, const NavWhere &where )
@@ -86,7 +101,7 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, const NavWhere &where )
 		else if ( key == NavKey::Up )
 			out.focus = BrowserFocus::Tabs;
 		else if ( key == NavKey::Down )
-			out.focus = IntoTheList( where, BrowserFocus::SubTabs );
+			out.focus = DownFromAboveTheList( where );
 		break;
 
 	case BrowserFocus::Search:
@@ -99,7 +114,7 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, const NavWhere &where )
 		if ( key == NavKey::Up )
 			out.focus = AboveTheList( where );
 		else if ( key == NavKey::Down )
-			out.focus = IntoTheList( where, AboveTheList( where ));
+			out.focus = DownFromAboveTheList( where );
 		break;
 
 	case BrowserFocus::Rows:
@@ -129,6 +144,26 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, const NavWhere &where )
 			out.focus = IntoTheList( where, AboveTheList( where ));
 		else if ( key == NavKey::Up )
 			out.focus = AboveTheList( where );
+		else if ( key == NavKey::Down )
+			out.focus = BrowserFocus::Refresh;
+		break;
+
+	case BrowserFocus::Refresh:
+		// [rc4l] Up goes back where it came from, and that is the WHOLE contract for this zone.
+		//
+		// A zone you can enter and not leave is worse than one you cannot enter at all: the mouse
+		// user never noticed the button was unreachable, but a keyboard user who arrives and gets
+		// stuck has lost the menu. So the return edge is the first thing here, not an afterthought.
+		//
+		// Left and right are deliberately nothing. The footer holds this button and the registry
+		// status bar beside it, and that bar is a readout rather than a control -- there is nothing
+		// horizontal to reach, and inventing a stop on a thing you cannot press would be worse than
+		// the keys doing nothing.
+		// Back to the action button when there IS one. With an empty list there is no selected server
+		// and so no button, and returning to it would strand the focus on a zone that is not drawn --
+		// the same mistake as arriving here through one, in the opposite direction.
+		if ( key == NavKey::Up )
+			out.focus = where.hasRows ? BrowserFocus::Action : AboveTheList( where );
 		break;
 	}
 
