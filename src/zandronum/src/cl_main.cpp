@@ -1250,6 +1250,13 @@ void CLIENT_GetPackets( void )
 				// [rc4l] A reply too big for one datagram, arriving in numbered pieces.
 				else if ( lCommand == SERVER_LAUNCHER_CHALLENGE_SEGMENTED )
 					BROWSER_ParseServerQuerySegment( pByteStream, false );
+				// [rc4l] A server the registry punched on our behalf, knocking. Under carrier NAT
+				// its packets arrive from a DIFFERENT port than the registry listed -- the knock's
+				// source is the only endpoint of that server that actually works, so the browser
+				// re-aims its waiting slot there. Not gated on the sending address: the whole point
+				// is that we could not have predicted it.
+				else if ( lCommand == SERVERREGISTRY_PUNCH )
+					BROWSER_PunchKnockFrom( NETWORK_GetFromAddress( ));
 				// [rc4l] It answered, so it is there. Keep the row rather than letting the refresh
 				// that just deactivated everything take it away. See BROWSER_ServerSaidItIsIgnoringUs
 				// for why your own server trips this every single time.

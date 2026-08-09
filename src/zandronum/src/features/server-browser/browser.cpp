@@ -877,6 +877,40 @@ void BROWSER_RefreshListedServers( void )
 
 //*****************************************************************************
 //
+// [rc4l] See browser.h. Only slots that ASKED for a punch are eligible: an unsolicited packet must
+// not be able to redirect a row we never invited, and a spoofed knock against an invited row costs
+// one wasted re-query and its own timeout -- the same as any dropped packet.
+void BROWSER_PunchKnockFrom( const NETADDRESS_s &From )
+{
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		// The eligibility rule lives in querypunch_compute, where its security property -- an
+		// uninvited row can never be redirected -- is asserted for every state.
+		if ( zx::ShouldAdoptPunchKnock(
+				g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY,
+				g_BrowserServerList[ulIdx].bPunchRequested,
+				g_BrowserServerList[ulIdx].Address.CompareNoPort( From )) == false )
+		{
+			continue;
+		}
+
+		// The knock's source port is the mapping the server's NAT actually opened; the listed port
+		// is only what its NAT once told the registry. Adopt the real one.
+		g_BrowserServerList[ulIdx].Address.usPort = From.usPort;
+
+		// Re-send into the open hole NOW rather than waiting for the next ladder rung -- the
+		// mapping is freshest this instant. Preserve the first-challenge stamp; the ladder's
+		// position is measured from it.
+		const LONG lFirstMS = g_BrowserServerList[ulIdx].lMSTime;
+		browser_QueryServer( ulIdx );
+		if ( lFirstMS > 0 )
+			g_BrowserServerList[ulIdx].lMSTime = lFirstMS;
+		return;
+	}
+}
+
+//*****************************************************************************
+//
 void BROWSER_ClearServerList( void )
 {
 	ULONG	ulIdx;
@@ -1023,10 +1057,11 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 		// registry's RE-announcement of it -- one missed reply window and the server was gone for
 		// the whole session, however many refreshes followed. If the registry still lists it, it is
 		// still worth asking: re-arm the slot for this sweep's query, with a fresh punch ladder.
-		// Anything live (answered, mid-query, or being re-checked in place) is a true duplicate.
-		if (( g_BrowserServerList[lExisting].ulActiveState == AS_TIMEDOUT )
-			|| (( g_BrowserServerList[lExisting].ulActiveState == AS_INACTIVE )
-				&& ( g_BrowserServerList[lExisting].bRefreshing == false )))
+		// The rule itself lives in querypunch_compute, where every state is asserted.
+		if ( zx::ShouldRearmListedSlot(
+				g_BrowserServerList[lExisting].ulActiveState == AS_TIMEDOUT,
+				g_BrowserServerList[lExisting].ulActiveState == AS_INACTIVE,
+				g_BrowserServerList[lExisting].bRefreshing ))
 		{
 			g_BrowserServerList[lExisting].ulActiveState = AS_WAITINGFORREPLY;
 			g_BrowserServerList[lExisting].lMSTime = 0;

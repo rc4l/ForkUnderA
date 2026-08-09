@@ -47,6 +47,21 @@ const unsigned int kMaxAwaitingCookie = 8;
 // ranges are the private ones from RFC 1918 plus loopback and link-local.
 bool IsLocalAddress( const NETADDRESS_s &address )
 {
+	// [rc4l] The v6 equivalents of the private ranges below: loopback, link-local (fe80::/10) and
+	// unique-local (fc00::/7). Read from abIP6 -- abIP is meaningless while bIsIPv6 is set, and
+	// judging a v6 address by four bytes of another field would punch for machines in this house.
+	if ( address.bIsIPv6 )
+	{
+		static const BYTE abLoopback6[16] = { 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1 };
+		if ( memcmp( address.abIP6, abLoopback6, 16 ) == 0 )
+			return true;
+		if (( address.abIP6[0] == 0xfe ) && (( address.abIP6[1] & 0xc0 ) == 0x80 ))
+			return true;
+		if (( address.abIP6[0] & 0xfe ) == 0xfc )
+			return true;
+		return false;
+	}
+
 	const BYTE a = address.abIP[0];
 	const BYTE b = address.abIP[1];
 

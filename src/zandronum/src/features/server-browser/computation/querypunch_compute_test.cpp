@@ -79,3 +79,61 @@ TEST(StepQueryPunch, AtMostOneActionPerStep)
 					EXPECT_LE(CountSet(StepQueryPunch(t, eligible != 0, requested != 0, resends)), 1);
 	}
 }
+
+//*****************************************************************************
+// ShouldAdoptPunchKnock -- the re-aim rule, which is also the security boundary.
+
+TEST(ShouldAdoptPunchKnock, OnlyAWaitingInvitedMatchingSlotMayBeReaimed)
+{
+	EXPECT_TRUE(zx::ShouldAdoptPunchKnock(true, true, true));
+}
+
+TEST(ShouldAdoptPunchKnock, AnUninvitedSlotCanNeverBeRedirected)
+{
+	// [rc4l] The security property: a spoofed knock against a row that never asked for a punch
+	// must do nothing -- otherwise any packet source could steer where a listed row points.
+	EXPECT_FALSE(zx::ShouldAdoptPunchKnock(true, false, true));
+}
+
+TEST(ShouldAdoptPunchKnock, ASettledSlotIsLeftAlone)
+{
+	// Answered rows carry live data a player may be about to join through; a late knock must not
+	// rewrite their address underneath them.
+	EXPECT_FALSE(zx::ShouldAdoptPunchKnock(false, true, true));
+}
+
+TEST(ShouldAdoptPunchKnock, AKnockFromSomeOtherHostMatchesNothing)
+{
+	EXPECT_FALSE(zx::ShouldAdoptPunchKnock(true, true, false));
+	// And no combination of the other flags rescues a host mismatch.
+	EXPECT_FALSE(zx::ShouldAdoptPunchKnock(false, false, false));
+	EXPECT_FALSE(zx::ShouldAdoptPunchKnock(true, false, false));
+	EXPECT_FALSE(zx::ShouldAdoptPunchKnock(false, true, false));
+}
+
+//*****************************************************************************
+// ShouldRearmListedSlot -- a re-announced server must be able to return.
+
+TEST(ShouldRearmListedSlot, ATimedOutSlotRearmsWhenTheRegistryStillListsIt)
+{
+	// [rc4l] The regression this pins: one missed reply window used to remove a server for the
+	// whole session, because the add-path dedupe ate every later re-announcement of its address.
+	EXPECT_TRUE(zx::ShouldRearmListedSlot(true, false, false));
+	// Even mid-recheck bookkeeping on a timed-out slot does not block the re-arm.
+	EXPECT_TRUE(zx::ShouldRearmListedSlot(true, false, true));
+}
+
+TEST(ShouldRearmListedSlot, ARemovedSlotRearmsUnlessARecheckIsStillFlying)
+{
+	EXPECT_TRUE(zx::ShouldRearmListedSlot(false, true, false));
+	// A re-check in flight will settle the slot itself; re-arming under it would race the answer.
+	EXPECT_FALSE(zx::ShouldRearmListedSlot(false, true, true));
+}
+
+TEST(ShouldRearmListedSlot, LiveAndAnsweredSlotsAreTrueDuplicates)
+{
+	// Neither timed out nor inactive: the slot is live (active, or mid-query) -- the announcement
+	// is a genuine duplicate and must change nothing.
+	EXPECT_FALSE(zx::ShouldRearmListedSlot(false, false, false));
+	EXPECT_FALSE(zx::ShouldRearmListedSlot(false, false, true));
+}
