@@ -2941,15 +2941,14 @@ public:
 			wanted.push_back( zx::waddownload::WantedFile( plan.missing[i], false, md5 ));
 		}
 
-		// No extra sites. A join gets to put the server's own mirror first because that server
-		// certainly has its own files; there is no server here yet, so the shipped list is all there
-		// is, and it is where a catalogue entry's files are published anyway.
+		// No extra sites and no last resorts: there is no server here yet, so the shipped mirror
+		// list is all there is, and it is where a catalogue entry's files are published anyway.
 		// [rc4l] zx::NoteDownloadFinished, not our own resume: that is the callback carrying the
 		// truth table. Handing waddownload our resume directly would fire it the instant the bytes
 		// landed, wherever the player happened to be, which is the bug the shared path exists to
 		// stop.
-		if ( !zx::waddownload::Start( std::vector<std::string>( ), wanted,
-			zx::NoteDownloadFinished ))
+		if ( !zx::waddownload::Start( std::vector<std::string>( ), std::vector<std::string>( ),
+			wanted, zx::NoteDownloadFinished ))
 		{
 			return false;
 		}
