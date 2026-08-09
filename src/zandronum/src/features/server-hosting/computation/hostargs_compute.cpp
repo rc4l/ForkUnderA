@@ -204,7 +204,11 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 	// belongs to.
 	PushOption(out, "+sv_rconpassword", config.rconSecret);
 
-	out.push_back("+sv_updatemaster");
+	// [rc4l] sv_fua_serverregistry_announce, NOT the old +sv_updatemaster: that cvar no longer
+	// exists in this fork, so the child silently ignored it and fell back to the announce default
+	// (on) -- meaning a "local only" host still announced itself to the public registry, and this
+	// toggle did nothing at all.
+	out.push_back("+sv_fua_serverregistry_announce");
 	out.push_back(config.advertise ? "1" : "0");
 
 	out.push_back("+sv_fua_download");

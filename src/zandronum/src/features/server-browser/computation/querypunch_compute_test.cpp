@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
+#include "gtest/gtest.h"
+#include "features/server-browser/computation/querypunch_compute.h"
+
+using zx::QueryPunchStep;
+using zx::StepQueryPunch;
+
+namespace
+{
+int CountSet(const QueryPunchStep &s)
+{
+	return (s.requestPunch ? 1 : 0) + (s.resendChallenge ? 1 : 0) + (s.timeOut ? 1 : 0);
+}
+} // namespace
+
+TEST(StepQueryPunch, AnIneligibleSlotKeepsThePrePunchLifetimeExactly)
+{
+	// [rc4l] The regression that must never happen: this feature exists for CGNAT servers, and a
+	// LAN server or a budget-starved slot must behave to the millisecond as the browser always did.
+	EXPECT_EQ(0, CountSet(StepQueryPunch(0, false, false, 0)));
+	EXPECT_EQ(0, CountSet(StepQueryPunch(3999, false, false, 0)));
+	EXPECT_TRUE(StepQueryPunch(4000, false, false, 0).timeOut);
+}
+
+TEST(StepQueryPunch, AsksForThePunchOnceThePlainQueryHasClearlyMissed)
+{
+	// Not instantly -- most servers answer in well under a second, and punching every listed
+	// server on every refresh would drain the registry's rate limit for nothing.
+	EXPECT_EQ(0, CountSet(StepQueryPunch(1499, true, false, 0)));
+	EXPECT_TRUE(StepQueryPunch(1500, true, false, 0).requestPunch);
+	EXPECT_TRUE(StepQueryPunch(3000, true, false, 0).requestPunch);
+}
+
+TEST(StepQueryPunch, ABudgetStarvedEligibleSlotStillDiesAtThePlainTimeout)
+{
+	// punchEligible but the caller never granted it (kept punchRequested false): at 4000 the slot
+	// times out rather than asking forever.
+	EXPECT_TRUE(StepQueryPunch(4000, true, false, 0).timeOut);
+	EXPECT_FALSE(StepQueryPunch(4000, true, false, 0).requestPunch);
+}
+
+TEST(StepQueryPunch, WalksTheResendLadderBehindThePunch)
+{
+	// The resends trail the server's punch packet schedule so one challenge lands in the hole.
+	EXPECT_EQ(0, CountSet(StepQueryPunch(2499, true, true, 0)));
+	EXPECT_TRUE(StepQueryPunch(2500, true, true, 0).resendChallenge);
+	EXPECT_EQ(0, CountSet(StepQueryPunch(2600, true, true, 1)));
+	EXPECT_TRUE(StepQueryPunch(4000, true, true, 1).resendChallenge);
+	EXPECT_TRUE(StepQueryPunch(5500, true, true, 2).resendChallenge);
+	// Ladder exhausted: nothing more to send, not timed out yet either.
+	EXPECT_EQ(0, CountSet(StepQueryPunch(5600, true, true, 3)));
+}
+
+TEST(StepQueryPunch, APunchedSlotGetsTheExtendedTimeoutAndNoMore)
+{
+	EXPECT_EQ(0, CountSet(StepQueryPunch(6999, true, true, 3)));
+	EXPECT_TRUE(StepQueryPunch(7000, true, true, 3).timeOut);
+	// Timeout wins over a straggling resend threshold.
+	EXPECT_TRUE(StepQueryPunch(7000, true, true, 0).timeOut);
+	EXPECT_FALSE(StepQueryPunch(7000, true, true, 0).resendChallenge);
+}
+
+TEST(StepQueryPunch, NegativeElapsedDoesNothing)
+{
+	// lMSTime can be unstamped or the clock can step; a nonsense elapsed must not punch or kill.
+	EXPECT_EQ(0, CountSet(StepQueryPunch(-1, true, false, 0)));
+	EXPECT_EQ(0, CountSet(StepQueryPunch(-1, true, true, 2)));
+}
+
+TEST(StepQueryPunch, AtMostOneActionPerStep)
+{
+	for (int t = 0; t <= 8000; t += 100)
+	{
+		for (int eligible = 0; eligible < 2; ++eligible)
+			for (int requested = 0; requested < 2; ++requested)
+				for (int resends = 0; resends <= 3; ++resends)
+					EXPECT_LE(CountSet(StepQueryPunch(t, eligible != 0, requested != 0, resends)), 1);
+	}
+}

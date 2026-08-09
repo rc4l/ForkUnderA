@@ -199,6 +199,13 @@ typedef struct
 	bool			bRefreshing;
 	LONG			lRefreshMS;
 
+	// [rc4l] Punch-on-query state (computation/querypunch_compute.h). A registry-listed server
+	// behind carrier NAT drops our direct query, so after a moment the browser asks the registry to
+	// have it punch toward us and re-sends the challenge into the hole. These carry that ladder's
+	// position between tics; both only mean anything while AS_WAITINGFORREPLY.
+	bool			bPunchRequested;
+	LONG			lPunchResendsSent;
+
 	// [rc4l] This server answered, and we hid it because it runs a different build.
 	//
 	// Kept separately because the hiding is done by setting AS_INACTIVE, which is also what an empty
