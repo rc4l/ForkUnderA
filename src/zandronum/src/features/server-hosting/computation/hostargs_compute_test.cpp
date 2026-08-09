@@ -299,13 +299,18 @@ TEST(HostArgs, AdvertisingIsExplicitInBothDirections)
 {
 	// Always stated, never left to whatever the config file happened to hold -- "local" hosting that
 	// silently announced itself would be a privacy failure, not a bug.
+	//
+	// [rc4l] And it must name the cvar the server actually reads. This test used to pin
+	// +sv_updatemaster, which no longer exists in this fork -- the child ignored it, fell back to
+	// the announce default (on), and "local only" hosting announced itself anyway: the exact
+	// privacy failure the comment above promises away.
 	HostConfig quiet = Basic();
 	quiet.advertise = false;
-	EXPECT_EQ("0", ValueAfter(BuildHostArgs("z", quiet), "+sv_updatemaster"));
+	EXPECT_EQ("0", ValueAfter(BuildHostArgs("z", quiet), "+sv_fua_serverregistry_announce"));
 
 	HostConfig loud = Basic();
 	loud.advertise = true;
-	EXPECT_EQ("1", ValueAfter(BuildHostArgs("z", loud), "+sv_updatemaster"));
+	EXPECT_EQ("1", ValueAfter(BuildHostArgs("z", loud), "+sv_fua_serverregistry_announce"));
 }
 
 TEST(HostArgs, ServingOurOwnFilesIsExplicitInBothDirections)

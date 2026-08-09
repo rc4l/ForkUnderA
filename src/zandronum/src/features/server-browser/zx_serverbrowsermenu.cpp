@@ -899,6 +899,16 @@ static void serverbrowser_ToScreen( int vx, int vy, int vw, int vh, int &x, int 
 	y = vy;
 	w = vw;
 	h = vh;
+
+	// [rc4l] Mirror the renderer's own short-circuit (v_draw.cpp, ParseDrawTextureTags): when the
+	// surface is EXACTLY the virtual size, DTA_Virtual* draws 1:1 without calling
+	// VirtualToRealCoords at all. VirtualToRealCoords is NOT identity there -- 640x400 is 16:10, so
+	// it applies the aspect expansion and pulls every x toward the centre by 960/1152 -- which is
+	// how vid_scalemode 1 (whose internal buffer is exactly 640x400) detached every pill, highlight
+	// and panel from the text sitting on it. One mapping means copying the shortcut too.
+	if ( screen->GetWidth( ) == SB_VIRT_W && screen->GetHeight( ) == SB_VIRT_H )
+		return;
+
 	screen->VirtualToRealCoordsInt( x, y, w, h, SB_VIRT_W, SB_VIRT_H, false, true );
 }
 
@@ -2941,15 +2951,14 @@ public:
 			wanted.push_back( zx::waddownload::WantedFile( plan.missing[i], false, md5 ));
 		}
 
-		// No extra sites. A join gets to put the server's own mirror first because that server
-		// certainly has its own files; there is no server here yet, so the shipped list is all there
-		// is, and it is where a catalogue entry's files are published anyway.
+		// No extra sites and no last resorts: there is no server here yet, so the shipped mirror
+		// list is all there is, and it is where a catalogue entry's files are published anyway.
 		// [rc4l] zx::NoteDownloadFinished, not our own resume: that is the callback carrying the
 		// truth table. Handing waddownload our resume directly would fire it the instant the bytes
 		// landed, wherever the player happened to be, which is the bug the shared path exists to
 		// stop.
-		if ( !zx::waddownload::Start( std::vector<std::string>( ), wanted,
-			zx::NoteDownloadFinished ))
+		if ( !zx::waddownload::Start( std::vector<std::string>( ), std::vector<std::string>( ),
+			wanted, zx::NoteDownloadFinished ))
 		{
 			return false;
 		}
@@ -4689,7 +4698,13 @@ public:
 
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
-				screen->DrawText( SmallFont, CR_WHITE, x, y, "No experiences are installed",
+				// [rc4l] Centred like the title above it, not left-aligned at the column edge --
+				// an empty state is a single caption under a single heading, and the two hanging
+				// at different alignments read as a layout accident.
+				const char *caption = "No experiences are installed";
+				const int capW = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
+				screen->DrawText( SmallFont, CR_WHITE,
+					SB_HOST_RCOL_LEFT + ( capW - SmallFont->StringWidth( caption )) / 2, y, caption,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 			}
 			return;

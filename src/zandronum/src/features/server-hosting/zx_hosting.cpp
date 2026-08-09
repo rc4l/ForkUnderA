@@ -123,11 +123,15 @@ void RememberOutput( const std::string &text )
 
 } // namespace
 
+static void HostStopBlocking( void );
+
 //*****************************************************************************
 //
 bool HostStart( const HostConfig &config )
 {
-	HostStop( );
+	// The blocking stop, deliberately: the new child needs the old one's port, and
+	// HostProcessStart refuses to spawn while a child is still held.
+	HostStopBlocking( );
 
 	g_Config = config;
 	g_Secret = MakeSecret( );
@@ -176,7 +180,36 @@ bool HostStart( const HostConfig &config )
 
 //*****************************************************************************
 //
+// [rc4l] The interactive stop, and it must NOT block: this runs on the game loop, and the old
+// synchronous version sat in a waitpid/usleep loop for up to three seconds while the child wound
+// down -- which on macOS is the spinning beachball every time a server was stopped. The child is
+// ASKED to stop here; HostTick observes the actual exit through the ordinary child-exited path,
+// and the Stopping state's own timeout (the state machine's contract says "the caller kills the
+// process on this same signal") escalates to a kill if it will not go.
 void HostStop( void )
+{
+	if ( HostHoldsProcess( g_Life.state ))
+		g_Life = StepHostLifecycle( g_Life, HostEvent::StopRequested, "" );
+
+	HostProcessRequestStop( );
+
+	// Give the port back. A mapping left behind is a hole in somebody's network that outlives the
+	// game that asked for it, and the lease is a backstop for the crash case, not a substitute.
+	PortMapClose( );
+
+	g_Secret = "";
+	g_Address = "";
+	g_bReadyEdge = false;
+	g_Reach = HostReach::NotPublic;
+	g_PublicMs = 0;
+}
+
+//*****************************************************************************
+//
+// [rc4l] The stop for callers that cannot tick afterwards: process exit, and HostStart replacing a
+// running server (the new child needs the old one's port, and HostProcessStart refuses while one
+// is live). Blocks up to three seconds -- acceptable exactly and only on those paths.
+static void HostStopBlocking( void )
 {
 	if ( HostHoldsProcess( g_Life.state ))
 		g_Life = StepHostLifecycle( g_Life, HostEvent::StopRequested, "" );
@@ -188,8 +221,6 @@ void HostStop( void )
 	if ( g_Life.state == HostState::Stopping )
 		g_Life = StepHostLifecycle( g_Life, HostEvent::ChildExited, "" );
 
-	// Give the port back. A mapping left behind is a hole in somebody's network that outlives the
-	// game that asked for it, and the lease is a backstop for the crash case, not a substitute.
 	PortMapClose( );
 
 	g_Secret = "";
@@ -294,6 +325,11 @@ void HostTick( void )
 		const std::string tail = g_Recent.GetChars( );
 		g_Life = StepHostLifecycle( g_Life, HostEvent::ChildExited,
 			ExplainHostFailure( tail, HostProcessExitCode( )));
+
+		// [rc4l] The exit is observed, the output above was the last of it: close the pipe and the
+		// handles now. The async HostStop leaves them open ON PURPOSE so this drain keeps working
+		// until the child actually goes; with it gone, HostProcessStop is just cleanup.
+		HostProcessStop( );
 		return;
 	}
 
@@ -309,6 +345,13 @@ void HostTick( void )
 	}
 
 	g_Life = TickHostLifecycle( g_Life, delta );
+
+	// [rc4l] The escalation the state machine's contract promises: a Stopping that timed out has
+	// moved to Stopped while the child is still alive, so kill it now -- SIGKILL and a momentary
+	// reap, nothing the game loop can beachball on. Without this, a child that ignored SIGTERM
+	// would outlive its own "Stopped" panel forever.
+	if ( IsHostFinished( g_Life.state ) && HostProcessRunning( ))
+		HostProcessKill( );
 }
 
 //*****************************************************************************
@@ -329,7 +372,9 @@ void HostForget( void )
 //
 void HostShutdown( void )
 {
-	HostStop( );
+	// Blocking on purpose: the process is exiting, there are no more ticks to reap the child, and
+	// an orphaned server outliving the game is the one outcome this call exists to prevent.
+	HostStopBlocking( );
 }
 
 unsigned HostGeneration( void )

@@ -79,6 +79,14 @@ public:
 FBasicStartupScreen::FBasicStartupScreen(int maxProgress, bool showBar)
 : FStartupScreen(maxProgress)
 {
+	// [rc4l] The -host server child never creates the console window (no NSApplication, no user);
+	// drawing progress on a window that does not exist was the second null dereference in a hosted
+	// game's startup, right after the fullscreen cvar callback. Same guard on every method below.
+	if (!FConsoleWindow::InstanceExists())
+	{
+		return;
+	}
+
 	FConsoleWindow& consoleWindow = FConsoleWindow::GetInstance();
 	consoleWindow.SetProgressBar(true);
 	consoleWindow.SetTitleText();
@@ -110,7 +118,10 @@ FBasicStartupScreen::FBasicStartupScreen(int maxProgress, bool showBar)
 
 FBasicStartupScreen::~FBasicStartupScreen()
 {
-	FConsoleWindow::GetInstance().SetProgressBar(false);
+	if (FConsoleWindow::InstanceExists())
+	{
+		FConsoleWindow::GetInstance().SetProgressBar(false);
+	}
 }
 
 
@@ -121,18 +132,27 @@ void FBasicStartupScreen::Progress()
 		++CurPos;
 	}
 
-	FConsoleWindow::GetInstance().Progress(CurPos, MaxPos);
+	if (FConsoleWindow::InstanceExists())
+	{
+		FConsoleWindow::GetInstance().Progress(CurPos, MaxPos);
+	}
 }
 
 
 void FBasicStartupScreen::NetInit(const char* const message, const int playerCount)
 {
-	FConsoleWindow::GetInstance().NetInit(message, playerCount);
+	if (FConsoleWindow::InstanceExists())
+	{
+		FConsoleWindow::GetInstance().NetInit(message, playerCount);
+	}
 }
 
 void FBasicStartupScreen::NetProgress(const int count)
 {
-	FConsoleWindow::GetInstance().NetProgress(count);
+	if (FConsoleWindow::InstanceExists())
+	{
+		FConsoleWindow::GetInstance().NetProgress(count);
+	}
 }
 
 void FBasicStartupScreen::NetMessage(const char* const format, ...)
@@ -149,7 +169,10 @@ void FBasicStartupScreen::NetMessage(const char* const format, ...)
 
 void FBasicStartupScreen::NetDone()
 {
-	FConsoleWindow::GetInstance().NetDone();
+	if (FConsoleWindow::InstanceExists())
+	{
+		FConsoleWindow::GetInstance().NetDone();
+	}
 }
 
 bool FBasicStartupScreen::NetLoop(bool (*timerCallback)(void*), void* const userData)

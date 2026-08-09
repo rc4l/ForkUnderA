@@ -199,6 +199,13 @@ typedef struct
 	bool			bRefreshing;
 	LONG			lRefreshMS;
 
+	// [rc4l] Punch-on-query state (computation/querypunch_compute.h). A registry-listed server
+	// behind carrier NAT drops our direct query, so after a moment the browser asks the registry to
+	// have it punch toward us and re-sends the challenge into the hole. These carry that ladder's
+	// position between tics; both only mean anything while AS_WAITINGFORREPLY.
+	bool			bPunchRequested;
+	LONG			lPunchResendsSent;
+
 	// [rc4l] This server answered, and we hid it because it runs a different build.
 	//
 	// Kept separately because the hiding is done by setting AS_INACTIVE, which is also what an empty
@@ -308,6 +315,14 @@ bool			BROWSER_IsRefreshInFlight( void );
 // Each carried-over server is re-queried at its own address, so culling a dead one does not wait on
 // the registry: it fails its own check and drops out on its own timeout.
 void			BROWSER_RefreshListedServers( void );
+
+// [rc4l] A punch packet knocked on our socket. The server we asked the registry to punch sends its
+// packets from whatever public port ITS NAT hands out -- under endpoint-dependent (carrier) NAT
+// that is a DIFFERENT port from the one the registry listed, so the challenges we aim at the
+// listed port keep missing. The knock's source is the server's real, open endpoint: re-aim the
+// waiting slot at it and re-send the challenge immediately. Joins then use the same corrected
+// address, which is the one that actually works.
+void			BROWSER_PunchKnockFrom( const NETADDRESS_s &From );
 
 // [rc4l] Per-row version of the fact BROWSER_GetNumHumanPlayers already uses in aggregate.
 bool			BROWSER_IsPlayerBot( ULONG ulServer, ULONG ulPlayer );
