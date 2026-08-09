@@ -1052,8 +1052,16 @@ void ScanDirectory(TArray<FFileList> &list, const char *dirpath)
 			// Skip hidden directories. (Prevents SVN bookkeeping
 			// info from being included.)
 			fts_set(fts, ent, FTS_SKIP);
+			continue;
 		}
-		if (ent->fts_info == FTS_D && ent->fts_level == 0)
+		// [rc4l] Record every directory encountered, not only the root (fts_level == 0, which is
+		// what this branch used to keep). The Windows and Linux branches report an
+		// isDirectory=true entry for EVERY subdirectory they walk into, and callers rely on it --
+		// the addon catalogue enumerates its entries as "the directories ScanDirectory reported",
+		// so on macOS/BSD it saw none and every catalogue loaded empty. The root is excluded to
+		// match the other branches, which scan the root's contents and never report the root
+		// itself.
+		if (ent->fts_info == FTS_D && ent->fts_level > 0)
 		{
 			FFileList *fl = &list[list.Reserve(1)];
 			fl->Filename = ent->fts_path;

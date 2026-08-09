@@ -61,3 +61,4 @@ ZandroX-dev-*/
 *.rej
 *.rej.orig
 *.orig
+.build-status

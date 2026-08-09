@@ -34,6 +34,41 @@ ZAN_SRC_DIR="$SRC_DIR/zandronum"
 DEFAULT_ZANDRONUM_REF="${ZANDRONUM_REF:-ZA_3.2.1}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 
+# ---------------------------------------------------------------------------
+# Build status protocol
+#
+# [rc4l] So waiting on a build NEVER means grepping process lists. A watcher
+# whose own command line contains "mac_compile.sh" matches ITSELF via
+# `pgrep -f` and waits forever -- six watcher shells once sat mutually
+# detecting each other while the build they "watched" had already failed.
+# The contract, written to .build-status at the repo root:
+#     running <pid> <epoch>       a build is in flight
+#     ok <epoch>                  the last build succeeded
+#     failed <exitcode> <epoch>   the last build failed
+# tools/build-wait.sh consumes this and is the one sanctioned way to wait.
+# The pid check also makes a second concurrent build REFUSE to start instead
+# of silently racing the first one for the same build directory.
+# ---------------------------------------------------------------------------
+STATUS_FILE="$SCRIPT_ROOT/.build-status"
+if [[ -f "$STATUS_FILE" ]]; then
+    read -r prev_state prev_pid _rest < "$STATUS_FILE" || true
+    if [[ "${prev_state:-}" == "running" ]] && kill -0 "${prev_pid:-0}" 2>/dev/null; then
+        printf '\033[31mERROR: another build (pid %s) is already running -- refusing to race it.\n' "$prev_pid" >&2
+        printf 'Wait for it with tools/build-wait.sh, or kill that pid if it is stale.\033[0m\n' >&2
+        exit 2
+    fi
+fi
+echo "running $$ $(date +%s)" > "$STATUS_FILE"
+finish_status() {
+    local code=$?
+    if [[ $code -eq 0 ]]; then
+        echo "ok $(date +%s)" > "$STATUS_FILE"
+    else
+        echo "failed $code $(date +%s)" > "$STATUS_FILE"
+    fi
+}
+trap finish_status EXIT
+
 # SDL is built from source (SDL2 + sdl12-compat 1.2.68). Homebrew's sdl12-compat
 # now targets SDL3 and dlopens it by leaf name, which does not survive being
 # copied+re-signed into a self-contained .app (its dllinit errors out). The
