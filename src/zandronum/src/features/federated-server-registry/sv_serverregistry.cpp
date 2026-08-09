@@ -77,6 +77,13 @@
 #include "features/wad-serve/zx_wadserve.h" // [rc4l] the direct-download port we advertise
 #include "features/server-hosting/zx_hosting.h" // [rc4l] tell the game that started us we are reachable
 #include "features/server-hosting/computation/punchbroker_compute.h" // [rc4l] how many punches, and when
+#include "features/federated-server-registry/computation/lanbroadcast_compute.h" // [rc4l] LAN subnet broadcast
+
+// [rc4l] Its own switch, not `developer`, so turning on LAN tracing does not also unleash every other
+// subsystem's developer chatter. Off by default; when on, the server logs each announce it sends and
+// the client logs each announce it receives (see the [LAN] lines below and fua_landiag). Archived so a
+// debugging session survives a restart, matching sv_showlauncherqueries.
+CVAR( Bool, fua_showlandiscovery, false, CVAR_ARCHIVE )
 
 // [SB] This is easier than updating the parameters for a load of functions every time I want to add something.
 struct LauncherResponseContext
@@ -831,19 +838,17 @@ void SERVER_SERVERREGISTRY_Broadcast( void )
 	// Class B contains networks 128.0.0.0 through 191.255.0.0; the network number is in the first two octets.
 	// Class C networks range from 192.0.0.0 through 223.255.255.0, with the network number contained in the first three octets.
 
-	int classIndex = 0;
-
-	const int locIP0 = g_LocalAddress.abIP[0];
-	if ( (locIP0 >= 1) && (locIP0 <= 127) )
-		classIndex = 1;
-	else if ( (locIP0 >= 128 ) && (locIP0 <= 191) )
-		classIndex = 2;
-	else if ( (locIP0 >= 192 ) && (locIP0 <= 223) )
-		classIndex = 3;
-
-	for( int i = 0; i < classIndex; i++ )
-		AddressBroadcast.abIP[i] = g_LocalAddress.abIP[i];
+	// [rc4l] The class boundaries are the one part with real edge cases, so the math lives in
+	// computation/lanbroadcast_compute and is unit-tested there. It fills all four octets (network
+	// octets from our IP, host octets 255), which is exactly what AddressBroadcast should carry.
+	zx::ComputeSubnetBroadcast( g_LocalAddress.abIP, AddressBroadcast.abIP );
 #endif
+
+	// [rc4l] Hidden LAN diagnostics: silent unless fua_showlandiscovery is on, so nothing reaches an
+	// ordinary player. This is the "did the announce actually leave, and to where" half of fua_landiag.
+	if ( fua_showlandiscovery )
+		Printf( "[LAN] announce -> %s (game port %u, via %s)\n", AddressBroadcast.ToString(),
+			NETWORK_GetLocalPort(), NETWORK_CanBroadcastOnLAN() ? "dedicated v4 socket" : "game socket" );
 
 	// Broadcast our packet.
 	SERVER_SERVERREGISTRY_SendServerInfo( AddressBroadcast, SQF_ALL, 0, SQF2_ALL, true, false );
@@ -932,7 +937,19 @@ void SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, 
 	// [SB] But skip the response code in the segmented response as it's unneeded.
 	if ( !bSegmentedResponse )
 	{
-		g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_CHALLENGE );
+		if ( bBroadcasting )
+		{
+			// [rc4l] A LAN announce leaves a send-only v4 socket whose source port is NOT the game
+			// port (see NETWORK_LaunchBroadcast). The client derives a server's address from the
+			// packet source, so carry the real game port here; the client patches it onto the
+			// from-address, then reads the remainder as an ordinary challenge reply unchanged.
+			g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_LAN_CHALLENGE );
+			g_ServerRegistryBuffer.ByteStream.WriteShort( NETWORK_GetLocalPort() );
+		}
+		else
+		{
+			g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_CHALLENGE );
+		}
 	}
 
 	// Send the time the launcher sent to us.
@@ -1066,6 +1083,16 @@ void SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, 
 			NETWORK_LaunchPacket( &g_SegmentBuffer, Address );
 			segmentNumber++;
 		}
+	}
+	else if ( bBroadcasting )
+	{
+		// [rc4l] Out the dedicated v4 broadcast socket -- the dual-stack game socket cannot send a v4
+		// broadcast. If we never opened that socket (not a dual-stack server), this is a no-op and
+		// the game socket already handled broadcasts the ordinary way, so send through it instead.
+		if ( NETWORK_CanBroadcastOnLAN( ))
+			NETWORK_LaunchBroadcast( &g_ServerRegistryBuffer, Address );
+		else
+			NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Address );
 	}
 	else
 	{
@@ -1319,6 +1346,29 @@ CUSTOM_CVAR( Bool, sv_fua_serverregistry_announce, true, CVAR_SERVERINFO|CVAR_NO
 CUSTOM_CVAR( Bool, sv_broadcast, true, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 {
 	SERVERCONSOLE_UpdateBroadcasting( );
+}
+
+// [rc4l] A one-shot LAN-discovery status dump. Not a menu item and not printed anywhere on its own --
+// a player never sees it -- but a single word to type when a LAN server will not appear. It answers,
+// in order: what address we think we are (the LAN broadcast is derived from it, and a stray 127.0.0.1
+// here is the classic cause), where the announce is being sent, whether the dedicated v4 broadcast
+// socket came up, and whether we are actually hosting and broadcasting at all. Pair it with
+// `fua_showlandiscovery 1`, which turns on the per-announce [LAN] send/receive lines on each side.
+CCMD( fua_landiag )
+{
+	unsigned char broadcastOctets[4];
+	zx::ComputeSubnetBroadcast( g_LocalAddress.abIP, broadcastOctets );
+
+	Printf( "LAN discovery diagnostics:\n" );
+	Printf( "  our local address:   %s\n", g_LocalAddress.ToString() );
+	Printf( "  announce target:     %d.%d.%d.%d:%d\n", broadcastOctets[0], broadcastOctets[1],
+		broadcastOctets[2], broadcastOctets[3], DEFAULT_BROADCAST_PORT );
+	Printf( "  broadcast socket:    %s\n", NETWORK_CanBroadcastOnLAN() ?
+		"dedicated v4 (dual-stack host)" : "none -- game socket broadcasts directly" );
+	Printf( "  hosting:             %s\n", ( NETWORK_GetState() == NETSTATE_SERVER ) ? "yes" : "no (client)" );
+	Printf( "  sv_broadcast:        %s\n", sv_broadcast ? "on" : "off" );
+	if ( g_LocalAddress.bIsIPv6 || ( g_LocalAddress.abIP[0] == 127 ))
+		Printf( TEXTCOLOR_YELLOW "  note: local address is loopback/v6 -- other machines on the LAN will not see this server.\n" );
 }
 
 // Name of this server on launchers.
