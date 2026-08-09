@@ -3182,7 +3182,7 @@ a605913f425ebe6790b859648f1c65a8c4773001	2016-03-09T11:49:49Z	- fixed: When pass
 f8ebfb541e4f56ca978ed1f22152fc3dad601c71	2016-03-10T19:45:45Z	- use typedefs for TVector<double> etc.	pending		/
 9843f16cc09328d2f871bb484cc6ef65dda8893a	2016-03-10T21:36:28Z	- some rework of vectors.h, mostly to remove all those silenced double->float conversions.	pending		/
 7edd5e2dace007411cf534a20141ee0f6a2c4417	2016-03-11T12:43:17Z	renamed 'exp' in xlat_parser.y to 'expr' because this gets in the way of searching for calls of the exp(x) function.	pending		/
-161d03231a21fc3c310447395ee40d3ace518308	2016-03-11T14:45:47Z	- added custom math routines for reliability.	pending		/
+161d03231a21fc3c310447395ee40d3ace518308	2016-03-11T14:45:47Z	- added custom math routines for reliability.	adapted	adapted the node-builder slice: vendored Cephes atan (math/atan.c+deps) and switched FNodeBuilder::PointToAngle to c_atan2 for bit-exact cross-platform GL nodes (fixes macOS floor/wall holes, doom2 MAP22/MAP06); the engine-wide g_* math conversion in the rest of the commit is not taken	f4432215415fb4d4ca97d770cb0aecf9daec47b0
 346fae82c7d263ac9214add32193b4cd5d92bc50	2016-03-12T09:54:14Z	- fixed beta Lost Soul's states.	pending		/
 c7c2beee2c766d6933e47564a2f1528df31ca39d	2016-03-12T11:11:46Z	Fixed A_Blast parameter type and default values	pending		/
 4116719a5a54c56ed6772efa96df45be85d3243c	2016-03-12T11:34:43Z	- fixed: P_CheckSplash shifted the fixed_t distance another 16 bits to the left.	pending		/
