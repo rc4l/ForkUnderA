@@ -367,6 +367,10 @@ void			BROWSER_ServerRegistryTick( void );
 // own words about why, and throwing that away at the door is why a refused query and an unreachable
 // one looked identical on screen.
 void			BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus why );
+
+// [rc4l] A server told us it is ignoring our query. That is not silence: it ANSWERED, so we know it
+// is alive, and the row must survive the refresh with whatever we last knew about it.
+void			BROWSER_ServerSaidItIsIgnoringUs( const NETADDRESS_s &Address );
 bool			BROWSER_WaitingForServerRegistryResponse( void );
 
 // [rc4l] What became of each registry in cl_fua_serverregistry_list, in list order, so the browser can

@@ -53,6 +53,9 @@
 #include "features/server-browser/computation/launcherfields_compute.h"
 #include "features/server-browser/computation/registrystatus_compute.h"
 #include "features/launcher-protocol/computation/segmentreassembly_compute.h"
+#include "features/server-hosting/zx_hosting.h" // [rc4l] which rows are the server WE started
+#include "features/server-hosting/zx_reachprobe.h" // [rc4l] ReachProbePublicIp
+#include "features/server-browser/computation/joinintent_compute.h" // [rc4l] RowIsOwnServer
 #include "c_dispatch.h"
 #include "cl_main.h"
 #include "deathmatch.h"
@@ -210,6 +213,7 @@ CVAR( String, cl_fua_serverregistry_list, "registry.cantstopscrolling.net", CVAR
 
 static	LONG	browser_GetNewListID( void );
 static	LONG	browser_GetListIDByAddress( NETADDRESS_s Address );
+static	void	browser_MirrorAnswerOntoOurOtherRows( LONG lAnswered );
 static	void	browser_QueryServer( ULONG ulServer );
 static	ULONG	browser_CountryIndexFromCode( const char *pszCode );
 static	void	browser_ResolveServerRegistries( void );
@@ -855,6 +859,97 @@ void BROWSER_ClearServerList( void )
 
 //*****************************************************************************
 //
+// The port out of "1.2.3.4:5678", or 0 when there is none to read.
+static int browser_PortOfAddress( const FString &address )
+{
+	const long colon = address.LastIndexOf( ":" );
+	if ( colon < 0 )
+		return 0;
+
+	return atoi( address.GetChars( ) + colon + 1 );
+}
+
+// Whether this row is the server we are running, by the same rule the menu uses.
+static bool browser_RowIsOurs( LONG lServer, int hostPort, const FString &localIp )
+{
+	if (( lServer < 0 ) || ( lServer >= MAX_BROWSER_SERVERS ))
+		return false;
+
+	const FString full = g_BrowserServerList[lServer].Address.ToString( );
+	if ( full.IsEmpty( ))
+		return false;
+
+	return zx::RowIsOwnServer( g_BrowserServerList[lServer].Address.ToStringNoPort( ),
+		browser_PortOfAddress( full ), hostPort, localIp.GetChars( ),
+		zx::ReachProbePublicIp( ));
+}
+
+// [rc4l] Give every other row for the SAME MACHINE the answer this one just got.
+//
+// Only ever our own server, because it is the only machine the browser can prove it knows twice:
+// HostOwnsAddress is bound to the server we started. Two unrelated addresses that happen to be one
+// box are not something we can detect, and guessing would merge strangers' servers together.
+//
+// Copied wholesale rather than field by field. The rows describe one process, so anything true of it
+// through one address is true through the other, and picking a subset is how they drift.
+static void browser_MirrorAnswerOntoOurOtherRows( LONG lAnswered )
+{
+	if (( lAnswered < 0 ) || ( lAnswered >= MAX_BROWSER_SERVERS ))
+		return;
+
+	// HostOwnsAddress is NOT the check to use here. It is bound to the loopback address we join our
+	// own server on, so it matches neither the LAN row nor the public one -- a first attempt at this
+	// used it and mirrored nothing at all. RowIsOwnServer is the wider question, and the one the menu
+	// already asks to decide whether JOIN means "go there" or "you are already here".
+	FString localIp;
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+		localIp = NETWORK_GetLocalAddress( ).ToStringNoPort( );
+
+	const int hostPort = browser_PortOfAddress( zx::HostConnectAddress( ));
+	if ( hostPort <= 0 )
+		return;			// we are not hosting, so no row can be ours
+
+	if ( browser_RowIsOurs( lAnswered, hostPort, localIp ) == false )
+		return;
+
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if ( static_cast<LONG>( ulIdx ) == lAnswered )
+			continue;
+
+		// Never touch a slot that is not one of ours, and never one already holding a fresh answer:
+		// the row that DID get through this refresh is the better copy.
+		if ( g_BrowserServerList[ulIdx].ulActiveState == AS_ACTIVE )
+			continue;
+
+		if ( browser_RowIsOurs( static_cast<LONG>( ulIdx ), hostPort, localIp ) == false )
+			continue;
+
+		// [rc4l] Three things belong to the ROW, not to the machine, and must survive the copy.
+		//
+		// The address is how the player joins and which of the two rows this is. bLAN is how it was
+		// found, and it decides the badge. The country is derived from the address, so copying it
+		// hands the public row the LAN row's answer -- which is no country at all, because a private
+		// address cannot be placed. Doing that turned both rows into LAN badges and lost the flag
+		// this whole exercise is about.
+		const NETADDRESS_s keepAddress = g_BrowserServerList[ulIdx].Address;
+		const bool keepLAN = g_BrowserServerList[ulIdx].bLAN;
+
+		g_BrowserServerList[ulIdx] = g_BrowserServerList[lAnswered];
+		g_BrowserServerList[ulIdx].Address = keepAddress;
+		g_BrowserServerList[ulIdx].bLAN = keepLAN;
+		g_BrowserServerList[ulIdx].ulActiveState = AS_ACTIVE;
+
+		// Re-derived rather than kept, so a row that has never been placed still gets its flag: the
+		// answer depends only on the address, and this row has its own.
+		g_BrowserServerList[ulIdx].CountryCode = "";
+		g_BrowserServerList[ulIdx].ulCountryIndex =
+			NETWORK_GetCountryIndexFromAddress( keepAddress );
+	}
+}
+
+//*****************************************************************************
+//
 void BROWSER_DeactivateAllServers( void )
 {
 	ULONG	ulIdx;
@@ -1043,6 +1138,24 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 
 	// This server is now active.
 	g_BrowserServerList[lServer].ulActiveState = AS_ACTIVE;
+
+	// [rc4l] ONE MACHINE, TWO ROWS, ONE ANSWER.
+	//
+	// Your own server is in the list twice: LAN discovery finds it at the private address and the
+	// registry hands back the public one. Querying both means two launcher challenges arriving at one
+	// process from one IP, and a server refuses the second for sv_queryignoretime -- ten seconds, keyed
+	// on the address WITHOUT the port, so this is not avoidable by asking from elsewhere.
+	//
+	// Whichever query lands first wins and the other row goes blank. The LAN path is shorter, so it
+	// usually wins, which is why the public row is the one seen flickering in and out on every refresh.
+	//
+	// The refusal cannot be attributed back to the row that lost, either: a hairpinned reply arrives
+	// with the server's LAN source address, so the packet says nothing about which address was asked.
+	// That is what makes reacting to the refusal the wrong shape of fix.
+	//
+	// So the answer is copied instead of asked for twice. One reply describes the machine, and every
+	// row pointing at that machine is that machine, whatever address the row is written with.
+	browser_MirrorAnswerOntoOurOtherRows( lServer );
 
 	// [rc4l] It answered, so any re-check outstanding against it is settled. Clearing this is what
 	// stops BROWSER_QueryTick from dropping a server that replied perfectly well.
@@ -1584,6 +1697,50 @@ void BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus why )
 	// turns red is the one that actually refused. The refusal codes are the registry's own words, and
 	// until now they reached a Printf and nothing else.
 	browser_NoteRegistryStatus( NETWORK_GetFromAddress( ), why );
+}
+
+//*****************************************************************************
+//
+// [rc4l] BEING IGNORED IS PROOF THE SERVER IS THERE.
+//
+// A server refuses a second launcher query from the same IP within sv_queryignoretime, ten seconds
+// by default, and the refusal is keyed on the ADDRESS WITHOUT THE PORT. Your own server is therefore
+// guaranteed to trip it: the browser knows that machine twice, once on the LAN address and once on
+// the public one the registry hands back, and both queries reach the same process from the same IP.
+// One is answered and the other is refused, and which one wins is a race between a local hop and a
+// round trip through the router.
+//
+// The refusal used to reach a Printf and nothing else, so the losing row stayed AS_INACTIVE from the
+// refresh that had just deactivated everything, and vanished. That is the flicker: host a server,
+// open the browser repeatedly, and watch your own entry come and go depending on which query landed
+// first. The LAN row usually wins because its path is shorter, which is exactly why the public row is
+// the one people notice disappearing.
+//
+// The packet itself is the evidence. A server that is gone sends nothing; a server that sends
+// "I am ignoring you" has told us it is alive, running, and reachable at this address. Treating that
+// as absence throws away the one thing it proves. So the row goes back to what we last knew, which is
+// the same bargain the rest of the browser makes: a moment-old truth beats a fresh blank.
+void BROWSER_ServerSaidItIsIgnoringUs( const NETADDRESS_s &Address )
+{
+	const LONG lServer = browser_GetListIDByAddress( Address );
+	if ( lServer == -1 )
+		return;
+
+	// AS_WAITINGFORREPLY is the state a queried row is really in: the query set it, and the refresh's
+	// deactivation only moves ACTIVE to INACTIVE, so it never touches a row already out for reply.
+	// Checking only for INACTIVE is the mistake that made a first attempt at this fix do nothing at
+	// all, which is worth naming because both states look equally plausible from the call site.
+	//
+	// Only ever back to ACTIVE, and only for a row we have really seen answer before. A server we
+	// have never had data for has nothing to restore, and drawing it from an empty slot would put a
+	// blank row on screen on the strength of a refusal.
+	const ULONG state = g_BrowserServerList[lServer].ulActiveState;
+
+	if (( state == AS_INACTIVE ) || ( state == AS_WAITINGFORREPLY ))
+	{
+		if ( g_BrowserServerList[lServer].HostName.IsNotEmpty( ))
+			g_BrowserServerList[lServer].ulActiveState = AS_ACTIVE;
+	}
 }
 
 //*****************************************************************************
