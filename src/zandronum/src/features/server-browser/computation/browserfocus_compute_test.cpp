@@ -343,6 +343,68 @@ TEST( BrowserNav, TheTabsAreAlwaysReachableGoingUp )
 		ComputeNav( BrowserFocus::Action, NavKey::Up, Browsing( ) ).focus );
 }
 
+// ---------------------------------------------------------------- the refresh button
+
+TEST( BrowserNav, DownFromTheActionButtonReachesRefresh )
+{
+	// It had no focus zone at all, so no key sequence reached it from anywhere and the button was
+	// mouse-only. Down from the action button is the way in.
+	EXPECT_EQ( BrowserFocus::Refresh,
+		ComputeNav( BrowserFocus::Action, NavKey::Down, Browsing( ) ).focus );
+}
+
+TEST( BrowserNav, RefreshGivesTheFocusBackGoingUp )
+{
+	// The half that matters more than getting in. A zone you can enter and not leave loses the whole
+	// menu for somebody driving it by keyboard, which is worse than the button being unreachable.
+	EXPECT_EQ( BrowserFocus::Action,
+		ComputeNav( BrowserFocus::Refresh, NavKey::Up, Browsing( ) ).focus );
+}
+
+TEST( BrowserNav, RefreshCannotTrapTheFocus )
+{
+	// Stated as a property rather than a path: from the button, SOME key leaves. If a later change
+	// removes the up edge this fails, even if nobody remembers why the edge was there.
+	const NavKey keys[] = { NavKey::Up, NavKey::Down, NavKey::Left, NavKey::Right };
+
+	bool escaped = false;
+	for ( int i = 0; i < 4; ++i )
+	{
+		if ( ComputeNav( BrowserFocus::Refresh, keys[i], Browsing( ) ).focus != BrowserFocus::Refresh )
+			escaped = true;
+	}
+
+	EXPECT_TRUE( escaped ) << "the refresh button would swallow the keyboard";
+}
+
+TEST( BrowserNav, RefreshDoesNotMoveTheListOrTheTabs )
+{
+	// It is a button in the footer, not a place to browse from. Nothing about arriving there should
+	// step a row or change a tab underneath it.
+	const NavKey keys[] = { NavKey::Up, NavKey::Down, NavKey::Left, NavKey::Right };
+
+	for ( int i = 0; i < 4; ++i )
+	{
+		const NavResult r = ComputeNav( BrowserFocus::Refresh, keys[i], Browsing( ) );
+		EXPECT_EQ( 0, r.rowStep ) << i;
+		EXPECT_EQ( 0, r.tabStep ) << i;
+		EXPECT_EQ( 0, r.subStep ) << i;
+	}
+}
+
+TEST( BrowserNav, RefreshIsReachableWithNoServersAtAll )
+{
+	// The case it is most needed in. An empty list is exactly when somebody wants to press refresh,
+	// and it must not depend on there being a row to travel through to get there.
+	NavWhere empty = Browsing( );
+	empty.hasRows = false;
+
+	EXPECT_EQ( BrowserFocus::Refresh,
+		ComputeNav( BrowserFocus::Action, NavKey::Down, empty ).focus );
+	EXPECT_EQ( BrowserFocus::Action,
+		ComputeNav( BrowserFocus::Refresh, NavKey::Up, empty ).focus );
+}
+
 TEST( BrowserNav, AnEmptyWhereIsAMenuWithNothingInIt )
 {
 	// The default is "no rows, no tabs, no sub-tabs", which is what a caller gets if it forgets to

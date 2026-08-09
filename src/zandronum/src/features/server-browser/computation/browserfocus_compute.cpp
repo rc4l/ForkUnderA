@@ -129,6 +129,23 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, const NavWhere &where )
 			out.focus = IntoTheList( where, AboveTheList( where ));
 		else if ( key == NavKey::Up )
 			out.focus = AboveTheList( where );
+		else if ( key == NavKey::Down )
+			out.focus = BrowserFocus::Refresh;
+		break;
+
+	case BrowserFocus::Refresh:
+		// [rc4l] Up goes back where it came from, and that is the WHOLE contract for this zone.
+		//
+		// A zone you can enter and not leave is worse than one you cannot enter at all: the mouse
+		// user never noticed the button was unreachable, but a keyboard user who arrives and gets
+		// stuck has lost the menu. So the return edge is the first thing here, not an afterthought.
+		//
+		// Left and right are deliberately nothing. The footer holds this button and the registry
+		// status bar beside it, and that bar is a readout rather than a control -- there is nothing
+		// horizontal to reach, and inventing a stop on a thing you cannot press would be worse than
+		// the keys doing nothing.
+		if ( key == NavKey::Up )
+			out.focus = BrowserFocus::Action;
 		break;
 	}
 
