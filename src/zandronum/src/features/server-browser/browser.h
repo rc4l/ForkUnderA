@@ -316,6 +316,14 @@ bool			BROWSER_IsRefreshInFlight( void );
 // the registry: it fails its own check and drops out on its own timeout.
 void			BROWSER_RefreshListedServers( void );
 
+// [rc4l] A punch packet knocked on our socket. The server we asked the registry to punch sends its
+// packets from whatever public port ITS NAT hands out -- under endpoint-dependent (carrier) NAT
+// that is a DIFFERENT port from the one the registry listed, so the challenges we aim at the
+// listed port keep missing. The knock's source is the server's real, open endpoint: re-aim the
+// waiting slot at it and re-send the challenge immediately. Joins then use the same corrected
+// address, which is the one that actually works.
+void			BROWSER_PunchKnockFrom( const NETADDRESS_s &From );
+
 // [rc4l] Per-row version of the fact BROWSER_GetNumHumanPlayers already uses in aggregate.
 bool			BROWSER_IsPlayerBot( ULONG ulServer, ULONG ulPlayer );
 // [rc4l] Did the server send player rows at all? A server that withheld them and one that is empty

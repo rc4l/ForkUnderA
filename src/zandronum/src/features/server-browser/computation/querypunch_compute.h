@@ -49,6 +49,21 @@ const int kQueryPlainTimeoutMs = 4000;
 QueryPunchStep StepQueryPunch(int elapsedMs, bool punchEligible, bool punchRequested,
 	int resendsSent);
 
+// Whether a punch knock -- an unsolicited packet from the server we asked the registry to punch --
+// may re-aim a waiting browser slot at the knock's source. Under endpoint-dependent (carrier) NAT
+// the server's packets leave from a DIFFERENT public port than the registry listed, so the knock's
+// source is the only endpoint that actually works. The rule is also the security boundary: only a
+// slot that is still waiting AND asked for a punch AND matches the knock's host may be re-aimed --
+// an unsolicited packet must never redirect a row that did not invite it.
+bool ShouldAdoptPunchKnock(bool slotWaiting, bool slotPunchRequested, bool sameHost);
+
+// Whether a slot that already exists for a re-announced address should be re-armed for a fresh
+// query. A slot that gave up earlier keeps its address, and the browser's add-path dedupe used to
+// eat the registry's re-announcement of it -- one missed reply window and the server was gone for
+// the whole session. Timed-out slots re-arm; so do inactive (removed) ones unless a re-check is
+// still in flight on them; anything else -- answered, mid-query, nonsense reply -- is left alone.
+bool ShouldRearmListedSlot(bool slotTimedOut, bool slotInactive, bool slotRefreshing);
+
 } // namespace zx
 
 #endif // ZX_QUERYPUNCH_COMPUTE_H

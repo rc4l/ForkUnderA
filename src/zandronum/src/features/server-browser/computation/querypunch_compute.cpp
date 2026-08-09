@@ -42,4 +42,17 @@ QueryPunchStep StepQueryPunch(int elapsedMs, bool punchEligible, bool punchReque
 	return step;
 }
 
+bool ShouldAdoptPunchKnock(bool slotWaiting, bool slotPunchRequested, bool sameHost)
+{
+	return slotWaiting && slotPunchRequested && sameHost;
+}
+
+bool ShouldRearmListedSlot(bool slotTimedOut, bool slotInactive, bool slotRefreshing)
+{
+	if (slotTimedOut)
+		return true;
+
+	return slotInactive && !slotRefreshing;
+}
+
 } // namespace zx
