@@ -6105,6 +6105,9 @@ public:
 		if (( w <= 0 ) || ( h <= 0 ))
 			return;
 
+		// The glow anchors to its left edge, the same way every other focusable control does.
+		FocusAnchor( zx::BrowserFocus::Refresh, SB_REFRESH_X - 5, SB_REFRESH_Y + SB_REFRESH_H / 2 );
+
 		// Same oval as the tabs: this switches nothing and is not a surface, it is a thing you press.
 		const int radius = h / 2;
 		const int base = bBusy ? 74 : ( g_RefreshHot ? 62 : 38 );
@@ -7614,6 +7617,16 @@ public:
 				return true;
 			}
 
+
+			// [rc4l] The refresh button, which until now had no keyboard route to press it at all.
+			// Same call the click makes, so the two ways of pressing it cannot come to mean
+			// different things.
+			if ( g_Focus == zx::BrowserFocus::Refresh )
+			{
+				BROWSER_RefreshListedServers( );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+				return true;
+			}
 
 			if (( g_Focus == zx::BrowserFocus::Tabs ) || ( g_Focus == zx::BrowserFocus::Search ))
 			{
