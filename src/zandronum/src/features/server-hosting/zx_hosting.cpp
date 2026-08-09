@@ -13,6 +13,7 @@
 #include "features/server-hosting/zx_hosting.h"
 #include "features/server-hosting/zx_hostprocess.h"
 #include "features/port-mapping/zx_portmap.h"
+#include "features/server-hosting/computation/hostport_compute.h" // [rc4l] shared with the reach panel
 
 #include "doomtype.h"
 #include "c_dispatch.h"
@@ -82,9 +83,18 @@ int				g_LastTickMs	= 0;
 // Enough to explain a failure, little enough that a chatty server cannot grow it without bound.
 const size_t kMaxRecent = 4096;
 
-// A minute. The registry verifies within seconds of an announcement; the rest is slack for a slow
-// round trip and a registry that is briefly busy.
-const int kReachTimeoutMs = 60000;
+// [rc4l] Ninety seconds, which is three announcements rather than the two a minute allowed.
+//
+// A minute was the same 60 seconds the registry uses to sweep a server it never managed to verify,
+// so the two clocks ran together and the retry could never beat the verdict. Servers announce every
+// 30 seconds and each announcement now gets a fresh verification request, so the question is simply
+// how many attempts fit before we answer. Two is not enough when the first can be lost in transit
+// and the countdown does not start until the server is up, part way into the first interval.
+//
+// Waiting longer is cheap because the panel says "checking" meanwhile, which is true. Saying
+// "nothing reached this port" to somebody whose port forward works is not, and it costs them an
+// evening in their router.
+const int kReachTimeoutMs = 90000;
 
 // [rc4l] Long enough that guessing it is not a strategy, and it only has to survive the lifetime of
 // one process. Drawn from the engine's RNG rather than anything the player can influence, and never
@@ -232,11 +242,21 @@ void HostTick( void )
 				{
 					g_Address.Format( "127.0.0.1:%d", boundPort );
 
-					if ( boundPort != ResolveHostPort( g_Config.port, 10666 ))
+					// [rc4l] Through the shared decision, so the message and the reachability panel
+					// can never disagree about whether the server moved. PortDriftNeedsWarning is the
+					// same call the panel uses to pick which port it reports on.
+					const int wantedPort = ResolveHostPort( g_Config.port, 10666 );
+
+					if ( PortDriftNeedsWarning( boundPort, wantedPort ))
 					{
+						// [rc4l] Say what it MEANS, not just what happened. "The server is on 10668"
+						// is a fact nobody can act on; a forwarded port that no longer matches is the
+						// likeliest reason a setup that used to work stops working, and the player is
+						// the only one who can fix it because we cannot forward a port for them.
 						Printf( TEXTCOLOR_GOLD "Port %d was already in use, so the server is on %d "
-							"instead.\n" TEXTCOLOR_NORMAL,
-							ResolveHostPort( g_Config.port, 10666 ), boundPort );
+							"instead. If you forwarded %d on your router, players outside your "
+							"network will not be able to reach this server.\n" TEXTCOLOR_NORMAL,
+							wantedPort, boundPort, wantedPort );
 					}
 				}
 

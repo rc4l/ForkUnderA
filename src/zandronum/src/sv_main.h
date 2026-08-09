@@ -760,6 +760,10 @@ void		SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags,
 const char	*SERVER_SERVERREGISTRY_GetGameName( void );
 bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address );
 void		SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream );
+
+// [rc4l] Send a packet at a joiner who cannot reach us, so our own router will accept the
+// reply that follows. See the definition for why sending it is the entire point.
+void		SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream );
 void		SERVER_SERVERREGISTRY_SendBanlistReceipt( void );
 
 // Statistic functions.
