@@ -1250,8 +1250,11 @@ void CLIENT_GetPackets( void )
 				// [rc4l] A reply too big for one datagram, arriving in numbered pieces.
 				else if ( lCommand == SERVER_LAUNCHER_CHALLENGE_SEGMENTED )
 					BROWSER_ParseServerQuerySegment( pByteStream, false );
+				// [rc4l] It answered, so it is there. Keep the row rather than letting the refresh
+				// that just deactivated everything take it away. See BROWSER_ServerSaidItIsIgnoringUs
+				// for why your own server trips this every single time.
 				else if ( lCommand == SERVER_LAUNCHER_IGNORING )
-					Printf( "WARNING! Please wait a full 10 seconds before refreshing the server list.\n" );
+					BROWSER_ServerSaidItIsIgnoringUs( NETWORK_GetFromAddress( ));
 				//else
 				//	Printf( "Unknown network message from %s.\n", g_AddressFrom.ToString() );
 			}
