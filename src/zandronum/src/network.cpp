@@ -60,6 +60,14 @@
 #endif
 #endif
 
+// [rc4l] getifaddrs() is the portable way to enumerate interface addresses -- present on macOS, BSD
+// and Linux alike, unlike the SIOCGIFCONF dance above which was gated on __unix__ (undefined by Apple)
+// and so never ran on macOS. Used by NETWORK_GetLocalAddress to find the real LAN IP.
+#ifndef _WIN32
+#include <ifaddrs.h>
+#include <net/if.h>
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -189,6 +197,10 @@ static	SOCKET			g_NetworkSocket;
 
 // Socket for listening for LAN games.
 static	SOCKET			g_LANSocket;
+
+// [rc4l] Send-only v4 socket for broadcasting THIS server onto the LAN. Exists only because the game
+// socket is dual-stack IPv6 and a v6 socket cannot send a v4 broadcast; see NETWORK_LaunchBroadcast.
+static	SOCKET			g_LANBroadcastSocket = INVALID_SOCKET;
 // [BB] Did binding the LAN socket fail?
 static	bool				g_bLANSocketInvalid = false;
 
@@ -369,6 +381,29 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 			}
 
 			if ( ioctlsocket( g_LANSocket, FIONBIO, &ulArg ) == -1 )
+				printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
+		}
+
+		// [rc4l] If we ARE a server and the game socket went dual-stack, open a dedicated v4 socket
+		// solely to broadcast this server onto the LAN. A dual-stack v6 socket cannot send a v4
+		// broadcast at all, which is why LAN discovery of a hosted server silently stopped working.
+		//
+		// Bound to an EPHEMERAL port on purpose. A second socket sharing the game port would, on
+		// BSD/macOS, steal inbound v4 game datagrams away from the dual-stack socket and break v4
+		// joiners -- a worse regression than the one being fixed. Since the source port is therefore
+		// not the game port, the real game port rides in the SERVER_LAUNCHER_LAN_CHALLENGE header and
+		// the client patches it back on (see NETWORK_LaunchBroadcast / the LAN pump in g_game.cpp).
+		if ( ( bAllocateLANSocket == false ) && g_bSocketIsDualStack )
+		{
+			bool bBroadcastDualStack = false;
+			g_LANBroadcastSocket = network_AllocateSocket( false, bBroadcastDualStack );
+			if ( network_BindSocketToPort( g_LANBroadcastSocket, INADDR_ANY, 0, true, bBroadcastDualStack ) == false )
+			{
+				Printf( "NETWORK_Construct: Couldn't bind LAN broadcast socket; this server will not be visible on the LAN.\n" );
+				closesocket( g_LANBroadcastSocket );
+				g_LANBroadcastSocket = INVALID_SOCKET;
+			}
+			else if ( ioctlsocket( g_LANBroadcastSocket, FIONBIO, &ulArg ) == -1 )
 				printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
 		}
 
@@ -756,6 +791,13 @@ void NETWORK_Destruct( void )
 
 	// [BB] This needs to be cleared since we assume it to be empty during a restart.
 	g_LumpNumsToAuthenticate.Clear();
+
+	// [rc4l] Release the LAN broadcast socket if we opened one.
+	if ( g_LANBroadcastSocket != INVALID_SOCKET )
+	{
+		closesocket( g_LANBroadcastSocket );
+		g_LANBroadcastSocket = INVALID_SOCKET;
+	}
 }
 
 //*****************************************************************************
@@ -1037,6 +1079,57 @@ return;
 
 //*****************************************************************************
 //
+// [rc4l] Broadcast a packet onto the LAN via the dedicated send-only v4 socket. Address is expected
+// to be a v4 (subnet- or limited-) broadcast address on the LAN listen port. A no-op if we never
+// opened the socket -- i.e. we are not a dual-stack server, in which case the caller should broadcast
+// the ordinary way through NETWORK_LaunchPacket. Send errors are swallowed: a broadcast that goes
+// nowhere is harmless and this runs once a second, so warning on it would only spam the console.
+void NETWORK_LaunchBroadcast( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
+{
+	INT		iNumBytesOut = sizeof( g_ucHuffmanBuffer );
+
+	if ( g_LANBroadcastSocket == INVALID_SOCKET )
+		return;
+
+	pBuffer->ulCurrentSize = pBuffer->CalcSize();
+	if ( pBuffer->ulCurrentSize == 0 )
+		return;
+
+	// Always a real sockaddr_in: this socket is AF_INET, never dual-stack, so ask for a v4 address.
+	struct sockaddr_storage SocketAddress;
+	const int iAddressLength = Address.ToSocketAddress( SocketAddress, false );
+
+	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
+
+	const LONG lNumBytes = sendto( g_LANBroadcastSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>( &SocketAddress ), iAddressLength );
+
+	if ( ( lNumBytes >= 0 ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ) )
+		SERVER_STATISTIC_AddToOutboundDataTransfer( lNumBytes );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Whether we hold a dedicated v4 broadcast socket. Only a dual-stack server opens one; a
+// plain v4 game socket can broadcast by itself, so callers fall back to NETWORK_LaunchPacket.
+bool NETWORK_CanBroadcastOnLAN( void )
+{
+	return ( g_LANBroadcastSocket != INVALID_SOCKET );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Patch the port of the most-recently-received-from address. A LAN broadcast leaves the
+// server's ephemeral send socket, so its source port is not the game port; the LAN pump calls this
+// with the real game port carried in the SERVER_LAUNCHER_LAN_CHALLENGE header, so the browser stores
+// an address that can actually be joined. usPort is a host-order port; g_AddressFrom keeps it in
+// network order, matching how LoadFromSocketAddress fills it.
+void NETWORK_OverrideFromAddressPort( USHORT usPort )
+{
+	g_AddressFrom.usPort = htons( usPort );
+}
+
+//*****************************************************************************
+//
 NETADDRESS_s NETWORK_GetLocalAddress( void )
 {
 	char				szBuffer[512];
@@ -1066,100 +1159,44 @@ NETADDRESS_s NETWORK_GetLocalAddress( void )
 		Printf( "NETWORK_GetLocalAddress: Error getting socket name: %s", strerror( errno ));
 	}
 
-#ifdef __unix__
-	// [BB] The "gethostname -> gethostbyname" trick didn't reveal the local IP.
-	// Now we need to resort to something more complicated.
-	if ( ok == false )
+#ifndef _WIN32
+	// [rc4l] gethostname()->gethostbyname() resolves to 127.0.0.1 on a stock macOS box: the machine's
+	// own hostname maps to loopback, so the trick "succeeds" with a useless address and the old
+	// SIOCGIFCONF fallback -- gated on ok==false AND #ifdef __unix__, which Apple does not define --
+	// never corrected it. g_LocalAddress then stayed 127.0.0.1, which aims the LAN broadcast at
+	// 127.255.255.255 rather than the real subnet. So whenever we do not yet hold a real, non-loopback
+	// IPv4 address, walk the interfaces with getifaddrs (portable across macOS/BSD/Linux) and take the
+	// first up, non-loopback IPv4 one.
+	if ( ( ok == false ) || Address.bIsIPv6 || ( Address.abIP[0] == 127 ) )
 	{
-#ifndef __FreeBSD__
-		unsigned char      *u;
-		int                size  = 1;
-		struct ifreq       *ifr;
-		struct ifconf      ifc;
-		struct sockaddr_in sa;
-		
-		ifc.ifc_len = IFRSIZE;
-		ifc.ifc_req = NULL;
-		
-		do {
-			++size;
-			/* realloc buffer size until no overflow occurs  */
-			if (NULL == (ifc.ifc_req = (ifreq*)realloc(ifc.ifc_req, IFRSIZE)))
-			{
-				fprintf(stderr, "Out of memory.\n");
-				exit(EXIT_FAILURE);
-			}
-			ifc.ifc_len = IFRSIZE;
-			if (ioctl(g_NetworkSocket, SIOCGIFCONF, &ifc))
-			{
-				perror("ioctl SIOCFIFCONF");
-				exit(EXIT_FAILURE);
-			}
-		} while  (IFRSIZE <= ifc.ifc_len);
-		
-		ifr = ifc.ifc_req;
-		for (;(char *) ifr < (char *) ifc.ifc_req + ifc.ifc_len; ++ifr)
+		struct ifaddrs *pInterfaces = NULL;
+		if ( getifaddrs( &pInterfaces ) == 0 )
 		{
-		
-			if (ifr->ifr_addr.sa_data == (ifr+1)->ifr_addr.sa_data)
+			for ( struct ifaddrs *pInterface = pInterfaces; pInterface != NULL; pInterface = pInterface->ifa_next )
 			{
-				continue;  /* duplicate, skip it */
-			}
-		
-			if (ioctl(g_NetworkSocket, SIOCGIFFLAGS, ifr))
-			{
-				continue;  /* failed to get flags, skip it */
-			}
-		
-			Printf("Found interface %s", ifr->ifr_name);
-			Printf(" with IP address: %s\n", inet_ntoa(inaddrr(ifr_addr.sa_data)));
-			*(int *)&Address.abIP = *(int *)&inaddrr(ifr_addr.sa_data);
-			if ( Address.abIP[0] != 127 )
-			{
-				Printf ( "Using IP address of interface %s as local address.\n", ifr->ifr_name );
+				if ( ( pInterface->ifa_addr == NULL ) || ( pInterface->ifa_addr->sa_family != AF_INET ))
+					continue;
+				if ( ( pInterface->ifa_flags & IFF_UP ) == 0 )
+					continue;
+				if ( pInterface->ifa_flags & IFF_LOOPBACK )
+					continue;
+
+				const struct sockaddr_in *pAddr = reinterpret_cast<const struct sockaddr_in *>( pInterface->ifa_addr );
+				const unsigned char *pOctets = reinterpret_cast<const unsigned char *>( &pAddr->sin_addr.s_addr );
+				if ( pOctets[0] == 127 )
+					continue;
+
+				Address.abIP[0] = pOctets[0];
+				Address.abIP[1] = pOctets[1];
+				Address.abIP[2] = pOctets[2];
+				Address.abIP[3] = pOctets[3];
+				Address.bIsIPv6 = false;
+				Printf( "Using IP address %d.%d.%d.%d of interface %s as local address.\n",
+					pOctets[0], pOctets[1], pOctets[2], pOctets[3], pInterface->ifa_name );
 				break;
 			}
+			freeifaddrs( pInterfaces );
 		}
-		if ( ifc.ifc_req != NULL )
-			free ( ifc.ifc_req );
-#else
-		struct ifreq       *ifr;
-		struct ifconf      ifc;
-		bzero(&ifc, sizeof(ifc));
-		unsigned int n = 1;
-		struct ifreq *lifr;
-		ifr = (ifreq*)calloc( ifc.ifc_len, sizeof(*ifr) );
-		do
-		{
-			n *= 2;
-			ifr = (ifreq*)realloc( ifr, PAGE_SIZE * n );
-			bzero( ifr, PAGE_SIZE * n );
-			ifc.ifc_req = ifr;
-			ifc.ifc_len = n * PAGE_SIZE;
-		} while( ( ioctl( g_NetworkSocket, SIOCGIFCONF, &ifc ) == -1 ) || ( ifc.ifc_len >= ( (n-1) * PAGE_SIZE)) );
-		
-		lifr = (struct ifreq *)&ifc.ifc_buf[ifc.ifc_len];
-		
-		while (ifr < lifr)
-		{
-			struct sockaddr *sa = &ifr->ifr_ifru.ifru_addr;
-			if( AF_INET == sa->sa_family )
-			{
-				struct sockaddr_in dummysa;
-				in_addr inAddr = *(struct in_addr *) &ifr->ifr_addr.sa_data[sizeof dummysa.sin_port];
-	
-				Printf("Found interface %s", ifr->ifr_name);
-				Printf(" with IP address: %s\n", inet_ntoa(inAddr));
-				*(int *)&Address.abIP = *(int *)&inAddr;
-				if ( Address.abIP[0] != 127 )
-				{
-					Printf ( "Using IP address of interface %s as local address.\n", ifr->ifr_name );
-					break;
-				}
-			 }
-	 	ifr = (struct ifreq *)(((char *)ifr) + _SIZEOF_ADDR_IFREQ(*ifr));
- 		}
-#endif
 	}
 #endif
 

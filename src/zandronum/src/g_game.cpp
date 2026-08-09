@@ -158,6 +158,9 @@ CVAR (String, save_dir, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 CVAR (Bool, cl_waitforsave, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
 EXTERN_CVAR (Float, con_midtime);
 
+// [rc4l] LAN-discovery tracing switch, defined in features/federated-server-registry/sv_serverregistry.cpp.
+EXTERN_CVAR (Bool, fua_showlandiscovery)
+
 // [BB]
 EXTERN_CVAR (Int, vid_renderer)
 
@@ -1658,6 +1661,20 @@ void G_Ticker ()
 			lCommand = pByteStream->ReadLong();
 			if ( lCommand == SERVER_LAUNCHER_CHALLENGE )
 				BROWSER_ParseServerQuery( pByteStream, true );
+			// [rc4l] A LAN broadcast announce. It leaves the server's ephemeral broadcast socket, so
+			// its source port is not the game port; the real game port follows the header. Patch it
+			// onto the from-address, then the remainder is an ordinary challenge reply parsed as-is.
+			else if ( lCommand == SERVER_LAUNCHER_LAN_CHALLENGE )
+			{
+				const USHORT usGamePort = pByteStream->ReadShort();
+				NETWORK_OverrideFromAddressPort( usGamePort );
+				// [rc4l] Hidden LAN diagnostics: silent unless fua_showlandiscovery is on. The receiving
+				// half of fua_landiag -- "did an announce arrive, from where, what game port did it name".
+				if ( fua_showlandiscovery )
+					Printf( "[LAN] announce from %s (game port %u)\n",
+						NETWORK_GetFromAddress().ToString(), usGamePort );
+				BROWSER_ParseServerQuery( pByteStream, true );
+			}
 			// [rc4l] A reply too big for one datagram, arriving in numbered pieces.
 			else if ( lCommand == SERVER_LAUNCHER_CHALLENGE_SEGMENTED )
 				BROWSER_ParseServerQuerySegment( pByteStream, true );

@@ -384,6 +384,17 @@ int				NETWORK_GetPackets( void );
 int				NETWORK_GetLANPackets( void );
 NETADDRESS_s	NETWORK_GetFromAddress( void );
 void			NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
+
+// [rc4l] Broadcast onto the LAN via the dedicated send-only v4 socket (see network.cpp).
+void			NETWORK_LaunchBroadcast( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
+
+// [rc4l] Whether a dedicated LAN broadcast socket exists (a dual-stack server); if not, the plain v4
+// game socket can broadcast itself and callers should use NETWORK_LaunchPacket.
+bool			NETWORK_CanBroadcastOnLAN( void );
+
+// [rc4l] Patch the port of the last received-from address; used by the LAN pump to restore the game
+// port that a broadcast's ephemeral source port cannot carry.
+void			NETWORK_OverrideFromAddressPort( USHORT usPort );
 NETADDRESS_s	NETWORK_GetLocalAddress( void );
 NETADDRESS_s	NETWORK_GetCachedLocalAddress( void );
 NETBUFFER_s		*NETWORK_GetNetworkMessageBuffer( void );
