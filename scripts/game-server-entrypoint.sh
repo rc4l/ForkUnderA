@@ -102,9 +102,16 @@ if [ $# -gt 0 ]; then
 fi
 
 PORT="${FUA_PORT:-${DEFAULT_PORT}}"
-PLAYERS="${FUA_PLAYERS:-8}"
-ANNOUNCE="${FUA_ANNOUNCE:-1}"
-SERVE_WADS="${FUA_SERVE_WADS:-1}"
+# [rc4l] NOT DEFAULTED, deliberately. These become `+cvar` arguments, and the engine applies `+`
+# arguments left to right AFTER the entry's `+exec`, so anything given a default here would silently
+# beat whatever the entry's server.cfg says. Defaulting FUA_PLAYERS to 8 meant a cfg saying
+# sv_maxplayers 16 was overruled by a number nobody typed, and the cfg looked broken.
+#
+# Unset now means "say nothing", so the cfg decides, and failing that the engine's own default does.
+# Everything expressible as a CVAR belongs in server.cfg; these exist only to override it on purpose.
+PLAYERS="${FUA_PLAYERS-}"
+ANNOUNCE="${FUA_ANNOUNCE-}"
+SERVE_WADS="${FUA_SERVE_WADS-}"
 SUBSTITUTE_IWAD="${FUA_IWAD_SUBSTITUTE:-1}"
 MAX_MB="${FUA_MAX_FILE_MB:-2048}"
 
@@ -148,7 +155,9 @@ ENTRY_NAME="$(jq -r '.name // ""' "${MANIFEST}")"
 ENTRY_IWAD="$(jq -r '.iwad // ""' "${MANIFEST}")"
 ENTRY_MAP="$(jq -r '.map // ""' "${MANIFEST}")"
 
-SERVER_NAME="${FUA_NAME:-${ENTRY_NAME:-${ENTRY_ID}} (ForkUnderA)}"
+# [rc4l] Same rule: only an explicit FUA_NAME becomes +sv_hostname. The entry's own name is used for
+# logging, not as a default that would overrule the cfg's sv_hostname.
+SERVER_NAME="${FUA_NAME-}"
 
 log "entry:  ${ENTRY_ID}  (${ENTRY_NAME:-unnamed})  from ${ENTRY_DIR}"
 
@@ -350,8 +359,15 @@ if [ -n "${ENTRY_MAP}" ]; then
 fi
 
 ARGS+=( -port "${PORT}" )
-is_safe_value "${SERVER_NAME}" && ARGS+=( +sv_hostname "${SERVER_NAME}" )
-ARGS+=( +sv_maxclients "${PLAYERS}" +sv_maxplayers "${PLAYERS}" )
+if [ -n "${SERVER_NAME}" ] && is_safe_value "${SERVER_NAME}"; then
+	ARGS+=( +sv_hostname "${SERVER_NAME}" )
+fi
+if [ -n "${PLAYERS}" ]; then
+	case "${PLAYERS}" in
+		''|*[!0-9]*) die "FUA_PLAYERS must be a number, got '${PLAYERS}'" ;;
+	esac
+	ARGS+=( +sv_maxclients "${PLAYERS}" +sv_maxplayers "${PLAYERS}" )
+fi
 
 # A password only counts if it is enforced; setting one without the flag produces a server that looks
 # locked in the browser and lets anybody in.
@@ -370,8 +386,12 @@ fi
 if [ -n "${FUA_REGISTRY:-}" ] && is_safe_value "${FUA_REGISTRY}"; then
 	ARGS+=( +fua_serverregistry_host "${FUA_REGISTRY}" )
 fi
-ARGS+=( +sv_fua_serverregistry_announce "${ANNOUNCE}" )
-ARGS+=( +sv_fua_download "${SERVE_WADS}" )
+if [ -n "${ANNOUNCE}" ]; then
+	ARGS+=( +sv_fua_serverregistry_announce "${ANNOUNCE}" )
+fi
+if [ -n "${SERVE_WADS}" ]; then
+	ARGS+=( +sv_fua_download "${SERVE_WADS}" )
+fi
 
 ARGS+=( ${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"} )
 
@@ -379,9 +399,9 @@ ARGS+=( ${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"} )
 # Go
 #---------------------------------------------------------------------------------------------------
 
-log "name:   ${SERVER_NAME}"
+log "name:   ${SERVER_NAME:-(from server.cfg, or the engine default)}"
 log "port:   ${PORT} (UDP for the game, TCP for downloads -- both must reach this container)"
-if [ "${ANNOUNCE}" = "1" ]; then
+if [ "${ANNOUNCE}" != "0" ]; then
 	# [rc4l] The registry lists a server at the source address of its own announce packet, so any NAT
 	# between here and it lists this server somewhere nothing is listening. Host networking is the fix
 	# and there is no other one; see Dockerfile.game-server.
