@@ -4795,23 +4795,39 @@ public:
 		{
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
-				const FString name = addon.files[i].name.c_str( );
-
-				screen->DrawText( SmallFont, CR_GRAY, x, y, name,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-
 				// [rc4l] Right-aligned, so a column of sizes reads down the edge rather than ragged
 				// after names of every length. A file this machine does not have has no size to
 				// show, which is the whole indicator: a number means you have it, blank means the
 				// button will fetch it.
 				const unsigned long long bytes = ( i < sizes.size( )) ? sizes[i] : 0;
 
+				// Measured BEFORE the name is drawn, because it decides how much room the name has.
+				// A long filename used to run straight under the size and the two overlapped into an
+				// unreadable smear -- the detail panel next door already solved this and this list
+				// never picked it up.
+				FString size;
 				if ( bytes > 0 )
-				{
-					const FString size = zx::FormatByteSize( bytes ).c_str( );
+					size = zx::FormatByteSize( bytes ).c_str( );
 
+				// [rc4l] Both collapse to zero when there is no size, so a file we do not have gets
+				// the FULL width for its name rather than reserving room for a number that is not
+				// coming. Missing sizes are the common case here, not the exception.
+				const int sizeW = size.IsNotEmpty( ) ? SmallFont->StringWidth( size ) : 0;
+				const int gap = size.IsNotEmpty( ) ? SmallFont->StringWidth( "  " ) : 0;
+
+				const int nameRoom = ( SB_HOST_RCOL_RIGHT - x ) - sizeW - gap;
+
+				FString name = addon.files[i].name.c_str( );
+				if ( SmallFont->StringWidth( name ) > nameRoom )
+					name = serverbrowser_FitName( name, nameRoom );
+
+				screen->DrawText( SmallFont, CR_GRAY, x, y, name,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+
+				if ( size.IsNotEmpty( ))
+				{
 					screen->DrawText( SmallFont, CR_DARKGRAY,
-						SB_HOST_RCOL_RIGHT - SmallFont->StringWidth( size ), y, size,
+						SB_HOST_RCOL_RIGHT - sizeW, y, size,
 						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 				}
 			}
