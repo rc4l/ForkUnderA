@@ -479,7 +479,11 @@ void DOptionMenu::Drawer ()
 		}
 		bool isSelected = mDesc->mSelectedItem == (int)i;
 		int cur_indent = mDesc->mItems[i]->Draw(mDesc, y, indent, isSelected);
-		if (cur_indent >= 0 && isSelected && mDesc->mItems[i]->Selectable())
+		// [rc4l] No blinking cursor while the global tab bar holds the arrows: two cursors, one of
+		// which is not where the next keypress goes. The selection is kept and drawn again on the
+		// way back down.
+		if (cur_indent >= 0 && isSelected && mDesc->mItems[i]->Selectable()
+			&& !zx::GlobalHeader_HasFocus())
 		{
 			if (((DMenu::MenuTime%8) < 6) || DMenu::CurrentMenu != this)
 			{

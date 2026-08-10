@@ -19,6 +19,13 @@
 // The rounded-panel gradient the update notice, the link prompt and the browser's own chrome all
 // share. The bar uses it too, so there is one look to adjust rather than four.
 #include "features/updater/computation/promptpanel_compute.h"
+// The focus orb and the curve it travels along, both shared with the server browser so the marker
+// the player is following does not change shape halfway up the screen.
+#include "features/menu-focus/zx_focusglow.h"
+#include "features/server-browser/computation/glowtravel_compute.h"
+
+#include "i_system.h"   // I_MSTime: the orb is timed in real milliseconds, not tics
+#include "s_sound.h"
 
 #include <string>
 #include <vector>
@@ -47,6 +54,15 @@ bool g_HasFocus = false;
 int g_HotTab = -1;
 int g_PointerX = -1;
 int g_PointerY = -1;
+
+// [rc4l] Where the focus orb actually IS, as against where it belongs. The browser's marker travels
+// between positions rather than teleporting, and the bar is the same marker, so it travels too:
+// walking from a menu up onto the bar and along it should be one continuous gesture, not a cursor
+// that blinks out in one place and reappears in another.
+GlowTravel g_GlowTravel;
+GlowPos    g_GlowAt;
+bool       g_GlowPlaced = false;
+int        g_GlowLastMs = 0;
 
 //*****************************************************************************
 //
@@ -201,10 +217,16 @@ void DrawPill( const HeaderRect &r, const char *label, bool bLit, bool bHot, boo
 
 	const int radius = h / 2;
 
+	// [rc4l] The keyboard cursor brightens the pill it is on, exactly as hovering does, and the orb
+	// sits beside it. Both together, the way the browser's tabs read: the orb alone says WHERE the
+	// cursor is, and the lift says WHICH TAB it is on, which are different questions when the pill
+	// and the marker beside it are a few pixels apart.
+	const bool bRaised = bHot || bFocused;
+
 	int baseR = 0, baseG = 0, baseB = 0;
 	if ( !TintColor( tint, baseR, baseG, baseB ))
 	{
-		const int base = bLit ? 96 : ( bHot ? 62 : 38 );
+		const int base = bLit ? 96 : ( bRaised ? 62 : 38 );
 		baseR = base;
 		baseG = base;
 		baseB = base + 24;
@@ -213,9 +235,9 @@ void DrawPill( const HeaderRect &r, const char *label, bool bLit, bool bHot, boo
 	{
 		// A tinted tab that is not the current one is dimmed rather than recoloured, so the colour
 		// still says what it says while the bar still shows where you are.
-		baseR = ( baseR * ( bHot ? 78 : 58 )) / 100;
-		baseG = ( baseG * ( bHot ? 78 : 58 )) / 100;
-		baseB = ( baseB * ( bHot ? 78 : 58 )) / 100;
+		baseR = ( baseR * ( bRaised ? 78 : 58 )) / 100;
+		baseG = ( baseG * ( bRaised ? 78 : 58 )) / 100;
+		baseB = ( baseB * ( bRaised ? 78 : 58 )) / 100;
 	}
 
 	const PanelColor topCol = { static_cast<BYTE>( baseR ), static_cast<BYTE>( baseG ),
@@ -234,16 +256,8 @@ void DrawPill( const HeaderRect &r, const char *label, bool bLit, bool bHot, boo
 		screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
 	}
 
-	// Keyboard focus gets a RING, hover gets a brighter fill. One picture cannot mean both, and the
-	// lit tab is already using brightness to say where you are.
-	if ( bFocused )
-	{
-		screen->Dim( PalEntry( 235, 235, 255 ), 0.85f, left + radius, top, w - 2 * radius, 1 );
-		screen->Dim( PalEntry( 235, 235, 255 ), 0.85f, left + radius, bottom - 1, w - 2 * radius, 1 );
-	}
-
 	const int textY = r.y + ( r.h - SmallFont->GetHeight( )) / 2 + 1;
-	const EColorRange textCol = !bEnabled ? CR_DARKGRAY : ( bLit ? CR_WHITE : CR_GRAY );
+	const EColorRange textCol = !bEnabled ? CR_DARKGRAY : (( bLit || bRaised ) ? CR_WHITE : CR_GRAY );
 
 	screen->DrawText( SmallFont, textCol,
 		r.x + ( r.w / 2 ) - ( SmallFont->StringWidth( label ) / 2 ), textY, label,
@@ -299,6 +313,74 @@ void DrawTooltip( const char *text )
 	}
 }
 
+//*****************************************************************************
+//
+// [rc4l] The focus orb, in the margin to the left of the focused pill.
+//
+// Beside the pill rather than around it, and the same offset the browser uses beside its own tabs,
+// so the marker keeps its relationship to whatever it is marking as the player moves between the
+// two. Drawn last, over the pills, because it is the answer to "where am I" and being half buried
+// under the thing it points at is how a marker gets missed.
+void DrawFocusOrb( const HeaderMetrics &m, const int *widths )
+{
+	if ( !g_HasFocus )
+	{
+		// Nothing focused, so there is nowhere for the next journey to set out FROM either.
+		g_GlowPlaced = false;
+		return;
+	}
+
+	const HeaderRect r = HeaderTabRect( m, widths, kHeaderTabCount, g_FocusTab );
+	const GlowPos want( r.x - 5, r.y + r.h / 2 );
+
+	// The first placement snaps. There is nowhere to have travelled from, and sliding in from a
+	// position left over from the last time the bar had focus would be a lie about where it had been.
+	if ( !g_GlowPlaced )
+	{
+		g_GlowAt = want;
+		g_GlowTravel = BeginGlowTravel( want, want );
+		g_GlowLastMs = static_cast<int>( I_MSTime( ));
+		g_GlowPlaced = true;
+	}
+	else
+	{
+		const int now = static_cast<int>( I_MSTime( ));
+		const int delta = now - g_GlowLastMs;
+		g_GlowLastMs = now;
+
+		// Set out again whenever the destination has moved, from wherever the orb has actually got
+		// to. Passing the CURRENT point is what makes a change of mind mid-flight continue smoothly
+		// instead of snapping back to where the last journey began.
+		if (( g_GlowTravel.to.x != want.x ) || ( g_GlowTravel.to.y != want.y ))
+			g_GlowTravel = BeginGlowTravel( g_GlowAt, want );
+
+		g_GlowTravel = StepGlowTravel( g_GlowTravel, delta );
+		g_GlowAt = GlowTravelPoint( g_GlowTravel );
+	}
+
+	// The bar's own scale: how many real pixels 100 of its virtual units cover. Measured over a long
+	// span for the reason the browser measures it that way, see the note at its DrawFocusGlow.
+	const int span = ToScreenX( 100 ) - ToScreenX( 0 );
+
+	zx::DrawFocusGlow( ToScreenX( g_GlowAt.x ), ToScreenY( g_GlowAt.y ), span );
+}
+
+// [rc4l] Move the keyboard cursor along the bar, and SAY SO.
+//
+// The bar was silent while every other menu in the engine clicks, so walking onto it felt like the
+// keyboard had stopped working. Only when the cursor actually moves: the ends of the bar clamp
+// rather than wrap, and a sound on a keypress that changed nothing is a worse lie than silence.
+bool StepFocus( int step )
+{
+	const int next = StepHeaderTab( g_FocusTab, kHeaderTabCount, step );
+	if ( next == g_FocusTab )
+		return true;   // consumed, the bar still owns the key; there is simply nowhere further to go
+
+	g_FocusTab = next;
+	S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	return true;
+}
+
 // What the hovered tab should say. Play Online's tooltip is its verdict, because the colour raises
 // the question and the tooltip is where the answer belongs.
 const char *TooltipFor( int tab, HeaderReach reach )
@@ -351,6 +433,8 @@ void GlobalHeader_Draw( )
 		DrawPill( HeaderTabRect( m, widths, kHeaderTabCount, i ), kTabLabels[i], ( i == lit ),
 			( i == g_HotTab ), ( g_HasFocus && ( i == g_FocusTab )), tint, bEnabled );
 	}
+
+	DrawFocusOrb( m, widths );
 
 	if ( g_HotTab >= 0 )
 		DrawTooltip( TooltipFor( g_HotTab, reach ));
@@ -432,8 +516,7 @@ bool GlobalHeader_NavLeft( )
 	if ( !g_HasFocus )
 		return false;
 
-	g_FocusTab = StepHeaderTab( g_FocusTab, kHeaderTabCount, -1 );
-	return true;
+	return StepFocus( -1 );
 }
 
 bool GlobalHeader_NavRight( )
@@ -441,8 +524,7 @@ bool GlobalHeader_NavRight( )
 	if ( !g_HasFocus )
 		return false;
 
-	g_FocusTab = StepHeaderTab( g_FocusTab, kHeaderTabCount, +1 );
-	return true;
+	return StepFocus( +1 );
 }
 
 bool GlobalHeader_NavDown( )
