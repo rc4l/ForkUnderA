@@ -63,7 +63,10 @@ void StartGLMenu (void)
 {
 }
 
-void FTexture::PrecacheGL()
+// [rc4l] Takes the cache layer that 39fea74 (staircase flight 17) added to the declaration. The stub
+// kept the old nullary signature for weeks because NO_GL is only reached by a SERVERONLY build and
+// nothing in CI made one.
+void FTexture::PrecacheGL(int cache)
 {
 }
 
