@@ -62,9 +62,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 #
 # libcurl4 is separate and is the engine's: features/net dlopens it rather than linking it, so a
 # missing libcurl is not a link error, it is a download that silently never happens.
+#
+# libsdl2 is not a mistake and not video. posix/sdl/i_main.cpp:288 calls SDL_Init(SDL_INIT_TIMER)
+# inside its own SERVER_ONLY branch, so the headless binary genuinely uses SDL as its timer source.
+# Replacing that with a plain clock is worth doing and is not this change.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl jq \
-        libstdc++6 libssl3 zlib1g libbz2-1.0 libcurl4 libopus0 \
+        libstdc++6 libssl3 zlib1g libbz2-1.0 libcurl4 libopus0 libsdl2-2.0-0 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --home-dir /data --shell /usr/sbin/nologin fua
 
