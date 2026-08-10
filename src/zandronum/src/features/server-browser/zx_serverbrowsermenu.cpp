@@ -1688,7 +1688,7 @@ public:
 		if ( parts & zx::kPartHost )
 			DrawHostPanel( );
 		if ( parts & zx::kPartList )
-			DrawRows( counts );
+			DrawRows( );
 		if ( parts & zx::kPartPlaceholder )
 			DrawPlaceholder( phase );
 		if ( parts & zx::kPartDetail )
@@ -2271,7 +2271,7 @@ public:
 
 	//*************************************************************************
 	//
-	void DrawRows( const zx::BrowserCounts &counts )
+	void DrawRows( void )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));
 
@@ -2387,23 +2387,11 @@ public:
 			DrawRightAligned( SmallFont, serverbrowser_PingColor( ping ), SB_COL_PING, ty, pingText );
 		}
 
-		// Only mention stragglers once there is something to compare them against.
-		if ( zx::ComputeShowsProgress( BROWSER_WaitingForServerRegistryResponse( ), counts ))
-		{
-			// [rc4l] Only the count says anything the rest of the footer does not.
-			//
-			// This used to fall back to "refreshing" when there was nothing to count, which is the
-			// same thing the button already says while it reads CHECKING: two labels for one fact,
-			// a few pixels apart. Stragglers ARE worth numbering, so that half stays; the bare
-			// restatement goes.
-			if ( counts.waiting > 0 )
-			{
-				FString more;
-				more.Format( "%s  querying %d more", Spinner( ), counts.waiting );
-				screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_ROWS_BOTTOM + 2,
-					more, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-			}
-		}
+		// [rc4l] There used to be a "querying N more" line under the list here. It went because it was
+		// the third thing on the footer saying the same thing: the button already reads CHECKING while
+		// a sweep is out, and the count it added was of servers the player has never heard of and
+		// cannot act on. A row that has not answered is simply not on the list yet, which the list
+		// already shows by not having it.
 	}
 
 	//*************************************************************************
