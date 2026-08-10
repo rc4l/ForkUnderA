@@ -172,7 +172,7 @@ jobs:
 
           # [rc4l] The one piece of fine print worth keeping: the app is unsigned, so without this
           # macOS silently blocks it and users think the build is broken. Tracked in the signing issue.
-          macos='**macOS:** the app is unsigned, so Gatekeeper blocks the first launch. After unzipping, run `xattr -dr com.apple.quarantine ZandroX.app`.'
+          macos='**macOS:** the app is unsigned, so Gatekeeper blocks the first launch. After unzipping, run `xattr -dr com.apple.quarantine ForkUnderA.app`.'
 
           if [ "$CHANNEL" = "experimental" ]; then
             # [rc4l] Each commit keeps its own pre-release, so this only clears a release for the
