@@ -34,7 +34,17 @@ readonly STORE_DIR="${DATA_DIR}/wads/by-md5"
 
 readonly DEFAULT_PORT=10666
 
-log()  { printf '[fua-entry] %s\n' "$*"; }
+# [rc4l] ALL THREE WRITE TO STDERR, and that is load-bearing rather than tidy.
+#
+# resolve_file and fetch_file return a path by printing it, so their caller reads them through $( ).
+# Command substitution captures stdout and does not care what was meant to be a message: with log()
+# on stdout, every "fetching..." line was concatenated into the path, and the engine received a
+# multi-line -file argument that matched no file. It loaded neither PWAD, said nothing about it, and
+# came up on the substituted IWAD's own map01 looking perfectly healthy.
+#
+# So stdout belongs to return values here and nothing else. Docker captures both streams, so nothing
+# is lost from the log.
+log()  { printf '[fua-entry] %s\n' "$*" >&2; }
 warn() { printf '[fua-entry] WARNING: %s\n' "$*" >&2; }
 die()  { printf '[fua-entry] ERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -292,7 +302,23 @@ for i in $(seq 0 $(( file_count - 1 )) ); do
 	fmd5="$(jq -r ".files[${i}].md5 // \"\"" "${MANIFEST}")"
 
 	is_bare_name "${fname}" || die "entry names an unusable file '${fname}'"
-	PWAD_PATHS+=( "$(resolve_file "${fname}" "${fmd5}")" )
+
+	resolved="$(resolve_file "${fname}" "${fmd5}")"
+
+	# [rc4l] Check what came back is a single path to a file that exists, and DIE rather than skip.
+	#
+	# This is the guard the stdout bug walked straight past. resolve_file returns through stdout, so
+	# anything else written there ends up in this string; the engine then took a -file argument that
+	# named nothing, loaded neither PWAD, and came up looking healthy on the substituted IWAD's own
+	# first map. A server quietly running the wrong content is worse than one that refuses to start,
+	# because only the second kind gets noticed.
+	case "${resolved}" in
+		*$'\n'*) die "internal: resolved path for '${fname}' contains newlines -- something wrote to stdout" ;;
+	esac
+	is_safe_value "${resolved}" || die "internal: unusable resolved path for '${fname}'"
+	[ -f "${resolved}" ] || die "internal: resolved '${fname}' to '${resolved}', which is not a file"
+
+	PWAD_PATHS+=( "${resolved}" )
 done
 
 #---------------------------------------------------------------------------------------------------
