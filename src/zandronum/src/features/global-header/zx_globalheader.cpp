@@ -48,6 +48,9 @@ const char *const kTabLabels[kHeaderTabCount] = { "Main Menu", "Play Online!" };
 int  g_FocusTab = 0;
 bool g_HasFocus = false;
 
+// Whether the last menu session ended on the browser. See GlobalHeader_NoteMenusClosing.
+bool g_ResumeBrowser = false;
+
 // Hover, in tab index, and the pointer that produced it. Kept in screen pixels because that is what
 // the events carry and the tooltip has to be placed against the real screen.
 int g_HotTab = -1;
@@ -578,6 +581,24 @@ void GlobalHeader_TakeFocus( )
 void GlobalHeader_ReleaseFocus( )
 {
 	g_HasFocus = false;
+}
+
+//*****************************************************************************
+//
+// [rc4l] Which section the player was in when the menus closed, so opening them again returns there.
+//
+// Escape out of the browser and Escape back in should land on the browser: the player left a screen,
+// they did not ask for a different one, and putting them on the main menu makes going back a second
+// thing to undo. Recorded rather than inferred, because by the time anything asks, the browser has
+// been destroyed and IsServerBrowserOpen has nothing left to answer with.
+void GlobalHeader_NoteMenusClosing( )
+{
+	g_ResumeBrowser = IsServerBrowserOpen( );
+}
+
+bool GlobalHeader_ResumeBrowser( )
+{
+	return g_ResumeBrowser;
 }
 
 //*****************************************************************************

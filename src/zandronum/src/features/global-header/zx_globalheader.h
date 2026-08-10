@@ -35,6 +35,11 @@ int GlobalHeader_MenuOffsetY();
 // screen coordinates rather than in any virtual space. The back button is the one that needs it.
 int GlobalHeader_ScreenBottom();
 
+// Which section the menus were last closed from, so opening them again returns to it rather than to
+// the main menu. Note it BEFORE the teardown; ask it when deciding what to open.
+void GlobalHeader_NoteMenusClosing();
+bool GlobalHeader_ResumeBrowser();
+
 // [rc4l] Move every menu descriptor down by that offset, once, after MENUDEF is fully parsed.
 //
 // THE DESCRIPTORS AND NOT THE DRAWING. Shifting at draw time would move the pixels and leave every

@@ -478,7 +478,9 @@ bool M_StartControlPanel (bool makeSound)
 	// asked for: the band said open, and the jump happened when you backed out. Backing out is the
 	// one input that reliably means "I am leaving this", and giving it a second, invisible meaning
 	// is how Escape stopped doing what Escape does.
-	if (zx::ConsumeJoinReady())
+	// [rc4l] Two reasons to open somewhere other than the main menu, and they answer the same way: a
+	// join that finished while the player was in the game, or a browser they were in when they left.
+	if (zx::ConsumeJoinReady() || zx::GlobalHeader_ResumeBrowser())
 	{
 		M_SetMenu("ZA_Browser", -1);
 		return true;
@@ -1005,8 +1007,22 @@ bool M_Responder (event_t *ev)
 				//
 				// That is what having focus means, and routing the key to both would move the bar's
 				// cursor and the menu's selection at the same time -- two carets, one keypress.
-				if (zx::GlobalHeader_HasFocus())
+				// [rc4l] ESCAPE MEANS ESCAPE, and it is dealt with before the bar gets a look in.
+				//
+				// It used to be one of the bar's cases, which spent the keypress handing the arrows
+				// back: a player who had walked up to the bar then had to press Escape twice, once
+				// to leave the bar and once to leave the menu. Escape is the one key that must never
+				// be absorbed by something the player did not ask to be in, so the bar's focus is
+				// dropped here as a side effect and the key carries on to the menu regardless.
+				if (mkey == MKEY_Back)
 				{
+					zx::GlobalHeader_ReleaseFocus();
+				}
+				else if (zx::GlobalHeader_HasFocus())
+				{
+					// While the tab bar holds the arrows, the menu underneath sees none of them.
+					// That is what having focus means, and routing the key to both would move the
+					// bar's cursor and the menu's selection at once: two carets, one keypress.
 					bool handled = false;
 					switch (mkey)
 					{
@@ -1015,11 +1031,8 @@ bool M_Responder (event_t *ev)
 					case MKEY_Down:		handled = zx::GlobalHeader_NavDown();	break;
 					case MKEY_Enter:	handled = zx::GlobalHeader_Activate();	break;
 
-					// Up is already at the top of everything, and Escape belongs to the menu:
-					// leaving the bar by backing out should back out of the menu, not trap the
-					// player on a row with nothing above it.
+					// Up is already at the top of everything.
 					case MKEY_Up:		handled = true;							break;
-					case MKEY_Back:		zx::GlobalHeader_ReleaseFocus();		break;
 					default:											break;
 					}
 
@@ -1177,6 +1190,13 @@ void M_Drawer (void)
 void M_ClearMenus ()
 {
 	M_DemoNoPlay = false;
+
+	// [rc4l] Asked BEFORE the teardown, while there is still a menu to ask about: which section the
+	// player was in when they left, so the next Escape puts them back there instead of at the main
+	// menu. Leaving a screen is not the same as choosing a different one, and being returned
+	// somewhere else is a second thing to undo before you are where you already were.
+	zx::GlobalHeader_NoteMenusClosing();
+
 	if (DMenu::CurrentMenu != NULL)
 	{
 		DMenu::CurrentMenu->Destroy();
