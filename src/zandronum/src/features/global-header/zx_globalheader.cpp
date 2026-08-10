@@ -465,6 +465,16 @@ const char *TooltipFor( int tab, HeaderReach reach )
 //
 void GlobalHeader_Draw( )
 {
+	// [rc4l] Which section the player is looking at, remembered every frame, so that opening the
+	// menus again can put them back where they were.
+	//
+	// OBSERVED rather than hooked onto the teardown, which is where two attempts at this went wrong.
+	// DMenu::Close moves CurrentMenu to the parent BEFORE it reaches M_ClearMenus, so a hook there
+	// asks what is open once nothing is; and switching tabs replaces the menu without closing
+	// anything at all, so a hook there never fires and the answer goes stale in the other direction.
+	// The last frame that had a menu on it cannot be wrong about which menu that was.
+	g_ResumeBrowser = ( CurrentTab( ) == HeaderTab::PlayOnline );
+
 	const HeaderMetrics m = Metrics( );
 
 	int widths[kHeaderTabCount];
@@ -585,17 +595,6 @@ void GlobalHeader_ReleaseFocus( )
 
 //*****************************************************************************
 //
-// [rc4l] Which section the player was in when the menus closed, so opening them again returns there.
-//
-// Escape out of the browser and Escape back in should land on the browser: the player left a screen,
-// they did not ask for a different one, and putting them on the main menu makes going back a second
-// thing to undo. Recorded rather than inferred, because by the time anything asks, the browser has
-// been destroyed and IsServerBrowserOpen has nothing left to answer with.
-void GlobalHeader_NoteMenusClosing( )
-{
-	g_ResumeBrowser = IsServerBrowserOpen( );
-}
-
 bool GlobalHeader_ResumeBrowser( )
 {
 	// NOT consumed here. M_StartControlPanel is called from three dozen places, and a flag that

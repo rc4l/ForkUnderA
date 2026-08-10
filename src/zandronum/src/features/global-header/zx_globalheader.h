@@ -35,9 +35,8 @@ int GlobalHeader_MenuOffsetY();
 // screen coordinates rather than in any virtual space. The back button is the one that needs it.
 int GlobalHeader_ScreenBottom();
 
-// Which section the menus were last closed from, so opening them again returns to it rather than to
-// the main menu. Note it BEFORE the teardown; ask it when deciding what to open.
-void GlobalHeader_NoteMenusClosing();
+// Whether the last menu the player was looking at was the browser, so opening the menus again
+// returns there rather than to the main menu. Observed while drawing; ask it when deciding.
 bool GlobalHeader_ResumeBrowser();
 
 // [rc4l] Move every menu descriptor down by that offset, once, after MENUDEF is fully parsed.
