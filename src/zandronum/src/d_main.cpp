@@ -1381,6 +1381,12 @@ void D_DoomLoop ()
 				{
 					TryRunTics (); // will run at least one tic
 				}
+
+				// [rc4l] Asks the server registries once, a few seconds in, and pumps the browser's
+				// clocks. Here rather than in the browser menu so the list is already there when the
+				// menu opens, and so a reply has somewhere to land while it is shut.
+				BROWSER_BackgroundTick( );
+
 				// Update display, next frame, with current state.
 				I_StartTic ();
 				D_Display ();

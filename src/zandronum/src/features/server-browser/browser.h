@@ -377,6 +377,9 @@ void			BROWSER_ParseServerQuerySegment( BYTESTREAM_s *pByteStream, bool bLAN );
 void			BROWSER_QueryServerRegistry( void );
 // [rc4l] Drives the query retry/give-up clock; call once per tic while the browser is open.
 void			BROWSER_ServerRegistryTick( void );
+// [rc4l] Runs every frame whether or not the browser is open: asks the registries once, a few
+// seconds into the session, and pumps the clocks that were previously only pumped by the menu.
+void			BROWSER_BackgroundTick( void );
 // [rc4l] The registry answered but refused; stop retrying (see browser.cpp).
 // [rc4l] Takes the reason now, rather than just "it said no". All three refusals are the registry's
 // own words about why, and throwing that away at the door is why a refused query and an unreachable
