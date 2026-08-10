@@ -40,20 +40,33 @@ const int kHeaderTabCount = 2;
 // top of the screen.
 struct HeaderMetrics
 {
-	int barH;      // full height of the bar, and the offset every menu below it owes
+	int barH;      // full height of the bar
 	int tabTop;    // y of the pills within the bar
 	int tabH;      // pill height
 	int leftPad;   // x where the first pill starts
 	int gap;       // space between one pill and the next
 	int labelPad;  // padding either side of a label inside its own pill
+	int menuGap;   // clear air between the bar's bottom edge and whatever the menu draws first
 
-	HeaderMetrics() : barH(0), tabTop(0), tabH(0), leftPad(0), gap(0), labelPad(0) {}
+	HeaderMetrics()
+		: barH(0), tabTop(0), tabH(0), leftPad(0), gap(0), labelPad(0), menuGap(0) {}
 };
 
 // The shipped numbers, in the 640x400 virtual space the server browser already draws in. That space
 // rather than the stock menus' 320x200 because the bar has to sit against the browser's chrome and
 // match it pill for pill; the stock menus are the ones that get shifted, and a shift is one number.
 HeaderMetrics DefaultHeaderMetrics();
+
+// How far every menu below the bar has to move down, in the stock menus' own 320x200 units.
+//
+// DERIVED, never written down twice. The bar's height is going to change, and a clearance kept as
+// its own number is one that quietly stops matching the thing it exists to clear: the first symptom
+// is a menu title resting on the bar, which is what happened when this was the bar height exactly
+// and left no air at all.
+//
+// The halving is the change of space, 640x400 down to 320x200, and it rounds UP because half a pixel
+// of overlap is still overlap.
+int MenuClearanceY(const HeaderMetrics &m);
 
 struct HeaderRect
 {

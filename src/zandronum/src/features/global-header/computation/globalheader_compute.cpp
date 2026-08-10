@@ -15,7 +15,17 @@ HeaderMetrics DefaultHeaderMetrics()
 	m.leftPad = 10;
 	m.gap = 6;
 	m.labelPad = 12;
+
+	// Enough that the bar and the menu read as two separate things. A title touching the bar makes
+	// the bar look like part of the menu, which is the one thing it must never look like: it is the
+	// same bar over every screen.
+	m.menuGap = 12;
 	return m;
+}
+
+int MenuClearanceY(const HeaderMetrics &m)
+{
+	return (m.barH + m.menuGap + 1) / 2;
 }
 
 HeaderRect HeaderTabRect(const HeaderMetrics &m, const int *labelWidths, int count, int index)

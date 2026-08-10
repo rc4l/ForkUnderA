@@ -46,6 +46,7 @@
 #include "doomstat.h"
 #include "gi.h"
 #include "d_gui.h"
+#include "features/global-header/zx_globalheader.h"
 
 
 
@@ -394,7 +395,12 @@ DLoadSaveMenu::DLoadSaveMenu(DMenu *parent, FListMenuDescriptor *desc)
 	ReadSaveStrings();
 
 	savepicLeft = 10;
-	savepicTop = 54*CleanYfac;
+
+	// [rc4l] Shifted with everything else. This screen does not lay itself out from its descriptor
+	// like an ordinary list menu does; it positions its own frames in real pixels, so the shift that
+	// moved every other menu clear of the global header went straight past it and its title kept the
+	// gap while the frames below did not. Everything under the bar owes the same offset.
+	savepicTop = (54 + zx::GlobalHeader_MenuOffsetY())*CleanYfac;
 	savepicWidth = 216*screen->GetWidth()/640;
 	savepicHeight = 135*screen->GetHeight()/400;
 

@@ -368,7 +368,15 @@ public:
 	// of the drawn one.
 	virtual int GetDrawnHeight() { return 0; }
 	void DrawSelector(int xofs, int yofs, FTextureID tex);
-	void OffsetPositionY(int ydelta) { mYpos += ydelta; }
+	// [rc4l] Down the screen, whichever way this item spells its y.
+	//
+	// mYpos packs two meanings into one int, the same trap FOptionMenuDescriptor::mPosition sets.
+	// Positive is a literal y in the menu's own space. NEGATIVE means the item is pinned to the
+	// screen and drawn at -mYpos*CleanYfac instead (FListMenuItemStaticPatch::Drawer and the static
+	// text beside it, the only two item types that ever carry one), so adding to it moves the item
+	// UP. That is how the LOAD GAME title came to sit behind the global header while every frame
+	// under it moved correctly: one item on the menu was speaking the other dialect.
+	void OffsetPositionY(int ydelta) { mYpos += (mYpos < 0) ? -ydelta : ydelta; }
 	int GetY() { return mYpos; }
 	int GetX() { return mXpos; }
 	void SetX(int x) { mXpos = x; }

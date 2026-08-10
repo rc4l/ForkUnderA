@@ -31,6 +31,10 @@ void GlobalHeader_Draw();
 // in one place, so the drawing and the mouse cannot disagree about it.
 int GlobalHeader_MenuOffsetY();
 
+// The screen y just past the bar's bottom edge, in REAL pixels, for chrome that is positioned in
+// screen coordinates rather than in any virtual space. The back button is the one that needs it.
+int GlobalHeader_ScreenBottom();
+
 // [rc4l] Move every menu descriptor down by that offset, once, after MENUDEF is fully parsed.
 //
 // THE DESCRIPTORS AND NOT THE DRAWING. Shifting at draw time would move the pixels and leave every

@@ -202,6 +202,10 @@ int GetRevisionNumber();
 // to be a break as well.
 #define FUA_NAME "Fua"
 
+// [rc4l] What a server we start for the player is called by default, on the HOST form and in the
+// browser. Built from FUA_NAME rather than spelled out, so the next rename is still one line.
+#define FUA_DEFAULT_SERVERNAME	FUA_NAME " Server"
+
 // More stuff that needs to be different for derivatives.
 #define GAMENAME "ForkUnderA"
 #define GAMENAMELOWERCASE "forkundera"
