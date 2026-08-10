@@ -46,6 +46,7 @@
 #include "features/updater/computation/promptpanel_compute.h" // [rc4l] rounded chip geometry/gradient
 #include "features/updater/computation/notice_compute.h"      // [rc4l] tested focus state machine
 #include "features/global-header/computation/globalheader_compute.h" // [rc4l] where the top row is
+#include "features/global-header/zx_globalheader.h"                  // [rc4l] does the bar hold the arrows?
 
 IMPLEMENT_CLASS(DListMenu)
 
@@ -321,8 +322,14 @@ void DListMenu::Drawer ()
 	{
 		if (mDesc->mItems[i]->mEnabled) mDesc->mItems[i]->Drawer(mDesc->mSelectedItem == (int)i);
 	}
-	if (mDesc->mSelectedItem >= 0 && mDesc->mSelectedItem < (int)mDesc->mItems.Size())
+	// [rc4l] No skull while the global tab bar holds the arrows. The selection is still remembered
+	// and comes back when the player goes down again, but drawing it now would put two cursors on
+	// screen and only the one up on the bar is where the next keypress goes.
+	if (mDesc->mSelectedItem >= 0 && mDesc->mSelectedItem < (int)mDesc->mItems.Size()
+		&& !zx::GlobalHeader_HasFocus())
+	{
 		mDesc->mItems[mDesc->mSelectedItem]->DrawSelector(mDesc->mSelectOfsX, mDesc->mSelectOfsY, mDesc->mSelector);
+	}
 	NoticeDrawer();   // [rc4l] no-op unless this is the main menu with an update pending
 	Super::Drawer();
 }

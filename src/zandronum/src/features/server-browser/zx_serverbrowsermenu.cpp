@@ -50,6 +50,7 @@
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-browser/computation/openingtab_compute.h"
 #include "features/global-header/zx_globalheader.h" // [rc4l] the bar above owns the arrows sometimes
+#include "features/menu-focus/zx_focusglow.h"       // [rc4l] the focus orb, shared with that bar
 #include "features/server-browser/computation/timeago_compute.h"
 #include "features/server-browser/computation/liverow_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
@@ -6454,48 +6455,17 @@ public:
 
 	void DrawFocusGlow( int vcx, int vcy )
 	{
-		// Slow breath, never all the way out -- a marker that vanishes is a marker you have to hunt
-		// for on the frame it happens to be invisible.
-		const double phase = ( DMenu::MenuTime % 70 ) / 70.0;
-		const float breath = 0.72f + 0.28f * static_cast<float>( fabs( 1.0 - 2.0 * phase ));
-
-		const int cx = serverbrowser_ToScreenX( vcx );
-		const int cy = serverbrowser_ToScreenY( vcy );
-
-		// [rc4l] The scale is measured over a LONG span, not from one virtual pixel.
+		// [rc4l] The orb itself now lives in features/menu-focus, because the global tab bar draws
+		// the same marker and two copies would drift. What stays here is the browser's own scale:
+		// how many real pixels 100 of ITS virtual units cover.
 		//
-		// ToScreenX(vcx + 1) - ToScreenX(vcx) looks like the obvious way to ask "how big is a virtual
-		// pixel here", and it is wrong: the mapping is fractional -- the panel's 640 units cover about
-		// 940 real ones -- so that difference rounds to 1 at some x and 2 at others. The glow was
-		// therefore HALF THE SIZE depending on where it landed, and flickered between the two sizes
-		// every tic while it travelled, because travelling is exactly changing x.
-		//
-		// Measuring across 100 units divides the same rounding error by a hundred, so the radius is
-		// the same wherever the glow is. Same trick as serverbrowser_ToVirtualX, for the same reason.
-		const int span = MAX( 1, serverbrowser_ToScreenX( 100 ) - serverbrowser_ToScreenX( 0 ));
+		// Measured over a long span rather than one unit. The mapping is fractional (the panel's 640
+		// units cover about 940 real ones), so the width of a single virtual pixel rounds to 1 at
+		// some x and 2 at others, and the orb was HALF THE SIZE depending on where it landed,
+		// flickering between the two every tic while it travelled: travelling is exactly changing x.
+		const int span = serverbrowser_ToScreenX( 100 ) - serverbrowser_ToScreenX( 0 );
 
-		// Four shells, widest and faintest first. Concentric rather than a true radial ramp because
-		// Dim takes rectangles, and at this size the difference is not visible -- what IS visible is
-		// the absence of a hard edge.
-		const int kShells = 4;
-		for ( int shell = kShells - 1; shell >= 0; --shell )
-		{
-			// Virtual radii of 3, 6, 9, 12 -- fixed in the coordinate space the browser is laid out
-			// in, so the glow is the same size beside a tab as beside a row.
-			const int radius = MAX( 1, ( span * ( shell + 1 ) * 3 ) / 100 );
-			const float alpha = breath * ( 0.10f + 0.16f * ( kShells - 1 - shell ));
-
-			for ( int dy = -radius; dy <= radius; ++dy )
-			{
-				// A circle, row by row: half-width falls off as the square root, which is what stops
-				// the shells reading as stacked squares.
-				const int half = static_cast<int>( sqrt( double( radius * radius - dy * dy )));
-				if ( half <= 0 )
-					continue;
-
-				screen->Dim( PalEntry( 190, 225, 255 ), alpha, cx - half, cy + dy, half * 2, 1 );
-			}
-		}
+		zx::DrawFocusGlow( serverbrowser_ToScreenX( vcx ), serverbrowser_ToScreenY( vcy ), span );
 	}
 
 	//*************************************************************************
