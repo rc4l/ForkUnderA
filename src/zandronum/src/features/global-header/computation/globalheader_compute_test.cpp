@@ -12,6 +12,7 @@ using zx::HeaderTabAtPoint;
 using zx::HeaderTabRect;
 using zx::kHeaderTabCount;
 using zx::StepHeaderTab;
+using zx::CursorAtTopRow;
 
 namespace
 {
@@ -193,4 +194,79 @@ TEST( GlobalHeader, NoTabsMeansNowhereToGo )
 {
 	EXPECT_EQ( 0, StepHeaderTab( 0, 0, +1 ));
 	EXPECT_EQ( 0, StepHeaderTab( 3, -1, -1 ));
+}
+
+// ------------------------------------------------ leaving a menu upwards
+
+TEST( GlobalHeader, TheTopRowIsTheFirstOneTheCursorCanReach )
+{
+	// The shape of nearly every stock menu: a banner, then the entries. Index 1 is the top as far as
+	// the player is concerned, and that is where Up has to hand over.
+	const bool rows[] = { false, true, true, true };
+
+	EXPECT_TRUE( CursorAtTopRow( rows, 4, 1 ));
+	EXPECT_FALSE( CursorAtTopRow( rows, 4, 2 ));
+	EXPECT_FALSE( CursorAtTopRow( rows, 4, 3 ));
+}
+
+TEST( GlobalHeader, AnUnreachableRowAboveTheCursorDoesNotCount )
+{
+	// A greyed-out entry between the banner and the first live one. It is drawn, it is skipped, and
+	// counting it would leave the player pressing Up into a wrap on a menu that looks like it has a
+	// top row.
+	const bool rows[] = { false, false, true, true };
+
+	EXPECT_TRUE( CursorAtTopRow( rows, 4, 2 ));
+}
+
+TEST( GlobalHeader, ARowTheCursorCannotSitOnIsNotTheTop )
+{
+	// Happens for real: an entry disables itself while the cursor is on it. Whatever the index says,
+	// this is not a position Up should be handing the bar the keyboard from.
+	const bool rows[] = { true, false, true };
+
+	EXPECT_FALSE( CursorAtTopRow( rows, 3, 1 ));
+}
+
+TEST( GlobalHeader, NothingSelectedKeepsUpForTheMenu )
+{
+	// -1 is how a menu says "no cursor yet", and its own Up means "pick a row". Taking that key would
+	// leave a menu the keyboard could never get into in the first place.
+	const bool rows[] = { true, true };
+
+	EXPECT_FALSE( CursorAtTopRow( rows, 2, -1 ));
+}
+
+TEST( GlobalHeader, AMenuWithNothingToSelectNeverReportsATop )
+{
+	const bool rows[] = { false, false };
+
+	EXPECT_FALSE( CursorAtTopRow( rows, 2, 0 ));
+	EXPECT_FALSE( CursorAtTopRow( rows, 2, 1 ));
+}
+
+TEST( GlobalHeader, AnIndexOffTheEndIsAnswered )
+{
+	// The selection is held by the menu across reloads, so it can outlive the list it points into.
+	const bool rows[] = { true, true };
+
+	EXPECT_FALSE( CursorAtTopRow( rows, 2, 2 ));
+	EXPECT_FALSE( CursorAtTopRow( rows, 2, 99 ));
+	EXPECT_FALSE( CursorAtTopRow( rows, 0, 0 ));
+	EXPECT_FALSE( CursorAtTopRow( 0, 3, 0 ));
+}
+
+TEST( GlobalHeader, ExactlyOneRowIsEverTheTop )
+{
+	// Swept, because "first reachable" is the kind of loop that quietly answers true twice.
+	const bool rows[] = { false, true, false, true, true };
+	int tops = 0;
+
+	for ( int i = 0; i < 5; ++i )
+	{
+		if ( CursorAtTopRow( rows, 5, i ))
+			++tops;
+	}
+
+	EXPECT_EQ( 1, tops );
 }

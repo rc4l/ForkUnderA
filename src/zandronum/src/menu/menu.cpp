@@ -247,6 +247,17 @@ bool DMenu::MouseEvent(int type, int x, int y)
 
 //=============================================================================
 //
+// [rc4l] Menus opt IN to handing Up to the global tab bar. Silence means "I keep my arrows".
+//
+//=============================================================================
+
+bool DMenu::AtTopRow()
+{
+	return false;
+}
+
+//=============================================================================
+//
 //
 //
 //=============================================================================
@@ -990,6 +1001,21 @@ bool M_Responder (event_t *ev)
 					if (handled)
 						return true;
 				}
+				// [rc4l] Up off the top row of a menu is how the keyboard reaches the bar.
+				//
+				// Asked here rather than inside each menu's Up because the bar sits above ALL of
+				// them: putting the question in one place is what stops the answer drifting apart
+				// menu by menu, and a mod's own menu inherits the behaviour without knowing.
+				//
+				// It costs the wrap from the top row to the bottom one, which is the trade every
+				// game with a tab strip makes: there is now something above the first row, so Up
+				// goes to it.
+				else if (mkey == MKEY_Up && DMenu::CurrentMenu->AtTopRow())
+				{
+					zx::GlobalHeader_TakeFocus();
+					S_Sound(CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE);
+					return true;
+				}
 
 				DMenu::CurrentMenu->MenuEvent(mkey, fromcontroller);
 				return true;
@@ -1136,6 +1162,11 @@ void M_ClearMenus ()
 	D_SendPendingUserinfoChanges(); // [TP]
 	V_SetBorderNeedRefresh();
 	menuactive = MENU_Off;
+
+	// [rc4l] The bar does not keep the arrows across a closed menu. Escape has to land on the first
+	// row of the main menu every time, and a bar still holding focus from last time would swallow
+	// the arrows of a menu the player has only just opened.
+	zx::GlobalHeader_ReleaseFocus();
 
 	// [AK] If we're not in a menu, then we're obviously not in the server setup menu.
 	ServerSetupMenu = NULL;

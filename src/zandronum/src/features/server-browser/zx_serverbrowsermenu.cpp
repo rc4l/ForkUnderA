@@ -7632,6 +7632,19 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] Up off the browser's own top row goes to the global tab bar, exactly as it does from a
+	// stock menu. The browser's tab row IS its top row, so this is the one focus zone that answers
+	// yes; everything else in the browser has somewhere of its own to go up to.
+	//
+	// Dialog is deliberately not included. A modal that the arrows can walk out of is not modal.
+	//
+	bool AtTopRow( )
+	{
+		return ( g_Focus == zx::BrowserFocus::Tabs );
+	}
+
+	//*************************************************************************
+	//
 	bool MenuEvent( int mkey, bool fromcontroller )
 	{
 		const int total = static_cast<int>( g_SortedServers.Size( ));

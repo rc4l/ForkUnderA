@@ -63,4 +63,23 @@ int StepHeaderTab(int index, int count, int step)
 	return next;
 }
 
+bool CursorAtTopRow(const bool *selectable, int count, int selected)
+{
+	if (selectable == 0 || count <= 0 || selected < 0 || selected >= count)
+		return false;
+
+	// A cursor parked on something unreachable is not "at the top", whatever its index. It can
+	// happen: an entry greys itself out while the cursor is sitting on it.
+	if (!selectable[selected])
+		return false;
+
+	for (int i = 0; i < selected; ++i)
+	{
+		if (selectable[i])
+			return false;
+	}
+
+	return true;
+}
+
 } // namespace zx
