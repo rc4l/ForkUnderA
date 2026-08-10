@@ -757,6 +757,19 @@ LONG BROWSER_SecondsSinceRefresh( void )
 
 //*****************************************************************************
 //
+// [rc4l] The same answer in milliseconds, for the gate that decides whether REFRESH may be pressed
+// again. Seconds are what a player is told; a floor measured in them would be off by up to a second
+// in whichever direction happened to suit, which on a ten second floor is a tenth of the rule.
+LONG BROWSER_MSSinceRefresh( void )
+{
+	if ( g_ulLastRefreshMS == 0 )
+		return ( -1 );
+
+	return ( static_cast<LONG>( I_MSTime( ) - g_ulLastRefreshMS ));
+}
+
+//*****************************************************************************
+//
 void BROWSER_SetSelectedServer( LONG lServer )
 {
 	g_lSelectedServer = lServer;
@@ -932,6 +945,32 @@ void BROWSER_RefreshListedServers( void )
 		g_BrowserServerList[ulIdx].bRefreshing = true;
 		g_BrowserServerList[ulIdx].lRefreshMS = I_MSTime( );
 	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] See browser.h. One row, re-challenged on its own, without troubling the registry.
+//
+// g_ulLastRefreshMS is deliberately NOT stamped: that clock answers "how old is this LIST", and one
+// row having been asked a moment ago says nothing about the other forty. Stamping it here would let
+// a player keep the age line reading "just now" by poking a single server, and would spend the
+// whole-list floor on work that never went near the registry.
+void BROWSER_RecheckServer( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) ||
+		( g_BrowserServerList[ulServer].ulActiveState == AS_INACTIVE ))
+	{
+		return;
+	}
+
+	browser_QueryServer( ulServer );
+
+	g_BrowserServerList[ulServer].bRefreshing = true;
+	g_BrowserServerList[ulServer].lRefreshMS = I_MSTime( );
+
+	// The strikes start again. A player asking about this specific row is entitled to an answer
+	// about this specific row, not to inherit two misses from a sweep they may not have watched.
+	g_BrowserServerList[ulServer].lRecheckMisses = 0;
 }
 
 //*****************************************************************************
