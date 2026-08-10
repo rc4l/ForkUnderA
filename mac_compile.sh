@@ -5,7 +5,7 @@
 #
 # ZandroX macOS Build  (fork of Zandronum)
 #
-# Builds ZandroX from the Zandronum source tree and packages it as ZandroX.app.
+# Builds ZandroX from the Zandronum source tree and packages it as ForkUnderA.app.
 # macOS counterpart to build.ps1. Terminal-only, "run and go".
 #
 #   ./mac_compile.sh                 # native build with OpenAL audio (default)
@@ -79,7 +79,7 @@ SDL_PREFIX="$SCRIPT_ROOT/deps/sdl"          # install prefix for from-source SDL
 SDL_SRC="$SCRIPT_ROOT/deps/sdlsrc"          # scratch dir for SDL source trees
 
 # macOS .app bundle that build/ ships in addition to the loose binary.
-APP_NAME="ZandroX"
+APP_NAME="ForkUnderA"
 BUNDLE_ID="org.zandrox.zandrox"
 
 HOST_ARCH="$(uname -m)"                 # arm64 | x86_64

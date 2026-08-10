@@ -53,24 +53,24 @@ jobs:
       - name: Verify sound is linked
         run: |
           set -euo pipefail
-          bin=build/ZandroX.app/Contents/MacOS/zandronum
+          bin=build/ForkUnderA.app/Contents/MacOS/zandronum
           otool -L "$bin" | grep -q libopenal \
             || { echo "::error::$bin is not linked against libopenal — no sound"; exit 1; }
-          test -f build/ZandroX.app/Contents/MacOS/libopenal.1.dylib \
+          test -f build/ForkUnderA.app/Contents/MacOS/libopenal.1.dylib \
             || { echo "::error::libopenal is not bundled in the .app"; exit 1; }
           echo "sound OK"; otool -L "$bin" | grep -iE 'openal|sndfile|mpg123'
 
       # [rc4l] ditto preserves the bundle's permissions and symlinks; upload-artifact's own
       # zipping drops the executable bit and produces an .app macOS refuses to launch.
-      - name: Package ZandroX.app
+      - name: Package ForkUnderA.app
         run: |
           set -euo pipefail
           mkdir -p dist-macos
           ditto -c -k --sequesterRsrc --keepParent \
-            build/ZandroX.app "dist-macos/ForkUnderA-${{ inputs.version }}-macos-arm64.zip"
+            build/ForkUnderA.app "dist-macos/ForkUnderA-${{ inputs.version }}-macos-arm64.zip"
           ls -la dist-macos/
 
-      - name: Upload ZandroX.app
+      - name: Upload ForkUnderA.app
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
