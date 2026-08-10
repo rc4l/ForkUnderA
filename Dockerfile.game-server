@@ -48,7 +48,24 @@ RUN SERVERONLY=ON ./linux_compile.sh
 
 # [rc4l] Normalise the arch out of the staged directory name so the COPY below is a fixed path. The
 # alternative is a wildcard COPY, which silently succeeds with zero matches.
-RUN mkdir -p /stage && cp -r dist-linux/ForkUnderA-linux-*/. /stage/
+#
+# The BINARY name is discovered rather than assumed, and that is not defensiveness for its own sake:
+# ZDOOM_EXE_NAME is a cache variable with SERVERONLY appending "-server" to whatever it holds, so the
+# name is a build-system decision this file has no business restating. Encoding a guess produced a
+# green compile and an image with nothing to run. Pick the one ELF file in the payload and give it a
+# fixed name from here on, failing loudly on none or several.
+RUN mkdir -p /stage && cp -r dist-linux/ForkUnderA-linux-*/. /stage/ \
+    && found=""; count=0; \
+       for f in /stage/*; do \
+         [ -f "$f" ] || continue; \
+         case "$(head -c 4 "$f" | od -An -c | tr -d ' \n')" in \
+           '177ELF') found="$f"; count=$((count + 1)) ;; \
+         esac; \
+       done; \
+       echo "staged payload:"; ls -la /stage; \
+       [ "$count" -eq 1 ] || { echo "expected exactly one executable in the payload, found ${count}" >&2; exit 1; }; \
+       echo "server binary is $(basename "$found")"; \
+       [ "$found" = /stage/forkundera-server ] || mv "$found" /stage/forkundera-server
 
 # ---- runtime -------------------------------------------------------------------------------------
 FROM ubuntu:22.04
@@ -85,8 +102,8 @@ COPY scripts/game-server-entrypoint.sh /usr/local/bin/game-server-entrypoint
 # discovering a missing .so when a host runs it. ldd prints "not found" and still exits 0, so the
 # grep is the test.
 RUN chmod +x /usr/local/bin/game-server-entrypoint \
-    && ldd /opt/forkundera/zandronum-server \
-    && ! ldd /opt/forkundera/zandronum-server | grep -q "not found"
+    && ldd /opt/forkundera/forkundera-server \
+    && ! ldd /opt/forkundera/forkundera-server | grep -q "not found"
 
 # [rc4l] /data holds the WAD store and any catalogue entries the operator adds. Content-addressed, so
 # several containers can share one volume and a mod downloaded for one server is instantly present for
