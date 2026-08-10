@@ -48,8 +48,30 @@ struct HeaderMetrics
 	int labelPad;  // padding either side of a label inside its own pill
 	int menuGap;   // clear air between the bar's bottom edge and whatever the menu draws first
 
+	// The focus orb, which is drawn OUTSIDE the pill it marks: `glowInset` left of the pill's edge,
+	// and `glowRadius` across from there. Both live here so the padding either side of a pill can be
+	// checked against the thing that has to fit in it, rather than being a number that looked about
+	// right until the orb went half off the screen.
+	int glowInset;
+	int glowRadius;
+
+	// How wide the bar is, in the caller's own space, so the row of tabs can be centred on it. Left
+	// at zero the row starts at leftPad instead, which is what a caller that has not said gets.
+	int barW;
+
+	// [rc4l] THE DIAL. How big the whole bar is drawn, as a percentage: 100 is one bar unit per half
+	// a stock menu unit, 125 is a quarter larger again.
+	//
+	// It is a zoom on the SPACE rather than a multiplier on the sizes, which is the only version that
+	// works. Growing the numbers here would grow the pills and leave the labels, the orb and the
+	// corner radii at their old size inside them; zooming the space carries all of it together, and
+	// the one thing that must not move with it -- how far the menus below are pushed down -- is
+	// derived from this same number in MenuClearanceY.
+	int zoomPercent;
+
 	HeaderMetrics()
-		: barH(0), tabTop(0), tabH(0), leftPad(0), gap(0), labelPad(0), menuGap(0) {}
+		: barH(0), tabTop(0), tabH(0), leftPad(0), gap(0), labelPad(0), menuGap(0),
+		  glowInset(0), glowRadius(0), barW(0), zoomPercent(100) {}
 };
 
 // The shipped numbers, in the 640x400 virtual space the server browser already draws in. That space
@@ -75,6 +97,12 @@ struct HeaderRect
 	HeaderRect() : x(0), y(0), w(0), h(0) {}
 	HeaderRect(int rx, int ry, int rw, int rh) : x(rx), y(ry), w(rw), h(rh) {}
 };
+
+// How wide the whole row of tabs is, and where it starts. Exposed because the drawing, the mouse and
+// the tests all have to agree on where the row begins, and a row that is centred has no fixed left
+// edge to hardcode.
+int HeaderRowWidth(const HeaderMetrics &m, const int *labelWidths, int count);
+int HeaderRowLeft(const HeaderMetrics &m, const int *labelWidths, int count);
 
 // Where tab `index` sits, given the measured width of every label. An index outside the range
 // answers an empty rect rather than reading past the array, because the caller that got the index

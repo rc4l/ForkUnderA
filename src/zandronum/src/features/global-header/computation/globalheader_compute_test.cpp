@@ -4,10 +4,14 @@
 #include "gtest/gtest.h"
 #include "features/global-header/computation/globalheader_compute.h"
 
+#include <stdlib.h>
+
 using zx::DefaultHeaderMetrics;
 using zx::HeaderBarContains;
 using zx::HeaderMetrics;
 using zx::HeaderRect;
+using zx::HeaderRowLeft;
+using zx::HeaderRowWidth;
 using zx::HeaderTabAtPoint;
 using zx::HeaderTabRect;
 using zx::MenuClearanceY;
@@ -37,6 +41,100 @@ TEST( GlobalHeader, TheBarIsTallerThanThePillsItHolds )
 	EXPECT_LE( m.tabTop + m.tabH, m.barH );
 }
 
+TEST( GlobalHeader, TheRowCentresOnTheBarOnceTheBarHasSaidHowWideItIs )
+{
+	HeaderMetrics m = DefaultHeaderMetrics( );
+	m.barW = 1000;
+
+	const int rowW = HeaderRowWidth( m, kWidths, kCount );
+	const int left = HeaderRowLeft( m, kWidths, kCount );
+
+	// Equal air either side, to within the pixel an odd remainder costs.
+	EXPECT_LE( abs(( m.barW - ( left + rowW )) - left ), 1 );
+}
+
+TEST( GlobalHeader, ARowTooWideToCentreCrowdsTheMiddleRatherThanItsOwnOrb )
+{
+	// leftPad is not spare margin, it is the room the first tab's orb needs. A bar too narrow to
+	// centre in must still not push its own marker off the screen.
+	HeaderMetrics m = DefaultHeaderMetrics( );
+	m.barW = 10;
+
+	EXPECT_EQ( m.leftPad, HeaderRowLeft( m, kWidths, kCount ));
+}
+
+TEST( GlobalHeader, ABarThatNeverSaidHowWideItIsGetsTheLeftEdge )
+{
+	// Zero is a caller that has not opted in. Centring on a width of nothing would put the row at a
+	// negative x, which is a worse answer than the one it replaced.
+	HeaderMetrics m = DefaultHeaderMetrics( );
+	m.barW = 0;
+
+	EXPECT_EQ( m.leftPad, HeaderRowLeft( m, kWidths, kCount ));
+}
+
+TEST( GlobalHeader, TheRowIsAsWideAsThePillsAndTheGapsBetweenThem )
+{
+	const HeaderMetrics m = DefaultHeaderMetrics( );
+
+	int expected = 0;
+	for ( int i = 0; i < kCount; ++i )
+	{
+		expected += kWidths[i] + 2 * m.labelPad;
+		if ( i > 0 )
+			expected += m.gap;
+	}
+
+	EXPECT_EQ( expected, HeaderRowWidth( m, kWidths, kCount ));
+
+	// And it agrees with the rects: the last pill's right edge is the row's.
+	HeaderMetrics wide = m;
+	wide.barW = 1000;
+	const HeaderRect last = HeaderTabRect( wide, kWidths, kCount, kCount - 1 );
+	EXPECT_EQ( HeaderRowLeft( wide, kWidths, kCount ) + expected, last.x + last.w );
+}
+
+TEST( GlobalHeader, TheFirstTabsFocusOrbFitsOnTheScreen )
+{
+	// The bug: the orb hangs to the LEFT of the pill it marks, and the lead-in was smaller than the
+	// orb, so the marker on the first tab was drawn half off the side of the screen. Nothing else on
+	// the bar could show this, because only the first tab has the screen edge for a neighbour.
+	const HeaderMetrics m = DefaultHeaderMetrics( );
+
+	EXPECT_GE( m.leftPad - m.glowInset, m.glowRadius );
+}
+
+TEST( GlobalHeader, TheGapBetweenTabsHoldsAnOrbWithoutLandingOnTheOneBefore )
+{
+	// Same arithmetic, one neighbour along. An orb that overflows the gap points at the previous tab,
+	// which is worse than being clipped: it is legible and wrong.
+	const HeaderMetrics m = DefaultHeaderMetrics( );
+
+	EXPECT_GE( m.gap - m.glowInset, m.glowRadius );
+}
+
+TEST( GlobalHeader, EveryTabsOrbClearsTheOneBeforeIt )
+{
+	// Swept over the real layout rather than asserted on the gap alone, because the pills are sized
+	// to their labels: the spacing that matters is the one the rects actually end up with.
+	const HeaderMetrics m = DefaultHeaderMetrics( );
+
+	for ( int i = 0; i < kCount; ++i )
+	{
+		const HeaderRect r = HeaderTabRect( m, kWidths, kCount, i );
+		const int orbLeft = r.x - m.glowInset - m.glowRadius;
+
+		if ( i == 0 )
+		{
+			EXPECT_GE( orbLeft, 0 ) << "tab " << i;
+			continue;
+		}
+
+		const HeaderRect prev = HeaderTabRect( m, kWidths, kCount, i - 1 );
+		EXPECT_GE( orbLeft, prev.x + prev.w ) << "tab " << i;
+	}
+}
+
 TEST( GlobalHeader, EveryMenuIsPushedClearOfTheBarRatherThanUpAgainstIt )
 {
 	// The bug this is here to stop: the clearance was the bar height exactly, so the OPTIONS title
@@ -49,15 +147,45 @@ TEST( GlobalHeader, EveryMenuIsPushedClearOfTheBarRatherThanUpAgainstIt )
 
 TEST( GlobalHeader, TheClearanceAlwaysCoversTheBarWhateverTheBarBecomes )
 {
-	// Swept, because the whole point of deriving it is that the bar is going to change. Half of the
-	// bar's own height in the menus' space is the floor; anything less is a bar drawn over a menu.
-	for ( int barH = 0; barH <= 200; ++barH )
+	// Swept over both dials, because the whole point of deriving it is that they are going to move.
+	// The bar's height in the menus' own units is barH * zoom / 200; anything less than that is a bar
+	// drawn over a menu, which is the failure this exists to make impossible.
+	for ( int zoom = 25; zoom <= 300; zoom += 25 )
 	{
-		HeaderMetrics m = DefaultHeaderMetrics( );
-		m.barH = barH;
+		for ( int barH = 0; barH <= 200; ++barH )
+		{
+			HeaderMetrics m = DefaultHeaderMetrics( );
+			m.barH = barH;
+			m.zoomPercent = zoom;
 
-		EXPECT_GE( MenuClearanceY( m ) * 2, barH ) << "barH " << barH;
+			EXPECT_GE( MenuClearanceY( m ) * 200, barH * zoom )
+				<< "barH " << barH << " zoom " << zoom;
+		}
 	}
+}
+
+TEST( GlobalHeader, TurningTheDialUpMovesTheMenusFurtherDown )
+{
+	// The dial has to reach the clearance, or a bigger bar would be drawn over menus that stayed put.
+	HeaderMetrics small = DefaultHeaderMetrics( );
+	small.zoomPercent = 100;
+
+	HeaderMetrics big = DefaultHeaderMetrics( );
+	big.zoomPercent = 150;
+
+	EXPECT_GT( MenuClearanceY( big ), MenuClearanceY( small ));
+}
+
+TEST( GlobalHeader, ADialOfNothingIsReadAsNoZoomRatherThanAsZeroSize )
+{
+	// Zero would otherwise collapse the clearance to nothing and put the bar straight over the menu.
+	HeaderMetrics none = DefaultHeaderMetrics( );
+	none.zoomPercent = 0;
+
+	HeaderMetrics plain = DefaultHeaderMetrics( );
+	plain.zoomPercent = 100;
+
+	EXPECT_EQ( MenuClearanceY( plain ), MenuClearanceY( none ));
 }
 
 TEST( GlobalHeader, NoGapConfiguredStillClearsTheBar )
