@@ -194,8 +194,8 @@ $BuildExit = $LASTEXITCODE
 $ErrorActionPreference = $PrevEAP
 if ($BuildExit -ne 0) { throw "cmake build failed" }
 
-$exe = Join-Path $BuildDir "$Configuration\zandronum.exe"
-if (-not (Test-Path $exe)) { throw "zandronum.exe missing — the build failed" }
+$exe = Join-Path $BuildDir "$Configuration\forkundera.exe"
+if (-not (Test-Path $exe)) { throw "forkundera.exe missing — the build failed" }
 Write-Status "Compiled: $exe"
 
 if ($NoPackage) { Write-Status "Done (compile only; -NoPackage)"; return }
@@ -204,7 +204,7 @@ if ($NoPackage) { Write-Status "Done (compile only; -NoPackage)"; return }
 Write-Status "Packaging dist-windows/"
 $out = Join-Path $BuildDir $Configuration
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
-Copy-Item "$out\zandronum.exe" $DistDir\
+Copy-Item "$out\forkundera.exe" $DistDir\
 Copy-Item "$out\*.pk3" $DistDir\ -ErrorAction SilentlyContinue
 
 if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
