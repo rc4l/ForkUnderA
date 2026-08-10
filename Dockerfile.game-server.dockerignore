@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Build context for Dockerfile.game-server. BuildKit reads <dockerfile>.dockerignore in
+# preference to the root .dockerignore, which excludes everything (that one serves
+# Dockerfile.linux-build, whose image is a toolchain with the source mounted at runtime).
+#
+# Allowlist rather than denylist, same as Dockerfile.registry.dockerignore. This one has to admit far
+# more, because it compiles the whole engine rather than eight files, but the shape is the same: start
+# from nothing and name what the build actually reads.
+*
+
+!src
+!catalogue
+!config
+!tools
+!scripts/game-server-entrypoint.sh
+!linux_compile.sh
+!LICENSE.txt
+!THIRD-PARTY-NOTICES.txt
+!README.md
+
+# [rc4l] .git is admitted so the engine's revision_check target can stamp a real revision into
+# gitinfo.h. This is not cosmetic here: the registry records iServerRevision from every announce and
+# refuses to list servers reporting certain builds, so a server built without a repository is one
+# whose identity the registry cannot read.
+!.git
+
+# [rc4l] Re-excluded from the directories admitted above. tools/ is admitted for tools/freedoom (the
+# shipped IWAD) and tools/gen-wadlists.cmake (read during configure); nothing else in it runs at build
+# time, and tools/mcp-bridge in particular is a development harness.
+tools/mcp-bridge
+tools/data
+**/__pycache__
+
+# Build output that would otherwise ride along inside src/ from a local compile.
+**/build-linux
+**/build-win
+**/build-tests
