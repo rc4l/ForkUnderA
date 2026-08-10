@@ -1190,13 +1190,6 @@ void M_Drawer (void)
 void M_ClearMenus ()
 {
 	M_DemoNoPlay = false;
-
-	// [rc4l] Asked BEFORE the teardown, while there is still a menu to ask about: which section the
-	// player was in when they left, so the next Escape puts them back there instead of at the main
-	// menu. Leaving a screen is not the same as choosing a different one, and being returned
-	// somewhere else is a second thing to undo before you are where you already were.
-	zx::GlobalHeader_NoteMenusClosing();
-
 	if (DMenu::CurrentMenu != NULL)
 	{
 		DMenu::CurrentMenu->Destroy();
