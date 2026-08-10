@@ -1016,9 +1016,23 @@ static void browser_MirrorAnswerOntoOurOtherRows( LONG lAnswered )
 		const NETADDRESS_s keepAddress = g_BrowserServerList[ulIdx].Address;
 		const bool keepLAN = g_BrowserServerList[ulIdx].bLAN;
 
+		// [rc4l] And the row's own re-check bookkeeping, which is what keeps it MORTAL.
+		//
+		// Copying the answered row's copy of these brought bRefreshing=false with it, and
+		// BROWSER_QueryTick only ever expires a row that is refreshing or still waiting. So every
+		// row this function touched became permanently active: never re-checked, never removable,
+		// still listed long after the server behind it had gone. Changing the host port was enough
+		// to strand a pair of them, because the old rows stopped matching "ours" and nothing else
+		// could reach them. Keeping the row's own deadline means it stays visible while our server
+		// keeps answering, and ages out on the ordinary four second timeout once it stops.
+		const bool keepRefreshing = g_BrowserServerList[ulIdx].bRefreshing;
+		const LONG keepRefreshMS = g_BrowserServerList[ulIdx].lRefreshMS;
+
 		g_BrowserServerList[ulIdx] = g_BrowserServerList[lAnswered];
 		g_BrowserServerList[ulIdx].Address = keepAddress;
 		g_BrowserServerList[ulIdx].bLAN = keepLAN;
+		g_BrowserServerList[ulIdx].bRefreshing = keepRefreshing;
+		g_BrowserServerList[ulIdx].lRefreshMS = keepRefreshMS;
 		g_BrowserServerList[ulIdx].ulActiveState = AS_ACTIVE;
 
 		// Re-derived rather than kept, so a row that has never been placed still gets its flag: the
