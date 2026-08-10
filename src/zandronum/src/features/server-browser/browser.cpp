@@ -53,6 +53,7 @@
 #include "features/server-browser/computation/launcherfields_compute.h"
 #include "features/server-browser/computation/registrystatus_compute.h"
 #include "features/server-browser/computation/querypunch_compute.h"   // [rc4l] punch-on-query schedule
+#include "features/server-browser/computation/rowlifetime_compute.h"  // [rc4l] what keeps a row mortal
 #include "features/server-hosting/zx_punchclient.h"                   // [rc4l] PunchRequestFor
 #include "features/launcher-protocol/computation/segmentreassembly_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] which rows are the server WE started
@@ -663,6 +664,12 @@ ULONG BROWSER_GetActiveState( ULONG ulServer )
 // two expiries racing on one row is how a row disappears mid-punch.
 static void browser_TryPunchOnQuery( ULONG ulIdx, int msSinceFirstChallenge, bool bMayTimeOut )
 {
+	// Both kinds of waiting reach the ladder. RowIsAwaitingReply exists so this cannot quietly go
+	// back to remembering one of them, which is how a carrier-NAT server got dropped in silence.
+	if ( zx::RowIsAwaitingReply( g_BrowserServerList[ulIdx].bRefreshing,
+			g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY ) == false )
+		return;
+
 	const bool bEligible = ( g_BrowserServerList[ulIdx].bLAN == false )
 		&& ( g_BrowserServerList[ulIdx].bPunchRequested
 			|| ( g_lPunchesThisSweep < kMaxPunchesPerSweep ));
@@ -1083,7 +1090,8 @@ static void browser_MirrorAnswerOntoOurOtherRows( LONG lAnswered )
 		// to strand a pair of them, because the old rows stopped matching "ours" and nothing else
 		// could reach them. Keeping the row's own deadline means it stays visible while our server
 		// keeps answering, and ages out on the ordinary four second timeout once it stops.
-		const bool keepRefreshing = g_BrowserServerList[ulIdx].bRefreshing;
+		const bool keepRefreshing = zx::RefreshingAfterMirror(
+			g_BrowserServerList[ulIdx].bRefreshing, g_BrowserServerList[lAnswered].bRefreshing );
 		const LONG keepRefreshMS = g_BrowserServerList[ulIdx].lRefreshMS;
 
 		g_BrowserServerList[ulIdx] = g_BrowserServerList[lAnswered];
