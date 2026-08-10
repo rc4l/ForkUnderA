@@ -2285,8 +2285,17 @@ public:
 			// [rc4l] White whether selected or not. CR_UNTRANSLATED is the font's own colour, which for
 			// SmallFont is Doom red -- so every unselected server read as a warning about itself, and
 			// the highlight had to carry the selection on its own anyway.
+			//
+			// GREEN for the server you are actually on, the same green the hosting catalogue uses for
+			// the experience it is running. One colour, one meaning across the whole browser: this is
+			// the live one.
+			//
+			// It beats selection deliberately. Selection already has a highlight bar to say what it
+			// is, and it moves every time an arrow key is pressed; being connected does not. The
+			// catalogue learned this the hard way -- a running row went gold while hovered, so the one
+			// state worth marking vanished exactly when you pointed at it.
 			const FString name = serverbrowser_FitName( BROWSER_GetHostName( lServer ), SB_NAME_MAX_WIDTH );
-			screen->DrawText( SmallFont, CR_WHITE,
+			screen->DrawText( SmallFont, RowIsTheServerWeAreOn( lServer ) ? CR_GREEN : CR_WHITE,
 				SB_COL_NAME, ty, name, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 			// Humans only -- a row reading 8/8 for seven bots and one person is a lie the player
@@ -5428,6 +5437,27 @@ public:
 
 	// Whether a row in the list is the server WE are running. See RowIsOwnServer for why the address
 	// on the row is not enough on its own.
+	// [rc4l] Is this row the server we are PLAYING ON right now? Drives the green name.
+	//
+	// Two ways to be, and the second is the one a plain address compare misses. Somebody else's
+	// server matches on the address we are connected to. Our OWN server does not: we join it on
+	// 127.0.0.1 while the browser knows it by its LAN address and its public one, so the row we are
+	// sitting in never equals the address in hand -- the same trap that made JOIN offer to stop our
+	// own server in order to travel to it.
+	bool RowIsTheServerWeAreOn( int lServer )
+	{
+		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+			return false;
+
+		const NETADDRESS_s connected = CLIENT_GetServerAddress( );
+
+		if ( BROWSER_GetAddress( lServer ).Compare( connected ))
+			return true;
+
+		// Our own server, reached through the loopback address that no row carries.
+		return zx::HostOwnsAddress( FString( connected.ToString( ))) && RowIsOurOwnServer( lServer );
+	}
+
 	bool RowIsOurOwnServer( int lServer )
 	{
 		const NETADDRESS_s address = BROWSER_GetAddress( lServer );
