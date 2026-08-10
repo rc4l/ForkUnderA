@@ -1982,10 +1982,33 @@ bool S_GetSoundPaused (void)
 //
 //==========================================================================
 
+// [rc4l] Freezing the game and silencing it are separate questions, split in
+// uzdoom@12ed24d066a819a128a54e2359fd0e2d48f641fe; the sound half is
+// uzdoom@000037dbf69c2c1580f3c9bb8a9771bf18bc7ae8.
+CVAR (Bool, i_soundinbackground, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR (Bool, i_pauseinbackground, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+
+// [rc4l] Upstream's `pauseext`, computed rather than stored: the commit defining it,
+// uzdoom@16e0f79fd7c31ab5a3b942c2899adaa2827e7fe3, only gates the P2P transport we replaced, so the
+// mark stays in `paused` as a negative value.
+static bool sound_BackgroundPauseWanted( int state )
+{
+	// [BB] !netgame -> (NETWORK_GetState( ) == NETSTATE_SINGLE)
+	return ( state == 0 ) && ( NETWORK_GetState( ) == NETSTATE_SINGLE ) && i_pauseinbackground
+#ifdef _DEBUG
+		&& !demoplayback
+#endif
+		;
+}
+
 void S_SetSoundPaused (int state)
 {
-	if (state)
+	const bool bBackgroundPause = sound_BackgroundPauseWanted( state );
+
+	if ((state || i_soundinbackground) && !bBackgroundPause)
 	{
+		// [rc4l] `<= 0` because our mark is the negative value; a positive `paused` still fails it,
+		// which is uzdoom@d789676b26da43d1a67acdaadb498c6e79e52241.
 		if (paused <= 0)
 		{
 			S_ResumeSound(true);
@@ -2011,16 +2034,14 @@ void S_SetSoundPaused (int state)
 			S_PauseSound(false, true);
 			if (GSnd !=  NULL)
 			{
-				GSnd->SetInactive(gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL ?
+				// [rc4l] Stop the device outright only when the game is genuinely frozen, or a
+				// running world bursts on return: uzdoom@16838bfa660f0ecc6a35c807166279171d730602.
+				GSnd->SetInactive(bBackgroundPause && (gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL) ?
 					SoundRenderer::INACTIVE_Complete :
 					SoundRenderer::INACTIVE_Mute);
 			}
-			// [BB] !netgame -> (NETWORK_GetState( ) == NETSTATE_SINGLE)
-			if ((NETWORK_GetState( ) == NETSTATE_SINGLE)
-#ifdef _DEBUG
-				&& !demoplayback
-#endif
-				)
+			// The mark goes last, or it would fail the guard above and skip the work it marks.
+			if (bBackgroundPause)
 			{
 				paused = -1;
 			}
