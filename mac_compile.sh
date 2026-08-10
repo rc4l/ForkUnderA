@@ -80,7 +80,7 @@ SDL_SRC="$SCRIPT_ROOT/deps/sdlsrc"          # scratch dir for SDL source trees
 
 # macOS .app bundle that build/ ships in addition to the loose binary.
 APP_NAME="ForkUnderA"
-BUNDLE_ID="org.zandrox.zandrox"
+BUNDLE_ID="org.forkundera.forkundera"
 
 HOST_ARCH="$(uname -m)"                 # arm64 | x86_64
 WANT_SOUND="${SOUND:-1}"                # 1 = OpenAL audio (default), 0 = no audio

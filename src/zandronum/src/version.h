@@ -177,7 +177,10 @@ int GetRevisionNumber();
 #define DYNLIGHT
 
 // This is so that derivates can use the same savegame versions without worrying about engine compatibility
-#define GAMESIG "ZANDRONUM"
+// [rc4l] Ours now. It is the engine string inside savegames (GetEngineString, g_game.cpp), so saves
+// written by a build that still said ZANDRONUM will not load. Taken deliberately as part of the
+// rebrand: this is a new foundation, not a Zandronum install with a different label.
+#define GAMESIG "FORKUNDERA"
 // [rc4l] The engine data pk3, named with this build's release key by src/zandronum/CMakeLists.txt so
 // a stale one is not found rather than silently loaded. The fallback only exists for builds that
 // bypass our CMake entirely.
@@ -190,16 +193,18 @@ int GetRevisionNumber();
 // version line, the window/taskbar title -- reads this one macro, so a rebrand is a one-line edit
 // here rather than a hunt through the tree.
 //
-// Deliberately NOT reusing GAMESIG / GAMENAME / GAMENAMELOWERCASE for this. Those look like display
-// names but are load-bearing compatibility values: GAMENAMELOWERCASE is the config FILENAME
-// (m_specialpaths.cpp) so changing it silently orphans everyone's settings, and GAMESIG identifies
-// the engine inside savegames via GetEngineString() (g_game.cpp) so changing it invalidates saves.
-// Renaming the product must not do either of those things.
+// Still separate from GAMESIG / GAMENAME / GAMENAMELOWERCASE, which are not display names however
+// much they read like them: GAMENAMELOWERCASE is the config FILENAME (m_specialpaths.cpp) and
+// GAMESIG is the engine string inside savegames (GetEngineString, g_game.cpp). All three have now
+// been moved to ForkUnderA anyway, which orphans existing settings and saves. That was a deliberate
+// call, not a side effect: one clean break at the rebrand rather than carrying the old name forever.
+// The separation stays because they answer different questions, and the next rename should not have
+// to be a break as well.
 #define FUA_NAME "Fua"
 
 // More stuff that needs to be different for derivatives.
-#define GAMENAME "Zandronum"
-#define GAMENAMELOWERCASE "zandronum"
+#define GAMENAME "ForkUnderA"
+#define GAMENAMELOWERCASE "forkundera"
 #define DOMAIN_NAME "zandronum.com"
 #define FORUM_URL "https://" DOMAIN_NAME "/forum/"
 #define BUGS_FORUM_URL	"https://" DOMAIN_NAME "/tracker/"
