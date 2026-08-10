@@ -123,6 +123,10 @@
 #include "cl_statistics.h"
 #include "maprotation.h"
 #include "features/server-browser/browser.h"
+#include "features/core-pk3/computation/corepk3_compute.h" // [rc4l] which fua_core_*.pk3 is ours
+
+#include <string>
+#include <vector>
 #include "p_spec.h"
 #include "joinqueue.h"
 #include "lastmanstanding.h"
@@ -2116,6 +2120,47 @@ void D_AddSubdirectory (const char *Subdirectory)
 //
 //==========================================================================
 
+//==========================================================================
+//
+// [rc4l] Which fua_core_*.pk3 are actually sitting next to the exe.
+//
+// Only ever called on the failure path, so the scan costs nothing in the normal case.
+//
+//==========================================================================
+
+static FString d_FuaDescribeFoundCores( void )
+{
+	// The scan is ours because it is I/O; which names count and what to say about them belong to
+	// features/core-pk3/computation, where both are asserted.
+	std::vector<std::string> found;
+	findstate_t fileinfo;
+	void *handle;
+
+	FString pattern = progdir;
+	if (( pattern.Len( ) > 0 ) && ( pattern[pattern.Len( ) - 1] != '/' ))
+		pattern += '/';
+	pattern += "*.pk3";
+
+	if (( handle = I_FindFirst( pattern.GetChars( ), &fileinfo )) != ((void *)-1))
+	{
+		do
+		{
+			if (( I_FindAttr( &fileinfo ) & FA_DIREC ) != 0 )
+				continue;
+
+			const std::string name = I_FindName( &fileinfo );
+			if ( zx::IsCorePk3Name( name ))
+				found.push_back( name );
+		}
+		while ( I_FindNext( handle, &fileinfo ) == 0 );
+		I_FindClose( handle );
+	}
+
+	return FString( zx::DescribeFoundCores( BASEWAD, found ).c_str( ));
+}
+
+//==========================================================================
+
 static const char *BaseFileSearch (const char *file, const char *ext, bool lookfirstinprogdir)
 {
 	static char wad[PATH_MAX];
@@ -2830,7 +2875,10 @@ void D_DoomMain (void)
 	wad = BaseFileSearch (BASEWAD, NULL, true);
 	if (wad == NULL)
 	{
-		I_FatalError ("Cannot find " BASEWAD);
+		// [rc4l] Name the cores we DID find. The pk3 carries this build's release key, so the usual
+		// cause of getting here is a mismatched pair, and saying which ones are present turns that
+		// from a dead end into a diagnosis.
+		I_FatalError ("Cannot find %s.\n%s", BASEWAD, d_FuaDescribeFoundCores( ).GetChars( ));
 	}
 	FString basewad = wad;
 
