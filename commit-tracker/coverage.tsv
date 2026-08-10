@@ -2082,7 +2082,7 @@ f4a60f29f354e18d73f61dd53ca9eeee86a13d8e	2015-11-30T08:21:45Z	- added missing sc
 41f91148a104d5afda61dddad773ea62b54b51a3	2015-12-02T08:31:27Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 81f521fe562bd5e562ce08bf2dce33007dd6d9c6	2015-12-02T21:31:27Z	- fixed: Texture precaching from MAPINFO was broken	pending		/
 455d8d9730c5cc3bbfa4b8d7f8fab3fca600a377	2015-12-02T21:33:10Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-f90ce1308e0764ea8c8b3c9f3ca700942b592062	2015-12-03T03:40:47Z	Fix lost focus loosing network data	pending		/
+f90ce1308e0764ea8c8b3c9f3ca700942b592062	2015-12-03T03:40:47Z	Fix lost focus loosing network data	skip	skip: gates NetUpdate/G_Ticker and the delay counters on pauseext, all inside upstream's P2P tic transport (maketic/ticdup/BACKUPTICS) that Zandronum replaced with its client/server model. Same reason as 16e0f79fd, ad33afb8c and cbb066f1f; the background pause it feeds is ours via the negative paused value, see 74544df	/
 542a1089145f426ac6a5af74961ec3d98ec036dc	2015-12-04T23:26:39Z	3D floor support for check switch range	pending		/
 d8cacbb8bbc798185111ed12794b0871ec3c41a9	2015-12-05T08:17:35Z	Merge pull request #436 from Gaerzi/master	pending		/
 ad0e71942d15dc79f81e9c3d48ea78a9d8e89534	2015-12-06T08:59:02Z	- added GetAspectRatio function to ACS. - added a sixth parameter for SetHUDClipRect so that the forced aspect ratio fudging this function performs can be disabled.	pending		/
