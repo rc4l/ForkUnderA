@@ -106,10 +106,16 @@ fi
 
 # --- Package ---------------------------------------------------------------
 ARCH="$(uname -m)"
+
+# [rc4l] The serveronly tarball must not be named like the client one. Both land in dist-linux/, and
+# CI now builds both in the same job, so a shared name meant the second silently overwrote the first
+# and the release carried one binary under a name promising the other.
+if [ "$SERVERONLY" = "ON" ]; then KIND="-server"; else KIND=""; fi
+
 if [ -n "$VERSION" ]; then
-  NAME="ForkUnderA-$VERSION-linux-$ARCH"
+  NAME="ForkUnderA-$VERSION-linux-$ARCH$KIND"
 else
-  NAME="ForkUnderA-linux-$ARCH"
+  NAME="ForkUnderA-linux-$ARCH$KIND"
 fi
 STAGE="dist-linux/$NAME"
 rm -rf "$STAGE"; mkdir -p "$STAGE"
