@@ -598,6 +598,18 @@ void GlobalHeader_NoteMenusClosing( )
 
 bool GlobalHeader_ResumeBrowser( )
 {
+	// NOT consumed here. M_StartControlPanel is called from three dozen places, and a flag that
+	// clears itself on being read would be spent by whichever of them ran first, leaving the Escape
+	// that actually asked to land on the main menu. It is cleared by the next close instead, which is
+	// the event that genuinely makes it untrue.
+	//
+	// Refused outright once the player is in a game, which is the case that made this look like a
+	// trapdoor: Escape there means the in-game menu, the one thing on screen that can get them out
+	// again, and offering a list of servers to join to somebody already on one answers a question
+	// nobody asked. Join Game and every other menu that is not ours are left exactly as they were.
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+		return false;
+
 	return g_ResumeBrowser;
 }
 
