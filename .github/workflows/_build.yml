@@ -148,7 +148,7 @@ jobs:
       # pull request and surfaces only when somebody builds a server image.
       #
       # LAST, AND THE ORDER IS LOAD-BEARING. It reconfigures build-linux/ with SERVERONLY=ON, which
-      # renames the target and leaves the client's zandronum.debug stale in a directory that no longer
+      # renames the target and leaves the client's forkundera.debug stale in a directory that no longer
       # builds it. Running before the symbols steps would have them zip whatever happened to survive
       # the reconfigure, which is the kind of failure that produces an uploaded artifact rather than
       # an error.
