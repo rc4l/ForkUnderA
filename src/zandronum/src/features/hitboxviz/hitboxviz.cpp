@@ -199,7 +199,14 @@ namespace
 				outer.radius, marker));
 		}
 	}
-}
+
+// [rc4l] Closed here rather than at the end of Draw(), because the brace below ends the anonymous
+// namespace and a guard that swallowed it left the file with no closing brace at all under NO_GL.
+#endif // NO_GL
+
+}	// anonymous namespace
+
+#ifndef NO_GL
 
 void BeginFrame()
 {
