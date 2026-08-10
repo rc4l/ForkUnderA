@@ -175,29 +175,42 @@ jobs:
             -v "$PWD/smoke:/data" \
             "${{ steps.meta.outputs.primary }}" citest
           sleep 20
-          docker logs fua-smoke
+
+          # [rc4l] Captured to a FILE and grepped from there, never piped into grep -q. This step runs
+          # under `set -o pipefail`, and `grep -q` exits the moment it matches, which closes the pipe
+          # and kills `docker logs` with SIGPIPE (141) -- so pipefail reports the pipeline as failed
+          # precisely when the assertion SUCCEEDED. That cost a red build whose log plainly contained
+          # the line it claimed was missing.
+          docker logs fua-smoke > smoke.log 2>&1
+          cat smoke.log
 
           if [ "$(docker inspect -f '{{.State.Running}}' fua-smoke)" != "true" ]; then
             echo "::error::the server exited instead of staying up"
             exit 1
           fi
 
-          # [rc4l] Assert the entrypoint got as far as handing off, and that the engine reached its
-          # own tick loop. "exec:" alone would pass even if the binary died on its first instruction.
-          docker logs fua-smoke 2>&1 | grep -q '\[fua-entry\] exec:' \
+          # The entrypoint got as far as handing off to the engine.
+          grep -q '\[fua-entry\] exec:' smoke.log \
             || { echo "::error::entrypoint never built a command line"; exit 1; }
 
-          # [rc4l] The banner is the ENGINE's own output, so it proves the binary executed. An earlier
-          # version grepped for "freedoom", which the entrypoint prints itself when it resolves the
-          # iwad -- so it would have passed against a binary that never ran at all.
-          docker logs fua-smoke 2>&1 | grep -q 'ForkUnderA' \
+          # [rc4l] The engine's OWN output, proving the binary executed. An earlier version grepped for
+          # "freedoom", which the entrypoint prints itself while resolving the iwad, so it would have
+          # passed against a binary that never ran at all.
+          grep -q 'ForkUnderA' smoke.log \
             || { echo "::error::engine never printed its banner -- the binary did not start"; exit 1; }
+
+          # [rc4l] The three that prove it is actually SERVING rather than merely alive: a bound
+          # socket, a loaded map, and the TCP listener features/wad-serve opens beside it.
+          grep -q 'UDP Initialized' smoke.log \
+            || { echo "::error::network subsystem never came up"; exit 1; }
+          grep -q '\*\*\* map01' smoke.log \
+            || { echo "::error::no map loaded"; exit 1; }
+          grep -q 'WAD serving enabled on TCP port' smoke.log \
+            || { echo "::error::wad-serve did not open its TCP listener"; exit 1; }
 
           # [rc4l] Config creation happens after the banner and kills the process when it fails, which
           # is exactly how the HOME-on-the-volume bug presented: built fine, banner fine, dead.
-          # Written as an if rather than `grep && { exit 1; }`, because the latter's interaction with
-          # set -e when the grep finds nothing is the sort of thing nobody should have to remember.
-          if docker logs fua-smoke 2>&1 | grep -q 'Permission denied'; then
+          if grep -q 'Permission denied' smoke.log; then
             echo "::error::server hit a permission error during startup"
             exit 1
           fi
