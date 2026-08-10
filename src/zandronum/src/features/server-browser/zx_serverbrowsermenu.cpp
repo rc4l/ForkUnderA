@@ -608,6 +608,12 @@ static	bool			g_RefreshHot = false;
 #define SB_REFRESH_FLOOR_MS	10000
 static	bool			g_RefreshRefused = false;
 
+// [rc4l] The refresh tooltip, composed when it appears rather than every frame. See where it is
+// built: it counts in seconds, and a box that resizes under the pointer as the number grows a digit
+// is a box you cannot finish reading.
+static	FString			g_RefreshTip;
+static	bool			g_RefreshTipShown = false;
+
 
 // [rc4l] What the hosting form was left holding. Archived so a player who hosts the same game every
 // evening is not retyping it every evening; the password is deliberately absent, because one saved
@@ -6427,7 +6433,20 @@ public:
 		// nothing about whether it is current, and this is the one control whose whole job is that
 		// question -- so the answer belongs on it rather than being inferred from rows that may have
 		// been sitting there for an hour.
+		// [rc4l] Composed WHEN THE TOOLTIP APPEARS, then left alone until it appears again.
+		//
+		// It counts in seconds, and rebuilding it every frame meant the box resized under the pointer
+		// as "9 secs ago" became "10 secs ago", then again at 100. A tooltip is a thing you are in
+		// the middle of reading; text that reflows while you read it is worse than text that is a few
+		// seconds stale, and the cure for stale is to look again, which is exactly what rebuilds it.
+		if ( !g_RefreshHot )
 		{
+			g_RefreshTipShown = false;
+		}
+		else if ( !g_RefreshTipShown || g_RefreshTip.IsEmpty( ))
+		{
+			g_RefreshTipShown = true;
+
 			const LONG lAgo = BROWSER_SecondsSinceRefresh( );
 
 			FString tip;
@@ -6444,8 +6463,10 @@ public:
 			// the player who suspects ONE row is stale does not have to spend the whole-list floor.
 			tip << "\nRight-click a server to re-check just that one";
 
-			serverbrowser_Tip( SB_REFRESH_X, SB_REFRESH_Y, SB_REFRESH_W, SB_REFRESH_H, tip );
+			g_RefreshTip = tip;
 		}
+
+		serverbrowser_Tip( SB_REFRESH_X, SB_REFRESH_Y, SB_REFRESH_W, SB_REFRESH_H, g_RefreshTip );
 	}
 
 	//*************************************************************************

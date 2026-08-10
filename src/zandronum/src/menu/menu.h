@@ -968,7 +968,10 @@ void M_ClearMenus ();
 void M_ParseMenuDefs();
 void M_StartupSkillMenu(FGameStartup *gs);
 int M_GetDefaultSkill();
-void M_StartControlPanel (bool makeSound);
+// [rc4l] Answers whether it has ALREADY put the player somewhere: a join that finished while they
+// were in the game is waiting, and opening the menu is the gesture that collects it. Callers that
+// would otherwise follow with a menu of their own have to ask, or theirs lands on top of this one.
+bool M_StartControlPanel (bool makeSound);
 
 // [rc4l] Release every latched menu key. Call it when something takes the keyboard away from the
 // menu's own translation -- see the definition for what goes wrong otherwise.
