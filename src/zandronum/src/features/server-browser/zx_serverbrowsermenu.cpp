@@ -1481,8 +1481,21 @@ public:
 		// ever could, because the list is a snapshot of other people's machines. Joining already
 		// re-contacts the server and already fails when it cannot, so a stale row leads to the same
 		// place it always did rather than to a new kind of surprise.
-		BROWSER_RefreshListedServers( );
-		BROWSER_QueryServerRegistry( );
+		// [rc4l] ONLY THE FIRST TIME THIS SESSION. Opening the browser used to re-check every listed
+		// server, which meant the list was being challenged constantly for no reason the player
+		// asked for, and every sweep was another chance for a live server to miss a datagram and be
+		// treated as gone.
+		//
+		// The list is not more true for having been asked again ten seconds later. It is a snapshot
+		// of other people's machines either way, and joining re-contacts the server regardless. So
+		// the sweep happens once, when there is nothing to show yet, and after that it is the
+		// REFRESH button's job: the player says when, because only the player knows they have been
+		// away from the screen long enough to care.
+		if ( g_ListHasAnswered == false )
+		{
+			BROWSER_RefreshListedServers( );
+			BROWSER_QueryServerRegistry( );
+		}
 	}
 
 	// [rc4l] The browser can be torn down by machinery that never saw the question -- a console

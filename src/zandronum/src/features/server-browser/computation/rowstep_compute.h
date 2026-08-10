@@ -50,12 +50,24 @@ struct RowStepIn
 	int resends;            // how many extra challenges this row has already had
 	bool punchBudgetLeft;   // whether the sweep can afford another introduction
 
-	int refreshTimeoutMs;   // how long a re-check may go unanswered before the row goes
+	int refreshTimeoutMs;   // how long a re-check may go unanswered before it counts as a miss
+
+	// [rc4l] STRIKES, NOT ONE MISS. How many re-checks in a row this server has failed to answer,
+	// and how many it is allowed before the row goes.
+	//
+	// One unanswered re-check used to delete the row outright, and that is not what one unanswered
+	// re-check means. These are single UDP datagrams over the open internet: they are dropped for
+	// a moment of loss, a busy server, a NAT rebinding, a burst of traffic on the player's own
+	// line. A server that is up and joinable would vanish off the list and only come back on a
+	// manual refresh, which is precisely backwards, since the list is meant to be the thing you
+	// trust and the button the thing you press when you do not.
+	int recheckFailures;
+	int maxRecheckFailures;
 
 	RowStepIn()
 		: refreshing(false), waitingForReply(false), lan(false), punchRequested(false),
 		  msSinceQuery(0), msSinceRefresh(0), resends(0), punchBudgetLeft(false),
-		  refreshTimeoutMs(0) {}
+		  refreshTimeoutMs(0), recheckFailures(0), maxRecheckFailures(0) {}
 };
 
 // Everything the caller may do about it. All false is a legitimate answer and the common one.
@@ -63,11 +75,16 @@ struct RowStepOut
 {
 	bool requestPunch;      // ask the registry to have the server punch toward us
 	bool resendChallenge;   // send the query again, into the hole a punch may have opened
-	bool dropFromList;      // the re-check gave up: stop offering this row at all
+	bool dropFromList;      // the re-check gave up for good: stop offering this row at all
 	bool markTimedOut;      // the first query gave up: keep the row, say it never answered
 
+	// [rc4l] This re-check went unanswered. The row STAYS unless dropFromList says otherwise; the
+	// caller stops refreshing it and counts the miss.
+	bool recheckMissed;
+
 	RowStepOut()
-		: requestPunch(false), resendChallenge(false), dropFromList(false), markTimedOut(false) {}
+		: requestPunch(false), resendChallenge(false), dropFromList(false), markTimedOut(false),
+		  recheckMissed(false) {}
 };
 
 // [rc4l] The two give-up outcomes are deliberately different, and the difference is the honest one.

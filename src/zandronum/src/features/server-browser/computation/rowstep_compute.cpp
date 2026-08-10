@@ -31,9 +31,17 @@ RowStepOut StepRow(const RowStepIn &in)
 
 	// The re-check owns its own deadline, and it is the only thing that may end this row. Two
 	// expiries racing on one row is how a row disappears out from under a punch in progress.
+	//
+	// A miss is not a death. The row only goes once it has missed maxRecheckFailures in a row: one
+	// dropped datagram says nothing about whether the server is there, and deleting a joinable
+	// server off the list is a far worse answer than briefly showing one that has gone.
 	if (in.refreshing && (in.refreshTimeoutMs > 0) && (msSince >= in.refreshTimeoutMs))
 	{
-		out.dropFromList = true;
+		out.recheckMissed = true;
+
+		if ((in.maxRecheckFailures > 0) && ((in.recheckFailures + 1) >= in.maxRecheckFailures))
+			out.dropFromList = true;
+
 		return out;
 	}
 
