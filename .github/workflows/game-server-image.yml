@@ -164,6 +164,11 @@ jobs:
           }
           JSON
 
+          # [rc4l] The container runs as an unprivileged user that does not exist on this runner, so a
+          # bind mount it must write into (the WAD store) has to be opened up. A real deployment uses a
+          # named volume, which Docker creates with the image's ownership and where this does not arise.
+          chmod -R 777 smoke
+
           docker run -d --name fua-smoke \
             -e FUA_ANNOUNCE=0 \
             -e FUA_NAME="CI smoke test" \
@@ -181,8 +186,21 @@ jobs:
           # own tick loop. "exec:" alone would pass even if the binary died on its first instruction.
           docker logs fua-smoke 2>&1 | grep -q '\[fua-entry\] exec:' \
             || { echo "::error::entrypoint never built a command line"; exit 1; }
-          docker logs fua-smoke 2>&1 | grep -qi 'freedoom' \
-            || { echo "::error::engine did not report loading the substituted iwad"; exit 1; }
+
+          # [rc4l] The banner is the ENGINE's own output, so it proves the binary executed. An earlier
+          # version grepped for "freedoom", which the entrypoint prints itself when it resolves the
+          # iwad -- so it would have passed against a binary that never ran at all.
+          docker logs fua-smoke 2>&1 | grep -q 'ForkUnderA' \
+            || { echo "::error::engine never printed its banner -- the binary did not start"; exit 1; }
+
+          # [rc4l] Config creation happens after the banner and kills the process when it fails, which
+          # is exactly how the HOME-on-the-volume bug presented: built fine, banner fine, dead.
+          # Written as an if rather than `grep && { exit 1; }`, because the latter's interaction with
+          # set -e when the grep finds nothing is the sort of thing nobody should have to remember.
+          if docker logs fua-smoke 2>&1 | grep -q 'Permission denied'; then
+            echo "::error::server hit a permission error during startup"
+            exit 1
+          fi
 
           docker rm -f fua-smoke
 
