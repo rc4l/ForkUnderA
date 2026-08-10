@@ -18,7 +18,7 @@ jobs:
   publish:
     # [rc4l] Main-repo-only infra: the badge JSON is read from THIS repo's `badges` branch by shields.io.
     # On a fork it would push a stray `badges` branch nobody reads, so skip it there.
-    if: github.repository == 'rc4l/ZandroX'
+    if: github.repository == 'rc4l/ForkUnderA'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

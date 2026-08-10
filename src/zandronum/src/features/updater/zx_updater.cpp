@@ -25,7 +25,7 @@ CVAR(Bool, cl_fua_update_notify, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 // The GitHub endpoint we check (matches the repo release_url_compute builds download URLs for).
 #define ZX_UPDATE_API_HOST "api.github.com"
-#define ZX_UPDATE_API_PATH "/repos/rc4l/ZandroX/releases/latest"
+#define ZX_UPDATE_API_PATH "/repos/rc4l/ForkUnderA/releases/latest"
 
 namespace zx { namespace updater {
 

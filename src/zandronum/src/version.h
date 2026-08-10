@@ -199,7 +199,7 @@ int GetRevisionNumber();
 // mismatch, and zandronum.com has nothing to offer that player -- it does not publish the build they
 // are being told to go and find. The other DOMAIN_NAME uses are Zandronum's own services (the
 // buy-Doom and Freedoom redirects) and stay where they are.
-#define FUA_RELEASES_URL "https://github.com/rc4l/ZandroX/releases"
+#define FUA_RELEASES_URL "https://github.com/rc4l/ForkUnderA/releases"
 
 // [BC] This is what's displayed as the title for server windows.
 #define	SERVERCONSOLE_TITLESTRING	GAMENAME " v" DOTVERSIONSTR " Server"
