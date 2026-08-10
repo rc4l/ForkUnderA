@@ -38,7 +38,7 @@ that addressed the row — the provenance the guard enforces instead of parsing 
 | `<sha>[,<sha>…]`            | one-or-more zandrox commits that ported/adapted it (comma-separated) |
 
 Commit URL = `https://github.com/UZDoom/UZDoom/commit/<sha>` (their); `ours` links to
-`https://github.com/rc4l/ZandroX/commit/<sha>`.
+`https://github.com/rc4l/ForkUnderA/commit/<sha>`.
 
 ## the goal bar
 
