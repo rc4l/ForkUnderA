@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
+#include "globalheader_compute.h"
+
+namespace zx
+{
+
+HeaderMetrics DefaultHeaderMetrics()
+{
+	HeaderMetrics m;
+	m.barH = 18;
+	m.tabTop = 3;
+	m.tabH = 12;
+	m.leftPad = 6;
+	m.gap = 4;
+	m.labelPad = 8;
+	return m;
+}
+
+HeaderRect HeaderTabRect(const HeaderMetrics &m, const int *labelWidths, int count, int index)
+{
+	if ((labelWidths == 0) || (index < 0) || (index >= count))
+		return HeaderRect();
+
+	// Walk the earlier pills rather than storing offsets: the row is two or three items long, and a
+	// cached layout is a thing that can disagree with the widths it was built from.
+	int x = m.leftPad;
+	for (int i = 0; i < index; ++i)
+		x += labelWidths[i] + 2 * m.labelPad + m.gap;
+
+	return HeaderRect(x, m.tabTop, labelWidths[index] + 2 * m.labelPad, m.tabH);
+}
+
+int HeaderTabAtPoint(const HeaderMetrics &m, const int *labelWidths, int count, int px, int py)
+{
+	for (int i = 0; i < count; ++i)
+	{
+		const HeaderRect r = HeaderTabRect(m, labelWidths, count, i);
+		if ((r.w > 0) && (px >= r.x) && (px < r.x + r.w) && (py >= r.y) && (py < r.y + r.h))
+			return i;
+	}
+
+	return -1;
+}
+
+bool HeaderBarContains(const HeaderMetrics &m, int py)
+{
+	return (py >= 0) && (py < m.barH);
+}
+
+int StepHeaderTab(int index, int count, int step)
+{
+	if (count <= 0)
+		return 0;
+
+	int next = index + step;
+	if (next < 0)
+		next = 0;
+	if (next >= count)
+		next = count - 1;
+
+	return next;
+}
+
+} // namespace zx
