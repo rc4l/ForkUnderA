@@ -759,7 +759,13 @@ void DrawJoinReadyNotice( bool afterMenus )
 	FString text;
 	if ( bReady )
 	{
-		text = "Server is ready to join - Open the Menu";
+		// [rc4l] The instruction has to match what is in front of the player. With a menu already
+		// open, "Open the Menu" is telling them to do the thing they have done, and the jump they
+		// are being promised happens on opening -- so it will not come while they sit there. Say
+		// what will actually work from where they are.
+		text = ( menuactive != MENU_Off )
+			? "Server is ready to join - Back out and open the menu again"
+			: "Server is ready to join - Open the Menu";
 	}
 	else
 	{
