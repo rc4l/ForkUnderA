@@ -47,6 +47,15 @@ void gl_CleanLevelData()
 {
 }
 
+// [rc4l] g_level.cpp forward-declares this and calls it from G_SerializeLevel unconditionally, so a
+// NO_GL build needs the symbol even though it has nothing to serialize. Every other gl_* entry point
+// reached from shared code is stubbed here for the same reason; this one was simply missed, and only
+// a SERVERONLY link would have said so.
+class FArchive;
+void gl_SerializeGlobals(FArchive &)
+{
+}
+
 void gl_PreprocessLevel()
 {
 }

@@ -2585,10 +2585,16 @@ void M_CreateMenus()
 	}
 
 	// [rc4l] Populate the OpenAL device + resampler lists from the live driver (UZDoom parity).
+	//
+	// Guarded because both live in features/openal-sound/oalsound.cpp, which CMake drops when
+	// NO_SOUND -- so a SERVERONLY build called two functions nobody compiled. Asking a headless
+	// server which audio devices it has is a question with no answer anyway.
+#ifndef NO_SOUND
 	if ((opt = OptionValues.CheckKey(NAME_Aldevices)) != NULL)
 		I_BuildALDeviceList(*opt);
 	if ((opt = OptionValues.CheckKey(NAME_Alresamplers)) != NULL)
 		I_BuildALResamplersList(*opt);
+#endif
 }
 
 //=============================================================================
