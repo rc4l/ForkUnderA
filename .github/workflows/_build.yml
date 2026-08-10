@@ -161,10 +161,13 @@ jobs:
         run: |
           set -o pipefail
           SERVERONLY=ON ./linux_compile.sh 2>&1 | tee build-server.log
-          # [rc4l] Assert the binary under the name SERVERONLY produces, so the failure names itself
-          # rather than arriving later as an empty tarball.
-          test -f build-linux/zandronum-server || { echo "::error::serveronly build produced no zandronum-server"; exit 1; }
+          # [rc4l] Assert the tarball, not a binary name. SERVERONLY appends "-server" to
+          # ZDOOM_EXE_NAME, which is a cache variable, so the executable's name is the build system's
+          # to choose and not something CI should restate -- doing that in the Dockerfile produced a
+          # green compile and an image with nothing in it.
           ls -la dist-linux/
+          ls dist-linux/*-server.tar.gz >/dev/null 2>&1 \
+            || { echo "::error::serveronly build produced no -server tarball"; exit 1; }
 
       # [rc4l] Picks up BOTH tarballs: linux_compile.sh suffixes the serveronly one, so the glob that
       # used to match one file now matches two and release.yml attaches both through assets/*.

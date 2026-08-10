@@ -304,7 +304,7 @@ done
 # run it. A cfg carrying sv_maxplayers would otherwise quietly overrule the number set here.
 #---------------------------------------------------------------------------------------------------
 
-ARGS=( "${INSTALL_DIR}/zandronum-server" -host )
+ARGS=( "${INSTALL_DIR}/forkundera-server" -host )
 
 [ -n "${IWAD_PATH}" ] && ARGS+=( -iwad "${IWAD_PATH}" )
 for path in ${PWAD_PATHS[@]+"${PWAD_PATHS[@]}"}; do
