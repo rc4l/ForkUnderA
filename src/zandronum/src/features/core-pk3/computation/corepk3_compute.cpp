@@ -50,9 +50,11 @@ bool EndsWithNoCase(const std::string &text, const char *suffix)
 
 bool IsCorePk3Name(const std::string &fileName)
 {
-	if (!StartsWithNoCase(fileName, kCorePk3Prefix))
-		return false;
+	// Extension first, then prefix. The other order leaves the length guard inside EndsWithNoCase
+	// unreachable, because nothing shorter than the prefix can ever get past it.
 	if (!EndsWithNoCase(fileName, kCorePk3Extension))
+		return false;
+	if (!StartsWithNoCase(fileName, kCorePk3Prefix))
 		return false;
 
 	// The prefix and the extension must not be the same characters: "fua_core_.pk3" names no build.
