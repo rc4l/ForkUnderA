@@ -398,6 +398,9 @@ unsigned int	BROWSER_GetServerRegistryCount( void );
 bool			BROWSER_GetServerRegistryStatus( unsigned int index, std::string &host, int &port,
 					zx::RegistryStatus &status );
 void			BROWSER_QueryAllServers( void );
+// [rc4l] Seconds since the last sweep went out, or -1 for never. Sent-time, not reply-time: a
+// refresh that found nothing still happened.
+LONG			BROWSER_SecondsSinceRefresh( void );
 LONG			BROWSER_CalcNumServers( void );
 
 //*****************************************************************************
