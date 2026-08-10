@@ -104,6 +104,19 @@ ENV HOME=/home/fua
 
 COPY --from=build /stage /opt/forkundera
 
+# [rc4l] Which engine is in here, as a label rather than folklore. The image carries its own
+# game-server version in its tag, and that number says nothing about the engine inside it -- so
+# answering "is this server up to date with the release" meant correlating a publish date against a
+# changelog. `docker inspect` now answers it directly, and the image is additionally tagged
+# engine-<version> so an operator can pin to an engine rather than to a packaging revision.
+#
+# Defaulted rather than required: a local `docker build` with no build-arg still works, and says so.
+ARG ENGINE_VERSION=unknown
+LABEL net.forkundera.engine.version="${ENGINE_VERSION}"
+LABEL org.opencontainers.image.source="https://github.com/rc4l/ForkUnderA"
+LABEL org.opencontainers.image.description="Headless ForkUnderA game server. Give it a catalogue id."
+LABEL org.opencontainers.image.licenses="GPL-3.0-or-later"
+
 # [rc4l] The mirror list the entrypoint fetches from. It lives in config/ rather than in the staged
 # tarball because the tarball is the CLIENT payload and a client compiles this list into the binary
 # (tools/gen-wadlists.cmake). The container reads the same file as text so an operator can override it
