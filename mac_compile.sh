@@ -272,9 +272,9 @@ build() {
     cmake --build "$BUILD_DIR" --config "$CONFIGURATION" --parallel "$NCPU"
 
     # [rc4l] Extract debug info into a .dSYM for symbol upload (kept out of the shipped binary).
-    if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" && -f "$BUILD_DIR/zandronum" ]]; then
+    if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" && -f "$BUILD_DIR/forkundera" ]]; then
         status "Generating dSYM..."
-        dsymutil "$BUILD_DIR/zandronum" -o "$BUILD_DIR/zandronum.dSYM" || warn "dsymutil failed"
+        dsymutil "$BUILD_DIR/forkundera" -o "$BUILD_DIR/forkundera.dSYM" || warn "dsymutil failed"
     fi
 
     # Freedoom WADs for a runnable game (matches the Windows build).
@@ -362,8 +362,8 @@ make_app_bundle() {
     mkdir -p "$macos" "$resources"
 
     # Binary + game data live together so progdir (= MacOS dir) finds the data.
-    cp "$BUILD_DIR/zandronum" "$macos/zandronum"
-    chmod u+w "$macos/zandronum"
+    cp "$BUILD_DIR/forkundera" "$macos/forkundera"
+    chmod u+w "$macos/forkundera"
     local f
     for f in "$BUILD_DIR"/*.pk3 "$BUILD_DIR"/*.wad; do
         [[ -e "$f" ]] && cp "$f" "$macos/"
@@ -398,7 +398,7 @@ make_app_bundle() {
     else
         warn "libSDL2-2.0.0.dylib not found in $SDL_PREFIX; run build_sdl_from_source"
     fi
-    _bundle_deps "$macos/zandronum" "$macos" "${search[@]}"
+    _bundle_deps "$macos/forkundera" "$macos" "${search[@]}"
 
     local icon; icon="$(make_icon "$resources")"
 
@@ -412,7 +412,7 @@ make_app_bundle() {
 	<key>CFBundleName</key><string>$APP_NAME</string>
 	<key>CFBundleDisplayName</key><string>$APP_NAME</string>
 	<key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-	<key>CFBundleExecutable</key><string>zandronum</string>
+	<key>CFBundleExecutable</key><string>forkundera</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>$ver</string>
 	<key>CFBundleVersion</key><string>$ver</string>
@@ -439,13 +439,13 @@ PLIST
 
 show_results() {
     status "Build results:"
-    local bin="$BUILD_DIR/zandronum"
+    local bin="$BUILD_DIR/forkundera"
     if [[ -x "$bin" ]]; then
         echo "  binary: $bin"
         lipo -info "$bin" | sed 's/^/  /'
         ls -lh "$bin" | awk '{print "  size: "$5}'
     else
-        warn "zandronum binary not found in $BUILD_DIR"
+        warn "forkundera binary not found in $BUILD_DIR"
     fi
     local app="$BUILD_DIR/$APP_NAME.app"
     if [[ -d "$app" ]]; then

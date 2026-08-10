@@ -24,7 +24,7 @@ Notes:
   `mcp_crash.cpp`. It is generic (applies to stock Zandronum or any fork) and opt-in
   (arms only when `ZANDRONUM_BRIDGE_PORT` is set).
 - The CMake executable target is named **`zdoom`** (output is renamed to
-  `zandronum.exe`), confirmed at `CMakeLists.txt: add_executable( zdoom WIN32 ...`.
+  `forkundera.exe`), confirmed at `CMakeLists.txt: add_executable( zdoom WIN32 ...`.
 - The bridge is **cross-platform**: `mcp_bridge.cpp` builds on Windows (Winsock)
   and POSIX (BSD sockets), and uses `std::thread`/`std::mutex` for one shared code
   path. On Windows `ws2_32` is already linked by the engine and the overlay also

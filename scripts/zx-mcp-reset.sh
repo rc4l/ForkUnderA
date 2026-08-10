@@ -15,11 +15,15 @@ set -u
 
 # Match the engine binaries (bundled app, loose build binary, and the MCP's
 # zandronum-mcp-hooks), excluding the MCP node server and this script itself.
-# Keep only real engine binaries: a path component `/zandronum` or the bridge
-# build `zandronum-mcp-hooks`. Excludes the MCP launcher (`npm exec zandronum-mcp`,
-# `node …`) and this script.
+# Keep only real engine binaries: a path component `/forkundera` or `/zandronum`,
+# or the bridge build `zandronum-mcp-hooks`. Excludes the MCP launcher
+# (`npm exec zandronum-mcp`, `node …`) and this script.
+#
+# [rc4l] Both names on purpose: the binary is forkundera now, but this matches on a RUNNING
+# process, and a build made before the rename is still called zandronum. Dropping the old name
+# would make this quietly stop killing exactly the stale engines it exists to clear.
 pids=$(ps -A -o pid=,command= \
-  | grep -iE '/zandronum(-mcp-hooks)?( |$)|/zandronum ' \
+  | grep -iE '/forkundera( |$)|/zandronum(-mcp-hooks)?( |$)|/zandronum ' \
   | grep -viE 'node|npm|zx-mcp-reset|grep' \
   | awk '{print $1}')
 

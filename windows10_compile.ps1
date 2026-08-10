@@ -235,8 +235,8 @@ Write-Status "Building ($Configuration)"
 & cmake --build $BuildDir --config $Configuration -- -m
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
-$exe = Join-Path $BuildDir "$Configuration\zandronum.exe"
-if (-not (Test-Path $exe)) { throw "zandronum.exe missing - the build failed" }
+$exe = Join-Path $BuildDir "$Configuration\forkundera.exe"
+if (-not (Test-Path $exe)) { throw "forkundera.exe missing - the build failed" }
 Write-Status "Compiled: $exe"
 
 if ($NoPackage) {
@@ -248,7 +248,7 @@ if ($NoPackage) {
 Write-Status "Packaging dist-windows/"
 $out = Join-Path $BuildDir $Configuration
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
-Copy-Item "$out\zandronum.exe" $DistDir\
+Copy-Item "$out\forkundera.exe" $DistDir\
 Copy-Item "$out\*.pk3" $DistDir\ -ErrorAction SilentlyContinue
 
 # [rc4l] Ship Freedoom so the zip is playable without a separate IWAD (BSD-3-clause, clause 2
