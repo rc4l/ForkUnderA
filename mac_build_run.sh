@@ -33,7 +33,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="$ROOT/build"
 SRC="$ROOT/src/zandronum"
-APP="$BUILD/ZandroX.app"
+APP="$BUILD/ForkUnderA.app"
 MACOS="$APP/Contents/MacOS"
 ZIPDIR="$BUILD/tools/zipdir/zipdir"
 BIN="$BUILD/zandronum"
