@@ -49,6 +49,7 @@
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-browser/computation/openingtab_compute.h"
+#include "features/server-browser/computation/refreshgate_compute.h"
 #include "features/global-header/zx_globalheader.h" // [rc4l] the bar above owns the arrows sometimes
 #include "features/menu-focus/zx_focusglow.h"       // [rc4l] the focus orb, shared with that bar
 #include "features/server-browser/computation/timeago_compute.h"
@@ -556,6 +557,17 @@ static	int				g_SubTabHot = -1;
 
 // [rc4l] Hover state for the refresh button, matching how the tabs carry theirs.
 static	bool			g_RefreshHot = false;
+
+// [rc4l] The floor under REFRESH, and whether a press has been turned away since the last one that
+// got through. Ten seconds because that is the registry's own limit. Ask sooner and it answers
+// SRSC_REQUESTIGNORED, which spends the refresh AND earns a place on its flood queue, so refusing on
+// this side is strictly better than being refused on that one.
+//
+// The flag is what lets the button count down instead of swallowing the press: it stays set until
+// the floor runs out, so the player who asked gets an answer that keeps answering. Nobody who has
+// not pressed it ever sees a countdown, which is the point of hanging this off a press at all.
+#define SB_REFRESH_FLOOR_MS	10000
+static	bool			g_RefreshRefused = false;
 
 
 // [rc4l] What the hosting form was left holding. Archived so a player who hosts the same game every
@@ -6212,6 +6224,40 @@ public:
 
 	//*************************************************************************
 	//
+	// [rc4l] How long REFRESH still owes, or 0 if it may be pressed. One helper so the mouse, the
+	// keyboard and the label can never disagree about whether the button is available.
+	static int RefreshWaitSeconds( void )
+	{
+		zx::RefreshGateIn in;
+		in.msSinceLastRefresh = static_cast<int>( BROWSER_MSSinceRefresh( ));
+		in.minIntervalMs = SB_REFRESH_FLOOR_MS;
+
+		const zx::RefreshGateOut out = zx::GateRefresh( in );
+		return ( out.allowed ? 0 : out.waitSeconds );
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] Pressing REFRESH, by whichever route. Both callers used to inline the same two calls, and
+	// a floor added to one of them would have been a floor the other walked straight through.
+	static void PressRefresh( void )
+	{
+		if ( RefreshWaitSeconds( ) > 0 )
+		{
+			// Refused, and it says so: the label becomes the countdown (see DrawRefreshButton), so
+			// the press is visibly declined rather than visibly ignored.
+			g_RefreshRefused = true;
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+			return;
+		}
+
+		g_RefreshRefused = false;
+		BROWSER_RefreshListedServers( );
+		BROWSER_QueryServerRegistry( );
+	}
+
+	//*************************************************************************
+	//
 	// [rc4l] Bottom left, and it does two jobs.
 	//
 	// It gives the player a way to ask, which is what was missing. But the re-check on open already
@@ -6259,10 +6305,21 @@ public:
 		// While busy the label says what is happening rather than what to press: the button is not
 		// disabled, and pressing it again while it works is harmless, but it should not be the only
 		// thing on screen claiming nothing is going on.
-		const char *const label = bBusy ? "CHECKING" : "REFRESH";
+		//
+		// [rc4l] And once it has turned a press away, it counts down to being pressable instead. A
+		// silent no is indistinguishable from a dead control, and the player's next move after one is
+		// to press it harder.
+		const int wait = RefreshWaitSeconds( );
+		const bool bRefused = ( wait > 0 ) && g_RefreshRefused;
+
+		FString countdown;
+		if ( bRefused )
+			countdown.Format( "WAIT %ds", wait );
+
+		const char *const label = bRefused ? countdown.GetChars( ) : ( bBusy ? "CHECKING" : "REFRESH" );
 		const int textW = SmallFont->StringWidth( label );
 
-		screen->DrawText( SmallFont, bBusy ? CR_GOLD : CR_GRAY,
+		screen->DrawText( SmallFont, bRefused ? CR_BRICK : ( bBusy ? CR_GOLD : CR_GRAY ),
 			SB_REFRESH_X + ( SB_REFRESH_W - textW ) / 2, SB_REFRESH_Y + 3, label,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
@@ -6276,6 +6333,16 @@ public:
 			FString tip;
 			tip << "Refresh all servers\n"
 				<< zx::LastRefreshedLine( lAgo >= 0, static_cast<int>( lAgo )).c_str( );
+
+			// Say what the wait is FOR. "Available in 6s" on its own reads as an arbitrary rule; the
+			// registry refusing us is a fact about the world, and it is also the reason a player
+			// should not want to press this again yet.
+			if ( wait > 0 )
+				tip.AppendFormat( "\nAvailable in %ds. The registry ignores faster requests", wait );
+
+			// Right-click is invisible unless something says so, and the whole point of it is that
+			// the player who suspects ONE row is stale does not have to spend the whole-list floor.
+			tip << "\nRight-click a server to re-check just that one";
 
 			serverbrowser_Tip( SB_REFRESH_X, SB_REFRESH_Y, SB_REFRESH_W, SB_REFRESH_H, tip );
 		}
@@ -6622,11 +6689,10 @@ public:
 			{
 				if ( type == MOUSE_Release )
 				{
-					// Exactly what opening the browser does. Rows are kept and re-checked underneath,
-					// so pressing this never empties the screen -- it just makes the checking visible,
-					// and picks up servers that have appeared since.
-					BROWSER_RefreshListedServers( );
-					BROWSER_QueryServerRegistry( );
+					// Rows are kept and re-checked underneath, so pressing this never empties the
+					// screen. It makes the checking visible, and picks up servers that have appeared
+					// since. PressRefresh also owns the floor, which the keyboard route shares.
+					PressRefresh( );
 				}
 
 				return true;
@@ -6873,11 +6939,36 @@ public:
 				// colour under the cursor. Selecting is what a click is for.
 				g_HoverRow = row;
 
-				if ( type == MOUSE_Click )
+				if (( type == MOUSE_Click ) || ( type == MOUSE_Click2 ))
 				{
 					g_MousePressRow = row;
 					// True also arms the capture that makes MOUSE_Release arrive at all (DMenu::
 					// Responder only forwards a release while captured).
+					return true;
+				}
+
+				// [rc4l] Right button: re-check THIS server and nothing else.
+				//
+				// The whole-list refresh is rationed because it costs a packet per row and a registry
+				// request. But the question a player usually has is about one row, the one they are
+				// looking at, and making them spend the whole-list floor to ask it is why the floor
+				// would feel like an obstacle rather than a courtesy. One row is one packet to one
+				// machine, so it needs no ration and does not touch the registry at all.
+				if ( type == MOUSE_Release2 )
+				{
+					const bool bOnPressRow = ( row == g_MousePressRow );
+					g_MousePressRow = -1;
+					if ( !bOnPressRow )
+						return true;
+
+					// Move the selection too. Asking about a row and then reading the detail panel of
+					// a different one is the sort of mismatch nobody notices until it misleads them.
+					g_Selected = row;
+					g_RevealSelection = true;
+					SetFocus( zx::BrowserFocus::Rows );
+
+					BROWSER_RecheckServer( static_cast<ULONG>( g_SortedServers[row] ));
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 					return true;
 				}
 
@@ -6913,7 +7004,7 @@ public:
 			}
 		}
 
-		if ( type == MOUSE_Release )
+		if (( type == MOUSE_Release ) || ( type == MOUSE_Release2 ))
 			g_MousePressRow = -1;
 		return Super::MouseEvent( type, x, y );
 	}
@@ -7756,9 +7847,12 @@ public:
 			// by keyboard re-checked the servers you already had and could never find a new one.
 			if ( g_Focus == zx::BrowserFocus::Refresh )
 			{
-				BROWSER_RefreshListedServers( );
-				BROWSER_QueryServerRegistry( );
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+				// The floor lives in PressRefresh, and so does the refusal sound, so the "chose it"
+				// noise is only played when something was actually chosen.
+				const bool bAllowed = ( RefreshWaitSeconds( ) == 0 );
+				PressRefresh( );
+				if ( bAllowed )
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 				return true;
 			}
 
