@@ -95,7 +95,7 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
    `LegacyFRenderState`, `LegacyFlatVertexBuffer`).
 
    **Build ALL targets, not the one you are iterating on.** `zdoom` is not the project. Several
-   targets compile the same `src/` files with their own source lists — `zandrox-server-registry`
+   targets compile the same `src/` files with their own source lists — `forkundera-server-registry`
    compiles `gitinfo.cpp`, the test binaries compile every `*_compute.cpp` — so a function added to a
    shared file can link fine in the engine and fail in a sibling target that never listed the unit
    defining it. Iterating with `cmake --build <dir> --target zdoom` will not notice, however many

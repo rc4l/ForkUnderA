@@ -14,7 +14,7 @@
     layer. Every step here fails LOUD instead:
 
       1. Builds EVERY target, not just zdoom. `--target zdoom` builds one target of
-         several: zandrox-server-registry compiles src/gitinfo.cpp with its own
+         several: forkundera-server-registry compiles src/gitinfo.cpp with its own
          source list, so a function added to a file the engine also compiles links
          fine in zandronum.exe and fails in a sibling that never listed the unit
          defining it. Iterating on `--target zdoom` will not notice, however many

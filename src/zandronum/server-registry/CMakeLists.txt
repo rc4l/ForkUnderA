@@ -36,7 +36,7 @@ if( NOT STRNICMP_EXISTS )
    add_definitions( -Dstrnicmp=strncasecmp )
 endif( NOT STRNICMP_EXISTS )
 
-add_executable( zandrox-server-registry
+add_executable( forkundera-server-registry
 	main.cpp
 	network.cpp
 	${ZAN_DIR}/gitinfo.cpp
@@ -71,9 +71,9 @@ add_executable( zandrox-server-registry
 # build, and the guard would silently drop a dependency the engine needs. add_dependencies resolves
 # at generate time, so the forward reference below is fine.
 if( NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR )
-	add_dependencies( zandrox-server-registry revision_check )
+	add_dependencies( forkundera-server-registry revision_check )
 endif()
 
 if( WIN32 )
-	target_link_libraries( zandrox-server-registry ws2_32 winmm )
+	target_link_libraries( forkundera-server-registry ws2_32 winmm )
 endif( WIN32 )
