@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 
-name: Release ZandroX
+name: Release ForkUnderA
 
 on:
   workflow_dispatch: # Trigger manually from the Actions tab
@@ -206,7 +206,7 @@ jobs:
 
             # [rc4l] gh creates the tag at this commit when it does not already exist.
             gh release create "$VERSION" \
-              --title "ZandroX $VERSION" \
+              --title "ForkUnderA $VERSION" \
               --notes-file notes.md \
               assets/*
           fi
