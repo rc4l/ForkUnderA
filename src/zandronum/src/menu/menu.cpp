@@ -69,6 +69,7 @@
 #include "network/cl_auth.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a finished download redirects to the browser
 #include "features/server-hosting/zx_hosting.h" // [rc4l] starting a game closes a server we are running
+#include "features/global-header/zx_globalheader.h" // [rc4l] the tab bar drawn over every menu
 
 //
 // Todo: Move these elsewhere
@@ -843,6 +844,20 @@ bool M_Responder (event_t *ev)
 				{
 						if (!m_use_mouse)
 							return true;
+
+						// [rc4l] The tab bar gets first refusal on anything over it. It is drawn on
+						// top, so it has to be asked first, or the menu underneath answers for
+						// pixels the player can see belong to the bar.
+						if (ev->subtype == EV_GUI_MouseMove)
+						{
+							if (zx::GlobalHeader_MouseMove(ev->data1, ev->data2))
+								return true;
+						}
+						else if (ev->subtype == EV_GUI_LButtonDown)
+						{
+							if (zx::GlobalHeader_MouseClick(ev->data1, ev->data2))
+								return true;
+						}
 				}
 
 				// pass everything else on to the current menu
@@ -950,6 +965,32 @@ bool M_Responder (event_t *ev)
 				{
 					MenuButtonTickers[mkey] = KEY_REPEAT_DELAY;
 				}
+				// [rc4l] While the tab bar holds the arrows, the menu underneath sees none of them.
+				//
+				// That is what having focus means, and routing the key to both would move the bar's
+				// cursor and the menu's selection at the same time -- two carets, one keypress.
+				if (zx::GlobalHeader_HasFocus())
+				{
+					bool handled = false;
+					switch (mkey)
+					{
+					case MKEY_Left:		handled = zx::GlobalHeader_NavLeft();	break;
+					case MKEY_Right:	handled = zx::GlobalHeader_NavRight();	break;
+					case MKEY_Down:		handled = zx::GlobalHeader_NavDown();	break;
+					case MKEY_Enter:	handled = zx::GlobalHeader_Activate();	break;
+
+					// Up is already at the top of everything, and Escape belongs to the menu:
+					// leaving the bar by backing out should back out of the menu, not trap the
+					// player on a row with nothing above it.
+					case MKEY_Up:		handled = true;							break;
+					case MKEY_Back:		zx::GlobalHeader_ReleaseFocus();		break;
+					default:											break;
+					}
+
+					if (handled)
+						return true;
+				}
+
 				DMenu::CurrentMenu->MenuEvent(mkey, fromcontroller);
 				return true;
 			}
@@ -1068,6 +1109,13 @@ void M_Drawer (void)
 			V_SetBorderNeedRefresh();
 		}
 		DMenu::CurrentMenu->Drawer();
+
+		// [rc4l] The global tab bar, drawn AFTER the menu and over every one of them.
+		//
+		// Here rather than in a menu descriptor because MENUDEF is replaced wholesale by any total
+		// conversion, and a route to online play that a mod can delete by accident is not a route.
+		// Everything below is shifted down by GlobalHeader_MenuOffsetY() to make room.
+		zx::GlobalHeader_Draw();
 	}
 }
 

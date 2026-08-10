@@ -50,7 +50,9 @@ struct HeaderMetrics
 	HeaderMetrics() : barH(0), tabTop(0), tabH(0), leftPad(0), gap(0), labelPad(0) {}
 };
 
-// The shipped numbers, tuned against the 320-wide menu space the stock menus use.
+// The shipped numbers, in the 640x400 virtual space the server browser already draws in. That space
+// rather than the stock menus' 320x200 because the bar has to sit against the browser's chrome and
+// match it pill for pill; the stock menus are the ones that get shifted, and a shift is one number.
 HeaderMetrics DefaultHeaderMetrics();
 
 struct HeaderRect

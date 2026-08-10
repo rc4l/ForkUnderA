@@ -9,12 +9,12 @@ namespace zx
 HeaderMetrics DefaultHeaderMetrics()
 {
 	HeaderMetrics m;
-	m.barH = 18;
-	m.tabTop = 3;
-	m.tabH = 12;
-	m.leftPad = 6;
-	m.gap = 4;
-	m.labelPad = 8;
+	m.barH = 26;
+	m.tabTop = 5;
+	m.tabH = 16;
+	m.leftPad = 10;
+	m.gap = 6;
+	m.labelPad = 12;
 	return m;
 }
 
