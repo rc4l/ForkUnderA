@@ -36,10 +36,9 @@ namespace zx
 namespace
 {
 
-// The browser's own virtual space, so the bar and the browser's chrome are drawn to one scale and a
-// pill on the bar is the same size as a pill in the browser under it.
-const int HEADER_VIRT_W = 640;
-const int HEADER_VIRT_H = 400;
+// The space the bar's metrics are written in. Not the space they are DRAWN in: see HeaderVirtW.
+const int HEADER_LAYOUT_W = 640;
+const int HEADER_LAYOUT_H = 400;
 
 const char *const kTabLabels[kHeaderTabCount] = { "Main Menu", "Play Online!" };
 
@@ -72,69 +71,52 @@ int        g_GlowLastMs = 0;
 // exactly the virtual size, DTA_Virtual* draws 1:1 and never calls VirtualToRealCoords, which is
 // NOT identity at 640x400. Reproducing the shortcut is what keeps the pills attached to the text
 // sitting on them under vid_scalemode 1.
-void ToScreenRaw( int vx, int vy, int vw, int vh, int &x, int &y, int &w, int &h )
+// [rc4l] The virtual space to DRAW the bar in, sized so this screen's mapping comes out UNIFORM.
+//
+// The bar used to be drawn in a fixed 640x400 through VirtualToRealCoords, and that is the wrong
+// tool for chrome. Virtual scaling fits a space to the window by stretching each axis into whatever
+// is left of it, so on a wide window the pills came out squat and wide while the menu beside them
+// kept its shape. That difference is not upstream's and not unavoidable: V_CalcCleanFacs
+// deliberately forces CleanXfac and CleanYfac equal, and everything the stock menus draw goes
+// through that one factor, which is exactly why none of it ever stretches.
+//
+// So the bar borrows the same factor. Asking for a virtual space of screen/(CleanXfac/2) makes
+// VirtualToRealCoords scale by CleanXfac/2 on both axes with no centring at all, which is uniform by
+// construction AND flush to the corner by construction. That second property replaced a pair of
+// measured bias corrections that existed only to undo the centring afterwards.
+//
+// Half the Clean factor because the metrics are written in 640x400 and CleanXfac is for 320x200.
+int HeaderVirtW( )
 {
-	x = vx;
-	y = vy;
-	w = vw;
-	h = vh;
+	const int fac = ( CleanXfac > 0 ) ? CleanXfac : 1;
+	const int v = ( screen->GetWidth( ) * 2 ) / fac;
+	return ( v > 0 ) ? v : HEADER_LAYOUT_W;
+}
 
-	if (( screen->GetWidth( ) == HEADER_VIRT_W ) && ( screen->GetHeight( ) == HEADER_VIRT_H ))
-		return;
-
-	screen->VirtualToRealCoordsInt( x, y, w, h, HEADER_VIRT_W, HEADER_VIRT_H, false, true );
+int HeaderVirtH( )
+{
+	const int fac = ( CleanYfac > 0 ) ? CleanYfac : 1;
+	const int v = ( screen->GetHeight( ) * 2 ) / fac;
+	return ( v > 0 ) ? v : HEADER_LAYOUT_H;
 }
 
 //*****************************************************************************
 //
-// [rc4l] How far to pull everything so the bar sits in the real top-left of the screen.
+// Virtual coordinates to screen pixels.
 //
-// VirtualToRealCoords centres the virtual space for the aspect it is handed, which is right for a
-// panel and wrong for chrome. It happens on BOTH axes and the window decides which: taller than the
-// virtual space and there is a band of game above the bar, so the header floats with the back arrows
-// in the gap; wider and the pills are pushed inward off the left edge, leaving the bar looking
-// stretched away from the only things on it. Neither is a thing the corner of the screen can do.
-//
-// Measured rather than derived: two conversions say where virtual 0 landed and how big a virtual
-// unit is, which is the same trick ToVirtual* uses and holds for whatever the mapping does next.
-// The answer is in VIRTUAL units on purpose. Biasing there moves the Dim rects and the DTA_Virtual
-// text by one identical amount, which is what keeps a label on its pill; a screen-space nudge would
-// move only the half of the drawing that goes through this function.
-//
-// `axis` picks which of the pair to measure, so the two can never drift into different arithmetic.
-int EdgeBiasV( bool bVertical )
-{
-	int x0 = 0, y0 = 0, w0 = 0, h0 = 0;
-	ToScreenRaw( 0, 0, 0, 0, x0, y0, w0, h0 );
-
-	int x1 = 100, y1 = 100, w1 = 0, h1 = 0;
-	ToScreenRaw( 100, 100, 0, 0, x1, y1, w1, h1 );
-
-	const int at0 = bVertical ? y0 : x0;
-	const int at100 = bVertical ? y1 : x1;
-
-	// Already flush, or a mapping we cannot read. Either way there is nothing to correct.
-	if (( at0 <= 0 ) || ( at100 <= at0 ))
-		return 0;
-
-	// Rounded AWAY from zero, because coming up a pixel short leaves a sliver of game outside the bar
-	// and coming a pixel over costs nothing anybody can see.
-	return -((( at0 * 100 ) + ( at100 - at0 ) - 1 ) / ( at100 - at0 ));
-}
-
-int TopBiasV( )
-{
-	return EdgeBiasV( true );
-}
-
-int LeftBiasV( )
-{
-	return EdgeBiasV( false );
-}
-
+// The engine's own arithmetic for the non-aspect branch of VirtualToRealCoords, repeated rather than
+// approximated, so a pill and the label drawn on it can never land a pixel apart. Widths come from
+// the mapped far edge minus the mapped near one, the way the engine does it, so integer truncation
+// cannot open a seam between two rectangles that share a boundary.
 void ToScreen( int vx, int vy, int vw, int vh, int &x, int &y, int &w, int &h )
 {
-	ToScreenRaw( vx + LeftBiasV( ), vy + TopBiasV( ), vw, vh, x, y, w, h );
+	const int sw = screen->GetWidth( ), sh = screen->GetHeight( );
+	const int vW = HeaderVirtW( ), vH = HeaderVirtH( );
+
+	x = vx * sw / vW;
+	y = vy * sh / vH;
+	w = ( vx + vw ) * sw / vW - x;
+	h = ( vy + vh ) * sh / vH - y;
 }
 
 int ToScreenX( int vx )
@@ -310,12 +292,13 @@ void DrawPill( const HeaderRect &r, const char *label, bool bLit, bool bHot, boo
 
 	// Biased to match the pill under it: DTA_Virtual* runs the raw mapping, so the label has to be
 	// handed coordinates already pulled the same way ToScreen pulls the rect.
-	const int textX = r.x + LeftBiasV( ) + ( r.w / 2 ) - ( SmallFont->StringWidth( label ) / 2 );
-	const int textY = r.y + TopBiasV( ) + ( r.h - SmallFont->GetHeight( )) / 2 + 1;
+	const int textX = r.x + ( r.w / 2 ) - ( SmallFont->StringWidth( label ) / 2 );
+	const int textY = r.y + ( r.h - SmallFont->GetHeight( )) / 2 + 1;
 	const EColorRange textCol = !bEnabled ? CR_DARKGRAY : (( bLit || bRaised ) ? CR_WHITE : CR_GRAY );
 
 	screen->DrawText( SmallFont, textCol, textX, textY, label,
-		DTA_VirtualWidth, HEADER_VIRT_W, DTA_VirtualHeight, HEADER_VIRT_H, TAG_DONE );
+		DTA_VirtualWidth, HeaderVirtW( ), DTA_VirtualHeight, HeaderVirtH( ),
+		DTA_KeepRatio, true, TAG_DONE );
 }
 
 //*****************************************************************************
@@ -343,7 +326,7 @@ void DrawTooltip( const char *text )
 	const int boxH = static_cast<int>( lines.size( )) * lineH + 2 * padY;
 
 	const TooltipBox box = ComputeTooltipPlacement( ToVirtualX( g_PointerX ),
-		ToVirtualY( g_PointerY ), boxW, boxH, HEADER_VIRT_W, HEADER_VIRT_H, 10, 3 );
+		ToVirtualY( g_PointerY ), boxW, boxH, HeaderVirtW( ), HeaderVirtH( ), 10, 3 );
 
 	const int left = ToScreenX( box.x );
 	const int top = ToScreenY( box.y );
@@ -358,13 +341,13 @@ void DrawTooltip( const char *text )
 	screen->Dim( PalEntry( 120, 130, 165 ), 0.55f, right - 1, top, 1, bottom - top );
 
 	// Same bias as the box it sits in, for the same reason as the pill labels.
-	const int textX = box.x + LeftBiasV( ) + padX;
-	int y = box.y + TopBiasV( ) + padY;
+	const int textX = box.x + padX;
+	int y = box.y + padY;
 	for ( size_t i = 0; i < lines.size( ); ++i )
 	{
 		screen->DrawText( SmallFont, ( i == 0 ) ? CR_WHITE : CR_GRAY, textX, y,
-			lines[i].c_str( ), DTA_VirtualWidth, HEADER_VIRT_W, DTA_VirtualHeight, HEADER_VIRT_H,
-			TAG_DONE );
+			lines[i].c_str( ), DTA_VirtualWidth, HeaderVirtW( ), DTA_VirtualHeight, HeaderVirtH( ),
+			DTA_KeepRatio, true, TAG_DONE );
 		y += lineH;
 	}
 }
