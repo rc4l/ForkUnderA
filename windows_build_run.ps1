@@ -16,7 +16,7 @@
       1. Builds EVERY target, not just zdoom. `--target zdoom` builds one target of
          several: forkundera-server-registry compiles src/gitinfo.cpp with its own
          source list, so a function added to a file the engine also compiles links
-         fine in zandronum.exe and fails in a sibling that never listed the unit
+         fine in forkundera.exe and fails in a sibling that never listed the unit
          defining it. Iterating on `--target zdoom` will not notice, however many
          times you run it -- the sibling simply never relinks, and the first thing
          that tells you is red CI on all three platforms.
@@ -44,7 +44,7 @@
     Debug or Release (default: Release). Must match what windows_build.ps1 built.
 
 .PARAMETER Run
-    Launch dist-windows\zandronum.exe once everything verifies.
+    Launch dist-windows\forkundera.exe once everything verifies.
 
 .PARAMETER ExtraArgs
     Arguments passed through to the engine when -Run is given.
@@ -73,7 +73,7 @@ $DistDir    = Join-Path $ScriptRoot "dist-windows"
 $SrcDir     = Join-Path $ScriptRoot "src\zandronum"
 $OutDir     = Join-Path $BuildDir $Configuration
 $ZipDir     = Join-Path $BuildDir "tools\zipdir\$Configuration\zipdir.exe"
-$Exe        = Join-Path $OutDir "zandronum.exe"
+$Exe        = Join-Path $OutDir "forkundera.exe"
 
 function Write-Status { param([string]$Message) Write-Host "==> $Message" -ForegroundColor Green }
 function Write-Note   { param([string]$Message) Write-Host "    $Message" -ForegroundColor DarkGray }
@@ -199,7 +199,7 @@ foreach ($pk3 in (Get-ChildItem $OutDir -Filter *.pk3 -File)) {
 # [rc4l] These are the assertions that catch a stale copy slipping through -- the
 # failure mode where the build is fresh, the copy silently did not happen, and you
 # spend an hour reading source that the running exe does not contain.
-$distExe = Join-Path $DistDir "zandronum.exe"
+$distExe = Join-Path $DistDir "forkundera.exe"
 $distPk3 = Join-Path $DistDir $coreName
 if (-not (Test-Path $distPk3)) {
     Die "dist-windows/ has NO $coreName after sync -- the engine would abort with 'Cannot find $coreName'."
