@@ -5481,12 +5481,24 @@ public:
 		const NETADDRESS_s address = BROWSER_GetAddress( lServer );
 		const FString full = address.ToString( );
 
-		FString localIp;
-		if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
-			localIp = NETWORK_GetLocalAddress( ).ToStringNoPort( );
+		// [rc4l] Resolved at most once per frame, not once per ROW per frame.
+		//
+		// This runs from the row drawing, and NETWORK_GetLocalAddress is not a cheap accessor: on
+		// macOS it walks every network interface with getifaddrs. Calling it for every visible row
+		// on every frame was a syscall sweep inside the render loop, and it is what turned an
+		// occasional discovery message into a console filling up forever.
+		static FString s_localIp;
+		static int s_localIpFrame = -1;
+		if ( s_localIpFrame != static_cast<int>( gametic ))
+		{
+			s_localIpFrame = static_cast<int>( gametic );
+			s_localIp = "";
+			if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+				s_localIp = NETWORK_GetLocalAddress( ).ToStringNoPort( );
+		}
 
 		return zx::RowIsOwnServer( address.ToStringNoPort( ), PortOfAddress( full ),
-			HostRunningPort( ), localIp.GetChars( ), zx::ReachProbePublicIp( ));
+			HostRunningPort( ), s_localIp.GetChars( ), zx::ReachProbePublicIp( ));
 	}
 
 	void DoJoinSelected( )
