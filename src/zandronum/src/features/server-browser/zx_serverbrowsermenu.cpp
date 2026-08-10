@@ -91,17 +91,53 @@
 // Everything below is in these coordinates. Anything handed to the renderer must therefore say
 // DTA_VirtualWidth/Height, and anything computing raw screen pixels must scale through ToScreenX/Y
 // -- mixing the two is what put the flags in the corner of the screen the first time.
-#define SB_VIRT_W			640
-#define SB_VIRT_H			400
+// [rc4l] The space the browser's layout is WRITTEN in. Not the space it is drawn in: see below.
+#define SB_LAYOUT_W			640
+#define SB_LAYOUT_H			400
 
-#define SB_PANEL_LEFT		36
-#define SB_PANEL_RIGHT		604
+//*****************************************************************************
+//
+// [rc4l] The space the browser is DRAWN in, sized so this screen's mapping comes out UNIFORM, plus
+// where the layout sits inside it.
+//
+// The browser used to be drawn in a fixed 640x400 through VirtualToRealCoords. Virtual scaling fits
+// a space to the window by stretching each axis into whatever is left of it, so on a wide window the
+// pills and rows came out squat while the stock menus beside them kept their shape. The menus do not
+// stretch because V_CalcCleanFacs forces CleanXfac and CleanYfac equal and everything they draw goes
+// through that one factor. This is the same idea by a different route: ask for a virtual space whose
+// ASPECT matches the screen, and the scale is then identical on both axes by construction.
+//
+// A matching aspect fixes the shape but not the position. The layout is 640x400 and the space it now
+// lives in is bigger on one axis, so it has to be placed: centred across, and below the global header
+// down the screen. That is what the origin is, and it is applied ONCE, to the handful of layout
+// constants that carry an absolute position. Everything else here is written as an offset from one
+// of those, so it follows for free, and the mouse follows too because the hit tests read the same
+// constants the drawing does.
+//
+// The header's height is taken out of the available room BEFORE the scale is chosen, so the browser
+// shrinks to fit under the bar rather than being pushed off the bottom by it.
+static int serverbrowser_VirtW( void );
+static int serverbrowser_VirtH( void );
+static int serverbrowser_OriginX( void );
+static int serverbrowser_OriginY( void );
+
+#define SB_VIRT_W			serverbrowser_VirtW( )
+#define SB_VIRT_H			serverbrowser_VirtH( )
+
+// [rc4l] The origin goes on the ABSOLUTE positions only, of which there are ten across the whole
+// layout. A size must never carry it, and a width written as the difference of two positions cancels
+// it on its own, which is why almost everything below is left exactly as it was.
+#define SB_X( v )			( serverbrowser_OriginX( ) + ( v ))
+#define SB_Y( v )			( serverbrowser_OriginY( ) + ( v ))
+
+#define SB_PANEL_LEFT		SB_X( 36 )
+#define SB_PANEL_RIGHT		SB_X( 604 )
 // [rc4l] Derived from the rule below the tabs rather than hardcoded, so nothing ever sits on it.
 #define SB_HEADER_Y			( SB_TAB_SEP_Y + 8 )
 // [rc4l] 103 rather than 92: the sub-tab row and its two rules cost 11 virtual pixels. Everything
 // else on this screen derives from this number through SB_CONTENT_TOP, so moving it is what keeps the
 // margins even, and 103 is the value that lands them at 29 top and bottom with all 14 rows intact.
-#define SB_FIRST_ROW_Y		103
+#define SB_FIRST_ROW_Y		SB_Y( 103 )
 
 // [rc4l] 16 rather than 20. The glyphs are eight units tall, so 20 left six clear above and below --
 // generous to the point of wasting a row and a half of list. At 16 there are still four either side,
@@ -116,8 +152,8 @@
 // Beside it costs name-column width instead -- and a name that no longer fits is a name you can still
 // read most of, whereas a row that does not fit is a server you cannot see at all.
 #define SB_ROWS_BOTTOM		( SB_FIRST_ROW_Y + SB_VISIBLE_ROWS * SB_ROW_HEIGHT )
-#define SB_DETAIL_LEFT		418
-#define SB_DETAIL_RIGHT		596
+#define SB_DETAIL_LEFT		SB_X( 418 )
+#define SB_DETAIL_RIGHT		SB_X( 596 )
 // Where the list stops. The row highlight and the click hitbox both end here rather than at the
 // panel edge -- otherwise a selected row's band runs on underneath the detail panel and shows through
 // it, and clicking the panel selects whatever row happens to be level with the pointer.
@@ -225,7 +261,7 @@
 // grows with the catalogue while the settings never do.
 #define SB_HOST_LIST_LEFT	( SB_HOST_LEFT + SB_HOST_PAD )
 #define SB_HOST_LIST_RIGHT	( SB_HOST_RCOL_LEFT - 12 )
-#define SB_HOST_RCOL_LEFT	296
+#define SB_HOST_RCOL_LEFT	SB_X( 296 )
 #define SB_HOST_RCOL_RIGHT	( SB_HOST_RIGHT - SB_HOST_PAD )
 
 // [rc4l] Wide enough for PREFERRED PORT, which is the longest label and the one that decides this.
@@ -302,7 +338,10 @@
 // those two to be equal; hardcoding them separately is how the panel ended up 4px from the top edge
 // and 28px from the bottom.
 #define SB_CONTENT_BOTTOM	( SB_FOOTER_Y + 24 )
-#define SB_CONTENT_TOP		( SB_VIRT_H - SB_CONTENT_BOTTOM )
+// [rc4l] Mirrored inside the LAYOUT's own 400 units, not inside the drawing space. The drawing space
+// is now whatever shape the window is, so measuring the top margin from its far edge would make the
+// panel grow with the window while its contents stayed put.
+#define SB_CONTENT_TOP		( 2 * serverbrowser_OriginY( ) + SB_LAYOUT_H - SB_CONTENT_BOTTOM )
 // [rc4l] The tab row, where the "SERVERS" title used to be.
 //
 // A title that says SERVERS on the server browser is a word doing no work -- the player pressed a
@@ -315,7 +354,7 @@
 // below the rule. Three separate literals is how "roughly even" happens; deriving all three from one
 // is how actually even happens, and it survives anyone changing the tab height later.
 #define SB_TAB_PAD			6
-#define SB_TAB_LEFT			48
+#define SB_TAB_LEFT			SB_X( 48 )
 // [rc4l] Pills are sized to their own text rather than to one shared width. MULTIPLAYER is nearly
 // three times the length of HOST, and a width that fits the longer is mostly empty space around the
 // shorter. The pad is the room either side of the label.
@@ -380,10 +419,10 @@
 #define SB_TAB_SEP_Y		( SB_SUBTAB_TOP + SB_SUBTAB_H + SB_SUBTAB_PAD )
 
 // Column x positions (left edge of each), virtual pixels.
-#define SB_COL_FLAG			48
-#define SB_COL_NAME			84
-#define SB_COL_PLAYERS		286
-#define SB_COL_PING			398
+#define SB_COL_FLAG			SB_X( 48 )
+#define SB_COL_NAME			SB_X( 84 )
+#define SB_COL_PLAYERS		SB_X( 286 )
+#define SB_COL_PING			SB_X( 398 )
 
 // [rc4l] Version left the list and lives in the detail strip instead. It is the column a player reads
 // least often and the one they need least urgently -- and the room it freed goes to the name, which
@@ -918,33 +957,106 @@ static	int				g_MouseY = -1;
 //*****************************************************************************
 //	FUNCTIONS
 
-// [rc4l] Virtual coordinates to real screen pixels, for the things that cannot use DTA_Virtual*.
+//*****************************************************************************
+//
+// [rc4l] The drawing space, and where the layout sits in it. See the block by SB_LAYOUT_W.
+//
+// The aspect is matched to the window so the scale is the same on both axes, which is the whole
+// point: a browser that stretches beside a menu that does not is the difference the player sees.
+// Whichever axis runs out first decides the scale, and the header's band is taken off the height
+// before that choice so the browser shrinks to fit under the bar instead of being pushed off the
+// bottom by it.
+static void serverbrowser_VirtSize( int &vw, int &vh )
+{
+	const int sw = screen->GetWidth( );
+	const int sh = screen->GetHeight( );
+	const int barPx = zx::GlobalHeader_ScreenBottom( );
+
+	// Never let the bar claim the whole window, however odd the window gets.
+	int avail = sh - barPx;
+	if ( avail < sh / 2 )
+		avail = sh / 2;
+
+	if (( sw <= 0 ) || ( sh <= 0 ) || ( avail <= 0 ))
+	{
+		vw = SB_LAYOUT_W;
+		vh = SB_LAYOUT_H;
+		return;
+	}
+
+	if (( sw * SB_LAYOUT_H ) <= ( avail * SB_LAYOUT_W ))
+	{
+		// Width runs out first: the layout spans the window and the space is taller than 400.
+		vw = SB_LAYOUT_W;
+		vh = ( sh * SB_LAYOUT_W ) / sw;
+	}
+	else
+	{
+		// Height runs out first, which is every wide window: the space is wider than 640.
+		vw = ( sw * SB_LAYOUT_H ) / avail;
+		vh = ( sh * SB_LAYOUT_H ) / avail;
+	}
+
+	if ( vw < SB_LAYOUT_W ) vw = SB_LAYOUT_W;
+	if ( vh < SB_LAYOUT_H ) vh = SB_LAYOUT_H;
+}
+
+static int serverbrowser_VirtW( void )
+{
+	int vw = 0, vh = 0;
+	serverbrowser_VirtSize( vw, vh );
+	return vw;
+}
+
+static int serverbrowser_VirtH( void )
+{
+	int vw = 0, vh = 0;
+	serverbrowser_VirtSize( vw, vh );
+	return vh;
+}
+
+static int serverbrowser_OriginX( void )
+{
+	return ( serverbrowser_VirtW( ) - SB_LAYOUT_W ) / 2;
+}
+
+static int serverbrowser_OriginY( void )
+{
+	int vw = 0, vh = 0;
+	serverbrowser_VirtSize( vw, vh );
+
+	// The bar's height in this space, so the layout is centred in what is LEFT rather than in the
+	// whole window. Centring in the whole window would tuck the top of the browser under the bar by
+	// half the bar's height, which is the overlap this replaces.
+	const int sh = screen->GetHeight( );
+	const int barV = ( sh > 0 ) ? ( zx::GlobalHeader_ScreenBottom( ) * vh ) / sh : 0;
+
+	const int room = vh - barV;
+	const int slack = ( room > SB_LAYOUT_H ) ? ( room - SB_LAYOUT_H ) / 2 : 0;
+	return barV + slack;
+}
+
+//*****************************************************************************
+//
+// [rc4l] Layout coordinates to real screen pixels, for the things that cannot use DTA_Virtual*.
 //
 // Dim() and the flag's clip rectangle take screen pixels only, so they have to reproduce whatever
-// mapping the renderer used for the text -- and that mapping is NOT a plain stretch. DTA_Virtual*
-// corrects for aspect ratio, letterboxing the virtual space inside the window, so scaling by
-// screenW/SB_VIRT_W put the panel edges and the row highlight in visibly different places from the
-// text sitting on them.
-//
-// VirtualToRealCoords is the renderer's own conversion, so using it means there is one mapping rather
-// than two that agree only on a 16:10 display.
+// mapping the renderer used for the text. This is the engine's own arithmetic for the branch
+// DTA_KeepRatio takes, repeated rather than approximated, so a panel edge and the text sitting on it
+// cannot land a pixel apart. Widths come from the mapped far edge minus the mapped near one, the way
+// the engine does it, so truncation cannot open a seam between rectangles that share a boundary.
 static void serverbrowser_ToScreen( int vx, int vy, int vw, int vh, int &x, int &y, int &w, int &h )
 {
-	x = vx;
-	y = vy;
-	w = vw;
-	h = vh;
+	const int sw = screen->GetWidth( );
+	const int sh = screen->GetHeight( );
 
-	// [rc4l] Mirror the renderer's own short-circuit (v_draw.cpp, ParseDrawTextureTags): when the
-	// surface is EXACTLY the virtual size, DTA_Virtual* draws 1:1 without calling
-	// VirtualToRealCoords at all. VirtualToRealCoords is NOT identity there -- 640x400 is 16:10, so
-	// it applies the aspect expansion and pulls every x toward the centre by 960/1152 -- which is
-	// how vid_scalemode 1 (whose internal buffer is exactly 640x400) detached every pill, highlight
-	// and panel from the text sitting on it. One mapping means copying the shortcut too.
-	if ( screen->GetWidth( ) == SB_VIRT_W && screen->GetHeight( ) == SB_VIRT_H )
-		return;
+	int vW = 0, vH = 0;
+	serverbrowser_VirtSize( vW, vH );
 
-	screen->VirtualToRealCoordsInt( x, y, w, h, SB_VIRT_W, SB_VIRT_H, false, true );
+	x = vx * sw / vW;
+	y = vy * sh / vH;
+	w = ( vx + vw ) * sw / vW - x;
+	h = ( vy + vh ) * sh / vH - y;
 }
 
 static int serverbrowser_ToScreenX( int vx )
@@ -1227,7 +1339,7 @@ static void serverbrowser_DrawCountry( int lServer, int x, int y )
 	if (( ulIndex == COUNTRY_INDEX_UNKNOWN ) && ( bCodeUsable == false ))
 	{
 		screen->DrawText( SmallFont, CR_DARKGRAY, x, serverbrowser_RowTextY( y, SmallFont->GetHeight( )),
-			"?", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			"?", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		return;
 	}
 
@@ -1278,7 +1390,7 @@ static void serverbrowser_DrawCountry( int lServer, int x, int y )
 	// No sheet, or a country we could not place: the code still tells the player what they need.
 	if ( bCodeUsable )
 		screen->DrawText( SmallFont, CR_DARKGRAY, x, serverbrowser_RowTextY( y, SmallFont->GetHeight( )),
-			pszCode, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			pszCode, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 }
 
 //*****************************************************************************
@@ -1848,7 +1960,7 @@ public:
 			// First line white, the rest dimmer: the thing hovered, then what is known about it.
 			screen->DrawText( SmallFont, ( i == 0 ) ? CR_WHITE : CR_GRAY,
 				box.x + padX, y, lines[i].c_str( ),
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			y += lineH;
 		}
 	}
@@ -1893,7 +2005,7 @@ public:
 					screen->DrawText( SmallFont, CR_GRAY,
 						( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( line ) / 2 ),
 						y + lines * SB_DLG_LINE, line,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 				++lines;
 				line = word;
 			}
@@ -1911,7 +2023,7 @@ public:
 				screen->DrawText( SmallFont, CR_GRAY,
 					( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( line ) / 2 ),
 					y + lines * SB_DLG_LINE, line,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			++lines;
 		}
 
@@ -1972,7 +2084,7 @@ public:
 
 		screen->DrawText( SmallFont, CR_WHITE,
 			( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( g_Dialog.title ) / 2 ), y, g_Dialog.title,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		y += SB_DLG_LINE + 4;
 
 		if ( g_Dialog.message.IsNotEmpty( ))
@@ -1982,7 +2094,7 @@ public:
 		{
 			y += 6;
 			screen->DrawText( SmallFont, CR_DARKGRAY, SB_DLG_LEFT + SB_DLG_PAD, y, g_Dialog.inputLabel,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			y += SB_DLG_LINE;
 
 			DrawDialogField( y );
@@ -2026,7 +2138,7 @@ public:
 
 		const int textY = y + ( SB_DLG_FIELD_H - SmallFont->GetHeight( )) / 2 + 1;
 		screen->DrawText( SmallFont, CR_WHITE, fx + 5, textY, shown,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 		if (( DMenu::MenuTime / 16 ) % 2 == 0 )
 		{
@@ -2307,8 +2419,8 @@ public:
 		DrawListScrollbar( total, window.first );
 
 		// Column headings, dim so they never compete with the data.
-		screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_HEADER_Y, "SERVER", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
-		screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_PLAYERS, SB_HEADER_Y, "PLRS", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_NAME, SB_HEADER_Y, "SERVER", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		screen->DrawText( SmallFont, CR_DARKGRAY, SB_COL_PLAYERS, SB_HEADER_Y, "PLRS", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		DrawRightAligned( SmallFont, CR_DARKGRAY, SB_COL_PING, SB_HEADER_Y, "PING" );
 
 		for ( int i = 0; i < window.count; i++ )
@@ -2366,7 +2478,7 @@ public:
 			// the live one. The band above keeps saying it once the selection moves onto this row.
 			const FString name = serverbrowser_FitName( BROWSER_GetHostName( lServer ), SB_NAME_MAX_WIDTH );
 			screen->DrawText( SmallFont, ( paint.label == zx::RowLabel::Live ) ? CR_GREEN : CR_WHITE,
-				SB_COL_NAME, ty, name, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				SB_COL_NAME, ty, name, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 			// Humans only -- a row reading 8/8 for seven bots and one person is a lie the player
 			// only discovers after joining.
@@ -2379,7 +2491,7 @@ public:
 			// [rc4l] Colour only where it means something, the same way ping does: full is the one
 			// state that changes what you can do about the row, so it is the only one worth marking.
 			const EColorRange playersColor = (( slots > 0 ) && ( humans >= slots )) ? CR_RED : CR_WHITE;
-			screen->DrawText( SmallFont, playersColor, SB_COL_PLAYERS, ty, players, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			screen->DrawText( SmallFont, playersColor, SB_COL_PLAYERS, ty, players, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 			const int ping = static_cast<int>( BROWSER_GetPing( lServer ));
 			FString pingText;
@@ -2414,7 +2526,7 @@ public:
 			text = "No servers found";
 
 		screen->DrawText( SmallFont, phase == zx::BrowserPhase::Loading ? CR_UNTRANSLATED : CR_DARKGRAY,
-			( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( text ) / 2 ), y, text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( text ) / 2 ), y, text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
 	//*************************************************************************
@@ -2527,7 +2639,7 @@ public:
 		const int textY = vy + ( vh - SmallFont->GetHeight( )) / 2 + 1;
 		screen->DrawText( SmallFont, textCol,
 			vx + ( vw / 2 ) - ( SmallFont->StringWidth( label ) / 2 ), textY, label,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
 	void DrawDetailPanel( )
@@ -2635,7 +2747,7 @@ public:
 		const int textY = vTop + ( vH - SmallFont->GetHeight( )) / 2 + 1;
 		screen->DrawText( SmallFont, bSelected ? CR_WHITE : CR_DARKGRAY,
 			vLeft + ( vW / 2 ) - ( SmallFont->StringWidth( label ) / 2 ), textY,
-			label, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			label, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
 	//*************************************************************************
@@ -4335,7 +4447,7 @@ public:
 					: ( bChosen ? CR_WHITE : CR_GRAY );
 
 				screen->DrawText( SmallFont, color, textX, textY, labels[i],
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			}
 		}
 	}
@@ -4418,7 +4530,7 @@ public:
 			screen->DrawText( SmallFont, bBusy ? CR_GOLD : CR_WHITE,
 				SB_HOST_LEFT + (( SB_HOST_RIGHT - SB_HOST_LEFT ) - headingW ) / 2,
 				SB_HOST_TOP + SB_HOST_PAD, heading,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 
 		// [rc4l] The settings are a MASKED, SCROLLING area. Everything between these two calls is
@@ -4484,7 +4596,7 @@ public:
 		{
 			screen->DrawText( SmallFont, bFocused ? CR_GOLD : CR_DARKGRAY, x,
 				y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1, g_HostFieldLabels[index],
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 
 		const int base = bFocused ? 30 : (( g_HostFieldHot == index ) ? 22 : 16 );
@@ -4543,7 +4655,7 @@ public:
 		if ( bLettering )
 		{
 			screen->DrawText( SmallFont, CR_WHITE, textX, textY, shown,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 
 		if ( bLettering && bFocused && (( DMenu::MenuTime / 16 ) % 2 == 0 ))
@@ -4745,7 +4857,7 @@ public:
 		const int w = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
 		screen->DrawText( BigFont, CR_WHITE,
 			SB_HOST_RCOL_LEFT + ( w - BigFont->StringWidth( title )) / 2, y, title,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
 	void DrawHostDetail( )
@@ -4774,7 +4886,7 @@ public:
 				const int capW = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
 				screen->DrawText( SmallFont, CR_WHITE,
 					SB_HOST_RCOL_LEFT + ( capW - SmallFont->StringWidth( caption )) / 2, y, caption,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			}
 			return;
 		}
@@ -4801,7 +4913,7 @@ public:
 				if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 				{
 					screen->DrawText( SmallFont, CR_WHITE, x, y, lines[i].Text,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 				}
 				y += SB_HOST_LINE;
 			}
@@ -4821,7 +4933,7 @@ public:
 			const FString iwadRow = HostDetailIwadRow( addon );
 			screen->DrawText( SmallFont, ( iwadRow[0] == '+' ) ? CR_GRAY : CR_DARKRED,
 				x, y, iwadRow,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 		y += SB_HOST_LINE;
 
@@ -4865,13 +4977,13 @@ public:
 					name = serverbrowser_FitName( name, nameRoom );
 
 				screen->DrawText( SmallFont, CR_GRAY, x, y, name,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 				if ( size.IsNotEmpty( ))
 				{
 					screen->DrawText( SmallFont, CR_DARKGRAY,
 						SB_HOST_RCOL_RIGHT - sizeW, y, size,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 				}
 			}
 			y += SB_HOST_LINE;
@@ -4966,7 +5078,7 @@ public:
 			// inside its own bar.
 			screen->DrawText( SmallFont, col, x,
 				rowY + ( SB_HOST_ENTRY_H - SmallFont->GetHeight( )) / 2, label,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 			// No file count here on purpose: the detail panel beside this already says the files and
 			// the IWAD, and a narrow list repeating it crowded itself for no new information.
@@ -4978,7 +5090,7 @@ public:
 		if ( HostRowFullyVisible( y - SB_HOST_LINE, SB_HOST_LINE ))
 		{
 			screen->DrawText( SmallFont, CR_DARKGRAY, x, y - SB_HOST_LINE, "VISIBILITY",
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 
 		const int rowX = x;
@@ -5099,7 +5211,7 @@ public:
 			const EColorRange headColour = ( state == zx::HostState::Running ) ? CR_GREEN : CR_GOLD;
 
 			screen->DrawText( SmallFont, headColour, x, y, zx::HostStateSummary( state ),
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 		y += SB_HOST_LINE + 6;
 
@@ -5198,7 +5310,7 @@ public:
 		if ( HostTextRowVisible( y, SB_HOST_LINE ))
 		{
 			screen->DrawText( SmallFont, colour, x, y, code,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 			// Only while the row is actually on screen. A tooltip for a line the mask is hiding is a
 			// hover target over something the player cannot see.
@@ -5244,7 +5356,7 @@ public:
 				if ( HostTextRowVisible( y, SB_HOST_LINE ))
 				{
 					screen->DrawText( SmallFont, colour, x, y, line,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 				}
 				y += SB_HOST_LINE;
 				line = word;
@@ -5268,7 +5380,7 @@ public:
 			if ( HostTextRowVisible( y, SB_HOST_LINE ))
 			{
 				screen->DrawText( SmallFont, colour, x, y, line,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			}
 			y += SB_HOST_LINE;
 		}
@@ -5324,7 +5436,7 @@ public:
 			// A prompt rather than a blank box: an empty rounded rectangle says nothing about what it
 			// is for, and this one is not obviously a search box until something is in it.
 			screen->DrawText( SmallFont, CR_DARKGRAY, textX, textY, "Search",
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			return;
 		}
 
@@ -5369,7 +5481,7 @@ public:
 		}
 
 		screen->DrawText( SmallFont, CR_WHITE, textX, textY, shown,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 		if ( bFocused )
 		{
@@ -5420,7 +5532,7 @@ public:
 		{
 			screen->DrawText( SmallFont, CR_WHITE,
 				(( SB_PANEL_LEFT + SB_DETAIL_RIGHT ) / 2 ) - ( lines[i].Width / 2 ), y,
-				lines[i].Text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				lines[i].Text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			y += SmallFont->GetHeight( ) + 2;
 		}
 		V_FreeBrokenLines( lines );
@@ -5429,7 +5541,7 @@ public:
 		const char *const dismiss = "press a key";
 		screen->DrawText( SmallFont, CR_DARKGRAY,
 			(( SB_PANEL_LEFT + SB_DETAIL_RIGHT ) / 2 ) - ( SmallFont->StringWidth( dismiss ) / 2 ), y,
-			dismiss, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			dismiss, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
 	//*************************************************************************
@@ -5752,7 +5864,7 @@ public:
 		const int textY = SB_BUTTON_TOP + ( SB_BUTTON_H - SmallFont->GetHeight( )) / 2 + 1;
 		screen->DrawText( SmallFont, bCancel ? CR_ORANGE : CR_WHITE,
 			( SB_BUTTON_LEFT + SB_BUTTON_RIGHT ) / 2 - ( SmallFont->StringWidth( label ) / 2 ),
-			textY, label, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			textY, label, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
 	//*************************************************************************
@@ -5890,7 +6002,7 @@ public:
 	void DrawInPanel( EColorRange color, int x, int y, const char *pszText )
 	{
 		screen->DrawText( SmallFont, color, x, y, pszText,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
 			DTA_ClipLeft, serverbrowser_ToScreenX( SB_DETAIL_LEFT + 4 ),
 			DTA_ClipRight, serverbrowser_ToScreenX( SB_DETAIL_RIGHT - 4 ),
 			DTA_ClipTop, serverbrowser_ToScreenY( SB_DETAIL_TOP + 4 ),
@@ -6309,7 +6421,7 @@ public:
 
 		screen->DrawText( SmallFont, bRefused ? CR_BRICK : ( bBusy ? CR_GOLD : CR_GRAY ),
 			SB_REFRESH_X + ( SB_REFRESH_W - textW ) / 2, SB_REFRESH_Y + 3, label,
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 		// [rc4l] How old the list is, under what the button does. A list that looks populated says
 		// nothing about whether it is current, and this is the one control whose whole job is that
@@ -6449,7 +6561,7 @@ public:
 
 		if ( text.IsNotEmpty( ))
 			screen->DrawText( SmallFont, CR_DARKGRAY,
-				( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( text ) / 2 ), y, text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+				( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( text ) / 2 ), y, text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
 	//*************************************************************************
@@ -6478,7 +6590,7 @@ public:
 	//
 	void DrawRightAligned( FFont *font, EColorRange color, int right, int y, const char *text )
 	{
-		screen->DrawText( font, color, right - font->StringWidth( text ), y, text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
+		screen->DrawText( font, color, right - font->StringWidth( text ), y, text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
 	//*************************************************************************
