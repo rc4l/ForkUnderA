@@ -71,7 +71,7 @@ echo "==> Configuring (Release, OpenAL, NO_FMOD, SERVERONLY=$SERVERONLY)"
 rm -f build-linux/CMakeCache.txt
 
 # [rc4l] ZX_WITH_SYMBOLS=1 (set by release CI) builds with debug info and splits it into
-# zandronum.debug via RELEASE_WITH_DEBUG_FILE, keeping the shipped binary stripped/lean. The
+# forkundera.debug via RELEASE_WITH_DEBUG_FILE, keeping the shipped binary stripped/lean. The
 # .debug file is uploaded to GlitchTip so crashes symbolicate. --build-id links the two.
 SYM_ARGS=()
 if [ "${ZX_WITH_SYMBOLS:-0}" = "1" ]; then
@@ -91,12 +91,12 @@ cmake --build build-linux -j"$(nproc)"
 
 # [rc4l] Refuse to package a client that cannot make sound; this shipped once already.
 if [ "$SERVERONLY" != "ON" ]; then
-  if ! ldd build-linux/zandronum | grep -q libopenal; then
+  if ! ldd build-linux/forkundera | grep -q libopenal; then
     echo "ERROR: zandronum is not linked against libopenal — the build has no sound." >&2
     echo "       Check the OpenAL detection in the configure output above." >&2
     exit 1
   fi
-  echo "==> sound OK: $(ldd build-linux/zandronum | grep libopenal | tr -s ' ')"
+  echo "==> sound OK: $(ldd build-linux/forkundera | grep libopenal | tr -s ' ')"
 fi
 
 if [ "$NO_PACKAGE" = "ON" ]; then
@@ -116,7 +116,7 @@ rm -rf "$STAGE"; mkdir -p "$STAGE"
 
 # [rc4l] SERVERONLY renames the target to zandronum-server; copying the hardcoded client name
 # shipped whatever stale client binary happened to be in the build directory.
-if [ "$SERVERONLY" = "ON" ]; then BIN=zandronum-server; else BIN=zandronum; fi
+if [ "$SERVERONLY" = "ON" ]; then BIN=forkundera-server; else BIN=forkundera; fi
 [ -f "build-linux/$BIN" ] || { echo "ERROR: build-linux/$BIN not found" >&2; exit 1; }
 cp "build-linux/$BIN" "$STAGE"/
 cp build-linux/*.pk3 "$STAGE"/
