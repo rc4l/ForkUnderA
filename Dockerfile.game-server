@@ -87,7 +87,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl jq \
         libstdc++6 libssl3 zlib1g libbz2-1.0 libcurl4 libopus0 libsdl2-2.0-0 \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --create-home --home-dir /data --shell /usr/sbin/nologin fua
+    && useradd --system --create-home --home-dir /home/fua --shell /usr/sbin/nologin fua \
+    && mkdir -p /data && chown fua:fua /data
+
+# [rc4l] HOME is NOT the data volume, and that separation is load-bearing rather than tidiness.
+#
+# The engine creates ~/.config during M_LoadDefaults and exits if it cannot. Whatever is mounted at
+# /data belongs to whoever created it on the host, which for a bind mount is essentially never this
+# container's user -- so making /data the home directory produced a server that built perfectly and
+# died three lines into startup with a permission error.
+#
+# So HOME lives inside the image where it is always writable. The config it writes there is
+# deliberately ephemeral: a dedicated server's entire configuration arrives on the argv the entrypoint
+# builds, so a persisted ini could only ever disagree with it.
+ENV HOME=/home/fua
 
 COPY --from=build /stage /opt/forkundera
 
