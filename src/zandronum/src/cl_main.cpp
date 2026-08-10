@@ -1164,9 +1164,11 @@ void CLIENT_GetPackets( void )
 							// Now, query all the servers on the list.
 							BROWSER_QueryAllServers( );
 
-							// Finally, clear the server list. Server slots will be reactivated when
-							// they come in.
-							BROWSER_DeactivateAllServers( );
+							// [rc4l] Re-check what is already listed instead of blanking it. This
+							// used to deactivate every row, so the whole list vanished the instant
+							// the registry answered and only refilled as each server replied. Rows
+							// now stay up while they are verified and drop on their own timeout.
+							BROWSER_RefreshListedServers( );
 						}
 					}
 					break;

@@ -1739,6 +1739,38 @@ void BROWSER_QueryServerRegistry( void )
 
 //*****************************************************************************
 //
+// [rc4l] Ask the registries once, a few seconds in, so the browser opens onto a list instead of
+// starting the conversation when you get there.
+//
+// The delay is jittered off the launch clock rather than a random number: every copy of the game
+// starting at once would otherwise land on the registry together, and its flood queues are small.
+static LONG g_lBackgroundQueryAtMS = 0;
+static bool g_bBackgroundQuerySent = false;
+
+void BROWSER_BackgroundTick( void )
+{
+	const LONG lNow = I_MSTime( );
+
+	if ( g_lBackgroundQueryAtMS == 0 )
+		g_lBackgroundQueryAtMS = lNow + 3000 + ( lNow % 4000 );
+
+	if (( g_bBackgroundQuerySent == false ) && ( lNow >= g_lBackgroundQueryAtMS ))
+	{
+		g_bBackgroundQuerySent = true;
+
+		// A server does not browse, and a client already has the list it is playing on.
+		if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
+			BROWSER_QueryServerRegistry( );
+	}
+
+	// These used to be pumped only by the browser menu's Ticker, so a reply that arrived while the
+	// menu was shut had nothing to retry it or time it out. One pump, always running.
+	BROWSER_ServerRegistryTick( );
+	BROWSER_QueryTick( );
+}
+
+//*****************************************************************************
+//
 // [rc4l] Retry, then give up out loud. Called every tic while the browser menu is open.
 //
 // Giving up MUST clear g_bWaitingForServerRegistryResponse: M_RefreshServers() refuses to do anything
