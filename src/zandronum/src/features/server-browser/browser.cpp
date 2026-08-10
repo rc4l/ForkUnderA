@@ -54,6 +54,7 @@
 #include "features/server-browser/computation/registrystatus_compute.h"
 #include "features/server-browser/computation/querypunch_compute.h"   // [rc4l] punch-on-query schedule
 #include "features/server-browser/computation/rowlifetime_compute.h"  // [rc4l] what keeps a row mortal
+#include "features/server-browser/computation/rowstep_compute.h"      // [rc4l] what to do with a row
 #include "features/server-hosting/zx_punchclient.h"                   // [rc4l] PunchRequestFor
 #include "features/launcher-protocol/computation/segmentreassembly_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] which rows are the server WE started
@@ -149,6 +150,10 @@ static	const LONG		kMaxPunchesPerSweep = 4;
 // Retrying faster than the thing you are retrying against is willing to answer is not persistence,
 // it is a self-inflicted denial of service.
 static const ULONG		SERVERREGISTRY_QUERY_TIMEOUT_MS = 4000;
+
+// [rc4l] How long a re-check of an already-listed row may go unanswered. Generous on purpose: this
+// is "will never answer", not a quality bar.
+static const int		SERVERBROWSER_REFRESH_TIMEOUT_MS = 4000;
 
 // [rc4l] How long a THROTTLED verdict keeps meaning something. The registry's own ignore window is
 // three seconds ("Ignoring for 3 seconds" in its log), so this sits just past it: long enough not to
@@ -648,62 +653,6 @@ ULONG BROWSER_GetActiveState( ULONG ulServer )
 //
 // Four seconds is deliberately generous. This is a timeout for "will never answer", not a quality
 // bar; a slow satellite link should still make it in.
-// [rc4l] Punch-on-query. A registry-listed server behind carrier NAT can announce OUT but cannot
-// receive our challenge, so without this it times out every refresh and the row is silently dropped
-// -- the one unreachable-host case the punch machinery cannot help, because punching used to run at
-// join and joining needs the row this timeout was deleting. The schedule (querypunch_compute) asks
-// the registry to have the server punch toward us, then re-sends the challenge so one lands in the
-// hole.
-//
-// Shared by both paths that can be waiting on a silent server: a first query (AS_WAITINGFORREPLY)
-// and a RE-check of a row we already had listed. It lived only in the first for a while, which meant
-// a server that moved behind a carrier NAT after we had seen it once was re-queried, ignored and
-// dropped without a single punch ever being asked for.
-//
-// `bMayTimeOut` is false for the re-check path, whose own four second deadline owns the row's fate;
-// two expiries racing on one row is how a row disappears mid-punch.
-static void browser_TryPunchOnQuery( ULONG ulIdx, int msSinceFirstChallenge, bool bMayTimeOut )
-{
-	// Both kinds of waiting reach the ladder. RowIsAwaitingReply exists so this cannot quietly go
-	// back to remembering one of them, which is how a carrier-NAT server got dropped in silence.
-	if ( zx::RowIsAwaitingReply( g_BrowserServerList[ulIdx].bRefreshing,
-			g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY ) == false )
-		return;
-
-	const bool bEligible = ( g_BrowserServerList[ulIdx].bLAN == false )
-		&& ( g_BrowserServerList[ulIdx].bPunchRequested
-			|| ( g_lPunchesThisSweep < kMaxPunchesPerSweep ));
-
-	const zx::QueryPunchStep step = zx::StepQueryPunch(
-		msSinceFirstChallenge, bEligible,
-		g_BrowserServerList[ulIdx].bPunchRequested,
-		static_cast<int>( g_BrowserServerList[ulIdx].lPunchResendsSent ));
-
-	if ( step.requestPunch )
-	{
-		// Spend budget only on an ask that actually went out -- PunchRequestFor declines local
-		// addresses and registry-less sessions on its own.
-		if ( zx::PunchRequestFor( g_BrowserServerList[ulIdx].Address, true ))
-		{
-			g_BrowserServerList[ulIdx].bPunchRequested = true;
-			g_lPunchesThisSweep++;
-		}
-	}
-	else if ( step.resendChallenge )
-	{
-		// Re-send WITHOUT restamping lMSTime: the ladder is positioned by time since the FIRST
-		// challenge, and browser_QueryServer stamps unconditionally.
-		const LONG lFirstMS = g_BrowserServerList[ulIdx].lMSTime;
-		browser_QueryServer( ulIdx );
-		g_BrowserServerList[ulIdx].lMSTime = lFirstMS;
-		g_BrowserServerList[ulIdx].lPunchResendsSent++;
-	}
-	else if ( step.timeOut && bMayTimeOut )
-	{
-		g_BrowserServerList[ulIdx].ulActiveState = AS_TIMEDOUT;
-	}
-}
-
 //*****************************************************************************
 //
 void BROWSER_QueryTick( void )
@@ -712,54 +661,62 @@ void BROWSER_QueryTick( void )
 
 	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
-		// [rc4l] A server carried over from the last time the browser was open, being re-checked
-		// while it stays listed. It answered once, so it is shown until it fails to answer again --
-		// and then it goes, rather than lingering as a row nobody can join.
+		// [rc4l] Read the row, ask what to do, do it. No judgement lives here any more.
 		//
-		// Removed outright instead of marked AS_TIMEDOUT: that state means "we asked and never heard
-		// anything", which is a thing worth saying about a server the registry still lists. This one
-		// is simply gone, and the registry will not be offering it next time either.
-		if ( g_BrowserServerList[ulIdx].bRefreshing )
-		{
-			if ( g_BrowserServerList[ulIdx].lRefreshMS <= 0 )
-				continue;			// queued, not sent yet -- nothing to time out
+		// It used to be a chain of early returns, and the shape of that chain hid two live bugs in
+		// one session: a re-checked row skipped the punch ladder entirely, and a mirrored row could
+		// end up in a state no timeout could reach. Both were dispatch, not arithmetic, so no
+		// predicate could catch them -- rowstep_compute takes the whole state and answers with the
+		// one thing to do, and its tests walk the entire space rather than the cases anyone thought
+		// of.
+		zx::RowStepIn in;
+		in.refreshing       = g_BrowserServerList[ulIdx].bRefreshing;
+		in.waitingForReply  = ( g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY );
+		in.lan              = g_BrowserServerList[ulIdx].bLAN;
+		in.punchRequested   = g_BrowserServerList[ulIdx].bPunchRequested;
+		in.msSinceQuery     = static_cast<int>( lNow - g_BrowserServerList[ulIdx].lMSTime );
+		in.msSinceRefresh   = static_cast<int>( lNow - g_BrowserServerList[ulIdx].lRefreshMS );
+		in.resends          = static_cast<int>( g_BrowserServerList[ulIdx].lPunchResendsSent );
+		in.punchBudgetLeft  = ( g_lPunchesThisSweep < kMaxPunchesPerSweep );
+		in.refreshTimeoutMs = SERVERBROWSER_REFRESH_TIMEOUT_MS;
 
-			// [rc4l] A re-check that is going unanswered is EXACTLY the case punch-on-query exists
-			// for, and this branch used to skip straight past it to the timeout. Rows only reached
-			// the punch ladder below while they were AS_WAITINGFORREPLY, which is the state a
-			// registry announcement puts a NEW server in -- so a server we had already seen once,
-			// which then moved behind a carrier NAT, was re-queried, ignored, and dropped without
-			// anyone ever asking the registry to introduce us. Seen live: a host on cellular was
-			// listed and verified by the registry, and the browser reported "3 did not respond"
-			// having never sent a single punch request for it.
-			browser_TryPunchOnQuery( ulIdx,
-				static_cast<int>( lNow - g_BrowserServerList[ulIdx].lRefreshMS ), false );
-
-			if (( lNow - g_BrowserServerList[ulIdx].lRefreshMS ) >= 4000 )
-			{
-				g_BrowserServerList[ulIdx].bRefreshing = false;
-				g_BrowserServerList[ulIdx].lRefreshMS = 0;
-				g_BrowserServerList[ulIdx].ulActiveState = AS_INACTIVE;
-			}
-			continue;
-		}
-
-		if ( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
-			continue;
-
-		// Not yet queried: lMSTime is only stamped when a packet actually goes out.
+		// A row whose clock never started reads as not-sent, which StepRow treats as "waiting on us".
 		if ( g_BrowserServerList[ulIdx].lMSTime <= 0 )
-			continue;
+			in.msSinceQuery = 0;
+		if ( g_BrowserServerList[ulIdx].lRefreshMS <= 0 )
+			in.msSinceRefresh = 0;
 
-		// [rc4l] Punch-on-query. A registry-listed server behind carrier NAT can announce OUT but
-		// cannot receive our challenge, so before this it timed out here every refresh and the row
-		// was silently dropped -- the ONLY unreachable-host case the punch machinery cannot help,
-		// because punching used to run at join, and joining needs the row this timeout was deleting.
-		// The schedule (querypunch_compute) asks the registry to have the server punch toward us,
-		// then re-sends the challenge so one lands in the hole. LAN rows and rows past the per-sweep
-		// budget keep the old four-second lifetime to the millisecond.
-		browser_TryPunchOnQuery( ulIdx,
-			static_cast<int>( lNow - g_BrowserServerList[ulIdx].lMSTime ), true );
+		const zx::RowStepOut act = zx::StepRow( in );
+
+		if ( act.requestPunch )
+		{
+			// Budget is spent only on an ask that actually went out -- PunchRequestFor declines
+			// local addresses and registry-less sessions on its own.
+			if ( zx::PunchRequestFor( g_BrowserServerList[ulIdx].Address, true ))
+			{
+				g_BrowserServerList[ulIdx].bPunchRequested = true;
+				g_lPunchesThisSweep++;
+			}
+		}
+		else if ( act.resendChallenge )
+		{
+			// Re-send WITHOUT restamping lMSTime: the ladder is positioned by time since the FIRST
+			// challenge, and browser_QueryServer stamps unconditionally.
+			const LONG lFirstMS = g_BrowserServerList[ulIdx].lMSTime;
+			browser_QueryServer( ulIdx );
+			g_BrowserServerList[ulIdx].lMSTime = lFirstMS;
+			g_BrowserServerList[ulIdx].lPunchResendsSent++;
+		}
+		else if ( act.dropFromList )
+		{
+			g_BrowserServerList[ulIdx].bRefreshing = false;
+			g_BrowserServerList[ulIdx].lRefreshMS = 0;
+			g_BrowserServerList[ulIdx].ulActiveState = AS_INACTIVE;
+		}
+		else if ( act.markTimedOut )
+		{
+			g_BrowserServerList[ulIdx].ulActiveState = AS_TIMEDOUT;
+		}
 	}
 }
 
