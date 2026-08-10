@@ -48,6 +48,7 @@
 #include "features/server-browser/computation/textinput_compute.h"
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
+#include "features/server-browser/computation/liverow_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
 #include "features/addon-catalogue/zx_catalogue.h"
 #include "features/addon-catalogue/computation/hostplan_compute.h"
@@ -2255,28 +2256,40 @@ public:
 			const int y = SB_FIRST_ROW_Y + i * SB_ROW_HEIGHT;
 			const bool bSelected = ( row == g_Selected );
 
-			if ( bSelected )
-			{
-				DimRow( y );
+			// [rc4l] The same rule the HOSTING CATALOGUE uses for the experience it is serving, from
+			// the same unit, so being on a server and running one are drawn alike. See 3e08af3.
+			const zx::RowPaint paint = zx::PaintListRow( bSelected, RowIsTheServerWeAreOn( lServer ),
+				row == g_HoverRow );
 
-				// [rc4l] And the glow, only when the ARROW KEYS are on the list. The highlight marks
-				// what is selected and stays put while you click around with the mouse; this marks
-				// where the keyboard is, which is a different question and used to have no answer.
-				FocusAnchor( zx::BrowserFocus::Rows, SB_PANEL_LEFT + 9, serverbrowser_RowTextY( y, 0 ) + 1 );
-			}
-			else if ( row == g_HoverRow )
+			// Hover is a HINT, not a selection. It used to move the selection outright, which meant
+			// sweeping the pointer across the list repainted every row it crossed and rewrote the
+			// whole detail panel each time -- names flicking between red and white, the panel
+			// churning through servers nobody asked about. A faint band says "this is what you would
+			// be clicking" without claiming anything happened.
+			if ( paint.band != zx::RowBand::None )
 			{
-				// [rc4l] Hover is a HINT, not a selection. It used to move the selection outright,
-				// which meant sweeping the pointer across the list repainted every row it crossed and
-				// rewrote the whole detail panel each time -- names flicking between red and white,
-				// the panel churning through servers nobody asked about. A faint band says "this is
-				// what you would be clicking" without claiming anything happened.
-				screen->Dim( PalEntry( 150, 170, 215 ), 0.06f,
-					serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 ),
-					serverbrowser_ToScreenY( y - 2 ),
-					serverbrowser_ToScreenX( SB_ROW_RIGHT ) - serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 ),
-					serverbrowser_ToScreenY( y - 2 + SB_ROW_HEIGHT ) - serverbrowser_ToScreenY( y - 2 ));
+				PalEntry bar( 150, 170, 215 );
+				float alpha = 0.06f;
+
+				if ( paint.band == zx::RowBand::Live )
+				{
+					bar = PalEntry( 40, 96, 52 );
+					alpha = bSelected ? 0.40f : 0.28f;
+				}
+				else if ( paint.band == zx::RowBand::Selection )
+				{
+					bar = PalEntry( 120, 150, 220 );
+					alpha = 0.28f;
+				}
+
+				DimRow( y, bar, alpha );
 			}
+
+			// [rc4l] The glow, only when the ARROW KEYS are on the list. The highlight marks what is
+			// selected and stays put while you click around with the mouse; this marks where the
+			// keyboard is, which is a different question and used to have no answer.
+			if ( bSelected )
+				FocusAnchor( zx::BrowserFocus::Rows, SB_PANEL_LEFT + 9, serverbrowser_RowTextY( y, 0 ) + 1 );
 
 			serverbrowser_DrawCountry( lServer, SB_COL_FLAG, y );
 
@@ -2288,14 +2301,9 @@ public:
 			//
 			// GREEN for the server you are actually on, the same green the hosting catalogue uses for
 			// the experience it is running. One colour, one meaning across the whole browser: this is
-			// the live one.
-			//
-			// It beats selection deliberately. Selection already has a highlight bar to say what it
-			// is, and it moves every time an arrow key is pressed; being connected does not. The
-			// catalogue learned this the hard way -- a running row went gold while hovered, so the one
-			// state worth marking vanished exactly when you pointed at it.
+			// the live one. The band above keeps saying it once the selection moves onto this row.
 			const FString name = serverbrowser_FitName( BROWSER_GetHostName( lServer ), SB_NAME_MAX_WIDTH );
-			screen->DrawText( SmallFont, RowIsTheServerWeAreOn( lServer ) ? CR_GREEN : CR_WHITE,
+			screen->DrawText( SmallFont, ( paint.label == zx::RowLabel::Live ) ? CR_GREEN : CR_WHITE,
 				SB_COL_NAME, ty, name, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
 			// Humans only -- a row reading 8/8 for seven bots and one person is a lie the player
@@ -4834,33 +4842,39 @@ public:
 			// It survives the selection moving away, which is the whole point of showing it.
 			const bool bRunning = zx::HostIsActive( ) && ( row == g_HostingEntry );
 
+			// [rc4l] Which of the three things this row is, decided in one place. The SERVER LIST
+			// has the same shape of problem in the row for the server you are connected to, and
+			// used to answer it differently; computation/liverow_compute is now the single rule and
+			// each list keeps its own colours and weights. See 3e08af3.
+			const zx::RowPaint paint = zx::PaintListRow( bSel, bRunning, bHot );
+
 			// The selected row gets a bar behind it rather than only a colour: on a dark panel a
 			// colour change alone is easy to miss, and this is the one choice that decides what the
 			// whole rest of the screen is about.
-			if ( bSel || bRunning )
+			//
+			// The HOVER band is the SERVER LIST's, to the pixel: the same faint colour at the same
+			// alpha. It used to recolour the label gold instead, which said the wrong thing twice
+			// over. Gold is what a FOCUSED field wears elsewhere in this browser, so sweeping the
+			// pointer down the list looked like the keyboard was following it; and a row that
+			// changes colour under the pointer claims something happened, when hovering is only a
+			// hint about what clicking would do.
+			if ( paint.band != zx::RowBand::None )
 			{
-				const PalEntry bar = bRunning ? PalEntry( 40, 96, 52 ) : PalEntry( 60, 70, 96 );
+				PalEntry bar( 150, 170, 215 );
+				float alpha = 0.06f;
 
-				screen->Dim( bar, bSel ? 0.55f : 0.4f,
-					serverbrowser_ToScreenX( x - 4 ),
-					serverbrowser_ToScreenY( rowY - 1 ),
-					serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT ) -
-						serverbrowser_ToScreenX( x - 4 ),
-					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H - 1 ) -
-						serverbrowser_ToScreenY( rowY - 1 ));
-			}
-			else if ( bHot )
-			{
-				// [rc4l] The SERVER LIST's hover, to the pixel: the same faint band at the same
-				// colour and alpha, and no change to the text.
-				//
-				// This used to recolour the label gold, which said the wrong thing twice over. Gold
-				// is what a FOCUSED field wears elsewhere in this browser, so sweeping the pointer
-				// down the list looked like the keyboard was following it; and a row that changes
-				// colour under the pointer claims something happened, when hovering is only a hint
-				// about what clicking would do. It also fought the green: a running row went gold
-				// while hovered, so the one state worth marking vanished when you pointed at it.
-				screen->Dim( PalEntry( 150, 170, 215 ), 0.06f,
+				if ( paint.band == zx::RowBand::Live )
+				{
+					bar = PalEntry( 40, 96, 52 );
+					alpha = bSel ? 0.55f : 0.4f;
+				}
+				else if ( paint.band == zx::RowBand::Selection )
+				{
+					bar = PalEntry( 60, 70, 96 );
+					alpha = 0.55f;
+				}
+
+				screen->Dim( bar, alpha,
 					serverbrowser_ToScreenX( x - 4 ),
 					serverbrowser_ToScreenY( rowY - 1 ),
 					serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT ) -
@@ -4871,7 +4885,11 @@ public:
 
 			// Hover is deliberately not in here. What a row IS -- selected, being served, neither --
 			// is all the label has to say.
-			EColorRange col = bSel ? CR_WHITE : ( bRunning ? CR_GREEN : CR_GRAY );
+			EColorRange col = CR_GRAY;
+			if ( paint.label == zx::RowLabel::Selected )
+				col = CR_WHITE;
+			else if ( paint.label == zx::RowLabel::Live )
+				col = CR_GREEN;
 
 			const FString label = entries[row].addon.name.c_str( );
 
@@ -6298,14 +6316,16 @@ public:
 
 	//*************************************************************************
 	//
-	void DimRow( int y )
+	// [rc4l] One rectangle, any tint. It used to hard-code the selection's blue, which meant the row
+	// for the server you are ON had nowhere to put its green. See 3e08af3.
+	void DimRow( int y, PalEntry tint, float alpha )
 	{
 		const int left = serverbrowser_ToScreenX( SB_PANEL_LEFT + 4 );
 		const int right = serverbrowser_ToScreenX( SB_ROW_RIGHT );
 		const int top = serverbrowser_ToScreenY( y - 2 );
 		const int bottom = serverbrowser_ToScreenY( y - 2 + SB_ROW_HEIGHT );
 
-		screen->Dim( PalEntry( 120, 150, 220 ), 0.28f, left, top, right - left, bottom - top );
+		screen->Dim( tint, alpha, left, top, right - left, bottom - top );
 	}
 
 	//*************************************************************************
