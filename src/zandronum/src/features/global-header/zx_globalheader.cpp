@@ -86,17 +86,26 @@ int        g_GlowLastMs = 0;
 // measured bias corrections that existed only to undo the centring afterwards.
 //
 // Half the Clean factor because the metrics are written in 640x400 and CleanXfac is for 320x200.
+// zoomPercent is the dial: asking for FEWER virtual units across the same screen makes every unit
+// cover more pixels, so the bar, its pills, their labels and the orb all grow together. Growing the
+// metrics instead would have grown the pills and left everything drawn inside them behind.
+int HeaderZoom( )
+{
+	const int z = DefaultHeaderMetrics( ).zoomPercent;
+	return ( z > 0 ) ? z : 100;
+}
+
 int HeaderVirtW( )
 {
 	const int fac = ( CleanXfac > 0 ) ? CleanXfac : 1;
-	const int v = ( screen->GetWidth( ) * 2 ) / fac;
+	const int v = ( screen->GetWidth( ) * 200 ) / ( fac * HeaderZoom( ));
 	return ( v > 0 ) ? v : HEADER_LAYOUT_W;
 }
 
 int HeaderVirtH( )
 {
 	const int fac = ( CleanYfac > 0 ) ? CleanYfac : 1;
-	const int v = ( screen->GetHeight( ) * 2 ) / fac;
+	const int v = ( screen->GetHeight( ) * 200 ) / ( fac * HeaderZoom( ));
 	return ( v > 0 ) ? v : HEADER_LAYOUT_H;
 }
 
@@ -362,15 +371,22 @@ void DrawTooltip( const char *text )
 // under the thing it points at is how a marker gets missed.
 void DrawFocusOrb( const HeaderMetrics &m, const int *widths )
 {
-	if ( !g_HasFocus )
-	{
-		// Nothing focused, so there is nowhere for the next journey to set out FROM either.
-		g_GlowPlaced = false;
-		return;
-	}
+	// [rc4l] ALWAYS drawn, because the bar is a place as well as a control.
+	//
+	// It used to appear only while the bar held the arrows, so a game that had just started showed a
+	// tab strip with nothing marked on it -- and "you are in the main menu" is exactly the thing a
+	// tab strip is for saying. The orb is that answer, not merely a keyboard cursor.
+	//
+	// It sits on the FOCUSED tab while the bar has the keyboard and on the CURRENT one the moment it
+	// does not, so there is never a frame where two tabs both look like the answer. That also keeps
+	// it honest as a cursor: walking the bar moves the orb, and leaving the bar puts it back on the
+	// section you are actually in rather than the one you were browsing.
+	const int lit = g_HasFocus ? g_FocusTab : static_cast<int>( CurrentTab( ));
 
-	const HeaderRect r = HeaderTabRect( m, widths, kHeaderTabCount, g_FocusTab );
-	const GlowPos want( r.x - 5, r.y + r.h / 2 );
+	const HeaderRect r = HeaderTabRect( m, widths, kHeaderTabCount, lit );
+	// From the metrics, not a literal, so the padding that has to hold this orb is checked against
+	// the same number the orb is drawn at.
+	const GlowPos want( r.x - m.glowInset, r.y + r.h / 2 );
 
 	// The first placement snaps. There is nowhere to have travelled from, and sliding in from a
 	// position left over from the last time the bar had focus would be a lie about where it had been.
@@ -420,6 +436,16 @@ bool StepFocus( int step )
 	return true;
 }
 
+// [rc4l] The shipped metrics, with the bar's width filled in so the row of tabs can centre on it.
+// Asked for in one place because the drawing and the two mouse handlers all have to be looking at
+// the same row; a hit test built from a left-aligned copy would be a click that lands nowhere.
+HeaderMetrics Metrics( )
+{
+	HeaderMetrics m = DefaultHeaderMetrics( );
+	m.barW = HeaderVirtW( );
+	return m;
+}
+
 // What the hovered tab should say. Play Online's tooltip is its verdict, because the colour raises
 // the question and the tooltip is where the answer belongs.
 const char *TooltipFor( int tab, HeaderReach reach )
@@ -436,7 +462,7 @@ const char *TooltipFor( int tab, HeaderReach reach )
 //
 void GlobalHeader_Draw( )
 {
-	const HeaderMetrics m = DefaultHeaderMetrics( );
+	const HeaderMetrics m = Metrics( );
 
 	int widths[kHeaderTabCount];
 	MeasureLabels( widths );
@@ -610,6 +636,39 @@ bool GoToTab( int tab )
 	return true;
 }
 
+// [rc4l] Pressing a tab, by whichever route, and SAYING SO. One place, so the keyboard and the
+// pointer cannot come to mean different things or make different noises.
+//
+// What it returns is whether the press was CONSUMED, which is not the same as whether it went
+// anywhere. A refused press still has to be consumed, because the menu under the bar is listening to
+// the same Enter: letting one through is how Enter on the bar used to start a new game.
+bool PressTab( int tab, bool bDropFocus )
+{
+	if ( tab == static_cast<int>( CurrentTab( )))
+	{
+		// Already here, so there is nothing to open and the useful thing left is to get out of the
+		// way. A player pressing Enter on the tab they are already on is asking to be let into the
+		// menu under it, which is exactly what Down does, so the two now agree. Re-opening the menu
+		// would rebuild it underneath them and throw away where they had got to in it.
+		if ( bDropFocus )
+			g_HasFocus = false;
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+		return true;
+	}
+
+	if ( GoToTab( tab ))
+	{
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+		return true;
+	}
+
+	// Somewhere we cannot go: Play Online with nothing reachable. Saying no out loud beats a tab that
+	// looks pressable and then appears to do nothing at all.
+	S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+	return true;
+}
+
 } // namespace
 
 bool GlobalHeader_Activate( )
@@ -617,7 +676,7 @@ bool GlobalHeader_Activate( )
 	if ( !g_HasFocus )
 		return false;
 
-	return GoToTab( g_FocusTab );
+	return PressTab( g_FocusTab, true );
 }
 
 //*****************************************************************************
@@ -627,7 +686,7 @@ bool GlobalHeader_MouseMove( int screenX, int screenY )
 	g_PointerX = screenX;
 	g_PointerY = screenY;
 
-	const HeaderMetrics m = DefaultHeaderMetrics( );
+	const HeaderMetrics m = Metrics( );
 	int widths[kHeaderTabCount];
 	MeasureLabels( widths );
 
@@ -643,7 +702,7 @@ bool GlobalHeader_MouseMove( int screenX, int screenY )
 
 bool GlobalHeader_MouseClick( int screenX, int screenY )
 {
-	const HeaderMetrics m = DefaultHeaderMetrics( );
+	const HeaderMetrics m = Metrics( );
 	int widths[kHeaderTabCount];
 	MeasureLabels( widths );
 
@@ -658,9 +717,10 @@ bool GlobalHeader_MouseClick( int screenX, int screenY )
 	{
 		// The pointer parks the keyboard cursor where it clicked, WITHOUT claiming the arrows. A
 		// mouse user who clicks Play Online wants to be in the browser, not left holding a bar
-		// that swallows the first arrow key they press once they get there.
+		// that swallows the first arrow key they press once they get there. Which is also why the
+		// click never drops focus: it never took any.
 		g_FocusTab = tab;
-		GoToTab( tab );
+		PressTab( tab, false );
 	}
 
 	// Consumed either way: a click on the bar's background is still a click on the bar.
