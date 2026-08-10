@@ -48,6 +48,7 @@
 #include "features/server-browser/computation/textinput_compute.h"
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
+#include "features/server-browser/computation/openingtab_compute.h"
 #include "features/server-browser/computation/timeago_compute.h"
 #include "features/server-browser/computation/liverow_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
@@ -313,7 +314,7 @@
 #define SB_TAB_PAD			6
 #define SB_TAB_LEFT			48
 // [rc4l] Pills are sized to their own text rather than to one shared width. MULTIPLAYER is nearly
-// three times the length of PLAY, and a width that fits the longer is mostly empty space around the
+// three times the length of HOST, and a width that fits the longer is mostly empty space around the
 // shorter. The pad is the room either side of the label.
 #define SB_TAB_PILL_PAD		13
 #define SB_TAB_GAP			6
@@ -512,33 +513,42 @@ static	zx::TextInput	g_DialogInput;
 // Which button the pointer is over, so hover lights it as it does everywhere else.
 static	int				g_DialogHot = -1;
 
-// [rc4l] Which tab is showing. Public is the default because it is what nearly everyone wants nearly
-// all the time -- a private server is one you were told about, so you already know it is there.
-//
-// HOST is on this row rather than in a menu of its own because it is the same question continued:
-// the player is here to get into a game, and making one is what you do when none of the listed ones
-// is what you wanted. It is last because it is the least common answer.
 // [rc4l] The top row picks WHAT YOU ARE DOING; the row under it picks which servers.
 //
 // These used to be one row of three: PUBLIC, PRIVATE, HOST. Hosting is not a filter on a list of
 // servers, so sitting it beside two things that are made the row mean two jobs at once, and the
 // keyboard had to walk past hosting to get from one filter to the other.
-enum class BrowserTab { Play, Browse };
+//
+// MULTIPLAYER FIRST, AND HOST IS CALLED HOST. The row used to read PLAY, MULTIPLAYER, which put the
+// less common answer where the eye starts and named it after something the other tab does more of.
+// Browsing is what this screen is for; hosting is what you do when the browsing turned nothing up,
+// so it reads second and says what it is.
+enum class BrowserTab { Browse, Host };
 const int kTabCount = 2;
 
-// Which servers MULTIPLAYER is showing. Only meaningful while that tab is selected.
+// Which servers MULTIPLAYER is showing. Only meaningful while that tab is selected. Public is the
+// default because it is what nearly everyone wants nearly all the time: a private server is one you
+// were told about, so you already know it is there.
 enum class BrowseKind { Public, Private };
 const int kBrowseCount = 2;
 
 // [rc4l] The row labels, at file scope because three things have to agree about them: what is
 // drawn, what is clicked, and the widths both of those are measured from.
-const char *const kTabLabels[kTabCount] = { "PLAY", "MULTIPLAYER" };
+const char *const kTabLabels[kTabCount] = { "MULTIPLAYER", "HOST" };
 const char *const kSubTabLabels[kBrowseCount] = { "PUBLIC", "PRIVATE" };
 
-// Play, matching where it sits on the row. Not reset per visit: the tab you left on is the tab you
-// come back to, so this is only where a fresh session starts.
-static	BrowserTab		g_Tab = BrowserTab::Play;
+// [rc4l] Browse, and Init decides again on every visit. This used to be "the tab you left on is the
+// tab you come back to", which sounds considerate and is not: the player who ended their last visit
+// on HOST because the list was empty gets sent back to HOST on the next visit, when the list may
+// well have filled up in the meantime. Where you land is a question about the servers, so it is
+// asked of the servers, in openingtab_compute.
+static	BrowserTab		g_Tab = BrowserTab::Browse;
 static	BrowseKind		g_Browse = BrowseKind::Public;
+
+// [rc4l] Has any refresh run to completion this session? Only ever set, never cleared: the question
+// is whether we have EVER had an answer, which is what separates "there are no servers" from "we
+// have not looked yet", and only the first of those is a reason to open on HOST.
+static	bool			g_ListHasAnswered = false;
 static	int				g_TabHot = -1;
 static	int				g_SubTabHot = -1;
 
@@ -1438,10 +1448,18 @@ public:
 			g_TabSelected[i] = -1;
 		}
 
-		// [rc4l] The form has to be filled HERE as well as in SelectTab. A fresh session starts on
-		// PLAY without ever switching to it, so SelectTab never runs and the fields would come up
-		// empty on the one tab the browser now opens to.
-		if ( g_Tab == BrowserTab::Play )
+		// [rc4l] Where the browser lands, decided from what is known right now and then left alone.
+		//
+		// Not re-asked while the screen is up, on purpose. The refresh below can turn an empty list
+		// into a full one seconds after the player arrives, and a tab that swaps itself out at that
+		// moment moves whatever they were already reaching for.
+		g_Tab = ( zx::ComputeOpeningTab( static_cast<int>( g_SortedServers.Size( )), g_ListHasAnswered )
+			== zx::OpeningTab::Host ) ? BrowserTab::Host : BrowserTab::Browse;
+
+		// [rc4l] The form has to be filled HERE as well as in SelectTab. Landing straight on HOST
+		// because the list came up empty means SelectTab never runs, and the fields would be blank
+		// on the one tab the player was sent to precisely because it is all they can do.
+		if ( g_Tab == BrowserTab::Host )
 		{
 			LoadHostForm( );
 			g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
@@ -1499,7 +1517,7 @@ public:
 		// browse someone else's server would be taking a port nobody asked us to take -- and doing it
 		// while a server of ours is running takes the port from that server, or fails and records
 		// "unreachable" about a port our own process is holding.
-		if (( g_Tab == BrowserTab::Play ) && ( zx::HostCurrentState( ) == zx::HostState::Idle ))
+		if (( g_Tab == BrowserTab::Host ) && ( zx::HostCurrentState( ) == zx::HostState::Idle ))
 		{
 			zx::ReachProbeRequest( HostConfiguredPort( ));
 			zx::ReachProbeTick( );
@@ -1598,6 +1616,13 @@ public:
 		const bool bWaitingRegistry = BROWSER_WaitingForServerRegistryResponse( );
 		const zx::BrowserPhase phase = zx::ComputeBrowserPhase( bWaitingRegistry, counts );
 
+		// [rc4l] Anything but Loading means the looking is over, which is the one fact the NEXT visit
+		// needs to tell an empty world from an unfinished search. Recorded here because this is
+		// where the phase is already known, and never unset: the question is whether we have ever
+		// had an answer, and a later refresh going quiet does not un-answer the last one.
+		if ( phase != zx::BrowserPhase::Loading )
+			g_ListHasAnswered = true;
+
 		if (( phase == zx::BrowserPhase::Ready ) && ( g_SortedServers.Size( ) == 0 ))
 			return zx::BrowserPhase::Empty;
 
@@ -1608,7 +1633,7 @@ public:
 	{
 		// The hosting tab is a different screen, not a filter, so it does not ask the phase at all --
 		// "still looking for servers" has no meaning on the page where you are making one.
-		if ( g_Tab == BrowserTab::Play )
+		if ( g_Tab == BrowserTab::Host )
 			// Ours does not count: the host panel's own button is the CANCEL for it.
 			return zx::ComputeHostParts( serverbrowser_DownloadRunning( )
 				&& !HostDownloadRunning( ));
@@ -2636,9 +2661,11 @@ public:
 	// [rc4l] The tab row: what you are doing here, and the rule that closes the header band.
 	void DrawTabs( )
 	{
+		// In tab order, and it has to stay that way: these are indexed by the same i that picks the
+		// label, so a tab moved on the row without moving its tip here describes the wrong one.
 		static const char *const tips[] = {
-			"Run a server on this machine\nOthers join it while you play",
 			"Find a server to join",
+			"Run a server on this machine\nOthers join it while you play",
 		};
 
 		for ( int i = 0; i < kTabCount; ++i )
@@ -5443,7 +5470,7 @@ public:
 
 		// Arriving at the hosting tab: fill the form from what was used last time, and put the
 		// keyboard on its first field rather than on a list that is not there.
-		if ( tab == BrowserTab::Play )
+		if ( tab == BrowserTab::Host )
 		{
 			LoadHostForm( );
 			g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
@@ -6992,7 +7019,7 @@ public:
 				// [rc4l] While hosting, the right column is two scrollable halves, so the notch goes
 				// to whichever half the pointer is in. Checked before the settings below, which are
 				// not on screen in this state at all.
-				if (( g_Tab == BrowserTab::Play ) && zx::HostIsActive( ) &&
+				if (( g_Tab == BrowserTab::Host ) && zx::HostIsActive( ) &&
 					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 6 )) &&
 					( g_MouseX < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT + 6 )))
 				{
@@ -7016,7 +7043,7 @@ public:
 				// [rc4l] Over the hosting settings, the notch belongs to them. Same rule as the WAD
 				// list below: one wheel and more than one scrollable thing means it drives whichever
 				// one the pointer is actually over.
-				if (( g_Tab == BrowserTab::Play ) && ( HostMaxScroll( ) > 0 ) &&
+				if (( g_Tab == BrowserTab::Host ) && ( HostMaxScroll( ) > 0 ) &&
 					( g_MouseY >= serverbrowser_ToScreenY( SB_HOST_VIEW_TOP )) &&
 					( g_MouseY < serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM )) &&
 					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_LEFT )) &&
@@ -7544,7 +7571,7 @@ public:
 		//
 		// Checked for every origin rather than just the tabs, because the search box shares that row
 		// and is just as much "above the form" as they are.
-		if (( g_Tab == BrowserTab::Play ) && ( key == zx::NavKey::Down )
+		if (( g_Tab == BrowserTab::Host ) && ( key == zx::NavKey::Down )
 			&& ( g_Focus != zx::BrowserFocus::Host ))
 		{
 			SetFocus( zx::BrowserFocus::Host );
