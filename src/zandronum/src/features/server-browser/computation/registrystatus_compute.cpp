@@ -97,4 +97,24 @@ std::string RegistryTooltip(const std::string &host, int port, RegistryStatus st
 	return out;
 }
 
+RegistryStatus AgeRegistryStatus(RegistryStatus current, int msSinceRecorded, int throttleClearMs)
+{
+	if (current != RegistryStatus::Throttled)
+		return current;
+
+	// A non-positive window means "do not decay", which lets a caller pin the state deliberately.
+	if (throttleClearMs <= 0)
+		return current;
+
+	// A negative age is a clock that moved, not a fresh reading. Left alone rather than treated as
+	// old, because guessing in either direction on a broken clock is worse than waiting.
+	if (msSinceRecorded < 0)
+		return current;
+
+	if (msSinceRecorded < throttleClearMs)
+		return current;
+
+	return RegistryStatus::Pending;
+}
+
 } // namespace zx

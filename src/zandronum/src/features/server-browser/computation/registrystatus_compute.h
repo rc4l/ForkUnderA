@@ -82,6 +82,22 @@ const char *RegistryStatusText(RegistryStatus status);
 // A port of zero is left off rather than printed, which is what a failed lookup has.
 std::string RegistryTooltip(const std::string &host, int port, RegistryStatus status);
 
+// [rc4l] What a recorded status should decay to once it is old enough to stop meaning anything.
+//
+// Throttled is the one that needs this, and it went unnoticed because the header above says it
+// "clears by itself in a few seconds" -- it did not. Nothing ever cleared it: the expiry pass only
+// turned Pending into NoAnswer, so one REQUESTIGNORED left the bar orange until some later reply
+// happened to overwrite it, long after the registry had stopped ignoring us. Reported as a status
+// bar stuck on REG_THROTTLED while the browser was working fine.
+//
+// It decays to Pending rather than Ok, because "they were busy a moment ago" is not evidence that
+// they are answering now. Pending is the honest thing to say until we have asked again.
+//
+// Every other status is a fact about a conversation that finished -- banned, wrong version, no
+// answer at all -- and stays until a new answer replaces it. Nothing about waiting makes those
+// less true.
+RegistryStatus AgeRegistryStatus(RegistryStatus current, int msSinceRecorded, int throttleClearMs);
+
 } // namespace zx
 
 #endif // ZX_REGISTRYSTATUS_COMPUTE_H

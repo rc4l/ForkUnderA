@@ -98,6 +98,10 @@ struct SERVERREGISTRYSTATE_s
 	NETADDRESS_s		address;
 	bool				bResolved;
 	zx::RegistryStatus	status;
+
+	// [rc4l] When `status` was recorded. Only THROTTLED reads it, to know when the registry has
+	// stopped ignoring us; every other status is a finished verdict that time does not change.
+	ULONG				ulStatusMS;
 };
 
 static	std::vector<SERVERREGISTRYSTATE_s>	g_ServerRegistryStates;
@@ -144,6 +148,11 @@ static	const LONG		kMaxPunchesPerSweep = 4;
 // Retrying faster than the thing you are retrying against is willing to answer is not persistence,
 // it is a self-inflicted denial of service.
 static const ULONG		SERVERREGISTRY_QUERY_TIMEOUT_MS = 4000;
+
+// [rc4l] How long a THROTTLED verdict keeps meaning something. The registry's own ignore window is
+// three seconds ("Ignoring for 3 seconds" in its log), so this sits just past it: long enough not to
+// clear a refusal that is still in force, short enough that the bar recovers while you are looking.
+static const int		SERVERREGISTRY_THROTTLE_CLEAR_MS = 4000;
 static const int		SERVERREGISTRY_QUERY_MAX_ATTEMPTS = 3;
 
 // Mark every registry we are still waiting on, without disturbing one that already answered.
@@ -152,7 +161,10 @@ static void browser_SetPendingRegistryStates( void )
 	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
 	{
 		if ( g_ServerRegistryStates[i].bResolved )
+		{
 			g_ServerRegistryStates[i].status = zx::RegistryStatus::Pending;
+			g_ServerRegistryStates[i].ulStatusMS = I_MSTime( );
+		}
 	}
 }
 
@@ -163,6 +175,20 @@ static void browser_SetPendingRegistryStates( void )
 // retry loop stopped. Both leave a silent registry that deserves a verdict.
 static void browser_ExpirePendingRegistries( void )
 {
+	// [rc4l] Let a THROTTLED bar recover on its own, before the early returns below.
+	//
+	// Nothing ever cleared it: this pass only turned Pending into NoAnswer, so a single
+	// REQUESTIGNORED left the status bar orange until some later reply happened to overwrite it --
+	// long after the registry had gone back to answering. Reported as a bar stuck on REG_THROTTLED
+	// while the browser was working. The rule and its window live in registrystatus_compute.
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		g_ServerRegistryStates[i].status = zx::AgeRegistryStatus(
+			g_ServerRegistryStates[i].status,
+			static_cast<int>( I_MSTime( ) - g_ServerRegistryStates[i].ulStatusMS ),
+			SERVERREGISTRY_THROTTLE_CLEAR_MS );
+	}
+
 	const bool bNoMoreTries = ( g_bWaitingForServerRegistryResponse == false ) ||
 		( g_lServerRegistryAttempts >= SERVERREGISTRY_QUERY_MAX_ATTEMPTS );
 
@@ -191,6 +217,7 @@ static void browser_NoteRegistryStatus( const NETADDRESS_s &from, zx::RegistrySt
 		if ( g_ServerRegistryStates[i].bResolved && g_ServerRegistryStates[i].address.Compare( from ))
 		{
 			g_ServerRegistryStates[i].status = status;
+			g_ServerRegistryStates[i].ulStatusMS = I_MSTime( );
 			return;
 		}
 	}
@@ -1718,6 +1745,7 @@ static void browser_ResolveServerRegistries( void )
 		state.port = 0;
 		state.bResolved = false;
 		state.status = zx::RegistryStatus::LookupFailed;
+		state.ulStatusMS = I_MSTime( );
 
 		NETADDRESS_s address;
 		if ( address.LoadFromString( entries[i].host.c_str( )) == false )
