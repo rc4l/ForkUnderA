@@ -172,7 +172,13 @@ int GetRevisionNumber();
 
 // This is so that derivates can use the same savegame versions without worrying about engine compatibility
 #define GAMESIG "ZANDRONUM"
-#define BASEWAD "zandronum.pk3"
+// [rc4l] The engine data pk3, named with this build's release key by src/zandronum/CMakeLists.txt so
+// a stale one is not found rather than silently loaded. The fallback only exists for builds that
+// bypass our CMake entirely.
+#ifndef FUA_CORE_PK3_NAME
+#define FUA_CORE_PK3_NAME "fua_core_dev.pk3"
+#endif
+#define BASEWAD FUA_CORE_PK3_NAME
 
 // [rc4l] THE product display name. Every user-facing place that names this engine -- the console
 // version line, the window/taskbar title -- reads this one macro, so a rebrand is a one-line edit
