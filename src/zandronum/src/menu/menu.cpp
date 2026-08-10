@@ -198,17 +198,6 @@ bool DMenu::MenuEvent (int mkey, bool fromcontroller)
 		S_Sound (CHAN_VOICE | CHAN_UI, 
 			DMenu::CurrentMenu != NULL? "menu/backup" : "menu/clear", snd_menuvolume, ATTN_NONE);
 
-		// [rc4l] A download finished while the player was somewhere else in the menus, so its join is
-		// waiting. Backing out is them leaving whatever they were doing, which is the moment to hand
-		// them the thing they actually asked for -- rather than dropping them at the main menu and
-		// hoping they remember to walk back to the browser.
-		//
-		// After Close(), so this lands wherever backing out would have left them.
-		if (zx::ConsumeJoinReady())
-		{
-			M_StartControlPanel(true);
-			M_SetMenu("ZA_Browser", -1);
-		}
 		return true;
 	}
 	}
@@ -444,6 +433,20 @@ void M_StartControlPanel (bool makeSound)
 	if (makeSound)
 	{
 		S_Sound (CHAN_VOICE | CHAN_UI, "menu/activate", snd_menuvolume, ATTN_NONE);
+	}
+
+	// [rc4l] A download finished while the player was elsewhere, so its join is waiting. The band on
+	// screen says "Open the Menu", and this is opening the menu -- so it goes where the band
+	// promised, rather than to a main menu the player then has to navigate out of.
+	//
+	// It used to hang off MKEY_Back instead, which acted on the OPPOSITE gesture to the one being
+	// asked for: the band said open, and the jump happened when you backed out. Backing out is the
+	// one input that reliably means "I am leaving this", and giving it a second, invisible meaning
+	// is how Escape stopped doing what Escape does.
+	if (zx::ConsumeJoinReady())
+	{
+		M_SetMenu("ZA_Browser", -1);
+		return;
 	}
 	BackbuttonTime = 0;
 	BackbuttonAlpha = 0;
