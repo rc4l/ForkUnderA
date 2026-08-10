@@ -450,11 +450,11 @@ void M_ReleaseMenuButtons ()
 	}
 }
 
-void M_StartControlPanel (bool makeSound)
+bool M_StartControlPanel (bool makeSound)
 {
 	// intro might call this repeatedly
 	if (DMenu::CurrentMenu != NULL)
-		return;
+		return false;
 
 	ResetButtonStates ();
 	M_ReleaseMenuButtons ();
@@ -481,7 +481,7 @@ void M_StartControlPanel (bool makeSound)
 	if (zx::ConsumeJoinReady())
 	{
 		M_SetMenu("ZA_Browser", -1);
-		return;
+		return true;
 	}
 	BackbuttonTime = 0;
 	BackbuttonAlpha = 0;
@@ -489,6 +489,8 @@ void M_StartControlPanel (bool makeSound)
 	// [BB] Don't change the displayed menu status when a demo is played.
 	if ( CLIENTDEMO_IsPlaying( ) == false )
 		PLAYER_SetStatus( &players[consoleplayer], PLAYERSTATUS_INMENU, true, SETPLAYERSTATUS_CLIENTSENDSUPDATE );
+
+	return false;
 }
 
 //=============================================================================
@@ -1053,14 +1055,14 @@ bool M_Responder (event_t *ev)
 			// Pop-up menu?
 			if (ev->data1 == KEY_ESCAPE)
 			{
-				M_StartControlPanel(true);
-				// [rc4l] Same redirect the mouse path and menu_main already do: a join that finished
-				// while the player was in the game is waiting, and opening the menu is the gesture we
-				// hang it on. Escape is by far the commonest way that happens, and it was the one
-				// route that still landed on the main menu.
-				if (zx::ConsumeJoinReady())
-					M_SetMenu("ZA_Browser", -1);
-				else
+				// [rc4l] ASK whether the panel already routed us, rather than deciding again.
+				//
+				// Both did, and both consumed the waiting join to find out. M_StartControlPanel got
+				// there first and opened the browser, which left the flag clear, so the test here
+				// came out false and the main menu was set straight over the top. Escape stopped
+				// honouring the "Open the Menu" band it had honoured a moment before, and the cause
+				// was never in this branch: it was that the question was asked twice.
+				if (!M_StartControlPanel(true))
 					M_SetMenu(NAME_Mainmenu, -1);
 				return true;
 			}
@@ -1076,14 +1078,12 @@ bool M_Responder (event_t *ev)
 		else if (ev->type == EV_GUI_Event && ev->subtype == EV_GUI_LButtonDown && 
 				 ConsoleState != c_down && m_use_mouse)
 		{
-			M_StartControlPanel(true);
 			// [rc4l] A download finished while the player was away, so its join is waiting. Opening
 			// the menu is the one deliberate "I am ready to stop playing" gesture there is, so it is
 			// what we hang this on -- no new key to bind, nothing to conflict with, and impossible to
-			// trigger mid-fight by accident. They land on the list and press JOIN themselves.
-			if (zx::ConsumeJoinReady())
-				M_SetMenu("ZA_Browser", -1);
-			else
+			// trigger mid-fight by accident. They land on the list and press JOIN themselves. The
+			// panel owns that decision now; this only supplies the default when it did not act.
+			if (!M_StartControlPanel(true))
 				M_SetMenu(NAME_Mainmenu, -1);
 			return true;
 		}
@@ -1266,12 +1266,10 @@ bool M_IsValidMenu( const char *name )
 
 CCMD (menu_main)
 {
-	M_StartControlPanel(true);
 	// [rc4l] Same redirect as the escape key: opening the main menu is opening the main menu however
-	// the player got there, and a waiting join should not depend on which route they took.
-	if (zx::ConsumeJoinReady())
-		M_SetMenu("ZA_Browser", -1);
-	else
+	// the player got there, and a waiting join should not depend on which route they took. Which is
+	// why the decision lives in one place and this asks it rather than repeating it.
+	if (!M_StartControlPanel(true))
 		M_SetMenu(NAME_Mainmenu, -1);
 }
 
