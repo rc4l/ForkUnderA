@@ -7931,6 +7931,18 @@ public:
 		case MKEY_Left:		return Navigate( zx::NavKey::Left, total );
 		case MKEY_Right:	return Navigate( zx::NavKey::Right, total );
 
+		// [rc4l] Escape LEAVES, rather than stepping back to whatever menu happened to open this one.
+		//
+		// The browser is a destination, not a stop on the way to the main menu: the player got here
+		// from the tab bar, which is above every menu and belongs to none of them, so "one screen up"
+		// has no meaning to answer with. Backing out of the last thing you opened should put you back
+		// in the game, and a dialog on top of the browser still eats its own Escape first, so the
+		// step-at-a-time behaviour survives exactly where there is a step to take.
+		case MKEY_Back:
+			M_ClearMenus( );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/clear", snd_menuvolume, ATTN_NONE );
+			return true;
+
 		// [rc4l] Enter acts on whatever has focus. On the tabs that is the tab -- which is already
 		// selected, so it is the way into the list without reaching for Down.
 		case MKEY_Enter:
