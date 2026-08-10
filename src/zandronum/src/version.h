@@ -52,7 +52,13 @@ int GetRevisionNumber();
 
 #define GAME_MAJOR_VERSION 3
 #define GAME_MINOR_VERSION 1
-#define GAMEVER_STRING "3.2.1"
+// [rc4l] Our release, not the Zandronum release we forked from. This is the string a client sends on
+// connect and a server rejects it over, so builds that are not interchangeable must not claim to be.
+// Set by src/zandronum/CMakeLists.txt; the fallback is for builds that bypass our CMake.
+#ifndef FUA_GAMEVER_STRING
+#define FUA_GAMEVER_STRING "3.2.1"
+#endif
+#define GAMEVER_STRING FUA_GAMEVER_STRING
 #define DOTVERSIONSTR GAMEVER_STRING
 #define VERSIONSTR DOTVERSIONSTR
 

@@ -66,6 +66,13 @@ message( STATUS "Engine data pk3: ${FUA_CORE_PK3_NAME}" )
 # The exe is told the same string, so BASEWAD and the file zipdir writes come from one place.
 add_definitions( -DFUA_CORE_PK3_NAME="${FUA_CORE_PK3_NAME}" )
 
+# [rc4l] GAMEVER_STRING is the version clients and servers hand each other and refuse to mix across
+# (sv_main.cpp compares it with stricmp), so it has to be OUR release rather than the Zandronum
+# release we forked from. Zandronum sets it to its own release for exactly this reason; leaving it
+# at 3.2.1 said every build of ours was interchangeable with every other, which was never true.
+string( REGEX REPLACE "^v" "" FUA_GAMEVER "${FUA_VERSION}" )
+add_definitions( -DFUA_GAMEVER_STRING="${FUA_GAMEVER}" )
+
 # Simplify pk3 building, add_pk3(filename srcdirectory)
 function( add_pk3 PK3_NAME PK3_DIR )
 	# Generate target name. Just use "pk3" for main pk3 target.
