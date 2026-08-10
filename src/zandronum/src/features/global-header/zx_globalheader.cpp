@@ -651,17 +651,29 @@ bool GoToTab( int tab )
 	if ( tab == static_cast<int>( CurrentTab( )))
 		return false;
 
-	if ( tab == static_cast<int>( HeaderTab::PlayOnline ))
-	{
-		if ( !PlayOnlineSelectable( Reach( )))
-			return false;
+	const bool bOnline = ( tab == static_cast<int>( HeaderTab::PlayOnline ));
 
-		M_SetMenu( NAME_Mainmenu, -1 );
+	if ( bOnline && !PlayOnlineSelectable( Reach( )))
+		return false;
+
+	// [rc4l] TORN DOWN FIRST, so the tab we are arriving at is not a CHILD of the tab we are leaving.
+	//
+	// M_SetMenu hangs the new menu off whatever is open at the time, and the bar is a switch between
+	// siblings rather than a step deeper into anything. Parenting them is what made Escape on the
+	// main menu land on the browser: the browser was its parent, so backing out of one WAS arriving
+	// at the other. Nothing was reopening it, which is why every attempt to fix this by deciding what
+	// to OPEN missed -- the menu had never been closed.
+	// And opened WITHOUT the redirect, because we already know where we are going. Left on, it would
+	// reopen the section we just closed and the tab actually clicked would be stacked on top of that
+	// instead, which is the same parenting bug one step further along.
+	M_ClearMenus( );
+	M_StartControlPanel( false, false );
+
+	if ( bOnline )
 		M_SetMenu( "ZA_Browser", -1 );
-		return true;
-	}
+	else
+		M_SetMenu( NAME_Mainmenu, -1 );
 
-	M_SetMenu( NAME_Mainmenu, -1 );
 	return true;
 }
 
