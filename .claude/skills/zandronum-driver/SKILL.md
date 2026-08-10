@@ -27,7 +27,7 @@ loopback TCP. Follow this to avoid the failure modes that otherwise eat a lot of
   Do NOT sit waiting on it. As soon as it returns *or* backgrounds, immediately drive the
   instance — `get_startup_errors` (reads the log, works even if the bridge is down) then a
   real command / `verify_menu` / `screenshot`.
-- IWAD lives next to the engine: `build/ZandroX.app/Contents/MacOS/freedoom2.wad`.
+- IWAD lives next to the engine: `build/ForkUnderA.app/Contents/MacOS/freedoom2.wad`.
 
 ## Opening an arbitrary menu
 

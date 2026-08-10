@@ -48,7 +48,7 @@ A crash fix is proven by "it no longer crashes doing the thing that crashed it."
 engine-wide (actors, sectors, players) and not extractable to a pure `Compute*` helper, so don't force
 one — reproduce instead:
 1. Apply the minimal guard. `cmake --build build --target zdoom -j4`, then refresh the `.app` bundle
-   binary (`cp build/zandronum build/ZandroX.app/Contents/MacOS/zandronum`).
+   binary (`cp build/zandronum build/ForkUnderA.app/Contents/MacOS/zandronum`).
 2. Drive the exact scenario that crashed via the MCP bridge (see `zandronum-driver`) — same iwad, map,
    bots, sequence.
 3. Before the fix it died within seconds; after, confirm it **survives well past that point** (watch
