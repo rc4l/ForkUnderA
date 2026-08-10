@@ -34,6 +34,24 @@ on:
         default: patch
   push:
     tags: ['game-server-v*']
+
+  # [rc4l] An engine release must produce a new image, and this is the trigger that survives contact
+  # with GitHub's recursion guard.
+  #
+  # The obvious wiring, `push: tags: ['v*']`, silently never fires: release.yml creates the tag with
+  # `gh release create` using GITHUB_TOKEN, and events raised by that token deliberately do not start
+  # new workflow runs. Dispatching from inside release.yml hits the same wall. workflow_run is a
+  # completion event rather than a token-raised one, so it is the one that works.
+  #
+  # WHY THIS COUPLING, when registry-image.yml deliberately avoids it: the registry only needs
+  # republishing when the wire protocol moves, so an engine release means nothing to it. This image
+  # CONTAINS the engine. A release that does not rebuild it leaves every updated player unable to join
+  # a server, because Zandronum clients refuse a version mismatch -- and it presents as the servers
+  # being down rather than as anything to do with a release.
+  workflow_run:
+    workflows: ["Release ForkUnderA"]
+    types: [completed]
+
   pull_request:
     paths:
       - Dockerfile.game-server
@@ -59,9 +77,13 @@ jobs:
     steps:
       # [rc4l] Full history: the engine's revision_check runs `git describe --tags`. A shallow clone
       # stamps a meaningless revision, and the registry reads iServerRevision off every announce.
+      # [rc4l] On a workflow_run the default checkout is the default branch's tip, NOT the commit the
+      # triggering run built. Pinning head_sha is what makes the image contain the engine that was
+      # actually released rather than whatever landed on main since.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # [rc4l] Required for Dockerfile.game-server.dockerignore to be honoured; the legacy builder
       # only reads the root .dockerignore, which excludes everything and would empty the context.
@@ -83,9 +105,43 @@ jobs:
           IMAGE="$(printf '%s' "${IMAGE}" | tr '[:upper:]' '[:lower:]')"
           shortsha="$(echo "${GITHUB_SHA}" | cut -c1-8)"
 
-          if [[ "${GITHUB_REF}" == refs/tags/game-server-v* ]]; then
+          # [rc4l] Which engine is inside. Recorded on every build, not just released ones, so
+          # `docker inspect` answers "what am I actually running" without anyone having to correlate a
+          # game-server version against a release date.
+          engine="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo unknown)"
+          echo "engine=${engine}" >> "$GITHUB_OUTPUT"
+
+          # [rc4l] Derive the next game-server patch. Shared by the dispatch and engine-release paths,
+          # which must agree or two releases could claim one version.
+          next_patch() {
+            local latest major minor patch
+            latest="$(git tag -l 'game-server-v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+            latest="${latest:-game-server-v0.0.0}"
+            IFS=. read -r major minor patch <<< "${latest#game-server-v}"
+            printf '%s.%s.%s' "${major}" "${minor}" "$((patch + 1))"
+          }
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            # [rc4l] release.yml also runs on ordinary pushes and only sometimes publishes, so its
+            # completion is not by itself a release. The question is answered by the repository rather
+            # than by the event: publish exactly when this commit carries an engine tag.
+            if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+              echo "triggering release run did not succeed; nothing to build"
+              { echo "publish=false"; echo "skip=true"; echo "version=none"; echo "tags=none"; echo "primary=none"; } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if ! git describe --exact-match --match 'v[0-9]*' HEAD >/dev/null 2>&1; then
+              echo "release.yml finished but this commit carries no engine tag -- it built artifacts without publishing"
+              { echo "publish=false"; echo "skip=true"; echo "version=none"; echo "tags=none"; echo "primary=none"; } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            version="$(next_patch)"
+            tags="${IMAGE}:${version},${IMAGE}:latest,${IMAGE}:engine-${engine}"
+            publish=true
+            echo "engine release ${engine} -> game-server ${version}"
+          elif [[ "${GITHUB_REF}" == refs/tags/game-server-v* ]]; then
             version="${GITHUB_REF#refs/tags/game-server-v}"
-            tags="${IMAGE}:${version},${IMAGE}:latest"
+            tags="${IMAGE}:${version},${IMAGE}:latest,${IMAGE}:engine-${engine}"
             publish=true
           elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ "${GITHUB_REF_NAME}" != "${DEFAULT_BRANCH}" ]; then
             slug="$(echo "${GITHUB_REF_NAME}" | sed 's#[^A-Za-z0-9._-]#-#g')"
@@ -103,7 +159,7 @@ jobs:
               *)     patch=$((patch + 1)) ;;
             esac
             version="${major}.${minor}.${patch}"
-            tags="${IMAGE}:${version},${IMAGE}:latest"
+            tags="${IMAGE}:${version},${IMAGE}:latest,${IMAGE}:engine-${engine}"
             publish=true
             echo "newest tag ${latest}, ${BUMP} bump -> ${version}"
             if git rev-parse -q --verify "refs/tags/game-server-v${version}" >/dev/null; then
@@ -121,13 +177,15 @@ jobs:
             echo "primary=${IMAGE}:${version}"
             echo "tags=${tags}"
             echo "publish=${publish}"
+            echo "skip=false"
           } >> "$GITHUB_OUTPUT"
-          echo "version=${version} publish=${publish}"
+          echo "version=${version} publish=${publish} engine=${engine}"
 
       # [rc4l] load, never push, at this stage: the smoke test below must run the EXACT image that
       # gets published, so the build lands in the local daemon first and is pushed only once it has
       # been proven to start a server.
       - name: Build
+        if: steps.meta.outputs.skip != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -136,6 +194,8 @@ jobs:
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           provenance: false
+          build-args: |
+            ENGINE_VERSION=${{ steps.meta.outputs.engine }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -150,6 +210,7 @@ jobs:
       # Announce is off. A CI runner registering itself on the public registry would put a server on
       # the browser that exists for ninety seconds and answers nobody.
       - name: Smoke test
+        if: steps.meta.outputs.skip != 'true'
         run: |
           set -euo pipefail
           mkdir -p smoke/catalogue/citest
@@ -286,13 +347,15 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           provenance: false
+          build-args: |
+            ENGINE_VERSION=${{ steps.meta.outputs.engine }}
           cache-from: type=gha
 
       # [rc4l] Tag the commit the published image was built from, so a running container can always be
       # traced back to source. Only for a real release off the default branch; an experimental image is
       # identified by its branch and sha and needs no tag.
       - name: Tag the release
-        if: steps.meta.outputs.publish == 'true' && github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch
+        if: steps.meta.outputs.publish == 'true' && (github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch))
         run: |
           set -euo pipefail
           git tag "game-server-v${{ steps.meta.outputs.version }}"
