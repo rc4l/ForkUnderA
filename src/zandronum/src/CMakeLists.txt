@@ -133,6 +133,11 @@ else( WIN32 )
 			set( NO_SOUND ON )
 			set( NO_GTK ON )
 			set( NO_GL ON )
+			# [rc4l] The instant-replay recorder captures the rendered frame, so a build with no
+			# renderer cannot use it. Without this the headless binary linked libavcodec, libavformat,
+			# libavutil and libswscale for a feature it can never run, which a container then has to
+			# install to satisfy the loader.
+			set( NO_REPLAY ON )
 			add_definitions ( -DSERVER_ONLY=1 )
 			set( ZDOOM_EXE_NAME ${ZDOOM_EXE_NAME}-server )
 		endif( SERVERONLY )
