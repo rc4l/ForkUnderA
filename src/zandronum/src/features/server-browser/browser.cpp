@@ -160,6 +160,14 @@ static const ULONG		SERVERREGISTRY_QUERY_TIMEOUT_MS = 4000;
 // is "will never answer", not a quality bar.
 static const int		SERVERBROWSER_REFRESH_TIMEOUT_MS = 4000;
 
+// [rc4l] How many re-checks in a row a listed server may miss before it comes off the list.
+//
+// Three, because one is packet loss and two is a bad moment. A server that has answered once and
+// then ignores three separate challenges over twelve seconds has genuinely gone; before that, the
+// row is worth keeping, since the cost of showing a dead server for a few seconds is a failed join
+// and the cost of hiding a live one is that nobody can find it at all.
+static const int		SERVERBROWSER_MAX_RECHECK_MISSES = 3;
+
 // [rc4l] How long a THROTTLED verdict keeps meaning something. The registry's own ignore window is
 // three seconds ("Ignoring for 3 seconds" in its log), so this sits just past it: long enough not to
 // clear a refusal that is still in force, short enough that the bar recovers while you are looking.
@@ -684,6 +692,8 @@ void BROWSER_QueryTick( void )
 		in.resends          = static_cast<int>( g_BrowserServerList[ulIdx].lPunchResendsSent );
 		in.punchBudgetLeft  = ( g_lPunchesThisSweep < kMaxPunchesPerSweep );
 		in.refreshTimeoutMs = SERVERBROWSER_REFRESH_TIMEOUT_MS;
+		in.recheckFailures  = static_cast<int>( g_BrowserServerList[ulIdx].lRecheckMisses );
+		in.maxRecheckFailures = SERVERBROWSER_MAX_RECHECK_MISSES;
 
 		// A row whose clock never started reads as not-sent, which StepRow treats as "waiting on us".
 		if ( g_BrowserServerList[ulIdx].lMSTime <= 0 )
@@ -712,11 +722,20 @@ void BROWSER_QueryTick( void )
 			g_BrowserServerList[ulIdx].lMSTime = lFirstMS;
 			g_BrowserServerList[ulIdx].lPunchResendsSent++;
 		}
-		else if ( act.dropFromList )
+		else if ( act.recheckMissed )
 		{
+			// [rc4l] Stop chasing this one and count the miss. The row stays listed and joinable on
+			// what it last told us, which is very probably still true: it answered a moment ago.
 			g_BrowserServerList[ulIdx].bRefreshing = false;
 			g_BrowserServerList[ulIdx].lRefreshMS = 0;
-			g_BrowserServerList[ulIdx].ulActiveState = AS_INACTIVE;
+			g_BrowserServerList[ulIdx].lRecheckMisses++;
+
+			if ( act.dropFromList )
+			{
+				// Missed its whole allowance in a row. Now it is gone rather than unlucky.
+				g_BrowserServerList[ulIdx].lRecheckMisses = 0;
+				g_BrowserServerList[ulIdx].ulActiveState = AS_INACTIVE;
+			}
 		}
 		else if ( act.markTimedOut )
 		{
@@ -960,6 +979,7 @@ void BROWSER_ClearServerList( void )
 		g_BrowserServerList[ulIdx].ulActiveState = AS_INACTIVE;
 		g_BrowserServerList[ulIdx].bRefreshing = false;
 		g_BrowserServerList[ulIdx].lRefreshMS = 0;
+		g_BrowserServerList[ulIdx].lRecheckMisses = 0;
 
 		g_BrowserServerList[ulIdx].Address.Clear();
 
@@ -1147,6 +1167,7 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 	// culled on the previous occupant's deadline.
 	g_BrowserServerList[ulServer].bRefreshing = false;
 	g_BrowserServerList[ulServer].lRefreshMS = 0;
+	g_BrowserServerList[ulServer].lRecheckMisses = 0;
 
 	// Likewise the previous occupant's verdict about a build that has nothing to do with this one.
 	g_BrowserServerList[ulServer].bVersionMismatch = false;
@@ -1317,6 +1338,10 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 	// stops BROWSER_QueryTick from dropping a server that replied perfectly well.
 	g_BrowserServerList[lServer].bRefreshing = false;
 	g_BrowserServerList[lServer].lRefreshMS = 0;
+
+	// The strikes are CONSECUTIVE, so one answer wipes them. A server that misses a datagram now and
+	// then must never accumulate its way off the list over an evening of being perfectly reachable.
+	g_BrowserServerList[lServer].lRecheckMisses = 0;
 
 	// Is this a LAN server?
 	g_BrowserServerList[lServer].bLAN = bLAN;

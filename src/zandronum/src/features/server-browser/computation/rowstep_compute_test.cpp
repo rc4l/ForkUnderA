@@ -12,6 +12,7 @@ namespace
 {
 
 const int kRefreshTimeoutMs = 4000;
+const int kMaxRecheckMisses = 3;
 
 RowStepIn Waiting( int msSinceQuery )
 {
@@ -30,16 +31,20 @@ RowStepIn Rechecking( int msSinceRefresh )
 	in.msSinceRefresh = msSinceRefresh;
 	in.punchBudgetLeft = true;
 	in.refreshTimeoutMs = kRefreshTimeoutMs;
+	in.maxRecheckFailures = kMaxRecheckMisses;
 	return in;
 }
 
 bool DoesNothing( const RowStepOut &out )
 {
-	return !out.requestPunch && !out.resendChallenge && !out.dropFromList && !out.markTimedOut;
+	return !out.requestPunch && !out.resendChallenge && !out.dropFromList && !out.markTimedOut
+		&& !out.recheckMissed;
 }
 
 int ActionCount( const RowStepOut &out )
 {
+	// recheckMissed is deliberately not counted: it accompanies dropFromList on the final strike
+	// rather than competing with it, so a step can legitimately carry both.
 	return ( out.requestPunch ? 1 : 0 ) + ( out.resendChallenge ? 1 : 0 )
 		+ ( out.dropFromList ? 1 : 0 ) + ( out.markTimedOut ? 1 : 0 );
 }
@@ -128,13 +133,59 @@ TEST( RowStep, ARowThatAlreadyAskedKeepsItsLadderWithoutBudget )
 
 // ---------------------------------------------------------- giving up
 
-TEST( RowStep, ARecheckThatFailsDropsTheRowEntirely )
+TEST( RowStep, OneMissedRecheckDoesNotTakeTheServerAway )
 {
-	// It answered once and has stopped, so it is gone. Leaving it up offers a server nobody can join.
+	// The bug this exists to stop: a live server vanished off the list because a single re-check
+	// datagram went missing, and only a manual refresh brought it back.
 	const RowStepOut out = StepRow( Rechecking( kRefreshTimeoutMs ));
 
-	EXPECT_TRUE( out.dropFromList );
+	EXPECT_TRUE( out.recheckMissed );
+	EXPECT_FALSE( out.dropFromList );
 	EXPECT_FALSE( out.markTimedOut );
+}
+
+TEST( RowStep, MissingEveryRecheckInARowDoesTakeItAway )
+{
+	// It answered once and has now ignored the whole allowance. That is gone rather than unlucky,
+	// and leaving it up offers a server nobody can join.
+	RowStepIn in = Rechecking( kRefreshTimeoutMs );
+	in.recheckFailures = kMaxRecheckMisses - 1;
+
+	const RowStepOut out = StepRow( in );
+
+	EXPECT_TRUE( out.recheckMissed );
+	EXPECT_TRUE( out.dropFromList );
+}
+
+TEST( RowStep, TheStrikesHaveToRunOutBeforeTheRowDoes )
+{
+	// Swept, because an off-by-one here is the difference between three chances and one, and the
+	// symptom of getting it wrong looks exactly like the bug that is being fixed.
+	for ( int failures = 0; failures < kMaxRecheckMisses; ++failures )
+	{
+		RowStepIn in = Rechecking( kRefreshTimeoutMs );
+		in.recheckFailures = failures;
+
+		const RowStepOut out = StepRow( in );
+		const bool bLast = ( failures + 1 >= kMaxRecheckMisses );
+
+		EXPECT_TRUE( out.recheckMissed ) << "failures " << failures;
+		EXPECT_EQ( bLast, out.dropFromList ) << "failures " << failures;
+	}
+}
+
+TEST( RowStep, NoAllowanceConfiguredMeansTheRowIsNeverDropped )
+{
+	// maxRecheckFailures of zero is a caller that has not opted in. Reading it as "drop on the
+	// first miss" would restore the bug by way of a default.
+	RowStepIn in = Rechecking( kRefreshTimeoutMs );
+	in.maxRecheckFailures = 0;
+	in.recheckFailures = 99;
+
+	const RowStepOut out = StepRow( in );
+
+	EXPECT_TRUE( out.recheckMissed );
+	EXPECT_FALSE( out.dropFromList );
 }
 
 TEST( RowStep, AFirstQueryThatFailsSaysSoInsteadOfVanishing )

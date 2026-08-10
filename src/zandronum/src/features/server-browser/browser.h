@@ -199,6 +199,11 @@ typedef struct
 	bool			bRefreshing;
 	LONG			lRefreshMS;
 
+	// [rc4l] How many re-checks in a row this server has failed to answer. Reset to zero the moment
+	// it answers anything. A row is only dropped once this passes the limit in browser.cpp, because
+	// a single unanswered datagram is ordinary packet loss and used to delete a live server.
+	LONG			lRecheckMisses;
+
 	// [rc4l] Punch-on-query state (computation/querypunch_compute.h). A registry-listed server
 	// behind carrier NAT drops our direct query, so after a moment the browser asks the registry to
 	// have it punch toward us and re-sends the challenge into the hole. These carry that ladder's
