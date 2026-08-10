@@ -164,6 +164,31 @@ jobs:
           }
           JSON
 
+          # [rc4l] A SECOND entry that actually names a file, because an empty files[] never calls
+          # resolve_file -- and that is precisely how a bug shipped: resolve_file returns its path on
+          # stdout, log() also wrote to stdout, and the caller's $( ) captured both. The engine got a
+          # -file argument full of log lines, loaded nothing, and came up healthy on the substituted
+          # IWAD's own map01. Every assertion below passed on that server.
+          #
+          # The file is one the IMAGE already carries, and its md5 is computed from the image at test
+          # time rather than hardcoded, so this exercises the whole resolve-and-load path with no
+          # network and nothing to go stale.
+          img="${{ steps.meta.outputs.primary }}"
+          pk3="$(docker run --rm --entrypoint sh "$img" -c 'ls /opt/forkundera/brightmaps.pk3')"
+          md5="$(docker run --rm --entrypoint sh "$img" -c "md5sum $pk3 | cut -d' ' -f1")"
+          echo "smoke file: $pk3 md5=$md5"
+
+          mkdir -p smoke/catalogue/citestfile
+          cat > smoke/catalogue/citestfile/addon.json <<JSON
+          {
+            "schema": 1,
+            "name": "CI smoke test with a file",
+            "iwad": "freedoom2.wad",
+            "map": "map01",
+            "files": [ { "name": "$(basename "$pk3")", "md5": "${md5}" } ]
+          }
+          JSON
+
           # [rc4l] The container runs as an unprivileged user that does not exist on this runner, so a
           # bind mount it must write into (the WAD store) has to be opened up. A real deployment uses a
           # named volume, which Docker creates with the image's ownership and where this does not arise.
@@ -216,6 +241,33 @@ jobs:
           fi
 
           docker rm -f fua-smoke
+
+          # [rc4l] Second server, from the entry that names a file. The assertion that matters is the
+          # last one: the ENGINE reporting it added the pk3. Everything above this can pass while the
+          # -file argument is garbage, which is exactly what happened in production.
+          docker run -d --name fua-smoke-file \
+            -e FUA_ANNOUNCE=0 \
+            -v "$PWD/smoke:/data" \
+            "$img" citestfile
+          sleep 20
+          docker logs fua-smoke-file > smokefile.log 2>&1
+          cat smokefile.log
+
+          if [ "$(docker inspect -f '{{.State.Running}}' fua-smoke-file)" != "true" ]; then
+            echo "::error::the file-entry server exited instead of staying up"
+            exit 1
+          fi
+
+          grep -qE '^ adding .*brightmaps\.pk3' smokefile.log \
+            || { echo "::error::the engine never loaded the entry's file -- resolve_file returned something unusable"; exit 1; }
+
+          # [rc4l] The path handed over must be one clean argument. A -file carrying log output would
+          # show up here as a line that is not a plain path.
+          grep -q "\-file /opt/forkundera/brightmaps.pk3" smokefile.log \
+            || grep -q "\-file /data/wads" smokefile.log \
+            || { echo "::error::the -file argument was not a clean resolved path"; exit 1; }
+
+          docker rm -f fua-smoke-file
 
       - name: Log in to GHCR
         if: steps.meta.outputs.publish == 'true'
