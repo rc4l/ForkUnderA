@@ -12,6 +12,7 @@
 
 #include "features/global-header/computation/globalheader_compute.h"
 #include "features/global-header/computation/headerreach_compute.h"
+#include "features/global-header/computation/menuresume_compute.h"
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h" // IsServerBrowserOpen: which tab is lit
 #include "features/server-browser/computation/registrystatus_compute.h"
@@ -597,19 +598,15 @@ void GlobalHeader_ReleaseFocus( )
 //
 bool GlobalHeader_ResumeBrowser( )
 {
-	// NOT consumed here. M_StartControlPanel is called from three dozen places, and a flag that
-	// clears itself on being read would be spent by whichever of them ran first, leaving the Escape
-	// that actually asked to land on the main menu. It is cleared by the next close instead, which is
-	// the event that genuinely makes it untrue.
-	//
-	// Refused outright once the player is in a game, which is the case that made this look like a
-	// trapdoor: Escape there means the in-game menu, the one thing on screen that can get them out
-	// again, and offering a list of servers to join to somebody already on one answers a question
-	// nobody asked. Join Game and every other menu that is not ours are left exactly as they were.
-	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
-		return false;
+	MenuResumeIn in;
+	in.lastShown = g_ResumeBrowser ? MenuSection::Browser : MenuSection::MainMenu;
+	in.inGame = ( NETWORK_GetState( ) != NETSTATE_SINGLE );
 
-	return g_ResumeBrowser;
+	// joinReady is deliberately NOT read here. It is a one-shot the caller consumes, and asking for
+	// it twice is the bug that made Escape open the main menu over a browser it had just opened.
+	in.joinReady = false;
+
+	return ( ComputeMenuToOpen( in ) == MenuSection::Browser );
 }
 
 //*****************************************************************************
