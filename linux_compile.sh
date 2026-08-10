@@ -92,7 +92,7 @@ cmake --build build-linux -j"$(nproc)"
 # [rc4l] Refuse to package a client that cannot make sound; this shipped once already.
 if [ "$SERVERONLY" != "ON" ]; then
   if ! ldd build-linux/forkundera | grep -q libopenal; then
-    echo "ERROR: zandronum is not linked against libopenal — the build has no sound." >&2
+    echo "ERROR: forkundera is not linked against libopenal — the build has no sound." >&2
     echo "       Check the OpenAL detection in the configure output above." >&2
     exit 1
   fi
@@ -114,7 +114,7 @@ fi
 STAGE="dist-linux/$NAME"
 rm -rf "$STAGE"; mkdir -p "$STAGE"
 
-# [rc4l] SERVERONLY renames the target to zandronum-server; copying the hardcoded client name
+# [rc4l] SERVERONLY renames the target to forkundera-server; copying the hardcoded client name
 # shipped whatever stale client binary happened to be in the build directory.
 if [ "$SERVERONLY" = "ON" ]; then BIN=forkundera-server; else BIN=forkundera; fi
 [ -f "build-linux/$BIN" ] || { echo "ERROR: build-linux/$BIN not found" >&2; exit 1; }
