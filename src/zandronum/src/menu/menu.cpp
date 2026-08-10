@@ -93,10 +93,6 @@ FButtonStatus	MenuButtons[NUM_MKEYS];
 int				MenuButtonTickers[NUM_MKEYS];
 bool			MenuButtonOrigin[NUM_MKEYS];
 int				BackbuttonTime;
-
-// [rc4l] The tic the menus were last closed on, so the Escape that closed them cannot also be read
-// as "open the menu". See M_ClearMenus and the KEY_ESCAPE branch in M_Responder.
-static int		MenusClosedOnTic = -1;
 fixed_t			BackbuttonAlpha;
 static bool		MenuEnabled = true;
 
@@ -1072,19 +1068,6 @@ bool M_Responder (event_t *ev)
 			// Pop-up menu?
 			if (ev->data1 == KEY_ESCAPE)
 			{
-				// [rc4l] ONE Escape cannot both close a menu and open one.
-				//
-				// A keypress arrives twice: once as the GUI event the open menu consumes to close
-				// itself, and once as the raw key that this branch turns into "open the menu". Both
-				// are dispatched in the same pass, so pressing Escape on an open menu closed it and
-				// immediately reopened it, and whatever the reopen decided to show -- the browser,
-				// most visibly -- looked like Escape navigating somewhere instead of leaving.
-				//
-				// Compared against the tic rather than a flag because that is exactly the span in
-				// question: the same pass, not the next press however quickly it follows.
-				if (MenusClosedOnTic == gametic)
-					return false;
-
 				// [rc4l] ASK whether the panel already routed us, rather than deciding again.
 				//
 				// Both did, and both consumed the waiting join to find out. M_StartControlPanel got
@@ -1207,11 +1190,6 @@ void M_Drawer (void)
 void M_ClearMenus ()
 {
 	M_DemoNoPlay = false;
-
-	// [rc4l] Stamped so the Escape that did this cannot also be read as "open the menu". See the
-	// KEY_ESCAPE branch in M_Responder.
-	MenusClosedOnTic = gametic;
-
 	if (DMenu::CurrentMenu != NULL)
 	{
 		DMenu::CurrentMenu->Destroy();
