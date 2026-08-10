@@ -27,10 +27,15 @@ GH_TOK  = os.environ["GITHUB_TOKEN"]
 DRY_RUN = os.environ.get("DRY_RUN", "") not in ("", "0", "false")
 MARKER_TMPL = "GlitchTip-ID: {}"          # dedup marker embedded (hidden) in each issue body
 
-# platform -> (preferred load base, symbol-file path inside the release symbols zip)
+# platform -> (preferred load base, symbol-file paths to try inside the release symbols zip)
+#
+# [rc4l] Two names per platform, because the binary was renamed zandronum -> forkundera and the
+# symbol files are named after it. Every release published before that rename contains the old
+# names, forever, and a crash from one of those builds is exactly when symbols matter most.
 PLAT = {
-    "macos":   (0x100000000, "zandronum.dSYM/Contents/Resources/DWARF/zandronum"),
-    "linux":   (0,           "zandronum.debug"),
+    "macos":   (0x100000000, ("forkundera.dSYM/Contents/Resources/DWARF/forkundera",
+                              "zandronum.dSYM/Contents/Resources/DWARF/zandronum")),
+    "linux":   (0,           ("forkundera.debug", "zandronum.debug")),
     "windows": (0x140000000, None),        # first *.pdb found in the zip
 }
 
@@ -147,10 +152,13 @@ def ensure_symbols(platform, sha12):
     return dest
 
 def symfile_path(symdir, platform):
-    sub = PLAT[platform][1]
-    if sub:
-        p = os.path.join(symdir, sub)
-        return p if os.path.exists(p) else None
+    subs = PLAT[platform][1]
+    if subs:
+        for sub in subs:                                 # current name first, then the pre-rename one
+            p = os.path.join(symdir, sub)
+            if os.path.exists(p):
+                return p
+        return None
     for root, _, files in os.walk(symdir):               # windows: first pdb
         for f in files:
             if f.lower().endswith(".pdb"):

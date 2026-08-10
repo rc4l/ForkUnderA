@@ -53,7 +53,7 @@ jobs:
       - name: Verify sound is linked
         run: |
           set -euo pipefail
-          bin=build/ForkUnderA.app/Contents/MacOS/zandronum
+          bin=build/ForkUnderA.app/Contents/MacOS/forkundera
           otool -L "$bin" | grep -q libopenal \
             || { echo "::error::$bin is not linked against libopenal — no sound"; exit 1; }
           test -f build/ForkUnderA.app/Contents/MacOS/libopenal.1.dylib \
@@ -82,7 +82,7 @@ jobs:
         run: |
           set -euo pipefail
           sha=$(git rev-parse HEAD | cut -c1-12)
-          ( cd build && zip -qry "../symbols-macos-${sha}.zip" zandronum.dSYM )
+          ( cd build && zip -qry "../symbols-macos-${sha}.zip" forkundera.dSYM )
           ls -la symbols-macos-*.zip
 
       - name: Upload symbols artifact
@@ -139,7 +139,7 @@ jobs:
         run: |
           set -euo pipefail
           sha=$(git rev-parse HEAD | cut -c1-12)
-          ( cd build-linux && zip -qy "../symbols-linux-${sha}.zip" zandronum.debug )
+          ( cd build-linux && zip -qy "../symbols-linux-${sha}.zip" forkundera.debug )
           ls -la symbols-linux-*.zip
 
       - name: Upload symbols artifact
@@ -211,8 +211,8 @@ jobs:
         shell: pwsh
         run: |
           $sha = (git rev-parse HEAD).Substring(0,12)
-          $pdb = Get-ChildItem -Path build-win -Recurse -Filter zandronum.pdb | Select-Object -First 1
-          if (-not $pdb) { throw "no zandronum.pdb found under build-win" }
+          $pdb = Get-ChildItem -Path build-win -Recurse -Filter forkundera.pdb | Select-Object -First 1
+          if (-not $pdb) { throw "no forkundera.pdb found under build-win" }
           Compress-Archive -Path $pdb.FullName -DestinationPath "symbols-windows-$sha.zip" -Force
           Get-ChildItem symbols-windows-*.zip
 

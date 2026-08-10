@@ -45,7 +45,11 @@ endif(CMAKE_CROSSCOMPILING)
 if( NOT FUA_VERSION )
 	find_package( Git QUIET )
 	if( GIT_FOUND )
-		execute_process( COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0
+		# --match is load-bearing. This repo also carries server-registry-v* tags for the registry
+		# image, and the newest tag overall is often one of those, which named the engine's pk3
+		# fua_core_server-registry-v0.1.5.pk3. Match the engine's own v* line only, the same pattern
+		# release.yml bumps from.
+		execute_process( COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0 --match "v[0-9]*"
 			WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 			OUTPUT_VARIABLE FUA_VERSION
 			OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -124,7 +128,7 @@ IF( NOT CMAKE_BUILD_TYPE )
 ENDIF( NOT CMAKE_BUILD_TYPE )
 
 set( ZDOOM_OUTPUT_DIR ${CMAKE_BINARY_DIR} CACHE PATH "Directory where zdoom.pk3 and the executable will be created." )
-set( ZDOOM_EXE_NAME "zandronum" CACHE FILEPATH "Name of the executable to create" )
+set( ZDOOM_EXE_NAME "forkundera" CACHE STRING "Name of the executable to create" )
 if( MSVC )
 	# Allow the user to use ZDOOM_OUTPUT_DIR as a single release point.
 	# Use zdoom, zdoomd, zdoom64, and zdoomd64 for the binary names
