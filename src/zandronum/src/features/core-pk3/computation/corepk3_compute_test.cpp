@@ -53,6 +53,14 @@ TEST( CorePk3, RejectsAPrefixThatIsMerelyContained )
 	EXPECT_FALSE( IsCorePk3Name( "fua_cor.pk3" ));
 }
 
+TEST( CorePk3, RejectsANameShorterThanThePrefix )
+{
+	// A pk3 whose whole name is shorter than "fua_core_" runs off the end of the string before the
+	// prefix can be ruled out any other way.
+	EXPECT_FALSE( IsCorePk3Name( ".pk3" ));
+	EXPECT_FALSE( IsCorePk3Name( "a.pk3" ));
+}
+
 // ------------------------------------------------------------- the message
 
 TEST( CorePk3, SaysSoWhenThereIsNothingElse )
