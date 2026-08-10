@@ -328,6 +328,25 @@ jobs:
             || grep -q "\-file /data/wads" smokefile.log \
             || { echo "::error::the -file argument was not a clean resolved path"; exit 1; }
 
+          # [rc4l] The contract that server.cfg is allowed to win. Everything expressible as a CVAR
+          # belongs in the entry's cfg, so the entrypoint must say NOTHING about those unless the
+          # operator overrode them -- `+` arguments are applied after `+exec` and would otherwise
+          # overrule the cfg with a default nobody chose. This container sets no FUA_NAME and no
+          # FUA_PLAYERS, so neither cvar may appear.
+          if grep -qE '\[fua-entry\] exec:.*\+sv_maxplayers' smokefile.log; then
+            echo "::error::+sv_maxplayers was passed with no FUA_PLAYERS set -- it would override server.cfg"
+            exit 1
+          fi
+          if grep -qE '\[fua-entry\] exec:.*\+sv_hostname' smokefile.log; then
+            echo "::error::+sv_hostname was passed with no FUA_NAME set -- it would override server.cfg"
+            exit 1
+          fi
+
+          # [rc4l] And the other half: an explicit override must still reach the command line. The
+          # first container ran with FUA_NAME set, so silence there would be the opposite bug.
+          grep -qE '\[fua-entry\] exec:.*\+sv_hostname' smoke.log \
+            || { echo "::error::FUA_NAME was set but +sv_hostname never reached the command line"; exit 1; }
+
           docker rm -f fua-smoke-file
 
       - name: Log in to GHCR
