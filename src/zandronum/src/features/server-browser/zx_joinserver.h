@@ -103,6 +103,14 @@ void DrawJoinReadyNotice( bool afterMenus );
 // opens the menu, so they land in the browser rather than the main menu.
 bool ConsumeJoinReady();
 
+// [rc4l] Raise the same ready band for a HOST download rather than a join.
+//
+// Hosting had no notice at all: ResumeHostAfterDownload runs only from the browser's Ticker, so a
+// player who wandered off while an experience downloaded saw the progress band vanish on completion
+// and was told nothing. The band already existed and already knew how to wait to be come back to;
+// it only ever spoke about joining.
+void NoteHostReady();
+
 } // namespace zx
 
 #endif // ZX_JOINSERVER_H

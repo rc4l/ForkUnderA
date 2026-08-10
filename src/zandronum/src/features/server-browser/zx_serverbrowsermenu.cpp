@@ -678,6 +678,15 @@ static void serverbrowser_HostDownloadResume( bool allSucceeded )
 {
 	g_HostDownloadResumed = true;
 	g_HostDownloadSucceeded = allSucceeded;
+
+	// [rc4l] Say so when the player is not here to see it happen.
+	//
+	// The resume below is driven by the browser's Ticker, so it only fires once they are back in the
+	// browser. A player who wandered off while an experience downloaded got no ending at all: the
+	// progress band vanished on completion and nothing replaced it. The band already knew how to
+	// wait to be come back to; it just had no way to talk about hosting.
+	if ( allSucceeded && ( zx::IsServerBrowserOpen( ) == false ))
+		zx::NoteHostReady( );
 }
 
 // [rc4l] Bumped whenever files may have appeared on disk, which invalidates the have-cache behind the
