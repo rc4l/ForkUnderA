@@ -36,7 +36,7 @@ SRC="$ROOT/src/zandronum"
 APP="$BUILD/ForkUnderA.app"
 MACOS="$APP/Contents/MacOS"
 ZIPDIR="$BUILD/tools/zipdir/zipdir"
-BIN="$BUILD/zandronum"
+BIN="$BUILD/forkundera"
 NCPU="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
 status() { printf '\033[32m==> %s\033[0m\n' "$*"; }
@@ -94,7 +94,7 @@ done
 
 # --- 3. Sync into the bundle, VERIFY the copy is faithful, THEN re-seal. -------
 status "Syncing fresh binary + pk3s into the bundle..."
-cp -f "$BIN" "$MACOS/zandronum"; chmod u+w "$MACOS/zandronum"
+cp -f "$BIN" "$MACOS/forkundera"; chmod u+w "$MACOS/forkundera"
 for pk3 in "$BUILD"/*.pk3; do [ -e "$pk3" ] && cp -f "$pk3" "$MACOS/"; done
 
 # Verify BEFORE signing -- codesign rewrites the bundle binary in place, so these
@@ -102,7 +102,7 @@ for pk3 in "$BUILD"/*.pk3; do [ -e "$pk3" ] && cp -f "$pk3" "$MACOS/"; done
 # the assertions that would have caught every failure in the screenshots:
 [ -f "$MACOS/$core_name" ] \
   || die "the bundle has NO $core_name after sync -- the engine would abort with 'Cannot find $core_name'."
-cmp -s "$BIN" "$MACOS/zandronum" \
+cmp -s "$BIN" "$MACOS/forkundera" \
   || die "bundle binary != build/ binary (a stale copy slipped through)."
 cmp -s "$BUILD/$core_name" "$MACOS/$core_name" \
   || die "bundle $core_name != build/ $core_name (a stale copy slipped through)."
