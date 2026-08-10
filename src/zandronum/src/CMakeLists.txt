@@ -133,6 +133,13 @@ else( WIN32 )
 			set( NO_SOUND ON )
 			set( NO_GTK ON )
 			set( NO_GL ON )
+			# [rc4l] NO_REPLAY is forced beside its own option() further down, NOT here, and the
+			# asymmetry is a trap rather than a style choice. The three switches above survive being
+			# set here only because their option() calls happen just above; option( NO_REPLAY ) is
+			# hundreds of lines below and would overwrite a plain set() with its OFF default, because
+			# CMP0077 is OLD under the CMAKE_POLICY_VERSION_MINIMUM=3.5 this project configures with.
+			# A set() here looks correct, changes nothing, and the only symptom is a headless binary
+			# still linking FFmpeg.
 			add_definitions ( -DSERVER_ONLY=1 )
 			set( ZDOOM_EXE_NAME ${ZDOOM_EXE_NAME}-server )
 		endif( SERVERONLY )
@@ -575,6 +582,19 @@ endif ( NOT NO_OPENAL )
 # [rc4l] FUA instant replay: encode gameplay clips as H.264/MP4 via FFmpeg (libav*). Optional --
 # if the libraries aren't found the feature compiles as a no-capture stub (ZX_ENABLE_REPLAY off).
 option( NO_REPLAY "Disable the FUA instant-replay video feature" OFF )
+
+# [rc4l] The recorder captures the rendered frame, so a build with no renderer cannot use it. Left
+# alone, SERVERONLY linked libavcodec, libavformat, libavutil and libswscale for a feature it can
+# never reach, and every container had to install them to satisfy the loader.
+#
+# Forced HERE, immediately after the option(), and it has to be: option() creates the cache entry
+# from its own default, so anything set before this line is discarded under CMP0077 OLD. That is why
+# the SERVERONLY block cannot do what it does for NO_SOUND, NO_GTK and NO_GL.
+if( SERVERONLY )
+	set( NO_REPLAY ON )
+	message( STATUS "FUA replay: disabled for SERVERONLY -- a headless build has no frame to capture" )
+endif()
+
 if( NOT NO_REPLAY )
 	# First try pkg-config (macOS Homebrew, Linux distros).
 	find_package( PkgConfig QUIET )
