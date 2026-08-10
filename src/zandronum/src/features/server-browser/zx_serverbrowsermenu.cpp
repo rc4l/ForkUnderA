@@ -1474,9 +1474,9 @@ public:
 	{
 		Super::Ticker( );
 
-		// Drives the registry query's retry/give-up clock and ages out servers that never answered.
-		BROWSER_ServerRegistryTick( );
-		BROWSER_QueryTick( );
+		// [rc4l] The retry/give-up clock and the per-server timeouts moved to BROWSER_BackgroundTick,
+		// which runs whether or not this menu is open. Ticking them here as well would halve every
+		// timeout while the browser was on screen.
 
 		// [rc4l] A finished download for an entry we were about to host, acted on here rather than in
 		// the callback: that arrives from inside waddownload::Tick, and starting a server from there
