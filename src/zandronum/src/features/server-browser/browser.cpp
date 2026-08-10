@@ -108,6 +108,11 @@ struct SERVERREGISTRYSTATE_s
 
 static	std::vector<SERVERREGISTRYSTATE_s>	g_ServerRegistryStates;
 
+// [rc4l] When a sweep last went out, or 0 for never. Stamped where the queries are SENT rather than
+// where replies land: a refresh that found nothing still happened, and a player asking "is this list
+// current" is asking when we last looked, not when somebody last answered.
+static	ULONG			g_ulLastRefreshMS = 0;
+
 // Message buffer for sending messages to the server registry.
 static	NETBUFFER_s		g_ServerRegistryBuffer;
 
@@ -722,6 +727,17 @@ void BROWSER_QueryTick( void )
 
 //*****************************************************************************
 //
+// [rc4l] Seconds since the last sweep, or -1 if there has never been one.
+LONG BROWSER_SecondsSinceRefresh( void )
+{
+	if ( g_ulLastRefreshMS == 0 )
+		return ( -1 );
+
+	return ( static_cast<LONG>(( I_MSTime( ) - g_ulLastRefreshMS ) / 1000 ));
+}
+
+//*****************************************************************************
+//
 void BROWSER_SetSelectedServer( LONG lServer )
 {
 	g_lSelectedServer = lServer;
@@ -880,6 +896,8 @@ bool BROWSER_IsServerRegistryAddress( const NETADDRESS_s &address )
 // [rc4l] See browser.h. Marks every listed server for a re-check while leaving it on the list.
 void BROWSER_RefreshListedServers( void )
 {
+	g_ulLastRefreshMS = I_MSTime( );
+
 	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
 		if ( g_BrowserServerList[ulIdx].ulActiveState != AS_ACTIVE )
@@ -1765,6 +1783,13 @@ void BROWSER_QueryServerRegistry( void )
 
 	if ( g_ServerRegistryAddresses.Size( ) == 0 )
 		return;
+
+	// [rc4l] Stamped here as well as in BROWSER_RefreshListedServers, because a sweep can start with
+	// either. The menu does both together, but the background query at startup asks the registry on
+	// its own -- and if that registry never answers, the per-server pass never runs, so without this
+	// a client that had been trying for a minute would still say "never refreshed". We looked; that
+	// is what the line reports.
+	g_ulLastRefreshMS = I_MSTime( );
 
 	// We are currently waiting to hear back from the server registries.
 	g_bWaitingForServerRegistryResponse = true;

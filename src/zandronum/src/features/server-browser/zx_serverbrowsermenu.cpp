@@ -48,6 +48,7 @@
 #include "features/server-browser/computation/textinput_compute.h"
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
+#include "features/server-browser/computation/timeago_compute.h"
 #include "features/server-browser/computation/liverow_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
 #include "features/addon-catalogue/zx_catalogue.h"
@@ -6223,8 +6224,19 @@ public:
 			SB_REFRESH_X + ( SB_REFRESH_W - textW ) / 2, SB_REFRESH_Y + 3, label,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, TAG_DONE );
 
-		serverbrowser_Tip( SB_REFRESH_X, SB_REFRESH_Y, SB_REFRESH_W, SB_REFRESH_H,
-			"Refresh all servers" );
+		// [rc4l] How old the list is, under what the button does. A list that looks populated says
+		// nothing about whether it is current, and this is the one control whose whole job is that
+		// question -- so the answer belongs on it rather than being inferred from rows that may have
+		// been sitting there for an hour.
+		{
+			const LONG lAgo = BROWSER_SecondsSinceRefresh( );
+
+			FString tip;
+			tip << "Refresh all servers\n"
+				<< zx::LastRefreshedLine( lAgo >= 0, static_cast<int>( lAgo )).c_str( );
+
+			serverbrowser_Tip( SB_REFRESH_X, SB_REFRESH_Y, SB_REFRESH_W, SB_REFRESH_H, tip );
+		}
 	}
 
 	//*************************************************************************
@@ -7706,11 +7718,16 @@ public:
 
 
 			// [rc4l] The refresh button, which until now had no keyboard route to press it at all.
-			// Same call the click makes, so the two ways of pressing it cannot come to mean
+			// Same calls the click makes, so the two ways of pressing it cannot come to mean
 			// different things.
+			//
+			// It used to be RefreshListedServers alone while the click also asked the registry, so
+			// the comment above was already claiming a sameness that was not there: pressing REFRESH
+			// by keyboard re-checked the servers you already had and could never find a new one.
 			if ( g_Focus == zx::BrowserFocus::Refresh )
 			{
 				BROWSER_RefreshListedServers( );
+				BROWSER_QueryServerRegistry( );
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 				return true;
 			}
