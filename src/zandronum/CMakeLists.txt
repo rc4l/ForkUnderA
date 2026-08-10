@@ -29,6 +29,50 @@ if(CMAKE_CROSSCOMPILING)
 	include(${IMPORT_EXECUTABLES})
 endif(CMAKE_CROSSCOMPILING)
 
+# [rc4l] The engine's own data pk3 carries a build key in its name: fua_core_<key>.pk3.
+#
+# A fixed zandronum.pk3 loads happily when it is stale, and the engine then misbehaves somewhere far
+# from the cause. Keyed, a mismatched pair simply is not found and the engine says so at startup.
+# That is the point of this: turning a silent wrong-data bug into a loud one.
+#
+# COMPUTED HERE AND NOWHERE ELSE. The exe is told the same string through FUA_CORE_PK3_NAME below,
+# so the name it looks for and the name zipdir writes cannot drift apart within a build tree. A glob
+# would reintroduce exactly the ambiguity this removes once a player has several cores in one folder.
+# FUA_VERSION is the fork's own release tag, the same string GetFuaVersionTag() reports. Asking git
+# is right even during a release build, where the tag does not exist yet: _build.yml already runs
+# `git tag -f "<version>" HEAD` on all three platforms before compiling, so describe answers with the
+# release being cut. The override is for builds with no git at all.
+if( NOT FUA_VERSION )
+	find_package( Git QUIET )
+	if( GIT_FOUND )
+		execute_process( COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0
+			WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+			OUTPUT_VARIABLE FUA_VERSION
+			OUTPUT_STRIP_TRAILING_WHITESPACE
+			ERROR_QUIET )
+	endif()
+endif()
+if( NOT FUA_VERSION )
+	set( FUA_VERSION "dev" )
+endif()
+
+# Anything a filename cannot carry becomes a dash rather than being dropped, so two different
+# versions can never collapse onto one name.
+string( REGEX REPLACE "[^A-Za-z0-9._-]" "-" FUA_CORE_KEY "${FUA_VERSION}" )
+
+set( FUA_CORE_PK3_NAME "fua_core_${FUA_CORE_KEY}.pk3" )
+message( STATUS "Engine data pk3: ${FUA_CORE_PK3_NAME}" )
+
+# The exe is told the same string, so BASEWAD and the file zipdir writes come from one place.
+add_definitions( -DFUA_CORE_PK3_NAME="${FUA_CORE_PK3_NAME}" )
+
+# [rc4l] GAMEVER_STRING is the version clients and servers hand each other and refuse to mix across
+# (sv_main.cpp compares it with stricmp), so it has to be OUR release rather than the Zandronum
+# release we forked from. Zandronum sets it to its own release for exactly this reason; leaving it
+# at 3.2.1 said every build of ours was interchangeable with every other, which was never true.
+string( REGEX REPLACE "^v" "" FUA_GAMEVER "${FUA_VERSION}" )
+add_definitions( -DFUA_GAMEVER_STRING="${FUA_GAMEVER}" )
+
 # Simplify pk3 building, add_pk3(filename srcdirectory)
 function( add_pk3 PK3_NAME PK3_DIR )
 	# Generate target name. Just use "pk3" for main pk3 target.
@@ -37,6 +81,11 @@ function( add_pk3 PK3_NAME PK3_DIR )
 	if( ${PK3_TARGET} STREQUAL "zandronum_pk3" )
 		set( PK3_TARGET "pk3" )
 	endif( ${PK3_TARGET} STREQUAL "zandronum_pk3" )
+	# [rc4l] The core pk3's FILENAME now carries a build key, so deriving the target name from it
+	# would rename the target on every rebuild and break everything that depends on "pk3".
+	if( ${PK3_NAME} STREQUAL ${FUA_CORE_PK3_NAME} )
+		set( PK3_TARGET "pk3" )
+	endif()
 
 	if( NOT NO_GENERATOR_EXPRESSIONS AND NOT ZDOOM_OUTPUT_OLDSTYLE )
 		add_custom_command( OUTPUT ${ZDOOM_OUTPUT_DIR}/${PK3_NAME}

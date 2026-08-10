@@ -33,7 +33,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="$ROOT/build"
 SRC="$ROOT/src/zandronum"
-APP="$BUILD/ZandroX.app"
+APP="$BUILD/ForkUnderA.app"
 MACOS="$APP/Contents/MacOS"
 ZIPDIR="$BUILD/tools/zipdir/zipdir"
 BIN="$BUILD/zandronum"
@@ -67,7 +67,13 @@ cmake --build "$BUILD" --target zdoom --parallel "$NCPU" \
 
 # --- 2. pk3 freshness. Repack any pk3 that is missing or older than wadsrc/. ---
 # We own this because the zdoom target never rebuilds pk3s (see header).
-pk3_pairs=( "wadsrc:zandronum.pk3" "wadsrc_bm:brightmaps.pk3"
+# [rc4l] The core pk3's name carries this build's release key, so it is discovered rather than
+# named. See src/zandronum/src/features/core-pk3.
+core_name="$( basename "$( ls -t "$BUILD"/fua_core_*.pk3 2>/dev/null | head -1 )" )"
+[ -n "$core_name" ] && [ "$core_name" != "*" ] \
+  || die "no fua_core_*.pk3 in $BUILD -- the pk3 target did not run, so there is nothing to ship."
+
+pk3_pairs=( "wadsrc:$core_name" "wadsrc_bm:brightmaps.pk3"
             "wadsrc_lights:lights.pk3" "wadsrc_st:skulltag_actors.pk3" )
 for pair in "${pk3_pairs[@]}"; do
     dir="${pair%%:*}"; name="${pair##*:}"
@@ -94,12 +100,19 @@ for pk3 in "$BUILD"/*.pk3; do [ -e "$pk3" ] && cp -f "$pk3" "$MACOS/"; done
 # Verify BEFORE signing -- codesign rewrites the bundle binary in place, so these
 # byte-compares must run while it is still the freshly-copied artifact. These are
 # the assertions that would have caught every failure in the screenshots:
-[ -f "$MACOS/zandronum.pk3" ] \
-  || die "the bundle has NO zandronum.pk3 after sync -- the engine would abort with 'Cannot find zandronum.pk3'."
+[ -f "$MACOS/$core_name" ] \
+  || die "the bundle has NO $core_name after sync -- the engine would abort with 'Cannot find $core_name'."
 cmp -s "$BIN" "$MACOS/zandronum" \
   || die "bundle binary != build/ binary (a stale copy slipped through)."
-cmp -s "$BUILD/zandronum.pk3" "$MACOS/zandronum.pk3" \
-  || die "bundle zandronum.pk3 != build/ zandronum.pk3 (a stale copy slipped through)."
+cmp -s "$BUILD/$core_name" "$MACOS/$core_name" \
+  || die "bundle $core_name != build/ $core_name (a stale copy slipped through)."
+
+# [rc4l] Sweep cores this build did not produce; inert, since the engine asks for an exact name, but
+# a bundle that grows a pk3 per version is how someone ends up shipping four.
+for stale in "$MACOS"/fua_core_*.pk3; do
+    [ -f "$stale" ] || continue
+    [ "$( basename "$stale" )" = "$core_name" ] || rm -f "$stale"
+done
 
 # Refreshing the main executable invalidates the app's signature; deep-sign
 # re-seals the whole bundle including the executable (this is expected to change

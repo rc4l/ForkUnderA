@@ -107,9 +107,9 @@ fi
 # --- Package ---------------------------------------------------------------
 ARCH="$(uname -m)"
 if [ -n "$VERSION" ]; then
-  NAME="ZandroX-$VERSION-linux-$ARCH"
+  NAME="ForkUnderA-$VERSION-linux-$ARCH"
 else
-  NAME="ZandroX-linux-$ARCH"
+  NAME="ForkUnderA-linux-$ARCH"
 fi
 STAGE="dist-linux/$NAME"
 rm -rf "$STAGE"; mkdir -p "$STAGE"

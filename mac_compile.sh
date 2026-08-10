@@ -5,7 +5,7 @@
 #
 # ZandroX macOS Build  (fork of Zandronum)
 #
-# Builds ZandroX from the Zandronum source tree and packages it as ZandroX.app.
+# Builds ZandroX from the Zandronum source tree and packages it as ForkUnderA.app.
 # macOS counterpart to build.ps1. Terminal-only, "run and go".
 #
 #   ./mac_compile.sh                 # native build with OpenAL audio (default)
@@ -79,8 +79,8 @@ SDL_PREFIX="$SCRIPT_ROOT/deps/sdl"          # install prefix for from-source SDL
 SDL_SRC="$SCRIPT_ROOT/deps/sdlsrc"          # scratch dir for SDL source trees
 
 # macOS .app bundle that build/ ships in addition to the loose binary.
-APP_NAME="ZandroX"
-BUNDLE_ID="org.zandrox.zandrox"
+APP_NAME="ForkUnderA"
+BUNDLE_ID="org.forkundera.forkundera"
 
 HOST_ARCH="$(uname -m)"                 # arm64 | x86_64
 WANT_SOUND="${SOUND:-1}"                # 1 = OpenAL audio (default), 0 = no audio
@@ -368,10 +368,10 @@ make_app_bundle() {
     for f in "$BUILD_DIR"/*.pk3 "$BUILD_DIR"/*.wad; do
         [[ -e "$f" ]] && cp "$f" "$macos/"
     done
-    # [rc4l] Fail closed: the pk3 copy above is a guarded glob, so a build that never
-    # produced zandronum.pk3 would silently ship a bundle the engine can't start
-    # ("Cannot find zandronum.pk3"). Assert it landed rather than hand off a dud.
-    [[ -f "$macos/zandronum.pk3" ]] || die "zandronum.pk3 missing from $BUILD_DIR -- the pk3 target didn't run. Build the 'pk3' target or use mac_build_run.sh; refusing to ship a bundle the engine can't start."
+    # [rc4l] Fail closed: the pk3 copy above is a guarded glob, so a build that never produced the
+    # core pk3 would silently ship a bundle the engine can't start. Its name carries this build's
+    # release key, so match the pattern rather than a literal. See features/core-pk3.
+    compgen -G "$macos/fua_core_*.pk3" > /dev/null || die "no fua_core_*.pk3 in $BUILD_DIR -- the pk3 target didn't run. Build the 'pk3' target or use mac_build_run.sh; refusing to ship a bundle the engine can't start."
     # [rc4l] Freedoom's BSD-3-clause license must travel with the WAD it covers, and GPL-3.0
     # sections 4-6 require the license text plus a pointer to the corresponding source; a
     # binary without them is not compliant. Missing files must not abort the build.

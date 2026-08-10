@@ -253,7 +253,7 @@ them dilutes it:
 
 ## Verification
 - `cmake --build build-tests && ctest` + `bash tests/coverage.sh --auto` (100% on `computation/`).
-- Engine: `cmake --build build-mac-arm`; then **`./mac_compile.sh`** to refresh `build/ZandroX.app` — the
+- Engine: `cmake --build build-mac-arm`; then **`./mac_compile.sh`** to refresh `build/ForkUnderA.app` — the
   MCP launches that bundle, not `build-mac-arm` ([[mcp-launches-stale-app]]).
 - Runtime: MCP `launch_instance` (windowed, MAP01) → `screenshot`, A/B each subsystem against the
   pre-migration image; `renderer_info` to confirm GL version/shadermodel.

@@ -20,7 +20,7 @@ false confidence for that flight.
 
 ```
 python3 progress/renderer-staircase/testmaps/lighttest_gen.py    # -> /tmp/lighttest.wad
-build/ZandroX.app/Contents/MacOS/zandronum \
+build/ForkUnderA.app/Contents/MacOS/zandronum \
   -iwad "$HOME/Library/Application Support/Zandronum/doom2.wad" \
   -file /tmp/lighttest.wad +map MAP01 +god 1 +gl_lights 1 +gl_lights_size 3
 ```
