@@ -971,7 +971,9 @@ int M_GetDefaultSkill();
 // [rc4l] Answers whether it has ALREADY put the player somewhere: a join that finished while they
 // were in the game is waiting, and opening the menu is the gesture that collects it. Callers that
 // would otherwise follow with a menu of their own have to ask, or theirs lands on top of this one.
-bool M_StartControlPanel (bool makeSound);
+// `allowRedirect` is how a caller says it already knows what it wants to open. The tab bar does, and
+// letting the redirect run there stacked the tab being clicked on top of the one being left.
+bool M_StartControlPanel (bool makeSound, bool allowRedirect = true);
 
 // [rc4l] Release every latched menu key. Call it when something takes the keyboard away from the
 // menu's own translation -- see the definition for what goes wrong otherwise.
