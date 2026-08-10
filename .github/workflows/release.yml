@@ -151,6 +151,18 @@ jobs:
           path: assets
           merge-multiple: true
 
+      # [rc4l] Clients up to v0.2.13 build the download filename themselves and still ask for
+      # "ZandroX-<tag>-<platform>". Publishing a copy under the old name keeps their auto-update
+      # working across the rename; without it they would see a new release and fail to fetch it.
+      # REMOVE once nothing older than the first ForkUnderA-named release is worth supporting.
+      - name: Publish compatibility copies under the old asset name
+        run: |
+          set -euo pipefail
+          for f in assets/ForkUnderA-*; do
+            [ -e "$f" ] || continue
+            cp -v "$f" "$(echo "$f" | sed 's|/ForkUnderA-|/ZandroX-|')"
+          done
+
       - name: Show what will be published
         run: ls -laR assets/
 

@@ -120,7 +120,10 @@ def find_symbolizer():
 
 def find_asset_url(platform, sha12):
     releases = json.loads(gh(f"/repos/{GH_REPO}/releases?per_page=100"))
-    want = re.compile(rf"ZandroX-symbols-{platform}-{re.escape(sha12)}", re.I)
+    # [rc4l] Matches both the old "ZandroX-symbols-<platform>-<sha>" and the current
+    # "symbols-<platform>-<sha>". Releases already published keep the old name forever, and a crash
+    # from one of those builds is exactly when symbols matter most, so the pattern has to span both.
+    want = re.compile(rf"symbols-{platform}-{re.escape(sha12)}", re.I)
     for rel in releases:
         for a in rel.get("assets", []):
             if want.search(a["name"]):
