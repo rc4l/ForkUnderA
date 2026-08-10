@@ -445,7 +445,7 @@ show_results() {
         lipo -info "$bin" | sed 's/^/  /'
         ls -lh "$bin" | awk '{print "  size: "$5}'
     else
-        warn "zandronum binary not found in $BUILD_DIR"
+        warn "forkundera binary not found in $BUILD_DIR"
     fi
     local app="$BUILD_DIR/$APP_NAME.app"
     if [[ -d "$app" ]]; then
