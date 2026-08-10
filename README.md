@@ -14,7 +14,7 @@ ForkUnderA is a GPL-compliant fork of Zandronum. You can track our [development 
 - **Linux:** `./linux_compile.sh`
 - **Windows:** `.\windows_compile.ps1`
 
-## The Big Changes from ForkUnderA
+## Major Changes
 
 - Fully GPL Compliant. You can make commercial games with this.
 - In-game server browser and wad downloader.
