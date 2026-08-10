@@ -82,6 +82,18 @@ bool HeaderBarContains(const HeaderMetrics &m, int py);
 // whose ends you cannot feel is one you have to look at to use.
 int StepHeaderTab(int index, int count, int step);
 
+// Is the menu's cursor on the first row the player can actually reach, so that Up should leave the
+// menu and land on the bar instead of wrapping round to the bottom?
+//
+// FIRST SELECTABLE, NOT INDEX ZERO. Menus lead with things the cursor never visits: a title patch, a
+// line of static text, a greyed-out entry. The top row is wherever the first reachable item happens
+// to be, and hard-coding zero would mean Up wraps to the bottom on exactly the menus that have a
+// banner, which is most of them.
+//
+// Answers false when nothing is selected: the menu's own Up already means "pick a row" then, and
+// stealing it would leave a menu the keyboard can never enter.
+bool CursorAtTopRow(const bool *selectable, int count, int selected);
+
 } // namespace zx
 
 #endif // ZX_GLOBALHEADER_COMPUTE_H

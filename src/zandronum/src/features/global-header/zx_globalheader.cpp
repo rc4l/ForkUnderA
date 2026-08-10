@@ -529,8 +529,9 @@ bool GlobalHeader_MouseClick( int screenX, int screenY )
 	const int tab = HeaderTabAtPoint( m, widths, kHeaderTabCount, vx, vy );
 	if ( tab >= 0 )
 	{
-		// A click that lands is also a claim on the arrows, so the keyboard carries on from where
-		// the pointer left off rather than from wherever it was before.
+		// The pointer parks the keyboard cursor where it clicked, WITHOUT claiming the arrows. A
+		// mouse user who clicks Play Online wants to be in the browser, not left holding a bar
+		// that swallows the first arrow key they press once they get there.
 		g_FocusTab = tab;
 		GoToTab( tab );
 	}

@@ -47,6 +47,7 @@
 #include "c_bind.h"
 #include "gameconfigfile.h"
 #include "menu/menu.h"
+#include "features/global-header/computation/globalheader_compute.h" // [rc4l] where the top row is
 // [TP] New #includes
 #include "cl_main.h"
 
@@ -98,6 +99,29 @@ void DOptionMenu::Init(DMenu *parent, FOptionMenuDescriptor *desc)
 	mDesc = desc;
 	if (mDesc != NULL && mDesc->mSelectedItem == -1) mDesc->mSelectedItem = FirstSelectable();
 
+}
+
+//=============================================================================
+//
+//
+//
+//=============================================================================
+
+// [rc4l] Up off the first reachable row hands the keyboard to the global tab bar.
+//
+// Asked of the same unit the list menus use, rather than compared against FirstSelectable(), so
+// there is one answer to "where is the top" and not two that can drift.
+bool DOptionMenu::AtTopRow()
+{
+	if (mDesc == NULL)
+		return false;
+
+	TArray<bool> selectable;
+	for (unsigned i = 0; i < mDesc->mItems.Size(); ++i)
+		selectable.Push(mDesc->mItems[i]->Selectable());
+
+	return zx::CursorAtTopRow(selectable.Size() > 0 ? &selectable[0] : NULL,
+		static_cast<int>(selectable.Size()), mDesc->mSelectedItem);
 }
 
 //=============================================================================

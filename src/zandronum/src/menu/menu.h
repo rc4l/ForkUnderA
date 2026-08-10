@@ -291,6 +291,14 @@ public:
 	virtual void Close();
 	virtual bool MouseEvent(int type, int x, int y);
 	virtual bool MouseEventBack(int type, int x, int y);
+
+	// [rc4l] Is the cursor on this menu's top row, so that Up should leave for the global tab bar?
+	//
+	// Answers false by default, and a menu that answers false simply keeps Up. That is the safe way
+	// round: a message box or a colour picker handing the keyboard to a bar the player cannot see
+	// the point of is worse than one more menu where Up wraps.
+	virtual bool AtTopRow();
+
 	void SetCapture();
 	void ReleaseCapture();
 	bool HasCapture()
@@ -620,6 +628,7 @@ public:
 	bool Responder (event_t *ev);
 	bool MenuEvent (int mkey, bool fromcontroller);
 	bool MouseEvent(int type, int x, int y);
+	bool AtTopRow();
 	void Ticker ();
 	void Drawer ();
 	void SetFocus(FListMenuItem *fc)
@@ -861,6 +870,7 @@ public:
 	bool Responder (event_t *ev);
 	bool MenuEvent (int mkey, bool fromcontroller);
 	bool MouseEvent(int type, int x, int y);
+	bool AtTopRow();
 	void Ticker ();
 	void Drawer ();
 	const FOptionMenuDescriptor *GetDescriptor() const { return mDesc; }
