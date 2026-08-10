@@ -262,6 +262,26 @@ bool DMenu::AtTopRow()
 //
 //=============================================================================
 
+//=============================================================================
+//
+// [rc4l] Where the back button's top-left corner goes, in real pixels.
+//
+// Its home is the top-left of the screen, and the global header now owns that corner: the arrows sat
+// on the bar, or in the band of game above it, depending on the window's shape. The bar is chrome
+// that spans the whole width, so the button moves out from under it rather than fighting it, and
+// takes the same padding off that edge that it now takes off the left one.
+//
+// Shared by the drawing and the hit test on purpose. They were already two copies of this sum, and
+// a back button you can see but not click is the classic result of letting them drift.
+static void M_BackButtonOrigin(int w, int h, int &x, int &y)
+{
+	const int pad = 2 * CleanXfac;
+
+	x = (m_show_backbutton & 1) ? screen->GetWidth() - w : pad;
+	y = (m_show_backbutton & 2) ? screen->GetHeight() - h
+		: zx::GlobalHeader_ScreenBottom() + 2 * CleanYfac;
+}
+
 bool DMenu::MouseEventBack(int type, int x, int y)
 {
 	if (m_show_backbutton >= 0)
@@ -269,10 +289,13 @@ bool DMenu::MouseEventBack(int type, int x, int y)
 		FTexture *tex = TexMan(gameinfo.mBackButton);
 		if (tex != NULL)
 		{
-			if (m_show_backbutton&1) x -= screen->GetWidth() - tex->GetScaledWidth() * CleanXfac;
-			if (m_show_backbutton&2) y -= screen->GetHeight() - tex->GetScaledHeight() * CleanYfac;
-			mBackbuttonSelected = ( x >= 0 && x < tex->GetScaledWidth() * CleanXfac && 
-									y >= 0 && y < tex->GetScaledHeight() * CleanYfac);
+			const int w = tex->GetScaledWidth() * CleanXfac;
+			const int h = tex->GetScaledHeight() * CleanYfac;
+
+			int ox, oy;
+			M_BackButtonOrigin(w, h, ox, oy);
+
+			mBackbuttonSelected = (x >= ox && x < ox + w && y >= oy && y < oy + h);
 			if (mBackbuttonSelected && type == MOUSE_Release)
 			{
 				if (m_use_mouse == 2) mBackbuttonSelected = false;
@@ -325,8 +348,8 @@ void DMenu::Drawer ()
 		FTexture *tex = TexMan(gameinfo.mBackButton);
 		int w = tex->GetScaledWidth() * CleanXfac;
 		int h = tex->GetScaledHeight() * CleanYfac;
-		int x = (!(m_show_backbutton&1))? 0:screen->GetWidth() - w;
-		int y = (!(m_show_backbutton&2))? 0:screen->GetHeight() - h;
+		int x, y;
+		M_BackButtonOrigin(w, h, x, y);
 		if (mBackbuttonSelected && (mMouseCapture || m_use_mouse == 1))
 		{
 			screen->DrawTexture(tex, x, y, DTA_CleanNoMove, true, DTA_ColorOverlay, MAKEARGB(40, 255,255,255), TAG_DONE);

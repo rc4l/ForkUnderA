@@ -573,7 +573,7 @@ static	bool			g_RefreshRefused = false;
 // [rc4l] What the hosting form was left holding. Archived so a player who hosts the same game every
 // evening is not retyping it every evening; the password is deliberately absent, because one saved
 // in a config file anybody with the machine can read is a worse promise than no password at all.
-CVAR( String, cl_fua_hostname, "ZandroX Server", CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+CVAR( String, cl_fua_hostname, FUA_DEFAULT_SERVERNAME, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 CVAR( Int, cl_fua_hostport, 10666, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 CVAR( Int, cl_fua_hostmaxplayers, 8, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 CVAR( Bool, cl_fua_hostpublic, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
@@ -2742,7 +2742,7 @@ public:
 		// conversion and GCC does not, so the direct form builds on one platform and fails on two.
 		FString name = cl_fua_hostname.GetGenericRep( CVAR_String ).String;
 		if ( name.IsEmpty( ))
-			name = "ZandroX Server";
+			name = FUA_DEFAULT_SERVERNAME;
 
 		g_HostFields[kHostFieldName] = zx::TextInput( name.GetChars( ), name.Len( ));
 

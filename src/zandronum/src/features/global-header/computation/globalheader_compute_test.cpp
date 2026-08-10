@@ -10,6 +10,7 @@ using zx::HeaderMetrics;
 using zx::HeaderRect;
 using zx::HeaderTabAtPoint;
 using zx::HeaderTabRect;
+using zx::MenuClearanceY;
 using zx::kHeaderTabCount;
 using zx::StepHeaderTab;
 using zx::CursorAtTopRow;
@@ -34,6 +35,38 @@ TEST( GlobalHeader, TheBarIsTallerThanThePillsItHolds )
 	EXPECT_GT( m.barH, m.tabH );
 	EXPECT_GE( m.tabTop, 1 );
 	EXPECT_LE( m.tabTop + m.tabH, m.barH );
+}
+
+TEST( GlobalHeader, EveryMenuIsPushedClearOfTheBarRatherThanUpAgainstIt )
+{
+	// The bug this is here to stop: the clearance was the bar height exactly, so the OPTIONS title
+	// came to rest ON the bar and the two read as one piece of furniture.
+	const HeaderMetrics m = DefaultHeaderMetrics( );
+
+	EXPECT_GT( m.menuGap, 0 );
+	EXPECT_GT( MenuClearanceY( m ), ( m.barH + 1 ) / 2 );
+}
+
+TEST( GlobalHeader, TheClearanceAlwaysCoversTheBarWhateverTheBarBecomes )
+{
+	// Swept, because the whole point of deriving it is that the bar is going to change. Half of the
+	// bar's own height in the menus' space is the floor; anything less is a bar drawn over a menu.
+	for ( int barH = 0; barH <= 200; ++barH )
+	{
+		HeaderMetrics m = DefaultHeaderMetrics( );
+		m.barH = barH;
+
+		EXPECT_GE( MenuClearanceY( m ) * 2, barH ) << "barH " << barH;
+	}
+}
+
+TEST( GlobalHeader, NoGapConfiguredStillClearsTheBar )
+{
+	// A caller that zeroes the gap wants no air, not an overlap.
+	HeaderMetrics m = DefaultHeaderMetrics( );
+	m.menuGap = 0;
+
+	EXPECT_GE( MenuClearanceY( m ) * 2, m.barH );
 }
 
 // ----------------------------------------------------------------- layout

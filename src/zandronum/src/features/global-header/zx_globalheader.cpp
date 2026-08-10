@@ -72,7 +72,7 @@ int        g_GlowLastMs = 0;
 // exactly the virtual size, DTA_Virtual* draws 1:1 and never calls VirtualToRealCoords, which is
 // NOT identity at 640x400. Reproducing the shortcut is what keeps the pills attached to the text
 // sitting on them under vid_scalemode 1.
-void ToScreen( int vx, int vy, int vw, int vh, int &x, int &y, int &w, int &h )
+void ToScreenRaw( int vx, int vy, int vw, int vh, int &x, int &y, int &w, int &h )
 {
 	x = vx;
 	y = vy;
@@ -83,6 +83,41 @@ void ToScreen( int vx, int vy, int vw, int vh, int &x, int &y, int &w, int &h )
 		return;
 
 	screen->VirtualToRealCoordsInt( x, y, w, h, HEADER_VIRT_W, HEADER_VIRT_H, false, true );
+}
+
+//*****************************************************************************
+//
+// [rc4l] How far to lift everything so the bar sits against the real top of the screen.
+//
+// VirtualToRealCoords centres the virtual space for the aspect it is handed, which is right for a
+// panel and wrong for chrome. On a window taller than 16:10 it left a band of game above the bar,
+// so the header floated, attached to nothing, with the back arrows sitting in the gap.
+//
+// Measured rather than derived: two conversions tell us where virtual 0 landed and how big a virtual
+// unit is, which is the same trick ToVirtualY uses and holds for whatever the mapping does next.
+// The answer is in VIRTUAL units on purpose. Biasing there moves the Dim rects and the DTA_Virtual
+// text by one identical amount, which is what keeps a label on its pill; a screen-space nudge would
+// move only the half of the drawing that goes through this function.
+int TopBiasV( )
+{
+	int x0 = 0, y0 = 0, w0 = 0, h0 = 0;
+	ToScreenRaw( 0, 0, 0, 0, x0, y0, w0, h0 );
+	if ( y0 <= 0 )
+		return 0;
+
+	int x1 = 0, y1 = 0, w1 = 0, h1 = 0;
+	ToScreenRaw( 0, 100, 0, 0, x1, y1, w1, h1 );
+	if ( y1 <= y0 )
+		return 0;
+
+	// Rounded AWAY from zero, because coming up a pixel short leaves a sliver of game above the bar
+	// and coming a pixel over costs nothing anybody can see.
+	return -((( y0 * 100 ) + ( y1 - y0 ) - 1 ) / ( y1 - y0 ));
+}
+
+void ToScreen( int vx, int vy, int vw, int vh, int &x, int &y, int &w, int &h )
+{
+	ToScreenRaw( vx, vy + TopBiasV( ), vw, vh, x, y, w, h );
 }
 
 int ToScreenX( int vx )
@@ -256,7 +291,9 @@ void DrawPill( const HeaderRect &r, const char *label, bool bLit, bool bHot, boo
 		screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
 	}
 
-	const int textY = r.y + ( r.h - SmallFont->GetHeight( )) / 2 + 1;
+	// Biased to match the pill under it: DTA_Virtual* runs the raw mapping, so the label has to be
+	// handed a y that has already been lifted the same way ToScreen lifts the rect.
+	const int textY = r.y + TopBiasV( ) + ( r.h - SmallFont->GetHeight( )) / 2 + 1;
 	const EColorRange textCol = !bEnabled ? CR_DARKGRAY : (( bLit || bRaised ) ? CR_WHITE : CR_GRAY );
 
 	screen->DrawText( SmallFont, textCol,
@@ -303,7 +340,8 @@ void DrawTooltip( const char *text )
 	screen->Dim( PalEntry( 120, 130, 165 ), 0.55f, left, top, 1, bottom - top );
 	screen->Dim( PalEntry( 120, 130, 165 ), 0.55f, right - 1, top, 1, bottom - top );
 
-	int y = box.y + padY;
+	// Same bias as the box it sits in, for the same reason as the pill labels.
+	int y = box.y + TopBiasV( ) + padY;
 	for ( size_t i = 0; i < lines.size( ); ++i )
 	{
 		screen->DrawText( SmallFont, ( i == 0 ) ? CR_WHITE : CR_GRAY, box.x + padX, y,
@@ -442,12 +480,18 @@ void GlobalHeader_Draw( )
 
 //*****************************************************************************
 //
+int GlobalHeader_ScreenBottom( )
+{
+	// Real pixels, not virtual: the callers are drawing chrome of their own against the bar's edge,
+	// and they work in the screen's own coordinates rather than ours.
+	return ToScreenY( DefaultHeaderMetrics( ).barH );
+}
+
+//*****************************************************************************
+//
 int GlobalHeader_MenuOffsetY( )
 {
-	// The bar is laid out in 640x400 and the stock menus think in 320x200, so the offset they owe is
-	// half of it. Rounded UP, because half a pixel of overlap is still overlap.
-	const HeaderMetrics m = DefaultHeaderMetrics( );
-	return ( m.barH + 1 ) / 2;
+	return MenuClearanceY( DefaultHeaderMetrics( ));
 }
 
 void GlobalHeader_ShiftMenusDown( )
