@@ -48,6 +48,7 @@
 #include "gameconfigfile.h"
 #include "menu/menu.h"
 #include "features/global-header/computation/globalheader_compute.h" // [rc4l] where the top row is
+#include "features/global-header/zx_globalheader.h"                  // [rc4l] how far the bar pushes menus down
 // [TP] New #includes
 #include "cl_main.h"
 
@@ -429,8 +430,12 @@ void DOptionMenu::Drawer ()
 		{
 			const char *tt = mDesc->mTitle;
 			if (*tt == '$') tt = GStrings(tt+1);
+			// [rc4l] The title is the one part of an option menu that is NOT positioned from the
+			// descriptor, so shifting mPosition for the global tab bar moved every row and left the
+			// heading behind, under the bar. Shifted here by the same one number.
 			screen->DrawText (BigFont, OptionSettings.mTitleColor,
-				(screen->GetWidth() - BigFont->StringWidth(tt) * CleanXfac_1) / 2, 10*CleanYfac_1,
+				(screen->GetWidth() - BigFont->StringWidth(tt) * CleanXfac_1) / 2,
+				(10 + zx::GlobalHeader_MenuOffsetY()) * CleanYfac_1,
 				tt, DTA_CleanNoMove_1, true, TAG_DONE);
 			y = -y + BigFont->GetHeight();
 		}

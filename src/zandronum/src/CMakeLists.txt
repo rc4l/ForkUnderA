@@ -1538,7 +1538,6 @@ add_executable( zdoom WIN32
 	features/server-browser/browser.cpp #ST
 	features/server-browser/zx_serverbrowsermenu.cpp
 	features/server-browser/zx_joinserver.cpp
-	features/server-browser/zx_mainmenuroute.cpp
 	features/global-header/zx_globalheader.cpp
 	features/global-header/computation/globalheader_compute.cpp
 	features/global-header/computation/headerreach_compute.cpp

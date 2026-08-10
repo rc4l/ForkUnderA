@@ -49,6 +49,7 @@
 #include "features/server-browser/computation/tooltip_compute.h"
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-browser/computation/openingtab_compute.h"
+#include "features/global-header/zx_globalheader.h" // [rc4l] the bar above owns the arrows sometimes
 #include "features/server-browser/computation/timeago_compute.h"
 #include "features/server-browser/computation/liverow_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
@@ -6437,6 +6438,12 @@ public:
 	// at the end of the frame, not buried under whatever the component painted after it.
 	void FocusAnchor( zx::BrowserFocus owner, int vcx, int vcy )
 	{
+		// [rc4l] The bar above has the arrows, so the browser has no cursor to show. Leaving the glow
+		// lit puts two markers on screen at once, and only one of them is where the next keypress
+		// actually goes: the browser's would be pointing at the tab the player just left.
+		if ( zx::GlobalHeader_HasFocus( ))
+			return;
+
 		if ( g_Focus != owner )
 			return;
 

@@ -1992,8 +1992,6 @@ static void ParseAddOptionMenu(FScanner &sc)
 //
 //=============================================================================
 
-// [rc4l] features/server-browser/zx_mainmenuroute.cpp
-namespace zx { void RouteMainMenuThroughOnlineOffline(); }
 namespace zx { void GlobalHeader_ShiftMenusDown(); }
 
 void M_ParseMenuDefs()
@@ -2082,11 +2080,6 @@ void M_ParseMenuDefs()
 			}
 		}
 	}
-
-	// [rc4l] Every MENUDEF has now been read, mods' included, so this is the only point where the
-	// main menu is final. Reroute its first entry through the Online/Offline choice -- see
-	// features/server-browser/zx_mainmenuroute.cpp for why it goes by position rather than by name.
-	zx::RouteMainMenuThroughOnlineOffline();
 
 	// [rc4l] Make room for the global tab bar. Here because it is the only point at which every
 	// MENUDEF, ours and every mod's, has been read -- a shift applied earlier would miss whatever
