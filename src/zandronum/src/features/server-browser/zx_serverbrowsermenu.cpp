@@ -5830,13 +5830,6 @@ public:
 			// is all the label has to say.
 			EColorRange col = CR_GRAY;
 
-			// [rc4l] A curated experience rests in cyan rather than grey. Cyan and not gold, which is
-			// what a FOCUSED field wears throughout this browser: a row that is permanently gold would
-			// read as the keyboard sitting on it. Only the EXPERIENCE row is marked; its ways of
-			// playing are ordinary rows under a marked heading.
-			if ( !bIsVariant && entry.addon.accent )
-				col = CR_CYAN;
-
 			if ( paint.label == zx::RowLabel::Selected )
 				col = CR_WHITE;
 			else if ( paint.label == zx::RowLabel::Live )
@@ -5868,10 +5861,49 @@ public:
 			// inside its own bar.
 			const int textY = rowY + ( SB_HOST_ENTRY_H - SmallFont->GetHeight( )) / 2;
 
-			// A way of playing is indented, so it reads as belonging to the experience above it
-			// rather than as another experience.
-			screen->DrawText( SmallFont, col, labelLeft, textY, label,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+			// [rc4l] A curated experience is drawn in TWO colours: its leading word green, the rest
+			// white. That marks the group these entries belong to without recolouring a whole row,
+			// which is how the browser says something is selected or being served.
+			//
+			// It beats Selected, which is why this is not folded into `col` above. Selected paints
+			// the label white, so an accented row that happened to be under the cursor came out
+			// looking like every other row -- and the cursor starts on the first row, so the top
+			// entry was never marked at all.
+			//
+			// Live still wins outright: a row you are being served is a fact about right now, and it
+			// matters more than what group the entry is in.
+			//
+			// The split is taken AFTER the fit. Fitting the two halves separately would measure each
+			// against the whole budget and let the pair overflow the room the row actually has.
+			const bool bAccent = ( !bIsVariant && entry.addon.accent &&
+				( paint.label != zx::RowLabel::Live ));
+
+			if ( bAccent )
+			{
+				const char *const space = strchr( label.GetChars( ), ' ' );
+				const size_t split = ( space != NULL )
+					? static_cast<size_t>( space - label.GetChars( )) : label.Len( );
+
+				const FString head = label.Left( split );
+				const FString tail = label.Mid( split );
+
+				screen->DrawText( SmallFont, CR_GREEN, labelLeft, textY, head,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+				if ( tail.IsNotEmpty( ))
+				{
+					screen->DrawText( SmallFont, CR_WHITE,
+						labelLeft + SmallFont->StringWidth( head ), textY, tail,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+				}
+			}
+			else
+			{
+				// A way of playing is indented, so it reads as belonging to the experience above it
+				// rather than as another experience.
+				screen->DrawText( SmallFont, col, labelLeft, textY, label,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+			}
 
 			if ( bIsVariant )
 			{
@@ -5898,7 +5930,10 @@ public:
 				const bool bOpen = HostEntryIsOpen( r.entry );
 				const char *caret = bOpen ? "v" : ">";
 
-				screen->DrawText( SmallFont, col,
+				// Grey on every experience that has one, whatever the row's own state. Taking it out
+				// of the label's colour keeps it quiet next to a marked name, which is what it is:
+				// the shape of the row, not something to look at.
+				screen->DrawText( SmallFont, CR_GRAY,
 					SB_HOST_ROW_RIGHT - SmallFont->StringWidth( caret ) - 4, textY, caret,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			}

@@ -139,12 +139,13 @@ struct AddonEntry
 	// depends on spelling is one rename away from moving on its own.
 	int order;
 
-	// [rc4l] Draw this entry's name in the accent colour instead of the ordinary one, to mark it out
-	// as curated. Separate from `order` on purpose: being first and being highlighted are different
-	// claims, and an entry may want one without the other.
+	// [rc4l] Mark this entry as curated: its name is drawn with the leading word in the accent colour
+	// and the rest plain. Separate from `order` on purpose: being first and being marked are
+	// different claims, and an entry may want one without the other.
 	//
-	// Only the resting colour changes. Selected and being-served still say what they say, because
-	// those are about what is happening rather than about what the entry is.
+	// The mark beats being selected, since the cursor starts on the first row and an accent that lost
+	// to selection would leave the top entry unmarked. Being SERVED still wins outright: that is a
+	// fact about right now, and it matters more than which group the entry is in.
 	bool accent;
 
 	bool valid;
