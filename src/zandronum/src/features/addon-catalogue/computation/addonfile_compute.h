@@ -131,10 +131,26 @@ struct AddonEntry
 	// weapons and classes has nowhere to put someone else's.
 	std::vector<std::string> remixes;
 
+	// [rc4l] Where this sits in the list. Higher floats nearer the top; everything defaults to 0 and
+	// so keeps the folder order it has always had.
+	//
+	// Explicit rather than derived from the folder name, because the two experiences this exists for
+	// are meant to lead the list and their ids happen to sort where they sort. A curated position that
+	// depends on spelling is one rename away from moving on its own.
+	int order;
+
+	// [rc4l] Draw this entry's name in the accent colour instead of the ordinary one, to mark it out
+	// as curated. Separate from `order` on purpose: being first and being highlighted are different
+	// claims, and an entry may want one without the other.
+	//
+	// Only the resting colour changes. Selected and being-served still say what they say, because
+	// those are about what is happening rather than about what the entry is.
+	bool accent;
+
 	bool valid;
 	std::string error;		// why not, when invalid
 
-	AddonEntry() : kind(VariantKind::Unknown), valid(false) {}
+	AddonEntry() : kind(VariantKind::Unknown), order(0), accent(false), valid(false) {}
 };
 
 // [rc4l] Something you can play an entry WITH, on top of whichever way of playing you chose.

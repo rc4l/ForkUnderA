@@ -1,6 +1,8 @@
 {
   "schema": 1,
-  "name": "Invasion!",
+  "name": "Popular Co-op Maps (Invasion)",
+  "order": 10,
+  "accent": true,
   "summary": "Hold out together against waves of monsters, across three mappacks of them.",
   "iwad": "doom2.wad",
   "kind": "pve",

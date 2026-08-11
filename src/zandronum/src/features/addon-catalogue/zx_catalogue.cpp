@@ -20,6 +20,7 @@
 #include "features/wad-download/zx_wadsearch.h"
 
 #include <stdio.h>
+#include <algorithm>
 
 namespace zx
 {
@@ -308,6 +309,13 @@ const std::vector<CatalogueEntry> &CatalogueLoad( bool bForceReload )
 	// player's own, which is what the first run of this actually did.
 	if ( user != shipped )
 		LoadRoot( user.c_str( ), false, g_Entries );
+
+	// [rc4l] Curated entries float to the top. STABLE, so everything at the default 0 keeps the folder
+	// order it has always had rather than being reshuffled by a field it never sets.
+	std::stable_sort( g_Entries.begin( ), g_Entries.end( ),
+		[]( const CatalogueEntry &a, const CatalogueEntry &b ) {
+			return a.addon.order > b.addon.order;
+		} );
 
 	// The pool is read in the same pass, so an entry and the remixes it names can never be one reload
 	// out of step with each other.

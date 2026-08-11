@@ -5824,15 +5824,23 @@ public:
 						serverbrowser_ToScreenY( rowY - 1 ));
 			}
 
+			const bool bIsVariant = ( r.variant >= 0 );
+
 			// Hover is deliberately not in here. What a row IS -- selected, being served, neither --
 			// is all the label has to say.
 			EColorRange col = CR_GRAY;
+
+			// [rc4l] A curated experience rests in cyan rather than grey. Cyan and not gold, which is
+			// what a FOCUSED field wears throughout this browser: a row that is permanently gold would
+			// read as the keyboard sitting on it. Only the EXPERIENCE row is marked; its ways of
+			// playing are ordinary rows under a marked heading.
+			if ( !bIsVariant && entry.addon.accent )
+				col = CR_CYAN;
+
 			if ( paint.label == zx::RowLabel::Selected )
 				col = CR_WHITE;
 			else if ( paint.label == zx::RowLabel::Live )
 				col = CR_GREEN;
-
-			const bool bIsVariant = ( r.variant >= 0 );
 
 			// [rc4l] Cut to what is left after the badge, not to the column: "Team Last Man
 			// Standing" is wider than the room before the PvP mark and ran straight under it. The

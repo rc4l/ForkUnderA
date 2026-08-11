@@ -471,6 +471,8 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			else if (key == "variants")	{ ok = ReadVariantsArray(r, entry.variants); }
 		else if (key == "remixes")	{ ok = ReadIdArray(r, entry.remixes); }
 			else if (key == "kind")		{ std::string k; ok = ReadString(r, k); entry.kind = ParseKind(k); }
+			else if (key == "order")	{ ok = ReadInt(r, entry.order); }
+			else if (key == "accent")	{ ok = ReadBool(r, entry.accent); }
 			else						{ ok = SkipValue(r); }
 
 			if (!ok)
