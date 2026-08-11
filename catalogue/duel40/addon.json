@@ -27,16 +27,20 @@
       ]
     },
     {
-      "id": "rampage",
-      "name": "Rampage Duel",
-      "cfg": "rampage.cfg",
+      "id": "duel32",
+      "name": "Duel 32",
+      "cfg": "duel32.cfg",
       "kind": "pvp",
-      "map": "MAP00",
+      "map": "START",
       "tooltip": "An alternate set of curated duel maps",
       "files": [
         {
-          "name": "rampageduel-v1.wad",
-          "md5": "e53ab0eb0d092b3a33a189502eb1a4a5"
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "duel32-rc2.pk3",
+          "md5": "99b386139ff6ea58e33174a5cd76a2db"
         }
       ]
     }
