@@ -41,6 +41,18 @@ TEST( GlobalHeader, TheBarIsTallerThanThePillsItHolds )
 	EXPECT_LE( m.tabTop + m.tabH, m.barH );
 }
 
+TEST( GlobalHeader, ARowOfNothingIsWideEnoughForNothing )
+{
+	// The same guard HeaderTabRect has, for the same reason: a caller that got the widths wrong is
+	// exactly the caller that will not check, and reading past the array to measure a row that is not
+	// there is a worse answer than zero.
+	const HeaderMetrics m = DefaultHeaderMetrics( );
+
+	EXPECT_EQ( 0, HeaderRowWidth( m, 0, kCount ));
+	EXPECT_EQ( 0, HeaderRowWidth( m, kWidths, 0 ));
+	EXPECT_EQ( 0, HeaderRowWidth( m, kWidths, -1 ));
+}
+
 TEST( GlobalHeader, TheRowCentresOnTheBarOnceTheBarHasSaidHowWideItIs )
 {
 	HeaderMetrics m = DefaultHeaderMetrics( );

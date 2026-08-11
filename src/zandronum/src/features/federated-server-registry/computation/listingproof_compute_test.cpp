@@ -135,6 +135,30 @@ TEST( ListingProof, TheDangerousStateNamesItsConsequence )
 	EXPECT_NE( std::string::npos, text.find( "may not be able to join" ));
 }
 
+TEST( ListingProof, OnlyProgressIsAllowedToLookLikeProgress )
+{
+	// Every state, both ways round, because this is the function that decides whether the player is
+	// shown a problem. Waiting is not a problem; being listed without ever having been reached is,
+	// however much the word "listed" sounds like success.
+	EXPECT_TRUE( ListingNeedsAttention( ListingState::NeverAnnounced ));
+	EXPECT_TRUE( ListingNeedsAttention( ListingState::Refused ));
+	EXPECT_TRUE( ListingNeedsAttention( ListingState::ListedUnverified ));
+	EXPECT_TRUE( ListingNeedsAttention( ListingState::ListedStale ));
+
+	EXPECT_FALSE( ListingNeedsAttention( ListingState::AwaitingAnswer ));
+	EXPECT_FALSE( ListingNeedsAttention( ListingState::ListedVerified ));
+}
+
+TEST( ListingProof, AProofNobodyFilledInClaimsNothing )
+{
+	// The default is what a caller holds before it has asked. It must not read as "announced" or as
+	// "checked a moment ago", which is why the age starts at never rather than at zero.
+	const ListingProof p;
+
+	EXPECT_EQ( ListingState::NeverAnnounced, p.state );
+	EXPECT_EQ( -1, p.secondsSinceVerified );
+}
+
 TEST( ListingProof, AnUnknownStateIsNotSilentlyFine )
 {
 	const ListingState bogus = static_cast<ListingState>( 99 );
