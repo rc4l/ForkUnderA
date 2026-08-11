@@ -3,15 +3,39 @@
   "name": "Ghouls vs Humans",
   "summary": "Humans hunt in a pack with guns and lamps. Ghouls hunt them in the dark.",
   "iwad": "doom2.wad",
-  "map": "gvh01",
   "kind": "pvp",
   "variants": [
     {
-      "id": "multiverse",
-      "name": "Multiverse",
+      "id": "reborn",
+      "name": "Classic: Reborn",
       "cfg": "server.cfg",
       "kind": "pvp",
       "default": true,
+      "tooltip": "The decade-old mod brought up to date.",
+      "files": [
+        {
+          "name": "gvhre-maps-1c.pk3",
+          "md5": "b07322c5d7fb6c36cbacb48743675ee0"
+        },
+        {
+          "name": "gvhre-4a2.pk3",
+          "md5": "6fc250f2a19febba8ec0e377c9c03776"
+        },
+        {
+          "name": "bourgdm.wad",
+          "md5": "aae83b7fffbf0df89d689465dfc340df"
+        },
+        {
+          "name": "gvh-paradoxmaps-1a.pk3",
+          "md5": "f163cf6f5cd8c8f356f00b93a232df6e"
+        }
+      ]
+    },
+    {
+      "id": "multiverse",
+      "name": "Multiverse",
+      "cfg": "multiverse.cfg",
+      "kind": "pvp",
       "tooltip": "The big one: sixty-nine maps and a roster to match.",
       "files": [
         {
