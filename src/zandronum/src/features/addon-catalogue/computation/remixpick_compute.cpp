@@ -75,4 +75,63 @@ RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &w
 	return pick;
 }
 
+std::vector<RemixGroup> GroupRemixes(const std::vector<AddonRemix> &offered)
+{
+	std::vector<RemixGroup> groups;
+
+	for (size_t i = 0; i < offered.size(); ++i)
+	{
+		size_t at = groups.size();
+		for (size_t g = 0; g < groups.size(); ++g)
+		{
+			if (groups[g].id == offered[i].group)
+			{
+				at = g;
+				break;
+			}
+		}
+
+		// First appearance opens the group, so the order is the author's. A group whose members are
+		// written apart from each other still collects into one axis; only its POSITION comes from
+		// whichever of them was named first.
+		if (at == groups.size())
+		{
+			RemixGroup fresh;
+			fresh.id = offered[i].group;
+			groups.push_back(fresh);
+		}
+
+		groups[at].choices.push_back(offered[i]);
+	}
+
+	return groups;
+}
+
+std::vector<RemixPick> PickRemixes(const std::vector<AddonRemix> &offered,
+                                   const std::vector<std::pair<std::string, std::string> > &wanted)
+{
+	const std::vector<RemixGroup> groups = GroupRemixes(offered);
+	std::vector<RemixPick> picks;
+
+	for (size_t g = 0; g < groups.size(); ++g)
+	{
+		std::string want;
+		for (size_t w = 0; w < wanted.size(); ++w)
+		{
+			if (wanted[w].first == groups[g].id)
+			{
+				want = wanted[w].second;
+				break;
+			}
+		}
+
+		// Resolved per group by the SAME function a single axis uses, so a stale or missing
+		// preference falls back to that group's baseline and cannot reach across to another axis.
+		// `index` is into this group's own choices, which is what a caller drawing one row wants.
+		picks.push_back(PickRemix(groups[g].choices, want));
+	}
+
+	return picks;
+}
+
 } // namespace zx

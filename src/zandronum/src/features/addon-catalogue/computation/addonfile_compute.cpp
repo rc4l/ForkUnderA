@@ -648,6 +648,7 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 			else if (key == "name")		{ ok = ReadString(r, remix.name); }
 			else if (key == "summary")	{ ok = ReadString(r, remix.summary); }
 			else if (key == "cfg")		{ ok = ReadString(r, remix.cfg); }
+			else if (key == "group")	{ ok = ReadString(r, remix.group); }
 			else if (key == "files")	{ ok = ReadFilesArray(r, remix.files); }
 			else						{ ok = SkipValue(r); }
 

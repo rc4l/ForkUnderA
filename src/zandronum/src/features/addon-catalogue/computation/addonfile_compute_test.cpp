@@ -763,6 +763,104 @@ TEST(AddonFile, AnEntryWithNeitherFilesNorVariantsIsStillRefused)
 	EXPECT_FALSE(e.error.empty());
 }
 
+// ------------------------------------------------------------ the other document
+
+namespace
+{
+
+zx::AddonRemix ParseRemix(const char *json)
+{
+	return zx::ParseRemixFile("survival", json);
+}
+
+} // namespace
+
+TEST(RemixFile, TheSmallestUsableRemixIsJustANameAndACfg)
+{
+	// [rc4l] A rules remix: no files at all, one line of cfg. Deliberately not refused for loading
+	// nothing, since the baseline option loads nothing either and still needs a name.
+	const zx::AddonRemix r = ParseRemix(
+		"{ \"schema\": 1, \"name\": \"Survival\", \"cfg\": \"survival.cfg\" }");
+
+	ASSERT_TRUE(r.valid) << r.error;
+	EXPECT_EQ("survival", r.id) << "the id comes from the folder, never from the file";
+	EXPECT_EQ("Survival", r.name);
+	EXPECT_EQ("survival.cfg", r.cfg);
+	EXPECT_TRUE(r.files.empty());
+}
+
+TEST(RemixFile, ARemixWithNoGroupIsInTheDefaultOne)
+{
+	// The shape every remix written before groups existed has. It must keep parsing unchanged.
+	const zx::AddonRemix r = ParseRemix("{ \"schema\": 1, \"name\": \"Survival\" }");
+
+	ASSERT_TRUE(r.valid) << r.error;
+	EXPECT_TRUE(r.group.empty());
+}
+
+TEST(RemixFile, TheGroupIsRead)
+{
+	const zx::AddonRemix r = ParseRemix(
+		"{ \"schema\": 1, \"name\": \"Brutal Doom\", \"group\": \"mod\" }");
+
+	ASSERT_TRUE(r.valid) << r.error;
+	EXPECT_EQ("mod", r.group);
+}
+
+TEST(RemixFile, ARemixWithFilesCarriesThem)
+{
+	const zx::AddonRemix r = ParseRemix(
+		"{ \"schema\": 1, \"name\": \"Brutal Doom\", \"group\": \"mod\","
+		"  \"files\": [{ \"name\": \"brutal22test6.pk3\","
+		"                \"md5\": \"57a61814fe96cfc20043f370eeace023\" }] }");
+
+	ASSERT_TRUE(r.valid) << r.error;
+	ASSERT_EQ(1u, r.files.size());
+	EXPECT_EQ("brutal22test6.pk3", r.files[0].name);
+}
+
+TEST(RemixFile, ARemixWithNoNameIsRefused)
+{
+	// The picker has nothing to draw for it, so it would be an invisible row.
+	const zx::AddonRemix r = ParseRemix("{ \"schema\": 1, \"cfg\": \"survival.cfg\" }");
+
+	EXPECT_FALSE(r.valid);
+	EXPECT_FALSE(r.error.empty());
+}
+
+TEST(RemixFile, APathInTheCfgOrTheFilesIsRefused)
+{
+	// Both reach a loader, so both obey the entry's rule: a bare filename beside the remix.json.
+	const char *const bad[] = {
+		"{ \"schema\": 1, \"name\": \"X\", \"cfg\": \"../../evil.cfg\" }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"a/b.pk3\","
+		"   \"md5\": \"57a61814fe96cfc20043f370eeace023\" }] }",
+		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"b.pk3\", \"md5\": \"nothex\" }] }",
+	};
+
+	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
+	{
+		const zx::AddonRemix r = ParseRemix(bad[i]);
+		EXPECT_FALSE(r.valid) << "accepted: " << bad[i];
+		EXPECT_FALSE(r.error.empty()) << "no reason given for: " << bad[i];
+	}
+}
+
+TEST(RemixFile, ARemixFromTheFutureIsSkippedNotGuessedAt)
+{
+	const zx::AddonRemix r = ParseRemix("{ \"schema\": 99, \"name\": \"X\" }");
+
+	EXPECT_FALSE(r.valid);
+	EXPECT_FALSE(r.error.empty());
+}
+
+TEST(RemixFile, NoSchemaIsRefused)
+{
+	const zx::AddonRemix r = ParseRemix("{ \"name\": \"X\" }");
+
+	EXPECT_FALSE(r.valid);
+}
+
 // ------------------------------------------------------------ curation
 
 TEST(AddonFile, AnEntryThatSaysNothingAboutItsPlaceIsNeitherFirstNorMarked)

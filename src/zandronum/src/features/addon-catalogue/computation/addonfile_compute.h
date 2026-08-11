@@ -176,6 +176,18 @@ struct AddonRemix
 	std::string summary;	// optional; what this actually changes
 	std::string cfg;		// optional; bare filename, beside the remix.json
 
+	// [rc4l] Which AXIS this belongs to. Remixes sharing a group are alternatives to each other;
+	// remixes in different groups apply together.
+	//
+	// Without it every combination is its own remix, and the combinations multiply: two ways to play
+	// and three gameplay mods is six remixes to express five choices, and adding a fourth mod means
+	// writing another two. With it they are two independent questions, which is what they are. You
+	// pick Brutal Doom AND two lives; you do not pick "Brutal two-life".
+	//
+	// Empty means the default group, so every remix written before this existed keeps behaving as one
+	// flat mutually-exclusive list and no catalogue edit is forced by this field arriving.
+	std::string group;
+
 	// Loaded AFTER the entry's files and the variant's, by the same rule and for the same reason:
 	// added, never replacing, so nothing has to restate what it is being added to.
 	std::vector<AddonFileRef> files;
