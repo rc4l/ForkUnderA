@@ -309,7 +309,14 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_VIEW_BOTTOM	( SB_HOST_BTN_Y - 10 )
 #define SB_HOST_VIEW_H		( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP )
 #define SB_HOST_BAR_W		2
-#define SB_HOST_BAR_X		( SB_HOST_RIGHT - 6 )
+// [rc4l] Just inside the right column's backdrop rather than out at the panel's own edge, which is
+// where the WAD list's bar sits relative to the detail panel and for the same reason: a bar floating
+// outside the thing it scrolls does not read as belonging to it.
+#define SB_HOST_BAR_X		( SB_HOST_RCOL_RIGHT + 3 )
+
+// [rc4l] How far the right column's backdrop stands off its content. The same on all four sides, so
+// the title is inset from the top by what the text is inset from the sides.
+#define SB_HOST_RCOL_INSET	8
 
 // [rc4l] The experience list's own bar, in the gap between the list and the column divider. The
 // labels are already cut four units short of SB_HOST_LIST_RIGHT and the divider sits six past it, so
@@ -4013,6 +4020,11 @@ public:
 	//
 	// Stops short of the buttons at its foot. Running it down to them would box each into its own
 	// cell, and they are a pair sitting under the panel rather than two things in two cells.
+	// [rc4l] UNUSED since the right column got its own backdrop, which separates the two columns by
+	// being a different surface -- a rule down the middle as well said the same thing twice, and its x
+	// landed exactly on the backdrop's left edge, so the line appeared to be touching the panel.
+	//
+	// Kept rather than deleted because the divider is the fallback if the backdrop is ever dropped.
 	void DrawHostColumnDivider( )
 	{
 		const int vx = ( SB_HOST_LIST_RIGHT + SB_HOST_RCOL_LEFT ) / 2;
@@ -4701,8 +4713,13 @@ public:
 		//
 		// Drawn here, before any of the column's own content and before the clip that masks it, so
 		// everything from the title to the foot buttons sits ON it rather than beside it.
-		DrawDetailBackdrop( SB_HOST_RCOL_LEFT - 6, SB_HOST_VIEW_TOP - 6,
-			SB_HOST_RIGHT - 3, SB_HOST_BOTTOM - 4 );
+		//
+		// Inset by the same amount on every side. It was measured off the PANEL's right edge before,
+		// which put thirteen units of black to the right of the text and six to the left of it.
+		DrawDetailBackdrop( SB_HOST_RCOL_LEFT - SB_HOST_RCOL_INSET,
+			SB_HOST_VIEW_TOP - SB_HOST_RCOL_INSET,
+			SB_HOST_RCOL_RIGHT + SB_HOST_RCOL_INSET,
+			SB_HOST_BTN_Y + SB_HOST_BTN_H + SB_HOST_RCOL_INSET );
 
 		const int x = SB_HOST_LEFT + SB_HOST_PAD;
 
@@ -4748,7 +4765,6 @@ public:
 			DrawHostRegionScrollBar( SB_HOST_RUN_BOT_TOP, SB_HOST_RTOP_BOTTOM,
 				g_HostStatusH, g_HostStatusScroll );
 
-			DrawHostColumnDivider( );
 			DrawHostFootButtons( );
 			return;
 		}
@@ -4814,7 +4830,6 @@ public:
 			g_HostListScroll, SB_HOST_LBAR_X );
 
 		DrawHostScrollBar( );
-		DrawHostColumnDivider( );
 
 		// [rc4l] OUTSIDE the clip. Both buttons sit at the panel's foot, which is below the scrolling
 		// viewport, so drawing them inside it cost them their backgrounds and left the labels
