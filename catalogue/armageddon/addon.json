@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Armageddon Invasion",
-  "summary": "Ten invasion maps, from a training run to a boss fight, on Skulltag's content.",
+  "summary": "A high-quality set of Invasion maps for Skulltag. Comes with new maps, monsters, and epic bosses.",
   "iwad": "doom2.wad",
   "map": "MAP01",
   "kind": "pve",

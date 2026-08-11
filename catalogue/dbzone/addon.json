@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Doom Barracks Zone",
-  "summary": "A city, a freight yard, a castle and a base, played through together.",
+  "summary": "The most popular cooperative mappack ever from the Zdaemon era.",
   "iwad": "doom2.wad",
   "map": "MAP01",
   "kind": "pve",
@@ -25,7 +25,7 @@
       "name": "X Edition",
       "cfg": "xce.cfg",
       "kind": "pve",
-      "tooltip": "The community edition: the nine, plus three more.",
+      "tooltip": "New maps and more!",
       "files": [
         {
           "name": "dbzxce_v12d.pk3",
