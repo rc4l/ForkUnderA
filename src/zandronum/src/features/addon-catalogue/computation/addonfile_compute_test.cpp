@@ -97,7 +97,7 @@ TEST(AddonFile, ReadsTheRealSkulltagEntry)
 		"  \"summary\": \"Skulltag's maps, weapons and runes, with a spree announcer.\",\n"
 		"  \"iwad\": \"doom2.wad\",\n"
 		"  \"files\": [\n"
-		"    { \"name\": \"skulltag_content-3.2-beta2.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" },\n"
+		"    { \"name\": \"skulltag_content-4.1.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" },\n"
 		"    { \"name\": \"zandrospree2rc2.pk3\",            \"md5\": \"25b2a3c4f46e50f4016b640119aefae6\" }\n"
 		"  ]\n"
 		"}\n");
@@ -107,7 +107,7 @@ TEST(AddonFile, ReadsTheRealSkulltagEntry)
 	EXPECT_EQ("Skulltag", e.name);
 
 	ASSERT_EQ(2u, e.files.size());
-	EXPECT_EQ("skulltag_content-3.2-beta2.pk3", e.files[0].name);
+	EXPECT_EQ("skulltag_content-4.1.pk3", e.files[0].name);
 	EXPECT_EQ("41630bc75af4b51fe5d163fe4d434c6e", e.files[0].md5);
 	EXPECT_EQ("zandrospree2rc2.pk3", e.files[1].name);
 }
