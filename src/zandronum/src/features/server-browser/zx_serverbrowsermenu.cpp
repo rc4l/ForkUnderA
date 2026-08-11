@@ -322,6 +322,13 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_GAME_ROW_H		SB_HOST_LINE
 #define SB_HOST_GAME_INDENT		10
 
+// [rc4l] Nearly half the pill's height, so the ends read as round rather than merely softened. Any
+// larger and ComputeRoundedInset eats into the text at the widest row.
+#define SB_HOST_PILL_RADIUS		4
+
+// The lit dot inside a pill. Odd, so it has a middle pixel and reads as round at this size.
+#define SB_HOST_PILL_DOT		5
+
 #define SB_HOST_RTOP_TOP	SB_HOST_VIEW_TOP
 #define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOGGLE_Y - 6 )
 #define SB_HOST_RTOP_H		( SB_HOST_RTOP_BOTTOM - SB_HOST_RTOP_TOP )
@@ -5608,7 +5615,8 @@ public:
 
 				// The same measurement DrawHostGameplay makes, because an axis drawn as one row of
 				// pills is one row tall and a height that assumed otherwise would scroll past the end.
-				const int pillPad = SmallFont->StringWidth( "  " );
+				// Room for the dot and the gaps either side of it, plus the trailing gap after the label.
+			const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
 				int pillTotal = 0;
 				for ( size_t i = 0; i < groups[g].choices.size( ); ++i )
 				{
@@ -5911,17 +5919,21 @@ public:
 	// a remix folder per value, which is what the three it replaced were: one line of cfg each,
 	// setting one integer, and doing nothing at all on three of the entries that offered them.
 	//
-	// Drawn even when it cannot be used, greyed with the reason where the value goes. Hiding it would
-	// move everything below it every time the way of playing changed, and would teach nobody why
-	// lives are not on offer for a deathmatch.
+	// [rc4l] NOT drawn at all when it does not apply.
+	//
+	// It was greyed in place at first, on the reasoning that a control which vanishes teaches nothing
+	// and that a fixed height cannot shift. Both true, and both beaten by the fact that two of the
+	// column's few lines were going to "this way of playing has no lives" on every deathmatch entry
+	// in the catalogue. Saying nothing is worth more than saying that.
+	//
+	// It costs no layout shift either, because whether lives apply is decided by the variant's
+	// gamemode. Picking a remix cannot change it, so nothing moves while a setting is being used --
+	// only when the way of playing changes, which redraws the panel anyway.
 	int DrawHostLives( int x, int y, const zx::AddonEntry &addon )
 	{
 		const zx::LivesControl lives = HostLivesControl( addon );
 
-		// The one case with nothing to say at all: a pack that sets its own and an entry that never
-		// declared a gamemode both land here, and a permanent grey row on every deathmatch entry in
-		// the catalogue is noise rather than instruction.
-		if (( lives.shape == zx::LivesShape::None ) && !lives.applies && lives.reason.empty( ))
+		if ( !lives.applies )
 			return y;
 
 		const bool bDraw = HostDetailRowVisible( y, SB_HOST_LINE * 2 );
@@ -6051,7 +6063,8 @@ public:
 			// assumes the label alone is enough, and a list has somewhere to put a description. So
 			// the rule is measured rather than decided per axis -- Teams is two short words and
 			// becomes pills, Mix is four and stays a list that can be scrolled.
-			const int pillPad = SmallFont->StringWidth( "  " );
+			// Room for the dot and the gaps either side of it, plus the trailing gap after the label.
+			const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
 			const int pillGap = 4;
 
 			int pillTotal = 0;
@@ -6085,15 +6098,53 @@ public:
 						const bool bHot =
 							( g_HostGameHot == static_cast<int>( g_HostGameRows.Size( ) - 1 ));
 
-						screen->Dim( bOn ? PalEntry( 40, 96, 52 ) : PalEntry( 150, 170, 215 ),
-							bOn ? 0.55f : ( bHot ? 0.16f : 0.07f ),
-							serverbrowser_ToScreenX( px ), serverbrowser_ToScreenY( y - 1 ),
-							serverbrowser_ToScreenX( px + pw ) - serverbrowser_ToScreenX( px ),
-							serverbrowser_ToScreenY( y + SB_HOST_GAME_ROW_H - 1 ) -
-								serverbrowser_ToScreenY( y - 1 ));
+						// [rc4l] Rounded, through the same DrawRoundedPanel every other soft-cornered
+						// thing in this browser uses. A pill with square corners is a table cell, and
+						// the shape is most of what says these are one-of-N rather than a list.
+						zx::PanelColor top, bot;
+						if ( bOn )
+						{
+							top.r = 52; top.g = 118; top.b = 66; top.a = 235;
+							bot.r = 34; bot.g = 82;  bot.b = 46; bot.a = 235;
+						}
+						else
+						{
+							const int lift = bHot ? 28 : 0;
+							top.r = 58 + lift; top.g = 62 + lift; top.b = 82 + lift; top.a = 210;
+							bot.r = 40 + lift; bot.g = 44 + lift; bot.b = 60 + lift; bot.a = 210;
+						}
+
+						DrawRoundedPanel( px, y - 1, pw, SB_HOST_GAME_ROW_H, top, bot,
+							SB_HOST_PILL_RADIUS );
+
+						// [rc4l] The dot, which is what actually says which pill is on.
+						//
+						// The fill alone was doing that job and doing it poorly: a filled pill and a
+						// hovered pill are both "brighter than the others", so at a glance the
+						// pointer looked like the selection. A lit dot is a different KIND of mark,
+						// so hover can never impersonate it.
+						const int dotY = y - 1 + ( SB_HOST_GAME_ROW_H - SB_HOST_PILL_DOT ) / 2;
+						const int dotX = px + SB_HOST_PILL_DOT;
+
+						if ( bOn )
+						{
+							// A soft ring under it, so the lit state reads as a glow rather than as a
+							// slightly different grey. Drawn first and larger, then the dot on top.
+							zx::PanelColor halo;
+							halo.r = 90; halo.g = 235; halo.b = 120; halo.a = 60;
+							DrawRoundedPanel( dotX - 2, dotY - 2, SB_HOST_PILL_DOT + 4,
+								SB_HOST_PILL_DOT + 4, halo, halo, ( SB_HOST_PILL_DOT + 4 ) / 2 );
+						}
+
+						zx::PanelColor dot;
+						if ( bOn )		{ dot.r = 120; dot.g = 255; dot.b = 150; dot.a = 255; }
+						else			{ dot.r = 96;  dot.g = 102; dot.b = 124; dot.a = 220; }
+
+						DrawRoundedPanel( dotX, dotY, SB_HOST_PILL_DOT, SB_HOST_PILL_DOT, dot, dot,
+							SB_HOST_PILL_DOT / 2 );
 
 						screen->DrawText( SmallFont, bOn ? CR_WHITE : CR_GRAY,
-							px + pillPad / 2, y, choices[i].name.c_str( ),
+							dotX + SB_HOST_PILL_DOT + 3, y, choices[i].name.c_str( ),
 							DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
 							DTA_KeepRatio, true, TAG_DONE );
 
