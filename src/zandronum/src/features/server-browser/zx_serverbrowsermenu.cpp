@@ -936,14 +936,23 @@ static	TArray<HostGameplayRow>	g_HostGameRows;
 static	int						g_HostGameHot = -1;
 
 
-// The lives track, recorded the same way and for the same reason: it scrolls, so where it is can
-// only be known once it has been drawn.
-static	int						g_HostLivesTrackX = 0;
-static	int						g_HostLivesTrackY = 0;
-static	int						g_HostLivesTrackW = 0;
-static	bool					g_HostLivesLive = false;	// drawn and usable this frame
-static	bool					g_HostLivesHot = false;
-static	bool					g_HostLivesDragging = false;
+// [rc4l] A SLIDER on the gameplay panel, recorded as it is drawn like the pills above.
+//
+// Not "the lives track". Lives is the only setting using one today and will not be the last -- a
+// starting map or a time limit is the same shape -- so the geometry, the drag, the step buttons and
+// the rounding all live here once, keyed by an id, rather than being written again per setting with
+// the chance to disagree.
+struct HostSliderRect
+{
+	std::string id;			// which setting this is; the caller maps it back
+	int trackX, trackY, trackW;
+	int minusX, plusX, stepW;
+	int min, max, value;
+};
+
+static	TArray<HostSliderRect>	g_HostSliders;
+static	FString					g_HostSliderHot;		// id under the pointer, or empty
+static	FString					g_HostSliderDragging;	// id being dragged, or empty
 
 // [rc4l] The remix picker, open over the panel. A list rather than a row of buttons, because the
 // dialog's three-button ceiling is exactly the wall this would hit: two options today, and the whole
@@ -2229,7 +2238,7 @@ public:
 		// -- and the box is big enough to land on top of the very thing being manipulated. It showed
 		// up over the list while a selection was being dragged out in the search box, which is the
 		// tooltip getting in the way of the gesture it is meant to be explaining.
-		if ( g_SearchDragging || g_DraggingScrollbar || g_DraggingWadBar || g_HostLivesDragging ||
+		if ( g_SearchDragging || g_DraggingScrollbar || g_DraggingWadBar || g_HostSliderDragging.IsNotEmpty( ) ||
 			g_ButtonPressed )
 			return;
 
@@ -3950,6 +3959,99 @@ public:
 		return false;
 	}
 
+	// [rc4l] What a slider's id means, which is the ONE place a setting is tied to its control. The
+	// slider itself knows nothing about lives.
+	void HostSliderSet( const std::string &id, int value )
+	{
+		if ( id == "lives" )
+			g_HostLives = value;
+	}
+
+	// Every slider on the panel, from the rects the last draw recorded. Steps first: they sit at the
+	// track's ends and a generous track hitbox would otherwise swallow them, which is exactly what
+	// makes a button look decorative.
+	bool HostSliderMouseEvent( int type, int x, int y )
+	{
+		// A drag cannot outlive the control it is dragging: a release off the panel, a changed
+		// selection, or the row scrolling away all leave the id set with nothing to move.
+		bool bStillDrawn = false;
+		for ( unsigned i = 0; i < g_HostSliders.Size( ); ++i )
+		{
+			if ( g_HostSliderDragging.Compare( g_HostSliders[i].id.c_str( )) == 0 )
+				bStillDrawn = true;
+		}
+		if ( !bStillDrawn )
+			g_HostSliderDragging = "";
+
+		g_HostSliderHot = "";
+
+		for ( unsigned i = 0; i < g_HostSliders.Size( ); ++i )
+		{
+			const HostSliderRect &s = g_HostSliders[i];
+
+			const bool bOnRow = ( y >= serverbrowser_ToScreenY( s.trackY - 2 )) &&
+				( y < serverbrowser_ToScreenY( s.trackY + SB_HOST_GAME_ROW_H - 1 ));
+
+			if ( bOnRow && ( type == MOUSE_Click ))
+			{
+				const bool bMinus = ( x >= serverbrowser_ToScreenX( s.minusX )) &&
+					( x < serverbrowser_ToScreenX( s.minusX + s.stepW ));
+				const bool bPlus = ( x >= serverbrowser_ToScreenX( s.plusX )) &&
+					( x < serverbrowser_ToScreenX( s.plusX + s.stepW ));
+
+				if ( bMinus || bPlus )
+				{
+					const int was = s.value;
+					const int now = clamp( was + ( bPlus ? 1 : -1 ), s.min, s.max );
+
+					HostSliderSet( s.id, now );
+
+					// Silent at the ends, so a press that changed nothing does not sound like one
+					// that did.
+					if ( now != was )
+						S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+
+					return true;
+				}
+			}
+
+			const bool bOnTrack = bOnRow &&
+				( x >= serverbrowser_ToScreenX( s.trackX - 4 )) &&
+				( x < serverbrowser_ToScreenX( s.trackX + s.trackW + 4 ));
+
+			if (( type == MOUSE_Click ) && bOnTrack )
+				g_HostSliderDragging = s.id.c_str( );
+
+			const bool bMine = ( g_HostSliderDragging.Compare( s.id.c_str( )) == 0 );
+			if ( bOnTrack || bMine )
+				g_HostSliderHot = s.id.c_str( );
+
+			if ( !bMine )
+				continue;
+
+			// Tracked once the button is down even after the pointer leaves the row, which is what
+			// makes a drag feel like one. Clamped to the track's ends first, so dragging past either
+			// end pins the value rather than letting the arithmetic run away.
+			const int span = MAX( 1, s.max - s.min );
+			const int vx = clamp( serverbrowser_ToVirtualX( x ) - s.trackX, 0, s.trackW );
+			const int steps = (( vx * span ) + ( s.trackW / 2 )) / MAX( 1, s.trackW );
+			const int now = clamp( s.min + steps, s.min, s.max );
+
+			if ( now != s.value )
+			{
+				HostSliderSet( s.id, now );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+
+			if ( type == MOUSE_Release )
+				g_HostSliderDragging = "";
+
+			return true;
+		}
+
+		return false;
+	}
+
 	bool HostMouseEvent( int type, int x, int y )
 	{
 		g_HostFieldHot = -1;
@@ -4087,62 +4189,9 @@ public:
 			}
 		}
 
-		// [rc4l] The lives track. Pressing anywhere on it sets the value there AND takes the drag, so
-		// the knob can be pulled the way a slider's knob is expected to move -- clicking the track to
-		// jump is the same gesture with no travel. Tested against the last frame's geometry, like the
-		// rows below.
-		const bool bOverLives = g_HostLivesLive &&
-			( x >= serverbrowser_ToScreenX( g_HostLivesTrackX - 4 )) &&
-			( x < serverbrowser_ToScreenX( g_HostLivesTrackX + g_HostLivesTrackW + 4 )) &&
-			( y >= serverbrowser_ToScreenY( g_HostLivesTrackY - 2 )) &&
-			( y < serverbrowser_ToScreenY( g_HostLivesTrackY + SB_HOST_LINE - 1 ));
-
-		if (( type == MOUSE_Click ) && bOverLives )
-			g_HostLivesDragging = true;
-
-		// [rc4l] A drag cannot outlive the control it is dragging. Releasing the button off the panel,
-		// changing the selection, or scrolling the track out of view all leave the flag set with
-		// nothing to move, and the next pointer twitch would then wrench a slider nobody is touching.
-		if ( !g_HostLivesLive )
-			g_HostLivesDragging = false;
-
-		g_HostLivesHot = bOverLives || g_HostLivesDragging;
-
-		if ( g_HostLivesDragging )
-		{
-			// [rc4l] Tracked while the button is down even once the pointer has left the row, which
-			// is what makes a drag feel like one: a slider you lose the moment you stray a few pixels
-			// above the track is worse than one that cannot be dragged at all.
-			const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
-			if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
-			{
-				const zx::LivesControl now = HostLivesControl( entries[g_HostEntrySel].addon );
-				const int span = MAX( 1, now.max - now.min );
-
-				// Clamped to the track's own ends first, so dragging past either end pins the value
-				// there rather than letting the arithmetic run away.
-				const int vx = clamp( serverbrowser_ToVirtualX( x ) - g_HostLivesTrackX,
-					0, g_HostLivesTrackW );
-
-				// Rounded rather than truncated, so the stop nearest the pointer is the one you get.
-				// Truncating makes the last stop unreachable without dragging past the end.
-				const int steps = (( vx * span ) + ( g_HostLivesTrackW / 2 )) / MAX( 1, g_HostLivesTrackW );
-				const int was = g_HostLives;
-
-				g_HostLives = clamp( now.min + steps, now.min, now.max );
-
-				// One tick per STOP crossed, not per pixel of travel.
-				if ( g_HostLives != was )
-					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-			}
-
-			if ( type == MOUSE_Release )
-				g_HostLivesDragging = false;
-
-			return true;
-		}
-
-		if ( bOverLives )
+		// [rc4l] The sliders, whichever settings they belong to. One handler over the rects recorded
+		// as they were drawn, so adding a second slider needs nothing here.
+		if ( HostSliderMouseEvent( type, x, y ))
 			return true;
 
 		// [rc4l] The gameplay rows, inside the scrolled detail region. Tested against what the last
@@ -5729,6 +5778,7 @@ public:
 		// Rebuilt every frame from what actually gets drawn, so a row that scrolled away or belongs
 		// to a selection that has changed cannot be left behind as a live click target.
 		g_HostGameRows.Clear( );
+		g_HostSliders.Clear( );
 
 		// [rc4l] Reached only when there is nothing to describe. This used to be the Custom row's
 		// panel; with that row gone, an out-of-range selection means the catalogue is empty.
@@ -5941,6 +5991,29 @@ public:
 	// a remix folder per value, which is what the three it replaced were: one line of cfg each,
 	// setting one integer, and doing nothing at all on three of the entries that offered them.
 	//
+	// [rc4l] One end-stop of the lives track. Rounded like a pill, since it is the same kind of small
+	// pressable thing, and dimmed when the value is already against that end.
+	void DrawHostSliderStep( int bx, int by, int bw, const char *glyph, bool bEnabled )
+	{
+		zx::PanelColor top, bot;
+		if ( bEnabled )
+		{
+			top.r = 62; top.g = 68; top.b = 90; top.a = 225;
+			bot.r = 44; bot.g = 48; bot.b = 66; bot.a = 225;
+		}
+		else
+		{
+			top.r = 34; top.g = 36; top.b = 46; top.a = 160;
+			bot.r = 28; bot.g = 30; bot.b = 40; bot.a = 160;
+		}
+
+		DrawRoundedPanel( bx, by - 1, bw, SB_HOST_GAME_ROW_H, top, bot, SB_HOST_PILL_RADIUS );
+
+		screen->DrawText( SmallFont, bEnabled ? CR_WHITE : CR_DARKGRAY,
+			bx + ( bw - SmallFont->StringWidth( glyph )) / 2, by, glyph,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+	}
+
 	// [rc4l] NOT drawn at all when it does not apply.
 	//
 	// It was greyed in place at first, on the reasoning that a control which vanishes teaches nothing
@@ -5951,18 +6024,23 @@ public:
 	// It costs no layout shift either, because whether lives apply is decided by the variant's
 	// gamemode. Picking a remix cannot change it, so nothing moves while a setting is being used --
 	// only when the way of playing changes, which redraws the panel anyway.
-	int DrawHostLives( int x, int y, const zx::AddonEntry &addon )
+
+	// [rc4l] A slider row: a label, a step button at each end, a track between them, and the value.
+	//
+	// Generic on purpose. Lives is the only setting shaped like this today and will not be the last,
+	// so the geometry, the rounding, the disabled ends and the recorded hit rects are written once
+	// here and keyed by `id`. A second slider is a call, not a copy.
+	//
+	// `valueText` rather than the number, because what a value MEANS is the caller's business: zero
+	// lives is "Unlimited", and zero of something else will be something else again.
+	int DrawHostSlider( const char *id, const char *label, int x, int y,
+		int minV, int maxV, int value, const char *valueText, const char *tip )
 	{
-		const zx::LivesControl lives = HostLivesControl( addon );
-
-		if ( !lives.adjustable )
-			return y;
-
 		const bool bDraw = HostDetailRowVisible( y, SB_HOST_LINE * 2 );
 
 		if ( bDraw )
 		{
-			screen->DrawText( SmallFont, CR_DARKGRAY, x, y, "LIVES",
+			screen->DrawText( SmallFont, CR_DARKGRAY, x, y, label,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 		y += SB_HOST_LINE;
@@ -5970,62 +6048,89 @@ public:
 		const int rowX = x + SB_HOST_GAME_INDENT;
 
 		// [rc4l] The VALUE is measured first and the track takes what is left, so a track never runs
-		// under its own label. "Unlimited" is much the widest thing this can say.
-		FString value;
-		if ( lives.unlimited )
-			value = "Unlimited";
-		else
-			value.Format( "%d", lives.value );
-
-		const int widest = MAX( SmallFont->StringWidth( "Unlimited" ), SmallFont->StringWidth( value ));
+		// under its own readout. Measured against the WIDEST it could say rather than what it says
+		// now, or the track would resize as the value changed and the knob would move twice.
+		const int widest = MAX( SmallFont->StringWidth( "Unlimited" ),
+			SmallFont->StringWidth( valueText ));
 		const int valueX = SB_HOST_RCOL_RIGHT - widest;
-		const int trackW = ( valueX - 6 ) - rowX;
 
-		g_HostLivesLive = false;
+		const int stepW = SmallFont->StringWidth( "-" ) + 8;
+		const int minusX = rowX;
+		const int plusX = ( valueX - 6 ) - stepW;
+		const int trackX = minusX + stepW + 4;
+		const int trackW = ( plusX - 4 ) - trackX;
 
 		if ( bDraw && ( trackW > 8 ))
 		{
-			g_HostLivesLive = true;
-			g_HostLivesTrackX = rowX;
-			g_HostLivesTrackY = y;
-			g_HostLivesTrackW = trackW;
+			HostSliderRect rec;
+			rec.id = id;
+			rec.trackX = trackX; rec.trackY = y; rec.trackW = trackW;
+			rec.minusX = minusX; rec.plusX = plusX; rec.stepW = stepW;
+			rec.min = minV; rec.max = maxV; rec.value = value;
+			g_HostSliders.Push( rec );
+
+			// Drawn dim at the end they cannot move from, so a button that would do nothing says so
+			// before it is pressed rather than by not responding.
+			DrawHostSliderStep( minusX, y, stepW, "-", value > minV );
+			DrawHostSliderStep( plusX, y, stepW, "+", value < maxV );
 
 			const int mid = y + SmallFont->GetHeight( ) / 2;
 
 			// The track, then the part of it that is filled, then the knob. Three dims rather than a
 			// texture, the same way every other bar in this browser is drawn.
 			screen->Dim( PalEntry( 90, 100, 130 ), 0.55f,
-				serverbrowser_ToScreenX( rowX ), serverbrowser_ToScreenY( mid ),
-				serverbrowser_ToScreenX( rowX + trackW ) - serverbrowser_ToScreenX( rowX ),
+				serverbrowser_ToScreenX( trackX ), serverbrowser_ToScreenY( mid ),
+				serverbrowser_ToScreenX( trackX + trackW ) - serverbrowser_ToScreenX( trackX ),
 				MAX( 1, serverbrowser_ToScreenY( mid + 1 ) - serverbrowser_ToScreenY( mid )));
 
-			const int span = MAX( 1, lives.max - lives.min );
-			const int filled = ( trackW * ( lives.value - lives.min )) / span;
+			const int span = MAX( 1, maxV - minV );
+			const int filled = ( trackW * ( value - minV )) / span;
 
 			screen->Dim( PalEntry( 120, 200, 140 ), 0.85f,
-				serverbrowser_ToScreenX( rowX ), serverbrowser_ToScreenY( mid ),
-				serverbrowser_ToScreenX( rowX + filled ) - serverbrowser_ToScreenX( rowX ),
+				serverbrowser_ToScreenX( trackX ), serverbrowser_ToScreenY( mid ),
+				serverbrowser_ToScreenX( trackX + filled ) - serverbrowser_ToScreenX( trackX ),
 				MAX( 1, serverbrowser_ToScreenY( mid + 1 ) - serverbrowser_ToScreenY( mid )));
 
-			const int knobX = rowX + filled;
-			screen->Dim( g_HostLivesHot ? PalEntry( 235, 240, 255 ) : PalEntry( 190, 205, 235 ), 1.0f,
+			const bool bHot = ( g_HostSliderHot.Compare( id ) == 0 );
+			const int knobX = trackX + filled;
+
+			screen->Dim( bHot ? PalEntry( 235, 240, 255 ) : PalEntry( 190, 205, 235 ), 1.0f,
 				serverbrowser_ToScreenX( knobX - 2 ), serverbrowser_ToScreenY( mid - 3 ),
 				serverbrowser_ToScreenX( knobX + 2 ) - serverbrowser_ToScreenX( knobX - 2 ),
 				serverbrowser_ToScreenY( mid + 4 ) - serverbrowser_ToScreenY( mid - 3 ));
 
-			serverbrowser_Tip( rowX, y - 1, trackW, SB_HOST_LINE,
-				lives.unlimited
-					? "No limit. Die as often as you like."
-					: "How many times each player may die before they are out." );
+			if (( tip != NULL ) && ( tip[0] != 0 ))
+				serverbrowser_Tip( trackX, y - 1, trackW, SB_HOST_LINE, tip );
 		}
 
 		if ( bDraw )
 		{
-			screen->DrawText( SmallFont, CR_WHITE, valueX, y, value,
+			screen->DrawText( SmallFont, CR_WHITE, valueX, y, valueText,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 
 		return y + SB_HOST_LINE + 3;
+	}
+
+	// How many lives, as one instance of the slider above.
+	int DrawHostLives( int x, int y, const zx::AddonEntry &addon )
+	{
+		const zx::LivesControl lives = HostLivesControl( addon );
+
+		if ( !lives.adjustable )
+			return y;
+
+		FString value;
+		if ( lives.unlimited )
+			value = "Unlimited";
+		else
+			value.Format( "%d", lives.value );
+
+		return DrawHostSlider( "lives", "LIVES", x, y, lives.min, lives.max, lives.value,
+			value.GetChars( ),
+			lives.unlimited
+				? "No limit. Die as often as you like."
+				: "How many times each player may die before they are out." );
 	}
 
 	// [rc4l] What this experience can be played WITH, as settings rather than a modal.
