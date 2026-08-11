@@ -329,6 +329,10 @@ static int serverbrowser_OriginY( void );
 // The lit dot inside a pill. Odd, so it has a middle pixel and reads as round at this size.
 #define SB_HOST_PILL_DOT		5
 
+// Between WRAPPED lines of pills. Small: enough that the rounded ends do not touch, not so much
+// that one axis stops reading as one group.
+#define SB_HOST_PILL_VGAP		2
+
 #define SB_HOST_RTOP_TOP	SB_HOST_VIEW_TOP
 #define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOGGLE_Y - 6 )
 #define SB_HOST_RTOP_H		( SB_HOST_RTOP_BOTTOM - SB_HOST_RTOP_TOP )
@@ -5613,22 +5617,29 @@ public:
 				if ( !groups[g].id.empty( ))
 					h += SB_HOST_LINE;
 
-				// The same measurement DrawHostGameplay makes, because an axis drawn as one row of
-				// pills is one row tall and a height that assumed otherwise would scroll past the end.
-				// Room for the dot and the gaps either side of it, plus the trailing gap after the label.
-			const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
-				int pillTotal = 0;
+				// [rc4l] The SAME wrap DrawHostGameplay performs, from the same function. Two
+				// measurements of one layout is exactly how a region ends up able to scroll past its
+				// own end, so both ask LayoutWadList rather than each doing its own arithmetic.
+				const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
+				const int pillRoom = SB_HOST_RCOL_RIGHT - ( SB_HOST_RCOL_LEFT + SB_HOST_GAME_INDENT );
+
+				std::vector<int> pillWidths;
 				for ( size_t i = 0; i < groups[g].choices.size( ); ++i )
 				{
-					pillTotal += SmallFont->StringWidth( groups[g].choices[i].name.c_str( )) + pillPad;
-					if ( i > 0 )
-						pillTotal += 4;
+					pillWidths.push_back(
+						SmallFont->StringWidth( groups[g].choices[i].name.c_str( )) + pillPad );
 				}
 
-				const bool bPills =
-					( pillTotal <= ( SB_HOST_RCOL_RIGHT - ( SB_HOST_RCOL_LEFT + SB_HOST_GAME_INDENT )));
+				const zx::WadListLayout pills = zx::LayoutWadList( pillWidths, 4, 0, pillRoom, 0 );
 
-				h += ( bPills ? 1 : static_cast<int>( groups[g].choices.size( ))) * SB_HOST_GAME_ROW_H + 3;
+				// Fewer lines than options means they packed, so pills; otherwise it falls back to a
+				// row each and the count is the same either way.
+				const bool bPills = ( pills.lines.size( ) < groups[g].choices.size( ));
+				const size_t rows = bPills ? pills.lines.size( ) : groups[g].choices.size( );
+
+				// Pills carry a gap between their lines; plain rows do not.
+				h += static_cast<int>( rows ) *
+					( SB_HOST_GAME_ROW_H + ( bPills ? SB_HOST_PILL_VGAP : 0 )) + 3;
 			}
 		}
 
@@ -6057,34 +6068,43 @@ public:
 				y += SB_HOST_LINE;
 			}
 
-			// [rc4l] Pills when the whole axis fits on one line, rows when it does not.
+			// [rc4l] Pills, WRAPPED across as many lines as the axis needs.
 			//
-			// Both are standard for one-of-N and the split between them is real: a segmented control
-			// assumes the label alone is enough, and a list has somewhere to put a description. So
-			// the rule is measured rather than decided per axis -- Teams is two short words and
-			// becomes pills, Mix is four and stays a list that can be scrolled.
+			// This was "pills if they all fit on one line, otherwise a plain list", which sent Mix's
+			// four options back to four rows over a few pixels. Pills that wrap are still pills:
+			// everything stays visible and four options cost two lines instead of four. The breaks
+			// come from wadlist_compute, the same greedy fill the file list uses, so there is one
+			// place that decides how a row of measured things becomes lines.
+			//
+			// A list survives only where the pills would be one per line anyway, which is an axis
+			// whose options are too wide to pack at all -- and there a list says it better.
+			//
 			// Room for the dot and the gaps either side of it, plus the trailing gap after the label.
 			const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
 			const int pillGap = 4;
+			const int pillRoom = SB_HOST_RCOL_RIGHT - ( x + SB_HOST_GAME_INDENT );
 
-			int pillTotal = 0;
+			std::vector<int> pillWidths;
+			pillWidths.reserve( choices.size( ));
 			for ( size_t i = 0; i < choices.size( ); ++i )
-			{
-				pillTotal += SmallFont->StringWidth( choices[i].name.c_str( )) + pillPad;
-				if ( i > 0 )
-					pillTotal += pillGap;
-			}
+				pillWidths.push_back( SmallFont->StringWidth( choices[i].name.c_str( )) + pillPad );
 
-			if ( pillTotal <= ( SB_HOST_RCOL_RIGHT - ( x + SB_HOST_GAME_INDENT )))
+			const zx::WadListLayout pills = zx::LayoutWadList( pillWidths, pillGap, 0, pillRoom, 0 );
+
+			if ( pills.lines.size( ) < choices.size( ))
 			{
+				for ( size_t ln = 0; ln < pills.lines.size( ); ++ln )
+				{
+				const zx::WadListLine &pline = pills.lines[ln];
+
 				if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
 				{
 					int px = x + SB_HOST_GAME_INDENT;
 
-					for ( size_t i = 0; i < choices.size( ); ++i )
+					for ( size_t i = pline.first; i < pline.end; ++i )
 					{
 						const bool bOn = ( choices[i].id == pick.id );
-						const int pw = SmallFont->StringWidth( choices[i].name.c_str( )) + pillPad;
+						const int pw = pillWidths[i];
 
 						HostGameplayRow rec;
 						rec.x = px;
@@ -6158,7 +6178,13 @@ public:
 					}
 				}
 
-				y += SB_HOST_GAME_ROW_H + 3;
+				// [rc4l] A gap BETWEEN wrapped lines as well as between the pills on one. Without it
+				// the rounded ends of one line sat against the next and the block read as a slab
+				// rather than as separate chips.
+				y += SB_HOST_GAME_ROW_H + SB_HOST_PILL_VGAP;
+				}
+
+				y += 3;
 				continue;
 			}
 
