@@ -15,7 +15,7 @@ namespace
 
 const char *kDuel40 =
 	"{\n"
-	"  \"schema\": 1,\n"
+	"  \"schema\": 1, \"kind\": \"pvp\",\n"
 	"  \"name\": \"Duel 40\",\n"
 	"  \"summary\": \"Forty-map duel pack with a spree announcer.\",\n"
 	"  \"iwad\": \"doom2.wad\",\n"
@@ -27,7 +27,7 @@ const char *kDuel40 =
 
 const char *kDuel40Mapped =
 	"{\n"
-	"  \"schema\": 1,\n"
+	"  \"schema\": 1, \"kind\": \"pvp\",\n"
 	"  \"name\": \"Duel 40\",\n"
 	"  \"iwad\": \"doom2.wad\",\n"
 	"  \"map\": \"START\",\n"
@@ -46,7 +46,7 @@ AddonEntry Parse(const char *json)
 std::string WithVariants(const char *variants)
 {
 	std::string json =
-		"{ \"schema\": 1, \"name\": \"Skulltag\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"Skulltag\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" }],"
 		"  \"variants\": ";
 	json += variants;
@@ -82,7 +82,7 @@ TEST(AddonFile, ReadsTheRealSkulltagEntry)
 	// because every ZandroX release already carries it.
 	const AddonEntry e = ParseAddonFile("skulltag",
 		"{\n"
-		"  \"schema\": 1,\n"
+		"  \"schema\": 1, \"kind\": \"pvp\",\n"
 		"  \"name\": \"Skulltag\",\n"
 		"  \"summary\": \"Skulltag's maps, weapons and runes, with a spree announcer.\",\n"
 		"  \"iwad\": \"doom2.wad\",\n"
@@ -116,7 +116,7 @@ TEST(AddonFile, TheIdComesFromTheCallerNotTheFile)
 	// The folder is what a player renames, so it is the identity. A file claiming otherwise is
 	// ignored rather than believed.
 	const AddonEntry e = ParseAddonFile("my-own-name",
-		"{ \"schema\": 1, \"id\": \"something-else\", \"name\": \"X\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"id\": \"something-else\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -128,7 +128,7 @@ TEST(AddonFile, AnUnknownKeyIsIgnoredRatherThanFatal)
 	// Forward compatibility within a schema: adding an optional field must not orphan every entry
 	// written before it.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"name\": \"X\", \"nested\": { \"a\": [1, 2, {\"b\": \"}\"}] },"
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"nested\": { \"a\": [1, 2, {\"b\": \"}\"}] },"
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -138,7 +138,7 @@ TEST(AddonFile, AnUnknownKeyIsIgnoredRatherThanFatal)
 TEST(AddonFile, AnUnknownKeyInsideAFileIsIgnoredToo)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"name\": \"X\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"size\": 123,"
 		"                \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
@@ -186,13 +186,13 @@ TEST(AddonFile, ANonsenseSchemaIsRefused)
 
 TEST(AddonFile, AnEntryWithNoFilesLoadsNothingAndIsRefused)
 {
-	EXPECT_FALSE(Parse("{ \"schema\": 1, \"name\": \"X\", \"files\": [] }").valid);
+	EXPECT_FALSE(Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [] }").valid);
 }
 
 TEST(AddonFile, AnEntryWithNoNameHasNothingToShow)
 {
 	EXPECT_FALSE(Parse(
-		"{ \"schema\": 1,"
+		"{ \"schema\": 1, \"kind\": \"pvp\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
 }
 
@@ -214,7 +214,7 @@ TEST(AddonFile, AnEntryMayNameTheMapItOpensOn)
 TEST(AddonFile, TheMapIsOptional)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"name\": \"X\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -229,7 +229,7 @@ TEST(AddonFile, AMapThatIsNotAPlainLumpNameIsRefused)
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
 	{
-		std::string json = std::string("{ \"schema\": 1, \"name\": \"X\", \"map\": \"") + bad[i] +
+		std::string json = std::string("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"map\": \"") + bad[i] +
 			"\"," +
 			"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
 
@@ -241,7 +241,7 @@ TEST(AddonFile, TheIwadIsOptional)
 {
 	// An entry that runs on whatever is already loaded need not name one.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"name\": \"X\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -263,7 +263,7 @@ TEST(AddonFile, APathInAFileNameIsRefused)
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
 	{
-		std::string json = std::string("{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"") +
+		std::string json = std::string("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": \"") +
 			bad[i] + "\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
 
 		EXPECT_FALSE(Parse(json.c_str()).valid) << "accepted " << bad[i];
@@ -273,7 +273,7 @@ TEST(AddonFile, APathInAFileNameIsRefused)
 TEST(AddonFile, APathInTheIwadIsRefused)
 {
 	EXPECT_FALSE(Parse(
-		"{ \"schema\": 1, \"name\": \"X\", \"iwad\": \"../doom2.wad\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"iwad\": \"../doom2.wad\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
 }
 
@@ -291,7 +291,7 @@ TEST(AddonFile, AnUnusableMd5IsRefused)
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
 	{
-		std::string json = std::string("{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\","
+		std::string json = std::string("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\","
 			" \"md5\": \"") + bad[i] + "\" }] }";
 
 		EXPECT_FALSE(Parse(json.c_str()).valid) << "accepted '" << bad[i] << "'";
@@ -309,14 +309,14 @@ TEST(AddonFile, RubbishIsRefusedRatherThanRead)
 		"not json at all",
 		"{",
 		"{ \"schema\": 1",
-		"{ \"schema\": 1, }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", }",
 		"{ \"name\" \"X\" }",					// no colon
 		"{ \"name\": \"unterminated }",
-		"{ \"schema\": 1, \"files\": [ { ] }",
-		"{ \"schema\": 1, \"files\": [ {} ",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"files\": [ { ] }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"files\": [ {} ",
 		"{ \"schema\": \"one\" }",				// string where an int belongs
-		"{ \"schema\": 1, \"files\": \"nope\" }",
-		"{ \"schema\": 1, \"name\": \"X\" } trailing",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"files\": \"nope\" }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\" } trailing",
 	};
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
@@ -348,7 +348,7 @@ TEST(AddonFile, EveryTruncationOfARealEntryIsRefused)
 TEST(AddonFile, EscapesInStringsAreUnderstood)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"name\": \"A \\\"quoted\\\" name\\twith\\\\escapes\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"A \\\"quoted\\\" name\\twith\\\\escapes\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -360,7 +360,7 @@ TEST(AddonFile, AnUnsupportedEscapeIsRefusedRatherThanDropped)
 	// \u would mean committing to surrogate pairs, and nothing in this schema needs it. Refusing is
 	// honest; silently dropping it would corrupt a filename.
 	EXPECT_FALSE(Parse(
-		"{ \"schema\": 1, \"name\": \"\\u0041\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"\\u0041\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
 }
 
@@ -374,7 +374,7 @@ TEST(AddonFile, EveryEscapeTheSchemaAcceptsIsUnderstood)
 	// [rc4l] All of them, not a sample. Each is its own line in the reader, and an untested one is a
 	// filename we would silently mangle the first time somebody used it.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"summary\": \"a\\/b\\bc\\fd\\ne\\rf\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"summary\": \"a\\/b\\bc\\fd\\ne\\rf\","
 		"  \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
@@ -385,7 +385,7 @@ TEST(AddonFile, EveryEscapeTheSchemaAcceptsIsUnderstood)
 TEST(AddonFile, AStringCutOffMidEscapeIsRefused)
 {
 	// The backslash promises another character and the file ends instead.
-	EXPECT_FALSE(Parse("{ \"schema\": 1, \"name\": \"X\\").valid);
+	EXPECT_FALSE(Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\\").valid);
 }
 
 TEST(AddonFile, ASignedSchemaIsStillANumber)
@@ -393,7 +393,7 @@ TEST(AddonFile, ASignedSchemaIsStillANumber)
 	// JSON does not allow a leading +, but the reader accepts one rather than mis-reading the rest of
 	// the file, and 1 is 1 however it was written.
 	EXPECT_TRUE(Parse(
-		"{ \"schema\": +1, \"name\": \"X\","
+		"{ \"schema\": +1, \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
 }
 
@@ -401,7 +401,7 @@ TEST(AddonFile, AnEmptyFileListIsReadAndThenRefusedForBeingEmpty)
 {
 	// It PARSES: [] is well formed. It is refused a step later, for loading nothing, and the
 	// distinction is what keeps the reason accurate.
-	const AddonEntry e = Parse("{ \"schema\": 1, \"name\": \"X\", \"files\": [] }");
+	const AddonEntry e = Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [] }");
 
 	EXPECT_FALSE(e.valid);
 	EXPECT_EQ("no files", e.error);
@@ -409,7 +409,7 @@ TEST(AddonFile, AnEmptyFileListIsReadAndThenRefusedForBeingEmpty)
 
 TEST(AddonFile, AFileEntryWithNoKeysHasNoNameToLoad)
 {
-	const AddonEntry e = Parse("{ \"schema\": 1, \"name\": \"X\", \"files\": [{}] }");
+	const AddonEntry e = Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{}] }");
 
 	EXPECT_FALSE(e.valid);
 	EXPECT_FALSE(e.error.empty());
@@ -421,7 +421,7 @@ TEST(AddonFile, ADotDotWithNoSlashIsStillRefused)
 	// and this one never ran. A name is refused for containing "..", separator or not, because the
 	// resolver it feeds is not the only thing that will ever read these.
 	EXPECT_FALSE(Parse(
-		"{ \"schema\": 1, \"name\": \"X\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a..pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
 }
 
@@ -429,37 +429,37 @@ TEST(AddonFile, AnEmptyFileNameIsRefused)
 {
 	// Not a path, but not a filename either, and the loader would search for nothing.
 	EXPECT_FALSE(Parse(
-		"{ \"schema\": 1, \"name\": \"X\","
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
 }
 
 TEST(AddonFile, AnUnknownKeyWithNothingAfterItIsRefused)
 {
 	// The skip has to notice it ran out rather than report success on an empty remainder.
-	EXPECT_FALSE(Parse("{ \"schema\": 1, \"x\":").valid);
+	EXPECT_FALSE(Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"x\":").valid);
 }
 
 TEST(AddonFile, AnUnterminatedStringInsideASkippedValueIsRefused)
 {
 	// Inside a container we are skipping wholesale, a string still has to close: without that the
 	// scan would run past a brace hidden in the text and re-sync somewhere meaningless.
-	EXPECT_FALSE(Parse("{ \"schema\": 1, \"x\": { \"a\": \"never closed } }").valid);
+	EXPECT_FALSE(Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"x\": { \"a\": \"never closed } }").valid);
 }
 
 TEST(AddonFile, AFileFieldOfTheWrongShapeIsRefused)
 {
 	const char *bad[] = {
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": 5 }] }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"md5\": 5 }] }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"notes\": }] }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": 5 }] }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"md5\": 5 }] }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"notes\": }] }",
 		// [rc4l] An unknown key inside a file whose value cannot be skipped at all: the string never
 		// closes, so the skip fails rather than quietly swallowing the rest of the file.
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"notes\": \"unterminated }] }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"notes\": [1, 2 }] }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"notes\": \"unterminated }] }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"notes\": [1, 2 }] }",
 
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\" \"a.pk3\" }] }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\" \"md5\": \"x\" }] }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [ 5 ] }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\" \"a.pk3\" }] }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\" \"md5\": \"x\" }] }",
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [ 5 ] }",
 	};
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
@@ -485,8 +485,8 @@ TEST(AddonFile, AnEntryWithNoVariantsHasNone)
 TEST(AddonFile, VariantsAreReadInOrderWithTheirTooltips)
 {
 	const AddonEntry e = Parse(WithVariants(
-		"[ { \"id\": \"dm\", \"name\": \"Deathmatch\", \"cfg\": \"server.cfg\", \"default\": true },"
-		"  { \"id\": \"inv\", \"name\": \"Invasion\", \"cfg\": \"invasion.cfg\","
+		"[ { \"id\": \"dm\", \"name\": \"Deathmatch\", \"cfg\": \"server.cfg\", \"kind\": \"pvp\", \"default\": true },"
+		"  { \"id\": \"inv\", \"name\": \"Invasion\", \"cfg\": \"invasion.cfg\", \"kind\": \"pve\","
 		"    \"tooltip\": \"Waves of monsters. Survive together.\" } ]").c_str());
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -498,16 +498,19 @@ TEST(AddonFile, VariantsAreReadInOrderWithTheirTooltips)
 	EXPECT_TRUE(e.variants[0].isDefault);
 	EXPECT_TRUE(e.variants[0].tooltip.empty());
 
+	EXPECT_EQ(zx::VariantKind::PvP, e.variants[0].kind);
+
 	EXPECT_EQ("inv", e.variants[1].id);
 	EXPECT_EQ("Waves of monsters. Survive together.", e.variants[1].tooltip);
+	EXPECT_EQ(zx::VariantKind::PvE, e.variants[1].kind);
 	EXPECT_FALSE(e.variants[1].isDefault);
 }
 
 TEST(AddonFile, AVariantListMayClaimNoDefaultAtAll)
 {
 	const AddonEntry e = Parse(WithVariants(
-		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\" },"
-		"  { \"id\": \"b\", \"name\": \"B\", \"cfg\": \"b.cfg\" } ]").c_str());
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\" },"
+		"  { \"id\": \"b\", \"name\": \"B\", \"cfg\": \"b.cfg\", \"kind\": \"pvp\" } ]").c_str());
 
 	EXPECT_TRUE(e.valid) << e.error;
 }
@@ -517,8 +520,8 @@ TEST(AddonFile, TwoDefaultsIsAMistakeRatherThanAnOrdering)
 	// Which way a pack plays when nobody has chosen must not depend on how the file is sorted, so an
 	// ambiguous claim is refused where the author can see it.
 	const AddonEntry e = Parse(WithVariants(
-		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"default\": true },"
-		"  { \"id\": \"b\", \"name\": \"B\", \"cfg\": \"b.cfg\", \"default\": true } ]").c_str());
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\", \"default\": true },"
+		"  { \"id\": \"b\", \"name\": \"B\", \"cfg\": \"b.cfg\", \"kind\": \"pvp\", \"default\": true } ]").c_str());
 
 	EXPECT_FALSE(e.valid);
 	EXPECT_FALSE(e.error.empty());
@@ -528,8 +531,8 @@ TEST(AddonFile, TwoVariantsMayNotShareAnId)
 {
 	// The id is what a remembered choice is keyed on, so duplicates make the choice meaningless.
 	const AddonEntry e = Parse(WithVariants(
-		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\" },"
-		"  { \"id\": \"a\", \"name\": \"B\", \"cfg\": \"b.cfg\" } ]").c_str());
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\" },"
+		"  { \"id\": \"a\", \"name\": \"B\", \"cfg\": \"b.cfg\", \"kind\": \"pvp\" } ]").c_str());
 
 	EXPECT_FALSE(e.valid);
 }
@@ -538,21 +541,21 @@ TEST(AddonFile, AVariantOfTheWrongShapeIsRefused)
 {
 	const char *bad[] = {
 		// No id, so nothing to remember a choice by.
-		"[ { \"name\": \"A\", \"cfg\": \"a.cfg\" } ]",
+		"[ { \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\" } ]",
 		// No name, so nothing to show.
-		"[ { \"id\": \"a\", \"cfg\": \"a.cfg\" } ]",
+		"[ { \"id\": \"a\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\" } ]",
 		// No cfg at all, which would silently fall back to the pack's own and play the wrong thing.
 		"[ { \"id\": \"a\", \"name\": \"A\" } ]",
 		// A cfg that climbs out of the entry's folder, the same rule every filename here obeys.
 		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"../server.cfg\" } ]",
 		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"sub/a.cfg\" } ]",
 		// "default" is a boolean and only a boolean: a guess here silently changes how a pack plays.
-		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"default\": 1 } ]",
-		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"default\": \"yes\" } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\", \"default\": 1 } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\", \"default\": \"yes\" } ]",
 		// Malformed array shapes.
 		"[ 5 ]",
 		"[ { \"id\": \"a\" \"name\": \"A\" } ]",
-		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\" }",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\" }",
 	};
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
@@ -561,6 +564,74 @@ TEST(AddonFile, AVariantOfTheWrongShapeIsRefused)
 		EXPECT_FALSE(e.valid) << "accepted: " << bad[i];
 		EXPECT_FALSE(e.error.empty()) << "no reason given for: " << bad[i];
 	}
+}
+
+// ------------------------------------------------------------ the label
+
+TEST(AddonFile, AnExperienceMustSayWhetherItIsPveOrPvp)
+{
+	// The first thing anybody wants to know, and the one thing the name reliably fails to say.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_NE(std::string::npos, e.error.find("pve or pvp"));
+	EXPECT_NE(std::string::npos, e.error.find("experience"));
+}
+
+TEST(AddonFile, AnUnlabelledVariantIsRefusedByItsOwnName)
+{
+	// A pack can have six of them, so "a variant" would leave the author reading all six to find the
+	// one they forgot.
+	const AddonEntry e = Parse(WithVariants(
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\" },"
+		"  { \"id\": \"b\", \"name\": \"Invasion\", \"cfg\": \"b.cfg\" } ]").c_str());
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_NE(std::string::npos, e.error.find("Invasion"));
+	EXPECT_NE(std::string::npos, e.error.find("pve or pvp"));
+	EXPECT_NE(std::string::npos, e.error.find("experience variant"));
+}
+
+TEST(AddonFile, AKindItDoesNotRecogniseIsRefusedRatherThanGuessedAt)
+{
+	const char *bad[] = { "coop", "PVP", "pvpve", "", "1" };
+
+	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
+	{
+		std::string json =
+			"{ \"schema\": 1, \"name\": \"X\", \"kind\": \"";
+		json += bad[i];
+		json += "\", \"files\": [{ \"name\": \"a.pk3\","
+			"  \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
+
+		EXPECT_FALSE(Parse(json.c_str()).valid) << "accepted: " << bad[i];
+	}
+}
+
+TEST(AddonFile, AnEntryWithVariantsIsLabelledByThemRatherThanByItself)
+{
+	// The variants ARE the experiences there, so the entry does not need its own label. Requiring one
+	// as well would mean writing "pvp" on a pack that is half invasion.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"name\": \"Skulltag\","
+		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" }],"
+		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\" },"
+		"                  { \"id\": \"b\", \"name\": \"B\", \"cfg\": \"b.cfg\", \"kind\": \"pve\" } ] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_EQ(zx::VariantKind::PvP, e.variants[0].kind);
+	EXPECT_EQ(zx::VariantKind::PvE, e.variants[1].kind);
+}
+
+TEST(AddonFile, EveryKindHasAWordForIt)
+{
+	// Used on the panel and in messages, so none of them may come out empty.
+	EXPECT_STREQ("PvP", zx::DescribeVariantKind(zx::VariantKind::PvP));
+	EXPECT_STREQ("PvE", zx::DescribeVariantKind(zx::VariantKind::PvE));
+	EXPECT_STREQ("Unlabelled", zx::DescribeVariantKind(zx::VariantKind::Unknown));
+	EXPECT_STREQ("Unlabelled", zx::DescribeVariantKind(static_cast<zx::VariantKind>(99)));
 }
 
 TEST(AddonFile, AnEmptyVariantsArrayIsSimplyNoVariants)
@@ -578,7 +649,7 @@ TEST(AddonFile, AnUnknownKeyInsideAVariantIsIgnoredRatherThanRefused)
 	// Same reading as everywhere else in this file, so a catalogue written for a later build still
 	// loads here instead of disappearing.
 	const AddonEntry e = Parse(WithVariants(
-		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"colour\": \"red\" } ]").c_str());
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\", \"colour\": \"red\" } ]").c_str());
 
 	ASSERT_TRUE(e.valid) << e.error;
 	ASSERT_EQ(1u, e.variants.size());

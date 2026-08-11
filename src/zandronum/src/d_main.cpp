@@ -66,6 +66,7 @@
 #include "doomstat.h"
 #include "gstrings.h"
 #include "w_wad.h"
+#include "features/addon-catalogue/zx_catalogue.h" // [rc4l] validated at startup, not on first use
 #include "features/crashreport/zx_crashreport.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
@@ -3252,6 +3253,12 @@ void D_DoomMain (void)
 		// Nothing this sets up depends on which WADs are loaded, so there is nothing to redo.
 		if ( !restart )
 			BROWSER_Construct( );
+
+		// [rc4l] The catalogue is read HERE rather than when somebody opens the host screen, so an
+		// entry that could not be used is reported while the console is still on screen. Cheap: a
+		// handful of small files. Re-read after a restart because a wad_reload may have been the
+		// thing that changed what is on disk.
+		zx::CatalogueCheckAtStartup( );
 
 		// [RH] Lock any cvars that should be locked now that we're
 		// about to begin the game.
