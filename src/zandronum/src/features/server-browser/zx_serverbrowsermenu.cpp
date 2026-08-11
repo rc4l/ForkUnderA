@@ -5671,23 +5671,36 @@ public:
 		{
 			h += 4 + 6 + SB_HOST_LINE + 2;	// the rule, and the GAMEPLAY heading
 
+			// One row now, not two: the label shares the control's line.
 			if ( HostLivesControl( a ).adjustable )
-				h += SB_HOST_LINE * 2 + 3;
+				h += SB_HOST_LINE + 3;
 
 			const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( a ));
+
+			// The same label column DrawHostGameplay measures, because it decides how wide the pills
+			// have to wrap in and therefore how many rows they take.
+			int labelW = SmallFont->StringWidth( "LIVES" );
+			for ( size_t g = 0; g < groups.size( ); ++g )
+			{
+				if (( groups[g].choices.size( ) <= 1 ) || groups[g].id.empty( ))
+					continue;
+
+				FString gl = groups[g].id.c_str( );
+				gl.ToUpper( );
+				labelW = MAX( labelW, SmallFont->StringWidth( gl ));
+			}
+			labelW += SmallFont->StringWidth( "  " );
+
 			for ( size_t g = 0; g < groups.size( ); ++g )
 			{
 				if ( groups[g].choices.size( ) <= 1 )
 					continue;
 
-				if ( !groups[g].id.empty( ))
-					h += SB_HOST_LINE;
-
 				// [rc4l] The SAME wrap DrawHostGameplay performs, from the same function. Two
 				// measurements of one layout is exactly how a region ends up able to scroll past its
 				// own end, so both ask LayoutWadList rather than each doing its own arithmetic.
 				const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
-				const int pillRoom = SB_HOST_RCOL_RIGHT - ( SB_HOST_RCOL_LEFT + SB_HOST_GAME_INDENT );
+				const int pillRoom = SB_HOST_RCOL_RIGHT - ( SB_HOST_RCOL_LEFT + labelW );
 
 				std::vector<int> pillWidths;
 				for ( size_t i = 0; i < groups[g].choices.size( ); ++i )
@@ -6033,19 +6046,20 @@ public:
 	//
 	// `valueText` rather than the number, because what a value MEANS is the caller's business: zero
 	// lives is "Unlimited", and zero of something else will be something else again.
-	int DrawHostSlider( const char *id, const char *label, int x, int y,
+	int DrawHostSlider( const char *id, const char *label, int x, int y, int labelW,
 		int minV, int maxV, int value, const char *valueText, const char *tip )
 	{
-		const bool bDraw = HostDetailRowVisible( y, SB_HOST_LINE * 2 );
+		const bool bDraw = HostDetailRowVisible( y, SB_HOST_LINE );
 
+		// [rc4l] The label shares the control's row rather than taking one above it. Three axes on a
+		// co-op entry is three lines saved, in a column that has none to spare.
 		if ( bDraw )
 		{
 			screen->DrawText( SmallFont, CR_DARKGRAY, x, y, label,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
-		y += SB_HOST_LINE;
 
-		const int rowX = x + SB_HOST_GAME_INDENT;
+		const int rowX = x + labelW;
 
 		// [rc4l] The VALUE is measured first and the track takes what is left, so a track never runs
 		// under its own readout. Measured against the WIDEST it could say rather than what it says
@@ -6113,7 +6127,7 @@ public:
 	}
 
 	// How many lives, as one instance of the slider above.
-	int DrawHostLives( int x, int y, const zx::AddonEntry &addon )
+	int DrawHostLives( int x, int y, int labelW, const zx::AddonEntry &addon )
 	{
 		const zx::LivesControl lives = HostLivesControl( addon );
 
@@ -6126,7 +6140,7 @@ public:
 		else
 			value.Format( "%d", lives.value );
 
-		return DrawHostSlider( "lives", "LIVES", x, y, lives.min, lives.max, lives.value,
+		return DrawHostSlider( "lives", "LIVES", x, y, labelW, lives.min, lives.max, lives.value,
 			value.GetChars( ),
 			lives.unlimited
 				? "No limit. Die as often as you like."
@@ -6160,7 +6174,22 @@ public:
 		}
 		y += SB_HOST_LINE + 2;
 
-		y = DrawHostLives( x, y, addon );
+		// [rc4l] ONE label column for every axis, measured across all of them so the controls line up
+		// under each other. Sized to the widest label rather than fixed, or a longer setting name
+		// later would either overlap its own control or leave a gap in front of every other.
+		int labelW = SmallFont->StringWidth( "LIVES" );
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if (( groups[g].choices.size( ) <= 1 ) || groups[g].id.empty( ))
+				continue;
+
+			FString label = groups[g].id.c_str( );
+			label.ToUpper( );
+			labelW = MAX( labelW, SmallFont->StringWidth( label ));
+		}
+		labelW += SmallFont->StringWidth( "  " );
+
+		y = DrawHostLives( x, y, labelW, addon );
 
 		for ( size_t g = 0; g < groups.size( ); ++g )
 		{
@@ -6170,8 +6199,9 @@ public:
 
 			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
 
-			// [rc4l] A named axis says what it is choosing between; the unnamed one does not, because
-			// the GAMEPLAY heading above already introduced it and a second word would be noise.
+			// [rc4l] The label sits on the FIRST row of pills rather than above them, which is a line
+			// back per axis. Wrapped rows hang under the pills, not under the label, so the block
+			// still reads as one thing.
 			if ( !groups[g].id.empty( ) && HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
 				FString label = groups[g].id.c_str( );
@@ -6179,7 +6209,6 @@ public:
 
 				screen->DrawText( SmallFont, CR_DARKGRAY, x, y, label,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-				y += SB_HOST_LINE;
 			}
 
 			// [rc4l] Pills, WRAPPED across as many lines as the axis needs.
@@ -6196,7 +6225,7 @@ public:
 			// Room for the dot and the gaps either side of it, plus the trailing gap after the label.
 			const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
 			const int pillGap = 4;
-			const int pillRoom = SB_HOST_RCOL_RIGHT - ( x + SB_HOST_GAME_INDENT );
+			const int pillRoom = SB_HOST_RCOL_RIGHT - ( x + labelW );
 
 			std::vector<int> pillWidths;
 			pillWidths.reserve( choices.size( ));
@@ -6211,7 +6240,7 @@ public:
 
 				if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
 				{
-					int px = x + SB_HOST_GAME_INDENT;
+					int px = x + labelW;
 
 					for ( size_t i = pline.first; i < pline.end; ++i )
 					{
