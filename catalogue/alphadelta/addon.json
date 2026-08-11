@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Alpha and Delta Invasion",
-  "summary": "Twenty-five invasion maps, eleven Alpha and fourteen Delta, on Skulltag's content.",
+  "summary": "A classic Invasion megawad from the Skulltag era. Comes with new maps, monsters, and epic bosses.",
   "iwad": "doom2.wad",
   "map": "alinv01",
   "kind": "pve",

@@ -318,10 +318,15 @@ static int serverbrowser_OriginY( void );
 // the title is inset from the top by what the text is inset from the sides.
 #define SB_HOST_RCOL_INSET	8
 
-// [rc4l] The experience list's own bar, in the gap between the list and the column divider. The
-// labels are already cut four units short of SB_HOST_LIST_RIGHT and the divider sits six past it, so
-// this lands in space nothing else uses rather than taking width off the names.
-#define SB_HOST_LBAR_X		( SB_HOST_LIST_RIGHT + 1 )
+// [rc4l] The experience list's own bar, INSIDE the list the way the server list keeps its own, with
+// the rows stopping short of it.
+//
+// It sat in the gap to the right of the list at first, which was the gap the column divider used to
+// occupy -- and once the divider went and the right column got a backdrop, a bar out there read as
+// part of the panel's margin rather than as something belonging to the list. A list's bar goes down
+// the edge of the list.
+#define SB_HOST_LBAR_X		( SB_HOST_LIST_RIGHT - 4 )
+#define SB_HOST_ROW_RIGHT	( SB_HOST_LBAR_X - 3 )
 
 #define SB_CHOICE_H			15
 // Wide enough for the focus glow to sit in the gap rather than on the previous cell -- the same
@@ -5350,7 +5355,7 @@ public:
 				screen->Dim( bar, alpha,
 					serverbrowser_ToScreenX( x - 4 ),
 					serverbrowser_ToScreenY( rowY - 1 ),
-					serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT ) -
+					serverbrowser_ToScreenX( SB_HOST_ROW_RIGHT ) -
 						serverbrowser_ToScreenX( x - 4 ),
 					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H - 1 ) -
 						serverbrowser_ToScreenY( rowY - 1 ));
@@ -5371,7 +5376,7 @@ public:
 			// budget is measured against the thing it must not touch, so a longer badge or a longer
 			// name cannot reintroduce the overlap.
 			const int labelLeft = bIsVariant ? ( x + 12 ) : x;
-			int labelRight = SB_HOST_LIST_RIGHT - 4;
+			int labelRight = SB_HOST_ROW_RIGHT - 4;
 
 			if ( bIsVariant )
 			{
@@ -5405,12 +5410,12 @@ public:
 				const char *kindText = zx::DescribeVariantKind( kind );
 
 				screen->DrawText( SmallFont, ( kind == zx::VariantKind::PvE ) ? CR_GREEN : CR_ORANGE,
-					SB_HOST_LIST_RIGHT - SmallFont->StringWidth( kindText ) - 4, textY, kindText,
+					SB_HOST_ROW_RIGHT - SmallFont->StringWidth( kindText ) - 4, textY, kindText,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 				if ( !entry.addon.variants[r.variant].tooltip.empty( ))
 				{
-					serverbrowser_Tip( x - 4, rowY - 1, SB_HOST_LIST_RIGHT - x + 4, SB_HOST_ENTRY_H,
+					serverbrowser_Tip( x - 4, rowY - 1, SB_HOST_ROW_RIGHT - x + 4, SB_HOST_ENTRY_H,
 						entry.addon.variants[r.variant].tooltip.c_str( ));
 				}
 			}
@@ -5423,7 +5428,7 @@ public:
 				const char *caret = bOpen ? "v" : ">";
 
 				screen->DrawText( SmallFont, col,
-					SB_HOST_LIST_RIGHT - SmallFont->StringWidth( caret ) - 4, textY, caret,
+					SB_HOST_ROW_RIGHT - SmallFont->StringWidth( caret ) - 4, textY, caret,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			}
 
