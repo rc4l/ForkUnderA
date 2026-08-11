@@ -249,6 +249,58 @@ TEST( VariantPick, AnEntryWithNoFilesAndNoVariantFilesLoadsNothing )
 	EXPECT_TRUE( pick.files.empty( ));
 }
 
+// ------------------------------------------------------------ where it opens
+
+TEST( VariantPick, AVariantOpensWhereTheEntryDoesUnlessItSaysOtherwise )
+{
+	AddonEntry e = Skulltag( );
+	e.map = "D2DM1";
+
+	const VariantPick pick = PickVariant( e, "duel" );
+
+	EXPECT_EQ( "D2DM1", pick.map ) << "a variant with no map of its own inherits the entry's";
+}
+
+TEST( VariantPick, AVariantsOwnMapWins )
+{
+	// [rc4l] THE case this exists for: three invasion packs under one entry open on alinv01, MAP01
+	// and Z1INV01, and one entry-level answer cannot be all three.
+	AddonEntry e = Skulltag( );
+	e.map = "D2DM1";
+	e.variants[3].map = "alinv01";
+
+	const VariantPick pick = PickVariant( e, "invasion" );
+
+	EXPECT_EQ( "alinv01", pick.map );
+}
+
+TEST( VariantPick, EveryVariantsMapIsResolvedNotJustTheDefaults )
+{
+	// Swept, because a map that only resolved for the default would look right on the entry you
+	// happened to test and start the wrong one everywhere else.
+	AddonEntry e = Skulltag( );
+	e.map = "ENTRY";
+
+	for ( size_t i = 0; i < e.variants.size( ); ++i )
+		e.variants[i].map = ( i % 2 == 0 ) ? "" : "OWN";
+
+	for ( size_t i = 0; i < e.variants.size( ); ++i )
+	{
+		const VariantPick pick = PickVariant( e, e.variants[i].id );
+		EXPECT_EQ( ( i % 2 == 0 ) ? "ENTRY" : "OWN", pick.map ) << "variant " << i;
+	}
+}
+
+TEST( VariantPick, APackThatPlaysOneWayStillAnswersWithItsMap )
+{
+	AddonEntry plain;
+	plain.name = "Duel 40";
+	plain.map = "START";
+	plain.files.push_back( Ref( "duel40b.pk3" ));
+
+	EXPECT_EQ( "START", PickVariant( plain, "" ).map );
+}
+
 // --------------------------------------------------------------- the name
 
 TEST( VariantPick, TheServerNameSaysWhichWayItIsBeingPlayed )
