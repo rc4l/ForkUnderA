@@ -464,8 +464,54 @@ const char *TooltipFor( int tab, HeaderReach reach )
 
 //*****************************************************************************
 //
+bool GlobalHeader_IsShown( )
+{
+	// [rc4l] Hidden on the JOIN FLOW and nowhere else: the menus a spectator gets for joining the
+	// match they are already connected to. Those belong to the game rather than to choosing what to
+	// play, and a Main Menu / Play Online strip over them turned backing out into a loop.
+	//
+	// NAMED, not inferred from "is there a netgame". The first attempt did that, and it took the bar
+	// away from every menu in an online session including the main menu, which is still the main menu
+	// whatever else is going on. Asked in ONE place so the drawing, the arrows and the pointer cannot
+	// disagree about whether the bar exists: an invisible bar that still swallows Up is worse than a
+	// visible one that misbehaves.
+	const DMenu *menu = DMenu::CurrentMenu;
+	if ( menu == NULL )
+		return true;
+
+	if ( !menu->IsKindOf( RUNTIME_CLASS( DOptionMenu )))
+		return true;
+
+	const FOptionMenuDescriptor *desc =
+		static_cast<const DOptionMenu *>( menu )->GetDescriptor( );
+	if ( desc == NULL )
+		return true;
+
+	// All three, because the flow walks between them: the plain join, the team picker, and the class
+	// picker it can lead to. Showing the bar on one of the three would put the loop back for exactly
+	// the players who reached the game a slightly different way.
+	static const char *const kJoinFlow[] = {
+		"ZA_JoinMenu", "ZA_JoinTeamMenu", "ZA_SelectClassMenu",
+	};
+
+	for ( size_t i = 0; i < ( sizeof kJoinFlow / sizeof kJoinFlow[0] ); ++i )
+	{
+		if ( desc->mMenuName == FName( kJoinFlow[i] ))
+			return false;
+	}
+
+	return true;
+}
+
 void GlobalHeader_Draw( )
 {
+	if ( !GlobalHeader_IsShown( ))
+	{
+		// Nothing drawn, so nothing may be holding the arrows either.
+		g_HasFocus = false;
+		return;
+	}
+
 	// [rc4l] Which section the player is looking at, remembered every frame, so that opening the
 	// menus again can put them back where they were.
 	//
@@ -583,6 +629,11 @@ bool GlobalHeader_HasFocus( )
 
 void GlobalHeader_TakeFocus( )
 {
+	// A bar that is not there cannot hold the arrows. Without this, Up off the top row of an in-game
+	// menu would hand them to something invisible and the menu would stop responding.
+	if ( !GlobalHeader_IsShown( ))
+		return;
+
 	// Land on the tab that is lit. Arriving anywhere else would mean the cursor appears somewhere
 	// the player was not already looking.
 	g_FocusTab = static_cast<int>( CurrentTab( ));
@@ -598,9 +649,15 @@ void GlobalHeader_ReleaseFocus( )
 //
 bool GlobalHeader_ResumeBrowser( )
 {
+	// [rc4l] "Come back to the section you were in" means nothing where there are no sections to be
+	// in. Without this the redirect still fired during an online session, which is the loop the bar
+	// was hidden to stop: Escape closed the menu, the next Escape reopened it on the browser, and
+	// leaving took as many presses as it took to walk back out.
+	if ( !GlobalHeader_IsShown( ))
+		return false;
+
 	MenuResumeIn in;
 	in.lastShown = g_ResumeBrowser ? MenuSection::Browser : MenuSection::MainMenu;
-	in.inGame = ( NETWORK_GetState( ) != NETSTATE_SINGLE );
 
 	// joinReady is deliberately NOT read here. It is a one-shot the caller consumes, and asking for
 	// it twice is the bug that made Escape open the main menu over a browser it had just opened.
@@ -724,6 +781,9 @@ bool GlobalHeader_Activate( )
 //
 bool GlobalHeader_MouseMove( int screenX, int screenY )
 {
+	if ( !GlobalHeader_IsShown( ))
+		return false;
+
 	g_PointerX = screenX;
 	g_PointerY = screenY;
 
@@ -743,6 +803,9 @@ bool GlobalHeader_MouseMove( int screenX, int screenY )
 
 bool GlobalHeader_MouseClick( int screenX, int screenY )
 {
+	if ( !GlobalHeader_IsShown( ))
+		return false;
+
 	const HeaderMetrics m = Metrics( );
 	int widths[kHeaderTabCount];
 	MeasureLabels( widths );
