@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "name": "Popular Co-op Maps (Classic)",
+  "name": "Popular Co-op Maps",
   "summary": "Seven of the megawads people still run, played cooperatively on Ultra-Violence.",
   "iwad": "doom2.wad",
   "kind": "pve",
