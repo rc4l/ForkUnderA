@@ -944,6 +944,94 @@ TEST(AddonFile, FastWeaponsCanBeOfferedAndTakenBack)
 	EXPECT_FALSE(off.fastWeapons);
 }
 
+TEST(AddonFile, AVariantsRemixesKeySaysItWasWrittenEvenWhenEmpty)
+{
+	// What separates "takes none" from "takes whatever the entry takes". Only the reader can tell them
+	// apart, because by the time OfferedRemixes sees the list both are an empty vector.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }],"
+		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pve\", \"cfg\": \"a.cfg\","
+		"                  \"default\": true, \"remixes\": [] },"
+		"                { \"id\": \"b\", \"name\": \"B\", \"kind\": \"pve\", \"cfg\": \"b.cfg\" } ] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(2u, e.variants.size());
+	EXPECT_TRUE(e.variants[0].remixesSet);
+	EXPECT_TRUE(e.variants[0].remixes.empty());
+	EXPECT_FALSE(e.variants[1].remixesSet);
+}
+
+TEST(AddonFile, TeamsIsReadOnBothAnEntryAndAVariant)
+{
+	// Both, because a pack that plays one way has no variant to say it on and a pack with several says
+	// it per way of playing.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"teams\": true,"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }],"
+		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\","
+		"                  \"default\": true, \"teams\": true },"
+		"                { \"id\": \"b\", \"name\": \"B\", \"kind\": \"pvp\", \"cfg\": \"b.cfg\" } ] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_TRUE(e.teams);
+	ASSERT_EQ(2u, e.variants.size());
+	EXPECT_TRUE(e.variants[0].teams);
+	EXPECT_FALSE(e.variants[1].teams);
+}
+
+TEST(AddonFile, AVariantMayOverrideTheEntrysLivesAndWeaponSpeed)
+{
+	// [rc4l] The bug this exists for: one entry gathering packs that are not alike. Popular Co-op Maps
+	// holds six campaign mapsets that can be run as Survival and four co-op packs that cannot, and the
+	// entry's single answer gave the lives slider to all ten and the weapon speed to Hell Revealed II.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"lives\": 0, \"maxlives\": 5,"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }],"
+		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pve\", \"cfg\": \"a.cfg\", \"default\": true },"
+		"                { \"id\": \"b\", \"name\": \"B\", \"kind\": \"pve\", \"cfg\": \"b.cfg\","
+		"                  \"lives\": 2, \"maxlives\": 0, \"fastweapons\": true } ] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(2u, e.variants.size());
+
+	// The one that says nothing leaves the fields unset, which is what tells the caller to use the
+	// entry's. Zero would not: a ceiling of zero is how a variant opts OUT of the control.
+	EXPECT_EQ(-1, e.variants[0].defaultLives);
+	EXPECT_EQ(-1, e.variants[0].maxLives);
+	EXPECT_FALSE(e.variants[0].fastWeapons);
+
+	EXPECT_EQ(2, e.variants[1].defaultLives);
+	EXPECT_EQ(0, e.variants[1].maxLives);
+	EXPECT_TRUE(e.variants[1].fastWeapons);
+}
+
+TEST(AddonFile, AVariantsLivesThatAreNotNumbersAreRefused)
+{
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }],"
+		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pve\", \"cfg\": \"a.cfg\","
+		"                  \"default\": true, \"maxlives\": \"five\" } ] }");
+
+	EXPECT_FALSE(e.valid);
+}
+
+TEST(AddonFile, ATeamsThatIsNotABooleanIsRefused)
+{
+	const AddonEntry entry = Parse(
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"teams\": 4,"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+	const AddonEntry variant = Parse(
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }],"
+		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\","
+		"                  \"default\": true, \"teams\": \"yes\" } ] }");
+
+	EXPECT_FALSE(entry.valid);
+	EXPECT_FALSE(variant.valid);
+}
+
 TEST(AddonFile, AFastWeaponsThatIsNotABooleanIsRefused)
 {
 	const AddonEntry e = Parse(

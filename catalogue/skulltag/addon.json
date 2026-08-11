@@ -21,7 +21,7 @@
       "cfg": "server.cfg",
       "kind": "pvp",
       "default": true,
-      "remixes": ["ffa", "teamdm"],
+      "teams": true,
       "tooltip": "Everyone for themselves! Will you prevail?"
     },
     {
@@ -38,7 +38,7 @@
       "name": "Last Man Standing",
       "cfg": "lms.cfg",
       "kind": "pvp",
-      "remixes": ["ffa", "teamlms"],
+      "teams": true,
       "tooltip": "One life each round. Last one alive takes it."
     },
     {

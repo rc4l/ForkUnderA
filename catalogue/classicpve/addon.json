@@ -7,7 +7,6 @@
   "gamemode": "cooperative",
   "lives": 0,
   "maxlives": 5,
-  "fastweapons": true,
   "order": 20,
   "accent": true,
   "remixes": ["vanilla", "brutaldoom", "complexdoom", "harddoom", "doom64"],
@@ -105,6 +104,9 @@
     },
     {
       "id": "dbzone",
+      "maxlives": 0,
+      "fastweapons": true,
+      "remixes": [],
       "name": "Doom Barracks Zone",
       "cfg": "dbzone.cfg",
       "kind": "pve",
@@ -119,6 +121,9 @@
     },
     {
       "id": "dbzonex",
+      "maxlives": 0,
+      "fastweapons": true,
+      "remixes": [],
       "name": "Doom Barracks Zone: X Edition",
       "cfg": "dbzonex.cfg",
       "kind": "pve",
@@ -137,6 +142,8 @@
     },
     {
       "id": "invasionuac",
+      "maxlives": 0,
+      "fastweapons": true,
       "name": "Invasion UAC",
       "cfg": "invasionuac.cfg",
       "kind": "pve",
@@ -150,6 +157,8 @@
     },
     {
       "id": "destunknown",
+      "maxlives": 0,
+      "fastweapons": true,
       "name": "Destination Unknown",
       "cfg": "destunknown.cfg",
       "kind": "pve",

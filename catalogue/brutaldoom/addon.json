@@ -6,7 +6,7 @@
   "map": "BDM01",
   "kind": "pvp",
   "gamemode": "deathmatch",
-  "remixes": ["ffa", "teamdm"],
+  "teams": true,
   "files": [
     {
       "name": "brutal22test6.pk3",

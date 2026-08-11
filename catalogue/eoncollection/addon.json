@@ -25,7 +25,7 @@
       "cfg": "server.cfg",
       "kind": "pvp",
       "default": true,
-      "remixes": ["ffa", "teamdm"],
+      "teams": true,
       "tooltip": "Everyone for themselves, across all three mappacks."
     },
     {
@@ -34,7 +34,7 @@
       "name": "Last Man Standing",
       "cfg": "lms.cfg",
       "kind": "pvp",
-      "remixes": ["ffa", "teamlms"],
+      "teams": true,
       "tooltip": "Two lives each round. Last one alive takes it."
     }
   ]

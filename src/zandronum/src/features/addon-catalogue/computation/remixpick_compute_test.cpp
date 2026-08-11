@@ -150,12 +150,31 @@ TEST(OfferedRemixes, AVariantsListOverridesTheEntrys)
 
 	AddonVariant duel;
 	duel.remixes.push_back("teamdm");
+	duel.remixesSet = true;
 	entry.variants.push_back(duel);
 
 	const std::vector<AddonRemix> offered = OfferedRemixes(entry, 0, Pool());
 
 	ASSERT_EQ(1u, offered.size());
 	EXPECT_EQ("teamdm", offered[0].id) << "the entry's list must not show through";
+}
+
+TEST(OfferedRemixes, AVariantMayWriteAnEmptyListToTakeNone)
+{
+	// [rc4l] The override is keyed on the KEY being there, not on the list being non-empty, and this
+	// is why. Both Doom Barracks Zones sit in an entry offering four mixes and can take none of them:
+	// the pack replaces the weapons itself. Read as silence, "remixes": [] handed them all four.
+	std::vector<std::string> entryWants;
+	entryWants.push_back("classic");
+	entryWants.push_back("survival");
+
+	AddonEntry entry = EntryWith(entryWants);
+
+	AddonVariant dbz;
+	dbz.remixesSet = true;
+	entry.variants.push_back(dbz);
+
+	EXPECT_TRUE(OfferedRemixes(entry, 0, Pool()).empty());
 }
 
 TEST(OfferedRemixes, AVariantWithNoListOfItsOwnFallsBackToTheEntrys)

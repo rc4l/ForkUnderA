@@ -115,14 +115,52 @@ struct AddonVariant
 	// [rc4l] Which remixes THIS way of playing can take, when that is not the same as the entry's.
 	//
 	// Skulltag is the case that needs it: three lives is a real choice for its Invasion and nonsense
-	// for its Duel, and the two live under one entry. Empty means "whatever the entry says", so a
-	// pack whose ways of playing all take the same remixes states it once.
+	// for its Duel, and the two live under one entry. A variant that does not WRITE the key takes
+	// whatever the entry says, so a pack whose ways of playing all take the same remixes states it
+	// once.
 	std::vector<std::string> remixes;
+
+	// [rc4l] Whether the key was there at all, which is what makes "none" sayable.
+	//
+	// The override used to be keyed on the list being non-empty, so "remixes": [] read as silence and
+	// fell back to the entry's. Both Doom Barracks Zones need the opposite: they sit in an entry whose
+	// other variants take four mixes, and neither of them can take any -- the pack replaces the
+	// weapons itself. Presence is the override, emptiness is the answer.
+	bool remixesSet;
+
+	// [rc4l] Whether to offer the team-count control, and the same question `fastWeapons` answers at
+	// entry level: is this axis a real choice here, or is it the pack's own business?
+	//
+	// Per variant rather than per entry because it genuinely differs per variant. Skulltag's
+	// Deathmatch and its Last Man Standing take it; its Duel, its CTF and its Skulltag variant do not,
+	// and the last of those declares deathmatch while running a mode of its own -- see
+	// teamspick_compute.h for why reading the gamemode alone would get that one wrong.
+	bool teams;
+
+	// [rc4l] The entry's lives, for a way of playing that does not want the entry's answer. NEGATIVE
+	// means unset, which is why they are not plain ints: a ceiling of 0 is meaningful -- it is how a
+	// variant opts out of the control altogether -- so emptiness needs a value of its own.
+	//
+	// Needed as soon as an entry gathers packs that are not alike. Popular Co-op Maps holds six
+	// campaign mapsets that can sensibly be run as Survival and four co-op packs that cannot, and one
+	// entry-level answer put a lives slider on Destination Unknown, which has no survival way of
+	// playing it at all.
+	int defaultLives;
+	int maxLives;
+
+	// [rc4l] Whether THIS way of playing offers the weapon speed. Added to the entry's rather than
+	// replacing it, so an entry may say it once and a variant may say it for itself.
+	//
+	// The same lesson as the lives above, found the same way: the entry said yes for four packs built
+	// on never letting go of the trigger, and Hell Revealed II, which is not one of them, got the
+	// slider too.
+	bool fastWeapons;
 
 	// Which one a player who has expressed no preference gets. Exactly one may claim it.
 	bool isDefault;
 
-	AddonVariant() : kind(VariantKind::Unknown), gameMode(HostGameMode::Unknown), isDefault(false) {}
+	AddonVariant() : kind(VariantKind::Unknown), gameMode(HostGameMode::Unknown), remixesSet(false),
+		teams(false), defaultLives(-1), maxLives(-1), fastWeapons(false), isDefault(false) {}
 };
 
 struct AddonEntry
@@ -192,6 +230,12 @@ struct AddonEntry
 	// invite it.
 	bool fastWeapons;
 
+	// [rc4l] Whether to offer the team-count control, for an entry that plays ONE way and so has no
+	// variant to carry it. An entry saying yes says it for every way of playing it has; a variant may
+	// say it for itself. See AddonVariant::teams, and teamspick_compute.h for what it costs to get
+	// this wrong.
+	bool teams;
+
 	// [rc4l] Mark this entry as curated: its name is drawn with the leading word in the accent colour
 	// and the rest plain. Separate from `order` on purpose: being first and being marked are
 	// different claims, and an entry may want one without the other.
@@ -205,7 +249,8 @@ struct AddonEntry
 	std::string error;		// why not, when invalid
 
 	AddonEntry() : kind(VariantKind::Unknown), gameMode(HostGameMode::Unknown),
-		defaultLives(0), maxLives(0), fastWeapons(false), order(0), accent(false), valid(false) {}
+		defaultLives(0), maxLives(0), fastWeapons(false), teams(false), order(0), accent(false),
+		valid(false) {}
 };
 
 // [rc4l] Something you can play an entry WITH, on top of whichever way of playing you chose.
