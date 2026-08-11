@@ -73,6 +73,7 @@
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/server-browser/computation/joinintent_compute.h"
+#include "features/server-browser/computation/ownjoin_compute.h"
 #include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
 #include "features/server-browser/computation/scrollview_compute.h"
@@ -1832,30 +1833,121 @@ public:
 	//
 	// [rc4l] Connect to the server we just started.
 	//
-	// Straight to the address rather than through the browser's own join path: that one resolves WADs
-	// and may start downloads, and neither can apply here. Our server is running the files WE are
-	// running -- that is where its command line came from -- so there is by construction nothing to
-	// fetch and nothing to check.
+	// Not through the browser's own join path: that one resolves WADs and may start downloads, and
+	// neither applies to a server whose files are already on this machine by definition. What DOES
+	// apply is the reload, because a catalogue entry means the server is running the entry's files
+	// and this client is still running whatever it had. computation/ownjoin_compute decides which.
+	// [rc4l] Whether the running server was started from a catalogue entry rather than from the form.
+	// A custom setup runs the client's own files, so there is nothing for it to reload onto.
+	bool HostingCatalogueEntry( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		return ( g_HostingEntry >= 0 ) && ( g_HostingEntry < static_cast<int>( entries.size( )));
+	}
+
+	// [rc4l] What the entry we are HOSTING loads, resolved to paths, rebuilt from the entry rather
+	// than remembered. Answers only for a catalogue entry; ask HostingCatalogueEntry first.
+	//
+	// The pair of statics above is filled in when the server is started and cleared the first time it
+	// is used, which makes "did we remember to reload" a question with a wrong answer available. If
+	// the ready edge ever fires with them empty -- a second edge, a reload that returned instead of
+	// restarting, a switch -- the join used to go ahead with whatever the client happened to have
+	// loaded, and land on protected lump authentication failed. The client cannot tell that from a
+	// genuinely mismatched server, so it reads as the experience being broken.
+	//
+	// Derived from g_HostingEntry, which IS what the running server was started from, so it cannot go
+	// stale in that way. Returning false here means the files cannot be found NOW, which is a refusal
+	// and not a reason to connect anyway -- see computation/ownjoin_compute.
+	bool HostedEntryFiles( FString &outIwad, TArray<FString> &outPwads )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if ( !HostingCatalogueEntry( ))
+			return false;
+
+		const zx::AddonEntry &addon = entries[g_HostingEntry].addon;
+
+		// The one place everything asks what an entry loads, so this cannot answer differently from
+		// what the server was handed.
+		const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( addon );
+
+		std::vector<std::string> iwads;
+		static const char *const kCandidates[] = {
+			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
+			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
+		};
+		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
+		{
+			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
+				iwads.push_back( kCandidates[i] );
+		}
+
+		const zx::IwadPick pick = zx::PickIwad( addon.iwad, iwads );
+		if ( pick.choice == zx::IwadChoice::None )
+			return false;
+
+		outIwad = zx::FindIwadInEngineSearchPaths( pick.iwad.c_str( ));
+		if ( outIwad.IsEmpty( ))
+			outIwad = zx::FindFileInEngineSearchPaths( pick.iwad.c_str( ));
+		if ( outIwad.IsEmpty( ))
+			return false;
+
+		const std::vector<FString> verified = HostEntryVerifiedPaths( loads );
+
+		outPwads.Clear( );
+		for ( size_t i = 0; i < loads.size( ); ++i )
+		{
+			FString path = ( i < verified.size( )) ? verified[i] : FString( );
+			if ( path.IsEmpty( ))
+				path = zx::FindFileInEngineSearchPaths( loads[i].name.c_str( ));
+			if ( path.IsEmpty( ))
+				return false;		// cannot reload onto a file we cannot find; say so rather than guess
+
+			outPwads.Push( path );
+		}
+
+		return true;
+	}
+
 	void JoinOwnServer( )
 	{
 		const FString address = zx::HostConnectAddress( );
 		if ( address.IsEmpty( ))
 			return;
 
-		// [rc4l] A catalogue entry is the one case where the server is NOT running what we are, so
-		// connecting straight to it fails protected-lump authentication: the server has the entry's
-		// files and this client does not.
-		//
-		// RequestReload is what the browser's own join uses, and it is the reason this works where an
-		// earlier attempt did not. Queueing `wad_reload` and a `connect` behind it loses the connect,
-		// because the reload restarts the game loop and takes the queued command with it. This
-		// instead rewrites argv and throws CRestartException, so the connect RIDES the restart rather
-		// than waiting for it. It also validates every file before tearing anything down, so a bad
-		// PWAD leaves the running game alone.
-		if ( g_HostEntryIwad.IsNotEmpty( ))
+		// [rc4l] Rebuild what the start-time statics were meant to carry, whenever they are empty, and
+		// find out whether we are allowed to connect at all. The rule is computation/ownjoin_compute:
+		// hosting an entry means the server is NOT running what we are, so a connect that skips the
+		// reload cannot authenticate, and guessing is worse than saying so.
+		FString rebuiltIwad;
+		TArray<FString> rebuiltPwads;
+
+		zx::OwnJoinIn in;
+		in.hostingCatalogueEntry = HostingCatalogueEntry( );
+		in.haveRememberedFiles = g_HostEntryIwad.IsNotEmpty( );
+		in.canRebuildFiles = in.hostingCatalogueEntry && !in.haveRememberedFiles
+			&& HostedEntryFiles( rebuiltIwad, rebuiltPwads );
+
+		const zx::OwnJoinOut decision = zx::DecideOwnJoin( in );
+
+		if ( decision.action == zx::OwnJoinAction::Refuse )
 		{
-			const FString iwad = g_HostEntryIwad;
-			TArray<FString> pwads = g_HostEntryPwads;
+			// The server is up and only the join failed, so it stays up: the player can fix the file
+			// and press JOIN rather than lose the server to a problem on their own end.
+			ShowNotice( "Cannot join your own server", decision.refusal.c_str( ));
+			return;
+		}
+
+		// [rc4l] RequestReload is what the browser's own join uses, and it is the reason this works
+		// where an earlier attempt did not. Queueing `wad_reload` and a `connect` behind it loses the
+		// connect, because the reload restarts the game loop and takes the queued command with it.
+		// This instead rewrites argv and throws CRestartException, so the connect RIDES the restart
+		// rather than waiting for it. It also validates every file before tearing anything down, so a
+		// bad PWAD leaves the running game alone.
+		if ( decision.action == zx::OwnJoinAction::ReloadThenConnect )
+		{
+			const FString iwad = decision.useRebuilt ? rebuiltIwad : g_HostEntryIwad;
+			TArray<FString> pwads = decision.useRebuilt ? rebuiltPwads : g_HostEntryPwads;
 
 			g_HostEntryIwad = "";
 			g_HostEntryPwads.Clear( );
