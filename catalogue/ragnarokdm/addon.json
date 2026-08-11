@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "name": "Ragnarok DM",
+  "summary": "Twenty-three arenas on Skulltag's weapons and runes.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "files": [
+    {
+      "name": "skulltag_content-3.2-beta2.pk3",
+      "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+    },
+    {
+      "name": "ragnarokdm.pk3",
+      "md5": "ccd0a71b55efda3b20ea5007d6c75ac4"
+    },
+    {
+      "name": "ragnarokmp.pk3",
+      "md5": "1f0db7810baa18e6799c64abbf911c5f"
+    },
+    {
+      "name": "zandrospree2rc2.pk3",
+      "md5": "25b2a3c4f46e50f4016b640119aefae6"
+    }
+  ],
+  "variants": [
+    {
+      "id": "dm",
+      "name": "Deathmatch",
+      "cfg": "server.cfg",
+      "kind": "pvp",
+      "default": true,
+      "remixes": ["ffa", "teamdm"],
+      "tooltip": "Everyone for themselves, across all twenty-three."
+    },
+    {
+      "id": "lms",
+      "name": "Last Man Standing",
+      "cfg": "lms.cfg",
+      "kind": "pvp",
+      "remixes": ["ffa", "teamlms"],
+      "tooltip": "One life each round. Last one alive takes it."
+    }
+  ]
+}
