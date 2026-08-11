@@ -193,6 +193,18 @@ static int serverbrowser_OriginY( void );
 // gap that merely LOOKS right, the glow lands on the previous button and points at the wrong answer.
 #define SB_DLG_BTN_GAP		22
 #define SB_DLG_FIELD_H		16
+
+// [rc4l] The remix picker, wider than the question dialog and split in two: the names on the left,
+// what the highlighted one actually does on the right.
+//
+// Its own width because the dialog's is sized for a sentence and a row of buttons. A list beside a
+// description needs more, and the description is the reason the picker is a panel rather than three
+// buttons -- "Survival" tells you nothing you did not already guess, and "three lives each, spend
+// them and you watch" is the whole answer.
+#define SB_RMX_W			320
+#define SB_RMX_PAD			14
+#define SB_RMX_LIST_W		104
+#define SB_RMX_GAP			12
 #define SB_BUTTON_LEFT		( SB_DETAIL_LEFT + SB_DETAIL_PAD )
 #define SB_BUTTON_RIGHT		( SB_DETAIL_RIGHT - SB_DETAIL_PAD )
 #define SB_BUTTON_TOP		( SB_DETAIL_BOTTOM - SB_DETAIL_PAD - SB_BUTTON_H )
@@ -2121,11 +2133,13 @@ public:
 		return h;
 	}
 
-	// One wrapping pass, shared by the measure and the draw so they cannot disagree about how many
-	// lines there are -- which would centre the panel on the wrong height.
-	int DialogWrap( const FString &text, int y, bool draw )
+	// [rc4l] One wrapping pass, shared by the measure and the draw so they cannot disagree about how
+	// many lines there are -- which would centre the panel on the wrong height.
+	//
+	// Taken out of DialogWrap when the remix picker wanted the same thing left-aligned in a column.
+	// Two loops would have been two chances to measure one way and draw another.
+	int WrapText( const FString &text, int x, int y, int width, int colour, bool bCentre, bool draw )
 	{
-		const int width = SB_DLG_W - 2 * SB_DLG_PAD;
 		int lines = 0;
 		FString line;
 		long start = 0;
@@ -2143,8 +2157,8 @@ public:
 			if ( line.IsNotEmpty( ) && ( SmallFont->StringWidth( candidate ) > width ))
 			{
 				if ( draw )
-					screen->DrawText( SmallFont, CR_GRAY,
-						( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( line ) / 2 ),
+					screen->DrawText( SmallFont, colour,
+						bCentre ? ( x + ( width - SmallFont->StringWidth( line )) / 2 ) : x,
 						y + lines * SB_DLG_LINE, line,
 						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 				++lines;
@@ -2161,14 +2175,20 @@ public:
 		if ( line.IsNotEmpty( ))
 		{
 			if ( draw )
-				screen->DrawText( SmallFont, CR_GRAY,
-					( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( line ) / 2 ),
+				screen->DrawText( SmallFont, colour,
+					bCentre ? ( x + ( width - SmallFont->StringWidth( line )) / 2 ) : x,
 					y + lines * SB_DLG_LINE, line,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			++lines;
 		}
 
 		return lines;
+	}
+
+	int DialogWrap( const FString &text, int y, bool draw )
+	{
+		return WrapText( text, SB_DLG_LEFT + SB_DLG_PAD, y, SB_DLG_W - 2 * SB_DLG_PAD,
+			CR_GRAY, true, draw );
 	}
 
 	int DialogWrapCount( const FString &text )
@@ -2221,20 +2241,52 @@ public:
 		return HostOfferedRemixes( entries[g_HostEntrySel].addon );
 	}
 
-	int RemixRowH( )		{ return SB_DLG_LINE * 2 + 8; }
+	int RemixRowH( )		{ return SB_DLG_LINE + 5; }
+
+	// Where the two columns are. The names are short and the descriptions are not, so the split is
+	// nowhere near the middle.
+	int RemixLeft( )		{ return ( SB_VIRT_W - SB_RMX_W ) / 2; }
+	int RemixListX( )		{ return RemixLeft( ) + SB_RMX_PAD; }
+	int RemixDetailX( )		{ return RemixListX( ) + SB_RMX_LIST_W + SB_RMX_GAP; }
+	int RemixDetailW( )		{ return SB_RMX_W - 2 * SB_RMX_PAD - SB_RMX_LIST_W - SB_RMX_GAP; }
+
+	// [rc4l] Measured across EVERY choice rather than the highlighted one, so the panel is the same
+	// size whichever row you are on. Sizing it to the current description makes the box grow and
+	// shrink under the cursor, which moves the row you were about to click.
+	int RemixBodyH( )
+	{
+		const std::vector<zx::AddonRemix> choices = RemixChoices( );
+
+		int longest = 0;
+		for ( size_t i = 0; i < choices.size( ); ++i )
+		{
+			const int lines = WrapText( choices[i].summary.c_str( ), 0, 0, RemixDetailW( ),
+				CR_GRAY, false, false );
+			if ( lines > longest )
+				longest = lines;
+		}
+
+		const int listH = static_cast<int>( choices.size( )) * RemixRowH( );
+		const int detailH = SB_DLG_LINE + 4 + ( longest * SB_DLG_LINE );
+
+		return MAX( listH, detailH );
+	}
 
 	int RemixPanelH( )
 	{
-		const int rows = static_cast<int>( RemixChoices( ).size( ));
-		return SB_DLG_PAD + SB_DLG_LINE + 6 + ( rows * RemixRowH( )) + SB_DLG_PAD;
+		return SB_RMX_PAD + SB_DLG_LINE + 8 + RemixBodyH( ) + SB_RMX_PAD;
+	}
+
+	int RemixBodyY( )
+	{
+		return (( SB_VIRT_H - RemixPanelH( )) / 2 ) + SB_RMX_PAD + SB_DLG_LINE + 8;
 	}
 
 	// Where a row sits, asked by the drawing AND the hit test, so a choice can never be somewhere
 	// other than where it is clickable.
 	int RemixRowY( int index )
 	{
-		const int top = ( SB_VIRT_H - RemixPanelH( )) / 2;
-		return top + SB_DLG_PAD + SB_DLG_LINE + 6 + ( index * RemixRowH( ));
+		return RemixBodyY( ) + ( index * RemixRowH( ));
 	}
 
 	void OpenRemixPicker( )
@@ -2282,13 +2334,14 @@ public:
 
 		const zx::PanelColor topCol = { 30, 32, 46, 246 };
 		const zx::PanelColor botCol = { 12, 13, 20, 252 };
-		DrawRoundedPanel( SB_DLG_LEFT, top, SB_DLG_W, h, topCol, botCol, 10 );
+		DrawRoundedPanel( RemixLeft( ), top, SB_RMX_W, h, topCol, botCol, 10 );
 
 		screen->DrawText( SmallFont, CR_WHITE,
 			( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( "HOW TO PLAY IT" ) / 2 ),
-			top + SB_DLG_PAD, "HOW TO PLAY IT",
+			top + SB_RMX_PAD, "HOW TO PLAY IT",
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
+		// The names, down the left.
 		for ( size_t i = 0; i < choices.size( ); ++i )
 		{
 			const int rowY = RemixRowY( static_cast<int>( i ));
@@ -2298,29 +2351,50 @@ public:
 			if ( bOn || bHot )
 			{
 				screen->Dim( bOn ? PalEntry( 60, 70, 96 ) : PalEntry( 40, 44, 60 ), bOn ? 0.55f : 0.4f,
-					serverbrowser_ToScreenX( SB_DLG_LEFT + SB_DLG_PAD - 4 ),
+					serverbrowser_ToScreenX( RemixListX( ) - 4 ),
 					serverbrowser_ToScreenY( rowY - 2 ),
-					serverbrowser_ToScreenX( SB_DLG_LEFT + SB_DLG_W - SB_DLG_PAD + 4 ) -
-						serverbrowser_ToScreenX( SB_DLG_LEFT + SB_DLG_PAD - 4 ),
-					serverbrowser_ToScreenY( rowY + RemixRowH( ) - 4 ) -
+					serverbrowser_ToScreenX( RemixListX( ) + SB_RMX_LIST_W ) -
+						serverbrowser_ToScreenX( RemixListX( ) - 4 ),
+					serverbrowser_ToScreenY( rowY + RemixRowH( ) - 2 ) -
 						serverbrowser_ToScreenY( rowY - 2 ));
 			}
 
 			screen->DrawText( SmallFont, bOn ? CR_GOLD : CR_WHITE,
-				SB_DLG_LEFT + SB_DLG_PAD, rowY, choices[i].name.c_str( ),
+				RemixListX( ), rowY, serverbrowser_FitName( choices[i].name.c_str( ), SB_RMX_LIST_W - 4 ),
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
 
-			if ( choices[i].summary.empty( ))
-				continue;
+		// [rc4l] The rule between them, so the two columns read as two things rather than as one
+		// ragged block of text.
+		{
+			const int x = RemixDetailX( ) - SB_RMX_GAP / 2;
+			const int barTop = serverbrowser_ToScreenY( RemixBodyY( ) - 2 );
+			const int barH = serverbrowser_ToScreenY( RemixBodyY( ) + RemixBodyH( )) - barTop;
+			const int w = MAX( 1, serverbrowser_ToScreenX( x + 1 ) - serverbrowser_ToScreenX( x ));
 
-			// The summary is the part that says what choosing this would do, which is why the picker
-			// is a list: a row of buttons has nowhere to put it.
-			const FString line = serverbrowser_FitName( choices[i].summary.c_str( ),
-				SB_DLG_W - 2 * SB_DLG_PAD );
+			for ( int i = 0; i < barH; ++i )
+			{
+				const int a = zx::ComputeSeparatorAlpha( i, barH, 110 );
+				if ( a > 0 )
+					screen->Dim( PalEntry( 150, 170, 215 ), a / 255.f,
+						serverbrowser_ToScreenX( x ), barTop + i, w, 1 );
+			}
+		}
 
-			screen->DrawText( SmallFont, CR_DARKGRAY,
-				SB_DLG_LEFT + SB_DLG_PAD, rowY + SB_DLG_LINE, line,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		// What the highlighted one actually does, down the right. This is the reason the picker is a
+		// panel and not three buttons: "Survival" tells you nothing you had not already guessed.
+		if (( g_RemixCursor < 0 ) || ( g_RemixCursor >= static_cast<int>( choices.size( ))))
+			return;
+
+		const zx::AddonRemix &shown = choices[g_RemixCursor];
+
+		screen->DrawText( SmallFont, CR_GOLD, RemixDetailX( ), RemixBodyY( ), shown.name.c_str( ),
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+		if ( !shown.summary.empty( ))
+		{
+			WrapText( shown.summary.c_str( ), RemixDetailX( ), RemixBodyY( ) + SB_DLG_LINE + 4,
+				RemixDetailW( ), CR_GRAY, false, true );
 		}
 	}
 
@@ -7338,15 +7412,20 @@ public:
 			{
 				const int rowY = RemixRowY( static_cast<int>( i ));
 
-				if (( x < serverbrowser_ToScreenX( SB_DLG_LEFT + SB_DLG_PAD - 4 )) ||
-					( x >= serverbrowser_ToScreenX( SB_DLG_LEFT + SB_DLG_W - SB_DLG_PAD + 4 )) ||
+				if (( x < serverbrowser_ToScreenX( RemixListX( ) - 4 )) ||
+					( x >= serverbrowser_ToScreenX( RemixListX( ) + SB_RMX_LIST_W )) ||
 					( y < serverbrowser_ToScreenY( rowY - 2 )) ||
-					( y >= serverbrowser_ToScreenY( rowY + RemixRowH( ) - 4 )))
+					( y >= serverbrowser_ToScreenY( rowY + RemixRowH( ) - 2 )))
 				{
 					continue;
 				}
 
 				g_RemixHot = static_cast<int>( i );
+
+				// Hovering moves the cursor too, so the right-hand pane describes whatever the
+				// pointer is over. Reading one and pointing at another is the whole failure a
+				// description pane is meant to avoid.
+				g_RemixCursor = static_cast<int>( i );
 
 				if ( type == MOUSE_Click )
 					ChooseRemix( static_cast<int>( i ));
