@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "name": "Cybercrime 3",
+  "summary": "Ten maps, shuffled.",
+  "cfg": "cybercrime3.cfg",
+  "files": [
+    {
+      "name": "cybercrime3_fix.wad",
+      "md5": "d1f423fcb1f1aa5c6912c912efe04362"
+    }
+  ]
+}
