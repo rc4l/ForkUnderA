@@ -2168,23 +2168,38 @@ public:
 		if ( found == NULL )
 			return;
 
-		const std::vector<std::string> lines = zx::TooltipLines( found->text.GetChars( ));
-		if ( lines.empty( ))
+		// [rc4l] WRAPPED, at a fixed maximum. It used to break only on newlines the caller had put
+		// there, which is exactly what a Win32 tooltip does before anybody sends it
+		// TTM_SETMAXTIPWIDTH: one line, no cap, as wide as the string happens to be. The file list
+		// tooltip is a whole comma-separated set of names, and it drew a box across the screen.
+		//
+		// There is no clever sizing rule to copy here -- Windows has a default (unbounded) and every
+		// well-behaved app picks a width. A third of the view is ours: wide enough that ordinary one
+		// line tips stay on one line, narrow enough that the box never spans the panel it explains.
+		FBrokenLines *broken = V_BreakLines( SmallFont, SB_VIRT_W / 3, found->text.GetChars( ));
+		if ( broken == NULL )
 			return;
 
-		// Sized to its content, in virtual units, so a tooltip can be as long or as tall as whatever
-		// it has to say -- a WAD's full name, its hash and its size is three lines and nothing had to
-		// be told about it in advance.
 		const int lineH = SmallFont->GetHeight( ) + 1;
 		const int padX = 4;
 		const int padY = 3;
 
+		// V_BreakLines measured each line as it broke it, so the width is the widest it produced --
+		// which for a short tip is the text itself, not the cap. The box still shrinks to its
+		// content; the cap only stops it growing.
 		int contentW = 0;
-		for ( size_t i = 0; i < lines.size( ); ++i )
-			contentW = MAX( contentW, SmallFont->StringWidth( lines[i].c_str( )));
+		int count = 0;
+		for ( ; broken[count].Width >= 0; ++count )
+			contentW = MAX( contentW, broken[count].Width );
+
+		if ( count == 0 )
+		{
+			V_FreeBrokenLines( broken );
+			return;
+		}
 
 		const int boxW = contentW + 2 * padX;
-		const int boxH = static_cast<int>( lines.size( )) * lineH + 2 * padY;
+		const int boxH = count * lineH + 2 * padY;
 
 		// The pointer is in screen pixels and the box is laid out in virtual ones, so the placement is
 		// done in virtual space -- the same space the text will be drawn in.
@@ -2210,14 +2225,16 @@ public:
 		screen->Dim( PalEntry( 120, 130, 165 ), 0.55f, right - 1, top, 1, bottom - top );
 
 		int y = box.y + padY;
-		for ( size_t i = 0; i < lines.size( ); ++i )
+		for ( int i = 0; i < count; ++i )
 		{
 			// First line white, the rest dimmer: the thing hovered, then what is known about it.
 			screen->DrawText( SmallFont, ( i == 0 ) ? CR_WHITE : CR_GRAY,
-				box.x + padX, y, lines[i].c_str( ),
+				box.x + padX, y, broken[i].Text,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			y += lineH;
 		}
+
+		V_FreeBrokenLines( broken );
 	}
 
 	// [rc4l] How tall the dialog needs to be for what it is carrying, worked out before anything is
