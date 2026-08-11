@@ -55,7 +55,12 @@ struct HostPlan
 // A missing PWAD is not a blocker: it is a download, and the whole point of shipping hashes is that
 // the downloader can go and get it. A missing IWAD IS a blocker, because there is nothing to
 // substitute and nothing to fetch.
+// `files` is what the CHOSEN WAY OF PLAYING loads, which PickVariant resolves: the entry's own files
+// followed by the variant's. Passed in rather than read off the entry, because an entry no longer
+// has one answer -- two variants of the same pack can load entirely different things, and reading
+// addon.files here would plan for whichever of them happened to be listed at the top.
 HostPlan BuildHostPlan(const AddonEntry &addon,
+                       const std::vector<AddonFileRef> &files,
                        const IwadPick &iwad,
                        const std::string &serverCfgPath,
                        const HostChoices &choices,

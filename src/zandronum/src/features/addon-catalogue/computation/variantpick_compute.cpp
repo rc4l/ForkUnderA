@@ -6,6 +6,20 @@
 namespace zx
 {
 
+namespace
+{
+
+// The entry's files, then the chosen variant's. Order is load order, and the entry's come first
+// because they are the base a variant adds to.
+void ResolveFiles(const AddonEntry &entry, const AddonVariant &variant,
+	std::vector<AddonFileRef> &out)
+{
+	out = entry.files;
+	out.insert(out.end(), variant.files.begin(), variant.files.end());
+}
+
+} // namespace
+
 VariantPick PickVariant(const AddonEntry &entry, const std::string &wantedId)
 {
 	VariantPick pick;
@@ -13,6 +27,7 @@ VariantPick PickVariant(const AddonEntry &entry, const std::string &wantedId)
 	if (entry.variants.empty())
 	{
 		pick.cfg = kDefaultVariantCfg;
+		pick.files = entry.files;
 		return pick;
 	}
 
@@ -28,6 +43,7 @@ VariantPick PickVariant(const AddonEntry &entry, const std::string &wantedId)
 			pick.index = static_cast<int>(i);
 			pick.cfg = entry.variants[i].cfg;
 			pick.name = entry.variants[i].name;
+			ResolveFiles(entry, entry.variants[i], pick.files);
 			return pick;
 		}
 	}
@@ -48,6 +64,7 @@ VariantPick PickVariant(const AddonEntry &entry, const std::string &wantedId)
 	pick.index = static_cast<int>(chosen);
 	pick.cfg = entry.variants[chosen].cfg;
 	pick.name = entry.variants[chosen].name;
+	ResolveFiles(entry, entry.variants[chosen], pick.files);
 	return pick;
 }
 
