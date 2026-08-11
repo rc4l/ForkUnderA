@@ -1,7 +1,0 @@
-{
-  "schema": 1,
-  "name": "Survival",
-  "summary": "If you die three times, you're out.",
-  "group": "lives",
-  "cfg": "survival.cfg"
-}

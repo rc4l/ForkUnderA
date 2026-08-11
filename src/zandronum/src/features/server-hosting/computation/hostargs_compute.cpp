@@ -173,6 +173,21 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 		out.push_back(config.execRemixCfgs[i]);
 	}
 
+	// [rc4l] After every exec, so the gameplay panel beats the cfgs the way the settings form does.
+	// A name that is not a plain cvar name is dropped rather than escaped, same as every other
+	// untrusted value here: it would otherwise be read as a flag of its own.
+	for (size_t i = 0; i < config.extraCvars.size(); ++i)
+	{
+		const std::string &name = config.extraCvars[i].first;
+		const std::string &value = config.extraCvars[i].second;
+
+		if (name.empty() || !IsSafeArgValue(name) || !IsSafeArgValue(value))
+			continue;
+
+		out.push_back("+" + name);
+		out.push_back(value);
+	}
+
 	if (IsSafeArgValue(config.map))
 	{
 		out.push_back("+map");

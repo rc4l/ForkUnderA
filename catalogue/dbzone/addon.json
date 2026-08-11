@@ -5,6 +5,9 @@
   "iwad": "doom2.wad",
   "map": "MAP01",
   "kind": "pve",
+  "gamemode": "cooperative",
+  "lives": 0,
+  "maxlives": 5,
   "variants": [
     {
       "id": "classic",

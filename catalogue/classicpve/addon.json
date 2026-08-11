@@ -4,9 +4,12 @@
   "summary": "Seven of the megawads people still run, played cooperatively on Ultra-Violence.",
   "iwad": "doom2.wad",
   "kind": "pve",
+  "gamemode": "cooperative",
+  "lives": 0,
+  "maxlives": 5,
   "order": 20,
   "accent": true,
-  "remixes": ["classic", "survival2", "nomod", "brutaldoom", "complexdoom", "harddoom"],
+  "remixes": ["vanilla", "brutaldoom", "complexdoom", "harddoom"],
   "variants": [
     {
       "id": "av",

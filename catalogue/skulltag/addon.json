@@ -16,6 +16,7 @@
   "variants": [
     {
       "id": "dm",
+      "gamemode": "deathmatch",
       "name": "Deathmatch",
       "cfg": "server.cfg",
       "kind": "pvp",
@@ -25,6 +26,7 @@
     },
     {
       "id": "duel",
+      "gamemode": "duel",
       "name": "Duel",
       "cfg": "duel.cfg",
       "kind": "pvp",
@@ -32,6 +34,7 @@
     },
     {
       "id": "lms",
+      "gamemode": "lastmanstanding",
       "name": "Last Man Standing",
       "cfg": "lms.cfg",
       "kind": "pvp",
@@ -40,6 +43,7 @@
     },
     {
       "id": "ctf",
+      "gamemode": "ctf",
       "name": "Capture the Flag",
       "cfg": "ctf.cfg",
       "kind": "pvp",
@@ -47,6 +51,7 @@
     },
     {
       "id": "skulltag",
+      "gamemode": "deathmatch",
       "name": "Skulltag",
       "cfg": "skulltag.cfg",
       "kind": "pvp",
@@ -54,10 +59,10 @@
     },
     {
       "id": "invasion",
+      "gamemode": "invasion",
       "name": "Invasion",
       "cfg": "invasion.cfg",
       "kind": "pve",
-      "remixes": ["classic", "survival"],
       "tooltip": "Everyone on the same side, against waves of monsters."
     }
   ]

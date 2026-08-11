@@ -39,6 +39,33 @@ struct AddonFileRef
 //
 // Unknown exists so a value that is present but unrecognised has somewhere to land, which keeps the
 // refusal specific: "kind is not pve or pvp" says more than "malformed value".
+// [rc4l] Which Zandronum gamemode a way of playing runs in, DECLARED rather than inferred.
+//
+// The cfg already says this by setting `cooperative`, `survival`, `invasion` and so on, but the cfg
+// is exec'd by the server and never read by the client, so the panel has no way to know. It needs to
+// know because whether a setting is even meaningful depends on it: only four of these honour
+// sv_maxlives, and one of them means something different by zero.
+//
+// Unknown is not an error. Most entries never declare it, and everything that reads this treats not
+// knowing as "offer nothing that depends on the gamemode", which is the safe answer.
+enum class HostGameMode
+{
+	Unknown,
+
+	Cooperative,
+	Survival,
+	Invasion,
+
+	Deathmatch,
+	TeamDeathmatch,
+	Duel,
+	LastManStanding,
+	TeamLastManStanding,
+	CaptureTheFlag,
+};
+
+HostGameMode ParseGameMode(const std::string &s);
+
 enum class VariantKind
 {
 	Unknown,
@@ -68,6 +95,11 @@ struct AddonVariant
 	std::string tooltip;	// optional; what this way of playing actually is
 	VariantKind kind;		// required; see VariantKind
 
+	// [rc4l] Optional, and falls back to the entry's. Declared per variant because it genuinely
+	// differs per variant: Ragnarok's Deathmatch and its Last Man Standing are the same files and
+	// the same maps, and only one of them has lives.
+	HostGameMode gameMode;
+
 	// [rc4l] Where this one opens, when it is not where the entry opens. Empty means the entry's.
 	//
 	// Needed the moment several packs live under one entry: three invasion packs open on alinv01,
@@ -90,7 +122,7 @@ struct AddonVariant
 	// Which one a player who has expressed no preference gets. Exactly one may claim it.
 	bool isDefault;
 
-	AddonVariant() : kind(VariantKind::Unknown), isDefault(false) {}
+	AddonVariant() : kind(VariantKind::Unknown), gameMode(HostGameMode::Unknown), isDefault(false) {}
 };
 
 struct AddonEntry
@@ -139,6 +171,19 @@ struct AddonEntry
 	// depends on spelling is one rename away from moving on its own.
 	int order;
 
+	// [rc4l] The gamemode every way of playing runs in unless it says otherwise, and what the lives
+	// control reads to know whether it means anything.
+	HostGameMode gameMode;
+
+	// [rc4l] How many lives this entry wants when nobody has chosen, and the most it will offer.
+	//
+	// Both are the entry's business rather than a global: Bosses from Hell is a boss rush and says
+	// it wants unlimited, and an invasion pack balanced around three has no use for a slider that
+	// goes to twenty. A max of 0 means the entry offers no lives control at all, whatever its
+	// gamemode, which is how a pack opts out.
+	int defaultLives;
+	int maxLives;
+
 	// [rc4l] Mark this entry as curated: its name is drawn with the leading word in the accent colour
 	// and the rest plain. Separate from `order` on purpose: being first and being marked are
 	// different claims, and an entry may want one without the other.
@@ -151,7 +196,8 @@ struct AddonEntry
 	bool valid;
 	std::string error;		// why not, when invalid
 
-	AddonEntry() : kind(VariantKind::Unknown), order(0), accent(false), valid(false) {}
+	AddonEntry() : kind(VariantKind::Unknown), gameMode(HostGameMode::Unknown),
+		defaultLives(0), maxLives(0), order(0), accent(false), valid(false) {}
 };
 
 // [rc4l] Something you can play an entry WITH, on top of whichever way of playing you chose.

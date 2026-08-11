@@ -58,6 +58,7 @@
 #include "features/addon-catalogue/zx_catalogue.h"
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/addon-catalogue/computation/livespick_compute.h"
 #include "features/addon-catalogue/computation/remixpick_compute.h"
 #include "features/addon-catalogue/computation/variantpick_compute.h"
 #include "features/addon-catalogue/computation/hostlist_compute.h"
@@ -826,6 +827,27 @@ static std::vector<zx::RemixPick> HostRemixPicks( const zx::AddonEntry &addon )
 	return zx::PickRemixes( HostOfferedRemixes( addon ), g_HostRemixIds );
 }
 
+// [rc4l] How many lives the player has asked for, or -1 for "not yet". Kept across entries like the
+// remix ids, and clamped per entry rather than reset: asking for two lives is a preference about how
+// you play, not about which pack you were looking at when you said it.
+static	int				g_HostLives = -1;
+
+// The lives control for the CHOSEN way of playing. The variant's gamemode when it declares one,
+// otherwise the entry's, because most packs play one way and should say it once.
+static zx::LivesControl HostLivesControl( const zx::AddonEntry &addon )
+{
+	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+	zx::HostGameMode mode = addon.gameMode;
+	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))) &&
+		( addon.variants[pick.index].gameMode != zx::HostGameMode::Unknown ))
+	{
+		mode = addon.variants[pick.index].gameMode;
+	}
+
+	return zx::LivesFor( mode, g_HostLives, addon.defaultLives, addon.maxLives );
+}
+
 // [rc4l] What the CHOSEN way of playing loads, remix included. Every question the host tab asks about
 // files -- what to list, what to size, what to verify, what to fetch, what to start on -- comes
 // through here.
@@ -901,6 +923,14 @@ struct HostGameplayRow
 };
 static	TArray<HostGameplayRow>	g_HostGameRows;
 static	int						g_HostGameHot = -1;
+
+// The lives track, recorded the same way and for the same reason: it scrolls, so where it is can
+// only be known once it has been drawn.
+static	int						g_HostLivesTrackX = 0;
+static	int						g_HostLivesTrackY = 0;
+static	int						g_HostLivesTrackW = 0;
+static	bool					g_HostLivesLive = false;	// drawn and usable this frame
+static	bool					g_HostLivesHot = false;
 
 // [rc4l] The remix picker, open over the panel. A list rather than a row of buttons, because the
 // dialog's three-button ceiling is exactly the wall this would hit: two options today, and the whole
@@ -3385,6 +3415,11 @@ public:
 			config.execCfg = plan.execCfg;
 			config.execRemixCfgs = plan.execRemixCfgs;
 
+			// [rc4l] Set directly rather than exec'd, and after everything, because what lives mean
+			// depends on the gamemode: in Cooperative asking for any is a switch to Survival, and in
+			// Invasion a zero is genuinely unlimited. No shared cfg can be right in both.
+			config.extraCvars = zx::LivesCvars( HostLivesControl( chosen.addon ));
+
 			// [rc4l] RESOLVED to full paths, not left as bare names. These are what the CLIENT
 			// reloads onto in order to join, and RequestReload's loadability check opens exactly
 			// what it is handed -- so a name is tested against the working directory, and a file
@@ -4034,6 +4069,40 @@ public:
 				}
 				return true;
 			}
+		}
+
+		// [rc4l] The lives track. Clicking anywhere on it sets the value at that point, which is what
+		// a track is for; there is no separate drag, so the knob is a readout rather than a handle to
+		// grab. Tested against the last frame's geometry, like the rows below.
+		g_HostLivesHot = false;
+		if ( g_HostLivesLive &&
+			( x >= serverbrowser_ToScreenX( g_HostLivesTrackX - 3 )) &&
+			( x < serverbrowser_ToScreenX( g_HostLivesTrackX + g_HostLivesTrackW + 3 )) &&
+			( y >= serverbrowser_ToScreenY( g_HostLivesTrackY - 1 )) &&
+			( y < serverbrowser_ToScreenY( g_HostLivesTrackY + SB_HOST_LINE - 1 )))
+		{
+			g_HostLivesHot = true;
+
+			if ( type == MOUSE_Click )
+			{
+				const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+				if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
+				{
+					const zx::LivesControl now = HostLivesControl( entries[g_HostEntrySel].addon );
+
+					const int vx = serverbrowser_ToVirtualX( x ) - g_HostLivesTrackX;
+					const int span = MAX( 1, now.max - now.min );
+
+					// Rounded rather than truncated, so the stop nearest the pointer is the one you
+					// get. Truncating makes the last stop unreachable without clicking past the end.
+					const int steps = (( vx * span ) + ( g_HostLivesTrackW / 2 )) / MAX( 1, g_HostLivesTrackW );
+
+					g_HostLives = clamp( now.min + steps, now.min, now.max );
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+			}
+
+			return true;
 		}
 
 		// [rc4l] The gameplay rows, inside the scrolled detail region. Tested against what the last
@@ -4909,6 +4978,9 @@ public:
 		// [rc4l] Any AXIS with something to decide, not any remix at all. An entry offering one mod
 		// and nothing else has a row that cannot change, which is not a setting and must not cost the
 		// file list three lines to display.
+		if ( HostLivesControl( entries[g_HostEntrySel].addon ).applies )
+			return true;
+
 		const std::vector<zx::RemixGroup> groups =
 			zx::GroupRemixes( HostOfferedRemixes( entries[g_HostEntrySel].addon ));
 
@@ -5422,13 +5494,46 @@ public:
 
 		const zx::AddonEntry &a = entries[g_HostEntrySel].addon;
 
-		return BigFont->GetHeight( ) + 4
+		// [rc4l] The file block is a FIXED height once anything is drawn under it, matching what
+		// DrawHostWadList reserves. Measuring the lines actually used would make the region's height
+		// change as a mod is picked, which is the shift the reservation exists to stop.
+		const bool bSettings = HostHasGameplayRow( );
+		const int fileLines = bSettings
+			? SB_HOST_WADS_MAXLINES
+			: static_cast<int>( HostSelectedFiles( a ).size( )) + 1;	// +1 for the IWAD
+
+		int h = BigFont->GetHeight( ) + 4
 			+ 6								// the rule under the title
 			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
 			+ 4 + 6							// the rule above the files
-			+ SB_HOST_LINE					// the IWAD, listed with them
-			+ static_cast<int>( HostSelectedFiles( a ).size( )) * SB_HOST_LINE
+			+ fileLines * SB_HOST_LINE
+			+ SB_HOST_LINE					// the "N files" total
 			+ 10;
+
+		// [rc4l] And the gameplay panel, which the region used to know nothing about -- so it never
+		// grew a scrollbar and anything past the fold simply could not be reached. Hard Doom was
+		// drawn off the bottom of the panel with no way to scroll to it.
+		if ( bSettings )
+		{
+			h += 4 + 6 + SB_HOST_LINE + 2;	// the rule, and the GAMEPLAY heading
+
+			if ( HostLivesControl( a ).applies )
+				h += SB_HOST_LINE * 2 + 3;
+
+			const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( a ));
+			for ( size_t g = 0; g < groups.size( ); ++g )
+			{
+				if ( groups[g].choices.size( ) <= 1 )
+					continue;
+
+				if ( !groups[g].id.empty( ))
+					h += SB_HOST_LINE;
+
+				h += static_cast<int>( groups[g].choices.size( )) * SB_HOST_GAME_ROW_H + 3;
+			}
+		}
+
+		return h;
 	}
 
 	// Which IWAD this entry will land on, in the same shape as the files below it, because it is one
@@ -5659,6 +5764,17 @@ public:
 			y += SB_HOST_LINE;
 		}
 
+		// [rc4l] When the list is capped it occupies the FULL cap whether or not it needs to.
+		//
+		// Otherwise picking a gameplay mod adds a file, the list grows a line, and everything under
+		// it jumps down -- while the pointer is still over the row that was just clicked, so the next
+		// click lands on a different setting. A fixed block is worth two blank lines on a short list.
+		if ( bCapped )
+		{
+			for ( size_t ln = layout.lines.size( ); ln < SB_HOST_WADS_MAXLINES; ++ln )
+				y += SB_HOST_LINE;
+		}
+
 		// [rc4l] One total instead of a size per name. Per-file sizes needed a right-hand column to
 		// line up in, and that column is what stopped the names running on. What actually decides
 		// anything here is how big the download is, and that is one number.
@@ -5698,6 +5814,97 @@ public:
 		return y;
 	}
 
+	// [rc4l] How many lives, as a track rather than a list of named options.
+	//
+	// It is a number with a range, and a slider is what that is. It also stops the catalogue needing
+	// a remix folder per value, which is what the three it replaced were: one line of cfg each,
+	// setting one integer, and doing nothing at all on three of the entries that offered them.
+	//
+	// Drawn even when it cannot be used, greyed with the reason where the value goes. Hiding it would
+	// move everything below it every time the way of playing changed, and would teach nobody why
+	// lives are not on offer for a deathmatch.
+	int DrawHostLives( int x, int y, const zx::AddonEntry &addon )
+	{
+		const zx::LivesControl lives = HostLivesControl( addon );
+
+		// The one case with nothing to say at all: a pack that sets its own and an entry that never
+		// declared a gamemode both land here, and a permanent grey row on every deathmatch entry in
+		// the catalogue is noise rather than instruction.
+		if (( lives.shape == zx::LivesShape::None ) && !lives.applies && lives.reason.empty( ))
+			return y;
+
+		const bool bDraw = HostDetailRowVisible( y, SB_HOST_LINE * 2 );
+
+		if ( bDraw )
+		{
+			screen->DrawText( SmallFont, CR_DARKGRAY, x, y, "LIVES",
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+		y += SB_HOST_LINE;
+
+		const int rowX = x + SB_HOST_GAME_INDENT;
+
+		// [rc4l] The VALUE is measured first and the track takes what is left, so a track never runs
+		// under its own label. "Unlimited" is much the widest thing this can say.
+		FString value;
+		if ( !lives.applies )
+			value = lives.reason.c_str( );
+		else if ( lives.unlimited )
+			value = "Unlimited";
+		else
+			value.Format( "%d", lives.value );
+
+		const int widest = MAX( SmallFont->StringWidth( "Unlimited" ), SmallFont->StringWidth( value ));
+		const int valueX = SB_HOST_RCOL_RIGHT - widest;
+		const int trackW = ( valueX - 6 ) - rowX;
+
+		g_HostLivesLive = false;
+
+		if ( bDraw && lives.applies && ( trackW > 8 ))
+		{
+			g_HostLivesLive = true;
+			g_HostLivesTrackX = rowX;
+			g_HostLivesTrackY = y;
+			g_HostLivesTrackW = trackW;
+
+			const int mid = y + SmallFont->GetHeight( ) / 2;
+
+			// The track, then the part of it that is filled, then the knob. Three dims rather than a
+			// texture, the same way every other bar in this browser is drawn.
+			screen->Dim( PalEntry( 90, 100, 130 ), 0.55f,
+				serverbrowser_ToScreenX( rowX ), serverbrowser_ToScreenY( mid ),
+				serverbrowser_ToScreenX( rowX + trackW ) - serverbrowser_ToScreenX( rowX ),
+				MAX( 1, serverbrowser_ToScreenY( mid + 1 ) - serverbrowser_ToScreenY( mid )));
+
+			const int span = MAX( 1, lives.max - lives.min );
+			const int filled = ( trackW * ( lives.value - lives.min )) / span;
+
+			screen->Dim( PalEntry( 120, 200, 140 ), 0.85f,
+				serverbrowser_ToScreenX( rowX ), serverbrowser_ToScreenY( mid ),
+				serverbrowser_ToScreenX( rowX + filled ) - serverbrowser_ToScreenX( rowX ),
+				MAX( 1, serverbrowser_ToScreenY( mid + 1 ) - serverbrowser_ToScreenY( mid )));
+
+			const int knobX = rowX + filled;
+			screen->Dim( g_HostLivesHot ? PalEntry( 235, 240, 255 ) : PalEntry( 190, 205, 235 ), 1.0f,
+				serverbrowser_ToScreenX( knobX - 2 ), serverbrowser_ToScreenY( mid - 3 ),
+				serverbrowser_ToScreenX( knobX + 2 ) - serverbrowser_ToScreenX( knobX - 2 ),
+				serverbrowser_ToScreenY( mid + 4 ) - serverbrowser_ToScreenY( mid - 3 ));
+
+			serverbrowser_Tip( rowX, y - 1, trackW, SB_HOST_LINE,
+				lives.unlimited
+					? "No limit. Die as often as you like."
+					: "How many times each player may die before they are out." );
+		}
+
+		if ( bDraw )
+		{
+			screen->DrawText( SmallFont, lives.applies ? CR_WHITE : CR_DARKGRAY, valueX, y, value,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+
+		return y + SB_HOST_LINE + 3;
+	}
+
 	// [rc4l] What this experience can be played WITH, as settings rather than a modal.
 	//
 	// One block per AXIS. Axes with a single choice are skipped: nothing to decide is not a setting,
@@ -5706,7 +5913,7 @@ public:
 	{
 		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
 
-		bool bAnything = false;
+		bool bAnything = HostLivesControl( addon ).applies;
 		for ( size_t g = 0; g < groups.size( ); ++g )
 			bAnything = bAnything || ( groups[g].choices.size( ) > 1 );
 
@@ -5724,6 +5931,8 @@ public:
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 		y += SB_HOST_LINE + 2;
+
+		y = DrawHostLives( x, y, addon );
 
 		for ( size_t g = 0; g < groups.size( ); ++g )
 		{
@@ -8166,6 +8375,26 @@ public:
 				{
 					g_HostListScroll += step * 6;
 					ClampHostListScroll( );
+					return true;
+				}
+
+				// [rc4l] Over the DETAIL column while not hosting, the notch belongs to it.
+				//
+				// This only existed for the hosting case above, so the panel that describes an
+				// experience could not be scrolled at all until a server was running. That was
+				// harmless while it only held a summary and a file list, and stopped being harmless
+				// the moment it grew gameplay settings: a fourth mod was drawn past the bottom of the
+				// column with no way to reach it. Checked before the settings, whose test spans the
+				// whole panel.
+				if (( g_Tab == BrowserTab::Host ) && !zx::HostIsActive( ) &&
+					!g_HostShowSettings && ( HostDetailMaxScroll( ) > 0 ) &&
+					( g_MouseY >= serverbrowser_ToScreenY( SB_HOST_VIEW_TOP )) &&
+					( g_MouseY < serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM )) &&
+					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 6 )) &&
+					( g_MouseX < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT + 6 )))
+				{
+					g_HostDetailScroll += step * 6;
+					ClampHostDetailScroll( );
 					return true;
 				}
 
