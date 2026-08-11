@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "name": "Armageddon Invasion",
+  "summary": "Ten invasion maps, from a training run to a boss fight, on Skulltag's content.",
+  "iwad": "doom2.wad",
+  "map": "MAP01",
+  "kind": "pve",
+  "files": [
+    {
+      "name": "skulltag_content-3.2-beta2.pk3",
+      "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+    },
+    {
+      "name": "armageddonv2.pk3",
+      "md5": "2f98c7afefafda2a80b8229c8ed6021f"
+    }
+  ],
+  "variants": [
+    {
+      "id": "invasion",
+      "name": "Invasion",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "default": true,
+      "tooltip": "Waves of monsters. Die as often as you need to."
+    },
+    {
+      "id": "survival",
+      "name": "Survival Invasion",
+      "cfg": "survival.cfg",
+      "kind": "pve",
+      "tooltip": "The same waves, three lives each. Spend them and you watch."
+    }
+  ]
+}

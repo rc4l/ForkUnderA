@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "name": "Alpha and Delta Invasion",
+  "summary": "Twenty-five invasion maps, eleven Alpha and fourteen Delta, on Skulltag's content.",
+  "iwad": "doom2.wad",
+  "map": "alinv01",
+  "kind": "pve",
+  "files": [
+    {
+      "name": "skulltag_content-3.2-beta2.pk3",
+      "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+    },
+    {
+      "name": "delta-invasionv3.pk3",
+      "md5": "f962c8180f724edc5c05398a6f10f4fd"
+    }
+  ],
+  "variants": [
+    {
+      "id": "invasion",
+      "name": "Invasion",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "default": true,
+      "tooltip": "Waves of monsters. Die as often as you need to."
+    },
+    {
+      "id": "survival",
+      "name": "Survival Invasion",
+      "cfg": "survival.cfg",
+      "kind": "pve",
+      "tooltip": "The same waves, three lives each. Spend them and you watch."
+    }
+  ]
+}
