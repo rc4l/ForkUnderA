@@ -1534,16 +1534,20 @@ static FString serverbrowser_PlainName( const char *pszName )
 // and O(n^2) character work for one name, repeated per row per frame. Width only ever grows with
 // length, so the longest prefix that fits can be found in about six probes instead of sixty, and the
 // one string being shortened is reused rather than recopied.
-static FString serverbrowser_FitName( const char *pszName, int maxWidth )
+//
+// [rc4l] The font is a parameter because the panel's title is drawn in BigFont, and measuring a
+// BigFont line against SmallFont's widths says it fits when it does not -- which is how the title
+// came to run out of its column while every SmallFont line beneath it stayed inside one.
+static FString serverbrowser_FitName( const char *pszName, int maxWidth, FFont *font = SmallFont )
 {
 	FString name = serverbrowser_PlainName( pszName );
 
 	// The common case, and the cheap one: it already fits, so nothing is cut, copied or searched.
-	if ( SmallFont->StringWidth( name ) <= maxWidth )
+	if ( font->StringWidth( name ) <= maxWidth )
 		return name;
 
 	// Room for the ellipsis BEFORE cutting, so the result including "..." fits.
-	const int budget = maxWidth - SmallFont->StringWidth( "..." );
+	const int budget = maxWidth - font->StringWidth( "..." );
 	if ( budget <= 0 )
 		return FString( "..." );
 
@@ -1559,7 +1563,7 @@ static FString serverbrowser_FitName( const char *pszName, int maxWidth )
 		probe = name;
 		probe.Truncate( mid );
 
-		if ( SmallFont->StringWidth( probe ) <= budget )
+		if ( font->StringWidth( probe ) <= budget )
 		{
 			best = mid;
 			lo = mid + 1;
@@ -5004,8 +5008,14 @@ public:
 			return;
 
 		const int w = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
+
+		// Cut to the column, measured in the font it is actually drawn in. "Alpha and Delta Invasion"
+		// is wider than the panel and ran off both ends of it, because centring a line that does not
+		// fit puts half the overflow on each side.
+		const FString fitted = serverbrowser_FitName( title, w, BigFont );
+
 		screen->DrawText( BigFont, CR_WHITE,
-			SB_HOST_RCOL_LEFT + ( w - BigFont->StringWidth( title )) / 2, y, title,
+			SB_HOST_RCOL_LEFT + ( w - BigFont->StringWidth( fitted )) / 2, y, fitted,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
