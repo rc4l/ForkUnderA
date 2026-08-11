@@ -11,12 +11,15 @@ std::vector<AddonRemix> OfferedRemixes(const AddonEntry &entry, int variant,
 {
 	std::vector<AddonRemix> offered;
 
-	// The variant's list when it has one, otherwise the entry's. Overriding rather than adding,
+	// The variant's list when it WROTE one, otherwise the entry's. Overriding rather than adding,
 	// because the case that needs this is one way of playing taking something the others must not.
+	//
+	// Keyed on the key being present, not on the list being non-empty: an empty list is how a variant
+	// says it takes none of what its entry offers, and reading that as silence made it unsayable.
 	const std::vector<std::string> *want = &entry.remixes;
 
 	if ((variant >= 0) && (variant < static_cast<int>(entry.variants.size())) &&
-		!entry.variants[variant].remixes.empty())
+		entry.variants[variant].remixesSet)
 	{
 		want = &entry.variants[variant].remixes;
 	}

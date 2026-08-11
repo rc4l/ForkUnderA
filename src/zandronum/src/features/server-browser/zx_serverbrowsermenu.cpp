@@ -59,6 +59,7 @@
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
 #include "features/addon-catalogue/computation/livespick_compute.h"
+#include "features/addon-catalogue/computation/teamspick_compute.h"
 #include "features/addon-catalogue/computation/remixpick_compute.h"
 #include "features/addon-catalogue/computation/variantpick_compute.h"
 #include "features/addon-catalogue/computation/hostlist_compute.h"
@@ -860,7 +861,68 @@ static zx::LivesControl HostLivesControl( const zx::AddonEntry &addon )
 		mode = addon.variants[pick.index].gameMode;
 	}
 
-	return zx::LivesFor( mode, g_HostLives, addon.defaultLives, addon.maxLives );
+	// [rc4l] And the variant's own lives when it states them, because an entry can gather packs that
+	// are not alike: six campaign mapsets that can be run as Survival sit beside four co-op packs that
+	// cannot, and the entry's single answer put a lives slider on all ten.
+	int defaultLives = addon.defaultLives;
+	int maxLives = addon.maxLives;
+
+	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))))
+	{
+		const zx::AddonVariant &v = addon.variants[pick.index];
+
+		if ( v.defaultLives >= 0 )
+			defaultLives = v.defaultLives;
+		if ( v.maxLives >= 0 )
+			maxLives = v.maxLives;
+	}
+
+	return zx::LivesFor( mode, g_HostLives, defaultLives, maxLives );
+}
+
+// [rc4l] Whether the chosen way of playing offers the weapon speed. Either the entry or the variant
+// may say yes, the same rule the teams control uses and for the same reason.
+static bool HostFastWeaponsOffered( const zx::AddonEntry &addon )
+{
+	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+	if ( addon.fastWeapons )
+		return true;
+
+	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))))
+		return addon.variants[pick.index].fastWeapons;
+
+	return false;
+}
+
+// [rc4l] How many teams the player has asked for, or -1 for "not yet". Kept across entries like the
+// lives count and for the same reason.
+static	int				g_HostTeams = -1;
+
+// The teams control for the CHOSEN way of playing. Read off the VARIANT throughout: the gamemode
+// because Skulltag's Deathmatch and its Duel are not the same question, and the say-so because its
+// Skulltag variant declares deathmatch and then runs a mode of its own.
+static zx::TeamsControl HostTeamsControl( const zx::AddonEntry &addon )
+{
+	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+	zx::HostGameMode mode = addon.gameMode;
+
+	// EITHER may say yes. An entry that plays one way has no variant to say it on -- Brutal Doom is
+	// eleven deathmatch maps and nothing else -- and an entry with several says it per variant.
+	bool bOffered = addon.teams;
+
+	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))))
+	{
+		const zx::AddonVariant &v = addon.variants[pick.index];
+
+		if ( v.gameMode != zx::HostGameMode::Unknown )
+			mode = v.gameMode;
+
+		bOffered = bOffered || v.teams;
+	}
+
+	return zx::TeamsFor( mode, bOffered, g_HostTeams );
 }
 
 // [rc4l] What the CHOSEN way of playing loads, remix included. Every question the host tab asks about
@@ -3449,11 +3511,20 @@ public:
 
 			// [rc4l] Weapon speed rides the same list. Set only when the entry offers the control, so
 			// a pack that never invited it is not handed a zero that overrides its own cfg.
-			if ( chosen.addon.fastWeapons )
+			if ( HostFastWeaponsOffered( chosen.addon ))
 			{
 				char n[8];
 				snprintf( n, sizeof( n ), "%d", clamp(( g_HostFastWeapons < 0 ) ? 0 : g_HostFastWeapons, 0, 2 ));
 				config.extraCvars.push_back( std::make_pair( std::string( "sv_fastweapons" ), std::string( n )));
+			}
+
+			// [rc4l] Teams ride the same list, and have to: the axis NAMES a gamemode, so an exec
+			// running after it would put the old mode straight back.
+			{
+				const std::vector<std::pair<std::string, std::string> > teams =
+					zx::TeamsCvars( HostTeamsControl( chosen.addon ));
+
+				config.extraCvars.insert( config.extraCvars.end( ), teams.begin( ), teams.end( ));
 			}
 
 			// [rc4l] RESOLVED to full paths, not left as bare names. These are what the CLIENT
@@ -3980,6 +4051,12 @@ public:
 			g_HostLives = value;
 		else if ( id == "fastweapons" )
 			g_HostFastWeapons = value;
+		else if ( id == "teams" )
+		{
+			// The one axis whose slider moves an INDEX rather than the value: the stops are 0, 2, 3
+			// and 4, and a slider that ran on the count would offer a team of one between them.
+			g_HostTeams = zx::TeamsCountAtStop( value );
+		}
 	}
 
 	// Every slider on the panel, from the rects the last draw recorded. Steps first: they sit at the
@@ -5127,6 +5204,32 @@ public:
 	// Most entries have none: a pack bringing its own weapons and classes has nowhere to put someone
 	// else's, and a heading over an empty group on every one of those is the wasted space this is
 	// supposed to save. Those entries get the whole column for their files instead.
+	// [rc4l] The label column the gameplay panel lines every control up in, measured ONCE.
+	//
+	// Two callers need the identical number -- the drawing and the height that gives the panel its
+	// scrollbar -- and they had a copy each. The copies had already drifted: only LIVES was measured,
+	// so WEAPONS, which is wider, drew its label straight through its own minus button.
+	int HostGameplayLabelW( const std::vector<zx::RemixGroup> &groups )
+	{
+		static const char *const kBuiltIn[3] = { "LIVES", "WEAPONS", "TEAMS" };
+
+		int labelW = 0;
+		for ( int i = 0; i < 3; ++i )
+			labelW = MAX( labelW, SmallFont->StringWidth( kBuiltIn[i] ));
+
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if (( groups[g].choices.size( ) <= 1 ) || groups[g].id.empty( ))
+				continue;
+
+			FString label = groups[g].id.c_str( );
+			label.ToUpper( );
+			labelW = MAX( labelW, SmallFont->StringWidth( label ));
+		}
+
+		return labelW + SmallFont->StringWidth( "  " );
+	}
+
 	bool HostHasGameplayRow( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -5138,7 +5241,8 @@ public:
 		// and nothing else has a row that cannot change, which is not a setting and must not cost the
 		// file list three lines to display.
 		if ( HostLivesControl( entries[g_HostEntrySel].addon ).adjustable ||
-			entries[g_HostEntrySel].addon.fastWeapons )
+			HostFastWeaponsOffered( entries[g_HostEntrySel].addon ) ||
+			HostTeamsControl( entries[g_HostEntrySel].addon ).adjustable )
 		{
 			return true;
 		}
@@ -5693,24 +5797,17 @@ public:
 			if ( HostLivesControl( a ).adjustable )
 				h += SB_HOST_LINE + 3;
 
-			if ( a.fastWeapons )
+			if ( HostFastWeaponsOffered( a ))
+				h += SB_HOST_LINE + 3;
+
+			if ( HostTeamsControl( a ).adjustable )
 				h += SB_HOST_LINE + 3;
 
 			const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( a ));
 
 			// The same label column DrawHostGameplay measures, because it decides how wide the pills
 			// have to wrap in and therefore how many rows they take.
-			int labelW = SmallFont->StringWidth( "LIVES" );
-			for ( size_t g = 0; g < groups.size( ); ++g )
-			{
-				if (( groups[g].choices.size( ) <= 1 ) || groups[g].id.empty( ))
-					continue;
-
-				FString gl = groups[g].id.c_str( );
-				gl.ToUpper( );
-				labelW = MAX( labelW, SmallFont->StringWidth( gl ));
-			}
-			labelW += SmallFont->StringWidth( "  " );
+			const int labelW = HostGameplayLabelW( groups );
 
 			for ( size_t g = 0; g < groups.size( ); ++g )
 			{
@@ -6175,7 +6272,7 @@ public:
 	// "2" tells nobody that the states without an action function drop to no ticks at all.
 	int DrawHostFastWeapons( int x, int y, int labelW, const zx::AddonEntry &addon )
 	{
-		if ( !addon.fastWeapons )
+		if ( !HostFastWeaponsOffered( addon ))
 			return y;
 
 		const int value = clamp(( g_HostFastWeapons < 0 ) ? 0 : g_HostFastWeapons, 0, 2 );
@@ -6191,6 +6288,32 @@ public:
 			kNames[value], kTips[value] );
 	}
 
+	// [rc4l] How many sides, as the third instance of the slider.
+	//
+	// This replaced two pills labelled with gamemode names, which was the wrong question twice over:
+	// they were really asking about TEAMS, and they could only answer yes or no when the engine has
+	// carried sv_maxteams and four of them all along. The stops skip 1, so the slider moves an INDEX
+	// and teamspick_compute owns the mapping in both directions.
+	int DrawHostTeams( int x, int y, int labelW, const zx::AddonEntry &addon )
+	{
+		const zx::TeamsControl teams = HostTeamsControl( addon );
+
+		if ( !teams.adjustable )
+			return y;
+
+		FString value;
+		if ( teams.count < 2 )
+			value = "Off";
+		else
+			value.Format( "%d", teams.count );
+
+		return DrawHostSlider( "teams", "TEAMS", x, y, labelW, 0, zx::TeamsStopCount( ) - 1,
+			teams.stop, value.GetChars( ),
+			( teams.count < 2 )
+				? "Everyone for themselves."
+				: "Sides, sharing their frags and their colour." );
+	}
+
 	// [rc4l] What this experience can be played WITH, as settings rather than a modal.
 	//
 	// One block per AXIS. Axes with a single choice are skipped: nothing to decide is not a setting,
@@ -6199,7 +6322,8 @@ public:
 	{
 		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
 
-		bool bAnything = HostLivesControl( addon ).adjustable || addon.fastWeapons;
+		bool bAnything = HostLivesControl( addon ).adjustable || HostFastWeaponsOffered( addon ) ||
+			HostTeamsControl( addon ).adjustable;
 		for ( size_t g = 0; g < groups.size( ); ++g )
 			bAnything = bAnything || ( groups[g].choices.size( ) > 1 );
 
@@ -6221,20 +6345,11 @@ public:
 		// [rc4l] ONE label column for every axis, measured across all of them so the controls line up
 		// under each other. Sized to the widest label rather than fixed, or a longer setting name
 		// later would either overlap its own control or leave a gap in front of every other.
-		int labelW = SmallFont->StringWidth( "LIVES" );
-		for ( size_t g = 0; g < groups.size( ); ++g )
-		{
-			if (( groups[g].choices.size( ) <= 1 ) || groups[g].id.empty( ))
-				continue;
-
-			FString label = groups[g].id.c_str( );
-			label.ToUpper( );
-			labelW = MAX( labelW, SmallFont->StringWidth( label ));
-		}
-		labelW += SmallFont->StringWidth( "  " );
+		const int labelW = HostGameplayLabelW( groups );
 
 		y = DrawHostLives( x, y, labelW, addon );
 		y = DrawHostFastWeapons( x, y, labelW, addon );
+		y = DrawHostTeams( x, y, labelW, addon );
 
 		for ( size_t g = 0; g < groups.size( ); ++g )
 		{

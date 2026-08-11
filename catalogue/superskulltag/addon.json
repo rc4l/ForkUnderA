@@ -59,7 +59,7 @@
       "cfg": "deathmatch.cfg",
       "kind": "pvp",
       "map": "SSTDM01",
-      "remixes": ["ffa", "teamdm"],
+      "teams": true,
       "tooltip": "Five arenas of its own."
     }
   ]

@@ -391,6 +391,27 @@ bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
 				{
 					if (!ReadIdArray(r, v.remixes))
 						return false;
+					v.remixesSet = true;
+				}
+				else if (key == "teams")
+				{
+					if (!ReadBool(r, v.teams))
+						return false;
+				}
+				else if (key == "lives")
+				{
+					if (!ReadInt(r, v.defaultLives))
+						return false;
+				}
+				else if (key == "maxlives")
+				{
+					if (!ReadInt(r, v.maxLives))
+						return false;
+				}
+				else if (key == "fastweapons")
+				{
+					if (!ReadBool(r, v.fastWeapons))
+						return false;
 				}
 				else if (key == "default")
 				{
@@ -508,6 +529,7 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			else if (key == "lives")	{ ok = ReadInt(r, entry.defaultLives); }
 			else if (key == "maxlives")	{ ok = ReadInt(r, entry.maxLives); }
 			else if (key == "fastweapons")	{ ok = ReadBool(r, entry.fastWeapons); }
+			else if (key == "teams")	{ ok = ReadBool(r, entry.teams); }
 			else						{ ok = SkipValue(r); }
 
 			if (!ok)

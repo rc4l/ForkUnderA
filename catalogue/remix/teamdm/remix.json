@@ -1,7 +1,0 @@
-{
-  "schema": 1,
-  "name": "Team Deathmatch",
-  "summary": "Two sides. Your frags count for your team.",
-  "group": "teams",
-  "cfg": "teamdm.cfg"
-}
