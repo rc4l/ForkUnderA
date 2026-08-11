@@ -94,6 +94,27 @@
       ]
     },
     {
+      "id": "idl",
+      "name": "International Doom League",
+      "cfg": "idl.cfg",
+      "kind": "pvp",
+      "tooltip": "Thirty-eight maps, the league's own set.",
+      "files": [
+        {
+          "name": "idl201x_b-fix.pk3",
+          "md5": "d0f883835b8f3fa288b68d15727cfe29"
+        },
+        {
+          "name": "odaflagx.pk3",
+          "md5": "fd35af932766ed9e9f7ad6d0cde18cd9"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
+        }
+      ]
+    },
+    {
       "id": "extreme",
       "name": "Extreme CTF",
       "cfg": "extreme.cfg",
