@@ -1,16 +1,37 @@
 {
   "schema": 1,
-  "name": "Classic Capture the Flag",
+  "name": "Capture the Flag",
   "summary": "Two flags, two bases, and the map sets people have played it on for twenty years.",
   "iwad": "doom2.wad",
   "kind": "pvp",
   "variants": [
     {
-      "id": "zdaemon",
-      "name": "Zdaemon CTF",
+      "id": "idl",
+      "name": "IDL 201X",
       "cfg": "server.cfg",
       "kind": "pvp",
       "default": true,
+      "tooltip": "Thirty-eight maps, the league's own set.",
+      "files": [
+        {
+          "name": "idl201x_b-fix.pk3",
+          "md5": "d0f883835b8f3fa288b68d15727cfe29"
+        },
+        {
+          "name": "odaflagx.pk3",
+          "md5": "fd35af932766ed9e9f7ad6d0cde18cd9"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
+        }
+      ]
+    },
+    {
+      "id": "zdaemon",
+      "name": "Zdaemon CTF",
+      "cfg": "zdaemon.cfg",
+      "kind": "pvp",
       "tooltip": "Thirty maps, the set Zdaemon players know.",
       "files": [
         {
@@ -90,27 +111,6 @@
         {
           "name": "ctfcap2d.pk3",
           "md5": "6d4060146f9e8b7db4b620ab5bf565c7"
-        }
-      ]
-    },
-    {
-      "id": "idl",
-      "name": "International Doom League",
-      "cfg": "idl.cfg",
-      "kind": "pvp",
-      "tooltip": "Thirty-eight maps, the league's own set.",
-      "files": [
-        {
-          "name": "idl201x_b-fix.pk3",
-          "md5": "d0f883835b8f3fa288b68d15727cfe29"
-        },
-        {
-          "name": "odaflagx.pk3",
-          "md5": "fd35af932766ed9e9f7ad6d0cde18cd9"
-        },
-        {
-          "name": "zandrospree2rc2.pk3",
-          "md5": "25b2a3c4f46e50f4016b640119aefae6"
         }
       ]
     },
