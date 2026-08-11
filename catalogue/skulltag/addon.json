@@ -20,14 +20,8 @@
       "cfg": "server.cfg",
       "kind": "pvp",
       "default": true,
+      "remixes": ["ffa", "teamdm"],
       "tooltip": "Everyone for themselves! Will you prevail?"
-    },
-    {
-      "id": "teamdm",
-      "name": "Team Deathmatch",
-      "cfg": "teamdm.cfg",
-      "kind": "pvp",
-      "tooltip": "You and your team must out-kill the enemy team."
     },
     {
       "id": "duel",
@@ -41,14 +35,8 @@
       "name": "Last Man Standing",
       "cfg": "lms.cfg",
       "kind": "pvp",
+      "remixes": ["ffa", "teamlms"],
       "tooltip": "One life each round. Last one alive takes it."
-    },
-    {
-      "id": "teamlms",
-      "name": "Team Last Man Standing",
-      "cfg": "teamlms.cfg",
-      "kind": "pvp",
-      "tooltip": "One life each round, and a team to lose it for."
     },
     {
       "id": "ctf",
