@@ -33,12 +33,18 @@ struct HostListRow
 	HostListRow(int e, int v) : entry(e), variant(v) {}
 };
 
-// `variantCounts` is how many ways each entry can be played, in catalogue order. `openEntry` is the
-// one whose ways are showing, or -1 for none.
+// `variantCounts` is how many ways each entry can be played, in catalogue order. `open` says which
+// are showing theirs, entry for entry; any entry past its end counts as shut, so a caller that has
+// not opened anything can pass an empty vector.
+//
+// ANY NUMBER may be open at once. One at a time was the first attempt and it made comparing two
+// packs impossible: opening the second shut the first, so the thing you wanted to compare against
+// disappeared at the moment you went to look at it.
 //
 // An entry with no variants is never opened, however hard the caller asks: there is nothing to show,
 // and a caret on a row that cannot open is a promise the list does not keep.
-std::vector<HostListRow> BuildHostListRows(const std::vector<int> &variantCounts, int openEntry);
+std::vector<HostListRow> BuildHostListRows(const std::vector<int> &variantCounts,
+                                           const std::vector<bool> &open);
 
 // Which row is the cursor, given what is chosen. Answers -1 when the selection names something the
 // list does not contain, which happens the moment a catalogue is re-read underneath it.

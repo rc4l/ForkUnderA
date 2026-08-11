@@ -6,7 +6,8 @@
 namespace zx
 {
 
-std::vector<HostListRow> BuildHostListRows(const std::vector<int> &variantCounts, int openEntry)
+std::vector<HostListRow> BuildHostListRows(const std::vector<int> &variantCounts,
+                                           const std::vector<bool> &open)
 {
 	std::vector<HostListRow> rows;
 
@@ -15,7 +16,8 @@ std::vector<HostListRow> BuildHostListRows(const std::vector<int> &variantCounts
 		const int entry = static_cast<int>(i);
 		rows.push_back(HostListRow(entry, -1));
 
-		if (entry != openEntry)
+		// Past the end of `open` is shut, so a caller with no state yet can pass nothing at all.
+		if ((i >= open.size()) || !open[i])
 			continue;
 
 		// A count of zero or less opens to nothing, which is the same as not being open. Guarded

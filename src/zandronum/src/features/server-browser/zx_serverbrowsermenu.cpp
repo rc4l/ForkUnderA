@@ -693,10 +693,30 @@ static	int				g_HostEntryHot = -2;	// -2 is "none"
 // been updated underneath a remembered choice.
 static	FString			g_HostVariantId;
 
-// [rc4l] Which experience is opened out to show its ways of playing, or -1 for none. One at a time:
-// the list is short and several open at once turns choosing an experience into scrolling past other
-// people's options.
-static	int				g_HostOpenEntry = -1;
+// [rc4l] Which experiences are opened out to show their ways of playing, entry for entry.
+//
+// Any number at once. One at a time was the first attempt and it made comparing two packs
+// impossible: opening the second shut the first, so the thing you wanted to compare against
+// disappeared at the moment you went to look at it. Grown on demand, and anything past the end
+// counts as shut, so a fresh session starts with nothing to allocate.
+static	std::vector<bool>	g_HostOpenEntries;
+
+static bool HostEntryIsOpen( int entry )
+{
+	return ( entry >= 0 ) && ( entry < static_cast<int>( g_HostOpenEntries.size( ))) &&
+		g_HostOpenEntries[entry];
+}
+
+static void HostToggleEntryOpen( int entry )
+{
+	if ( entry < 0 )
+		return;
+
+	if ( entry >= static_cast<int>( g_HostOpenEntries.size( )))
+		g_HostOpenEntries.resize( entry + 1, false );
+
+	g_HostOpenEntries[entry] = !g_HostOpenEntries[entry];
+}
 
 // [rc4l] What we told the server to load, kept so the client can match it before joining.
 //
@@ -3684,7 +3704,7 @@ public:
 						// The experience's own row opens and shuts it. Clicking the row anywhere does
 						// it, not just the caret: a caret is a small target and the row already means
 						// "this one", which is the same thing opening it says.
-						g_HostOpenEntry = ( g_HostOpenEntry == r.entry ) ? -1 : r.entry;
+						HostToggleEntryOpen( r.entry );
 					}
 
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
@@ -4376,7 +4396,7 @@ public:
 		for ( size_t i = 0; i < entries.size( ); ++i )
 			counts.push_back( static_cast<int>( entries[i].addon.variants.size( )));
 
-		return zx::BuildHostListRows( counts, g_HostOpenEntry );
+		return zx::BuildHostListRows( counts, g_HostOpenEntries );
 	}
 
 	int HostCatalogueRowCount( )
@@ -5189,9 +5209,26 @@ public:
 
 			const bool bIsVariant = ( r.variant >= 0 );
 
-			const FString label = bIsVariant
-				? FString( entry.addon.variants[r.variant].name.c_str( ))
-				: FString( entry.addon.name.c_str( ));
+			// [rc4l] Cut to what is left after the badge, not to the column: "Team Last Man
+			// Standing" is wider than the room before the PvP mark and ran straight under it. The
+			// budget is measured against the thing it must not touch, so a longer badge or a longer
+			// name cannot reintroduce the overlap.
+			const int labelLeft = bIsVariant ? ( x + 12 ) : x;
+			int labelRight = SB_HOST_LIST_RIGHT - 4;
+
+			if ( bIsVariant )
+			{
+				labelRight -= SmallFont->StringWidth(
+					zx::DescribeVariantKind( entry.addon.variants[r.variant].kind )) + 6;
+			}
+			else if ( !entry.addon.variants.empty( ))
+			{
+				labelRight -= SmallFont->StringWidth( ">" ) + 6;
+			}
+
+			const FString label = serverbrowser_FitName( bIsVariant
+				? entry.addon.variants[r.variant].name.c_str( )
+				: entry.addon.name.c_str( ), labelRight - labelLeft );
 
 			// [rc4l] Centred in the row rather than drawn at its top edge. The highlight bar is
 			// SB_HOST_ENTRY_H tall and the glyphs are shorter, so drawing at rowY sat the text high
@@ -5200,7 +5237,7 @@ public:
 
 			// A way of playing is indented, so it reads as belonging to the experience above it
 			// rather than as another experience.
-			screen->DrawText( SmallFont, col, bIsVariant ? ( x + 12 ) : x, textY, label,
+			screen->DrawText( SmallFont, col, labelLeft, textY, label,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 			if ( bIsVariant )
@@ -5225,7 +5262,7 @@ public:
 				// [rc4l] The caret, on the RIGHT of the row: it is about this row's own state rather
 				// than a step to the side, and putting it at the left would read as an indent that
 				// the rows under it then repeat.
-				const bool bOpen = ( r.entry == g_HostOpenEntry );
+				const bool bOpen = HostEntryIsOpen( r.entry );
 				const char *caret = bOpen ? "v" : ">";
 
 				screen->DrawText( SmallFont, col,
