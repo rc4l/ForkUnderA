@@ -69,6 +69,7 @@
       "name": "Invasion",
       "cfg": "invasion.cfg",
       "kind": "pve",
+      "remixes": ["classic", "survival"],
       "tooltip": "Everyone on the same side, against waves of monsters."
     }
   ]

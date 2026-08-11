@@ -1,6 +1,6 @@
 {
   "schema": 1,
   "name": "Survival",
-  "summary": "Three lives each. Spend them and you watch the rest.",
+  "summary": "If you die three times, you're out.",
   "cfg": "survival.cfg"
 }

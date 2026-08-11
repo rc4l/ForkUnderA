@@ -26,7 +26,11 @@ namespace zx
 // the pool has and could read. An entry asking for something the pool does not hold is not an error
 // here -- catalogues are edited by hand and a missing remix should cost that one option rather than
 // the whole entry.
-std::vector<AddonRemix> OfferedRemixes(const AddonEntry &entry,
+//
+// `variant` is the index of the chosen way of playing, or -1 for none. A variant that names its own
+// remixes overrides the entry's rather than adding to them: Skulltag's Invasion takes three lives
+// and its Duel does not, and "the entry's plus mine" cannot express that.
+std::vector<AddonRemix> OfferedRemixes(const AddonEntry &entry, int variant,
                                        const std::vector<AddonRemix> &pool);
 
 struct RemixPick

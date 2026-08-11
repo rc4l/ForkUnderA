@@ -265,6 +265,33 @@ VariantKind ParseKind(const std::string &s)
 	return VariantKind::Unknown;
 }
 
+// [rc4l] A remixes list: a flat array of ids naming things defined elsewhere, so this reads strings
+// rather than objects. Used by both an entry and its variants.
+bool ReadIdArray(Reader &r, std::vector<std::string> &out)
+{
+	if (!r.Take('['))
+		return false;
+
+	r.SkipSpace();
+	if (r.Take(']'))
+		return true;
+
+	for (;;)
+	{
+		std::string id;
+		if (!ReadString(r, id))
+			return false;
+
+		out.push_back(id);
+
+		if (r.Take(','))
+			continue;
+		if (r.Take(']'))
+			return true;
+		return false;
+	}
+}
+
 // [rc4l] The variants array. Same shape as the files array, and deliberately the same reading of an
 // unknown key: skipped, so a catalogue written for a later build still loads here.
 bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
@@ -329,6 +356,11 @@ bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
 					if (!ReadFilesArray(r, v.files))
 						return false;
 				}
+				else if (key == "remixes")
+				{
+					if (!ReadIdArray(r, v.remixes))
+						return false;
+				}
 				else if (key == "default")
 				{
 					if (!ReadBool(r, v.isDefault))
@@ -357,32 +389,6 @@ bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
 	}
 }
 
-// [rc4l] The remixes an entry offers: a flat array of ids naming things defined elsewhere, so this
-// reads strings rather than objects.
-bool ReadIdArray(Reader &r, std::vector<std::string> &out)
-{
-	if (!r.Take('['))
-		return false;
-
-	r.SkipSpace();
-	if (r.Take(']'))
-		return true;
-
-	for (;;)
-	{
-		std::string id;
-		if (!ReadString(r, id))
-			return false;
-
-		out.push_back(id);
-
-		if (r.Take(','))
-			continue;
-		if (r.Take(']'))
-			return true;
-		return false;
-	}
-}
 
 bool LooksLikeMd5(const std::string &s)
 {

@@ -776,10 +776,13 @@ static void HostToggleEntryOpen( int entry )
 // re-read and reordered, and a stored number would eventually point at something else.
 static	FString			g_HostRemixId;
 
-// What the selected entry can be played with, in the order the entry names them.
+// What the selected way of playing can be played with. The VARIANT decides, not just the entry:
+// Skulltag's Invasion takes three lives and its Duel does not.
 static std::vector<zx::AddonRemix> HostOfferedRemixes( const zx::AddonEntry &addon )
 {
-	return zx::OfferedRemixes( addon, zx::CatalogueRemixes( ));
+	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+	return zx::OfferedRemixes( addon, pick.index, zx::CatalogueRemixes( ));
 }
 
 static zx::RemixPick HostRemixPick( const zx::AddonEntry &addon )
@@ -2304,7 +2307,18 @@ public:
 		g_RemixHot = -1;
 		g_RemixOpen = true;
 
+		// Focus goes to the modal for the same reason the question dialog takes it: while it is up
+		// there is nowhere else a keypress can land, so the marker has to be in here.
+		SetFocus( zx::BrowserFocus::Dialog );
+
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	void CloseRemixPicker( )
+	{
+		g_RemixOpen = false;
+		g_RemixHot = -1;
+		SetFocus( zx::BrowserFocus::Host );
 	}
 
 	void ChooseRemix( int index )
@@ -2314,7 +2328,7 @@ public:
 		if (( index >= 0 ) && ( index < static_cast<int>( choices.size( ))))
 			g_HostRemixId = choices[index].id.c_str( );
 
-		g_RemixOpen = false;
+		CloseRemixPicker( );
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 	}
 
@@ -2359,9 +2373,21 @@ public:
 						serverbrowser_ToScreenY( rowY - 2 ));
 			}
 
+			// Centred in the band rather than drawn at its top edge, the same way the experience list
+			// centres its rows: the band is taller than the glyphs, so drawing at rowY sits the text
+			// high and leaves the highlight looking like it belongs to the row underneath.
+			const int textY = rowY - 2 + ( RemixRowH( ) - SmallFont->GetHeight( )) / 2;
+
 			screen->DrawText( SmallFont, bOn ? CR_GOLD : CR_WHITE,
-				RemixListX( ), rowY, serverbrowser_FitName( choices[i].name.c_str( ), SB_RMX_LIST_W - 4 ),
+				RemixListX( ), textY, serverbrowser_FitName( choices[i].name.c_str( ), SB_RMX_LIST_W - 4 ),
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+			// [rc4l] The travelling marker, on the row the keyboard is on. The picker had none, so
+			// arrowing through it moved a gold label and nothing else -- every other list in this
+			// browser marks its keyboard position, and a modal is the place it matters most because
+			// there is nowhere else the next keypress could go.
+			if ( bOn )
+				FocusAnchor( zx::BrowserFocus::Dialog, RemixListX( ) - 9, rowY - 2 + RemixRowH( ) / 2 );
 		}
 
 		// [rc4l] The rule between them, so the two columns read as two things rather than as one
@@ -7436,7 +7462,7 @@ public:
 			// Clicking outside it closes it without choosing, which is what clicking away from a
 			// picker means everywhere else.
 			if ( type == MOUSE_Click )
-				g_RemixOpen = false;
+				CloseRemixPicker( );
 
 			return true;
 		}
@@ -8652,7 +8678,7 @@ public:
 				break;
 
 			case MKEY_Back:
-				g_RemixOpen = false;
+				CloseRemixPicker( );
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/backup", snd_menuvolume, ATTN_NONE );
 				break;
 
