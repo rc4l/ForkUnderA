@@ -5385,6 +5385,22 @@ public:
 		return row;
 	}
 
+	// [rc4l] The same answer for the running list, which has no room for a marker column. The name on
+	// its own when we have it; the wanted name in brackets when we do not, because inside a comma
+	// list a bare "-" reads as part of a filename rather than as a verdict about one.
+	FString HostDetailIwadName( const zx::AddonEntry &addon )
+	{
+		const FString row = HostDetailIwadRow( addon );
+		const char *const body = row.GetChars( ) + 2;		// past the marker and its space
+
+		if ( row[0] == '+' )
+			return FString( body );
+
+		FString missing;
+		missing.Format( "(%s)", body );
+		return missing;
+	}
+
 	// The title names what the whole column is about, so it is the one line that should not look like
 	// the rest: BigFont, centred over the column.
 	void DrawHostDetailTitle( const char *title, int y )
@@ -5477,15 +5493,6 @@ public:
 			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
 		y += 6;
 
-		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
-		{
-			const FString iwadRow = HostDetailIwadRow( addon );
-			screen->DrawText( SmallFont, ( iwadRow[0] == '+' ) ? CR_GRAY : CR_DARKRED,
-				x, y, iwadRow,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-		}
-		y += SB_HOST_LINE;
-
 		// [rc4l] WHAT it loads, and how big. Not whether you have it.
 		//
 		// Every row used to be marked + or - and coloured for it, which answered a question nobody
@@ -5497,7 +5504,19 @@ public:
 		const std::vector<unsigned long long> &sizes = HostEntryFileSizes( g_HostEntrySel,
 			g_HostVariantId.GetChars( ), loads );
 
-		y = DrawHostWadList( x, y, loads, sizes, HostHasGameplayRow( ));
+		// [rc4l] The IWAD leads the list rather than sitting on a line of its own above it. It IS one
+		// of the files the server loads, and giving it a private row said it was a different kind of
+		// thing -- which cost a whole line to say something the name already says.
+		TArray<FString> names;
+		names.Push( HostDetailIwadName( addon ));
+		for ( size_t i = 0; i < loads.size( ); ++i )
+			names.Push( FString( loads[i].name.c_str( )));
+
+		unsigned long long total = 0;
+		for ( size_t i = 0; i < sizes.size( ) && i < loads.size( ); ++i )
+			total += sizes[i];
+
+		y = DrawHostWadList( x, y, names, total, HostHasGameplayRow( ));
 
 		// [rc4l] What you play it WITH, in the room the list just gave back.
 		//
@@ -5511,10 +5530,10 @@ public:
 	//
 	// `bCapped` is whether something is drawn underneath: the list stops at three lines to leave room
 	// for it, and runs as long as it likes when nothing is.
-	int DrawHostWadList( int x, int y, const std::vector<zx::AddonFileRef> &loads,
-		const std::vector<unsigned long long> &sizes, bool bCapped )
+	int DrawHostWadList( int x, int y, const TArray<FString> &names,
+		unsigned long long total, bool bCapped )
 	{
-		if ( loads.empty( ))
+		if ( names.Size( ) == 0 )
 			return y;
 
 		const int wrapW = SB_HOST_RCOL_RIGHT - x;
@@ -5522,9 +5541,9 @@ public:
 		const int dotsW = SmallFont->StringWidth( ", ..." );
 
 		std::vector<int> widths;
-		widths.reserve( loads.size( ));
-		for ( size_t i = 0; i < loads.size( ); ++i )
-			widths.push_back( SmallFont->StringWidth( loads[i].name.c_str( )));
+		widths.reserve( names.Size( ));
+		for ( unsigned i = 0; i < names.Size( ); ++i )
+			widths.push_back( SmallFont->StringWidth( names[i] ));
 
 		const zx::WadListLayout layout = zx::LayoutWadList( widths, sepW, dotsW, wrapW,
 			bCapped ? SB_HOST_WADS_MAXLINES : 0 );
@@ -5542,7 +5561,7 @@ public:
 				{
 					if ( i > line.first )
 						text += ", ";
-					text += loads[i].name.c_str( );
+					text += names[static_cast<unsigned>( i )];
 				}
 
 				// A comma after the last name on a line that is not the last: the break is a wrap,
@@ -5569,15 +5588,10 @@ public:
 		// [rc4l] One total instead of a size per name. Per-file sizes needed a right-hand column to
 		// line up in, and that column is what stopped the names running on. What actually decides
 		// anything here is how big the download is, and that is one number.
-		unsigned long long total = 0;
-		for ( size_t i = 0; i < sizes.size( ) && i < loads.size( ); ++i )
-			total += sizes[i];
-
 		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 		{
 			FString summary;
-			summary.Format( "%u file%s", static_cast<unsigned>( loads.size( )),
-				( loads.size( ) == 1 ) ? "" : "s" );
+			summary.Format( "%u file%s", names.Size( ), ( names.Size( ) == 1 ) ? "" : "s" );
 
 			// Only what this machine can actually measure. Files not downloaded yet have no size, so
 			// a total is a floor rather than the whole story -- saying nothing beats saying a number
@@ -5598,11 +5612,11 @@ public:
 		// are the same problem: text they can see is missing. Hung on the drawn block so it appears
 		// where they are already looking.
 		FString all;
-		for ( size_t i = 0; i < loads.size( ); ++i )
+		for ( unsigned i = 0; i < names.Size( ); ++i )
 		{
 			if ( i > 0 )
 				all += ", ";
-			all += loads[i].name.c_str( );
+			all += names[i];
 		}
 
 		serverbrowser_Tip( x, listTop, wrapW, y - listTop, all.GetChars( ));
