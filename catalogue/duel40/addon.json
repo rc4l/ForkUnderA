@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "name": "Duel 40",
-  "summary": "Forty-map duel pack with a spree announcer.",
+  "name": "Classic Duel",
+  "summary": "Play one-on-one against someone with classic settings. Say goodbye to freelook and jumping.",
   "iwad": "doom2.wad",
   "map": "START",
   "files": [
