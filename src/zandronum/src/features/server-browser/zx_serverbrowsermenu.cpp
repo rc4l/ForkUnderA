@@ -698,6 +698,16 @@ static	int				g_HostEntryHot = -2;	// -2 is "none"
 // been updated underneath a remembered choice.
 static	FString			g_HostVariantId;
 
+// [rc4l] Whether the cursor is on an opened experience's OWN row rather than on one of the ways of
+// playing under it.
+//
+// The one thing the selection cannot say by itself. Everywhere else the cursor is derived from what
+// is chosen, and that works because a choice names exactly one row -- but an open experience's own
+// row and its default variant's row are both "this entry, playing the default", so deriving alone
+// put the cursor on the variant and left the row above it unreachable. UP off the first variant then
+// moved the selection to a row it was already on and looked like a key that did nothing.
+static	bool			g_HostOnEntryRow = false;
+
 // [rc4l] Which experiences are opened out to show their ways of playing, entry for entry.
 //
 // Any number at once. One at a time was the first attempt and it made comparing two packs
@@ -3452,6 +3462,7 @@ public:
 				if ( next < static_cast<int>( rows.size( )))
 				{
 					g_HostEntrySel = rows[next].entry;
+					g_HostOnEntryRow = ( rows[next].variant < 0 );
 
 					if ( rows[next].variant >= 0 )
 						g_HostVariantId = entries[rows[next].entry].addon.variants[rows[next].variant].id.c_str( );
@@ -3718,6 +3729,7 @@ public:
 					SetFocus( zx::BrowserFocus::Host );
 					g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
 					g_HostEntrySel = r.entry;
+					g_HostOnEntryRow = ( r.variant < 0 );
 
 					if ( r.variant >= 0 )
 					{
@@ -3918,6 +3930,12 @@ public:
 	void ClampHostScroll( )
 	{
 		g_HostScroll = zx::ClampScroll( g_HostScroll, HostMaxScroll( ));
+	}
+
+	// The same, for the list beside them. It shortens and lengthens as experiences are opened out.
+	void ClampHostListScroll( )
+	{
+		g_HostListScroll = zx::ClampScroll( g_HostListScroll, HostListMaxScroll( ));
 	}
 
 	// [rc4l] Bring a row into view, for the keyboard.
@@ -4480,12 +4498,17 @@ public:
 	// index would have to be corrected every time the list changed shape -- opening an entry, the
 	// catalogue being re-read -- and the correction that gets missed is the one that starts the wrong
 	// experience.
+	//
+	// The one thing the choice cannot say is whether the cursor is on an OPEN experience's own row or
+	// on the way of playing it defaults to, because both are the same choice. That bit is kept beside
+	// it; see g_HostOnEntryRow.
 	int HostSelectedRow( const std::vector<zx::HostListRow> &rows )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
 
 		int variant = -1;
-		if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
+		if ( !g_HostOnEntryRow &&
+			( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
 		{
 			const zx::VariantPick pick = zx::PickVariant( entries[g_HostEntrySel].addon,
 				g_HostVariantId.GetChars( ));
@@ -7520,6 +7543,21 @@ public:
 						ClampHostStatusScroll( );
 						return true;
 					}
+				}
+
+				// [rc4l] Over the experience list, the notch belongs to the list. Checked BEFORE the
+				// settings below, whose test spans the whole panel and would otherwise answer for a
+				// notch aimed at the left column -- and answer with nothing at all whenever the
+				// settings happen to fit, which is why the list would not scroll by wheel.
+				if (( g_Tab == BrowserTab::Host ) && ( HostListMaxScroll( ) > 0 ) &&
+					( g_MouseY >= serverbrowser_ToScreenY( SB_HOST_VIEW_TOP )) &&
+					( g_MouseY < serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM )) &&
+					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_LIST_LEFT - 6 )) &&
+					( g_MouseX < serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 6 )))
+				{
+					g_HostListScroll += step * 6;
+					ClampHostListScroll( );
+					return true;
 				}
 
 				// [rc4l] Over the hosting settings, the notch belongs to them. Same rule as the WAD
