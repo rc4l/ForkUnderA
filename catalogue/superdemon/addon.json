@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "name": "Super Demon",
+  "summary": "Forty-seven boss arenas. One life a round, and only one of you walks out.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "files": [
+    {
+      "name": "superdemon-.pk3",
+      "md5": "5ffcea5d2632b1304df91295117aa8ba"
+    },
+    {
+      "name": "super_demon_overlord_supremacy_v0.64.pk3",
+      "md5": "c5a6f75b6bb047c8521bd0d0e4ab3fc2"
+    }
+  ]
+}
