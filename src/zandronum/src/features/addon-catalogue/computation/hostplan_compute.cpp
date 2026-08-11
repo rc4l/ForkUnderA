@@ -41,6 +41,8 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
                        const std::vector<AddonFileRef> &files,
                        const IwadPick &iwad,
                        const std::string &serverCfgPath,
+                       const std::string &remixCfgPath,
+                       const std::string &map,
                        const HostChoices &choices,
                        const std::vector<std::string> &haveFiles)
 {
@@ -51,7 +53,8 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
 	plan.port = choices.port;
 	plan.advertise = choices.advertise;
 	plan.execCfg = serverCfgPath;
-	plan.map = addon.map;
+	plan.execRemixCfg = remixCfgPath;
+	plan.map = map;
 
 	if (!addon.valid)
 	{

@@ -68,6 +68,14 @@ struct AddonVariant
 	std::string tooltip;	// optional; what this way of playing actually is
 	VariantKind kind;		// required; see VariantKind
 
+	// [rc4l] Where this one opens, when it is not where the entry opens. Empty means the entry's.
+	//
+	// Needed the moment several packs live under one entry: three invasion packs open on alinv01,
+	// MAP01 and Z1INV01, and one entry-level answer cannot be all three. Without it the only way to
+	// place the start was to write out a rotation per variant, which is a lot of lines to maintain
+	// for a fact the pack's own mapinfo already states.
+	std::string map;
+
 	// Loaded AFTER the entry's own, so an entry can carry what every way of playing shares and a
 	// variant only what is peculiar to it. Empty for a pack whose variants differ by cfg alone.
 	std::vector<AddonFileRef> files;
@@ -104,15 +112,64 @@ struct AddonEntry
 	// variant's cfg should BE server.cfg. Then old and new agree about what an unchosen entry does.
 	std::vector<AddonVariant> variants;
 
+	// [rc4l] Which remixes this entry can be played with, BY ID -- the remixes themselves live once
+	// in catalogue/remix and are shared.
+	//
+	// Ids rather than definitions because the same few remixes apply to many entries: "three lives"
+	// means the same thing to every invasion pack, and restating its cfg and files in each addon.json
+	// is the copies-drift problem this schema refuses everywhere else. An entry says which apply,
+	// which is the only part that is actually about the entry.
+	//
+	// Empty for an entry nothing can be played with, which is most of them: a pack bringing its own
+	// weapons and classes has nowhere to put someone else's.
+	std::vector<std::string> remixes;
+
 	bool valid;
 	std::string error;		// why not, when invalid
 
 	AddonEntry() : kind(VariantKind::Unknown), valid(false) {}
 };
 
+// [rc4l] Something you can play an entry WITH, on top of whichever way of playing you chose.
+//
+// A third axis, and it has to be one. "Three lives" means the same thing to every invasion pack, and
+// Brutal Doom means the same thing to every plain mapset. Written as variants instead, each would be
+// restated once per pack, and n packs times m of these is a lot of copies of one idea.
+//
+// So a remix is defined ONCE, in catalogue/remix/<id>/remix.json, and an entry names the ones it can
+// take. The entry says what applies to it, which is the only part actually about the entry; the
+// remix says what it does, which is the only part actually about the remix.
+//
+// Both halves are optional and both get used. A RULES remix changes cvars and loads nothing, which
+// is what Survival is: one line of cfg every invasion pack understands. A CONTENT remix brings
+// files, which is what Brutal Doom would be. One that does neither is not an error either: that is
+// the baseline, the "as the pack ships" option, and it needs a name like the rest so the picker has
+// something to put at the top.
+struct AddonRemix
+{
+	std::string id;			// the folder name; never read from inside the file
+	std::string name;		// what the picker shows
+	std::string summary;	// optional; what this actually changes
+	std::string cfg;		// optional; bare filename, beside the remix.json
+
+	// Loaded AFTER the entry's files and the variant's, by the same rule and for the same reason:
+	// added, never replacing, so nothing has to restate what it is being added to.
+	std::vector<AddonFileRef> files;
+
+	bool valid;
+	std::string error;		// why not, when invalid
+
+	AddonRemix() : valid(false) {}
+};
+
 // `id` is supplied by the caller from the directory name rather than trusted from the file: the
 // folder is what a player renames, and two sources for one identity can only ever disagree.
 AddonEntry ParseAddonFile(const std::string &id, const std::string &json);
+
+// The same restricted JSON, read by the same reader, for the other kind of document in the
+// catalogue. Kept in this unit rather than a sibling precisely so there is ONE reader: two would
+// drift, and the drift would show up as a file that parses in one place and not the other.
+AddonRemix ParseRemixFile(const std::string &id, const std::string &json);
 
 } // namespace zx
 

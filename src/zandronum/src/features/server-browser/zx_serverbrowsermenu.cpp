@@ -58,6 +58,7 @@
 #include "features/addon-catalogue/zx_catalogue.h"
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/addon-catalogue/computation/remixpick_compute.h"
 #include "features/addon-catalogue/computation/variantpick_compute.h"
 #include "features/addon-catalogue/computation/hostlist_compute.h"
 #include "features/wad-download/zx_wadsearch.h"
@@ -291,6 +292,20 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_FOOT_W		( SB_HOST_FOOT_RIGHT - SB_HOST_FOOT_LEFT )
 #define SB_HOST_FOOT_HALF	(( SB_HOST_FOOT_W - SB_HOST_FOOT_GAP ) / 2 )
 #define SB_HOST_TOGGLE_X	( SB_HOST_FOOT_RIGHT - SB_HOST_FOOT_HALF )
+
+// [rc4l] The remix button, on its own row above the other two and spanning both of them.
+//
+// Full width because it is not a third choice beside PLAY NOW and SETTINGS: it says what the button
+// under it is about to start, so it reads as a line of the panel rather than as a sibling of the
+// thing it qualifies.
+//
+// Drawn ONLY for an entry that offers remixes, which is most of them not at all. A permanent row
+// saying "nothing to choose" is exactly the wasted space a picker is supposed to avoid, and the
+// column is short enough that eighteen units matter.
+#define SB_HOST_REMIX_H		SB_HOST_BTN_H
+#define SB_HOST_REMIX_GAP	6
+#define SB_HOST_REMIX_Y		( SB_HOST_BTN_Y - SB_HOST_REMIX_GAP - SB_HOST_REMIX_H )
+
 #define SB_HOST_RTOP_TOP	SB_HOST_VIEW_TOP
 #define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOGGLE_Y - 6 )
 #define SB_HOST_RTOP_H		( SB_HOST_RTOP_BOTTOM - SB_HOST_RTOP_TOP )
@@ -745,15 +760,40 @@ static void HostToggleEntryOpen( int entry )
 	g_HostOpenEntries[entry] = !g_HostOpenEntries[entry];
 }
 
-// [rc4l] What the CHOSEN way of playing loads. Every question the host tab asks about files -- what
-// to list, what to size, what to verify, what to fetch, what to start on -- comes through here.
+// [rc4l] Which remix the player wants, held as an id for the reason the variant is: the pool is
+// re-read and reordered, and a stored number would eventually point at something else.
+static	FString			g_HostRemixId;
+
+// What the selected entry can be played with, in the order the entry names them.
+static std::vector<zx::AddonRemix> HostOfferedRemixes( const zx::AddonEntry &addon )
+{
+	return zx::OfferedRemixes( addon, zx::CatalogueRemixes( ));
+}
+
+static zx::RemixPick HostRemixPick( const zx::AddonEntry &addon )
+{
+	return zx::PickRemix( HostOfferedRemixes( addon ), g_HostRemixId.GetChars( ));
+}
+
+// [rc4l] What the CHOSEN way of playing loads, remix included. Every question the host tab asks about
+// files -- what to list, what to size, what to verify, what to fetch, what to start on -- comes
+// through here.
 //
 // Not addon.files, which used to be the answer and no longer is one. Ghouls vs Humans keeps nothing
 // at the entry level and a whole different wad on each way of playing, so reading the entry's own
 // list would show and start something no variant plays.
+//
+// The remix's files go on the end, which is also why the panel needs no work to show them: pick a
+// remix that loads something and it appears in the file list with its size, beside everything else
+// the server will be started on.
 static std::vector<zx::AddonFileRef> HostSelectedFiles( const zx::AddonEntry &addon )
 {
-	return zx::PickVariant( addon, g_HostVariantId.GetChars( )).files;
+	std::vector<zx::AddonFileRef> files = zx::PickVariant( addon, g_HostVariantId.GetChars( )).files;
+
+	const zx::RemixPick remix = HostRemixPick( addon );
+	files.insert( files.end( ), remix.files.begin( ), remix.files.end( ));
+
+	return files;
 }
 
 // [rc4l] What we told the server to load, kept so the client can match it before joining.
@@ -794,6 +834,14 @@ static	int				g_HostStatusH = 0;
 // START is what the selection will actually load.
 static	bool			g_HostShowSettings = false;
 static	bool			g_HostOnSettingsToggle = false;
+static	bool			g_HostRemixHot = false;
+
+// [rc4l] The remix picker, open over the panel. A list rather than a row of buttons, because the
+// dialog's three-button ceiling is exactly the wall this would hit: two options today, and the whole
+// point of a shared pool is that there will be more.
+static	bool			g_RemixOpen = false;
+static	int				g_RemixCursor = 0;
+static	int				g_RemixHot = -1;
 
 // [rc4l] Which catalogue row the RUNNING server was started from, so the list can mark it and SWITCH
 // knows there is nothing to switch to. -2 is "custom setup", matching g_HostEntrySel's own spelling.
@@ -1909,11 +1957,13 @@ public:
 			// rather than being stranded behind the panel on a control they cannot reach.
 			if ( g_Dialog.open )
 				DrawDialog( );
+			else if ( g_RemixOpen )
+				DrawRemixPicker( );
 
 			DrawFocusTravel( );
 
 			// A tooltip about a control behind the modal is about something not being asked.
-			if ( !g_Dialog.open )
+			if ( !g_Dialog.open && !g_RemixOpen )
 				DrawTooltip( );
 		}
 	}
@@ -2151,6 +2201,127 @@ public:
 		outY = (( SB_VIRT_H - h ) / 2 ) + h - SB_DLG_PAD - SB_DLG_BTN_H;
 		outW = widths[index];
 		return true;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The remix picker: the same modal treatment as the dialog, but a LIST.
+	//
+	// Not the dialog itself, whose buttons cap at three. Two remixes exist today and the pool is
+	// shared precisely so more can be added without touching any entry, so a control that stops at
+	// three would be a wall built on purpose. A list also has somewhere to put the summary, which is
+	// the part that says what picking it would do.
+	std::vector<zx::AddonRemix> RemixChoices( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return std::vector<zx::AddonRemix>( );
+
+		return HostOfferedRemixes( entries[g_HostEntrySel].addon );
+	}
+
+	int RemixRowH( )		{ return SB_DLG_LINE * 2 + 8; }
+
+	int RemixPanelH( )
+	{
+		const int rows = static_cast<int>( RemixChoices( ).size( ));
+		return SB_DLG_PAD + SB_DLG_LINE + 6 + ( rows * RemixRowH( )) + SB_DLG_PAD;
+	}
+
+	// Where a row sits, asked by the drawing AND the hit test, so a choice can never be somewhere
+	// other than where it is clickable.
+	int RemixRowY( int index )
+	{
+		const int top = ( SB_VIRT_H - RemixPanelH( )) / 2;
+		return top + SB_DLG_PAD + SB_DLG_LINE + 6 + ( index * RemixRowH( ));
+	}
+
+	void OpenRemixPicker( )
+	{
+		const std::vector<zx::AddonRemix> choices = RemixChoices( );
+		if ( choices.empty( ))
+			return;
+
+		// Opens ON the current choice rather than at the top, so the first thing marked is what is
+		// already in force.
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		const zx::RemixPick now = HostRemixPick( entries[g_HostEntrySel].addon );
+
+		g_RemixCursor = ( now.index >= 0 ) ? now.index : 0;
+		g_RemixHot = -1;
+		g_RemixOpen = true;
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	void ChooseRemix( int index )
+	{
+		const std::vector<zx::AddonRemix> choices = RemixChoices( );
+
+		if (( index >= 0 ) && ( index < static_cast<int>( choices.size( ))))
+			g_HostRemixId = choices[index].id.c_str( );
+
+		g_RemixOpen = false;
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+	}
+
+	void DrawRemixPicker( )
+	{
+		const std::vector<zx::AddonRemix> choices = RemixChoices( );
+		if ( choices.empty( ))
+		{
+			g_RemixOpen = false;
+			return;
+		}
+
+		screen->Dim( PalEntry( 0, 0, 0 ), 0.72f, 0, 0, SCREENWIDTH, SCREENHEIGHT );
+
+		const int h = RemixPanelH( );
+		const int top = ( SB_VIRT_H - h ) / 2;
+
+		const zx::PanelColor topCol = { 30, 32, 46, 246 };
+		const zx::PanelColor botCol = { 12, 13, 20, 252 };
+		DrawRoundedPanel( SB_DLG_LEFT, top, SB_DLG_W, h, topCol, botCol, 10 );
+
+		screen->DrawText( SmallFont, CR_WHITE,
+			( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( "HOW TO PLAY IT" ) / 2 ),
+			top + SB_DLG_PAD, "HOW TO PLAY IT",
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+		for ( size_t i = 0; i < choices.size( ); ++i )
+		{
+			const int rowY = RemixRowY( static_cast<int>( i ));
+			const bool bOn = ( static_cast<int>( i ) == g_RemixCursor );
+			const bool bHot = ( static_cast<int>( i ) == g_RemixHot );
+
+			if ( bOn || bHot )
+			{
+				screen->Dim( bOn ? PalEntry( 60, 70, 96 ) : PalEntry( 40, 44, 60 ), bOn ? 0.55f : 0.4f,
+					serverbrowser_ToScreenX( SB_DLG_LEFT + SB_DLG_PAD - 4 ),
+					serverbrowser_ToScreenY( rowY - 2 ),
+					serverbrowser_ToScreenX( SB_DLG_LEFT + SB_DLG_W - SB_DLG_PAD + 4 ) -
+						serverbrowser_ToScreenX( SB_DLG_LEFT + SB_DLG_PAD - 4 ),
+					serverbrowser_ToScreenY( rowY + RemixRowH( ) - 4 ) -
+						serverbrowser_ToScreenY( rowY - 2 ));
+			}
+
+			screen->DrawText( SmallFont, bOn ? CR_GOLD : CR_WHITE,
+				SB_DLG_LEFT + SB_DLG_PAD, rowY, choices[i].name.c_str( ),
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+			if ( choices[i].summary.empty( ))
+				continue;
+
+			// The summary is the part that says what choosing this would do, which is why the picker
+			// is a list: a row of buttons has nowhere to put it.
+			const FString line = serverbrowser_FitName( choices[i].summary.c_str( ),
+				SB_DLG_W - 2 * SB_DLG_PAD );
+
+			screen->DrawText( SmallFont, CR_DARKGRAY,
+				SB_DLG_LEFT + SB_DLG_PAD, rowY + SB_DLG_LINE, line,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
 	}
 
 	//*************************************************************************
@@ -3044,13 +3215,18 @@ public:
 			// this avoids.
 			const zx::VariantPick pick = zx::PickVariant( chosen.addon, g_HostVariantId.GetChars( ));
 
-			const std::vector<FString> verified = HostEntryVerifiedPaths( pick.files );
+			// The remix goes through the same one place the panel asks, so what gets verified,
+			// fetched and started is exactly what was on screen.
+			const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( chosen.addon );
+			const zx::RemixPick remix = HostRemixPick( chosen.addon );
+
+			const std::vector<FString> verified = HostEntryVerifiedPaths( loads );
 
 			std::vector<std::string> have;
-			for ( size_t i = 0; i < pick.files.size( ); ++i )
+			for ( size_t i = 0; i < loads.size( ); ++i )
 			{
 				if (( i < verified.size( )) && verified[i].IsNotEmpty( ))
-					have.push_back( pick.files[i].name );
+					have.push_back( loads[i].name );
 			}
 
 			std::vector<std::string> iwads;
@@ -3079,9 +3255,10 @@ public:
 					pick.name, std::string( ));
 			}
 
-			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon, pick.files,
+			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon, loads,
 				zx::PickIwad( chosen.addon.iwad, iwads ),
-				zx::CatalogueServerCfgPath( chosen, g_HostVariantId.GetChars( )), choices, have );
+				zx::CatalogueServerCfgPath( chosen, g_HostVariantId.GetChars( )),
+				zx::CatalogueRemixCfgPath( remix.id ), pick.map, choices, have );
 
 			// [rc4l] Missing files are a DOWNLOAD, which is what the catalogue's per-file md5 was
 			// shipped for and what BuildHostPlan has always meant by returning `missing` rather than
@@ -3089,7 +3266,7 @@ public:
 			// downloading was impossible while the JOIN beside it fetched the same file happily.
 			//
 			// A blocker is different and still refuses: no IWAD to run on cannot be downloaded.
-			if ( plan.blocker.empty( ) && !plan.ready && BeginHostDownload( chosen, pick.files, plan ))
+			if ( plan.blocker.empty( ) && !plan.ready && BeginHostDownload( chosen, loads, plan ))
 				return;
 
 			if ( !plan.blocker.empty( ) || !plan.ready )
@@ -3130,6 +3307,7 @@ public:
 			}
 
 			config.execCfg = plan.execCfg;
+			config.execRemixCfg = plan.execRemixCfg;
 
 			// [rc4l] RESOLVED to full paths, not left as bare names. These are what the CLIENT
 			// reloads onto in order to join, and RequestReload's loadability check opens exactly
@@ -3150,7 +3328,7 @@ public:
 				// The copy whose md5 matched, if we checked this one above. Re-resolving by name here
 				// would undo the check: the verified file can sit later on the search path than an
 				// impostor of the same name, and the first hit is what a name search returns.
-				FString path = VerifiedPathFor( pick.files, verified, plan.pwads[i].c_str( ));
+				FString path = VerifiedPathFor( loads, verified, plan.pwads[i].c_str( ));
 				if ( path.IsEmpty( ))
 					path = zx::FindFileInEngineSearchPaths( plan.pwads[i].c_str( ));
 
@@ -3772,6 +3950,24 @@ public:
 			}
 		}
 
+		// [rc4l] The remix row, above them both. Same rule as the toggle below: only when it is
+		// DRAWN, because an entry with nothing to be played with has no row there and a hitbox
+		// hanging in that space would be the invisible-but-clickable bug again.
+		g_HostRemixHot = false;
+		if ( HostHasRemixRow( ) &&
+			( y >= serverbrowser_ToScreenY( SB_HOST_REMIX_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_REMIX_Y + SB_HOST_REMIX_H )) &&
+			( x >= serverbrowser_ToScreenX( SB_HOST_FOOT_LEFT )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_FOOT_RIGHT )))
+		{
+			g_HostRemixHot = true;
+
+			if ( type == MOUSE_Click )
+				OpenRemixPicker( );
+
+			return true;
+		}
+
 		// The toggle, in the other half of the foot row. Only when it is DRAWN: while a server is
 		// running the action button spans the whole row, and a toggle still taking clicks from under
 		// it would be the invisible-but-clickable bug in its purest form.
@@ -4179,6 +4375,41 @@ public:
 	// ONE function draws both, from the same constants the hit test reads. The last time these were
 	// worked out separately STOP ended up drawn in one place and clickable in another, which is to
 	// say not clickable at all.
+	// [rc4l] What the button says: the remix in force, not the word "remix" on its own.
+	//
+	// The picker is behind a click and this row is the only place the choice is visible while the
+	// panel is showing anything else, so a label that named the control rather than the state would
+	// leave the player with no way to see what they are about to start.
+	FString HostRemixLabel( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return FString( "REMIX" );
+
+		const zx::RemixPick pick = HostRemixPick( entries[g_HostEntrySel].addon );
+
+		FString label;
+		label.Format( "REMIX: %s", pick.name.empty( ) ? "NONE" : pick.name.c_str( ));
+		label.ToUpper( );
+		return label;
+	}
+
+	void DrawHostRemixButton( )
+	{
+		if ( !HostHasRemixRow( ))
+			return;
+
+		// The same DrawRoundedButton as PLAY NOW and SETTINGS, spanning the width of both: it is a
+		// line of the panel saying what the button beneath it will start, not a third choice beside
+		// them.
+		DrawRoundedButton( SB_HOST_FOOT_LEFT, SB_HOST_REMIX_Y, SB_HOST_FOOT_W, SB_HOST_REMIX_H,
+			HostRemixLabel( ), g_HostRemixHot );
+
+		serverbrowser_Tip( SB_HOST_FOOT_LEFT, SB_HOST_REMIX_Y, SB_HOST_FOOT_W, SB_HOST_REMIX_H,
+			"Change how this experience plays without changing the experience" );
+	}
+
 	void DrawHostFootButtons( )
 	{
 		const HostAction action = HostActionNow( );
@@ -4457,7 +4688,7 @@ public:
 
 	int HostMaxScroll( )
 	{
-		const int over = HostContentH( ) - SB_HOST_RBOT_H;
+		const int over = HostContentH( ) - ( HostRightBottom( ) - SB_HOST_RBOT_TOP );
 		return ( over > 0 ) ? over : 0;
 	}
 
@@ -4600,12 +4831,33 @@ public:
 		return zx::RowFullyInView( vy, vh, SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM );
 	}
 
+	// [rc4l] Whether the selected entry has anything to be played WITH, which decides whether the
+	// remix row exists at all. Most entries offer nothing: a pack bringing its own weapons and
+	// classes has nowhere to put someone else's, and a row saying "no choice here" on every one of
+	// those is the wasted space a picker is supposed to save.
+	bool HostHasRemixRow( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return false;
+
+		return HostOfferedRemixes( entries[g_HostEntrySel].addon ).size( ) > 1;
+	}
+
+	// Where the RIGHT column's content has to stop. The remix row is drawn under it, so everything
+	// above has to end before it rather than scroll beneath it.
+	int HostRightBottom( )
+	{
+		return HostHasRemixRow( ) ? ( SB_HOST_REMIX_Y - 6 ) : SB_HOST_VIEW_BOTTOM;
+	}
+
 	// [rc4l] Where the detail region stops, which is not a constant: while a server is running it
 	// gives up its lower half to the status, so the details scroll inside what is left rather than
 	// running underneath it.
 	int HostDetailViewBottom( )
 	{
-		return zx::HostIsActive( ) ? SB_HOST_RUN_TOP_BOT : SB_HOST_RTOP_BOTTOM;
+		return zx::HostIsActive( ) ? SB_HOST_RUN_TOP_BOT : HostRightBottom( );
 	}
 
 	int HostDetailViewH( )
@@ -4808,6 +5060,14 @@ public:
 
 		DrawHostCatalogue( SB_HOST_LIST_LEFT );
 
+		PopClip( );
+
+		// [rc4l] The right column gets its OWN clip, ending above the remix row when there is one.
+		// It used to share the list's, which was fine while both columns ran to the same line; the
+		// remix row belongs to this column alone, and the list must not lose height to it.
+		PushClip( serverbrowser_ToScreenY( SB_HOST_VIEW_TOP ),
+			serverbrowser_ToScreenY( HostRightBottom( )));
+
 		// One face at a time. Both used to be on screen at once, each with its own bar, and the
 		// settings bled over the boundary because two regions in one clip cannot mask each other.
 		if ( g_HostShowSettings )
@@ -4839,6 +5099,7 @@ public:
 		// [rc4l] OUTSIDE the clip. Both buttons sit at the panel's foot, which is below the scrolling
 		// viewport, so drawing them inside it cost them their backgrounds and left the labels
 		// floating.
+		DrawHostRemixButton( );
 		DrawHostFootButtons( );
 	}
 
@@ -7066,6 +7327,41 @@ public:
 		if ( g_Dialog.open )
 			return DialogMouseEvent( type, x, y );
 
+		// [rc4l] The picker owns the screen the same way, and for the same reason: a click through it
+		// would be choosing something by pressing something else.
+		if ( g_RemixOpen )
+		{
+			const std::vector<zx::AddonRemix> choices = RemixChoices( );
+
+			g_RemixHot = -1;
+			for ( size_t i = 0; i < choices.size( ); ++i )
+			{
+				const int rowY = RemixRowY( static_cast<int>( i ));
+
+				if (( x < serverbrowser_ToScreenX( SB_DLG_LEFT + SB_DLG_PAD - 4 )) ||
+					( x >= serverbrowser_ToScreenX( SB_DLG_LEFT + SB_DLG_W - SB_DLG_PAD + 4 )) ||
+					( y < serverbrowser_ToScreenY( rowY - 2 )) ||
+					( y >= serverbrowser_ToScreenY( rowY + RemixRowH( ) - 4 )))
+				{
+					continue;
+				}
+
+				g_RemixHot = static_cast<int>( i );
+
+				if ( type == MOUSE_Click )
+					ChooseRemix( static_cast<int>( i ));
+
+				return true;
+			}
+
+			// Clicking outside it closes it without choosing, which is what clicking away from a
+			// picker means everywhere else.
+			if ( type == MOUSE_Click )
+				g_RemixOpen = false;
+
+			return true;
+		}
+
 		// The search box, which shares the row with the tabs.
 		g_SearchHot = false;
 		{
@@ -8244,6 +8540,47 @@ public:
 		if ( g_Notice.IsNotEmpty( ))
 		{
 			g_Notice = "";
+			return true;
+		}
+
+		// [rc4l] Same for the picker, and it is checked first because it is drawn on top. Escape
+		// leaves without choosing: the safe answer to "how would you like to play it" is whatever
+		// they already had.
+		if ( g_RemixOpen )
+		{
+			const int count = static_cast<int>( RemixChoices( ).size( ));
+
+			switch ( mkey )
+			{
+			case MKEY_Up:
+				if ( g_RemixCursor > 0 )
+				{
+					--g_RemixCursor;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				break;
+
+			case MKEY_Down:
+				if ( g_RemixCursor + 1 < count )
+				{
+					++g_RemixCursor;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				break;
+
+			case MKEY_Enter:
+				ChooseRemix( g_RemixCursor );
+				break;
+
+			case MKEY_Back:
+				g_RemixOpen = false;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/backup", snd_menuvolume, ATTN_NONE );
+				break;
+
+			default:
+				break;
+			}
+
 			return true;
 		}
 

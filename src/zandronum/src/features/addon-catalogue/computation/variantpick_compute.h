@@ -34,6 +34,10 @@ struct VariantPick
 	// What to show, and what the server is called. Empty when there are no variants.
 	std::string name;
 
+	// Where to open. The variant's own when it names one, otherwise the entry's, so a caller has one
+	// place to ask and never has to know which of the two answered.
+	std::string map;
+
 	// Everything this way of playing loads, in load order: the entry's own files followed by the
 	// variant's. Resolved here so no caller has to remember that the two lists concatenate, and so
 	// the panel, the download plan and the launch cannot each answer it differently.
