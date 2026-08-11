@@ -41,6 +41,39 @@
       ]
     },
     {
+      "id": "nordicsaga",
+      "name": "Nordic Saga",
+      "cfg": "nordicsaga.cfg",
+      "kind": "pvp",
+      "tooltip": "The GVHNS run, on the same content Multiverse uses.",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "mv_core_v4b2patch4.pk3",
+          "md5": "a70e9410920eb40260bef26fee9c5816"
+        },
+        {
+          "name": "mv_mapgfx_v4b2patch4.pk3",
+          "md5": "cbc9558780ad190fed8ef7090b03151c"
+        },
+        {
+          "name": "mv_maps_v4b2patch10.pk3",
+          "md5": "7080d65b016942f677485039119acd46"
+        },
+        {
+          "name": "mv_music_v4b2patch4.pk3",
+          "md5": "908145ed3104d5f054a23a1bacabf7be"
+        },
+        {
+          "name": "mv_code_v4b2patch12.pk3",
+          "md5": "195f817ab7bdcab68bc54f68f054ee56"
+        }
+      ]
+    },
+    {
       "id": "lod",
       "name": "Legacy of Darkness",
       "cfg": "lod.cfg",
