@@ -4042,6 +4042,16 @@ public:
 						// it, not just the caret: a caret is a small target and the row already means
 						// "this one", which is the same thing opening it says.
 						HostToggleEntryOpen( r.entry );
+
+						// [rc4l] Opening it puts the cursor on the way of playing that would ACTUALLY
+						// be hosted, rather than leaving it on the heading.
+						//
+						// Selecting the heading and selecting its default start the same server, so
+						// leaving the highlight up there said nothing the row below did not, while
+						// looking like a fourth thing you could pick. Derived rather than set to row
+						// zero, so an entry whose default is not its first still highlights the one
+						// the button would start.
+						g_HostOnEntryRow = !HostEntryIsOpen( r.entry );
 					}
 
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
