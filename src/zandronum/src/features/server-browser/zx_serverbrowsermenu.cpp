@@ -74,6 +74,7 @@
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/server-browser/computation/joinintent_compute.h"
 #include "features/server-browser/computation/ownjoin_compute.h"
+#include "features/server-browser/computation/wadlist_compute.h"
 #include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
 #include "features/server-browser/computation/scrollview_compute.h"
@@ -202,10 +203,6 @@ static int serverbrowser_OriginY( void );
 // description needs more, and the description is the reason the picker is a panel rather than three
 // buttons -- "Survival" tells you nothing you did not already guess, and "three lives each, spend
 // them and you watch" is the whole answer.
-#define SB_RMX_W			320
-#define SB_RMX_PAD			14
-#define SB_RMX_LIST_W		104
-#define SB_RMX_GAP			12
 #define SB_BUTTON_LEFT		( SB_DETAIL_LEFT + SB_DETAIL_PAD )
 #define SB_BUTTON_RIGHT		( SB_DETAIL_RIGHT - SB_DETAIL_PAD )
 #define SB_BUTTON_TOP		( SB_DETAIL_BOTTOM - SB_DETAIL_PAD - SB_BUTTON_H )
@@ -234,11 +231,15 @@ static int serverbrowser_OriginY( void );
 #define SB_PLRBAR_X			SB_WADBAR_X
 #define SB_PLRBAR_W			SB_WADBAR_W
 
-// [rc4l] The hosting panel, which stands where the list and the detail panel would be. One column,
-// centred, because there are six fields and nothing to compare them against -- a two-column form
-// would only be filling space it was given.
-#define SB_HOST_LEFT		( SB_PANEL_LEFT + 40 )
-#define SB_HOST_RIGHT		( SB_PANEL_RIGHT - 40 )
+// [rc4l] The hosting panel, which stands where the list and the detail panel would be.
+//
+// It used to be inset forty units either side, from when this was a centred one-column form with six
+// fields and nothing to compare them against. It is a two-column browser now, and eighty units of
+// margin were coming straight out of the experience names -- which are the longest text on the
+// screen and the thing the whole tab is for reading. Now it takes the panel it stands in, less the
+// same small breathing room the server list leaves.
+#define SB_HOST_LEFT		( SB_PANEL_LEFT + 8 )
+#define SB_HOST_RIGHT		( SB_PANEL_RIGHT - 8 )
 #define SB_HOST_TOP			( SB_TAB_ROW_SEP_Y + 14 )
 #define SB_HOST_PAD			16
 #define SB_HOST_LINE		11
@@ -272,12 +273,14 @@ static int serverbrowser_OriginY( void );
 
 // [rc4l] Two columns: WHAT to run on the left, how to run it on the right.
 //
-// Split at the same x the server list uses, so the HOST tab lines up with PUBLIC and PRIVATE and
-// switching tabs does not shift the layout under the pointer. The list has its own scroll because it
-// grows with the catalogue while the settings never do.
+// [rc4l] The split is placed from the RIGHT: the detail column needs a fixed readable width and the
+// list takes whatever is left, so widening the panel widens the list rather than padding both.
+// Every unit gained goes to the experience names, which is where it was missing.
+//
+// The list has its own scroll because it grows with the catalogue while the settings never do.
 #define SB_HOST_LIST_LEFT	( SB_HOST_LEFT + SB_HOST_PAD )
 #define SB_HOST_LIST_RIGHT	( SB_HOST_RCOL_LEFT - 12 )
-#define SB_HOST_RCOL_LEFT	SB_X( 296 )
+#define SB_HOST_RCOL_LEFT	SB_X( 328 )
 #define SB_HOST_RCOL_RIGHT	( SB_HOST_RIGHT - SB_HOST_PAD )
 
 // [rc4l] Wide enough for PREFERRED PORT, which is the longest label and the one that decides this.
@@ -306,18 +309,17 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_FOOT_HALF	(( SB_HOST_FOOT_W - SB_HOST_FOOT_GAP ) / 2 )
 #define SB_HOST_TOGGLE_X	( SB_HOST_FOOT_RIGHT - SB_HOST_FOOT_HALF )
 
-// [rc4l] The remix button, on its own row above the other two and spanning both of them.
+// [rc4l] How many lines of filenames are drawn when something is under them.
 //
-// Full width because it is not a third choice beside PLAY NOW and SETTINGS: it says what the button
-// under it is about to start, so it reads as a line of the panel rather than as a sibling of the
-// thing it qualifies.
-//
-// Drawn ONLY for an entry that offers remixes, which is most of them not at all. A permanent row
-// saying "nothing to choose" is exactly the wasted space a picker is supposed to avoid, and the
-// column is short enough that eighteen units matter.
-#define SB_HOST_REMIX_H		SB_HOST_BTN_H
-#define SB_HOST_REMIX_GAP	6
-#define SB_HOST_REMIX_Y		( SB_HOST_BTN_Y - SB_HOST_REMIX_GAP - SB_HOST_REMIX_H )
+// Three, and the number is a judgement rather than a measurement: it is enough for the four or five
+// files a typical entry loads, and short enough that an entry loading twelve cannot push the
+// gameplay settings off the bottom of a column. Past it the list ends in an ellipsis and hovering
+// gives the whole thing. An entry with no settings has nothing to protect and gets no cap at all.
+#define SB_HOST_WADS_MAXLINES	3
+
+// The gameplay rows: one per way of playing, indented under their heading.
+#define SB_HOST_GAME_ROW_H		SB_HOST_LINE
+#define SB_HOST_GAME_INDENT		10
 
 #define SB_HOST_RTOP_TOP	SB_HOST_VIEW_TOP
 #define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOGGLE_Y - 6 )
@@ -850,14 +852,21 @@ static	int				g_HostStatusH = 0;
 // START is what the selection will actually load.
 static	bool			g_HostShowSettings = false;
 static	bool			g_HostOnSettingsToggle = false;
-static	bool			g_HostRemixHot = false;
+// [rc4l] The gameplay rows are drawn inside the scrolled detail region, so where they LAND is only
+// known once they have been drawn. Each frame's draw records them here and the pointer tests against
+// that, which is how a row that scrolled out of view stops being clickable without a second copy of
+// the layout deciding when.
+struct HostGameplayRow
+{
+	int y, h;
+	FString id;
+};
+static	TArray<HostGameplayRow>	g_HostGameRows;
+static	int						g_HostGameHot = -1;
 
 // [rc4l] The remix picker, open over the panel. A list rather than a row of buttons, because the
 // dialog's three-button ceiling is exactly the wall this would hit: two options today, and the whole
 // point of a shared pool is that there will be more.
-static	bool			g_RemixOpen = false;
-static	int				g_RemixCursor = 0;
-static	int				g_RemixHot = -1;
 
 // [rc4l] Which catalogue row the RUNNING server was started from, so the list can mark it and SWITCH
 // knows there is nothing to switch to. -2 is "custom setup", matching g_HostEntrySel's own spelling.
@@ -2064,13 +2073,11 @@ public:
 			// rather than being stranded behind the panel on a control they cannot reach.
 			if ( g_Dialog.open )
 				DrawDialog( );
-			else if ( g_RemixOpen )
-				DrawRemixPicker( );
 
 			DrawFocusTravel( );
 
 			// A tooltip about a control behind the modal is about something not being asked.
-			if ( !g_Dialog.open && !g_RemixOpen )
+			if ( !g_Dialog.open )
 				DrawTooltip( );
 		}
 	}
@@ -2320,12 +2327,9 @@ public:
 
 	//*************************************************************************
 	//
-	// [rc4l] The remix picker: the same modal treatment as the dialog, but a LIST.
-	//
-	// Not the dialog itself, whose buttons cap at three. Two remixes exist today and the pool is
-	// shared precisely so more can be added without touching any entry, so a control that stops at
-	// three would be a wall built on purpose. A list also has somewhere to put the summary, which is
-	// the part that says what picking it would do.
+	// [rc4l] The remix picker used to be a modal here, opened from a button above PLAY NOW. Both are
+	// gone: the choice is a SETTING, so it is drawn in the detail panel beside the thing it changes
+	// (DrawHostGameplay) rather than behind a click that hid the browser to ask one question.
 	std::vector<zx::AddonRemix> RemixChoices( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -2334,186 +2338,6 @@ public:
 			return std::vector<zx::AddonRemix>( );
 
 		return HostOfferedRemixes( entries[g_HostEntrySel].addon );
-	}
-
-	int RemixRowH( )		{ return SB_DLG_LINE + 5; }
-
-	// Where the two columns are. The names are short and the descriptions are not, so the split is
-	// nowhere near the middle.
-	int RemixLeft( )		{ return ( SB_VIRT_W - SB_RMX_W ) / 2; }
-	int RemixListX( )		{ return RemixLeft( ) + SB_RMX_PAD; }
-	int RemixDetailX( )		{ return RemixListX( ) + SB_RMX_LIST_W + SB_RMX_GAP; }
-	int RemixDetailW( )		{ return SB_RMX_W - 2 * SB_RMX_PAD - SB_RMX_LIST_W - SB_RMX_GAP; }
-
-	// [rc4l] Measured across EVERY choice rather than the highlighted one, so the panel is the same
-	// size whichever row you are on. Sizing it to the current description makes the box grow and
-	// shrink under the cursor, which moves the row you were about to click.
-	int RemixBodyH( )
-	{
-		const std::vector<zx::AddonRemix> choices = RemixChoices( );
-
-		int longest = 0;
-		for ( size_t i = 0; i < choices.size( ); ++i )
-		{
-			const int lines = WrapText( choices[i].summary.c_str( ), 0, 0, RemixDetailW( ),
-				CR_GRAY, false, false );
-			if ( lines > longest )
-				longest = lines;
-		}
-
-		const int listH = static_cast<int>( choices.size( )) * RemixRowH( );
-		const int detailH = SB_DLG_LINE + 4 + ( longest * SB_DLG_LINE );
-
-		return MAX( listH, detailH );
-	}
-
-	int RemixPanelH( )
-	{
-		return SB_RMX_PAD + SB_DLG_LINE + 8 + RemixBodyH( ) + SB_RMX_PAD;
-	}
-
-	int RemixBodyY( )
-	{
-		return (( SB_VIRT_H - RemixPanelH( )) / 2 ) + SB_RMX_PAD + SB_DLG_LINE + 8;
-	}
-
-	// Where a row sits, asked by the drawing AND the hit test, so a choice can never be somewhere
-	// other than where it is clickable.
-	int RemixRowY( int index )
-	{
-		return RemixBodyY( ) + ( index * RemixRowH( ));
-	}
-
-	void OpenRemixPicker( )
-	{
-		const std::vector<zx::AddonRemix> choices = RemixChoices( );
-		if ( choices.empty( ))
-			return;
-
-		// Opens ON the current choice rather than at the top, so the first thing marked is what is
-		// already in force.
-		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
-		const zx::RemixPick now = HostRemixPick( entries[g_HostEntrySel].addon );
-
-		g_RemixCursor = ( now.index >= 0 ) ? now.index : 0;
-		g_RemixHot = -1;
-		g_RemixOpen = true;
-
-		// Focus goes to the modal for the same reason the question dialog takes it: while it is up
-		// there is nowhere else a keypress can land, so the marker has to be in here.
-		SetFocus( zx::BrowserFocus::Dialog );
-
-		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-	}
-
-	void CloseRemixPicker( )
-	{
-		g_RemixOpen = false;
-		g_RemixHot = -1;
-		SetFocus( zx::BrowserFocus::Host );
-	}
-
-	void ChooseRemix( int index )
-	{
-		const std::vector<zx::AddonRemix> choices = RemixChoices( );
-
-		if (( index >= 0 ) && ( index < static_cast<int>( choices.size( ))))
-			g_HostRemixId = choices[index].id.c_str( );
-
-		CloseRemixPicker( );
-		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
-	}
-
-	void DrawRemixPicker( )
-	{
-		const std::vector<zx::AddonRemix> choices = RemixChoices( );
-		if ( choices.empty( ))
-		{
-			g_RemixOpen = false;
-			return;
-		}
-
-		screen->Dim( PalEntry( 0, 0, 0 ), 0.72f, 0, 0, SCREENWIDTH, SCREENHEIGHT );
-
-		const int h = RemixPanelH( );
-		const int top = ( SB_VIRT_H - h ) / 2;
-
-		const zx::PanelColor topCol = { 30, 32, 46, 246 };
-		const zx::PanelColor botCol = { 12, 13, 20, 252 };
-		DrawRoundedPanel( RemixLeft( ), top, SB_RMX_W, h, topCol, botCol, 10 );
-
-		screen->DrawText( SmallFont, CR_WHITE,
-			( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( "HOW TO PLAY IT" ) / 2 ),
-			top + SB_RMX_PAD, "HOW TO PLAY IT",
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-
-		// The names, down the left.
-		for ( size_t i = 0; i < choices.size( ); ++i )
-		{
-			const int rowY = RemixRowY( static_cast<int>( i ));
-			const bool bOn = ( static_cast<int>( i ) == g_RemixCursor );
-			const bool bHot = ( static_cast<int>( i ) == g_RemixHot );
-
-			if ( bOn || bHot )
-			{
-				screen->Dim( bOn ? PalEntry( 60, 70, 96 ) : PalEntry( 40, 44, 60 ), bOn ? 0.55f : 0.4f,
-					serverbrowser_ToScreenX( RemixListX( ) - 4 ),
-					serverbrowser_ToScreenY( rowY - 2 ),
-					serverbrowser_ToScreenX( RemixListX( ) + SB_RMX_LIST_W ) -
-						serverbrowser_ToScreenX( RemixListX( ) - 4 ),
-					serverbrowser_ToScreenY( rowY + RemixRowH( ) - 2 ) -
-						serverbrowser_ToScreenY( rowY - 2 ));
-			}
-
-			// Centred in the band rather than drawn at its top edge, the same way the experience list
-			// centres its rows: the band is taller than the glyphs, so drawing at rowY sits the text
-			// high and leaves the highlight looking like it belongs to the row underneath.
-			const int textY = rowY - 2 + ( RemixRowH( ) - SmallFont->GetHeight( )) / 2;
-
-			screen->DrawText( SmallFont, bOn ? CR_GOLD : CR_WHITE,
-				RemixListX( ), textY, serverbrowser_FitName( choices[i].name.c_str( ), SB_RMX_LIST_W - 4 ),
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-
-			// [rc4l] The travelling marker, on the row the keyboard is on. The picker had none, so
-			// arrowing through it moved a gold label and nothing else -- every other list in this
-			// browser marks its keyboard position, and a modal is the place it matters most because
-			// there is nowhere else the next keypress could go.
-			if ( bOn )
-				FocusAnchor( zx::BrowserFocus::Dialog, RemixListX( ) - 9, rowY - 2 + RemixRowH( ) / 2 );
-		}
-
-		// [rc4l] The rule between them, so the two columns read as two things rather than as one
-		// ragged block of text.
-		{
-			const int x = RemixDetailX( ) - SB_RMX_GAP / 2;
-			const int barTop = serverbrowser_ToScreenY( RemixBodyY( ) - 2 );
-			const int barH = serverbrowser_ToScreenY( RemixBodyY( ) + RemixBodyH( )) - barTop;
-			const int w = MAX( 1, serverbrowser_ToScreenX( x + 1 ) - serverbrowser_ToScreenX( x ));
-
-			for ( int i = 0; i < barH; ++i )
-			{
-				const int a = zx::ComputeSeparatorAlpha( i, barH, 110 );
-				if ( a > 0 )
-					screen->Dim( PalEntry( 150, 170, 215 ), a / 255.f,
-						serverbrowser_ToScreenX( x ), barTop + i, w, 1 );
-			}
-		}
-
-		// What the highlighted one actually does, down the right. This is the reason the picker is a
-		// panel and not three buttons: "Survival" tells you nothing you had not already guessed.
-		if (( g_RemixCursor < 0 ) || ( g_RemixCursor >= static_cast<int>( choices.size( ))))
-			return;
-
-		const zx::AddonRemix &shown = choices[g_RemixCursor];
-
-		screen->DrawText( SmallFont, CR_GOLD, RemixDetailX( ), RemixBodyY( ), shown.name.c_str( ),
-			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-
-		if ( !shown.summary.empty( ))
-		{
-			WrapText( shown.summary.c_str( ), RemixDetailX( ), RemixBodyY( ) + SB_DLG_LINE + 4,
-				RemixDetailW( ), CR_GRAY, false, true );
-		}
 	}
 
 	//*************************************************************************
@@ -4152,20 +3976,29 @@ public:
 			}
 		}
 
-		// [rc4l] The remix row, above them both. Same rule as the toggle below: only when it is
-		// DRAWN, because an entry with nothing to be played with has no row there and a hitbox
-		// hanging in that space would be the invisible-but-clickable bug again.
-		g_HostRemixHot = false;
-		if ( HostHasRemixRow( ) &&
-			( y >= serverbrowser_ToScreenY( SB_HOST_REMIX_Y )) &&
-			( y < serverbrowser_ToScreenY( SB_HOST_REMIX_Y + SB_HOST_REMIX_H )) &&
-			( x >= serverbrowser_ToScreenX( SB_HOST_FOOT_LEFT )) &&
-			( x < serverbrowser_ToScreenX( SB_HOST_FOOT_RIGHT )))
+		// [rc4l] The gameplay rows, inside the scrolled detail region. Tested against what the last
+		// frame actually DREW rather than against a computed row height: these scroll, so a rule
+		// saying "the nth row is at this y" is wrong the moment the region moves under it.
+		g_HostGameHot = -1;
+		for ( unsigned i = 0; i < g_HostGameRows.Size( ); ++i )
 		{
-			g_HostRemixHot = true;
+			const HostGameplayRow &row = g_HostGameRows[i];
+
+			if (( y < serverbrowser_ToScreenY( row.y - 1 )) ||
+				( y >= serverbrowser_ToScreenY( row.y + row.h - 1 )) ||
+				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) ||
+				( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+			{
+				continue;
+			}
+
+			g_HostGameHot = static_cast<int>( i );
 
 			if ( type == MOUSE_Click )
-				OpenRemixPicker( );
+			{
+				g_HostRemixId = row.id;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+			}
 
 			return true;
 		}
@@ -4577,41 +4410,6 @@ public:
 	// ONE function draws both, from the same constants the hit test reads. The last time these were
 	// worked out separately STOP ended up drawn in one place and clickable in another, which is to
 	// say not clickable at all.
-	// [rc4l] What the button says: the remix in force, not the word "remix" on its own.
-	//
-	// The picker is behind a click and this row is the only place the choice is visible while the
-	// panel is showing anything else, so a label that named the control rather than the state would
-	// leave the player with no way to see what they are about to start.
-	FString HostRemixLabel( )
-	{
-		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
-
-		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
-			return FString( "REMIX" );
-
-		const zx::RemixPick pick = HostRemixPick( entries[g_HostEntrySel].addon );
-
-		FString label;
-		label.Format( "REMIX: %s", pick.name.empty( ) ? "NONE" : pick.name.c_str( ));
-		label.ToUpper( );
-		return label;
-	}
-
-	void DrawHostRemixButton( )
-	{
-		if ( !HostHasRemixRow( ))
-			return;
-
-		// The same DrawRoundedButton as PLAY NOW and SETTINGS, spanning the width of both: it is a
-		// line of the panel saying what the button beneath it will start, not a third choice beside
-		// them.
-		DrawRoundedButton( SB_HOST_FOOT_LEFT, SB_HOST_REMIX_Y, SB_HOST_FOOT_W, SB_HOST_REMIX_H,
-			HostRemixLabel( ), g_HostRemixHot );
-
-		serverbrowser_Tip( SB_HOST_FOOT_LEFT, SB_HOST_REMIX_Y, SB_HOST_FOOT_W, SB_HOST_REMIX_H,
-			"Change how this experience plays without changing the experience" );
-	}
-
 	void DrawHostFootButtons( )
 	{
 		const HostAction action = HostActionNow( );
@@ -5033,11 +4831,13 @@ public:
 		return zx::RowFullyInView( vy, vh, SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM );
 	}
 
-	// [rc4l] Whether the selected entry has anything to be played WITH, which decides whether the
-	// remix row exists at all. Most entries offer nothing: a pack bringing its own weapons and
-	// classes has nowhere to put someone else's, and a row saying "no choice here" on every one of
-	// those is the wasted space a picker is supposed to save.
-	bool HostHasRemixRow( )
+	// [rc4l] Whether the selected entry has any gameplay setting to show, which is what decides
+	// whether the panel exists and so whether the file list is capped.
+	//
+	// Most entries have none: a pack bringing its own weapons and classes has nowhere to put someone
+	// else's, and a heading over an empty group on every one of those is the wasted space this is
+	// supposed to save. Those entries get the whole column for their files instead.
+	bool HostHasGameplayRow( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
 
@@ -5047,11 +4847,11 @@ public:
 		return HostOfferedRemixes( entries[g_HostEntrySel].addon ).size( ) > 1;
 	}
 
-	// Where the RIGHT column's content has to stop. The remix row is drawn under it, so everything
-	// above has to end before it rather than scroll beneath it.
+	// Where the RIGHT column's content has to stop. The gameplay settings scroll WITH the details now
+	// rather than sitting in a fixed row beneath them, so the region runs the full height.
 	int HostRightBottom( )
 	{
-		return HostHasRemixRow( ) ? ( SB_HOST_REMIX_Y - 6 ) : SB_HOST_VIEW_BOTTOM;
+		return SB_HOST_VIEW_BOTTOM;
 	}
 
 	// [rc4l] Where the detail region stops, which is not a constant: while a server is running it
@@ -5301,7 +5101,6 @@ public:
 		// [rc4l] OUTSIDE the clip. Both buttons sit at the panel's foot, which is below the scrolling
 		// viewport, so drawing them inside it cost them their backgrounds and left the labels
 		// floating.
-		DrawHostRemixButton( );
 		DrawHostFootButtons( );
 	}
 
@@ -5611,6 +5410,10 @@ public:
 		const int x = SB_HOST_RCOL_LEFT;
 		int y = SB_HOST_RTOP_TOP - g_HostDetailScroll;
 
+		// Rebuilt every frame from what actually gets drawn, so a row that scrolled away or belongs
+		// to a selection that has changed cannot be left behind as a live click target.
+		g_HostGameRows.Clear( );
+
 		// [rc4l] Reached only when there is nothing to describe. This used to be the Custom row's
 		// panel; with that row gone, an out-of-range selection means the catalogue is empty.
 		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
@@ -5694,47 +5497,189 @@ public:
 		const std::vector<unsigned long long> &sizes = HostEntryFileSizes( g_HostEntrySel,
 			g_HostVariantId.GetChars( ), loads );
 
+		y = DrawHostWadList( x, y, loads, sizes, HostHasGameplayRow( ));
+
+		// [rc4l] What you play it WITH, in the room the list just gave back.
+		//
+		// This used to be a button above PLAY NOW opening a modal over the whole browser, which is a
+		// lot of ceremony for picking between two words. It is a setting, so it lives with the thing
+		// it changes and is readable without opening anything.
+		DrawHostGameplay( x, y, addon );
+	}
+
+	// [rc4l] The files, as running text rather than a table. Returns the y below what it drew.
+	//
+	// `bCapped` is whether something is drawn underneath: the list stops at three lines to leave room
+	// for it, and runs as long as it likes when nothing is.
+	int DrawHostWadList( int x, int y, const std::vector<zx::AddonFileRef> &loads,
+		const std::vector<unsigned long long> &sizes, bool bCapped )
+	{
+		if ( loads.empty( ))
+			return y;
+
+		const int wrapW = SB_HOST_RCOL_RIGHT - x;
+		const int sepW = SmallFont->StringWidth( ", " );
+		const int dotsW = SmallFont->StringWidth( ", ..." );
+
+		std::vector<int> widths;
+		widths.reserve( loads.size( ));
 		for ( size_t i = 0; i < loads.size( ); ++i )
+			widths.push_back( SmallFont->StringWidth( loads[i].name.c_str( )));
+
+		const zx::WadListLayout layout = zx::LayoutWadList( widths, sepW, dotsW, wrapW,
+			bCapped ? SB_HOST_WADS_MAXLINES : 0 );
+
+		const int listTop = y;
+
+		for ( size_t ln = 0; ln < layout.lines.size( ); ++ln )
 		{
+			const zx::WadListLine &line = layout.lines[ln];
+
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
-				// [rc4l] Right-aligned, so a column of sizes reads down the edge rather than ragged
-				// after names of every length. A file this machine does not have has no size to
-				// show, which is the whole indicator: a number means you have it, blank means the
-				// button will fetch it.
-				const unsigned long long bytes = ( i < sizes.size( )) ? sizes[i] : 0;
-
-				// Measured BEFORE the name is drawn, because it decides how much room the name has.
-				// A long filename used to run straight under the size and the two overlapped into an
-				// unreadable smear -- the detail panel next door already solved this and this list
-				// never picked it up.
-				FString size;
-				if ( bytes > 0 )
-					size = zx::FormatByteSize( bytes ).c_str( );
-
-				// [rc4l] Both collapse to zero when there is no size, so a file we do not have gets
-				// the FULL width for its name rather than reserving room for a number that is not
-				// coming. Missing sizes are the common case here, not the exception.
-				const int sizeW = size.IsNotEmpty( ) ? SmallFont->StringWidth( size ) : 0;
-				const int gap = size.IsNotEmpty( ) ? SmallFont->StringWidth( "  " ) : 0;
-
-				const int nameRoom = ( SB_HOST_RCOL_RIGHT - x ) - sizeW - gap;
-
-				FString name = loads[i].name.c_str( );
-				if ( SmallFont->StringWidth( name ) > nameRoom )
-					name = serverbrowser_FitName( name, nameRoom );
-
-				screen->DrawText( SmallFont, CR_GRAY, x, y, name,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-
-				if ( size.IsNotEmpty( ))
+				FString text;
+				for ( size_t i = line.first; i < line.end; ++i )
 				{
-					screen->DrawText( SmallFont, CR_DARKGRAY,
-						SB_HOST_RCOL_RIGHT - sizeW, y, size,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+					if ( i > line.first )
+						text += ", ";
+					text += loads[i].name.c_str( );
 				}
+
+				// A comma after the last name on a line that is not the last: the break is a wrap,
+				// not the end of the list, and without it the line reads as finished.
+				const bool bLastLine = ( ln + 1 == layout.lines.size( ));
+				if ( !bLastLine )
+					text += ",";
+				else if ( layout.truncated )
+					text += ", ...";
+
+				// [rc4l] A single filename can be wider than the whole column -- Super Demon ships a
+				// forty-character one -- and the layout puts it on a line of its own rather than
+				// losing it. Cutting it is this end's job: without this it ran straight out past the
+				// panel edge and over whatever was beside it.
+				if ( SmallFont->StringWidth( text ) > wrapW )
+					text = serverbrowser_FitName( text, wrapW );
+
+				screen->DrawText( SmallFont, CR_GRAY, x, y, text,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			}
 			y += SB_HOST_LINE;
+		}
+
+		// [rc4l] One total instead of a size per name. Per-file sizes needed a right-hand column to
+		// line up in, and that column is what stopped the names running on. What actually decides
+		// anything here is how big the download is, and that is one number.
+		unsigned long long total = 0;
+		for ( size_t i = 0; i < sizes.size( ) && i < loads.size( ); ++i )
+			total += sizes[i];
+
+		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+		{
+			FString summary;
+			summary.Format( "%u file%s", static_cast<unsigned>( loads.size( )),
+				( loads.size( ) == 1 ) ? "" : "s" );
+
+			// Only what this machine can actually measure. Files not downloaded yet have no size, so
+			// a total is a floor rather than the whole story -- saying nothing beats saying a number
+			// that quietly means something else.
+			if ( total > 0 )
+			{
+				summary += ", ";
+				summary += zx::FormatByteSize( total ).c_str( );
+			}
+
+			screen->DrawText( SmallFont, CR_DARKGRAY, x, y, summary,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+		y += SB_HOST_LINE;
+
+		// [rc4l] The whole list, every time, not only when the cap bit. A name can be cut for being
+		// wider than the column while nothing was dropped at all, and from the reader's side those
+		// are the same problem: text they can see is missing. Hung on the drawn block so it appears
+		// where they are already looking.
+		FString all;
+		for ( size_t i = 0; i < loads.size( ); ++i )
+		{
+			if ( i > 0 )
+				all += ", ";
+			all += loads[i].name.c_str( );
+		}
+
+		serverbrowser_Tip( x, listTop, wrapW, y - listTop, all.GetChars( ));
+
+		return y;
+	}
+
+	// [rc4l] What this experience can be played WITH, as settings rather than a modal.
+	//
+	// One group today -- the ways of playing -- but drawn as a GROUP under a heading rather than as a
+	// single control, because that is what it is going to keep being. The next setting to arrive gets
+	// a heading of its own beneath this one and nothing here has to move.
+	void DrawHostGameplay( int x, int y, const zx::AddonEntry &addon )
+	{
+		const std::vector<zx::AddonRemix> choices = HostOfferedRemixes( addon );
+		if ( choices.size( ) <= 1 )
+			return;			// nothing to choose is not a setting; the file list took the room
+
+		const zx::RemixPick pick = HostRemixPick( addon );
+
+		y += 4;
+		if ( HostDetailRowVisible( y, 2 ))
+			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+		y += 6;
+
+		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+		{
+			screen->DrawText( SmallFont, CR_GOLD, x, y, "GAMEPLAY",
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+		y += SB_HOST_LINE + 2;
+
+		for ( size_t i = 0; i < choices.size( ); ++i )
+		{
+			const bool bOn = ( choices[i].id == pick.id );
+			const int rowX = x + SB_HOST_GAME_INDENT;
+
+			// Recorded whether or not it is visible, then filtered: a row scrolled out of the region
+			// must not be clickable, and the region is the only thing that knows.
+			if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
+			{
+				HostGameplayRow rec;
+				rec.y = y;
+				rec.h = SB_HOST_GAME_ROW_H;
+				rec.id = choices[i].id.c_str( );
+				g_HostGameRows.Push( rec );
+
+				const bool bHot = ( g_HostGameHot == static_cast<int>( g_HostGameRows.Size( ) - 1 ));
+
+				if ( bOn || bHot )
+				{
+					screen->Dim( bOn ? PalEntry( 40, 96, 52 ) : PalEntry( 150, 170, 215 ),
+						bOn ? 0.45f : 0.06f,
+						serverbrowser_ToScreenX( x ),
+						serverbrowser_ToScreenY( y - 1 ),
+						serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT ) - serverbrowser_ToScreenX( x ),
+						serverbrowser_ToScreenY( y + SB_HOST_GAME_ROW_H - 1 ) -
+							serverbrowser_ToScreenY( y - 1 ));
+				}
+
+				// The mark, not just the tint: a colour alone cannot say which of two rows is on when
+				// the reader cannot see both at once.
+				screen->DrawText( SmallFont, bOn ? CR_GREEN : CR_DARKGRAY, x, y, bOn ? "*" : "-",
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+				screen->DrawText( SmallFont, bOn ? CR_WHITE : CR_GRAY, rowX, y,
+					serverbrowser_FitName( choices[i].name.c_str( ), SB_HOST_RCOL_RIGHT - rowX ),
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+				if ( !choices[i].summary.empty( ))
+				{
+					serverbrowser_Tip( x, y - 1, SB_HOST_RCOL_RIGHT - x, SB_HOST_GAME_ROW_H,
+						choices[i].summary.c_str( ));
+				}
+			}
+
+			y += SB_HOST_GAME_ROW_H;
 		}
 	}
 
@@ -7572,45 +7517,6 @@ public:
 		if ( g_Dialog.open )
 			return DialogMouseEvent( type, x, y );
 
-		// [rc4l] The picker owns the screen the same way, and for the same reason: a click through it
-		// would be choosing something by pressing something else.
-		if ( g_RemixOpen )
-		{
-			const std::vector<zx::AddonRemix> choices = RemixChoices( );
-
-			g_RemixHot = -1;
-			for ( size_t i = 0; i < choices.size( ); ++i )
-			{
-				const int rowY = RemixRowY( static_cast<int>( i ));
-
-				if (( x < serverbrowser_ToScreenX( RemixListX( ) - 4 )) ||
-					( x >= serverbrowser_ToScreenX( RemixListX( ) + SB_RMX_LIST_W )) ||
-					( y < serverbrowser_ToScreenY( rowY - 2 )) ||
-					( y >= serverbrowser_ToScreenY( rowY + RemixRowH( ) - 2 )))
-				{
-					continue;
-				}
-
-				g_RemixHot = static_cast<int>( i );
-
-				// Hovering moves the cursor too, so the right-hand pane describes whatever the
-				// pointer is over. Reading one and pointing at another is the whole failure a
-				// description pane is meant to avoid.
-				g_RemixCursor = static_cast<int>( i );
-
-				if ( type == MOUSE_Click )
-					ChooseRemix( static_cast<int>( i ));
-
-				return true;
-			}
-
-			// Clicking outside it closes it without choosing, which is what clicking away from a
-			// picker means everywhere else.
-			if ( type == MOUSE_Click )
-				CloseRemixPicker( );
-
-			return true;
-		}
 
 		// The search box, which shares the row with the tabs.
 		g_SearchHot = false;
@@ -8790,47 +8696,6 @@ public:
 		if ( g_Notice.IsNotEmpty( ))
 		{
 			g_Notice = "";
-			return true;
-		}
-
-		// [rc4l] Same for the picker, and it is checked first because it is drawn on top. Escape
-		// leaves without choosing: the safe answer to "how would you like to play it" is whatever
-		// they already had.
-		if ( g_RemixOpen )
-		{
-			const int count = static_cast<int>( RemixChoices( ).size( ));
-
-			switch ( mkey )
-			{
-			case MKEY_Up:
-				if ( g_RemixCursor > 0 )
-				{
-					--g_RemixCursor;
-					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-				}
-				break;
-
-			case MKEY_Down:
-				if ( g_RemixCursor + 1 < count )
-				{
-					++g_RemixCursor;
-					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-				}
-				break;
-
-			case MKEY_Enter:
-				ChooseRemix( g_RemixCursor );
-				break;
-
-			case MKEY_Back:
-				CloseRemixPicker( );
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/backup", snd_menuvolume, ATTN_NONE );
-				break;
-
-			default:
-				break;
-			}
-
 			return true;
 		}
 
