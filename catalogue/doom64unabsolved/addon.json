@@ -5,7 +5,7 @@
   "iwad": "doom2.wad",
   "map": "DM01",
   "kind": "pvp",
-  "remixes": ["ffa", "teamdm"],
+  "remixes": ["ffa", "teamdm", "nomod", "complexdoom"],
   "files": [
     {
       "name": "sd64_unofficial_v20a.pk3",
