@@ -2,5 +2,6 @@
   "schema": 1,
   "name": "Team Last Man Standing",
   "summary": "Two sides, one life each round.",
+  "group": "teams",
   "cfg": "teamlms.cfg"
 }
