@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "name": "Brutal Doom",
+  "summary": "Doom with the volume turned up, on its five horde defence maps.",
+  "iwad": "doom2.wad",
+  "map": "DF01",
+  "kind": "pve",
+  "remixes": ["classic", "survival"],
+  "files": [
+    {
+      "name": "brutal22test6.pk3",
+      "md5": "57a61814fe96cfc20043f370eeace023"
+    }
+  ]
+}
