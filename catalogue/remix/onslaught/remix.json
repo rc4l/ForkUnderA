@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "name": "Onslaught",
+  "summary": "Fifty-one maps, shuffled.",
+  "cfg": "onslaught.cfg",
+  "files": [
+    {
+      "name": "onslpack.wad",
+      "md5": "004dd564c695d81e66de53bb5b6ff227"
+    }
+  ]
+}
