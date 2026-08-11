@@ -580,8 +580,10 @@ CCMD( fua_host )
 	choices.port = 0;
 	choices.advertise = false;
 
+	// [rc4l] No remixes from the console. fua_host names an entry and a variant and nothing else, so
+	// there is no axis to resolve; the panel is where a remix gets chosen.
 	const zx::HostPlan plan = zx::BuildHostPlan( chosen->addon, variant.files, pick,
-		zx::CatalogueServerCfgPath( *chosen, variantId ), std::string( ), variant.map,
+		zx::CatalogueServerCfgPath( *chosen, variantId ), std::vector<std::string>( ), variant.map,
 		choices, have );
 
 	if ( !plan.blocker.empty( ))
@@ -611,7 +613,7 @@ CCMD( fua_host )
 	config.iwad = plan.iwad;
 	config.pwads = plan.pwads;
 	config.execCfg = plan.execCfg;
-	config.execRemixCfg = plan.execRemixCfg;
+	config.execRemixCfgs = plan.execRemixCfgs;
 	config.maxPlayers = plan.maxPlayers;
 	config.port = plan.port;
 	config.advertise = plan.advertise;

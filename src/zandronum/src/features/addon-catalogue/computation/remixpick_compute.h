@@ -15,6 +15,7 @@
 #define ZX_REMIXPICK_COMPUTE_H
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "features/addon-catalogue/computation/addonfile_compute.h"
@@ -58,6 +59,33 @@ struct RemixPick
 // remix list is written with "as it ships" at the top, so somebody who has never chosen gets the
 // pack as its author meant it.
 RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &wantedId);
+
+// [rc4l] One axis: the remixes that are alternatives to each other, in the order the entry named
+// them.
+struct RemixGroup
+{
+	std::string id;						// the shared group name; empty is the default group
+	std::vector<AddonRemix> choices;	// at least one, in entry order
+};
+
+// Split what an entry offers into its axes, keeping entry order both between groups and within them.
+//
+// Group order is FIRST APPEARANCE, not alphabetical, for the same reason the choices keep their
+// order: the catalogue is written by hand and the author's sequence is the one that reads correctly.
+// Sorting here would put "lives" above "mod" because of a letter.
+//
+// A group with one choice is still a group. It is nothing to decide, so a caller may well draw it
+// differently or not at all, but that is a drawing question and this is not the place to answer it.
+std::vector<RemixGroup> GroupRemixes(const std::vector<AddonRemix> &offered);
+
+// What is in force on every axis at once, given what the player last chose on each.
+//
+// `wanted` maps group id to remix id and may be missing groups, name remixes that are no longer
+// offered, or name groups that no longer exist. Every one of those resolves the same way a single
+// pick does: to that group's own baseline. A stale preference costs the axis it was about and never
+// the others.
+std::vector<RemixPick> PickRemixes(const std::vector<AddonRemix> &offered,
+                                   const std::vector<std::pair<std::string, std::string> > &wanted);
 
 } // namespace zx
 

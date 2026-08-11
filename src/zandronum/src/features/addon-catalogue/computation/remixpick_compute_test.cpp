@@ -8,8 +8,11 @@ using zx::AddonEntry;
 using zx::AddonFileRef;
 using zx::AddonRemix;
 using zx::AddonVariant;
+using zx::GroupRemixes;
 using zx::OfferedRemixes;
 using zx::PickRemix;
+using zx::PickRemixes;
+using zx::RemixGroup;
 using zx::RemixPick;
 
 namespace
@@ -22,6 +25,18 @@ AddonRemix Remix(const std::string &id, const std::string &name, bool valid = tr
 	r.name = name;
 	r.valid = valid;
 	return r;
+}
+
+AddonRemix Grouped(const std::string &id, const std::string &name, const std::string &group)
+{
+	AddonRemix r = Remix(id, name);
+	r.group = group;
+	return r;
+}
+
+std::pair<std::string, std::string> Want(const std::string &group, const std::string &id)
+{
+	return std::make_pair(group, id);
 }
 
 AddonFileRef File(const std::string &name)
@@ -253,6 +268,144 @@ TEST(PickRemix, TheBaselineIsAllowedToAddNothing)
 	EXPECT_EQ(0, pick.index);
 	EXPECT_TRUE(pick.cfg.empty());
 	EXPECT_TRUE(pick.files.empty());
+}
+
+// ------------------------------------------------------------ axes
+
+TEST(GroupRemixes, EverythingUngroupedIsOneAxis)
+{
+	// [rc4l] The shape every remix written before groups existed has. It must keep behaving as one
+	// flat mutually-exclusive list, or adding the field would silently re-mean every entry.
+	const std::vector<RemixGroup> groups = GroupRemixes(Pool());
+
+	ASSERT_EQ(1u, groups.size());
+	EXPECT_TRUE(groups[0].id.empty());
+	EXPECT_EQ(3u, groups[0].choices.size());
+}
+
+TEST(GroupRemixes, NothingOfferedIsNoAxes)
+{
+	EXPECT_TRUE(GroupRemixes(std::vector<AddonRemix>()).empty());
+}
+
+TEST(GroupRemixes, RemixesSplitByGroupAndKeepEntryOrderWithinEach)
+{
+	std::vector<AddonRemix> offered;
+	offered.push_back(Grouped("classic", "Classic", "lives"));
+	offered.push_back(Grouped("nomod", "None", "mod"));
+	offered.push_back(Grouped("survival", "Survival", "lives"));
+	offered.push_back(Grouped("brutal", "Brutal Doom", "mod"));
+
+	const std::vector<RemixGroup> groups = GroupRemixes(offered);
+
+	ASSERT_EQ(2u, groups.size());
+	EXPECT_EQ("lives", groups[0].id) << "group order is first appearance, not alphabetical";
+	EXPECT_EQ("mod", groups[1].id);
+
+	ASSERT_EQ(2u, groups[0].choices.size());
+	EXPECT_EQ("classic", groups[0].choices[0].id);
+	EXPECT_EQ("survival", groups[0].choices[1].id) << "interleaved members still collect in order";
+
+	ASSERT_EQ(2u, groups[1].choices.size());
+	EXPECT_EQ("nomod", groups[1].choices[0].id);
+	EXPECT_EQ("brutal", groups[1].choices[1].id);
+}
+
+TEST(GroupRemixes, AGroupOfOneIsStillAGroup)
+{
+	// Nothing to decide, but that is the caller's problem to draw. Collapsing it here would hide an
+	// axis that exists, and the axis is what says a mod is applied at all.
+	std::vector<AddonRemix> offered;
+	offered.push_back(Grouped("classic", "Classic", "lives"));
+	offered.push_back(Grouped("brutal", "Brutal Doom", "mod"));
+
+	const std::vector<RemixGroup> groups = GroupRemixes(offered);
+
+	ASSERT_EQ(2u, groups.size());
+	EXPECT_EQ(1u, groups[0].choices.size());
+	EXPECT_EQ(1u, groups[1].choices.size());
+}
+
+TEST(GroupRemixes, GroupedAndUngroupedCoexist)
+{
+	// The migration state: some remixes carry a group and the rest have not been touched yet. The
+	// untouched ones share the default axis rather than becoming one axis each.
+	std::vector<AddonRemix> offered;
+	offered.push_back(Remix("ffa", "Free for all"));
+	offered.push_back(Grouped("brutal", "Brutal Doom", "mod"));
+	offered.push_back(Remix("teamdm", "Team Deathmatch"));
+
+	const std::vector<RemixGroup> groups = GroupRemixes(offered);
+
+	ASSERT_EQ(2u, groups.size());
+	EXPECT_TRUE(groups[0].id.empty());
+	EXPECT_EQ(2u, groups[0].choices.size());
+	EXPECT_EQ("mod", groups[1].id);
+}
+
+TEST(PickRemixes, EachAxisResolvesOnItsOwn)
+{
+	std::vector<AddonRemix> offered;
+	offered.push_back(Grouped("classic", "Classic", "lives"));
+	offered.push_back(Grouped("survival", "Survival", "lives"));
+	offered.push_back(Grouped("nomod", "None", "mod"));
+	offered.push_back(Grouped("brutal", "Brutal Doom", "mod"));
+
+	std::vector<std::pair<std::string, std::string> > wanted;
+	wanted.push_back(Want("mod", "brutal"));
+
+	const std::vector<RemixPick> picks = PickRemixes(offered, wanted);
+
+	ASSERT_EQ(2u, picks.size());
+	EXPECT_EQ("classic", picks[0].id) << "an axis nobody chose on falls to its own baseline";
+	EXPECT_EQ("brutal", picks[1].id);
+	EXPECT_EQ(1, picks[1].index) << "the index is into the GROUP, not the whole offered list";
+}
+
+TEST(PickRemixes, AStalePreferenceCostsOnlyItsOwnAxis)
+{
+	// [rc4l] The property that makes independent axes worth having. A remix withdrawn from one group
+	// must not disturb what is chosen on another, or every catalogue edit becomes a reset.
+	std::vector<AddonRemix> offered;
+	offered.push_back(Grouped("classic", "Classic", "lives"));
+	offered.push_back(Grouped("survival", "Survival", "lives"));
+	offered.push_back(Grouped("nomod", "None", "mod"));
+	offered.push_back(Grouped("brutal", "Brutal Doom", "mod"));
+
+	std::vector<std::pair<std::string, std::string> > wanted;
+	wanted.push_back(Want("lives", "gone-away"));
+	wanted.push_back(Want("mod", "brutal"));
+	wanted.push_back(Want("no-such-group", "whatever"));
+
+	const std::vector<RemixPick> picks = PickRemixes(offered, wanted);
+
+	ASSERT_EQ(2u, picks.size()) << "a group that does not exist adds nothing";
+	EXPECT_EQ("classic", picks[0].id) << "the withdrawn choice fell back";
+	EXPECT_EQ("brutal", picks[1].id) << "and the other axis was left alone";
+}
+
+TEST(PickRemixes, NothingOfferedPicksNothing)
+{
+	EXPECT_TRUE(PickRemixes(std::vector<AddonRemix>(),
+		std::vector<std::pair<std::string, std::string> >()).empty());
+}
+
+TEST(PickRemixes, NoPreferenceAtAllTakesEveryBaseline)
+{
+	std::vector<AddonRemix> offered;
+	offered.push_back(Grouped("classic", "Classic", "lives"));
+	offered.push_back(Grouped("survival", "Survival", "lives"));
+	offered.push_back(Grouped("nomod", "None", "mod"));
+	offered.push_back(Grouped("brutal", "Brutal Doom", "mod"));
+
+	const std::vector<RemixPick> picks =
+		PickRemixes(offered, std::vector<std::pair<std::string, std::string> >());
+
+	ASSERT_EQ(2u, picks.size());
+	EXPECT_EQ("classic", picks[0].id);
+	EXPECT_EQ("nomod", picks[1].id);
+	EXPECT_EQ(0, picks[0].index);
+	EXPECT_EQ(0, picks[1].index);
 }
 
 TEST(PickRemix, EveryOfferedRemixIsReachable)

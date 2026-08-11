@@ -775,9 +775,41 @@ static void HostToggleEntryOpen( int entry )
 	g_HostOpenEntries[entry] = !g_HostOpenEntries[entry];
 }
 
-// [rc4l] Which remix the player wants, held as an id for the reason the variant is: the pool is
-// re-read and reordered, and a stored number would eventually point at something else.
-static	FString			g_HostRemixId;
+// [rc4l] Which remix the player wants ON EACH AXIS, held as ids for the reason the variant is: the
+// pool is re-read and reordered, and a stored number would eventually point at something else.
+//
+// One entry per group, keyed by group id. Kept across entries on purpose: choosing Brutal Doom and
+// then looking at three other experiences should not quietly forget it, and an entry that does not
+// offer that axis simply never reads the key.
+static	std::vector<std::pair<std::string, std::string> >	g_HostRemixIds;
+
+// What is wanted on one axis, or empty when nothing has been chosen there yet.
+static const std::string &HostRemixWanted( const std::string &group )
+{
+	static const std::string kNone;
+
+	for ( size_t i = 0; i < g_HostRemixIds.size( ); ++i )
+	{
+		if ( g_HostRemixIds[i].first == group )
+			return g_HostRemixIds[i].second;
+	}
+
+	return kNone;
+}
+
+static void HostSetRemixWanted( const std::string &group, const std::string &id )
+{
+	for ( size_t i = 0; i < g_HostRemixIds.size( ); ++i )
+	{
+		if ( g_HostRemixIds[i].first == group )
+		{
+			g_HostRemixIds[i].second = id;
+			return;
+		}
+	}
+
+	g_HostRemixIds.push_back( std::make_pair( group, id ));
+}
 
 // What the selected way of playing can be played with. The VARIANT decides, not just the entry:
 // Skulltag's Invasion takes three lives and its Duel does not.
@@ -788,9 +820,10 @@ static std::vector<zx::AddonRemix> HostOfferedRemixes( const zx::AddonEntry &add
 	return zx::OfferedRemixes( addon, pick.index, zx::CatalogueRemixes( ));
 }
 
-static zx::RemixPick HostRemixPick( const zx::AddonEntry &addon )
+// What is in force on every axis at once. One pick per group, in the entry's own group order.
+static std::vector<zx::RemixPick> HostRemixPicks( const zx::AddonEntry &addon )
 {
-	return zx::PickRemix( HostOfferedRemixes( addon ), g_HostRemixId.GetChars( ));
+	return zx::PickRemixes( HostOfferedRemixes( addon ), g_HostRemixIds );
 }
 
 // [rc4l] What the CHOSEN way of playing loads, remix included. Every question the host tab asks about
@@ -808,8 +841,12 @@ static std::vector<zx::AddonFileRef> HostSelectedFiles( const zx::AddonEntry &ad
 {
 	std::vector<zx::AddonFileRef> files = zx::PickVariant( addon, g_HostVariantId.GetChars( )).files;
 
-	const zx::RemixPick remix = HostRemixPick( addon );
-	files.insert( files.end( ), remix.files.begin( ), remix.files.end( ));
+	// Every axis, in group order, each appended after the last. Load order between axes is the
+	// catalogue author's: a mod named after a rules remix loads after it and so wins where they
+	// overlap, which is the only way an author can express that at all.
+	const std::vector<zx::RemixPick> picks = HostRemixPicks( addon );
+	for ( size_t i = 0; i < picks.size( ); ++i )
+		files.insert( files.end( ), picks[i].files.begin( ), picks[i].files.end( ));
 
 	return files;
 }
@@ -859,7 +896,8 @@ static	bool			g_HostOnSettingsToggle = false;
 struct HostGameplayRow
 {
 	int y, h;
-	FString id;
+	std::string group;		// which axis the click sets
+	std::string id;
 };
 static	TArray<HostGameplayRow>	g_HostGameRows;
 static	int						g_HostGameHot = -1;
@@ -3251,7 +3289,12 @@ public:
 			// The remix goes through the same one place the panel asks, so what gets verified,
 			// fetched and started is exactly what was on screen.
 			const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( chosen.addon );
-			const zx::RemixPick remix = HostRemixPick( chosen.addon );
+
+			// Every axis, in group order, so what gets exec'd matches what the panel showed.
+			const std::vector<zx::RemixPick> remixes = HostRemixPicks( chosen.addon );
+			std::vector<std::string> remixCfgs;
+			for ( size_t i = 0; i < remixes.size( ); ++i )
+				remixCfgs.push_back( zx::CatalogueRemixCfgPath( remixes[i].id ));
 
 			const std::vector<FString> verified = HostEntryVerifiedPaths( loads );
 
@@ -3291,7 +3334,7 @@ public:
 			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon, loads,
 				zx::PickIwad( chosen.addon.iwad, iwads ),
 				zx::CatalogueServerCfgPath( chosen, g_HostVariantId.GetChars( )),
-				zx::CatalogueRemixCfgPath( remix.id ), pick.map, choices, have );
+				remixCfgs, pick.map, choices, have );
 
 			// [rc4l] Missing files are a DOWNLOAD, which is what the catalogue's per-file md5 was
 			// shipped for and what BuildHostPlan has always meant by returning `missing` rather than
@@ -3340,7 +3383,7 @@ public:
 			}
 
 			config.execCfg = plan.execCfg;
-			config.execRemixCfg = plan.execRemixCfg;
+			config.execRemixCfgs = plan.execRemixCfgs;
 
 			// [rc4l] RESOLVED to full paths, not left as bare names. These are what the CLIENT
 			// reloads onto in order to join, and RequestReload's loadability check opens exactly
@@ -4013,7 +4056,9 @@ public:
 
 			if ( type == MOUSE_Click )
 			{
-				g_HostRemixId = row.id;
+				// Sets that AXIS only. Every other axis keeps whatever it had, which is the whole
+				// reason they are separate.
+				HostSetRemixWanted( row.group, row.id );
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 			}
 
@@ -4861,7 +4906,19 @@ public:
 		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
 			return false;
 
-		return HostOfferedRemixes( entries[g_HostEntrySel].addon ).size( ) > 1;
+		// [rc4l] Any AXIS with something to decide, not any remix at all. An entry offering one mod
+		// and nothing else has a row that cannot change, which is not a setting and must not cost the
+		// file list three lines to display.
+		const std::vector<zx::RemixGroup> groups =
+			zx::GroupRemixes( HostOfferedRemixes( entries[g_HostEntrySel].addon ));
+
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if ( groups[g].choices.size( ) > 1 )
+				return true;
+		}
+
+		return false;
 	}
 
 	// Where the RIGHT column's content has to stop. The gameplay settings scroll WITH the details now
@@ -5643,16 +5700,18 @@ public:
 
 	// [rc4l] What this experience can be played WITH, as settings rather than a modal.
 	//
-	// One group today -- the ways of playing -- but drawn as a GROUP under a heading rather than as a
-	// single control, because that is what it is going to keep being. The next setting to arrive gets
-	// a heading of its own beneath this one and nothing here has to move.
+	// One block per AXIS. Axes with a single choice are skipped: nothing to decide is not a setting,
+	// and a row that cannot change is a row spent saying nothing.
 	void DrawHostGameplay( int x, int y, const zx::AddonEntry &addon )
 	{
-		const std::vector<zx::AddonRemix> choices = HostOfferedRemixes( addon );
-		if ( choices.size( ) <= 1 )
-			return;			// nothing to choose is not a setting; the file list took the room
+		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
 
-		const zx::RemixPick pick = HostRemixPick( addon );
+		bool bAnything = false;
+		for ( size_t g = 0; g < groups.size( ); ++g )
+			bAnything = bAnything || ( groups[g].choices.size( ) > 1 );
+
+		if ( !bAnything )
+			return;			// the file list took the room instead
 
 		y += 4;
 		if ( HostDetailRowVisible( y, 2 ))
@@ -5666,51 +5725,75 @@ public:
 		}
 		y += SB_HOST_LINE + 2;
 
-		for ( size_t i = 0; i < choices.size( ); ++i )
+		for ( size_t g = 0; g < groups.size( ); ++g )
 		{
-			const bool bOn = ( choices[i].id == pick.id );
-			const int rowX = x + SB_HOST_GAME_INDENT;
+			const std::vector<zx::AddonRemix> &choices = groups[g].choices;
+			if ( choices.size( ) <= 1 )
+				continue;
 
-			// Recorded whether or not it is visible, then filtered: a row scrolled out of the region
-			// must not be clickable, and the region is the only thing that knows.
-			if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
+			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
+
+			// [rc4l] A named axis says what it is choosing between; the unnamed one does not, because
+			// the GAMEPLAY heading above already introduced it and a second word would be noise.
+			if ( !groups[g].id.empty( ) && HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
-				HostGameplayRow rec;
-				rec.y = y;
-				rec.h = SB_HOST_GAME_ROW_H;
-				rec.id = choices[i].id.c_str( );
-				g_HostGameRows.Push( rec );
+				FString label = groups[g].id.c_str( );
+				label.ToUpper( );
 
-				const bool bHot = ( g_HostGameHot == static_cast<int>( g_HostGameRows.Size( ) - 1 ));
-
-				if ( bOn || bHot )
-				{
-					screen->Dim( bOn ? PalEntry( 40, 96, 52 ) : PalEntry( 150, 170, 215 ),
-						bOn ? 0.45f : 0.06f,
-						serverbrowser_ToScreenX( x ),
-						serverbrowser_ToScreenY( y - 1 ),
-						serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT ) - serverbrowser_ToScreenX( x ),
-						serverbrowser_ToScreenY( y + SB_HOST_GAME_ROW_H - 1 ) -
-							serverbrowser_ToScreenY( y - 1 ));
-				}
-
-				// The mark, not just the tint: a colour alone cannot say which of two rows is on when
-				// the reader cannot see both at once.
-				screen->DrawText( SmallFont, bOn ? CR_GREEN : CR_DARKGRAY, x, y, bOn ? "*" : "-",
+				screen->DrawText( SmallFont, CR_DARKGRAY, x, y, label,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-
-				screen->DrawText( SmallFont, bOn ? CR_WHITE : CR_GRAY, rowX, y,
-					serverbrowser_FitName( choices[i].name.c_str( ), SB_HOST_RCOL_RIGHT - rowX ),
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-
-				if ( !choices[i].summary.empty( ))
-				{
-					serverbrowser_Tip( x, y - 1, SB_HOST_RCOL_RIGHT - x, SB_HOST_GAME_ROW_H,
-						choices[i].summary.c_str( ));
-				}
+				y += SB_HOST_LINE;
 			}
 
-			y += SB_HOST_GAME_ROW_H;
+			for ( size_t i = 0; i < choices.size( ); ++i )
+			{
+				const bool bOn = ( choices[i].id == pick.id );
+				const int rowX = x + SB_HOST_GAME_INDENT;
+
+				// Recorded whether or not it is visible, then filtered: a row scrolled out of the
+				// region must not be clickable, and the region is the only thing that knows.
+				if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
+				{
+					HostGameplayRow rec;
+					rec.y = y;
+					rec.h = SB_HOST_GAME_ROW_H;
+					rec.group = groups[g].id;
+					rec.id = choices[i].id;
+					g_HostGameRows.Push( rec );
+
+					const bool bHot = ( g_HostGameHot == static_cast<int>( g_HostGameRows.Size( ) - 1 ));
+
+					if ( bOn || bHot )
+					{
+						screen->Dim( bOn ? PalEntry( 40, 96, 52 ) : PalEntry( 150, 170, 215 ),
+							bOn ? 0.45f : 0.06f,
+							serverbrowser_ToScreenX( x ),
+							serverbrowser_ToScreenY( y - 1 ),
+							serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT ) - serverbrowser_ToScreenX( x ),
+							serverbrowser_ToScreenY( y + SB_HOST_GAME_ROW_H - 1 ) -
+								serverbrowser_ToScreenY( y - 1 ));
+					}
+
+					// The mark, not just the tint: a colour alone cannot say which of two rows is on
+					// when the reader cannot see both at once.
+					screen->DrawText( SmallFont, bOn ? CR_GREEN : CR_DARKGRAY, x, y, bOn ? "*" : "-",
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+					screen->DrawText( SmallFont, bOn ? CR_WHITE : CR_GRAY, rowX, y,
+						serverbrowser_FitName( choices[i].name.c_str( ), SB_HOST_RCOL_RIGHT - rowX ),
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+					if ( !choices[i].summary.empty( ))
+					{
+						serverbrowser_Tip( x, y - 1, SB_HOST_RCOL_RIGHT - x, SB_HOST_GAME_ROW_H,
+							choices[i].summary.c_str( ));
+					}
+				}
+
+				y += SB_HOST_GAME_ROW_H;
+			}
+
+			y += 3;			// a gap between axes, so two blocks do not read as one long list
 		}
 	}
 

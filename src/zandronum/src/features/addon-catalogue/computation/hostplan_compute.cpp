@@ -41,7 +41,7 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
                        const std::vector<AddonFileRef> &files,
                        const IwadPick &iwad,
                        const std::string &serverCfgPath,
-                       const std::string &remixCfgPath,
+                       const std::vector<std::string> &remixCfgPaths,
                        const std::string &map,
                        const HostChoices &choices,
                        const std::vector<std::string> &haveFiles)
@@ -53,8 +53,15 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
 	plan.port = choices.port;
 	plan.advertise = choices.advertise;
 	plan.execCfg = serverCfgPath;
-	plan.execRemixCfg = remixCfgPath;
 	plan.map = map;
+
+	// Empties dropped here rather than at every call site: a remix with no cfg is the ordinary case,
+	// not something the caller should have to filter before it can ask for a plan.
+	for (size_t i = 0; i < remixCfgPaths.size(); ++i)
+	{
+		if (!remixCfgPaths[i].empty())
+			plan.execRemixCfgs.push_back(remixCfgPaths[i]);
+	}
 
 	if (!addon.valid)
 	{

@@ -38,10 +38,14 @@ struct HostPlan
 	std::vector<std::string> pwads;	// bare filenames, in the entry's load order
 	std::string execCfg;			// the entry's server.cfg, or "" when it has none
 
-	// [rc4l] The chosen remix's cfg, exec'd AFTER the one above so it wins. Two files rather than one
-	// merged one because they are edited by different people for different reasons: the entry's says
-	// how the pack plays, the remix's says the one thing it changes about any pack.
-	std::string execRemixCfg;
+	// [rc4l] The chosen remixes' cfgs, exec'd AFTER the one above so they win, and in group order so a
+	// later axis wins over an earlier one. Separate files rather than one merged one because they are
+	// edited by different people for different reasons: the entry's says how the pack plays, each
+	// remix's says the one thing it changes about any pack.
+	//
+	// A list because there is one per axis now. Remixes with no cfg contribute nothing and are simply
+	// absent, so this is usually shorter than the number of axes.
+	std::vector<std::string> execRemixCfgs;
 	std::string map;				// the map to open on, or "" to let the cfg's rotation decide
 	std::string serverName;
 	int maxPlayers;
@@ -71,7 +75,7 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
                        const std::vector<AddonFileRef> &files,
                        const IwadPick &iwad,
                        const std::string &serverCfgPath,
-                       const std::string &remixCfgPath,
+                       const std::vector<std::string> &remixCfgPaths,
                        const std::string &map,
                        const HostChoices &choices,
                        const std::vector<std::string> &haveFiles);

@@ -43,9 +43,10 @@ struct HostConfig
 	// server has no reason to go looking for it anywhere else.
 	std::string execCfg;
 
-	// [rc4l] A second cfg, exec'd right after the first so it wins where they disagree. The chosen
-	// remix's, which is one or two lines that mean the same thing to every experience it applies to.
-	std::string execRemixCfg;
+	// [rc4l] Further cfgs, exec'd right after the first so they win where they disagree: one per
+	// chosen remix that has one, in group order. Each is a line or two meaning the same thing to
+	// every experience it applies to.
+	std::vector<std::string> execRemixCfgs;
 	std::string password;			// empty for an open server
 	std::string joinPassword;		// empty unless the operator wants a join gate
 	std::string rconSecret;			// the one-shot secret the host authenticates with

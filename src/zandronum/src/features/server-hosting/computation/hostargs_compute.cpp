@@ -157,13 +157,20 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 		out.push_back(config.execCfg);
 	}
 
-	// Straight after, so the remix beats the experience where they disagree and the settings menu
-	// still beats both. That ordering is the whole point of a remix: one line that overrides whatever
-	// the pack said about that one thing.
-	if (IsSafeArgValue(config.execRemixCfg))
+	// Straight after, so the remixes beat the experience where they disagree and the settings menu
+	// still beats all of them. That ordering is the whole point of a remix: one line that overrides
+	// whatever the pack said about that one thing.
+	//
+	// In the order given, which is group order, so a later axis wins over an earlier one where two
+	// axes touch the same cvar. An unsafe path drops itself and not the ones after it: one bad entry
+	// in the catalogue should cost its own axis, not silently disarm every axis below it.
+	for (size_t i = 0; i < config.execRemixCfgs.size(); ++i)
 	{
+		if (!IsSafeArgValue(config.execRemixCfgs[i]))
+			continue;
+
 		out.push_back("+exec");
-		out.push_back(config.execRemixCfg);
+		out.push_back(config.execRemixCfgs[i]);
 	}
 
 	if (IsSafeArgValue(config.map))
