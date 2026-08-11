@@ -55,9 +55,18 @@ struct LivesControl
 {
 	LivesShape shape;
 
-	// Whether it can be touched at all. False means draw it greyed with `reason` where the value
-	// would go.
+	// Whether lives mean anything here at all, which is what decides whether the cvars get set. A
+	// gamemode that ignores sv_maxlives must not have it written, or the panel is claiming something
+	// the server will not do.
 	bool applies;
+
+	// Whether there is anything to CHOOSE: more than one stop. Separate from `applies` because an
+	// entry can pin its lives -- Super Demon is one life a round and says so with a ceiling of one --
+	// and a slider with a single stop is a readout wearing a control's clothes, spending two lines of
+	// a short column to say what the summary already said.
+	//
+	// The caller draws only when this is true, and sets the cvars whenever `applies` is.
+	bool adjustable;
 
 	int min;			// lowest selectable value; 0 exactly when an unlimited stop exists
 	int max;			// highest selectable
@@ -69,8 +78,8 @@ struct LivesControl
 
 	std::string reason;	// why it cannot be used; empty unless `applies` is false
 
-	LivesControl() : shape(LivesShape::None), applies(false), min(0), max(0), value(0),
-		unlimited(false) {}
+	LivesControl() : shape(LivesShape::None), applies(false), adjustable(false), min(0), max(0),
+		value(0), unlimited(false) {}
 };
 
 // `wanted` is what the player last asked for, which may be out of range for this gamemode or left

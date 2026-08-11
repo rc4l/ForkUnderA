@@ -78,6 +78,10 @@ LivesControl LivesFor(HostGameMode mode, int wanted, int defaultLives, int maxLi
 	out.value = Clamp(start, out.min, out.max);
 	out.unlimited = (out.value == 0);
 
+	// One stop is not a choice. The cvars still get set from it, so the pack gets the lives it asked
+	// for; there is simply no control to draw.
+	out.adjustable = (out.min < out.max);
+
 	return out;
 }
 
