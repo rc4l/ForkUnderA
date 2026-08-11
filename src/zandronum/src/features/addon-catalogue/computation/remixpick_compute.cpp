@@ -6,19 +6,29 @@
 namespace zx
 {
 
-std::vector<AddonRemix> OfferedRemixes(const AddonEntry &entry,
+std::vector<AddonRemix> OfferedRemixes(const AddonEntry &entry, int variant,
                                        const std::vector<AddonRemix> &pool)
 {
 	std::vector<AddonRemix> offered;
 
-	// The ENTRY's order, not the pool's. The pool is a folder listing and comes out alphabetical;
-	// the entry's list is written by hand, and "as it ships" belongs at the top of the picker
-	// whatever it happens to be called.
-	for (size_t i = 0; i < entry.remixes.size(); ++i)
+	// The variant's list when it has one, otherwise the entry's. Overriding rather than adding,
+	// because the case that needs this is one way of playing taking something the others must not.
+	const std::vector<std::string> *want = &entry.remixes;
+
+	if ((variant >= 0) && (variant < static_cast<int>(entry.variants.size())) &&
+		!entry.variants[variant].remixes.empty())
+	{
+		want = &entry.variants[variant].remixes;
+	}
+
+	// Written order, not the pool's. The pool is a folder listing and comes out alphabetical; the
+	// list here is written by hand, and "as it ships" belongs at the top of the picker whatever it
+	// happens to be called.
+	for (size_t i = 0; i < want->size(); ++i)
 	{
 		for (size_t j = 0; j < pool.size(); ++j)
 		{
-			if (!pool[j].valid || (pool[j].id != entry.remixes[i]))
+			if (!pool[j].valid || (pool[j].id != (*want)[i]))
 				continue;
 
 			offered.push_back(pool[j]);

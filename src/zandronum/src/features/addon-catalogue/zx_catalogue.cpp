@@ -485,6 +485,18 @@ CCMD( fua_catalogue )
 			}
 
 			Printf( "      cfg:  %s\n", zx::CatalogueServerCfgPath( e, variant.id ).c_str( ));
+
+			if ( !variant.remixes.empty( ))
+			{
+				FString offers;
+				for ( size_t m = 0; m < variant.remixes.size( ); ++m )
+				{
+					if ( m > 0 )
+						offers += ", ";
+					offers += variant.remixes[m].c_str( );
+				}
+				Printf( "      plays with: %s\n", offers.GetChars( ));
+			}
 		}
 	}
 }

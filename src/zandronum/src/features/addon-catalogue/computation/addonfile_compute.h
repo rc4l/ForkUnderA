@@ -80,6 +80,13 @@ struct AddonVariant
 	// variant only what is peculiar to it. Empty for a pack whose variants differ by cfg alone.
 	std::vector<AddonFileRef> files;
 
+	// [rc4l] Which remixes THIS way of playing can take, when that is not the same as the entry's.
+	//
+	// Skulltag is the case that needs it: three lives is a real choice for its Invasion and nonsense
+	// for its Duel, and the two live under one entry. Empty means "whatever the entry says", so a
+	// pack whose ways of playing all take the same remixes states it once.
+	std::vector<std::string> remixes;
+
 	// Which one a player who has expressed no preference gets. Exactly one may claim it.
 	bool isDefault;
 
