@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "name": "Invasion UAC",
+  "summary": "Thirty-two maps of held ground, on weapons that never run dry.",
+  "iwad": "doom2.wad",
+  "kind": "pve",
+  "files": [
+    {
+      "name": "iu-part5.wad",
+      "md5": "77997414113e8dcaa16b727dc04f245f"
+    }
+  ]
+}
