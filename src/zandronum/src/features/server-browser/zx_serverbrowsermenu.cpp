@@ -931,6 +931,7 @@ static	int						g_HostLivesTrackY = 0;
 static	int						g_HostLivesTrackW = 0;
 static	bool					g_HostLivesLive = false;	// drawn and usable this frame
 static	bool					g_HostLivesHot = false;
+static	bool					g_HostLivesDragging = false;
 
 // [rc4l] The remix picker, open over the panel. A list rather than a row of buttons, because the
 // dialog's three-button ceiling is exactly the wall this would hit: two options today, and the whole
@@ -2216,7 +2217,8 @@ public:
 		// -- and the box is big enough to land on top of the very thing being manipulated. It showed
 		// up over the list while a selection was being dragged out in the search box, which is the
 		// tooltip getting in the way of the gesture it is meant to be explaining.
-		if ( g_SearchDragging || g_DraggingScrollbar || g_DraggingWadBar || g_ButtonPressed )
+		if ( g_SearchDragging || g_DraggingScrollbar || g_DraggingWadBar || g_HostLivesDragging ||
+			g_ButtonPressed )
 			return;
 
 		const BrowserTip *found = NULL;
@@ -4071,39 +4073,63 @@ public:
 			}
 		}
 
-		// [rc4l] The lives track. Clicking anywhere on it sets the value at that point, which is what
-		// a track is for; there is no separate drag, so the knob is a readout rather than a handle to
-		// grab. Tested against the last frame's geometry, like the rows below.
-		g_HostLivesHot = false;
-		if ( g_HostLivesLive &&
-			( x >= serverbrowser_ToScreenX( g_HostLivesTrackX - 3 )) &&
-			( x < serverbrowser_ToScreenX( g_HostLivesTrackX + g_HostLivesTrackW + 3 )) &&
-			( y >= serverbrowser_ToScreenY( g_HostLivesTrackY - 1 )) &&
-			( y < serverbrowser_ToScreenY( g_HostLivesTrackY + SB_HOST_LINE - 1 )))
+		// [rc4l] The lives track. Pressing anywhere on it sets the value there AND takes the drag, so
+		// the knob can be pulled the way a slider's knob is expected to move -- clicking the track to
+		// jump is the same gesture with no travel. Tested against the last frame's geometry, like the
+		// rows below.
+		const bool bOverLives = g_HostLivesLive &&
+			( x >= serverbrowser_ToScreenX( g_HostLivesTrackX - 4 )) &&
+			( x < serverbrowser_ToScreenX( g_HostLivesTrackX + g_HostLivesTrackW + 4 )) &&
+			( y >= serverbrowser_ToScreenY( g_HostLivesTrackY - 2 )) &&
+			( y < serverbrowser_ToScreenY( g_HostLivesTrackY + SB_HOST_LINE - 1 ));
+
+		if (( type == MOUSE_Click ) && bOverLives )
+			g_HostLivesDragging = true;
+
+		// [rc4l] A drag cannot outlive the control it is dragging. Releasing the button off the panel,
+		// changing the selection, or scrolling the track out of view all leave the flag set with
+		// nothing to move, and the next pointer twitch would then wrench a slider nobody is touching.
+		if ( !g_HostLivesLive )
+			g_HostLivesDragging = false;
+
+		g_HostLivesHot = bOverLives || g_HostLivesDragging;
+
+		if ( g_HostLivesDragging )
 		{
-			g_HostLivesHot = true;
-
-			if ( type == MOUSE_Click )
+			// [rc4l] Tracked while the button is down even once the pointer has left the row, which
+			// is what makes a drag feel like one: a slider you lose the moment you stray a few pixels
+			// above the track is worse than one that cannot be dragged at all.
+			const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+			if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
 			{
-				const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
-				if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
-				{
-					const zx::LivesControl now = HostLivesControl( entries[g_HostEntrySel].addon );
+				const zx::LivesControl now = HostLivesControl( entries[g_HostEntrySel].addon );
+				const int span = MAX( 1, now.max - now.min );
 
-					const int vx = serverbrowser_ToVirtualX( x ) - g_HostLivesTrackX;
-					const int span = MAX( 1, now.max - now.min );
+				// Clamped to the track's own ends first, so dragging past either end pins the value
+				// there rather than letting the arithmetic run away.
+				const int vx = clamp( serverbrowser_ToVirtualX( x ) - g_HostLivesTrackX,
+					0, g_HostLivesTrackW );
 
-					// Rounded rather than truncated, so the stop nearest the pointer is the one you
-					// get. Truncating makes the last stop unreachable without clicking past the end.
-					const int steps = (( vx * span ) + ( g_HostLivesTrackW / 2 )) / MAX( 1, g_HostLivesTrackW );
+				// Rounded rather than truncated, so the stop nearest the pointer is the one you get.
+				// Truncating makes the last stop unreachable without dragging past the end.
+				const int steps = (( vx * span ) + ( g_HostLivesTrackW / 2 )) / MAX( 1, g_HostLivesTrackW );
+				const int was = g_HostLives;
 
-					g_HostLives = clamp( now.min + steps, now.min, now.max );
+				g_HostLives = clamp( now.min + steps, now.min, now.max );
+
+				// One tick per STOP crossed, not per pixel of travel.
+				if ( g_HostLives != was )
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-				}
 			}
+
+			if ( type == MOUSE_Release )
+				g_HostLivesDragging = false;
 
 			return true;
 		}
+
+		if ( bOverLives )
+			return true;
 
 		// [rc4l] The gameplay rows, inside the scrolled detail region. Tested against what the last
 		// frame actually DREW rather than against a computed row height: these scroll, so a rule
