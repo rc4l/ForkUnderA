@@ -311,6 +311,11 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_BAR_W		2
 #define SB_HOST_BAR_X		( SB_HOST_RIGHT - 6 )
 
+// [rc4l] The experience list's own bar, in the gap between the list and the column divider. The
+// labels are already cut four units short of SB_HOST_LIST_RIGHT and the divider sits six past it, so
+// this lands in space nothing else uses rather than taking width off the names.
+#define SB_HOST_LBAR_X		( SB_HOST_LIST_RIGHT + 1 )
+
 #define SB_CHOICE_H			15
 // Wide enough for the focus glow to sit in the gap rather than on the previous cell -- the same
 // number the dialog's buttons needed, and for the same reason: every control in this browser puts
@@ -754,6 +759,7 @@ static	int				g_HostStatusScroll = 0;
 // hand the grab to the other.
 static	bool			g_DraggingHostDetailBar = false;
 static	bool			g_DraggingHostStatusBar = false;
+static	bool			g_DraggingHostListBar = false;
 
 // [rc4l] The band the status text may draw in, or an empty range for "anywhere". Set around the
 // status half only; see HostTextRowVisible for why a rectangle would not have done.
@@ -3617,6 +3623,9 @@ public:
 		// [rc4l] FIRST, and before the click-away rule below. A bar lives over the same column the
 		// details and the status draw in, and a drag along it must not read as "clicked on nothing"
 		// and drop the keyboard focus every frame it moves.
+		if ( HostListBarMouseEvent( type, x, y ))
+			return true;
+
 		if ( HostRegionBarsMouseEvent( type, x, y ))
 			return true;
 
@@ -4202,7 +4211,11 @@ public:
 	// The settings bar above is hard-wired to the settings; the running panel has two scrollable
 	// regions and neither of them is that, so the arithmetic is taken as parameters instead of read
 	// from globals. Same compute helpers, so all three thumbs behave identically.
-	void DrawHostRegionScrollBar( int viewTop, int viewBottom, int contentH, int scroll )
+	//
+	// `barX` because the experience list scrolls in the LEFT column and its bar cannot share the right
+	// column's x. Everything else about it is the same bar.
+	void DrawHostRegionScrollBar( int viewTop, int viewBottom, int contentH, int scroll,
+		int barX = SB_HOST_BAR_X )
 	{
 		const int viewH = viewBottom - viewTop;
 		if (( viewH <= 0 ) || ( contentH <= viewH ))
@@ -4213,8 +4226,8 @@ public:
 		if ( trackH <= 0 )
 			return;
 
-		const int x = serverbrowser_ToScreenX( SB_HOST_BAR_X );
-		const int w = MAX( 1, serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W ) - x );
+		const int x = serverbrowser_ToScreenX( barX );
+		const int w = MAX( 1, serverbrowser_ToScreenX( barX + SB_HOST_BAR_W ) - x );
 
 		const int thumbH = zx::ComputeThumbHeight( trackH, viewH, contentH, 8 );
 		const int thumbTop = zx::ComputeThumbTop( trackH, thumbH, scroll, contentH - viewH );
@@ -4236,7 +4249,7 @@ public:
 	// The compute unit talks about rows and this scrolls by pixels, which costs nothing -- the
 	// mapping is linear and unit-agnostic, so "first row" is "pixels down" with no conversion.
 	bool HostRegionBarDrag( int viewTop, int viewBottom, int contentH, int maxScroll,
-		int x, int y, int &scroll )
+		int x, int y, int &scroll, int barX = SB_HOST_BAR_X )
 	{
 		const int viewH = viewBottom - viewTop;
 		if (( viewH <= 0 ) || ( contentH <= viewH ) || ( maxScroll <= 0 ))
@@ -4249,8 +4262,8 @@ public:
 
 		// Wider than the bar is drawn, by the same few pixels the WAD list's bar allows. A two-pixel
 		// target is one nobody hits on the first try.
-		if (( x < serverbrowser_ToScreenX( SB_HOST_BAR_X - 3 )) ||
-			( x >= serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W + 3 )))
+		if (( x < serverbrowser_ToScreenX( barX - 3 )) ||
+			( x >= serverbrowser_ToScreenX( barX + SB_HOST_BAR_W + 3 )))
 		{
 			return false;
 		}
@@ -4260,6 +4273,48 @@ public:
 
 		const int thumbH = zx::ComputeThumbHeight( trackH, viewH, contentH, 8 );
 		scroll = zx::ComputeFirstFromPointer( y - trackTop, trackH, thumbH, maxScroll );
+		return true;
+	}
+
+	// [rc4l] The experience list's bar, which unlike the two below is there whether a server is
+	// running or not -- the list is drawn in both faces of the panel.
+	//
+	// Answered before the rows, because the bar sits in the gap beside them and a click that scrolled
+	// the list and also picked whatever row happened to be under it would be picking at random.
+	bool HostListBarMouseEvent( int type, int x, int y )
+	{
+		if ( type == MOUSE_Click )
+		{
+			int scroll = g_HostListScroll;
+			if ( HostRegionBarDrag( SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM, HostCatalogueH( ),
+				HostListMaxScroll( ), x, y, scroll, SB_HOST_LBAR_X ))
+			{
+				g_HostListScroll = scroll;
+				g_DraggingHostListBar = true;
+				return true;
+			}
+
+			return false;
+		}
+
+		if ( g_DraggingHostListBar == false )
+			return false;
+
+		// Same rule as the bars below: the grab is kept without re-testing the pointer, because
+		// sliding sideways off a two-pixel bar mid-drag is how everyone uses one.
+		const int trackTop = serverbrowser_ToScreenY( SB_HOST_VIEW_TOP );
+		const int trackH = serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM ) - trackTop;
+		const int maxScroll = HostListMaxScroll( );
+
+		if (( trackH > 0 ) && ( maxScroll > 0 ))
+		{
+			const int thumbH = zx::ComputeThumbHeight( trackH, SB_HOST_VIEW_H, HostCatalogueH( ), 8 );
+			g_HostListScroll = zx::ComputeFirstFromPointer( y - trackTop, trackH, thumbH, maxScroll );
+		}
+
+		if ( type == MOUSE_Release )
+			g_DraggingHostListBar = false;
+
 		return true;
 	}
 
@@ -4710,6 +4765,13 @@ public:
 		}
 
 		PopClip( );
+
+		// [rc4l] The experience list's bar. It was the one scrolling region of the three with no bar
+		// at all, so once the catalogue grew past a screenful there was nothing saying the list went
+		// on -- the wheel worked and gave no reason to try it.
+		DrawHostRegionScrollBar( SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM, HostCatalogueH( ),
+			g_HostListScroll, SB_HOST_LBAR_X );
+
 		DrawHostScrollBar( );
 		DrawHostColumnDivider( );
 
