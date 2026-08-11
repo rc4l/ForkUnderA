@@ -762,3 +762,61 @@ TEST(AddonFile, AnEntryWithNeitherFilesNorVariantsIsStillRefused)
 	EXPECT_FALSE(e.valid);
 	EXPECT_FALSE(e.error.empty());
 }
+
+// ------------------------------------------------------------ curation
+
+TEST(AddonFile, AnEntryThatSaysNothingAboutItsPlaceIsNeitherFirstNorMarked)
+{
+	// The default every existing entry relies on: order 0 keeps the folder order the catalogue has
+	// always had, and no accent keeps the ordinary label colour.
+	const AddonEntry e = Parse(kDuel40);
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_EQ(0, e.order);
+	EXPECT_FALSE(e.accent);
+}
+
+TEST(AddonFile, OrderAndAccentAreRead)
+{
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"order\": 20, \"accent\": true,"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_EQ(20, e.order);
+	EXPECT_TRUE(e.accent);
+}
+
+TEST(AddonFile, AccentCanBeSaidAndTurnedOff)
+{
+	// Pinned because writing the field is how an author REMOVES the mark, and a reader that only
+	// looked for the key's presence would make that impossible to say.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"accent\": false,"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_FALSE(e.accent);
+}
+
+TEST(AddonFile, AnOrderThatIsNotANumberIsRefused)
+{
+	// Refused rather than treated as 0, which would silently drop a curated entry back into the
+	// middle of the list with nothing to say why.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"order\": \"first\","
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_FALSE(e.error.empty());
+}
+
+TEST(AddonFile, AnAccentThatIsNotABooleanIsRefused)
+{
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"accent\": \"yes\","
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_FALSE(e.error.empty());
+}
