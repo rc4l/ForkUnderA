@@ -60,6 +60,7 @@
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
 #include "features/addon-catalogue/computation/livespick_compute.h"
 #include "features/addon-catalogue/computation/teamspick_compute.h"
+#include "features/addon-catalogue/computation/weaponspick_compute.h"
 #include "features/addon-catalogue/computation/remixpick_compute.h"
 #include "features/addon-catalogue/computation/variantpick_compute.h"
 #include "features/addon-catalogue/computation/hostlist_compute.h"
@@ -3509,13 +3510,13 @@ public:
 			// Invasion a zero is genuinely unlimited. No shared cfg can be right in both.
 			config.extraCvars = zx::LivesCvars( HostLivesControl( chosen.addon ));
 
-			// [rc4l] Weapon speed rides the same list. Set only when the entry offers the control, so
-			// a pack that never invited it is not handed a zero that overrides its own cfg.
-			if ( HostFastWeaponsOffered( chosen.addon ))
+			// [rc4l] Weapon speed rides the same list, and brings the infinite ammo with it. Both come
+			// out of one unit because they are one decision: see weaponspick_compute.h.
 			{
-				char n[8];
-				snprintf( n, sizeof( n ), "%d", clamp(( g_HostFastWeapons < 0 ) ? 0 : g_HostFastWeapons, 0, 2 ));
-				config.extraCvars.push_back( std::make_pair( std::string( "sv_fastweapons" ), std::string( n )));
+				const std::vector<std::pair<std::string, std::string> > weapons =
+					zx::FastWeaponsCvars( HostFastWeaponsOffered( chosen.addon ), g_HostFastWeapons );
+
+				config.extraCvars.insert( config.extraCvars.end( ), weapons.begin( ), weapons.end( ));
 			}
 
 			// [rc4l] Teams ride the same list, and have to: the axis NAMES a gamemode, so an exec
@@ -6275,16 +6276,16 @@ public:
 		if ( !HostFastWeaponsOffered( addon ))
 			return y;
 
-		const int value = clamp(( g_HostFastWeapons < 0 ) ? 0 : g_HostFastWeapons, 0, 2 );
+		const int value = zx::FastWeaponsValue( g_HostFastWeapons );
 
 		static const char *const kNames[3] = { "Normal", "Fast", "Fastest" };
 		static const char *const kTips[3] = {
 			"The weapons as the pack timed them.",
-			"Every weapon state cut to a single tick.",
+			"Every weapon state cut to a single tick, and the ammo made infinite to match.",
 			"As Fast, and the states with nothing to do take no time at all.",
 		};
 
-		return DrawHostSlider( "fastweapons", "WEAPONS", x, y, labelW, 0, 2, value,
+		return DrawHostSlider( "fastweapons", "WEAPONS", x, y, labelW, 0, zx::FastWeaponsMax( ), value,
 			kNames[value], kTips[value] );
 	}
 
