@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Popular Co-op Maps (Classic)",
-  "summary": "Six of the megawads people still run, played cooperatively on Ultra-Violence.",
+  "summary": "Seven of the megawads people still run, played cooperatively on Ultra-Violence.",
   "iwad": "doom2.wad",
   "kind": "pve",
   "order": 20,
@@ -66,6 +66,23 @@
         {
           "name": "aaliens_v1_2.wad",
           "md5": "8f32c3e51524757dd0d7ccb93231997a"
+        }
+      ]
+    },
+    {
+      "id": "sunlust",
+      "name": "Sunlust",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty-two maps that expect you to be good at this.",
+      "files": [
+        {
+          "name": "sunlust.wad",
+          "md5": "72bdb54a847e42d71be4535c52f90731"
+        },
+        {
+          "name": "sunlust_map27coopfix.wad",
+          "md5": "41ec7bd08054587c32c20fa8b033f491"
         }
       ]
     },
