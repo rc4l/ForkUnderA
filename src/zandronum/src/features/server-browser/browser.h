@@ -199,6 +199,11 @@ typedef struct
 	bool			bRefreshing;
 	LONG			lRefreshMS;
 
+	// [rc4l] How many re-checks in a row this server has failed to answer. Reset to zero the moment
+	// it answers anything. A row is only dropped once this passes the limit in browser.cpp, because
+	// a single unanswered datagram is ordinary packet loss and used to delete a live server.
+	LONG			lRecheckMisses;
+
 	// [rc4l] Punch-on-query state (computation/querypunch_compute.h). A registry-listed server
 	// behind carrier NAT drops our direct query, so after a moment the browser asks the registry to
 	// have it punch toward us and re-sends the challenge into the hole. These carry that ladder's
@@ -316,6 +321,14 @@ bool			BROWSER_IsRefreshInFlight( void );
 // the registry: it fails its own check and drops out on its own timeout.
 void			BROWSER_RefreshListedServers( void );
 
+// [rc4l] Re-check ONE listed server, at its own address, without asking the registry anything.
+//
+// A whole-list sweep is a poor answer to "is that one still there": it costs a packet per row and a
+// registry request, so it has to be rationed, and the rationing then stands between the player and
+// the single question they actually asked. This is the cheap version, and being cheap is why it
+// does not need a floor of its own.
+void			BROWSER_RecheckServer( ULONG ulServer );
+
 // [rc4l] A punch packet knocked on our socket. The server we asked the registry to punch sends its
 // packets from whatever public port ITS NAT hands out -- under endpoint-dependent (carrier) NAT
 // that is a DIFFERENT port from the one the registry listed, so the challenges we aim at the
@@ -398,6 +411,11 @@ unsigned int	BROWSER_GetServerRegistryCount( void );
 bool			BROWSER_GetServerRegistryStatus( unsigned int index, std::string &host, int &port,
 					zx::RegistryStatus &status );
 void			BROWSER_QueryAllServers( void );
+// [rc4l] Seconds since the last sweep went out, or -1 for never. Sent-time, not reply-time: a
+// refresh that found nothing still happened.
+LONG			BROWSER_SecondsSinceRefresh( void );
+// [rc4l] The same, in milliseconds, for the press floor. See BROWSER_MSSinceRefresh in browser.cpp.
+LONG			BROWSER_MSSinceRefresh( void );
 LONG			BROWSER_CalcNumServers( void );
 
 //*****************************************************************************
