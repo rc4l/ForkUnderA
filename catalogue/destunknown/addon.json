@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "name": "Destination Unknown",
+  "summary": "Nineteen maps of held ground, on weapons that never run dry.",
+  "iwad": "doom2.wad",
+  "kind": "pve",
+  "files": [
+    {
+      "name": "dest_unknown_zandro.pk3",
+      "md5": "f84b16db6e99e89b57901a8639625fb3"
+    }
+  ]
+}
