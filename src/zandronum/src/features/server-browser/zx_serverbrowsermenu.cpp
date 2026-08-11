@@ -935,6 +935,7 @@ struct HostGameplayRow
 static	TArray<HostGameplayRow>	g_HostGameRows;
 static	int						g_HostGameHot = -1;
 
+
 // The lives track, recorded the same way and for the same reason: it scrolls, so where it is can
 // only be known once it has been drawn.
 static	int						g_HostLivesTrackX = 0;
@@ -3785,6 +3786,7 @@ public:
 				if ( next < static_cast<int>( rows.size( )))
 				{
 					g_HostEntrySel = rows[next].entry;
+					HostSelectionChanged( );
 					g_HostOnEntryRow = ( rows[next].variant < 0 );
 
 					if ( rows[next].variant >= 0 )
@@ -4052,6 +4054,7 @@ public:
 					SetFocus( zx::BrowserFocus::Host );
 					g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
 					g_HostEntrySel = r.entry;
+					HostSelectionChanged( );
 					g_HostOnEntryRow = ( r.variant < 0 );
 
 					if ( r.variant >= 0 )
@@ -4146,6 +4149,8 @@ public:
 		// frame actually DREW rather than against a computed row height: these scroll, so a rule
 		// saying "the nth row is at this y" is wrong the moment the region moves under it.
 		g_HostGameHot = -1;
+
+
 		for ( unsigned i = 0; i < g_HostGameRows.Size( ); ++i )
 		{
 			const HostGameplayRow &row = g_HostGameRows[i];
@@ -4159,6 +4164,7 @@ public:
 			}
 
 			g_HostGameHot = static_cast<int>( i );
+
 
 			if ( type == MOUSE_Click )
 			{
@@ -4916,6 +4922,17 @@ public:
 		return ( over > 0 ) ? over : 0;
 	}
 
+	// [rc4l] A different experience is a different panel, so it starts at the top.
+	//
+	// The offset used to survive the selection changing, which is wrong twice over: you are reading
+	// something you did not scroll, and on an entry with a shorter panel the whole thing sits above
+	// the viewport with nothing drawn at all. Nothing drawn means nothing RECORDED either, so the
+	// gameplay pills were not merely invisible, they were unclickable -- which is how this surfaced.
+	void HostSelectionChanged( )
+	{
+		g_HostDetailScroll = 0;
+	}
+
 	void ClampHostDetailScroll( )
 	{
 		const int maxScroll = HostDetailMaxScroll( );
@@ -5056,7 +5073,7 @@ public:
 		// [rc4l] Any AXIS with something to decide, not any remix at all. An entry offering one mod
 		// and nothing else has a row that cannot change, which is not a setting and must not cost the
 		// file list three lines to display.
-		if ( HostLivesControl( entries[g_HostEntrySel].addon ).applies )
+		if ( HostLivesControl( entries[g_HostEntrySel].addon ).adjustable )
 			return true;
 
 		const std::vector<zx::RemixGroup> groups =
@@ -5605,7 +5622,7 @@ public:
 		{
 			h += 4 + 6 + SB_HOST_LINE + 2;	// the rule, and the GAMEPLAY heading
 
-			if ( HostLivesControl( a ).applies )
+			if ( HostLivesControl( a ).adjustable )
 				h += SB_HOST_LINE * 2 + 3;
 
 			const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( a ));
@@ -5632,14 +5649,8 @@ public:
 
 				const zx::WadListLayout pills = zx::LayoutWadList( pillWidths, 4, 0, pillRoom, 0 );
 
-				// Fewer lines than options means they packed, so pills; otherwise it falls back to a
-				// row each and the count is the same either way.
-				const bool bPills = ( pills.lines.size( ) < groups[g].choices.size( ));
-				const size_t rows = bPills ? pills.lines.size( ) : groups[g].choices.size( );
-
-				// Pills carry a gap between their lines; plain rows do not.
-				h += static_cast<int>( rows ) *
-					( SB_HOST_GAME_ROW_H + ( bPills ? SB_HOST_PILL_VGAP : 0 )) + 3;
+				h += static_cast<int>( pills.lines.size( )) *
+					( SB_HOST_GAME_ROW_H + SB_HOST_PILL_VGAP ) + 3;
 			}
 		}
 
@@ -5944,7 +5955,7 @@ public:
 	{
 		const zx::LivesControl lives = HostLivesControl( addon );
 
-		if ( !lives.applies )
+		if ( !lives.adjustable )
 			return y;
 
 		const bool bDraw = HostDetailRowVisible( y, SB_HOST_LINE * 2 );
@@ -5961,9 +5972,7 @@ public:
 		// [rc4l] The VALUE is measured first and the track takes what is left, so a track never runs
 		// under its own label. "Unlimited" is much the widest thing this can say.
 		FString value;
-		if ( !lives.applies )
-			value = lives.reason.c_str( );
-		else if ( lives.unlimited )
+		if ( lives.unlimited )
 			value = "Unlimited";
 		else
 			value.Format( "%d", lives.value );
@@ -5974,7 +5983,7 @@ public:
 
 		g_HostLivesLive = false;
 
-		if ( bDraw && lives.applies && ( trackW > 8 ))
+		if ( bDraw && ( trackW > 8 ))
 		{
 			g_HostLivesLive = true;
 			g_HostLivesTrackX = rowX;
@@ -6012,7 +6021,7 @@ public:
 
 		if ( bDraw )
 		{
-			screen->DrawText( SmallFont, lives.applies ? CR_WHITE : CR_DARKGRAY, valueX, y, value,
+			screen->DrawText( SmallFont, CR_WHITE, valueX, y, value,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 
@@ -6027,7 +6036,7 @@ public:
 	{
 		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
 
-		bool bAnything = HostLivesControl( addon ).applies;
+		bool bAnything = HostLivesControl( addon ).adjustable;
 		for ( size_t g = 0; g < groups.size( ); ++g )
 			bAnything = bAnything || ( groups[g].choices.size( ) > 1 );
 
@@ -6091,10 +6100,8 @@ public:
 
 			const zx::WadListLayout pills = zx::LayoutWadList( pillWidths, pillGap, 0, pillRoom, 0 );
 
-			if ( pills.lines.size( ) < choices.size( ))
+			for ( size_t ln = 0; ln < pills.lines.size( ); ++ln )
 			{
-				for ( size_t ln = 0; ln < pills.lines.size( ); ++ln )
-				{
 				const zx::WadListLine &pline = pills.lines[ln];
 
 				if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
@@ -6104,7 +6111,11 @@ public:
 					for ( size_t i = pline.first; i < pline.end; ++i )
 					{
 						const bool bOn = ( choices[i].id == pick.id );
-						const int pw = pillWidths[i];
+
+						// [rc4l] An option wider than the whole column gets its own line from the
+						// layout and is cut here, the same division of labour the file list uses.
+						// Skulltag's "Team Last Man Standing" is the one that needs it.
+						const int pw = MIN( pillWidths[i], pillRoom );
 
 						HostGameplayRow rec;
 						rec.x = px;
@@ -6163,8 +6174,11 @@ public:
 						DrawRoundedPanel( dotX, dotY, SB_HOST_PILL_DOT, SB_HOST_PILL_DOT, dot, dot,
 							SB_HOST_PILL_DOT / 2 );
 
-						screen->DrawText( SmallFont, bOn ? CR_WHITE : CR_GRAY,
-							dotX + SB_HOST_PILL_DOT + 3, y, choices[i].name.c_str( ),
+						const int textX = dotX + SB_HOST_PILL_DOT + 3;
+
+						screen->DrawText( SmallFont, bOn ? CR_WHITE : CR_GRAY, textX, y,
+							serverbrowser_FitName( choices[i].name.c_str( ),
+								( px + pw ) - textX - 2 ),
 							DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
 							DTA_KeepRatio, true, TAG_DONE );
 
@@ -6182,64 +6196,11 @@ public:
 				// the rounded ends of one line sat against the next and the block read as a slab
 				// rather than as separate chips.
 				y += SB_HOST_GAME_ROW_H + SB_HOST_PILL_VGAP;
-				}
-
-				y += 3;
-				continue;
-			}
-
-			for ( size_t i = 0; i < choices.size( ); ++i )
-			{
-				const bool bOn = ( choices[i].id == pick.id );
-				const int rowX = x + SB_HOST_GAME_INDENT;
-
-				// Recorded whether or not it is visible, then filtered: a row scrolled out of the
-				// region must not be clickable, and the region is the only thing that knows.
-				if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
-				{
-					HostGameplayRow rec;
-					rec.x = x;
-					rec.w = SB_HOST_RCOL_RIGHT - x;
-					rec.y = y;
-					rec.h = SB_HOST_GAME_ROW_H;
-					rec.group = groups[g].id;
-					rec.id = choices[i].id;
-					g_HostGameRows.Push( rec );
-
-					const bool bHot = ( g_HostGameHot == static_cast<int>( g_HostGameRows.Size( ) - 1 ));
-
-					if ( bOn || bHot )
-					{
-						screen->Dim( bOn ? PalEntry( 40, 96, 52 ) : PalEntry( 150, 170, 215 ),
-							bOn ? 0.45f : 0.06f,
-							serverbrowser_ToScreenX( x ),
-							serverbrowser_ToScreenY( y - 1 ),
-							serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT ) - serverbrowser_ToScreenX( x ),
-							serverbrowser_ToScreenY( y + SB_HOST_GAME_ROW_H - 1 ) -
-								serverbrowser_ToScreenY( y - 1 ));
-					}
-
-					// The mark, not just the tint: a colour alone cannot say which of two rows is on
-					// when the reader cannot see both at once.
-					screen->DrawText( SmallFont, bOn ? CR_GREEN : CR_DARKGRAY, x, y, bOn ? "*" : "-",
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-
-					screen->DrawText( SmallFont, bOn ? CR_WHITE : CR_GRAY, rowX, y,
-						serverbrowser_FitName( choices[i].name.c_str( ), SB_HOST_RCOL_RIGHT - rowX ),
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-
-					if ( !choices[i].summary.empty( ))
-					{
-						serverbrowser_Tip( x, y - 1, SB_HOST_RCOL_RIGHT - x, SB_HOST_GAME_ROW_H,
-							choices[i].summary.c_str( ));
-					}
-				}
-
-				y += SB_HOST_GAME_ROW_H;
 			}
 
 			y += 3;			// a gap between axes, so two blocks do not read as one long list
 		}
+
 	}
 
 	// [rc4l] WHAT to run. The catalogue answers this; the fields beside it answer how.
