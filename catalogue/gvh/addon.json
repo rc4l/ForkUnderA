@@ -98,31 +98,35 @@
       "name": "Nordic Saga",
       "cfg": "nordicsaga.cfg",
       "kind": "pvp",
-      "tooltip": "The GVHNS run, on the same content Multiverse uses.",
+      "tooltip": "Fifty-two maps, and the GVHNS run they are named for.",
       "files": [
         {
           "name": "skulltag_content-4.1.pk3",
           "md5": "3f835911eefeeefeaf1ec4c3c1aad5a4"
         },
         {
-          "name": "mv_core_v4b2patch4.pk3",
-          "md5": "a70e9410920eb40260bef26fee9c5816"
+          "name": "ns_core.pk3",
+          "md5": "063384bb833d2e24c256e34c70858fd8"
         },
         {
-          "name": "mv_mapgfx_v4b2patch4.pk3",
-          "md5": "cbc9558780ad190fed8ef7090b03151c"
+          "name": "ns_datapack_r24.pk3",
+          "md5": "fbe07b92166aa586257b71493fd0cc79"
         },
         {
-          "name": "mv_maps_v4b2patch10.pk3",
-          "md5": "7080d65b016942f677485039119acd46"
+          "name": "ns_codepack_r39.pk3",
+          "md5": "e0e78576e0a743103ac09d0e31cc2d6c"
         },
         {
-          "name": "mv_music_v4b2patch4.pk3",
-          "md5": "908145ed3104d5f054a23a1bacabf7be"
+          "name": "ns_patch_r3_fixed.pk3",
+          "md5": "2cda34d9984fa198126cea244ff4445a"
         },
         {
-          "name": "mv_code_v4b2patch12.pk3",
-          "md5": "195f817ab7bdcab68bc54f68f054ee56"
+          "name": "ns-addonv1.8.pk3",
+          "md5": "bda55d2223fd8fd18386c34b27ae0e3a"
+        },
+        {
+          "name": "ns_demonicusv1.07.pk3",
+          "md5": "203e1db6da05161d11ea6b49a3a634bf"
         }
       ]
     },
