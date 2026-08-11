@@ -38,6 +38,7 @@ bool Have(const std::vector<std::string> &haveFiles, const std::string &name)
 } // namespace
 
 HostPlan BuildHostPlan(const AddonEntry &addon,
+                       const std::vector<AddonFileRef> &files,
                        const IwadPick &iwad,
                        const std::string &serverCfgPath,
                        const HostChoices &choices,
@@ -71,11 +72,11 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
 
 	plan.iwad = iwad.iwad;
 
-	// Load order is the entry's, unchanged. It is the only thing that says the announcer goes after
+	// Load order is as resolved, unchanged. It is the only thing that says the announcer goes after
 	// the maps, and re-deriving it here would be a second opinion nobody asked for.
-	for (size_t i = 0; i < addon.files.size(); ++i)
+	for (size_t i = 0; i < files.size(); ++i)
 	{
-		const std::string &name = addon.files[i].name;
+		const std::string &name = files[i].name;
 
 		plan.pwads.push_back(name);
 

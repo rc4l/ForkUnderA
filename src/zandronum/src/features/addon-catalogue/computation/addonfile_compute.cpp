@@ -310,6 +310,11 @@ bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
 						return false;
 					v.kind = ParseKind(kind);
 				}
+				else if (key == "files")
+				{
+					if (!ReadFilesArray(r, v.files))
+						return false;
+				}
 				else if (key == "default")
 				{
 					if (!ReadBool(r, v.isDefault))
@@ -446,7 +451,12 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 
 	if (entry.name.empty())
 		return Fail(id, "no name");
-	if (entry.files.empty())
+
+	// [rc4l] What a variant LOADS must be non-empty, which is not the same as the entry having files
+	// of its own any more. A pack whose ways of playing share nothing puts everything in its variants
+	// and leaves this list empty, so requiring it here would refuse exactly that shape. The real rule
+	// -- every way of playing loads something -- is checked with the variants below.
+	if (entry.variants.empty() && entry.files.empty())
 		return Fail(id, "no files");
 
 	for (size_t i = 0; i < entry.files.size(); ++i)
@@ -505,6 +515,24 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 				if (entry.variants[j].id == v.id)
 					return Fail(id, "two variants share an id");
 			}
+
+			// The same rules the entry's own files obey. A variant's list reaches the same loader and
+			// the same by-hash store, so a path or a bad hash is exactly as dangerous there.
+			for (size_t f = 0; f < v.files.size(); ++f)
+			{
+				if (!IsBareFilename(v.files[f].name))
+					return Fail(id, "the experience variant '" + v.name +
+						"' names a file that is not a bare filename");
+				if (!LooksLikeMd5(v.files[f].md5))
+					return Fail(id, "the experience variant '" + v.name +
+						"' has a file with no usable md5");
+			}
+
+			// [rc4l] THE rule the entry-level check gave up: what this way of playing actually loads,
+			// which is the entry's files plus its own. A variant that resolves to nothing would start
+			// a server on the bare IWAD, which is not what anybody picked.
+			if (entry.files.empty() && v.files.empty())
+				return Fail(id, "the experience variant '" + v.name + "' loads no files");
 
 			if (v.isDefault)
 				++defaults;

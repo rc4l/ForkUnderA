@@ -50,12 +50,16 @@ enum class VariantKind
 const char *DescribeVariantKind(VariantKind kind);
 
 // [rc4l] One way to play an entry. Skulltag is a deathmatch pack, a duel pack, an invasion pack and
-// a CTF pack, and today that is one cfg with every map of all four in one rotation.
+// a CTF pack, and that used to be one cfg with every map of all four in one rotation.
 //
-// A variant changes the CFG and nothing else. Files are identical across variants by construction:
-// they are the pack's files, and a variant that needed different ones would be a different entry.
-// That is what makes this cheap -- no second file list to keep in step, no second download plan, and
-// nothing for the missing-file logic to reconsider.
+// A variant always changes the cfg, and MAY add files of its own. What it loads is the entry's list
+// followed by its own, which covers both shapes with one rule: Skulltag puts everything in the
+// entry and nothing in its variants, Ghouls vs Humans puts nothing in the entry and a whole map pack
+// in each variant, and a pack with a shared base plus per-mode extras falls out in between.
+//
+// ADDED, never replacing. A variant that restated the shared files would hold a copy of them, and
+// copies drift: update the base, miss one variant, and that variant quietly loads something else.
+// The failure is invisible until somebody cannot join.
 struct AddonVariant
 {
 	std::string id;			// stable; what a remembered choice is keyed on
@@ -63,6 +67,10 @@ struct AddonVariant
 	std::string cfg;		// bare filename, beside the addon.json
 	std::string tooltip;	// optional; what this way of playing actually is
 	VariantKind kind;		// required; see VariantKind
+
+	// Loaded AFTER the entry's own, so an entry can carry what every way of playing shares and a
+	// variant only what is peculiar to it. Empty for a pack whose variants differ by cfg alone.
+	std::vector<AddonFileRef> files;
 
 	// Which one a player who has expressed no preference gets. Exactly one may claim it.
 	bool isDefault;

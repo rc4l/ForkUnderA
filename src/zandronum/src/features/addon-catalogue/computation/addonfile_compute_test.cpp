@@ -54,6 +54,16 @@ std::string WithVariants(const char *variants)
 	return json;
 }
 
+// A pack whose ways of playing share NOTHING, written the way Ghouls vs Humans is: no entry-level
+// files at all, and every variant bringing its own.
+std::string NoBase(const char *variants)
+{
+	std::string json = "{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"Ghouls vs Humans\", \"variants\": ";
+	json += variants;
+	json += " }";
+	return json;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------- the real file
@@ -654,4 +664,101 @@ TEST(AddonFile, AnUnknownKeyInsideAVariantIsIgnoredRatherThanRefused)
 	ASSERT_TRUE(e.valid) << e.error;
 	ASSERT_EQ(1u, e.variants.size());
 	EXPECT_EQ("a", e.variants[0].id);
+}
+
+// ------------------------------------------------------------------ variants with their own files
+
+TEST(AddonFile, AVariantMayCarryFilesOfItsOwn)
+{
+	// Skulltag's shape stays legal and gains nothing; this is the addition on top of it.
+	const AddonEntry e = Parse(WithVariants(
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\","
+		"    \"files\": [{ \"name\": \"extra.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6f\" }] } ]").c_str());
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(1u, e.variants.size());
+	ASSERT_EQ(1u, e.variants[0].files.size());
+	EXPECT_EQ("extra.pk3", e.variants[0].files[0].name);
+	EXPECT_EQ("41630bc75af4b51fe5d163fe4d434c6f", e.variants[0].files[0].md5);
+
+	EXPECT_EQ(1u, e.files.size()) << "the entry's own list is untouched by a variant's";
+}
+
+TEST(AddonFile, AnEntryMayKeepNoFilesAtAllWhenEveryVariantBringsItsOwn)
+{
+	// [rc4l] Ghouls vs Humans: the ways of playing share no base whatever, so the entry itself loads
+	// nothing and each variant brings a whole different wad. Requiring files at the entry level used
+	// to refuse exactly this shape.
+	const AddonEntry e = Parse(NoBase(
+		"[ { \"id\": \"gvh\", \"name\": \"Ghouls\", \"cfg\": \"server.cfg\", \"kind\": \"pvp\", \"default\": true,"
+		"    \"files\": [{ \"name\": \"gvh.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" }] },"
+		"  { \"id\": \"gvhr\", \"name\": \"Reborn\", \"cfg\": \"reborn.cfg\", \"kind\": \"pvp\","
+		"    \"files\": [{ \"name\": \"gvhr.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6f\" }] } ]").c_str());
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_TRUE(e.files.empty());
+	ASSERT_EQ(2u, e.variants.size());
+	EXPECT_EQ("gvh.pk3", e.variants[0].files[0].name);
+	EXPECT_EQ("gvhr.pk3", e.variants[1].files[0].name);
+}
+
+TEST(AddonFile, AVariantThatLoadsNothingIsRefusedByItsOwnName)
+{
+	// With no base to inherit, a variant with no files of its own would start a server on the bare
+	// IWAD. Named for the same reason the missing kind is: a pack can have six.
+	const AddonEntry e = Parse(NoBase(
+		"[ { \"id\": \"gvh\", \"name\": \"Ghouls\", \"cfg\": \"server.cfg\", \"kind\": \"pvp\","
+		"    \"files\": [{ \"name\": \"gvh.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" }] },"
+		"  { \"id\": \"empty\", \"name\": \"Reborn\", \"cfg\": \"reborn.cfg\", \"kind\": \"pvp\" } ]").c_str());
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_NE(std::string::npos, e.error.find("Reborn")) << "say WHICH one: " << e.error;
+}
+
+TEST(AddonFile, AnEntryWithABaseCoversAVariantThatAddsNothing)
+{
+	// The other side of the same rule. Skulltag's variants differ by cfg alone and load the entry's
+	// files, which is not a variant that loads nothing.
+	const AddonEntry e = Parse(WithVariants(
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\" } ]").c_str());
+
+	EXPECT_TRUE(e.valid) << e.error;
+}
+
+TEST(AddonFile, AVariantsFilesObeyTheSameRulesAsTheEntrys)
+{
+	// They reach the same loader and the same by-hash store, so a path or a bad hash is exactly as
+	// dangerous there as at the entry level.
+	const char *bad[] = {
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\","
+		"    \"files\": [{ \"name\": \"../gvh.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" }] } ]",
+
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\","
+		"    \"files\": [{ \"name\": \"wads/gvh.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" }] } ]",
+
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\","
+		"    \"files\": [{ \"name\": \"gvh.pk3\", \"md5\": \"nothex\" }] } ]",
+
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\","
+		"    \"files\": [{ \"name\": \"gvh.pk3\" }] } ]",
+
+		// The array itself, not one of its members.
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\", \"files\": 5 } ]",
+	};
+
+	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
+	{
+		const AddonEntry e = Parse(WithVariants(bad[i]).c_str());
+		EXPECT_FALSE(e.valid) << "accepted: " << bad[i];
+		EXPECT_FALSE(e.error.empty()) << "no reason given for: " << bad[i];
+	}
+}
+
+TEST(AddonFile, AnEntryWithNeitherFilesNorVariantsIsStillRefused)
+{
+	// Relaxing the entry-level rule for the Ghouls shape must not have relaxed it into nothing.
+	const AddonEntry e = Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\" }");
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_FALSE(e.error.empty());
 }

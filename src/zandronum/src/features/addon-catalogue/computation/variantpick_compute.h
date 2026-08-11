@@ -34,6 +34,11 @@ struct VariantPick
 	// What to show, and what the server is called. Empty when there are no variants.
 	std::string name;
 
+	// Everything this way of playing loads, in load order: the entry's own files followed by the
+	// variant's. Resolved here so no caller has to remember that the two lists concatenate, and so
+	// the panel, the download plan and the launch cannot each answer it differently.
+	std::vector<AddonFileRef> files;
+
 	VariantPick() : index(-1) {}
 };
 

@@ -67,13 +67,29 @@ std::vector<std::string> Files(const char *a = 0, const char *b = 0)
 	return v;
 }
 
+// A pack that plays one way loads exactly its own files, which is what PickVariant resolves for it.
+// Spelling that out once keeps these cases about planning rather than about resolution.
+HostPlan PlanFor(const AddonEntry &addon, const IwadPick &iwad, const std::string &cfg,
+	const HostChoices &choices, const std::vector<std::string> &haveFiles)
+{
+	return BuildHostPlan(addon, addon.files, iwad, cfg, choices, haveFiles);
+}
+
+AddonFileRef Ref(const char *name, const char *md5)
+{
+	AddonFileRef f;
+	f.name = name;
+	f.md5 = md5;
+	return f;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------- the whole point
 
 TEST(HostPlan, EverythingPresentIsReadyToStart)
 {
-	const HostPlan p = BuildHostPlan(Duel40(),
+	const HostPlan p = PlanFor(Duel40(),
 		Picked(IwadChoice::Substitute, "freedoom2.wad"),
 		"catalogue/duel40/server.cfg", Mine(),
 		Files("duel40b.pk3", "zandrospree2rc2.pk3"));
@@ -93,7 +109,7 @@ TEST(HostPlan, EverythingPresentIsReadyToStart)
 TEST(HostPlan, TheHostOwnsTheNameAndTheEntryOwnsTheFiles)
 {
 	// An entry never names the server or picks the port. Those belong to whoever is running it.
-	const HostPlan p = BuildHostPlan(Duel40(),
+	const HostPlan p = PlanFor(Duel40(),
 		Picked(IwadChoice::Preferred, "doom2.wad"),
 		"", Mine(), Files("duel40b.pk3", "zandrospree2rc2.pk3"));
 
@@ -106,7 +122,7 @@ TEST(HostPlan, TheHostOwnsTheNameAndTheEntryOwnsTheFiles)
 TEST(HostPlan, LoadOrderIsTheEntrysAndIsNotSecondGuessed)
 {
 	// The order in the file is the only thing saying the announcer goes after the maps.
-	const HostPlan p = BuildHostPlan(Duel40(),
+	const HostPlan p = PlanFor(Duel40(),
 		Picked(IwadChoice::Preferred, "doom2.wad"),
 		"", Mine(), Files("zandrospree2rc2.pk3", "duel40b.pk3"));
 
@@ -120,7 +136,7 @@ TEST(HostPlan, AMissingPwadIsADownloadRatherThanARefusal)
 {
 	// Shipping the hashes is what makes fetching possible, so treating an absent file as fatal would
 	// waste the whole design.
-	const HostPlan p = BuildHostPlan(Duel40(),
+	const HostPlan p = PlanFor(Duel40(),
 		Picked(IwadChoice::Preferred, "doom2.wad"),
 		"", Mine(), Files("duel40b.pk3"));
 
@@ -134,7 +150,7 @@ TEST(HostPlan, AMissingPwadIsADownloadRatherThanARefusal)
 TEST(HostPlan, TheFullFileListSurvivesEvenWhenSomeAreMissing)
 {
 	// The caller downloads `missing` and then starts with `pwads`, so the plan has to carry both.
-	const HostPlan p = BuildHostPlan(Duel40(),
+	const HostPlan p = PlanFor(Duel40(),
 		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(), Files());
 
 	EXPECT_EQ(2u, p.pwads.size());
@@ -143,7 +159,7 @@ TEST(HostPlan, TheFullFileListSurvivesEvenWhenSomeAreMissing)
 
 TEST(HostPlan, MissingFilesKeepLoadOrderSoTheProgressReadsSensibly)
 {
-	const HostPlan p = BuildHostPlan(Duel40(),
+	const HostPlan p = PlanFor(Duel40(),
 		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(), Files());
 
 	ASSERT_EQ(2u, p.missing.size());
@@ -156,7 +172,7 @@ TEST(HostPlan, NoIwadIsABlockerBecauseNothingCanBeFetchedForIt)
 {
 	// PickIwad has already tried the substitute table, so None means there is genuinely nothing to
 	// run on, and offering a download would be offering a commercial game we may not fetch.
-	const HostPlan p = BuildHostPlan(Duel40(),
+	const HostPlan p = PlanFor(Duel40(),
 		Picked(IwadChoice::None, ""), "", Mine(),
 		Files("duel40b.pk3", "zandrospree2rc2.pk3"));
 
@@ -171,7 +187,7 @@ TEST(HostPlan, AnUnreadableEntryIsABlockerAndNotAnEmptyServer)
 	broken.valid = false;
 	broken.error = "no files";
 
-	const HostPlan p = BuildHostPlan(broken,
+	const HostPlan p = PlanFor(broken,
 		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(), Files());
 
 	EXPECT_FALSE(p.ready);
@@ -183,7 +199,7 @@ TEST(HostPlan, AnUnreadableEntryIsABlockerAndNotAnEmptyServer)
 
 TEST(HostPlan, AnEntryWithNoConfigExecsNothing)
 {
-	const HostPlan p = BuildHostPlan(Duel40(),
+	const HostPlan p = PlanFor(Duel40(),
 		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(),
 		Files("duel40b.pk3", "zandrospree2rc2.pk3"));
 
@@ -194,7 +210,7 @@ TEST(HostPlan, AnEntryWithNoConfigExecsNothing)
 TEST(HostPlan, CaseDoesNotDecideWhetherYouHaveAFile)
 {
 	// A file off a Windows disk is the same file whatever its spelling.
-	const HostPlan p = BuildHostPlan(Duel40(),
+	const HostPlan p = PlanFor(Duel40(),
 		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(),
 		Files("DUEL40B.PK3", "ZandroSpree2RC2.pk3"));
 
@@ -213,7 +229,7 @@ TEST(HostPlan, AnEntryThatNamesNoIwadStillSaysWhyItCannotRun)
 	IwadPick nothing;
 	nothing.choice = IwadChoice::None;
 
-	const HostPlan p = BuildHostPlan(anyGame, nothing, "", Mine(),
+	const HostPlan p = PlanFor(anyGame, nothing, "", Mine(),
 		Files("duel40b.pk3", "zandrospree2rc2.pk3"));
 
 	EXPECT_FALSE(p.ready);
@@ -228,11 +244,52 @@ TEST(HostPlan, TwoNamesOfTheSameLengthAreStillDifferentFiles)
 	a.files.resize(1);
 	a.files[0].name = "aaaaaaaa.pk3";
 
-	const HostPlan p = BuildHostPlan(a,
+	const HostPlan p = PlanFor(a,
 		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(),
 		Files("bbbbbbbb.pk3"));
 
 	EXPECT_FALSE(p.ready);
 	ASSERT_EQ(1u, p.missing.size());
 	EXPECT_EQ("aaaaaaaa.pk3", p.missing[0]);
+}
+
+// ---------------------------------------------------------------- what a variant loads
+
+TEST(HostPlan, ItPlansTheFilesItIsGivenAndNotTheEntrysOwn)
+{
+	// [rc4l] Ghouls vs Humans has nothing at the entry level and a different wad per way of playing,
+	// so an entry no longer has one answer to "what does this load". Reading addon.files here would
+	// plan for whichever way of playing happened to be listed first.
+	AddonEntry gvh;
+	gvh.valid = true;
+	gvh.id = "gvh";
+	gvh.iwad = "doom2.wad";
+
+	std::vector<AddonFileRef> variant;
+	variant.push_back(Ref("gvh-maps.pk3", "aa3896cb47c781facab7ea7f39395201"));
+
+	const HostPlan p = BuildHostPlan(gvh, variant,
+		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(), Files("gvh-maps.pk3"));
+
+	EXPECT_TRUE(p.ready);
+	ASSERT_EQ(1u, p.pwads.size());
+	EXPECT_EQ("gvh-maps.pk3", p.pwads[0]);
+}
+
+TEST(HostPlan, AVariantsMissingWadIsStillJustADownload)
+{
+	// The variant's own files are fetched exactly like the entry's; being peculiar to one way of
+	// playing does not make an absent file fatal.
+	std::vector<AddonFileRef> resolved = Duel40().files;
+	resolved.push_back(Ref("skulltag_announcer.pk3", "25b2a3c4f46e50f4016b640119aefae7"));
+
+	const HostPlan p = BuildHostPlan(Duel40(), resolved,
+		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(),
+		Files("duel40b.pk3", "zandrospree2rc2.pk3"));
+
+	EXPECT_FALSE(p.ready);
+	EXPECT_TRUE(p.blocker.empty());
+	ASSERT_EQ(1u, p.missing.size());
+	EXPECT_EQ("skulltag_announcer.pk3", p.missing[0]);
+	EXPECT_EQ(3u, p.pwads.size()) << "the variant's file is part of what gets started";
 }

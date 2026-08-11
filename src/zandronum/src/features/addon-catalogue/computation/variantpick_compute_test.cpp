@@ -39,6 +39,34 @@ AddonEntry Skulltag( )
 	return e;
 }
 
+zx::AddonFileRef Ref( const char *name )
+{
+	zx::AddonFileRef f;
+	f.name = name;
+	f.md5 = "41630bc75af4b51fe5d163fe4d434c6e";
+	return f;
+}
+
+// Ghouls vs Humans: no shared base whatever, and a different wad on each way of playing.
+AddonEntry Ghouls( )
+{
+	AddonEntry e;
+	e.id = "gvh";
+	e.name = "Ghouls vs Humans";
+	e.valid = true;
+
+	AddonVariant classic = Variant( "gvh", "Classic", "server.cfg", true );
+	classic.files.push_back( Ref( "gvh.pk3" ));
+	e.variants.push_back( classic );
+
+	AddonVariant reborn = Variant( "gvhr", "Reborn", "reborn.cfg" );
+	reborn.files.push_back( Ref( "gvhr.pk3" ));
+	reborn.files.push_back( Ref( "gvhr-maps.pk3" ));
+	e.variants.push_back( reborn );
+
+	return e;
+}
+
 } // namespace
 
 // ------------------------------------------------------- entries without variants
@@ -141,6 +169,84 @@ TEST( VariantPick, WithNoDefaultClaimedTheFirstOneWins )
 
 	EXPECT_EQ( 0, pick.index );
 	EXPECT_EQ( "Deathmatch", pick.name );
+}
+
+// ------------------------------------------------------------ what it loads
+
+TEST( VariantPick, APackThatPlaysOneWayLoadsItsOwnFiles )
+{
+	AddonEntry plain;
+	plain.name = "Duel 40";
+	plain.files.push_back( Ref( "duel40b.pk3" ));
+
+	const VariantPick pick = PickVariant( plain, "" );
+
+	ASSERT_EQ( 1u, pick.files.size( ));
+	EXPECT_EQ( "duel40b.pk3", pick.files[0].name );
+}
+
+TEST( VariantPick, AVariantsFilesComeAfterTheEntrysRatherThanInsteadOfThem )
+{
+	// [rc4l] ADDED, never replacing. A variant that restated the shared files would hold a copy of
+	// them, and copies drift: update the base, miss one variant, and it quietly loads something else.
+	AddonEntry e = Skulltag( );
+	e.files.push_back( Ref( "skulltag.pk3" ));
+	e.variants[3].files.push_back( Ref( "announcer.pk3" ));
+
+	const VariantPick pick = PickVariant( e, "invasion" );
+
+	ASSERT_EQ( 2u, pick.files.size( ));
+	EXPECT_EQ( "skulltag.pk3", pick.files[0].name ) << "the base loads first";
+	EXPECT_EQ( "announcer.pk3", pick.files[1].name );
+}
+
+TEST( VariantPick, VariantsThatDifferByCfgAloneAllLoadTheSameThing )
+{
+	// Skulltag's shape. Every way of playing gets the entry's list and nothing else.
+	AddonEntry e = Skulltag( );
+	e.files.push_back( Ref( "skulltag.pk3" ));
+
+	for ( size_t i = 0; i < e.variants.size( ); ++i )
+	{
+		const VariantPick pick = PickVariant( e, e.variants[i].id );
+
+		ASSERT_EQ( 1u, pick.files.size( )) << "variant " << i;
+		EXPECT_EQ( "skulltag.pk3", pick.files[0].name ) << "variant " << i;
+	}
+}
+
+TEST( VariantPick, WithNoSharedBaseEachWayOfPlayingLoadsOnlyItsOwn )
+{
+	// THE Ghouls case: picking the wrong list here starts a server on somebody else's wad, and the
+	// panel beside it would still read correctly.
+	const VariantPick classic = PickVariant( Ghouls( ), "gvh" );
+	ASSERT_EQ( 1u, classic.files.size( ));
+	EXPECT_EQ( "gvh.pk3", classic.files[0].name );
+
+	const VariantPick reborn = PickVariant( Ghouls( ), "gvhr" );
+	ASSERT_EQ( 2u, reborn.files.size( ));
+	EXPECT_EQ( "gvhr.pk3", reborn.files[0].name );
+	EXPECT_EQ( "gvhr-maps.pk3", reborn.files[1].name );
+}
+
+TEST( VariantPick, TheFallbackCarriesTheDefaultsFilesAndNotTheAskedForOnes )
+{
+	// A remembered choice the catalogue no longer offers falls back to the default -- and the files
+	// have to fall back WITH it, or the server runs the default's cfg on a missing variant's wads.
+	const VariantPick pick = PickVariant( Ghouls( ), "terminator" );
+
+	EXPECT_EQ( 0, pick.index );
+	ASSERT_EQ( 1u, pick.files.size( ));
+	EXPECT_EQ( "gvh.pk3", pick.files[0].name );
+}
+
+TEST( VariantPick, AnEntryWithNoFilesAndNoVariantFilesLoadsNothing )
+{
+	// Defensive: the parser refuses this shape, so it can only arrive from a caller that built one by
+	// hand. The answer is an empty list rather than a guess at what was meant.
+	const VariantPick pick = PickVariant( Skulltag( ), "duel" );
+
+	EXPECT_TRUE( pick.files.empty( ));
 }
 
 // --------------------------------------------------------------- the name

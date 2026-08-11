@@ -718,6 +718,17 @@ static void HostToggleEntryOpen( int entry )
 	g_HostOpenEntries[entry] = !g_HostOpenEntries[entry];
 }
 
+// [rc4l] What the CHOSEN way of playing loads. Every question the host tab asks about files -- what
+// to list, what to size, what to verify, what to fetch, what to start on -- comes through here.
+//
+// Not addon.files, which used to be the answer and no longer is one. Ghouls vs Humans keeps nothing
+// at the entry level and a whole different wad on each way of playing, so reading the entry's own
+// list would show and start something no variant plays.
+static std::vector<zx::AddonFileRef> HostSelectedFiles( const zx::AddonEntry &addon )
+{
+	return zx::PickVariant( addon, g_HostVariantId.GetChars( )).files;
+}
+
 // [rc4l] What we told the server to load, kept so the client can match it before joining.
 //
 // JoinOwnServer connected straight to the address, and the reason it could was that the server was
@@ -2985,13 +2996,20 @@ public:
 			// wrong file, authentication compares them and passes, and the server quietly is not the
 			// experience it advertises. A mismatch is treated as missing, which routes it into the
 			// downloader that was already sitting here for the absent case.
-			const std::vector<FString> verified = HostEntryVerifiedPaths( chosen.addon );
+			// [rc4l] The variant reaches the server three times, and has to: as the cfg that decides
+			// how it plays, as the files it loads, and in the name, because a joiner reading a server
+			// list cannot see either of the first two. "Skulltag" alone does not tell them whether
+			// they are about to join an invasion or a duel, and finding out by joining is the cost
+			// this avoids.
+			const zx::VariantPick pick = zx::PickVariant( chosen.addon, g_HostVariantId.GetChars( ));
+
+			const std::vector<FString> verified = HostEntryVerifiedPaths( pick.files );
 
 			std::vector<std::string> have;
-			for ( size_t i = 0; i < chosen.addon.files.size( ); ++i )
+			for ( size_t i = 0; i < pick.files.size( ); ++i )
 			{
 				if (( i < verified.size( )) && verified[i].IsNotEmpty( ))
-					have.push_back( chosen.addon.files[i].name );
+					have.push_back( pick.files[i].name );
 			}
 
 			std::vector<std::string> iwads;
@@ -3014,19 +3032,13 @@ public:
 			choices.port = config.port;
 			choices.advertise = config.advertise;
 
-			// [rc4l] The variant reaches the server twice, and has to: once as the cfg that decides
-			// how it plays, and once in the name, because a joiner reading a server list cannot see
-			// a cfg. "Skulltag" alone does not tell them whether they are about to join an invasion
-			// or a duel, and finding out by joining is the cost this avoids.
-			const zx::VariantPick pick = zx::PickVariant( chosen.addon, g_HostVariantId.GetChars( ));
-
 			if ( !pick.name.empty( ))
 			{
 				choices.serverName = zx::ComposeServerName( config.hostName.c_str( ),
 					pick.name, std::string( ));
 			}
 
-			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon,
+			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon, pick.files,
 				zx::PickIwad( chosen.addon.iwad, iwads ),
 				zx::CatalogueServerCfgPath( chosen, g_HostVariantId.GetChars( )), choices, have );
 
@@ -3036,7 +3048,7 @@ public:
 			// downloading was impossible while the JOIN beside it fetched the same file happily.
 			//
 			// A blocker is different and still refuses: no IWAD to run on cannot be downloaded.
-			if ( plan.blocker.empty( ) && !plan.ready && BeginHostDownload( chosen, plan ))
+			if ( plan.blocker.empty( ) && !plan.ready && BeginHostDownload( chosen, pick.files, plan ))
 				return;
 
 			if ( !plan.blocker.empty( ) || !plan.ready )
@@ -3097,7 +3109,7 @@ public:
 				// The copy whose md5 matched, if we checked this one above. Re-resolving by name here
 				// would undo the check: the verified file can sit later on the search path than an
 				// impostor of the same name, and the first hit is what a name search returns.
-				FString path = VerifiedPathFor( chosen.addon, verified, plan.pwads[i].c_str( ));
+				FString path = VerifiedPathFor( pick.files, verified, plan.pwads[i].c_str( ));
 				if ( path.IsEmpty( ))
 					path = zx::FindFileInEngineSearchPaths( plan.pwads[i].c_str( ));
 
@@ -3164,7 +3176,8 @@ public:
 	// The catalogue's md5 per file goes with each request, so the transfer is CHECKED rather than
 	// trusted: a mirror handing us a different build of the same filename is caught here rather than
 	// discovered by the server refusing to start on it.
-	bool BeginHostDownload( const zx::CatalogueEntry &chosen, const zx::HostPlan &plan )
+	bool BeginHostDownload( const zx::CatalogueEntry &chosen,
+		const std::vector<zx::AddonFileRef> &files, const zx::HostPlan &plan )
 	{
 		if ( plan.missing.empty( ) || !zx::waddownload::IsAvailable( ))
 			return false;
@@ -3173,11 +3186,11 @@ public:
 		for ( size_t i = 0; i < plan.missing.size( ); ++i )
 		{
 			std::string md5;
-			for ( size_t j = 0; j < chosen.addon.files.size( ); ++j )
+			for ( size_t j = 0; j < files.size( ); ++j )
 			{
-				if ( chosen.addon.files[j].name == plan.missing[i] )
+				if ( files[j].name == plan.missing[i] )
 				{
-					md5 = chosen.addon.files[j].md5;
+					md5 = files[j].md5;
 					break;
 				}
 			}
@@ -4860,23 +4873,31 @@ public:
 	//
 	// The button is where that gets settled. HostEntryVerifiedPaths asks by md5 once, on the press,
 	// and a mismatch goes to the downloader like any other missing file.
-	const std::vector<unsigned long long> &HostEntryFileSizes( int entry, const zx::AddonEntry &addon )
+	//
+	// Keyed on the way of playing as well as the entry, because with per-variant wads those are two
+	// different file lists under one selection: switching from Ghouls to Humans without re-measuring
+	// would leave the panel showing the previous variant's sizes beside this one's names.
+	const std::vector<unsigned long long> &HostEntryFileSizes( int entry, const char *variantId,
+		const std::vector<zx::AddonFileRef> &files )
 	{
 		static int cached = -2;
+		static FString cachedVariant;
 		static int cachedGeneration = -1;
 		static std::vector<unsigned long long> sizes;
 
-		if (( entry != cached ) || ( cachedGeneration != g_HostHaveGeneration )
-			|| ( sizes.size( ) != addon.files.size( )))
+		if (( entry != cached ) || ( cachedVariant.Compare( variantId ) != 0 )
+			|| ( cachedGeneration != g_HostHaveGeneration )
+			|| ( sizes.size( ) != files.size( )))
 		{
 			cached = entry;
+			cachedVariant = variantId;
 			cachedGeneration = g_HostHaveGeneration;
 			sizes.clear( );
 
-			for ( size_t i = 0; i < addon.files.size( ); ++i )
+			for ( size_t i = 0; i < files.size( ); ++i )
 			{
 				// The search is stats only; the size is one more on the path it just resolved.
-				const FString at = zx::FindFileInEngineSearchPaths( addon.files[i].name.c_str( ));
+				const FString at = zx::FindFileInEngineSearchPaths( files[i].name.c_str( ));
 				sizes.push_back( at.IsEmpty( ) ? 0 : zx::FileSizeOnDisk( at.GetChars( )));
 			}
 		}
@@ -4894,14 +4915,14 @@ public:
 	//
 	// Uncached on purpose. It runs once per press, and caching a verdict about files on disk is how
 	// you end up hosting on a copy the player replaced since.
-	std::vector<FString> HostEntryVerifiedPaths( const zx::AddonEntry &addon )
+	std::vector<FString> HostEntryVerifiedPaths( const std::vector<zx::AddonFileRef> &files )
 	{
 		std::vector<FString> paths;
-		paths.reserve( addon.files.size( ));
+		paths.reserve( files.size( ));
 
-		for ( size_t i = 0; i < addon.files.size( ); ++i )
+		for ( size_t i = 0; i < files.size( ); ++i )
 		{
-			const zx::AddonFileRef &file = addon.files[i];
+			const zx::AddonFileRef &file = files[i];
 
 			// An entry that ships no md5 cannot be checked, so fall back to the name rather than
 			// call a file we have no opinion about missing and download it forever.
@@ -4915,13 +4936,14 @@ public:
 		return paths;
 	}
 
-	// The verified path for `name`, or "" if that file was not one of the entry's or did not match.
-	FString VerifiedPathFor( const zx::AddonEntry &addon, const std::vector<FString> &paths,
-		const char *name )
+	// The verified path for `name`, or "" if that file was not one of the chosen variant's or did not
+	// match.
+	FString VerifiedPathFor( const std::vector<zx::AddonFileRef> &files,
+		const std::vector<FString> &paths, const char *name )
 	{
-		for ( size_t i = 0; i < addon.files.size( ); ++i )
+		for ( size_t i = 0; i < files.size( ); ++i )
 		{
-			if (( i < paths.size( )) && ( stricmp( addon.files[i].name.c_str( ), name ) == 0 ))
+			if (( i < paths.size( )) && ( stricmp( files[i].name.c_str( ), name ) == 0 ))
 				return paths[i];
 		}
 
@@ -4942,7 +4964,7 @@ public:
 			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
 			+ 4 + 6							// the rule above the files
 			+ SB_HOST_LINE					// the IWAD, listed with them
-			+ static_cast<int>( a.files.size( )) * SB_HOST_LINE
+			+ static_cast<int>( HostSelectedFiles( a ).size( )) * SB_HOST_LINE
 			+ 10;
 	}
 
@@ -5072,9 +5094,11 @@ public:
 		// was reporting an inventory the player has no use for and colouring half of it like a
 		// fault. Size is the fact that changes what someone decides -- the server list has shown it
 		// for the same reason, from SQF2_WAD_SIZES, and this is the same answer from the catalogue.
-		const std::vector<unsigned long long> &sizes = HostEntryFileSizes( g_HostEntrySel, addon );
+		const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( addon );
+		const std::vector<unsigned long long> &sizes = HostEntryFileSizes( g_HostEntrySel,
+			g_HostVariantId.GetChars( ), loads );
 
-		for ( size_t i = 0; i < addon.files.size( ); ++i )
+		for ( size_t i = 0; i < loads.size( ); ++i )
 		{
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
@@ -5100,7 +5124,7 @@ public:
 
 				const int nameRoom = ( SB_HOST_RCOL_RIGHT - x ) - sizeW - gap;
 
-				FString name = addon.files[i].name.c_str( );
+				FString name = loads[i].name.c_str( );
 				if ( SmallFont->StringWidth( name ) > nameRoom )
 					name = serverbrowser_FitName( name, nameRoom );
 

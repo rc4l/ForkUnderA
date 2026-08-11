@@ -317,7 +317,7 @@ CCMD( fua_host )
 {
 	if ( argv.argc( ) < 2 )
 	{
-		Printf( "fua_host <id>: host a catalogue entry. fua_catalogue lists them.\n" );
+		Printf( "fua_host <id> [variant]: host a catalogue entry. fua_catalogue lists them.\n" );
 		return;
 	}
 
@@ -340,12 +340,17 @@ CCMD( fua_host )
 		return;
 	}
 
+	// Which way of playing, and so what actually loads. An entry whose variants carry their own wads
+	// has no single file list, so everything below asks the pick rather than the entry.
+	const std::string variantId = ( argv.argc( ) >= 3 ) ? argv[2] : std::string( );
+	const zx::VariantPick variant = zx::PickVariant( chosen->addon, variantId );
+
 	// What the player already has, in the two places a file can be: the ordinary search path and the
 	// by-hash store the downloader fills. Asking both is what stops us fetching something twice.
 	std::vector<std::string> have;
-	for ( size_t i = 0; i < chosen->addon.files.size( ); ++i )
+	for ( size_t i = 0; i < variant.files.size( ); ++i )
 	{
-		const std::string &name = chosen->addon.files[i].name;
+		const std::string &name = variant.files[i].name;
 
 		TArray<FString> resolved;
 		if ( D_AddFile( resolved, name.c_str( ), false ) && ( resolved.Size( ) > 0 ))
@@ -371,13 +376,13 @@ CCMD( fua_host )
 	const zx::IwadPick pick = zx::PickIwad( chosen->addon.iwad, iwads );
 
 	zx::HostChoices choices;
-	choices.serverName = chosen->addon.name + " (" FUA_NAME ")";
+	choices.serverName = zx::ComposeServerName( chosen->addon.name, variant.name, FUA_NAME );
 	choices.maxPlayers = 8;
 	choices.port = 0;
 	choices.advertise = false;
 
-	const zx::HostPlan plan = zx::BuildHostPlan( chosen->addon, pick,
-		zx::CatalogueServerCfgPath( *chosen ), choices, have );
+	const zx::HostPlan plan = zx::BuildHostPlan( chosen->addon, variant.files, pick,
+		zx::CatalogueServerCfgPath( *chosen, variantId ), choices, have );
 
 	if ( !plan.blocker.empty( ))
 	{
