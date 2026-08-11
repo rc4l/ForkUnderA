@@ -57,14 +57,14 @@
     },
     {
       "id": "brit",
-      "name": "The Brit 10 & 11",
+      "name": "The Brit 10",
       "cfg": "brit.cfg",
       "kind": "pvp",
-      "tooltip": "Thirty-one maps, shuffled.",
+      "tooltip": "Seven maps, shuffled.",
       "files": [
         {
-          "name": "execbrit10brit11.wad",
-          "md5": "cd4109f654585059da54097547aebf5e"
+          "name": "brit10.wad",
+          "md5": "61c269d3daedc65340502493418bd5eb"
         }
       ]
     }
