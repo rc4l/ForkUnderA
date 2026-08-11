@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "name": "Bosses from Hell",
+  "summary": "Thirty-two bosses, one map each, reached through a hub on Earth and a hub in Hell.",
+  "iwad": "doom2.wad",
+  "map": "START",
+  "kind": "pve",
+  "remixes": ["classic", "survival"],
+  "files": [
+    {
+      "name": "bfh1p.pk3",
+      "md5": "7bbcf6a0b8f48d1ab2612a406c1d36f9"
+    },
+    {
+      "name": "bfh1-dlc1.pk3",
+      "md5": "d51d02b74f5f6751d8b3b97bec28ef4b"
+    }
+  ]
+}
