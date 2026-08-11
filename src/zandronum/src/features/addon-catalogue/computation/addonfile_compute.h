@@ -184,6 +184,14 @@ struct AddonEntry
 	int defaultLives;
 	int maxLives;
 
+	// [rc4l] Whether to offer the weapon-speed control. sv_fastweapons runs 0 to 2: normal, every
+	// weapon state cut to one tick, and then the states with no action function cut to none at all.
+	//
+	// Opt-in per entry rather than offered everywhere, because it is a taste rather than a fix. A
+	// pack built around its own weapon timings has nothing to gain from it and every reason not to
+	// invite it.
+	bool fastWeapons;
+
 	// [rc4l] Mark this entry as curated: its name is drawn with the leading word in the accent colour
 	// and the rest plain. Separate from `order` on purpose: being first and being marked are
 	// different claims, and an entry may want one without the other.
@@ -197,7 +205,7 @@ struct AddonEntry
 	std::string error;		// why not, when invalid
 
 	AddonEntry() : kind(VariantKind::Unknown), gameMode(HostGameMode::Unknown),
-		defaultLives(0), maxLives(0), order(0), accent(false), valid(false) {}
+		defaultLives(0), maxLives(0), fastWeapons(false), order(0), accent(false), valid(false) {}
 };
 
 // [rc4l] Something you can play an entry WITH, on top of whichever way of playing you chose.

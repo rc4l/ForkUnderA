@@ -843,6 +843,10 @@ static std::vector<zx::RemixPick> HostRemixPicks( const zx::AddonEntry &addon )
 // you play, not about which pack you were looking at when you said it.
 static	int				g_HostLives = -1;
 
+// [rc4l] Weapon speed, kept the same way and for the same reason: it is a preference about how you
+// play rather than about which pack you were looking at when you set it.
+static	int				g_HostFastWeapons = -1;
+
 // The lives control for the CHOSEN way of playing. The variant's gamemode when it declares one,
 // otherwise the entry's, because most packs play one way and should say it once.
 static zx::LivesControl HostLivesControl( const zx::AddonEntry &addon )
@@ -3443,6 +3447,15 @@ public:
 			// Invasion a zero is genuinely unlimited. No shared cfg can be right in both.
 			config.extraCvars = zx::LivesCvars( HostLivesControl( chosen.addon ));
 
+			// [rc4l] Weapon speed rides the same list. Set only when the entry offers the control, so
+			// a pack that never invited it is not handed a zero that overrides its own cfg.
+			if ( chosen.addon.fastWeapons )
+			{
+				char n[8];
+				snprintf( n, sizeof( n ), "%d", clamp(( g_HostFastWeapons < 0 ) ? 0 : g_HostFastWeapons, 0, 2 ));
+				config.extraCvars.push_back( std::make_pair( std::string( "sv_fastweapons" ), std::string( n )));
+			}
+
 			// [rc4l] RESOLVED to full paths, not left as bare names. These are what the CLIENT
 			// reloads onto in order to join, and RequestReload's loadability check opens exactly
 			// what it is handed -- so a name is tested against the working directory, and a file
@@ -3965,6 +3978,8 @@ public:
 	{
 		if ( id == "lives" )
 			g_HostLives = value;
+		else if ( id == "fastweapons" )
+			g_HostFastWeapons = value;
 	}
 
 	// Every slider on the panel, from the rects the last draw recorded. Steps first: they sit at the
@@ -5122,8 +5137,11 @@ public:
 		// [rc4l] Any AXIS with something to decide, not any remix at all. An entry offering one mod
 		// and nothing else has a row that cannot change, which is not a setting and must not cost the
 		// file list three lines to display.
-		if ( HostLivesControl( entries[g_HostEntrySel].addon ).adjustable )
+		if ( HostLivesControl( entries[g_HostEntrySel].addon ).adjustable ||
+			entries[g_HostEntrySel].addon.fastWeapons )
+		{
 			return true;
+		}
 
 		const std::vector<zx::RemixGroup> groups =
 			zx::GroupRemixes( HostOfferedRemixes( entries[g_HostEntrySel].addon ));
@@ -5675,6 +5693,9 @@ public:
 			if ( HostLivesControl( a ).adjustable )
 				h += SB_HOST_LINE + 3;
 
+			if ( a.fastWeapons )
+				h += SB_HOST_LINE + 3;
+
 			const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( a ));
 
 			// The same label column DrawHostGameplay measures, because it decides how wide the pills
@@ -6147,6 +6168,29 @@ public:
 				: "How many times each player may die before they are out." );
 	}
 
+	// [rc4l] How fast weapons fire, as the second instance of the slider.
+	//
+	// sv_fastweapons is 0 to 2 and the cvar clamps itself to that, so the range is the engine's
+	// rather than a number chosen here. What each stop MEANS is named rather than shown as a digit:
+	// "2" tells nobody that the states without an action function drop to no ticks at all.
+	int DrawHostFastWeapons( int x, int y, int labelW, const zx::AddonEntry &addon )
+	{
+		if ( !addon.fastWeapons )
+			return y;
+
+		const int value = clamp(( g_HostFastWeapons < 0 ) ? 0 : g_HostFastWeapons, 0, 2 );
+
+		static const char *const kNames[3] = { "Normal", "Fast", "Fastest" };
+		static const char *const kTips[3] = {
+			"The weapons as the pack timed them.",
+			"Every weapon state cut to a single tick.",
+			"As Fast, and the states with nothing to do take no time at all.",
+		};
+
+		return DrawHostSlider( "fastweapons", "WEAPONS", x, y, labelW, 0, 2, value,
+			kNames[value], kTips[value] );
+	}
+
 	// [rc4l] What this experience can be played WITH, as settings rather than a modal.
 	//
 	// One block per AXIS. Axes with a single choice are skipped: nothing to decide is not a setting,
@@ -6155,7 +6199,7 @@ public:
 	{
 		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
 
-		bool bAnything = HostLivesControl( addon ).adjustable;
+		bool bAnything = HostLivesControl( addon ).adjustable || addon.fastWeapons;
 		for ( size_t g = 0; g < groups.size( ); ++g )
 			bAnything = bAnything || ( groups[g].choices.size( ) > 1 );
 
@@ -6190,6 +6234,7 @@ public:
 		labelW += SmallFont->StringWidth( "  " );
 
 		y = DrawHostLives( x, y, labelW, addon );
+		y = DrawHostFastWeapons( x, y, labelW, addon );
 
 		for ( size_t g = 0; g < groups.size( ); ++g )
 		{
