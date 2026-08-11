@@ -917,7 +917,7 @@ static	bool			g_HostOnSettingsToggle = false;
 // the layout deciding when.
 struct HostGameplayRow
 {
-	int y, h;
+	int x, w, y, h;			// the clickable extent; a pill is narrower than the column
 	std::string group;		// which axis the click sets
 	std::string id;
 };
@@ -4141,8 +4141,8 @@ public:
 
 			if (( y < serverbrowser_ToScreenY( row.y - 1 )) ||
 				( y >= serverbrowser_ToScreenY( row.y + row.h - 1 )) ||
-				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) ||
-				( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+				( x < serverbrowser_ToScreenX( row.x )) ||
+				( x >= serverbrowser_ToScreenX( row.x + row.w )))
 			{
 				continue;
 			}
@@ -4754,8 +4754,49 @@ public:
 	// of them took the event, so the panel underneath does not also act on it.
 	bool HostRegionBarsMouseEvent( int type, int x, int y )
 	{
-		if ( zx::HostIsActive( ) == false )
-			return false;			// only the running panel splits the column in two
+		// [rc4l] The detail column has a bar whether or not a server is running. This used to bail
+		// outright unless one was, so the bar drawn beside the experience panel could be looked at
+		// and not grabbed.
+		if ( !zx::HostIsActive( ) && !g_HostShowSettings )
+		{
+			if ( type == MOUSE_Click )
+			{
+				int scroll = g_HostDetailScroll;
+				if ( HostRegionBarDrag( SB_HOST_RTOP_TOP, HostDetailViewBottom( ), HostDetailH( ),
+					HostDetailMaxScroll( ), x, y, scroll ))
+				{
+					g_HostDetailScroll = scroll;
+					g_DraggingHostDetailBar = true;
+					return true;
+				}
+
+				return false;
+			}
+
+			// A held drag keeps being answered by the bar that started it, the same as the two below.
+			if ( g_DraggingHostDetailBar )
+			{
+				const int trackTop = serverbrowser_ToScreenY( SB_HOST_RTOP_TOP );
+				const int trackH = serverbrowser_ToScreenY( HostDetailViewBottom( )) - trackTop;
+				const int maxScroll = HostDetailMaxScroll( );
+
+				if (( trackH > 0 ) && ( maxScroll > 0 ))
+				{
+					const int viewH = HostDetailViewBottom( ) - SB_HOST_RTOP_TOP;
+					const int thumbH = zx::ComputeThumbHeight( trackH, viewH, HostDetailH( ), 8 );
+
+					g_HostDetailScroll =
+						zx::ComputeFirstFromPointer( y - trackTop, trackH, thumbH, maxScroll );
+				}
+
+				if ( type == MOUSE_Release )
+					g_DraggingHostDetailBar = false;
+
+				return true;
+			}
+
+			return false;
+		}
 
 		if ( type == MOUSE_Click )
 		{
@@ -5268,6 +5309,16 @@ public:
 		DrawHostRegionScrollBar( SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM, HostCatalogueH( ),
 			g_HostListScroll, SB_HOST_LBAR_X );
 
+		// [rc4l] The detail column's own bar. It had one only while a server was running, so for the
+		// panel a player actually reads before pressing anything there was nothing saying the column
+		// went on -- the same fault the list above had, and the reason a fourth gameplay mod could be
+		// drawn past the bottom with nothing hinting it was there.
+		if ( !g_HostShowSettings && !zx::HostIsActive( ))
+		{
+			DrawHostRegionScrollBar( SB_HOST_RTOP_TOP, HostDetailViewBottom( ), HostDetailH( ),
+				g_HostDetailScroll );
+		}
+
 		DrawHostScrollBar( );
 
 		// [rc4l] OUTSIDE the clip. Both buttons sit at the panel's foot, which is below the scrolling
@@ -5555,7 +5606,21 @@ public:
 				if ( !groups[g].id.empty( ))
 					h += SB_HOST_LINE;
 
-				h += static_cast<int>( groups[g].choices.size( )) * SB_HOST_GAME_ROW_H + 3;
+				// The same measurement DrawHostGameplay makes, because an axis drawn as one row of
+				// pills is one row tall and a height that assumed otherwise would scroll past the end.
+				const int pillPad = SmallFont->StringWidth( "  " );
+				int pillTotal = 0;
+				for ( size_t i = 0; i < groups[g].choices.size( ); ++i )
+				{
+					pillTotal += SmallFont->StringWidth( groups[g].choices[i].name.c_str( )) + pillPad;
+					if ( i > 0 )
+						pillTotal += 4;
+				}
+
+				const bool bPills =
+					( pillTotal <= ( SB_HOST_RCOL_RIGHT - ( SB_HOST_RCOL_LEFT + SB_HOST_GAME_INDENT )));
+
+				h += ( bPills ? 1 : static_cast<int>( groups[g].choices.size( ))) * SB_HOST_GAME_ROW_H + 3;
 			}
 		}
 
@@ -5980,6 +6045,72 @@ public:
 				y += SB_HOST_LINE;
 			}
 
+			// [rc4l] Pills when the whole axis fits on one line, rows when it does not.
+			//
+			// Both are standard for one-of-N and the split between them is real: a segmented control
+			// assumes the label alone is enough, and a list has somewhere to put a description. So
+			// the rule is measured rather than decided per axis -- Teams is two short words and
+			// becomes pills, Mix is four and stays a list that can be scrolled.
+			const int pillPad = SmallFont->StringWidth( "  " );
+			const int pillGap = 4;
+
+			int pillTotal = 0;
+			for ( size_t i = 0; i < choices.size( ); ++i )
+			{
+				pillTotal += SmallFont->StringWidth( choices[i].name.c_str( )) + pillPad;
+				if ( i > 0 )
+					pillTotal += pillGap;
+			}
+
+			if ( pillTotal <= ( SB_HOST_RCOL_RIGHT - ( x + SB_HOST_GAME_INDENT )))
+			{
+				if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
+				{
+					int px = x + SB_HOST_GAME_INDENT;
+
+					for ( size_t i = 0; i < choices.size( ); ++i )
+					{
+						const bool bOn = ( choices[i].id == pick.id );
+						const int pw = SmallFont->StringWidth( choices[i].name.c_str( )) + pillPad;
+
+						HostGameplayRow rec;
+						rec.x = px;
+						rec.w = pw;
+						rec.y = y;
+						rec.h = SB_HOST_GAME_ROW_H;
+						rec.group = groups[g].id;
+						rec.id = choices[i].id;
+						g_HostGameRows.Push( rec );
+
+						const bool bHot =
+							( g_HostGameHot == static_cast<int>( g_HostGameRows.Size( ) - 1 ));
+
+						screen->Dim( bOn ? PalEntry( 40, 96, 52 ) : PalEntry( 150, 170, 215 ),
+							bOn ? 0.55f : ( bHot ? 0.16f : 0.07f ),
+							serverbrowser_ToScreenX( px ), serverbrowser_ToScreenY( y - 1 ),
+							serverbrowser_ToScreenX( px + pw ) - serverbrowser_ToScreenX( px ),
+							serverbrowser_ToScreenY( y + SB_HOST_GAME_ROW_H - 1 ) -
+								serverbrowser_ToScreenY( y - 1 ));
+
+						screen->DrawText( SmallFont, bOn ? CR_WHITE : CR_GRAY,
+							px + pillPad / 2, y, choices[i].name.c_str( ),
+							DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
+							DTA_KeepRatio, true, TAG_DONE );
+
+						if ( !choices[i].summary.empty( ))
+						{
+							serverbrowser_Tip( px, y - 1, pw, SB_HOST_GAME_ROW_H,
+								choices[i].summary.c_str( ));
+						}
+
+						px += pw + pillGap;
+					}
+				}
+
+				y += SB_HOST_GAME_ROW_H + 3;
+				continue;
+			}
+
 			for ( size_t i = 0; i < choices.size( ); ++i )
 			{
 				const bool bOn = ( choices[i].id == pick.id );
@@ -5990,6 +6121,8 @@ public:
 				if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
 				{
 					HostGameplayRow rec;
+					rec.x = x;
+					rec.w = SB_HOST_RCOL_RIGHT - x;
 					rec.y = y;
 					rec.h = SB_HOST_GAME_ROW_H;
 					rec.group = groups[g].id;

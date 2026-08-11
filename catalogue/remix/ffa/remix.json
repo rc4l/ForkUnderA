@@ -1,5 +1,6 @@
 {
   "schema": 1,
   "name": "Classic",
-  "summary": "Everyone for themselves."
+  "summary": "Everyone for themselves.",
+  "group": "teams"
 }
