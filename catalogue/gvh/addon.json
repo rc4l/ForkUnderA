@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "name": "Ghouls vs Humans",
+  "summary": "Humans hunt in a pack with guns and lamps. Ghouls hunt them in the dark.",
+  "iwad": "doom2.wad",
+  "map": "gvh01",
+  "kind": "pvp",
+  "variants": [
+    {
+      "id": "multiverse",
+      "name": "Multiverse",
+      "cfg": "server.cfg",
+      "kind": "pvp",
+      "default": true,
+      "tooltip": "The big one: sixty-nine maps and a roster to match.",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "mv_core_v4b2patch4.pk3",
+          "md5": "a70e9410920eb40260bef26fee9c5816"
+        },
+        {
+          "name": "mv_mapgfx_v4b2patch4.pk3",
+          "md5": "cbc9558780ad190fed8ef7090b03151c"
+        },
+        {
+          "name": "mv_maps_v4b2patch10.pk3",
+          "md5": "7080d65b016942f677485039119acd46"
+        },
+        {
+          "name": "mv_music_v4b2patch4.pk3",
+          "md5": "908145ed3104d5f054a23a1bacabf7be"
+        },
+        {
+          "name": "mv_code_v4b2patch12.pk3",
+          "md5": "195f817ab7bdcab68bc54f68f054ee56"
+        }
+      ]
+    },
+    {
+      "id": "lod",
+      "name": "Legacy of Darkness",
+      "cfg": "lod.cfg",
+      "kind": "pvp",
+      "tooltip": "The older line, kept close to the mod people remember.",
+      "files": [
+        {
+          "name": "lod-corev1.2.pk3",
+          "md5": "59e930c1b0bf1f113f0758863d5a7b44"
+        },
+        {
+          "name": "lod-music.pk3",
+          "md5": "8db9e1b0126540745f7de311b0ac2fe7"
+        },
+        {
+          "name": "lod-mapsv1.6a.pk3",
+          "md5": "5d3a3f57d4e12106219464b22de9c449"
+        },
+        {
+          "name": "lod-addonv1.4b.pk3",
+          "md5": "29a13ce9f9b05daf753cb3e0899308f3"
+        },
+        {
+          "name": "lod-addon-mapsv1.5.pk3",
+          "md5": "b0284382946dfbafc9d8b808a7a2fe17"
+        },
+        {
+          "name": "lod-patchv1.7a.pk3",
+          "md5": "c0d606a610cce0cea7827d810ef46fe7"
+        }
+      ]
+    }
+  ]
+}
