@@ -9,7 +9,7 @@
   "maxlives": 5,
   "order": 20,
   "accent": true,
-  "remixes": ["vanilla", "brutaldoom", "complexdoom", "harddoom"],
+  "remixes": ["vanilla", "brutaldoom", "complexdoom", "harddoom", "doom64"],
   "variants": [
     {
       "id": "av",
