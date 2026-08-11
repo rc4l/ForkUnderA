@@ -6,7 +6,7 @@
   "kind": "pve",
   "order": 20,
   "accent": true,
-  "remixes": ["classic", "survival2"],
+  "remixes": ["classic", "survival2", "nomod", "brutaldoom", "complexdoom", "harddoom"],
   "variants": [
     {
       "id": "av",

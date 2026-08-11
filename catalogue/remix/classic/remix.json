@@ -1,5 +1,6 @@
 {
   "schema": 1,
   "name": "Classic",
-  "summary": "Unlimited lives."
+  "summary": "Unlimited lives.",
+  "group": "lives"
 }

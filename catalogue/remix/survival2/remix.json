@@ -2,5 +2,6 @@
   "schema": 1,
   "name": "Survival",
   "summary": "Two lives each. Spend them and you watch.",
+  "group": "lives",
   "cfg": "survival2.cfg"
 }
