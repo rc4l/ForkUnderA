@@ -177,3 +177,65 @@ TEST(RegistryStatus, EveryStatusProducesAUsableTooltip)
 		EXPECT_NE(std::string::npos, tip.find(RegistryStatusText(kAll[i])));
 	}
 }
+
+// ------------------------------------------------- throttled decays back
+
+namespace
+{
+const int kThrottleClearMs = 4000;
+}
+
+TEST( RegistryStatus, ThrottledStopsMeaningAnythingAfterItsWindow )
+{
+	// [rc4l] The bug this pins: nothing ever cleared Throttled, so one REQUESTIGNORED left the
+	// status bar orange long after the registry had gone back to answering.
+	EXPECT_EQ( zx::RegistryStatus::Pending,
+		zx::AgeRegistryStatus( zx::RegistryStatus::Throttled, kThrottleClearMs, kThrottleClearMs ));
+}
+
+TEST( RegistryStatus, ThrottledHoldsInsideItsWindow )
+{
+	EXPECT_EQ( zx::RegistryStatus::Throttled,
+		zx::AgeRegistryStatus( zx::RegistryStatus::Throttled, kThrottleClearMs - 1, kThrottleClearMs ));
+}
+
+TEST( RegistryStatus, ThrottledDecaysToPendingNotToOk )
+{
+	// "They were busy a moment ago" is not evidence that they are answering now.
+	const zx::RegistryStatus aged =
+		zx::AgeRegistryStatus( zx::RegistryStatus::Throttled, 60000, kThrottleClearMs );
+
+	EXPECT_NE( zx::RegistryStatus::Ok, aged );
+	EXPECT_EQ( zx::RegistryStatus::Pending, aged );
+}
+
+TEST( RegistryStatus, FinishedVerdictsAreNotWornAwayByTime )
+{
+	// Banned, wrong version and no-answer are facts about a conversation that ended. Waiting does
+	// not make them less true, and decaying them would quietly hide a real refusal.
+	const zx::RegistryStatus keep[] = {
+		zx::RegistryStatus::Ok,
+		zx::RegistryStatus::Banned,
+		zx::RegistryStatus::Version,
+		zx::RegistryStatus::NoAnswer,
+		zx::RegistryStatus::Pending,
+	};
+
+	for ( unsigned int i = 0; i < ( sizeof keep / sizeof keep[0] ); ++i )
+	{
+		EXPECT_EQ( keep[i], zx::AgeRegistryStatus( keep[i], 999999, kThrottleClearMs ))
+			<< "status index " << i;
+	}
+}
+
+TEST( RegistryStatus, ANonPositiveWindowPinsTheStatus )
+{
+	EXPECT_EQ( zx::RegistryStatus::Throttled,
+		zx::AgeRegistryStatus( zx::RegistryStatus::Throttled, 999999, 0 ));
+}
+
+TEST( RegistryStatus, ABackwardsClockDoesNotClearIt )
+{
+	EXPECT_EQ( zx::RegistryStatus::Throttled,
+		zx::AgeRegistryStatus( zx::RegistryStatus::Throttled, -1, kThrottleClearMs ));
+}

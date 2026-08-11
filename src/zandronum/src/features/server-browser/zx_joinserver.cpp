@@ -133,6 +133,10 @@ bool g_resumePendingSuccess = false;
 bool g_readyPending = false;
 FString g_readyName;
 
+// [rc4l] Which of the two ready states the band is showing. They are different promises: one is
+// somebody else's server you are about to join, the other is your own game about to start.
+static bool g_readyIsHost = false;
+
 // [rc4l] A resume that is NOT a join -- hosting, which wants every part of this except the last
 // step. See SetPendingResume. Exactly one of this and g_pending is ever set.
 zx::ResumeProc g_pendingProc = NULL;
@@ -180,6 +184,7 @@ void OnDownloadFinished(bool allSucceeded)
 		// It WAITS. The pending thing is kept, and ConsumeJoinReady picks it up when the player next
 		// opens the menu.
 		g_readyPending = true;
+		g_readyIsHost = false;
 		g_readyName = PendingName();
 		Printf(TEXTCOLOR_GREEN "%s is ready.\n" TEXTCOLOR_NORMAL,
 			g_readyName.IsNotEmpty() ? g_readyName.GetChars() : "It");
@@ -713,6 +718,14 @@ bool IsJoinResumeHeld()
 	return g_resumeHeld;
 }
 
+void NoteHostReady()
+{
+	g_readyPending = true;
+	g_readyIsHost = true;
+	g_readyName = "";
+	Printf( TEXTCOLOR_GREEN "Your game is ready.\n" TEXTCOLOR_NORMAL );
+}
+
 bool ConsumeJoinReady()
 {
 	if ( !g_readyPending )
@@ -721,6 +734,7 @@ bool ConsumeJoinReady()
 	// Cleared, but g_pending is left alone: the player is being taken to the browser, and pressing
 	// JOIN there starts the join from scratch with files that are now already on disk.
 	g_readyPending = false;
+	g_readyIsHost = false;
 	g_readyName = "";
 	return true;
 }
@@ -759,7 +773,14 @@ void DrawJoinReadyNotice( bool afterMenus )
 	FString text;
 	if ( bReady )
 	{
-		text = "Server is ready to join - Open the Menu";
+		// [rc4l] The instruction has to match what is in front of the player. With a menu already
+		// open, "Open the Menu" is telling them to do the thing they have done, and the jump they
+		// are being promised happens on opening -- so it will not come while they sit there. Say
+		// what will actually work from where they are.
+		if ( g_readyIsHost )
+			text = "Your game is ready - open the menu!";
+		else
+			text = "Server is ready to join - Open the Menu";
 	}
 	else
 	{

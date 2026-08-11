@@ -291,6 +291,14 @@ public:
 	virtual void Close();
 	virtual bool MouseEvent(int type, int x, int y);
 	virtual bool MouseEventBack(int type, int x, int y);
+
+	// [rc4l] Is the cursor on this menu's top row, so that Up should leave for the global tab bar?
+	//
+	// Answers false by default, and a menu that answers false simply keeps Up. That is the safe way
+	// round: a message box or a colour picker handing the keyboard to a bar the player cannot see
+	// the point of is worse than one more menu where Up wraps.
+	virtual bool AtTopRow();
+
 	void SetCapture();
 	void ReleaseCapture();
 	bool HasCapture()
@@ -360,7 +368,15 @@ public:
 	// of the drawn one.
 	virtual int GetDrawnHeight() { return 0; }
 	void DrawSelector(int xofs, int yofs, FTextureID tex);
-	void OffsetPositionY(int ydelta) { mYpos += ydelta; }
+	// [rc4l] Down the screen, whichever way this item spells its y.
+	//
+	// mYpos packs two meanings into one int, the same trap FOptionMenuDescriptor::mPosition sets.
+	// Positive is a literal y in the menu's own space. NEGATIVE means the item is pinned to the
+	// screen and drawn at -mYpos*CleanYfac instead (FListMenuItemStaticPatch::Drawer and the static
+	// text beside it, the only two item types that ever carry one), so adding to it moves the item
+	// UP. That is how the LOAD GAME title came to sit behind the global header while every frame
+	// under it moved correctly: one item on the menu was speaking the other dialect.
+	void OffsetPositionY(int ydelta) { mYpos += (mYpos < 0) ? -ydelta : ydelta; }
 	int GetY() { return mYpos; }
 	int GetX() { return mXpos; }
 	void SetX(int x) { mXpos = x; }
@@ -620,6 +636,7 @@ public:
 	bool Responder (event_t *ev);
 	bool MenuEvent (int mkey, bool fromcontroller);
 	bool MouseEvent(int type, int x, int y);
+	bool AtTopRow();
 	void Ticker ();
 	void Drawer ();
 	void SetFocus(FListMenuItem *fc)
@@ -861,6 +878,7 @@ public:
 	bool Responder (event_t *ev);
 	bool MenuEvent (int mkey, bool fromcontroller);
 	bool MouseEvent(int type, int x, int y);
+	bool AtTopRow();
 	void Ticker ();
 	void Drawer ();
 	const FOptionMenuDescriptor *GetDescriptor() const { return mDesc; }
@@ -950,7 +968,12 @@ void M_ClearMenus ();
 void M_ParseMenuDefs();
 void M_StartupSkillMenu(FGameStartup *gs);
 int M_GetDefaultSkill();
-void M_StartControlPanel (bool makeSound);
+// [rc4l] Answers whether it has ALREADY put the player somewhere: a join that finished while they
+// were in the game is waiting, and opening the menu is the gesture that collects it. Callers that
+// would otherwise follow with a menu of their own have to ask, or theirs lands on top of this one.
+// `allowRedirect` is how a caller says it already knows what it wants to open. The tab bar does, and
+// letting the redirect run there stacked the tab being clicked on top of the one being left.
+bool M_StartControlPanel (bool makeSound, bool allowRedirect = true);
 
 // [rc4l] Release every latched menu key. Call it when something takes the keyboard away from the
 // menu's own translation -- see the definition for what goes wrong otherwise.
