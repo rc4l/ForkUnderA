@@ -787,6 +787,11 @@ static	bool			g_HostOnSettingsToggle = false;
 // knows there is nothing to switch to. -2 is "custom setup", matching g_HostEntrySel's own spelling.
 static	int				g_HostingEntry = -2;
 
+// [rc4l] And WHICH way of playing it was started as, so the tint can go on the row the server is
+// actually running. The id rather than the row number, for the reason g_HostVariantId is: rows move
+// when an experience is opened out, and a stored number would then point at the wrong one.
+static	FString			g_HostingVariantId;
+
 // [rc4l] A transfer fetching what an entry needs before it can be hosted.
 //
 // The catalogue ships an md5 per file precisely so this is possible, and BuildHostPlan has always
@@ -2973,7 +2978,23 @@ public:
 	{
 		// Remembered before anything can fail: the list marks THIS row as the one being served, and
 		// SWITCH compares against it.
+		//
+		// [rc4l] The way of playing goes with it, RESOLVED rather than copied from the choice: an
+		// empty choice means "the default", and the tint has to name a row rather than a preference.
 		g_HostingEntry = g_HostEntrySel;
+		g_HostingVariantId = "";
+
+		{
+			const std::vector<zx::CatalogueEntry> &all = zx::CatalogueLoad( );
+			if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( all.size( ))))
+			{
+				const zx::AddonEntry &addon = all[g_HostEntrySel].addon;
+				const zx::VariantPick chosen = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+				if (( chosen.index >= 0 ) && ( chosen.index < static_cast<int>( addon.variants.size( ))))
+					g_HostingVariantId = addon.variants[chosen.index].id.c_str( );
+			}
+		}
 
 		zx::HostConfig config;
 
@@ -5272,10 +5293,15 @@ public:
 			// [rc4l] The row being SERVED is tinted green, the same way CANCEL is tinted while a
 			// download runs: a state the row is in, said in colour rather than in another word.
 			// It survives the selection moving away, which is the whole point of showing it.
-			// On the EXPERIENCE's own row, not on its ways of playing: the server is running one of
-			// them, and tinting all six would say the opposite of what the tint means.
-			const bool bRunning = zx::HostIsActive( ) && ( r.variant < 0 ) &&
-				( r.entry == g_HostingEntry );
+			//
+			// The experience's own row AND the one way of playing the server was started as -- never
+			// the others, because tinting all six would say the opposite of what the tint means. An
+			// opened experience showing a green heading over six identical rows told you a server was
+			// running and then refused to say which of them it was running.
+			const bool bRunning = zx::HostIsActive( ) && ( r.entry == g_HostingEntry ) &&
+				(( r.variant < 0 ) || ( g_HostingVariantId.IsNotEmpty( ) &&
+					( g_HostingVariantId.Compare(
+						entry.addon.variants[r.variant].id.c_str( )) == 0 )));
 
 			// [rc4l] Which of the three things this row is, decided in one place. The SERVER LIST
 			// has the same shape of problem in the row for the server you are connected to, and
