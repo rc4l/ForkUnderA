@@ -31,15 +31,15 @@
       "cfg": "armageddon.cfg",
       "kind": "pve",
       "map": "MAP01",
-      "tooltip": "Ten maps, from a training run to a boss fight.",
+      "tooltip": "Twelve maps, a temple to a sand worm trench to a hell collider.",
       "files": [
         {
           "name": "skulltag_content-3.2-beta2.pk3",
           "md5": "41630bc75af4b51fe5d163fe4d434c6e"
         },
         {
-          "name": "armageddonv2.pk3",
-          "md5": "2f98c7afefafda2a80b8229c8ed6021f"
+          "name": "armageddon2v63.pk3",
+          "md5": "c3bf95cfd329e1c91b8185c3f746a724"
         }
       ]
     },
