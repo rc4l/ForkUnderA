@@ -918,3 +918,38 @@ TEST(AddonFile, AnAccentThatIsNotABooleanIsRefused)
 	EXPECT_FALSE(e.valid);
 	EXPECT_FALSE(e.error.empty());
 }
+
+// ------------------------------------------------------------ weapon speed
+
+TEST(AddonFile, AnEntryThatSaysNothingAboutWeaponSpeedDoesNotOfferTheControl)
+{
+	const AddonEntry e = Parse(kDuel40);
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_FALSE(e.fastWeapons);
+}
+
+TEST(AddonFile, FastWeaponsCanBeOfferedAndTakenBack)
+{
+	const AddonEntry on = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"fastweapons\": true,"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+	const AddonEntry off = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"fastweapons\": false,"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(on.valid) << on.error;
+	ASSERT_TRUE(off.valid) << off.error;
+	EXPECT_TRUE(on.fastWeapons);
+	EXPECT_FALSE(off.fastWeapons);
+}
+
+TEST(AddonFile, AFastWeaponsThatIsNotABooleanIsRefused)
+{
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"fastweapons\": 2,"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_FALSE(e.error.empty());
+}

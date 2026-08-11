@@ -507,6 +507,7 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			else if (key == "gamemode")	{ std::string g; ok = ReadString(r, g); entry.gameMode = ParseGameMode(g); }
 			else if (key == "lives")	{ ok = ReadInt(r, entry.defaultLives); }
 			else if (key == "maxlives")	{ ok = ReadInt(r, entry.maxLives); }
+			else if (key == "fastweapons")	{ ok = ReadBool(r, entry.fastWeapons); }
 			else						{ ok = SkipValue(r); }
 
 			if (!ok)
