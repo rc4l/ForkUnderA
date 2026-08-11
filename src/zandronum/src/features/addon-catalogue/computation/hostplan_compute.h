@@ -37,6 +37,11 @@ struct HostPlan
 	std::string iwad;				// what to start on, after substitution
 	std::vector<std::string> pwads;	// bare filenames, in the entry's load order
 	std::string execCfg;			// the entry's server.cfg, or "" when it has none
+
+	// [rc4l] The chosen remix's cfg, exec'd AFTER the one above so it wins. Two files rather than one
+	// merged one because they are edited by different people for different reasons: the entry's says
+	// how the pack plays, the remix's says the one thing it changes about any pack.
+	std::string execRemixCfg;
 	std::string map;				// the map to open on, or "" to let the cfg's rotation decide
 	std::string serverName;
 	int maxPlayers;
@@ -59,10 +64,15 @@ struct HostPlan
 // followed by the variant's. Passed in rather than read off the entry, because an entry no longer
 // has one answer -- two variants of the same pack can load entirely different things, and reading
 // addon.files here would plan for whichever of them happened to be listed at the top.
+//
+// `map` and `serverCfgPath` are likewise passed rather than read off the entry: which map to open on
+// is the chosen variant's answer when it has one, and which cfg to exec depends on the variant too.
 HostPlan BuildHostPlan(const AddonEntry &addon,
                        const std::vector<AddonFileRef> &files,
                        const IwadPick &iwad,
                        const std::string &serverCfgPath,
+                       const std::string &remixCfgPath,
+                       const std::string &map,
                        const HostChoices &choices,
                        const std::vector<std::string> &haveFiles);
 

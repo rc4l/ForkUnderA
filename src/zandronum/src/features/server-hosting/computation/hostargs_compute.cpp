@@ -157,6 +157,15 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 		out.push_back(config.execCfg);
 	}
 
+	// Straight after, so the remix beats the experience where they disagree and the settings menu
+	// still beats both. That ordering is the whole point of a remix: one line that overrides whatever
+	// the pack said about that one thing.
+	if (IsSafeArgValue(config.execRemixCfg))
+	{
+		out.push_back("+exec");
+		out.push_back(config.execRemixCfg);
+	}
+
 	if (IsSafeArgValue(config.map))
 	{
 		out.push_back("+map");

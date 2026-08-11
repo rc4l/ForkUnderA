@@ -37,6 +37,17 @@ const std::vector<CatalogueEntry> &CatalogueLoad( bool bForceReload = false );
 // default. An entry with no variants answers with its server.cfg whatever is passed.
 std::string CatalogueServerCfgPath( const CatalogueEntry &entry, const std::string &variantId = std::string( ));
 
+// [rc4l] Every remix on disk, read once and cached beside the entries.
+//
+// One pool rather than a copy per entry, because the same few apply to many: "three lives" means the
+// same thing to every invasion pack. Entries name the ones they can take and this holds what they
+// actually do.
+const std::vector<AddonRemix> &CatalogueRemixes( bool bForceReload = false );
+
+// The full path to a remix's cfg, or "" when it has none to exec. Remixes live in their own folders
+// under remix/, so this is not the entry's directory.
+std::string CatalogueRemixCfgPath( const std::string &remixId );
+
 // [rc4l] Read the catalogue during startup and say, loudly, if anything in it could not be used.
 //
 // Called once from D_DoomMain. Without it the first read happens when somebody opens the host screen,

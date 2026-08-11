@@ -185,6 +185,15 @@ AddonEntry Fail(const std::string &id, const std::string &why)
 	return e;
 }
 
+AddonRemix FailRemix(const std::string &id, const std::string &why)
+{
+	AddonRemix m;
+	m.id = id;
+	m.valid = false;
+	m.error = why;
+	return m;
+}
+
 bool ReadFilesArray(Reader &r, std::vector<AddonFileRef> &out)
 {
 	if (!r.Take('['))
@@ -310,6 +319,11 @@ bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
 						return false;
 					v.kind = ParseKind(kind);
 				}
+				else if (key == "map")
+				{
+					if (!ReadString(r, v.map))
+						return false;
+				}
 				else if (key == "files")
 				{
 					if (!ReadFilesArray(r, v.files))
@@ -334,6 +348,33 @@ bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
 		}
 
 		out.push_back(v);
+
+		if (r.Take(','))
+			continue;
+		if (r.Take(']'))
+			return true;
+		return false;
+	}
+}
+
+// [rc4l] The remixes an entry offers: a flat array of ids naming things defined elsewhere, so this
+// reads strings rather than objects.
+bool ReadIdArray(Reader &r, std::vector<std::string> &out)
+{
+	if (!r.Take('['))
+		return false;
+
+	r.SkipSpace();
+	if (r.Take(']'))
+		return true;
+
+	for (;;)
+	{
+		std::string id;
+		if (!ReadString(r, id))
+			return false;
+
+		out.push_back(id);
 
 		if (r.Take(','))
 			continue;
@@ -422,6 +463,7 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			else if (key == "map")		{ ok = ReadString(r, entry.map); }
 			else if (key == "files")	{ ok = ReadFilesArray(r, entry.files); }
 			else if (key == "variants")	{ ok = ReadVariantsArray(r, entry.variants); }
+		else if (key == "remixes")	{ ok = ReadIdArray(r, entry.remixes); }
 			else if (key == "kind")		{ std::string k; ok = ReadString(r, k); entry.kind = ParseKind(k); }
 			else						{ ok = SkipValue(r); }
 
@@ -502,6 +544,11 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			if (!IsBareFilename(v.cfg))
 				return Fail(id, "a variant's cfg is not a bare filename");
 
+			// The same rule the entry's own map obeys: it reaches a command line, so it may not
+			// carry a path or read as another flag.
+			if (!v.map.empty() && (!IsBareFilename(v.map) || (v.map[0] == '-') || (v.map[0] == '+')))
+				return Fail(id, "the experience variant '" + v.name + "' has a map that is not a plain lump name");
+
 			// Named, because a pack can have six of them and "a variant" would leave the author
 			// reading all six to find out which one they forgot.
 			if (v.kind == VariantKind::Unknown)
@@ -545,8 +592,101 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			return Fail(id, "more than one variant claims to be the default");
 	}
 
+	// [rc4l] The remixes an entry names. Whether each one EXISTS is not settled here: this reads one
+	// file and the remixes live in others, so the pool checks that when it has both halves. All that
+	// can be judged from here is that the entry asked for something and did not ask twice.
+	for (size_t i = 0; i < entry.remixes.size(); ++i)
+	{
+		if (entry.remixes[i].empty())
+			return Fail(id, "a remix id is empty");
+
+		for (size_t j = 0; j < i; ++j)
+		{
+			if (entry.remixes[j] == entry.remixes[i])
+				return Fail(id, "the remix '" + entry.remixes[i] + "' is listed twice");
+		}
+	}
+
 	entry.valid = true;
 	return entry;
+}
+
+AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
+{
+	AddonRemix remix;
+	remix.id = id;
+
+	Reader r;
+	r.p = json.c_str();
+	r.end = r.p + json.size();
+
+	if (!r.Take('{'))
+		return FailRemix(id, "not a json object");
+
+	int schema = 0;
+	bool sawSchema = false;
+
+	r.SkipSpace();
+	if (!r.Take('}'))
+	{
+		for (;;)
+		{
+			std::string key;
+			if (!ReadString(r, key) || !r.Take(':'))
+				return FailRemix(id, "malformed key");
+
+			bool ok = true;
+			if (key == "schema")		{ ok = ReadInt(r, schema); sawSchema = true; }
+			else if (key == "name")		{ ok = ReadString(r, remix.name); }
+			else if (key == "summary")	{ ok = ReadString(r, remix.summary); }
+			else if (key == "cfg")		{ ok = ReadString(r, remix.cfg); }
+			else if (key == "files")	{ ok = ReadFilesArray(r, remix.files); }
+			else						{ ok = SkipValue(r); }
+
+			if (!ok)
+				return FailRemix(id, "malformed value");
+
+			if (r.Take(','))
+				continue;
+			if (r.Take('}'))
+				break;
+			return FailRemix(id, "malformed object");
+		}
+	}
+
+	r.SkipSpace();
+	if (!r.Done())
+		return FailRemix(id, "trailing content after the object");
+
+	if (!sawSchema)
+		return FailRemix(id, "no schema");
+	if (schema > kAddonSchema)
+		return FailRemix(id, "written for a newer ZandroX");
+	if (schema < 1)
+		return FailRemix(id, "bad schema");
+
+	if (remix.name.empty())
+		return FailRemix(id, "no name");
+
+	// Optional, but if given it reaches a loader, so it may not carry a path or climb out of the
+	// remix's own folder.
+	if (!remix.cfg.empty() && !IsBareFilename(remix.cfg))
+		return FailRemix(id, "cfg is not a bare filename");
+
+	// The same rules the entries' files obey. A remix's list reaches the same loader and the same
+	// by-hash store, so a path or a bad hash is exactly as dangerous here.
+	for (size_t i = 0; i < remix.files.size(); ++i)
+	{
+		if (!IsBareFilename(remix.files[i].name))
+			return FailRemix(id, "a file name is not a bare filename");
+		if (!LooksLikeMd5(remix.files[i].md5))
+			return FailRemix(id, "a file has no usable md5");
+	}
+
+	// Deliberately NOT refused for doing nothing. The baseline remix is the one that changes nothing,
+	// and the picker needs it to have a name like the rest.
+	remix.valid = true;
+	return remix;
 }
 
 } // namespace zx

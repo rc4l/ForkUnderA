@@ -72,7 +72,8 @@ std::vector<std::string> Files(const char *a = 0, const char *b = 0)
 HostPlan PlanFor(const AddonEntry &addon, const IwadPick &iwad, const std::string &cfg,
 	const HostChoices &choices, const std::vector<std::string> &haveFiles)
 {
-	return BuildHostPlan(addon, addon.files, iwad, cfg, choices, haveFiles);
+	return BuildHostPlan(addon, addon.files, iwad, cfg, std::string(), addon.map,
+		choices, haveFiles);
 }
 
 AddonFileRef Ref(const char *name, const char *md5)
@@ -269,7 +270,7 @@ TEST(HostPlan, ItPlansTheFilesItIsGivenAndNotTheEntrysOwn)
 	variant.push_back(Ref("gvh-maps.pk3", "aa3896cb47c781facab7ea7f39395201"));
 
 	const HostPlan p = BuildHostPlan(gvh, variant,
-		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(), Files("gvh-maps.pk3"));
+		Picked(IwadChoice::Preferred, "doom2.wad"), "", "", "", Mine(), Files("gvh-maps.pk3"));
 
 	EXPECT_TRUE(p.ready);
 	ASSERT_EQ(1u, p.pwads.size());
@@ -284,7 +285,7 @@ TEST(HostPlan, AVariantsMissingWadIsStillJustADownload)
 	resolved.push_back(Ref("skulltag_announcer.pk3", "25b2a3c4f46e50f4016b640119aefae7"));
 
 	const HostPlan p = BuildHostPlan(Duel40(), resolved,
-		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(),
+		Picked(IwadChoice::Preferred, "doom2.wad"), "", "", "", Mine(),
 		Files("duel40b.pk3", "zandrospree2rc2.pk3"));
 
 	EXPECT_FALSE(p.ready);

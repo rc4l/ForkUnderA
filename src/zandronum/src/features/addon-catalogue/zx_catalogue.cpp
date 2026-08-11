@@ -28,6 +28,11 @@ namespace
 {
 
 std::vector<CatalogueEntry> g_Entries;
+
+// [rc4l] Read in the same pass as the entries, so an entry and the remixes it names cannot end up
+// one reload apart.
+std::vector<AddonRemix> g_Remixes;
+
 bool g_Loaded = false;
 
 // How many entries were thrown out on the last read, so the summary at startup can say there were
@@ -185,6 +190,82 @@ void LoadRoot( const char *root, bool bShipped, std::vector<CatalogueEntry> &out
 	}
 }
 
+// [rc4l] The remix pool under one root: remix/<id>/remix.json.
+//
+// Inside the catalogue folder rather than beside it, because it IS catalogue data and travels with
+// it. The entry scan is unbothered by it for free: `remix` has no addon.json so it is not an entry,
+// and everything under it is too deep for the direct-children rule.
+void LoadRemixRoot( const char *root, std::vector<AddonRemix> &out )
+{
+	FString dir = root;
+	FixPathSeperator( dir );
+	if (( dir.Len( ) > 0 ) && ( dir[dir.Len( ) - 1] != '/' ))
+		dir += "/";
+	dir += "remix/";
+
+	if ( !DirEntryExists( dir.GetChars( )))
+		return;
+
+	TArray<FFileList> found;
+	ScanDirectory( found, dir );
+
+	for ( unsigned int i = 0; i < found.Size( ); ++i )
+	{
+		if ( !found[i].isDirectory )
+			continue;
+
+		FString path = found[i].Filename;
+		FixPathSeperator( path );
+		while (( path.Len( ) > 0 ) && ( path[path.Len( ) - 1] == '/' ))
+			path.Truncate( path.Len( ) - 1 );
+
+		const long slash = path.LastIndexOf( '/' );
+		const FString id = ( slash >= 0 ) ? path.Mid( slash + 1 ) : path;
+
+		if (( id.Len( ) == 0 ) || ( id[0] == '.' ))
+			continue;
+		if ( path.Len( ) != dir.Len( ) + id.Len( ))
+			continue;			// ScanDirectory recurses; only direct children are remixes
+
+		std::string json;
+		if ( !ReadWholeFile(( path + "/remix.json" ).GetChars( ), json ))
+			continue;
+
+		AddonRemix remix = ParseRemixFile( id.GetChars( ), json );
+
+		// Same promise, same moment: a remix naming a cfg nobody shipped would fail when somebody
+		// picks it, which is the worst time to find out.
+		if ( remix.valid && !remix.cfg.empty( ) &&
+			!FileExists(( path + "/" + remix.cfg.c_str( )).GetChars( )))
+		{
+			remix.valid = false;
+			remix.error = "names " + remix.cfg + ", which is not in the folder";
+		}
+
+		if ( !remix.valid )
+		{
+			Printf( TEXTCOLOR_RED "Catalogue: skipping remix '%s' -- %s\n" TEXTCOLOR_NORMAL,
+				id.GetChars( ), remix.error.c_str( ));
+			++g_Problems;
+			continue;
+		}
+
+		bool bReplaced = false;
+		for ( size_t j = 0; j < out.size( ); ++j )
+		{
+			if ( out[j].id == remix.id )
+			{
+				out[j] = remix;
+				bReplaced = true;
+				break;
+			}
+		}
+
+		if ( !bReplaced )
+			out.push_back( remix );
+	}
+}
+
 } // namespace
 
 std::string CatalogueShippedDir( void )
@@ -228,8 +309,46 @@ const std::vector<CatalogueEntry> &CatalogueLoad( bool bForceReload )
 	if ( user != shipped )
 		LoadRoot( user.c_str( ), false, g_Entries );
 
+	// The pool is read in the same pass, so an entry and the remixes it names can never be one reload
+	// out of step with each other.
+	g_Remixes.clear( );
+	LoadRemixRoot( shipped.c_str( ), g_Remixes );
+	if ( user != shipped )
+		LoadRemixRoot( user.c_str( ), g_Remixes );
+
 	g_Loaded = true;
 	return g_Entries;
+}
+
+const std::vector<AddonRemix> &CatalogueRemixes( bool bForceReload )
+{
+	CatalogueLoad( bForceReload );		// fills both; see above
+	return g_Remixes;
+}
+
+std::string CatalogueRemixCfgPath( const std::string &remixId )
+{
+	const std::vector<AddonRemix> &pool = CatalogueRemixes( );
+
+	for ( size_t i = 0; i < pool.size( ); ++i )
+	{
+		if (( pool[i].id != remixId ) || pool[i].cfg.empty( ))
+			continue;
+
+		// Rebuilt from the roots rather than remembered per remix, the same way an entry's cfg path
+		// is: the shipped copy and the player's can hold the same id, and the one that wins is the
+		// one the loader kept.
+		const std::string user = CatalogueUserDir( );
+		const std::string shipped = CatalogueShippedDir( );
+
+		std::string at = user + "/remix/" + remixId + "/" + pool[i].cfg;
+		if ( FileExists( at.c_str( )))
+			return at;
+
+		return shipped + "/remix/" + remixId + "/" + pool[i].cfg;
+	}
+
+	return std::string( );
 }
 
 //*****************************************************************************
@@ -286,6 +405,29 @@ CCMD( fua_catalogue )
 		return;
 	}
 
+	const std::vector<zx::AddonRemix> &remixes = zx::CatalogueRemixes( );
+
+	if ( !remixes.empty( ))
+	{
+		Printf( "%d remix%s:\n", static_cast<int>( remixes.size( )),
+			( remixes.size( ) == 1 ) ? "" : "es" );
+
+		for ( size_t i = 0; i < remixes.size( ); ++i )
+		{
+			Printf( TEXTCOLOR_GOLD "    %s" TEXTCOLOR_NORMAL " -- %s\n",
+				remixes[i].id.c_str( ), remixes[i].name.c_str( ));
+
+			if ( !remixes[i].cfg.empty( ))
+				Printf( "      cfg:  %s\n", zx::CatalogueRemixCfgPath( remixes[i].id ).c_str( ));
+
+			for ( size_t f = 0; f < remixes[i].files.size( ); ++f )
+			{
+				Printf( "      file: %-32s %s\n",
+					remixes[i].files[f].name.c_str( ), remixes[i].files[f].md5.c_str( ));
+			}
+		}
+	}
+
 	Printf( "%d catalogue entries:\n", static_cast<int>( entries.size( )));
 	for ( size_t i = 0; i < entries.size( ); ++i )
 	{
@@ -297,6 +439,18 @@ CCMD( fua_catalogue )
 
 		if ( !e.addon.summary.empty( ))
 			Printf( "    %s\n", e.addon.summary.c_str( ));
+
+		if ( !e.addon.remixes.empty( ))
+		{
+			FString offers;
+			for ( size_t m = 0; m < e.addon.remixes.size( ); ++m )
+			{
+				if ( m > 0 )
+					offers += ", ";
+				offers += e.addon.remixes[m].c_str( );
+			}
+			Printf( "    plays with: %s\n", offers.GetChars( ));
+		}
 		if ( !e.addon.iwad.empty( ))
 			Printf( "    iwad: %s\n", e.addon.iwad.c_str( ));
 
@@ -407,7 +561,8 @@ CCMD( fua_host )
 	choices.advertise = false;
 
 	const zx::HostPlan plan = zx::BuildHostPlan( chosen->addon, variant.files, pick,
-		zx::CatalogueServerCfgPath( *chosen, variantId ), choices, have );
+		zx::CatalogueServerCfgPath( *chosen, variantId ), std::string( ), variant.map,
+		choices, have );
 
 	if ( !plan.blocker.empty( ))
 	{
@@ -436,6 +591,7 @@ CCMD( fua_host )
 	config.iwad = plan.iwad;
 	config.pwads = plan.pwads;
 	config.execCfg = plan.execCfg;
+	config.execRemixCfg = plan.execRemixCfg;
 	config.maxPlayers = plan.maxPlayers;
 	config.port = plan.port;
 	config.advertise = plan.advertise;

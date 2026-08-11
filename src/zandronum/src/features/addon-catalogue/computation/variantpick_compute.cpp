@@ -18,6 +18,13 @@ void ResolveFiles(const AddonEntry &entry, const AddonVariant &variant,
 	out.insert(out.end(), variant.files.begin(), variant.files.end());
 }
 
+// The variant's map when it names one, otherwise the entry's. Answered here so no caller has to
+// remember which of the two it should be asking.
+const std::string &ResolveMap(const AddonEntry &entry, const AddonVariant &variant)
+{
+	return variant.map.empty() ? entry.map : variant.map;
+}
+
 } // namespace
 
 VariantPick PickVariant(const AddonEntry &entry, const std::string &wantedId)
@@ -28,6 +35,7 @@ VariantPick PickVariant(const AddonEntry &entry, const std::string &wantedId)
 	{
 		pick.cfg = kDefaultVariantCfg;
 		pick.files = entry.files;
+		pick.map = entry.map;
 		return pick;
 	}
 
@@ -43,6 +51,7 @@ VariantPick PickVariant(const AddonEntry &entry, const std::string &wantedId)
 			pick.index = static_cast<int>(i);
 			pick.cfg = entry.variants[i].cfg;
 			pick.name = entry.variants[i].name;
+			pick.map = ResolveMap(entry, entry.variants[i]);
 			ResolveFiles(entry, entry.variants[i], pick.files);
 			return pick;
 		}
