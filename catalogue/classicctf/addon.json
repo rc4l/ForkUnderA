@@ -117,7 +117,7 @@
     },
     {
       "id": "extreme",
-      "name": "Extreme CTF",
+      "name": "Last Strike Extreme CTF",
       "cfg": "extreme.cfg",
       "kind": "pvp",
       "tooltip": "Nine maps, named rather than numbered.",
