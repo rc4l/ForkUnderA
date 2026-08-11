@@ -26,8 +26,16 @@
       "md5": "2617768e95f3fdd36413a056e023d11e"
     },
     {
+      "name": "wdi_touchupv9.11.wad",
+      "md5": "2ccc1f88f1160cd503fb790e63da9c9c"
+    },
+    {
       "name": "wdibeta_phobos_outpostd1.pk3",
       "md5": "b22505cd5ce4152b8c8e9a6b62bb7484"
+    },
+    {
+      "name": "wdi_random_crate_1b.pk3",
+      "md5": "408d20d4afaead2d15c9df1e46c9825c"
     },
     {
       "name": "wdi_scoreboard_fix.wad",
