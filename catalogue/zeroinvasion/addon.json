@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "name": "Zero Invasion",
+  "summary": "Eleven invasion maps in three tiers, BYOC-friendly, on Skulltag's content.",
+  "iwad": "doom2.wad",
+  "map": "Z1INV01",
+  "kind": "pve",
+  "files": [
+    {
+      "name": "skulltag_content-3.2-beta2.pk3",
+      "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+    },
+    {
+      "name": "zeroinvasionmapsbutbyocfriendly.wad",
+      "md5": "2809a3f6fd834b047ef106964c9ded37"
+    },
+    {
+      "name": "zeroinvasionmonstereffectbutwithoutthekeyconfv3.wad",
+      "md5": "0d90beb661be9b40a5c8f3ad522a91cb"
+    },
+    {
+      "name": "zeroinvasionmusic.wad",
+      "md5": "651af19c20d180f469dd454833d205a6"
+    }
+  ],
+  "variants": [
+    {
+      "id": "invasion",
+      "name": "Invasion",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "default": true,
+      "tooltip": "Waves of monsters. Die as often as you need to."
+    },
+    {
+      "id": "survival",
+      "name": "Survival Invasion",
+      "cfg": "survival.cfg",
+      "kind": "pve",
+      "tooltip": "The same waves, three lives each. Spend them and you watch."
+    }
+  ]
+}
