@@ -306,7 +306,32 @@ CCMD( fua_catalogue )
 				e.addon.files[f].name.c_str( ), e.addon.files[f].md5.c_str( ));
 		}
 
-		Printf( "    cfg:  %s\n", e.hasServerCfg ? zx::CatalogueServerCfgPath( e ).c_str( ) : "(none)" );
+		// [rc4l] The ways of playing, each with the cfg and the files peculiar to it. Listing only the
+		// entry's own used to be the whole story; for a pack whose ways of playing share no base it
+		// prints an experience that appears to load nothing at all.
+		if ( e.addon.variants.empty( ))
+		{
+			Printf( "    cfg:  %s\n",
+				e.hasServerCfg ? zx::CatalogueServerCfgPath( e ).c_str( ) : "(none)" );
+			continue;
+		}
+
+		for ( size_t v = 0; v < e.addon.variants.size( ); ++v )
+		{
+			const zx::AddonVariant &variant = e.addon.variants[v];
+
+			Printf( "    %s%s [%s]\n", variant.name.c_str( ),
+				variant.isDefault ? " (default)" : "",
+				zx::DescribeVariantKind( variant.kind ));
+
+			for ( size_t f = 0; f < variant.files.size( ); ++f )
+			{
+				Printf( "      file: %-32s %s\n",
+					variant.files[f].name.c_str( ), variant.files[f].md5.c_str( ));
+			}
+
+			Printf( "      cfg:  %s\n", zx::CatalogueServerCfgPath( e, variant.id ).c_str( ));
+		}
 	}
 }
 
