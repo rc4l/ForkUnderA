@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Zero Invasion",
-  "summary": "Eleven invasion maps in three tiers, BYOC-friendly, on Skulltag's content.",
+  "summary": "Frantic set of skulltag invasion maps with custom monsters and bosses.",
   "iwad": "doom2.wad",
   "map": "Z1INV01",
   "kind": "pve",

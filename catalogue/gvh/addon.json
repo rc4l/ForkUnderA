@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Ghouls vs Humans",
-  "summary": "Humans hunt in a pack with guns and lamps. Ghouls hunt them in the dark.",
+  "summary": "A PvP class-based gameplay mod where specialized human combatants rely on ranged weaponry to survive against high-mobility, deadly close-range monster ghouls.",
   "iwad": "doom2.wad",
   "kind": "pvp",
   "variants": [
@@ -11,7 +11,7 @@
       "cfg": "server.cfg",
       "kind": "pvp",
       "default": true,
-      "tooltip": "The 2b9 line, as the mod was played for years.",
+      "tooltip": "The original.",
       "files": [
         {
           "name": "skulltag_content-4.1.pk3",
@@ -40,7 +40,7 @@
       "name": "Classic: Reborn",
       "cfg": "reborn.cfg",
       "kind": "pvp",
-      "tooltip": "The decade-old mod brought up to date.",
+      "tooltip": "The original but with new twists!",
       "files": [
         {
           "name": "gvhre-maps-1c.pk3",
@@ -65,7 +65,7 @@
       "name": "Multiverse",
       "cfg": "multiverse.cfg",
       "kind": "pvp",
-      "tooltip": "The big one: sixty-nine maps and a roster to match.",
+      "tooltip": "Fanmade edition with more classes than you can count!",
       "files": [
         {
           "name": "skulltag_content-4.1.pk3",
@@ -98,7 +98,7 @@
       "name": "Nordic Saga",
       "cfg": "nordicsaga.cfg",
       "kind": "pvp",
-      "tooltip": "Fifty-two maps, and the GVHNS run they are named for.",
+      "tooltip": "Fanmade expansion with new maps and classes.",
       "files": [
         {
           "name": "skulltag_content-4.1.pk3",
@@ -135,7 +135,7 @@
       "name": "Legacy of Darkness",
       "cfg": "lod.cfg",
       "kind": "pvp",
-      "tooltip": "The older line, kept close to the mod people remember.",
+      "tooltip": "The ultimate fanmade expansion with massive upgrades.",
       "files": [
         {
           "name": "lod-corev1.2.pk3",

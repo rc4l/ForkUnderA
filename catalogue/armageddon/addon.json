@@ -22,14 +22,14 @@
       "cfg": "server.cfg",
       "kind": "pve",
       "default": true,
-      "tooltip": "Waves of monsters. Die as often as you need to."
+      "tooltip": "Unlimited lives."
     },
     {
       "id": "survival",
       "name": "Survival Invasion",
       "cfg": "survival.cfg",
       "kind": "pve",
-      "tooltip": "The same waves, three lives each. Spend them and you watch."
+      "tooltip": "Three lives max."
     }
   ]
 }

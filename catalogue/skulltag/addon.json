@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Skulltag",
-  "summary": "Skulltag's maps, weapons and runes, with the 98a announcer.",
+  "summary": "The one that started it all.",
   "iwad": "doom2.wad",
   "files": [
     {
@@ -20,14 +20,14 @@
       "cfg": "server.cfg",
       "kind": "pvp",
       "default": true,
-      "tooltip": "Everyone for themselves, on the eleven deathmatch maps."
+      "tooltip": "Everyone for themselves! Will you prevail?"
     },
     {
       "id": "teamdm",
       "name": "Team Deathmatch",
       "cfg": "teamdm.cfg",
       "kind": "pvp",
-      "tooltip": "The same maps and rules, two sides."
+      "tooltip": "You and your team must out-kill the enemy team."
     },
     {
       "id": "duel",
@@ -62,7 +62,7 @@
       "name": "Skulltag",
       "cfg": "skulltag.cfg",
       "kind": "pvp",
-      "tooltip": "The mode the pack is named after. One skull, both teams want it."
+      "tooltip": "Grab a skull, and tag it on the enemy's side."
     },
     {
       "id": "invasion",

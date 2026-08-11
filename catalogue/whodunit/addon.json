@@ -3,7 +3,7 @@
   "name": "Who Dun It?",
   "summary": "Survival, with a traitor among you. Twenty-nine maps to work out who.",
   "iwad": "doom2.wad",
-  "kind": "pve",
+  "kind": "pvp",
   "files": [
     {
       "name": "skulltag_content-4.1.pk3",
