@@ -23,6 +23,13 @@
       "tooltip": "Everyone for themselves, on the eleven deathmatch maps."
     },
     {
+      "id": "teamdm",
+      "name": "Team Deathmatch",
+      "cfg": "teamdm.cfg",
+      "kind": "pvp",
+      "tooltip": "The same maps and rules, two sides."
+    },
+    {
       "id": "duel",
       "name": "Duel",
       "cfg": "duel.cfg",
@@ -35,6 +42,13 @@
       "cfg": "lms.cfg",
       "kind": "pvp",
       "tooltip": "One life each round. Last one alive takes it."
+    },
+    {
+      "id": "teamlms",
+      "name": "Team Last Man Standing",
+      "cfg": "teamlms.cfg",
+      "kind": "pvp",
+      "tooltip": "One life each round, and a team to lose it for."
     },
     {
       "id": "ctf",

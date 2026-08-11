@@ -27,11 +27,25 @@
       "tooltip": "Everyone for themselves, across all three mappacks."
     },
     {
+      "id": "teamdm",
+      "name": "Team Deathmatch",
+      "cfg": "teamdm.cfg",
+      "kind": "pvp",
+      "tooltip": "The same three mappacks, two sides."
+    },
+    {
       "id": "lms",
       "name": "Last Man Standing",
       "cfg": "lms.cfg",
       "kind": "pvp",
       "tooltip": "Two lives each round. Last one alive takes it."
+    },
+    {
+      "id": "teamlms",
+      "name": "Team Last Man Standing",
+      "cfg": "teamlms.cfg",
+      "kind": "pvp",
+      "tooltip": "Two lives each round, and a team to lose them for."
     }
   ]
 }
