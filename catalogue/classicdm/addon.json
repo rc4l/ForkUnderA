@@ -1,13 +1,19 @@
 {
   "schema": 1,
   "name": "Popular Deathmatch Maps",
-  "summary": "Two of the mappacks deathmatch has always been played on, with whatever you like on top.",
+  "summary": "The mappacks deathmatch has always been played on, with whatever you like on top.",
   "iwad": "doom2.wad",
   "kind": "pvp",
   "gamemode": "deathmatch",
   "order": 5,
   "accent": true,
-  "remixes": ["vanilla", "brutaldoom", "doom64", "cataweaponz"],
+  "remixes": ["vanilla", "brutaldoom", "doom64", "cataweaponz", "eonweapons"],
+  "files": [
+    {
+      "name": "zandrospree2rc2.pk3",
+      "md5": "25b2a3c4f46e50f4016b640119aefae6"
+    }
+  ],
   "variants": [
     {
       "id": "onslaught",
@@ -33,6 +39,32 @@
         {
           "name": "cybercrime3_fix.wad",
           "md5": "d1f423fcb1f1aa5c6912c912efe04362"
+        }
+      ]
+    },
+    {
+      "id": "udmx",
+      "name": "UDMX",
+      "cfg": "udmx.cfg",
+      "kind": "pvp",
+      "tooltip": "Thirty-two maps, shuffled.",
+      "files": [
+        {
+          "name": "udmx.wad",
+          "md5": "2b41f525a3a94ef86b553fb5e656dd9a"
+        }
+      ]
+    },
+    {
+      "id": "brit",
+      "name": "The Brit 10 & 11",
+      "cfg": "brit.cfg",
+      "kind": "pvp",
+      "tooltip": "Thirty-one maps, shuffled.",
+      "files": [
+        {
+          "name": "execbrit10brit11.wad",
+          "md5": "cd4109f654585059da54097547aebf5e"
         }
       ]
     }
