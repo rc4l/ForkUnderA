@@ -670,6 +670,49 @@ TEST(HostArgs, OneUnsafeRemixPathDoesNotDisarmTheOthers)
 	EXPECT_TRUE(Has(args, "catalogue/remix/brutal/brutal.cfg"));
 }
 
+TEST(HostArgs, TheGameplayPanelsCvarsBeatEveryExec)
+{
+	// [rc4l] The lives control sets cvars directly rather than exec'ing a file, because what it must
+	// set depends on the gamemode. They have to land after the cfgs or the pack overrides the panel.
+	HostConfig config = Basic();
+	config.execCfg = "catalogue/classicpve/server.cfg";
+	config.execRemixCfgs.push_back("catalogue/remix/brutal/brutal.cfg");
+	config.extraCvars.push_back(std::make_pair(std::string("survival"), std::string("true")));
+	config.extraCvars.push_back(std::make_pair(std::string("sv_maxlives"), std::string("2")));
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_EQ("true", ValueAfter(args, "+survival"));
+	EXPECT_EQ("2", ValueAfter(args, "+sv_maxlives"));
+	EXPECT_GT(IndexOf(args, "+survival"), IndexOf(args, "catalogue/remix/brutal/brutal.cfg"))
+		<< "the panel has to win over the remix as well as the entry";
+}
+
+TEST(HostArgs, AnUnsafeCvarNameOrValueIsDropped)
+{
+	HostConfig config = Basic();
+	config.extraCvars.push_back(std::make_pair(std::string("-host"), std::string("1")));
+	config.extraCvars.push_back(std::make_pair(std::string(""), std::string("1")));
+	config.extraCvars.push_back(std::make_pair(std::string("sv_maxlives"), std::string("\"2\"")));
+	config.extraCvars.push_back(std::make_pair(std::string("survival"), std::string("true")));
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_FALSE(Has(args, "+-host"));
+	EXPECT_FALSE(Has(args, "+"));
+	EXPECT_FALSE(Has(args, "+sv_maxlives")) << "a quoted value would escape its own argument";
+	EXPECT_TRUE(Has(args, "+survival")) << "and the good one still went through";
+}
+
+TEST(HostArgs, NoGameplayCvarsIsNoExtraArguments)
+{
+	HostConfig config = Basic();
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_FALSE(Has(args, "+survival"));
+	EXPECT_FALSE(Has(args, "+sv_maxlives"));
+}
+
 TEST(HostArgs, ADangerousWadPathIsStillDropped)
 {
 	// Dropped rather than escaped, the same as every other unsafe value here.

@@ -5,6 +5,7 @@
   "iwad": "doom2.wad",
   "map": "BDM01",
   "kind": "pvp",
+  "gamemode": "deathmatch",
   "remixes": ["ffa", "teamdm"],
   "files": [
     {

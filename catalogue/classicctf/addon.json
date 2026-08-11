@@ -4,6 +4,7 @@
   "summary": "Two flags, two bases, and the map sets people have played it on for twenty years.",
   "iwad": "doom2.wad",
   "kind": "pvp",
+  "gamemode": "ctf",
   "variants": [
     {
       "id": "idl",

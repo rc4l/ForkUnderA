@@ -5,7 +5,7 @@
   "iwad": "doom2.wad",
   "map": "START",
   "kind": "pve",
-  "remixes": ["classic", "survival"],
+  "gamemode": "cooperative",
   "files": [
     {
       "name": "bfh1p.pk3",

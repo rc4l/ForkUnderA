@@ -6,7 +6,9 @@
   "summary": "Hold out together against waves of monsters, across three mappacks of them.",
   "iwad": "doom2.wad",
   "kind": "pve",
-  "remixes": ["classic", "survival"],
+  "gamemode": "invasion",
+  "lives": 0,
+  "maxlives": 5,
   "variants": [
     {
       "id": "alphadelta",

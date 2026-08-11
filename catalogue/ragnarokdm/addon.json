@@ -4,6 +4,9 @@
   "summary": "Twenty-three arenas on Skulltag's weapons and runes.",
   "iwad": "doom2.wad",
   "kind": "pvp",
+  "gamemode": "deathmatch",
+  "lives": 1,
+  "maxlives": 5,
   "files": [
     {
       "name": "skulltag_content-3.2-beta2.pk3",
@@ -25,6 +28,7 @@
   "variants": [
     {
       "id": "dm",
+      "gamemode": "deathmatch",
       "name": "Deathmatch",
       "cfg": "server.cfg",
       "kind": "pvp",
@@ -34,6 +38,7 @@
     },
     {
       "id": "lms",
+      "gamemode": "lastmanstanding",
       "name": "Last Man Standing",
       "cfg": "lms.cfg",
       "kind": "pvp",

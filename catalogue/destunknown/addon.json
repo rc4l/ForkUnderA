@@ -4,6 +4,9 @@
   "summary": "Nineteen maps of held ground, on weapons that never run dry.",
   "iwad": "doom2.wad",
   "kind": "pve",
+  "gamemode": "cooperative",
+  "lives": 0,
+  "maxlives": 5,
   "files": [
     {
       "name": "dest_unknown_zandro.pk3",

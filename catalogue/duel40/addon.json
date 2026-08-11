@@ -4,6 +4,7 @@
   "summary": "Play one-on-one against someone with classic settings. Say goodbye to freelook and jumping.",
   "iwad": "doom2.wad",
   "kind": "pvp",
+  "gamemode": "duel",
   "files": [
     {
       "name": "zandrospree2rc2.pk3",

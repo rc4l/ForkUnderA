@@ -4,6 +4,9 @@
   "summary": "Survival, with a traitor among you. Twenty-nine maps to work out who.",
   "iwad": "doom2.wad",
   "kind": "pvp",
+  "gamemode": "survival",
+  "lives": 1,
+  "maxlives": 5,
   "files": [
     {
       "name": "skulltag_content-3.2-beta2.pk3",

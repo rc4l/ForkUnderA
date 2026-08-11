@@ -4,6 +4,9 @@
   "summary": "Doom II rebuilt with Skulltag's weapons, runes and monsters.",
   "iwad": "doom2.wad",
   "kind": "pve",
+  "gamemode": "cooperative",
+  "lives": 0,
+  "maxlives": 5,
   "files": [
     {
       "name": "skulltag_content-3.2-beta2.pk3",
@@ -17,21 +20,21 @@
   "variants": [
     {
       "id": "campaign",
+      "gamemode": "cooperative",
       "name": "Campaign",
       "cfg": "server.cfg",
       "kind": "pve",
       "default": true,
       "map": "SSTMAP01",
-      "remixes": ["classic", "survival"],
       "tooltip": "Twenty-nine of Doom II's maps, played through together."
     },
     {
       "id": "monstermash",
+      "gamemode": "cooperative",
       "name": "Monster Mash",
       "cfg": "monstermash.cfg",
       "kind": "pve",
       "map": "SSTMAP01",
-      "remixes": ["classic", "survival"],
       "tooltip": "The same campaign, with a different bestiary in it.",
       "files": [
         {
@@ -42,15 +45,16 @@
     },
     {
       "id": "invasion",
+      "gamemode": "invasion",
       "name": "Invasion",
       "cfg": "invasion.cfg",
       "kind": "pve",
       "map": "SSTINV01",
-      "remixes": ["classic", "survival"],
       "tooltip": "Two maps, and waves of them."
     },
     {
       "id": "dm",
+      "gamemode": "deathmatch",
       "name": "Deathmatch",
       "cfg": "deathmatch.cfg",
       "kind": "pvp",

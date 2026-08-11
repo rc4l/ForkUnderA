@@ -20,6 +20,7 @@
   "variants": [
     {
       "id": "dm",
+      "gamemode": "deathmatch",
       "name": "Deathmatch",
       "cfg": "server.cfg",
       "kind": "pvp",
@@ -29,6 +30,7 @@
     },
     {
       "id": "lms",
+      "gamemode": "lastmanstanding",
       "name": "Last Man Standing",
       "cfg": "lms.cfg",
       "kind": "pvp",

@@ -255,6 +255,30 @@ bool ReadFilesArray(Reader &r, std::vector<AddonFileRef> &out)
 // [rc4l] The label, spelled out rather than guessed. Anything else lands on Unknown, which the
 // caller refuses by name: "kind is not pve or pvp" tells the author what to write, where a generic
 // malformed-value would leave them hunting.
+} // namespace
+
+HostGameMode ParseGameMode(const std::string &s)
+{
+	// [rc4l] The names Zandronum's own cvars use, so an author writing these is writing what they
+	// already put in the cfg rather than learning a second vocabulary.
+	if (s == "cooperative")		return HostGameMode::Cooperative;
+	if (s == "survival")		return HostGameMode::Survival;
+	if (s == "invasion")		return HostGameMode::Invasion;
+	if (s == "deathmatch")		return HostGameMode::Deathmatch;
+	if (s == "teamdeathmatch")	return HostGameMode::TeamDeathmatch;
+	if (s == "duel")			return HostGameMode::Duel;
+	if (s == "lastmanstanding")	return HostGameMode::LastManStanding;
+	if (s == "teamlms")			return HostGameMode::TeamLastManStanding;
+	if (s == "ctf")				return HostGameMode::CaptureTheFlag;
+
+	// Not an error. An entry that says nothing gets no gamemode-dependent controls, which is the
+	// safe answer and the one every entry written before this field had.
+	return HostGameMode::Unknown;
+}
+
+namespace
+{
+
 VariantKind ParseKind(const std::string &s)
 {
 	if (s == "pve")
@@ -345,6 +369,13 @@ bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
 					if (!ReadString(r, kind))
 						return false;
 					v.kind = ParseKind(kind);
+				}
+				else if (key == "gamemode")
+				{
+					std::string mode;
+					if (!ReadString(r, mode))
+						return false;
+					v.gameMode = ParseGameMode(mode);
 				}
 				else if (key == "map")
 				{
@@ -473,6 +504,9 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			else if (key == "kind")		{ std::string k; ok = ReadString(r, k); entry.kind = ParseKind(k); }
 			else if (key == "order")	{ ok = ReadInt(r, entry.order); }
 			else if (key == "accent")	{ ok = ReadBool(r, entry.accent); }
+			else if (key == "gamemode")	{ std::string g; ok = ReadString(r, g); entry.gameMode = ParseGameMode(g); }
+			else if (key == "lives")	{ ok = ReadInt(r, entry.defaultLives); }
+			else if (key == "maxlives")	{ ok = ReadInt(r, entry.maxLives); }
 			else						{ ok = SkipValue(r); }
 
 			if (!ok)
