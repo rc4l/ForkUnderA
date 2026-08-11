@@ -1191,8 +1191,27 @@ NETADDRESS_s NETWORK_GetLocalAddress( void )
 				Address.abIP[2] = pOctets[2];
 				Address.abIP[3] = pOctets[3];
 				Address.bIsIPv6 = false;
-				Printf( "Using IP address %d.%d.%d.%d of interface %s as local address.\n",
-					pOctets[0], pOctets[1], pOctets[2], pOctets[3], pInterface->ifa_name );
+
+				// [rc4l] Say it once, and again only if the answer CHANGES.
+				//
+				// This is a query function, and the browser calls it while drawing -- once per row,
+				// per frame -- so an unconditional Printf here filled a macOS console with the same
+				// line dozens of times a second and never stopped. It is a discovery message: what
+				// is worth reading is the address we settled on, and later that it moved, not that
+				// somebody asked again.
+				{
+					static unsigned char s_LastReported[4] = { 0, 0, 0, 0 };
+					if (( s_LastReported[0] != pOctets[0] ) || ( s_LastReported[1] != pOctets[1] )
+						|| ( s_LastReported[2] != pOctets[2] ) || ( s_LastReported[3] != pOctets[3] ))
+					{
+						s_LastReported[0] = pOctets[0];
+						s_LastReported[1] = pOctets[1];
+						s_LastReported[2] = pOctets[2];
+						s_LastReported[3] = pOctets[3];
+						Printf( "Using IP address %d.%d.%d.%d of interface %s as local address.\n",
+							pOctets[0], pOctets[1], pOctets[2], pOctets[3], pInterface->ifa_name );
+					}
+				}
 				break;
 			}
 			freeifaddrs( pInterfaces );

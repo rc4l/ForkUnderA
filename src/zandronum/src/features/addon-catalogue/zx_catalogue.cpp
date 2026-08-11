@@ -10,6 +10,7 @@
 #include "m_misc.h"
 #include "templates.h"
 #include "v_text.h"
+#include "version.h"
 
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
@@ -298,7 +299,7 @@ CCMD( fua_host )
 	const zx::IwadPick pick = zx::PickIwad( chosen->addon.iwad, iwads );
 
 	zx::HostChoices choices;
-	choices.serverName = chosen->addon.name + " (ZandroX)";
+	choices.serverName = chosen->addon.name + " (" FUA_NAME ")";
 	choices.maxPlayers = 8;
 	choices.port = 0;
 	choices.advertise = false;

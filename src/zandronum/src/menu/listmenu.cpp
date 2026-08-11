@@ -45,6 +45,8 @@
 #include "features/updater/zx_updater.h"                      // [rc4l] update-available state
 #include "features/updater/computation/promptpanel_compute.h" // [rc4l] rounded chip geometry/gradient
 #include "features/updater/computation/notice_compute.h"      // [rc4l] tested focus state machine
+#include "features/global-header/computation/globalheader_compute.h" // [rc4l] where the top row is
+#include "features/global-header/zx_globalheader.h"                  // [rc4l] does the bar hold the arrows?
 
 IMPLEMENT_CLASS(DListMenu)
 
@@ -211,6 +213,37 @@ bool DListMenu::MenuEvent (int mkey, bool fromcontroller)
 
 //=============================================================================
 //
+// [rc4l] Is Up about to leave this menu for the global tab bar?
+//
+// A ladder, bottom to top: the list's first reachable row, then the update chip if one is showing,
+// then the bar. The chip is asked about before the list is, because it is drawn above the list and
+// already owns Up on the main menu.
+//
+//=============================================================================
+
+bool DListMenu::AtTopRow()
+{
+	if (mDesc == NULL)
+		return false;
+
+	// On the chip, and there is nothing above it but the bar.
+	if (mNoticeFocused)
+		return true;
+
+	// A chip is showing but not focused, so Up belongs to it and not to us.
+	if (NoticeApplies())
+		return false;
+
+	TArray<bool> selectable;
+	for (unsigned i = 0; i < mDesc->mItems.Size(); ++i)
+		selectable.Push(mDesc->mItems[i]->Selectable());
+
+	return zx::CursorAtTopRow(selectable.Size() > 0 ? &selectable[0] : NULL,
+		static_cast<int>(selectable.Size()), mDesc->mSelectedItem);
+}
+
+//=============================================================================
+//
 //
 //
 //=============================================================================
@@ -289,8 +322,14 @@ void DListMenu::Drawer ()
 	{
 		if (mDesc->mItems[i]->mEnabled) mDesc->mItems[i]->Drawer(mDesc->mSelectedItem == (int)i);
 	}
-	if (mDesc->mSelectedItem >= 0 && mDesc->mSelectedItem < (int)mDesc->mItems.Size())
+	// [rc4l] No skull while the global tab bar holds the arrows. The selection is still remembered
+	// and comes back when the player goes down again, but drawing it now would put two cursors on
+	// screen and only the one up on the bar is where the next keypress goes.
+	if (mDesc->mSelectedItem >= 0 && mDesc->mSelectedItem < (int)mDesc->mItems.Size()
+		&& !zx::GlobalHeader_HasFocus())
+	{
 		mDesc->mItems[mDesc->mSelectedItem]->DrawSelector(mDesc->mSelectOfsX, mDesc->mSelectOfsY, mDesc->mSelector);
+	}
 	NoticeDrawer();   // [rc4l] no-op unless this is the main menu with an update pending
 	Super::Drawer();
 }

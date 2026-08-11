@@ -91,8 +91,8 @@ void DFUAPanelListMenu::Drawer()
 
 	// [rc4l] Keep the card off the screen edges no matter how large its content is.
 	//
-	// The panel is sized from what it contains, and what it contains is not ours: FUANewGameMenu
-	// draws StaticPatch "M_DOOM", and a mod is free to replace that lump with anything. MM8BDM's is a
+	// The panel is sized from what it contains, and what it contains is not ours: a list menu draws
+	// StaticPatch "M_DOOM", and a mod is free to replace that lump with anything. MM8BDM's is a
 	// full-width banner where Doom's is 159x37, so the computed extent ran past the screen, got
 	// clamped to it, and the "card floating over the title screen" became an opaque sheet covering
 	// everything.

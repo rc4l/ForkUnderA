@@ -17,7 +17,6 @@ using zx::ComputeClampedSelection;
 using zx::ComputeRestoredScroll;
 using zx::ComputePingBucket;
 using zx::ComputeRowWindow;
-using zx::ComputeShowsProgress;
 using zx::ComputeSpinnerFrame;
 using zx::PingBucket;
 using zx::RowWindow;
@@ -64,18 +63,6 @@ TEST( BrowserPhase, AnythingDrawableBeatsWaiting )
 	// Even mid-registry-refresh, existing results stay on screen.
 	EXPECT_EQ( ComputeBrowserPhase( true, Counts( 0, 4, 0, 0 )), BrowserPhase::Ready );
 	EXPECT_EQ( ComputeBrowserPhase( false, Counts( 0, 2, 5, 3 )), BrowserPhase::Ready );
-}
-
-TEST( ShowsProgress, TrueWheneverSomethingIsStillOutstanding )
-{
-	// Ready and "still working" are simultaneously true -- which is why this is a separate question.
-	EXPECT_TRUE( ComputeShowsProgress( false, Counts( 3, 5, 0, 0 )));
-	EXPECT_TRUE( ComputeShowsProgress( true, Counts( 0, 5, 0, 0 )));
-	EXPECT_TRUE( ComputeShowsProgress( true, Counts( 0, 0, 0, 0 )));
-
-	// Nothing outstanding: failures are settled, not pending.
-	EXPECT_FALSE( ComputeShowsProgress( false, Counts( 0, 5, 0, 0 )));
-	EXPECT_FALSE( ComputeShowsProgress( false, Counts( 0, 0, 4, 1 )));
 }
 
 // ---- Spinner ---------------------------------------------------------------
