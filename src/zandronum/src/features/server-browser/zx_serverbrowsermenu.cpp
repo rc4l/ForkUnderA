@@ -2721,35 +2721,23 @@ public:
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
-	void DrawDetailPanel( )
+	// [rc4l] The sunken black backdrop a column of detail sits on, given its corners.
+	//
+	// The server list's detail panel had this written out inline; the HOST tab's right column now wants
+	// the same one, and two hand-rolled gradients would have drifted apart the first time either was
+	// touched. DrawRoundedPanel above already does the work -- this only names the colours, which are
+	// what "the detail panel's background" actually means.
+	void DrawDetailBackdrop( int vLeft, int vTop, int vRight, int vBottom )
 	{
-		const int left = serverbrowser_ToScreenX( SB_DETAIL_LEFT );
-		const int right = serverbrowser_ToScreenX( SB_DETAIL_RIGHT );
-		const int top = serverbrowser_ToScreenY( SB_DETAIL_TOP );
-		const int bottom = serverbrowser_ToScreenY( SB_DETAIL_BOTTOM );
-		const int radius = serverbrowser_ToScreenY( 8 ) - serverbrowser_ToScreenY( 0 );
-
-		const int w = right - left;
-		const int h = bottom - top;
-		if (( w <= 0 ) || ( h <= 0 ))
-			return;
-
-		// ComputePanelRect is not used here: it centres its rectangle on the screen, which is right for
-		// the one panel and wrong for anything placed inside it. The rounding and gradient helpers are
-		// the parts worth sharing, and they are.
 		const zx::PanelColor topCol = { 0, 0, 0, 170 };
 		const zx::PanelColor botCol = { 0, 0, 0, 205 };
 
-		for ( int row = 0; row < h; ++row )
-		{
-			const int inset = zx::ComputeRoundedInset( row, h, radius );
-			const int rowW = w - 2 * inset;
-			if ( rowW <= 0 )
-				continue;
+		DrawRoundedPanel( vLeft, vTop, vRight - vLeft, vBottom - vTop, topCol, botCol, 8 );
+	}
 
-			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
-			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
-		}
+	void DrawDetailPanel( )
+	{
+		DrawDetailBackdrop( SB_DETAIL_LEFT, SB_DETAIL_TOP, SB_DETAIL_RIGHT, SB_DETAIL_BOTTOM );
 	}
 
 	//*************************************************************************
@@ -4706,6 +4694,15 @@ public:
 		const zx::PanelColor topCol = { 22, 24, 34, 235 };
 		const zx::PanelColor botCol = { 10, 11, 17, 245 };
 		DrawRoundedPanel( SB_HOST_LEFT, SB_HOST_TOP, w, h, topCol, botCol, 8 );
+
+		// [rc4l] The right column gets the server list's detail backdrop, for the reason it reads as
+		// the same kind of thing: a column describing whatever the list beside it has selected. Without
+		// it the two tabs looked like different screens rather than two views of one browser.
+		//
+		// Drawn here, before any of the column's own content and before the clip that masks it, so
+		// everything from the title to the foot buttons sits ON it rather than beside it.
+		DrawDetailBackdrop( SB_HOST_RCOL_LEFT - 6, SB_HOST_VIEW_TOP - 6,
+			SB_HOST_RIGHT - 3, SB_HOST_BOTTOM - 4 );
 
 		const int x = SB_HOST_LEFT + SB_HOST_PAD;
 
