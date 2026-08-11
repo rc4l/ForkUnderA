@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "name": "Popular Deathmatch Maps",
+  "summary": "Two of the mappacks deathmatch has always been played on, with whatever you like on top.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "gamemode": "deathmatch",
+  "order": 5,
+  "accent": true,
+  "remixes": ["vanilla", "brutaldoom", "doom64", "cataweaponz"],
+  "variants": [
+    {
+      "id": "onslaught",
+      "name": "Onslaught",
+      "cfg": "server.cfg",
+      "kind": "pvp",
+      "default": true,
+      "tooltip": "Fifty-one maps, shuffled.",
+      "files": [
+        {
+          "name": "onslpack.wad",
+          "md5": "004dd564c695d81e66de53bb5b6ff227"
+        }
+      ]
+    },
+    {
+      "id": "cybercrime3",
+      "name": "Cybercrime 3",
+      "cfg": "cybercrime3.cfg",
+      "kind": "pvp",
+      "tooltip": "Ten maps, shuffled.",
+      "files": [
+        {
+          "name": "cybercrime3_fix.wad",
+          "md5": "d1f423fcb1f1aa5c6912c912efe04362"
+        }
+      ]
+    }
+  ]
+}
