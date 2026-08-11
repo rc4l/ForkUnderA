@@ -6,11 +6,40 @@
   "kind": "pvp",
   "variants": [
     {
-      "id": "reborn",
-      "name": "Classic: Reborn",
+      "id": "classic",
+      "name": "Classic",
       "cfg": "server.cfg",
       "kind": "pvp",
       "default": true,
+      "tooltip": "The 2b9 line, as the mod was played for years.",
+      "files": [
+        {
+          "name": "skulltag_content-4.1.pk3",
+          "md5": "3f835911eefeeefeaf1ec4c3c1aad5a4"
+        },
+        {
+          "name": "gvhv2b9_fixed.pk3",
+          "md5": "9cccfbb1edaa9f40df318947fea584bb"
+        },
+        {
+          "name": "gvhv2b9maps.pk3",
+          "md5": "4d0df7f54a01f8bcdb40ff997ad50212"
+        },
+        {
+          "name": "gvhv2b9_patch2d3.wad",
+          "md5": "eb83c4750f34f97980ca365a1a9ae460"
+        },
+        {
+          "name": "gry_gvhmapfixesv1_5.pk3",
+          "md5": "0539fdc882ca3ad1969156fa212fe73b"
+        }
+      ]
+    },
+    {
+      "id": "reborn",
+      "name": "Classic: Reborn",
+      "cfg": "reborn.cfg",
+      "kind": "pvp",
       "tooltip": "The decade-old mod brought up to date.",
       "files": [
         {
