@@ -12,5 +12,50 @@
       "name": "zandrospree2rc2.pk3",
       "md5": "25b2a3c4f46e50f4016b640119aefae6"
     }
+  ],
+  "variants": [
+    {
+      "id": "dm",
+      "name": "Deathmatch",
+      "cfg": "server.cfg",
+      "kind": "pvp",
+      "default": true,
+      "tooltip": "Everyone for themselves, on the eleven deathmatch maps."
+    },
+    {
+      "id": "duel",
+      "name": "Duel",
+      "cfg": "duel.cfg",
+      "kind": "pvp",
+      "tooltip": "One on one duel."
+    },
+    {
+      "id": "lms",
+      "name": "Last Man Standing",
+      "cfg": "lms.cfg",
+      "kind": "pvp",
+      "tooltip": "One life each round. Last one alive takes it."
+    },
+    {
+      "id": "ctf",
+      "name": "Capture the Flag",
+      "cfg": "ctf.cfg",
+      "kind": "pvp",
+      "tooltip": "Two teams, a flag each. Take theirs and get home."
+    },
+    {
+      "id": "skulltag",
+      "name": "Skulltag",
+      "cfg": "skulltag.cfg",
+      "kind": "pvp",
+      "tooltip": "The mode the pack is named after. One skull, both teams want it."
+    },
+    {
+      "id": "invasion",
+      "name": "Invasion",
+      "cfg": "invasion.cfg",
+      "kind": "pve",
+      "tooltip": "Everyone on the same side, against waves of monsters."
+    }
   ]
 }

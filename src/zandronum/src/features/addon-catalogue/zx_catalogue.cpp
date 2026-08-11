@@ -14,6 +14,7 @@
 
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/addon-catalogue/computation/variantpick_compute.h"
 #include "features/server-hosting/zx_hosting.h"
 #include "features/server-hosting/zx_reachprobe.h"
 #include "features/wad-download/zx_wadsearch.h"
@@ -28,6 +29,11 @@ namespace
 
 std::vector<CatalogueEntry> g_Entries;
 bool g_Loaded = false;
+
+// How many entries were thrown out on the last read, so the summary at startup can say there were
+// any at all. A player who dropped a folder in wants to know it did not take, and a line among the
+// hundreds the engine prints while loading is easy to scroll past.
+int g_Problems = 0;
 
 bool ReadWholeFile( const char *path, std::string &out )
 {
@@ -120,12 +126,45 @@ void LoadRoot( const char *root, bool bShipped, std::vector<CatalogueEntry> &out
 		entry.shipped = bShipped;
 		entry.hasServerCfg = FileExists(( path + "/server.cfg" ).GetChars( ));
 
+		// [rc4l] The cfgs an entry PROMISES have to be there, and this is the only moment anybody
+		// looks. The json names them; nothing else checks; and a variant naming a cfg that was never
+		// shipped fails at the worst possible time -- when a player presses the button to host it --
+		// with the server starting on whatever the engine's defaults happen to be. So the promise is
+		// checked where it is made.
+		//
+		// Existence and readability only. A cfg is a list of console commands, and the engine's own
+		// exec is what decides whether a line means anything, so claiming to have validated the
+		// CONTENTS here would be a lie.
+		if ( entry.addon.valid )
+		{
+			if ( !entry.hasServerCfg )
+			{
+				entry.addon.valid = false;
+				entry.addon.error = "no server.cfg beside addon.json";
+			}
+			else
+			{
+				for ( size_t v = 0; v < entry.addon.variants.size( ); ++v )
+				{
+					const FString cfgPath = path + "/" + entry.addon.variants[v].cfg.c_str( );
+					if ( FileExists( cfgPath.GetChars( )))
+						continue;
+
+					entry.addon.valid = false;
+					entry.addon.error = "the experience variant '" + entry.addon.variants[v].name +
+						"' names " + entry.addon.variants[v].cfg + ", which is not in the folder";
+					break;
+				}
+			}
+		}
+
 		if ( !entry.addon.valid )
 		{
 			// Named, not swallowed. One bad entry a player dropped in must not cost them the rest of
 			// the catalogue, and it must not fail silently either.
-			Printf( TEXTCOLOR_ORANGE "Catalogue: skipping '%s' -- %s\n" TEXTCOLOR_NORMAL,
+			Printf( TEXTCOLOR_RED "Catalogue: skipping '%s' -- %s\n" TEXTCOLOR_NORMAL,
 				id.GetChars( ), entry.addon.error.c_str( ));
+			++g_Problems;
 			continue;
 		}
 
@@ -176,6 +215,7 @@ const std::vector<CatalogueEntry> &CatalogueLoad( bool bForceReload )
 		return g_Entries;
 
 	g_Entries.clear( );
+	g_Problems = 0;
 
 	const std::string shipped = CatalogueShippedDir( );
 	const std::string user = CatalogueUserDir( );
@@ -192,12 +232,44 @@ const std::vector<CatalogueEntry> &CatalogueLoad( bool bForceReload )
 	return g_Entries;
 }
 
-std::string CatalogueServerCfgPath( const CatalogueEntry &entry )
+//*****************************************************************************
+//
+// [rc4l] Read the catalogue AT STARTUP, so a broken entry is reported while the player is still
+// looking at the console rather than the first time they open the host screen.
+//
+// It used to be read lazily, which meant a folder somebody had just added could be silently absent
+// for as long as they did not go looking for it -- and when they did, the reason scrolled past in a
+// list they had no reason to be reading. Nothing here is expensive: a handful of small files.
+void CatalogueCheckAtStartup( void )
 {
+	const std::vector<CatalogueEntry> &entries = CatalogueLoad( );
+
+	if ( g_Problems <= 0 )
+		return;
+
+	// Said again, after the individual reasons, because the reasons are printed one per entry among
+	// everything else the engine says while it starts.
+	Printf( TEXTCOLOR_RED "Catalogue: %d entr%s could not be used and %s been skipped. "
+		"See the lines above, or type fua_catalogue.\n" TEXTCOLOR_NORMAL,
+		g_Problems, ( g_Problems == 1 ) ? "y" : "ies", ( g_Problems == 1 ) ? "has" : "have" );
+
+	Printf( "Catalogue: %d usable entr%s.\n",
+		static_cast<int>( entries.size( )), ( entries.size( ) == 1 ) ? "y" : "ies" );
+}
+
+std::string CatalogueServerCfgPath( const CatalogueEntry &entry, const std::string &variantId )
+{
+	// [rc4l] Which cfg, not whether there is one. PickVariant answers with server.cfg for an entry
+	// that has no variants, so the plain case comes out exactly as it did before this existed.
+	const VariantPick pick = PickVariant( entry.addon, variantId );
+
+	// hasServerCfg is still about server.cfg specifically, because that is the file the scan looked
+	// for and the one an entry is required to have. A variant's cfg sits beside it in the same
+	// folder, so an entry with no server.cfg has no variants worth running either.
 	if ( !entry.hasServerCfg )
 		return std::string( );
 
-	return entry.dir + "/server.cfg";
+	return entry.dir + "/" + pick.cfg;
 }
 
 } // namespace zx

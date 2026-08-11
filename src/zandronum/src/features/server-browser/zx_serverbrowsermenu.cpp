@@ -58,6 +58,7 @@
 #include "features/addon-catalogue/zx_catalogue.h"
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/addon-catalogue/computation/variantpick_compute.h"
 #include "features/wad-download/zx_wadsearch.h"
 #include "features/wadreload/zx_wadreload.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
@@ -680,6 +681,17 @@ static	zx::HostFocusPos	g_HostFocus( zx::HostSlot::List, 0 );
 
 static	int				g_HostEntrySel = SB_HOST_CATALOGUE_FIRST;
 static	int				g_HostEntryHot = -2;	// -2 is "none"
+
+// [rc4l] Which way of playing the selected entry the player wants, held as the variant's ID rather
+// than a row number.
+//
+// An index would have to be reset every time the selection moved, in each of the several places that
+// move it, and a missed one hands them a different game from the one the panel is showing. An id
+// cannot be stale in that way: PickVariant answers with the entry's default whenever this names
+// something the entry does not have, which covers both switching entries and a catalogue that has
+// been updated underneath a remembered choice.
+static	FString			g_HostVariantId;
+static	int				g_HostVariantHot = -1;	// hover, matching how the entry list carries its own
 
 // [rc4l] What we told the server to load, kept so the client can match it before joining.
 //
@@ -2977,9 +2989,21 @@ public:
 			choices.port = config.port;
 			choices.advertise = config.advertise;
 
+			// [rc4l] The variant reaches the server twice, and has to: once as the cfg that decides
+			// how it plays, and once in the name, because a joiner reading a server list cannot see
+			// a cfg. "Skulltag" alone does not tell them whether they are about to join an invasion
+			// or a duel, and finding out by joining is the cost this avoids.
+			const zx::VariantPick pick = zx::PickVariant( chosen.addon, g_HostVariantId.GetChars( ));
+
+			if ( !pick.name.empty( ))
+			{
+				choices.serverName = zx::ComposeServerName( config.hostName.c_str( ),
+					pick.name, std::string( ));
+			}
+
 			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon,
 				zx::PickIwad( chosen.addon.iwad, iwads ),
-				zx::CatalogueServerCfgPath( chosen ), choices, have );
+				zx::CatalogueServerCfgPath( chosen, g_HostVariantId.GetChars( )), choices, have );
 
 			// [rc4l] Missing files are a DOWNLOAD, which is what the catalogue's per-file md5 was
 			// shipped for and what BuildHostPlan has always meant by returning `missing` rather than
@@ -3627,6 +3651,45 @@ public:
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
 				return true;
+			}
+		}
+
+		// [rc4l] The ways-to-play rows, in the detail column beside the list. Positioned from the
+		// same helper that draws them, and tested only while VISIBLE: the column scrolls, so a row
+		// that has been scrolled out from under the pointer must stop answering for that patch of
+		// screen.
+		g_HostVariantHot = -1;
+		{
+			const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+			if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
+			{
+				const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+				int rowY = HostVariantsFirstRowY( addon );
+
+				for ( size_t i = 0; i < addon.variants.size( ); ++i, rowY += SB_HOST_LINE )
+				{
+					if ( !HostDetailRowVisible( rowY, SB_HOST_LINE ))
+						continue;
+
+					if (( y < serverbrowser_ToScreenY( rowY - 1 )) ||
+						( y >= serverbrowser_ToScreenY( rowY - 1 + SB_HOST_LINE )) ||
+						( x < serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 2 )) ||
+						( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+					{
+						continue;
+					}
+
+					g_HostVariantHot = static_cast<int>( i );
+
+					if ( type == MOUSE_Click )
+					{
+						SetFocus( zx::BrowserFocus::Host );
+						g_HostVariantId = addon.variants[i].id.c_str( );
+						S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					}
+					return true;
+				}
 			}
 		}
 
@@ -4807,6 +4870,34 @@ public:
 		return FString( );
 	}
 
+	// [rc4l] How tall the ways-to-play band is, and zero for an entry that plays only one way.
+	//
+	// Zero rather than one row: "this pack plays one way" and "this pack has one variant" look the
+	// same drawn and are different things to say, and a heading over a list of one is noise on a
+	// column that is already short of room.
+	int HostVariantsH( const zx::AddonEntry &addon )
+	{
+		if ( addon.variants.empty( ))
+			return 0;
+
+		return 4 + 6						// the rule that opens the band
+			+ SB_HOST_LINE					// the heading
+			+ static_cast<int>( addon.variants.size( )) * SB_HOST_LINE;
+	}
+
+	// The y of the band's FIRST variant row, in the same scrolled space DrawHostDetail draws in.
+	// Shared with the hit test, because a row drawn somewhere other than where it is clickable is the
+	// one bug this browser has avoided everywhere by never letting those two work it out separately.
+	int HostVariantsFirstRowY( const zx::AddonEntry &addon )
+	{
+		return SB_HOST_RTOP_TOP - g_HostDetailScroll
+			+ BigFont->GetHeight( ) + 4
+			+ 6								// the rule under the title
+			+ HostDetailSummaryLines( addon.summary ) * SB_HOST_LINE
+			+ 4 + 6							// the rule that opens the band
+			+ SB_HOST_LINE;					// the heading
+	}
+
 	int HostDetailH( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -4819,6 +4910,7 @@ public:
 		return BigFont->GetHeight( ) + 4
 			+ 6								// the rule under the title
 			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
+			+ HostVariantsH( a )			// the ways to play, when there is more than one
 			+ 4 + 6							// the rule above the files
 			+ SB_HOST_LINE					// the IWAD, listed with them
 			+ static_cast<int>( a.files.size( )) * SB_HOST_LINE
@@ -4925,6 +5017,77 @@ public:
 			}
 
 			V_FreeBrokenLines( lines );
+		}
+
+		// [rc4l] The ways to play, for a pack that has more than one. Between what it IS and what it
+		// LOADS, because that is the order the questions arrive in: you read what the thing is, you
+		// decide how you want it, and the files are the same either way.
+		if ( !addon.variants.empty( ))
+		{
+			y += 4;
+			if ( HostDetailRowVisible( y, 2 ))
+				DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+			y += 6;
+
+			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+			{
+				screen->DrawText( SmallFont, CR_DARKGRAY, x, y, "WAYS TO PLAY",
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+			}
+			y += SB_HOST_LINE;
+
+			const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+			for ( size_t i = 0; i < addon.variants.size( ); ++i )
+			{
+				const zx::AddonVariant &v = addon.variants[i];
+				const bool bChosen = ( static_cast<int>( i ) == pick.index );
+				const bool bHot = ( static_cast<int>( i ) == g_HostVariantHot );
+
+				if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+				{
+					// The chosen one gets a band the width of the column, the same way a selected
+					// server row does, so which one is in force reads at a glance rather than by
+					// comparing text colours.
+					if ( bChosen || bHot )
+					{
+						const int left = serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 2 );
+						const int right = serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT );
+						const int top = serverbrowser_ToScreenY( y - 1 );
+						const int bottom = serverbrowser_ToScreenY( y - 1 + SB_HOST_LINE );
+
+						screen->Dim( PalEntry( 120, 140, 200 ), bChosen ? 0.30f : 0.14f,
+							left, top, right - left, bottom - top );
+					}
+
+					screen->DrawText( SmallFont, bChosen ? CR_WHITE : CR_GRAY, x, y, v.name.c_str( ),
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+					// [rc4l] PvP or PvE, right-aligned so the labels line up down the edge and can be
+					// read as a column. It is the first thing anybody wants to know and the one thing
+					// a name like "Skulltag" reliably fails to say.
+					{
+						const char *kind = zx::DescribeVariantKind( v.kind );
+						const int kindW = SmallFont->StringWidth( kind );
+
+						screen->DrawText( SmallFont,
+							( v.kind == zx::VariantKind::PvE ) ? CR_GREEN : CR_ORANGE,
+							SB_HOST_RCOL_RIGHT - kindW, y, kind,
+							DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+					}
+
+					// The author's own sentence about this way of playing. Registered only while the
+					// row is on screen, so a scrolled-away row cannot claim the pointer.
+					if ( !v.tooltip.empty( ))
+					{
+						serverbrowser_Tip( SB_HOST_RCOL_LEFT - 2, y - 1,
+							SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT + 2, SB_HOST_LINE,
+							v.tooltip.c_str( ));
+					}
+				}
+
+				y += SB_HOST_LINE;
+			}
 		}
 
 		// The same faded rule the server detail panel puts between what a server IS and what it wants

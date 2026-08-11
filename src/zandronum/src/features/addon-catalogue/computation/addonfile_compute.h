@@ -31,6 +31,24 @@ struct AddonFileRef
 	std::string md5;	// lower-case hex; what the by-hash store is keyed on
 };
 
+// [rc4l] Whether an experience is people against each other or people against the game.
+//
+// It is the first thing anybody wants to know and the one thing a name reliably fails to say:
+// "Skulltag" and "Invasion" tell you nothing until you already know the pack. So it is REQUIRED, and
+// an entry that does not say is refused by name at startup rather than shown unlabelled.
+//
+// Unknown exists so a value that is present but unrecognised has somewhere to land, which keeps the
+// refusal specific: "kind is not pve or pvp" says more than "malformed value".
+enum class VariantKind
+{
+	Unknown,
+	PvE,
+	PvP,
+};
+
+// The word for a kind, for a panel or a message. Never empty, so a caller cannot print nothing.
+const char *DescribeVariantKind(VariantKind kind);
+
 // [rc4l] One way to play an entry. Skulltag is a deathmatch pack, a duel pack, an invasion pack and
 // a CTF pack, and today that is one cfg with every map of all four in one rotation.
 //
@@ -44,11 +62,12 @@ struct AddonVariant
 	std::string name;		// what the panel shows
 	std::string cfg;		// bare filename, beside the addon.json
 	std::string tooltip;	// optional; what this way of playing actually is
+	VariantKind kind;		// required; see VariantKind
 
 	// Which one a player who has expressed no preference gets. Exactly one may claim it.
 	bool isDefault;
 
-	AddonVariant() : isDefault(false) {}
+	AddonVariant() : kind(VariantKind::Unknown), isDefault(false) {}
 };
 
 struct AddonEntry
@@ -63,6 +82,11 @@ struct AddonEntry
 	std::string map;
 	std::vector<AddonFileRef> files;	// load order, as listed
 
+	// [rc4l] The entry's own label, for a pack that plays one way and so has no variant to carry it.
+	// Required exactly as a variant's is: an unlabelled experience is the thing this is here to stop,
+	// and a pack having only one way to play is not a reason to know less about it.
+	VariantKind kind;
+
 	// [rc4l] Empty for an entry that plays one way, which is most of them. NOT filled in with a
 	// synthetic single variant: "this pack has one way to play" and "this pack has one variant" look
 	// the same in a list and are different things to say, and the panel should draw nothing rather
@@ -75,7 +99,7 @@ struct AddonEntry
 	bool valid;
 	std::string error;		// why not, when invalid
 
-	AddonEntry() : valid(false) {}
+	AddonEntry() : kind(VariantKind::Unknown), valid(false) {}
 };
 
 // `id` is supplied by the caller from the directory name rather than trusted from the file: the

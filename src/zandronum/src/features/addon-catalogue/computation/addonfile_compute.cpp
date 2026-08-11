@@ -174,7 +174,9 @@ bool SkipValue(Reader &r)
 	return true;
 }
 
-AddonEntry Fail(const std::string &id, const char *why)
+// Takes a std::string so a reason can NAME the thing it is about: a pack with six variants needs to
+// be told which one is wrong, not that one of them is.
+AddonEntry Fail(const std::string &id, const std::string &why)
 {
 	AddonEntry e;
 	e.id = id;
@@ -241,6 +243,19 @@ bool ReadFilesArray(Reader &r, std::vector<AddonFileRef> &out)
 	}
 }
 
+// [rc4l] The label, spelled out rather than guessed. Anything else lands on Unknown, which the
+// caller refuses by name: "kind is not pve or pvp" tells the author what to write, where a generic
+// malformed-value would leave them hunting.
+VariantKind ParseKind(const std::string &s)
+{
+	if (s == "pve")
+		return VariantKind::PvE;
+	if (s == "pvp")
+		return VariantKind::PvP;
+
+	return VariantKind::Unknown;
+}
+
 // [rc4l] The variants array. Same shape as the files array, and deliberately the same reading of an
 // unknown key: skipped, so a catalogue written for a later build still loads here.
 bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
@@ -287,6 +302,13 @@ bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
 				{
 					if (!ReadString(r, v.tooltip))
 						return false;
+				}
+				else if (key == "kind")
+				{
+					std::string kind;
+					if (!ReadString(r, kind))
+						return false;
+					v.kind = ParseKind(kind);
 				}
 				else if (key == "default")
 				{
@@ -349,6 +371,20 @@ bool IsBareFilename(const std::string &s)
 
 } // namespace
 
+const char *DescribeVariantKind(VariantKind kind)
+{
+	switch (kind)
+	{
+	case VariantKind::PvE:
+		return "PvE";
+	case VariantKind::PvP:
+		return "PvP";
+	case VariantKind::Unknown:
+		break;
+	}
+	return "Unlabelled";
+}
+
 AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 {
 	Reader r;
@@ -381,6 +417,7 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			else if (key == "map")		{ ok = ReadString(r, entry.map); }
 			else if (key == "files")	{ ok = ReadFilesArray(r, entry.files); }
 			else if (key == "variants")	{ ok = ReadVariantsArray(r, entry.variants); }
+			else if (key == "kind")		{ std::string k; ok = ReadString(r, k); entry.kind = ParseKind(k); }
 			else						{ ok = SkipValue(r); }
 
 			if (!ok)
@@ -430,6 +467,13 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 	// [rc4l] Variants, if the entry claims any. An entry with none is the ordinary case and skips all
 	// of this; an entry that says "variants" and then offers nothing usable is refused rather than
 	// quietly treated as having none, because the panel would then be silently missing.
+	// [rc4l] The label is required, and required of whichever thing is actually the experience: the
+	// variants when there are any, the entry itself when there are not. An unlabelled experience is
+	// what this exists to stop, and a pack with one way to play is not a reason to know less about
+	// it. Refused by name at startup, where the author can see and fix it.
+	if (entry.variants.empty() && (entry.kind == VariantKind::Unknown))
+		return Fail(id, "this experience does not say whether it is pve or pvp: add \"kind\"");
+
 	if (!entry.variants.empty())
 	{
 		int defaults = 0;
@@ -447,6 +491,14 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			// path or climb out of the entry's own folder.
 			if (!IsBareFilename(v.cfg))
 				return Fail(id, "a variant's cfg is not a bare filename");
+
+			// Named, because a pack can have six of them and "a variant" would leave the author
+			// reading all six to find out which one they forgot.
+			if (v.kind == VariantKind::Unknown)
+			{
+				return Fail(id, "the experience variant '" + v.name +
+					"' does not say whether it is pve or pvp: add \"kind\"");
+			}
 
 			for (size_t j = 0; j < i; ++j)
 			{
