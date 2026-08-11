@@ -59,6 +59,7 @@
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
 #include "features/addon-catalogue/computation/variantpick_compute.h"
+#include "features/addon-catalogue/computation/hostlist_compute.h"
 #include "features/wad-download/zx_wadsearch.h"
 #include "features/wadreload/zx_wadreload.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
@@ -691,7 +692,11 @@ static	int				g_HostEntryHot = -2;	// -2 is "none"
 // something the entry does not have, which covers both switching entries and a catalogue that has
 // been updated underneath a remembered choice.
 static	FString			g_HostVariantId;
-static	int				g_HostVariantHot = -1;	// hover, matching how the entry list carries its own
+
+// [rc4l] Which experience is opened out to show its ways of playing, or -1 for none. One at a time:
+// the list is short and several open at once turns choosing an experience into scrolling past other
+// people's options.
+static	int				g_HostOpenEntry = -1;
 
 // [rc4l] What we told the server to load, kept so the client can match it before joining.
 //
@@ -3381,11 +3386,17 @@ public:
 		// left alone -- the movement/traversal split the unit reports separately.
 		if ( r.rowStep != 0 )
 		{
-			const int rows = HostCatalogueRowCount( );
+			// [rc4l] Walks the ROWS, which now include the open experience's ways of playing, and then
+			// says what the row it landed on means. The cursor is derived from the choice rather than
+			// stored, so moving it IS choosing: there is no third state where the highlight is on one
+			// thing and the button would start another.
+			const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+			const std::vector<zx::HostListRow> rows = HostListRows( );
 
-			if ( rows > 0 )
+			if ( !rows.empty( ))
 			{
-				const int next = g_HostEntrySel + r.rowStep;
+				const int here = HostSelectedRow( rows );
+				const int next = (( here >= 0 ) ? here : 0 ) + r.rowStep;
 
 				// Up off the first row is the one edge that leaves, back to the tabs. Down off the
 				// last simply stops, the same as the server list.
@@ -3395,9 +3406,13 @@ public:
 					return;
 				}
 
-				if ( next < rows )
+				if ( next < static_cast<int>( rows.size( )))
 				{
-					g_HostEntrySel = next;
+					g_HostEntrySel = rows[next].entry;
+
+					if ( rows[next].variant >= 0 )
+						g_HostVariantId = entries[rows[next].entry].addon.variants[rows[next].variant].id.c_str( );
+
 					RevealHostCatalogueRow( next );
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
@@ -3632,64 +3647,49 @@ public:
 		// The catalogue, before the fields: it is above them on screen and it decides what the rest
 		// of the panel is about.
 		g_HostEntryHot = -2;
-		for ( int row = SB_HOST_CATALOGUE_FIRST; row < HostCatalogueRowCount( ); ++row )
 		{
-			const int rowY = HostCatalogueRowY( row );
-			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
-				( y >= serverbrowser_ToScreenY( rowY )) &&
-				( y < serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H )) &&
-				( x >= serverbrowser_ToScreenX( SB_HOST_LIST_LEFT )) &&
-				( x < serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT )))
+			const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+			const std::vector<zx::HostListRow> rows = HostListRows( );
+
+			for ( int row = SB_HOST_CATALOGUE_FIRST; row < static_cast<int>( rows.size( )); ++row )
 			{
+				const int rowY = HostCatalogueRowY( row );
+				if ( !HostRowVisible( rowY, SB_HOST_ENTRY_H ) ||
+					( y < serverbrowser_ToScreenY( rowY )) ||
+					( y >= serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H )) ||
+					( x < serverbrowser_ToScreenX( SB_HOST_LIST_LEFT )) ||
+					( x >= serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT )))
+				{
+					continue;
+				}
+
 				g_HostEntryHot = row;
 
 				if ( type == MOUSE_Click )
 				{
+					const zx::HostListRow &r = rows[row];
+
 					SetFocus( zx::BrowserFocus::Host );
 					g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
-					g_HostEntrySel = row;
+					g_HostEntrySel = r.entry;
+
+					if ( r.variant >= 0 )
+					{
+						// A way of playing chooses itself and leaves the list open, because comparing
+						// two of them means going back and forth between them.
+						g_HostVariantId = entries[r.entry].addon.variants[r.variant].id.c_str( );
+					}
+					else if ( !entries[r.entry].addon.variants.empty( ))
+					{
+						// The experience's own row opens and shuts it. Clicking the row anywhere does
+						// it, not just the caret: a caret is a small target and the row already means
+						// "this one", which is the same thing opening it says.
+						g_HostOpenEntry = ( g_HostOpenEntry == r.entry ) ? -1 : r.entry;
+					}
+
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
 				return true;
-			}
-		}
-
-		// [rc4l] The ways-to-play rows, in the detail column beside the list. Positioned from the
-		// same helper that draws them, and tested only while VISIBLE: the column scrolls, so a row
-		// that has been scrolled out from under the pointer must stop answering for that patch of
-		// screen.
-		g_HostVariantHot = -1;
-		{
-			const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
-
-			if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
-			{
-				const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
-				int rowY = HostVariantsFirstRowY( addon );
-
-				for ( size_t i = 0; i < addon.variants.size( ); ++i, rowY += SB_HOST_LINE )
-				{
-					if ( !HostDetailRowVisible( rowY, SB_HOST_LINE ))
-						continue;
-
-					if (( y < serverbrowser_ToScreenY( rowY - 1 )) ||
-						( y >= serverbrowser_ToScreenY( rowY - 1 + SB_HOST_LINE )) ||
-						( x < serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 2 )) ||
-						( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
-					{
-						continue;
-					}
-
-					g_HostVariantHot = static_cast<int>( i );
-
-					if ( type == MOUSE_Click )
-					{
-						SetFocus( zx::BrowserFocus::Host );
-						g_HostVariantId = addon.variants[i].id.c_str( );
-						S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-					}
-					return true;
-				}
 			}
 		}
 
@@ -3903,7 +3903,11 @@ public:
 
 		if ( HostOnList( ))
 		{
-			RevealHostCatalogueRow( g_HostEntrySel );
+			// The ROW, which is not the entry index any more: the open experience's ways of playing
+			// sit between the entries, so scrolling to the entry number would reveal the wrong line.
+			const int row = HostSelectedRow( HostListRows( ));
+			if ( row >= 0 )
+				RevealHostCatalogueRow( row );
 			return;
 		}
 
@@ -4359,10 +4363,44 @@ public:
 	// scrolling cannot separate the two.
 	// [rc4l] The catalogue list, and everything below it. One anchor, so a row drawn somewhere other
 	// than where it is clickable stays impossible -- the same rule the fields already follow.
+	// [rc4l] The list as ROWS, which is no longer one per entry: the open entry's ways of playing hang
+	// under it. Rebuilt each time it is asked for rather than cached, because the catalogue can be
+	// re-read and a stale row list is one that describes one experience while the button starts
+	// another.
+	std::vector<zx::HostListRow> HostListRows( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		std::vector<int> counts;
+		counts.reserve( entries.size( ));
+		for ( size_t i = 0; i < entries.size( ); ++i )
+			counts.push_back( static_cast<int>( entries[i].addon.variants.size( )));
+
+		return zx::BuildHostListRows( counts, g_HostOpenEntry );
+	}
+
 	int HostCatalogueRowCount( )
 	{
-		// Whatever is on disk, and nothing else.
-		return static_cast<int>( zx::CatalogueLoad( ).size( ));
+		return static_cast<int>( HostListRows( ).size( ));
+	}
+
+	// Where the cursor is, derived from what is CHOSEN rather than stored beside it. A stored row
+	// index would have to be corrected every time the list changed shape -- opening an entry, the
+	// catalogue being re-read -- and the correction that gets missed is the one that starts the wrong
+	// experience.
+	int HostSelectedRow( const std::vector<zx::HostListRow> &rows )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		int variant = -1;
+		if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
+		{
+			const zx::VariantPick pick = zx::PickVariant( entries[g_HostEntrySel].addon,
+				g_HostVariantId.GetChars( ));
+			variant = pick.index;
+		}
+
+		return zx::FindHostListRow( rows, g_HostEntrySel, variant );
 	}
 
 	int HostCatalogueY( )
@@ -4870,34 +4908,6 @@ public:
 		return FString( );
 	}
 
-	// [rc4l] How tall the ways-to-play band is, and zero for an entry that plays only one way.
-	//
-	// Zero rather than one row: "this pack plays one way" and "this pack has one variant" look the
-	// same drawn and are different things to say, and a heading over a list of one is noise on a
-	// column that is already short of room.
-	int HostVariantsH( const zx::AddonEntry &addon )
-	{
-		if ( addon.variants.empty( ))
-			return 0;
-
-		return 4 + 6						// the rule that opens the band
-			+ SB_HOST_LINE					// the heading
-			+ static_cast<int>( addon.variants.size( )) * SB_HOST_LINE;
-	}
-
-	// The y of the band's FIRST variant row, in the same scrolled space DrawHostDetail draws in.
-	// Shared with the hit test, because a row drawn somewhere other than where it is clickable is the
-	// one bug this browser has avoided everywhere by never letting those two work it out separately.
-	int HostVariantsFirstRowY( const zx::AddonEntry &addon )
-	{
-		return SB_HOST_RTOP_TOP - g_HostDetailScroll
-			+ BigFont->GetHeight( ) + 4
-			+ 6								// the rule under the title
-			+ HostDetailSummaryLines( addon.summary ) * SB_HOST_LINE
-			+ 4 + 6							// the rule that opens the band
-			+ SB_HOST_LINE;					// the heading
-	}
-
 	int HostDetailH( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -4910,7 +4920,6 @@ public:
 		return BigFont->GetHeight( ) + 4
 			+ 6								// the rule under the title
 			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
-			+ HostVariantsH( a )			// the ways to play, when there is more than one
 			+ 4 + 6							// the rule above the files
 			+ SB_HOST_LINE					// the IWAD, listed with them
 			+ static_cast<int>( a.files.size( )) * SB_HOST_LINE
@@ -5019,76 +5028,6 @@ public:
 			V_FreeBrokenLines( lines );
 		}
 
-		// [rc4l] The ways to play, for a pack that has more than one. Between what it IS and what it
-		// LOADS, because that is the order the questions arrive in: you read what the thing is, you
-		// decide how you want it, and the files are the same either way.
-		if ( !addon.variants.empty( ))
-		{
-			y += 4;
-			if ( HostDetailRowVisible( y, 2 ))
-				DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
-			y += 6;
-
-			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
-			{
-				screen->DrawText( SmallFont, CR_DARKGRAY, x, y, "WAYS TO PLAY",
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-			}
-			y += SB_HOST_LINE;
-
-			const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
-
-			for ( size_t i = 0; i < addon.variants.size( ); ++i )
-			{
-				const zx::AddonVariant &v = addon.variants[i];
-				const bool bChosen = ( static_cast<int>( i ) == pick.index );
-				const bool bHot = ( static_cast<int>( i ) == g_HostVariantHot );
-
-				if ( HostDetailRowVisible( y, SB_HOST_LINE ))
-				{
-					// The chosen one gets a band the width of the column, the same way a selected
-					// server row does, so which one is in force reads at a glance rather than by
-					// comparing text colours.
-					if ( bChosen || bHot )
-					{
-						const int left = serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 2 );
-						const int right = serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT );
-						const int top = serverbrowser_ToScreenY( y - 1 );
-						const int bottom = serverbrowser_ToScreenY( y - 1 + SB_HOST_LINE );
-
-						screen->Dim( PalEntry( 120, 140, 200 ), bChosen ? 0.30f : 0.14f,
-							left, top, right - left, bottom - top );
-					}
-
-					screen->DrawText( SmallFont, bChosen ? CR_WHITE : CR_GRAY, x, y, v.name.c_str( ),
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-
-					// [rc4l] PvP or PvE, right-aligned so the labels line up down the edge and can be
-					// read as a column. It is the first thing anybody wants to know and the one thing
-					// a name like "Skulltag" reliably fails to say.
-					{
-						const char *kind = zx::DescribeVariantKind( v.kind );
-						const int kindW = SmallFont->StringWidth( kind );
-
-						screen->DrawText( SmallFont,
-							( v.kind == zx::VariantKind::PvE ) ? CR_GREEN : CR_ORANGE,
-							SB_HOST_RCOL_RIGHT - kindW, y, kind,
-							DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-					}
-
-					// The author's own sentence about this way of playing. Registered only while the
-					// row is on screen, so a scrolled-away row cannot claim the pointer.
-					if ( !v.tooltip.empty( ))
-					{
-						serverbrowser_Tip( SB_HOST_RCOL_LEFT - 2, y - 1,
-							SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT + 2, SB_HOST_LINE,
-							v.tooltip.c_str( ));
-					}
-				}
-
-				y += SB_HOST_LINE;
-			}
-		}
 
 		// The same faded rule the server detail panel puts between what a server IS and what it wants
 		// you to load, for exactly the same reason.
@@ -5163,14 +5102,19 @@ public:
 	void DrawHostCatalogue( int x )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		const std::vector<zx::HostListRow> rows = HostListRows( );
+		const int selRow = HostSelectedRow( rows );
 
-		for ( int row = SB_HOST_CATALOGUE_FIRST; row < static_cast<int>( entries.size( )); ++row )
+		for ( int row = SB_HOST_CATALOGUE_FIRST; row < static_cast<int>( rows.size( )); ++row )
 		{
 			const int rowY = HostCatalogueRowY( row );
 			if ( !HostRowVisible( rowY, SB_HOST_ENTRY_H ))
 				continue;
 
-			const bool bSel = ( row == g_HostEntrySel );
+			const zx::HostListRow &r = rows[row];
+			const zx::CatalogueEntry &entry = entries[r.entry];
+
+			const bool bSel = ( row == selRow );
 			const bool bHot = ( row == g_HostEntryHot );
 
 			// [rc4l] The travelling marker, on the selected row -- the same one the server list puts
@@ -5189,7 +5133,10 @@ public:
 			// [rc4l] The row being SERVED is tinted green, the same way CANCEL is tinted while a
 			// download runs: a state the row is in, said in colour rather than in another word.
 			// It survives the selection moving away, which is the whole point of showing it.
-			const bool bRunning = zx::HostIsActive( ) && ( row == g_HostingEntry );
+			// On the EXPERIENCE's own row, not on its ways of playing: the server is running one of
+			// them, and tinting all six would say the opposite of what the tint means.
+			const bool bRunning = zx::HostIsActive( ) && ( r.variant < 0 ) &&
+				( r.entry == g_HostingEntry );
 
 			// [rc4l] Which of the three things this row is, decided in one place. The SERVER LIST
 			// has the same shape of problem in the row for the server you are connected to, and
@@ -5240,14 +5187,51 @@ public:
 			else if ( paint.label == zx::RowLabel::Live )
 				col = CR_GREEN;
 
-			const FString label = entries[row].addon.name.c_str( );
+			const bool bIsVariant = ( r.variant >= 0 );
+
+			const FString label = bIsVariant
+				? FString( entry.addon.variants[r.variant].name.c_str( ))
+				: FString( entry.addon.name.c_str( ));
 
 			// [rc4l] Centred in the row rather than drawn at its top edge. The highlight bar is
 			// SB_HOST_ENTRY_H tall and the glyphs are shorter, so drawing at rowY sat the text high
 			// inside its own bar.
-			screen->DrawText( SmallFont, col, x,
-				rowY + ( SB_HOST_ENTRY_H - SmallFont->GetHeight( )) / 2, label,
+			const int textY = rowY + ( SB_HOST_ENTRY_H - SmallFont->GetHeight( )) / 2;
+
+			// A way of playing is indented, so it reads as belonging to the experience above it
+			// rather than as another experience.
+			screen->DrawText( SmallFont, col, bIsVariant ? ( x + 12 ) : x, textY, label,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+			if ( bIsVariant )
+			{
+				// PvE or PvP, on the way of playing it describes. The experience row above has no
+				// single answer to give, which is the reason the label lives down here.
+				const zx::VariantKind kind = entry.addon.variants[r.variant].kind;
+				const char *kindText = zx::DescribeVariantKind( kind );
+
+				screen->DrawText( SmallFont, ( kind == zx::VariantKind::PvE ) ? CR_GREEN : CR_ORANGE,
+					SB_HOST_LIST_RIGHT - SmallFont->StringWidth( kindText ) - 4, textY, kindText,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+				if ( !entry.addon.variants[r.variant].tooltip.empty( ))
+				{
+					serverbrowser_Tip( x - 4, rowY - 1, SB_HOST_LIST_RIGHT - x + 4, SB_HOST_ENTRY_H,
+						entry.addon.variants[r.variant].tooltip.c_str( ));
+				}
+			}
+			else if ( !entry.addon.variants.empty( ))
+			{
+				// [rc4l] The caret, on the RIGHT of the row: it is about this row's own state rather
+				// than a step to the side, and putting it at the left would read as an indent that
+				// the rows under it then repeat.
+				const bool bOpen = ( r.entry == g_HostOpenEntry );
+				const char *caret = bOpen ? "v" : ">";
+
+				screen->DrawText( SmallFont, col,
+					SB_HOST_LIST_RIGHT - SmallFont->StringWidth( caret ) - 4, textY, caret,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+			}
 
 			// No file count here on purpose: the detail panel beside this already says the files and
 			// the IWAD, and a narrow list repeating it crowded itself for no new information.

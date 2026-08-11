@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Skulltag",
-  "summary": "Skulltag's maps, weapons and runes, with a spree announcer.",
+  "summary": "Skulltag's maps, weapons and runes, with the 98a announcer.",
   "iwad": "doom2.wad",
   "files": [
     {
@@ -9,8 +9,8 @@
       "md5": "41630bc75af4b51fe5d163fe4d434c6e"
     },
     {
-      "name": "zandrospree2rc2.pk3",
-      "md5": "25b2a3c4f46e50f4016b640119aefae6"
+      "name": "skulltag_98a_announcer_v2.pk3",
+      "md5": "71f9ff36f536bcb2f5a029aa9da4a3de"
     }
   ],
   "variants": [
