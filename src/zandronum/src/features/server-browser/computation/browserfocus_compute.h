@@ -11,7 +11,7 @@
 // move within that region or hand it to a neighbour. The loop is deliberately small enough to hold in
 // your head:
 //
-//     TABS                    PLAY | BROWSE
+//     TABS                    MULTIPLAYER | HOST
 //       |
 //     down
 //       v
@@ -40,7 +40,7 @@
 // because it filters them and belongs where the thing it filters is chosen.
 //
 // A TAB NEED NOT HAVE SUB-TABS. `subCount` of zero says this one does not, and then down from the
-// tabs skips the row that is not there. That is how PLAY works: it has a form, not a list.
+// tabs skips the row that is not there. That is how HOST works: it has a form, not a list.
 //
 // Two rules that are easy to get wrong and are pinned by tests here:
 //

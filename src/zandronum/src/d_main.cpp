@@ -3242,7 +3242,16 @@ void D_DoomMain (void)
 		DATABASE_Construct( );
 
 		// [BC] Initialize the browser module.
-		BROWSER_Construct( );
+		// [rc4l] ONCE PER PROCESS, not once per restart. wad_reload restarts the engine in place by
+		// throwing CRestartException, and this ran again on the way back through: it re-Init'd both
+		// UDP buffers over live ones and cleared the entire server list. So joining a server that
+		// needed different files, the one case where a restart is not the player's own idea, emptied
+		// the browser. The session had already had its one automatic sweep, so the list then stayed
+		// empty until REFRESH was pressed. That is the "the server I just clicked vanished" report.
+		//
+		// Nothing this sets up depends on which WADs are loaded, so there is nothing to redo.
+		if ( !restart )
+			BROWSER_Construct( );
 
 		// [RH] Lock any cvars that should be locked now that we're
 		// about to begin the game.
