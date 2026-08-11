@@ -1,11 +1,30 @@
 {
   "schema": 1,
   "name": "Brutal Doom",
-  "summary": "Doom with the volume turned up, on its five horde defence maps.",
+  "summary": "Doom with the volume turned up, on the maps it ships for it.",
   "iwad": "doom2.wad",
-  "map": "DF01",
   "kind": "pve",
-  "remixes": ["classic", "survival"],
+  "variants": [
+    {
+      "id": "horde",
+      "name": "Horde",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "default": true,
+      "map": "DF01",
+      "remixes": ["classic", "survival"],
+      "tooltip": "Five defence maps. Hold out together."
+    },
+    {
+      "id": "dm",
+      "name": "Deathmatch",
+      "cfg": "deathmatch.cfg",
+      "kind": "pvp",
+      "map": "BDM01",
+      "remixes": ["ffa", "teamdm"],
+      "tooltip": "Eleven maps of its own, everyone for themselves."
+    }
+  ],
   "files": [
     {
       "name": "brutal22test6.pk3",
