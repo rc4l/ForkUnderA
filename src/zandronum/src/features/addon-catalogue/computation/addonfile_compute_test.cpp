@@ -41,6 +41,19 @@ AddonEntry Parse(const char *json)
 	return ParseAddonFile("duel40", json);
 }
 
+// A pack with several ways to play it, written the way Skulltag would be: one file list, one cfg per
+// variant, and the default keeping server.cfg so an older build lands on the same thing.
+std::string WithVariants(const char *variants)
+{
+	std::string json =
+		"{ \"schema\": 1, \"name\": \"Skulltag\","
+		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" }],"
+		"  \"variants\": ";
+	json += variants;
+	json += " }";
+	return json;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------- the real file
@@ -455,4 +468,119 @@ TEST(AddonFile, AFileFieldOfTheWrongShapeIsRefused)
 		EXPECT_FALSE(e.valid) << "accepted: " << bad[i];
 		EXPECT_FALSE(e.error.empty()) << "no reason given for: " << bad[i];
 	}
+}
+
+// ------------------------------------------------------------------ variants
+
+TEST(AddonFile, AnEntryWithNoVariantsHasNone)
+{
+	// The ordinary case, and the one that must not change: "plays one way" is not "has one variant",
+	// and the panel draws nothing rather than a row of one.
+	const AddonEntry e = Parse(kDuel40);
+
+	EXPECT_TRUE(e.valid);
+	EXPECT_TRUE(e.variants.empty());
+}
+
+TEST(AddonFile, VariantsAreReadInOrderWithTheirTooltips)
+{
+	const AddonEntry e = Parse(WithVariants(
+		"[ { \"id\": \"dm\", \"name\": \"Deathmatch\", \"cfg\": \"server.cfg\", \"default\": true },"
+		"  { \"id\": \"inv\", \"name\": \"Invasion\", \"cfg\": \"invasion.cfg\","
+		"    \"tooltip\": \"Waves of monsters. Survive together.\" } ]").c_str());
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(2u, e.variants.size());
+
+	EXPECT_EQ("dm", e.variants[0].id);
+	EXPECT_EQ("Deathmatch", e.variants[0].name);
+	EXPECT_EQ("server.cfg", e.variants[0].cfg);
+	EXPECT_TRUE(e.variants[0].isDefault);
+	EXPECT_TRUE(e.variants[0].tooltip.empty());
+
+	EXPECT_EQ("inv", e.variants[1].id);
+	EXPECT_EQ("Waves of monsters. Survive together.", e.variants[1].tooltip);
+	EXPECT_FALSE(e.variants[1].isDefault);
+}
+
+TEST(AddonFile, AVariantListMayClaimNoDefaultAtAll)
+{
+	const AddonEntry e = Parse(WithVariants(
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\" },"
+		"  { \"id\": \"b\", \"name\": \"B\", \"cfg\": \"b.cfg\" } ]").c_str());
+
+	EXPECT_TRUE(e.valid) << e.error;
+}
+
+TEST(AddonFile, TwoDefaultsIsAMistakeRatherThanAnOrdering)
+{
+	// Which way a pack plays when nobody has chosen must not depend on how the file is sorted, so an
+	// ambiguous claim is refused where the author can see it.
+	const AddonEntry e = Parse(WithVariants(
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"default\": true },"
+		"  { \"id\": \"b\", \"name\": \"B\", \"cfg\": \"b.cfg\", \"default\": true } ]").c_str());
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_FALSE(e.error.empty());
+}
+
+TEST(AddonFile, TwoVariantsMayNotShareAnId)
+{
+	// The id is what a remembered choice is keyed on, so duplicates make the choice meaningless.
+	const AddonEntry e = Parse(WithVariants(
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\" },"
+		"  { \"id\": \"a\", \"name\": \"B\", \"cfg\": \"b.cfg\" } ]").c_str());
+
+	EXPECT_FALSE(e.valid);
+}
+
+TEST(AddonFile, AVariantOfTheWrongShapeIsRefused)
+{
+	const char *bad[] = {
+		// No id, so nothing to remember a choice by.
+		"[ { \"name\": \"A\", \"cfg\": \"a.cfg\" } ]",
+		// No name, so nothing to show.
+		"[ { \"id\": \"a\", \"cfg\": \"a.cfg\" } ]",
+		// No cfg at all, which would silently fall back to the pack's own and play the wrong thing.
+		"[ { \"id\": \"a\", \"name\": \"A\" } ]",
+		// A cfg that climbs out of the entry's folder, the same rule every filename here obeys.
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"../server.cfg\" } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"sub/a.cfg\" } ]",
+		// "default" is a boolean and only a boolean: a guess here silently changes how a pack plays.
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"default\": 1 } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"default\": \"yes\" } ]",
+		// Malformed array shapes.
+		"[ 5 ]",
+		"[ { \"id\": \"a\" \"name\": \"A\" } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\" }",
+	};
+
+	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
+	{
+		const AddonEntry e = Parse(WithVariants(bad[i]).c_str());
+		EXPECT_FALSE(e.valid) << "accepted: " << bad[i];
+		EXPECT_FALSE(e.error.empty()) << "no reason given for: " << bad[i];
+	}
+}
+
+TEST(AddonFile, AnEmptyVariantsArrayIsSimplyNoVariants)
+{
+	// Not a refusal: an author trimming the list back to one way of playing should not have to also
+	// remember to delete the key.
+	const AddonEntry e = Parse(WithVariants("[]").c_str());
+
+	EXPECT_TRUE(e.valid) << e.error;
+	EXPECT_TRUE(e.variants.empty());
+}
+
+TEST(AddonFile, AnUnknownKeyInsideAVariantIsIgnoredRatherThanRefused)
+{
+	// Same reading as everywhere else in this file, so a catalogue written for a later build still
+	// loads here instead of disappearing.
+	const AddonEntry e = Parse(WithVariants(
+		"[ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"colour\": \"red\" } ]").c_str());
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(1u, e.variants.size());
+	EXPECT_EQ("a", e.variants[0].id);
 }

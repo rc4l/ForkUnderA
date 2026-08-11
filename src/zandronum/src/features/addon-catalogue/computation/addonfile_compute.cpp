@@ -98,6 +98,32 @@ bool ReadInt(Reader &r, int &out)
 	return true;
 }
 
+// [rc4l] A JSON boolean, and ONLY a boolean. "default": 1 and "default": "yes" are refused rather
+// than guessed at, because the one field this reads decides which way a pack plays by default and a
+// guess there is a silent wrong answer rather than a loud one.
+bool ReadBool(Reader &r, bool &out)
+{
+	r.SkipSpace();
+
+	const size_t left = static_cast<size_t>(r.end - r.p);
+
+	if ((left >= 4) && (std::string(r.p, r.p + 4) == "true"))
+	{
+		r.p += 4;
+		out = true;
+		return true;
+	}
+
+	if ((left >= 5) && (std::string(r.p, r.p + 5) == "false"))
+	{
+		r.p += 5;
+		out = false;
+		return true;
+	}
+
+	return false;
+}
+
 // Skip one value of any shape, so an unknown key does not have to be understood to be ignored.
 bool SkipValue(Reader &r)
 {
@@ -215,6 +241,81 @@ bool ReadFilesArray(Reader &r, std::vector<AddonFileRef> &out)
 	}
 }
 
+// [rc4l] The variants array. Same shape as the files array, and deliberately the same reading of an
+// unknown key: skipped, so a catalogue written for a later build still loads here.
+bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
+{
+	if (!r.Take('['))
+		return false;
+
+	r.SkipSpace();
+	if (r.Take(']'))
+		return true;	// an empty array is caught by the caller, which knows it means nothing
+
+	for (;;)
+	{
+		if (!r.Take('{'))
+			return false;
+
+		AddonVariant v;
+		r.SkipSpace();
+
+		if (!r.Take('}'))
+		{
+			for (;;)
+			{
+				std::string key;
+				if (!ReadString(r, key) || !r.Take(':'))
+					return false;
+
+				if (key == "id")
+				{
+					if (!ReadString(r, v.id))
+						return false;
+				}
+				else if (key == "name")
+				{
+					if (!ReadString(r, v.name))
+						return false;
+				}
+				else if (key == "cfg")
+				{
+					if (!ReadString(r, v.cfg))
+						return false;
+				}
+				else if (key == "tooltip")
+				{
+					if (!ReadString(r, v.tooltip))
+						return false;
+				}
+				else if (key == "default")
+				{
+					if (!ReadBool(r, v.isDefault))
+						return false;
+				}
+				else if (!SkipValue(r))
+				{
+					return false;
+				}
+
+				if (r.Take(','))
+					continue;
+				if (r.Take('}'))
+					break;
+				return false;
+			}
+		}
+
+		out.push_back(v);
+
+		if (r.Take(','))
+			continue;
+		if (r.Take(']'))
+			return true;
+		return false;
+	}
+}
+
 bool LooksLikeMd5(const std::string &s)
 {
 	if (s.size() != 32)
@@ -279,6 +380,7 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 			else if (key == "iwad")		{ ok = ReadString(r, entry.iwad); }
 			else if (key == "map")		{ ok = ReadString(r, entry.map); }
 			else if (key == "files")	{ ok = ReadFilesArray(r, entry.files); }
+			else if (key == "variants")	{ ok = ReadVariantsArray(r, entry.variants); }
 			else						{ ok = SkipValue(r); }
 
 			if (!ok)
@@ -324,6 +426,44 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 	// A map lump name reaches a command line, so it may not carry a path or read as another flag.
 	if (!entry.map.empty() && (!IsBareFilename(entry.map) || (entry.map[0] == '-') || (entry.map[0] == '+')))
 		return Fail(id, "map is not a plain lump name");
+
+	// [rc4l] Variants, if the entry claims any. An entry with none is the ordinary case and skips all
+	// of this; an entry that says "variants" and then offers nothing usable is refused rather than
+	// quietly treated as having none, because the panel would then be silently missing.
+	if (!entry.variants.empty())
+	{
+		int defaults = 0;
+
+		for (size_t i = 0; i < entry.variants.size(); ++i)
+		{
+			const AddonVariant &v = entry.variants[i];
+
+			if (v.id.empty())
+				return Fail(id, "a variant has no id");
+			if (v.name.empty())
+				return Fail(id, "a variant has no name");
+
+			// Same rule as every other filename here: it reaches a loader, so it may not carry a
+			// path or climb out of the entry's own folder.
+			if (!IsBareFilename(v.cfg))
+				return Fail(id, "a variant's cfg is not a bare filename");
+
+			for (size_t j = 0; j < i; ++j)
+			{
+				if (entry.variants[j].id == v.id)
+					return Fail(id, "two variants share an id");
+			}
+
+			if (v.isDefault)
+				++defaults;
+		}
+
+		// Ambiguity is refused rather than resolved by order. Which way a pack plays when nobody has
+		// chosen is exactly the sort of thing that must not depend on how the file happens to be
+		// sorted, and two claims to it is a mistake the author can see and fix.
+		if (defaults > 1)
+			return Fail(id, "more than one variant claims to be the default");
+	}
 
 	entry.valid = true;
 	return entry;

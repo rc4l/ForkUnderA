@@ -31,6 +31,26 @@ struct AddonFileRef
 	std::string md5;	// lower-case hex; what the by-hash store is keyed on
 };
 
+// [rc4l] One way to play an entry. Skulltag is a deathmatch pack, a duel pack, an invasion pack and
+// a CTF pack, and today that is one cfg with every map of all four in one rotation.
+//
+// A variant changes the CFG and nothing else. Files are identical across variants by construction:
+// they are the pack's files, and a variant that needed different ones would be a different entry.
+// That is what makes this cheap -- no second file list to keep in step, no second download plan, and
+// nothing for the missing-file logic to reconsider.
+struct AddonVariant
+{
+	std::string id;			// stable; what a remembered choice is keyed on
+	std::string name;		// what the panel shows
+	std::string cfg;		// bare filename, beside the addon.json
+	std::string tooltip;	// optional; what this way of playing actually is
+
+	// Which one a player who has expressed no preference gets. Exactly one may claim it.
+	bool isDefault;
+
+	AddonVariant() : isDefault(false) {}
+};
+
 struct AddonEntry
 {
 	std::string id;			// the folder name; never read from inside the file
@@ -42,6 +62,15 @@ struct AddonEntry
 	// cfg would land players on a duel map they never chose.
 	std::string map;
 	std::vector<AddonFileRef> files;	// load order, as listed
+
+	// [rc4l] Empty for an entry that plays one way, which is most of them. NOT filled in with a
+	// synthetic single variant: "this pack has one way to play" and "this pack has one variant" look
+	// the same in a list and are different things to say, and the panel should draw nothing rather
+	// than a row of one.
+	//
+	// An older build ignores this field entirely and plays server.cfg, which is why the default
+	// variant's cfg should BE server.cfg. Then old and new agree about what an unchosen entry does.
+	std::vector<AddonVariant> variants;
 
 	bool valid;
 	std::string error;		// why not, when invalid
