@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "name": "Doom64: Unabsolved",
-  "summary": "The Doom 64 conversion, four maps of it, played through together.",
+  "summary": "The Doom 64 conversion, and the four arenas built for it.",
   "iwad": "doom2.wad",
   "map": "DM01",
-  "kind": "pve",
-  "remixes": ["classic", "survival2"],
+  "kind": "pvp",
+  "remixes": ["ffa", "teamdm"],
   "files": [
     {
       "name": "sd64_unofficial_v20a.pk3",
