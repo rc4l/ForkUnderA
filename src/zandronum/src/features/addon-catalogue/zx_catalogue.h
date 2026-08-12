@@ -65,6 +65,13 @@ std::string CatalogueRemixArtPath( const std::string &remixId );
 // which is both too late to be called a startup error and too far from the console to be seen.
 void CatalogueCheckAtStartup( void );
 
+// [rc4l] Every IWAD the host could run an entry on, for PickIwad.
+//
+// `preferred` is what the entry asked for, and it is always probed: a fixed list of the classics
+// cannot name a game that ships its own iwad, and an entry declaring one was told there was nothing
+// to run on while the file sat beside the executable.
+std::vector<std::string> AvailableIwads( const std::string &preferred );
+
 // The two places entries are read from, in order. Exposed so a player can be TOLD where to put one
 // rather than having to guess.
 std::string CatalogueShippedDir( void );
