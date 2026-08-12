@@ -1,5 +1,4 @@
 {
-  "schema": 1,
   "name": "DND",
   "summary": "Death and Decay: an RPG on top of Doom, with levels, loot and stats that carry between maps.",
   "group": "mix",

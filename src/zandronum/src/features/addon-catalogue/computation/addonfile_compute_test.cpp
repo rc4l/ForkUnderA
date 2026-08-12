@@ -7,7 +7,6 @@
 #include <string>
 
 using zx::AddonEntry;
-using zx::kAddonSchema;
 using zx::ParseAddonFile;
 
 namespace
@@ -15,7 +14,7 @@ namespace
 
 const char *kDuel40 =
 	"{\n"
-	"  \"schema\": 1, \"kind\": \"pvp\",\n"
+	"  \"kind\": \"pvp\",\n"
 	"  \"name\": \"Duel 40\",\n"
 	"  \"summary\": \"Forty-map duel pack with a spree announcer.\",\n"
 	"  \"iwad\": \"doom2.wad\",\n"
@@ -27,7 +26,7 @@ const char *kDuel40 =
 
 const char *kDuel40Mapped =
 	"{\n"
-	"  \"schema\": 1, \"kind\": \"pvp\",\n"
+	"  \"kind\": \"pvp\",\n"
 	"  \"name\": \"Duel 40\",\n"
 	"  \"iwad\": \"doom2.wad\",\n"
 	"  \"map\": \"START\",\n"
@@ -46,7 +45,7 @@ AddonEntry Parse(const char *json)
 std::string WithVariants(const char *variants)
 {
 	std::string json =
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"Skulltag\","
+		"{ \"kind\": \"pvp\", \"name\": \"Skulltag\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" }],"
 		"  \"variants\": ";
 	json += variants;
@@ -58,7 +57,7 @@ std::string WithVariants(const char *variants)
 // files at all, and every variant bringing its own.
 std::string NoBase(const char *variants)
 {
-	std::string json = "{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"Ghouls vs Humans\", \"variants\": ";
+	std::string json = "{ \"kind\": \"pvp\", \"name\": \"Ghouls vs Humans\", \"variants\": ";
 	json += variants;
 	json += " }";
 	return json;
@@ -92,7 +91,7 @@ TEST(AddonFile, ReadsTheRealSkulltagEntry)
 	// because every ZandroX release already carries it.
 	const AddonEntry e = ParseAddonFile("skulltag",
 		"{\n"
-		"  \"schema\": 1, \"kind\": \"pvp\",\n"
+		"  \"kind\": \"pvp\",\n"
 		"  \"name\": \"Skulltag\",\n"
 		"  \"summary\": \"Skulltag's maps, weapons and runes, with a spree announcer.\",\n"
 		"  \"iwad\": \"doom2.wad\",\n"
@@ -126,7 +125,7 @@ TEST(AddonFile, TheIdComesFromTheCallerNotTheFile)
 	// The folder is what a player renames, so it is the identity. A file claiming otherwise is
 	// ignored rather than believed.
 	const AddonEntry e = ParseAddonFile("my-own-name",
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"id\": \"something-else\", \"name\": \"X\","
+		"{ \"kind\": \"pvp\", \"id\": \"something-else\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -138,7 +137,7 @@ TEST(AddonFile, AnUnknownKeyIsIgnoredRatherThanFatal)
 	// Forward compatibility within a schema: adding an optional field must not orphan every entry
 	// written before it.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"nested\": { \"a\": [1, 2, {\"b\": \"}\"}] },"
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"nested\": { \"a\": [1, 2, {\"b\": \"}\"}] },"
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -148,7 +147,7 @@ TEST(AddonFile, AnUnknownKeyIsIgnoredRatherThanFatal)
 TEST(AddonFile, AnUnknownKeyInsideAFileIsIgnoredToo)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
+		"{ \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"size\": 123,"
 		"                \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
@@ -160,7 +159,7 @@ TEST(AddonFile, AnUnknownKeyInsideAFileIsIgnoredToo)
 TEST(AddonFile, AVariantsArrayThatIsNotAnArrayIsRefused)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"variants\": 1,"
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"variants\": 1,"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	EXPECT_FALSE(e.valid);
@@ -214,7 +213,7 @@ TEST(AddonFile, EveryGamemodeTheSchemaKnowsIsRead)
 	for (size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); ++i)
 	{
 		std::string json =
-			"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"gamemode\": \"";
+			"{ \"kind\": \"pvp\", \"name\": \"X\", \"gamemode\": \"";
 		json += kCases[i].text;
 		json += "\","
 			"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
@@ -231,7 +230,7 @@ TEST(AddonFile, AGamemodeNobodyKnowsIsNotAnError)
 	// Not knowing is the safe answer: everything that reads this treats Unknown as "offer nothing
 	// that depends on the gamemode", which is what an entry written for a later build should get.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"gamemode\": \"possession\","
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"gamemode\": \"possession\","
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -316,7 +315,7 @@ TEST(AddonFile, AnEntryListsWhatItPlaysWithInTheOrderWritten)
 	// [rc4l] The pool is a folder listing and arrives alphabetical; this list is written by hand
 	// with the baseline first, and the panel draws it in this order.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\","
+		"{ \"kind\": \"pve\", \"name\": \"X\","
 		"  \"remixes\": [\"vanilla\", \"brutaldoom\", \"doom64\"],"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
@@ -329,7 +328,7 @@ TEST(AddonFile, AnEntryListsWhatItPlaysWithInTheOrderWritten)
 TEST(AddonFile, AnEmptyRemixListIsFine)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"remixes\": [],"
+		"{ \"kind\": \"pve\", \"name\": \"X\", \"remixes\": [],"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -346,7 +345,7 @@ TEST(AddonFile, ARemixListThatIsNotStringsIsRefused)
 
 	for (size_t i = 0; i < sizeof(kBad) / sizeof(kBad[0]); ++i)
 	{
-		std::string json = "{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", ";
+		std::string json = "{ \"kind\": \"pve\", \"name\": \"X\", ";
 		json += kBad[i];
 		json += ", \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
 
@@ -357,7 +356,7 @@ TEST(AddonFile, ARemixListThatIsNotStringsIsRefused)
 TEST(AddonFile, AnEmptyRemixIdIsRefused)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"remixes\": [\"\"],"
+		"{ \"kind\": \"pve\", \"name\": \"X\", \"remixes\": [\"\"],"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	EXPECT_FALSE(e.valid);
@@ -368,7 +367,7 @@ TEST(AddonFile, ARemixListedTwiceIsRefused)
 	// It would draw two pills that do the same thing, and the second could never be reached: the
 	// pick is by id and the first match wins.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\","
+		"{ \"kind\": \"pve\", \"name\": \"X\","
 		"  \"remixes\": [\"vanilla\", \"brutaldoom\", \"vanilla\"],"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
@@ -376,52 +375,17 @@ TEST(AddonFile, ARemixListedTwiceIsRefused)
 	EXPECT_NE(std::string::npos, e.error.find("twice"));
 }
 
-// ---------------------------------------------------------------- schema
-
-TEST(AddonFile, AnEntryFromTheFutureIsSkippedNotGuessedAt)
-{
-	// User entries outlive the build that read them. A field whose meaning changed is worse than an
-	// entry that does not appear.
-	char json[256];
-	snprintf(json, sizeof(json),
-		"{ \"schema\": %d, \"name\": \"X\","
-		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }",
-		kAddonSchema + 1);
-
-	const AddonEntry e = Parse(json);
-	EXPECT_FALSE(e.valid);
-	EXPECT_NE(std::string::npos, e.error.find("newer"));
-}
-
-TEST(AddonFile, NoSchemaIsRefused)
-{
-	const AddonEntry e = Parse(
-		"{ \"name\": \"X\","
-		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
-
-	EXPECT_FALSE(e.valid);
-}
-
-TEST(AddonFile, ANonsenseSchemaIsRefused)
-{
-	const AddonEntry e = Parse(
-		"{ \"schema\": 0, \"name\": \"X\","
-		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
-
-	EXPECT_FALSE(e.valid);
-}
-
 // ---------------------------------------------------------------- what must be there
 
 TEST(AddonFile, AnEntryWithNoFilesLoadsNothingAndIsRefused)
 {
-	EXPECT_FALSE(Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [] }").valid);
+	EXPECT_FALSE(Parse("{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [] }").valid);
 }
 
 TEST(AddonFile, AnEntryWithNoNameHasNothingToShow)
 {
 	EXPECT_FALSE(Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\","
+		"{ \"kind\": \"pvp\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
 }
 
@@ -443,7 +407,7 @@ TEST(AddonFile, AnEntryMayNameTheMapItOpensOn)
 TEST(AddonFile, TheMapIsOptional)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
+		"{ \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -458,7 +422,7 @@ TEST(AddonFile, AMapThatIsNotAPlainLumpNameIsRefused)
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
 	{
-		std::string json = std::string("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"map\": \"") + bad[i] +
+		std::string json = std::string("{ \"kind\": \"pvp\", \"name\": \"X\", \"map\": \"") + bad[i] +
 			"\"," +
 			"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
 
@@ -470,7 +434,7 @@ TEST(AddonFile, TheIwadIsOptional)
 {
 	// An entry that runs on whatever is already loaded need not name one.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
+		"{ \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -492,7 +456,7 @@ TEST(AddonFile, APathInAFileNameIsRefused)
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
 	{
-		std::string json = std::string("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": \"") +
+		std::string json = std::string("{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": \"") +
 			bad[i] + "\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
 
 		EXPECT_FALSE(Parse(json.c_str()).valid) << "accepted " << bad[i];
@@ -502,7 +466,7 @@ TEST(AddonFile, APathInAFileNameIsRefused)
 TEST(AddonFile, APathInTheIwadIsRefused)
 {
 	EXPECT_FALSE(Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"iwad\": \"../doom2.wad\","
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"iwad\": \"../doom2.wad\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
 }
 
@@ -520,7 +484,7 @@ TEST(AddonFile, AnUnusableMd5IsRefused)
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
 	{
-		std::string json = std::string("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\","
+		std::string json = std::string("{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\","
 			" \"md5\": \"") + bad[i] + "\" }] }";
 
 		EXPECT_FALSE(Parse(json.c_str()).valid) << "accepted '" << bad[i] << "'";
@@ -538,14 +502,14 @@ TEST(AddonFile, RubbishIsRefusedRatherThanRead)
 		"not json at all",
 		"{",
 		"{ \"schema\": 1",
-		"{ \"schema\": 1, \"kind\": \"pvp\", }",
+		"{ \"kind\": \"pvp\", }",
 		"{ \"name\" \"X\" }",					// no colon
 		"{ \"name\": \"unterminated }",
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"files\": [ { ] }",
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"files\": [ {} ",
+		"{ \"kind\": \"pvp\", \"files\": [ { ] }",
+		"{ \"kind\": \"pvp\", \"files\": [ {} ",
 		"{ \"schema\": \"one\" }",				// string where an int belongs
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"files\": \"nope\" }",
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\" } trailing",
+		"{ \"kind\": \"pvp\", \"files\": \"nope\" }",
+		"{ \"kind\": \"pvp\", \"name\": \"X\" } trailing",
 	};
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
@@ -577,7 +541,7 @@ TEST(AddonFile, EveryTruncationOfARealEntryIsRefused)
 TEST(AddonFile, EscapesInStringsAreUnderstood)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"A \\\"quoted\\\" name\\twith\\\\escapes\","
+		"{ \"kind\": \"pvp\", \"name\": \"A \\\"quoted\\\" name\\twith\\\\escapes\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -589,13 +553,8 @@ TEST(AddonFile, AnUnsupportedEscapeIsRefusedRatherThanDropped)
 	// \u would mean committing to surrogate pairs, and nothing in this schema needs it. Refusing is
 	// honest; silently dropping it would corrupt a filename.
 	EXPECT_FALSE(Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"\\u0041\","
+		"{ \"kind\": \"pvp\", \"name\": \"\\u0041\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
-}
-
-TEST(AddonFile, ANegativeSchemaIsRefused)
-{
-	EXPECT_FALSE(Parse("{ \"schema\": -1, \"name\": \"X\" }").valid);
 }
 
 TEST(AddonFile, EveryEscapeTheSchemaAcceptsIsUnderstood)
@@ -603,7 +562,7 @@ TEST(AddonFile, EveryEscapeTheSchemaAcceptsIsUnderstood)
 	// [rc4l] All of them, not a sample. Each is its own line in the reader, and an untested one is a
 	// filename we would silently mangle the first time somebody used it.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"summary\": \"a\\/b\\bc\\fd\\ne\\rf\","
+		"{ \"kind\": \"pvp\", \"summary\": \"a\\/b\\bc\\fd\\ne\\rf\","
 		"  \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
@@ -614,23 +573,14 @@ TEST(AddonFile, EveryEscapeTheSchemaAcceptsIsUnderstood)
 TEST(AddonFile, AStringCutOffMidEscapeIsRefused)
 {
 	// The backslash promises another character and the file ends instead.
-	EXPECT_FALSE(Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\\").valid);
-}
-
-TEST(AddonFile, ASignedSchemaIsStillANumber)
-{
-	// JSON does not allow a leading +, but the reader accepts one rather than mis-reading the rest of
-	// the file, and 1 is 1 however it was written.
-	EXPECT_TRUE(Parse(
-		"{ \"schema\": +1, \"kind\": \"pvp\", \"name\": \"X\","
-		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
+	EXPECT_FALSE(Parse("{ \"kind\": \"pvp\", \"name\": \"X\\").valid);
 }
 
 TEST(AddonFile, AnEmptyFileListIsReadAndThenRefusedForBeingEmpty)
 {
 	// It PARSES: [] is well formed. It is refused a step later, for loading nothing, and the
 	// distinction is what keeps the reason accurate.
-	const AddonEntry e = Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [] }");
+	const AddonEntry e = Parse("{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [] }");
 
 	EXPECT_FALSE(e.valid);
 	EXPECT_EQ("no files", e.error);
@@ -638,7 +588,7 @@ TEST(AddonFile, AnEmptyFileListIsReadAndThenRefusedForBeingEmpty)
 
 TEST(AddonFile, AFileEntryWithNoKeysHasNoNameToLoad)
 {
-	const AddonEntry e = Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{}] }");
+	const AddonEntry e = Parse("{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{}] }");
 
 	EXPECT_FALSE(e.valid);
 	EXPECT_FALSE(e.error.empty());
@@ -650,7 +600,7 @@ TEST(AddonFile, ADotDotWithNoSlashIsStillRefused)
 	// and this one never ran. A name is refused for containing "..", separator or not, because the
 	// resolver it feeds is not the only thing that will ever read these.
 	EXPECT_FALSE(Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
+		"{ \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a..pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
 }
 
@@ -658,37 +608,37 @@ TEST(AddonFile, AnEmptyFileNameIsRefused)
 {
 	// Not a path, but not a filename either, and the loader would search for nothing.
 	EXPECT_FALSE(Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
+		"{ \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
 }
 
 TEST(AddonFile, AnUnknownKeyWithNothingAfterItIsRefused)
 {
 	// The skip has to notice it ran out rather than report success on an empty remainder.
-	EXPECT_FALSE(Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"x\":").valid);
+	EXPECT_FALSE(Parse("{ \"kind\": \"pvp\", \"x\":").valid);
 }
 
 TEST(AddonFile, AnUnterminatedStringInsideASkippedValueIsRefused)
 {
 	// Inside a container we are skipping wholesale, a string still has to close: without that the
 	// scan would run past a brace hidden in the text and re-sync somewhere meaningless.
-	EXPECT_FALSE(Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"x\": { \"a\": \"never closed } }").valid);
+	EXPECT_FALSE(Parse("{ \"kind\": \"pvp\", \"x\": { \"a\": \"never closed } }").valid);
 }
 
 TEST(AddonFile, AFileFieldOfTheWrongShapeIsRefused)
 {
 	const char *bad[] = {
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": 5 }] }",
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"md5\": 5 }] }",
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"notes\": }] }",
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": 5 }] }",
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"md5\": 5 }] }",
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"notes\": }] }",
 		// [rc4l] An unknown key inside a file whose value cannot be skipped at all: the string never
 		// closes, so the skip fails rather than quietly swallowing the rest of the file.
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"notes\": \"unterminated }] }",
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"notes\": [1, 2 }] }",
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"notes\": \"unterminated }] }",
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"notes\": [1, 2 }] }",
 
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\" \"a.pk3\" }] }",
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\" \"md5\": \"x\" }] }",
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"files\": [ 5 ] }",
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\" \"a.pk3\" }] }",
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [{ \"name\": \"a.pk3\" \"md5\": \"x\" }] }",
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"files\": [ 5 ] }",
 	};
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
@@ -801,7 +751,7 @@ TEST(AddonFile, AnExperienceMustSayWhetherItIsPveOrPvp)
 {
 	// The first thing anybody wants to know, and the one thing the name reliably fails to say.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"name\": \"X\","
+		"{ \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	EXPECT_FALSE(e.valid);
@@ -830,7 +780,7 @@ TEST(AddonFile, AKindItDoesNotRecogniseIsRefusedRatherThanGuessedAt)
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
 	{
 		std::string json =
-			"{ \"schema\": 1, \"name\": \"X\", \"kind\": \"";
+			"{ \"name\": \"X\", \"kind\": \"";
 		json += bad[i];
 		json += "\", \"files\": [{ \"name\": \"a.pk3\","
 			"  \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
@@ -844,7 +794,7 @@ TEST(AddonFile, AnEntryWithVariantsIsLabelledByThemRatherThanByItself)
 	// The variants ARE the experiences there, so the entry does not need its own label. Requiring one
 	// as well would mean writing "pvp" on a pack that is half invasion.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"name\": \"Skulltag\","
+		"{ \"name\": \"Skulltag\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"41630bc75af4b51fe5d163fe4d434c6e\" }],"
 		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"cfg\": \"a.cfg\", \"kind\": \"pvp\" },"
 		"                  { \"id\": \"b\", \"name\": \"B\", \"cfg\": \"b.cfg\", \"kind\": \"pve\" } ] }");
@@ -976,7 +926,7 @@ TEST(AddonFile, AVariantsFilesObeyTheSameRulesAsTheEntrys)
 TEST(AddonFile, AnEntryWithNeitherFilesNorVariantsIsStillRefused)
 {
 	// Relaxing the entry-level rule for the Ghouls shape must not have relaxed it into nothing.
-	const AddonEntry e = Parse("{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\" }");
+	const AddonEntry e = Parse("{ \"kind\": \"pvp\", \"name\": \"X\" }");
 
 	EXPECT_FALSE(e.valid);
 	EXPECT_FALSE(e.error.empty());
@@ -999,7 +949,7 @@ TEST(RemixFile, TheSmallestUsableRemixIsJustANameAndACfg)
 	// [rc4l] A rules remix: no files at all, one line of cfg. Deliberately not refused for loading
 	// nothing, since the baseline option loads nothing either and still needs a name.
 	const zx::AddonRemix r = ParseRemix(
-		"{ \"schema\": 1, \"name\": \"Survival\", \"cfg\": \"survival.cfg\" }");
+		"{ \"name\": \"Survival\", \"cfg\": \"survival.cfg\" }");
 
 	ASSERT_TRUE(r.valid) << r.error;
 	EXPECT_EQ("survival", r.id) << "the id comes from the folder, never from the file";
@@ -1011,7 +961,7 @@ TEST(RemixFile, TheSmallestUsableRemixIsJustANameAndACfg)
 TEST(RemixFile, ARemixWithNoGroupIsInTheDefaultOne)
 {
 	// The shape every remix written before groups existed has. It must keep parsing unchanged.
-	const zx::AddonRemix r = ParseRemix("{ \"schema\": 1, \"name\": \"Survival\" }");
+	const zx::AddonRemix r = ParseRemix("{ \"name\": \"Survival\" }");
 
 	ASSERT_TRUE(r.valid) << r.error;
 	EXPECT_TRUE(r.group.empty());
@@ -1020,7 +970,7 @@ TEST(RemixFile, ARemixWithNoGroupIsInTheDefaultOne)
 TEST(RemixFile, TheGroupIsRead)
 {
 	const zx::AddonRemix r = ParseRemix(
-		"{ \"schema\": 1, \"name\": \"Brutal Doom\", \"group\": \"mod\" }");
+		"{ \"name\": \"Brutal Doom\", \"group\": \"mod\" }");
 
 	ASSERT_TRUE(r.valid) << r.error;
 	EXPECT_EQ("mod", r.group);
@@ -1029,7 +979,7 @@ TEST(RemixFile, TheGroupIsRead)
 TEST(RemixFile, ARemixWithFilesCarriesThem)
 {
 	const zx::AddonRemix r = ParseRemix(
-		"{ \"schema\": 1, \"name\": \"Brutal Doom\", \"group\": \"mod\","
+		"{ \"name\": \"Brutal Doom\", \"group\": \"mod\","
 		"  \"files\": [{ \"name\": \"brutal22test6.pk3\","
 		"                \"md5\": \"57a61814fe96cfc20043f370eeace023\" }] }");
 
@@ -1041,7 +991,7 @@ TEST(RemixFile, ARemixWithFilesCarriesThem)
 TEST(RemixFile, ARemixWithNoNameIsRefused)
 {
 	// The picker has nothing to draw for it, so it would be an invisible row.
-	const zx::AddonRemix r = ParseRemix("{ \"schema\": 1, \"cfg\": \"survival.cfg\" }");
+	const zx::AddonRemix r = ParseRemix("{ \"cfg\": \"survival.cfg\" }");
 
 	EXPECT_FALSE(r.valid);
 	EXPECT_FALSE(r.error.empty());
@@ -1051,10 +1001,10 @@ TEST(RemixFile, APathInTheCfgOrTheFilesIsRefused)
 {
 	// Both reach a loader, so both obey the entry's rule: a bare filename beside the remix.json.
 	const char *const bad[] = {
-		"{ \"schema\": 1, \"name\": \"X\", \"cfg\": \"../../evil.cfg\" }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"a/b.pk3\","
+		"{ \"name\": \"X\", \"cfg\": \"../../evil.cfg\" }",
+		"{ \"name\": \"X\", \"files\": [{ \"name\": \"a/b.pk3\","
 		"   \"md5\": \"57a61814fe96cfc20043f370eeace023\" }] }",
-		"{ \"schema\": 1, \"name\": \"X\", \"files\": [{ \"name\": \"b.pk3\", \"md5\": \"nothex\" }] }",
+		"{ \"name\": \"X\", \"files\": [{ \"name\": \"b.pk3\", \"md5\": \"nothex\" }] }",
 	};
 
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
@@ -1073,13 +1023,6 @@ TEST(RemixFile, ARemixFromTheFutureIsSkippedNotGuessedAt)
 	EXPECT_FALSE(r.error.empty());
 }
 
-TEST(RemixFile, NoSchemaIsRefused)
-{
-	const zx::AddonRemix r = ParseRemix("{ \"name\": \"X\" }");
-
-	EXPECT_FALSE(r.valid);
-}
-
 // ------------------------------------------------------------ curation
 
 TEST(AddonFile, AnEntryThatSaysNothingAboutItsPlaceIsNeitherFirstNorMarked)
@@ -1096,7 +1039,7 @@ TEST(AddonFile, AnEntryThatSaysNothingAboutItsPlaceIsNeitherFirstNorMarked)
 TEST(AddonFile, OrderAndAccentAreRead)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"order\": 20, \"accent\": true,"
+		"{ \"kind\": \"pve\", \"name\": \"X\", \"order\": 20, \"accent\": true,"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -1109,7 +1052,7 @@ TEST(AddonFile, AccentCanBeSaidAndTurnedOff)
 	// Pinned because writing the field is how an author REMOVES the mark, and a reader that only
 	// looked for the key's presence would make that impossible to say.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"accent\": false,"
+		"{ \"kind\": \"pve\", \"name\": \"X\", \"accent\": false,"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -1121,7 +1064,7 @@ TEST(AddonFile, AnOrderThatIsNotANumberIsRefused)
 	// Refused rather than treated as 0, which would silently drop a curated entry back into the
 	// middle of the list with nothing to say why.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"order\": \"first\","
+		"{ \"kind\": \"pve\", \"name\": \"X\", \"order\": \"first\","
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	EXPECT_FALSE(e.valid);
@@ -1131,7 +1074,7 @@ TEST(AddonFile, AnOrderThatIsNotANumberIsRefused)
 TEST(AddonFile, AnAccentThatIsNotABooleanIsRefused)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"accent\": \"yes\","
+		"{ \"kind\": \"pve\", \"name\": \"X\", \"accent\": \"yes\","
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	EXPECT_FALSE(e.valid);
@@ -1151,10 +1094,10 @@ TEST(AddonFile, AnEntryThatSaysNothingAboutWeaponSpeedDoesNotOfferTheControl)
 TEST(AddonFile, FastWeaponsCanBeOfferedAndTakenBack)
 {
 	const AddonEntry on = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"fastweapons\": true,"
+		"{ \"kind\": \"pve\", \"name\": \"X\", \"fastweapons\": true,"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 	const AddonEntry off = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"fastweapons\": false,"
+		"{ \"kind\": \"pve\", \"name\": \"X\", \"fastweapons\": false,"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(on.valid) << on.error;
@@ -1168,7 +1111,7 @@ TEST(AddonFile, AVariantsRemixesKeySaysItWasWrittenEvenWhenEmpty)
 	// What separates "takes none" from "takes whatever the entry takes". Only the reader can tell them
 	// apart, because by the time OfferedRemixes sees the list both are an empty vector.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\","
+		"{ \"kind\": \"pve\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }],"
 		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pve\", \"cfg\": \"a.cfg\","
 		"                  \"default\": true, \"remixes\": [] },"
@@ -1186,7 +1129,7 @@ TEST(AddonFile, TeamsIsReadOnBothAnEntryAndAVariant)
 	// Both, because a pack that plays one way has no variant to say it on and a pack with several says
 	// it per way of playing.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"teams\": true,"
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"teams\": true,"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }],"
 		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\","
 		"                  \"default\": true, \"teams\": true },"
@@ -1205,7 +1148,7 @@ TEST(AddonFile, AVariantMayOverrideTheEntrysLivesAndWeaponSpeed)
 	// holds six campaign mapsets that can be run as Survival and four co-op packs that cannot, and the
 	// entry's single answer gave the lives slider to all ten and the weapon speed to Hell Revealed II.
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"lives\": 0, \"maxlives\": 5,"
+		"{ \"kind\": \"pve\", \"name\": \"X\", \"lives\": 0, \"maxlives\": 5,"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }],"
 		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pve\", \"cfg\": \"a.cfg\", \"default\": true },"
 		"                { \"id\": \"b\", \"name\": \"B\", \"kind\": \"pve\", \"cfg\": \"b.cfg\","
@@ -1228,7 +1171,7 @@ TEST(AddonFile, AVariantMayOverrideTheEntrysLivesAndWeaponSpeed)
 TEST(AddonFile, AVariantsLivesThatAreNotNumbersAreRefused)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\","
+		"{ \"kind\": \"pve\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }],"
 		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pve\", \"cfg\": \"a.cfg\","
 		"                  \"default\": true, \"maxlives\": \"five\" } ] }");
@@ -1239,10 +1182,10 @@ TEST(AddonFile, AVariantsLivesThatAreNotNumbersAreRefused)
 TEST(AddonFile, ATeamsThatIsNotABooleanIsRefused)
 {
 	const AddonEntry entry = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"teams\": 4,"
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"teams\": 4,"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 	const AddonEntry variant = Parse(
-		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\","
+		"{ \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }],"
 		"  \"variants\": [ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\","
 		"                  \"default\": true, \"teams\": \"yes\" } ] }");
@@ -1254,7 +1197,7 @@ TEST(AddonFile, ATeamsThatIsNotABooleanIsRefused)
 TEST(AddonFile, AFastWeaponsThatIsNotABooleanIsRefused)
 {
 	const AddonEntry e = Parse(
-		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"fastweapons\": 2,"
+		"{ \"kind\": \"pve\", \"name\": \"X\", \"fastweapons\": 2,"
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	EXPECT_FALSE(e.valid);
@@ -1275,7 +1218,7 @@ TEST(AddonFile, AMalformedRemixFileIsRefused)
 		"{ 1: \"Survival\" }",
 		"{ \"name\": }",
 		"{ \"name\": \"Survival\" \"cfg\": \"a.cfg\" }",
-		"{ \"schema\": 1, \"name\": \"Survival\" } trailing",
+		"{ \"name\": \"Survival\" } trailing",
 		"{ \"schema\": 0, \"name\": \"Survival\" }",
 	};
 
@@ -1288,7 +1231,7 @@ TEST(AddonFile, AnUnknownKeyInARemixIsSkipped)
 	// The same forward compatibility the entry reader gives: a field added later must not orphan
 	// every remix written before it.
 	const zx::AddonRemix r = ParseRemix(
-		"{ \"schema\": 1, \"name\": \"Survival\", \"nested\": { \"a\": [1, 2] } }");
+		"{ \"name\": \"Survival\", \"nested\": { \"a\": [1, 2] } }");
 
 	ASSERT_TRUE(r.valid) << r.error;
 	EXPECT_EQ("Survival", r.name);

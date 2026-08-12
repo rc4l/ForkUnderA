@@ -21,10 +21,6 @@
 namespace zx
 {
 
-// The newest schema this build understands. An entry claiming a higher one is skipped rather than
-// read with today's meanings, because a field that changed sense is worse than a missing entry.
-const int kAddonSchema = 1;
-
 struct AddonFileRef
 {
 	std::string name;	// bare filename, as the loader will ask for it
