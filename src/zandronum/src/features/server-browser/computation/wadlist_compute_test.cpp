@@ -204,3 +204,14 @@ TEST(WadList, ANarrowerColumnNeverShowsMoreFiles)
 		prev = l.shown;
 	}
 }
+
+TEST(WadList, AFreshLineCoversNothing)
+{
+	// [rc4l] The default a caller gets before the layout fills it in: an empty half-open range, so
+	// `first == end` and a loop over it does nothing rather than reading item zero.
+	const zx::WadListLine line;
+
+	EXPECT_EQ(0u, line.first);
+	EXPECT_EQ(0u, line.end);
+	EXPECT_EQ(line.first, line.end) << "an empty range, not a one-item one";
+}

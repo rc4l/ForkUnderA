@@ -157,6 +157,186 @@ TEST(AddonFile, AnUnknownKeyInsideAFileIsIgnoredToo)
 	EXPECT_EQ("a.pk3", e.files[0].name);
 }
 
+// ---------------------------------------------------------------- gamemodes
+
+TEST(AddonFile, EveryGamemodeTheSchemaKnowsIsRead)
+{
+	// [rc4l] The names Zandronum's own cvars use, so an author writing these is writing what they
+	// already put in the cfg. Pinned one by one because everything the gameplay panel offers hangs
+	// off the answer: lives, teams and the weapon speed all ask the gamemode first.
+	struct { const char *text; zx::HostGameMode mode; } kCases[] = {
+		{ "cooperative",     zx::HostGameMode::Cooperative },
+		{ "survival",        zx::HostGameMode::Survival },
+		{ "invasion",        zx::HostGameMode::Invasion },
+		{ "deathmatch",      zx::HostGameMode::Deathmatch },
+		{ "teamdeathmatch",  zx::HostGameMode::TeamDeathmatch },
+		{ "duel",            zx::HostGameMode::Duel },
+		{ "lastmanstanding", zx::HostGameMode::LastManStanding },
+		{ "teamlms",         zx::HostGameMode::TeamLastManStanding },
+		{ "ctf",             zx::HostGameMode::CaptureTheFlag },
+	};
+
+	for (size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); ++i)
+	{
+		std::string json =
+			"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"gamemode\": \"";
+		json += kCases[i].text;
+		json += "\","
+			"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
+
+		const AddonEntry e = Parse(json.c_str());
+
+		ASSERT_TRUE(e.valid) << kCases[i].text << ": " << e.error;
+		EXPECT_EQ(kCases[i].mode, e.gameMode) << kCases[i].text;
+	}
+}
+
+TEST(AddonFile, AGamemodeNobodyKnowsIsNotAnError)
+{
+	// Not knowing is the safe answer: everything that reads this treats Unknown as "offer nothing
+	// that depends on the gamemode", which is what an entry written for a later build should get.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"gamemode\": \"possession\","
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_EQ(zx::HostGameMode::Unknown, e.gameMode);
+}
+
+TEST(AddonFile, AVariantMayDeclareItsOwnGamemodeAndMap)
+{
+	// Ragnarok is the case: one file list, one set of maps, and only one of its two ways of playing
+	// has lives.
+	const AddonEntry e = Parse(WithVariants(
+		"[ { \"id\": \"dm\", \"name\": \"Deathmatch\", \"kind\": \"pvp\", \"cfg\": \"server.cfg\","
+		"    \"default\": true, \"gamemode\": \"deathmatch\" },"
+		"  { \"id\": \"lms\", \"name\": \"Last Man Standing\", \"kind\": \"pvp\", \"cfg\": \"lms.cfg\","
+		"    \"gamemode\": \"lastmanstanding\", \"map\": \"MAP07\" } ]").c_str());
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(2u, e.variants.size());
+	EXPECT_EQ(zx::HostGameMode::Deathmatch, e.variants[0].gameMode);
+	EXPECT_EQ(zx::HostGameMode::LastManStanding, e.variants[1].gameMode);
+	EXPECT_EQ("MAP07", e.variants[1].map);
+	EXPECT_TRUE(e.variants[0].map.empty()) << "saying nothing means the entry's";
+}
+
+TEST(AddonFile, AVariantsMapMustBeAPlainLumpName)
+{
+	// It goes out on a command line as +map, so a path or a switch in it is not a map name at all.
+	const AddonEntry e = Parse(WithVariants(
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"default\": true,"
+		"    \"map\": \"maps/secret.wad\" } ]").c_str());
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_FALSE(e.error.empty());
+}
+
+TEST(AddonFile, EveryVariantKeyIsRefusedWhenItIsTheWrongShape)
+{
+	// One case per key rather than one for the reader, because each is a separate branch and a
+	// reader that silently accepted a number for a name would be found by nothing else here.
+	static const char *const kBad[] = {
+		"[ { \"id\": 1, \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"default\": true } ]",
+		"[ { \"id\": \"a\", \"name\": 1, \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"default\": true } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": 1, \"cfg\": \"a.cfg\", \"default\": true } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": 1, \"default\": true } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"tooltip\": 1 } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"gamemode\": 1 } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"map\": 1 } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"files\": 1 } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"remixes\": 1 } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"default\": 1 } ]",
+	};
+
+	for (size_t i = 0; i < sizeof(kBad) / sizeof(kBad[0]); ++i)
+		EXPECT_FALSE(Parse(WithVariants(kBad[i]).c_str()).valid) << kBad[i];
+}
+
+TEST(AddonFile, AVariantMayBringItsOwnFilesAndMixes)
+{
+	// Ghouls vs Humans' shape: nothing shared, everything in the variants.
+	const AddonEntry e = Parse(NoBase(
+		"[ { \"id\": \"classic\", \"name\": \"Classic\", \"kind\": \"pvp\", \"cfg\": \"server.cfg\","
+		"    \"default\": true, \"remixes\": [\"vanilla\", \"brutaldoom\"],"
+		"    \"files\": [{ \"name\": \"gvh.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] } ]").c_str());
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(1u, e.variants.size());
+	ASSERT_EQ(1u, e.variants[0].files.size());
+	EXPECT_EQ("gvh.pk3", e.variants[0].files[0].name);
+	ASSERT_EQ(2u, e.variants[0].remixes.size());
+	EXPECT_EQ("vanilla", e.variants[0].remixes[0]);
+	EXPECT_EQ("brutaldoom", e.variants[0].remixes[1]);
+}
+
+// ---------------------------------------------------------------- the remix list
+
+TEST(AddonFile, AnEntryListsWhatItPlaysWithInTheOrderWritten)
+{
+	// [rc4l] The pool is a folder listing and arrives alphabetical; this list is written by hand
+	// with the baseline first, and the panel draws it in this order.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\","
+		"  \"remixes\": [\"vanilla\", \"brutaldoom\", \"doom64\"],"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(3u, e.remixes.size());
+	EXPECT_EQ("vanilla", e.remixes[0]);
+	EXPECT_EQ("doom64", e.remixes[2]);
+}
+
+TEST(AddonFile, AnEmptyRemixListIsFine)
+{
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"remixes\": [],"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	EXPECT_TRUE(e.remixes.empty());
+}
+
+TEST(AddonFile, ARemixListThatIsNotStringsIsRefused)
+{
+	static const char *const kBad[] = {
+		"\"remixes\": [1]",
+		"\"remixes\": [\"vanilla\" \"brutaldoom\"]",
+		"\"remixes\": [\"vanilla\",",
+	};
+
+	for (size_t i = 0; i < sizeof(kBad) / sizeof(kBad[0]); ++i)
+	{
+		std::string json = "{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", ";
+		json += kBad[i];
+		json += ", \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }";
+
+		EXPECT_FALSE(Parse(json.c_str()).valid) << kBad[i];
+	}
+}
+
+TEST(AddonFile, AnEmptyRemixIdIsRefused)
+{
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\", \"remixes\": [\"\"],"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	EXPECT_FALSE(e.valid);
+}
+
+TEST(AddonFile, ARemixListedTwiceIsRefused)
+{
+	// It would draw two pills that do the same thing, and the second could never be reached: the
+	// pick is by id and the first match wins.
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pve\", \"name\": \"X\","
+		"  \"remixes\": [\"vanilla\", \"brutaldoom\", \"vanilla\"],"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	EXPECT_FALSE(e.valid);
+	EXPECT_NE(std::string::npos, e.error.find("twice"));
+}
+
 // ---------------------------------------------------------------- schema
 
 TEST(AddonFile, AnEntryFromTheFutureIsSkippedNotGuessedAt)
@@ -1040,4 +1220,37 @@ TEST(AddonFile, AFastWeaponsThatIsNotABooleanIsRefused)
 
 	EXPECT_FALSE(e.valid);
 	EXPECT_FALSE(e.error.empty());
+}
+
+// ---------------------------------------------------------------- a malformed remix file
+
+TEST(AddonFile, ARemixFileThatIsNotAnObjectIsRefused)
+{
+	EXPECT_FALSE(ParseRemix("[]").valid);
+	EXPECT_FALSE(ParseRemix("\"survival\"").valid);
+}
+
+TEST(AddonFile, AMalformedRemixFileIsRefused)
+{
+	static const char *const kBad[] = {
+		"{ 1: \"Survival\" }",
+		"{ \"name\": }",
+		"{ \"name\": \"Survival\" \"cfg\": \"a.cfg\" }",
+		"{ \"schema\": 1, \"name\": \"Survival\" } trailing",
+		"{ \"schema\": 0, \"name\": \"Survival\" }",
+	};
+
+	for (size_t i = 0; i < sizeof(kBad) / sizeof(kBad[0]); ++i)
+		EXPECT_FALSE(ParseRemix(kBad[i]).valid) << kBad[i];
+}
+
+TEST(AddonFile, AnUnknownKeyInARemixIsSkipped)
+{
+	// The same forward compatibility the entry reader gives: a field added later must not orphan
+	// every remix written before it.
+	const zx::AddonRemix r = ParseRemix(
+		"{ \"schema\": 1, \"name\": \"Survival\", \"nested\": { \"a\": [1, 2] } }");
+
+	ASSERT_TRUE(r.valid) << r.error;
+	EXPECT_EQ("Survival", r.name);
 }
