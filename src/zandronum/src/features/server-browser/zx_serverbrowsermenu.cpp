@@ -343,9 +343,14 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_RBOT_H		SB_HOST_RTOP_H
 
 // [rc4l] While a server is running the right column carries TWO things: what you are looking at, and
-// what you are running. Split down the middle, each half scrolling on its own, with the rule at the
-// seam. STOP sits below both and is never scrolled away from.
-#define SB_HOST_RUN_SPLIT	( SB_HOST_RTOP_TOP + SB_HOST_RTOP_H / 2 )
+// what you are running. Each half scrolls on its own, with the rule at the seam. STOP sits below
+// both and is never scrolled away from.
+//
+// The seam was fixed at the middle, which spent half the column on a status that is usually a few
+// lines and left the gameplay settings in a window too short to use -- the very thing you are there
+// to change while deciding whether to switch. HostRunSplit gives the status the room it needs and
+// the details everything above it, falling back to the old half when the status is long.
+#define SB_HOST_RUN_SPLIT	HostRunSplit( )
 #define SB_HOST_RUN_TOP_BOT	( SB_HOST_RUN_SPLIT - 5 )
 #define SB_HOST_RUN_BOT_TOP	( SB_HOST_RUN_SPLIT + 5 )
 #define SB_HOST_RUN_TOP_H	( SB_HOST_RUN_TOP_BOT - SB_HOST_RTOP_TOP )
@@ -984,6 +989,21 @@ static	int				g_HostTextClipTop = 0;
 static	int				g_HostTextClipBottom = 0;
 static	int				g_HostStatusH = 0;
 
+// [rc4l] Where the running server's status begins. Measured from the BOTTOM: the status takes the
+// room its content needs and the details keep the rest, rather than each taking half whatever they
+// hold. Never more than half, so a long status cannot push the details off the panel entirely.
+//
+// g_HostStatusH is last frame's measurement, which is what every other reader of it uses. It is a
+// content height and so does not move when the seam does, and the feedback loop that would
+// otherwise imply cannot start.
+static int HostRunSplit( )
+{
+	const int half = SB_HOST_RTOP_TOP + SB_HOST_RTOP_H / 2;
+	const int wanted = SB_HOST_RTOP_BOTTOM - g_HostStatusH - 5;
+
+	return ( wanted > half ) ? wanted : half;
+}
+
 // [rc4l] The right column shows the description by default. The settings are one click away rather
 // than always on screen: almost nobody changes them, and the thing worth reading before pressing
 // START is what the selection will actually load.
@@ -1028,6 +1048,10 @@ static	FString					g_HostSliderDragging;	// id being dragged, or empty
 // [rc4l] Which catalogue row the RUNNING server was started from, so the list can mark it and SWITCH
 // knows there is nothing to switch to. -2 is "custom setup", matching g_HostEntrySel's own spelling.
 static	int				g_HostingEntry = -2;
+
+// [rc4l] And the whole configuration it was started on, so the action button can tell "looking at
+// what is running" from "looking at the same pack set up differently". See HostSelectionKey.
+static	FString			g_HostingKey;
 
 // [rc4l] And WHICH way of playing it was started as, so the tint can go on the row the server is
 // actually running. The id rather than the row number, for the reason g_HostVariantId is: rows move
@@ -3345,6 +3369,7 @@ public:
 		// empty choice means "the default", and the tint has to name a row rather than a preference.
 		g_HostingEntry = g_HostEntrySel;
 		g_HostingVariantId = "";
+		g_HostingKey = HostSelectionKey( );
 
 		{
 			const std::vector<zx::CatalogueEntry> &all = zx::CatalogueLoad( );
@@ -4600,11 +4625,60 @@ public:
 		}
 	}
 
-	// [rc4l] Whether the selected entry is the one already being served, so SWITCH does not offer to
-	// restart a server onto what it is already running.
+	// [rc4l] Everything the panel would START, as one string to compare against.
+	//
+	// Written out rather than compared field by field so that adding a setting cannot forget to
+	// teach the button about it: a control missing from here is a control you can change while the
+	// button goes on saying STOP SERVER.
+	//
+	// RESOLVED values rather than the raw preferences. A stored -1 means the entry's own default,
+	// and two entries with different defaults would otherwise read as the same request.
+	FString HostSelectionKey( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		FString key;
+		key.Format( "e%d", g_HostEntrySel );
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return key;
+
+		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+		const zx::VariantPick chosen = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+		if (( chosen.index >= 0 ) && ( chosen.index < static_cast<int>( addon.variants.size( ))))
+			key.AppendFormat( "|v%s", addon.variants[chosen.index].id.c_str( ));
+
+		const std::vector<zx::RemixPick> picks = HostRemixPicks( addon );
+		for ( size_t i = 0; i < picks.size( ); ++i )
+			key.AppendFormat( "|m%s", picks[i].id.c_str( ));
+
+		const zx::LivesControl lives = HostLivesControl( addon );
+		if ( lives.applies )
+			key.AppendFormat( "|l%d", lives.value );
+
+		if ( HostFastWeaponsOffered( addon ))
+			key.AppendFormat( "|w%d", zx::FastWeaponsValue( g_HostFastWeapons ));
+
+		const zx::TeamsControl teams = HostTeamsControl( addon );
+		if ( teams.applies )
+			key.AppendFormat( "|t%d", teams.count );
+
+		return key;
+	}
+
+	// [rc4l] Whether what is on screen is what is already being served, so SWITCH does not offer to
+	// restart a server onto exactly what it is running.
+	//
+	// The whole configuration, not just the row. It compared the entry alone, so picking a different
+	// way of playing, a different mix, or any of the gameplay settings left the button saying STOP
+	// SERVER: there was no way to ask for the thing you had just chosen.
 	bool HostSelectionIsWhatIsRunning( )
 	{
-		return g_HostEntrySel == g_HostingEntry;
+		if ( g_HostEntrySel != g_HostingEntry )
+			return false;
+
+		return HostSelectionKey( ).Compare( g_HostingKey ) == 0;
 	}
 
 	// [rc4l] Which of the four the action button is, worked out ONCE.
