@@ -21,8 +21,7 @@
 # KNOWN GAP, recorded rather than papered over: nothing in CI builds SERVERONLY at all today, and
 # SERVERONLY compiles genuinely different code (SERVER_ONLY=1, no GL, no sound). So a break confined to
 # a SERVER_ONLY branch passes every PR and is caught here only when this workflow is dispatched. The
-# fix is a cheap native SERVERONLY configure+compile in _build.yml, not a full Docker build per PR.
-name: Release Game Server Image
+# fix is a cheap native SERVERONLY configure+compile in _build.yml, not a full Docker build per PR.name: Release Game Server Image
 
 on:
   workflow_dispatch:
@@ -52,31 +51,26 @@ on:
     workflows: ["Release ForkUnderA"]
     types: [completed]
 
-  pull_request:
-    paths:
-      - Dockerfile.game-server
-      - Dockerfile.game-server.dockerignore
-      - .github/workflows/game-server-image.yml
-      - scripts/game-server-entrypoint.sh
-      - linux_compile.sh
-      - catalogue/**
-      - config/waddownloadsites.txt
+# [rc4l] NO pull_request trigger any more. Validation moved to test-and-build.yml, which calls the
+# same reusable workflow this one does, so a PR checks exactly what a release ships without this
+# workflow having to pretend a pull request might publish something.
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/forkundera-game-server
 
 jobs:
-  image:
+  # [rc4l] Version policy only. Split out because a job may have steps or a `uses`, never both, and
+  # the build had to become a reusable call so the PR path and the release path cannot drift.
+  meta:
     runs-on: ubuntu-latest
-    # [rc4l] A cold engine compile inside Docker is the long pole here; the default 360 is plenty but
-    # an explicit ceiling stops a hung configure burning a whole runner hour.
-    timeout-minutes: 90
-    permissions:
-      contents: write   # to push the release tag below
-      packages: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tags: ${{ steps.meta.outputs.tags }}
+      primary: ${{ steps.meta.outputs.primary }}
+      publish: ${{ steps.meta.outputs.publish }}
+      engine: ${{ steps.meta.outputs.engine }}
+      skip: ${{ steps.meta.outputs.skip }}
     steps:
-      # [rc4l] Full history: the engine's revision_check runs `git describe --tags`. A shallow clone
-      # stamps a meaningless revision, and the registry reads iServerRevision off every announce.
       # [rc4l] On a workflow_run the default checkout is the default branch's tip, NOT the commit the
       # triggering run built. Pinning head_sha is what makes the image contain the engine that was
       # actually released rather than whatever landed on main since.
@@ -85,14 +79,6 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      # [rc4l] Required for Dockerfile.game-server.dockerignore to be honoured; the legacy builder
-      # only reads the root .dockerignore, which excludes everything and would empty the context.
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # [rc4l] Same derivation as registry-image.yml: the version is computed from the newest tag,
-      # never typed. A hand-entered version is how you publish 0.2.0 twice, or a 0.10.0 that sorts
-      # below 0.9.0.
       - name: Derive tags
         id: meta
         env:
@@ -184,198 +170,37 @@ jobs:
       # [rc4l] load, never push, at this stage: the smoke test below must run the EXACT image that
       # gets published, so the build lands in the local daemon first and is pushed only once it has
       # been proven to start a server.
-      - name: Build
-        if: steps.meta.outputs.skip != 'true'
-        uses: docker/build-push-action@v6
+
+  build:
+    needs: meta
+    if: needs.meta.outputs.skip != 'true'
+    uses: ./.github/workflows/_game-server-image.yml
+    with:
+      ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      tags: ${{ needs.meta.outputs.tags }}
+      primary: ${{ needs.meta.outputs.primary }}
+      engine: ${{ needs.meta.outputs.engine }}
+      publish: ${{ needs.meta.outputs.publish == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+
+  # [rc4l] Tag the commit the published image was built from, so a running container can always be
+  # traced back to source. Only after the image is actually pushed: a tag claiming a version nobody
+  # can pull is worse than no tag.
+  tag:
+    needs: [meta, build]
+    if: needs.meta.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
         with:
-          context: .
-          file: Dockerfile.game-server
-          load: true
-          push: false
-          tags: ${{ steps.meta.outputs.tags }}
-          provenance: false
-          build-args: |
-            ENGINE_VERSION=${{ steps.meta.outputs.engine }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # [rc4l] Prove it HOSTS, not merely that it compiled.
-      #
-      # The entry is synthesised rather than taken from catalogue/, and that is the whole trick: every
-      # shipped entry wants doom2.wad and pk3s that live on third-party mirrors, so smoke-testing one
-      # would make this job fail whenever somebody else's web server is down. An entry that names
-      # freedoom2.wad and no files resolves entirely from inside the image, with no network at all, and
-      # still exercises the real path: manifest parse, iwad resolution, argv construction, engine start.
-      #
-      # Announce is off. A CI runner registering itself on the public registry would put a server on
-      # the browser that exists for ninety seconds and answers nobody.
-      - name: Smoke test
-        if: steps.meta.outputs.skip != 'true'
-        run: |
-          set -euo pipefail
-          mkdir -p smoke/catalogue/citest
-          cat > smoke/catalogue/citest/addon.json <<'JSON'
-          {
-            "schema": 1,
-            "name": "CI smoke test",
-            "summary": "Resolves entirely from inside the image, so this test needs no network.",
-            "iwad": "freedoom2.wad",
-            "map": "map01",
-            "files": []
-          }
-          JSON
-
-          # [rc4l] A SECOND entry that actually names a file, because an empty files[] never calls
-          # resolve_file -- and that is precisely how a bug shipped: resolve_file returns its path on
-          # stdout, log() also wrote to stdout, and the caller's $( ) captured both. The engine got a
-          # -file argument full of log lines, loaded nothing, and came up healthy on the substituted
-          # IWAD's own map01. Every assertion below passed on that server.
-          #
-          # The file is one the IMAGE already carries, and its md5 is computed from the image at test
-          # time rather than hardcoded, so this exercises the whole resolve-and-load path with no
-          # network and nothing to go stale.
-          img="${{ steps.meta.outputs.primary }}"
-          pk3="$(docker run --rm --entrypoint sh "$img" -c 'ls /opt/forkundera/brightmaps.pk3')"
-          md5="$(docker run --rm --entrypoint sh "$img" -c "md5sum $pk3 | cut -d' ' -f1")"
-          echo "smoke file: $pk3 md5=$md5"
-
-          mkdir -p smoke/catalogue/citestfile
-          cat > smoke/catalogue/citestfile/addon.json <<JSON
-          {
-            "schema": 1,
-            "name": "CI smoke test with a file",
-            "iwad": "freedoom2.wad",
-            "map": "map01",
-            "files": [ { "name": "$(basename "$pk3")", "md5": "${md5}" } ]
-          }
-          JSON
-
-          # [rc4l] The container runs as an unprivileged user that does not exist on this runner, so a
-          # bind mount it must write into (the WAD store) has to be opened up. A real deployment uses a
-          # named volume, which Docker creates with the image's ownership and where this does not arise.
-          chmod -R 777 smoke
-
-          docker run -d --name fua-smoke \
-            -e FUA_ANNOUNCE=0 \
-            -e FUA_NAME="CI smoke test" \
-            -v "$PWD/smoke:/data" \
-            "${{ steps.meta.outputs.primary }}" citest
-          sleep 20
-
-          # [rc4l] Captured to a FILE and grepped from there, never piped into grep -q. This step runs
-          # under `set -o pipefail`, and `grep -q` exits the moment it matches, which closes the pipe
-          # and kills `docker logs` with SIGPIPE (141) -- so pipefail reports the pipeline as failed
-          # precisely when the assertion SUCCEEDED. That cost a red build whose log plainly contained
-          # the line it claimed was missing.
-          docker logs fua-smoke > smoke.log 2>&1
-          cat smoke.log
-
-          if [ "$(docker inspect -f '{{.State.Running}}' fua-smoke)" != "true" ]; then
-            echo "::error::the server exited instead of staying up"
-            exit 1
-          fi
-
-          # The entrypoint got as far as handing off to the engine.
-          grep -q '\[fua-entry\] exec:' smoke.log \
-            || { echo "::error::entrypoint never built a command line"; exit 1; }
-
-          # [rc4l] The engine's OWN output, proving the binary executed. An earlier version grepped for
-          # "freedoom", which the entrypoint prints itself while resolving the iwad, so it would have
-          # passed against a binary that never ran at all.
-          grep -q 'ForkUnderA' smoke.log \
-            || { echo "::error::engine never printed its banner -- the binary did not start"; exit 1; }
-
-          # [rc4l] The three that prove it is actually SERVING rather than merely alive: a bound
-          # socket, a loaded map, and the TCP listener features/wad-serve opens beside it.
-          grep -q 'UDP Initialized' smoke.log \
-            || { echo "::error::network subsystem never came up"; exit 1; }
-          grep -q '\*\*\* map01' smoke.log \
-            || { echo "::error::no map loaded"; exit 1; }
-          grep -q 'WAD serving enabled on TCP port' smoke.log \
-            || { echo "::error::wad-serve did not open its TCP listener"; exit 1; }
-
-          # [rc4l] Config creation happens after the banner and kills the process when it fails, which
-          # is exactly how the HOME-on-the-volume bug presented: built fine, banner fine, dead.
-          if grep -q 'Permission denied' smoke.log; then
-            echo "::error::server hit a permission error during startup"
-            exit 1
-          fi
-
-          docker rm -f fua-smoke
-
-          # [rc4l] Second server, from the entry that names a file. The assertion that matters is the
-          # last one: the ENGINE reporting it added the pk3. Everything above this can pass while the
-          # -file argument is garbage, which is exactly what happened in production.
-          docker run -d --name fua-smoke-file \
-            -e FUA_ANNOUNCE=0 \
-            -v "$PWD/smoke:/data" \
-            "$img" citestfile
-          sleep 20
-          docker logs fua-smoke-file > smokefile.log 2>&1
-          cat smokefile.log
-
-          if [ "$(docker inspect -f '{{.State.Running}}' fua-smoke-file)" != "true" ]; then
-            echo "::error::the file-entry server exited instead of staying up"
-            exit 1
-          fi
-
-          grep -qE '^ adding .*brightmaps\.pk3' smokefile.log \
-            || { echo "::error::the engine never loaded the entry's file -- resolve_file returned something unusable"; exit 1; }
-
-          # [rc4l] The path handed over must be one clean argument. A -file carrying log output would
-          # show up here as a line that is not a plain path.
-          grep -q "\-file /opt/forkundera/brightmaps.pk3" smokefile.log \
-            || grep -q "\-file /data/wads" smokefile.log \
-            || { echo "::error::the -file argument was not a clean resolved path"; exit 1; }
-
-          # [rc4l] The contract that server.cfg is allowed to win. Everything expressible as a CVAR
-          # belongs in the entry's cfg, so the entrypoint must say NOTHING about those unless the
-          # operator overrode them -- `+` arguments are applied after `+exec` and would otherwise
-          # overrule the cfg with a default nobody chose. This container sets no FUA_NAME and no
-          # FUA_PLAYERS, so neither cvar may appear.
-          if grep -qE '\[fua-entry\] exec:.*\+sv_maxplayers' smokefile.log; then
-            echo "::error::+sv_maxplayers was passed with no FUA_PLAYERS set -- it would override server.cfg"
-            exit 1
-          fi
-          if grep -qE '\[fua-entry\] exec:.*\+sv_hostname' smokefile.log; then
-            echo "::error::+sv_hostname was passed with no FUA_NAME set -- it would override server.cfg"
-            exit 1
-          fi
-
-          # [rc4l] And the other half: an explicit override must still reach the command line. The
-          # first container ran with FUA_NAME set, so silence there would be the opposite bug.
-          grep -qE '\[fua-entry\] exec:.*\+sv_hostname' smoke.log \
-            || { echo "::error::FUA_NAME was set but +sv_hostname never reached the command line"; exit 1; }
-
-          docker rm -f fua-smoke-file
-
-      - name: Log in to GHCR
-        if: steps.meta.outputs.publish == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Push
-        if: steps.meta.outputs.publish == 'true'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.game-server
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          provenance: false
-          build-args: |
-            ENGINE_VERSION=${{ steps.meta.outputs.engine }}
-          cache-from: type=gha
-
-      # [rc4l] Tag the commit the published image was built from, so a running container can always be
-      # traced back to source. Only for a real release off the default branch; an experimental image is
-      # identified by its branch and sha and needs no tag.
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Tag the release
-        if: steps.meta.outputs.publish == 'true' && (github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch))
         run: |
           set -euo pipefail
-          git tag "game-server-v${{ steps.meta.outputs.version }}"
-          git push origin "game-server-v${{ steps.meta.outputs.version }}"
+          git tag "game-server-v${{ needs.meta.outputs.version }}"
+          git push origin "game-server-v${{ needs.meta.outputs.version }}"

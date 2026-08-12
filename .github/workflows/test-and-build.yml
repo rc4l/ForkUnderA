@@ -26,7 +26,7 @@ jobs:
   # [rc4l] A clang-tidy job ran here and gated publish in release.yml. Deleted in 50d64db, which
   # has the measurements. .clang-tidy stays for editors and clangd.
 
-  # [rc4l] PRs and main, but not every feature-branch push â€” the builds are the slow part.
+  # [rc4l] PRs and main, but not every feature-branch push — the builds are the slow part.
   # Main is covered as well as PRs because an admin can push straight past the PR gate.
   # Advisory, not a required check: the Windows job depends on vcpkg and a pinned runner
   # image, and a hiccup there shouldn't block a merge that never touched Windows.
@@ -36,3 +36,21 @@ jobs:
     uses: ./.github/workflows/_build.yml
     with:
       version: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('main-{0}', github.run_number) }}
+
+  # [rc4l] The headless server image, built and smoke-tested on every pull request.
+  #
+  # DELIBERATELY NO `needs:`. It starts at the same moment as `test` and nothing waits on it: `build`
+  # still needs only `test`, so the slowest job here cannot delay the ones people actually watch. It
+  # is expected to finish last and to hold the PR until it does, which is the point -- it is a
+  # required check, so a headless build that cannot start a server rejects the merge.
+  #
+  # Unfiltered, unlike the old workflow-level path filter. _build.yml already compiles SERVERONLY
+  # natively on every PR and catches source breakage faster, so what this uniquely proves is the
+  # PACKAGING: the Dockerfile, the entrypoint's catalogue resolution, the runtime library set and that
+  # a server actually reaches its tick loop. Every one of those has broken at least once.
+  game-server:
+    uses: ./.github/workflows/_game-server-image.yml
+    permissions:
+      contents: read
+      packages: write
+
