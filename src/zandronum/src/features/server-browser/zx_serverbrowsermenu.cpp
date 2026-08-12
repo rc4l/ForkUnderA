@@ -2315,18 +2315,7 @@ public:
 		// what the server was handed.
 		const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( addon );
 
-		std::vector<std::string> iwads;
-		static const char *const kCandidates[] = {
-			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
-			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
-		};
-		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
-		{
-			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
-				iwads.push_back( kCandidates[i] );
-		}
-
-		const zx::IwadPick pick = zx::PickIwad( addon.iwad, iwads );
+		const zx::IwadPick pick = zx::PickIwad( addon.iwad, zx::AvailableIwads( addon.iwad ));
 		if ( pick.choice == zx::IwadChoice::None )
 			return false;
 
@@ -3711,19 +3700,6 @@ public:
 					have.push_back( loads[i].name );
 			}
 
-			std::vector<std::string> iwads;
-			{
-				static const char *const kCandidates[] = {
-					"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
-					"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
-				};
-
-				for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
-				{
-					if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
-						iwads.push_back( kCandidates[i] );
-				}
-			}
 
 			zx::HostChoices choices;
 			choices.serverName = config.hostName;
@@ -3738,7 +3714,7 @@ public:
 			}
 
 			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon, loads,
-				zx::PickIwad( chosen.addon.iwad, iwads ),
+				zx::PickIwad( chosen.addon.iwad, zx::AvailableIwads( chosen.addon.iwad )),
 				zx::CatalogueServerCfgPath( chosen, g_HostVariantId.GetChars( )),
 				remixCfgs, pick.map, choices, have );
 
@@ -6527,19 +6503,7 @@ public:
 	// getting Freedoom sees freedoom2.wad and knows.
 	FString HostDetailIwadRow( const zx::AddonEntry &addon )
 	{
-		std::vector<std::string> iwads;
-		static const char *const kCandidates[] = {
-			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
-			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
-		};
-
-		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
-		{
-			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
-				iwads.push_back( kCandidates[i] );
-		}
-
-		const zx::IwadPick pick = zx::PickIwad( addon.iwad, iwads );
+		const zx::IwadPick pick = zx::PickIwad( addon.iwad, zx::AvailableIwads( addon.iwad ));
 
 		FString row;
 		if ( pick.choice == zx::IwadChoice::None )

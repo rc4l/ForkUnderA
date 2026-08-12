@@ -440,6 +440,43 @@ std::string CatalogueServerCfgPath( const CatalogueEntry &entry, const std::stri
 	return entry.dir + "/" + pick.cfg;
 }
 
+//*****************************************************************************
+//
+// [rc4l] Every IWAD the host could run an entry on, in the order PickIwad wants them.
+//
+// The entry's OWN iwad is probed first and always. A fixed list of the classics can never name a
+// game that ships its own, so an entry declaring one was told there was nothing to run on while the
+// file sat beside the executable. Asking for what was actually asked for costs one probe and cannot
+// go out of date.
+//
+// The rest are the free IWADs a substitute might land on. Those ARE a list, because being
+// substitutable is a fact about our own table rather than about any entry.
+//
+// Wider than the working directory: Steam libraries and the launcher's own folders count.
+//
+std::vector<std::string> AvailableIwads( const std::string &preferred )
+{
+	std::vector<std::string> iwads;
+
+	if ( !preferred.empty( ) && zx::FindIwadInEngineSearchPaths( preferred.c_str( )).IsNotEmpty( ))
+		iwads.push_back( preferred );
+
+	static const char *const kSubstitutable[] = {
+		"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
+		"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
+	};
+
+	for ( size_t i = 0; i < sizeof( kSubstitutable ) / sizeof( kSubstitutable[0] ); ++i )
+	{
+		if ( preferred == kSubstitutable[i] )
+			continue;					// already probed above
+		if ( zx::FindIwadInEngineSearchPaths( kSubstitutable[i] ).IsNotEmpty( ))
+			iwads.push_back( kSubstitutable[i] );
+	}
+
+	return iwads;
+}
+
 } // namespace zx
 
 // [rc4l] Reading the catalogue back out, so a broken entry can be diagnosed without a debugger.
@@ -597,21 +634,7 @@ CCMD( fua_host )
 			have.push_back( name );
 	}
 
-	// Every IWAD the engine can actually see, which is a wider list than the working directory:
-	// Steam libraries and the launcher's own folders count.
-	std::vector<std::string> iwads;
-	{
-		const char *const kCandidates[] = {
-			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
-			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
-		};
-
-		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
-		{
-			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
-				iwads.push_back( kCandidates[i] );
-		}
-	}
+	const std::vector<std::string> iwads = zx::AvailableIwads( chosen->addon.iwad );
 
 	const zx::IwadPick pick = zx::PickIwad( chosen->addon.iwad, iwads );
 
