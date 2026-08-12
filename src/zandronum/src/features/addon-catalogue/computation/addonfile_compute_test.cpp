@@ -188,7 +188,8 @@ TEST(AddonFile, AnUnknownVariantKeyIsSkippedButStillHasToParse)
 	EXPECT_EQ("a", good.variants[0].id);
 
 	EXPECT_FALSE(Parse(WithVariants(
-		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"fromlater\": { \"a\": }").c_str()).valid);
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\","
+		"    \"fromlater\": \"a\\qb\" } ]").c_str()).valid);
 }
 
 // ---------------------------------------------------------------- gamemodes
