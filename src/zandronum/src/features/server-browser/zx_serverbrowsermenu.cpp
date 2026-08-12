@@ -867,18 +867,17 @@ static	int				g_HostLives = -1;
 // play rather than about which pack you were looking at when you set it.
 static	int				g_HostFastWeapons = -1;
 
+// [rc4l] The mode actually in force. Declared here and defined below the picks it needs: both the
+// lives control and the teams control ask the same question and must not answer it two ways.
+static zx::HostGameMode HostGameModeFor( const zx::AddonEntry &addon );
+
 // The lives control for the CHOSEN way of playing. The variant's gamemode when it declares one,
 // otherwise the entry's, because most packs play one way and should say it once.
 static zx::LivesControl HostLivesControl( const zx::AddonEntry &addon )
 {
 	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
 
-	zx::HostGameMode mode = addon.gameMode;
-	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))) &&
-		( addon.variants[pick.index].gameMode != zx::HostGameMode::Unknown ))
-	{
-		mode = addon.variants[pick.index].gameMode;
-	}
+	const zx::HostGameMode mode = HostGameModeFor( addon );
 
 	// [rc4l] And the variant's own lives when it states them, because an entry can gather packs that
 	// are not alike: six campaign mapsets that can be run as Survival sit beside four co-op packs that
@@ -1042,6 +1041,25 @@ static std::vector<zx::RemixPick> HostRemixPicks( const zx::AddonEntry &addon )
 	return zx::PickRemixes( HostOfferedRemixes( addon ), wanted );
 }
 
+// [rc4l] The mode in force: what the entry says, then its variant, then whatever mode mix is lit.
+//
+// The pill wins over both, because it is the most recent and most specific thing said. An entry
+// declares how it plays by default; a variant narrows that; picking DEATHMATCH or CAPTURE THE FLAG
+// on the panel is the player changing it now, and the teams and lives controls read the answer.
+static zx::HostGameMode HostGameModeFor( const zx::AddonEntry &addon )
+{
+	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+	zx::HostGameMode stated = addon.gameMode;
+	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))) &&
+		( addon.variants[pick.index].gameMode != zx::HostGameMode::Unknown ))
+	{
+		stated = addon.variants[pick.index].gameMode;
+	}
+
+	return zx::EffectiveGameMode( stated, HostRemixPicks( addon ));
+}
+
 // [rc4l] How many teams the player has asked for, or -1 for "not yet". Kept across entries like the
 // lives count and for the same reason.
 static	int				g_HostTeams = -1;
@@ -1053,23 +1071,14 @@ static zx::TeamsControl HostTeamsControl( const zx::AddonEntry &addon )
 {
 	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
 
-	zx::HostGameMode mode = addon.gameMode;
-
 	// EITHER may say yes. An entry that plays one way has no variant to say it on -- Brutal Doom is
 	// eleven deathmatch maps and nothing else -- and an entry with several says it per variant.
 	bool bOffered = addon.teams;
 
 	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))))
-	{
-		const zx::AddonVariant &v = addon.variants[pick.index];
+		bOffered = bOffered || addon.variants[pick.index].teams;
 
-		if ( v.gameMode != zx::HostGameMode::Unknown )
-			mode = v.gameMode;
-
-		bOffered = bOffered || v.teams;
-	}
-
-	return zx::TeamsFor( mode, bOffered, g_HostTeams );
+	return zx::TeamsFor( HostGameModeFor( addon ), bOffered, g_HostTeams );
 }
 
 //*****************************************************************************

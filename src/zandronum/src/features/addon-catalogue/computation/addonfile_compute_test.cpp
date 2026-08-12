@@ -246,6 +246,10 @@ TEST(AddonFile, EveryGamemodeTheSchemaKnowsIsRead)
 		{ "lastmanstanding", zx::HostGameMode::LastManStanding },
 		{ "teamlms",         zx::HostGameMode::TeamLastManStanding },
 		{ "ctf",             zx::HostGameMode::CaptureTheFlag },
+		{ "skulltag",        zx::HostGameMode::Skulltag },
+		{ "possession",      zx::HostGameMode::Possession },
+		{ "teampossession",  zx::HostGameMode::TeamPossession },
+		{ "terminator",      zx::HostGameMode::Terminator },
 	};
 
 	for (size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); ++i)
@@ -267,8 +271,13 @@ TEST(AddonFile, AGamemodeNobodyKnowsIsNotAnError)
 {
 	// Not knowing is the safe answer: everything that reads this treats Unknown as "offer nothing
 	// that depends on the gamemode", which is what an entry written for a later build should get.
+	//
+	// Domination is a real Zandronum gamemode that this schema does not model, which makes it the
+	// honest example. It was "possession" until possession became one of the modes we do model, and
+	// the lesson is that the example has to be a mode we have decided against rather than one we
+	// have not reached yet.
 	const AddonEntry e = Parse(
-		"{ \"kind\": \"pvp\", \"name\": \"X\", \"gamemode\": \"possession\","
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"gamemode\": \"domination\","
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
 
 	ASSERT_TRUE(e.valid) << e.error;
@@ -1004,6 +1013,38 @@ zx::AddonRemix ParseRemix(const char *json)
 }
 
 } // namespace
+
+TEST(RemixFile, AMixMaySayWhichWayOfPlayingItSwitchesTo)
+{
+	// An axis of MODES rather than of mods. Read into the enum here so a name nobody knows becomes
+	// Unknown at the door instead of somewhere with no way to say so.
+	const zx::AddonRemix r = ParseRemix(
+		"{ \"name\": \"Capture the Flag\", \"group\": \"mode\", \"gamemode\": \"ctf\","
+		"  \"cfg\": \"ctf.cfg\" }");
+
+	ASSERT_TRUE(r.valid) << r.error;
+	EXPECT_EQ(zx::HostGameMode::CaptureTheFlag, r.gameMode);
+}
+
+TEST(RemixFile, AMixThatSaysNothingAboutTheModeLeavesItAlone)
+{
+	// Every gameplay mod in the catalogue. Unknown is what stops a mod pill from blanking the mode
+	// the entry declared, which is the difference between adding Brutal Doom and changing the game.
+	EXPECT_EQ(zx::HostGameMode::Unknown,
+		ParseRemix("{ \"name\": \"Brutal Doom\" }").gameMode);
+
+	// And a mode this build has never heard of reads the same way, rather than refusing the mix:
+	// a catalogue written for a later build should lose the control, not the pill.
+	EXPECT_EQ(zx::HostGameMode::Unknown,
+		ParseRemix("{ \"name\": \"X\", \"gamemode\": \"domination\" }").gameMode);
+}
+
+TEST(RemixFile, AGamemodeThatIsNotAStringIsRefused)
+{
+	// Not skipped. A mode that failed to read is a pill that silently stops switching anything,
+	// and the panel would then offer teams and lives for whatever the entry happened to say.
+	EXPECT_FALSE(ParseRemix("{ \"name\": \"X\", \"gamemode\": 7 }").valid);
+}
 
 TEST(RemixFile, TheSmallestUsableRemixIsJustANameAndACfg)
 {

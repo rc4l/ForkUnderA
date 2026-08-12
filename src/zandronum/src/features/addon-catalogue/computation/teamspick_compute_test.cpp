@@ -92,6 +92,53 @@ TEST(TeamsPick, AModeWithNoFreeForAllToLeaveGetsNoControlEvenWhenAsked)
 	EXPECT_FALSE(c.reason.empty());
 }
 
+TEST(TeamsPick, TheModesWhoseSidesComeFromTheMapSaySoInThoseWords)
+{
+	// Both of these have sides, so the generic refusal reads as a bug in the entry rather than as
+	// the truth. Checked as its own case because the wording is the whole point of the branch: an
+	// author who is told CTF has "no free-for-all" goes looking for a mistake that is not there.
+	const HostGameMode fromTheMap[] = { HostGameMode::CaptureTheFlag, HostGameMode::Skulltag };
+
+	for (size_t i = 0; i < sizeof(fromTheMap) / sizeof(fromTheMap[0]); ++i)
+	{
+		const TeamsControl c = TeamsFor(fromTheMap[i], true, 4);
+
+		EXPECT_FALSE(c.applies) << "mode index " << i;
+		EXPECT_NE(std::string::npos, c.reason.find("map decides")) << "mode index " << i;
+		EXPECT_TRUE(TeamsCvars(c).empty()) << "mode index " << i;
+	}
+}
+
+TEST(TeamsPick, PossessionSwitchesToItsOwnTeamMode)
+{
+	// The third mode with a twin, and it qualifies for the same reason the other two do: the stone
+	// is spawned by the engine at a deathmatch start, so no part of the map has to agree.
+	const Cvars solo = TeamsCvars(TeamsFor(HostGameMode::Possession, true, 0));
+	const Cvars teams = TeamsCvars(TeamsFor(HostGameMode::Possession, true, 3));
+
+	EXPECT_EQ("true", ValueOf(solo, "possession"));
+	EXPECT_EQ("true", ValueOf(teams, "teampossession"));
+	EXPECT_EQ("3", ValueOf(teams, "sv_maxteams"));
+}
+
+TEST(TeamsPick, AModeThatIsAlreadyTeamsHasNothingToSwitch)
+{
+	// Handed the team half of a pair, there is no free-for-all to go back to: the control would be
+	// offering to turn the chosen gamemode into a different one.
+	EXPECT_FALSE(TeamsFor(HostGameMode::TeamPossession, true, 2).applies);
+	EXPECT_FALSE(TeamsFor(HostGameMode::TeamLastManStanding, true, 2).applies);
+	EXPECT_FALSE(TeamsFor(HostGameMode::TeamDeathmatch, true, 2).applies);
+}
+
+TEST(TeamsPick, TerminatorHasNoTeamsBecauseThatIsTheMode)
+{
+	// One ball, and whoever holds it is everyone else's enemy. Sides would remove the mode.
+	const TeamsControl c = TeamsFor(HostGameMode::Terminator, true, 4);
+
+	EXPECT_FALSE(c.applies);
+	EXPECT_FALSE(c.reason.empty());
+}
+
 TEST(TeamsPick, AnUnstatedGamemodeSaysSoRatherThanGuessing)
 {
 	const TeamsControl c = TeamsFor(HostGameMode::Unknown, true, -1);
