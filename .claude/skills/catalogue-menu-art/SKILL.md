@@ -35,11 +35,20 @@ to the wrong picture. The script says which are absent; do not ignore it.
 
 ## What it picks
 
-| Order | Lump | Why |
+| Order | Source | Why |
 |---|---|---|
-| 1 | `M_DOOM` | A logo, drawn to be read small on a dark background. Survives the shrink. |
-| 2 | `TITLEPIC` | A whole illustration. Recognisable at this size but its fine text is not. |
-| - | neither | No file is written. The caller falls back to the text header. |
+| 1 | What the pack's **menu definition** draws | The only one that says what is really on screen |
+| 2 | `M_DOOM` | The convention. A logo, made to be read small on a dark background |
+| 3 | `TITLEPIC` | A whole illustration. Recognisable at this size, its fine text is not |
+| - | none of them | No file is written. The caller falls back to the text header |
+
+The first step matters more than it sounds. The conventional name is a **convention**: a pack that
+replaces the main menu outright names its own graphic, and then the picture a player actually sees
+is one nothing conventional would look for. Such a pack has a perfectly good logo and appears to
+have none, which is a silent and very convincing failure.
+
+Blank graphics are skipped at every step. Archives ship them as placeholders and spacers, they
+decode perfectly, and a flat slab in place of a name is worse than the name.
 
 Exit code 0 means art was written, 1 means there was none, 2 means it could not reach the budget.
 Use `--json` when a script needs the details.
@@ -151,8 +160,11 @@ a list of names living in a tool is a list somebody has to edit the tool to chan
 | Written on the entry, variant or mix | Means |
 |---|---|
 | `"art": "<lump>"` | Use this instead of what would be resolved |
+| `"art": "<file.png>"` | A picture supplied beside the JSON |
 | `"art": ""` | No picture. Draw the name |
 | absent | Resolve automatically |
+
+A value with an extension is a file, since lump names have none.
 
 A variant speaks for itself, or inherits what its entry said.
 
@@ -164,10 +176,14 @@ it. Three shapes seen so far:
   names the base game rather than the pack, so every variant comes out as the same generic picture
   where their names had told you which was which.
 - A menu graphic that is a blank spacer, with the real title rendered as a MAP rather than stored as
-  a picture. Nothing can be extracted from a rendered scene, so the pack's badge elsewhere in its
-  own files is the only thing to point at.
+  a picture. Nothing can be extracted from a rendered scene, so either the pack's badge elsewhere in
+  its own files, or a supplied picture, is the only thing to point at.
 
 It is not for taste.
+
+A supplied picture goes through the same slot, the same budget and the same treatment as an
+extracted one. That is the point of routing it through here rather than dropping a finished image
+into the folder: one path, one look, and a regeneration cannot quietly leave it behind.
 
 ## When to regenerate
 
