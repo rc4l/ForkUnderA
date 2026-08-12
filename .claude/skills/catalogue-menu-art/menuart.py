@@ -46,6 +46,11 @@ COLOUR_STEPS = (256, 128, 64, 32, 16, 8, 4)
 # panel is usually several layers deep.
 BACKGROUND = (7, 8, 11)
 
+# [rc4l] The last resort, when every colour depth is still over the ceiling. A wide logo can have
+# twice the pixels of an ordinary one, and no amount of posterising will save it.
+SIZE_SHRINK = 0.9
+SIZE_STEPS = 12
+
 # [rc4l] The stock palette, for decoding a picture whose archive brought none of its own.
 #
 # Most add-ons ship no palette because the base game already supplies one, and the load order a
@@ -423,11 +428,13 @@ def fit(img, height, max_width):
 
 
 def compress(img, budget, background=BACKGROUND):
-	"""Under budget, keeping every pixel. Returns the bytes and how many colours it took.
+	"""Under budget. Returns the bytes, how many colours it took, and whether it got there.
 
-	Size is settled before this runs and is never traded away: the slot is the slot, and an image
-	that fits the budget by being smaller than its slot just gets stretched back and looks worse
-	than the posterised version of the right size.
+	Colours are spent FIRST and pixels only after they run out, because a logo is flat colour and
+	posterises gracefully where a smaller one just goes illegible. But the ceiling is a guarantee, not
+	a preference: an unusually wide logo has twice the pixels of an ordinary one and can exhaust every
+	colour step while still being too big, and writing it anyway would quietly break the promise the
+	budget exists to make. So size is the LAST thing spent, and it is spent rather than the ceiling.
 
 	Transparency is kept, because most logos have it and the surface behind them is not flat. A
 	logo flattened onto one colour shows that colour as a rectangle around itself the moment the
@@ -449,28 +456,42 @@ def compress(img, budget, background=BACKGROUND):
 	transparent = clear.getbbox() is not None
 
 	last = None
-	for colours in COLOUR_STEPS:
-		# One index is spent on the clear colour when there is transparency to record.
-		want = max(2, colours - 1) if transparent else colours
-		quantised = flat.quantize(colors=want, method=Image.MEDIANCUT, dither=Image.NONE)
 
-		save = {}
-		if transparent:
-			index = max(quantised.getdata()) + 1
-			if index > 255:
-				index = 255
-			palette = quantised.getpalette()
-			palette += [0] * (768 - len(palette))
-			palette[index * 3:index * 3 + 3] = list(background)
-			quantised.putpalette(palette)
-			quantised.paste(index, clear)
-			save["transparency"] = index
+	for step in range(SIZE_STEPS):
+		if step:
+			# Only ever reached when every colour depth was still too big. A tenth off each time,
+			# so the first thing that fits is barely smaller than what was asked for.
+			scale = SIZE_SHRINK ** step
+			size = (max(1, int(round(img.size[0] * scale))),
+			        max(1, int(round(img.size[1] * scale))))
+			flat = Image.new("RGB", size, background)
+			shrunk = img.resize(size, Image.LANCZOS)
+			flat.paste(shrunk, (0, 0), shrunk)
+			clear = shrunk.split()[3].point(lambda a: 255 if a == 0 else 0)
+			transparent = clear.getbbox() is not None
 
-		buf = io.BytesIO()
-		quantised.save(buf, "PNG", optimize=True, compress_level=9, **save)
-		last = (buf.getvalue(), colours)
-		if len(last[0]) <= budget:
-			return last[0], colours, True
+		for colours in COLOUR_STEPS:
+			# One index is spent on the clear colour when there is transparency to record.
+			want = max(2, colours - 1) if transparent else colours
+			quantised = flat.quantize(colors=want, method=Image.MEDIANCUT, dither=Image.NONE)
+
+			save = {}
+			if transparent:
+				index = max(quantised.getdata()) + 1
+				if index > 255:
+					index = 255
+				palette = quantised.getpalette()
+				palette += [0] * (768 - len(palette))
+				palette[index * 3:index * 3 + 3] = list(background)
+				quantised.putpalette(palette)
+				quantised.paste(index, clear)
+				save["transparency"] = index
+
+			buf = io.BytesIO()
+			quantised.save(buf, "PNG", optimize=True, compress_level=9, **save)
+			last = (buf.getvalue(), colours)
+			if len(last[0]) <= budget:
+				return last[0], colours, True
 
 	return last[0], last[1], False
 
@@ -491,15 +512,21 @@ def extract(paths, out, height, width, budget, lumps=LUMPS, background=BACKGROUN
 		with open(out, "wb") as f:
 			f.write(data)
 
+	# Read back rather than assumed: compress may have had to give up pixels to reach the budget, and
+	# reporting the size we ASKED for would hide exactly the case worth knowing about.
+	written = Image.open(io.BytesIO(data))
+
 	return {
 		"out": out,
 		"lump": lump,
 		"source": source,
-		"size": list(sized.size),
+		"size": list(written.size),
+		"asked": list(sized.size),
+		"shrunk": written.size != sized.size,
 		"bytes": len(data),
 		"colours": colours,
 		"within_budget": ok,
-		"transparent": sized.split()[3].point(lambda a: 255 if a == 0 else 0).getbbox() is not None,
+		"transparent": "transparency" in written.info,
 	}
 
 
