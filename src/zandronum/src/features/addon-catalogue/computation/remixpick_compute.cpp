@@ -6,6 +6,33 @@
 namespace zx
 {
 
+namespace
+{
+
+// Filenames only, so ASCII case folding is the whole of it. tolower's locale is not wanted here and
+// its signed-char undefined behaviour is not worth inviting for a set of characters wad names have
+// never used.
+bool SameFileName(const std::string &a, const std::string &b)
+{
+	if (a.size() != b.size())
+		return false;
+
+	for (size_t i = 0; i < a.size(); ++i)
+	{
+		char x = a[i], y = b[i];
+		if ((x >= 'A') && (x <= 'Z'))
+			x = static_cast<char>(x - 'A' + 'a');
+		if ((y >= 'A') && (y <= 'Z'))
+			y = static_cast<char>(y - 'A' + 'a');
+		if (x != y)
+			return false;
+	}
+
+	return true;
+}
+
+} // namespace
+
 std::vector<AddonRemix> OfferedRemixes(const AddonEntry &entry, int variant,
                                        const std::vector<AddonRemix> &pool)
 {
@@ -63,6 +90,7 @@ RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &w
 			pick.name = offered[i].name;
 			pick.cfg = offered[i].cfg;
 			pick.files = offered[i].files;
+			pick.supersedes = offered[i].supersedes;
 			return pick;
 		}
 	}
@@ -75,6 +103,7 @@ RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &w
 	pick.name = offered[0].name;
 	pick.cfg = offered[0].cfg;
 	pick.files = offered[0].files;
+	pick.supersedes = offered[0].supersedes;
 	return pick;
 }
 
@@ -135,6 +164,34 @@ std::vector<RemixPick> PickRemixes(const std::vector<AddonRemix> &offered,
 	}
 
 	return picks;
+}
+
+std::vector<AddonFileRef> FilesAfterSupersedes(const std::vector<AddonFileRef> &files,
+                                               const std::vector<RemixPick> &picks)
+{
+	std::vector<AddonFileRef> kept;
+
+	for (size_t i = 0; i < files.size(); ++i)
+	{
+		bool drop = false;
+
+		for (size_t p = 0; (p < picks.size()) && !drop; ++p)
+		{
+			for (size_t s = 0; s < picks[p].supersedes.size(); ++s)
+			{
+				if (SameFileName(files[i].name, picks[p].supersedes[s]))
+				{
+					drop = true;
+					break;
+				}
+			}
+		}
+
+		if (!drop)
+			kept.push_back(files[i]);
+	}
+
+	return kept;
 }
 
 } // namespace zx

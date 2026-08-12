@@ -8,6 +8,7 @@ using zx::AddonEntry;
 using zx::AddonFileRef;
 using zx::AddonRemix;
 using zx::AddonVariant;
+using zx::FilesAfterSupersedes;
 using zx::GroupRemixes;
 using zx::OfferedRemixes;
 using zx::PickRemix;
@@ -440,4 +441,148 @@ TEST(PickRemix, EveryOfferedRemixIsReachable)
 		EXPECT_EQ(static_cast<int>(i), pick.index) << "id=" << offered[i].id;
 		EXPECT_EQ(offered[i].id, pick.id);
 	}
+}
+
+namespace
+{
+
+std::vector<AddonFileRef> Loading(const char *a, const char *b, const char *c)
+{
+	std::vector<AddonFileRef> files;
+	files.push_back(File(a));
+	if (b != NULL)
+		files.push_back(File(b));
+	if (c != NULL)
+		files.push_back(File(c));
+	return files;
+}
+
+RemixPick Superseding(const char *what)
+{
+	RemixPick pick;
+	pick.index = 0;
+	pick.id = "mod";
+	if (what != NULL)
+		pick.supersedes.push_back(what);
+	return pick;
+}
+
+std::vector<std::string> NamesOf(const std::vector<AddonFileRef> &files)
+{
+	std::vector<std::string> names;
+	for (size_t i = 0; i < files.size(); ++i)
+		names.push_back(files[i].name);
+	return names;
+}
+
+} // namespace
+
+TEST(FilesAfterSupersedes, KeepsEverythingWhenNothingIsSuperseded)
+{
+	const std::vector<AddonFileRef> files = Loading("maps.wad", "spree.pk3", NULL);
+	const std::vector<RemixPick> picks(1, Superseding(NULL));
+
+	EXPECT_EQ(NamesOf(files), NamesOf(FilesAfterSupersedes(files, picks)));
+}
+
+TEST(FilesAfterSupersedes, DropsTheFileTheMixAlreadyContains)
+{
+	// The case this exists for: a weapon mod carrying its own announcer, offered by an entry that
+	// loads one anyway. Loading both plays every announcement over itself.
+	const std::vector<AddonFileRef> files = Loading("maps.wad", "spree.pk3", "weapons.pk3");
+	const std::vector<RemixPick> picks(1, Superseding("spree.pk3"));
+
+	const std::vector<std::string> kept = NamesOf(FilesAfterSupersedes(files, picks));
+
+	ASSERT_EQ(2u, kept.size());
+	EXPECT_EQ("maps.wad", kept[0]);
+	EXPECT_EQ("weapons.pk3", kept[1]);
+}
+
+TEST(FilesAfterSupersedes, MatchesTheNameWhateverItsCase)
+{
+	// Catalogue and download store disagree about case often enough that an exact compare would
+	// suppress on one machine and not on another. Both sides are folded, since either could be the
+	// one written in caps.
+	const std::vector<AddonFileRef> loud = Loading("maps.wad", "ZandroSpree.PK3", NULL);
+	const std::vector<AddonFileRef> quiet = Loading("maps.wad", "zandrospree.pk3", NULL);
+
+	EXPECT_EQ(1u, FilesAfterSupersedes(loud, std::vector<RemixPick>(1, Superseding(
+		"zandrospree.pk3"))).size());
+	EXPECT_EQ(1u, FilesAfterSupersedes(quiet, std::vector<RemixPick>(1, Superseding(
+		"ZandroSpree.PK3"))).size());
+}
+
+TEST(FilesAfterSupersedes, DoesNotMatchOnAPrefix)
+{
+	const std::vector<AddonFileRef> files = Loading("spree.pk3", "spree2.pk3", NULL);
+	const std::vector<RemixPick> picks(1, Superseding("spree.pk3"));
+
+	const std::vector<std::string> kept = NamesOf(FilesAfterSupersedes(files, picks));
+
+	ASSERT_EQ(1u, kept.size());
+	EXPECT_EQ("spree2.pk3", kept[0]);
+}
+
+TEST(FilesAfterSupersedes, DoesNotMatchADifferentNameOfTheSameLength)
+{
+	// The length test alone would let this through, and two announcers with names this close is
+	// exactly the shape the catalogue already has.
+	const std::vector<AddonFileRef> files = Loading("spree1.pk3", "spree2.pk3", NULL);
+	const std::vector<RemixPick> picks(1, Superseding("spree2.pk3"));
+
+	const std::vector<std::string> kept = NamesOf(FilesAfterSupersedes(files, picks));
+
+	ASSERT_EQ(1u, kept.size());
+	EXPECT_EQ("spree1.pk3", kept[0]);
+}
+
+TEST(FilesAfterSupersedes, LetsAnyAxisSupersede)
+{
+	// Two independent axes, and it is the SECOND one that brings the announcer. Nothing about the
+	// suppression may depend on which group the mix sits in.
+	std::vector<RemixPick> picks;
+	picks.push_back(Superseding(NULL));
+	picks.push_back(Superseding("spree.pk3"));
+
+	const std::vector<AddonFileRef> files = Loading("maps.wad", "spree.pk3", NULL);
+	const std::vector<std::string> kept = NamesOf(FilesAfterSupersedes(files, picks));
+
+	ASSERT_EQ(1u, kept.size());
+	EXPECT_EQ("maps.wad", kept[0]);
+}
+
+TEST(FilesAfterSupersedes, ReachesWhatALaterMixAdded)
+{
+	// A mix's files are already on the end of the list by the time this runs, so one axis can
+	// supersede what another added. Cheaper than filtering in stages, and the answer is the same
+	// either way round.
+	std::vector<RemixPick> picks;
+	picks.push_back(Superseding("spree.pk3"));
+	picks.push_back(Superseding(NULL));
+
+	const std::vector<AddonFileRef> files = Loading("maps.wad", "spree.pk3", NULL);
+
+	EXPECT_EQ(1u, FilesAfterSupersedes(files, picks).size());
+}
+
+TEST(FilesAfterSupersedes, SupersedesNothingWhenNoMixIsInForce)
+{
+	// An entry with no mixes at all still comes through here, and must load exactly what it named.
+	const std::vector<AddonFileRef> files = Loading("maps.wad", "spree.pk3", NULL);
+
+	EXPECT_EQ(2u, FilesAfterSupersedes(files, std::vector<RemixPick>()).size());
+}
+
+TEST(PickRemix, CarriesTheSupersededListThrough)
+{
+	// The suppression is useless unless the pick hands the names on; nothing else does. Both routes
+	// through PickRemix are checked -- the remembered choice and the fallback to the baseline.
+	AddonRemix mod = Remix("mod", "Weapons");
+	mod.supersedes.push_back("spree.pk3");
+
+	const std::vector<AddonRemix> offered(1, mod);
+
+	EXPECT_EQ(mod.supersedes, PickRemix(offered, "mod").supersedes);
+	EXPECT_EQ(mod.supersedes, PickRemix(offered, "gone").supersedes);
 }
