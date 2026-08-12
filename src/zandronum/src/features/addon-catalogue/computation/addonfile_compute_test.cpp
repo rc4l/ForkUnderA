@@ -493,6 +493,29 @@ TEST(AddonFile, AnUnusableMd5IsRefused)
 
 // ---------------------------------------------------------------- malformed input
 
+// [rc4l] ReadInt consumes a leading sign before the digits, and the only fixtures that ever fed it
+// one were the schema tests, which went with the field. `order` is still an int and takes any value,
+// so it keeps that branch honest without inventing a rule to test against.
+TEST(AddonFile, ASignedOrderIsStillANumber)
+{
+	const AddonEntry e = Parse(
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"order\": +2,"
+		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	EXPECT_TRUE(e.valid) << e.error;
+	EXPECT_EQ(2, e.order);
+}
+
+TEST(AddonFile, ANegativeOrderIsStillANumber)
+{
+	const AddonEntry e = Parse(
+		"{ \"kind\": \"pvp\", \"name\": \"X\", \"order\": -3,"
+		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	EXPECT_TRUE(e.valid) << e.error;
+	EXPECT_EQ(-3, e.order);
+}
+
 TEST(AddonFile, RubbishIsRefusedRatherThanRead)
 {
 	const char *bad[] = {
