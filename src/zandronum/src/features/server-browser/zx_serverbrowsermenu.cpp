@@ -5990,7 +5990,7 @@ public:
 		// change as a mod is picked, which is the shift the reservation exists to stop.
 		const bool bSettings = HostHasGameplayRow( );
 		const int fileLines = bSettings
-			? SB_HOST_WADS_MAXLINES
+			? HostWadListLines( a )
 			: static_cast<int>( HostSelectedFiles( a ).size( )) + 1;	// +1 for the IWAD
 
 		int h = BigFont->GetHeight( ) + 4
@@ -6216,7 +6216,8 @@ public:
 		for ( size_t i = 0; i < sizes.size( ) && i < loads.size( ); ++i )
 			total += sizes[i];
 
-		y = DrawHostWadList( x, y, names, total, HostHasGameplayRow( ));
+		y = DrawHostWadList( x, y, names, total,
+			HostHasGameplayRow( ) ? HostWadListLines( addon ) : 0 );
 
 		// [rc4l] What you play it WITH, in the room the list just gave back.
 		//
@@ -6226,12 +6227,87 @@ public:
 		DrawHostGameplay( x, y, addon );
 	}
 
+	// [rc4l] How many lines the file list must RESERVE for this entry.
+	//
+	// It used to reserve a flat three whenever anything was drawn under it, which is what put two
+	// blank lines above "3 files" on every entry whose names fit on one -- room spent on nothing, in
+	// the column that then needed scrolling to reach the mixes.
+	//
+	// The reservation itself has to stay. Picking a mix ADDS a file, and if the block grew with it
+	// then everything below would jump down a line while the pointer is still over the pill that was
+	// just clicked, so the next click lands on a different setting.
+	//
+	// The answer is to reserve what this entry can actually reach: the widest its list gets across
+	// every mix it offers. That is stable while the panel is being used -- the only thing that
+	// changes it is choosing a different way of playing, which redraws everything anyway -- and for
+	// most entries it is one line rather than three.
+	int HostWadListLines( const zx::AddonEntry &addon )
+	{
+		const int wrapW = SB_HOST_RCOL_RIGHT - SB_HOST_LEFT;
+		const int sepW = SmallFont->StringWidth( ", " );
+		const int dotsW = SmallFont->StringWidth( ", ..." );
+
+		const std::vector<zx::AddonFileRef> base =
+			zx::PickVariant( addon, g_HostVariantId.GetChars( )).files;
+
+		// [rc4l] PickRemixes answers one per group, in the group order GroupRemixes gives, so the two
+		// line up by index. That is the only handle on which pick belongs to which axis.
+		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
+		const std::vector<zx::RemixPick> picks = HostRemixPicks( addon );
+
+		// What every axis OTHER than the mix contributes, which does not vary here.
+		std::vector<zx::AddonFileRef> fixed = base;
+		for ( size_t i = 0; i < picks.size( ); ++i )
+		{
+			if (( i < groups.size( )) && ( groups[i].id == kHostMixGroup ))
+				continue;
+
+			fixed.insert( fixed.end( ), picks[i].files.begin( ), picks[i].files.end( ));
+		}
+
+		// Every mix on offer in turn, plus the case of no mix axis at all.
+		std::vector<std::vector<zx::AddonFileRef> > mixes;
+
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if ( groups[g].id != kHostMixGroup )
+				continue;
+
+			for ( size_t c = 0; c < groups[g].choices.size( ); ++c )
+				mixes.push_back( groups[g].choices[c].files );
+		}
+
+		if ( mixes.empty( ))
+			mixes.push_back( std::vector<zx::AddonFileRef>( ));
+
+		const FString iwad = HostDetailIwadName( addon );
+
+		int most = 1;
+		for ( size_t m = 0; m < mixes.size( ); ++m )
+		{
+			std::vector<int> widths;
+			widths.push_back( SmallFont->StringWidth( iwad ));
+
+			for ( size_t i = 0; i < fixed.size( ); ++i )
+				widths.push_back( SmallFont->StringWidth( fixed[i].name.c_str( )));
+			for ( size_t i = 0; i < mixes[m].size( ); ++i )
+				widths.push_back( SmallFont->StringWidth( mixes[m][i].name.c_str( )));
+
+			const zx::WadListLayout layout = zx::LayoutWadList( widths, sepW, dotsW, wrapW,
+				SB_HOST_WADS_MAXLINES );
+
+			most = MAX( most, static_cast<int>( layout.lines.size( )));
+		}
+
+		return MIN( most, SB_HOST_WADS_MAXLINES );
+	}
+
 	// [rc4l] The files, as running text rather than a table. Returns the y below what it drew.
 	//
 	// `bCapped` is whether something is drawn underneath: the list stops at three lines to leave room
 	// for it, and runs as long as it likes when nothing is.
 	int DrawHostWadList( int x, int y, const TArray<FString> &names,
-		unsigned long long total, bool bCapped )
+		unsigned long long total, int reserved )
 	{
 		if ( names.Size( ) == 0 )
 			return y;
@@ -6245,8 +6321,7 @@ public:
 		for ( unsigned i = 0; i < names.Size( ); ++i )
 			widths.push_back( SmallFont->StringWidth( names[i] ));
 
-		const zx::WadListLayout layout = zx::LayoutWadList( widths, sepW, dotsW, wrapW,
-			bCapped ? SB_HOST_WADS_MAXLINES : 0 );
+		const zx::WadListLayout layout = zx::LayoutWadList( widths, sepW, dotsW, wrapW, reserved );
 
 		const int listTop = y;
 
@@ -6285,16 +6360,11 @@ public:
 			y += SB_HOST_LINE;
 		}
 
-		// [rc4l] When the list is capped it occupies the FULL cap whether or not it needs to.
-		//
-		// Otherwise picking a gameplay mod adds a file, the list grows a line, and everything under
-		// it jumps down -- while the pointer is still over the row that was just clicked, so the next
-		// click lands on a different setting. A fixed block is worth two blank lines on a short list.
-		if ( bCapped )
-		{
-			for ( size_t ln = layout.lines.size( ); ln < SB_HOST_WADS_MAXLINES; ++ln )
-				y += SB_HOST_LINE;
-		}
+		// [rc4l] The block occupies its whole RESERVATION whether or not it needs to, so that picking
+		// a mix cannot move what is underneath. The reservation is what this entry can reach rather
+		// than a flat three, so the slack is usually none at all -- see HostWadListLines.
+		for ( int ln = static_cast<int>( layout.lines.size( )); ln < reserved; ++ln )
+			y += SB_HOST_LINE;
 
 		// [rc4l] One total instead of a size per name. Per-file sizes needed a right-hand column to
 		// line up in, and that column is what stopped the names running on. What actually decides
