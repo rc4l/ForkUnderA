@@ -237,7 +237,7 @@ if (-not (Get-ChildItem "$DistDir\avcodec-*.dll" -ErrorAction SilentlyContinue))
 }
 Write-Note "instant replay OK: FFmpeg runtime present"
 
-$zip = Join-Path $ScriptRoot "ZandroX-$Version-windows-x64.zip"
+$zip = Join-Path $ScriptRoot "ForkUnderA-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path "$DistDir\*" -DestinationPath $zip -Force
 Write-Status "Done: $zip"
