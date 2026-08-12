@@ -1071,19 +1071,12 @@ static zx::TeamsControl HostTeamsControl( const zx::AddonEntry &addon )
 // the server will be started on.
 static std::vector<zx::AddonFileRef> HostSelectedFiles( const zx::AddonEntry &addon )
 {
-	std::vector<zx::AddonFileRef> files = zx::PickVariant( addon, g_HostVariantId.GetChars( )).files;
-
-	// Every axis, in group order, each appended after the last. Load order between axes is the
-	// catalogue author's: a mod named after a rules remix loads after it and so wins where they
-	// overlap, which is the only way an author can express that at all.
-	const std::vector<zx::RemixPick> picks = HostRemixPicks( addon );
-	for ( size_t i = 0; i < picks.size( ); ++i )
-		files.insert( files.end( ), picks[i].files.begin( ), picks[i].files.end( ));
-
-	// [rc4l] Last, and here rather than anywhere nearer the launch, because every question about
-	// files comes through this one function: a file a mix supersedes has to disappear from the panel
-	// and its size total as well as from the command line, and it does, for free.
-	return zx::FilesAfterSupersedes( files, picks );
+	// [rc4l] Assembled by the unit rather than here, because dropping what a mix already contains
+	// needs to know which list each file came from. Doing it here is also why it is right: every
+	// question about files comes through this one function, so a file a mix replaces leaves the
+	// panel and its size total as well as the command line, for free.
+	return zx::CombineFiles( zx::PickVariant( addon, g_HostVariantId.GetChars( )).files,
+		HostRemixPicks( addon ));
 }
 
 // [rc4l] What we told the server to load, kept so the client can match it before joining.

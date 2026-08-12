@@ -18,7 +18,7 @@ everywhere else.
   "group": "mix",
   "cfg": "<optional>.cfg",
   "files": [ { "name": "<mod>.pk3", "md5": "<32 hex>" } ],
-  "supersedes": [ "<bare filename>" ]
+  "provides": [ "<role>" ]
 }
 ```
 
@@ -70,23 +70,34 @@ override the entry and why, because that is the surprising part for whoever read
 
 ## When a mix bundles something the experiences already load
 
-A mod is free to ship its own copy of a system the experiences load separately — an announcer, a
-spree tracker, a HUD. That is not a duplicate file, since the names differ; it is the same system
+A mod is free to ship its own copy of a system the experiences load separately: an announcer, a
+spree tracker, a HUD. That is not a duplicate file, since the names differ. It is the same system
 running twice, and every announcement plays over itself.
 
-Name the file in `supersedes` and it is taken back out wherever the mix is picked:
+Fixed with a **role**, declared on both sides:
 
 ```json
-"supersedes": ["<the file the experiences load>"]
+// the file, wherever an entry or variant loads it
+{ "name": "<file>.pk3", "md5": "<32 hex>", "provides": "<role>" }
+
+// the mix that carries its own
+"provides": ["<role>"]
 ```
 
-It goes on the **mix**, never the entry, because the mix is the thing that knows what is inside it.
-An entry cannot be asked to list what each of its mixes happens to carry — it would need editing
-every time any of them gained something.
+When a chosen mix provides a role, files filling that role are dropped. A mix never drops its own.
 
-Bare filenames, matched case-insensitively. A name no entry loads drops nothing, which is the normal
-case for a mix offered by several entries where only some of them load it. A mix that supersedes a
-file it also loads is refused at parse time.
+**Never name a filename.** A filename carries a version. Name one and the day the file is replaced
+by its next release the mix goes on naming something nobody loads, saying nothing about the file
+that took its place, and it fails silently because naming a file nobody loads is also the ordinary
+case. A role outlives the release, and it sits on the line an upgrade has to edit anyway.
+
+The mix half goes on the **mix**, never the entry, because the mix is the thing that knows what is
+inside it. An entry cannot be asked to list what each of its mixes happens to carry.
+
+Roles are plain lower case words, shared by convention rather than declared anywhere. Reuse an
+existing one rather than coining a synonym: two files with the same role are claiming to be
+interchangeable, which is the whole of what is being said. A role nothing fills drops nothing, which
+is the normal case for a mix offered by entries that never load one.
 
 Before adding a mix, open its archive and work out what it brings with it beyond the thing it is
 named for. Mods bundle their dependencies, and a weapon set is often also a script package, a sound
