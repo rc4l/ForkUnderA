@@ -46,6 +46,23 @@
       ]
     },
     {
+      "id": "drowninblood",
+      "name": "Drown in Blood",
+      "cfg": "drowninblood.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty maps of exactly what the name says.",
+      "files": [
+        {
+          "name": "dib28a.wad",
+          "md5": "b09a7531bb794ec8f23807fe34525315"
+        },
+        {
+          "name": "dib28a-fix3.wad",
+          "md5": "45ed0bc9a0f9f596474b1207d46b9665"
+        }
+      ]
+    },
+    {
       "id": "invasionuac",
       "name": "Invasion UAC",
       "cfg": "invasionuac.cfg",
