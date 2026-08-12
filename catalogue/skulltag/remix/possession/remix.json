@@ -1,0 +1,7 @@
+{
+  "name": "Poss",
+  "summary": "Possession. Hold the stone to score, while everyone tries to take it off you.",
+  "group": "mode",
+  "gamemode": "possession",
+  "cfg": "possession.cfg"
+}

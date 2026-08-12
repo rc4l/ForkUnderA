@@ -237,3 +237,58 @@ TEST(VideoScaleReconcile, EachAxisIsCheckedIndependently)
 	EXPECT_EQ(zx::SCALE_RECONCILE_RESIZE,
 		zx::ComputeScaleReconcile(1280, 800, 1280, 800, 1280, 800, 1280, 400));
 }
+
+// ---------------------------------------------------------------- the mouse
+
+TEST(ScaleWindowPointToRender, ANativeWindowLeavesThePointWhereItIs)
+{
+	// Render size equals the client size, which is Native at factor 1.0 and most of the world.
+	int x = 640, y = 400;
+	ScaleWindowPointToRender(1280, 800, 1280, 800, x, y);
+	EXPECT_EQ(640, x);
+	EXPECT_EQ(400, y);
+}
+
+TEST(ScaleWindowPointToRender, ASmallerBufferPullsThePointIn)
+{
+	// The window is twice the buffer, so a click halfway across the window is halfway across the
+	// buffer. Leaving it unscaled is the whole bug: the pointer sits on one thing and selects
+	// another, and the error grows the further from the origin you click.
+	int x = 1000, y = 600;
+	ScaleWindowPointToRender(1600, 1200, 800, 600, x, y);
+	EXPECT_EQ(500, x);
+	EXPECT_EQ(300, y);
+}
+
+TEST(ScaleWindowPointToRender, EachAxisScalesOnItsOwn)
+{
+	// The present stretches to FILL the client rather than letterboxing inside it, so the two
+	// ratios differ whenever the window is not the buffer's shape. One shared ratio would be right
+	// along one axis and wrong along the other.
+	int x = 800, y = 300;
+	ScaleWindowPointToRender(1600, 600, 400, 300, x, y);
+	EXPECT_EQ(200, x);
+	EXPECT_EQ(150, y);
+}
+
+TEST(ScaleWindowPointToRender, TheOriginIsFixedWhateverTheScale)
+{
+	int x = 0, y = 0;
+	ScaleWindowPointToRender(1556, 977, 640, 400, x, y);
+	EXPECT_EQ(0, x);
+	EXPECT_EQ(0, y);
+}
+
+TEST(ScaleWindowPointToRender, ASizeNobodyHasSetYetLeavesThePointAlone)
+{
+	// Before the first mode is set, and on any backend that never fills these in. Unscaled is wrong
+	// by a ratio; inventing one from a zero would put the pointer somewhere arbitrary instead.
+	int x = 123, y = 45;
+	ScaleWindowPointToRender(0, 0, 640, 400, x, y);
+	EXPECT_EQ(123, x);
+	EXPECT_EQ(45, y);
+
+	ScaleWindowPointToRender(1280, 800, 0, 0, x, y);
+	EXPECT_EQ(123, x);
+	EXPECT_EQ(45, y);
+}

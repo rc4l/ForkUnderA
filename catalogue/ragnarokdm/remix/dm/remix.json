@@ -1,6 +1,6 @@
 {
-  "name": "Deathmatch",
-  "summary": "Frags, on the whole rotation.",
+  "name": "DM",
+  "summary": "Deathmatch. Frags, on the whole rotation.",
   "group": "mode",
   "gamemode": "deathmatch"
 }

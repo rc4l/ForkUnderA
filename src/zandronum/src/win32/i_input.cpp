@@ -335,8 +335,27 @@ bool GUIWndProcHook(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, LRESU
 
 		{
 			int shift = screen? screen->GetPixelDoubling() : 0;
-			ev.data1 = LOWORD(lParam) >> shift; 
-			ev.data2 = HIWORD(lParam) >> shift; 
+			ev.data1 = LOWORD(lParam) >> shift;
+			ev.data2 = HIWORD(lParam) >> shift;
+
+			// [rc4l] Window pixels to render pixels, the step upstream added as
+			// ScaleCoordsFromWindow (common/platform/win32/i_input.cpp). Without it every hit test
+			// is off by the ratio between the window and the buffer at any scale but Native, which
+			// is invisible until you click: the cursor the OS draws is in window pixels and the
+			// thing it is over was drawn in render ones.
+			//
+			// BEFORE the letterbox adjustment below, because that one is already in render pixels.
+			//
+			// Through locals: the event carries SWORDs, and a render buffer is never big enough for
+			// the scaled value not to fit back into one.
+			if (screen)
+			{
+				int mx = ev.data1, my = ev.data2;
+				screen->ScaleCoordsFromWindow(mx, my);
+				ev.data1 = (SWORD)mx;
+				ev.data2 = (SWORD)my;
+			}
+
 			if (screen) ev.data2 -= (screen->GetTrueHeight() - screen->GetHeight())/2;
 		}
 

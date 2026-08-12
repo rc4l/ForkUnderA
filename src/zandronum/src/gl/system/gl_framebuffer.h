@@ -80,6 +80,9 @@ public:
 	bool Is8BitMode() { return false; }
 	void DumpScaleState();
 
+	// [rc4l] The mouse arrives in window pixels; everything is drawn in render ones. See v_video.h.
+	void ScaleCoordsFromWindow(int &x, int &y);
+
 
 private:
 	// [rc4l] video-scale: offscreen render target for internal-resolution scaling. When
