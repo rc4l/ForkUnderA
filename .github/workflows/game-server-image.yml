@@ -33,7 +33,7 @@ name: Release Game Server Image
 # releases say so.
 run-name: >-
   ${{ github.event_name == 'pull_request'
-      && 'Headless Game Server Build Check'
+      && 'Headless Server Build Validation'
       || 'Release Game Server Image' }}
 
 on:
@@ -84,7 +84,7 @@ jobs:
     # contexts, not this one, so no ruleset is pinned to the old name.
     name: >-
       ${{ github.event_name == 'pull_request'
-          && 'Headless game server build check'
+          && 'Headless Server Build Validation'
           || 'Release game server image' }}
     runs-on: ubuntu-latest
     # [rc4l] A cold engine compile inside Docker is the long pole here; the default 360 is plenty but
