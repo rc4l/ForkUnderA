@@ -356,7 +356,10 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_RUN_BOT_TOP	( SB_HOST_RUN_SPLIT + 5 )
 #define SB_HOST_RUN_TOP_H	( SB_HOST_RUN_TOP_BOT - SB_HOST_RTOP_TOP )
 #define SB_HOST_RUN_BOT_H	( SB_HOST_RTOP_BOTTOM - SB_HOST_RUN_BOT_TOP )
-#define SB_HOST_VIEW_BOTTOM	( SB_HOST_BTN_Y - 10 )
+// [rc4l] The SAME line the detail column ends on. It stopped four pixels higher, which cost the
+// list a sliver of room and left its scrollbar visibly short of the one beside it -- two bars down
+// one panel, ending at different heights, reads as one of them being cut off.
+#define SB_HOST_VIEW_BOTTOM	SB_HOST_RTOP_BOTTOM
 #define SB_HOST_VIEW_H		( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP )
 #define SB_HOST_BAR_W		2
 // [rc4l] Just inside the right column's backdrop rather than out at the panel's own edge, which is
@@ -2979,6 +2982,11 @@ public:
 		const int thumbY = top + zx::ComputeThumbTop( height, thumbH, first, total - SB_VISIBLE_ROWS );
 
 		screen->Dim( PalEntry( 170, 190, 230 ), 0.55f, left, thumbY, width, thumbH );
+
+		// [rc4l] And the edges, which say WHICH way the rest of the list is. Counted in rows here
+		// rather than pixels, because rows are what this list scrolls by.
+		DrawScrollEdgeShadows( SB_PANEL_LEFT + 4, SB_ROW_RIGHT, vTop, vTop + vHeight,
+			total * SB_ROW_HEIGHT, first * SB_ROW_HEIGHT );
 	}
 
 	//*************************************************************************
@@ -5016,6 +5024,51 @@ public:
 	//
 	// `barX` because the experience list scrolls in the LEFT column and its bar cannot share the right
 	// column's x. Everything else about it is the same bar.
+	// [rc4l] A shadow along a scrolling region's edge, drawn only on the side that has more behind it.
+	//
+	// A scrollbar says a region CAN scroll; it does not say which way, and at a glance a thumb near
+	// the middle of a short track is easy to read as a whole list. The shadow says it at the place
+	// the eye already is -- the row that is half-cut at the edge -- and says nothing at all when there
+	// is nothing that way, so its absence is information too.
+	//
+	// A ramp of one-pixel dims rather than a texture, the same way every soft edge in this browser is
+	// drawn. Strongest against the boundary and gone within a row's height, so it reads as the content
+	// passing under an edge rather than as a band of its own.
+	void DrawScrollEdgeShadows( int left, int right, int viewTop, int viewBottom,
+		int contentH, int scroll )
+	{
+		const int viewH = viewBottom - viewTop;
+		if (( viewH <= 0 ) || ( contentH <= viewH ))
+			return;
+
+		const int x = serverbrowser_ToScreenX( left );
+		const int w = serverbrowser_ToScreenX( right ) - x;
+		if ( w <= 0 )
+			return;
+
+		const int topPx = serverbrowser_ToScreenY( viewTop );
+		const int botPx = serverbrowser_ToScreenY( viewBottom );
+
+		// One text line deep, measured the same way everything else here converts a height.
+		const int deep = MAX( 2, serverbrowser_ToScreenY( viewTop + SB_HOST_LINE ) - topPx );
+
+		const bool bAbove = ( scroll > 0 );
+		const bool bBelow = ( scroll < ( contentH - viewH ));
+
+		for ( int i = 0; i < deep; ++i )
+		{
+			// Squared rather than linear, so the fade is quick at the edge and long in the tail. A
+			// straight ramp reads as a grey rectangle laid on top.
+			const float t = 1.f - ( static_cast<float>( i ) / deep );
+			const float a = 0.42f * t * t;
+
+			if ( bAbove )
+				screen->Dim( PalEntry( 0, 0, 0 ), a, x, topPx + i, w, 1 );
+			if ( bBelow )
+				screen->Dim( PalEntry( 0, 0, 0 ), a, x, botPx - 1 - i, w, 1 );
+		}
+	}
+
 	void DrawHostRegionScrollBar( int viewTop, int viewBottom, int contentH, int scroll,
 		int barX = SB_HOST_BAR_X )
 	{
@@ -5444,6 +5497,27 @@ public:
 		return labelW + SmallFont->StringWidth( "  " );
 	}
 
+	// [rc4l] Where an axis of PILLS starts, which is deliberately not the shared label column.
+	//
+	// The sliders line up under each other because they are one control repeated and a ragged left
+	// edge on three of those reads as a mistake. Pills are not that: an axis of them wraps over as
+	// many rows as it needs, and every pixel the shared column reserves is taken off ALL of them.
+	// Mix already runs to four rows and the catalogue keeps gaining mods; indenting it to clear the
+	// word FIRST MAP costs a row or two for an alignment nothing lines up with anyway.
+	//
+	// So pills sit against their own label and the sliders keep the column. Rule broken once, where
+	// it pays, and the reason written down so the next axis does not copy it blindly.
+	int HostPillLeft( int x, const std::string &groupId )
+	{
+		if ( groupId.empty( ))
+			return x;
+
+		FString label = groupId.c_str( );
+		label.ToUpper( );
+
+		return x + SmallFont->StringWidth( label ) + SmallFont->StringWidth( "  " );
+	}
+
 	bool HostHasGameplayRow( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -5723,6 +5797,9 @@ public:
 		DrawHostRegionScrollBar( SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM, HostCatalogueH( ),
 			g_HostListScroll, SB_HOST_LBAR_X );
 
+		DrawScrollEdgeShadows( SB_HOST_LEFT, SB_HOST_LIST_RIGHT, SB_HOST_VIEW_TOP,
+			SB_HOST_VIEW_BOTTOM, HostCatalogueH( ), g_HostListScroll );
+
 		// [rc4l] The detail column's own bar. It had one only while a server was running, so for the
 		// panel a player actually reads before pressing anything there was nothing saying the column
 		// went on -- the same fault the list above had, and the reason a fourth gameplay mod could be
@@ -5731,6 +5808,15 @@ public:
 		{
 			DrawHostRegionScrollBar( SB_HOST_RTOP_TOP, HostDetailViewBottom( ), HostDetailH( ),
 				g_HostDetailScroll );
+		}
+
+		// [rc4l] The detail column's edges, drawn whether or not a server is running -- while one is,
+		// the column is split and the top half is SHORTER, so it is the half most likely to have
+		// something just past its end.
+		if ( !g_HostShowSettings )
+		{
+			DrawScrollEdgeShadows( SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT, SB_HOST_RTOP_TOP,
+				HostDetailViewBottom( ), HostDetailH( ), g_HostDetailScroll );
 		}
 
 		DrawHostScrollBar( );
@@ -6038,7 +6124,8 @@ public:
 				// measurements of one layout is exactly how a region ends up able to scroll past its
 				// own end, so both ask LayoutWadList rather than each doing its own arithmetic.
 				const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
-				const int pillRoom = SB_HOST_RCOL_RIGHT - ( SB_HOST_RCOL_LEFT + labelW );
+				const int pillRoom = SB_HOST_RCOL_RIGHT -
+					HostPillLeft( SB_HOST_RCOL_LEFT, groups[g].id );
 
 				std::vector<int> pillWidths;
 				for ( size_t i = 0; i < groups[g].choices.size( ); ++i )
@@ -6704,7 +6791,8 @@ public:
 			// Room for the dot and the gaps either side of it, plus the trailing gap after the label.
 			const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
 			const int pillGap = 4;
-			const int pillRoom = SB_HOST_RCOL_RIGHT - ( x + labelW );
+			const int pillLeft = HostPillLeft( x, groups[g].id );
+			const int pillRoom = SB_HOST_RCOL_RIGHT - pillLeft;
 
 			std::vector<int> pillWidths;
 			pillWidths.reserve( choices.size( ));
@@ -6719,7 +6807,7 @@ public:
 
 				if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
 				{
-					int px = x + labelW;
+					int px = pillLeft;
 
 					for ( size_t i = pline.first; i < pline.end; ++i )
 					{
