@@ -247,6 +247,12 @@ configure() {
         args+=( -DCMAKE_CXX_FLAGS=-g -DCMAKE_C_FLAGS=-g )
     fi
 
+    # [rc4l] Only a build whose symbols get published may report crashes; see ZX_OFFICIAL_BUILD in
+    # src/zandronum/CMakeLists.txt. Set by CI, never by a local build.
+    if [[ "${ZX_OFFICIAL_BUILD:-0}" == "1" ]]; then
+        args+=( -DZX_OFFICIAL_BUILD=ON )
+    fi
+
     if [[ "$WANT_SOUND" == "1" ]]; then
         local oal snd mp3
         oal="$(brew --prefix openal-soft)"; snd="$(brew --prefix libsndfile)"; mp3="$(brew --prefix mpg123)"
