@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "name": "Popular Invasion Maps",
+  "order": 10,
+  "accent": true,
+  "summary": "Hold out together against waves of monsters, across three mappacks of them.",
+  "iwad": "doom2.wad",
+  "kind": "pve",
+  "gamemode": "invasion",
+  "lives": 0,
+  "maxlives": 5,
+  "variants": [
+    {
+      "id": "alphadelta",
+      "name": "Alpha and Delta",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "default": true,
+      "map": "alinv01",
+      "tooltip": "Twenty-five maps, eleven Alpha and fourteen Delta.",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "delta-invasionv3.pk3",
+          "md5": "f962c8180f724edc5c05398a6f10f4fd"
+        }
+      ]
+    },
+    {
+      "id": "armageddon",
+      "name": "Armageddon",
+      "cfg": "armageddon.cfg",
+      "kind": "pve",
+      "map": "MAP01",
+      "tooltip": "Twelve maps, a temple to a sand worm trench to a hell collider.",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "armageddon2v63.pk3",
+          "md5": "c3bf95cfd329e1c91b8185c3f746a724"
+        }
+      ]
+    },
+    {
+      "id": "zero",
+      "name": "Zero",
+      "cfg": "zero.cfg",
+      "kind": "pve",
+      "map": "Z1INV01",
+      "tooltip": "Eleven maps in three tiers, with custom monsters and bosses.",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "zeroinvasionmapsbutbyocfriendly.wad",
+          "md5": "2809a3f6fd834b047ef106964c9ded37"
+        },
+        {
+          "name": "zeroinvasionmonstereffectbutwithoutthekeyconfv3.wad",
+          "md5": "0d90beb661be9b40a5c8f3ad522a91cb"
+        },
+        {
+          "name": "zeroinvasionmusic.wad",
+          "md5": "651af19c20d180f469dd454833d205a6"
+        }
+      ]
+    }
+  ]
+}

@@ -17,7 +17,7 @@ namespace zx
 
 struct CatalogueEntry
 {
-	AddonEntry addon;		// what addon.json said
+	AddonEntry addon;		// what addon.json said, variants included
 	std::string dir;		// the folder it came from, so server.cfg can be found beside it
 	bool hasServerCfg;
 	bool shipped;			// ours, next to the exe, rather than the player's
@@ -32,9 +32,27 @@ struct CatalogueEntry
 // with it: one bad entry a player dropped in must not cost them the rest of the list.
 const std::vector<CatalogueEntry> &CatalogueLoad( bool bForceReload = false );
 
-// The full path to an entry's server.cfg, or "" when it has none. Only meaningful for an entry that
-// came out of CatalogueLoad.
-std::string CatalogueServerCfgPath( const CatalogueEntry &entry );
+// The full path to the cfg an entry should be hosted with, or "" when it has none. `variantId` is
+// the way of playing the player chose; empty means "no preference", which lands on the entry's
+// default. An entry with no variants answers with its server.cfg whatever is passed.
+std::string CatalogueServerCfgPath( const CatalogueEntry &entry, const std::string &variantId = std::string( ));
+
+// [rc4l] Every remix on disk, read once and cached beside the entries.
+//
+// One pool rather than a copy per entry, because the same few apply to many: "three lives" means the
+// same thing to every invasion pack. Entries name the ones they can take and this holds what they
+// actually do.
+const std::vector<AddonRemix> &CatalogueRemixes( bool bForceReload = false );
+
+// The full path to a remix's cfg, or "" when it has none to exec. Remixes live in their own folders
+// under remix/, so this is not the entry's directory.
+std::string CatalogueRemixCfgPath( const std::string &remixId );
+
+// [rc4l] Read the catalogue during startup and say, loudly, if anything in it could not be used.
+//
+// Called once from D_DoomMain. Without it the first read happens when somebody opens the host screen,
+// which is both too late to be called a startup error and too far from the console to be seen.
+void CatalogueCheckAtStartup( void );
 
 // The two places entries are read from, in order. Exposed so a player can be TOLD where to put one
 // rather than having to guess.

@@ -10,9 +10,14 @@
 //
 // The rule:
 //   1. A finished join outranks everything. The player was promised the browser and is owed it.
-//   2. In a game, never the browser. Escape there means the in-game menu, the one thing on screen
-//      that can get them out again.
-//   3. Otherwise, wherever they last were.
+//   2. Otherwise, wherever they last were.
+//
+// There used to be a third: never the browser while in a game. It was added while chasing an Escape
+// that arrived at the browser from the in-game menu, and it was the wrong fix -- the cause was the
+// tab bar making one section a child of the other, so backing out of one WAS arriving at the other.
+// Once that was fixed the guard did nothing but overrule the player: somebody hosting a duel, who
+// had been on the browser, was sent to the main menu because of where they were rather than what
+// they had chosen. Being in a game is not a reason to forget.
 //
 // "Wherever they last were" is OBSERVED while the menus are up, not recorded when they close. Two
 // earlier versions hooked the close and both were wrong in opposite directions: DMenu::Close moves
@@ -43,11 +48,8 @@ struct MenuResumeIn
 	// A join finished while they were away and the band told them to open the menu.
 	bool joinReady;
 
-	// Connected to a server, so the menus belong to the game rather than to browsing for one.
-	bool inGame;
-
 	MenuResumeIn()
-		: lastShown(MenuSection::MainMenu), joinReady(false), inGame(false) {}
+		: lastShown(MenuSection::MainMenu), joinReady(false) {}
 };
 
 MenuSection ComputeMenuToOpen(const MenuResumeIn &in);

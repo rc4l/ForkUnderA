@@ -26,12 +26,6 @@ struct Session
 		return *this;
 	}
 
-	Session &InGame( bool yes )
-	{
-		in.inGame = yes;
-		return *this;
-	}
-
 	Session &JoinReady( bool yes )
 	{
 		in.joinReady = yes;
@@ -112,27 +106,15 @@ TEST( MenuResume, HoppingBackAndForthEndsWhereverItActuallyEnded )
 	}
 }
 
-// ------------------------------------------------------------- in a game
-
-TEST( MenuResume, BeingInAGameNeverOpensTheBrowser )
+TEST( MenuResume, BeingInAGameIsNotAReasonToForget )
 {
-	// The Join Game report: Escape in a game means the in-game menu, the one thing on screen that
-	// can get the player out again. A server list, to somebody already on a server, is not that.
+	// There used to be a guard here refusing the browser while in a game. It was the wrong fix for an
+	// Escape bug whose cause was elsewhere, and all it did afterwards was overrule the player:
+	// somebody hosting a duel, who had been on the browser, was sent to the main menu because of
+	// where they were rather than what they had chosen.
 	Session s;
-	s.Showing( MenuSection::Browser ).InGame( true ).Closed( );
+	s.Showing( MenuSection::Browser ).Closed( );
 
-	EXPECT_EQ( MenuSection::MainMenu, s.Opens( ));
-}
-
-TEST( MenuResume, LeavingTheGameRestoresTheBrowserTheyWereOn )
-{
-	// The guard is about being in a game, not about forgetting. Someone who browsed, joined, and
-	// then quit back out should still find the list where they left it.
-	Session s;
-	s.Showing( MenuSection::Browser ).InGame( true );
-	EXPECT_EQ( MenuSection::MainMenu, s.Opens( ));
-
-	s.InGame( false );
 	EXPECT_EQ( MenuSection::Browser, s.Opens( ));
 }
 
@@ -148,12 +130,12 @@ TEST( MenuResume, AFinishedJoinBeatsWhereverTheyWere )
 	EXPECT_EQ( MenuSection::Browser, s.Opens( ));
 }
 
-TEST( MenuResume, AFinishedJoinBeatsBeingInAGameToo )
+TEST( MenuResume, AFinishedJoinOutranksWhereTheyWereEvenOnTheMainMenu )
 {
-	// A download can finish while the player is still connected somewhere else, and the band is on
-	// screen saying so. Refusing here would leave an instruction the player cannot follow.
+	// A download can finish while the player is somewhere else entirely, and the band is on screen
+	// saying so. Refusing here would leave an instruction the player cannot follow.
 	Session s;
-	s.Showing( MenuSection::MainMenu ).InGame( true ).JoinReady( true );
+	s.Showing( MenuSection::MainMenu ).JoinReady( true );
 
 	EXPECT_EQ( MenuSection::Browser, s.Opens( ));
 }

@@ -42,6 +42,19 @@ struct HostConfig
 	// IsSafeArgValue rather than IsBareFileName: the file lives in the entry's own folder and the
 	// server has no reason to go looking for it anywhere else.
 	std::string execCfg;
+
+	// [rc4l] Further cfgs, exec'd right after the first so they win where they disagree: one per
+	// chosen remix that has one, in group order. Each is a line or two meaning the same thing to
+	// every experience it applies to.
+	std::vector<std::string> execRemixCfgs;
+
+	// [rc4l] Settings the gameplay panel decided, as name/value pairs, applied AFTER every exec so
+	// they win over the cfgs.
+	//
+	// Set directly rather than written to a cfg and exec'd, which is what the lives control needs:
+	// what it must set depends on the gamemode, and a shared file exec'd by a cooperative entry and
+	// an invasion one cannot mean the right thing in both.
+	std::vector<std::pair<std::string, std::string> > extraCvars;
 	std::string password;			// empty for an open server
 	std::string joinPassword;		// empty unless the operator wants a join gate
 	std::string rconSecret;			// the one-shot secret the host authenticates with

@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "name": "Casual Co-op Maps",
+  "summary": "Short co-op packs you drop into, on weapons that never run dry.",
+  "iwad": "doom2.wad",
+  "kind": "pve",
+  "gamemode": "cooperative",
+  "fastweapons": true,
+  "order": 15,
+  "remixes": ["vanilla", "brutaldoom", "d4t", "complexdoom", "dnd", "woc", "harddoom", "doom64"],
+  "variants": [
+    {
+      "id": "dbzone",
+      "name": "Doom Barracks Zone",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "map": "MAP01",
+      "default": true,
+      "remixes": [],
+      "tooltip": "The nine maps everyone played on Zdaemon.",
+      "files": [
+        {
+          "name": "dbzone.wad",
+          "md5": "eb9cc8b6fb65464058d19779b861972f"
+        }
+      ]
+    },
+    {
+      "id": "dbzonex",
+      "name": "Doom Barracks Zone: X Edition",
+      "cfg": "dbzonex.cfg",
+      "kind": "pve",
+      "map": "MAP01",
+      "remixes": [],
+      "tooltip": "The same idea, rebuilt and extended.",
+      "files": [
+        {
+          "name": "dbzxce_v12d.pk3",
+          "md5": "0e486215b7f97922d319485d6867e13f"
+        },
+        {
+          "name": "dbzxce_ropatchv2.pk3",
+          "md5": "500b2c95176ea6d76d5cd596a0bba0dd"
+        }
+      ]
+    },
+    {
+      "id": "drowninblood",
+      "name": "Drown in Blood",
+      "cfg": "drowninblood.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty maps of exactly what the name says.",
+      "files": [
+        {
+          "name": "dib28a.wad",
+          "md5": "b09a7531bb794ec8f23807fe34525315"
+        },
+        {
+          "name": "dib28a-fix3.wad",
+          "md5": "45ed0bc9a0f9f596474b1207d46b9665"
+        }
+      ]
+    },
+    {
+      "id": "invasionuac",
+      "name": "Invasion UAC",
+      "cfg": "invasionuac.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty-two maps of held ground, on weapons that never run dry.",
+      "files": [
+        {
+          "name": "iu-part5.wad",
+          "md5": "77997414113e8dcaa16b727dc04f245f"
+        }
+      ]
+    },
+    {
+      "id": "destunknown",
+      "name": "Destination Unknown",
+      "cfg": "destunknown.cfg",
+      "kind": "pve",
+      "tooltip": "Nineteen more of the same, and just as thirsty.",
+      "files": [
+        {
+          "name": "dest_unknown_zandro.pk3",
+          "md5": "f84b16db6e99e89b57901a8639625fb3"
+        }
+      ]
+    }
+  ]
+}

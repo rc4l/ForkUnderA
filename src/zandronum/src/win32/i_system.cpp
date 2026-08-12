@@ -1222,6 +1222,21 @@ BOOL CALLBACK IWADBoxCallback(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPa
 		sprintf(szString, "Version %s.", GetVersionStringRev());
 		SetDlgItemText (hDlg, IDC_WELCOME_VERSION, szString);
 
+		// [rc4l] The three lines that named the engine we forked, written here rather than in the
+		// .rc so the name lives in one place. This dialog is the FIRST thing a new player sees --
+		// it only appears when there is more than one IWAD to choose between, which shipping both
+		// Freedoom phases made the normal case -- so it was also the most visible place still
+		// introducing itself as somebody else.
+		//
+		// GAMENAME rather than FUA_NAME: this is the engine introducing itself before any game is
+		// running, which is what GAMENAME is, and it is the same word as the executable beside it.
+		// FUA_NAME is the shorter brand the in-game browser wears.
+		sprintf(szString, "Welcome to %s!", GAMENAME);
+		SetDlgItemText (hDlg, IDC_WELCOME_TITLE, szString);
+
+		sprintf(szString, "Choose how %s will render the game.", GAMENAME);
+		SetDlgItemText (hDlg, IDC_WELCOME_RENDERER, szString);
+
 		// Check the current video settings.
 		SendDlgItemMessage( hDlg, vid_renderer ? IDC_WELCOME_OPENGL : IDC_WELCOME_SOFTWARE, BM_SETCHECK, BST_CHECKED, 0 );
 		SendDlgItemMessage( hDlg, IDC_WELCOME_FULLSCREEN, BM_SETCHECK, fullscreen ? BST_CHECKED : BST_UNCHECKED, 0 );
