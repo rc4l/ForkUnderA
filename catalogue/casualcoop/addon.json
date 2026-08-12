@@ -8,7 +8,7 @@
   "fastweapons": true,
   "order": 15,
   "accent": true,
-  "remixes": ["vanilla", "brutaldoom", "complexdoom", "harddoom", "doom64"],
+  "remixes": ["vanilla", "brutaldoom", "d4t", "complexdoom", "harddoom", "doom64"],
   "variants": [
     {
       "id": "dbzone",
