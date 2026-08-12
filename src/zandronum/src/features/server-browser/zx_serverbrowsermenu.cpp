@@ -58,6 +58,7 @@
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
 #include "features/addon-catalogue/zx_catalogue.h"
 #include "features/addon-catalogue/computation/hostplan_compute.h"
+#include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
 #include "features/addon-catalogue/computation/livespick_compute.h"
 #include "features/addon-catalogue/computation/maprotation_compute.h"
@@ -3716,7 +3717,8 @@ public:
 			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon, loads,
 				zx::PickIwad( chosen.addon.iwad, zx::AvailableIwads( chosen.addon.iwad )),
 				zx::CatalogueServerCfgPath( chosen, g_HostVariantId.GetChars( )),
-				remixCfgs, pick.map, choices, have );
+				remixCfgs, pick.map, choices, have,
+				zx::IsFreeIwadName( chosen.addon.iwad ));
 
 			// [rc4l] Missing files are a DOWNLOAD, which is what the catalogue's per-file md5 was
 			// shipped for and what BuildHostPlan has always meant by returning `missing` rather than
@@ -3904,9 +3906,15 @@ public:
 				}
 			}
 
-			// Never an IWAD: an entry's `files` are its PWADs, and the game underneath them is
-			// PickIwad's business and is not ours to fetch.
-			wanted.push_back( zx::waddownload::WantedFile( plan.missing[i], false, md5 ));
+			// [rc4l] Say when one of these IS the game. The downloader checks an iwad's SHA-256
+			// against the shipped list before keeping it, and it can only do that if it is told
+			// which file to check -- an entry's own `files` are all mods, so the flag can only come
+			// from the plan.
+			//
+			// It carries no md5, because the catalogue never hashes a game it does not ship. The
+			// allowlist's own hash is the check that matters for one of these.
+			const bool bIsIwad = plan.missingIwad && ( plan.missing[i] == plan.iwad );
+			wanted.push_back( zx::waddownload::WantedFile( plan.missing[i], bIsIwad, md5 ));
 		}
 
 		// No extra sites and no last resorts: there is no server here yet, so the shipped mirror

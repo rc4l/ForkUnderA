@@ -13,6 +13,7 @@
 #include "version.h"
 
 #include "features/addon-catalogue/computation/hostplan_compute.h"
+#include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
 #include "features/addon-catalogue/computation/menuart_compute.h"
 #include "features/addon-catalogue/computation/variantpick_compute.h"
@@ -646,9 +647,11 @@ CCMD( fua_host )
 
 	// [rc4l] No remixes from the console. fua_host names an entry and a variant and nothing else, so
 	// there is no axis to resolve; the panel is where a remix gets chosen.
+	// [rc4l] Whether a missing game may be fetched, which is the allowlist's question and not the
+	// planner's. Asked here so the pure unit never has to know the list.
 	const zx::HostPlan plan = zx::BuildHostPlan( chosen->addon, variant.files, pick,
 		zx::CatalogueServerCfgPath( *chosen, variantId ), std::vector<std::string>( ), variant.map,
-		choices, have );
+		choices, have, zx::IsFreeIwadName( chosen->addon.iwad ));
 
 	if ( !plan.blocker.empty( ))
 	{

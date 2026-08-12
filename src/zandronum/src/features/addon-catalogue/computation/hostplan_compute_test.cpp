@@ -59,21 +59,22 @@ HostChoices Mine()
 	return c;
 }
 
-std::vector<std::string> Files(const char *a = 0, const char *b = 0)
+std::vector<std::string> Files(const char *a = 0, const char *b = 0, const char *c = 0)
 {
 	std::vector<std::string> v;
 	if (a) v.push_back(a);
 	if (b) v.push_back(b);
+	if (c) v.push_back(c);
 	return v;
 }
 
 // A pack that plays one way loads exactly its own files, which is what PickVariant resolves for it.
 // Spelling that out once keeps these cases about planning rather than about resolution.
 HostPlan PlanFor(const AddonEntry &addon, const IwadPick &iwad, const std::string &cfg,
-	const HostChoices &choices, const std::vector<std::string> &haveFiles)
+	const HostChoices &choices, const std::vector<std::string> &haveFiles, bool freeIwad = false)
 {
 	return BuildHostPlan(addon, addon.files, iwad, cfg, std::vector<std::string>(), addon.map,
-		choices, haveFiles);
+		choices, haveFiles, freeIwad);
 }
 
 AddonFileRef Ref(const char *name, const char *md5)
@@ -169,7 +170,36 @@ TEST(HostPlan, MissingFilesKeepLoadOrderSoTheProgressReadsSensibly)
 
 // ---------------------------------------------------------------- what actually blocks
 
-TEST(HostPlan, NoIwadIsABlockerBecauseNothingCanBeFetchedForIt)
+TEST(HostPlan, AFreeIwadThatIsMissingIsFetchedRatherThanRefused)
+{
+	// The objection to fetching a game was always licensing rather than plumbing, and it does not
+	// apply to one whose authors give it away. So this is a download like any other.
+	const HostPlan p = PlanFor(Duel40(),
+		Picked(IwadChoice::None, ""), "", Mine(),
+		Files("duel40b.pk3", "zandrospree2rc2.pk3"), true);
+
+	EXPECT_TRUE(p.blocker.empty()) << "a free game is not a refusal";
+	EXPECT_FALSE(p.ready) << "but it still has to arrive first";
+	EXPECT_TRUE(p.missingIwad);
+	ASSERT_FALSE(p.missing.empty());
+	EXPECT_EQ("doom2.wad", p.missing[0]) << "first, because everything else sits on it";
+	EXPECT_EQ("doom2.wad", p.iwad) << "and it is what the server will be started on";
+}
+
+TEST(HostPlan, AFreeIwadAlreadyPresentIsNotAskedForAgain)
+{
+	// The flag says what MAY be fetched, never what must be. A machine that already has the game
+	// must not be told to download it.
+	const HostPlan p = PlanFor(Duel40(),
+		Picked(IwadChoice::Preferred, "doom2.wad"), "", Mine(),
+		Files("doom2.wad", "duel40b.pk3", "zandrospree2rc2.pk3"), true);
+
+	EXPECT_TRUE(p.ready);
+	EXPECT_FALSE(p.missingIwad);
+	EXPECT_TRUE(p.missing.empty());
+}
+
+TEST(HostPlan, ACommercialIwadIsStillABlocker)
 {
 	// PickIwad has already tried the substitute table, so None means there is genuinely nothing to
 	// run on, and offering a download would be offering a commercial game we may not fetch.
@@ -179,6 +209,7 @@ TEST(HostPlan, NoIwadIsABlockerBecauseNothingCanBeFetchedForIt)
 
 	EXPECT_FALSE(p.ready);
 	EXPECT_FALSE(p.blocker.empty());
+	EXPECT_FALSE(p.missingIwad) << "never queue a game we may not fetch";
 	EXPECT_NE(std::string::npos, p.blocker.find("doom2.wad")) << "say WHICH game is missing";
 }
 
@@ -231,10 +262,11 @@ TEST(HostPlan, AnEntryThatNamesNoIwadStillSaysWhyItCannotRun)
 	nothing.choice = IwadChoice::None;
 
 	const HostPlan p = PlanFor(anyGame, nothing, "", Mine(),
-		Files("duel40b.pk3", "zandrospree2rc2.pk3"));
+		Files("duel40b.pk3", "zandrospree2rc2.pk3"), true);
 
 	EXPECT_FALSE(p.ready);
-	EXPECT_EQ("no IWAD to run on", p.blocker);
+	EXPECT_EQ("no IWAD to run on", p.blocker) << "even when free games may be fetched: there is no name to fetch";
+	EXPECT_FALSE(p.missingIwad);
 }
 
 TEST(HostPlan, TwoNamesOfTheSameLengthAreStillDifferentFiles)
