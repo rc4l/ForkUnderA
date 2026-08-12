@@ -23,6 +23,10 @@
 //                     LEFT AND RIGHT ARE NOT NAVIGATION -- they belong to the caret, the same rule
 //                     the browser's search box follows, which is also why LEFT cannot be the way
 //                     back to the list from here.
+//     GAMEPLAY        the settings drawn beside the experience while the form is SHUT: the sliders
+//                     and the rows of pills. Up and down walk them, left and right change the row
+//                     they are on rather than moving off it -- the same split the visibility row
+//                     makes, and for the same reason.
 //     VISIBILITY      up returns to the last field, down goes to the foot. Left and right pick the
 //                     choice rather than moving.
 //     ACTION/TOGGLE   the foot is a ROW: left and right move along it, up returns to the column.
@@ -51,6 +55,15 @@ enum class HostSlot
 	List,
 
 	Field,		// one of the text boxes; `field` says which
+
+	// [rc4l] One row of the gameplay panel; `field` is which, counted in the order they are drawn.
+	//
+	// It is a slot rather than part of Field because the two are never on screen together: the form
+	// replaces the panel. What the row IS -- a slider, an axis of pills -- is the caller's business,
+	// and deliberately not this unit's: it would have to be told the kind of every row to answer
+	// questions it does not ask, and the two would then have to agree about the order twice.
+	Gameplay,
+
 	Visibility,	// the INTERNET / HOME row
 	Action,		// PLAY NOW! and its other faces
 	Toggle,		// SETTINGS / BACK, beside the action
@@ -84,7 +97,9 @@ struct HostNavResult
 	// A key that changes the visibility choice does not move focus, and a key that moves focus does
 	// not change the choice. Returning both from one call is what stops the caller inventing its own
 	// rule for the overlap.
-	int choiceStep;		// -1 or +1 on the visibility row, 0 otherwise
+	// -1 or +1 on a row that HAS choices -- the visibility row, or whichever gameplay row is
+	// focused. The caller knows which of those it is from the slot; this only says which way.
+	int choiceStep;
 	int rowStep;		// -1 or +1 on the experience list, 0 otherwise
 	bool caret;			// the key belongs to the text caret; the caller passes it to the field
 
@@ -96,16 +111,20 @@ struct HostNavResult
 //
 // `fieldCount` is how many text boxes there are. `hasFields` covers the fields AND the visibility
 // row, which appear and disappear together with the settings. `hasToggle` is whether the SETTINGS
-// button is beside the action.
+// button is beside the action. `gameplayRows` is how many rows the gameplay panel is drawing, which
+// is zero whenever the form is open, while a server is running, or for an experience that offers
+// nothing to decide.
 //
-// A position that no longer exists -- a field while the settings are shut -- is corrected rather than
-// honoured, because the panel can close underneath a focus that was legitimate when it was set.
+// A position that no longer exists -- a field while the settings are shut, a gameplay row on an
+// experience that has none -- is corrected rather than honoured, because the panel can change
+// underneath a focus that was legitimate when it was set.
 HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
-                             bool hasFields, bool hasToggle);
+                             bool hasFields, bool hasToggle, int gameplayRows);
 
 // The position to correct to when `pos` names something not currently on screen. Returns `pos`
 // unchanged when it is already valid.
-HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bool hasToggle);
+HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bool hasToggle,
+                            int gameplayRows);
 
 // [rc4l] Where LEFT lands when a text field finally gives it back.
 //
