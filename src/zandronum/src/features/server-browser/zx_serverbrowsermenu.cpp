@@ -59,6 +59,7 @@
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
 #include "features/addon-catalogue/computation/livespick_compute.h"
+#include "features/addon-catalogue/computation/maprotation_compute.h"
 #include "features/addon-catalogue/computation/teamspick_compute.h"
 #include "features/addon-catalogue/computation/weaponspick_compute.h"
 #include "features/addon-catalogue/computation/remixpick_compute.h"
@@ -893,6 +894,79 @@ static bool HostFastWeaponsOffered( const zx::AddonEntry &addon )
 		return addon.variants[pick.index].fastWeapons;
 
 	return false;
+}
+
+// [rc4l] Which map to open on, as an index into the chosen way of playing's own rotation, or -1 for
+// "wherever it would have started". An index rather than a name because the axis IS the rotation:
+// remembering MAP07 and finding a pack that has no MAP07 would leave a choice that cannot be met.
+static	int				g_HostStartMap = -1;
+
+// The rotation of the last cfg asked about. One entry of cache, which is all this needs: the panel
+// asks about the same cfg many times a frame and about a different one only when the selection
+// changes.
+static	FString			g_HostRotationCfg;
+static	std::vector<std::string>	g_HostRotation;
+
+// [rc4l] The maps the chosen way of playing writes into its rotation, read out of its cfg.
+//
+// The cfg is the SERVER's file and this client has never parsed one. This is the one exception and
+// it is narrow: only addmap lines, only to name them. See maprotation_compute.h for why reading it
+// beats writing the same thirty-two names into addon.json a second time.
+static const std::vector<std::string> &HostRotation( const zx::CatalogueEntry &entry )
+{
+	const FString path = zx::CatalogueServerCfgPath( entry, g_HostVariantId.GetChars( )).c_str( );
+
+	if ( g_HostRotationCfg.Compare( path ) == 0 )
+		return g_HostRotation;
+
+	g_HostRotationCfg = path;
+	g_HostRotation.clear( );
+
+	if ( path.IsNotEmpty( ))
+	{
+		FILE *fp = fopen( path.GetChars( ), "rb" );
+		if ( fp != NULL )
+		{
+			std::string text;
+			char buf[4096];
+			size_t got;
+
+			while (( got = fread( buf, 1, sizeof( buf ), fp )) > 0 )
+				text.append( buf, got );
+
+			fclose( fp );
+			g_HostRotation = zx::MapsInRotation( text );
+		}
+	}
+
+	return g_HostRotation;
+}
+
+// The rotation of whatever is selected right now, which is what the picker runs on. Empty when
+// nothing is selected, or when the way of playing writes no rotation at all -- Doom Barracks Zone
+// leans on its pack's own mapinfo chain and lists nothing.
+static const std::vector<std::string> &HostSelectedRotation( )
+{
+	static const std::vector<std::string> kNone;
+
+	const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+	if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+		return kNone;
+
+	return HostRotation( entries[g_HostEntrySel] );
+}
+
+// Which map the picker is on, always a legal index when there is a rotation at all. Nothing chosen
+// is the first, which is where the server would have started anyway.
+static int HostStartMapIndex( )
+{
+	const int count = static_cast<int>( HostSelectedRotation( ).size( ));
+
+	if ( count <= 0 )
+		return 0;
+
+	return clamp(( g_HostStartMap < 0 ) ? 0 : g_HostStartMap, 0, count - 1 );
 }
 
 // [rc4l] The axis whose choices REPLACE the weapons, which is the one the speed slider argues with.
@@ -3646,6 +3720,15 @@ public:
 			if ( config.map.empty( ) && plan.execCfg.empty( ))
 				config.map = "map01";
 
+			// [rc4l] Unless a map was PICKED, which beats all of it. Only when the picker was drawn:
+			// an entry whose rotation has one map or none has nothing to have chosen, and writing a
+			// map there would override the welcome map that is the whole reason plan.map exists.
+			{
+				const std::vector<std::string> &maps = HostSelectedRotation( );
+				if ( maps.size( ) > 1 )
+					config.map = maps[HostStartMapIndex( )];
+			}
+
 			SaveHostForm( );
 			zx::ReachProbeRelease( );
 
@@ -4126,6 +4209,8 @@ public:
 			g_HostLives = value;
 		else if ( id == "fastweapons" )
 			g_HostFastWeapons = value;
+		else if ( id == "startmap" )
+			g_HostStartMap = value;
 		else if ( id == "teams" )
 		{
 			// The one axis whose slider moves an INDEX rather than the value: the stops are 0, 2, 3
@@ -4712,6 +4797,9 @@ public:
 		const zx::TeamsControl teams = HostTeamsControl( addon );
 		if ( teams.applies )
 			key.AppendFormat( "|t%d", teams.count );
+
+		if ( HostSelectedRotation( ).size( ) > 1 )
+			key.AppendFormat( "|s%d", HostStartMapIndex( ));
 
 		return key;
 	}
@@ -5337,10 +5425,10 @@ public:
 	{
 		// WEAPON SPEED is deliberately absent: it draws its label above its track, so sizing this
 		// column to it would push the other controls across the panel to line up with nothing.
-		static const char *const kBuiltIn[2] = { "LIVES", "TEAMS" };
+		static const char *const kBuiltIn[3] = { "LIVES", "TEAMS", "FIRST MAP" };
 
 		int labelW = 0;
-		for ( int i = 0; i < 2; ++i )
+		for ( int i = 0; i < 3; ++i )
 			labelW = MAX( labelW, SmallFont->StringWidth( kBuiltIn[i] ));
 
 		for ( size_t g = 0; g < groups.size( ); ++g )
@@ -5368,7 +5456,8 @@ public:
 		// file list three lines to display.
 		if ( HostLivesControl( entries[g_HostEntrySel].addon ).adjustable ||
 			HostFastWeaponsOffered( entries[g_HostEntrySel].addon ) ||
-			HostTeamsControl( entries[g_HostEntrySel].addon ).adjustable )
+			HostTeamsControl( entries[g_HostEntrySel].addon ).adjustable ||
+			( HostSelectedRotation( ).size( ) > 1 ))
 		{
 			return true;
 		}
@@ -5920,6 +6009,9 @@ public:
 			h += 4 + 6 + SB_HOST_LINE + 2;	// the rule, and the GAMEPLAY heading
 
 			// One row now, not two: the label shares the control's line.
+			if ( HostSelectedRotation( ).size( ) > 1 )
+				h += SB_HOST_LINE + 3;
+
 			if ( HostLivesControl( a ).adjustable )
 				h += SB_HOST_LINE + 3;
 
@@ -6446,6 +6538,34 @@ public:
 			true );
 	}
 
+	// [rc4l] Where to open, as a slider over the rotation the pack already writes.
+	//
+	// A slider and not pills: thirty-two maps is not a row of chips, and the thing being chosen has a
+	// natural ORDER, which is exactly what a track shows and a set of pills does not. The steps at
+	// each end move one map at a time, so a precise pick does not depend on dragging accurately.
+	//
+	// It names the map rather than the position. "MAP07" is what the rotation says and what the
+	// server will report; "7 of 32" would be a number the player has to translate.
+	//
+	// Only where there is something to choose. A pack with no written rotation has no list to index
+	// into, and one with a single map has one answer.
+	int DrawHostStartMap( int x, int y, int labelW )
+	{
+		const std::vector<std::string> &maps = HostSelectedRotation( );
+
+		if ( maps.size( ) <= 1 )
+			return y;
+
+		const int index = HostStartMapIndex( );
+
+		FString tip;
+		tip.Format( "Open on %s, map %d of %d in the rotation.", maps[index].c_str( ),
+			index + 1, static_cast<int>( maps.size( )));
+
+		return DrawHostSlider( "startmap", "FIRST MAP", x, y, labelW, 0,
+			static_cast<int>( maps.size( )) - 1, index, maps[index].c_str( ), tip.GetChars( ));
+	}
+
 	// [rc4l] How many sides, as the third instance of the slider.
 	//
 	// This replaced two pills labelled with gamemode names, which was the wrong question twice over:
@@ -6481,7 +6601,7 @@ public:
 		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
 
 		bool bAnything = HostLivesControl( addon ).adjustable || HostFastWeaponsOffered( addon ) ||
-			HostTeamsControl( addon ).adjustable;
+			HostTeamsControl( addon ).adjustable || ( HostSelectedRotation( ).size( ) > 1 );
 		for ( size_t g = 0; g < groups.size( ); ++g )
 			bAnything = bAnything || ( groups[g].choices.size( ) > 1 );
 
@@ -6505,6 +6625,7 @@ public:
 		// later would either overlap its own control or leave a gap in front of every other.
 		const int labelW = HostGameplayLabelW( groups );
 
+		y = DrawHostStartMap( x, y, labelW );
 		y = DrawHostLives( x, y, labelW, addon );
 		y = DrawHostFastWeapons( x, y, labelW, addon );
 		y = DrawHostTeams( x, y, labelW, addon );
