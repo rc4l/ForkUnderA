@@ -6360,15 +6360,13 @@ public:
 			y += SB_HOST_LINE;
 		}
 
-		// [rc4l] The block occupies its whole RESERVATION whether or not it needs to, so that picking
-		// a mix cannot move what is underneath. The reservation is what this entry can reach rather
-		// than a flat three, so the slack is usually none at all -- see HostWadListLines.
-		for ( int ln = static_cast<int>( layout.lines.size( )); ln < reserved; ++ln )
-			y += SB_HOST_LINE;
-
 		// [rc4l] One total instead of a size per name. Per-file sizes needed a right-hand column to
 		// line up in, and that column is what stopped the names running on. What actually decides
 		// anything here is how big the download is, and that is one number.
+		//
+		// Drawn BEFORE the slack below, so it sits against the names it counts. It used to come after,
+		// which left a hole between the list and its own total on every entry that did not fill the
+		// reservation -- and put the slack where it reads as a hole rather than as spacing.
 		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 		{
 			FString summary;
@@ -6387,6 +6385,15 @@ public:
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 		y += SB_HOST_LINE;
+
+		// [rc4l] And the RESERVATION's remainder, spent here rather than above the total.
+		//
+		// The block still occupies the same height whatever mix is picked, which is what stops
+		// everything below jumping a line while the pointer is over the pill that was just clicked.
+		// Where the slack falls is free, and under the total it reads as the gap before the next
+		// section instead of as a hole in the middle of one.
+		for ( int ln = static_cast<int>( layout.lines.size( )); ln < reserved; ++ln )
+			y += SB_HOST_LINE;
 
 		// [rc4l] The whole list, every time, not only when the cap bit. A name can be cut for being
 		// wider than the column while nothing was dropped at all, and from the reader's side those
