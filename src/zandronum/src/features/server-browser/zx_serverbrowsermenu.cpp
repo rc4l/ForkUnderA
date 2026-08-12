@@ -2982,11 +2982,6 @@ public:
 		const int thumbY = top + zx::ComputeThumbTop( height, thumbH, first, total - SB_VISIBLE_ROWS );
 
 		screen->Dim( PalEntry( 170, 190, 230 ), 0.55f, left, thumbY, width, thumbH );
-
-		// [rc4l] And the edges, which say WHICH way the rest of the list is. Counted in rows here
-		// rather than pixels, because rows are what this list scrolls by.
-		DrawScrollEdgeShadows( SB_PANEL_LEFT + 4, SB_ROW_RIGHT, vTop, vTop + vHeight,
-			total * SB_ROW_HEIGHT, first * SB_ROW_HEIGHT, SB_ROW_HEIGHT );
 	}
 
 	//*************************************************************************
@@ -5014,65 +5009,6 @@ public:
 		screen->Dim( PalEntry( 40, 42, 58 ), 0.55f, x, trackTop, w, trackH );
 		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
 	}
-
-	// [rc4l] A scrollbar for an arbitrary region of the right column, given what it holds and where it
-	// has been scrolled to.
-	//
-	// The settings bar above is hard-wired to the settings; the running panel has two scrollable
-	// regions and neither of them is that, so the arithmetic is taken as parameters instead of read
-	// from globals. Same compute helpers, so all three thumbs behave identically.
-	//
-	// `barX` because the experience list scrolls in the LEFT column and its bar cannot share the right
-	// column's x. Everything else about it is the same bar.
-	// [rc4l] A shadow along a scrolling region's edge, drawn only on the side that has more behind it.
-	//
-	// A scrollbar says a region CAN scroll; it does not say which way, and at a glance a thumb near
-	// the middle of a short track is easy to read as a whole list. The shadow says it at the place
-	// the eye already is -- the row that is half-cut at the edge -- and says nothing at all when there
-	// is nothing that way, so its absence is information too.
-	//
-	// A ramp of one-pixel dims rather than a texture, the same way every soft edge in this browser is
-	// drawn. Strongest against the boundary and gone within a row's height, so it reads as the content
-	// passing under an edge rather than as a band of its own.
-	void DrawScrollEdgeShadows( int left, int right, int viewTop, int viewBottom,
-		int contentH, int scroll, int depth )
-	{
-		const int viewH = viewBottom - viewTop;
-		if (( viewH <= 0 ) || ( contentH <= viewH ))
-			return;
-
-		const int x = serverbrowser_ToScreenX( left );
-		const int w = serverbrowser_ToScreenX( right ) - x;
-		if ( w <= 0 )
-			return;
-
-		const int topPx = serverbrowser_ToScreenY( viewTop );
-		const int botPx = serverbrowser_ToScreenY( viewBottom );
-
-		// [rc4l] A whole ROW deep, not a text line. The first version faded over one line, which is
-		// barely half a row: the half-cut row at the boundary had its text sitting above where the
-		// shadow reached, so the row read as bright text under a dark stripe rather than as something
-		// passing under an edge. What has to be covered is the thing being cut, so the depth is the
-		// caller's -- it is the one that knows what its rows are.
-		const int deep = MAX( 2, serverbrowser_ToScreenY( viewTop + depth ) - topPx );
-
-		const bool bAbove = ( scroll > 0 );
-		const bool bBelow = ( scroll < ( contentH - viewH ));
-
-		for ( int i = 0; i < deep; ++i )
-		{
-			// Squared rather than linear, so the fade is quick at the edge and long in the tail. A
-			// straight ramp reads as a grey rectangle laid on top.
-			const float t = 1.f - ( static_cast<float>( i ) / deep );
-			const float a = 0.85f * t * t;
-
-			if ( bAbove )
-				screen->Dim( PalEntry( 0, 0, 0 ), a, x, topPx + i, w, 1 );
-			if ( bBelow )
-				screen->Dim( PalEntry( 0, 0, 0 ), a, x, botPx - 1 - i, w, 1 );
-		}
-	}
-
 	void DrawHostRegionScrollBar( int viewTop, int viewBottom, int contentH, int scroll,
 		int barX = SB_HOST_BAR_X )
 	{
@@ -5801,9 +5737,6 @@ public:
 		DrawHostRegionScrollBar( SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM, HostCatalogueH( ),
 			g_HostListScroll, SB_HOST_LBAR_X );
 
-		DrawScrollEdgeShadows( SB_HOST_LEFT, SB_HOST_LIST_RIGHT, SB_HOST_VIEW_TOP,
-			SB_HOST_VIEW_BOTTOM, HostCatalogueH( ), g_HostListScroll, SB_HOST_ROW_H );
-
 		// [rc4l] The detail column's own bar. It had one only while a server was running, so for the
 		// panel a player actually reads before pressing anything there was nothing saying the column
 		// went on -- the same fault the list above had, and the reason a fourth gameplay mod could be
@@ -5812,15 +5745,6 @@ public:
 		{
 			DrawHostRegionScrollBar( SB_HOST_RTOP_TOP, HostDetailViewBottom( ), HostDetailH( ),
 				g_HostDetailScroll );
-		}
-
-		// [rc4l] The detail column's edges, drawn whether or not a server is running -- while one is,
-		// the column is split and the top half is SHORTER, so it is the half most likely to have
-		// something just past its end.
-		if ( !g_HostShowSettings )
-		{
-			DrawScrollEdgeShadows( SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT, SB_HOST_RTOP_TOP,
-				HostDetailViewBottom( ), HostDetailH( ), g_HostDetailScroll, SB_HOST_GAME_ROW_H );
 		}
 
 		DrawHostScrollBar( );
@@ -6979,16 +6903,6 @@ public:
 			if ( !HostRowVisible( rowY, SB_HOST_ENTRY_H ))
 				continue;
 
-			// [rc4l] Whether the row FITS, as opposed to merely touching the view.
-			//
-			// PushClip reaches DimClipped and not DrawText, so a row half past the boundary had its box
-			// cut and its text drawn whole -- a line of bright letters hanging below a list that had
-			// visibly ended. The edge shadow made it obvious rather than causing it: the shadow fades
-			// over the last row INSIDE the region, and the spilt text was underneath all of it.
-			//
-			// The box still draws either way. A sliver of a row is what says the list goes on.
-			const bool bWhole = HostRowFullyVisible( rowY, SB_HOST_ENTRY_H );
-
 			const zx::HostListRow &r = rows[row];
 			const zx::CatalogueEntry &entry = entries[r.entry];
 
@@ -7125,31 +7039,22 @@ public:
 				const FString head = label.Left( split );
 				const FString tail = label.Mid( split );
 
-				if ( bWhole )
-				{
-					screen->DrawText( SmallFont, CR_GREEN, labelLeft, textY, head,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-				}
+				screen->DrawText( SmallFont, CR_GREEN, labelLeft, textY, head,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 				if ( tail.IsNotEmpty( ))
 				{
-					if ( bWhole )
-					{
-						screen->DrawText( SmallFont, CR_WHITE,
-							labelLeft + SmallFont->StringWidth( head ), textY, tail,
-							DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-					}
+					screen->DrawText( SmallFont, CR_WHITE,
+						labelLeft + SmallFont->StringWidth( head ), textY, tail,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 				}
 			}
 			else
 			{
 				// A way of playing is indented, so it reads as belonging to the experience above it
 				// rather than as another experience.
-				if ( bWhole )
-				{
-					screen->DrawText( SmallFont, col, labelLeft, textY, label,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-				}
+				screen->DrawText( SmallFont, col, labelLeft, textY, label,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			}
 
 			if ( bIsVariant )
@@ -7159,12 +7064,9 @@ public:
 				const zx::VariantKind kind = entry.addon.variants[r.variant].kind;
 				const char *kindText = zx::DescribeVariantKind( kind );
 
-				if ( bWhole )
-				{
-					screen->DrawText( SmallFont, ( kind == zx::VariantKind::PvE ) ? CR_GREEN : CR_ORANGE,
-						SB_HOST_ROW_RIGHT - SmallFont->StringWidth( kindText ) - 4, textY, kindText,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-				}
+				screen->DrawText( SmallFont, ( kind == zx::VariantKind::PvE ) ? CR_GREEN : CR_ORANGE,
+					SB_HOST_ROW_RIGHT - SmallFont->StringWidth( kindText ) - 4, textY, kindText,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 				if ( !entry.addon.variants[r.variant].tooltip.empty( ))
 				{
@@ -7183,12 +7085,9 @@ public:
 				// Grey on every experience that has one, whatever the row's own state. Taking it out
 				// of the label's colour keeps it quiet next to a marked name, which is what it is:
 				// the shape of the row, not something to look at.
-				if ( bWhole )
-				{
-					screen->DrawText( SmallFont, CR_GRAY,
-						SB_HOST_ROW_RIGHT - SmallFont->StringWidth( caret ) - 4, textY, caret,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-				}
+				screen->DrawText( SmallFont, CR_GRAY,
+					SB_HOST_ROW_RIGHT - SmallFont->StringWidth( caret ) - 4, textY, caret,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			}
 
 			// No file count here on purpose: the detail panel beside this already says the files and
