@@ -40,6 +40,9 @@ jobs:
       - name: Build ForkUnderA
         env:
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
+          # [rc4l] Same condition as the symbols, because it is the same fact: a build may report a
+          # crash exactly when someone can read the report. See ZX_OFFICIAL_BUILD in CMakeLists.
+          ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
           # Native OpenAL build (no FMOD, no Rosetta) — arm64 on Apple Silicon runners.
           set -o pipefail
@@ -119,6 +122,9 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
+          # [rc4l] Same condition as the symbols, because it is the same fact: a build may report a
+          # crash exactly when someone can read the report. See ZX_OFFICIAL_BUILD in CMakeLists.
+          ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
           set -o pipefail
           ./linux_compile.sh --install-deps 2>&1 | tee build.log
@@ -179,6 +185,8 @@ jobs:
       - name: Build + package the headless server (Linux, native)
         env:
           VERSION: ${{ inputs.version }}
+          ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
+          ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
           set -o pipefail
           ./linux_compile.sh --install-deps --serveronly 2>&1 | tee build-server.log
@@ -197,6 +205,27 @@ jobs:
         with:
           name: ForkUnderA-linux-server
           path: dist-linux/*-server.tar.gz
+
+      # [rc4l] The server's OWN symbols, under a name that cannot collide with the client's.
+      #
+      # Both binaries are "linux" and share a sha, so one name would mean a crash from either being
+      # read with whichever set won the upload. They share no addresses -- SERVER_ONLY, no renderer,
+      # no sound -- so that produced function names that were confident and wrong. crash_sync.py
+      # keys the server variant off this name.
+      - name: Package debug symbols (server .debug)
+        if: ${{ inputs.upload_symbols }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD | cut -c1-12)
+          ( cd build-linux && zip -qy "../symbols-linux-server-${sha}.zip" forkundera-server.debug )
+          ls -la symbols-linux-server-*.zip
+
+      - name: Upload server symbols artifact
+        if: ${{ inputs.upload_symbols }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: symbols-linux-server
+          path: symbols-linux-server-*.zip
 
   build-windows:
     # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose
@@ -241,6 +270,9 @@ jobs:
         shell: pwsh
         env:
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
+          # [rc4l] Same condition as the symbols, because it is the same fact: a build may report a
+          # crash exactly when someone can read the report. See ZX_OFFICIAL_BUILD in CMakeLists.
+          ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
           $ErrorActionPreference = "Stop"
           ./windows_compile.ps1 -Version "${{ inputs.version }}" 2>&1 | Tee-Object -FilePath build.log

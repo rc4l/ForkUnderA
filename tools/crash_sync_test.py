@@ -65,9 +65,41 @@ check("missing closed_at reopens",  "2026-07-29T13:00:00Z", None,          True)
 check("unparseable value reopens",  "not-a-date",  "2026-07-29T13:00:00Z", True)
 check("empty string reopens",       "",            "2026-07-29T13:00:00Z", True)
 
+
+# --- resolve_platform: which symbols a crash may be read with ---------------------------------
+#
+# [rc4l] The case that matters is the refusal. A server crash carries the same release, dist and
+# platform as a client crash from the same commit, so before this it matched the CLIENT's symbols
+# asset and symbolicated a different binary -- names that are authoritative and wrong. An
+# unsymbolicated stack at least admits it is useless.
+
+def ev_with(build=None):
+    e = {"tags": []}
+    if build is not None:
+        e["tags"].append({"key": "build", "value": build})
+    return e
+
+def check_plat(label, ev, platform, expected):
+    got = crash_sync.resolve_platform(ev, platform)
+    ok = got == expected
+    print(("PASS  " if ok else "FAIL  ") + label)
+    print(f"      -> {got!r}")
+    if not ok:
+        FAILURES.append(f"{label}: expected {expected!r}, got {got!r}")
+
+check_plat("server crash asks for server symbols", ev_with("server"), "linux", "linux-server")
+check_plat("client crash is unchanged",            ev_with("client"), "linux", "linux")
+# Absent is not client-shaped guesswork: nothing but a client reported before the tag existed.
+check_plat("untagged build is treated as client",  ev_with(None),     "linux", "linux")
+# The refusal. No server symbols are built for these platforms, so there is nothing honest to use.
+check_plat("server crash on macos refuses",        ev_with("server"), "macos", None)
+check_plat("server crash on windows refuses",      ev_with("server"), "windows", None)
+# Case and padding come from a remote payload, not from us.
+check_plat("tag value is normalised",              ev_with(" Server "), "linux", "linux-server")
+
 if FAILURES:
     print("\nFAILED:")
     for f in FAILURES:
         print(f"  - {f}")
     sys.exit(1)
-print("\nall crash_sync.should_reopen cases passed")
+print("\nall crash_sync cases passed")
