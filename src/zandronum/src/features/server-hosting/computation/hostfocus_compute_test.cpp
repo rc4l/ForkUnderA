@@ -19,7 +19,7 @@ const int kFields = 4;
 
 HostNavResult Nav(HostFocusPos pos, HostNavKey key, bool hasFields = true, bool hasToggle = true)
 {
-	return ComputeHostNav(pos, key, kFields, hasFields, hasToggle);
+	return ComputeHostNav(pos, key, kFields, hasFields, hasToggle, 0);
 }
 
 HostFocusPos Field(int i) { return HostFocusPos(HostSlot::Field, i); }
@@ -180,26 +180,26 @@ TEST(HostFocus, WithTheSettingsShutThereAreNoFieldsToWalk)
 
 TEST(HostFocus, ClampCorrectsWhatCannotBeThere)
 {
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Field(0), kFields, false, true).slot);
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Vis(), kFields, false, true).slot);
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Toggle(), kFields, true, false).slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Field(0), kFields, false, true, 0).slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Vis(), kFields, false, true, 0).slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Toggle(), kFields, true, false, 0).slot);
 
 	// A field index past the end is the same kind of stale.
-	EXPECT_EQ(0, ClampHostFocus(Field(99), kFields, true, true).field);
-	EXPECT_EQ(0, ClampHostFocus(Field(-3), kFields, true, true).field);
+	EXPECT_EQ(0, ClampHostFocus(Field(99), kFields, true, true, 0).field);
+	EXPECT_EQ(0, ClampHostFocus(Field(-3), kFields, true, true, 0).field);
 
 	// Valid positions are left exactly alone.
-	EXPECT_EQ(HostSlot::Field, ClampHostFocus(Field(2), kFields, true, true).slot);
-	EXPECT_EQ(2, ClampHostFocus(Field(2), kFields, true, true).field);
-	EXPECT_EQ(HostSlot::Toggle, ClampHostFocus(Toggle(), kFields, true, true).slot);
+	EXPECT_EQ(HostSlot::Field, ClampHostFocus(Field(2), kFields, true, true, 0).slot);
+	EXPECT_EQ(2, ClampHostFocus(Field(2), kFields, true, true, 0).field);
+	EXPECT_EQ(HostSlot::Toggle, ClampHostFocus(Toggle(), kFields, true, true, 0).slot);
 }
 
 TEST(HostFocus, NoFieldsAtAllStillLeavesSomewhereToStand)
 {
 	// A form with its boxes counted as zero must not put focus on a field that cannot exist.
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Field(0), 0, true, true).slot);
-	EXPECT_EQ(HostSlot::List, ComputeHostNav(Vis(), HostNavKey::Up, 0, true, true).pos.slot);
-	EXPECT_EQ(HostSlot::List, ComputeHostNav(Action(), HostNavKey::Up, 0, true, true).pos.slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Field(0), 0, true, true, 0).slot);
+	EXPECT_EQ(HostSlot::List, ComputeHostNav(Vis(), HostNavKey::Up, 0, true, true, 0).pos.slot);
+	EXPECT_EQ(HostSlot::List, ComputeHostNav(Action(), HostNavKey::Up, 0, true, true, 0).pos.slot);
 }
 
 // ---------------------------------------------------------------- coming back
@@ -246,7 +246,7 @@ TEST(HostFocus, OnePositionCannotNameTwoThings)
 			const HostFocusPos to = Nav(starts[s], keys[k]).pos;
 
 			// Whatever it lands on is one slot, and one that exists.
-			EXPECT_EQ(to.slot, ClampHostFocus(to, kFields, true, true).slot);
+			EXPECT_EQ(to.slot, ClampHostFocus(to, kFields, true, true, 0).slot);
 
 			if (to.slot == HostSlot::Field)
 			{
@@ -255,4 +255,108 @@ TEST(HostFocus, OnePositionCannotNameTwoThings)
 			}
 		}
 	}
+}
+
+// ------------------------------------------------------------ the gameplay panel
+
+namespace
+{
+
+// The panel face: settings shut, so no fields and no visibility row, and `n` rows of controls.
+HostNavResult Panel(HostFocusPos pos, HostNavKey key, int n)
+{
+	return ComputeHostNav(pos, key, kFields, false, true, n);
+}
+
+HostFocusPos Game(int i)
+{
+	return HostFocusPos(HostSlot::Gameplay, i);
+}
+
+} // namespace
+
+TEST(HostFocus, RightOffTheListEntersTheGameplayPanelWhenTheFormIsShut)
+{
+	// The form REPLACES the panel, so the right column has one first thing and which it is depends
+	// on the face showing. With the settings open this same key goes to the first field.
+	EXPECT_EQ(HostSlot::Gameplay, Panel(HostFocusPos(HostSlot::List, 0), HostNavKey::Right, 3).pos.slot);
+	EXPECT_EQ(0, Panel(HostFocusPos(HostSlot::List, 0), HostNavKey::Right, 3).pos.field);
+
+	EXPECT_EQ(HostSlot::Field,
+		ComputeHostNav(HostFocusPos(HostSlot::List, 0), HostNavKey::Right, kFields, true, true, 3).pos.slot);
+}
+
+TEST(HostFocus, AnExperienceWithNothingToDecideSendsRightToTheFoot)
+{
+	// Most entries offer no gameplay controls at all. Right must still land somewhere real.
+	EXPECT_EQ(HostSlot::Action, Panel(HostFocusPos(HostSlot::List, 0), HostNavKey::Right, 0).pos.slot);
+}
+
+TEST(HostFocus, UpAndDownWalkTheGameplayRows)
+{
+	EXPECT_EQ(1, Panel(Game(0), HostNavKey::Down, 3).pos.field);
+	EXPECT_EQ(2, Panel(Game(1), HostNavKey::Down, 3).pos.field);
+	EXPECT_EQ(0, Panel(Game(1), HostNavKey::Up, 3).pos.field);
+}
+
+TEST(HostFocus, UpOffTheFirstGameplayRowCrossesBackToTheList)
+{
+	// The same answer up off the first field gives, because it is the same crossing.
+	EXPECT_EQ(HostSlot::List, Panel(Game(0), HostNavKey::Up, 3).pos.slot);
+}
+
+TEST(HostFocus, DownOffTheLastGameplayRowLandsOnTheFoot)
+{
+	// Which is what the panel was leading to: the button that starts the thing being configured.
+	EXPECT_EQ(HostSlot::Action, Panel(Game(2), HostNavKey::Down, 3).pos.slot);
+}
+
+TEST(HostFocus, UpFromTheFootReturnsToTheLastGameplayRow)
+{
+	// [rc4l] Both feet answer this, and they answer it the same way. The bug this guards is the two
+	// buttons disagreeing about where up goes, which is invisible until somebody presses up on the
+	// one that was not tested.
+	EXPECT_EQ(HostSlot::Gameplay, Panel(HostFocusPos(HostSlot::Action, 0), HostNavKey::Up, 3).pos.slot);
+	EXPECT_EQ(2, Panel(HostFocusPos(HostSlot::Action, 0), HostNavKey::Up, 3).pos.field);
+
+	EXPECT_EQ(HostSlot::Gameplay, Panel(HostFocusPos(HostSlot::Toggle, 0), HostNavKey::Up, 3).pos.slot);
+	EXPECT_EQ(2, Panel(HostFocusPos(HostSlot::Toggle, 0), HostNavKey::Up, 3).pos.field);
+}
+
+TEST(HostFocus, UpFromTheFootStillSkipsAPanelWithNoRows)
+{
+	EXPECT_EQ(HostSlot::List, Panel(HostFocusPos(HostSlot::Action, 0), HostNavKey::Up, 0).pos.slot);
+}
+
+TEST(HostFocus, LeftAndRightBelongToTheGameplayRowItself)
+{
+	// A slider moves a stop, an axis of pills moves along its options. Movement and traversal are
+	// separate answers: the step is reported and the focus does not move.
+	const HostNavResult left = Panel(Game(1), HostNavKey::Left, 3);
+	const HostNavResult right = Panel(Game(1), HostNavKey::Right, 3);
+
+	EXPECT_EQ(-1, left.choiceStep);
+	EXPECT_EQ(1, right.choiceStep);
+	EXPECT_EQ(HostSlot::Gameplay, left.pos.slot);
+	EXPECT_EQ(1, left.pos.field);
+	EXPECT_EQ(1, right.pos.field);
+}
+
+TEST(HostFocus, AGameplayRowThatIsNoLongerThereIsCorrected)
+{
+	// The panel changes underneath a focus that was legitimate: opening the settings replaces it,
+	// and choosing a different experience can leave fewer rows than there were.
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Game(0), kFields, false, true, 0).slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Game(0), kFields, true, true, 3).slot)
+		<< "the form replaces the panel, so a gameplay row cannot be current while it is open";
+	EXPECT_EQ(0, ClampHostFocus(Game(9), kFields, false, true, 3).field);
+	EXPECT_EQ(0, ClampHostFocus(Game(-2), kFields, false, true, 3).field);
+}
+
+TEST(HostFocus, AValidGameplayRowIsLeftAlone)
+{
+	const HostFocusPos pos = ClampHostFocus(Game(2), kFields, false, true, 3);
+
+	EXPECT_EQ(HostSlot::Gameplay, pos.slot);
+	EXPECT_EQ(2, pos.field);
 }

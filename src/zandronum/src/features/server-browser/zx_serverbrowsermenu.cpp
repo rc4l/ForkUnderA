@@ -78,6 +78,7 @@
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/server-browser/computation/joinintent_compute.h"
 #include "features/server-browser/computation/ownjoin_compute.h"
+#include "features/server-browser/computation/pillgrid_compute.h"
 #include "features/server-browser/computation/wadlist_compute.h"
 #include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
@@ -1166,6 +1167,25 @@ struct HostSliderRect
 static	TArray<HostSliderRect>	g_HostSliders;
 static	FString					g_HostSliderHot;		// id under the pointer, or empty
 static	FString					g_HostSliderDragging;	// id being dragged, or empty
+
+// [rc4l] One entry per ROW of the gameplay panel, in the order it draws, so the keyboard has
+// something to walk.
+//
+// Built BY THE DRAW, the same way the hit rects are, and for the same reason: the alternative is a
+// second function listing the rows in the order the first one happens to draw them, and two lists
+// of one layout is how a keyboard comes to land on a control that is not where it thinks.
+//
+// Unlike a hit rect it is pushed even when the row is scrolled out of view. A pointer cannot click
+// what it cannot see, but the keyboard is entitled to reach it -- RevealHostFocus scrolls it back.
+struct HostGameFocusRow
+{
+	bool		bSlider;	// false: an axis of pills
+	std::string	id;			// the slider's id, or the axis's group
+	int			y;			// as drawn, so the glow and the reveal agree with the draw
+	int			h;
+};
+
+static	TArray<HostGameFocusRow>	g_HostGameFocusRows;
 
 // [rc4l] The remix picker, open over the panel. A list rather than a row of buttons, because the
 // dialog's three-button ceiling is exactly the wall this would hit: two options today, and the whole
@@ -3963,6 +3983,25 @@ public:
 	//
 	// Reads look the way they did when there were three variables; what changed is that there is one
 	// now, so no caller can leave two of them disagreeing.
+	// How many rows the gameplay panel drew last frame, which is what the keyboard walks. Zero while
+	// the form is open, while a server is running, and for an experience with nothing to decide.
+	int HostGameplayRowCount( )		{ return static_cast<int>( g_HostGameFocusRows.Size( )); }
+
+	bool HostOnGameplay( )		{ return g_HostFocus.slot == zx::HostSlot::Gameplay; }
+
+	// Which row the keyboard is on, or -1. Bounds-checked against what actually drew, because the
+	// panel can shrink underneath a focus that was legitimate when it was set.
+	int HostGameplayFocus( )
+	{
+		if ( !HostOnGameplay( ) || ( g_HostFocus.field < 0 ) ||
+			( g_HostFocus.field >= HostGameplayRowCount( )))
+		{
+			return -1;
+		}
+
+		return g_HostFocus.field;
+	}
+
 	bool HostOnList( )			{ return g_HostFocus.slot == zx::HostSlot::List; }
 	bool HostOnVisibility( )	{ return g_HostFocus.slot == zx::HostSlot::Visibility; }
 	bool HostOnButton( )		{ return g_HostFocus.slot == zx::HostSlot::Action; }
@@ -3993,7 +4032,7 @@ public:
 	void ClampHostFocus( )
 	{
 		g_HostFocus = zx::ClampHostFocus( g_HostFocus, kHostFieldCount,
-			HostHasFields( ), HostFootHasToggle( ));
+			HostHasFields( ), HostFootHasToggle( ), HostGameplayRowCount( ));
 	}
 
 	// [rc4l] One key, answered by computation/hostfocus_compute and applied here.
@@ -4006,12 +4045,25 @@ public:
 	{
 		ClampHostFocus( );
 
+		// [rc4l] An axis of pills that has wrapped is a GRID, and up and down belong to it before
+		// they belong to the panel. Asked first, and only falls through when the axis has no line
+		// that way -- see computation/pillgrid_compute.
+		if ( HostOnGameplay( ) &&
+			(( key == zx::HostNavKey::Up ) || ( key == zx::HostNavKey::Down )))
+		{
+			if ( StepPillGridVertically( HostGameplayFocus( ),
+				( key == zx::HostNavKey::Up ) ? -1 : 1 ))
+			{
+				return;
+			}
+		}
+
 		// [rc4l] What the keyboard OWNS before the key is answered, so the release below can tell a
 		// move that changes it from one that does not.
 		const bool bWasInField = HostInAField( );
 
 		const zx::HostNavResult r = zx::ComputeHostNav( g_HostFocus, key, kHostFieldCount,
-			HostHasFields( ), HostFootHasToggle( ));
+			HostHasFields( ), HostFootHasToggle( ), HostGameplayRowCount( ));
 
 		// [rc4l] The list moves its SELECTION rather than focus, so it is applied here and focus is
 		// left alone -- the movement/traversal split the unit reports separately.
@@ -4056,6 +4108,29 @@ public:
 		// [rc4l] The visibility row's left and right move the CURSOR along it. They do not answer the
 		// question -- enter does. Moving and choosing are different acts, and a row that decided as
 		// you passed over it could not be read without being changed.
+		if (( r.choiceStep != 0 ) && HostOnGameplay( ))
+		{
+			// [rc4l] LEFT off the first option leaves the axis for the list. An axis is the leftmost
+			// thing in the right column, so there is nothing else that way, and going back to what
+			// the panel is describing is more use than doing nothing.
+			if (( r.choiceStep < 0 ) && HostGameplayRowAtFirstChoice( HostGameplayFocus( )))
+			{
+				g_HostFocus = zx::HostLeftOfTheForm( );
+				RevealHostFocus( );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				return;
+			}
+
+			// [rc4l] The row decides what a step MEANS -- a stop on a slider, the next option on an
+			// axis of pills -- so the unit reports the direction and this applies it. Same split the
+			// visibility row makes just below.
+			//
+			// RIGHT off the last option does nothing. It is the end of the row and there is nothing
+			// beyond it: wrapping to the first would undo the choice the player just walked to.
+			StepHostGameplayRow( HostGameplayFocus( ), r.choiceStep );
+			return;
+		}
+
 		if ( r.choiceStep != 0 )
 		{
 			const int at = zx::ChoiceStep( g_HostVisCursor, kHostVisCount, r.choiceStep );
@@ -4204,6 +4279,191 @@ public:
 		return false;
 	}
 
+	// [rc4l] Whether this row is an axis of pills sitting on its FIRST option.
+	//
+	// Which is where LEFT stops being about the axis: there is nothing to its left on the row, and
+	// the thing to its left on the panel is the experience list. The same answer the foot's action
+	// button gives for the same key, so the right column has one way back rather than two.
+	//
+	// Sliders are deliberately not included. Left is how their value comes DOWN, and a slider that
+	// threw the keyboard across the panel when the value reached its floor would fight the key that
+	// was being held to get it there.
+	bool HostGameplayRowAtFirstChoice( int row )
+	{
+		if (( row < 0 ) || ( row >= HostGameplayRowCount( )))
+			return false;
+
+		const HostGameFocusRow &at = g_HostGameFocusRows[row];
+		if ( at.bSlider )
+			return false;
+
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return false;
+
+		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
+
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if ( groups[g].id != at.id )
+				continue;
+
+			return zx::PickRemix( groups[g].choices, HostRemixWanted( groups[g].id )).index <= 0;
+		}
+
+		return false;
+	}
+
+	// [rc4l] UP or DOWN inside an axis of pills, when the axis has wrapped onto more than one line.
+	//
+	// True when the key was spent inside the axis. False means there is no line that way, and the
+	// caller lets it fall through to the ordinary navigation -- which is how up off the first line
+	// still reaches the control above and down off the last still reaches the one below.
+	//
+	// The grid it walks is computed by the same function the draw uses, so the marker cannot land
+	// where a pill is not.
+	bool StepPillGridVertically( int row, int dir )
+	{
+		if (( row < 0 ) || ( row >= HostGameplayRowCount( )))
+			return false;
+
+		const HostGameFocusRow &at = g_HostGameFocusRows[row];
+		if ( at.bSlider )
+			return false;
+
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return false;
+
+		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
+
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if ( groups[g].id != at.id )
+				continue;
+
+			const std::vector<zx::AddonRemix> &choices = groups[g].choices;
+			if ( choices.size( ) <= 1 )
+				return false;
+
+			// A locked axis does not move, by any key. The mouse cannot touch it either.
+			if (( groups[g].id == kHostMixGroup ) && HostWeaponsPlan( addon ).mixLocked )
+				return false;
+
+			const HostPillGeom geom = HostPillGeometry( SB_HOST_RCOL_LEFT, groups[g] );
+			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
+
+			const zx::PillMove to = zx::MovePillVertically( geom.layout, geom.widths, geom.gap,
+				( pick.index >= 0 ) ? pick.index : 0, dir );
+
+			if ( to.leaves )
+				return false;
+
+			if ( to.index != pick.index )
+			{
+				HostSetRemixWanted( groups[g].id, choices[to.index].id );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+
+			return true;
+		}
+
+		return false;
+	}
+
+	// [rc4l] Put the keyboard on the gameplay row with this id, so a click moves the marker to what
+	// was clicked.
+	//
+	// Without it the next arrow key sets off from wherever the keyboard happened to be left, which is
+	// never where the player is looking: their cursor is the thing they just pressed.
+	void FocusHostGameplayRow( bool bSlider, const std::string &id )
+	{
+		for ( unsigned i = 0; i < g_HostGameFocusRows.Size( ); ++i )
+		{
+			if (( g_HostGameFocusRows[i].bSlider != bSlider ) || ( g_HostGameFocusRows[i].id != id ))
+				continue;
+
+			SetFocus( zx::BrowserFocus::Host );
+			g_HostFocus = zx::HostFocusPos( zx::HostSlot::Gameplay, static_cast<int>( i ));
+			return;
+		}
+	}
+
+	// [rc4l] A step on whichever gameplay row the keyboard is on.
+	//
+	// The row registry says what the row IS; this says what a step does to each kind. Both kinds go
+	// through the very same call the mouse makes -- HostSliderSet for a track, HostSetRemixWanted for
+	// an axis -- so a key and a click cannot come to mean different things.
+	void StepHostGameplayRow( int row, int step )
+	{
+		if (( row < 0 ) || ( row >= HostGameplayRowCount( )) || ( step == 0 ))
+			return;
+
+		const HostGameFocusRow &at = g_HostGameFocusRows[row];
+
+		if ( at.bSlider )
+		{
+			// The slider's own recorded geometry, so the ends and the clamp are the ones the mouse
+			// is using rather than a second opinion about the range.
+			for ( unsigned i = 0; i < g_HostSliders.Size( ); ++i )
+			{
+				if ( g_HostSliders[i].id != at.id )
+					continue;
+
+				const HostSliderRect &s = g_HostSliders[i];
+				const int now = clamp( s.value + step, s.min, s.max );
+
+				if ( now != s.value )
+				{
+					HostSliderSet( s.id, now );
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return;
+			}
+
+			return;
+		}
+
+		// An axis of pills. Stepping moves along the OFFERED order, which is the order they are
+		// drawn in, so left and right go the way the eye expects on a wrapped row too.
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return;
+
+		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
+
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if ( groups[g].id != at.id )
+				continue;
+
+			const std::vector<zx::AddonRemix> &choices = groups[g].choices;
+			if ( choices.size( ) <= 1 )
+				return;
+
+			// [rc4l] A locked axis does not move. It draws inert and registers no hit rect, so the
+			// mouse cannot touch it; the keyboard must not be the one way round that.
+			if (( groups[g].id == kHostMixGroup ) && HostWeaponsPlan( addon ).mixLocked )
+				return;
+
+			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
+
+			const int count = static_cast<int>( choices.size( ));
+			const int from = ( pick.index >= 0 ) ? pick.index : 0;
+			const int to = clamp( from + step, 0, count - 1 );
+
+			if ( to != from )
+			{
+				HostSetRemixWanted( groups[g].id, choices[to].id );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+			return;
+		}
+	}
+
 	// [rc4l] What a slider's id means, which is the ONE place a setting is tied to its control. The
 	// slider itself knows nothing about lives.
 	void HostSliderSet( const std::string &id, int value )
@@ -4259,6 +4519,7 @@ public:
 					const int was = s.value;
 					const int now = clamp( was + ( bPlus ? 1 : -1 ), s.min, s.max );
 
+					FocusHostGameplayRow( true, s.id );
 					HostSliderSet( s.id, now );
 
 					// Silent at the ends, so a press that changed nothing does not sound like one
@@ -4275,7 +4536,10 @@ public:
 				( x < serverbrowser_ToScreenX( s.trackX + s.trackW + 4 ));
 
 			if (( type == MOUSE_Click ) && bOnTrack )
+			{
 				g_HostSliderDragging = s.id.c_str( );
+				FocusHostGameplayRow( true, s.id );
+			}
 
 			const bool bMine = ( g_HostSliderDragging.Compare( s.id.c_str( )) == 0 );
 			if ( bOnTrack || bMine )
@@ -4475,6 +4739,7 @@ public:
 				// Sets that AXIS only. Every other axis keeps whatever it had, which is the whole
 				// reason they are separate.
 				HostSetRemixWanted( row.group, row.id );
+				FocusHostGameplayRow( false, row.group );
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 			}
 
@@ -4709,6 +4974,25 @@ public:
 		{
 			RevealHostRow( HostVisibilityY( ), SB_CHOICE_H );
 			return;
+		}
+
+		// [rc4l] The gameplay panel scrolls in the DETAIL column, not the settings one, so it has its
+		// own reveal. The row's y is where it was last drawn, offset included, which is why this can
+		// nudge the offset by the shortfall and be right next frame.
+		{
+			const int row = HostGameplayFocus( );
+			if ( row >= 0 )
+			{
+				const HostGameFocusRow &at = g_HostGameFocusRows[row];
+
+				if ( at.y < SB_HOST_RTOP_TOP )
+					g_HostDetailScroll -= ( SB_HOST_RTOP_TOP - at.y );
+				else if (( at.y + at.h ) > HostDetailViewBottom( ))
+					g_HostDetailScroll += (( at.y + at.h ) - HostDetailViewBottom( ));
+
+				g_HostDetailScroll = zx::ClampScroll( g_HostDetailScroll, HostDetailMaxScroll( ));
+				return;
+			}
 		}
 
 		if ( HostInAField( ))
@@ -5458,6 +5742,39 @@ public:
 		return x + SmallFont->StringWidth( label ) + SmallFont->StringWidth( "  " );
 	}
 
+	// [rc4l] Where an axis's pills sit, worked out ONCE.
+	//
+	// Three callers need the identical answer -- the draw, the height that gives the panel its
+	// scrollbar, and the keyboard that walks the grid -- and each had its own copy of the widths and
+	// the wrap. Three arithmetics for one layout is how a marker lands where a pill is not.
+	struct HostPillGeom
+	{
+		std::vector<int>	widths;
+		zx::WadListLayout	layout;
+		int					gap;
+		int					left;
+	};
+
+	HostPillGeom HostPillGeometry( int x, const zx::RemixGroup &group )
+	{
+		HostPillGeom out;
+
+		// Room for the dot and the gaps either side of it, plus the trailing gap after the label.
+		const int pad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
+
+		out.gap = 4;
+		out.left = HostPillLeft( x, group.id );
+
+		out.widths.reserve( group.choices.size( ));
+		for ( size_t i = 0; i < group.choices.size( ); ++i )
+			out.widths.push_back( SmallFont->StringWidth( group.choices[i].name.c_str( )) + pad );
+
+		out.layout = zx::LayoutWadList( out.widths, out.gap, 0,
+			SB_HOST_RCOL_RIGHT - out.left, 0 );
+
+		return out;
+	}
+
 	bool HostHasGameplayRow( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -6051,18 +6368,8 @@ public:
 				// [rc4l] The SAME wrap DrawHostGameplay performs, from the same function. Two
 				// measurements of one layout is exactly how a region ends up able to scroll past its
 				// own end, so both ask LayoutWadList rather than each doing its own arithmetic.
-				const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
-				const int pillRoom = SB_HOST_RCOL_RIGHT -
-					HostPillLeft( SB_HOST_RCOL_LEFT, groups[g].id );
-
-				std::vector<int> pillWidths;
-				for ( size_t i = 0; i < groups[g].choices.size( ); ++i )
-				{
-					pillWidths.push_back(
-						SmallFont->StringWidth( groups[g].choices[i].name.c_str( )) + pillPad );
-				}
-
-				const zx::WadListLayout pills = zx::LayoutWadList( pillWidths, 4, 0, pillRoom, 0 );
+				const zx::WadListLayout pills =
+					HostPillGeometry( SB_HOST_RCOL_LEFT, groups[g] ).layout;
 
 				h += static_cast<int>( pills.lines.size( )) *
 					( SB_HOST_GAME_ROW_H + SB_HOST_PILL_VGAP ) + 3;
@@ -6145,6 +6452,7 @@ public:
 		// to a selection that has changed cannot be left behind as a live click target.
 		g_HostGameRows.Clear( );
 		g_HostSliders.Clear( );
+		g_HostGameFocusRows.Clear( );
 
 		// [rc4l] Reached only when there is nothing to describe. This used to be the Custom row's
 		// panel; with that row gone, an out-of-range selection means the catalogue is empty.
@@ -6453,6 +6761,25 @@ public:
 			labelW = 0;
 		}
 
+		// [rc4l] Registered BEFORE the visibility test, unlike a hit rect. A pointer cannot click what
+		// it cannot see, but the keyboard is entitled to reach a row that has scrolled off -- and
+		// RevealHostFocus is what brings it back.
+		{
+			HostGameFocusRow row;
+			row.bSlider = true;
+			row.id = id;
+			row.y = y;
+			row.h = SB_HOST_GAME_ROW_H;
+			g_HostGameFocusRows.Push( row );
+		}
+
+		const bool bFocused = ( HostGameplayFocus( ) ==
+			static_cast<int>( g_HostGameFocusRows.Size( )) - 1 ) &&
+			( g_Focus == zx::BrowserFocus::Host );
+
+		if ( bFocused )
+			FocusAnchor( zx::BrowserFocus::Host, x - 5, y + SB_HOST_GAME_ROW_H / 2 );
+
 		const bool bDraw = HostDetailRowVisible( y, SB_HOST_LINE );
 
 		if ( bDraw && !bLabelAbove )
@@ -6660,6 +6987,21 @@ public:
 			if (( groups[g].id == kHostMixGroup ) != bMix )
 				continue;
 
+			// The axis is one row as far as the keyboard is concerned, however many lines of pills it
+			// wraps onto. Same registry the sliders use, in the same draw order.
+			{
+				HostGameFocusRow row;
+				row.bSlider = false;
+				row.id = groups[g].id;
+				row.y = y;
+				row.h = SB_HOST_GAME_ROW_H;
+				g_HostGameFocusRows.Push( row );
+			}
+
+			const bool bAxisFocused = ( HostGameplayFocus( ) ==
+				static_cast<int>( g_HostGameFocusRows.Size( )) - 1 ) &&
+				( g_Focus == zx::BrowserFocus::Host );
+
 			// [rc4l] The lock, and it has to be read HERE rather than taken from HostRemixPicks: this
 			// draw walks the groups itself, and a mix group drawn from the raw preference would show
 			// the choice the player made rather than the baseline actually being served.
@@ -6692,17 +7034,13 @@ public:
 			// whose options are too wide to pack at all -- and there a list says it better.
 			//
 			// Room for the dot and the gaps either side of it, plus the trailing gap after the label.
-			const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
-			const int pillGap = 4;
-			const int pillLeft = HostPillLeft( x, groups[g].id );
+			const HostPillGeom geom = HostPillGeometry( x, groups[g] );
+
+			const std::vector<int> &pillWidths = geom.widths;
+			const zx::WadListLayout &pills = geom.layout;
+			const int pillGap = geom.gap;
+			const int pillLeft = geom.left;
 			const int pillRoom = SB_HOST_RCOL_RIGHT - pillLeft;
-
-			std::vector<int> pillWidths;
-			pillWidths.reserve( choices.size( ));
-			for ( size_t i = 0; i < choices.size( ); ++i )
-				pillWidths.push_back( SmallFont->StringWidth( choices[i].name.c_str( )) + pillPad );
-
-			const zx::WadListLayout pills = zx::LayoutWadList( pillWidths, pillGap, 0, pillRoom, 0 );
 
 			for ( size_t ln = 0; ln < pills.lines.size( ); ++ln )
 			{
@@ -6821,6 +7159,12 @@ public:
 								( px + pw ) - textX - 2 ),
 							DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
 							DTA_KeepRatio, true, TAG_DONE );
+
+						// [rc4l] The glow sits on the pill that is ON, not at the head of the row. That
+						// is where the answer is, and it is what makes left and right read as moving
+						// the marker along the axis rather than as changing something elsewhere.
+						if ( bAxisFocused && bOn )
+							FocusAnchor( zx::BrowserFocus::Host, px - 5, y + SB_HOST_GAME_ROW_H / 2 );
 
 						if ( !choices[i].summary.empty( ))
 						{
