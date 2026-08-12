@@ -195,6 +195,13 @@ if ($env:ZX_WITH_SYMBOLS -eq "1") {
     Write-Status "building with debug symbols (PDB)"
     $symArgs = @("-DZX_WITH_SYMBOLS=ON")
 }
+
+# [rc4l] Only a build whose symbols get published may report crashes; see ZX_OFFICIAL_BUILD in
+# src/zandronum/CMakeLists.txt. Set by CI, never by a local build.
+if ($env:ZX_OFFICIAL_BUILD -eq "1") {
+    Write-Status "official build: crash reporting enabled"
+    $symArgs += "-DZX_OFFICIAL_BUILD=ON"
+}
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$dep" `

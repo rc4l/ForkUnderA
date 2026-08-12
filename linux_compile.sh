@@ -73,6 +73,14 @@ rm -f build-linux/CMakeCache.txt
 # [rc4l] ZX_WITH_SYMBOLS=1 (set by release CI) builds with debug info and splits it into
 # forkundera.debug via RELEASE_WITH_DEBUG_FILE, keeping the shipped binary stripped/lean. The
 # .debug file is uploaded to GlitchTip so crashes symbolicate. --build-id links the two.
+# [rc4l] Only a build whose symbols get published may report crashes; see ZX_OFFICIAL_BUILD in
+# src/zandronum/CMakeLists.txt. Set by CI, never by a local build.
+OFFICIAL_ARGS=()
+if [ "${ZX_OFFICIAL_BUILD:-0}" = "1" ]; then
+  echo "==> official build: crash reporting enabled"
+  OFFICIAL_ARGS=( -DZX_OFFICIAL_BUILD=ON )
+fi
+
 SYM_ARGS=()
 if [ "${ZX_WITH_SYMBOLS:-0}" = "1" ]; then
   echo "==> building with debug symbols (ZX_WITH_SYMBOLS=1)"
@@ -84,7 +92,7 @@ fi
 cmake -S src/zandronum -B build-linux -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
   -DSERVERONLY="$SERVERONLY" -DNO_FMOD=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON \
-  "${SYM_ARGS[@]}"
+  "${SYM_ARGS[@]}" "${OFFICIAL_ARGS[@]}"
 
 echo "==> Building"
 cmake --build build-linux -j"$(nproc)"
