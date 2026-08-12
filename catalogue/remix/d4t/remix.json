@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "name": "D4T",
+  "summary": "Death Foretold: Doom 2016's arsenal and glory kills, built to run in multiplayer.",
+  "group": "mix",
+  "files": [
+    {
+      "name": "d4tv2.5.pk3",
+      "md5": "11effb67a21fdf65e8348a244e5cbe53"
+    }
+  ]
+}

@@ -7,7 +7,7 @@
   "gamemode": "deathmatch",
   "order": 5,
   "accent": true,
-  "remixes": ["vanilla", "brutaldoom", "doom64", "cataweaponz", "eonweapons"],
+  "remixes": ["vanilla", "brutaldoom", "d4t", "doom64", "cataweaponz", "eonweapons"],
   "files": [
     {
       "name": "zandrospree2rc2.pk3",
