@@ -20,7 +20,6 @@ Three levels, and they are not interchangeable:
 
 ```json
 {
-  "schema": 1,
   "name": "<what the list shows>",
   "summary": "One sentence. It is drawn under the title and wraps.",
   "iwad": "doom2.wad",
@@ -36,9 +35,13 @@ Three levels, and they are not interchangeable:
 }
 ```
 
-`schema`, `name` and a label are required. **`kind` is required of whichever thing is actually the
+`name`, `files` and a label are required. **`kind` is required of whichever thing is actually the
 experience**: the entry when it has no variants, every variant when it has. `pve` or `pvp`, nothing
 else. An unlabelled experience is refused by name at startup.
+
+There is no version field. The reader ignores keys it does not know, which is what lets a catalogue
+written for a later build load on an earlier one, and a field that changes meaning is a change to
+make in the reader rather than something to gate behind a number nobody bumps.
 
 `order` floats an entry up the list (higher is nearer the top, default 0 keeps folder order).
 `accent` draws its leading word in the accent colour. Both are curation, so use them sparingly: two
