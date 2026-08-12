@@ -6520,10 +6520,10 @@ public:
 			// [rc4l] The lock, and it has to be read HERE rather than taken from HostRemixPicks: this
 			// draw walks the groups itself, and a mix group drawn from the raw preference would show
 			// the choice the player made rather than the baseline actually being served.
-			const bool bLocked = ( groups[g].id == kHostMixGroup ) && plan.mixLocked;
+			const bool bAxisLocked = ( groups[g].id == kHostMixGroup ) && plan.mixLocked;
 
 			const zx::RemixPick pick = zx::PickRemix( choices,
-				bLocked ? std::string( ) : HostRemixWanted( groups[g].id ));
+				bAxisLocked ? std::string( ) : HostRemixWanted( groups[g].id ));
 
 			// [rc4l] The label sits on the FIRST row of pills rather than above them, which is a line
 			// back per axis. Wrapped rows hang under the pills, not under the label, so the block
@@ -6571,6 +6571,14 @@ public:
 					for ( size_t i = pline.first; i < pline.end; ++i )
 					{
 						const bool bOn = ( choices[i].id == pick.id );
+
+						// [rc4l] The BASELINE is never locked, because it is not the thing the lock is
+						// about. Vanilla adds no weapons, so it is exactly what a raised weapon speed
+						// is compatible with -- greying it out said the whole axis was unavailable
+						// when what is unavailable is replacing the weapons. It stays lit, and stays
+						// pressable, which costs nothing: pressing what is already chosen does what
+						// it always did.
+						const bool bLocked = bAxisLocked && ( i > 0 );
 
 						// [rc4l] An option wider than the whole column gets its own line from the
 						// layout and is cut here, the same division of labour the file list uses.
