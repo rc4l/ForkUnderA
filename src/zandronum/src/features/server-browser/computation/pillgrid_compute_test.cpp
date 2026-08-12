@@ -120,3 +120,26 @@ TEST(PillGrid, NonsenseAsksLeaveRatherThanGuess)
 	EXPECT_TRUE(MovePillVertically(grid, Even(), kGap, 99, 1).leaves) << "not in the layout";
 	EXPECT_TRUE(MovePillVertically(WadListLayout(), Even(), kGap, 0, 1).leaves) << "nothing laid out";
 }
+
+TEST(PillGrid, AnEmptyLineIsNotSomethingToLandOn)
+{
+	// [rc4l] Built by hand, because LayoutWadList does not produce one: it only starts a line when
+	// it has an item to put on it. The layout is an ARGUMENT though, and a line with nothing on it
+	// has no pill to move to -- answering "leave" hands the key back to the region, where landing on
+	// a line that is not there would put the marker on nothing.
+	zx::WadListLayout layout;
+
+	zx::WadListLine first;
+	first.first = 0;
+	first.end = 2;
+	layout.lines.push_back(first);
+
+	zx::WadListLine empty;
+	empty.first = 2;
+	empty.end = 2;
+	layout.lines.push_back(empty);
+
+	const std::vector<int> widths(2, 30);
+
+	EXPECT_TRUE(MovePillVertically(layout, widths, kGap, 0, 1).leaves);
+}
