@@ -2986,7 +2986,7 @@ public:
 		// [rc4l] And the edges, which say WHICH way the rest of the list is. Counted in rows here
 		// rather than pixels, because rows are what this list scrolls by.
 		DrawScrollEdgeShadows( SB_PANEL_LEFT + 4, SB_ROW_RIGHT, vTop, vTop + vHeight,
-			total * SB_ROW_HEIGHT, first * SB_ROW_HEIGHT );
+			total * SB_ROW_HEIGHT, first * SB_ROW_HEIGHT, SB_ROW_HEIGHT );
 	}
 
 	//*************************************************************************
@@ -5035,7 +5035,7 @@ public:
 	// drawn. Strongest against the boundary and gone within a row's height, so it reads as the content
 	// passing under an edge rather than as a band of its own.
 	void DrawScrollEdgeShadows( int left, int right, int viewTop, int viewBottom,
-		int contentH, int scroll )
+		int contentH, int scroll, int depth )
 	{
 		const int viewH = viewBottom - viewTop;
 		if (( viewH <= 0 ) || ( contentH <= viewH ))
@@ -5049,8 +5049,12 @@ public:
 		const int topPx = serverbrowser_ToScreenY( viewTop );
 		const int botPx = serverbrowser_ToScreenY( viewBottom );
 
-		// One text line deep, measured the same way everything else here converts a height.
-		const int deep = MAX( 2, serverbrowser_ToScreenY( viewTop + SB_HOST_LINE ) - topPx );
+		// [rc4l] A whole ROW deep, not a text line. The first version faded over one line, which is
+		// barely half a row: the half-cut row at the boundary had its text sitting above where the
+		// shadow reached, so the row read as bright text under a dark stripe rather than as something
+		// passing under an edge. What has to be covered is the thing being cut, so the depth is the
+		// caller's -- it is the one that knows what its rows are.
+		const int deep = MAX( 2, serverbrowser_ToScreenY( viewTop + depth ) - topPx );
 
 		const bool bAbove = ( scroll > 0 );
 		const bool bBelow = ( scroll < ( contentH - viewH ));
@@ -5060,7 +5064,7 @@ public:
 			// Squared rather than linear, so the fade is quick at the edge and long in the tail. A
 			// straight ramp reads as a grey rectangle laid on top.
 			const float t = 1.f - ( static_cast<float>( i ) / deep );
-			const float a = 0.42f * t * t;
+			const float a = 0.85f * t * t;
 
 			if ( bAbove )
 				screen->Dim( PalEntry( 0, 0, 0 ), a, x, topPx + i, w, 1 );
@@ -5798,7 +5802,7 @@ public:
 			g_HostListScroll, SB_HOST_LBAR_X );
 
 		DrawScrollEdgeShadows( SB_HOST_LEFT, SB_HOST_LIST_RIGHT, SB_HOST_VIEW_TOP,
-			SB_HOST_VIEW_BOTTOM, HostCatalogueH( ), g_HostListScroll );
+			SB_HOST_VIEW_BOTTOM, HostCatalogueH( ), g_HostListScroll, SB_HOST_ROW_H );
 
 		// [rc4l] The detail column's own bar. It had one only while a server was running, so for the
 		// panel a player actually reads before pressing anything there was nothing saying the column
@@ -5816,7 +5820,7 @@ public:
 		if ( !g_HostShowSettings )
 		{
 			DrawScrollEdgeShadows( SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT, SB_HOST_RTOP_TOP,
-				HostDetailViewBottom( ), HostDetailH( ), g_HostDetailScroll );
+				HostDetailViewBottom( ), HostDetailH( ), g_HostDetailScroll, SB_HOST_GAME_ROW_H );
 		}
 
 		DrawHostScrollBar( );
@@ -6711,50 +6715,25 @@ public:
 				: "Sides, sharing their frags and their colour." );
 	}
 
-	// [rc4l] What this experience can be played WITH, as settings rather than a modal.
+	// [rc4l] The pill axes, in one pass or the other.
 	//
-	// One block per AXIS. Axes with a single choice are skipped: nothing to decide is not a setting,
-	// and a row that cannot change is a row spent saying nothing.
-	int DrawHostGameplay( int x, int y, const zx::AddonEntry &addon )
+	// Split because MIX leads the panel and everything else follows the sliders. It is the setting a
+	// host is most likely to have come here to change -- it is the one with a dozen answers, where
+	// the rest have two or three -- and it is the only one whose row count grows with the catalogue,
+	// so burying it under three sliders puts the longest block furthest from the top of the region.
+	//
+	// `bMix` picks the pass. Any axis added later lands with the ordinary ones unless it is argued
+	// for, which is the right default: leading the panel is a claim, not a courtesy.
+	int DrawHostRemixAxes( int x, int y, int labelW, const std::vector<zx::RemixGroup> &groups,
+		const zx::WeaponsPlan &plan, bool bMix )
 	{
-		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
-
-		bool bAnything = HostLivesControl( addon ).adjustable || HostFastWeaponsOffered( addon ) ||
-			HostTeamsControl( addon ).adjustable || ( HostSelectedRotation( ).size( ) > 1 );
-		for ( size_t g = 0; g < groups.size( ); ++g )
-			bAnything = bAnything || ( groups[g].choices.size( ) > 1 );
-
-		if ( !bAnything )
-			return y;		// the file list takes the room instead
-
-		y += 4;
-		if ( HostDetailRowVisible( y, 2 ))
-			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
-		y += 6;
-
-		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
-		{
-			screen->DrawText( SmallFont, CR_GOLD, x, y, "GAMEPLAY",
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-		}
-		y += SB_HOST_LINE + 2;
-
-		// [rc4l] ONE label column for every axis, measured across all of them so the controls line up
-		// under each other. Sized to the widest label rather than fixed, or a longer setting name
-		// later would either overlap its own control or leave a gap in front of every other.
-		const int labelW = HostGameplayLabelW( groups );
-
-		y = DrawHostStartMap( x, y, labelW );
-		y = DrawHostLives( x, y, labelW, addon );
-		y = DrawHostFastWeapons( x, y, labelW, addon );
-		y = DrawHostTeams( x, y, labelW, addon );
-
-		const zx::WeaponsPlan plan = HostWeaponsPlan( addon );
-
 		for ( size_t g = 0; g < groups.size( ); ++g )
 		{
 			const std::vector<zx::AddonRemix> &choices = groups[g].choices;
 			if ( choices.size( ) <= 1 )
+				continue;
+
+			if (( groups[g].id == kHostMixGroup ) != bMix )
 				continue;
 
 			// [rc4l] The lock, and it has to be read HERE rather than taken from HostRemixPicks: this
@@ -6937,6 +6916,52 @@ public:
 
 			y += 3;			// a gap between axes, so two blocks do not read as one long list
 		}
+
+		return y;
+	}
+
+	// [rc4l] What this experience can be played WITH, as settings rather than a modal.
+	//
+	// One block per AXIS. Axes with a single choice are skipped: nothing to decide is not a setting,
+	// and a row that cannot change is a row spent saying nothing.
+	int DrawHostGameplay( int x, int y, const zx::AddonEntry &addon )
+	{
+		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
+
+		bool bAnything = HostLivesControl( addon ).adjustable || HostFastWeaponsOffered( addon ) ||
+			HostTeamsControl( addon ).adjustable || ( HostSelectedRotation( ).size( ) > 1 );
+		for ( size_t g = 0; g < groups.size( ); ++g )
+			bAnything = bAnything || ( groups[g].choices.size( ) > 1 );
+
+		if ( !bAnything )
+			return y;		// the file list takes the room instead
+
+		y += 4;
+		if ( HostDetailRowVisible( y, 2 ))
+			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+		y += 6;
+
+		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+		{
+			screen->DrawText( SmallFont, CR_GOLD, x, y, "GAMEPLAY",
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+		y += SB_HOST_LINE + 2;
+
+		// [rc4l] ONE label column for every axis, measured across all of them so the controls line up
+		// under each other. Sized to the widest label rather than fixed, or a longer setting name
+		// later would either overlap its own control or leave a gap in front of every other.
+		const int labelW = HostGameplayLabelW( groups );
+
+		const zx::WeaponsPlan plan = HostWeaponsPlan( addon );
+
+		// The mix leads, then the sliders, then any other axis. See DrawHostRemixAxes.
+		y = DrawHostRemixAxes( x, y, labelW, groups, plan, true );
+		y = DrawHostStartMap( x, y, labelW );
+		y = DrawHostLives( x, y, labelW, addon );
+		y = DrawHostFastWeapons( x, y, labelW, addon );
+		y = DrawHostTeams( x, y, labelW, addon );
+		y = DrawHostRemixAxes( x, y, labelW, groups, plan, false );
 
 		return y;
 	}
