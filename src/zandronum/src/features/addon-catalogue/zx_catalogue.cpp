@@ -14,6 +14,7 @@
 
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/addon-catalogue/computation/menuart_compute.h"
 #include "features/addon-catalogue/computation/variantpick_compute.h"
 #include "features/server-hosting/zx_hosting.h"
 #include "features/server-hosting/zx_reachprobe.h"
@@ -355,6 +356,46 @@ std::string CatalogueRemixCfgPath( const std::string &remixId )
 
 		return shipped + "/remix/" + remixId + "/" + pool[i].cfg;
 	}
+
+	return std::string( );
+}
+
+//*****************************************************************************
+//
+// [rc4l] The picture beside an entry, if it shipped one.
+//
+// Rebuilt from the roots rather than from entry.dir, so it answers the same way the cfg paths do
+// when the player has their own copy of an experience: theirs wins, and its picture comes with it.
+// Reading entry.dir would have been shorter and would have quietly used the shipped picture with
+// the player's files.
+//
+std::string CatalogueArtPath( const CatalogueEntry &entry, const std::string &variantId )
+{
+	const std::string name = MenuArtFileName( variantId );
+
+	std::string at = CatalogueUserDir( ) + "/" + entry.addon.id + "/" + name;
+	if ( FileExists( at.c_str( )))
+		return at;
+
+	at = CatalogueShippedDir( ) + "/" + entry.addon.id + "/" + name;
+	if ( FileExists( at.c_str( )))
+		return at;
+
+	// Nothing to draw. Most things answer this way, and the caller draws the name instead.
+	return std::string( );
+}
+
+std::string CatalogueRemixArtPath( const std::string &remixId )
+{
+	const std::string name = MenuArtFileName( std::string( ));
+
+	std::string at = CatalogueUserDir( ) + "/remix/" + remixId + "/" + name;
+	if ( FileExists( at.c_str( )))
+		return at;
+
+	at = CatalogueShippedDir( ) + "/remix/" + remixId + "/" + name;
+	if ( FileExists( at.c_str( )))
+		return at;
 
 	return std::string( );
 }
