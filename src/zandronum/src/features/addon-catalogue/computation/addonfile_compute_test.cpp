@@ -157,6 +157,40 @@ TEST(AddonFile, AnUnknownKeyInsideAFileIsIgnoredToo)
 	EXPECT_EQ("a.pk3", e.files[0].name);
 }
 
+TEST(AddonFile, AVariantsArrayThatIsNotAnArrayIsRefused)
+{
+	const AddonEntry e = Parse(
+		"{ \"schema\": 1, \"kind\": \"pvp\", \"name\": \"X\", \"variants\": 1,"
+		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	EXPECT_FALSE(e.valid);
+}
+
+TEST(AddonFile, AMalformedKeyInsideAVariantIsRefused)
+{
+	// A key that is not a string, and a key with no colon after it. Both leave the reader with no
+	// way to know what the value belongs to, which is not something to guess at.
+	EXPECT_FALSE(Parse(WithVariants("[ { 1: \"a\" } ]").c_str()).valid);
+	EXPECT_FALSE(Parse(WithVariants("[ { \"id\" \"a\" } ]").c_str()).valid);
+}
+
+TEST(AddonFile, AnUnknownVariantKeyIsSkippedButStillHasToParse)
+{
+	// Skipping an unknown key is what lets a catalogue written for a later build load here. It is
+	// not licence to accept anything: the value still has to be a value, or the rest of the object
+	// cannot be found.
+	const AddonEntry good = Parse(WithVariants(
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"default\": true,"
+		"    \"fromlater\": { \"a\": [1, 2] } } ]").c_str());
+
+	ASSERT_TRUE(good.valid) << good.error;
+	ASSERT_EQ(1u, good.variants.size());
+	EXPECT_EQ("a", good.variants[0].id);
+
+	EXPECT_FALSE(Parse(WithVariants(
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"fromlater\": { \"a\": }").c_str()).valid);
+}
+
 // ---------------------------------------------------------------- gamemodes
 
 TEST(AddonFile, EveryGamemodeTheSchemaKnowsIsRead)
@@ -247,6 +281,10 @@ TEST(AddonFile, EveryVariantKeyIsRefusedWhenItIsTheWrongShape)
 		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"files\": 1 } ]",
 		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"remixes\": 1 } ]",
 		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"default\": 1 } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"teams\": 1 } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"lives\": \"two\" } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"maxlives\": \"five\" } ]",
+		"[ { \"id\": \"a\", \"name\": \"A\", \"kind\": \"pvp\", \"cfg\": \"a.cfg\", \"fastweapons\": 2 } ]",
 	};
 
 	for (size_t i = 0; i < sizeof(kBad) / sizeof(kBad[0]); ++i)
