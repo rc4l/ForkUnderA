@@ -55,6 +55,7 @@
 #include "network.h"
 
 #include "features/server-browser/computation/registrystatus_compute.h"
+#include "features/server-browser/computation/versionrelation_compute.h"
 
 #include <string>
 
@@ -85,6 +86,10 @@ enum
 
 	AS_TIMEDOUT,			// asked, gave up waiting -- listed but unreachable
 	AS_BADRESPONSE,			// answered, but we could not make sense of it
+	// [rc4l] Answered perfectly, and not one we can play on: its engine version is not ours. Listed
+	// rather than hidden, because "the servers vanished" and "the servers are down" look identical
+	// from the outside, and a release used to empty the browser for everyone who had not updated.
+	AS_VERSIONMISMATCH,		// answered, but built from a different engine version
 
 	NUM_ACTIVESTATES
 };
@@ -218,6 +223,10 @@ typedef struct
 	// nobody ever used. That made the list drop servers with no count, no message and no way to tell
 	// "nobody is hosting" from "everyone here is on another version".
 	bool			bVersionMismatch;
+	// [rc4l] WHICH WAY the mismatch goes, which the boolean cannot say. Older means the host has not
+	// updated and the player can do nothing; newer means we have not, and an update reaches it. The
+	// two sort and read differently, so the browser needs the direction and not just the fact.
+	zx::VersionRelation	versionRelation;
 
 	// Ping to this server.
 	LONG			lPing;
@@ -256,6 +265,10 @@ void			BROWSER_Construct( void );
 void			BROWSER_Destruct( void );
 
 bool			BROWSER_IsActive( ULONG ulServer );
+// [rc4l] Everything worth DRAWING, which is wider than what can be joined: a server on another
+// engine version answered us perfectly, it just is not one we can play on today.
+bool			BROWSER_IsListable( ULONG ulServer );
+zx::VersionRelation	BROWSER_GetVersionRelation( ULONG ulServer );
 bool			BROWSER_IsLAN( ULONG ulServer );
 NETADDRESS_s	BROWSER_GetAddress( ULONG ulServer );
 const char		*BROWSER_GetHostName( ULONG ulServer );

@@ -40,6 +40,8 @@
 
 #include <string>
 
+#include "features/server-browser/computation/versionrelation_compute.h"
+
 namespace zx
 {
 
@@ -51,6 +53,20 @@ std::string ServerSortKey(const std::string &name);
 // more players wins; equal counts fall back to the name; identical names tie.
 int CompareServers(bool lanA, int playersA, const std::string &nameA,
 	bool lanB, int playersB, const std::string &nameB);
+
+// [rc4l] The same order, with one rule ahead of population and behind LAN: a server the player can
+// do nothing about sinks WITHIN ITS GROUP.
+//
+// Older and Unknown sink; Same and Newer do not. The asymmetry is the point. An older server means
+// the HOST has not updated, so nothing the player does reaches it and ranking it among servers they
+// can join buries the ones they can. A newer server means WE have not updated, which is one update
+// away, so it keeps its place and the row carries the offer.
+//
+// Inside its group, deliberately. A LAN server on an old build is still on your network and still
+// more relevant than a stranger's, so it sinks to the bottom of the LAN servers rather than below
+// the internet ones -- the same reasoning that made LAN a group rather than a bonus.
+int CompareServersWithVersion(bool lanA, int playersA, const std::string &nameA, VersionRelation relA,
+	bool lanB, int playersB, const std::string &nameB, VersionRelation relB);
 
 } // namespace zx
 
