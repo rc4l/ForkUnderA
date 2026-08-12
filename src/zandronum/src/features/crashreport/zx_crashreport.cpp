@@ -228,13 +228,29 @@ static void ZX_CrashReportDoInit(int consentAction)
 	if (dsn == NULL || dsn[0] == '\0')
 		return;
 
+	// [rc4l] ONLY OFFICIAL BUILDS REPORT, and the flag has to come from CI rather than be inferred
+	// here.
+	//
+	// A report is worth sending only if it can be read, and it can only be read if this exact build's
+	// symbols were published. A local build's never are, so its crashes arrive as raw stacks nothing
+	// can ever resolve and sit in the tracker forever (issue #228 is one of them).
+	//
+	// The tempting local test -- does `git describe` land exactly on a tag -- is wrong, and wrong in
+	// the dangerous direction. A developer building at a tagged commit would look official, and
+	// crash-sync would symbolicate their binary against the OFFICIAL release's symbols: different
+	// compiler, different flags, different addresses, confident nonsense. Only the machine that
+	// publishes the symbols can honestly assert that they exist.
+#ifndef ZX_OFFICIAL_BUILD
+	return;
+#endif
+
 	sentry_options_t *options = sentry_options_new();
 	sentry_options_set_dsn(options, dsn);
 	sentry_options_set_require_user_consent(options, 1);
 	sentry_options_set_before_send(options, zx_before_send, NULL);
 
 	char release[128];
-	snprintf(release, sizeof release, "ZandroX@%s", GetGitDescription());
+	snprintf(release, sizeof release, "ForkUnderA@%s", GetGitDescription());
 	sentry_options_set_release(options, release);
 	sentry_options_set_dist(options, GetGitHash());
 
@@ -251,6 +267,22 @@ static void ZX_CrashReportDoInit(int consentAction)
 	if (sentry_init(options) != 0)
 		return;
 	g_sentryInited = true;
+
+	// [rc4l] WHICH BINARY this is, which is not the same question as which ROLE it is playing.
+	//
+	// The tag exists so crash-sync can pick the matching symbol file, and symbols map to a binary. The
+	// server target is genuinely different code -- SERVER_ONLY, no renderer, no sound -- so its
+	// addresses mean nothing against the client's symbols, and a crash reported without this arrives
+	// looking identical to a client's: same release, same dist, same platform. crash-sync would then
+	// resolve it against the wrong binary and produce names that are confident and false.
+	//
+	// Compile-time on purpose. A Windows client hosting with -host is still the CLIENT binary, so it
+	// must keep reporting as one however it is being used.
+#ifdef SERVER_ONLY
+	sentry_set_tag("build", "server");
+#else
+	sentry_set_tag("build", "client");
+#endif
 	atexit(ZX_CrashReportShutdown);
 
 #ifdef _WIN32
