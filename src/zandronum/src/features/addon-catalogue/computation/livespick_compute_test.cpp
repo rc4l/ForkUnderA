@@ -236,3 +236,16 @@ TEST(LivesCvars, AControlThatDoesNotApplySetsNothing)
 	EXPECT_TRUE(LivesCvars(LivesFor(HostGameMode::Deathmatch, kUnchosen, 0, 5)).empty());
 	EXPECT_TRUE(LivesCvars(LivesFor(HostGameMode::Cooperative, kUnchosen, 0, 0)).empty());
 }
+
+TEST(LivesPick, AControlWithNoShapeWritesNothingEvenIfItClaimsToApply)
+{
+	// [rc4l] Built by hand, because LivesFor cannot produce it: `applies` is only ever set once a
+	// shape has been chosen. The guard is here for the caller that assembles a control itself, and
+	// the answer is silence -- there is no cvar that means "lives, of no particular kind".
+	zx::LivesControl control;
+	control.shape = zx::LivesShape::None;
+	control.applies = true;
+	control.value = 3;
+
+	EXPECT_TRUE(zx::LivesCvars(control).empty());
+}

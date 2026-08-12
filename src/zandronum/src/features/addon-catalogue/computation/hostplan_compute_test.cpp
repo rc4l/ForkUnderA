@@ -294,3 +294,47 @@ TEST(HostPlan, AVariantsMissingWadIsStillJustADownload)
 	EXPECT_EQ("skulltag_announcer.pk3", p.missing[0]);
 	EXPECT_EQ(3u, p.pwads.size()) << "the variant's file is part of what gets started";
 }
+
+TEST(HostPlan, TheRemixCfgsRideAlongInOrder)
+{
+	// [rc4l] One per AXIS, and the order is the catalogue author's: a mod named after a rules remix
+	// execs after it and so wins where the two overlap, which is the only way to say that at all.
+	std::vector<std::string> remixes;
+	remixes.push_back("/cat/remix/teamdm/teamdm.cfg");
+	remixes.push_back("/cat/remix/dnd/dnd.cfg");
+
+	HostChoices choices;
+	choices.serverName = "A server";
+	choices.maxPlayers = 8;
+	choices.port = 10666;
+
+	const HostPlan plan = BuildHostPlan(Duel40(), Duel40().files,
+		Picked(IwadChoice::Preferred, "doom2.wad"), "/cat/duel40/server.cfg", remixes, "START",
+		choices, std::vector<std::string>());
+
+	ASSERT_EQ(2u, plan.execRemixCfgs.size());
+	EXPECT_EQ("/cat/remix/teamdm/teamdm.cfg", plan.execRemixCfgs[0]);
+	EXPECT_EQ("/cat/remix/dnd/dnd.cfg", plan.execRemixCfgs[1]);
+}
+
+TEST(HostPlan, AnAxisWithNoCfgOfItsOwnAddsNoExec)
+{
+	// The baseline of an axis changes nothing and so ships no cfg. It still comes through the list
+	// as an empty string, because the list is one entry per axis and dropping it here would make
+	// the positions mean something different from what the picker chose.
+	std::vector<std::string> remixes;
+	remixes.push_back("");
+	remixes.push_back("/cat/remix/dnd/dnd.cfg");
+
+	HostChoices choices;
+	choices.serverName = "A server";
+	choices.maxPlayers = 8;
+	choices.port = 10666;
+
+	const HostPlan plan = BuildHostPlan(Duel40(), Duel40().files,
+		Picked(IwadChoice::Preferred, "doom2.wad"), "/cat/duel40/server.cfg", remixes, "START",
+		choices, std::vector<std::string>());
+
+	ASSERT_EQ(1u, plan.execRemixCfgs.size());
+	EXPECT_EQ("/cat/remix/dnd/dnd.cfg", plan.execRemixCfgs[0]);
+}

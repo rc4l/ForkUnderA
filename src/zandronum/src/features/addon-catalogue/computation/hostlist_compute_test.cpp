@@ -170,3 +170,14 @@ TEST( HostList, ASelectionTheListDoesNotContainAnswersNowhere )
 	EXPECT_EQ( -1, FindHostListRow( rows, -1, -1 ));
 	EXPECT_EQ( -1, FindHostListRow( std::vector<HostListRow>( ), 0, -1 ));
 }
+
+TEST(HostListRows, AFreshRowIsTheFirstEntrysOwnRow)
+{
+	// [rc4l] -1 for the variant is what says "the entry itself" rather than one of its ways of
+	// playing, and it has to be the default: zero would be a real variant index and would make a
+	// default-constructed row point at somebody's first variant.
+	const HostListRow row;
+
+	EXPECT_EQ(0, row.entry);
+	EXPECT_EQ(-1, row.variant);
+}
