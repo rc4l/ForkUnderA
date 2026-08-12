@@ -15,6 +15,18 @@ HostFocusPos Foot()
 	return HostFocusPos(HostSlot::Action, 0);
 }
 
+// [rc4l] Where UP off the foot lands, written once because both buttons on that row answer it and
+// two copies of a three-way choice is two chances to disagree.
+HostFocusPos UpFromTheFoot(bool bFields, bool bGameplay, int gameplayRows)
+{
+	if (bFields)
+		return HostFocusPos(HostSlot::Visibility, 0);
+	if (bGameplay)
+		return HostFocusPos(HostSlot::Gameplay, gameplayRows - 1);
+
+	return HostFocusPos(HostSlot::List, 0);
+}
+
 } // namespace
 
 HostFocusPos HostLeftOfTheForm()
@@ -22,12 +34,24 @@ HostFocusPos HostLeftOfTheForm()
 	return HostFocusPos(HostSlot::List, 0);
 }
 
-HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bool hasToggle)
+HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bool hasToggle,
+                            int gameplayRows)
 {
 	if ((pos.slot == HostSlot::Field) || (pos.slot == HostSlot::Visibility))
 	{
 		if (!hasFields)
 			return Foot();
+	}
+
+	if (pos.slot == HostSlot::Gameplay)
+	{
+		// The panel is drawn only while the form is shut, and an experience may offer nothing to
+		// decide. Both leave a focus here with nothing under it.
+		if ((gameplayRows <= 0) || hasFields)
+			return Foot();
+
+		if ((pos.field < 0) || (pos.field >= gameplayRows))
+			return HostFocusPos(HostSlot::Gameplay, 0);
 	}
 
 	if (pos.slot == HostSlot::Field)
@@ -44,16 +68,20 @@ HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bo
 }
 
 HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
-                             bool hasFields, bool hasToggle)
+                             bool hasFields, bool hasToggle, int gameplayRows)
 {
 	HostNavResult out;
 
 	// Start from something that exists. The settings can be shut, or a server started, underneath a
 	// focus that was legitimate when it was set.
-	pos = ClampHostFocus(pos, fieldCount, hasFields, hasToggle);
+	pos = ClampHostFocus(pos, fieldCount, hasFields, hasToggle, gameplayRows);
 	out.pos = pos;
 
 	const bool bFields = hasFields && (fieldCount > 0);
+
+	// [rc4l] The gameplay panel and the form are never both up: the form REPLACES the panel. So the
+	// right column has one first thing, and which one it is depends on which face is showing.
+	const bool bGameplay = !hasFields && (gameplayRows > 0);
 
 	switch (pos.slot)
 	{
@@ -72,10 +100,18 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 			return out;
 		}
 
-		// Right crosses to the right column: the first field when the settings are open, the foot
-		// when they are not. Left has nowhere to go; the list is the leftmost thing here.
+		// Right crosses to the right column: the first field when the settings are open, the first
+		// gameplay row when they are shut and there is one, the foot when there is neither. Left has
+		// nowhere to go; the list is the leftmost thing here.
 		if (key == HostNavKey::Right)
-			out.pos = bFields ? HostFocusPos(HostSlot::Field, 0) : Foot();
+		{
+			if (bFields)
+				out.pos = HostFocusPos(HostSlot::Field, 0);
+			else if (bGameplay)
+				out.pos = HostFocusPos(HostSlot::Gameplay, 0);
+			else
+				out.pos = Foot();
+		}
 		return out;
 
 	case HostSlot::Field:
@@ -101,6 +137,36 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 			out.pos = HostFocusPos(HostSlot::Field, pos.field + 1);
 		else
 			out.pos = HostFocusPos(HostSlot::Visibility, 0);
+		return out;
+
+	case HostSlot::Gameplay:
+		// [rc4l] Left and right belong to the ROW, not to navigation: a slider moves a stop, an axis
+		// of pills moves along its options. Reported as a step and applied by the caller, which is
+		// the only side that knows what the focused row actually is.
+		if (key == HostNavKey::Left)
+		{
+			out.choiceStep = -1;
+			return out;
+		}
+		if (key == HostNavKey::Right)
+		{
+			out.choiceStep = 1;
+			return out;
+		}
+
+		if (key == HostNavKey::Up)
+		{
+			// Up off the first row crosses back to the list, the way up off the first field does.
+			out.pos = (pos.field > 0)
+				? HostFocusPos(HostSlot::Gameplay, pos.field - 1)
+				: HostFocusPos(HostSlot::List, 0);
+			return out;
+		}
+
+		// Down off the last row lands on the foot, which is what the panel was leading to.
+		out.pos = (pos.field + 1 < gameplayRows)
+			? HostFocusPos(HostSlot::Gameplay, pos.field + 1)
+			: Foot();
 		return out;
 
 	case HostSlot::Visibility:
@@ -145,9 +211,7 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 
 		if (key == HostNavKey::Up)
 		{
-			out.pos = bFields
-				? HostFocusPos(HostSlot::Visibility, 0)
-				: HostFocusPos(HostSlot::List, 0);
+			out.pos = UpFromTheFoot(bFields, bGameplay, gameplayRows);
 			return out;
 		}
 
@@ -167,9 +231,7 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 
 		if (key == HostNavKey::Up)
 		{
-			out.pos = bFields
-				? HostFocusPos(HostSlot::Visibility, 0)
-				: HostFocusPos(HostSlot::List, 0);
+			out.pos = UpFromTheFoot(bFields, bGameplay, gameplayRows);
 			return out;
 		}
 
