@@ -259,8 +259,8 @@ static int serverbrowser_OriginY( void );
 // suit this number, so changing it means regenerating them.
 #define SB_HOST_ART_H		( BigFont->GetHeight( ) * 3 )
 
-// Wide enough to set the joining mark in, with air either side of it.
-#define SB_HOST_ART_GAP		18
+// Enough air to read the two as a pair rather than as one wide picture.
+#define SB_HOST_ART_GAP		8
 #define SB_HOST_ROW_H		15		// one field and the space under it
 #define SB_HOST_FIELD_H		16
 // [rc4l] Wide enough for the longest label, which is PREFERRED PORT. At 92 it fitted every label
@@ -6648,21 +6648,6 @@ public:
 				DTA_DestHeight, ph,
 				DTA_ClipTop, clipTop,
 				DTA_ClipBottom, clipBottom,
-				TAG_DONE );
-		}
-
-		// [rc4l] Two pictures with nothing between them read as one wide picture, or as a pack whose
-		// logo happens to have two halves. The mark says they are separate things being combined,
-		// which is exactly what picking a mix does.
-		if (( rects.size( ) == 2 ) && HostDetailRowVisible( y, h ))
-		{
-			const int between = ( rects[0].x + rects[0].w + rects[1].x ) / 2;
-			const char *mark = "+";
-
-			screen->DrawText( SmallFont, CR_DARKGRAY,
-				between - SmallFont->StringWidth( mark ) / 2,
-				y + ( h - SmallFont->GetHeight( )) / 2, mark,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
 				TAG_DONE );
 		}
 
