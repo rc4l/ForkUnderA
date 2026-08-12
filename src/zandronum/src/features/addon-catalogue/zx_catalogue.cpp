@@ -21,6 +21,9 @@
 #include "features/server-hosting/zx_reachprobe.h"
 #include "features/wad-download/zx_wadsearch.h"
 
+// [rc4l] kIwadSubstitutes, generated from the repo-root iwadsubstitutes.txt by tools/gen-wadlists.cmake.
+#include "zx_waddownload_lists.h"
+
 #include <stdio.h>
 #include <algorithm>
 
@@ -462,17 +465,28 @@ std::vector<std::string> AvailableIwads( const std::string &preferred )
 	if ( !preferred.empty( ) && zx::FindIwadInEngineSearchPaths( preferred.c_str( )).IsNotEmpty( ))
 		iwads.push_back( preferred );
 
-	static const char *const kSubstitutable[] = {
-		"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
-		"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
-	};
-
-	for ( size_t i = 0; i < sizeof( kSubstitutable ) / sizeof( kSubstitutable[0] ); ++i )
+	// [rc4l] Read out of the substitute table rather than listed again here. The set worth probing
+	// is exactly the set PickIwad can land on, which is that table's right-hand column, so a second
+	// list can only ever drift from it: add a substitute and forget this line and the file is never
+	// looked for, leaving "you need X" in front of a player who has everything required.
+	for ( size_t i = 0; i < sizeof( kIwadSubstitutes ) / sizeof( kIwadSubstitutes[0] ); ++i )
 	{
-		if ( preferred == kSubstitutable[i] )
+		const char *const candidate = kIwadSubstitutes[i][1];
+		if ( preferred == candidate )
 			continue;					// already probed above
-		if ( zx::FindIwadInEngineSearchPaths( kSubstitutable[i] ).IsNotEmpty( ))
-			iwads.push_back( kSubstitutable[i] );
+
+		bool bAlreadyHave = false;			// several wanted names share one substitute
+		for ( size_t j = 0; j < iwads.size( ); ++j )
+		{
+			if ( iwads[j] == candidate )
+			{
+				bAlreadyHave = true;
+				break;
+			}
+		}
+
+		if ( !bAlreadyHave && zx::FindIwadInEngineSearchPaths( candidate ).IsNotEmpty( ))
+			iwads.push_back( candidate );
 	}
 
 	return iwads;
