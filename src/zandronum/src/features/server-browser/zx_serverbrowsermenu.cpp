@@ -6238,7 +6238,10 @@ public:
 	// moment after a click. The panel scrolls less now, which is worth more than a settled pointer.
 	int HostWadListLines( const zx::AddonEntry &addon )
 	{
-		const int wrapW = SB_HOST_RCOL_RIGHT - SB_HOST_LEFT;
+		// [rc4l] The column the detail panel draws in, which is NOT SB_HOST_LEFT: that is the panel's
+		// own left edge and the detail sits in the right column. Measuring against the wrong one gives
+		// a line count the draw does not agree with, and a region that can scroll past its own end.
+		const int wrapW = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
 
 		std::vector<int> widths;
 		widths.push_back( SmallFont->StringWidth( HostDetailIwadName( addon )));
