@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "name": "Complex Doom",
+  "summary": "New weapons and far nastier monsters, including ones that were never there.",
+  "group": "mix",
+  "files": [
+    {
+      "name": "complex-doom.v27f.pk3",
+      "md5": "333e871a28ac1a32487e20e2e303aade"
+    }
+  ]
+}

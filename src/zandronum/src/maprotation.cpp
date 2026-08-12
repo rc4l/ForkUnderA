@@ -51,6 +51,7 @@
 #include <vector>
 #include "c_cvars.h"
 #include "maprotation.h"
+#include "features/addon-catalogue/computation/maprotation_compute.h"
 #include "joinqueue.h"
 #include "sv_commands.h"
 
@@ -81,16 +82,56 @@ void MAPROTATION_Construct( void )
 
 //*****************************************************************************
 //
-void MAPROTATION_StartNewGame( void )
+void MAPROTATION_StartNewGame( const char *pszStartMap )
 {
 	unsigned int position = 0;
+
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+	//   SUPERSEDED BY: nothing. Upstream has no notion of a start map chosen alongside a rotation;
+	//   its rotation is a server-cfg fact and the map on the command line is for a server without
+	//   one, so the two never meet there.
+	//   ON PORT: keep. Deleting it silently breaks the host panel's FIRST MAP control.
+	//
+	// The map the command line asked for, when the rotation holds it. Without this the argument is
+	// dropped on the floor whenever a rotation exists: d_main hands startmap to G_InitNew only in
+	// the else branch, so +map does nothing for any experience that writes one -- which is most of
+	// them. The rotation BEGINS at the chosen map rather than visiting it once, because opening on
+	// one map and then continuing from the top of the list is not something anybody would ask for.
+	bool bPlaced = false;
+
+	if (( pszStartMap != NULL ) && ( *pszStartMap != '\0' ))
+	{
+		std::vector<std::string> names;
+		names.reserve( g_MapRotationEntries.size( ));
+
+		for ( unsigned int i = 0; i < g_MapRotationEntries.size( ); i++ )
+			names.push_back( g_MapRotationEntries[i].map->MapName.GetChars( ));
+
+		const size_t at = zx::MapRotationStart( names, pszStartMap );
+
+		// Zero is also "not in the rotation", so an unmet request falls through to the ordinary
+		// rules below rather than pinning a random rotation to its first entry.
+		if ( at > 0 )
+		{
+			position = static_cast<unsigned int>( at );
+			bPlaced = true;
+		}
+	}
 
 	// [K6] Start with a random map if we are using sv_randommaprotation.
 	// [AK] The player limits assigned to each map entry must be respected, so
 	// if a random map should be picked, or if the first entry can't be entered,
 	// pick one that can.
 	// Note: the next map position should always start at zero here.
-	if (( sv_randommaprotation ) || ( MAPROTATION_CanEnterMap( position, MAPROTATION_CountEligiblePlayers( )) == false ))
+	//
+	// [rc4l] An asked-for map beats the shuffle. The player limits do not bend for it either way:
+	// a map that cannot be entered still falls through to one that can.
+	if (( bPlaced == false ) && (( sv_randommaprotation ) || ( MAPROTATION_CanEnterMap( position, MAPROTATION_CountEligiblePlayers( )) == false )))
+	{
+		MAPROTATION_CalcNextMap( false );
+		position = MAPROTATION_GetNextPosition( );
+	}
+	else if (( bPlaced ) && ( MAPROTATION_CanEnterMap( position, MAPROTATION_CountEligiblePlayers( )) == false ))
 	{
 		MAPROTATION_CalcNextMap( false );
 		position = MAPROTATION_GetNextPosition( );

@@ -280,10 +280,13 @@ build() {
     # Freedoom WADs for a runnable game (matches the Windows build).
     # [rc4l] Freedoom is BSD-3-clause: clause 2 requires its copyright notice to travel with
     # any binary distribution, so the license ships beside the WAD rather than just the WAD.
-    if [[ -f "$TOOLS_DIR/freedoom/freedoom2.wad" ]]; then
-        cp -n "$TOOLS_DIR/freedoom/"*.wad "$BUILD_DIR/" 2>/dev/null || true
-        cp -f "$TOOLS_DIR/freedoom/License.txt" "$BUILD_DIR/FREEDOOM-LICENSE.txt" 2>/dev/null || true
-    fi
+    # Both phases: Phase 1 stands in for doom.wad and Phase 2 for doom2.wad, and the wildcard copy
+    # would happily ship half of them.
+    for wad in freedoom1.wad freedoom2.wad; do
+        [[ -f "$TOOLS_DIR/freedoom/$wad" ]] || { echo "ERROR: tools/freedoom/$wad missing -- the app would ship without a game to fall back on" >&2; exit 1; }
+    done
+    cp -n "$TOOLS_DIR/freedoom/"*.wad "$BUILD_DIR/" 2>/dev/null || true
+    cp -f "$TOOLS_DIR/freedoom/License.txt" "$BUILD_DIR/FREEDOOM-LICENSE.txt" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,11 @@
 namespace zx
 {
 
+// Whether the bar exists at all right now. False during an online session: the menus there belong to
+// the game rather than to getting into one. Asked by the drawing, the keyboard and the pointer alike,
+// because an invisible bar that still swallows Up is worse than a visible one that misbehaves.
+bool GlobalHeader_IsShown();
+
 // Paint the bar. Called from M_Drawer AFTER the menu, so the bar is never drawn under the thing it
 // is supposed to sit above.
 void GlobalHeader_Draw();

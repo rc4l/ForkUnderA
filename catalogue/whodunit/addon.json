@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "name": "Who Dun It?",
+  "summary": "Survival, with a traitor among you. Twenty-nine maps to work out who.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "gamemode": "survival",
+  "lives": 1,
+  "maxlives": 5,
+  "files": [
+    {
+      "name": "skulltag_content-3.2-beta2.pk3",
+      "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+    },
+    {
+      "name": "whodunit_fixed2.pk3",
+      "md5": "fc8afa7358c2c2b38614ee74a07a719f"
+    },
+    {
+      "name": "wdi_expack_1a.pk3",
+      "md5": "0448efffc27d8105b1ae1172c14c794e"
+    },
+    {
+      "name": "wdi_bigpackv3.9test.pk3",
+      "md5": "d642da865b0addd46ccfab34ef0fffd8"
+    },
+    {
+      "name": "wdi_bigpackv3.9testfixsv1.pk3",
+      "md5": "2617768e95f3fdd36413a056e023d11e"
+    },
+    {
+      "name": "wdi_touchupv9.11.wad",
+      "md5": "2ccc1f88f1160cd503fb790e63da9c9c"
+    },
+    {
+      "name": "wdibeta_phobos_outpostd1.pk3",
+      "md5": "b22505cd5ce4152b8c8e9a6b62bb7484"
+    },
+    {
+      "name": "wdi_random_crate_1b.pk3",
+      "md5": "408d20d4afaead2d15c9df1e46c9825c"
+    },
+    {
+      "name": "wdi_scoreboard_fix.wad",
+      "md5": "26ee8a0515d71a2cc0ffea94a7ccfbbc"
+    }
+  ]
+}

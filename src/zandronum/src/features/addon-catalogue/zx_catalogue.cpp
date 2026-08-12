@@ -14,11 +14,13 @@
 
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/addon-catalogue/computation/variantpick_compute.h"
 #include "features/server-hosting/zx_hosting.h"
 #include "features/server-hosting/zx_reachprobe.h"
 #include "features/wad-download/zx_wadsearch.h"
 
 #include <stdio.h>
+#include <algorithm>
 
 namespace zx
 {
@@ -27,7 +29,17 @@ namespace
 {
 
 std::vector<CatalogueEntry> g_Entries;
+
+// [rc4l] Read in the same pass as the entries, so an entry and the remixes it names cannot end up
+// one reload apart.
+std::vector<AddonRemix> g_Remixes;
+
 bool g_Loaded = false;
+
+// How many entries were thrown out on the last read, so the summary at startup can say there were
+// any at all. A player who dropped a folder in wants to know it did not take, and a line among the
+// hundreds the engine prints while loading is easy to scroll past.
+int g_Problems = 0;
 
 bool ReadWholeFile( const char *path, std::string &out )
 {
@@ -120,12 +132,45 @@ void LoadRoot( const char *root, bool bShipped, std::vector<CatalogueEntry> &out
 		entry.shipped = bShipped;
 		entry.hasServerCfg = FileExists(( path + "/server.cfg" ).GetChars( ));
 
+		// [rc4l] The cfgs an entry PROMISES have to be there, and this is the only moment anybody
+		// looks. The json names them; nothing else checks; and a variant naming a cfg that was never
+		// shipped fails at the worst possible time -- when a player presses the button to host it --
+		// with the server starting on whatever the engine's defaults happen to be. So the promise is
+		// checked where it is made.
+		//
+		// Existence and readability only. A cfg is a list of console commands, and the engine's own
+		// exec is what decides whether a line means anything, so claiming to have validated the
+		// CONTENTS here would be a lie.
+		if ( entry.addon.valid )
+		{
+			if ( !entry.hasServerCfg )
+			{
+				entry.addon.valid = false;
+				entry.addon.error = "no server.cfg beside addon.json";
+			}
+			else
+			{
+				for ( size_t v = 0; v < entry.addon.variants.size( ); ++v )
+				{
+					const FString cfgPath = path + "/" + entry.addon.variants[v].cfg.c_str( );
+					if ( FileExists( cfgPath.GetChars( )))
+						continue;
+
+					entry.addon.valid = false;
+					entry.addon.error = "the experience variant '" + entry.addon.variants[v].name +
+						"' names " + entry.addon.variants[v].cfg + ", which is not in the folder";
+					break;
+				}
+			}
+		}
+
 		if ( !entry.addon.valid )
 		{
 			// Named, not swallowed. One bad entry a player dropped in must not cost them the rest of
 			// the catalogue, and it must not fail silently either.
-			Printf( TEXTCOLOR_ORANGE "Catalogue: skipping '%s' -- %s\n" TEXTCOLOR_NORMAL,
+			Printf( TEXTCOLOR_RED "Catalogue: skipping '%s' -- %s\n" TEXTCOLOR_NORMAL,
 				id.GetChars( ), entry.addon.error.c_str( ));
+			++g_Problems;
 			continue;
 		}
 
@@ -143,6 +188,82 @@ void LoadRoot( const char *root, bool bShipped, std::vector<CatalogueEntry> &out
 
 		if ( !bReplaced )
 			out.push_back( entry );
+	}
+}
+
+// [rc4l] The remix pool under one root: remix/<id>/remix.json.
+//
+// Inside the catalogue folder rather than beside it, because it IS catalogue data and travels with
+// it. The entry scan is unbothered by it for free: `remix` has no addon.json so it is not an entry,
+// and everything under it is too deep for the direct-children rule.
+void LoadRemixRoot( const char *root, std::vector<AddonRemix> &out )
+{
+	FString dir = root;
+	FixPathSeperator( dir );
+	if (( dir.Len( ) > 0 ) && ( dir[dir.Len( ) - 1] != '/' ))
+		dir += "/";
+	dir += "remix/";
+
+	if ( !DirEntryExists( dir.GetChars( )))
+		return;
+
+	TArray<FFileList> found;
+	ScanDirectory( found, dir );
+
+	for ( unsigned int i = 0; i < found.Size( ); ++i )
+	{
+		if ( !found[i].isDirectory )
+			continue;
+
+		FString path = found[i].Filename;
+		FixPathSeperator( path );
+		while (( path.Len( ) > 0 ) && ( path[path.Len( ) - 1] == '/' ))
+			path.Truncate( path.Len( ) - 1 );
+
+		const long slash = path.LastIndexOf( '/' );
+		const FString id = ( slash >= 0 ) ? path.Mid( slash + 1 ) : path;
+
+		if (( id.Len( ) == 0 ) || ( id[0] == '.' ))
+			continue;
+		if ( path.Len( ) != dir.Len( ) + id.Len( ))
+			continue;			// ScanDirectory recurses; only direct children are remixes
+
+		std::string json;
+		if ( !ReadWholeFile(( path + "/remix.json" ).GetChars( ), json ))
+			continue;
+
+		AddonRemix remix = ParseRemixFile( id.GetChars( ), json );
+
+		// Same promise, same moment: a remix naming a cfg nobody shipped would fail when somebody
+		// picks it, which is the worst time to find out.
+		if ( remix.valid && !remix.cfg.empty( ) &&
+			!FileExists(( path + "/" + remix.cfg.c_str( )).GetChars( )))
+		{
+			remix.valid = false;
+			remix.error = "names " + remix.cfg + ", which is not in the folder";
+		}
+
+		if ( !remix.valid )
+		{
+			Printf( TEXTCOLOR_RED "Catalogue: skipping remix '%s' -- %s\n" TEXTCOLOR_NORMAL,
+				id.GetChars( ), remix.error.c_str( ));
+			++g_Problems;
+			continue;
+		}
+
+		bool bReplaced = false;
+		for ( size_t j = 0; j < out.size( ); ++j )
+		{
+			if ( out[j].id == remix.id )
+			{
+				out[j] = remix;
+				bReplaced = true;
+				break;
+			}
+		}
+
+		if ( !bReplaced )
+			out.push_back( remix );
 	}
 }
 
@@ -176,6 +297,7 @@ const std::vector<CatalogueEntry> &CatalogueLoad( bool bForceReload )
 		return g_Entries;
 
 	g_Entries.clear( );
+	g_Problems = 0;
 
 	const std::string shipped = CatalogueShippedDir( );
 	const std::string user = CatalogueUserDir( );
@@ -188,16 +310,93 @@ const std::vector<CatalogueEntry> &CatalogueLoad( bool bForceReload )
 	if ( user != shipped )
 		LoadRoot( user.c_str( ), false, g_Entries );
 
+	// [rc4l] Curated entries float to the top. STABLE, so everything at the default 0 keeps the folder
+	// order it has always had rather than being reshuffled by a field it never sets.
+	std::stable_sort( g_Entries.begin( ), g_Entries.end( ),
+		[]( const CatalogueEntry &a, const CatalogueEntry &b ) {
+			return a.addon.order > b.addon.order;
+		} );
+
+	// The pool is read in the same pass, so an entry and the remixes it names can never be one reload
+	// out of step with each other.
+	g_Remixes.clear( );
+	LoadRemixRoot( shipped.c_str( ), g_Remixes );
+	if ( user != shipped )
+		LoadRemixRoot( user.c_str( ), g_Remixes );
+
 	g_Loaded = true;
 	return g_Entries;
 }
 
-std::string CatalogueServerCfgPath( const CatalogueEntry &entry )
+const std::vector<AddonRemix> &CatalogueRemixes( bool bForceReload )
 {
+	CatalogueLoad( bForceReload );		// fills both; see above
+	return g_Remixes;
+}
+
+std::string CatalogueRemixCfgPath( const std::string &remixId )
+{
+	const std::vector<AddonRemix> &pool = CatalogueRemixes( );
+
+	for ( size_t i = 0; i < pool.size( ); ++i )
+	{
+		if (( pool[i].id != remixId ) || pool[i].cfg.empty( ))
+			continue;
+
+		// Rebuilt from the roots rather than remembered per remix, the same way an entry's cfg path
+		// is: the shipped copy and the player's can hold the same id, and the one that wins is the
+		// one the loader kept.
+		const std::string user = CatalogueUserDir( );
+		const std::string shipped = CatalogueShippedDir( );
+
+		std::string at = user + "/remix/" + remixId + "/" + pool[i].cfg;
+		if ( FileExists( at.c_str( )))
+			return at;
+
+		return shipped + "/remix/" + remixId + "/" + pool[i].cfg;
+	}
+
+	return std::string( );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Read the catalogue AT STARTUP, so a broken entry is reported while the player is still
+// looking at the console rather than the first time they open the host screen.
+//
+// It used to be read lazily, which meant a folder somebody had just added could be silently absent
+// for as long as they did not go looking for it -- and when they did, the reason scrolled past in a
+// list they had no reason to be reading. Nothing here is expensive: a handful of small files.
+void CatalogueCheckAtStartup( void )
+{
+	const std::vector<CatalogueEntry> &entries = CatalogueLoad( );
+
+	if ( g_Problems <= 0 )
+		return;
+
+	// Said again, after the individual reasons, because the reasons are printed one per entry among
+	// everything else the engine says while it starts.
+	Printf( TEXTCOLOR_RED "Catalogue: %d entr%s could not be used and %s been skipped. "
+		"See the lines above, or type fua_catalogue.\n" TEXTCOLOR_NORMAL,
+		g_Problems, ( g_Problems == 1 ) ? "y" : "ies", ( g_Problems == 1 ) ? "has" : "have" );
+
+	Printf( "Catalogue: %d usable entr%s.\n",
+		static_cast<int>( entries.size( )), ( entries.size( ) == 1 ) ? "y" : "ies" );
+}
+
+std::string CatalogueServerCfgPath( const CatalogueEntry &entry, const std::string &variantId )
+{
+	// [rc4l] Which cfg, not whether there is one. PickVariant answers with server.cfg for an entry
+	// that has no variants, so the plain case comes out exactly as it did before this existed.
+	const VariantPick pick = PickVariant( entry.addon, variantId );
+
+	// hasServerCfg is still about server.cfg specifically, because that is the file the scan looked
+	// for and the one an entry is required to have. A variant's cfg sits beside it in the same
+	// folder, so an entry with no server.cfg has no variants worth running either.
 	if ( !entry.hasServerCfg )
 		return std::string( );
 
-	return entry.dir + "/server.cfg";
+	return entry.dir + "/" + pick.cfg;
 }
 
 } // namespace zx
@@ -214,6 +413,29 @@ CCMD( fua_catalogue )
 		return;
 	}
 
+	const std::vector<zx::AddonRemix> &remixes = zx::CatalogueRemixes( );
+
+	if ( !remixes.empty( ))
+	{
+		Printf( "%d remix%s:\n", static_cast<int>( remixes.size( )),
+			( remixes.size( ) == 1 ) ? "" : "es" );
+
+		for ( size_t i = 0; i < remixes.size( ); ++i )
+		{
+			Printf( TEXTCOLOR_GOLD "    %s" TEXTCOLOR_NORMAL " -- %s\n",
+				remixes[i].id.c_str( ), remixes[i].name.c_str( ));
+
+			if ( !remixes[i].cfg.empty( ))
+				Printf( "      cfg:  %s\n", zx::CatalogueRemixCfgPath( remixes[i].id ).c_str( ));
+
+			for ( size_t f = 0; f < remixes[i].files.size( ); ++f )
+			{
+				Printf( "      file: %-32s %s\n",
+					remixes[i].files[f].name.c_str( ), remixes[i].files[f].md5.c_str( ));
+			}
+		}
+	}
+
 	Printf( "%d catalogue entries:\n", static_cast<int>( entries.size( )));
 	for ( size_t i = 0; i < entries.size( ); ++i )
 	{
@@ -225,6 +447,18 @@ CCMD( fua_catalogue )
 
 		if ( !e.addon.summary.empty( ))
 			Printf( "    %s\n", e.addon.summary.c_str( ));
+
+		if ( !e.addon.remixes.empty( ))
+		{
+			FString offers;
+			for ( size_t m = 0; m < e.addon.remixes.size( ); ++m )
+			{
+				if ( m > 0 )
+					offers += ", ";
+				offers += e.addon.remixes[m].c_str( );
+			}
+			Printf( "    plays with: %s\n", offers.GetChars( ));
+		}
 		if ( !e.addon.iwad.empty( ))
 			Printf( "    iwad: %s\n", e.addon.iwad.c_str( ));
 
@@ -234,7 +468,44 @@ CCMD( fua_catalogue )
 				e.addon.files[f].name.c_str( ), e.addon.files[f].md5.c_str( ));
 		}
 
-		Printf( "    cfg:  %s\n", e.hasServerCfg ? zx::CatalogueServerCfgPath( e ).c_str( ) : "(none)" );
+		// [rc4l] The ways of playing, each with the cfg and the files peculiar to it. Listing only the
+		// entry's own used to be the whole story; for a pack whose ways of playing share no base it
+		// prints an experience that appears to load nothing at all.
+		if ( e.addon.variants.empty( ))
+		{
+			Printf( "    cfg:  %s\n",
+				e.hasServerCfg ? zx::CatalogueServerCfgPath( e ).c_str( ) : "(none)" );
+			continue;
+		}
+
+		for ( size_t v = 0; v < e.addon.variants.size( ); ++v )
+		{
+			const zx::AddonVariant &variant = e.addon.variants[v];
+
+			Printf( "    %s%s [%s]\n", variant.name.c_str( ),
+				variant.isDefault ? " (default)" : "",
+				zx::DescribeVariantKind( variant.kind ));
+
+			for ( size_t f = 0; f < variant.files.size( ); ++f )
+			{
+				Printf( "      file: %-32s %s\n",
+					variant.files[f].name.c_str( ), variant.files[f].md5.c_str( ));
+			}
+
+			Printf( "      cfg:  %s\n", zx::CatalogueServerCfgPath( e, variant.id ).c_str( ));
+
+			if ( !variant.remixes.empty( ))
+			{
+				FString offers;
+				for ( size_t m = 0; m < variant.remixes.size( ); ++m )
+				{
+					if ( m > 0 )
+						offers += ", ";
+					offers += variant.remixes[m].c_str( );
+				}
+				Printf( "      plays with: %s\n", offers.GetChars( ));
+			}
+		}
 	}
 }
 
@@ -245,7 +516,7 @@ CCMD( fua_host )
 {
 	if ( argv.argc( ) < 2 )
 	{
-		Printf( "fua_host <id>: host a catalogue entry. fua_catalogue lists them.\n" );
+		Printf( "fua_host <id> [variant]: host a catalogue entry. fua_catalogue lists them.\n" );
 		return;
 	}
 
@@ -268,12 +539,17 @@ CCMD( fua_host )
 		return;
 	}
 
+	// Which way of playing, and so what actually loads. An entry whose variants carry their own wads
+	// has no single file list, so everything below asks the pick rather than the entry.
+	const std::string variantId = ( argv.argc( ) >= 3 ) ? argv[2] : std::string( );
+	const zx::VariantPick variant = zx::PickVariant( chosen->addon, variantId );
+
 	// What the player already has, in the two places a file can be: the ordinary search path and the
 	// by-hash store the downloader fills. Asking both is what stops us fetching something twice.
 	std::vector<std::string> have;
-	for ( size_t i = 0; i < chosen->addon.files.size( ); ++i )
+	for ( size_t i = 0; i < variant.files.size( ); ++i )
 	{
-		const std::string &name = chosen->addon.files[i].name;
+		const std::string &name = variant.files[i].name;
 
 		TArray<FString> resolved;
 		if ( D_AddFile( resolved, name.c_str( ), false ) && ( resolved.Size( ) > 0 ))
@@ -299,13 +575,16 @@ CCMD( fua_host )
 	const zx::IwadPick pick = zx::PickIwad( chosen->addon.iwad, iwads );
 
 	zx::HostChoices choices;
-	choices.serverName = chosen->addon.name + " (" FUA_NAME ")";
+	choices.serverName = zx::ComposeServerName( chosen->addon.name, variant.name, FUA_NAME );
 	choices.maxPlayers = 8;
 	choices.port = 0;
 	choices.advertise = false;
 
-	const zx::HostPlan plan = zx::BuildHostPlan( chosen->addon, pick,
-		zx::CatalogueServerCfgPath( *chosen ), choices, have );
+	// [rc4l] No remixes from the console. fua_host names an entry and a variant and nothing else, so
+	// there is no axis to resolve; the panel is where a remix gets chosen.
+	const zx::HostPlan plan = zx::BuildHostPlan( chosen->addon, variant.files, pick,
+		zx::CatalogueServerCfgPath( *chosen, variantId ), std::vector<std::string>( ), variant.map,
+		choices, have );
 
 	if ( !plan.blocker.empty( ))
 	{
@@ -334,6 +613,7 @@ CCMD( fua_host )
 	config.iwad = plan.iwad;
 	config.pwads = plan.pwads;
 	config.execCfg = plan.execCfg;
+	config.execRemixCfgs = plan.execRemixCfgs;
 	config.maxPlayers = plan.maxPlayers;
 	config.port = plan.port;
 	config.advertise = plan.advertise;

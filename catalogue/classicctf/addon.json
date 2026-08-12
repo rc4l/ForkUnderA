@@ -1,0 +1,215 @@
+{
+  "schema": 1,
+  "name": "Capture the Flag",
+  "summary": "Two flags, two bases, and the map sets people have played it on for twenty years.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "gamemode": "ctf",
+  "variants": [
+    {
+      "id": "idl",
+      "name": "IDL 201X",
+      "cfg": "server.cfg",
+      "kind": "pvp",
+      "default": true,
+      "tooltip": "Thirty-eight maps, the league's own set.",
+      "files": [
+        {
+          "name": "idl201x_b-fix.pk3",
+          "md5": "d0f883835b8f3fa288b68d15727cfe29"
+        },
+        {
+          "name": "odaflagx.pk3",
+          "md5": "fd35af932766ed9e9f7ad6d0cde18cd9"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
+        }
+      ]
+    },
+    {
+      "id": "zdaemon",
+      "name": "Zdaemon CTF",
+      "cfg": "zdaemon.cfg",
+      "kind": "pvp",
+      "tooltip": "Thirty maps, the set Zdaemon players know.",
+      "files": [
+        {
+          "name": "stctfmp.wad",
+          "md5": "c6bc2b2fe25ec3d489d4e9d7b1ff723c"
+        },
+        {
+          "name": "stctfmp2.wad",
+          "md5": "de6886c49163f10fbdfadd40c49b85ff"
+        },
+        {
+          "name": "stctfmp3-.wad",
+          "md5": "f1d55f9214815f369fe406611b369add"
+        },
+        {
+          "name": "zctfconvstv2.wad",
+          "md5": "324a0117331a421d3c1d982208e9f40a"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
+        }
+      ]
+    },
+    {
+      "id": "rage",
+      "name": "Rage CTF",
+      "cfg": "ragectf.cfg",
+      "kind": "pvp",
+      "tooltip": "Nineteen maps, with a capture timer and flag markers.",
+      "files": [
+        {
+          "name": "ragectf.wad",
+          "md5": "ff15d66531bc408d8ddc0fc609104e3f"
+        },
+        {
+          "name": "hudtimer_v4fix.pk3",
+          "md5": "923c01df3b07d98403837c461ae65636"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
+        },
+        {
+          "name": "odaflagx.pk3",
+          "md5": "fd35af932766ed9e9f7ad6d0cde18cd9"
+        },
+        {
+          "name": "ctfcap2d.pk3",
+          "md5": "6d4060146f9e8b7db4b620ab5bf565c7"
+        }
+      ]
+    },
+    {
+      "id": "chaoscore",
+      "name": "Chaos Core CTF",
+      "cfg": "chaoscore.cfg",
+      "kind": "pvp",
+      "tooltip": "Thirty-one maps, with a capture timer and flag markers.",
+      "files": [
+        {
+          "name": "chaoscorectfmpii-b.wad",
+          "md5": "f99f26a31b772f8579ef9ac2b51f7fb3"
+        },
+        {
+          "name": "hudtimer_v4fix.pk3",
+          "md5": "923c01df3b07d98403837c461ae65636"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
+        },
+        {
+          "name": "odaflagx.pk3",
+          "md5": "fd35af932766ed9e9f7ad6d0cde18cd9"
+        },
+        {
+          "name": "ctfcap2d.pk3",
+          "md5": "6d4060146f9e8b7db4b620ab5bf565c7"
+        }
+      ]
+    },
+    {
+      "id": "extreme",
+      "name": "Last Strike Extreme CTF",
+      "cfg": "extreme.cfg",
+      "kind": "pvp",
+      "tooltip": "Nine maps, named rather than numbered.",
+      "files": [
+        {
+          "name": "tlsxctfstv1.2.pk3",
+          "md5": "7141c37052b03372bd80590ea90766a0"
+        },
+        {
+          "name": "zctfconvstv2.wad",
+          "md5": "324a0117331a421d3c1d982208e9f40a"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
+        }
+      ]
+    },
+    {
+      "id": "legendary",
+      "name": "Legendary CTF",
+      "cfg": "legendary.cfg",
+      "kind": "pvp",
+      "tooltip": "Twenty-six maps, three teams.",
+      "files": [
+        {
+          "name": "legendary-5ffba51.pk3",
+          "md5": "1b60e7c561c9768f25c15e928a3559cd"
+        },
+        {
+          "name": "zctfconvstv2.wad",
+          "md5": "324a0117331a421d3c1d982208e9f40a"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
+        }
+      ]
+    },
+    {
+      "id": "3way",
+      "name": "3 Way Madness",
+      "cfg": "3way.cfg",
+      "kind": "pvp",
+      "tooltip": "Twenty-three maps, and a third team to watch out for.",
+      "files": [
+        {
+          "name": "3waymadness-ctf-v5.wad",
+          "md5": "38e687c9275c75a40e5daf84dfb6482b"
+        },
+        {
+          "name": "3waymadness-gldefs.pk3",
+          "md5": "8a4ccfe6341211e809c661466063a4a6"
+        },
+        {
+          "name": "zctfconvstv2.wad",
+          "md5": "324a0117331a421d3c1d982208e9f40a"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
+        }
+      ]
+    },
+    {
+      "id": "velocity",
+      "name": "Velocity CTF",
+      "cfg": "velocity.cfg",
+      "kind": "pvp",
+      "tooltip": "Thirty-two maps, with a capture timer and flag markers.",
+      "files": [
+        {
+          "name": "veloctfx.wad",
+          "md5": "47a0df0336c5e053e76a2c99ca13c3cc"
+        },
+        {
+          "name": "hudtimer_v4fix.pk3",
+          "md5": "923c01df3b07d98403837c461ae65636"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
+        },
+        {
+          "name": "odaflagx.pk3",
+          "md5": "fd35af932766ed9e9f7ad6d0cde18cd9"
+        },
+        {
+          "name": "ctfcap2d.pk3",
+          "md5": "6d4060146f9e8b7db4b620ab5bf565c7"
+        }
+      ]
+    }
+  ]
+}
