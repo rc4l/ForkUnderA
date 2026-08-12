@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
+#include <cstddef>
+
 #include "features/addon-catalogue/computation/hostlist_compute.h"
 
 namespace zx
@@ -11,7 +13,7 @@ std::vector<HostListRow> BuildHostListRows(const std::vector<int> &variantCounts
 {
 	std::vector<HostListRow> rows;
 
-	for (size_t i = 0; i < variantCounts.size(); ++i)
+	for (std::size_t i = 0; i < variantCounts.size(); ++i)
 	{
 		const int entry = static_cast<int>(i);
 		rows.push_back(HostListRow(entry, -1));
@@ -34,7 +36,7 @@ int FindHostListRow(const std::vector<HostListRow> &rows, int entry, int variant
 {
 	int entryRow = -1;
 
-	for (size_t i = 0; i < rows.size(); ++i)
+	for (std::size_t i = 0; i < rows.size(); ++i)
 	{
 		if (rows[i].entry != entry)
 			continue;
