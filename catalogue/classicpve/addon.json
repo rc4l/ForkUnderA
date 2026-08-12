@@ -42,6 +42,19 @@
       ]
     },
     {
+      "id": "scythe2",
+      "name": "Scythe 2",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty-two maps, bigger and prettier than the first, and no kinder.",
+      "files": [
+        {
+          "name": "scythe2v2.wad",
+          "md5": "1f939d6bcc6175eb9830645d7acb8aa9"
+        }
+      ]
+    },
+    {
       "id": "hr2",
       "name": "Hell Revealed II",
       "cfg": "server.cfg",
