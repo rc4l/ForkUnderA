@@ -8,12 +8,11 @@ description: Adding a mix (gameplay mod) to catalogue/remix/ — the shared pool
 A **mix** is something layered on top of an experience: a gameplay mod, a weapon set, a monster
 replacement. It is defined **once** in `catalogue/remix/<id>/remix.json` and named by the
 experiences that can take it. Ids rather than definitions, because the same mix applies to many
-packs and restating its files in each `addon.json` is the copies-drift problem the schema refuses
+packs and restating its files in each `addon.json` is the copies-drift problem this format refuses
 everywhere else.
 
 ```json
 {
-  "schema": 1,
   "name": "<what the pill shows>",
   "summary": "One sentence, shown on hover.",
   "group": "mix",
@@ -22,8 +21,8 @@ everywhere else.
 }
 ```
 
-`schema` and `name` are required. `files` and `cfg` are both optional — the baseline mix has
-neither and still needs a name.
+`name` is required. `files` and `cfg` are both optional — the baseline mix has neither and still
+needs a name.
 
 ## Groups are axes
 
