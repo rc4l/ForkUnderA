@@ -5988,10 +5988,11 @@ public:
 		// [rc4l] The file block is a FIXED height once anything is drawn under it, matching what
 		// DrawHostWadList reserves. Measuring the lines actually used would make the region's height
 		// change as a mod is picked, which is the shift the reservation exists to stop.
+		// [rc4l] One answer whether or not there is a panel, now that the list is last either way and
+		// capped either way. HostWadListLines measures what will be drawn, so this and the draw cannot
+		// come to disagree about how far the region scrolls.
 		const bool bSettings = HostHasGameplayRow( );
-		const int fileLines = bSettings
-			? HostWadListLines( a )
-			: static_cast<int>( HostSelectedFiles( a ).size( )) + 1;	// +1 for the IWAD
+		const int fileLines = HostWadListLines( a );
 
 		int h = BigFont->GetHeight( ) + 4
 			+ 6								// the rule under the title
@@ -6186,6 +6187,19 @@ public:
 		}
 
 
+		// [rc4l] What you play it WITH, ABOVE what it loads rather than below.
+		//
+		// The order used to be the other way and it could not be made to sit still: picking a mix adds
+		// a file, the list grows a line, and everything under it moves -- while the pointer is on the
+		// pill that was just clicked, so the next click lands on a different setting. Two attempts to
+		// reserve the room instead both paid for it with blank lines on every draw.
+		//
+		// Putting the controls first ends the argument. Nothing the list does can push them, so it
+		// needs no reservation and no blank lines, and the settings are at the top of the scroll
+		// region where they no longer have to be scrolled to at all. The list is what the growth is
+		// FOR, and it grows downwards into the space it was always going to occupy.
+		y = DrawHostGameplay( x, y, addon );
+
 		// The same faded rule the server detail panel puts between what a server IS and what it wants
 		// you to load, for exactly the same reason.
 		y += 4;
@@ -6216,14 +6230,8 @@ public:
 		for ( size_t i = 0; i < sizes.size( ) && i < loads.size( ); ++i )
 			total += sizes[i];
 
-		y = DrawHostWadList( x, y, names, total, HostHasGameplayRow( ));
-
-		// [rc4l] What you play it WITH, in the room the list just gave back.
-		//
-		// This used to be a button above PLAY NOW opening a modal over the whole browser, which is a
-		// lot of ceremony for picking between two words. It is a setting, so it lives with the thing
-		// it changes and is readable without opening anything.
-		DrawHostGameplay( x, y, addon );
+		// Nothing follows it now, so it runs to the cap and the hover carries the rest.
+		DrawHostWadList( x, y, names, total, true );
 	}
 
 	// [rc4l] How many lines the file list actually takes, for the region height to allow for.
@@ -6620,7 +6628,7 @@ public:
 	//
 	// One block per AXIS. Axes with a single choice are skipped: nothing to decide is not a setting,
 	// and a row that cannot change is a row spent saying nothing.
-	void DrawHostGameplay( int x, int y, const zx::AddonEntry &addon )
+	int DrawHostGameplay( int x, int y, const zx::AddonEntry &addon )
 	{
 		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
 
@@ -6630,7 +6638,7 @@ public:
 			bAnything = bAnything || ( groups[g].choices.size( ) > 1 );
 
 		if ( !bAnything )
-			return;			// the file list took the room instead
+			return y;		// the file list takes the room instead
 
 		y += 4;
 		if ( HostDetailRowVisible( y, 2 ))
@@ -6842,6 +6850,7 @@ public:
 			y += 3;			// a gap between axes, so two blocks do not read as one long list
 		}
 
+		return y;
 	}
 
 	// [rc4l] WHAT to run. The catalogue answers this; the fields beside it answer how.
