@@ -6380,9 +6380,11 @@ public:
 				serverbrowser_Tip( trackX, y - 1, trackW, SB_HOST_LINE, tip );
 		}
 
+		// [rc4l] Dimmed with the rest of the row when the value cannot move. A white readout beside
+		// two greyed steps and a dead track says the number is live when nothing else on the row does.
 		if ( bDraw )
 		{
-			screen->DrawText( SmallFont, CR_WHITE, valueX, y, valueText,
+			screen->DrawText( SmallFont, ( minV < maxV ) ? CR_WHITE : CR_DARKGRAY, valueX, y, valueText,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 
@@ -6601,11 +6603,16 @@ public:
 						zx::PanelColor top, bot;
 						if ( bLocked )
 						{
-							// [rc4l] Flat and faint, the same treatment a slider's end-stop gets when
-							// it cannot move. Still drawn, and the ON one still marked, so the axis
-							// says what it is set to rather than disappearing while it is held.
-							top.r = 34; top.g = 36; top.b = 46; top.a = 160;
-							bot.r = 28; bot.g = 30; bot.b = 40; bot.a = 160;
+							// [rc4l] Nearly the panel's own colour, and flat. The first attempt was a
+							// dim version of the ordinary pill, which read as "another option" rather
+							// than as "not available": an unpressable thing has to differ in KIND
+							// from a pressable one, not in brightness, or it just looks like the one
+							// you have not hovered yet.
+							//
+							// Still drawn, and the one that is on still marked, so the axis says what
+							// it is set to rather than going blank while it is held.
+							top.r = 26; top.g = 27; top.b = 34; top.a = 120;
+							bot.r = 22; bot.g = 23; bot.b = 30; bot.a = 120;
 						}
 						else if ( bOn )
 						{
@@ -6631,7 +6638,9 @@ public:
 						const int dotY = y - 1 + ( SB_HOST_GAME_ROW_H - SB_HOST_PILL_DOT ) / 2;
 						const int dotX = px + SB_HOST_PILL_DOT;
 
-						if ( bOn )
+						// No halo while the axis is locked. The glow is what says "this is live", and
+						// a locked axis is precisely what is not.
+						if ( bOn && !bLocked )
 						{
 							// A soft ring under it, so the lit state reads as a glow rather than as a
 							// slightly different grey. Drawn first and larger, then the dot on top.
@@ -6641,16 +6650,21 @@ public:
 								SB_HOST_PILL_DOT + 4, halo, halo, ( SB_HOST_PILL_DOT + 4 ) / 2 );
 						}
 
+						// [rc4l] Locked keeps the green so the choice is still legible, at a quarter
+						// of the light. Held, not lost.
 						zx::PanelColor dot;
-						if ( bOn )		{ dot.r = 120; dot.g = 255; dot.b = 150; dot.a = 255; }
-						else			{ dot.r = 96;  dot.g = 102; dot.b = 124; dot.a = 220; }
+						if ( bOn && bLocked )	{ dot.r = 54;  dot.g = 96;  dot.b = 64;  dot.a = 200; }
+						else if ( bOn )			{ dot.r = 120; dot.g = 255; dot.b = 150; dot.a = 255; }
+						else if ( bLocked )		{ dot.r = 46;  dot.g = 48;  dot.b = 58;  dot.a = 200; }
+						else					{ dot.r = 96;  dot.g = 102; dot.b = 124; dot.a = 220; }
 
 						DrawRoundedPanel( dotX, dotY, SB_HOST_PILL_DOT, SB_HOST_PILL_DOT, dot, dot,
 							SB_HOST_PILL_DOT / 2 );
 
 						const int textX = dotX + SB_HOST_PILL_DOT + 3;
 
-						screen->DrawText( SmallFont, bOn ? CR_WHITE : CR_GRAY, textX, y,
+						screen->DrawText( SmallFont,
+							bLocked ? CR_DARKGRAY : ( bOn ? CR_WHITE : CR_GRAY ), textX, y,
 							serverbrowser_FitName( choices[i].name.c_str( ),
 								( px + pw ) - textX - 2 ),
 							DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
