@@ -147,6 +147,18 @@ bool HostStart( const HostConfig &config )
 	// running, which is a whole class of version-mismatch failure that simply cannot arise.
 	const std::vector<std::string> args = BuildHostArgs( Args->GetArg( 0 ), g_Config );
 
+	// [rc4l] What the child is actually told, every time, whoever asked. fua_host printed its plan and
+	// the HOST panel printed nothing, so the one path a player uses was the one with no record of what
+	// it did -- and "it loaded the wrong files" had nowhere to be checked.
+	Printf( "hosting: -iwad %s\n", g_Config.iwad.empty( ) ? "(none)" : g_Config.iwad.c_str( ));
+	for ( size_t i = 0; i < g_Config.pwads.size( ); ++i )
+		Printf( "hosting:   -file %s\n", g_Config.pwads[i].c_str( ));
+	for ( size_t i = 0; i < g_Config.execRemixCfgs.size( ); ++i )
+		Printf( "hosting:   +exec %s\n", g_Config.execRemixCfgs[i].c_str( ));
+	if ( !g_Config.execCfg.empty( ))
+		Printf( "hosting:   +exec %s\n", g_Config.execCfg.c_str( ));
+	Printf( "hosting:   +map %s\n", g_Config.map.empty( ) ? "(none)" : g_Config.map.c_str( ));
+
 	std::string error;
 	if ( HostProcessStart( args, error ) == false )
 	{

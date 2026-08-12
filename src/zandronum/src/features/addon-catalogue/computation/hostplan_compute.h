@@ -37,6 +37,15 @@ struct HostPlan
 	std::string iwad;				// what to start on, after substitution
 	std::vector<std::string> pwads;	// bare filenames, in the entry's load order
 	std::string execCfg;			// the entry's server.cfg, or "" when it has none
+
+	// [rc4l] The chosen remixes' cfgs, exec'd AFTER the one above so they win, and in group order so a
+	// later axis wins over an earlier one. Separate files rather than one merged one because they are
+	// edited by different people for different reasons: the entry's says how the pack plays, each
+	// remix's says the one thing it changes about any pack.
+	//
+	// A list because there is one per axis now. Remixes with no cfg contribute nothing and are simply
+	// absent, so this is usually shorter than the number of axes.
+	std::vector<std::string> execRemixCfgs;
 	std::string map;				// the map to open on, or "" to let the cfg's rotation decide
 	std::string serverName;
 	int maxPlayers;
@@ -55,9 +64,19 @@ struct HostPlan
 // A missing PWAD is not a blocker: it is a download, and the whole point of shipping hashes is that
 // the downloader can go and get it. A missing IWAD IS a blocker, because there is nothing to
 // substitute and nothing to fetch.
+// `files` is what the CHOSEN WAY OF PLAYING loads, which PickVariant resolves: the entry's own files
+// followed by the variant's. Passed in rather than read off the entry, because an entry no longer
+// has one answer -- two variants of the same pack can load entirely different things, and reading
+// addon.files here would plan for whichever of them happened to be listed at the top.
+//
+// `map` and `serverCfgPath` are likewise passed rather than read off the entry: which map to open on
+// is the chosen variant's answer when it has one, and which cfg to exec depends on the variant too.
 HostPlan BuildHostPlan(const AddonEntry &addon,
+                       const std::vector<AddonFileRef> &files,
                        const IwadPick &iwad,
                        const std::string &serverCfgPath,
+                       const std::vector<std::string> &remixCfgPaths,
+                       const std::string &map,
                        const HostChoices &choices,
                        const std::vector<std::string> &haveFiles);
 

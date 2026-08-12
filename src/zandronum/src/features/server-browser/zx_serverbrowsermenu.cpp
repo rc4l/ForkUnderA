@@ -58,6 +58,13 @@
 #include "features/addon-catalogue/zx_catalogue.h"
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/addon-catalogue/computation/livespick_compute.h"
+#include "features/addon-catalogue/computation/maprotation_compute.h"
+#include "features/addon-catalogue/computation/teamspick_compute.h"
+#include "features/addon-catalogue/computation/weaponspick_compute.h"
+#include "features/addon-catalogue/computation/remixpick_compute.h"
+#include "features/addon-catalogue/computation/variantpick_compute.h"
+#include "features/addon-catalogue/computation/hostlist_compute.h"
 #include "features/wad-download/zx_wadsearch.h"
 #include "features/wadreload/zx_wadreload.h"
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
@@ -70,6 +77,8 @@
 #include "features/server-browser/computation/colortext_compute.h"
 #include "features/server-browser/computation/serverbrowser_compute.h"
 #include "features/server-browser/computation/joinintent_compute.h"
+#include "features/server-browser/computation/ownjoin_compute.h"
+#include "features/server-browser/computation/wadlist_compute.h"
 #include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
 #include "features/server-browser/computation/scrollview_compute.h"
@@ -190,6 +199,14 @@ static int serverbrowser_OriginY( void );
 // gap that merely LOOKS right, the glow lands on the previous button and points at the wrong answer.
 #define SB_DLG_BTN_GAP		22
 #define SB_DLG_FIELD_H		16
+
+// [rc4l] The remix picker, wider than the question dialog and split in two: the names on the left,
+// what the highlighted one actually does on the right.
+//
+// Its own width because the dialog's is sized for a sentence and a row of buttons. A list beside a
+// description needs more, and the description is the reason the picker is a panel rather than three
+// buttons -- "Survival" tells you nothing you did not already guess, and "three lives each, spend
+// them and you watch" is the whole answer.
 #define SB_BUTTON_LEFT		( SB_DETAIL_LEFT + SB_DETAIL_PAD )
 #define SB_BUTTON_RIGHT		( SB_DETAIL_RIGHT - SB_DETAIL_PAD )
 #define SB_BUTTON_TOP		( SB_DETAIL_BOTTOM - SB_DETAIL_PAD - SB_BUTTON_H )
@@ -218,11 +235,15 @@ static int serverbrowser_OriginY( void );
 #define SB_PLRBAR_X			SB_WADBAR_X
 #define SB_PLRBAR_W			SB_WADBAR_W
 
-// [rc4l] The hosting panel, which stands where the list and the detail panel would be. One column,
-// centred, because there are six fields and nothing to compare them against -- a two-column form
-// would only be filling space it was given.
-#define SB_HOST_LEFT		( SB_PANEL_LEFT + 40 )
-#define SB_HOST_RIGHT		( SB_PANEL_RIGHT - 40 )
+// [rc4l] The hosting panel, which stands where the list and the detail panel would be.
+//
+// It used to be inset forty units either side, from when this was a centred one-column form with six
+// fields and nothing to compare them against. It is a two-column browser now, and eighty units of
+// margin were coming straight out of the experience names -- which are the longest text on the
+// screen and the thing the whole tab is for reading. Now it takes the panel it stands in, less the
+// same small breathing room the server list leaves.
+#define SB_HOST_LEFT		( SB_PANEL_LEFT + 8 )
+#define SB_HOST_RIGHT		( SB_PANEL_RIGHT - 8 )
 #define SB_HOST_TOP			( SB_TAB_ROW_SEP_Y + 14 )
 #define SB_HOST_PAD			16
 #define SB_HOST_LINE		11
@@ -256,12 +277,14 @@ static int serverbrowser_OriginY( void );
 
 // [rc4l] Two columns: WHAT to run on the left, how to run it on the right.
 //
-// Split at the same x the server list uses, so the HOST tab lines up with PUBLIC and PRIVATE and
-// switching tabs does not shift the layout under the pointer. The list has its own scroll because it
-// grows with the catalogue while the settings never do.
+// [rc4l] The split is placed from the RIGHT: the detail column needs a fixed readable width and the
+// list takes whatever is left, so widening the panel widens the list rather than padding both.
+// Every unit gained goes to the experience names, which is where it was missing.
+//
+// The list has its own scroll because it grows with the catalogue while the settings never do.
 #define SB_HOST_LIST_LEFT	( SB_HOST_LEFT + SB_HOST_PAD )
 #define SB_HOST_LIST_RIGHT	( SB_HOST_RCOL_LEFT - 12 )
-#define SB_HOST_RCOL_LEFT	SB_X( 296 )
+#define SB_HOST_RCOL_LEFT	SB_X( 328 )
 #define SB_HOST_RCOL_RIGHT	( SB_HOST_RIGHT - SB_HOST_PAD )
 
 // [rc4l] Wide enough for PREFERRED PORT, which is the longest label and the one that decides this.
@@ -289,6 +312,30 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_FOOT_W		( SB_HOST_FOOT_RIGHT - SB_HOST_FOOT_LEFT )
 #define SB_HOST_FOOT_HALF	(( SB_HOST_FOOT_W - SB_HOST_FOOT_GAP ) / 2 )
 #define SB_HOST_TOGGLE_X	( SB_HOST_FOOT_RIGHT - SB_HOST_FOOT_HALF )
+
+// [rc4l] How many lines of filenames are drawn when something is under them.
+//
+// Three, and the number is a judgement rather than a measurement: it is enough for the four or five
+// files a typical entry loads, and short enough that an entry loading twelve cannot push the
+// gameplay settings off the bottom of a column. Past it the list ends in an ellipsis and hovering
+// gives the whole thing. An entry with no settings has nothing to protect and gets no cap at all.
+#define SB_HOST_WADS_MAXLINES	3
+
+// The gameplay rows: one per way of playing, indented under their heading.
+#define SB_HOST_GAME_ROW_H		SB_HOST_LINE
+#define SB_HOST_GAME_INDENT		10
+
+// [rc4l] Nearly half the pill's height, so the ends read as round rather than merely softened. Any
+// larger and ComputeRoundedInset eats into the text at the widest row.
+#define SB_HOST_PILL_RADIUS		4
+
+// The lit dot inside a pill. Odd, so it has a middle pixel and reads as round at this size.
+#define SB_HOST_PILL_DOT		5
+
+// Between WRAPPED lines of pills. Small: enough that the rounded ends do not touch, not so much
+// that one axis stops reading as one group.
+#define SB_HOST_PILL_VGAP		2
+
 #define SB_HOST_RTOP_TOP	SB_HOST_VIEW_TOP
 #define SB_HOST_RTOP_BOTTOM	( SB_HOST_RTOGGLE_Y - 6 )
 #define SB_HOST_RTOP_H		( SB_HOST_RTOP_BOTTOM - SB_HOST_RTOP_TOP )
@@ -297,17 +344,42 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_RBOT_H		SB_HOST_RTOP_H
 
 // [rc4l] While a server is running the right column carries TWO things: what you are looking at, and
-// what you are running. Split down the middle, each half scrolling on its own, with the rule at the
-// seam. STOP sits below both and is never scrolled away from.
-#define SB_HOST_RUN_SPLIT	( SB_HOST_RTOP_TOP + SB_HOST_RTOP_H / 2 )
+// what you are running. Each half scrolls on its own, with the rule at the seam. STOP sits below
+// both and is never scrolled away from.
+//
+// The seam was fixed at the middle, which spent half the column on a status that is usually a few
+// lines and left the gameplay settings in a window too short to use -- the very thing you are there
+// to change while deciding whether to switch. HostRunSplit gives the status the room it needs and
+// the details everything above it, falling back to the old half when the status is long.
+#define SB_HOST_RUN_SPLIT	HostRunSplit( )
 #define SB_HOST_RUN_TOP_BOT	( SB_HOST_RUN_SPLIT - 5 )
 #define SB_HOST_RUN_BOT_TOP	( SB_HOST_RUN_SPLIT + 5 )
 #define SB_HOST_RUN_TOP_H	( SB_HOST_RUN_TOP_BOT - SB_HOST_RTOP_TOP )
 #define SB_HOST_RUN_BOT_H	( SB_HOST_RTOP_BOTTOM - SB_HOST_RUN_BOT_TOP )
-#define SB_HOST_VIEW_BOTTOM	( SB_HOST_BTN_Y - 10 )
+// [rc4l] The SAME line the detail column ends on. It stopped four pixels higher, which cost the
+// list a sliver of room and left its scrollbar visibly short of the one beside it -- two bars down
+// one panel, ending at different heights, reads as one of them being cut off.
+#define SB_HOST_VIEW_BOTTOM	SB_HOST_RTOP_BOTTOM
 #define SB_HOST_VIEW_H		( SB_HOST_VIEW_BOTTOM - SB_HOST_VIEW_TOP )
 #define SB_HOST_BAR_W		2
-#define SB_HOST_BAR_X		( SB_HOST_RIGHT - 6 )
+// [rc4l] Just inside the right column's backdrop rather than out at the panel's own edge, which is
+// where the WAD list's bar sits relative to the detail panel and for the same reason: a bar floating
+// outside the thing it scrolls does not read as belonging to it.
+#define SB_HOST_BAR_X		( SB_HOST_RCOL_RIGHT + 3 )
+
+// [rc4l] How far the right column's backdrop stands off its content. The same on all four sides, so
+// the title is inset from the top by what the text is inset from the sides.
+#define SB_HOST_RCOL_INSET	8
+
+// [rc4l] The experience list's own bar, INSIDE the list the way the server list keeps its own, with
+// the rows stopping short of it.
+//
+// It sat in the gap to the right of the list at first, which was the gap the column divider used to
+// occupy -- and once the divider went and the right column got a backdrop, a bar out there read as
+// part of the panel's margin rather than as something belonging to the list. A list's bar goes down
+// the edge of the list.
+#define SB_HOST_LBAR_X		( SB_HOST_LIST_RIGHT - 4 )
+#define SB_HOST_ROW_RIGHT	( SB_HOST_LBAR_X - 3 )
 
 #define SB_CHOICE_H			15
 // Wide enough for the focus glow to sit in the gap rather than on the previous cell -- the same
@@ -681,6 +753,335 @@ static	zx::HostFocusPos	g_HostFocus( zx::HostSlot::List, 0 );
 static	int				g_HostEntrySel = SB_HOST_CATALOGUE_FIRST;
 static	int				g_HostEntryHot = -2;	// -2 is "none"
 
+// [rc4l] Which way of playing the selected entry the player wants, held as the variant's ID rather
+// than a row number.
+//
+// An index would have to be reset every time the selection moved, in each of the several places that
+// move it, and a missed one hands them a different game from the one the panel is showing. An id
+// cannot be stale in that way: PickVariant answers with the entry's default whenever this names
+// something the entry does not have, which covers both switching entries and a catalogue that has
+// been updated underneath a remembered choice.
+static	FString			g_HostVariantId;
+
+// [rc4l] Whether the cursor is on an opened experience's OWN row rather than on one of the ways of
+// playing under it.
+//
+// The one thing the selection cannot say by itself. Everywhere else the cursor is derived from what
+// is chosen, and that works because a choice names exactly one row -- but an open experience's own
+// row and its default variant's row are both "this entry, playing the default", so deriving alone
+// put the cursor on the variant and left the row above it unreachable. UP off the first variant then
+// moved the selection to a row it was already on and looked like a key that did nothing.
+static	bool			g_HostOnEntryRow = false;
+
+// [rc4l] Which experiences are opened out to show their ways of playing, entry for entry.
+//
+// Any number at once. One at a time was the first attempt and it made comparing two packs
+// impossible: opening the second shut the first, so the thing you wanted to compare against
+// disappeared at the moment you went to look at it. Grown on demand, and anything past the end
+// counts as shut, so a fresh session starts with nothing to allocate.
+static	std::vector<bool>	g_HostOpenEntries;
+
+static bool HostEntryIsOpen( int entry )
+{
+	return ( entry >= 0 ) && ( entry < static_cast<int>( g_HostOpenEntries.size( ))) &&
+		g_HostOpenEntries[entry];
+}
+
+static void HostToggleEntryOpen( int entry )
+{
+	if ( entry < 0 )
+		return;
+
+	if ( entry >= static_cast<int>( g_HostOpenEntries.size( )))
+		g_HostOpenEntries.resize( entry + 1, false );
+
+	g_HostOpenEntries[entry] = !g_HostOpenEntries[entry];
+}
+
+// [rc4l] Which remix the player wants ON EACH AXIS, held as ids for the reason the variant is: the
+// pool is re-read and reordered, and a stored number would eventually point at something else.
+//
+// One entry per group, keyed by group id. Kept across entries on purpose: choosing Brutal Doom and
+// then looking at three other experiences should not quietly forget it, and an entry that does not
+// offer that axis simply never reads the key.
+static	std::vector<std::pair<std::string, std::string> >	g_HostRemixIds;
+
+// What is wanted on one axis, or empty when nothing has been chosen there yet.
+static const std::string &HostRemixWanted( const std::string &group )
+{
+	static const std::string kNone;
+
+	for ( size_t i = 0; i < g_HostRemixIds.size( ); ++i )
+	{
+		if ( g_HostRemixIds[i].first == group )
+			return g_HostRemixIds[i].second;
+	}
+
+	return kNone;
+}
+
+static void HostSetRemixWanted( const std::string &group, const std::string &id )
+{
+	for ( size_t i = 0; i < g_HostRemixIds.size( ); ++i )
+	{
+		if ( g_HostRemixIds[i].first == group )
+		{
+			g_HostRemixIds[i].second = id;
+			return;
+		}
+	}
+
+	g_HostRemixIds.push_back( std::make_pair( group, id ));
+}
+
+// What the selected way of playing can be played with. The VARIANT decides, not just the entry:
+// Skulltag's Invasion takes three lives and its Duel does not.
+static std::vector<zx::AddonRemix> HostOfferedRemixes( const zx::AddonEntry &addon )
+{
+	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+	return zx::OfferedRemixes( addon, pick.index, zx::CatalogueRemixes( ));
+}
+
+// [rc4l] How many lives the player has asked for, or -1 for "not yet". Kept across entries like the
+// remix ids, and clamped per entry rather than reset: asking for two lives is a preference about how
+// you play, not about which pack you were looking at when you said it.
+static	int				g_HostLives = -1;
+
+// [rc4l] Weapon speed, kept the same way and for the same reason: it is a preference about how you
+// play rather than about which pack you were looking at when you set it.
+static	int				g_HostFastWeapons = -1;
+
+// The lives control for the CHOSEN way of playing. The variant's gamemode when it declares one,
+// otherwise the entry's, because most packs play one way and should say it once.
+static zx::LivesControl HostLivesControl( const zx::AddonEntry &addon )
+{
+	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+	zx::HostGameMode mode = addon.gameMode;
+	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))) &&
+		( addon.variants[pick.index].gameMode != zx::HostGameMode::Unknown ))
+	{
+		mode = addon.variants[pick.index].gameMode;
+	}
+
+	// [rc4l] And the variant's own lives when it states them, because an entry can gather packs that
+	// are not alike: six campaign mapsets that can be run as Survival sit beside four co-op packs that
+	// cannot, and the entry's single answer put a lives slider on all ten.
+	int defaultLives = addon.defaultLives;
+	int maxLives = addon.maxLives;
+
+	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))))
+	{
+		const zx::AddonVariant &v = addon.variants[pick.index];
+
+		if ( v.defaultLives >= 0 )
+			defaultLives = v.defaultLives;
+		if ( v.maxLives >= 0 )
+			maxLives = v.maxLives;
+	}
+
+	return zx::LivesFor( mode, g_HostLives, defaultLives, maxLives );
+}
+
+// [rc4l] Whether the chosen way of playing offers the weapon speed. Either the entry or the variant
+// may say yes, the same rule the teams control uses and for the same reason.
+static bool HostFastWeaponsOffered( const zx::AddonEntry &addon )
+{
+	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+	if ( addon.fastWeapons )
+		return true;
+
+	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))))
+		return addon.variants[pick.index].fastWeapons;
+
+	return false;
+}
+
+// [rc4l] Which map to open on, as an index into the chosen way of playing's own rotation, or -1 for
+// "wherever it would have started". An index rather than a name because the axis IS the rotation:
+// remembering MAP07 and finding a pack that has no MAP07 would leave a choice that cannot be met.
+static	int				g_HostStartMap = -1;
+
+// The rotation of the last cfg asked about. One entry of cache, which is all this needs: the panel
+// asks about the same cfg many times a frame and about a different one only when the selection
+// changes.
+static	FString			g_HostRotationCfg;
+static	std::vector<std::string>	g_HostRotation;
+
+// [rc4l] The maps the chosen way of playing writes into its rotation, read out of its cfg.
+//
+// The cfg is the SERVER's file and this client has never parsed one. This is the one exception and
+// it is narrow: only addmap lines, only to name them. See maprotation_compute.h for why reading it
+// beats writing the same thirty-two names into addon.json a second time.
+static const std::vector<std::string> &HostRotation( const zx::CatalogueEntry &entry )
+{
+	const FString path = zx::CatalogueServerCfgPath( entry, g_HostVariantId.GetChars( )).c_str( );
+
+	if ( g_HostRotationCfg.Compare( path ) == 0 )
+		return g_HostRotation;
+
+	g_HostRotationCfg = path;
+	g_HostRotation.clear( );
+
+	if ( path.IsNotEmpty( ))
+	{
+		FILE *fp = fopen( path.GetChars( ), "rb" );
+		if ( fp != NULL )
+		{
+			std::string text;
+			char buf[4096];
+			size_t got;
+
+			while (( got = fread( buf, 1, sizeof( buf ), fp )) > 0 )
+				text.append( buf, got );
+
+			fclose( fp );
+			g_HostRotation = zx::MapsInRotation( text );
+		}
+	}
+
+	return g_HostRotation;
+}
+
+// The rotation of whatever is selected right now, which is what the picker runs on. Empty when
+// nothing is selected, or when the way of playing writes no rotation at all -- Doom Barracks Zone
+// leans on its pack's own mapinfo chain and lists nothing.
+static const std::vector<std::string> &HostSelectedRotation( )
+{
+	static const std::vector<std::string> kNone;
+
+	const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+	if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+		return kNone;
+
+	return HostRotation( entries[g_HostEntrySel] );
+}
+
+// Which map the picker is on, always a legal index when there is a rotation at all. Nothing chosen
+// is the first, which is where the server would have started anyway.
+static int HostStartMapIndex( )
+{
+	const int count = static_cast<int>( HostSelectedRotation( ).size( ));
+
+	if ( count <= 0 )
+		return 0;
+
+	return clamp(( g_HostStartMap < 0 ) ? 0 : g_HostStartMap, 0, count - 1 );
+}
+
+// [rc4l] The axis whose choices REPLACE the weapons, which is the one the speed slider argues with.
+// Named rather than guessed at: it is the group id those remixes carry in the catalogue.
+static const char *const kHostMixGroup = "mix";
+
+// Whether the mix axis is sitting on the choice that adds nothing, which is the first one offered.
+// Read WITHOUT the lock below, or the answer would be whatever the lock had just forced.
+static bool HostMixIsBaseline( const zx::AddonEntry &addon )
+{
+	const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
+
+	for ( size_t g = 0; g < groups.size( ); ++g )
+	{
+		if ( groups[g].id != kHostMixGroup )
+			continue;
+
+		return zx::PickRemix( groups[g].choices, HostRemixWanted( groups[g].id )).index <= 0;
+	}
+
+	// No mix axis at all, so nothing has replaced the weapons.
+	return true;
+}
+
+// Which of the weapon speed and the mix has the panel. See weaponspick_compute.h for why only one of
+// them can.
+static zx::WeaponsPlan HostWeaponsPlan( const zx::AddonEntry &addon )
+{
+	return zx::PlanWeapons( HostFastWeaponsOffered( addon ), g_HostFastWeapons,
+		HostMixIsBaseline( addon ));
+}
+
+// What is in force on every axis at once. One pick per group, in the entry's own group order.
+//
+// [rc4l] With the mix TAKEN BACK to its baseline while the weapon speed is up. Done here rather than
+// at the draw, because this is the one place that answers "what is in force": the file list, the
+// host plan, the download set and the configuration key all come through it, and a lock only the
+// pills knew about would show Vanilla while starting a server on Brutal Doom.
+static std::vector<zx::RemixPick> HostRemixPicks( const zx::AddonEntry &addon )
+{
+	std::vector<std::pair<std::string, std::string> > wanted = g_HostRemixIds;
+
+	if ( HostWeaponsPlan( addon ).forceBaselineMix )
+	{
+		for ( size_t i = 0; i < wanted.size( ); ++i )
+		{
+			// Emptied rather than removed, and never written back to g_HostRemixIds: an empty want
+			// takes the first offered, which is the baseline by the catalogue's own convention, and
+			// the player's real choice is still there when the speed comes back down.
+			if ( wanted[i].first == kHostMixGroup )
+				wanted[i].second = "";
+		}
+	}
+
+	return zx::PickRemixes( HostOfferedRemixes( addon ), wanted );
+}
+
+// [rc4l] How many teams the player has asked for, or -1 for "not yet". Kept across entries like the
+// lives count and for the same reason.
+static	int				g_HostTeams = -1;
+
+// The teams control for the CHOSEN way of playing. Read off the VARIANT throughout: the gamemode
+// because Skulltag's Deathmatch and its Duel are not the same question, and the say-so because its
+// Skulltag variant declares deathmatch and then runs a mode of its own.
+static zx::TeamsControl HostTeamsControl( const zx::AddonEntry &addon )
+{
+	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+	zx::HostGameMode mode = addon.gameMode;
+
+	// EITHER may say yes. An entry that plays one way has no variant to say it on -- Brutal Doom is
+	// eleven deathmatch maps and nothing else -- and an entry with several says it per variant.
+	bool bOffered = addon.teams;
+
+	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))))
+	{
+		const zx::AddonVariant &v = addon.variants[pick.index];
+
+		if ( v.gameMode != zx::HostGameMode::Unknown )
+			mode = v.gameMode;
+
+		bOffered = bOffered || v.teams;
+	}
+
+	return zx::TeamsFor( mode, bOffered, g_HostTeams );
+}
+
+// [rc4l] What the CHOSEN way of playing loads, remix included. Every question the host tab asks about
+// files -- what to list, what to size, what to verify, what to fetch, what to start on -- comes
+// through here.
+//
+// Not addon.files, which used to be the answer and no longer is one. Ghouls vs Humans keeps nothing
+// at the entry level and a whole different wad on each way of playing, so reading the entry's own
+// list would show and start something no variant plays.
+//
+// The remix's files go on the end, which is also why the panel needs no work to show them: pick a
+// remix that loads something and it appears in the file list with its size, beside everything else
+// the server will be started on.
+static std::vector<zx::AddonFileRef> HostSelectedFiles( const zx::AddonEntry &addon )
+{
+	std::vector<zx::AddonFileRef> files = zx::PickVariant( addon, g_HostVariantId.GetChars( )).files;
+
+	// Every axis, in group order, each appended after the last. Load order between axes is the
+	// catalogue author's: a mod named after a rules remix loads after it and so wins where they
+	// overlap, which is the only way an author can express that at all.
+	const std::vector<zx::RemixPick> picks = HostRemixPicks( addon );
+	for ( size_t i = 0; i < picks.size( ); ++i )
+		files.insert( files.end( ), picks[i].files.begin( ), picks[i].files.end( ));
+
+	return files;
+}
+
 // [rc4l] What we told the server to load, kept so the client can match it before joining.
 //
 // JoinOwnServer connected straight to the address, and the reason it could was that the server was
@@ -706,6 +1107,7 @@ static	int				g_HostStatusScroll = 0;
 // hand the grab to the other.
 static	bool			g_DraggingHostDetailBar = false;
 static	bool			g_DraggingHostStatusBar = false;
+static	bool			g_DraggingHostListBar = false;
 
 // [rc4l] The band the status text may draw in, or an empty range for "anywhere". Set around the
 // status half only; see HostTextRowVisible for why a rectangle would not have done.
@@ -713,15 +1115,74 @@ static	int				g_HostTextClipTop = 0;
 static	int				g_HostTextClipBottom = 0;
 static	int				g_HostStatusH = 0;
 
+// [rc4l] Where the running server's status begins. Measured from the BOTTOM: the status takes the
+// room its content needs and the details keep the rest, rather than each taking half whatever they
+// hold. Never more than half, so a long status cannot push the details off the panel entirely.
+//
+// g_HostStatusH is last frame's measurement, which is what every other reader of it uses. It is a
+// content height and so does not move when the seam does, and the feedback loop that would
+// otherwise imply cannot start.
+static int HostRunSplit( )
+{
+	const int half = SB_HOST_RTOP_TOP + SB_HOST_RTOP_H / 2;
+	const int wanted = SB_HOST_RTOP_BOTTOM - g_HostStatusH - 5;
+
+	return ( wanted > half ) ? wanted : half;
+}
+
 // [rc4l] The right column shows the description by default. The settings are one click away rather
 // than always on screen: almost nobody changes them, and the thing worth reading before pressing
 // START is what the selection will actually load.
 static	bool			g_HostShowSettings = false;
 static	bool			g_HostOnSettingsToggle = false;
+// [rc4l] The gameplay rows are drawn inside the scrolled detail region, so where they LAND is only
+// known once they have been drawn. Each frame's draw records them here and the pointer tests against
+// that, which is how a row that scrolled out of view stops being clickable without a second copy of
+// the layout deciding when.
+struct HostGameplayRow
+{
+	int x, w, y, h;			// the clickable extent; a pill is narrower than the column
+	std::string group;		// which axis the click sets
+	std::string id;
+};
+static	TArray<HostGameplayRow>	g_HostGameRows;
+static	int						g_HostGameHot = -1;
+
+
+// [rc4l] A SLIDER on the gameplay panel, recorded as it is drawn like the pills above.
+//
+// Not "the lives track". Lives is the only setting using one today and will not be the last -- a
+// starting map or a time limit is the same shape -- so the geometry, the drag, the step buttons and
+// the rounding all live here once, keyed by an id, rather than being written again per setting with
+// the chance to disagree.
+struct HostSliderRect
+{
+	std::string id;			// which setting this is; the caller maps it back
+	int trackX, trackY, trackW;
+	int minusX, plusX, stepW;
+	int min, max, value;
+};
+
+static	TArray<HostSliderRect>	g_HostSliders;
+static	FString					g_HostSliderHot;		// id under the pointer, or empty
+static	FString					g_HostSliderDragging;	// id being dragged, or empty
+
+// [rc4l] The remix picker, open over the panel. A list rather than a row of buttons, because the
+// dialog's three-button ceiling is exactly the wall this would hit: two options today, and the whole
+// point of a shared pool is that there will be more.
 
 // [rc4l] Which catalogue row the RUNNING server was started from, so the list can mark it and SWITCH
 // knows there is nothing to switch to. -2 is "custom setup", matching g_HostEntrySel's own spelling.
 static	int				g_HostingEntry = -2;
+
+// [rc4l] And the whole configuration it was started on, so the action button can tell "looking at
+// what is running" from "looking at the same pack set up differently". See HostSelectionKey.
+static	FString			g_HostingKey;
+
+// [rc4l] And WHICH way of playing it was started as, so the tint can go on the row the server is
+// actually running. The id rather than the row number, for the reason g_HostVariantId is: rows move
+// when an experience is opened out, and a stored number would then point at the wrong one.
+static	FString			g_HostingVariantId;
 
 // [rc4l] A transfer fetching what an entry needs before it can be hosted.
 //
@@ -1486,16 +1947,20 @@ static FString serverbrowser_PlainName( const char *pszName )
 // and O(n^2) character work for one name, repeated per row per frame. Width only ever grows with
 // length, so the longest prefix that fits can be found in about six probes instead of sixty, and the
 // one string being shortened is reused rather than recopied.
-static FString serverbrowser_FitName( const char *pszName, int maxWidth )
+//
+// [rc4l] The font is a parameter because the panel's title is drawn in BigFont, and measuring a
+// BigFont line against SmallFont's widths says it fits when it does not -- which is how the title
+// came to run out of its column while every SmallFont line beneath it stayed inside one.
+static FString serverbrowser_FitName( const char *pszName, int maxWidth, FFont *font = SmallFont )
 {
 	FString name = serverbrowser_PlainName( pszName );
 
 	// The common case, and the cheap one: it already fits, so nothing is cut, copied or searched.
-	if ( SmallFont->StringWidth( name ) <= maxWidth )
+	if ( font->StringWidth( name ) <= maxWidth )
 		return name;
 
 	// Room for the ellipsis BEFORE cutting, so the result including "..." fits.
-	const int budget = maxWidth - SmallFont->StringWidth( "..." );
+	const int budget = maxWidth - font->StringWidth( "..." );
 	if ( budget <= 0 )
 		return FString( "..." );
 
@@ -1511,7 +1976,7 @@ static FString serverbrowser_FitName( const char *pszName, int maxWidth )
 		probe = name;
 		probe.Truncate( mid );
 
-		if ( SmallFont->StringWidth( probe ) <= budget )
+		if ( font->StringWidth( probe ) <= budget )
 		{
 			best = mid;
 			lo = mid + 1;
@@ -1684,30 +2149,121 @@ public:
 	//
 	// [rc4l] Connect to the server we just started.
 	//
-	// Straight to the address rather than through the browser's own join path: that one resolves WADs
-	// and may start downloads, and neither can apply here. Our server is running the files WE are
-	// running -- that is where its command line came from -- so there is by construction nothing to
-	// fetch and nothing to check.
+	// Not through the browser's own join path: that one resolves WADs and may start downloads, and
+	// neither applies to a server whose files are already on this machine by definition. What DOES
+	// apply is the reload, because a catalogue entry means the server is running the entry's files
+	// and this client is still running whatever it had. computation/ownjoin_compute decides which.
+	// [rc4l] Whether the running server was started from a catalogue entry rather than from the form.
+	// A custom setup runs the client's own files, so there is nothing for it to reload onto.
+	bool HostingCatalogueEntry( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		return ( g_HostingEntry >= 0 ) && ( g_HostingEntry < static_cast<int>( entries.size( )));
+	}
+
+	// [rc4l] What the entry we are HOSTING loads, resolved to paths, rebuilt from the entry rather
+	// than remembered. Answers only for a catalogue entry; ask HostingCatalogueEntry first.
+	//
+	// The pair of statics above is filled in when the server is started and cleared the first time it
+	// is used, which makes "did we remember to reload" a question with a wrong answer available. If
+	// the ready edge ever fires with them empty -- a second edge, a reload that returned instead of
+	// restarting, a switch -- the join used to go ahead with whatever the client happened to have
+	// loaded, and land on protected lump authentication failed. The client cannot tell that from a
+	// genuinely mismatched server, so it reads as the experience being broken.
+	//
+	// Derived from g_HostingEntry, which IS what the running server was started from, so it cannot go
+	// stale in that way. Returning false here means the files cannot be found NOW, which is a refusal
+	// and not a reason to connect anyway -- see computation/ownjoin_compute.
+	bool HostedEntryFiles( FString &outIwad, TArray<FString> &outPwads )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if ( !HostingCatalogueEntry( ))
+			return false;
+
+		const zx::AddonEntry &addon = entries[g_HostingEntry].addon;
+
+		// The one place everything asks what an entry loads, so this cannot answer differently from
+		// what the server was handed.
+		const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( addon );
+
+		std::vector<std::string> iwads;
+		static const char *const kCandidates[] = {
+			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
+			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
+		};
+		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
+		{
+			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
+				iwads.push_back( kCandidates[i] );
+		}
+
+		const zx::IwadPick pick = zx::PickIwad( addon.iwad, iwads );
+		if ( pick.choice == zx::IwadChoice::None )
+			return false;
+
+		outIwad = zx::FindIwadInEngineSearchPaths( pick.iwad.c_str( ));
+		if ( outIwad.IsEmpty( ))
+			outIwad = zx::FindFileInEngineSearchPaths( pick.iwad.c_str( ));
+		if ( outIwad.IsEmpty( ))
+			return false;
+
+		const std::vector<FString> verified = HostEntryVerifiedPaths( loads );
+
+		outPwads.Clear( );
+		for ( size_t i = 0; i < loads.size( ); ++i )
+		{
+			FString path = ( i < verified.size( )) ? verified[i] : FString( );
+			if ( path.IsEmpty( ))
+				path = zx::FindFileInEngineSearchPaths( loads[i].name.c_str( ));
+			if ( path.IsEmpty( ))
+				return false;		// cannot reload onto a file we cannot find; say so rather than guess
+
+			outPwads.Push( path );
+		}
+
+		return true;
+	}
+
 	void JoinOwnServer( )
 	{
 		const FString address = zx::HostConnectAddress( );
 		if ( address.IsEmpty( ))
 			return;
 
-		// [rc4l] A catalogue entry is the one case where the server is NOT running what we are, so
-		// connecting straight to it fails protected-lump authentication: the server has the entry's
-		// files and this client does not.
-		//
-		// RequestReload is what the browser's own join uses, and it is the reason this works where an
-		// earlier attempt did not. Queueing `wad_reload` and a `connect` behind it loses the connect,
-		// because the reload restarts the game loop and takes the queued command with it. This
-		// instead rewrites argv and throws CRestartException, so the connect RIDES the restart rather
-		// than waiting for it. It also validates every file before tearing anything down, so a bad
-		// PWAD leaves the running game alone.
-		if ( g_HostEntryIwad.IsNotEmpty( ))
+		// [rc4l] Rebuild what the start-time statics were meant to carry, whenever they are empty, and
+		// find out whether we are allowed to connect at all. The rule is computation/ownjoin_compute:
+		// hosting an entry means the server is NOT running what we are, so a connect that skips the
+		// reload cannot authenticate, and guessing is worse than saying so.
+		FString rebuiltIwad;
+		TArray<FString> rebuiltPwads;
+
+		zx::OwnJoinIn in;
+		in.hostingCatalogueEntry = HostingCatalogueEntry( );
+		in.haveRememberedFiles = g_HostEntryIwad.IsNotEmpty( );
+		in.canRebuildFiles = in.hostingCatalogueEntry && !in.haveRememberedFiles
+			&& HostedEntryFiles( rebuiltIwad, rebuiltPwads );
+
+		const zx::OwnJoinOut decision = zx::DecideOwnJoin( in );
+
+		if ( decision.action == zx::OwnJoinAction::Refuse )
 		{
-			const FString iwad = g_HostEntryIwad;
-			TArray<FString> pwads = g_HostEntryPwads;
+			// The server is up and only the join failed, so it stays up: the player can fix the file
+			// and press JOIN rather than lose the server to a problem on their own end.
+			ShowNotice( "Cannot join your own server", decision.refusal.c_str( ));
+			return;
+		}
+
+		// [rc4l] RequestReload is what the browser's own join uses, and it is the reason this works
+		// where an earlier attempt did not. Queueing `wad_reload` and a `connect` behind it loses the
+		// connect, because the reload restarts the game loop and takes the queued command with it.
+		// This instead rewrites argv and throws CRestartException, so the connect RIDES the restart
+		// rather than waiting for it. It also validates every file before tearing anything down, so a
+		// bad PWAD leaves the running game alone.
+		if ( decision.action == zx::OwnJoinAction::ReloadThenConnect )
+		{
+			const FString iwad = decision.useRebuilt ? rebuiltIwad : g_HostEntryIwad;
+			TArray<FString> pwads = decision.useRebuilt ? rebuiltPwads : g_HostEntryPwads;
 
 			g_HostEntryIwad = "";
 			g_HostEntryPwads.Clear( );
@@ -1899,7 +2455,8 @@ public:
 		// -- and the box is big enough to land on top of the very thing being manipulated. It showed
 		// up over the list while a selection was being dragged out in the search box, which is the
 		// tooltip getting in the way of the gesture it is meant to be explaining.
-		if ( g_SearchDragging || g_DraggingScrollbar || g_DraggingWadBar || g_ButtonPressed )
+		if ( g_SearchDragging || g_DraggingScrollbar || g_DraggingWadBar || g_HostSliderDragging.IsNotEmpty( ) ||
+			g_ButtonPressed )
 			return;
 
 		const BrowserTip *found = NULL;
@@ -1919,23 +2476,38 @@ public:
 		if ( found == NULL )
 			return;
 
-		const std::vector<std::string> lines = zx::TooltipLines( found->text.GetChars( ));
-		if ( lines.empty( ))
+		// [rc4l] WRAPPED, at a fixed maximum. It used to break only on newlines the caller had put
+		// there, which is exactly what a Win32 tooltip does before anybody sends it
+		// TTM_SETMAXTIPWIDTH: one line, no cap, as wide as the string happens to be. The file list
+		// tooltip is a whole comma-separated set of names, and it drew a box across the screen.
+		//
+		// There is no clever sizing rule to copy here -- Windows has a default (unbounded) and every
+		// well-behaved app picks a width. A third of the view is ours: wide enough that ordinary one
+		// line tips stay on one line, narrow enough that the box never spans the panel it explains.
+		FBrokenLines *broken = V_BreakLines( SmallFont, SB_VIRT_W / 3, found->text.GetChars( ));
+		if ( broken == NULL )
 			return;
 
-		// Sized to its content, in virtual units, so a tooltip can be as long or as tall as whatever
-		// it has to say -- a WAD's full name, its hash and its size is three lines and nothing had to
-		// be told about it in advance.
 		const int lineH = SmallFont->GetHeight( ) + 1;
 		const int padX = 4;
 		const int padY = 3;
 
+		// V_BreakLines measured each line as it broke it, so the width is the widest it produced --
+		// which for a short tip is the text itself, not the cap. The box still shrinks to its
+		// content; the cap only stops it growing.
 		int contentW = 0;
-		for ( size_t i = 0; i < lines.size( ); ++i )
-			contentW = MAX( contentW, SmallFont->StringWidth( lines[i].c_str( )));
+		int count = 0;
+		for ( ; broken[count].Width >= 0; ++count )
+			contentW = MAX( contentW, broken[count].Width );
+
+		if ( count == 0 )
+		{
+			V_FreeBrokenLines( broken );
+			return;
+		}
 
 		const int boxW = contentW + 2 * padX;
-		const int boxH = static_cast<int>( lines.size( )) * lineH + 2 * padY;
+		const int boxH = count * lineH + 2 * padY;
 
 		// The pointer is in screen pixels and the box is laid out in virtual ones, so the placement is
 		// done in virtual space -- the same space the text will be drawn in.
@@ -1961,14 +2533,16 @@ public:
 		screen->Dim( PalEntry( 120, 130, 165 ), 0.55f, right - 1, top, 1, bottom - top );
 
 		int y = box.y + padY;
-		for ( size_t i = 0; i < lines.size( ); ++i )
+		for ( int i = 0; i < count; ++i )
 		{
 			// First line white, the rest dimmer: the thing hovered, then what is known about it.
 			screen->DrawText( SmallFont, ( i == 0 ) ? CR_WHITE : CR_GRAY,
-				box.x + padX, y, lines[i].c_str( ),
+				box.x + padX, y, broken[i].Text,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			y += lineH;
 		}
+
+		V_FreeBrokenLines( broken );
 	}
 
 	// [rc4l] How tall the dialog needs to be for what it is carrying, worked out before anything is
@@ -1986,11 +2560,13 @@ public:
 		return h;
 	}
 
-	// One wrapping pass, shared by the measure and the draw so they cannot disagree about how many
-	// lines there are -- which would centre the panel on the wrong height.
-	int DialogWrap( const FString &text, int y, bool draw )
+	// [rc4l] One wrapping pass, shared by the measure and the draw so they cannot disagree about how
+	// many lines there are -- which would centre the panel on the wrong height.
+	//
+	// Taken out of DialogWrap when the remix picker wanted the same thing left-aligned in a column.
+	// Two loops would have been two chances to measure one way and draw another.
+	int WrapText( const FString &text, int x, int y, int width, int colour, bool bCentre, bool draw )
 	{
-		const int width = SB_DLG_W - 2 * SB_DLG_PAD;
 		int lines = 0;
 		FString line;
 		long start = 0;
@@ -2008,8 +2584,8 @@ public:
 			if ( line.IsNotEmpty( ) && ( SmallFont->StringWidth( candidate ) > width ))
 			{
 				if ( draw )
-					screen->DrawText( SmallFont, CR_GRAY,
-						( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( line ) / 2 ),
+					screen->DrawText( SmallFont, colour,
+						bCentre ? ( x + ( width - SmallFont->StringWidth( line )) / 2 ) : x,
 						y + lines * SB_DLG_LINE, line,
 						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 				++lines;
@@ -2026,14 +2602,20 @@ public:
 		if ( line.IsNotEmpty( ))
 		{
 			if ( draw )
-				screen->DrawText( SmallFont, CR_GRAY,
-					( SB_VIRT_W / 2 ) - ( SmallFont->StringWidth( line ) / 2 ),
+				screen->DrawText( SmallFont, colour,
+					bCentre ? ( x + ( width - SmallFont->StringWidth( line )) / 2 ) : x,
 					y + lines * SB_DLG_LINE, line,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			++lines;
 		}
 
 		return lines;
+	}
+
+	int DialogWrap( const FString &text, int y, bool draw )
+	{
+		return WrapText( text, SB_DLG_LEFT + SB_DLG_PAD, y, SB_DLG_W - 2 * SB_DLG_PAD,
+			CR_GRAY, true, draw );
 	}
 
 	int DialogWrapCount( const FString &text )
@@ -2066,6 +2648,21 @@ public:
 		outY = (( SB_VIRT_H - h ) / 2 ) + h - SB_DLG_PAD - SB_DLG_BTN_H;
 		outW = widths[index];
 		return true;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The remix picker used to be a modal here, opened from a button above PLAY NOW. Both are
+	// gone: the choice is a SETTING, so it is drawn in the detail panel beside the thing it changes
+	// (DrawHostGameplay) rather than behind a click that hid the browser to ask one question.
+	std::vector<zx::AddonRemix> RemixChoices( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return std::vector<zx::AddonRemix>( );
+
+		return HostOfferedRemixes( entries[g_HostEntrySel].addon );
 	}
 
 	//*************************************************************************
@@ -2648,35 +3245,23 @@ public:
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
-	void DrawDetailPanel( )
+	// [rc4l] The sunken black backdrop a column of detail sits on, given its corners.
+	//
+	// The server list's detail panel had this written out inline; the HOST tab's right column now wants
+	// the same one, and two hand-rolled gradients would have drifted apart the first time either was
+	// touched. DrawRoundedPanel above already does the work -- this only names the colours, which are
+	// what "the detail panel's background" actually means.
+	void DrawDetailBackdrop( int vLeft, int vTop, int vRight, int vBottom )
 	{
-		const int left = serverbrowser_ToScreenX( SB_DETAIL_LEFT );
-		const int right = serverbrowser_ToScreenX( SB_DETAIL_RIGHT );
-		const int top = serverbrowser_ToScreenY( SB_DETAIL_TOP );
-		const int bottom = serverbrowser_ToScreenY( SB_DETAIL_BOTTOM );
-		const int radius = serverbrowser_ToScreenY( 8 ) - serverbrowser_ToScreenY( 0 );
-
-		const int w = right - left;
-		const int h = bottom - top;
-		if (( w <= 0 ) || ( h <= 0 ))
-			return;
-
-		// ComputePanelRect is not used here: it centres its rectangle on the screen, which is right for
-		// the one panel and wrong for anything placed inside it. The rounding and gradient helpers are
-		// the parts worth sharing, and they are.
 		const zx::PanelColor topCol = { 0, 0, 0, 170 };
 		const zx::PanelColor botCol = { 0, 0, 0, 205 };
 
-		for ( int row = 0; row < h; ++row )
-		{
-			const int inset = zx::ComputeRoundedInset( row, h, radius );
-			const int rowW = w - 2 * inset;
-			if ( rowW <= 0 )
-				continue;
+		DrawRoundedPanel( vLeft, vTop, vRight - vLeft, vBottom - vTop, topCol, botCol, 8 );
+	}
 
-			const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
-			screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
-		}
+	void DrawDetailPanel( )
+	{
+		DrawDetailBackdrop( SB_DETAIL_LEFT, SB_DETAIL_TOP, SB_DETAIL_RIGHT, SB_DETAIL_BOTTOM );
 	}
 
 	//*************************************************************************
@@ -2905,7 +3490,24 @@ public:
 	{
 		// Remembered before anything can fail: the list marks THIS row as the one being served, and
 		// SWITCH compares against it.
+		//
+		// [rc4l] The way of playing goes with it, RESOLVED rather than copied from the choice: an
+		// empty choice means "the default", and the tint has to name a row rather than a preference.
 		g_HostingEntry = g_HostEntrySel;
+		g_HostingVariantId = "";
+		g_HostingKey = HostSelectionKey( );
+
+		{
+			const std::vector<zx::CatalogueEntry> &all = zx::CatalogueLoad( );
+			if (( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( all.size( ))))
+			{
+				const zx::AddonEntry &addon = all[g_HostEntrySel].addon;
+				const zx::VariantPick chosen = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+				if (( chosen.index >= 0 ) && ( chosen.index < static_cast<int>( addon.variants.size( ))))
+					g_HostingVariantId = addon.variants[chosen.index].id.c_str( );
+			}
+		}
 
 		zx::HostConfig config;
 
@@ -2948,13 +3550,30 @@ public:
 			// wrong file, authentication compares them and passes, and the server quietly is not the
 			// experience it advertises. A mismatch is treated as missing, which routes it into the
 			// downloader that was already sitting here for the absent case.
-			const std::vector<FString> verified = HostEntryVerifiedPaths( chosen.addon );
+			// [rc4l] The variant reaches the server three times, and has to: as the cfg that decides
+			// how it plays, as the files it loads, and in the name, because a joiner reading a server
+			// list cannot see either of the first two. "Skulltag" alone does not tell them whether
+			// they are about to join an invasion or a duel, and finding out by joining is the cost
+			// this avoids.
+			const zx::VariantPick pick = zx::PickVariant( chosen.addon, g_HostVariantId.GetChars( ));
+
+			// The remix goes through the same one place the panel asks, so what gets verified,
+			// fetched and started is exactly what was on screen.
+			const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( chosen.addon );
+
+			// Every axis, in group order, so what gets exec'd matches what the panel showed.
+			const std::vector<zx::RemixPick> remixes = HostRemixPicks( chosen.addon );
+			std::vector<std::string> remixCfgs;
+			for ( size_t i = 0; i < remixes.size( ); ++i )
+				remixCfgs.push_back( zx::CatalogueRemixCfgPath( remixes[i].id ));
+
+			const std::vector<FString> verified = HostEntryVerifiedPaths( loads );
 
 			std::vector<std::string> have;
-			for ( size_t i = 0; i < chosen.addon.files.size( ); ++i )
+			for ( size_t i = 0; i < loads.size( ); ++i )
 			{
 				if (( i < verified.size( )) && verified[i].IsNotEmpty( ))
-					have.push_back( chosen.addon.files[i].name );
+					have.push_back( loads[i].name );
 			}
 
 			std::vector<std::string> iwads;
@@ -2977,9 +3596,16 @@ public:
 			choices.port = config.port;
 			choices.advertise = config.advertise;
 
-			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon,
+			if ( !pick.name.empty( ))
+			{
+				choices.serverName = zx::ComposeServerName( config.hostName.c_str( ),
+					pick.name, std::string( ));
+			}
+
+			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon, loads,
 				zx::PickIwad( chosen.addon.iwad, iwads ),
-				zx::CatalogueServerCfgPath( chosen ), choices, have );
+				zx::CatalogueServerCfgPath( chosen, g_HostVariantId.GetChars( )),
+				remixCfgs, pick.map, choices, have );
 
 			// [rc4l] Missing files are a DOWNLOAD, which is what the catalogue's per-file md5 was
 			// shipped for and what BuildHostPlan has always meant by returning `missing` rather than
@@ -2987,7 +3613,7 @@ public:
 			// downloading was impossible while the JOIN beside it fetched the same file happily.
 			//
 			// A blocker is different and still refuses: no IWAD to run on cannot be downloaded.
-			if ( plan.blocker.empty( ) && !plan.ready && BeginHostDownload( chosen, plan ))
+			if ( plan.blocker.empty( ) && !plan.ready && BeginHostDownload( chosen, loads, plan ))
 				return;
 
 			if ( !plan.blocker.empty( ) || !plan.ready )
@@ -3028,6 +3654,30 @@ public:
 			}
 
 			config.execCfg = plan.execCfg;
+			config.execRemixCfgs = plan.execRemixCfgs;
+
+			// [rc4l] Set directly rather than exec'd, and after everything, because what lives mean
+			// depends on the gamemode: in Cooperative asking for any is a switch to Survival, and in
+			// Invasion a zero is genuinely unlimited. No shared cfg can be right in both.
+			config.extraCvars = zx::LivesCvars( HostLivesControl( chosen.addon ));
+
+			// [rc4l] Weapon speed rides the same list, and brings the infinite ammo with it. Both come
+			// out of one unit because they are one decision: see weaponspick_compute.h.
+			{
+				const std::vector<std::pair<std::string, std::string> > weapons =
+					zx::FastWeaponsCvars( HostFastWeaponsOffered( chosen.addon ), g_HostFastWeapons );
+
+				config.extraCvars.insert( config.extraCvars.end( ), weapons.begin( ), weapons.end( ));
+			}
+
+			// [rc4l] Teams ride the same list, and have to: the axis NAMES a gamemode, so an exec
+			// running after it would put the old mode straight back.
+			{
+				const std::vector<std::pair<std::string, std::string> > teams =
+					zx::TeamsCvars( HostTeamsControl( chosen.addon ));
+
+				config.extraCvars.insert( config.extraCvars.end( ), teams.begin( ), teams.end( ));
+			}
 
 			// [rc4l] RESOLVED to full paths, not left as bare names. These are what the CLIENT
 			// reloads onto in order to join, and RequestReload's loadability check opens exactly
@@ -3048,7 +3698,7 @@ public:
 				// The copy whose md5 matched, if we checked this one above. Re-resolving by name here
 				// would undo the check: the verified file can sit later on the search path than an
 				// impostor of the same name, and the first hit is what a name search returns.
-				FString path = VerifiedPathFor( chosen.addon, verified, plan.pwads[i].c_str( ));
+				FString path = VerifiedPathFor( loads, verified, plan.pwads[i].c_str( ));
 				if ( path.IsEmpty( ))
 					path = zx::FindFileInEngineSearchPaths( plan.pwads[i].c_str( ));
 
@@ -3072,6 +3722,15 @@ public:
 			config.map = plan.map;
 			if ( config.map.empty( ) && plan.execCfg.empty( ))
 				config.map = "map01";
+
+			// [rc4l] Unless a map was PICKED, which beats all of it. Only when the picker was drawn:
+			// an entry whose rotation has one map or none has nothing to have chosen, and writing a
+			// map there would override the welcome map that is the whole reason plan.map exists.
+			{
+				const std::vector<std::string> &maps = HostSelectedRotation( );
+				if ( maps.size( ) > 1 )
+					config.map = maps[HostStartMapIndex( )];
+			}
 
 			SaveHostForm( );
 			zx::ReachProbeRelease( );
@@ -3115,7 +3774,8 @@ public:
 	// The catalogue's md5 per file goes with each request, so the transfer is CHECKED rather than
 	// trusted: a mirror handing us a different build of the same filename is caught here rather than
 	// discovered by the server refusing to start on it.
-	bool BeginHostDownload( const zx::CatalogueEntry &chosen, const zx::HostPlan &plan )
+	bool BeginHostDownload( const zx::CatalogueEntry &chosen,
+		const std::vector<zx::AddonFileRef> &files, const zx::HostPlan &plan )
 	{
 		if ( plan.missing.empty( ) || !zx::waddownload::IsAvailable( ))
 			return false;
@@ -3124,11 +3784,11 @@ public:
 		for ( size_t i = 0; i < plan.missing.size( ); ++i )
 		{
 			std::string md5;
-			for ( size_t j = 0; j < chosen.addon.files.size( ); ++j )
+			for ( size_t j = 0; j < files.size( ); ++j )
 			{
-				if ( chosen.addon.files[j].name == plan.missing[i] )
+				if ( files[j].name == plan.missing[i] )
 				{
-					md5 = chosen.addon.files[j].md5;
+					md5 = files[j].md5;
 					break;
 				}
 			}
@@ -3357,11 +4017,17 @@ public:
 		// left alone -- the movement/traversal split the unit reports separately.
 		if ( r.rowStep != 0 )
 		{
-			const int rows = HostCatalogueRowCount( );
+			// [rc4l] Walks the ROWS, which now include the open experience's ways of playing, and then
+			// says what the row it landed on means. The cursor is derived from the choice rather than
+			// stored, so moving it IS choosing: there is no third state where the highlight is on one
+			// thing and the button would start another.
+			const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+			const std::vector<zx::HostListRow> rows = HostListRows( );
 
-			if ( rows > 0 )
+			if ( !rows.empty( ))
 			{
-				const int next = g_HostEntrySel + r.rowStep;
+				const int here = HostSelectedRow( rows );
+				const int next = (( here >= 0 ) ? here : 0 ) + r.rowStep;
 
 				// Up off the first row is the one edge that leaves, back to the tabs. Down off the
 				// last simply stops, the same as the server list.
@@ -3371,9 +4037,15 @@ public:
 					return;
 				}
 
-				if ( next < rows )
+				if ( next < static_cast<int>( rows.size( )))
 				{
-					g_HostEntrySel = next;
+					g_HostEntrySel = rows[next].entry;
+					HostSelectionChanged( );
+					g_HostOnEntryRow = ( rows[next].variant < 0 );
+
+					if ( rows[next].variant >= 0 )
+						g_HostVariantId = entries[rows[next].entry].addon.variants[rows[next].variant].id.c_str( );
+
 					RevealHostCatalogueRow( next );
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
@@ -3532,6 +4204,109 @@ public:
 		return false;
 	}
 
+	// [rc4l] What a slider's id means, which is the ONE place a setting is tied to its control. The
+	// slider itself knows nothing about lives.
+	void HostSliderSet( const std::string &id, int value )
+	{
+		if ( id == "lives" )
+			g_HostLives = value;
+		else if ( id == "fastweapons" )
+			g_HostFastWeapons = value;
+		else if ( id == "startmap" )
+			g_HostStartMap = value;
+		else if ( id == "teams" )
+		{
+			// The one axis whose slider moves an INDEX rather than the value: the stops are 0, 2, 3
+			// and 4, and a slider that ran on the count would offer a team of one between them.
+			g_HostTeams = zx::TeamsCountAtStop( value );
+		}
+	}
+
+	// Every slider on the panel, from the rects the last draw recorded. Steps first: they sit at the
+	// track's ends and a generous track hitbox would otherwise swallow them, which is exactly what
+	// makes a button look decorative.
+	bool HostSliderMouseEvent( int type, int x, int y )
+	{
+		// A drag cannot outlive the control it is dragging: a release off the panel, a changed
+		// selection, or the row scrolling away all leave the id set with nothing to move.
+		bool bStillDrawn = false;
+		for ( unsigned i = 0; i < g_HostSliders.Size( ); ++i )
+		{
+			if ( g_HostSliderDragging.Compare( g_HostSliders[i].id.c_str( )) == 0 )
+				bStillDrawn = true;
+		}
+		if ( !bStillDrawn )
+			g_HostSliderDragging = "";
+
+		g_HostSliderHot = "";
+
+		for ( unsigned i = 0; i < g_HostSliders.Size( ); ++i )
+		{
+			const HostSliderRect &s = g_HostSliders[i];
+
+			const bool bOnRow = ( y >= serverbrowser_ToScreenY( s.trackY - 2 )) &&
+				( y < serverbrowser_ToScreenY( s.trackY + SB_HOST_GAME_ROW_H - 1 ));
+
+			if ( bOnRow && ( type == MOUSE_Click ))
+			{
+				const bool bMinus = ( x >= serverbrowser_ToScreenX( s.minusX )) &&
+					( x < serverbrowser_ToScreenX( s.minusX + s.stepW ));
+				const bool bPlus = ( x >= serverbrowser_ToScreenX( s.plusX )) &&
+					( x < serverbrowser_ToScreenX( s.plusX + s.stepW ));
+
+				if ( bMinus || bPlus )
+				{
+					const int was = s.value;
+					const int now = clamp( was + ( bPlus ? 1 : -1 ), s.min, s.max );
+
+					HostSliderSet( s.id, now );
+
+					// Silent at the ends, so a press that changed nothing does not sound like one
+					// that did.
+					if ( now != was )
+						S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+
+					return true;
+				}
+			}
+
+			const bool bOnTrack = bOnRow &&
+				( x >= serverbrowser_ToScreenX( s.trackX - 4 )) &&
+				( x < serverbrowser_ToScreenX( s.trackX + s.trackW + 4 ));
+
+			if (( type == MOUSE_Click ) && bOnTrack )
+				g_HostSliderDragging = s.id.c_str( );
+
+			const bool bMine = ( g_HostSliderDragging.Compare( s.id.c_str( )) == 0 );
+			if ( bOnTrack || bMine )
+				g_HostSliderHot = s.id.c_str( );
+
+			if ( !bMine )
+				continue;
+
+			// Tracked once the button is down even after the pointer leaves the row, which is what
+			// makes a drag feel like one. Clamped to the track's ends first, so dragging past either
+			// end pins the value rather than letting the arithmetic run away.
+			const int span = MAX( 1, s.max - s.min );
+			const int vx = clamp( serverbrowser_ToVirtualX( x ) - s.trackX, 0, s.trackW );
+			const int steps = (( vx * span ) + ( s.trackW / 2 )) / MAX( 1, s.trackW );
+			const int now = clamp( s.min + steps, s.min, s.max );
+
+			if ( now != s.value )
+			{
+				HostSliderSet( s.id, now );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+
+			if ( type == MOUSE_Release )
+				g_HostSliderDragging = "";
+
+			return true;
+		}
+
+		return false;
+	}
+
 	bool HostMouseEvent( int type, int x, int y )
 	{
 		g_HostFieldHot = -1;
@@ -3541,6 +4316,9 @@ public:
 		// [rc4l] FIRST, and before the click-away rule below. A bar lives over the same column the
 		// details and the status draw in, and a drag along it must not read as "clicked on nothing"
 		// and drop the keyboard focus every frame it moves.
+		if ( HostListBarMouseEvent( type, x, y ))
+			return true;
+
 		if ( HostRegionBarsMouseEvent( type, x, y ))
 			return true;
 
@@ -3608,26 +4386,99 @@ public:
 		// The catalogue, before the fields: it is above them on screen and it decides what the rest
 		// of the panel is about.
 		g_HostEntryHot = -2;
-		for ( int row = SB_HOST_CATALOGUE_FIRST; row < HostCatalogueRowCount( ); ++row )
 		{
-			const int rowY = HostCatalogueRowY( row );
-			if ( HostRowVisible( rowY, SB_HOST_ENTRY_H ) &&
-				( y >= serverbrowser_ToScreenY( rowY )) &&
-				( y < serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H )) &&
-				( x >= serverbrowser_ToScreenX( SB_HOST_LIST_LEFT )) &&
-				( x < serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT )))
+			const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+			const std::vector<zx::HostListRow> rows = HostListRows( );
+
+			for ( int row = SB_HOST_CATALOGUE_FIRST; row < static_cast<int>( rows.size( )); ++row )
 			{
+				const int rowY = HostCatalogueRowY( row );
+				if ( !HostRowVisible( rowY, SB_HOST_ENTRY_H ) ||
+					( y < serverbrowser_ToScreenY( rowY )) ||
+					( y >= serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H )) ||
+					( x < serverbrowser_ToScreenX( SB_HOST_LIST_LEFT )) ||
+					( x >= serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT )))
+				{
+					continue;
+				}
+
 				g_HostEntryHot = row;
 
 				if ( type == MOUSE_Click )
 				{
+					const zx::HostListRow &r = rows[row];
+
 					SetFocus( zx::BrowserFocus::Host );
 					g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
-					g_HostEntrySel = row;
+					g_HostEntrySel = r.entry;
+					HostSelectionChanged( );
+					g_HostOnEntryRow = ( r.variant < 0 );
+
+					if ( r.variant >= 0 )
+					{
+						// A way of playing chooses itself and leaves the list open, because comparing
+						// two of them means going back and forth between them.
+						g_HostVariantId = entries[r.entry].addon.variants[r.variant].id.c_str( );
+					}
+					else if ( !entries[r.entry].addon.variants.empty( ))
+					{
+						// The experience's own row opens and shuts it. Clicking the row anywhere does
+						// it, not just the caret: a caret is a small target and the row already means
+						// "this one", which is the same thing opening it says.
+						HostToggleEntryOpen( r.entry );
+
+						// [rc4l] Opening it puts the cursor on the way of playing that would ACTUALLY
+						// be hosted, rather than leaving it on the heading.
+						//
+						// Selecting the heading and selecting its default start the same server, so
+						// leaving the highlight up there said nothing the row below did not, while
+						// looking like a fourth thing you could pick. Derived rather than set to row
+						// zero, so an entry whose default is not its first still highlights the one
+						// the button would start.
+						g_HostOnEntryRow = !HostEntryIsOpen( r.entry );
+					}
+
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
 				return true;
 			}
+		}
+
+		// [rc4l] The sliders, whichever settings they belong to. One handler over the rects recorded
+		// as they were drawn, so adding a second slider needs nothing here.
+		if ( HostSliderMouseEvent( type, x, y ))
+			return true;
+
+		// [rc4l] The gameplay rows, inside the scrolled detail region. Tested against what the last
+		// frame actually DREW rather than against a computed row height: these scroll, so a rule
+		// saying "the nth row is at this y" is wrong the moment the region moves under it.
+		g_HostGameHot = -1;
+
+
+		for ( unsigned i = 0; i < g_HostGameRows.Size( ); ++i )
+		{
+			const HostGameplayRow &row = g_HostGameRows[i];
+
+			if (( y < serverbrowser_ToScreenY( row.y - 1 )) ||
+				( y >= serverbrowser_ToScreenY( row.y + row.h - 1 )) ||
+				( x < serverbrowser_ToScreenX( row.x )) ||
+				( x >= serverbrowser_ToScreenX( row.x + row.w )))
+			{
+				continue;
+			}
+
+			g_HostGameHot = static_cast<int>( i );
+
+
+			if ( type == MOUSE_Click )
+			{
+				// Sets that AXIS only. Every other axis keeps whatever it had, which is the whole
+				// reason they are separate.
+				HostSetRemixWanted( row.group, row.id );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+			}
+
+			return true;
 		}
 
 		// The toggle, in the other half of the foot row. Only when it is DRAWN: while a server is
@@ -3811,6 +4662,12 @@ public:
 		g_HostScroll = zx::ClampScroll( g_HostScroll, HostMaxScroll( ));
 	}
 
+	// The same, for the list beside them. It shortens and lengthens as experiences are opened out.
+	void ClampHostListScroll( )
+	{
+		g_HostListScroll = zx::ClampScroll( g_HostListScroll, HostListMaxScroll( ));
+	}
+
 	// [rc4l] Bring a row into view, for the keyboard.
 	//
 	// Arrowing onto a field that is scrolled out of sight would move a focus the player cannot see --
@@ -3840,7 +4697,11 @@ public:
 
 		if ( HostOnList( ))
 		{
-			RevealHostCatalogueRow( g_HostEntrySel );
+			// The ROW, which is not the entry index any more: the open experience's ways of playing
+			// sit between the entries, so scrolling to the entry number would reveal the wrong line.
+			const int row = HostSelectedRow( HostListRows( ));
+			if ( row >= 0 )
+				RevealHostCatalogueRow( row );
 			return;
 		}
 
@@ -3873,6 +4734,11 @@ public:
 	//
 	// Stops short of the buttons at its foot. Running it down to them would box each into its own
 	// cell, and they are a pair sitting under the panel rather than two things in two cells.
+	// [rc4l] UNUSED since the right column got its own backdrop, which separates the two columns by
+	// being a different surface -- a rule down the middle as well said the same thing twice, and its x
+	// landed exactly on the backdrop's left edge, so the line appeared to be touching the panel.
+	//
+	// Kept rather than deleted because the divider is the fallback if the backdrop is ever dropped.
 	void DrawHostColumnDivider( )
 	{
 		const int vx = ( SB_HOST_LIST_RIGHT + SB_HOST_RCOL_LEFT ) / 2;
@@ -3896,11 +4762,63 @@ public:
 		}
 	}
 
-	// [rc4l] Whether the selected entry is the one already being served, so SWITCH does not offer to
-	// restart a server onto what it is already running.
+	// [rc4l] Everything the panel would START, as one string to compare against.
+	//
+	// Written out rather than compared field by field so that adding a setting cannot forget to
+	// teach the button about it: a control missing from here is a control you can change while the
+	// button goes on saying STOP SERVER.
+	//
+	// RESOLVED values rather than the raw preferences. A stored -1 means the entry's own default,
+	// and two entries with different defaults would otherwise read as the same request.
+	FString HostSelectionKey( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		FString key;
+		key.Format( "e%d", g_HostEntrySel );
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return key;
+
+		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+		const zx::VariantPick chosen = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+		if (( chosen.index >= 0 ) && ( chosen.index < static_cast<int>( addon.variants.size( ))))
+			key.AppendFormat( "|v%s", addon.variants[chosen.index].id.c_str( ));
+
+		const std::vector<zx::RemixPick> picks = HostRemixPicks( addon );
+		for ( size_t i = 0; i < picks.size( ); ++i )
+			key.AppendFormat( "|m%s", picks[i].id.c_str( ));
+
+		const zx::LivesControl lives = HostLivesControl( addon );
+		if ( lives.applies )
+			key.AppendFormat( "|l%d", lives.value );
+
+		if ( HostFastWeaponsOffered( addon ))
+			key.AppendFormat( "|w%d", zx::FastWeaponsValue( g_HostFastWeapons ));
+
+		const zx::TeamsControl teams = HostTeamsControl( addon );
+		if ( teams.applies )
+			key.AppendFormat( "|t%d", teams.count );
+
+		if ( HostSelectedRotation( ).size( ) > 1 )
+			key.AppendFormat( "|s%d", HostStartMapIndex( ));
+
+		return key;
+	}
+
+	// [rc4l] Whether what is on screen is what is already being served, so SWITCH does not offer to
+	// restart a server onto exactly what it is running.
+	//
+	// The whole configuration, not just the row. It compared the entry alone, so picking a different
+	// way of playing, a different mix, or any of the gameplay settings left the button saying STOP
+	// SERVER: there was no way to ask for the thing you had just chosen.
 	bool HostSelectionIsWhatIsRunning( )
 	{
-		return g_HostEntrySel == g_HostingEntry;
+		if ( g_HostEntrySel != g_HostingEntry )
+			return false;
+
+		return HostSelectionKey( ).Compare( g_HostingKey ) == 0;
 	}
 
 	// [rc4l] Which of the four the action button is, worked out ONCE.
@@ -4091,14 +5009,8 @@ public:
 		screen->Dim( PalEntry( 40, 42, 58 ), 0.55f, x, trackTop, w, trackH );
 		screen->Dim( PalEntry( 150, 155, 180 ), 0.9f, x, trackTop + thumbTop, w, thumbH );
 	}
-
-	// [rc4l] A scrollbar for an arbitrary region of the right column, given what it holds and where it
-	// has been scrolled to.
-	//
-	// The settings bar above is hard-wired to the settings; the running panel has two scrollable
-	// regions and neither of them is that, so the arithmetic is taken as parameters instead of read
-	// from globals. Same compute helpers, so all three thumbs behave identically.
-	void DrawHostRegionScrollBar( int viewTop, int viewBottom, int contentH, int scroll )
+	void DrawHostRegionScrollBar( int viewTop, int viewBottom, int contentH, int scroll,
+		int barX = SB_HOST_BAR_X )
 	{
 		const int viewH = viewBottom - viewTop;
 		if (( viewH <= 0 ) || ( contentH <= viewH ))
@@ -4109,8 +5021,8 @@ public:
 		if ( trackH <= 0 )
 			return;
 
-		const int x = serverbrowser_ToScreenX( SB_HOST_BAR_X );
-		const int w = MAX( 1, serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W ) - x );
+		const int x = serverbrowser_ToScreenX( barX );
+		const int w = MAX( 1, serverbrowser_ToScreenX( barX + SB_HOST_BAR_W ) - x );
 
 		const int thumbH = zx::ComputeThumbHeight( trackH, viewH, contentH, 8 );
 		const int thumbTop = zx::ComputeThumbTop( trackH, thumbH, scroll, contentH - viewH );
@@ -4132,7 +5044,7 @@ public:
 	// The compute unit talks about rows and this scrolls by pixels, which costs nothing -- the
 	// mapping is linear and unit-agnostic, so "first row" is "pixels down" with no conversion.
 	bool HostRegionBarDrag( int viewTop, int viewBottom, int contentH, int maxScroll,
-		int x, int y, int &scroll )
+		int x, int y, int &scroll, int barX = SB_HOST_BAR_X )
 	{
 		const int viewH = viewBottom - viewTop;
 		if (( viewH <= 0 ) || ( contentH <= viewH ) || ( maxScroll <= 0 ))
@@ -4145,8 +5057,8 @@ public:
 
 		// Wider than the bar is drawn, by the same few pixels the WAD list's bar allows. A two-pixel
 		// target is one nobody hits on the first try.
-		if (( x < serverbrowser_ToScreenX( SB_HOST_BAR_X - 3 )) ||
-			( x >= serverbrowser_ToScreenX( SB_HOST_BAR_X + SB_HOST_BAR_W + 3 )))
+		if (( x < serverbrowser_ToScreenX( barX - 3 )) ||
+			( x >= serverbrowser_ToScreenX( barX + SB_HOST_BAR_W + 3 )))
 		{
 			return false;
 		}
@@ -4159,12 +5071,95 @@ public:
 		return true;
 	}
 
+	// [rc4l] The experience list's bar, which unlike the two below is there whether a server is
+	// running or not -- the list is drawn in both faces of the panel.
+	//
+	// Answered before the rows, because the bar sits in the gap beside them and a click that scrolled
+	// the list and also picked whatever row happened to be under it would be picking at random.
+	bool HostListBarMouseEvent( int type, int x, int y )
+	{
+		if ( type == MOUSE_Click )
+		{
+			int scroll = g_HostListScroll;
+			if ( HostRegionBarDrag( SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM, HostCatalogueH( ),
+				HostListMaxScroll( ), x, y, scroll, SB_HOST_LBAR_X ))
+			{
+				g_HostListScroll = scroll;
+				g_DraggingHostListBar = true;
+				return true;
+			}
+
+			return false;
+		}
+
+		if ( g_DraggingHostListBar == false )
+			return false;
+
+		// Same rule as the bars below: the grab is kept without re-testing the pointer, because
+		// sliding sideways off a two-pixel bar mid-drag is how everyone uses one.
+		const int trackTop = serverbrowser_ToScreenY( SB_HOST_VIEW_TOP );
+		const int trackH = serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM ) - trackTop;
+		const int maxScroll = HostListMaxScroll( );
+
+		if (( trackH > 0 ) && ( maxScroll > 0 ))
+		{
+			const int thumbH = zx::ComputeThumbHeight( trackH, SB_HOST_VIEW_H, HostCatalogueH( ), 8 );
+			g_HostListScroll = zx::ComputeFirstFromPointer( y - trackTop, trackH, thumbH, maxScroll );
+		}
+
+		if ( type == MOUSE_Release )
+			g_DraggingHostListBar = false;
+
+		return true;
+	}
+
 	// [rc4l] The two running-panel bars, answered in the order they are drawn. Returns true when one
 	// of them took the event, so the panel underneath does not also act on it.
 	bool HostRegionBarsMouseEvent( int type, int x, int y )
 	{
-		if ( zx::HostIsActive( ) == false )
-			return false;			// only the running panel splits the column in two
+		// [rc4l] The detail column has a bar whether or not a server is running. This used to bail
+		// outright unless one was, so the bar drawn beside the experience panel could be looked at
+		// and not grabbed.
+		if ( !zx::HostIsActive( ) && !g_HostShowSettings )
+		{
+			if ( type == MOUSE_Click )
+			{
+				int scroll = g_HostDetailScroll;
+				if ( HostRegionBarDrag( SB_HOST_RTOP_TOP, HostDetailViewBottom( ), HostDetailH( ),
+					HostDetailMaxScroll( ), x, y, scroll ))
+				{
+					g_HostDetailScroll = scroll;
+					g_DraggingHostDetailBar = true;
+					return true;
+				}
+
+				return false;
+			}
+
+			// A held drag keeps being answered by the bar that started it, the same as the two below.
+			if ( g_DraggingHostDetailBar )
+			{
+				const int trackTop = serverbrowser_ToScreenY( SB_HOST_RTOP_TOP );
+				const int trackH = serverbrowser_ToScreenY( HostDetailViewBottom( )) - trackTop;
+				const int maxScroll = HostDetailMaxScroll( );
+
+				if (( trackH > 0 ) && ( maxScroll > 0 ))
+				{
+					const int viewH = HostDetailViewBottom( ) - SB_HOST_RTOP_TOP;
+					const int thumbH = zx::ComputeThumbHeight( trackH, viewH, HostDetailH( ), 8 );
+
+					g_HostDetailScroll =
+						zx::ComputeFirstFromPointer( y - trackTop, trackH, thumbH, maxScroll );
+				}
+
+				if ( type == MOUSE_Release )
+					g_DraggingHostDetailBar = false;
+
+				return true;
+			}
+
+			return false;
+		}
 
 		if ( type == MOUSE_Click )
 		{
@@ -4254,7 +5249,7 @@ public:
 
 	int HostMaxScroll( )
 	{
-		const int over = HostContentH( ) - SB_HOST_RBOT_H;
+		const int over = HostContentH( ) - ( HostRightBottom( ) - SB_HOST_RBOT_TOP );
 		return ( over > 0 ) ? over : 0;
 	}
 
@@ -4271,6 +5266,17 @@ public:
 	{
 		const int over = g_HostStatusH - SB_HOST_RUN_BOT_H;
 		return ( over > 0 ) ? over : 0;
+	}
+
+	// [rc4l] A different experience is a different panel, so it starts at the top.
+	//
+	// The offset used to survive the selection changing, which is wrong twice over: you are reading
+	// something you did not scroll, and on an entry with a shorter panel the whole thing sits above
+	// the viewport with nothing drawn at all. Nothing drawn means nothing RECORDED either, so the
+	// gameplay pills were not merely invisible, they were unclickable -- which is how this surfaced.
+	void HostSelectionChanged( )
+	{
+		g_HostDetailScroll = 0;
 	}
 
 	void ClampHostDetailScroll( )
@@ -4296,10 +5302,49 @@ public:
 	// scrolling cannot separate the two.
 	// [rc4l] The catalogue list, and everything below it. One anchor, so a row drawn somewhere other
 	// than where it is clickable stays impossible -- the same rule the fields already follow.
+	// [rc4l] The list as ROWS, which is no longer one per entry: the open entry's ways of playing hang
+	// under it. Rebuilt each time it is asked for rather than cached, because the catalogue can be
+	// re-read and a stale row list is one that describes one experience while the button starts
+	// another.
+	std::vector<zx::HostListRow> HostListRows( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		std::vector<int> counts;
+		counts.reserve( entries.size( ));
+		for ( size_t i = 0; i < entries.size( ); ++i )
+			counts.push_back( static_cast<int>( entries[i].addon.variants.size( )));
+
+		return zx::BuildHostListRows( counts, g_HostOpenEntries );
+	}
+
 	int HostCatalogueRowCount( )
 	{
-		// Whatever is on disk, and nothing else.
-		return static_cast<int>( zx::CatalogueLoad( ).size( ));
+		return static_cast<int>( HostListRows( ).size( ));
+	}
+
+	// Where the cursor is, derived from what is CHOSEN rather than stored beside it. A stored row
+	// index would have to be corrected every time the list changed shape -- opening an entry, the
+	// catalogue being re-read -- and the correction that gets missed is the one that starts the wrong
+	// experience.
+	//
+	// The one thing the choice cannot say is whether the cursor is on an OPEN experience's own row or
+	// on the way of playing it defaults to, because both are the same choice. That bit is kept beside
+	// it; see g_HostOnEntryRow.
+	int HostSelectedRow( const std::vector<zx::HostListRow> &rows )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		int variant = -1;
+		if ( !g_HostOnEntryRow &&
+			( g_HostEntrySel >= 0 ) && ( g_HostEntrySel < static_cast<int>( entries.size( ))))
+		{
+			const zx::VariantPick pick = zx::PickVariant( entries[g_HostEntrySel].addon,
+				g_HostVariantId.GetChars( ));
+			variant = pick.index;
+		}
+
+		return zx::FindHostListRow( rows, g_HostEntrySel, variant );
 	}
 
 	int HostCatalogueY( )
@@ -4358,12 +5403,104 @@ public:
 		return zx::RowFullyInView( vy, vh, SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM );
 	}
 
+	// [rc4l] Whether the selected entry has any gameplay setting to show, which is what decides
+	// whether the panel exists and so whether the file list is capped.
+	//
+	// Most entries have none: a pack bringing its own weapons and classes has nowhere to put someone
+	// else's, and a heading over an empty group on every one of those is the wasted space this is
+	// supposed to save. Those entries get the whole column for their files instead.
+	// [rc4l] The label column the gameplay panel lines every control up in, measured ONCE.
+	//
+	// Two callers need the identical number -- the drawing and the height that gives the panel its
+	// scrollbar -- and they had a copy each. The copies had already drifted: only LIVES was measured,
+	// so WEAPONS, which is wider, drew its label straight through its own minus button.
+	int HostGameplayLabelW( const std::vector<zx::RemixGroup> &groups )
+	{
+		// WEAPON SPEED is deliberately absent: it draws its label above its track, so sizing this
+		// column to it would push the other controls across the panel to line up with nothing.
+		static const char *const kBuiltIn[3] = { "LIVES", "TEAMS", "FIRST MAP" };
+
+		int labelW = 0;
+		for ( int i = 0; i < 3; ++i )
+			labelW = MAX( labelW, SmallFont->StringWidth( kBuiltIn[i] ));
+
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if (( groups[g].choices.size( ) <= 1 ) || groups[g].id.empty( ))
+				continue;
+
+			FString label = groups[g].id.c_str( );
+			label.ToUpper( );
+			labelW = MAX( labelW, SmallFont->StringWidth( label ));
+		}
+
+		return labelW + SmallFont->StringWidth( "  " );
+	}
+
+	// [rc4l] Where an axis of PILLS starts, which is deliberately not the shared label column.
+	//
+	// The sliders line up under each other because they are one control repeated and a ragged left
+	// edge on three of those reads as a mistake. Pills are not that: an axis of them wraps over as
+	// many rows as it needs, and every pixel the shared column reserves is taken off ALL of them.
+	// Mix already runs to four rows and the catalogue keeps gaining mods; indenting it to clear the
+	// word FIRST MAP costs a row or two for an alignment nothing lines up with anyway.
+	//
+	// So pills sit against their own label and the sliders keep the column. Rule broken once, where
+	// it pays, and the reason written down so the next axis does not copy it blindly.
+	int HostPillLeft( int x, const std::string &groupId )
+	{
+		if ( groupId.empty( ))
+			return x;
+
+		FString label = groupId.c_str( );
+		label.ToUpper( );
+
+		return x + SmallFont->StringWidth( label ) + SmallFont->StringWidth( "  " );
+	}
+
+	bool HostHasGameplayRow( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return false;
+
+		// [rc4l] Any AXIS with something to decide, not any remix at all. An entry offering one mod
+		// and nothing else has a row that cannot change, which is not a setting and must not cost the
+		// file list three lines to display.
+		if ( HostLivesControl( entries[g_HostEntrySel].addon ).adjustable ||
+			HostFastWeaponsOffered( entries[g_HostEntrySel].addon ) ||
+			HostTeamsControl( entries[g_HostEntrySel].addon ).adjustable ||
+			( HostSelectedRotation( ).size( ) > 1 ))
+		{
+			return true;
+		}
+
+		const std::vector<zx::RemixGroup> groups =
+			zx::GroupRemixes( HostOfferedRemixes( entries[g_HostEntrySel].addon ));
+
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if ( groups[g].choices.size( ) > 1 )
+				return true;
+		}
+
+		return false;
+	}
+
+	// Where the RIGHT column's content has to stop. The gameplay settings scroll WITH the details now
+	// rather than sitting in a fixed row beneath them, so the region runs the full height.
+	int HostRightBottom( )
+	{
+		return SB_HOST_VIEW_BOTTOM;
+	}
+
 	// [rc4l] Where the detail region stops, which is not a constant: while a server is running it
 	// gives up its lower half to the status, so the details scroll inside what is left rather than
 	// running underneath it.
 	int HostDetailViewBottom( )
 	{
-		return zx::HostIsActive( ) ? SB_HOST_RUN_TOP_BOT : SB_HOST_RTOP_BOTTOM;
+		return zx::HostIsActive( ) ? SB_HOST_RUN_TOP_BOT : HostRightBottom( );
 	}
 
 	int HostDetailViewH( )
@@ -4470,6 +5607,20 @@ public:
 		const zx::PanelColor botCol = { 10, 11, 17, 245 };
 		DrawRoundedPanel( SB_HOST_LEFT, SB_HOST_TOP, w, h, topCol, botCol, 8 );
 
+		// [rc4l] The right column gets the server list's detail backdrop, for the reason it reads as
+		// the same kind of thing: a column describing whatever the list beside it has selected. Without
+		// it the two tabs looked like different screens rather than two views of one browser.
+		//
+		// Drawn here, before any of the column's own content and before the clip that masks it, so
+		// everything from the title to the foot buttons sits ON it rather than beside it.
+		//
+		// Inset by the same amount on every side. It was measured off the PANEL's right edge before,
+		// which put thirteen units of black to the right of the text and six to the left of it.
+		DrawDetailBackdrop( SB_HOST_RCOL_LEFT - SB_HOST_RCOL_INSET,
+			SB_HOST_VIEW_TOP - SB_HOST_RCOL_INSET,
+			SB_HOST_RCOL_RIGHT + SB_HOST_RCOL_INSET,
+			SB_HOST_BTN_Y + SB_HOST_BTN_H + SB_HOST_RCOL_INSET );
+
 		const int x = SB_HOST_LEFT + SB_HOST_PAD;
 
 		// [rc4l] Running is a state of the RIGHT column, not a different screen.
@@ -4514,7 +5665,6 @@ public:
 			DrawHostRegionScrollBar( SB_HOST_RUN_BOT_TOP, SB_HOST_RTOP_BOTTOM,
 				g_HostStatusH, g_HostStatusScroll );
 
-			DrawHostColumnDivider( );
 			DrawHostFootButtons( );
 			return;
 		}
@@ -4553,6 +5703,14 @@ public:
 
 		DrawHostCatalogue( SB_HOST_LIST_LEFT );
 
+		PopClip( );
+
+		// [rc4l] The right column gets its OWN clip, ending above the remix row when there is one.
+		// It used to share the list's, which was fine while both columns ran to the same line; the
+		// remix row belongs to this column alone, and the list must not lose height to it.
+		PushClip( serverbrowser_ToScreenY( SB_HOST_VIEW_TOP ),
+			serverbrowser_ToScreenY( HostRightBottom( )));
+
 		// One face at a time. Both used to be on screen at once, each with its own bar, and the
 		// settings bled over the boundary because two regions in one clip cannot mask each other.
 		if ( g_HostShowSettings )
@@ -4572,8 +5730,24 @@ public:
 		}
 
 		PopClip( );
+
+		// [rc4l] The experience list's bar. It was the one scrolling region of the three with no bar
+		// at all, so once the catalogue grew past a screenful there was nothing saying the list went
+		// on -- the wheel worked and gave no reason to try it.
+		DrawHostRegionScrollBar( SB_HOST_VIEW_TOP, SB_HOST_VIEW_BOTTOM, HostCatalogueH( ),
+			g_HostListScroll, SB_HOST_LBAR_X );
+
+		// [rc4l] The detail column's own bar. It had one only while a server was running, so for the
+		// panel a player actually reads before pressing anything there was nothing saying the column
+		// went on -- the same fault the list above had, and the reason a fourth gameplay mod could be
+		// drawn past the bottom with nothing hinting it was there.
+		if ( !g_HostShowSettings && !zx::HostIsActive( ))
+		{
+			DrawHostRegionScrollBar( SB_HOST_RTOP_TOP, HostDetailViewBottom( ), HostDetailH( ),
+				g_HostDetailScroll );
+		}
+
 		DrawHostScrollBar( );
-		DrawHostColumnDivider( );
 
 		// [rc4l] OUTSIDE the clip. Both buttons sit at the panel's foot, which is below the scrolling
 		// viewport, so drawing them inside it cost them their backgrounds and left the labels
@@ -4739,23 +5913,31 @@ public:
 	//
 	// The button is where that gets settled. HostEntryVerifiedPaths asks by md5 once, on the press,
 	// and a mismatch goes to the downloader like any other missing file.
-	const std::vector<unsigned long long> &HostEntryFileSizes( int entry, const zx::AddonEntry &addon )
+	//
+	// Keyed on the way of playing as well as the entry, because with per-variant wads those are two
+	// different file lists under one selection: switching from Ghouls to Humans without re-measuring
+	// would leave the panel showing the previous variant's sizes beside this one's names.
+	const std::vector<unsigned long long> &HostEntryFileSizes( int entry, const char *variantId,
+		const std::vector<zx::AddonFileRef> &files )
 	{
 		static int cached = -2;
+		static FString cachedVariant;
 		static int cachedGeneration = -1;
 		static std::vector<unsigned long long> sizes;
 
-		if (( entry != cached ) || ( cachedGeneration != g_HostHaveGeneration )
-			|| ( sizes.size( ) != addon.files.size( )))
+		if (( entry != cached ) || ( cachedVariant.Compare( variantId ) != 0 )
+			|| ( cachedGeneration != g_HostHaveGeneration )
+			|| ( sizes.size( ) != files.size( )))
 		{
 			cached = entry;
+			cachedVariant = variantId;
 			cachedGeneration = g_HostHaveGeneration;
 			sizes.clear( );
 
-			for ( size_t i = 0; i < addon.files.size( ); ++i )
+			for ( size_t i = 0; i < files.size( ); ++i )
 			{
 				// The search is stats only; the size is one more on the path it just resolved.
-				const FString at = zx::FindFileInEngineSearchPaths( addon.files[i].name.c_str( ));
+				const FString at = zx::FindFileInEngineSearchPaths( files[i].name.c_str( ));
 				sizes.push_back( at.IsEmpty( ) ? 0 : zx::FileSizeOnDisk( at.GetChars( )));
 			}
 		}
@@ -4773,14 +5955,14 @@ public:
 	//
 	// Uncached on purpose. It runs once per press, and caching a verdict about files on disk is how
 	// you end up hosting on a copy the player replaced since.
-	std::vector<FString> HostEntryVerifiedPaths( const zx::AddonEntry &addon )
+	std::vector<FString> HostEntryVerifiedPaths( const std::vector<zx::AddonFileRef> &files )
 	{
 		std::vector<FString> paths;
-		paths.reserve( addon.files.size( ));
+		paths.reserve( files.size( ));
 
-		for ( size_t i = 0; i < addon.files.size( ); ++i )
+		for ( size_t i = 0; i < files.size( ); ++i )
 		{
-			const zx::AddonFileRef &file = addon.files[i];
+			const zx::AddonFileRef &file = files[i];
 
 			// An entry that ships no md5 cannot be checked, so fall back to the name rather than
 			// call a file we have no opinion about missing and download it forever.
@@ -4794,13 +5976,14 @@ public:
 		return paths;
 	}
 
-	// The verified path for `name`, or "" if that file was not one of the entry's or did not match.
-	FString VerifiedPathFor( const zx::AddonEntry &addon, const std::vector<FString> &paths,
-		const char *name )
+	// The verified path for `name`, or "" if that file was not one of the chosen variant's or did not
+	// match.
+	FString VerifiedPathFor( const std::vector<zx::AddonFileRef> &files,
+		const std::vector<FString> &paths, const char *name )
 	{
-		for ( size_t i = 0; i < addon.files.size( ); ++i )
+		for ( size_t i = 0; i < files.size( ); ++i )
 		{
-			if (( i < paths.size( )) && ( stricmp( addon.files[i].name.c_str( ), name ) == 0 ))
+			if (( i < paths.size( )) && ( stricmp( files[i].name.c_str( ), name ) == 0 ))
 				return paths[i];
 		}
 
@@ -4816,13 +5999,77 @@ public:
 
 		const zx::AddonEntry &a = entries[g_HostEntrySel].addon;
 
-		return BigFont->GetHeight( ) + 4
+		// [rc4l] The file block is a FIXED height once anything is drawn under it, matching what
+		// DrawHostWadList reserves. Measuring the lines actually used would make the region's height
+		// change as a mod is picked, which is the shift the reservation exists to stop.
+		// [rc4l] One answer whether or not there is a panel, now that the list is last either way and
+		// capped either way. HostWadListLines measures what will be drawn, so this and the draw cannot
+		// come to disagree about how far the region scrolls.
+		const bool bSettings = HostHasGameplayRow( );
+		const int fileLines = HostWadListLines( a );
+
+		int h = BigFont->GetHeight( ) + 4
 			+ 6								// the rule under the title
 			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
 			+ 4 + 6							// the rule above the files
-			+ SB_HOST_LINE					// the IWAD, listed with them
-			+ static_cast<int>( a.files.size( )) * SB_HOST_LINE
+			+ fileLines * SB_HOST_LINE
+			+ SB_HOST_LINE					// the "N files" total
 			+ 10;
+
+		// [rc4l] And the gameplay panel, which the region used to know nothing about -- so it never
+		// grew a scrollbar and anything past the fold simply could not be reached. Hard Doom was
+		// drawn off the bottom of the panel with no way to scroll to it.
+		if ( bSettings )
+		{
+			h += 4 + 6 + SB_HOST_LINE + 2;	// the rule, and the GAMEPLAY heading
+
+			// One row now, not two: the label shares the control's line.
+			if ( HostSelectedRotation( ).size( ) > 1 )
+				h += SB_HOST_LINE + 3;
+
+			if ( HostLivesControl( a ).adjustable )
+				h += SB_HOST_LINE + 3;
+
+			// Two lines, not one: this is the row whose label sits above its track.
+			if ( HostFastWeaponsOffered( a ))
+				h += SB_HOST_LINE * 2 + 3;
+
+			if ( HostTeamsControl( a ).adjustable )
+				h += SB_HOST_LINE + 3;
+
+			const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( a ));
+
+			// The same label column DrawHostGameplay measures, because it decides how wide the pills
+			// have to wrap in and therefore how many rows they take.
+			const int labelW = HostGameplayLabelW( groups );
+
+			for ( size_t g = 0; g < groups.size( ); ++g )
+			{
+				if ( groups[g].choices.size( ) <= 1 )
+					continue;
+
+				// [rc4l] The SAME wrap DrawHostGameplay performs, from the same function. Two
+				// measurements of one layout is exactly how a region ends up able to scroll past its
+				// own end, so both ask LayoutWadList rather than each doing its own arithmetic.
+				const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
+				const int pillRoom = SB_HOST_RCOL_RIGHT -
+					HostPillLeft( SB_HOST_RCOL_LEFT, groups[g].id );
+
+				std::vector<int> pillWidths;
+				for ( size_t i = 0; i < groups[g].choices.size( ); ++i )
+				{
+					pillWidths.push_back(
+						SmallFont->StringWidth( groups[g].choices[i].name.c_str( )) + pillPad );
+				}
+
+				const zx::WadListLayout pills = zx::LayoutWadList( pillWidths, 4, 0, pillRoom, 0 );
+
+				h += static_cast<int>( pills.lines.size( )) *
+					( SB_HOST_GAME_ROW_H + SB_HOST_PILL_VGAP ) + 3;
+			}
+		}
+
+		return h;
 	}
 
 	// Which IWAD this entry will land on, in the same shape as the files below it, because it is one
@@ -4853,6 +6100,22 @@ public:
 		return row;
 	}
 
+	// [rc4l] The same answer for the running list, which has no room for a marker column. The name on
+	// its own when we have it; the wanted name in brackets when we do not, because inside a comma
+	// list a bare "-" reads as part of a filename rather than as a verdict about one.
+	FString HostDetailIwadName( const zx::AddonEntry &addon )
+	{
+		const FString row = HostDetailIwadRow( addon );
+		const char *const body = row.GetChars( ) + 2;		// past the marker and its space
+
+		if ( row[0] == '+' )
+			return FString( body );
+
+		FString missing;
+		missing.Format( "(%s)", body );
+		return missing;
+	}
+
 	// The title names what the whole column is about, so it is the one line that should not look like
 	// the rest: BigFont, centred over the column.
 	void DrawHostDetailTitle( const char *title, int y )
@@ -4861,8 +6124,14 @@ public:
 			return;
 
 		const int w = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
+
+		// Cut to the column, measured in the font it is actually drawn in. "Alpha and Delta Invasion"
+		// is wider than the panel and ran off both ends of it, because centring a line that does not
+		// fit puts half the overflow on each side.
+		const FString fitted = serverbrowser_FitName( title, w, BigFont );
+
 		screen->DrawText( BigFont, CR_WHITE,
-			SB_HOST_RCOL_LEFT + ( w - BigFont->StringWidth( title )) / 2, y, title,
+			SB_HOST_RCOL_LEFT + ( w - BigFont->StringWidth( fitted )) / 2, y, fitted,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
@@ -4871,6 +6140,11 @@ public:
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
 		const int x = SB_HOST_RCOL_LEFT;
 		int y = SB_HOST_RTOP_TOP - g_HostDetailScroll;
+
+		// Rebuilt every frame from what actually gets drawn, so a row that scrolled away or belongs
+		// to a selection that has changed cannot be left behind as a live click target.
+		g_HostGameRows.Clear( );
+		g_HostSliders.Clear( );
 
 		// [rc4l] Reached only when there is nothing to describe. This used to be the Custom row's
 		// panel; with that row gone, an out-of-range selection means the catalogue is empty.
@@ -4927,21 +6201,26 @@ public:
 			V_FreeBrokenLines( lines );
 		}
 
+
+		// [rc4l] What you play it WITH, ABOVE what it loads rather than below.
+		//
+		// The order used to be the other way and it could not be made to sit still: picking a mix adds
+		// a file, the list grows a line, and everything under it moves -- while the pointer is on the
+		// pill that was just clicked, so the next click lands on a different setting. Two attempts to
+		// reserve the room instead both paid for it with blank lines on every draw.
+		//
+		// Putting the controls first ends the argument. Nothing the list does can push them, so it
+		// needs no reservation and no blank lines, and the settings are at the top of the scroll
+		// region where they no longer have to be scrolled to at all. The list is what the growth is
+		// FOR, and it grows downwards into the space it was always going to occupy.
+		y = DrawHostGameplay( x, y, addon );
+
 		// The same faded rule the server detail panel puts between what a server IS and what it wants
 		// you to load, for exactly the same reason.
 		y += 4;
 		if ( HostDetailRowVisible( y, 2 ))
 			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
 		y += 6;
-
-		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
-		{
-			const FString iwadRow = HostDetailIwadRow( addon );
-			screen->DrawText( SmallFont, ( iwadRow[0] == '+' ) ? CR_GRAY : CR_DARKRED,
-				x, y, iwadRow,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-		}
-		y += SB_HOST_LINE;
 
 		// [rc4l] WHAT it loads, and how big. Not whether you have it.
 		//
@@ -4950,64 +6229,684 @@ public:
 		// was reporting an inventory the player has no use for and colouring half of it like a
 		// fault. Size is the fact that changes what someone decides -- the server list has shown it
 		// for the same reason, from SQF2_WAD_SIZES, and this is the same answer from the catalogue.
-		const std::vector<unsigned long long> &sizes = HostEntryFileSizes( g_HostEntrySel, addon );
+		const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( addon );
+		const std::vector<unsigned long long> &sizes = HostEntryFileSizes( g_HostEntrySel,
+			g_HostVariantId.GetChars( ), loads );
 
-		for ( size_t i = 0; i < addon.files.size( ); ++i )
+		// [rc4l] The IWAD leads the list rather than sitting on a line of its own above it. It IS one
+		// of the files the server loads, and giving it a private row said it was a different kind of
+		// thing -- which cost a whole line to say something the name already says.
+		TArray<FString> names;
+		names.Push( HostDetailIwadName( addon ));
+		for ( size_t i = 0; i < loads.size( ); ++i )
+			names.Push( FString( loads[i].name.c_str( )));
+
+		unsigned long long total = 0;
+		for ( size_t i = 0; i < sizes.size( ) && i < loads.size( ); ++i )
+			total += sizes[i];
+
+		// Nothing follows it now, so it runs to the cap and the hover carries the rest.
+		DrawHostWadList( x, y, names, total, true );
+	}
+
+	// [rc4l] How many lines the file list actually takes, for the region height to allow for.
+	//
+	// Measured, not reserved. There were two goes at reserving room instead -- a flat three lines,
+	// then the widest this entry's list could reach across its mixes -- both to stop the block
+	// changing height when picking a mix adds a file, since everything below then moves a line while
+	// the pointer is still over the pill that was just clicked.
+	//
+	// Both spent the room whether or not it was needed, which is the wrong trade in a column this
+	// short: the blank lines are there on every draw, and the shift they prevent happens only in the
+	// moment after a click. The panel scrolls less now, which is worth more than a settled pointer.
+	int HostWadListLines( const zx::AddonEntry &addon )
+	{
+		// [rc4l] The column the detail panel draws in, which is NOT SB_HOST_LEFT: that is the panel's
+		// own left edge and the detail sits in the right column. Measuring against the wrong one gives
+		// a line count the draw does not agree with, and a region that can scroll past its own end.
+		const int wrapW = SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT;
+
+		std::vector<int> widths;
+		widths.push_back( SmallFont->StringWidth( HostDetailIwadName( addon )));
+
+		const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( addon );
+		for ( size_t i = 0; i < loads.size( ); ++i )
+			widths.push_back( SmallFont->StringWidth( loads[i].name.c_str( )));
+
+		const zx::WadListLayout layout = zx::LayoutWadList( widths, SmallFont->StringWidth( ", " ),
+			SmallFont->StringWidth( ", ..." ), wrapW, SB_HOST_WADS_MAXLINES );
+
+		return MAX( 1, static_cast<int>( layout.lines.size( )));
+	}
+
+	// [rc4l] The files, as running text rather than a table. Returns the y below what it drew.
+	//
+	// `bCapped` is whether something is drawn underneath: the list stops at three lines to leave room
+	// for it, and runs as long as it likes when nothing is.
+	int DrawHostWadList( int x, int y, const TArray<FString> &names,
+		unsigned long long total, bool bCapped )
+	{
+		if ( names.Size( ) == 0 )
+			return y;
+
+		const int wrapW = SB_HOST_RCOL_RIGHT - x;
+		const int sepW = SmallFont->StringWidth( ", " );
+		const int dotsW = SmallFont->StringWidth( ", ..." );
+
+		std::vector<int> widths;
+		widths.reserve( names.Size( ));
+		for ( unsigned i = 0; i < names.Size( ); ++i )
+			widths.push_back( SmallFont->StringWidth( names[i] ));
+
+		// Capped only when something is drawn underneath. With the whole column to itself the list
+		// runs as long as it likes.
+		const zx::WadListLayout layout = zx::LayoutWadList( widths, sepW, dotsW, wrapW,
+			bCapped ? SB_HOST_WADS_MAXLINES : 0 );
+
+		const int listTop = y;
+
+		for ( size_t ln = 0; ln < layout.lines.size( ); ++ln )
 		{
+			const zx::WadListLine &line = layout.lines[ln];
+
 			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
 			{
-				// [rc4l] Right-aligned, so a column of sizes reads down the edge rather than ragged
-				// after names of every length. A file this machine does not have has no size to
-				// show, which is the whole indicator: a number means you have it, blank means the
-				// button will fetch it.
-				const unsigned long long bytes = ( i < sizes.size( )) ? sizes[i] : 0;
-
-				// Measured BEFORE the name is drawn, because it decides how much room the name has.
-				// A long filename used to run straight under the size and the two overlapped into an
-				// unreadable smear -- the detail panel next door already solved this and this list
-				// never picked it up.
-				FString size;
-				if ( bytes > 0 )
-					size = zx::FormatByteSize( bytes ).c_str( );
-
-				// [rc4l] Both collapse to zero when there is no size, so a file we do not have gets
-				// the FULL width for its name rather than reserving room for a number that is not
-				// coming. Missing sizes are the common case here, not the exception.
-				const int sizeW = size.IsNotEmpty( ) ? SmallFont->StringWidth( size ) : 0;
-				const int gap = size.IsNotEmpty( ) ? SmallFont->StringWidth( "  " ) : 0;
-
-				const int nameRoom = ( SB_HOST_RCOL_RIGHT - x ) - sizeW - gap;
-
-				FString name = addon.files[i].name.c_str( );
-				if ( SmallFont->StringWidth( name ) > nameRoom )
-					name = serverbrowser_FitName( name, nameRoom );
-
-				screen->DrawText( SmallFont, CR_GRAY, x, y, name,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
-
-				if ( size.IsNotEmpty( ))
+				FString text;
+				for ( size_t i = line.first; i < line.end; ++i )
 				{
-					screen->DrawText( SmallFont, CR_DARKGRAY,
-						SB_HOST_RCOL_RIGHT - sizeW, y, size,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+					if ( i > line.first )
+						text += ", ";
+					text += names[static_cast<unsigned>( i )];
 				}
+
+				// A comma after the last name on a line that is not the last: the break is a wrap,
+				// not the end of the list, and without it the line reads as finished.
+				const bool bLastLine = ( ln + 1 == layout.lines.size( ));
+				if ( !bLastLine )
+					text += ",";
+				else if ( layout.truncated )
+					text += ", ...";
+
+				// [rc4l] A single filename can be wider than the whole column -- Super Demon ships a
+				// forty-character one -- and the layout puts it on a line of its own rather than
+				// losing it. Cutting it is this end's job: without this it ran straight out past the
+				// panel edge and over whatever was beside it.
+				if ( SmallFont->StringWidth( text ) > wrapW )
+					text = serverbrowser_FitName( text, wrapW );
+
+				screen->DrawText( SmallFont, CR_GRAY, x, y, text,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			}
 			y += SB_HOST_LINE;
 		}
+
+		// [rc4l] One total instead of a size per name. Per-file sizes needed a right-hand column to
+		// line up in, and that column is what stopped the names running on. What actually decides
+		// anything here is how big the download is, and that is one number.
+		//
+		// Against the names it counts, with nothing reserved between them. See HostWadListLines for
+		// what used to sit in that gap and why it is gone.
+		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+		{
+			FString summary;
+			summary.Format( "%u file%s", names.Size( ), ( names.Size( ) == 1 ) ? "" : "s" );
+
+			// Only what this machine can actually measure. Files not downloaded yet have no size, so
+			// a total is a floor rather than the whole story -- saying nothing beats saying a number
+			// that quietly means something else.
+			if ( total > 0 )
+			{
+				summary += ", ";
+				summary += zx::FormatByteSize( total ).c_str( );
+			}
+
+			screen->DrawText( SmallFont, CR_DARKGRAY, x, y, summary,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+		y += SB_HOST_LINE;
+
+		// [rc4l] The whole list, every time, not only when the cap bit. A name can be cut for being
+		// wider than the column while nothing was dropped at all, and from the reader's side those
+		// are the same problem: text they can see is missing. Hung on the drawn block so it appears
+		// where they are already looking.
+		FString all;
+		for ( unsigned i = 0; i < names.Size( ); ++i )
+		{
+			if ( i > 0 )
+				all += ", ";
+			all += names[i];
+		}
+
+		serverbrowser_Tip( x, listTop, wrapW, y - listTop, all.GetChars( ));
+
+		return y;
+	}
+
+	// [rc4l] How many lives, as a track rather than a list of named options.
+	//
+	// It is a number with a range, and a slider is what that is. It also stops the catalogue needing
+	// a remix folder per value, which is what the three it replaced were: one line of cfg each,
+	// setting one integer, and doing nothing at all on three of the entries that offered them.
+	//
+	// [rc4l] One end-stop of the lives track. Rounded like a pill, since it is the same kind of small
+	// pressable thing, and dimmed when the value is already against that end.
+	void DrawHostSliderStep( int bx, int by, int bw, const char *glyph, bool bEnabled )
+	{
+		zx::PanelColor top, bot;
+		if ( bEnabled )
+		{
+			top.r = 62; top.g = 68; top.b = 90; top.a = 225;
+			bot.r = 44; bot.g = 48; bot.b = 66; bot.a = 225;
+		}
+		else
+		{
+			top.r = 34; top.g = 36; top.b = 46; top.a = 160;
+			bot.r = 28; bot.g = 30; bot.b = 40; bot.a = 160;
+		}
+
+		DrawRoundedPanel( bx, by - 1, bw, SB_HOST_GAME_ROW_H, top, bot, SB_HOST_PILL_RADIUS );
+
+		screen->DrawText( SmallFont, bEnabled ? CR_WHITE : CR_DARKGRAY,
+			bx + ( bw - SmallFont->StringWidth( glyph )) / 2, by, glyph,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+	}
+
+	// [rc4l] NOT drawn at all when it does not apply.
+	//
+	// It was greyed in place at first, on the reasoning that a control which vanishes teaches nothing
+	// and that a fixed height cannot shift. Both true, and both beaten by the fact that two of the
+	// column's few lines were going to "this way of playing has no lives" on every deathmatch entry
+	// in the catalogue. Saying nothing is worth more than saying that.
+	//
+	// It costs no layout shift either, because whether lives apply is decided by the variant's
+	// gamemode. Picking a remix cannot change it, so nothing moves while a setting is being used --
+	// only when the way of playing changes, which redraws the panel anyway.
+
+	// [rc4l] A slider row: a label, a step button at each end, a track between them, and the value.
+	//
+	// Generic on purpose. Lives is the only setting shaped like this today and will not be the last,
+	// so the geometry, the rounding, the disabled ends and the recorded hit rects are written once
+	// here and keyed by `id`. A second slider is a call, not a copy.
+	//
+	// `valueText` rather than the number, because what a value MEANS is the caller's business: zero
+	// lives is "Unlimited", and zero of something else will be something else again.
+	int DrawHostSlider( const char *id, const char *label, int x, int y, int labelW,
+		int minV, int maxV, int value, const char *valueText, const char *tip,
+		bool bLabelAbove = false )
+	{
+		// [rc4l] The label shares the control's row rather than taking one above it. Three axes on a
+		// co-op entry is three lines saved, in a column that has none to spare.
+		//
+		// One exception, and it earns it: WEAPON SPEED is wider than the shared column can carry
+		// without pushing every other control across the panel, and the abbreviation it fitted in --
+		// "WEAPONS" -- did not say what the setting does. A header line for that one costs a line and
+		// leaves the column sized to the labels that do fit.
+		if ( bLabelAbove )
+		{
+			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+			{
+				screen->DrawText( SmallFont, CR_DARKGRAY, x, y, label,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+			}
+
+			y += SB_HOST_LINE;
+			labelW = 0;
+		}
+
+		const bool bDraw = HostDetailRowVisible( y, SB_HOST_LINE );
+
+		if ( bDraw && !bLabelAbove )
+		{
+			screen->DrawText( SmallFont, CR_DARKGRAY, x, y, label,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+
+		const int rowX = x + labelW;
+
+		// [rc4l] The VALUE is measured first and the track takes what is left, so a track never runs
+		// under its own readout. Measured against the WIDEST it could say rather than what it says
+		// now, or the track would resize as the value changed and the knob would move twice.
+		const int widest = MAX( SmallFont->StringWidth( "Unlimited" ),
+			SmallFont->StringWidth( valueText ));
+		const int valueX = SB_HOST_RCOL_RIGHT - widest;
+
+		const int stepW = SmallFont->StringWidth( "-" ) + 8;
+		const int minusX = rowX;
+		const int plusX = ( valueX - 6 ) - stepW;
+		const int trackX = minusX + stepW + 4;
+		const int trackW = ( plusX - 4 ) - trackX;
+
+		if ( bDraw && ( trackW > 8 ))
+		{
+			HostSliderRect rec;
+			rec.id = id;
+			rec.trackX = trackX; rec.trackY = y; rec.trackW = trackW;
+			rec.minusX = minusX; rec.plusX = plusX; rec.stepW = stepW;
+			rec.min = minV; rec.max = maxV; rec.value = value;
+			g_HostSliders.Push( rec );
+
+			// Drawn dim at the end they cannot move from, so a button that would do nothing says so
+			// before it is pressed rather than by not responding.
+			DrawHostSliderStep( minusX, y, stepW, "-", value > minV );
+			DrawHostSliderStep( plusX, y, stepW, "+", value < maxV );
+
+			const int mid = y + SmallFont->GetHeight( ) / 2;
+
+			// The track, then the part of it that is filled, then the knob. Three dims rather than a
+			// texture, the same way every other bar in this browser is drawn.
+			screen->Dim( PalEntry( 90, 100, 130 ), 0.55f,
+				serverbrowser_ToScreenX( trackX ), serverbrowser_ToScreenY( mid ),
+				serverbrowser_ToScreenX( trackX + trackW ) - serverbrowser_ToScreenX( trackX ),
+				MAX( 1, serverbrowser_ToScreenY( mid + 1 ) - serverbrowser_ToScreenY( mid )));
+
+			const int span = MAX( 1, maxV - minV );
+			const int filled = ( trackW * ( value - minV )) / span;
+
+			screen->Dim( PalEntry( 120, 200, 140 ), 0.85f,
+				serverbrowser_ToScreenX( trackX ), serverbrowser_ToScreenY( mid ),
+				serverbrowser_ToScreenX( trackX + filled ) - serverbrowser_ToScreenX( trackX ),
+				MAX( 1, serverbrowser_ToScreenY( mid + 1 ) - serverbrowser_ToScreenY( mid )));
+
+			const bool bHot = ( g_HostSliderHot.Compare( id ) == 0 );
+			const int knobX = trackX + filled;
+
+			screen->Dim( bHot ? PalEntry( 235, 240, 255 ) : PalEntry( 190, 205, 235 ), 1.0f,
+				serverbrowser_ToScreenX( knobX - 2 ), serverbrowser_ToScreenY( mid - 3 ),
+				serverbrowser_ToScreenX( knobX + 2 ) - serverbrowser_ToScreenX( knobX - 2 ),
+				serverbrowser_ToScreenY( mid + 4 ) - serverbrowser_ToScreenY( mid - 3 ));
+
+			if (( tip != NULL ) && ( tip[0] != 0 ))
+				serverbrowser_Tip( trackX, y - 1, trackW, SB_HOST_LINE, tip );
+		}
+
+		// [rc4l] Dimmed with the rest of the row when the value cannot move. A white readout beside
+		// two greyed steps and a dead track says the number is live when nothing else on the row does.
+		if ( bDraw )
+		{
+			screen->DrawText( SmallFont, ( minV < maxV ) ? CR_WHITE : CR_DARKGRAY, valueX, y, valueText,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+
+		return y + SB_HOST_LINE + 3;
+	}
+
+	// How many lives, as one instance of the slider above.
+	int DrawHostLives( int x, int y, int labelW, const zx::AddonEntry &addon )
+	{
+		const zx::LivesControl lives = HostLivesControl( addon );
+
+		if ( !lives.adjustable )
+			return y;
+
+		FString value;
+		if ( lives.unlimited )
+			value = "Unlimited";
+		else
+			value.Format( "%d", lives.value );
+
+		return DrawHostSlider( "lives", "LIVES", x, y, labelW, lives.min, lives.max, lives.value,
+			value.GetChars( ),
+			lives.unlimited
+				? "No limit. Die as often as you like."
+				: "How many times each player may die before they are out." );
+	}
+
+	// [rc4l] How fast weapons fire, as the second instance of the slider.
+	//
+	// sv_fastweapons is 0 to 2 and the cvar clamps itself to that, so the range is the engine's
+	// rather than a number chosen here. What each stop MEANS is named rather than shown as a digit:
+	// "2" tells nobody that the states without an action function drop to no ticks at all.
+	int DrawHostFastWeapons( int x, int y, int labelW, const zx::AddonEntry &addon )
+	{
+		if ( !HostFastWeaponsOffered( addon ))
+			return y;
+
+		const zx::WeaponsPlan plan = HostWeaponsPlan( addon );
+		const int value = plan.speed;
+
+		static const char *const kNames[3] = { "Normal", "Fast", "Fastest" };
+		static const char *const kTips[3] = {
+			"The weapons as the pack timed them.",
+			"Every weapon state cut to a single tick, and the ammo made infinite to match.",
+			"As Fast, and the states with nothing to do take no time at all.",
+		};
+
+		// [rc4l] Pinned rather than hidden while a mix owns the weapons. The row is the only place
+		// that can say WHY the setting is unavailable, and a control that vanishes says nothing --
+		// the player is left thinking the panel forgot it. A ceiling equal to the floor makes both
+		// steps draw dim and the track inert, through the slider's own end-stop rules.
+		const int top = plan.speedAdjustable ? zx::FastWeaponsMax( ) : 0;
+
+		return DrawHostSlider( "fastweapons", "WEAPON SPEED", x, y, labelW, 0, top,
+			value, kNames[value],
+			plan.speedAdjustable
+				? kTips[value]
+				: "The mix brings its own weapons, with their own timings. Choose Vanilla to speed them up.",
+			true );
+	}
+
+	// [rc4l] Where to open, as a slider over the rotation the pack already writes.
+	//
+	// A slider and not pills: thirty-two maps is not a row of chips, and the thing being chosen has a
+	// natural ORDER, which is exactly what a track shows and a set of pills does not. The steps at
+	// each end move one map at a time, so a precise pick does not depend on dragging accurately.
+	//
+	// It names the map rather than the position. "MAP07" is what the rotation says and what the
+	// server will report; "7 of 32" would be a number the player has to translate.
+	//
+	// Only where there is something to choose. A pack with no written rotation has no list to index
+	// into, and one with a single map has one answer.
+	int DrawHostStartMap( int x, int y, int labelW )
+	{
+		const std::vector<std::string> &maps = HostSelectedRotation( );
+
+		if ( maps.size( ) <= 1 )
+			return y;
+
+		const int index = HostStartMapIndex( );
+
+		FString tip;
+		tip.Format( "Open on %s, map %d of %d in the rotation.", maps[index].c_str( ),
+			index + 1, static_cast<int>( maps.size( )));
+
+		return DrawHostSlider( "startmap", "FIRST MAP", x, y, labelW, 0,
+			static_cast<int>( maps.size( )) - 1, index, maps[index].c_str( ), tip.GetChars( ));
+	}
+
+	// [rc4l] How many sides, as the third instance of the slider.
+	//
+	// This replaced two pills labelled with gamemode names, which was the wrong question twice over:
+	// they were really asking about TEAMS, and they could only answer yes or no when the engine has
+	// carried sv_maxteams and four of them all along. The stops skip 1, so the slider moves an INDEX
+	// and teamspick_compute owns the mapping in both directions.
+	int DrawHostTeams( int x, int y, int labelW, const zx::AddonEntry &addon )
+	{
+		const zx::TeamsControl teams = HostTeamsControl( addon );
+
+		if ( !teams.adjustable )
+			return y;
+
+		FString value;
+		if ( teams.count < 2 )
+			value = "Off";
+		else
+			value.Format( "%d", teams.count );
+
+		return DrawHostSlider( "teams", "TEAMS", x, y, labelW, 0, zx::TeamsStopCount( ) - 1,
+			teams.stop, value.GetChars( ),
+			( teams.count < 2 )
+				? "Everyone for themselves."
+				: "Sides, sharing their frags and their colour." );
+	}
+
+	// [rc4l] The pill axes, in one pass or the other.
+	//
+	// Split because MIX leads the panel and everything else follows the sliders. It is the setting a
+	// host is most likely to have come here to change -- it is the one with a dozen answers, where
+	// the rest have two or three -- and it is the only one whose row count grows with the catalogue,
+	// so burying it under three sliders puts the longest block furthest from the top of the region.
+	//
+	// `bMix` picks the pass. Any axis added later lands with the ordinary ones unless it is argued
+	// for, which is the right default: leading the panel is a claim, not a courtesy.
+	int DrawHostRemixAxes( int x, int y, int labelW, const std::vector<zx::RemixGroup> &groups,
+		const zx::WeaponsPlan &plan, bool bMix )
+	{
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			const std::vector<zx::AddonRemix> &choices = groups[g].choices;
+			if ( choices.size( ) <= 1 )
+				continue;
+
+			if (( groups[g].id == kHostMixGroup ) != bMix )
+				continue;
+
+			// [rc4l] The lock, and it has to be read HERE rather than taken from HostRemixPicks: this
+			// draw walks the groups itself, and a mix group drawn from the raw preference would show
+			// the choice the player made rather than the baseline actually being served.
+			const bool bAxisLocked = ( groups[g].id == kHostMixGroup ) && plan.mixLocked;
+
+			const zx::RemixPick pick = zx::PickRemix( choices,
+				bAxisLocked ? std::string( ) : HostRemixWanted( groups[g].id ));
+
+			// [rc4l] The label sits on the FIRST row of pills rather than above them, which is a line
+			// back per axis. Wrapped rows hang under the pills, not under the label, so the block
+			// still reads as one thing.
+			if ( !groups[g].id.empty( ) && HostDetailRowVisible( y, SB_HOST_LINE ))
+			{
+				FString label = groups[g].id.c_str( );
+				label.ToUpper( );
+
+				screen->DrawText( SmallFont, CR_DARKGRAY, x, y, label,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+			}
+
+			// [rc4l] Pills, WRAPPED across as many lines as the axis needs.
+			//
+			// This was "pills if they all fit on one line, otherwise a plain list", which sent Mix's
+			// four options back to four rows over a few pixels. Pills that wrap are still pills:
+			// everything stays visible and four options cost two lines instead of four. The breaks
+			// come from wadlist_compute, the same greedy fill the file list uses, so there is one
+			// place that decides how a row of measured things becomes lines.
+			//
+			// A list survives only where the pills would be one per line anyway, which is an axis
+			// whose options are too wide to pack at all -- and there a list says it better.
+			//
+			// Room for the dot and the gaps either side of it, plus the trailing gap after the label.
+			const int pillPad = SB_HOST_PILL_DOT * 2 + 3 + SmallFont->StringWidth( " " );
+			const int pillGap = 4;
+			const int pillLeft = HostPillLeft( x, groups[g].id );
+			const int pillRoom = SB_HOST_RCOL_RIGHT - pillLeft;
+
+			std::vector<int> pillWidths;
+			pillWidths.reserve( choices.size( ));
+			for ( size_t i = 0; i < choices.size( ); ++i )
+				pillWidths.push_back( SmallFont->StringWidth( choices[i].name.c_str( )) + pillPad );
+
+			const zx::WadListLayout pills = zx::LayoutWadList( pillWidths, pillGap, 0, pillRoom, 0 );
+
+			for ( size_t ln = 0; ln < pills.lines.size( ); ++ln )
+			{
+				const zx::WadListLine &pline = pills.lines[ln];
+
+				if ( HostDetailRowVisible( y, SB_HOST_GAME_ROW_H ))
+				{
+					int px = pillLeft;
+
+					for ( size_t i = pline.first; i < pline.end; ++i )
+					{
+						const bool bOn = ( choices[i].id == pick.id );
+
+						// [rc4l] The BASELINE is never locked, because it is not the thing the lock is
+						// about. Vanilla adds no weapons, so it is exactly what a raised weapon speed
+						// is compatible with -- greying it out said the whole axis was unavailable
+						// when what is unavailable is replacing the weapons. It stays lit, and stays
+						// pressable, which costs nothing: pressing what is already chosen does what
+						// it always did.
+						const bool bLocked = bAxisLocked && ( i > 0 );
+
+						// [rc4l] An option wider than the whole column gets its own line from the
+						// layout and is cut here, the same division of labour the file list uses.
+						// Skulltag's "Team Last Man Standing" is the one that needs it.
+						const int pw = MIN( pillWidths[i], pillRoom );
+
+						// [rc4l] A locked axis registers NO rect, which is what actually makes it
+						// unpressable: the hit test walks these, so a pill that never lands in the
+						// list cannot be clicked, hovered or reached by the keyboard. One rule in one
+						// place, rather than a bLocked test at each of the three.
+						bool bHot = false;
+
+						if ( !bLocked )
+						{
+							HostGameplayRow rec;
+							rec.x = px;
+							rec.w = pw;
+							rec.y = y;
+							rec.h = SB_HOST_GAME_ROW_H;
+							rec.group = groups[g].id;
+							rec.id = choices[i].id;
+							g_HostGameRows.Push( rec );
+
+							bHot = ( g_HostGameHot == static_cast<int>( g_HostGameRows.Size( ) - 1 ));
+						}
+
+						// [rc4l] Rounded, through the same DrawRoundedPanel every other soft-cornered
+						// thing in this browser uses. A pill with square corners is a table cell, and
+						// the shape is most of what says these are one-of-N rather than a list.
+						zx::PanelColor top, bot;
+						if ( bLocked )
+						{
+							// [rc4l] Nearly the panel's own colour, and flat. The first attempt was a
+							// dim version of the ordinary pill, which read as "another option" rather
+							// than as "not available": an unpressable thing has to differ in KIND
+							// from a pressable one, not in brightness, or it just looks like the one
+							// you have not hovered yet.
+							//
+							// Still drawn, and the one that is on still marked, so the axis says what
+							// it is set to rather than going blank while it is held.
+							top.r = 26; top.g = 27; top.b = 34; top.a = 120;
+							bot.r = 22; bot.g = 23; bot.b = 30; bot.a = 120;
+						}
+						else if ( bOn )
+						{
+							top.r = 52; top.g = 118; top.b = 66; top.a = 235;
+							bot.r = 34; bot.g = 82;  bot.b = 46; bot.a = 235;
+						}
+						else
+						{
+							const int lift = bHot ? 28 : 0;
+							top.r = 58 + lift; top.g = 62 + lift; top.b = 82 + lift; top.a = 210;
+							bot.r = 40 + lift; bot.g = 44 + lift; bot.b = 60 + lift; bot.a = 210;
+						}
+
+						DrawRoundedPanel( px, y - 1, pw, SB_HOST_GAME_ROW_H, top, bot,
+							SB_HOST_PILL_RADIUS );
+
+						// [rc4l] The dot, which is what actually says which pill is on.
+						//
+						// The fill alone was doing that job and doing it poorly: a filled pill and a
+						// hovered pill are both "brighter than the others", so at a glance the
+						// pointer looked like the selection. A lit dot is a different KIND of mark,
+						// so hover can never impersonate it.
+						const int dotY = y - 1 + ( SB_HOST_GAME_ROW_H - SB_HOST_PILL_DOT ) / 2;
+						const int dotX = px + SB_HOST_PILL_DOT;
+
+						// No halo while the axis is locked. The glow is what says "this is live", and
+						// a locked axis is precisely what is not.
+						if ( bOn && !bLocked )
+						{
+							// A soft ring under it, so the lit state reads as a glow rather than as a
+							// slightly different grey. Drawn first and larger, then the dot on top.
+							zx::PanelColor halo;
+							halo.r = 90; halo.g = 235; halo.b = 120; halo.a = 60;
+							DrawRoundedPanel( dotX - 2, dotY - 2, SB_HOST_PILL_DOT + 4,
+								SB_HOST_PILL_DOT + 4, halo, halo, ( SB_HOST_PILL_DOT + 4 ) / 2 );
+						}
+
+						// [rc4l] Locked keeps the green so the choice is still legible, at a quarter
+						// of the light. Held, not lost.
+						zx::PanelColor dot;
+						if ( bOn && bLocked )	{ dot.r = 54;  dot.g = 96;  dot.b = 64;  dot.a = 200; }
+						else if ( bOn )			{ dot.r = 120; dot.g = 255; dot.b = 150; dot.a = 255; }
+						else if ( bLocked )		{ dot.r = 46;  dot.g = 48;  dot.b = 58;  dot.a = 200; }
+						else					{ dot.r = 96;  dot.g = 102; dot.b = 124; dot.a = 220; }
+
+						DrawRoundedPanel( dotX, dotY, SB_HOST_PILL_DOT, SB_HOST_PILL_DOT, dot, dot,
+							SB_HOST_PILL_DOT / 2 );
+
+						const int textX = dotX + SB_HOST_PILL_DOT + 3;
+
+						screen->DrawText( SmallFont,
+							bLocked ? CR_DARKGRAY : ( bOn ? CR_WHITE : CR_GRAY ), textX, y,
+							serverbrowser_FitName( choices[i].name.c_str( ),
+								( px + pw ) - textX - 2 ),
+							DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
+							DTA_KeepRatio, true, TAG_DONE );
+
+						if ( !choices[i].summary.empty( ))
+						{
+							serverbrowser_Tip( px, y - 1, pw, SB_HOST_GAME_ROW_H,
+								choices[i].summary.c_str( ));
+						}
+
+						px += pw + pillGap;
+					}
+				}
+
+				// [rc4l] A gap BETWEEN wrapped lines as well as between the pills on one. Without it
+				// the rounded ends of one line sat against the next and the block read as a slab
+				// rather than as separate chips.
+				y += SB_HOST_GAME_ROW_H + SB_HOST_PILL_VGAP;
+			}
+
+			y += 3;			// a gap between axes, so two blocks do not read as one long list
+		}
+
+		return y;
+	}
+
+	// [rc4l] What this experience can be played WITH, as settings rather than a modal.
+	//
+	// One block per AXIS. Axes with a single choice are skipped: nothing to decide is not a setting,
+	// and a row that cannot change is a row spent saying nothing.
+	int DrawHostGameplay( int x, int y, const zx::AddonEntry &addon )
+	{
+		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
+
+		bool bAnything = HostLivesControl( addon ).adjustable || HostFastWeaponsOffered( addon ) ||
+			HostTeamsControl( addon ).adjustable || ( HostSelectedRotation( ).size( ) > 1 );
+		for ( size_t g = 0; g < groups.size( ); ++g )
+			bAnything = bAnything || ( groups[g].choices.size( ) > 1 );
+
+		if ( !bAnything )
+			return y;		// the file list takes the room instead
+
+		y += 4;
+		if ( HostDetailRowVisible( y, 2 ))
+			DrawSeparatorSpan( y, SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT );
+		y += 6;
+
+		if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+		{
+			screen->DrawText( SmallFont, CR_GOLD, x, y, "GAMEPLAY",
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+		y += SB_HOST_LINE + 2;
+
+		// [rc4l] ONE label column for every axis, measured across all of them so the controls line up
+		// under each other. Sized to the widest label rather than fixed, or a longer setting name
+		// later would either overlap its own control or leave a gap in front of every other.
+		const int labelW = HostGameplayLabelW( groups );
+
+		const zx::WeaponsPlan plan = HostWeaponsPlan( addon );
+
+		// The mix leads, then the sliders, then any other axis. See DrawHostRemixAxes.
+		y = DrawHostRemixAxes( x, y, labelW, groups, plan, true );
+		y = DrawHostStartMap( x, y, labelW );
+		y = DrawHostLives( x, y, labelW, addon );
+		y = DrawHostFastWeapons( x, y, labelW, addon );
+		y = DrawHostTeams( x, y, labelW, addon );
+		y = DrawHostRemixAxes( x, y, labelW, groups, plan, false );
+
+		return y;
 	}
 
 	// [rc4l] WHAT to run. The catalogue answers this; the fields beside it answer how.
 	void DrawHostCatalogue( int x )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		const std::vector<zx::HostListRow> rows = HostListRows( );
+		const int selRow = HostSelectedRow( rows );
 
-		for ( int row = SB_HOST_CATALOGUE_FIRST; row < static_cast<int>( entries.size( )); ++row )
+		for ( int row = SB_HOST_CATALOGUE_FIRST; row < static_cast<int>( rows.size( )); ++row )
 		{
 			const int rowY = HostCatalogueRowY( row );
 			if ( !HostRowVisible( rowY, SB_HOST_ENTRY_H ))
 				continue;
 
-			const bool bSel = ( row == g_HostEntrySel );
+			const zx::HostListRow &r = rows[row];
+			const zx::CatalogueEntry &entry = entries[r.entry];
+
+			const bool bSel = ( row == selRow );
 			const bool bHot = ( row == g_HostEntryHot );
 
 			// [rc4l] The travelling marker, on the selected row -- the same one the server list puts
@@ -5026,7 +6925,15 @@ public:
 			// [rc4l] The row being SERVED is tinted green, the same way CANCEL is tinted while a
 			// download runs: a state the row is in, said in colour rather than in another word.
 			// It survives the selection moving away, which is the whole point of showing it.
-			const bool bRunning = zx::HostIsActive( ) && ( row == g_HostingEntry );
+			//
+			// The experience's own row AND the one way of playing the server was started as -- never
+			// the others, because tinting all six would say the opposite of what the tint means. An
+			// opened experience showing a green heading over six identical rows told you a server was
+			// running and then refused to say which of them it was running.
+			const bool bRunning = zx::HostIsActive( ) && ( r.entry == g_HostingEntry ) &&
+				(( r.variant < 0 ) || ( g_HostingVariantId.IsNotEmpty( ) &&
+					( g_HostingVariantId.Compare(
+						entry.addon.variants[r.variant].id.c_str( )) == 0 )));
 
 			// [rc4l] Which of the three things this row is, decided in one place. The SERVER LIST
 			// has the same shape of problem in the row for the server you are connected to, and
@@ -5063,28 +6970,125 @@ public:
 				screen->Dim( bar, alpha,
 					serverbrowser_ToScreenX( x - 4 ),
 					serverbrowser_ToScreenY( rowY - 1 ),
-					serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT ) -
+					serverbrowser_ToScreenX( SB_HOST_ROW_RIGHT ) -
 						serverbrowser_ToScreenX( x - 4 ),
 					serverbrowser_ToScreenY( rowY + SB_HOST_ENTRY_H - 1 ) -
 						serverbrowser_ToScreenY( rowY - 1 ));
 			}
 
+			const bool bIsVariant = ( r.variant >= 0 );
+
 			// Hover is deliberately not in here. What a row IS -- selected, being served, neither --
 			// is all the label has to say.
 			EColorRange col = CR_GRAY;
+
 			if ( paint.label == zx::RowLabel::Selected )
 				col = CR_WHITE;
 			else if ( paint.label == zx::RowLabel::Live )
 				col = CR_GREEN;
 
-			const FString label = entries[row].addon.name.c_str( );
+			// [rc4l] Cut to what is left after the badge, not to the column: "Team Last Man
+			// Standing" is wider than the room before the PvP mark and ran straight under it. The
+			// budget is measured against the thing it must not touch, so a longer badge or a longer
+			// name cannot reintroduce the overlap.
+			const int labelLeft = bIsVariant ? ( x + 12 ) : x;
+			int labelRight = SB_HOST_ROW_RIGHT - 4;
+
+			if ( bIsVariant )
+			{
+				labelRight -= SmallFont->StringWidth(
+					zx::DescribeVariantKind( entry.addon.variants[r.variant].kind )) + 6;
+			}
+			else if ( !entry.addon.variants.empty( ))
+			{
+				labelRight -= SmallFont->StringWidth( ">" ) + 6;
+			}
+
+			const FString label = serverbrowser_FitName( bIsVariant
+				? entry.addon.variants[r.variant].name.c_str( )
+				: entry.addon.name.c_str( ), labelRight - labelLeft );
 
 			// [rc4l] Centred in the row rather than drawn at its top edge. The highlight bar is
 			// SB_HOST_ENTRY_H tall and the glyphs are shorter, so drawing at rowY sat the text high
 			// inside its own bar.
-			screen->DrawText( SmallFont, col, x,
-				rowY + ( SB_HOST_ENTRY_H - SmallFont->GetHeight( )) / 2, label,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+			const int textY = rowY + ( SB_HOST_ENTRY_H - SmallFont->GetHeight( )) / 2;
+
+			// [rc4l] A curated experience is drawn in TWO colours: its leading word green, the rest
+			// white. That marks the group these entries belong to without recolouring a whole row,
+			// which is how the browser says something is selected or being served.
+			//
+			// It beats Selected, which is why this is not folded into `col` above. Selected paints
+			// the label white, so an accented row that happened to be under the cursor came out
+			// looking like every other row -- and the cursor starts on the first row, so the top
+			// entry was never marked at all.
+			//
+			// Live still wins outright: a row you are being served is a fact about right now, and it
+			// matters more than what group the entry is in.
+			//
+			// The split is taken AFTER the fit. Fitting the two halves separately would measure each
+			// against the whole budget and let the pair overflow the room the row actually has.
+			const bool bAccent = ( !bIsVariant && entry.addon.accent &&
+				( paint.label != zx::RowLabel::Live ));
+
+			if ( bAccent )
+			{
+				const char *const space = strchr( label.GetChars( ), ' ' );
+				const size_t split = ( space != NULL )
+					? static_cast<size_t>( space - label.GetChars( )) : label.Len( );
+
+				const FString head = label.Left( split );
+				const FString tail = label.Mid( split );
+
+				screen->DrawText( SmallFont, CR_GREEN, labelLeft, textY, head,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+				if ( tail.IsNotEmpty( ))
+				{
+					screen->DrawText( SmallFont, CR_WHITE,
+						labelLeft + SmallFont->StringWidth( head ), textY, tail,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+				}
+			}
+			else
+			{
+				// A way of playing is indented, so it reads as belonging to the experience above it
+				// rather than as another experience.
+				screen->DrawText( SmallFont, col, labelLeft, textY, label,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+			}
+
+			if ( bIsVariant )
+			{
+				// PvE or PvP, on the way of playing it describes. The experience row above has no
+				// single answer to give, which is the reason the label lives down here.
+				const zx::VariantKind kind = entry.addon.variants[r.variant].kind;
+				const char *kindText = zx::DescribeVariantKind( kind );
+
+				screen->DrawText( SmallFont, ( kind == zx::VariantKind::PvE ) ? CR_GREEN : CR_ORANGE,
+					SB_HOST_ROW_RIGHT - SmallFont->StringWidth( kindText ) - 4, textY, kindText,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+				if ( !entry.addon.variants[r.variant].tooltip.empty( ))
+				{
+					serverbrowser_Tip( x - 4, rowY - 1, SB_HOST_ROW_RIGHT - x + 4, SB_HOST_ENTRY_H,
+						entry.addon.variants[r.variant].tooltip.c_str( ));
+				}
+			}
+			else if ( !entry.addon.variants.empty( ))
+			{
+				// [rc4l] The caret, on the RIGHT of the row: it is about this row's own state rather
+				// than a step to the side, and putting it at the left would read as an indent that
+				// the rows under it then repeat.
+				const bool bOpen = HostEntryIsOpen( r.entry );
+				const char *caret = bOpen ? "v" : ">";
+
+				// Grey on every experience that has one, whatever the row's own state. Taking it out
+				// of the label's colour keeps it quiet next to a marked name, which is what it is:
+				// the shape of the row, not something to look at.
+				screen->DrawText( SmallFont, CR_GRAY,
+					SB_HOST_ROW_RIGHT - SmallFont->StringWidth( caret ) - 4, textY, caret,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+			}
 
 			// No file count here on purpose: the detail panel beside this already says the files and
 			// the IWAD, and a narrow list repeating it crowded itself for no new information.
@@ -6720,6 +8724,7 @@ public:
 		if ( g_Dialog.open )
 			return DialogMouseEvent( type, x, y );
 
+
 		// The search box, which shares the row with the tabs.
 		g_SearchHot = false;
 		{
@@ -7240,6 +9245,41 @@ public:
 						ClampHostStatusScroll( );
 						return true;
 					}
+				}
+
+				// [rc4l] Over the experience list, the notch belongs to the list. Checked BEFORE the
+				// settings below, whose test spans the whole panel and would otherwise answer for a
+				// notch aimed at the left column -- and answer with nothing at all whenever the
+				// settings happen to fit, which is why the list would not scroll by wheel.
+				if (( g_Tab == BrowserTab::Host ) && ( HostListMaxScroll( ) > 0 ) &&
+					( g_MouseY >= serverbrowser_ToScreenY( SB_HOST_VIEW_TOP )) &&
+					( g_MouseY < serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM )) &&
+					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_LIST_LEFT - 6 )) &&
+					( g_MouseX < serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 6 )))
+				{
+					g_HostListScroll += step * 6;
+					ClampHostListScroll( );
+					return true;
+				}
+
+				// [rc4l] Over the DETAIL column while not hosting, the notch belongs to it.
+				//
+				// This only existed for the hosting case above, so the panel that describes an
+				// experience could not be scrolled at all until a server was running. That was
+				// harmless while it only held a summary and a file list, and stopped being harmless
+				// the moment it grew gameplay settings: a fourth mod was drawn past the bottom of the
+				// column with no way to reach it. Checked before the settings, whose test spans the
+				// whole panel.
+				if (( g_Tab == BrowserTab::Host ) && !zx::HostIsActive( ) &&
+					!g_HostShowSettings && ( HostDetailMaxScroll( ) > 0 ) &&
+					( g_MouseY >= serverbrowser_ToScreenY( SB_HOST_VIEW_TOP )) &&
+					( g_MouseY < serverbrowser_ToScreenY( SB_HOST_VIEW_BOTTOM )) &&
+					( g_MouseX >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 6 )) &&
+					( g_MouseX < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT + 6 )))
+				{
+					g_HostDetailScroll += step * 6;
+					ClampHostDetailScroll( );
+					return true;
 				}
 
 				// [rc4l] Over the hosting settings, the notch belongs to them. Same rule as the WAD

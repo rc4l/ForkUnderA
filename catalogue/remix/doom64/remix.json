@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "name": "Doom 64",
+  "summary": "The Doom 64 conversion's weapons, monsters and darkness, over someone else's maps.",
+  "group": "mix",
+  "files": [
+    {
+      "name": "sd64_unofficial_v20a.pk3",
+      "md5": "176a6e0a2dc2c1421766e6909d5335a0"
+    },
+    {
+      "name": "sd64_unabsolved_a10a.pk3",
+      "md5": "843f093bec0805193c1addb51051fb0a"
+    }
+  ]
+}
