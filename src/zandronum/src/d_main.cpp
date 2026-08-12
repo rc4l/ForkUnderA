@@ -2323,6 +2323,47 @@ static FString ParseGameInfo(TArray<FString> &pwads, const char *fn, const char 
 				if ( Args->CheckParm ( "-connect" ) )
 					continue;
 
+				// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+				//   SUPERSEDED BY: nothing. Upstream reaches this with a hand-typed command line,
+				//   where naming the same file twice is the user's own doing. A catalogue that lists
+				//   what a mod needs, on a build whose clients auto-load nothing, is ours.
+				//   ON PORT: keep.
+				//
+				// ALREADY ASKED FOR? Then leave it. A GAMEINFO naming a file the command line also
+				// names loaded it TWICE, as two independent entries in the wad list.
+				//
+				// Which nothing survives on a server. network_InitPWADList walks that list, so the
+				// server advertised the file twice and no client could match it: a joiner loads it
+				// once, the counts differ, and authentication refuses the join naming a file both
+				// sides plainly have. Super Skulltag hit it exactly this way -- its pk3 LOADs
+				// skulltag_content, our entry lists it so it can be downloaded, and hosting it was
+				// unjoinable from the moment it otherwise worked.
+				//
+				// The client escaped it only by the branch above: with -connect it skips auto-loading
+				// altogether, so the asymmetry that hid this is the same one that made it fatal.
+				{
+					bool bAlready = false;
+
+					for ( unsigned int i = 0; i < pwads.Size( ); ++i )
+					{
+						const char *pszHave = pwads[i].GetChars( );
+						const char *pszSlash = strrchr( pszHave, '/' );
+						const char *pszBack = strrchr( pszHave, '\\' );
+
+						if (( pszBack != NULL ) && (( pszSlash == NULL ) || ( pszBack > pszSlash )))
+							pszSlash = pszBack;
+
+						if ( stricmp( pszSlash ? ( pszSlash + 1 ) : pszHave, sc.String ) == 0 )
+						{
+							bAlready = true;
+							break;
+						}
+					}
+
+					if ( bAlready )
+						continue;
+				}
+
 				if (!FileExists(checkpath))
 				{
 					pos += D_AddFile(pwads, sc.String, true, pos);
