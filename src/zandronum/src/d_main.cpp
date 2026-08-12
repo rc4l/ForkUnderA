@@ -3343,9 +3343,10 @@ void D_DoomMain (void)
 				{
 					G_NewInit( );
 
-					// Check if we have map rotation setup. If we do, use the first map there.
+					// Check if we have map rotation setup. If we do, use the first map there --
+					// [rc4l] or the one that was asked for, when the rotation holds it.
 					if ( useMapRotation )
-						MAPROTATION_StartNewGame( );
+						MAPROTATION_StartNewGame( startmap );
 					else
 						G_InitNew( startmap, false );
 				}
@@ -3363,7 +3364,7 @@ void D_DoomMain (void)
 							G_BeginRecording (startmap);
 						// [AK] Use a map from the map rotation if it should be used.
 						if ((NETWORK_GetState() != NETSTATE_CLIENT) && (useMapRotation))
-							MAPROTATION_StartNewGame();
+							MAPROTATION_StartNewGame( startmap );
 						else
 							G_InitNew (startmap, false);
 					if (StoredWarp.IsNotEmpty())

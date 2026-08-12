@@ -36,6 +36,21 @@ namespace zx
 // reader that cared would silently return nothing for one of them.
 std::vector<std::string> MapsInRotation(const std::string &cfgText);
 
+// [rc4l] Where a rotation should BEGIN, given the map that was asked for.
+//
+// The server ignores the map on its command line whenever a rotation exists: MAPROTATION_StartNewGame
+// takes position 0 (or a random one) and hands that to G_InitNew, so +map is dropped on the floor for
+// every experience in this catalogue that writes a rotation. Starting a rotation AT a map is what
+// "first map" has to mean anyway -- the alternative, opening on one map and then continuing from the
+// top of the list, is not something anybody would ask for.
+//
+// Matched case-insensitively, because a rotation is written by hand and a map name is a lump name:
+// the catalogue already contains `addmap Gvh00` and `addmap D2CTF1` in the same breath.
+//
+// A name the rotation does not hold gives 0, which is where it would have started. An unmet request
+// is not worth refusing a server over, and there is nowhere to say so by the time this is asked.
+size_t MapRotationStart(const std::vector<std::string> &maps, const std::string &wanted);
+
 } // namespace zx
 
 #endif // ZX_MAPROTATION_COMPUTE_H
