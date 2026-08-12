@@ -6,7 +6,7 @@
   "gamemode": "deathmatch",
   "order": 5,
   "accent": true,
-  "remixes": ["vanilla", "brutaldoom", "d4t", "doom64", "cataweaponz", "eonweapons"],
+  "remixes": ["vanilla", "brutaldoom", "rga2", "d4t", "doom64", "cataweaponz", "eonweapons"],
   "variants": [
     {
       "id": "onslaught",
