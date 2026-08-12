@@ -127,8 +127,14 @@ SERVE_WADS="${FUA_SERVE_WADS-}"
 SUBSTITUTE_IWAD="${FUA_IWAD_SUBSTITUTE:-1}"
 MAX_MB="${FUA_MAX_FILE_MB:-2048}"
 
-[ -n "${ENTRY_ID}" ] || die "no catalogue entry given. Try: docker run <image> duel40   (fua_catalogue lists them)"
-is_bare_name "${ENTRY_ID}" || die "refusing catalogue id '${ENTRY_ID}': not a plain name"
+SERVER_DIR="${FUA_SERVER_DIR-}"
+
+if [ -z "${SERVER_DIR}" ] && [ -z "${ENTRY_ID}" ]; then
+	die "nothing to host. Give a catalogue id, or point FUA_SERVER_DIR at a folder holding server.cfg and wads.txt"
+fi
+if [ -z "${SERVER_DIR}" ]; then
+	is_bare_name "${ENTRY_ID}" || die "refusing catalogue id '${ENTRY_ID}': not a plain name"
+fi
 
 case "${PORT}" in
 	''|*[!0-9]*) die "FUA_PORT must be a number, got '${PORT}'" ;;
@@ -137,6 +143,83 @@ esac
 # container runs as an unprivileged user on purpose.
 [ "${PORT}" -ge 1024 ] && [ "${PORT}" -le 65535 ] || die "FUA_PORT ${PORT} is outside 1024-65535"
 
+#---------------------------------------------------------------------------------------------------
+# Folder mode
+#
+# [rc4l] A server is a folder holding two files and nothing else:
+#
+#     servers/duel40/server.cfg    how it plays -- every cvar, including sv_hostname
+#     servers/duel40/wads.txt      what to load, in order
+#
+# wads.txt reads like the command line it becomes:
+#
+#     iwad doom2.wad
+#     file duel40b.pk3
+#     file zandrospree2rc2.pk3
+#
+# WHY THIS EXISTS ALONGSIDE THE CATALOGUE. A cfg cannot name a wad -- there is no cvar for it, only
+# -iwad and -file -- so a folder of cfgs would be settings with no game. One list of files is the
+# minimum extra information, and this is the version of it for an operator who already has the wads:
+# no hashes, no schema, no downloading, nothing to keep in step with the engine.
+#
+# The catalogue keeps its own reason to exist: hashes are what make fetching from a stranger's mirror
+# safe, and an entry is shared with the client's HOST tab. Neither mode is the other's replacement.
+#---------------------------------------------------------------------------------------------------
+
+FOLDER_IWAD=""
+FOLDER_FILES=()
+
+if [ -n "${SERVER_DIR}" ]; then
+	case "${SERVER_DIR}" in
+		*..*) die "refusing server dir '${SERVER_DIR}': contains .." ;;
+	esac
+	[ -d "${SERVER_DIR}" ] || die "no such server folder: ${SERVER_DIR}"
+
+	readonly WADS_TXT="${SERVER_DIR}/wads.txt"
+	[ -f "${WADS_TXT}" ] || die "${SERVER_DIR} has no wads.txt, so nothing says which wads to load"
+
+	line_no=0
+	while IFS= read -r line || [ -n "${line}" ]; do
+		line_no=$(( line_no + 1 ))
+		# Strip comments and surrounding whitespace; skip what is left of a blank line.
+		line="${line%%#*}"
+		line="$(printf '%s' "${line}" | tr -d '
+' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+		[ -n "${line}" ] || continue
+
+		kind="${line%% *}"
+		name="${line#* }"
+		name="$(printf '%s' "${name}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+
+		[ "${kind}" != "${name}" ] || die "${WADS_TXT}:${line_no}: expected 'iwad <file>' or 'file <file>', got '${line}'"
+		is_bare_name "${name}" || die "${WADS_TXT}:${line_no}: '${name}' is not a plain filename"
+
+		case "${kind}" in
+			iwad)
+				[ -z "${FOLDER_IWAD}" ] || die "${WADS_TXT}:${line_no}: a second iwad line; a server loads exactly one"
+				FOLDER_IWAD="${name}"
+				;;
+			file)
+				FOLDER_FILES+=( "${name}" )
+				;;
+			*)
+				die "${WADS_TXT}:${line_no}: unknown keyword '${kind}' -- only 'iwad' and 'file' exist"
+				;;
+		esac
+	done < "${WADS_TXT}"
+
+	[ -n "${FOLDER_IWAD}" ] || die "${WADS_TXT} names no iwad, and a server cannot start without one"
+
+	log "server: ${SERVER_DIR}  (${#FOLDER_FILES[@]} pwad(s))"
+fi
+
+# [rc4l] Same rule as the other cvars: only an explicit FUA_NAME becomes +sv_hostname, so the cfg's
+# own sv_hostname is not overruled by a default nobody chose. Set for BOTH modes -- it lived inside
+# the catalogue branch at first, which left folder mode tripping over it unset.
+SERVER_NAME="${FUA_NAME-}"
+
+# [rc4l] Catalogue mode only. Folder mode already knows its files and its cfg.
+if [ -z "${SERVER_DIR}" ]; then
 #---------------------------------------------------------------------------------------------------
 # Locate the entry
 #---------------------------------------------------------------------------------------------------
@@ -210,12 +293,10 @@ if [ "$(jq '(.variants // []) | length' "${MANIFEST}")" -gt 0 ]; then
 	log "variant: ${VARIANT_ID}  (${VARIANT_NAME:-unnamed})"
 fi
 
-# [rc4l] Same rule: only an explicit FUA_NAME becomes +sv_hostname. The entry's own name is used for
-# logging, not as a default that would overrule the cfg's sv_hostname.
-SERVER_NAME="${FUA_NAME-}"
-
 log "entry:  ${ENTRY_ID}  (${ENTRY_NAME:-unnamed})  from ${ENTRY_DIR}"
 
+
+fi
 #---------------------------------------------------------------------------------------------------
 # Mirrors
 #---------------------------------------------------------------------------------------------------
@@ -332,6 +413,17 @@ resolve_file() {
 }
 
 #---------------------------------------------------------------------------------------------------
+# What folder mode supplies in place of a manifest
+#---------------------------------------------------------------------------------------------------
+
+if [ -n "${SERVER_DIR}" ]; then
+	ENTRY_IWAD="${FOLDER_IWAD}"
+	ENTRY_MAP=""			# the cfg's rotation decides; a folder has nothing else to say
+	ENTRY_NAME=""
+	ENTRY_ID="$(basename "${SERVER_DIR}")"
+fi
+
+#---------------------------------------------------------------------------------------------------
 # Resolve the IWAD
 #---------------------------------------------------------------------------------------------------
 
@@ -359,6 +451,20 @@ fi
 #---------------------------------------------------------------------------------------------------
 
 PWAD_PATHS=()
+
+if [ -n "${SERVER_DIR}" ]; then
+	for fname in ${FOLDER_FILES[@]+"${FOLDER_FILES[@]}"}; do
+		# [rc4l] No digest, so nothing may be fetched: a file we cannot verify is one we will not
+		# download. Missing is a hard stop rather than a skip, because a server quietly missing a wad
+		# is the failure this whole project keeps rediscovering.
+		if ! resolved="$(find_local "${fname}" "")"; then
+			die "${fname} is not in ${DATA_DIR}/wads (folder mode never downloads -- put it there)"
+		fi
+		PWAD_PATHS+=( "${resolved}" )
+	done
+fi
+
+if [ -z "${SERVER_DIR}" ]; then
 # [rc4l] Shared first, then the variant's, which is the order they are declared and the order the
 # engine will load them in.
 ALL_FILES="$(jq -c --argjson v "${VARIANT_JSON}" '(.files // []) + (($v.files) // [])' "${MANIFEST}")"
@@ -389,6 +495,8 @@ for i in $(seq 0 $(( file_count - 1 )) ); do
 	PWAD_PATHS+=( "${resolved}" )
 done
 
+fi
+
 #---------------------------------------------------------------------------------------------------
 # Build the command line
 #
@@ -406,6 +514,11 @@ for path in ${PWAD_PATHS[@]+"${PWAD_PATHS[@]}"}; do
 done
 
 # [rc4l] The variant names its cfg; server.cfg is the fallback for an entry that has no variants.
+if [ -n "${SERVER_DIR}" ]; then
+	ENTRY_DIR="${SERVER_DIR}"
+	VARIANT_CFG="server.cfg"
+fi
+
 CFG_NAME="${VARIANT_CFG:-server.cfg}"
 is_bare_name "${CFG_NAME}" || die "variant names an unusable cfg '${CFG_NAME}'"
 
