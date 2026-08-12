@@ -44,6 +44,38 @@ int FastWeaponsValue(int wanted);
 // overrides its own cfg.
 std::vector<std::pair<std::string, std::string> > FastWeaponsCvars(bool offered, int wanted);
 
+// [rc4l] The weapon speed and the mix cannot both be had, and this says which one has the panel.
+//
+// sv_fastweapons works on the states of whatever weapons are loaded. Brutal Doom, Complex Doom and
+// Hard Doom all REPLACE the weapons, with their own timings, their own reload frames and in Complex
+// Doom's case a random weapon set per pickup. Cutting every state to a tick on top of that is not a
+// faster version of that mod; it is that mod with its animation system taken away, and what comes
+// out is a different bug depending on which one was loaded.
+//
+// So at most one of the two is in force. Whichever is already off its default locks the other, and
+// there is no order to remember because the lock is symmetric:
+//
+//   * A speed above Normal takes the mix back to the baseline and holds it there.
+//   * A mix off the baseline pins the speed to Normal.
+//
+// The speed wins ties. It has to win something, and a remembered mix carried in from another
+// experience is the likelier of the two to be the stale one -- a mix is kept across every entry that
+// offers it, and the speed is only offered by the handful that ask for it.
+struct WeaponsPlan
+{
+	int speed;				// the speed actually in force; 0 whenever a mod owns the weapons
+
+	bool speedAdjustable;	// whether the slider may be moved at all
+	bool mixLocked;			// whether the mix pills are inert
+	bool forceBaselineMix;	// whether the mix in force is the baseline whatever was chosen
+
+	WeaponsPlan() : speed(0), speedAdjustable(false), mixLocked(false), forceBaselineMix(false) {}
+};
+
+// `offered` and `wanted` are as FastWeaponsCvars reads them. `mixIsBaseline` is whether the mix axis
+// is sitting on its first offered choice, which is the one that adds nothing.
+WeaponsPlan PlanWeapons(bool offered, int wanted, bool mixIsBaseline);
+
 } // namespace zx
 
 #endif // ZX_WEAPONSPICK_COMPUTE_H

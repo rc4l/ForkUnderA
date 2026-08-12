@@ -839,12 +839,6 @@ static std::vector<zx::AddonRemix> HostOfferedRemixes( const zx::AddonEntry &add
 	return zx::OfferedRemixes( addon, pick.index, zx::CatalogueRemixes( ));
 }
 
-// What is in force on every axis at once. One pick per group, in the entry's own group order.
-static std::vector<zx::RemixPick> HostRemixPicks( const zx::AddonEntry &addon )
-{
-	return zx::PickRemixes( HostOfferedRemixes( addon ), g_HostRemixIds );
-}
-
 // [rc4l] How many lives the player has asked for, or -1 for "not yet". Kept across entries like the
 // remix ids, and clamped per entry rather than reset: asking for two lives is a preference about how
 // you play, not about which pack you were looking at when you said it.
@@ -899,6 +893,61 @@ static bool HostFastWeaponsOffered( const zx::AddonEntry &addon )
 		return addon.variants[pick.index].fastWeapons;
 
 	return false;
+}
+
+// [rc4l] The axis whose choices REPLACE the weapons, which is the one the speed slider argues with.
+// Named rather than guessed at: it is the group id those remixes carry in the catalogue.
+static const char *const kHostMixGroup = "mix";
+
+// Whether the mix axis is sitting on the choice that adds nothing, which is the first one offered.
+// Read WITHOUT the lock below, or the answer would be whatever the lock had just forced.
+static bool HostMixIsBaseline( const zx::AddonEntry &addon )
+{
+	const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
+
+	for ( size_t g = 0; g < groups.size( ); ++g )
+	{
+		if ( groups[g].id != kHostMixGroup )
+			continue;
+
+		return zx::PickRemix( groups[g].choices, HostRemixWanted( groups[g].id )).index <= 0;
+	}
+
+	// No mix axis at all, so nothing has replaced the weapons.
+	return true;
+}
+
+// Which of the weapon speed and the mix has the panel. See weaponspick_compute.h for why only one of
+// them can.
+static zx::WeaponsPlan HostWeaponsPlan( const zx::AddonEntry &addon )
+{
+	return zx::PlanWeapons( HostFastWeaponsOffered( addon ), g_HostFastWeapons,
+		HostMixIsBaseline( addon ));
+}
+
+// What is in force on every axis at once. One pick per group, in the entry's own group order.
+//
+// [rc4l] With the mix TAKEN BACK to its baseline while the weapon speed is up. Done here rather than
+// at the draw, because this is the one place that answers "what is in force": the file list, the
+// host plan, the download set and the configuration key all come through it, and a lock only the
+// pills knew about would show Vanilla while starting a server on Brutal Doom.
+static std::vector<zx::RemixPick> HostRemixPicks( const zx::AddonEntry &addon )
+{
+	std::vector<std::pair<std::string, std::string> > wanted = g_HostRemixIds;
+
+	if ( HostWeaponsPlan( addon ).forceBaselineMix )
+	{
+		for ( size_t i = 0; i < wanted.size( ); ++i )
+		{
+			// Emptied rather than removed, and never written back to g_HostRemixIds: an empty want
+			// takes the first offered, which is the baseline by the catalogue's own convention, and
+			// the player's real choice is still there when the speed comes back down.
+			if ( wanted[i].first == kHostMixGroup )
+				wanted[i].second = "";
+		}
+	}
+
+	return zx::PickRemixes( HostOfferedRemixes( addon ), wanted );
 }
 
 // [rc4l] How many teams the player has asked for, or -1 for "not yet". Kept across entries like the
@@ -6371,7 +6420,8 @@ public:
 		if ( !HostFastWeaponsOffered( addon ))
 			return y;
 
-		const int value = zx::FastWeaponsValue( g_HostFastWeapons );
+		const zx::WeaponsPlan plan = HostWeaponsPlan( addon );
+		const int value = plan.speed;
 
 		static const char *const kNames[3] = { "Normal", "Fast", "Fastest" };
 		static const char *const kTips[3] = {
@@ -6380,8 +6430,18 @@ public:
 			"As Fast, and the states with nothing to do take no time at all.",
 		};
 
-		return DrawHostSlider( "fastweapons", "WEAPON SPEED", x, y, labelW, 0, zx::FastWeaponsMax( ),
-			value, kNames[value], kTips[value], true );
+		// [rc4l] Pinned rather than hidden while a mix owns the weapons. The row is the only place
+		// that can say WHY the setting is unavailable, and a control that vanishes says nothing --
+		// the player is left thinking the panel forgot it. A ceiling equal to the floor makes both
+		// steps draw dim and the track inert, through the slider's own end-stop rules.
+		const int top = plan.speedAdjustable ? zx::FastWeaponsMax( ) : 0;
+
+		return DrawHostSlider( "fastweapons", "WEAPON SPEED", x, y, labelW, 0, top,
+			value, kNames[value],
+			plan.speedAdjustable
+				? kTips[value]
+				: "The mix brings its own weapons, with their own timings. Choose Vanilla to speed them up.",
+			true );
 	}
 
 	// [rc4l] How many sides, as the third instance of the slider.
@@ -6447,13 +6507,21 @@ public:
 		y = DrawHostFastWeapons( x, y, labelW, addon );
 		y = DrawHostTeams( x, y, labelW, addon );
 
+		const zx::WeaponsPlan plan = HostWeaponsPlan( addon );
+
 		for ( size_t g = 0; g < groups.size( ); ++g )
 		{
 			const std::vector<zx::AddonRemix> &choices = groups[g].choices;
 			if ( choices.size( ) <= 1 )
 				continue;
 
-			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
+			// [rc4l] The lock, and it has to be read HERE rather than taken from HostRemixPicks: this
+			// draw walks the groups itself, and a mix group drawn from the raw preference would show
+			// the choice the player made rather than the baseline actually being served.
+			const bool bLocked = ( groups[g].id == kHostMixGroup ) && plan.mixLocked;
+
+			const zx::RemixPick pick = zx::PickRemix( choices,
+				bLocked ? std::string( ) : HostRemixWanted( groups[g].id ));
 
 			// [rc4l] The label sits on the FIRST row of pills rather than above them, which is a line
 			// back per axis. Wrapped rows hang under the pills, not under the label, so the block
@@ -6507,23 +6575,39 @@ public:
 						// Skulltag's "Team Last Man Standing" is the one that needs it.
 						const int pw = MIN( pillWidths[i], pillRoom );
 
-						HostGameplayRow rec;
-						rec.x = px;
-						rec.w = pw;
-						rec.y = y;
-						rec.h = SB_HOST_GAME_ROW_H;
-						rec.group = groups[g].id;
-						rec.id = choices[i].id;
-						g_HostGameRows.Push( rec );
+						// [rc4l] A locked axis registers NO rect, which is what actually makes it
+						// unpressable: the hit test walks these, so a pill that never lands in the
+						// list cannot be clicked, hovered or reached by the keyboard. One rule in one
+						// place, rather than a bLocked test at each of the three.
+						bool bHot = false;
 
-						const bool bHot =
-							( g_HostGameHot == static_cast<int>( g_HostGameRows.Size( ) - 1 ));
+						if ( !bLocked )
+						{
+							HostGameplayRow rec;
+							rec.x = px;
+							rec.w = pw;
+							rec.y = y;
+							rec.h = SB_HOST_GAME_ROW_H;
+							rec.group = groups[g].id;
+							rec.id = choices[i].id;
+							g_HostGameRows.Push( rec );
+
+							bHot = ( g_HostGameHot == static_cast<int>( g_HostGameRows.Size( ) - 1 ));
+						}
 
 						// [rc4l] Rounded, through the same DrawRoundedPanel every other soft-cornered
 						// thing in this browser uses. A pill with square corners is a table cell, and
 						// the shape is most of what says these are one-of-N rather than a list.
 						zx::PanelColor top, bot;
-						if ( bOn )
+						if ( bLocked )
+						{
+							// [rc4l] Flat and faint, the same treatment a slider's end-stop gets when
+							// it cannot move. Still drawn, and the ON one still marked, so the axis
+							// says what it is set to rather than disappearing while it is held.
+							top.r = 34; top.g = 36; top.b = 46; top.a = 160;
+							bot.r = 28; bot.g = 30; bot.b = 40; bot.a = 160;
+						}
+						else if ( bOn )
 						{
 							top.r = 52; top.g = 118; top.b = 66; top.a = 235;
 							bot.r = 34; bot.g = 82;  bot.b = 46; bot.a = 235;
