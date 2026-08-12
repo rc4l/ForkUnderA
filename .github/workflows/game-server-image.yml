@@ -24,6 +24,18 @@
 # fix is a cheap native SERVERONLY configure+compile in _build.yml, not a full Docker build per PR.
 name: Release Game Server Image
 
+# [rc4l] What a RUN is called, as opposed to what the workflow is called. On a pull request this
+# builds the image and stands a server up inside it, then stops: the version derives to "ci", publish
+# is false, and the login, push and tag steps are all gated on publish. Calling that run "Release Game
+# Server Image" invited exactly the question it should have answered, since nothing is released.
+#
+# The workflow keeps its name because releasing is what it is FOR; only the runs that are not
+# releases say so.
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+      && 'Headless Server Build Validation'
+      || 'Release Game Server Image' }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -52,21 +64,31 @@ on:
     workflows: ["Release ForkUnderA"]
     types: [completed]
 
+  # [rc4l] Every pull request, no path filter. It used to be scoped to the packaging files on the
+  # grounds that a whole engine compile inside Docker is expensive, and that was the wrong trade.
+  #
+  # What this uniquely proves is not the compile -- build-linux-server already does that natively and
+  # faster -- but that the PACKAGING works: the Dockerfile, the runtime library set, the entrypoint
+  # resolving a catalogue entry, and a server actually reaching its tick loop. Every one of those has
+  # broken at least once, none of them is covered anywhere else, and the paths that break them are not
+  # always the paths that look related. An entrypoint bug shipped through a filter exactly like this.
+  #
+  # It is expected to be the slowest check and to hold the pull request until it finishes. Nothing
+  # else waits on it: workflows run independently, so this delays no other job.
   pull_request:
-    paths:
-      - Dockerfile.game-server
-      - Dockerfile.game-server.dockerignore
-      - .github/workflows/game-server-image.yml
-      - scripts/game-server-entrypoint.sh
-      - linux_compile.sh
-      - catalogue/**
-      - config/waddownloadsites.txt
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/forkundera-game-server
 
 jobs:
   image:
+    # [rc4l] Same distinction one level down, so the entry in a PR's check list reads as a check
+    # rather than as a release. Safe to rename: branch protection requires the test/* and build/*
+    # contexts, not this one, so no ruleset is pinned to the old name.
+    name: >-
+      ${{ github.event_name == 'pull_request'
+          && 'Headless Server Build Validation'
+          || 'Release game server image' }}
     runs-on: ubuntu-latest
     # [rc4l] A cold engine compile inside Docker is the long pole here; the default 360 is plenty but
     # an explicit ceiling stops a hung configure burning a whole runner hour.

@@ -47,7 +47,7 @@ jobs:
           fi
           printf '{"schemaVersion":1,"label":"tests","message":"%s","color":"blue"}\n' "$TESTS" > tests.json
           git add tests.json
-          if git -c user.email=ci@zandrox -c user.name="ZandroX CI" commit -q -m "Update tests badge: $TESTS"; then
+          if git -c user.email=ci@forkundera -c user.name="ForkUnderA CI" commit -q -m "Update tests badge: $TESTS"; then
             git push -q origin badges
             echo "published tests=$TESTS"
           else
