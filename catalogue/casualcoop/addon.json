@@ -7,7 +7,6 @@
   "gamemode": "cooperative",
   "fastweapons": true,
   "order": 15,
-  "accent": true,
   "remixes": ["vanilla", "brutaldoom", "d4t", "complexdoom", "dnd", "woc", "harddoom", "doom64"],
   "variants": [
     {

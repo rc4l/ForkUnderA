@@ -6979,6 +6979,16 @@ public:
 			if ( !HostRowVisible( rowY, SB_HOST_ENTRY_H ))
 				continue;
 
+			// [rc4l] Whether the row FITS, as opposed to merely touching the view.
+			//
+			// PushClip reaches DimClipped and not DrawText, so a row half past the boundary had its box
+			// cut and its text drawn whole -- a line of bright letters hanging below a list that had
+			// visibly ended. The edge shadow made it obvious rather than causing it: the shadow fades
+			// over the last row INSIDE the region, and the spilt text was underneath all of it.
+			//
+			// The box still draws either way. A sliver of a row is what says the list goes on.
+			const bool bWhole = HostRowFullyVisible( rowY, SB_HOST_ENTRY_H );
+
 			const zx::HostListRow &r = rows[row];
 			const zx::CatalogueEntry &entry = entries[r.entry];
 
@@ -7115,22 +7125,31 @@ public:
 				const FString head = label.Left( split );
 				const FString tail = label.Mid( split );
 
-				screen->DrawText( SmallFont, CR_GREEN, labelLeft, textY, head,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+				if ( bWhole )
+				{
+					screen->DrawText( SmallFont, CR_GREEN, labelLeft, textY, head,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+				}
 
 				if ( tail.IsNotEmpty( ))
 				{
-					screen->DrawText( SmallFont, CR_WHITE,
-						labelLeft + SmallFont->StringWidth( head ), textY, tail,
-						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+					if ( bWhole )
+					{
+						screen->DrawText( SmallFont, CR_WHITE,
+							labelLeft + SmallFont->StringWidth( head ), textY, tail,
+							DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+					}
 				}
 			}
 			else
 			{
 				// A way of playing is indented, so it reads as belonging to the experience above it
 				// rather than as another experience.
-				screen->DrawText( SmallFont, col, labelLeft, textY, label,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+				if ( bWhole )
+				{
+					screen->DrawText( SmallFont, col, labelLeft, textY, label,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+				}
 			}
 
 			if ( bIsVariant )
@@ -7140,9 +7159,12 @@ public:
 				const zx::VariantKind kind = entry.addon.variants[r.variant].kind;
 				const char *kindText = zx::DescribeVariantKind( kind );
 
-				screen->DrawText( SmallFont, ( kind == zx::VariantKind::PvE ) ? CR_GREEN : CR_ORANGE,
-					SB_HOST_ROW_RIGHT - SmallFont->StringWidth( kindText ) - 4, textY, kindText,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+				if ( bWhole )
+				{
+					screen->DrawText( SmallFont, ( kind == zx::VariantKind::PvE ) ? CR_GREEN : CR_ORANGE,
+						SB_HOST_ROW_RIGHT - SmallFont->StringWidth( kindText ) - 4, textY, kindText,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+				}
 
 				if ( !entry.addon.variants[r.variant].tooltip.empty( ))
 				{
@@ -7161,9 +7183,12 @@ public:
 				// Grey on every experience that has one, whatever the row's own state. Taking it out
 				// of the label's colour keeps it quiet next to a marked name, which is what it is:
 				// the shape of the row, not something to look at.
-				screen->DrawText( SmallFont, CR_GRAY,
-					SB_HOST_ROW_RIGHT - SmallFont->StringWidth( caret ) - 4, textY, caret,
-					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+				if ( bWhole )
+				{
+					screen->DrawText( SmallFont, CR_GRAY,
+						SB_HOST_ROW_RIGHT - SmallFont->StringWidth( caret ) - 4, textY, caret,
+						DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+				}
 			}
 
 			// No file count here on purpose: the detail panel beside this already says the files and
