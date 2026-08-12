@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "name": "Ghouls vs Humans",
+  "summary": "A PvP class-based gameplay mod where specialized human combatants rely on ranged weaponry to survive against high-mobility, deadly close-range monster ghouls.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "gamemode": "teamdeathmatch",
+  "variants": [
+    {
+      "id": "classic",
+      "name": "Classic",
+      "cfg": "server.cfg",
+      "kind": "pvp",
+      "default": true,
+      "tooltip": "The original.",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "gvhv2b9_fixed.pk3",
+          "md5": "9cccfbb1edaa9f40df318947fea584bb"
+        },
+        {
+          "name": "gvhv2b9maps.pk3",
+          "md5": "4d0df7f54a01f8bcdb40ff997ad50212"
+        },
+        {
+          "name": "gvhv2b9_patch2d3.wad",
+          "md5": "eb83c4750f34f97980ca365a1a9ae460"
+        },
+        {
+          "name": "gry_gvhmapfixesv1_5.pk3",
+          "md5": "0539fdc882ca3ad1969156fa212fe73b"
+        }
+      ]
+    },
+    {
+      "id": "reborn",
+      "name": "Classic: Reborn",
+      "cfg": "reborn.cfg",
+      "kind": "pvp",
+      "tooltip": "The original but with new twists!",
+      "files": [
+        {
+          "name": "gvhre-maps-1c.pk3",
+          "md5": "b07322c5d7fb6c36cbacb48743675ee0"
+        },
+        {
+          "name": "gvhre-4a2.pk3",
+          "md5": "6fc250f2a19febba8ec0e377c9c03776"
+        },
+        {
+          "name": "gvh-paradoxmaps-1a.pk3",
+          "md5": "f163cf6f5cd8c8f356f00b93a232df6e"
+        }
+      ]
+    },
+    {
+      "id": "multiverse",
+      "name": "Multiverse",
+      "cfg": "multiverse.cfg",
+      "kind": "pvp",
+      "tooltip": "Fanmade edition with more classes than you can count!",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "mv_core_v4b2patch4.pk3",
+          "md5": "a70e9410920eb40260bef26fee9c5816"
+        },
+        {
+          "name": "mv_mapgfx_v4b2patch4.pk3",
+          "md5": "cbc9558780ad190fed8ef7090b03151c"
+        },
+        {
+          "name": "mv_maps_v4b2patch10.pk3",
+          "md5": "7080d65b016942f677485039119acd46"
+        },
+        {
+          "name": "mv_music_v4b2patch4.pk3",
+          "md5": "908145ed3104d5f054a23a1bacabf7be"
+        },
+        {
+          "name": "mv_code_v4b2patch12.pk3",
+          "md5": "195f817ab7bdcab68bc54f68f054ee56"
+        }
+      ]
+    },
+    {
+      "id": "nordicsaga",
+      "name": "Nordic Saga",
+      "cfg": "nordicsaga.cfg",
+      "kind": "pvp",
+      "tooltip": "Fanmade expansion with new maps and classes.",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "ns_core.pk3",
+          "md5": "063384bb833d2e24c256e34c70858fd8"
+        },
+        {
+          "name": "ns_datapack_r24.pk3",
+          "md5": "fbe07b92166aa586257b71493fd0cc79"
+        },
+        {
+          "name": "ns_codepack_r39.pk3",
+          "md5": "e0e78576e0a743103ac09d0e31cc2d6c"
+        },
+        {
+          "name": "ns_patch_r3_fixed.pk3",
+          "md5": "2cda34d9984fa198126cea244ff4445a"
+        },
+        {
+          "name": "ns-addonv1.8.pk3",
+          "md5": "bda55d2223fd8fd18386c34b27ae0e3a"
+        },
+        {
+          "name": "ns_demonicusv1.07.pk3",
+          "md5": "203e1db6da05161d11ea6b49a3a634bf"
+        }
+      ]
+    },
+    {
+      "id": "lod",
+      "name": "Legacy of Darkness",
+      "cfg": "lod.cfg",
+      "kind": "pvp",
+      "tooltip": "The ultimate fanmade expansion with massive upgrades.",
+      "files": [
+        {
+          "name": "lod-corev1.2.pk3",
+          "md5": "59e930c1b0bf1f113f0758863d5a7b44"
+        },
+        {
+          "name": "lod-music.pk3",
+          "md5": "8db9e1b0126540745f7de311b0ac2fe7"
+        },
+        {
+          "name": "lod-mapsv1.6a.pk3",
+          "md5": "5d3a3f57d4e12106219464b22de9c449"
+        },
+        {
+          "name": "lod-addonv1.4b.pk3",
+          "md5": "29a13ce9f9b05daf753cb3e0899308f3"
+        },
+        {
+          "name": "lod-addon-mapsv1.5.pk3",
+          "md5": "b0284382946dfbafc9d8b808a7a2fe17"
+        },
+        {
+          "name": "lod-patchv1.7a.pk3",
+          "md5": "c0d606a610cce0cea7827d810ef46fe7"
+        }
+      ]
+    }
+  ]
+}

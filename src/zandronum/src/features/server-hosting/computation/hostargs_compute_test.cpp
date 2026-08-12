@@ -610,6 +610,109 @@ TEST(HostArgs, HandsTheServerResolvedPathsRatherThanNames)
 	EXPECT_EQ(2, seen) << "every wanted PWAD reached the command line";
 }
 
+// ------------------------------------------------------------ the remix cfgs
+
+TEST(HostArgs, EveryChosenRemixIsExecdAfterTheExperience)
+{
+	// [rc4l] One per axis now, and all of them after the entry's own cfg so a remix beats the pack
+	// where they disagree. That ordering is the whole point of a remix.
+	HostConfig config = Basic();
+	config.execCfg = "catalogue/classicpve/server.cfg";
+	config.execRemixCfgs.push_back("catalogue/remix/survival2/survival2.cfg");
+	config.execRemixCfgs.push_back("catalogue/remix/brutal/brutal.cfg");
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	const int entry = IndexOf(args, "catalogue/classicpve/server.cfg");
+	const int lives = IndexOf(args, "catalogue/remix/survival2/survival2.cfg");
+	const int mod = IndexOf(args, "catalogue/remix/brutal/brutal.cfg");
+
+	ASSERT_GE(entry, 0);
+	ASSERT_GE(lives, 0);
+	ASSERT_GE(mod, 0);
+
+	EXPECT_GT(lives, entry) << "a remix that loses to the pack is not a remix";
+	EXPECT_GT(mod, lives) << "group order decides which axis wins where two axes touch one cvar";
+}
+
+TEST(HostArgs, NoRemixesIsNoExtraExecs)
+{
+	// The ordinary entry, which offers no axes at all.
+	HostConfig config = Basic();
+	config.execCfg = "catalogue/duel40/server.cfg";
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	int execs = 0;
+	for (size_t i = 0; i < args.size(); ++i)
+	{
+		if (args[i] == "+exec")
+			++execs;
+	}
+
+	EXPECT_EQ(1, execs);
+}
+
+TEST(HostArgs, OneUnsafeRemixPathDoesNotDisarmTheOthers)
+{
+	// [rc4l] The `continue` rather than a bail. A single bad row in the catalogue should cost its own
+	// axis; dropping the rest would silently un-apply settings the panel said were on.
+	// Unsafe here means what it means everywhere else in this unit: a value that would be read as
+	// another argument, not a path that points somewhere rude.
+	HostConfig config = Basic();
+	config.execCfg = "catalogue/classicpve/server.cfg";
+	config.execRemixCfgs.push_back("cat/\"quoted\"/remix.cfg");
+	config.execRemixCfgs.push_back("catalogue/remix/brutal/brutal.cfg");
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_FALSE(Has(args, "cat/\"quoted\"/remix.cfg"));
+	EXPECT_TRUE(Has(args, "catalogue/remix/brutal/brutal.cfg"));
+}
+
+TEST(HostArgs, TheGameplayPanelsCvarsBeatEveryExec)
+{
+	// [rc4l] The lives control sets cvars directly rather than exec'ing a file, because what it must
+	// set depends on the gamemode. They have to land after the cfgs or the pack overrides the panel.
+	HostConfig config = Basic();
+	config.execCfg = "catalogue/classicpve/server.cfg";
+	config.execRemixCfgs.push_back("catalogue/remix/brutal/brutal.cfg");
+	config.extraCvars.push_back(std::make_pair(std::string("survival"), std::string("true")));
+	config.extraCvars.push_back(std::make_pair(std::string("sv_maxlives"), std::string("2")));
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_EQ("true", ValueAfter(args, "+survival"));
+	EXPECT_EQ("2", ValueAfter(args, "+sv_maxlives"));
+	EXPECT_GT(IndexOf(args, "+survival"), IndexOf(args, "catalogue/remix/brutal/brutal.cfg"))
+		<< "the panel has to win over the remix as well as the entry";
+}
+
+TEST(HostArgs, AnUnsafeCvarNameOrValueIsDropped)
+{
+	HostConfig config = Basic();
+	config.extraCvars.push_back(std::make_pair(std::string("-host"), std::string("1")));
+	config.extraCvars.push_back(std::make_pair(std::string(""), std::string("1")));
+	config.extraCvars.push_back(std::make_pair(std::string("sv_maxlives"), std::string("\"2\"")));
+	config.extraCvars.push_back(std::make_pair(std::string("survival"), std::string("true")));
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_FALSE(Has(args, "+-host"));
+	EXPECT_FALSE(Has(args, "+"));
+	EXPECT_FALSE(Has(args, "+sv_maxlives")) << "a quoted value would escape its own argument";
+	EXPECT_TRUE(Has(args, "+survival")) << "and the good one still went through";
+}
+
+TEST(HostArgs, NoGameplayCvarsIsNoExtraArguments)
+{
+	HostConfig config = Basic();
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_FALSE(Has(args, "+survival"));
+	EXPECT_FALSE(Has(args, "+sv_maxlives"));
+}
+
 TEST(HostArgs, ADangerousWadPathIsStillDropped)
 {
 	// Dropped rather than escaped, the same as every other unsafe value here.

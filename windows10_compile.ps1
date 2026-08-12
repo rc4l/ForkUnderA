@@ -253,12 +253,15 @@ Copy-Item "$out\*.pk3" $DistDir\ -ErrorAction SilentlyContinue
 
 # [rc4l] Ship Freedoom so the zip is playable without a separate IWAD (BSD-3-clause, clause 2
 # requires the notice to accompany binary distributions).
-if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
-    Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
-    Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
-} else {
-    throw "tools/freedoom/freedoom2.wad missing - the zip would ship without a game"
+# Both phases: Phase 1 is what stands in for doom.wad, and the wildcard copy below would happily
+# ship half of them.
+foreach ($wad in @("freedoom1.wad", "freedoom2.wad")) {
+    if (-not (Test-Path (Join-Path $ScriptRoot "tools\freedoom\$wad"))) {
+        throw "tools/freedoom/$wad missing - the zip would ship without a game to fall back on"
+    }
 }
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
 
 # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and point at the source.
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\

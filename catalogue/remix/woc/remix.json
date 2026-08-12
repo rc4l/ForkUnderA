@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "name": "WoC",
+  "summary": "Wrath of Chronos: classes, levels and skill trees, carried between maps as you play.",
+  "group": "mix",
+  "files": [
+    {
+      "name": "woc_v3.1.4-fix1.pk3",
+      "md5": "aa72d58bb362669faf941fe2973c99d3"
+    }
+  ]
+}

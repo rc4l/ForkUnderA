@@ -3,15 +3,47 @@
   "name": "Classic Duel",
   "summary": "Play one-on-one against someone with classic settings. Say goodbye to freelook and jumping.",
   "iwad": "doom2.wad",
-  "map": "START",
+  "kind": "pvp",
+  "gamemode": "duel",
   "files": [
-    {
-      "name": "duel40b.pk3",
-      "md5": "aa3896cb47c781facab7ea7f39395201"
-    },
     {
       "name": "zandrospree2rc2.pk3",
       "md5": "25b2a3c4f46e50f4016b640119aefae6"
+    }
+  ],
+  "variants": [
+    {
+      "id": "duel40",
+      "name": "Duel 40",
+      "cfg": "server.cfg",
+      "kind": "pvp",
+      "default": true,
+      "map": "START",
+      "tooltip": "Forty maps, and a welcome map to wait on.",
+      "files": [
+        {
+          "name": "duel40b.pk3",
+          "md5": "aa3896cb47c781facab7ea7f39395201"
+        }
+      ]
+    },
+    {
+      "id": "duel32",
+      "name": "Duel 32",
+      "cfg": "duel32.cfg",
+      "kind": "pvp",
+      "map": "START",
+      "tooltip": "An alternate set of curated duel maps",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "duel32-rc2.pk3",
+          "md5": "99b386139ff6ea58e33174a5cd76a2db"
+        }
+      ]
     }
   ]
 }

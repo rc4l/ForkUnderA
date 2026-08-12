@@ -1670,6 +1670,22 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 					szErrorString.Format( "%s authentication failed.\nPlease make sure you are using the exact same file(s) as the server, and try again.", ( ulErrorCode == NETWORK_ERRORCODE_PROTECTED_LUMP_AUTHENTICATIONFAILED ) ? "Protected lump" : "Level" );
 					Printf( "The server reports %d file(s), and you have %d\n", numServerPWADs, NETWORK_GetAuthenticatedWADsList().Size() );
+
+					// [rc4l] BOTH lists in full, not only the difference. The difference names what did
+					// not line up and never says why, and the why is almost always in what did: a file
+					// loaded twice, a name that matched with a different hash behind it, an order that
+					// is not the order the other side used. Two lists in the log settle in one read
+					// what the summary above cannot settle at all.
+					Printf( "Server's list:\n" );
+					for ( unsigned int i = 0; i < serverPWADs.Size( ); ++i )
+						Printf( "  %s - %s\n", serverPWADs[i].name.GetChars( ), serverPWADs[i].checksum.GetChars( ));
+
+					Printf( "Ours:\n" );
+					{
+						const TArray<NetworkPWAD> &ours = NETWORK_GetAuthenticatedWADsList( );
+						for ( unsigned int i = 0; i < ours.Size( ); ++i )
+							Printf( "  %s - %s\n", ours[i].name.GetChars( ), ours[i].checksum.GetChars( ));
+					}
 					if ( incompatiblePWADs.Size( ) != 0 )
 					{
 						Printf( "Incompatible file(s) (file name - server | client):\n" );

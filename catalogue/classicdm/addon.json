@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "name": "Popular Deathmatch Maps",
+  "summary": "The mappacks deathmatch has always been played on, with whatever you like on top.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "gamemode": "deathmatch",
+  "order": 5,
+  "accent": true,
+  "remixes": ["vanilla", "brutaldoom", "d4t", "doom64", "cataweaponz", "eonweapons"],
+  "files": [
+    {
+      "name": "zandrospree2rc2.pk3",
+      "md5": "25b2a3c4f46e50f4016b640119aefae6"
+    }
+  ],
+  "variants": [
+    {
+      "id": "onslaught",
+      "name": "Onslaught",
+      "cfg": "server.cfg",
+      "kind": "pvp",
+      "default": true,
+      "tooltip": "Fifty-one maps, shuffled.",
+      "files": [
+        {
+          "name": "onslpack.wad",
+          "md5": "004dd564c695d81e66de53bb5b6ff227"
+        }
+      ]
+    },
+    {
+      "id": "cybercrime3",
+      "name": "Cybercrime 3",
+      "cfg": "cybercrime3.cfg",
+      "kind": "pvp",
+      "tooltip": "Ten maps, shuffled.",
+      "files": [
+        {
+          "name": "cybercrime3.wad",
+          "md5": "ccf6ad5517b12e2cd1ca51014401b19f"
+        }
+      ]
+    },
+    {
+      "id": "udm3",
+      "name": "Unidoom Deathmatch 3",
+      "cfg": "udm3.cfg",
+      "kind": "pvp",
+      "tooltip": "Nineteen maps, shuffled.",
+      "files": [
+        {
+          "name": "udm3.wad",
+          "md5": "3ad094eb5412bb1c711c438a3b0c4eb2"
+        }
+      ]
+    },
+    {
+      "id": "udmx",
+      "name": "Unidoom Deathmatch X",
+      "cfg": "udmx.cfg",
+      "kind": "pvp",
+      "tooltip": "Thirty-two maps, shuffled.",
+      "files": [
+        {
+          "name": "udmx.wad",
+          "md5": "2b41f525a3a94ef86b553fb5e656dd9a"
+        }
+      ]
+    },
+    {
+      "id": "brit",
+      "name": "The Brit 10",
+      "cfg": "brit.cfg",
+      "kind": "pvp",
+      "tooltip": "Seven maps, shuffled.",
+      "files": [
+        {
+          "name": "brit10.wad",
+          "md5": "61c269d3daedc65340502493418bd5eb"
+        }
+      ]
+    }
+  ]
+}

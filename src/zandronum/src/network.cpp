@@ -2003,6 +2003,23 @@ static void network_InitPWADList( void )
 {
 	g_PWADs.Clear();
 
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+	//   SUPERSEDED BY: nothing. Upstream builds this list once per process because upstream has no
+	//   way to change the loaded files without exiting; wad_reload does, so the second build is a
+	//   case that cannot arise there.
+	//   ON PORT: keep.
+	//
+	// The authenticated list was cleared with the PWAD list above and this line was simply absent, so
+	// every rebuild appended to whatever was already in it. Nothing noticed while a process loaded
+	// its files once and never again -- which was true of this engine until wad_reload.
+	//
+	// It stopped being true the moment a client could reload onto a server's file set. Hosting an
+	// experience does exactly that: boot on the IWAD, reload onto the entry, connect. The list then
+	// held the first boot's files AND the second's, so the client offered six where it had loaded
+	// four, the server matched five of them, and the join was refused for protected-lump
+	// authentication -- naming a file both sides had, as missing.
+	g_AuthenticatedWADs.Clear();
+
 	// Find the IWAD index.
 	ULONG ulNumPWADs = 0, ulRealIWADIdx = 0;
 	for ( ULONG ulIdx = 0; Wads.GetWadName( ulIdx ) != NULL; ulIdx++ )
@@ -2054,8 +2071,7 @@ static void network_InitPWADList( void )
 		if ( Wads.WadContainsAuthenticatedLumps( ulIdx ) )
 		{
 			g_AuthenticatedWADs.Push( pwad );
-		}
-	}
+		}	}
 }
 
 void network_Error( const char *pszError )
