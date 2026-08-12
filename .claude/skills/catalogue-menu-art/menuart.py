@@ -37,6 +37,14 @@ PIXEL_ASPECT = 1.2
 # colour and posterises gracefully, where a smaller logo just goes illegible.
 COLOUR_STEPS = (256, 128, 64, 32, 16, 8, 4)
 
+# [rc4l] What the art will be drawn ON, for blending its antialiased edge into.
+#
+# Only the part-transparent pixels use it, so it needs to be close rather than exact: an edge blended
+# into a colour a level or two off the real surface is not something an eye can find. Change it if
+# the surface changes, and measure the composite rather than reading one layer's colour, because a
+# panel is usually several layers deep.
+BACKGROUND = (7, 8, 11)
+
 # [rc4l] The stock palette, for decoding a picture whose archive brought none of its own.
 #
 # Most add-ons ship no palette because the base game already supplies one, and the load order a
@@ -236,23 +244,52 @@ def fit(img, height, max_width):
 	                    max(1, int(round(tall.size[1] * scale)))), Image.LANCZOS)
 
 
-def compress(img, budget):
+def compress(img, budget, background=BACKGROUND):
 	"""Under budget, keeping every pixel. Returns the bytes and how many colours it took.
 
 	Size is settled before this runs and is never traded away: the slot is the slot, and an image
 	that fits the budget by being smaller than its slot just gets stretched back and looks worse
 	than the posterised version of the right size.
+
+	Transparency is kept, because most logos have it and the surface behind them is not flat. A
+	logo flattened onto one colour shows that colour as a rectangle around itself the moment the
+	surface is a gradient, which is what a panel usually is.
 	"""
-	# Flattened onto black. Alpha costs a tRNS chunk for a transparency the panel never sees,
-	# because it draws on a dark background anyway.
-	flat = Image.new("RGB", img.size, (0, 0, 0))
+	# [rc4l] Where a pixel is PART transparent, blend it into the background rather than carrying
+	# its alpha through.
+	#
+	# Full per-pixel alpha would need a palette of colour-and-alpha pairs, and the pixels needing it
+	# are the antialiased rim and nothing else. Blending them into the surface they will be drawn on
+	# reproduces that rim exactly, for one palette entry and no format complexity. It is only
+	# approximate to the extent the surface is not the colour given, and a panel varies by a level or
+	# two across the height of a logo.
+	flat = Image.new("RGB", img.size, background)
 	flat.paste(img, (0, 0), img)
+
+	# Fully clear stays clear. This is the part that matters: it is what stops a box being drawn.
+	clear = img.split()[3].point(lambda a: 255 if a == 0 else 0)
+	transparent = clear.getbbox() is not None
 
 	last = None
 	for colours in COLOUR_STEPS:
-		quantised = flat.quantize(colors=colours, method=Image.MEDIANCUT, dither=Image.NONE)
+		# One index is spent on the clear colour when there is transparency to record.
+		want = max(2, colours - 1) if transparent else colours
+		quantised = flat.quantize(colors=want, method=Image.MEDIANCUT, dither=Image.NONE)
+
+		save = {}
+		if transparent:
+			index = max(quantised.getdata()) + 1
+			if index > 255:
+				index = 255
+			palette = quantised.getpalette()
+			palette += [0] * (768 - len(palette))
+			palette[index * 3:index * 3 + 3] = list(background)
+			quantised.putpalette(palette)
+			quantised.paste(index, clear)
+			save["transparency"] = index
+
 		buf = io.BytesIO()
-		quantised.save(buf, "PNG", optimize=True, compress_level=9)
+		quantised.save(buf, "PNG", optimize=True, compress_level=9, **save)
 		last = (buf.getvalue(), colours)
 		if len(last[0]) <= budget:
 			return last[0], colours, True
@@ -260,14 +297,14 @@ def compress(img, budget):
 	return last[0], last[1], False
 
 
-def extract(paths, out, height, width, budget, lumps=LUMPS):
+def extract(paths, out, height, width, budget, lumps=LUMPS, background=BACKGROUND):
 	"""The whole job for one slot. Returns a dict describing what happened, or None for no art."""
 	img, lump, source = resolve(paths, lumps)
 	if img is None:
 		return None
 
 	sized = fit(img, height, width)
-	data, colours, ok = compress(sized, budget)
+	data, colours, ok = compress(sized, budget, background)
 
 	if out:
 		d = os.path.dirname(out)
@@ -284,6 +321,7 @@ def extract(paths, out, height, width, budget, lumps=LUMPS):
 		"bytes": len(data),
 		"colours": colours,
 		"within_budget": ok,
+		"transparent": sized.split()[3].point(lambda a: 255 if a == 0 else 0).getbbox() is not None,
 	}
 
 
@@ -298,11 +336,14 @@ def main(argv):
 	ap.add_argument("--budget", type=int, default=1024, help="hard byte ceiling for the PNG")
 	ap.add_argument("--lumps", default=",".join(LUMPS),
 	                help="lump names to try, best first")
+	ap.add_argument("--background", default="%d,%d,%d" % BACKGROUND,
+	                help="R,G,B the art will be drawn on; antialiased edges blend into it")
 	ap.add_argument("--json", action="store_true", help="report as JSON")
 	args = ap.parse_args(argv)
 
 	got = extract(args.files, args.out, args.height, args.width, args.budget,
-	              tuple(x.strip().upper() for x in args.lumps.split(",") if x.strip()))
+	              tuple(x.strip().upper() for x in args.lumps.split(",") if x.strip()),
+	              tuple(int(x) for x in args.background.split(",")))
 
 	if got is None:
 		if args.json:
@@ -315,9 +356,10 @@ def main(argv):
 		got["found"] = True
 		print(json.dumps(got))
 	else:
-		print("%s from %s: %dx%d, %d colours, %d B%s" % (
-			got["lump"], got["source"], got["size"][0], got["size"][1],
-			got["colours"], got["bytes"], "" if got["within_budget"] else "  OVER BUDGET"))
+		print("%s from %s: %dx%d, %d colours, %s, %d B%s" % (
+			got["lump"], got["source"], got["size"][0], got["size"][1], got["colours"],
+			"transparent" if got["transparent"] else "opaque",
+			got["bytes"], "" if got["within_budget"] else "  OVER BUDGET"))
 
 	return 0 if got["within_budget"] else 2
 

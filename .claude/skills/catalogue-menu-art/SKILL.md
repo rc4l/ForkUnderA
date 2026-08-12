@@ -1,12 +1,14 @@
 ---
 name: catalogue-menu-art
-description: Generating the small menu-art thumbnails a catalogue entry, variant or mix shows in place of its text header, using menuart.py. Use when adding or changing anything the catalogue loads, when a header should show art instead of a name, or when the art looks wrong.
+description: Generating the small menu-art thumbnails a catalogue entry, variant or mix shows in place of its text header, using the generate.py and menuart.py scripts in this skill. Use when adding or changing anything the catalogue loads, when a header should show art instead of a name, when the panel's size or colours change, or when the art looks wrong.
 ---
 
 # Menu art for the catalogue
 
 An entry, variant or mix can show a picture instead of a text header. The picture comes out of the
-archives it loads, shrunk to a kilobyte and committed. **The archives are not shipped; the art is.**
+archives it loads, shrunk to a few kilobytes and committed. **The archives are not shipped; the art
+is.** That is the whole point: the identity of a pack costs kilobytes, the pack costs hundreds of
+megabytes.
 
 Two scripts sit beside this file. Neither needs anything but Pillow.
 
@@ -82,6 +84,36 @@ knowing because it goes the opposite way to intuition. At one fixed budget:
 Colour beats resolution here. Smooth scaling hides a 1.7x resolution gap; nothing hides banding.
 So when the budget binds, come **down** in size rather than up.
 
+## Transparency
+
+Logos have it and backgrounds do not, and that difference is not cosmetic. Measured across a full
+catalogue:
+
+| Lump | Opaque | Binary alpha | Antialiased |
+|---|---|---|---|
+| Logo | 5 | 19 | 8 |
+| Background | all | none | none |
+
+A logo flattened onto one colour draws that colour as a **rectangle around itself** the moment the
+surface behind it is not that colour. Panels are gradients, so it always is. The tool keeps
+transparency, and there is nothing to configure for it.
+
+What it does with the in-between pixels is worth knowing, because it is a deliberate approximation:
+
+- **Fully clear stays clear**, recorded as one palette entry. This is the part that stops the box.
+- **Part-transparent pixels are blended into the surface** named by `--background`, then stored
+  opaque.
+
+Full per-pixel alpha would need a palette of colour-and-alpha pairs, and the only pixels wanting it
+are the antialiased rim. Blending that rim into the surface it will be drawn on reproduces it
+exactly, for one palette entry and no format complexity. The approximation shows only where the real
+surface differs from the colour given, and across the height of one logo a panel varies by a level
+or two.
+
+So `--background` must be the **composite** the art will sit on, not one layer's colour. Read the
+drawing code and work out what the layers actually add up to; a panel is usually several deep and
+its declared colour is rarely what reaches the screen.
+
 ## Traps this already handles
 
 Do not re-solve these:
@@ -96,6 +128,8 @@ Do not re-solve these:
   resort. Anything shipping its own still wins.
 - **Non-square pixels.** Source pixels are taller than they are wide. The tool corrects this, which
   is why the output matches what a player sees rather than a squashed copy.
+- **A picture whose last byte is its terminator.** Requiring a byte after it rejects every
+  well-formed picture whose final column ends the lump, which is most of them.
 
 ## Verify by looking
 
