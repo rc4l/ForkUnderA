@@ -17,7 +17,8 @@ everywhere else.
   "summary": "One sentence, shown on hover.",
   "group": "mix",
   "cfg": "<optional>.cfg",
-  "files": [ { "name": "<mod>.pk3", "md5": "<32 hex>" } ]
+  "files": [ { "name": "<mod>.pk3", "md5": "<32 hex>" } ],
+  "supersedes": [ "<bare filename>" ]
 }
 ```
 
@@ -66,6 +67,31 @@ taste:
 
 Write the cfg by the rules in `catalogue-cfg` — named cvars, and a comment saying which of them
 override the entry and why, because that is the surprising part for whoever reads it next.
+
+## When a mix bundles something the experiences already load
+
+A mod is free to ship its own copy of a system the experiences load separately — an announcer, a
+spree tracker, a HUD. That is not a duplicate file, since the names differ; it is the same system
+running twice, and every announcement plays over itself.
+
+Name the file in `supersedes` and it is taken back out wherever the mix is picked:
+
+```json
+"supersedes": ["<the file the experiences load>"]
+```
+
+It goes on the **mix**, never the entry, because the mix is the thing that knows what is inside it.
+An entry cannot be asked to list what each of its mixes happens to carry — it would need editing
+every time any of them gained something.
+
+Bare filenames, matched case-insensitively. A name no entry loads drops nothing, which is the normal
+case for a mix offered by several entries where only some of them load it. A mix that supersedes a
+file it also loads is refused at parse time.
+
+Before adding a mix, look inside its pk3: `LOADACS`, `KEYCONF`, and any `SNDINFO*` say what systems
+it brings with it. Two mods touching the same area of the game are not automatically in conflict —
+one replacing a built-in announcer and another running a separate tracker say different things and
+belong together. What `supersedes` is for is the same system twice.
 
 ## The weapon-speed exclusion
 
