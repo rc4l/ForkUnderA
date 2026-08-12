@@ -258,7 +258,9 @@ static int serverbrowser_OriginY( void );
 // picture does not, and at four the widest art costs more than it is worth. The assets are built to
 // suit this number, so changing it means regenerating them.
 #define SB_HOST_ART_H		( BigFont->GetHeight( ) * 3 )
-#define SB_HOST_ART_GAP		8
+
+// Wide enough to set the joining mark in, with air either side of it.
+#define SB_HOST_ART_GAP		18
 #define SB_HOST_ROW_H		15		// one field and the space under it
 #define SB_HOST_FIELD_H		16
 // [rc4l] Wide enough for the longest label, which is PREFERRED PORT. At 92 it fitted every label
@@ -6420,6 +6422,25 @@ public:
 		return FString( );
 	}
 
+	// [rc4l] Whether THIS selection has a picture to draw in place of its name.
+	//
+	// Asked by the height as well as by the draw, and they must not answer differently: the region
+	// scrolls by the height, so a disagreement is a panel that cannot reach its own last line.
+	//
+	// The file rather than the loaded texture, because the height is wanted before the draw has had
+	// a chance to load anything, and on the first frame of a new selection the texture is still the
+	// old one.
+	bool HostHasArt( const zx::CatalogueEntry &entry )
+	{
+		const zx::VariantPick pick = zx::PickVariant( entry.addon, g_HostVariantId.GetChars( ));
+
+		std::string variantId;
+		if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( entry.addon.variants.size( ))))
+			variantId = entry.addon.variants[pick.index].id;
+
+		return !zx::CatalogueArtPath( entry, variantId ).empty( );
+	}
+
 	int HostDetailH( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -6438,7 +6459,16 @@ public:
 		const bool bSettings = HostHasGameplayRow( );
 		const int fileLines = HostWadListLines( a );
 
-		int h = BigFont->GetHeight( ) + 4
+		// [rc4l] The picture stands in for the title and is taller than it, so the region has to be
+		// told. Without this the panel is short by the difference, which is how the file list ends up
+		// cut off with a scrollbar that will not reach it.
+		//
+		// Asked the same way the draw asks: whether this selection HAS a picture, not whether any
+		// does. The two must agree or the region scrolls past its own content.
+		const int headH = HostHasArt( entries[g_HostEntrySel] )
+			? SB_HOST_ART_H : BigFont->GetHeight( );
+
+		int h = headH + 4
 			+ 6								// the rule under the title
 			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
 			+ 4 + 6							// the rule above the files
@@ -6567,6 +6597,18 @@ public:
 	// otherwise draw straight over the panel edge.
 	bool DrawHostArtRow( int y, int h )
 	{
+		// [rc4l] The mix's picture is an ADDITION to the experience's, never a replacement for it.
+		//
+		// Without this, an experience with no picture whose mix has one would draw the mix's logo
+		// where its own name belongs, which says the wrong thing entirely: you would be looking at a
+		// header reading BRUTAL DOOM while hosting something else. The mix is already named by its
+		// lit pill a few lines below.
+		//
+		// It also keeps this in step with HostHasArt, which the region's height is measured from. The
+		// two answering differently is a panel that cannot scroll to its own last line.
+		if ( g_HostArtMain.pTex == NULL )
+			return false;
+
 		std::vector<std::pair<int, int> > sizes;
 		FTexture *tex[2] = { g_HostArtMain.pTex, g_HostArtMix.pTex };
 		int count = 0;
@@ -6606,6 +6648,21 @@ public:
 				DTA_DestHeight, ph,
 				DTA_ClipTop, clipTop,
 				DTA_ClipBottom, clipBottom,
+				TAG_DONE );
+		}
+
+		// [rc4l] Two pictures with nothing between them read as one wide picture, or as a pack whose
+		// logo happens to have two halves. The mark says they are separate things being combined,
+		// which is exactly what picking a mix does.
+		if (( rects.size( ) == 2 ) && HostDetailRowVisible( y, h ))
+		{
+			const int between = ( rects[0].x + rects[0].w + rects[1].x ) / 2;
+			const char *mark = "+";
+
+			screen->DrawText( SmallFont, CR_DARKGRAY,
+				between - SmallFont->StringWidth( mark ) / 2,
+				y + ( h - SmallFont->GetHeight( )) / 2, mark,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
 				TAG_DONE );
 		}
 
