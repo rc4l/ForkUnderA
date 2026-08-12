@@ -271,7 +271,7 @@ if (Get-ChildItem "$DistDir\*.dll" -ErrorAction SilentlyContinue) {
 }
 Write-Note "static build: no runtime DLLs in dist-windows"
 
-$zip = Join-Path $ScriptRoot "ZandroX-$Version-windows-x64.zip"
+$zip = Join-Path $ScriptRoot "ForkUnderA-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path "$DistDir\*" -DestinationPath $zip -Force
 Write-Status "Done: $zip"
