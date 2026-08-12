@@ -26,8 +26,9 @@ Archives go in **load order**. The tool applies the engine's own rule, so it ret
 would actually see.
 
 `generate.py` writes `art.png` beside an entry that plays one way, `art.<variant>.png` for each way
-of playing, and `art.png` beside each mix. Settings and overrides live in that file rather than in
-somebody's shell history, so the next run reproduces the same catalogue.
+of playing, and `art.png` beside each mix. Its settings live in that file rather than in somebody's
+shell history, so the next run reproduces the same catalogue. Nothing about any particular pack
+lives there.
 
 Every referenced file has to be in the store, or the load order is incomplete and a slot can resolve
 to the wrong picture. The script says which are absent; do not ignore it.
@@ -141,9 +142,32 @@ Some art will be poor, and the tool is not at fault. Sources vary: a logo may be
 tall, or low contrast, or an illustration rather than a wordmark. Check the source at its native
 size before concluding the tool broke it. It usually did not.
 
-When the preferred lump is genuinely the wrong picture, and only then, add a line to `OVERRIDES` in
-`generate.py` naming the slot and the lump to use instead. It is for a source that is not what it
-claims, such as a logo lump holding an empty menu frame. It is not for taste.
+## When a slot has to say for itself
+
+The automatic answer is right nearly always. When it is not, the slot says so **in the catalogue**,
+not in this tool. A pack's art is a fact about that pack, and the packs are described over there;
+a list of names living in a tool is a list somebody has to edit the tool to change.
+
+| Written on the entry, variant or mix | Means |
+|---|---|
+| `"art": "<lump>"` | Use this instead of what would be resolved |
+| `"art": ""` | No picture. Draw the name |
+| absent | Resolve automatically |
+
+A variant speaks for itself, or inherits what its entry said.
+
+Reach for it only when the source is not what it claims, and say in the commit what was wrong with
+it. Three shapes seen so far:
+
+- A logo lump holding an empty frame, with the real art on the title screen.
+- A menu drawing the **base game's** logo. It is real art and it is what the menu shows, but it
+  names the base game rather than the pack, so every variant comes out as the same generic picture
+  where their names had told you which was which.
+- A menu graphic that is a blank spacer, with the real title rendered as a MAP rather than stored as
+  a picture. Nothing can be extracted from a rendered scene, so the pack's badge elsewhere in its
+  own files is the only thing to point at.
+
+It is not for taste.
 
 ## When to regenerate
 
