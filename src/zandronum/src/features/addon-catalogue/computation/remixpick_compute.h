@@ -51,6 +51,10 @@ struct RemixPick
 	std::string cfg;
 	std::vector<AddonFileRef> files;
 
+	// What it makes redundant, carried through from the remix so the caller can act on it without
+	// going back to the pool for the thing it just picked.
+	std::vector<std::string> supersedes;
+
 	RemixPick() : index(-1) {}
 };
 
@@ -86,6 +90,19 @@ std::vector<RemixGroup> GroupRemixes(const std::vector<AddonRemix> &offered);
 // the others.
 std::vector<RemixPick> PickRemixes(const std::vector<AddonRemix> &offered,
                                    const std::vector<std::pair<std::string, std::string> > &wanted);
+
+// [rc4l] The file list with everything the chosen mixes already contain taken back out.
+//
+// `files` is the whole load in order -- what the entry and its variant bring, then what each pick
+// adds -- and the answer is that list minus any file a pick says it supersedes. Applied to the
+// COMBINED list rather than to the base, because the thing being superseded is not always the
+// entry's: two mixes on different axes can each carry the same announcer.
+//
+// Matching is by filename, case-insensitively, since that is the only handle a remix has on a file
+// it does not itself list a hash for. A name nothing matches drops nothing, which is the normal case
+// for a mix offered by several entries where only some of them load it.
+std::vector<AddonFileRef> FilesAfterSupersedes(const std::vector<AddonFileRef> &files,
+                                               const std::vector<RemixPick> &picks);
 
 } // namespace zx
 

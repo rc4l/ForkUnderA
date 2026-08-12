@@ -999,6 +999,46 @@ TEST(RemixFile, TheGroupIsRead)
 	EXPECT_EQ("mod", r.group);
 }
 
+TEST(RemixFile, TheSupersededListIsRead)
+{
+	// A mix that bundles its own copy of something entries load separately. Nothing is refused for
+	// naming a file the entry does not have: the same mix is offered by entries that never load it.
+	const zx::AddonRemix r = ParseRemix(
+		"{ \"name\": \"Weapons\", \"supersedes\": [\"spree.pk3\", \"announcer.pk3\"] }");
+
+	ASSERT_TRUE(r.valid) << r.error;
+	ASSERT_EQ(2u, r.supersedes.size());
+	EXPECT_EQ("spree.pk3", r.supersedes[0]);
+	EXPECT_EQ("announcer.pk3", r.supersedes[1]);
+}
+
+TEST(RemixFile, ARemixSupersedesNothingByDefault)
+{
+	EXPECT_TRUE(ParseRemix("{ \"name\": \"Weapons\" }").supersedes.empty());
+}
+
+TEST(RemixFile, ASupersededNameMustBeBare)
+{
+	// Matched against filenames, so a path can never match one and the suppression would silently
+	// do nothing at all.
+	const zx::AddonRemix r = ParseRemix(
+		"{ \"name\": \"Weapons\", \"supersedes\": [\"wads/spree.pk3\"] }");
+
+	EXPECT_FALSE(r.valid);
+}
+
+TEST(RemixFile, ARemixCannotSupersedeSomethingItLoads)
+{
+	// Refused because the suppression matches by name and would take the remix's own copy out along
+	// with the entry's, leaving a mix that quietly stops loading half of itself.
+	const zx::AddonRemix r = ParseRemix(
+		"{ \"name\": \"Weapons\","
+		" \"files\": [{ \"name\": \"spree.pk3\", \"md5\": \"0123456789abcdef0123456789abcdef\" }],"
+		" \"supersedes\": [\"spree.pk3\"] }");
+
+	EXPECT_FALSE(r.valid);
+}
+
 TEST(RemixFile, ARemixWithFilesCarriesThem)
 {
 	const zx::AddonRemix r = ParseRemix(

@@ -1080,7 +1080,10 @@ static std::vector<zx::AddonFileRef> HostSelectedFiles( const zx::AddonEntry &ad
 	for ( size_t i = 0; i < picks.size( ); ++i )
 		files.insert( files.end( ), picks[i].files.begin( ), picks[i].files.end( ));
 
-	return files;
+	// [rc4l] Last, and here rather than anywhere nearer the launch, because every question about
+	// files comes through this one function: a file a mix supersedes has to disappear from the panel
+	// and its size total as well as from the command line, and it does, for free.
+	return zx::FilesAfterSupersedes( files, picks );
 }
 
 // [rc4l] What we told the server to load, kept so the client can match it before joining.

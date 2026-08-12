@@ -690,6 +690,7 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 			else if (key == "summary")	{ ok = ReadString(r, remix.summary); }
 			else if (key == "cfg")		{ ok = ReadString(r, remix.cfg); }
 			else if (key == "group")	{ ok = ReadString(r, remix.group); }
+			else if (key == "supersedes")	{ ok = ReadIdArray(r, remix.supersedes); }
 			else if (key == "files")	{ ok = ReadFilesArray(r, remix.files); }
 			else						{ ok = SkipValue(r); }
 
@@ -716,6 +717,15 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 	if (!remix.cfg.empty() && !IsBareFilename(remix.cfg))
 		return FailRemix(id, "cfg is not a bare filename");
 
+	// [rc4l] A superseded name is compared against filenames, so it obeys the same rule they do:
+	// bare, or it names something no entry could ever match and the suppression silently does
+	// nothing.
+	for (size_t i = 0; i < remix.supersedes.size(); ++i)
+	{
+		if (!IsBareFilename(remix.supersedes[i]))
+			return FailRemix(id, "a superseded file name is not a bare filename");
+	}
+
 	// The same rules the entries' files obey. A remix's list reaches the same loader and the same
 	// by-hash store, so a path or a bad hash is exactly as dangerous here.
 	for (size_t i = 0; i < remix.files.size(); ++i)
@@ -724,6 +734,15 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 			return FailRemix(id, "a file name is not a bare filename");
 		if (!LooksLikeMd5(remix.files[i].md5))
 			return FailRemix(id, "a file has no usable md5");
+
+		// [rc4l] Superseding something it also loads is a contradiction, and a silent one: the
+		// suppression matches by name and would take the remix's own copy out with the entry's,
+		// leaving a mix that quietly stops loading half of itself.
+		for (size_t s = 0; s < remix.supersedes.size(); ++s)
+		{
+			if (remix.files[i].name == remix.supersedes[s])
+				return FailRemix(id, "a file is both loaded and superseded");
+		}
 	}
 
 	// Deliberately NOT refused for doing nothing. The baseline remix is the one that changes nothing,
