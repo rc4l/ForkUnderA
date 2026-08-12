@@ -102,6 +102,19 @@
       ]
     },
     {
+      "id": "sod",
+      "name": "Speed of Doom",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Two mappers taking turns, one quick and tight, the other vast.",
+      "files": [
+        {
+          "name": "sodfinal.wad",
+          "md5": "91005d20647041c8195a231629b496e4"
+        }
+      ]
+    },
+    {
       "id": "uacultra",
       "name": "UAC Ultra",
       "cfg": "uacultra.cfg",
