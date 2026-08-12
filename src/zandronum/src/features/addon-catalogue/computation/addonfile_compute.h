@@ -248,8 +248,10 @@ struct AddonEntry
 	bool valid;
 	std::string error;		// why not, when invalid
 
-	AddonEntry() : kind(VariantKind::Unknown), gameMode(HostGameMode::Unknown),
-		defaultLives(0), maxLives(0), fastWeapons(false), teams(false), order(0), accent(false),
+	// In DECLARATION order, which gcc requires and which msvc does not check: `order` is declared
+	// above the gamemode and has to be initialised there too.
+	AddonEntry() : kind(VariantKind::Unknown), order(0), gameMode(HostGameMode::Unknown),
+		defaultLives(0), maxLives(0), fastWeapons(false), teams(false), accent(false),
 		valid(false) {}
 };
 
