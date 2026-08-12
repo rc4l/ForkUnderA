@@ -6,7 +6,7 @@
   "gamemode": "cooperative",
   "fastweapons": true,
   "order": 15,
-  "remixes": ["vanilla", "brutaldoom", "d4t", "complexdoom", "dnd", "woc", "harddoom", "doom64"],
+  "remixes": ["vanilla", "brutaldoom", "rga2", "d4t", "complexdoom", "dnd", "woc", "harddoom", "doom64"],
   "variants": [
     {
       "id": "dbzone",

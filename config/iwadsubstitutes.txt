@@ -10,3 +10,4 @@ doom1.wad         freedoom1.wad    Doom shareware
 doomu.wad         freedoom1.wad    The Ultimate Doom
 bfgdoom.wad       freedoom1.wad    Doom: BFG Edition
 doombfg.wad       freedoom1.wad    Doom: BFG Edition
+megagame.wad      fuamega.wad      Mega Man 8-bit Deathmatch

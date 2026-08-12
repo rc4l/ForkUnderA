@@ -44,7 +44,8 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
                        const std::vector<std::string> &remixCfgPaths,
                        const std::string &map,
                        const HostChoices &choices,
-                       const std::vector<std::string> &haveFiles)
+                       const std::vector<std::string> &haveFiles,
+                       bool freeIwad)
 {
 	HostPlan plan;
 
@@ -69,18 +70,38 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
 		return plan;
 	}
 
-	// An IWAD is the one thing that cannot be worked around. The substitute table has already been
-	// consulted by PickIwad, so None here means there is genuinely nothing to run on, and offering a
-	// download would be offering a commercial game we are not allowed to fetch.
+	// [rc4l] Nothing on this machine to run on. Whether that is fatal turns on ONE question: can the
+	// game be named as freely redistributable?
+	//
+	// If it can, it is a download like any other. The objection to fetching an iwad was always a
+	// licensing one rather than a technical one, and it simply does not apply to a game whose authors
+	// give it away. If it cannot, it stays a refusal, and the wording says why rather than implying
+	// the file is merely absent.
 	if (iwad.choice == IwadChoice::None)
 	{
-		plan.blocker = addon.iwad.empty()
-			? std::string("no IWAD to run on")
-			: ("you need " + addon.iwad + ", and there is no free stand-in for it on this machine");
-		return plan;
-	}
+		if (addon.iwad.empty())
+		{
+			plan.blocker = "no IWAD to run on";
+			return plan;
+		}
 
-	plan.iwad = iwad.iwad;
+		if (!freeIwad)
+		{
+			plan.blocker = "you need " + addon.iwad +
+				", and there is no free stand-in for it on this machine";
+			return plan;
+		}
+
+		// FIRST in the list, because it is the thing everything else sits on: a caller showing
+		// progress reads better counting up from the game to the mods than the other way about.
+		plan.iwad = addon.iwad;
+		plan.missingIwad = true;
+		plan.missing.push_back(addon.iwad);
+	}
+	else
+	{
+		plan.iwad = iwad.iwad;
+	}
 
 	// Load order is as resolved, unchanged. It is the only thing that says the announcer goes after
 	// the maps, and re-deriving it here would be a second opinion nobody asked for.

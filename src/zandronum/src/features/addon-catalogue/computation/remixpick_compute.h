@@ -51,6 +51,10 @@ struct RemixPick
 	std::string cfg;
 	std::vector<AddonFileRef> files;
 
+	// What it already contains, carried through from the remix so the caller can act on it without
+	// going back to the pool for the thing it just picked.
+	std::vector<std::string> provides;
+
 	RemixPick() : index(-1) {}
 };
 
@@ -86,6 +90,19 @@ std::vector<RemixGroup> GroupRemixes(const std::vector<AddonRemix> &offered);
 // the others.
 std::vector<RemixPick> PickRemixes(const std::vector<AddonRemix> &offered,
                                    const std::vector<std::pair<std::string, std::string> > &wanted);
+
+// [rc4l] The whole load, in order: what the entry and its variant bring, then what each pick adds,
+// minus anything a pick already contains.
+//
+// One function rather than an append followed by a filter, because the filter needs to know where
+// each file CAME FROM. A mix that provides a role must not suppress its own copy of that role, and
+// once the lists are concatenated there is nothing left to tell them apart.
+//
+// Matched on AddonFileRef::provides against RemixPick::provides -- roles, never filenames. A role no
+// file fills drops nothing, which is the normal case for a mix offered by several entries where only
+// some of them load one.
+std::vector<AddonFileRef> CombineFiles(const std::vector<AddonFileRef> &base,
+                                       const std::vector<RemixPick> &picks);
 
 } // namespace zx
 

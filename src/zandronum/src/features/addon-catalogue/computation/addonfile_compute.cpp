@@ -229,6 +229,11 @@ bool ReadFilesArray(Reader &r, std::vector<AddonFileRef> &out)
 					if (!ReadString(r, ref.md5))
 						return false;
 				}
+				else if (key == "provides")
+				{
+					if (!ReadString(r, ref.provides))
+						return false;
+				}
 				else if (!SkipValue(r))
 				{
 					return false;
@@ -690,6 +695,7 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 			else if (key == "summary")	{ ok = ReadString(r, remix.summary); }
 			else if (key == "cfg")		{ ok = ReadString(r, remix.cfg); }
 			else if (key == "group")	{ ok = ReadString(r, remix.group); }
+			else if (key == "provides")	{ ok = ReadIdArray(r, remix.provides); }
 			else if (key == "files")	{ ok = ReadFilesArray(r, remix.files); }
 			else						{ ok = SkipValue(r); }
 
@@ -715,6 +721,14 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 	// remix's own folder.
 	if (!remix.cfg.empty() && !IsBareFilename(remix.cfg))
 		return FailRemix(id, "cfg is not a bare filename");
+
+	// [rc4l] An empty role matches every untagged file, which is every file. Refused rather than
+	// left to take the whole load list out.
+	for (size_t i = 0; i < remix.provides.size(); ++i)
+	{
+		if (remix.provides[i].empty())
+			return FailRemix(id, "a provided role is empty");
+	}
 
 	// The same rules the entries' files obey. A remix's list reaches the same loader and the same
 	// by-hash store, so a path or a bad hash is exactly as dangerous here.

@@ -31,6 +31,7 @@
 #include "d_gui.h"
 #include "d_main.h"		// D_AddFile, for the have/have-not colouring
 #include "textures/textures.h"
+#include "m_png.h"		// [rc4l] M_VerifyPNG / PNGTexture_CreateFromFile, for the catalogue art
 #include "r_data/r_translate.h"
 #include "templates.h"
 
@@ -57,9 +58,11 @@
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
 #include "features/addon-catalogue/zx_catalogue.h"
 #include "features/addon-catalogue/computation/hostplan_compute.h"
+#include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
 #include "features/addon-catalogue/computation/livespick_compute.h"
 #include "features/addon-catalogue/computation/maprotation_compute.h"
+#include "features/addon-catalogue/computation/menuart_compute.h"
 #include "features/addon-catalogue/computation/teamspick_compute.h"
 #include "features/addon-catalogue/computation/weaponspick_compute.h"
 #include "features/addon-catalogue/computation/remixpick_compute.h"
@@ -248,6 +251,17 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_TOP			( SB_TAB_ROW_SEP_Y + 14 )
 #define SB_HOST_PAD			16
 #define SB_HOST_LINE		11
+
+// [rc4l] The band a catalogue picture is drawn in, when an experience shipped one.
+//
+// Three times the header text it stands in for. Measured rather than chosen: at one text height a
+// logo is an unreadable smudge whatever the colour depth, at two the wordmarks read but a full
+// picture does not, and at four the widest art costs more than it is worth. The assets are built to
+// suit this number, so changing it means regenerating them.
+#define SB_HOST_ART_H		( BigFont->GetHeight( ) * 3 )
+
+// Enough air to read the two as a pair rather than as one wide picture.
+#define SB_HOST_ART_GAP		8
 #define SB_HOST_ROW_H		15		// one field and the space under it
 #define SB_HOST_FIELD_H		16
 // [rc4l] Wide enough for the longest label, which is PREFERRED PORT. At 92 it fitted every label
@@ -1058,6 +1072,96 @@ static zx::TeamsControl HostTeamsControl( const zx::AddonEntry &addon )
 	return zx::TeamsFor( mode, bOffered, g_HostTeams );
 }
 
+//*****************************************************************************
+//
+// [rc4l] The pictures the catalogue ships, loaded from disk and kept until the selection changes.
+//
+// These are ordinary files beside an addon.json, NOT lumps, and that is deliberate. Anything added
+// to the loaded-file list is advertised to a server and authenticated against it, so putting menu
+// decoration there would make a picture a reason a player cannot join. The engine already reads a
+// PNG straight off disk for savegame thumbnails; this is the same road.
+//
+// Held rather than reloaded per frame because a texture is a decode, and the panel redraws sixty
+// times a second while the selection changes at the speed of a keypress.
+//
+struct HostArt
+{
+	FTexture		*pTex;
+	FString			Path;
+
+	HostArt( ) : pTex( NULL ) { }
+};
+
+static	HostArt		g_HostArtMain;		// what you are playing
+static	HostArt		g_HostArtMix;		// what you are playing it with
+
+//*****************************************************************************
+//
+// One picture, from a path. NULL for anything that is not there or will not decode, which is the
+// ordinary answer: most experiences ship none and the panel draws their name instead.
+//
+static FTexture *serverbrowser_LoadArt( const char *pszPath )
+{
+	if (( pszPath == NULL ) || ( pszPath[0] == '\0' ))
+		return NULL;
+
+	FILE *pFile = fopen( pszPath, "rb" );
+	if ( pFile == NULL )
+		return NULL;
+
+	FTexture *pTex = NULL;
+	PNGHandle *pPng = M_VerifyPNG( pFile );
+
+	if ( pPng != NULL )
+	{
+		// The texture keeps the PATH and reopens it when it needs the pixels, so this handle is
+		// finished with either way and the file must simply stay where it is.
+		pTex = PNGTexture_CreateFromFile( pPng, pszPath );
+		delete pPng;
+
+		// What a refusal looks like: a one-pixel texture rather than a null. Drawing it would put a
+		// dot where the name should be, which reads as a bug rather than as no art.
+		if (( pTex != NULL ) && ( pTex->GetWidth( ) <= 1 ) && ( pTex->GetHeight( ) <= 1 ))
+		{
+			delete pTex;
+			pTex = NULL;
+		}
+	}
+
+	fclose( pFile );
+	return pTex;
+}
+
+//*****************************************************************************
+//
+// Point a slot at a path, reloading only when it actually changed.
+//
+static void serverbrowser_SetArt( HostArt &art, const FString &path )
+{
+	if ( art.Path.Compare( path ) == 0 )
+		return;
+
+	if ( art.pTex != NULL )
+	{
+		delete art.pTex;
+		art.pTex = NULL;
+	}
+
+	art.Path = path;
+	art.pTex = serverbrowser_LoadArt( path.GetChars( ));
+}
+
+//*****************************************************************************
+//
+// [rc4l] Let go of every picture. Called when the catalogue is reread and when the browser closes:
+// a reload can replace the file a texture is still holding a path to, and nothing else would notice.
+//
+static void serverbrowser_FreeArt( void )
+{
+	serverbrowser_SetArt( g_HostArtMain, FString( ));
+	serverbrowser_SetArt( g_HostArtMix, FString( ));
+}
+
 // [rc4l] What the CHOSEN way of playing loads, remix included. Every question the host tab asks about
 // files -- what to list, what to size, what to verify, what to fetch, what to start on -- comes
 // through here.
@@ -1071,16 +1175,12 @@ static zx::TeamsControl HostTeamsControl( const zx::AddonEntry &addon )
 // the server will be started on.
 static std::vector<zx::AddonFileRef> HostSelectedFiles( const zx::AddonEntry &addon )
 {
-	std::vector<zx::AddonFileRef> files = zx::PickVariant( addon, g_HostVariantId.GetChars( )).files;
-
-	// Every axis, in group order, each appended after the last. Load order between axes is the
-	// catalogue author's: a mod named after a rules remix loads after it and so wins where they
-	// overlap, which is the only way an author can express that at all.
-	const std::vector<zx::RemixPick> picks = HostRemixPicks( addon );
-	for ( size_t i = 0; i < picks.size( ); ++i )
-		files.insert( files.end( ), picks[i].files.begin( ), picks[i].files.end( ));
-
-	return files;
+	// [rc4l] Assembled by the unit rather than here, because dropping what a mix already contains
+	// needs to know which list each file came from. Doing it here is also why it is right: every
+	// question about files comes through this one function, so a file a mix replaces leaves the
+	// panel and its size total as well as the command line, for free.
+	return zx::CombineFiles( zx::PickVariant( addon, g_HostVariantId.GetChars( )).files,
+		HostRemixPicks( addon ));
 }
 
 // [rc4l] What we told the server to load, kept so the client can match it before joining.
@@ -2123,6 +2223,15 @@ public:
 			g_Dialog = BrowserDialog( );
 			zx::ReleaseJoinResume( true );
 		}
+
+		// [rc4l] The catalogue pictures go with the menu that was showing them. They are held only to
+		// avoid decoding one per frame, so nothing wants them once there is no panel to draw.
+		//
+		// It also settles the reload question by construction: fua_catalogue rereads from disk, and a
+		// texture holding a path to a file that has just been replaced would go on drawing the old one
+		// for as long as the menu stayed open. Reopening the browser is what a reload means anyway.
+		serverbrowser_FreeArt( );
+
 		Super::Destroy( );
 	}
 
@@ -2207,18 +2316,7 @@ public:
 		// what the server was handed.
 		const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( addon );
 
-		std::vector<std::string> iwads;
-		static const char *const kCandidates[] = {
-			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
-			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
-		};
-		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
-		{
-			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
-				iwads.push_back( kCandidates[i] );
-		}
-
-		const zx::IwadPick pick = zx::PickIwad( addon.iwad, iwads );
+		const zx::IwadPick pick = zx::PickIwad( addon.iwad, zx::AvailableIwads( addon.iwad ));
 		if ( pick.choice == zx::IwadChoice::None )
 			return false;
 
@@ -3603,19 +3701,6 @@ public:
 					have.push_back( loads[i].name );
 			}
 
-			std::vector<std::string> iwads;
-			{
-				static const char *const kCandidates[] = {
-					"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
-					"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
-				};
-
-				for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
-				{
-					if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
-						iwads.push_back( kCandidates[i] );
-				}
-			}
 
 			zx::HostChoices choices;
 			choices.serverName = config.hostName;
@@ -3630,9 +3715,10 @@ public:
 			}
 
 			const zx::HostPlan plan = zx::BuildHostPlan( chosen.addon, loads,
-				zx::PickIwad( chosen.addon.iwad, iwads ),
+				zx::PickIwad( chosen.addon.iwad, zx::AvailableIwads( chosen.addon.iwad )),
 				zx::CatalogueServerCfgPath( chosen, g_HostVariantId.GetChars( )),
-				remixCfgs, pick.map, choices, have );
+				remixCfgs, pick.map, choices, have,
+				zx::IsFreeIwadName( chosen.addon.iwad ));
 
 			// [rc4l] Missing files are a DOWNLOAD, which is what the catalogue's per-file md5 was
 			// shipped for and what BuildHostPlan has always meant by returning `missing` rather than
@@ -3820,9 +3906,15 @@ public:
 				}
 			}
 
-			// Never an IWAD: an entry's `files` are its PWADs, and the game underneath them is
-			// PickIwad's business and is not ours to fetch.
-			wanted.push_back( zx::waddownload::WantedFile( plan.missing[i], false, md5 ));
+			// [rc4l] Say when one of these IS the game. The downloader checks an iwad's SHA-256
+			// against the shipped list before keeping it, and it can only do that if it is told
+			// which file to check -- an entry's own `files` are all mods, so the flag can only come
+			// from the plan.
+			//
+			// It carries no md5, because the catalogue never hashes a game it does not ship. The
+			// allowlist's own hash is the check that matters for one of these.
+			const bool bIsIwad = plan.missingIwad && ( plan.missing[i] == plan.iwad );
+			wanted.push_back( zx::waddownload::WantedFile( plan.missing[i], bIsIwad, md5 ));
 		}
 
 		// No extra sites and no last resorts: there is no server here yet, so the shipped mirror
@@ -6314,6 +6406,25 @@ public:
 		return FString( );
 	}
 
+	// [rc4l] Whether THIS selection has a picture to draw in place of its name.
+	//
+	// Asked by the height as well as by the draw, and they must not answer differently: the region
+	// scrolls by the height, so a disagreement is a panel that cannot reach its own last line.
+	//
+	// The file rather than the loaded texture, because the height is wanted before the draw has had
+	// a chance to load anything, and on the first frame of a new selection the texture is still the
+	// old one.
+	bool HostHasArt( const zx::CatalogueEntry &entry )
+	{
+		const zx::VariantPick pick = zx::PickVariant( entry.addon, g_HostVariantId.GetChars( ));
+
+		std::string variantId;
+		if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( entry.addon.variants.size( ))))
+			variantId = entry.addon.variants[pick.index].id;
+
+		return !zx::CatalogueArtPath( entry, variantId ).empty( );
+	}
+
 	int HostDetailH( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -6332,7 +6443,16 @@ public:
 		const bool bSettings = HostHasGameplayRow( );
 		const int fileLines = HostWadListLines( a );
 
-		int h = BigFont->GetHeight( ) + 4
+		// [rc4l] The picture stands in for the title and is taller than it, so the region has to be
+		// told. Without this the panel is short by the difference, which is how the file list ends up
+		// cut off with a scrollbar that will not reach it.
+		//
+		// Asked the same way the draw asks: whether this selection HAS a picture, not whether any
+		// does. The two must agree or the region scrolls past its own content.
+		const int headH = HostHasArt( entries[g_HostEntrySel] )
+			? SB_HOST_ART_H : BigFont->GetHeight( );
+
+		int h = headH + 4
 			+ 6								// the rule under the title
 			+ HostDetailSummaryLines( a.summary ) * SB_HOST_LINE
 			+ 4 + 6							// the rule above the files
@@ -6391,19 +6511,7 @@ public:
 	// getting Freedoom sees freedoom2.wad and knows.
 	FString HostDetailIwadRow( const zx::AddonEntry &addon )
 	{
-		std::vector<std::string> iwads;
-		static const char *const kCandidates[] = {
-			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
-			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
-		};
-
-		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
-		{
-			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
-				iwads.push_back( kCandidates[i] );
-		}
-
-		const zx::IwadPick pick = zx::PickIwad( addon.iwad, iwads );
+		const zx::IwadPick pick = zx::PickIwad( addon.iwad, zx::AvailableIwads( addon.iwad ));
 
 		FString row;
 		if ( pick.choice == zx::IwadChoice::None )
@@ -6449,6 +6557,75 @@ public:
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
+	// [rc4l] The picture in place of the title, when the catalogue shipped one.
+	//
+	// Three times the text's height, which is what it took to be legible: at one the logos are a
+	// smudge and at two only the wordmarks read. Returns false when there is nothing to draw, and the
+	// caller falls back to the name.
+	//
+	// Drawn in SCREEN pixels rather than virtual ones, like the country flags and for the same
+	// reason: DTA_Clip* is measured there, and it is the only clip that actually reaches a texture.
+	// The column's own PushClip is ours and only DimClipped reads it, so a scrolled picture would
+	// otherwise draw straight over the panel edge.
+	bool DrawHostArtRow( int y, int h )
+	{
+		// [rc4l] The mix's picture is an ADDITION to the experience's, never a replacement for it.
+		//
+		// Without this, an experience with no picture whose mix has one would draw the mix's logo
+		// where its own name belongs, which says the wrong thing entirely: you would be looking at a
+		// header reading BRUTAL DOOM while hosting something else. The mix is already named by its
+		// lit pill a few lines below.
+		//
+		// It also keeps this in step with HostHasArt, which the region's height is measured from. The
+		// two answering differently is a panel that cannot scroll to its own last line.
+		if ( g_HostArtMain.pTex == NULL )
+			return false;
+
+		std::vector<std::pair<int, int> > sizes;
+		FTexture *tex[2] = { g_HostArtMain.pTex, g_HostArtMix.pTex };
+		int count = 0;
+
+		for ( int i = 0; i < 2; ++i )
+		{
+			if ( tex[i] == NULL )
+				continue;
+			tex[count] = tex[i];
+			sizes.push_back( std::make_pair( tex[i]->GetWidth( ), tex[i]->GetHeight( )));
+			++count;
+		}
+
+		if ( count == 0 )
+			return false;
+
+		const std::vector<zx::ArtRect> rects = zx::LayoutMenuArt(
+			SB_HOST_RCOL_LEFT, y, SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, h, SB_HOST_ART_GAP, sizes );
+
+		// The band the column is allowed to paint in, so a picture scrolled half out of the region is
+		// cut rather than drawn over whatever is above it.
+		const int clipTop = serverbrowser_ToScreenY( SB_HOST_RTOP_TOP );
+		const int clipBottom = serverbrowser_ToScreenY( HostDetailViewBottom( ));
+
+		for ( size_t i = 0; i < rects.size( ); ++i )
+		{
+			const int px = serverbrowser_ToScreenX( rects[i].x );
+			const int py = serverbrowser_ToScreenY( rects[i].y );
+			const int pw = serverbrowser_ToScreenX( rects[i].x + rects[i].w ) - px;
+			const int ph = serverbrowser_ToScreenY( rects[i].y + rects[i].h ) - py;
+
+			if (( pw <= 0 ) || ( ph <= 0 ))
+				continue;
+
+			screen->DrawTexture( tex[i], px, py,
+				DTA_DestWidth, pw,
+				DTA_DestHeight, ph,
+				DTA_ClipTop, clipTop,
+				DTA_ClipBottom, clipBottom,
+				TAG_DONE );
+		}
+
+		return true;
+	}
+
 	void DrawHostDetail( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -6487,9 +6664,52 @@ public:
 		}
 
 		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+		const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
 
-		DrawHostDetailTitle( addon.name.c_str( ), y );
-		y += BigFont->GetHeight( ) + 4;
+		// [rc4l] Whatever the catalogue has for what is actually selected, refreshed here rather than
+		// on the keypress: the selection can change from the list, from a pill, from the keyboard or
+		// from a remembered preference being resolved, and the draw is the one place that sees all
+		// of them. Reloads only when the path changes, so this costs a string compare per frame.
+		// [rc4l] The id off the variant itself, since the pick answers with an index. Empty for an
+		// entry that plays one way, which is exactly what names its picture art.png.
+		std::string variantId;
+		if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))))
+			variantId = addon.variants[pick.index].id;
+
+		serverbrowser_SetArt( g_HostArtMain,
+			zx::CatalogueArtPath( entries[g_HostEntrySel], variantId ).c_str( ));
+
+		const std::vector<zx::RemixPick> picks = HostRemixPicks( addon );
+		FString mixArt;
+		for ( size_t i = 0; i < picks.size( ); ++i )
+		{
+			// The baseline mix adds nothing and is not a thing you chose, so it brings no picture.
+			if ( picks[i].index <= 0 )
+				continue;
+
+			const std::string at = zx::CatalogueRemixArtPath( picks[i].id );
+			if ( !at.empty( ))
+			{
+				mixArt = at.c_str( );
+				break;
+			}
+		}
+		serverbrowser_SetArt( g_HostArtMix, mixArt );
+
+		// [rc4l] The picture stands in for the name; the name is drawn when there is no picture.
+		//
+		// The VARIANT's name, not the entry's, because the variant is what the panel below describes
+		// and what the pills change. The entry's name is on the row you selected in the list beside
+		// this, so nothing is lost by not repeating it here.
+		if ( DrawHostArtRow( y, SB_HOST_ART_H ))
+		{
+			y += SB_HOST_ART_H + 4;
+		}
+		else
+		{
+			DrawHostDetailTitle( pick.name.empty( ) ? addon.name.c_str( ) : pick.name.c_str( ), y );
+			y += BigFont->GetHeight( ) + 4;
+		}
 
 		// [rc4l] A rule under the title as well, so the column reads as three bands -- what it is
 		// called, what it is, what it loads -- rather than a heading with a paragraph stuck to it.

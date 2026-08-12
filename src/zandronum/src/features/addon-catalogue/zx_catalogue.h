@@ -48,11 +48,29 @@ const std::vector<AddonRemix> &CatalogueRemixes( bool bForceReload = false );
 // under remix/, so this is not the entry's directory.
 std::string CatalogueRemixCfgPath( const std::string &remixId );
 
+// [rc4l] The picture that stands in for a name, or "" when there is none to draw.
+//
+// Optional everywhere and absent for most things: a pack only has one if its own files carried
+// something worth showing. "" is the ordinary answer and means "use the text", not "something went
+// wrong".
+//
+// Resolved against the roots in the same order everything else is, so a player who drops their own
+// copy of an experience beside the shipped one gets their own picture with it.
+std::string CatalogueArtPath( const CatalogueEntry &entry, const std::string &variantId = std::string( ));
+std::string CatalogueRemixArtPath( const std::string &remixId );
+
 // [rc4l] Read the catalogue during startup and say, loudly, if anything in it could not be used.
 //
 // Called once from D_DoomMain. Without it the first read happens when somebody opens the host screen,
 // which is both too late to be called a startup error and too far from the console to be seen.
 void CatalogueCheckAtStartup( void );
+
+// [rc4l] Every IWAD the host could run an entry on, for PickIwad.
+//
+// `preferred` is what the entry asked for, and it is always probed: a fixed list of the classics
+// cannot name a game that ships its own iwad, and an entry declaring one was told there was nothing
+// to run on while the file sat beside the executable.
+std::vector<std::string> AvailableIwads( const std::string &preferred );
 
 // The two places entries are read from, in order. Exposed so a player can be TOLD where to put one
 // rather than having to guess.
