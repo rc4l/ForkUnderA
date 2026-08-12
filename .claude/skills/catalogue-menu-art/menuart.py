@@ -256,6 +256,23 @@ def menu_logo(archives):
 	return None
 
 
+def as_picture(path):
+	"""The file itself, when it is a picture rather than an archive to search.
+
+	Some things have no usable art inside them at all: a title built by a script, a menu graphic left
+	blank, a logo that only ever existed on the project's own page. For those the source is a picture
+	somebody supplies, and it goes through everything below unchanged -- same slot, same budget, same
+	treatment -- so a supplied picture and an extracted one cannot end up looking like they came from
+	different tools.
+	"""
+	try:
+		img = Image.open(path)
+		img.load()
+		return img.convert("RGBA")
+	except Exception:
+		return None
+
+
 def resolve(paths, lumps=LUMPS):
 	"""The art the loaded set actually shows, and where it came from.
 
@@ -265,8 +282,19 @@ def resolve(paths, lumps=LUMPS):
 	"""
 	archives = []
 	for p in paths:
-		if os.path.exists(p):
-			archives.append(Archive(p))
+		if not os.path.exists(p):
+			continue
+
+		# A picture given directly is the answer, not somewhere to look for one.
+		if not zipfile.is_zipfile(p):
+			with open(p, "rb") as f:
+				head = f.read(4)
+			if head != b"PWAD" and head != b"IWAD":
+				img = as_picture(p)
+				if img is not None and img.getbbox():
+					return img, "file", os.path.basename(p)
+
+		archives.append(Archive(p))
 
 	# The palette a patch is drawn against, resolved by the same rule. A pack shipping its own
 	# recolours everything, and reading it against somebody else's is how art comes out wrong.
@@ -305,8 +333,84 @@ def resolve(paths, lumps=LUMPS):
 	return None, None, None
 
 
+# How far from the surrounding colour a pixel may be and still count as part of it.
+KEY_TOLERANCE = 32
+
+# How much of the border must agree before there is a surround to remove at all.
+KEY_BORDER_SHARE = 0.9
+
+
+def unbox(img):
+	"""Cut away a flat surround that a picture has instead of transparency.
+
+	A picture that came out of an archive already says what is transparent, because somebody decided.
+	A picture from anywhere else usually does not: it is a logo sitting on whatever colour it was
+	saved on, and drawing it unchanged puts a hard rectangle of that colour on the panel.
+
+	Flood filled from the EDGES rather than keyed globally, so the dark parts inside a logo survive.
+	Keying every dark pixel would eat the logo's own shadows and outlines, which is how this goes
+	wrong.
+	"""
+	if img.split()[3].getextrema()[0] < 255:
+		return img					# it already has transparency; that answer is authoritative
+
+	w, h = img.size
+	if (w < 3) or (h < 3):
+		return img
+
+	px = img.load()
+
+	border = []
+	for x in range(w):
+		border.append(px[x, 0][:3])
+		border.append(px[x, h - 1][:3])
+	for y in range(h):
+		border.append(px[0, y][:3])
+		border.append(px[w - 1, y][:3])
+
+	common = max(set(border), key=border.count)
+	if border.count(common) < KEY_BORDER_SHARE * len(border):
+		return img					# no single surround, so nothing to take away
+
+	def alike(c):
+		return (abs(c[0] - common[0]) <= KEY_TOLERANCE and
+		        abs(c[1] - common[1]) <= KEY_TOLERANCE and
+		        abs(c[2] - common[2]) <= KEY_TOLERANCE)
+
+	seen = bytearray(w * h)
+	stack = []
+	for x in range(w):
+		stack.append((x, 0))
+		stack.append((x, h - 1))
+	for y in range(h):
+		stack.append((0, y))
+		stack.append((w - 1, y))
+
+	while stack:
+		x, y = stack.pop()
+		if (x < 0) or (y < 0) or (x >= w) or (y >= h):
+			continue
+		if seen[y * w + x]:
+			continue
+		if not alike(px[x, y]):
+			continue
+
+		seen[y * w + x] = 1
+		px[x, y] = (0, 0, 0, 0)
+		stack.append((x + 1, y))
+		stack.append((x - 1, y))
+		stack.append((x, y + 1))
+		stack.append((x, y - 1))
+
+	return img
+
+
 def fit(img, height, max_width):
 	"""To the slot, aspect kept. Height leads; width only clamps something unusually wide."""
+	# Before the crop, so a surround that becomes transparent is then trimmed away as well.
+	img = unbox(img.copy())
+	if not img.getbbox():
+		return img
 	img = img.crop(img.getbbox())
 	tall = img.resize((img.size[0], max(1, int(round(img.size[1] * PIXEL_ASPECT)))), Image.LANCZOS)
 

@@ -138,12 +138,19 @@ logo lump, else the title screen. When that is wrong, the slot says so with `art
 | Value | Means |
 |---|---|
 | `"art": "<lump>"` | Use this lump instead |
+| `"art": "<file.png>"` | Use a picture you put beside the JSON |
 | `"art": ""` | No picture. Draw the name |
 | absent | Work it out. Nearly always right |
+
+A value with an extension is a file. Lump names have none.
 
 Use it only when the source is not what it claims: a logo lump holding an empty frame, a menu
 drawing the base game's logo rather than the pack's, a blank spacer where the real title is a
 rendered map. Not for taste.
+
+The file form is for a pack with no usable art inside it at all, where the only logo is one you
+have from elsewhere. It goes through the same shrinking and the same budget as an extracted one, so
+the two cannot end up looking like they came from different tools.
 
 ## Roles
 

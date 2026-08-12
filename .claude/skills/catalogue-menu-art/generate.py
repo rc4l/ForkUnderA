@@ -36,9 +36,16 @@ BUDGET = 4096
 # described over there. A list of pack names in this file would be a list that has to be edited every
 # time the catalogue changes, by somebody editing a tool.
 #
-#   "art": "<lump>"  use this instead of what would be resolved
-#   "art": ""        no picture; draw the name
-#   absent           resolve automatically, which is nearly always right
+#   "art": "<lump>"      use this instead of what would be resolved
+#   "art": "<file.ext>"  a picture supplied beside the json, for something with no usable art of
+#                        its own: a title built by a script, a blank menu graphic, a logo that only
+#                        ever existed on the project's own page
+#   "art": ""            no picture; draw the name
+#   absent               resolve automatically, which is nearly always right
+#
+# A value with an extension is a file, since lump names have none. The supplied picture goes through
+# exactly what an extracted one does, so the two cannot end up looking like different tools made
+# them.
 ART_KEY = "art"
 
 
@@ -63,14 +70,23 @@ def main(argv):
 				absent.add(n)
 
 		lumps = menuart.LUMPS
+		sources = load_order(args.store, names)
+
 		if ART_KEY in says:
 			named = (says[ART_KEY] or "").strip()
-			lumps = (named.upper(),) if named else ()
+			if not named:
+				lumps = ()
+			elif os.path.splitext(named)[1]:
+				# A supplied picture, beside the json that named it. Nothing else is searched: the
+				# slot said what its art is.
+				sources = [os.path.join(os.path.dirname(out), named)]
+			else:
+				lumps = (named.upper(),)
 
 		# An empty override is "no art", so nothing is looked for and the caller draws the name.
 		got = None
 		if lumps:
-			got = menuart.extract(load_order(args.store, names), None if args.check else out,
+			got = menuart.extract(sources, None if args.check else out,
 			                      HEIGHT, WIDTH, BUDGET, lumps)
 
 		# A slot that USED to have art and no longer should must lose the file too, or the panel goes
