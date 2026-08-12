@@ -508,7 +508,15 @@ static int serverbrowser_OriginY( void );
 // Column x positions (left edge of each), virtual pixels.
 #define SB_COL_FLAG			SB_X( 48 )
 #define SB_COL_NAME			SB_X( 84 )
-#define SB_COL_PLAYERS		SB_X( 286 )
+
+// [rc4l] Players sits as far right as it can rather than in the middle, and every pixel that buys
+// goes to the name: SB_NAME_MAX_WIDTH is measured from here, so moving this moves that.
+//
+// The counts are what set the floor. Player counts are at most two digits a side -- MAXPLAYERS is
+// 64 -- so the widest this column ever draws is "64/64", and the header "PLRS" is shorter still.
+// Ping is right-aligned ON SB_COL_PING and grows leftward, at most "999" under its own "PING"
+// header, so the gap left here is measured against that header rather than against the digits.
+#define SB_COL_PLAYERS		SB_X( 330 )
 #define SB_COL_PING			SB_X( 398 )
 
 // [rc4l] Version left the list and lives in the detail strip instead. It is the column a player reads
@@ -7202,17 +7210,41 @@ public:
 				: "Sides, sharing their frags and their colour." );
 	}
 
-	// [rc4l] The pill axes, in one pass or the other.
+	// [rc4l] The pill axes, one pass per band.
 	//
-	// Split because MIX leads the panel and everything else follows the sliders. It is the setting a
-	// host is most likely to have come here to change -- it is the one with a dozen answers, where
-	// the rest have two or three -- and it is the only one whose row count grows with the catalogue,
-	// so burying it under three sliders puts the longest block furthest from the top of the region.
+	// MIX leads the panel. It is the setting a host is most likely to have come here to change -- it
+	// is the one with a dozen answers where the rest have two or three -- and it is the only one
+	// whose row count grows with the catalogue, so burying it under three sliders puts the longest
+	// block furthest from the top of the region.
 	//
-	// `bMix` picks the pass. Any axis added later lands with the ordinary ones unless it is argued
-	// for, which is the right default: leading the panel is a claim, not a courtesy.
+	// MODE comes next, and it is above the SLIDERS rather than below them because it decides what
+	// they say. Teams and lives both read the gamemode, so a mode pill under them makes changing it
+	// reflow everything above it: the row you just clicked moves, and the control you were about to
+	// reach for is somewhere else. A control belongs above what it changes.
+	//
+	// Everything else follows the sliders. Any axis added later lands there unless it is argued for,
+	// which is the right default: leading the panel is a claim, not a courtesy.
+	enum class HostAxisBand { Mix, Mode, Rest };
+
+	// Which band an axis is in. MODE is recognised by what its choices DO rather than by what the
+	// catalogue called the group: an axis whose pills switch the gamemode is a mode axis whatever
+	// its id, and keying this on a magic group name would be a rule the schema never stated.
+	HostAxisBand HostBandOf( const zx::RemixGroup &group )
+	{
+		if ( group.id == kHostMixGroup )
+			return HostAxisBand::Mix;
+
+		for ( size_t i = 0; i < group.choices.size( ); ++i )
+		{
+			if ( group.choices[i].gameMode != zx::HostGameMode::Unknown )
+				return HostAxisBand::Mode;
+		}
+
+		return HostAxisBand::Rest;
+	}
+
 	int DrawHostRemixAxes( int x, int y, int labelW, const std::vector<zx::RemixGroup> &groups,
-		const zx::WeaponsPlan &plan, bool bMix )
+		const zx::WeaponsPlan &plan, HostAxisBand band )
 	{
 		for ( size_t g = 0; g < groups.size( ); ++g )
 		{
@@ -7220,7 +7252,7 @@ public:
 			if ( choices.size( ) <= 1 )
 				continue;
 
-			if (( groups[g].id == kHostMixGroup ) != bMix )
+			if ( HostBandOf( groups[g] ) != band )
 				continue;
 
 			// The axis is one row as far as the keyboard is concerned, however many lines of pills it
@@ -7459,13 +7491,15 @@ public:
 
 		const zx::WeaponsPlan plan = HostWeaponsPlan( addon );
 
-		// The mix leads, then the sliders, then any other axis. See DrawHostRemixAxes.
-		y = DrawHostRemixAxes( x, y, labelW, groups, plan, true );
+		// The mix leads, then the mode, then the sliders those two decide, then any other axis.
+		// See DrawHostRemixAxes.
+		y = DrawHostRemixAxes( x, y, labelW, groups, plan, HostAxisBand::Mix );
+		y = DrawHostRemixAxes( x, y, labelW, groups, plan, HostAxisBand::Mode );
 		y = DrawHostStartMap( x, y, labelW );
 		y = DrawHostLives( x, y, labelW, addon );
 		y = DrawHostFastWeapons( x, y, labelW, addon );
 		y = DrawHostTeams( x, y, labelW, addon );
-		y = DrawHostRemixAxes( x, y, labelW, groups, plan, false );
+		y = DrawHostRemixAxes( x, y, labelW, groups, plan, HostAxisBand::Rest );
 
 		return y;
 	}

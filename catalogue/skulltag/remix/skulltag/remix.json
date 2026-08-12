@@ -1,6 +1,6 @@
 {
-  "name": "Skulltag",
-  "summary": "The flags, plus a skull that scores for whoever brings it home.",
+  "name": "ST",
+  "summary": "Skulltag. The flags, plus a skull that scores for whoever brings it home.",
   "group": "mode",
   "gamemode": "skulltag",
   "cfg": "skulltag.cfg"

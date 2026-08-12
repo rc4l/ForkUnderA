@@ -15,11 +15,15 @@
   ],
   "gamemode": "deathmatch",
   "teams": true,
+  "lives": 1,
+  "maxlives": 5,
   "remixes": [
     "skulltag/dm",
-    "skulltag/duel",
     "skulltag/lms",
     "skulltag/ctf",
+    "skulltag/duel",
+    "skulltag/possession",
+    "skulltag/terminator",
     "skulltag/skulltag",
     "skulltag/invasion"
   ]

@@ -1,6 +1,6 @@
 {
   "name": "Duel",
-  "summary": "One on one, winner stays.",
+  "summary": "Duel. One on one, winner stays.",
   "group": "mode",
   "gamemode": "duel",
   "cfg": "duel.cfg"

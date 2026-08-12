@@ -389,6 +389,21 @@ void OpenGLFrameBuffer::UpdateScaleBuffer()
 	glViewport(0, 0, renderW, renderH);
 }
 
+// [rc4l] The inverse of BlitScaleBuffer, and deliberately reading the same two cached numbers it
+// does: that blit is what put the pixels where the pointer is now, so anything else here could only
+// be a second opinion about the same rectangle.
+//
+// Not gated on mScaleActive. The cached client size is refreshed whether or not scaling is on, and
+// when it is off it equals the render size, so this is an identity rather than a special case worth
+// branching for. One less state to get wrong on the frame a mode changes.
+void OpenGLFrameBuffer::ScaleCoordsFromWindow(int &x, int &y)
+{
+	const int clientW = (mScaleClientW > 0) ? mScaleClientW : GetWidth();
+	const int clientH = (mScaleClientH > 0) ? mScaleClientH : GetHeight();
+
+	zx::ScaleWindowPointToRender(clientW, clientH, GetWidth(), GetHeight(), x, y);
+}
+
 void OpenGLFrameBuffer::BlitScaleBuffer()
 {
 	// Cached client size (set in UpdateScaleBuffer); avoids a per-frame GetClientSize, which is an
