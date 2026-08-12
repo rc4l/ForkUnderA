@@ -14,6 +14,7 @@ import argparse
 import io
 import json
 import os
+import re
 import struct
 import sys
 import zipfile
@@ -195,6 +196,66 @@ def decode(data, palette):
 		return None
 
 
+# [rc4l] How much of a picture may be one flat colour before it is not a picture.
+#
+# Archives ship blank graphics: a placeholder somebody meant to fill in, or a spacer a menu uses for
+# its own layout. They decode perfectly and they say nothing, and a blank slab in place of a name is
+# strictly worse than the name. Set high because real art with a large flat background is common and
+# must still pass.
+BLANK_FRACTION = 0.98
+
+
+def informative(img):
+	"""Whether there is anything in this picture worth showing."""
+	flat = Image.new("RGB", img.size, (0, 0, 0))
+	flat.paste(img, (0, 0), img)
+
+	pixels = flat.size[0] * flat.size[1]
+	if pixels == 0:
+		return False
+
+	colours = flat.getcolors(maxcolors=pixels)
+	if not colours:
+		return True						# more colours than pixels to count: certainly not blank
+
+	return (max(n for n, _c in colours) / float(pixels)) < BLANK_FRACTION
+
+
+def menu_logo(archives):
+	"""What the menu definition draws at the top of the main menu, if it defines one.
+
+	M_DOOM is a CONVENTION, not a rule. A mod that replaces the main menu outright names its own
+	graphic, and then the picture a player actually sees is one this tool would never have looked
+	for: the pack has a perfectly good logo and appears to have none.
+
+	So the definition is read first and its answer preferred, because it is the one that says what
+	is really on screen. Anything without one falls through to the convention.
+	"""
+	# Only the main menu's own graphic. A definition names several menus and the others are
+	# options screens and readouts, whose art says nothing about the pack.
+	head = re.compile(r'^\s*LISTMENU\s+"([^"]+)"', re.I | re.M)
+	patch = re.compile(r'^\s*StaticPatch\s+[-\d]+\s*,\s*[-\d]+\s*,\s*"([^"]+)"', re.I | re.M)
+
+	for arc in reversed(archives):
+		for raw in reversed(arc.read("MENUDEF")):
+			text = raw.decode("latin-1", "replace")
+
+			for m in head.finditer(text):
+				if m.group(1).strip().lower() != "mainmenu":
+					continue
+
+				# To the next menu, so a graphic belonging to the screen after this one is not
+				# mistaken for this one's.
+				nxt = head.search(text, m.end())
+				block = text[m.end():nxt.start() if nxt else len(text)]
+
+				found = patch.search(block)
+				if found:
+					return found.group(1).upper()
+
+	return None
+
+
 def resolve(paths, lumps=LUMPS):
 	"""The art the loaded set actually shows, and where it came from.
 
@@ -221,12 +282,25 @@ def resolve(paths, lumps=LUMPS):
 	if palette is None:
 		palette = default_palette()
 
+	# The menu's own choice goes first, ahead of the convention, because it is the one that says
+	# what is actually drawn.
+	named = menu_logo(archives)
+	if named:
+		lumps = (named,) + tuple(x for x in lumps if x != named)
+
 	for want in lumps:
 		for arc in reversed(archives):
 			for raw in reversed(arc.read(want)):
 				img = decode(raw, palette)
-				if img is not None and img.getbbox():
-					return img, want, os.path.basename(arc.path)
+				if img is None or not img.getbbox():
+					continue
+
+				# A blank graphic is not art. Skipping it rather than failing outright lets the next
+				# candidate answer, which is usually the convention behind the menu's own choice.
+				if not informative(img.crop(img.getbbox())):
+					continue
+
+				return img, want, os.path.basename(arc.path)
 
 	return None, None, None
 

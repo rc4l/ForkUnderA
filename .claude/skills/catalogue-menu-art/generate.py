@@ -31,12 +31,23 @@ BUDGET = 4096
 
 # [rc4l] Slots whose preferred lump is the wrong picture.
 #
-# The order in menuart.LUMPS is right nearly always, and this is not a place to record taste. It is
-# for a source that is not what it claims: a logo lump holding a menu frame with nothing in it, say.
-# Look at the output before adding a line here, and say what is wrong with the source.
+# The order menuart resolves in is right nearly always, and this is not a place to record taste. It
+# is for a source that is not what it claims. Look at the output before adding a line here, and say
+# what is wrong with the source.
+#
+# An EMPTY tuple means "no art, use the name". For a pack whose menu genuinely draws the base game's
+# own logo: it is real art and it is what the menu shows, but it identifies the base game rather
+# than the pack, so several variants come out as the same generic picture where their names had told
+# you which was which.
 OVERRIDES = {
 	# Its logo lump is an empty bordered box. The title screen is the only art in the file.
 	"rocketjump/extreme": ("TITLEPIC",),
+
+	# Its menu draws the base game's logo. Four ways of playing, one generic picture between them.
+	"superskulltag/campaign": (),
+	"superskulltag/monstermash": (),
+	"superskulltag/invasion": (),
+	"superskulltag/dm": (),
 }
 
 
@@ -60,8 +71,18 @@ def main(argv):
 			if not os.path.exists(os.path.join(args.store, n)):
 				absent.add(n)
 		lumps = OVERRIDES.get(label, menuart.LUMPS)
-		got = menuart.extract(load_order(args.store, names), None if args.check else out,
-		                      HEIGHT, WIDTH, BUDGET, lumps)
+
+		# An empty override is "no art", so nothing is looked for and the caller draws the name.
+		got = None
+		if lumps:
+			got = menuart.extract(load_order(args.store, names), None if args.check else out,
+			                      HEIGHT, WIDTH, BUDGET, lumps)
+
+		# A slot that USED to have art and no longer should must lose the file too, or the panel goes
+		# on drawing yesterday's answer.
+		if (got is None) and not args.check and os.path.exists(out):
+			os.remove(out)
+
 		rows.append((label, got))
 
 	for p in sorted(glob.glob(os.path.join(args.catalogue, "*", "addon.json"))):
