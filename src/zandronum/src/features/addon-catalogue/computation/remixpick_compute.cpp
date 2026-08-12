@@ -80,6 +80,7 @@ RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &w
 			pick.cfg = offered[i].cfg;
 			pick.files = offered[i].files;
 			pick.provides = offered[i].provides;
+			pick.gameMode = offered[i].gameMode;
 			return pick;
 		}
 	}
@@ -93,7 +94,25 @@ RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &w
 	pick.cfg = offered[0].cfg;
 	pick.files = offered[0].files;
 	pick.provides = offered[0].provides;
+	pick.gameMode = offered[0].gameMode;
 	return pick;
+}
+
+HostGameMode EffectiveGameMode(HostGameMode stated, const std::vector<RemixPick> &picks)
+{
+	// Last one wins, and in practice there is only ever one: mode mixes share a group, so the
+	// grouping already guarantees a single pick can name a mode. Written as a sweep rather than a
+	// find-first anyway, because relying on the grouping here would make this quietly wrong the day
+	// a catalogue splits modes across two axes, and the sweep is the same length either way.
+	HostGameMode out = stated;
+
+	for (size_t i = 0; i < picks.size(); ++i)
+	{
+		if (picks[i].gameMode != HostGameMode::Unknown)
+			out = picks[i].gameMode;
+	}
+
+	return out;
 }
 
 std::vector<RemixGroup> GroupRemixes(const std::vector<AddonRemix> &offered)

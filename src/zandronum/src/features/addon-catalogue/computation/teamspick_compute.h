@@ -12,15 +12,21 @@
 // mean: it is a free-for-all where the frags happen to share a colour. The gap is why the control
 // runs on a stop INDEX rather than the count itself.
 //
-// Two gamemodes have a team twin to switch to, and they are the two that had the pills:
+// Three gamemodes have a team twin to switch to:
 //
 //   * DEATHMATCH becomes teamplay.
 //   * LAST MAN STANDING becomes teamlms.
+//   * POSSESSION becomes teampossession.
+//
+// What they share is that the thing being fought over is spawned by the ENGINE rather than placed
+// by the mapper, so any number of sides can play on a map built for none of them. Terminator has no
+// twin at all: there is one ball and whoever holds it is everyone's enemy, which is the mode.
 //
 // Everything else is left alone. Not for want of a cvar -- CTF and Skulltag honour sv_maxteams
 // perfectly well -- but because their maps do not: a CTF map carries two flags, and a third team
 // would spawn with nothing to take and nothing to lose. Modes whose teams come from the map are the
-// map's business.
+// map's business, and they are told so in those words rather than the generic refusal, because an
+// author who reads "no free-for-all to switch out of" about CTF will think we have it wrong.
 //
 // Which is also why the control is opt-in per entry rather than read off the gamemode alone. The
 // Skulltag entry has a variant that declares deathmatch and then exec's a cfg naming the Skulltag

@@ -35,6 +35,13 @@ AddonRemix Grouped(const std::string &id, const std::string &name, const std::st
 	return r;
 }
 
+AddonRemix Mode(const std::string &id, const std::string &name, zx::HostGameMode mode)
+{
+	AddonRemix r = Grouped(id, name, "mode");
+	r.gameMode = mode;
+	return r;
+}
+
 std::pair<std::string, std::string> Want(const std::string &group, const std::string &id)
 {
 	return std::make_pair(group, id);
@@ -605,4 +612,70 @@ TEST(PickRemix, CarriesTheProvidedRolesThrough)
 
 	EXPECT_EQ(mod.provides, PickRemix(offered, "mod").provides);
 	EXPECT_EQ(mod.provides, PickRemix(offered, "gone").provides);
+}
+
+// ---------------------------------------------------------------- modes on an axis
+
+TEST(RemixPick, APickCarriesTheModeItSwitchesTo)
+{
+	// Both ways in, because a pick that fell back to the baseline must answer the same as one that
+	// was asked for by name: the caller reads the mode off the pick either way.
+	std::vector<AddonRemix> offered;
+	offered.push_back(Mode("dm", "Deathmatch", zx::HostGameMode::Deathmatch));
+	offered.push_back(Mode("ctf", "Capture the Flag", zx::HostGameMode::CaptureTheFlag));
+
+	EXPECT_EQ(zx::HostGameMode::CaptureTheFlag, PickRemix(offered, "ctf").gameMode);
+	EXPECT_EQ(zx::HostGameMode::Deathmatch, PickRemix(offered, "").gameMode);
+	EXPECT_EQ(zx::HostGameMode::Deathmatch, PickRemix(offered, "withdrawn").gameMode);
+}
+
+TEST(EffectiveGameMode, NothingPickedLeavesWhatTheEntrySaid)
+{
+	EXPECT_EQ(zx::HostGameMode::Deathmatch,
+		zx::EffectiveGameMode(zx::HostGameMode::Deathmatch, std::vector<RemixPick>()));
+}
+
+TEST(EffectiveGameMode, AModeMixWinsOverTheEntry)
+{
+	// The pill is the more recent and more specific statement: the entry says how it plays by
+	// default, and picking CAPTURE THE FLAG is the player changing it now.
+	std::vector<AddonRemix> offered;
+	offered.push_back(Mode("dm", "Deathmatch", zx::HostGameMode::Deathmatch));
+	offered.push_back(Mode("ctf", "Capture the Flag", zx::HostGameMode::CaptureTheFlag));
+
+	std::vector<RemixPick> picks(1, PickRemix(offered, "ctf"));
+
+	EXPECT_EQ(zx::HostGameMode::CaptureTheFlag,
+		zx::EffectiveGameMode(zx::HostGameMode::Deathmatch, picks));
+}
+
+TEST(EffectiveGameMode, AMixThatIsNotAboutTheModeLeavesItAlone)
+{
+	// Every gameplay mod ever written for this catalogue. Brutal Doom does not change deathmatch
+	// into something else, and a mod axis must not be able to blank the mode by being picked.
+	std::vector<AddonRemix> offered(1, Remix("brutal", "Brutal Doom"));
+	std::vector<RemixPick> picks(1, PickRemix(offered, "brutal"));
+
+	EXPECT_EQ(zx::HostGameMode::Unknown, picks[0].gameMode);
+	EXPECT_EQ(zx::HostGameMode::LastManStanding,
+		zx::EffectiveGameMode(zx::HostGameMode::LastManStanding, picks));
+}
+
+TEST(EffectiveGameMode, TheLastMixNamingAModeIsTheOneInForce)
+{
+	// Two axes both naming a mode is a catalogue asking for something no server can do, since one
+	// server runs one gamemode. Resolved rather than refused, and resolved the same way every time,
+	// so the panel and the server cannot disagree about which of them won.
+	std::vector<AddonRemix> offered;
+	offered.push_back(Mode("ctf", "Capture the Flag", zx::HostGameMode::CaptureTheFlag));
+	offered.push_back(Remix("mod", "Some Mod"));
+	offered.push_back(Mode("lms", "Last Man Standing", zx::HostGameMode::LastManStanding));
+
+	std::vector<RemixPick> picks;
+	picks.push_back(PickRemix(offered, "ctf"));
+	picks.push_back(PickRemix(offered, "mod"));
+	picks.push_back(PickRemix(offered, "lms"));
+
+	EXPECT_EQ(zx::HostGameMode::LastManStanding,
+		zx::EffectiveGameMode(zx::HostGameMode::Deathmatch, picks));
 }

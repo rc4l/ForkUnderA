@@ -70,7 +70,14 @@ enum class HostGameMode
 	Duel,
 	LastManStanding,
 	TeamLastManStanding,
+	Possession,
+	TeamPossession,
+	Terminator,
+
+	// The two that take their sides from the map rather than from a cvar. Both want a flag on the
+	// floor, so a pack can only offer them on maps built for them.
 	CaptureTheFlag,
+	Skulltag,
 };
 
 HostGameMode ParseGameMode(const std::string &s);
@@ -318,10 +325,22 @@ struct AddonRemix
 	// loaded one.
 	std::vector<std::string> provides;
 
+	// [rc4l] The way of playing this mix switches to, when it switches to one at all.
+	//
+	// A mix that names a gamemode is an AXIS OF MODES rather than of mods, which is what deathmatch,
+	// last man standing and capture the flag are to an experience that offers all three. Stated here
+	// because the panel's other controls read the mode: teams and lives both ask it first, and a mode
+	// chosen by a pill that could not say so would leave them reading the entry's answer to a
+	// question the player has since changed.
+	//
+	// Unknown, which is the default, means this mix is not about the mode and leaves it alone. That
+	// is every gameplay mod ever written for this catalogue.
+	HostGameMode gameMode;
+
 	bool valid;
 	std::string error;		// why not, when invalid
 
-	AddonRemix() : valid(false) {}
+	AddonRemix() : gameMode(HostGameMode::Unknown), valid(false) {}
 };
 
 // `id` is supplied by the caller from the directory name rather than trusted from the file: the

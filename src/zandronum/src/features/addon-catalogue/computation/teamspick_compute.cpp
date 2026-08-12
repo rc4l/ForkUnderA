@@ -70,6 +70,20 @@ TeamsControl TeamsFor(HostGameMode mode, bool offered, int wanted)
 		out.teamCvar = "teamlms";
 		break;
 
+	case HostGameMode::Possession:
+		out.soloCvar = "possession";
+		out.teamCvar = "teampossession";
+		break;
+
+	case HostGameMode::CaptureTheFlag:
+	case HostGameMode::Skulltag:
+		// [rc4l] Said separately from the modes below, because these two DO have sides and a reader
+		// who is told they have no free-for-all will think the entry is wrong. Both honour
+		// sv_maxteams; their maps do not. A map carries one flag per side, so the count is a fact
+		// about the map and a third team would spawn with nothing to take and nothing to lose.
+		out.reason = "The map decides the sides here, and it carries two";
+		return out;
+
 	default:
 		// Named rather than lumped in with "no", because an entry that asked for the control and did
 		// not get one is a mistake in the entry and the reader should be able to see which.

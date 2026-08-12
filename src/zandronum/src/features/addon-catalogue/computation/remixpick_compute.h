@@ -55,8 +55,22 @@ struct RemixPick
 	// going back to the pool for the thing it just picked.
 	std::vector<std::string> provides;
 
-	RemixPick() : index(-1) {}
+	// The mode it switches to, Unknown when it is not about the mode. Carried for the same reason
+	// `provides` is: the caller has the pick and should not have to go back to the pool for a fact
+	// about the thing it just picked.
+	HostGameMode gameMode;
+
+	RemixPick() : index(-1), gameMode(HostGameMode::Unknown) {}
 };
+
+// The mode actually in force, given what the entry or its variant said and what the player then
+// picked. A mix that names a mode WINS, because picking it is the more recent and more specific
+// statement: the entry says how it plays by default, the pill says how it is being played now.
+//
+// Only one mix may claim it. Two pills naming modes are on the same axis by construction -- one
+// lights per group -- so the last one that names a mode is the one in force, and a catalogue that
+// puts two mode mixes in different groups has asked for something no server can do.
+HostGameMode EffectiveGameMode(HostGameMode stated, const std::vector<RemixPick> &picks);
 
 // `wantedId` is what the player last chose, which may be empty or name a remix this entry no longer
 // offers. Either way the answer is the FIRST one offered, which is the baseline by convention: a
