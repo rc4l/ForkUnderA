@@ -8,7 +8,7 @@ using zx::AddonEntry;
 using zx::AddonFileRef;
 using zx::AddonRemix;
 using zx::AddonVariant;
-using zx::FilesAfterSupersedes;
+using zx::CombineFiles;
 using zx::GroupRemixes;
 using zx::OfferedRemixes;
 using zx::PickRemix;
@@ -446,24 +446,23 @@ TEST(PickRemix, EveryOfferedRemixIsReachable)
 namespace
 {
 
-std::vector<AddonFileRef> Loading(const char *a, const char *b, const char *c)
+AddonFileRef Filling(const std::string &name, const std::string &role)
 {
-	std::vector<AddonFileRef> files;
-	files.push_back(File(a));
-	if (b != NULL)
-		files.push_back(File(b));
-	if (c != NULL)
-		files.push_back(File(c));
-	return files;
+	AddonFileRef f = File(name);
+	f.provides = role;
+	return f;
 }
 
-RemixPick Superseding(const char *what)
+// A pick as PickRemix would have built it: what it loads, and what it says it already contains.
+RemixPick Mix(const std::string &id, const char *loads, const char *provides)
 {
 	RemixPick pick;
 	pick.index = 0;
-	pick.id = "mod";
-	if (what != NULL)
-		pick.supersedes.push_back(what);
+	pick.id = id;
+	if (loads != NULL)
+		pick.files.push_back(File(loads));
+	if (provides != NULL)
+		pick.provides.push_back(provides);
 	return pick;
 }
 
@@ -475,114 +474,135 @@ std::vector<std::string> NamesOf(const std::vector<AddonFileRef> &files)
 	return names;
 }
 
+// What a deathmatch entry loads: its maps, and a spree announcer it names as one.
+std::vector<AddonFileRef> Deathmatch()
+{
+	std::vector<AddonFileRef> base;
+	base.push_back(File("maps.wad"));
+	base.push_back(Filling("spree2rc2.pk3", "spree"));
+	return base;
+}
+
 } // namespace
 
-TEST(FilesAfterSupersedes, KeepsEverythingWhenNothingIsSuperseded)
+TEST(CombineFiles, PutsTheMixAfterWhatTheEntryLoads)
 {
-	const std::vector<AddonFileRef> files = Loading("maps.wad", "spree.pk3", NULL);
-	const std::vector<RemixPick> picks(1, Superseding(NULL));
+	const std::vector<RemixPick> picks(1, Mix("weapons", "weapons.pk3", NULL));
+	const std::vector<std::string> got = NamesOf(CombineFiles(Deathmatch(), picks));
 
-	EXPECT_EQ(NamesOf(files), NamesOf(FilesAfterSupersedes(files, picks)));
+	ASSERT_EQ(3u, got.size());
+	EXPECT_EQ("maps.wad", got[0]);
+	EXPECT_EQ("spree2rc2.pk3", got[1]);
+	EXPECT_EQ("weapons.pk3", got[2]);
 }
 
-TEST(FilesAfterSupersedes, DropsTheFileTheMixAlreadyContains)
+TEST(CombineFiles, DropsTheFileWhoseRoleTheMixAlreadyFills)
 {
-	// The case this exists for: a weapon mod carrying its own announcer, offered by an entry that
-	// loads one anyway. Loading both plays every announcement over itself.
-	const std::vector<AddonFileRef> files = Loading("maps.wad", "spree.pk3", "weapons.pk3");
-	const std::vector<RemixPick> picks(1, Superseding("spree.pk3"));
+	// The case this exists for: a weapon mod carrying its own spree, offered by an entry that loads
+	// one anyway. Both loaded means two trackers over the same kills.
+	const std::vector<RemixPick> picks(1, Mix("weapons", "weapons.pk3", "spree"));
+	const std::vector<std::string> got = NamesOf(CombineFiles(Deathmatch(), picks));
 
-	const std::vector<std::string> kept = NamesOf(FilesAfterSupersedes(files, picks));
-
-	ASSERT_EQ(2u, kept.size());
-	EXPECT_EQ("maps.wad", kept[0]);
-	EXPECT_EQ("weapons.pk3", kept[1]);
+	ASSERT_EQ(2u, got.size());
+	EXPECT_EQ("maps.wad", got[0]);
+	EXPECT_EQ("weapons.pk3", got[1]);
 }
 
-TEST(FilesAfterSupersedes, MatchesTheNameWhateverItsCase)
+TEST(CombineFiles, SurvivesTheFileBeingUpgraded)
 {
-	// Catalogue and download store disagree about case often enough that an exact compare would
-	// suppress on one machine and not on another. Both sides are folded, since either could be the
-	// one written in caps.
-	const std::vector<AddonFileRef> loud = Loading("maps.wad", "ZandroSpree.PK3", NULL);
-	const std::vector<AddonFileRef> quiet = Loading("maps.wad", "zandrospree.pk3", NULL);
+	// THE reason this is a role and not a filename. The entry moves to the next release; nothing
+	// about the mix changes; the suppression still fires.
+	std::vector<AddonFileRef> next;
+	next.push_back(File("maps.wad"));
+	next.push_back(Filling("spree3final.pk3", "spree"));
 
-	EXPECT_EQ(1u, FilesAfterSupersedes(loud, std::vector<RemixPick>(1, Superseding(
-		"zandrospree.pk3"))).size());
-	EXPECT_EQ(1u, FilesAfterSupersedes(quiet, std::vector<RemixPick>(1, Superseding(
-		"ZandroSpree.PK3"))).size());
+	const std::vector<RemixPick> picks(1, Mix("weapons", "weapons.pk3", "spree"));
+
+	EXPECT_EQ(2u, CombineFiles(next, picks).size());
 }
 
-TEST(FilesAfterSupersedes, DoesNotMatchOnAPrefix)
+TEST(CombineFiles, LeavesAnUntaggedFileAlone)
 {
-	const std::vector<AddonFileRef> files = Loading("spree.pk3", "spree2.pk3", NULL);
-	const std::vector<RemixPick> picks(1, Superseding("spree.pk3"));
+	// An entry that never said what its file was keeps it. Silence is not a claim to any role, so a
+	// mix providing one cannot reach it.
+	std::vector<AddonFileRef> base;
+	base.push_back(File("maps.wad"));
+	base.push_back(File("spree2rc2.pk3"));
 
-	const std::vector<std::string> kept = NamesOf(FilesAfterSupersedes(files, picks));
+	const std::vector<RemixPick> picks(1, Mix("weapons", "weapons.pk3", "spree"));
 
-	ASSERT_EQ(1u, kept.size());
-	EXPECT_EQ("spree2.pk3", kept[0]);
+	EXPECT_EQ(3u, CombineFiles(base, picks).size());
 }
 
-TEST(FilesAfterSupersedes, DoesNotMatchADifferentNameOfTheSameLength)
+TEST(CombineFiles, LeavesADifferentRoleAlone)
 {
-	// The length test alone would let this through, and two announcers with names this close is
-	// exactly the shape the catalogue already has.
-	const std::vector<AddonFileRef> files = Loading("spree1.pk3", "spree2.pk3", NULL);
-	const std::vector<RemixPick> picks(1, Superseding("spree2.pk3"));
+	std::vector<AddonFileRef> base;
+	base.push_back(Filling("hud.pk3", "hud"));
 
-	const std::vector<std::string> kept = NamesOf(FilesAfterSupersedes(files, picks));
+	const std::vector<RemixPick> picks(1, Mix("weapons", NULL, "spree"));
 
-	ASSERT_EQ(1u, kept.size());
-	EXPECT_EQ("spree1.pk3", kept[0]);
+	EXPECT_EQ(1u, CombineFiles(base, picks).size());
 }
 
-TEST(FilesAfterSupersedes, LetsAnyAxisSupersede)
+TEST(CombineFiles, LetsAnyAxisFillTheRole)
 {
-	// Two independent axes, and it is the SECOND one that brings the announcer. Nothing about the
+	// Two independent axes, and it is the SECOND that brings the spree. Nothing about the
 	// suppression may depend on which group the mix sits in.
 	std::vector<RemixPick> picks;
-	picks.push_back(Superseding(NULL));
-	picks.push_back(Superseding("spree.pk3"));
+	picks.push_back(Mix("lives", NULL, NULL));
+	picks.push_back(Mix("weapons", "weapons.pk3", "spree"));
 
-	const std::vector<AddonFileRef> files = Loading("maps.wad", "spree.pk3", NULL);
-	const std::vector<std::string> kept = NamesOf(FilesAfterSupersedes(files, picks));
-
-	ASSERT_EQ(1u, kept.size());
-	EXPECT_EQ("maps.wad", kept[0]);
+	EXPECT_EQ(2u, CombineFiles(Deathmatch(), picks).size());
 }
 
-TEST(FilesAfterSupersedes, ReachesWhatALaterMixAdded)
+TEST(CombineFiles, KeepsTheMixsOwnCopyOfWhatItProvides)
 {
-	// A mix's files are already on the end of the list by the time this runs, so one axis can
-	// supersede what another added. Cheaper than filtering in stages, and the answer is the same
-	// either way round.
+	// A mix may tag its own file with the role it fills. Suppressing that would delete the thing
+	// the declaration is about and leave the role filled by nothing.
+	RemixPick pick = Mix("weapons", NULL, "spree");
+	pick.files.push_back(Filling("weapons.pk3", "spree"));
+
+	const std::vector<std::string> got = NamesOf(CombineFiles(Deathmatch(), std::vector<RemixPick>(1, pick)));
+
+	ASSERT_EQ(2u, got.size());
+	EXPECT_EQ("maps.wad", got[0]);
+	EXPECT_EQ("weapons.pk3", got[1]);
+}
+
+TEST(CombineFiles, OneMixCanReplaceWhatAnotherBrought)
+{
+	// Across axes, a mix's file is no different from the entry's: whoever provides the role wins and
+	// the other copy goes.
+	RemixPick brings = Mix("sounds", NULL, NULL);
+	brings.files.push_back(Filling("othersp.pk3", "spree"));
+
 	std::vector<RemixPick> picks;
-	picks.push_back(Superseding("spree.pk3"));
-	picks.push_back(Superseding(NULL));
+	picks.push_back(brings);
+	picks.push_back(Mix("weapons", "weapons.pk3", "spree"));
 
-	const std::vector<AddonFileRef> files = Loading("maps.wad", "spree.pk3", NULL);
+	std::vector<AddonFileRef> base(1, File("maps.wad"));
+	const std::vector<std::string> got = NamesOf(CombineFiles(base, picks));
 
-	EXPECT_EQ(1u, FilesAfterSupersedes(files, picks).size());
+	ASSERT_EQ(2u, got.size());
+	EXPECT_EQ("maps.wad", got[0]);
+	EXPECT_EQ("weapons.pk3", got[1]);
 }
 
-TEST(FilesAfterSupersedes, SupersedesNothingWhenNoMixIsInForce)
+TEST(CombineFiles, ChangesNothingWhenNoMixIsInForce)
 {
-	// An entry with no mixes at all still comes through here, and must load exactly what it named.
-	const std::vector<AddonFileRef> files = Loading("maps.wad", "spree.pk3", NULL);
-
-	EXPECT_EQ(2u, FilesAfterSupersedes(files, std::vector<RemixPick>()).size());
+	// An entry with no mixes at all comes through here and must load exactly what it named.
+	EXPECT_EQ(2u, CombineFiles(Deathmatch(), std::vector<RemixPick>()).size());
 }
 
-TEST(PickRemix, CarriesTheSupersededListThrough)
+TEST(PickRemix, CarriesTheProvidedRolesThrough)
 {
-	// The suppression is useless unless the pick hands the names on; nothing else does. Both routes
-	// through PickRemix are checked -- the remembered choice and the fallback to the baseline.
+	// The suppression is useless unless the pick hands the roles on; nothing else does. Both routes
+	// through PickRemix are checked: the remembered choice, and the fallback to the baseline.
 	AddonRemix mod = Remix("mod", "Weapons");
-	mod.supersedes.push_back("spree.pk3");
+	mod.provides.push_back("spree");
 
 	const std::vector<AddonRemix> offered(1, mod);
 
-	EXPECT_EQ(mod.supersedes, PickRemix(offered, "mod").supersedes);
-	EXPECT_EQ(mod.supersedes, PickRemix(offered, "gone").supersedes);
+	EXPECT_EQ(mod.provides, PickRemix(offered, "mod").provides);
+	EXPECT_EQ(mod.provides, PickRemix(offered, "gone").provides);
 }

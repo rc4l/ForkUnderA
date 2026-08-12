@@ -25,6 +25,19 @@ struct AddonFileRef
 {
 	std::string name;	// bare filename, as the loader will ask for it
 	std::string md5;	// lower-case hex; what the by-hash store is keyed on
+
+	// [rc4l] What this file IS, when a mod might bring its own copy of the same thing. Optional, and
+	// empty for almost every file.
+	//
+	// A role rather than a filename, because a filename carries a version. Name one in a mix and the
+	// day the file is replaced by its next release, the mix goes on naming something nobody loads and
+	// says nothing about the file that took its place -- silently, since a name that matches nothing
+	// is the ordinary case. The role outlives the release: the tag moves with the filename it sits
+	// beside, which is the line an upgrade has to touch anyway.
+	//
+	// Freeform, lower case, and shared by convention rather than declared anywhere. Two files given
+	// the same role are claiming to be interchangeable, which is exactly the claim being made.
+	std::string provides;
 };
 
 // [rc4l] Whether an experience is people against each other or people against the game.
@@ -289,19 +302,21 @@ struct AddonRemix
 	// added, never replacing, so nothing has to restate what it is being added to.
 	std::vector<AddonFileRef> files;
 
-	// [rc4l] Files this remix ALREADY CONTAINS, which must therefore not be loaded beside it.
+	// [rc4l] What this remix ALREADY CONTAINS, so a file filling the same role is not loaded beside
+	// it.
 	//
 	// A mod is free to bundle something an experience also loads on its own. The two are not a
-	// duplicate file -- the names differ -- they are the same content twice, and what the player
-	// gets is every announcement played over itself.
+	// duplicate file -- the names differ -- they are the same thing twice, and what the player gets
+	// is every announcement played over itself.
 	//
-	// Named by the REMIX, because the remix is the thing that knows what is inside it. An entry
+	// Declared by the REMIX, because the remix is the thing that knows what is inside it. An entry
 	// cannot be asked to list what each of its mixes happens to carry: it would need editing every
 	// time any of them gained something, and that is not a fact about the entry.
 	//
-	// Bare filenames, matched against what the entry and its variant load. A name that is not there
-	// is not an error -- the same mix is offered by entries that never loaded it.
-	std::vector<std::string> supersedes;
+	// Roles, matched against AddonFileRef::provides, and never filenames. See there for why. A role
+	// nothing on the entry fills is not an error: the same mix is offered by entries that never
+	// loaded one.
+	std::vector<std::string> provides;
 
 	bool valid;
 	std::string error;		// why not, when invalid

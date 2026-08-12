@@ -9,26 +9,15 @@ namespace zx
 namespace
 {
 
-// Filenames only, so ASCII case folding is the whole of it. tolower's locale is not wanted here and
-// its signed-char undefined behaviour is not worth inviting for a set of characters wad names have
-// never used.
-bool SameFileName(const std::string &a, const std::string &b)
+bool Holds(const std::vector<std::string> &list, const std::string &want)
 {
-	if (a.size() != b.size())
-		return false;
-
-	for (size_t i = 0; i < a.size(); ++i)
+	for (size_t i = 0; i < list.size(); ++i)
 	{
-		char x = a[i], y = b[i];
-		if ((x >= 'A') && (x <= 'Z'))
-			x = static_cast<char>(x - 'A' + 'a');
-		if ((y >= 'A') && (y <= 'Z'))
-			y = static_cast<char>(y - 'A' + 'a');
-		if (x != y)
-			return false;
+		if (list[i] == want)
+			return true;
 	}
 
-	return true;
+	return false;
 }
 
 } // namespace
@@ -90,7 +79,7 @@ RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &w
 			pick.name = offered[i].name;
 			pick.cfg = offered[i].cfg;
 			pick.files = offered[i].files;
-			pick.supersedes = offered[i].supersedes;
+			pick.provides = offered[i].provides;
 			return pick;
 		}
 	}
@@ -103,7 +92,7 @@ RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &w
 	pick.name = offered[0].name;
 	pick.cfg = offered[0].cfg;
 	pick.files = offered[0].files;
-	pick.supersedes = offered[0].supersedes;
+	pick.provides = offered[0].provides;
 	return pick;
 }
 
@@ -166,29 +155,60 @@ std::vector<RemixPick> PickRemixes(const std::vector<AddonRemix> &offered,
 	return picks;
 }
 
-std::vector<AddonFileRef> FilesAfterSupersedes(const std::vector<AddonFileRef> &files,
-                                               const std::vector<RemixPick> &picks)
+std::vector<AddonFileRef> CombineFiles(const std::vector<AddonFileRef> &base,
+                                       const std::vector<RemixPick> &picks)
 {
+	// -1 for the entry's own, otherwise which pick brought it. Only ever read to answer "did this
+	// file come from the mix now trying to suppress it", so an index is the whole of what is needed.
+	std::vector<AddonFileRef> all;
+	std::vector<int> from;
+
+	for (size_t i = 0; i < base.size(); ++i)
+	{
+		all.push_back(base[i]);
+		from.push_back(-1);
+	}
+
+	// Every axis, in group order, each appended after the last. Load order between axes is the
+	// catalogue author's: a mod named after a rules remix loads after it and so wins where they
+	// overlap, which is the only way an author can express that at all.
+	for (size_t p = 0; p < picks.size(); ++p)
+	{
+		for (size_t i = 0; i < picks[p].files.size(); ++i)
+		{
+			all.push_back(picks[p].files[i]);
+			from.push_back(static_cast<int>(p));
+		}
+	}
+
 	std::vector<AddonFileRef> kept;
 
-	for (size_t i = 0; i < files.size(); ++i)
+	for (size_t i = 0; i < all.size(); ++i)
 	{
+		if (all[i].provides.empty())
+		{
+			kept.push_back(all[i]);
+			continue;
+		}
+
 		bool drop = false;
 
-		for (size_t p = 0; (p < picks.size()) && !drop; ++p)
+		for (size_t p = 0; p < picks.size(); ++p)
 		{
-			for (size_t s = 0; s < picks[p].supersedes.size(); ++s)
+			// Its own file. A mix providing a role has to keep whatever it brought to provide it
+			// with, or declaring the role would delete the thing being declared.
+			if (from[i] == static_cast<int>(p))
+				continue;
+
+			if (Holds(picks[p].provides, all[i].provides))
 			{
-				if (SameFileName(files[i].name, picks[p].supersedes[s]))
-				{
-					drop = true;
-					break;
-				}
+				drop = true;
+				break;
 			}
 		}
 
 		if (!drop)
-			kept.push_back(files[i]);
+			kept.push_back(all[i]);
 	}
 
 	return kept;
