@@ -60,6 +60,7 @@ That is why `remix/` is not read as one.
 | `teams` | bool | no | Offer the team count slider. Default false. |
 | `order` | int | no | Higher floats nearer the top. Default 0. |
 | `accent` | bool | no | Draw the first word of the name in the accent colour. |
+| `art` | string | no | Override the menu picture. See Menu art. |
 
 `files` is required only when there are no variants. With variants, each variant must end up
 loading something. It may come from either list.
@@ -83,6 +84,7 @@ Unknown fields are skipped, not refused. A catalogue written for a later build s
 | `maxlives` | int | no | Falls back to the entry's. |
 | `fastweapons` | bool | no | Added to the entry's. |
 | `teams` | bool | no | Added to the entry's. |
+| `art` | string | no | Override the menu picture. Falls back to the entry's. |
 | `default` | bool | no | The one an undecided player gets. At most one variant. |
 
 The default variant's `cfg` should be `server.cfg`. An older build ignores variants and plays
@@ -106,8 +108,42 @@ The default variant's `cfg` should be `server.cfg`. An older build ignores varia
 | `cfg` | filename | no | Exec'd after the experience's. Must exist in the folder. |
 | `files` | array | no | Loaded after everything else. |
 | `provides` | array of roles | no | What this mix already contains. See Roles. |
+| `art` | string | no | Override the menu picture. See Menu art. |
 
 A mix with neither `cfg` nor `files` is legal. That is the baseline.
+
+## Menu art
+
+An entry, variant or mix can show a small picture instead of its text header. The picture is pulled
+out of the files it loads by a tool, shrunk, and committed beside the JSON. **The files are not
+shipped; the picture is.**
+
+| File | Belongs to |
+|---|---|
+| `art.png` | An entry that plays one way, or a mix |
+| `art.<variant>.png` | One way of playing |
+
+You do not write these by hand. Run the tool:
+
+```
+python .claude/skills/catalogue-menu-art/generate.py --store <folder holding the loaded files>
+```
+
+Nothing is required. A slot with no picture draws its name, which is a designed fallback and not a
+degraded one.
+
+The tool finds the picture on its own: what the pack's menu definition draws, else the conventional
+logo lump, else the title screen. When that is wrong, the slot says so with `art`:
+
+| Value | Means |
+|---|---|
+| `"art": "<lump>"` | Use this lump instead |
+| `"art": ""` | No picture. Draw the name |
+| absent | Work it out. Nearly always right |
+
+Use it only when the source is not what it claims: a logo lump holding an empty frame, a menu
+drawing the base game's logo rather than the pack's, a blank spacer where the real title is a
+rendered map. Not for taste.
 
 ## Roles
 

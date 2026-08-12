@@ -8,8 +8,9 @@
 Writes art.png beside an entry that plays one way, art.<variant>.png for each way of playing, and
 art.png beside each mix. Reports every slot, and every slot that has no art and falls back to text.
 
-Reproducible on purpose: the settings and the handful of overrides live here rather than in
-somebody's shell history, so the next run produces the same catalogue.
+Reproducible on purpose: the settings live here rather than in somebody's shell history, so the next
+run produces the same catalogue. Nothing about any particular pack lives here; a slot that needs
+something other than the automatic answer says so in the catalogue.
 """
 
 import argparse
@@ -29,26 +30,16 @@ HEIGHT = 64
 WIDTH = 512
 BUDGET = 4096
 
-# [rc4l] Slots whose preferred lump is the wrong picture.
+# [rc4l] What a slot may say for itself, when the automatic answer is wrong for it.
 #
-# The order menuart resolves in is right nearly always, and this is not a place to record taste. It
-# is for a source that is not what it claims. Look at the output before adding a line here, and say
-# what is wrong with the source.
+# Read from the catalogue rather than kept here, because it is a fact about a pack and the packs are
+# described over there. A list of pack names in this file would be a list that has to be edited every
+# time the catalogue changes, by somebody editing a tool.
 #
-# An EMPTY tuple means "no art, use the name". For a pack whose menu genuinely draws the base game's
-# own logo: it is real art and it is what the menu shows, but it identifies the base game rather
-# than the pack, so several variants come out as the same generic picture where their names had told
-# you which was which.
-OVERRIDES = {
-	# Its logo lump is an empty bordered box. The title screen is the only art in the file.
-	"rocketjump/extreme": ("TITLEPIC",),
-
-	# Its menu draws the base game's logo. Four ways of playing, one generic picture between them.
-	"superskulltag/campaign": (),
-	"superskulltag/monstermash": (),
-	"superskulltag/invasion": (),
-	"superskulltag/dm": (),
-}
+#   "art": "<lump>"  use this instead of what would be resolved
+#   "art": ""        no picture; draw the name
+#   absent           resolve automatically, which is nearly always right
+ART_KEY = "art"
 
 
 def load_order(store, names):
@@ -66,11 +57,15 @@ def main(argv):
 	rows = []
 	absent = set()
 
-	def do(out, names, label):
+	def do(out, names, label, says):
 		for n in names:
 			if not os.path.exists(os.path.join(args.store, n)):
 				absent.add(n)
-		lumps = OVERRIDES.get(label, menuart.LUMPS)
+
+		lumps = menuart.LUMPS
+		if ART_KEY in says:
+			named = (says[ART_KEY] or "").strip()
+			lumps = (named.upper(),) if named else ()
 
 		# An empty override is "no art", so nothing is looked for and the caller draws the name.
 		got = None
@@ -93,21 +88,23 @@ def main(argv):
 		variants = entry.get("variants") or []
 
 		if not variants:
-			do(os.path.join(d, "art.png"), base, who)
+			do(os.path.join(d, "art.png"), base, who, entry)
 			continue
 
 		# Per variant, because the header names the variant. The entry's own files are part of the
 		# load order either way, so a pack whose art sits at entry level still resolves for each.
 		for v in variants:
+			# A variant speaks for itself, or falls back to whatever its entry said.
 			do(os.path.join(d, "art.%s.png" % v["id"]),
 			   base + [f["name"] for f in v.get("files") or []],
-			   "%s/%s" % (who, v["id"]))
+			   "%s/%s" % (who, v["id"]),
+			   v if ART_KEY in v else entry)
 
 	for p in sorted(glob.glob(os.path.join(args.catalogue, "remix", "*", "remix.json"))):
 		d = os.path.dirname(p)
 		remix = json.load(io.open(p, encoding="utf-8"))
 		do(os.path.join(d, "art.png"), [f["name"] for f in remix.get("files") or []],
-		   "remix/" + os.path.basename(d))
+		   "remix/" + os.path.basename(d), remix)
 
 	print("%-28s %-9s %-11s %7s %6s" % ("SLOT", "LUMP", "SIZE", "BYTES", "COLS"))
 	for label, got in rows:
