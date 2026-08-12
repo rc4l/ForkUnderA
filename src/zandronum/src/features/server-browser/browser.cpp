@@ -326,6 +326,27 @@ bool BROWSER_IsActive( ULONG ulServer )
 
 //*****************************************************************************
 //
+bool BROWSER_IsListable( ULONG ulServer )
+{
+	if ( ulServer >= MAX_BROWSER_SERVERS )
+		return ( false );
+
+	const ULONG ulState = g_BrowserServerList[ulServer].ulActiveState;
+	return (( ulState == AS_ACTIVE ) || ( ulState == AS_VERSIONMISMATCH ));
+}
+
+//*****************************************************************************
+//
+zx::VersionRelation BROWSER_GetVersionRelation( ULONG ulServer )
+{
+	if ( ulServer >= MAX_BROWSER_SERVERS )
+		return ( zx::VersionRelation::Unknown );
+
+	return ( g_BrowserServerList[ulServer].versionRelation );
+}
+
+//*****************************************************************************
+//
 bool BROWSER_IsLAN( ULONG ulServer )
 {
 	if ( ulServer >= MAX_BROWSER_SERVERS )
@@ -1210,6 +1231,7 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 
 	// Likewise the previous occupant's verdict about a build that has nothing to do with this one.
 	g_BrowserServerList[ulServer].bVersionMismatch = false;
+	g_BrowserServerList[ulServer].versionRelation = zx::VersionRelation::Unknown;
 }
 
 //*****************************************************************************
@@ -1401,7 +1423,7 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 	// Read in the version.
 	g_BrowserServerList[lServer].Version = pByteStream->ReadString();
 
-	// If the version doesn't match ours, remove it from the list.
+	// [rc4l] Which way our versions differ, if they do. Listed either way; see AS_VERSIONMISMATCH.
 	{
 		// [rc4l] Compare ZandroX versions, not Zandronum ones. GetVersionStringRev() is identical
 		// across every ZandroX release, so this check used to pass for builds that cannot actually
@@ -1413,19 +1435,24 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		if ( ourVersion[ourVersion.Len()-1] == 'M' )
 			ourVersion = ourVersion.Left ( ourVersion.Len()-1 );
 
-		// [BB] Check whether the server version starts with our version.
-		if ( g_BrowserServerList[lServer].Version.IndexOf ( ourVersion ) != 0 )
+		// [rc4l] A comparison rather than the prefix test this used to be. "Different" was one
+		// answer where the browser needs three: an OLDER server is one the host must fix and the
+		// player cannot, a NEWER one is a destination an update reaches. They sort and read
+		// differently, so the direction has to survive to the row.
+		const zx::VersionRelation rel = zx::CompareFuaVersions(
+			g_BrowserServerList[lServer].Version.GetChars( ), ourVersion.GetChars( ));
+		g_BrowserServerList[lServer].versionRelation = rel;
+
+		if ( zx::VersionRelationCanJoin( rel ) == false )
 		{
-			// [rc4l] Remember WHY this one went quiet, so the footer can say so. Hiding a server that
-			// answered us, with no trace that it did, is how "I can see it and you cannot" turns into
-			// a bug report about the server registry.
+			// Kept for the footer's count, which still explains a list holding no JOINABLE servers.
 			g_BrowserServerList[lServer].bVersionMismatch = true;
-			g_BrowserServerList[lServer].ulActiveState = AS_INACTIVE;
-			while ( 1 )
-			{
-				if ( pByteStream->ReadByte() == -1 )
-					return;
-			}
+			// [rc4l] Flagged and KEPT. Draining the packet here dropped the server, so a release made
+			// every not-yet-updated server vanish at once -- and an empty browser reads as "nobody is
+			// hosting", never as "you are ahead of them". Parsing continues so the row has a name, a
+			// player count and a version to show; the state is set after AS_ACTIVE was assigned above,
+			// so it stands.
+			g_BrowserServerList[lServer].ulActiveState = AS_VERSIONMISMATCH;
 		}
 	}
 

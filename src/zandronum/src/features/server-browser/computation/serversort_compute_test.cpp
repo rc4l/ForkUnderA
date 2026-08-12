@@ -185,3 +185,54 @@ TEST(CompareServers, IsTransitive)
 					EXPECT_LT(ik, 0) << i << "," << j << "," << k;
 			}
 }
+
+// ---------------------------------------------------------------- version ordering
+//
+// [rc4l] A server the player cannot act on sinks within its group. Older and Unknown do; Same and
+// Newer do not, because an update reaches a newer one and nothing reaches an older one.
+
+using zx::CompareServersWithVersion;
+using zx::VersionRelation;
+
+TEST(ServerSort, AnOlderServerSinksBelowAJoinableOne)
+{
+	// Even though it has more players, which would otherwise put it first.
+	EXPECT_GT(CompareServersWithVersion(false, 9, "busy", VersionRelation::Older,
+	                                    false, 1, "quiet", VersionRelation::Same), 0);
+}
+
+TEST(ServerSort, ANewerServerKeepsItsPlace)
+{
+	// One update away, so it is ranked on population like anything else.
+	EXPECT_LT(CompareServersWithVersion(false, 9, "busy", VersionRelation::Newer,
+	                                    false, 1, "quiet", VersionRelation::Same), 0);
+}
+
+TEST(ServerSort, AnUnreadableVersionSinksLikeAnOldOne)
+{
+	EXPECT_GT(CompareServersWithVersion(false, 9, "busy", VersionRelation::Unknown,
+	                                    false, 1, "quiet", VersionRelation::Same), 0);
+}
+
+TEST(ServerSort, SinkingHappensInsideTheGroupNotAcrossIt)
+{
+	// A LAN server on an old build is still on your network, so it stays above every internet
+	// server -- the same reasoning that made LAN a group rather than a score.
+	EXPECT_LT(CompareServersWithVersion(true, 0, "old lan", VersionRelation::Older,
+	                                    false, 32, "busy internet", VersionRelation::Same), 0);
+}
+
+TEST(ServerSort, TwoSinkingServersStillSortAgainstEachOther)
+{
+	// Sinking is a group, not a tie: within it the usual rules apply.
+	EXPECT_LT(CompareServersWithVersion(false, 9, "busy", VersionRelation::Older,
+	                                    false, 1, "quiet", VersionRelation::Older), 0);
+}
+
+TEST(ServerSort, WithoutAMismatchTheOrderIsUnchanged)
+{
+	// The version rule must not disturb the ordering everything else relies on.
+	EXPECT_EQ(CompareServersWithVersion(false, 5, "a", VersionRelation::Same,
+	                                    false, 5, "b", VersionRelation::Same),
+	          zx::CompareServers(false, 5, "a", false, 5, "b"));
+}

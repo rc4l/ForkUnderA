@@ -1562,6 +1562,7 @@ add_executable( zdoom WIN32
 	features/server-browser/computation/scrollview_compute.cpp
 	features/server-browser/computation/serversearch_compute.cpp
 	features/server-browser/computation/serversort_compute.cpp
+	features/server-browser/computation/versionrelation_compute.cpp
 	features/server-browser/computation/textinput_compute.cpp
 	features/server-browser/computation/tooltip_compute.cpp
 	features/server-browser/computation/stableline_compute.cpp

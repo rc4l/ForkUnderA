@@ -1691,11 +1691,11 @@ static int STACK_ARGS serverbrowser_CompareServers( const void *pA, const void *
 	const char *pszNameA = BROWSER_GetHostName( lA );
 	const char *pszNameB = BROWSER_GetHostName( lB );
 
-	const int lResult = zx::CompareServers(
+	const int lResult = zx::CompareServersWithVersion(
 		BROWSER_IsLAN( lA ), static_cast<int>( BROWSER_GetNumHumanPlayers( lA )),
-		( pszNameA != NULL ) ? pszNameA : "",
+		( pszNameA != NULL ) ? pszNameA : "", BROWSER_GetVersionRelation( lA ),
 		BROWSER_IsLAN( lB ), static_cast<int>( BROWSER_GetNumHumanPlayers( lB )),
-		( pszNameB != NULL ) ? pszNameB : "" );
+		( pszNameB != NULL ) ? pszNameB : "", BROWSER_GetVersionRelation( lB ));
 
 	// Two servers with the same name and the same population still need a stable order, or the list
 	// reshuffles them on every refresh.
@@ -1711,7 +1711,7 @@ static int serverbrowser_CountActive( void )
 	int count = 0;
 	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
-		if ( BROWSER_IsActive( ulIdx ))
+		if ( BROWSER_IsListable( ulIdx ))
 			++count;
 	}
 	return count;
@@ -1733,7 +1733,7 @@ static void serverbrowser_RebuildList( void )
 
 	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
-		if ( BROWSER_IsActive( ulIdx ) == false )
+		if ( BROWSER_IsListable( ulIdx ) == false )
 			continue;
 		if ( BROWSER_IsPasswordProtected( ulIdx ) != bWantPrivate )
 			continue;
@@ -3099,8 +3099,13 @@ public:
 			// GREEN for the server you are actually on, the same green the hosting catalogue uses for
 			// the experience it is running. One colour, one meaning across the whole browser: this is
 			// the live one. The band above keeps saying it once the selection moves onto this row.
+			// [rc4l] A row we cannot join is drawn grey throughout, so it reads as unavailable at a
+			// glance rather than requiring the version column to be compared against your own build.
+			const bool bUnjoinable = !zx::VersionRelationCanJoin( BROWSER_GetVersionRelation( lServer ));
+
 			const FString name = serverbrowser_FitName( BROWSER_GetHostName( lServer ), SB_NAME_MAX_WIDTH );
-			screen->DrawText( SmallFont, ( paint.label == zx::RowLabel::Live ) ? CR_GREEN : CR_WHITE,
+			screen->DrawText( SmallFont, bUnjoinable ? CR_DARKGRAY
+					: (( paint.label == zx::RowLabel::Live ) ? CR_GREEN : CR_WHITE),
 				SB_COL_NAME, ty, name, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 			// Humans only -- a row reading 8/8 for seven bots and one person is a lie the player
@@ -3113,13 +3118,15 @@ public:
 
 			// [rc4l] Colour only where it means something, the same way ping does: full is the one
 			// state that changes what you can do about the row, so it is the only one worth marking.
-			const EColorRange playersColor = (( slots > 0 ) && ( humans >= slots )) ? CR_RED : CR_WHITE;
+			const EColorRange playersColor = bUnjoinable ? CR_DARKGRAY
+				: ((( slots > 0 ) && ( humans >= slots )) ? CR_RED : CR_WHITE);
 			screen->DrawText( SmallFont, playersColor, SB_COL_PLAYERS, ty, players, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
 			const int ping = static_cast<int>( BROWSER_GetPing( lServer ));
 			FString pingText;
 			pingText.Format( "%d", ping );
-			DrawRightAligned( SmallFont, serverbrowser_PingColor( ping ), SB_COL_PING, ty, pingText );
+			DrawRightAligned( SmallFont, bUnjoinable ? CR_DARKGRAY : serverbrowser_PingColor( ping ),
+				SB_COL_PING, ty, pingText );
 		}
 
 		// [rc4l] There used to be a "querying N more" line under the list here. It went because it was
