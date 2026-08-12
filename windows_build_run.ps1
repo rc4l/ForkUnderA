@@ -219,6 +219,56 @@ foreach ($pairToCheck in @(@($Exe, $distExe), @((Join-Path $OutDir $coreName), $
     }
 }
 
+# --- 3b. The catalogue, MIRRORED rather than copied. ---------------------------
+# [rc4l] catalogue/ is source, not a build output, so nothing else was ever staging it: every run
+# launched against whatever happened to be in dist-windows already. An addon.json edited here and a
+# cfg renamed here both looked like they had taken and had not, which is the same silent wrong-data
+# failure this script exists to catch for the pk3s.
+#
+# MIRRORED, because a plain copy only ever adds. A variant's cfg removed from source would linger in
+# dist and keep working, so the one thing you cannot test is whether you have broken it -- and the
+# engine's own check for a promised-but-missing cfg would keep passing on a file that is gone.
+$catSrc = Join-Path $ScriptRoot "catalogue"
+$catDst = Join-Path $DistDir "catalogue"
+
+if (-not (Test-Path $catSrc)) {
+    Write-Warn "no catalogue/ at $catSrc -- the HOST tab will have nothing to offer."
+} else {
+    if (-not (Test-Path $catDst)) { New-Item -ItemType Directory -Path $catDst | Out-Null }
+
+    $srcFiles = @(Get-ChildItem $catSrc -Recurse -File)
+    $srcRel   = @($srcFiles | ForEach-Object { $_.FullName.Substring($catSrc.Length).TrimStart('\') })
+
+    foreach ($rel in $srcRel) {
+        $to = Join-Path $catDst $rel
+        $toDir = Split-Path $to -Parent
+        if (-not (Test-Path $toDir)) { New-Item -ItemType Directory -Path $toDir -Force | Out-Null }
+        Copy-Item (Join-Path $catSrc $rel) $to -Force
+    }
+
+    # Anything dist has that source does not is from an older layout. Removed rather than left,
+    # for the reason above: a leftover cfg is a test that cannot fail.
+    foreach ($stale in (Get-ChildItem $catDst -Recurse -File)) {
+        $rel = $stale.FullName.Substring($catDst.Length).TrimStart('\')
+        if ($srcRel -notcontains $rel) {
+            Write-Note "removing stale catalogue file $rel"
+            Remove-Item $stale.FullName -Force
+        }
+    }
+
+    # Verified the same way the exe and the core pk3 are, and fails CLOSED for the same reason: a
+    # catalogue that did not copy is a run against yesterday's entries.
+    foreach ($rel in $srcRel) {
+        $a = (Get-FileHash (Join-Path $catSrc $rel) -Algorithm SHA256).Hash
+        $b = (Get-FileHash (Join-Path $catDst $rel) -Algorithm SHA256).Hash
+        if ($a -ne $b) {
+            Die "dist copy of catalogue/$rel != source (a stale copy slipped through)."
+        }
+    }
+
+    Write-Note "catalogue: $($srcRel.Count) file(s) mirrored"
+}
+
 # [rc4l] windows_build.ps1 stages these once; warn rather than fail if dist predates a
 # change to them, since neither is produced by this script.
 if (-not (Test-Path (Join-Path $DistDir "OpenAL32.dll"))) {

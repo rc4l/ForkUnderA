@@ -38,8 +38,11 @@ bool Have(const std::vector<std::string> &haveFiles, const std::string &name)
 } // namespace
 
 HostPlan BuildHostPlan(const AddonEntry &addon,
+                       const std::vector<AddonFileRef> &files,
                        const IwadPick &iwad,
                        const std::string &serverCfgPath,
+                       const std::vector<std::string> &remixCfgPaths,
+                       const std::string &map,
                        const HostChoices &choices,
                        const std::vector<std::string> &haveFiles)
 {
@@ -50,7 +53,15 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
 	plan.port = choices.port;
 	plan.advertise = choices.advertise;
 	plan.execCfg = serverCfgPath;
-	plan.map = addon.map;
+	plan.map = map;
+
+	// Empties dropped here rather than at every call site: a remix with no cfg is the ordinary case,
+	// not something the caller should have to filter before it can ask for a plan.
+	for (size_t i = 0; i < remixCfgPaths.size(); ++i)
+	{
+		if (!remixCfgPaths[i].empty())
+			plan.execRemixCfgs.push_back(remixCfgPaths[i]);
+	}
 
 	if (!addon.valid)
 	{
@@ -71,11 +82,11 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
 
 	plan.iwad = iwad.iwad;
 
-	// Load order is the entry's, unchanged. It is the only thing that says the announcer goes after
+	// Load order is as resolved, unchanged. It is the only thing that says the announcer goes after
 	// the maps, and re-deriving it here would be a second opinion nobody asked for.
-	for (size_t i = 0; i < addon.files.size(); ++i)
+	for (size_t i = 0; i < files.size(); ++i)
 	{
-		const std::string &name = addon.files[i].name;
+		const std::string &name = files[i].name;
 
 		plan.pwads.push_back(name);
 

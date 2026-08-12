@@ -130,10 +130,13 @@ cp build-linux/*.pk3 "$STAGE"/
 
 # [rc4l] Ship Freedoom so the tarball is playable without a separate IWAD. It is
 # BSD-3-clause, whose clause 2 requires the notice to accompany binary distributions.
-if [ -f tools/freedoom/freedoom2.wad ]; then
-  cp tools/freedoom/*.wad "$STAGE"/
-  cp tools/freedoom/License.txt "$STAGE"/FREEDOOM-LICENSE.txt
-fi
+# Both phases: Phase 1 stands in for doom.wad and Phase 2 for doom2.wad, and the wildcard copy
+# would happily ship half of them.
+for wad in freedoom1.wad freedoom2.wad; do
+  [ -f "tools/freedoom/$wad" ] || { echo "ERROR: tools/freedoom/$wad missing -- the tarball would ship without a game to fall back on" >&2; exit 1; }
+done
+cp tools/freedoom/*.wad "$STAGE"/
+cp tools/freedoom/License.txt "$STAGE"/FREEDOOM-LICENSE.txt
 
 # [rc4l] The addon catalogue. Required rather than best-effort: the HOST tab reads it from beside
 # the binary, and a build without it offers nothing to host.
