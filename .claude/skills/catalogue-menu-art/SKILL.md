@@ -8,14 +8,27 @@ description: Generating the small menu-art thumbnails a catalogue entry, variant
 An entry, variant or mix can show a picture instead of a text header. The picture comes out of the
 archives it loads, shrunk to a kilobyte and committed. **The archives are not shipped; the art is.**
 
-`menuart.py`, beside this file, does the extraction. It has no dependency beyond Pillow.
+Two scripts sit beside this file. Neither needs anything but Pillow.
+
+| Script | For |
+|---|---|
+| `generate.py` | The whole catalogue at once. **This is the normal entry point.** |
+| `menuart.py` | One slot. Use it to try a single case before changing anything. |
 
 ```
-python menuart.py <archive> [<archive> ...] -o art.png
+python .claude/skills/catalogue-menu-art/generate.py --store <folder holding the loaded files>
+python .claude/skills/catalogue-menu-art/menuart.py <archive> [<archive> ...] -o art.png
 ```
 
 Archives go in **load order**. The tool applies the engine's own rule, so it returns what a player
 would actually see.
+
+`generate.py` writes `art.png` beside an entry that plays one way, `art.<variant>.png` for each way
+of playing, and `art.png` beside each mix. Settings and overrides live in that file rather than in
+somebody's shell history, so the next run reproduces the same catalogue.
+
+Every referenced file has to be in the store, or the load order is incomplete and a slot can resolve
+to the wrong picture. The script says which are absent; do not ignore it.
 
 ## What it picks
 
@@ -39,22 +52,35 @@ Reversing it produces an image smaller than its slot, which then gets stretched 
 worse than a posterised one of the right size. Resolution is what the eye reads; colour count is
 what it forgives.
 
-Defaults are `--height 36 --width 252 --budget 1024`, sized to the panel the art appears in. If the
-panel changes, change these; do not compensate elsewhere.
+## Ship larger than the slot
 
-## Choosing a slot height
+The panel is measured in layout pixels, and a real screen multiplies them. A slot three layout
+pixels tall is nine real pixels on a screen scaled 3:1. **So an asset the size of its slot arrives
+already needing a 3x upscale**, and looks it.
 
-Measured against the header text it replaces, at 1x, 2x and 3x that text's height:
+Ship at roughly twice the slot's layout height. The engine's own scaling closes the rest and does it
+better than a hard upscale of something too small. Measured, drawing into the same slot:
 
-| Slot | Result |
-|---|---|
-| 1x text height | Unreadable at any colour depth |
-| 2x | Logos read; full-screen art does not |
-| 3x | Everything legible, everything inside 1 KB |
-| 4x | Wide logos break the budget and fall to 4 colours |
+| Asset | Engine scales | Result |
+|---|---|---|
+| slot size | 3.0x up | Blocky, or mushy with smoothing |
+| ~2x slot | 1.7x up | The setting. Clean at the sizes screens actually use |
+| ~3x slot | 1.1x up | Sharper still, but see the budget below |
 
-3x is the setting for a reason. Going bigger costs legibility, because the budget is then spent on
-colour reduction instead of pixels.
+## Spending the budget
+
+With the byte ceiling fixed, a taller asset buys pixels by giving up colours. That trade is worth
+knowing because it goes the opposite way to intuition. At one fixed budget:
+
+| Asset | Colours it can afford | Look |
+|---|---|---|
+| 2x slot | most | **Best.** Fire and gradients stay smooth |
+| 2.5x | fewer | Slightly flatter |
+| 3x | few | Visible banding on anything with a glow |
+| 4x | fewest | Worst, and the widest art breaks the ceiling |
+
+Colour beats resolution here. Smooth scaling hides a 1.7x resolution gap; nothing hides banding.
+So when the budget binds, come **down** in size rather than up.
 
 ## Traps this already handles
 
@@ -73,9 +99,17 @@ Do not re-solve these:
 
 ## Verify by looking
 
-Byte counts prove nothing about whether a picture decoded correctly. A wrong palette or a
-misparsed picture produces a plausibly sized file of garbage. **Open the PNG.** Scale it up if you
-must, but look at it before committing it.
+Byte counts prove nothing about whether a picture decoded correctly. A wrong palette or a misparsed
+picture produces a plausibly sized file of garbage. **Open the output.** Build a contact sheet of
+every slot at the size the panel will draw it, and look at the whole thing before committing.
+
+Some art will be poor, and the tool is not at fault. Sources vary: a logo may be eighteen pixels
+tall, or low contrast, or an illustration rather than a wordmark. Check the source at its native
+size before concluding the tool broke it. It usually did not.
+
+When the preferred lump is genuinely the wrong picture, and only then, add a line to `OVERRIDES` in
+`generate.py` naming the slot and the lump to use instead. It is for a source that is not what it
+claims, such as a logo lump holding an empty menu frame. It is not for taste.
 
 ## When to regenerate
 
