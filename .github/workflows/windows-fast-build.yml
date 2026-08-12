@@ -29,7 +29,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build ZandroX (windows_build.ps1, prebuilt deps)
+      - name: Build ForkUnderA (windows_build.ps1, prebuilt deps)
         shell: pwsh
         run: ./windows_build.ps1 -Version "fast-ci"
 
@@ -37,5 +37,5 @@ jobs:
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ZandroX-windows-fast
-          path: ZandroX-*-windows-x64.zip
+          name: ForkUnderA-windows-fast
+          path: ForkUnderA-*-windows-x64.zip
