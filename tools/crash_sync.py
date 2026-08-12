@@ -36,6 +36,11 @@ PLAT = {
     "macos":   (0x100000000, ("forkundera.dSYM/Contents/Resources/DWARF/forkundera",
                               "zandronum.dSYM/Contents/Resources/DWARF/zandronum")),
     "linux":   (0,           ("forkundera.debug", "zandronum.debug")),
+    # [rc4l] The headless server is a different binary from the client -- SERVER_ONLY, no renderer,
+    # no sound -- so its addresses mean nothing against the client's symbols. It gets its own key,
+    # its own release asset and its own debug file, which SERVERONLY already names for us because it
+    # appends "-server" to ZDOOM_EXE_NAME.
+    "linux-server": (0,      ("forkundera-server.debug",)),
     "windows": (0x140000000, None),        # first *.pdb found in the zip
 }
 
@@ -77,6 +82,12 @@ def tagval(ev, key):
             return t.get("value")
     return None
 
+def build_kind(ev):
+    # [rc4l] "server" or "client", stamped at sentry init. Absent on anything built before that
+    # existed, and absent is NOT the same as client: see resolve_platform.
+    v = tagval(ev, "build")
+    return v.strip().lower() if v else None
+
 def norm_platform(ev):
     name = ""
     for c in (ev.get("contexts") or {}).values():
@@ -87,6 +98,24 @@ def norm_platform(ev):
     if "mac" in name or "darwin" in name: return "macos"
     if "windows" in name:                 return "windows"
     return "linux"
+
+def resolve_platform(ev, platform):
+    """Which symbol set this crash may be read with, or None to refuse.
+
+    [rc4l] REFUSING IS A FEATURE HERE. A server crash carries the same release, the same dist and the
+    same platform as a client crash from the same commit, so without this it matched the client's
+    symbols asset and symbolicated the wrong binary -- producing function names that are authoritative
+    and false. An unsymbolicated stack at least admits it is useless.
+
+    Absent tag means the build predates the tag, so it is a client (nothing else reported then).
+    """
+    kind = build_kind(ev)
+    if kind == "server":
+        key = f"{platform}-server"
+        if key not in PLAT:
+            return None                                  # no server symbols for this platform, ever
+        return key
+    return platform
 
 def exception_frames(ev):
     # GlitchTip nests the stacktrace under entries[type=="exception"].
@@ -171,6 +200,10 @@ def symbolicate(ev, platform):
     sha12 = build_sha(ev)
     if not sha12:
         return None, "no build sha on the event (release/dist tag missing)"
+    platform = resolve_platform(ev, platform)
+    if platform is None:
+        return None, (f"crash came from a server build and no server symbols exist for "
+                      f"{norm_platform(ev)}; refusing to read it with the client's")
     base_tag = tagval(ev, "zx_image_base")
     if not base_tag:
         return None, "no zx_image_base tag on the event (can't rebase addresses)"
