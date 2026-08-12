@@ -501,13 +501,13 @@ TEST(AddonFile, RubbishIsRefusedRatherThanRead)
 		"[]",
 		"not json at all",
 		"{",
-		"{ \"schema\": 1",
+		"{ \"order\": 1",
 		"{ \"kind\": \"pvp\", }",
 		"{ \"name\" \"X\" }",					// no colon
 		"{ \"name\": \"unterminated }",
 		"{ \"kind\": \"pvp\", \"files\": [ { ] }",
 		"{ \"kind\": \"pvp\", \"files\": [ {} ",
-		"{ \"schema\": \"one\" }",				// string where an int belongs
+		"{ \"order\": \"one\" }",				// string where an int belongs
 		"{ \"kind\": \"pvp\", \"files\": \"nope\" }",
 		"{ \"kind\": \"pvp\", \"name\": \"X\" } trailing",
 	};
@@ -1015,14 +1015,6 @@ TEST(RemixFile, APathInTheCfgOrTheFilesIsRefused)
 	}
 }
 
-TEST(RemixFile, ARemixFromTheFutureIsSkippedNotGuessedAt)
-{
-	const zx::AddonRemix r = ParseRemix("{ \"schema\": 99, \"name\": \"X\" }");
-
-	EXPECT_FALSE(r.valid);
-	EXPECT_FALSE(r.error.empty());
-}
-
 // ------------------------------------------------------------ curation
 
 TEST(AddonFile, AnEntryThatSaysNothingAboutItsPlaceIsNeitherFirstNorMarked)
@@ -1219,7 +1211,6 @@ TEST(AddonFile, AMalformedRemixFileIsRefused)
 		"{ \"name\": }",
 		"{ \"name\": \"Survival\" \"cfg\": \"a.cfg\" }",
 		"{ \"name\": \"Survival\" } trailing",
-		"{ \"schema\": 0, \"name\": \"Survival\" }",
 	};
 
 	for (size_t i = 0; i < sizeof(kBad) / sizeof(kBad[0]); ++i)
