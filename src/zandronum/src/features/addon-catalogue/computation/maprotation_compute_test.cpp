@@ -5,7 +5,22 @@
 
 #include "features/addon-catalogue/computation/maprotation_compute.h"
 
+using zx::MapRotationStart;
 using zx::MapsInRotation;
+
+namespace
+{
+
+std::vector<std::string> Rotation(const char *a, const char *b = NULL, const char *c = NULL)
+{
+	std::vector<std::string> maps;
+	maps.push_back(a);
+	if (b) maps.push_back(b);
+	if (c) maps.push_back(c);
+	return maps;
+}
+
+} // namespace
 
 TEST(MapRotation, ACfgWithNoRotationOffersNoMaps)
 {
@@ -129,6 +144,43 @@ TEST(MapRotation, AQuotedNameStopsAtTheQuote)
 	const std::vector<std::string> maps = MapsInRotation("addmap \"MAP01\"\n");
 
 	EXPECT_TRUE(maps.empty());
+}
+
+// ------------------------------------------------------------ where it begins
+
+TEST(MapRotationStart, AskingForNothingStartsAtTheTop)
+{
+	EXPECT_EQ(0u, MapRotationStart(Rotation("MAP01", "MAP02", "MAP03"), ""));
+}
+
+TEST(MapRotationStart, TheAskedForMapIsWhereItBegins)
+{
+	EXPECT_EQ(2u, MapRotationStart(Rotation("MAP01", "MAP02", "MAP03"), "MAP03"));
+	EXPECT_EQ(1u, MapRotationStart(Rotation("MAP01", "MAP02", "MAP03"), "MAP02"));
+}
+
+TEST(MapRotationStart, TheNameIsMatchedEitherWay)
+{
+	// [rc4l] A rotation is written by hand and a map name is a lump name. The catalogue holds
+	// `addmap Gvh00` and `addmap D2CTF1` in the same breath, and the engine's own comparisons of
+	// level names have never been case-sensitive.
+	EXPECT_EQ(1u, MapRotationStart(Rotation("D2CTF1", "D2CTF2"), "d2ctf2"));
+	EXPECT_EQ(1u, MapRotationStart(Rotation("Gvh00", "Gvh01"), "GVH01"));
+}
+
+TEST(MapRotationStart, AMapTheRotationDoesNotHoldStartsAtTheTop)
+{
+	// Where it would have started. An unmet request is not worth refusing a server over, and there
+	// is nowhere to say so by the time this is asked.
+	EXPECT_EQ(0u, MapRotationStart(Rotation("MAP01", "MAP02"), "MAP31"));
+	EXPECT_EQ(0u, MapRotationStart(std::vector<std::string>(), "MAP01"));
+}
+
+TEST(MapRotationStart, APrefixIsNotAMatch)
+{
+	// MAP1 must not find MAP15, or a rotation would begin somewhere nobody named.
+	EXPECT_EQ(0u, MapRotationStart(Rotation("MAP15", "MAP16"), "MAP1"));
+	EXPECT_EQ(0u, MapRotationStart(Rotation("MAP15", "MAP16"), "MAP150"));
 }
 
 TEST(MapRotation, NothingElseInTheFileIsRead)

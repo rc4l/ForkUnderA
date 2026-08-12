@@ -106,4 +106,31 @@ std::vector<std::string> MapsInRotation(const std::string &cfgText)
 	return maps;
 }
 
+size_t MapRotationStart(const std::vector<std::string> &maps, const std::string &wanted)
+{
+	if (wanted.empty())
+		return 0;
+
+	for (size_t i = 0; i < maps.size(); ++i)
+	{
+		if (maps[i].size() != wanted.size())
+			continue;
+
+		bool same = true;
+		for (size_t c = 0; c < wanted.size(); ++c)
+		{
+			if (Lower(maps[i][c]) != Lower(wanted[c]))
+			{
+				same = false;
+				break;
+			}
+		}
+
+		if (same)
+			return i;
+	}
+
+	return 0;
+}
+
 } // namespace zx
