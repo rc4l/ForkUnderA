@@ -5212,10 +5212,12 @@ public:
 	// so WEAPONS, which is wider, drew its label straight through its own minus button.
 	int HostGameplayLabelW( const std::vector<zx::RemixGroup> &groups )
 	{
-		static const char *const kBuiltIn[3] = { "LIVES", "WEAPONS", "TEAMS" };
+		// WEAPON SPEED is deliberately absent: it draws its label above its track, so sizing this
+		// column to it would push the other controls across the panel to line up with nothing.
+		static const char *const kBuiltIn[2] = { "LIVES", "TEAMS" };
 
 		int labelW = 0;
-		for ( int i = 0; i < 3; ++i )
+		for ( int i = 0; i < 2; ++i )
 			labelW = MAX( labelW, SmallFont->StringWidth( kBuiltIn[i] ));
 
 		for ( size_t g = 0; g < groups.size( ); ++g )
@@ -5798,8 +5800,9 @@ public:
 			if ( HostLivesControl( a ).adjustable )
 				h += SB_HOST_LINE + 3;
 
+			// Two lines, not one: this is the row whose label sits above its track.
 			if ( HostFastWeaponsOffered( a ))
-				h += SB_HOST_LINE + 3;
+				h += SB_HOST_LINE * 2 + 3;
 
 			if ( HostTeamsControl( a ).adjustable )
 				h += SB_HOST_LINE + 3;
@@ -6166,13 +6169,31 @@ public:
 	// `valueText` rather than the number, because what a value MEANS is the caller's business: zero
 	// lives is "Unlimited", and zero of something else will be something else again.
 	int DrawHostSlider( const char *id, const char *label, int x, int y, int labelW,
-		int minV, int maxV, int value, const char *valueText, const char *tip )
+		int minV, int maxV, int value, const char *valueText, const char *tip,
+		bool bLabelAbove = false )
 	{
-		const bool bDraw = HostDetailRowVisible( y, SB_HOST_LINE );
-
 		// [rc4l] The label shares the control's row rather than taking one above it. Three axes on a
 		// co-op entry is three lines saved, in a column that has none to spare.
-		if ( bDraw )
+		//
+		// One exception, and it earns it: WEAPON SPEED is wider than the shared column can carry
+		// without pushing every other control across the panel, and the abbreviation it fitted in --
+		// "WEAPONS" -- did not say what the setting does. A header line for that one costs a line and
+		// leaves the column sized to the labels that do fit.
+		if ( bLabelAbove )
+		{
+			if ( HostDetailRowVisible( y, SB_HOST_LINE ))
+			{
+				screen->DrawText( SmallFont, CR_DARKGRAY, x, y, label,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+			}
+
+			y += SB_HOST_LINE;
+			labelW = 0;
+		}
+
+		const bool bDraw = HostDetailRowVisible( y, SB_HOST_LINE );
+
+		if ( bDraw && !bLabelAbove )
 		{
 			screen->DrawText( SmallFont, CR_DARKGRAY, x, y, label,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
@@ -6285,8 +6306,8 @@ public:
 			"As Fast, and the states with nothing to do take no time at all.",
 		};
 
-		return DrawHostSlider( "fastweapons", "WEAPONS", x, y, labelW, 0, zx::FastWeaponsMax( ), value,
-			kNames[value], kTips[value] );
+		return DrawHostSlider( "fastweapons", "WEAPON SPEED", x, y, labelW, 0, zx::FastWeaponsMax( ),
+			value, kNames[value], kTips[value], true );
 	}
 
 	// [rc4l] How many sides, as the third instance of the slider.
