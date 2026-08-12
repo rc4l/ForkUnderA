@@ -33,6 +33,22 @@ Game data:
 
   Freedoom (freedoom2.wad)     BSD-3-clause  — see FREEDOOM-LICENSE.txt
 
+  fuamega.wad                  Ours, and not a third party notice at all: it is listed
+                               here only because it sits beside the two files above and
+                               a reader will wonder. Generated in full by tools/mkiwad
+                               from a manifest and a bitmap font written for it, and
+                               licensed GPL-3.0-or-later. The file carries the same
+                               statement in its own COPYING lump, since a wad gets copied
+                               around away from the repo that states its terms.
+
+                               It is base data for a total conversion that ships no base
+                               file of its own: a "PAUSED" graphic, intermission digits,
+                               screen borders, one map, and several hundred one-pixel
+                               patches whose only job is to make a stock texture name
+                               resolve. No id Software artwork, and no Mega Man artwork
+                               either. The conversion's own 173 MB of content is NOT
+                               shipped and downloads like any other mod.
+
   zandronum.pk3                Engine data: menus, DECORATE definitions, fonts,
                                shaders and sprites from the ZDoom/Zandronum
                                lineage. Script and definition lumps are GPL v3
