@@ -4,12 +4,6 @@
   "iwad": "doom2.wad",
   "kind": "pvp",
   "gamemode": "duel",
-  "files": [
-    {
-      "name": "zandrospree2rc2.pk3",
-      "md5": "25b2a3c4f46e50f4016b640119aefae6"
-    }
-  ],
   "variants": [
     {
       "id": "duel40",
@@ -23,6 +17,10 @@
         {
           "name": "duel40b.pk3",
           "md5": "aa3896cb47c781facab7ea7f39395201"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
         }
       ]
     },
@@ -41,6 +39,10 @@
         {
           "name": "duel32-rc2.pk3",
           "md5": "99b386139ff6ea58e33174a5cd76a2db"
+        },
+        {
+          "name": "zandrospree2rc2.pk3",
+          "md5": "25b2a3c4f46e50f4016b640119aefae6"
         }
       ]
     }
