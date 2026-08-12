@@ -441,7 +441,6 @@ bool ReadVariantsArray(Reader &r, std::vector<AddonVariant> &out)
 	}
 }
 
-
 bool LooksLikeMd5(const std::string &s)
 {
 	if (s.size() != 32)
@@ -501,9 +500,6 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 	AddonEntry entry;
 	entry.id = id;
 
-	int schema = 0;
-	bool sawSchema = false;
-
 	r.SkipSpace();
 	if (!r.Take('}'))
 	{
@@ -514,8 +510,7 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 				return Fail(id, "malformed key");
 
 			bool ok = true;
-			if (key == "schema")		{ ok = ReadInt(r, schema); sawSchema = true; }
-			else if (key == "name")		{ ok = ReadString(r, entry.name); }
+			if (key == "name")		{ ok = ReadString(r, entry.name); }
 			else if (key == "summary")	{ ok = ReadString(r, entry.summary); }
 			else if (key == "iwad")		{ ok = ReadString(r, entry.iwad); }
 			else if (key == "map")		{ ok = ReadString(r, entry.map); }
@@ -548,13 +543,6 @@ AddonEntry ParseAddonFile(const std::string &id, const std::string &json)
 	r.SkipSpace();
 	if (!r.Done())
 		return Fail(id, "trailing content after the object");
-
-	if (!sawSchema)
-		return Fail(id, "no schema");
-	if (schema > kAddonSchema)
-		return Fail(id, "written for a newer ZandroX");
-	if (schema < 1)
-		return Fail(id, "bad schema");
 
 	if (entry.name.empty())
 		return Fail(id, "no name");
@@ -688,9 +676,6 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 	if (!r.Take('{'))
 		return FailRemix(id, "not a json object");
 
-	int schema = 0;
-	bool sawSchema = false;
-
 	r.SkipSpace();
 	if (!r.Take('}'))
 	{
@@ -701,8 +686,7 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 				return FailRemix(id, "malformed key");
 
 			bool ok = true;
-			if (key == "schema")		{ ok = ReadInt(r, schema); sawSchema = true; }
-			else if (key == "name")		{ ok = ReadString(r, remix.name); }
+			if (key == "name")		{ ok = ReadString(r, remix.name); }
 			else if (key == "summary")	{ ok = ReadString(r, remix.summary); }
 			else if (key == "cfg")		{ ok = ReadString(r, remix.cfg); }
 			else if (key == "group")	{ ok = ReadString(r, remix.group); }
@@ -723,13 +707,6 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 	r.SkipSpace();
 	if (!r.Done())
 		return FailRemix(id, "trailing content after the object");
-
-	if (!sawSchema)
-		return FailRemix(id, "no schema");
-	if (schema > kAddonSchema)
-		return FailRemix(id, "written for a newer ZandroX");
-	if (schema < 1)
-		return FailRemix(id, "bad schema");
 
 	if (remix.name.empty())
 		return FailRemix(id, "no name");
