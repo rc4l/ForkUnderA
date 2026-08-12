@@ -31,6 +31,7 @@
 #include "d_gui.h"
 #include "d_main.h"		// D_AddFile, for the have/have-not colouring
 #include "textures/textures.h"
+#include "m_png.h"		// [rc4l] M_VerifyPNG / PNGTexture_CreateFromFile, for the catalogue art
 #include "r_data/r_translate.h"
 #include "templates.h"
 
@@ -60,6 +61,7 @@
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
 #include "features/addon-catalogue/computation/livespick_compute.h"
 #include "features/addon-catalogue/computation/maprotation_compute.h"
+#include "features/addon-catalogue/computation/menuart_compute.h"
 #include "features/addon-catalogue/computation/teamspick_compute.h"
 #include "features/addon-catalogue/computation/weaponspick_compute.h"
 #include "features/addon-catalogue/computation/remixpick_compute.h"
@@ -248,6 +250,15 @@ static int serverbrowser_OriginY( void );
 #define SB_HOST_TOP			( SB_TAB_ROW_SEP_Y + 14 )
 #define SB_HOST_PAD			16
 #define SB_HOST_LINE		11
+
+// [rc4l] The band a catalogue picture is drawn in, when an experience shipped one.
+//
+// Three times the header text it stands in for. Measured rather than chosen: at one text height a
+// logo is an unreadable smudge whatever the colour depth, at two the wordmarks read but a full
+// picture does not, and at four the widest art costs more than it is worth. The assets are built to
+// suit this number, so changing it means regenerating them.
+#define SB_HOST_ART_H		( BigFont->GetHeight( ) * 3 )
+#define SB_HOST_ART_GAP		8
 #define SB_HOST_ROW_H		15		// one field and the space under it
 #define SB_HOST_FIELD_H		16
 // [rc4l] Wide enough for the longest label, which is PREFERRED PORT. At 92 it fitted every label
@@ -1056,6 +1067,96 @@ static zx::TeamsControl HostTeamsControl( const zx::AddonEntry &addon )
 	}
 
 	return zx::TeamsFor( mode, bOffered, g_HostTeams );
+}
+
+//*****************************************************************************
+//
+// [rc4l] The pictures the catalogue ships, loaded from disk and kept until the selection changes.
+//
+// These are ordinary files beside an addon.json, NOT lumps, and that is deliberate. Anything added
+// to the loaded-file list is advertised to a server and authenticated against it, so putting menu
+// decoration there would make a picture a reason a player cannot join. The engine already reads a
+// PNG straight off disk for savegame thumbnails; this is the same road.
+//
+// Held rather than reloaded per frame because a texture is a decode, and the panel redraws sixty
+// times a second while the selection changes at the speed of a keypress.
+//
+struct HostArt
+{
+	FTexture		*pTex;
+	FString			Path;
+
+	HostArt( ) : pTex( NULL ) { }
+};
+
+static	HostArt		g_HostArtMain;		// what you are playing
+static	HostArt		g_HostArtMix;		// what you are playing it with
+
+//*****************************************************************************
+//
+// One picture, from a path. NULL for anything that is not there or will not decode, which is the
+// ordinary answer: most experiences ship none and the panel draws their name instead.
+//
+static FTexture *serverbrowser_LoadArt( const char *pszPath )
+{
+	if (( pszPath == NULL ) || ( pszPath[0] == '\0' ))
+		return NULL;
+
+	FILE *pFile = fopen( pszPath, "rb" );
+	if ( pFile == NULL )
+		return NULL;
+
+	FTexture *pTex = NULL;
+	PNGHandle *pPng = M_VerifyPNG( pFile );
+
+	if ( pPng != NULL )
+	{
+		// The texture keeps the PATH and reopens it when it needs the pixels, so this handle is
+		// finished with either way and the file must simply stay where it is.
+		pTex = PNGTexture_CreateFromFile( pPng, pszPath );
+		delete pPng;
+
+		// What a refusal looks like: a one-pixel texture rather than a null. Drawing it would put a
+		// dot where the name should be, which reads as a bug rather than as no art.
+		if (( pTex != NULL ) && ( pTex->GetWidth( ) <= 1 ) && ( pTex->GetHeight( ) <= 1 ))
+		{
+			delete pTex;
+			pTex = NULL;
+		}
+	}
+
+	fclose( pFile );
+	return pTex;
+}
+
+//*****************************************************************************
+//
+// Point a slot at a path, reloading only when it actually changed.
+//
+static void serverbrowser_SetArt( HostArt &art, const FString &path )
+{
+	if ( art.Path.Compare( path ) == 0 )
+		return;
+
+	if ( art.pTex != NULL )
+	{
+		delete art.pTex;
+		art.pTex = NULL;
+	}
+
+	art.Path = path;
+	art.pTex = serverbrowser_LoadArt( path.GetChars( ));
+}
+
+//*****************************************************************************
+//
+// [rc4l] Let go of every picture. Called when the catalogue is reread and when the browser closes:
+// a reload can replace the file a texture is still holding a path to, and nothing else would notice.
+//
+static void serverbrowser_FreeArt( void )
+{
+	serverbrowser_SetArt( g_HostArtMain, FString( ));
+	serverbrowser_SetArt( g_HostArtMix, FString( ));
 }
 
 // [rc4l] What the CHOSEN way of playing loads, remix included. Every question the host tab asks about
@@ -2119,6 +2220,15 @@ public:
 			g_Dialog = BrowserDialog( );
 			zx::ReleaseJoinResume( true );
 		}
+
+		// [rc4l] The catalogue pictures go with the menu that was showing them. They are held only to
+		// avoid decoding one per frame, so nothing wants them once there is no panel to draw.
+		//
+		// It also settles the reload question by construction: fua_catalogue rereads from disk, and a
+		// texture holding a path to a file that has just been replaced would go on drawing the old one
+		// for as long as the menu stayed open. Reopening the browser is what a reload means anyway.
+		serverbrowser_FreeArt( );
+
 		Super::Destroy( );
 	}
 
@@ -6445,6 +6555,63 @@ public:
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
+	// [rc4l] The picture in place of the title, when the catalogue shipped one.
+	//
+	// Three times the text's height, which is what it took to be legible: at one the logos are a
+	// smudge and at two only the wordmarks read. Returns false when there is nothing to draw, and the
+	// caller falls back to the name.
+	//
+	// Drawn in SCREEN pixels rather than virtual ones, like the country flags and for the same
+	// reason: DTA_Clip* is measured there, and it is the only clip that actually reaches a texture.
+	// The column's own PushClip is ours and only DimClipped reads it, so a scrolled picture would
+	// otherwise draw straight over the panel edge.
+	bool DrawHostArtRow( int y, int h )
+	{
+		std::vector<std::pair<int, int> > sizes;
+		FTexture *tex[2] = { g_HostArtMain.pTex, g_HostArtMix.pTex };
+		int count = 0;
+
+		for ( int i = 0; i < 2; ++i )
+		{
+			if ( tex[i] == NULL )
+				continue;
+			tex[count] = tex[i];
+			sizes.push_back( std::make_pair( tex[i]->GetWidth( ), tex[i]->GetHeight( )));
+			++count;
+		}
+
+		if ( count == 0 )
+			return false;
+
+		const std::vector<zx::ArtRect> rects = zx::LayoutMenuArt(
+			SB_HOST_RCOL_LEFT, y, SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, h, SB_HOST_ART_GAP, sizes );
+
+		// The band the column is allowed to paint in, so a picture scrolled half out of the region is
+		// cut rather than drawn over whatever is above it.
+		const int clipTop = serverbrowser_ToScreenY( SB_HOST_RTOP_TOP );
+		const int clipBottom = serverbrowser_ToScreenY( HostDetailViewBottom( ));
+
+		for ( size_t i = 0; i < rects.size( ); ++i )
+		{
+			const int px = serverbrowser_ToScreenX( rects[i].x );
+			const int py = serverbrowser_ToScreenY( rects[i].y );
+			const int pw = serverbrowser_ToScreenX( rects[i].x + rects[i].w ) - px;
+			const int ph = serverbrowser_ToScreenY( rects[i].y + rects[i].h ) - py;
+
+			if (( pw <= 0 ) || ( ph <= 0 ))
+				continue;
+
+			screen->DrawTexture( tex[i], px, py,
+				DTA_DestWidth, pw,
+				DTA_DestHeight, ph,
+				DTA_ClipTop, clipTop,
+				DTA_ClipBottom, clipBottom,
+				TAG_DONE );
+		}
+
+		return true;
+	}
+
 	void DrawHostDetail( )
 	{
 		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
@@ -6483,9 +6650,52 @@ public:
 		}
 
 		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+		const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
 
-		DrawHostDetailTitle( addon.name.c_str( ), y );
-		y += BigFont->GetHeight( ) + 4;
+		// [rc4l] Whatever the catalogue has for what is actually selected, refreshed here rather than
+		// on the keypress: the selection can change from the list, from a pill, from the keyboard or
+		// from a remembered preference being resolved, and the draw is the one place that sees all
+		// of them. Reloads only when the path changes, so this costs a string compare per frame.
+		// [rc4l] The id off the variant itself, since the pick answers with an index. Empty for an
+		// entry that plays one way, which is exactly what names its picture art.png.
+		std::string variantId;
+		if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))))
+			variantId = addon.variants[pick.index].id;
+
+		serverbrowser_SetArt( g_HostArtMain,
+			zx::CatalogueArtPath( entries[g_HostEntrySel], variantId ).c_str( ));
+
+		const std::vector<zx::RemixPick> picks = HostRemixPicks( addon );
+		FString mixArt;
+		for ( size_t i = 0; i < picks.size( ); ++i )
+		{
+			// The baseline mix adds nothing and is not a thing you chose, so it brings no picture.
+			if ( picks[i].index <= 0 )
+				continue;
+
+			const std::string at = zx::CatalogueRemixArtPath( picks[i].id );
+			if ( !at.empty( ))
+			{
+				mixArt = at.c_str( );
+				break;
+			}
+		}
+		serverbrowser_SetArt( g_HostArtMix, mixArt );
+
+		// [rc4l] The picture stands in for the name; the name is drawn when there is no picture.
+		//
+		// The VARIANT's name, not the entry's, because the variant is what the panel below describes
+		// and what the pills change. The entry's name is on the row you selected in the list beside
+		// this, so nothing is lost by not repeating it here.
+		if ( DrawHostArtRow( y, SB_HOST_ART_H ))
+		{
+			y += SB_HOST_ART_H + 4;
+		}
+		else
+		{
+			DrawHostDetailTitle( pick.name.empty( ) ? addon.name.c_str( ) : pick.name.c_str( ), y );
+			y += BigFont->GetHeight( ) + 4;
+		}
 
 		// [rc4l] A rule under the title as well, so the column reads as three bands -- what it is
 		// called, what it is, what it loads -- rather than a heading with a paragraph stuck to it.
