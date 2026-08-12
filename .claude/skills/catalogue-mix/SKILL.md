@@ -88,10 +88,15 @@ Bare filenames, matched case-insensitively. A name no entry loads drops nothing,
 case for a mix offered by several entries where only some of them load it. A mix that supersedes a
 file it also loads is refused at parse time.
 
-Before adding a mix, look inside its pk3: `LOADACS`, `KEYCONF`, and any `SNDINFO*` say what systems
-it brings with it. Two mods touching the same area of the game are not automatically in conflict —
-one replacing a built-in announcer and another running a separate tracker say different things and
-belong together. What `supersedes` is for is the same system twice.
+Before adding a mix, open its archive and work out what it brings with it beyond the thing it is
+named for. Mods bundle their dependencies, and a weapon set is often also a script package, a sound
+set and a set of keybinds. There is no fixed list of places to look: read the archive until you can
+say what the mod adds, then compare that against what the entries offering it already load.
+
+Overlap alone is not the test. Two mods touching the same part of the game can be in no conflict at
+all, because they say different things or hook different events. `supersedes` is for the case where
+the same system would run twice over the same input, and the player hears or sees the result
+doubled. If you cannot describe the doubling concretely, it is probably not this.
 
 ## The weapon-speed exclusion
 
