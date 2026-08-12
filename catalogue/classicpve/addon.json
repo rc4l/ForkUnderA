@@ -128,6 +128,90 @@
       ]
     },
     {
+      "id": "jpcp",
+      "name": "Japanese Community Pack",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty-two maps from Japan's mapping scene, with an eye for shape and colour.",
+      "files": [
+        {
+          "name": "jpcp.wad",
+          "md5": "b0bfbdff7785da02b0fa6721dbccecd2"
+        },
+        {
+          "name": "jpcp_coopfix.wad",
+          "md5": "279e4a0c12add99b7d6f608e92da7c27"
+        }
+      ]
+    },
+    {
+      "id": "epic2",
+      "name": "Epic 2",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty-two maps of desert and temples, and the pack that made Egypt a Doom setting.",
+      "files": [
+        {
+          "name": "epic2.wad",
+          "md5": "38596120e305dfd2632005991a4cc204"
+        },
+        {
+          "name": "epic2gl.wad",
+          "md5": "0816ce2ea9b3be9d36b5d857548c15b0"
+        }
+      ],
+      "art": "TITLEPIC"
+    },
+    {
+      "id": "btsxe1",
+      "name": "Back to Saturn X: E1",
+      "cfg": "btsxe1.cfg",
+      "kind": "pve",
+      "tooltip": "Twenty-seven maps in a palette nobody else uses.",
+      "files": [
+        {
+          "name": "btsx_e1a.wad",
+          "md5": "96530f7e149ab838b3a80c29570cd275"
+        },
+        {
+          "name": "btsx_e1b.wad",
+          "md5": "667a7b6160ab0f64d853a5142a9a31de"
+        }
+      ],
+      "art": "TITLEPIC"
+    },
+    {
+      "id": "btsxe2",
+      "name": "Back to Saturn X: E2",
+      "cfg": "btsxe2.cfg",
+      "kind": "pve",
+      "tooltip": "Twenty-nine more, bluer and stranger than the first.",
+      "files": [
+        {
+          "name": "btsx_e2a.wad",
+          "md5": "ff42f95fffcb2ecae3af034af5c578ca"
+        },
+        {
+          "name": "btsx_e2b.wad",
+          "md5": "3853b06204e2e251b06e61b63de06ab2"
+        }
+      ],
+      "art": "TITLEPIC"
+    },
+    {
+      "id": "dvii",
+      "name": "Deus Vult II",
+      "cfg": "dvii.cfg",
+      "kind": "pve",
+      "tooltip": "Cathedral-sized maps, and more monsters than you have bullets for.",
+      "files": [
+        {
+          "name": "dvii-1u.wad",
+          "md5": "0a63f3f3cfbf75e2d6d86cfe054c5f0a"
+        }
+      ]
+    },
+    {
       "id": "uacultra",
       "name": "UAC Ultra",
       "cfg": "uacultra.cfg",
