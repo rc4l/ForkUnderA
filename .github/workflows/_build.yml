@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: git tag -f "${{ inputs.version }}" HEAD
 
-      - name: Build ZandroX
+      - name: Build ForkUnderA
         env:
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
@@ -74,7 +74,7 @@ jobs:
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ZandroX-macos
+          name: ForkUnderA-macos
           path: dist-macos/*.zip
 
       - name: Package debug symbols (dSYM)
@@ -113,7 +113,7 @@ jobs:
         shell: bash
         run: git tag -f "${{ inputs.version }}" HEAD
 
-      - name: Build + package ZandroX (Linux, native)
+      - name: Build + package ForkUnderA (Linux, native)
         # [rc4l] linux_compile.sh is the same script devs run; --install-deps apt-installs the
         # build/OpenAL libs, then it configures, builds and packages dist-linux/*.tar.gz itself.
         env:
@@ -171,11 +171,11 @@ jobs:
 
       # [rc4l] Picks up BOTH tarballs: linux_compile.sh suffixes the serveronly one, so the glob that
       # used to match one file now matches two and release.yml attaches both through assets/*.
-      - name: Upload ZandroX Linux tarballs
+      - name: Upload ForkUnderA Linux tarballs
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ZandroX-linux
+          name: ForkUnderA-linux
           path: dist-linux/*.tar.gz
 
   build-windows:
@@ -217,7 +217,7 @@ jobs:
       # [rc4l] The whole compile — vcpkg deps, DirectX-SDK reshaping, CMake configure/build and
       # packaging — lives in windows_compile.ps1 so a contributor runs exactly what CI runs, and
       # CI verifies the script on every PR. Keep this a thin wrapper: no build logic here.
-      - name: Compile ZandroX (windows_compile.ps1)
+      - name: Compile ForkUnderA (windows_compile.ps1)
         shell: pwsh
         env:
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
@@ -228,11 +228,11 @@ jobs:
           if (-not (Select-String -Path build.log -Pattern "FUA replay: FFmpeg found" -Quiet)) { Write-Error "instant replay / FFmpeg not enabled in this build" }
           if (-not (Select-String -Path build.log -Pattern "ZX crash reporting: sentry ENABLED" -Quiet)) { Write-Error "sentry crash reporting not enabled in this build" }
 
-      - name: Upload ZandroX Windows build
+      - name: Upload ForkUnderA Windows build
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ZandroX-windows
+          name: ForkUnderA-windows
           path: ForkUnderA-*-windows-x64.zip
 
       - name: Package debug symbols (PDB)
