@@ -212,6 +212,19 @@
       ]
     },
     {
+      "id": "struggle",
+      "name": "Struggle",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty handsome maps, on a weapon set rebuilt from the ground up.",
+      "files": [
+        {
+          "name": "STRG.wad",
+          "md5": "1f3653c4c3928a578aff9ac685ed402a"
+        }
+      ]
+    },
+    {
       "id": "uacultra",
       "name": "UAC Ultra",
       "cfg": "uacultra.cfg",
