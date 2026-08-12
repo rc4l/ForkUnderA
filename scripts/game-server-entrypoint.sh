@@ -167,6 +167,49 @@ ENTRY_NAME="$(jq -r '.name // ""' "${MANIFEST}")"
 ENTRY_IWAD="$(jq -r '.iwad // ""' "${MANIFEST}")"
 ENTRY_MAP="$(jq -r '.map // ""' "${MANIFEST}")"
 
+#---------------------------------------------------------------------------------------------------
+# Variants
+#
+# [rc4l] An entry can offer several ways to play the same thing -- Duel 40 and Duel 32, Skulltag's
+# deathmatch and its CTF -- and each names its own cfg, its own opening map and its own extra files.
+#
+# A variant ADDS to the entry's file list, never replaces it (see addonfile_compute.h). The shared
+# list holds what every variant needs; the variant holds only what is peculiar to it. Restating the
+# shared files inside each variant would mean copies, and copies drift: update the base, miss one
+# variant, and that variant quietly loads something else.
+#
+# Missing this cost a live server its content. The entrypoint predated variants, read only the
+# top-level files[], and hosted Duel 40 with the announcer pk3 and none of its maps -- on the
+# substituted IWAD's own map01, looking perfectly healthy.
+#---------------------------------------------------------------------------------------------------
+
+VARIANT_ID="${FUA_VARIANT-}"
+VARIANT_JSON="null"
+
+if [ "$(jq '(.variants // []) | length' "${MANIFEST}")" -gt 0 ]; then
+	if [ -n "${VARIANT_ID}" ]; then
+		VARIANT_JSON="$(jq -c --arg v "${VARIANT_ID}" 'first(.variants[] | select(.id == $v)) // null' "${MANIFEST}")"
+		if [ "${VARIANT_JSON}" = "null" ]; then
+			log "variants offered by ${ENTRY_ID}:"
+			jq -r '.variants[] | "    \(.id)	\(.name // "")"' "${MANIFEST}" >&2
+			die "no variant '${VARIANT_ID}' in entry '${ENTRY_ID}'"
+		fi
+	else
+		# The one marked default, else the first. An entry with variants always has something to pick,
+		# so falling through to "no variant" would silently host the shared files alone -- which is
+		# exactly the failure this section exists to prevent.
+		VARIANT_JSON="$(jq -c 'first(.variants[] | select(.default == true)) // .variants[0]' "${MANIFEST}")"
+	fi
+
+	VARIANT_ID="$(printf '%s' "${VARIANT_JSON}" | jq -r '.id // ""')"
+	VARIANT_NAME="$(printf '%s' "${VARIANT_JSON}" | jq -r '.name // ""')"
+	# Both fall back to the entry's, which is why they are read after it.
+	VARIANT_MAP="$(printf '%s' "${VARIANT_JSON}" | jq -r '.map // ""')"
+	VARIANT_CFG="$(printf '%s' "${VARIANT_JSON}" | jq -r '.cfg // ""')"
+	[ -n "${VARIANT_MAP}" ] && ENTRY_MAP="${VARIANT_MAP}"
+	log "variant: ${VARIANT_ID}  (${VARIANT_NAME:-unnamed})"
+fi
+
 # [rc4l] Same rule: only an explicit FUA_NAME becomes +sv_hostname. The entry's own name is used for
 # logging, not as a default that would overrule the cfg's sv_hostname.
 SERVER_NAME="${FUA_NAME-}"
@@ -316,12 +359,15 @@ fi
 #---------------------------------------------------------------------------------------------------
 
 PWAD_PATHS=()
-file_count="$(jq '.files | length // 0' "${MANIFEST}")"
+# [rc4l] Shared first, then the variant's, which is the order they are declared and the order the
+# engine will load them in.
+ALL_FILES="$(jq -c --argjson v "${VARIANT_JSON}" '(.files // []) + (($v.files) // [])' "${MANIFEST}")"
+file_count="$(printf '%s' "${ALL_FILES}" | jq 'length')"
 for i in $(seq 0 $(( file_count - 1 )) ); do
 	[ "${file_count}" -gt 0 ] || break
 
-	fname="$(jq -r ".files[${i}].name // \"\"" "${MANIFEST}")"
-	fmd5="$(jq -r ".files[${i}].md5 // \"\"" "${MANIFEST}")"
+	fname="$(printf '%s' "${ALL_FILES}" | jq -r ".[${i}].name // \"\"")"
+	fmd5="$(printf '%s' "${ALL_FILES}" | jq -r ".[${i}].md5 // \"\"")"
 
 	is_bare_name "${fname}" || die "entry names an unusable file '${fname}'"
 
@@ -359,9 +405,13 @@ for path in ${PWAD_PATHS[@]+"${PWAD_PATHS[@]}"}; do
 	ARGS+=( -file "${path}" )
 done
 
-if [ -f "${ENTRY_DIR}/server.cfg" ]; then
-	ARGS+=( +exec "${ENTRY_DIR}/server.cfg" )
-	log "cfg:    ${ENTRY_DIR}/server.cfg"
+# [rc4l] The variant names its cfg; server.cfg is the fallback for an entry that has no variants.
+CFG_NAME="${VARIANT_CFG:-server.cfg}"
+is_bare_name "${CFG_NAME}" || die "variant names an unusable cfg '${CFG_NAME}'"
+
+if [ -f "${ENTRY_DIR}/${CFG_NAME}" ]; then
+	ARGS+=( +exec "${ENTRY_DIR}/${CFG_NAME}" )
+	log "cfg:    ${ENTRY_DIR}/${CFG_NAME}"
 elif [ -z "${ENTRY_MAP}" ]; then
 	# Nothing to pick a map for us and the entry named none, so the engine needs somewhere to start.
 	ENTRY_MAP="map01"

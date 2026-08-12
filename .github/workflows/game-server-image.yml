@@ -273,9 +273,19 @@ jobs:
             "name": "CI smoke test with a file",
             "iwad": "freedoom2.wad",
             "map": "map01",
-            "files": [ { "name": "$(basename "$pk3")", "md5": "${md5}" } ]
+            "files": [],
+            "variants": [
+              { "id": "only", "name": "the only way to play it", "cfg": "server.cfg", "default": true,
+                "files": [ { "name": "$(basename "$pk3")", "md5": "${md5}" } ] }
+            ]
           }
           JSON
+
+          # [rc4l] The file lives in a VARIANT, not in the entry's shared list, and that is the point.
+          # An entry can offer several ways to play the same thing, each adding its own files, and the
+          # entrypoint read only the shared list for a while -- so a live server hosted Duel 40 with
+          # none of Duel 40 in it, on the substituted IWAD's own map01, looking perfectly healthy.
+          # The assertion below is unchanged; it now proves the variant path resolves.
 
           # [rc4l] The container runs as an unprivileged user that does not exist on this runner, so a
           # bind mount it must write into (the WAD store) has to be opened up. A real deployment uses a
