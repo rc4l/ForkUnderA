@@ -1,0 +1,7 @@
+{
+  "name": "Skulltag",
+  "summary": "The flags, plus a neutral skull that scores for whoever gets it home.",
+  "group": "mode",
+  "gamemode": "skulltag",
+  "cfg": "skulltag.cfg"
+}

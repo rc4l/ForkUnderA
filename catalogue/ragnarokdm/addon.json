@@ -29,25 +29,10 @@
       "provides": "spree"
     }
   ],
-  "variants": [
-    {
-      "id": "dm",
-      "gamemode": "deathmatch",
-      "name": "Deathmatch",
-      "cfg": "server.cfg",
-      "kind": "pvp",
-      "default": true,
-      "teams": true,
-      "tooltip": "Everyone for themselves, across all twenty-three."
-    },
-    {
-      "id": "lms",
-      "gamemode": "lastmanstanding",
-      "name": "Last Man Standing",
-      "cfg": "lms.cfg",
-      "kind": "pvp",
-      "teams": true,
-      "tooltip": "One life each round. Last one alive takes it."
-    }
+  "teams": true,
+  "remixes": [
+    "ragnarokdm/dm",
+    "ragnarokdm/lms",
+    "ragnarokdm/possession"
   ]
 }

@@ -1,6 +1,7 @@
 {
   "name": "The Eon Collection",
   "summary": "PvP with the cacoaward winning DBAB, Aeon DM, and Neon DM mappacks with Eon Weapons.",
+  "kind": "pvp",
   "iwad": "doom2.wad",
   "files": [
     {
@@ -17,25 +18,13 @@
       "provides": "spree"
     }
   ],
-  "variants": [
-    {
-      "id": "dm",
-      "gamemode": "deathmatch",
-      "name": "Deathmatch",
-      "cfg": "server.cfg",
-      "kind": "pvp",
-      "default": true,
-      "teams": true,
-      "tooltip": "Everyone for themselves, across all three mappacks."
-    },
-    {
-      "id": "lms",
-      "gamemode": "lastmanstanding",
-      "name": "Last Man Standing",
-      "cfg": "lms.cfg",
-      "kind": "pvp",
-      "teams": true,
-      "tooltip": "Two lives each round. Last one alive takes it."
-    }
+  "gamemode": "deathmatch",
+  "teams": true,
+  "lives": 2,
+  "maxlives": 5,
+  "remixes": [
+    "eoncollection/dm",
+    "eoncollection/lms",
+    "eoncollection/possession"
   ]
 }

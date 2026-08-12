@@ -1,0 +1,7 @@
+{
+  "name": "Last Man Standing",
+  "summary": "One life a round.",
+  "group": "mode",
+  "gamemode": "lastmanstanding",
+  "cfg": "lms.cfg"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Capture the Flag",
+  "summary": "Two bases, two flags.",
+  "group": "mode",
+  "gamemode": "ctf",
+  "cfg": "ctf.cfg"
+}
