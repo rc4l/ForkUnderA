@@ -48,4 +48,30 @@ std::vector<std::pair<std::string, std::string> > FastWeaponsCvars(bool offered,
 	return out;
 }
 
+WeaponsPlan PlanWeapons(bool offered, int wanted, bool mixIsBaseline)
+{
+	WeaponsPlan out;
+
+	// An entry that never invited the control has no exclusion to enforce either: its mixes are the
+	// only thing on that part of the panel and must stay pressable.
+	if (!offered)
+		return out;
+
+	out.speed = FastWeaponsValue(wanted);
+
+	if (out.speed > 0)
+	{
+		// The speed is up, so it owns the weapons. See the header for why it wins the tie.
+		out.speedAdjustable = true;
+		out.mixLocked = true;
+		out.forceBaselineMix = true;
+		return out;
+	}
+
+	// Normal speed. The mix is free, and the slider moves only while nothing has replaced the
+	// weapons it would be speeding up.
+	out.speedAdjustable = mixIsBaseline;
+	return out;
+}
+
 } // namespace zx

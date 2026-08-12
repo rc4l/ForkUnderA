@@ -8,6 +8,8 @@
 using zx::FastWeaponsCvars;
 using zx::FastWeaponsMax;
 using zx::FastWeaponsValue;
+using zx::PlanWeapons;
+using zx::WeaponsPlan;
 
 namespace
 {
@@ -94,4 +96,62 @@ TEST(WeaponsPick, TheSpeedIsSetBeforeTheAmmo)
 	ASSERT_EQ(2u, c.size());
 	EXPECT_EQ("sv_fastweapons", c[0].first);
 	EXPECT_EQ("sv_infiniteammo", c[1].first);
+}
+
+// ------------------------------------------------------------ speed against mix
+
+TEST(WeaponsPlan, AnEntryWithoutTheControlLocksNothing)
+{
+	// Its mixes are the only thing on that part of the panel and have to stay pressable.
+	const WeaponsPlan plan = PlanWeapons(false, 2, false);
+
+	EXPECT_EQ(0, plan.speed);
+	EXPECT_FALSE(plan.speedAdjustable);
+	EXPECT_FALSE(plan.mixLocked);
+	EXPECT_FALSE(plan.forceBaselineMix);
+}
+
+TEST(WeaponsPlan, AtTheDefaultSpeedTheMixIsFree)
+{
+	const WeaponsPlan plan = PlanWeapons(true, 0, true);
+
+	EXPECT_EQ(0, plan.speed);
+	EXPECT_TRUE(plan.speedAdjustable);
+	EXPECT_FALSE(plan.mixLocked);
+	EXPECT_FALSE(plan.forceBaselineMix);
+}
+
+TEST(WeaponsPlan, AModOwningTheWeaponsPinsTheSpeedToNormal)
+{
+	// [rc4l] Brutal Doom's weapons have their own timings and reload frames. Cutting every state to
+	// a tick on top of that is not a faster Brutal Doom, it is Brutal Doom with its animation system
+	// taken away.
+	const WeaponsPlan plan = PlanWeapons(true, 0, false);
+
+	EXPECT_EQ(0, plan.speed);
+	EXPECT_FALSE(plan.speedAdjustable);
+	EXPECT_FALSE(plan.mixLocked) << "the mix is what is chosen; it is the speed that gives way";
+}
+
+TEST(WeaponsPlan, ASpeedAboveNormalTakesTheMixBackToTheBaseline)
+{
+	const WeaponsPlan plan = PlanWeapons(true, 1, true);
+
+	EXPECT_EQ(1, plan.speed);
+	EXPECT_TRUE(plan.speedAdjustable);
+	EXPECT_TRUE(plan.mixLocked);
+	EXPECT_TRUE(plan.forceBaselineMix);
+}
+
+TEST(WeaponsPlan, TheSpeedWinsATie)
+{
+	// Both off their defaults at once, which only a preference carried in from another experience can
+	// produce. The speed takes it: a mix is remembered across every entry that offers one, and the
+	// speed only by the handful that ask for it, so the mix is the likelier to be stale.
+	const WeaponsPlan plan = PlanWeapons(true, 2, false);
+
+	EXPECT_EQ(2, plan.speed);
+	EXPECT_TRUE(plan.speedAdjustable);
+	EXPECT_TRUE(plan.mixLocked);
+	EXPECT_TRUE(plan.forceBaselineMix);
 }
