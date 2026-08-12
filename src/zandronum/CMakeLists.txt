@@ -322,6 +322,21 @@ else()
 	set( ZX_ENABLE_SENTRY OFF )
 endif()
 
+# [rc4l] Whether this build's symbols will be published, which is the only honest licence to report a
+# crash: a report nobody can symbolicate is noise that outlives the build it came from (issue #228).
+#
+# OFF by default and set only by the release workflow, deliberately. It cannot be inferred locally --
+# the tempting test, whether `git describe` lands exactly on a tag, says yes for a developer building
+# at a tagged commit, and crash-sync would then read their binary with the official release's symbols.
+# Only the machine that publishes the symbols can assert that they exist.
+option( ZX_OFFICIAL_BUILD "This build's symbols are published, so crash reporting is meaningful" OFF )
+if( ZX_OFFICIAL_BUILD )
+	add_definitions( -DZX_OFFICIAL_BUILD=1 )
+	message( STATUS "ZX crash reporting: official build (reports enabled)" )
+else()
+	message( STATUS "ZX crash reporting: unofficial build (reports disabled -- no symbols would be published)" )
+endif()
+
 # [rc4l] Guard against silently shipping crash reporting that can't deliver: if sentry is enabled it
 # MUST have a DSN, or every report goes nowhere (a whole class of "works locally, dead in release"
 # bugs). Emit a status line CI asserts on (see .github/workflows/_build.yml).
