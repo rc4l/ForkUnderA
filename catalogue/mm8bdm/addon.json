@@ -5,12 +5,22 @@
   "kind": "pvp",
   "gamemode": "deathmatch",
   "teams": true,
+  "lives": 1,
+  "maxlives": 5,
   "order": 3,
   "files": [
     {
       "name": "mm8bdm-v6b.pk3",
       "md5": "e3a30c6a4068e8285d4277202bebd31a"
     }
+  ],
+  "remixes": [
+    "mm8bdm/dm",
+    "mm8bdm/lms",
+    "mm8bdm/possession",
+    "mm8bdm/terminator",
+    "mm8bdm/ctf",
+    "mm8bdm/skulltag"
   ],
   "art": "MEGAMAN"
 }

@@ -1,6 +1,7 @@
 {
   "name": "Skulltag",
   "summary": "The one that started it all.",
+  "kind": "pvp",
   "iwad": "doom2.wad",
   "files": [
     {
@@ -12,57 +13,14 @@
       "md5": "71f9ff36f536bcb2f5a029aa9da4a3de"
     }
   ],
-  "variants": [
-    {
-      "id": "dm",
-      "gamemode": "deathmatch",
-      "name": "Deathmatch",
-      "cfg": "server.cfg",
-      "kind": "pvp",
-      "default": true,
-      "teams": true,
-      "tooltip": "Everyone for themselves! Will you prevail?"
-    },
-    {
-      "id": "duel",
-      "gamemode": "duel",
-      "name": "Duel",
-      "cfg": "duel.cfg",
-      "kind": "pvp",
-      "tooltip": "One on one duel."
-    },
-    {
-      "id": "lms",
-      "gamemode": "lastmanstanding",
-      "name": "Last Man Standing",
-      "cfg": "lms.cfg",
-      "kind": "pvp",
-      "teams": true,
-      "tooltip": "One life each round. Last one alive takes it."
-    },
-    {
-      "id": "ctf",
-      "gamemode": "ctf",
-      "name": "Capture the Flag",
-      "cfg": "ctf.cfg",
-      "kind": "pvp",
-      "tooltip": "Two teams, a flag each. Take theirs and get home."
-    },
-    {
-      "id": "skulltag",
-      "gamemode": "deathmatch",
-      "name": "Skulltag",
-      "cfg": "skulltag.cfg",
-      "kind": "pvp",
-      "tooltip": "Grab a skull, and tag it on the enemy's side."
-    },
-    {
-      "id": "invasion",
-      "gamemode": "invasion",
-      "name": "Invasion",
-      "cfg": "invasion.cfg",
-      "kind": "pve",
-      "tooltip": "Everyone on the same side, against waves of monsters."
-    }
+  "gamemode": "deathmatch",
+  "teams": true,
+  "remixes": [
+    "skulltag/dm",
+    "skulltag/duel",
+    "skulltag/lms",
+    "skulltag/ctf",
+    "skulltag/skulltag",
+    "skulltag/invasion"
   ]
 }
