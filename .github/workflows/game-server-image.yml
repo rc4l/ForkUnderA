@@ -152,7 +152,12 @@ jobs:
               { echo "publish=false"; echo "skip=true"; echo "version=none"; echo "tags=none"; echo "primary=none"; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            if ! git describe --exact-match --match 'v[0-9]*' HEAD >/dev/null 2>&1; then
+            # [rc4l] --tags is load-bearing. `gh release create` makes a LIGHTWEIGHT tag, and
+            # git describe only considers annotated tags without it, so this gate never once matched:
+            # every engine release skipped the image build and reported success while doing it. The
+            # engine= line above always had --tags, which is why that half worked and this half did
+            # not.
+            if ! git describe --tags --exact-match --match 'v[0-9]*' HEAD >/dev/null 2>&1; then
               echo "release.yml finished but this commit carries no engine tag -- it built artifacts without publishing"
               { echo "publish=false"; echo "skip=true"; echo "version=none"; echo "tags=none"; echo "primary=none"; } >> "$GITHUB_OUTPUT"
               exit 0
