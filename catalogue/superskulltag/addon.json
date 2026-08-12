@@ -25,7 +25,8 @@
       "kind": "pve",
       "default": true,
       "map": "SSTMAP01",
-      "tooltip": "Twenty-nine of Doom II's maps, played through together."
+      "tooltip": "Twenty-nine of Doom II's maps, played through together.",
+      "art": ""
     },
     {
       "id": "monstermash",
@@ -40,7 +41,8 @@
           "name": "sst_monstermash_v2.pk3",
           "md5": "db2a6549a78b333bd718e0bee2515fbb"
         }
-      ]
+      ],
+      "art": ""
     },
     {
       "id": "invasion",
@@ -49,7 +51,8 @@
       "cfg": "invasion.cfg",
       "kind": "pve",
       "map": "SSTINV01",
-      "tooltip": "Two maps, and waves of them."
+      "tooltip": "Two maps, and waves of them.",
+      "art": ""
     },
     {
       "id": "dm",
@@ -59,7 +62,8 @@
       "kind": "pvp",
       "map": "SSTDM01",
       "teams": true,
-      "tooltip": "Five arenas of its own."
+      "tooltip": "Five arenas of its own.",
+      "art": ""
     }
   ]
 }

@@ -8,7 +8,7 @@
   "maxlives": 5,
   "order": 20,
   "accent": true,
-  "remixes": ["vanilla", "brutaldoom", "d4t", "complexdoom", "dnd", "woc", "harddoom", "doom64"],
+  "remixes": ["vanilla", "brutaldoom", "rga2", "d4t", "complexdoom", "dnd", "woc", "harddoom", "doom64"],
   "variants": [
     {
       "id": "av",
@@ -38,6 +38,19 @@
         {
           "name": "scythe.wad",
           "md5": "3131213a9413a604c5c160848ddb3d9d"
+        }
+      ]
+    },
+    {
+      "id": "scythe2",
+      "name": "Scythe 2",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty-two maps, bigger and prettier than the first, and no kinder.",
+      "files": [
+        {
+          "name": "scythe2v2.wad",
+          "md5": "1f939d6bcc6175eb9830645d7acb8aa9"
         }
       ]
     },
@@ -98,6 +111,116 @@
         {
           "name": "sunder_2512.wad",
           "md5": "0800f4c9c352e34cc3c48887da6988d6"
+        }
+      ]
+    },
+    {
+      "id": "sod",
+      "name": "Speed of Doom",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Two mappers taking turns, one quick and tight, the other vast.",
+      "files": [
+        {
+          "name": "sodfinal.wad",
+          "md5": "91005d20647041c8195a231629b496e4"
+        }
+      ]
+    },
+    {
+      "id": "jpcp",
+      "name": "Japanese Community Pack",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty-two maps from Japan's mapping scene, with an eye for shape and colour.",
+      "files": [
+        {
+          "name": "jpcp.wad",
+          "md5": "b0bfbdff7785da02b0fa6721dbccecd2"
+        },
+        {
+          "name": "jpcp_coopfix.wad",
+          "md5": "279e4a0c12add99b7d6f608e92da7c27"
+        }
+      ]
+    },
+    {
+      "id": "epic2",
+      "name": "Epic 2",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty-two maps of desert and temples, and the pack that made Egypt a Doom setting.",
+      "files": [
+        {
+          "name": "epic2.wad",
+          "md5": "38596120e305dfd2632005991a4cc204"
+        },
+        {
+          "name": "epic2gl.wad",
+          "md5": "0816ce2ea9b3be9d36b5d857548c15b0"
+        }
+      ],
+      "art": "TITLEPIC"
+    },
+    {
+      "id": "btsxe1",
+      "name": "Back to Saturn X: E1",
+      "cfg": "btsxe1.cfg",
+      "kind": "pve",
+      "tooltip": "Twenty-seven maps in a palette nobody else uses.",
+      "files": [
+        {
+          "name": "btsx_e1a.wad",
+          "md5": "96530f7e149ab838b3a80c29570cd275"
+        },
+        {
+          "name": "btsx_e1b.wad",
+          "md5": "667a7b6160ab0f64d853a5142a9a31de"
+        }
+      ],
+      "art": "TITLEPIC"
+    },
+    {
+      "id": "btsxe2",
+      "name": "Back to Saturn X: E2",
+      "cfg": "btsxe2.cfg",
+      "kind": "pve",
+      "tooltip": "Twenty-nine more, bluer and stranger than the first.",
+      "files": [
+        {
+          "name": "btsx_e2a.wad",
+          "md5": "ff42f95fffcb2ecae3af034af5c578ca"
+        },
+        {
+          "name": "btsx_e2b.wad",
+          "md5": "3853b06204e2e251b06e61b63de06ab2"
+        }
+      ],
+      "art": "TITLEPIC"
+    },
+    {
+      "id": "dvii",
+      "name": "Deus Vult II",
+      "cfg": "dvii.cfg",
+      "kind": "pve",
+      "tooltip": "Cathedral-sized maps, and more monsters than you have bullets for.",
+      "files": [
+        {
+          "name": "dvii-1u.wad",
+          "md5": "0a63f3f3cfbf75e2d6d86cfe054c5f0a"
+        }
+      ]
+    },
+    {
+      "id": "struggle",
+      "name": "Struggle",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "tooltip": "Thirty handsome maps, on a weapon set rebuilt from the ground up.",
+      "files": [
+        {
+          "name": "STRG.wad",
+          "md5": "1f3653c4c3928a578aff9ac685ed402a"
         }
       ]
     },

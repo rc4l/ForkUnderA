@@ -8,6 +8,7 @@ using zx::AddonEntry;
 using zx::AddonFileRef;
 using zx::AddonRemix;
 using zx::AddonVariant;
+using zx::CombineFiles;
 using zx::GroupRemixes;
 using zx::OfferedRemixes;
 using zx::PickRemix;
@@ -440,4 +441,168 @@ TEST(PickRemix, EveryOfferedRemixIsReachable)
 		EXPECT_EQ(static_cast<int>(i), pick.index) << "id=" << offered[i].id;
 		EXPECT_EQ(offered[i].id, pick.id);
 	}
+}
+
+namespace
+{
+
+AddonFileRef Filling(const std::string &name, const std::string &role)
+{
+	AddonFileRef f = File(name);
+	f.provides = role;
+	return f;
+}
+
+// A pick as PickRemix would have built it: what it loads, and what it says it already contains.
+RemixPick Mix(const std::string &id, const char *loads, const char *provides)
+{
+	RemixPick pick;
+	pick.index = 0;
+	pick.id = id;
+	if (loads != NULL)
+		pick.files.push_back(File(loads));
+	if (provides != NULL)
+		pick.provides.push_back(provides);
+	return pick;
+}
+
+std::vector<std::string> NamesOf(const std::vector<AddonFileRef> &files)
+{
+	std::vector<std::string> names;
+	for (size_t i = 0; i < files.size(); ++i)
+		names.push_back(files[i].name);
+	return names;
+}
+
+// What a deathmatch entry loads: its maps, and a spree announcer it names as one.
+std::vector<AddonFileRef> Deathmatch()
+{
+	std::vector<AddonFileRef> base;
+	base.push_back(File("maps.wad"));
+	base.push_back(Filling("spree2rc2.pk3", "spree"));
+	return base;
+}
+
+} // namespace
+
+TEST(CombineFiles, PutsTheMixAfterWhatTheEntryLoads)
+{
+	const std::vector<RemixPick> picks(1, Mix("weapons", "weapons.pk3", NULL));
+	const std::vector<std::string> got = NamesOf(CombineFiles(Deathmatch(), picks));
+
+	ASSERT_EQ(3u, got.size());
+	EXPECT_EQ("maps.wad", got[0]);
+	EXPECT_EQ("spree2rc2.pk3", got[1]);
+	EXPECT_EQ("weapons.pk3", got[2]);
+}
+
+TEST(CombineFiles, DropsTheFileWhoseRoleTheMixAlreadyFills)
+{
+	// The case this exists for: a weapon mod carrying its own spree, offered by an entry that loads
+	// one anyway. Both loaded means two trackers over the same kills.
+	const std::vector<RemixPick> picks(1, Mix("weapons", "weapons.pk3", "spree"));
+	const std::vector<std::string> got = NamesOf(CombineFiles(Deathmatch(), picks));
+
+	ASSERT_EQ(2u, got.size());
+	EXPECT_EQ("maps.wad", got[0]);
+	EXPECT_EQ("weapons.pk3", got[1]);
+}
+
+TEST(CombineFiles, SurvivesTheFileBeingUpgraded)
+{
+	// THE reason this is a role and not a filename. The entry moves to the next release; nothing
+	// about the mix changes; the suppression still fires.
+	std::vector<AddonFileRef> next;
+	next.push_back(File("maps.wad"));
+	next.push_back(Filling("spree3final.pk3", "spree"));
+
+	const std::vector<RemixPick> picks(1, Mix("weapons", "weapons.pk3", "spree"));
+
+	EXPECT_EQ(2u, CombineFiles(next, picks).size());
+}
+
+TEST(CombineFiles, LeavesAnUntaggedFileAlone)
+{
+	// An entry that never said what its file was keeps it. Silence is not a claim to any role, so a
+	// mix providing one cannot reach it.
+	std::vector<AddonFileRef> base;
+	base.push_back(File("maps.wad"));
+	base.push_back(File("spree2rc2.pk3"));
+
+	const std::vector<RemixPick> picks(1, Mix("weapons", "weapons.pk3", "spree"));
+
+	EXPECT_EQ(3u, CombineFiles(base, picks).size());
+}
+
+TEST(CombineFiles, LeavesADifferentRoleAlone)
+{
+	std::vector<AddonFileRef> base;
+	base.push_back(Filling("hud.pk3", "hud"));
+
+	const std::vector<RemixPick> picks(1, Mix("weapons", NULL, "spree"));
+
+	EXPECT_EQ(1u, CombineFiles(base, picks).size());
+}
+
+TEST(CombineFiles, LetsAnyAxisFillTheRole)
+{
+	// Two independent axes, and it is the SECOND that brings the spree. Nothing about the
+	// suppression may depend on which group the mix sits in.
+	std::vector<RemixPick> picks;
+	picks.push_back(Mix("lives", NULL, NULL));
+	picks.push_back(Mix("weapons", "weapons.pk3", "spree"));
+
+	EXPECT_EQ(2u, CombineFiles(Deathmatch(), picks).size());
+}
+
+TEST(CombineFiles, KeepsTheMixsOwnCopyOfWhatItProvides)
+{
+	// A mix may tag its own file with the role it fills. Suppressing that would delete the thing
+	// the declaration is about and leave the role filled by nothing.
+	RemixPick pick = Mix("weapons", NULL, "spree");
+	pick.files.push_back(Filling("weapons.pk3", "spree"));
+
+	const std::vector<std::string> got = NamesOf(CombineFiles(Deathmatch(), std::vector<RemixPick>(1, pick)));
+
+	ASSERT_EQ(2u, got.size());
+	EXPECT_EQ("maps.wad", got[0]);
+	EXPECT_EQ("weapons.pk3", got[1]);
+}
+
+TEST(CombineFiles, OneMixCanReplaceWhatAnotherBrought)
+{
+	// Across axes, a mix's file is no different from the entry's: whoever provides the role wins and
+	// the other copy goes.
+	RemixPick brings = Mix("sounds", NULL, NULL);
+	brings.files.push_back(Filling("othersp.pk3", "spree"));
+
+	std::vector<RemixPick> picks;
+	picks.push_back(brings);
+	picks.push_back(Mix("weapons", "weapons.pk3", "spree"));
+
+	std::vector<AddonFileRef> base(1, File("maps.wad"));
+	const std::vector<std::string> got = NamesOf(CombineFiles(base, picks));
+
+	ASSERT_EQ(2u, got.size());
+	EXPECT_EQ("maps.wad", got[0]);
+	EXPECT_EQ("weapons.pk3", got[1]);
+}
+
+TEST(CombineFiles, ChangesNothingWhenNoMixIsInForce)
+{
+	// An entry with no mixes at all comes through here and must load exactly what it named.
+	EXPECT_EQ(2u, CombineFiles(Deathmatch(), std::vector<RemixPick>()).size());
+}
+
+TEST(PickRemix, CarriesTheProvidedRolesThrough)
+{
+	// The suppression is useless unless the pick hands the roles on; nothing else does. Both routes
+	// through PickRemix are checked: the remembered choice, and the fallback to the baseline.
+	AddonRemix mod = Remix("mod", "Weapons");
+	mod.provides.push_back("spree");
+
+	const std::vector<AddonRemix> offered(1, mod);
+
+	EXPECT_EQ(mod.provides, PickRemix(offered, "mod").provides);
+	EXPECT_EQ(mod.provides, PickRemix(offered, "gone").provides);
 }

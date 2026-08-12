@@ -1,0 +1,16 @@
+{
+  "name": "Mega Man 8-bit Deathmatch",
+  "summary": "The Blue Bomber's own game, on its own weapons, across every robot master's stage.",
+  "iwad": "megagame.wad",
+  "kind": "pvp",
+  "gamemode": "deathmatch",
+  "teams": true,
+  "order": 3,
+  "files": [
+    {
+      "name": "mm8bdm-v6b.pk3",
+      "md5": "e3a30c6a4068e8285d4277202bebd31a"
+    }
+  ],
+  "art": "MEGAMAN"
+}

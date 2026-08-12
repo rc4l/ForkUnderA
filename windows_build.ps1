@@ -219,6 +219,15 @@ foreach ($wad in @("freedoom1.wad", "freedoom2.wad")) {
 Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
 Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
 
+# [rc4l] Our own base data for total conversions that ship no base file of their own. Built by
+# tools/mkiwad, entirely generated, so it carries nobody else's work. Checked rather than copied
+# blind, for the same reason the two above are: a wildcard that quietly ships nothing leaves a
+# catalogue entry nobody can host.
+if (-not (Test-Path (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad"))) {
+    throw "tools/mkiwad/fuamega.wad missing -- rebuild it with tools/mkiwad/mkiwad.py"
+}
+Copy-Item (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad") $DistDir\
+
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\
 Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\
 

@@ -13,11 +13,16 @@
 #include "version.h"
 
 #include "features/addon-catalogue/computation/hostplan_compute.h"
+#include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
+#include "features/addon-catalogue/computation/menuart_compute.h"
 #include "features/addon-catalogue/computation/variantpick_compute.h"
 #include "features/server-hosting/zx_hosting.h"
 #include "features/server-hosting/zx_reachprobe.h"
 #include "features/wad-download/zx_wadsearch.h"
+
+// [rc4l] kIwadSubstitutes, generated from the repo-root iwadsubstitutes.txt by tools/gen-wadlists.cmake.
+#include "zx_waddownload_lists.h"
 
 #include <stdio.h>
 #include <algorithm>
@@ -361,6 +366,46 @@ std::string CatalogueRemixCfgPath( const std::string &remixId )
 
 //*****************************************************************************
 //
+// [rc4l] The picture beside an entry, if it shipped one.
+//
+// Rebuilt from the roots rather than from entry.dir, so it answers the same way the cfg paths do
+// when the player has their own copy of an experience: theirs wins, and its picture comes with it.
+// Reading entry.dir would have been shorter and would have quietly used the shipped picture with
+// the player's files.
+//
+std::string CatalogueArtPath( const CatalogueEntry &entry, const std::string &variantId )
+{
+	const std::string name = MenuArtFileName( variantId );
+
+	std::string at = CatalogueUserDir( ) + "/" + entry.addon.id + "/" + name;
+	if ( FileExists( at.c_str( )))
+		return at;
+
+	at = CatalogueShippedDir( ) + "/" + entry.addon.id + "/" + name;
+	if ( FileExists( at.c_str( )))
+		return at;
+
+	// Nothing to draw. Most things answer this way, and the caller draws the name instead.
+	return std::string( );
+}
+
+std::string CatalogueRemixArtPath( const std::string &remixId )
+{
+	const std::string name = MenuArtFileName( std::string( ));
+
+	std::string at = CatalogueUserDir( ) + "/remix/" + remixId + "/" + name;
+	if ( FileExists( at.c_str( )))
+		return at;
+
+	at = CatalogueShippedDir( ) + "/remix/" + remixId + "/" + name;
+	if ( FileExists( at.c_str( )))
+		return at;
+
+	return std::string( );
+}
+
+//*****************************************************************************
+//
 // [rc4l] Read the catalogue AT STARTUP, so a broken entry is reported while the player is still
 // looking at the console rather than the first time they open the host screen.
 //
@@ -397,6 +442,54 @@ std::string CatalogueServerCfgPath( const CatalogueEntry &entry, const std::stri
 		return std::string( );
 
 	return entry.dir + "/" + pick.cfg;
+}
+
+//*****************************************************************************
+//
+// [rc4l] Every IWAD the host could run an entry on, in the order PickIwad wants them.
+//
+// The entry's OWN iwad is probed first and always. A fixed list of the classics can never name a
+// game that ships its own, so an entry declaring one was told there was nothing to run on while the
+// file sat beside the executable. Asking for what was actually asked for costs one probe and cannot
+// go out of date.
+//
+// The rest are the free IWADs a substitute might land on. Those ARE a list, because being
+// substitutable is a fact about our own table rather than about any entry.
+//
+// Wider than the working directory: Steam libraries and the launcher's own folders count.
+//
+std::vector<std::string> AvailableIwads( const std::string &preferred )
+{
+	std::vector<std::string> iwads;
+
+	if ( !preferred.empty( ) && zx::FindIwadInEngineSearchPaths( preferred.c_str( )).IsNotEmpty( ))
+		iwads.push_back( preferred );
+
+	// [rc4l] Read out of the substitute table rather than listed again here. The set worth probing
+	// is exactly the set PickIwad can land on, which is that table's right-hand column, so a second
+	// list can only ever drift from it: add a substitute and forget this line and the file is never
+	// looked for, leaving "you need X" in front of a player who has everything required.
+	for ( size_t i = 0; i < sizeof( kIwadSubstitutes ) / sizeof( kIwadSubstitutes[0] ); ++i )
+	{
+		const char *const candidate = kIwadSubstitutes[i][1];
+		if ( preferred == candidate )
+			continue;					// already probed above
+
+		bool bAlreadyHave = false;			// several wanted names share one substitute
+		for ( size_t j = 0; j < iwads.size( ); ++j )
+		{
+			if ( iwads[j] == candidate )
+			{
+				bAlreadyHave = true;
+				break;
+			}
+		}
+
+		if ( !bAlreadyHave && zx::FindIwadInEngineSearchPaths( candidate ).IsNotEmpty( ))
+			iwads.push_back( candidate );
+	}
+
+	return iwads;
 }
 
 } // namespace zx
@@ -556,21 +649,7 @@ CCMD( fua_host )
 			have.push_back( name );
 	}
 
-	// Every IWAD the engine can actually see, which is a wider list than the working directory:
-	// Steam libraries and the launcher's own folders count.
-	std::vector<std::string> iwads;
-	{
-		const char *const kCandidates[] = {
-			"doom2.wad", "doom.wad", "freedoom2.wad", "freedoom1.wad", "freedm.wad",
-			"tnt.wad", "plutonia.wad", "heretic.wad", "hexen.wad", "strife1.wad",
-		};
-
-		for ( size_t i = 0; i < sizeof( kCandidates ) / sizeof( kCandidates[0] ); ++i )
-		{
-			if ( zx::FindIwadInEngineSearchPaths( kCandidates[i] ).IsNotEmpty( ))
-				iwads.push_back( kCandidates[i] );
-		}
-	}
+	const std::vector<std::string> iwads = zx::AvailableIwads( chosen->addon.iwad );
 
 	const zx::IwadPick pick = zx::PickIwad( chosen->addon.iwad, iwads );
 
@@ -582,9 +661,11 @@ CCMD( fua_host )
 
 	// [rc4l] No remixes from the console. fua_host names an entry and a variant and nothing else, so
 	// there is no axis to resolve; the panel is where a remix gets chosen.
+	// [rc4l] Whether a missing game may be fetched, which is the allowlist's question and not the
+	// planner's. Asked here so the pure unit never has to know the list.
 	const zx::HostPlan plan = zx::BuildHostPlan( chosen->addon, variant.files, pick,
 		zx::CatalogueServerCfgPath( *chosen, variantId ), std::vector<std::string>( ), variant.map,
-		choices, have );
+		choices, have, zx::IsFreeIwadName( chosen->addon.iwad ));
 
 	if ( !plan.blocker.empty( ))
 	{

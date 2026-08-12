@@ -156,6 +156,44 @@ TEST(AddonFile, AnUnknownKeyInsideAFileIsIgnoredToo)
 	EXPECT_EQ("a.pk3", e.files[0].name);
 }
 
+TEST(AddonFile, AFileSaysWhatItIsRatherThanBeingKnownByItsName)
+{
+	// The role a file fills, so a mix that brings its own copy of something can suppress the
+	// entry's. Read here because it is the file that states it; a filename carries a version and
+	// stops matching the moment the thing is upgraded, which is the whole reason for the key.
+	const AddonEntry e = Parse(
+		"{ \"kind\": \"pvp\", \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"spree-2.pk3\", \"provides\": \"spree\","
+		"                \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(1u, e.files.size());
+	EXPECT_EQ("spree", e.files[0].provides);
+}
+
+TEST(AddonFile, AFileWithNoRoleClaimsNone)
+{
+	// Most files fill no role worth naming, and the absence has to stay empty rather than fall back
+	// to the name: an empty role matches nothing, which is what "supersedes nobody" must mean.
+	const AddonEntry e = Parse(
+		"{ \"kind\": \"pvp\", \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
+
+	ASSERT_TRUE(e.valid) << e.error;
+	ASSERT_EQ(1u, e.files.size());
+	EXPECT_TRUE(e.files[0].provides.empty());
+}
+
+TEST(AddonFile, ARoleThatIsNotAStringIsRefused)
+{
+	// Not skipped. A role that failed to read is a file that silently stops superseding anything,
+	// and the mix it belongs to then loads two copies of the same system.
+	EXPECT_FALSE(Parse(
+		"{ \"kind\": \"pvp\", \"name\": \"X\","
+		"  \"files\": [{ \"name\": \"a.pk3\", \"provides\": 7,"
+		"                \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }").valid);
+}
+
 TEST(AddonFile, AVariantsArrayThatIsNotAnArrayIsRefused)
 {
 	const AddonEntry e = Parse(
@@ -997,6 +1035,31 @@ TEST(RemixFile, TheGroupIsRead)
 
 	ASSERT_TRUE(r.valid) << r.error;
 	EXPECT_EQ("mod", r.group);
+}
+
+TEST(RemixFile, TheProvidedRolesAreRead)
+{
+	// A mix that brings its own copy of something entries load separately. Nothing is refused for
+	// naming a role no entry fills: the same mix is offered by entries that never load one.
+	const zx::AddonRemix r = ParseRemix(
+		"{ \"name\": \"Weapons\", \"provides\": [\"spree\", \"announcer\"] }");
+
+	ASSERT_TRUE(r.valid) << r.error;
+	ASSERT_EQ(2u, r.provides.size());
+	EXPECT_EQ("spree", r.provides[0]);
+	EXPECT_EQ("announcer", r.provides[1]);
+}
+
+TEST(RemixFile, ARemixProvidesNothingByDefault)
+{
+	EXPECT_TRUE(ParseRemix("{ \"name\": \"Weapons\" }").provides.empty());
+}
+
+TEST(RemixFile, AnEmptyRoleIsRefused)
+{
+	// It would match every file that named no role, which is every file, and take the whole load
+	// list out.
+	EXPECT_FALSE(ParseRemix("{ \"name\": \"Weapons\", \"provides\": [\"\"] }").valid);
 }
 
 TEST(RemixFile, ARemixWithFilesCarriesThem)

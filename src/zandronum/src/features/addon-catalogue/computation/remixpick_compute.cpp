@@ -6,6 +6,22 @@
 namespace zx
 {
 
+namespace
+{
+
+bool Holds(const std::vector<std::string> &list, const std::string &want)
+{
+	for (size_t i = 0; i < list.size(); ++i)
+	{
+		if (list[i] == want)
+			return true;
+	}
+
+	return false;
+}
+
+} // namespace
+
 std::vector<AddonRemix> OfferedRemixes(const AddonEntry &entry, int variant,
                                        const std::vector<AddonRemix> &pool)
 {
@@ -63,6 +79,7 @@ RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &w
 			pick.name = offered[i].name;
 			pick.cfg = offered[i].cfg;
 			pick.files = offered[i].files;
+			pick.provides = offered[i].provides;
 			return pick;
 		}
 	}
@@ -75,6 +92,7 @@ RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &w
 	pick.name = offered[0].name;
 	pick.cfg = offered[0].cfg;
 	pick.files = offered[0].files;
+	pick.provides = offered[0].provides;
 	return pick;
 }
 
@@ -135,6 +153,65 @@ std::vector<RemixPick> PickRemixes(const std::vector<AddonRemix> &offered,
 	}
 
 	return picks;
+}
+
+std::vector<AddonFileRef> CombineFiles(const std::vector<AddonFileRef> &base,
+                                       const std::vector<RemixPick> &picks)
+{
+	// -1 for the entry's own, otherwise which pick brought it. Only ever read to answer "did this
+	// file come from the mix now trying to suppress it", so an index is the whole of what is needed.
+	std::vector<AddonFileRef> all;
+	std::vector<int> from;
+
+	for (size_t i = 0; i < base.size(); ++i)
+	{
+		all.push_back(base[i]);
+		from.push_back(-1);
+	}
+
+	// Every axis, in group order, each appended after the last. Load order between axes is the
+	// catalogue author's: a mod named after a rules remix loads after it and so wins where they
+	// overlap, which is the only way an author can express that at all.
+	for (size_t p = 0; p < picks.size(); ++p)
+	{
+		for (size_t i = 0; i < picks[p].files.size(); ++i)
+		{
+			all.push_back(picks[p].files[i]);
+			from.push_back(static_cast<int>(p));
+		}
+	}
+
+	std::vector<AddonFileRef> kept;
+
+	for (size_t i = 0; i < all.size(); ++i)
+	{
+		if (all[i].provides.empty())
+		{
+			kept.push_back(all[i]);
+			continue;
+		}
+
+		bool drop = false;
+
+		for (size_t p = 0; p < picks.size(); ++p)
+		{
+			// Its own file. A mix providing a role has to keep whatever it brought to provide it
+			// with, or declaring the role would delete the thing being declared.
+			if (from[i] == static_cast<int>(p))
+				continue;
+
+			if (Holds(picks[p].provides, all[i].provides))
+			{
+				drop = true;
+				break;
+			}
+		}
+
+		if (!drop)
+			kept.push_back(all[i]);
+	}
+
+	return kept;
 }
 
 } // namespace zx

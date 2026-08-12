@@ -53,17 +53,30 @@ struct HostPlan
 	bool advertise;
 
 	std::vector<std::string> missing;	// bare filenames not on disk, in load order
+
+	// [rc4l] Whether the first of `missing` is the GAME rather than a mod, so the caller can ask the
+	// downloader for it as one. The download path checks a hash against the shipped list before
+	// keeping anything it was told is an iwad, and it can only do that if it is told.
+	//
+	// Only ever set for an iwad we can name as freely redistributable. A commercial one is still a
+	// blocker, because the objection to fetching it was never that we lacked the plumbing.
+	bool missingIwad;
+
 	std::string blocker;				// why not ready at all; "" when only downloads are needed
 
-	HostPlan() : ready(false), maxPlayers(8), port(0), advertise(false) {}
+	HostPlan() : ready(false), maxPlayers(8), port(0), advertise(false), missingIwad(false) {}
 };
 
 // `haveFiles` is the bare filenames already resolvable, which the caller gets from the by-hash store
 // and the ordinary search path. Passing it in keeps this unit pure and keeps one notion of "present".
 //
 // A missing PWAD is not a blocker: it is a download, and the whole point of shipping hashes is that
-// the downloader can go and get it. A missing IWAD IS a blocker, because there is nothing to
-// substitute and nothing to fetch.
+// the downloader can go and get it.
+//
+// A missing IWAD is a blocker ONLY when we cannot name it as free. One we can is fetched like
+// anything else -- there was never a technical reason not to, only a licensing one, and that reason
+// does not apply to a game whose authors give it away. `freeIwad` answers that question; the caller
+// passes the allowlist's verdict in rather than this unit knowing the list, which keeps it pure.
 // `files` is what the CHOSEN WAY OF PLAYING loads, which PickVariant resolves: the entry's own files
 // followed by the variant's. Passed in rather than read off the entry, because an entry no longer
 // has one answer -- two variants of the same pack can load entirely different things, and reading
@@ -78,7 +91,8 @@ HostPlan BuildHostPlan(const AddonEntry &addon,
                        const std::vector<std::string> &remixCfgPaths,
                        const std::string &map,
                        const HostChoices &choices,
-                       const std::vector<std::string> &haveFiles);
+                       const std::vector<std::string> &haveFiles,
+                       bool freeIwad = false);
 
 } // namespace zx
 
