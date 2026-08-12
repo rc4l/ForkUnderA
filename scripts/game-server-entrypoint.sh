@@ -85,6 +85,18 @@ is_hex_md5() {
 	printf '%s' "$1" | grep -Eqi '^[0-9a-f]{32}$'
 }
 
+# [rc4l] Which Freedoom phase stands in for a game, mirroring iwadsubstitutes.txt.
+#
+# Phase 2 was the only answer here for a long time, which was wrong for the Doom 1 half of that
+# table: an entry wanting doom.wad was handed Doom II's data, so the episode structure and half the
+# textures were not what the maps expected. Phase 1 is the stand-in for those.
+free_stand_in() {
+	case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in
+		doom.wad|doom1.wad|doomu.wad|bfgdoom.wad|doombfg.wad) printf 'freedoom1.wad' ;;
+		*) printf 'freedoom2.wad' ;;
+	esac
+}
+
 #---------------------------------------------------------------------------------------------------
 # Configuration
 #---------------------------------------------------------------------------------------------------
@@ -286,11 +298,12 @@ if [ -n "${ENTRY_IWAD}" ]; then
 
 	if IWAD_PATH="$(find_local "${ENTRY_IWAD}" "")"; then
 		log "iwad:   ${IWAD_PATH}"
-	elif [ "${SUBSTITUTE_IWAD}" = "1" ] && [ -f "${INSTALL_DIR}/freedoom2.wad" ]; then
+	elif [ "${SUBSTITUTE_IWAD}" = "1" ] && [ -f "${INSTALL_DIR}/$(free_stand_in "${ENTRY_IWAD}")" ]; then
 		# [rc4l] Never fetched, always substituted. Every IWAD is assumed commercial (see
 		# features/wad-download/README.md), and a container has no way to know what its operator owns.
-		IWAD_PATH="${INSTALL_DIR}/freedoom2.wad"
-		warn "${ENTRY_IWAD} is not on this box; hosting on freedoom2.wad instead."
+		SUBSTITUTE="$(free_stand_in "${ENTRY_IWAD}")"
+		IWAD_PATH="${INSTALL_DIR}/${SUBSTITUTE}"
+		warn "${ENTRY_IWAD} is not on this box; hosting on ${SUBSTITUTE} instead."
 		warn "  This works for a PWAD that replaces every map. On STOCK maps the geometry differs and"
 		warn "  joining clients will fail level authentication. Put ${ENTRY_IWAD} in /data/wads to fix."
 	else

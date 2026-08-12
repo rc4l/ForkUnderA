@@ -207,12 +207,17 @@ New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 Copy-Item "$out\forkundera.exe" $DistDir\
 Copy-Item "$out\*.pk3" $DistDir\ -ErrorAction SilentlyContinue
 
-if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
-    Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
-    Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
-} else {
-    throw "tools/freedoom/freedoom2.wad missing — the zip would ship without a game"
+# [rc4l] BOTH phases are required, not just the second. Phase 1 is what stands in for doom.wad, and
+# the substitute table has named it since it was written -- so shipping without it means every Doom 1
+# experience refuses to host on a machine that has no Ultimate Doom, which is the case this exists to
+# cover. Checked one by one because the copy is a wildcard and would happily ship half of them.
+foreach ($wad in @("freedoom1.wad", "freedoom2.wad")) {
+    if (-not (Test-Path (Join-Path $ScriptRoot "tools\freedoom\$wad"))) {
+        throw "tools/freedoom/$wad missing — the zip would ship without a game to fall back on"
+    }
 }
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
 
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\
 Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\

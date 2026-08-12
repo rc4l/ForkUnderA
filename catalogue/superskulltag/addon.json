@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "name": "Super Skulltag",
+  "summary": "Doom II rebuilt with Skulltag's weapons, runes and monsters.",
+  "iwad": "doom2.wad",
+  "kind": "pve",
+  "gamemode": "cooperative",
+  "lives": 0,
+  "maxlives": 5,
+  "files": [
+    {
+      "name": "skulltag_content-3.2-beta2.pk3",
+      "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+    },
+    {
+      "name": "superskulltag_v2h.pk3",
+      "md5": "1085839aae2dbb56f94e87e0b737ced7"
+    }
+  ],
+  "variants": [
+    {
+      "id": "campaign",
+      "gamemode": "cooperative",
+      "name": "Campaign",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "default": true,
+      "map": "SSTMAP01",
+      "tooltip": "Twenty-nine of Doom II's maps, played through together."
+    },
+    {
+      "id": "monstermash",
+      "gamemode": "cooperative",
+      "name": "Monster Mash",
+      "cfg": "monstermash.cfg",
+      "kind": "pve",
+      "map": "SSTMAP01",
+      "tooltip": "The same campaign, with a different bestiary in it.",
+      "files": [
+        {
+          "name": "sst_monstermash_v2.pk3",
+          "md5": "db2a6549a78b333bd718e0bee2515fbb"
+        }
+      ]
+    },
+    {
+      "id": "invasion",
+      "gamemode": "invasion",
+      "name": "Invasion",
+      "cfg": "invasion.cfg",
+      "kind": "pve",
+      "map": "SSTINV01",
+      "tooltip": "Two maps, and waves of them."
+    },
+    {
+      "id": "dm",
+      "gamemode": "deathmatch",
+      "name": "Deathmatch",
+      "cfg": "deathmatch.cfg",
+      "kind": "pvp",
+      "map": "SSTDM01",
+      "teams": true,
+      "tooltip": "Five arenas of its own."
+    }
+  ]
+}

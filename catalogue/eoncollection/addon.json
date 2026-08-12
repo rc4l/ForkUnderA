@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "The Eon Collection",
-  "summary": "Deathmatch with the cacoaward winning DBAB, Aeon DM, and Neon DM mappacks with Eon Weapons.",
+  "summary": "PvP with the cacoaward winning DBAB, Aeon DM, and Neon DM mappacks with Eon Weapons.",
   "iwad": "doom2.wad",
   "files": [
     {
@@ -15,6 +15,27 @@
     {
       "name": "zandrospree2rc2.pk3",
       "md5": "25b2a3c4f46e50f4016b640119aefae6"
+    }
+  ],
+  "variants": [
+    {
+      "id": "dm",
+      "gamemode": "deathmatch",
+      "name": "Deathmatch",
+      "cfg": "server.cfg",
+      "kind": "pvp",
+      "default": true,
+      "teams": true,
+      "tooltip": "Everyone for themselves, across all three mappacks."
+    },
+    {
+      "id": "lms",
+      "gamemode": "lastmanstanding",
+      "name": "Last Man Standing",
+      "cfg": "lms.cfg",
+      "kind": "pvp",
+      "teams": true,
+      "tooltip": "Two lives each round. Last one alive takes it."
     }
   ]
 }
