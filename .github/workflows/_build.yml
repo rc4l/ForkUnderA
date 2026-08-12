@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: git tag -f "${{ inputs.version }}" HEAD
 
-      - name: Build ZandroX
+      - name: Build ForkUnderA
         env:
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
@@ -74,7 +74,7 @@ jobs:
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ZandroX-macos
+          name: ForkUnderA-macos
           path: dist-macos/*.zip
 
       - name: Package debug symbols (dSYM)
@@ -113,7 +113,7 @@ jobs:
         shell: bash
         run: git tag -f "${{ inputs.version }}" HEAD
 
-      - name: Build + package ZandroX (Linux, native)
+      - name: Build + package ForkUnderA (Linux, native)
         # [rc4l] linux_compile.sh is the same script devs run; --install-deps apt-installs the
         # build/OpenAL libs, then it configures, builds and packages dist-linux/*.tar.gz itself.
         env:
@@ -142,41 +142,61 @@ jobs:
           name: symbols-linux
           path: symbols-linux-*.zip
 
-      # [rc4l] The headless server, from the same script and the same runner. This is the ONLY place
-      # in CI that compiles SERVERONLY, and it compiles genuinely different code (SERVER_ONLY=1, no
-      # GL, no sound) -- so without this step a break confined to one of those branches passes every
-      # pull request and surfaces only when somebody builds a server image.
-      #
-      # LAST, AND THE ORDER IS LOAD-BEARING. It reconfigures build-linux/ with SERVERONLY=ON, which
-      # renames the target and leaves the client's forkundera.debug stale in a directory that no longer
-      # builds it. Running before the symbols steps would have them zip whatever happened to survive
-      # the reconfigure, which is the kind of failure that produces an uploaded artifact rather than
-      # an error.
-      #
-      # No --install-deps: the client step already installed them. No ZX_WITH_SYMBOLS either, so this
-      # stays a short compile; symbolicating server crashes is worth doing and is its own change.
+      - name: Upload ForkUnderA Linux tarball
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ForkUnderA-linux
+          path: dist-linux/*.tar.gz
+
+  # [rc4l] The headless server, in its OWN job so it compiles ALONGSIDE the client rather than after
+  # it. As a step inside build-linux this job's wall clock was client time plus server time, serially,
+  # for no reason: the two builds share nothing but a checkout.
+  #
+  # Splitting also deletes a rule rather than documenting it. In one job everything shares one
+  # build-linux/ directory, so reconfiguring it with SERVERONLY=ON renamed the target and left the
+  # client's forkundera.debug behind as a leftover of a configuration that no longer existed -- which
+  # meant the serveronly step had to run AFTER the symbol steps or they would zip whatever survived
+  # and upload it as this build's symbols. Wrong symbols are worse than none, because you find out
+  # while reading a crash. A separate runner has its own empty build directory and cannot do that.
+  #
+  # This is the ONLY place in CI that compiles SERVERONLY natively, and SERVERONLY compiles genuinely
+  # different code (SERVER_ONLY=1, no GL, no sound), so without it a break confined to one of those
+  # branches passes every pull request.
+  build-linux-server:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Bake release version into git describe
+        if: inputs.upload_symbols
+        shell: bash
+        run: git tag -f "${{ inputs.version }}" HEAD
+
       - name: Build + package the headless server (Linux, native)
         env:
           VERSION: ${{ inputs.version }}
         run: |
           set -o pipefail
-          SERVERONLY=ON ./linux_compile.sh 2>&1 | tee build-server.log
+          ./linux_compile.sh --install-deps --serveronly 2>&1 | tee build-server.log
           # [rc4l] Assert the tarball, not a binary name. SERVERONLY appends "-server" to
           # ZDOOM_EXE_NAME, which is a cache variable, so the executable's name is the build system's
-          # to choose and not something CI should restate -- doing that in the Dockerfile produced a
-          # green compile and an image with nothing in it.
+          # to choose and not something CI should restate.
           ls -la dist-linux/
-          ls dist-linux/*-server.tar.gz >/dev/null 2>&1 \
-            || { echo "::error::serveronly build produced no -server tarball"; exit 1; }
+          ls dist-linux/*-server.tar.gz >/dev/null 2>&1             || { echo "::error::serveronly build produced no -server tarball"; exit 1; }
 
-      # [rc4l] Picks up BOTH tarballs: linux_compile.sh suffixes the serveronly one, so the glob that
-      # used to match one file now matches two and release.yml attaches both through assets/*.
-      - name: Upload ZandroX Linux tarballs
+      # [rc4l] Its own artifact name: two jobs cannot upload to one name, v4 artifacts being
+      # immutable. release.yml downloads with merge-multiple and no name filter, so both still land
+      # side by side in assets/.
+      - name: Upload ForkUnderA Linux server tarball
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ZandroX-linux
-          path: dist-linux/*.tar.gz
+          name: ForkUnderA-linux-server
+          path: dist-linux/*-server.tar.gz
 
   build-windows:
     # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose
@@ -217,7 +237,7 @@ jobs:
       # [rc4l] The whole compile — vcpkg deps, DirectX-SDK reshaping, CMake configure/build and
       # packaging — lives in windows_compile.ps1 so a contributor runs exactly what CI runs, and
       # CI verifies the script on every PR. Keep this a thin wrapper: no build logic here.
-      - name: Compile ZandroX (windows_compile.ps1)
+      - name: Compile ForkUnderA (windows_compile.ps1)
         shell: pwsh
         env:
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
@@ -228,11 +248,11 @@ jobs:
           if (-not (Select-String -Path build.log -Pattern "FUA replay: FFmpeg found" -Quiet)) { Write-Error "instant replay / FFmpeg not enabled in this build" }
           if (-not (Select-String -Path build.log -Pattern "ZX crash reporting: sentry ENABLED" -Quiet)) { Write-Error "sentry crash reporting not enabled in this build" }
 
-      - name: Upload ZandroX Windows build
+      - name: Upload ForkUnderA Windows build
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ZandroX-windows
+          name: ForkUnderA-windows
           path: ForkUnderA-*-windows-x64.zip
 
       - name: Package debug symbols (PDB)
