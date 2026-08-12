@@ -226,7 +226,7 @@ typedef struct
 	// [rc4l] WHICH WAY the mismatch goes, which the boolean cannot say. Older means the host has not
 	// updated and the player can do nothing; newer means we have not, and an update reaches it. The
 	// two sort and read differently, so the browser needs the direction and not just the fact.
-	VersionRelation	versionRelation;
+	zx::VersionRelation	versionRelation;
 
 	// Ping to this server.
 	LONG			lPing;
@@ -268,7 +268,7 @@ bool			BROWSER_IsActive( ULONG ulServer );
 // [rc4l] Everything worth DRAWING, which is wider than what can be joined: a server on another
 // engine version answered us perfectly, it just is not one we can play on today.
 bool			BROWSER_IsListable( ULONG ulServer );
-VersionRelation	BROWSER_GetVersionRelation( ULONG ulServer );
+zx::VersionRelation	BROWSER_GetVersionRelation( ULONG ulServer );
 bool			BROWSER_IsLAN( ULONG ulServer );
 NETADDRESS_s	BROWSER_GetAddress( ULONG ulServer );
 const char		*BROWSER_GetHostName( ULONG ulServer );
