@@ -22,6 +22,7 @@
 #include "network_enums.h"
 #include "sv_commands.h"
 #include "sv_main.h"
+#include "p_local.h"
 #include "v_text.h"
 
 #include "features/identity/computation/identity_compute.h"
@@ -168,6 +169,15 @@ bool SERVER_ProcessFuaAuthCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 			pClient->username = account.c_str( );
 			pClient->loggedIn = true;
+
+			// [rc4l] Tell everyone, now, rather than leaving it to the userinfo exchange.
+			//
+			// That exchange races this one and usually wins, so the account was being established
+			// on the server and never reaching a single screen: playerinfo reported the anonymous
+			// placeholder for a player who had in fact proved who they were. Found by asking it
+			// rather than by trusting that a successful join meant a successful login.
+			if ( PLAYER_IsValidPlayer( ulClient ))
+				SERVERCOMMANDS_SetPlayerAccountName( ulClient );
 
 			// Nothing further needs the exchange, and a kept private key is a key that can leak.
 			pClient->fuaEphemeralPrivate.Clear( );
