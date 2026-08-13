@@ -55,7 +55,7 @@ bool CopyFileBytes( const char *from, const char *to )
 	fclose( in );
 
 	// Checked, not assumed. Buffered writes fail at close as readily as at write, and a full disk
-	// reports it here -- silently keeping a truncated copy under a digest that describes the whole
+	// reports it here, and silently keeping a truncated copy under a digest that describes the whole
 	// file is the one outcome a content-addressed store must never produce.
 	if ( fclose( out ) != 0 )
 		bOk = false;
@@ -74,7 +74,7 @@ namespace zx
 std::string IwadRegistryRoot( void )
 {
 	// The same place the registry list already caches into: per-user, machine-local, and not the
-	// roaming profile -- IWADs are large and roaming would sync them onto every machine a domain
+	// roaming profile, because IWADs are large and roaming would sync them onto every machine a domain
 	// account touches.
 	FString dir = M_GetCachePath( true );
 	if ( dir.IsEmpty( ))
