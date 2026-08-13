@@ -149,7 +149,7 @@ cp tools/freedoom/License.txt "$STAGE"/FREEDOOM-LICENSE.txt
 # [rc4l] Our own base data for total conversions that ship no base file of their own. Built by
 # tools/mkiwad and entirely generated, so it carries nobody else's work. Checked for the same
 # reason the two above are: without it that catalogue entry is unhostable.
-[ -f tools/mkiwad/fuamega.wad ] || { echo "ERROR: tools/mkiwad/fuamega.wad missing -- rebuild it with tools/mkiwad/mkiwad.py" >&2; exit 1; }
+[ -f tools/mkiwad/fuamega.wad ] || { echo "ERROR: tools/mkiwad/fuamega.wad missing, so rebuild it with tools/mkiwad/mkiwad.py" >&2; exit 1; }
 cp tools/mkiwad/fuamega.wad "$STAGE"/
 
 # [rc4l] The addon catalogue. Required rather than best-effort: the HOST tab reads it from beside

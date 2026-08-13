@@ -94,9 +94,8 @@ TEST(TeamsPick, AModeWithNoFreeForAllToLeaveGetsNoControlEvenWhenAsked)
 
 TEST(TeamsPick, TheModesWhoseSidesComeFromTheMapSaySoInThoseWords)
 {
-	// Both of these have sides, so the generic refusal reads as a bug in the entry rather than as
-	// the truth. Checked as its own case because the wording is the whole point of the branch: an
-	// author who is told CTF has "no free-for-all" goes looking for a mistake that is not there.
+	// Both of these have sides, so the generic refusal would send an author looking for a mistake
+	// that is not there, which is the whole point of the branch.
 	const HostGameMode fromTheMap[] = { HostGameMode::CaptureTheFlag, HostGameMode::Skulltag };
 
 	for (size_t i = 0; i < sizeof(fromTheMap) / sizeof(fromTheMap[0]); ++i)

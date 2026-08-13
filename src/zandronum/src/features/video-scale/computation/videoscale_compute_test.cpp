@@ -251,9 +251,8 @@ TEST(ScaleWindowPointToRender, ANativeWindowLeavesThePointWhereItIs)
 
 TEST(ScaleWindowPointToRender, ASmallerBufferPullsThePointIn)
 {
-	// The window is twice the buffer, so a click halfway across the window is halfway across the
-	// buffer. Leaving it unscaled is the whole bug: the pointer sits on one thing and selects
-	// another, and the error grows the further from the origin you click.
+	// The window is twice the buffer, so leaving a click unscaled makes the pointer select
+	// something other than what it sits on, by an error that grows with distance from the origin.
 	int x = 1000, y = 600;
 	ScaleWindowPointToRender(1600, 1200, 800, 600, x, y);
 	EXPECT_EQ(500, x);
@@ -262,9 +261,8 @@ TEST(ScaleWindowPointToRender, ASmallerBufferPullsThePointIn)
 
 TEST(ScaleWindowPointToRender, EachAxisScalesOnItsOwn)
 {
-	// The present stretches to FILL the client rather than letterboxing inside it, so the two
-	// ratios differ whenever the window is not the buffer's shape. One shared ratio would be right
-	// along one axis and wrong along the other.
+	// The present stretches to FILL the client rather than letterboxing inside it, so one shared
+	// ratio would be right along one axis and wrong along the other.
 	int x = 800, y = 300;
 	ScaleWindowPointToRender(1600, 600, 400, 300, x, y);
 	EXPECT_EQ(200, x);
@@ -281,8 +279,8 @@ TEST(ScaleWindowPointToRender, TheOriginIsFixedWhateverTheScale)
 
 TEST(ScaleWindowPointToRender, ASizeNobodyHasSetYetLeavesThePointAlone)
 {
-	// Before the first mode is set, and on any backend that never fills these in. Unscaled is wrong
-	// by a ratio; inventing one from a zero would put the pointer somewhere arbitrary instead.
+	// Before the first mode is set, and on any backend that never fills these in, where a ratio
+	// invented from a zero would put the pointer somewhere arbitrary rather than merely unscaled.
 	int x = 123, y = 45;
 	ScaleWindowPointToRender(0, 0, 640, 400, x, y);
 	EXPECT_EQ(123, x);

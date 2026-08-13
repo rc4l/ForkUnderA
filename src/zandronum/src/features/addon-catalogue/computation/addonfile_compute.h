@@ -74,8 +74,8 @@ enum class HostGameMode
 	TeamPossession,
 	Terminator,
 
-	// The two that take their sides from the map rather than from a cvar. Both want a flag on the
-	// floor, so a pack can only offer them on maps built for them.
+	// The two that take their sides from the map rather than from a cvar, both wanting a flag on
+	// the floor, so a pack can only offer them on maps built for them.
 	CaptureTheFlag,
 	Skulltag,
 };
@@ -327,14 +327,10 @@ struct AddonRemix
 
 	// [rc4l] The way of playing this mix switches to, when it switches to one at all.
 	//
-	// A mix that names a gamemode is an AXIS OF MODES rather than of mods, which is what deathmatch,
-	// last man standing and capture the flag are to an experience that offers all three. Stated here
-	// because the panel's other controls read the mode: teams and lives both ask it first, and a mode
-	// chosen by a pill that could not say so would leave them reading the entry's answer to a
-	// question the player has since changed.
+	// A mix that names a gamemode is an AXIS OF MODES rather than of mods, and it has to say so
+	// here because the teams and lives controls both read the mode before drawing themselves.
 	//
-	// Unknown, which is the default, means this mix is not about the mode and leaves it alone. That
-	// is every gameplay mod ever written for this catalogue.
+	// Unknown, the default, means this mix is not about the mode and leaves it alone.
 	HostGameMode gameMode;
 
 	bool valid;

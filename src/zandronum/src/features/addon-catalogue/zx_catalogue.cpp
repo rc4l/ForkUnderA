@@ -202,12 +202,11 @@ void LoadRoot( const char *root, bool bShipped, std::vector<CatalogueEntry> &out
 // it. The entry scan is unbothered by it for free: `remix` has no addon.json so it is not an entry,
 // and everything under it is too deep for the direct-children rule.
 //
-// `idPrefix` is what makes an entry able to carry its OWN mixes, under its own folder, by pointing
-// this at <entry>/remix/ and prefixing the ids with "<entry>/". A mix whose cfg names a map
-// rotation belongs to one experience and nowhere else -- Mega Man's capture the flag rotation is
-// twenty five of its own maps -- and putting it in the shared pool would mean a flat namespace full
-// of names only one entry could ever use. The prefix keeps the pool flat and the ids unambiguous,
-// and it is the same scan either way rather than a second one that could drift.
+// `idPrefix` is what lets an entry carry its OWN mixes under its own folder, by pointing this at
+// <entry>/remix/ and prefixing the ids with "<entry>/".
+//
+// A mix whose cfg names a map rotation belongs to one experience and nowhere else, so putting it
+// in the shared pool would fill a flat namespace with names only one entry could ever use.
 void LoadRemixRoot( const char *root, const char *idPrefix, std::vector<AddonRemix> &out )
 {
 	FString dir = root;

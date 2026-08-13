@@ -26,11 +26,8 @@ zx::KeyPair g_ServerKey;
 
 const char kSeedTag[] = "seed = ";
 
-// [rc4l] The derivation from the master secret to one operator's account.
-//
-// SHA-256 over a tag, the secret and the server's key. A plain hash is enough here because the
-// input already holds 256 bits of entropy: this is separating one high-entropy secret into many,
-// not stretching a password somebody chose.
+// [rc4l] The derivation from the master secret to one operator's account, a plain SHA-256 because
+// the input already holds 256 bits of entropy and no stretching is called for.
 void DeriveSeed( const zx::Bytes &master, const zx::Bytes &serverPublicKey, zx::Bytes &out )
 {
 	static const char kTag[] = "FUA-IDENTITY-v1-account";
@@ -61,8 +58,7 @@ bool PublicFromSeed( const zx::Bytes &seed, zx::Bytes &out )
 	return bOk;
 }
 
-// [rc4l] The key file is text so a player can back it up by copying the line out of it, and so the
-// version can be read without a parser.
+// [rc4l] The key file is text so a player can back it up by copying the line out of it.
 bool WriteKeyFile( const char *path, const zx::Bytes &seed )
 {
 	FString dir = path;
@@ -112,7 +108,7 @@ bool ReadKeyFile( const char *path, zx::Bytes &seed )
 	return bFound;
 }
 
-// Load `path`, or create it with a fresh secret. `what` names the file in the first-run notice.
+// Load `path`, or create it with a fresh secret, where `what` names the file in the notice.
 bool LoadOrCreate( const std::string &path, const char *what, zx::KeyPair &out )
 {
 	if ( path.empty( ))
@@ -131,8 +127,8 @@ bool LoadOrCreate( const std::string &path, const char *what, zx::KeyPair &out )
 			return false;
 		}
 
-		// [rc4l] Said once, loudly, because it is the only safety mechanism there is: no server
-		// holds a copy, so a lost file is a lost account with no way to recover it.
+		// [rc4l] Said once and loudly, because no server holds a copy and a lost file is a lost
+		// account.
 		Printf( TEXTCOLOR_GOLD "Created your %s.\n" TEXTCOLOR_NORMAL
 			"%s\nBack it up. Anyone holding it is you, and losing it cannot be undone.\n",
 			what, path.c_str( ));
@@ -161,8 +157,8 @@ bool Identity_InitClient( const char *configRoot, int instance )
 
 bool Identity_InitServer( const char *configRoot )
 {
-	// [rc4l] Worth its own warning: losing this one changes every player's derived account, which
-	// orphans the whole progression table rather than one person's.
+	// [rc4l] Worth its own warning, because losing this one orphans every player's progression
+	// rather than one person's.
 	return LoadOrCreate( ServerAuthKeyPath( configRoot ? configRoot : "" ),
 		"server identity (every account on your server is derived from it)", g_ServerKey );
 }
@@ -314,8 +310,8 @@ bool Identity_SharedSession( const Bytes &ourPrivate, const Bytes &theirPublic, 
 
 			if ( bOk )
 			{
-				// [rc4l] Hashed rather than used raw: the session ID is quoted in signed messages,
-				// and the shared secret itself should never appear anywhere it could be logged.
+				// [rc4l] Hashed rather than used raw, so the shared secret never appears in a
+				// signed message that could be logged.
 				sessionIdOut.resize( 32 );
 				SHA256( &shared[0], len, &sessionIdOut[0] );
 			}
@@ -332,9 +328,8 @@ bool Identity_SharedSession( const Bytes &ourPrivate, const Bytes &theirPublic, 
 
 std::string Identity_ConfigRoot( void )
 {
-	// [rc4l] The config directory, NOT the data one that holds the IWAD store. The IWAD store is
-	// meant to be found by the engine's file search; a secret in a searched folder is a secret any
-	// mod can read the day somebody points -file at it.
+	// [rc4l] The config directory and NOT the data one that holds the IWAD store, because a secret
+	// in a folder the engine file search walks is a secret any mod can read.
 	FString path = M_GetConfigPath( false );
 	FixPathSeperator( path );
 
@@ -347,9 +342,8 @@ std::string Identity_ConfigRoot( void )
 
 } // namespace zx
 
-// [rc4l] Proves the crypto end to end without a server: derive, sign, verify, refuse a forgery, and
-// agree a session key with itself. Kept because "authentication is broken" is otherwise a very long
-// way from "which of the five steps".
+// [rc4l] Proves the crypto end to end without a server, so "authentication is broken" is a short
+// way from knowing which of the five steps broke.
 CCMD( fua_identity )
 {
 	const std::string root = zx::Identity_ConfigRoot( );
@@ -366,7 +360,7 @@ CCMD( fua_identity )
 	const zx::KeyPair account = zx::Identity_DeriveAccount( fakeServer );
 	Printf( "account here: %s\n", zx::Identity_AccountName( account.publicKey ).c_str( ));
 
-	// Same server twice must give the same account, or nobody's progression survives a reconnect.
+	// The same server twice must give the same account, or no progression survives a reconnect.
 	const zx::KeyPair again = zx::Identity_DeriveAccount( fakeServer );
 	Printf( "stable across derivations: %s\n",
 		( account.publicKey == again.publicKey ) ? "yes" : TEXTCOLOR_RED "NO" );
@@ -385,7 +379,7 @@ CCMD( fua_identity )
 	Printf( "verify: %s\n",
 		zx::Identity_Verify( account.publicKey, message, sig ) ? "ok" : TEXTCOLOR_RED "FAILED" );
 
-	// The one that matters: a signature must not verify against a message it was not made for.
+	// The one that matters, since a signature must not verify against another message.
 	Printf( "rejects a forgery: %s\n",
 		zx::Identity_Verify( account.publicKey, message + "x", sig ) ? TEXTCOLOR_RED "NO" : "yes" );
 

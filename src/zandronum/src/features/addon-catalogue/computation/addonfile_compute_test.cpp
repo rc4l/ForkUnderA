@@ -158,9 +158,8 @@ TEST(AddonFile, AnUnknownKeyInsideAFileIsIgnoredToo)
 
 TEST(AddonFile, AFileSaysWhatItIsRatherThanBeingKnownByItsName)
 {
-	// The role a file fills, so a mix that brings its own copy of something can suppress the
-	// entry's. Read here because it is the file that states it; a filename carries a version and
-	// stops matching the moment the thing is upgraded, which is the whole reason for the key.
+	// The role a file fills, so a mix bringing its own copy of something can suppress the entry's,
+	// keyed on the role rather than the filename that stops matching the day it is upgraded.
 	const AddonEntry e = Parse(
 		"{ \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"spree-2.pk3\", \"provides\": \"spree\","
@@ -173,8 +172,8 @@ TEST(AddonFile, AFileSaysWhatItIsRatherThanBeingKnownByItsName)
 
 TEST(AddonFile, AFileWithNoRoleClaimsNone)
 {
-	// Most files fill no role worth naming, and the absence has to stay empty rather than fall back
-	// to the name: an empty role matches nothing, which is what "supersedes nobody" must mean.
+	// Most files fill no role worth naming, and the absence stays empty rather than falling back to
+	// the name, an empty role being what "supersedes nobody" has to mean.
 	const AddonEntry e = Parse(
 		"{ \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
@@ -186,8 +185,8 @@ TEST(AddonFile, AFileWithNoRoleClaimsNone)
 
 TEST(AddonFile, ARoleThatIsNotAStringIsRefused)
 {
-	// Not skipped. A role that failed to read is a file that silently stops superseding anything,
-	// and the mix it belongs to then loads two copies of the same system.
+	// Not skipped, because a role that failed to read is a file that silently stops superseding
+	// anything and lets its mix load two copies of the same system.
 	EXPECT_FALSE(Parse(
 		"{ \"kind\": \"pvp\", \"name\": \"X\","
 		"  \"files\": [{ \"name\": \"a.pk3\", \"provides\": 7,"
@@ -272,10 +271,8 @@ TEST(AddonFile, AGamemodeNobodyKnowsIsNotAnError)
 	// Not knowing is the safe answer: everything that reads this treats Unknown as "offer nothing
 	// that depends on the gamemode", which is what an entry written for a later build should get.
 	//
-	// Domination is a real Zandronum gamemode that this schema does not model, which makes it the
-	// honest example. It was "possession" until possession became one of the modes we do model, and
-	// the lesson is that the example has to be a mode we have decided against rather than one we
-	// have not reached yet.
+	// Domination is a real Zandronum gamemode this schema does not model, which is why the example
+	// has to be a mode we decided against rather than one we have not reached yet.
 	const AddonEntry e = Parse(
 		"{ \"kind\": \"pvp\", \"name\": \"X\", \"gamemode\": \"domination\","
 		"  \"files\": [{ \"name\": \"x.pk3\", \"md5\": \"aa3896cb47c781facab7ea7f39395201\" }] }");
@@ -1016,8 +1013,8 @@ zx::AddonRemix ParseRemix(const char *json)
 
 TEST(RemixFile, AMixMaySayWhichWayOfPlayingItSwitchesTo)
 {
-	// An axis of MODES rather than of mods. Read into the enum here so a name nobody knows becomes
-	// Unknown at the door instead of somewhere with no way to say so.
+	// An axis of MODES rather than of mods, read into the enum here so a name nobody knows becomes
+	// Unknown at the door rather than somewhere with no way to say so.
 	const zx::AddonRemix r = ParseRemix(
 		"{ \"name\": \"Capture the Flag\", \"group\": \"mode\", \"gamemode\": \"ctf\","
 		"  \"cfg\": \"ctf.cfg\" }");
@@ -1028,8 +1025,8 @@ TEST(RemixFile, AMixMaySayWhichWayOfPlayingItSwitchesTo)
 
 TEST(RemixFile, AMixThatSaysNothingAboutTheModeLeavesItAlone)
 {
-	// Every gameplay mod in the catalogue. Unknown is what stops a mod pill from blanking the mode
-	// the entry declared, which is the difference between adding Brutal Doom and changing the game.
+	// Every gameplay mod in the catalogue, where Unknown is what stops a mod pill from blanking the
+	// mode the entry declared.
 	EXPECT_EQ(zx::HostGameMode::Unknown,
 		ParseRemix("{ \"name\": \"Brutal Doom\" }").gameMode);
 
@@ -1041,8 +1038,8 @@ TEST(RemixFile, AMixThatSaysNothingAboutTheModeLeavesItAlone)
 
 TEST(RemixFile, AGamemodeThatIsNotAStringIsRefused)
 {
-	// Not skipped. A mode that failed to read is a pill that silently stops switching anything,
-	// and the panel would then offer teams and lives for whatever the entry happened to say.
+	// Not skipped, because a mode that failed to read is a pill that silently stops switching
+	// anything and leaves the panel offering teams and lives for whatever the entry said.
 	EXPECT_FALSE(ParseRemix("{ \"name\": \"X\", \"gamemode\": 7 }").valid);
 }
 

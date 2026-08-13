@@ -8,8 +8,8 @@
 
 #include "doomtype.h"
 
-// Forward declared rather than included: networkshared.h needs the engine types pulled in first,
-// so including it here would make this header depend on its own include order.
+// Forward declared rather than included, because networkshared.h needs the engine types pulled in
+// first and including it here would make this header depend on its own include order.
 struct BYTESTREAM_s;
 #include "features/identity/zx_identity.h"
 

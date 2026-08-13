@@ -100,10 +100,10 @@ RemixPick PickRemix(const std::vector<AddonRemix> &offered, const std::string &w
 
 HostGameMode EffectiveGameMode(HostGameMode stated, const std::vector<RemixPick> &picks)
 {
-	// Last one wins, and in practice there is only ever one: mode mixes share a group, so the
-	// grouping already guarantees a single pick can name a mode. Written as a sweep rather than a
-	// find-first anyway, because relying on the grouping here would make this quietly wrong the day
-	// a catalogue splits modes across two axes, and the sweep is the same length either way.
+	// Last one wins, and in practice there is only ever one, mode mixes sharing a group.
+	//
+	// Written as a sweep rather than a find-first anyway, because leaning on the grouping here
+	// would go quietly wrong the day a catalogue splits modes across two axes.
 	HostGameMode out = stated;
 
 	for (size_t i = 0; i < picks.size(); ++i)

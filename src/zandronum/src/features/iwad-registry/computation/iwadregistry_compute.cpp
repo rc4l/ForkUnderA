@@ -16,8 +16,7 @@ bool IsHexDigit(char c)
 	return ((c >= '0') && (c <= '9')) || ((c >= 'a') && (c <= 'f')) || ((c >= 'A') && (c <= 'F'));
 }
 
-// No trailing separator, whichever kind the caller handed us. Both are separators on Windows and
-// the store is written by us on every platform, so normalising to '/' keeps one shape in the tests.
+// No trailing separator of either kind, normalised to '/' so the store has one shape everywhere.
 std::string WithoutTrailingSlash(const std::string &s)
 {
 	std::string out = s;
@@ -33,8 +32,7 @@ namespace zx
 
 std::string NormalizeDigest(const std::string &sha256Hex)
 {
-	// Exactly 64. A shorter string is a truncated or different digest, and a longer one is not a
-	// SHA-256 at all; either way it is not an identity we can file something under.
+	// Exactly 64, since anything else is not a SHA-256 and so not an identity to file under.
 	if (sha256Hex.size() != 64)
 		return std::string();
 
@@ -57,8 +55,8 @@ bool IsSafeStoreName(const std::string &fileName)
 	if (fileName.empty())
 		return false;
 
-	// "." and ".." are not names, they are places. A leaf of ".." would put the copy in the folder
-	// ABOVE its digest, which is where every other digest's folder lives.
+	// "." and ".." are places rather than names, and a leaf of ".." would put the copy in the folder
+	// above its digest, where every other digest's folder lives.
 	if ((fileName == ".") || (fileName == ".."))
 		return false;
 

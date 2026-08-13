@@ -17,9 +17,8 @@
 namespace
 {
 
-// [rc4l] Copied in fixed-size pieces rather than read whole. An IWAD is a few tens of megabytes
-// today and nothing stops one being far larger, and a copy that allocates the file's own size is a
-// copy that fails on exactly the files most worth keeping.
+// [rc4l] Copied in fixed-size pieces rather than read whole, since a copy that allocates the file's
+// own size is a copy that fails on exactly the files most worth keeping.
 bool CopyFileBytes( const char *from, const char *to )
 {
 	FILE *in = fopen( from, "rb" );
@@ -54,9 +53,8 @@ bool CopyFileBytes( const char *from, const char *to )
 
 	fclose( in );
 
-	// Checked, not assumed. Buffered writes fail at close as readily as at write, and a full disk
-	// reports it here, and silently keeping a truncated copy under a digest that describes the whole
-	// file is the one outcome a content-addressed store must never produce.
+	// Checked rather than assumed, because a buffered write fails at close as readily as at write
+	// and a truncated copy filed under a whole file's digest is the one outcome to never produce.
 	if ( fclose( out ) != 0 )
 		bOk = false;
 
@@ -73,9 +71,8 @@ namespace zx
 
 std::string IwadRegistryRoot( void )
 {
-	// The same place the registry list already caches into: per-user, machine-local, and not the
-	// roaming profile, because IWADs are large and roaming would sync them onto every machine a domain
-	// account touches.
+	// The same place the registry list already caches into, which is machine-local rather than the
+	// roaming profile that would sync tens of megabytes onto every machine an account touches.
 	FString dir = M_GetCachePath( true );
 	if ( dir.IsEmpty( ))
 		return std::string( );
@@ -96,8 +93,8 @@ std::string RegisterIwad( const char *path )
 	if ( !Sha256OfFile( path, hex, sizeof( hex )))
 		return std::string( );
 
-	// The leaf keeps the file's own name, which is the part of the source path we want. Everything
-	// before it is where this copy happened to come from and says nothing about what it is.
+	// The leaf keeps the file's own name, everything before it being where this copy happened to
+	// come from rather than anything about what it is.
 	FString leaf = path;
 	FixPathSeperator( leaf );
 	const long slash = leaf.LastIndexOf( '/' );
@@ -108,8 +105,8 @@ std::string RegisterIwad( const char *path )
 	if ( dest.empty( ))
 		return std::string( );
 
-	// Already registered. The destination IS the digest, so this is the whole "have we done this"
-	// check: no list to keep, and nothing to go stale if a player empties the folder by hand.
+	// Already registered, and since the destination IS the digest this is the whole check, with no
+	// list to keep and nothing to go stale if a player empties the folder by hand.
 	if ( FileExists( dest.c_str( )))
 		return dest;
 
@@ -124,8 +121,8 @@ std::string RegisterIwad( const char *path )
 
 } // namespace zx
 
-// [rc4l] Registering a file by hand, which is how somebody points us at the copy of Doom II they
-// already own rather than waiting for the engine to happen across it.
+// [rc4l] Registering a file by hand, which is how somebody points us at a copy they already own
+// rather than waiting for the engine to happen across it.
 CCMD( fua_iwadregister )
 {
 	if ( argv.argc( ) < 2 )
