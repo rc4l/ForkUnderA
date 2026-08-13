@@ -704,7 +704,7 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 			else if (key == "gamemode")
 			{
 				// Read into the enum rather than kept as text, so a name nobody knows becomes
-				// Unknown here instead of somewhere further along that has no way to say so.
+				// Unknown here rather than somewhere with no way to say so.
 				std::string mode;
 				ok = ReadString(r, mode);
 				if (ok)

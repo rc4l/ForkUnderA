@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-// [rc4l] Fua IWAD registration: taking a copy of an IWAD into the shared per-user store.
+// [rc4l] Fua IWAD registration, meaning taking a copy of an IWAD into the shared per-user store.
 //
-// The store is described in computation/iwadregistry_compute.h. This is the part that touches the
-// disk: where the root is, hashing the file, and copying it in if it is not already there.
+// The store itself is described in computation/iwadregistry_compute.h, and this is the part that
+// touches the disk.
 
 #ifndef ZX_IWADREGISTRY_H
 #define ZX_IWADREGISTRY_H
@@ -14,16 +14,15 @@
 namespace zx
 {
 
-// The ForkUnderA data root for this user, from the OS rather than assembled. Asking is what makes a
-// redirected corporate profile work, and a redirected profile is not a rare setup.
+// The ForkUnderA data root for this user, asked of the OS rather than assembled, which is what
+// makes a redirected profile work.
 std::string IwadRegistryRoot( void );
 
-// Register `path` if it is not registered already. Returns the path of the stored copy, or "" when
-// nothing was stored, meaning an unreadable file, a hash that failed, or no writable root.
+// Register `path` if it is not registered already, returning the path of the stored copy or "" for
+// an unreadable file, a hash that failed, or no writable root.
 //
-// Idempotent by construction: the destination is the file's own digest, so registering the same
-// file twice finds it already there and copies nothing. That is what makes it safe to call on every
-// IWAD the engine touches without keeping a list of what has been done.
+// Idempotent by construction, the destination being the file's own digest, so it is safe to call on
+// every IWAD the engine touches without keeping a list of what has been done.
 std::string RegisterIwad( const char *path );
 
 } // namespace zx

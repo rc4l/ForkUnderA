@@ -422,15 +422,13 @@ public:
 	virtual int GetTrueHeight() { return GetHeight(); }
 
 	// [rc4l] Adapted from uzdoom@9b6756114b89c37d607705713bd7705cf08c8a20 ("Scale mouse coordinates
-	// based on window size"): the seam where an OS mouse position becomes a buffer one, called from
-	// the platform input layer.
+	// based on window size"), being the seam where an OS mouse position becomes a buffer one.
 	//
-	// ADAPTED rather than ported. Upstream reads mOutputLetterbox off a DFrameBuffer this tree does
-	// not have, and their present letterboxes inside the client while ours stretches to fill it, so
-	// the hook is theirs and the arithmetic is ours. See features/video-scale.
+	// ADAPTED rather than ported, because upstream reads mOutputLetterbox off a DFrameBuffer this
+	// tree does not have and letterboxes where we stretch to fill, so only the hook is theirs.
 	//
-	// A no-op by default: a backend that renders straight at the window's size has nothing to
-	// convert, and that is every backend except the scaled one.
+	// A no-op by default, since a backend that renders straight at the window size has nothing to
+	// convert.
 	virtual void ScaleCoordsFromWindow(int &x, int &y) { (void)x; (void)y; }
 
 	uint32 GetLastFPS() const { return LastCount; }

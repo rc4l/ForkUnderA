@@ -512,10 +512,11 @@ static int serverbrowser_OriginY( void );
 // [rc4l] Players sits as far right as it can rather than in the middle, and every pixel that buys
 // goes to the name: SB_NAME_MAX_WIDTH is measured from here, so moving this moves that.
 //
-// The counts are what set the floor. Player counts are at most two digits a side -- MAXPLAYERS is
-// 64 -- so the widest this column ever draws is "64/64", and the header "PLRS" is shorter still.
-// Ping is right-aligned ON SB_COL_PING and grows leftward, at most "999" under its own "PING"
-// header, so the gap left here is measured against that header rather than against the digits.
+// The counts are what set the floor, MAXPLAYERS being 64, so the widest this column ever draws is
+// "64/64" and the header "PLRS" is shorter still.
+//
+// Ping is right-aligned on SB_COL_PING and grows leftward to at most "999", so the gap left here
+// is measured against its "PING" header rather than against the digits.
 #define SB_COL_PLAYERS		SB_X( 330 )
 #define SB_COL_PING			SB_X( 398 )
 
@@ -7212,23 +7213,17 @@ public:
 
 	// [rc4l] The pill axes, one pass per band.
 	//
-	// MIX leads the panel. It is the setting a host is most likely to have come here to change -- it
-	// is the one with a dozen answers where the rest have two or three -- and it is the only one
-	// whose row count grows with the catalogue, so burying it under three sliders puts the longest
-	// block furthest from the top of the region.
+	// MIX leads the panel, being the setting a host most likely came here to change and the only
+	// one whose row count grows with the catalogue.
 	//
-	// MODE comes next, and it is above the SLIDERS rather than below them because it decides what
-	// they say. Teams and lives both read the gamemode, so a mode pill under them makes changing it
-	// reflow everything above it: the row you just clicked moves, and the control you were about to
-	// reach for is somewhere else. A control belongs above what it changes.
+	// MODE comes next, above the sliders rather than below them, because teams and lives both read
+	// the gamemode and a control belongs above what it changes.
 	//
-	// Everything else follows the sliders. Any axis added later lands there unless it is argued for,
-	// which is the right default: leading the panel is a claim, not a courtesy.
+	// Everything else follows the sliders, where any axis added later lands unless argued for.
 	enum class HostAxisBand { Mix, Mode, Rest };
 
-	// Which band an axis is in. MODE is recognised by what its choices DO rather than by what the
-	// catalogue called the group: an axis whose pills switch the gamemode is a mode axis whatever
-	// its id, and keying this on a magic group name would be a rule the schema never stated.
+	// Which band an axis is in, with MODE recognised by what its choices DO rather than by what the
+	// catalogue called the group, since a magic group name would be a rule the schema never made.
 	HostAxisBand HostBandOf( const zx::RemixGroup &group )
 	{
 		if ( group.id == kHostMixGroup )

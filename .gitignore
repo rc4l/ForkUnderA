@@ -62,3 +62,6 @@ ZandroX-dev-*/
 *.rej.orig
 *.orig
 .build-status
+
+# [rc4l] Reference material for the mkiwad manifest, not ours to redistribute.
+tools/mm8bdm/

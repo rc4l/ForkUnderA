@@ -128,9 +128,8 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize,
 		{
 			++blocks;
 
-			// [rc4l] Into the caller's when it supplied one. A candidate file's own definition has
-			// not been accepted yet at this point, and appending first would leave a rejected file's
-			// claim in the list for everything afterwards to match against.
+			// [rc4l] Into the caller's when it supplied one, since appending first would leave a
+			// rejected file's claim in the list for everything afterwards to match against.
 			FIWADInfo *iwad = (result != NULL) ? result : &mIWads[mIWads.Reserve(1)];
 			sc.MustGetStringName("{");
 			while (!sc.CheckString("}"))
@@ -232,9 +231,8 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize,
 		}
 		else if (sc.Compare("NAMES"))
 		{
-			// [rc4l] Never from a candidate. NAMES adds filenames to the list the engine SEARCHES
-			// FOR, so honouring it here would let any file the player happens to own extend that
-			// search, which is a claim about the whole install rather than about itself.
+			// [rc4l] Never from a candidate, because NAMES extends the list the engine searches for
+			// and that is a claim about the whole install rather than about the file itself.
 			if (result != NULL)
 			{
 				sc.MustGetStringName("{");
@@ -265,16 +263,13 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize,
 		}
 	}
 
-	// [rc4l] A DECLARATION is one block. A LIST is many, and the two are the same lump name.
+	// [rc4l] A DECLARATION is one block and a LIST is many, and both go by the same lump name.
 	//
-	// The engine's own pk3 carries an IWADINFO holding every game it can recognise. Read as a
-	// self-declaration that reads as "this file is the first game in its own list", which made
-	// fua_core_v0.2.19.pk3 identify as an IWAD and get itself registered as one. Found by looking
-	// in the store afterwards, not by reasoning about it.
+	// Read as a self-declaration, the engine's own catalogue of every game it recognises says "this
+	// file is the first game in its own list", which registered fua_core.pk3 as an IWAD.
 	//
-	// Refused by COUNT rather than by excluding the base wad by name, because the property that
-	// matters is what the lump says, not which file it came out of: any pk3 shipping a catalogue of
-	// other people's games is making the same mistake, and would be just as wrong to believe.
+	// Refused by count rather than by excluding the base pk3 by name, because what matters is what
+	// the lump says rather than which file it came out of.
 	if ((result != NULL) && (blocks != 1))
 		result->Name = "";
 }
@@ -319,19 +314,17 @@ void FIWadManager::ParseIWadInfos(const char *fn)
 //==========================================================================
 
 // [rc4l] Adapted from uzdoom@cdff5bdc08a2f4eac784f3984b18cd788e16be42 ("rewrite of the IWAD loading
-// mechanism"), which introduced FIWadManager::CheckIWADInfo: a file carrying its own IWADINFO says
-// what it is, instead of being guessed at from the lumps it happens to contain.
+// mechanism"), which introduced FIWadManager::CheckIWADInfo so that a file carrying its own
+// IWADINFO says what it is instead of being guessed at from the lumps it happens to contain.
 //
-// ONE PIECE of that rewrite. The commit also rebuilds discovery around a FileSystem this tree does
-// not have, and that part is deliberately not taken: its row stays pending.
+// ONE PIECE of that rewrite, the rest of which rebuilds discovery around a FileSystem this tree
+// does not have, so that row stays pending.
 //
-// ADAPTED, not ported. Upstream builds a whole FileSystem to read one lump; this tree has
-// FResourceFile, which ParseIWadInfos twelve lines up already uses for exactly this. The idea and
-// the precedence rule are theirs, the file access is ours.
+// ADAPTED rather than ported, because upstream builds a whole FileSystem to read one lump where
+// this tree has the FResourceFile that ParseIWadInfos twelve lines up already uses.
 //
-// Worth having because MustContain is deliberately coarse -- Doom II's is "MAP01" and nothing else,
-// so every megawad ever made matches it. Recognition answers "what can this run as"; a declaration
-// answers "what IS this", and only the file itself can.
+// Worth having because MustContain is deliberately coarse, Doom II's being "MAP01" and nothing
+// else, so recognition can only ever answer what a file can run as rather than what it is.
 int FIWadManager::CheckIWADInfo(const char *fn)
 {
 	FResourceFile *resfile = FResourceFile::OpenResourceFile(fn, NULL, true);
@@ -352,14 +345,13 @@ int FIWadManager::CheckIWADInfo(const char *fn)
 			FIWADInfo declared;
 			ParseIWadInfo(fn, (const char *)lmp->CacheLump(), lmp->LumpSize, &declared);
 
-			// A block that named nothing is not a claim. Refused rather than pushed, or the list
-			// grows an anonymous entry that the first file with any lump at all would match.
+			// A block that named nothing is not a claim, and pushing it would grow an anonymous
+			// entry that the first file with any lump at all would match.
 			if (declared.Name.IsEmpty())
 				break;
 
-			// Already known by that name, so this is another copy of a game we can describe rather
-			// than a new one. Same rule upstream uses, and it is what stops a shelf full of the same
-			// IWAD from filling the picker with duplicates.
+			// Already known by that name, so this is another copy of a game we can describe, which
+			// is the rule that stops a shelf full of one IWAD filling the picker with duplicates.
 			for (unsigned j = 0; j < mIWads.Size(); ++j)
 			{
 				if (mIWads[j].Name.CompareNoCase(declared.Name) == 0)
@@ -374,8 +366,8 @@ int FIWadManager::CheckIWADInfo(const char *fn)
 		}
 		catch (CRecoverableError &err)
 		{
-			// A malformed declaration costs that file its claim, nothing else. Letting this escape
-			// would mean one bad file in the search path stopping the engine from starting at all.
+			// A malformed declaration costs that file its claim and nothing else, where letting the
+			// error escape would stop the engine starting at all.
 			Printf(TEXTCOLOR_RED "%s: %s\nIgnoring its IWADINFO.\n", fn, err.GetMessage());
 			found = -1;
 		}
@@ -389,11 +381,11 @@ int FIWadManager::CheckIWADInfo(const char *fn)
 
 int FIWadManager::ScanIWAD (const char *iwad)
 {
-	// [rc4l] What the file says about itself beats what its lumps imply. A declaration is exact and
-	// recognition is a guess, so consulting the guess first could only ever overrule the truth.
+	// [rc4l] What the file says about itself beats what its lumps imply, a declaration being exact
+	// where recognition is a guess.
 	//
-	// This opens the file a second time, which is the price of keeping the two answers separable.
-	// It happens a handful of times at startup and never in a frame.
+	// This opens the file a second time, which happens a handful of times at startup and never in
+	// a frame.
 	const int declared = CheckIWADInfo(iwad);
 	if (declared >= 0)
 		return declared;
@@ -435,11 +427,9 @@ int FIWadManager::ScanIWAD (const char *iwad)
 
 // [rc4l] Register every IWAD in one folder, whatever the engine is doing about finding one.
 //
-// Separate from CheckIWAD because that runs only while the engine still NEEDS an IWAD: launch with
-// a -iwad that resolves and the whole directory search is skipped (see IdentifyVersion), so the
-// rest of the player's collection is never looked at and never registered. Archiving what somebody
-// owns is not the same question as booting, and tying it to booting is what made a doom2.wad in the
-// download folder invisible.
+// Separate from CheckIWAD because that runs only while the engine still needs an IWAD, and a -iwad
+// that resolves skips the whole directory search (see IdentifyVersion) along with the rest of the
+// player's collection.
 void FIWadManager::RegisterIWADsIn(const char *dir)
 {
 	if ((dir == NULL) || (*dir == '\0'))
@@ -456,11 +446,11 @@ void FIWadManager::RegisterIWADsIn(const char *dir)
 		path.Format("%s%s%s", dir, slash, mIWadNames[i].GetChars());
 		FixPathSeperator(path);
 
-		// A stat per known name, and only files that exist are opened at all.
+		// A stat per known name, with only files that exist opened at all.
 		if (!FileExists(path))
 			continue;
 
-		// Still has to BE one. The name list is what to look for, never what a file is.
+		// Still has to BE one, the name list being what to look for rather than what a file is.
 		if (ScanIWAD(path) == -1)
 			continue;
 
@@ -749,14 +739,11 @@ const FIWADInfo *FIWadManager::FindIWAD(TArray<FString> &wadfiles, const char *i
 {
 	int iwadType = IdentifyVersion(wadfiles, iwad, basewad);
 
-	// [rc4l] Fua IWAD registration, over every folder we know about rather than only the ones
-	// IdentifyVersion happened to need. It stops searching the moment it has something to boot
-	// from, which with an explicit -iwad is immediately, so this is the only pass that sees a
-	// player's whole collection.
+	// [rc4l] Fua IWAD registration over every folder we know about, rather than only the ones
+	// IdentifyVersion happened to need before it stopped at the first thing it could boot from.
 	//
-	// After identification, so the definitions are loaded and ScanIWAD can answer. Costs a stat per
-	// known name per folder, and a hash per file the first time it is seen: the destination is the
-	// digest, so an already-registered file is found present and nothing is read.
+	// Run after identification so the definitions are loaded, at the cost of a stat per known name
+	// per folder and a hash per file the first time it is seen.
 	RegisterIWADsIn(progdir);
 
 	static const char *const kSections[] = { "IWADSearch.Directories", "FileSearch.Directories" };

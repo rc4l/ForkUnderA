@@ -618,8 +618,8 @@ TEST(PickRemix, CarriesTheProvidedRolesThrough)
 
 TEST(RemixPick, APickCarriesTheModeItSwitchesTo)
 {
-	// Both ways in, because a pick that fell back to the baseline must answer the same as one that
-	// was asked for by name: the caller reads the mode off the pick either way.
+	// Both ways in, because a pick that fell back to the baseline must answer the same as one asked
+	// for by name.
 	std::vector<AddonRemix> offered;
 	offered.push_back(Mode("dm", "Deathmatch", zx::HostGameMode::Deathmatch));
 	offered.push_back(Mode("ctf", "Capture the Flag", zx::HostGameMode::CaptureTheFlag));
@@ -637,8 +637,8 @@ TEST(EffectiveGameMode, NothingPickedLeavesWhatTheEntrySaid)
 
 TEST(EffectiveGameMode, AModeMixWinsOverTheEntry)
 {
-	// The pill is the more recent and more specific statement: the entry says how it plays by
-	// default, and picking CAPTURE THE FLAG is the player changing it now.
+	// The pill is the more recent and more specific statement, the entry saying only how it plays
+	// by default.
 	std::vector<AddonRemix> offered;
 	offered.push_back(Mode("dm", "Deathmatch", zx::HostGameMode::Deathmatch));
 	offered.push_back(Mode("ctf", "Capture the Flag", zx::HostGameMode::CaptureTheFlag));
@@ -651,8 +651,8 @@ TEST(EffectiveGameMode, AModeMixWinsOverTheEntry)
 
 TEST(EffectiveGameMode, AMixThatIsNotAboutTheModeLeavesItAlone)
 {
-	// Every gameplay mod ever written for this catalogue. Brutal Doom does not change deathmatch
-	// into something else, and a mod axis must not be able to blank the mode by being picked.
+	// Every gameplay mod ever written for this catalogue, none of which may blank the mode simply
+	// by being picked.
 	std::vector<AddonRemix> offered(1, Remix("brutal", "Brutal Doom"));
 	std::vector<RemixPick> picks(1, PickRemix(offered, "brutal"));
 
@@ -663,9 +663,8 @@ TEST(EffectiveGameMode, AMixThatIsNotAboutTheModeLeavesItAlone)
 
 TEST(EffectiveGameMode, TheLastMixNamingAModeIsTheOneInForce)
 {
-	// Two axes both naming a mode is a catalogue asking for something no server can do, since one
-	// server runs one gamemode. Resolved rather than refused, and resolved the same way every time,
-	// so the panel and the server cannot disagree about which of them won.
+	// Two axes both naming a mode is a catalogue asking for what no server can do, resolved the
+	// same way every time so the panel and the server cannot disagree about which of them won.
 	std::vector<AddonRemix> offered;
 	offered.push_back(Mode("ctf", "Capture the Flag", zx::HostGameMode::CaptureTheFlag));
 	offered.push_back(Remix("mod", "Some Mod"));

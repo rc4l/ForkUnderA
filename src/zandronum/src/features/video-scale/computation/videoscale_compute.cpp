@@ -169,7 +169,7 @@ void ScaleWindowPointToRender(
 	int &x, int &y)
 {
 	// Each axis on its own, because the present stretches each to fill the client and the two
-	// ratios are not the same number whenever the window is not the render buffer's shape.
+	// ratios differ whenever the window is not the render buffer's shape.
 	if ((clientWidth > 0) && (renderWidth > 0))
 		x = (x * renderWidth) / clientWidth;
 

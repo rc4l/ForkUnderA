@@ -124,18 +124,14 @@ ScaleReconcile ComputeScaleReconcile(
 	int cachedClientWidth, int cachedClientHeight,
 	int wantWidth, int wantHeight);
 
-// [rc4l] A point in WINDOW pixels to the RENDER pixels everything is drawn in.
+// [rc4l] A point in WINDOW pixels to the RENDER pixels everything is drawn in, since the scale
+// feature keeps the window at one size and renders into a buffer of another.
 //
-// The scale feature splits those two apart: the window keeps its size and the engine renders into a
-// buffer of another one. Everything that draws works in render pixels, and the mouse arrives from
-// the OS in window pixels, so at any scale but Native the two disagree and every hit test is off by
-// the ratio between them. Upstream calls this ScaleCoordsFromWindow; ours is the same idea against
-// our own present rect, which fills the client rather than letterboxing inside it, so this is a
-// scale with no offset to undo.
+// Upstream calls this ScaleCoordsFromWindow, and ours is the same idea against a present rect that
+// fills the client rather than letterboxing inside it, so there is no offset to undo.
 //
-// Sizes that are zero or negative mean nothing has been set up yet. The point is then left alone,
-// because a window with no size cannot have been clicked and inventing a ratio from it would put
-// the pointer somewhere arbitrary rather than merely unscaled.
+// A size of zero or less means nothing has been set up yet, and the point is left alone rather than
+// scaled by a ratio invented from it.
 void ScaleWindowPointToRender(
 	int clientWidth, int clientHeight,
 	int renderWidth, int renderHeight,
