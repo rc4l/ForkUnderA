@@ -94,6 +94,18 @@ TEST(McpRpc, GetFloatRejectsMissingAndNonNumeric)
 	EXPECT_NEAR(v, 42.0, 1e-9);                        // out untouched on failure
 }
 
+TEST(McpRpc, DegreesToViewUnitsIsExactForDivisorsAndSigned)
+{
+	EXPECT_EQ(DegreesToViewUnits(135.0), 24576); // the scenario angle -- exact
+	EXPECT_EQ(DegreesToViewUnits(90.0), 16384);
+	EXPECT_EQ(DegreesToViewUnits(180.0), 32768);
+	EXPECT_EQ(DegreesToViewUnits(360.0), 65536);
+	EXPECT_EQ(DegreesToViewUnits(0.0), 0);
+	EXPECT_EQ(DegreesToViewUnits(-45.0), -8192); // sign preserved
+	// arbitrary angle rounds to nearest BAM step (10 deg = 1820.44 -> 1820)
+	EXPECT_EQ(DegreesToViewUnits(10.0), 1820);
+}
+
 TEST(McpRpc, GetStrDecodesEscapes)
 {
 	std::string out;

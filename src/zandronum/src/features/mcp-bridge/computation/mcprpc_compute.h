@@ -43,6 +43,10 @@ bool GetInt(const std::string &obj, const char *key, long &out);
 // Extract a floating-point field ("key":N.N, sign + optional fraction). Integers parse too.
 bool GetFloat(const std::string &obj, const char *key, double &out);
 
+// Convert a view rotation in degrees to the integer G_AddViewAngle/G_AddViewPitch expect (1 unit =
+// 360/65536 deg). Rounds to the nearest BAM step; exact for angles dividing 360 (135 -> 24576).
+long DegreesToViewUnits(double deg);
+
 // Extract a string field ("key":"...") with standard escape decoding.
 bool GetStr(const std::string &obj, const char *key, std::string &out);
 

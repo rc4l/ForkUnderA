@@ -59,6 +59,15 @@ bool GetFloat(const std::string &obj, const char *key, double &out)
 	return true;
 }
 
+long DegreesToViewUnits(double deg)
+{
+	// G_AddViewAngle/G_AddViewPitch take an int that they shift <<16 onto a 2^32 BAM angle (full
+	// circle). So 1 unit = 360/65536 deg, and units = deg * 65536/360. Exact for angles that divide
+	// 360 evenly (135 -> 24576). Round to nearest so arbitrary degrees land on the closest BAM step.
+	double u = deg * 65536.0 / 360.0;
+	return static_cast<long>(u < 0 ? u - 0.5 : u + 0.5);
+}
+
 bool GetStr(const std::string &obj, const char *key, std::string &out)
 {
 	size_t i = ValueStart(obj, key);
