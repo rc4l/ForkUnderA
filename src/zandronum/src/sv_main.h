@@ -480,8 +480,6 @@ struct CLIENT_s
 	// [BB] Client doesn't want his country to be revealed to the other players.
 	bool			bWantHideCountry;
 
-	// [TP] Client doesn't want his account to be revealed to the other players.
-	bool			WantHideAccount;
 
 	// [BB] Did the client not yet acknowledge receiving the last full update?
 	bool			bFullUpdateIncomplete;
@@ -585,19 +583,17 @@ struct CLIENT_s
 	// [BB] Variables for the account system
 	FString username;
 	unsigned int clientSessionID;
-	int SRPsessionID;
 	bool loggedIn;
-	TArray<unsigned char> bytesA;
-	TArray<unsigned char> bytesB;
-	TArray<unsigned char> bytesM;
-	TArray<unsigned char> bytesHAMK;
-	TArray<unsigned char> salt;
 
 	// [rc4l] Anonymous accounts. The nonce this client opened with and our ephemeral private key
 	// for its session, kept only until the proof arrives.
 	TArray<unsigned char> fuaClientNonce;
 	TArray<unsigned char> fuaEphemeralPrivate;
 	TArray<unsigned char> fuaClientEphemeral;
+
+	// [rc4l] When this client runs out of time to prove who it is. Zero means the clock has not
+	// started, which is every client that has not finished connecting yet.
+	ULONG fuaAuthDeadline;
 
 	// [CK] The client communicates back to us with the last gametic from the server it saw
 	LONG			lLastServerGametic;
@@ -808,7 +804,6 @@ EXTERN_CVAR( Int, sv_timestampformat );
 EXTERN_CVAR( Int, sv_colorstripmethod );
 EXTERN_CVAR( Bool, sv_minimizetosystray )
 EXTERN_CVAR( Int, sv_queryignoretime )
-EXTERN_CVAR( Bool, sv_forcelogintojoin )
 EXTERN_CVAR( Bool, sv_limitcommands )
 EXTERN_CVAR( Int, sv_smoothplayers )
 EXTERN_CVAR( Int, sv_allowprivatechat )

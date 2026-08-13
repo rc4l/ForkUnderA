@@ -388,10 +388,6 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_GIVEINVENTORYEXTRA ),
 	ENUM_ELEMENT ( SVC2_SYNCPLAYERMEDALCOUNTS ),
 	ENUM_ELEMENT ( SVC2_PRINTTEAMSCORESMESSAGE ),
-	// [BB] Commands necessary for the account system.
-	ENUM_ELEMENT ( SVC2_SRP_USER_START_AUTHENTICATION ),
-	ENUM_ELEMENT ( SVC2_SRP_USER_PROCESS_CHALLENGE ),
-	ENUM_ELEMENT ( SVC2_SRP_USER_VERIFY_SESSION ),
 
 	// [rc4l] The server proving itself, which must happen BEFORE the client reveals anything: a
 	// server that merely COPIED a real public key cannot produce this signature.
@@ -481,18 +477,14 @@ BEGIN_ENUM( CLC )
 }
 END_ENUM( CLC )
 
-BEGIN_ENUM( CLC_SRP )
+// [rc4l] Anonymous accounts: the client opens with a nonce and an ephemeral key, and proves itself
+// only after the server has proved itself first.
+BEGIN_ENUM( CLC_EXTENDED )
 {
-	ENUM_ELEMENT2( CLC_SRP_USER_REQUEST_LOGIN, NUM_CLIENT_COMMANDS ),
-	ENUM_ELEMENT( CLC_SRP_USER_START_AUTHENTICATION ),
-	ENUM_ELEMENT( CLC_SRP_USER_PROCESS_CHALLENGE ),
-
-	// [rc4l] Anonymous accounts: the client opens with a nonce and an ephemeral key, and proves
-	// itself only after the server has proved itself first.
-	ENUM_ELEMENT( CLC_FUA_AUTH_HELLO ),
+	ENUM_ELEMENT2( CLC_FUA_AUTH_HELLO, NUM_CLIENT_COMMANDS ),
 	ENUM_ELEMENT( CLC_FUA_AUTH_PROOF ),
 }
-END_ENUM( CLC_SRP )
+END_ENUM( CLC_EXTENDED )
 
 BEGIN_ENUM ( NetworkErrorCode )
 {

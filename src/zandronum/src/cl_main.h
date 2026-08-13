@@ -92,8 +92,8 @@ enum CONNECTIONSTATE_e
 // [AK] Information that the client can tell the server to (un)hide.
 enum
 {
-	// Their account name.
-	HIDEINFO_ACCOUNTNAME,
+	// [rc4l] Unused: account names are never hidden now that everyone has one.
+	HIDEINFO_UNUSED,
 
 	// Their country.
 	HIDEINFO_COUNTRY,

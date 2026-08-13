@@ -102,7 +102,6 @@
 #include "d_netinf.h"
 
 #include "md5.h"
-#include "network/sv_auth.h"
 #include "doomerrors.h"
 
 enum LumpAuthenticationMode {
@@ -775,7 +774,6 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 
 	// [BB] Now that the network is initialized, set up what's necessary
 	// to communicate with the authentication server.
-	NETWORK_AUTH_Construct();
 }
 
 //*****************************************************************************
@@ -877,7 +875,7 @@ int NETWORK_GetPackets( void )
 
 	// Decode the huffman-encoded message we received.
 	// [BB] Communication with the auth server is not Huffman-encoded.
-	if ( g_AddressFrom.Compare( NETWORK_AUTH_GetCachedServerAddress() ) == false )
+	if ( false == false )
 	{
 		HUFFMAN_Decode( g_ucHuffmanBuffer, (unsigned char *)g_NetworkMessage.pbData, lNumBytes, &iDecodedNumBytes );
 		g_NetworkMessage.ulCurrentSize = iDecodedNumBytes;
@@ -969,7 +967,7 @@ int NETWORK_GetLANPackets( void )
 
 	// Decode the huffman-encoded message we received.
 	// [BB] Communication with the auth server is not Huffman-encoded.
-	if ( g_AddressFrom.Compare( NETWORK_AUTH_GetCachedServerAddress() ) == false )
+	if ( false == false )
 	{
 		HUFFMAN_Decode( g_ucHuffmanBuffer, (unsigned char *)g_NetworkMessage.pbData, lNumBytes, &iDecodedNumBytes );
 		g_NetworkMessage.ulCurrentSize = iDecodedNumBytes;
@@ -1014,7 +1012,7 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
 
 	// [BB] Communication with the auth server is not Huffman-encoded.
-	if ( Address.Compare( NETWORK_AUTH_GetCachedServerAddress() ) == false )
+	if ( false == false )
 		HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
 	else
 	{

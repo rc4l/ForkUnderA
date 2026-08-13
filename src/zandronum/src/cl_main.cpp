@@ -127,7 +127,6 @@
 #include "a_movingcamera.h"
 #include "d_netinf.h"
 #include "po_man.h"
-#include "network/cl_auth.h"
 #include "r_data/colormaps.h"
 #include "r_main.h"
 #include "network_enums.h"
@@ -173,7 +172,6 @@ EXTERN_CVAR( Bool, cl_oldfreelooklimit )
 EXTERN_CVAR( Float, turbo )
 EXTERN_CVAR( Float, sv_gravity )
 EXTERN_CVAR( Float, sv_aircontrol )
-EXTERN_CVAR( Bool, cl_hideaccount )
 EXTERN_CVAR( Int, cl_ticsperupdate )
 EXTERN_CVAR( String, name )
 EXTERN_CVAR( Bool, cl_telespy )
@@ -198,15 +196,6 @@ CVAR( Bool, cl_keepserversettings, false, CVAR_ARCHIVE | CVAR_DEBUGONLY )
 // [JS] Always makes us ready when we are in intermission.
 CVAR( Bool, cl_autoready, false, CVAR_ARCHIVE )
 
-#ifdef WIN32
-// [AK] Automatically logs us into our default account (i.e. login_default_user).
-CUSTOM_CVAR( Bool, cl_autologin, false, CVAR_ARCHIVE | CVAR_NOINITCALL )
-{
-	// [AK] Log in automatically when enabling this CVar, if not already.
-	if (( self ) && ( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENT_IsLoggedIn( ) == false ))
-		CLIENT_RetrieveUserAndLogIn( login_default_user.GetGenericRep( CVAR_String ).String );
-}
-#endif
 
 // [AK] Restores the old mouse behaviour from Skulltag.
 CVAR( Bool, cl_useskulltagmouse, false, CVAR_GLOBALCONFIG | CVAR_ARCHIVE )
@@ -922,7 +911,6 @@ void CLIENT_AttemptConnection( void )
 	g_LocalBuffer.ByteStream.WriteString( DOTVERSIONSTR );
 	g_LocalBuffer.ByteStream.WriteString( cl_password );
 	g_LocalBuffer.ByteStream.WriteByte( cl_connect_flags );
-	g_LocalBuffer.ByteStream.WriteByte( cl_hideaccount );
 	g_LocalBuffer.ByteStream.WriteByte( NETGAMEVERSION );
 	g_LocalBuffer.ByteStream.WriteString( g_lumpsAuthenticationChecksum.GetChars() );
 }
@@ -2255,15 +2243,9 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 
 			// [rc4l] The server proving itself, which we check before revealing anything.
-	case SVC2_FUA_AUTH_CHALLENGE:
+			case SVC2_FUA_AUTH_CHALLENGE:
 
-		CLIENT_FuaAuthHandleChallenge( pByteStream );
-		break;
-
-	case SVC2_SRP_USER_START_AUTHENTICATION:
-			case SVC2_SRP_USER_PROCESS_CHALLENGE:
-			case SVC2_SRP_USER_VERIFY_SESSION:
-				CLIENT_ProcessSRPServerCommand ( lExtCommand, pByteStream );
+				CLIENT_FuaAuthHandleChallenge( pByteStream );
 				break;
 
 			case SVC2_SETTHINGHEALTH:
@@ -2659,8 +2641,8 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// [AK] Since we disconnected, we don't have RCON access anymore.
 	g_HasRCONAccess = false;
 
-	// [AK] Log the client out of their account now so that they can log in again.
-	CLIENT_LogOut( );
+	// [rc4l] Forget the account this connection earned us, so the next server sees a fresh proof.
+	CLIENT_FuaAuthReset( );
 
 	// [AK] Close the server setup menu if we're still in it.
 	if ( M_InServerSetupMenu( ))
@@ -3587,12 +3569,6 @@ void ServerCommands::EndSnapshot::Execute()
 
 	// [AK] Reset the scoreboard.
 	SCOREBOARD_Reset( );
-
-#ifdef WIN32
-	// [AK] Allow the client to log into their default account automatically.
-	if (( CLIENTDEMO_IsPlaying( ) == false ) && ( cl_autologin ))
-		CLIENT_RetrieveUserAndLogIn( login_default_user.GetGenericRep( CVAR_String ).String );
-#endif
 
 	// [rc4l] If this is a server WE started, take administrator rights on it now.
 	//
