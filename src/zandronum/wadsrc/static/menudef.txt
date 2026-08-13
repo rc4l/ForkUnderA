@@ -2009,7 +2009,9 @@ OptionMenu VideoModeMenu
 	Option "Force aspect ratio",	"vid_aspect", "ForceRatios"
 	Option "Enable 5:4 aspect ratio","vid_tft", "YesNo"
 	Option "Scale mode",			"vid_scalemode", "ScaleModes"
-	Slider "Scale factor",			"vid_scalefactor", 0.25, 2.0, 0.25, 2
+	// [rc4l] The trailing 1 holds the value until the mouse is released; this one resizes what the
+	// menu is drawn on, so applying mid-drag moves the thumb away from the cursor.
+	Slider "Scale factor",			"vid_scalefactor", 0.25, 2.0, 0.25, 2, 1
 	StaticText " "
 	StaticText "Windowed size", 1
 	TextField "Width",				"vid_defwidth"
