@@ -32,6 +32,13 @@ sequenceDiagram
 3. The same server tomorrow gives the same account. It never expires and nothing stores it.
 4. A different owner's server gives a different account, and the two cannot be linked.
 
+## For modders
+
+Nothing changed. `GetPlayerAccountName` and `PlayerIsLoggedIn` work as before.
+
+The name is now 32 hex characters instead of a chosen username. It is stable per player per server
+owner, so anything using it as a database key keeps working.
+
 ## Where the file is
 
 One folder per user, shared by every copy of the engine on the machine, including portable ones.
@@ -60,10 +67,3 @@ There is no undo and no way back to the old account.
 >
 > No server keeps a copy, so nobody can verify, restore, or revoke it on their behalf. Never paste
 > it, screenshot it, or put it in a mod, a bug report, or a synced cloud folder.
-
-## For modders
-
-Nothing changed. `GetPlayerAccountName` and `PlayerIsLoggedIn` work as before.
-
-The name is now 32 hex characters instead of a chosen username. It is stable per player per server
-owner, so anything using it as a database key keeps working.
