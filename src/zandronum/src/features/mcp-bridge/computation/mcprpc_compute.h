@@ -40,6 +40,9 @@ RpcRequest ParseRequest(const std::string &line);
 // Extract an integer field ("key":N, N may be negative) from a flat JSON object substring.
 bool GetInt(const std::string &obj, const char *key, long &out);
 
+// Extract a floating-point field ("key":N.N, sign + optional fraction). Integers parse too.
+bool GetFloat(const std::string &obj, const char *key, double &out);
+
 // Extract a string field ("key":"...") with standard escape decoding.
 bool GetStr(const std::string &obj, const char *key, std::string &out);
 

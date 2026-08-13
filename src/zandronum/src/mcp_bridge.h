@@ -32,6 +32,13 @@ void MCP_Crash_Init();
 // Marks the sim|render boundary for the coarse perf split (anchored before D_Display in D_DoomLoop).
 void MCP_RPC_MarkRender();
 
+// Per-command RECEIVE bandwidth tally (anchored in the client's parse loop). svc = command id.
+void MCP_NetProf_Recv( int svc, int bytes );
+
+// Synthetic analog axis injection (anchored after I_GetAxes in G_BuildTiccmd). Overwrites the polled
+// hardware axes with bridge-held values when an override is active; no-op otherwise.
+void MCP_RPC_OverrideAxes( float *axes );
+
 #else
 
 // Release build: no bridge. The anchors compile to nothing.
@@ -40,6 +47,8 @@ inline void MCP_Bridge_TeeOutput(const char *) {}
 inline void MCP_Bridge_Shutdown() {}
 inline void MCP_Crash_Init() {}
 inline void MCP_RPC_MarkRender() {}
+inline void MCP_NetProf_Recv( int, int ) {}
+inline void MCP_RPC_OverrideAxes( float * ) {}
 
 #endif // FUA_MCP_BRIDGE
 

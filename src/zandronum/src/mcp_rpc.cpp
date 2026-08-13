@@ -22,6 +22,7 @@
 #include "tables.h"
 #include "g_level.h"
 #include "g_game.h"
+#include "m_joy.h"
 #include "r_state.h"
 #include "m_random.h"
 #include "zstring.h"
@@ -63,6 +64,22 @@ namespace
 	int    g_perfWant       = 0;
 	int    g_perfWarmup     = 0; // discard the first few frames of a capture (one-time costs)
 	std::vector<double> g_perfTotal, g_perfSim, g_perfRender;
+
+	// --- network RECEIVE bandwidth accounting (per server-command / SVC id) --
+	// O(1) integer tally at the client parse funnel; read out here off the hot path.
+	unsigned long long    g_svcRecvBytes[256] = { 0 };
+	unsigned int          g_svcRecvCount[256] = { 0 };
+	PerfClock::time_point g_netStart;
+	bool                  g_netStarted = false;
+
+	// --- synthetic analog axis override (controller sticks) -----------------
+	// Analog sticks/triggers are hardware-polled into G_BuildTiccmd via I_GetAxes; they never reach
+	// the event queue, so input.event can't drive them. Instead the bridge holds a set of axis values
+	// and MCP_RPC_OverrideAxes (anchored right after I_GetAxes) stamps them in each tic -- a stick
+	// "held" at a position. Deterministic: the same held values feed every tic, running the full
+	// deadzone/scale/accel pipeline exactly as a real stick would.
+	float g_axisOverride[NUM_JOYAXIS] = { 0 };
+	bool  g_axisActive = false;
 
 	double MsSince( PerfClock::time_point a, PerfClock::time_point b )
 	{
@@ -137,6 +154,22 @@ void MCP_RPC_MarkRender()
 	g_haveRenderMark = true;
 }
 
+// Anchored in the client's command parse loop: tally RECEIVE bytes for one server command.
+void MCP_NetProf_Recv( int svc, int bytes )
+{
+	if ( svc < 0 || svc >= 256 || bytes <= 0 ) return;
+	g_svcRecvBytes[svc] += (unsigned long long)bytes;
+	g_svcRecvCount[svc]++;
+}
+
+// Anchored right after I_GetAxes in G_BuildTiccmd: if the bridge holds synthetic axis values, stamp
+// them over the polled (empty) hardware axes so they drive the ticcmd this tic. No-op otherwise.
+void MCP_RPC_OverrideAxes( float *axes )
+{
+	if ( !g_axisActive || axes == NULL ) return;
+	for ( int i = 0; i < NUM_JOYAXIS; ++i ) axes[i] = g_axisOverride[i];
+}
+
 void MCP_RPC_Tick()
 {
 	MCP_HUD_BeginFrame(); // snapshot the frame the engine just drew (for screenshots/HUD reads)
@@ -207,8 +240,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\","
-			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\","
-			"\"perf.capture\",\"perf.counters\""
+			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\","
+			"\"perf.capture\",\"perf.counters\",\"net.bandwidth\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\"]}" );
 	}
 	else if ( cmd == "console.exec" )
@@ -324,6 +357,42 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		MCP_PostInputEvent( (int)ev, (int)sub, (int)d1, (int)d2 );
 		SendOk( id, "{\"posted\":true}" );
 	}
+	else if ( cmd == "input.axis" )
+	{
+		// Synthetic analog stick: hold named axes at float values in [-1,1]. Any subset may be given;
+		// unspecified axes keep their held value. {"clear":true} releases the override entirely.
+		long clear = 0;
+		GetInt( args, "clear", clear );
+		if ( clear )
+		{
+			g_axisActive = false;
+			for ( int i = 0; i < NUM_JOYAXIS; ++i ) g_axisOverride[i] = 0.0f;
+			SendOk( id, "{\"active\":false}" );
+		}
+		else
+		{
+			struct { const char *key; int idx; } map[] = {
+				{ "yaw", JOYAXIS_Yaw }, { "pitch", JOYAXIS_Pitch },
+				{ "forward", JOYAXIS_Forward }, { "side", JOYAXIS_Side }, { "up", JOYAXIS_Up },
+			};
+			double v = 0.0;
+			for ( unsigned k = 0; k < sizeof( map ) / sizeof( map[0] ); ++k )
+			{
+				if ( GetFloat( args, map[k].key, v ) )
+				{
+					if ( v > 1.0 ) v = 1.0; else if ( v < -1.0 ) v = -1.0;
+					g_axisOverride[map[k].idx] = (float)v;
+				}
+			}
+			g_axisActive = true;
+			std::string body = "{\"active\":true,\"yaw\":" + std::to_string( g_axisOverride[JOYAXIS_Yaw] )
+				+ ",\"pitch\":" + std::to_string( g_axisOverride[JOYAXIS_Pitch] )
+				+ ",\"forward\":" + std::to_string( g_axisOverride[JOYAXIS_Forward] )
+				+ ",\"side\":" + std::to_string( g_axisOverride[JOYAXIS_Side] )
+				+ ",\"up\":" + std::to_string( g_axisOverride[JOYAXIS_Up] ) + "}";
+			SendOk( id, body );
+		}
+	}
 	else if ( cmd == "perf.capture" )
 	{
 		long frames = 120, warmup = 3;
@@ -348,6 +417,47 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		std::string body = "{\"actors\":" + I( actors );
 		body += ",\"numsegs\":" + I( numsegs );
 		body += ",\"leveltime\":" + I( level.time ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "net.bandwidth" )
+	{
+		std::string op;
+		GetStr( args, "op", op );
+		if ( op == "reset" )
+		{
+			for ( int i = 0; i < 256; ++i ) { g_svcRecvBytes[i] = 0; g_svcRecvCount[i] = 0; }
+			g_netStart = PerfClock::now();
+			g_netStarted = true;
+			SendOk( id, "{\"reset\":true}" );
+			return;
+		}
+		double elapsed = g_netStarted ? ( MsSince( g_netStart, PerfClock::now() ) / 1000.0 ) : 0.0;
+		unsigned long long total = 0;
+		for ( int i = 0; i < 256; ++i ) total += g_svcRecvBytes[i];
+		long topN = 12;
+		GetInt( args, "top", topN );
+		// Selection of the top-N commands by bytes (256 is tiny; no need for a real sort).
+		bool used[256] = { false };
+		std::string arr = "[";
+		int listed = 0;
+		for ( long k = 0; k < topN; ++k )
+		{
+			int best = -1;
+			unsigned long long bestB = 0;
+			for ( int i = 0; i < 256; ++i )
+				if ( !used[i] && g_svcRecvBytes[i] > bestB ) { bestB = g_svcRecvBytes[i]; best = i; }
+			if ( best < 0 ) break;
+			used[best] = true;
+			if ( listed ) arr += ",";
+			arr += "{\"svc\":" + I( best ) + ",\"bytes\":" + I( (long long)g_svcRecvBytes[best] )
+				+ ",\"count\":" + I( (long long)g_svcRecvCount[best] ) + "}";
+			++listed;
+		}
+		arr += "]";
+		std::string body = "{\"dir\":\"recv\",\"elapsed_s\":" + std::to_string( elapsed );
+		body += ",\"total_bytes\":" + I( (long long)total );
+		body += ",\"bytes_per_s\":" + std::to_string( elapsed > 0 ? (double)total / elapsed : 0.0 );
+		body += ",\"top\":" + arr + "}";
 		SendOk( id, body );
 	}
 	else

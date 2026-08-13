@@ -38,6 +38,27 @@ bool GetInt(const std::string &obj, const char *key, long &out)
 	return true;
 }
 
+bool GetFloat(const std::string &obj, const char *key, double &out)
+{
+	size_t i = ValueStart(obj, key);
+	if (i == std::string::npos) return false;
+	size_t start = i;
+	bool neg = false;
+	if (i < obj.size() && (obj[i] == '-' || obj[i] == '+')) { neg = (obj[i] == '-'); ++i; }
+	double v = 0.0;
+	bool anyDigit = false;
+	while (i < obj.size() && obj[i] >= '0' && obj[i] <= '9') { v = v * 10.0 + (obj[i] - '0'); ++i; anyDigit = true; }
+	if (i < obj.size() && obj[i] == '.')
+	{
+		++i;
+		double scale = 0.1;
+		while (i < obj.size() && obj[i] >= '0' && obj[i] <= '9') { v += (obj[i] - '0') * scale; scale *= 0.1; ++i; anyDigit = true; }
+	}
+	if (!anyDigit) { (void)start; return false; }
+	out = neg ? -v : v;
+	return true;
+}
+
 bool GetStr(const std::string &obj, const char *key, std::string &out)
 {
 	size_t i = ValueStart(obj, key);
