@@ -28,14 +28,20 @@ std::string WithoutTrailingSlash(const std::string &s)
 	return out;
 }
 
+// [rc4l] A do-while rather than a zero special case, which nothing here can reach and so nothing
+// can cover.
 std::string IntToString(int v)
 {
-	if (v == 0)
-		return "0";
-
 	std::string digits;
-	for (int n = v; n > 0; n /= 10)
+	int n = v;
+
+	do
+	{
 		digits.insert(digits.begin(), char('0' + (n % 10)));
+		n /= 10;
+	}
+	while (n > 0);
+
 	return digits;
 }
 
