@@ -3,7 +3,7 @@
 // programmable engine (launch instances, run the determinism check, reap, raw RPC).
 import readline from "node:readline";
 import { reap, readRegistry } from "./registry.mjs";
-import { runDeterminismCheck } from "./session.mjs";
+import { runDeterminismCheck, runPerfAblation } from "./session.mjs";
 import { launchInstance } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 
@@ -17,6 +17,9 @@ const TOOLS = [
   { name: "session_check", description: "Run the determinism + desync check across N instances.",
     inputSchema: { type: "object", properties: {
       instances: { type: "number" }, seed: { type: "number" }, map: { type: "string" }, tics: { type: "number" } } } },
+  { name: "perf_ablation", description: "Deterministic perf ablation: baseline vs a perturbation, causal frametime delta + sim/render (CPU/GPU) verdict.",
+    inputSchema: { type: "object", properties: {
+      seed: { type: "number" }, map: { type: "string" }, spawn: { type: "string" }, count: { type: "number" }, frames: { type: "number" } } } },
   { name: "rpc", description: "Send one raw RPC to an instance and return the result.",
     inputSchema: { type: "object", required: ["port", "cmd"], properties: {
       port: { type: "number" }, token: { type: "string" }, cmd: { type: "string" }, args: { type: "object" } } } },
@@ -28,6 +31,7 @@ async function callTool(name, a = {}) {
     case "reap": { const r = reap({ kill: !!a.kill, all: !!a.all }); return { orphans: r.orphan.length, owned: r.owned.length, killed: r.killed.length, pruned: r.prunedCount }; }
     case "launch_instance": { const i = await launchInstance({ map: a.map, seed: a.seed }); return { pid: i.pid, port: i.port, token: i.token }; }
     case "session_check": return runDeterminismCheck({ instances: a.instances, seed: a.seed, map: a.map, tics: a.tics });
+    case "perf_ablation": return runPerfAblation({ seed: a.seed, map: a.map, spawn: a.spawn, count: a.count, frames: a.frames });
     case "rpc": {
       const c = new BridgeClient();
       await c.connect(a.port, { token: a.token || null });

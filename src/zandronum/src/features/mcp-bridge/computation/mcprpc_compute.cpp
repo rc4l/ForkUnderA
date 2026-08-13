@@ -3,6 +3,9 @@
 
 #include "features/mcp-bridge/computation/mcprpc_compute.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace zx { namespace mcp {
 
 namespace {
@@ -203,6 +206,72 @@ long StepTarget(long currentLevelTime, int tics)
 bool StepComplete(long currentLevelTime, long targetLevelTime)
 {
 	return currentLevelTime >= targetLevelTime;
+}
+
+namespace {
+	double Percentile(const std::vector<double> &sorted, double pct)
+	{
+		if (sorted.empty()) return 0.0;
+		double idx = (pct / 100.0) * (double)(sorted.size() - 1);
+		long i = (long)(idx + 0.5); // nearest-rank
+		if (i < 0) i = 0;
+		if (i >= (long)sorted.size()) i = (long)sorted.size() - 1;
+		return sorted[(size_t)i];
+	}
+	std::string Fixed3(double v)
+	{
+		if (std::isnan(v) || std::isinf(v)) return "0";
+		bool neg = v < 0; if (neg) v = -v;
+		long long scaled = (long long)(v * 1000.0 + 0.5);
+		std::string whole = std::to_string(scaled / 1000);
+		long long frac = scaled % 1000;
+		std::string f = std::to_string(frac);
+		while (f.size() < 3) f = "0" + f;
+		return (neg ? "-" : "") + whole + "." + f;
+	}
+}
+
+PerfSummary SummarizeFrameTimes(const std::vector<double> &frameMs)
+{
+	PerfSummary s;
+	s.n = (int)frameMs.size();
+	s.mean = s.min = s.max = s.p50 = s.p95 = s.p99 = s.fpsAvg = s.fps1pctLow = 0.0;
+	if (frameMs.empty()) return s;
+
+	std::vector<double> v = frameMs;
+	std::sort(v.begin(), v.end());
+	double sum = 0.0;
+	for (double x : v) sum += x;
+	s.mean = sum / (double)v.size();
+	s.min = v.front();
+	s.max = v.back();
+	s.p50 = Percentile(v, 50);
+	s.p95 = Percentile(v, 95);
+	s.p99 = Percentile(v, 99);
+	s.fpsAvg = s.mean > 0 ? 1000.0 / s.mean : 0.0;
+
+	// 1% low: the worst 1% of frames (largest frametimes), averaged, expressed as FPS.
+	size_t worstCount = v.size() / 100;
+	if (worstCount < 1) worstCount = 1;
+	double wsum = 0.0;
+	for (size_t i = v.size() - worstCount; i < v.size(); ++i) wsum += v[i];
+	double worstMean = wsum / (double)worstCount;
+	s.fps1pctLow = worstMean > 0 ? 1000.0 / worstMean : 0.0;
+	return s;
+}
+
+std::string PerfSummaryJson(const PerfSummary &s)
+{
+	std::string j = "{\"n\":" + std::to_string(s.n);
+	j += ",\"mean_ms\":" + Fixed3(s.mean);
+	j += ",\"min_ms\":" + Fixed3(s.min);
+	j += ",\"max_ms\":" + Fixed3(s.max);
+	j += ",\"p50_ms\":" + Fixed3(s.p50);
+	j += ",\"p95_ms\":" + Fixed3(s.p95);
+	j += ",\"p99_ms\":" + Fixed3(s.p99);
+	j += ",\"fps_avg\":" + Fixed3(s.fpsAvg);
+	j += ",\"fps_1pct_low\":" + Fixed3(s.fps1pctLow) + "}";
+	return j;
 }
 
 }} // namespace zx::mcp

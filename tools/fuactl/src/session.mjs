@@ -45,6 +45,68 @@ async function stepTo(c, targetLevelTime) {
   return targetLevelTime;
 }
 
+async function capturePerf(c, frames) {
+  const done = c.waitEvent("perf", 40000);
+  await c.rpc("perf.capture", { frames });
+  return done; // { total: {mean_ms, p99_ms, fps_avg, fps_1pct_low, ...}, sim_mean_ms, render_mean_ms }
+}
+
+// Deterministic perf ABLATION: measure a scene, apply a perturbation with everything else held
+// constant, measure again, and diff -- so the frametime delta is CAUSAL. Attributes the cost to
+// sim (CPU) vs render (GPU-ish) via the coarse split, and correlates with the actor-count jump.
+// This is the "what/why is the flamethrower lagging" method in code.
+export async function runPerfAblation(opts = {}) {
+  const {
+    seed = 20260812, map = "MAP01", iwad = "freedoom2.wad", engine,
+    frames = 120, spawn = "DoomImp", count = 40, log = () => {},
+  } = opts;
+
+  const insts = [await launchInstance({ seed, map, iwad, engine })];
+  const clients = [];
+  try {
+    clients.push(await (async () => {
+      const c = new BridgeClient();
+      for (let i = 0; ; i++) {
+        try { await c.connect(insts[0].port, { token: insts[0].token, timeoutMs: 2000 }); await c.waitHello(); return c; }
+        catch (e) { c.close(); if (i >= 60) throw e; await sleep(500); }
+      }
+    })());
+    const c = clients[0];
+    await waitInLevel(c);
+    await c.rpc("sim.resume"); // frames + effects must advance during capture
+
+    log(`baseline capture (${frames} frames)…`);
+    const base = await capturePerf(c, frames);
+    const baseCounters = await c.rpc("perf.counters");
+
+    log(`perturbing: summon ${count}x ${spawn}…`);
+    await c.rpc("console.exec", { text: "sv_cheats 1" });
+    for (let i = 0; i < count; i++) await c.rpc("console.exec", { text: `summon ${spawn}` });
+    await sleep(600); // let the spawns settle into the scene
+
+    log(`perturbed capture (${frames} frames)…`);
+    const perturbed = await capturePerf(c, frames);
+    const perturbedCounters = await c.rpc("perf.counters");
+
+    const dTotal = perturbed.total.mean_ms - base.total.mean_ms;
+    const dSim = perturbed.sim_mean_ms - base.sim_mean_ms;
+    const dRender = perturbed.render_mean_ms - base.render_mean_ms;
+    const verdict = dRender >= dSim ? "render/GPU-dominated" : "sim/CPU-dominated";
+
+    return {
+      scenario: { seed, map, spawn, count, frames },
+      baseline: { fps_avg: base.total.fps_avg, mean_ms: base.total.mean_ms, actors: baseCounters.actors },
+      perturbed: { fps_avg: perturbed.total.fps_avg, mean_ms: perturbed.total.mean_ms, fps_1pct_low: perturbed.total.fps_1pct_low, actors: perturbedCounters.actors },
+      delta_ms: { total: dTotal, sim: dSim, render: dRender },
+      actor_delta: perturbedCounters.actors - baseCounters.actors,
+      verdict,
+    };
+  } finally {
+    for (const c of clients) c.close();
+    for (const inst of insts) await stopInstance(inst);
+  }
+}
+
 // The determinism + desync check. Returns a structured report; throws only on infra failure.
 export async function runDeterminismCheck(opts = {}) {
   const {

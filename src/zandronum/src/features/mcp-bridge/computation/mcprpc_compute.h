@@ -17,6 +17,7 @@
 #define ZX_MCPRPC_COMPUTE_H
 
 #include <string>
+#include <vector>
 #include <cstdint>
 
 namespace zx { namespace mcp {
@@ -73,6 +74,24 @@ long StepTarget(long currentLevelTime, int tics);
 
 // True once the world clock has reached (or passed) the planned target.
 bool StepComplete(long currentLevelTime, long targetLevelTime);
+
+// ---- Performance summary ---------------------------------------------------
+// Frametime statistics done the way the industry reports them: percentiles + the "1% low" (the mean
+// of the worst 1% of frames, expressed as FPS) rather than a single average FPS, because a stutter --
+// exactly what a laggy weapon effect causes -- shows up in the tail, not the mean. Pure, so it is
+// unit-tested and identical for every consumer.
+struct PerfSummary
+{
+	int    n;
+	double mean, min, max, p50, p95, p99; // frametimes in ms
+	double fpsAvg;                          // 1000 / mean
+	double fps1pctLow;                      // 1000 / (mean of the worst 1% frametimes)
+};
+
+PerfSummary SummarizeFrameTimes(const std::vector<double> &frameMs);
+
+// Serialize a PerfSummary to a compact JSON object (values fixed to 3 decimals).
+std::string PerfSummaryJson(const PerfSummary &s);
 
 }} // namespace zx::mcp
 
