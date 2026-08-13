@@ -132,6 +132,9 @@ private:
 
 	// [rc4l] Let a file declare what it is, rather than being recognised by its lumps.
 	int CheckIWADInfo(const char *fn);
+
+	// [rc4l] Register every IWAD in one folder, whether or not the engine still needs to find one.
+	void RegisterIWADsIn(const char *dir);
 	void ClearChecks();
 	void CheckLumpName(const char *name);
 	int GetIWadInfo();

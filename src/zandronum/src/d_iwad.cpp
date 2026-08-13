@@ -433,6 +433,41 @@ int FIWadManager::ScanIWAD (const char *iwad)
 // 
 //==========================================================================
 
+// [rc4l] Register every IWAD in one folder, whatever the engine is doing about finding one.
+//
+// Separate from CheckIWAD because that runs only while the engine still NEEDS an IWAD: launch with
+// a -iwad that resolves and the whole directory search is skipped (see IdentifyVersion), so the
+// rest of the player's collection is never looked at and never registered. Archiving what somebody
+// owns is not the same question as booting, and tying it to booting is what made a doom2.wad in the
+// download folder invisible.
+void FIWadManager::RegisterIWADsIn(const char *dir)
+{
+	if ((dir == NULL) || (*dir == '\0'))
+		return;
+
+	const char *slash = (dir[strlen(dir) - 1] != '/') ? "/" : "";
+
+	for (unsigned i = 0; i < mIWadNames.Size(); i++)
+	{
+		if (mIWadNames[i].IsEmpty())
+			continue;
+
+		FString path;
+		path.Format("%s%s%s", dir, slash, mIWadNames[i].GetChars());
+		FixPathSeperator(path);
+
+		// A stat per known name, and only files that exist are opened at all.
+		if (!FileExists(path))
+			continue;
+
+		// Still has to BE one. The name list is what to look for, never what a file is.
+		if (ScanIWAD(path) == -1)
+			continue;
+
+		zx::RegisterIwad(path.GetChars());
+	}
+}
+
 int FIWadManager::CheckIWAD (const char *doomwaddir, WadStuff *wads)
 {
 	const char *slash;
@@ -459,16 +494,6 @@ int FIWadManager::CheckIWAD (const char *doomwaddir, WadStuff *wads)
 					wads[i].Path = iwad;
 					wads[i].Name = mIWads[wads[i].Type].Name;
 					numfound++;
-
-					// [rc4l] Fua IWAD registration. Here because this is the list the picker is
-					// built from: every file we have confirmed is an IWAD and know the path of,
-					// found or not eventually played. Registering only the one launched would
-					// archive whichever the player happened to pick and leave the rest of their
-					// collection unarchived until they got round to launching each.
-					//
-					// Free after the first time -- the destination is the file's own digest, so a
-					// registered file is found already there and nothing is copied.
-					zx::RegisterIwad( iwad.GetChars( ));
 				}
 			}
 		}
@@ -723,6 +748,34 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 const FIWADInfo *FIWadManager::FindIWAD(TArray<FString> &wadfiles, const char *iwad, const char *basewad)
 {
 	int iwadType = IdentifyVersion(wadfiles, iwad, basewad);
+
+	// [rc4l] Fua IWAD registration, over every folder we know about rather than only the ones
+	// IdentifyVersion happened to need. It stops searching the moment it has something to boot
+	// from, which with an explicit -iwad is immediately, so this is the only pass that sees a
+	// player's whole collection.
+	//
+	// After identification, so the definitions are loaded and ScanIWAD can answer. Costs a stat per
+	// known name per folder, and a hash per file the first time it is seen: the destination is the
+	// digest, so an already-registered file is found present and nothing is read.
+	RegisterIWADsIn(progdir);
+
+	static const char *const kSections[] = { "IWADSearch.Directories", "FileSearch.Directories" };
+
+	for (size_t s = 0; s < sizeof(kSections) / sizeof(kSections[0]); ++s)
+	{
+		if (!GameConfig->SetSection(kSections[s]))
+			continue;
+
+		const char *key;
+		const char *value;
+
+		while (GameConfig->NextInSection(key, value))
+		{
+			if (stricmp(key, "Path") == 0)
+				RegisterIWADsIn(NicePath(value));
+		}
+	}
+
 	//gameiwad = iwadType;
 	const FIWADInfo *iwad_info = &mIWads[iwadType];
 	if (DoomStartupInfo.Name.IsEmpty()) DoomStartupInfo.Name = iwad_info->Name;
