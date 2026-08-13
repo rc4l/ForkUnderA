@@ -5,7 +5,7 @@
 //
 // One store per user, shared by every ForkUnderA on the machine:
 //
-//     <data root>/ForkUnderA/core/iwads/<sha256>/<filename>
+//     <fua user root>/iwads/<sha256>/<filename>
 //
 // Addressed by CONTENT rather than by name, because names lie in both directions and a digest does
 // not.

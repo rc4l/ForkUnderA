@@ -68,4 +68,10 @@ FString M_GetConfigPath(bool for_reading);
 FString M_GetScreenshotsPath();
 FString M_GetSavegamesPath();
 
+// [rc4l] The per-user folder holding this fork's identity keys and IWAD store.
+FString M_GetFuaUserPath();
+
+// [rc4l] The per-user folder holding this fork's identity keys and IWAD store.
+FString M_GetFuaUserPath();
+
 #endif
