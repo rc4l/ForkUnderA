@@ -1718,9 +1718,25 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				szErrorString = "The server could not confirm who you are.\nDelete your identity folder to start over with a new account.";
 				break;
 
+			// [rc4l] Answered with another account rather than a refusal, so a player whose key has
+			// leaked is kept out of their account and not out of the game.
+			//
+			// The same numbering that gives two copies of the engine an account each, asked for one
+			// more, which bounds this on its own.
 			case NETWORK_ERRORCODE_IDENTITYINUSE:
 
-				szErrorString = "Somebody is already playing on your account.\nTwo copies of one key cannot be told apart, so only the first is let in.";
+				if ( zx::Identity_SwitchToSpare( ))
+				{
+					Printf( TEXTCOLOR_GOLD "Somebody is already playing on your account.\n"
+						TEXTCOLOR_NORMAL "Joining on a new one instead. If this was not you, your key has leaked.\n" );
+
+					CLIENT_FuaAuthReset( );
+					g_ulRetryTicks = 0;
+					CLIENT_SetConnectionState( CTS_ATTEMPTINGCONNECTION );
+					return;
+				}
+
+				szErrorString = "Somebody is already playing on your account.\nThis machine has run out of accounts to make, which means the server refused every one.";
 				break;
 
 			case NETWORK_ERRORCODE_TOOMANYCONNECTIONSFROMIP:
