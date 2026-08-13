@@ -1,64 +1,67 @@
 # Automated Anonymous Accounts (AAA)
 
-Every player has an account. Nobody signs up, nobody logs in, and there is no account server.
+Servers want to know who is who, so they can save your progress, keep your rank, and ban a griefer
+without banning your whole household. The old answer was to make everyone register on a login
+server and type a password before playing. AAA gives servers the same stable identity while nobody
+signs up, nobody logs in, and no login server exists to go down or be trusted.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant C as You
+    participant C as Client
     participant S as Server
 
     rect rgba(56, 139, 253, 0.15)
         Note over C,S: Server proves itself first
         C->>S: A random number
-        S->>C: My ID, signed with it
-        Note over C: Wrong? Leave now.
+        S->>C: Server ID, signed with that number
+        Note over C: Bad signature? Client leaves.
     end
 
     rect rgba(63, 185, 80, 0.15)
-        Note over C,S: Only then do you
-        C->>S: My account, signed
-        Note over S: Wrong? Refused, no slot given.
+        Note over C,S: Client proves itself second
+        C->>S: Account, signed
+        Note over S: Bad signature? Refused, no slot given.
     end
 
-    S->>C: You are in
+    S->>C: Join accepted
 ```
 
 ## How
 
-1. On first run the engine makes one secret file on your machine.
-2. When you join a server, your account is that secret mixed with the server's public key.
-3. Same server tomorrow, same account. It never expires and nothing stores it.
-4. A different owner's server gives you a different account, and the two cannot be linked.
+1. On first run the engine makes one secret file for the player.
+2. On joining a server, the account is that secret mixed with the server's public key.
+3. The same server tomorrow gives the same account. It never expires and nothing stores it.
+4. A different owner's server gives a different account, and the two cannot be linked.
 
 ## Where the file is
 
-A folder called `ForkUnderA/identity/`, next to wherever the engine keeps its config.
+One folder per user, shared by every copy of the engine on the machine, including portable ones.
 
-| Setup | Folder |
+| System | Folder |
 |---|---|
-| Portable (an `.ini` sits beside the exe) | `<install>\ForkUnderA\identity\` |
-| Windows | `%APPDATA%\ForkUnderA\ForkUnderA\identity\` |
-| macOS | `~/Library/Preferences/ForkUnderA/identity/` |
-| Linux | `~/.config/forkundera/ForkUnderA/identity/` |
+| Windows | `%LOCALAPPDATA%\ForkUnderA\identity\` |
+| macOS | `~/Library/Application Support/ForkUnderA/identity/` |
+| Linux | `~/.config/ForkUnderA/identity/` |
 
-Inside, `client-auth.key` is you. `server-auth.key` is the identity your server presents when you
+`client-auth.key` is the player. `server-auth.key` is the identity their server presents when they
 host. Numbered files like `client-auth.2.key` belong to a second copy of the engine running at the
 same time, so two windows are two players.
 
-## Deleting your account
+## Deleting an account
 
-Delete `client-auth.key`. The next launch makes a new one, and you are a new player everywhere.
+Delete `client-auth.key`. The next launch makes a new one, and the player is a new person
+everywhere.
 
 There is no undo and no way back to the old account.
 
 ## Keep it private
 
 > [!WARNING]
-> Anyone who has your `client-auth.key` **is** you, on every server you play on.
+> Whoever holds `client-auth.key` **is** that player, on every server they play on.
 >
-> No server holds a copy, so nobody can verify you, restore you, or take it back for you.
-> Do not paste it, screenshot it, or put it in a mod, a bug report, or a cloud sync folder.
+> No server keeps a copy, so nobody can verify, restore, or revoke it on their behalf. Never paste
+> it, screenshot it, or put it in a mod, a bug report, or a synced cloud folder.
 
 ## For modders
 
