@@ -9022,7 +9022,7 @@ ec42e30614997c42604080f81599c947cf138a43	2017-08-19T08:18:52Z	Fixed compilation 
 dae83f989be4d05f8b248f87b779867d76e96eeb	2017-08-19T09:58:04Z	- fixed: changing 'uiscale' did not always update the screen size properly.	pending		/
 45d5eac6ada539f7e941cf90f806570cdb4fa9e0	2017-08-19T10:03:26Z	- fix last commit - somehow it pushed an old version of the fix (yet again?...) - this is the proper fix.	pending		/
 2f5535dbca9b0198170a5804fc02d8208156a6c9	2017-08-19T12:32:34Z	- Fix HOM for Line_Horizon specials when used with a skybox	pending		/
-cdff5bdc08a2f4eac784f3984b18cd788e16be42	2017-08-19T17:30:48Z	- rewrite of the IWAD loading mechanism.	pending		/
+cdff5bdc08a2f4eac784f3984b18cd788e16be42	2017-08-19T17:30:48Z	- rewrite of the IWAD loading mechanism.	pending	PARTIAL, stays pending. Took CheckIWADInfo only (a file declares itself via an embedded IWADINFO, and that beats lump matching); adapted onto FResourceFile since this tree has no FileSystem. The rest of the commit rebuilds IWAD discovery around that FileSystem and is NOT taken. Detection itself needed nothing: our MustContain rule already matches upstream.	/
 f3d31e055f83c8b3b25da20cd2facef518362d86	2017-08-19T18:13:12Z	- print the version at the start of the log.	pending		/
 b8c0e78c9187b66adf75c37e89e50320347886e1	2017-08-19T21:32:10Z	- fix linux compile	pending		/
 b7d26b3fa129e2b3df8cd5c4ad57b6c3f345c1ae	2017-08-20T02:10:45Z	- fixed Linux IWAD search thanks to a suggestion by Chris on the forum. Moved the search macros to i_system.h for both platforms. Neither are compatible with the other. This can be improved upon later, but for now, at least the major compile issue is fixed.	pending		/
