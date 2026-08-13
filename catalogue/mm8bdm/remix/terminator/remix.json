@@ -1,0 +1,7 @@
+{
+  "name": "Term",
+  "summary": "Terminator. Whoever picks up the ball is hunted by everyone else.",
+  "group": "mode",
+  "gamemode": "terminator",
+  "cfg": "terminator.cfg"
+}

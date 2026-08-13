@@ -1199,13 +1199,10 @@ add_executable( zdoom WIN32
 	name.cpp
 	network.cpp #ST
 	networkshared.cpp #ST
-	network/cl_auth.cpp #ZA
 	network/netcommand.cpp #ZA
 	network/nettraffic.cpp #ST
 	network/packetarchive.cpp #ZA
 	network/servercommands.cpp #ZA
-	network/srp.cpp #ZA
-	network/sv_auth.cpp #ZA
 	# [rc4l] Vendored Cephes portable math (from UZDoom common/thirdparty/math): bit-exact
 	# c_atan2 for the node builder, so GL node building is deterministic across platforms.
 	# Apple ARM libm's atan2 rounds differently from MSVC's, which flipped seg orderings at
@@ -1494,6 +1491,9 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
+	features/iwad-registry/zx_iwadregistry.cpp
+	features/identity/zx_identity.cpp
+	features/identity/zx_identitynet.cpp
 	features/net/zx_httpsget.cpp
 	features/net/zx_httpfile.cpp
 	features/net/zx_httpfile_win.cpp

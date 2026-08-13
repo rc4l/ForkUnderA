@@ -8,24 +8,28 @@
 // axis is really a NUMBER: Zandronum carries sv_maxteams and TEAMINFO defines four, so a deathmatch
 // can be run as a free-for-all or as two, three or four sides.
 //
-// The stops are 0, 2, 3 and 4 with no 1 between them, because one team is not a thing anybody can
-// mean: it is a free-for-all where the frags happen to share a colour. The gap is why the control
-// runs on a stop INDEX rather than the count itself.
+// The stops are 0, 2, 3 and 4 with no 1 between them, one team being a free-for-all whose frags
+// happen to share a colour, and that gap is why the control runs on a stop index.
 //
-// Two gamemodes have a team twin to switch to, and they are the two that had the pills:
+// Three gamemodes have a team twin to switch to:
 //
 //   * DEATHMATCH becomes teamplay.
 //   * LAST MAN STANDING becomes teamlms.
+//   * POSSESSION becomes teampossession.
 //
-// Everything else is left alone. Not for want of a cvar -- CTF and Skulltag honour sv_maxteams
-// perfectly well -- but because their maps do not: a CTF map carries two flags, and a third team
-// would spawn with nothing to take and nothing to lose. Modes whose teams come from the map are the
-// map's business.
+// What they share is that the thing being fought over is spawned by the ENGINE rather than placed
+// by the mapper, so any number of sides can play on a map built for none of them.
 //
-// Which is also why the control is opt-in per entry rather than read off the gamemode alone. The
-// Skulltag entry has a variant that declares deathmatch and then exec's a cfg naming the Skulltag
-// gamemode; inferring from the mode would hand it a control whose "no teams" stop would quietly
-// switch the whole thing back to plain deathmatch.
+// Terminator has no twin at all, there being one ball whose holder is everyone's enemy.
+//
+// Everything else is left alone, not for want of a cvar but because their maps carry one flag per
+// side and a third team would spawn with nothing to take and nothing to lose.
+//
+// Those modes are told so in those words rather than the generic refusal, because an author who
+// reads "no free-for-all to switch out of" about CTF will think we have it wrong.
+//
+// Which is also why the control is opt-in per entry rather than read off the gamemode alone, the
+// Skulltag entry having a variant that declares deathmatch and then exec's a Skulltag cfg.
 //
 // Header-pure by the features/ rules, no engine types.
 

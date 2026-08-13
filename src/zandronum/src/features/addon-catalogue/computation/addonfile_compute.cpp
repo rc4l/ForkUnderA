@@ -275,6 +275,10 @@ HostGameMode ParseGameMode(const std::string &s)
 	if (s == "lastmanstanding")	return HostGameMode::LastManStanding;
 	if (s == "teamlms")			return HostGameMode::TeamLastManStanding;
 	if (s == "ctf")				return HostGameMode::CaptureTheFlag;
+	if (s == "skulltag")		return HostGameMode::Skulltag;
+	if (s == "possession")		return HostGameMode::Possession;
+	if (s == "teampossession")	return HostGameMode::TeamPossession;
+	if (s == "terminator")		return HostGameMode::Terminator;
 
 	// Not an error. An entry that says nothing gets no gamemode-dependent controls, which is the
 	// safe answer and the one every entry written before this field had.
@@ -697,6 +701,15 @@ AddonRemix ParseRemixFile(const std::string &id, const std::string &json)
 			else if (key == "group")	{ ok = ReadString(r, remix.group); }
 			else if (key == "provides")	{ ok = ReadIdArray(r, remix.provides); }
 			else if (key == "files")	{ ok = ReadFilesArray(r, remix.files); }
+			else if (key == "gamemode")
+			{
+				// Read into the enum rather than kept as text, so a name nobody knows becomes
+				// Unknown here rather than somewhere with no way to say so.
+				std::string mode;
+				ok = ReadString(r, mode);
+				if (ok)
+					remix.gameMode = ParseGameMode(mode);
+			}
 			else						{ ok = SkipValue(r); }
 
 			if (!ok)
