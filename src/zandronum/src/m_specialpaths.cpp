@@ -631,3 +631,37 @@ FString M_GetSavegamesPath()
 }
 
 #endif
+
+//===========================================================================
+//
+// M_GetFuaUserPath													All platforms
+//
+// [rc4l] The one folder per user that holds everything this fork keeps for a player: the identity
+// keys and the IWAD store.
+//
+// A sibling of the node cache rather than a child of it, because that cache is deliberately named
+// after ZDoom so its child ports can share one, which is right for parsed nodes and wrong for our
+// own content: an account belongs to ForkUnderA, not to whatever else reads that folder.
+//
+// Written once here rather than per platform, since M_GetCachePath already resolved the per-user
+// part on each of them.
+//
+//===========================================================================
+
+FString M_GetFuaUserPath()
+{
+	FString path = M_GetCachePath(false);
+	FixPathSeperator(path);
+
+	// Trim the "/zdoom/cache" every platform's M_GetCachePath appends.
+	for (int i = 0; i < 2; ++i)
+	{
+		const long slash = path.LastIndexOf('/');
+		if (slash > 0)
+			path.Truncate(slash);
+	}
+
+	path << "/" GAMENAME;
+	return path;
+}
+

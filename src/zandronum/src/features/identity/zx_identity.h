@@ -31,6 +31,14 @@ struct KeyPair
 // concurrent clients on one machine so the second cannot share the first's account.
 bool Identity_InitClient( const char *configRoot, int instance );
 
+// [rc4l] Load the first client secret no other copy on this machine has claimed, returning which
+// one that was, so two engines running side by side each play as their own account.
+int Identity_InitClientHere( const char *configRoot );
+
+// [rc4l] Play as the next spare secret instead, for a player whose account is occupied. False when
+// this machine has no spare left.
+bool Identity_SwitchToSpare( void );
+
 // The same for the identity a hosted server presents, generated on first host.
 bool Identity_InitServer( const char *configRoot );
 
@@ -52,9 +60,11 @@ bool Identity_SignAsServer( const std::string &message, Bytes &signatureOut );
 bool Identity_Sign( const Bytes &privateKey, const std::string &message, Bytes &signatureOut );
 bool Identity_Verify( const Bytes &publicKey, const std::string &message, const Bytes &signature );
 
-// Where the key files live, which is the config directory and never the data one that the engine
-// file search is meant to walk.
+// Where the key files live, which is one folder per user shared by every copy of the engine.
 std::string Identity_ConfigRoot( void );
+
+// Move keys out of the per-install folder a build before this one wrote them to.
+void Identity_MigrateLegacyRoot( void );
 
 // Cryptographically strong random bytes for nonces, never rand().
 bool Identity_RandomBytes( size_t count, Bytes &out );

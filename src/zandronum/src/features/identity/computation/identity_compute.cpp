@@ -28,6 +28,8 @@ std::string WithoutTrailingSlash(const std::string &s)
 	return out;
 }
 
+const char kIdentityFolder[] = "ForkUnderA";
+
 // [rc4l] A do-while rather than a zero special case, which nothing here can reach and so nothing
 // can cover.
 std::string IntToString(int v)
@@ -125,6 +127,15 @@ std::string ServerAuthKeyPath(const std::string &configRoot)
 		return std::string();
 
 	return WithoutTrailingSlash(configRoot) + "/identity/server-auth.key";
+}
+
+std::string IdentityRootUnder(const std::string &base)
+{
+	const std::string dir = WithoutTrailingSlash(base);
+	if (dir.empty())
+		return std::string();
+
+	return dir + "/" + kIdentityFolder;
 }
 
 std::string ClientProofMessage(const std::string &sessionIdHex, const std::string &serverKeyHex)
