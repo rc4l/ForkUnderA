@@ -60,6 +60,11 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
   `sim.step {tics}`, `sim.snapshot {slot}`, `sim.restore {slot}`
 - **Structured state**: `state.player`, `state.actors {limit}`
 - **Input**: `input.event {evtype,subtype,data1,data2}`
+- **Perf**: `perf.capture {frames}` → async `perf` event with p50/p95/p99 + 1%-low fps and the coarse
+  sim/render split; `perf.counters` → actor/segment counts. The sim|render boundary is one anchor
+  before `D_Display` (no markers in the hot render path). Use `fuactl perf-ab` for a deterministic
+  ablation — measure a scene, perturb it with everything else held constant, diff → a *causal*
+  frametime delta attributed to CPU (sim) vs GPU-ish (render).
 
 `sim.hash` mixes `level.time` + the RNG position + every actor's transform/health (FNV-1a) into a stable
 fingerprint. Two instances at the same `level.time` with identical simulation return the same value; a

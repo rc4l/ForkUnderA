@@ -4,6 +4,7 @@
 import { launchInstance, stopInstance } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { desyncVerdict } from "./proto.mjs";
+import { sampleProcess } from "./sample.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -84,8 +85,13 @@ export async function runPerfAblation(opts = {}) {
     for (let i = 0; i < count; i++) await c.rpc("console.exec", { text: `summon ${spawn}` });
     await sleep(600); // let the spawns settle into the scene
 
-    log(`perturbed capture (${frames} frames)…`);
-    const perturbed = await capturePerf(c, frames);
+    log(`perturbed capture (${frames} frames) + function sampling…`);
+    // Sample the running engine DURING the perturbed window for function-level attribution -- which
+    // functions are hot (called a lot) while the load is active. No source instrumentation.
+    const [perturbed, sample] = await Promise.all([
+      capturePerf(c, frames),
+      sampleProcess(insts[0].pid, { seconds: 2, top: 12, engineOnly: true }),
+    ]);
     const perturbedCounters = await c.rpc("perf.counters");
 
     const dTotal = perturbed.total.mean_ms - base.total.mean_ms;
@@ -100,6 +106,7 @@ export async function runPerfAblation(opts = {}) {
       delta_ms: { total: dTotal, sim: dSim, render: dRender },
       actor_delta: perturbedCounters.actors - baseCounters.actors,
       verdict,
+      hot_functions: sample.available ? sample.functions : { unavailable: sample.error },
     };
   } finally {
     for (const c of clients) c.close();

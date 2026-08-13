@@ -7,6 +7,7 @@ import { reap, readRegistry } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation } from "./session.mjs";
 import { launchInstance, stopInstance } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
+import { sampleProcess } from "./sample.mjs";
 
 function parseFlags(argv) {
   const flags = {}; const rest = [];
@@ -89,6 +90,18 @@ async function main() {
         log: (m) => console.error(`[perf-ab] ${m}`),
       });
       console.log(JSON.stringify(report, null, 2));
+      break;
+    }
+    case "sample": {
+      // function-level hotspots of a running instance (by --pid, or --port -> registry lookup)
+      let pid = flags.pid ? Number(flags.pid) : null;
+      if (!pid && flags.port) {
+        const e = readRegistry().find((x) => String(x.port) === String(flags.port));
+        if (e) pid = e.pid;
+      }
+      if (!pid) { console.error("usage: fuactl sample --pid P | --port P [--seconds N]"); process.exit(2); }
+      const r = await sampleProcess(pid, { seconds: flags.seconds ? Number(flags.seconds) : 2, engineOnly: !!flags.engine });
+      console.log(JSON.stringify(r, null, 2));
       break;
     }
     case "mcp": {
