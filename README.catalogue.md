@@ -108,9 +108,38 @@ The default variant's `cfg` should be `server.cfg`. An older build ignores varia
 | `cfg` | filename | no | Exec'd after the experience's. Must exist in the folder. |
 | `files` | array | no | Loaded after everything else. |
 | `provides` | array of roles | no | What this mix already contains. See Roles. |
+| `gamemode` | see table | no | The way of playing this mix switches to. |
 | `art` | string | no | Override the menu picture. See Menu art. |
 
 A mix with neither `cfg` nor `files` is legal. That is the baseline.
+
+### Mixes an entry owns
+
+A mix normally lives in the shared `remix/` folder and any entry may list it. A mix whose cfg
+names a map rotation belongs to ONE entry, so it goes in that entry's own folder instead:
+
+```
+catalogue/mm8bdm/remix/ctf/remix.json
+```
+
+Its id is then `mm8bdm/ctf`, and that is what `remixes` must list. The prefix keeps the pool flat
+and the ids unambiguous. An entry's copy of a name wins over the shared one.
+
+### Modes as pills
+
+A mix that names a `gamemode` switches the mode. Put them all in one group so exactly one lights.
+
+The mode a mix names beats the entry's and the variant's. Setting a gamemode cvar clears every
+other one, so a mode cfg needs only its own line.
+
+| Order things are applied |
+|---|
+| The entry's cfg, then each mix's cfg, then the panel's own cvars. |
+
+So a mix cfg sets a floor and the sliders still win.
+
+**List mods before modes.** Axes are drawn in the order `remixes` names them, so whichever group
+appears first is the top row of pills.
 
 ## Menu art
 
@@ -196,7 +225,7 @@ Anything else is refused.
 Accepted values:
 
 `cooperative`, `survival`, `invasion`, `deathmatch`, `teamdeathmatch`, `duel`, `lastmanstanding`,
-`teamlms`, `ctf`.
+`teamlms`, `possession`, `teampossession`, `terminator`, `ctf`, `skulltag`.
 
 Anything else, including an absent field, means unknown. Unknown is not an error. It costs the
 controls that read the mode.
@@ -244,7 +273,7 @@ These are not fields. They are decided from the fields above.
 | Control | Shown when | Range |
 |---|---|---|
 | Lives | `maxlives` above 0, and the mode is one of the five below | See the lives table. |
-| Teams | `teams` is true, and the mode is deathmatch or lastmanstanding | 0, 2, 3, 4. There is no 1. |
+| Teams | `teams` is true, and the mode has a team twin | 0, 2, 3, 4. There is no 1. |
 | Weapon speed | `fastweapons` is true | 0 to 2. Above 0 also turns on infinite ammo. |
 
 Lives mean different things per mode. This is Zandronum's behaviour, not ours.
@@ -255,7 +284,20 @@ Lives mean different things per mode. This is Zandronum's behaviour, not ours.
 | `invasion` | 0 | Genuinely unlimited. |
 | `survival`, `lastmanstanding`, `teamlms` | 1 | Not available. One life is the floor. |
 
-Every other mode has no lives control at all.
+Every other mode has no lives control at all. The engine decides this, not us: a mode gets the
+control when its `gamemode.txt` block carries `USEMAXLIVES`.
+
+Three modes have a team twin, and `teams` switches between them.
+
+| Free-for-all | Teams |
+|---|---|
+| `deathmatch` | `teamplay` |
+| `lastmanstanding` | `teamlms` |
+| `possession` | `teampossession` |
+
+`ctf` and `skulltag` get no control. They have sides, but the count is the map's: one flag per
+side, so a third team would spawn with nothing to take. `terminator` gets none either, because one
+ball against everyone is the mode.
 
 A slider needs room to move. When the lowest and `maxlives` are the same value it is not drawn,
 but the value is still sent to the server.

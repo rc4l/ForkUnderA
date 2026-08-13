@@ -508,7 +508,16 @@ static int serverbrowser_OriginY( void );
 // Column x positions (left edge of each), virtual pixels.
 #define SB_COL_FLAG			SB_X( 48 )
 #define SB_COL_NAME			SB_X( 84 )
-#define SB_COL_PLAYERS		SB_X( 286 )
+
+// [rc4l] Players sits as far right as it can rather than in the middle, and every pixel that buys
+// goes to the name: SB_NAME_MAX_WIDTH is measured from here, so moving this moves that.
+//
+// The counts are what set the floor, MAXPLAYERS being 64, so the widest this column ever draws is
+// "64/64" and the header "PLRS" is shorter still.
+//
+// Ping is right-aligned on SB_COL_PING and grows leftward to at most "999", so the gap left here
+// is measured against its "PING" header rather than against the digits.
+#define SB_COL_PLAYERS		SB_X( 330 )
 #define SB_COL_PING			SB_X( 398 )
 
 // [rc4l] Version left the list and lives in the detail strip instead. It is the column a player reads
@@ -867,18 +876,17 @@ static	int				g_HostLives = -1;
 // play rather than about which pack you were looking at when you set it.
 static	int				g_HostFastWeapons = -1;
 
+// [rc4l] The mode actually in force. Declared here and defined below the picks it needs: both the
+// lives control and the teams control ask the same question and must not answer it two ways.
+static zx::HostGameMode HostGameModeFor( const zx::AddonEntry &addon );
+
 // The lives control for the CHOSEN way of playing. The variant's gamemode when it declares one,
 // otherwise the entry's, because most packs play one way and should say it once.
 static zx::LivesControl HostLivesControl( const zx::AddonEntry &addon )
 {
 	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
 
-	zx::HostGameMode mode = addon.gameMode;
-	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))) &&
-		( addon.variants[pick.index].gameMode != zx::HostGameMode::Unknown ))
-	{
-		mode = addon.variants[pick.index].gameMode;
-	}
+	const zx::HostGameMode mode = HostGameModeFor( addon );
 
 	// [rc4l] And the variant's own lives when it states them, because an entry can gather packs that
 	// are not alike: six campaign mapsets that can be run as Survival sit beside four co-op packs that
@@ -1042,6 +1050,25 @@ static std::vector<zx::RemixPick> HostRemixPicks( const zx::AddonEntry &addon )
 	return zx::PickRemixes( HostOfferedRemixes( addon ), wanted );
 }
 
+// [rc4l] The mode in force: what the entry says, then its variant, then whatever mode mix is lit.
+//
+// The pill wins over both, because it is the most recent and most specific thing said. An entry
+// declares how it plays by default; a variant narrows that; picking DEATHMATCH or CAPTURE THE FLAG
+// on the panel is the player changing it now, and the teams and lives controls read the answer.
+static zx::HostGameMode HostGameModeFor( const zx::AddonEntry &addon )
+{
+	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+	zx::HostGameMode stated = addon.gameMode;
+	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))) &&
+		( addon.variants[pick.index].gameMode != zx::HostGameMode::Unknown ))
+	{
+		stated = addon.variants[pick.index].gameMode;
+	}
+
+	return zx::EffectiveGameMode( stated, HostRemixPicks( addon ));
+}
+
 // [rc4l] How many teams the player has asked for, or -1 for "not yet". Kept across entries like the
 // lives count and for the same reason.
 static	int				g_HostTeams = -1;
@@ -1053,23 +1080,14 @@ static zx::TeamsControl HostTeamsControl( const zx::AddonEntry &addon )
 {
 	const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
 
-	zx::HostGameMode mode = addon.gameMode;
-
 	// EITHER may say yes. An entry that plays one way has no variant to say it on -- Brutal Doom is
 	// eleven deathmatch maps and nothing else -- and an entry with several says it per variant.
 	bool bOffered = addon.teams;
 
 	if (( pick.index >= 0 ) && ( pick.index < static_cast<int>( addon.variants.size( ))))
-	{
-		const zx::AddonVariant &v = addon.variants[pick.index];
+		bOffered = bOffered || addon.variants[pick.index].teams;
 
-		if ( v.gameMode != zx::HostGameMode::Unknown )
-			mode = v.gameMode;
-
-		bOffered = bOffered || v.teams;
-	}
-
-	return zx::TeamsFor( mode, bOffered, g_HostTeams );
+	return zx::TeamsFor( HostGameModeFor( addon ), bOffered, g_HostTeams );
 }
 
 //*****************************************************************************
@@ -7193,17 +7211,35 @@ public:
 				: "Sides, sharing their frags and their colour." );
 	}
 
-	// [rc4l] The pill axes, in one pass or the other.
+	// [rc4l] The pill axes, one pass per band.
 	//
-	// Split because MIX leads the panel and everything else follows the sliders. It is the setting a
-	// host is most likely to have come here to change -- it is the one with a dozen answers, where
-	// the rest have two or three -- and it is the only one whose row count grows with the catalogue,
-	// so burying it under three sliders puts the longest block furthest from the top of the region.
+	// MIX leads the panel, being the setting a host most likely came here to change and the only
+	// one whose row count grows with the catalogue.
 	//
-	// `bMix` picks the pass. Any axis added later lands with the ordinary ones unless it is argued
-	// for, which is the right default: leading the panel is a claim, not a courtesy.
+	// MODE comes next, above the sliders rather than below them, because teams and lives both read
+	// the gamemode and a control belongs above what it changes.
+	//
+	// Everything else follows the sliders, where any axis added later lands unless argued for.
+	enum class HostAxisBand { Mix, Mode, Rest };
+
+	// Which band an axis is in, with MODE recognised by what its choices DO rather than by what the
+	// catalogue called the group, since a magic group name would be a rule the schema never made.
+	HostAxisBand HostBandOf( const zx::RemixGroup &group )
+	{
+		if ( group.id == kHostMixGroup )
+			return HostAxisBand::Mix;
+
+		for ( size_t i = 0; i < group.choices.size( ); ++i )
+		{
+			if ( group.choices[i].gameMode != zx::HostGameMode::Unknown )
+				return HostAxisBand::Mode;
+		}
+
+		return HostAxisBand::Rest;
+	}
+
 	int DrawHostRemixAxes( int x, int y, int labelW, const std::vector<zx::RemixGroup> &groups,
-		const zx::WeaponsPlan &plan, bool bMix )
+		const zx::WeaponsPlan &plan, HostAxisBand band )
 	{
 		for ( size_t g = 0; g < groups.size( ); ++g )
 		{
@@ -7211,7 +7247,7 @@ public:
 			if ( choices.size( ) <= 1 )
 				continue;
 
-			if (( groups[g].id == kHostMixGroup ) != bMix )
+			if ( HostBandOf( groups[g] ) != band )
 				continue;
 
 			// The axis is one row as far as the keyboard is concerned, however many lines of pills it
@@ -7450,13 +7486,15 @@ public:
 
 		const zx::WeaponsPlan plan = HostWeaponsPlan( addon );
 
-		// The mix leads, then the sliders, then any other axis. See DrawHostRemixAxes.
-		y = DrawHostRemixAxes( x, y, labelW, groups, plan, true );
+		// The mix leads, then the mode, then the sliders those two decide, then any other axis.
+		// See DrawHostRemixAxes.
+		y = DrawHostRemixAxes( x, y, labelW, groups, plan, HostAxisBand::Mix );
+		y = DrawHostRemixAxes( x, y, labelW, groups, plan, HostAxisBand::Mode );
 		y = DrawHostStartMap( x, y, labelW );
 		y = DrawHostLives( x, y, labelW, addon );
 		y = DrawHostFastWeapons( x, y, labelW, addon );
 		y = DrawHostTeams( x, y, labelW, addon );
-		y = DrawHostRemixAxes( x, y, labelW, groups, plan, false );
+		y = DrawHostRemixAxes( x, y, labelW, groups, plan, HostAxisBand::Rest );
 
 		return y;
 	}

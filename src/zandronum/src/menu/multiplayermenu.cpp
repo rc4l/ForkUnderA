@@ -143,8 +143,6 @@ CVAR ( Int, menu_ignoreduration, 0, 0 )
 CVAR ( Bool, menu_ignoreaction, true, 0 )
 CVAR ( Bool, menu_ignoretype, false, 0 )
 CVAR ( Float, menu_voicevolume, 1.0f, 0 )
-CVAR ( String, menu_authusername, 0, 0 )
-CVAR ( String, menu_authpassword, 0, 0 )
 CVAR ( Int, menu_skirmishskill, 0, CVAR_ARCHIVE )
 CVAR ( Int, menu_skirmishbotskill, 0, CVAR_ARCHIVE )
 CVAR ( Int, menu_skirmishtimelimit, 0, CVAR_ARCHIVE )
@@ -1228,20 +1226,6 @@ CCMD ( menu_disconnect )
 	}
 	else
 		M_StartMessage( "You must be in a netgame to disconnect.\n\npress a key.", 1 );
-}
-
-CCMD ( menu_login )
-{
-	if ( NETWORK_GetState() == NETSTATE_CLIENT )
-	{
-		M_ClearMenus();
-
-		FString command;
-		command.Format( "login \"%s\" \"%s\"", *menu_authusername, *menu_authpassword );
-		C_DoCommand( command );
-	}
-	else
-		M_StartMessage( "You must be in a netgame to log in.\n\npress a key.", 1 );
 }
 
 CCMD ( menu_rconlogin )

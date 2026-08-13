@@ -108,6 +108,9 @@ void Tick();
 // FileSearch.Directories so BaseFileSearch finds what we downloaded -- this run and every run after.
 FString DownloadDir();
 
+// [rc4l] Put the download folder in FileSearch.Directories now, not when a download starts.
+void RegisterDownloadDirEarly();
+
 // [rc4l] Full path of a copy of `name` whose MD5 is `md5Hex`, inside our own download folder, or ""
 // if we do not have that exact content. Checks the content-addressed store (a stat) and then the
 // flat working copy (one hash).

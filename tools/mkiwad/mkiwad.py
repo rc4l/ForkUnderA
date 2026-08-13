@@ -2,16 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 #
-# [rc4l] Assembles an IWAD from a manifest. The tool knows lump formats and drawing primitives;
-# it knows nothing about any particular game. What goes in a given IWAD is the manifest's business.
+# [rc4l] Assembles an IWAD from a manifest, knowing lump formats and drawing primitives and nothing
+# about any particular game.
 #
-# An IWAD here is the minimum a total-conversion pk3 needs underneath it: the engine chrome the
-# pk3 does not carry (status bar face, pause, intermission), placeholder patches so stock texture
-# names resolve, and one map so the engine can identify the file at all.
+# An IWAD here is the minimum a total-conversion pk3 needs underneath it: the engine chrome the pk3
+# does not carry, placeholder patches so stock texture names resolve, and one map to identify by.
 #
-# Art is written as PNG lumps rather than Doom patches on purpose. A patch is palette indexed, and
-# the palette at runtime belongs to whichever pk3 is loaded on top, so patch bytes authored against
-# a different palette come out miscoloured. PNG carries its own colours and the engine converts.
+# Art is written as PNG rather than as Doom patches because a patch is palette indexed and the
+# runtime palette belongs to whichever pk3 is loaded on top.
 
 import io
 import json
@@ -145,7 +143,7 @@ def draw_text(s, scale=2, fill=(255, 255, 255, 255), shadow=(0, 0, 0, 255)):
 
 
 # ---------------------------------------------------------------------------------------------
-# Generators. Each takes (spec) and returns lump bytes.
+# Generators, each taking a spec and returning lump bytes.
 # ---------------------------------------------------------------------------------------------
 
 def gen_text(spec):
@@ -192,8 +190,8 @@ def gen_sky(spec):
         t = y / float(h - 1)
         d.line([(0, y), (w, y)],
                fill=tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3)) + (255,))
-    # Stars from a fixed seed rather than the system generator, so the file is byte reproducible.
-    # Multiplying the index by a constant is what NOT to do here: it lays them out on a lattice.
+    # Stars from a fixed seed rather than the system generator, so the file is byte reproducible,
+    # and not from the index times a constant, which lays them out on a lattice.
     seed = spec.get("seed", 20250807)
     for _ in range(90):
         seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
@@ -319,8 +317,8 @@ def main(argv):
         print("usage: mkiwad.py <manifest.json> [output.wad]")
         return 2
     out, count, size = build(argv[1], argv[2] if len(argv) > 2 else None)
-    # The digest is printed rather than left to be looked up: it has to be copied into
-    # config/iwadallowlist.txt, and PNG bytes can shift with the zlib the build happens to use.
+    # The digest is printed rather than left to be looked up, because it has to be copied into
+    # config/iwadallowlist.txt and PNG bytes shift with whichever zlib built them.
     import hashlib
     digest = hashlib.sha256(io.open(out, "rb").read()).hexdigest()
     print("wrote %s: %d lumps, %d bytes" % (out, count, size))

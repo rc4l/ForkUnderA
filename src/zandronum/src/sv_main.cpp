@@ -80,6 +80,8 @@
 #include "g_game.h"
 #include "p_local.h"
 #include "sv_main.h"
+#include "features/identity/zx_identity.h"
+#include "features/identity/zx_identitynet.h"
 #include "sv_ban.h"
 #include "i_system.h"
 #include "c_console.h"
@@ -114,8 +116,6 @@
 #include "cl_main.h"
 #include "d_netinf.h"
 #include "po_man.h"
-#include "network/cl_auth.h"
-#include "network/sv_auth.h"
 #include "r_data/colormaps.h"
 #include "network_enums.h"
 #include "d_protocol.h"
@@ -173,7 +173,6 @@ static	bool	server_CheckForClientCommandFlood( ULONG ulClient );
 static	bool	server_CheckForClientMinorCommandFlood( ULONG ulClient );
 static	bool	server_CheckJoinPassword( const FString& clientPassword );
 static	bool	server_InfoCheat( BYTESTREAM_s* pByteStream );
-static	bool	server_CheckLogin( const ULONG ulClient );
 static	void	server_PrintWithIP( FString message, const NETADDRESS_s &address );
 static	void	server_PerformBacktrace( ULONG ulClient, ULONG ulNumLateMoveCMDs );
 static	bool	server_ShouldPerformBacktrace( ULONG ulClient );
@@ -288,7 +287,6 @@ CVAR( Flag, sv_nokill, dmflags2, DF2_NOSUICIDE )
 CVAR( Bool, sv_pure, true, CVAR_SERVERINFO | CVAR_LATCH )
 CVAR( Int, sv_maxclientsperip, 2, CVAR_ARCHIVE | CVAR_SERVERINFO )
 CVAR( Int, sv_afk2spec, 0, CVAR_ARCHIVE | CVAR_SERVERINFO ) // [K6]
-CVAR( Bool, sv_forcelogintojoin, false, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 CVAR( Bool, sv_useticbuffer, true, CVAR_ARCHIVE|CVAR_NOSETBYACS|CVAR_DEBUGONLY )
 CVAR( Int, sv_showcommands, 0, CVAR_ARCHIVE|CVAR_DEBUGONLY )
 CVAR( Int, sv_smoothplayers_debuginfo, 0, CVAR_ARCHIVE|CVAR_DEBUGONLY ) // [AK]
@@ -482,6 +480,14 @@ CUSTOM_CVAR( Float, sv_respawndelaytime, 1.0f, CVAR_ARCHIVE | CVAR_SERVERINFO | 
 
 void SERVER_Construct( void )
 {
+	// [rc4l] Load or create the identity this server presents, once, before anybody can connect.
+	// Doing it here rather than per connection is what keeps the handshake free of disk access.
+	{
+		const std::string root = zx::Identity_ConfigRoot( );
+		if ( !zx::Identity_InitServer( root.c_str( )))
+			Printf( TEXTCOLOR_RED "No server identity, so nobody will be able to authenticate.\n" );
+	}
+
 	const char	*pszPort;
 	const char	*pszMaxClients;
 	ULONG		ulIdx;
@@ -699,6 +705,9 @@ unsigned int server_GetDeltaTicks( unsigned int &nowTime, const unsigned int pre
 void SERVER_Tick( void )
 {
 	unsigned int nowTime = 0;
+
+	// [rc4l] Anonymous accounts: nobody plays here without proving who they are.
+	SERVER_FuaAuthCheckDeadlines( );
 
 	I_DoSelect();
 
@@ -1204,13 +1213,6 @@ void SERVER_GetPackets( void )
 		// Packet is not from an existing client; must be someone trying to connect!
 		if ( g_lCurrentClient == -1 )
 		{
-			// [BB] Or it's from the auth server.
-			if ( NETWORK_GetFromAddress().Compare( NETWORK_AUTH_GetCachedServerAddress() ))
-			{
-				SERVER_AUTH_ParsePacket( pByteStream );
-				continue;
-			}
-
 			SERVER_DetermineConnectionType( pByteStream );
 			continue;
 		}
@@ -2043,9 +2045,6 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	// [BB] Save whether the clients wants his country to be hidden.
 	g_aClients[lClient].bWantHideCountry = !!( connectFlags & CCF_HIDECOUNTRY );
 
-	// [TP] Save whether or not the player wants to hide his account.
-	g_aClients[lClient].WantHideAccount = !!pByteStream->ReadByte();
-
 	// Read in the client's network game version.
 	clientNetworkGameVersion = pByteStream->ReadByte();
 
@@ -2177,7 +2176,11 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	// [AK] Reset the client's tic buffer.
 	SERVER_ResetClientTicBuffer( lClient );
 
-	SERVER_InitClientSRPData ( lClient );
+	// [rc4l] Anonymous accounts: the client starts unproven, and the deadline clock starts once
+	// it has finished connecting.
+	SERVER_GetClient( lClient )->loggedIn = false;
+	SERVER_GetClient( lClient )->username = "";
+	SERVER_GetClient( lClient )->fuaAuthDeadline = 0;
 
 	// [BB] Inform the client that he is connected and needs to authenticate the map.
 	SERVER_RequestClientToAuthenticate( lClient );
@@ -2681,8 +2684,7 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 			SERVERCOMMANDS_SetPlayerCountry( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 
 		// [TP] Account name.
-		if ( g_aClients[ulIdx].WantHideAccount == false )
-			SERVERCOMMANDS_SetPlayerAccountName( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
+		SERVERCOMMANDS_SetPlayerAccountName( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 	}
 
 	// Server may have already picked a team for the incoming player. If so, tell him!
@@ -5173,11 +5175,11 @@ bool SERVER_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 		// [TP] Client wishes to use the linetarget or info cheat on an actor.
 		return ( server_InfoCheat( pByteStream ));
 
-	case CLC_SRP_USER_REQUEST_LOGIN:
-	case CLC_SRP_USER_START_AUTHENTICATION:
-	case CLC_SRP_USER_PROCESS_CHALLENGE:
+	// [rc4l] Anonymous accounts. Nobody typed anything to get here.
+	case CLC_FUA_AUTH_HELLO:
+	case CLC_FUA_AUTH_PROOF:
 
-		return SERVER_ProcessSRPClientCommand( lCommand, pByteStream );
+		return SERVER_ProcessFuaAuthCommand( lCommand, pByteStream );
 	case CLC_WARPCHEAT:
 
 		{
@@ -5263,12 +5265,7 @@ bool SERVER_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 			const int info = pByteStream->ReadByte();
 			const bool value = !!pByteStream->ReadByte();
 
-			if ( info == HIDEINFO_ACCOUNTNAME )
-			{
-				client->WantHideAccount = value;
-				SERVERCOMMANDS_SetPlayerAccountName( g_lCurrentClient );
-			}
-			else if ( info == HIDEINFO_COUNTRY )
+			if ( info == HIDEINFO_COUNTRY )
 			{
 				client->bWantHideCountry = value;
 
@@ -6660,10 +6657,6 @@ static bool server_RequestJoin( BYTESTREAM_s *pByteStream )
 	if ( server_CheckJoinPassword( clientJoinPassword ) == false )
 		return ( false );
 
-	// [BB] Possibly the player needs to login before joining.
-	if ( server_CheckLogin ( g_lCurrentClient ) == false )
-		return ( false );
-
 	// If there aren't currently any slots available, just put the person in line.
 	if ( GAMEMODE_PreventPlayersFromJoining() )
 	{
@@ -6901,10 +6894,6 @@ static bool server_ChangeTeam( BYTESTREAM_s *pByteStream )
 
 	// If we're forcing a join password, prevent him from joining if it doesn't match.
 	if ( server_CheckJoinPassword( clientJoinPassword ) == false )
-		return ( false );
-
-	// [BB] Possibly the player needs to login before joining.
-	if ( server_CheckLogin ( g_lCurrentClient ) == false )
 		return ( false );
 
 	// [BB] If this is a spectator and players are not allowed to join at the moment, put him in line.
@@ -7791,19 +7780,6 @@ static bool server_CheckJoinPassword( const FString& clientPassword )
 
 //*****************************************************************************
 //
-static bool server_CheckLogin ( const ULONG ulClient )
-{
-	if ( sv_forcelogintojoin && ( g_aClients[ulClient].loggedIn == false ) )
-	{
-		SERVER_PrintfPlayer( ulClient, "You need to login before joining.\n" );
-		return ( false );
-	}
-
-	return true;
-}
-
-//*****************************************************************************
-//
 // [TP] Client wishes to apply the linetarget or info cheat on a particularly
 // interesting actor but cannot because they don't know the health of it.
 // Let's help it out. :)
@@ -8046,17 +8022,9 @@ static void server_FixZFromBacktrace( APlayerPawn *pmo, fixed_t oldFloorZ )
 //
 FString CLIENT_s::GetAccountName( void ) const
 {
-	if ( loggedIn )
-	{
-		return username;
-	}
-	// [BB] Anonymous players get an account name based on their player slot.
-	else
-	{
-		FString result;
-		result.Format ( "%td@localhost", this - g_aClients );
-		return result;
-	}
+	// [rc4l] Empty only during the few seconds before a client proves who it is, after which it is
+	// dropped anyway, so there is no anonymous name left to invent.
+	return loggedIn ? username : FString( "" );
 }
 
 //*****************************************************************************

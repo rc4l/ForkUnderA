@@ -125,8 +125,16 @@ private:
 	TArray<FString> mIWadNames;
 	TArray<int> mLumpsFound;
 
-	void ParseIWadInfo(const char *fn, const char *data, int datasize);
+	// [rc4l] `result` non-NULL parses INTO it instead of appending to the list, so a candidate can
+	// be read without joining the list until it has been accepted. See CheckIWADInfo.
+	void ParseIWadInfo(const char *fn, const char *data, int datasize, FIWADInfo *result = NULL);
 	void ParseIWadInfos(const char *fn);
+
+	// [rc4l] Let a file declare what it is, rather than being recognised by its lumps.
+	int CheckIWADInfo(const char *fn);
+
+	// [rc4l] Register every IWAD in one folder, whether or not the engine still needs to find one.
+	void RegisterIWADsIn(const char *dir);
 	void ClearChecks();
 	void CheckLumpName(const char *name);
 	int GetIWadInfo();

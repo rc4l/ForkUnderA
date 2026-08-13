@@ -163,4 +163,18 @@ ScaleReconcile ComputeScaleReconcile(
 	return SCALE_RECONCILE_NONE;
 }
 
+void ScaleWindowPointToRender(
+	int clientWidth, int clientHeight,
+	int renderWidth, int renderHeight,
+	int &x, int &y)
+{
+	// Each axis on its own, because the present stretches each to fill the client and the two
+	// ratios differ whenever the window is not the render buffer's shape.
+	if ((clientWidth > 0) && (renderWidth > 0))
+		x = (x * renderWidth) / clientWidth;
+
+	if ((clientHeight > 0) && (renderHeight > 0))
+		y = (y * renderHeight) / clientHeight;
+}
+
 } // namespace zx

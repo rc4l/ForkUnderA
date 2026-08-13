@@ -636,6 +636,16 @@ void RegisterDownloadDirInSearchPath(const char *dir)
 
 namespace zx { namespace waddownload {
 
+// [rc4l] Registered at startup because the folder already holds what earlier sessions fetched
+// and whatever the player dropped in by hand, none of which a session that downloaded nothing
+// could see.
+void RegisterDownloadDirEarly()
+{
+	const FString dir = DownloadDir();
+	if (dir.IsNotEmpty())
+		RegisterDownloadDirInSearchPath(dir.GetChars());
+}
+
 FString DownloadDir()
 {
 	FString dir = *cl_fua_download_dir;
