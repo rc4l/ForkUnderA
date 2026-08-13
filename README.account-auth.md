@@ -1,4 +1,4 @@
-# Accounts
+# Automated Anonymous Accounts (AAA)
 
 Every player has an account. Nobody signs up, nobody logs in, and there is no account server.
 
