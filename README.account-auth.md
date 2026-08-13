@@ -2,6 +2,20 @@
 
 Every player has an account. Nobody signs up, nobody logs in, and there is no account server.
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Server
+
+    C->>S: connect, my nonce, my ephemeral key
+    S->>C: my key, my ephemeral key, signature over your nonce
+    Note over C: Verify the server BEFORE naming an account
+    C->>S: my account key, signature over the shared session
+    Note over S: Verify, and only now commit a slot
+    S->>C: map load
+```
+
 ## How
 
 One secret per machine. Your account on a server is derived from that secret plus the server's
