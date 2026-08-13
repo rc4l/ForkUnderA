@@ -6,7 +6,7 @@ import { reap, readRegistry } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation } from "./session.mjs";
 import { launchInstance, resolveEngine } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
-import { menuNav, click, typeText, screenshot, padButton, padDpad } from "./ui.mjs";
+import { menuNav, click, typeText, screenshot, padButton, padDpad, look } from "./ui.mjs";
 
 // Run fn with a short-lived, connected+greeted client, then close it.
 async function withClient(port, token, fn) {
@@ -56,6 +56,9 @@ const TOOLS = [
       port: { type: "number" }, token: { type: "string" },
       yaw: { type: "number" }, pitch: { type: "number" }, forward: { type: "number" }, side: { type: "number" }, up: { type: "number" },
       clear: { type: "boolean" } } } },
+  { name: "ui_look", description: "Precise relative view rotation in DEGREES (yaw>0 left, pitch>0 down). Exact angular turn, unlike the rate-based stick. Applies next tic.",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" }, yaw: { type: "number" }, pitch: { type: "number" } } } },
 ];
 
 async function callTool(name, a = {}) {
@@ -75,6 +78,7 @@ async function callTool(name, a = {}) {
       await padButton(c, a.index, { hold: a.hold }); return { button: a.index };
     });
     case "ui_stick": return withClient(a.port, a.token, (c) => c.rpc("input.axis", a.clear ? { clear: true } : { yaw: a.yaw, pitch: a.pitch, forward: a.forward, side: a.side, up: a.up }));
+    case "ui_look": return withClient(a.port, a.token, (c) => look(c, { yaw: a.yaw, pitch: a.pitch }));
     default: throw new Error(`unknown tool: ${name}`);
   }
 }

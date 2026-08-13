@@ -126,6 +126,11 @@ export const stickClear = (c) => c.rpc("input.axis", { clear: true });
 export async function stickHold(c, axes, { hold = 300 } = {}) {
   await stick(c, axes); await sleep(hold); await stickClear(c);
 }
+
+// Precise relative view rotation in DEGREES: yaw>0 = left, pitch>0 = down. Unlike the analog stick
+// (a turn rate), this is an exact angular delta -- "look left 135 then down 10" = look(c,{yaw:135})
+// then look(c,{pitch:10}). The view applies on the next tic, so in a paused sim step one tic after.
+export const look = (c, { yaw = 0, pitch = 0 } = {}) => c.rpc("input.look", { yaw, pitch });
 export async function typeText(c, text, { delay = 30 } = {}) { for (const ch of text) { await post(c, charEvent(ch)); await sleep(delay); } }
 
 // Capture the frame via the engine's built-in `screenshot` CCMD (writes <name>.png beside the binary),
