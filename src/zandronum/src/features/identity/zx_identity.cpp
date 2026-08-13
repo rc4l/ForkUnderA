@@ -17,6 +17,18 @@
 
 #include <stdio.h>
 
+// [rc4l] The CRT rather than windows.h, which collides with the bundled dxsdk headers here.
+#include <fcntl.h>
+#include <sys/stat.h>
+
+#ifdef _WIN32
+#include <io.h>
+#include <share.h>
+#else
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+
 namespace
 {
 
@@ -25,6 +37,60 @@ zx::KeyPair g_ClientKey;
 zx::KeyPair g_ServerKey;
 
 const char kSeedTag[] = "seed = ";
+
+// [rc4l] How many copies of the engine one machine may run with accounts of their own.
+const int kMaxLocalInstances = 8;
+
+// [rc4l] Held open for the life of the process, which is what reserves this instance's key.
+int g_InstanceLock = -1;
+
+// [rc4l] Claim a key by taking an exclusive lock on a file beside it.
+//
+// The lock rather than a "does the file exist" check, because two copies launched together would
+// both see the same answer and both take the same key. An exclusive open is decided by the OS, so
+// exactly one of them wins however close together they ask.
+bool ClaimInstance( const std::string &keyPath )
+{
+	const std::string lockPath = keyPath + ".lock";
+
+#ifdef _WIN32
+	// Deny-read-write is the whole mechanism: a second copy asking for the same file is refused
+	// by the OS rather than by a check we could lose a race on.
+	int fd = -1;
+	if ( _sopen_s( &fd, lockPath.c_str( ), _O_RDWR | _O_CREAT, _SH_DENYRW, _S_IREAD | _S_IWRITE ) != 0 )
+		return false;
+
+	if ( fd < 0 )
+		return false;
+#else
+	const int fd = open( lockPath.c_str( ), O_RDWR | O_CREAT, 0600 );
+	if ( fd < 0 )
+		return false;
+
+	if ( flock( fd, LOCK_EX | LOCK_NB ) != 0 )
+	{
+		close( fd );
+		return false;
+	}
+#endif
+
+	g_InstanceLock = fd;
+	return true;
+}
+
+void ReleaseClaim( void )
+{
+	if ( g_InstanceLock < 0 )
+		return;
+
+#ifdef _WIN32
+	_close( g_InstanceLock );
+#else
+	close( g_InstanceLock );
+#endif
+
+	g_InstanceLock = -1;
+}
 
 // [rc4l] The derivation from the master secret to one operator's account, a plain SHA-256 because
 // the input already holds 256 bits of entropy and no stretching is called for.
@@ -153,6 +219,39 @@ bool Identity_InitClient( const char *configRoot, int instance )
 {
 	return LoadOrCreate( ClientAuthKeyPath( configRoot ? configRoot : "", instance ),
 		"client identity", g_ClientKey );
+}
+
+int Identity_InitClientHere( const char *configRoot )
+{
+	const std::string root = configRoot ? configRoot : "";
+
+	for ( int instance = 0; instance < kMaxLocalInstances; ++instance )
+	{
+		const std::string path = ClientAuthKeyPath( root, instance );
+		if ( path.empty( ))
+			break;
+
+		if ( !ClaimInstance( path ))
+			continue;
+
+		if ( Identity_InitClient( configRoot, instance ))
+		{
+			if ( instance > 0 )
+			{
+				Printf( "Identity: this is copy %d on this machine, so it plays as its own account.\n",
+					instance + 1 );
+			}
+
+			return instance;
+		}
+
+		ReleaseClaim( );
+	}
+
+	// [rc4l] Every numbered key is spoken for, so fall back to the first one and let the server
+	// refuse the duplicate rather than starting with no identity at all.
+	Identity_InitClient( configRoot, 0 );
+	return 0;
 }
 
 bool Identity_InitServer( const char *configRoot )

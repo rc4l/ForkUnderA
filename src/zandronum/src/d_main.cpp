@@ -2970,7 +2970,7 @@ void D_DoomMain (void)
 		// need it, so the handshake itself never touches the disk.
 		{
 			const std::string identityRoot = zx::Identity_ConfigRoot( );
-			zx::Identity_InitClient( identityRoot.c_str( ), 0 );
+			zx::Identity_InitClientHere( identityRoot.c_str( ));
 		}
 
 		FIWadManager *iwad_man = new FIWadManager;
