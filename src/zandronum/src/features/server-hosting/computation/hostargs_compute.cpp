@@ -245,6 +245,14 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 	out.push_back("+sv_fua_download");
 	out.push_back(config.serveWads ? "1" : "0");
 
+	// [rc4l] Force LAN broadcast on for every hosted server, independent of config.advertise (which is
+	// the PUBLIC registry) and of the archived sv_broadcast cvar. Hosting a game to play locally is
+	// exactly the case that needs LAN discovery, yet leaving it to the saved cvar meant a config with
+	// sv_broadcast=false silently hid the server from every browser on the LAN -- announcing publicly
+	// while being invisible next door. A private (unadvertised) host still wants to be found on the LAN.
+	out.push_back("+sv_broadcast");
+	out.push_back("1");
+
 	return out;
 }
 
