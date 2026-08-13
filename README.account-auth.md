@@ -1,9 +1,7 @@
 # Automated Anonymous Accounts (AAA)
 
-Servers want to know who is who, so they can save your progress, keep your rank, and ban a griefer
-without banning your whole household. The old answer was to make everyone register on a login
-server and type a password before playing. AAA gives servers the same stable identity while nobody
-signs up, nobody logs in, and no login server exists to go down or be trusted.
+Servers get a stable identity to hang progress, ranks and bans on, without anyone registering,
+logging in, or trusting a login server.
 
 ```mermaid
 sequenceDiagram
