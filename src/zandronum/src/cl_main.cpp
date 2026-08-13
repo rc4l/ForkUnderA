@@ -913,6 +913,10 @@ void CLIENT_AttemptConnection( void )
 	g_LocalBuffer.ByteStream.WriteByte( cl_connect_flags );
 	g_LocalBuffer.ByteStream.WriteByte( NETGAMEVERSION );
 	g_LocalBuffer.ByteStream.WriteString( g_lumpsAuthenticationChecksum.GetChars() );
+
+	// [rc4l] Anonymous accounts: the same nonce on every retry, so the answer we get back is one
+	// we can still check.
+	CLIENT_FuaAuthWriteHello( &g_LocalBuffer.ByteStream );
 }
 
 //*****************************************************************************
@@ -935,6 +939,9 @@ void CLIENT_AttemptAuthentication( char *pszMapName )
 
 	// Send a checksum of our verticies, linedefs, sidedefs, and sectors.
 	CLIENT_AuthenticateLevel( pszMapName );
+
+	// [rc4l] Anonymous accounts: and who we are, which the server judges before it commits a slot.
+	CLIENT_FuaAuthWriteProof( &g_LocalBuffer.ByteStream );
 
 	// Make sure all players are gone from the level.
 	CLIENT_ClearAllPlayers();
@@ -1480,6 +1487,14 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 		// [CK] Use the server's gametic to start at a reasonable number
 		CLIENT_SetLatestServerGametic( pByteStream->ReadLong() );
+
+		// [rc4l] Anonymous accounts: the server proves itself here, and we walk away rather than
+		// name an account to something that cannot.
+		if ( CLIENT_FuaAuthReadChallenge( pByteStream ) == false )
+		{
+			CLIENT_QuitNetworkGame( "This server could not prove its identity." );
+			return;
+		}
 
 		// [BB] If we don't have the map, something went horribly wrong.
 		if ( P_CheckIfMapExists( g_szMapName ) == false )
@@ -2253,12 +2268,6 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 					players[ulPlayer].mo->ViewHeight = viewHeight;
 					players[ulPlayer].viewheight = viewHeight;
 				}
-				break;
-
-			// [rc4l] The server proving itself, which we check before revealing anything.
-			case SVC2_FUA_AUTH_CHALLENGE:
-
-				CLIENT_FuaAuthHandleChallenge( pByteStream );
 				break;
 
 			case SVC2_SETTHINGHEALTH:
@@ -3525,8 +3534,6 @@ void ServerCommands::EndSnapshot::Execute()
 
 	// [rc4l] Anonymous accounts: open the identity exchange now that we are a client the server
 	// will take commands from. Doing it during the level check was too early, and the hello was
-	// simply dropped: the account was never established and playerinfo said so.
-	CLIENT_FuaAuthSendHello( );
 
 	// Display in the console that we have the snapshot now.
 	Printf( "Snapshot received.\n" );
