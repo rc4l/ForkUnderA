@@ -19,7 +19,7 @@ namespace zx
 std::string IwadRegistryRoot( void );
 
 // Register `path` if it is not registered already. Returns the path of the stored copy, or "" when
-// nothing was stored -- an unreadable file, a hash that failed, or no writable root.
+// nothing was stored, meaning an unreadable file, a hash that failed, or no writable root.
 //
 // Idempotent by construction: the destination is the file's own digest, so registering the same
 // file twice finds it already there and copies nothing. That is what makes it safe to call on every

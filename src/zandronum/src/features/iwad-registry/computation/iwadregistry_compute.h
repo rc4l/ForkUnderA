@@ -9,7 +9,7 @@
 //     <data root>/ForkUnderA/core/iwads/<sha256>/<filename>
 //
 // Addressed by CONTENT rather than by name, because names lie. The same file arrives as DOOM2.WAD,
-// doom2.wad and doom2 (1).wad, and two genuinely different builds arrive as the same name -- which
+// doom2.wad and doom2 (1).wad, and two genuinely different builds arrive as the same name, which
 // is the whole reason the allowlist already keys on the digest. Filed under its hash, one file is
 // one entry and two builds are two, whatever anyone called them.
 //
@@ -30,7 +30,7 @@ namespace zx
 // A SHA-256 digest as it must appear in a path: lower case, hex, exactly 64 characters.
 //
 // Lower case is not cosmetic. Windows folds case in paths and Linux does not, so the same digest
-// written both ways is ONE folder on Windows and TWO on Linux -- a split store that only appears on
+// written both ways is ONE folder on Windows and TWO on Linux, a split store that only shows up on
 // the platform it is hardest to notice on. Normalised in one place so it cannot be got wrong twice.
 //
 // Returns "" for anything that is not a 64-character hex string, which is how a caller whose hash
