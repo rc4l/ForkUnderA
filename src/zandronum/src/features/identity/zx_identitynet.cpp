@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-// [rc4l] The handshake that replaces logging in.
+// [rc4l] The handshake that replaces logging in: the client proves it holds a key, the server works
+// out which account that is, and play begins.
 //
-// Nobody types anything and nothing is registered anywhere. The client proves it holds a key, the
-// server works out which account that is, and play begins. The whole exchange is two round trips
-// and no I/O: keys were loaded at startup, so this costs two signatures and a key agreement.
-//
-// THE ORDER IS THE SECURITY. The server signs first, before the client has revealed which account
-// it is or produced any proof. A server that merely copied a real server's public key cannot
-// produce that signature, so the client walks away before it can be used as a relay.
+// THE ORDER IS THE SECURITY, so the server signs first, before the client has revealed which
+// account it is.
 
 #include "features/identity/zx_identitynet.h"
 
@@ -48,8 +44,7 @@ zx::Bytes FromArray( const TArray<unsigned char> &in )
 	return out;
 }
 
-// [rc4l] Our own, rather than sv_auth.cpp's: that file goes away with the account server, and
-// this check has to outlive it.
+// [rc4l] Our own rather than sv_auth.cpp's, which goes away with the account server.
 bool AccountAlreadyHere( const char *account, ULONG ulExcept )
 {
 	for ( ULONG i = 0; i < MAXPLAYERS; ++i )
@@ -120,8 +115,8 @@ bool SERVER_ProcessFuaAuthCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 			ToArray( ephemeral.privateKey, pClient->fuaEphemeralPrivate );
 
-			// [rc4l] Signed over the client's nonce, so the client knows this answer was made for
-			// its request and is not a recording of an older one.
+			// [rc4l] Signed over the client's nonce, so this answer cannot be a recording of an
+			// older one.
 			const zx::Bytes &serverPublic = zx::Identity_ServerPublicKey( );
 			const std::string message = zx::ServerProofMessage(
 				zx::ToHex( nonce ), zx::ToHex( serverPublic ));
@@ -152,35 +147,31 @@ bool SERVER_ProcessFuaAuthCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 			if ( !zx::Identity_Verify( accountPublic, message, signature ))
 			{
-				// [rc4l] Said plainly rather than dropped quietly: a player whose proof fails has a
-				// broken install or a tampering middlebox, and neither is their fault to guess at.
-				SERVER_ClientError( ulClient, NETWORK_ERRORCODE_AUTHENTICATIONFAILED );
+				// [rc4l] Said plainly rather than dropped quietly, because a failed proof means a
+				// broken install and not a mistake the player made.
+				SERVER_ClientError( ulClient, NETWORK_ERRORCODE_IDENTITYREJECTED );
 				return true;
 			}
 
 			const std::string account = zx::Identity_AccountName( accountPublic );
 
-			// [rc4l] Refused rather than shared. Two sessions on one account means somebody else
-			// holds that key, and letting both in would let the second one act as the first.
+			// [rc4l] Refused rather than shared, because letting both in would let the second one
+			// act as the first.
 			if ( AccountAlreadyHere( account.c_str( ), ulClient ))
 			{
-				SERVER_ClientError( ulClient, NETWORK_ERRORCODE_AUTHENTICATIONFAILED );
+				SERVER_ClientError( ulClient, NETWORK_ERRORCODE_IDENTITYINUSE );
 				return true;
 			}
 
 			pClient->username = account.c_str( );
 			pClient->loggedIn = true;
 
-			// [rc4l] Tell everyone, now, rather than leaving it to the userinfo exchange.
-			//
-			// That exchange races this one and usually wins, so the account was being established
-			// on the server and never reaching a single screen: playerinfo reported the anonymous
-			// placeholder for a player who had in fact proved who they were. Found by asking it
-			// rather than by trusting that a successful join meant a successful login.
+			// [rc4l] Told now rather than left to the userinfo exchange, which races this one and
+			// usually wins, leaving the account set on the server but on nobody's screen.
 			if ( PLAYER_IsValidPlayer( ulClient ))
 				SERVERCOMMANDS_SetPlayerAccountName( ulClient );
 
-			// Nothing further needs the exchange, and a kept private key is a key that can leak.
+			// A kept private key is a key that can leak.
 			pClient->fuaEphemeralPrivate.Clear( );
 			pClient->fuaClientEphemeral.Clear( );
 			pClient->fuaClientNonce.Clear( );
@@ -193,12 +184,8 @@ bool SERVER_ProcessFuaAuthCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 
 
-// [rc4l] Drop anyone who never proved who they are.
-//
-// A grace period rather than an instant refusal, because the proof cannot arrive until the client
-// has finished connecting and the exchange itself is two round trips: refusing on arrival would
-// reject every honest player on a slow link. Ten seconds is far longer than the handshake needs
-// and far shorter than anybody would sit wondering.
+// [rc4l] Drop anyone who never proved who they are, after a grace period rather than on arrival,
+// because the proof cannot be sent until the client has finished connecting.
 void SERVER_FuaAuthCheckDeadlines( void )
 {
 	for ( ULONG i = 0; i < MAXPLAYERS; ++i )
@@ -214,7 +201,7 @@ void SERVER_FuaAuthCheckDeadlines( void )
 			continue;
 		}
 
-		// Not counting yet: the client is still arriving.
+		// Not counting yet, because the client is still arriving.
 		if ( pClient->State < CLS_SPAWNED )
 			continue;
 
@@ -227,7 +214,7 @@ void SERVER_FuaAuthCheckDeadlines( void )
 		if ( gametic >= (signed)pClient->fuaAuthDeadline )
 		{
 			Printf( "Dropping client %d: no identity was offered.\n", (int)i );
-			SERVER_ClientError( i, NETWORK_ERRORCODE_AUTHENTICATIONFAILED );
+			SERVER_ClientError( i, NETWORK_ERRORCODE_IDENTITYREJECTED );
 		}
 	}
 }
@@ -238,8 +225,8 @@ void SERVER_FuaAuthCheckDeadlines( void )
 namespace
 {
 
-// [rc4l] Held between the two halves of the exchange. The nonce proves the server's answer was made
-// for us, and the ephemeral private key turns it into a session only we two share.
+// [rc4l] Held between the two halves of the exchange, the nonce to date the server's answer and the
+// ephemeral key to turn it into a session only we two share.
 zx::Bytes g_ClientNonce;
 zx::KeyPair g_ClientEphemeral;
 
@@ -298,9 +285,8 @@ void CLIENT_FuaAuthHandleChallenge( BYTESTREAM_s *pByteStream )
 	const int lenSig = pByteStream->ReadByte( );
 	const zx::Bytes signature = ReadBytes( pByteStream, ( lenSig > 0 ) ? lenSig : 0 );
 
-	// [rc4l] THE step this design turns on. Verified BEFORE we derive an account or sign anything,
-	// so a server that copied a real public key gets nothing it could relay onwards: it cannot
-	// produce this signature, and we stop here.
+	// [rc4l] THE step this design turns on, verified before we derive an account or sign anything,
+	// so a server that only copied a public key gets nothing it could relay onwards.
 	const std::string expected = zx::ServerProofMessage(
 		zx::ToHex( g_ClientNonce ), zx::ToHex( serverPublic ));
 

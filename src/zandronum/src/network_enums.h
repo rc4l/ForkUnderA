@@ -515,6 +515,12 @@ BEGIN_ENUM ( NetworkErrorCode )
 	// [TP] The client sent bad userinfo
 	ENUM_ELEMENT( NETWORK_ERRORCODE_USERINFOREJECTED ),
 
+	// [rc4l] The client never proved which account it holds, or the proof did not check out.
+	ENUM_ELEMENT( NETWORK_ERRORCODE_IDENTITYREJECTED ),
+
+	// [rc4l] Somebody holding the same key is already playing here.
+	ENUM_ELEMENT( NETWORK_ERRORCODE_IDENTITYINUSE ),
+
 	ENUM_ELEMENT( NUM_NETWORK_ERRORCODES )
 }
 END_ENUM ( NetworkErrorCode )

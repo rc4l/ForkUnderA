@@ -1695,6 +1695,19 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 					}
 					break;
 				}
+
+			// [rc4l] Its own code rather than the level-authentication one, which would send the
+			// player hunting for a file mismatch that is not there.
+			case NETWORK_ERRORCODE_IDENTITYREJECTED:
+
+				szErrorString = "The server could not confirm who you are.\nDelete your identity folder to start over with a new account.";
+				break;
+
+			case NETWORK_ERRORCODE_IDENTITYINUSE:
+
+				szErrorString = "Somebody is already playing on your account.\nTwo copies of one key cannot be told apart, so only the first is let in.";
+				break;
+
 			case NETWORK_ERRORCODE_TOOMANYCONNECTIONSFROMIP:
 
 				szErrorString = "Too many connections from your IP.";
