@@ -72,6 +72,28 @@ TEST(McpRpc, GetIntHandlesNegativeAndMissing)
 	EXPECT_FALSE(GetInt("{\"n\":-42}", "missing", v));
 }
 
+TEST(McpRpc, GetFloatParsesSignFractionAndInteger)
+{
+	double v = -1.0;
+	EXPECT_TRUE(GetFloat("{\"x\":0.75}", "x", v));
+	EXPECT_NEAR(v, 0.75, 1e-9);
+	EXPECT_TRUE(GetFloat("{\"x\":-0.5}", "x", v));
+	EXPECT_NEAR(v, -0.5, 1e-9);
+	EXPECT_TRUE(GetFloat("{\"x\":3}", "x", v));       // bare integer parses as float
+	EXPECT_NEAR(v, 3.0, 1e-9);
+	EXPECT_TRUE(GetFloat("{\"x\":+1.25}", "x", v));   // leading + sign
+	EXPECT_NEAR(v, 1.25, 1e-9);
+}
+
+TEST(McpRpc, GetFloatRejectsMissingAndNonNumeric)
+{
+	double v = 42.0;
+	EXPECT_FALSE(GetFloat("{\"x\":0.75}", "missing", v));
+	EXPECT_FALSE(GetFloat("{\"x\":\"str\"}", "x", v)); // a string value is not a number
+	EXPECT_FALSE(GetFloat("{\"x\":.}", "x", v));       // no digits at all
+	EXPECT_NEAR(v, 42.0, 1e-9);                        // out untouched on failure
+}
+
 TEST(McpRpc, GetStrDecodesEscapes)
 {
 	std::string out;
