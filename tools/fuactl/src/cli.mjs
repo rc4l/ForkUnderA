@@ -1,0 +1,92 @@
+#!/usr/bin/env node
+// fuactl -- ForkUnderA companion. One tool, two faces:
+//   fuactl <cmd>     humans / CI          fuactl mcp     agents (MCP stdio server)
+// Both talk to the engine's native bridge (features/mcp-bridge), which must be built with
+// -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
+import { reap, readRegistry } from "./registry.mjs";
+import { runDeterminismCheck } from "./session.mjs";
+import { launchInstance, stopInstance } from "./launch.mjs";
+import { BridgeClient } from "./client.mjs";
+
+function parseFlags(argv) {
+  const flags = {}; const rest = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith("--")) {
+      const key = a.slice(2);
+      const val = (i + 1 < argv.length && !argv[i + 1].startsWith("--")) ? argv[++i] : true;
+      flags[key] = val;
+    } else rest.push(a);
+  }
+  return { flags, rest };
+}
+
+const USAGE = `fuactl <command>
+  ls                                 list registered engine instances
+  reap [--kill]                      prune dead instances; --kill SIGTERMs live ones (clean quit)
+  launch [--map M] [--seed S]        launch one supervised bridge instance (stays up until Ctrl-C)
+  rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
+  session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
+  mcp                                run as an MCP stdio server for agents
+`;
+
+async function main() {
+  const [cmd, ...argv] = process.argv.slice(2);
+  const { flags, rest } = parseFlags(argv);
+
+  switch (cmd) {
+    case "ls": {
+      const r = readRegistry();
+      for (const e of r) console.log(`pid=${e.pid} port=${e.port ?? "?"} ppid=${e.ppid ?? "?"}`);
+      if (!r.length) console.log("(no instances registered)");
+      break;
+    }
+    case "reap": {
+      const r = reap({ kill: !!flags.kill });
+      console.log(`live=${r.live.length} killed=${r.killed.length} pruned=${r.prunedCount}`);
+      break;
+    }
+    case "launch": {
+      const inst = await launchInstance({ map: flags.map, seed: flags.seed != null ? Number(flags.seed) : undefined });
+      console.log(`launched pid=${inst.pid} port=${inst.port} token=${inst.token}`);
+      console.log(`(rpc it with: fuactl rpc sim.tic --port ${inst.port} --token ${inst.token})`);
+      process.on("SIGINT", async () => { await stopInstance(inst); process.exit(0); });
+      await new Promise(() => {}); // stay up
+      break;
+    }
+    case "rpc": {
+      const rpcCmd = rest[0];
+      if (!rpcCmd || !flags.port) { console.error("usage: fuactl rpc <cmd> [jsonArgs] --port P [--token T]"); process.exit(2); }
+      const args = rest[1] ? JSON.parse(rest[1]) : undefined;
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null });
+      await c.waitHello();
+      const res = await c.rpc(rpcCmd, args);
+      console.log(JSON.stringify(res, null, 2));
+      c.close();
+      break;
+    }
+    case "session": {
+      const report = await runDeterminismCheck({
+        instances: flags.instances ? Number(flags.instances) : 2,
+        seed: flags.seed ? Number(flags.seed) : undefined,
+        map: flags.map || undefined,
+        tics: flags.tics ? Number(flags.tics) : undefined,
+        log: (m) => console.error(`[session] ${m}`),
+      });
+      console.log(JSON.stringify(report, null, 2));
+      process.exit(report.pass ? 0 : 1);
+      break;
+    }
+    case "mcp": {
+      const { runMcpServer } = await import("./mcp.mjs");
+      await runMcpServer();
+      break;
+    }
+    default:
+      console.log(USAGE);
+      process.exit(cmd ? 1 : 0);
+  }
+}
+
+main().catch((e) => { console.error("fuactl error:", e.message); process.exit(1); });

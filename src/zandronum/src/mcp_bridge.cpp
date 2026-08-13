@@ -1,23 +1,24 @@
 //
-// mcp_bridge.cpp -- minimal local IPC seam (overlay file; see mcp_bridge.h).
+// mcp_bridge.cpp -- native MCP control-bridge TRANSPORT + LIFECYCLE (engine-free).
 //
-// v0 seam: one loopback TCP client, NDJSON, hello + cmd + out. Hardening TODOs
-// are noted inline (multi-client, locking around the client socket, reconnect).
+// This translation unit owns only the loopback socket, the request/response queue, and process
+// lifecycle (clean-quit on signal, self-registering pidfile, orphan watchdog). It includes NO engine
+// headers -- the platform networking headers would clash with the engine's types -- and forwards the
+// few entry points it needs. All the actual "programmable engine" logic (determinism, state, sessions)
+// lives in mcp_rpc.cpp, which IS engine-facing. Wire framing is the tested pure core in
+// features/mcp-bridge/computation/mcprpc_compute.
 //
-// Cross-platform: the same implementation runs on Windows (Winsock) and on
-// POSIX (BSD sockets). Only the socket primitives differ; they are bridged by
-// the typedefs/macros below. Threading and locking use the C++ standard library
-// so there is a single code path on every platform.
+// Compiled ONLY when FUA_MCP_BRIDGE is defined (dev/test builds). Runtime opt-in: the listener starts
+// only when ZANDRONUM_BRIDGE_PORT is set, binds 127.0.0.1 only.
 //
 #include "mcp_bridge.h"
+#include "features/mcp-bridge/computation/mcprpc_compute.h"
 
 // --- Portable socket shim ---------------------------------------------------
-// This file deliberately includes NO engine headers (it forward-declares the few
-// engine entry points it needs), so the platform networking headers never clash
-// with the engine's types.
 #ifdef _WIN32
   #include <winsock2.h>
   #include <ws2tcpip.h>
+  #include <direct.h>
   typedef SOCKET mcp_socket_t;
   #define MCP_INVALID_SOCKET INVALID_SOCKET
   #define mcp_close_socket   closesocket
@@ -26,120 +27,77 @@
   #include <sys/socket.h>
   #include <netinet/in.h>
   #include <arpa/inet.h>
+  #include <sys/stat.h>
   #include <unistd.h>
-  typedef int mcp_socket_t;
-  #define MCP_INVALID_SOCKET (-1)
-  #define mcp_close_socket   ::close
-#endif
-
-// --- Portable process shim --------------------------------------------------
-// Used by the parent-death watchdog (below): an engine the MCP launched must not
-// outlive the MCP that launched it, or it lingers as a stale bridge holding its
-// port. These give us the current PID and a liveness check for the parent PID.
-#ifdef _WIN32
-  #include <process.h>
-  static int  mcp_getpid()          { return (int)GetCurrentProcessId(); }
-  static bool mcp_pid_alive( int pid )
-  {
-      HANDLE h = OpenProcess( SYNCHRONIZE, FALSE, (DWORD)pid );
-      if ( h == NULL ) return false;               // gone (or unqueryable)
-      DWORD w = WaitForSingleObject( h, 0 );
-      CloseHandle( h );
-      return w == WAIT_TIMEOUT;                     // still running
-  }
-#else
   #include <signal.h>
   #include <errno.h>
-  static int  mcp_getpid()          { return (int)getpid(); }
-  static bool mcp_pid_alive( int pid )
-  {
-      // kill(pid,0): 0 => alive; EPERM => alive but not ours; ESRCH => gone.
-      return ::kill( (pid_t)pid, 0 ) == 0 || errno == EPERM;
-  }
 #endif
 
 #include <thread>
 #include <mutex>
 #include <chrono>
+#include <atomic>
+#include <deque>
+#include <string>
+#include <csignal>   // sig_atomic_t (portable; POSIX also gets sigaction via <signal.h> above)
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <string>
-#include <deque>
 
-// Hand a command to the engine's console dispatcher, exactly like the dedicated
-// server does for stdin. Forward-declared to avoid pulling in c_dispatch.h.
-void AddCommandString(char *text, int keynum);
+// --- Engine entry points (implemented in mcp_rpc.cpp / mcp_crash.cpp) --------
+// Run one queued RPC request on the game thread and send its response. args is the raw JSON "args".
+void MCP_RPC_Dispatch( long id, const char *cmd, const char *args );
+// Per-frame housekeeping on the game thread (step re-freeze, event pumping, HUD frame capture).
+void MCP_RPC_Tick();
 
-// The engine's global pause flag (defined in g_game.cpp). The MCP drives it
-// directly so a backgrounded, defocused window can keep advancing tics — vital
-// for automated testing, because single-player auto-pauses on focus loss
-// (S_SetSoundPaused in i_input.cpp forces `paused = -1`, with no cvar to opt out).
-extern int paused;
-
-// Post a synthetic input event (implemented in mcp_event.cpp, which owns the
-// engine-header includes so this socket TU doesn't have to).
-void MCP_PostInputEvent( int type, int subtype, int data1, int data2 );
-
-// Snapshot the just-drawn HUD frame (implemented in mcp_hud.cpp).
-void MCP_HUD_BeginFrame();
+#ifdef _WIN32
+  static int  mcp_getpid()          { return (int)GetCurrentProcessId(); }
+  static bool mcp_pid_alive( int pid )
+  {
+      HANDLE h = OpenProcess( SYNCHRONIZE, FALSE, (DWORD)pid );
+      if ( h == NULL ) return false;
+      DWORD w = WaitForSingleObject( h, 0 );
+      CloseHandle( h );
+      return w == WAIT_TIMEOUT;
+  }
+#else
+  typedef int mcp_socket_t;
+  static int  mcp_getpid()          { return (int)getpid(); }
+  static bool mcp_pid_alive( int pid )
+  {
+      return ::kill( (pid_t)pid, 0 ) == 0 || errno == EPERM;
+  }
+#endif
+#ifndef _WIN32
+  #define MCP_INVALID_SOCKET (-1)
+  #define mcp_close_socket   ::close
+#endif
 
 namespace
 {
-	// One queued inbound message: either a console command or an input event.
-	struct InboundMsg
-	{
-		bool        isEvent;
-		bool        isPause;               // setpause control (isPause == true)
-		int         pauseVal;              // target value for the engine `paused` flag
-		std::string text;                  // command text (isEvent == false)
-		int         evtype, subtype, d1, d2; // event fields (isEvent == true)
-	};
+	bool                     g_initialized = false;
+	std::atomic<bool>        g_enabled( false );
+	mcp_socket_t             g_listen      = MCP_INVALID_SOCKET;
+	mcp_socket_t             g_client      = MCP_INVALID_SOCKET;
+	std::mutex               g_qlock;     // guards g_inbound + g_rxbuf
+	std::mutex               g_sendlock;  // serialises writes to g_client
+	std::deque<zx::mcp::RpcRequest> g_inbound;
+	std::string              g_rxbuf;
+	std::string              g_pidfilePath;
 
-	bool             g_initialized = false;
-	bool             g_enabled     = false;
-	mcp_socket_t     g_listen      = MCP_INVALID_SOCKET;
-	mcp_socket_t     g_client      = MCP_INVALID_SOCKET;
-	std::mutex       g_lock;
-	std::deque<InboundMsg> g_inbound;  // messages awaiting the game thread
-	std::string      g_rxbuf;          // partial inbound line buffer
-
-	// Extract an integer JSON field ("key":N) from a single line. Minimal.
-	bool ExtractInt( const std::string &line, const char *key, int &out )
-	{
-		std::string k = std::string( "\"" ) + key + "\"";
-		size_t p = line.find( k );
-		if ( p == std::string::npos ) return false;
-		size_t colon = line.find( ':', p + k.size() );
-		if ( colon == std::string::npos ) return false;
-		size_t i = colon + 1;
-		while ( i < line.size() && line[i] == ' ' ) ++i;
-		bool neg = false;
-		if ( i < line.size() && line[i] == '-' ) { neg = true; ++i; }
-		if ( i >= line.size() || line[i] < '0' || line[i] > '9' ) return false;
-		long v = 0;
-		while ( i < line.size() && line[i] >= '0' && line[i] <= '9' )
-		{
-			v = v * 10 + ( line[i] - '0' );
-			++i;
-		}
-		out = (int)( neg ? -v : v );
-		return true;
-	}
+	// Set by the SIGTERM/SIGINT handler; honoured on the game thread so GL/Cocoa teardown runs
+	// on the main thread between frames -- a clean exit(0) instead of a mid-render hard kill that
+	// wedges the macOS window server.
+	volatile sig_atomic_t    g_quitRequested = 0;
 
 	int BridgePort()
 	{
 		const char *env = getenv( "ZANDRONUM_BRIDGE_PORT" );
-		if ( env == NULL || env[0] == '\0' )
-			return 0; // disabled / opt-in
+		if ( env == NULL || env[0] == '\0' ) return 0; // opt-in
 		int port = atoi( env );
 		return ( port > 0 && port < 65536 ) ? port : 0;
 	}
 
-	// The MCP server passes its own PID in ZANDRONUM_BRIDGE_PARENT_PID so a launched
-	// engine can tell when its controller has died and exit instead of lingering as
-	// an orphan on its bridge port. 0 = unset (engine started by hand, not by the
-	// MCP) -> the watchdog stays off and the engine behaves exactly as before.
 	int ParentPid()
 	{
 		const char *env = getenv( "ZANDRONUM_BRIDGE_PARENT_PID" );
@@ -148,106 +106,90 @@ namespace
 		return pid > 0 ? pid : 0;
 	}
 
-	// Watchdog: once the launching MCP process is gone, this engine is an orphan by
-	// definition (it exists only to serve that MCP), so vanish immediately. We use
-	// _exit rather than a clean shutdown on purpose: an orphan should just release
-	// its port and disappear, and skipping the engine's graphics/Rosetta teardown
-	// avoids the macOS exit-hang that would otherwise leave a wedged process behind.
-	void WatchdogThread( int parentPid )
+	// Optional shared secret. When ZANDRONUM_BRIDGE_TOKEN is set, a client must present the same
+	// token in its "hello" or first request before any command runs -- so no OTHER local process can
+	// drive an armed bridge. Empty => no token required (still loopback + opt-in).
+	const char *BridgeToken()
 	{
-		int misses = 0;
-		for ( ;; )
-		{
-			std::this_thread::sleep_for( std::chrono::milliseconds( 1500 ) );
-			if ( mcp_pid_alive( parentPid ) ) { misses = 0; continue; }
-			// Require two consecutive misses (~3s) so a momentary PID-reuse race
-			// can't kill an engine whose parent is actually still alive.
-			if ( ++misses >= 2 )
-			{
+		const char *env = getenv( "ZANDRONUM_BRIDGE_TOKEN" );
+		return ( env && env[0] ) ? env : NULL;
+	}
+	bool g_authed = false; // per-connection: has the client presented the token (if one is required)?
+
+	void RemovePidfile()
+	{
+		if ( !g_pidfilePath.empty() ) { remove( g_pidfilePath.c_str() ); g_pidfilePath.clear(); }
+	}
+
+	// ~/.forkundera/instances/<pid>.json -- so a reaper (fuactl reap) can find EVERY instance,
+	// however it was launched (MCP, fuactl, `open`, or by hand). Removed on clean exit via atexit.
+	void WritePidfile( int port )
+	{
 #ifdef _WIN32
-				TerminateProcess( GetCurrentProcess(), 0 );
+		const char *home = getenv( "USERPROFILE" );
 #else
-				_exit( 0 );
+		const char *home = getenv( "HOME" );
 #endif
-			}
-		}
+		if ( home == NULL || home[0] == '\0' ) return;
+		std::string dir = std::string( home ) + "/.forkundera";
+#ifdef _WIN32
+		_mkdir( dir.c_str() );
+		dir += "/instances"; _mkdir( dir.c_str() );
+#else
+		mkdir( dir.c_str(), 0755 );
+		dir += "/instances"; mkdir( dir.c_str(), 0755 );
+#endif
+		char path[1024];
+		snprintf( path, sizeof( path ), "%s/%d.json", dir.c_str(), mcp_getpid() );
+		FILE *f = fopen( path, "w" );
+		if ( f == NULL ) return;
+		fprintf( f, "{\"pid\":%d,\"port\":%d,\"ppid\":%d,\"bridge\":\"2.0.0\"}\n",
+			mcp_getpid(), port, ParentPid() );
+		fflush( f );
+		fclose( f );
+		g_pidfilePath = path;
+		atexit( RemovePidfile ); // clean exit removes it; a hard-killed engine's stale entry is pruned
+		                         // by the reaper (fuactl reap) via a liveness check, so the registry
+		                         // is self-healing either way.
 	}
 
-	// Extract the value of the JSON "text" field from a single-line command.
-	// Deliberately minimal: assumes the MCP sends well-formed single-line JSON.
-	bool ExtractText( const std::string &line, std::string &out )
+#ifndef _WIN32
+	void OnTermSignal( int ) { g_quitRequested = 1; }
+	void InstallSignalHandlers()
 	{
-		size_t k = line.find( "\"text\"" );
-		if ( k == std::string::npos ) return false;
-		size_t colon = line.find( ':', k );
-		if ( colon == std::string::npos ) return false;
-		size_t q1 = line.find( '"', colon );
-		if ( q1 == std::string::npos ) return false;
-		out.clear();
-		for ( size_t i = q1 + 1; i < line.size(); ++i )
-		{
-			char c = line[i];
-			if ( c == '\\' && i + 1 < line.size() )
-			{
-				char n = line[++i];
-				switch ( n )
-				{
-					case 'n':  out.push_back( '\n' ); break;
-					case 't':  out.push_back( '\t' ); break;
-					case '"':  out.push_back( '"' );  break;
-					case '\\': out.push_back( '\\' ); break;
-					default:   out.push_back( n );    break;
-				}
-			}
-			else if ( c == '"' )
-			{
-				return true; // closing quote
-			}
-			else
-			{
-				out.push_back( c );
-			}
-		}
-		return false;
+		// Only SIGTERM/SIGINT. Fault signals (SEGV/BUS/ILL/FPE) belong to sentry-native's crash
+		// handler installed earlier in startup -- do NOT touch those.
+		struct sigaction sa;
+		memset( &sa, 0, sizeof( sa ) );
+		sa.sa_handler = OnTermSignal;
+		sigaction( SIGTERM, &sa, NULL );
+		sigaction( SIGINT, &sa, NULL );
 	}
+#else
+	static BOOL WINAPI CtrlHandler( DWORD ) { g_quitRequested = 1; return TRUE; }
+	void InstallSignalHandlers() { SetConsoleCtrlHandler( CtrlHandler, TRUE ); }
+#endif
+}
 
-	void JsonEscape( const char *in, std::string &out )
+// Send one framed JSON line to the connected client. Thread-safe; called from the game thread
+// (responses/events) and the listen thread (hello). Public so mcp_rpc.cpp can emit results/events.
+void MCP_Bridge_SendJson( const char *json )
+{
+	std::lock_guard<std::mutex> lk( g_sendlock );
+	mcp_socket_t s = g_client;
+	if ( s == MCP_INVALID_SOCKET ) return;
+	std::string wire = json;
+	wire.push_back( '\n' );
+	if ( send( s, wire.c_str(), (int)wire.size(), 0 ) < 0 )
 	{
-		out.clear();
-		for ( const char *p = in; *p; ++p )
-		{
-			unsigned char c = (unsigned char)*p;
-			switch ( c )
-			{
-				case '"':  out += "\\\""; break;
-				case '\\': out += "\\\\"; break;
-				case '\n': out += "\\n";  break;
-				case '\r': break; // drop CR
-				case '\t': out += "\\t";  break;
-				default:
-					if ( c < 0x20 ) { char b[8]; sprintf( b, "\\u%04x", c ); out += b; }
-					else out.push_back( (char)c );
-			}
-		}
+		mcp_close_socket( s );
+		g_client = MCP_INVALID_SOCKET;
 	}
+}
 
-	void SendLine( const std::string &json )
-	{
-		mcp_socket_t s = g_client;
-		if ( s == MCP_INVALID_SOCKET ) return;
-		std::string wire = json;
-		wire.push_back( '\n' );
-		if ( send( s, wire.c_str(), (int)wire.size(), 0 ) < 0 )
-		{
-			mcp_close_socket( s );
-			g_client = MCP_INVALID_SOCKET;
-		}
-	}
-
-	// Append one console line to the startup logfile if ZANDRONUM_BRIDGE_LOG is set.
-	// Opened lazily on the first console output -- which happens during early startup
-	// (DECORATE/ACS parsing), BEFORE the socket bridge is up -- so this captures the
-	// compile/fatal errors that abort the engine before any MCP client can connect.
+namespace
+{
+	// Startup logfile tee (captures DECORATE/ACS compile errors that abort before a client connects).
 	void LogWrite( const char *text )
 	{
 		static bool  checked = false;
@@ -258,10 +200,28 @@ namespace
 			const char *path = getenv( "ZANDRONUM_BRIDGE_LOG" );
 			if ( path && path[0] ) logf = fopen( path, "w" );
 		}
-		if ( logf )
+		if ( logf ) { fputs( text, logf ); fflush( logf ); }
+	}
+
+	void WatchdogThread( int parentPid )
+	{
+		int misses = 0;
+		for ( ;; )
 		{
-			fputs( text, logf );
-			fflush( logf ); // per-line flush so a crash still leaves the error on disk
+			std::this_thread::sleep_for( std::chrono::milliseconds( 1500 ) );
+			if ( mcp_pid_alive( parentPid ) ) { misses = 0; continue; }
+			if ( ++misses >= 2 )
+			{
+				// Ask for a CLEAN quit first (game thread runs GL/Cocoa teardown), then hard-exit as a
+				// last resort if the loop is wedged and doesn't honour the flag within a grace window.
+				g_quitRequested = 1;
+				std::this_thread::sleep_for( std::chrono::milliseconds( 3000 ) );
+#ifdef _WIN32
+				TerminateProcess( GetCurrentProcess(), 0 );
+#else
+				_exit( 0 );
+#endif
+			}
 		}
 	}
 
@@ -276,28 +236,30 @@ namespace
 				continue;
 			}
 
-			// One client at a time; replace any previous.
 			{
-				std::lock_guard<std::mutex> lk( g_lock );
+				std::lock_guard<std::mutex> lk( g_sendlock );
 				if ( g_client != MCP_INVALID_SOCKET ) mcp_close_socket( g_client );
 				g_client = s;
+			}
+			{
+				std::lock_guard<std::mutex> lk( g_qlock );
 				g_rxbuf.clear();
 			}
+			g_authed = ( BridgeToken() == NULL ); // no token required => already authed
 
-			// hello now advertises this engine's PID so the MCP can verify it attached
-			// to the process it just spawned (and not a stale bridge on the same port).
-			char hello[256];
+			char hello[320];
 			snprintf( hello, sizeof( hello ),
-				"{\"v\":1,\"t\":\"hello\",\"engine\":\"zandronum\",\"bridge\":\"0.4.0\",\"pid\":%d,\"caps\":[\"cmd\",\"event\",\"time\"]}",
-				mcp_getpid() );
-			SendLine( hello );
+				"{\"t\":\"hello\",\"engine\":\"forkundera\",\"bridge\":\"2.0.0\",\"pid\":%d,"
+				"\"auth\":%s,\"caps\":[\"rpc\",\"events\",\"determinism\",\"snapshot\",\"session\"]}",
+				mcp_getpid(), g_authed ? "false" : "true" ); // auth:false means "token still required"
+			MCP_Bridge_SendJson( hello );
 
-			char buf[1024];
+			char buf[2048];
 			for ( ;; )
 			{
 				int n = (int)recv( s, buf, sizeof( buf ), 0 );
 				if ( n <= 0 ) break;
-				std::lock_guard<std::mutex> lk( g_lock );
+				std::lock_guard<std::mutex> lk( g_qlock );
 				g_rxbuf.append( buf, n );
 				size_t nl;
 				while ( ( nl = g_rxbuf.find( '\n' ) ) != std::string::npos )
@@ -305,45 +267,29 @@ namespace
 					std::string line = g_rxbuf.substr( 0, nl );
 					g_rxbuf.erase( 0, nl + 1 );
 
-					if ( line.find( "\"t\":\"setpause\"" ) != std::string::npos )
+					// Token gate: the first message must be {"cmd":"auth","args":{"token":"..."}}.
+					if ( !g_authed )
 					{
-						InboundMsg msg;
-						msg.isEvent = false;
-						msg.isPause = true;
-						msg.pauseVal = 0;
-						msg.evtype = msg.subtype = msg.d1 = msg.d2 = 0;
-						ExtractInt( line, "paused", msg.pauseVal );
-						g_inbound.push_back( msg );
-					}
-					else if ( line.find( "\"t\":\"event\"" ) != std::string::npos )
-					{
-						InboundMsg msg;
-						msg.isEvent = true;
-						msg.isPause = false;
-						msg.evtype = msg.subtype = msg.d1 = msg.d2 = 0;
-						ExtractInt( line, "evtype", msg.evtype );
-						ExtractInt( line, "subtype", msg.subtype );
-						ExtractInt( line, "data1", msg.d1 );
-						ExtractInt( line, "data2", msg.d2 );
-						g_inbound.push_back( msg );
-					}
-					else
-					{
-						std::string text;
-						if ( ExtractText( line, text ) && !text.empty() )
+						std::string tok;
+						if ( zx::mcp::GetStr( line, "token", tok ) )
 						{
-							InboundMsg msg;
-							msg.isEvent = false;
-							msg.isPause = false;
-							msg.text = text;
-							msg.evtype = msg.subtype = msg.d1 = msg.d2 = 0;
-							g_inbound.push_back( msg );
+							const char *want = BridgeToken();
+							if ( want && tok == want ) { g_authed = true; MCP_Bridge_SendJson( "{\"t\":\"authed\"}" ); }
+							else MCP_Bridge_SendJson( "{\"t\":\"error\",\"error\":\"bad token\"}" );
 						}
+						continue; // drop everything until authed
 					}
+
+					zx::mcp::RpcRequest req = zx::mcp::ParseRequest( line );
+					if ( req.valid )
+						g_inbound.push_back( req );
 				}
 			}
 
-			if ( g_client == s ) g_client = MCP_INVALID_SOCKET;
+			{
+				std::lock_guard<std::mutex> lk( g_sendlock );
+				if ( g_client == s ) g_client = MCP_INVALID_SOCKET;
+			}
 			mcp_close_socket( s );
 		}
 	}
@@ -352,11 +298,11 @@ namespace
 	{
 		g_initialized = true;
 		int port = BridgePort();
-		if ( port == 0 ) return; // opt-in: only runs with ZANDRONUM_BRIDGE_PORT set
+		if ( port == 0 ) return; // opt-in
 
-		// Arm the parent-death watchdog before anything else. Start it even if the
-		// bind below fails (e.g. a stale engine already holds the port): a bridgeless
-		// engine is exactly the kind that must still self-exit when the MCP dies.
+		InstallSignalHandlers();
+		WritePidfile( port );
+
 		int ppid = ParentPid();
 		if ( ppid != 0 )
 			std::thread( WatchdogThread, ppid ).detach();
@@ -365,7 +311,6 @@ namespace
 		WSADATA wsa;
 		if ( WSAStartup( MAKEWORD( 2, 2 ), &wsa ) != 0 ) return;
 #endif
-
 		g_listen = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
 		if ( g_listen == MCP_INVALID_SOCKET ) return;
 
@@ -393,46 +338,49 @@ namespace
 
 void MCP_Bridge_Poll()
 {
-	MCP_Crash_Init(); // belt-and-suspenders: also arm from the frame loop (idempotent)
+	MCP_Crash_Init();
 	if ( !g_initialized ) Init();
 	if ( !g_enabled ) return;
 
-	MCP_HUD_BeginFrame(); // snapshot the frame the engine just drew
+	// Honour a pending clean-quit request from a signal or the watchdog, between frames, on the main
+	// thread -- so exit(0) runs the full atexit/call_terms teardown (GL, SDL, Cocoa) with no wedge.
+	if ( g_quitRequested )
+	{
+		RemovePidfile();
+		exit( 0 );
+	}
+
+	MCP_RPC_Tick(); // step re-freeze, event pump, HUD frame capture (engine-facing)
 
 	for ( ;; )
 	{
-		InboundMsg msg;
+		zx::mcp::RpcRequest req;
 		bool have = false;
 		{
-			std::lock_guard<std::mutex> lk( g_lock );
-			if ( !g_inbound.empty() ) { msg = g_inbound.front(); g_inbound.pop_front(); have = true; }
+			std::lock_guard<std::mutex> lk( g_qlock );
+			if ( !g_inbound.empty() ) { req = g_inbound.front(); g_inbound.pop_front(); have = true; }
 		}
 		if ( !have ) break;
-		if ( msg.isPause )
-			paused = msg.pauseVal;
-		else if ( msg.isEvent )
-			MCP_PostInputEvent( msg.evtype, msg.subtype, msg.d1, msg.d2 );
-		else
-			AddCommandString( const_cast<char *>( msg.text.c_str() ), 0 );
+		MCP_RPC_Dispatch( req.id, req.cmd.c_str(), req.args.c_str() );
 	}
 }
 
 void MCP_Bridge_TeeOutput( const char *text )
 {
 	if ( text == NULL ) return;
-	MCP_Crash_Init(); // arm the crash handler as early as the first console line (idempotent)
-	LogWrite( text ); // capture to the startup logfile even before the bridge is up
+	MCP_Crash_Init();
+	LogWrite( text );
 	if ( !g_enabled || g_client == MCP_INVALID_SOCKET ) return;
 	std::string esc;
-	JsonEscape( text, esc );
-	std::string json = "{\"v\":1,\"t\":\"out\",\"level\":0,\"text\":\"";
-	json += esc;
-	json += "\"}";
-	SendLine( json );
+	zx::mcp::JsonEscape( text, esc );
+	std::string data = "{\"text\":\"" + esc + "\"}";
+	MCP_Bridge_SendJson( zx::mcp::BuildEvent( "out", data ).c_str() );
 }
 
 void MCP_Bridge_Shutdown()
 {
+	std::lock_guard<std::mutex> lk( g_sendlock );
 	if ( g_client != MCP_INVALID_SOCKET ) { mcp_close_socket( g_client ); g_client = MCP_INVALID_SOCKET; }
 	if ( g_listen != MCP_INVALID_SOCKET ) { mcp_close_socket( g_listen ); g_listen = MCP_INVALID_SOCKET; }
+	RemovePidfile();
 }
