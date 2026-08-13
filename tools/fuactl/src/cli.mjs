@@ -23,7 +23,7 @@ function parseFlags(argv) {
 
 const USAGE = `fuactl <command>
   ls                                 list registered engine instances
-  reap [--kill]                      prune dead instances; --kill SIGTERMs live ones (clean quit)
+  reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S]        launch one supervised bridge instance (stays up until Ctrl-C)
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
@@ -42,8 +42,8 @@ async function main() {
       break;
     }
     case "reap": {
-      const r = reap({ kill: !!flags.kill });
-      console.log(`live=${r.live.length} killed=${r.killed.length} pruned=${r.prunedCount}`);
+      const r = reap({ kill: !!flags.kill, all: !!flags.all });
+      console.log(`orphans=${r.orphan.length} owned(left-alone)=${r.owned.length} killed=${r.killed.length} pruned=${r.prunedCount}`);
       break;
     }
     case "launch": {

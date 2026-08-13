@@ -10,8 +10,8 @@ import { BridgeClient } from "./client.mjs";
 const TOOLS = [
   { name: "list_instances", description: "List registered engine instances (pid/port).",
     inputSchema: { type: "object", properties: {} } },
-  { name: "reap", description: "Prune dead instances; optionally SIGTERM live ones (clean quit).",
-    inputSchema: { type: "object", properties: { kill: { type: "boolean" } } } },
+  { name: "reap", description: "Prune dead instances; with kill, SIGTERM only orphans (safe for other sessions); with all, every live instance.",
+    inputSchema: { type: "object", properties: { kill: { type: "boolean" }, all: { type: "boolean" } } } },
   { name: "launch_instance", description: "Launch one supervised bridge-enabled engine instance.",
     inputSchema: { type: "object", properties: { map: { type: "string" }, seed: { type: "number" } } } },
   { name: "session_check", description: "Run the determinism + desync check across N instances.",
@@ -25,7 +25,7 @@ const TOOLS = [
 async function callTool(name, a = {}) {
   switch (name) {
     case "list_instances": return readRegistry().map((e) => ({ pid: e.pid, port: e.port, ppid: e.ppid }));
-    case "reap": { const r = reap({ kill: !!a.kill }); return { live: r.live.length, killed: r.killed.length, pruned: r.prunedCount }; }
+    case "reap": { const r = reap({ kill: !!a.kill, all: !!a.all }); return { orphans: r.orphan.length, owned: r.owned.length, killed: r.killed.length, pruned: r.prunedCount }; }
     case "launch_instance": { const i = await launchInstance({ map: a.map, seed: a.seed }); return { pid: i.pid, port: i.port, token: i.token }; }
     case "session_check": return runDeterminismCheck({ instances: a.instances, seed: a.seed, map: a.map, tics: a.tics });
     case "rpc": {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  drainLines, frameRequest, classify, desyncVerdict, partitionRegistry, candidatePort,
+  drainLines, frameRequest, classify, desyncVerdict, partitionRegistry, classifyInstances, candidatePort,
 } from "../src/proto.mjs";
 
 test("drainLines splits complete NDJSON and keeps the partial remainder", () => {
@@ -41,6 +41,22 @@ test("partitionRegistry splits live from stale by injected liveness", () => {
   const { live, stale } = partitionRegistry(entries, (p) => alive.has(p));
   assert.deepEqual(live.map((e) => e.pid), [1, 3]);
   assert.deepEqual(stale.map((e) => e.pid ?? "?"), [2, "?"]); // dead pid + malformed entry are stale
+});
+
+test("classifyInstances: reaper is multi-session safe (only orphans, never live-owned)", () => {
+  // pids: 100 dead engine; 200 engine alive owned by live launcher 201; 300 engine alive whose
+  // launcher 301 is DEAD (orphan); 400 engine alive with no launcher recorded (ppid 0 -> owned/untracked).
+  const alive = new Set([200, 201, 300, 400]); // 301 is NOT alive
+  const entries = [
+    { pid: 100, ppid: 101 },   // dead engine
+    { pid: 200, ppid: 201 },   // owned by a live session -> must NOT be killed
+    { pid: 300, ppid: 301 },   // orphan (launcher gone) -> the real hanging instance
+    { pid: 400, ppid: 0 },     // untracked -> owned (left alone by default)
+  ];
+  const { dead, orphan, owned } = classifyInstances(entries, (p) => alive.has(p));
+  assert.deepEqual(dead.map((e) => e.pid), [100]);
+  assert.deepEqual(orphan.map((e) => e.pid), [300]);          // only the true orphan is reap --kill target
+  assert.deepEqual(owned.map((e) => e.pid).sort(), [200, 400]); // another session's + untracked are spared
 });
 
 test("candidatePort stays in range and varies by offset", () => {
