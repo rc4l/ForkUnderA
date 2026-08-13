@@ -38,14 +38,16 @@ export async function launchInstance(opts = {}) {
   const logDir = opts.logDir || fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-"));
   const log = path.join(logDir, `engine-${port}.log`);
 
-  const args = [
-    "-iwad", opts.iwad || "freedoom2.wad",
-    "+map", opts.map || "MAP01",
+  const args = ["-iwad", opts.iwad || "freedoom2.wad"];
+  // A client joins a server with +connect (and no local map); otherwise start in a local map.
+  if (opts.connect) args.push("+connect", opts.connect);
+  else args.push("+map", opts.map || "MAP01");
+  args.push(
     "-skill", String(opts.skill ?? 3),
     "+set", "fullscreen", "0",
     "+set", "vid_defwidth", "640",
     "+set", "vid_defheight", "400",
-  ];
+  );
   if (opts.seed != null) args.push("-rngseed", String(opts.seed));
   if (opts.extraArgs) args.push(...opts.extraArgs);
 

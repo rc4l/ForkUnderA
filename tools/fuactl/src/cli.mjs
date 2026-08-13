@@ -4,7 +4,7 @@
 // Both talk to the engine's native bridge (features/mcp-bridge), which must be built with
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
 import { reap, readRegistry } from "./registry.mjs";
-import { runDeterminismCheck, runPerfAblation } from "./session.mjs";
+import { runDeterminismCheck, runPerfAblation, runNetBandwidth } from "./session.mjs";
 import { launchInstance, stopInstance } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { sampleProcess } from "./sample.mjs";
@@ -84,6 +84,7 @@ async function main() {
       const report = await runPerfAblation({
         seed: flags.seed ? Number(flags.seed) : undefined,
         map: flags.map || undefined,
+        iwad: flags.iwad || undefined,
         spawn: flags.spawn || undefined,
         count: flags.count ? Number(flags.count) : undefined,
         frames: flags.frames ? Number(flags.frames) : undefined,
@@ -102,6 +103,18 @@ async function main() {
       if (!pid) { console.error("usage: fuactl sample --pid P | --port P [--seconds N]"); process.exit(2); }
       const r = await sampleProcess(pid, { seconds: flags.seconds ? Number(flags.seconds) : 2, engineOnly: !!flags.engine });
       console.log(JSON.stringify(r, null, 2));
+      break;
+    }
+    case "net-bw": {
+      const report = await runNetBandwidth({
+        seed: flags.seed ? Number(flags.seed) : undefined,
+        map: flags.map || undefined,
+        spawn: flags.spawn || undefined,
+        count: flags.count ? Number(flags.count) : undefined,
+        seconds: flags.seconds ? Number(flags.seconds) : undefined,
+        log: (m) => console.error(`[net-bw] ${m}`),
+      });
+      console.log(JSON.stringify(report, null, 2));
       break;
     }
     case "mcp": {

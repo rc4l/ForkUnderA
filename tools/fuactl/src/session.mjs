@@ -114,6 +114,60 @@ export async function runPerfAblation(opts = {}) {
   }
 }
 
+// Deterministic RECEIVE-bandwidth ablation over a real server+client session: connect a client to a
+// hosted server, measure per-command (per-SVC) receive bytes, perturb the server (spawn moving actors
+// -- the same replication traffic a fired projectile/smoke generates), measure again, diff. Answers
+// "what am I receiving that costs so much, per command."
+export async function runNetBandwidth(opts = {}) {
+  const {
+    seed = 20260812, map = "MAP01", iwad = "freedoom2.wad", engine,
+    gamePort = 10800, seconds = 3, spawn = "DoomImp", count = 60, log = () => {},
+  } = opts;
+
+  // NOTE: the host port is set with the -port COMMAND-LINE arg, not a "+port" cvar (which the engine
+  // ignores -- it would otherwise bind the default 10666 and the client's connect would hang forever).
+  const server = await launchInstance({ seed, map, iwad, engine, extraArgs: ["-host", "-port", String(gamePort), "+sv_broadcast", "0", "+sv_updatemaster", "0"] });
+  let client = null;
+  const sc = new BridgeClient(), cc = new BridgeClient();
+  const connect = async (inst, c) => { for (let i = 0; ; i++) { try { await c.connect(inst.port, { token: inst.token, timeoutMs: 2000 }); await c.waitHello(); return; } catch (e) { c.close(); if (i >= 60) throw e; await sleep(500); } } };
+  try {
+    await connect(server, sc);
+    await waitInLevel(sc); // server hosting the map
+    // Launch the client with +connect (NO local map) only after the server is confirmed hosting.
+    // If the client started in its own +map it would already be GS_LEVEL, so waitInLevel below would
+    // pass instantly -- before the netgame join -- and measure zero receive traffic. This was the bug.
+    log(`server hosting; launching client -> 127.0.0.1:${gamePort}…`);
+    client = await launchInstance({ seed, iwad, engine, connect: `127.0.0.1:${gamePort}` });
+    await connect(client, cc);
+    await waitInLevel(cc, 30000); // client reaches GS_LEVEL only once the connection completes
+    log("client in game; measuring baseline receive bandwidth…");
+
+    const capture = async () => {
+      await cc.rpc("net.bandwidth", { op: "reset" });
+      await sleep(seconds * 1000);
+      return cc.rpc("net.bandwidth", { top: 10 });
+    };
+    const base = await capture();
+
+    log(`perturbing server: summon ${count}x ${spawn} (moving actors -> replication traffic)…`);
+    await sc.rpc("console.exec", { text: "sv_cheats 1" });
+    for (let i = 0; i < count; i++) await sc.rpc("console.exec", { text: `summon ${spawn}` });
+    await sleep(500);
+    const perturbed = await capture();
+
+    return {
+      scenario: { seed, map, spawn, count, seconds },
+      baseline: { bytes_per_s: base.bytes_per_s, total: base.total_bytes, top: base.top },
+      perturbed: { bytes_per_s: perturbed.bytes_per_s, total: perturbed.total_bytes, top: perturbed.top },
+      delta_bytes_per_s: perturbed.bytes_per_s - base.bytes_per_s,
+    };
+  } finally {
+    sc.close(); cc.close();
+    if (client) await stopInstance(client);
+    await stopInstance(server);
+  }
+}
+
 // The determinism + desync check. Returns a structured report; throws only on infra failure.
 export async function runDeterminismCheck(opts = {}) {
   const {
