@@ -32,7 +32,6 @@
   "teams": true,
   "remixes": [
     "ragnarokdm/dm",
-    "ragnarokdm/lms",
-    "ragnarokdm/possession"
+    "ragnarokdm/lms"
   ]
 }

@@ -24,7 +24,6 @@
   "maxlives": 5,
   "remixes": [
     "eoncollection/dm",
-    "eoncollection/lms",
-    "eoncollection/possession"
+    "eoncollection/lms"
   ]
 }
