@@ -388,10 +388,6 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_GIVEINVENTORYEXTRA ),
 	ENUM_ELEMENT ( SVC2_SYNCPLAYERMEDALCOUNTS ),
 	ENUM_ELEMENT ( SVC2_PRINTTEAMSCORESMESSAGE ),
-
-	// [rc4l] The server proving itself, which must happen BEFORE the client reveals anything: a
-	// server that merely COPIED a real public key cannot produce this signature.
-	ENUM_ELEMENT ( SVC2_FUA_AUTH_CHALLENGE ),
 	ENUM_ELEMENT ( SVC2_RCONACCESS ),
 	// [TRSR] Command for syncing Domination point state.
 	ENUM_ELEMENT ( SVC2_SETDOMINATIONPOINTSTATE ),
@@ -476,15 +472,6 @@ BEGIN_ENUM( CLC )
 	ENUM_ELEMENT( NUM_CLIENT_COMMANDS )
 }
 END_ENUM( CLC )
-
-// [rc4l] Anonymous accounts: the client opens with a nonce and an ephemeral key, and proves itself
-// only after the server has proved itself first.
-BEGIN_ENUM( CLC_EXTENDED )
-{
-	ENUM_ELEMENT2( CLC_FUA_AUTH_HELLO, NUM_CLIENT_COMMANDS ),
-	ENUM_ELEMENT( CLC_FUA_AUTH_PROOF ),
-}
-END_ENUM( CLC_EXTENDED )
 
 BEGIN_ENUM ( NetworkErrorCode )
 {
