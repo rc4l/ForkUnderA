@@ -2962,6 +2962,9 @@ void D_DoomMain (void)
 		// Registering twice is free: AddPathOnce is idempotent and only adds directories that exist.
 		zx::RegisterKnownWadDirectories();
 
+		// [rc4l] And our own download folder, before anything searches it.
+		zx::waddownload::RegisterDownloadDirEarly();
+
 		FIWadManager *iwad_man = new FIWadManager;
 		const FIWADInfo *iwad_info = iwad_man->FindIWAD(allwads, iwad, basewad);
 		gameinfo.gametype = iwad_info->gametype;
