@@ -598,10 +598,6 @@ void CLIENT_Tick( void )
 	// A connection has been established with the server; now authenticate the level.
 	case CTS_ATTEMPTINGAUTHENTICATION:
 
-		// [rc4l] Anonymous accounts: open the identity exchange alongside the level check. Nobody
-		// typed anything, and there is no account server to wait on, so this costs one packet.
-		CLIENT_FuaAuthSendHello( );
-
 		CLIENT_AttemptAuthentication( g_szMapName );
 		break;
 	// The level has been authenticated. Request level data and send user info.
@@ -3531,6 +3527,11 @@ void ServerCommands::EndSnapshot::Execute()
 {
 	// We're all done! Set the new client connection state to active.
 	CLIENT_SetConnectionState( CTS_ACTIVE );
+
+	// [rc4l] Anonymous accounts: open the identity exchange now that we are a client the server
+	// will take commands from. Doing it during the level check was too early, and the hello was
+	// simply dropped: the account was never established and playerinfo said so.
+	CLIENT_FuaAuthSendHello( );
 
 	// Display in the console that we have the snapshot now.
 	Printf( "Snapshot received.\n" );
