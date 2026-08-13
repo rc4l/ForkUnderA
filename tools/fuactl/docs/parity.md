@@ -86,5 +86,14 @@ tool couldn't do.
 - **Analog controller axes**: injected via `input.axis` (bridge-held override stamped into
   `G_BuildTiccmd`), NOT via the event queue — the OS gamepad is hardware-polled, so a fake gamepad
   event can't reach the sim. The override is the faithful path (full deadzone/accel pipeline).
+- **Pause/step are single-player only**: `sim.pause`/`sim.resume`/`sim.step` drive the local `paused`
+  flag, which only freezes the single-player `P_Ticker`. A server/client advances its sim from
+  network tics, so these RPCs now return an explicit error on a netgame instance rather than
+  silently no-op'ing. The determinism harness uses single-player instances, so it is unaffected.
+- **Netgame bandwidth harness** requires the exact host recipe (`net-bw` bakes it in): host with
+  `-port` (not the ignored `+port` cvar) and `+sv_cheats 1` at launch (a runtime change never reaches
+  a connected client); the client joins with `+connect` and no local map, then must `join` to leave
+  spectator (a spectator receives only ~8 B/s of keepalive); and the summon perturbation is issued
+  from the client (the dedicated host has no console pawn).
 - **Some ACS/map introspection** relies on existing engine CCMDs rather than a typed RPC; output is
   console text, not structured JSON. Promote to a typed RPC only if a workflow needs the structure.
