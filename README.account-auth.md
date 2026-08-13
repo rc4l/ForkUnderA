@@ -5,15 +5,23 @@ Every player has an account. Nobody signs up, nobody logs in, and there is no ac
 ```mermaid
 sequenceDiagram
     autonumber
-    participant C as Client
+    participant C as You
     participant S as Server
 
-    C->>S: connect, my nonce, my ephemeral key
-    S->>C: my key, my ephemeral key, signature over your nonce
-    Note over C: Verify the server BEFORE naming an account
-    C->>S: my account key, signature over the shared session
-    Note over S: Verify, and only now commit a slot
-    S->>C: map load
+    rect rgba(56, 139, 253, 0.15)
+        Note over C,S: The server proves itself first
+        C->>S: Hello. Here is a random number. Prove you are you.
+        S->>C: Here is my ID, signed with your random number
+        Note over C: Signature wrong? Walk away now, having said nothing.
+    end
+
+    rect rgba(63, 185, 80, 0.15)
+        Note over C,S: Only then do you prove yourself
+        C->>S: Here is my account, signed so only this server can use it
+        Note over S: Wrong? Refused here, before you get a player slot.
+    end
+
+    S->>C: You are in. Load the map.
 ```
 
 ## How
@@ -43,13 +51,7 @@ Anyone holding your key is you. No server has a copy, so a lost key is a lost ac
 
 ## Joining
 
-Three messages the join already sends:
-
-```
-client  ->  connect         + nonce + ephemeral key
-server  ->  authenticate    + its key + ephemeral key + signature over the nonce
-client  ->  authenticated   + account key + signature over the session
-```
+The three steps above ride on messages the join already sends, so this costs no extra round trips.
 
 **The server signs first**, before the client names an account. A server that copied a real
 server's public key cannot produce that signature, so the client leaves before it can be used to
