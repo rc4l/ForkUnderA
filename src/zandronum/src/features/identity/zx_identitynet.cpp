@@ -23,6 +23,7 @@
 #include "sv_commands.h"
 #include "sv_main.h"
 #include "p_local.h"
+#include "doomstat.h"
 #include "v_text.h"
 
 #include "features/identity/computation/identity_compute.h"
@@ -191,6 +192,46 @@ bool SERVER_ProcessFuaAuthCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 }
 
 
+
+// [rc4l] Drop anyone who never proved who they are.
+//
+// A grace period rather than an instant refusal, because the proof cannot arrive until the client
+// has finished connecting and the exchange itself is two round trips: refusing on arrival would
+// reject every honest player on a slow link. Ten seconds is far longer than the handshake needs
+// and far shorter than anybody would sit wondering.
+void SERVER_FuaAuthCheckDeadlines( void )
+{
+	for ( ULONG i = 0; i < MAXPLAYERS; ++i )
+	{
+		if ( SERVER_IsValidClient( i ) == false )
+			continue;
+
+		CLIENT_s *pClient = SERVER_GetClient( i );
+
+		if ( pClient->loggedIn )
+		{
+			pClient->fuaAuthDeadline = 0;
+			continue;
+		}
+
+		// Not counting yet: the client is still arriving.
+		if ( pClient->State < CLS_SPAWNED )
+			continue;
+
+		if ( pClient->fuaAuthDeadline == 0 )
+		{
+			pClient->fuaAuthDeadline = gametic + ( 10 * TICRATE );
+			continue;
+		}
+
+		if ( gametic >= (signed)pClient->fuaAuthDeadline )
+		{
+			Printf( "Dropping client %d: no identity was offered.\n", (int)i );
+			SERVER_ClientError( i, NETWORK_ERRORCODE_AUTHENTICATIONFAILED );
+		}
+	}
+}
+
 //*****************************************************************************
 // CLIENT
 
@@ -203,6 +244,14 @@ zx::Bytes g_ClientNonce;
 zx::KeyPair g_ClientEphemeral;
 
 } // namespace
+
+// [rc4l] Called when we disconnect, so a stale nonce can never be reused to answer a new server.
+void CLIENT_FuaAuthReset( void )
+{
+	g_ClientNonce.clear( );
+	g_ClientEphemeral.publicKey.clear( );
+	g_ClientEphemeral.privateKey.clear( );
+}
 
 namespace
 {

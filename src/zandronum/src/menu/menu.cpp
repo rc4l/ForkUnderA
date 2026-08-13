@@ -66,7 +66,6 @@
 #include "cl_main.h"
 #include "cl_demo.h"
 #include "cl_commands.h"
-#include "network/cl_auth.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a finished download redirects to the browser
 #include "features/server-hosting/zx_hosting.h" // [rc4l] starting a game closes a server we are running
 #include "features/global-header/zx_globalheader.h" // [rc4l] the tab bar drawn over every menu
@@ -665,29 +664,6 @@ void M_SetMenu(FName menu, int param)
 		// [TP] Make the server setup menu redirect to RCON login if not logged in yet
 		if (( NETWORK_GetState() == NETSTATE_CLIENT ) && ( CLIENT_HasRCONAccess() == false ))
 			menu = NAME_ZA_RconLoginMenu;
-		break;
-
-	case NAME_ZA_LoginMenu:
-		// [AK] Prevent the login menu from opening if the client is already logged in.
-		if (( NETWORK_GetState() == NETSTATE_CLIENT ) && ( CLIENT_IsLoggedIn()))
-		{
-			M_StartMessage( "You are already logged in.\n\npress a key.", 1 );
-			return;
-		}
-
-#ifdef WIN32
-		FBaseCVar *usernameCVar = FindCVar( "menu_authusername", nullptr );
-
-		// [AK] Set the username in the login menu to the client's default username when the menu's opened
-		// for the first time (i.e. "menu_authusername" hasn't been changed yet).
-		if (( usernameCVar != nullptr ) && ( strlen( usernameCVar->GetGenericRep( CVAR_String ).String ) == 0 ))
-		{
-			UCVarValue val;
-			val.String = login_default_user.GetGenericRep( CVAR_String ).String;
-			usernameCVar->SetGenericRep( val, CVAR_String );
-		}
-#endif
-
 		break;
 	}
 

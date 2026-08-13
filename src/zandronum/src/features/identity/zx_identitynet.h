@@ -23,8 +23,14 @@ void SERVERCOMMANDS_FuaAuthChallenge( const ULONG ulClient, const zx::Bytes &ser
 void CLIENTCOMMANDS_FuaAuthHello( const zx::Bytes &nonce, const zx::Bytes &ephemeralPublic );
 void CLIENTCOMMANDS_FuaAuthProof( const zx::Bytes &accountPublic, const zx::Bytes &signature );
 
+// Server: drop anyone who never proved who they are.
+void SERVER_FuaAuthCheckDeadlines( void );
+
 // Client: open the exchange, and answer the challenge once the server has proved itself.
 void CLIENT_FuaAuthSendHello( void );
 void CLIENT_FuaAuthHandleChallenge( BYTESTREAM_s *pByteStream );
+
+// Client: forget the half-finished exchange when the connection ends.
+void CLIENT_FuaAuthReset( void );
 
 #endif // ZX_IDENTITYNET_H

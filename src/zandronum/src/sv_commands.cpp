@@ -666,11 +666,7 @@ void SERVERCOMMANDS_SetPlayerAccountName( ULONG ulPlayer, ULONG ulPlayerExtra, S
 {
 	ServerCommands::SetPlayerAccountName command;
 	command.SetPlayer( &players[ulPlayer] );
-	// [TP] Redact the account name if the player so wishes.
-	if ( SERVER_GetClient( ulPlayer )->WantHideAccount )
-		command.SetAccountName( "" );
-	else
-		command.SetAccountName( SERVER_GetClient( ulPlayer )->GetAccountName() );
+	command.SetAccountName( SERVER_GetClient( ulPlayer )->GetAccountName() );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
@@ -5415,49 +5411,6 @@ void SERVERCOMMANDS_SetDefaultSkybox( ULONG ulPlayerExtra, ServerCommandFlags fl
 	command.addShort( ( level.DefaultSkybox != NULL ) ? level.DefaultSkybox->NetID : 0 );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
-//*****************************************************************************
-void SERVERCOMMANDS_SRPUserStartAuthentication ( const ULONG ulClient )
-{
-	if ( SERVER_IsValidClient( ulClient ) == false )
-		return;
-
-	CLIENT_s *pClient = SERVER_GetClient ( ulClient );
-	NetCommand command ( SVC2_SRP_USER_START_AUTHENTICATION );
-	command.addString ( pClient->username.GetChars() );
-	command.sendCommandToClients ( ulClient, SVCF_ONLYTHISCLIENT );
-}
-
-//*****************************************************************************
-void SERVERCOMMANDS_SRPUserProcessChallenge ( const ULONG ulClient )
-{
-	if ( SERVER_IsValidClient( ulClient ) == false )
-		return;
-
-	CLIENT_s *pClient = SERVER_GetClient ( ulClient );
-	NetCommand command ( SVC2_SRP_USER_PROCESS_CHALLENGE );
-	command.addByte ( pClient->salt.Size() );
-	for ( unsigned int i = 0; i < pClient->salt.Size(); ++i )
-		command.addByte ( pClient->salt[i] );
-	command.addShort ( pClient->bytesB.Size() );
-	for ( unsigned int i = 0; i < pClient->bytesB.Size(); ++i )
-		command.addByte ( pClient->bytesB[i] );
-	command.sendCommandToClients ( ulClient, SVCF_ONLYTHISCLIENT );
-}
-
-//*****************************************************************************
-void SERVERCOMMANDS_SRPUserVerifySession ( const ULONG ulClient )
-{
-	if ( SERVER_IsValidClient( ulClient ) == false )
-		return;
-
-	CLIENT_s *pClient = SERVER_GetClient ( ulClient );
-	NetCommand command ( SVC2_SRP_USER_VERIFY_SESSION );
-	command.addShort ( pClient->bytesHAMK.Size() );
-	for ( unsigned int i = 0; i < pClient->bytesHAMK.Size(); ++i )
-		command.addByte ( pClient->bytesHAMK[i] );
-	command.sendCommandToClients ( ulClient, SVCF_ONLYTHISCLIENT );
-}
-
  //*****************************************************************************
 void SERVERCOMMANDS_ShootDecal ( const FDecalTemplate* tpl, AActor* actor, fixed_t z, angle_t angle, fixed_t tracedist,
 	bool permanent, ULONG ulPlayerExtra, ServerCommandFlags flags )
