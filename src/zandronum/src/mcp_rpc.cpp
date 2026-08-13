@@ -23,6 +23,7 @@
 #include "g_level.h"
 #include "g_game.h"
 #include "m_joy.h"
+#include "network.h"
 #include "r_state.h"
 #include "m_random.h"
 #include "zstring.h"
@@ -110,6 +111,15 @@ namespace
 	std::string B( bool v )      { return v ? "true" : "false"; }
 
 	bool InLevel() { return gamestate == GS_LEVEL; }
+
+	// The `paused` flag only freezes the LOCAL single-player P_Ticker. A server/client runs its sim
+	// off network tics (TryRunTics), so pause/step can't hold the world still there -- report that
+	// plainly instead of silently doing nothing.
+	bool IsNetInstance()
+	{
+		LONG s = NETWORK_GetState();
+		return s == NETSTATE_SERVER || s == NETSTATE_CLIENT;
+	}
 
 	// Deterministic fingerprint of the sim: level clock + RNG position + every actor's transform &
 	// health, mixed in thinker-list order (stable across save/load round-trips). Two instances at the
@@ -285,17 +295,20 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	}
 	else if ( cmd == "sim.pause" )
 	{
+		if ( IsNetInstance() ) { SendErr( id, "pause unsupported in a netgame (server/client sim runs on network tics, not the local paused flag)" ); return; }
 		paused = 1;
 		SendOk( id, "{\"paused\":1}" );
 	}
 	else if ( cmd == "sim.resume" )
 	{
+		if ( IsNetInstance() ) { SendErr( id, "resume unsupported in a netgame (nothing to unpause -- the net sim was never frozen)" ); return; }
 		paused = 0;
 		g_stepping = false;
 		SendOk( id, "{\"paused\":0}" );
 	}
 	else if ( cmd == "sim.step" )
 	{
+		if ( IsNetInstance() ) { SendErr( id, "step unsupported in a netgame (deterministic stepping is single-player only)" ); return; }
 		long tics = 1;
 		GetInt( args, "tics", tics );
 		g_stepTarget = StepTarget( level.time, (int)tics );
