@@ -11,13 +11,14 @@ sequenceDiagram
     rect rgba(56, 139, 253, 0.15)
         Note over C,S: Server proves itself first
         C->>S: A random number
-        S->>C: Server ID, signed with that number
+        S->>C: Server public key, signed with that number
         Note over C: Bad signature? Client leaves.
     end
 
     rect rgba(63, 185, 80, 0.15)
         Note over C,S: Client proves itself second
-        C->>S: Account, signed
+        Note over C: Makes an account key from the<br/>secret file and the server key.<br/>The secret file is never sent.
+        C->>S: Account public key, signed
         Note over S: Bad signature? Refused, no slot given.
     end
 
