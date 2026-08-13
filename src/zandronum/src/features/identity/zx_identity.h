@@ -54,6 +54,10 @@ KeyPair Identity_DeriveAccount( const Bytes &serverPublicKey );
 // The account name for a public key: the truncated digest players and mods see.
 std::string Identity_AccountName( const Bytes &publicKey );
 
+// Sign as this SERVER, with the key a host presents. Separate from the general signer so the
+// server private key never has to be handed around to reach it.
+bool Identity_SignAsServer( const std::string &message, Bytes &signatureOut );
+
 // Ed25519 over arbitrary bytes. `privateKey` is the 32-byte seed.
 bool Identity_Sign( const Bytes &privateKey, const std::string &message, Bytes &signatureOut );
 bool Identity_Verify( const Bytes &publicKey, const std::string &message, const Bytes &signature );

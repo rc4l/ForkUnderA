@@ -80,6 +80,8 @@
 #include "g_game.h"
 #include "p_local.h"
 #include "sv_main.h"
+#include "features/identity/zx_identity.h"
+#include "features/identity/zx_identitynet.h"
 #include "sv_ban.h"
 #include "i_system.h"
 #include "c_console.h"
@@ -482,6 +484,14 @@ CUSTOM_CVAR( Float, sv_respawndelaytime, 1.0f, CVAR_ARCHIVE | CVAR_SERVERINFO | 
 
 void SERVER_Construct( void )
 {
+	// [rc4l] Load or create the identity this server presents, once, before anybody can connect.
+	// Doing it here rather than per connection is what keeps the handshake free of disk access.
+	{
+		const std::string root = zx::Identity_ConfigRoot( );
+		if ( !zx::Identity_InitServer( root.c_str( )))
+			Printf( TEXTCOLOR_RED "No server identity, so nobody will be able to authenticate.\n" );
+	}
+
 	const char	*pszPort;
 	const char	*pszMaxClients;
 	ULONG		ulIdx;
@@ -5178,6 +5188,12 @@ bool SERVER_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 	case CLC_SRP_USER_PROCESS_CHALLENGE:
 
 		return SERVER_ProcessSRPClientCommand( lCommand, pByteStream );
+
+	// [rc4l] Anonymous accounts. Nobody typed anything to get here.
+	case CLC_FUA_AUTH_HELLO:
+	case CLC_FUA_AUTH_PROOF:
+
+		return SERVER_ProcessFuaAuthCommand( lCommand, pByteStream );
 	case CLC_WARPCHEAT:
 
 		{

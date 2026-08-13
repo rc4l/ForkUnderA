@@ -68,6 +68,7 @@
 #include "w_wad.h"
 #include "features/addon-catalogue/zx_catalogue.h" // [rc4l] validated at startup, not on first use
 #include "features/crashreport/zx_crashreport.h"
+#include "features/identity/zx_identity.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
 #include "features/wad-download/zx_wadsearch.h" // [rc4l] where to look for IWADs and PWADs
@@ -2964,6 +2965,13 @@ void D_DoomMain (void)
 
 		// [rc4l] And our own download folder, before anything searches it.
 		zx::waddownload::RegisterDownloadDirEarly();
+
+		// [rc4l] Anonymous accounts: load or create this machine's identity before any join can
+		// need it, so the handshake itself never touches the disk.
+		{
+			const std::string identityRoot = zx::Identity_ConfigRoot( );
+			zx::Identity_InitClient( identityRoot.c_str( ), 0 );
+		}
 
 		FIWadManager *iwad_man = new FIWadManager;
 		const FIWADInfo *iwad_info = iwad_man->FindIWAD(allwads, iwad, basewad);

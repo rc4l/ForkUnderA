@@ -90,6 +90,7 @@
 #include "m_argv.h"
 #include "m_cheat.h"
 #include "cl_main.h"
+#include "features/identity/zx_identitynet.h"
 #include "p_effect.h"
 #include "p_lnspec.h"
 #include "possession.h"
@@ -596,6 +597,10 @@ void CLIENT_Tick( void )
 		break;
 	// A connection has been established with the server; now authenticate the level.
 	case CTS_ATTEMPTINGAUTHENTICATION:
+
+		// [rc4l] Anonymous accounts: open the identity exchange alongside the level check. Nobody
+		// typed anything, and there is no account server to wait on, so this costs one packet.
+		CLIENT_FuaAuthSendHello( );
 
 		CLIENT_AttemptAuthentication( g_szMapName );
 		break;
@@ -2253,7 +2258,13 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				}
 				break;
 
-			case SVC2_SRP_USER_START_AUTHENTICATION:
+			// [rc4l] The server proving itself, which we check before revealing anything.
+	case SVC2_FUA_AUTH_CHALLENGE:
+
+		CLIENT_FuaAuthHandleChallenge( pByteStream );
+		break;
+
+	case SVC2_SRP_USER_START_AUTHENTICATION:
 			case SVC2_SRP_USER_PROCESS_CHALLENGE:
 			case SVC2_SRP_USER_VERIFY_SESSION:
 				CLIENT_ProcessSRPServerCommand ( lExtCommand, pByteStream );

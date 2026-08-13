@@ -593,6 +593,12 @@ struct CLIENT_s
 	TArray<unsigned char> bytesHAMK;
 	TArray<unsigned char> salt;
 
+	// [rc4l] Anonymous accounts. The nonce this client opened with and our ephemeral private key
+	// for its session, kept only until the proof arrives.
+	TArray<unsigned char> fuaClientNonce;
+	TArray<unsigned char> fuaEphemeralPrivate;
+	TArray<unsigned char> fuaClientEphemeral;
+
 	// [CK] The client communicates back to us with the last gametic from the server it saw
 	LONG			lLastServerGametic;
 
