@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { partitionRegistry } from "./proto.mjs";
+import { classifyInstances } from "./proto.mjs";
 
 export function registryDir() {
   return path.join(os.homedir(), ".forkundera", "instances");
@@ -34,19 +34,23 @@ export function pidAlive(pid) {
   catch (e) { return e.code === "EPERM"; } // EPERM => alive but not ours; ESRCH => gone
 }
 
-// Reap: SIGTERM live instances (clean quit) when kill=true, and delete every stale entry's file.
-export function reap({ kill = false, signal = "SIGTERM" } = {}) {
+// Reap, MULTI-SESSION SAFE. Always prunes dead entries' files. With kill=true, SIGTERMs only genuine
+// ORPHANS (engine alive but its launcher gone) -- so it never touches an engine another concurrent
+// session/folder is actively using. Pass all=true to also stop live, still-owned instances (the
+// explicit "kill everything on this machine" escape hatch, like the MCP reset's all:true).
+export function reap({ kill = false, all = false, signal = "SIGTERM" } = {}) {
   const entries = readRegistry();
-  const { live, stale } = partitionRegistry(entries, pidAlive);
+  const { dead, orphan, owned } = classifyInstances(entries, pidAlive);
   const killed = [];
-  if (kill) {
-    for (const e of live) {
+  if (kill || all) {
+    const targets = all ? [...orphan, ...owned] : orphan;
+    for (const e of targets) {
       try { process.kill(e.pid, signal); killed.push(e.pid); } catch { /* ignore */ }
     }
   }
   const pruned = [];
-  for (const e of stale) {
-    try { fs.unlinkSync(e._file); pruned.push(e._file); } catch { /* ignore */ }
+  for (const e of dead) {
+    try { if (e && e._file) fs.unlinkSync(e._file); pruned.push(e && e._file); } catch { /* ignore */ }
   }
-  return { live, stale, killed, prunedCount: pruned.length };
+  return { orphan, owned, dead, killed, prunedCount: pruned.length };
 }

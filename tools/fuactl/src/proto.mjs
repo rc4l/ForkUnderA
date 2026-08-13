@@ -54,6 +54,24 @@ export function partitionRegistry(entries, isAlive) {
   return { live, stale };
 }
 
+// Classify for a MULTI-SESSION-SAFE reaper. `~/.forkundera/instances` is a single global registry
+// shared by every fuactl/session on the machine, so a reaper must NEVER kill an instance another
+// session is actively using. Using each entry's recorded launcher pid (ppid):
+//   dead   : the engine pid is gone            -> just delete its stale file
+//   orphan : engine alive, but its launcher (ppid>0) is dead  -> a true hanging instance, safe to kill
+//   owned  : engine alive and its launcher is alive, OR ppid is untracked (<=0) -> LEAVE ALONE by default
+// so `reap --kill` reaps only orphans; killing owned/untracked ones requires an explicit --all.
+export function classifyInstances(entries, isAlive) {
+  const dead = [], orphan = [], owned = [];
+  for (const e of entries) {
+    if (!e || typeof e.pid !== "number" || !isAlive(e.pid)) { dead.push(e); continue; }
+    const ppid = e.ppid;
+    if (Number.isInteger(ppid) && ppid > 0 && !isAlive(ppid)) orphan.push(e);
+    else owned.push(e); // launcher alive, or no launcher recorded -> don't touch without --all
+  }
+  return { dead, orphan, owned };
+}
+
 // Allocate a candidate bridge port deterministically from a base + offset, wrapping in the ephemeral
 // range. Kept pure so port selection is testable; the caller confirms the port is actually free.
 export function candidatePort(base, offset) {
