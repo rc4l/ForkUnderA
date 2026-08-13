@@ -35,6 +35,10 @@ bool Identity_InitClient( const char *configRoot, int instance );
 // one that was, so two engines running side by side each play as their own account.
 int Identity_InitClientHere( const char *configRoot );
 
+// [rc4l] Play as the next spare secret instead, for a player whose account is occupied. False when
+// this machine has no spare left.
+bool Identity_SwitchToSpare( void );
+
 // The same for the identity a hosted server presents, generated on first host.
 bool Identity_InitServer( const char *configRoot );
 
