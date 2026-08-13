@@ -51,6 +51,8 @@
 // [BB] New #includes.
 #include "doomerrors.h"
 
+#include "features/iwad-registry/zx_iwadregistry.h" // [rc4l] fua IWAD registration
+
 
 CVAR (Bool, queryiwad, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 CVAR (String, defaultiwad, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
@@ -117,12 +119,15 @@ int FIWadManager::GetIWadInfo()
 void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize, FIWADInfo *result)
 {
 	FScanner sc;
+	int blocks = 0;
 
 	sc.OpenMem("IWADINFO", data, datasize);
 	while (sc.GetString())
 	{
 		if (sc.Compare("IWAD"))
 		{
+			++blocks;
+
 			// [rc4l] Into the caller's when it supplied one. A candidate file's own definition has
 			// not been accepted yet at this point, and appending first would leave a rejected file's
 			// claim in the list for everything afterwards to match against.
@@ -259,6 +264,19 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize,
 			}
 		}
 	}
+
+	// [rc4l] A DECLARATION is one block. A LIST is many, and the two are the same lump name.
+	//
+	// The engine's own pk3 carries an IWADINFO holding every game it can recognise. Read as a
+	// self-declaration that reads as "this file is the first game in its own list", which made
+	// fua_core_v0.2.19.pk3 identify as an IWAD and get itself registered as one. Found by looking
+	// in the store afterwards, not by reasoning about it.
+	//
+	// Refused by COUNT rather than by excluding the base wad by name, because the property that
+	// matters is what the lump says, not which file it came out of: any pk3 shipping a catalogue of
+	// other people's games is making the same mistake, and would be just as wrong to believe.
+	if ((result != NULL) && (blocks != 1))
+		result->Name = "";
 }
 
 //==========================================================================
@@ -441,6 +459,16 @@ int FIWadManager::CheckIWAD (const char *doomwaddir, WadStuff *wads)
 					wads[i].Path = iwad;
 					wads[i].Name = mIWads[wads[i].Type].Name;
 					numfound++;
+
+					// [rc4l] Fua IWAD registration. Here because this is the list the picker is
+					// built from: every file we have confirmed is an IWAD and know the path of,
+					// found or not eventually played. Registering only the one launched would
+					// archive whichever the player happened to pick and leave the rest of their
+					// collection unarchived until they got round to launching each.
+					//
+					// Free after the first time -- the destination is the file's own digest, so a
+					// registered file is found already there and nothing is copied.
+					zx::RegisterIwad( iwad.GetChars( ));
 				}
 			}
 		}
