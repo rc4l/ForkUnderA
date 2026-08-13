@@ -585,15 +585,20 @@ struct CLIENT_s
 	unsigned int clientSessionID;
 	bool loggedIn;
 
-	// [rc4l] Anonymous accounts. The nonce this client opened with and our ephemeral private key
-	// for its session, kept only until the proof arrives.
+	// [rc4l] Anonymous accounts, held from the connection attempt until the proof is judged.
+	//
+	// Minted once per slot and re-sent unchanged on every retry, because the connection sequence
+	// has no acks and a client that signed against a challenge we had since replaced would be
+	// refused for nothing but a dropped packet.
 	TArray<unsigned char> fuaClientNonce;
 	TArray<unsigned char> fuaEphemeralPrivate;
 	TArray<unsigned char> fuaClientEphemeral;
+	TArray<unsigned char> fuaServerEphemeralPublic;
+	TArray<unsigned char> fuaChallengeSignature;
 
-	// [rc4l] When this client runs out of time to prove who it is. Zero means the clock has not
-	// started, which is every client that has not finished connecting yet.
-	ULONG fuaAuthDeadline;
+	// [rc4l] Whether the fields above hold a challenge, which the nonce is compared against to tell
+	// this client's own retry from a different client taking the slot.
+	bool fuaHasChallenge;
 
 	// [CK] The client communicates back to us with the last gametic from the server it saw
 	LONG			lLastServerGametic;

@@ -17,6 +17,19 @@
 
 #include <stdio.h>
 
+// [rc4l] The CRT rather than windows.h, which collides with the bundled dxsdk headers here.
+#include <fcntl.h>
+#include <sys/stat.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#include <share.h>
+#else
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+
 namespace
 {
 
@@ -25,6 +38,68 @@ zx::KeyPair g_ClientKey;
 zx::KeyPair g_ServerKey;
 
 const char kSeedTag[] = "seed = ";
+
+// [rc4l] How many copies of the engine one machine may run with accounts of their own.
+const int kMaxLocalInstances = 8;
+
+// [rc4l] How far a spare will look for a free slot, well past the copies anyone runs at once,
+// because the point is to always find one rather than to ration them.
+const int kMaxSpareInstances = 64;
+
+// [rc4l] Held open for the life of the process, which is what reserves this instance's key.
+int g_InstanceLock = -1;
+
+// Which key this copy is playing as, so a spare can start looking after it.
+int g_Instance = 0;
+std::string g_IdentityRoot;
+
+// [rc4l] Claim a key by taking an exclusive lock on a file beside it.
+//
+// The lock rather than a "does the file exist" check, because two copies launched together would
+// both see the same answer and both take the same key. An exclusive open is decided by the OS, so
+// exactly one of them wins however close together they ask.
+bool ClaimInstance( const std::string &keyPath )
+{
+	const std::string lockPath = keyPath + ".lock";
+
+#ifdef _WIN32
+	// Deny-read-write is the whole mechanism: a second copy asking for the same file is refused
+	// by the OS rather than by a check we could lose a race on.
+	int fd = -1;
+	if ( _sopen_s( &fd, lockPath.c_str( ), _O_RDWR | _O_CREAT, _SH_DENYRW, _S_IREAD | _S_IWRITE ) != 0 )
+		return false;
+
+	if ( fd < 0 )
+		return false;
+#else
+	const int fd = open( lockPath.c_str( ), O_RDWR | O_CREAT, 0600 );
+	if ( fd < 0 )
+		return false;
+
+	if ( flock( fd, LOCK_EX | LOCK_NB ) != 0 )
+	{
+		close( fd );
+		return false;
+	}
+#endif
+
+	g_InstanceLock = fd;
+	return true;
+}
+
+void ReleaseClaim( void )
+{
+	if ( g_InstanceLock < 0 )
+		return;
+
+#ifdef _WIN32
+	_close( g_InstanceLock );
+#else
+	close( g_InstanceLock );
+#endif
+
+	g_InstanceLock = -1;
+}
 
 // [rc4l] The derivation from the master secret to one operator's account, a plain SHA-256 because
 // the input already holds 256 bits of entropy and no stretching is called for.
@@ -153,6 +228,89 @@ bool Identity_InitClient( const char *configRoot, int instance )
 {
 	return LoadOrCreate( ClientAuthKeyPath( configRoot ? configRoot : "", instance ),
 		"client identity", g_ClientKey );
+}
+
+int Identity_InitClientHere( const char *configRoot )
+{
+	const std::string root = configRoot ? configRoot : "";
+
+	for ( int instance = 0; instance < kMaxLocalInstances; ++instance )
+	{
+		const std::string path = ClientAuthKeyPath( root, instance );
+		if ( path.empty( ))
+			break;
+
+		if ( !ClaimInstance( path ))
+			continue;
+
+		if ( Identity_InitClient( configRoot, instance ))
+		{
+			g_Instance = instance;
+			g_IdentityRoot = root;
+
+			if ( instance > 0 )
+			{
+				Printf( "Identity: this is copy %d on this machine, so it plays as its own account.\n",
+					instance + 1 );
+			}
+
+			return instance;
+		}
+
+		ReleaseClaim( );
+	}
+
+	// [rc4l] Every numbered key is spoken for, so fall back to the first one and let the server
+	// refuse the duplicate rather than starting with no identity at all.
+	Identity_InitClient( configRoot, 0 );
+	return 0;
+}
+
+bool Identity_SwitchToSpare( void )
+{
+	// [rc4l] Take the next key nothing else holds, so being locked out of an account is not being
+	// locked out of the game.
+	//
+	// A whole account rather than a one-off name, because a throwaway that changed every session
+	// would lose the player's progress on every server they went on to play, which is the thing
+	// this was meant to save.
+	for ( int instance = g_Instance + 1; instance < kMaxSpareInstances; ++instance )
+	{
+		const std::string path = ClientAuthKeyPath( g_IdentityRoot, instance );
+		if ( path.empty( ))
+			break;
+
+		const int held = g_InstanceLock;
+		g_InstanceLock = -1;
+
+		if ( !ClaimInstance( path ))
+		{
+			g_InstanceLock = held;
+			continue;
+		}
+
+		if ( !Identity_InitClient( g_IdentityRoot.c_str( ), instance ))
+		{
+			ReleaseClaim( );
+			g_InstanceLock = held;
+			continue;
+		}
+
+		// Only now is the old one given up, so a failure above leaves this copy as it was.
+		if ( held >= 0 )
+		{
+#ifdef _WIN32
+			_close( held );
+#else
+			close( held );
+#endif
+		}
+
+		g_Instance = instance;
+		return true;
+	}
+
+	return false;
 }
 
 bool Identity_InitServer( const char *configRoot )
@@ -326,10 +484,21 @@ bool Identity_SharedSession( const Bytes &ourPrivate, const Bytes &theirPublic, 
 	return bOk;
 }
 
-std::string Identity_ConfigRoot( void )
+namespace
 {
-	// [rc4l] The config directory and NOT the data one that holds the IWAD store, because a secret
-	// in a folder the engine file search walks is a secret any mod can read.
+
+void RemoveEmptyDir( const std::string &path )
+{
+#ifdef _WIN32
+	_rmdir( path.c_str( ));
+#else
+	rmdir( path.c_str( ));
+#endif
+}
+
+// [rc4l] Where a build before this one put the keys, which is what the migration moves from.
+std::string LegacyRoot( void )
+{
 	FString path = M_GetConfigPath( false );
 	FixPathSeperator( path );
 
@@ -337,7 +506,77 @@ std::string Identity_ConfigRoot( void )
 	if ( slash > 0 )
 		path.Truncate( slash );
 
-	return std::string( path.GetChars( )) + "/ForkUnderA";
+	return IdentityRootUnder( std::string( path.GetChars( )));
+}
+
+} // namespace
+
+std::string Identity_ConfigRoot( void )
+{
+	// [rc4l] The same folder the IWAD store uses, so a player's account and their games sit
+	// together rather than in two unrelated corners of the profile.
+	return std::string( M_GetFuaUserPath( ).GetChars( ));
+}
+
+// [rc4l] Move keys written by a build that kept them beside the config file.
+//
+// That put a portable install's accounts next to the exe and a normal one's in a doubled
+// ForkUnderA/ForkUnderA, so neither matched the other and copying the folder moved the player's
+// identity with it. One shared folder per user replaces both.
+//
+// Moved rather than left behind, because the root is where an account IS: reading a new folder
+// without bringing the keys would hand every existing player a new identity and orphan whatever
+// they had earned.
+void Identity_MigrateLegacyRoot( void )
+{
+	const std::string legacy = LegacyRoot( );
+	const std::string current = Identity_ConfigRoot( );
+
+	if ( legacy.empty( ) || current.empty( ) || ( legacy == current ))
+		return;
+
+	const std::string fromDir = legacy + "/identity";
+	const std::string toDir = current + "/identity";
+
+	if ( !DirEntryExists( fromDir.c_str( )))
+		return;
+
+	CreatePath( toDir.c_str( ));
+
+	int moved = 0;
+	for ( int instance = -1; instance < kMaxLocalInstances; ++instance )
+	{
+		// [rc4l] Minus one is the server key, and the rest are this machine's client keys.
+		const std::string leaf = ( instance < 0 )
+			? ServerAuthKeyPath( "x" ).substr( 1 )
+			: ClientAuthKeyPath( "x", instance ).substr( 1 );
+
+		const std::string from = legacy + leaf;
+		const std::string to = current + leaf;
+
+		// Never over a key already in the new folder, so a live account beats a leftover one.
+		if ( !FileExists( from.c_str( )) || FileExists( to.c_str( )))
+			continue;
+
+		if ( rename( from.c_str( ), to.c_str( )) == 0 )
+			moved++;
+	}
+
+	if ( moved > 0 )
+		Printf( "Identity: moved %d key file(s) into the shared folder for this user.\n", moved );
+
+	// [rc4l] The lock sentinels are remade wherever they are needed, so the old folder can go and
+	// stop looking like somewhere accounts still live.
+	for ( int instance = 0; instance < kMaxLocalInstances; ++instance )
+	{
+		const std::string stale = legacy + ClientAuthKeyPath( "x", instance ).substr( 1 ) + ".lock";
+		remove( stale.c_str( ));
+	}
+
+	// Only when empty, which these refuse to be if anything else was put there. Not remove(),
+	// which will not take a directory on Windows.
+	RemoveEmptyDir( fromDir );
+	RemoveEmptyDir( legacy );
 }
 
 } // namespace zx

@@ -86,7 +86,7 @@ std::string IwadStoreDir(const std::string &root, const std::string &sha256Hex)
 	if (digest.empty() || root.empty())
 		return std::string();
 
-	return WithoutTrailingSlash(root) + "/ForkUnderA/core/iwads/" + digest;
+	return WithoutTrailingSlash(root) + "/iwads/" + digest;
 }
 
 std::string IwadStorePath(const std::string &root, const std::string &sha256Hex,

@@ -80,6 +80,7 @@
 #include "g_game.h"
 #include "p_local.h"
 #include "sv_main.h"
+#include "features/identity/computation/connectchallenge_compute.h"
 #include "features/identity/zx_identity.h"
 #include "features/identity/zx_identitynet.h"
 #include "sv_ban.h"
@@ -705,9 +706,6 @@ unsigned int server_GetDeltaTicks( unsigned int &nowTime, const unsigned int pre
 void SERVER_Tick( void )
 {
 	unsigned int nowTime = 0;
-
-	// [rc4l] Anonymous accounts: nobody plays here without proving who they are.
-	SERVER_FuaAuthCheckDeadlines( );
 
 	I_DoSelect();
 
@@ -1371,6 +1369,9 @@ void SERVER_RequestClientToAuthenticate( ULONG ulClient )
 	// the client from relying on a gametic of 0 or some unset number.
 	g_aClients[ulClient].PacketBuffer.ByteStream.WriteLong( gametic );
 
+	// [rc4l] Anonymous accounts: we prove ourselves here, before the client has named an account.
+	SERVER_FuaAuthWriteChallenge( ulClient, &g_aClients[ulClient].PacketBuffer.ByteStream );
+
 	// Send the packet off.
 	SERVER_SendClientPacket( ulClient, true );
 }
@@ -1379,7 +1380,22 @@ void SERVER_RequestClientToAuthenticate( ULONG ulClient )
 //
 void SERVER_AuthenticateClientLevel( BYTESTREAM_s *pByteStream )
 {
-	if ( SERVER_PerformAuthenticationChecksum( pByteStream ) == false )
+	const bool bLevelMatches = SERVER_PerformAuthenticationChecksum( pByteStream );
+
+	// [rc4l] Read whatever the level said, so the proof after it is at the offset we expect, and
+	// judged before the level is: an identity we cannot confirm is the more basic refusal.
+	const bool bIdentityHolds = SERVER_FuaAuthReadProof( g_lCurrentClient, pByteStream );
+
+	if ( bIdentityHolds == false )
+	{
+		// [rc4l] SERVER_FuaAuthReadProof reports the duplicate-account case itself, so say nothing
+		// more when it has already disconnected this client.
+		if ( SERVER_IsValidClient( g_lCurrentClient ))
+			SERVER_ClientError( g_lCurrentClient, NETWORK_ERRORCODE_IDENTITYREJECTED );
+		return;
+	}
+
+	if ( bLevelMatches == false )
 	{
 		SERVER_ClientError( g_lCurrentClient, NETWORK_ERRORCODE_AUTHENTICATIONFAILED );
 		return;
@@ -2010,6 +2026,9 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 			pByteStream->ReadByte();
 			// [BB] Lump authentication string.
 			pByteStream->ReadString();
+			// [rc4l] And the identity fields, so this drain still matches what a client sends.
+			for ( size_t i = 0; i < zx::kNonceBytes + zx::kKeyBytes; ++i )
+				pByteStream->ReadByte();
 			return;
 		}
 	}
@@ -2115,10 +2134,21 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 		return;
 	}
 
-	if ( sv_pure && strcmp ( pByteStream->ReadString(), g_lumpsAuthenticationChecksum.GetChars() ) )
+	// [rc4l] Read before it is judged, rather than inside the condition where sv_pure being off
+	// would short-circuit it away and leave everything after it reading from the wrong offset.
+	const FString clientLumpChecksum = pByteStream->ReadString();
+
+	if ( sv_pure && strcmp ( clientLumpChecksum.GetChars(), g_lumpsAuthenticationChecksum.GetChars() ) )
 	{
 		// Client fails the lump authentication.
 		SERVER_ClientError( lClient, NETWORK_ERRORCODE_PROTECTED_LUMP_AUTHENTICATIONFAILED );
+		return;
+	}
+
+	// [rc4l] Anonymous accounts: mint this slot's challenge, or replay the one it already has.
+	if ( SERVER_FuaAuthReadHello( lClient, pByteStream ) == false )
+	{
+		SERVER_ClientError( lClient, NETWORK_ERRORCODE_IDENTITYREJECTED );
 		return;
 	}
 
@@ -2176,11 +2206,10 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	// [AK] Reset the client's tic buffer.
 	SERVER_ResetClientTicBuffer( lClient );
 
-	// [rc4l] Anonymous accounts: the client starts unproven, and the deadline clock starts once
-	// it has finished connecting.
+	// [rc4l] Anonymous accounts: unproven until the proof arrives with the level checksum, which
+	// is two messages away and before any slot is committed.
 	SERVER_GetClient( lClient )->loggedIn = false;
 	SERVER_GetClient( lClient )->username = "";
-	SERVER_GetClient( lClient )->fuaAuthDeadline = 0;
 
 	// [BB] Inform the client that he is connected and needs to authenticate the map.
 	SERVER_RequestClientToAuthenticate( lClient );
@@ -3186,6 +3215,10 @@ void SERVER_AdjustPlayersReactiontime( const ULONG ulPlayer )
 void SERVER_DisconnectClient( ULONG ulClient, bool bBroadcast, bool bSaveInfo, LEAVEREASON_e reason )
 {
 	const CLIENTSTATE_e OldState = g_aClients[ulClient].State;
+
+	// [rc4l] Anonymous accounts: drop this slot's challenge, so the next occupant is issued its own
+	// and no ephemeral private key outlives the connection it was made for.
+	SERVER_FuaAuthClearChallenge( ulClient );
 
 	// [RK] Disconnectd players need their vote removed/cancelled.
 	CALLVOTE_DisconnectedVoter( ulClient );
@@ -5175,11 +5208,6 @@ bool SERVER_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 		// [TP] Client wishes to use the linetarget or info cheat on an actor.
 		return ( server_InfoCheat( pByteStream ));
 
-	// [rc4l] Anonymous accounts. Nobody typed anything to get here.
-	case CLC_FUA_AUTH_HELLO:
-	case CLC_FUA_AUTH_PROOF:
-
-		return SERVER_ProcessFuaAuthCommand( lCommand, pByteStream );
 	case CLC_WARPCHEAT:
 
 		{
