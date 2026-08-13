@@ -35,7 +35,9 @@ async function waitInLevel(c, timeoutMs = 20000) {
   throw new Error("instance never reached GS_LEVEL");
 }
 
-// Step an instance to an absolute leveltime target and wait for the refreeze.
+// Step an instance to (or past) an absolute leveltime target and wait for the refreeze. Returns the
+// ACTUAL leveltime it settled at -- which may exceed the target, because the engine refreezes on
+// level.time >= target and TryRunTics can run several tics in one frame during catch-up (overshoot).
 async function stepTo(c, targetLevelTime) {
   const t = await c.rpc("sim.tic");
   const need = targetLevelTime - t.leveltime;
@@ -43,7 +45,24 @@ async function stepTo(c, targetLevelTime) {
   const stepped = c.waitEvent("stepped", 20000);
   await c.rpc("sim.step", { tics: need });
   await stepped;
-  return targetLevelTime;
+  return (await c.rpc("sim.tic")).leveltime; // read the real settled time, not the requested target
+}
+
+// Bring every instance to ONE common leveltime before comparing fingerprints. A single large step
+// can overshoot by different amounts per instance, so we level everyone UP to the current max with
+// single-tic top-ups and repeat until they agree (you can't un-step). This is what makes the
+// determinism comparison exact rather than occasionally off-by-a-tic.
+async function alignAll(clients, maxIters = 8) {
+  for (let iter = 0; iter < maxIters; iter++) {
+    const times = [];
+    for (const c of clients) times.push((await c.rpc("sim.tic")).leveltime);
+    const max = Math.max(...times);
+    if (times.every((t) => t === max)) return max;
+    for (let i = 0; i < clients.length; i++) if (times[i] < max) await stepTo(clients[i], max);
+  }
+  const final = [];
+  for (const c of clients) final.push((await c.rpc("sim.tic")).leveltime);
+  throw new Error(`instances would not converge to a common leveltime: ${JSON.stringify(final)}`);
 }
 
 async function capturePerf(c, frames) {
@@ -124,9 +143,13 @@ export async function runNetBandwidth(opts = {}) {
     gamePort = 10800, seconds = 3, spawn = "DoomImp", count = 60, log = () => {},
   } = opts;
 
-  // NOTE: the host port is set with the -port COMMAND-LINE arg, not a "+port" cvar (which the engine
-  // ignores -- it would otherwise bind the default 10666 and the client's connect would hang forever).
-  const server = await launchInstance({ seed, map, iwad, engine, extraArgs: ["-host", "-port", String(gamePort), "+sv_broadcast", "0", "+sv_updatemaster", "0"] });
+  // Host flags, each learned the hard way:
+  //  -port (COMMAND-LINE, not a "+port" cvar which the engine ignores -> it would bind the default
+  //   10666 and the client's connect would hang forever).
+  //  +sv_cheats 1 must be set AT LAUNCH: a runtime change never reaches an already-connected client,
+  //   so the client's `summon` is refused with "sv_cheats must be true". Set here it lands in the
+  //   client's initial cvar sync.
+  const server = await launchInstance({ seed, map, iwad, engine, extraArgs: ["-host", "-port", String(gamePort), "+sv_broadcast", "0", "+sv_updatemaster", "0", "+sv_cheats", "1"] });
   let client = null;
   const sc = new BridgeClient(), cc = new BridgeClient();
   const connect = async (inst, c) => { for (let i = 0; ; i++) { try { await c.connect(inst.port, { token: inst.token, timeoutMs: 2000 }); await c.waitHello(); return; } catch (e) { c.close(); if (i >= 60) throw e; await sleep(500); } } };
@@ -140,7 +163,11 @@ export async function runNetBandwidth(opts = {}) {
     client = await launchInstance({ seed, iwad, engine, connect: `127.0.0.1:${gamePort}` });
     await connect(client, cc);
     await waitInLevel(cc, 30000); // client reaches GS_LEVEL only once the connection completes
-    log("client in game; measuring baseline receive bandwidth…");
+    // A freshly-connected client is a SPECTATOR -- it receives only keepalives (~8 B/s). It must
+    // `join` to become an active player and receive the real replication stream (~1 kB/s).
+    await cc.rpc("console.exec", { text: "join" });
+    await sleep(1000);
+    log("client joined; measuring baseline receive bandwidth…");
 
     const capture = async () => {
       await cc.rpc("net.bandwidth", { op: "reset" });
@@ -149,10 +176,14 @@ export async function runNetBandwidth(opts = {}) {
     };
     const base = await capture();
 
-    log(`perturbing server: summon ${count}x ${spawn} (moving actors -> replication traffic)…`);
-    await sc.rpc("console.exec", { text: "sv_cheats 1" });
-    for (let i = 0; i < count; i++) await sc.rpc("console.exec", { text: `summon ${spawn}` });
-    await sleep(500);
+    // Perturb by spawning actors the CLIENT will receive. The -host server is dedicated (no console
+    // player pawn), so `summon` on the server is a no-op -- it spawns at the caller's pawn. Issue it
+    // from the CLIENT instead: with cheats synced at launch the request reaches the server, which
+    // spawns near the client's pawn and replicates the moving actors back => real receive traffic
+    // (it shows up as a distinct actor-update SVC, separate from the steady position stream).
+    log(`perturbing: client summons ${count}x ${spawn} (server-authoritative -> replicated back)…`);
+    for (let i = 0; i < count; i++) await cc.rpc("console.exec", { text: `summon ${spawn}` });
+    await sleep(800);
     const perturbed = await capture();
 
     return {
@@ -194,24 +225,28 @@ export async function runDeterminismCheck(opts = {}) {
     const target = maxT + tics;
     log(`stepping all instances to leveltime ${target}…`);
     for (const c of clients) await stepTo(c, target);
+    // stepTo can overshoot by different amounts per instance -- align to an exact common leveltime
+    // before hashing, or a comparison "failure" is really just an off-by-a-tic in the harness.
+    const alignedT = await alignAll(clients);
 
     // Invariant 1: identical seed+map+tics => identical fingerprint (determinism).
     const h1 = [];
     for (const c of clients) h1.push((await c.rpc("sim.hash")).hash);
     const v1 = desyncVerdict(h1);
-    report.steps.push({ name: "determinism", leveltime: target, hashes: h1, agree: v1.agree });
-    log(`determinism @${target}: hashes=${JSON.stringify(h1)} agree=${v1.agree}`);
+    report.steps.push({ name: "determinism", leveltime: alignedT, hashes: h1, agree: v1.agree });
+    log(`determinism @${alignedT}: hashes=${JSON.stringify(h1)} agree=${v1.agree}`);
 
     // Invariant 2: perturb ONE instance's RNG state (a real desync cause) => fingerprints diverge,
     // and we detect it. Then step all one more tic so leveltime still matches across instances.
     await clients[0].rpc("sim.seed", { op: "set", value: seed ^ 0x5bd1e995 });
-    const target2 = target + 1;
+    const target2 = alignedT + 1;
     for (const c of clients) await stepTo(c, target2);
+    const alignedT2 = await alignAll(clients); // leveltime is RNG-independent, so this still aligns
     const h2 = [];
     for (const c of clients) h2.push((await c.rpc("sim.hash")).hash);
     const v2 = desyncVerdict(h2);
-    report.steps.push({ name: "desync-detect", leveltime: target2, hashes: h2, diverged: !v2.agree });
-    log(`desync @${target2}: hashes=${JSON.stringify(h2)} diverged=${!v2.agree}`);
+    report.steps.push({ name: "desync-detect", leveltime: alignedT2, hashes: h2, diverged: !v2.agree });
+    log(`desync @${alignedT2}: hashes=${JSON.stringify(h2)} diverged=${!v2.agree}`);
 
     report.pass = v1.agree && !v2.agree;
     return report;
