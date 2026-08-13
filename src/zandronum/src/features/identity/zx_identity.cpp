@@ -42,8 +42,16 @@ const char kSeedTag[] = "seed = ";
 // [rc4l] How many copies of the engine one machine may run with accounts of their own.
 const int kMaxLocalInstances = 8;
 
+// [rc4l] How far a spare will look for a free slot, well past the copies anyone runs at once,
+// because the point is to always find one rather than to ration them.
+const int kMaxSpareInstances = 64;
+
 // [rc4l] Held open for the life of the process, which is what reserves this instance's key.
 int g_InstanceLock = -1;
+
+// Which key this copy is playing as, so a spare can start looking after it.
+int g_Instance = 0;
+std::string g_IdentityRoot;
 
 // [rc4l] Claim a key by taking an exclusive lock on a file beside it.
 //
@@ -237,6 +245,9 @@ int Identity_InitClientHere( const char *configRoot )
 
 		if ( Identity_InitClient( configRoot, instance ))
 		{
+			g_Instance = instance;
+			g_IdentityRoot = root;
+
 			if ( instance > 0 )
 			{
 				Printf( "Identity: this is copy %d on this machine, so it plays as its own account.\n",
@@ -253,6 +264,53 @@ int Identity_InitClientHere( const char *configRoot )
 	// refuse the duplicate rather than starting with no identity at all.
 	Identity_InitClient( configRoot, 0 );
 	return 0;
+}
+
+bool Identity_SwitchToSpare( void )
+{
+	// [rc4l] Take the next key nothing else holds, so being locked out of an account is not being
+	// locked out of the game.
+	//
+	// A whole account rather than a one-off name, because a throwaway that changed every session
+	// would lose the player's progress on every server they went on to play, which is the thing
+	// this was meant to save.
+	for ( int instance = g_Instance + 1; instance < kMaxSpareInstances; ++instance )
+	{
+		const std::string path = ClientAuthKeyPath( g_IdentityRoot, instance );
+		if ( path.empty( ))
+			break;
+
+		const int held = g_InstanceLock;
+		g_InstanceLock = -1;
+
+		if ( !ClaimInstance( path ))
+		{
+			g_InstanceLock = held;
+			continue;
+		}
+
+		if ( !Identity_InitClient( g_IdentityRoot.c_str( ), instance ))
+		{
+			ReleaseClaim( );
+			g_InstanceLock = held;
+			continue;
+		}
+
+		// Only now is the old one given up, so a failure above leaves this copy as it was.
+		if ( held >= 0 )
+		{
+#ifdef _WIN32
+			_close( held );
+#else
+			close( held );
+#endif
+		}
+
+		g_Instance = instance;
+		return true;
+	}
+
+	return false;
 }
 
 bool Identity_InitServer( const char *configRoot )
@@ -429,30 +487,6 @@ bool Identity_SharedSession( const Bytes &ourPrivate, const Bytes &theirPublic, 
 namespace
 {
 
-// [rc4l] Up out of the node cache to the per-user folder holding it.
-//
-// M_GetCachePath rather than M_GetConfigPath because the config path falls back to the program
-// directory for a portable install, and an account should be the player's rather than the copy of
-// the engine they happened to launch.
-//
-// A sibling of that cache and not inside it, because the IWAD store lives there and the engine
-// file search walks it: a secret in a searched folder is a secret any mod can read.
-std::string PerUserBase( void )
-{
-	FString path = M_GetCachePath( true );
-	FixPathSeperator( path );
-
-	// Trim "/zdoom/cache", which M_GetCachePath appends on every platform.
-	for ( int i = 0; i < 2; ++i )
-	{
-		const long slash = path.LastIndexOf( '/' );
-		if ( slash > 0 )
-			path.Truncate( slash );
-	}
-
-	return std::string( path.GetChars( ));
-}
-
 void RemoveEmptyDir( const std::string &path )
 {
 #ifdef _WIN32
@@ -479,7 +513,9 @@ std::string LegacyRoot( void )
 
 std::string Identity_ConfigRoot( void )
 {
-	return IdentityRootUnder( PerUserBase( ));
+	// [rc4l] The same folder the IWAD store uses, so a player's account and their games sit
+	// together rather than in two unrelated corners of the profile.
+	return std::string( M_GetFuaUserPath( ).GetChars( ));
 }
 
 // [rc4l] Move keys written by a build that kept them beside the config file.

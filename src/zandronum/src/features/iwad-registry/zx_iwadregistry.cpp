@@ -8,11 +8,18 @@
 #include "doomtype.h"
 #include "m_misc.h"
 #include "v_text.h"
+#include "version.h"
 
 #include "features/iwad-registry/computation/iwadregistry_compute.h"
 #include "features/wad-download/zx_filehash.h"
 
 #include <stdio.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace
 {
@@ -69,15 +76,68 @@ bool CopyFileBytes( const char *from, const char *to )
 namespace zx
 {
 
+// [rc4l] Move a store written when the root was the shared ZDoom node cache.
+//
+// Renamed rather than re-registered, because re-registering means hashing and copying every IWAD
+// again and leaving the originals behind as tens of megabytes of orphans nobody will ever find.
+//
+// One rename of the whole folder, since both roots are under the same per-user directory and so on
+// the same volume.
+void MigrateLegacyStore( const std::string &currentRoot )
+{
+	FString legacy = M_GetCachePath( false );
+	if ( legacy.IsEmpty( ))
+		return;
+
+	FixPathSeperator( legacy );
+
+	const std::string from = std::string( legacy.GetChars( )) + "/" GAMENAME "/core/iwads";
+	const std::string to = currentRoot + "/iwads";
+
+	if ( !DirEntryExists( from.c_str( )) || DirEntryExists( to.c_str( )))
+		return;
+
+	CreatePath( currentRoot.c_str( ));
+
+	if ( rename( from.c_str( ), to.c_str( )) != 0 )
+		return;
+
+	Printf( "IWADs: moved the registered copies into %s\n", to.c_str( ));
+
+	// [rc4l] And the folders the move emptied, so nothing is left looking like a second store.
+	// Not remove(), which will not take a directory on Windows.
+	const std::string owner = std::string( legacy.GetChars( )) + "/" GAMENAME;
+#ifdef _WIN32
+	_rmdir(( owner + "/core" ).c_str( ));
+	_rmdir( owner.c_str( ));
+#else
+	rmdir(( owner + "/core" ).c_str( ));
+	rmdir( owner.c_str( ));
+#endif
+}
+
 std::string IwadRegistryRoot( void )
 {
-	// The same place the registry list already caches into, which is machine-local rather than the
-	// roaming profile that would sync tens of megabytes onto every machine an account touches.
-	FString dir = M_GetCachePath( true );
+	// [rc4l] The same folder the identity keys live in, machine-local rather than the roaming
+	// profile that would sync tens of megabytes onto every machine an account touches.
+	FString dir = M_GetFuaUserPath( );
 	if ( dir.IsEmpty( ))
 		return std::string( );
 
-	return std::string( dir.GetChars( ));
+	CreatePath( dir.GetChars( ));
+
+	const std::string root( dir.GetChars( ));
+
+	// [rc4l] Once, on the first ask, so a store written by an earlier build is found rather than
+	// rebuilt beside itself.
+	static bool bMigrated = false;
+	if ( !bMigrated )
+	{
+		bMigrated = true;
+		MigrateLegacyStore( root );
+	}
+
+	return root;
 }
 
 std::string RegisterIwad( const char *path )
@@ -128,7 +188,7 @@ CCMD( fua_iwadregister )
 	if ( argv.argc( ) < 2 )
 	{
 		Printf( "fua_iwadregister <path>: copy an IWAD into the shared store.\n" );
-		Printf( "Store: %s/ForkUnderA/core/iwads/\n", zx::IwadRegistryRoot( ).c_str( ));
+		Printf( "Store: %s/iwads/\n", zx::IwadRegistryRoot( ).c_str( ));
 		return;
 	}
 

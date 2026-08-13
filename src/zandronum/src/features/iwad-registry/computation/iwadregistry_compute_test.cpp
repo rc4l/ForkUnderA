@@ -43,14 +43,14 @@ TEST(NormalizeDigest, AnythingThatIsNotADigestIsRefused)
 
 TEST(IwadStoreDir, IsTheAgreedShape)
 {
-	EXPECT_EQ(std::string(kRoot) + "/ForkUnderA/core/iwads/" + kDigest,
+	EXPECT_EQ(std::string(kRoot) + "/iwads/" + kDigest,
 		IwadStoreDir(kRoot, kDigest));
 }
 
 TEST(IwadStoreDir, ATrailingSeparatorOnTheRootDoesNotDoubleUp)
 {
 	// The root comes from the OS, which is inconsistent about this.
-	const std::string want = std::string(kRoot) + "/ForkUnderA/core/iwads/" + kDigest;
+	const std::string want = std::string(kRoot) + "/iwads/" + kDigest;
 
 	EXPECT_EQ(want, IwadStoreDir(std::string(kRoot) + "/", kDigest));
 	EXPECT_EQ(want, IwadStoreDir(std::string(kRoot) + "\\", kDigest));
