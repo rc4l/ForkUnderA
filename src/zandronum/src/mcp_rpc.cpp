@@ -250,7 +250,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\","
-			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\","
+			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
 			"\"perf.capture\",\"perf.counters\",\"net.bandwidth\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\"]}" );
 	}
@@ -405,6 +405,24 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				+ ",\"up\":" + std::to_string( g_axisOverride[JOYAXIS_Up] ) + "}";
 			SendOk( id, body );
 		}
+	}
+	else if ( cmd == "input.look" )
+	{
+		// Precise relative view rotation, in DEGREES. yaw>0 = left, pitch>0 = down (intuitive), which
+		// map to the engine's own turn functions (Button_Left is -yaw, Button_LookDown is -pitch).
+		// These drive LocalViewAngle through the ticcmd, so it works single-player AND as a netclient;
+		// the view updates on the next tic (advance one tic, or let a running game apply it).
+		double yaw = 0.0, pitch = 0.0;
+		bool haveYaw = GetFloat( args, "yaw", yaw );
+		bool havePitch = GetFloat( args, "pitch", pitch );
+		if ( haveYaw && yaw != 0.0 ) G_AddViewAngle( (int)( -DegreesToViewUnits( yaw ) ) );
+		if ( havePitch && pitch != 0.0 ) G_AddViewPitch( (int)( -DegreesToViewUnits( pitch ) ) );
+		// Report the pawn's CURRENT facing (pre-tic) in degrees so a caller can diff across a step.
+		AActor *mo = ( consoleplayer >= 0 && consoleplayer < MAXPLAYERS ) ? players[consoleplayer].mo : NULL;
+		double angleDeg = mo ? ( (double)(unsigned long)mo->angle * 360.0 / 4294967296.0 ) : 0.0;
+		std::string body = "{\"requested\":{\"yaw\":" + std::to_string( yaw ) + ",\"pitch\":" + std::to_string( pitch )
+			+ "},\"angle_deg\":" + std::to_string( angleDeg ) + "}";
+		SendOk( id, body );
 	}
 	else if ( cmd == "perf.capture" )
 	{
