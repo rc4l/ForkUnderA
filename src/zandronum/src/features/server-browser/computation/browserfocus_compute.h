@@ -114,10 +114,11 @@ struct NavWhere
 	int tabCount;
 	int subIndex;   // position on the sub-tab row
 	int subCount;   // 0 when the selected tab has no sub-tab row at all
+	bool atTopRow;  // the selected server row is the first one -- Up leaves the list rather than wrapping
 
-	NavWhere() : hasRows(false), tabIndex(0), tabCount(0), subIndex(0), subCount(0) {}
-	NavWhere(bool rows, int tab, int tabs, int sub, int subs)
-		: hasRows(rows), tabIndex(tab), tabCount(tabs), subIndex(sub), subCount(subs) {}
+	NavWhere() : hasRows(false), tabIndex(0), tabCount(0), subIndex(0), subCount(0), atTopRow(false) {}
+	NavWhere(bool rows, int tab, int tabs, int sub, int subs, bool top = false)
+		: hasRows(rows), tabIndex(tab), tabCount(tabs), subIndex(sub), subCount(subs), atTopRow(top) {}
 };
 
 struct NavResult

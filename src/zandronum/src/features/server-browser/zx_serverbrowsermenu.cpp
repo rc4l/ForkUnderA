@@ -10454,7 +10454,8 @@ public:
 		// told that PLAY has no sub-tab row to walk into at all.
 		const zx::NavWhere where( total > 0, static_cast<int>( g_Tab ), kTabCount,
 			static_cast<int>( g_Browse ),
-			( g_Tab == BrowserTab::Browse ) ? kBrowseCount : 0 );
+			( g_Tab == BrowserTab::Browse ) ? kBrowseCount : 0,
+			g_Selected <= 0 ); // at the first row (or none) -> Up leaves the list for the filter above
 
 		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, where );
 		const zx::BrowserFocus was = g_Focus;
