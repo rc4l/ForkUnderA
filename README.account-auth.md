@@ -9,66 +9,60 @@ sequenceDiagram
     participant S as Server
 
     rect rgba(56, 139, 253, 0.15)
-        Note over C,S: The server proves itself first
-        C->>S: Hello. Here is a random number. Prove you are you.
-        S->>C: Here is my ID, signed with your random number
-        Note over C: Signature wrong? Walk away now, having said nothing.
+        Note over C,S: Server proves itself first
+        C->>S: A random number
+        S->>C: My ID, signed with it
+        Note over C: Wrong? Leave now.
     end
 
     rect rgba(63, 185, 80, 0.15)
-        Note over C,S: Only then do you prove yourself
-        C->>S: Here is my account, signed so only this server can use it
-        Note over S: Wrong? Refused here, before you get a player slot.
+        Note over C,S: Only then do you
+        C->>S: My account, signed
+        Note over S: Wrong? Refused, no slot given.
     end
 
-    S->>C: You are in. Load the map.
+    S->>C: You are in
 ```
 
 ## How
 
-One secret per machine. Your account on a server is derived from that secret plus the server's
-public key.
+1. On first run the engine makes one secret file on your machine.
+2. When you join a server, your account is that secret mixed with the server's public key.
+3. Same server tomorrow, same account. It never expires and nothing stores it.
+4. A different owner's server gives you a different account, and the two cannot be linked.
 
-```
-account = truncate( sha256( tag | your secret | server public key ) )
-```
+## Where the file is
 
-So one operator sees one stable account for you forever, and unrelated operators cannot tell that
-two of their players are the same person.
+A folder called `ForkUnderA/identity/`, next to wherever the engine keeps its config.
 
-## Files
-
-`<config>/identity/`
-
-| File | What |
+| Setup | Folder |
 |---|---|
-| `client-auth.key` | Your secret. 64 hex characters. Back it up. |
-| `client-auth.2.key` | The second copy of the engine on this machine, and so on to 8. |
-| `server-auth.key` | The identity your server presents when you host. |
-| `*.key.lock` | Empty. Each running copy holds one open so two never share a key. |
+| Portable (an `.ini` sits beside the exe) | `<install>\ForkUnderA\identity\` |
+| Windows | `%APPDATA%\ForkUnderA\ForkUnderA\identity\` |
+| macOS | `~/Library/Preferences/ForkUnderA/identity/` |
+| Linux | `~/.config/forkundera/ForkUnderA/identity/` |
 
-Anyone holding your key is you. No server has a copy, so a lost key is a lost account.
+Inside, `client-auth.key` is you. `server-auth.key` is the identity your server presents when you
+host. Numbered files like `client-auth.2.key` belong to a second copy of the engine running at the
+same time, so two windows are two players.
 
-## Joining
+## Deleting your account
 
-The three steps above ride on messages the join already sends, so this costs no extra round trips.
+Delete `client-auth.key`. The next launch makes a new one, and you are a new player everywhere.
 
-**The server signs first**, before the client names an account. A server that copied a real
-server's public key cannot produce that signature, so the client leaves before it can be used to
-relay a proof to the real one.
+There is no undo and no way back to the old account.
 
-A client that fails is refused here, before it gets a player slot or a snapshot.
+## Keep it private
 
-Nothing in this is delivered reliably, so a challenge is minted once per client and re-sent
-unchanged on every retry. Otherwise a dropped packet would refuse an honest player.
+> [!WARNING]
+> Anyone who has your `client-auth.key` **is** you, on every server you play on.
+>
+> No server holds a copy, so nobody can verify you, restore you, or take it back for you.
+> Do not paste it, screenshot it, or put it in a mod, a bug report, or a cloud sync folder.
 
 ## For modders
 
-Unchanged. `GetPlayerAccountName` and `PlayerIsLoggedIn` work as before. The name is now 32 hex
-characters instead of a chosen username, and is stable per player per operator, so anything using
-it as a database key keeps working.
+Nothing changed. `GetPlayerAccountName` and `PlayerIsLoggedIn` work as before.
 
-## Costs nothing at runtime
-
-Keys are read once at startup. A join is two signatures and a key agreement: no disk, no network.
-That is why the account server was dropped rather than reimplemented.
+The name is now 32 hex characters instead of a chosen username. It is stable per player per server
+owner, so anything using it as a database key keeps working.
