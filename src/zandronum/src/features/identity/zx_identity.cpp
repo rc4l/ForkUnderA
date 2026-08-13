@@ -256,6 +256,14 @@ bool Identity_Verify( const Bytes &publicKey, const std::string &message, const 
 	return bOk;
 }
 
+bool Identity_SignAsServer( const std::string &message, Bytes &signatureOut )
+{
+	if ( !g_ServerKey.IsValid( ))
+		return false;
+
+	return Identity_Sign( g_ServerKey.privateKey, message, signatureOut );
+}
+
 bool Identity_NewEphemeral( KeyPair &out )
 {
 	EVP_PKEY *pkey = NULL;

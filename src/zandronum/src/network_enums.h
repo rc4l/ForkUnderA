@@ -392,6 +392,10 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_SRP_USER_START_AUTHENTICATION ),
 	ENUM_ELEMENT ( SVC2_SRP_USER_PROCESS_CHALLENGE ),
 	ENUM_ELEMENT ( SVC2_SRP_USER_VERIFY_SESSION ),
+
+	// [rc4l] The server proving itself, which must happen BEFORE the client reveals anything: a
+	// server that merely COPIED a real public key cannot produce this signature.
+	ENUM_ELEMENT ( SVC2_FUA_AUTH_CHALLENGE ),
 	ENUM_ELEMENT ( SVC2_RCONACCESS ),
 	// [TRSR] Command for syncing Domination point state.
 	ENUM_ELEMENT ( SVC2_SETDOMINATIONPOINTSTATE ),
@@ -482,6 +486,11 @@ BEGIN_ENUM( CLC_SRP )
 	ENUM_ELEMENT2( CLC_SRP_USER_REQUEST_LOGIN, NUM_CLIENT_COMMANDS ),
 	ENUM_ELEMENT( CLC_SRP_USER_START_AUTHENTICATION ),
 	ENUM_ELEMENT( CLC_SRP_USER_PROCESS_CHALLENGE ),
+
+	// [rc4l] Anonymous accounts: the client opens with a nonce and an ephemeral key, and proves
+	// itself only after the server has proved itself first.
+	ENUM_ELEMENT( CLC_FUA_AUTH_HELLO ),
+	ENUM_ELEMENT( CLC_FUA_AUTH_PROOF ),
 }
 END_ENUM( CLC_SRP )
 
