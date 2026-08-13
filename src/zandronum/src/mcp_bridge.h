@@ -29,6 +29,9 @@ void MCP_Bridge_Shutdown();
 // Arm the crash-backtrace handler (implemented in mcp_crash.cpp). Idempotent, opt-in.
 void MCP_Crash_Init();
 
+// Marks the sim|render boundary for the coarse perf split (anchored before D_Display in D_DoomLoop).
+void MCP_RPC_MarkRender();
+
 #else
 
 // Release build: no bridge. The anchors compile to nothing.
@@ -36,6 +39,7 @@ inline void MCP_Bridge_Poll() {}
 inline void MCP_Bridge_TeeOutput(const char *) {}
 inline void MCP_Bridge_Shutdown() {}
 inline void MCP_Crash_Init() {}
+inline void MCP_RPC_MarkRender() {}
 
 #endif // FUA_MCP_BRIDGE
 

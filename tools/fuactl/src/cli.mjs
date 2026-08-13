@@ -4,7 +4,7 @@
 // Both talk to the engine's native bridge (features/mcp-bridge), which must be built with
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
 import { reap, readRegistry } from "./registry.mjs";
-import { runDeterminismCheck } from "./session.mjs";
+import { runDeterminismCheck, runPerfAblation } from "./session.mjs";
 import { launchInstance, stopInstance } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 
@@ -27,6 +27,7 @@ const USAGE = `fuactl <command>
   launch [--map M] [--seed S]        launch one supervised bridge instance (stays up until Ctrl-C)
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
+  perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -76,6 +77,18 @@ async function main() {
       });
       console.log(JSON.stringify(report, null, 2));
       process.exit(report.pass ? 0 : 1);
+      break;
+    }
+    case "perf-ab": {
+      const report = await runPerfAblation({
+        seed: flags.seed ? Number(flags.seed) : undefined,
+        map: flags.map || undefined,
+        spawn: flags.spawn || undefined,
+        count: flags.count ? Number(flags.count) : undefined,
+        frames: flags.frames ? Number(flags.frames) : undefined,
+        log: (m) => console.error(`[perf-ab] ${m}`),
+      });
+      console.log(JSON.stringify(report, null, 2));
       break;
     }
     case "mcp": {
