@@ -386,6 +386,33 @@ jobs:
 
           docker rm -f fua-smoke-file
 
+          # [rc4l] FOLDER MODE: a server folder holding a cfg and a wads.txt, no catalogue at all.
+          # It uses files the image already carries, so it needs no network, and it is here because
+          # every previous gap in this smoke test was a code path nothing exercised.
+          mkdir -p smoke/servers/folderci
+          : > smoke/servers/folderci/server.cfg
+          cat > smoke/servers/folderci/wads.txt <<TXT
+          # comments and blank lines must be ignored
+
+          iwad freedoom2.wad
+          file $(basename "$pk3")
+          TXT
+          chmod -R 777 smoke
+
+          docker run -d --name fua-smoke-folder             -e FUA_ANNOUNCE=0             -e FUA_SERVER_DIR=/data/servers/folderci             -v "$PWD/smoke:/data"             "$img"
+          sleep 20
+          docker logs fua-smoke-folder > smokefolder.log 2>&1
+          cat smokefolder.log
+
+          if [ "$(docker inspect -f '{{.State.Running}}' fua-smoke-folder)" != "true" ]; then
+            echo "::error::the folder-mode server exited instead of staying up"
+            exit 1
+          fi
+          grep -qE '^ adding .*brightmaps\.pk3' smokefolder.log             || { echo "::error::folder mode did not load the wads.txt file"; exit 1; }
+          grep -q 'UDP Initialized' smokefolder.log             || { echo "::error::folder-mode server never bound its socket"; exit 1; }
+
+          docker rm -f fua-smoke-folder
+
       - name: Log in to GHCR
         if: steps.meta.outputs.publish == 'true'
         uses: docker/login-action@v3
