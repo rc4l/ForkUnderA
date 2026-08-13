@@ -114,7 +114,7 @@ int FIWadManager::GetIWadInfo()
 //
 //==========================================================================
 
-void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize)
+void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize, FIWADInfo *result)
 {
 	FScanner sc;
 
@@ -123,7 +123,10 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize)
 	{
 		if (sc.Compare("IWAD"))
 		{
-			FIWADInfo *iwad = &mIWads[mIWads.Reserve(1)];
+			// [rc4l] Into the caller's when it supplied one. A candidate file's own definition has
+			// not been accepted yet at this point, and appending first would leave a rejected file's
+			// claim in the list for everything afterwards to match against.
+			FIWADInfo *iwad = (result != NULL) ? result : &mIWads[mIWads.Reserve(1)];
 			sc.MustGetStringName("{");
 			while (!sc.CheckString("}"))
 			{
@@ -224,6 +227,17 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize)
 		}
 		else if (sc.Compare("NAMES"))
 		{
+			// [rc4l] Never from a candidate. NAMES adds filenames to the list the engine SEARCHES
+			// FOR, so honouring it here would let any file the player happens to own extend that
+			// search, which is a claim about the whole install rather than about itself.
+			if (result != NULL)
+			{
+				sc.MustGetStringName("{");
+				while (!sc.CheckString("}"))
+					sc.MustGetString();
+				continue;
+			}
+
 			sc.MustGetStringName("{");
 			mIWadNames.Push(FString());
 			while (!sc.CheckString("}"))
@@ -286,8 +300,86 @@ void FIWadManager::ParseIWadInfos(const char *fn)
 // Scan the contents of an IWAD to determine which one it is
 //==========================================================================
 
+// [rc4l] Adapted from uzdoom@cdff5bdc08a2f4eac784f3984b18cd788e16be42 ("rewrite of the IWAD loading
+// mechanism"), which introduced FIWadManager::CheckIWADInfo: a file carrying its own IWADINFO says
+// what it is, instead of being guessed at from the lumps it happens to contain.
+//
+// ONE PIECE of that rewrite. The commit also rebuilds discovery around a FileSystem this tree does
+// not have, and that part is deliberately not taken: its row stays pending.
+//
+// ADAPTED, not ported. Upstream builds a whole FileSystem to read one lump; this tree has
+// FResourceFile, which ParseIWadInfos twelve lines up already uses for exactly this. The idea and
+// the precedence rule are theirs, the file access is ours.
+//
+// Worth having because MustContain is deliberately coarse -- Doom II's is "MAP01" and nothing else,
+// so every megawad ever made matches it. Recognition answers "what can this run as"; a declaration
+// answers "what IS this", and only the file itself can.
+int FIWadManager::CheckIWADInfo(const char *fn)
+{
+	FResourceFile *resfile = FResourceFile::OpenResourceFile(fn, NULL, true);
+	if (resfile == NULL)
+		return -1;
+
+	int found = -1;
+
+	for (int i = (int)resfile->LumpCount() - 1; i >= 0; i--)
+	{
+		FResourceLump *lmp = resfile->GetLump(i);
+
+		if ((lmp->Namespace != ns_global) || stricmp(lmp->Name, "IWADINFO"))
+			continue;
+
+		try
+		{
+			FIWADInfo declared;
+			ParseIWadInfo(fn, (const char *)lmp->CacheLump(), lmp->LumpSize, &declared);
+
+			// A block that named nothing is not a claim. Refused rather than pushed, or the list
+			// grows an anonymous entry that the first file with any lump at all would match.
+			if (declared.Name.IsEmpty())
+				break;
+
+			// Already known by that name, so this is another copy of a game we can describe rather
+			// than a new one. Same rule upstream uses, and it is what stops a shelf full of the same
+			// IWAD from filling the picker with duplicates.
+			for (unsigned j = 0; j < mIWads.Size(); ++j)
+			{
+				if (mIWads[j].Name.CompareNoCase(declared.Name) == 0)
+				{
+					found = (int)j;
+					break;
+				}
+			}
+
+			if (found < 0)
+				found = (int)mIWads.Push(declared);
+		}
+		catch (CRecoverableError &err)
+		{
+			// A malformed declaration costs that file its claim, nothing else. Letting this escape
+			// would mean one bad file in the search path stopping the engine from starting at all.
+			Printf(TEXTCOLOR_RED "%s: %s\nIgnoring its IWADINFO.\n", fn, err.GetMessage());
+			found = -1;
+		}
+
+		break;
+	}
+
+	delete resfile;
+	return found;
+}
+
 int FIWadManager::ScanIWAD (const char *iwad)
 {
+	// [rc4l] What the file says about itself beats what its lumps imply. A declaration is exact and
+	// recognition is a guess, so consulting the guess first could only ever overrule the truth.
+	//
+	// This opens the file a second time, which is the price of keeping the two answers separable.
+	// It happens a handful of times at startup and never in a frame.
+	const int declared = CheckIWADInfo(iwad);
+	if (declared >= 0)
+		return declared;
+
 	FResourceFile *iwadfile = FResourceFile::OpenResourceFile(iwad, NULL, true);
 
 	if (iwadfile != NULL)
