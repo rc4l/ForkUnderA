@@ -269,6 +269,15 @@ registered into **both** config sections — unexpanded, once each, visible in t
 can remove them. A mod already downloaded through Doomseeker should not be downloaded again for
 anything, not just for a join.
 
+`RegisterKnownWadDirectories` also registers **`$PROGDIR/iwads`**, which is ours rather than another
+tool's: the release keeps the IWADs it ships (Freedoom, `fuamega.wad`) in that folder instead of loose
+beside the binary, so opening the install shows a program to run rather than game data a player did
+not put there. It is registered here, on every launch, rather than in `GameConfigFile`'s defaults —
+those are written only when the section does not exist yet, so a player updating from a build that
+kept the IWADs loose would never be told about the folder and would open a build that could not find
+the data it had just shipped with. It is also seeded before `IdentifyVersion` looks, for the same
+reason the Doomseeker paths are.
+
 ## Where files go
 
 `cl_fua_download_dir`, or by default `pwads/` under `M_GetFuaUserPath()` — beside the `iwads/`
