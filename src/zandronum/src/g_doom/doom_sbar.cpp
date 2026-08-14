@@ -1345,10 +1345,11 @@ void DrawFullHUD_GameInformation()
 			{
 				DrawPartialImage(&StatusBarTex, 142, 37);
 				// [rc4l] features/damage-tint: the floor's tint reaches Doomguy's face too,
-				// banded from the chin up to the coverage point.
+				// from the chin up to the coverage point; a protected face glows.
 				float dtCov = 0.0f;
-				PalEntry dtOverlay = DamageTint_FaceOverlay(&dtCov);
-				DrawImage(face, 143, 0, NULL, dtOverlay, dtCov);
+				bool dtGlow = false;
+				PalEntry dtOverlay = DamageTint_FaceOverlay(&dtCov, &dtGlow);
+				DrawImage(face, 143, 0, NULL, dtOverlay, dtCov, dtGlow);
 			}
 		}
 		else

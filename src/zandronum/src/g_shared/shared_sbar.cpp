@@ -558,15 +558,15 @@ void DBaseStatusBar::ShowPlayerName ()
 //---------------------------------------------------------------------------
 
 void DBaseStatusBar::DrawImage (FTexture *img,
-	int x, int y, FRemapTable *translation, PalEntry colorOverlay, float overlayCoverage) const
+	int x, int y, FRemapTable *translation, PalEntry colorOverlay, float overlayCoverage, bool overlayGlow) const
 {
 	if (img == NULL)
 		return;
 
-	// [rc4l] features/damage-tint: the overlay renders as the shader's per-pixel multiplicative
-	// gradient (full at the image's bottom edge, gone at the coverage point) -- armed for this one
-	// draw and cleared right after. No banding, and the art's own shading survives.
-	DamageTint_Arm2D(colorOverlay, colorOverlay.a ? overlayCoverage : 0.0f);
+	// [rc4l] features/damage-tint: the overlay renders as the shader's per-pixel gradient (full at
+	// the image's bottom edge, gone at the coverage point) -- armed for this one draw and cleared
+	// right after. No banding, the art's own shading survives, and a protected face glows.
+	DamageTint_Arm2D(colorOverlay, colorOverlay.a ? overlayCoverage : 0.0f, overlayGlow);
 	screen->DrawTexture (img, x + ST_X, y + ST_Y,
 		DTA_Translation, translation,
 		DTA_Bottom320x200, Scaled,

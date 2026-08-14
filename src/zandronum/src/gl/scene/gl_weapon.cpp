@@ -208,10 +208,11 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	PalEntry dtAvg;
 	int dtPct;
 	float dtCov;
-	if (DamageTint_WeaponParams(player->mo, player->mo->RenderStyle.BlendOp, player->mo->RenderStyle.Flags, dtAvg, dtPct, dtCov))
+	bool dtGlow;
+	if (DamageTint_WeaponParams(player->mo, player->mo->RenderStyle.BlendOp, player->mo->RenderStyle.Flags, dtAvg, dtPct, dtCov, dtGlow))
 	{
 		gl_RenderState.SetDamageTint(dtAvg.r / 255.0f, dtAvg.g / 255.0f, dtAvg.b / 255.0f,
-			dtPct / 100.0f, fV2 - (fV2 - fV1) * dtCov, fV2);
+			dtPct / 100.0f, fV2 - (fV2 - fV1) * dtCov, fV2, dtGlow);
 	}
 	gl_RenderState.Apply();
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();

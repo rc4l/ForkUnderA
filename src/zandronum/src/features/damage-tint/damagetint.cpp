@@ -108,12 +108,12 @@ int DamageTint_SectorDamage( const sector_t *sec )
 
 // Strength (color intensity) and coverage (how far up the sprite the gradient reaches, as a percent
 // of the body / weapon-quad height). Either at 0 disables that surface. Face is strength-only.
-CVAR( Int, cl_damagetint, 35, CVAR_ARCHIVE )
+CVAR( Int, cl_damagetint, 100, CVAR_ARCHIVE )
 CVAR( Int, cl_damagetint_coverage, 50, CVAR_ARCHIVE )
-CVAR( Int, cl_damagetint_weapon, 25, CVAR_ARCHIVE )
-CVAR( Int, cl_damagetint_weapon_coverage, 40, CVAR_ARCHIVE )
-CVAR( Int, cl_damagetint_face, 30, CVAR_ARCHIVE )
-CVAR( Int, cl_damagetint_face_coverage, 60, CVAR_ARCHIVE )
+CVAR( Int, cl_damagetint_weapon, 100, CVAR_ARCHIVE )
+CVAR( Int, cl_damagetint_weapon_coverage, 50, CVAR_ARCHIVE )
+CVAR( Int, cl_damagetint_face, 65, CVAR_ARCHIVE )
+CVAR( Int, cl_damagetint_face_coverage, 50, CVAR_ARCHIVE )
 
 // Defined in gl/textures/gl_texture.cpp. NOTE: it reads GL-order RGBA; FBitmap stores BGRA, so
 // r/b come back swapped -- callers swap them back (learned the hard way in the sky-tint trial).
@@ -214,10 +214,17 @@ namespace
 		return 0;
 	}
 
-	bool SuitProtected( player_t *player )
+	// Any damage-negating state: radsuit (and subclasses), invulnerability power/flag, god mode.
+	// The tint doesn't vanish for these -- it switches to the protected GLOW.
+	bool DamageNegated( player_t *player )
 	{
+		if ( player->cheats & CF_GODMODE )
+			return true;
+		if ( player->mo->flags2 & MF2_INVULNERABLE )
+			return true;
 		for ( AInventory *item = player->mo->Inventory; item != NULL; item = item->Inventory )
-			if ( item->IsKindOf( RUNTIME_CLASS( APowerIronFeet )))
+			if ( item->IsKindOf( RUNTIME_CLASS( APowerIronFeet ))
+				|| item->IsKindOf( RUNTIME_CLASS( APowerInvulnerable )))
 				return true;
 		return false;
 	}
@@ -261,10 +268,12 @@ namespace
 		return st.intensity;
 	}
 
-	// Shared qualification + strength for both hooks. Returns the effective percent (0 = no tint)
-	// and the floor's average color.
-	int TintStrength( AActor *actor, int blendOp, DWORD styleFlags, int basePct, PalEntry &avgOut )
+	// Shared qualification + strength for the hooks. Returns the effective percent (0 = no tint),
+	// the tint color, and whether it should render as the protected GLOW (radsuit/invuln/god on a
+	// damaging floor) instead of the taking-damage stain.
+	int TintStrength( AActor *actor, int blendOp, DWORD styleFlags, int basePct, PalEntry &avgOut, bool &glowOut )
 	{
+		glowOut = false;
 		if ( basePct <= 0 || gamestate != GS_LEVEL || actor == NULL )
 			return 0;
 		if ( actor->player == NULL || actor->player->mo != actor )
@@ -276,8 +285,8 @@ namespace
 		// floor plane / water / 3D-floor contact) -- ledge-hanging neither damages nor tints.
 		FTextureID tintTex;
 		tintTex.SetInvalid();
-		bool active = FloorDamage( actor, tintTex ) > 0
-			&& !SuitProtected( actor->player );
+		bool active = FloorDamage( actor, tintTex ) > 0;
+		glowOut = active && DamageNegated( actor->player );
 
 		PalEntry activeColor( 255, 255, 255 );
 		if ( active )
@@ -295,21 +304,22 @@ namespace
 bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb )
 {
 	PalEntry avg;
-	int pct = TintStrength( actor, blendOp, styleFlags, cl_damagetint, avg );
+	bool glow;
+	int pct = TintStrength( actor, blendOp, styleFlags, cl_damagetint, avg, glow );
 	if ( pct <= 0 )
 		return false;
 	int cov = clamp<int>( cl_damagetint_coverage, 0, 100 );
 	if ( cov <= 0 )
 		return false;
 
-	// Per-pixel multiplicative gradient across the sprite's vertical texture span: full tint at
-	// the feet (the larger V), fading to none at the coverage point. Same shader path as the
-	// weapon and mugshot, so it reads identically on any clothing color.
+	// Per-pixel gradient across the sprite's vertical texture span: full tint at the feet (the
+	// larger V), fading to none at the coverage point. Same shader path as the weapon and
+	// mugshot, so it reads identically on any clothing color; protected players glow instead.
 	float vBottom = vb > vt ? vb : vt;
 	float vTop    = vb > vt ? vt : vb;
 	float covFrac = cov / 100.0f;
 	gl_RenderState.SetDamageTint( avg.r / 255.0f, avg.g / 255.0f, avg.b / 255.0f,
-		pct / 100.0f, vBottom - ( vBottom - vTop ) * covFrac, vBottom );
+		pct / 100.0f, vBottom - ( vBottom - vTop ) * covFrac, vBottom, glow );
 	return true;
 }
 
@@ -318,9 +328,9 @@ void DamageTint_EndSpriteGlow()
 	gl_RenderState.ClearDamageTint();
 }
 
-bool DamageTint_WeaponParams( AActor *playermo, int blendOp, DWORD styleFlags, PalEntry &avgOut, int &pctOut, float &coverageFracOut )
+bool DamageTint_WeaponParams( AActor *playermo, int blendOp, DWORD styleFlags, PalEntry &avgOut, int &pctOut, float &coverageFracOut, bool &glowOut )
 {
-	pctOut = TintStrength( playermo, blendOp, styleFlags, cl_damagetint_weapon, avgOut );
+	pctOut = TintStrength( playermo, blendOp, styleFlags, cl_damagetint_weapon, avgOut, glowOut );
 	if ( pctOut <= 0 )
 		return false;
 	int cov = clamp<int>( cl_damagetint_weapon_coverage, 0, 100 );
@@ -335,13 +345,13 @@ PalEntry DamageTint_Blend( PalEntry avg, int pct )
 	return PalEntry( 255, (BYTE)TintChannel( avg.r, pct ), (BYTE)TintChannel( avg.g, pct ), (BYTE)TintChannel( avg.b, pct ));
 }
 
-void DamageTint_Arm2D( PalEntry overlay, float coverageFrac )
+void DamageTint_Arm2D( PalEntry overlay, float coverageFrac, bool glow )
 {
 	if ( overlay.a == 0 || coverageFrac <= 0.0f )
 		return;
 	// Texture-V runs 0 (top) to 1 (bottom) on a 2D graphic: gradient bottom = 1, top = 1 - coverage.
 	gl_RenderState.SetDamageTint( overlay.r / 255.0f, overlay.g / 255.0f, overlay.b / 255.0f,
-		overlay.a / 255.0f, 1.0f - coverageFrac, 1.0f );
+		overlay.a / 255.0f, 1.0f - coverageFrac, 1.0f, glow );
 }
 
 void DamageTint_Disarm2D()
@@ -366,9 +376,9 @@ CCMD( fua_tintdebug )
 	Printf( "sector #%d  special=%d (0x%x)  damage=%d  computed=%d  terrain=%d(dmg %d)\n",
 		(int)( sec - sectors ), sec->special, sec->special, sec->damage, FloorDamage( mo, dbgTex ),
 		terrain, Terrains[terrain].DamageAmount );
-	Printf( "z=%d floorz=%d planez=%d onfloor=%d waterlevel=%d suit=%d 3dfloors=%d\n",
+	Printf( "z=%d floorz=%d planez=%d onfloor=%d waterlevel=%d protected=%d 3dfloors=%d\n",
 		(int)( mo->z >> FRACBITS ), (int)( mo->floorz >> FRACBITS ), (int)( fz >> FRACBITS ),
-		(int)( mo->z == fz ), mo->waterlevel, (int)( mo->player && SuitProtected( mo->player )),
+		(int)( mo->z == fz ), mo->waterlevel, (int)( mo->player && DamageNegated( mo->player )),
 		sec->e ? (int)sec->e->XFloor.ffloors.Size() : 0 );
 	if ( TintState *st = g_state.CheckKey( mo ))
 		Printf( "intensity=%.2f lastTic=%d (now %d)\n", st->intensity, st->lastTic, level.time );
@@ -398,16 +408,19 @@ CCMD( fua_tintdebug )
 	}
 }
 
-PalEntry DamageTint_FaceOverlay( float *coverageFracOut )
+PalEntry DamageTint_FaceOverlay( float *coverageFracOut, bool *glowOut )
 {
 	if ( coverageFracOut != NULL )
 		*coverageFracOut = 0.0f;
+	if ( glowOut != NULL )
+		*glowOut = false;
 	if ( consoleplayer < 0 || consoleplayer >= MAXPLAYERS || !playeringame[consoleplayer] )
 		return PalEntry( 0 );
 	AActor *mo = players[consoleplayer].mo;
 	PalEntry avg;
+	bool glow;
 	// The mugshot has no render style; qualify with the neutral style so only the floor state decides.
-	int pct = TintStrength( mo, STYLEOP_Add, 0, cl_damagetint_face, avg );
+	int pct = TintStrength( mo, STYLEOP_Add, 0, cl_damagetint_face, avg, glow );
 	if ( pct <= 0 )
 		return PalEntry( 0 );
 	int cov = clamp<int>( cl_damagetint_face_coverage, 0, 100 );
@@ -415,6 +428,8 @@ PalEntry DamageTint_FaceOverlay( float *coverageFracOut )
 		return PalEntry( 0 );
 	if ( coverageFracOut != NULL )
 		*coverageFracOut = cov / 100.0f;
+	if ( glowOut != NULL )
+		*glowOut = glow;
 	return PalEntry( (BYTE)( pct * 255 / 100 ), avg.r, avg.g, avg.b );
 }
 
@@ -423,10 +438,10 @@ PalEntry DamageTint_FaceOverlay( float *coverageFracOut )
 #include "features/damage-tint/damagetint.h"
 bool DamageTint_BeginSpriteGlow( AActor *, int, DWORD, float, float ) { return false; }
 void DamageTint_EndSpriteGlow() {}
-bool DamageTint_WeaponParams( AActor *, int, DWORD, PalEntry &, int &, float & ) { return false; }
+bool DamageTint_WeaponParams( AActor *, int, DWORD, PalEntry &, int &, float &, bool & ) { return false; }
 PalEntry DamageTint_Blend( PalEntry, int ) { return PalEntry( 255, 255, 255, 255 ); }
-PalEntry DamageTint_FaceOverlay( float *cov ) { if ( cov ) *cov = 0.0f; return PalEntry( 0 ); }
-void DamageTint_Arm2D( PalEntry, float ) {}
+PalEntry DamageTint_FaceOverlay( float *cov, bool *glow ) { if ( cov ) *cov = 0.0f; if ( glow ) *glow = false; return PalEntry( 0 ); }
+void DamageTint_Arm2D( PalEntry, float, bool ) {}
 void DamageTint_Disarm2D() {}
 
 #endif // NO_GL
