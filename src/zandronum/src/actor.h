@@ -845,6 +845,9 @@ public:
 	virtual void HandleSpawnFlags();	// Translates SpawnFlags into in-game flags.
 
 	virtual void MarkPrecacheSounds() const;	// Marks sounds used by this actor for precaching.
+	void MarkPropertySounds() const;			// [ForkUnderA] The property-sound list itself, non-virtual so
+												// fua-caching can call it on class Defaults (whose vtable
+												// pointer must not be trusted -- Defaults are memcpy-built).
 
 	virtual void Activate (AActor *activator);
 	virtual void Deactivate (AActor *activator);

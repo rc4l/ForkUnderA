@@ -79,6 +79,7 @@
 #include "gl/utility/gl_templates.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "features/fov-interp/fovinterp.h"
+#include "features/fua-caching/fua_caching.h"
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 
 //==========================================================================
@@ -1140,6 +1141,14 @@ void FGLInterface::PrecacheTexture(FTexture *tex, int cache)
 		if (cache)
 		{
 			tex->PrecacheGL(cache);
+		}
+		// [ForkUnderA] cl_fua_caching: sprite materials stay resident across
+		// level loads -- they are the hitch-prone ones, and evicting a warm
+		// effect sprite just because it isn't placed on the next map recreates
+		// the very stutter the precache exists to remove. Level geometry
+		// still evicts per map as before.
+		else if (FUA_CachingMode() > 0 && tex->UseType == FTexture::TEX_Sprite)
+		{
 		}
 		else
 		{

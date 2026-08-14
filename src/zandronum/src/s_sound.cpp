@@ -60,6 +60,7 @@
 #include "deathmatch.h"
 #include "network.h"
 #include "sv_commands.h"
+#include "features/fua-caching/fua_caching.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -549,13 +550,23 @@ void S_PrecacheLevel ()
 			level.info->PrecacheSounds[i].MarkUsed();
 		}
 
+		// [ForkUnderA] cl_fua_caching: property sounds and constant
+		// state-parameter sounds of the placed-class/spawn-closure set.
+		// Must run before the cache/unload loops below.
+		FUA_MarkCachedSounds();
+
+		unsigned int cached = 0;
 		for (i = 1; i < S_sfx.Size(); ++i)
 		{
 			if (S_sfx[i].bUsed)
 			{
 				S_CacheSound (&S_sfx[i]);
+				cached++;
 			}
 		}
+		// [ForkUnderA]
+		if (FUA_CachingMode() > 0)
+			Printf ("FUA caching: %u sounds precached\n", cached);
 		for (i = 1; i < S_sfx.Size(); ++i)
 		{
 			if (!S_sfx[i].bUsed && S_sfx[i].link == sfxinfo_t::NO_LINK)
