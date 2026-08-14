@@ -77,11 +77,13 @@ TeamsControl TeamsFor(HostGameMode mode, bool offered, int wanted)
 
 	case HostGameMode::CaptureTheFlag:
 	case HostGameMode::Skulltag:
-		// [rc4l] Said separately from the modes below, because these two DO have sides and being
+	case HostGameMode::Teamgame:
+		// [rc4l] Said separately from the modes below, because these three DO have sides and being
 		// told they have no free-for-all reads as a bug in the entry.
 		//
-		// Both honour sv_maxteams where their maps do not, a map carrying one flag per side, so a
-		// third team would spawn with nothing to take and nothing to lose.
+		// All honour sv_maxteams where their maps do not: the first two carry one flag per side, and
+		// a Teamgame map carries one set of team starts per side, so a third team would spawn with
+		// nothing to take, nothing to lose, and in All Out War's case nowhere to stand.
 		out.reason = "The map decides the sides here, and it carries two";
 		return out;
 

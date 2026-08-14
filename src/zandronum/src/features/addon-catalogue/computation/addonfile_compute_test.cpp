@@ -249,6 +249,7 @@ TEST(AddonFile, EveryGamemodeTheSchemaKnowsIsRead)
 		{ "possession",      zx::HostGameMode::Possession },
 		{ "teampossession",  zx::HostGameMode::TeamPossession },
 		{ "terminator",      zx::HostGameMode::Terminator },
+		{ "teamgame",        zx::HostGameMode::Teamgame },
 	};
 
 	for (size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); ++i)
