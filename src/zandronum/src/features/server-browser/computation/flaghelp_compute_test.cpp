@@ -46,6 +46,30 @@ TEST(FlagHelp, EveryLineIsOneShortSentence)
 	}
 }
 
+TEST(FlagFieldHelp, DescribesEveryFieldTheBoxCanShow)
+{
+	// The nine the walk can produce. A field with no line leaves its heading unexplained, which is
+	// the one row in the box somebody reads before deciding whether to open it.
+	static const char *const kFields[] = { "dmflags", "dmflags2", "zadmflags", "compatflags",
+		"compatflags2", "zacompatflags", "sv_forbidvoteflags", "lmsallowedweapons",
+		"lmsspectatorsettings" };
+
+	for (size_t i = 0; i < sizeof(kFields) / sizeof(kFields[0]); ++i)
+	{
+		const std::string text = FlagFieldHelp(kFields[i]);
+
+		EXPECT_FALSE(text.empty()) << kFields[i];
+		EXPECT_LE(text.size(), size_t(90)) << kFields[i];
+		EXPECT_EQ('.', text[text.size() - 1]) << kFields[i];
+	}
+}
+
+TEST(FlagFieldHelp, SaysNothingForAFieldItDoesNotKnow)
+{
+	EXPECT_STREQ("", FlagFieldHelp("paletteflash"));
+	EXPECT_STREQ("", FlagFieldHelp(""));
+}
+
 TEST(FlagHelp, NamesNothingTwice)
 {
 	const std::vector<std::pair<std::string, std::string> > &table = FlagHelpTable();

@@ -32,6 +32,10 @@ namespace zx
 // for, which the caller shows as no tooltip rather than as a blank box.
 const char *FlagHelp(const std::string &name);
 
+// What a whole FIELD is for -- dmflags, zacompatflags and the rest -- shown on the heading that
+// folds it. Same rule as the flags: one sentence, fewest words. Empty for a field with no line.
+const char *FlagFieldHelp(const std::string &name);
+
 // The whole table, in name order. Exposed so it can be checked rather than only read.
 const std::vector<std::pair<std::string, std::string> > &FlagHelpTable();
 

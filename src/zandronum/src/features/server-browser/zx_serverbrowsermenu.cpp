@@ -6903,15 +6903,8 @@ public:
 		// touched rather than only once somebody picks a different one.
 		NewSetGameMode( g_NewGameMode );
 
-		// [rc4l] Doubled ammo, on, for a configuration built here.
-		//
-		// It is a BIT of dmflags2 rather than a setting of its own, so it is turned on where it
-		// lives: the pill shows lit, the number in the footer counts it, and the one dmflags2 value
-		// the server is told carries it. Setting a cvar called sv_doubleammo beside that number
-		// would be two answers to one question, and which won would depend on their order.
-		//
-		// A convenience rather than a policy: it is a pill in the FLAGS box and can be turned off.
-		NewTurnFlagOn( "sv_doubleammo" );
+		// The numbers a configuration built here starts from. See NewApplyFlagDefaults.
+		NewApplyFlagDefaults( );
 
 		for ( size_t i = 0; i < g_NewFlags.size( ); ++i )
 		{
@@ -6921,22 +6914,43 @@ public:
 		}
 	}
 
-	// One named switch, turned on wherever in the table it lives. Silent if this build has no such
-	// flag, which is the honest answer for a name that may not survive an engine update.
-	void NewTurnFlagOn( const char *name )
+	// [rc4l] What the flag fields start at for a configuration built here.
+	//
+	// Whole numbers rather than a list of switches, because that is how they were given and how
+	// anybody hosting quotes them -- and the box shows both views of the same value, so a number
+	// set here arrives as lit pills either way. Decoded by the engine's own walk, these are:
+	//
+	//   dmflags 2621444             weapons stay, freelook on, no deathmatch-only weapons in co-op
+	//   dmflags2 64                 doubled ammo
+	//   zadmflags 268435524         no co-op HUD info, shared keys, no enemy icons
+	//   sv_forbidvoteflags 3066     no votes on the limits, the flags, forcespec, changemap
+	//                               or the secret exit
+	//
+	// They REPLACE what this client happens to have set rather than adding to it: a starting point
+	// for a new configuration is a known state, not this machine's leftovers. Every one of them is
+	// a pill in the FLAGS box and can be turned off.
+	void NewApplyFlagDefaults( )
 	{
-		for ( size_t f = 0; f < g_NewFlags.size( ); ++f )
+		struct FieldDefault { const char *field; unsigned int value; };
+
+		static const FieldDefault kDefaults[] =
 		{
-			for ( size_t b = 0; b < g_NewFlags[f].bits.size( ); ++b )
+			{ "dmflags",			2621444u },
+			{ "dmflags2",			64u },
+			{ "zadmflags",			268435524u },
+			{ "sv_forbidvoteflags",	3066u },
+		};
+
+		for ( size_t d = 0; d < countof( kDefaults ); ++d )
+		{
+			for ( size_t f = 0; f < g_NewFlags.size( ); ++f )
 			{
-				if ( g_NewFlags[f].bits[b].name != name )
+				if ( g_NewFlags[f].name != kDefaults[d].field )
 					continue;
 
-				g_NewFlags[f].value = zx::FlagSet( g_NewFlags[f].value,
-					g_NewFlags[f].bits[b].bit, true );
-
+				g_NewFlags[f].value = kDefaults[d].value;
 				NewFlagValueChanged( static_cast<int>( f ));
-				return;
+				break;
 			}
 		}
 	}
@@ -7948,6 +7962,11 @@ public:
 				{
 					DrawFieldHeader( left, y, NewBigContentRight( ) - left, SB_NEW_PILL_H,
 						item.text, !NewFieldCollapsed( item.field ), bHot );
+
+					// What is inside, so the heading answers "is what I want in here" without
+					// having to be opened first.
+					serverbrowser_Tip( left, y, NewBigContentRight( ) - left, SB_NEW_PILL_H,
+						zx::FlagFieldHelp( g_NewFlags[item.field].name ));
 				}
 				else
 				{
