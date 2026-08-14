@@ -797,8 +797,14 @@ line_t *FBlockLinesIterator::Next()
 //
 //===========================================================================
 
+// [rc4l] The DynHash(0) initializers were removed: TArray(0) still calls
+// M_Malloc, so every iterator paid a malloc+free pair even though most
+// blocks fit in FixedHash and never touch DynHash. Default construction is
+// allocation-free; dense blocks allocate on first Grow as before. This is
+// one of the hottest object constructions in the sim (every collision
+// check), so the pair matters in mass-actor storms.
+
 FBlockThingsIterator::FBlockThingsIterator()
-: DynHash(0)
 {
 	minx = maxx = 0;
 	miny = maxy = 0;
@@ -807,7 +813,6 @@ FBlockThingsIterator::FBlockThingsIterator()
 }
 
 FBlockThingsIterator::FBlockThingsIterator(int _minx, int _miny, int _maxx, int _maxy)
-: DynHash(0)
 {
 	minx = _minx;
 	maxx = _maxx;
@@ -818,7 +823,6 @@ FBlockThingsIterator::FBlockThingsIterator(int _minx, int _miny, int _maxx, int 
 }
 
 FBlockThingsIterator::FBlockThingsIterator(const FBoundingBox &box)
-: DynHash(0)
 {
 	maxy = GetSafeBlockY(box.Top() - bmaporgy);
 	miny = GetSafeBlockY(box.Bottom() - bmaporgy);
