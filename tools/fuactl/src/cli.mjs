@@ -5,9 +5,21 @@
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
 import { reap, readRegistry } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation, runNetBandwidth } from "./session.mjs";
-import { launchInstance, stopInstance } from "./launch.mjs";
+import { launchInstance, stopInstance, resolveEngine } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { sampleProcess } from "./sample.mjs";
+import * as ui from "./ui.mjs";
+
+const num = (v) => (v != null && v !== true ? Number(v) : undefined);
+
+// Connect to an instance, run fn with the client, print nothing extra, then close.
+async function withUi(flags, fn) {
+  if (!flags.port) { console.error("ui needs --port P [--token T]"); process.exit(2); }
+  const c = new BridgeClient();
+  await c.connect(Number(flags.port), { token: flags.token || null });
+  await c.waitHello();
+  try { return await fn(c); } finally { c.close(); }
+}
 
 function parseFlags(argv) {
   const flags = {}; const rest = [];
@@ -29,6 +41,7 @@ const USAGE = `fuactl <command>
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
+  ui <action> [args] --port P [--token T]   drive the UI: nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -115,6 +128,27 @@ async function main() {
         log: (m) => console.error(`[net-bw] ${m}`),
       });
       console.log(JSON.stringify(report, null, 2));
+      break;
+    }
+    case "ui": {
+      // Drive the UI of a running instance: fuactl ui <action> [args] --port P [--token T]
+      const [act, ...a] = rest;
+      const r = await withUi(flags, async (c) => {
+        switch (act) {
+          case "nav":        return ui.menuNav(c, a).then(() => ({ navigated: a }));
+          case "key":        return ui.menuNav(c, a).then(() => ({ keys: a })); // alias
+          case "click":      return ui.click(c, Number(a[0]), Number(a[1]), { button: flags.button || "left", double: !!flags.double }).then(() => ({ clicked: [Number(a[0]), Number(a[1])], button: flags.button || "left" }));
+          case "rightclick": return ui.rightClick(c, Number(a[0]), Number(a[1])).then(() => ({ rightClicked: [Number(a[0]), Number(a[1])] }));
+          case "drag":       return ui.drag(c, Number(a[0]), Number(a[1]), Number(a[2]), Number(a[3])).then(() => ({ dragged: a.map(Number) }));
+          case "type":       return ui.typeText(c, a.join(" ")).then(() => ({ typed: a.join(" ") }));
+          case "look":       return ui.look(c, { yaw: flags.yaw ? Number(flags.yaw) : 0, pitch: flags.pitch ? Number(flags.pitch) : 0 });
+          case "stick":      return c.rpc("input.axis", flags.clear ? { clear: true } : { yaw: num(flags.yaw), pitch: num(flags.pitch), forward: num(flags.forward), side: num(flags.side) });
+          case "screenshot": return ui.screenshot(c, flags.engine || resolveEngine(), a[0] || "fuactl_shot").then((s) => ({ path: s.path, bytes: s.base64.length }));
+          case "exec":       return c.rpc("console.exec", { text: a.join(" ") });
+          default: throw new Error(`unknown ui action: ${act} (nav/click/rightclick/drag/type/look/stick/screenshot/exec)`);
+        }
+      });
+      console.log(JSON.stringify(r, null, 2));
       break;
     }
     case "mcp": {
