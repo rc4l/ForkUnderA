@@ -7571,8 +7571,12 @@ public:
 	int NewBigBarX( )			{ return NewBigContentRight( ) + 2; }
 	int NewBigButtonLeft( )		{ return ( NewBigModalLeft( ) + NewBigModalRight( )) / 2 - 40; }
 
-	// A box to type a number into, and what separates two of them in the footer.
-	int NewNumberBoxW( )		{ return 74; }
+	// [rc4l] A box to type a number into, and what separates two of them in the footer.
+	//
+	// Wide enough for the widest number a flag field can hold. It was 74, which fits eight digits,
+	// and zadmflags at 268435524 is nine -- so the leading 2 was scrolled out of sight and the box
+	// read 68435524, a different number entirely.
+	int NewNumberBoxW( )		{ return 96; }
 	int NewFootGap( )			{ return 12; }
 
 	// A setting's own control, right-aligned so a column of them lines up whatever the labels say.
@@ -8253,7 +8257,9 @@ public:
 	// Small on purpose. It asks one question, and the status line under the box is where every
 	// answer to it goes -- including the one that matters, which is that the name is taken.
 
-	int NewSaveBoxW( )		{ return 260; }
+	// [rc4l] Wide enough for the longest thing the status line says, which is the replace warning.
+	// It was 260 and that line ran out of the box and across the panel behind it.
+	int NewSaveBoxW( )		{ return 330; }
 	int NewSaveBoxLeft( )	{ return ( SB_VIRT_W - NewSaveBoxW( )) / 2; }
 	int NewSaveBoxTop( )	{ return SB_CONTENT_TOP + 60; }
 	int NewSaveBoxH( )		{ return SB_NEW_MODAL_PAD * 2 + SB_NEW_LINE * 4 + SB_DLG_BTN_H + 14; }
@@ -8307,6 +8313,11 @@ public:
 
 		if ( zx::CustomSave( NewAsCustomEntry( g_NewSaveName.text )))
 		{
+			// [rc4l] The CUSTOM tab reads its list once and keeps it, so a save it does not hear
+			// about is a preset written to disk and missing from the screen until something else
+			// happens to reload. Found by saving one and looking.
+			CustomForget( );
+
 			NewSay( "Saved to CUSTOM" );
 			g_NewModal = NewModal::None;
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
