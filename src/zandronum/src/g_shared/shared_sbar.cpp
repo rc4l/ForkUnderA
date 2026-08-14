@@ -65,6 +65,7 @@
 #include "network.h"
 #include "gamemode.h"
 #include "st_hud.h"
+#include "features/damage-tint/damagetint.h"	// [rc4l] mugshot damage tint
 
 #define XHAIRSHRINKSIZE		(FRACUNIT/18)
 #define XHAIRPICKUPSIZE		(FRACUNIT*2+XHAIRSHRINKSIZE)
@@ -557,15 +558,20 @@ void DBaseStatusBar::ShowPlayerName ()
 //---------------------------------------------------------------------------
 
 void DBaseStatusBar::DrawImage (FTexture *img,
-	int x, int y, FRemapTable *translation) const
+	int x, int y, FRemapTable *translation, PalEntry colorOverlay, float overlayCoverage) const
 {
-	if (img != NULL)
-	{
-		screen->DrawTexture (img, x + ST_X, y + ST_Y,
-			DTA_Translation, translation,
-			DTA_Bottom320x200, Scaled,
-			TAG_DONE);
-	}
+	if (img == NULL)
+		return;
+
+	// [rc4l] features/damage-tint: the overlay renders as the shader's per-pixel multiplicative
+	// gradient (full at the image's bottom edge, gone at the coverage point) -- armed for this one
+	// draw and cleared right after. No banding, and the art's own shading survives.
+	DamageTint_Arm2D(colorOverlay, colorOverlay.a ? overlayCoverage : 0.0f);
+	screen->DrawTexture (img, x + ST_X, y + ST_Y,
+		DTA_Translation, translation,
+		DTA_Bottom320x200, Scaled,
+		TAG_DONE);
+	DamageTint_Disarm2D();
 }
 
 //---------------------------------------------------------------------------

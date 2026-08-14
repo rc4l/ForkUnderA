@@ -13,6 +13,12 @@ uniform float uAlphaThreshold;
 
 // colors
 uniform vec4 uObjectColor;
+
+// [rc4l] features/damage-tint: per-pixel multiplicative tint. rgb = the floor's color, a =
+// strength; a == 0 (the default) is a no-op for every draw that doesn't arm it. Range holds the
+// gradient's (top, bottom) in texture-V space -- full tint at bottom, fading to none at top.
+uniform vec4 uDamageTint;
+uniform vec2 uDamageTintRange;
 uniform vec4 uDynLightColor;
 uniform vec4 uFogColor;
 uniform float uDesaturationFactor;

@@ -66,6 +66,7 @@
 #include "gamemode.h"
 #include "c_console.h"
 #include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
+#include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
 
 CVAR(Bool, gl_usecolorblending, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_spritebrightfog, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
@@ -187,6 +188,10 @@ void GLSprite::Draw(int pass)
 		gl_SetColor(lightlevel, rel, Colormap, trans);
 	}
 	gl_RenderState.SetObjectColor(ThingColor);
+
+	// [rc4l] features/damage-tint: players on damaging floors glow with the floor's color from the
+	// feet up; no-op unless the actor qualifies. Must be unwound after the draw (end of Draw).
+	bool damagetintglow = DamageTint_BeginSpriteGlow(actor, RenderStyle.BlendOp, RenderStyle.Flags);
 
 	if (gl_isBlack(Colormap.FadeColor)) foglevel=lightlevel;
 
@@ -316,6 +321,8 @@ void GLSprite::Draw(int pass)
 		gl_RenderState.BlendEquation(GL_FUNC_ADD);
 		gl_RenderState.SetTextureMode(TM_MODULATE);
 	}
+
+	if (damagetintglow) DamageTint_EndSpriteGlow(); // [rc4l] features/damage-tint
 
 	gl_RenderState.SetObjectColor(0xffffffff);
 	gl_RenderState.EnableTexture(true);

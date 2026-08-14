@@ -1509,6 +1509,7 @@ add_executable( zdoom WIN32
 	features/port-mapping/computation/ssdp_compute.cpp
 	features/port-mapping/computation/upnpsoap_compute.cpp
 	features/port-mapping/computation/natpmp_compute.cpp
+	features/damage-tint/damagetint.cpp
 	features/server-hosting/zx_hosting.cpp
 	features/server-hosting/zx_hostprocess.cpp
 	features/server-hosting/zx_hostwatchdog.cpp
