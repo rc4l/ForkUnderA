@@ -282,11 +282,14 @@ namespace
 			return 0; // stencil/shaded/fuzz/subtractive styles own their look
 
 		// FloorDamage owns the on-the-floor gates, mirroring each damage system's own test (base
-		// floor plane / water / 3D-floor contact) -- ledge-hanging neither damages nor tints.
+		// floor plane / water / 3D-floor contact) -- ledge-hanging neither damages nor tints. Any
+		// damage-negating state (radsuit and variants, invulnerability, god) means you look
+		// normal: no tint at all. (glowOut stays wired for a possible future protected-aura mode
+		// -- the shader supports it -- but nothing sets it today.)
 		FTextureID tintTex;
 		tintTex.SetInvalid();
-		bool active = FloorDamage( actor, tintTex ) > 0;
-		glowOut = active && DamageNegated( actor->player );
+		bool active = FloorDamage( actor, tintTex ) > 0
+			&& !DamageNegated( actor->player );
 
 		PalEntry activeColor( 255, 255, 255 );
 		if ( active )
