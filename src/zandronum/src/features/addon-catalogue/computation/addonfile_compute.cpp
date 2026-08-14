@@ -276,6 +276,7 @@ HostGameMode ParseGameMode(const std::string &s)
 	if (s == "teamlms")			return HostGameMode::TeamLastManStanding;
 	if (s == "ctf")				return HostGameMode::CaptureTheFlag;
 	if (s == "skulltag")		return HostGameMode::Skulltag;
+	if (s == "teamgame")		return HostGameMode::Teamgame;
 	if (s == "possession")		return HostGameMode::Possession;
 	if (s == "teampossession")	return HostGameMode::TeamPossession;
 	if (s == "terminator")		return HostGameMode::Terminator;
