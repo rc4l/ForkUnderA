@@ -215,9 +215,13 @@ bool DListMenu::MenuEvent (int mkey, bool fromcontroller)
 //
 // [rc4l] Is Up about to leave this menu for the global tab bar?
 //
-// A ladder, bottom to top: the list's first reachable row, then the update chip if one is showing,
-// then the bar. The chip is asked about before the list is, because it is drawn above the list and
-// already owns Up on the main menu.
+// Up off the first reachable row goes to the bar -- always, whether or not the update chip is
+// showing. The chip used to intercept Up here ("belongs to it, not us"), but it never forwarded that
+// Up anywhere: from the list its key handler delegates and the list simply wrapped to the bottom, so
+// Up on the first item reached neither the chip nor the bar. The chip is still reachable on its own
+// terms (Right focuses it, a click activates it); it is just no longer in the vertical path, so Up
+// does the one thing the tab strip exists to promise -- there is something above the first row, and
+// Up goes to it.
 //
 //=============================================================================
 
@@ -229,10 +233,6 @@ bool DListMenu::AtTopRow()
 	// On the chip, and there is nothing above it but the bar.
 	if (mNoticeFocused)
 		return true;
-
-	// A chip is showing but not focused, so Up belongs to it and not to us.
-	if (NoticeApplies())
-		return false;
 
 	TArray<bool> selectable;
 	for (unsigned i = 0; i < mDesc->mItems.Size(); ++i)
