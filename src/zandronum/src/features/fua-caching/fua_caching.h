@@ -31,4 +31,10 @@ void FUA_MarkCachedSprites (BYTE *spritelist, unsigned int numsprites);
 // no-op in mode 0.
 void FUA_MarkCachedSounds ();
 
+// Once per session, draws one masked point per reachable (shader program,
+// blend state) combo so the driver compiles every pipeline at load instead
+// of at first use mid-fight (fua_warmup.cpp). Called after the material
+// precache; no-op in mode 0, without a GL renderer, or on repeat calls.
+void FUA_WarmupPipelines ();
+
 #endif
