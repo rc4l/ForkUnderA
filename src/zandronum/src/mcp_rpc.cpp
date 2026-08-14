@@ -29,6 +29,8 @@
 #include "zstring.h"
 #include "mcp_hud.h"
 #include "mcp_glperf.h"
+#include "textures/textures.h"
+#include "features/damage-tint/damagetint.h"
 
 #include "features/mcp-bridge/computation/mcprpc_compute.h"
 
@@ -261,7 +263,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			"\"ping\",\"capabilities\",\"console.exec\","
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
-			"\"perf.capture\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\""
+			"\"perf.capture\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
+			"\"world.sectors\",\"player.setpos\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\"]}" );
 	}
 	else if ( cmd == "console.exec" )
@@ -458,6 +461,100 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		std::string body = "{\"actors\":" + I( actors );
 		body += ",\"numsegs\":" + I( numsegs );
 		body += ",\"leveltime\":" + I( level.time ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "world.sectors" )
+	{
+		// Query the level's sectors -- by default only those with a special or damage set;
+		// {damaging:1} narrows to floors that actually hurt. Each row carries a point GUARANTEED
+		// inside the sector (centroid of its first GL subsector, which is convex) so a driver can
+		// navigate there; the bbox-center soundorg lies OUTSIDE ring-shaped sectors.
+		if ( !InLevel() )
+		{
+			SendErr( id, "not in a level" );
+			return;
+		}
+		long damaging = 0, limit = 64;
+		GetInt( args, "damaging", damaging );
+		GetInt( args, "limit", limit );
+
+		TArray<int> firstss;
+		firstss.Resize( numsectors );
+		for ( int i = 0; i < numsectors; ++i ) firstss[i] = -1;
+		for ( int i = 0; i < numsubsectors; ++i )
+		{
+			int s = (int)( subsectors[i].sector - sectors );
+			if ( s >= 0 && s < numsectors && firstss[s] < 0 ) firstss[s] = i;
+		}
+
+		std::string arr = "[";
+		int n = 0;
+		for ( int i = 0; i < numsectors && n < limit; ++i )
+		{
+			int dmg = DamageTint_SectorDamage( &sectors[i] );
+			if ( damaging ? dmg <= 0 : ( sectors[i].special == 0 && sectors[i].damage == 0 ))
+				continue;
+
+			double cx = 0, cy = 0;
+			if ( firstss[i] >= 0 )
+			{
+				subsector_t &ss = subsectors[firstss[i]];
+				for ( DWORD k = 0; k < ss.numlines; ++k )
+				{
+					cx += FIXED2FLOAT( ss.firstline[k].v1->x );
+					cy += FIXED2FLOAT( ss.firstline[k].v1->y );
+				}
+				cx /= ss.numlines;
+				cy /= ss.numlines;
+			}
+
+			FTexture *ft = TexMan[sectors[i].GetTexture( sector_t::floor )];
+			std::string tn;
+			JsonEscape( std::string( ft ? ft->Name : "" ), tn );
+
+			if ( n ) arr += ",";
+			arr += "{\"i\":" + I( i ) + ",\"special\":" + I( sectors[i].special )
+				+ ",\"damage\":" + I( sectors[i].damage ) + ",\"dmg\":" + I( dmg )
+				+ ",\"tex\":\"" + tn + "\",\"x\":" + I( (long long)cx ) + ",\"y\":" + I( (long long)cy ) + "}";
+			++n;
+		}
+		arr += "]";
+		SendOk( id, "{\"count\":" + I( n ) + ",\"sectors\":" + arr + "}" );
+	}
+	else if ( cmd == "player.setpos" )
+	{
+		// Teleport the console player to (x, y) map units, snapped to the floor. Dev tool for
+		// driving verification -- single-player instances only (a netgame would desync).
+		if ( !InLevel() )
+		{
+			SendErr( id, "not in a level" );
+			return;
+		}
+		if ( IsNetInstance() )
+		{
+			SendErr( id, "single-player instances only" );
+			return;
+		}
+		long x = 0, y = 0;
+		if ( !GetInt( args, "x", x ) || !GetInt( args, "y", y ))
+		{
+			SendErr( id, "need x and y (map units)" );
+			return;
+		}
+		AActor *mo = ( consoleplayer >= 0 && consoleplayer < MAXPLAYERS ) ? players[consoleplayer].mo : NULL;
+		if ( mo == NULL )
+		{
+			SendErr( id, "no player pawn" );
+			return;
+		}
+		P_TeleportMove( mo, fixed_t( x ) << FRACBITS, fixed_t( y ) << FRACBITS, mo->z, true );
+		mo->z = mo->floorz;
+		mo->velx = mo->vely = mo->velz = 0;
+		mo->PrevX = mo->x;
+		mo->PrevY = mo->y;
+		mo->PrevZ = mo->z;
+		std::string body = "{\"x\":" + I( (long long)( mo->x >> FRACBITS )) + ",\"y\":" + I( (long long)( mo->y >> FRACBITS ))
+			+ ",\"z\":" + I( (long long)( mo->z >> FRACBITS )) + ",\"sector\":" + I( (int)( mo->Sector - sectors )) + "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "gl.timers" )

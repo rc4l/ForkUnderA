@@ -152,6 +152,16 @@ export async function screenshot(c, engineBinPath, name = "fuactl_shot", { tries
 // capture, collects the console output, and parses it. Returns { texts, images, msgs, lines }, where
 // `lines` is the visible text in reading order. This is what lets navigation match labels
 // ("Complex Doom", "Play Now") rather than guess pixels -- deterministic, no image reading.
+// Teleport the (single-player) pawn to map coordinates -- no more blind steering loops.
+export async function warp(c, x, y) {
+  return c.rpc("player.setpos", { x: Math.round(x), y: Math.round(y) });
+}
+
+// The level's damaging sectors, each with a guaranteed-interior point to warp to.
+export async function damagingSectors(c, limit = 64) {
+  return c.rpc("world.sectors", { damaging: 1, limit });
+}
+
 export async function readMenu(c, { settle = 350 } = {}) {
   const out = [];
   const off = c.onEvent((n, d) => { if (n === "out" && d && d.text) out.push(d.text); });

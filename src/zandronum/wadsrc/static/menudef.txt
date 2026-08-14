@@ -394,10 +394,31 @@ OptionMenu "FUAOptions"
 	Submenu "Field of View",			"FUAFovOptions"
 	Submenu "Crash Reporting",			"CrashReportOptions"
 	Submenu "Hitbox Visualization",		"HitboxVizOptions"
+	Submenu "Damage Tint",				"FUADamageTintOptions"
 	StaticText " "
 	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
 	// notice. On by default; off means no update check and no network call.
 	Option	"Check for updates",		"cl_fua_update_notify",		"OnOff"
+}
+
+// [rc4l] features/damage-tint: players on damaging floors pick up the floor's color -- a glow
+// gradient from the feet on body sprites, a faint tint on your own weapon, and the mugshot.
+// Strength 0 disables a surface; body coverage picks how far up the gradient climbs.
+OptionMenu "FUADamageTintOptions"
+{
+	Title "DAMAGE TINT"
+	StaticText "Players standing in damaging floors take on the floor's color.", 1
+	StaticText " "
+	Slider	"Body glow strength",		"cl_damagetint",					0.0, 100.0, 5.0, 0
+	Slider	"Body glow coverage",		"cl_damagetint_coverage",			0.0, 100.0, 5.0, 0
+	StaticText " "
+	Slider	"Weapon tint strength",		"cl_damagetint_weapon",				0.0, 100.0, 5.0, 0
+	Slider	"Weapon tint coverage",		"cl_damagetint_weapon_coverage",	0.0, 100.0, 5.0, 0
+	StaticText " "
+	Slider	"Face tint strength",		"cl_damagetint_face",				0.0, 100.0, 5.0, 0
+	Slider	"Face tint coverage",		"cl_damagetint_face_coverage",		0.0, 100.0, 5.0, 0
+	StaticText " "
+	StaticText "Coverage: how far up each sprite the tint reaches (50 = half).", 1
 }
 
 // [rc4l] fov-interp: FOV and how fast the view tweens to it. Its own submenu rather than rows in
