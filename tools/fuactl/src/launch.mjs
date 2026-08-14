@@ -59,6 +59,7 @@ export async function launchInstance(opts = {}) {
     // input still arrives through the bridge (input.event / input.look / input.axis), untouched.
     "+set", "use_mouse", "0",
     "+set", "use_joystick", "0",
+    "+set", "m_use_mouse", "0", // also silence the MENU cursor, so nothing the harness didn't inject moves it
   );
   if (opts.seed != null) args.push("-rngseed", String(opts.seed));
   if (opts.extraArgs) args.push(...opts.extraArgs);
@@ -72,6 +73,8 @@ export async function launchInstance(opts = {}) {
       ZANDRONUM_BRIDGE_PARENT_PID: String(process.pid), // watchdog reaps if fuactl dies
       ZANDRONUM_BRIDGE_TOKEN: token,
       ZANDRONUM_BRIDGE_LOG: log,
+      // Hands-off: the window drops OS keyboard/mouse; only harness-injected input reaches the sim.
+      ZANDRONUM_BRIDGE_INPUT_LOCK: opts.allowOsInput ? "" : "1",
     },
   });
   return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log };
