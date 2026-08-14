@@ -15,9 +15,11 @@
 class AActor;
 
 // Body sprites: if the actor qualifies (player, normal blend style, on a damaging floor or still
-// fading out), arm a bottom-up glow gradient on the render state and return true. The caller MUST
-// call DamageTint_EndSpriteGlow() after its draw call when this returns true.
-bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags );
+// fading out), arm the shader's per-pixel multiplicative gradient across the sprite's vertical
+// texture span (vt..vb -- feet at the patch bottom) and return true. The caller MUST call
+// DamageTint_EndSpriteGlow() after its draw when this returns true. (An additive glow was tried
+// first; adding to the LIGHT gets multiplied by the texel, so a red tint on green armor vanished.)
+bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb );
 void DamageTint_EndSpriteGlow();
 
 // First-person weapon sprite: multiplicative gradient, drawn as horizontal slices (multiply
