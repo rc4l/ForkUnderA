@@ -28,6 +28,11 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 # What identifies a pack, best first. The logo is a logo: made to be read small, on a dark
 # background, which is exactly the job here. A title screen is a whole illustration and survives the
 # shrink far less well, so it is the fallback rather than the choice.
+#
+# [rc4l] TITLE is last because it is a plain word rather than a reserved lump name, so it is the one
+# most likely to be something other than a logo. It earns its place because packs use it: Legacy of
+# Darkness keeps its logo in Graphics/Misc/TITLE.png, declares no main menu for the MENUDEF route to
+# read, and so came out with no art at all.
 LUMPS = ("M_DOOM", "TITLEPIC")
 
 # Archive pixels are 1.2 times as tall as they are wide. Correcting is what makes the output look
@@ -278,6 +283,52 @@ def as_picture(path):
 		return None
 
 
+def textures_alias(archives, want):
+	"""The patch a TEXTURES definition draws for `want`, if the name is defined there rather than
+	being a lump of its own.
+
+	A pack may define its logo as a composite instead of shipping it under the name the engine
+	looks for:
+
+	    graphic M_DOOM, 2000, 2000
+	    {
+	        xscale 4.3
+	        yscale 4.3
+	        Patch GVHLOGO, 0, 0
+	    }
+
+	Asking the archive for M_DOOM then finds nothing, and the pack looks like it has no logo when
+	it plainly has one. Ghouls vs Humans does this in both Legacy of Darkness and Classic: Reborn,
+	and it is a common enough shape that missing it costs art across the catalogue rather than in
+	one place.
+
+	Only the first patch is taken. A composite of several is a picture assembled from pieces, and
+	the first is the one at the origin; a logo built that way is rare enough to be worth less than
+	the complication of compositing it here.
+	"""
+	head = re.compile(r'^\s*(?:graphic|texture|sprite|walltexture|flat)\s+"?([\w\-\.]+)"?\s*,',
+	                  re.I | re.M)
+	patch = re.compile(r'^\s*patch\s+"?([\w\-\.]+)"?\s*,', re.I | re.M)
+
+	for arc in reversed(archives):
+		for raw in reversed(arc.read("TEXTURES")):
+			text = raw.decode("latin-1", "replace")
+
+			for m in head.finditer(text):
+				if m.group(1).upper() != want.upper():
+					continue
+
+				# To the next definition, so a patch belonging to the one after this is not read as
+				# part of it.
+				nxt = head.search(text, m.end())
+				block = text[m.end():nxt.start() if nxt else len(text)]
+
+				found = patch.search(block)
+				if found and found.group(1).upper() != want.upper():
+					return found.group(1).upper()
+
+	return None
+
 def resolve(paths, lumps=LUMPS):
 	"""The art the loaded set actually shows, and where it came from.
 
@@ -322,18 +373,27 @@ def resolve(paths, lumps=LUMPS):
 		lumps = (named,) + tuple(x for x in lumps if x != named)
 
 	for want in lumps:
-		for arc in reversed(archives):
-			for raw in reversed(arc.read(want)):
-				img = decode(raw, palette)
-				if img is None or not img.getbbox():
-					continue
+		# [rc4l] A name defined in TEXTURES rather than shipped as a lump resolves to the patch it
+		# draws, so a pack that composites its logo is not read as having none.
+		names = [want]
+		alias = textures_alias(archives, want)
+		if alias:
+			names.append(alias)
 
-				# A blank graphic is not art. Skipping it rather than failing outright lets the next
-				# candidate answer, which is usually the convention behind the menu's own choice.
-				if not informative(img.crop(img.getbbox())):
-					continue
+		for want in names:
+			for arc in reversed(archives):
+				for raw in reversed(arc.read(want)):
+					img = decode(raw, palette)
+					if img is None or not img.getbbox():
+						continue
 
-				return img, want, os.path.basename(arc.path)
+					# A blank graphic is not art. Skipping it rather than failing outright lets the
+					# next candidate answer, which is usually the convention behind the menu's own
+					# choice.
+					if not informative(img.crop(img.getbbox())):
+						continue
+
+					return img, want, os.path.basename(arc.path)
 
 	return None, None, None
 
