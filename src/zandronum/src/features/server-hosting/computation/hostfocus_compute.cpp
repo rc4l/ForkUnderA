@@ -17,8 +17,11 @@ HostFocusPos Foot()
 
 // [rc4l] Where UP off the foot lands, written once because both buttons on that row answer it and
 // two copies of a three-way choice is two chances to disagree.
-HostFocusPos UpFromTheFoot(bool bFields, bool bGameplay, int gameplayRows)
+HostFocusPos UpFromTheFoot(bool bFields, bool bGameplay, int gameplayRows, bool bCopy)
 {
+	// The copy button sits between the visibility row and the foot, so it is what up meets first.
+	if (bCopy)
+		return HostFocusPos(HostSlot::Copy, 0);
 	if (bFields)
 		return HostFocusPos(HostSlot::Visibility, 0);
 	if (bGameplay)
@@ -35,13 +38,19 @@ HostFocusPos HostLeftOfTheForm()
 }
 
 HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bool hasToggle,
-                            int gameplayRows)
+                            int gameplayRows, bool hasCopy)
 {
 	if ((pos.slot == HostSlot::Field) || (pos.slot == HostSlot::Visibility))
 	{
 		if (!hasFields)
 			return Foot();
 	}
+
+	// [rc4l] The copy button comes and goes with what is on disk, not only with the panel: a
+	// download finishing offers it, and switching to an experience whose files are missing takes it
+	// away underneath a focus that was on it a frame ago.
+	if ((pos.slot == HostSlot::Copy) && !hasCopy)
+		return Foot();
 
 	if (pos.slot == HostSlot::Gameplay)
 	{
@@ -68,13 +77,13 @@ HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bo
 }
 
 HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
-                             bool hasFields, bool hasToggle, int gameplayRows)
+                             bool hasFields, bool hasToggle, int gameplayRows, bool hasCopy)
 {
 	HostNavResult out;
 
 	// Start from something that exists. The settings can be shut, or a server started, underneath a
 	// focus that was legitimate when it was set.
-	pos = ClampHostFocus(pos, fieldCount, hasFields, hasToggle, gameplayRows);
+	pos = ClampHostFocus(pos, fieldCount, hasFields, hasToggle, gameplayRows, hasCopy);
 	out.pos = pos;
 
 	const bool bFields = hasFields && (fieldCount > 0);
@@ -191,7 +200,16 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 			return out;
 		}
 
-		out.pos = Foot();
+		out.pos = hasCopy ? HostFocusPos(HostSlot::Copy, 0) : Foot();
+		return out;
+
+	case HostSlot::Copy:
+		// One button on its own line, so left and right have nowhere to go. Deliberately NOT a jump
+		// to the foot: sideways off a full-width button is not a direction anybody means.
+		if ((key == HostNavKey::Left) || (key == HostNavKey::Right))
+			return out;
+
+		out.pos = (key == HostNavKey::Up) ? HostFocusPos(HostSlot::Visibility, 0) : Foot();
 		return out;
 
 	case HostSlot::Action:
@@ -211,7 +229,7 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 
 		if (key == HostNavKey::Up)
 		{
-			out.pos = UpFromTheFoot(bFields, bGameplay, gameplayRows);
+			out.pos = UpFromTheFoot(bFields, bGameplay, gameplayRows, hasCopy);
 			return out;
 		}
 
@@ -231,7 +249,7 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 
 		if (key == HostNavKey::Up)
 		{
-			out.pos = UpFromTheFoot(bFields, bGameplay, gameplayRows);
+			out.pos = UpFromTheFoot(bFields, bGameplay, gameplayRows, hasCopy);
 			return out;
 		}
 

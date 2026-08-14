@@ -1517,6 +1517,9 @@ static	bool			g_HostAdvertise = false;
 // Which cell of the visibility row the pointer is over. Whether the KEYBOARD is on it is g_HostFocus.
 static	int				g_HostVisHot = -1;
 
+// Whether the pointer is on COPY TO NEW, the same split for the same reason.
+static	bool			g_HostCopyHot = false;
+
 
 // Two answers: local, then global. Named so the row and everything that indexes it agree.
 // [rc4l] Internet FIRST, and the default. Hosting to be joined is the ordinary reason to host, and
@@ -4628,7 +4631,7 @@ public:
 	void ClampHostFocus( )
 	{
 		g_HostFocus = zx::ClampHostFocus( g_HostFocus, kHostFieldCount,
-			HostHasFields( ), HostFootHasToggle( ), HostGameplayRowCount( ));
+			HostHasFields( ), HostFootHasToggle( ), HostGameplayRowCount( ), HostCopyOffered( ));
 	}
 
 	// [rc4l] One key, answered by computation/hostfocus_compute and applied here.
@@ -4659,7 +4662,7 @@ public:
 		const bool bWasInField = HostInAField( );
 
 		const zx::HostNavResult r = zx::ComputeHostNav( g_HostFocus, key, kHostFieldCount,
-			HostHasFields( ), HostFootHasToggle( ), HostGameplayRowCount( ));
+			HostHasFields( ), HostFootHasToggle( ), HostGameplayRowCount( ), HostCopyOffered( ));
 
 		// [rc4l] The list moves its SELECTION rather than focus, so it is applied here and focus is
 		// left alone -- the movement/traversal split the unit reports separately.
@@ -5183,6 +5186,7 @@ public:
 		g_HostFieldHot = -1;
 		g_HostButtonHot = false;
 		g_HostVisHot = -1;
+		g_HostCopyHot = false;
 
 		if ( g_HostKind == HostKind::New )
 			return NewMouseEvent( type, x, y );
@@ -5479,6 +5483,33 @@ public:
 			}
 
 			return ( at >= 0 );
+		}
+
+		// COPY TO NEW, under it. Guarded by HostRowVisible for the reason every control in this
+		// scrolling column is: one scrolled out of the viewport must not still be clickable.
+		if ( HostCopyOffered( ))
+		{
+			const int copyY = HostCopyY( );
+
+			if ( HostRowVisible( copyY, HostCopyH( )) &&
+				( y >= serverbrowser_ToScreenY( copyY )) &&
+				( y < serverbrowser_ToScreenY( copyY + HostCopyH( ))) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+			{
+				g_HostCopyHot = true;
+
+				// On the PRESS, which is what every other control on this panel answers. Written as
+				// a release first, and it never fired: the panel is gone by the time one arrives.
+				if ( type == MOUSE_Click )
+				{
+					SetFocus( zx::BrowserFocus::Host );
+					g_HostFocus = zx::HostFocusPos( zx::HostSlot::Copy, 0 );
+					HostPressCopy( );
+				}
+
+				return true;
+			}
 		}
 
 		return false;
@@ -6077,7 +6108,15 @@ public:
 	// How tall the settings are, viewport or no viewport. What decides whether they scroll.
 	int HostContentH( )
 	{
-		return kHostFieldCount * HostRowPitch( ) + 4 + SB_HOST_LINE + SB_CHOICE_H;
+		int h = kHostFieldCount * HostRowPitch( ) + 4 + SB_HOST_LINE + SB_CHOICE_H;
+
+		// [rc4l] COPY TO NEW counts toward the scroll only when it is there. A height that always
+		// allowed for it would leave the column scrolling past its own bottom on every experience
+		// that is missing a file, which is the sort of empty gap nobody can explain later.
+		if ( HostCopyOffered( ))
+			h += SB_HOST_LINE + 8 + HostCopyH( );
+
+		return h;
 	}
 
 	int HostMaxScroll( )
@@ -6217,6 +6256,69 @@ public:
 	int HostVisibilityY( )
 	{
 		return HostFirstFieldY( ) + kHostFieldCount * HostRowPitch( ) + 4 + SB_HOST_LINE;
+	}
+
+	// [rc4l] COPY TO NEW, on its own line under the visibility row. A gap of a row above it, because
+	// it is not another server setting -- it leaves this screen.
+	int HostCopyY( )	{ return HostVisibilityY( ) + SB_CHOICE_H + SB_HOST_LINE + 8; }
+	int HostCopyH( )	{ return SB_HOST_RTOGGLE_H; }
+
+	// [rc4l] Whether every file the chosen way of playing loads is already on this machine.
+	//
+	// By NAME, through the sizes the panel has already measured, so this costs nothing per frame --
+	// see HostEntryFileSizes for why that cache exists and what "by name" does and does not promise.
+	// A copy is not a launch: it fills in the NEW screen, whose own list is names on disk, so a name
+	// is the right question here. The stricter by-hash check stays where it belongs, on the button
+	// that actually starts a server.
+	bool HostFilesAllPresent( const zx::AddonEntry &addon )
+	{
+		const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( addon );
+		if ( loads.empty( ))
+			return false;
+
+		const std::vector<unsigned long long> &sizes = HostEntryFileSizes( g_HostEntrySel,
+			g_HostVariantId.GetChars( ), loads );
+
+		if ( sizes.size( ) != loads.size( ))
+			return false;
+
+		for ( size_t i = 0; i < sizes.size( ); ++i )
+		{
+			if ( sizes[i] == 0 )
+				return false;
+		}
+
+		// And something to run them on, RESOLVED THE WAY HOSTING WOULD RESOLVE IT.
+		//
+		// Not "AvailableIwads is not empty", which was the first version of this line and was wrong:
+		// that list carries SUBSTITUTES, so it is non-empty whenever the machine has any IWAD at all.
+		// Mega Man 8-bit Deathmatch wants megagame.wad; with that file gone the list still came back
+		// full, the button was still offered, and the copy landed on the NEW screen with doom2.wad
+		// selected and no word said. Found by hiding the file and pressing it.
+		return HostCopyIwad( addon ).empty( ) == false;
+	}
+
+	// What COPY would put in the IWAD box: the entry's own, or the substitute hosting would fall
+	// back to, or "" when neither is here. Asked by the offer and by the press, so the button cannot
+	// promise an IWAD the copy then fails to select.
+	std::string HostCopyIwad( const zx::AddonEntry &addon )
+	{
+		const zx::IwadPick pick = zx::PickIwad( addon.iwad, zx::AvailableIwads( addon.iwad ));
+		return pick.iwad;
+	}
+
+	// Whether the button is on screen at all: the settings face, no server running, an experience
+	// chosen, and every file for it already here.
+	bool HostCopyOffered( )
+	{
+		if ( !g_HostShowSettings || zx::HostIsActive( ))
+			return false;
+
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return false;
+
+		return HostFilesAllPresent( entries[g_HostEntrySel].addon );
 	}
 
 	// [rc4l] Both buttons now sit at the foot of the RIGHT column, in one row, drawn and hit-tested
@@ -10573,6 +10675,147 @@ public:
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 	}
 
+	// [rc4l] The gamemode the panel is showing, as the engine's own enum.
+	//
+	// The catalogue's vocabulary and the engine's are not quite the same word for the same thing --
+	// "teamdeathmatch" in an addon.json is GAMEMODE_TEAMPLAY here -- so the crossing is spelled out
+	// once, in the one place that needs it, rather than guessed by lowercasing a name.
+	GAMEMODE_e HostModeAsGameMode( zx::HostGameMode mode )
+	{
+		switch ( mode )
+		{
+		case zx::HostGameMode::Survival:				return GAMEMODE_SURVIVAL;
+		case zx::HostGameMode::Invasion:				return GAMEMODE_INVASION;
+		case zx::HostGameMode::Deathmatch:				return GAMEMODE_DEATHMATCH;
+		case zx::HostGameMode::TeamDeathmatch:			return GAMEMODE_TEAMPLAY;
+		case zx::HostGameMode::Duel:					return GAMEMODE_DUEL;
+		case zx::HostGameMode::LastManStanding:			return GAMEMODE_LASTMANSTANDING;
+		case zx::HostGameMode::TeamLastManStanding:		return GAMEMODE_TEAMLMS;
+		case zx::HostGameMode::Possession:				return GAMEMODE_POSSESSION;
+		case zx::HostGameMode::TeamPossession:			return GAMEMODE_TEAMPOSSESSION;
+		case zx::HostGameMode::Terminator:				return GAMEMODE_TERMINATOR;
+		case zx::HostGameMode::CaptureTheFlag:			return GAMEMODE_CTF;
+		case zx::HostGameMode::Skulltag:				return GAMEMODE_SKULLTAG;
+		case zx::HostGameMode::Teamgame:				return GAMEMODE_TEAMGAME;
+
+		// Cooperative, and anything an entry declined to say. Co-op is what a server runs when
+		// nothing turned another mode on, so it is the honest answer for both.
+		default:										return GAMEMODE_COOPERATIVE;
+		}
+	}
+
+	// [rc4l] The selected experience as an entry the NEW screen can take, which is what COPY hands it.
+	//
+	// The settings come out of the way of playing's OWN server.cfg, which is the second and last
+	// place this client reads one -- HostRotation is the first, and says why. Reading it is what
+	// makes a copy a copy: without it the flags would be the NEW screen's defaults and the thing
+	// somebody pressed copy on would arrive playing differently.
+	//
+	// What the panel decided wins over what the cfg says, because the panel is the more recent word:
+	// the mix, the lives, the way of playing and the map are all on screen and all changeable there.
+	zx::CustomEntry HostAsCustomEntry( const zx::CatalogueEntry &entry )
+	{
+		const zx::AddonEntry &addon = entry.addon;
+		const zx::VariantPick pick = zx::PickVariant( addon, g_HostVariantId.GetChars( ));
+
+		zx::CustomEntry out;
+
+		// A NAME to arrive under, so the save box opens on something rather than empty. The variant
+		// is the more useful half when there is one: "Alien Vendetta" beats "Popular Co-op Maps".
+		out.name = pick.name.empty( ) ? addon.name : pick.name;
+
+		// The RESOLVED iwad, not the wanted one: the NEW screen matches its box by name and has no
+		// substitute table of its own, so handing it a name this machine does not have would leave
+		// whatever was selected before quietly in place.
+		out.iwad = HostCopyIwad( addon );
+		out.bPvP = ( addon.kind == zx::VariantKind::PvP );
+
+		const std::vector<zx::AddonFileRef> loads = HostSelectedFiles( addon );
+		for ( size_t i = 0; i < loads.size( ); ++i )
+			out.files.push_back( zx::CustomFile( loads[i].name, loads[i].md5 ));
+
+		// The cfg, read here and only here: once, on a press somebody made.
+		{
+			const FString path = zx::CatalogueServerCfgPath( entry,
+				g_HostVariantId.GetChars( )).c_str( );
+
+			FILE *const fp = path.IsNotEmpty( ) ? fopen( path.GetChars( ), "rb" ) : NULL;
+			if ( fp != NULL )
+			{
+				std::string text;
+				char buf[4096];
+				size_t got;
+
+				while (( got = fread( buf, 1, sizeof( buf ), fp )) > 0 )
+					text.append( buf, got );
+
+				fclose( fp );
+				zx::ParseCustomCfg( text, out.cvars, out.maps );
+			}
+		}
+
+		out.gameMode = NewGameModeCvar( HostModeAsGameMode( HostGameModeFor( addon )));
+
+		// [rc4l] The lives the SLIDER is on, which the cfg cannot know: it is the panel's control and
+		// half the reason the copy is worth having.
+		//
+		// Through LivesCvars, which is what the launch path hands the server for the same control --
+		// so a copy is set up the way starting it would have been, rather than the way somebody
+		// writing this a second time guessed.
+		{
+			const std::vector<std::pair<std::string, std::string> > lives =
+				zx::LivesCvars( HostLivesControl( addon ));
+
+			for ( size_t i = 0; i < lives.size( ); ++i )
+			{
+				bool bReplaced = false;
+
+				for ( size_t c = 0; c < out.cvars.size( ); ++c )
+				{
+					if ( out.cvars[c].first != lives[i].first )
+						continue;
+
+					out.cvars[c].second = lives[i].second;
+					bReplaced = true;
+					break;
+				}
+
+				if ( !bReplaced )
+					out.cvars.push_back( lives[i] );
+			}
+		}
+
+		return out;
+	}
+
+	// [rc4l] COPY: the chosen experience, opened on the NEW screen so it can be taken further.
+	//
+	// Only offered when every file is already here -- see HostCopyOffered -- so this has nothing to
+	// download and nothing to refuse. A press that could fail would need a dialog, and the button
+	// not being there at all is the better version of that message.
+	void HostPressCopy( )
+	{
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return;
+
+		const zx::CustomEntry entry = HostAsCustomEntry( entries[g_HostEntrySel] );
+		const std::vector<std::string> missing = NewApplyEntry( entry );
+
+		// Should be empty: the button is only drawn when they are all here. Said rather than assumed,
+		// because a file can go between the frame that drew the button and the press.
+		if ( !missing.empty( ))
+		{
+			ShowNotice( "Files missing",
+				"Some of what it loads is no longer on this machine." );
+			return;
+		}
+
+		SelectSubTabIndex( static_cast<int>( HostKind::New ));
+		g_NewFocus = NewFocus::Wads;
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+	}
+
 	void CustomAskDelete( )
 	{
 		const zx::CustomEntry *const chosen = CustomSelected( );
@@ -12105,6 +12348,20 @@ public:
 		// settings bled over the boundary because two regions in one clip cannot mask each other.
 		if ( g_HostShowSettings )
 		{
+			// [rc4l] THE OTHER FACE'S CLICK TARGETS GO WITH IT.
+			//
+			// The gameplay rows and sliders are recorded as they are drawn and cleared at the top of
+			// the draw that records them -- which is the DETAIL face, and which is not called at all
+			// while the form is up. So the rects from the last time it was drawn stayed live under
+			// the form, and the mouse handler tests them before anything on it: a click anywhere
+			// they happened to cover was answered by a control that was not on screen.
+			//
+			// Invisible-but-clickable, and it had been there unnoticed because everything the form
+			// draws happened to sit above them. Found by putting a button underneath.
+			g_HostGameRows.Clear( );
+			g_HostSliders.Clear( );
+			g_HostGameFocusRows.Clear( );
+
 			int y = HostFirstFieldY( );
 			for ( int i = 0; i < kHostFieldCount; ++i )
 			{
@@ -12113,6 +12370,7 @@ public:
 			}
 
 			DrawHostVisibility( SB_HOST_RCOL_LEFT, HostVisibilityY( ));
+			DrawHostCopyButton( );
 		}
 		else
 		{
@@ -13618,6 +13876,39 @@ public:
 
 			// No file count here on purpose: the detail panel beside this already says the files and
 			// the IWAD, and a narrow list repeating it crowded itself for no new information.
+		}
+	}
+
+	// [rc4l] COPY TO NEW, under the visibility row.
+	//
+	// Inside the settings' clip and the settings' scroll, because it IS one of them as far as the
+	// panel is concerned -- it scrolls with the fields above it and it is gone with them when the
+	// face changes. Which is why it is not on the foot row beside PLAY NOW: the foot is what this
+	// screen DOES, and copying is leaving it.
+	void DrawHostCopyButton( )
+	{
+		if ( !HostCopyOffered( ))
+			return;
+
+		const int y = HostCopyY( );
+		if ( !HostRowVisible( y, HostCopyH( )))
+			return;
+
+		const int x = SB_HOST_RCOL_LEFT;
+		const int w = SB_HOST_RCOL_RIGHT - x;
+		const bool bOn = ( g_HostFocus.slot == zx::HostSlot::Copy );
+
+		DrawRoundedButton( x, y, w, HostCopyH( ), "COPY TO NEW", bOn || g_HostCopyHot );
+
+		if ( bOn && ( g_Focus == zx::BrowserFocus::Host ))
+			FocusAnchor( zx::BrowserFocus::Host, x - 5, y + HostCopyH( ) / 2 );
+
+		// Only while it is really in view: a tip for a button scrolled out of the viewport is the
+		// invisible-but-hoverable half of the same bug the hit test avoids.
+		if ( HostRowFullyVisible( y, HostCopyH( )))
+		{
+			serverbrowser_Tip( x, y, w, HostCopyH( ),
+				"Open these files and settings on the NEW tab to change them" );
 		}
 	}
 
@@ -16972,6 +17263,8 @@ public:
 					PressHostAction( );		// the list's enter is "host this one"
 				else if ( HostOnVisibility( ))
 					PressHostVisibility( );
+				else if ( g_HostFocus.slot == zx::HostSlot::Copy )
+					HostPressCopy( );
 				else
 					NavigateHostFocus( zx::HostNavKey::Down );
 				return true;
