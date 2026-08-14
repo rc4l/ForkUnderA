@@ -8056,7 +8056,7 @@ public:
 				// The load order's own row, over a different list. See DrawOrderRow.
 				DrawOrderRow( left, right, rowY, row, g_NewMaps[row].c_str( ), bSel,
 					( row == g_NewMapHot ), btnHot, ( row == 0 ),
-					( row + 1 == static_cast<int>( g_NewMaps.size( ))));
+					( row + 1 == static_cast<int>( g_NewMaps.size( ))), false );
 			}
 
 			DrawHostRegionScrollBar( top, top + visible * SB_NEW_ROW_H,
@@ -8860,7 +8860,7 @@ public:
 	// different things -- a list where the POSITION is the meaning. `btnHot` is 0, 1 or 2 for the
 	// button under the pointer, or -1.
 	void DrawOrderRow( int left, int right, int rowY, int index, const char *label, bool bSel,
-		bool bHot, int btnHot, bool bFirst, bool bLast )
+		bool bHot, int btnHot, bool bFirst, bool bLast, bool bNumbered )
 	{
 		DrawNewRowHighlight( left - 4, right, rowY, bSel, bHot );
 
@@ -8869,9 +8869,15 @@ public:
 		// where it cannot be hit on the way to anything else.
 		DrawNewOrderButton( OrderXLeft( left ), rowY, "X", ( btnHot == 0 ));
 
-		// Numbered, because the number IS the meaning here: this is an order, not a set.
+		// [rc4l] Numbered only where the number says something the list does not.
+		//
+		// The load order keeps it: "3." is how a patch is quoted as going after what it patches,
+		// and it is the answer to "which of these wins". A rotation reads top to bottom and that IS
+		// the order, so a column of numbers there is a column of noise beside the names.
 		FString line;
-		line.Format( "%d. ", index + 1 );
+		if ( bNumbered )
+			line.Format( "%d. ", index + 1 );
+
 		line += serverbrowser_FitName( label, OrderUpLeft( right ) - OrderNameLeft( left ) - 6 );
 
 		DrawNewRowText( OrderNameLeft( left ), rowY, bSel ? CR_WHITE : CR_GRAY, line );
@@ -8954,7 +8960,7 @@ public:
 
 			DrawOrderRow( SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT, rowY, row,
 				g_NewOrder[row].name.c_str( ), bSel, ( row == g_NewOrderHot ), btnHot,
-				( row == 0 ), ( row + 1 == static_cast<int>( g_NewOrder.size( ))));
+				( row == 0 ), ( row + 1 == static_cast<int>( g_NewOrder.size( ))), true );
 		}
 
 		// Outside the rows, where the host panel's own right-column bars sit, so the buttons at the
