@@ -7612,6 +7612,11 @@ public:
 			{
 				labelRight -= SmallFont->StringWidth( ">" ) + 6;
 			}
+			else
+			{
+				labelRight -= SmallFont->StringWidth(
+					zx::DescribeVariantKind( entry.addon.kind )) + 6;
+			}
 
 			const FString label = serverbrowser_FitName( bIsVariant
 				? entry.addon.variants[r.variant].name.c_str( )
@@ -7666,18 +7671,26 @@ public:
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 			}
 
-			if ( bIsVariant )
+			// PvE or PvP. An experience that offers several ways to play has no single answer to
+			// give, so the badge belongs on each way rather than on the row above them; one that
+			// offers a single way does have one, and hiding it there taught the reader that the
+			// mark means "has variants" when it means what the row plays like.
+			//
+			// The parser requires `kind` of whichever thing is actually the experience, so exactly
+			// one of these two branches always has a real answer to draw.
+			if ( bIsVariant || entry.addon.variants.empty( ))
 			{
-				// PvE or PvP, on the way of playing it describes. The experience row above has no
-				// single answer to give, which is the reason the label lives down here.
-				const zx::VariantKind kind = entry.addon.variants[r.variant].kind;
+				const zx::VariantKind kind = bIsVariant
+					? entry.addon.variants[r.variant].kind : entry.addon.kind;
 				const char *kindText = zx::DescribeVariantKind( kind );
 
 				screen->DrawText( SmallFont, ( kind == zx::VariantKind::PvE ) ? CR_GREEN : CR_ORANGE,
 					SB_HOST_ROW_RIGHT - SmallFont->StringWidth( kindText ) - 4, textY, kindText,
 					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 
-				if ( !entry.addon.variants[r.variant].tooltip.empty( ))
+				// Only a way of playing carries one. An experience says what it is in its summary,
+				// which the detail panel beside this already shows in full.
+				if ( bIsVariant && !entry.addon.variants[r.variant].tooltip.empty( ))
 				{
 					serverbrowser_Tip( x - 4, rowY - 1, SB_HOST_ROW_RIGHT - x + 4, SB_HOST_ENTRY_H,
 						entry.addon.variants[r.variant].tooltip.c_str( ));
