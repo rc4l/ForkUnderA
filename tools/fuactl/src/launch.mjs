@@ -39,6 +39,12 @@ export async function launchInstance(opts = {}) {
   const log = path.join(logDir, `engine-${port}.log`);
 
   const args = ["-iwad", opts.iwad || "freedoom2.wad"];
+  // Isolated config, per instance. Without -config the engine reads AND writes the user's shared
+  // ini, so a bridge run would both inherit whatever cvars the user happens to have archived (not a
+  // clean, reproducible baseline) and, on exit, save its own overrides -- e.g. use_mouse 0 -- back
+  // into that ini and break the user's real mouse. A fresh file starts from engine defaults, which is
+  // identical across instances and never touches the user's config.
+  args.push("-config", path.join(logDir, "fua-bridge.ini"));
   // A client joins a server with +connect (and no local map); otherwise start in a local map.
   if (opts.connect) args.push("+connect", opts.connect);
   else args.push("+map", opts.map || "MAP01");
@@ -47,6 +53,12 @@ export async function launchInstance(opts = {}) {
     "+set", "fullscreen", "0",
     "+set", "vid_defwidth", "640",
     "+set", "vid_defheight", "400",
+    // Bridge instances are driven by the harness, never by a human at the window. Disable OS mouse
+    // and joystick so a stray cursor drifting over one instance's window can't turn its view (a live
+    // level grabs the mouse) and silently diverge a deterministic run from its twin. All synthetic
+    // input still arrives through the bridge (input.event / input.look / input.axis), untouched.
+    "+set", "use_mouse", "0",
+    "+set", "use_joystick", "0",
   );
   if (opts.seed != null) args.push("-rngseed", String(opts.seed));
   if (opts.extraArgs) args.push(...opts.extraArgs);
