@@ -16,18 +16,35 @@ TEST(ServerVarTable, HasTheSettingsOurOwnExperiencesActuallySet)
 
 	bool respawnTime = false;
 	bool teamDamage = false;
-	bool mapVote = false;
+	bool rotation = false;
 
 	for (size_t i = 0; i < table.size(); ++i)
 	{
 		if (table[i].name == "sv_forcerespawntime")	respawnTime = true;
 		if (table[i].name == "teamdamage")			teamDamage = true;
-		if (table[i].name == "sv_nomapvote")		mapVote = true;
+		if (table[i].name == "sv_randommaprotation")	rotation = true;
 	}
 
 	EXPECT_TRUE(respawnTime);
 	EXPECT_TRUE(teamDamage);
-	EXPECT_TRUE(mapVote);
+	EXPECT_TRUE(rotation);
+}
+
+TEST(ServerVarTable, LeavesTheVoteRefusalsToTheFlagsThatOwnThem)
+{
+	// Every sv_no*vote is a bit of sv_forbidvoteflags, which the flags panel lists in full. A row
+	// here as well would be the same switch in two places, and the one applied second would win.
+	static const char *const kOwnedByFlags[] = { "sv_nomapvote", "sv_nochangemapvote",
+		"sv_nonextmapvote", "sv_nofraglimitvote", "sv_notimelimitvote", "sv_nopointlimitvote",
+		"sv_nokickvote", "sv_noforcespecvote", "sv_nowinlimitvote" };
+
+	const std::vector<ServerVar> &table = ServerVarTable();
+
+	for (size_t i = 0; i < table.size(); ++i)
+	{
+		for (size_t k = 0; k < sizeof(kOwnedByFlags) / sizeof(kOwnedByFlags[0]); ++k)
+			EXPECT_NE(kOwnedByFlags[k], table[i].name) << "a flag offered twice";
+	}
 }
 
 TEST(ServerVarTable, DoesNotOfferTheCvarThatDoesNotExist)
