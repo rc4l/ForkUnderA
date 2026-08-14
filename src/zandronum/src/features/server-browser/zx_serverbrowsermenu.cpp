@@ -6298,13 +6298,34 @@ public:
 		return HostCopyIwad( addon ).empty( ) == false;
 	}
 
-	// What COPY would put in the IWAD box: the entry's own, or the substitute hosting would fall
-	// back to, or "" when neither is here. Asked by the offer and by the press, so the button cannot
-	// promise an IWAD the copy then fails to select.
+	// What COPY would put in the IWAD box: the entry's own, or the substitute hosting would fall back
+	// to, or "" when the NEW screen cannot select either. Asked by the offer and by the press, so the
+	// button cannot promise an IWAD the copy then fails to select.
+	//
+	// [rc4l] AND IT MUST BE ONE THAT SCREEN ACTUALLY OFFERS, which is a shorter list than "IWADs that
+	// exist": NewIwads is built from KnownIwadNames, a fixed set of the IWADs a player might own.
+	// Mega Man 8-bit Deathmatch runs on megagame.wad and falls back to fuamega.wad, and neither is in
+	// it -- so the box could not be moved to either, the copy silently kept whatever was selected
+	// before, and a Mega Man setup arrived on the NEW tab reading doom2.wad. Found by hiding
+	// megagame.wad and watching the copy land on the wrong game.
+	//
+	// Not offering the button is the right answer rather than copying anyway. The NEW screen builds
+	// servers out of the files this machine has, and an experience it cannot express is one it cannot
+	// build.
 	std::string HostCopyIwad( const zx::AddonEntry &addon )
 	{
 		const zx::IwadPick pick = zx::PickIwad( addon.iwad, zx::AvailableIwads( addon.iwad ));
-		return pick.iwad;
+		if ( pick.iwad.empty( ))
+			return std::string( );
+
+		const std::vector<std::string> &offered = NewIwads( );
+		for ( size_t i = 0; i < offered.size( ); ++i )
+		{
+			if ( stricmp( offered[i].c_str( ), pick.iwad.c_str( )) == 0 )
+				return pick.iwad;
+		}
+
+		return std::string( );
 	}
 
 	// Whether the button is on screen at all: the settings face, no server running, an experience
