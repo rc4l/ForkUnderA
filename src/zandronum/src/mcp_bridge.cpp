@@ -384,3 +384,16 @@ void MCP_Bridge_Shutdown()
 	if ( g_listen != MCP_INVALID_SOCKET ) { mcp_close_socket( g_listen ); g_listen = MCP_INVALID_SOCKET; }
 	RemovePidfile();
 }
+
+bool MCP_InputLocked()
+{
+	// Opt-in per instance and read once. A harness-driven instance sets ZANDRONUM_BRIDGE_INPUT_LOCK so
+	// its on-screen window is hands-off: the OS input pump drops keyboard/mouse and only bridge-injected
+	// events (input.event / input.look / input.axis, which bypass the OS layer) move the sim. Leaving it
+	// unset keeps a bridge instance manually controllable, e.g. for debugging.
+	static const bool locked = []{
+		const char *env = getenv( "ZANDRONUM_BRIDGE_INPUT_LOCK" );
+		return env != NULL && env[0] != '\0' && env[0] != '0';
+	}();
+	return locked;
+}

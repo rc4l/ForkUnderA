@@ -39,6 +39,11 @@ void MCP_NetProf_Recv( int svc, int bytes );
 // hardware axes with bridge-held values when an override is active; no-op otherwise.
 void MCP_RPC_OverrideAxes( float *axes );
 
+// True when this instance is a hands-off, harness-driven one (ZANDRONUM_BRIDGE_INPUT_LOCK set): the
+// OS input layer drops keyboard/mouse from the window so only bridge-injected events reach the sim.
+// Anchored at the top of the platform event pump (I_ProcessEvent). Read once, cached.
+bool MCP_InputLocked();
+
 #else
 
 // Release build: no bridge. The anchors compile to nothing.
@@ -49,6 +54,7 @@ inline void MCP_Crash_Init() {}
 inline void MCP_RPC_MarkRender() {}
 inline void MCP_NetProf_Recv( int, int ) {}
 inline void MCP_RPC_OverrideAxes( float * ) {}
+inline bool MCP_InputLocked() { return false; }
 
 #endif // FUA_MCP_BRIDGE
 
