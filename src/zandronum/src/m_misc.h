@@ -68,10 +68,14 @@ FString M_GetConfigPath(bool for_reading);
 FString M_GetScreenshotsPath();
 FString M_GetSavegamesPath();
 
-// [rc4l] The per-user folder holding this fork's identity keys and IWAD store.
+// [rc4l] The per-user folder holding this fork's identity keys, IWAD store and config.
 FString M_GetFuaUserPath();
 
-// [rc4l] The per-user folder holding this fork's identity keys and IWAD store.
-FString M_GetFuaUserPath();
+// [rc4l] Where the config would have been written before it moved into that folder, which is what
+// decides whether an install keeps its old one.
+FString M_GetLegacyConfigPath(bool for_reading);
+
+// [rc4l] Whether that old file exists, which is what decides between the two.
+bool M_ConfigIsAtLegacyPath();
 
 #endif
