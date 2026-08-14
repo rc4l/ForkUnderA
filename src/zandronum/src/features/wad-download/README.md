@@ -271,11 +271,17 @@ anything, not just for a join.
 
 ## Where files go
 
-`cl_fua_download_dir`, or by default a `Downloads/` folder under `M_GetSavegamesPath()` — per-user
-and writable on all three platforms, and `progdir` for a portable install. The folder is registered
-once in the config's `FileSearch.Directories`, so `BaseFileSearch` finds what we downloaded: this
-run, every run after, and anything the player drops in there by hand. That is why the join path
-needs no special case for a downloaded file — the retry resolves it exactly like any other WAD.
+`cl_fua_download_dir`, or by default `pwads/` under `M_GetFuaUserPath()` — beside the `iwads/`
+store and the identity keys, so everything this install keeps for the player is in one folder, and
+`progdir` for a portable install. The folder is registered once in the config's
+`FileSearch.Directories`, so `BaseFileSearch` finds what we downloaded: this run, every run after,
+and anything the player drops in there by hand. That is why the join path needs no special case for
+a downloaded file — the retry resolves it exactly like any other WAD.
+
+Earlier builds wrote `Downloads/` under `M_GetSavegamesPath()`. That folder is renamed into place
+on the first ask, once, rather than left behind as hundreds of megabytes every join would fetch
+again. A rename that fails — the two roots can be on different volumes — is not an error: the old
+path is still in `FileSearch.Directories` from the session that wrote it.
 
 ## CVARs and commands
 
