@@ -257,10 +257,12 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 
 		if ( teeClean ) { teeVW = 320; teeVH = 200; teeKeep = false; }
 
-		int sx = x, sy = y, sw = 0, sh = 0;
+		// Map the string's origin AND its width to screen pixels, so a driver can aim for the label's
+		// centre -- the text-start alone sits at a row's clickable edge and a click there can miss.
+		int sx = x, sy = y, sw = font->StringWidth( string ), sh = 1;
 		if ( teeVW != Width || teeVH != Height )
 			VirtualToRealCoordsInt( sx, sy, sw, sh, teeVW, teeVH, false, !teeKeep );
-		MCP_HUD_TeeText( sx, sy, string );
+		MCP_HUD_TeeText( sx, sy, sw, string );
 	}
 #endif
 
