@@ -30,13 +30,6 @@
 
 CVAR (Int, cl_fua_caching, 2, CVAR_ARCHIVE)
 
-// [rc4l] Max sim tics run inside one frame when the game falls behind (offline single
-// player only; consumed in d_net.cpp TryRunTics). Stock behavior batches every owed tic
-// into the current frame, so a storm that overruns the 28.6 ms tic budget freezes the
-// screen for whole batches. Capping trades that freeze for brief smooth slow-motion.
-// 0 = stock unlimited batching.
-CVAR (Int, cl_fua_maxcatchup, 3, CVAR_ARCHIVE)
-
 // Backstop against pathological mods whose spawn graph reaches everything;
 // what is cut off just stays lazy-loaded.
 static const unsigned int FUA_CACHING_MAX_CLASSES = 4096;
