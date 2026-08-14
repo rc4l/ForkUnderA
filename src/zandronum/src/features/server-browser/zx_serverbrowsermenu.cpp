@@ -6898,6 +6898,10 @@ public:
 		// Every field folded to start with. See NewFieldCollapsed.
 		g_NewFlagCollapsed.assign( g_NewFlags.size( ), true );
 
+		// And the mode this screen starts on, so its cvars and its skill are set before anything is
+		// touched rather than only once somebody picks a different one.
+		NewSetGameMode( g_NewGameMode );
+
 		for ( size_t i = 0; i < g_NewFlags.size( ); ++i )
 		{
 			NewSetCvar( g_NewFlags[i].name, zx::FormatFlagNumber( g_NewFlags[i].value ));
@@ -7209,9 +7213,39 @@ public:
 		return name;
 	}
 
+	// [rc4l] What skill a mode starts at.
+	//
+	// Ultra-Violence where the monsters are the opposition, Nightmare where the players are. In a
+	// deathmatch the skill is not the difficulty of the game, it is how fast the map behaves --
+	// respawning items and faster projectiles -- and the people shooting at each other are the
+	// challenge either way. In co-op and survival it IS the difficulty, and Nightmare there respawns
+	// every monster you kill, which is a different game rather than a harder one.
+	int NewModeSkillDefault( GAMEMODE_e mode )
+	{
+		const ULONG flags = GAMEMODE_GetFlags( mode );
+		const bool bPvP = (( flags & ( GMF_DEATHMATCH | GMF_TEAMGAME )) != 0 );
+
+		return bPvP ? 4 : 3;
+	}
+
 	void NewSetGameMode( GAMEMODE_e mode )
 	{
 		g_NewGameMode = mode;
+
+		// The mode's own default skill comes with it. Changing what is being played changes what
+		// "normal" means, and leaving Ultra-Violence set from the last mode is answering a question
+		// nobody asked in the terms of a game they are no longer starting.
+		{
+			char buf[16];
+			mysnprintf( buf, countof( buf ), "%d", NewModeSkillDefault( mode ));
+
+			NewSetCvar( "skill", buf );
+
+			SettingRow row;
+			row.name = "skill";
+			row.kind = zx::VarKind::Number;
+			SettingSet( row, buf );
+		}
 
 		// EVERY mode named, not only the chosen one. They are switches on the server, and one left
 		// true by an earlier click would still be true when it starts.
@@ -7816,7 +7850,7 @@ public:
 
 		const int labelX = x + 6 + caretW + 5;
 
-		screen->DrawText( SmallFont, CR_GOLD, labelX, textY,
+		screen->DrawText( SmallFont, CR_WHITE, labelX, textY,
 			serverbrowser_FitName( label, ( x + w ) - labelX - 4 ),
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
