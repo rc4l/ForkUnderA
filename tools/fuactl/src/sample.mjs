@@ -48,7 +48,7 @@ export function parseLinuxPerf(stdout, { top = 12, onlyBinary = null } = {}) {
 
 // ---- Backends --------------------------------------------------------------
 
-function run(cmd, args, timeoutMs) {
+function realRun(cmd, args, timeoutMs) {
   return new Promise((resolve) => {
     execFile(cmd, args, { maxBuffer: 64 * 1024 * 1024, timeout: timeoutMs }, (err, stdout, stderr) => {
       resolve({ err, stdout: stdout || "", stderr: stderr || "" });
@@ -56,13 +56,13 @@ function run(cmd, args, timeoutMs) {
   });
 }
 
-async function sampleMac(pid, seconds, top, engineOnly) {
+async function sampleMac(pid, seconds, top, engineOnly, run) {
   const { err, stdout } = await run("sample", [String(pid), String(seconds), "-mayDie"], (seconds + 15) * 1000);
   if (!stdout) return { available: false, backend: "sample", error: (err && err.message) || "no output", functions: [] };
   return { available: true, backend: "sample", seconds, functions: parseTopOfStack(stdout, { top, onlyBinary: engineOnly ? ENGINE_HINT : null }) };
 }
 
-async function sampleLinux(pid, seconds, top, engineOnly) {
+async function sampleLinux(pid, seconds, top, engineOnly, run) {
   const out = path.join(os.tmpdir(), `fuactl-perf-${pid}.data`);
   const rec = await run("perf", ["record", "-g", "-o", out, "-p", String(pid), "--", "sleep", String(seconds)], (seconds + 20) * 1000);
   if (rec.err && /not found|ENOENT/.test(rec.err.message)) return { available: false, backend: "perf", error: "perf not installed", functions: [] };
@@ -76,10 +76,12 @@ async function sampleLinux(pid, seconds, top, engineOnly) {
 
 // Sample `pid` for `seconds`, returning the hottest functions (engineOnly filters to the engine
 // binary, the actionable "what in OUR code is hot"). Cross-platform via the pluggable backend.
-export function sampleProcess(pid, { seconds = 2, top = 12, engineOnly = false } = {}) {
-  const plat = os.platform();
-  if (plat === "darwin") return sampleMac(pid, seconds, top, engineOnly);
-  if (plat === "linux") return sampleLinux(pid, seconds, top, engineOnly);
+// `_run`/`_platform` are test seams (default to the real spawn / host platform); production never
+// passes them.
+export function sampleProcess(pid, { seconds = 2, top = 12, engineOnly = false, _run = realRun, _platform = os.platform() } = {}) {
+  const plat = _platform;
+  if (plat === "darwin") return sampleMac(pid, seconds, top, engineOnly, _run);
+  if (plat === "linux") return sampleLinux(pid, seconds, top, engineOnly, _run);
   return Promise.resolve({
     available: false, backend: "none",
     error: "no built-in CLI sampler on Windows — use Tracy (BSD, cross-platform) or Windows Performance Recorder (wpr/WPA). The in-engine perf metrics (frametime/percentiles/sim-render split/counters) work here regardless.",

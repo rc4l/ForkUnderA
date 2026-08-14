@@ -41,7 +41,7 @@ const USAGE = `fuactl <command>
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
-  ui <action> [args] --port P [--token T]   drive the UI: nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
+  ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -144,6 +144,8 @@ async function main() {
           case "look":       return ui.look(c, { yaw: flags.yaw ? Number(flags.yaw) : 0, pitch: flags.pitch ? Number(flags.pitch) : 0 });
           case "stick":      return c.rpc("input.axis", flags.clear ? { clear: true } : { yaw: num(flags.yaw), pitch: num(flags.pitch), forward: num(flags.forward), side: num(flags.side) });
           case "screenshot": return ui.screenshot(c, flags.engine || resolveEngine(), a[0] || "fuactl_shot").then((s) => ({ path: s.path, bytes: s.base64.length }));
+          case "read":       return ui.readMenu(c).then((m) => (flags.full ? m : { lines: m.lines.map((l) => l.text) }));
+          case "find":       return ui.findLabel(c, a.join(" "));
           case "exec":       return c.rpc("console.exec", { text: a.join(" ") });
           default: throw new Error(`unknown ui action: ${act} (nav/click/rightclick/drag/type/look/stick/screenshot/exec)`);
         }
