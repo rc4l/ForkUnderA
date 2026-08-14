@@ -1795,7 +1795,17 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 				sc.MustGetNumber();
 				showvalue = sc.Number;
 			}
-			FOptionMenuItem *it = new FOptionMenuSliderCVar(text, action, min, max, step, showvalue);
+
+			// [rc4l] An optional eighth field, nonzero to hold the value until the mouse is
+			// released, for a slider whose CVAR resizes what the menu is drawn on.
+			bool deferApply = false;
+			if (sc.CheckString(","))
+			{
+				sc.MustGetNumber();
+				deferApply = ( sc.Number != 0 );
+			}
+
+			FOptionMenuItem *it = new FOptionMenuSliderCVar(text, action, min, max, step, showvalue, deferApply);
 			desc->mItems.Push(it);
 		}
 		else if (sc.Compare("screenresolution"))
