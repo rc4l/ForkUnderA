@@ -27,8 +27,11 @@
 #include "r_state.h"
 #include "m_random.h"
 #include "zstring.h"
+#include "m_cheat.h"
+#include "d_protocol.h"
 #include "mcp_hud.h"
 #include "mcp_glperf.h"
+#include "mcp_ticprof.h"
 
 #include "features/mcp-bridge/computation/mcprpc_compute.h"
 
@@ -51,6 +54,11 @@ namespace
 	// --- sim-step state (advance N tics then refreeze) ----------------------
 	bool g_stepping   = false;
 	long g_stepTarget = 0;
+
+	// --- tic-scheduled cheat (sim.cheatat; fired by MCP_SimPreTic) ----------
+	bool g_cheatAtArmed = false;
+	int g_cheatAtTic    = 0;
+	int g_cheatAtCheat  = 0;
 
 	// --- perf capture -------------------------------------------------------
 	// Frame timing at the D_DoomLoop seam: MCP_RPC_Tick runs at the TOP of each iteration, so the
@@ -125,11 +133,16 @@ namespace
 	// Deterministic fingerprint of the sim: level clock + RNG position + every actor's transform &
 	// health, mixed in thinker-list order (stable across save/load round-trips). Two instances at the
 	// same level.time with identical simulation return the same value; a mismatch is a desync.
-	QWORD StateHash()
+	// withRng mixes in the sum of ALL FRandom streams -- including sound RNGs (pr_randsound
+	// etc.) whose draw count depends on real-time audio channel availability, so it is NOT
+	// run-to-run stable on sound-heavy mods even when the world is bit-identical. Use the
+	// world-only form (sim.hash {scope:"world"}) for cross-binary determinism gates.
+	QWORD StateHash( bool withRng )
 	{
 		uint64_t h = FnvInit();
 		h = FnvMixU64( h, (uint64_t)level.time );
-		h = FnvMixU64( h, (uint64_t)FRandom::StaticSumSeeds() );
+		if ( withRng )
+			h = FnvMixU64( h, (uint64_t)FRandom::StaticSumSeeds() );
 		if ( InLevel() )
 		{
 			TThinkerIterator<AActor> it;
@@ -181,6 +194,18 @@ void MCP_RPC_OverrideAxes( float *axes )
 	for ( int i = 0; i < NUM_JOYAXIS; ++i ) axes[i] = g_axisOverride[i];
 }
 
+// Called at the top of every game tic (anchor in d_net.cpp, before G_Ticker). Fires
+// tic-scheduled actions so scenario injection is deterministic -- see sim.cheatat.
+void MCP_SimPreTic()
+{
+	if ( g_cheatAtArmed && gamestate == GS_LEVEL && level.time >= g_cheatAtTic )
+	{
+		g_cheatAtArmed = false;
+		if ( consoleplayer >= 0 && consoleplayer < MAXPLAYERS && playeringame[consoleplayer] )
+			cht_DoCheat( &players[consoleplayer], g_cheatAtCheat );
+	}
+}
+
 void MCP_RPC_Tick()
 {
 	MCP_HUD_BeginFrame(); // snapshot the frame the engine just drew (for screenshots/HUD reads)
@@ -228,6 +253,14 @@ void MCP_RPC_Tick()
 			EmitEvent( "glperf", glperf );
 	}
 
+	// Per-tic sim profiler (perf.ticprof): the tic anchors accumulate phase times; when the armed
+	// tic count completes, the per-tic report goes out as a "ticprof" event.
+	{
+		std::string ticprof;
+		if ( MCP_TicProf_ReportReady( ticprof ) )
+			EmitEvent( "ticprof", ticprof );
+	}
+
 	// Drive a scheduled step. Force paused=0 EVERY frame while stepping so the single-player
 	// focus-loss auto-pause (S_SetSoundPaused sets paused=-1 on a backgrounded window) can't stall
 	// a controlled advance -- the whole point of headless determinism. Refreeze at the target tic.
@@ -259,10 +292,10 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
-			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\","
+			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.rngdump\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
-			"\"perf.capture\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\""
-			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\"]}" );
+			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\""
+			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\"]}" );
 	}
 	else if ( cmd == "console.exec" )
 	{
@@ -286,8 +319,10 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	}
 	else if ( cmd == "sim.hash" )
 	{
+		std::string scope;
+		GetStr( args, "scope", scope );
 		std::string body = "{\"leveltime\":" + I( level.time );
-		body += ",\"hash\":\"" + I( (long long)StateHash() ) + "\"}"; // string to survive 64-bit in JSON
+		body += ",\"hash\":\"" + I( (long long)StateHash( scope != "world" ) ) + "\"}"; // string to survive 64-bit in JSON
 		SendOk( id, body );
 	}
 	else if ( cmd == "sim.seed" )
@@ -325,6 +360,39 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		g_stepping = true;
 		paused = 0; // let the world advance; MCP_RPC_Tick refreezes at the target and emits "stepped"
 		SendOk( id, std::string( "{\"target\":" ) + I( g_stepTarget ) + "}" );
+	}
+	else if ( cmd == "sim.rngdump" )
+	{
+		// Every FRandom stream's (name CRC, index, first state word). Diff two runs at the
+		// same tic to name the exact subsystem whose RNG stream diverged first.
+		std::string body = "{\"rngs\":[";
+		struct Ctx { std::string *out; bool first; } ctx = { &body, true };
+		FRandom::StaticEnumStates( []( DWORD crc, unsigned int idx, DWORD u0, void *vctx )
+		{
+			Ctx *c = (Ctx *)vctx;
+			if ( !c->first ) *c->out += ",";
+			c->first = false;
+			*c->out += "{\"c\":" + I( (long long)crc ) + ",\"i\":" + I( (long long)idx ) + ",\"u\":" + I( (long long)u0 ) + "}";
+		}, &ctx );
+		body += "],\"leveltime\":" + I( level.time ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "sim.cheatat" )
+	{
+		// Schedule a cheat to run at an exact leveltime, bypassing the net-command stream.
+		// Console cheats (kill monsters = cheat 19/CHT_MASSACRE) land in the demo stream at a
+		// wall-clock-dependent maketic, so the tic they execute on jitters between runs --
+		// which breaks cross-binary lockstep determinism gates. This calls cht_DoCheat
+		// directly at the start of the scheduled tic: same tic, every run, every binary.
+		if ( IsNetInstance() ) { SendErr( id, "cheatat unsupported in a netgame" ); return; }
+		long tic = -1, cheat = -1;
+		GetInt( args, "tic", tic );
+		GetInt( args, "cheat", cheat );
+		if ( tic < 0 || cheat < 0 ) { SendErr( id, "sim.cheatat requires args.tic and args.cheat (CHT_* id; massacre is 19)" ); return; }
+		g_cheatAtTic = (int)tic;
+		g_cheatAtCheat = (int)cheat;
+		g_cheatAtArmed = true;
+		SendOk( id, std::string( "{\"scheduled\":true,\"tic\":" ) + I( tic ) + ",\"cheat\":" + I( cheat ) + "}" );
 	}
 	else if ( cmd == "sim.snapshot" )
 	{
@@ -446,6 +514,17 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		g_perfCapturing = true;
 		// The summary arrives asynchronously as a "perf" event once `frames` frames are collected.
 		SendOk( id, std::string( "{\"capturing\":true,\"frames\":" ) + I( frames ) + ",\"warmup\":" + I( warmup ) + "}" );
+	}
+	else if ( cmd == "perf.ticprof" )
+	{
+		// Arm the per-tic sim profiler: times the next `tics` game tics with a phase split
+		// (G_Ticker total incl. net-command execution, P_Ticker, thinkers, effects, specials).
+		// The per-tic array arrives asynchronously as a "ticprof" event. Combine with sim.pause +
+		// sim.step to dissect a specific tic (e.g. the one that runs "kill monsters").
+		long tics = 35;
+		GetInt( args, "tics", tics );
+		MCP_TicProf_Arm( (int)tics );
+		SendOk( id, std::string( "{\"capturing\":true,\"tics\":" ) + I( tics ) + "}" );
 	}
 	else if ( cmd == "perf.counters" )
 	{

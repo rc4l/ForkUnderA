@@ -307,6 +307,23 @@ DWORD FRandom::StaticSumSeeds ()
 
 //==========================================================================
 //
+// FRandom :: StaticEnumStates
+//
+// [ForkUnderA] See the declaration: per-stream state enumeration for the
+// mcp-bridge sim.rngdump RPC.
+//
+//==========================================================================
+
+void FRandom::StaticEnumStates (void (*fn)(DWORD crc, unsigned int idx, DWORD u0, void *ctx), void *ctx)
+{
+	for (FRandom *rng = RNGList; rng != NULL; rng = rng->Next)
+	{
+		fn (rng->NameCRC, (unsigned int)rng->idx, rng->sfmt.u[0], ctx);
+	}
+}
+
+//==========================================================================
+//
 // FRandom :: StaticWriteRNGState
 //
 // Stores the state of every RNG into a savegame.

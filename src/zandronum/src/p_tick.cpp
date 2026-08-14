@@ -43,6 +43,7 @@
 #include "cl_main.h"
 #include "astar.h"
 #include "botpath.h"
+#include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
 
 extern gamestate_t wipegamestate;
 
@@ -402,7 +403,11 @@ void P_Ticker (void)
 	// server send him a full update, i.e. CLIENT_GetConnectionState() == CTS_ACTIVE.
 	// I have no idea if this has unwanted side effects. Has to be checked.
 	if(( NETWORK_GetState( ) != NETSTATE_CLIENT ) || (CLIENT_GetConnectionState() == CTS_ACTIVE))
+	{
+		MCP_TicProf_Begin (MCP_TPZ_THINKERS); // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
 		DThinker::RunThinkers ();
+		MCP_TicProf_End (MCP_TPZ_THINKERS);
+	}
 
 	// Don't do this stuff while in freeze mode.
 	if ( !(level.flags2 & LEVEL2_FROZEN) )
@@ -421,10 +426,16 @@ void P_Ticker (void)
 			}
 		}
 
+		MCP_TicProf_Begin (MCP_TPZ_SPECIALS);
 		P_UpdateSpecials ();
+		MCP_TicProf_End (MCP_TPZ_SPECIALS);
 
 		if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		{
+			MCP_TicProf_Begin (MCP_TPZ_EFFECTS);
 			P_RunEffects ();	// [RH] Run particle effects
+			MCP_TicProf_End (MCP_TPZ_EFFECTS);
+		}
 	}
 
 	// for par times

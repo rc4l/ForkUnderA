@@ -74,6 +74,12 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
   before `D_Display` (no markers in the hot render path). Use `fuactl perf-ab` for a deterministic
   ablation — measure a scene, perturb it with everything else held constant, diff → a *causal*
   frametime delta attributed to CPU (sim) vs GPU-ish (render).
+- **Per-tic sim profiling**: `perf.ticprof {tics}` → async `ticprof` event with a per-tic array of
+  `{total, pticker, thinkers, effects, specials}` milliseconds (`mcp_ticprof.{h,cpp}`; anchors in
+  `d_net.cpp`/`g_game.cpp`/`p_tick.cpp` are inline no-ops when the bridge is off, one bool test when
+  disarmed). `total` is the whole `G_Ticker` including net-command execution, so a cheat like
+  `kill monsters` shows up in the tic that runs it. Combine with `sim.pause` + `sim.step` to dissect
+  a specific tic — this is how the kill-storm tic train was decomposed without external samplers.
 - **GPU profiling**: `renderer.info` → vendor/renderer/GL version + whether GL timer queries work on this
   driver. `gl.timers {frames,warmup}` → async `glperf` event with **per-pass GPU milliseconds** — opaque
   `scene`, `translucent` (the usual fill-rate/overdraw killer), `hud2d`, plus the whole-frame `total`
