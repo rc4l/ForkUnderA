@@ -379,6 +379,61 @@ std::string HostProcessReadOutput( void )
 
 //*****************************************************************************
 //
+void HostProcessRequestStop( void )
+{
+	if (( g_bStarted == false ) || g_bExited )
+		return;
+
+#ifdef _WIN32
+
+	// No polite shutdown to attempt on Windows (see HostProcessStop); Terminate is asynchronous, so
+	// this still returns immediately and HostProcessPoll observes the exit on a later tick.
+	if ( g_hProcess != NULL )
+		TerminateProcess( g_hProcess, 0 );
+
+#else
+
+	if ( g_Child > 0 )
+		kill( g_Child, SIGTERM );
+
+#endif
+}
+
+void HostProcessKill( void )
+{
+	if ( g_bStarted == false )
+		return;
+
+#ifdef _WIN32
+
+	if (( g_hProcess != NULL ) && ( g_bExited == false ))
+	{
+		TerminateProcess( g_hProcess, 0 );
+		// Momentary: the process is being torn down by the kernel, not asked to leave.
+		WaitForSingleObject( g_hProcess, 1000 );
+
+		DWORD code = 0;
+		if ( GetExitCodeProcess( g_hProcess, &code ))
+			g_ExitCode = code;
+	}
+
+#else
+
+	if (( g_Child > 0 ) && ( g_bExited == false ))
+	{
+		kill( g_Child, SIGKILL );
+		int status = 0;
+		waitpid( g_Child, &status, 0 );
+		g_ExitCode = -1;
+	}
+
+#endif
+
+	g_bExited = true;
+	g_bStarted = false;
+	CloseAll( );
+}
+
 void HostProcessStop( void )
 {
 	if ( g_bStarted == false )

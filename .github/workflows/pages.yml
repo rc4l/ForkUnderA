@@ -23,8 +23,8 @@ jobs:
   deploy:
     # [rc4l] Main-repo-only infra: publishing to GitHub Pages needs Pages enabled + the github-pages
     # environment, which a fork does not have, so configure-pages/deploy-pages just fail there. Skip on
-    # forks; only rc4l/ZandroX publishes the commit-tracker site.
-    if: github.repository == 'rc4l/ZandroX'
+    # forks; only rc4l/ForkUnderA publishes the commit-tracker site.
+    if: github.repository == 'rc4l/ForkUnderA'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

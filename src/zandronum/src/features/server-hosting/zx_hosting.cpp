@@ -12,12 +12,17 @@
 
 #include "features/server-hosting/zx_hosting.h"
 #include "features/server-hosting/zx_hostprocess.h"
+#include "features/port-mapping/zx_portmap.h"
+#include "features/server-hosting/computation/hostport_compute.h" // [rc4l] shared with the reach panel
 
 #include "doomtype.h"
 #include "c_dispatch.h"
 #include "i_system.h"
 #include "m_argv.h"
 #include "m_random.h"
+// [rc4l] NETWORK_GetLocalPort: the port the server ACTUALLY bound, which is what the ready line
+// carries. networkheaders.h is already first above, so this is safe to add here.
+#include "network.h"
 #include "templates.h"
 #include "v_text.h"
 
@@ -78,9 +83,18 @@ int				g_LastTickMs	= 0;
 // Enough to explain a failure, little enough that a chatty server cannot grow it without bound.
 const size_t kMaxRecent = 4096;
 
-// A minute. The registry verifies within seconds of an announcement; the rest is slack for a slow
-// round trip and a registry that is briefly busy.
-const int kReachTimeoutMs = 60000;
+// [rc4l] Ninety seconds, which is three announcements rather than the two a minute allowed.
+//
+// A minute was the same 60 seconds the registry uses to sweep a server it never managed to verify,
+// so the two clocks ran together and the retry could never beat the verdict. Servers announce every
+// 30 seconds and each announcement now gets a fresh verification request, so the question is simply
+// how many attempts fit before we answer. Two is not enough when the first can be lost in transit
+// and the countdown does not start until the server is up, part way into the first interval.
+//
+// Waiting longer is cheap because the panel says "checking" meanwhile, which is true. Saying
+// "nothing reached this port" to somebody whose port forward works is not, and it costs them an
+// evening in their router.
+const int kReachTimeoutMs = 90000;
 
 // [rc4l] Long enough that guessing it is not a strategy, and it only has to survive the lifetime of
 // one process. Drawn from the engine's RNG rather than anything the player can influence, and never
@@ -109,11 +123,15 @@ void RememberOutput( const std::string &text )
 
 } // namespace
 
+static void HostStopBlocking( void );
+
 //*****************************************************************************
 //
 bool HostStart( const HostConfig &config )
 {
-	HostStop( );
+	// The blocking stop, deliberately: the new child needs the old one's port, and
+	// HostProcessStart refuses to spawn while a child is still held.
+	HostStopBlocking( );
 
 	g_Config = config;
 	g_Secret = MakeSecret( );
@@ -128,6 +146,18 @@ bool HostStart( const HostConfig &config )
 	// nothing to get wrong -- and it can never be a different build from the one the player is
 	// running, which is a whole class of version-mismatch failure that simply cannot arise.
 	const std::vector<std::string> args = BuildHostArgs( Args->GetArg( 0 ), g_Config );
+
+	// [rc4l] What the child is actually told, every time, whoever asked. fua_host printed its plan and
+	// the HOST panel printed nothing, so the one path a player uses was the one with no record of what
+	// it did -- and "it loaded the wrong files" had nowhere to be checked.
+	Printf( "hosting: -iwad %s\n", g_Config.iwad.empty( ) ? "(none)" : g_Config.iwad.c_str( ));
+	for ( size_t i = 0; i < g_Config.pwads.size( ); ++i )
+		Printf( "hosting:   -file %s\n", g_Config.pwads[i].c_str( ));
+	for ( size_t i = 0; i < g_Config.execRemixCfgs.size( ); ++i )
+		Printf( "hosting:   +exec %s\n", g_Config.execRemixCfgs[i].c_str( ));
+	if ( !g_Config.execCfg.empty( ))
+		Printf( "hosting:   +exec %s\n", g_Config.execCfg.c_str( ));
+	Printf( "hosting:   +map %s\n", g_Config.map.empty( ) ? "(none)" : g_Config.map.c_str( ));
 
 	std::string error;
 	if ( HostProcessStart( args, error ) == false )
@@ -147,6 +177,13 @@ bool HostStart( const HostConfig &config )
 	g_Reach = config.advertise ? HostReach::Waiting : HostReach::NotPublic;
 	g_PublicMs = 0;
 
+	// [rc4l] The router is NOT asked yet, deliberately. Nothing here knows which port the server will
+	// end up on -- NETWORK_Construct falls back to the next free one and only the child finds out --
+	// so mapping the requested port now would forward a port the server may never listen on: a hole
+	// in somebody's network leading nowhere, and a public server unreachable for a reason the
+	// reachability check cannot explain. The mapping is opened on the ready line, where the real port
+	// is known.
+
 	g_Address = "127.0.0.1:";
 	g_Address.AppendFormat( "%d", ResolveHostPort( g_Config.port, 10666 ));
 
@@ -155,7 +192,36 @@ bool HostStart( const HostConfig &config )
 
 //*****************************************************************************
 //
+// [rc4l] The interactive stop, and it must NOT block: this runs on the game loop, and the old
+// synchronous version sat in a waitpid/usleep loop for up to three seconds while the child wound
+// down -- which on macOS is the spinning beachball every time a server was stopped. The child is
+// ASKED to stop here; HostTick observes the actual exit through the ordinary child-exited path,
+// and the Stopping state's own timeout (the state machine's contract says "the caller kills the
+// process on this same signal") escalates to a kill if it will not go.
 void HostStop( void )
+{
+	if ( HostHoldsProcess( g_Life.state ))
+		g_Life = StepHostLifecycle( g_Life, HostEvent::StopRequested, "" );
+
+	HostProcessRequestStop( );
+
+	// Give the port back. A mapping left behind is a hole in somebody's network that outlives the
+	// game that asked for it, and the lease is a backstop for the crash case, not a substitute.
+	PortMapClose( );
+
+	g_Secret = "";
+	g_Address = "";
+	g_bReadyEdge = false;
+	g_Reach = HostReach::NotPublic;
+	g_PublicMs = 0;
+}
+
+//*****************************************************************************
+//
+// [rc4l] The stop for callers that cannot tick afterwards: process exit, and HostStart replacing a
+// running server (the new child needs the old one's port, and HostProcessStart refuses while one
+// is live). Blocks up to three seconds -- acceptable exactly and only on those paths.
+static void HostStopBlocking( void )
 {
 	if ( HostHoldsProcess( g_Life.state ))
 		g_Life = StepHostLifecycle( g_Life, HostEvent::StopRequested, "" );
@@ -166,6 +232,8 @@ void HostStop( void )
 	// waiting for an exit notification that has already happened would hang the UI in Stopping.
 	if ( g_Life.state == HostState::Stopping )
 		g_Life = StepHostLifecycle( g_Life, HostEvent::ChildExited, "" );
+
+	PortMapClose( );
 
 	g_Secret = "";
 	g_Address = "";
@@ -205,8 +273,50 @@ void HostTick( void )
 		{
 			g_Pending += chunk;
 
-			if ( g_Pending.find( kReadyMarker ) != std::string::npos )
+			int boundPort = 0;
+			if ( ParseHostReadyLine( g_Pending, &boundPort ))
 			{
+				// [rc4l] Believe the child over our own request. Asking for a port that is already
+				// taken does not fail -- NETWORK_Construct binds the next one free -- so the address
+				// built at launch from g_Config.port can point at somebody ELSE'S server. When it did,
+				// the panel advertised their address and the auto-join walked the player into their
+				// game, where the file check failed and read as "it hosted the wrong thing".
+				if ( boundPort > 0 )
+				{
+					g_Address.Format( "127.0.0.1:%d", boundPort );
+
+					// [rc4l] Through the shared decision, so the message and the reachability panel
+					// can never disagree about whether the server moved. PortDriftNeedsWarning is the
+					// same call the panel uses to pick which port it reports on.
+					const int wantedPort = ResolveHostPort( g_Config.port, 10666 );
+
+					if ( PortDriftNeedsWarning( boundPort, wantedPort ))
+					{
+						// [rc4l] Say what it MEANS, not just what happened. "The server is on 10668"
+						// is a fact nobody can act on; a forwarded port that no longer matches is the
+						// likeliest reason a setup that used to work stops working, and the player is
+						// the only one who can fix it because we cannot forward a port for them.
+						Printf( TEXTCOLOR_GOLD "Port %d was already in use, so the server is on %d "
+							"instead. If you forwarded %d on your router, players outside your "
+							"network will not be able to reach this server.\n" TEXTCOLOR_NORMAL,
+							wantedPort, boundPort, wantedPort );
+					}
+				}
+
+				// [rc4l] Now the router can be asked, and asked for the RIGHT port -- ONLY for a
+				// public server, which is already an explicit choice on an explicit tab. A game that
+				// quietly opened ports on somebody's network would be doing the thing routers switch
+				// UPnP off to prevent.
+				//
+				// It still runs before the registry check and still never replaces it: a router
+				// agreeing proves a router agreed, and behind carrier-grade NAT that happens while the
+				// server stays invisible.
+				if ( g_Config.advertise )
+				{
+					PortMapOpen( ( boundPort > 0 ) ? boundPort
+						: ResolveHostPort( g_Config.port, 10666 ), g_Config.hostName.c_str( ));
+				}
+
 				g_Life = StepHostLifecycle( g_Life, HostEvent::ReadyObserved, "" );
 				g_Pending.clear( );
 
@@ -227,6 +337,11 @@ void HostTick( void )
 		const std::string tail = g_Recent.GetChars( );
 		g_Life = StepHostLifecycle( g_Life, HostEvent::ChildExited,
 			ExplainHostFailure( tail, HostProcessExitCode( )));
+
+		// [rc4l] The exit is observed, the output above was the last of it: close the pipe and the
+		// handles now. The async HostStop leaves them open ON PURPOSE so this drain keeps working
+		// until the child actually goes; with it gone, HostProcessStop is just cleanup.
+		HostProcessStop( );
 		return;
 	}
 
@@ -242,6 +357,13 @@ void HostTick( void )
 	}
 
 	g_Life = TickHostLifecycle( g_Life, delta );
+
+	// [rc4l] The escalation the state machine's contract promises: a Stopping that timed out has
+	// moved to Stopped while the child is still alive, so kill it now -- SIGKILL and a momentary
+	// reap, nothing the game loop can beachball on. Without this, a child that ignored SIGTERM
+	// would outlive its own "Stopped" panel forever.
+	if ( IsHostFinished( g_Life.state ) && HostProcessRunning( ))
+		HostProcessKill( );
 }
 
 //*****************************************************************************
@@ -262,7 +384,9 @@ void HostForget( void )
 //
 void HostShutdown( void )
 {
-	HostStop( );
+	// Blocking on purpose: the process is exiting, there are no more ticks to reap the child, and
+	// an orphaned server outliving the game is the one outcome this call exists to prevent.
+	HostStopBlocking( );
 }
 
 unsigned HostGeneration( void )
@@ -422,8 +546,11 @@ void HostChildAnnounceReady( void )
 
 	bAnnounced = true;
 
+	// [rc4l] The port we ACTUALLY bound, which is not necessarily the one we were told to use:
+	// NETWORK_Construct falls back to the next free port rather than failing. The parent cannot know
+	// this and has no way to ask, so it is said here, on the one channel that is definitely ours.
 	FString line;
-	line.Format( "%s\n", kReadyMarker );
+	line.Format( "%s %u\n", kReadyMarker, static_cast<unsigned int>( NETWORK_GetLocalPort( )));
 	WriteUpThePipe( line.GetChars( ));
 }
 

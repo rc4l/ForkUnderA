@@ -118,6 +118,13 @@ namespace
 		return ( NETWORK_InClientMode( ) == false ) && ( NETWORK_GetState( ) != NETSTATE_SERVER );
 	}
 
+// [rc4l] Everything from here to the end of Draw() talks to the renderer, and a SERVERONLY build has
+// none -- it linked against gl_RenderState, GLRenderer and libGL itself and failed. The split is the
+// feature's own: a server RECORDS blasts (PushBlast, from cl_main.cpp) and answers whether the
+// overlay is permitted (ServerDebugActive, from p_map.cpp), and only a client draws them. Those three
+// stay below the #endif; the drawing is called solely from gl/scene/ and so is guarded here.
+#ifndef NO_GL
+
 	// GL_ALIASED_LINE_WIDTH_RANGE, queried lazily on first draw.
 	bool  s_lineRangeKnown = false;
 	float s_lineWidthMin = 1.f;
@@ -192,7 +199,14 @@ namespace
 				outer.radius, marker));
 		}
 	}
-}
+
+// [rc4l] Closed here rather than at the end of Draw(), because the brace below ends the anonymous
+// namespace and a guard that swallowed it left the file with no closing brace at all under NO_GL.
+#endif // NO_GL
+
+}	// anonymous namespace
+
+#ifndef NO_GL
 
 void BeginFrame()
 {
@@ -317,6 +331,8 @@ void Draw()
 	gl_RenderState.SetColorAlpha(PalEntry(0xffffffff), 1.f);
 	gl_RenderState.Apply();
 }
+
+#endif // NO_GL
 
 void PushBlast(fixed_t x, fixed_t y, fixed_t z, int distance, int fulldamagedistance)
 {

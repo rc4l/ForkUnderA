@@ -92,6 +92,21 @@ TextInput DeleteForward( const TextInput &in );
 // right.
 TextInput MoveCaret( const TextInput &in, int delta, bool extend );
 
+// [rc4l] Whether an arrow should LEAVE the field instead of moving the caret inside it.
+//
+// A text field has to claim left and right, or you cannot move through what you typed. It also has
+// to give them back at some point, or a box with something beside it becomes a place the keyboard
+// goes and never comes out of. The answer everywhere else in software is the same: the arrow moves
+// the caret until the caret has nowhere left to go, and the next press moves on.
+//
+// `hasNeighbour` is the caller's -- only it knows what is beside this box, and a field with nothing
+// there must keep the key rather than hand it to nobody.
+//
+// Shift NEVER leaves: shift+arrow is a selection gesture, and one that jumped to another control
+// halfway through would be unusable. Nor does an arrow with a selection live -- that press collapses
+// the selection, which is a move in its own right, and only the press after it reaches the edge.
+bool ArrowLeavesField( const TextInput &in, bool goingRight, bool hasNeighbour, bool shiftHeld );
+
 // Caret to the start / to the end, extending the selection if shift is held.
 TextInput CaretHome( const TextInput &in, bool extend );
 TextInput CaretEnd( const TextInput &in, bool extend );

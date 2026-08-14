@@ -20,11 +20,6 @@ BrowserPhase ComputeBrowserPhase( bool waitingForRegistry, const BrowserCounts &
 	return BrowserPhase::Empty;
 }
 
-bool ComputeShowsProgress( bool waitingForRegistry, const BrowserCounts &counts )
-{
-	return waitingForRegistry || ( counts.waiting > 0 );
-}
-
 int ComputeSpinnerFrame( int tic, int frameCount, int ticsPerFrame )
 {
 	if (( frameCount <= 0 ) || ( ticsPerFrame <= 0 ))

@@ -71,8 +71,16 @@ echo "==> Configuring (Release, OpenAL, NO_FMOD, SERVERONLY=$SERVERONLY)"
 rm -f build-linux/CMakeCache.txt
 
 # [rc4l] ZX_WITH_SYMBOLS=1 (set by release CI) builds with debug info and splits it into
-# zandronum.debug via RELEASE_WITH_DEBUG_FILE, keeping the shipped binary stripped/lean. The
+# forkundera.debug via RELEASE_WITH_DEBUG_FILE, keeping the shipped binary stripped/lean. The
 # .debug file is uploaded to GlitchTip so crashes symbolicate. --build-id links the two.
+# [rc4l] Only a build whose symbols get published may report crashes; see ZX_OFFICIAL_BUILD in
+# src/zandronum/CMakeLists.txt. Set by CI, never by a local build.
+OFFICIAL_ARGS=()
+if [ "${ZX_OFFICIAL_BUILD:-0}" = "1" ]; then
+  echo "==> official build: crash reporting enabled"
+  OFFICIAL_ARGS=( -DZX_OFFICIAL_BUILD=ON )
+fi
+
 SYM_ARGS=()
 if [ "${ZX_WITH_SYMBOLS:-0}" = "1" ]; then
   echo "==> building with debug symbols (ZX_WITH_SYMBOLS=1)"
@@ -84,19 +92,19 @@ fi
 cmake -S src/zandronum -B build-linux -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
   -DSERVERONLY="$SERVERONLY" -DNO_FMOD=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON \
-  "${SYM_ARGS[@]}"
+  "${SYM_ARGS[@]}" "${OFFICIAL_ARGS[@]}"
 
 echo "==> Building"
 cmake --build build-linux -j"$(nproc)"
 
 # [rc4l] Refuse to package a client that cannot make sound; this shipped once already.
 if [ "$SERVERONLY" != "ON" ]; then
-  if ! ldd build-linux/zandronum | grep -q libopenal; then
-    echo "ERROR: zandronum is not linked against libopenal — the build has no sound." >&2
+  if ! ldd build-linux/forkundera | grep -q libopenal; then
+    echo "ERROR: forkundera is not linked against libopenal — the build has no sound." >&2
     echo "       Check the OpenAL detection in the configure output above." >&2
     exit 1
   fi
-  echo "==> sound OK: $(ldd build-linux/zandronum | grep libopenal | tr -s ' ')"
+  echo "==> sound OK: $(ldd build-linux/forkundera | grep libopenal | tr -s ' ')"
 fi
 
 if [ "$NO_PACKAGE" = "ON" ]; then
@@ -106,17 +114,23 @@ fi
 
 # --- Package ---------------------------------------------------------------
 ARCH="$(uname -m)"
+
+# [rc4l] The serveronly tarball must not be named like the client one. Both land in dist-linux/, and
+# CI now builds both in the same job, so a shared name meant the second silently overwrote the first
+# and the release carried one binary under a name promising the other.
+if [ "$SERVERONLY" = "ON" ]; then KIND="-server"; else KIND=""; fi
+
 if [ -n "$VERSION" ]; then
-  NAME="ZandroX-$VERSION-linux-$ARCH"
+  NAME="ForkUnderA-$VERSION-linux-$ARCH$KIND"
 else
-  NAME="ZandroX-linux-$ARCH"
+  NAME="ForkUnderA-linux-$ARCH$KIND"
 fi
 STAGE="dist-linux/$NAME"
 rm -rf "$STAGE"; mkdir -p "$STAGE"
 
-# [rc4l] SERVERONLY renames the target to zandronum-server; copying the hardcoded client name
+# [rc4l] SERVERONLY renames the target to forkundera-server; copying the hardcoded client name
 # shipped whatever stale client binary happened to be in the build directory.
-if [ "$SERVERONLY" = "ON" ]; then BIN=zandronum-server; else BIN=zandronum; fi
+if [ "$SERVERONLY" = "ON" ]; then BIN=forkundera-server; else BIN=forkundera; fi
 [ -f "build-linux/$BIN" ] || { echo "ERROR: build-linux/$BIN not found" >&2; exit 1; }
 cp "build-linux/$BIN" "$STAGE"/
 cp build-linux/*.pk3 "$STAGE"/
@@ -124,10 +138,24 @@ cp build-linux/*.pk3 "$STAGE"/
 
 # [rc4l] Ship Freedoom so the tarball is playable without a separate IWAD. It is
 # BSD-3-clause, whose clause 2 requires the notice to accompany binary distributions.
-if [ -f tools/freedoom/freedoom2.wad ]; then
-  cp tools/freedoom/*.wad "$STAGE"/
-  cp tools/freedoom/License.txt "$STAGE"/FREEDOOM-LICENSE.txt
-fi
+# Both phases: Phase 1 stands in for doom.wad and Phase 2 for doom2.wad, and the wildcard copy
+# would happily ship half of them.
+for wad in freedoom1.wad freedoom2.wad; do
+  [ -f "tools/freedoom/$wad" ] || { echo "ERROR: tools/freedoom/$wad missing -- the tarball would ship without a game to fall back on" >&2; exit 1; }
+done
+cp tools/freedoom/*.wad "$STAGE"/
+cp tools/freedoom/License.txt "$STAGE"/FREEDOOM-LICENSE.txt
+
+# [rc4l] Our own base data for total conversions that ship no base file of their own. Built by
+# tools/mkiwad and entirely generated, so it carries nobody else's work. Checked for the same
+# reason the two above are: without it that catalogue entry is unhostable.
+[ -f tools/mkiwad/fuamega.wad ] || { echo "ERROR: tools/mkiwad/fuamega.wad missing, so rebuild it with tools/mkiwad/mkiwad.py" >&2; exit 1; }
+cp tools/mkiwad/fuamega.wad "$STAGE"/
+
+# [rc4l] The addon catalogue. Required rather than best-effort: the HOST tab reads it from beside
+# the binary, and a build without it offers nothing to host.
+[ -d catalogue ] || { echo "ERROR: catalogue/ missing -- the HOST tab would have nothing to offer" >&2; exit 1; }
+cp -r catalogue "$STAGE"/
 
 # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and say where the
 # corresponding source is, so these are required rather than best-effort.

@@ -771,4 +771,11 @@ CCMD (whereisini)
 {
 	FString path = M_GetConfigPath(false);
 	Printf ("%s\n", path.GetChars());
+
+	// [rc4l] Which of the two rules put it there, so "why is it reading that one" is answerable in
+	// one command rather than by guessing at folder permissions.
+	if (M_ConfigIsAtLegacyPath())
+		Printf ("Kept where an earlier build wrote it, because a config is already there.\n");
+	else
+		Printf ("Shared by every copy of " GAMENAME " for this user.\n");
 }

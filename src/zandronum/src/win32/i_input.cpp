@@ -161,6 +161,8 @@ extern bool CursorState;
 extern BOOL paused;
 static bool noidle = false;
 
+EXTERN_CVAR (Bool, i_pauseinbackground)
+
 LPDIRECTINPUT8			g_pdi;
 LPDIRECTINPUT			g_pdi3;
 
@@ -168,9 +170,6 @@ LPDIRECTINPUT			g_pdi3;
 BOOL AppActive = TRUE;
 int SessionState = 0;
 int BlockMouseMove; 
-
-// [BB] Allows to keep the sound turned on, when the client is not the active app.
-CVAR (Bool, cl_soundwhennotactive, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 CVAR (Bool, k_allowfullscreentoggle, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
@@ -336,8 +335,25 @@ bool GUIWndProcHook(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, LRESU
 
 		{
 			int shift = screen? screen->GetPixelDoubling() : 0;
-			ev.data1 = LOWORD(lParam) >> shift; 
-			ev.data2 = HIWORD(lParam) >> shift; 
+			ev.data1 = LOWORD(lParam) >> shift;
+			ev.data2 = HIWORD(lParam) >> shift;
+
+			// [rc4l] Window pixels to render pixels, the step upstream added as
+			// ScaleCoordsFromWindow, without which every hit test at any scale but Native is off by
+			// the ratio between the window and the buffer.
+			//
+			// BEFORE the letterbox adjustment below, because that one is already in render pixels.
+			//
+			// Through locals because the event carries SWORDs, which a scaled render coordinate
+			// always fits back into.
+			if (screen)
+			{
+				int mx = ev.data1, my = ev.data2;
+				screen->ScaleCoordsFromWindow(mx, my);
+				ev.data1 = (SWORD)mx;
+				ev.data2 = (SWORD)my;
+			}
+
 			if (screen) ev.data2 -= (screen->GetTrueHeight() - screen->GetHeight())/2;
 		}
 
@@ -601,12 +617,16 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			SetPriorityClass (GetCurrentProcess (), INGAME_PRIORITY_CLASS);
 		}
-		else if (!noidle && NETWORK_GetState( ) != NETSTATE_CLIENT )
+		// [rc4l] Not idle priority when i_pauseinbackground is off: the game is deliberately still
+		// running back there, and starving it is the opposite of what was asked for. Ported from
+		// uzdoom@b044baf850eeb99f06835a223804e1d73994dc04.
+		else if (!noidle && NETWORK_GetState( ) != NETSTATE_CLIENT && i_pauseinbackground)
 		{
 			SetPriorityClass (GetCurrentProcess (), IDLE_PRIORITY_CLASS);
 		}
-		if ( ( NETWORK_GetState( ) != NETSTATE_CLIENT ) || ( cl_soundwhennotactive == false ) )
-			S_SetSoundPaused (wParam);
+		// [rc4l] Unconditional: S_SetSoundPaused answers i_pauseinbackground and
+		// i_soundinbackground itself now. Ported from uzdoom@12ed24d066a819a128a54e2359fd0e2d48f641fe.
+		S_SetSoundPaused (wParam);
 		break;
 
 	case WM_WTSSESSION_CHANGE:

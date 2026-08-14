@@ -51,7 +51,15 @@
 #include "networkheaders.h"
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/launcherfields_compute.h"
+#include "features/server-browser/computation/registrystatus_compute.h"
+#include "features/server-browser/computation/querypunch_compute.h"   // [rc4l] punch-on-query schedule
+#include "features/server-browser/computation/rowlifetime_compute.h"  // [rc4l] what keeps a row mortal
+#include "features/server-browser/computation/rowstep_compute.h"      // [rc4l] what to do with a row
+#include "features/server-hosting/zx_punchclient.h"                   // [rc4l] PunchRequestFor
 #include "features/launcher-protocol/computation/segmentreassembly_compute.h"
+#include "features/server-hosting/zx_hosting.h" // [rc4l] which rows are the server WE started
+#include "features/server-hosting/zx_reachprobe.h" // [rc4l] ReachProbePublicIp
+#include "features/server-browser/computation/joinintent_compute.h" // [rc4l] RowIsOwnServer
 #include "c_dispatch.h"
 #include "cl_main.h"
 #include "deathmatch.h"
@@ -79,6 +87,32 @@ static	SERVER_t		g_BrowserServerList[MAX_BROWSER_SERVERS];
 // addresses carries no authority, so fanning it out costs nothing.
 static	TArray<NETADDRESS_s>	g_ServerRegistryAddresses;
 
+// [rc4l] What became of each registry in the list, kept so the browser can SHOW it.
+//
+// One row per entry in cl_fua_serverregistry_list, including the ones that never produced an address:
+// a name that will not look up is exactly the case that used to vanish into a console warning nobody
+// reads, so it has to survive here or the bar for it can never be drawn. See
+// computation/registrystatus_compute.h for why each status exists.
+struct SERVERREGISTRYSTATE_s
+{
+	std::string			host;			// as written in the list
+	int					port;			// 0 when the lookup never got that far
+	NETADDRESS_s		address;
+	bool				bResolved;
+	zx::RegistryStatus	status;
+
+	// [rc4l] When `status` was recorded. Only THROTTLED reads it, to know when the registry has
+	// stopped ignoring us; every other status is a finished verdict that time does not change.
+	ULONG				ulStatusMS;
+};
+
+static	std::vector<SERVERREGISTRYSTATE_s>	g_ServerRegistryStates;
+
+// [rc4l] When a sweep last went out, or 0 for never. Stamped where the queries are SENT rather than
+// where replies land: a refresh that found nothing still happened, and a player asking "is this list
+// current" is asking when we last looked, not when somebody last answered.
+static	ULONG			g_ulLastRefreshMS = 0;
+
 // Message buffer for sending messages to the server registry.
 static	NETBUFFER_s		g_ServerRegistryBuffer;
 
@@ -104,6 +138,12 @@ static	LONG			g_lSelectedServer = -1;
 static	ULONG			g_ulServerRegistryQuerySentMS;
 static	int				g_lServerRegistryAttempts;
 
+// [rc4l] Punch-on-query budget for one refresh sweep. The registry rate-limits punch requests to
+// five per ten seconds per client; four leaves one for the join the player is presumably about to
+// make on whichever of those servers appears. Reset wherever a sweep of queries starts.
+static	LONG			g_lPunchesThisSweep;
+static	const LONG		kMaxPunchesPerSweep = 4;
+
 // [rc4l] Four seconds, not the second and a half this started as.
 //
 // A server registry flood-blocks a repeat launcher challenge from the same address for 3 seconds and
@@ -115,7 +155,92 @@ static	int				g_lServerRegistryAttempts;
 // Retrying faster than the thing you are retrying against is willing to answer is not persistence,
 // it is a self-inflicted denial of service.
 static const ULONG		SERVERREGISTRY_QUERY_TIMEOUT_MS = 4000;
+
+// [rc4l] How long a re-check of an already-listed row may go unanswered. Generous on purpose: this
+// is "will never answer", not a quality bar.
+static const int		SERVERBROWSER_REFRESH_TIMEOUT_MS = 4000;
+
+// [rc4l] How many re-checks in a row a listed server may miss before it comes off the list.
+//
+// Three, because one is packet loss and two is a bad moment. A server that has answered once and
+// then ignores three separate challenges over twelve seconds has genuinely gone; before that, the
+// row is worth keeping, since the cost of showing a dead server for a few seconds is a failed join
+// and the cost of hiding a live one is that nobody can find it at all.
+static const int		SERVERBROWSER_MAX_RECHECK_MISSES = 3;
+
+// [rc4l] How long a THROTTLED verdict keeps meaning something. The registry's own ignore window is
+// three seconds ("Ignoring for 3 seconds" in its log), so this sits just past it: long enough not to
+// clear a refusal that is still in force, short enough that the bar recovers while you are looking.
+static const int		SERVERREGISTRY_THROTTLE_CLEAR_MS = 4000;
 static const int		SERVERREGISTRY_QUERY_MAX_ATTEMPTS = 3;
+
+// Mark every registry we are still waiting on, without disturbing one that already answered.
+static void browser_SetPendingRegistryStates( void )
+{
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		if ( g_ServerRegistryStates[i].bResolved )
+		{
+			g_ServerRegistryStates[i].status = zx::RegistryStatus::Pending;
+			g_ServerRegistryStates[i].ulStatusMS = I_MSTime( );
+		}
+	}
+}
+
+// [rc4l] Turn "still waiting" into "nothing came back" once no further attempt will be made to that
+// registry, and the last one we did make has timed out.
+//
+// Two ways there will be no further attempt: we ran out of retries, or somebody else answered and the
+// retry loop stopped. Both leave a silent registry that deserves a verdict.
+static void browser_ExpirePendingRegistries( void )
+{
+	// [rc4l] Let a THROTTLED bar recover on its own, before the early returns below.
+	//
+	// Nothing ever cleared it: this pass only turned Pending into NoAnswer, so a single
+	// REQUESTIGNORED left the status bar orange until some later reply happened to overwrite it --
+	// long after the registry had gone back to answering. Reported as a bar stuck on REG_THROTTLED
+	// while the browser was working. The rule and its window live in registrystatus_compute.
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		g_ServerRegistryStates[i].status = zx::AgeRegistryStatus(
+			g_ServerRegistryStates[i].status,
+			static_cast<int>( I_MSTime( ) - g_ServerRegistryStates[i].ulStatusMS ),
+			SERVERREGISTRY_THROTTLE_CLEAR_MS );
+	}
+
+	const bool bNoMoreTries = ( g_bWaitingForServerRegistryResponse == false ) ||
+		( g_lServerRegistryAttempts >= SERVERREGISTRY_QUERY_MAX_ATTEMPTS );
+
+	if ( bNoMoreTries == false )
+		return;
+
+	// Unsigned arithmetic, so this stays correct across the I_MSTime() wrap.
+	if (( I_MSTime( ) - g_ulServerRegistryQuerySentMS ) < SERVERREGISTRY_QUERY_TIMEOUT_MS )
+		return;
+
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		if ( g_ServerRegistryStates[i].status == zx::RegistryStatus::Pending )
+			g_ServerRegistryStates[i].status = zx::RegistryStatus::NoAnswer;
+	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] Record what one registry did, found by the address the packet came from. A sender we do not
+// have a row for is ignored rather than guessed at.
+static void browser_NoteRegistryStatus( const NETADDRESS_s &from, zx::RegistryStatus status )
+{
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		if ( g_ServerRegistryStates[i].bResolved && g_ServerRegistryStates[i].address.Compare( from ))
+		{
+			g_ServerRegistryStates[i].status = status;
+			g_ServerRegistryStates[i].ulStatusMS = I_MSTime( );
+			return;
+		}
+	}
+}
 
 // [CW] The amount of teams sent to us.
 static ULONG			g_ulNumberOfTeams = 0;
@@ -142,8 +267,10 @@ CVAR( String, cl_fua_serverregistry_list, "registry.cantstopscrolling.net", CVAR
 
 static	LONG	browser_GetNewListID( void );
 static	LONG	browser_GetListIDByAddress( NETADDRESS_s Address );
+static	void	browser_MirrorAnswerOntoOurOtherRows( LONG lAnswered );
 static	void	browser_QueryServer( ULONG ulServer );
 static	ULONG	browser_CountryIndexFromCode( const char *pszCode );
+static	void	browser_ResolveServerRegistries( void );
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -195,6 +322,27 @@ bool BROWSER_IsActive( ULONG ulServer )
 		return ( false );
 
 	return ( g_BrowserServerList[ulServer].ulActiveState == AS_ACTIVE );
+}
+
+//*****************************************************************************
+//
+bool BROWSER_IsListable( ULONG ulServer )
+{
+	if ( ulServer >= MAX_BROWSER_SERVERS )
+		return ( false );
+
+	const ULONG ulState = g_BrowserServerList[ulServer].ulActiveState;
+	return (( ulState == AS_ACTIVE ) || ( ulState == AS_VERSIONMISMATCH ));
+}
+
+//*****************************************************************************
+//
+zx::VersionRelation BROWSER_GetVersionRelation( ULONG ulServer )
+{
+	if ( ulServer >= MAX_BROWSER_SERVERS )
+		return ( zx::VersionRelation::Unknown );
+
+	return ( g_BrowserServerList[ulServer].versionRelation );
 }
 
 //*****************************************************************************
@@ -472,6 +620,34 @@ LONG BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer )
 
 //*****************************************************************************
 //
+// [rc4l] Bots are already told apart for the player COUNT; the detail panel needs the same fact per
+// row, so it can say which of the names on a busy-looking server are people.
+bool BROWSER_IsPlayerBot( ULONG ulServer, ULONG ulPlayer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( false );
+
+	if ( ulPlayer >= (ULONG)g_BrowserServerList[ulServer].lNumPlayers )
+		return ( false );
+
+	return ( g_BrowserServerList[ulServer].Players[ulPlayer].bIsBot );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Whether the server sent player rows at all. Distinct from "nobody is playing": a server that
+// withheld the data and a server that is genuinely empty both report zero names, and a panel that
+// showed the same thing for both would be inventing an empty server out of a silent one.
+bool BROWSER_HasPlayerData( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
+		return ( false );
+
+	return ( g_BrowserServerList[ulServer].bHasPlayerData );
+}
+
+//*****************************************************************************
+//
 LONG BROWSER_GetPing( ULONG ulServer )
 {
 	if (( ulServer >= MAX_BROWSER_SERVERS ) || ( g_BrowserServerList[ulServer].ulActiveState != AS_ACTIVE ))
@@ -511,22 +687,106 @@ ULONG BROWSER_GetActiveState( ULONG ulServer )
 //
 // Four seconds is deliberately generous. This is a timeout for "will never answer", not a quality
 // bar; a slow satellite link should still make it in.
+//*****************************************************************************
+//
 void BROWSER_QueryTick( void )
 {
 	const LONG lNow = I_MSTime( );
 
 	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
-		if ( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
-			continue;
+		// [rc4l] Read the row, ask what to do, do it. No judgement lives here any more.
+		//
+		// It used to be a chain of early returns, and the shape of that chain hid two live bugs in
+		// one session: a re-checked row skipped the punch ladder entirely, and a mirrored row could
+		// end up in a state no timeout could reach. Both were dispatch, not arithmetic, so no
+		// predicate could catch them -- rowstep_compute takes the whole state and answers with the
+		// one thing to do, and its tests walk the entire space rather than the cases anyone thought
+		// of.
+		zx::RowStepIn in;
+		in.refreshing       = g_BrowserServerList[ulIdx].bRefreshing;
+		in.waitingForReply  = ( g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY );
+		in.lan              = g_BrowserServerList[ulIdx].bLAN;
+		in.punchRequested   = g_BrowserServerList[ulIdx].bPunchRequested;
+		in.msSinceQuery     = static_cast<int>( lNow - g_BrowserServerList[ulIdx].lMSTime );
+		in.msSinceRefresh   = static_cast<int>( lNow - g_BrowserServerList[ulIdx].lRefreshMS );
+		in.resends          = static_cast<int>( g_BrowserServerList[ulIdx].lPunchResendsSent );
+		in.punchBudgetLeft  = ( g_lPunchesThisSweep < kMaxPunchesPerSweep );
+		in.refreshTimeoutMs = SERVERBROWSER_REFRESH_TIMEOUT_MS;
+		in.recheckFailures  = static_cast<int>( g_BrowserServerList[ulIdx].lRecheckMisses );
+		in.maxRecheckFailures = SERVERBROWSER_MAX_RECHECK_MISSES;
 
-		// Not yet queried: lMSTime is only stamped when a packet actually goes out.
+		// A row whose clock never started reads as not-sent, which StepRow treats as "waiting on us".
 		if ( g_BrowserServerList[ulIdx].lMSTime <= 0 )
-			continue;
+			in.msSinceQuery = 0;
+		if ( g_BrowserServerList[ulIdx].lRefreshMS <= 0 )
+			in.msSinceRefresh = 0;
 
-		if (( lNow - g_BrowserServerList[ulIdx].lMSTime ) >= 4000 )
+		const zx::RowStepOut act = zx::StepRow( in );
+
+		if ( act.requestPunch )
+		{
+			// Budget is spent only on an ask that actually went out -- PunchRequestFor declines
+			// local addresses and registry-less sessions on its own.
+			if ( zx::PunchRequestFor( g_BrowserServerList[ulIdx].Address, true ))
+			{
+				g_BrowserServerList[ulIdx].bPunchRequested = true;
+				g_lPunchesThisSweep++;
+			}
+		}
+		else if ( act.resendChallenge )
+		{
+			// Re-send WITHOUT restamping lMSTime: the ladder is positioned by time since the FIRST
+			// challenge, and browser_QueryServer stamps unconditionally.
+			const LONG lFirstMS = g_BrowserServerList[ulIdx].lMSTime;
+			browser_QueryServer( ulIdx );
+			g_BrowserServerList[ulIdx].lMSTime = lFirstMS;
+			g_BrowserServerList[ulIdx].lPunchResendsSent++;
+		}
+		else if ( act.recheckMissed )
+		{
+			// [rc4l] Stop chasing this one and count the miss. The row stays listed and joinable on
+			// what it last told us, which is very probably still true: it answered a moment ago.
+			g_BrowserServerList[ulIdx].bRefreshing = false;
+			g_BrowserServerList[ulIdx].lRefreshMS = 0;
+			g_BrowserServerList[ulIdx].lRecheckMisses++;
+
+			if ( act.dropFromList )
+			{
+				// Missed its whole allowance in a row. Now it is gone rather than unlucky.
+				g_BrowserServerList[ulIdx].lRecheckMisses = 0;
+				g_BrowserServerList[ulIdx].ulActiveState = AS_INACTIVE;
+			}
+		}
+		else if ( act.markTimedOut )
+		{
 			g_BrowserServerList[ulIdx].ulActiveState = AS_TIMEDOUT;
+		}
 	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] Seconds since the last sweep, or -1 if there has never been one.
+LONG BROWSER_SecondsSinceRefresh( void )
+{
+	if ( g_ulLastRefreshMS == 0 )
+		return ( -1 );
+
+	return ( static_cast<LONG>(( I_MSTime( ) - g_ulLastRefreshMS ) / 1000 ));
+}
+
+//*****************************************************************************
+//
+// [rc4l] The same answer in milliseconds, for the gate that decides whether REFRESH may be pressed
+// again. Seconds are what a player is told; a floor measured in them would be off by up to a second
+// in whichever direction happened to suit, which on a ten second floor is a tenth of the rule.
+LONG BROWSER_MSSinceRefresh( void )
+{
+	if ( g_ulLastRefreshMS == 0 )
+		return ( -1 );
+
+	return ( static_cast<LONG>( I_MSTime( ) - g_ulLastRefreshMS ));
 }
 
 //*****************************************************************************
@@ -651,6 +911,125 @@ const char *BROWSER_GetGameModeShortName( ULONG ulServer )
 //*****************************************************************************
 //*****************************************************************************
 //
+// [rc4l] See browser.h. The list is resolved when the browser opens, so this is usually already
+// populated; a probe asked for before any refresh simply gets false and reports that it could not
+// reach us rather than guessing.
+bool BROWSER_GetServerRegistryAddress( NETADDRESS_s &out )
+{
+	if ( g_ServerRegistryAddresses.Size( ) == 0 )
+		browser_ResolveServerRegistries( );
+
+	if ( g_ServerRegistryAddresses.Size( ) == 0 )
+		return false;
+
+	out = g_ServerRegistryAddresses[0];
+	return true;
+}
+
+//*****************************************************************************
+//
+// [rc4l] See browser.h. Whether a packet came from a registry this client actually talks to.
+//
+// Deliberately the WHOLE list, because browser_QueryServerRegistries sends to the whole list. Judging
+// a reply by one address, or by the server-side announce cvar, meant we could send to a registry and
+// then throw its answer away.
+bool BROWSER_IsServerRegistryAddress( const NETADDRESS_s &address )
+{
+	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
+	{
+		if ( g_ServerRegistryAddresses[i].Compare( address ))
+			return true;
+	}
+
+	return false;
+}
+
+//*****************************************************************************
+//
+// [rc4l] See browser.h. Marks every listed server for a re-check while leaving it on the list.
+void BROWSER_RefreshListedServers( void )
+{
+	g_ulLastRefreshMS = I_MSTime( );
+
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if ( g_BrowserServerList[ulIdx].ulActiveState != AS_ACTIVE )
+			continue;
+
+		// SENT HERE, not queued for BROWSER_QueryAllServers. That pump only runs when the registry
+		// answers (cl_main.cpp), so queueing would tie a re-check of servers we can already reach to
+		// a reply from a machine we may not be able to reach at all -- and on a LAN with no registry,
+		// the re-checks would simply never go out. This is the whole point of re-querying each server
+		// at its own address, so it must not route through the registry's timing.
+		browser_QueryServer( ulIdx );
+
+		g_BrowserServerList[ulIdx].bRefreshing = true;
+		g_BrowserServerList[ulIdx].lRefreshMS = I_MSTime( );
+	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] See browser.h. One row, re-challenged on its own, without troubling the registry.
+//
+// g_ulLastRefreshMS is deliberately NOT stamped: that clock answers "how old is this LIST", and one
+// row having been asked a moment ago says nothing about the other forty. Stamping it here would let
+// a player keep the age line reading "just now" by poking a single server, and would spend the
+// whole-list floor on work that never went near the registry.
+void BROWSER_RecheckServer( ULONG ulServer )
+{
+	if (( ulServer >= MAX_BROWSER_SERVERS ) ||
+		( g_BrowserServerList[ulServer].ulActiveState == AS_INACTIVE ))
+	{
+		return;
+	}
+
+	browser_QueryServer( ulServer );
+
+	g_BrowserServerList[ulServer].bRefreshing = true;
+	g_BrowserServerList[ulServer].lRefreshMS = I_MSTime( );
+
+	// The strikes start again. A player asking about this specific row is entitled to an answer
+	// about this specific row, not to inherit two misses from a sweep they may not have watched.
+	g_BrowserServerList[ulServer].lRecheckMisses = 0;
+}
+
+//*****************************************************************************
+//
+// [rc4l] See browser.h. Only slots that ASKED for a punch are eligible: an unsolicited packet must
+// not be able to redirect a row we never invited, and a spoofed knock against an invited row costs
+// one wasted re-query and its own timeout -- the same as any dropped packet.
+void BROWSER_PunchKnockFrom( const NETADDRESS_s &From )
+{
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		// The eligibility rule lives in querypunch_compute, where its security property -- an
+		// uninvited row can never be redirected -- is asserted for every state.
+		if ( zx::ShouldAdoptPunchKnock(
+				g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY,
+				g_BrowserServerList[ulIdx].bPunchRequested,
+				g_BrowserServerList[ulIdx].Address.CompareNoPort( From )) == false )
+		{
+			continue;
+		}
+
+		// The knock's source port is the mapping the server's NAT actually opened; the listed port
+		// is only what its NAT once told the registry. Adopt the real one.
+		g_BrowserServerList[ulIdx].Address.usPort = From.usPort;
+
+		// Re-send into the open hole NOW rather than waiting for the next ladder rung -- the
+		// mapping is freshest this instant. Preserve the first-challenge stamp; the ladder's
+		// position is measured from it.
+		const LONG lFirstMS = g_BrowserServerList[ulIdx].lMSTime;
+		browser_QueryServer( ulIdx );
+		if ( lFirstMS > 0 )
+			g_BrowserServerList[ulIdx].lMSTime = lFirstMS;
+		return;
+	}
+}
+
+//*****************************************************************************
+//
 void BROWSER_ClearServerList( void )
 {
 	ULONG	ulIdx;
@@ -658,6 +1037,9 @@ void BROWSER_ClearServerList( void )
 	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
 		g_BrowserServerList[ulIdx].ulActiveState = AS_INACTIVE;
+		g_BrowserServerList[ulIdx].bRefreshing = false;
+		g_BrowserServerList[ulIdx].lRefreshMS = 0;
+		g_BrowserServerList[ulIdx].lRecheckMisses = 0;
 
 		g_BrowserServerList[ulIdx].Address.Clear();
 
@@ -673,6 +1055,112 @@ void BROWSER_ClearServerList( void )
 		g_BrowserServerList[ulIdx].IWADHash = "";
 		g_BrowserServerList[ulIdx].bForcePassword = false;
 		g_BrowserServerList[ulIdx].bForceJoinPassword = false;
+	}
+}
+
+//*****************************************************************************
+//
+// The port out of "1.2.3.4:5678", or 0 when there is none to read.
+static int browser_PortOfAddress( const FString &address )
+{
+	const long colon = address.LastIndexOf( ":" );
+	if ( colon < 0 )
+		return 0;
+
+	return atoi( address.GetChars( ) + colon + 1 );
+}
+
+// Whether this row is the server we are running, by the same rule the menu uses.
+static bool browser_RowIsOurs( LONG lServer, int hostPort, const FString &localIp )
+{
+	if (( lServer < 0 ) || ( lServer >= MAX_BROWSER_SERVERS ))
+		return false;
+
+	const FString full = g_BrowserServerList[lServer].Address.ToString( );
+	if ( full.IsEmpty( ))
+		return false;
+
+	return zx::RowIsOwnServer( g_BrowserServerList[lServer].Address.ToStringNoPort( ),
+		browser_PortOfAddress( full ), hostPort, localIp.GetChars( ),
+		zx::ReachProbePublicIp( ));
+}
+
+// [rc4l] Give every other row for the SAME MACHINE the answer this one just got.
+//
+// Only ever our own server, because it is the only machine the browser can prove it knows twice:
+// HostOwnsAddress is bound to the server we started. Two unrelated addresses that happen to be one
+// box are not something we can detect, and guessing would merge strangers' servers together.
+//
+// Copied wholesale rather than field by field. The rows describe one process, so anything true of it
+// through one address is true through the other, and picking a subset is how they drift.
+static void browser_MirrorAnswerOntoOurOtherRows( LONG lAnswered )
+{
+	if (( lAnswered < 0 ) || ( lAnswered >= MAX_BROWSER_SERVERS ))
+		return;
+
+	// HostOwnsAddress is NOT the check to use here. It is bound to the loopback address we join our
+	// own server on, so it matches neither the LAN row nor the public one -- a first attempt at this
+	// used it and mirrored nothing at all. RowIsOwnServer is the wider question, and the one the menu
+	// already asks to decide whether JOIN means "go there" or "you are already here".
+	FString localIp;
+	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+		localIp = NETWORK_GetLocalAddress( ).ToStringNoPort( );
+
+	const int hostPort = browser_PortOfAddress( zx::HostConnectAddress( ));
+	if ( hostPort <= 0 )
+		return;			// we are not hosting, so no row can be ours
+
+	if ( browser_RowIsOurs( lAnswered, hostPort, localIp ) == false )
+		return;
+
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if ( static_cast<LONG>( ulIdx ) == lAnswered )
+			continue;
+
+		// Never touch a slot that is not one of ours, and never one already holding a fresh answer:
+		// the row that DID get through this refresh is the better copy.
+		if ( g_BrowserServerList[ulIdx].ulActiveState == AS_ACTIVE )
+			continue;
+
+		if ( browser_RowIsOurs( static_cast<LONG>( ulIdx ), hostPort, localIp ) == false )
+			continue;
+
+		// [rc4l] Three things belong to the ROW, not to the machine, and must survive the copy.
+		//
+		// The address is how the player joins and which of the two rows this is. bLAN is how it was
+		// found, and it decides the badge. The country is derived from the address, so copying it
+		// hands the public row the LAN row's answer -- which is no country at all, because a private
+		// address cannot be placed. Doing that turned both rows into LAN badges and lost the flag
+		// this whole exercise is about.
+		const NETADDRESS_s keepAddress = g_BrowserServerList[ulIdx].Address;
+		const bool keepLAN = g_BrowserServerList[ulIdx].bLAN;
+
+		// [rc4l] And the row's own re-check bookkeeping, which is what keeps it MORTAL.
+		//
+		// Copying the answered row's copy of these brought bRefreshing=false with it, and
+		// BROWSER_QueryTick only ever expires a row that is refreshing or still waiting. So every
+		// row this function touched became permanently active: never re-checked, never removable,
+		// still listed long after the server behind it had gone. Changing the host port was enough
+		// to strand a pair of them, because the old rows stopped matching "ours" and nothing else
+		// could reach them. Keeping the row's own deadline means it stays visible while our server
+		// keeps answering, and ages out on the ordinary four second timeout once it stops.
+		const bool keepRefreshing = zx::RefreshingAfterMirror(
+			g_BrowserServerList[ulIdx].bRefreshing, g_BrowserServerList[lAnswered].bRefreshing );
+		const LONG keepRefreshMS = g_BrowserServerList[ulIdx].lRefreshMS;
+
+		g_BrowserServerList[ulIdx] = g_BrowserServerList[lAnswered];
+		g_BrowserServerList[ulIdx].Address = keepAddress;
+		g_BrowserServerList[ulIdx].bLAN = keepLAN;
+		g_BrowserServerList[ulIdx].bRefreshing = keepRefreshing;
+		g_BrowserServerList[ulIdx].lRefreshMS = keepRefreshMS;
+		g_BrowserServerList[ulIdx].ulActiveState = AS_ACTIVE;
+
+		// Re-derived rather than kept, so a row that has never been placed still gets its flag: the
+		// answer depends only on the address, and this row has its own.
+		g_BrowserServerList[ulIdx].CountryCode = "";
+		g_BrowserServerList[ulIdx].ulCountryIndex =
+			NETWORK_GetCountryIndexFromAddress( keepAddress );
 	}
 }
 
@@ -697,8 +1185,26 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 	// independently, so the same address legitimately arrives several times. Without this the browser
 	// listed it once per server registry -- the duplicates were harmless before only because there
 	// was exactly one server registry to hear from.
-	if ( browser_GetListIDByAddress( Address ) != -1 )
+	const LONG lExisting = browser_GetListIDByAddress( Address );
+	if ( lExisting != -1 )
+	{
+		// [rc4l] A slot that gave up earlier keeps its address, so this dedupe used to eat the
+		// registry's RE-announcement of it -- one missed reply window and the server was gone for
+		// the whole session, however many refreshes followed. If the registry still lists it, it is
+		// still worth asking: re-arm the slot for this sweep's query, with a fresh punch ladder.
+		// The rule itself lives in querypunch_compute, where every state is asserted.
+		if ( zx::ShouldRearmListedSlot(
+				g_BrowserServerList[lExisting].ulActiveState == AS_TIMEDOUT,
+				g_BrowserServerList[lExisting].ulActiveState == AS_INACTIVE,
+				g_BrowserServerList[lExisting].bRefreshing ))
+		{
+			g_BrowserServerList[lExisting].ulActiveState = AS_WAITINGFORREPLY;
+			g_BrowserServerList[lExisting].lMSTime = 0;
+			g_BrowserServerList[lExisting].bPunchRequested = false;
+			g_BrowserServerList[lExisting].lPunchResendsSent = 0;
+		}
 		return;
+	}
 
 	const ULONG ulServer = browser_GetNewListID( );
 	if ( ulServer >= MAX_BROWSER_SERVERS )
@@ -714,6 +1220,18 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 	g_BrowserServerList[ulServer].CountryCode = "";
 	g_BrowserServerList[ulServer].ulCountryIndex = COUNTRY_INDEX_UNKNOWN;
 	g_BrowserServerList[ulServer].bHasPlayerData = false;
+	g_BrowserServerList[ulServer].bPunchRequested = false;
+	g_BrowserServerList[ulServer].lPunchResendsSent = 0;
+
+	// A slot arriving here is new, not being re-checked; inheriting a re-check would have this server
+	// culled on the previous occupant's deadline.
+	g_BrowserServerList[ulServer].bRefreshing = false;
+	g_BrowserServerList[ulServer].lRefreshMS = 0;
+	g_BrowserServerList[ulServer].lRecheckMisses = 0;
+
+	// Likewise the previous occupant's verdict about a build that has nothing to do with this one.
+	g_BrowserServerList[ulServer].bVersionMismatch = false;
+	g_BrowserServerList[ulServer].versionRelation = zx::VersionRelation::Unknown;
 }
 
 //*****************************************************************************
@@ -723,6 +1241,9 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 {
 	// No longer waiting for a server registry response.
 	g_bWaitingForServerRegistryResponse = false;
+
+	// This one answered, whatever the others are doing.
+	browser_NoteRegistryStatus( NETWORK_GetFromAddress( ), zx::RegistryStatus::Ok );
 
 	while ( true )
 	{
@@ -856,6 +1377,33 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 	// This server is now active.
 	g_BrowserServerList[lServer].ulActiveState = AS_ACTIVE;
 
+	// [rc4l] ONE MACHINE, TWO ROWS, ONE ANSWER.
+	//
+	// Your own server is in the list twice: LAN discovery finds it at the private address and the
+	// registry hands back the public one. Querying both means two launcher challenges arriving at one
+	// process from one IP, and a server refuses the second for sv_queryignoretime -- ten seconds, keyed
+	// on the address WITHOUT the port, so this is not avoidable by asking from elsewhere.
+	//
+	// Whichever query lands first wins and the other row goes blank. The LAN path is shorter, so it
+	// usually wins, which is why the public row is the one seen flickering in and out on every refresh.
+	//
+	// The refusal cannot be attributed back to the row that lost, either: a hairpinned reply arrives
+	// with the server's LAN source address, so the packet says nothing about which address was asked.
+	// That is what makes reacting to the refusal the wrong shape of fix.
+	//
+	// So the answer is copied instead of asked for twice. One reply describes the machine, and every
+	// row pointing at that machine is that machine, whatever address the row is written with.
+	browser_MirrorAnswerOntoOurOtherRows( lServer );
+
+	// [rc4l] It answered, so any re-check outstanding against it is settled. Clearing this is what
+	// stops BROWSER_QueryTick from dropping a server that replied perfectly well.
+	g_BrowserServerList[lServer].bRefreshing = false;
+	g_BrowserServerList[lServer].lRefreshMS = 0;
+
+	// The strikes are CONSECUTIVE, so one answer wipes them. A server that misses a datagram now and
+	// then must never accumulate its way off the list over an evening of being perfectly reachable.
+	g_BrowserServerList[lServer].lRecheckMisses = 0;
+
 	// Is this a LAN server?
 	g_BrowserServerList[lServer].bLAN = bLAN;
 
@@ -875,7 +1423,7 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 	// Read in the version.
 	g_BrowserServerList[lServer].Version = pByteStream->ReadString();
 
-	// If the version doesn't match ours, remove it from the list.
+	// [rc4l] Which way our versions differ, if they do. Listed either way; see AS_VERSIONMISMATCH.
 	{
 		// [rc4l] Compare ZandroX versions, not Zandronum ones. GetVersionStringRev() is identical
 		// across every ZandroX release, so this check used to pass for builds that cannot actually
@@ -887,15 +1435,24 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 		if ( ourVersion[ourVersion.Len()-1] == 'M' )
 			ourVersion = ourVersion.Left ( ourVersion.Len()-1 );
 
-		// [BB] Check whether the server version starts with our version.
-		if ( g_BrowserServerList[lServer].Version.IndexOf ( ourVersion ) != 0 )
+		// [rc4l] A comparison rather than the prefix test this used to be. "Different" was one
+		// answer where the browser needs three: an OLDER server is one the host must fix and the
+		// player cannot, a NEWER one is a destination an update reaches. They sort and read
+		// differently, so the direction has to survive to the row.
+		const zx::VersionRelation rel = zx::CompareFuaVersions(
+			g_BrowserServerList[lServer].Version.GetChars( ), ourVersion.GetChars( ));
+		g_BrowserServerList[lServer].versionRelation = rel;
+
+		if ( zx::VersionRelationCanJoin( rel ) == false )
 		{
-			g_BrowserServerList[lServer].ulActiveState = AS_INACTIVE;
-			while ( 1 )
-			{
-				if ( pByteStream->ReadByte() == -1 )
-					return;
-			}
+			// Kept for the footer's count, which still explains a list holding no JOINABLE servers.
+			g_BrowserServerList[lServer].bVersionMismatch = true;
+			// [rc4l] Flagged and KEPT. Draining the packet here dropped the server, so a release made
+			// every not-yet-updated server vanish at once -- and an empty browser reads as "nobody is
+			// hosting", never as "you are ahead of them". Parsing continues so the row has a name, a
+			// player count and a version to show; the state is set after AS_ACTIVE was assigned above,
+			// so it stands.
+			g_BrowserServerList[lServer].ulActiveState = AS_VERSIONMISMATCH;
 		}
 	}
 
@@ -1243,6 +1800,7 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 static void browser_ResolveServerRegistries( void )
 {
 	g_ServerRegistryAddresses.Clear();
+	g_ServerRegistryStates.clear();
 
 	// Kick a background refresh if the cache is stale. It never blocks and never affects THIS query --
 	// a newly fetched list takes effect the next time the browser is opened.
@@ -1253,10 +1811,21 @@ static void browser_ResolveServerRegistries( void )
 
 	for ( size_t i = 0; i < entries.size( ); ++i )
 	{
+		// [rc4l] Recorded BEFORE the lookup, so an entry that never produces an address still has a
+		// row. It used to be skipped outright, which is why "your registry name is wrong" and "there
+		// are no servers" looked identical on screen.
+		SERVERREGISTRYSTATE_s state;
+		state.host = entries[i].host;
+		state.port = 0;
+		state.bResolved = false;
+		state.status = zx::RegistryStatus::LookupFailed;
+		state.ulStatusMS = I_MSTime( );
+
 		NETADDRESS_s address;
 		if ( address.LoadFromString( entries[i].host.c_str( )) == false )
 		{
 			Printf( "Warning: can't resolve server registry \"%s\" -- skipping it.\n", entries[i].host.c_str( ));
+			g_ServerRegistryStates.push_back( state );
 			continue;
 		}
 
@@ -1264,6 +1833,12 @@ static void browser_ResolveServerRegistries( void )
 		// port or takes the default. LoadFromString never sees a port here.
 		address.SetPort( entries[i].port != 0 ? static_cast<USHORT>( entries[i].port ) : g_usServerRegistryPort );
 
+		state.address = address;
+		state.bResolved = true;
+		state.port = ( entries[i].port != 0 ) ? entries[i].port : static_cast<int>( g_usServerRegistryPort );
+		state.status = zx::RegistryStatus::Pending;
+
+		g_ServerRegistryStates.push_back( state );
 		g_ServerRegistryAddresses.Push( address );
 	}
 
@@ -1300,11 +1875,52 @@ void BROWSER_QueryServerRegistry( void )
 	if ( g_ServerRegistryAddresses.Size( ) == 0 )
 		return;
 
+	// [rc4l] Stamped here as well as in BROWSER_RefreshListedServers, because a sweep can start with
+	// either. The menu does both together, but the background query at startup asks the registry on
+	// its own -- and if that registry never answers, the per-server pass never runs, so without this
+	// a client that had been trying for a minute would still say "never refreshed". We looked; that
+	// is what the line reports.
+	g_ulLastRefreshMS = I_MSTime( );
+
 	// We are currently waiting to hear back from the server registries.
 	g_bWaitingForServerRegistryResponse = true;
 	g_lServerRegistryAttempts = 0;
+	g_lPunchesThisSweep = 0;	// [rc4l] fresh refresh, fresh punch budget
+	browser_SetPendingRegistryStates( );
 
 	browser_SendServerRegistryQuery();
+}
+
+//*****************************************************************************
+//
+// [rc4l] Ask the registries once, a few seconds in, so the browser opens onto a list instead of
+// starting the conversation when you get there.
+//
+// The delay is jittered off the launch clock rather than a random number: every copy of the game
+// starting at once would otherwise land on the registry together, and its flood queues are small.
+static LONG g_lBackgroundQueryAtMS = 0;
+static bool g_bBackgroundQuerySent = false;
+
+void BROWSER_BackgroundTick( void )
+{
+	const LONG lNow = I_MSTime( );
+
+	if ( g_lBackgroundQueryAtMS == 0 )
+		g_lBackgroundQueryAtMS = lNow + 3000 + ( lNow % 4000 );
+
+	if (( g_bBackgroundQuerySent == false ) && ( lNow >= g_lBackgroundQueryAtMS ))
+	{
+		g_bBackgroundQuerySent = true;
+
+		// A server does not browse, and a client already has the list it is playing on.
+		if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
+			BROWSER_QueryServerRegistry( );
+	}
+
+	// These used to be pumped only by the browser menu's Ticker, so a reply that arrived while the
+	// menu was shut had nothing to retry it or time it out. One pump, always running.
+	BROWSER_ServerRegistryTick( );
+	BROWSER_QueryTick( );
 }
 
 //*****************************************************************************
@@ -1316,6 +1932,14 @@ void BROWSER_QueryServerRegistry( void )
 // broken. Better to say nothing came back and let them press refresh again.
 void BROWSER_ServerRegistryTick( void )
 {
+	// [rc4l] Registry bars age out on their own clock, BEFORE the early return below.
+	//
+	// g_bWaitingForServerRegistryResponse is one flag for the whole fan-out, and it clears the moment
+	// any single registry answers. Hanging the expiry off it meant that with several configured, the
+	// first reply stopped the clock for everybody: a dead registry sat on "waiting for an answer"
+	// forever and its bar never went red. Caught with a real list of three, one of them 127.0.0.1.
+	browser_ExpirePendingRegistries( );
+
 	if ( g_bWaitingForServerRegistryResponse == false )
 		return;
 
@@ -1331,6 +1955,7 @@ void BROWSER_ServerRegistryTick( void )
 
 	g_bWaitingForServerRegistryResponse = false;
 
+	// browser_ExpirePendingRegistries above has already given the silent ones their verdict.
 	FString names;
 	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
 	{
@@ -1352,9 +1977,79 @@ void BROWSER_ServerRegistryTick( void )
 //
 // Before this, those three replies only printed a message and left the query outstanding, so the
 // retry loop kept firing at a registry that had already said no.
-void BROWSER_ServerRegistryRefusedQuery( void )
+void BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus why )
 {
 	g_bWaitingForServerRegistryResponse = false;
+
+	// [rc4l] Against the address it came from, so with several registries configured the bar that
+	// turns red is the one that actually refused. The refusal codes are the registry's own words, and
+	// until now they reached a Printf and nothing else.
+	browser_NoteRegistryStatus( NETWORK_GetFromAddress( ), why );
+}
+
+//*****************************************************************************
+//
+// [rc4l] BEING IGNORED IS PROOF THE SERVER IS THERE.
+//
+// A server refuses a second launcher query from the same IP within sv_queryignoretime, ten seconds
+// by default, and the refusal is keyed on the ADDRESS WITHOUT THE PORT. Your own server is therefore
+// guaranteed to trip it: the browser knows that machine twice, once on the LAN address and once on
+// the public one the registry hands back, and both queries reach the same process from the same IP.
+// One is answered and the other is refused, and which one wins is a race between a local hop and a
+// round trip through the router.
+//
+// The refusal used to reach a Printf and nothing else, so the losing row stayed AS_INACTIVE from the
+// refresh that had just deactivated everything, and vanished. That is the flicker: host a server,
+// open the browser repeatedly, and watch your own entry come and go depending on which query landed
+// first. The LAN row usually wins because its path is shorter, which is exactly why the public row is
+// the one people notice disappearing.
+//
+// The packet itself is the evidence. A server that is gone sends nothing; a server that sends
+// "I am ignoring you" has told us it is alive, running, and reachable at this address. Treating that
+// as absence throws away the one thing it proves. So the row goes back to what we last knew, which is
+// the same bargain the rest of the browser makes: a moment-old truth beats a fresh blank.
+void BROWSER_ServerSaidItIsIgnoringUs( const NETADDRESS_s &Address )
+{
+	const LONG lServer = browser_GetListIDByAddress( Address );
+	if ( lServer == -1 )
+		return;
+
+	// AS_WAITINGFORREPLY is the state a queried row is really in: the query set it, and the refresh's
+	// deactivation only moves ACTIVE to INACTIVE, so it never touches a row already out for reply.
+	// Checking only for INACTIVE is the mistake that made a first attempt at this fix do nothing at
+	// all, which is worth naming because both states look equally plausible from the call site.
+	//
+	// Only ever back to ACTIVE, and only for a row we have really seen answer before. A server we
+	// have never had data for has nothing to restore, and drawing it from an empty slot would put a
+	// blank row on screen on the strength of a refusal.
+	const ULONG state = g_BrowserServerList[lServer].ulActiveState;
+
+	if (( state == AS_INACTIVE ) || ( state == AS_WAITINGFORREPLY ))
+	{
+		if ( g_BrowserServerList[lServer].HostName.IsNotEmpty( ))
+			g_BrowserServerList[lServer].ulActiveState = AS_ACTIVE;
+	}
+}
+
+//*****************************************************************************
+//
+bool BROWSER_GetServerRegistryStatus( unsigned int index, std::string &host, int &port,
+	zx::RegistryStatus &status )
+{
+	if ( index >= g_ServerRegistryStates.size( ))
+		return false;
+
+	host = g_ServerRegistryStates[index].host;
+	port = g_ServerRegistryStates[index].port;
+	status = g_ServerRegistryStates[index].status;
+	return true;
+}
+
+//*****************************************************************************
+//
+unsigned int BROWSER_GetServerRegistryCount( void )
+{
+	return static_cast<unsigned int>( g_ServerRegistryStates.size( ));
 }
 
 //*****************************************************************************
@@ -1369,6 +2064,8 @@ bool BROWSER_WaitingForServerRegistryResponse( void )
 void BROWSER_QueryAllServers( void )
 {
 	ULONG	ulIdx;
+
+	g_lPunchesThisSweep = 0;	// [rc4l] fresh sweep, fresh punch budget
 
 	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
@@ -1427,14 +2124,75 @@ static LONG browser_GetListIDByAddress( NETADDRESS_s Address )
 
 //*****************************************************************************
 //
+// [rc4l] Is a launcher reply from this address something we are waiting for?
+//
+// The client's packet loop needs this: a reply from the server we are PLAYING on arrives from the
+// same address as game traffic, so it has to be told apart from it, and "we asked this address a
+// question and have not had an answer" is the only honest way to tell.
+// [rc4l] Is anything actually being checked right now?
+//
+// Exists so the refresh button can show it. The re-check runs silently underneath a list that keeps
+// its rows, which is the right behaviour and looks exactly like nothing happening -- and a player
+// who cannot see the work concludes the list is a stale cache and asks for a refresh button. This
+// is what makes the button they press honest about the work that was already under way.
+bool BROWSER_IsRefreshInFlight( void )
+{
+	if ( g_bWaitingForServerRegistryResponse )
+		return ( true );
+
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if ( g_BrowserServerList[ulIdx].bRefreshing )
+			return ( true );
+
+		if ( g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY )
+			return ( true );
+	}
+
+	return ( false );
+}
+
+//*****************************************************************************
+//
+// [rc4l] How many servers answered and were hidden for running a different build.
+LONG BROWSER_CountVersionMismatched( void )
+{
+	LONG lCount = 0;
+
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if ( g_BrowserServerList[ulIdx].bVersionMismatch )
+			lCount++;
+	}
+
+	return ( lCount );
+}
+
+//*****************************************************************************
+//
+bool BROWSER_IsAwaitingReplyFrom( const NETADDRESS_s &Address )
+{
+	const LONG lServer = browser_GetListIDByAddress( Address );
+	if ( lServer == -1 )
+		return ( false );
+
+	return ( g_BrowserServerList[lServer].ulActiveState == AS_WAITINGFORREPLY );
+}
+
+//*****************************************************************************
+//
 static void browser_QueryServer( ULONG ulServer )
 {
-	// Don't query a server that we're already connected to.
-	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) &&
-		( g_BrowserServerList[ulServer].Address.Compare( CLIENT_GetServerAddress() )))
-	{
-		return;
-	}
+	// [rc4l] The server we are connected to USED to be skipped here, and that is how a server you
+	// were standing on appeared in your own browser as "did not respond".
+	//
+	// The slot has already been marked AS_WAITINGFORREPLY by the caller, so returning without
+	// sending anything did not skip the server, it condemned it: nothing could ever answer, and the
+	// row aged out on its own timeout and was counted as a failure. A player would join a server,
+	// open the list while playing on it, and be told it was not there.
+	//
+	// So it is queried like any other. The reply arrives from the address the game connection also
+	// uses, which the client's packet loop now separates by asking BROWSER_IsAwaitingReplyFrom.
 
 	// Clear out the buffer, and write out launcher challenge.
 	// [SB] Added extended flags that we want.

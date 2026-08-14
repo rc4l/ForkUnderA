@@ -33,6 +33,22 @@ Game data:
 
   Freedoom (freedoom2.wad)     BSD-3-clause  — see FREEDOOM-LICENSE.txt
 
+  fuamega.wad                  Ours, and not a third party notice at all: it is listed
+                               here only because it sits beside the two files above and
+                               a reader will wonder. Generated in full by tools/mkiwad
+                               from a manifest and a bitmap font written for it, and
+                               licensed GPL-3.0-or-later. The file carries the same
+                               statement in its own COPYING lump, since a wad gets copied
+                               around away from the repo that states its terms.
+
+                               It is base data for a total conversion that ships no base
+                               file of its own: a "PAUSED" graphic, intermission digits,
+                               screen borders, one map, and several hundred one-pixel
+                               patches whose only job is to make a stock texture name
+                               resolve. No id Software artwork, and no Mega Man artwork
+                               either. The conversion's own 173 MB of content is NOT
+                               shipped and downloads like any other mod.
+
   zandronum.pk3                Engine data: menus, DECORATE definitions, fonts,
                                shaders and sprites from the ZDoom/Zandronum
                                lineage. Script and definition lumps are GPL v3
@@ -68,10 +84,24 @@ bundles none of them.
   OpenSSL 3.x   Apache-2.0            https://openssl-library.org
   SDL           zlib (SDL2) / LGPL-2.1-or-later (SDL 1.2)
                                       https://libsdl.org
+  FFmpeg        LGPL-2.1-or-later upstream; GPL-2.0-or-later as built here
+                                      https://ffmpeg.org
+  x264          GPL-2.0-or-later      https://www.videolan.org/developers/x264.html
 
 The LGPL components are dynamically linked and shipped unmodified, so they may
 be replaced by the user with compatible builds of their own, as the LGPL
 requires. Source for each is available from the URLs above.
+
+Note on FFmpeg and x264: instant replay encodes video through FFmpeg, and the
+FFmpeg used here is built with libx264 (--enable-gpl). x264 is GPL-2.0-or-later,
+so these FFmpeg binaries are GPL rather than LGPL. Both are compatible with this
+project's own GPL-3.0-or-later.
+
+The two Windows build paths link them differently — the release build statically
+into zandronum.exe, the prebuilt-deps build as DLLs beside it — which changes
+nothing about the obligation, because it is the GPL's either way: complete
+corresponding source and the scripts that built it are published at the URL under
+SOURCE CODE above.
 
 Note on OpenSSL: version 3.x is Apache-2.0, which is compatible with GPL-3.0.
 The older OpenSSL 1.x licence, with its advertising clause, was not — so this
@@ -79,3 +109,22 @@ distribution must stay on OpenSSL 3.x or later.
 
 FMOD, which upstream Zandronum uses for audio, is proprietary and is NOT part of
 this distribution; it has been replaced by the OpenAL stack listed above.
+
+IP GEOLOCATION DATA
+-------------------
+The country table shipped inside zandronum.pk3 as fua_geoip.dat is derived from
+the DB-IP IP to Country Lite database, used under the Creative Commons
+Attribution 4.0 International licence (CC BY 4.0):
+
+    IP Geolocation by DB-IP -- https://db-ip.com
+    Licence: https://creativecommons.org/licenses/by/4.0/
+
+Only the IPv4 country ranges are used, converted to the compact sorted form the
+browser reads. The conversion script is published with the source at
+tools/gen_geoip_table.py, so the table can be rebuilt from a current DB-IP
+release without touching the engine.
+
+This replaces the MaxMind GeoIP legacy database, which upstream Zandronum
+expects the packager to supply and which MaxMind discontinued in 2019. The
+GeoIP library itself is still built in and is still preferred at runtime when a
+system database is present, which is the usual case on Linux.

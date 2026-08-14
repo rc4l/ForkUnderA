@@ -420,13 +420,102 @@ TEST(WireAdversarial, ReadingBitsPastEndFallsBackWithoutOob) {
 // lookup), which is non-deterministic and CI-hostile; its 512-byte strncpy bound
 // is verified by inspection, not by a test that would hit the network.
 // ---------------------------------------------------------------------------
-TEST(WireAddress, GoldenIsFourIpBytesThenLittleEndianPort) {
+TEST(WireAddress, GoldenIsAFamilyByteThenFourIpBytesThenLittleEndianPort) {
+    // [rc4l] The leading 4 is the family. Every address on the wire now says which kind it is,
+    // including v4 ones, so that a v6 address can be read back as sixteen bytes rather than the
+    // reader having to guess from a length it does not know.
     Wire wr;
     NETADDRESS_s a; a.Clear();
     a.abIP[0] = 1; a.abIP[1] = 2; a.abIP[2] = 3; a.abIP[3] = 4;
     a.SetPort(0x1234);
     a.WriteToStream(&wr.w, true);
-    expectBytes(wr, {1, 2, 3, 4, /*port LE*/ 0x34, 0x12});
+    expectBytes(wr, {4, 1, 2, 3, 4, /*port LE*/ 0x34, 0x12});
+}
+
+TEST(WireAddress, GoldenForV6IsSixThenSixteenBytes) {
+    Wire wr;
+    NETADDRESS_s a; a.Clear();
+    a.bIsIPv6 = true;
+    for (int i = 0; i < 16; ++i)
+        a.abIP6[i] = static_cast<BYTE>(i + 1);
+    a.SetPort(0x1234);
+    a.WriteToStream(&wr.w, true);
+    expectBytes(wr, {6, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 0x34, 0x12});
+}
+
+TEST(WireAddress, RoundTripV6) {
+    Wire wr;
+    NETADDRESS_s a; a.Clear();
+    a.bIsIPv6 = true;
+    for (int i = 0; i < 16; ++i)
+        a.abIP6[i] = static_cast<BYTE>(0xa0 + i);
+    a.SetPort(10666);
+    a.WriteToStream(&wr.w, true);
+    wr.openReader();
+    NETADDRESS_s b; b.Clear();
+    b.ReadFromStream(&wr.r, true);
+    EXPECT_TRUE(b.bIsIPv6);
+    EXPECT_TRUE(b.Compare(a)) << "a v6 address did not survive the wire";
+}
+
+TEST(WireAddress, AV4AndAV6AddressAreNeverEqual) {
+    // Two different machines, even when one host is reachable at both. Collapsing them would merge
+    // two server entries into one.
+    NETADDRESS_s v4; v4.Clear();
+    v4.abIP[0] = 1; v4.abIP[1] = 2; v4.abIP[2] = 3; v4.abIP[3] = 4;
+
+    NETADDRESS_s v6; v6.Clear();
+    v6.bIsIPv6 = true;
+    v6.abIP6[15] = 1;
+
+    EXPECT_FALSE(v4.Compare(v6));
+    EXPECT_FALSE(v6.Compare(v4));
+    EXPECT_FALSE(v4.CompareNoPort(v6));
+}
+
+TEST(WireAddress, AnEmptyV6AddressIsNotSet) {
+    NETADDRESS_s a; a.Clear();
+    a.bIsIPv6 = true;
+    EXPECT_FALSE(a.IsSet());
+
+    a.abIP6[7] = 1;
+    EXPECT_TRUE(a.IsSet()) << "a nonzero byte anywhere in the sixteen counts";
+}
+
+TEST(WireAddress, V6TextIsBracketedSoThePortCanBeFound) {
+    // "::1:10666" cannot be split back into an address and a port, because the address is colons
+    // too. RFC 3986 brackets are what make it parseable.
+    NETADDRESS_s a; a.Clear();
+    a.bIsIPv6 = true;
+    a.abIP6[15] = 1;
+    a.SetPort(10666);
+
+    // Plain C strings: this target links networkshared.cpp and the i_system shim, not FString.
+    const char *text = a.ToString();
+    EXPECT_EQ('[', text[0]) << "got: " << text;
+    EXPECT_TRUE(strstr(text, "]:10666") != NULL) << "got: " << text;
+}
+
+TEST(WireAddress, V6LiteralsParseBracketedAndBare) {
+    NETADDRESS_s bracketed;
+    ASSERT_TRUE(bracketed.LoadFromString("[::1]:10666"));
+    EXPECT_TRUE(bracketed.bIsIPv6);
+    EXPECT_EQ(1, bracketed.abIP6[15]);
+
+    NETADDRESS_s bare;
+    ASSERT_TRUE(bare.LoadFromString("::1"));
+    EXPECT_TRUE(bare.bIsIPv6) << "a bare literal is what somebody types when not thinking of ports";
+    EXPECT_EQ(1, bare.abIP6[15]);
+}
+
+TEST(WireAddress, AV4StringIsStillReadAsV4) {
+    // The v6 branch must not swallow the ordinary case: it splits on the FIRST colon to find a port,
+    // and a dotted quad has exactly one.
+    NETADDRESS_s a;
+    ASSERT_TRUE(a.LoadFromString("192.168.0.42:10666"));
+    EXPECT_FALSE(a.bIsIPv6);
+    EXPECT_EQ(192, a.abIP[0]);
+    EXPECT_EQ(42, a.abIP[3]);
 }
 
 TEST(WireAddress, RoundTripWithPort) {
@@ -445,8 +534,8 @@ TEST(WireAddress, RoundTripWithoutPortLeavesPortUntouched) {
     Wire wr;
     NETADDRESS_s a; a.Clear();
     a.abIP[0] = 10; a.abIP[1] = 0; a.abIP[2] = 0; a.abIP[3] = 1;
-    a.WriteToStream(&wr.w, false);          // IP only, 4 bytes
-    EXPECT_EQ(wr.written(), 4u);
+    a.WriteToStream(&wr.w, false);          // family byte + IP, no port
+    EXPECT_EQ(wr.written(), 5u);
     wr.openReader();
     NETADDRESS_s b; b.Clear();
     b.ReadFromStream(&wr.r, false);

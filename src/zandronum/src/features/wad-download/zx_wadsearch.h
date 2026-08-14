@@ -32,6 +32,25 @@ namespace zx
 // replacement for the ordinary file search.
 FString FindIwadInEngineSearchPaths( const char *name );
 
+// [rc4l] Full path to the PWAD/PK3 named `name`, or "" if this machine does not have it. Walks what
+// BaseFileSearch walks for a -file argument: the path as given, then FileSearch.Directories.
+//
+// Exists because the obvious way to ask this question is wrong. D_AddFile's third parameter is
+// `check`, and passing false does not mean "check quietly" -- it means DO NOT CHECK, so the call
+// returns true for a file that is not there. Two callers asked it that way, which is why hosting an
+// entry whose files were missing started a server anyway and only wad_reload found out.
+FString FindFileInEngineSearchPaths( const char *name );
+
+// [rc4l] Every copy of `name` in those same places, in search order, rather than just the first.
+// The PWAD counterpart of FindAllIwadsInEngineSearchPaths, and for the same reason: one name is not
+// one file. Which of them is meant is a question only a digest can answer, so the caller is given
+// all of them to choose from instead of whichever the search order reached first.
+void FindAllFilesInEngineSearchPaths( const char *name, TArray<FString> &out );
+
+// [rc4l] Bytes on disk, or 0 if it is not there. One stat, no reading -- which is what makes it
+// affordable to ask about every file of an entry while drawing.
+unsigned long long FileSizeOnDisk( const char *path );
+
 // [rc4l] Every copy of `name` in those same places, in search order, rather than just the first.
 //
 // One name is not one file. doom2.wad shipped as 1.666, 1.7, 1.8, 1.9, a French build, BFG Edition

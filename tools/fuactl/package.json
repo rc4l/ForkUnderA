@@ -1,0 +1,13 @@
+{
+  "name": "fuactl",
+  "version": "0.1.0",
+  "description": "ForkUnderA companion: CLI + MCP frontend + session orchestrator over the native engine bridge (features/mcp-bridge). One tool, two faces: `fuactl <cmd>` for humans/CI, `fuactl mcp` for agents.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "fuactl": "src/cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

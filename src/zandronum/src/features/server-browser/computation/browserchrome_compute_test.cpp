@@ -20,17 +20,29 @@ bool Shows( unsigned parts, unsigned part ) { return ( parts & part ) != 0; }
 
 // ---------------------------------------------------------------- still looking
 
-TEST( BrowserChrome, ShowsNothingButTheSpinnerWhileLooking )
+TEST( BrowserChrome, ShowsTheSpinnerAndNothingThatPromisesContent )
 {
-	// The state this unit exists for. Tabs, a rule, column headings and an empty black panel around
-	// the word "Looking for servers" are four promises that there is something there.
+	// The state this unit exists for. A list, a detail panel and a footer would each be promising
+	// something that genuinely is not there yet.
 	const unsigned parts = ComputeVisibleParts( BrowserPhase::Loading, kNothingSelected, kIdle );
 
 	EXPECT_TRUE( Shows( parts, zx::kPartPlaceholder ));
-	EXPECT_FALSE( Shows( parts, zx::kPartTabs ));
 	EXPECT_FALSE( Shows( parts, zx::kPartList ));
 	EXPECT_FALSE( Shows( parts, zx::kPartDetail ));
 	EXPECT_FALSE( Shows( parts, zx::kPartFooter ));
+}
+
+TEST( BrowserChrome, KeepsTheTabsWhileLookingSoThePlayerIsNotTrapped )
+{
+	// [rc4l] The tabs are not part of the ANSWER, they are how the player asks a different question
+	// -- so a query in flight is no reason to take them away.
+	//
+	// This was the spinner alone until HOST existed, which was defensible while every tab was a
+	// filter over the same not-yet-arrived list. HOST never depended on the query, and hiding it
+	// during one strands a player away from the panel holding the button that stops their own
+	// server. With no internet, that lasts until the query times out.
+	EXPECT_TRUE( Shows( ComputeVisibleParts( BrowserPhase::Loading, kNothingSelected, kIdle ),
+		zx::kPartTabs ));
 }
 
 TEST( BrowserChrome, DrawsNoDetailPanelWhileLookingEvenIfSomethingIsStillSelected )
@@ -50,9 +62,9 @@ TEST( BrowserChrome, KeepsTheFooterWhileLookingIfATransferIsRunning )
 	EXPECT_TRUE( Shows( parts, zx::kPartFooter ));
 	EXPECT_TRUE( Shows( parts, zx::kPartPlaceholder ));
 
-	// The panel comes back with it, because CANCEL is in there. Nothing else does.
+	// The panel comes back with it, because CANCEL is in there. The LIST does not -- it is the one
+	// thing here that would be promising content that has not arrived.
 	EXPECT_TRUE( Shows( parts, zx::kPartDetail ));
-	EXPECT_FALSE( Shows( parts, zx::kPartTabs ));
 	EXPECT_FALSE( Shows( parts, zx::kPartList ));
 }
 
@@ -203,13 +215,25 @@ TEST( HostParts, KeepsTheTabsSoThereIsAWayBack )
 	EXPECT_TRUE( Shows( ComputeHostParts( true ), zx::kPartTabs ));
 }
 
-TEST( HostParts, ARunningTransferSurvivesTheChangeOfTab )
+TEST( HostParts, AForeignTransferSurvivesTheChangeOfTab )
 {
-	// The download does not care which screen the player wandered onto, and the button that stops it
-	// lives in the detail panel. Taking that away would strand a transfer with no way to cancel it.
+	// A JOIN's download does not care which screen the player wandered onto, and the button that
+	// stops it lives in the detail panel. Taking that away would strand it with no way to cancel.
 	const unsigned parts = ComputeHostParts( true );
 
 	EXPECT_TRUE( Shows( parts, zx::kPartHost ));
 	EXPECT_TRUE( Shows( parts, zx::kPartFooter ));
 	EXPECT_TRUE( Shows( parts, zx::kPartDetail ));
+}
+
+TEST( HostParts, ThePanelsOwnTransferDoesNotDragInASecondCancel )
+{
+	// [rc4l] Hosting downloads too, and its own action button becomes CANCEL while it does. Treating
+	// that as a reason to draw the server-list detail panel as well put two CANCEL buttons on screen
+	// for one download, over a panel explaining that the server was no longer listed -- there was no
+	// server; the player was hosting.
+	const unsigned parts = ComputeHostParts( false );
+
+	EXPECT_TRUE( Shows( parts, zx::kPartHost ));
+	EXPECT_FALSE( Shows( parts, zx::kPartDetail ));
 }

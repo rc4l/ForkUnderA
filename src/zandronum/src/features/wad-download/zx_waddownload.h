@@ -21,8 +21,9 @@
 // field: sv_website is advertised over the launcher protocol as SQF_URL and the browser stores it as
 // SERVER_t::WadURL, described in browser.h as "Website URL of the wad the server is using". That is
 // exactly sv_downloadsites, already deployed on every Zandronum server in the world. So the mirror
-// list is the server's own WadURL first, then cl_fua_downloadsites -- and this works against servers
-// that have never heard of us.
+// list is the server's own WadURL first, then cl_fua_downloadsites, then any last-resort sources
+// such as the hosting machine's own direct endpoint -- and this works against servers that have
+// never heard of us.
 //
 // What is ours rather than copied: the legality gate. Odamex keeps a denylist of commercial files;
 // we assume every IWAD is commercial and keep an allowlist of the free ones instead. See
@@ -72,11 +73,14 @@ bool IsAvailable();
 
 bool IsRunning();
 
-// Begin fetching `files`, in order, from `extraSites` followed by cl_fua_downloadsites. Returns false
-// (having done nothing) if downloading is off, a run is already in flight, the file list is empty, or
-// every wanted file is refused by the legality gate -- refusals are printed either way. `onDone` may
-// be NULL.
-bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedFile> &files,
+// Begin fetching `files`, in order, from `extraSites`, then cl_fua_downloadsites, then
+// `lastResortSites` (see AssembleSiteOrder for why the last group exists: the hosting machine's own
+// endpoint goes there, AFTER the public mirrors, so one residential upload is the fallback rather
+// than the first hop). Returns false (having done nothing) if downloading is off, a run is already
+// in flight, the file list is empty, or every wanted file is refused by the legality gate --
+// refusals are printed either way. `onDone` may be NULL.
+bool Start(const std::vector<std::string> &extraSites,
+	const std::vector<std::string> &lastResortSites, const std::vector<WantedFile> &files,
 	CompleteProc onDone);
 
 // Stop the run because the PLAYER asked. The partial file is discarded, any queued replacement is
@@ -104,6 +108,9 @@ void Tick();
 // FileSearch.Directories so BaseFileSearch finds what we downloaded -- this run and every run after.
 FString DownloadDir();
 
+// [rc4l] Put the download folder in FileSearch.Directories now, not when a download starts.
+void RegisterDownloadDirEarly();
+
 // [rc4l] Full path of a copy of `name` whose MD5 is `md5Hex`, inside our own download folder, or ""
 // if we do not have that exact content. Checks the content-addressed store (a stat) and then the
 // flat working copy (one hash).
@@ -118,6 +125,25 @@ FString DownloadDir();
 // Only ever looks inside our download folder. WADs the player keeps elsewhere are the name search's
 // business, and are never moved, renamed or deleted by us.
 FString FindLocalCopy(const char *name, const char *md5Hex);
+
+// [rc4l] The same question asked of the WHOLE machine: the copy of `name` whose MD5 is `md5Hex`
+// anywhere the engine looks, or "" if no copy on this disk has those bytes.
+//
+// FindLocalCopy plus every hit from the engine's file search, in one plan, cheapest step first,
+// so anything we downloaded is still answered by a stat and never read. The extra reads only ever
+// fall on a file the player put there by hand, which is the one copy whose bytes we have no other
+// reason to trust.
+//
+// This is what hosting must ask. Resolving by name alone takes the first test.wad on the path, and
+// since the spawned server is handed the path the client resolved, both sides load the same wrong
+// file and authentication compares them and passes. The result is a server quietly not running
+// the experience it advertises, with the host the last person able to tell.
+//
+// "" does NOT mean the file is absent, it means no copy here matches. Both answers lead to the same
+// place: fetch the right bytes.
+//
+// Main thread only: the search reads GameConfig. Read-only on anything outside our own folder.
+FString FindVerifiedCopy(const char *name, const char *md5Hex);
 
 }} // namespace zx::waddownload
 

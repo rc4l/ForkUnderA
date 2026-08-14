@@ -199,6 +199,10 @@
 #define IDC_WELCOME_FULLSCREEN			4022
 #define IDC_WELCOME_COMPAT				4023
 #define IDC_WELCOME_SHIFTLABEL			4024
+// [rc4l] Two lines that named the engine we forked. Given ids so the dialog proc can write them
+// from FUA_NAME rather than the .rc spelling a brand the next rename would have to hunt for.
+#define IDC_WELCOME_TITLE				4025
+#define IDC_WELCOME_RENDERER			4026
 #define IDC_SPIN2                       4043
 #define IDC_SPIN3                       4044
 #define G15_ICON_ORION					4045 // [RC] G15 LCD console.

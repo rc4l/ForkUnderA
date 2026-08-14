@@ -7,7 +7,7 @@ for the server list the browser shows.
 
 | term | what it is | where it lives |
 |---|---|---|
-| **server registry** | one deployed daemon holding a list of game servers | `src/zandronum/server-registry/` (its own executable, image `zandrox-server-registry`) |
+| **server registry** | one deployed daemon holding a list of game servers | `src/zandronum/server-registry/` (its own executable, image `forkundera-server-registry`) |
 | **federated server registry** | the engine-side logic that knows there are *many* registries — which to trust, which to announce to, how to merge their answers | **here** |
 
 So anything named `serverregistry` talks to a single instance; anything named `federated` deals

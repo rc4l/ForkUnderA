@@ -9,7 +9,7 @@
 namespace zx
 {
 
-// The per-platform asset suffix that follows "ZandroX-<tag>". Null for Unknown (no single asset).
+// The per-platform asset suffix that follows "ForkUnderA-<tag>". Null for Unknown (no single asset).
 static const char *AssetSuffix(ReleasePlatform p)
 {
 	switch (p)
@@ -42,7 +42,7 @@ bool ComputeReleaseDownloadURL(char *out, int outSize, const char *repoBase, con
 	else
 	{
 		written = std::snprintf(out, static_cast<size_t>(outSize),
-			"%s/releases/download/%s/ZandroX-%s%s", repoBase, tag, tag, suffix);
+			"%s/releases/download/%s/ForkUnderA-%s%s", repoBase, tag, tag, suffix);
 	}
 
 	// snprintf returns the length it WANTED to write; a value >= outSize means it was truncated.

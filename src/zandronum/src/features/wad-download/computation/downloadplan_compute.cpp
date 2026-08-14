@@ -3,6 +3,8 @@
 
 #include "features/wad-download/computation/downloadplan_compute.h"
 
+#include <cstdio>
+
 namespace
 {
 
@@ -208,6 +210,37 @@ bool IsSafeDownloadName(const std::string &name)
 	return true;
 }
 
+std::string DownloadSourceName(const std::string &url)
+{
+	std::string rest = url;
+
+	// Drop the scheme.
+	const size_t scheme = rest.find("://");
+	if (scheme != std::string::npos)
+		rest = rest.substr(scheme + 3);
+
+	// Everything from the first slash onward is the path, and the path is not the source.
+	const size_t slash = rest.find('/');
+	if (slash != std::string::npos)
+		rest = rest.substr(0, slash);
+
+	// A query or fragment can appear before any slash on a bare host, and may carry a token.
+	const size_t query = rest.find_first_of("?#");
+	if (query != std::string::npos)
+		rest = rest.substr(0, query);
+
+	// user:password@host -- credentials are exactly what must not reach a log.
+	const size_t at = rest.rfind('@');
+	if (at != std::string::npos)
+		rest = rest.substr(at + 1);
+
+	// Nothing host-shaped survived; name the original rather than print an empty string.
+	if (rest.empty())
+		return url;
+
+	return rest;
+}
+
 std::vector<std::string> BuildCandidateUrls(const std::vector<std::string> &sites,
 	const std::string &filename)
 {
@@ -232,6 +265,71 @@ std::vector<std::string> BuildCandidateUrls(const std::vector<std::string> &site
 	}
 
 	return out;
+}
+
+std::vector<std::string> AssembleSiteOrder(const std::vector<std::string> &serverSites,
+	const std::vector<std::string> &configuredMirrors,
+	const std::vector<std::string> &lastResortSites)
+{
+	// Plain concatenation, in preference order. Duplicates are left alone here on purpose:
+	// NormalizeDownloadSites already keeps the FIRST occurrence, so a site that appears both as a
+	// server site and as a last resort keeps its better position without this function needing its
+	// own dedup rules.
+	std::vector<std::string> out;
+	out.reserve(serverSites.size() + configuredMirrors.size() + lastResortSites.size());
+	out.insert(out.end(), serverSites.begin(), serverSites.end());
+	out.insert(out.end(), configuredMirrors.begin(), configuredMirrors.end());
+	out.insert(out.end(), lastResortSites.begin(), lastResortSites.end());
+	return out;
+}
+
+std::string HumanBytes(long long n)
+{
+	char buf[64];
+	if (n < 0)
+		return "?";
+	if (n >= 1024LL * 1024LL)
+		std::snprintf(buf, sizeof buf, "%.1f MB", double(n) / (1024.0 * 1024.0));
+	else
+		std::snprintf(buf, sizeof buf, "%.0f KB", double(n) / 1024.0);
+	return buf;
+}
+
+std::string FormatDownloadStatus(const std::string &file, long long received, long long total)
+{
+	if (total <= 0 && received <= 0)
+	{
+		// Nothing has answered yet -- DNS, connect, waiting on headers, or walking past mirrors
+		// that 404. A bare "0%" here reads as a stalled transfer; what is actually happening is
+		// source selection, so say that. The line flips to the percent form the moment a source
+		// resolves (Content-Length arrives or bytes start landing).
+		return "Searching for " + file + "...";
+	}
+
+	if (total > 0)
+	{
+		// [rc4l] FIXED WIDTH, deliberately. The band drawn behind this line is sized from it, so a
+		// string that gains a character when the percentage reaches 10 -- and again at 100, and
+		// again every time the received figure gains a digit -- is a panel that twitches while you
+		// read it.
+		//
+		// The percentage is padded to three columns and the received figure to the width of the
+		// total, which does not change during a transfer. Doom's SmallFont gives every digit the
+		// same advance and a space a fixed one, so the line is not merely the same LENGTH every
+		// frame, it is the same number of pixels.
+		const std::string totalText = HumanBytes(total);
+		std::string receivedText = HumanBytes(received);
+		while (receivedText.size() < totalText.size())
+			receivedText.insert(receivedText.begin(), ' ');
+
+		char line[256];
+		std::snprintf(line, sizeof line, "%s  %3d%%  (%s of %s)", file.c_str(),
+			int((received * 100) / total), receivedText.c_str(), totalText.c_str());
+		return line;
+	}
+
+	// No Content-Length: a percentage would be a guess, so show what has actually arrived.
+	return file + "  " + HumanBytes(received);
 }
 
 } // namespace zx

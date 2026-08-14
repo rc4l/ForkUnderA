@@ -13861,6 +13861,10 @@ int ACS_GetTranslationIndex( FRemapTable *pTranslation )
 	return translationindex;
 }
 
+// [rc4l] The MCP ACS / map-var / script introspection CCMDs below are part of the dev-only bridge
+// (features/mcp-bridge) and are compiled out of release builds, so a shipped binary carries no MCP
+// surface at all. Gate matches -DFUA_MCP_BRIDGE.
+#ifdef FUA_MCP_BRIDGE
 // ==== MCP_ACSVARS (overlay-appended to p_acs.cpp; not committed upstream) ====
 // Read/write ACS world and global variables by index. World vars are a
 // file-static array in p_acs.cpp, so these commands live here (appended) rather
@@ -14030,3 +14034,4 @@ CCMD( dumpfunctions )
 	}
 }
 // ==== end MCP_SCRIPTS ====
+#endif // FUA_MCP_BRIDGE

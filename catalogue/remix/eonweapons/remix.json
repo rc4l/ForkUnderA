@@ -1,0 +1,11 @@
+{
+  "name": "Eon Weapons",
+  "summary": "The Eon Collection's weapon set on its own, without its maps.",
+  "group": "mix",
+  "files": [
+    {
+      "name": "eonweapons_rc8.5t.pk3",
+      "md5": "f975e4a2f02e117ce387bc35fe20c027"
+    }
+  ]
+}

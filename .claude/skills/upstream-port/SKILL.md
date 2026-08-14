@@ -95,7 +95,7 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
    `LegacyFRenderState`, `LegacyFlatVertexBuffer`).
 
    **Build ALL targets, not the one you are iterating on.** `zdoom` is not the project. Several
-   targets compile the same `src/` files with their own source lists — `zandrox-server-registry`
+   targets compile the same `src/` files with their own source lists — `forkundera-server-registry`
    compiles `gitinfo.cpp`, the test binaries compile every `*_compute.cpp` — so a function added to a
    shared file can link fine in the engine and fail in a sibling target that never listed the unit
    defining it. Iterating with `cmake --build <dir> --target zdoom` will not notice, however many
@@ -118,7 +118,7 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
    hand-rolled build ships a stale or missing `zandronum.pk3` and a silently-failed link as if they
    were fine — the exact trap that has burned whole sessions. Both scripts fail CLOSED: stop on a bad
    build, repack any pk3 missing or older than its `wadsrc/`, sync into the launch directory
-   (`build/ZandroX.app/Contents/MacOS/` / `dist-windows/`), and hash-verify the staged binary + pk3
+   (`build/ForkUnderA.app/Contents/MacOS/` / `dist-windows/`), and hash-verify the staged binary + pk3
    against the build tree before either says "safe to launch." The Windows one additionally builds
    **all** targets and resolves `cmake` out of the VS install, so it does not need a Developer
    PowerShell. Neither stages runtime deps (dylibs / DLLs, IWADs) — those come from a one-time

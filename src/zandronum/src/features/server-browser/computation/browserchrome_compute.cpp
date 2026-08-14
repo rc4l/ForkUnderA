@@ -13,9 +13,19 @@ unsigned ComputeVisibleParts( BrowserPhase phase, bool hasSelection, bool downlo
 	switch ( phase )
 	{
 	case BrowserPhase::Loading:
-		// Nothing has answered yet, so there is nothing to put tabs on, nothing to list, and nothing
-		// to describe. The spinner alone -- which is the entire honest content of this moment.
-		parts = kPartPlaceholder;
+		// [rc4l] The spinner, and the tabs -- because THE TABS ARE NOT PART OF THE ANSWER, they are
+		// how the player asks a different question.
+		//
+		// This used to be the spinner alone, on the reasoning that nothing had answered yet so there
+		// was nothing to put tabs on. That was true while every tab was a filter over the same
+		// not-yet-arrived list. HOST is not: it never depended on the query at all, and hiding it
+		// while a query runs TRAPS the player away from it -- switch to PUBLIC while hosting, watch
+		// the re-query start, and the panel with the button that stops your server is gone until
+		// something answers. On a machine with no internet, that is until the query times out.
+		//
+		// The rest still goes: a list, a detail panel and a footer would all be promising content
+		// that genuinely is not there yet.
+		parts = kPartTabs | kPartPlaceholder;
 		break;
 
 	case BrowserPhase::Empty:
@@ -47,13 +57,20 @@ unsigned ComputeVisibleParts( BrowserPhase phase, bool hasSelection, bool downlo
 	return parts;
 }
 
-unsigned ComputeHostParts( bool downloadRunning )
+unsigned ComputeHostParts( bool foreignDownloadRunning )
 {
 	// The tabs stay -- they are how the player gets back -- and the hosting panel takes the space the
 	// list and the detail panel would have had.
 	unsigned parts = kPartTabs | kPartHost;
 
-	if ( downloadRunning )
+	// [rc4l] Only for a transfer that is NOT this panel's own.
+	//
+	// The detail panel is dragged in here to carry the CANCEL button for a download the player
+	// started on another tab, which would otherwise have nowhere to be stopped from. Hosting now
+	// downloads too, and its own button says CANCEL while it does -- so doing this for its own
+	// transfer drew the server-list panel straight over the host panel, with two CANCELs on screen
+	// describing one download and a "that server is no longer listed" underneath them.
+	if ( foreignDownloadRunning )
 		parts |= kPartFooter | kPartDetail;
 
 	return parts;

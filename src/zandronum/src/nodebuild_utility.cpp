@@ -66,15 +66,23 @@ static const int PO_LINE_EXPLICIT = 5;
 #define P(x) do{}while(0)
 #endif
 
+// [rc4l] Vendored Cephes atan2 (math/atan.c, from UZDoom common/thirdparty/math) instead of
+// platform libm: seg sorting must be BIT-EXACT across platforms or GL node building diverges.
+// Apple ARM libm rounds atan2 differently from MSVC at near-ties, which reordered segs and
+// assembled corrupt subsector rings (duplicated ring walks, collinear slivers) -- the macOS-only
+// floor/wall holes (doom2 MAP22 sector 109 was the proven case). Upstream made the same switch
+// (their PointToAngle calls g_atan2 == c_atan2 under USE_CUSTOM_MATH, "we want reproducibly
+// reliable results, even at the cost of performance"). The old [AL] atan2l GCC workaround is
+// obsolete with it. Also convert to signed int before angle_t like upstream does: negative
+// double -> unsigned is undefined behavior.
+extern "C" double c_atan2 (double, double);
+
 angle_t FNodeBuilder::PointToAngle (fixed_t x, fixed_t y)
 {
 	const double rad2bam = double(1<<30) / M_PI;
-#if defined __APPLE__ && !defined __llvm__ // [AL] GCC vectorization work-around 
-	long double ang = atan2l (double(y), double(x));
-#else // [AL] !__APPLE__ || __llvm__
-	double ang = atan2 (double(y), double(x));
-#endif // [AL] __APPLE__ && !__llvm__
-	return angle_t(ang * rad2bam) << 1;
+	double ang = c_atan2 (double(y), double(x));
+	// Convert to signed first since negative double to unsigned is undefined.
+	return angle_t(int(ang * rad2bam)) << 1;
 }
 
 void FNodeBuilder::FindUsedVertices (vertex_t *oldverts, int max)

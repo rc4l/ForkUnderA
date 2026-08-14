@@ -66,12 +66,16 @@
 #include "doomstat.h"
 #include "gstrings.h"
 #include "w_wad.h"
+#include "features/addon-catalogue/zx_catalogue.h" // [rc4l] validated at startup, not on first use
 #include "features/crashreport/zx_crashreport.h"
+#include "features/identity/zx_identity.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
+#include "features/wad-download/zx_wadsearch.h" // [rc4l] where to look for IWADs and PWADs
 #include "features/wad-serve/zx_wadserve.h" // [rc4l] serving this server's own WADs to joiners
 #include "features/server-hosting/zx_hosting.h" // [rc4l] hosting a server from inside the game
 #include "features/server-hosting/zx_hostwatchdog.h" // [rc4l] and dying with the game that started us
+#include "features/port-mapping/zx_portmap.h" // [rc4l] and giving back any port we asked for
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "s_sound.h"
 #include "v_video.h"
@@ -121,6 +125,10 @@
 #include "cl_statistics.h"
 #include "maprotation.h"
 #include "features/server-browser/browser.h"
+#include "features/core-pk3/computation/corepk3_compute.h" // [rc4l] which fua_core_*.pk3 is ours
+
+#include <string>
+#include <vector>
 #include "p_spec.h"
 #include "joinqueue.h"
 #include "lastmanstanding.h"
@@ -1336,6 +1344,7 @@ void D_DoomLoop ()
 				if ( cl_useskulltagmouse == false )
 					I_StartTic( );
 
+				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
 				D_Display( );
 				break;
 			case NETSTATE_SERVER:
@@ -1380,8 +1389,15 @@ void D_DoomLoop ()
 				{
 					TryRunTics (); // will run at least one tic
 				}
+
+				// [rc4l] Asks the server registries once, a few seconds in, and pumps the browser's
+				// clocks. Here rather than in the browser menu so the list is already there when the
+				// menu opens, and so a reply has somewhere to land while it is shut.
+				BROWSER_BackgroundTick( );
+
 				// Update display, next frame, with current state.
 				I_StartTic ();
+				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
 				D_Display ();
 				break;
 			}
@@ -2109,6 +2125,47 @@ void D_AddSubdirectory (const char *Subdirectory)
 //
 //==========================================================================
 
+//==========================================================================
+//
+// [rc4l] Which fua_core_*.pk3 are actually sitting next to the exe.
+//
+// Only ever called on the failure path, so the scan costs nothing in the normal case.
+//
+//==========================================================================
+
+static FString d_FuaDescribeFoundCores( void )
+{
+	// The scan is ours because it is I/O; which names count and what to say about them belong to
+	// features/core-pk3/computation, where both are asserted.
+	std::vector<std::string> found;
+	findstate_t fileinfo;
+	void *handle;
+
+	FString pattern = progdir;
+	if (( pattern.Len( ) > 0 ) && ( pattern[pattern.Len( ) - 1] != '/' ))
+		pattern += '/';
+	pattern += "*.pk3";
+
+	if (( handle = I_FindFirst( pattern.GetChars( ), &fileinfo )) != ((void *)-1))
+	{
+		do
+		{
+			if (( I_FindAttr( &fileinfo ) & FA_DIREC ) != 0 )
+				continue;
+
+			const std::string name = I_FindName( &fileinfo );
+			if ( zx::IsCorePk3Name( name ))
+				found.push_back( name );
+		}
+		while ( I_FindNext( handle, &fileinfo ) == 0 );
+		I_FindClose( handle );
+	}
+
+	return FString( zx::DescribeFoundCores( BASEWAD, found ).c_str( ));
+}
+
+//==========================================================================
+
 static const char *BaseFileSearch (const char *file, const char *ext, bool lookfirstinprogdir)
 {
 	static char wad[PATH_MAX];
@@ -2270,6 +2327,47 @@ static FString ParseGameInfo(TArray<FString> &pwads, const char *fn, const char 
 				// information from the launcher instead.
 				if ( Args->CheckParm ( "-connect" ) )
 					continue;
+
+				// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+				//   SUPERSEDED BY: nothing. Upstream reaches this with a hand-typed command line,
+				//   where naming the same file twice is the user's own doing. A catalogue that lists
+				//   what a mod needs, on a build whose clients auto-load nothing, is ours.
+				//   ON PORT: keep.
+				//
+				// ALREADY ASKED FOR? Then leave it. A GAMEINFO naming a file the command line also
+				// names loaded it TWICE, as two independent entries in the wad list.
+				//
+				// Which nothing survives on a server. network_InitPWADList walks that list, so the
+				// server advertised the file twice and no client could match it: a joiner loads it
+				// once, the counts differ, and authentication refuses the join naming a file both
+				// sides plainly have. Super Skulltag hit it exactly this way -- its pk3 LOADs
+				// skulltag_content, our entry lists it so it can be downloaded, and hosting it was
+				// unjoinable from the moment it otherwise worked.
+				//
+				// The client escaped it only by the branch above: with -connect it skips auto-loading
+				// altogether, so the asymmetry that hid this is the same one that made it fatal.
+				{
+					bool bAlready = false;
+
+					for ( unsigned int i = 0; i < pwads.Size( ); ++i )
+					{
+						const char *pszHave = pwads[i].GetChars( );
+						const char *pszSlash = strrchr( pszHave, '/' );
+						const char *pszBack = strrchr( pszHave, '\\' );
+
+						if (( pszBack != NULL ) && (( pszSlash == NULL ) || ( pszBack > pszSlash )))
+							pszSlash = pszBack;
+
+						if ( stricmp( pszSlash ? ( pszSlash + 1 ) : pszHave, sc.String ) == 0 )
+						{
+							bAlready = true;
+							break;
+						}
+					}
+
+					if ( bAlready )
+						continue;
+				}
 
 				if (!FileExists(checkpath))
 				{
@@ -2458,6 +2556,10 @@ static void D_DoomInit()
 	// which has no PR_SET_PDEATHSIG, and a second lock on the door elsewhere. Registered this early
 	// because a startup that fails after the spawn still has to clean up after itself.
 	atterm( zx::HostShutdown );
+
+	// A port mapping outlives the game unless something gives it back, and a quit is the commonest
+	// way for one to be forgotten.
+	atterm( zx::PortMapShutdown );
 	zx::HostWatchdogInit( );
 
 	gamestate = GS_STARTUP;
@@ -2844,7 +2946,10 @@ void D_DoomMain (void)
 	wad = BaseFileSearch (BASEWAD, NULL, true);
 	if (wad == NULL)
 	{
-		I_FatalError ("Cannot find " BASEWAD);
+		// [rc4l] Name the cores we DID find. The pk3 carries this build's release key, so the usual
+		// cause of getting here is a mismatched pair, and saying which ones are present turns that
+		// from a dead end into a diagnosis.
+		I_FatalError ("Cannot find %s.\n%s", BASEWAD, d_FuaDescribeFoundCores( ).GetChars( ));
 	}
 	FString basewad = wad;
 
@@ -2888,6 +2993,32 @@ void D_DoomMain (void)
 		// restart is initiated without a defined IWAD assume for now that it's not going to change.
 		if (iwad.IsEmpty()) iwad = lastIWAD;	// [rc4l] uzdoom@484eb347c
 
+		// [rc4l] Teach the IWAD search about Doomseeker's and GZDoom's folders BEFORE it looks.
+		//
+		// This used to happen only when joining a server, which left a gap nobody would guess at: a
+		// new player whose IWADs live in a Doomseeker or GZDoom folder, and who has no Steam copy,
+		// got an empty IWAD picker on first launch -- and then a full one later, because joining once
+		// wrote those paths into their ini for good. The list appearing to fix itself is worse than
+		// it being wrong, so the paths are registered here too, before anything is searched.
+		//
+		// Registering twice is free: AddPathOnce is idempotent and only adds directories that exist.
+		zx::RegisterKnownWadDirectories();
+
+		// [rc4l] And our own download folder, before anything searches it.
+		zx::waddownload::RegisterDownloadDirEarly();
+
+		// [rc4l] Anonymous accounts: load or create this machine's identity before any join can
+		// need it, so the handshake itself never touches the disk.
+		{
+			zx::Identity_MigrateLegacyRoot( );
+
+			const std::string identityRoot = zx::Identity_ConfigRoot( );
+			zx::Identity_InitClientHere( identityRoot.c_str( ));
+		}
+
+		// [rc4l] iwad_man is created earlier now (uzdoom@dfda74ffe moved it ahead of M_LoadDefaults,
+		// which needs it to generate the autoload sections), so this only fills it in if that did
+		// not already happen. The registration above still lands before any searching.
 		if (iwad_man == NULL) iwad_man = new FIWadManager;
 		const FIWADInfo *iwad_info = iwad_man->FindIWAD(allwads, iwad, basewad);
 		gameinfo.gametype = iwad_info->gametype;
@@ -3223,7 +3354,22 @@ void D_DoomMain (void)
 		DATABASE_Construct( );
 
 		// [BC] Initialize the browser module.
-		BROWSER_Construct( );
+		// [rc4l] ONCE PER PROCESS, not once per restart. wad_reload restarts the engine in place by
+		// throwing CRestartException, and this ran again on the way back through: it re-Init'd both
+		// UDP buffers over live ones and cleared the entire server list. So joining a server that
+		// needed different files, the one case where a restart is not the player's own idea, emptied
+		// the browser. The session had already had its one automatic sweep, so the list then stayed
+		// empty until REFRESH was pressed. That is the "the server I just clicked vanished" report.
+		//
+		// Nothing this sets up depends on which WADs are loaded, so there is nothing to redo.
+		if ( !restart )
+			BROWSER_Construct( );
+
+		// [rc4l] The catalogue is read HERE rather than when somebody opens the host screen, so an
+		// entry that could not be used is reported while the console is still on screen. Cheap: a
+		// handful of small files. Re-read after a restart because a wad_reload may have been the
+		// thing that changed what is on disk.
+		zx::CatalogueCheckAtStartup( );
 
 		// [RH] Lock any cvars that should be locked now that we're
 		// about to begin the game.
@@ -3308,9 +3454,10 @@ void D_DoomMain (void)
 				{
 					G_NewInit( );
 
-					// Check if we have map rotation setup. If we do, use the first map there.
+					// Check if we have map rotation setup. If we do, use the first map there --
+					// [rc4l] or the one that was asked for, when the rotation holds it.
 					if ( useMapRotation )
-						MAPROTATION_StartNewGame( );
+						MAPROTATION_StartNewGame( startmap );
 					else
 						G_InitNew( startmap, false );
 				}
@@ -3328,7 +3475,7 @@ void D_DoomMain (void)
 							G_BeginRecording (startmap);
 						// [AK] Use a map from the map rotation if it should be used.
 						if ((NETWORK_GetState() != NETSTATE_CLIENT) && (useMapRotation))
-							MAPROTATION_StartNewGame();
+							MAPROTATION_StartNewGame( startmap );
 						else
 							G_InitNew (startmap, false);
 					if (StoredWarp.IsNotEmpty())

@@ -21,7 +21,7 @@ TEST(ResumeAction, JoinsImmediatelyWhenTheBrowserIsStillOpen)
 {
 	// The player is sitting there watching the progress bar. Asking them to confirm the thing they
 	// are visibly waiting for is friction and nothing else.
-	EXPECT_EQ(ResumeAction::JoinNow, Act(true, true, true, false));
+	EXPECT_EQ(ResumeAction::ProceedNow, Act(true, true, true, false));
 }
 
 TEST(ResumeAction, NotifiesRatherThanJoiningWhenThePlayerWentAway)
@@ -66,7 +66,7 @@ TEST(ResumeAction, DoesNothingWithNoJoinWaiting)
 
 TEST(ResumeAction, NeverJoinsUnannouncedInAnyCombination)
 {
-	// The property that matters, over the whole truth table: JoinNow may only ever come back when
+	// The property that matters, over the whole truth table: ProceedNow may only ever come back when
 	// the browser is open. Every other route to a running join has to pass through the player.
 	for (int i = 0; i < 16; ++i)
 	{
@@ -75,7 +75,7 @@ TEST(ResumeAction, NeverJoinsUnannouncedInAnyCombination)
 		const bool browserOpen = (( i & 4 ) != 0 );
 		const bool answering = (( i & 8 ) != 0 );
 
-		if (Act(pending, succeeded, browserOpen, answering) == ResumeAction::JoinNow)
+		if (Act(pending, succeeded, browserOpen, answering) == ResumeAction::ProceedNow)
 		{
 			EXPECT_TRUE(browserOpen) << "case " << i << " joins with the browser closed";
 			EXPECT_TRUE(succeeded) << "case " << i << " joins after a failed download";
@@ -93,7 +93,7 @@ TEST(ResumeAction, EveryCombinationHasAnAnswer)
 			(( i & 4 ) != 0 ), (( i & 8 ) != 0 ));
 
 		const bool known = ( action == ResumeAction::Nothing ) || ( action == ResumeAction::Hold ) ||
-			( action == ResumeAction::NotifyReady ) || ( action == ResumeAction::JoinNow ) ||
+			( action == ResumeAction::NotifyReady ) || ( action == ResumeAction::ProceedNow ) ||
 			( action == ResumeAction::ReportFailure );
 		EXPECT_TRUE(known) << "case " << i;
 	}

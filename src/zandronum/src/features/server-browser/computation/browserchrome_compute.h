@@ -51,7 +51,12 @@ enum BrowserPart
 // A transfer still running is the exception, and the same exception as everywhere else: its progress
 // and the control that stops it survive any change of tab, because the download does not care which
 // screen the player wandered onto and losing the CANCEL button would strand them.
-unsigned ComputeHostParts( bool downloadRunning );
+//
+// FOREIGN means a transfer this panel did not start -- one belonging to a join. Hosting downloads
+// too now, and its own button becomes CANCEL while it does, so dragging the server-list panel in for
+// its own transfer drew that panel over the host panel: two CANCELs describing one download, over a
+// line about a server nobody had selected.
+unsigned ComputeHostParts( bool foreignDownloadRunning );
 
 // `hasSelection` is whether a server is actually selected -- there is no panel without one, since
 // every line in it describes that server.

@@ -1,0 +1,12 @@
+{
+  "name": "DND",
+  "summary": "Death and Decay: an RPG on top of Doom, with levels, loot and stats that carry between maps.",
+  "group": "mix",
+  "cfg": "dnd.cfg",
+  "files": [
+    {
+      "name": "dnd_v2.6f.pk3",
+      "md5": "35ef8656a8df72178171e6ab49577cfb"
+    }
+  ]
+}

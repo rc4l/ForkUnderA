@@ -61,6 +61,20 @@ bool IsSafeArgValue(const std::string &value)
 	return true;
 }
 
+bool IsSafeFilePath(const std::string &path)
+{
+	// [rc4l] Everything IsSafeArgValue refuses, plus traversal. A path we hand the server is one WE
+	// resolved off the filesystem, so it is not attacker-chosen -- but the filename inside it came
+	// out of a catalogue json, and ".." in an argument is never something we meant to write.
+	if (!IsSafeArgValue(path))
+		return false;
+
+	if (path.find("..") != std::string::npos)
+		return false;
+
+	return true;
+}
+
 bool IsBareFileName(const std::string &name)
 {
 	if (!IsSafeArgValue(name))
@@ -103,7 +117,15 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 		out.push_back(IntToString(config.parentPid));
 	}
 
-	if (IsBareFileName(config.iwad))
+	// [rc4l] PATHS, not just bare names, and that is the fix rather than a loosening.
+	//
+	// A bare name makes the SERVER go and find the file, and it searches its own config -- which is
+	// not the one the client just wrote. Download an experience and host it and the freshly fetched
+	// pk3 sat in a folder registered in the client's FileSearch.Directories and nowhere the server
+	// looked: it skipped the file, came up with one PWAD instead of two, and the client that joined
+	// it was told its lumps did not match. Two processes searching separately for the same file is
+	// the whole bug; handing over what we already resolved removes the second search.
+	if (IsSafeFilePath(config.iwad))
 	{
 		out.push_back("-iwad");
 		out.push_back(config.iwad);
@@ -111,11 +133,59 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 
 	for (size_t i = 0; i < config.pwads.size(); ++i)
 	{
-		if (!IsBareFileName(config.pwads[i]))
+		if (!IsSafeFilePath(config.pwads[i]))
 			continue;
 
 		out.push_back("-file");
 		out.push_back(config.pwads[i]);
+	}
+
+	// [rc4l] THE FIRST '+' ARGUMENT, AND IT HAS TO STAY THAT WAY.
+	//
+	// The engine applies these left to right, so whatever comes last wins. Putting the entry's cfg
+	// ahead of every setting means the SETTINGS MENU BEATS THE EXPERIENCE, always: an entry describes
+	// what to play, and the host decides how to run it. A cfg full of addmap lines would otherwise
+	// choose where the host lands, and a cfg naming a player limit would quietly overrule the number
+	// the host just typed into the form.
+	//
+	// It is stated as "first '+'" rather than as a list of the settings it must precede, because the
+	// list grows. A new +setting appended anywhere below is after this by construction and therefore
+	// wins for free. TheSettingsMenuBeatsTheExperienceConfig in the tests pins exactly that.
+	if (IsSafeArgValue(config.execCfg))
+	{
+		out.push_back("+exec");
+		out.push_back(config.execCfg);
+	}
+
+	// Straight after, so the remixes beat the experience where they disagree and the settings menu
+	// still beats all of them. That ordering is the whole point of a remix: one line that overrides
+	// whatever the pack said about that one thing.
+	//
+	// In the order given, which is group order, so a later axis wins over an earlier one where two
+	// axes touch the same cvar. An unsafe path drops itself and not the ones after it: one bad entry
+	// in the catalogue should cost its own axis, not silently disarm every axis below it.
+	for (size_t i = 0; i < config.execRemixCfgs.size(); ++i)
+	{
+		if (!IsSafeArgValue(config.execRemixCfgs[i]))
+			continue;
+
+		out.push_back("+exec");
+		out.push_back(config.execRemixCfgs[i]);
+	}
+
+	// [rc4l] After every exec, so the gameplay panel beats the cfgs the way the settings form does.
+	// A name that is not a plain cvar name is dropped rather than escaped, same as every other
+	// untrusted value here: it would otherwise be read as a flag of its own.
+	for (size_t i = 0; i < config.extraCvars.size(); ++i)
+	{
+		const std::string &name = config.extraCvars[i].first;
+		const std::string &value = config.extraCvars[i].second;
+
+		if (name.empty() || !IsSafeArgValue(name) || !IsSafeArgValue(value))
+			continue;
+
+		out.push_back("+" + name);
+		out.push_back(value);
 	}
 
 	if (IsSafeArgValue(config.map))
@@ -165,11 +235,23 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 	// belongs to.
 	PushOption(out, "+sv_rconpassword", config.rconSecret);
 
-	out.push_back("+sv_updatemaster");
+	// [rc4l] sv_fua_serverregistry_announce, NOT the old +sv_updatemaster: that cvar no longer
+	// exists in this fork, so the child silently ignored it and fell back to the announce default
+	// (on) -- meaning a "local only" host still announced itself to the public registry, and this
+	// toggle did nothing at all.
+	out.push_back("+sv_fua_serverregistry_announce");
 	out.push_back(config.advertise ? "1" : "0");
 
 	out.push_back("+sv_fua_download");
 	out.push_back(config.serveWads ? "1" : "0");
+
+	// [rc4l] Force LAN broadcast on for every hosted server, independent of config.advertise (which is
+	// the PUBLIC registry) and of the archived sv_broadcast cvar. Hosting a game to play locally is
+	// exactly the case that needs LAN discovery, yet leaving it to the saved cvar meant a config with
+	// sv_broadcast=false silently hid the server from every browser on the LAN -- announcing publicly
+	// while being invisible next door. A private (unadvertised) host still wants to be found on the LAN.
+	out.push_back("+sv_broadcast");
+	out.push_back("1");
 
 	return out;
 }

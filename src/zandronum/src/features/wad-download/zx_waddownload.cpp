@@ -44,8 +44,10 @@
 
 #include "features/net/zx_httpfile.h"
 #include "features/wad-download/zx_filehash.h"
+#include "features/wad-download/zx_wadsearch.h"
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wad-download/computation/downloadplan_compute.h"
+#include "features/wad-download/computation/fileresolve_compute.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/wad-download/computation/wadstore_compute.h"
 
@@ -178,18 +180,6 @@ bool EqualsIgnoreCase(const char *a, const std::string &b)
 			return false;
 	}
 	return a[i] == '\0' && i == b.size();
-}
-
-std::string HumanBytes(long long n)
-{
-	char buf[64];
-	if (n < 0)
-		return "?";
-	if (n >= 1024LL * 1024LL)
-		std::snprintf(buf, sizeof buf, "%.1f MB", double(n) / (1024.0 * 1024.0));
-	else
-		std::snprintf(buf, sizeof buf, "%.0f KB", double(n) / 1024.0);
-	return buf;
 }
 
 //*****************************************************************************
@@ -449,6 +439,26 @@ bool FetchOne(const Job &job, const zx::waddownload::WantedFile &wanted)
 		// is the ordinary state during a map change, when everyone joins at once. Moving on there
 		// would abandon the only source certain to have a file that may exist nowhere else. So the
 		// SAME url is retried a few times before the rest of the list is considered.
+		// [rc4l] Say where this is coming from, before it starts rather than after it finishes.
+		//
+		// A download that stalls is the case that needs this: without it the console shows a file
+		// name and a progress bar that stopped, and no way to tell whether the culprit is a mirror
+		// worth skipping or the player's own connection. Host only, never the whole URL -- see
+		// DownloadSourceName for why a signed mirror URL must not reach a log.
+		Say(std::string("Downloading ") + wanted.name + " from "
+			+ zx::DownloadSourceName(urls[i]) + " (source " + std::to_string(i + 1)
+			+ " of " + std::to_string(urls.size()) + ")");
+
+		// [rc4l] Fresh counters per SOURCE, not just per file: StatusLine reads these to tell "a
+		// source is delivering" (percent) apart from "still knocking on doors" (searching...), and
+		// a dead mirror leaving the previous attempt's figures behind would show a progress bar for
+		// a connection that does not exist.
+		{
+			std::lock_guard<std::mutex> lock(g_mutex);
+			g_received = 0;
+			g_total = -1;
+		}
+
 		zx::HttpFileResult r = zx::HttpFileResult::NetworkError;
 		for (;;)
 		{
@@ -626,6 +636,16 @@ void RegisterDownloadDirInSearchPath(const char *dir)
 
 namespace zx { namespace waddownload {
 
+// [rc4l] Registered at startup because the folder already holds what earlier sessions fetched
+// and whatever the player dropped in by hand, none of which a session that downloaded nothing
+// could see.
+void RegisterDownloadDirEarly()
+{
+	const FString dir = DownloadDir();
+	if (dir.IsNotEmpty())
+		RegisterDownloadDirInSearchPath(dir.GetChars());
+}
+
 FString DownloadDir()
 {
 	FString dir = *cl_fua_download_dir;
@@ -649,40 +669,53 @@ FString DownloadDir()
 	return dir;
 }
 
-FString FindLocalCopy(const char *name, const char *md5Hex)
+// Walk a resolve plan and return the first step that holds the wanted bytes. A Stat step is taken on
+// the strength of its path, since the digest names the folder. Only a Hash step is read.
+static FString WalkResolvePlan(const std::vector<zx::ResolveStep> &steps, const std::string &digest)
 {
-	FString found;
-
-	if ((name == NULL) || (md5Hex == NULL) || (md5Hex[0] == '\0'))
-		return found;
-
-	const std::string dir = DownloadDir().GetChars();
-	const std::string digest = md5Hex;
-
-	// The store first, because it costs a stat: the path itself claims the content, so a hit needs
-	// no reading at all -- only a size check that nothing edited the file in place.
-	const std::string relative = zx::StoredRelativePath(digest, name, 32);
-	if (!relative.empty())
+	for (size_t i = 0; i < steps.size(); ++i)
 	{
-		const std::string stored = dir + relative;
-		if (FileExists(stored))
+		if (!FileExists(steps[i].path))
+			continue;
+
+		if (steps[i].check == zx::ResolveCheck::Stat)
+			return FString(steps[i].path.c_str());
+
+		char actual[33];
+		if (zx::Md5OfFile(steps[i].path.c_str(), actual, sizeof actual) &&
+			EqualsIgnoreCase(actual, digest))
 		{
-			found = stored.c_str();
-			return found;
+			return FString(steps[i].path.c_str());
 		}
 	}
 
-	// Then the flat working copy, which does cost a hash -- but it is the same hash the join would
-	// have computed for its staleness check, so nothing is read twice.
-	const std::string flat = dir + name;
-	if (FileExists(flat))
-	{
-		char actual[33];
-		if (zx::Md5OfFile(flat.c_str(), actual, sizeof actual) && EqualsIgnoreCase(actual, digest))
-			found = flat.c_str();
-	}
+	return FString();
+}
 
-	return found;
+FString FindLocalCopy(const char *name, const char *md5Hex)
+{
+	if ((name == NULL) || (md5Hex == NULL) || (md5Hex[0] == '\0'))
+		return FString();
+
+	// No search hits: our own folder is the whole of this question by contract.
+	return WalkResolvePlan(zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(),
+		std::vector<std::string>()), md5Hex);
+}
+
+FString FindVerifiedCopy(const char *name, const char *md5Hex)
+{
+	if ((name == NULL) || (md5Hex == NULL) || (md5Hex[0] == '\0'))
+		return FString();
+
+	TArray<FString> found;
+	zx::FindAllFilesInEngineSearchPaths(name, found);
+
+	std::vector<std::string> hits;
+	hits.reserve(found.Size());
+	for (unsigned i = 0; i < found.Size(); ++i)
+		hits.push_back(found[i].GetChars());
+
+	return WalkResolvePlan(zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(), hits), md5Hex);
 }
 
 bool IsRunning()
@@ -721,7 +754,8 @@ void Abandon()
 	g_onDone = NULL;
 }
 
-bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedFile> &files,
+bool Start(const std::vector<std::string> &extraSites,
+	const std::vector<std::string> &lastResortSites, const std::vector<WantedFile> &files,
 	CompleteProc onDone)
 {
 	if (files.empty())
@@ -740,12 +774,11 @@ bool Start(const std::vector<std::string> &extraSites, const std::vector<WantedF
 
 	Job job;
 
-	// The server's own advertised site first: it is the one that actually has this server's files.
-	// Everything after it is a general-purpose mirror that may or may not.
-	job.sites = extraSites;
-	const std::vector<std::string> configured =
-		zx::SplitOnWhitespace(std::string(*cl_fua_downloadsites));
-	job.sites.insert(job.sites.end(), configured.begin(), configured.end());
+	// The server's own advertised site first, the public mirrors next, and the last-resort sources
+	// (the hosting machine's own endpoint) at the end -- AssembleSiteOrder is the policy, with the
+	// reasoning and the regression test beside it.
+	job.sites = zx::AssembleSiteOrder(extraSites,
+		zx::SplitOnWhitespace(std::string(*cl_fua_downloadsites)), lastResortSites);
 	if (zx::NormalizeDownloadSites(job.sites).empty())
 	{
 		Printf(TEXTCOLOR_ORANGE "No usable download sites. Set cl_fua_downloadsites.\n");
@@ -825,31 +858,9 @@ FString StatusLine()
 		total = g_total;
 	}
 
-	FString out;
-	if (total > 0)
-	{
-		// [rc4l] FIXED WIDTH, deliberately. The band drawn behind this line is sized from it, so a
-		// string that gains a character when the percentage reaches 10 -- and again at 100, and again
-		// every time the received figure gains a digit -- is a panel that twitches while you read it.
-		//
-		// The percentage is padded to three columns and the received figure to the width of the total,
-		// which does not change during a transfer. Doom's SmallFont gives every digit the same advance
-		// and a space a fixed one, so the line is not merely the same LENGTH every frame, it is the
-		// same number of pixels.
-		const std::string totalText = HumanBytes(total);
-		std::string receivedText = HumanBytes(received);
-		while (receivedText.size() < totalText.size())
-			receivedText.insert(receivedText.begin(), ' ');
-
-		out.Format("%s  %3d%%  (%s of %s)", file.c_str(), int((received * 100) / total),
-			receivedText.c_str(), totalText.c_str());
-	}
-	else
-	{
-		// No Content-Length: a percentage would be a guess, so show what has actually arrived.
-		out.Format("%s  %s", file.c_str(), HumanBytes(received).c_str());
-	}
-	return out;
+	// [rc4l] The wording and the width rules live in FormatDownloadStatus, where every shape of the
+	// line -- searching, percent, length-unknown -- is pinned by tests instead of read off a screen.
+	return FString(zx::FormatDownloadStatus(file, received, total).c_str());
 }
 
 void Tick()
@@ -927,7 +938,7 @@ CCMD( fua_download )
 
 	std::vector<zx::waddownload::WantedFile> files;
 	files.push_back( zx::waddownload::WantedFile( argv[1], false ));
-	zx::waddownload::Start( std::vector<std::string>( ), files, NULL );
+	zx::waddownload::Start( std::vector<std::string>( ), std::vector<std::string>( ), files, NULL );
 }
 
 CCMD( fua_download_stop )
