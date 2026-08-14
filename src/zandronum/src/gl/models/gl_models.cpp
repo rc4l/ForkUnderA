@@ -467,10 +467,31 @@ void gl_InitModels()
 				smf.xscale=smf.yscale=smf.zscale=1.f;
 
 				smf.type = PClass::FindClass(sc.String);
-				if (!smf.type || smf.type->Defaults == NULL) 
+
+				// [rc4l] PROVENANCE: upstream errors here, ours warns and skips the block.
+				//   SUPERSEDED BY: nothing. Upstream keeps the error (r_data/models.cpp) and has no
+				//   reason not to, since it does not have to load the Zandronum library.
+				//   ON PORT: keep the warning, or DND and anything like it stops loading again.
+				//
+				// A model named for an actor that does not exist is the mod's mistake, not a reason
+				// to refuse the whole game: DND ships a model for PutrefierBullet and defines that
+				// actor nowhere. Skipping the block loses one model and keeps everything else.
+				if (!smf.type || smf.type->Defaults == NULL)
 				{
-					sc.ScriptError("MODELDEF: Unknown actor type '%s'\n", sc.String);
+					FScriptPosition(sc).Message(MSG_WARNING,
+						"MODELDEF: Unknown actor type '%s', so its model is ignored.", sc.String);
+
+					// Past the block, so its contents are not read as top-level keywords.
+					sc.MustGetStringName("{");
+					int depth = 1;
+					while (depth > 0 && sc.GetString())
+					{
+						if (sc.Compare("{")) depth++;
+						else if (sc.Compare("}")) depth--;
+					}
+					continue;
 				}
+
 				GetDefaultByType(smf.type)->hasmodel=true;
 				sc.MustGetStringName("{");
 				while (!sc.CheckString("}"))
