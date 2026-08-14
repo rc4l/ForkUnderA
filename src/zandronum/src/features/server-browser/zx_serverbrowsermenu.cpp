@@ -1647,6 +1647,11 @@ enum class CustomFocus { Search, List, Buttons };
 
 static	std::vector<zx::CustomEntry>	g_CustomAll;
 static	bool				g_CustomLoaded = false;
+
+// Bumped whenever what is on disk has changed. Anything remembering a preset by name has to be
+// keyed on this as well: a preset replaced under its own name is a different preset with the same
+// key. See CustomForget.
+static	int					g_CustomGeneration = 0;
 static	zx::TextInput		g_CustomSearch;
 static	int					g_CustomSearchFirstChar = 0;
 static	bool				g_CustomSearchDragging = false;
@@ -8305,6 +8310,21 @@ public:
 	int NewSaveConfirmLeft( ) { return NewSaveBoxLeft( ) + NewSaveBoxW( ) / 2 - NewSaveBtnW( ) - 4; }
 	int NewSaveCancelLeft( )  { return NewSaveBoxLeft( ) + NewSaveBoxW( ) / 2 + 4; }
 
+	// [rc4l] A MODAL IS MODAL: while one of the NEW screen's boxes is up it has the keyboard, whatever
+	// the browser's focus happens to say.
+	//
+	// This is here because the two halves of the routing disagreed. TranslateKeyboardEvents hands the
+	// save box its raw keys with no focus test at all -- it is a name being typed -- while the guard
+	// that DELIVERS them demanded g_Focus == Host. Open the box from a click, which did not take the
+	// focus, and enter arrived untranslated at a Responder that would not pass it on, fell through to
+	// the browser's own handling, and shut the box instead of asking to replace. Both halves ask this
+	// now, so they cannot drift apart again.
+	bool NewOwnsKeyboard( )
+	{
+		return ( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::New ) &&
+			( g_NewModal != NewModal::None );
+	}
+
 	// What the box would do if Confirm were pressed now. Asked by the drawing and by the pressing,
 	// so what it says and what it does cannot differ.
 	zx::SaveState NewSaveStateNow( )
@@ -8458,7 +8478,13 @@ public:
 			}
 
 			g_NewSaveBtnHot = i;
-			g_NewSaveBtnSel = i;
+
+			// [rc4l] HOVERING IS NOT CHOOSING. Moving the selection here meant a pointer left sitting
+			// over CANCEL silently reassigned what enter does, so a name typed on the keyboard was
+			// cancelled by a mouse nobody touched. The highlight follows the pointer; the selection
+			// only moves when a button is actually pressed.
+			if (( type == MOUSE_Click ) || ( type == MOUSE_Release ))
+				g_NewSaveBtnSel = i;
 
 			if ( type == MOUSE_Release )
 			{
@@ -9602,9 +9628,16 @@ public:
 		return g_CustomAll;
 	}
 
+	// [rc4l] Everything read from the preset folder is stale, INCLUDING what is keyed by name.
+	//
+	// The counter is the half that was missing. Saving over an existing preset changes what is in
+	// it and not what it is called, so a cache keyed on the name alone answered with the old
+	// contents forever -- you replaced a preset and the column went on describing the one you had
+	// replaced. Bumping this changes the key without anything having to guess what changed.
 	void CustomForget( )
 	{
 		g_CustomLoaded = false;
+		++g_CustomGeneration;
 	}
 
 	// Which rows the search leaves, as indices into the list. The same folding the wad search uses,
@@ -9850,14 +9883,21 @@ public:
 	{
 		static std::vector<DetailLine> cache;
 		static std::string forName;
-		static int forGeneration = -1;
+		static int forFiles = -1;
+		static int forPresets = -1;
 
-		if (( forName == entry.name ) && ( forGeneration == g_HostHaveGeneration ))
+		// Both generations: one moves when files appear on disk, the other when a preset is written
+		// -- and a preset saved over itself changes neither its name nor the files on the machine.
+		if (( forName == entry.name ) && ( forFiles == g_HostHaveGeneration ) &&
+			( forPresets == g_CustomGeneration ))
+		{
 			return cache;
+		}
 
 		cache = CustomDetailLines( entry );
 		forName = entry.name;
-		forGeneration = g_HostHaveGeneration;
+		forFiles = g_HostHaveGeneration;
+		forPresets = g_CustomGeneration;
 
 		return cache;
 	}
@@ -11185,6 +11225,11 @@ public:
 				{
 					g_NewFocus = NewFocus::Buttons;
 					g_NewButtonSel = 0;
+
+					// [rc4l] The browser's focus comes with it, the way the tool buttons take it.
+					// Without this the box opened while the keyboard belonged to something else,
+					// and every key it wanted went somewhere else instead.
+					SetFocus( zx::BrowserFocus::Host );
 					NewOpenSaveModal( );
 				}
 				return true;
@@ -15730,7 +15775,7 @@ public:
 		// own, and the two forms are never on screen at the same time.
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
 			( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::New ) &&
-			( g_Focus == zx::BrowserFocus::Host ))
+			( NewOwnsKeyboard( ) || ( g_Focus == zx::BrowserFocus::Host )))
 		{
 			if ( NewKeyEvent( ev ))
 				return true;
@@ -16071,9 +16116,9 @@ public:
 				(( g_NewFlagEditing >= 0 ) || g_NewSettingEditing.IsNotEmpty( )))
 
 			// The save box is a name being typed the whole time it is open, so it always wants the
-			// raw keys.
-			|| (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::New ) &&
-				( g_NewModal == NewModal::Save ))
+			// raw keys. Asked through NewOwnsKeyboard so this and the guard that delivers them
+			// cannot answer differently.
+			|| ( NewOwnsKeyboard( ) && ( g_NewModal == NewModal::Save ))
 
 			// And the CUSTOM tab's search box, for the reason the wad search needed it: backspace
 			// has to reach the field rather than becoming a menu key on the way.
