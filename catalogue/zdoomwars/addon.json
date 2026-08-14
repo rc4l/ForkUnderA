@@ -1,0 +1,24 @@
+{
+  "name": "ZDoom Wars",
+  "summary": "The closest Doom gets to a real time strategy game: spend mana, summon hordes, and throw them at each other.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "gamemode": "lastmanstanding",
+  "teams": true,
+  "lives": 1,
+  "maxlives": 1,
+  "files": [
+    {
+      "name": "zdoomwarsiv3.15d.pk3",
+      "md5": "218fd207802629cf84bbf19f601da452"
+    },
+    {
+      "name": "zdoomwarsiv3.1resources.pk3",
+      "md5": "32c425930ce42a5b6fcbea6d06cd7f72"
+    },
+    {
+      "name": "zdoomwarsimapsv1.8d.pk3",
+      "md5": "25da0e27f85252ba55e4321bd102689f"
+    }
+  ]
+}
