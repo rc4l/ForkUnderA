@@ -799,15 +799,19 @@ line_t *FBlockLinesIterator::Next()
 
 // [rc4l] The DynHash(0) initializers were removed: TArray(0) still calls
 // M_Malloc, so every iterator paid a malloc+free pair even though most
-// blocks fit in FixedHash and never touch DynHash. Default construction is
-// allocation-free; dense blocks allocate on first Grow as before. This is
-// one of the hottest object constructions in the sim (every collision
-// check), so the pair matters in mass-actor storms.
+// blocks fit in FixedHash and never touch DynHash. Dense blocks now lease a
+// hash block from a shared pool (returned by the destructor), so grown
+// capacity survives across iterators instead of being reallocated for every
+// crowded collision check. This is one of the hottest object constructions
+// in the sim, so both halves matter in mass-actor storms.
+
+TArray<TArray<FBlockThingsIterator::HashEntry> *> FBlockThingsIterator::DynHashPool;
 
 FBlockThingsIterator::FBlockThingsIterator()
 {
 	minx = maxx = 0;
 	miny = maxy = 0;
+	DynHash = NULL;
 	ClearHash();
 	block = NULL;
 }
@@ -818,12 +822,14 @@ FBlockThingsIterator::FBlockThingsIterator(int _minx, int _miny, int _maxx, int 
 	maxx = _maxx;
 	miny = _miny;
 	maxy = _maxy;
+	DynHash = NULL;
 	ClearHash();
 	Reset();
 }
 
 FBlockThingsIterator::FBlockThingsIterator(const FBoundingBox &box)
 {
+	DynHash = NULL;
 	maxy = GetSafeBlockY(box.Top() - bmaporgy);
 	miny = GetSafeBlockY(box.Bottom() - bmaporgy);
 	maxx = GetSafeBlockX(box.Right() - bmaporgx);
@@ -842,7 +848,18 @@ void FBlockThingsIterator::ClearHash()
 {
 	clearbuf(Buckets, countof(Buckets), -1);
 	NumFixedHash = 0;
-	DynHash.Clear();
+	if (DynHash != NULL)
+		DynHash->Clear();
+}
+
+FBlockThingsIterator::~FBlockThingsIterator()
+{
+	if (DynHash != NULL)
+	{
+		DynHash->Clear();
+		DynHashPool.Push(DynHash);
+		DynHash = NULL;
+	}
 }
 
 //===========================================================================
@@ -939,12 +956,25 @@ AActor *FBlockThingsIterator::Next(bool centeronly)
 					}
 					else
 					{
-						if (DynHash.Size() == 0)
+						if (DynHash == NULL)
 						{
-							DynHash.Grow(50);
+							// Lease a block; pooled ones keep their grown capacity.
+							if (DynHashPool.Size() > 0)
+							{
+								DynHash = DynHashPool[DynHashPool.Size() - 1];
+								DynHashPool.Delete(DynHashPool.Size() - 1);
+							}
+							else
+							{
+								DynHash = new TArray<HashEntry>;
+							}
 						}
-						i = DynHash.Reserve(1);
-						entry = &DynHash[i];
+						if (DynHash->Size() == 0 && DynHash->Max() == 0)
+						{
+							DynHash->Grow(50);
+						}
+						i = DynHash->Reserve(1);
+						entry = &(*DynHash)[i];
 						entry->Next = Buckets[hash];
 						Buckets[hash] = i + countof(FixedHash);
 					}
