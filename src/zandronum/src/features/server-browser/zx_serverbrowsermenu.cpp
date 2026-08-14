@@ -9627,15 +9627,84 @@ public:
 		return out;
 	}
 
-	// What a preset cannot find on this machine. Empty means it is ready to play.
-	std::vector<std::string> CustomMissing( const zx::CustomEntry &entry )
+	// [rc4l] Where a file is, ANSWERED ONCE.
+	//
+	// FindVerifiedCopy is not a lookup: it walks every search path and then MD5s each candidate,
+	// because a name is not proof of contents. That is the right answer to ask before hosting and
+	// the wrong thing to do while drawing -- and this asked it per file, per visible row, EVERY
+	// FRAME, and again for the detail column from the draw, the pointer and the wheel. A preset
+	// naming a 127MB wad hashed it several times a frame, which is exactly as slow as it sounds.
+	//
+	// Kept against a generation rather than forever: files appear while the menu is open, and
+	// HostFilesChanged already exists to say so.
+	struct ResolvedFile
+	{
+		std::string key;
+		FString path;
+		int generation;
+
+		ResolvedFile() : generation(-1) {}
+	};
+
+	FString CustomResolve( const std::string &name, const std::string &md5 )
+	{
+		// Local rather than a class member: a static member needs a definition of its own, and this
+		// is one function's memory.
+		static std::vector<ResolvedFile> g_CustomResolved;
+
+		const std::string key = name + "|" + md5;
+
+		for ( size_t i = 0; i < g_CustomResolved.size( ); ++i )
+		{
+			if (( g_CustomResolved[i].key == key ) &&
+				( g_CustomResolved[i].generation == g_HostHaveGeneration ))
+			{
+				return g_CustomResolved[i].path;
+			}
+		}
+
+		ResolvedFile found;
+		found.key = key;
+		found.generation = g_HostHaveGeneration;
+		found.path = zx::waddownload::FindVerifiedCopy( name.c_str( ),
+			md5.empty( ) ? NULL : md5.c_str( ));
+
+		// Replace a stale entry for the same file rather than growing a row per generation.
+		for ( size_t i = 0; i < g_CustomResolved.size( ); ++i )
+		{
+			if ( g_CustomResolved[i].key == key )
+			{
+				g_CustomResolved[i] = found;
+				return found.path;
+			}
+		}
+
+		g_CustomResolved.push_back( found );
+		return found.path;
+	}
+
+	// [rc4l] What a preset cannot find on this machine. Empty means it is ready to play.
+	//
+	// THREE THINGS ASK THIS, and they do not want the same answer:
+	//
+	//   the ROW, to colour itself and say how many are missing;
+	//   EDIT, to refuse rather than prefill a load order full of gaps;
+	//   PLAY NOW, to decide whether to spend somebody's bandwidth before starting a server.
+	//
+	// The first two are drawing, and drawing happens sixty times a second: they want a remembered
+	// answer. The third is an act, happens once, and is about to commit -- so it asks again from
+	// scratch. `bFresh` is that distinction, and having it here rather than at each call site is
+	// what stops the cheap answer being used for the expensive decision.
+	std::vector<std::string> CustomMissing( const zx::CustomEntry &entry, bool bFresh = false )
 	{
 		std::vector<std::string> missing;
 
 		for ( size_t i = 0; i < entry.files.size( ); ++i )
 		{
-			const FString path = zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
-				entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( ));
+			const FString path = bFresh
+				? zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
+					entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( ))
+				: CustomResolve( entry.files[i].name, entry.files[i].md5 );
 
 			if ( path.IsEmpty( ))
 				missing.push_back( entry.files[i].name );
@@ -9771,6 +9840,28 @@ public:
 		out.push_back( CustomDetailMake( DetailLine::Heading, title, CR_GOLD ));
 	}
 
+	// [rc4l] The column, built once per preset rather than per look.
+	//
+	// Even with the file lookups memoised this wraps every line through V_BreakLines, which
+	// allocates -- and the draw, the pointer and the wheel each asked for the whole column. Held
+	// against the preset's name and the same generation the lookups use, so a file appearing while
+	// the menu is open still changes what it says.
+	std::vector<DetailLine> CustomDetailCached( const zx::CustomEntry &entry )
+	{
+		static std::vector<DetailLine> cache;
+		static std::string forName;
+		static int forGeneration = -1;
+
+		if (( forName == entry.name ) && ( forGeneration == g_HostHaveGeneration ))
+			return cache;
+
+		cache = CustomDetailLines( entry );
+		forName = entry.name;
+		forGeneration = g_HostHaveGeneration;
+
+		return cache;
+	}
+
 	std::vector<DetailLine> CustomDetailLines( const zx::CustomEntry &entry )
 	{
 		std::vector<DetailLine> out;
@@ -9792,11 +9883,10 @@ public:
 
 		for ( size_t i = 0; i < entry.files.size( ); ++i )
 		{
-			const FString path = zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
-				entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( ));
+			const bool bHere = !CustomResolve( entry.files[i].name, entry.files[i].md5 ).IsEmpty( );
 
 			CustomDetailItem( out, entry.files[i].name.c_str( ),
-				path.IsEmpty( ) ? "MISSING" : "", path.IsEmpty( ) ? CR_ORANGE : CR_GRAY );
+				bHere ? "" : "MISSING", bHere ? CR_GRAY : CR_ORANGE );
 		}
 
 		// [rc4l] The flag fields, by name and number, and only the ones that are set. A column of
@@ -9847,7 +9937,7 @@ public:
 		if ( chosen == NULL )
 			return;
 
-		const std::vector<DetailLine> lines = CustomDetailLines( *chosen );
+		const std::vector<DetailLine> lines = CustomDetailCached( *chosen );
 
 		const int lineH = CustomDetailLineH( );
 		const int maxScroll = MAX( 0, static_cast<int>( lines.size( )) - CustomDetailRowsShown( ));
@@ -10229,7 +10319,7 @@ public:
 		{
 			const zx::CustomEntry *const chosen = CustomSelected( );
 			const int detailLines = ( chosen != NULL )
-				? static_cast<int>( CustomDetailLines( *chosen ).size( )) : 0;
+				? static_cast<int>( CustomDetailCached( *chosen ).size( )) : 0;
 
 			if ( RegionBarMouse( type, x, y, CustomDetailTop( ), CustomTextBottom( ),
 				detailLines * CustomDetailLineH( ),
@@ -10427,7 +10517,9 @@ public:
 		if ( chosen == NULL )
 			return;
 
-		if ( !CustomMissing( *chosen ).empty( ))
+		// Fresh here too: refusing to edit is a refusal, and refusing on a stale answer is refusing
+		// for a reason that is no longer true.
+		if ( !CustomMissing( *chosen, true ).empty( ))
 		{
 			ShowNotice( "Files missing",
 				"Play it first to fetch what it needs, then edit it." );
@@ -10468,7 +10560,9 @@ public:
 		if ( chosen == NULL )
 			return;
 
-		const std::vector<std::string> missing = CustomMissing( *chosen );
+		// Asked again from scratch: this is about to fetch files and start a server, and a
+		// remembered "missing" would spend somebody's bandwidth on a file that has since arrived.
+		const std::vector<std::string> missing = CustomMissing( *chosen, true );
 
 		if ( !missing.empty( ))
 		{
@@ -15738,7 +15832,7 @@ public:
 					{
 						const zx::CustomEntry *const chosen = CustomSelected( );
 						const int lines = ( chosen != NULL )
-							? static_cast<int>( CustomDetailLines( *chosen ).size( )) : 0;
+							? static_cast<int>( CustomDetailCached( *chosen ).size( )) : 0;
 
 						g_CustomDetailScroll = zx::ClampScroll( g_CustomDetailScroll + step,
 							MAX( 0, lines - CustomDetailRowsShown( )));
