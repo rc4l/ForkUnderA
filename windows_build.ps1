@@ -224,7 +224,7 @@ Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOO
 # blind, for the same reason the two above are: a wildcard that quietly ships nothing leaves a
 # catalogue entry nobody can host.
 if (-not (Test-Path (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad"))) {
-    throw "tools/mkiwad/fuamega.wad missing -- rebuild it with tools/mkiwad/mkiwad.py"
+    throw "tools/mkiwad/fuamega.wad missing, so rebuild it with tools/mkiwad/mkiwad.py"
 }
 Copy-Item (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad") $DistDir\
 

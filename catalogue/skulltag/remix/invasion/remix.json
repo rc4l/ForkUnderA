@@ -1,0 +1,7 @@
+{
+  "name": "Invasion",
+  "summary": "Invasion. Hold out together against waves of monsters.",
+  "group": "mode",
+  "gamemode": "invasion",
+  "cfg": "invasion.cfg"
+}

@@ -440,9 +440,6 @@ void	SERVERCOMMANDS_SetPlayerLogNumber ( const ULONG ulPlayer, const int Arg0, U
 void	SERVERCOMMANDS_SetCVar( const FBaseCVar &CVar, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SyncCVarToAdmins( const FBaseCVar &CVar );
 void	SERVERCOMMANDS_SetDefaultSkybox ( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
-void	SERVERCOMMANDS_SRPUserStartAuthentication ( const ULONG ulClient );
-void	SERVERCOMMANDS_SRPUserProcessChallenge ( const ULONG ulClient );
-void	SERVERCOMMANDS_SRPUserVerifySession ( const ULONG ulClient );
 void	SERVERCOMMANDS_ShootDecal ( const FDecalTemplate* tpl, AActor* actor, fixed_t z, angle_t angle, fixed_t tracedist, bool permanent, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_RCONAccess( int client );
 void	SERVERCOMMANDS_SyncMapRotation( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );

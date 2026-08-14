@@ -156,9 +156,8 @@ TEST(LayoutMenuArt, ASizeOfZeroIsNotDividedBy)
 
 TEST(LayoutMenuArt, AGapWiderThanTheSlotStillLeavesEachPictureAShare)
 {
-	// The gaps come out of the width before it is shared, so a gap bigger than the slot makes that
-	// subtraction negative and each picture's share comes out negative with it. Every later
-	// division works from that share, so it is clamped to one pixel: off the panel, but finite.
+	// The gaps come out of the width before it is shared, so a gap bigger than the slot would give
+	// each picture a negative share, and the share is clamped to one pixel to keep it finite.
 	const std::vector<ArtRect> got = LayoutMenuArt(kSlotX, kSlotY, 10, kSlotH, 400,
 		Sizes(72, 36, 72, 36));
 
@@ -173,8 +172,7 @@ TEST(LayoutMenuArt, AGapWiderThanTheSlotStillLeavesEachPictureAShare)
 TEST(LayoutMenuArt, AnAbsurdlyWidePictureKeepsAVisibleHeight)
 {
 	// Width is taken back by giving up height, and a picture thousands of times wider than it is
-	// tall gives up all of it: the height that comes back out of the ratio rounds to nothing. A row
-	// one pixel high is still a row; zero pixels high looks exactly like art that failed to load.
+	// tall rounds that height to nothing, where a row zero pixels high reads as art that failed.
 	const std::vector<ArtRect> got = LayoutMenuArt(kSlotX, kSlotY, 4, kSlotH, 0, Sizes(4000, 1));
 
 	ASSERT_EQ(1u, got.size());
@@ -184,9 +182,8 @@ TEST(LayoutMenuArt, AnAbsurdlyWidePictureKeepsAVisibleHeight)
 
 TEST(LayoutMenuArt, AnAbsurdlyTallPictureKeepsAVisibleWidth)
 {
-	// The other end of the same rounding, reached by a different branch: height is filled first, so
-	// a picture thousands of times taller than it is wide comes out NARROWER than its share and
-	// never touches the code that trades height away. It needs its own clamp, and has one.
+	// The other end of the same rounding, reached by a different branch, since height is filled
+	// first and a very tall picture never touches the code that trades height away.
 	const std::vector<ArtRect> got = LayoutMenuArt(kSlotX, kSlotY, kSlotW, kSlotH, 0, Sizes(1, 4000));
 
 	ASSERT_EQ(1u, got.size());

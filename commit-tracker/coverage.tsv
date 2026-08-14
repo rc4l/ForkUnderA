@@ -1629,7 +1629,7 @@ d166211ce073cbbcfc96de87edfdc7d24daccefc	2015-04-16T17:55:46Z	- reverted changes
 4432ce5686a614e6ddeaaad5ff03d149d6299a0b	2015-04-16T17:56:19Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 a602e47261d7f814d34f4b6daeb299922a63711c	2015-04-16T17:57:18Z	- commit of the correct version of p_3dfloors.cpp	pending		/
 df6ffe64180e85d5ca1faf73ae2290a0b1da737b	2015-04-16T20:50:26Z	- adjustments for recent ZDoom changes.	adapted	66abdae	66abdae
-9b6756114b89c37d607705713bd7705cf08c8a20	2015-04-16T22:45:57Z	Scale mouse coordinates based on window size	pending		/
+9b6756114b89c37d607705713bd7705cf08c8a20	2015-04-16T22:45:57Z	Scale mouse coordinates based on window size	adapted	hook only. Upstream reads mOutputLetterbox off a DFrameBuffer we do not have, and their present letterboxes where ours fills the client, so the arithmetic is ours (features/video-scale). Windows only: the SDL path already scaled.	3d546dd8
 1fa1e26cf9c91f6eb41f967e76799323541080ff	2015-04-17T04:24:33Z	- SDL backend could use the new ScaleCoordsFromWindow since it does similarly for fullscreen.	pending		/
 6e28963141cf02da2ca108b0104b65fc90b649ff	2015-04-17T17:40:45Z	- added a sanity check to GL nodes loader for a potential crash.	pending		/
 f57e08102cc32c510aad3cd3a8d22568436ed5aa	2015-04-17T17:41:08Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
@@ -9022,7 +9022,7 @@ ec42e30614997c42604080f81599c947cf138a43	2017-08-19T08:18:52Z	Fixed compilation 
 dae83f989be4d05f8b248f87b779867d76e96eeb	2017-08-19T09:58:04Z	- fixed: changing 'uiscale' did not always update the screen size properly.	pending		/
 45d5eac6ada539f7e941cf90f806570cdb4fa9e0	2017-08-19T10:03:26Z	- fix last commit - somehow it pushed an old version of the fix (yet again?...) - this is the proper fix.	pending		/
 2f5535dbca9b0198170a5804fc02d8208156a6c9	2017-08-19T12:32:34Z	- Fix HOM for Line_Horizon specials when used with a skybox	pending		/
-cdff5bdc08a2f4eac784f3984b18cd788e16be42	2017-08-19T17:30:48Z	- rewrite of the IWAD loading mechanism.	pending		/
+cdff5bdc08a2f4eac784f3984b18cd788e16be42	2017-08-19T17:30:48Z	- rewrite of the IWAD loading mechanism.	pending	PARTIAL, stays pending. Took CheckIWADInfo only (a file declares itself via an embedded IWADINFO, and that beats lump matching); adapted onto FResourceFile since this tree has no FileSystem. The rest of the commit rebuilds IWAD discovery around that FileSystem and is NOT taken. Detection itself needed nothing: our MustContain rule already matches upstream.	/
 f3d31e055f83c8b3b25da20cd2facef518362d86	2017-08-19T18:13:12Z	- print the version at the start of the log.	pending		/
 b8c0e78c9187b66adf75c37e89e50320347886e1	2017-08-19T21:32:10Z	- fix linux compile	pending		/
 b7d26b3fa129e2b3df8cd5c4ad57b6c3f345c1ae	2017-08-20T02:10:45Z	- fixed Linux IWAD search thanks to a suggestion by Chris on the forum. Moved the search macros to i_system.h for both platforms. Neither are compatible with the other. This can be improved upon later, but for now, at least the major compile issue is fixed.	pending		/

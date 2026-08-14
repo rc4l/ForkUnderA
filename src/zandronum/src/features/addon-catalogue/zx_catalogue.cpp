@@ -201,7 +201,13 @@ void LoadRoot( const char *root, bool bShipped, std::vector<CatalogueEntry> &out
 // Inside the catalogue folder rather than beside it, because it IS catalogue data and travels with
 // it. The entry scan is unbothered by it for free: `remix` has no addon.json so it is not an entry,
 // and everything under it is too deep for the direct-children rule.
-void LoadRemixRoot( const char *root, std::vector<AddonRemix> &out )
+//
+// `idPrefix` is what lets an entry carry its OWN mixes under its own folder, by pointing this at
+// <entry>/remix/ and prefixing the ids with "<entry>/".
+//
+// A mix whose cfg names a map rotation belongs to one experience and nowhere else, so putting it
+// in the shared pool would fill a flat namespace with names only one entry could ever use.
+void LoadRemixRoot( const char *root, const char *idPrefix, std::vector<AddonRemix> &out )
 {
 	FString dir = root;
 	FixPathSeperator( dir );
@@ -237,7 +243,8 @@ void LoadRemixRoot( const char *root, std::vector<AddonRemix> &out )
 		if ( !ReadWholeFile(( path + "/remix.json" ).GetChars( ), json ))
 			continue;
 
-		AddonRemix remix = ParseRemixFile( id.GetChars( ), json );
+		const FString fullId = FString( idPrefix ) + id;
+		AddonRemix remix = ParseRemixFile( fullId.GetChars( ), json );
 
 		// Same promise, same moment: a remix naming a cfg nobody shipped would fail when somebody
 		// picks it, which is the worst time to find out.
@@ -251,7 +258,7 @@ void LoadRemixRoot( const char *root, std::vector<AddonRemix> &out )
 		if ( !remix.valid )
 		{
 			Printf( TEXTCOLOR_RED "Catalogue: skipping remix '%s' -- %s\n" TEXTCOLOR_NORMAL,
-				id.GetChars( ), remix.error.c_str( ));
+				fullId.GetChars( ), remix.error.c_str( ));
 			++g_Problems;
 			continue;
 		}
@@ -325,9 +332,22 @@ const std::vector<CatalogueEntry> &CatalogueLoad( bool bForceReload )
 	// The pool is read in the same pass, so an entry and the remixes it names can never be one reload
 	// out of step with each other.
 	g_Remixes.clear( );
-	LoadRemixRoot( shipped.c_str( ), g_Remixes );
+	LoadRemixRoot( shipped.c_str( ), "", g_Remixes );
 	if ( user != shipped )
-		LoadRemixRoot( user.c_str( ), g_Remixes );
+		LoadRemixRoot( user.c_str( ), "", g_Remixes );
+
+	// [rc4l] Then each entry's own, under <entry>/remix/, with the entry's id on the front. Read
+	// after the shared pool so an entry's copy of a name wins, which is the same rule the user
+	// folder already has over the shipped one.
+	for ( size_t i = 0; i < g_Entries.size( ); ++i )
+	{
+		const std::string &owner = g_Entries[i].addon.id;
+		const std::string prefix = owner + "/";
+
+		LoadRemixRoot(( shipped + "/" + owner ).c_str( ), prefix.c_str( ), g_Remixes );
+		if ( user != shipped )
+			LoadRemixRoot(( user + "/" + owner ).c_str( ), prefix.c_str( ), g_Remixes );
+	}
 
 	g_Loaded = true;
 	return g_Entries;
@@ -354,11 +374,19 @@ std::string CatalogueRemixCfgPath( const std::string &remixId )
 		const std::string user = CatalogueUserDir( );
 		const std::string shipped = CatalogueShippedDir( );
 
-		std::string at = user + "/remix/" + remixId + "/" + pool[i].cfg;
+		// [rc4l] An id carrying a slash is an entry's own mix, and its folder is under that entry
+		// rather than under the shared pool. Derived from the id rather than stored alongside it,
+		// so the two cannot disagree: the id IS where it came from.
+		const size_t slash = remixId.find( '/' );
+		const std::string tail = ( slash == std::string::npos )
+			? ( "/remix/" + remixId + "/" )
+			: ( "/" + remixId.substr( 0, slash ) + "/remix/" + remixId.substr( slash + 1 ) + "/" );
+
+		std::string at = user + tail + pool[i].cfg;
 		if ( FileExists( at.c_str( )))
 			return at;
 
-		return shipped + "/remix/" + remixId + "/" + pool[i].cfg;
+		return shipped + tail + pool[i].cfg;
 	}
 
 	return std::string( );

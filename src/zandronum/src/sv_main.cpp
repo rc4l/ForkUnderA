@@ -80,6 +80,9 @@
 #include "g_game.h"
 #include "p_local.h"
 #include "sv_main.h"
+#include "features/identity/computation/connectchallenge_compute.h"
+#include "features/identity/zx_identity.h"
+#include "features/identity/zx_identitynet.h"
 #include "sv_ban.h"
 #include "i_system.h"
 #include "c_console.h"
@@ -114,8 +117,6 @@
 #include "cl_main.h"
 #include "d_netinf.h"
 #include "po_man.h"
-#include "network/cl_auth.h"
-#include "network/sv_auth.h"
 #include "r_data/colormaps.h"
 #include "network_enums.h"
 #include "d_protocol.h"
@@ -173,7 +174,6 @@ static	bool	server_CheckForClientCommandFlood( ULONG ulClient );
 static	bool	server_CheckForClientMinorCommandFlood( ULONG ulClient );
 static	bool	server_CheckJoinPassword( const FString& clientPassword );
 static	bool	server_InfoCheat( BYTESTREAM_s* pByteStream );
-static	bool	server_CheckLogin( const ULONG ulClient );
 static	void	server_PrintWithIP( FString message, const NETADDRESS_s &address );
 static	void	server_PerformBacktrace( ULONG ulClient, ULONG ulNumLateMoveCMDs );
 static	bool	server_ShouldPerformBacktrace( ULONG ulClient );
@@ -288,7 +288,6 @@ CVAR( Flag, sv_nokill, dmflags2, DF2_NOSUICIDE )
 CVAR( Bool, sv_pure, true, CVAR_SERVERINFO | CVAR_LATCH )
 CVAR( Int, sv_maxclientsperip, 2, CVAR_ARCHIVE | CVAR_SERVERINFO )
 CVAR( Int, sv_afk2spec, 0, CVAR_ARCHIVE | CVAR_SERVERINFO ) // [K6]
-CVAR( Bool, sv_forcelogintojoin, false, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 CVAR( Bool, sv_useticbuffer, true, CVAR_ARCHIVE|CVAR_NOSETBYACS|CVAR_DEBUGONLY )
 CVAR( Int, sv_showcommands, 0, CVAR_ARCHIVE|CVAR_DEBUGONLY )
 CVAR( Int, sv_smoothplayers_debuginfo, 0, CVAR_ARCHIVE|CVAR_DEBUGONLY ) // [AK]
@@ -482,6 +481,14 @@ CUSTOM_CVAR( Float, sv_respawndelaytime, 1.0f, CVAR_ARCHIVE | CVAR_SERVERINFO | 
 
 void SERVER_Construct( void )
 {
+	// [rc4l] Load or create the identity this server presents, once, before anybody can connect.
+	// Doing it here rather than per connection is what keeps the handshake free of disk access.
+	{
+		const std::string root = zx::Identity_ConfigRoot( );
+		if ( !zx::Identity_InitServer( root.c_str( )))
+			Printf( TEXTCOLOR_RED "No server identity, so nobody will be able to authenticate.\n" );
+	}
+
 	const char	*pszPort;
 	const char	*pszMaxClients;
 	ULONG		ulIdx;
@@ -1204,13 +1211,6 @@ void SERVER_GetPackets( void )
 		// Packet is not from an existing client; must be someone trying to connect!
 		if ( g_lCurrentClient == -1 )
 		{
-			// [BB] Or it's from the auth server.
-			if ( NETWORK_GetFromAddress().Compare( NETWORK_AUTH_GetCachedServerAddress() ))
-			{
-				SERVER_AUTH_ParsePacket( pByteStream );
-				continue;
-			}
-
 			SERVER_DetermineConnectionType( pByteStream );
 			continue;
 		}
@@ -1369,6 +1369,9 @@ void SERVER_RequestClientToAuthenticate( ULONG ulClient )
 	// the client from relying on a gametic of 0 or some unset number.
 	g_aClients[ulClient].PacketBuffer.ByteStream.WriteLong( gametic );
 
+	// [rc4l] Anonymous accounts: we prove ourselves here, before the client has named an account.
+	SERVER_FuaAuthWriteChallenge( ulClient, &g_aClients[ulClient].PacketBuffer.ByteStream );
+
 	// Send the packet off.
 	SERVER_SendClientPacket( ulClient, true );
 }
@@ -1377,7 +1380,22 @@ void SERVER_RequestClientToAuthenticate( ULONG ulClient )
 //
 void SERVER_AuthenticateClientLevel( BYTESTREAM_s *pByteStream )
 {
-	if ( SERVER_PerformAuthenticationChecksum( pByteStream ) == false )
+	const bool bLevelMatches = SERVER_PerformAuthenticationChecksum( pByteStream );
+
+	// [rc4l] Read whatever the level said, so the proof after it is at the offset we expect, and
+	// judged before the level is: an identity we cannot confirm is the more basic refusal.
+	const bool bIdentityHolds = SERVER_FuaAuthReadProof( g_lCurrentClient, pByteStream );
+
+	if ( bIdentityHolds == false )
+	{
+		// [rc4l] SERVER_FuaAuthReadProof reports the duplicate-account case itself, so say nothing
+		// more when it has already disconnected this client.
+		if ( SERVER_IsValidClient( g_lCurrentClient ))
+			SERVER_ClientError( g_lCurrentClient, NETWORK_ERRORCODE_IDENTITYREJECTED );
+		return;
+	}
+
+	if ( bLevelMatches == false )
 	{
 		SERVER_ClientError( g_lCurrentClient, NETWORK_ERRORCODE_AUTHENTICATIONFAILED );
 		return;
@@ -2008,6 +2026,9 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 			pByteStream->ReadByte();
 			// [BB] Lump authentication string.
 			pByteStream->ReadString();
+			// [rc4l] And the identity fields, so this drain still matches what a client sends.
+			for ( size_t i = 0; i < zx::kNonceBytes + zx::kKeyBytes; ++i )
+				pByteStream->ReadByte();
 			return;
 		}
 	}
@@ -2042,9 +2063,6 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 
 	// [BB] Save whether the clients wants his country to be hidden.
 	g_aClients[lClient].bWantHideCountry = !!( connectFlags & CCF_HIDECOUNTRY );
-
-	// [TP] Save whether or not the player wants to hide his account.
-	g_aClients[lClient].WantHideAccount = !!pByteStream->ReadByte();
 
 	// Read in the client's network game version.
 	clientNetworkGameVersion = pByteStream->ReadByte();
@@ -2116,10 +2134,21 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 		return;
 	}
 
-	if ( sv_pure && strcmp ( pByteStream->ReadString(), g_lumpsAuthenticationChecksum.GetChars() ) )
+	// [rc4l] Read before it is judged, rather than inside the condition where sv_pure being off
+	// would short-circuit it away and leave everything after it reading from the wrong offset.
+	const FString clientLumpChecksum = pByteStream->ReadString();
+
+	if ( sv_pure && strcmp ( clientLumpChecksum.GetChars(), g_lumpsAuthenticationChecksum.GetChars() ) )
 	{
 		// Client fails the lump authentication.
 		SERVER_ClientError( lClient, NETWORK_ERRORCODE_PROTECTED_LUMP_AUTHENTICATIONFAILED );
+		return;
+	}
+
+	// [rc4l] Anonymous accounts: mint this slot's challenge, or replay the one it already has.
+	if ( SERVER_FuaAuthReadHello( lClient, pByteStream ) == false )
+	{
+		SERVER_ClientError( lClient, NETWORK_ERRORCODE_IDENTITYREJECTED );
 		return;
 	}
 
@@ -2177,7 +2206,10 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	// [AK] Reset the client's tic buffer.
 	SERVER_ResetClientTicBuffer( lClient );
 
-	SERVER_InitClientSRPData ( lClient );
+	// [rc4l] Anonymous accounts: unproven until the proof arrives with the level checksum, which
+	// is two messages away and before any slot is committed.
+	SERVER_GetClient( lClient )->loggedIn = false;
+	SERVER_GetClient( lClient )->username = "";
 
 	// [BB] Inform the client that he is connected and needs to authenticate the map.
 	SERVER_RequestClientToAuthenticate( lClient );
@@ -2681,8 +2713,7 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 			SERVERCOMMANDS_SetPlayerCountry( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 
 		// [TP] Account name.
-		if ( g_aClients[ulIdx].WantHideAccount == false )
-			SERVERCOMMANDS_SetPlayerAccountName( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
+		SERVERCOMMANDS_SetPlayerAccountName( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 	}
 
 	// Server may have already picked a team for the incoming player. If so, tell him!
@@ -3184,6 +3215,10 @@ void SERVER_AdjustPlayersReactiontime( const ULONG ulPlayer )
 void SERVER_DisconnectClient( ULONG ulClient, bool bBroadcast, bool bSaveInfo, LEAVEREASON_e reason )
 {
 	const CLIENTSTATE_e OldState = g_aClients[ulClient].State;
+
+	// [rc4l] Anonymous accounts: drop this slot's challenge, so the next occupant is issued its own
+	// and no ephemeral private key outlives the connection it was made for.
+	SERVER_FuaAuthClearChallenge( ulClient );
 
 	// [RK] Disconnectd players need their vote removed/cancelled.
 	CALLVOTE_DisconnectedVoter( ulClient );
@@ -5173,11 +5208,6 @@ bool SERVER_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 		// [TP] Client wishes to use the linetarget or info cheat on an actor.
 		return ( server_InfoCheat( pByteStream ));
 
-	case CLC_SRP_USER_REQUEST_LOGIN:
-	case CLC_SRP_USER_START_AUTHENTICATION:
-	case CLC_SRP_USER_PROCESS_CHALLENGE:
-
-		return SERVER_ProcessSRPClientCommand( lCommand, pByteStream );
 	case CLC_WARPCHEAT:
 
 		{
@@ -5263,12 +5293,7 @@ bool SERVER_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 			const int info = pByteStream->ReadByte();
 			const bool value = !!pByteStream->ReadByte();
 
-			if ( info == HIDEINFO_ACCOUNTNAME )
-			{
-				client->WantHideAccount = value;
-				SERVERCOMMANDS_SetPlayerAccountName( g_lCurrentClient );
-			}
-			else if ( info == HIDEINFO_COUNTRY )
+			if ( info == HIDEINFO_COUNTRY )
 			{
 				client->bWantHideCountry = value;
 
@@ -6660,10 +6685,6 @@ static bool server_RequestJoin( BYTESTREAM_s *pByteStream )
 	if ( server_CheckJoinPassword( clientJoinPassword ) == false )
 		return ( false );
 
-	// [BB] Possibly the player needs to login before joining.
-	if ( server_CheckLogin ( g_lCurrentClient ) == false )
-		return ( false );
-
 	// If there aren't currently any slots available, just put the person in line.
 	if ( GAMEMODE_PreventPlayersFromJoining() )
 	{
@@ -6901,10 +6922,6 @@ static bool server_ChangeTeam( BYTESTREAM_s *pByteStream )
 
 	// If we're forcing a join password, prevent him from joining if it doesn't match.
 	if ( server_CheckJoinPassword( clientJoinPassword ) == false )
-		return ( false );
-
-	// [BB] Possibly the player needs to login before joining.
-	if ( server_CheckLogin ( g_lCurrentClient ) == false )
 		return ( false );
 
 	// [BB] If this is a spectator and players are not allowed to join at the moment, put him in line.
@@ -7791,19 +7808,6 @@ static bool server_CheckJoinPassword( const FString& clientPassword )
 
 //*****************************************************************************
 //
-static bool server_CheckLogin ( const ULONG ulClient )
-{
-	if ( sv_forcelogintojoin && ( g_aClients[ulClient].loggedIn == false ) )
-	{
-		SERVER_PrintfPlayer( ulClient, "You need to login before joining.\n" );
-		return ( false );
-	}
-
-	return true;
-}
-
-//*****************************************************************************
-//
 // [TP] Client wishes to apply the linetarget or info cheat on a particularly
 // interesting actor but cannot because they don't know the health of it.
 // Let's help it out. :)
@@ -8046,17 +8050,9 @@ static void server_FixZFromBacktrace( APlayerPawn *pmo, fixed_t oldFloorZ )
 //
 FString CLIENT_s::GetAccountName( void ) const
 {
-	if ( loggedIn )
-	{
-		return username;
-	}
-	// [BB] Anonymous players get an account name based on their player slot.
-	else
-	{
-		FString result;
-		result.Format ( "%td@localhost", this - g_aClients );
-		return result;
-	}
+	// [rc4l] Empty only during the few seconds before a client proves who it is, after which it is
+	// dropped anyway, so there is no anonymous name left to invent.
+	return loggedIn ? username : FString( "" );
 }
 
 //*****************************************************************************
