@@ -1615,14 +1615,32 @@ static	GAMEMODE_e			g_NewGameMode = GAMEMODE_COOPERATIVE;
 // `key` is what it was built from -- the IWAD and the load order -- so changing the files rebuilds
 // it and nothing else does. Rebuilding on every look would throw away a rotation somebody had just
 // finished arranging.
-static	std::vector<std::string>	g_NewMaps;
+// [rc4l] A map is in the rotation or out of it, and it stays on the list either way.
+//
+// Taking one out used to remove the row, which made it a decision you could not undo without
+// rebuilding the whole list -- and rebuilding means changing the files, so there was no way back at
+// all. A switch costs one bool and makes a mis-click a mis-click rather than an accident.
+struct NewMapEntry
+{
+	std::string name;
+	bool bIn;
+
+	NewMapEntry() : bIn(true) {}
+	NewMapEntry(const std::string &n) : name(n), bIn(true) {}
+};
+
+static	std::vector<NewMapEntry>	g_NewMaps;
 static	FString				g_NewMapsKey;
 static	int					g_NewMapSel = 0;
 static	int					g_NewMapScroll = 0;
 static	int					g_NewMapHot = -1;
 static	int					g_NewMapBtnHot = -1;
+static	int					g_NewMapBtnSel = 0;		// which of the row's buttons the keyboard is on
 static	bool				g_NewMapRevealSel = true;
 static	bool				g_DraggingNewMapBar = false;
+
+// The same cursor for the load order's rows, which have the same three buttons.
+static	int					g_NewOrderBtnSel = 0;
 
 // The chooser's own state: where its cursor is and where it is scrolled to, separate from the
 // selection itself, so backing out of it changes nothing.
@@ -6706,10 +6724,17 @@ public:
 		for ( size_t i = 0; i < g_NewOrder.size( ); ++i )
 			zx::MergeMaps( maps, zx::MapsInPath( g_NewOrder[i].path ));
 
-		g_NewMaps = maps;
+		// Everything in, which is what "the rotation of these files" means before anybody says
+		// otherwise.
+		g_NewMaps.clear( );
+		g_NewMaps.reserve( maps.size( ));
+		for ( size_t i = 0; i < maps.size( ); ++i )
+			g_NewMaps.push_back( NewMapEntry( maps[i] ));
+
 		g_NewMapsKey = key;
 		g_NewMapSel = 0;
 		g_NewMapScroll = 0;
+		g_NewMapBtnSel = 0;
 		g_NewMapRevealSel = true;
 	}
 
@@ -6773,8 +6798,8 @@ public:
 		// list would have got anyway.
 		NewRebuildMaps( false );
 
-		config.mapRotation = g_NewMaps;
-		config.map = g_NewMaps.empty( ) ? "map01" : g_NewMaps[0];
+		config.mapRotation = NewRotation( );
+		config.map = config.mapRotation.empty( ) ? "map01" : config.mapRotation[0];
 
 		zx::ReachProbeRelease( );
 
@@ -7980,6 +8005,45 @@ public:
 
 	// --- the map list, in the same big box --------------------------------------------------------
 
+	// How many will actually be played, and which one is first. Both are asked in two places, and
+	// hosting has to agree with what the box says.
+	int NewMapsInCount( )
+	{
+		int count = 0;
+
+		for ( size_t i = 0; i < g_NewMaps.size( ); ++i )
+		{
+			if ( g_NewMaps[i].bIn )
+				count++;
+		}
+
+		return count;
+	}
+
+	std::string NewFirstMapIn( )
+	{
+		for ( size_t i = 0; i < g_NewMaps.size( ); ++i )
+		{
+			if ( g_NewMaps[i].bIn )
+				return g_NewMaps[i].name;
+		}
+
+		return std::string( );
+	}
+
+	std::vector<std::string> NewRotation( )
+	{
+		std::vector<std::string> out;
+
+		for ( size_t i = 0; i < g_NewMaps.size( ); ++i )
+		{
+			if ( g_NewMaps[i].bIn )
+				out.push_back( g_NewMaps[i].name );
+		}
+
+		return out;
+	}
+
 	int NewMapRowsVisible( )
 	{
 		// No footer here: nothing in this box is a number to paste.
@@ -8009,8 +8073,11 @@ public:
 		const int top = NewBigContentTop( );
 		const int visible = NewMapRowsVisible( );
 
+		// [rc4l] "8 of 32" rather than a count, because the two numbers are different questions:
+		// how many will be played, and how many there are to choose from.
 		FString heading;
-		heading.Format( "MAP ROTATION  (%d)", static_cast<int>( g_NewMaps.size( )));
+		heading.Format( "MAP ROTATION  (%d of %d)", NewMapsInCount( ),
+			static_cast<int>( g_NewMaps.size( )));
 
 		screen->DrawText( SmallFont, CR_GOLD, left, NewBigModalTop( ) + SB_NEW_MODAL_PAD, heading,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
@@ -8050,13 +8117,20 @@ public:
 				if ( bSel )
 					FocusAnchor( zx::BrowserFocus::Host, left - 9, rowY + SB_NEW_ROW_H / 2 );
 
-				const int btnHot = (( g_NewMapBtnHot >= row * 3 ) &&
-					( g_NewMapBtnHot < row * 3 + 3 )) ? ( g_NewMapBtnHot - row * 3 ) : -1;
+				// The pointer wins where it is, and the keyboard's cursor shows on the selected row
+				// otherwise -- the same rule the settings boxes follow, so both ways of using this
+				// mark the same thing.
+				int btnHot = (( g_NewMapBtnHot >= row * 3 ) && ( g_NewMapBtnHot < row * 3 + 3 ))
+					? ( g_NewMapBtnHot - row * 3 ) : -1;
+
+				if (( btnHot < 0 ) && bSel && ( g_NewMapHot < 0 ))
+					btnHot = g_NewMapBtnSel;
 
 				// The load order's own row, over a different list. See DrawOrderRow.
-				DrawOrderRow( left, right, rowY, row, g_NewMaps[row].c_str( ), bSel,
+				DrawOrderRow( left, right, rowY, row, g_NewMaps[row].name.c_str( ), bSel,
 					( row == g_NewMapHot ), btnHot, ( row == 0 ),
-					( row + 1 == static_cast<int>( g_NewMaps.size( ))), false );
+					( row + 1 == static_cast<int>( g_NewMaps.size( ))), false,
+					g_NewMaps[row].bIn ? "X" : "+", !g_NewMaps[row].bIn );
 			}
 
 			DrawHostRegionScrollBar( top, top + visible * SB_NEW_ROW_H,
@@ -8064,11 +8138,11 @@ public:
 				NewBigBarX( ));
 		}
 
-		// The first map is where the server starts, which is worth saying where it is decided.
-		if ( !g_NewMaps.empty( ))
+		// The first map IN is where the server starts, which is worth saying where it is decided.
+		if ( NewMapsInCount( ) > 0 )
 		{
 			FString foot;
-			foot.Format( "Starts on %s", g_NewMaps[0].c_str( ));
+			foot.Format( "Starts on %s", NewFirstMapIn( ).c_str( ));
 
 			screen->DrawText( SmallFont, CR_DARKGRAY, left, NewBigButtonTop( ) + 4, foot,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
@@ -8079,17 +8153,14 @@ public:
 			g_NewIwadConfirmHot );
 	}
 
-	// [rc4l] Remove and move, which is the whole of what this list can be told.
-	void NewMapRemove( int row )
+	// [rc4l] Switch and move, which is the whole of what this list can be told. Nothing leaves it:
+	// see NewMapEntry for why taking a map out has to be undoable.
+	void NewMapToggle( int row )
 	{
 		if (( row < 0 ) || ( row >= static_cast<int>( g_NewMaps.size( ))))
 			return;
 
-		g_NewMaps.erase( g_NewMaps.begin( ) + row );
-
-		g_NewMapSel = zx::ComputeClampedSelection( g_NewMapSel,
-			MAX( 1, static_cast<int>( g_NewMaps.size( ))));
-		g_NewMapRevealSel = true;
+		g_NewMaps[row].bIn = !g_NewMaps[row].bIn;
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 	}
 
@@ -8102,7 +8173,7 @@ public:
 		if (( to < 0 ) || ( to >= static_cast<int>( g_NewMaps.size( ))))
 			return;
 
-		const std::string held = g_NewMaps[row];
+		const NewMapEntry held = g_NewMaps[row];
 		g_NewMaps[row] = g_NewMaps[to];
 		g_NewMaps[to] = held;
 
@@ -8177,9 +8248,10 @@ public:
 				if ( type == MOUSE_Release )
 				{
 					g_NewMapSel = row;
+					g_NewMapBtnSel = button;
 
 					if ( button == 0 )
-						NewMapRemove( row );
+						NewMapToggle( row );
 					else
 						NewMapMove( row, ( button == 1 ) ? -1 : 1 );
 				}
@@ -8211,8 +8283,12 @@ public:
 		return true;
 	}
 
-	// The arrows walk it, DEL and Enter remove, and [ and ] move -- the same keys the load order
-	// answers to, because it is the same list of the same kind.
+	// [rc4l] Up and down walk the rows, LEFT AND RIGHT WALK THE ROW'S BUTTONS, and Enter presses the
+	// one under the cursor.
+	//
+	// Without the second of those, the three buttons on a row were a mouse-only control: the
+	// keyboard could reach the row and not the things on it, so switching a map out or moving one
+	// meant reaching for the mouse in the middle of arranging a rotation with the arrows.
 	bool NewMapsMenuKey( int mkey )
 	{
 		if ( g_NewMaps.empty( ))
@@ -8232,9 +8308,27 @@ public:
 			return true;
 		}
 
+		if (( mkey == MKEY_Left ) || ( mkey == MKEY_Right ))
+		{
+			const int next = zx::ComputeClampedSelection(
+				g_NewMapBtnSel + (( mkey == MKEY_Left ) ? -1 : 1 ), 3 );
+
+			if ( next != g_NewMapBtnSel )
+			{
+				g_NewMapBtnSel = next;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+
+			return true;
+		}
+
 		if ( mkey == MKEY_Enter )
 		{
-			NewMapRemove( g_NewMapSel );
+			if ( g_NewMapBtnSel == 0 )
+				NewMapToggle( g_NewMapSel );
+			else
+				NewMapMove( g_NewMapSel, ( g_NewMapBtnSel == 1 ) ? -1 : 1 );
+
 			return true;
 		}
 
@@ -8859,15 +8953,18 @@ public:
 	// Written once and used by the load order and by the map list, which are the same control over
 	// different things -- a list where the POSITION is the meaning. `btnHot` is 0, 1 or 2 for the
 	// button under the pointer, or -1.
+	// `firstGlyph` is what the leftmost button says: the load order removes a file, and the map list
+	// switches a map in and out, which is a different act and says so.
 	void DrawOrderRow( int left, int right, int rowY, int index, const char *label, bool bSel,
-		bool bHot, int btnHot, bool bFirst, bool bLast, bool bNumbered )
+		bool bHot, int btnHot, bool bFirst, bool bLast, bool bNumbered,
+		const char *firstGlyph = "X", bool bDim = false )
 	{
 		DrawNewRowHighlight( left - 4, right, rowY, bSel, bHot );
 
 		// X, then the name, then the two arrows: the order the eye reads them is the order they
 		// matter in. Remove is the one you reach for; moving is fiddly, so it sits at the far end
 		// where it cannot be hit on the way to anything else.
-		DrawNewOrderButton( OrderXLeft( left ), rowY, "X", ( btnHot == 0 ));
+		DrawNewOrderButton( OrderXLeft( left ), rowY, firstGlyph, ( btnHot == 0 ));
 
 		// [rc4l] Numbered only where the number says something the list does not.
 		//
@@ -8880,7 +8977,10 @@ public:
 
 		line += serverbrowser_FitName( label, OrderUpLeft( right ) - OrderNameLeft( left ) - 6 );
 
-		DrawNewRowText( OrderNameLeft( left ), rowY, bSel ? CR_WHITE : CR_GRAY, line );
+		// Dim says "on the list but not in play". The state is on the ROW rather than on the button,
+		// because the button says what pressing it would do and those are different things.
+		DrawNewRowText( OrderNameLeft( left ), rowY,
+			bDim ? CR_DARKGRAY : ( bSel ? CR_WHITE : CR_GRAY ), line );
 
 		// [rc4l] Drawn dark at the ends where they cannot go anywhere, rather than hidden. A button
 		// that vanishes on the first and last row makes the row change shape as the selection passes
@@ -8955,8 +9055,16 @@ public:
 			if ( bSel && ( g_NewFocus == NewFocus::Order ) && ( g_Focus == zx::BrowserFocus::Host ))
 				FocusAnchor( zx::BrowserFocus::Host, SB_HOST_RCOL_LEFT - 9, rowY + SB_NEW_ROW_H / 2 );
 
-			const int btnHot = (( g_NewOrderBtnHot >= row * 3 ) && ( g_NewOrderBtnHot < row * 3 + 3 ))
+			int btnHot = (( g_NewOrderBtnHot >= row * 3 ) && ( g_NewOrderBtnHot < row * 3 + 3 ))
 				? ( g_NewOrderBtnHot - row * 3 ) : -1;
+
+			// The keyboard's cursor shows where the pointer is not, so the row says which button
+			// Enter would press.
+			if (( btnHot < 0 ) && bSel && ( g_NewOrderHot < 0 ) &&
+				( g_NewFocus == NewFocus::Order ) && ( g_Focus == zx::BrowserFocus::Host ))
+			{
+				btnHot = g_NewOrderBtnSel;
+			}
 
 			DrawOrderRow( SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT, rowY, row,
 				g_NewOrder[row].name.c_str( ), bSel, ( row == g_NewOrderHot ), btnHot,
@@ -9712,6 +9820,16 @@ public:
 		case zx::NavKey::Left:
 			if ( g_NewFocus == NewFocus::Order )
 			{
+				// [rc4l] Along the row's own buttons first, and out of the region only from the
+				// leftmost one. They were unreachable by keyboard entirely: the cursor could get to
+				// a row and not to the three controls sitting on it.
+				if ( g_NewOrderBtnSel > 0 )
+				{
+					g_NewOrderBtnSel--;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					return true;
+				}
+
 				g_NewFocus = NewFocus::Wads;
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			}
@@ -9732,6 +9850,17 @@ public:
 				if ( g_NewToolSel < SB_NEW_TOOL_COUNT - 1 )
 				{
 					g_NewToolSel++;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
+			if ( g_NewFocus == NewFocus::Order )
+			{
+				// The other half of the row walk. See the Left case.
+				if ( g_NewOrderBtnSel < 2 )
+				{
+					g_NewOrderBtnSel++;
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
 				return true;
@@ -14807,10 +14936,21 @@ public:
 					return true;
 				}
 
-				// On the load order, Enter is deliberately nothing: the row's own buttons say what
-				// can be done to it, and none of them is the obvious meaning of "enter".
+				// [rc4l] On the load order, Enter presses the button the cursor is on.
+				//
+				// It was deliberately nothing, on the reasoning that no single act is the obvious
+				// meaning of "enter" for a file in a list. True while the buttons could not be
+				// reached at all; now that left and right walk them, Enter has exactly one meaning
+				// again -- press this one.
 				if ( g_NewFocus == NewFocus::Order )
+				{
+					if ( g_NewOrderBtnSel == 0 )
+						NewRemoveSelected( );
+					else
+						NewMoveSelected(( g_NewOrderBtnSel == 1 ) ? -1 : 1 );
+
 					return true;
+				}
 			}
 		}
 
