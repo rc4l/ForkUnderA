@@ -728,6 +728,60 @@ TEST(HostArgs, NoGameplayCvarsIsNoExtraArguments)
 	EXPECT_FALSE(Has(args, "+sv_maxlives"));
 }
 
+TEST(HostArgs, PutsTheWholeRotationOnTheCommandLine)
+{
+	HostConfig config = Basic();
+	config.mapRotation.push_back("MAP01");
+	config.mapRotation.push_back("MAP02");
+	config.mapRotation.push_back("MAP03");
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	int found = 0;
+	for (size_t i = 0; i < args.size(); ++i)
+	{
+		if (args[i] == "+addmap")
+			found++;
+	}
+
+	EXPECT_EQ(3, found);
+	EXPECT_EQ("MAP01", ValueAfter(args, "+addmap"));
+}
+
+TEST(HostArgs, RotatesBeforeItIsToldWhereToStart)
+{
+	// The server needs somewhere to go next before it goes anywhere, or the first map change has
+	// an empty rotation to choose from.
+	HostConfig config = Basic();
+	config.map = "MAP01";
+	config.mapRotation.push_back("MAP01");
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_LT(IndexOf(args, "+addmap"), IndexOf(args, "+map"));
+}
+
+TEST(HostArgs, DropsARotationEntryThatIsNotALumpName)
+{
+	// Dropped rather than escaped, the same as every other untrusted value here: a rotation is
+	// built from what was read out of a file, and a file can say anything.
+	HostConfig config = Basic();
+	config.mapRotation.push_back("../../etc/passwd");
+	config.mapRotation.push_back("-host");
+	config.mapRotation.push_back("MAP 01");
+
+	const vector<string> args = BuildHostArgs("z", config);
+
+	EXPECT_FALSE(Has(args, "+addmap"));
+}
+
+TEST(HostArgs, NoRotationIsNoAddmapAtAll)
+{
+	const vector<string> args = BuildHostArgs("z", Basic());
+
+	EXPECT_FALSE(Has(args, "+addmap"));
+}
+
 TEST(HostArgs, ADangerousWadPathIsStillDropped)
 {
 	// Dropped rather than escaped, the same as every other unsafe value here.
