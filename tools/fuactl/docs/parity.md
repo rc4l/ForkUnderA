@@ -70,7 +70,9 @@ tool couldn't do.
 |---|---|
 | deterministic perf ablation | ✅ CLI `perf-ab` (causal Δms + sim/render verdict) |
 | frame percentiles / 1%-low | ✅ RPC `perf.capture` |
-| function-level hotspots | ✅ CLI `sample` (macOS `sample` / Linux `perf`) |
+| function-level hotspots (CPU) | ✅ CLI `sample` (macOS `sample` / Linux `perf`) |
+| per-pass **GPU** milliseconds | ✅ RPC `gl.timers` / CLI `gl-timers` (scene / translucent / hud2d + total, GL_TIMESTAMP queries) — which GL pass eats a laggy frame |
+| renderer identity + timer-query support | ✅ RPC `renderer.info` / CLI `renderer-info` |
 | per-command receive bandwidth | ✅ RPC `net.bandwidth` / CLI `net-bw` |
 
 ## Saves / demos
