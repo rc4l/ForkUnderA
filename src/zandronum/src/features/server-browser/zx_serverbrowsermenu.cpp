@@ -57,6 +57,8 @@
 #include "features/server-browser/computation/liverow_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] the HOST tab runs a server from in here
 #include "features/addon-catalogue/zx_catalogue.h"
+#include "features/wad-library/zx_wadlibrary.h"
+#include "features/wad-library/computation/loadorder_compute.h"
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
@@ -248,7 +250,10 @@ static int serverbrowser_OriginY( void );
 // same small breathing room the server list leaves.
 #define SB_HOST_LEFT		( SB_PANEL_LEFT + 8 )
 #define SB_HOST_RIGHT		( SB_PANEL_RIGHT - 8 )
-#define SB_HOST_TOP			( SB_TAB_ROW_SEP_Y + 14 )
+// [rc4l] Below the SECOND rule, not the first. Hosting has its own sub-tab row now, so the panel
+// starts where the browse tab's content starts and the two tabs no longer disagree about where the
+// header ends.
+#define SB_HOST_TOP			( SB_TAB_SEP_Y + 14 )
 #define SB_HOST_PAD			16
 #define SB_HOST_LINE		11
 
@@ -385,6 +390,29 @@ static int serverbrowser_OriginY( void );
 // [rc4l] How far the right column's backdrop stands off its content. The same on all four sides, so
 // the title is inset from the top by what the text is inset from the sides.
 #define SB_HOST_RCOL_INSET	8
+
+// [rc4l] The NEW screen, laid out in the same two columns the preset form uses so the two tabs read
+// as one panel rather than two designs. Left is what you have, right is what you picked.
+//
+// The IWAD list is SHORT by construction: one is chosen, and a tall list of things you can only
+// have one of wastes the height the wad list needs. Four rows plus its own scroll is enough to see
+// that there is a choice, and the search box under it is what handles somebody with twenty.
+#define SB_NEW_LINE			SB_HOST_LINE
+#define SB_NEW_ROW_H		12
+#define SB_NEW_TOP			( SB_HOST_TOP + SB_HOST_PAD )
+#define SB_NEW_IWAD_ROWS	4
+#define SB_NEW_IWAD_TOP		( SB_NEW_TOP + SB_NEW_LINE + 4 )
+#define SB_NEW_IWAD_BOTTOM	( SB_NEW_IWAD_TOP + SB_NEW_IWAD_ROWS * SB_NEW_ROW_H )
+
+// The wad list takes everything left over, which is what makes it the thing this screen is for.
+#define SB_NEW_SEARCH_TOP	( SB_NEW_IWAD_BOTTOM + 10 )
+#define SB_NEW_SEARCH_H		12
+#define SB_NEW_WADS_TOP		( SB_NEW_SEARCH_TOP + SB_NEW_SEARCH_H + 6 )
+#define SB_NEW_WADS_BOTTOM	( SB_HOST_BTN_Y - 8 )
+
+// The right column: the load order, and the buttons that reorder it pinned under it.
+#define SB_NEW_ORDER_TOP	( SB_NEW_TOP + SB_NEW_LINE + 4 )
+#define SB_NEW_ORDER_BOTTOM	( SB_HOST_BTN_Y - 8 )
 
 // [rc4l] The experience list's own bar, INSIDE the list the way the server list keeps its own, with
 // the rows stopping short of it.
@@ -670,10 +698,20 @@ const int kTabCount = 2;
 enum class BrowseKind { Public, Private };
 const int kBrowseCount = 2;
 
+// [rc4l] And what HOST is showing. The second row belongs to whichever tab is selected rather than
+// to browsing alone.
+//
+// Three, because "made by us" and "made by you" are not the same shelf and one word cannot mean
+// both: PRESETS is the shipped catalogue this tab has always been, CUSTOM is where the ones you
+// saved land, and NEW is where you build one. The order is the order you meet them in.
+enum class HostKind { Presets, Custom, New };
+const int kHostKindCount = 3;
+
 // [rc4l] The row labels, at file scope because three things have to agree about them: what is
 // drawn, what is clicked, and the widths both of those are measured from.
 const char *const kTabLabels[kTabCount] = { "MULTIPLAYER", "HOST" };
 const char *const kSubTabLabels[kBrowseCount] = { "PUBLIC", "PRIVATE" };
+const char *const kHostSubTabLabels[kHostKindCount] = { "PRESETS", "CUSTOM", "NEW" };
 
 // [rc4l] Browse, and Init decides again on every visit. This used to be "the tab you left on is the
 // tab you come back to", which sounds considerate and is not: the player who ended their last visit
@@ -682,6 +720,7 @@ const char *const kSubTabLabels[kBrowseCount] = { "PUBLIC", "PRIVATE" };
 // asked of the servers, in openingtab_compute.
 static	BrowserTab		g_Tab = BrowserTab::Browse;
 static	BrowseKind		g_Browse = BrowseKind::Public;
+static	HostKind		g_HostKind = HostKind::Presets;
 
 // [rc4l] Has any refresh run to completion this session? Only ever set, never cleared: the question
 // is whether we have EVER had an answer, which is what separates "there are no servers" from "we
@@ -1420,6 +1459,56 @@ static	zx::BrowserFocus	g_Focus = zx::BrowserFocus::Tabs;
 // not about a tab, and having to retype it to look at the other tab would make the box feel like it
 // belonged to one of them.
 static	zx::TextInput		g_Search;
+
+// ---------------------------------------------------------------------------------------------
+//
+// [rc4l] NEW: a server built by hand, out of the player's own files.
+//
+// Four regions and one rule about them: the IWAD is a single choice and the PWADs are an ordered
+// list, so they are two different controls rather than one list with a flag on a row. See
+// features/wad-library/computation/loadorder_compute.h for why order is the whole point.
+
+enum class NewFocus { Iwads, Search, Wads, Order };
+
+static	NewFocus			g_NewFocus = NewFocus::Wads;
+
+// Which row is under the cursor in each region, and where each list is scrolled to. Separate
+// because they are separate lists: scrolling one must not move the others.
+static	int					g_NewIwadSel = 0;
+static	int					g_NewIwadScroll = 0;
+
+// Whether the player has picked one themselves. Until they have, the selection follows the IWAD
+// this client is running, which is the only one their own join can authenticate against.
+static	bool				g_NewIwadChosen = false;
+static	int					g_NewWadSel = 0;
+static	int					g_NewWadScroll = 0;
+static	int					g_NewOrderSel = 0;
+static	int					g_NewOrderScroll = 0;
+
+// Hover, so the mouse lights what it is over exactly as everywhere else on this screen.
+static	int					g_NewIwadHot = -1;
+static	int					g_NewWadHot = -1;
+static	int					g_NewOrderHot = -1;
+static	bool				g_NewSearchHot = false;
+static	bool				g_NewButtonHot = false;
+
+static	zx::TextInput		g_NewSearch;
+
+// The chosen files, in the order they will load. The IWAD is deliberately NOT in here.
+static	std::vector<zx::LoadOrderEntry>	g_NewOrder;
+
+// [rc4l] The rows the wad list is showing: filtered, deduplicated and sorted, rebuilt only when the
+// query or the scan changes. NEVER per frame -- that is the whole reason this is cached rather than
+// derived where it is drawn, and at twenty thousand files it is the difference between a menu and a
+// slideshow.
+static	std::vector<zx::LibraryRow>		g_NewRows;
+static	FString				g_NewRowsKey;
+static	size_t				g_NewRowsFiles = 0;
+static	bool				g_NewRowsValid = false;
+
+// What the last add did, so a refusal can say why rather than looking like a dead button.
+static	FString				g_NewNotice;
+static	int					g_NewNoticeMs = 0;
 static	bool				g_SearchHot = false;
 
 // [rc4l] Held while the pointer is dragging out a selection in the search box, so a drag that
@@ -3420,7 +3509,28 @@ public:
 	}
 
 	int TabW( int i )		{ return PillW( kTabLabels[i], SB_TAB_PILL_PAD ); }
-	int SubTabW( int i )	{ return PillW( kSubTabLabels[i], SB_SUBTAB_PILL_PAD ); }
+
+	// [rc4l] The second row belongs to whichever tab is selected, so everything about it -- how many
+	// pills, what they say, which one is lit -- is asked of the tab rather than assumed to be the
+	// browse filters. Three things have to agree about this row (what is drawn, what is clicked, and
+	// the widths both measure from), so they agree by asking the same three functions.
+	int SubTabCount( )
+	{
+		return ( g_Tab == BrowserTab::Browse ) ? kBrowseCount : kHostKindCount;
+	}
+
+	const char *SubTabLabel( int i )
+	{
+		return ( g_Tab == BrowserTab::Browse ) ? kSubTabLabels[i] : kHostSubTabLabels[i];
+	}
+
+	int SubTabIndex( )
+	{
+		return ( g_Tab == BrowserTab::Browse )
+			? static_cast<int>( g_Browse ) : static_cast<int>( g_HostKind );
+	}
+
+	int SubTabW( int i )	{ return PillW( SubTabLabel( i ), SB_SUBTAB_PILL_PAD ); }
 
 	int TabLeft( int i )
 	{
@@ -3492,20 +3602,29 @@ public:
 	// controls that do nothing sitting where the eye expects the thing it just chose.
 	void DrawSubTabs( )
 	{
-		static const char *const tips[] = {
+		static const char *const browseTips[] = {
 			"Servers anyone can join",
 			"These servers are password-protected",
 		};
 
-		for ( int i = 0; i < kBrowseCount; ++i )
+		// In row order, same as the labels they describe.
+		static const char *const hostTips[] = {
+			"Ready-made experiences to host",
+			"The ones you have put together and saved",
+			"Build a server from your own files",
+		};
+
+		const char *const *tips = ( g_Tab == BrowserTab::Browse ) ? browseTips : hostTips;
+
+		for ( int i = 0; i < SubTabCount( ); ++i )
 		{
 			const int vLeft = SubTabLeft( i );
 			const int vW = SubTabW( i );
-			const bool bSelected = ( static_cast<int>( g_Browse ) == i );
+			const bool bSelected = ( SubTabIndex( ) == i );
 
 			// Hover only. Keyboard focus gets a RING instead, because a brighter fill is already what
 			// selected looks like and one picture cannot mean both.
-			DrawPill( vLeft, SB_SUBTAB_TOP, vW, SB_SUBTAB_H, kSubTabLabels[i], bSelected,
+			DrawPill( vLeft, SB_SUBTAB_TOP, vW, SB_SUBTAB_H, SubTabLabel( i ), bSelected,
 				( g_SubTabHot == i ));
 
 			if ( bSelected )
@@ -3514,7 +3633,9 @@ public:
 			serverbrowser_Tip( vLeft, SB_SUBTAB_TOP, vW, SB_SUBTAB_H, tips[i] );
 		}
 
-		DrawSearchBox( );
+		// The search box filters a list, and hosting has none. It stays with the row it belongs to.
+		if ( g_Tab == BrowserTab::Browse )
+			DrawSearchBox( );
 	}
 
 	//*************************************************************************
@@ -3547,13 +3668,11 @@ public:
 		// thing in the header that must not move when the tab changes.
 		DrawSeparatorSpan( SB_TAB_ROW_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
 
-		// The second row and the rule under it belong to BROWSE alone. They appear BELOW a divider
-		// that has not moved, so arriving on this tab adds to the header rather than rearranging it.
-		if ( g_Tab == BrowserTab::Browse )
-		{
-			DrawSubTabs( );
-			DrawSeparatorSpan( SB_TAB_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
-		}
+		// [rc4l] The second row now belongs to BOTH tabs -- browse filters its list, host picks how
+		// the server is put together -- so the header is the same shape whichever tab is selected
+		// and nothing below it moves when you change tab.
+		DrawSubTabs( );
+		DrawSeparatorSpan( SB_TAB_SEP_Y, SB_PANEL_LEFT + 12, SB_DETAIL_RIGHT );
 	}
 
 	//*************************************************************************
@@ -4693,6 +4812,15 @@ public:
 		g_HostFieldHot = -1;
 		g_HostButtonHot = false;
 		g_HostVisHot = -1;
+
+		if ( g_HostKind == HostKind::New )
+			return NewMouseEvent( type, x, y );
+
+		// [rc4l] CUSTOM draws nothing, so nothing there can be clicked. Refused rather than left to
+		// miss every hit test on its own: the fields keep their positions while they are not on
+		// screen, and a click landing on one of them would edit a form nobody can see.
+		if ( g_HostKind != HostKind::Presets )
+			return false;
 
 		// [rc4l] FIRST, and before the click-away rule below. A bar lives over the same column the
 		// details and the status draw in, and a drag along it must not read as "clicked on nothing"
@@ -6029,6 +6157,861 @@ public:
 		}
 	}
 
+	// =============================================================================================
+	//
+	// [rc4l] NEW: building a server out of your own files.
+	//
+	// =============================================================================================
+
+	// The IWADs on this machine, cached for the frame. AvailableIwads probes the disk, so calling it
+	// per row would be one stat per IWAD per frame.
+	// The IWAD this client is running, by its bare filename.
+	FString NewRunningIwad( )
+	{
+		const char *const path = Wads.GetWadName( FWadCollection::IWAD_FILENUM );
+		if ( path == NULL )
+			return FString( );
+
+		FString name = path;
+		FixPathSeperator( name );
+
+		const long slash = name.LastIndexOf( '/' );
+		return ( slash >= 0 ) ? name.Mid( slash + 1 ) : name;
+	}
+
+	const std::vector<std::string> &NewIwads( )
+	{
+		static std::vector<std::string> cached;
+		static int lastMs = -100000;
+
+		const int now = static_cast<int>( I_MSTime( ));
+		if ( now - lastMs > 2000 )
+		{
+			// [rc4l] Every IWAD on the machine, NOT zx::AvailableIwads.
+			//
+			// That one probes the SUBSTITUTE table -- the free stand-ins -- plus whatever name a
+			// catalogue entry asked for, which is right for "the entry wants doom2, what can it run
+			// on" and wrong for "what has this player got". Asked with no preference it can only
+			// ever answer Freedoom, so this screen offered three IWADs to somebody running a fourth,
+			// and hosting on one of them produced a server its own client could not authenticate
+			// against.
+			cached.clear( );
+
+			const std::vector<std::string> &known = zx::KnownIwadNames( );
+			for ( size_t i = 0; i < known.size( ); ++i )
+			{
+				if ( zx::FindIwadInEngineSearchPaths( known[i].c_str( )).IsNotEmpty( ) ||
+					zx::FindFileInEngineSearchPaths( known[i].c_str( )).IsNotEmpty( ))
+				{
+					cached.push_back( known[i] );
+				}
+			}
+
+			// [rc4l] And whatever we are RUNNING, which the table above cannot be relied on to name:
+			// a game shipping its own iwad under its own filename is exactly the case the table
+			// cannot enumerate, and it is loaded right now, so there is no question that it exists.
+			{
+				const FString running = NewRunningIwad( );
+				if ( running.IsNotEmpty( ))
+				{
+					bool bHave = false;
+					for ( size_t i = 0; i < cached.size( ); ++i )
+					{
+						if ( running.CompareNoCase( cached[i].c_str( )) == 0 )
+						{
+							bHave = true;
+							break;
+						}
+					}
+
+					if ( !bHave )
+						cached.push_back( running.GetChars( ));
+				}
+			}
+
+			lastMs = now;
+
+			// [rc4l] The one already loaded is the one selected, until the player says otherwise.
+			//
+			// Not the first row. Hosting is followed by joining your own server, and a server on a
+			// different IWAD from the client that started it fails level authentication the moment
+			// it connects -- so the alphabetical default was a working server nobody could join,
+			// which reads as the feature being broken rather than as a choice made for you.
+			if ( !g_NewIwadChosen )
+			{
+				const FString running = NewRunningIwad( );
+				for ( size_t i = 0; i < cached.size( ); ++i )
+				{
+					if ( running.CompareNoCase( cached[i].c_str( )) == 0 )
+					{
+						g_NewIwadSel = static_cast<int>( i );
+						break;
+					}
+				}
+			}
+		}
+
+		return cached;
+	}
+
+	// [rc4l] The wad rows, rebuilt only when something they depend on has changed.
+	//
+	// Two inputs: what has been typed, and how many files the scan has found. Both are cheap to
+	// compare and neither can change without the rows needing to. Everything else on this screen
+	// reads the result, so the filter runs once per change rather than once per region per frame.
+	const std::vector<zx::LibraryRow> &NewRows( )
+	{
+		const std::vector<zx::LibraryFile> &files = zx::wadlibrary::Files( );
+
+		const FString key = g_NewSearch.text.c_str( );
+
+		if ( g_NewRowsValid && ( g_NewRowsFiles == files.size( )) && ( g_NewRowsKey.Compare( key ) == 0 ))
+			return g_NewRows;
+
+		g_NewRows = zx::BuildLibraryRows( files, zx::SearchFold( g_NewSearch.text ));
+		g_NewRowsKey = key;
+		g_NewRowsFiles = files.size( );
+		g_NewRowsValid = true;
+
+		// A narrower search can leave the cursor past the end of what is left.
+		g_NewWadSel = zx::ComputeClampedSelection( g_NewWadSel, static_cast<int>( g_NewRows.size( )));
+
+		return g_NewRows;
+	}
+
+	int NewWadRowsVisible( )
+	{
+		return ( SB_NEW_WADS_BOTTOM - SB_NEW_WADS_TOP ) / SB_NEW_ROW_H;
+	}
+
+	int NewOrderRowsVisible( )
+	{
+		return ( SB_NEW_ORDER_BOTTOM - SB_NEW_ORDER_TOP ) / SB_NEW_ROW_H;
+	}
+
+	// Keep a selection on screen by moving the VIEW, never the selection. See the server list, which
+	// has had this rule since it had a scrollbar.
+	void NewClampScroll( int sel, int count, int visible, int &scroll )
+	{
+		if ( count <= visible )
+		{
+			scroll = 0;
+			return;
+		}
+
+		if ( sel < scroll )
+			scroll = sel;
+		else if ( sel >= scroll + visible )
+			scroll = sel - visible + 1;
+
+		if ( scroll > count - visible )
+			scroll = count - visible;
+		if ( scroll < 0 )
+			scroll = 0;
+	}
+
+	void NewSay( const char *text )
+	{
+		g_NewNotice = text;
+		g_NewNoticeMs = static_cast<int>( I_MSTime( ));
+	}
+
+	// [rc4l] Add the selected file to the load order, and say what happened.
+	//
+	// This is the ONE place a file is hashed, and it happens here rather than during the scan for
+	// the reason the library header gives at length: one hash is milliseconds and twenty thousand
+	// is tens of gigabytes.
+	void NewAddSelected( )
+	{
+		const std::vector<zx::LibraryRow> &rows = NewRows( );
+		if (( g_NewWadSel < 0 ) || ( g_NewWadSel >= static_cast<int>( rows.size( ))))
+			return;
+
+		const std::vector<zx::LibraryFile> &files = zx::wadlibrary::Files( );
+		const zx::LibraryFile &file = files[rows[g_NewWadSel].index];
+
+		zx::LoadOrderEntry entry( file.path, file.name, file.size );
+		entry.md5 = zx::wadlibrary::HashOf( file );
+
+		const zx::AddResult result = zx::AddToLoadOrder( g_NewOrder, entry );
+
+		switch ( result.verdict )
+		{
+		case zx::AddVerdict::Added:
+			g_NewOrderSel = static_cast<int>( result.index );
+			NewSay( "Added" );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+			break;
+
+		case zx::AddVerdict::AlreadyThere:
+			g_NewOrderSel = static_cast<int>( result.index );
+			NewSay( "That one is already in the list" );
+			break;
+
+		case zx::AddVerdict::NameTaken:
+			// [rc4l] Said in these words on purpose. The player is looking at two rows they can SEE
+			// are different files, and the reason they cannot have both is about the name a joining
+			// client is given, which is not visible from here at all.
+			g_NewOrderSel = static_cast<int>( result.index );
+			NewSay( "A different file of that name is already in the list" );
+			break;
+
+		case zx::AddVerdict::Empty:
+			break;
+		}
+	}
+
+	// [rc4l] Start a server out of what has been built here.
+	//
+	// The IWAD and the files go over as RESOLVED PATHS, never names, for the reason the preset path
+	// gives where it does the same: the spawned server searches its own config, not this one, so a
+	// name is a second search that can find a different file. Here they came out of a scan that
+	// already knows exactly where each one is, so there is nothing to look up twice.
+	void NewStartHosting( )
+	{
+		const std::vector<std::string> &iwads = NewIwads( );
+		if ( iwads.empty( ))
+		{
+			NewSay( "No IWAD to run on" );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+			return;
+		}
+
+		const std::string iwadName = iwads[zx::ComputeClampedSelection( g_NewIwadSel,
+			static_cast<int>( iwads.size( )))];
+
+		FString iwadPath = zx::FindFileInEngineSearchPaths( iwadName.c_str( ));
+		if ( iwadPath.IsEmpty( ))
+			iwadPath = zx::FindIwadInEngineSearchPaths( iwadName.c_str( ));
+		if ( iwadPath.IsEmpty( ))
+			iwadPath = iwadName.c_str( );
+
+		zx::HostConfig config;
+		config.hostName = ( std::string( "Fua: " ) +
+			( g_NewOrder.empty( ) ? iwadName : g_NewOrder[0].name ));
+		config.iwad = iwadPath.GetChars( );
+
+		for ( size_t i = 0; i < g_NewOrder.size( ); ++i )
+			config.pwads.push_back( g_NewOrder[i].path );
+
+		config.maxPlayers = 8;
+		config.port = 0;
+		config.advertise = false;
+		config.serveWads = true;
+
+		// No cfg and no gamemode: this screen has not grown the controls for either yet, so the
+		// server takes the engine's defaults rather than something half-chosen on its behalf.
+		config.map = "map01";
+
+		zx::ReachProbeRelease( );
+
+		if ( zx::HostStart( config ) == false )
+		{
+			NewSay( "Could not start the server" );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+		}
+	}
+
+	void NewMoveSelected( int step )
+	{
+		if ( g_NewOrder.empty( ))
+			return;
+
+		g_NewOrderSel = static_cast<int>(
+			zx::MoveInLoadOrder( g_NewOrder, static_cast<size_t>( g_NewOrderSel ), step ));
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	void NewRemoveSelected( )
+	{
+		if ( g_NewOrder.empty( ))
+			return;
+
+		g_NewOrderSel = static_cast<int>(
+			zx::RemoveFromLoadOrder( g_NewOrder, static_cast<size_t>( g_NewOrderSel )));
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	// One row of either list. Returns the row's top edge, so the hit test and the draw agree by
+	// construction rather than by both being written from the same numbers.
+	int NewRowY( int top, int row, int scroll )
+	{
+		return top + ( row - scroll ) * SB_NEW_ROW_H;
+	}
+
+	void DrawNewRowText( int x, int rowY, EColorRange col, const char *text )
+	{
+		screen->DrawText( SmallFont, col, x, rowY + ( SB_NEW_ROW_H - SmallFont->GetHeight( )) / 2,
+			text, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+			TAG_DONE );
+	}
+
+	void DrawNewRowHighlight( int left, int right, int rowY, bool bSel, bool bHot )
+	{
+		if ( !bSel && !bHot )
+			return;
+
+		const int a = bSel ? 70 : 34;
+		screen->Dim( bSel ? 0x5C7CFF : 0xFFFFFF, a / 255.0f,
+			serverbrowser_ToScreenX( left ), serverbrowser_ToScreenY( rowY ),
+			serverbrowser_ToScreenX( right ) - serverbrowser_ToScreenX( left ),
+			serverbrowser_ToScreenY( rowY + SB_NEW_ROW_H ) - serverbrowser_ToScreenY( rowY ));
+	}
+
+	void DrawNewIwads( )
+	{
+		const std::vector<std::string> &iwads = NewIwads( );
+
+		screen->DrawText( SmallFont, CR_GOLD, SB_HOST_LIST_LEFT, SB_NEW_TOP, "IWAD",
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+		if ( iwads.empty( ))
+		{
+			DrawNewRowText( SB_HOST_LIST_LEFT, SB_NEW_IWAD_TOP, CR_DARKGRAY, "No IWADs found" );
+			return;
+		}
+
+		g_NewIwadSel = zx::ComputeClampedSelection( g_NewIwadSel, static_cast<int>( iwads.size( )));
+		NewClampScroll( g_NewIwadSel, static_cast<int>( iwads.size( )), SB_NEW_IWAD_ROWS,
+			g_NewIwadScroll );
+
+		for ( int row = g_NewIwadScroll;
+			row < static_cast<int>( iwads.size( )) && row < g_NewIwadScroll + SB_NEW_IWAD_ROWS; ++row )
+		{
+			const int rowY = NewRowY( SB_NEW_IWAD_TOP, row, g_NewIwadScroll );
+			const bool bSel = ( row == g_NewIwadSel );
+
+			DrawNewRowHighlight( SB_HOST_LIST_LEFT - 4, SB_HOST_LIST_RIGHT, rowY, bSel,
+				( row == g_NewIwadHot ));
+
+			// The chosen one is marked as well as highlighted: this is a list you pick ONE from, and
+			// the highlight alone would say "where the cursor is" rather than "what will load".
+			DrawNewRowText( SB_HOST_LIST_LEFT, rowY, bSel ? CR_WHITE : CR_GRAY,
+				( std::string( bSel ? "> " : "  " ) + iwads[row] ).c_str( ));
+		}
+
+		if ( static_cast<int>( iwads.size( )) > SB_NEW_IWAD_ROWS )
+		{
+			FString more;
+			more.Format( "%d more", static_cast<int>( iwads.size( )) - SB_NEW_IWAD_ROWS );
+			screen->DrawText( SmallFont, CR_DARKGRAY,
+				SB_HOST_LIST_RIGHT - SmallFont->StringWidth( more ), SB_NEW_TOP, more,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+	}
+
+	void DrawNewSearch( )
+	{
+		const bool bFocused = ( g_NewFocus == NewFocus::Search ) &&
+			( g_Focus == zx::BrowserFocus::Host );
+
+		// The same box the browse search wears, drawn the same way: lighter when it has the keyboard,
+		// so "what would a key do right now" is answerable by looking.
+		{
+			const int left = serverbrowser_ToScreenX( SB_HOST_LIST_LEFT );
+			const int right = serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT );
+			const int top = serverbrowser_ToScreenY( SB_NEW_SEARCH_TOP );
+			const int bottom = serverbrowser_ToScreenY( SB_NEW_SEARCH_TOP + SB_NEW_SEARCH_H );
+
+			const int w = right - left;
+			const int h = bottom - top;
+
+			if (( w > 0 ) && ( h > 0 ))
+			{
+				const int base = bFocused ? 30 : ( g_NewSearchHot ? 22 : 16 );
+				const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+					static_cast<BYTE>( base + 10 ), 225 };
+				const zx::PanelColor botCol = { static_cast<BYTE>( base + 18 ),
+					static_cast<BYTE>( base + 18 ), static_cast<BYTE>( base + 30 ), 210 };
+
+				for ( int row = 0; row < h; ++row )
+				{
+					const int inset = zx::ComputeRoundedInset( row, h, h / 3 );
+					const int rowW = w - 2 * inset;
+					if ( rowW <= 0 )
+						continue;
+
+					const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
+					screen->Dim( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row,
+						rowW, 1 );
+				}
+			}
+		}
+
+		const bool bEmpty = g_NewSearch.text.empty( );
+		screen->DrawText( SmallFont, bEmpty ? CR_DARKGRAY : CR_WHITE, SB_HOST_LIST_LEFT + 6,
+			SB_NEW_SEARCH_TOP + ( SB_NEW_SEARCH_H - SmallFont->GetHeight( )) / 2,
+			bEmpty ? "SEARCH YOUR WADS" : g_NewSearch.text.c_str( ),
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+	}
+
+	void DrawNewWads( )
+	{
+		const zx::wadlibrary::ScanState state = zx::wadlibrary::State( );
+		const std::vector<zx::LibraryFile> &files = zx::wadlibrary::Files( );
+		const std::vector<zx::LibraryRow> &rows = NewRows( );
+
+		// The heading carries the count, because on this screen "how many have I got" is the first
+		// thing anybody wants to know and there is nowhere else to say it.
+		FString heading;
+		if ( state == zx::wadlibrary::ScanState::Running )
+			heading = "YOUR WADS  (looking...)";
+		else if ( state == zx::wadlibrary::ScanState::Failed )
+			heading = "YOUR WADS  (nowhere to look)";
+		else if ( g_NewSearch.text.empty( ))
+			heading.Format( "YOUR WADS  (%d)", static_cast<int>( rows.size( )));
+		else
+			heading.Format( "YOUR WADS  (%d of %d)", static_cast<int>( rows.size( )),
+				static_cast<int>( files.size( )));
+
+		screen->DrawText( SmallFont, CR_GOLD, SB_HOST_LIST_LEFT, SB_NEW_SEARCH_TOP - SB_NEW_LINE - 2,
+			heading, DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+			TAG_DONE );
+
+		if ( rows.empty( ))
+		{
+			DrawNewRowText( SB_HOST_LIST_LEFT, SB_NEW_WADS_TOP, CR_DARKGRAY,
+				( state == zx::wadlibrary::ScanState::Running ) ? "Looking through your folders"
+					: "Nothing here matches" );
+			return;
+		}
+
+		const int visible = NewWadRowsVisible( );
+		NewClampScroll( g_NewWadSel, static_cast<int>( rows.size( )), visible, g_NewWadScroll );
+
+		for ( int row = g_NewWadScroll;
+			row < static_cast<int>( rows.size( )) && row < g_NewWadScroll + visible; ++row )
+		{
+			const int rowY = NewRowY( SB_NEW_WADS_TOP, row, g_NewWadScroll );
+			const zx::LibraryFile &file = files[rows[row].index];
+			const bool bSel = ( row == g_NewWadSel );
+
+			DrawNewRowHighlight( SB_HOST_LIST_LEFT - 4, SB_HOST_LIST_RIGHT, rowY, bSel,
+				( row == g_NewWadHot ));
+
+			// [rc4l] Size and folder are not decoration. Two rows of one name differ only by those,
+			// and this list is the only place the player can tell them apart before choosing.
+			FString right = zx::FormatByteSize( static_cast<unsigned long long>( file.size )).c_str( );
+			if ( rows[row].copies > 1 )
+				right.AppendFormat( "  x%d", rows[row].copies );
+
+			const int rightW = SmallFont->StringWidth( right );
+
+			const FString name = serverbrowser_FitName( file.name.c_str( ),
+				SB_HOST_LIST_RIGHT - SB_HOST_LIST_LEFT - rightW - 10 );
+
+			DrawNewRowText( SB_HOST_LIST_LEFT, rowY, bSel ? CR_WHITE : CR_GRAY, name );
+
+			screen->DrawText( SmallFont, CR_DARKGRAY, SB_HOST_LIST_RIGHT - rightW,
+				rowY + ( SB_NEW_ROW_H - SmallFont->GetHeight( )) / 2, right,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+	}
+
+	void DrawNewOrder( )
+	{
+		FString heading;
+		heading.Format( "LOAD ORDER  (%d)", static_cast<int>( g_NewOrder.size( )));
+
+		screen->DrawText( SmallFont, CR_GOLD, SB_HOST_RCOL_LEFT, SB_NEW_TOP, heading,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+		if ( g_NewOrder.empty( ))
+		{
+			DrawNewRowText( SB_HOST_RCOL_LEFT, SB_NEW_ORDER_TOP, CR_DARKGRAY,
+				"Pick files on the left" );
+			return;
+		}
+
+		g_NewOrderSel = zx::ComputeClampedSelection( g_NewOrderSel,
+			static_cast<int>( g_NewOrder.size( )));
+
+		const int visible = NewOrderRowsVisible( );
+		NewClampScroll( g_NewOrderSel, static_cast<int>( g_NewOrder.size( )), visible,
+			g_NewOrderScroll );
+
+		for ( int row = g_NewOrderScroll;
+			row < static_cast<int>( g_NewOrder.size( )) && row < g_NewOrderScroll + visible; ++row )
+		{
+			const int rowY = NewRowY( SB_NEW_ORDER_TOP, row, g_NewOrderScroll );
+			const bool bSel = ( row == g_NewOrderSel );
+
+			DrawNewRowHighlight( SB_HOST_RCOL_LEFT - 4, SB_HOST_RCOL_RIGHT, rowY, bSel,
+				( row == g_NewOrderHot ));
+
+			// Numbered, because the number IS the meaning here: this list is an order, not a set.
+			FString line;
+			line.Format( "%d. ", row + 1 );
+			line += serverbrowser_FitName( g_NewOrder[row].name.c_str( ),
+				SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT - 24 );
+
+			DrawNewRowText( SB_HOST_RCOL_LEFT, rowY, bSel ? CR_WHITE : CR_GRAY, line );
+		}
+	}
+
+	void DrawNewPanel( )
+	{
+		// [rc4l] The scan is asked for HERE rather than at startup, and this is the only place that
+		// asks. Begin() is cheap once a scan has run, so calling it while the tab is drawn is what
+		// makes "open the tab, get a list" true without costing anything on any other screen.
+		zx::wadlibrary::Begin( false );
+		zx::wadlibrary::Tick( );
+
+		DrawDetailBackdrop( SB_HOST_RCOL_LEFT - SB_HOST_RCOL_INSET,
+			SB_NEW_ORDER_TOP - SB_HOST_RCOL_INSET,
+			SB_HOST_RCOL_RIGHT + SB_HOST_RCOL_INSET,
+			SB_NEW_ORDER_BOTTOM + SB_HOST_RCOL_INSET );
+
+		DrawNewIwads( );
+		DrawNewSearch( );
+		DrawNewWads( );
+		DrawNewOrder( );
+
+		// The button, in the same place PRESETS puts its own, so the one control you always want to
+		// reach is where the eye already goes.
+		//
+		// [rc4l] DrawRoundedButton, which IS the JOIN and PLAY NOW drawing on the other screens. A
+		// button that merely resembled them would drift apart the first time either was touched.
+		DrawRoundedButton( SB_HOST_RCOL_LEFT, SB_HOST_BTN_Y,
+			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, SB_HOST_BTN_H, "PLAY NOW!", g_NewButtonHot );
+
+		serverbrowser_Tip( SB_HOST_RCOL_LEFT, SB_HOST_BTN_Y,
+			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, SB_HOST_BTN_H,
+			g_NewOrder.empty( ) ? "Add at least one file first"
+				: "Start a server on this machine with these files" );
+
+		// [rc4l] What the keys do, on screen rather than in a manual. This screen has four regions
+		// and no other way to learn that ENTER adds and the brackets reorder.
+		const char *hint = ( g_NewFocus == NewFocus::Order )
+			? "[ ] move     DEL removes     LEFT goes back to your wads"
+			: "ENTER adds     RIGHT goes to the load order";
+		if ( g_NewNotice.IsNotEmpty( ) &&
+			( static_cast<int>( I_MSTime( )) - g_NewNoticeMs < 2500 ))
+		{
+			hint = g_NewNotice.GetChars( );
+		}
+
+		screen->DrawText( SmallFont, CR_DARKGRAY, SB_HOST_LEFT + SB_HOST_PAD,
+			SB_HOST_BTN_Y + ( SB_HOST_BTN_H - SmallFont->GetHeight( )) / 2, hint,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+		if ( zx::wadlibrary::HitCap( ))
+		{
+			screen->DrawText( SmallFont, CR_ORANGE, SB_HOST_LIST_LEFT, SB_NEW_WADS_BOTTOM + 2,
+				"Stopped counting: there are more files than this list will hold",
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+		}
+	}
+
+	// Which row of a list a screen-space y lands on, or -1. One helper for all three, so a row can
+	// never be clickable somewhere other than where it was drawn.
+	int NewRowAt( int y, int top, int bottom, int scroll, int count )
+	{
+		if (( y < serverbrowser_ToScreenY( top )) || ( y >= serverbrowser_ToScreenY( bottom )))
+			return -1;
+
+		for ( int row = scroll; row < count; ++row )
+		{
+			const int rowY = NewRowY( top, row, scroll );
+			if ( rowY >= bottom )
+				break;
+
+			if (( y >= serverbrowser_ToScreenY( rowY )) &&
+				( y < serverbrowser_ToScreenY( rowY + SB_NEW_ROW_H )))
+			{
+				return row;
+			}
+		}
+
+		return -1;
+	}
+
+	bool NewMouseEvent( int type, int x, int y )
+	{
+		g_NewIwadHot = -1;
+		g_NewWadHot = -1;
+		g_NewOrderHot = -1;
+		g_NewSearchHot = false;
+		g_NewButtonHot = false;
+
+		// The button first: it sits inside the right column, so testing it after the rows would let
+		// a row's own test claim a click that landed on it.
+		if (( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )) &&
+			( y >= serverbrowser_ToScreenY( SB_HOST_BTN_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_BTN_Y + SB_HOST_BTN_H )))
+		{
+			g_NewButtonHot = true;
+			if ( type == MOUSE_Release )
+				NewStartHosting( );
+			return true;
+		}
+
+		const bool bLeftColumn = ( x >= serverbrowser_ToScreenX( SB_HOST_LIST_LEFT - 4 )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT ));
+		const bool bRightColumn = ( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 4 )) &&
+			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT ));
+
+		if ( bLeftColumn )
+		{
+			const std::vector<std::string> &iwads = NewIwads( );
+			const int iwadRow = NewRowAt( y, SB_NEW_IWAD_TOP, SB_NEW_IWAD_BOTTOM, g_NewIwadScroll,
+				static_cast<int>( iwads.size( )));
+			if ( iwadRow >= 0 )
+			{
+				g_NewIwadHot = iwadRow;
+				if ( type == MOUSE_Release )
+				{
+					g_NewIwadSel = iwadRow;
+					g_NewIwadChosen = true;
+					g_NewFocus = NewFocus::Iwads;
+					SetFocus( zx::BrowserFocus::Host );
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
+			if (( y >= serverbrowser_ToScreenY( SB_NEW_SEARCH_TOP )) &&
+				( y < serverbrowser_ToScreenY( SB_NEW_SEARCH_TOP + SB_NEW_SEARCH_H )))
+			{
+				g_NewSearchHot = true;
+				if ( type == MOUSE_Release )
+				{
+					g_NewFocus = NewFocus::Search;
+					SetFocus( zx::BrowserFocus::Host );
+				}
+				return true;
+			}
+
+			const std::vector<zx::LibraryRow> &rows = NewRows( );
+			const int wadRow = NewRowAt( y, SB_NEW_WADS_TOP, SB_NEW_WADS_BOTTOM, g_NewWadScroll,
+				static_cast<int>( rows.size( )));
+			if ( wadRow >= 0 )
+			{
+				g_NewWadHot = wadRow;
+				if ( type == MOUSE_Release )
+				{
+					// [rc4l] A second click on the row already selected ADDS it. One click to look,
+					// one to take -- so a click can never add something the player was only reading,
+					// which on a list of twenty thousand is the difference between browsing and
+					// fighting the mouse.
+					const bool bAgain = ( wadRow == g_NewWadSel ) && ( g_NewFocus == NewFocus::Wads );
+
+					g_NewWadSel = wadRow;
+					g_NewFocus = NewFocus::Wads;
+					SetFocus( zx::BrowserFocus::Host );
+
+					if ( bAgain )
+						NewAddSelected( );
+					else
+						S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+		}
+
+		if ( bRightColumn )
+		{
+			const int orderRow = NewRowAt( y, SB_NEW_ORDER_TOP, SB_NEW_ORDER_BOTTOM, g_NewOrderScroll,
+				static_cast<int>( g_NewOrder.size( )));
+			if ( orderRow >= 0 )
+			{
+				g_NewOrderHot = orderRow;
+				if ( type == MOUSE_Release )
+				{
+					g_NewOrderSel = orderRow;
+					g_NewFocus = NewFocus::Order;
+					SetFocus( zx::BrowserFocus::Host );
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	// [rc4l] The arrows, applied to whichever region has the keyboard.
+	//
+	// Up and down move within a region; left and right move BETWEEN them, which is the only mapping
+	// that works when the regions are laid out in two columns and one of them is a text field.
+	bool NewNavigate( zx::NavKey key )
+	{
+		switch ( key )
+		{
+		case zx::NavKey::Up:
+		case zx::NavKey::Down:
+		{
+			// [rc4l] NO WRAPPING WITHIN A REGION. The left column is three controls stacked up, so
+			// running off the end of one means the next one, not the other end of the same one.
+			// Wrapping would make the IWAD list and the search box unreachable from the wad list,
+			// which is where the keyboard lands when the screen opens.
+			const int step = ( key == zx::NavKey::Up ) ? -1 : 1;
+
+			if ( g_NewFocus == NewFocus::Iwads )
+			{
+				const int count = static_cast<int>( NewIwads( ).size( ));
+				const int next = g_NewIwadSel + step;
+
+				if (( next >= 0 ) && ( next < count ))
+				{
+					g_NewIwadSel = next;
+					g_NewIwadChosen = true;
+				}
+				else if ( step > 0 )
+				{
+					g_NewFocus = NewFocus::Search;	// off the bottom of the IWADs is the box below
+				}
+			}
+			else if ( g_NewFocus == NewFocus::Search )
+			{
+				// A single-line field has nowhere to go vertically, so up and down mean what they
+				// mean everywhere else: leave.
+				g_NewFocus = ( step < 0 ) ? NewFocus::Iwads : NewFocus::Wads;
+			}
+			else if ( g_NewFocus == NewFocus::Wads )
+			{
+				const int count = static_cast<int>( NewRows( ).size( ));
+				const int next = g_NewWadSel + step;
+
+				if (( next >= 0 ) && ( next < count ))
+					g_NewWadSel = next;
+				else if ( step < 0 )
+					g_NewFocus = NewFocus::Search;	// off the top of the wads is the box above
+			}
+			else
+			{
+				const int count = static_cast<int>( g_NewOrder.size( ));
+				const int next = g_NewOrderSel + step;
+
+				if (( next >= 0 ) && ( next < count ))
+					g_NewOrderSel = next;
+			}
+
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			return true;
+		}
+
+		case zx::NavKey::Left:
+			if ( g_NewFocus == NewFocus::Order )
+			{
+				g_NewFocus = NewFocus::Wads;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+			return true;
+
+		case zx::NavKey::Right:
+			if ( g_NewFocus != NewFocus::Order )
+			{
+				g_NewFocus = NewFocus::Order;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+			return true;
+		}
+
+		return false;
+	}
+
+	// [rc4l] The NEW screen's keys.
+	//
+	// The search field claims the keyboard while it has focus, for the reason every field on this
+	// menu does: a printable key is a letter being typed and must never also be a shortcut. Away
+	// from the field, the keys are the three verbs this screen has.
+	bool NewKeyEvent( event_t *ev )
+	{
+		if ( g_NewFocus == NewFocus::Search )
+		{
+			zx::TextInput next = g_NewSearch;
+
+			switch ( EditTextField( next, ev, 48, false, false, false ))
+			{
+			case FieldKey::Escape:
+				// Out of the box, not out of the browser.
+				g_NewFocus = NewFocus::Wads;
+				return true;
+
+			case FieldKey::Enter:
+			case FieldKey::Down:
+				g_NewFocus = NewFocus::Wads;
+				return true;
+
+			case FieldKey::Up:
+				g_NewFocus = NewFocus::Iwads;
+				return true;
+
+			case FieldKey::Handled:
+				if ( next.text != g_NewSearch.text )
+				{
+					g_NewSearch = next;
+
+					// Typing narrows the list, so the cursor goes back to the top: keeping its old
+					// row would leave it on whatever happened to land there, which on a filtered
+					// list is a different file every keystroke.
+					g_NewWadSel = 0;
+					g_NewWadScroll = 0;
+					g_NewRowsValid = false;
+				}
+				else
+				{
+					g_NewSearch = next;
+				}
+				return true;
+
+			// Not a key at all -- above all the mouse, which reaches a menu through this same
+			// Responder and must be allowed past.
+			case FieldKey::Unclaimed:
+			case FieldKey::Left:
+			case FieldKey::Right:
+				return false;
+			}
+
+			return false;
+		}
+
+		if (( ev->subtype != EV_GUI_KeyDown ) && ( ev->subtype != EV_GUI_KeyRepeat ) &&
+			( ev->subtype != EV_GUI_Char ))
+		{
+			return false;
+		}
+
+		switch ( ev->data1 )
+		{
+		case GK_RETURN:
+			if ( g_NewFocus == NewFocus::Wads )
+			{
+				NewAddSelected( );
+				return true;
+			}
+			return false;
+
+		case GK_DEL:
+			if ( g_NewFocus == NewFocus::Order )
+			{
+				NewRemoveSelected( );
+				return true;
+			}
+			return false;
+
+		case '[':
+			if ( g_NewFocus == NewFocus::Order )
+			{
+				NewMoveSelected( -1 );
+				return true;
+			}
+			return false;
+
+		case ']':
+			if ( g_NewFocus == NewFocus::Order )
+			{
+				NewMoveSelected( +1 );
+				return true;
+			}
+			return false;
+		}
+
+		return false;
+	}
+
 	void DrawHostPanel( )
 	{
 		const zx::HostState state = zx::HostCurrentState( );
@@ -6040,6 +7023,17 @@ public:
 		const zx::PanelColor topCol = { 22, 24, 34, 235 };
 		const zx::PanelColor botCol = { 10, 11, 17, 245 };
 		DrawRoundedPanel( SB_HOST_LEFT, SB_HOST_TOP, w, h, topCol, botCol, 8 );
+
+		if ( g_HostKind == HostKind::New )
+		{
+			DrawNewPanel( );
+			return;
+		}
+
+		// [rc4l] CUSTOM has no screen yet. The panel itself is still drawn: a sub-tab that blanks
+		// the screen looks like a fault rather than like a place that has yet to be filled in.
+		if ( g_HostKind != HostKind::Presets )
+			return;
 
 		// [rc4l] The right column gets the server list's detail backdrop, for the reason it reads as
 		// the same kind of thing: a column describing whatever the list beside it has selected. Without
@@ -8209,21 +9203,49 @@ public:
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 	}
 
+	// [rc4l] The same for the hosting row. Nothing to save or restore between the two: PRESETS keeps
+	// its own scroll and selection in the host form, which this does not touch.
+	void SelectHostKind( HostKind kind )
+	{
+		if ( g_HostKind == kind )
+			return;
+
+		g_HostKind = kind;
+
+		// The form goes away with PRESETS, so the keyboard cannot stay in it. Same rule the search
+		// box gets when its row leaves: focus comes back to the thing that is still on screen.
+		if (( kind != HostKind::Presets ) && ( g_Focus == zx::BrowserFocus::Host ))
+			SetFocus( zx::BrowserFocus::SubTabs );
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	// Whichever row is showing, told to go to one of its pills.
+	void SelectSubTabIndex( int i )
+	{
+		if (( i < 0 ) || ( i >= SubTabCount( )))
+			return;
+
+		if ( g_Tab == BrowserTab::Browse )
+			SelectSubTab( static_cast<BrowseKind>( i ));
+		else
+			SelectHostKind( static_cast<HostKind>( i ));
+	}
+
 	void SelectTab( BrowserTab tab )
 	{
 		if ( g_Tab == tab )
 			return;
 
-		// [rc4l] Leaving BROWSE takes its second row with it, so anything focused down there has to
-		// come up to the tabs before it goes. The sub-tabs and the search box are both drawn only
-		// under BROWSE, and a caret blinking in a box that is no longer on screen is a lie about
-		// where the next keystroke lands. ComputeNav cannot fix this after the fact: it is told what
-		// exists NOW, and by then the focus is already pointing at nothing.
-		if (( tab != BrowserTab::Browse ) &&
-			(( g_Focus == zx::BrowserFocus::SubTabs ) || ( g_Focus == zx::BrowserFocus::Search )))
-		{
-			SetFocus( zx::BrowserFocus::Tabs );
-		}
+		// [rc4l] Leaving BROWSE takes the search box with it, so a caret focused there has to come up
+		// to the tabs before it goes: a caret blinking in a box that is no longer on screen is a lie
+		// about where the next keystroke lands. ComputeNav cannot fix this after the fact -- it is
+		// told what exists NOW, and by then the focus is already pointing at nothing.
+		//
+		// The SUB-TABS no longer need this. Both tabs have a second row, so focus on it stays valid
+		// across the change and lands on the row the new tab brought with it.
+		if (( tab != BrowserTab::Browse ) && ( g_Focus == zx::BrowserFocus::Search ))
+			SetFocus( zx::BrowserFocus::SubTabs );
 
 		g_Tab = tab;
 
@@ -8233,6 +9255,11 @@ public:
 		{
 			LoadHostForm( );
 			g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
+
+			// Unless the sub-tab showing has no form, in which case there is no first field to land
+			// on and the keyboard belongs on the row that IS drawn.
+			if ( g_HostKind != HostKind::Presets )
+				SetFocus( zx::BrowserFocus::SubTabs );
 		}
 
 		// The list belongs to BROWSE, so arriving there rebuilds it for whichever sub-tab was last
@@ -9474,30 +10501,28 @@ public:
 				return true;
 			}
 
-			// [rc4l] The sub-tabs, and only while the row they belong to is on screen. Hit testing a
-			// row that is not drawn would claim clicks in empty space above the hosting panel.
+			// [rc4l] The sub-tabs of whichever tab is showing. Both have a row now, and it is hit
+			// tested through the same helpers that draw it, so a pill cannot be clickable anywhere
+			// other than where it is drawn.
 			g_SubTabHot = -1;
-			if ( g_Tab == BrowserTab::Browse )
+			for ( int i = 0; i < SubTabCount( ); ++i )
 			{
-				for ( int i = 0; i < kBrowseCount; ++i )
+				const int vLeft = SubTabLeft( i );
+				if (( x < serverbrowser_ToScreenX( vLeft )) ||
+					( x >= serverbrowser_ToScreenX( vLeft + SubTabW( i ))) ||
+					( y < serverbrowser_ToScreenY( SB_SUBTAB_TOP )) ||
+					( y >= serverbrowser_ToScreenY( SB_SUBTAB_TOP + SB_SUBTAB_H )))
 				{
-					const int vLeft = SubTabLeft( i );
-					if (( x < serverbrowser_ToScreenX( vLeft )) ||
-						( x >= serverbrowser_ToScreenX( vLeft + SubTabW( i ))) ||
-						( y < serverbrowser_ToScreenY( SB_SUBTAB_TOP )) ||
-						( y >= serverbrowser_ToScreenY( SB_SUBTAB_TOP + SB_SUBTAB_H )))
-					{
-						continue;
-					}
-
-					g_SubTabHot = i;
-					if ( type == MOUSE_Release )
-					{
-						SetFocus( zx::BrowserFocus::SubTabs );
-						SelectSubTab( static_cast<BrowseKind>( i ));
-					}
-					return true;
+					continue;
 				}
+
+				g_SubTabHot = i;
+				if ( type == MOUSE_Release )
+				{
+					SetFocus( zx::BrowserFocus::SubTabs );
+					SelectSubTabIndex( i );
+				}
+				return true;
 			}
 		}
 
@@ -9817,7 +10842,18 @@ public:
 		// [rc4l] Same rule for the hosting form: a focused field owns the keyboard, so a server name
 		// containing the letter 'p' does not also press something. Only when a FIELD has focus -- on
 		// the button the keys belong to the menu again, which is what makes enter work there.
+		// [rc4l] The NEW screen's own keys, before the preset form's: it has a search field of its
+		// own, and the two forms are never on screen at the same time.
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
+			( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::New ) &&
+			( g_Focus == zx::BrowserFocus::Host ))
+		{
+			if ( NewKeyEvent( ev ))
+				return true;
+		}
+
+		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
+			( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Presets ) &&
 			( g_Focus == zx::BrowserFocus::Host ) && HostInAField( ))
 		{
 			if ( EditHostField( ev ))
@@ -10435,11 +11471,29 @@ public:
 		//
 		// Checked for every origin rather than just the tabs, because the search box shares that row
 		// and is just as much "above the form" as they are.
-		if (( g_Tab == BrowserTab::Host ) && ( key == zx::NavKey::Down )
-			&& ( g_Focus != zx::BrowserFocus::Host ))
+		// [rc4l] DOWN off the SECOND ROW enters whichever screen the tab is showing.
+		//
+		// From the second row and not from the first, which is a change: this used to fire from any
+		// origin, on the reasoning that everything above the form was equally "above the form". That
+		// was true while hosting had no sub-tab row -- and the moment it got one, DOWN from the tabs
+		// flew straight past it into the form and the sub-tabs became unreachable by keyboard. You
+		// could not get to CUSTOM or NEW without a mouse.
+		//
+		// CUSTOM is left out because it has no screen to enter yet.
+		const bool bAboveTheForm = ( g_Focus == zx::BrowserFocus::SubTabs ) ||
+			( g_Focus == zx::BrowserFocus::Search );
+
+		if (( g_Tab == BrowserTab::Host ) && ( g_HostKind != HostKind::Custom )
+			&& ( key == zx::NavKey::Down ) && bAboveTheForm )
 		{
 			SetFocus( zx::BrowserFocus::Host );
-			g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
+
+			// Each screen has its own idea of where the keyboard should land first.
+			if ( g_HostKind == HostKind::New )
+				g_NewFocus = NewFocus::Wads;
+			else
+				g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
+
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return true;
 		}
@@ -10450,6 +11504,9 @@ public:
 		// the visibility row right above them -- so the list could not be reached at all and the
 		// settings toggle had no keyboard. What each key means is now one answer from one place, the
 		// way the rest of the browser gets its answer from browserfocus_compute.
+		if (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostKind == HostKind::New ))
+			return NewNavigate( key );
+
 		if ( g_Focus == zx::BrowserFocus::Host )
 		{
 			switch ( key )
@@ -10466,11 +11523,18 @@ public:
 		// lets the unit answer left and right for either of them, and `subCount` of zero is how it is
 		// told that PLAY has no sub-tab row to walk into at all.
 		const zx::NavWhere where( total > 0, static_cast<int>( g_Tab ), kTabCount,
-			static_cast<int>( g_Browse ),
-			( g_Tab == BrowserTab::Browse ) ? kBrowseCount : 0,
+			SubTabIndex( ), SubTabCount( ),
 			g_Selected <= 0 ); // at the first row (or none) -> Up leaves the list for the filter above
 
-		const zx::NavResult nav = zx::ComputeNav( g_Focus, key, where );
+		zx::NavResult nav = zx::ComputeNav( g_Focus, key, where );
+
+		// [rc4l] Off the end of the sub-tabs is the search box, which only BROWSE has. The unit is
+		// told where the rows stand and not which tab they belong to, so it cannot know that; on the
+		// hosting row, RIGHT off the last pill stays where it is rather than moving the caret into a
+		// box that is not on screen.
+		if (( g_Tab != BrowserTab::Browse ) && ( nav.focus == zx::BrowserFocus::Search ))
+			nav.focus = zx::BrowserFocus::SubTabs;
+
 		const zx::BrowserFocus was = g_Focus;
 		SetFocus( nav.focus );
 
@@ -10486,9 +11550,7 @@ public:
 
 		if ( nav.subStep != 0 )
 		{
-			const int next = static_cast<int>( g_Browse ) + nav.subStep;
-			if (( next >= 0 ) && ( next < kBrowseCount ))
-				SelectSubTab( static_cast<BrowseKind>( next ));
+			SelectSubTabIndex( SubTabIndex( ) + nav.subStep );
 			return true;
 		}
 
