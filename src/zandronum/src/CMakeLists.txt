@@ -1555,6 +1555,7 @@ add_executable( zdoom WIN32
 	features/server-browser/computation/dialog_compute.cpp
 	features/server-browser/computation/pillflow_compute.cpp
 	features/server-browser/computation/flagset_compute.cpp
+	features/server-browser/computation/flaghelp_compute.cpp
 	features/server-browser/computation/servervar_compute.cpp
 	features/server-browser/zx_flagtable.cpp
 	features/server-browser/computation/glowtravel_compute.cpp
