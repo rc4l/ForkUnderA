@@ -90,13 +90,29 @@ std::string FormatFlagNumber(unsigned int value)
 	return std::string(text);
 }
 
+// The order these have been quoted in for twenty years, and the list of what a FIELD is. One array
+// so the ranking and the membership test cannot disagree.
+static const char *const kOrder[] = {
+	"dmflags", "dmflags2", "dmflags3", "zadmflags", "compatflags", "compatflags2",
+	"zacompatflags", "lmsspectatorsettings", "lmsallowedweapons",
+};
+
+bool IsFlagFieldName(const std::string &name)
+{
+	for (size_t i = 0; i < sizeof(kOrder) / sizeof(kOrder[0]); ++i)
+	{
+		if (name == kOrder[i])
+			return true;
+	}
+
+	// [rc4l] sv_forbidvoteflags is a field too, and is NOT in the order above -- that list is the
+	// preferred order and this one has always been appended by the "anything else found" rule. Named
+	// here because a caller asking "is this a field" gets a wrong answer otherwise.
+	return (name == "sv_forbidvoteflags");
+}
+
 std::vector<std::string> FlagFieldOrder(const std::vector<std::string> &found)
 {
-	// The order these have been quoted in for twenty years.
-	static const char *const kOrder[] = {
-		"dmflags", "dmflags2", "dmflags3", "zadmflags", "compatflags", "compatflags2",
-		"zacompatflags", "lmsspectatorsettings", "lmsallowedweapons",
-	};
 
 	std::vector<std::string> out;
 

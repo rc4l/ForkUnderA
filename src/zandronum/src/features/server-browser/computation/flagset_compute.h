@@ -81,6 +81,13 @@ std::string FormatFlagNumber(unsigned int value);
 // header for why nothing is ever dropped.
 std::vector<std::string> FlagFieldOrder(const std::vector<std::string> &found);
 
+// [rc4l] Whether a cvar name is one of the FIELDS rather than a switch inside one.
+//
+// Asked by anything holding a bag of settings that wants to tell the two apart -- a saved preset's
+// cvars are dmflags alongside sv_maxlives, and a list of "the flags" means only the first kind.
+// Same list FlagFieldOrder ranks, so the two cannot disagree about what a field is.
+bool IsFlagFieldName(const std::string &name);
+
 } // namespace zx
 
 #endif // ZX_FLAGSET_COMPUTE_H

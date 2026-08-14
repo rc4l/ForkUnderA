@@ -1662,6 +1662,11 @@ static	int					g_CustomBtnSel = 0;
 static	bool				g_CustomEmptyHot = false;
 static	bool				g_DraggingCustomBar = false;
 
+// The detail column's own scroll, separate from the list's: they are two views and moving one must
+// not move the other.
+static	int					g_CustomDetailScroll = 0;
+static	bool				g_DraggingCustomDetailBar = false;
+
 // Which preset a delete question is about. The dialog answers with a yes or a no and nothing else,
 // so what it was about has to be remembered on this side of it.
 static	FString				g_CustomDeleting;
@@ -3783,17 +3788,32 @@ public:
 	// [rc4l] `warn` tints the button the way CANCEL is tinted while a download runs: warmer, with the
 	// label in orange. Reserved for buttons that TAKE SOMETHING AWAY, so the one that ends a running
 	// thing looks the same wherever it appears rather than only on the download.
+	// [rc4l] What a button is FOR, in its colour. Neutral is every ordinary one; Warn is the button
+	// that stops a running server; Cool invites rather than warns, and is for the one button on an
+	// otherwise empty screen.
+	//
+	// A named tint rather than a second bool beside `warn`: two bools at a call site say nothing
+	// about which combinations mean anything, and three of the four here mean nothing at all.
+	enum class ButtonTint { Neutral, Warn, Cool };
+
 	void DrawRoundedButton( int vx, int vy, int vw, int vh, const char *label, bool lit,
-		bool warn = false )
+		ButtonTint tint = ButtonTint::Neutral )
 	{
 		const int base = lit ? 70 : 45;
+
+		const bool warn = ( tint == ButtonTint::Warn );
+		const bool cool = ( tint == ButtonTint::Cool );
+
+		// Warm pushes red, cool pushes blue, and the untinted one stays grey.
 		const int warmTop = warn ? base + 30 : base;
 		const int warmBot = warn ? base + 15 : base / 2;
+		const int coolTop = cool ? base + 40 : base;
+		const int coolBot = cool ? base + 25 : base / 2;
 
 		const zx::PanelColor topCol = { static_cast<BYTE>( warmTop ), static_cast<BYTE>( base ),
-			static_cast<BYTE>( base ), 220 };
+			static_cast<BYTE>( coolTop ), 220 };
 		const zx::PanelColor botCol = { static_cast<BYTE>( warmBot ), static_cast<BYTE>( base / 2 ),
-			static_cast<BYTE>( base / 2 ), 235 };
+			static_cast<BYTE>( coolBot ), 235 };
 
 		DrawRoundedPanel( vx, vy, vw, vh, topCol, botCol, 4 );
 
@@ -5820,7 +5840,8 @@ public:
 			|| ( action == HostAction::Cancel );
 
 		DrawRoundedButton( SB_HOST_FOOT_LEFT, SB_HOST_RTOGGLE_Y, actW, SB_HOST_RTOGGLE_H,
-			HostActionLabel( ), HostOnButton( ) || g_HostButtonHot, bWarn );
+			HostActionLabel( ), HostOnButton( ) || g_HostButtonHot,
+			bWarn ? ButtonTint::Warn : ButtonTint::Neutral );
 
 		if (( g_Focus == zx::BrowserFocus::Host ) && HostOnButton( ))
 		{
@@ -7219,6 +7240,12 @@ public:
 			entry.files.push_back( zx::CustomFile( g_NewOrder[i].name,
 				zx::wadlibrary::HashOf( file )));
 		}
+
+		// [rc4l] The rotation is READ OUT OF THE FILES here if nobody has opened the MAPS box, the
+		// same call PLAY NOW makes. Without it, a preset saved by somebody who never looked at the
+		// map list was saved with no rotation at all, and the server it started fell back to map01
+		// -- which is a preset quietly not playing the pack it names.
+		NewRebuildMaps( false );
 
 		entry.maps = NewRotation( );
 		entry.gameMode = NewGameModeCvar( g_NewGameMode );
@@ -9544,6 +9571,14 @@ public:
 	int CustomListBottom( )		{ return SB_NEW_TOOL_Y - 8; }
 	int CustomRowsVisible( )	{ return ( CustomListBottom( ) - CustomListTop( )) / SB_NEW_ROW_H; }
 
+	// [rc4l] The detail column, in the place and the shape the PRESETS tab's is: same left and right
+	// edges, same backdrop, same wrap width, same rule about which rows are drawn. Two tabs showing
+	// what a thing IS should not look like two different screens.
+	int CustomDetailTop( )		{ return SB_NEW_TOP + SB_NEW_LINE + 2 + SB_HOST_RCOL_INSET; }
+	int CustomDetailBottom( )	{ return SB_NEW_TOOL_Y - 8; }
+	int CustomDetailLineH( )	{ return SmallFont->GetHeight( ) + 1; }
+	int CustomDetailRows( )		{ return ( CustomDetailBottom( ) - CustomDetailTop( )) / CustomDetailLineH( ); }
+
 	// The buttons across the bottom, in the tool row's own lane.
 	int CustomBtnW( )			{ return SB_NEW_TOOL_W; }
 	int CustomBtnLeft( int i )	{ return NewToolLeft( i ); }
@@ -9613,31 +9648,208 @@ public:
 		return &CustomEntries( )[rows[at]];
 	}
 
+	// [rc4l] The empty state's own geometry, in one place because the draw and the hit test both
+	// need it and a button you can see and cannot press is what two copies produce.
+	//
+	// The BLOCK is centred, not the line: text, a gap, and the button are measured together and
+	// placed about the panel's middle, so the pair sits where the eye expects rather than the text
+	// sitting on the centre line with the button hanging below it.
+	int CustomEmptyBtnW( )
+	{
+		// Sized to its own label rather than to a number somebody guessed. "CREATE ONE HERE" barely
+		// fitted 110 and the next label would not have.
+		return SmallFont->StringWidth( "CREATE ONE HERE" ) + 28;
+	}
+
+	int CustomEmptyBtnLeft( )	{ return ( SB_HOST_LEFT + SB_HOST_RIGHT ) / 2 - CustomEmptyBtnW( ) / 2; }
+	int CustomEmptyBlockH( )	{ return SB_NEW_LINE + 10 + SB_HOST_BTN_H; }
+	int CustomEmptyTop( )		{ return ( SB_HOST_TOP + SB_HOST_BOTTOM ) / 2 - CustomEmptyBlockH( ) / 2; }
+	int CustomEmptyBtnTop( )	{ return CustomEmptyTop( ) + SB_NEW_LINE + 10; }
+
 	void DrawCustomEmpty( )
 	{
 		// [rc4l] Said plainly, with the way out under it. An empty list with no explanation reads as
 		// a screen that failed to load rather than as one nobody has filled in yet.
-		const int y = ( SB_HOST_TOP + SB_HOST_BOTTOM ) / 2 - SB_NEW_LINE;
-
 		const char *const line = "You have no custom presets";
+
 		screen->DrawText( SmallFont, CR_GRAY,
-			( SB_HOST_LEFT + SB_HOST_RIGHT ) / 2 - SmallFont->StringWidth( line ) / 2, y, line,
+			( SB_HOST_LEFT + SB_HOST_RIGHT ) / 2 - SmallFont->StringWidth( line ) / 2,
+			CustomEmptyTop( ), line,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
 			TAG_DONE );
 
-		const int bw = 110;
-		const int bx = ( SB_HOST_LEFT + SB_HOST_RIGHT ) / 2 - bw / 2;
-		const int by = y + SB_NEW_LINE + 8;
-
 		const bool bFocus = ( g_Focus == zx::BrowserFocus::Host );
 
-		DrawRoundedButton( bx, by, bw, SB_HOST_BTN_H, "CREATE ONE HERE",
-			g_CustomEmptyHot || bFocus );
+		// [rc4l] Blue, because this one INVITES. The warm tint is reserved for the button that ends
+		// something; a neutral button here would read as one more grey control on an empty screen
+		// rather than as the thing to press.
+		DrawRoundedButton( CustomEmptyBtnLeft( ), CustomEmptyBtnTop( ), CustomEmptyBtnW( ),
+			SB_HOST_BTN_H, "CREATE ONE HERE", g_CustomEmptyHot || bFocus, ButtonTint::Cool );
 
 		if ( bFocus )
-			FocusAnchor( zx::BrowserFocus::Host, bx - 5, by + SB_HOST_BTN_H / 2 );
+		{
+			FocusAnchor( zx::BrowserFocus::Host, CustomEmptyBtnLeft( ) - 5,
+				CustomEmptyBtnTop( ) + SB_HOST_BTN_H / 2 );
+		}
 
-		serverbrowser_Tip( bx, by, bw, SB_HOST_BTN_H, "Build one on the NEW tab" );
+		serverbrowser_Tip( CustomEmptyBtnLeft( ), CustomEmptyBtnTop( ), CustomEmptyBtnW( ),
+			SB_HOST_BTN_H, "Build one on the NEW tab" );
+	}
+
+	// [rc4l] What the detail column says about the selected preset, as lines already wrapped to the
+	// column's width.
+	//
+	// Built rather than drawn so the height, the scrollbar and the drawing agree about how much
+	// there is -- the same reason the experience summary is measured before it is drawn.
+	struct DetailLine
+	{
+		FString text;
+		EColorRange colour;
+
+		DetailLine() : colour(CR_GRAY) {}
+		DetailLine(const char *t, EColorRange c) : text(t), colour(c) {}
+	};
+
+	void CustomDetailAdd( std::vector<DetailLine> &out, const char *text, EColorRange colour )
+	{
+		// Wrapped the way every other block of text in this browser is, so a long filename becomes
+		// two lines rather than running off the panel.
+		FBrokenLines *const lines = V_BreakLines( SmallFont, HostDetailWrapWidth( ), text );
+
+		for ( int i = 0; lines[i].Width >= 0; ++i )
+			out.push_back( DetailLine( lines[i].Text, colour ));
+
+		V_FreeBrokenLines( lines );
+	}
+
+	std::vector<DetailLine> CustomDetailLines( const zx::CustomEntry &entry )
+	{
+		std::vector<DetailLine> out;
+
+		CustomDetailAdd( out, entry.name.c_str( ), CR_GOLD );
+
+		{
+			FString line;
+			line.Format( "%s, %s", entry.bPvP ? "PvP" : "PvE",
+				entry.gameMode.empty( ) ? "default mode" : entry.gameMode.c_str( ));
+			CustomDetailAdd( out, line.GetChars( ), CR_DARKGRAY );
+		}
+
+		out.push_back( DetailLine( ));
+
+		// The files, in load order, with the IWAD first because that is what a server is told first.
+		CustomDetailAdd( out, "FILES", CR_GOLD );
+
+		if ( !entry.iwad.empty( ))
+			CustomDetailAdd( out, entry.iwad.c_str( ), CR_GRAY );
+
+		for ( size_t i = 0; i < entry.files.size( ); ++i )
+		{
+			const FString path = zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
+				entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( ));
+
+			FString line = entry.files[i].name.c_str( );
+			if ( path.IsEmpty( ))
+				line += "   (missing)";
+
+			CustomDetailAdd( out, line.GetChars( ), path.IsEmpty( ) ? CR_ORANGE : CR_GRAY );
+		}
+
+		out.push_back( DetailLine( ));
+
+		{
+			FString head;
+			head.Format( "ROTATION  (%d)", static_cast<int>( entry.maps.size( )));
+			CustomDetailAdd( out, head.GetChars( ), CR_GOLD );
+
+			// [rc4l] The whole rotation rather than the first few. This column scrolls, and a list
+			// that stopped at five would hide exactly the thing somebody opened it to check.
+			FString row;
+			for ( size_t i = 0; i < entry.maps.size( ); ++i )
+			{
+				if ( row.IsNotEmpty( ))
+					row += " ";
+
+				row += entry.maps[i].c_str( );
+
+				if ((( i + 1 ) % 4 == 0 ) || ( i + 1 == entry.maps.size( )))
+				{
+					CustomDetailAdd( out, row.GetChars( ), CR_GRAY );
+					row = "";
+				}
+			}
+		}
+
+		// [rc4l] The flag fields, by name and number, and only the ones that are set. A column of
+		// zeroes is a column nobody reads, and the fields that ARE set are the whole question.
+		{
+			bool bAny = false;
+
+			for ( size_t i = 0; i < entry.cvars.size( ); ++i )
+			{
+				if ( !zx::IsFlagFieldName( entry.cvars[i].first ))
+					continue;
+				if (( entry.cvars[i].second == "0" ) || entry.cvars[i].second.empty( ))
+					continue;
+
+				if ( !bAny )
+				{
+					out.push_back( DetailLine( ));
+					CustomDetailAdd( out, "FLAGS", CR_GOLD );
+					bAny = true;
+				}
+
+				FString line;
+				line.Format( "%s  %s", entry.cvars[i].first.c_str( ),
+					entry.cvars[i].second.c_str( ));
+				CustomDetailAdd( out, line.GetChars( ), CR_GRAY );
+			}
+		}
+
+		return out;
+	}
+
+	void DrawCustomDetail( )
+	{
+		const zx::CustomEntry *const chosen = CustomSelected( );
+
+		DrawDetailBackdrop( SB_HOST_RCOL_LEFT - SB_HOST_RCOL_INSET,
+			CustomDetailTop( ) - SB_HOST_RCOL_INSET,
+			SB_HOST_RCOL_RIGHT + SB_HOST_RCOL_INSET,
+			CustomDetailBottom( ) + SB_HOST_RCOL_INSET );
+
+		if ( chosen == NULL )
+			return;
+
+		const std::vector<DetailLine> lines = CustomDetailLines( *chosen );
+
+		const int lineH = CustomDetailLineH( );
+		const int visible = CustomDetailRows( );
+		const int maxScroll = MAX( 0, static_cast<int>( lines.size( )) - visible );
+
+		g_CustomDetailScroll = zx::ClampScroll( g_CustomDetailScroll, maxScroll );
+
+		for ( size_t i = 0; i < lines.size( ); ++i )
+		{
+			const int y = CustomDetailTop( ) +
+				( static_cast<int>( i ) - g_CustomDetailScroll ) * lineH;
+
+			// The presets column's own rule about which rows are drawn, so a line never half
+			// appears at an edge.
+			if ( !zx::RowFullyInView( y, lineH, CustomDetailTop( ), CustomDetailBottom( )))
+				continue;
+
+			if ( lines[i].text.IsEmpty( ))
+				continue;
+
+			screen->DrawText( SmallFont, lines[i].colour, SB_HOST_RCOL_LEFT, y,
+				lines[i].text.GetChars( ),
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+				TAG_DONE );
+		}
+
+		DrawHostRegionScrollBar( CustomDetailTop( ), CustomDetailBottom( ),
+			static_cast<int>( lines.size( )) * lineH, g_CustomDetailScroll * lineH, SB_HOST_BAR_X );
 	}
 
 	void DrawCustomPanel( )
@@ -9721,6 +9933,9 @@ public:
 			static_cast<int>( rows.size( )) * SB_NEW_ROW_H, g_CustomScroll * SB_NEW_ROW_H,
 			SB_HOST_LBAR_X );
 
+		// What the selected one IS, in the column the PRESETS tab uses for the same question.
+		DrawCustomDetail( );
+
 		// [rc4l] The three things that can be done with the selected one. EDIT goes dark when a file
 		// is missing rather than vanishing: a button that disappears makes the row change shape as
 		// the cursor passes over it, and the eye reads that as the list moving.
@@ -9768,9 +9983,9 @@ public:
 		// Nothing saved: one button, in the middle, and it is the only thing that can be pressed.
 		if ( CustomEntries( ).empty( ))
 		{
-			const int bw = 110;
-			const int bx = ( SB_HOST_LEFT + SB_HOST_RIGHT ) / 2 - bw / 2;
-			const int by = ( SB_HOST_TOP + SB_HOST_BOTTOM ) / 2 - SB_NEW_LINE + SB_NEW_LINE + 8;
+			const int bw = CustomEmptyBtnW( );
+			const int bx = CustomEmptyBtnLeft( );
+			const int by = CustomEmptyBtnTop( );
 
 			if (( x >= serverbrowser_ToScreenX( bx )) &&
 				( x < serverbrowser_ToScreenX( bx + bw )) &&
@@ -9793,13 +10008,27 @@ public:
 
 		const std::vector<int> rows = CustomRows( );
 
-		// The bar first, through the shared helper, for the reason every other list here does it.
+		// The bars first, through the shared helper, for the reason every other list here does it.
 		if ( RegionBarMouse( type, x, y, CustomListTop( ), CustomListBottom( ),
 			static_cast<int>( rows.size( )) * SB_NEW_ROW_H,
 			MAX( 0, static_cast<int>( rows.size( )) - CustomRowsVisible( )),
 			g_CustomScroll, g_DraggingCustomBar, SB_HOST_LBAR_X ))
 		{
 			return true;
+		}
+
+		{
+			const zx::CustomEntry *const chosen = CustomSelected( );
+			const int detailLines = ( chosen != NULL )
+				? static_cast<int>( CustomDetailLines( *chosen ).size( )) : 0;
+
+			if ( RegionBarMouse( type, x, y, CustomDetailTop( ), CustomDetailBottom( ),
+				detailLines * CustomDetailLineH( ),
+				MAX( 0, detailLines - CustomDetailRows( )),
+				g_CustomDetailScroll, g_DraggingCustomDetailBar, SB_HOST_BAR_X ))
+			{
+				return true;
+			}
 		}
 
 		// The three buttons.
@@ -9862,6 +10091,11 @@ public:
 				if ( type == MOUSE_Release )
 				{
 					g_CustomFocus = CustomFocus::List;
+
+					// A different preset is a different column of text, read from the top.
+					if ( row != g_CustomSel )
+						g_CustomDetailScroll = 0;
+
 					g_CustomSel = row;
 					g_CustomRevealSel = true;
 					SetFocus( zx::BrowserFocus::Host );
@@ -9915,6 +10149,7 @@ public:
 				{
 					g_CustomSel = next;
 					g_CustomRevealSel = true;
+					g_CustomDetailScroll = 0;		// a different preset, read from the top
 				}
 				else if ( step < 0 )
 					g_CustomFocus = CustomFocus::Search;
@@ -15238,6 +15473,34 @@ public:
 				{
 					g_NewMapScroll = zx::ComputeClampedSelection( g_NewMapScroll + step,
 						NewMapMaxScroll( ) + 1 );
+					return true;
+				}
+
+				// [rc4l] The CUSTOM tab's two columns, each taking the notch when the pointer is
+				// over it. Two views side by side, and a wheel that moved both would move the one
+				// nobody was looking at.
+				if (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Custom ) &&
+					!CustomEntries( ).empty( ))
+				{
+					const bool bOverList =
+						( g_MouseX < serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT - 8 ));
+
+					if ( bOverList )
+					{
+						const int rows = static_cast<int>( CustomRows( ).size( ));
+						g_CustomScroll = zx::ClampScroll( g_CustomScroll + step,
+							MAX( 0, rows - CustomRowsVisible( )));
+					}
+					else
+					{
+						const zx::CustomEntry *const chosen = CustomSelected( );
+						const int lines = ( chosen != NULL )
+							? static_cast<int>( CustomDetailLines( *chosen ).size( )) : 0;
+
+						g_CustomDetailScroll = zx::ClampScroll( g_CustomDetailScroll + step,
+							MAX( 0, lines - CustomDetailRows( )));
+					}
+
 					return true;
 				}
 
