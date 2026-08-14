@@ -6,6 +6,7 @@
 // M_Ticker auto-repeats whatever stays latched, so a down without its release walks the whole menu.
 import fs from "node:fs";
 import path from "node:path";
+import { parseHudDump, hudLines, findHudLabel } from "./proto.mjs";
 
 // d_event.h / d_gui.h (EGUIEvent enum)
 export const EV_GUI_EVENT = 4;
@@ -135,16 +136,36 @@ export async function typeText(c, text, { delay = 30 } = {}) { for (const ch of 
 
 // Capture the frame via the engine's built-in `screenshot` CCMD (writes <name>.png beside the binary),
 // then read it back. engineBinPath is FUACTL_ENGINE (the folder that also holds the IWAD/pk3).
-export async function screenshot(c, engineBinPath, name = "fuactl_shot") {
+export async function screenshot(c, engineBinPath, name = "fuactl_shot", { tries = 40, delay = 150 } = {}) {
   const dir = path.dirname(engineBinPath);
   const file = path.join(dir, `${name}.png`);
   try { fs.rmSync(file, { force: true }); } catch { /* ignore */ }
   await c.rpc("console.exec", { text: `screenshot ${name}` });
-  for (let i = 0; i < 40; i++) { // wait for the PNG to land (a busy frame can take a moment)
+  for (let i = 0; i < tries; i++) { // wait for the PNG to land (a busy frame can take a moment)
     if (fs.existsSync(file) && fs.statSync(file).size > 0) return { path: file, base64: fs.readFileSync(file).toString("base64") };
-    await sleep(150);
+    await sleep(delay);
   }
   throw new Error(`screenshot did not appear at ${file}`);
+}
+
+// Read the current menu/HUD as STRUCTURED TEXT instead of a screenshot: runs the engine's dumphud
+// capture, collects the console output, and parses it. Returns { texts, images, msgs, lines }, where
+// `lines` is the visible text in reading order. This is what lets navigation match labels
+// ("Complex Doom", "Play Now") rather than guess pixels -- deterministic, no image reading.
+export async function readMenu(c, { settle = 350 } = {}) {
+  const out = [];
+  const off = c.onEvent((n, d) => { if (n === "out" && d && d.text) out.push(d.text); });
+  try {
+    await c.rpc("console.exec", { text: "dumphud" });
+    await sleep(settle);
+  } finally { if (typeof off === "function") off(); }
+  const parsed = parseHudDump(out.join(""));
+  return { ...parsed, lines: hudLines(parsed.texts) };
+}
+
+// Where a label is on screen (its click anchor), or null. Convenience over readMenu + findHudLabel.
+export async function findLabel(c, needle, opts) {
+  return findHudLabel((await readMenu(c, opts)).texts, needle);
 }
 
 // Open a menu, apply nav/click steps, screenshot to verify -- the old verify_menu, ported.
