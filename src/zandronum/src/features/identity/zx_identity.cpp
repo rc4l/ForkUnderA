@@ -497,9 +497,13 @@ void RemoveEmptyDir( const std::string &path )
 }
 
 // [rc4l] Where a build before this one put the keys, which is what the migration moves from.
+//
+// M_GetLegacyConfigPath rather than M_GetConfigPath, because the latter now answers "wherever the
+// config lives today", which for a fresh install is the folder we are migrating INTO. Asking it
+// would have pointed the migration at its own destination and quietly found nothing to move.
 std::string LegacyRoot( void )
 {
-	FString path = M_GetConfigPath( false );
+	FString path = M_GetLegacyConfigPath( false );
 	FixPathSeperator( path );
 
 	const long slash = path.LastIndexOf( '/' );
