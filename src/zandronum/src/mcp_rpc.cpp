@@ -32,6 +32,7 @@
 #include "mcp_hud.h"
 #include "mcp_glperf.h"
 #include "mcp_ticprof.h"
+#include "mcp_simtrace.h"
 
 #include "features/mcp-bridge/computation/mcprpc_compute.h"
 
@@ -137,6 +138,10 @@ namespace
 	// etc.) whose draw count depends on real-time audio channel availability, so it is NOT
 	// run-to-run stable on sound-heavy mods even when the world is bit-identical. Use the
 	// world-only form (sim.hash {scope:"world"}) for cross-binary determinism gates.
+	// Either scope skips attached dynamic-light actors: they are client-side eye candy
+	// spawned into the thinker list whose population couples to rendering, and hashing them
+	// makes a bit-identical gameplay sim look divergent (proven: identical 65-tic event
+	// traces with "diverging" hashes on the Complex Doom kill storm).
 	QWORD StateHash( bool withRng )
 	{
 		uint64_t h = FnvInit();
@@ -145,10 +150,13 @@ namespace
 			h = FnvMixU64( h, (uint64_t)FRandom::StaticSumSeeds() );
 		if ( InLevel() )
 		{
+			const PClass *lightcls = PClass::FindClass( "DynamicLight" );
 			TThinkerIterator<AActor> it;
 			AActor *mo;
 			while ( ( mo = it.Next() ) != NULL )
 			{
+				if ( lightcls != NULL && mo->IsKindOf( lightcls ) )
+					continue;
 				h = FnvMixU64( h, (uint64_t)mo->x );
 				h = FnvMixU64( h, (uint64_t)mo->y );
 				h = FnvMixU64( h, (uint64_t)mo->z );
@@ -161,7 +169,9 @@ namespace
 
 	std::string ActorJson( AActor *mo )
 	{
-		std::string s = "{\"x\":" + I( (long long)( mo->x >> FRACBITS ) );
+		std::string s = "{\"c\":\"";
+		s += ( mo->GetClass() != NULL ) ? mo->GetClass()->TypeName.GetChars() : "?";
+		s += "\",\"x\":" + I( (long long)( mo->x >> FRACBITS ) );
 		s += ",\"y\":" + I( (long long)( mo->y >> FRACBITS ) );
 		s += ",\"z\":" + I( (long long)( mo->z >> FRACBITS ) );
 		s += ",\"angle\":" + I( (long long)( mo->angle >> 24 ) ); // ~degrees*256/360; raw hi byte
@@ -259,6 +269,13 @@ void MCP_RPC_Tick()
 		std::string ticprof;
 		if ( MCP_TicProf_ReportReady( ticprof ) )
 			EmitEvent( "ticprof", ticprof );
+	}
+
+	// Sim event tracer (sim.trace): completion notice once the trace file is written.
+	{
+		std::string trace;
+		if ( MCP_SimTrace_ReportReady( trace ) )
+			EmitEvent( "trace", trace );
 	}
 
 	// Drive a scheduled step. Force paused=0 EVERY frame while stepping so the single-player
@@ -360,6 +377,18 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		g_stepping = true;
 		paused = 0; // let the world advance; MCP_RPC_Tick refreezes at the target and emits "stepped"
 		SendOk( id, std::string( "{\"target\":" ) + I( g_stepTarget ) + "}" );
+	}
+	else if ( cmd == "sim.trace" )
+	{
+		// Arm the sim event tracer: every damage/kill/spawn for the next `tics` tics is
+		// recorded and written to args.path when done (a "trace" event reports completion).
+		// Diff two runs' files to find the exact event that shifts between them.
+		long tics = 35;
+		std::string path;
+		GetInt( args, "tics", tics );
+		if ( !GetStr( args, "path", path ) || path.empty() ) { SendErr( id, "sim.trace requires args.path" ); return; }
+		MCP_SimTrace_Arm( (int)tics, path.c_str() );
+		SendOk( id, std::string( "{\"tracing\":true,\"tics\":" ) + I( tics ) + "}" );
 	}
 	else if ( cmd == "sim.rngdump" )
 	{
