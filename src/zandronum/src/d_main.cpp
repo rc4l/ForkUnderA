@@ -1343,6 +1343,7 @@ void D_DoomLoop ()
 				if ( cl_useskulltagmouse == false )
 					I_StartTic( );
 
+				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
 				D_Display( );
 				break;
 			case NETSTATE_SERVER:
@@ -1395,6 +1396,7 @@ void D_DoomLoop ()
 
 				// Update display, next frame, with current state.
 				I_StartTic ();
+				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
 				D_Display ();
 				break;
 			}

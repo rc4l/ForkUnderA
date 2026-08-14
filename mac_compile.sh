@@ -241,6 +241,15 @@ configure() {
         -DOPENSSL_ROOT_DIR="$ssl"
     )
 
+    # [rc4l] Dev-only in-engine MCP control bridge (features/mcp-bridge). OFF by default so release
+    # builds carry no remote-control surface. Turn on for a driveable dev build with ZX_MCP_BRIDGE=1.
+    if [[ "${ZX_MCP_BRIDGE:-0}" == "1" ]]; then
+        args+=( -DFUA_MCP_BRIDGE=ON )
+        status "MCP bridge: ENABLED (dev build -- do not ship)"
+    else
+        args+=( -DFUA_MCP_BRIDGE=OFF )
+    fi
+
     # [rc4l] ZX_WITH_SYMBOLS=1 (release CI) builds with debug info; a .dSYM is generated after the
     # build (RELEASE_WITH_DEBUG_FILE is off on Apple) and uploaded to GlitchTip so crashes symbolicate.
     if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" ]]; then
