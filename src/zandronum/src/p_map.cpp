@@ -1801,11 +1801,16 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 
 	bool good = true;
 
+	// [rc4l] Loop-invariant: the answer depends only on `thing` and per-tic client state, so hoist
+	// it out of the line loop. It was being recomputed (network state + demo lookups) once per
+	// blockmap line, per move, per actor -- measurable during mass-death actor storms.
+	const bool specUnrestricted = P_IsSpectatorUnrestricted(thing);
+
 	while ((ld = it.Next()))
 	{
 		// [AK] Spectators without physical restrictions should only be executing
 		// line specials if they reached this point.
-		if (P_IsSpectatorUnrestricted(thing))
+		if (specUnrestricted)
 		{
 			if (ld->special)
 				spechit.Push(ld);
@@ -2447,7 +2452,11 @@ bool P_TryMove(AActor *thing, fixed_t x, fixed_t y,
 	// [BC] Flag this thing as having moved.
 	thing->STFlags |= STFL_POSITIONCHANGED;
 
-	thing->LinkToWorld();
+	// [rc4l] P_CheckPosition already resolved this exact (x, y) into tm.sector at the top of this
+	// move; the parameterless LinkToWorld() would walk the gameplay BSP again for the identical
+	// answer. Bit-exact elision -- measured against mass simultaneous deaths (a "kill monsters"
+	// storm of ~5k effect actors), where the per-move re-walk was a top sim hotspot.
+	thing->LinkToWorld(tm.sector);
 
 	if (thing->flags2 & MF2_FLOORCLIP)
 	{
@@ -2675,7 +2684,8 @@ bool P_OldTryMove (AActor *thing, fixed_t x, fixed_t y,
 	thing->x = x;
 	thing->y = y;
 
-	thing->LinkToWorld( );
+	// [rc4l] Same elision as P_TryMove: tm.sector is P_CheckPosition's answer for this (x, y).
+	thing->LinkToWorld( tm.sector );
 
 	// if any special lines were hit, do the effect
 	// [AK] Allow spectators without physical restrictions to execute line specials.
