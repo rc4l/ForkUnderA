@@ -6,7 +6,7 @@ import { reap, readRegistry } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation } from "./session.mjs";
 import { launchInstance, resolveEngine } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
-import { menuNav, click, typeText, screenshot, padButton, padDpad, look, readMenu, findLabel } from "./ui.mjs";
+import { menuNav, click, clickLabel, typeText, screenshot, padButton, padDpad, look, readMenu, findLabel } from "./ui.mjs";
 
 // Run fn with a short-lived, connected+greeted client, then close it.
 async function withClient(port, token, fn) {
@@ -37,9 +37,9 @@ const TOOLS = [
     inputSchema: { type: "object", required: ["port", "steps"], properties: {
       port: { type: "number" }, token: { type: "string" },
       steps: { type: "array", items: { type: "string", enum: ["up", "down", "left", "right", "enter", "back", "backspace"] } } } } },
-  { name: "ui_click", description: "Mouse click at (x,y). button: left/middle/right; double for dbl-click.",
-    inputSchema: { type: "object", required: ["port", "x", "y"], properties: {
-      port: { type: "number" }, token: { type: "string" }, x: { type: "number" }, y: { type: "number" },
+  { name: "ui_click", description: "Mouse click. Give `label` to click an on-screen label's centre (robust), or x,y for a point. button: left/middle/right; double for dbl-click.",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" }, label: { type: "string" }, x: { type: "number" }, y: { type: "number" },
       button: { type: "string", enum: ["left", "middle", "right"] }, double: { type: "boolean" } } } },
   { name: "ui_type", description: "Type text as GUI char events (menu name fields, console).",
     inputSchema: { type: "object", required: ["port", "text"], properties: {
@@ -76,7 +76,10 @@ async function callTool(name, a = {}) {
     case "perf_ablation": return runPerfAblation({ seed: a.seed, map: a.map, spawn: a.spawn, count: a.count, frames: a.frames });
     case "rpc": return withClient(a.port, a.token, (c) => c.rpc(a.cmd, a.args));
     case "ui_menu_nav": return withClient(a.port, a.token, async (c) => { await menuNav(c, a.steps); return { navigated: a.steps }; });
-    case "ui_click": return withClient(a.port, a.token, async (c) => { await click(c, a.x, a.y, { button: a.button || "left", double: !!a.double }); return { clicked: { x: a.x, y: a.y, button: a.button || "left" } }; });
+    case "ui_click": return withClient(a.port, a.token, async (c) => {
+      if (a.label) return clickLabel(c, a.label, { button: a.button || "left", double: !!a.double });
+      await click(c, a.x, a.y, { button: a.button || "left", double: !!a.double }); return { clicked: { x: a.x, y: a.y, button: a.button || "left" } };
+    });
     case "ui_type": return withClient(a.port, a.token, async (c) => { await typeText(c, a.text); return { typed: a.text.length }; });
     case "ui_screenshot": return withClient(a.port, a.token, (c) => screenshot(c, resolveEngine(), a.name || "fuactl_shot"));
     case "ui_pad_button": return withClient(a.port, a.token, async (c) => {

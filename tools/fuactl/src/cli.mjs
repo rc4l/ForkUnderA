@@ -137,7 +137,10 @@ async function main() {
         switch (act) {
           case "nav":        return ui.menuNav(c, a).then(() => ({ navigated: a }));
           case "key":        return ui.menuNav(c, a).then(() => ({ keys: a })); // alias
-          case "click":      return ui.click(c, Number(a[0]), Number(a[1]), { button: flags.button || "left", double: !!flags.double }).then(() => ({ clicked: [Number(a[0]), Number(a[1])], button: flags.button || "left" }));
+          case "click":
+            // `ui click <x> <y>` clicks a point; `ui click <label...>` finds the label and clicks its centre.
+            if (a.length && Number.isNaN(Number(a[0]))) return ui.clickLabel(c, a.join(" "), { button: flags.button || "left", double: !!flags.double });
+            return ui.click(c, Number(a[0]), Number(a[1]), { button: flags.button || "left", double: !!flags.double }).then(() => ({ clicked: [Number(a[0]), Number(a[1])], button: flags.button || "left" }));
           case "rightclick": return ui.rightClick(c, Number(a[0]), Number(a[1])).then(() => ({ rightClicked: [Number(a[0]), Number(a[1])] }));
           case "drag":       return ui.drag(c, Number(a[0]), Number(a[1]), Number(a[2]), Number(a[3])).then(() => ({ dragged: a.map(Number) }));
           case "type":       return ui.typeText(c, a.join(" ")).then(() => ({ typed: a.join(" ") }));

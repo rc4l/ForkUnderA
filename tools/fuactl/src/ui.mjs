@@ -168,6 +168,15 @@ export async function findLabel(c, needle, opts) {
   return findHudLabel((await readMenu(c, opts)).texts, needle);
 }
 
+// Click a label by name: read the menu, find the label, and click its CENTRE (cx) -- the text-start
+// alone can sit on a row's clickable edge and miss. Returns the label hit, or throws if not found.
+export async function clickLabel(c, needle, { button = "left", double = false, delay = 40 } = {}) {
+  const hit = findHudLabel((await readMenu(c)).texts, needle);
+  if (!hit) throw new Error(`label not found on screen: ${needle}`);
+  await click(c, hit.cx, hit.y, { button, double, delay });
+  return hit;
+}
+
 // Open a menu, apply nav/click steps, screenshot to verify -- the old verify_menu, ported.
 export async function verifyMenu(c, engineBinPath, { open, steps = [] } = {}) {
   if (open) await c.rpc("console.exec", { text: open });
