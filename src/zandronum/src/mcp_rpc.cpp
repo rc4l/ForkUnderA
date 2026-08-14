@@ -28,6 +28,7 @@
 #include "m_random.h"
 #include "zstring.h"
 #include "mcp_hud.h"
+#include "mcp_glperf.h"
 
 #include "features/mcp-bridge/computation/mcprpc_compute.h"
 
@@ -218,6 +219,15 @@ void MCP_RPC_Tick()
 		g_haveRenderMark = false;
 	}
 
+	// GPU profiler (gl.timers): the render-thread anchors accumulate timer-query results across frames;
+	// when a capture completes, its report is waiting here and goes out as a "glperf" event, mirroring
+	// the "perf" event above. Poll is cheap (a bool) when nothing is capturing.
+	{
+		std::string glperf;
+		if ( MCP_GLPerf_ReportReady( glperf ) )
+			EmitEvent( "glperf", glperf );
+	}
+
 	// Drive a scheduled step. Force paused=0 EVERY frame while stepping so the single-player
 	// focus-loss auto-pause (S_SetSoundPaused sets paused=-1 on a backgrounded window) can't stall
 	// a controlled advance -- the whole point of headless determinism. Refreeze at the target tic.
@@ -251,8 +261,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			"\"ping\",\"capabilities\",\"console.exec\","
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
-			"\"perf.capture\",\"perf.counters\",\"net.bandwidth\""
-			"],\"events\":[\"out\",\"stepped\",\"perf\"]}" );
+			"\"perf.capture\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\""
+			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\"]}" );
 	}
 	else if ( cmd == "console.exec" )
 	{
@@ -449,6 +459,24 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		body += ",\"numsegs\":" + I( numsegs );
 		body += ",\"leveltime\":" + I( level.time ) + "}";
 		SendOk( id, body );
+	}
+	else if ( cmd == "gl.timers" )
+	{
+		// Arm a GPU-time capture. The per-zone breakdown (opaque scene / translucent / 2D) + whole-frame
+		// GPU ms arrive asynchronously as a "glperf" event once `frames` frames are timed, exactly like
+		// perf.capture's "perf" event. Warmup frames are discarded to drop scene-change one-time costs.
+		long frames = 120, warmup = 3;
+		GetInt( args, "frames", frames );
+		GetInt( args, "warmup", warmup );
+		if ( frames < 1 ) frames = 1;
+		MCP_GLPerf_BeginCapture( (int)frames, warmup > 0 ? (int)warmup : 0 );
+		SendOk( id, std::string( "{\"capturing\":true,\"frames\":" ) + I( frames ) + ",\"warmup\":" + I( warmup ) + "}" );
+	}
+	else if ( cmd == "renderer.info" )
+	{
+		// Renderer identity + whether GL timer queries are usable on this driver (so a caller knows
+		// whether gl.timers will return real numbers before arming a capture).
+		SendOk( id, MCP_GLPerf_RendererInfo() );
 	}
 	else if ( cmd == "net.bandwidth" )
 	{
