@@ -52,6 +52,8 @@
 #include "features/server-browser/computation/pillflow_compute.h"
 #include "features/server-browser/computation/flagset_compute.h"
 #include "features/server-browser/computation/flaghelp_compute.h"
+#include "features/server-browser/computation/maplist_compute.h"
+#include "features/server-browser/zx_mapscan.h"
 #include "features/server-browser/computation/servervar_compute.h"
 #include "features/server-browser/zx_flagtable.h"
 #include "gamemode.h"		// [rc4l] GAMEMODE_GetFlags, so the GAMEPLAY box shows what the mode uses
@@ -1554,7 +1556,7 @@ static	bool				g_NewIwadChosen = false;
 // [rc4l] Which modal is up, if any. One selector rather than a flag per box: every place that has
 // to know "is a modal open" -- the pointer, the keys, the draw order -- asks once, and adding a
 // fourth box cannot leave one of them behind.
-enum class NewModal { None, Iwad, Flags, Vars, Gameplay };
+enum class NewModal { None, Iwad, Flags, Maps, Gameplay };
 
 static	NewModal			g_NewModal = NewModal::None;
 
@@ -1606,6 +1608,21 @@ static	int					g_NewSettingFirstChar = 0;
 
 // The mode a server built here would run. See NewChosenGameMode.
 static	GAMEMODE_e			g_NewGameMode = GAMEMODE_COOPERATIVE;
+
+// [rc4l] The rotation: every map in the chosen files, in the order the files provide them, and
+// whatever the player has since done to that list.
+//
+// `key` is what it was built from -- the IWAD and the load order -- so changing the files rebuilds
+// it and nothing else does. Rebuilding on every look would throw away a rotation somebody had just
+// finished arranging.
+static	std::vector<std::string>	g_NewMaps;
+static	FString				g_NewMapsKey;
+static	int					g_NewMapSel = 0;
+static	int					g_NewMapScroll = 0;
+static	int					g_NewMapHot = -1;
+static	int					g_NewMapBtnHot = -1;
+static	bool				g_NewMapRevealSel = true;
+static	bool				g_DraggingNewMapBar = false;
 
 // The chooser's own state: where its cursor is and where it is scrolled to, separate from the
 // selection itself, so backing out of it changes nothing.
@@ -6646,6 +6663,76 @@ public:
 	// gives where it does the same: the spawned server searches its own config, not this one, so a
 	// name is a second search that can find a different file. Here they came out of a scan that
 	// already knows exactly where each one is, so there is nothing to look up twice.
+	// ---------------------------------------------------------------------------------------------
+	//
+	// [rc4l] THE MAP LIST, which is the rotation.
+	//
+	// Every map in the chosen files, in the order the files give them, and every one of them in by
+	// default: a server built out of a map pack is meant to play the map pack. Taking one out is a
+	// decision, and putting them all in is not.
+	//
+	// The files are read where they lie -- see zx_mapscan -- because this client has not loaded any
+	// of them, and it is configuring a server rather than playing one.
+
+	// What the list was built from. Rebuilt when this changes and at no other time, so a rotation
+	// somebody has just finished arranging survives being looked at again.
+	FString NewMapsKey( )
+	{
+		FString key = NewIwadPath( );
+
+		for ( size_t i = 0; i < g_NewOrder.size( ); ++i )
+		{
+			key += "|";
+			key += g_NewOrder[i].path.c_str( );
+		}
+
+		return key;
+	}
+
+	void NewRebuildMaps( bool bForce )
+	{
+		const FString key = NewMapsKey( );
+
+		if ( !bForce && ( g_NewMapsKey.Compare( key ) == 0 ))
+			return;
+
+		std::vector<std::string> maps;
+
+		// The IWAD first, then the files in load order: a rotation should read the way the load
+		// order does. MergeMaps keeps each name once, so a pwad replacing MAP01 does not add a
+		// second visit to it.
+		zx::MergeMaps( maps, zx::MapsInPath( NewIwadPath( ).GetChars( )));
+
+		for ( size_t i = 0; i < g_NewOrder.size( ); ++i )
+			zx::MergeMaps( maps, zx::MapsInPath( g_NewOrder[i].path ));
+
+		g_NewMaps = maps;
+		g_NewMapsKey = key;
+		g_NewMapSel = 0;
+		g_NewMapScroll = 0;
+		g_NewMapRevealSel = true;
+	}
+
+	// Where the chosen IWAD actually is. Asked by hosting and by the map scan, which must agree
+	// about which file they are talking about.
+	FString NewIwadPath( )
+	{
+		const std::vector<std::string> &iwads = NewIwads( );
+		if ( iwads.empty( ))
+			return "";
+
+		const std::string name = iwads[zx::ComputeClampedSelection( g_NewIwadSel,
+			static_cast<int>( iwads.size( )))];
+
+		FString path = zx::FindFileInEngineSearchPaths( name.c_str( ));
+		if ( path.IsEmpty( ))
+			path = zx::FindIwadInEngineSearchPaths( name.c_str( ));
+		if ( path.IsEmpty( ))
+			path = name.c_str( );
+
+		return path;
+	}
+
 	void NewStartHosting( )
 	{
 		const std::vector<std::string> &iwads = NewIwads( );
@@ -6659,11 +6746,7 @@ public:
 		const std::string iwadName = iwads[zx::ComputeClampedSelection( g_NewIwadSel,
 			static_cast<int>( iwads.size( )))];
 
-		FString iwadPath = zx::FindFileInEngineSearchPaths( iwadName.c_str( ));
-		if ( iwadPath.IsEmpty( ))
-			iwadPath = zx::FindIwadInEngineSearchPaths( iwadName.c_str( ));
-		if ( iwadPath.IsEmpty( ))
-			iwadPath = iwadName.c_str( );
+		const FString iwadPath = NewIwadPath( );
 
 		zx::HostConfig config;
 		config.hostName = ( std::string( "Fua: " ) +
@@ -6682,9 +6765,16 @@ public:
 		// which for a hand-built server is everything, there being no cfg to disagree with.
 		config.extraCvars = g_NewCvars;
 
-		// No cfg and no gamemode: this screen has not grown the controls for either yet, so the
-		// server takes the engine's defaults rather than something half-chosen on its behalf.
-		config.map = "map01";
+		// [rc4l] The rotation, and the map it starts on, which is the first of it.
+		//
+		// One decision rather than two: a starting map chosen separately from the list can name
+		// something that is not in the rotation, and the server then leaves it after one round
+		// never to return. Empty falls back to map01, which is what a wad without a readable map
+		// list would have got anyway.
+		NewRebuildMaps( false );
+
+		config.mapRotation = g_NewMaps;
+		config.map = g_NewMaps.empty( ) ? "map01" : g_NewMaps[0];
 
 		zx::ReachProbeRelease( );
 
@@ -6837,7 +6927,7 @@ public:
 
 	const char *NewToolLabel( int i )
 	{
-		static const char *const kLabels[SB_NEW_TOOL_COUNT] = { "FLAGS", "VARIABLES", "GAMEPLAY" };
+		static const char *const kLabels[SB_NEW_TOOL_COUNT] = { "FLAGS", "MAPS", "GAMEPLAY" };
 		return kLabels[i];
 	}
 
@@ -6997,7 +7087,15 @@ public:
 		if ( i == 0 )
 			g_NewModal = NewModal::Flags;
 		else if ( i == 1 )
-			g_NewModal = NewModal::Vars;
+		{
+			g_NewModal = NewModal::Maps;
+
+			// [rc4l] The files are read HERE, on the press, and only when they have changed since
+			// the last read. Not at startup, not while the tab is drawn, and not per frame: this
+			// opens files off disk, and the one moment somebody is willing to wait for that is the
+			// moment they asked to see what is in them.
+			NewRebuildMaps( false );
+		}
 		else
 			g_NewModal = NewModal::Gameplay;
 
@@ -7634,10 +7732,6 @@ public:
 			for ( size_t i = 0; i < fields.size( ); ++i )
 				BoxAddFlagField( items, row, fields[i] );
 		}
-		else if ( which == NewModal::Vars )
-		{
-			BoxAddSettings( items, row, NewVarRows( ));
-		}
 		else if ( which == NewModal::Gameplay )
 		{
 			BoxAddHeading( items, row, "MODE" );
@@ -7659,8 +7753,6 @@ public:
 
 	const char *BoxTitle( NewModal which )
 	{
-		if ( which == NewModal::Vars )
-			return "SERVER VARIABLES";
 		if ( which == NewModal::Gameplay )
 			return "GAMEPLAY";
 
@@ -7670,8 +7762,6 @@ public:
 	// Each box keeps its own place, so closing one and opening it again lands where it was left.
 	int &BoxScroll( NewModal which )
 	{
-		if ( which == NewModal::Vars )
-			return g_NewVarsScroll;
 		if ( which == NewModal::Gameplay )
 			return g_NewGameScroll;
 
@@ -7886,6 +7976,269 @@ public:
 		screen->DrawText( SmallFont, CR_WHITE, labelX, textY,
 			serverbrowser_FitName( label, ( x + w ) - labelX - 4 ),
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+	}
+
+	// --- the map list, in the same big box --------------------------------------------------------
+
+	int NewMapRowsVisible( )
+	{
+		// No footer here: nothing in this box is a number to paste.
+		return MAX( 1, ( NewBigContentBottom( std::vector<int>( )) - NewBigContentTop( )) /
+			SB_NEW_ROW_H );
+	}
+
+	int NewMapMaxScroll( )
+	{
+		return MAX( 0, static_cast<int>( g_NewMaps.size( )) - NewMapRowsVisible( ));
+	}
+
+	void DrawNewMapsModal( )
+	{
+		serverbrowser_ClearTips( );
+
+		screen->Dim( 0x000000, 0.62f, 0, 0, screen->GetWidth( ), screen->GetHeight( ));
+
+		const zx::PanelColor topCol = { 26, 28, 40, 245 };
+		const zx::PanelColor botCol = { 12, 13, 20, 250 };
+		DrawRoundedPanel( NewBigModalLeft( ), NewBigModalTop( ),
+			NewBigModalRight( ) - NewBigModalLeft( ), NewBigModalBottom( ) - NewBigModalTop( ),
+			topCol, botCol, 8 );
+
+		const int left = NewBigContentLeft( );
+		const int right = NewBigContentRight( );
+		const int top = NewBigContentTop( );
+		const int visible = NewMapRowsVisible( );
+
+		FString heading;
+		heading.Format( "MAP ROTATION  (%d)", static_cast<int>( g_NewMaps.size( )));
+
+		screen->DrawText( SmallFont, CR_GOLD, left, NewBigModalTop( ) + SB_NEW_MODAL_PAD, heading,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+			TAG_DONE );
+
+		if ( g_NewMaps.empty( ))
+		{
+			// [rc4l] Said plainly, because the two reasons are different problems: a resource pack
+			// has no maps and never will, and a file this cannot read is worth knowing about.
+			DrawNewRowText( left, top, CR_DARKGRAY,
+				"No maps in the IWAD or any of the chosen files" );
+		}
+		else
+		{
+			g_NewMapSel = zx::ComputeClampedSelection( g_NewMapSel,
+				static_cast<int>( g_NewMaps.size( )));
+
+			if ( g_NewMapRevealSel )
+			{
+				NewClampScroll( g_NewMapSel, static_cast<int>( g_NewMaps.size( )), visible,
+					g_NewMapScroll );
+				g_NewMapRevealSel = false;
+			}
+			else
+			{
+				g_NewMapScroll = zx::ComputeClampedSelection( g_NewMapScroll,
+					NewMapMaxScroll( ) + 1 );
+			}
+
+			for ( int row = g_NewMapScroll;
+				( row < static_cast<int>( g_NewMaps.size( ))) && ( row < g_NewMapScroll + visible );
+				++row )
+			{
+				const int rowY = NewRowY( top, row, g_NewMapScroll );
+				const bool bSel = ( row == g_NewMapSel );
+
+				if ( bSel )
+					FocusAnchor( zx::BrowserFocus::Host, left - 9, rowY + SB_NEW_ROW_H / 2 );
+
+				const int btnHot = (( g_NewMapBtnHot >= row * 3 ) &&
+					( g_NewMapBtnHot < row * 3 + 3 )) ? ( g_NewMapBtnHot - row * 3 ) : -1;
+
+				// The load order's own row, over a different list. See DrawOrderRow.
+				DrawOrderRow( left, right, rowY, row, g_NewMaps[row].c_str( ), bSel,
+					( row == g_NewMapHot ), btnHot, ( row == 0 ),
+					( row + 1 == static_cast<int>( g_NewMaps.size( ))));
+			}
+
+			DrawHostRegionScrollBar( top, top + visible * SB_NEW_ROW_H,
+				static_cast<int>( g_NewMaps.size( )) * SB_NEW_ROW_H, g_NewMapScroll * SB_NEW_ROW_H,
+				NewBigBarX( ));
+		}
+
+		// The first map is where the server starts, which is worth saying where it is decided.
+		if ( !g_NewMaps.empty( ))
+		{
+			FString foot;
+			foot.Format( "Starts on %s", g_NewMaps[0].c_str( ));
+
+			screen->DrawText( SmallFont, CR_DARKGRAY, left, NewBigButtonTop( ) + 4, foot,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+				TAG_DONE );
+		}
+
+		DrawRoundedButton( NewBigButtonLeft( ), NewBigButtonTop( ), 80, SB_DLG_BTN_H, "DONE",
+			g_NewIwadConfirmHot );
+	}
+
+	// [rc4l] Remove and move, which is the whole of what this list can be told.
+	void NewMapRemove( int row )
+	{
+		if (( row < 0 ) || ( row >= static_cast<int>( g_NewMaps.size( ))))
+			return;
+
+		g_NewMaps.erase( g_NewMaps.begin( ) + row );
+
+		g_NewMapSel = zx::ComputeClampedSelection( g_NewMapSel,
+			MAX( 1, static_cast<int>( g_NewMaps.size( ))));
+		g_NewMapRevealSel = true;
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	void NewMapMove( int row, int step )
+	{
+		const int to = row + step;
+
+		if (( row < 0 ) || ( row >= static_cast<int>( g_NewMaps.size( ))))
+			return;
+		if (( to < 0 ) || ( to >= static_cast<int>( g_NewMaps.size( ))))
+			return;
+
+		const std::string held = g_NewMaps[row];
+		g_NewMaps[row] = g_NewMaps[to];
+		g_NewMaps[to] = held;
+
+		g_NewMapSel = to;
+		g_NewMapRevealSel = true;
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	bool NewMapsModalMouse( int type, int x, int y )
+	{
+		g_NewMapHot = -1;
+		g_NewMapBtnHot = -1;
+		g_NewIwadConfirmHot = false;
+
+		const int left = NewBigContentLeft( );
+		const int right = NewBigContentRight( );
+		const int top = NewBigContentTop( );
+		const int visible = NewMapRowsVisible( );
+
+		// The bar first, through the shared helper every other list uses.
+		if ( RegionBarMouse( type, x, y, top, top + visible * SB_NEW_ROW_H,
+			static_cast<int>( g_NewMaps.size( )) * SB_NEW_ROW_H, NewMapMaxScroll( ),
+			g_NewMapScroll, g_DraggingNewMapBar, NewBigBarX( )))
+		{
+			return true;
+		}
+
+		{
+			const int bx = NewBigButtonLeft( );
+			const int by = NewBigButtonTop( );
+
+			if (( x >= serverbrowser_ToScreenX( bx )) &&
+				( x < serverbrowser_ToScreenX( bx + 80 )) &&
+				( y >= serverbrowser_ToScreenY( by )) &&
+				( y < serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+			{
+				g_NewIwadConfirmHot = true;
+				if ( type == MOUSE_Release )
+				{
+					g_NewModal = NewModal::None;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+		}
+
+		for ( int row = g_NewMapScroll;
+			( row < static_cast<int>( g_NewMaps.size( ))) && ( row < g_NewMapScroll + visible );
+			++row )
+		{
+			const int rowY = NewRowY( top, row, g_NewMapScroll );
+
+			if (( y < serverbrowser_ToScreenY( rowY )) ||
+				( y >= serverbrowser_ToScreenY( rowY + SB_NEW_ROW_H )))
+			{
+				continue;
+			}
+
+			if (( x < serverbrowser_ToScreenX( left - 4 )) ||
+				( x >= serverbrowser_ToScreenX( right )))
+			{
+				continue;
+			}
+
+			g_NewMapHot = row;
+
+			const int button = OrderButtonAt( left, right, rowY, x, y );
+			if ( button >= 0 )
+			{
+				g_NewMapBtnHot = row * 3 + button;
+
+				if ( type == MOUSE_Release )
+				{
+					g_NewMapSel = row;
+
+					if ( button == 0 )
+						NewMapRemove( row );
+					else
+						NewMapMove( row, ( button == 1 ) ? -1 : 1 );
+				}
+
+				return true;
+			}
+
+			if ( type == MOUSE_Release )
+			{
+				g_NewMapSel = row;
+				g_NewMapRevealSel = true;
+			}
+
+			return true;
+		}
+
+		// Inside the box swallows; outside closes, the same as the other boxes.
+		if (( x >= serverbrowser_ToScreenX( NewBigModalLeft( ))) &&
+			( x < serverbrowser_ToScreenX( NewBigModalRight( ))) &&
+			( y >= serverbrowser_ToScreenY( NewBigModalTop( ))) &&
+			( y < serverbrowser_ToScreenY( NewBigModalBottom( ))))
+		{
+			return true;
+		}
+
+		if ( type == MOUSE_Release )
+			g_NewModal = NewModal::None;
+
+		return true;
+	}
+
+	// The arrows walk it, DEL and Enter remove, and [ and ] move -- the same keys the load order
+	// answers to, because it is the same list of the same kind.
+	bool NewMapsMenuKey( int mkey )
+	{
+		if ( g_NewMaps.empty( ))
+			return true;
+
+		if (( mkey == MKEY_Up ) || ( mkey == MKEY_Down ))
+		{
+			const int next = g_NewMapSel + (( mkey == MKEY_Up ) ? -1 : 1 );
+
+			if (( next >= 0 ) && ( next < static_cast<int>( g_NewMaps.size( ))))
+			{
+				g_NewMapSel = next;
+				g_NewMapRevealSel = true;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+
+			return true;
+		}
+
+		if ( mkey == MKEY_Enter )
+		{
+			NewMapRemove( g_NewMapSel );
+			return true;
+		}
+
+		return true;
 	}
 
 	// --- drawing and clicking, once for all three -------------------------------------------------
@@ -8472,10 +8825,18 @@ public:
 	//
 	// Widths are fixed rather than measured: they hold single glyphs, and a column of buttons that
 	// changed width with the glyph inside it would not line up down the list.
-	int NewOrderXLeft( )		{ return SB_HOST_RCOL_LEFT; }
-	int NewOrderNameLeft( )		{ return SB_HOST_RCOL_LEFT + SB_NEW_ORDER_BTN_W + 4; }
-	int NewOrderUpLeft( )		{ return SB_HOST_RCOL_RIGHT - SB_NEW_ORDER_BTN_W * 2 - 3; }
-	int NewOrderDownLeft( )		{ return SB_HOST_RCOL_RIGHT - SB_NEW_ORDER_BTN_W; }
+	// [rc4l] Taking a left and a right rather than reading the NEW screen's own column, because the
+	// map list is the same control in a different box. The four wrappers below are the load order's
+	// own columns, so every existing caller reads as it did.
+	int OrderXLeft( int left )			{ return left; }
+	int OrderNameLeft( int left )		{ return left + SB_NEW_ORDER_BTN_W + 4; }
+	int OrderUpLeft( int right )		{ return right - SB_NEW_ORDER_BTN_W * 2 - 3; }
+	int OrderDownLeft( int right )		{ return right - SB_NEW_ORDER_BTN_W; }
+
+	int NewOrderXLeft( )		{ return OrderXLeft( SB_HOST_RCOL_LEFT ); }
+	int NewOrderNameLeft( )		{ return OrderNameLeft( SB_HOST_RCOL_LEFT ); }
+	int NewOrderUpLeft( )		{ return OrderUpLeft( SB_HOST_RCOL_RIGHT ); }
+	int NewOrderDownLeft( )		{ return OrderDownLeft( SB_HOST_RCOL_RIGHT ); }
 
 	void DrawNewOrderButton( int vx, int rowY, const char *glyph, bool bHot, bool bEnabled = true )
 	{
@@ -8491,6 +8852,59 @@ public:
 		screen->DrawText( SmallFont, bEnabled ? ( bHot ? CR_WHITE : CR_GRAY ) : CR_DARKGRAY,
 			vx + ( SB_NEW_ORDER_BTN_W - w ) / 2, NewRowTextY( rowY ), glyph,
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+	}
+
+	// [rc4l] One row of an ordered list: remove, the numbered name, and the two arrows.
+	//
+	// Written once and used by the load order and by the map list, which are the same control over
+	// different things -- a list where the POSITION is the meaning. `btnHot` is 0, 1 or 2 for the
+	// button under the pointer, or -1.
+	void DrawOrderRow( int left, int right, int rowY, int index, const char *label, bool bSel,
+		bool bHot, int btnHot, bool bFirst, bool bLast )
+	{
+		DrawNewRowHighlight( left - 4, right, rowY, bSel, bHot );
+
+		// X, then the name, then the two arrows: the order the eye reads them is the order they
+		// matter in. Remove is the one you reach for; moving is fiddly, so it sits at the far end
+		// where it cannot be hit on the way to anything else.
+		DrawNewOrderButton( OrderXLeft( left ), rowY, "X", ( btnHot == 0 ));
+
+		// Numbered, because the number IS the meaning here: this is an order, not a set.
+		FString line;
+		line.Format( "%d. ", index + 1 );
+		line += serverbrowser_FitName( label, OrderUpLeft( right ) - OrderNameLeft( left ) - 6 );
+
+		DrawNewRowText( OrderNameLeft( left ), rowY, bSel ? CR_WHITE : CR_GRAY, line );
+
+		// [rc4l] Drawn dark at the ends where they cannot go anywhere, rather than hidden. A button
+		// that vanishes on the first and last row makes the row change shape as the selection passes
+		// over it, and the eye reads that as the list moving.
+		DrawNewOrderButton( OrderUpLeft( right ), rowY, "^", ( btnHot == 1 ), !bFirst );
+		DrawNewOrderButton( OrderDownLeft( right ), rowY, "v", ( btnHot == 2 ), !bLast );
+	}
+
+	// Which of a row's three buttons a pointer is over, or -1. The draw and the hit test ask the
+	// same function, so a button you can see is a button you can press.
+	int OrderButtonAt( int left, int right, int rowY, int x, int y )
+	{
+		if (( y < serverbrowser_ToScreenY( rowY )) ||
+			( y >= serverbrowser_ToScreenY( rowY + SB_NEW_ROW_H )))
+		{
+			return -1;
+		}
+
+		const int lanes[3] = { OrderXLeft( left ), OrderUpLeft( right ), OrderDownLeft( right ) };
+
+		for ( int i = 0; i < 3; ++i )
+		{
+			if (( x >= serverbrowser_ToScreenX( lanes[i] )) &&
+				( x < serverbrowser_ToScreenX( lanes[i] + SB_NEW_ORDER_BTN_W )))
+			{
+				return i;
+			}
+		}
+
+		return -1;
 	}
 
 	void DrawNewOrder( )
@@ -8531,33 +8945,16 @@ public:
 			const int rowY = NewRowY( SB_NEW_ORDER_TOP, row, g_NewOrderScroll );
 			const bool bSel = ( row == g_NewOrderSel );
 
-			DrawNewRowHighlight( SB_HOST_RCOL_LEFT - 4, SB_HOST_RCOL_RIGHT, rowY, bSel,
-				( row == g_NewOrderHot ));
-
 			// The same marker on this side, so the keyboard is never in a place that does not say so.
 			if ( bSel && ( g_NewFocus == NewFocus::Order ) && ( g_Focus == zx::BrowserFocus::Host ))
 				FocusAnchor( zx::BrowserFocus::Host, SB_HOST_RCOL_LEFT - 9, rowY + SB_NEW_ROW_H / 2 );
 
-			// [rc4l] X, then the file, then the two arrows: the order the eye reads them in is the
-			// order they matter in. Remove is the one you reach for; moving is the fiddly one, so
-			// it sits at the far end where it cannot be hit by accident on the way to anything else.
-			DrawNewOrderButton( NewOrderXLeft( ), rowY, "X", ( g_NewOrderBtnHot == row * 3 + 0 ));
+			const int btnHot = (( g_NewOrderBtnHot >= row * 3 ) && ( g_NewOrderBtnHot < row * 3 + 3 ))
+				? ( g_NewOrderBtnHot - row * 3 ) : -1;
 
-			// Numbered, because the number IS the meaning here: this list is an order, not a set.
-			FString line;
-			line.Format( "%d. ", row + 1 );
-			line += serverbrowser_FitName( g_NewOrder[row].name.c_str( ),
-				NewOrderUpLeft( ) - NewOrderNameLeft( ) - 6 );
-
-			DrawNewRowText( NewOrderNameLeft( ), rowY, bSel ? CR_WHITE : CR_GRAY, line );
-
-			// [rc4l] Drawn dark at the ends where they cannot go anywhere, rather than hidden. A
-			// button that vanishes on the first and last row makes the row change shape as the
-			// selection passes over it, and the eye reads that as the list moving.
-			DrawNewOrderButton( NewOrderUpLeft( ), rowY, "^", ( g_NewOrderBtnHot == row * 3 + 1 ),
-				( row > 0 ));
-			DrawNewOrderButton( NewOrderDownLeft( ), rowY, "v", ( g_NewOrderBtnHot == row * 3 + 2 ),
-				( row + 1 < static_cast<int>( g_NewOrder.size( ))));
+			DrawOrderRow( SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT, rowY, row,
+				g_NewOrder[row].name.c_str( ), bSel, ( row == g_NewOrderHot ), btnHot,
+				( row == 0 ), ( row + 1 == static_cast<int>( g_NewOrder.size( ))));
 		}
 
 		// Outside the rows, where the host panel's own right-column bars sit, so the buttons at the
@@ -8626,8 +9023,8 @@ public:
 		switch ( g_NewModal )
 		{
 		case NewModal::Iwad:		DrawNewIwadModal( ); break;
+		case NewModal::Maps:		DrawNewMapsModal( ); break;
 		case NewModal::Flags:
-		case NewModal::Vars:
 		case NewModal::Gameplay:	DrawSettingsBox( g_NewModal ); break;
 		case NewModal::None:		break;
 		default:					break;
@@ -8988,11 +9385,10 @@ public:
 		// The modal owns the pointer while it is up, which is what modal means.
 		if ( g_NewModal == NewModal::Iwad )
 			return NewIwadModalMouse( type, x, y );
-		if (( g_NewModal == NewModal::Flags ) || ( g_NewModal == NewModal::Vars ) ||
-			( g_NewModal == NewModal::Gameplay ))
-		{
+		if ( g_NewModal == NewModal::Maps )
+			return NewMapsModalMouse( type, x, y );
+		if (( g_NewModal == NewModal::Flags ) || ( g_NewModal == NewModal::Gameplay ))
 			return SettingsBoxMouse( g_NewModal, type, x, y );
-		}
 
 		g_NewToolHot = -1;
 
@@ -13432,12 +13828,19 @@ public:
 				// One row a notch rather than three. The grid is six rows tall, so three would jump
 				// most of the way down it and land nowhere anybody aimed.
 				if (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::New ) &&
-					(( g_NewModal == NewModal::Flags ) || ( g_NewModal == NewModal::Vars ) ||
-					 ( g_NewModal == NewModal::Gameplay )))
+					(( g_NewModal == NewModal::Flags ) || ( g_NewModal == NewModal::Gameplay )))
 				{
 					int &scroll = BoxScroll( g_NewModal );
 					scroll = zx::ComputeClampedSelection( scroll + step,
 						BoxMaxScroll( g_NewModal ) + 1 );
+					return true;
+				}
+
+				if (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::New ) &&
+					( g_NewModal == NewModal::Maps ))
+				{
+					g_NewMapScroll = zx::ComputeClampedSelection( g_NewMapScroll + step,
+						NewMapMaxScroll( ) + 1 );
 					return true;
 				}
 
@@ -14335,11 +14738,22 @@ public:
 		if (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::New ) &&
 			( g_Focus == zx::BrowserFocus::Host ))
 		{
+			// The map list: the arrows walk it, Enter takes a map out, Escape closes it.
+			if ( g_NewModal == NewModal::Maps )
+			{
+				if ( mkey == MKEY_Back )
+				{
+					g_NewModal = NewModal::None;
+					return true;
+				}
+
+				return NewMapsMenuKey( mkey );
+			}
+
 			// [rc4l] The settings boxes: the arrows walk them, Enter presses what is under the
 			// cursor, Escape closes them. Answered here for the reason the chooser is -- these keys
 			// never reach Responder at all.
-			if (( g_NewModal == NewModal::Flags ) || ( g_NewModal == NewModal::Vars ) ||
-				( g_NewModal == NewModal::Gameplay ))
+			if (( g_NewModal == NewModal::Flags ) || ( g_NewModal == NewModal::Gameplay ))
 			{
 				if ( mkey == MKEY_Back )
 				{
