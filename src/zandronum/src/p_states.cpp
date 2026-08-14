@@ -312,8 +312,25 @@ FState *FActorInfo::FindState (int numnames, FName *names, bool exact) const
 
 FState *FActorInfo::FindStateByString(const char *name, bool exact)
 {
+	// [rc4l] Memoized: ACS SetActorState and friends resolve state-name strings on
+	// every call (strtok parsing plus an allocation in MakeStateNameList), and
+	// script-heavy mods do this per actor per tic. State labels are immutable once
+	// DECORATE/DEHACKED loading finishes, so the resolution is a pure function of
+	// (class, name, exact) -- cache it. The FName key makes lookups case-insensitive
+	// exactly like the parse itself; ClassIndex + name index + exact packed into one
+	// collision-free key. A cached NULL ("no such state") is stored too, as the
+	// sentinel value (FState*)-1.
+	static TMap<QWORD, FState *> cache;
+	const FName key (name);
+	const QWORD ck = ((QWORD)key << 18) | ((QWORD)Class->ClassIndex << 1) | (exact ? 1 : 0);
+	FState **cached = cache.CheckKey (ck);
+	if (cached != NULL)
+		return *cached == (FState *)(intptr_t)-1 ? NULL : *cached;
+
 	TArray<FName> &namelist = MakeStateNameList(name);
-	return FindState(namelist.Size(), &namelist[0], exact);
+	FState *state = FindState(namelist.Size(), &namelist[0], exact);
+	cache[ck] = state != NULL ? state : (FState *)(intptr_t)-1;
+	return state;
 }
 
 

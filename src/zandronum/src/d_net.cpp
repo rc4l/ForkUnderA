@@ -77,6 +77,8 @@
 #include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer tic boundary (no-op unless FUA_MCP_BRIDGE)
 
+EXTERN_CVAR (Int, cl_fua_maxcatchup) // [rc4l] catch-up batching cap (features/fua-caching)
+
 EXTERN_CVAR (Int, disableautosave)
 EXTERN_CVAR (Int, autosavecount)
 
@@ -1794,7 +1796,19 @@ void TryRunTics (void)
 		counts = realtics;
 	else
 		counts = availabletics;
-	
+
+	// [rc4l] fua-caching/perf: cap catch-up batching offline. When the sim overruns the
+	// tic budget (mass-kill storms), the loop above happily runs 5-10 tics inside one
+	// frame, which the player sees as a several-hundred-ms freeze. Capping the batch
+	// turns overload into brief smooth slow-motion instead of frozen frames. Offline
+	// single-player only: netgames must keep pace with the server, and demo playback
+	// keeps stock behavior so timing-sensitive playback is untouched.
+	if (( cl_fua_maxcatchup > 0 ) && ( counts > cl_fua_maxcatchup ) &&
+		( NETWORK_GetState( ) == NETSTATE_SINGLE ) && !demoplayback && ( CLIENTDEMO_IsPlaying( ) == false ))
+	{
+		counts = cl_fua_maxcatchup;
+	}
+
 	if (counts == 0 && !doWait)
 	{
 		// Check possible stall conditions
