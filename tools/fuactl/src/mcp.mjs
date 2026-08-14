@@ -71,6 +71,12 @@ const TOOLS = [
   { name: "ui_find", description: "Find an on-screen label (case-insensitive substring) and return its {x,y,text}, or null.",
     inputSchema: { type: "object", required: ["port", "label"], properties: {
       port: { type: "number" }, token: { type: "string" }, label: { type: "string" } } } },
+  { name: "world_sectors", description: "Query the level's sectors with specials/damage; damaging:true narrows to floors that hurt. Each row has a guaranteed-interior x,y to warp to.",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" }, damaging: { type: "boolean" }, limit: { type: "number" } } } },
+  { name: "player_setpos", description: "Teleport the console player to map coordinates (single-player instances only), snapped to the floor.",
+    inputSchema: { type: "object", required: ["port", "x", "y"], properties: {
+      port: { type: "number" }, token: { type: "string" }, x: { type: "number" }, y: { type: "number" } } } },
 ];
 
 async function callTool(name, a = {}) {
@@ -98,6 +104,8 @@ async function callTool(name, a = {}) {
     case "ui_look": return withClient(a.port, a.token, (c) => look(c, { yaw: a.yaw, pitch: a.pitch }));
     case "ui_read": return withClient(a.port, a.token, async (c) => { const m = await readMenu(c); return a.full ? m : { lines: m.lines.map((l) => l.text) }; });
     case "ui_find": return withClient(a.port, a.token, (c) => findLabel(c, a.label));
+    case "world_sectors": return withClient(a.port, a.token, (c) => c.rpc("world.sectors", { damaging: a.damaging ? 1 : 0, limit: a.limit ?? 64 }));
+    case "player_setpos": return withClient(a.port, a.token, (c) => c.rpc("player.setpos", { x: a.x, y: a.y }));
     default: throw new Error(`unknown tool: ${name}`);
   }
 }
