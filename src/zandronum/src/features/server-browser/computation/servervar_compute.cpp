@@ -31,13 +31,12 @@ const std::vector<ServerVar> &ServerVarTable()
 	table.push_back(ServerVar("sv_randommaprotation", "Shuffle the rotation", VarKind::Toggle, "0"));
 	table.push_back(ServerVar("sv_maprotation", "Use the rotation", VarKind::Toggle, "1"));
 
-	// What players may call a vote on. Each is a refusal, so the label says what it stops.
-	table.push_back(ServerVar("sv_nomapvote", "Forbid map votes", VarKind::Toggle, "0"));
-	table.push_back(ServerVar("sv_nochangemapvote", "Forbid changemap votes", VarKind::Toggle, "0"));
-	table.push_back(ServerVar("sv_nonextmapvote", "Forbid nextmap votes", VarKind::Toggle, "0"));
-	table.push_back(ServerVar("sv_nofraglimitvote", "Forbid fraglimit votes", VarKind::Toggle, "0"));
-	table.push_back(ServerVar("sv_notimelimitvote", "Forbid timelimit votes", VarKind::Toggle, "0"));
-	table.push_back(ServerVar("sv_nopointlimitvote", "Forbid pointlimit votes", VarKind::Toggle, "0"));
+	// [rc4l] NOT the individual vote refusals. sv_nomapvote and its eight siblings are BITS of
+	// sv_forbidvoteflags, so the flags panel already lists every one of them, with the number they
+	// add up to underneath. Offering them here as well is the same switch in two places: whichever
+	// the server applied second would win, and the two views would disagree on screen.
+	//
+	// sv_disallowvoting stays, below, because it is a cvar of its own and stops voting outright.
 
 	// The room itself.
 	table.push_back(ServerVar("sv_maxclients", "Connection limit", VarKind::Number, "16"));

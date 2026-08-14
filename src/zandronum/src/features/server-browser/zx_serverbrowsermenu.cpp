@@ -8088,8 +8088,17 @@ public:
 			out.push_back( row );
 		}
 
-		row.name = "timelimit"; row.label = "Time limit (minutes)"; row.max = 20;
-		out.push_back( row );
+		// [rc4l] NOT in co-op, survival or invasion.
+		//
+		// A clock decides who was ahead when it runs out, and those three have nobody to be ahead
+		// of: the map ends when it is finished or when everyone is dead. Zandronum will still cut
+		// the map short if a limit is set, which is a way to lose a co-op run to a number nobody
+		// meant to set. The three share GMF_COOPERATIVE, so that is the test.
+		if (( flags & GMF_COOPERATIVE ) == 0 )
+		{
+			row.name = "timelimit"; row.label = "Time limit (minutes)"; row.max = 20;
+			out.push_back( row );
+		}
 
 		row.slider = false;
 		row.zeroText = "";
