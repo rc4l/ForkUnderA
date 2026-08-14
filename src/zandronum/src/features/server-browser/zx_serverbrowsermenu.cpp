@@ -6902,11 +6902,41 @@ public:
 		// touched rather than only once somebody picks a different one.
 		NewSetGameMode( g_NewGameMode );
 
+		// [rc4l] Doubled ammo, on, for a configuration built here.
+		//
+		// It is a BIT of dmflags2 rather than a setting of its own, so it is turned on where it
+		// lives: the pill shows lit, the number in the footer counts it, and the one dmflags2 value
+		// the server is told carries it. Setting a cvar called sv_doubleammo beside that number
+		// would be two answers to one question, and which won would depend on their order.
+		//
+		// A convenience rather than a policy: it is a pill in the FLAGS box and can be turned off.
+		NewTurnFlagOn( "sv_doubleammo" );
+
 		for ( size_t i = 0; i < g_NewFlags.size( ); ++i )
 		{
 			NewSetCvar( g_NewFlags[i].name, zx::FormatFlagNumber( g_NewFlags[i].value ));
 			g_NewFlagInput[i] = zx::ClearInput( );
 			g_NewFlagInput[i].text = zx::FormatFlagNumber( g_NewFlags[i].value );
+		}
+	}
+
+	// One named switch, turned on wherever in the table it lives. Silent if this build has no such
+	// flag, which is the honest answer for a name that may not survive an engine update.
+	void NewTurnFlagOn( const char *name )
+	{
+		for ( size_t f = 0; f < g_NewFlags.size( ); ++f )
+		{
+			for ( size_t b = 0; b < g_NewFlags[f].bits.size( ); ++b )
+			{
+				if ( g_NewFlags[f].bits[b].name != name )
+					continue;
+
+				g_NewFlags[f].value = zx::FlagSet( g_NewFlags[f].value,
+					g_NewFlags[f].bits[b].bit, true );
+
+				NewFlagValueChanged( static_cast<int>( f ));
+				return;
+			}
 		}
 	}
 
@@ -7213,33 +7243,21 @@ public:
 		return name;
 	}
 
-	// [rc4l] What skill a mode starts at.
+	// [rc4l] What a server built here starts at: Nightmare, with the ammo doubled.
 	//
-	// Ultra-Violence where the monsters are the opposition, Nightmare where the players are. In a
-	// deathmatch the skill is not the difficulty of the game, it is how fast the map behaves --
-	// respawning items and faster projectiles -- and the people shooting at each other are the
-	// challenge either way. In co-op and survival it IS the difficulty, and Nightmare there respawns
-	// every monster you kill, which is a different game rather than a harder one.
-	int NewModeSkillDefault( GAMEMODE_e mode )
-	{
-		const ULONG flags = GAMEMODE_GetFlags( mode );
-		const bool bPvP = (( flags & ( GMF_DEATHMATCH | GMF_TEAMGAME )) != 0 );
-
-		return bPvP ? 4 : 3;
-	}
+	// Every mode, not one setting per mode. Nightmare is what makes a map behave the way people
+	// actually play it -- fast projectiles, respawning items, monsters that come back -- and the
+	// ammo is doubled alongside it because that pace is what the skill costs. It is a default rather
+	// than a rule: the GAMEPLAY box shows the skill and it can be turned down.
+	int NewSkillDefault( )		{ return 4; }
 
 	void NewSetGameMode( GAMEMODE_e mode )
 	{
 		g_NewGameMode = mode;
 
-		// The mode's own default skill comes with it. Changing what is being played changes what
-		// "normal" means, and leaving Ultra-Violence set from the last mode is answering a question
-		// nobody asked in the terms of a game they are no longer starting.
 		{
 			char buf[16];
-			mysnprintf( buf, countof( buf ), "%d", NewModeSkillDefault( mode ));
-
-			NewSetCvar( "skill", buf );
+			mysnprintf( buf, countof( buf ), "%d", NewSkillDefault( ));
 
 			SettingRow row;
 			row.name = "skill";
