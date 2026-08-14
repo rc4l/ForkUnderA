@@ -11091,6 +11091,25 @@ public:
 		// looking at would be the one unrecoverable mistake this box can make.
 		if ( g_NewModal == NewModal::Save )
 		{
+			// [rc4l] TAB picks which button Enter presses.
+			//
+			// Left and right belong to the caret here -- this box is a name being typed -- so the
+			// two buttons needed a key of their own, and Tab is the one every other form on the
+			// desktop uses for exactly this. Without it Cancel was reachable only by Escape, which
+			// is a way out but not the same as choosing the button that says so.
+			if (( ev->data1 == GK_TAB ) &&
+				(( ev->subtype == EV_GUI_KeyDown ) || ( ev->subtype == EV_GUI_KeyRepeat ) ||
+				 ( ev->subtype == EV_GUI_Char )))
+			{
+				if ( ev->subtype == EV_GUI_KeyDown )
+				{
+					g_NewSaveBtnSel = ( g_NewSaveBtnSel == 0 ) ? 1 : 0;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+
+				return true;
+			}
+
 			zx::TextInput next = g_NewSaveName;
 
 			switch ( EditTextField( next, ev, 48, false, false, false ))
@@ -11100,7 +11119,10 @@ public:
 				return true;
 
 			case FieldKey::Enter:
-				NewSaveConfirm( );
+				if ( g_NewSaveBtnSel == 0 )
+					NewSaveConfirm( );
+				else
+					NewCloseSaveModal( );
 				return true;
 
 			case FieldKey::Up:
