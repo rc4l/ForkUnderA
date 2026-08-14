@@ -85,6 +85,7 @@
 #include "v_video.h"
 #include "st_hud.h"
 #include "p_terrain.h"
+#include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchors (no-op unless FUA_MCP_BRIDGE)
 #include "features/mbf21/computation/damage_groups_compute.h"
 
 // [BC] Ugh.
@@ -411,6 +412,7 @@ EXTERN_CVAR (Int, fraglimit)
 
 void AActor::Die (AActor *source, AActor *inflictor, int dmgflags)
 {
+	MCP_SimTrace_Kill (this, source); // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 	// [BB] Potentially get rid of some corpses. This isn't necessarily client-only.
 	//CLIENT_RemoveMonsterCorpses();
 
@@ -1156,6 +1158,7 @@ static inline bool isFakePain(AActor *target, AActor *inflictor)
 // the damage was cancelled.
 int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage, FName mod, int flags)
 {
+	MCP_SimTrace_Damage (target, inflictor, damage); // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 	unsigned ang;
 	player_t *player = NULL;
 	fixed_t thrust;

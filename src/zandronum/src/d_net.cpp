@@ -75,6 +75,7 @@
 #include "team.h"
 #include "chat.h"
 #include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
+#include "mcp_simtrace.h" // [ForkUnderA] sim tracer tic boundary (no-op unless FUA_MCP_BRIDGE)
 
 EXTERN_CVAR (Int, disableautosave)
 EXTERN_CVAR (Int, autosavecount)
@@ -1919,6 +1920,7 @@ void TryRunTics (void)
 			G_Ticker ();
 			MCP_TicProf_End (MCP_TPZ_GTICKER);
 			MCP_TicProf_TicDone ();
+			MCP_SimTrace_TicDone ();
 			gametic++;
 
 			NetUpdate ();	// check for new console commands
