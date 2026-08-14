@@ -45,6 +45,7 @@
 #include "d_gui.h"
 #include "chat.h"   // [rc4l] CHAT_GetChatMode
 #include "dikeys.h"
+#include "mcp_bridge.h" // [rc4l] MCP_InputLocked: drop OS input on a hands-off harness-driven instance
 #include "doomdef.h"
 #include "doomstat.h"
 #include "v_video.h"
@@ -728,6 +729,12 @@ void ProcessMouseWheelEvent(NSEvent* theEvent)
 
 void I_ProcessEvent(NSEvent* event)
 {
+	// [rc4l] A harness-driven instance is hands-off: drop every OS keyboard/mouse event here, at the one
+	// seam they all pass through, so a stray click or keypress on its window can't perturb the sim.
+	// Bridge-injected events (MCP_PostInputEvent) reach D_PostEvent directly and are unaffected.
+	if (MCP_InputLocked())
+		return;
+
 	const NSEventType eventType = [event type];
 
 	switch (eventType)

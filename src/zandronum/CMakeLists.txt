@@ -129,6 +129,12 @@ ENDIF( NOT CMAKE_BUILD_TYPE )
 
 set( ZDOOM_OUTPUT_DIR ${CMAKE_BINARY_DIR} CACHE PATH "Directory where zdoom.pk3 and the executable will be created." )
 set( ZDOOM_EXE_NAME "forkundera" CACHE STRING "Name of the executable to create" )
+
+# [rc4l] The native MCP control bridge (features/mcp-bridge). OFF by default so RELEASE binaries
+# contain zero remote-control surface -- a shipped player build cannot be driven, period. Dev/test
+# builds turn it on (-DFUA_MCP_BRIDGE=ON, or ZX_MCP_BRIDGE=1 for the compile scripts). See
+# features/mcp-bridge/README.md. Even when ON it is runtime opt-in (ZANDRONUM_BRIDGE_PORT) + loopback.
+option( FUA_MCP_BRIDGE "Build the in-engine MCP control bridge (DEV ONLY -- never ship it ON)" OFF )
 if( MSVC )
 	# Allow the user to use ZDOOM_OUTPUT_DIR as a single release point.
 	# Use zdoom, zdoomd, zdoom64, and zdoomd64 for the binary names
