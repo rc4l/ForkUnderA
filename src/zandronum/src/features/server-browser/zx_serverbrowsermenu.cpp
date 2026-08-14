@@ -102,6 +102,8 @@
 #include "features/server-browser/zx_joinserver.h"
 #include "features/updater/computation/promptpanel_compute.h"
 #include "features/wad-download/zx_waddownload.h"
+#include "features/wad-download/zx_resolvejob.h"
+#include "features/wad-download/computation/jobstate_compute.h"
 
 //*****************************************************************************
 //	CONSTANTS
@@ -1655,6 +1657,31 @@ static	bool				g_CustomLoaded = false;
 // keyed on this as well: a preset replaced under its own name is a different preset with the same
 // key. See CustomForget.
 static	int					g_CustomGeneration = 0;
+
+// [rc4l] Where a preset's files were found, once a worker has said. Empty path means "looked, and
+// no copy here matches", which is a real answer -- absence from the list is the third state, "not
+// asked yet", and is what the rows draw "Loading..." for. See CustomVerifyPump.
+//
+// File scope rather than inside the menu class: a static member would need a definition of its own,
+// and all the other state this screen keeps lives out here.
+struct ResolvedFile
+{
+	std::string key;
+	std::string path;
+
+	ResolvedFile() {}
+	ResolvedFile(const std::string &k, const std::string &p) : key(k), path(p) {}
+};
+
+static	std::vector<ResolvedFile>	g_CustomResolved;
+
+// The claim CUSTOM has on the shared resolver, or -1 when it has nothing outstanding.
+static	int					g_CustomVerifyToken = -1;
+
+// The same, for the NEW tab's last-played restore, with the entry it is waiting to apply.
+static	zx::CustomEntry		g_NewRestoreEntry;
+static	int					g_NewRestoreToken = -1;
+
 static	zx::TextInput		g_CustomSearch;
 static	int					g_CustomSearchFirstChar = 0;
 static	bool				g_CustomSearchDragging = false;
@@ -7420,7 +7447,11 @@ public:
 	//
 	// Returns what it could NOT find, so the caller can say so rather than starting a server that
 	// is quietly missing a file.
-	std::vector<std::string> NewApplyEntry( const zx::CustomEntry &entry )
+	// `resolved` is name -> path for files somebody has ALREADY looked up, or NULL to look them up
+	// here. An empty path in that list means "looked, and no copy on this disk matches", which is a
+	// real answer and not the same as being absent from it.
+	std::vector<std::string> NewApplyEntry( const zx::CustomEntry &entry,
+		const std::vector<std::pair<std::string, std::string> > *resolved = NULL )
 	{
 		std::vector<std::string> missing;
 
@@ -7445,10 +7476,35 @@ public:
 
 		for ( size_t i = 0; i < entry.files.size( ); ++i )
 		{
-			const FString path = zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
-				entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( ));
+			// [rc4l] `resolved` is the answer a worker already found, when there is one. Passing it
+			// in rather than looking again is what lets the last-played restore happen off the main
+			// thread: the hashing is the expensive part and it has already been paid for.
+			//
+			// Looked up by name here rather than by index, so a caller that resolved a different
+			// number of files than the entry has cannot silently pair the wrong path with a name.
+			std::string found;
+			bool bHaveAnswer = false;
 
-			if ( path.IsEmpty( ))
+			if ( resolved != NULL )
+			{
+				for ( size_t r = 0; r < resolved->size( ); ++r )
+				{
+					if ( (*resolved)[r].first != entry.files[i].name )
+						continue;
+
+					found = (*resolved)[r].second;
+					bHaveAnswer = true;
+					break;
+				}
+			}
+
+			if ( !bHaveAnswer )
+			{
+				found = zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
+					entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( )).GetChars( );
+			}
+
+			if ( found.empty( ))
 			{
 				missing.push_back( entry.files[i].name );
 				continue;
@@ -7456,7 +7512,7 @@ public:
 
 			zx::LoadOrderEntry row;
 			row.name = entry.files[i].name;
-			row.path = path.GetChars( );
+			row.path = found;
 			g_NewOrder.push_back( row );
 		}
 
@@ -9655,8 +9711,10 @@ public:
 
 		if ( g_NewOrder.empty( ))
 		{
+			// [rc4l] "Loading." while the last-played setup is being resolved on a worker, so the
+			// screen is not telling somebody to pick files a moment before it fills itself in.
 			DrawNewRowText( SB_HOST_RCOL_LEFT, SB_NEW_ORDER_TOP, CR_DARKGRAY,
-				"Pick files on the left" );
+				NewRestorePending( ) ? LoadingText( ) : "Pick files on the left" );
 			return;
 		}
 
@@ -9793,50 +9851,165 @@ public:
 	//
 	// Kept against a generation rather than forever: files appear while the menu is open, and
 	// HostFilesChanged already exists to say so.
-	struct ResolvedFile
+	// [rc4l] ANSWERED ON A WORKER, and until it answers the row says so.
+	//
+	// The memo was the first half of this fix and the cheaper one: it stopped the hashing happening
+	// per frame. It could not stop the FIRST answer costing what it costs, and that is the whole of
+	// the remaining stall -- one preset naming 157MB measured at 156ms, which is ten frames gone the
+	// moment the tab opens. Nothing about drawing a list should ever read 157MB.
+	//
+	// So the question goes to features/wad-download/zx_resolvejob and the rows draw "Loading..."
+	// until it comes back. See that header for why the worker is safe: it is handed plain paths and
+	// hands plain paths back, and it never sees a preset, an FString or this cache.
+	// ResolvedFile and g_CustomResolved live at file scope with the rest of this screen's state.
+	std::string CustomResolveKey( const std::string &name, const std::string &md5 )
 	{
-		std::string key;
-		FString path;
-		int generation;
+		return name + "|" + md5;
+	}
 
-		ResolvedFile() : generation(-1) {}
+	// [rc4l] The one place that notices the answers could have changed, and the only thing that
+	// empties the cache.
+	//
+	// Two counters feed it -- files appearing on disk (g_HostHaveGeneration) and presets being
+	// written (g_CustomGeneration) -- and neither is monotonic in a way a job can be stamped with.
+	// So this folds both into one number that only ever goes up, which is what a result arriving
+	// late is compared against before it is believed.
+	// [rc4l] ONE counter for every claim on the resolver, because there is one worker and two screens
+	// that want it. A per-screen counter would hand both the same numbers and each would eventually
+	// apply the other's answers -- the CUSTOM list's verdicts landing in the NEW tab's restore.
+	int NextVerifyToken( )
+	{
+		static int token = 0;
+		return ++token;
+	}
+
+	int CustomVerifyEpoch( )
+	{
+		static int epoch = 0;
+		static std::vector<int> last;
+
+		std::vector<int> now;
+		now.push_back( g_HostHaveGeneration );
+		now.push_back( g_CustomGeneration );
+
+		bool bChanged = false;
+		epoch = zx::JobNextEpoch( epoch, last, now, bChanged );
+
+		if ( bChanged )
+		{
+			last = now;
+			g_CustomResolved.clear( );
+
+			// [rc4l] THE CLAIM GOES WITH THE CACHE. A run already in flight is answering the
+			// question as it stood a moment ago; leaving the token set would have its result
+			// claimed and written into the cache this just emptied, which is the stale answer the
+			// clearing was for. Dropping the claim is what makes the result unclaimable.
+			g_CustomVerifyToken = -1;
+
+			// And it stops reading files nobody is waiting for.
+			zx::resolvejob::Cancel( );
+		}
+
+		return epoch;
+	}
+
+	enum class ResolveState
+	{
+		Pending,		// asked, or about to be; no answer yet
+		Found,
+		Missing,
 	};
 
-	FString CustomResolve( const std::string &name, const std::string &md5 )
+	ResolveState CustomResolve( const std::string &name, const std::string &md5,
+		std::string *outPath = NULL )
 	{
-		// Local rather than a class member: a static member needs a definition of its own, and this
-		// is one function's memory.
-		static std::vector<ResolvedFile> g_CustomResolved;
-
-		const std::string key = name + "|" + md5;
+		const std::string key = CustomResolveKey( name, md5 );
 
 		for ( size_t i = 0; i < g_CustomResolved.size( ); ++i )
 		{
-			if (( g_CustomResolved[i].key == key ) &&
-				( g_CustomResolved[i].generation == g_HostHaveGeneration ))
-			{
-				return g_CustomResolved[i].path;
-			}
+			if ( g_CustomResolved[i].key != key )
+				continue;
+
+			if ( outPath != NULL )
+				*outPath = g_CustomResolved[i].path;
+
+			return g_CustomResolved[i].path.empty( ) ? ResolveState::Missing : ResolveState::Found;
 		}
 
-		ResolvedFile found;
-		found.key = key;
-		found.generation = g_HostHaveGeneration;
-		found.path = zx::waddownload::FindVerifiedCopy( name.c_str( ),
-			md5.empty( ) ? NULL : md5.c_str( ));
+		return ResolveState::Pending;
+	}
 
-		// Replace a stale entry for the same file rather than growing a row per generation.
-		for ( size_t i = 0; i < g_CustomResolved.size( ); ++i )
+	// [rc4l] Drain what came back, then ask about anything still unanswered. Called from the CUSTOM
+	// draw, which is the only screen that needs it.
+	//
+	// EVERY preset's files go in ONE job rather than a job per row. A list of presets is tens of
+	// files, the thread is the expensive part, and answering them together means the rows settle at
+	// once instead of popping in one at a time while somebody is reading them.
+	void CustomVerifyPump( )
+	{
+		// Bumps the epoch and empties the cache when the answers could have changed. Its return is
+		// not used here; what matters is that it runs before anything is read.
+		CustomVerifyEpoch( );
+
+		if ( g_CustomVerifyToken >= 0 )
 		{
-			if ( g_CustomResolved[i].key == key )
+			std::vector<zx::resolvejob::Answer> answers;
+
+			if ( zx::resolvejob::Tick( g_CustomVerifyToken, answers ))
 			{
-				g_CustomResolved[i] = found;
-				return found.path;
+				g_CustomVerifyToken = -1;
+
+				for ( size_t i = 0; i < answers.size( ); ++i )
+					g_CustomResolved.push_back( ResolvedFile( answers[i].key, answers[i].path ));
 			}
 		}
 
-		g_CustomResolved.push_back( found );
-		return found.path;
+		if ( zx::resolvejob::Running( ))
+			return;
+
+		std::vector<zx::resolvejob::Want> wants;
+		const std::vector<zx::CustomEntry> &all = CustomEntries( );
+
+		for ( size_t e = 0; e < all.size( ); ++e )
+		{
+			for ( size_t f = 0; f < all[e].files.size( ); ++f )
+			{
+				const std::string key = CustomResolveKey( all[e].files[f].name,
+					all[e].files[f].md5 );
+
+				if ( CustomResolve( all[e].files[f].name, all[e].files[f].md5 ) !=
+					ResolveState::Pending )
+				{
+					continue;
+				}
+
+				// The same file named by two presets is one question. Asking twice would hash it
+				// twice for an answer that cannot differ.
+				bool bAlready = false;
+				for ( size_t w = 0; w < wants.size( ); ++w )
+				{
+					if ( wants[w].key == key )
+					{
+						bAlready = true;
+						break;
+					}
+				}
+
+				if ( !bAlready )
+				{
+					wants.push_back( zx::resolvejob::Want( key, all[e].files[f].name,
+						all[e].files[f].md5 ));
+				}
+			}
+		}
+
+		const int token = NextVerifyToken( );
+
+		// Only claim it if it actually started. Begin refuses while the NEW tab's restore has the
+		// worker, and a token remembered for a run that never began is a claim on somebody else's
+		// answers.
+		if ( zx::resolvejob::Begin( wants, token ))
+			g_CustomVerifyToken = token;
 	}
 
 	// [rc4l] What a preset cannot find on this machine. Empty means it is ready to play.
@@ -9851,19 +10024,49 @@ public:
 	// answer. The third is an act, happens once, and is about to commit -- so it asks again from
 	// scratch. `bFresh` is that distinction, and having it here rather than at each call site is
 	// what stops the cheap answer being used for the expensive decision.
-	std::vector<std::string> CustomMissing( const zx::CustomEntry &entry, bool bFresh = false )
+	// [rc4l] `bPending` is the third answer, and leaving it out is how "we have not looked yet" gets
+	// drawn as "you are missing everything". It is set when ANY file is still unanswered; `missing`
+	// then holds only what is known to be absent, which is nothing worth showing until it is
+	// complete.
+	std::vector<std::string> CustomMissing( const zx::CustomEntry &entry, bool bFresh = false,
+		bool *bPending = NULL )
 	{
 		std::vector<std::string> missing;
 
+		if ( bPending != NULL )
+			*bPending = false;
+
 		for ( size_t i = 0; i < entry.files.size( ); ++i )
 		{
-			const FString path = bFresh
-				? zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
-					entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( ))
-				: CustomResolve( entry.files[i].name, entry.files[i].md5 );
+			if ( bFresh )
+			{
+				// [rc4l] STILL SYNCHRONOUS, deliberately. This is PLAY NOW and EDIT: an act, once,
+				// about to commit, and the player has already accepted a pause by pressing it. A
+				// worker here would mean a button that does nothing for a moment and then acts,
+				// which is worse than a button that takes a moment.
+				const FString path = zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
+					entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( ));
 
-			if ( path.IsEmpty( ))
+				if ( path.IsEmpty( ))
+					missing.push_back( entry.files[i].name );
+
+				continue;
+			}
+
+			switch ( CustomResolve( entry.files[i].name, entry.files[i].md5 ))
+			{
+			case ResolveState::Missing:
 				missing.push_back( entry.files[i].name );
+				break;
+
+			case ResolveState::Pending:
+				if ( bPending != NULL )
+					*bPending = true;
+				break;
+
+			default:
+				break;
+			}
 		}
 
 		return missing;
@@ -10008,11 +10211,17 @@ public:
 		static std::string forName;
 		static int forFiles = -1;
 		static int forPresets = -1;
+		static size_t forAnswers = 0;
 
 		// Both generations: one moves when files appear on disk, the other when a preset is written
 		// -- and a preset saved over itself changes neither its name nor the files on the machine.
+		//
+		// [rc4l] And how many answers the resolver has given, which is what makes the "..." lines
+		// settle. Without it a column built while the worker was still reading would keep saying
+		// "..." about files that had since come back, until something else happened to invalidate
+		// it -- the lines are cached, and the answers land after they were drawn.
 		if (( forName == entry.name ) && ( forFiles == g_HostHaveGeneration ) &&
-			( forPresets == g_CustomGeneration ))
+			( forPresets == g_CustomGeneration ) && ( forAnswers == g_CustomResolved.size( )))
 		{
 			return cache;
 		}
@@ -10021,6 +10230,7 @@ public:
 		forName = entry.name;
 		forFiles = g_HostHaveGeneration;
 		forPresets = g_CustomGeneration;
+		forAnswers = g_CustomResolved.size( );
 
 		return cache;
 	}
@@ -10046,10 +10256,22 @@ public:
 
 		for ( size_t i = 0; i < entry.files.size( ); ++i )
 		{
-			const bool bHere = !CustomResolve( entry.files[i].name, entry.files[i].md5 ).IsEmpty( );
+			// Three states, not two: saying MISSING about a file nobody has looked at yet is the
+			// same lie the rows used to tell, one column over.
+			switch ( CustomResolve( entry.files[i].name, entry.files[i].md5 ))
+			{
+			case ResolveState::Found:
+				CustomDetailItem( out, entry.files[i].name.c_str( ), "", CR_GRAY );
+				break;
 
-			CustomDetailItem( out, entry.files[i].name.c_str( ),
-				bHere ? "" : "MISSING", bHere ? CR_GRAY : CR_ORANGE );
+			case ResolveState::Missing:
+				CustomDetailItem( out, entry.files[i].name.c_str( ), "MISSING", CR_ORANGE );
+				break;
+
+			default:
+				CustomDetailItem( out, entry.files[i].name.c_str( ), "...", CR_DARKGRAY );
+				break;
+			}
 		}
 
 		// [rc4l] The flag fields, by name and number, and only the ones that are set. A column of
@@ -10314,6 +10536,11 @@ public:
 			return;
 		}
 
+		// [rc4l] Drain last frame's answers and ask about anything still unanswered. Asked from the
+		// draw because this is the screen that wants the answer, and asked every frame because the
+		// second ask through is a bool test -- see JobAcceptsBegin.
+		CustomVerifyPump( );
+
 		FString heading;
 		heading.Format( "YOUR PRESETS  (%d)", static_cast<int>( CustomEntries( ).size( )));
 
@@ -10364,21 +10591,27 @@ public:
 					rowY + SB_NEW_ROW_H / 2 );
 			}
 
-			const std::vector<std::string> missing = CustomMissing( entry );
+			bool bPending = false;
+			const std::vector<std::string> missing = CustomMissing( entry, false, &bPending );
 
+			// [rc4l] Neutral while the answer is still being worked out. Colouring an unanswered row
+			// orange would accuse the player of missing files the moment the tab opened, and then
+			// take it back a fraction of a second later.
 			DrawNewRowText( SB_HOST_LIST_LEFT, rowY,
-				missing.empty( ) ? ( bSel ? CR_WHITE : CR_GRAY ) : CR_ORANGE,
+				( bPending || missing.empty( )) ? ( bSel ? CR_WHITE : CR_GRAY ) : CR_ORANGE,
 				serverbrowser_FitName( entry.name.c_str( ), 150 ));
 
 			// What it is, on the right of its own row: the mode, and whether it can be played.
 			FString note;
-			if ( !missing.empty( ))
+			if ( bPending )
+				note = LoadingText( );
+			else if ( !missing.empty( ))
 				note.Format( "%d missing", static_cast<int>( missing.size( )));
 			else
 				note.Format( "%d file(s)", static_cast<int>( entry.files.size( )));
 
 			DrawNewRowText( SB_HOST_LIST_RIGHT - SmallFont->StringWidth( note ) - 4, rowY,
-				missing.empty( ) ? CR_DARKGRAY : CR_ORANGE, note );
+				bPending ? CR_DARKGRAY : ( missing.empty( ) ? CR_DARKGRAY : CR_ORANGE ), note );
 		}
 
 		DrawHostRegionScrollBar( CustomListTop( ), CustomListBottom( ),
@@ -10393,7 +10626,13 @@ public:
 		// the cursor passes over it, and the eye reads that as the list moving.
 		const zx::CustomEntry *const chosen = CustomSelected( );
 		const bool bPlayable = ( chosen != NULL );
-		const bool bEditable = ( chosen != NULL ) && CustomMissing( *chosen ).empty( );
+
+		// [rc4l] Dark while the answer is still coming, the same as when a file really is missing.
+		// Lighting it and then taking it away under the pointer would be a button that changes its
+		// mind, and EDIT refuses on a stale answer anyway -- see CustomEdit's fresh check.
+		bool bEditPending = false;
+		const bool bEditable = ( chosen != NULL ) &&
+			CustomMissing( *chosen, false, &bEditPending ).empty( ) && !bEditPending;
 
 		static const char *const kLabels[3] = { "PLAY NOW!", "EDIT", "DELETE" };
 
@@ -10963,30 +11202,88 @@ public:
 	//
 	// Only when the screen is EMPTY. Restoring over a load order somebody has already built would
 	// be the file remembering better than the person, which is the wrong way round.
+	// g_NewRestoreEntry and g_NewRestoreToken are at file scope; this is what the draw asks.
+	bool NewRestorePending( )	{ return g_NewRestoreToken >= 0; }
+
+	// [rc4l] The last-played setup, restored WITHOUT the first frame of this tab paying for it.
+	//
+	// It used to resolve every file inline, which meant hashing them: a setup naming a couple of
+	// large wads outside the by-hash store stalled the screen the moment it was opened, before
+	// anything had been drawn. Now the entry is read here -- two small files -- and the expensive
+	// half is asked of the worker; the load order fills in when it answers.
+	//
+	// STILL ONCE PER SESSION, and still only over an EMPTY screen. The empty test is repeated at
+	// apply time as well as here, because the wait is exactly the window in which somebody can start
+	// building an order by hand, and restoring over that would be the file remembering better than
+	// the person.
 	void NewRestoreLastOnce( )
 	{
 		static bool bAsked = false;
 
+		if ( NewRestorePending( ))
+		{
+			std::vector<zx::resolvejob::Answer> answers;
+			if ( !zx::resolvejob::Tick( g_NewRestoreToken, answers ))
+				return;
+
+			g_NewRestoreToken = -1;
+
+			// Built while we waited. The answers are dropped rather than applied.
+			if ( !g_NewOrder.empty( ))
+				return;
+
+			std::vector<std::pair<std::string, std::string> > resolved;
+			for ( size_t i = 0; i < answers.size( ); ++i )
+				resolved.push_back( std::make_pair( answers[i].key, answers[i].path ));
+
+			const std::vector<std::string> missing = NewApplyEntry( g_NewRestoreEntry, &resolved );
+
+			if ( !missing.empty( ))
+			{
+				FString say;
+				say.Format( "%d file(s) from the last setup are missing",
+					static_cast<int>( missing.size( )));
+				NewSay( say.GetChars( ));
+			}
+
+			return;
+		}
+
 		if ( bAsked )
 			return;
 
-		bAsked = true;
-
 		if ( !g_NewOrder.empty( ))
+		{
+			bAsked = true;
 			return;
+		}
 
 		const zx::CustomEntry last = zx::CustomLoadLast( );
 		if ( last.files.empty( ))
-			return;
-
-		const std::vector<std::string> missing = NewApplyEntry( last );
-
-		if ( !missing.empty( ))
 		{
-			FString say;
-			say.Format( "%d file(s) from the last setup are missing",
-				static_cast<int>( missing.size( )));
-			NewSay( say.GetChars( ));
+			bAsked = true;
+			return;
+		}
+
+		// [rc4l] The KEY IS THE FILENAME here, not name|md5 as the CUSTOM list uses, because this is
+		// what NewApplyEntry looks the answer up by. The two consumers never share a result -- the
+		// token sees to that -- so they are free to key their own the way each needs.
+		std::vector<zx::resolvejob::Want> wants;
+		for ( size_t i = 0; i < last.files.size( ); ++i )
+		{
+			wants.push_back( zx::resolvejob::Want( last.files[i].name, last.files[i].name,
+				last.files[i].md5 ));
+		}
+
+		const int token = NextVerifyToken( );
+
+		// Not marked asked until it actually starts: the CUSTOM list may hold the worker, and giving
+		// up on the restore because it was busy for one frame would lose the setup for the session.
+		if ( zx::resolvejob::Begin( wants, token ))
+		{
+			bAsked = true;
+			g_NewRestoreEntry = last;
+			g_NewRestoreToken = token;
 		}
 	}
 
@@ -15505,6 +15802,18 @@ public:
 	{
 		static const char *const frames[] = { "|", "/", "-", "\\" };
 		return frames[zx::ComputeSpinnerFrame( static_cast<int>( DMenu::MenuTime ), 4, 4 )];
+	}
+
+	// [rc4l] "Loading." through "Loading...", for a row whose answer is being worked out on a
+	// worker. Through the same frame unit the spinner uses, so the two tick together rather than
+	// drifting into a busy corner of the screen where two things blink out of step.
+	//
+	// Slower than the spinner on purpose: dots that change four times a second read as an error
+	// flashing rather than as something in progress.
+	const char *LoadingText( )
+	{
+		static const char *const frames[] = { "Loading.", "Loading..", "Loading..." };
+		return frames[zx::ComputeSpinnerFrame( static_cast<int>( DMenu::MenuTime ), 3, 10 )];
 	}
 
 	//*************************************************************************
