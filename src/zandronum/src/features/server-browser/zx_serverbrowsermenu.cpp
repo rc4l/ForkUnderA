@@ -53,7 +53,9 @@
 #include "features/server-browser/computation/flagset_compute.h"
 #include "features/server-browser/computation/flaghelp_compute.h"
 #include "features/server-browser/computation/maplist_compute.h"
+#include "features/server-browser/computation/customsave_compute.h"
 #include "features/server-browser/zx_mapscan.h"
+#include "features/server-browser/zx_customstore.h"
 #include "features/server-browser/computation/servervar_compute.h"
 #include "features/server-browser/zx_flagtable.h"
 #include "gamemode.h"		// [rc4l] GAMEMODE_GetFlags, so the GAMEPLAY box shows what the mode uses
@@ -1537,10 +1539,10 @@ static	zx::TextInput		g_Search;
 // list, so they are two different controls rather than one list with a flag on a row. See
 // features/wad-library/computation/loadorder_compute.h for why order is the whole point.
 
-// [rc4l] Tools is the row of three buttons under the wad list. It is a focus of its own because the
-// boxes they open are the only way to set a flag or a limit, and reaching them by mouse alone would
-// make the keyboard a way to do some of the job.
-enum class NewFocus { Iwads, Search, Wads, Tools, Order };
+// [rc4l] Tools is the row of three buttons under the wad list, and Buttons is SAVE and PLAY NOW.
+// Both are focuses of their own because what they open or do is otherwise reachable only by mouse,
+// which would make the keyboard a way to do some of the job.
+enum class NewFocus { Iwads, Search, Wads, Tools, Order, Buttons };
 
 static	NewFocus			g_NewFocus = NewFocus::Wads;
 
@@ -1556,7 +1558,7 @@ static	bool				g_NewIwadChosen = false;
 // [rc4l] Which modal is up, if any. One selector rather than a flag per box: every place that has
 // to know "is a modal open" -- the pointer, the keys, the draw order -- asks once, and adding a
 // fourth box cannot leave one of them behind.
-enum class NewModal { None, Iwad, Flags, Maps, Gameplay };
+enum class NewModal { None, Iwad, Flags, Maps, Gameplay, Save };
 
 static	NewModal			g_NewModal = NewModal::None;
 
@@ -1574,6 +1576,18 @@ static	int					g_NewFlagHot = -1;
 static	int					g_NewFlagFieldHot = -1;
 static	int					g_NewToolHot = -1;
 static	int					g_NewToolSel = 0;		// which of the three the keyboard is on
+static	bool				g_NewSaveHot = false;
+static	int					g_NewButtonSel = 1;		// 0 SAVE, 1 PLAY NOW; play is the usual one
+
+// [rc4l] The save box: the name being typed, whether the player has been asked about replacing, and
+// what the box last worked out to say. See customsave_compute for why the asking is a state.
+static	zx::TextInput		g_NewSaveName;
+static	bool				g_NewSaveAsked = false;
+static	int					g_NewSaveFirstChar = 0;
+static	bool				g_NewSaveDragging = false;
+static	int					g_NewSaveClickTime = 0;
+static	int					g_NewSaveBtnHot = -1;	// 0 Confirm, 1 Cancel
+static	int					g_NewSaveBtnSel = 0;
 
 // [rc4l] One text box per field, and which one is being typed in.
 //
@@ -6801,6 +6815,12 @@ public:
 		config.mapRotation = NewRotation( );
 		config.map = config.mapRotation.empty( ) ? "map01" : config.mapRotation[0];
 
+		// [rc4l] Written down before the server starts, because starting one makes this client
+		// reload its files to match -- and anything held only in memory across that is a bet. It
+		// survives the game being closed as well, which is what somebody expects from a screen they
+		// spent ten minutes filling in.
+		zx::CustomSaveLast( NewAsCustomEntry( "" ));
+
 		zx::ReachProbeRelease( );
 
 		if ( zx::HostStart( config ) == false )
@@ -7101,6 +7121,172 @@ public:
 
 		g_NewFlags[field].value = value;
 		NewSetCvar( g_NewFlags[field].name, zx::FormatFlagNumber( value ));
+	}
+
+	// [rc4l] SAVE takes the corner and PLAY NOW keeps the rest. Both are here rather than inline so
+	// the draw and the hit test cannot disagree about where a button is.
+	int NewSaveLeft( )		{ return SB_HOST_RCOL_LEFT; }
+	int NewSaveWidth( )		{ return 54; }
+	int NewPlayLeft( )		{ return SB_HOST_RCOL_LEFT + NewSaveWidth( ) + 5; }
+	int NewPlayWidth( )		{ return SB_HOST_RCOL_RIGHT - NewPlayLeft( ); }
+
+	// [rc4l] What this screen currently is, as a preset.
+	//
+	// Built in one place because three things want it: SAVE writes it, PLAY NOW keeps it as the
+	// last-played, and a preset loaded from CUSTOM has to come back through the same shape or the
+	// round trip would lose something silently.
+	zx::CustomEntry NewAsCustomEntry( const std::string &name )
+	{
+		zx::CustomEntry entry;
+
+		entry.name = name;
+
+		{
+			const std::vector<std::string> &iwads = NewIwads( );
+			if ( !iwads.empty( ))
+			{
+				entry.iwad = iwads[zx::ComputeClampedSelection( g_NewIwadSel,
+					static_cast<int>( iwads.size( )))];
+			}
+		}
+
+		// [rc4l] The hash comes with each file, because it is what lets a missing one be FETCHED on
+		// another machine rather than merely reported. HashOf caches per path, so a preset saved
+		// twice in a session hashes nothing twice.
+		for ( size_t i = 0; i < g_NewOrder.size( ); ++i )
+		{
+			zx::LibraryFile file;
+			file.path = g_NewOrder[i].path;
+			file.name = g_NewOrder[i].name;
+
+			entry.files.push_back( zx::CustomFile( g_NewOrder[i].name,
+				zx::wadlibrary::HashOf( file )));
+		}
+
+		entry.maps = NewRotation( );
+		entry.gameMode = NewGameModeCvar( g_NewGameMode );
+
+		const ULONG flags = GAMEMODE_GetFlags( g_NewGameMode );
+		entry.bPvP = (( flags & ( GMF_DEATHMATCH | GMF_TEAMGAME )) != 0 );
+
+		// Everything the boxes decided, less the sixteen mode switches: the mode is written as its
+		// own line, and repeating the other fifteen as false is noise in a file meant to be read.
+		for ( size_t i = 0; i < g_NewCvars.size( ); ++i )
+		{
+			bool bMode = false;
+
+			for ( int m = 0; m < NUM_GAMEMODES; ++m )
+			{
+				if ( g_NewCvars[i].first == NewGameModeCvar( static_cast<GAMEMODE_e>( m )))
+				{
+					bMode = true;
+					break;
+				}
+			}
+
+			if ( !bMode )
+				entry.cvars.push_back( g_NewCvars[i] );
+		}
+
+		return entry;
+	}
+
+	// [rc4l] A preset PUT BACK onto this screen: the IWAD, the load order, the settings, the mode
+	// and the rotation.
+	//
+	// Written once because three things need it and they must agree: the last-played configuration
+	// restored after a wad reload, EDIT on a saved preset, and COPY on a shipped one. Three separate
+	// versions of "fill in the screen" would drift, and the drift would look like a preset losing a
+	// setting for no reason anybody could reproduce.
+	//
+	// Returns what it could NOT find, so the caller can say so rather than starting a server that
+	// is quietly missing a file.
+	std::vector<std::string> NewApplyEntry( const zx::CustomEntry &entry )
+	{
+		std::vector<std::string> missing;
+
+		// The IWAD, by name, if this machine has it.
+		{
+			const std::vector<std::string> &iwads = NewIwads( );
+
+			for ( size_t i = 0; i < iwads.size( ); ++i )
+			{
+				if ( stricmp( iwads[i].c_str( ), entry.iwad.c_str( )) != 0 )
+					continue;
+
+				g_NewIwadSel = static_cast<int>( i );
+				g_NewIwadChosen = true;
+				break;
+			}
+		}
+
+		// The load order, resolved through the SAME search hosting uses -- by hash first, so a file
+		// with the right name and the wrong contents is not quietly accepted.
+		g_NewOrder.clear( );
+
+		for ( size_t i = 0; i < entry.files.size( ); ++i )
+		{
+			const FString path = zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
+				entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( ));
+
+			if ( path.IsEmpty( ))
+			{
+				missing.push_back( entry.files[i].name );
+				continue;
+			}
+
+			zx::LoadOrderEntry row;
+			row.name = entry.files[i].name;
+			row.path = path.GetChars( );
+			g_NewOrder.push_back( row );
+		}
+
+		// The settings. Loaded before the flags are read back out of them, so the numbers win.
+		NewLoadFlags( );
+
+		g_NewCvars = entry.cvars;
+
+		for ( size_t f = 0; f < g_NewFlags.size( ); ++f )
+		{
+			for ( size_t c = 0; c < entry.cvars.size( ); ++c )
+			{
+				if ( entry.cvars[c].first != g_NewFlags[f].name )
+					continue;
+
+				unsigned int value = 0;
+				if ( zx::ParseFlagNumber( entry.cvars[c].second, value ))
+				{
+					g_NewFlags[f].value = value;
+					NewFlagValueChanged( static_cast<int>( f ));
+				}
+			}
+		}
+
+		// The mode, by its cvar name.
+		for ( int m = 0; m < NUM_GAMEMODES; ++m )
+		{
+			if ( entry.gameMode == NewGameModeCvar( static_cast<GAMEMODE_e>( m )))
+			{
+				g_NewGameMode = static_cast<GAMEMODE_e>( m );
+				break;
+			}
+		}
+
+		// [rc4l] The rotation as SAVED, rather than rescanned. A preset that deliberately leaves a
+		// map out would get it back the moment it was opened if this rebuilt from the files.
+		g_NewMaps.clear( );
+		for ( size_t i = 0; i < entry.maps.size( ); ++i )
+			g_NewMaps.push_back( NewMapEntry( entry.maps[i] ));
+
+		g_NewMapsKey = NewMapsKey( );
+		g_NewMapSel = 0;
+		g_NewMapScroll = 0;
+
+		g_NewOrderSel = 0;
+		g_NewOrderScroll = 0;
+		g_NewRowsValid = false;
+
+		return missing;
 	}
 
 	// [rc4l] One of the three boxes, opened. The mouse and the keyboard both come through here, so
@@ -8001,6 +8187,185 @@ public:
 		screen->DrawText( SmallFont, CR_WHITE, labelX, textY,
 			serverbrowser_FitName( label, ( x + w ) - labelX - 4 ),
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	//
+	// [rc4l] THE SAVE BOX: a name, a line that says what will happen, and two buttons.
+	//
+	// Small on purpose. It asks one question, and the status line under the box is where every
+	// answer to it goes -- including the one that matters, which is that the name is taken.
+
+	int NewSaveBoxW( )		{ return 260; }
+	int NewSaveBoxLeft( )	{ return ( SB_VIRT_W - NewSaveBoxW( )) / 2; }
+	int NewSaveBoxTop( )	{ return SB_CONTENT_TOP + 60; }
+	int NewSaveBoxH( )		{ return SB_NEW_MODAL_PAD * 2 + SB_NEW_LINE * 4 + SB_DLG_BTN_H + 14; }
+	int NewSaveFieldTop( )	{ return NewSaveBoxTop( ) + SB_NEW_MODAL_PAD + SB_NEW_LINE + 4; }
+	int NewSaveStatusTop( )	{ return NewSaveFieldTop( ) + SB_NEW_SEARCH_H + 6; }
+	int NewSaveBtnTop( )	{ return NewSaveBoxTop( ) + NewSaveBoxH( ) - SB_NEW_MODAL_PAD - SB_DLG_BTN_H; }
+	int NewSaveBtnW( )		{ return 74; }
+	int NewSaveConfirmLeft( ) { return NewSaveBoxLeft( ) + NewSaveBoxW( ) / 2 - NewSaveBtnW( ) - 4; }
+	int NewSaveCancelLeft( )  { return NewSaveBoxLeft( ) + NewSaveBoxW( ) / 2 + 4; }
+
+	// What the box would do if Confirm were pressed now. Asked by the drawing and by the pressing,
+	// so what it says and what it does cannot differ.
+	zx::SaveState NewSaveStateNow( )
+	{
+		return zx::NextSaveState( g_NewSaveName.text, zx::CustomNames( ), g_NewSaveAsked,
+			g_NewOrder.size( ));
+	}
+
+	void NewOpenSaveModal( )
+	{
+		g_NewModal = NewModal::Save;
+
+		g_NewSaveName = zx::ClearInput( );
+		g_NewSaveAsked = false;
+		g_NewSaveFirstChar = 0;
+		g_NewSaveBtnSel = 0;
+		g_NewSaveBtnHot = -1;
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	// [rc4l] Confirm, which is either the question or the answer. See customsave_compute.
+	void NewSaveConfirm( )
+	{
+		const zx::SaveState state = NewSaveStateNow( );
+
+		if ( state == zx::SaveState::Asking )
+		{
+			// The first press on a taken name asks. Nothing is written.
+			g_NewSaveAsked = true;
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+			return;
+		}
+
+		if (( state != zx::SaveState::Ready ) && ( state != zx::SaveState::Replace ))
+		{
+			// Empty, unusable, or nothing to save. The line under the box already says which.
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+			return;
+		}
+
+		if ( zx::CustomSave( NewAsCustomEntry( g_NewSaveName.text )))
+		{
+			NewSay( "Saved to CUSTOM" );
+			g_NewModal = NewModal::None;
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+		}
+		else
+		{
+			NewSay( "Could not write that preset" );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+		}
+	}
+
+	// Escape, Cancel, and clicking away are the same thing: nothing was saved.
+	void NewCloseSaveModal( )
+	{
+		g_NewModal = NewModal::None;
+		g_NewSaveAsked = false;
+	}
+
+	void DrawNewSaveModal( )
+	{
+		serverbrowser_ClearTips( );
+
+		screen->Dim( 0x000000, 0.62f, 0, 0, screen->GetWidth( ), screen->GetHeight( ));
+
+		const zx::PanelColor topCol = { 26, 28, 40, 245 };
+		const zx::PanelColor botCol = { 12, 13, 20, 250 };
+		DrawRoundedPanel( NewSaveBoxLeft( ), NewSaveBoxTop( ), NewSaveBoxW( ), NewSaveBoxH( ),
+			topCol, botCol, 8 );
+
+		const int left = NewSaveBoxLeft( ) + SB_NEW_MODAL_PAD;
+		const int width = NewSaveBoxW( ) - SB_NEW_MODAL_PAD * 2;
+
+		screen->DrawText( SmallFont, CR_GOLD, left, NewSaveBoxTop( ) + SB_NEW_MODAL_PAD,
+			"SAVE THIS SETUP", DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
+			DTA_KeepRatio, true, TAG_DONE );
+
+		DrawTextField( left, NewSaveFieldTop( ), width, SB_NEW_SEARCH_H, g_NewSaveName, true, true,
+			"Name it", false, g_NewSaveFirstChar );
+
+		// [rc4l] The status line, which is the whole reason this box exists rather than a prompt.
+		// Red is a refusal or a warning; grey is a remark.
+		const zx::SaveState state = NewSaveStateNow( );
+		const char *const status = zx::SaveStatusText( state );
+
+		if ( status[0] != 0 )
+		{
+			screen->DrawText( SmallFont,
+				zx::SaveStatusIsWarning( state ) ? CR_RED : CR_DARKGRAY,
+				left, NewSaveStatusTop( ), status,
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+				TAG_DONE );
+		}
+
+		DrawRoundedButton( NewSaveConfirmLeft( ), NewSaveBtnTop( ), NewSaveBtnW( ), SB_DLG_BTN_H,
+			( state == zx::SaveState::Replace ) ? "REPLACE" : "CONFIRM",
+			( g_NewSaveBtnHot == 0 ) || ( g_NewSaveBtnSel == 0 ));
+
+		DrawRoundedButton( NewSaveCancelLeft( ), NewSaveBtnTop( ), NewSaveBtnW( ), SB_DLG_BTN_H,
+			"CANCEL", ( g_NewSaveBtnHot == 1 ) || ( g_NewSaveBtnSel == 1 ));
+
+		FocusAnchor( zx::BrowserFocus::Host,
+			(( g_NewSaveBtnSel == 0 ) ? NewSaveConfirmLeft( ) : NewSaveCancelLeft( )) - 5,
+			NewSaveBtnTop( ) + SB_DLG_BTN_H / 2 );
+	}
+
+	bool NewSaveModalMouse( int type, int x, int y )
+	{
+		g_NewSaveBtnHot = -1;
+
+		// The name box, through the same field helper every other box on this screen uses.
+		if ( FieldMouse( type, x, y, NewSaveBoxLeft( ) + SB_NEW_MODAL_PAD, NewSaveFieldTop( ),
+			NewSaveBoxW( ) - SB_NEW_MODAL_PAD * 2, SB_NEW_SEARCH_H, g_NewSaveName,
+			g_NewSaveFirstChar, g_NewSaveDragging, g_NewSaveClickTime ))
+		{
+			return true;
+		}
+
+		const int lefts[2] = { NewSaveConfirmLeft( ), NewSaveCancelLeft( ) };
+
+		for ( int i = 0; i < 2; ++i )
+		{
+			if (( x < serverbrowser_ToScreenX( lefts[i] )) ||
+				( x >= serverbrowser_ToScreenX( lefts[i] + NewSaveBtnW( ))) ||
+				( y < serverbrowser_ToScreenY( NewSaveBtnTop( ))) ||
+				( y >= serverbrowser_ToScreenY( NewSaveBtnTop( ) + SB_DLG_BTN_H )))
+			{
+				continue;
+			}
+
+			g_NewSaveBtnHot = i;
+			g_NewSaveBtnSel = i;
+
+			if ( type == MOUSE_Release )
+			{
+				if ( i == 0 )
+					NewSaveConfirm( );
+				else
+					NewCloseSaveModal( );
+			}
+
+			return true;
+		}
+
+		// Inside swallows; outside is a cancel, which is what closing without answering means.
+		if (( x >= serverbrowser_ToScreenX( NewSaveBoxLeft( ))) &&
+			( x < serverbrowser_ToScreenX( NewSaveBoxLeft( ) + NewSaveBoxW( ))) &&
+			( y >= serverbrowser_ToScreenY( NewSaveBoxTop( ))) &&
+			( y < serverbrowser_ToScreenY( NewSaveBoxTop( ) + NewSaveBoxH( ))))
+		{
+			return true;
+		}
+
+		if ( type == MOUSE_Release )
+			NewCloseSaveModal( );
+
+		return true;
 	}
 
 	// --- the map list, in the same big box --------------------------------------------------------
@@ -9078,8 +9443,44 @@ public:
 			SB_HOST_BAR_X );
 	}
 
+	// [rc4l] The last configuration played, put back, once per run of the game.
+	//
+	// Asked for on the first draw of this screen rather than at startup: a player who never opens
+	// HOST should not pay for reading a folder, and this is the moment the answer is needed.
+	//
+	// Only when the screen is EMPTY. Restoring over a load order somebody has already built would
+	// be the file remembering better than the person, which is the wrong way round.
+	void NewRestoreLastOnce( )
+	{
+		static bool bAsked = false;
+
+		if ( bAsked )
+			return;
+
+		bAsked = true;
+
+		if ( !g_NewOrder.empty( ))
+			return;
+
+		const zx::CustomEntry last = zx::CustomLoadLast( );
+		if ( last.files.empty( ))
+			return;
+
+		const std::vector<std::string> missing = NewApplyEntry( last );
+
+		if ( !missing.empty( ))
+		{
+			FString say;
+			say.Format( "%d file(s) from the last setup are missing",
+				static_cast<int>( missing.size( )));
+			NewSay( say.GetChars( ));
+		}
+	}
+
 	void DrawNewPanel( )
 	{
+		NewRestoreLastOnce( );
+
 		// [rc4l] The scan is asked for HERE rather than at startup, and this is the only place that
 		// asks. Begin() is cheap once a scan has run, so calling it while the tab is drawn is what
 		// makes "open the tab, get a list" true without costing anything on any other screen.
@@ -9099,16 +9500,35 @@ public:
 		DrawNewTools( );
 		DrawNewOrder( );
 
-		// The button, in the same place PRESETS puts its own, so the one control you always want to
-		// reach is where the eye already goes.
+		// [rc4l] TWO buttons on the row PRESETS gives to one.
 		//
-		// [rc4l] DrawRoundedButton, which IS the JOIN and PLAY NOW drawing on the other screens. A
-		// button that merely resembled them would drift apart the first time either was touched.
-		DrawRoundedButton( SB_HOST_RCOL_LEFT, SB_NEW_BTN_Y,
-			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, SB_HOST_BTN_H, "PLAY NOW!", g_NewButtonHot );
+		// They are different acts and only one of them is undoable: playing spends a minute, saving
+		// writes a folder somebody will come back to. PLAY NOW keeps the width and the place the eye
+		// already goes; SAVE takes the corner.
+		//
+		// DrawRoundedButton, which IS the JOIN and PLAY NOW drawing on the other screens. A button
+		// that merely resembled them would drift apart the first time either was touched.
+		const bool bSaveFocus = ( g_NewFocus == NewFocus::Buttons ) && ( g_NewButtonSel == 0 ) &&
+			( g_Focus == zx::BrowserFocus::Host ) && ( g_NewModal == NewModal::None );
+		const bool bPlayFocus = ( g_NewFocus == NewFocus::Buttons ) && ( g_NewButtonSel == 1 ) &&
+			( g_Focus == zx::BrowserFocus::Host ) && ( g_NewModal == NewModal::None );
 
-		serverbrowser_Tip( SB_HOST_RCOL_LEFT, SB_NEW_BTN_Y,
-			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, SB_HOST_BTN_H,
+		DrawRoundedButton( NewSaveLeft( ), SB_NEW_BTN_Y, NewSaveWidth( ), SB_HOST_BTN_H, "SAVE",
+			g_NewSaveHot || bSaveFocus );
+
+		DrawRoundedButton( NewPlayLeft( ), SB_NEW_BTN_Y, NewPlayWidth( ), SB_HOST_BTN_H,
+			"PLAY NOW!", g_NewButtonHot || bPlayFocus );
+
+		if ( bSaveFocus )
+			FocusAnchor( zx::BrowserFocus::Host, NewSaveLeft( ) - 5, SB_NEW_BTN_Y + SB_HOST_BTN_H / 2 );
+		if ( bPlayFocus )
+			FocusAnchor( zx::BrowserFocus::Host, NewPlayLeft( ) - 5, SB_NEW_BTN_Y + SB_HOST_BTN_H / 2 );
+
+		serverbrowser_Tip( NewSaveLeft( ), SB_NEW_BTN_Y, NewSaveWidth( ), SB_HOST_BTN_H,
+			g_NewOrder.empty( ) ? "Add at least one file first"
+				: "Keep this setup under a name, in the CUSTOM tab" );
+
+		serverbrowser_Tip( NewPlayLeft( ), SB_NEW_BTN_Y, NewPlayWidth( ), SB_HOST_BTN_H,
 			g_NewOrder.empty( ) ? "Add at least one file first"
 				: "Start a server on this machine with these files" );
 
@@ -9138,6 +9558,7 @@ public:
 		{
 		case NewModal::Iwad:		DrawNewIwadModal( ); break;
 		case NewModal::Maps:		DrawNewMapsModal( ); break;
+		case NewModal::Save:		DrawNewSaveModal( ); break;
 		case NewModal::Flags:
 		case NewModal::Gameplay:	DrawSettingsBox( g_NewModal ); break;
 		case NewModal::None:		break;
@@ -9501,6 +9922,8 @@ public:
 			return NewIwadModalMouse( type, x, y );
 		if ( g_NewModal == NewModal::Maps )
 			return NewMapsModalMouse( type, x, y );
+		if ( g_NewModal == NewModal::Save )
+			return NewSaveModalMouse( type, x, y );
 		if (( g_NewModal == NewModal::Flags ) || ( g_NewModal == NewModal::Gameplay ))
 			return SettingsBoxMouse( g_NewModal, type, x, y );
 
@@ -9538,18 +9961,38 @@ public:
 		g_NewOrderBtnHot = -1;
 		g_NewSearchHot = false;
 		g_NewButtonHot = false;
+		g_NewSaveHot = false;
 
-		// The button first: it sits inside the right column, so testing it after the rows would let
-		// a row's own test claim a click that landed on it.
-		if (( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
-			( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )) &&
-			( y >= serverbrowser_ToScreenY( SB_NEW_BTN_Y )) &&
+		// The buttons first: they sit inside the right column, so testing them after the rows would
+		// let a row's own test claim a click that landed on one.
+		if (( y >= serverbrowser_ToScreenY( SB_NEW_BTN_Y )) &&
 			( y < serverbrowser_ToScreenY( SB_NEW_BTN_Y + SB_HOST_BTN_H )))
 		{
-			g_NewButtonHot = true;
-			if ( type == MOUSE_Release )
-				NewStartHosting( );
-			return true;
+			if (( x >= serverbrowser_ToScreenX( NewSaveLeft( ))) &&
+				( x < serverbrowser_ToScreenX( NewSaveLeft( ) + NewSaveWidth( ))))
+			{
+				g_NewSaveHot = true;
+				if ( type == MOUSE_Release )
+				{
+					g_NewFocus = NewFocus::Buttons;
+					g_NewButtonSel = 0;
+					NewOpenSaveModal( );
+				}
+				return true;
+			}
+
+			if (( x >= serverbrowser_ToScreenX( NewPlayLeft( ))) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+			{
+				g_NewButtonHot = true;
+				if ( type == MOUSE_Release )
+				{
+					g_NewFocus = NewFocus::Buttons;
+					g_NewButtonSel = 1;
+					NewStartHosting( );
+				}
+				return true;
+			}
 		}
 
 		// The bars first: they sit in the gutters beside their rows, and a click that scrolled AND
@@ -9801,6 +10244,12 @@ public:
 				if ( step < 0 )
 					g_NewFocus = NewFocus::Wads;
 			}
+			else if ( g_NewFocus == NewFocus::Buttons )
+			{
+				// The bottom row of the screen: up is the load order above it.
+				if ( step < 0 )
+					g_NewFocus = NewFocus::Order;
+			}
 			else
 			{
 				const int count = static_cast<int>( g_NewOrder.size( ));
@@ -9842,6 +10291,14 @@ public:
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
 			}
+			else if ( g_NewFocus == NewFocus::Buttons )
+			{
+				if ( g_NewButtonSel > 0 )
+				{
+					g_NewButtonSel--;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+			}
 			return true;
 
 		case zx::NavKey::Right:
@@ -9861,6 +10318,16 @@ public:
 				if ( g_NewOrderBtnSel < 2 )
 				{
 					g_NewOrderBtnSel++;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
+			if ( g_NewFocus == NewFocus::Buttons )
+			{
+				if ( g_NewButtonSel < 1 )
+				{
+					g_NewButtonSel++;
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
 				return true;
@@ -9902,7 +10369,7 @@ public:
 				return true;
 
 			static const NewFocus kOrder[] = { NewFocus::Iwads, NewFocus::Search, NewFocus::Wads,
-				NewFocus::Tools, NewFocus::Order };
+				NewFocus::Tools, NewFocus::Order, NewFocus::Buttons };
 			const int count = static_cast<int>( countof( kOrder ));
 
 			int at = 0;
@@ -9920,6 +10387,46 @@ public:
 			M_ReleaseMenuButtons( );
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return true;
+		}
+
+		// [rc4l] The save box's name field, which owns the keyboard while that box is up.
+		//
+		// ANY CHANGE TO THE NAME FORGETS THE REPLACE QUESTION. Having been asked about one name says
+		// nothing about another, and a Confirm that replaced a preset the player was no longer
+		// looking at would be the one unrecoverable mistake this box can make.
+		if ( g_NewModal == NewModal::Save )
+		{
+			zx::TextInput next = g_NewSaveName;
+
+			switch ( EditTextField( next, ev, 48, false, false, false ))
+			{
+			case FieldKey::Escape:
+				NewCloseSaveModal( );
+				return true;
+
+			case FieldKey::Enter:
+				NewSaveConfirm( );
+				return true;
+
+			case FieldKey::Up:
+			case FieldKey::Down:
+				// Nothing above or below the field but the two buttons, which left and right walk.
+				return true;
+
+			case FieldKey::Handled:
+				if ( next.text != g_NewSaveName.text )
+					g_NewSaveAsked = false;
+
+				g_NewSaveName = next;
+				return true;
+
+			case FieldKey::Unclaimed:
+			case FieldKey::Left:
+			case FieldKey::Right:
+				return false;
+			}
+
+			return false;
 		}
 
 		// [rc4l] A setting's own box, while it is being typed in.
@@ -14206,7 +14713,12 @@ public:
 			// the footer, or a setting's own value.
 			|| (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::New ) &&
 				( g_NewModal != NewModal::None ) && ( g_NewModal != NewModal::Iwad ) &&
-				(( g_NewFlagEditing >= 0 ) || g_NewSettingEditing.IsNotEmpty( )));
+				(( g_NewFlagEditing >= 0 ) || g_NewSettingEditing.IsNotEmpty( )))
+
+			// The save box is a name being typed the whole time it is open, so it always wants the
+			// raw keys.
+			|| (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::New ) &&
+				( g_NewModal == NewModal::Save ));
 
 		return ( bInAField == false ) || g_Dialog.open || g_Notice.IsNotEmpty( );
 	}
@@ -14933,6 +15445,15 @@ public:
 				if ( g_NewFocus == NewFocus::Tools )
 				{
 					NewOpenTool( g_NewToolSel );
+					return true;
+				}
+				if ( g_NewFocus == NewFocus::Buttons )
+				{
+					if ( g_NewButtonSel == 0 )
+						NewOpenSaveModal( );
+					else
+						NewStartHosting( );
+
 					return true;
 				}
 
