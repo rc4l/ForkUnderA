@@ -283,6 +283,29 @@ def as_picture(path):
 		return None
 
 
+def hirestex_alias(archives, want):
+	"""The lump a HIRESTEX `remap` draws in place of `want`.
+
+	    remap M_DOOM M_DOOMH
+
+	The engine substitutes the replacement wherever the original is drawn, so the original can be a
+	stub nobody ever sees. ZDoom Wars ships exactly that: a 758-byte M_DOOM beside a 115 KB M_DOOMH,
+	and reading the stub gets a picture the pack does not show.
+
+	This one REPLACES rather than falls back, which is why the caller puts it ahead of the name it
+	remaps rather than after.
+	"""
+	remap = re.compile(r'^\s*remap\s+"?([\w\-\.]+)"?\s+"?([\w\-\.]+)"?', re.I | re.M)
+
+	for arc in reversed(archives):
+		for raw in reversed(arc.read("HIRESTEX")):
+			for m in remap.finditer(raw.decode("latin-1", "replace")):
+				if m.group(1).upper() == want.upper() and m.group(2).upper() != want.upper():
+					return m.group(2).upper()
+
+	return None
+
+
 def textures_alias(archives, want):
 	"""The patch a TEXTURES definition draws for `want`, if the name is defined there rather than
 	being a lump of its own.
@@ -373,9 +396,16 @@ def resolve(paths, lumps=LUMPS):
 		lumps = (named,) + tuple(x for x in lumps if x != named)
 
 	for want in lumps:
-		# [rc4l] A name defined in TEXTURES rather than shipped as a lump resolves to the patch it
-		# draws, so a pack that composites its logo is not read as having none.
-		names = [want]
+		# [rc4l] A name the pack redirects resolves to what the engine actually draws for it. A
+		# HIRESTEX remap goes FIRST because it replaces the lump outright; a TEXTURES definition goes
+		# last because it answers for a name that is usually not a lump at all.
+		names = []
+		hires = hirestex_alias(archives, want)
+		if hires:
+			names.append(hires)
+
+		names.append(want)
+
 		alias = textures_alias(archives, want)
 		if alias:
 			names.append(alias)
