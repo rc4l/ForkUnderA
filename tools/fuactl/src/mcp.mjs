@@ -6,7 +6,7 @@ import { reap, readRegistry } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation } from "./session.mjs";
 import { launchInstance, resolveEngine } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
-import { menuNav, click, typeText, screenshot, padButton, padDpad, look } from "./ui.mjs";
+import { menuNav, click, typeText, screenshot, padButton, padDpad, look, readMenu, findLabel } from "./ui.mjs";
 
 // Run fn with a short-lived, connected+greeted client, then close it.
 async function withClient(port, token, fn) {
@@ -59,6 +59,12 @@ const TOOLS = [
   { name: "ui_look", description: "Precise relative view rotation in DEGREES (yaw>0 left, pitch>0 down). Exact angular turn, unlike the rate-based stick. Applies next tic.",
     inputSchema: { type: "object", required: ["port"], properties: {
       port: { type: "number" }, token: { type: "string" }, yaw: { type: "number" }, pitch: { type: "number" } } } },
+  { name: "ui_read", description: "Read the current menu/HUD as structured text (labels + coords) instead of a screenshot -- navigate by label, not pixels.",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" }, full: { type: "boolean" } } } },
+  { name: "ui_find", description: "Find an on-screen label (case-insensitive substring) and return its {x,y,text}, or null.",
+    inputSchema: { type: "object", required: ["port", "label"], properties: {
+      port: { type: "number" }, token: { type: "string" }, label: { type: "string" } } } },
 ];
 
 async function callTool(name, a = {}) {
@@ -79,6 +85,8 @@ async function callTool(name, a = {}) {
     });
     case "ui_stick": return withClient(a.port, a.token, (c) => c.rpc("input.axis", a.clear ? { clear: true } : { yaw: a.yaw, pitch: a.pitch, forward: a.forward, side: a.side, up: a.up }));
     case "ui_look": return withClient(a.port, a.token, (c) => look(c, { yaw: a.yaw, pitch: a.pitch }));
+    case "ui_read": return withClient(a.port, a.token, async (c) => { const m = await readMenu(c); return a.full ? m : { lines: m.lines.map((l) => l.text) }; });
+    case "ui_find": return withClient(a.port, a.token, (c) => findLabel(c, a.label));
     default: throw new Error(`unknown tool: ${name}`);
   }
 }

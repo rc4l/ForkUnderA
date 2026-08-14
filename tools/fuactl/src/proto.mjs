@@ -78,3 +78,58 @@ export function candidatePort(base, offset) {
   const lo = 20000, span = 20000;
   return lo + (((base - lo) + offset) % span + span) % span;
 }
+
+// Parse the `dumphud` capture (mcp_hud.cpp) into structured on-screen content. Each line is
+// "text <x> <y> <string>", "image <x> <y> <name>", or "msg <layer> <l> <t> <tics> <string>"; the
+// header "MCP_HUD" and blanks are ignored. Returns { texts, images, msgs } with numeric coords, so a
+// caller can navigate by label instead of by pixel-reading a screenshot.
+export function parseHudDump(dump) {
+  const texts = [], images = [], msgs = [];
+  for (const raw of String(dump || "").split("\n")) {
+    const line = raw.replace(/\r$/, "");
+    if (!line || line === "MCP_HUD") continue;
+    const sp = line.indexOf(" ");
+    const kind = sp < 0 ? line : line.slice(0, sp);
+    const rest = sp < 0 ? "" : line.slice(sp + 1);
+    if (kind === "text") {
+      const m = rest.match(/^(-?\d+) (-?\d+) ?(.*)$/);
+      if (m) texts.push({ x: Number(m[1]), y: Number(m[2]), text: m[3] });
+    } else if (kind === "image") {
+      const m = rest.match(/^(-?\d+) (-?\d+) (.*)$/);
+      if (m) images.push({ x: Number(m[1]), y: Number(m[2]), name: m[3] });
+    } else if (kind === "msg") {
+      const m = rest.match(/^(\d+) (-?[\d.]+) (-?[\d.]+) (-?\d+) ?(.*)$/);
+      if (m) msgs.push({ layer: Number(m[1]), left: Number(m[2]), top: Number(m[3]), tics: Number(m[4]), text: m[5] });
+    }
+  }
+  return { texts, images, msgs };
+}
+
+// Merge fragments the engine drew as separate DrawText calls on the same baseline (e.g. "Popular" +
+// " Co-op Maps") back into one label per row, in reading order (top-to-bottom, left-to-right). yTol
+// groups baselines a couple of pixels apart. Returns [{ y, x, text }] -- the visible lines.
+export function hudLines(texts, yTol = 3) {
+  const rows = [];
+  for (const t of [...texts].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const row = rows.find((r) => Math.abs(r.y - t.y) <= yTol);
+    if (row) { row.parts.push(t); row.y = Math.min(row.y, t.y); }
+    else rows.push({ y: t.y, parts: [t] });
+  }
+  return rows.map((r) => ({
+    y: r.y,
+    x: Math.min(...r.parts.map((p) => p.x)),
+    text: r.parts.sort((a, b) => a.x - b.x).map((p) => p.text).join("").replace(/\s+/g, " ").trim(),
+  }));
+}
+
+// Find the on-screen label matching `needle` (case-insensitive substring) and return its anchor
+// {x, y, text}, or null. Prefers the exact DRAWN FRAGMENT (its real x,y -- the right click target,
+// e.g. "Complex Doom" at its own column) over the merged reading-order line, which shares a baseline
+// with whatever sat beside it and would anchor at the wrong x.
+export function findHudLabel(texts, needle) {
+  const want = String(needle).toLowerCase();
+  const frag = texts.find((t) => String(t.text).toLowerCase().includes(want));
+  if (frag) return { x: frag.x, y: frag.y, text: frag.text };
+  const line = hudLines(texts).find((l) => l.text.toLowerCase().includes(want));
+  return line || null;
+}
