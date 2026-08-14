@@ -636,6 +636,24 @@ void RegisterDownloadDirInSearchPath(const char *dir)
 
 namespace zx { namespace waddownload {
 
+// Where earlier builds wrote: `Downloads` beside the savegames.
+static FString LegacyDownloadDir()
+{
+	FString legacy = M_GetSavegamesPath();
+	if (legacy.IsEmpty())
+		return FString();
+
+	if (legacy.Len() > 0 && legacy[legacy.Len() - 1] != '/' && legacy[legacy.Len() - 1] != '\\')
+		legacy += "/";
+	legacy += "Downloads/";
+
+	// [rc4l] With the trailing slash, which is the form DownloadDir() returns and so the form an
+	// earlier session already wrote into FileSearch.Directories. The dedupe there is an exact string
+	// compare, so a path spelled differently is added a second time every launch.
+	FixPathSeperator(legacy);
+	return legacy;
+}
+
 // [rc4l] Registered at startup because the folder already holds what earlier sessions fetched
 // and whatever the player dropped in by hand, none of which a session that downloaded nothing
 // could see.
@@ -644,6 +662,48 @@ void RegisterDownloadDirEarly()
 	const FString dir = DownloadDir();
 	if (dir.IsNotEmpty())
 		RegisterDownloadDirInSearchPath(dir.GetChars());
+
+	// [rc4l] And the old folder, if it is still there. The move below is a rename and a rename
+	// cannot cross volumes, so an install whose two roots are on different drives keeps its store
+	// where it is -- and a store nobody searches is one every join downloads again.
+	const FString legacy = LegacyDownloadDir();
+	if (legacy.IsNotEmpty() && DirEntryExists(legacy.GetChars()))
+		RegisterDownloadDirInSearchPath(legacy.GetChars());
+}
+
+// [rc4l] The store this build reads is `pwads`. Renamed rather than left behind, because a store
+// nobody looks in is a folder of hundreds of megabytes that every join then fetches again.
+//
+// One rename of the whole folder, and a failure is not an error: RegisterDownloadDirEarly keeps the
+// old path searchable, so everything in it is still found by name.
+static void MigrateLegacyDownloads(const FString &current)
+{
+	// Both bare, because rename() takes a directory by its name and not all platforms accept one
+	// with a trailing separator.
+	FString from = LegacyDownloadDir();
+	FString to = current;
+
+	while (from.Len() > 0 && (from[from.Len() - 1] == '/' || from[from.Len() - 1] == '\\'))
+		from.Truncate(from.Len() - 1);
+	while (to.Len() > 0 && (to[to.Len() - 1] == '/' || to[to.Len() - 1] == '\\'))
+		to.Truncate(to.Len() - 1);
+
+	if (from.IsEmpty() || to.IsEmpty())
+		return;
+
+	if (!DirEntryExists(from.GetChars()) || DirEntryExists(to.GetChars()))
+		return;
+
+	FString parent = to;
+	const long cut = parent.LastIndexOfAny("/\\");
+	if (cut > 0)
+	{
+		parent.Truncate(cut);
+		CreatePath(parent.GetChars());
+	}
+
+	if (rename(from.GetChars(), to.GetChars()) == 0)
+		Printf("PWADs: moved the downloaded copies into %s\n", to.GetChars());
 }
 
 FString DownloadDir()
@@ -651,14 +711,25 @@ FString DownloadDir()
 	FString dir = *cl_fua_download_dir;
 	if (dir.IsEmpty())
 	{
-		// A per-user, writable location that already exists on every platform -- and one that falls
-		// back to progdir for a portable install, which is where a portable install expects its files.
-		dir = M_GetSavegamesPath();
+		// [rc4l] `pwads`, beside the `iwads` store and under the same per-user folder as the
+		// identity keys, so everything this install keeps for the player is in one place a player
+		// can find. Falls back to progdir for a portable install, which is where a portable install
+		// expects its files.
+		dir = M_GetFuaUserPath();
 		if (dir.IsEmpty())
 			dir = progdir;
 		if (dir.Len() > 0 && dir[dir.Len() - 1] != '/' && dir[dir.Len() - 1] != '\\')
 			dir += "/";
-		dir += "Downloads/";
+		dir += "pwads/";
+
+		// Once a session, on the first ask, so a store written by an earlier build is moved rather
+		// than left sitting beside the new one.
+		static bool bMigrated = false;
+		if (!bMigrated)
+		{
+			bMigrated = true;
+			MigrateLegacyDownloads(dir);
+		}
 	}
 	else if (dir.Len() > 0 && dir[dir.Len() - 1] != '/' && dir[dir.Len() - 1] != '\\')
 	{
