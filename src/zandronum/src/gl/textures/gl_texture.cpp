@@ -522,6 +522,11 @@ void FTexture::CheckTrans(unsigned char * buffer, int size, int trans)
 					return;
 				}
 			}
+			// [rc4l] Latch the opaque outcome too (upstream texture.cpp does the same). Without this
+			// a fully-opaque or binary-alpha true-color image leaves the flag at -1 "unknown", so
+			// FMaterial::GetTransparent re-runs the ENTIRE image decode every frame for every
+			// visible sprite that uses it -- 3x whole-frame cost on PNG-heavy mods.
+			gl_info.mIsTransparent = 0;
 		}
 	}
 }
