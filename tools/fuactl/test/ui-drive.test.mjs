@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   menuNav, click, rightClick, middleClick, drag, wheel, typeText,
   padButton, padDpad, look, stick, stickHold, stickClear, readMenu, findLabel, clickLabel, screenshot, verifyMenu,
+  warp, damagingSectors,
 } from "../src/ui.mjs";
 
 // A stand-in for BridgeClient: records every rpc(), and (for readMenu) replays a dumphud capture
@@ -87,6 +88,14 @@ test("look and stick call the right RPCs", async () => {
   await stickHold(c, { side: -1 }, { hold: 0 });
   assert.equal(c.calls[2].args.side, -1);
   assert.deepEqual(c.calls[3].args, { clear: true }); // released after the hold
+});
+
+test("warp and damagingSectors call the world-navigation RPCs", async () => {
+  const c = mockClient();
+  await warp(c, 2148.7, -2020.2);
+  assert.deepEqual(c.calls[0], { cmd: "player.setpos", args: { x: 2149, y: -2020 } }); // rounded
+  await damagingSectors(c, 8);
+  assert.deepEqual(c.calls[1], { cmd: "world.sectors", args: { damaging: 1, limit: 8 } });
 });
 
 test("readMenu runs dumphud and returns parsed lines; findLabel finds a fragment", async () => {

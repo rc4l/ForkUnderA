@@ -39,4 +39,9 @@ void DamageTint_Disarm2D();
 // (0..1 from the chin up) the caller should band-clip to.
 PalEntry DamageTint_FaceOverlay( float *coverageFracOut = 0 );
 
+// How much a sector's special/damage config hurts per cycle (0 = harmless). The complete mirror of
+// P_PlayerInSpecialSector's tables; exported for the bridge's world.sectors query.
+struct sector_t;
+int DamageTint_SectorDamage( const sector_t *sec );
+
 #endif
