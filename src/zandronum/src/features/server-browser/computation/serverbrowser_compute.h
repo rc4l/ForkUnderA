@@ -34,10 +34,6 @@ enum class BrowserPhase
 // than a spinner, because the first server usually arrives long before the last one gives up.
 BrowserPhase ComputeBrowserPhase( bool waitingForRegistry, const BrowserCounts &counts );
 
-// True when a "still working" hint belongs on screen ALONGSIDE results -- the phase alone cannot say
-// this, since Ready and "three servers yet to answer" are both true at once.
-bool ComputeShowsProgress( bool waitingForRegistry, const BrowserCounts &counts );
-
 // Spinner frame for a given tic. frameCount and ticsPerFrame must be positive; nonsense input pins
 // to frame 0 rather than dividing by zero, because a spinner is never worth a crash.
 int ComputeSpinnerFrame( int tic, int frameCount, int ticsPerFrame );

@@ -127,7 +127,7 @@ TEST(ListMenuExtent, SingleItemAndZeroLinespacing)
 	EXPECT_EQ(5, e.bottom);
 }
 
-// [rc4l] The panel is sized from menu items, and menu items are mod-supplied: FUANewGameMenu draws
+// [rc4l] The panel is sized from menu items, and menu items are mod-supplied: a list menu draws
 // StaticPatch "M_DOOM", and MM8BDM replaces that lump with a full-width banner where Doom's is
 // 159x37. Unbounded, the card grew past the screen and became an opaque sheet over everything.
 TEST(PanelBounds, OversizedContentIsClampedToLeaveAMargin)

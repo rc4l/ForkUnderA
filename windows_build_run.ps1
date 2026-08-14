@@ -14,9 +14,9 @@
     layer. Every step here fails LOUD instead:
 
       1. Builds EVERY target, not just zdoom. `--target zdoom` builds one target of
-         several: zandrox-server-registry compiles src/gitinfo.cpp with its own
+         several: forkundera-server-registry compiles src/gitinfo.cpp with its own
          source list, so a function added to a file the engine also compiles links
-         fine in zandronum.exe and fails in a sibling that never listed the unit
+         fine in forkundera.exe and fails in a sibling that never listed the unit
          defining it. Iterating on `--target zdoom` will not notice, however many
          times you run it -- the sibling simply never relinks, and the first thing
          that tells you is red CI on all three platforms.
@@ -44,7 +44,7 @@
     Debug or Release (default: Release). Must match what windows_build.ps1 built.
 
 .PARAMETER Run
-    Launch dist-windows\zandronum.exe once everything verifies.
+    Launch dist-windows\forkundera.exe once everything verifies.
 
 .PARAMETER ExtraArgs
     Arguments passed through to the engine when -Run is given.
@@ -73,7 +73,7 @@ $DistDir    = Join-Path $ScriptRoot "dist-windows"
 $SrcDir     = Join-Path $ScriptRoot "src\zandronum"
 $OutDir     = Join-Path $BuildDir $Configuration
 $ZipDir     = Join-Path $BuildDir "tools\zipdir\$Configuration\zipdir.exe"
-$Exe        = Join-Path $OutDir "zandronum.exe"
+$Exe        = Join-Path $OutDir "forkundera.exe"
 
 function Write-Status { param([string]$Message) Write-Host "==> $Message" -ForegroundColor Green }
 function Write-Note   { param([string]$Message) Write-Host "    $Message" -ForegroundColor DarkGray }
@@ -151,8 +151,17 @@ if (-not (Test-Path $Exe)) {
 # --- 2. pk3 freshness. Repack any pk3 that is missing or older than wadsrc/. ---
 # [rc4l] wadsrc_lights is commented out of src/zandronum/CMakeLists.txt, so lights.pk3
 # is deliberately absent -- do not add it here expecting a fourth file.
+# [rc4l] The core pk3's name carries this build's release key, so it is discovered rather than
+# named. Hard-coding it here would send the script hunting a file no build produces the moment the
+# version moves. See src/zandronum/src/features/core-pk3.
+$coreName = (Get-ChildItem -Path $OutDir -Filter "fua_core_*.pk3" -ErrorAction SilentlyContinue |
+             Sort-Object LastWriteTime -Descending | Select-Object -First 1).Name
+if (-not $coreName) {
+    Die "build-win/ has no fua_core_*.pk3 -- the pk3 target did not run, so there is nothing to ship."
+}
+
 $pk3Pairs = @(
-    @{ Dir = "wadsrc";     Name = "zandronum.pk3" },
+    @{ Dir = "wadsrc";     Name = $coreName },
     @{ Dir = "wadsrc_bm";  Name = "brightmaps.pk3" },
     @{ Dir = "wadsrc_st";  Name = "skulltag_actors.pk3" }
 )
@@ -190,17 +199,74 @@ foreach ($pk3 in (Get-ChildItem $OutDir -Filter *.pk3 -File)) {
 # [rc4l] These are the assertions that catch a stale copy slipping through -- the
 # failure mode where the build is fresh, the copy silently did not happen, and you
 # spend an hour reading source that the running exe does not contain.
-$distExe = Join-Path $DistDir "zandronum.exe"
-$distPk3 = Join-Path $DistDir "zandronum.pk3"
+$distExe = Join-Path $DistDir "forkundera.exe"
+$distPk3 = Join-Path $DistDir $coreName
 if (-not (Test-Path $distPk3)) {
-    Die "dist-windows/ has NO zandronum.pk3 after sync -- the engine would abort with 'Cannot find zandronum.pk3'."
+    Die "dist-windows/ has NO $coreName after sync -- the engine would abort with 'Cannot find $coreName'."
 }
-foreach ($pairToCheck in @(@($Exe, $distExe), @((Join-Path $OutDir "zandronum.pk3"), $distPk3))) {
+
+# [rc4l] Sweep the cores this build did not produce. They are inert, since the engine asks for an
+# exact name, but a dist folder that grows a pk3 per version is how someone ends up shipping four.
+Get-ChildItem -Path $DistDir -Filter "fua_core_*.pk3" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne $coreName } |
+    ForEach-Object { Write-Note "removing stale core $($_.Name)"; Remove-Item $_.FullName -Force }
+
+foreach ($pairToCheck in @(@($Exe, $distExe), @((Join-Path $OutDir $coreName), $distPk3))) {
     $a = (Get-FileHash $pairToCheck[0] -Algorithm SHA256).Hash
     $b = (Get-FileHash $pairToCheck[1] -Algorithm SHA256).Hash
     if ($a -ne $b) {
         Die "dist copy of $(Split-Path -Leaf $pairToCheck[1]) != build-win/ original (a stale copy slipped through)."
     }
+}
+
+# --- 3b. The catalogue, MIRRORED rather than copied. ---------------------------
+# [rc4l] catalogue/ is source, not a build output, so nothing else was ever staging it: every run
+# launched against whatever happened to be in dist-windows already. An addon.json edited here and a
+# cfg renamed here both looked like they had taken and had not, which is the same silent wrong-data
+# failure this script exists to catch for the pk3s.
+#
+# MIRRORED, because a plain copy only ever adds. A variant's cfg removed from source would linger in
+# dist and keep working, so the one thing you cannot test is whether you have broken it -- and the
+# engine's own check for a promised-but-missing cfg would keep passing on a file that is gone.
+$catSrc = Join-Path $ScriptRoot "catalogue"
+$catDst = Join-Path $DistDir "catalogue"
+
+if (-not (Test-Path $catSrc)) {
+    Write-Warn "no catalogue/ at $catSrc -- the HOST tab will have nothing to offer."
+} else {
+    if (-not (Test-Path $catDst)) { New-Item -ItemType Directory -Path $catDst | Out-Null }
+
+    $srcFiles = @(Get-ChildItem $catSrc -Recurse -File)
+    $srcRel   = @($srcFiles | ForEach-Object { $_.FullName.Substring($catSrc.Length).TrimStart('\') })
+
+    foreach ($rel in $srcRel) {
+        $to = Join-Path $catDst $rel
+        $toDir = Split-Path $to -Parent
+        if (-not (Test-Path $toDir)) { New-Item -ItemType Directory -Path $toDir -Force | Out-Null }
+        Copy-Item (Join-Path $catSrc $rel) $to -Force
+    }
+
+    # Anything dist has that source does not is from an older layout. Removed rather than left,
+    # for the reason above: a leftover cfg is a test that cannot fail.
+    foreach ($stale in (Get-ChildItem $catDst -Recurse -File)) {
+        $rel = $stale.FullName.Substring($catDst.Length).TrimStart('\')
+        if ($srcRel -notcontains $rel) {
+            Write-Note "removing stale catalogue file $rel"
+            Remove-Item $stale.FullName -Force
+        }
+    }
+
+    # Verified the same way the exe and the core pk3 are, and fails CLOSED for the same reason: a
+    # catalogue that did not copy is a run against yesterday's entries.
+    foreach ($rel in $srcRel) {
+        $a = (Get-FileHash (Join-Path $catSrc $rel) -Algorithm SHA256).Hash
+        $b = (Get-FileHash (Join-Path $catDst $rel) -Algorithm SHA256).Hash
+        if ($a -ne $b) {
+            Die "dist copy of catalogue/$rel != source (a stale copy slipped through)."
+        }
+    }
+
+    Write-Note "catalogue: $($srcRel.Count) file(s) mirrored"
 }
 
 # [rc4l] windows_build.ps1 stages these once; warn rather than fail if dist predates a

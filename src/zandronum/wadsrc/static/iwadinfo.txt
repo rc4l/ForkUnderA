@@ -319,6 +319,22 @@ IWad
 	Load = "nerve.wad"
 }
 
+// [rc4l] Our own base data, built by tools/mkiwad. It carries MAP01 like any Doom 2 file, so it
+// must be checked BEFORE the Doom 2 block below or that one claims it first and reports it as
+// Doom 2. Everything else here mirrors Doom 2 deliberately: the pk3 that loads on top expects a
+// Doom 2 game and mapinfo, and only the identity differs.
+IWad
+{
+	Name = "ForkUnderA base data"
+	Autoname = "FuaBase"
+	Game = "Doom"
+	Config = "Doom"
+	Mapinfo = "mapinfo/doom2.txt"
+	Compatibility = "Shorttex"
+	MustContain = "MAP01", "FUAMEGA"
+	BannerColors = "1c 2c 54", "9c c8 f0"
+}
+
 // Doom 2 must be last to be checked becaude MAP01 is its only requirement
 IWad
 {

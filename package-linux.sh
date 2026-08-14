@@ -6,7 +6,7 @@
 #
 # Runs the same on macOS (Apple Silicon -> aarch64 binary, runs natively under
 # Docker Desktop) and on x86_64 Linux CI (-> x86_64 binary). Output:
-#   dist-linux/ZandroX-linux-<arch>.tar.gz   (zandronum binary + game .pk3s)
+#   dist-linux/ForkUnderA-linux-<arch>.tar.gz   (forkundera binary + game .pk3s)
 #
 #   ./package-linux.sh                    # full client
 #   SERVERONLY=ON ./package-linux.sh      # headless server build

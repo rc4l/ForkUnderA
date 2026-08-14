@@ -218,12 +218,14 @@ FTextureID FTextureManager::CheckForTexture (const char *name, int usetype, BITF
 	if ((flags & TEXMAN_TryAny) && usetype != FTexture::TEX_Any)
 	{
 		// Never return the index of NULL textures.
+		// [rc4l] uzdoom@8c052818b: this return used to sit outside the if, so a miss returned -1 and
+		// the full-path lookup below was unreachable. Falling through is the whole fix.
 		if (firstfound != -1)
 		{
 			if (firsttype == FTexture::TEX_Null) return FTextureID(0);
 			if (firsttype == FTexture::TEX_FirstDefined && !(flags & TEXMAN_ReturnFirst)) return FTextureID(0);
+			return FTextureID(firstfound);
 		}
-		return FTextureID(firstfound);
 	}
 
 	
@@ -375,6 +377,15 @@ FTextureID FTextureManager::AddTexture (FTexture *texture)
 	int hash;
 
 	if (texture == NULL) return FTextureID(-1);
+
+	// [rc4l] Claim this texture as THE texture for its lump, so a full-path lookup finds it instead
+	// of minting a copy the map never draws. Multipatch is skipped because its source lump is the
+	// TEXTURE1 lump it was defined in, not an image it owns. See f31d90b.
+	if (!texture->bMultiPatch && texture->SourceLump >= 0 &&
+		Wads.GetLinkedTexture(texture->SourceLump) == NULL)
+	{
+		Wads.SetLinkedTexture(texture->SourceLump, texture);
+	}
 
 	// Later textures take precedence over earlier ones
 

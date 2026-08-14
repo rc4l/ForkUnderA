@@ -49,6 +49,7 @@
 
 #include "networkheaders.h"
 #include "networkshared.h"
+#include "features/net/computation/v6mapped_compute.h"
 #include <sstream>
 #include <errno.h>
 #include <iostream>
@@ -568,6 +569,24 @@ void BYTESTREAM_s::WriteShortByte( int value, int bits )
 
 //*****************************************************************************
 //
+// [rc4l] The v6 address as text, without a port and without brackets.
+//
+// inet_ntop rather than sprintf: v6 has a canonical shortened form ("::" for the longest run of
+// zeroes, no leading zeroes in a group) and hand-rolling it produces strings that are correct but
+// do not match what every other tool prints, which makes them useless for comparing by eye.
+const char *NETADDRESS_s::AddressToStringNoPort( char *buffer, size_t len ) const
+{
+	if ( inet_ntop( AF_INET6, const_cast<BYTE *>( abIP6 ), buffer, static_cast<socklen_t>( len )) == NULL )
+	{
+		if ( len > 0 )
+			buffer[0] = 0;
+	}
+
+	return buffer;
+}
+
+//*****************************************************************************
+//
 NETADDRESS_s::NETADDRESS_s()
 {
 	Clear();
@@ -578,6 +597,8 @@ NETADDRESS_s::NETADDRESS_s()
 void NETADDRESS_s::Clear()
 {
 	abIP[0] = abIP[1] = abIP[2] = abIP[3] = 0;
+	memset( abIP6, 0, sizeof( abIP6 ));
+	bIsIPv6 = false;
 	usPort = 0;
 }
 
@@ -585,11 +606,22 @@ void NETADDRESS_s::Clear()
 //
 bool NETADDRESS_s::Compare ( const NETADDRESS_s& other, bool ignorePort ) const
 {
+	// [rc4l] Different families are never the same address, and are not compared byte by byte to
+	// find that out. A v4 host and a v6 host are two different machines even when one is reachable
+	// at both, and treating them as equal would collapse two server entries into one.
+	if ( bIsIPv6 != other.bIsIPv6 )
+		return false;
+
+	if ( !ignorePort && ( usPort != other.usPort ))
+		return false;
+
+	if ( bIsIPv6 )
+		return ( memcmp( abIP6, other.abIP6, sizeof( abIP6 )) == 0 );
+
 	return (( abIP[0] == other.abIP[0] ) &&
 		( abIP[1] == other.abIP[1] ) &&
 		( abIP[2] == other.abIP[2] ) &&
-		( abIP[3] == other.abIP[3] ) &&
-		( ignorePort ? 1 : ( usPort == other.usPort )));
+		( abIP[3] == other.abIP[3] ));
 }
 
 //*****************************************************************************
@@ -608,6 +640,60 @@ bool NETADDRESS_s::LoadFromString ( const char* string )
 	struct sockaddr_in sadr;
 	char    *colon;
 	char    copy[512];
+
+	// [rc4l] A v6 literal first, because the v4 parser below splits on the FIRST colon to find a
+	// port and a v6 address is nothing but colons. Handing it "::1" would leave it parsing "" as an
+	// address and ":1" as a port.
+	//
+	// Bracketed is the form with a port, per RFC 3986. Bare is accepted too, because that is what a
+	// person types when they are not thinking about ports.
+	{
+		char v6[512];
+		int v6Port = 0;
+		bool bLooksV6 = false;
+
+		if ( string[0] == '[' )
+		{
+			const char *close = strchr( string, ']' );
+			if ( close != NULL )
+			{
+				const size_t inner = static_cast<size_t>( close - string - 1 );
+				if ( inner < sizeof( v6 ))
+				{
+					memcpy( v6, string + 1, inner );
+					v6[inner] = 0;
+					bLooksV6 = true;
+
+					if ( close[1] == ':' )
+						v6Port = atoi( close + 2 );
+				}
+			}
+		}
+		else
+		{
+			// Two or more colons and no dotted quad: nothing else looks like that.
+			const char *first = strchr( string, ':' );
+			if (( first != NULL ) && ( strchr( first + 1, ':' ) != NULL ))
+			{
+				strncpy( v6, string, sizeof( v6 ) - 1 );
+				v6[sizeof( v6 ) - 1] = 0;
+				bLooksV6 = true;
+			}
+		}
+
+		if ( bLooksV6 )
+		{
+			BYTE parsed[16];
+			if ( inet_pton( AF_INET6, v6, parsed ) != 1 )
+				return false;
+
+			Clear();
+			memcpy( abIP6, parsed, sizeof( abIP6 ));
+			bIsIPv6 = true;
+			SetPort( static_cast<USHORT>( v6Port ));
+			return true;
+		}
+	}
 
 	memset (&sadr, 0, sizeof(sadr));
 	sadr.sin_family = AF_INET;
@@ -652,21 +738,69 @@ bool NETADDRESS_s::LoadFromString ( const char* string )
 //
 void NETADDRESS_s::LoadFromSocketAddress ( const struct sockaddr& sockaddr )
 {
+	// [rc4l] Read the family before reading anything else. A v6 socket hands back a sockaddr_in6,
+	// and interpreting those bytes as a sockaddr_in produces a plausible-looking v4 address made
+	// out of the wrong half of somebody's v6 one.
+	if ( sockaddr.sa_family == AF_INET6 )
+	{
+		const sockaddr_in6 &ipv6 = reinterpret_cast<const sockaddr_in6&> ( sockaddr );
+		const BYTE *raw = reinterpret_cast<const BYTE *>( &ipv6.sin6_addr );
+
+		// [rc4l] A v4 PEER ON A DUAL-STACK SOCKET ARRIVES AS ::ffff:a.b.c.d, and has to be put back
+		// into v4 before anybody sees it. See features/net/computation/v6mapped_compute.h for what
+		// goes wrong when it is not, and for the tests that pin the byte pattern.
+		if ( zx::IsV4MappedV6( raw ))
+		{
+			zx::ExtractMappedV4( raw, this->abIP );
+			memset( this->abIP6, 0, sizeof( this->abIP6 ));
+			this->bIsIPv6 = false;
+			this->usPort = ipv6.sin6_port;
+			return;
+		}
+
+		memcpy( this->abIP6, &ipv6.sin6_addr, sizeof( this->abIP6 ));
+		this->bIsIPv6 = true;
+		this->usPort = ipv6.sin6_port;
+
+		// The v4 half stays zeroed rather than left holding whatever was there before, so anything
+		// that reads it without checking the family gets an obviously empty address instead of a
+		// stale one that looks real.
+		this->abIP[0] = this->abIP[1] = this->abIP[2] = this->abIP[3] = 0;
+		return;
+	}
+
 	const sockaddr_in ipv4 = reinterpret_cast<const sockaddr_in&> ( sockaddr );
 	*( int * )&this->abIP = *(const int *)&ipv4.sin_addr;
+	memset( this->abIP6, 0, sizeof( this->abIP6 ));
+	this->bIsIPv6 = false;
 	this->usPort = ipv4.sin_port;
 }
 
 //*****************************************************************************
 //
-void NETADDRESS_s::ToSocketAddress( struct sockaddr &SocketAddress ) const
+int NETADDRESS_s::ToSocketAddress( struct sockaddr_storage &SocketAddress, bool bMapV4ToV6 ) const
 {
 	memset( &SocketAddress, 0, sizeof SocketAddress );
+
+	if ( bIsIPv6 || bMapV4ToV6 )
+	{
+		struct sockaddr_in6 *ipv6 = reinterpret_cast <struct sockaddr_in6 *> ( &SocketAddress );
+
+		if ( bIsIPv6 )
+			memcpy( &ipv6->sin6_addr, abIP6, sizeof( abIP6 ));
+		else
+			zx::MakeV4MappedV6( abIP, reinterpret_cast<unsigned char *>( &ipv6->sin6_addr ));
+
+		ipv6->sin6_port = usPort;
+		ipv6->sin6_family = AF_INET6;
+		return static_cast<int>( sizeof( *ipv6 ));
+	}
 
 	struct sockaddr_in *ipv4 = reinterpret_cast <struct sockaddr_in *> ( &SocketAddress );
 	*(int *)&ipv4->sin_addr = *(int *)&abIP;
 	ipv4->sin_port = usPort;
 	ipv4->sin_family = AF_INET;
+	return static_cast<int>( sizeof( *ipv4 ));
 }
 
 //*****************************************************************************
@@ -681,6 +815,16 @@ void NETADDRESS_s::SetPort ( USHORT port )
 const char* NETADDRESS_s::ToString() const
 {
 	static char	buffer[64];
+
+	// [rc4l] Brackets around a v6 literal, per RFC 3986. Without them "::1:10666" cannot be split
+	// back into an address and a port, because the address is made of colons too.
+	if ( bIsIPv6 )
+	{
+		char inner[48];
+		sprintf( buffer, "[%s]:%i", AddressToStringNoPort( inner, sizeof( inner )), ntohs( usPort ));
+		return ( buffer );
+	}
+
 	sprintf( buffer, "%i.%i.%i.%i:%i", abIP[0], abIP[1], abIP[2], abIP[3], ntohs( usPort ));
 	return ( buffer );
 }
@@ -690,6 +834,10 @@ const char* NETADDRESS_s::ToString() const
 const char* NETADDRESS_s::ToStringNoPort() const
 {
 	static char	buffer[64];
+
+	if ( bIsIPv6 )
+		return ( AddressToStringNoPort( buffer, sizeof( buffer )));
+
 	sprintf( buffer, "%i.%i.%i.%i", abIP[0], abIP[1], abIP[2], abIP[3] );
 	return ( buffer );
 }
@@ -698,6 +846,16 @@ const char* NETADDRESS_s::ToStringNoPort() const
 //
 bool NETADDRESS_s::IsSet() const
 {
+	if ( bIsIPv6 )
+	{
+		for ( size_t i = 0; i < sizeof( abIP6 ); ++i )
+		{
+			if ( abIP6[i] != 0 )
+				return true;
+		}
+		return false;
+	}
+
 	return ( abIP[0] != 0 );
 }
 
@@ -705,8 +863,25 @@ bool NETADDRESS_s::IsSet() const
 //
 void NETADDRESS_s::WriteToStream ( BYTESTREAM_s *pByteStream, bool IncludePort ) const
 {
-	for ( int i = 0; i < 4; ++i )
-		pByteStream->WriteByte( abIP[i] );
+	// [rc4l] A family byte in front, then four bytes or sixteen.
+	//
+	// This changes the format for everybody, v4 included, and that is the deliberate choice: a
+	// version that stayed compatible would mean two encodings, two readers and a negotiation to pick
+	// between them, forever, to keep talking to launchers we have decided we are not talking to. One
+	// format that can say what it is beats two that cannot.
+	pByteStream->WriteByte( bIsIPv6 ? 6 : 4 );
+
+	if ( bIsIPv6 )
+	{
+		for ( size_t i = 0; i < sizeof( abIP6 ); ++i )
+			pByteStream->WriteByte( abIP6[i] );
+	}
+	else
+	{
+		for ( int i = 0; i < 4; ++i )
+			pByteStream->WriteByte( abIP[i] );
+	}
+
 	if ( IncludePort )
 		pByteStream->WriteShort( ntohs( usPort ));
 }
@@ -715,8 +890,27 @@ void NETADDRESS_s::WriteToStream ( BYTESTREAM_s *pByteStream, bool IncludePort )
 //
 void NETADDRESS_s::ReadFromStream ( BYTESTREAM_s *pByteStream, bool IncludePort )
 {
-	for ( int i = 0; i < 4; ++i )
-		abIP[i] = pByteStream->ReadByte();
+	// [rc4l] The ADDRESS is reset, not the whole object. Clear() would take the port with it, and
+	// reading with IncludePort false is defined as leaving the port exactly as it was.
+	abIP[0] = abIP[1] = abIP[2] = abIP[3] = 0;
+	memset( abIP6, 0, sizeof( abIP6 ));
+
+	// Anything that is not a 6 is read as v4, including a truncated stream, where ReadByte returns
+	// -1. A short read then produces an empty address rather than sixteen bytes of whatever followed.
+	const int family = pByteStream->ReadByte();
+	bIsIPv6 = ( family == 6 );
+
+	if ( bIsIPv6 )
+	{
+		for ( size_t i = 0; i < sizeof( abIP6 ); ++i )
+			abIP6[i] = pByteStream->ReadByte();
+	}
+	else
+	{
+		for ( int i = 0; i < 4; ++i )
+			abIP[i] = pByteStream->ReadByte();
+	}
+
 	if ( IncludePort )
 		usPort = htons( pByteStream->ReadShort());
 }
@@ -725,6 +919,26 @@ void NETADDRESS_s::ReadFromStream ( BYTESTREAM_s *pByteStream, bool IncludePort 
 //
 void IPStringArray::SetFrom ( const NETADDRESS_s &Address )
 {
+	// [rc4l] A V6 ADDRESS IS NOT REPRESENTABLE HERE, AND MUST NOT BE APPROXIMATED.
+	//
+	// This holds four decimal octets so a ban can say 1.2.3.*, and there is no v6 shape that fits
+	// it: v6 has eight groups and the unit people actually ban is a /64 prefix, which is a length
+	// rather than a wildcard.
+	//
+	// The dangerous part is what happens if this is left alone. abIP is zeroed for a v6 address, so
+	// every v6 player would come out as 0.0.0.0: identical to each other, matching a 0.* rule, and
+	// banning any one of them would ban all of them. Enabling v6 is what created that, so it is
+	// closed here rather than left as a surprise for whoever ships the first v6 ban.
+	//
+	// Cleared means "no address", which every comparison already treats as matching nothing. A v6
+	// player is therefore unbannable by this list rather than wrongly bannable, which is the right
+	// way round for a failure: see the note in networkshared.h about what replacing this needs.
+	if ( Address.bIsIPv6 )
+	{
+		Clear();
+		return;
+	}
+
 	for ( int i = 0; i < 4; ++i )
 		itoa( Address.abIP[i], szAddress[i], 10 );
 }

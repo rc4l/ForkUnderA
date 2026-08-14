@@ -33,6 +33,54 @@ if(CMAKE_CROSSCOMPILING)
 	include(${IMPORT_EXECUTABLES})
 endif(CMAKE_CROSSCOMPILING)
 
+# [rc4l] The engine's own data pk3 carries a build key in its name: fua_core_<key>.pk3.
+#
+# A fixed zandronum.pk3 loads happily when it is stale, and the engine then misbehaves somewhere far
+# from the cause. Keyed, a mismatched pair simply is not found and the engine says so at startup.
+# That is the point of this: turning a silent wrong-data bug into a loud one.
+#
+# COMPUTED HERE AND NOWHERE ELSE. The exe is told the same string through FUA_CORE_PK3_NAME below,
+# so the name it looks for and the name zipdir writes cannot drift apart within a build tree. A glob
+# would reintroduce exactly the ambiguity this removes once a player has several cores in one folder.
+# FUA_VERSION is the fork's own release tag, the same string GetFuaVersionTag() reports. Asking git
+# is right even during a release build, where the tag does not exist yet: _build.yml already runs
+# `git tag -f "<version>" HEAD` on all three platforms before compiling, so describe answers with the
+# release being cut. The override is for builds with no git at all.
+if( NOT FUA_VERSION )
+	find_package( Git QUIET )
+	if( GIT_FOUND )
+		# --match is load-bearing. This repo also carries server-registry-v* tags for the registry
+		# image, and the newest tag overall is often one of those, which named the engine's pk3
+		# fua_core_server-registry-v0.1.5.pk3. Match the engine's own v* line only, the same pattern
+		# release.yml bumps from.
+		execute_process( COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0 --match "v[0-9]*"
+			WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+			OUTPUT_VARIABLE FUA_VERSION
+			OUTPUT_STRIP_TRAILING_WHITESPACE
+			ERROR_QUIET )
+	endif()
+endif()
+if( NOT FUA_VERSION )
+	set( FUA_VERSION "dev" )
+endif()
+
+# Anything a filename cannot carry becomes a dash rather than being dropped, so two different
+# versions can never collapse onto one name.
+string( REGEX REPLACE "[^A-Za-z0-9._-]" "-" FUA_CORE_KEY "${FUA_VERSION}" )
+
+set( FUA_CORE_PK3_NAME "fua_core_${FUA_CORE_KEY}.pk3" )
+message( STATUS "Engine data pk3: ${FUA_CORE_PK3_NAME}" )
+
+# The exe is told the same string, so BASEWAD and the file zipdir writes come from one place.
+add_definitions( -DFUA_CORE_PK3_NAME="${FUA_CORE_PK3_NAME}" )
+
+# [rc4l] GAMEVER_STRING is the version clients and servers hand each other and refuse to mix across
+# (sv_main.cpp compares it with stricmp), so it has to be OUR release rather than the Zandronum
+# release we forked from. Zandronum sets it to its own release for exactly this reason; leaving it
+# at 3.2.1 said every build of ours was interchangeable with every other, which was never true.
+string( REGEX REPLACE "^v" "" FUA_GAMEVER "${FUA_VERSION}" )
+add_definitions( -DFUA_GAMEVER_STRING="${FUA_GAMEVER}" )
+
 # Simplify pk3 building, add_pk3(filename srcdirectory)
 function( add_pk3 PK3_NAME PK3_DIR )
 	# Generate target name. Just use "pk3" for main pk3 target.
@@ -41,6 +89,11 @@ function( add_pk3 PK3_NAME PK3_DIR )
 	if( ${PK3_TARGET} STREQUAL "zandronum_pk3" )
 		set( PK3_TARGET "pk3" )
 	endif( ${PK3_TARGET} STREQUAL "zandronum_pk3" )
+	# [rc4l] The core pk3's FILENAME now carries a build key, so deriving the target name from it
+	# would rename the target on every rebuild and break everything that depends on "pk3".
+	if( ${PK3_NAME} STREQUAL ${FUA_CORE_PK3_NAME} )
+		set( PK3_TARGET "pk3" )
+	endif()
 
 	if( NOT NO_GENERATOR_EXPRESSIONS AND NOT ZDOOM_OUTPUT_OLDSTYLE )
 		add_custom_command( OUTPUT ${ZDOOM_OUTPUT_DIR}/${PK3_NAME}
@@ -79,7 +132,13 @@ IF( NOT CMAKE_BUILD_TYPE )
 ENDIF( NOT CMAKE_BUILD_TYPE )
 
 set( ZDOOM_OUTPUT_DIR ${CMAKE_BINARY_DIR} CACHE PATH "Directory where zdoom.pk3 and the executable will be created." )
-set( ZDOOM_EXE_NAME "zandronum" CACHE FILEPATH "Name of the executable to create" )
+set( ZDOOM_EXE_NAME "forkundera" CACHE STRING "Name of the executable to create" )
+
+# [rc4l] The native MCP control bridge (features/mcp-bridge). OFF by default so RELEASE binaries
+# contain zero remote-control surface -- a shipped player build cannot be driven, period. Dev/test
+# builds turn it on (-DFUA_MCP_BRIDGE=ON, or ZX_MCP_BRIDGE=1 for the compile scripts). See
+# features/mcp-bridge/README.md. Even when ON it is runtime opt-in (ZANDRONUM_BRIDGE_PORT) + loopback.
+option( FUA_MCP_BRIDGE "Build the in-engine MCP control bridge (DEV ONLY -- never ship it ON)" OFF )
 if( MSVC )
 	# Allow the user to use ZDOOM_OUTPUT_DIR as a single release point.
 	# Use zdoom, zdoomd, zdoom64, and zdoomd64 for the binary names
@@ -271,6 +330,21 @@ if( ZX_ENABLE_SENTRY AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sentry-native/CMake
 	add_subdirectory( sentry-native )
 else()
 	set( ZX_ENABLE_SENTRY OFF )
+endif()
+
+# [rc4l] Whether this build's symbols will be published, which is the only honest licence to report a
+# crash: a report nobody can symbolicate is noise that outlives the build it came from (issue #228).
+#
+# OFF by default and set only by the release workflow, deliberately. It cannot be inferred locally --
+# the tempting test, whether `git describe` lands exactly on a tag, says yes for a developer building
+# at a tagged commit, and crash-sync would then read their binary with the official release's symbols.
+# Only the machine that publishes the symbols can assert that they exist.
+option( ZX_OFFICIAL_BUILD "This build's symbols are published, so crash reporting is meaningful" OFF )
+if( ZX_OFFICIAL_BUILD )
+	add_definitions( -DZX_OFFICIAL_BUILD=1 )
+	message( STATUS "ZX crash reporting: official build (reports enabled)" )
+else()
+	message( STATUS "ZX crash reporting: unofficial build (reports disabled -- no symbols would be published)" )
 endif()
 
 # [rc4l] Guard against silently shipping crash reporting that can't deliver: if sentry is enabled it

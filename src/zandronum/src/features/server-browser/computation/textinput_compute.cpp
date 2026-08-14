@@ -293,4 +293,17 @@ TextInput NormaliseInput( const TextInput &in )
 	return out;
 }
 
+bool ArrowLeavesField( const TextInput &in, bool goingRight, bool hasNeighbour, bool shiftHeld )
+{
+	// Nothing beside us: the key stays here rather than being handed to nobody.
+	if ( !hasNeighbour )
+		return false;
+
+	// A selection gesture, or a selection being collapsed. Either way this press belongs to the text.
+	if ( shiftHeld || HasSelection( in ))
+		return false;
+
+	return goingRight ? ( in.caret >= in.text.size( )) : ( in.caret == 0 );
+}
+
 } // namespace zx

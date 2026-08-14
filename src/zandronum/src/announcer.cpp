@@ -160,6 +160,10 @@ static	void					announcer_ParseAnnouncerInfoLump( FScanner &sc );
 
 void ANNOUNCER_Construct( void )
 {
+	// [rc4l] This runs again on a restart, so without clearing first each reload appended another
+	// "Default" profile behind the previous set's. See features/restart-reparse/README.md.
+	g_AnnouncerProfile.Clear( );
+
 	AnnouncerProfile def;
 	def.SetName("Default");
 	g_AnnouncerProfile.Push(def);

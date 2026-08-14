@@ -1,0 +1,7 @@
+{
+  "name": "CTF",
+  "summary": "Capture the Flag. Twenty five stages built for two sides, with a flag at each end.",
+  "group": "mode",
+  "gamemode": "ctf",
+  "cfg": "ctf.cfg"
+}

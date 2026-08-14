@@ -1,0 +1,11 @@
+{
+  "name": "Brutal Doom",
+  "summary": "Louder, faster, and a great deal more blood. Rebalances every weapon and monster.",
+  "group": "mix",
+  "files": [
+    {
+      "name": "brutal22test6.pk3",
+      "md5": "57a61814fe96cfc20043f370eeace023"
+    }
+  ]
+}

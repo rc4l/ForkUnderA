@@ -1,0 +1,11 @@
+{
+  "name": "Hard Doom",
+  "summary": "The same monsters, rebuilt to hurt. Your weapons are untouched.",
+  "group": "mix",
+  "files": [
+    {
+      "name": "hard-doomv831.pk3",
+      "md5": "78f7dfe3387f8619eb10e561ab73a6af"
+    }
+  ]
+}

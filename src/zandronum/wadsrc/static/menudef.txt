@@ -76,7 +76,7 @@ LISTMENU "MainMenu"
 	
 	IfGame(Doom, Strife, Chex)
 	{
-		PatchItem "M_NGAME", "n", "FUANewGameMenu"	// [rc4l] Online/Offline first
+		PatchItem "M_NGAME", "n", "PlayerclassMenu"
 		ifOption(SwapMenu)
 		{
 			PatchItem "M_LOADG", "l", "LoadGameMenu"
@@ -98,7 +98,7 @@ LISTMENU "MainMenu"
 	
 	IfGame(Heretic, Hexen)
 	{
-		TextItem "$MNU_NEWGAME", "n", "FUANewGameMenu"	// [rc4l] Online/Offline first
+		TextItem "$MNU_NEWGAME", "n", "PlayerclassMenu"
 		TextItem "$MNU_OPTIONS", "o", "OptionsMenu"
 		TextItem "$MNU_GAMEFILES", "g", "GameFilesMenu"
 		TextItem "$MNU_INFO", "i", "ReadThisMenu"
@@ -378,68 +378,6 @@ OptionMenu "OptionsMenu"
 	SafeCommand "Reset to defaults",	"reset2defaults"
 	SafeCommand	"Reset to last saved",	"reset2saved"
 	Command "Go to console",			"menuconsole"
-}
-
-//-------------------------------------------------------------------------------------------
-//
-// [rc4l] New Game now asks Online or Offline first, instead of going straight to the
-// singleplayer flow. The server browser already existed (ZA_Browser, browsermenu.cpp) but was
-// buried three levels down under Options -> Multiplayer Options -> Browse servers, which is a
-// strange place for the primary way people play this engine.
-//
-// Offline points at PlayerclassMenu -- the exact target New Game used before -- so the
-// singleplayer path is unchanged and simply gains one keypress. Its netgame guard is unaffected:
-// PlayerclassMenu carries its own NetgameMessage.
-//
-// Kept as its own menu (FUA room) rather than restructured into Zandronum's ZA_ menus, so a
-// re-sync never has to untangle ours from theirs.
-//
-//-------------------------------------------------------------------------------------------
-
-// A ListMenu, not an OptionMenu, so it reads as a continuation of the main menu rather than a
-// settings page: same logo art and position per game, and the DEFAULTLISTMENU selector/font/
-// linespacing above (M_SKULL1 + BigFont Red on Doom) apply for free. The two entries are TextItem
-// rather than PatchItem because there is no M_ONLINE/M_OFFLIN art in any IWAD -- BigFont Red is
-// the closest match to the main menu's patches without shipping new graphics.
-LISTMENU "FUANewGameMenu"
-{
-	// [rc4l] No Class, matching MainMenu. This used to be FUAPanelListMenu, which drew a rounded
-	// panel behind the logo and rows -- but the menu it sits directly under has no panel, so New Game
-	// grew one out of nowhere and lost it again on the next screen.
-	//
-	// Same compatibility reason as MainMenu above, too: ReplaceMenu refuses an override whose class
-	// does not match, so a mod writing a plain `ListMenu "FUANewGameMenu"` would have been discarded.
-	IfGame(Doom, Chex)
-	{
-		StaticPatch 94, 2, "M_DOOM"
-		Position 97, 72
-	}
-	IfGame(Strife)
-	{
-		StaticPatch 84, 2, "M_STRIFE"
-		Position 97, 45
-	}
-	IfGame(Heretic)
-	{
-		StaticPatch 88, 0, "M_HTIC"
-		StaticPatch 40, 10, "M_SKL01"
-		StaticPatch 232, 10, "M_SKL00"
-		Position 110, 56
-	}
-	IfGame(Hexen)
-	{
-		StaticPatch 88, 0, "M_HTIC"
-		StaticPatch 37, 80, "FBULB0"
-		StaticPatch 278, 80, "FBULA0"
-		Position 110, 56
-	}
-
-	TextItem "Online",	"o", "ZA_Browser"
-	// [rc4l] "PlayerclassMenu" is only the fallback for the stock menu. At runtime
-	// RouteMainMenuThroughOnlineOffline() overwrites this row's action with whatever the main menu's
-	// first entry pointed at before we took it over -- so under a mod that ships its own main menu,
-	// Offline leads into THAT mod's flow rather than the stock one.
-	TextItem "Offline",	"f", "PlayerclassMenu"
 }
 
 //-------------------------------------------------------------------------------------------
@@ -1183,6 +1121,7 @@ OptionMenu "MiscOptions"
 	Option "Enable autosaves",						"disableautosave", "Autosave"
 	Slider "Number of autosaves",					"autosavecount", 1, 20, 1, 0
 	Option "Load *.deh/*.bex lumps",				"dehload", "dehopt"
+	Option "Pause game in background",				"i_pauseinbackground", "OnOff" // [rc4l]
 	StaticText " "
 	Option "Cache nodes",							"gl_cachenodes", "OnOff"
 	Slider "Time threshold for node caching",		"gl_cachetime", 0.0, 2.0, 0.1
@@ -1882,6 +1821,7 @@ OptionMenu SoundOptions
 	Option "Play connect sound", "cl_connectsound", "YesNo" // [TP]
 	Option "Multiple announcer sounds", "cl_allowmultipleannouncersounds", "YesNo" // [TP]
 	Option "Lock music",		"snd_lockmusic", "YesNo" // [AK]
+	Option "Sound in background", "i_soundinbackground", "OnOff" // [rc4l]
 	StaticText " "
 	Command "Restart sound",	"snd_reset"
 	StaticText " "

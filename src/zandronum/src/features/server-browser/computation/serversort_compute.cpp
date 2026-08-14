@@ -45,8 +45,29 @@ std::string ServerSortKey(const std::string &name)
 	return out;
 }
 
-int CompareServers(int playersA, const std::string &nameA, int playersB, const std::string &nameB)
+int CompareServersWithVersion(bool lanA, int playersA, const std::string &nameA, VersionRelation relA,
+	bool lanB, int playersB, const std::string &nameB, VersionRelation relB)
 {
+	// LAN still outranks everything: an old server on your own network beats a stranger's.
+	if (lanA != lanB)
+		return lanA ? -1 : 1;
+
+	// Then, within the group, whether the player can act on it at all.
+	const bool sinkA = VersionRelationSinks(relA);
+	const bool sinkB = VersionRelationSinks(relB);
+	if (sinkA != sinkB)
+		return sinkA ? 1 : -1;
+
+	return CompareServers(lanA, playersA, nameA, lanB, playersB, nameB);
+}
+
+int CompareServers(bool lanA, int playersA, const std::string &nameA,
+	bool lanB, int playersB, const std::string &nameB)
+{
+	// LAN outranks everything, before population is even looked at.
+	if (lanA != lanB)
+		return lanA ? -1 : 1;
+
 	// Busiest first. Full counts as busy: it is evidence about where people play, which is what the
 	// list is being read for.
 	if (playersA != playersB)

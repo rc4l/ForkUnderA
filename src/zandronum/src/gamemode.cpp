@@ -68,6 +68,7 @@
 #include "p_lnspec.h"
 #include "p_acs.h"
 #include "gi.h"
+#include "features/restart-reparse/computation/gamemodetable_compute.h"
 
 //*****************************************************************************
 //	CONSOLE VARIABLES
@@ -195,11 +196,13 @@ void GAMEMODE_ParseGameModeBlock( FScanner &sc, const GAMEMODE_e GameMode )
 
 		if ( stricmp( sc.String, "removeflag" ) == 0 )
 		{
-			g_GameModes[GameMode].ulFlags &= ~sc.MustGetEnumName( "flag", "GMF_", GetValueGMF );
+			g_GameModes[GameMode].ulFlags = static_cast<ULONG>( zx::gamemodetable::ComputeGameModeFlags(
+				g_GameModes[GameMode].ulFlags, false, sc.MustGetEnumName( "flag", "GMF_", GetValueGMF )));
 		}
 		else if ( stricmp( sc.String, "addflag" ) == 0 )
 		{
-			g_GameModes[GameMode].ulFlags |= sc.MustGetEnumName( "flag", "GMF_", GetValueGMF );
+			g_GameModes[GameMode].ulFlags = static_cast<ULONG>( zx::gamemodetable::ComputeGameModeFlags(
+				g_GameModes[GameMode].ulFlags, true, sc.MustGetEnumName( "flag", "GMF_", GetValueGMF )));
 		}
 		else if ( stricmp( sc.String, "name" ) == 0 )
 		{
@@ -421,6 +424,12 @@ void GAMEMODE_ParseGameModeInfo( void )
 {
 	int lastlump = 0, lump;
 
+	// [rc4l] Start from an empty table. Every directive below MUTATES what is already there, and
+	// g_GameModes outlives a restart, so re-parsing a different WAD set (wad_reload, restart) used
+	// to stack the new set's lumps on the old set's edits. See features/restart-reparse/README.md.
+	for ( unsigned int i = GAMEMODE_COOPERATIVE; i < NUM_GAMEMODES; i++ )
+		g_GameModes[i] = GAMEMODE_s( );
+
 	while (( lump = Wads.FindLump( "GAMEMODE", &lastlump )) != -1 )
 	{
 		FScanner sc( lump );
@@ -463,25 +472,36 @@ void GAMEMODE_ParseGameModeInfo( void )
 		FString name = ( GetStringGAMEMODE_e( static_cast<GAMEMODE_e>( i )) + ulPrefixLen );
 		name.ToLower( );
 
-		// [AK] Make sure the game mode has a (short) name.
-		if ( g_GameModes[i].Name.IsEmpty( ))
-			I_Error( "\"%s\" has no name.", name.GetChars( ));
-		if ( g_GameModes[i].ShortName.IsEmpty( ))
-			I_Error( "\"%s\" has no short name.", name.GetChars( ));
+		// [rc4l] Same checks and messages as before; the rule itself moved to a tested pure helper.
+		switch ( zx::gamemodetable::ComputeGameModeDefect( g_GameModes[i].Name.IsNotEmpty( ),
+			g_GameModes[i].ShortName.IsNotEmpty( ), g_GameModes[i].ulFlags, GAMETYPE_MASK, EARNTYPE_MASK ))
+		{
+			// [AK] Make sure the game mode has a (short) name.
+			case zx::gamemodetable::GameModeDefect::NoName:
+				I_Error( "\"%s\" has no name.", name.GetChars( ));
+				break;
 
-		// [AK] Get the game mode type (cooperative, deathmatch, or team game). There shouldn't be more than one enabled or none at all.
-		ULONG ulFlags = g_GameModes[i].ulFlags & GAMETYPE_MASK;
-		if (( ulFlags == 0 ) || (( ulFlags & ( ulFlags - 1 )) != 0 ))
-			I_Error( "Can't determine if \"%s\" is cooperative, deathmatch, or team-based.", name.GetChars( ));
+			case zx::gamemodetable::GameModeDefect::NoShortName:
+				I_Error( "\"%s\" has no short name.", name.GetChars( ));
+				break;
 
-		// [AK] Get the type of "players earn" flag this game mode is currently using.
-		ulFlags = g_GameModes[i].ulFlags & EARNTYPE_MASK;
+			// [AK] Get the game mode type (cooperative, deathmatch, or team game). There shouldn't be more than one enabled or none at all.
+			case zx::gamemodetable::GameModeDefect::AmbiguousGameType:
+				I_Error( "Can't determine if \"%s\" is cooperative, deathmatch, or team-based.", name.GetChars( ));
+				break;
 
-		// [AK] If all of these flags were removed or if more than one was added, then throw an error.
-		if ( ulFlags == 0 )
-			I_Error( "Players have no way of earning kills, frags, points, or wins in \"%s\".", name.GetChars( ));
-		else if (( ulFlags & ( ulFlags - 1 )) != 0 )
-			I_Error( "There is more than one PLAYERSEARN flag enabled in \"%s\".", name.GetChars( ));
+			// [AK] If all of these flags were removed or if more than one was added, then throw an error.
+			case zx::gamemodetable::GameModeDefect::NoEarnType:
+				I_Error( "Players have no way of earning kills, frags, points, or wins in \"%s\".", name.GetChars( ));
+				break;
+
+			case zx::gamemodetable::GameModeDefect::MultipleEarnTypes:
+				I_Error( "There is more than one PLAYERSEARN flag enabled in \"%s\".", name.GetChars( ));
+				break;
+
+			case zx::gamemodetable::GameModeDefect::None:
+				break;
+		}
 	}
 
 	// Our default game mode is co-op.

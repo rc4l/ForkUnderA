@@ -40,7 +40,20 @@ bool HostProcessRunning( void );
 std::string HostProcessReadOutput( void );
 
 // Ask it to stop, then make sure. Safe to call when nothing is running.
+// [rc4l] BLOCKS the calling thread for up to three seconds while the child winds down -- which on
+// the game loop is a beachball. Only for paths that cannot tick afterwards (process exit, and
+// starting a replacement server that needs the old one's port). Interactive stops use
+// HostProcessRequestStop and let HostTick reap the exit.
 void HostProcessStop( void );
+
+// [rc4l] Ask it to stop and return IMMEDIATELY -- no wait, no beachball. The pipe stays open so
+// the tick keeps draining output, HostProcessRunning() keeps answering, and the ordinary
+// child-exited path in HostTick observes the death and cleans up. Safe when nothing is running.
+void HostProcessRequestStop( void );
+
+// [rc4l] The escalation for a stop that timed out: kill it now, reap it now, close everything.
+// The wait is momentary -- SIGKILL is not refusable -- so this is safe on the game loop.
+void HostProcessKill( void );
 
 // The child's exit code, meaningful only once it has exited.
 int HostProcessExitCode( void );

@@ -28,6 +28,7 @@
 #include "d_main.h"		// D_AddFile
 #include "menu/menu.h"	// M_StartMessage, M_ClearMenus
 
+#include "features/server-hosting/zx_punchclient.h"
 #include "cl_main.h"		// CLIENT_GetConnectionState, CTS_ACTIVE
 #include "network.h"		// NETWORK_GetState
 #include "v_video.h"		// screen, DTA_*, SCREENWIDTH/HEIGHT -- the ready-to-join line
@@ -93,6 +94,9 @@ struct JoinPlan
 	// [rc4l] Only ever used to name the server in a message when something goes wrong.
 	FString serverName;
 	std::vector<std::string> sites;		// the server's own advertised download site, if any
+	// [rc4l] Sources tried only after the public mirrors have missed -- the hosting machine's own
+	// direct endpoint lives here, so one residential upload is the fallback, not the first hop.
+	std::vector<std::string> lastResortSites;
 	bool valid;
 
 	JoinPlan() : valid(false) {}
@@ -129,13 +133,41 @@ bool g_resumePendingSuccess = false;
 bool g_readyPending = false;
 FString g_readyName;
 
+// [rc4l] Which of the two ready states the band is showing. They are different promises: one is
+// somebody else's server you are about to join, the other is your own game about to start.
+static bool g_readyIsHost = false;
+
+// [rc4l] A resume that is NOT a join -- hosting, which wants every part of this except the last
+// step. See SetPendingResume. Exactly one of this and g_pending is ever set.
+zx::ResumeProc g_pendingProc = NULL;
+FString g_pendingProcName;
+
+// Whether anything at all is waiting on the current transfer.
+bool HaveSomethingPending()
+{
+	return g_pending.valid || ( g_pendingProc != NULL );
+}
+
+// What the waiting band should call it.
+FString PendingName()
+{
+	return ( g_pendingProc != NULL ) ? g_pendingProcName : g_pending.serverName;
+}
+
+void ForgetPending()
+{
+	g_pending = JoinPlan();
+	g_pendingProc = NULL;
+	g_pendingProcName = "";
+}
+
 void OnDownloadFinished(bool allSucceeded)
 {
 	// [rc4l] The decision itself is computation/joinresume_compute.h, where every combination of
 	// "did it work / is the browser open / are they mid-answer" can be asserted. Getting it wrong
 	// throws away whatever the player was doing, and each individual branch reads fine in review,
 	// which is exactly the sort of thing that wants a truth table rather than a chain of ifs.
-	const zx::ResumeAction action = zx::ComputeResumeAction( g_pending.valid, allSucceeded,
+	const zx::ResumeAction action = zx::ComputeResumeAction( HaveSomethingPending(), allSucceeded,
 		zx::IsServerBrowserOpen(), g_resumeHeld );
 
 	switch (action)
@@ -149,31 +181,42 @@ void OnDownloadFinished(bool allSucceeded)
 		return;
 
 	case zx::ResumeAction::NotifyReady:
-		// The join WAITS. g_pending is kept, and ConsumeJoinReady picks it up when the player next
+		// It WAITS. The pending thing is kept, and ConsumeJoinReady picks it up when the player next
 		// opens the menu.
 		g_readyPending = true;
-		g_readyName = g_pending.serverName;
-		Printf(TEXTCOLOR_GREEN "%s is ready to join.\n" TEXTCOLOR_NORMAL,
-			g_readyName.IsNotEmpty() ? g_readyName.GetChars() : "That server");
+		g_readyIsHost = false;
+		g_readyName = PendingName();
+		Printf(TEXTCOLOR_GREEN "%s is ready.\n" TEXTCOLOR_NORMAL,
+			g_readyName.IsNotEmpty() ? g_readyName.GetChars() : "It");
 		return;
 
 	case zx::ResumeAction::ReportFailure:
-		g_pending = JoinPlan();
+		ForgetPending();
 		// The downloader has already said which file and why, on the console. This is the part the
 		// player sees without having opened it.
-		zx::ShowBrowserNotice("Couldn't get everything this server needs.\n\n"
+		zx::ShowBrowserNotice("Couldn't get everything that was needed.\n\n"
 			"See the console for what was missing.");
 		return;
 
-	case zx::ResumeAction::JoinNow:
+	case zx::ResumeAction::ProceedNow:
 		break;
+	}
+
+	// [rc4l] A resume belonging to somebody else -- hosting. Cleared BEFORE the call, for the same
+	// reason the join plan is: what it does next may not return either.
+	if (g_pendingProc != NULL)
+	{
+		const zx::ResumeProc proc = g_pendingProc;
+		ForgetPending();
+		proc(allSucceeded);
+		return;
 	}
 
 	// Taken by value and cleared BEFORE the retry: AttemptJoin does not return on the path that
 	// works (RequestReload throws CRestartException), so anything after the call is unreachable
 	// exactly when it matters.
 	const JoinPlan plan = g_pending;
-	g_pending = JoinPlan();
+	ForgetPending();
 
 	// Second pass, with downloading off: if something is STILL missing after a run that reported
 	// success, retrying the download would loop forever on it.
@@ -234,7 +277,7 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 				// Say it plainly here rather than letting the connection fail later: level
 				// authentication rejects a mismatched IWAD without ever naming the reason.
 				Printf(TEXTCOLOR_GOLD "Your %s is a different build from the one this server runs.\n"
-					TEXTCOLOR_NORMAL "The join may be rejected. Nothing is wrong with your copy -- "
+					TEXTCOLOR_NORMAL "The join may be rejected. Nothing is wrong with your copy, "
 					"that IWAD has shipped in several versions and they are not interchangeable.\n",
 					plan.iwadName.GetChars());
 			}
@@ -371,8 +414,18 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 			// The browser stays open rather than putting up a modal: the transfer runs for minutes,
 			// and a dialog you cannot dismiss without cancelling is a worse way to spend them than a
 			// progress line under a list you can still read. The join resumes on its own.
-			if (zx::waddownload::Start(plan.sites, missing, OnDownloadFinished))
+			if (zx::waddownload::Start(plan.sites, plan.lastResortSites, missing, OnDownloadFinished))
 			{
+				// [rc4l] The host resume goes with it. Start ABANDONS whatever was in flight, so a
+				// transfer that was fetching an experience to host is over the moment this one
+				// begins, and leaving its resume parked would fire it when THIS download lands -- we
+				// would download a server's files and stand up somebody's duel server with them.
+				//
+				// Exactly one of these two is ever set. That is the invariant; this is the only place
+				// a join could have broken it.
+				g_pendingProc = NULL;
+				g_pendingProcName = "";
+
 				g_pending = plan;
 				g_pending.valid = true;
 				return false;
@@ -395,6 +448,22 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 	}
 
 	M_ClearMenus();
+
+	// [rc4l] Ask the server's router to let us in, and carry straight on without waiting.
+	//
+	// Racing rather than waiting is the whole point. The connection below goes out exactly as it
+	// always did; this runs beside it, and if it lands the connection already in flight starts
+	// working. Nothing here can delay or refuse a join, which is what makes it safe to do on every
+	// one: a registry that is down, a server too old to punch, or a punch that simply fails all end
+	// where we would have been anyway.
+	//
+	// Before the reload because the reload does not return, and outbound-first because the packet has
+	// to leave OUR side too for the reply to be accepted coming back.
+	{
+		NETADDRESS_s target;
+		if ( target.LoadFromString( plan.address.GetChars( )))
+			zx::PunchRequestFor( target, true );
+	}
 
 	// [rc4l] Marked BEFORE the reload, because the reload does not return: RequestReload throws
 	// CRestartException on the path that works. Anything recorded after it would never run.
@@ -451,7 +520,7 @@ bool JoinSelectedServer()
 	if (( lMaxClients > 0 ) && ( lPlayers >= lMaxClients ))
 	{
 		FString msg;
-		msg.Format("%s is full (%d/%d).\n\nNothing has been changed -- try again when a slot opens."
+		msg.Format("%s is full (%d/%d).\n\nNothing has been changed. Try again when a slot opens."
 			"\n\npress a key.", plan.serverName.GetChars(), static_cast<int>( lPlayers ),
 			static_cast<int>( lMaxClients ));
 		zx::ShowBrowserNotice(msg.GetChars());
@@ -485,22 +554,17 @@ bool JoinSelectedServer()
 
 	// [rc4l] The server's own endpoint, if it serves its files itself (SQF2_FUA_DIRECT_DOWNLOAD).
 	//
-	// FIRST by default, and that ordering is the point of the feature rather than an optimisation.
-	// The case a mirror cannot cover is a WAD built this afternoon, which exists nowhere else; and
-	// even when mirrors do have the file, the server's copy is by definition the one matching the
-	// MD5 it advertises, so it is the copy that verifies on the first try instead of after two
-	// mirrors served a different build under the same name.
-	//
-	// An operator who hosts their WADs somewhere with real bandwidth can flip it, which is what
-	// sv_fua_download_prefermirrors is for -- they are the one paying for the traffic.
+	// LAST, after the public mirrors. This used to be first by default -- "the server's copy is the
+	// one matching the MD5 it advertises" -- but in practice that put every join's whole download on
+	// one residential upload, the same link carrying the game's netcode, while six real file hosts
+	// sat idle. The md5 gate makes mirrors-first safe (a mirror's wrong copy is deleted and the walk
+	// continues), so preferring the host buys nothing but the slowest pipe; a brand-new WAD that
+	// exists nowhere else costs only a few fast 404s before the walk reaches the host anyway. The
+	// sv_fua_download_prefermirrors hint asked for exactly this order, so it needs no branch now --
+	// every client behaves as if it were set.
 	const FString directUrl = BROWSER_GetDirectDownloadURL((ULONG)lServer);
 	if (directUrl.IsNotEmpty())
-	{
-		if (BROWSER_PrefersMirrors((ULONG)lServer))
-			plan.sites.push_back(directUrl.GetChars());
-		else
-			plan.sites.insert(plan.sites.begin(), directUrl.GetChars());
-	}
+		plan.lastResortSites.push_back(directUrl.GetChars());
 
 	plan.valid = true;
 	return AttemptJoin(plan, true);
@@ -518,6 +582,20 @@ bool g_joinInFlight = false;
 FString g_joiningName;
 bool g_joinFailed = false;
 FString g_joinFailReason;
+
+void NoteDownloadFinished( bool allSucceeded )
+{
+	OnDownloadFinished( allSucceeded );
+}
+
+void SetPendingResume( ResumeProc proc, const char *readyName )
+{
+	// Replaces whatever was pending. Two things cannot be waiting on one transfer, and the last one
+	// asked for is the one the player is looking at.
+	g_pending = JoinPlan();
+	g_pendingProc = proc;
+	g_pendingProcName = ( readyName != NULL ) ? readyName : "";
+}
 
 void HoldJoinResume()
 {
@@ -606,23 +684,23 @@ void ReleaseJoinResume(bool proceed)
 
 	if (!proceed)
 	{
-		// [rc4l] The player said stop, so the JOIN is abandoned here -- unconditionally, not only in
-		// the race below where the transfer had already finished.
+		// [rc4l] The player said stop, so whatever was waiting is abandoned here -- unconditionally,
+		// not only in the race below where the transfer had already finished.
 		//
 		// Leaving it pending meant the aborted transfer reached OnDownloadFinished looking exactly
-		// like a failed one, and the player was told "couldn't get everything this server needs, see
-		// the console for what was missing" -- a diagnosis, and a homework assignment, for something
-		// they had just chosen on purpose and confirmed.
-		g_pending = JoinPlan();
+		// like a failed one, and the player was told "couldn't get everything, see the console for
+		// what was missing" -- a diagnosis, and a homework assignment, for something they had just
+		// chosen on purpose and confirmed.
+		ForgetPending();
 
 		if (g_resumePending)
 		{
 			// It finished while they were being asked. The file stays -- it is downloaded and
-			// verified, and throwing it away would only mean fetching it again -- but the join it was
+			// verified, and throwing it away would only mean fetching it again -- but what it was
 			// for does not happen, because that is what they answered.
 			g_resumePending = false;
-			Printf(TEXTCOLOR_GOLD "The download had already finished, so the file is kept -- but the "
-				"join was cancelled as you asked.\n" TEXTCOLOR_NORMAL);
+			Printf(TEXTCOLOR_GOLD "The download had already finished, so the file is kept, but it "
+				"was cancelled as you asked.\n" TEXTCOLOR_NORMAL);
 		}
 		return;
 	}
@@ -640,6 +718,14 @@ bool IsJoinResumeHeld()
 	return g_resumeHeld;
 }
 
+void NoteHostReady()
+{
+	g_readyPending = true;
+	g_readyIsHost = true;
+	g_readyName = "";
+	Printf( TEXTCOLOR_GREEN "Your game is ready.\n" TEXTCOLOR_NORMAL );
+}
+
 bool ConsumeJoinReady()
 {
 	if ( !g_readyPending )
@@ -648,31 +734,9 @@ bool ConsumeJoinReady()
 	// Cleared, but g_pending is left alone: the player is being taken to the browser, and pressing
 	// JOIN there starts the join from scratch with files that are now already on disk.
 	g_readyPending = false;
+	g_readyIsHost = false;
 	g_readyName = "";
 	return true;
-}
-
-// [rc4l] The widest digit in SmallFont, measured once. Which one it is depends on the font, so it is
-// found rather than assumed -- and found here rather than per frame, since it cannot change.
-static int WidestDigit( )
-{
-	static char cached = 0;
-	if ( cached != 0 )
-		return cached;
-
-	int best = -1;
-	for ( char c = '0'; c <= '9'; ++c )
-	{
-		char one[2] = { c, 0 };
-		const int w = SmallFont->StringWidth( one );
-		if ( w > best )
-		{
-			best = w;
-			cached = c;
-		}
-	}
-
-	return cached;
 }
 
 void DrawJoinReadyNotice( bool afterMenus )
@@ -702,11 +766,21 @@ void DrawJoinReadyNotice( bool afterMenus )
 	// [rc4l] The same slot carries both states, because they are the same story: the thing you asked
 	// for is on its way, and then it has arrived. Nothing about files or downloads in the ready
 	// wording -- the transfer was our problem, and what the player cares about is the server.
+	// [rc4l] The server's own name is deliberately NOT in this line. It is a name the server chose,
+	// so it can be long, colourful or blank, and it pushed the one instruction in the sentence off
+	// to the right where the eye reaches it last. The player knows which server they asked for --
+	// they asked for it seconds ago -- and what they do not know is what to do about it.
 	FString text;
 	if ( bReady )
 	{
-		text.Format( "%s is ready to join -- open the menu",
-			g_readyName.IsNotEmpty( ) ? g_readyName.GetChars( ) : "Your server" );
+		// [rc4l] The instruction has to match what is in front of the player. With a menu already
+		// open, "Open the Menu" is telling them to do the thing they have done, and the jump they
+		// are being promised happens on opening -- so it will not come while they sit there. Say
+		// what will actually work from where they are.
+		if ( g_readyIsHost )
+			text = "Your game is ready - open the menu!";
+		else
+			text = "Server is ready to join - Open the Menu";
 	}
 	else
 	{
@@ -730,25 +804,8 @@ void DrawJoinReadyNotice( bool afterMenus )
 	const int virtH = 400;
 	const int y = 12;
 
-	// [rc4l] The band is laid out from a MASKED copy of the line -- every digit replaced by whichever
-	// digit is widest in this font -- rather than from the line itself.
-	//
-	// Padding the string to a fixed character count was not enough. SmallFont gives '1' a narrower
-	// advance than '0', so "11%" and "80%" are different widths and the panel kept shuffling as the
-	// numbers went by. The mask is the same string every frame whatever the numbers are, so its width
-	// is a constant, and it is never narrower than the real line, so nothing overflows it.
-	const FString stable = zx::MaskVarying( text.GetChars( ), WidestDigit( )).c_str( );
-	const int stableW = SmallFont->StringWidth( stable );
-
-	// BOTH are centred on the same axis, each on its own width. Placing the text at the box's left
-	// edge instead left every pixel the mask over-measured sitting on one side, so the line looked
-	// shoved against the end of its own panel.
-	//
-	// The text can still shift by a pixel or two as the digits change, since the mask is an upper
-	// bound rather than an exact match -- but the character count is fixed, so that is glyph-width
-	// variance and nothing more. The box, which is the thing that was moving, does not move at all.
+	// Centred on its own width. The band no longer has one, so there is no second axis to agree with.
 	const int x = ( virtW / 2 ) - ( SmallFont->StringWidth( text ) / 2 );
-	const int bandLeft = ( virtW / 2 ) - ( stableW / 2 );
 
 	// A backing band, so the line stays readable over a bright wall or a lit sky.
 	//
@@ -757,13 +814,26 @@ void DrawJoinReadyNotice( bool afterMenus )
 	// letterboxing the virtual space inside the window, so scaling by SCREENWIDTH/virtW agreed with
 	// the text only on a display that happened to be 16:10 and put the band visibly off-centre under
 	// it everywhere else. Same mistake, same fix, as the browser's own panel edges.
-	int bandX = bandLeft - 6;
+	// [rc4l] EDGE TO EDGE, so the band stops depending on the string at all.
+	//
+	// Only the vertical extent is converted from virtual space. The horizontal is the real surface,
+	// 0 to SCREENWIDTH, which is the one measurement that cannot be pulled off-centre by the aspect
+	// correction DTA_Virtual* applies -- and the measurement that is right at every resolution
+	// without anybody working it out.
+	//
+	// This is what retires the masked-string machinery above. Sizing a box to text meant fighting
+	// the font: '1' is narrower than '0', so the panel shuffled as the percentage ticked, and the
+	// fix was to measure a copy of the line with every digit replaced by the widest one. A band that
+	// spans the screen has no width to get wrong, so the whole class of problem goes away rather
+	// than being compensated for.
 	int bandY = y - 3;
-	int bandW = stableW + 12;
 	int bandH = SmallFont->GetHeight( ) + 6;
-	screen->VirtualToRealCoordsInt( bandX, bandY, bandW, bandH, virtW, virtH, false, true );
 
-	screen->Dim( PalEntry( 0, 0, 0 ), 0.45f * alpha, bandX, bandY, bandW, bandH );
+	int ignoreX = 0;
+	int ignoreW = virtW;
+	screen->VirtualToRealCoordsInt( ignoreX, bandY, ignoreW, bandH, virtW, virtH, false, true );
+
+	screen->Dim( PalEntry( 0, 0, 0 ), 0.45f * alpha, 0, bandY, SCREENWIDTH, bandH );
 
 	// [rc4l] The text is drawn OPAQUE, and the pulse lives in the band behind it and in the colour.
 	//

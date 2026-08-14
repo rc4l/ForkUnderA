@@ -47,6 +47,8 @@
 #include "c_bind.h"
 #include "gameconfigfile.h"
 #include "menu/menu.h"
+#include "features/global-header/computation/globalheader_compute.h" // [rc4l] where the top row is
+#include "features/global-header/zx_globalheader.h"                  // [rc4l] how far the bar pushes menus down
 // [TP] New #includes
 #include "cl_main.h"
 
@@ -98,6 +100,29 @@ void DOptionMenu::Init(DMenu *parent, FOptionMenuDescriptor *desc)
 	mDesc = desc;
 	if (mDesc != NULL && mDesc->mSelectedItem == -1) mDesc->mSelectedItem = FirstSelectable();
 
+}
+
+//=============================================================================
+//
+//
+//
+//=============================================================================
+
+// [rc4l] Up off the first reachable row hands the keyboard to the global tab bar.
+//
+// Asked of the same unit the list menus use, rather than compared against FirstSelectable(), so
+// there is one answer to "where is the top" and not two that can drift.
+bool DOptionMenu::AtTopRow()
+{
+	if (mDesc == NULL)
+		return false;
+
+	TArray<bool> selectable;
+	for (unsigned i = 0; i < mDesc->mItems.Size(); ++i)
+		selectable.Push(mDesc->mItems[i]->Selectable());
+
+	return zx::CursorAtTopRow(selectable.Size() > 0 ? &selectable[0] : NULL,
+		static_cast<int>(selectable.Size()), mDesc->mSelectedItem);
 }
 
 //=============================================================================
@@ -405,8 +430,12 @@ void DOptionMenu::Drawer ()
 		{
 			const char *tt = mDesc->mTitle;
 			if (*tt == '$') tt = GStrings(tt+1);
+			// [rc4l] The title is the one part of an option menu that is NOT positioned from the
+			// descriptor, so shifting mPosition for the global tab bar moved every row and left the
+			// heading behind, under the bar. Shifted here by the same one number.
 			screen->DrawText (BigFont, OptionSettings.mTitleColor,
-				(screen->GetWidth() - BigFont->StringWidth(tt) * CleanXfac_1) / 2, 10*CleanYfac_1,
+				(screen->GetWidth() - BigFont->StringWidth(tt) * CleanXfac_1) / 2,
+				(10 + zx::GlobalHeader_MenuOffsetY()) * CleanYfac_1,
 				tt, DTA_CleanNoMove_1, true, TAG_DONE);
 			y = -y + BigFont->GetHeight();
 		}
@@ -450,7 +479,11 @@ void DOptionMenu::Drawer ()
 		}
 		bool isSelected = mDesc->mSelectedItem == (int)i;
 		int cur_indent = mDesc->mItems[i]->Draw(mDesc, y, indent, isSelected);
-		if (cur_indent >= 0 && isSelected && mDesc->mItems[i]->Selectable())
+		// [rc4l] No blinking cursor while the global tab bar holds the arrows: two cursors, one of
+		// which is not where the next keypress goes. The selection is kept and drawn again on the
+		// way back down.
+		if (cur_indent >= 0 && isSelected && mDesc->mItems[i]->Selectable()
+			&& !zx::GlobalHeader_HasFocus())
 		{
 			if (((DMenu::MenuTime%8) < 6) || DMenu::CurrentMenu != this)
 			{

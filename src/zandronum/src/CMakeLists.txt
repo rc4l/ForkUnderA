@@ -133,6 +133,13 @@ else( WIN32 )
 			set( NO_SOUND ON )
 			set( NO_GTK ON )
 			set( NO_GL ON )
+			# [rc4l] NO_REPLAY is forced beside its own option() further down, NOT here, and the
+			# asymmetry is a trap rather than a style choice. The three switches above survive being
+			# set here only because their option() calls happen just above; option( NO_REPLAY ) is
+			# hundreds of lines below and would overwrite a plain set() with its OFF default, because
+			# CMP0077 is OLD under the CMAKE_POLICY_VERSION_MINIMUM=3.5 this project configures with.
+			# A set() here looks correct, changes nothing, and the only symptom is a headless binary
+			# still linking FFmpeg.
 			add_definitions ( -DSERVER_ONLY=1 )
 			set( ZDOOM_EXE_NAME ${ZDOOM_EXE_NAME}-server )
 		endif( SERVERONLY )
@@ -575,6 +582,19 @@ endif ( NOT NO_OPENAL )
 # [rc4l] FUA instant replay: encode gameplay clips as H.264/MP4 via FFmpeg (libav*). Optional --
 # if the libraries aren't found the feature compiles as a no-capture stub (ZX_ENABLE_REPLAY off).
 option( NO_REPLAY "Disable the FUA instant-replay video feature" OFF )
+
+# [rc4l] The recorder captures the rendered frame, so a build with no renderer cannot use it. Left
+# alone, SERVERONLY linked libavcodec, libavformat, libavutil and libswscale for a feature it can
+# never reach, and every container had to install them to satisfy the loader.
+#
+# Forced HERE, immediately after the option(), and it has to be: option() creates the cache entry
+# from its own default, so anything set before this line is discarded under CMP0077 OLD. That is why
+# the SERVERONLY block cannot do what it does for NO_SOUND, NO_GTK and NO_GL.
+if( SERVERONLY )
+	set( NO_REPLAY ON )
+	message( STATUS "FUA replay: disabled for SERVERONLY -- a headless build has no frame to capture" )
+endif()
+
 if( NOT NO_REPLAY )
 	# First try pkg-config (macOS Homebrew, Linux distros).
 	find_package( PkgConfig QUIET )
@@ -1181,13 +1201,19 @@ add_executable( zdoom WIN32
 	name.cpp
 	network.cpp #ST
 	networkshared.cpp #ST
-	network/cl_auth.cpp #ZA
 	network/netcommand.cpp #ZA
 	network/nettraffic.cpp #ST
 	network/packetarchive.cpp #ZA
 	network/servercommands.cpp #ZA
-	network/srp.cpp #ZA
-	network/sv_auth.cpp #ZA
+	# [rc4l] Vendored Cephes portable math (from UZDoom common/thirdparty/math): bit-exact
+	# c_atan2 for the node builder, so GL node building is deterministic across platforms.
+	# Apple ARM libm's atan2 rounds differently from MSVC's, which flipped seg orderings at
+	# near-ties and assembled corrupt subsector rings (holes in floors/walls) on macOS only.
+	math/atan.c
+	math/const.c
+	math/isnan.c
+	math/mtherr.c
+	math/polevl.c
 	nodebuild.cpp
 	nodebuild_classify_nosse2.cpp
 	nodebuild_events.cpp
@@ -1467,6 +1493,9 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
+	features/iwad-registry/zx_iwadregistry.cpp
+	features/identity/zx_identity.cpp
+	features/identity/zx_identitynet.cpp
 	features/net/zx_httpsget.cpp
 	features/net/zx_httpfile.cpp
 	features/net/zx_httpfile_win.cpp
@@ -1476,12 +1505,32 @@ add_executable( zdoom WIN32
 	features/wad-download/computation/downloadplan_compute.cpp
 	features/wad-download/computation/iwadallow_compute.cpp
 	features/wad-download/computation/iwadsubstitute_compute.cpp
+	features/wad-download/computation/fileresolve_compute.cpp
 	features/wad-download/computation/wadstore_compute.cpp
+	features/port-mapping/zx_portmap.cpp
+	features/port-mapping/computation/ssdp_compute.cpp
+	features/port-mapping/computation/upnpsoap_compute.cpp
+	features/port-mapping/computation/natpmp_compute.cpp
 	features/server-hosting/zx_hosting.cpp
 	features/server-hosting/zx_hostprocess.cpp
 	features/server-hosting/zx_hostwatchdog.cpp
 	features/server-hosting/computation/hostargs_compute.cpp
 	features/server-hosting/computation/hostlifecycle_compute.cpp
+	features/server-hosting/computation/hostport_compute.cpp
+	features/server-hosting/computation/hoststatus_compute.cpp
+	features/net/computation/v6mapped_compute.cpp
+	features/net/computation/v6prefix_compute.cpp
+	features/server-hosting/computation/punchbroker_compute.cpp
+	features/server-hosting/zx_punchclient.cpp
+	features/server-hosting/computation/hostfocus_compute.cpp
+	features/server-hosting/computation/reachprobe_compute.cpp
+	features/server-hosting/zx_reachprobe.cpp
+	features/addon-catalogue/zx_catalogue.cpp
+	features/addon-catalogue/computation/addonfile_compute.cpp
+	features/addon-catalogue/computation/iwadpick_compute.cpp
+	features/addon-catalogue/computation/pickerview_compute.cpp
+	features/addon-catalogue/computation/hostplan_compute.cpp
+	features/addon-catalogue/computation/compat_compute.cpp
 	features/wad-serve/zx_wadserve.cpp
 	features/wad-serve/computation/ratebucket_compute.cpp
 	features/wad-serve/computation/httpreq_compute.cpp
@@ -1491,9 +1540,15 @@ add_executable( zdoom WIN32
 	features/server-browser/browser.cpp #ST
 	features/server-browser/zx_serverbrowsermenu.cpp
 	features/server-browser/zx_joinserver.cpp
-	features/server-browser/zx_mainmenuroute.cpp
+	features/global-header/zx_globalheader.cpp
+	features/menu-focus/zx_focusglow.cpp
+	features/global-header/computation/globalheader_compute.cpp
+	features/global-header/computation/headerreach_compute.cpp
 	features/server-browser/computation/serverbrowser_compute.cpp
+	features/server-browser/computation/registrystatus_compute.cpp
 	features/server-browser/computation/browserchrome_compute.cpp
+	features/server-browser/computation/choicerow_compute.cpp
+	features/server-browser/computation/pointerdrag_compute.cpp
 	features/server-browser/computation/browserfocus_compute.cpp
 	features/server-browser/computation/browserhit_compute.cpp
 	features/server-browser/computation/dialog_compute.cpp
@@ -1501,10 +1556,15 @@ add_executable( zdoom WIN32
 	features/server-browser/computation/bytesize_compute.cpp
 	features/server-browser/computation/colortext_compute.cpp
 	features/server-browser/computation/joinplan_compute.cpp
+	features/server-browser/computation/geoiptable_compute.cpp
+	features/server-browser/computation/joinintent_compute.cpp
 	features/server-browser/computation/joinresume_compute.cpp
 	features/server-browser/computation/scrollbar_compute.cpp
+	features/server-browser/computation/replyrouting_compute.cpp
+	features/server-browser/computation/scrollview_compute.cpp
 	features/server-browser/computation/serversearch_compute.cpp
 	features/server-browser/computation/serversort_compute.cpp
+	features/server-browser/computation/versionrelation_compute.cpp
 	features/server-browser/computation/textinput_compute.cpp
 	features/server-browser/computation/tooltip_compute.cpp
 	features/server-browser/computation/stableline_compute.cpp
@@ -1751,8 +1811,14 @@ source_group("Network\\Server" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/
 source_group("Network\\Protocol\\Specs" REGULAR_EXPRESSION "^${CMAKE_SOURCE_DIR}/protocolspec/.+\\.txt$")
 source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_DIR}/protocolspec/generator/.+")
 
-# MCP dev bridge (overlay -- not committed upstream)
-target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_actorstate.cpp mcp_hud.cpp )
+# [rc4l] Native MCP "programmable engine" control bridge -- DEV/TEST ONLY, gated OFF by default so
+# release binaries ship without it (no remote-control surface). Enable with -DFUA_MCP_BRIDGE=ON.
+# mcp_bridge.cpp = transport/lifecycle (header-pure); mcp_rpc.cpp = typed RPC dispatch + determinism/
+# state/session handlers (engine-facing); the rest are reader/crash/input/hud backends.
+if( FUA_MCP_BRIDGE )
+	target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_rpc.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_hud.cpp )
+	target_compile_definitions( zdoom PRIVATE FUA_MCP_BRIDGE )
+endif()
 
 # [rc4l] Pure Compute* helpers extracted for testability live in computation/ folders as
 # *_compute.cpp. They register no classes, so link order is irrelevant — pull them all in

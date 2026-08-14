@@ -4,7 +4,9 @@
 #include "gtest/gtest.h"
 #include "features/wad-download/computation/downloadplan_compute.h"
 
+using zx::AssembleSiteOrder;
 using zx::BuildCandidateUrls;
+using zx::DownloadSourceName;
 using zx::IsSafeDownloadName;
 using zx::NormalizeDownloadSites;
 using zx::SplitOnWhitespace;
@@ -262,4 +264,136 @@ TEST(BuildCandidateUrls, YieldsNothingWhenNoSiteSurvivesNormalisation)
 {
 	EXPECT_TRUE(BuildCandidateUrls({ "not a url", "ftp://x/" }, "brutal.wad").empty());
 	EXPECT_TRUE(BuildCandidateUrls({}, "brutal.wad").empty());
+}
+
+// ---------------------------------------------------------------- naming a download source
+
+TEST(DownloadSourceName, NamesTheHostAndNothingElse)
+{
+	EXPECT_EQ("wads.example.net", DownloadSourceName("https://wads.example.net/doom/brutal.wad"));
+	EXPECT_EQ("wads.example.net", DownloadSourceName("http://wads.example.net/"));
+	EXPECT_EQ("wads.example.net", DownloadSourceName("wads.example.net/doom/brutal.wad"));
+}
+
+TEST(DownloadSourceName, KeepsThePortBecauseAServerServingItsOwnWadsIsIdentifiedByIt)
+{
+	// Two servers on one address are told apart only by port, and this line exists so a player can
+	// see which machine a file came from.
+	EXPECT_EQ("203.0.113.7:10666", DownloadSourceName("http://203.0.113.7:10666/wads/brutal.wad"));
+}
+
+TEST(DownloadSourceName, StripsCredentials)
+{
+	// [rc4l] The reason this is not just "print the URL". A player pastes a console log into a bug
+	// report, and anything in it is published.
+	EXPECT_EQ("mirror.example.org", DownloadSourceName("https://user:secret@mirror.example.org/x.wad"));
+}
+
+TEST(DownloadSourceName, StripsAQueryThatCouldCarryAToken)
+{
+	EXPECT_EQ("cdn.example.com", DownloadSourceName("https://cdn.example.com?token=abc123"));
+	EXPECT_EQ("cdn.example.com", DownloadSourceName("https://cdn.example.com/a.wad?token=abc123"));
+}
+
+TEST(DownloadSourceName, FallsBackToTheInputRatherThanGoingBlank)
+{
+	// An odd cl_fua_downloadsites entry should still be nameable in the log.
+	EXPECT_EQ("https:///a.wad", DownloadSourceName("https:///a.wad"));
+	EXPECT_EQ("", DownloadSourceName(""));
+}
+
+//*****************************************************************************
+// AssembleSiteOrder -- the download preference policy itself.
+
+TEST(AssembleSiteOrder, ServerSitesThenMirrorsThenLastResort)
+{
+	// [rc4l] The regression this pins: joining a server used to put the HOSTING MACHINE's own
+	// endpoint ahead of the public mirrors, so every download crawled over one residential upload
+	// while six file hosts sat idle. The host belongs at the END -- still present (it is the one
+	// source certain to have the file), but only reached once the mirrors have missed.
+	const std::vector<std::string> server = { "https://operator.example/wads/" };
+	const std::vector<std::string> mirrors = { "https://mirror-a.example/", "https://mirror-b.example/" };
+	const std::vector<std::string> host = { "http://203.0.113.7:10666/" };
+
+	const std::vector<std::string> order = AssembleSiteOrder(server, mirrors, host);
+
+	ASSERT_EQ(4u, order.size());
+	EXPECT_EQ("https://operator.example/wads/", order[0]);
+	EXPECT_EQ("https://mirror-a.example/", order[1]);
+	EXPECT_EQ("https://mirror-b.example/", order[2]);
+	EXPECT_EQ("http://203.0.113.7:10666/", order[3]);
+}
+
+TEST(AssembleSiteOrder, EmptyGroupsJustDisappear)
+{
+	// A server that advertises nothing and serves nothing itself leaves exactly the mirror list.
+	const std::vector<std::string> none;
+	const std::vector<std::string> mirrors = { "https://mirror.example/" };
+
+	EXPECT_EQ(mirrors, AssembleSiteOrder(none, mirrors, none));
+	EXPECT_TRUE(AssembleSiteOrder(none, none, none).empty());
+}
+
+TEST(AssembleSiteOrder, LeavesDuplicatesForNormalizeToResolveInFavourOfTheEarlierSlot)
+{
+	// A site listed both by the server and as a last resort must keep its earlier (better) position
+	// once NormalizeDownloadSites dedups -- which keeps the FIRST occurrence. This test documents
+	// the division of labour: AssembleSiteOrder orders, Normalize dedups.
+	const std::vector<std::string> server = { "https://both.example/" };
+	const std::vector<std::string> none;
+	const std::vector<std::string> tail = { "https://both.example/" };
+
+	const std::vector<std::string> order = AssembleSiteOrder(server, none, tail);
+	ASSERT_EQ(2u, order.size());
+
+	const std::vector<std::string> deduped = NormalizeDownloadSites(order);
+	ASSERT_EQ(1u, deduped.size());
+	EXPECT_EQ("https://both.example/", deduped[0]);
+}
+
+//*****************************************************************************
+// FormatDownloadStatus -- the progress line's three shapes and the boundaries between them.
+
+TEST(FormatDownloadStatus, SaysSearchingUntilAnySourceAnswers)
+{
+	// No Content-Length and no bytes: source selection is still running (DNS, connect, mirrors
+	// 404ing past). A bare 0% here would read as a stalled transfer.
+	EXPECT_EQ("Searching for brutal.wad...", zx::FormatDownloadStatus("brutal.wad", 0, -1));
+	EXPECT_EQ("Searching for brutal.wad...", zx::FormatDownloadStatus("brutal.wad", 0, 0));
+}
+
+TEST(FormatDownloadStatus, FlipsToPercentTheMomentContentLengthArrives)
+{
+	// The boundary the searching text hands over at: headers landed, nothing received yet -- this
+	// is a real 0%, not a search.
+	EXPECT_EQ("brutal.wad    0%  (  0 KB of 7.0 MB)",
+		zx::FormatDownloadStatus("brutal.wad", 0, 7 * 1024 * 1024));
+}
+
+TEST(FormatDownloadStatus, PercentLineIsFixedWidthThroughTheTransfer)
+{
+	// The band behind the line is sized from it, so 5% and 50% and 100% must all be the same
+	// length: percent padded to three columns, received padded to the total's width.
+	const long long total = 10 * 1024 * 1024;
+	const std::string early = zx::FormatDownloadStatus("a.wad", total / 20, total);
+	const std::string mid = zx::FormatDownloadStatus("a.wad", total / 2, total);
+	const std::string done = zx::FormatDownloadStatus("a.wad", total, total);
+
+	EXPECT_EQ(early.size(), mid.size());
+	EXPECT_EQ(mid.size(), done.size());
+	EXPECT_EQ("a.wad   50%  ( 5.0 MB of 10.0 MB)", mid);
+}
+
+TEST(FormatDownloadStatus, ShowsBytesAloneWhenLengthIsUnknown)
+{
+	// Bytes flowing but no Content-Length: a percentage would be a guess.
+	EXPECT_EQ("a.wad  512 KB", zx::FormatDownloadStatus("a.wad", 512 * 1024, -1));
+}
+
+TEST(HumanBytes, PicksTheUnitAndAnswersNegativesWithAQuestionMark)
+{
+	EXPECT_EQ("0 KB", zx::HumanBytes(0));
+	EXPECT_EQ("512 KB", zx::HumanBytes(512 * 1024));
+	EXPECT_EQ("1.5 MB", zx::HumanBytes(1536 * 1024));
+	EXPECT_EQ("?", zx::HumanBytes(-1));
 }

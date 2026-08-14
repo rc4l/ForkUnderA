@@ -1,0 +1,109 @@
+{
+  "name": "Rocket Jumping Playlist",
+  "summary": "Maps you get through by standing on your own rockets. Ammo is infinite and so is the falling.",
+  "iwad": "doom2.wad",
+  "kind": "pve",
+  "gamemode": "cooperative",
+  "maxlives": 0,
+  "variants": [
+    {
+      "id": "extreme",
+      "name": "Rocket Jumping Extreme",
+      "cfg": "server.cfg",
+      "kind": "pve",
+      "default": true,
+      "tooltip": "Thirty-two maps, and the set most people mean.",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "skulltag_98a_announcer_v2.pk3",
+          "md5": "71f9ff36f536bcb2f5a029aa9da4a3de"
+        },
+        {
+          "name": "rjumpextreme.wad",
+          "md5": "79e6f9e64b3547bdf989a830d45b2d64"
+        }
+      ],
+      "art": "TITLEPIC"
+    },
+    {
+      "id": "voidjumps",
+      "name": "Void Jumps",
+      "cfg": "voidjumps.cfg",
+      "kind": "pve",
+      "map": "MAP01",
+      "tooltip": "One map, and a long way down from all of it.",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "voidjump1c_clean.wad",
+          "md5": "b85daa0b8279163a0d6e747e89dee919"
+        },
+        {
+          "name": "voidjump1c_patch_v3.pk3",
+          "md5": "a32e4eb67bd6a6407111d19b2fd6f89d"
+        }
+      ]
+    },
+    {
+      "id": "masterjumps",
+      "name": "Master Jumps",
+      "cfg": "masterjumps.cfg",
+      "kind": "pve",
+      "tooltip": "Eleven maps that expect you to have done the others.",
+      "files": [
+        {
+          "name": "masterjumps11.wad",
+          "md5": "51aa08eea98d3a8c7bf53dfe551714bb"
+        }
+      ]
+    },
+    {
+      "id": "sloth",
+      "name": "Rocket Jump Sloth",
+      "cfg": "sloth.cfg",
+      "kind": "pve",
+      "map": "MAP02",
+      "tooltip": "Three maps, numbered two, six and ten.",
+      "files": [
+        {
+          "name": "rjsloth12.wad",
+          "md5": "6b3fae5338a7a5ca3d3aa70bda3706ea"
+        }
+      ]
+    },
+    {
+      "id": "space",
+      "name": "Rocket Jump Space",
+      "cfg": "space.cfg",
+      "kind": "pve",
+      "map": "MAP01",
+      "tooltip": "One map, and nothing under it.",
+      "files": [
+        {
+          "name": "rjspace31.wad",
+          "md5": "31c71f80bd1db1cfc50250b5a0a8980a"
+        }
+      ]
+    },
+    {
+      "id": "rjump",
+      "name": "RJump",
+      "cfg": "rjump.cfg",
+      "kind": "pve",
+      "tooltip": "Twenty-one maps, and where most people learned this.",
+      "files": [
+        {
+          "name": "rjump2v6.wad",
+          "md5": "667086b81e24d7bd57b7c1bc156f3f2d"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Container image for a headless ForkUnderA game server (forkundera-game-server).
+#
+# Named game-server, not server, because this repo already publishes forkundera-server-registry and
+# both are servers. This one HOSTS a game; that one LISTS the servers hosting them.
+#
+# The point of the image is that a dedicated host edits nothing. It is handed a catalogue id and
+# brings up a playable, listed server on its own: resolves the entry, fetches whatever WADs it does
+# not already have, verifies them against the md5s the entry ships, and execs the engine. See
+# scripts/game-server-entrypoint.sh for that chain and features/addon-catalogue/README.md for what an
+# entry is.
+#
+# Built from THIS repo rather than consuming a release tarball, for the same reason Dockerfile.registry
+# is: engine and catalogue ship together and must not drift. A published tarball would add a second
+# release cadence to keep in step, and the failure mode of getting it wrong is a server whose clients
+# cannot join it.
+
+# ---- build ---------------------------------------------------------------------------------------
+# [rc4l] Ubuntu 22.04 in BOTH stages, deliberately. The runtime stage has to supply the same glibc the
+# binary was linked against, and pinning one image for both makes that true by construction rather
+# than by remembering to bump two lines together.
+FROM ubuntu:22.04 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# [rc4l] The full dependency list from linux_compile.sh, not a hand-trimmed server subset. SERVERONLY
+# turns off sound, GTK and GL in the BUILD, but CMake still probes for them while configuring, and a
+# probe that fails silently produces a differently-configured binary rather than an error. Build-stage
+# size is discarded anyway.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build git python3 pkg-config ca-certificates \
+        libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
+        libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
+        libopenal-dev libsndfile1-dev libmpg123-dev \
+        libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+        libcurl4-openssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+# [rc4l] linux_compile.sh is the one build path a dev, package-linux.sh and this image all take, so
+# there is nothing here that only CI exercises. It stages the binary, the pk3s, Freedoom and
+# catalogue/ into dist-linux/ForkUnderA-linux-<arch>/, which is exactly the runtime payload.
+RUN SERVERONLY=ON ./linux_compile.sh
+
+# [rc4l] Normalise the arch out of the staged directory name so the COPY below is a fixed path. The
+# alternative is a wildcard COPY, which silently succeeds with zero matches.
+#
+# The BINARY name is discovered rather than assumed, and that is not defensiveness for its own sake:
+# ZDOOM_EXE_NAME is a cache variable with SERVERONLY appending "-server" to whatever it holds, so the
+# name is a build-system decision this file has no business restating. Encoding a guess produced a
+# green compile and an image with nothing to run. Pick the one ELF file in the payload and give it a
+# fixed name from here on, failing loudly on none or several.
+RUN mkdir -p /stage && cp -r dist-linux/ForkUnderA-linux-*/. /stage/ \
+    && found=""; count=0; \
+       for f in /stage/*; do \
+         [ -f "$f" ] || continue; \
+         case "$(head -c 4 "$f" | od -An -c | tr -d ' \n')" in \
+           '177ELF') found="$f"; count=$((count + 1)) ;; \
+         esac; \
+       done; \
+       echo "staged payload:"; ls -la /stage; \
+       [ "$count" -eq 1 ] || { echo "expected exactly one executable in the payload, found ${count}" >&2; exit 1; }; \
+       echo "server binary is $(basename "$found")"; \
+       [ "$found" = /stage/forkundera-server ] || mv "$found" /stage/forkundera-server
+
+# ---- runtime -------------------------------------------------------------------------------------
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# [rc4l] curl and jq are the entrypoint's tools, not the engine's: the catalogue resolution and WAD
+# fetch happen in shell before the engine starts. Doing it out here rather than in the engine is
+# deliberate -- addon.json is data, the engine is one reader of it, and a dedicated host needs the
+# answer BEFORE there is a process to ask.
+#
+# libcurl4 is separate and is the engine's: features/net dlopens it rather than linking it, so a
+# missing libcurl is not a link error, it is a download that silently never happens.
+#
+# libsdl2 is not a mistake and not video. posix/sdl/i_main.cpp:288 calls SDL_Init(SDL_INIT_TIMER)
+# inside its own SERVER_ONLY branch, so the headless binary genuinely uses SDL as its timer source.
+# Replacing that with a plain clock is worth doing and is not this change.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl jq \
+        libstdc++6 libssl3 zlib1g libbz2-1.0 libcurl4 libopus0 libsdl2-2.0-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --create-home --home-dir /home/fua --shell /usr/sbin/nologin fua \
+    && mkdir -p /data && chown fua:fua /data
+
+# [rc4l] HOME is NOT the data volume, and that separation is load-bearing rather than tidiness.
+#
+# The engine creates ~/.config during M_LoadDefaults and exits if it cannot. Whatever is mounted at
+# /data belongs to whoever created it on the host, which for a bind mount is essentially never this
+# container's user -- so making /data the home directory produced a server that built perfectly and
+# died three lines into startup with a permission error.
+#
+# So HOME lives inside the image where it is always writable. The config it writes there is
+# deliberately ephemeral: a dedicated server's entire configuration arrives on the argv the entrypoint
+# builds, so a persisted ini could only ever disagree with it.
+ENV HOME=/home/fua
+
+COPY --from=build /stage /opt/forkundera
+
+# [rc4l] Which engine is in here, as a label rather than folklore. The image carries its own
+# game-server version in its tag, and that number says nothing about the engine inside it -- so
+# answering "is this server up to date with the release" meant correlating a publish date against a
+# changelog. `docker inspect` now answers it directly, and the image is additionally tagged
+# engine-<version> so an operator can pin to an engine rather than to a packaging revision.
+#
+# Defaulted rather than required: a local `docker build` with no build-arg still works, and says so.
+ARG ENGINE_VERSION=unknown
+LABEL net.forkundera.engine.version="${ENGINE_VERSION}"
+LABEL org.opencontainers.image.source="https://github.com/rc4l/ForkUnderA"
+LABEL org.opencontainers.image.description="Headless ForkUnderA game server. Give it a catalogue id."
+LABEL org.opencontainers.image.licenses="GPL-3.0-or-later"
+
+# [rc4l] The mirror list the entrypoint fetches from. It lives in config/ rather than in the staged
+# tarball because the tarball is the CLIENT payload and a client compiles this list into the binary
+# (tools/gen-wadlists.cmake). The container reads the same file as text so an operator can override it
+# with FUA_MIRRORS without a rebuild.
+COPY config/waddownloadsites.txt /opt/forkundera/waddownloadsites.txt
+COPY scripts/game-server-entrypoint.sh /usr/local/bin/game-server-entrypoint
+
+# [rc4l] Prove the binary can actually resolve its libraries HERE, at build time, rather than
+# discovering a missing .so when a host runs it. ldd prints "not found" and still exits 0, so the
+# grep is the test.
+RUN chmod +x /usr/local/bin/game-server-entrypoint \
+    && ldd /opt/forkundera/forkundera-server \
+    && ! ldd /opt/forkundera/forkundera-server | grep -q "not found"
+
+# [rc4l] /data holds the WAD store and any catalogue entries the operator adds. Content-addressed, so
+# several containers can share one volume and a mod downloaded for one server is instantly present for
+# all of them -- see the store layout note in the entrypoint.
+WORKDIR /data
+VOLUME ["/data"]
+
+USER fua
+
+# [rc4l] BOTH protocols on the same port, and the TCP one is the easy mistake. UDP carries the game;
+# TCP is features/wad-serve handing joiners the files this server runs. Publish only UDP and you get a
+# server that works perfectly and whose downloads fail, which is the hardest state for a host to
+# diagnose. EXPOSE is documentation only -- the compose file that runs this must use host networking,
+# because the registry lists a server at the source address of its announce packet and any NAT in the
+# way lists it somewhere nothing is listening.
+EXPOSE 10666/udp
+EXPOSE 10666/tcp
+
+ENTRYPOINT ["/usr/local/bin/game-server-entrypoint"]

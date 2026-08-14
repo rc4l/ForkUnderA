@@ -937,7 +937,7 @@ static zx::ReleasePlatform M_HostReleasePlatform()
 void M_ConfirmDownloadRelease(const char *tag)
 {
 	char url[512];
-	if (!zx::ComputeReleaseDownloadURL(url, sizeof url, "https://github.com/rc4l/ZandroX", tag,
+	if (!zx::ComputeReleaseDownloadURL(url, sizeof url, "https://github.com/rc4l/ForkUnderA", tag,
 			M_HostReleasePlatform()))
 	{
 		Printf("download: could not build a release URL for tag '%s'\n", tag != NULL ? tag : "(null)");

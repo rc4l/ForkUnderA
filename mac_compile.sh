@@ -5,7 +5,7 @@
 #
 # ZandroX macOS Build  (fork of Zandronum)
 #
-# Builds ZandroX from the Zandronum source tree and packages it as ZandroX.app.
+# Builds ZandroX from the Zandronum source tree and packages it as ForkUnderA.app.
 # macOS counterpart to build.ps1. Terminal-only, "run and go".
 #
 #   ./mac_compile.sh                 # native build with OpenAL audio (default)
@@ -34,6 +34,41 @@ ZAN_SRC_DIR="$SRC_DIR/zandronum"
 DEFAULT_ZANDRONUM_REF="${ZANDRONUM_REF:-ZA_3.2.1}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 
+# ---------------------------------------------------------------------------
+# Build status protocol
+#
+# [rc4l] So waiting on a build NEVER means grepping process lists. A watcher
+# whose own command line contains "mac_compile.sh" matches ITSELF via
+# `pgrep -f` and waits forever -- six watcher shells once sat mutually
+# detecting each other while the build they "watched" had already failed.
+# The contract, written to .build-status at the repo root:
+#     running <pid> <epoch>       a build is in flight
+#     ok <epoch>                  the last build succeeded
+#     failed <exitcode> <epoch>   the last build failed
+# tools/build-wait.sh consumes this and is the one sanctioned way to wait.
+# The pid check also makes a second concurrent build REFUSE to start instead
+# of silently racing the first one for the same build directory.
+# ---------------------------------------------------------------------------
+STATUS_FILE="$SCRIPT_ROOT/.build-status"
+if [[ -f "$STATUS_FILE" ]]; then
+    read -r prev_state prev_pid _rest < "$STATUS_FILE" || true
+    if [[ "${prev_state:-}" == "running" ]] && kill -0 "${prev_pid:-0}" 2>/dev/null; then
+        printf '\033[31mERROR: another build (pid %s) is already running -- refusing to race it.\n' "$prev_pid" >&2
+        printf 'Wait for it with tools/build-wait.sh, or kill that pid if it is stale.\033[0m\n' >&2
+        exit 2
+    fi
+fi
+echo "running $$ $(date +%s)" > "$STATUS_FILE"
+finish_status() {
+    local code=$?
+    if [[ $code -eq 0 ]]; then
+        echo "ok $(date +%s)" > "$STATUS_FILE"
+    else
+        echo "failed $code $(date +%s)" > "$STATUS_FILE"
+    fi
+}
+trap finish_status EXIT
+
 # SDL is built from source (SDL2 + sdl12-compat 1.2.68). Homebrew's sdl12-compat
 # now targets SDL3 and dlopens it by leaf name, which does not survive being
 # copied+re-signed into a self-contained .app (its dllinit errors out). The
@@ -44,8 +79,8 @@ SDL_PREFIX="$SCRIPT_ROOT/deps/sdl"          # install prefix for from-source SDL
 SDL_SRC="$SCRIPT_ROOT/deps/sdlsrc"          # scratch dir for SDL source trees
 
 # macOS .app bundle that build/ ships in addition to the loose binary.
-APP_NAME="ZandroX"
-BUNDLE_ID="org.zandrox.zandrox"
+APP_NAME="ForkUnderA"
+BUNDLE_ID="org.forkundera.forkundera"
 
 HOST_ARCH="$(uname -m)"                 # arm64 | x86_64
 WANT_SOUND="${SOUND:-1}"                # 1 = OpenAL audio (default), 0 = no audio
@@ -206,10 +241,25 @@ configure() {
         -DOPENSSL_ROOT_DIR="$ssl"
     )
 
+    # [rc4l] Dev-only in-engine MCP control bridge (features/mcp-bridge). OFF by default so release
+    # builds carry no remote-control surface. Turn on for a driveable dev build with ZX_MCP_BRIDGE=1.
+    if [[ "${ZX_MCP_BRIDGE:-0}" == "1" ]]; then
+        args+=( -DFUA_MCP_BRIDGE=ON )
+        status "MCP bridge: ENABLED (dev build -- do not ship)"
+    else
+        args+=( -DFUA_MCP_BRIDGE=OFF )
+    fi
+
     # [rc4l] ZX_WITH_SYMBOLS=1 (release CI) builds with debug info; a .dSYM is generated after the
     # build (RELEASE_WITH_DEBUG_FILE is off on Apple) and uploaded to GlitchTip so crashes symbolicate.
     if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" ]]; then
         args+=( -DCMAKE_CXX_FLAGS=-g -DCMAKE_C_FLAGS=-g )
+    fi
+
+    # [rc4l] Only a build whose symbols get published may report crashes; see ZX_OFFICIAL_BUILD in
+    # src/zandronum/CMakeLists.txt. Set by CI, never by a local build.
+    if [[ "${ZX_OFFICIAL_BUILD:-0}" == "1" ]]; then
+        args+=( -DZX_OFFICIAL_BUILD=ON )
     fi
 
     if [[ "$WANT_SOUND" == "1" ]]; then
@@ -237,18 +287,21 @@ build() {
     cmake --build "$BUILD_DIR" --config "$CONFIGURATION" --parallel "$NCPU"
 
     # [rc4l] Extract debug info into a .dSYM for symbol upload (kept out of the shipped binary).
-    if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" && -f "$BUILD_DIR/zandronum" ]]; then
+    if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" && -f "$BUILD_DIR/forkundera" ]]; then
         status "Generating dSYM..."
-        dsymutil "$BUILD_DIR/zandronum" -o "$BUILD_DIR/zandronum.dSYM" || warn "dsymutil failed"
+        dsymutil "$BUILD_DIR/forkundera" -o "$BUILD_DIR/forkundera.dSYM" || warn "dsymutil failed"
     fi
 
     # Freedoom WADs for a runnable game (matches the Windows build).
     # [rc4l] Freedoom is BSD-3-clause: clause 2 requires its copyright notice to travel with
     # any binary distribution, so the license ships beside the WAD rather than just the WAD.
-    if [[ -f "$TOOLS_DIR/freedoom/freedoom2.wad" ]]; then
-        cp -n "$TOOLS_DIR/freedoom/"*.wad "$BUILD_DIR/" 2>/dev/null || true
-        cp -f "$TOOLS_DIR/freedoom/License.txt" "$BUILD_DIR/FREEDOOM-LICENSE.txt" 2>/dev/null || true
-    fi
+    # Both phases: Phase 1 stands in for doom.wad and Phase 2 for doom2.wad, and the wildcard copy
+    # would happily ship half of them.
+    for wad in freedoom1.wad freedoom2.wad; do
+        [[ -f "$TOOLS_DIR/freedoom/$wad" ]] || { echo "ERROR: tools/freedoom/$wad missing -- the app would ship without a game to fall back on" >&2; exit 1; }
+    done
+    cp -n "$TOOLS_DIR/freedoom/"*.wad "$BUILD_DIR/" 2>/dev/null || true
+    cp -f "$TOOLS_DIR/freedoom/License.txt" "$BUILD_DIR/FREEDOOM-LICENSE.txt" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -327,22 +380,27 @@ make_app_bundle() {
     mkdir -p "$macos" "$resources"
 
     # Binary + game data live together so progdir (= MacOS dir) finds the data.
-    cp "$BUILD_DIR/zandronum" "$macos/zandronum"
-    chmod u+w "$macos/zandronum"
+    cp "$BUILD_DIR/forkundera" "$macos/forkundera"
+    chmod u+w "$macos/forkundera"
     local f
     for f in "$BUILD_DIR"/*.pk3 "$BUILD_DIR"/*.wad; do
         [[ -e "$f" ]] && cp "$f" "$macos/"
     done
-    # [rc4l] Fail closed: the pk3 copy above is a guarded glob, so a build that never
-    # produced zandronum.pk3 would silently ship a bundle the engine can't start
-    # ("Cannot find zandronum.pk3"). Assert it landed rather than hand off a dud.
-    [[ -f "$macos/zandronum.pk3" ]] || die "zandronum.pk3 missing from $BUILD_DIR -- the pk3 target didn't run. Build the 'pk3' target or use mac_build_run.sh; refusing to ship a bundle the engine can't start."
+    # [rc4l] Fail closed: the pk3 copy above is a guarded glob, so a build that never produced the
+    # core pk3 would silently ship a bundle the engine can't start. Its name carries this build's
+    # release key, so match the pattern rather than a literal. See features/core-pk3.
+    compgen -G "$macos/fua_core_*.pk3" > /dev/null || die "no fua_core_*.pk3 in $BUILD_DIR -- the pk3 target didn't run. Build the 'pk3' target or use mac_build_run.sh; refusing to ship a bundle the engine can't start."
     # [rc4l] Freedoom's BSD-3-clause license must travel with the WAD it covers, and GPL-3.0
     # sections 4-6 require the license text plus a pointer to the corresponding source; a
     # binary without them is not compliant. Missing files must not abort the build.
     cp -f "$BUILD_DIR/FREEDOOM-LICENSE.txt" "$macos/" 2>/dev/null || true
     cp -f "$SCRIPT_ROOT/LICENSE.txt" "$macos/" 2>/dev/null || true
     cp -f "$SCRIPT_ROOT/THIRD-PARTY-NOTICES.txt" "$macos/" 2>/dev/null || true
+
+    # [rc4l] The addon catalogue, into MacOS/ with the rest of the game data so progdir finds it.
+    # Required, not best-effort: without it the HOST tab has nothing to offer.
+    [[ -d "$SCRIPT_ROOT/catalogue" ]] || die "catalogue/ missing -- the HOST tab would have nothing to offer"
+    cp -R "$SCRIPT_ROOT/catalogue" "$macos/"
 
     # Stage and re-point dylibs. The recursive pass follows the link graph (OpenAL,
     # sndfile, mpg123, opus, sdl12-compat's libSDL-1.2, GLEW, openssl all resolve
@@ -358,7 +416,7 @@ make_app_bundle() {
     else
         warn "libSDL2-2.0.0.dylib not found in $SDL_PREFIX; run build_sdl_from_source"
     fi
-    _bundle_deps "$macos/zandronum" "$macos" "${search[@]}"
+    _bundle_deps "$macos/forkundera" "$macos" "${search[@]}"
 
     local icon; icon="$(make_icon "$resources")"
 
@@ -372,7 +430,7 @@ make_app_bundle() {
 	<key>CFBundleName</key><string>$APP_NAME</string>
 	<key>CFBundleDisplayName</key><string>$APP_NAME</string>
 	<key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-	<key>CFBundleExecutable</key><string>zandronum</string>
+	<key>CFBundleExecutable</key><string>forkundera</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>$ver</string>
 	<key>CFBundleVersion</key><string>$ver</string>
@@ -399,13 +457,13 @@ PLIST
 
 show_results() {
     status "Build results:"
-    local bin="$BUILD_DIR/zandronum"
+    local bin="$BUILD_DIR/forkundera"
     if [[ -x "$bin" ]]; then
         echo "  binary: $bin"
         lipo -info "$bin" | sed 's/^/  /'
         ls -lh "$bin" | awk '{print "  size: "$5}'
     else
-        warn "zandronum binary not found in $BUILD_DIR"
+        warn "forkundera binary not found in $BUILD_DIR"
     fi
     local app="$BUILD_DIR/$APP_NAME.app"
     if [[ -d "$app" ]]; then

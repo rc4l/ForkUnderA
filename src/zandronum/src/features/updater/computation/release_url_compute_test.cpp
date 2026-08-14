@@ -25,15 +25,15 @@ TEST(ReleaseDownloadURL, PerPlatformAssetNames)
 
 	ASSERT_TRUE(ComputeReleaseDownloadURL(buf, sizeof buf, kRepo, "v0.1.19", ReleasePlatform::MacOS));
 	EXPECT_STREQ(buf,
-		"https://github.com/rc4l/ZandroX/releases/download/v0.1.19/ZandroX-v0.1.19-macos-arm64.zip");
+		"https://github.com/rc4l/ZandroX/releases/download/v0.1.19/ForkUnderA-v0.1.19-macos-arm64.zip");
 
 	ASSERT_TRUE(ComputeReleaseDownloadURL(buf, sizeof buf, kRepo, "v0.1.19", ReleasePlatform::Windows));
 	EXPECT_STREQ(buf,
-		"https://github.com/rc4l/ZandroX/releases/download/v0.1.19/ZandroX-v0.1.19-windows-x64.zip");
+		"https://github.com/rc4l/ZandroX/releases/download/v0.1.19/ForkUnderA-v0.1.19-windows-x64.zip");
 
 	ASSERT_TRUE(ComputeReleaseDownloadURL(buf, sizeof buf, kRepo, "v0.1.19", ReleasePlatform::Linux));
 	EXPECT_STREQ(buf,
-		"https://github.com/rc4l/ZandroX/releases/download/v0.1.19/ZandroX-v0.1.19-linux-x86_64.tar.gz");
+		"https://github.com/rc4l/ZandroX/releases/download/v0.1.19/ForkUnderA-v0.1.19-linux-x86_64.tar.gz");
 }
 
 TEST(ReleaseDownloadURL, UnknownPlatformFallsBackToReleasePage)

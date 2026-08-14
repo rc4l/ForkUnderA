@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 
-name: Release ZandroX
+name: Release ForkUnderA
 
 on:
   workflow_dispatch: # Trigger manually from the Actions tab
@@ -117,13 +117,8 @@ jobs:
     if: github.ref_type == 'tag' || (inputs.release && github.ref_name == github.event.repository.default_branch)
     uses: ./.github/workflows/_test.yml
 
-  # [rc4l] clang-tidy, split out of _test.yml so PR builds stop queueing behind it. Same
-  # stable-path condition as test — it gated stable releases when it lived inside that job,
-  # and it still does; running in parallel from t=0 it finishes long before the builds, so
-  # this preserves the gate at zero added wall time.
-  tidy:
-    if: github.ref_type == 'tag' || (inputs.release && github.ref_name == github.event.repository.default_branch)
-    uses: ./.github/workflows/_tidy.yml
+  # [rc4l] A clang-tidy job here used to gate publish, holding it ~13 minutes after every other job
+  # was green. Deleted in 50d64db.
 
   # [rc4l] The three platform builds live in _build.yml so test-and-build.yml runs the same ones on PRs.
   build:
@@ -140,12 +135,12 @@ jobs:
   # experimental builds — without it, a skipped dependency would skip publish too. The build
   # must always have succeeded; the suite must have passed only on the stable path.
   publish:
-    needs: [setup, test, tidy, build]
+    needs: [setup, test, build]
     if: >-
       always()
       && needs.setup.outputs.publish == 'true'
       && needs.build.result == 'success'
-      && (needs.setup.outputs.channel == 'experimental' || (needs.test.result == 'success' && needs.tidy.result == 'success'))
+      && (needs.setup.outputs.channel == 'experimental' || needs.test.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -177,7 +172,7 @@ jobs:
 
           # [rc4l] The one piece of fine print worth keeping: the app is unsigned, so without this
           # macOS silently blocks it and users think the build is broken. Tracked in the signing issue.
-          macos='**macOS:** the app is unsigned, so Gatekeeper blocks the first launch. After unzipping, run `xattr -dr com.apple.quarantine ZandroX.app`.'
+          macos='**macOS:** the app is unsigned, so Gatekeeper blocks the first launch. After unzipping, run `xattr -dr com.apple.quarantine ForkUnderA.app`.'
 
           if [ "$CHANNEL" = "experimental" ]; then
             # [rc4l] Each commit keeps its own pre-release, so this only clears a release for the
@@ -211,7 +206,7 @@ jobs:
 
             # [rc4l] gh creates the tag at this commit when it does not already exist.
             gh release create "$VERSION" \
-              --title "ZandroX $VERSION" \
+              --title "ForkUnderA $VERSION" \
               --notes-file notes.md \
               assets/*
           fi

@@ -236,7 +236,7 @@ e49e926bd95a95f963859878fbb2d2fdc074b60d	2014-05-13T19:26:51Z	- added option to 
 24886b6734523df3c5b8847afb3465465299f839	2014-05-13T21:16:13Z	- removed the last static character arrays from FLevelLocals.	adapted	5982250 adapted: FString level.MapName/NextMap/NextSecretMap; wire sites made explicit (.GetChars) and protocol-snapshot verified unchanged; FString-through-varargs fixed at every Printf/Format site	19f9e2e
 a375454474266fd753863ff09271947d20dfb4d1	2014-05-13T22:52:16Z	- removed 8 character limit for map names.	adapted	7ac2cc8 adapted: level_info_t::MapName FString; Zandronum's strcpy/strncpy EndGame+EndTitle paths became assignments and the mapname[7] index is guarded	19f9e2e
 fdfcb728a970113548f6aafb425fc77eacecdfad	2014-05-14T05:50:39Z	- make it easier to spot patch definition errors in console log	ported	2ac01a5 ported: clearer multipatch patch-definition errors	19f9e2e
-8c052818b7acdc428a590a0c0cd8922d5c7aeb94	2014-05-14T08:27:40Z	- fixed: long texture name lookup did not work with TEXMAN_TryAny.	ported	83ea1cb inherited: added lines already present in our tree (1/1); pre-dates our ZDoom 2.8pre base 458e1b1	zandronum-base
+8c052818b7acdc428a590a0c0cd8922d5c7aeb94	2014-05-14T08:27:40Z	- fixed: long texture name lookup did not work with TEXMAN_TryAny.	ported	2457924 corrects an earlier false positive: the triage saw "added lines already present in our tree (1/1)" and called it inherited, but the diff MOVES `return FTextureID(firstfound);` inside the `if (firstfound != -1)` block -- an added-lines check cannot see a move, and our tree still had the pre-fix shape	2457924
 47a9dab56d74fe021f454bccec91e57715f6db94	2014-05-14T10:16:33Z	- allow setting sector planes' plane equations directly from UDMF.	ported	ported: UDMF floor/ceilingplane_a..d parsed into sector_t planes; defaults restored unless all four are present	6a6df7d
 388f09f786d5ab3927d3bb6d76895b043a18bdb6	2014-05-14T10:54:03Z	- fixed: In Heretic corpses do not get crunched to gibs, they just get their size reduced to 0. Handled by a new gameinfo flag. This also gets set for Chex quest which has the gib sprite replaced by something different. Using a Crush state will override this global flag.	ported	ported: C++ half already inherited (mis-cited as a1cc548af); this lands the missing mapinfo half. chex.txt written as 'true' per 51ed68dc7, so the end state matches upstream exactly	15f955e
 51ed68dc7243cf00c285526a8009a2fa2d4c427d	2014-05-14T11:02:04Z	- forgot to save this...	ported	ported: folded into the 388f09f78 completion -- chex.txt written as dontcrunchcorpses = true, never as the '1' this commit corrects	15f955e
@@ -1629,7 +1629,7 @@ d166211ce073cbbcfc96de87edfdc7d24daccefc	2015-04-16T17:55:46Z	- reverted changes
 4432ce5686a614e6ddeaaad5ff03d149d6299a0b	2015-04-16T17:56:19Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 a602e47261d7f814d34f4b6daeb299922a63711c	2015-04-16T17:57:18Z	- commit of the correct version of p_3dfloors.cpp	pending		/
 df6ffe64180e85d5ca1faf73ae2290a0b1da737b	2015-04-16T20:50:26Z	- adjustments for recent ZDoom changes.	adapted	66abdae	66abdae
-9b6756114b89c37d607705713bd7705cf08c8a20	2015-04-16T22:45:57Z	Scale mouse coordinates based on window size	pending		/
+9b6756114b89c37d607705713bd7705cf08c8a20	2015-04-16T22:45:57Z	Scale mouse coordinates based on window size	adapted	hook only. Upstream reads mOutputLetterbox off a DFrameBuffer we do not have, and their present letterboxes where ours fills the client, so the arithmetic is ours (features/video-scale). Windows only: the SDL path already scaled.	3d546dd8
 1fa1e26cf9c91f6eb41f967e76799323541080ff	2015-04-17T04:24:33Z	- SDL backend could use the new ScaleCoordsFromWindow since it does similarly for fullscreen.	pending		/
 6e28963141cf02da2ca108b0104b65fc90b649ff	2015-04-17T17:40:45Z	- added a sanity check to GL nodes loader for a potential crash.	pending		/
 f57e08102cc32c510aad3cd3a8d22568436ed5aa	2015-04-17T17:41:08Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
@@ -2082,7 +2082,7 @@ f4a60f29f354e18d73f61dd53ca9eeee86a13d8e	2015-11-30T08:21:45Z	- added missing sc
 41f91148a104d5afda61dddad773ea62b54b51a3	2015-12-02T08:31:27Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 81f521fe562bd5e562ce08bf2dce33007dd6d9c6	2015-12-02T21:31:27Z	- fixed: Texture precaching from MAPINFO was broken	pending		/
 455d8d9730c5cc3bbfa4b8d7f8fab3fca600a377	2015-12-02T21:33:10Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-f90ce1308e0764ea8c8b3c9f3ca700942b592062	2015-12-03T03:40:47Z	Fix lost focus loosing network data	pending		/
+f90ce1308e0764ea8c8b3c9f3ca700942b592062	2015-12-03T03:40:47Z	Fix lost focus loosing network data	skip	skip: gates NetUpdate/G_Ticker and the delay counters on pauseext, all inside upstream's P2P tic transport (maketic/ticdup/BACKUPTICS) that Zandronum replaced with its client/server model. Same reason as 16e0f79fd, ad33afb8c and cbb066f1f; the background pause it feeds is ours via the negative paused value, see 74544df	/
 542a1089145f426ac6a5af74961ec3d98ec036dc	2015-12-04T23:26:39Z	3D floor support for check switch range	pending		/
 d8cacbb8bbc798185111ed12794b0871ec3c41a9	2015-12-05T08:17:35Z	Merge pull request #436 from Gaerzi/master	pending		/
 ad0e71942d15dc79f81e9c3d48ea78a9d8e89534	2015-12-06T08:59:02Z	- added GetAspectRatio function to ACS. - added a sixth parameter for SetHUDClipRect so that the forced aspect ratio fudging this function performs can be disabled.	pending		/
@@ -3182,7 +3182,7 @@ a605913f425ebe6790b859648f1c65a8c4773001	2016-03-09T11:49:49Z	- fixed: When pass
 f8ebfb541e4f56ca978ed1f22152fc3dad601c71	2016-03-10T19:45:45Z	- use typedefs for TVector<double> etc.	pending		/
 9843f16cc09328d2f871bb484cc6ef65dda8893a	2016-03-10T21:36:28Z	- some rework of vectors.h, mostly to remove all those silenced double->float conversions.	pending		/
 7edd5e2dace007411cf534a20141ee0f6a2c4417	2016-03-11T12:43:17Z	renamed 'exp' in xlat_parser.y to 'expr' because this gets in the way of searching for calls of the exp(x) function.	pending		/
-161d03231a21fc3c310447395ee40d3ace518308	2016-03-11T14:45:47Z	- added custom math routines for reliability.	pending		/
+161d03231a21fc3c310447395ee40d3ace518308	2016-03-11T14:45:47Z	- added custom math routines for reliability.	adapted	adapted the node-builder slice: vendored Cephes atan (math/atan.c+deps) and switched FNodeBuilder::PointToAngle to c_atan2 for bit-exact cross-platform GL nodes (fixes macOS floor/wall holes, doom2 MAP22/MAP06); the engine-wide g_* math conversion in the rest of the commit is not taken	f4432215415fb4d4ca97d770cb0aecf9daec47b0
 346fae82c7d263ac9214add32193b4cd5d92bc50	2016-03-12T09:54:14Z	- fixed beta Lost Soul's states.	pending		/
 c7c2beee2c766d6933e47564a2f1528df31ca39d	2016-03-12T11:11:46Z	Fixed A_Blast parameter type and default values	pending		/
 4116719a5a54c56ed6772efa96df45be85d3243c	2016-03-12T11:34:43Z	- fixed: P_CheckSplash shifted the fixed_t distance another 16 bits to the left.	pending		/
@@ -9022,7 +9022,7 @@ ec42e30614997c42604080f81599c947cf138a43	2017-08-19T08:18:52Z	Fixed compilation 
 dae83f989be4d05f8b248f87b779867d76e96eeb	2017-08-19T09:58:04Z	- fixed: changing 'uiscale' did not always update the screen size properly.	pending		/
 45d5eac6ada539f7e941cf90f806570cdb4fa9e0	2017-08-19T10:03:26Z	- fix last commit - somehow it pushed an old version of the fix (yet again?...) - this is the proper fix.	pending		/
 2f5535dbca9b0198170a5804fc02d8208156a6c9	2017-08-19T12:32:34Z	- Fix HOM for Line_Horizon specials when used with a skybox	pending		/
-cdff5bdc08a2f4eac784f3984b18cd788e16be42	2017-08-19T17:30:48Z	- rewrite of the IWAD loading mechanism.	pending		/
+cdff5bdc08a2f4eac784f3984b18cd788e16be42	2017-08-19T17:30:48Z	- rewrite of the IWAD loading mechanism.	pending	PARTIAL, stays pending. Took CheckIWADInfo only (a file declares itself via an embedded IWADINFO, and that beats lump matching); adapted onto FResourceFile since this tree has no FileSystem. The rest of the commit rebuilds IWAD discovery around that FileSystem and is NOT taken. Detection itself needed nothing: our MustContain rule already matches upstream.	/
 f3d31e055f83c8b3b25da20cd2facef518362d86	2017-08-19T18:13:12Z	- print the version at the start of the log.	pending		/
 b8c0e78c9187b66adf75c37e89e50320347886e1	2017-08-19T21:32:10Z	- fix linux compile	pending		/
 b7d26b3fa129e2b3df8cd5c4ad57b6c3f345c1ae	2017-08-20T02:10:45Z	- fixed Linux IWAD search thanks to a suggestion by Chris on the forum. Moved the search macros to i_system.h for both platforms. Neither are compatible with the other. This can be improved upon later, but for now, at least the major compile issue is fixed.	pending		/
@@ -9419,7 +9419,7 @@ a11e9ca4dc44c6b767490119afa7b0393a398606	2017-12-24T08:33:29Z	Apply compatibilit
 563a80ff839b879dcdfbe4dcc6f16f3e68243f25	2017-12-24T08:37:22Z	Added compatibility settings for Hanging Gardens	pending		/
 aacdc3546caa90adf9acf59fe07393d85d428003	2017-12-24T09:00:02Z	Fixed take ammo cheat	pending		/
 d10304ea4e4ab1c2db5d038917e1dd724b7030a6	2017-12-24T12:48:11Z	Merge commit 'refs/pull/355/head' of https://github.com/coelckers/gzdoom	pending		/
-000037dbf69c2c1580f3c9bb8a9771bf18bc7ae8	2017-12-24T23:01:45Z	- implemented 'i_soundinbackground' to continue playing sounds and music while in the background. - OpenGL rendering continues now even when losing focus while in windowed mode.	pending		/
+000037dbf69c2c1580f3c9bb8a9771bf18bc7ae8	2017-12-24T23:01:45Z	- implemented 'i_soundinbackground' to continue playing sounds and music while in the background. - OpenGL rendering continues now even when losing focus while in windowed mode.	adapted	the i_soundinbackground cvar; the S_SetSoundPaused around it is Zandronum's and upstream's pauseext is our negative paused	74544df
 205c64d4b179a6f612750049f8095dc19a1befa7	2017-12-25T01:48:51Z	- prevent level from exiting if no deathmatch starts are available in multiplayer	pending		/
 35dbe965e1c611fae087573986ea3e6dd188b418	2017-12-25T10:36:37Z	Fixed tics to seconds conversion, now in ZScript	pending		/
 8fce9d9d2d3ff9e83eadbd24dbc7ba02e000a746	2017-12-25T10:50:08Z	- added menu option for 'i_soundinbackground'	pending		/
@@ -15681,7 +15681,7 @@ a1d0d272789158b1729aaf5e939ea0f346d8f59a	2022-01-11T12:01:31Z	Make GC::CheckTime
 79c9b979d28dd263a75174b5b146af05fba5157e	2022-01-11T16:19:16Z	- backend update from Raze.	pending		/
 c3fc4e347e95c6ccb06da01d26c5f112228dfae9	2022-01-15T15:01:19Z	- added Visual Studio 2022 target to continuous integration	pending		/
 57112742fe7d4bf75ce789bdfe12d77ecdacd213	2022-01-15T17:57:38Z	Merge branch 'master' of https://github.com/coelckers/gzdoom into lightmaps2	pending		/
-12ed24d066a819a128a54e2359fd0e2d48f641fe	2022-01-16T01:17:11Z	- separate `i_pauseinbackground` and `i_soundinbackground` - they probably should ultimately be moved out of the sound code	pending		/
+12ed24d066a819a128a54e2359fd0e2d48f641fe	2022-01-16T01:17:11Z	- separate `i_pauseinbackground` and `i_soundinbackground` - they probably should ultimately be moved out of the sound code	adapted	the split itself, ported at the commit rather than from HEAD; pauseext is computed not stored because 16e0f79fd is skip, the mark stays in paused and is written after the audio work, and !netgame becomes NETSTATE_SINGLE. Removes cl_soundwhennotactive and its three per-platform definitions	74544df
 84458ddb9f011505bf8135e34553ad4ebb38757d	2022-01-16T23:07:43Z	- redid postprocessing shader interface to be free of the player dependency.	pending		/
 e6c6471e2f3a7e68051f3be3915c23f049f5ad2f	2022-01-16T23:32:54Z	- fixed logic error with depth bias state in hardware renderer.	pending		/
 97859fd60872324609e32316c54bcc451d22d484	2022-01-18T07:06:29Z	fix MBF21 GetSoundArg off-by-one: sound indices are 1-indexed in args because Killough	pending		/
@@ -16018,7 +16018,7 @@ c7798d5503a65727f9465e08ee12aabc0d793bd3	2022-06-06T22:11:56Z	- use a unique_ptr
 eb56eb380e5b35c9e1d4ba5323a4ec6a1dc0ae8c	2022-06-08T14:42:32Z	- reinstated con_scale.	pending		/
 86a5545fa8aaf96795465b28080558975947e6d2	2022-06-09T06:36:11Z	- fixed division by zero with unvalidated ticdup values.	pending		/
 013f2003e8d6967c9e0684d87103794b1b382bfc	2022-06-09T07:16:58Z	Revert "-got rid of shared_ptr in postprocessing system"	pending		/
-0344462684c8234223fbce5fd366f9ad5b4a1f20	2022-06-09T08:11:44Z	- set `i_pauseinbackground` to match `!(i_soundinbackground)` for all configs before this commit.	pending		/
+0344462684c8234223fbce5fd366f9ad5b4a1f20	2022-06-09T08:11:44Z	- set `i_pauseinbackground` to match `!(i_soundinbackground)` for all configs before this commit.	skip	config migration for upstream's own pre-223 i_soundinbackground users; ZandroX never shipped that cvar and takes upstream's defaults deliberately, so there is nothing to migrate	/
 f1dec835d7420b52881d3cbf415b39d2478f523f	2022-06-09T08:13:55Z	- add `i_pauseinbackground` to the menu. note: please pull the language file for this	pending		/
 d862bf4347bb79eafeefe7079a8c2dcb85638fb7	2022-06-12T15:26:18Z	- added FailSound property to PuzzleItem	pending		/
 f9bf6f931129f1614b3837e09c77773815c1e911	2022-06-12T15:57:44Z	Implement FVector ZScript for Actor Scale	pending		/
@@ -17294,7 +17294,7 @@ a0f52411d3e1a1396957455b4837799d4b32fbe0	2024-01-10T16:09:50Z	Add tabs to the la
 53c60027466e7d4ba073fa4830cfe863d4e63eb3	2024-01-11T15:41:21Z	attempt to fix compilation on macOS	pending		/
 63f1326e621495173cd80a6082cafb3028543ec1	2024-01-11T15:52:12Z	Add support for changing the tab labels	pending		/
 04e6eba9e05162534761460b3bb1d3ebd186fe87	2024-01-11T16:50:26Z	activate localization of tabs and text update.	pending		/
-d789676b26da43d1a67acdaadb498c6e79e52241	2024-01-12T15:53:56Z	Fixed music unpausing when alt-tabbing back.	pending		/
+d789676b26da43d1a67acdaadb498c6e79e52241	2024-01-12T15:53:56Z	Fixed music unpausing when alt-tabbing back.	adapted	stops a pause command being unpaused by alt-tabbing back; our resume guard is paused <= 0 rather than !paused because the background mark occupies the negative range	74544df
 98e6330eaac751b0cf648f13f18c7ee0383e335c	2024-01-16T15:27:08Z	allow modeldef flags to be overriden	pending		/
 b708e16193dceccd25a25fe4233edafa8f26e17e	2024-01-16T15:27:08Z	fix serialization	pending		/
 79d9217340add28af0c9a7c6565b8bd1be92bff9	2024-01-16T15:27:08Z	Add action versions of the animation/model methods	pending		/
@@ -17559,7 +17559,7 @@ d697eafbe16d8f76e01759ac033451386dfa3bb8	2024-07-29T07:10:50Z	Fixed subnormal fl
 bd2027ee4b44468fc78ff9674e250ca89f15dd8e	2024-08-09T17:31:48Z	Support the new Doom + Doom II update	pending		/
 01e7859e1f5224d0c9abbc179d2c87bee060aa3f	2024-08-09T17:32:35Z	fix MBF21 A_RadiusDamage crash/broken 'distance' arg	pending		/
 1655f7e3b747ca37857f907631177061bd753799	2024-08-09T21:04:51Z	Allow XInput joysticks to work while the game is unfocused	pending		/
-b044baf850eeb99f06835a223804e1d73994dc04	2024-08-09T21:04:51Z	don't change priority to idle if i_pauseinbackground is false	pending		/
+b044baf850eeb99f06835a223804e1d73994dc04	2024-08-09T21:04:51Z	don't change priority to idle if i_pauseinbackground is false	ported	the i_pauseinbackground guard on IDLE_PRIORITY_CLASS, faithful	74544df
 95b264bdb6158c8e62ec2ded6c1e5ee7c0719c6c	2024-08-11T14:04:40Z	Isometric Mode and Robin (#2618)	pending		/
 8043370ef1868f55bf03b2123b95f691dc619f16	2024-08-11T18:34:53Z	Export PlayDiveOrSurfaceSounds to ZScript and made it virtual for mods to customize the diving and surfacing sounds	pending		/
 95f31cdd7e6f1821c810952b01a1c06ff782cb2e	2024-08-15T06:43:46Z	mingw64 requires including cstdint	pending		/
@@ -17856,7 +17856,7 @@ f2ecdc5d96cf659f39eb94878acabaf0004867e7	2025-02-08T18:05:16Z	fix id24 weapons t
 bfd9b6f720b61bb44522181453c276726d5b7ac7	2025-02-08T19:49:00Z	add static function to convert ints to names	pending		/
 7eaab2691bde0e5d19b48c53171570944b76155c	2025-02-08T20:55:51Z	fix out-of-bounds array access (again)	pending		/
 e12ef8074528f7e118961fcb55f55062b47e4657	2025-02-08T23:44:02Z	Add VKDoom's lm_ao and lm_bounce to the UDMF specs	pending		/
-047e1e8b74923b11da12643730e3644d8c707ca9	2025-02-09T02:42:39Z	- remove priority changing code entirely - replace with `vid_lowerinbackground` which activates FPS capping in background	pending		/
+047e1e8b74923b11da12643730e3644d8c707ca9	2025-02-09T02:42:39Z	- remove priority changing code entirely - replace with `vid_lowerinbackground` which activates FPS capping in background	pending	LEFT: removes the priority juggling outright and replaces it with vid_lowerinbackground, which needs an AppActive on all three backends; ours is win32-only. The priority code it deletes is still here, carrying b044baf's guard	/
 567a180d2b00c7b120d8572650682f229ca123c1	2025-02-11T23:49:39Z	Added is3DFloor parameter to SpecialBounceHit	pending		/
 a7d4d409a0a684e7d74424777f6b7f25fd61888b	2025-02-14T08:49:56Z	Added PlayerRespawning event	pending		/
 fdd2a90545c8f11fadf8a4b9bf751daaa157f51c	2025-02-14T18:43:58Z	Fixed ammo and backpack with local items on	pending		/
@@ -18548,7 +18548,7 @@ ecf42b81699571ee4bca52c66f1b5441e5346e19	2025-11-05T17:14:36Z	Updated Linux path
 078949a9b0ddee73ea2be8728ea6e15b8ee35dd0	2025-11-05T17:14:36Z	gameconfigfile paths now use XDG vars when available	pending		/
 295972f5028a5cb734c94c951d4538d3c644891e	2025-11-05T20:25:31Z	No longer silently ignore iwad not found	pending		/
 b0a44e998c919743d4578f7d62e7b1e3dc2c33f8	2025-11-05T20:25:31Z	Added i_exit_on_not_found setting to launcher	pending		/
-16838bfa660f0ecc6a35c807166279171d730602	2025-11-05T20:27:47Z	Fixed audio not muting properly when unfocused	pending		/
+16838bfa660f0ecc6a35c807166279171d730602	2025-11-05T20:27:47Z	Fixed audio not muting properly when unfocused	adapted	mute rather than pause the device unless the game is genuinely frozen, so a world left running in the background does not burst on return; keyed on our computed pauseext	74544df
 bca5c31ac4ab384b58c04094480b293f50df7aed	2025-11-05T20:29:58Z	Fix string OOB access in CheckWarpTransMap	pending		/
 fcba21aebdbe0ef32ed79a9dd3d7426f9fe8a927	2025-11-05T20:31:07Z	Fixed incorrect stat velocity reading	pending		/
 65c25c4e53eacaf9844a67a040dbfc561dacf136	2025-11-05T20:31:07Z	Added support for reading multiple player velocities	pending		/

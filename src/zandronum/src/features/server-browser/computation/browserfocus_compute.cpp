@@ -6,16 +6,53 @@
 namespace zx
 {
 
-NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastTab )
+namespace
+{
+
+// The region directly above the list: the sub-tabs when the selected tab has them, the tabs when it
+// does not. Everything that leaves upwards asks this rather than naming a zone, so a tab without a
+// sub-row does not strand focus on a row that is not drawn.
+BrowserFocus AboveTheList( const NavWhere &where )
+{
+	return ( where.subCount > 0 ) ? BrowserFocus::SubTabs : BrowserFocus::Tabs;
+}
+
+// Down into the list, or stay put when there is nothing to land on.
+BrowserFocus IntoTheList( const NavWhere &where, BrowserFocus stay )
+{
+	return where.hasRows ? BrowserFocus::Rows : stay;
+}
+
+// [rc4l] Down from the row above the list: into the list, or PAST it to the refresh button.
+//
+// An empty list has no rows to enter and no action button either -- that button belongs to a
+// selected server -- so the only way into the footer was through a zone that does not exist. Down
+// simply stopped, and the one control that fixes an empty list could not be reached in exactly the
+// situation it exists for. The first fix gave refresh an entrance from the action button and missed
+// this, because a test can walk the edge from a zone it was handed without noticing nothing can
+// arrive there.
+//
+// So when the list is empty, down carries on to the next thing that IS on screen.
+BrowserFocus DownFromAboveTheList( const NavWhere &where )
+{
+	return where.hasRows ? BrowserFocus::Rows : BrowserFocus::Refresh;
+}
+
+} // namespace
+
+NavResult ComputeNav( BrowserFocus focus, NavKey key, const NavWhere &where )
 {
 	NavResult out;
 	out.focus = focus;
-	out.tabStep = 0;
-	out.rowStep = 0;
 
-	// A focus that points at rows which are no longer there answers as the tabs, which is the one
-	// region that is always occupiable.
-	if ( !hasRows && ( focus == BrowserFocus::Rows ))
+	// A focus that points at rows which are no longer there answers as the region above them, which
+	// is always occupiable.
+	if ( !where.hasRows && ( focus == BrowserFocus::Rows ))
+		out.focus = focus = AboveTheList( where );
+
+	// Same for a sub-tab row belonging to a tab that has none: switching tabs can pull it out from
+	// under the focus.
+	if (( where.subCount <= 0 ) && ( focus == BrowserFocus::SubTabs ))
 		out.focus = focus = BrowserFocus::Tabs;
 
 	switch ( focus )
@@ -23,47 +60,81 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastT
 	case BrowserFocus::Tabs:
 		if ( key == NavKey::Left )
 		{
-			// The start of the row is the start of the row. Only a tab that has something to its left
-			// steps left; the first one stays put rather than wrapping to the far end, for the same
-			// reason Right does not wrap.
-			out.tabStep = onLastTab ? -1 : 0;
+			// The start of the row is the start of the row. A tab with something to its left steps
+			// left; the first one stays put rather than wrapping to the far end, for the same reason
+			// Right does not wrap.
+			out.tabStep = ( where.tabIndex > 0 ) ? -1 : 0;
 		}
 		else if ( key == NavKey::Right )
 		{
-			// Off the end of the tabs is the search box, not a wrap back to the first one -- they are
-			// stops on the same row, and looping among the tabs would leave the box unreachable.
-			if ( onLastTab )
-				out.focus = BrowserFocus::Search;
-			else
-				out.tabStep = 1;
+			// Nothing sits past the last tab now that the search box has moved down to the row it
+			// filters, so the end of the row is simply the end of the row.
+			out.tabStep = ( where.tabIndex < where.tabCount - 1 ) ? 1 : 0;
 		}
-		else if (( key == NavKey::Down ) && hasRows )
-			out.focus = BrowserFocus::Rows;
+		else if ( key == NavKey::Down )
+		{
+			// Into the sub-tabs when this tab has them, otherwise straight past to the list. A tab
+			// with neither keeps the focus, because the caller owns what down means there: PLAY hands
+			// it to the hosting form.
+			if ( where.subCount > 0 )
+				out.focus = BrowserFocus::SubTabs;
+			else
+				out.focus = IntoTheList( where, BrowserFocus::Tabs );
+		}
+		break;
+
+	case BrowserFocus::SubTabs:
+		if ( key == NavKey::Left )
+		{
+			out.subStep = ( where.subIndex > 0 ) ? -1 : 0;
+		}
+		else if ( key == NavKey::Right )
+		{
+			// Off the end of the sub-tabs is the search box, not a wrap back to the first one. They
+			// are stops on the same row, and looping among the sub-tabs would leave the box
+			// unreachable, which is the bug the old single row had before the search box existed.
+			if ( where.subIndex < where.subCount - 1 )
+				out.subStep = 1;
+			else
+				out.focus = BrowserFocus::Search;
+		}
+		else if ( key == NavKey::Up )
+			out.focus = BrowserFocus::Tabs;
+		else if ( key == NavKey::Down )
+			out.focus = DownFromAboveTheList( where );
 		break;
 
 	case BrowserFocus::Search:
-		// [rc4l] LEFT AND RIGHT ARE NOT NAVIGATION HERE. They belong to the caret -- a text field that
+		// [rc4l] LEFT AND RIGHT ARE NOT NAVIGATION HERE. They belong to the caret: a text field that
 		// jumped to another control when you tried to move through what you had typed would be
 		// unusable, and it is the one thing a focused field must claim.
 		//
 		// Up and down still leave, because this is a single line: there is nowhere within the field
-		// for them to go, so they mean what they mean everywhere else on the screen. Down lands in the
-		// list; up goes back to the tabs, the only other thing on this row.
+		// for them to go, so they mean what they mean everywhere else on the screen.
 		if ( key == NavKey::Up )
-			out.focus = BrowserFocus::Tabs;
+			out.focus = AboveTheList( where );
 		else if ( key == NavKey::Down )
-			out.focus = hasRows ? BrowserFocus::Rows : BrowserFocus::Tabs;
+			out.focus = DownFromAboveTheList( where );
 		break;
 
 	case BrowserFocus::Rows:
 		if ( key == NavKey::Up )
-			out.rowStep = -1;
+		{
+			// At the top of the list Up LEAVES for the region above it -- the filter row, or the tabs
+			// when the tab has no filter -- rather than wrapping to the bottom. It is the same "there is
+			// something above the first row, so Up goes to it" the tabs and the search box already keep;
+			// wrapping made the list the one place where Up doubled back on itself.
+			if ( where.atTopRow )
+				out.focus = AboveTheList( where );
+			else
+				out.rowStep = -1;
+		}
 		else if ( key == NavKey::Down )
 			out.rowStep = 1;
 		else if ( key == NavKey::Right )
 			out.focus = BrowserFocus::Action;
-		// Left is deliberately nothing: there is no fourth region, and wrapping round to the button
-		// would make the two horizontal keys disagree about which way the layout runs.
+		// Left is deliberately nothing: there is no region to the left, and wrapping round to the
+		// button would make the two horizontal keys disagree about which way the layout runs.
 		break;
 
 	case BrowserFocus::Dialog:
@@ -71,7 +142,7 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastT
 		break;
 
 	case BrowserFocus::Host:
-		// [rc4l] The form owns up and down -- they move between its fields, and the caller does that
+		// [rc4l] The form owns up and down, they move between its fields, and the caller does that
 		// walk because only it knows how many there are. What this unit decides is the one edge that
 		// leaves: off the TOP is the tabs, which is how the player gets back to the list. Left and
 		// right belong to the caret in whichever field is focused, exactly as in the search box.
@@ -79,9 +150,29 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, bool hasRows, bool onLastT
 
 	case BrowserFocus::Action:
 		if ( key == NavKey::Left )
-			out.focus = hasRows ? BrowserFocus::Rows : BrowserFocus::Tabs;
+			out.focus = IntoTheList( where, AboveTheList( where ));
 		else if ( key == NavKey::Up )
-			out.focus = BrowserFocus::Tabs;
+			out.focus = AboveTheList( where );
+		else if ( key == NavKey::Down )
+			out.focus = BrowserFocus::Refresh;
+		break;
+
+	case BrowserFocus::Refresh:
+		// [rc4l] Up goes back where it came from, and that is the WHOLE contract for this zone.
+		//
+		// A zone you can enter and not leave is worse than one you cannot enter at all: the mouse
+		// user never noticed the button was unreachable, but a keyboard user who arrives and gets
+		// stuck has lost the menu. So the return edge is the first thing here, not an afterthought.
+		//
+		// Left and right are deliberately nothing. The footer holds this button and the registry
+		// status bar beside it, and that bar is a readout rather than a control -- there is nothing
+		// horizontal to reach, and inventing a stop on a thing you cannot press would be worse than
+		// the keys doing nothing.
+		// Back to the action button when there IS one. With an empty list there is no selected server
+		// and so no button, and returning to it would strand the focus on a zone that is not drawn --
+		// the same mistake as arriving here through one, in the opposite direction.
+		if ( key == NavKey::Up )
+			out.focus = where.hasRows ? BrowserFocus::Action : AboveTheList( where );
 		break;
 	}
 

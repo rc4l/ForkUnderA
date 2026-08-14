@@ -13,16 +13,18 @@ on:
   pull_request:
   workflow_dispatch:
 
+# [rc4l] Cancel a superseded PR run rather than build three platforms for a commit nobody reads.
+# Main is excluded because its runs back the badge and the merge history.
+concurrency:
+  group: test-and-build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   test:
     uses: ./.github/workflows/_test.yml
 
-  # [rc4l] clang-tidy runs in PARALLEL with test and the builds — deliberately not a `needs`
-  # of anything. It was 75% of the test job's wall time, and `build: needs: test` made every
-  # platform build queue behind a report-only lint. As its own top-level job the report still
-  # lands on every push/PR (same files, same config), it just no longer gates the builds.
-  tidy:
-    uses: ./.github/workflows/_tidy.yml
+  # [rc4l] A clang-tidy job ran here and gated publish in release.yml. Deleted in 50d64db, which
+  # has the measurements. .clang-tidy stays for editors and clangd.
 
   # [rc4l] PRs and main, but not every feature-branch push — the builds are the slow part.
   # Main is covered as well as PRs because an admin can push straight past the PR gate.

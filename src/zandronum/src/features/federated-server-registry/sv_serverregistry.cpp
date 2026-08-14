@@ -76,6 +76,14 @@
 #include "voicechat.h"
 #include "features/wad-serve/zx_wadserve.h" // [rc4l] the direct-download port we advertise
 #include "features/server-hosting/zx_hosting.h" // [rc4l] tell the game that started us we are reachable
+#include "features/server-hosting/computation/punchbroker_compute.h" // [rc4l] how many punches, and when
+#include "features/federated-server-registry/computation/lanbroadcast_compute.h" // [rc4l] LAN subnet broadcast
+
+// [rc4l] Its own switch, not `developer`, so turning on LAN tracing does not also unleash every other
+// subsystem's developer chatter. Off by default; when on, the server logs each announce it sends and
+// the client logs each announce it receives (see the [LAN] lines below and fua_landiag). Archived so a
+// debugging session survives a restart, matching sv_showlauncherqueries.
+CVAR( Bool, fua_showlandiscovery, false, CVAR_ARCHIVE )
 
 // [SB] This is easier than updating the parameters for a load of functions every time I want to add something.
 struct LauncherResponseContext
@@ -103,6 +111,44 @@ using LauncherFieldFunction = void(*)(const LauncherResponseContext &);
 // One registry per server means one authority per server, which is a deal an operator can actually
 // reason about: you accept the rules of the registry you chose, and moving is repointing one CVAR.
 static	NETADDRESS_s		g_AddressServerRegistry;
+
+// [rc4l] The registry's IPv6 address, when its hostname has one. Announced to IN ADDITION to the
+// v4 address: the registry lists a server under the address it OBSERVES the announce from, so a
+// host on an IPv6-native carrier (where the v4 address is carrier NAT that nobody can reach) gets
+// listed under its real, reachable v6 address as well. LoadFromString resolves through
+// gethostbyname, which is A-records only -- this is the AAAA half it can never see.
+static	NETADDRESS_s		g_AddressServerRegistryV6;
+static	bool				g_bServerRegistryV6Valid = false;
+
+//*****************************************************************************
+//
+// [rc4l] Resolve the AAAA record of `pszHost` (which may carry a :port suffix that a v6 LOOKUP
+// must not see). Returns false when the name has no v6 address, which is the common case and not
+// an error.
+static bool server_registry_ResolveV6( const char *pszHost, NETADDRESS_s &Out )
+{
+	char szName[512];
+	strncpy( szName, pszHost, sizeof szName - 1 );
+	szName[sizeof szName - 1] = 0;
+
+	// Strip a trailing :port exactly as LoadFromString does; a bare hostname has no colons.
+	char *pszColon = strchr( szName, ':' );
+	if ( pszColon != NULL )
+		*pszColon = 0;
+
+	struct addrinfo hints;
+	struct addrinfo *pResult = NULL;
+	memset( &hints, 0, sizeof hints );
+	hints.ai_family = AF_INET6;
+	hints.ai_socktype = SOCK_DGRAM;
+
+	if (( getaddrinfo( szName, NULL, &hints, &pResult ) != 0 ) || ( pResult == NULL ))
+		return false;
+
+	Out.LoadFromSocketAddress( *pResult->ai_addr );
+	freeaddrinfo( pResult );
+	return true;
+}
 
 // Message buffer for sending messages to the server registry.
 static	NETBUFFER_s			g_ServerRegistryBuffer;
@@ -680,6 +726,10 @@ void SERVER_SERVERREGISTRY_Destruct( void )
 
 //*****************************************************************************
 //
+static void server_registry_TickPunches( void );
+
+//*****************************************************************************
+//
 void SERVER_SERVERREGISTRY_Tick( void )
 {
 	while (( g_lStoredQueryIPHead != g_lStoredQueryIPTail ) && ( gametic >= g_StoredQueryIPs[g_lStoredQueryIPHead].lNextAllowedGametic ))
@@ -687,6 +737,10 @@ void SERVER_SERVERREGISTRY_Tick( void )
 		g_lStoredQueryIPHead++;
 		g_lStoredQueryIPHead = g_lStoredQueryIPHead % MAX_STORED_QUERY_IPS;
 	}
+
+	// [rc4l] Above the thirty-second gate below, because a punch is measured in milliseconds. Putting
+	// it after would mean the retries and the keepalive fired twice a minute, which is neither.
+	server_registry_TickPunches( );
 
 	// Send an update to the server registry every 30 seconds.
 	if ( gametic % ( TICRATE * 30 ))
@@ -718,8 +772,31 @@ void SERVER_SERVERREGISTRY_Tick( void )
 	// [BB] And tell which code revision number the server was built with.
 	g_ServerRegistryBuffer.ByteStream.WriteLong( GetRevisionNumber() );
 
+	// [rc4l] And that we can open a hole for a joiner who cannot reach us.
+	//
+	// A trailing byte, so a registry that predates it reads the packet exactly as it always did and
+	// simply stops before this. On our own registry the absence of it reads as false, which is what
+	// lets a punch request against an older server be refused instantly rather than instructing
+	// something that will never answer.
+	g_ServerRegistryBuffer.ByteStream.WriteByte( 1 );
+
 	// Send the server registry our packet.
 	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistry );
+
+	// [rc4l] And the same announce over IPv6, when the registry has an AAAA record and our socket
+	// can speak v6. The registry keys a server on the address the announce ARRIVES from, so this is
+	// what gets an IPv6-native host (cellular especially: real public v6, unreachable carrier-NAT
+	// v4) listed under an address other players can actually reach. Same packet, second family --
+	// to the registry these are simply two servers, one per address, which is exactly the truth.
+	g_bServerRegistryV6Valid = server_registry_ResolveV6( fua_serverregistry_host,
+		g_AddressServerRegistryV6 );
+	if ( g_bServerRegistryV6Valid )
+	{
+		if ( g_AddressServerRegistryV6.usPort == 0 )
+			g_AddressServerRegistryV6.SetPort( g_AddressServerRegistry.usPort );
+
+		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistryV6 );
+	}
 }
 
 //*****************************************************************************
@@ -761,19 +838,17 @@ void SERVER_SERVERREGISTRY_Broadcast( void )
 	// Class B contains networks 128.0.0.0 through 191.255.0.0; the network number is in the first two octets.
 	// Class C networks range from 192.0.0.0 through 223.255.255.0, with the network number contained in the first three octets.
 
-	int classIndex = 0;
-
-	const int locIP0 = g_LocalAddress.abIP[0];
-	if ( (locIP0 >= 1) && (locIP0 <= 127) )
-		classIndex = 1;
-	else if ( (locIP0 >= 128 ) && (locIP0 <= 191) )
-		classIndex = 2;
-	else if ( (locIP0 >= 192 ) && (locIP0 <= 223) )
-		classIndex = 3;
-
-	for( int i = 0; i < classIndex; i++ )
-		AddressBroadcast.abIP[i] = g_LocalAddress.abIP[i];
+	// [rc4l] The class boundaries are the one part with real edge cases, so the math lives in
+	// computation/lanbroadcast_compute and is unit-tested there. It fills all four octets (network
+	// octets from our IP, host octets 255), which is exactly what AddressBroadcast should carry.
+	zx::ComputeSubnetBroadcast( g_LocalAddress.abIP, AddressBroadcast.abIP );
 #endif
+
+	// [rc4l] Hidden LAN diagnostics: silent unless fua_showlandiscovery is on, so nothing reaches an
+	// ordinary player. This is the "did the announce actually leave, and to where" half of fua_landiag.
+	if ( fua_showlandiscovery )
+		Printf( "[LAN] announce -> %s (game port %u, via %s)\n", AddressBroadcast.ToString(),
+			NETWORK_GetLocalPort(), NETWORK_CanBroadcastOnLAN() ? "dedicated v4 socket" : "game socket" );
 
 	// Broadcast our packet.
 	SERVER_SERVERREGISTRY_SendServerInfo( AddressBroadcast, SQF_ALL, 0, SQF2_ALL, true, false );
@@ -862,7 +937,19 @@ void SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, 
 	// [SB] But skip the response code in the segmented response as it's unneeded.
 	if ( !bSegmentedResponse )
 	{
-		g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_CHALLENGE );
+		if ( bBroadcasting )
+		{
+			// [rc4l] A LAN announce leaves a send-only v4 socket whose source port is NOT the game
+			// port (see NETWORK_LaunchBroadcast). The client derives a server's address from the
+			// packet source, so carry the real game port here; the client patches it onto the
+			// from-address, then reads the remainder as an ordinary challenge reply unchanged.
+			g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_LAN_CHALLENGE );
+			g_ServerRegistryBuffer.ByteStream.WriteShort( NETWORK_GetLocalPort() );
+		}
+		else
+		{
+			g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_CHALLENGE );
+		}
 	}
 
 	// Send the time the launcher sent to us.
@@ -997,6 +1084,16 @@ void SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, 
 			segmentNumber++;
 		}
 	}
+	else if ( bBroadcasting )
+	{
+		// [rc4l] Out the dedicated v4 broadcast socket -- the dual-stack game socket cannot send a v4
+		// broadcast. If we never opened that socket (not a dual-stack server), this is a no-op and
+		// the game socket already handled broadcasts the ordinary way, so send through it instead.
+		if ( NETWORK_CanBroadcastOnLAN( ))
+			NETWORK_LaunchBroadcast( &g_ServerRegistryBuffer, Address );
+		else
+			NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Address );
+	}
 	else
 	{
 		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Address );
@@ -1039,7 +1136,153 @@ const char *SERVER_SERVERREGISTRY_GetGameName( void )
 // how you end up with a check that is subtly wrong in one of two places.
 bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address )
 {
-	return Address.Compare( g_AddressServerRegistry );
+	// [rc4l] Either family: the registry answers an announce from the address the announce reached
+	// it on, so a v6 announce earns a v6 verification and a v6 punch instruction, and refusing
+	// those here would undo the second announce entirely.
+	return Address.Compare( g_AddressServerRegistry )
+		|| ( g_bServerRegistryV6Valid && Address.Compare( g_AddressServerRegistryV6 ));
+}
+
+//*****************************************************************************
+//
+// [rc4l] Punches in flight, walked by the tick.
+//
+// Bounded, because it is fed by the network: sixteen joiners being helped through a router at once is
+// far past anything a home server sees, and a fixed array cannot be grown by anybody sending packets.
+#define MAX_PENDING_PUNCHES 16
+
+struct PendingPunch_t
+{
+	NETADDRESS_s	Target;
+	unsigned int	ulFirstMS;			// when the request arrived; the burst is scheduled from this
+	unsigned int	ulLastSendMS;		// when the last packet left; the keepalive is scheduled from this
+	LONG			lAttemptsSent;
+	bool			bActive;
+
+	PendingPunch_t( ) : ulFirstMS( 0 ), ulLastSendMS( 0 ), lAttemptsSent( 0 ), bActive( false ) { }
+};
+
+static PendingPunch_t	g_PendingPunches[MAX_PENDING_PUNCHES];
+
+//*****************************************************************************
+//
+// [rc4l] Out of the GAME socket, not the registry one. The hole has to open on the port the joiner is
+// about to connect to, and a router maps per source port: punching from any other socket would open a
+// door beside the one they are knocking on.
+static void server_registry_SendPunch( const NETADDRESS_s &Target )
+{
+	g_ServerRegistryBuffer.Clear();
+	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVERREGISTRY_PUNCH );
+	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Target );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Walk the punches, sending whatever is due.
+//
+// The schedule itself lives in computation/punchbroker_compute so it can be tested without a socket;
+// this only owns the clock and the sending.
+static void server_registry_TickPunches( void )
+{
+	const unsigned int ulNow = I_MSTime( );
+
+	for ( int i = 0; i < MAX_PENDING_PUNCHES; ++i )
+	{
+		if ( g_PendingPunches[i].bActive == false )
+			continue;
+
+		PendingPunch_t &Punch = g_PendingPunches[i];
+
+		// They made it. Ordinary game traffic holds the mapping open from here.
+		const bool bConnected = ( SERVER_FindClientByAddress( Punch.Target ) != -1 );
+
+		// Unsigned subtraction, so the millisecond clock wrapping reads as a small elapsed time rather
+		// than a huge negative one.
+		const zx::PunchStep Step = zx::NextPunchStep( Punch.lAttemptsSent,
+			static_cast<int>( ulNow - Punch.ulFirstMS ),
+			static_cast<int>( ulNow - Punch.ulLastSendMS ),
+			bConnected );
+
+		if ( Step == zx::PunchStep::Done )
+		{
+			Punch.bActive = false;
+			continue;
+		}
+
+		if ( Step == zx::PunchStep::Wait )
+			continue;
+
+		server_registry_SendPunch( Punch.Target );
+		Punch.ulLastSendMS = ulNow;
+		Punch.lAttemptsSent++;
+	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] Open a hole for somebody who cannot reach us.
+//
+// Our router drops packets from strangers because it has never seen us talk to them. It does accept
+// replies to traffic that already left, so sending one packet to the joiner first is enough to turn
+// their next packet from unsolicited into expected. The content is irrelevant and this will very
+// likely be discarded at the far end. SENDING IT is the entire point.
+//
+// Repeated rather than sent once, ICE-style: the two ends act on separate messages from the registry
+// and do not start together, so a single packet can easily leave before the other side is listening,
+// and UDP may drop it besides. computation/punchbroker_compute owns the schedule.
+//
+// SPREAD OVER TIME, not fired as a burst. Sending all five in one loop looks like a retry and is not
+// one: they leave in the same instant, down the same path, so a joiner who is not listening yet misses
+// every one and a moment of packet loss takes the lot. Retries only buy anything if they are spaced,
+// which is why this becomes an entry the tick walks rather than a loop here.
+void SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream )
+{
+	const char *pszTarget = pByteStream->ReadString();
+	if (( pszTarget == NULL ) || ( pszTarget[0] == 0 ))
+		return;
+
+	NETADDRESS_s Target;
+	if ( Target.LoadFromString( pszTarget ) == false )
+		return;
+
+	// A port of zero is not somewhere to send anything.
+	if ( Target.usPort == 0 )
+		return;
+
+	const unsigned int ulNow = I_MSTime( );
+	LONG lSlot = -1;
+
+	// Reuse the entry for this joiner if one is already running, so somebody retrying cannot take a
+	// second slot, and take a free one otherwise.
+	for ( int i = 0; i < MAX_PENDING_PUNCHES; ++i )
+	{
+		if ( g_PendingPunches[i].bActive && g_PendingPunches[i].Target.Compare( Target ))
+		{
+			lSlot = i;
+			break;
+		}
+
+		if (( lSlot == -1 ) && ( g_PendingPunches[i].bActive == false ))
+			lSlot = i;
+	}
+
+	// [rc4l] A full table drops the request rather than evicting somebody.
+	//
+	// Every entry here belongs to a joiner who got through the cookie gate seconds ago, and the one
+	// asking now has no better claim than the one already being helped. Dropping the newcomer costs
+	// them the punch and nothing else, because the direct connection they are racing is untouched;
+	// evicting instead would let a stream of requests knock real joins out one after another.
+	if ( lSlot == -1 )
+		return;
+
+	g_PendingPunches[lSlot].Target = Target;
+	g_PendingPunches[lSlot].ulFirstMS = ulNow;
+	g_PendingPunches[lSlot].ulLastSendMS = ulNow;
+	g_PendingPunches[lSlot].lAttemptsSent = 0;
+	g_PendingPunches[lSlot].bActive = true;
+
+	// The first punch goes now rather than on the next tick. The joiner is already trying.
+	server_registry_TickPunches( );
 }
 
 //*****************************************************************************
@@ -1103,6 +1346,29 @@ CUSTOM_CVAR( Bool, sv_fua_serverregistry_announce, true, CVAR_SERVERINFO|CVAR_NO
 CUSTOM_CVAR( Bool, sv_broadcast, true, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 {
 	SERVERCONSOLE_UpdateBroadcasting( );
+}
+
+// [rc4l] A one-shot LAN-discovery status dump. Not a menu item and not printed anywhere on its own --
+// a player never sees it -- but a single word to type when a LAN server will not appear. It answers,
+// in order: what address we think we are (the LAN broadcast is derived from it, and a stray 127.0.0.1
+// here is the classic cause), where the announce is being sent, whether the dedicated v4 broadcast
+// socket came up, and whether we are actually hosting and broadcasting at all. Pair it with
+// `fua_showlandiscovery 1`, which turns on the per-announce [LAN] send/receive lines on each side.
+CCMD( fua_landiag )
+{
+	unsigned char broadcastOctets[4];
+	zx::ComputeSubnetBroadcast( g_LocalAddress.abIP, broadcastOctets );
+
+	Printf( "LAN discovery diagnostics:\n" );
+	Printf( "  our local address:   %s\n", g_LocalAddress.ToString() );
+	Printf( "  announce target:     %d.%d.%d.%d:%d\n", broadcastOctets[0], broadcastOctets[1],
+		broadcastOctets[2], broadcastOctets[3], DEFAULT_BROADCAST_PORT );
+	Printf( "  broadcast socket:    %s\n", NETWORK_CanBroadcastOnLAN() ?
+		"dedicated v4 (dual-stack host)" : "none -- game socket broadcasts directly" );
+	Printf( "  hosting:             %s\n", ( NETWORK_GetState() == NETSTATE_SERVER ) ? "yes" : "no (client)" );
+	Printf( "  sv_broadcast:        %s\n", sv_broadcast ? "on" : "off" );
+	if ( g_LocalAddress.bIsIPv6 || ( g_LocalAddress.abIP[0] == 127 ))
+		Printf( TEXTCOLOR_YELLOW "  note: local address is loopback/v6 -- other machines on the LAN will not see this server.\n" );
 }
 
 // Name of this server on launchers.

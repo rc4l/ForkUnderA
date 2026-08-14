@@ -33,9 +33,6 @@ CVAR (Bool,  m_noprescale,			false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool,	 m_filter,				false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool,  sdl_nokeyrepeat,		false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
-// [EP] Allows to keep the sound turned on, when the client is not the active app.
-CVAR (Bool,	 cl_soundwhennotactive, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-
 EXTERN_CVAR (Bool, fullscreen)
 // [rc4l] windowed-video: the persisted windowed size (updated on window resize).
 EXTERN_CVAR (Int, vid_defwidth)
@@ -289,8 +286,9 @@ void MessagePump (const SDL_Event &sev)
 			{ // kill focus
 				FlushDIKState ();
 			}
-			if (( NETWORK_GetState() != NETSTATE_CLIENT ) || ( cl_soundwhennotactive == false ))	// [EP]
-				S_SetSoundPaused(gain);
+			// [rc4l] Unconditional: S_SetSoundPaused answers i_pauseinbackground and
+			// i_soundinbackground itself now. Ported from uzdoom@12ed24d066a819a128a54e2359fd0e2d48f641fe.
+			S_SetSoundPaused(gain);
 		}
 		// [rc4l] windowed-video: the window was resized (dragged, or via vid_setsize). Persist the
 		// new size so it reopens the same, matching upstream's win_w/win_h. The render target itself

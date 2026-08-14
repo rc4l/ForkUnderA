@@ -60,6 +60,14 @@
 #endif
 #endif
 
+// [rc4l] getifaddrs() is the portable way to enumerate interface addresses -- present on macOS, BSD
+// and Linux alike, unlike the SIOCGIFCONF dance above which was gated on __unix__ (undefined by Apple)
+// and so never ran on macOS. Used by NETWORK_GetLocalAddress to find the real LAN IP.
+#ifndef _WIN32
+#include <ifaddrs.h>
+#include <net/if.h>
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -70,6 +78,8 @@
 #include <vector>
 #include <string>
 #include "../GeoIP/GeoIP.h"
+#include "w_wad.h" // [rc4l] the shipped country table is a lump in zandronum.pk3
+#include "features/server-browser/computation/geoiptable_compute.h"
 
 #include "c_console.h"
 #include "c_dispatch.h"
@@ -92,7 +102,6 @@
 #include "d_netinf.h"
 
 #include "md5.h"
-#include "network/sv_auth.h"
 #include "doomerrors.h"
 
 enum LumpAuthenticationMode {
@@ -187,6 +196,10 @@ static	SOCKET			g_NetworkSocket;
 
 // Socket for listening for LAN games.
 static	SOCKET			g_LANSocket;
+
+// [rc4l] Send-only v4 socket for broadcasting THIS server onto the LAN. Exists only because the game
+// socket is dual-stack IPv6 and a v6 socket cannot send a v4 broadcast; see NETWORK_LaunchBroadcast.
+static	SOCKET			g_LANBroadcastSocket = INVALID_SOCKET;
 // [BB] Did binding the LAN socket fail?
 static	bool				g_bLANSocketInvalid = false;
 
@@ -210,6 +223,11 @@ extern int restart;
 
 // [AK] Did we need to authenticate a lump that has a duplicate?
 static bool g_bDuplicateLumpAuthenticated = false;
+
+// [rc4l] Whether our sockets ended up speaking both families. Two things need it: the bind has to
+// hand a socket the matching kind of address, and every SEND to a v4 peer has to be dressed as
+// ::ffff:a.b.c.d, because an AF_INET6 socket refuses a sockaddr_in outright.
+static bool g_bSocketIsDualStack = false;
 
 // [TP] Named ACS scripts share the name pool with all other names in the engine, which means named script numbers may
 // differ wildly between systems, e.g. if the server and client have different vid_renderer values the names will
@@ -249,8 +267,8 @@ static const std::vector<std::string> g_FreedoomDehackedHashes = {
 
 static	void			network_InitPWADList( void );
 static	void			network_Error( const char *pszError );
-static	SOCKET			network_AllocateSocket( void );
-static	bool			network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse );
+static	SOCKET			network_AllocateSocket( bool bWantDualStack, bool &bGotDualStack );
+static	bool			network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse, bool bDualStack );
 static	bool			network_GenerateLumpMD5HashAndWarnIfNeeded( const int LumpNum, const char *LumpName, FString &MD5Hash );
 static	void			network_CheckIfDuplicateLump( const int LumpNum ); // [AK]
 static	void			network_AddSpritesToList( std::set<AUTHENTICATELUMP_s> &list, const char *name, const std::set<char> frames, const LumpAuthenticationMode mode ); // [AK]
@@ -298,16 +316,16 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 		g_usLocalPort = usPort;
 
 		// Allocate a socket, and attempt to bind it to the given port.
-		g_NetworkSocket = network_AllocateSocket( );
+		g_NetworkSocket = network_AllocateSocket( true, g_bSocketIsDualStack );
 		// [BB] If we can't allocate a socket, sending / receiving net packets won't work.
 		if ( g_NetworkSocket == INVALID_SOCKET )
 			network_Error( "NETWORK_Construct: Couldn't allocate socket. You will not be able to host or join servers.\n" );
-		else if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false ) == false )
+		else if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false, g_bSocketIsDualStack ) == false )
 		{
 			bSuccess = true;
 			bool bSuccessIP = true;
 			usNewPort = g_usLocalPort;
-			while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false ) == false )
+			while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false, g_bSocketIsDualStack ) == false )
 			{
 				// Didn't find an available port. Oh well...
 				if ( usNewPort == g_usLocalPort )
@@ -348,8 +366,12 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 		// If we're not starting a server, setup a socket to listen for LAN servers.
 		if ( bAllocateLANSocket )
 		{
-			g_LANSocket = network_AllocateSocket( );
-			if ( network_BindSocketToPort( g_LANSocket, ulInAddr, DEFAULT_BROADCAST_PORT, true ) == false )
+			// [rc4l] v4 ON PURPOSE. LAN discovery is a broadcast to 255.255.255.255, and IPv6 has no
+			// broadcast at all -- it has multicast instead, which is a different protocol and a
+			// different address. A dual-stack socket here simply never sees a LAN server.
+			bool bLANDualStack = false;
+			g_LANSocket = network_AllocateSocket( false, bLANDualStack );
+			if ( network_BindSocketToPort( g_LANSocket, ulInAddr, DEFAULT_BROADCAST_PORT, true, bLANDualStack ) == false )
 			{
 				sprintf( szString, "network_BindSocketToPort: Couldn't bind LAN socket to port: %d. You will not be able to see LAN servers in the browser.", DEFAULT_BROADCAST_PORT );
 				network_Error( szString );
@@ -358,6 +380,29 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 			}
 
 			if ( ioctlsocket( g_LANSocket, FIONBIO, &ulArg ) == -1 )
+				printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
+		}
+
+		// [rc4l] If we ARE a server and the game socket went dual-stack, open a dedicated v4 socket
+		// solely to broadcast this server onto the LAN. A dual-stack v6 socket cannot send a v4
+		// broadcast at all, which is why LAN discovery of a hosted server silently stopped working.
+		//
+		// Bound to an EPHEMERAL port on purpose. A second socket sharing the game port would, on
+		// BSD/macOS, steal inbound v4 game datagrams away from the dual-stack socket and break v4
+		// joiners -- a worse regression than the one being fixed. Since the source port is therefore
+		// not the game port, the real game port rides in the SERVER_LAUNCHER_LAN_CHALLENGE header and
+		// the client patches it back on (see NETWORK_LaunchBroadcast / the LAN pump in g_game.cpp).
+		if ( ( bAllocateLANSocket == false ) && g_bSocketIsDualStack )
+		{
+			bool bBroadcastDualStack = false;
+			g_LANBroadcastSocket = network_AllocateSocket( false, bBroadcastDualStack );
+			if ( network_BindSocketToPort( g_LANBroadcastSocket, INADDR_ANY, 0, true, bBroadcastDualStack ) == false )
+			{
+				Printf( "NETWORK_Construct: Couldn't bind LAN broadcast socket; this server will not be visible on the LAN.\n" );
+				closesocket( g_LANBroadcastSocket );
+				g_LANBroadcastSocket = INVALID_SOCKET;
+			}
+			else if ( ioctlsocket( g_LANBroadcastSocket, FIONBIO, &ulArg ) == -1 )
 				printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
 		}
 
@@ -729,7 +774,6 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 
 	// [BB] Now that the network is initialized, set up what's necessary
 	// to communicate with the authentication server.
-	NETWORK_AUTH_Construct();
 }
 
 //*****************************************************************************
@@ -745,6 +789,13 @@ void NETWORK_Destruct( void )
 
 	// [BB] This needs to be cleared since we assume it to be empty during a restart.
 	g_LumpNumsToAuthenticate.Clear();
+
+	// [rc4l] Release the LAN broadcast socket if we opened one.
+	if ( g_LANBroadcastSocket != INVALID_SOCKET )
+	{
+		closesocket( g_LANBroadcastSocket );
+		g_LANBroadcastSocket = INVALID_SOCKET;
+	}
 }
 
 //*****************************************************************************
@@ -753,7 +804,13 @@ int NETWORK_GetPackets( void )
 {
 	LONG				lNumBytes;
 	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
-	sockaddr			SocketFrom;
+	// [rc4l] BIG ENOUGH FOR THE FAMILY THAT ACTUALLY ARRIVES.
+	//
+	// A plain sockaddr is sixteen bytes and a sockaddr_in6 is twenty-eight, so once the socket went
+	// dual-stack every recvfrom failed outright with WSAEFAULT: the kernel will not write a v6 sender
+	// into a v4-sized buffer, and it refuses rather than truncating. The symptom is the whole of
+	// networking silently dead behind a warning, because there is no packet to point at.
+	sockaddr_storage	SocketFrom;
 	INT					iSocketFromLength;
 
 	iSocketFromLength = sizeof( SocketFrom );
@@ -763,9 +820,9 @@ int NETWORK_GetPackets( void )
 		return ( 0 );
 
 #ifdef	WIN32
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, &iSocketFromLength );
+	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
 #else
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, (socklen_t *)&iSocketFromLength );
+	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
 
 	// If the number of bytes returned is -1, an error has occured.
@@ -814,11 +871,11 @@ int NETWORK_GetPackets( void )
 		return ( 0 );
 
 	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( SocketFrom );
+	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	// Decode the huffman-encoded message we received.
 	// [BB] Communication with the auth server is not Huffman-encoded.
-	if ( g_AddressFrom.Compare( NETWORK_AUTH_GetCachedServerAddress() ) == false )
+	if ( false == false )
 	{
 		HUFFMAN_Decode( g_ucHuffmanBuffer, (unsigned char *)g_NetworkMessage.pbData, lNumBytes, &iDecodedNumBytes );
 		g_NetworkMessage.ulCurrentSize = iDecodedNumBytes;
@@ -848,15 +905,16 @@ int NETWORK_GetLANPackets( void )
 
 	LONG				lNumBytes;
 	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
-	sockaddr			SocketFrom;
+	// [rc4l] Room for a v6 sender, for the reason spelled out in NETWORK_GetPackets above.
+	sockaddr_storage	SocketFrom;
 	INT					iSocketFromLength;
 
     iSocketFromLength = sizeof( SocketFrom );
 
 #ifdef	WIN32
-	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, &iSocketFromLength );
+	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
 #else
-	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, (socklen_t *)&iSocketFromLength );
+	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
 
 	// If the number of bytes returned is -1, an error has occured.
@@ -905,11 +963,11 @@ int NETWORK_GetLANPackets( void )
 		return ( 0 );
 
 	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( SocketFrom );
+	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	// Decode the huffman-encoded message we received.
 	// [BB] Communication with the auth server is not Huffman-encoded.
-	if ( g_AddressFrom.Compare( NETWORK_AUTH_GetCachedServerAddress() ) == false )
+	if ( false == false )
 	{
 		HUFFMAN_Decode( g_ucHuffmanBuffer, (unsigned char *)g_NetworkMessage.pbData, lNumBytes, &iDecodedNumBytes );
 		g_NetworkMessage.ulCurrentSize = iDecodedNumBytes;
@@ -948,11 +1006,13 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 		return;
 
 	// Convert the IP address to a socket address.
-	struct sockaddr_in SocketAddress;
-	Address.ToSocketAddress( reinterpret_cast<sockaddr&>(SocketAddress) );
+	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
+	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
+	struct sockaddr_storage SocketAddress;
+	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
 
 	// [BB] Communication with the auth server is not Huffman-encoded.
-	if ( Address.Compare( NETWORK_AUTH_GetCachedServerAddress() ) == false )
+	if ( false == false )
 		HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
 	else
 	{
@@ -962,7 +1022,7 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 		iNumBytesOut = pBuffer->ulCurrentSize;
 	}
 
-	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), sizeof( SocketAddress ));
+	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), iAddressLength );
 
 	// If sendto returns -1, there was an error.
 	if ( lNumBytes == -1 )
@@ -1017,10 +1077,65 @@ return;
 
 //*****************************************************************************
 //
+// [rc4l] Broadcast a packet onto the LAN via the dedicated send-only v4 socket. Address is expected
+// to be a v4 (subnet- or limited-) broadcast address on the LAN listen port. A no-op if we never
+// opened the socket -- i.e. we are not a dual-stack server, in which case the caller should broadcast
+// the ordinary way through NETWORK_LaunchPacket. Send errors are swallowed: a broadcast that goes
+// nowhere is harmless and this runs once a second, so warning on it would only spam the console.
+void NETWORK_LaunchBroadcast( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
+{
+	INT		iNumBytesOut = sizeof( g_ucHuffmanBuffer );
+
+	if ( g_LANBroadcastSocket == INVALID_SOCKET )
+		return;
+
+	pBuffer->ulCurrentSize = pBuffer->CalcSize();
+	if ( pBuffer->ulCurrentSize == 0 )
+		return;
+
+	// Always a real sockaddr_in: this socket is AF_INET, never dual-stack, so ask for a v4 address.
+	struct sockaddr_storage SocketAddress;
+	const int iAddressLength = Address.ToSocketAddress( SocketAddress, false );
+
+	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
+
+	const LONG lNumBytes = sendto( g_LANBroadcastSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>( &SocketAddress ), iAddressLength );
+
+	if ( ( lNumBytes >= 0 ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ) )
+		SERVER_STATISTIC_AddToOutboundDataTransfer( lNumBytes );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Whether we hold a dedicated v4 broadcast socket. Only a dual-stack server opens one; a
+// plain v4 game socket can broadcast by itself, so callers fall back to NETWORK_LaunchPacket.
+bool NETWORK_CanBroadcastOnLAN( void )
+{
+	return ( g_LANBroadcastSocket != INVALID_SOCKET );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Patch the port of the most-recently-received-from address. A LAN broadcast leaves the
+// server's ephemeral send socket, so its source port is not the game port; the LAN pump calls this
+// with the real game port carried in the SERVER_LAUNCHER_LAN_CHALLENGE header, so the browser stores
+// an address that can actually be joined. usPort is a host-order port; g_AddressFrom keeps it in
+// network order, matching how LoadFromSocketAddress fills it.
+void NETWORK_OverrideFromAddressPort( USHORT usPort )
+{
+	g_AddressFrom.usPort = htons( usPort );
+}
+
+//*****************************************************************************
+//
 NETADDRESS_s NETWORK_GetLocalAddress( void )
 {
 	char				szBuffer[512];
-	struct sockaddr_in	SocketAddress;
+	// [rc4l] sockaddr_storage, for the reason in NETWORK_GetPackets: a dual-stack socket names
+	// itself with a sockaddr_in6, and the smaller struct makes getsockname fail rather than
+	// truncate. Only the port is wanted here, and LoadFromSocketAddress knows how to find it in
+	// either family instead of trusting the two layouts to agree.
+	struct sockaddr_storage	SocketAddress;
 	int					iNameLength;
 
 #ifndef __WINE__
@@ -1042,104 +1157,69 @@ NETADDRESS_s NETWORK_GetLocalAddress( void )
 		Printf( "NETWORK_GetLocalAddress: Error getting socket name: %s", strerror( errno ));
 	}
 
-#ifdef __unix__
-	// [BB] The "gethostname -> gethostbyname" trick didn't reveal the local IP.
-	// Now we need to resort to something more complicated.
-	if ( ok == false )
+#ifndef _WIN32
+	// [rc4l] gethostname()->gethostbyname() resolves to 127.0.0.1 on a stock macOS box: the machine's
+	// own hostname maps to loopback, so the trick "succeeds" with a useless address and the old
+	// SIOCGIFCONF fallback -- gated on ok==false AND #ifdef __unix__, which Apple does not define --
+	// never corrected it. g_LocalAddress then stayed 127.0.0.1, which aims the LAN broadcast at
+	// 127.255.255.255 rather than the real subnet. So whenever we do not yet hold a real, non-loopback
+	// IPv4 address, walk the interfaces with getifaddrs (portable across macOS/BSD/Linux) and take the
+	// first up, non-loopback IPv4 one.
+	if ( ( ok == false ) || Address.bIsIPv6 || ( Address.abIP[0] == 127 ) )
 	{
-#ifndef __FreeBSD__
-		unsigned char      *u;
-		int                size  = 1;
-		struct ifreq       *ifr;
-		struct ifconf      ifc;
-		struct sockaddr_in sa;
-		
-		ifc.ifc_len = IFRSIZE;
-		ifc.ifc_req = NULL;
-		
-		do {
-			++size;
-			/* realloc buffer size until no overflow occurs  */
-			if (NULL == (ifc.ifc_req = (ifreq*)realloc(ifc.ifc_req, IFRSIZE)))
-			{
-				fprintf(stderr, "Out of memory.\n");
-				exit(EXIT_FAILURE);
-			}
-			ifc.ifc_len = IFRSIZE;
-			if (ioctl(g_NetworkSocket, SIOCGIFCONF, &ifc))
-			{
-				perror("ioctl SIOCFIFCONF");
-				exit(EXIT_FAILURE);
-			}
-		} while  (IFRSIZE <= ifc.ifc_len);
-		
-		ifr = ifc.ifc_req;
-		for (;(char *) ifr < (char *) ifc.ifc_req + ifc.ifc_len; ++ifr)
+		struct ifaddrs *pInterfaces = NULL;
+		if ( getifaddrs( &pInterfaces ) == 0 )
 		{
-		
-			if (ifr->ifr_addr.sa_data == (ifr+1)->ifr_addr.sa_data)
+			for ( struct ifaddrs *pInterface = pInterfaces; pInterface != NULL; pInterface = pInterface->ifa_next )
 			{
-				continue;  /* duplicate, skip it */
-			}
-		
-			if (ioctl(g_NetworkSocket, SIOCGIFFLAGS, ifr))
-			{
-				continue;  /* failed to get flags, skip it */
-			}
-		
-			Printf("Found interface %s", ifr->ifr_name);
-			Printf(" with IP address: %s\n", inet_ntoa(inaddrr(ifr_addr.sa_data)));
-			*(int *)&Address.abIP = *(int *)&inaddrr(ifr_addr.sa_data);
-			if ( Address.abIP[0] != 127 )
-			{
-				Printf ( "Using IP address of interface %s as local address.\n", ifr->ifr_name );
+				if ( ( pInterface->ifa_addr == NULL ) || ( pInterface->ifa_addr->sa_family != AF_INET ))
+					continue;
+				if ( ( pInterface->ifa_flags & IFF_UP ) == 0 )
+					continue;
+				if ( pInterface->ifa_flags & IFF_LOOPBACK )
+					continue;
+
+				const struct sockaddr_in *pAddr = reinterpret_cast<const struct sockaddr_in *>( pInterface->ifa_addr );
+				const unsigned char *pOctets = reinterpret_cast<const unsigned char *>( &pAddr->sin_addr.s_addr );
+				if ( pOctets[0] == 127 )
+					continue;
+
+				Address.abIP[0] = pOctets[0];
+				Address.abIP[1] = pOctets[1];
+				Address.abIP[2] = pOctets[2];
+				Address.abIP[3] = pOctets[3];
+				Address.bIsIPv6 = false;
+
+				// [rc4l] Say it once, and again only if the answer CHANGES.
+				//
+				// This is a query function, and the browser calls it while drawing -- once per row,
+				// per frame -- so an unconditional Printf here filled a macOS console with the same
+				// line dozens of times a second and never stopped. It is a discovery message: what
+				// is worth reading is the address we settled on, and later that it moved, not that
+				// somebody asked again.
+				{
+					static unsigned char s_LastReported[4] = { 0, 0, 0, 0 };
+					if (( s_LastReported[0] != pOctets[0] ) || ( s_LastReported[1] != pOctets[1] )
+						|| ( s_LastReported[2] != pOctets[2] ) || ( s_LastReported[3] != pOctets[3] ))
+					{
+						s_LastReported[0] = pOctets[0];
+						s_LastReported[1] = pOctets[1];
+						s_LastReported[2] = pOctets[2];
+						s_LastReported[3] = pOctets[3];
+						Printf( "Using IP address %d.%d.%d.%d of interface %s as local address.\n",
+							pOctets[0], pOctets[1], pOctets[2], pOctets[3], pInterface->ifa_name );
+					}
+				}
 				break;
 			}
+			freeifaddrs( pInterfaces );
 		}
-		if ( ifc.ifc_req != NULL )
-			free ( ifc.ifc_req );
-#else
-		struct ifreq       *ifr;
-		struct ifconf      ifc;
-		bzero(&ifc, sizeof(ifc));
-		unsigned int n = 1;
-		struct ifreq *lifr;
-		ifr = (ifreq*)calloc( ifc.ifc_len, sizeof(*ifr) );
-		do
-		{
-			n *= 2;
-			ifr = (ifreq*)realloc( ifr, PAGE_SIZE * n );
-			bzero( ifr, PAGE_SIZE * n );
-			ifc.ifc_req = ifr;
-			ifc.ifc_len = n * PAGE_SIZE;
-		} while( ( ioctl( g_NetworkSocket, SIOCGIFCONF, &ifc ) == -1 ) || ( ifc.ifc_len >= ( (n-1) * PAGE_SIZE)) );
-		
-		lifr = (struct ifreq *)&ifc.ifc_buf[ifc.ifc_len];
-		
-		while (ifr < lifr)
-		{
-			struct sockaddr *sa = &ifr->ifr_ifru.ifru_addr;
-			if( AF_INET == sa->sa_family )
-			{
-				struct sockaddr_in dummysa;
-				in_addr inAddr = *(struct in_addr *) &ifr->ifr_addr.sa_data[sizeof dummysa.sin_port];
-	
-				Printf("Found interface %s", ifr->ifr_name);
-				Printf(" with IP address: %s\n", inet_ntoa(inAddr));
-				*(int *)&Address.abIP = *(int *)&inAddr;
-				if ( Address.abIP[0] != 127 )
-				{
-					Printf ( "Using IP address of interface %s as local address.\n", ifr->ifr_name );
-					break;
-				}
-			 }
-	 	ifr = (struct ifreq *)(((char *)ifr) + _SIZEOF_ADDR_IFREQ(*ifr));
- 		}
-#endif
 	}
 #endif
 
-	Address.usPort = SocketAddress.sin_port;
+	NETADDRESS_s Named;
+	Named.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketAddress ));
+	Address.usPort = Named.usPort;
 	return ( Address );
 }
 
@@ -1180,6 +1260,115 @@ bool NETWORK_IsGeoIPAvailable ( void )
 
 //*****************************************************************************
 // [BB/AK]
+//*****************************************************************************
+//
+// [rc4l] Our own country table, used when no GeoIP database is present.
+//
+// The GeoIP library has always been compiled in and a database never shipped, so on every platform
+// but a Linux box that happened to install one, NETWORK_IsGeoIPAvailable was false and every
+// internet server in the browser drew "?" instead of a flag. MaxMind discontinued the legacy .dat
+// format in 2019, so there was nothing to ship even if we had remembered to.
+//
+// The table lives as a lump inside zandronum.pk3 rather than as a file beside the exe. That is the
+// whole point: a loose data file is precisely what a packaging step forgets, which is the bug this
+// is fixing. Parsing is in geoiptable_compute.cpp, where the bounds checks are tested.
+static TArray<BYTE>		g_FuaGeoBuffer;
+static zx::GeoTable		g_FuaGeoTable;
+static bool				g_bFuaGeoLoaded = false;
+
+static void network_EnsureFuaGeoTable( void )
+{
+	if ( g_bFuaGeoLoaded )
+		return;
+
+	g_bFuaGeoLoaded = true;		// one attempt, whatever happens; a missing lump is not worth retrying
+
+	const int lump = Wads.CheckNumForFullName( "fua_geoip.dat" );
+	if ( lump < 0 )
+		return;
+
+	const int length = Wads.LumpLength( lump );
+	if ( length <= 0 )
+		return;
+
+	g_FuaGeoBuffer.Resize( length );
+	Wads.ReadLump( lump, &g_FuaGeoBuffer[0] );
+
+	g_FuaGeoTable = zx::ParseGeoTable( &g_FuaGeoBuffer[0], static_cast<size_t>( length ));
+
+	// Refusing the table means the lump is corrupt, so the memory is given back rather than held for
+	// the rest of the session by something that will never be read.
+	if ( g_FuaGeoTable.valid == false )
+		g_FuaGeoBuffer.Clear( );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Our table stores ISO alpha-2, and the rest of the engine speaks GeoIP's index. Walked once
+// per lookup rather than cached: it runs when a server row is parsed, not per frame, and a 250-entry
+// string compare is not worth a second table to keep in step.
+static ULONG network_FuaCountryIndexFromAlpha2( const char *pszCode )
+{
+	if (( pszCode == NULL ) || ( pszCode[0] == '\0' ))
+		return ( 0 );
+
+	for ( ULONG ulIdx = 0; ulIdx < COUNTRYINDEX_LAN; ulIdx++ )
+	{
+		const char *pszCandidate = NETWORK_GetCountryCodeFromIndex( ulIdx, false );
+
+		if (( pszCandidate != NULL ) && ( stricmp( pszCandidate, pszCode ) == 0 ))
+			return ( ulIdx );
+	}
+
+	return ( 0 );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Ask where an address is, without needing a server there to ask about.
+//
+// The browser draws the answer as twenty pixels of flag, which is not something you can check. This
+// prints it, so "why is that server showing the wrong country" has an answer that does not require
+// finding a server in that country first.
+CCMD( fua_whereis )
+{
+	if ( argv.argc( ) < 2 )
+	{
+		Printf( "usage: fua_whereis <ip address>\n" );
+		return;
+	}
+
+	NETADDRESS_s address;
+	if ( address.LoadFromString( argv[1] ) == false )
+	{
+		Printf( "%s is not an address I can read.\n", argv[1] );
+		return;
+	}
+
+	const ULONG ulIndex = NETWORK_GetCountryIndexFromAddress( address );
+
+	if ( ulIndex == COUNTRYINDEX_LAN )
+	{
+		Printf( "%s is on a local network.\n", argv[1] );
+		return;
+	}
+
+	if ( ulIndex == 0 )
+	{
+		Printf( "%s could not be placed. (GeoIP database: %s)\n", argv[1],
+			NETWORK_IsGeoIPAvailable( ) ? "system" : "the table shipped in zandronum.pk3" );
+		return;
+	}
+
+	Printf( "%s is in %s (%s / %s), via %s.\n", argv[1],
+		NETWORK_GetCountryNameFromIndex( ulIndex ),
+		NETWORK_GetCountryCodeFromIndex( ulIndex, false ),
+		NETWORK_GetCountryCodeFromIndex( ulIndex, true ),
+		NETWORK_IsGeoIPAvailable( ) ? "the system GeoIP database" : "the table in zandronum.pk3" );
+}
+
+//*****************************************************************************
+//
 ULONG NETWORK_GetCountryIndexFromAddress( NETADDRESS_s Address )
 {
 	const char *addressString = Address.ToStringNoPort();
@@ -1194,10 +1383,24 @@ ULONG NETWORK_GetCountryIndexFromAddress( NETADDRESS_s Address )
 		return COUNTRYINDEX_LAN;
 	}
 
-	if ( NETWORK_IsGeoIPAvailable() == false )
+	// A real GeoIP database wins when there is one: it is finer-grained than what we ship, and a
+	// Linux box with the distribution package installed should keep using it.
+	if ( NETWORK_IsGeoIPAvailable() )
+		return GeoIP_id_by_addr ( g_GeoIPDB, addressString );
+
+	network_EnsureFuaGeoTable( );
+
+	// Big-endian on the wire, and the table is sorted by the same numeric order.
+	const unsigned int ip = ( static_cast<unsigned int>( Address.abIP[0] ) << 24 )
+		| ( static_cast<unsigned int>( Address.abIP[1] ) << 16 )
+		| ( static_cast<unsigned int>( Address.abIP[2] ) << 8 )
+		| static_cast<unsigned int>( Address.abIP[3] );
+
+	char code[3];
+	if ( zx::GeoCodeForIndex( g_FuaGeoTable, zx::GeoLookupCodeIndex( g_FuaGeoTable, ip ), code ) == false )
 		return 0;
 
-	return GeoIP_id_by_addr ( g_GeoIPDB, addressString );
+	return network_FuaCountryIndexFromAlpha2( code );
 }
 
 //*****************************************************************************
@@ -1798,6 +2001,23 @@ static void network_InitPWADList( void )
 {
 	g_PWADs.Clear();
 
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+	//   SUPERSEDED BY: nothing. Upstream builds this list once per process because upstream has no
+	//   way to change the loaded files without exiting; wad_reload does, so the second build is a
+	//   case that cannot arise there.
+	//   ON PORT: keep.
+	//
+	// The authenticated list was cleared with the PWAD list above and this line was simply absent, so
+	// every rebuild appended to whatever was already in it. Nothing noticed while a process loaded
+	// its files once and never again -- which was true of this engine until wad_reload.
+	//
+	// It stopped being true the moment a client could reload onto a server's file set. Hosting an
+	// experience does exactly that: boot on the IWAD, reload onto the entry, connect. The list then
+	// held the first boot's files AND the second's, so the client offered six where it had loaded
+	// four, the server matched five of them, and the join was refused for protected-lump
+	// authentication -- naming a file both sides had, as missing.
+	g_AuthenticatedWADs.Clear();
+
 	// Find the IWAD index.
 	ULONG ulNumPWADs = 0, ulRealIWADIdx = 0;
 	for ( ULONG ulIdx = 0; Wads.GetWadName( ulIdx ) != NULL; ulIdx++ )
@@ -1849,8 +2069,7 @@ static void network_InitPWADList( void )
 		if ( Wads.WadContainsAuthenticatedLumps( ulIdx ) )
 		{
 			g_AuthenticatedWADs.Push( pwad );
-		}
-	}
+		}	}
 }
 
 void network_Error( const char *pszError )
@@ -1860,9 +2079,44 @@ void network_Error( const char *pszError )
 
 //*****************************************************************************
 //
-static SOCKET network_AllocateSocket( void )
+// [rc4l] A socket that hears v6 AND v4, or a plain v4 one where the first is not available.
+//
+// ONE socket rather than two. Turning IPV6_V6ONLY off makes a v6 socket accept v4 peers as well,
+// delivered as ::ffff:a.b.c.d, which NETADDRESS_s::LoadFromSocketAddress puts straight back into v4
+// so nothing downstream ever sees the mapped form. Two listeners would have meant two read loops and
+// a new question, which socket did that arrive on, for no gain.
+//
+// The fallback is not defensive padding. IPV6_V6ONLY defaults on in some places and off in others, a
+// host can have the v6 stack disabled outright, and a socket that exists but will only ever hear v6
+// would make us invisible to every v4 player. If any part of that fails we close it and open exactly
+// the socket we always opened.
+// [rc4l] Reports what it got instead of writing the global itself.
+//
+// Two sockets are allocated and they do not have to agree: the LAN one asks for v4 outright, and
+// either can fall back on a machine with v6 switched off. While this assigned the global directly,
+// whichever socket was allocated LAST decided how EVERY packet was addressed, so a v4 LAN socket
+// silently told the main socket to stop mapping and the reverse broke LAN discovery just as quietly.
+static SOCKET network_AllocateSocket( bool bWantDualStack, bool &bGotDualStack )
 {
 	SOCKET	Socket;
+
+	bGotDualStack = false;
+
+	if ( bWantDualStack )
+	{
+		Socket = socket( PF_INET6, SOCK_DGRAM, IPPROTO_UDP );
+		if ( Socket != INVALID_SOCKET )
+		{
+			int off = 0;
+			if ( setsockopt( Socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&off, sizeof( off )) == 0 )
+			{
+				bGotDualStack = true;
+				return ( Socket );
+			}
+
+			closesocket( Socket );
+		}
+	}
 
 	// Allocate a socket.
 	Socket = socket( PF_INET, SOCK_DGRAM, IPPROTO_UDP );
@@ -1877,23 +2131,40 @@ static SOCKET network_AllocateSocket( void )
 
 //*****************************************************************************
 //
-bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse )
+bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse, bool bDualStack )
 {
 	int		iErrorCode;
-	struct sockaddr_in address;
 
 	// setsockopt needs an int, bool won't work
 	int		enable = 1;
 
+	// Allow the network socket to broadcast. Meaningless on a v6 socket, which has multicast and no
+	// broadcast at all, and harmless: the call simply fails there, and LAN discovery keeps its own
+	// separate socket either way.
+	setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof( enable ));
+	if ( bReUse )
+		setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof( enable ));
+
+	// [rc4l] The bind has to match the SOCKET'S family rather than the caller's expectations. A
+	// dual-stack socket binds in6addr_any, which covers every v4 address too; handing it a
+	// sockaddr_in fails outright and the server never comes up at all.
+	if ( bDualStack )
+	{
+		struct sockaddr_in6 address6;
+		memset( &address6, 0, sizeof( address6 ));
+		address6.sin6_family = AF_INET6;
+		address6.sin6_addr = in6addr_any;
+		address6.sin6_port = htons( usPort );
+
+		iErrorCode = bind( Socket, (sockaddr *)&address6, sizeof( address6 ));
+		return ( iErrorCode != SOCKET_ERROR );
+	}
+
+	struct sockaddr_in address;
 	memset (&address, 0, sizeof(address));
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = ulInAddr;
 	address.sin_port = htons( usPort );
-
-	// Allow the network socket to broadcast.
-	setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof( enable ));
-	if ( bReUse )
-		setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof( enable ));
 
 	iErrorCode = bind( Socket, (sockaddr *)&address, sizeof( address ));
 	if ( iErrorCode == SOCKET_ERROR )

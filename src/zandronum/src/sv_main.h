@@ -480,8 +480,6 @@ struct CLIENT_s
 	// [BB] Client doesn't want his country to be revealed to the other players.
 	bool			bWantHideCountry;
 
-	// [TP] Client doesn't want his account to be revealed to the other players.
-	bool			WantHideAccount;
 
 	// [BB] Did the client not yet acknowledge receiving the last full update?
 	bool			bFullUpdateIncomplete;
@@ -585,13 +583,22 @@ struct CLIENT_s
 	// [BB] Variables for the account system
 	FString username;
 	unsigned int clientSessionID;
-	int SRPsessionID;
 	bool loggedIn;
-	TArray<unsigned char> bytesA;
-	TArray<unsigned char> bytesB;
-	TArray<unsigned char> bytesM;
-	TArray<unsigned char> bytesHAMK;
-	TArray<unsigned char> salt;
+
+	// [rc4l] Anonymous accounts, held from the connection attempt until the proof is judged.
+	//
+	// Minted once per slot and re-sent unchanged on every retry, because the connection sequence
+	// has no acks and a client that signed against a challenge we had since replaced would be
+	// refused for nothing but a dropped packet.
+	TArray<unsigned char> fuaClientNonce;
+	TArray<unsigned char> fuaEphemeralPrivate;
+	TArray<unsigned char> fuaClientEphemeral;
+	TArray<unsigned char> fuaServerEphemeralPublic;
+	TArray<unsigned char> fuaChallengeSignature;
+
+	// [rc4l] Whether the fields above hold a challenge, which the nonce is compared against to tell
+	// this client's own retry from a different client taking the slot.
+	bool fuaHasChallenge;
 
 	// [CK] The client communicates back to us with the last gametic from the server it saw
 	LONG			lLastServerGametic;
@@ -760,6 +767,10 @@ void		SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags,
 const char	*SERVER_SERVERREGISTRY_GetGameName( void );
 bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address );
 void		SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream );
+
+// [rc4l] Send a packet at a joiner who cannot reach us, so our own router will accept the
+// reply that follows. See the definition for why sending it is the entire point.
+void		SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream );
 void		SERVER_SERVERREGISTRY_SendBanlistReceipt( void );
 
 // Statistic functions.
@@ -798,7 +809,6 @@ EXTERN_CVAR( Int, sv_timestampformat );
 EXTERN_CVAR( Int, sv_colorstripmethod );
 EXTERN_CVAR( Bool, sv_minimizetosystray )
 EXTERN_CVAR( Int, sv_queryignoretime )
-EXTERN_CVAR( Bool, sv_forcelogintojoin )
 EXTERN_CVAR( Bool, sv_limitcommands )
 EXTERN_CVAR( Int, sv_smoothplayers )
 EXTERN_CVAR( Int, sv_allowprivatechat )

@@ -4,6 +4,9 @@
 #include "features/server-hosting/computation/hostlifecycle_compute.h"
 
 #include <cstdio>
+// [rc4l] strlen. Named explicitly rather than leaned on transitively -- MSVC supplies it through
+// other headers and GCC/Clang do not, which is a build that only breaks on the platforms CI runs.
+#include <cstring>
 
 namespace zx
 {
@@ -210,6 +213,49 @@ std::string ExplainHostFailure(const std::string &childOutput, int exitCode)
 	}
 
 	return "The server stopped without saying why.";
+}
+
+// [rc4l] See the header for why the newline matters more than the marker.
+bool ParseHostReadyLine(const std::string &pending, int *portOut)
+{
+	static const char *const kMarker = "[fua-host] ready";
+
+	const size_t at = pending.find(kMarker);
+	if (at == std::string::npos)
+		return false;
+
+	// The line has to be complete. Without this, a chunk that split mid-number would be read as a
+	// smaller port -- and a wrong port here is the bug this whole function exists to prevent, not a
+	// cosmetic slip.
+	const size_t eol = pending.find('\n', at);
+	if (eol == std::string::npos)
+		return false;
+
+	size_t i = at + strlen(kMarker);
+
+	while ((i < eol) && ((pending[i] == ' ') || (pending[i] == '\t') || (pending[i] == '\r')))
+		++i;
+
+	int port = 0;
+	bool anyDigits = false;
+	while ((i < eol) && (pending[i] >= '0') && (pending[i] <= '9'))
+	{
+		// Bounded so a long run of digits cannot overflow into a negative or wrapped port. Anything
+		// past a plausible port is malformed, and malformed means "say nothing" rather than "guess".
+		if (port > 65535)
+		{
+			anyDigits = false;
+			break;
+		}
+		port = (port * 10) + (pending[i] - '0');
+		anyDigits = true;
+		++i;
+	}
+
+	if (anyDigits && (port > 0) && (port <= 65535) && (portOut != NULL))
+		*portOut = port;
+
+	return true;
 }
 
 } // namespace zx
