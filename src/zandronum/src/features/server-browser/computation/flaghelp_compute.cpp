@@ -217,6 +217,21 @@ const HelpEntry kHelp[] =
 	{ "lms_spectatorvoicechat",	"The dead may speak to the living over voice." },
 };
 
+// [rc4l] The fields themselves, on the heading that folds each one. Nine lines rather than a
+// paragraph: the heading answers "is what I want in here", and the switches inside answer the rest.
+const HelpEntry kFieldHelp[] =
+{
+	{ "dmflags",				"Doom's own gameplay switches: what spawns, what respawns, what players may do." },
+	{ "dmflags2",				"Further gameplay switches, added after Doom's own." },
+	{ "zadmflags",				"Zandronum's server switches, mostly about players, allies and teams." },
+	{ "compatflags",			"Bug-for-bug behaviour of the original engines, for maps built against it." },
+	{ "compatflags2",			"Further original-engine behaviour, added later." },
+	{ "zacompatflags",			"Zandronum's compatibility switches, mostly for older online behaviour." },
+	{ "sv_forbidvoteflags",		"Which votes players may not call." },
+	{ "lmsallowedweapons",		"Which weapons Last Man Standing allows." },
+	{ "lmsspectatorsettings",	"What the dead may do while a round runs." },
+};
+
 bool ByName(const HelpEntry &a, const HelpEntry &b)
 {
 	return std::string(a.name) < std::string(b.name);
@@ -273,6 +288,19 @@ const char *FlagHelp(const std::string &name)
 
 	if ((lo < table.size()) && (table[lo].first == name))
 		return table[lo].second.c_str();
+
+	return "";
+}
+
+const char *FlagFieldHelp(const std::string &name)
+{
+	// Nine entries, so this is a walk. A bisection here would be arithmetic nobody can check for
+	// the sake of four comparisons.
+	for (size_t i = 0; i < (sizeof(kFieldHelp) / sizeof(kFieldHelp[0])); ++i)
+	{
+		if (name == kFieldHelp[i].name)
+			return kFieldHelp[i].text;
+	}
 
 	return "";
 }
