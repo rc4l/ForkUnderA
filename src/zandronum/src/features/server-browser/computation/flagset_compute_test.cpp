@@ -185,6 +185,22 @@ TEST(FlagSet, TheRebuildKeepsUnknownBitsToo)
 
 // ---------------------------------------------------------------- field order
 
+TEST(IsFlagFieldName, TellsAFieldFromASwitchInsideOne)
+{
+	// A saved preset's settings are dmflags alongside sv_maxlives, and "the flags" means the first
+	// kind only.
+	EXPECT_TRUE(IsFlagFieldName("dmflags"));
+	EXPECT_TRUE(IsFlagFieldName("zacompatflags"));
+	EXPECT_TRUE(IsFlagFieldName("lmsallowedweapons"));
+
+	// Not in the preferred order list, and still a field: the walk appends it.
+	EXPECT_TRUE(IsFlagFieldName("sv_forbidvoteflags"));
+
+	EXPECT_FALSE(IsFlagFieldName("sv_nomonsters"));
+	EXPECT_FALSE(IsFlagFieldName("sv_maxlives"));
+	EXPECT_FALSE(IsFlagFieldName(""));
+}
+
 TEST(FlagFieldOrder, IsTheOrderTheyAreAlwaysQuotedIn)
 {
 	std::vector<std::string> found;
