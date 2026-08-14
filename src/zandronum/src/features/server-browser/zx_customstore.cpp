@@ -15,6 +15,8 @@
 #endif
 
 #include "features/addon-catalogue/computation/addonfile_compute.h"
+#include "features/wad-download/zx_waddownload.h"
+#include "i_system.h"
 
 #include "cmdlib.h"
 #include "c_dispatch.h"
@@ -294,10 +296,33 @@ CustomEntry CustomLoadLast()
 // [rc4l] What is saved and where. The path is the half of this nobody can guess.
 CCMD( fua_custom )
 {
+	const unsigned int began = I_MSTime( );
 	const std::vector<zx::CustomEntry> all = zx::CustomAll( );
+	const unsigned int read = I_MSTime( ) - began;
 
 	Printf( "%s\n", zx::CustomRoot( ).c_str( ));
-	Printf( "%d saved preset(s)\n", static_cast<int>( all.size( )));
+	Printf( "%d saved preset(s), read in %ums\n", static_cast<int>( all.size( )), read );
+
+	// [rc4l] What the CUSTOM tab's row colouring costs, which is the question that matters: this is
+	// the walk-and-hash the drawing used to do PER ROW PER FRAME. Timed here so the number is a
+	// measurement rather than a claim.
+	for ( size_t i = 0; i < all.size( ); ++i )
+	{
+		const unsigned int one = I_MSTime( );
+
+		int missing = 0;
+		for ( size_t f = 0; f < all[i].files.size( ); ++f )
+		{
+			const FString path = zx::waddownload::FindVerifiedCopy( all[i].files[f].name.c_str( ),
+				all[i].files[f].md5.empty( ) ? NULL : all[i].files[f].md5.c_str( ));
+
+			if ( path.IsEmpty( ))
+				missing++;
+		}
+
+		Printf( "    verifying %s: %d file(s), %d missing, %ums\n", all[i].name.c_str( ),
+			static_cast<int>( all[i].files.size( )), missing, I_MSTime( ) - one );
+	}
 
 	for ( size_t i = 0; i < all.size( ); ++i )
 	{
