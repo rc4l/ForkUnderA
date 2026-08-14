@@ -62,7 +62,7 @@ export class BridgeClient {
     });
   }
 
-  onEvent(fn) { this.eventHandlers.push(fn); }
+  onEvent(fn) { this.eventHandlers.push(fn); return () => { const i = this.eventHandlers.indexOf(fn); if (i >= 0) this.eventHandlers.splice(i, 1); }; }
 
   rpc(cmd, args, timeoutMs = 8000) {
     const id = this.nextId++;
