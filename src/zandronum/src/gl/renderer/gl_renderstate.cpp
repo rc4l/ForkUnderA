@@ -88,6 +88,8 @@ void FRenderState::Reset()
 	mDamageTint[0] = mDamageTint[1] = mDamageTint[2] = mDamageTint[3] = 0.0f;
 	mDamageTintRange[0] = 0.0f;
 	mDamageTintRange[1] = 1.0f;
+	mDamageTintRange[2] = 0.0f;
+	mDamageTintRange[3] = 0.0f;
 	m2D = true;
 	mVertexBuffer = mCurrentVertexBuffer = NULL;
 	mColormapState = CM_DEFAULT;

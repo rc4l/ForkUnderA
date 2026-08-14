@@ -27,19 +27,19 @@ void DamageTint_EndSpriteGlow();
 // Returns true with the floor color, strength percent, and coverage fraction (0..1 of the quad,
 // from its bottom edge) when the tint is active. The caller slices; per-slice strength comes from
 // zx::damagetint::SliceTintPct and colors from DamageTint_Blend.
-bool DamageTint_WeaponParams( AActor *playermo, int blendOp, DWORD styleFlags, PalEntry &avgOut, int &pctOut, float &coverageFracOut );
+bool DamageTint_WeaponParams( AActor *playermo, int blendOp, DWORD styleFlags, PalEntry &avgOut, int &pctOut, float &coverageFracOut, bool &glowOut );
 
 // White blended toward `avg` by pct -- the multiplicative tint color for a slice.
 PalEntry DamageTint_Blend( PalEntry avg, int pct );
 
 // 2D path (the status-bar mugshot): arm the shader's per-pixel gradient for the next draw and
 // clear it right after. No-ops when overlay.a == 0 (and on NO_GL builds).
-void DamageTint_Arm2D( PalEntry overlay, float coverageFrac );
+void DamageTint_Arm2D( PalEntry overlay, float coverageFrac, bool glow = false );
 void DamageTint_Disarm2D();
 
 // Status-bar mugshot: the tint as an ARGB overlay (alpha 0 = inactive) plus the coverage fraction
 // (0..1 from the chin up) the caller should band-clip to.
-PalEntry DamageTint_FaceOverlay( float *coverageFracOut = 0 );
+PalEntry DamageTint_FaceOverlay( float *coverageFracOut = 0, bool *glowOut = 0 );
 
 // How much a sector's special/damage config hurts per cycle (0 = harmless). The complete mirror of
 // P_PlayerInSpecialSector's tables; exported for the bridge's world.sectors query.
