@@ -29,6 +29,7 @@
 #include "gamemode.h"
 #include "st_hud.h"
 #include "survival.h"
+#include "features/damage-tint/damagetint.h"	// [rc4l] mugshot damage tint
 
 
 #define ST_EVILGRINCOUNT		(2*TICRATE)
@@ -1343,7 +1344,11 @@ void DrawFullHUD_GameInformation()
 			if (face != NULL)
 			{
 				DrawPartialImage(&StatusBarTex, 142, 37);
-				DrawImage(face, 143, 0);
+				// [rc4l] features/damage-tint: the floor's tint reaches Doomguy's face too,
+				// banded from the chin up to the coverage point.
+				float dtCov = 0.0f;
+				PalEntry dtOverlay = DamageTint_FaceOverlay(&dtCov);
+				DrawImage(face, 143, 0, NULL, dtOverlay, dtCov);
 			}
 		}
 		else

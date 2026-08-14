@@ -76,6 +76,8 @@ class FRenderState
 	PalEntry mObjectColor;
 	FStateVec4 mDynColor;
 	float mClipSplit[2];
+	float mDamageTint[4];		// [rc4l] features/damage-tint: rgb + strength (0 = off)
+	float mDamageTintRange[2];	// [rc4l] gradient (top, bottom) in texture V
 
 	int mEffectState;
 	int mColormapState;
@@ -264,6 +266,18 @@ public:
 	{
 		if (glset.lightmode == 8) mLightParms[3] = level / 255.f;
 		else mLightParms[3] = -1.f;
+	}
+
+	// [rc4l] features/damage-tint: per-pixel multiplicative tint in texture-V space (shaderdefs.i).
+	// Arm around a draw, clear right after -- strength 0 is a no-op for everything else.
+	void SetDamageTint(float r, float g, float b, float strength, float vTop, float vBottom)
+	{
+		mDamageTint[0] = r; mDamageTint[1] = g; mDamageTint[2] = b; mDamageTint[3] = strength;
+		mDamageTintRange[0] = vTop; mDamageTintRange[1] = vBottom;
+	}
+	void ClearDamageTint()
+	{
+		mDamageTint[3] = 0.0f;
 	}
 
 	void SetGlowPlanes(const secplane_t &top, const secplane_t &bottom)

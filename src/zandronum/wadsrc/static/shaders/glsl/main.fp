@@ -85,6 +85,13 @@ vec4 getTexel(vec2 st)
 	}
 	texel *= uObjectColor;
 
+	// [rc4l] features/damage-tint: multiplicative gradient in texture-V space; a == 0 -> no-op.
+	if (uDamageTint.a > 0.0)
+	{
+		float dtf = clamp((vTexCoord.t - uDamageTintRange.x) / max(uDamageTintRange.y - uDamageTintRange.x, 0.0001), 0.0, 1.0);
+		texel.rgb = mix(texel.rgb, texel.rgb * uDamageTint.rgb, dtf * uDamageTint.a);
+	}
+
 	return desaturate(texel);
 }
 

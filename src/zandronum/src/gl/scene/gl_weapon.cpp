@@ -58,6 +58,7 @@
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
 #include "computation/psprite_overlay_compute.h"
+#include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor weapon tint
 
 EXTERN_CVAR (Bool, r_drawplayersprites)
 EXTERN_CVAR(Float, transsouls)
@@ -201,6 +202,17 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	{
 		gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
 	}
+	// [rc4l] features/damage-tint: while a damaging floor hurts the player, arm the shader's
+	// per-pixel multiplicative gradient -- full tint at the weapon's bottom edge (fV2), fading to
+	// none at the coverage point. Cleared right after the draw.
+	PalEntry dtAvg;
+	int dtPct;
+	float dtCov;
+	if (DamageTint_WeaponParams(player->mo, player->mo->RenderStyle.BlendOp, player->mo->RenderStyle.Flags, dtAvg, dtPct, dtCov))
+	{
+		gl_RenderState.SetDamageTint(dtAvg.r / 255.0f, dtAvg.g / 255.0f, dtAvg.b / 255.0f,
+			dtPct / 100.0f, fV2 - (fV2 - fV1) * dtCov, fV2);
+	}
 	gl_RenderState.Apply();
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	ptr->Set(x1, y1, 0, fU1, fV1);
@@ -212,6 +224,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	ptr->Set(x2, y2, 0, fU2, fV2);
 	ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
+	gl_RenderState.ClearDamageTint(); // [rc4l] features/damage-tint
 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.5f);
 }
 
