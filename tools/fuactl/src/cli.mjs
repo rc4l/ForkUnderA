@@ -175,6 +175,8 @@ async function main() {
           case "screenshot": return ui.screenshot(c, flags.engine || resolveEngine(), a[0] || "fuactl_shot").then((s) => ({ path: s.path, bytes: s.base64.length }));
           case "read":       return ui.readMenu(c).then((m) => (flags.full ? m : { lines: m.lines.map((l) => l.text) }));
           case "find":       return ui.findLabel(c, a.join(" "));
+          case "warp":       return ui.warp(c, Number(a[0]), Number(a[1]));
+          case "damaging":   return ui.damagingSectors(c, flags.limit ? Number(flags.limit) : 64);
           case "exec":       return c.rpc("console.exec", { text: a.join(" ") });
           default: throw new Error(`unknown ui action: ${act} (nav/click/rightclick/drag/type/look/stick/screenshot/exec)`);
         }
