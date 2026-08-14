@@ -715,6 +715,11 @@ enum class DialogAction
 	StopHosting,
 	StopHostingAndJoin,
 	SwitchHosting,
+
+	// [rc4l] Deleting one of the player's own presets, which is a folder on their disk and gone for
+	// good. Through the shared dialog rather than a box of its own, so it gets the same rule every
+	// destructive question here gets: focus starts on the safe answer and Escape resolves to it.
+	DeleteCustom,
 };
 
 struct BrowserDialog
@@ -1452,6 +1457,19 @@ static	int				g_HostDownloadEntry = -1;
 static	bool			g_HostDownloadResumed = false;
 static	bool			g_HostDownloadSucceeded = false;
 
+// [rc4l] The same pair for a CUSTOM preset's fetch. A separate slot rather than a shared one
+// because the two resumes do different things afterwards -- one hosts a catalogue entry by index,
+// the other reloads a preset from disk -- and one flag serving both would host whichever was last.
+static	bool			g_CustomDownloadResumed = false;
+static	bool			g_CustomDownloadSucceeded = false;
+static	FString			g_CustomDownloading;
+
+static void serverbrowser_CustomDownloadResume( bool allSucceeded )
+{
+	g_CustomDownloadResumed = true;
+	g_CustomDownloadSucceeded = allSucceeded;
+}
+
 // Free function because ResumeProc is a plain pointer and this menu is a class.
 static void serverbrowser_HostDownloadResume( bool allSucceeded )
 {
@@ -1622,6 +1640,32 @@ static	int					g_NewSettingFirstChar = 0;
 
 // The mode a server built here would run. See NewChosenGameMode.
 static	GAMEMODE_e			g_NewGameMode = GAMEMODE_COOPERATIVE;
+
+// [rc4l] The CUSTOM tab's own state: the presets read from disk, the search over them, and where
+// the cursor is. Three regions, walked the same way the NEW screen's are.
+enum class CustomFocus { Search, List, Buttons };
+
+static	std::vector<zx::CustomEntry>	g_CustomAll;
+static	bool				g_CustomLoaded = false;
+static	zx::TextInput		g_CustomSearch;
+static	int					g_CustomSearchFirstChar = 0;
+static	bool				g_CustomSearchDragging = false;
+static	int					g_CustomSearchClickTime = 0;
+static	bool				g_CustomSearchHot = false;
+static	CustomFocus			g_CustomFocus = CustomFocus::List;
+static	int					g_CustomSel = 0;
+static	int					g_CustomScroll = 0;
+static	int					g_CustomHot = -1;
+static	bool				g_CustomRevealSel = true;
+static	int					g_CustomBtnHot = -1;
+static	int					g_CustomBtnSel = 0;
+static	bool				g_CustomEmptyHot = false;
+static	bool				g_DraggingCustomBar = false;
+
+// Which preset a delete question is about. The dialog answers with a yes or a no and nothing else,
+// so what it was about has to be remembered on this side of it.
+static	FString				g_CustomDeleting;
+
 
 // [rc4l] The rotation: every map in the chosen files, in the order the files provide them, and
 // whatever the player has since done to that list.
@@ -2613,6 +2657,7 @@ public:
 		// the callback: that arrives from inside waddownload::Tick, and starting a server from there
 		// would re-enter it.
 		ResumeHostAfterDownload( );
+		ResumeCustomAfterDownload( );
 
 		// [rc4l] Only while the HOST tab is up, and only while nothing is being hosted.
 		//
@@ -3329,6 +3374,18 @@ public:
 
 		switch ( action )
 		{
+		case DialogAction::DeleteCustom:
+			if ( bAffirmative && g_CustomDeleting.IsNotEmpty( ))
+			{
+				if ( zx::CustomDelete( g_CustomDeleting.GetChars( )))
+					CustomForget( );
+				else
+					ShowNotice( "Could not delete", "That preset's folder would not go away." );
+			}
+
+			g_CustomDeleting = "";
+			break;
+
 		case DialogAction::CancelDownload:
 			// The hold placed when the question went up must be released on exactly one of the two
 			// answers -- that pairing is the whole reason this menu owns the question rather than
@@ -5098,9 +5155,9 @@ public:
 		if ( g_HostKind == HostKind::New )
 			return NewMouseEvent( type, x, y );
 
-		// [rc4l] CUSTOM draws nothing, so nothing there can be clicked. Refused rather than left to
-		// miss every hit test on its own: the fields keep their positions while they are not on
-		// screen, and a click landing on one of them would edit a form nobody can see.
+		if ( g_HostKind == HostKind::Custom )
+			return CustomMouseEvent( type, x, y );
+
 		if ( g_HostKind != HostKind::Presets )
 			return false;
 
@@ -9443,6 +9500,574 @@ public:
 			SB_HOST_BAR_X );
 	}
 
+	// ---------------------------------------------------------------------------------------------
+	//
+	// [rc4l] THE CUSTOM TAB: the player's own presets.
+	//
+	// The same list the NEW screen's wad list is: a search box over rows, because a player with
+	// forty saved setups is looking for one by name rather than reading the lot. The three buttons
+	// below say what can be done with the one selected.
+	//
+	// A preset whose files are not on this machine is still SHOWN. Hiding it would leave somebody
+	// wondering where a preset went; saying what is missing lets them fetch it, which is what PLAY
+	// NOW does. Only EDIT is refused, because prefilling the NEW screen with files it cannot resolve
+	// would build a load order full of gaps.
+
+	int CustomListTop( )		{ return SB_NEW_SEARCH_TOP + SB_NEW_SEARCH_H + 6; }
+	int CustomListBottom( )		{ return SB_NEW_TOOL_Y - 8; }
+	int CustomRowsVisible( )	{ return ( CustomListBottom( ) - CustomListTop( )) / SB_NEW_ROW_H; }
+
+	// The buttons across the bottom, in the tool row's own lane.
+	int CustomBtnW( )			{ return SB_NEW_TOOL_W; }
+	int CustomBtnLeft( int i )	{ return NewToolLeft( i ); }
+
+	// Reloaded from disk when something changes it, not per frame: this reads a folder.
+	const std::vector<zx::CustomEntry> &CustomEntries( )
+	{
+		if ( !g_CustomLoaded )
+		{
+			g_CustomAll = zx::CustomAll( );
+			g_CustomLoaded = true;
+		}
+
+		return g_CustomAll;
+	}
+
+	void CustomForget( )
+	{
+		g_CustomLoaded = false;
+	}
+
+	// Which rows the search leaves, as indices into the list. The same folding the wad search uses,
+	// so "sunday" finds "Sunday co-op".
+	std::vector<int> CustomRows( )
+	{
+		const std::vector<zx::CustomEntry> &all = CustomEntries( );
+		const std::string key = zx::SearchFold( g_CustomSearch.text );
+
+		std::vector<int> out;
+
+		for ( size_t i = 0; i < all.size( ); ++i )
+		{
+			if ( !key.empty( ) && ( zx::SearchFold( all[i].name ).find( key ) == std::string::npos ))
+				continue;
+
+			out.push_back( static_cast<int>( i ));
+		}
+
+		return out;
+	}
+
+	// What a preset cannot find on this machine. Empty means it is ready to play.
+	std::vector<std::string> CustomMissing( const zx::CustomEntry &entry )
+	{
+		std::vector<std::string> missing;
+
+		for ( size_t i = 0; i < entry.files.size( ); ++i )
+		{
+			const FString path = zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
+				entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( ));
+
+			if ( path.IsEmpty( ))
+				missing.push_back( entry.files[i].name );
+		}
+
+		return missing;
+	}
+
+	// The one under the cursor, or NULL when the list is empty or the search has emptied it.
+	const zx::CustomEntry *CustomSelected( )
+	{
+		const std::vector<int> rows = CustomRows( );
+		if ( rows.empty( ))
+			return NULL;
+
+		const int at = zx::ComputeClampedSelection( g_CustomSel, static_cast<int>( rows.size( )));
+		return &CustomEntries( )[rows[at]];
+	}
+
+	void DrawCustomEmpty( )
+	{
+		// [rc4l] Said plainly, with the way out under it. An empty list with no explanation reads as
+		// a screen that failed to load rather than as one nobody has filled in yet.
+		const int y = ( SB_HOST_TOP + SB_HOST_BOTTOM ) / 2 - SB_NEW_LINE;
+
+		const char *const line = "You have no custom presets";
+		screen->DrawText( SmallFont, CR_GRAY,
+			( SB_HOST_LEFT + SB_HOST_RIGHT ) / 2 - SmallFont->StringWidth( line ) / 2, y, line,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+			TAG_DONE );
+
+		const int bw = 110;
+		const int bx = ( SB_HOST_LEFT + SB_HOST_RIGHT ) / 2 - bw / 2;
+		const int by = y + SB_NEW_LINE + 8;
+
+		const bool bFocus = ( g_Focus == zx::BrowserFocus::Host );
+
+		DrawRoundedButton( bx, by, bw, SB_HOST_BTN_H, "CREATE ONE HERE",
+			g_CustomEmptyHot || bFocus );
+
+		if ( bFocus )
+			FocusAnchor( zx::BrowserFocus::Host, bx - 5, by + SB_HOST_BTN_H / 2 );
+
+		serverbrowser_Tip( bx, by, bw, SB_HOST_BTN_H, "Build one on the NEW tab" );
+	}
+
+	void DrawCustomPanel( )
+	{
+		const std::vector<int> rows = CustomRows( );
+
+		if ( CustomEntries( ).empty( ))
+		{
+			DrawCustomEmpty( );
+			return;
+		}
+
+		FString heading;
+		heading.Format( "YOUR PRESETS  (%d)", static_cast<int>( CustomEntries( ).size( )));
+
+		screen->DrawText( SmallFont, CR_GOLD, SB_HOST_LIST_LEFT, SB_NEW_TOP, heading,
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+			TAG_DONE );
+
+		// The search box, in the same place and shape the wad list's is.
+		{
+			int firstChar = g_CustomSearchFirstChar;
+			DrawTextField( SB_HOST_LIST_LEFT, SB_NEW_SEARCH_TOP,
+				SB_HOST_LIST_RIGHT - SB_HOST_LIST_LEFT, SB_NEW_SEARCH_H, g_CustomSearch,
+				( g_CustomFocus == CustomFocus::Search ) && ( g_Focus == zx::BrowserFocus::Host ),
+				g_CustomSearchHot, "Search your presets", false, firstChar );
+			g_CustomSearchFirstChar = firstChar;
+		}
+
+		const int visible = CustomRowsVisible( );
+
+		g_CustomSel = zx::ComputeClampedSelection( g_CustomSel, static_cast<int>( rows.size( )));
+
+		if ( g_CustomRevealSel )
+		{
+			NewClampScroll( g_CustomSel, static_cast<int>( rows.size( )), visible, g_CustomScroll );
+			g_CustomRevealSel = false;
+		}
+		else
+		{
+			g_CustomScroll = zx::ComputeClampedSelection( g_CustomScroll,
+				MAX( 1, static_cast<int>( rows.size( )) - visible + 1 ));
+		}
+
+		for ( int row = g_CustomScroll;
+			( row < static_cast<int>( rows.size( ))) && ( row < g_CustomScroll + visible ); ++row )
+		{
+			const zx::CustomEntry &entry = CustomEntries( )[rows[row]];
+
+			const int rowY = NewRowY( CustomListTop( ), row, g_CustomScroll );
+			const bool bSel = ( row == g_CustomSel );
+
+			DrawNewRowHighlight( SB_HOST_LIST_LEFT - 4, SB_HOST_LIST_RIGHT, rowY, bSel,
+				( row == g_CustomHot ));
+
+			if ( bSel && ( g_CustomFocus == CustomFocus::List ) &&
+				( g_Focus == zx::BrowserFocus::Host ))
+			{
+				FocusAnchor( zx::BrowserFocus::Host, SB_HOST_LIST_LEFT - 9,
+					rowY + SB_NEW_ROW_H / 2 );
+			}
+
+			const std::vector<std::string> missing = CustomMissing( entry );
+
+			DrawNewRowText( SB_HOST_LIST_LEFT, rowY,
+				missing.empty( ) ? ( bSel ? CR_WHITE : CR_GRAY ) : CR_ORANGE,
+				serverbrowser_FitName( entry.name.c_str( ), 150 ));
+
+			// What it is, on the right of its own row: the mode, and whether it can be played.
+			FString note;
+			if ( !missing.empty( ))
+				note.Format( "%d missing", static_cast<int>( missing.size( )));
+			else
+				note.Format( "%d file(s)", static_cast<int>( entry.files.size( )));
+
+			DrawNewRowText( SB_HOST_LIST_RIGHT - SmallFont->StringWidth( note ) - 4, rowY,
+				missing.empty( ) ? CR_DARKGRAY : CR_ORANGE, note );
+		}
+
+		DrawHostRegionScrollBar( CustomListTop( ), CustomListBottom( ),
+			static_cast<int>( rows.size( )) * SB_NEW_ROW_H, g_CustomScroll * SB_NEW_ROW_H,
+			SB_HOST_LBAR_X );
+
+		// [rc4l] The three things that can be done with the selected one. EDIT goes dark when a file
+		// is missing rather than vanishing: a button that disappears makes the row change shape as
+		// the cursor passes over it, and the eye reads that as the list moving.
+		const zx::CustomEntry *const chosen = CustomSelected( );
+		const bool bPlayable = ( chosen != NULL );
+		const bool bEditable = ( chosen != NULL ) && CustomMissing( *chosen ).empty( );
+
+		static const char *const kLabels[3] = { "PLAY NOW!", "EDIT", "DELETE" };
+
+		for ( int i = 0; i < 3; ++i )
+		{
+			const bool bOn = ( g_CustomBtnHot == i ) ||
+				(( g_CustomFocus == CustomFocus::Buttons ) && ( g_CustomBtnSel == i ) &&
+				 ( g_Focus == zx::BrowserFocus::Host ));
+
+			DrawRoundedButton( CustomBtnLeft( i ), SB_NEW_TOOL_Y, CustomBtnW( ), SB_NEW_TOOL_H,
+				kLabels[i], bOn && (( i != 1 ) || bEditable ));
+
+			if ( bOn && ( g_CustomFocus == CustomFocus::Buttons ))
+			{
+				FocusAnchor( zx::BrowserFocus::Host, CustomBtnLeft( i ) - 5,
+					SB_NEW_TOOL_Y + SB_NEW_TOOL_H / 2 );
+			}
+		}
+
+		serverbrowser_Tip( CustomBtnLeft( 0 ), SB_NEW_TOOL_Y, CustomBtnW( ), SB_NEW_TOOL_H,
+			bPlayable ? "Start a server on this machine, fetching anything missing first"
+				: "Nothing selected" );
+		serverbrowser_Tip( CustomBtnLeft( 1 ), SB_NEW_TOOL_Y, CustomBtnW( ), SB_NEW_TOOL_H,
+			bEditable ? "Open this setup on the NEW tab"
+				: "Cannot edit a preset whose files are missing" );
+		serverbrowser_Tip( CustomBtnLeft( 2 ), SB_NEW_TOOL_Y, CustomBtnW( ), SB_NEW_TOOL_H,
+			"Remove this preset" );
+	}
+
+	// --- the pointer and the keyboard on the CUSTOM tab -------------------------------------------
+
+	bool CustomMouseEvent( int type, int x, int y )
+	{
+		g_CustomHot = -1;
+		g_CustomBtnHot = -1;
+		g_CustomSearchHot = false;
+		g_CustomEmptyHot = false;
+
+		// Nothing saved: one button, in the middle, and it is the only thing that can be pressed.
+		if ( CustomEntries( ).empty( ))
+		{
+			const int bw = 110;
+			const int bx = ( SB_HOST_LEFT + SB_HOST_RIGHT ) / 2 - bw / 2;
+			const int by = ( SB_HOST_TOP + SB_HOST_BOTTOM ) / 2 - SB_NEW_LINE + SB_NEW_LINE + 8;
+
+			if (( x >= serverbrowser_ToScreenX( bx )) &&
+				( x < serverbrowser_ToScreenX( bx + bw )) &&
+				( y >= serverbrowser_ToScreenY( by )) &&
+				( y < serverbrowser_ToScreenY( by + SB_HOST_BTN_H )))
+			{
+				g_CustomEmptyHot = true;
+
+				if ( type == MOUSE_Release )
+				{
+					SelectSubTabIndex( static_cast<int>( HostKind::New ));
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+				}
+
+				return true;
+			}
+
+			return false;
+		}
+
+		const std::vector<int> rows = CustomRows( );
+
+		// The bar first, through the shared helper, for the reason every other list here does it.
+		if ( RegionBarMouse( type, x, y, CustomListTop( ), CustomListBottom( ),
+			static_cast<int>( rows.size( )) * SB_NEW_ROW_H,
+			MAX( 0, static_cast<int>( rows.size( )) - CustomRowsVisible( )),
+			g_CustomScroll, g_DraggingCustomBar, SB_HOST_LBAR_X ))
+		{
+			return true;
+		}
+
+		// The three buttons.
+		if (( y >= serverbrowser_ToScreenY( SB_NEW_TOOL_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_NEW_TOOL_Y + SB_NEW_TOOL_H )))
+		{
+			for ( int i = 0; i < 3; ++i )
+			{
+				if (( x < serverbrowser_ToScreenX( CustomBtnLeft( i ))) ||
+					( x >= serverbrowser_ToScreenX( CustomBtnLeft( i ) + CustomBtnW( ))))
+				{
+					continue;
+				}
+
+				g_CustomBtnHot = i;
+
+				if ( type == MOUSE_Release )
+				{
+					g_CustomFocus = CustomFocus::Buttons;
+					g_CustomBtnSel = i;
+					CustomPressButton( i );
+				}
+
+				return true;
+			}
+		}
+
+		// The search box, through the same field rule every other box on this screen follows.
+		{
+			const bool bOver = ( y >= serverbrowser_ToScreenY( SB_NEW_SEARCH_TOP )) &&
+				( y < serverbrowser_ToScreenY( SB_NEW_SEARCH_TOP + SB_NEW_SEARCH_H ));
+
+			if ( bOver && ( type == MOUSE_Click ))
+			{
+				g_CustomFocus = CustomFocus::Search;
+				SetFocus( zx::BrowserFocus::Host );
+			}
+
+			g_CustomSearchHot = bOver;
+
+			if ( FieldMouse( type, x, y, SB_HOST_LIST_LEFT, SB_NEW_SEARCH_TOP,
+				SB_HOST_LIST_RIGHT - SB_HOST_LIST_LEFT, SB_NEW_SEARCH_H, g_CustomSearch,
+				g_CustomSearchFirstChar, g_CustomSearchDragging, g_CustomSearchClickTime ))
+			{
+				return true;
+			}
+		}
+
+		// The rows.
+		{
+			const int row = NewRowAt( y, CustomListTop( ), CustomListBottom( ), g_CustomScroll,
+				static_cast<int>( rows.size( )));
+
+			if (( row >= 0 ) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_LIST_LEFT - 4 )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_LIST_RIGHT )))
+			{
+				g_CustomHot = row;
+
+				if ( type == MOUSE_Release )
+				{
+					g_CustomFocus = CustomFocus::List;
+					g_CustomSel = row;
+					g_CustomRevealSel = true;
+					SetFocus( zx::BrowserFocus::Host );
+				}
+
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	// [rc4l] Which button, pressed. Shared by the pointer and the keyboard so the two cannot differ
+	// about what DELETE means.
+	void CustomPressButton( int i )
+	{
+		if ( i == 0 )
+			CustomPlay( );
+		else if ( i == 1 )
+			CustomEdit( );
+		else
+			CustomAskDelete( );
+	}
+
+	// Up and down walk the rows, left and right walk the buttons, Enter presses what is under the
+	// cursor, and Tab moves between the three regions -- the same alphabet the NEW screen uses.
+	bool CustomNavigate( zx::NavKey key )
+	{
+		const std::vector<int> rows = CustomRows( );
+
+		if ( CustomEntries( ).empty( ))
+			return true;		// one button, nothing to walk
+
+		switch ( key )
+		{
+		case zx::NavKey::Up:
+		case zx::NavKey::Down:
+		{
+			const int step = ( key == zx::NavKey::Up ) ? -1 : 1;
+
+			if ( g_CustomFocus == CustomFocus::Search )
+			{
+				if ( step > 0 )
+					g_CustomFocus = CustomFocus::List;
+			}
+			else if ( g_CustomFocus == CustomFocus::List )
+			{
+				const int next = g_CustomSel + step;
+
+				if (( next >= 0 ) && ( next < static_cast<int>( rows.size( ))))
+				{
+					g_CustomSel = next;
+					g_CustomRevealSel = true;
+				}
+				else if ( step < 0 )
+					g_CustomFocus = CustomFocus::Search;
+				else
+					g_CustomFocus = CustomFocus::Buttons;
+			}
+			else if ( step < 0 )
+			{
+				g_CustomFocus = CustomFocus::List;
+			}
+
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			return true;
+		}
+
+		case zx::NavKey::Left:
+		case zx::NavKey::Right:
+			if ( g_CustomFocus == CustomFocus::Buttons )
+			{
+				const int next = zx::ComputeClampedSelection(
+					g_CustomBtnSel + (( key == zx::NavKey::Left ) ? -1 : 1 ), 3 );
+
+				if ( next != g_CustomBtnSel )
+				{
+					g_CustomBtnSel = next;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+			}
+			return true;
+
+		default:
+			break;
+		}
+
+		return true;
+	}
+
+	// --- what the three buttons do ----------------------------------------------------------------
+
+	// [rc4l] EDIT: the preset onto the NEW screen, and the tab with it.
+	//
+	// Refused while a file is missing rather than half-done: prefilling a load order with gaps in it
+	// would look like the preset had lost them.
+	void CustomEdit( )
+	{
+		const zx::CustomEntry *const chosen = CustomSelected( );
+		if ( chosen == NULL )
+			return;
+
+		if ( !CustomMissing( *chosen ).empty( ))
+		{
+			ShowNotice( "Files missing",
+				"Play it first to fetch what it needs, then edit it." );
+			return;
+		}
+
+		NewApplyEntry( *chosen );
+
+		SelectSubTabIndex( static_cast<int>( HostKind::New ));
+		g_NewFocus = NewFocus::Wads;
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+	}
+
+	void CustomAskDelete( )
+	{
+		const zx::CustomEntry *const chosen = CustomSelected( );
+		if ( chosen == NULL )
+			return;
+
+		g_CustomDeleting = chosen->name.c_str( );
+
+		FString message;
+		message.Format( "\"%s\" and its folder go for good.", chosen->name.c_str( ));
+
+		ShowDialog( DialogAction::DeleteCustom, "Delete this preset?", message.GetChars( ),
+			"Delete", 'd', "Keep", 'k' );
+	}
+
+	// [rc4l] PLAY NOW on a preset: fetch what is missing, then host it.
+	//
+	// The fetch is the SAME transfer a shipped preset uses, with the same checking -- each file goes
+	// over with its md5, so a mirror handing back a different build of the same filename is caught
+	// here rather than by a server refusing to start on it. A preset saved on another machine is
+	// exactly the case this exists for.
+	void CustomPlay( )
+	{
+		const zx::CustomEntry *const chosen = CustomSelected( );
+		if ( chosen == NULL )
+			return;
+
+		const std::vector<std::string> missing = CustomMissing( *chosen );
+
+		if ( !missing.empty( ))
+		{
+			if ( !zx::waddownload::IsAvailable( ))
+			{
+				ShowNotice( "Files missing",
+					"This preset needs files this machine does not have, and downloading is off." );
+				return;
+			}
+
+			std::vector<zx::waddownload::WantedFile> wanted;
+
+			for ( size_t i = 0; i < missing.size( ); ++i )
+			{
+				std::string md5;
+				for ( size_t j = 0; j < chosen->files.size( ); ++j )
+				{
+					if ( chosen->files[j].name == missing[i] )
+					{
+						md5 = chosen->files[j].md5;
+						break;
+					}
+				}
+
+				wanted.push_back( zx::waddownload::WantedFile( missing[i], false, md5 ));
+			}
+
+			if ( !zx::waddownload::Start( std::vector<std::string>( ), std::vector<std::string>( ),
+				wanted, zx::NoteDownloadFinished ))
+			{
+				// [rc4l] Gracefully, which here means saying which files and stopping. A preset
+				// naming something no mirror carries is a preset that cannot be played on this
+				// machine, and pretending otherwise would start a server without them.
+				FString message;
+				message.Format( "%d file(s) could not be fetched, starting with %s.",
+					static_cast<int>( missing.size( )), missing[0].c_str( ));
+
+				ShowNotice( "Could not fetch", message.GetChars( ));
+				return;
+			}
+
+			g_CustomDownloading = chosen->name.c_str( );
+			zx::SetPendingResume( serverbrowser_CustomDownloadResume, chosen->name.c_str( ));
+
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+			return;
+		}
+
+		// Everything is here: onto the NEW screen's own hosting, which is the one path that starts
+		// a server built out of files rather than out of a catalogue entry.
+		NewApplyEntry( *chosen );
+		NewStartHosting( );
+	}
+
+	// One frame after the transfer says it finished, for the reason the preset path gives: the
+	// callback arrives from inside waddownload::Tick and starting a server from there re-enters it.
+	void ResumeCustomAfterDownload( )
+	{
+		if ( !g_CustomDownloadResumed )
+			return;
+
+		g_CustomDownloadResumed = false;
+
+		const FString name = g_CustomDownloading;
+		const bool bOk = g_CustomDownloadSucceeded;
+		g_CustomDownloading = "";
+
+		if ( name.IsEmpty( ) || !bOk )
+			return;		// a failure has already been reported on the browser's own panel
+
+		const zx::CustomEntry entry = zx::CustomLoad( name.GetChars( ));
+		if ( entry.name.empty( ))
+			return;
+
+		const std::vector<std::string> missing = NewApplyEntry( entry );
+
+		if ( !missing.empty( ))
+		{
+			FString message;
+			message.Format( "%d file(s) are still missing after the download.",
+				static_cast<int>( missing.size( )));
+
+			ShowNotice( "Still missing", message.GetChars( ));
+			return;
+		}
+
+		NewStartHosting( );
+	}
+
 	// [rc4l] The last configuration played, put back, once per run of the game.
 	//
 	// Asked for on the first draw of this screen rather than at startup: a player who never opens
@@ -10347,6 +10972,76 @@ public:
 	// The search field claims the keyboard while it has focus, for the reason every field on this
 	// menu does: a printable key is a letter being typed and must never also be a shortcut. Away
 	// from the field, the keys are the three verbs this screen has.
+	// [rc4l] The CUSTOM tab's keys: Tab between its three regions, and the search box while it has
+	// them. Everything else it does arrives as an MKEY and is answered in MenuEvent.
+	bool CustomKeyEvent( event_t *ev )
+	{
+		if ( CustomEntries( ).empty( ))
+			return false;
+
+		if (( ev->data1 == GK_TAB ) &&
+			(( ev->subtype == EV_GUI_KeyDown ) || ( ev->subtype == EV_GUI_KeyRepeat ) ||
+			 ( ev->subtype == EV_GUI_Char )))
+		{
+			if ( ev->subtype != EV_GUI_KeyDown )
+				return true;
+
+			static const CustomFocus kOrder[] = { CustomFocus::Search, CustomFocus::List,
+				CustomFocus::Buttons };
+			const int count = static_cast<int>( countof( kOrder ));
+
+			int at = 0;
+			for ( int i = 0; i < count; ++i )
+			{
+				if ( kOrder[i] == g_CustomFocus )
+					at = i;
+			}
+
+			const bool bBack = (( ev->data3 & GKM_SHIFT ) != 0 );
+			g_CustomFocus = kOrder[( at + ( bBack ? count - 1 : 1 )) % count];
+
+			M_ReleaseMenuButtons( );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			return true;
+		}
+
+		if ( g_CustomFocus != CustomFocus::Search )
+			return false;
+
+		zx::TextInput next = g_CustomSearch;
+
+		switch ( EditTextField( next, ev, 48, false, false, false ))
+		{
+		case FieldKey::Escape:
+		case FieldKey::Enter:
+		case FieldKey::Down:
+			g_CustomFocus = CustomFocus::List;
+			return true;
+
+		case FieldKey::Up:
+			return true;
+
+		case FieldKey::Handled:
+			if ( next.text != g_CustomSearch.text )
+			{
+				// A narrower list has a different row under the cursor, so the cursor goes back to
+				// the top rather than to whatever happened to land there.
+				g_CustomSel = 0;
+				g_CustomScroll = 0;
+			}
+
+			g_CustomSearch = next;
+			return true;
+
+		case FieldKey::Unclaimed:
+		case FieldKey::Left:
+		case FieldKey::Right:
+			return false;
+		}
+
+		return false;
+	}
+
 	bool NewKeyEvent( event_t *ev )
 	{
 		// [rc4l] TAB walks the SCREEN's regions, which the arrows cannot.
@@ -10645,10 +11340,11 @@ public:
 			return;
 		}
 
-		// [rc4l] CUSTOM has no screen yet. The panel itself is still drawn: a sub-tab that blanks
-		// the screen looks like a fault rather than like a place that has yet to be filled in.
-		if ( g_HostKind != HostKind::Presets )
+		if ( g_HostKind == HostKind::Custom )
+		{
+			DrawCustomPanel( );
 			return;
+		}
 
 		// [rc4l] The right column gets the server list's detail backdrop, for the reason it reads as
 		// the same kind of thing: a column describing whatever the list beside it has selected. Without
@@ -14434,6 +15130,16 @@ public:
 				return true;
 		}
 
+		// The CUSTOM tab's own, for the same reason: it has a search field, and no two of these
+		// screens are ever up at once.
+		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
+			( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Custom ) &&
+			( g_Focus == zx::BrowserFocus::Host ))
+		{
+			if ( CustomKeyEvent( ev ))
+				return true;
+		}
+
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
 			( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Presets ) &&
 			( g_Focus == zx::BrowserFocus::Host ) && HostInAField( ))
@@ -14718,7 +15424,12 @@ public:
 			// The save box is a name being typed the whole time it is open, so it always wants the
 			// raw keys.
 			|| (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::New ) &&
-				( g_NewModal == NewModal::Save ));
+				( g_NewModal == NewModal::Save ))
+
+			// And the CUSTOM tab's search box, for the reason the wad search needed it: backspace
+			// has to reach the field rather than becoming a menu key on the way.
+			|| (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Custom ) &&
+				( g_CustomFocus == CustomFocus::Search ));
 
 		return ( bInAField == false ) || g_Dialog.open || g_Notice.IsNotEmpty( );
 	}
@@ -15231,6 +15942,9 @@ public:
 		if (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostKind == HostKind::New ))
 			return NewNavigate( key );
 
+		if (( g_Focus == zx::BrowserFocus::Host ) && ( g_HostKind == HostKind::Custom ))
+			return CustomNavigate( key );
+
 		if ( g_Focus == zx::BrowserFocus::Host )
 		{
 			switch ( key )
@@ -15373,6 +16087,28 @@ public:
 			return true;
 		}
 
+		// [rc4l] The CUSTOM tab answers its own Enter, for the same reason the NEW screen does: it
+		// never reaches Responder, and falling through would act on the PRESETS panel's idea of what
+		// is selected.
+		if (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Custom ) &&
+			( g_Focus == zx::BrowserFocus::Host ) && ( mkey == MKEY_Enter ))
+		{
+			if ( CustomEntries( ).empty( ))
+			{
+				// The one button there is.
+				SelectSubTabIndex( static_cast<int>( HostKind::New ));
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+				return true;
+			}
+
+			if ( g_CustomFocus == CustomFocus::Buttons )
+				CustomPressButton( g_CustomBtnSel );
+			else
+				CustomPlay( );		// on a row, Enter is what the row is for
+
+			return true;
+		}
+
 		// [rc4l] THE NEW SCREEN ANSWERS ITS OWN ENTER, before the generic one below can.
 		//
 		// Enter is translated into MKEY_Enter and delivered HERE -- it never reaches Responder, and
@@ -15433,6 +16169,7 @@ public:
 			else if ( mkey == MKEY_Enter )
 			{
 				if ( g_NewFocus == NewFocus::Wads )
+
 				{
 					NewAddSelected( );
 					return true;
