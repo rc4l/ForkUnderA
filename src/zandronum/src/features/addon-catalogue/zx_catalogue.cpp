@@ -19,6 +19,7 @@
 #include "features/addon-catalogue/computation/variantpick_compute.h"
 #include "features/server-hosting/zx_hosting.h"
 #include "features/server-hosting/zx_reachprobe.h"
+#include "features/wad-download/zx_waddownload.h"
 #include "features/wad-download/zx_wadsearch.h"
 
 // [rc4l] kIwadSubstitutes, generated from the repo-root iwadsubstitutes.txt by tools/gen-wadlists.cmake.
@@ -665,16 +666,38 @@ CCMD( fua_host )
 	const std::string variantId = ( argv.argc( ) >= 3 ) ? argv[2] : std::string( );
 	const zx::VariantPick variant = zx::PickVariant( chosen->addon, variantId );
 
-	// What the player already has, in the two places a file can be: the ordinary search path and the
-	// by-hash store the downloader fills. Asking both is what stops us fetching something twice.
+	// What the player already has, in the two places a file can be: the by-hash store the downloader
+	// fills, and the ordinary search path. Asking both is what stops us fetching something twice.
+	//
+	// [rc4l] By CONTENT first, and the resolved path is kept rather than thrown away. This asked
+	// D_AddFile( ..., check = false ), which does not look for the file at all -- it pushes the name
+	// and returns true -- so every file read as present and nothing could ever be reported missing.
+	// The path then went to the server as a bare NAME, leaving it to search its own config: the
+	// by-hash store is not on anybody's search path, so a file we hold could not be found by the
+	// server we hold it for, and two files called test.wad could not be told apart at all.
+	//
+	// The panel has resolved this way since it shipped; this is the same resolution, in the path
+	// that had been left behind.
 	std::vector<std::string> have;
+	std::vector<std::string> paths;			// resolved, parallel to `have`
+
 	for ( size_t i = 0; i < variant.files.size( ); ++i )
 	{
 		const std::string &name = variant.files[i].name;
 
-		TArray<FString> resolved;
-		if ( D_AddFile( resolved, name.c_str( ), false ) && ( resolved.Size( ) > 0 ))
+		FString path = zx::waddownload::FindVerifiedCopy( name.c_str( ),
+			variant.files[i].md5.c_str( ));
+
+		// Nothing with those bytes. A copy under that name still plays -- it is what the player
+		// dropped in by hand -- and the join that follows is where a mismatch is caught.
+		if ( path.IsEmpty( ))
+			path = zx::FindFileInEngineSearchPaths( name.c_str( ));
+
+		if ( path.IsNotEmpty( ))
+		{
 			have.push_back( name );
+			paths.push_back( std::string( path.GetChars( )));
+		}
 	}
 
 	const std::vector<std::string> iwads = zx::AvailableIwads( chosen->addon.iwad );
@@ -720,7 +743,25 @@ CCMD( fua_host )
 	zx::HostConfig config;
 	config.hostName = plan.serverName;
 	config.iwad = plan.iwad;
-	config.pwads = plan.pwads;
+
+	// [rc4l] The SERVER gets the paths we resolved, not the names the plan carries, for the reason
+	// the panel gives where it does the same: it searches its OWN config, which is not the one this
+	// process just registered a download folder in.
+	config.pwads.clear( );
+	for ( size_t i = 0; i < plan.pwads.size( ); ++i )
+	{
+		std::string resolved = plan.pwads[i];
+		for ( size_t j = 0; j < have.size( ); ++j )
+		{
+			if ( have[j] == plan.pwads[i] )
+			{
+				resolved = paths[j];
+				break;
+			}
+		}
+
+		config.pwads.push_back( resolved );
+	}
 	config.execCfg = plan.execCfg;
 	config.execRemixCfgs = plan.execRemixCfgs;
 	config.maxPlayers = plan.maxPlayers;
