@@ -264,8 +264,8 @@ const char *SaveStatusText(SaveState state)
 	case SaveState::Empty:		return "Give it a name";
 	case SaveState::NoFiles:	return "Add at least one file before saving this";
 	case SaveState::Bad:		return "That name cannot be used for a folder";
-	case SaveState::Asking:		return "That name is already in use. Confirm again to replace it";
-	case SaveState::Replace:	return "Confirm replaces what is saved under that name";
+	case SaveState::Asking:		return "That name is taken. Confirm again to replace it";
+	case SaveState::Replace:	return "Confirm now replaces it";
 	case SaveState::Ready:		return "";
 	case SaveState::Fresh:		return "";
 	}
