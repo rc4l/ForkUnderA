@@ -1308,6 +1308,10 @@ void FTextureManager::PrecacheLevel (void)
 		}
 		Printf ("FUA caching: %u textures (%.1f MB) precached in %u ms\n",
 			marked, pixbytes / (1024.0 * 1024.0), I_MSTime() - precacheTime);
+
+		// Compile every reachable GPU pipeline now rather than at first draw
+		// mid-fight (once per session; see fua_warmup.cpp).
+		FUA_WarmupPipelines ();
 	}
 
 	delete[] hitlist;

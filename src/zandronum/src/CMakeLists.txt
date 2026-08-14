@@ -1492,6 +1492,7 @@ add_executable( zdoom WIN32
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
 	features/fua-caching/fua_caching.cpp
+	features/fua-caching/fua_warmup.cpp
 	features/iwad-registry/zx_iwadregistry.cpp
 	features/identity/zx_identity.cpp
 	features/identity/zx_identitynet.cpp
