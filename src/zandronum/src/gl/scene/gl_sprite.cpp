@@ -191,7 +191,7 @@ void GLSprite::Draw(int pass)
 
 	// [rc4l] features/damage-tint: players on damaging floors glow with the floor's color from the
 	// feet up; no-op unless the actor qualifies. Must be unwound after the draw (end of Draw).
-	bool damagetintglow = DamageTint_BeginSpriteGlow(actor, RenderStyle.BlendOp, RenderStyle.Flags);
+	bool damagetintglow = DamageTint_BeginSpriteGlow(actor, RenderStyle.BlendOp, RenderStyle.Flags, vt, vb);
 
 	if (gl_isBlack(Colormap.FadeColor)) foglevel=lightlevel;
 

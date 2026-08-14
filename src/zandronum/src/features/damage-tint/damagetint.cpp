@@ -292,30 +292,30 @@ namespace
 	}
 } // namespace
 
-bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags )
+bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb )
 {
 	PalEntry avg;
 	int pct = TintStrength( actor, blendOp, styleFlags, cl_damagetint, avg );
 	if ( pct <= 0 )
 		return false;
-	float reach = CoverageSpan( cl_damagetint_coverage, FIXED2FLOAT( actor->height ));
-	if ( reach <= 0.0f )
+	int cov = clamp<int>( cl_damagetint_coverage, 0, 100 );
+	if ( cov <= 0 )
 		return false;
 
-	// Emissive gradient from the actor's own floor plane: full tint at the feet, gone `reach`
-	// units up (coverage % of the body). The shader's glow path does the per-pixel falloff.
-	float s = pct / 100.0f;
-	float top[4] = { 0.0f, 0.0f, 0.0f, 0.0f }; // alpha 0 disables the ceiling side
-	float bot[4] = { avg.r / 255.0f * s, avg.g / 255.0f * s, avg.b / 255.0f * s, reach };
-	gl_RenderState.EnableGlow( true );
-	gl_RenderState.SetGlowParams( top, bot );
-	gl_RenderState.SetGlowPlanes( actor->Sector->ceilingplane, actor->Sector->floorplane );
+	// Per-pixel multiplicative gradient across the sprite's vertical texture span: full tint at
+	// the feet (the larger V), fading to none at the coverage point. Same shader path as the
+	// weapon and mugshot, so it reads identically on any clothing color.
+	float vBottom = vb > vt ? vb : vt;
+	float vTop    = vb > vt ? vt : vb;
+	float covFrac = cov / 100.0f;
+	gl_RenderState.SetDamageTint( avg.r / 255.0f, avg.g / 255.0f, avg.b / 255.0f,
+		pct / 100.0f, vBottom - ( vBottom - vTop ) * covFrac, vBottom );
 	return true;
 }
 
 void DamageTint_EndSpriteGlow()
 {
-	gl_RenderState.EnableGlow( false );
+	gl_RenderState.ClearDamageTint();
 }
 
 bool DamageTint_WeaponParams( AActor *playermo, int blendOp, DWORD styleFlags, PalEntry &avgOut, int &pctOut, float &coverageFracOut )
@@ -421,7 +421,7 @@ PalEntry DamageTint_FaceOverlay( float *coverageFracOut )
 #else // NO_GL -- dedicated server: no renderer, no tint; nothing references these there.
 
 #include "features/damage-tint/damagetint.h"
-bool DamageTint_BeginSpriteGlow( AActor *, int, DWORD ) { return false; }
+bool DamageTint_BeginSpriteGlow( AActor *, int, DWORD, float, float ) { return false; }
 void DamageTint_EndSpriteGlow() {}
 bool DamageTint_WeaponParams( AActor *, int, DWORD, PalEntry &, int &, float & ) { return false; }
 PalEntry DamageTint_Blend( PalEntry, int ) { return PalEntry( 255, 255, 255, 255 ); }
