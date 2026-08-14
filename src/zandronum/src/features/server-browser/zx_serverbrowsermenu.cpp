@@ -8262,7 +8262,8 @@ public:
 	int NewSaveBoxW( )		{ return 330; }
 	int NewSaveBoxLeft( )	{ return ( SB_VIRT_W - NewSaveBoxW( )) / 2; }
 	int NewSaveBoxTop( )	{ return SB_CONTENT_TOP + 60; }
-	int NewSaveBoxH( )		{ return SB_NEW_MODAL_PAD * 2 + SB_NEW_LINE * 4 + SB_DLG_BTN_H + 14; }
+	// Tall enough for a status line that has WRAPPED to two, which the longest of them does.
+	int NewSaveBoxH( )		{ return SB_NEW_MODAL_PAD * 2 + SB_NEW_LINE * 5 + SB_DLG_BTN_H + 14; }
 	int NewSaveFieldTop( )	{ return NewSaveBoxTop( ) + SB_NEW_MODAL_PAD + SB_NEW_LINE + 4; }
 	int NewSaveStatusTop( )	{ return NewSaveFieldTop( ) + SB_NEW_SEARCH_H + 6; }
 	int NewSaveBtnTop( )	{ return NewSaveBoxTop( ) + NewSaveBoxH( ) - SB_NEW_MODAL_PAD - SB_DLG_BTN_H; }
@@ -8359,16 +8360,31 @@ public:
 
 		// [rc4l] The status line, which is the whole reason this box exists rather than a prompt.
 		// Red is a refusal or a warning; grey is a remark.
+		//
+		// WRAPPED TO THE BOX, through V_BreakLines -- the same thing the notice panel and the
+		// experience summary use. Drawn as one line it ran out of the box and across the panel
+		// behind it, and the answer to that is not a shorter sentence: the next line somebody adds
+		// would do it again. A width the text has to fit inside cannot overflow.
 		const zx::SaveState state = NewSaveStateNow( );
 		const char *const status = zx::SaveStatusText( state );
 
 		if ( status[0] != 0 )
 		{
-			screen->DrawText( SmallFont,
-				zx::SaveStatusIsWarning( state ) ? CR_RED : CR_DARKGRAY,
-				left, NewSaveStatusTop( ), status,
-				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
-				TAG_DONE );
+			FBrokenLines *const lines = V_BreakLines( SmallFont, width, status );
+
+			int y = NewSaveStatusTop( );
+			for ( int i = 0; lines[i].Width >= 0; ++i )
+			{
+				screen->DrawText( SmallFont,
+					zx::SaveStatusIsWarning( state ) ? CR_RED : CR_DARKGRAY,
+					left, y, lines[i].Text,
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+					TAG_DONE );
+
+				y += SmallFont->GetHeight( ) + 1;
+			}
+
+			V_FreeBrokenLines( lines );
 		}
 
 		DrawRoundedButton( NewSaveConfirmLeft( ), NewSaveBtnTop( ), NewSaveBtnW( ), SB_DLG_BTN_H,
