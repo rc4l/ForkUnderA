@@ -1667,6 +1667,13 @@ static	bool				g_DraggingCustomBar = false;
 static	int					g_CustomDetailScroll = 0;
 static	bool				g_DraggingCustomDetailBar = false;
 
+// The read-only map list a saved preset opens. See DrawCustomMapsModal for why it cannot be edited.
+static	bool				g_CustomMapsOpen = false;
+static	bool				g_CustomMapsHot = false;
+static	bool				g_CustomMapsDoneHot = false;
+static	int					g_CustomMapsScroll = 0;
+static	bool				g_DraggingCustomMapsBar = false;
+
 // Which preset a delete question is about. The dialog answers with a yes or a no and nothing else,
 // so what it was about has to be remembered on this side of it.
 static	FString				g_CustomDeleting;
@@ -9701,83 +9708,95 @@ public:
 	//
 	// Built rather than drawn so the height, the scrollbar and the drawing agree about how much
 	// there is -- the same reason the experience summary is measured before it is drawn.
+	// [rc4l] A line of the column, by KIND rather than by pre-formatted text.
+	//
+	// The first version pasted a label and a value into one string and left-aligned the lot, which
+	// is why it read as a wall: nothing lined up, and every line had the same weight as every other.
+	// Saying what a line IS lets the drawing align the numbers, rule the sections and dim what is
+	// secondary, none of which can be done to a string that has already been joined.
 	struct DetailLine
 	{
-		FString text;
+		enum Kind { Blank, Title, Subtitle, Heading, Item, Rule };
+
+		Kind kind;
+		FString text;			// Item: the label
+		FString value;			// Item: right-aligned
 		EColorRange colour;
 
-		DetailLine() : colour(CR_GRAY) {}
-		DetailLine(const char *t, EColorRange c) : text(t), colour(c) {}
+		DetailLine() : kind(Blank), colour(CR_GRAY) {}
 	};
 
-	void CustomDetailAdd( std::vector<DetailLine> &out, const char *text, EColorRange colour )
+	DetailLine CustomDetailMake( DetailLine::Kind kind, const char *text, EColorRange colour )
+	{
+		DetailLine line;
+		line.kind = kind;
+		line.text = text;
+		line.colour = colour;
+
+		return line;
+	}
+
+	void CustomDetailAdd( std::vector<DetailLine> &out, DetailLine::Kind kind, const char *text,
+		EColorRange colour )
 	{
 		// Wrapped the way every other block of text in this browser is, so a long filename becomes
 		// two lines rather than running off the panel.
 		FBrokenLines *const lines = V_BreakLines( SmallFont, HostDetailWrapWidth( ), text );
 
 		for ( int i = 0; lines[i].Width >= 0; ++i )
-			out.push_back( DetailLine( lines[i].Text, colour ));
+			out.push_back( CustomDetailMake( kind, lines[i].Text, colour ));
 
 		V_FreeBrokenLines( lines );
+	}
+
+	// A label on the left and its value on the right, which is what makes a column of numbers
+	// readable: the eye runs down the right edge rather than hunting along each line.
+	void CustomDetailItem( std::vector<DetailLine> &out, const char *label, const char *value,
+		EColorRange colour )
+	{
+		DetailLine line;
+		line.kind = DetailLine::Item;
+		line.text = serverbrowser_FitName( label, HostDetailWrapWidth( ) -
+			SmallFont->StringWidth( value ) - 12 );
+		line.value = value;
+		line.colour = colour;
+
+		out.push_back( line );
+	}
+
+	void CustomDetailSection( std::vector<DetailLine> &out, const char *title )
+	{
+		out.push_back( DetailLine( ));
+		out.push_back( CustomDetailMake( DetailLine::Rule, "", CR_GRAY ));
+		out.push_back( CustomDetailMake( DetailLine::Heading, title, CR_GOLD ));
 	}
 
 	std::vector<DetailLine> CustomDetailLines( const zx::CustomEntry &entry )
 	{
 		std::vector<DetailLine> out;
 
-		CustomDetailAdd( out, entry.name.c_str( ), CR_GOLD );
+		CustomDetailAdd( out, DetailLine::Title, entry.name.c_str( ), CR_GOLD );
 
 		{
 			FString line;
-			line.Format( "%s, %s", entry.bPvP ? "PvP" : "PvE",
+			line.Format( "%s  -  %s", entry.bPvP ? "PvP" : "PvE",
 				entry.gameMode.empty( ) ? "default mode" : entry.gameMode.c_str( ));
-			CustomDetailAdd( out, line.GetChars( ), CR_DARKGRAY );
+			CustomDetailAdd( out, DetailLine::Subtitle, line.GetChars( ), CR_DARKGRAY );
 		}
 
-		out.push_back( DetailLine( ));
-
 		// The files, in load order, with the IWAD first because that is what a server is told first.
-		CustomDetailAdd( out, "FILES", CR_GOLD );
+		CustomDetailSection( out, "FILES" );
 
 		if ( !entry.iwad.empty( ))
-			CustomDetailAdd( out, entry.iwad.c_str( ), CR_GRAY );
+			CustomDetailItem( out, entry.iwad.c_str( ), "IWAD", CR_GRAY );
 
 		for ( size_t i = 0; i < entry.files.size( ); ++i )
 		{
 			const FString path = zx::waddownload::FindVerifiedCopy( entry.files[i].name.c_str( ),
 				entry.files[i].md5.empty( ) ? NULL : entry.files[i].md5.c_str( ));
 
-			FString line = entry.files[i].name.c_str( );
-			if ( path.IsEmpty( ))
-				line += "   (missing)";
-
-			CustomDetailAdd( out, line.GetChars( ), path.IsEmpty( ) ? CR_ORANGE : CR_GRAY );
-		}
-
-		out.push_back( DetailLine( ));
-
-		{
-			FString head;
-			head.Format( "ROTATION  (%d)", static_cast<int>( entry.maps.size( )));
-			CustomDetailAdd( out, head.GetChars( ), CR_GOLD );
-
-			// [rc4l] The whole rotation rather than the first few. This column scrolls, and a list
-			// that stopped at five would hide exactly the thing somebody opened it to check.
-			FString row;
-			for ( size_t i = 0; i < entry.maps.size( ); ++i )
-			{
-				if ( row.IsNotEmpty( ))
-					row += " ";
-
-				row += entry.maps[i].c_str( );
-
-				if ((( i + 1 ) % 4 == 0 ) || ( i + 1 == entry.maps.size( )))
-				{
-					CustomDetailAdd( out, row.GetChars( ), CR_GRAY );
-					row = "";
-				}
-			}
+			CustomDetailItem( out, entry.files[i].name.c_str( ),
+				path.IsEmpty( ) ? "MISSING" : "", path.IsEmpty( ) ? CR_ORANGE : CR_GRAY );
 		}
 
 		// [rc4l] The flag fields, by name and number, and only the ones that are set. A column of
@@ -9794,20 +9813,27 @@ public:
 
 				if ( !bAny )
 				{
-					out.push_back( DetailLine( ));
-					CustomDetailAdd( out, "FLAGS", CR_GOLD );
+					CustomDetailSection( out, "FLAGS" );
 					bAny = true;
 				}
 
-				FString line;
-				line.Format( "%s  %s", entry.cvars[i].first.c_str( ),
-					entry.cvars[i].second.c_str( ));
-				CustomDetailAdd( out, line.GetChars( ), CR_GRAY );
+				CustomDetailItem( out, entry.cvars[i].first.c_str( ),
+					entry.cvars[i].second.c_str( ), CR_GRAY );
 			}
 		}
 
 		return out;
 	}
+
+	// [rc4l] The MAPS button sits at the FOOT of the column and does not scroll with the text.
+	//
+	// A rotation of thirty-two names is a list, not a paragraph, and pasting it into a column meant
+	// for labels was what made this read as a wall. It gets a box of its own, and the button that
+	// opens it stays where it can be pressed however far down the text somebody has scrolled.
+	int CustomMapsBtnH( )		{ return SB_NEW_TOOL_H; }
+	int CustomMapsBtnTop( )		{ return CustomDetailBottom( ) - CustomMapsBtnH( ); }
+	int CustomTextBottom( )		{ return CustomMapsBtnTop( ) - 6; }
+	int CustomDetailRowsShown( ){ return ( CustomTextBottom( ) - CustomDetailTop( )) / CustomDetailLineH( ); }
 
 	void DrawCustomDetail( )
 	{
@@ -9824,32 +9850,205 @@ public:
 		const std::vector<DetailLine> lines = CustomDetailLines( *chosen );
 
 		const int lineH = CustomDetailLineH( );
-		const int visible = CustomDetailRows( );
-		const int maxScroll = MAX( 0, static_cast<int>( lines.size( )) - visible );
+		const int maxScroll = MAX( 0, static_cast<int>( lines.size( )) - CustomDetailRowsShown( ));
 
 		g_CustomDetailScroll = zx::ClampScroll( g_CustomDetailScroll, maxScroll );
 
 		for ( size_t i = 0; i < lines.size( ); ++i )
 		{
+			const DetailLine &line = lines[i];
+
 			const int y = CustomDetailTop( ) +
 				( static_cast<int>( i ) - g_CustomDetailScroll ) * lineH;
 
 			// The presets column's own rule about which rows are drawn, so a line never half
 			// appears at an edge.
-			if ( !zx::RowFullyInView( y, lineH, CustomDetailTop( ), CustomDetailBottom( )))
+			if ( !zx::RowFullyInView( y, lineH, CustomDetailTop( ), CustomTextBottom( )))
 				continue;
 
-			if ( lines[i].text.IsEmpty( ))
+			if ( line.kind == DetailLine::Blank )
 				continue;
 
-			screen->DrawText( SmallFont, lines[i].colour, SB_HOST_RCOL_LEFT, y,
-				lines[i].text.GetChars( ),
+			// A hairline under a section, the same one the flags box's footer uses. It is what
+			// turns a run of lines into blocks somebody can skim.
+			if ( line.kind == DetailLine::Rule )
+			{
+				const int rx = serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT );
+				const int ry = serverbrowser_ToScreenY( y + lineH / 2 );
+
+				screen->Dim( PalEntry( 70, 74, 96 ), 0.7f, rx, ry,
+					MAX( 1, serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT ) - rx ),
+					MAX( 1, serverbrowser_ToScreenY( y + lineH / 2 + 1 ) - ry ));
+				continue;
+			}
+
+			screen->DrawText( SmallFont,
+				( line.kind == DetailLine::Title ) ? CR_WHITE : line.colour,
+				SB_HOST_RCOL_LEFT, y, line.text.GetChars( ),
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
 				TAG_DONE );
+
+			// The value, against the right edge, so a column of numbers lines up.
+			if (( line.kind == DetailLine::Item ) && line.value.IsNotEmpty( ))
+			{
+				screen->DrawText( SmallFont,
+					( line.colour == CR_ORANGE ) ? CR_ORANGE : CR_WHITE,
+					SB_HOST_RCOL_RIGHT - SmallFont->StringWidth( line.value ), y,
+					line.value.GetChars( ),
+					DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+					TAG_DONE );
+			}
 		}
 
-		DrawHostRegionScrollBar( CustomDetailTop( ), CustomDetailBottom( ),
+		DrawHostRegionScrollBar( CustomDetailTop( ), CustomTextBottom( ),
 			static_cast<int>( lines.size( )) * lineH, g_CustomDetailScroll * lineH, SB_HOST_BAR_X );
+
+		FString maps;
+		maps.Format( "MAPS  (%d)", static_cast<int>( chosen->maps.size( )));
+
+		DrawRoundedButton( SB_HOST_RCOL_LEFT, CustomMapsBtnTop( ),
+			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, CustomMapsBtnH( ), maps.GetChars( ),
+			g_CustomMapsHot );
+
+		serverbrowser_Tip( SB_HOST_RCOL_LEFT, CustomMapsBtnTop( ),
+			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, CustomMapsBtnH( ),
+			"The rotation this preset plays\nEDIT to change it" );
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	//
+	// [rc4l] The maps a saved preset plays, to LOOK AT.
+	//
+	// Read-only on purpose: EDIT is where a rotation is changed, and it puts the preset back on the
+	// NEW screen where the map list already has every control for the job. A second editable copy
+	// here would be two places to change one thing, and the one nobody used would rot.
+
+	void DrawCustomMapsModal( )
+	{
+		const zx::CustomEntry *const chosen = CustomSelected( );
+		if ( chosen == NULL )
+			return;
+
+		serverbrowser_ClearTips( );
+
+		screen->Dim( 0x000000, 0.62f, 0, 0, screen->GetWidth( ), screen->GetHeight( ));
+
+		const zx::PanelColor topCol = { 26, 28, 40, 245 };
+		const zx::PanelColor botCol = { 12, 13, 20, 250 };
+		DrawRoundedPanel( NewBigModalLeft( ), NewBigModalTop( ),
+			NewBigModalRight( ) - NewBigModalLeft( ), NewBigModalBottom( ) - NewBigModalTop( ),
+			topCol, botCol, 8 );
+
+		const int left = NewBigContentLeft( );
+		const int top = NewBigContentTop( );
+		const int visible = MAX( 1, ( NewBigButtonTop( ) - 8 - top ) / SB_NEW_ROW_H );
+
+		FString heading;
+		heading.Format( "%s  -  MAPS  (%d)", chosen->name.c_str( ),
+			static_cast<int>( chosen->maps.size( )));
+
+		screen->DrawText( SmallFont, CR_GOLD, left, NewBigModalTop( ) + SB_NEW_MODAL_PAD,
+			heading.GetChars( ), DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
+			DTA_KeepRatio, true, TAG_DONE );
+
+		const int maxScroll = MAX( 0, static_cast<int>( chosen->maps.size( )) - visible );
+		g_CustomMapsScroll = zx::ClampScroll( g_CustomMapsScroll, maxScroll );
+
+		if ( chosen->maps.empty( ))
+		{
+			DrawNewRowText( left, top, CR_DARKGRAY, "This preset names no maps" );
+		}
+		else
+		{
+			for ( int row = g_CustomMapsScroll;
+				( row < static_cast<int>( chosen->maps.size( ))) &&
+				( row < g_CustomMapsScroll + visible ); ++row )
+			{
+				const int rowY = NewRowY( top, row, g_CustomMapsScroll );
+
+				// [rc4l] The order IS the meaning here and nothing can be moved, so the position is
+				// numbered: without a control to drag, the number is all that says "third".
+				FString line;
+				line.Format( "%d.  %s", row + 1, chosen->maps[row].c_str( ));
+
+				DrawNewRowText( left, rowY, ( row == 0 ) ? CR_WHITE : CR_GRAY, line );
+			}
+
+			DrawHostRegionScrollBar( top, top + visible * SB_NEW_ROW_H,
+				static_cast<int>( chosen->maps.size( )) * SB_NEW_ROW_H,
+				g_CustomMapsScroll * SB_NEW_ROW_H, NewBigBarX( ));
+		}
+
+		if ( !chosen->maps.empty( ))
+		{
+			FString foot;
+			foot.Format( "Starts on %s", chosen->maps[0].c_str( ));
+
+			screen->DrawText( SmallFont, CR_DARKGRAY, left, NewBigButtonTop( ) + 4,
+				foot.GetChars( ), DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H,
+				DTA_KeepRatio, true, TAG_DONE );
+		}
+
+		DrawRoundedButton( NewBigButtonLeft( ), NewBigButtonTop( ), 80, SB_DLG_BTN_H, "DONE",
+			g_CustomMapsDoneHot );
+
+		// The orb comes into the box with the keyboard, the same as every other modal here: DONE is
+		// the only thing in it a key can press.
+		FocusAnchor( zx::BrowserFocus::Host, NewBigButtonLeft( ) - 5,
+			NewBigButtonTop( ) + SB_DLG_BTN_H / 2 );
+	}
+
+	bool CustomMapsModalMouse( int type, int x, int y )
+	{
+		g_CustomMapsDoneHot = false;
+
+		const zx::CustomEntry *const chosen = CustomSelected( );
+		const int lines = ( chosen != NULL ) ? static_cast<int>( chosen->maps.size( )) : 0;
+
+		const int top = NewBigContentTop( );
+		const int visible = MAX( 1, ( NewBigButtonTop( ) - 8 - top ) / SB_NEW_ROW_H );
+
+		if ( RegionBarMouse( type, x, y, top, top + visible * SB_NEW_ROW_H,
+			lines * SB_NEW_ROW_H, MAX( 0, lines - visible ), g_CustomMapsScroll,
+			g_DraggingCustomMapsBar, NewBigBarX( )))
+		{
+			return true;
+		}
+
+		{
+			const int bx = NewBigButtonLeft( );
+			const int by = NewBigButtonTop( );
+
+			if (( x >= serverbrowser_ToScreenX( bx )) &&
+				( x < serverbrowser_ToScreenX( bx + 80 )) &&
+				( y >= serverbrowser_ToScreenY( by )) &&
+				( y < serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+			{
+				g_CustomMapsDoneHot = true;
+
+				if ( type == MOUSE_Release )
+				{
+					g_CustomMapsOpen = false;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+				}
+
+				return true;
+			}
+		}
+
+		// Inside swallows; outside closes, the same as every other box here.
+		if (( x >= serverbrowser_ToScreenX( NewBigModalLeft( ))) &&
+			( x < serverbrowser_ToScreenX( NewBigModalRight( ))) &&
+			( y >= serverbrowser_ToScreenY( NewBigModalTop( ))) &&
+			( y < serverbrowser_ToScreenY( NewBigModalBottom( ))))
+		{
+			return true;
+		}
+
+		if ( type == MOUSE_Release )
+			g_CustomMapsOpen = false;
+
+		return true;
 	}
 
 	void DrawCustomPanel( )
@@ -9969,16 +10168,26 @@ public:
 				: "Cannot edit a preset whose files are missing" );
 		serverbrowser_Tip( CustomBtnLeft( 2 ), SB_NEW_TOOL_Y, CustomBtnW( ), SB_NEW_TOOL_H,
 			"Remove this preset" );
+
+		// [rc4l] LAST, so it is over everything this tab drew rather than among it. Drawn before the
+		// three buttons it sat behind them, which is a box you can see through and cannot use.
+		if ( g_CustomMapsOpen )
+			DrawCustomMapsModal( );
 	}
 
 	// --- the pointer and the keyboard on the CUSTOM tab -------------------------------------------
 
 	bool CustomMouseEvent( int type, int x, int y )
 	{
+		// The box owns the pointer while it is up, which is what modal means.
+		if ( g_CustomMapsOpen )
+			return CustomMapsModalMouse( type, x, y );
+
 		g_CustomHot = -1;
 		g_CustomBtnHot = -1;
 		g_CustomSearchHot = false;
 		g_CustomEmptyHot = false;
+		g_CustomMapsHot = false;
 
 		// Nothing saved: one button, in the middle, and it is the only thing that can be pressed.
 		if ( CustomEntries( ).empty( ))
@@ -10022,11 +10231,30 @@ public:
 			const int detailLines = ( chosen != NULL )
 				? static_cast<int>( CustomDetailLines( *chosen ).size( )) : 0;
 
-			if ( RegionBarMouse( type, x, y, CustomDetailTop( ), CustomDetailBottom( ),
+			if ( RegionBarMouse( type, x, y, CustomDetailTop( ), CustomTextBottom( ),
 				detailLines * CustomDetailLineH( ),
-				MAX( 0, detailLines - CustomDetailRows( )),
+				MAX( 0, detailLines - CustomDetailRowsShown( )),
 				g_CustomDetailScroll, g_DraggingCustomDetailBar, SB_HOST_BAR_X ))
 			{
+				return true;
+			}
+
+			// The MAPS button, at the foot of that column.
+			if (( chosen != NULL ) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )) &&
+				( y >= serverbrowser_ToScreenY( CustomMapsBtnTop( ))) &&
+				( y < serverbrowser_ToScreenY( CustomMapsBtnTop( ) + CustomMapsBtnH( ))))
+			{
+				g_CustomMapsHot = true;
+
+				if ( type == MOUSE_Release )
+				{
+					g_CustomMapsOpen = true;
+					g_CustomMapsScroll = 0;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+
 				return true;
 			}
 		}
@@ -15479,6 +15707,21 @@ public:
 				// [rc4l] The CUSTOM tab's two columns, each taking the notch when the pointer is
 				// over it. Two views side by side, and a wheel that moved both would move the one
 				// nobody was looking at.
+				// The read-only map list takes the notch while it is up, wherever the pointer is.
+				if (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Custom ) &&
+					g_CustomMapsOpen )
+				{
+					const zx::CustomEntry *const chosen = CustomSelected( );
+					const int lines = ( chosen != NULL )
+						? static_cast<int>( chosen->maps.size( )) : 0;
+					const int visible = MAX( 1,
+						( NewBigButtonTop( ) - 8 - NewBigContentTop( )) / SB_NEW_ROW_H );
+
+					g_CustomMapsScroll = zx::ClampScroll( g_CustomMapsScroll + step,
+						MAX( 0, lines - visible ));
+					return true;
+				}
+
 				if (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Custom ) &&
 					!CustomEntries( ).empty( ))
 				{
@@ -15498,7 +15741,7 @@ public:
 							? static_cast<int>( CustomDetailLines( *chosen ).size( )) : 0;
 
 						g_CustomDetailScroll = zx::ClampScroll( g_CustomDetailScroll + step,
-							MAX( 0, lines - CustomDetailRows( )));
+							MAX( 0, lines - CustomDetailRowsShown( )));
 					}
 
 					return true;
@@ -16402,6 +16645,31 @@ public:
 		// [rc4l] The CUSTOM tab answers its own Enter, for the same reason the NEW screen does: it
 		// never reaches Responder, and falling through would act on the PRESETS panel's idea of what
 		// is selected.
+		// The read-only map list: the arrows scroll it, Escape and Enter close it. Nothing in it can
+		// be changed, so there is nothing else for a key to do.
+		if (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Custom ) && g_CustomMapsOpen )
+		{
+			const zx::CustomEntry *const chosen = CustomSelected( );
+			const int lines = ( chosen != NULL ) ? static_cast<int>( chosen->maps.size( )) : 0;
+			const int visible = MAX( 1,
+				( NewBigButtonTop( ) - 8 - NewBigContentTop( )) / SB_NEW_ROW_H );
+
+			if (( mkey == MKEY_Back ) || ( mkey == MKEY_Enter ))
+			{
+				g_CustomMapsOpen = false;
+				return true;
+			}
+
+			if (( mkey == MKEY_Up ) || ( mkey == MKEY_Down ))
+			{
+				g_CustomMapsScroll = zx::ClampScroll(
+					g_CustomMapsScroll + (( mkey == MKEY_Up ) ? -1 : 1 ),
+					MAX( 0, lines - visible ));
+			}
+
+			return true;		// everything else is swallowed rather than reaching the tab behind
+		}
+
 		if (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Custom ) &&
 			( g_Focus == zx::BrowserFocus::Host ) && ( mkey == MKEY_Enter ))
 		{
