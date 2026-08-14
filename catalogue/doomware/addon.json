@@ -5,29 +5,11 @@
   "kind": "pvp",
   "gamemode": "deathmatch",
   "teams": true,
+  "map": "MAP01",
   "files": [
     {
       "name": "doomware_v1_05a.wad",
       "md5": "968ada0d59ec73d8080385eb6ee919a7"
-    }
-  ],
-  "variants": [
-    {
-      "id": "main",
-      "name": "DoomWare",
-      "cfg": "server.cfg",
-      "kind": "pvp",
-      "default": true,
-      "map": "MAP01",
-      "tooltip": "The main set of minigames, with the boss fight on MAP30."
-    },
-    {
-      "id": "community",
-      "name": "Community Minigames",
-      "cfg": "community.cfg",
-      "kind": "pvp",
-      "map": "MAP02",
-      "tooltip": "The same rules on the pack's second map, which holds the minigames sent in by players."
     }
   ]
 }
