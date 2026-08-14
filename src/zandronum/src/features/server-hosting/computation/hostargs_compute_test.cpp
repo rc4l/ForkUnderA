@@ -313,6 +313,21 @@ TEST(HostArgs, AdvertisingIsExplicitInBothDirections)
 	EXPECT_EQ("1", ValueAfter(BuildHostArgs("z", loud), "+sv_fua_serverregistry_announce"));
 }
 
+TEST(HostArgs, LanBroadcastIsForcedOnRegardlessOfAdvertiseOrArchivedCvar)
+{
+	// LAN discovery is separate from the public registry: a private (unadvertised) host still wants
+	// to be found on the local network. And it must be stated explicitly, never left to the archived
+	// sv_broadcast cvar -- a config holding sv_broadcast=false silently hid every hosted server from
+	// the LAN browser even while it announced itself publicly.
+	HostConfig quiet = Basic();
+	quiet.advertise = false;
+	EXPECT_EQ("1", ValueAfter(BuildHostArgs("z", quiet), "+sv_broadcast"));
+
+	HostConfig loud = Basic();
+	loud.advertise = true;
+	EXPECT_EQ("1", ValueAfter(BuildHostArgs("z", loud), "+sv_broadcast"));
+}
+
 TEST(HostArgs, ServingOurOwnFilesIsExplicitInBothDirections)
 {
 	HostConfig off = Basic();

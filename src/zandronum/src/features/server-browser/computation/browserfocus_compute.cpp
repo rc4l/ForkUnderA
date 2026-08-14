@@ -119,7 +119,16 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, const NavWhere &where )
 
 	case BrowserFocus::Rows:
 		if ( key == NavKey::Up )
-			out.rowStep = -1;
+		{
+			// At the top of the list Up LEAVES for the region above it -- the filter row, or the tabs
+			// when the tab has no filter -- rather than wrapping to the bottom. It is the same "there is
+			// something above the first row, so Up goes to it" the tabs and the search box already keep;
+			// wrapping made the list the one place where Up doubled back on itself.
+			if ( where.atTopRow )
+				out.focus = AboveTheList( where );
+			else
+				out.rowStep = -1;
+		}
 		else if ( key == NavKey::Down )
 			out.rowStep = 1;
 		else if ( key == NavKey::Right )
