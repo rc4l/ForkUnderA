@@ -1,0 +1,6 @@
+{
+  "name": "DM",
+  "summary": "Deathmatch. A hundred and thirty seven stages, and every robot master's weapon.",
+  "group": "mode",
+  "gamemode": "deathmatch"
+}

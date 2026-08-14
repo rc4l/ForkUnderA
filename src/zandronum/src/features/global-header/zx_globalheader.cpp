@@ -375,17 +375,18 @@ void DrawTooltip( const char *text )
 // under the thing it points at is how a marker gets missed.
 void DrawFocusOrb( const HeaderMetrics &m, const int *widths )
 {
-	// [rc4l] ALWAYS drawn, because the bar is a place as well as a control.
-	//
-	// It used to appear only while the bar held the arrows, so a game that had just started showed a
-	// tab strip with nothing marked on it -- and "you are in the main menu" is exactly the thing a
-	// tab strip is for saying. The orb is that answer, not merely a keyboard cursor.
-	//
-	// It sits on the FOCUSED tab while the bar has the keyboard and on the CURRENT one the moment it
-	// does not, so there is never a frame where two tabs both look like the answer. That also keeps
-	// it honest as a cursor: walking the bar moves the orb, and leaving the bar puts it back on the
-	// section you are actually in rather than the one you were browsing.
-	const int lit = g_HasFocus ? g_FocusTab : static_cast<int>( CurrentTab( ));
+	// [rc4l] Drawn ONLY while the bar holds the arrows -- it is the keyboard cursor, not a permanent
+	// "you are here" marker. Left on when unfocused it reads as stale: pressing Up lands focus on a tab
+	// that was already wearing the orb, so nothing visibly changes and it is not clear the arrows now
+	// belong to the bar. Off when unfocused, it snaps on at the focused tab the instant Up reaches the
+	// bar -- which is exactly the change the player needs to see.
+	if ( !g_HasFocus )
+	{
+		g_GlowPlaced = false; // next appearance snaps to the focused tab, not slid in from a stale spot
+		return;
+	}
+
+	const int lit = g_FocusTab;
 
 	const HeaderRect r = HeaderTabRect( m, widths, kHeaderTabCount, lit );
 	// From the metrics, not a literal, so the padding that has to hold this orb is checked against

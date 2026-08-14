@@ -56,8 +56,6 @@ OptionMenu ZA_MultiplayerOptions
 	SubMenu		"Offline Skirmish",		"ZA_SkirmishMenu"
 	SubMenu		"Browse servers",		"ZA_Browser"
 	StaticText	" "
-	SubMenu		"Log in",			"ZA_LoginMenu"
-	StaticText	" "
 	SubMenu		"Player list",			"ZA_PlayerListMenu"
 	SubMenu		"Call a vote",			"ZA_CallVote"
 	StaticText	" "
@@ -68,12 +66,6 @@ OptionMenu ZA_MultiplayerOptions
 	SubMenu		"Network Options",		"ZA_NetworkOptions"
 	Submenu		"Server settings",		"ZA_ServerSetupMenu"
 	StaticText	" "
-
-	// [AK] cl_autologin only exists in Windows.
-	IfOption( Windows )
-	{
-		Option	"Auto-login",			"cl_autologin",			"YesNo"
-	}
 
 	Option		"Start as spectator",		"cl_startasspectator",		"YesNo"
 	TextField	"Server password",		"cl_password"
@@ -681,29 +673,6 @@ OptionMenu ZA_WeaponSetup
 // LOGIN MENU
 //
 // =================================================================================================
-
-OptionMenu ZA_LoginMenu
-{
-	NetGameOnly
-	Title "LOG IN"
-	Indent 150
-
-	StaticText	"To create an account, visit:", 1
-	StaticText	"https://auth.zandronum.com/register"
-	StaticText	" "
-	StaticText	"--- NOTICE ---"
-	StaticText	"If the server is using their own auth host,", 1
-	StaticText	"you must register there instead.", 1
-	StaticText	" "
-	StaticText	"Contact the server host for more info.", 1
-	StaticText	" "
-	TextField	"Username",				"menu_authusername"
-	TextField	"Password",				"menu_authpassword"
-	StaticText	" "
-	Command		"Log in",				"menu_login"
-}
-
-// =================================================================================================
 //
 // Bot skill menu
 //
@@ -768,7 +737,6 @@ OptionMenu ZA_ServerSetupMenu
 	TextField	"Connect password",			"sv_password",				"sv_forcepassword"
 	Option		"Use join password",		"sv_forcejoinpassword",		"YesNo"
 	TextField	"Join password",			"sv_joinpassword",			"sv_forcejoinpassword"
-	Option		"Require login to join",	"sv_forcelogintojoin",		"YesNo"
 	StaticText	" "
 	Option		"Allow private chat",		"sv_allowprivatechat",			"ZA_AllowPrivateChat"
 	Option		"Allow voice chat",		"sv_allowvoicechat",			"ZA_AllowVoiceChat"

@@ -222,6 +222,23 @@ TEST( BrowserNav, MovingTheSelectionDoesNotChangeFocus )
 	EXPECT_EQ( BrowserFocus::Rows, ComputeNav( BrowserFocus::Rows, NavKey::Down, Browsing( ) ).focus );
 }
 
+TEST( BrowserNav, UpFromTheFirstRowLeavesTheListForTheFilterAbove )
+{
+	// The reported bug: Up on the first server row wrapped to the bottom. At the top it now hands focus
+	// up to the filter row (PUBLIC/PRIVATE) -- there is something above the first row, so Up goes to it.
+	const NavWhere atTop( true, kBrowseTab, kTabCount, kPublic, kSubCount, /*atTopRow=*/true );
+	const NavResult r = ComputeNav( BrowserFocus::Rows, NavKey::Up, atTop );
+	EXPECT_EQ( BrowserFocus::SubTabs, r.focus );
+	EXPECT_EQ( 0, r.rowStep ); // it left the list; it did not also step a row
+}
+
+TEST( BrowserNav, UpFromTheFirstRowReachesTheTabsWhenThereIsNoFilter )
+{
+	// With no sub-tab row, "above the list" is the tabs themselves.
+	const NavWhere atTop( true, kBrowseTab, kTabCount, 0, 0, /*atTopRow=*/true );
+	EXPECT_EQ( BrowserFocus::Tabs, ComputeNav( BrowserFocus::Rows, NavKey::Up, atTop ).focus );
+}
+
 TEST( BrowserNav, RightFromTheListReachesTheButton )
 {
 	EXPECT_EQ( BrowserFocus::Action,

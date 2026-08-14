@@ -91,6 +91,7 @@
 #include "m_argv.h"
 #include "m_cheat.h"
 #include "cl_main.h"
+#include "features/identity/zx_identitynet.h"
 #include "p_effect.h"
 #include "p_lnspec.h"
 #include "possession.h"
@@ -127,7 +128,6 @@
 #include "a_movingcamera.h"
 #include "d_netinf.h"
 #include "po_man.h"
-#include "network/cl_auth.h"
 #include "r_data/colormaps.h"
 #include "r_main.h"
 #include "network_enums.h"
@@ -173,7 +173,6 @@ EXTERN_CVAR( Bool, cl_oldfreelooklimit )
 EXTERN_CVAR( Float, turbo )
 EXTERN_CVAR( Float, sv_gravity )
 EXTERN_CVAR( Float, sv_aircontrol )
-EXTERN_CVAR( Bool, cl_hideaccount )
 EXTERN_CVAR( Int, cl_ticsperupdate )
 EXTERN_CVAR( String, name )
 EXTERN_CVAR( Bool, cl_telespy )
@@ -198,15 +197,6 @@ CVAR( Bool, cl_keepserversettings, false, CVAR_ARCHIVE | CVAR_DEBUGONLY )
 // [JS] Always makes us ready when we are in intermission.
 CVAR( Bool, cl_autoready, false, CVAR_ARCHIVE )
 
-#ifdef WIN32
-// [AK] Automatically logs us into our default account (i.e. login_default_user).
-CUSTOM_CVAR( Bool, cl_autologin, false, CVAR_ARCHIVE | CVAR_NOINITCALL )
-{
-	// [AK] Log in automatically when enabling this CVar, if not already.
-	if (( self ) && ( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENT_IsLoggedIn( ) == false ))
-		CLIENT_RetrieveUserAndLogIn( login_default_user.GetGenericRep( CVAR_String ).String );
-}
-#endif
 
 // [AK] Restores the old mouse behaviour from Skulltag.
 CVAR( Bool, cl_useskulltagmouse, false, CVAR_GLOBALCONFIG | CVAR_ARCHIVE )
@@ -922,9 +912,12 @@ void CLIENT_AttemptConnection( void )
 	g_LocalBuffer.ByteStream.WriteString( DOTVERSIONSTR );
 	g_LocalBuffer.ByteStream.WriteString( cl_password );
 	g_LocalBuffer.ByteStream.WriteByte( cl_connect_flags );
-	g_LocalBuffer.ByteStream.WriteByte( cl_hideaccount );
 	g_LocalBuffer.ByteStream.WriteByte( NETGAMEVERSION );
 	g_LocalBuffer.ByteStream.WriteString( g_lumpsAuthenticationChecksum.GetChars() );
+
+	// [rc4l] Anonymous accounts: the same nonce on every retry, so the answer we get back is one
+	// we can still check.
+	CLIENT_FuaAuthWriteHello( &g_LocalBuffer.ByteStream );
 }
 
 //*****************************************************************************
@@ -947,6 +940,9 @@ void CLIENT_AttemptAuthentication( char *pszMapName )
 
 	// Send a checksum of our verticies, linedefs, sidedefs, and sectors.
 	CLIENT_AuthenticateLevel( pszMapName );
+
+	// [rc4l] Anonymous accounts: and who we are, which the server judges before it commits a slot.
+	CLIENT_FuaAuthWriteProof( &g_LocalBuffer.ByteStream );
 
 	// Make sure all players are gone from the level.
 	CLIENT_ClearAllPlayers();
@@ -1497,6 +1493,14 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 		// [CK] Use the server's gametic to start at a reasonable number
 		CLIENT_SetLatestServerGametic( pByteStream->ReadLong() );
 
+		// [rc4l] Anonymous accounts: the server proves itself here, and we walk away rather than
+		// name an account to something that cannot.
+		if ( CLIENT_FuaAuthReadChallenge( pByteStream ) == false )
+		{
+			CLIENT_QuitNetworkGame( "This server could not prove its identity." );
+			return;
+		}
+
 		// [BB] If we don't have the map, something went horribly wrong.
 		if ( P_CheckIfMapExists( g_szMapName ) == false )
 			I_Error ( "SVCC_AUTHENTICATE: Unknown map: %s\n", g_szMapName );
@@ -1711,6 +1715,35 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 					}
 					break;
 				}
+
+			// [rc4l] Its own code rather than the level-authentication one, which would send the
+			// player hunting for a file mismatch that is not there.
+			case NETWORK_ERRORCODE_IDENTITYREJECTED:
+
+				szErrorString = "The server could not confirm who you are.\nDelete your identity folder to start over with a new account.";
+				break;
+
+			// [rc4l] Answered with another account rather than a refusal, so a player whose key has
+			// leaked is kept out of their account and not out of the game.
+			//
+			// The same numbering that gives two copies of the engine an account each, asked for one
+			// more, which bounds this on its own.
+			case NETWORK_ERRORCODE_IDENTITYINUSE:
+
+				if ( zx::Identity_SwitchToSpare( ))
+				{
+					Printf( TEXTCOLOR_GOLD "Somebody is already playing on your account.\n"
+						TEXTCOLOR_NORMAL "Joining on a new one instead. If this was not you, your key has leaked.\n" );
+
+					CLIENT_FuaAuthReset( );
+					g_ulRetryTicks = 0;
+					CLIENT_SetConnectionState( CTS_ATTEMPTINGCONNECTION );
+					return;
+				}
+
+				szErrorString = "Somebody is already playing on your account.\nThis machine has run out of accounts to make, which means the server refused every one.";
+				break;
+
 			case NETWORK_ERRORCODE_TOOMANYCONNECTIONSFROMIP:
 
 				szErrorString = "Too many connections from your IP.";
@@ -2258,12 +2291,6 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				}
 				break;
 
-			case SVC2_SRP_USER_START_AUTHENTICATION:
-			case SVC2_SRP_USER_PROCESS_CHALLENGE:
-			case SVC2_SRP_USER_VERIFY_SESSION:
-				CLIENT_ProcessSRPServerCommand ( lExtCommand, pByteStream );
-				break;
-
 			case SVC2_SETTHINGHEALTH:
 				{
 					const unsigned short netID = pByteStream->ReadShort();
@@ -2657,8 +2684,8 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// [AK] Since we disconnected, we don't have RCON access anymore.
 	g_HasRCONAccess = false;
 
-	// [AK] Log the client out of their account now so that they can log in again.
-	CLIENT_LogOut( );
+	// [rc4l] Forget the account this connection earned us, so the next server sees a fresh proof.
+	CLIENT_FuaAuthReset( );
 
 	// [AK] Close the server setup menu if we're still in it.
 	if ( M_InServerSetupMenu( ))
@@ -3526,6 +3553,9 @@ void ServerCommands::EndSnapshot::Execute()
 	// We're all done! Set the new client connection state to active.
 	CLIENT_SetConnectionState( CTS_ACTIVE );
 
+	// [rc4l] Anonymous accounts: open the identity exchange now that we are a client the server
+	// will take commands from. Doing it during the level check was too early, and the hello was
+
 	// Display in the console that we have the snapshot now.
 	Printf( "Snapshot received.\n" );
 
@@ -3580,12 +3610,6 @@ void ServerCommands::EndSnapshot::Execute()
 
 	// [AK] Reset the scoreboard.
 	SCOREBOARD_Reset( );
-
-#ifdef WIN32
-	// [AK] Allow the client to log into their default account automatically.
-	if (( CLIENTDEMO_IsPlaying( ) == false ) && ( cl_autologin ))
-		CLIENT_RetrieveUserAndLogIn( login_default_user.GetGenericRep( CVAR_String ).String );
-#endif
 
 	// [rc4l] If this is a server WE started, take administrator rights on it now.
 	//
