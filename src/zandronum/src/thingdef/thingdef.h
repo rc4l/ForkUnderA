@@ -139,6 +139,9 @@ public:
 	void Copy(int dest, int src, int cnt);
 	int ResolveAll();
 	FxExpression *Get(int no);
+	// [ForkUnderA] fua-caching: the class whose DECORATE owns entry no, so the
+	// spawn-closure precache can group constant refs by class without the VM.
+	const PClass *GetOwner(unsigned int no);
 	unsigned int Size() { return expressions.Size(); }
 };
 

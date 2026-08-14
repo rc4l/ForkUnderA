@@ -5506,6 +5506,13 @@ void AActor::PostBeginPlay ()
 
 void AActor::MarkPrecacheSounds() const
 {
+	MarkPropertySounds();
+}
+
+// [ForkUnderA] Split out of MarkPrecacheSounds so fua-caching can mark a
+// never-spawned class's sounds through its Defaults without virtual dispatch.
+void AActor::MarkPropertySounds() const
+{
 	SeeSound.MarkUsed();
 	AttackSound.MarkUsed();
 	PainSound.MarkUsed();
