@@ -51,6 +51,7 @@
 #include "features/server-browser/computation/browserfocus_compute.h"
 #include "features/server-browser/computation/pillflow_compute.h"
 #include "features/server-browser/computation/flagset_compute.h"
+#include "features/server-browser/computation/flaghelp_compute.h"
 #include "features/server-browser/computation/servervar_compute.h"
 #include "features/server-browser/zx_flagtable.h"
 #include "gamemode.h"		// [rc4l] GAMEMODE_GetFlags, so the GAMEPLAY box shows what the mode uses
@@ -7959,9 +7960,15 @@ public:
 			case BoxItem::Flag:
 			{
 				const zx::FlagField &field = g_NewFlags[item.field];
-				DrawGameplayPill( left + item.x, y, item.width, SB_NEW_PILL_H,
-					field.bits[item.bit].name.c_str( ),
+				const std::string &flagName = field.bits[item.bit].name;
+
+				DrawGameplayPill( left + item.x, y, item.width, SB_NEW_PILL_H, flagName.c_str( ),
 					zx::FlagIsOn( field.value, field.bits[item.bit].bit ), bHot, false );
+
+				// [rc4l] What the switch does, in a line. A cvar name is not an explanation:
+				// nobody ticks compat_plasmabump on the strength of being able to read it.
+				serverbrowser_Tip( left + item.x, y, item.width, SB_NEW_PILL_H,
+					zx::FlagHelp( flagName ));
 				break;
 			}
 

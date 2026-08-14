@@ -4,6 +4,7 @@
 // [rc4l] See zx_flagtable.h for why this is a walk of the engine's own cvars rather than a list.
 
 #include "features/server-browser/zx_flagtable.h"
+#include "features/server-browser/computation/flaghelp_compute.h"
 
 #include <algorithm>
 
@@ -147,9 +148,33 @@ CCMD( fua_flags )
 		{
 			for ( size_t b = 0; b < f.bits.size( ); ++b )
 			{
-				Printf( "    %-40s %s\n", f.bits[b].name.c_str( ),
-					zx::FlagIsOn( f.value, f.bits[b].bit ) ? "true" : "false" );
+				Printf( "    %-40s %-5s %s\n", f.bits[b].name.c_str( ),
+					zx::FlagIsOn( f.value, f.bits[b].bit ) ? "true" : "false",
+					zx::FlagHelp( f.bits[b].name ));
 			}
 		}
 	}
+
+	// [rc4l] Anything the FLAGS box would show with nothing to say about it.
+	//
+	// The walk finds whatever this build has, and the help is a written table, so the two can only
+	// drift one way: an engine update adds a flag and nobody notices it has no line. This says so.
+	int quiet = 0;
+	for ( size_t i = 0; i < fields.size( ); ++i )
+	{
+		for ( size_t b = 0; b < fields[i].bits.size( ); ++b )
+		{
+			if ( zx::FlagHelp( fields[i].bits[b].name )[0] != 0 )
+				continue;
+
+			if ( quiet == 0 )
+				Printf( TEXTCOLOR_ORANGE "No description written for:\n" TEXTCOLOR_NORMAL );
+
+			Printf( "    %s\n", fields[i].bits[b].name.c_str( ));
+			quiet++;
+		}
+	}
+
+	if ( quiet == 0 )
+		Printf( TEXTCOLOR_GREEN "Every flag has a description.\n" TEXTCOLOR_NORMAL );
 }
