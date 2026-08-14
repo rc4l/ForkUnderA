@@ -1497,6 +1497,9 @@ add_executable( zdoom WIN32
 	features/net/zx_httpsget.cpp
 	features/net/zx_httpfile.cpp
 	features/net/zx_httpfile_win.cpp
+	features/wad-library/zx_wadlibrary.cpp
+	features/wad-library/computation/wadlibrary_compute.cpp
+	features/wad-library/computation/loadorder_compute.cpp
 	features/wad-download/zx_waddownload.cpp
 	features/wad-download/zx_filehash.cpp
 	features/wad-download/zx_wadsearch.cpp
