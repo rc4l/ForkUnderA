@@ -1501,8 +1501,10 @@ add_executable( zdoom WIN32
 	features/wad-library/computation/wadlibrary_compute.cpp
 	features/wad-library/computation/loadorder_compute.cpp
 	features/wad-download/zx_waddownload.cpp
+	features/wad-download/zx_resolvejob.cpp
 	features/wad-download/zx_filehash.cpp
 	features/wad-download/zx_wadsearch.cpp
+	features/wad-download/computation/jobstate_compute.cpp
 	features/wad-download/computation/downloadplan_compute.cpp
 	features/wad-download/computation/iwadallow_compute.cpp
 	features/wad-download/computation/iwadsubstitute_compute.cpp

@@ -742,7 +742,14 @@ FString DownloadDir()
 
 // Walk a resolve plan and return the first step that holds the wanted bytes. A Stat step is taken on
 // the strength of its path, since the digest names the folder. Only a Hash step is read.
-static FString WalkResolvePlan(const std::vector<zx::ResolveStep> &steps, const std::string &digest)
+// [rc4l] std::string, NOT FString, because this runs on a worker.
+//
+// FString's default constructor points at a SHARED NullString and bumps its refcount, and that
+// counter is not atomic -- two threads making an empty FString is a data race on a global, which is
+// exactly the class of bug the threading contract in wad-library's header forbids. Everything in
+// here is std::string, FileExists and Md5OfFile: stat, fopen, and an EVP context on the local stack.
+static std::string WalkResolvePlan(const std::vector<zx::ResolveStep> &steps,
+	const std::string &digest)
 {
 	for (size_t i = 0; i < steps.size(); ++i)
 	{
@@ -750,17 +757,17 @@ static FString WalkResolvePlan(const std::vector<zx::ResolveStep> &steps, const 
 			continue;
 
 		if (steps[i].check == zx::ResolveCheck::Stat)
-			return FString(steps[i].path.c_str());
+			return steps[i].path;
 
 		char actual[33];
 		if (zx::Md5OfFile(steps[i].path.c_str(), actual, sizeof actual) &&
 			EqualsIgnoreCase(actual, digest))
 		{
-			return FString(steps[i].path.c_str());
+			return steps[i].path;
 		}
 	}
 
-	return FString();
+	return std::string();
 }
 
 FString FindLocalCopy(const char *name, const char *md5Hex)
@@ -769,15 +776,18 @@ FString FindLocalCopy(const char *name, const char *md5Hex)
 		return FString();
 
 	// No search hits: our own folder is the whole of this question by contract.
-	return WalkResolvePlan(zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(),
-		std::vector<std::string>()), md5Hex);
+	return FString(WalkResolvePlan(zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(),
+		std::vector<std::string>()), md5Hex).c_str());
 }
 
-FString FindVerifiedCopy(const char *name, const char *md5Hex)
+std::vector<zx::ResolveStep> PlanVerifiedCopy(const char *name, const char *md5Hex)
 {
 	if ((name == NULL) || (md5Hex == NULL) || (md5Hex[0] == '\0'))
-		return FString();
+		return std::vector<zx::ResolveStep>();
 
+	// [rc4l] The half that must stay on the main thread: FindAllFilesInEngineSearchPaths reads
+	// GameConfig, and DownloadDir builds an FString. Both are stats and string work -- cheap. What
+	// comes out is plain paths, which is exactly what a worker can be handed.
 	TArray<FString> found;
 	zx::FindAllFilesInEngineSearchPaths(name, found);
 
@@ -786,7 +796,22 @@ FString FindVerifiedCopy(const char *name, const char *md5Hex)
 	for (unsigned i = 0; i < found.Size(); ++i)
 		hits.push_back(found[i].GetChars());
 
-	return WalkResolvePlan(zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(), hits), md5Hex);
+	return zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(), hits);
+}
+
+std::string WalkVerifiedPlan(const std::vector<zx::ResolveStep> &steps, const std::string &md5Hex)
+{
+	// [rc4l] The half that may run anywhere: FileExists and Md5OfFile are stat, fopen and EVP over a
+	// local context. Nothing here is an engine global, which is the whole reason the split exists.
+	return WalkResolvePlan(steps, md5Hex);
+}
+
+FString FindVerifiedCopy(const char *name, const char *md5Hex)
+{
+	// The two halves composed. Written this way rather than duplicated so the answer the menu gets
+	// on a worker and the answer hosting gets inline cannot come to differ.
+	return FString(WalkVerifiedPlan(PlanVerifiedCopy(name, md5Hex),
+		(md5Hex != NULL) ? md5Hex : "").c_str());
 }
 
 bool IsRunning()
