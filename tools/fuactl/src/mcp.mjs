@@ -3,7 +3,7 @@
 // programmable engine (launch instances, run the determinism check, reap, raw RPC).
 import readline from "node:readline";
 import { reap, readRegistry } from "./registry.mjs";
-import { runDeterminismCheck, runPerfAblation } from "./session.mjs";
+import { runDeterminismCheck, runPerfAblation, runGlTimers } from "./session.mjs";
 import { launchInstance, resolveEngine } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { menuNav, click, clickLabel, typeText, screenshot, padButton, padDpad, look, readMenu, findLabel } from "./ui.mjs";
@@ -29,6 +29,12 @@ const TOOLS = [
   { name: "perf_ablation", description: "Deterministic perf ablation: baseline vs a perturbation, causal frametime delta + sim/render (CPU/GPU) verdict.",
     inputSchema: { type: "object", properties: {
       seed: { type: "number" }, map: { type: "string" }, spawn: { type: "string" }, count: { type: "number" }, frames: { type: "number" } } } },
+  { name: "gl_timers", description: "GPU render profiling: arm a gl.timers capture on a running instance and return per-pass GPU milliseconds (scene/translucent/hud2d), whole-frame total, and draw counters. Answers 'which GL pass is eating the frame on this laggy map'. Includes renderer.info (whether timer queries even work on this driver).",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" }, frames: { type: "number" }, warmup: { type: "number" } } } },
+  { name: "renderer_info", description: "Renderer identity (vendor/renderer/GL version) + whether GL timer queries are usable on this driver, so you know if gl_timers will return real numbers.",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" } } } },
   { name: "rpc", description: "Send one raw RPC to an instance and return the result.",
     inputSchema: { type: "object", required: ["port", "cmd"], properties: {
       port: { type: "number" }, token: { type: "string" }, cmd: { type: "string" }, args: { type: "object" } } } },
@@ -74,6 +80,8 @@ async function callTool(name, a = {}) {
     case "launch_instance": { const i = await launchInstance({ map: a.map, seed: a.seed }); return { pid: i.pid, port: i.port, token: i.token }; }
     case "session_check": return runDeterminismCheck({ instances: a.instances, seed: a.seed, map: a.map, tics: a.tics });
     case "perf_ablation": return runPerfAblation({ seed: a.seed, map: a.map, spawn: a.spawn, count: a.count, frames: a.frames });
+    case "gl_timers": return runGlTimers({ port: a.port, token: a.token, frames: a.frames, warmup: a.warmup });
+    case "renderer_info": return withClient(a.port, a.token, (c) => c.rpc("renderer.info"));
     case "rpc": return withClient(a.port, a.token, (c) => c.rpc(a.cmd, a.args));
     case "ui_menu_nav": return withClient(a.port, a.token, async (c) => { await menuNav(c, a.steps); return { navigated: a.steps }; });
     case "ui_click": return withClient(a.port, a.token, async (c) => {

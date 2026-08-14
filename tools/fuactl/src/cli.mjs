@@ -4,10 +4,11 @@
 // Both talk to the engine's native bridge (features/mcp-bridge), which must be built with
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
 import { reap, readRegistry } from "./registry.mjs";
-import { runDeterminismCheck, runPerfAblation, runNetBandwidth } from "./session.mjs";
+import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } from "./session.mjs";
 import { launchInstance, stopInstance, resolveEngine } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { sampleProcess } from "./sample.mjs";
+import { summarizeGlTimers } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 
 const num = (v) => (v != null && v !== true ? Number(v) : undefined);
@@ -41,6 +42,8 @@ const USAGE = `fuactl <command>
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
+  gl-timers --port P [--token T] [--frames N] [--warmup M]   GPU render profiling: per-pass GPU ms (scene/translucent/hud2d) of a running instance
+  renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   mcp                                run as an MCP stdio server for agents
 `;
@@ -116,6 +119,29 @@ async function main() {
       if (!pid) { console.error("usage: fuactl sample --pid P | --port P [--seconds N]"); process.exit(2); }
       const r = await sampleProcess(pid, { seconds: flags.seconds ? Number(flags.seconds) : 2, engineOnly: !!flags.engine });
       console.log(JSON.stringify(r, null, 2));
+      break;
+    }
+    case "gl-timers": {
+      // GPU render profiling of a running instance: which GL pass is eating the frame?
+      if (!flags.port) { console.error("usage: fuactl gl-timers --port P [--token T] [--frames N] [--warmup M]"); process.exit(2); }
+      const { info, report } = await runGlTimers({
+        port: Number(flags.port),
+        token: flags.token || undefined,
+        frames: flags.frames ? Number(flags.frames) : undefined,
+        warmup: flags.warmup != null ? Number(flags.warmup) : undefined,
+      });
+      console.error(`[gl-timers] ${summarizeGlTimers(report)}`);
+      console.log(JSON.stringify({ info, report }, null, 2));
+      break;
+    }
+    case "renderer-info": {
+      if (!flags.port) { console.error("usage: fuactl renderer-info --port P [--token T]"); process.exit(2); }
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null });
+      await c.waitHello();
+      const info = await c.rpc("renderer.info");
+      c.close();
+      console.log(JSON.stringify(info, null, 2));
       break;
     }
     case "net-bw": {

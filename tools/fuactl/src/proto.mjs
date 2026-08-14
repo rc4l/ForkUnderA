@@ -128,6 +128,28 @@ export function hudLines(texts, yTol = 3) {
   });
 }
 
+// Format a gl.timers report (the "glperf" event payload) into one human line, ranked by cost so the
+// hottest GPU pass is obvious. Pure so it is unit-tested. report =
+//   { available, frames, note?, total:{mean_ms,...}, zones:{scene:{mean_ms,...},...}, counters?:{...} }
+// When the driver couldn't time (available:false) we say so rather than printing fake zeros.
+export function summarizeGlTimers(report) {
+  if (!report || report.available === false) {
+    const why = report && report.note ? ` (${report.note})` : "";
+    return `GPU timing unavailable${why}`;
+  }
+  const ms = (s) => (s && typeof s.mean_ms === "number" ? s.mean_ms.toFixed(2) : "?");
+  const zones = report.zones || {};
+  const ranked = Object.keys(zones)
+    .map((k) => ({ k, v: typeof zones[k].mean_ms === "number" ? zones[k].mean_ms : -1 }))
+    .sort((a, b) => b.v - a.v); // hottest pass first
+  const parts = ranked.map(({ k }) => `${k} ${ms(zones[k])}`).join(" / ");
+  let line = `GPU ${ms(report.total)}ms/frame over ${report.frames ?? 0} frames`;
+  if (parts) line += ` — ${parts}`;
+  const c = report.counters;
+  if (c) line += ` [${c.walls ?? 0}w ${c.flats ?? 0}f ${c.sprites ?? 0}s ${c.vertices ?? 0}v]`;
+  return line;
+}
+
 // Find the on-screen label matching `needle` (case-insensitive substring) and return its anchor
 // {x, y, text}, or null. Prefers the exact DRAWN FRAGMENT (its real x,y -- the right click target,
 // e.g. "Complex Doom" at its own column) over the merged reading-order line, which shares a baseline
