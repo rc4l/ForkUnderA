@@ -53,6 +53,7 @@
 #include "r_renderer.h"
 #include "r_sky.h"
 #include "textures/textures.h"
+#include "features/sprite-atlas/spriteatlas.h"
 // [BB] New #includes.
 #include "cl_demo.h"
 
@@ -1286,6 +1287,9 @@ void FTextureManager::PrecacheLevel (void)
 	{
 		Renderer->PrecacheTexture(ByIndex(i), hitlist[i]);
 	}
+
+	// [ForkUnderA] sprite-atlas: pack this level's marked sprite textures into shared pages.
+	SpriteAtlas_AddFromHitlist(hitlist, cnt);
 
 	delete[] hitlist;
 }

@@ -339,6 +339,7 @@ public:
 public:
 
 	void ComputeVertices(class Vector &v1, class Vector &v2, class Vector &v3, class Vector &v4); // [rc4l] sprite-batching: billboard/roll quad corners
+	bool atlased; // [rc4l] sprite-atlas: texture is a shared page cell (bind NOMIP, batch key field)
 	void Draw(int pass);
 	void PutSprite(bool translucent);
 	void Process(AActor* thing,sector_t * sector);

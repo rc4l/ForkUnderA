@@ -43,6 +43,7 @@
 #include "g_level.h"
 #include "doomstat.h"
 #include "c_dispatch.h"
+#include "features/sprite-atlas/spriteatlas.h"
 #include "gl/gl_functions.h"
 #include "r_defs.h"
 #include "r_sky.h"
@@ -160,6 +161,7 @@ struct SpriteBatchState
 	BYTE redisalpha;
 	BYTE usecolorblend;
 	BYTE fullbright;
+	BYTE atlased;
 };
 
 static SpriteBatchState g_spriteBatchKey;
@@ -280,6 +282,7 @@ void GLSprite::Draw(int pass)
 		batchkey.thingcolor = ThingColor.d;
 		batchkey.redisalpha = !!(RenderStyle.Flags & STYLEF_RedIsAlpha);
 		batchkey.fullbright = fullbright;
+		batchkey.atlased = atlased;
 		batchkey.usecolorblend = trans > 1.f - FLT_EPSILON && gl_usecolorblending &&
 			gl_fixedcolormap == CM_DEFAULT && actor && fullbright && gltexture && !gltexture->GetTransparent();
 		if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && !fullbright)
@@ -430,7 +433,8 @@ void GLSprite::Draw(int pass)
 		gl_RenderState.SetFog(0, 0);
 	}
 
-	if (gltexture) gl_RenderState.SetMaterial(gltexture, CLAMP_XY, translation, OverrideShader, !!(RenderStyle.Flags & STYLEF_RedIsAlpha));
+	// [rc4l] sprite-atlas: pages bind without mipmaps (mip reduction would blend cells).
+	if (gltexture) gl_RenderState.SetMaterial(gltexture, atlased ? CLAMP_XY_NOMIP : CLAMP_XY, translation, OverrideShader, !!(RenderStyle.Flags & STYLEF_RedIsAlpha));
 	else if (!modelframe) gl_RenderState.EnableTexture(false);
 
 	if (!modelframe)
@@ -868,6 +872,26 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 			}
 		}
 
+		// [rc4l] sprite-atlas: substitute the shared page material and remap the UVs into
+		// this texture's cell, so consecutive effect sprites bind one material and the
+		// batcher can merge their draws. Geometry (r) stays from the original texture.
+		// Untranslated face sprites without extra material layers (brightmaps) only;
+		// everything else keeps the classic path and looks identical either way.
+		atlased = false;
+		if (type == RF_FACESPRITE && thing->Translation == 0 && gltexture->GetLayers() == 1)
+		{
+			FSpriteAtlasEntry *ae = SpriteAtlas_GetOrPack(TexMan[patch], patch.GetIndex());
+			if (ae != NULL)
+			{
+				gltexture = ae->material;
+				ul = ae->u0 + ul * ae->uscale;
+				ur = ae->u0 + ur * ae->uscale;
+				vt = ae->v0 + vt * ae->vscale;
+				vb = ae->v0 + vb * ae->vscale;
+				atlased = true;
+			}
+		}
+
 		r.Scale(FIXED2FLOAT(spritescaleX),FIXED2FLOAT(spritescaleY));
 
 		// [rc4l] sprite-cull: see the cvar. Models are unaffected (this is the !modelframe path).
@@ -1131,6 +1155,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 
 void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int shade, int fakeside)
 {
+	atlased = false; // [rc4l] sprite-atlas: particles keep the classic path
 	if (GLRenderer->mCurrentPortal)
 	{
 		int clipres = GLRenderer->mCurrentPortal->ClipPoint(particle->x, particle->y);
