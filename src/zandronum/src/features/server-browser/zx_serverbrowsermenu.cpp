@@ -722,6 +722,13 @@ enum class DialogAction
 	// good. Through the shared dialog rather than a box of its own, so it gets the same rule every
 	// destructive question here gets: focus starts on the safe answer and Escape resolves to it.
 	DeleteCustom,
+
+	// [rc4l] Throwing away every flag somebody has set, or every map they have taken out of the
+	// rotation. Not destructive on disk, but destructive of work -- a hundred and seventy-five
+	// switches is an afternoon -- and there is no undo, so it is asked the same way.
+	ResetFlags,
+	ResetMaps,
+	ResetGameplay,
 };
 
 struct BrowserDialog
@@ -750,6 +757,21 @@ struct BrowserDialog
 };
 
 static	BrowserDialog	g_Dialog;
+
+// [rc4l] Whether saying yes to this question destroys something the player cannot get back -- their
+// preset, their flags, their map list. Only the answer is tinted, not the button that asks; see
+// DrawDialog.
+//
+// Stopping or switching a server is deliberately NOT in here. Those end something that is running
+// and can be started again in a press, which is a different weight of mistake from work that is
+// simply gone.
+static bool DialogIsDestructive( DialogAction action )
+{
+	return ( action == DialogAction::DeleteCustom ) ||
+		( action == DialogAction::ResetFlags ) ||
+		( action == DialogAction::ResetMaps ) ||
+		( action == DialogAction::ResetGameplay );
+}
 
 // What is typed into the dialog's field, edited by the same rules as the search box.
 static	zx::TextInput	g_DialogInput;
@@ -1761,6 +1783,9 @@ static	int					g_NewIwadModalScroll = 0;
 static	int					g_NewIwadModalHot = -1;
 static	bool				g_NewIwadRefreshHot = false;
 static	bool				g_NewIwadConfirmHot = false;
+
+// The RESET beside it, on the boxes that have one. See NewBoxHasReset.
+static	bool				g_NewBoxResetHot = false;
 static	bool				g_DraggingIwadBar = false;
 static	bool				g_DraggingNewWadBar = false;
 static	bool				g_DraggingNewOrderBar = false;
@@ -3305,7 +3330,18 @@ public:
 				continue;
 
 			const bool bFocused = ( g_Dialog.focus == i );
-			DrawRoundedButton( bx, by, bw, SB_DLG_BTN_H, g_Dialog.labels[i], bFocused || ( g_DialogHot == i ));
+
+			// [rc4l] THE WARNING BELONGS ON THE ANSWER, not on the button that asks the question.
+			//
+			// RESET on the flag box was tinted red itself, which made a button that merely opens a
+			// question look like the dangerous act. The dangerous act is confirming it, and index 0
+			// is always the affirmative here -- so the red sits on the one press that cannot be
+			// taken back, beside a neutral way out.
+			const bool bWarn = ( i == 0 ) && DialogIsDestructive( g_Dialog.action );
+
+			DrawRoundedButton( bx, by, bw, SB_DLG_BTN_H, g_Dialog.labels[i],
+				bFocused || ( g_DialogHot == i ),
+				bWarn ? ButtonTint::Warn : ButtonTint::Neutral );
 
 			if ( bFocused )
 				FocusAnchor( zx::BrowserFocus::Dialog, bx - 5, by + SB_DLG_BTN_H / 2 );
@@ -3438,6 +3474,39 @@ public:
 			}
 
 			g_CustomDeleting = "";
+			break;
+
+		// [rc4l] The box stays OPEN either way. The question was asked from inside it and the answer
+		// belongs there: closing on "yes" would hide the very thing the player asked to look at
+		// afresh, and closing on "no" would punish them for changing their mind.
+		case DialogAction::ResetFlags:
+			if ( bAffirmative )
+			{
+				NewResetFlags( );
+				NewSay( "Flags reset" );
+			}
+			break;
+
+		case DialogAction::ResetMaps:
+			if ( bAffirmative )
+			{
+				NewResetMaps( );
+				NewSay( "Map list reset" );
+			}
+			break;
+
+		// [rc4l] Re-applying the MODE is the reset: NewSetGameMode writes this mode's skill, its
+		// limits, its clock and its teams, which is the whole of what this box shows. Doing it that
+		// way rather than listing the cvars again means the defaults live in one place and the
+		// button cannot fall behind them.
+		case DialogAction::ResetGameplay:
+			if ( bAffirmative )
+			{
+				// FORCED: this is the defaults being asked for outright, so it takes the settings a
+				// mode change would have left alone. See NewSetGameMode.
+				NewSetGameMode( NewChosenGameMode( ), true );
+				NewSay( "Gameplay settings reset" );
+			}
 			break;
 
 		case DialogAction::CancelDownload:
@@ -7286,6 +7355,127 @@ public:
 	// [rc4l] The flag fields as this screen has them, read from the engine the first time and edited
 	// here after. Read rather than assumed: a fresh server starts from the same defaults this client
 	// has, so starting the boxes anywhere else would be showing something untrue.
+	// [rc4l] Every flag field back to what a fresh configuration starts with.
+	//
+	// The WHOLE table is rebuilt, not just the four fields that carry an explicit default: a reset
+	// that left compatflags holding yesterday's number would be a reset that did not.
+	//
+	// The collapsed state is deliberately left alone. Refolding every field would move the thing
+	// somebody is looking at out from under them, and how the list is folded is not a setting.
+	void NewResetFlags( )
+	{
+		g_NewFlags = zx::FlagTable( );
+		NewApplyFlagDefaults( );
+
+		g_NewFlagInput.clear( );
+		g_NewFlagInput.resize( g_NewFlags.size( ));
+
+		for ( size_t i = 0; i < g_NewFlags.size( ); ++i )
+		{
+			NewSetCvar( g_NewFlags[i].name, zx::FormatFlagNumber( g_NewFlags[i].value ));
+			g_NewFlagInput[i] = zx::ClearInput( );
+			g_NewFlagInput[i].text = zx::FormatFlagNumber( g_NewFlags[i].value );
+		}
+
+		g_NewFlagEditing = -1;
+	}
+
+	// Every map back in, in the order the files give. Forced, because the cached rotation is keyed on
+	// the load order and that has not changed -- the whole point is to discard what was done to it.
+	void NewResetMaps( )
+	{
+		NewRebuildMaps( true );
+
+		g_NewMapSel = 0;
+		g_NewMapScroll = 0;
+	}
+
+	// [rc4l] The foot of a big box: DONE, and RESET beside it where there is one. ONE function draws
+	// both, from the same geometry the hit tests read, for the reason DrawHostFootButtons gives --
+	// the last time a pair like this was worked out twice, one of them ended up drawn in one place
+	// and clickable in another.
+	void DrawBoxFootButtons( )
+	{
+		DrawRoundedButton( NewBigDoneLeft( ), NewBigButtonTop( ), NewBigBtnW( ), SB_DLG_BTN_H,
+			"DONE", g_NewIwadConfirmHot );
+
+		if ( !NewBoxHasReset( ))
+			return;
+
+		// Neutral: this one only ASKS. The red belongs on the answer, and the confirmation's own
+		// affirmative wears it -- see DialogIsDestructive.
+		DrawRoundedButton( NewBigResetLeft( ), NewBigButtonTop( ), NewBigBtnW( ), SB_DLG_BTN_H,
+			"RESET", g_NewBoxResetHot );
+
+		// [rc4l] One line per box. This was a two-way choice between maps and flags, which left
+		// GAMEPLAY -- added later -- being told about flags it does not show.
+		const char *tip = "Put every flag back to what a new setup starts with  (Backspace)";
+
+		if ( g_NewModal == NewModal::Maps )
+			tip = "Put every map back, in the order the files give  (Backspace)";
+		else if ( g_NewModal == NewModal::Gameplay )
+			tip = "Put these settings back to what this mode starts with  (Backspace)";
+
+		serverbrowser_Tip( NewBigResetLeft( ), NewBigButtonTop( ), NewBigBtnW( ), SB_DLG_BTN_H, tip );
+	}
+
+	// The RESET button's own hit test, shared by both boxes for the same reason the drawing is.
+	// Returns true when the click belonged to it.
+	bool BoxResetMouse( int type, int x, int y )
+	{
+		if ( !NewBoxHasReset( ))
+			return false;
+
+		const int bx = NewBigResetLeft( );
+		const int by = NewBigButtonTop( );
+
+		if (( x < serverbrowser_ToScreenX( bx )) ||
+			( x >= serverbrowser_ToScreenX( bx + NewBigBtnW( ))) ||
+			( y < serverbrowser_ToScreenY( by )) ||
+			( y >= serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+		{
+			return false;
+		}
+
+		g_NewBoxResetHot = true;
+
+		if ( type == MOUSE_Release )
+			NewAskReset( );
+
+		return true;
+	}
+
+	// [rc4l] The question, asked the same way from the mouse and the keyboard so the two cannot come
+	// to mean different things. Says WHAT goes rather than "are you sure": a player who has just
+	// spent a while in here deserves to be told which afternoon they are about to lose.
+	void NewAskReset( )
+	{
+		if ( g_NewModal == NewModal::Flags )
+		{
+			ShowDialog( DialogAction::ResetFlags, "Reset every flag?",
+				"All of them go back to what a new setup starts with.",
+				"Reset", 'r', "Keep", 'k' );
+		}
+		else if ( g_NewModal == NewModal::Maps )
+		{
+			ShowDialog( DialogAction::ResetMaps, "Reset the map list?",
+				"Every map goes back in, in the order the files give.",
+				"Reset", 'r', "Keep", 'k' );
+		}
+		else if ( g_NewModal == NewModal::Gameplay )
+		{
+			// [rc4l] "Everything here" rather than a list of what is on the box. A list has to be
+			// rewritten every time a setting is added or a mode shows a different set, and the one
+			// that is not rewritten is a dialog quietly lying about what the button does.
+			//
+			// The mode IS named, because it is the one thing on this box a reset could plausibly be
+			// expected to take and does not.
+			ShowDialog( DialogAction::ResetGameplay, "Reset these settings?",
+				"Everything here goes back to what this mode starts with. The mode itself is kept.",
+				"Reset", 'r', "Keep", 'k' );
+		}
+	}
+
 	void NewLoadFlags( )
 	{
 		if ( g_NewFlagsLoaded )
@@ -7869,6 +8059,27 @@ public:
 	int NewBigBarX( )			{ return NewBigContentRight( ) + 2; }
 	int NewBigButtonLeft( )		{ return ( NewBigModalLeft( ) + NewBigModalRight( )) / 2 - 40; }
 
+	// [rc4l] RESET beside DONE, on the three boxes that hold settings somebody can get into a state
+	// they cannot undo: the flag fields, the map rotation and the gameplay numbers.
+	//
+	// GAMEPLAY has a way back already -- picking the mode again re-applies its defaults -- but that
+	// is a reset you have to KNOW about, and one that costs you the mode pill you were on if the
+	// mode is what you wanted to keep. A button that says what it does beats a trick.
+	//
+	// Not on the IWAD box or the CUSTOM tab's read-only map list, neither of which holds anything to
+	// reset.
+	bool NewBoxHasReset( )
+	{
+		return ( g_NewModal == NewModal::Maps ) || ( g_NewModal == NewModal::Flags ) ||
+			( g_NewModal == NewModal::Gameplay );
+	}
+
+	// The pair is centred TOGETHER when there are two, so DONE does not sit off to one side on the
+	// boxes that have a neighbour and dead centre on the ones that do not.
+	int NewBigDoneLeft( )	{ return NewBigButtonLeft( ) - ( NewBoxHasReset( ) ? 44 : 0 ); }
+	int NewBigResetLeft( )	{ return NewBigButtonLeft( ) + 44; }
+	int NewBigBtnW( )		{ return 80; }
+
 	// [rc4l] A box to type a number into, and what separates two of them in the footer.
 	//
 	// Wide enough for the widest number a flag field can hold. It was 74, which fits eight digits,
@@ -7944,7 +8155,14 @@ public:
 		return (( GAMEMODE_GetFlags( mode ) & GMF_COOPERATIVE ) != 0 ) ? 3 : 4;
 	}
 
-	void NewSetGameMode( GAMEMODE_e mode )
+	// [rc4l] `bForceDefaults` is the difference between CHOOSING a mode and RESETTING it.
+	//
+	// Choosing one keeps the few settings that are a preference rather than a property of the mode:
+	// a lives count you picked survives a switch to another mode that also uses lives, and the room
+	// size survives everything. Resetting is being asked for the defaults outright, so it takes them
+	// all -- which is what "I changed the lives, pressed reset, nothing happened" was: the reset was
+	// running the mode-change rules and politely keeping the very number being reset.
+	void NewSetGameMode( GAMEMODE_e mode, bool bForceDefaults = false )
 	{
 		g_NewGameMode = mode;
 
@@ -7993,10 +8211,20 @@ public:
 				SettingApplyNumber( "winlimit", 5 );
 
 			// [rc4l] Off zero, because zero is unlimited and this mode is about them running out.
-			// Only when it is still zero: a lives count somebody set is theirs to keep, and picking
-			// survival twice should not walk it back to the floor.
-			if ( limits.lives && ( atoi( NewCvarValue( "sv_maxlives" ).c_str( )) < 1 ))
+			//
+			// On a mode CHANGE only when it is still zero: a lives count somebody set is theirs to
+			// keep, and picking survival twice should not walk it back to the floor. On a RESET it
+			// goes back regardless -- that is what was asked for.
+			if ( limits.lives &&
+				( bForceDefaults || ( atoi( NewCvarValue( "sv_maxlives" ).c_str( )) < 1 )))
+			{
 				SettingApplyNumber( "sv_maxlives", 1 );
+			}
+
+			// The room size is a preference rather than anything the mode decides, so it survives a
+			// mode change and goes back only when the defaults are asked for outright.
+			if ( bForceDefaults )
+				SettingApplyNumber( "sv_maxplayers", 32 );
 
 			// No clock in co-op, survival or invasion -- see NewGameplayRows for why.
 			if (( flags & GMF_COOPERATIVE ) == 0 )
@@ -8952,11 +9180,13 @@ public:
 				if (( btnHot < 0 ) && bSel && ( g_NewMapHot < 0 ))
 					btnHot = g_NewMapBtnSel;
 
-				// The load order's own row, over a different list. See DrawOrderRow.
+				// The load order's own row, over a different list, with the first button as a
+				// SWITCH: a map is in or out, and that is a state rather than an act. See
+				// DrawNewOrderToggle for why a glyph was the wrong mark for it.
 				DrawOrderRow( left, right, rowY, row, g_NewMaps[row].name.c_str( ), bSel,
 					( row == g_NewMapHot ), btnHot, ( row == 0 ),
 					( row + 1 == static_cast<int>( g_NewMaps.size( ))), false,
-					g_NewMaps[row].bIn ? "X" : "+", !g_NewMaps[row].bIn );
+					"X", !g_NewMaps[row].bIn, true, g_NewMaps[row].bIn );
 			}
 
 			DrawHostRegionScrollBar( top, top + visible * SB_NEW_ROW_H,
@@ -8975,8 +9205,7 @@ public:
 				TAG_DONE );
 		}
 
-		DrawRoundedButton( NewBigButtonLeft( ), NewBigButtonTop( ), 80, SB_DLG_BTN_H, "DONE",
-			g_NewIwadConfirmHot );
+		DrawBoxFootButtons( );
 	}
 
 	// [rc4l] Switch and move, which is the whole of what this list can be told. Nothing leaves it:
@@ -9013,6 +9242,7 @@ public:
 		g_NewMapHot = -1;
 		g_NewMapBtnHot = -1;
 		g_NewIwadConfirmHot = false;
+		g_NewBoxResetHot = false;
 
 		const int left = NewBigContentLeft( );
 		const int right = NewBigContentRight( );
@@ -9027,12 +9257,15 @@ public:
 			return true;
 		}
 
+		if ( BoxResetMouse( type, x, y ))
+			return true;
+
 		{
-			const int bx = NewBigButtonLeft( );
+			const int bx = NewBigDoneLeft( );
 			const int by = NewBigButtonTop( );
 
 			if (( x >= serverbrowser_ToScreenX( bx )) &&
-				( x < serverbrowser_ToScreenX( bx + 80 )) &&
+				( x < serverbrowser_ToScreenX( bx + NewBigBtnW( ))) &&
 				( y >= serverbrowser_ToScreenY( by )) &&
 				( y < serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
 			{
@@ -9314,8 +9547,7 @@ public:
 
 		DrawFlagFooter( footFields );
 
-		DrawRoundedButton( NewBigButtonLeft( ), NewBigButtonTop( ), 80, SB_DLG_BTN_H, "DONE",
-			g_NewIwadConfirmHot );
+		DrawBoxFootButtons( );
 	}
 
 	// [rc4l] What the GAMEPLAY box shows, which depends on the mode.
@@ -9794,6 +10026,45 @@ public:
 			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 	}
 
+	// [rc4l] The leftmost button as a TOGGLE rather than a glyph, for a row that is switched rather
+	// than emptied.
+	//
+	// Same footprint as DrawNewOrderButton, and the mark inside is the one the pills use -- a lit
+	// dot with a halo. A glyph could only say what PRESSING it would do ("X" to take out, "+" to put
+	// back), which means the row tells you its state by describing its opposite, and every row you
+	// have switched reads as the inverse of every row you have not. A dot says what IS.
+	//
+	// No label: this button is one glyph wide by construction, and the pill's own text would not
+	// fit. The dot is the part that carries the meaning anyway; see DrawGameplayPill.
+	void DrawNewOrderToggle( int vx, int rowY, bool bOn, bool bHot )
+	{
+		const int base = bHot ? 46 : 28;
+		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
+			static_cast<BYTE>( base + 10 ), 220 };
+		const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base / 2 ),
+			static_cast<BYTE>( base / 2 + 8 ), 230 };
+
+		DrawRoundedPanel( vx, rowY + 1, SB_NEW_ORDER_BTN_W, SB_NEW_ROW_H - 2, topCol, botCol, 3 );
+
+		const int dotX = vx + ( SB_NEW_ORDER_BTN_W - SB_HOST_PILL_DOT ) / 2;
+		const int dotY = rowY + 1 + ( SB_NEW_ROW_H - 2 - SB_HOST_PILL_DOT ) / 2;
+
+		if ( bOn )
+		{
+			zx::PanelColor halo;
+			halo.r = 90; halo.g = 235; halo.b = 120; halo.a = 60;
+			DrawRoundedPanel( dotX - 2, dotY - 2, SB_HOST_PILL_DOT + 4, SB_HOST_PILL_DOT + 4,
+				halo, halo, ( SB_HOST_PILL_DOT + 4 ) / 2 );
+		}
+
+		zx::PanelColor dot;
+		if ( bOn )	{ dot.r = 120; dot.g = 255; dot.b = 150; dot.a = 255; }
+		else		{ dot.r = 96;  dot.g = 102; dot.b = 124; dot.a = 220; }
+
+		DrawRoundedPanel( dotX, dotY, SB_HOST_PILL_DOT, SB_HOST_PILL_DOT, dot, dot,
+			SB_HOST_PILL_DOT / 2 );
+	}
+
 	// [rc4l] One row of an ordered list: remove, the numbered name, and the two arrows.
 	//
 	// Written once and used by the load order and by the map list, which are the same control over
@@ -9801,16 +10072,21 @@ public:
 	// button under the pointer, or -1.
 	// `firstGlyph` is what the leftmost button says: the load order removes a file, and the map list
 	// switches a map in and out, which is a different act and says so.
+	// `bToggle` makes the leftmost button a switch showing its state rather than a glyph naming an
+	// act -- the map list, where a row is in or out. `firstGlyph` is what it says when it is not.
 	void DrawOrderRow( int left, int right, int rowY, int index, const char *label, bool bSel,
 		bool bHot, int btnHot, bool bFirst, bool bLast, bool bNumbered,
-		const char *firstGlyph = "X", bool bDim = false )
+		const char *firstGlyph = "X", bool bDim = false, bool bToggle = false, bool bOn = false )
 	{
 		DrawNewRowHighlight( left - 4, right, rowY, bSel, bHot );
 
-		// X, then the name, then the two arrows: the order the eye reads them is the order they
-		// matter in. Remove is the one you reach for; moving is fiddly, so it sits at the far end
-		// where it cannot be hit on the way to anything else.
-		DrawNewOrderButton( OrderXLeft( left ), rowY, firstGlyph, ( btnHot == 0 ));
+		// The switch or the X, then the name, then the two arrows: the order the eye reads them is
+		// the order they matter in. The first is the one you reach for; moving is fiddly, so it sits
+		// at the far end where it cannot be hit on the way to anything else.
+		if ( bToggle )
+			DrawNewOrderToggle( OrderXLeft( left ), rowY, bOn, ( btnHot == 0 ));
+		else
+			DrawNewOrderButton( OrderXLeft( left ), rowY, firstGlyph, ( btnHot == 0 ));
 
 		// [rc4l] Numbered only where the number says something the list does not.
 		//
@@ -11701,6 +11977,7 @@ public:
 		g_NewIwadModalHot = -1;
 		g_NewIwadRefreshHot = false;
 		g_NewIwadConfirmHot = false;
+		g_NewBoxResetHot = false;
 
 		// The bar first: it lies beside the grid, and a click that scrolled AND picked whatever pill
 		// happened to be under it would be picking at random.
@@ -11845,6 +12122,7 @@ public:
 		g_NewBoxHot = -1;
 		g_NewFlagFieldHot = -1;
 		g_NewIwadConfirmHot = false;
+		g_NewBoxResetHot = false;
 
 		int totalRows = 0;
 		const std::vector<BoxItem> items = BuildBox( which, totalRows );
@@ -11864,13 +12142,16 @@ public:
 			return true;
 		}
 
+		if ( BoxResetMouse( type, x, y ))
+			return true;
+
 		// DONE, which sits below the content where nothing else claims a click.
 		{
-			const int bx = NewBigButtonLeft( );
+			const int bx = NewBigDoneLeft( );
 			const int by = NewBigButtonTop( );
 
 			if (( x >= serverbrowser_ToScreenX( bx )) &&
-				( x < serverbrowser_ToScreenX( bx + 80 )) &&
+				( x < serverbrowser_ToScreenX( bx + NewBigBtnW( ))) &&
 				( y >= serverbrowser_ToScreenY( by )) &&
 				( y < serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
 			{
@@ -17720,6 +18001,20 @@ public:
 					return true;
 				}
 
+				// [rc4l] RESET, by the key that means clear everywhere else in this engine.
+				//
+				// MKEY_Clear is BACKSPACE, not Delete -- menu.cpp maps GK_BACKSPACE to it, and the
+				// tooltip says so for the same reason this comment does: guessing it was Delete is
+				// exactly what made the first attempt do nothing at all.
+				//
+				// DONE has no key of its own here because Escape IS it, so the button beside it
+				// needs one rather than a focus slot nothing else on this box uses.
+				if ( mkey == MKEY_Clear )
+				{
+					NewAskReset( );
+					return true;
+				}
+
 				return NewMapsMenuKey( mkey );
 			}
 
@@ -17733,6 +18028,17 @@ public:
 					EndSettingEdit( );
 					g_NewModal = NewModal::None;
 					g_NewFlagEditing = -1;
+					return true;
+				}
+
+				// Same key as the map list's, and only on the box that has the button: GAMEPLAY
+				// shares this branch and has no reset, its numbers being re-applied by the mode.
+				//
+				// A number field being edited never gets here: while one has the caret the raw keys
+				// go to it and Delete is a character deletion, not a menu key.
+				if (( mkey == MKEY_Clear ) && NewBoxHasReset( ))
+				{
+					NewAskReset( );
 					return true;
 				}
 
