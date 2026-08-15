@@ -491,15 +491,16 @@ public:
 		Class = inClass;
 	}
 
-	void *operator new(size_t len)
-	{
-		return M_Malloc(len);
-	}
-
-	void operator delete (void *mem)
-	{
-		M_Free(mem);
-	}
+	// [rc4l] actor-pool: object memory is recycled through a per-size free pool
+	// (dobject.cpp) instead of hitting the allocator for every spawn/death. Storms
+	// spawn and destroy thousands of actors; the pool removes that churn. Memory is
+	// only ever pooled at the point the GC frees it -- i.e. after mark-and-sweep has
+	// PROVEN nothing references the object -- which is exactly the guarantee free()
+	// relies on today. GC::AllocBytes accounting is preserved by the pool so GC
+	// pacing is byte-identical to the malloc path. Debug builds poison recycled
+	// memory so any untracked stale pointer still fails loudly.
+	void *operator new(size_t len);
+	void operator delete (void *mem);
 
 	// GC fiddling
 
