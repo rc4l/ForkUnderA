@@ -17,6 +17,8 @@
 #ifndef ZX_SKYTINT_H
 #define ZX_SKYTINT_H
 
+#include <cstddef>
+
 struct sector_t;
 struct subsector_t;
 struct FColormap;
@@ -40,6 +42,9 @@ void SkyTint_ApplySub(const subsector_t *sub, FColormap &cm);
 // Is there any tint at all this level? Asked once per drawn leaf, so it has to be a plain bool read
 // rather than anything that touches the table.
 bool SkyTint_Active();
+
+// TEMPORARY, for the fua_skytintinfo diagnostic.
+size_t SkyTintTableSize();
 
 // The sector form, for the few places the renderer knows only which sector it is drawing (sprites
 // away from a subsector, horizon portals). Takes the brightest leaf of that sector, so it errs

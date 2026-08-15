@@ -10,6 +10,7 @@
 #include "doomstat.h"
 #include "network.h"
 #include "c_cvars.h"
+#include "c_dispatch.h"
 #include "r_defs.h"
 #include "r_state.h"
 #include "r_sky.h"
@@ -153,6 +154,19 @@ bool ReadSky( std::vector<SkyRgb> &out, int &width )
 }
 
 } // namespace
+
+// [rc4l] TEMPORARY diagnostic: what does the rebuild actually see? Added chasing sky tint dying
+// after a wad reload, where the same map tints fine on a fresh launch. Delete once answered.
+CCMD( fua_skytintinfo )
+{
+	FTexture *sky = TexMan( sky1texture );
+	Printf( "skytint: state=%d gamestate=%d cvar=%d sectors=%d subsectors=%d\n",
+		(int)NETWORK_GetState( ), (int)gamestate, (int)(bool)cl_fua_skytint, numsectors, numsubsectors );
+	Printf( "skytint: sky1texture=%d tex=%p w=%d h=%d skyflatnum=%d\n",
+		sky1texture.GetIndex( ), (void *)sky,
+		sky ? sky->GetWidth( ) : -1, sky ? sky->GetHeight( ) : -1, skyflatnum.GetIndex( ));
+	Printf( "skytint: table=%u any=%d\n", (unsigned)zx::SkyTintTableSize( ), (int)zx::SkyTint_Active( ));
+}
 
 void SkyTint_Clear( )
 {
@@ -388,6 +402,11 @@ void ApplyIndex( ptrdiff_t at, FColormap &cm )
 }
 
 } // namespace
+
+size_t SkyTintTableSize( )
+{
+	return g_tint.size( );
+}
 
 bool SkyTint_Active( )
 {
