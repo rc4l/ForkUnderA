@@ -8,26 +8,18 @@ flowchart LR
     AI([agent]) -->|MCP| CLI([fuactl CLI])
     CLI ==>|TCP| B{{bridge}}
 
-    subgraph DEV["dev build · ZX_MCP_BRIDGE=1"]
-        direction LR
-        B --> SIM("sim clock<br/>pause · single step")
-        B --> STATE[("world state<br/>actors · hashes · RNG")]
-        B --> PROF("profilers<br/>tic ms · frames · GPU")
-        B --> TRACE[/"event tracer<br/>damage · kills · spawns"/]
-        B --> UI[/"input and UI<br/>keys · menus · screenshots"/]
-    end
-
-    REL("release build<br/>no bridge · zero symbols")
+    B --> SIM("sim clock<br/>pause · single step")
+    B --> STATE[("world state<br/>actors · hashes · RNG")]
+    B --> PROF("profilers<br/>tic ms · frames · GPU")
+    B --> TRACE[/"event tracer<br/>damage · kills · spawns"/]
+    B --> UI[/"input and UI<br/>keys · menus · screenshots"/]
 
     classDef you fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
     classDef hub fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#78350f
     classDef cap fill:#d1fae5,stroke:#10b981,stroke-width:2px,color:#064e3b
-    classDef off fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#7f1d1d,stroke-dasharray:6 4
     class AI,CLI you
     class B hub
     class SIM,STATE,PROF,TRACE,UI cap
-    class REL off
-    style DEV fill:#f8fafc,stroke:#94a3b8,stroke-width:1px,color:#475569
 ```
 
 ## Quick start
