@@ -1309,6 +1309,7 @@ void FPolyObj::CalcCenter()
 
 bool FPolyObj::MovePolyobj (int x, int y, bool force)
 {
+	SightGeomRevision++; // [rc4l] sight-cache: moving walls change sight rays
 	FBoundingBox oldbounds = Bounds;
 	UnLinkPolyobj ();
 	DoMovePolyobj (x, y);
@@ -1395,6 +1396,7 @@ static void RotatePt (int an, fixed_t *x, fixed_t *y, fixed_t startSpotX, fixed_
 
 bool FPolyObj::RotatePolyobj (angle_t angle, bool fromsave)
 {
+	SightGeomRevision++; // [rc4l] sight-cache: rotating walls change sight rays
 	int an;
 	bool blocked;
 	FBoundingBox oldbounds = Bounds;
