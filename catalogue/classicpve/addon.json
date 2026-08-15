@@ -169,6 +169,7 @@
       "cfg": "btsxe1.cfg",
       "kind": "pve",
       "tooltip": "Twenty-seven maps in a palette nobody else uses.",
+      "remixes": ["vanilla", "brutaldoom", "rga2", "d4t", "complexdoom", "dnd", "woc", "harddoom"],
       "files": [
         {
           "name": "btsx_e1a.wad",
@@ -187,6 +188,7 @@
       "cfg": "btsxe2.cfg",
       "kind": "pve",
       "tooltip": "Twenty-nine more, bluer and stranger than the first.",
+      "remixes": ["vanilla", "brutaldoom", "rga2", "d4t", "complexdoom", "dnd", "woc", "harddoom"],
       "files": [
         {
           "name": "btsx_e2a.wad",
