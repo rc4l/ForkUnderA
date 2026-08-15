@@ -183,6 +183,54 @@ TEST(NormaliseBrightness, ABlackSkyHasNoHueToOffer)
 	EXPECT_EQ(SkyRgb(255, 255, 255), NormaliseBrightness(SkyRgb(0, 0, 0)));
 }
 
+// [rc4l] The problem this answers: a DIM green sky and a blazing one normalise to the same vivid
+// hue, so a dark sky can read as a filter over the whole map. Turning Max colour down would tame it
+// but is global, costing the tint on every map where it was already fine. This is per-sky.
+TEST(SkyLuminance, ReadsADarkSkyAsDarkAndABrightOneAsBright)
+{
+	EXPECT_NEAR(0.0, SkyLuminance(SkyRgb(0, 0, 0)), 0.001);
+	EXPECT_NEAR(1.0, SkyLuminance(SkyRgb(255, 255, 255)), 0.001);
+
+	const double dim = SkyLuminance(SkyRgb(20, 60, 20));
+	const double bright = SkyLuminance(SkyRgb(120, 255, 120));
+	EXPECT_LT(dim, bright);
+	EXPECT_LT(dim, 0.1) << "a dark green sky must not read as bright";
+}
+
+TEST(SkyLuminance, WeighsGreenHeaviestAsAnEyeDoes)
+{
+	// Which matters here precisely because the skies that cause trouble are the green ones.
+	EXPECT_GT(SkyLuminance(SkyRgb(0, 200, 0)), SkyLuminance(SkyRgb(200, 0, 0)));
+	EXPECT_GT(SkyLuminance(SkyRgb(0, 200, 0)), SkyLuminance(SkyRgb(0, 0, 200)));
+}
+
+TEST(StrengthForSky, IgnoresTheSkyAtZeroAndObeysItAtFull)
+{
+	const double dark = SkyLuminance(SkyRgb(20, 60, 20));
+
+	EXPECT_EQ(40, StrengthForSky(40, dark, 0)) << "hue only: the sky's brightness is discarded";
+	EXPECT_LT(StrengthForSky(40, dark, 100), 8) << "a dark sky should barely tint at all";
+	EXPECT_EQ(40, StrengthForSky(40, 1.0, 100)) << "a white sky tints at full strength";
+}
+
+TEST(StrengthForSky, IsADialRatherThanASwitch)
+{
+	const double mid = 0.5;
+	const int none = StrengthForSky(40, mid, 0);
+	const int half = StrengthForSky(40, mid, 50);
+	const int full = StrengthForSky(40, mid, 100);
+
+	EXPECT_GT(none, half);
+	EXPECT_GT(half, full) << "a map with a mid-bright sky should land in between";
+}
+
+TEST(StrengthForSky, ClampsNonsenseInsteadOfTrusting)
+{
+	EXPECT_EQ(40, StrengthForSky(40, 5.0, 100)) << "luminance above 1 is still just full";
+	EXPECT_EQ(0, StrengthForSky(40, -1.0, 100));
+	EXPECT_EQ(40, StrengthForSky(40, 1.0, 500));
+}
+
 TEST(SaturationPct, MeasuresTheDistanceFromGrey)
 {
 	EXPECT_EQ(0, SaturationPct(SkyRgb(200, 200, 200)));

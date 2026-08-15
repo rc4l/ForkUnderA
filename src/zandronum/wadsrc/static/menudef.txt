@@ -449,6 +449,7 @@ OptionMenu "FUASkyTintOptions"
 	Option	"Tint from sky",			"cl_fua_skytint",				"OnOff"
 	Slider	"Strength",					"cl_fua_skytint_strength",		0.0, 100.0, 5.0, 0
 	Slider	"Max colour",				"cl_fua_skytint_saturation",	0.0, 100.0, 5.0, 0
+	Slider	"Follow sky brightness",	"cl_fua_skytint_brightness",	0.0, 100.0, 5.0, 0
 	Slider	"Indoor reach",				"cl_fua_skytint_reach",			0.0, 2048.0, 64.0, 0
 	Slider	"Doorway matters",			"cl_fua_skytint_gap",			0.0, 100.0, 5.0, 0
 	StaticText " "
@@ -457,6 +458,7 @@ OptionMenu "FUASkyTintOptions"
 	StaticText " "
 	StaticText "Average is faithful; Dominant names the biggest colour in the sky.", 1
 	StaticText "Horizon is what you look at; Overhead is what lights a floor.", 1
+	StaticText "Follow sky brightness: let a dark sky tint gently, per map.", 1
 	StaticText "Indoor reach: map units the light travels in (128 = a doorway).", 1
 	StaticText "Doorway matters: how much a narrow gap slows the light down.", 1
 }
