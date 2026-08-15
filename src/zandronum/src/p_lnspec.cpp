@@ -2840,6 +2840,10 @@ FUNC(LS_Line_SetTextureScale)
 FUNC(LS_Line_SetBlocking)
 // Line_SetBlocking (id, setflags, clearflags)
 {
+	// [rc4l] sight-cache: blocking-flag changes (incl. ML_BLOCKSIGHT/ML_BLOCKEVERYTHING)
+	// can change any sight ray's answer.
+	SightGeomRevision++;
+
 	static const int flagtrans[] =
 	{
 		ML_BLOCKING,

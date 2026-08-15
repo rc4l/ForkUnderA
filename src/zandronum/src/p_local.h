@@ -116,6 +116,10 @@ void	P_PredictPlayer (player_t *player);
 void	P_UnPredictPlayer ();
 */
 
+// [rc4l] sight-cache geometry revision (p_sight.cpp). Bump after ANY change that can
+// affect a sight ray: sector plane movement, polyobject movement, line blocking flags.
+extern DWORD SightGeomRevision;
+
 //
 // P_MOBJ
 //
