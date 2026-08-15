@@ -84,6 +84,13 @@ static TMap<FName, FBaseCVar *> &CVarCache()
 	return cache;
 }
 
+// [rc4l] Flushed on the wad_reload restart path: mod-defined cvars (CVARINFO) are
+// destroyed and recreated across a rebuild.
+void C_ClearCVarCache()
+{
+	CVarCache().Clear();
+}
+
 struct FLatchedValue
 {
 	FBaseCVar *Variable;

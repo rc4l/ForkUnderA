@@ -41,4 +41,9 @@ FSpriteAtlasEntry *SpriteAtlas_Lookup(int textureindex);
 // a grown page's GPU copy refreshes on its next bind.
 FSpriteAtlasEntry *SpriteAtlas_GetOrPack(class FTexture *tex, int textureindex);
 
+// Drop every page and mapping. MUST be called when the texture manager is rebuilt
+// (wad_reload restarts the engine): entries are keyed on texture index and hold page
+// materials, both of which the old texture manager owned.
+void SpriteAtlas_Reset();
+
 #endif

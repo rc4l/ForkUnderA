@@ -225,6 +225,15 @@ void SpriteAtlas_AddFromHitlist(const BYTE *hitlist, int count)
 	}
 }
 
+void SpriteAtlas_Reset()
+{
+	// The page FTextures and their materials belong to the outgoing texture manager;
+	// drop every reference rather than reuse anything across the rebuild.
+	Pages.Clear();
+	Registry.Clear();
+	Rejected.Clear();
+}
+
 FSpriteAtlasEntry *SpriteAtlas_Lookup(int textureindex)
 {
 	if (!gl_sprite_atlas)
@@ -281,5 +290,6 @@ FSpriteAtlasEntry *SpriteAtlas_GetOrPack(FTexture *tex, int textureindex)
 void SpriteAtlas_AddFromHitlist(const BYTE *, int) {}
 FSpriteAtlasEntry *SpriteAtlas_Lookup(int) { return NULL; }
 FSpriteAtlasEntry *SpriteAtlas_GetOrPack(FTexture *, int) { return NULL; }
+void SpriteAtlas_Reset() {}
 
 #endif

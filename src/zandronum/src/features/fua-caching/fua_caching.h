@@ -37,4 +37,9 @@ void FUA_MarkCachedSounds ();
 // precache; no-op in mode 0, without a GL renderer, or on repeat calls.
 void FUA_WarmupPipelines ();
 
+// Drop the cached DECORATE constant-reference table. MUST be called when the actor
+// classes are rebuilt (wad_reload restarts the engine): the table is keyed on and holds
+// PClass pointers from the outgoing class set.
+void FUA_CachingReset ();
+
 #endif
