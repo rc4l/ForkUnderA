@@ -1682,6 +1682,13 @@ static	int					g_CustomVerifyToken = -1;
 static	zx::CustomEntry		g_NewRestoreEntry;
 static	int					g_NewRestoreToken = -1;
 
+// [rc4l] And for EDIT, which used to verify every file inline on the press and froze the menu for
+// as long as that took. `wanted` is the press before the worker was free; `token` is the claim once
+// it is. Both together are "an edit is happening", which is what the button says while it waits.
+static	zx::CustomEntry		g_CustomEditEntry;
+static	int					g_CustomEditToken = -1;
+static	bool				g_CustomEditWanted = false;
+
 static	zx::TextInput		g_CustomSearch;
 static	int					g_CustomSearchFirstChar = 0;
 static	bool				g_CustomSearchDragging = false;
@@ -5098,10 +5105,12 @@ public:
 		// moves. Namespaced so it cannot be confused with this panel's own four; see SettingSliderId.
 		if ( id.compare( 0, 4, "box:" ) == 0 )
 		{
-			char buf[32];
-			mysnprintf( buf, countof( buf ), "%d", value );
-
-			NewSetCvar( id.substr( 4 ), buf );
+			// [rc4l] Through SettingApplyNumber, NOT NewSetCvar. Some of these settings write a
+			// companion cvar -- sv_maxplayers has to carry sv_maxclients with it -- and that used to
+			// live in SettingSanitise, which only runs when TYPING stops. Making Players a slider
+			// with the raw setter here would have moved the players and left the seats behind,
+			// which is the silent half-full server the one-row comment warns about.
+			SettingApplyNumber( id.substr( 4 ), value );
 			return;
 		}
 
@@ -7652,8 +7661,43 @@ public:
 		int max;					// the cap the slider offers, not a cap on the setting
 		std::string zeroText;		// what 0 means, when it means something other than zero
 
+		// [rc4l] What each stop is CALLED, when the number is not the useful part. Skill 4 is
+		// "Nightmare" to everyone who plays; a slider showing 4 is a slider you have to look up.
+		// Empty for the settings whose value really is a count.
+		std::vector<std::string> names;
+
 		SettingRow() : kind(zx::VarKind::Toggle), slider(false), min(0), max(0) {}
 	};
+
+	// [rc4l] One row, FULLY specified, rather than one row mutated between pushes.
+	//
+	// The list used to be built by setting fields on a single SettingRow and pushing it repeatedly,
+	// so each row silently inherited whatever the one above it left behind -- a zeroText, a cap, the
+	// slider flag. That was survivable while one row in three was a slider. Now that they all are,
+	// with different bounds and two of them naming their stops, it is a trap, so each row is built
+	// from nothing.
+	SettingRow NumberRow( const char *name, const char *label )
+	{
+		SettingRow row;
+		row.name = name;
+		row.label = label;
+		row.kind = zx::VarKind::Number;
+		return row;
+	}
+
+	SettingRow SliderRow( const char *name, const char *label, int min, int max,
+		const char *zeroText = NULL )
+	{
+		SettingRow row = NumberRow( name, label );
+		row.slider = true;
+		row.min = min;
+		row.max = max;
+
+		if ( zeroText != NULL )
+			row.zeroText = zeroText;
+
+		return row;
+	}
 
 	// The value a slider row currently holds.
 	int SettingNumber( const SettingRow &row )
@@ -7711,6 +7755,11 @@ public:
 		if (( value == 0 ) && !row.zeroText.empty( ))
 			return row.zeroText;
 
+		// A named stop, when this setting has names. Range-checked rather than trusted: a cfg can
+		// hold a skill this build has no word for, and the number is a better answer than a crash.
+		if (( value >= 0 ) && ( value < static_cast<int>( row.names.size( ))))
+			return row.names[value];
+
 		char buf[32];
 		mysnprintf( buf, countof( buf ), "%d", value );
 		return buf;
@@ -7725,6 +7774,21 @@ public:
 	// what the protocol carries, so it becomes 64. Anything that is not a number at all is somebody
 	// who deleted the field or pasted a word, and 32 is the answer they would have got by leaving it
 	// alone.
+	// [rc4l] Write a numeric setting AND whatever has to travel with it. The one place that knows
+	// about companions, so the slider and the typed box cannot disagree about them.
+	void SettingApplyNumber( const std::string &name, int value )
+	{
+		char buf[32];
+		mysnprintf( buf, countof( buf ), "%d", value );
+
+		NewSetCvar( name, buf );
+
+		// sv_maxclients is the seats and sv_maxplayers the players in the game; a server told to
+		// seat fewer than it plays quietly loses the difference.
+		if ( name == "sv_maxplayers" )
+			NewSetCvar( "sv_maxclients", buf );
+	}
+
 	void SettingSanitise( const SettingRow &row )
 	{
 		if ( row.name != "sv_maxplayers" )
@@ -7746,15 +7810,14 @@ public:
 		if ( value > 64 )
 			value = 64;
 
+		// [rc4l] And the OTHER cvar, which is the whole reason this is one row -- through the same
+		// setter the slider uses, so there is one answer to what "Players" writes.
+		SettingApplyNumber( row.name, value );
+
+		// The typed box keeps its own text, which has to agree with what was just written.
 		char buf[32];
 		mysnprintf( buf, countof( buf ), "%d", value );
-
 		SettingSet( row, buf );
-
-		// [rc4l] And the OTHER cvar, which is the whole reason this is one row. sv_maxclients is
-		// the seats and sv_maxplayers the players in the game; a server told to seat fewer than it
-		// plays quietly loses the difference.
-		NewSetCvar( "sv_maxclients", buf );
 	}
 
 	bool SettingIsOn( const SettingRow &row )
@@ -7846,13 +7909,23 @@ public:
 		return name;
 	}
 
-	// [rc4l] What a server built here starts at: Nightmare, with the ammo doubled.
+	// [rc4l] What a server built here starts at, with the ammo doubled either way.
 	//
-	// Every mode, not one setting per mode. Nightmare is what makes a map behave the way people
-	// actually play it -- fast projectiles, respawning items, monsters that come back -- and the
-	// ammo is doubled alongside it because that pace is what the skill costs. It is a default rather
-	// than a rule: the GAMEPLAY box shows the skill and it can be turned down.
-	int NewSkillDefault( )		{ return 4; }
+	// THE NUMBERS ARE 0-BASED, which is the trap in this setting: the `skill` cvar is an index into
+	// the skill list, and g_game.cpp defaults it to 2 -- Hurt Me Plenty, the third. So Ultra-Violence
+	// is 3 and Nightmare is 4, and the command line's own -skill is the OTHER convention, 1 to 5.
+	// Anything written here in the wrong one lands a whole skill out.
+	//
+	// CO-OP GETS ULTRA-VIOLENCE. Nightmare respawns every monster, which against a team working
+	// through a map is not a harder version of the same game -- it is a different one, where nothing
+	// stays cleared and progress is a treadmill. PvP never meets that, so it keeps Nightmare for the
+	// pace: fast projectiles and items that come back.
+	//
+	// A default rather than a rule: the GAMEPLAY box shows the skill and it can be moved.
+	int NewSkillDefault( GAMEMODE_e mode )
+	{
+		return (( GAMEMODE_GetFlags( mode ) & GMF_COOPERATIVE ) != 0 ) ? 3 : 4;
+	}
 
 	void NewSetGameMode( GAMEMODE_e mode )
 	{
@@ -7860,12 +7933,56 @@ public:
 
 		{
 			char buf[16];
-			mysnprintf( buf, countof( buf ), "%d", NewSkillDefault( ));
+			mysnprintf( buf, countof( buf ), "%d", NewSkillDefault( mode ));
 
 			SettingRow row;
 			row.name = "skill";
 			row.kind = zx::VarKind::Number;
 			SettingSet( row, buf );
+		}
+
+		// [rc4l] The limits this mode is usually played to, set when the mode is chosen.
+		//
+		// Only the ones the mode ACTUALLY HAS, read off its own declared capabilities the same way
+		// the rows are -- setting a frag limit on a mode that earns points would be a number the
+		// server ignores and the box does not show, left behind for whoever reads the cfg later.
+		//
+		// Set on every change, like the skill above: picking a mode is asking for that mode's
+		// defaults, and a frag limit carried over from the deathmatch you were looking at a moment
+		// ago is not something anybody chose.
+		{
+			const ULONG flags = GAMEMODE_GetFlags( mode );
+
+			const zx::ModeLimits limits = zx::LimitsForMode(
+				( flags & GMF_PLAYERSEARNFRAGS ) != 0,
+				( flags & GMF_PLAYERSEARNPOINTS ) != 0,
+				( flags & GMF_PLAYERSEARNWINS ) != 0,
+				( flags & GMF_USEMAXLIVES ) != 0,
+				( flags & GMF_PLAYERSONTEAMS ) != 0 );
+
+			// Fifty frags or fifty points is the length of a match people actually play; five wins
+			// is a duel. Ten minutes is the clock beside any of them.
+			if ( limits.fraglimit )
+				SettingApplyNumber( "fraglimit", 50 );
+
+			if ( limits.pointlimit )
+				SettingApplyNumber( "pointlimit", 50 );
+
+			if ( limits.winlimit )
+				SettingApplyNumber( "winlimit", 5 );
+
+			// [rc4l] Off zero, because zero is unlimited and this mode is about them running out.
+			// Only when it is still zero: a lives count somebody set is theirs to keep, and picking
+			// survival twice should not walk it back to the floor.
+			if ( limits.lives && ( atoi( NewCvarValue( "sv_maxlives" ).c_str( )) < 1 ))
+				SettingApplyNumber( "sv_maxlives", 1 );
+
+			// No clock in co-op, survival or invasion -- see NewGameplayRows for why.
+			if (( flags & GMF_COOPERATIVE ) == 0 )
+				SettingApplyNumber( "timelimit", 10 );
+
+			if ( limits.teams )
+				SettingApplyNumber( "sv_maxteams", 2 );
 		}
 
 		// EVERY mode named, not only the chosen one. They are switches on the server, and one left
@@ -9199,29 +9316,35 @@ public:
 			( flags & GMF_USEMAXLIVES ) != 0,
 			( flags & GMF_PLAYERSONTEAMS ) != 0 );
 
-		SettingRow row;
-		row.kind = zx::VarKind::Number;
+		// [rc4l] EVERY row on this box is a slider now.
+		//
+		// They were a mix: two number boxes for the limits, three sliders, then three more boxes.
+		// The mix was the problem -- the same kind of question answered two different ways down one
+		// column, so half of them wanted a click and a drag and the other half wanted a caret and
+		// the keyboard. A slider is also the honest control for all of these: every one is a small
+		// bounded number where the useful values are a short range, not free text.
+		//
+		// Zero is no limit at all on the four limits, which is why they say so rather than "0".
+		if ( limits.fraglimit )
+			out.push_back( SliderRow( "fraglimit", "Frag limit", 0, 50, "Unlimited" ));
 
-		if ( limits.fraglimit )	{ row.name = "fraglimit";  row.label = "Frag limit";  out.push_back( row ); }
-		if ( limits.pointlimit ){ row.name = "pointlimit"; row.label = "Point limit"; out.push_back( row ); }
-
-		// [rc4l] The three that are worth dragging, with the caps somebody hosting usually wants.
-		// Zero is no limit at all on every one of them, which is why they say so rather than "0".
-		row.slider = true;
-		row.min = 0;
-		row.zeroText = "Unlimited";
+		if ( limits.pointlimit )
+			out.push_back( SliderRow( "pointlimit", "Point limit", 0, 50, "Unlimited" ));
 
 		if ( limits.winlimit )
-		{
-			row.name = "winlimit"; row.label = "Win limit"; row.max = 5;
-			out.push_back( row );
-		}
+			out.push_back( SliderRow( "winlimit", "Win limit", 0, 5, "Unlimited" ));
 
+		// [rc4l] ONE AT THE BOTTOM, not zero.
+		//
+		// sv_maxlives 0 means unlimited, and a mode that only exists because lives run out cannot
+		// offer that: survival with unlimited lives is co-op, and last man standing with unlimited
+		// lives never ends. The floor is the smallest number that still makes the mode itself, so
+		// there is no "Unlimited" stop to name here.
+		//
+		// Every mode that uses lives, not just survival: GMF_USEMAXLIVES is exactly the set where
+		// running out is the point.
 		if ( limits.lives )
-		{
-			row.name = "sv_maxlives"; row.label = "Lives"; row.max = 5;
-			out.push_back( row );
-		}
+			out.push_back( SliderRow( "sv_maxlives", "Lives", 1, 5 ));
 
 		// [rc4l] NOT in co-op, survival or invasion.
 		//
@@ -9230,26 +9353,38 @@ public:
 		// the map short if a limit is set, which is a way to lose a co-op run to a number nobody
 		// meant to set. The three share GMF_COOPERATIVE, so that is the test.
 		if (( flags & GMF_COOPERATIVE ) == 0 )
-		{
-			row.name = "timelimit"; row.label = "Time limit (minutes)"; row.max = 20;
-			out.push_back( row );
-		}
+			out.push_back( SliderRow( "timelimit", "Time limit (minutes)", 0, 20, "Unlimited" ));
 
-		row.slider = false;
-		row.zeroText = "";
-		row.max = 0;
-
-		if ( limits.teams )	{ row.name = "sv_maxteams"; row.label = "Teams"; out.push_back( row ); }
+		// Two to four, the same stops the PRESETS tab's teams slider offers -- see teamspick_compute.
+		// One team is not a team game and the engine has colours for four.
+		if ( limits.teams )
+			out.push_back( SliderRow( "sv_maxteams", "Teams", 2, 4 ));
 
 		// [rc4l] ONE room size, not two.
 		//
 		// sv_maxplayers and sv_maxclients are separate cvars because a server can hold spectators
-		// beyond the players in the game, but two boxes that are set to the same number every time
-		// are one question asked twice -- and the pair disagreeing is a server that silently seats
-		// fewer people than it advertises. The row sets both; see SettingSanitise for the bounds.
-		row.name = "sv_maxplayers"; row.label = "Players"; out.push_back( row );
+		// beyond the players in the game, but two controls set to the same number every time are one
+		// question asked twice -- and the pair disagreeing is a server that silently seats fewer
+		// people than it advertises. Both are written by SettingApplyNumber, which is where the
+		// slider and the typed box meet.
+		//
+		// The bounds are the ones SettingSanitise held typed text to: under two is not a server, and
+		// past 64 is more than the protocol carries.
+		out.push_back( SliderRow( "sv_maxplayers", "Players", 2, 64 ));
 
-		row.name = "skill"; row.label = "Skill"; out.push_back( row );
+		// [rc4l] Named stops, because the number is not what anybody means. Zandronum's skills are
+		// 0 to 4 and everyone calls them by name.
+		{
+			SettingRow skill = SliderRow( "skill", "Skill", 0, 4 );
+
+			skill.names.push_back( "I'm too young to die" );
+			skill.names.push_back( "Hey, not too rough" );
+			skill.names.push_back( "Hurt me plenty" );
+			skill.names.push_back( "Ultra-Violence" );
+			skill.names.push_back( "Nightmare" );
+
+			out.push_back( skill );
+		}
 
 		return out;
 	}
@@ -9756,9 +9891,14 @@ public:
 				btnHot = g_NewOrderBtnSel;
 			}
 
+			// [rc4l] Unnumbered: a list you can drag says its order by BEING in that order, and the
+			// numbers were a second copy of that which has to be re-read every time a row moves.
+			// The maps list dropped them for the same reason. The read-only list in the CUSTOM tab's
+			// maps box keeps its numbers, because there the position is all it has -- nothing can be
+			// moved, so nothing demonstrates the order.
 			DrawOrderRow( SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT, rowY, row,
 				g_NewOrder[row].name.c_str( ), bSel, ( row == g_NewOrderHot ), btnHot,
-				( row == 0 ), ( row + 1 == static_cast<int>( g_NewOrder.size( ))), true );
+				( row == 0 ), ( row + 1 == static_cast<int>( g_NewOrder.size( ))), false );
 		}
 
 		// Outside the rows, where the host panel's own right-column bars sit, so the buttons at the
@@ -9950,6 +10090,45 @@ public:
 		// Bumps the epoch and empties the cache when the answers could have changed. Its return is
 		// not used here; what matters is that it runs before anything is read.
 		CustomVerifyEpoch( );
+
+		// [rc4l] AN EDIT COMES FIRST. It is a press somebody is waiting on; the row colouring is
+		// something they have not asked for and will not miss for another frame. Both want the one
+		// worker, so the order here is the whole of that priority.
+		if ( g_CustomEditToken >= 0 )
+		{
+			std::vector<zx::resolvejob::Answer> answers;
+
+			if ( zx::resolvejob::Tick( g_CustomEditToken, answers ))
+			{
+				g_CustomEditToken = -1;
+				CustomEditLanded( answers );
+			}
+
+			return;
+		}
+
+		if ( g_CustomEditWanted )
+		{
+			// Keyed by FILENAME, which is what NewApplyEntry looks a resolved path up by.
+			std::vector<zx::resolvejob::Want> wants;
+			for ( size_t i = 0; i < g_CustomEditEntry.files.size( ); ++i )
+			{
+				wants.push_back( zx::resolvejob::Want( g_CustomEditEntry.files[i].name,
+					g_CustomEditEntry.files[i].name, g_CustomEditEntry.files[i].md5 ));
+			}
+
+			const int token = NextVerifyToken( );
+
+			// Begin refuses while the row verification still holds the worker; the press stays
+			// wanted and this tries again next frame rather than being dropped.
+			if ( zx::resolvejob::Begin( wants, token ))
+			{
+				g_CustomEditWanted = false;
+				g_CustomEditToken = token;
+			}
+
+			return;
+		}
 
 		if ( g_CustomVerifyToken >= 0 )
 		{
@@ -10634,7 +10813,12 @@ public:
 		const bool bEditable = ( chosen != NULL ) &&
 			CustomMissing( *chosen, false, &bEditPending ).empty( ) && !bEditPending;
 
-		static const char *const kLabels[3] = { "PLAY NOW!", "EDIT", "DELETE" };
+		const char *kLabels[3] = { "PLAY NOW!", "EDIT", "DELETE" };
+
+		// [rc4l] EDIT says it is working while the worker checks the files. The press used to freeze
+		// the menu instead, which is the same wait with nothing to read.
+		if ( CustomEditPending( ))
+			kLabels[1] = LoadingText( );
 
 		for ( int i = 0; i < 3; ++i )
 		{
@@ -10742,6 +10926,14 @@ public:
 
 				if ( type == MOUSE_Release )
 				{
+					// [rc4l] THE BOX TAKES THE KEYBOARD WITH IT.
+					//
+					// Without this the browser's focus stayed wherever it was -- usually the sub-tab
+					// row -- so the glow went on drawing up there, above a modal that owns every key
+					// until it is closed. A marker pointing at something behind a box you cannot
+					// interact past is worse than no marker: it says the next press goes somewhere
+					// it cannot go. The same gap the save box had; see NewOwnsKeyboard.
+					SetFocus( zx::BrowserFocus::Host );
 					g_CustomMapsOpen = true;
 					g_CustomMapsScroll = 0;
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
@@ -10913,22 +11105,57 @@ public:
 	//
 	// Refused while a file is missing rather than half-done: prefilling a load order with gaps in it
 	// would look like the preset had lost them.
+	bool CustomEditPending( )	{ return g_CustomEditWanted || ( g_CustomEditToken >= 0 ); }
+
+	// [rc4l] EDIT, ASKED FOR rather than done on the spot.
+	//
+	// It used to verify every file inline -- hashing each one to be sure the preset can really be
+	// opened -- and the menu stopped dead for as long as that took, which for a preset naming a
+	// couple of large wads is long enough to look like a hang. The verifying is the same; only where
+	// it happens has changed. CustomVerifyPump starts it and CustomEditLanded finishes it.
+	//
+	// STILL VERIFIED FRESH. Refusing to edit is a refusal, and refusing on a remembered answer is
+	// refusing for a reason that may no longer be true -- so this asks again rather than reading the
+	// row colours, exactly as before.
 	void CustomEdit( )
 	{
 		const zx::CustomEntry *const chosen = CustomSelected( );
 		if ( chosen == NULL )
 			return;
 
-		// Fresh here too: refusing to edit is a refusal, and refusing on a stale answer is refusing
-		// for a reason that is no longer true.
-		if ( !CustomMissing( *chosen, true ).empty( ))
+		// A second press while the first is still being answered is the same press.
+		if ( CustomEditPending( ))
+			return;
+
+		g_CustomEditEntry = *chosen;
+		g_CustomEditWanted = true;
+
+		// Answered now, so the press is not silent while the worker gets to it.
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
+	// What the worker found, applied. Empty path means no copy on this disk matches.
+	void CustomEditLanded( const std::vector<zx::resolvejob::Answer> &answers )
+	{
+		std::vector<std::pair<std::string, std::string> > resolved;
+		int missing = 0;
+
+		for ( size_t i = 0; i < answers.size( ); ++i )
+		{
+			resolved.push_back( std::make_pair( answers[i].key, answers[i].path ));
+
+			if ( answers[i].path.empty( ))
+				missing++;
+		}
+
+		if ( missing > 0 )
 		{
 			ShowNotice( "Files missing",
 				"Play it first to fetch what it needs, then edit it." );
 			return;
 		}
 
-		NewApplyEntry( *chosen );
+		NewApplyEntry( g_CustomEditEntry, &resolved );
 
 		SelectSubTabIndex( static_cast<int>( HostKind::New ));
 		g_NewFocus = NewFocus::Wads;
