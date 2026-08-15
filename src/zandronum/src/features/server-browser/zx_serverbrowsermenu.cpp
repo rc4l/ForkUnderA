@@ -7044,6 +7044,23 @@ public:
 		for ( size_t i = 0; i < g_NewOrder.size( ); ++i )
 			config.pwads.push_back( g_NewOrder[i].path );
 
+		// [rc4l] WHAT THE CLIENT HAS TO RELOAD ONTO, written down before the server is started.
+		//
+		// Only the catalogue path used to do this, on the reasoning that a server built any other
+		// way was running the client's own files -- true of the hosting FORM, whose server inherited
+		// what this client had loaded, and false the moment this screen existed. A server built here
+		// runs files chosen from the library; the client goes on running whatever it booted with.
+		// Handing the server two PWADs and then connecting without them is a join Zandronum refuses
+		// with PROTECTED LUMP AUTHENTICATION FAILED, naming files the player had just picked.
+		//
+		// The SAME resolved paths the server was given, not the names: see the catalogue path for
+		// why a bare name is tested against the working directory and comes back missing.
+		g_HostEntryIwad = iwadPath;
+
+		g_HostEntryPwads.Clear( );
+		for ( size_t i = 0; i < g_NewOrder.size( ); ++i )
+			g_HostEntryPwads.Push( g_NewOrder[i].path.c_str( ));
+
 		config.maxPlayers = 8;
 		config.port = 0;
 		config.advertise = false;
@@ -7960,10 +7977,14 @@ public:
 				( flags & GMF_USEMAXLIVES ) != 0,
 				( flags & GMF_PLAYERSONTEAMS ) != 0 );
 
-			// Fifty frags or fifty points is the length of a match people actually play; five wins
-			// is a duel. Ten minutes is the clock beside any of them.
+			// Fifty frags or fifty points is the length of a match people actually play, and ten
+			// minutes is the clock beside any of them.
+			//
+			// A DUEL IS SHORTER. Twenty-five is what duels are played to: two people, every frag
+			// contested, and fifty is a long enough round that it stops being a duel and starts
+			// being an endurance test.
 			if ( limits.fraglimit )
-				SettingApplyNumber( "fraglimit", 50 );
+				SettingApplyNumber( "fraglimit", ( mode == GAMEMODE_DUEL ) ? 25 : 50 );
 
 			if ( limits.pointlimit )
 				SettingApplyNumber( "pointlimit", 50 );
@@ -9325,8 +9346,10 @@ public:
 		// bounded number where the useful values are a short range, not free text.
 		//
 		// Zero is no limit at all on the four limits, which is why they say so rather than "0".
+		// A hundred is the reach, not the answer: the default sits at fifty (twenty-five in a duel)
+		// and the top of the track is there for the longer games people do run.
 		if ( limits.fraglimit )
-			out.push_back( SliderRow( "fraglimit", "Frag limit", 0, 50, "Unlimited" ));
+			out.push_back( SliderRow( "fraglimit", "Frag limit", 0, 100, "Unlimited" ));
 
 		if ( limits.pointlimit )
 			out.push_back( SliderRow( "pointlimit", "Point limit", 0, 50, "Unlimited" ));
