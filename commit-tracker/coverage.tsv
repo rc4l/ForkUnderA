@@ -16568,7 +16568,7 @@ bafd6be342a7ada8276750b63d43c376977ff20b	2023-01-15T07:23:26Z	- removed backend 
 156161649840ab1cb9ace17feb8b4455a9d6eca6	2023-01-15T07:34:32Z	- pass colormap to MakeGoodRemap as parameter.	pending		/
 34e2e77f9e1fbc9028835949bac0f8555391de38	2023-01-15T07:54:54Z	- tab cleanup in shader code.	pending		/
 5b7826f68b8f97fd7161e79f4e35783135c09b99	2023-01-15T08:21:01Z	- set lightblendmode to 0 when setting up a 2D viewpoint.	pending		/
-3ea49a66d1ddc941106819e11d85e45a08ec3d98	2023-01-15T13:01:37Z	- cleaned up the pitch management in the sound backend.	adapted	ported only the pitch-RNG separation (pr_soundpitch stream instead of shared M_Random) -- fixes a real sound-driven sim desync; upstream's wider pitch-management cleanup (float pitch pipeline, $PitchSet/$PitchShift rework) NOT taken	796bd7c9
+3ea49a66d1ddc941106819e11d85e45a08ec3d98	2023-01-15T13:01:37Z	- cleaned up the pitch management in the sound backend.	adapted	ported only the pitch-RNG separation (pr_soundpitch stream instead of shared M_Random) -- fixes a real sound-driven sim desync; upstream's wider pitch-management cleanup (float pitch pipeline, $PitchSet/$PitchShift rework) NOT taken	a06ee0ff
 dd7cb8649f73e061c78d8b7c653d0d6b9e7338cb	2023-01-15T21:01:37Z	Exported LinePortals	pending		/
 258f4b6786d2da1306615582e5fb583d80f82ef3	2023-01-16T15:53:10Z	Check all ACS functions for minimum number of arguments. Also fixes SpawnForced not respecting the minimum declared in zspecial.acs. (https://forum.zdoom.org/viewtopic.php?t=77027)	pending		/
 1c45890c5ab85a2349b11984ebc450f40ba4fcaf	2023-01-16T15:53:59Z	Use a slider to allow specifying max FPS with more precision	pending		/
