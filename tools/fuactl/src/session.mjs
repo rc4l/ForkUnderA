@@ -130,7 +130,9 @@ export async function runPerfAblation(opts = {}) {
     // functions are hot (called a lot) while the load is active. No source instrumentation.
     const [perturbed, sample] = await Promise.all([
       capturePerf(c, frames),
-      sampleProcess(insts[0].pid, { seconds: 2, top: 12, engineOnly: true }),
+      // conn is what the in-engine Windows backend needs; the mac/Linux backends ignore it and
+      // attach to the pid. Both answer in the same shape, so the verdict below reads the same.
+      sampleProcess(insts[0].pid, { seconds: 2, top: 12, engineOnly: true, conn: c }),
     ]);
     const perturbedCounters = await c.rpc("perf.counters");
 

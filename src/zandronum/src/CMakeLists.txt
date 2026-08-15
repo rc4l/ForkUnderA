@@ -1830,7 +1830,7 @@ source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_
 # mcp_bridge.cpp = transport/lifecycle (header-pure); mcp_rpc.cpp = typed RPC dispatch + determinism/
 # state/session handlers (engine-facing); the rest are reader/crash/input/hud backends.
 if( FUA_MCP_BRIDGE )
-	target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_rpc.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_hud.cpp mcp_glperf.cpp mcp_ticprof.cpp mcp_simtrace.cpp )
+	target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_rpc.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_hud.cpp mcp_glperf.cpp mcp_ticprof.cpp mcp_simtrace.cpp mcp_sample.cpp )
 	target_compile_definitions( zdoom PRIVATE FUA_MCP_BRIDGE )
 endif()
 

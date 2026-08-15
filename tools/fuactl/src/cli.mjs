@@ -130,7 +130,16 @@ async function main() {
         if (e) pid = e.pid;
       }
       if (!pid) { console.error("usage: fuactl sample --pid P | --port P [--seconds N]"); process.exit(2); }
-      const r = await sampleProcess(pid, { seconds: flags.seconds ? Number(flags.seconds) : 2, engineOnly: !!flags.engine });
+      const opts = {
+        seconds: flags.seconds ? Number(flags.seconds) : 2,
+        top: flags.top ? Number(flags.top) : 12,
+        engineOnly: !!flags.engine,
+      };
+      // [rc4l] The Windows backend lives inside the engine, so it needs a connection rather than a
+      // pid. Opened only when --port was given; the external backends never touch it.
+      const r = flags.port
+        ? await withUi(flags, (c) => sampleProcess(pid, { ...opts, conn: c }))
+        : await sampleProcess(pid, opts);
       console.log(JSON.stringify(r, null, 2));
       break;
     }
