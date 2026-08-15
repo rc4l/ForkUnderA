@@ -3,21 +3,21 @@
 Reproducing a bug or a lag spike by hand is guesswork: no two runs are alike, and you cannot see inside a slow frame. fuactl fixes that by making a dev engine fully scriptable. Launch it, run it one tic at a time, read its world, measure its frames, and get the exact same run every time.
 
 ```mermaid
-%%{init: {"theme":"base","themeVariables":{"fontFamily":"Trebuchet MS, Verdana, sans-serif","fontSize":"14px","lineColor":"#64748b"},"flowchart":{"curve":"basis","nodeSpacing":40,"rankSpacing":55}}}%%
+%%{init: {"theme":"base","themeVariables":{"fontSize":"14px","lineColor":"#64748b"},"flowchart":{"curve":"basis","nodeSpacing":45,"rankSpacing":60}}}%%
 flowchart LR
-    AI["🤖 agent"] -->|MCP| CLI["🖥️ fuactl CLI"]
-    CLI ==>|"NDJSON over TCP"| B["🔌 bridge"]
+    AI([agent]) -->|MCP| CLI([fuactl CLI])
+    CLI ==>|TCP| B{{bridge}}
 
-    subgraph DEV["  dev build · ZX_MCP_BRIDGE=1  "]
+    subgraph DEV["dev build · ZX_MCP_BRIDGE=1"]
         direction LR
-        B --> SIM["⏱️ sim clock<br/>pause · step · cheat at tic N"]
-        B --> STATE["🌍 world state<br/>actors · hashes · RNG streams"]
-        B --> PROF["📊 profilers<br/>tic ms · worst frames · GPU passes"]
-        B --> TRACE["🧾 event tracer<br/>damage · kills · spawns"]
-        B --> UI["🎮 input & UI<br/>keys · menus · screenshots"]
+        B --> SIM("sim clock<br/>pause · single step")
+        B --> STATE[("world state<br/>actors · hashes · RNG")]
+        B --> PROF("profilers<br/>tic ms · frames · GPU")
+        B --> TRACE[/"event tracer<br/>damage · kills · spawns"/]
+        B --> UI[/"input and UI<br/>keys · menus · screenshots"/]
     end
 
-    REL["🚢 release build<br/>no bridge · zero symbols"]
+    REL("release build<br/>no bridge · zero symbols")
 
     classDef you fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
     classDef hub fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#78350f
