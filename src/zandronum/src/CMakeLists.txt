@@ -1493,6 +1493,8 @@ add_executable( zdoom WIN32
 	features/wadreload/zx_wadreload.cpp
 	features/sprite-atlas/spriteatlas.cpp
 	features/playerclass-fallback/zx_playerclassfallback.cpp
+	features/fua-caching/fua_caching.cpp
+	features/fua-caching/fua_warmup.cpp
 	features/iwad-registry/zx_iwadregistry.cpp
 	features/identity/zx_identity.cpp
 	features/identity/zx_identitynet.cpp

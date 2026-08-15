@@ -53,7 +53,22 @@ inline long long GetClockCycle ()
 
 #if defined (__APPLE__)
 
-typedef cycle_t glcycle_t;
+// [rc4l] This was `typedef cycle_t glcycle_t;`, which reads mach_absolute_time
+// UNCONDITIONALLY on every Clock/Unclock. These clocks bracket every draw call
+// (FFlatVertexBuffer::RenderCurrent), every wall/flat/sprite render -- and sampled
+// at ~4% of storm render time doing nothing but timing. Mirror the non-Apple
+// branch: only pay for the clock while gl_benching is actually measuring.
+class glcycle_t
+{
+public:
+	void Reset() { inner.Reset(); }
+	__forceinline void Clock()   { if (gl_benching) inner.Clock(); }
+	__forceinline void Unclock() { if (gl_benching) inner.Unclock(); }
+	double Time()   { return inner.Time(); }
+	double TimeMS() { return inner.TimeMS(); }
+private:
+	cycle_t inner;
+};
 
 #else // !__APPLE__
 

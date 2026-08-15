@@ -54,6 +54,7 @@
 #include "r_sky.h"
 #include "textures/textures.h"
 #include "features/sprite-atlas/spriteatlas.h"
+#include "features/fua-caching/fua_caching.h"
 // [BB] New #includes.
 #include "cl_demo.h"
 
@@ -1290,6 +1291,32 @@ void FTextureManager::PrecacheLevel (void)
 
 	// [ForkUnderA] sprite-atlas: pack this level's marked sprite textures into shared pages.
 	SpriteAtlas_AddFromHitlist(hitlist, cnt);
+
+	// [ForkUnderA] cl_fua_caching: make the cost visible so it can be tuned
+	// instead of guessed at.
+	if (FUA_CachingMode() > 0)
+	{
+		unsigned int marked = 0;
+		QWORD pixbytes = 0;
+		for (int i = 0; i < cnt; ++i)
+		{
+			if (hitlist[i])
+			{
+				FTexture *tex = ByIndex(i);
+				if (tex != NULL)
+				{
+					marked++;
+					pixbytes += (QWORD)tex->GetWidth() * tex->GetHeight() * 4;
+				}
+			}
+		}
+		Printf ("FUA caching: %u textures (%.1f MB) precached in %u ms\n",
+			marked, pixbytes / (1024.0 * 1024.0), I_MSTime() - precacheTime);
+
+		// Compile every reachable GPU pipeline now rather than at first draw
+		// mid-fight (once per session; see fua_warmup.cpp).
+		FUA_WarmupPipelines ();
+	}
 
 	delete[] hitlist;
 }
