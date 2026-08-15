@@ -63,12 +63,14 @@
 //
 //==========================================================================
 
-void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsector_t * subsec)
+// [rc4l] sprite-batching: the accumulation loop, split from the state call so the batcher can
+// compute a sprite's light color for its batch key without touching GL state.
+void gl_GetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsector_t * subsec, float *out)
 {
 	ADynamicLight *light;
 	float frac, lr, lg, lb;
 	float radius;
-	float out[3] = { 0.0f, 0.0f, 0.0f };
+	out[0] = out[1] = out[2] = 0.0f;
 	
 	// Go through both light lists
 	FLightNode * node = subsec->lighthead;
@@ -110,7 +112,30 @@ void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsect
 		}
 		node = node->nextLight;
 	}
+}
+
+void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsector_t * subsec)
+{
+	float out[3];
+	gl_GetDynSpriteLight(self, x, y, z, subsec, out);
 	gl_RenderState.SetDynLight(out[0], out[1], out[2]);
+}
+
+// [rc4l] sprite-batching: key-side variant of the (thing, particle) wrapper below.
+void gl_GetDynSpriteLight(AActor *thing, particle_t *particle, float *out)
+{
+	if (thing != NULL)
+	{
+		gl_GetDynSpriteLight(thing, thing->x, thing->y, thing->z + (thing->height >> 1), thing->subsector, out);
+	}
+	else if (particle != NULL)
+	{
+		gl_GetDynSpriteLight(NULL, particle->x, particle->y, particle->z, particle->subsector, out);
+	}
+	else
+	{
+		out[0] = out[1] = out[2] = 0.0f;
+	}
 }
 
 void gl_SetDynSpriteLight(AActor *thing, particle_t *particle)
