@@ -31,6 +31,23 @@ Horizon and Overhead genuinely disagree on a sky with a coloured horizon: one is
 sees, the other is the light a floor actually receives. That is a look choice, not a right answer,
 which is why it is a knob rather than a constant.
 
+## Skyboxes
+
+A sector can render a 3D skybox instead of a texture: the engine draws the level from a
+`ASkyViewpoint` actor and shows that where the sky would be. There is no image to average, so the
+only honest answer is to render it and look, which `SkyTint_FrameHook` does -- a 32x32 canvas texture
+registered against the viewpoint, rendered by the engine's own camera-texture pass, read back off the
+GPU and averaged like any other sky.
+
+It goes through `FCanvasTextureInfo::Add` rather than calling `RenderTextureView` directly, because
+`UpdateAll` saves and restores the `fixedcolormap` globals that camera rendering clobbers. It is also
+self-limiting: nothing draws the texture on a surface, so nothing re-arms `bNeedsUpdate` and it
+renders once rather than every frame. No row weighting is applied -- row weights describe position on
+the sky *dome*, and a camera frame of a room has no such geometry.
+
+This is not a rare case. 9 of the first 20 GvH Legacy of Darkness maps use skyboxes; none of epic2,
+BTSX E1, Ancient Aliens, JPCP, Doom VII, HR2 or AV do, across 35 maps sampled.
+
 ## Which sky, per sector
 
 There is no such thing as "the level's sky". A map can show different skies in different sectors
@@ -81,6 +98,10 @@ two players disagreeing about it costs nothing.
 - `gl/scene/gl_flats.cpp`, `gl_walls.cpp`, `gl_sprite.cpp`, `gl_drawinfo.cpp` -- one gated
   `zx::SkyTint_Apply` line after each `Colormap = <sector>->ColorMap`, 8 in total.
 - `p_setup.cpp` -- `SkyTint_Rebuild()` at the end of `P_SetupLevel`.
+- `gl/scene/gl_scene.cpp` -- `SkyTint_FrameHook()` immediately after `FCanvasTextureInfo::UpdateAll()`,
+  which is where a registered skybox camera has just been rendered and can be read back. Beside the
+  existing `hitboxviz::BeginFrame()` hook; that file has no upstream counterpart, so it is not a
+  re-sync risk.
 - `cl_main.cpp`, `p_acs.cpp`, `c_cmds.cpp` -- `SkyTint_SkyChanged()` after each `R_InitSkyMap()`
   that follows a real sky swap: the server's `SetMapSky`, ACS `ChangeSky`, and the `changesky`
   console command. The table is derived from `sky1texture`; these three change it without the level

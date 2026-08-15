@@ -78,6 +78,7 @@
 #include "gl/utility/gl_convert.h"
 #include "gl/utility/gl_templates.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/sky-tint/zx_skytint.h" // [rc4l] SkyTint_FrameHook()
 #include "features/fov-interp/fovinterp.h"
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 
@@ -1000,6 +1001,11 @@ void FGLRenderer::RenderView (player_t* player)
 
 	// prepare all camera textures that have been used in the last frame
 	FCanvasTextureInfo::UpdateAll();
+
+	// [rc4l] features/sky-tint samples 3D skyboxes by registering a camera texture against the
+	// SkyViewpoint and reading back what UpdateAll just rendered, so it has to run immediately after
+	// it. Returns at once on a level with no skybox, which is most of them.
+	zx::SkyTint_FrameHook();
 
 
 	// I stopped using BaseRatioSizes here because the information there wasn't well presented.
