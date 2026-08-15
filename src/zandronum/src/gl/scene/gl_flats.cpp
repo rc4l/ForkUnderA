@@ -63,6 +63,7 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_convert.h"
 #include "gl/utility/gl_templates.h"
+#include "features/sky-tint/zx_skytint.h"
 
 #ifdef _DEBUG
 CVAR(Int, gl_breaksec, -1, 0)
@@ -522,6 +523,7 @@ void GLFlat::ProcessSector(sector_t * frontsector)
 
 		lightlevel = gl_ClampLight(frontsector->GetFloorLight());
 		Colormap=frontsector->ColorMap;
+		zx::SkyTint_Apply( frontsector, Colormap );
 		if ((stack = (frontsector->portals[sector_t::floor] != NULL)))
 		{
 			gl_drawinfo->AddFloorStack(sector);
@@ -573,6 +575,7 @@ void GLFlat::ProcessSector(sector_t * frontsector)
 
 		lightlevel = gl_ClampLight(frontsector->GetCeilingLight());
 		Colormap=frontsector->ColorMap;
+		zx::SkyTint_Apply( frontsector, Colormap );
 		if ((stack = (frontsector->portals[sector_t::ceiling] != NULL))) 
 		{
 			gl_drawinfo->AddCeilingStack(sector);

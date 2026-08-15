@@ -67,6 +67,7 @@
 #include "c_console.h"
 #include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
+#include "features/sky-tint/zx_skytint.h"
 
 CVAR(Bool, gl_usecolorblending, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_spritebrightfog, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
@@ -784,6 +785,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	else 
 	{
 		Colormap=rendersector->ColorMap;
+		zx::SkyTint_Apply( rendersector, Colormap );
 		if (fullbright)
 		{
 			if (rendersector == &sectors[rendersector->sectornum] || in_area != area_below)	
@@ -962,6 +964,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 		int lightbottom;
 
 		Colormap = sector->ColorMap;
+		zx::SkyTint_Apply( sector, Colormap );
 		for(unsigned int i=0;i<lightlist.Size();i++)
 		{
 			if (i<lightlist.Size()-1) lightbottom = (int)(lightlist[i+1].plane.ZatPoint(particle->x,particle->y));
@@ -979,6 +982,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 	{
 		lightlevel = 255;
 		Colormap = sector->ColorMap;
+		zx::SkyTint_Apply( sector, Colormap );
 		Colormap.ClearColor();
 	}
 
