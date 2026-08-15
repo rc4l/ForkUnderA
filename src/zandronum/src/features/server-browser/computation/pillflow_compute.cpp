@@ -3,6 +3,12 @@
 
 #include "features/server-browser/computation/pillflow_compute.h"
 
+// [rc4l] size_t, which this file loops with. <vector> happens to leak it into the global namespace
+// on MSVC and does not on libstdc++, so without this the Linux build failed with "'i' was not
+// declared in this scope" -- the loop variable's type had silently not been a type at all.
+// playerclasspick_compute and hostlist_compute carry the same include for the same reason.
+#include <cstddef>
+
 namespace zx
 {
 
