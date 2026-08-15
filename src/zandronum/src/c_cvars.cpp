@@ -70,6 +70,26 @@
 #include "gi.h"
 #include "gameconfigfile.h"
 #include "scoreboard.h"
+#include "name.h"
+
+// [rc4l] Name-keyed cache in front of FindCVar's linked-list walk. ACS GetCVar resolves a
+// cvar by name on every script call, and mods poll cvars every tic, so the O(cvars) stricmp
+// walk showed up in kill-storm tic profiles. Lazy-filled: a miss walks the list (which stays
+// the source of truth) and memoizes the hit; ~FBaseCVar evicts only its own entry, which keeps
+// the unknown-cvar replacement dance in the ctor correct. Callers that need `prev` for list
+// surgery always walk. Function-local static so cvar construction at static-init time is safe.
+static TMap<FName, FBaseCVar *> &CVarCache()
+{
+	static TMap<FName, FBaseCVar *> cache;
+	return cache;
+}
+
+// [rc4l] Flushed on the wad_reload restart path: mod-defined cvars (CVARINFO) are
+// destroyed and recreated across a rebuild.
+void C_ClearCVarCache()
+{
+	CVarCache().Clear();
+}
 
 struct FLatchedValue
 {
@@ -165,6 +185,17 @@ FBaseCVar::~FBaseCVar ()
 				CVars = m_Next;
 		}
 		C_RemoveTabCommand(Name);
+		// [rc4l] Drop this cvar's FindCVar cache entry -- only if it is really ours,
+		// so destroying a shadowed duplicate can't evict the live cvar (see CVarCache).
+		{
+			FName key (Name, true);
+			if (key != NAME_None)
+			{
+				FBaseCVar **cached = CVarCache().CheckKey (key);
+				if (cached != NULL && *cached == this)
+					CVarCache().Remove (key);
+			}
+		}
 		delete[] Name;
 	}
 }
@@ -1617,9 +1648,23 @@ FBaseCVar *FindCVar (const char *var_name, FBaseCVar **prev)
 {
 	FBaseCVar *var;
 	FBaseCVar *dummy;
+	const bool wantsPrev = (prev != NULL);
 
 	if (var_name == NULL)
 		return NULL;
+
+	// [rc4l] Fast path via the name cache (see CVarCache above). noCreate keeps
+	// lookups of nonexistent cvars from growing the global name table.
+	if (!wantsPrev)
+	{
+		FName key (var_name, true);
+		if (key != NAME_None)
+		{
+			FBaseCVar **cached = CVarCache().CheckKey (key);
+			if (cached != NULL)
+				return *cached;
+		}
+	}
 
 	if (prev == NULL)
 		prev = &dummy;
@@ -1633,6 +1678,8 @@ FBaseCVar *FindCVar (const char *var_name, FBaseCVar **prev)
 		*prev = var;
 		var = var->m_Next;
 	}
+	if (var != NULL && !wantsPrev)
+		CVarCache()[FName (var->GetName ())] = var;
 	return var;
 }
 

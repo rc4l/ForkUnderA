@@ -45,6 +45,84 @@
 #include "i_system.h"
 #include "r_state.h"
 #include "stats.h"
+
+// [rc4l] actor-pool -- see the declaration in dobject.h. Buckets are keyed by the
+// allocator's real block size, read identically on both ends, so a recycled block
+// always exactly fits its bucket. GC::AllocBytes is adjusted exactly as
+// M_Malloc/M_Free would, so collection pacing does not change.
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#define ZX_POOL_MSIZE(p) malloc_size(p)
+#elif defined(_WIN32)
+#include <malloc.h>
+#define ZX_POOL_MSIZE(p) _msize(p)
+#else
+#include <malloc.h>
+#define ZX_POOL_MSIZE(p) malloc_usable_size(p)
+#endif
+
+namespace
+{
+	const size_t POOL_MAX_BLOCK = 8192;            // objects only; anything bigger goes to the allocator
+	const unsigned int POOL_MAX_PER_BUCKET = 4096; // cap hoarding after a storm ends
+
+	TMap<size_t, TArray<void *> > *PoolBuckets;
+	TMap<size_t, size_t> *PoolRealSize; // request len -> allocator's real block size
+}
+
+void *DObject::operator new(size_t len)
+{
+	// malloc returns the same real block size for the same request, so the len -> real
+	// size mapping is learned once and pool hits then cost no allocator call at all.
+	if (PoolBuckets != NULL && PoolRealSize != NULL)
+	{
+		size_t *known = PoolRealSize->CheckKey(len);
+		if (known != NULL)
+		{
+			TArray<void *> *bucket = PoolBuckets->CheckKey(*known);
+			if (bucket != NULL && bucket->Size() > 0)
+			{
+				void *mem = (*bucket)[bucket->Size() - 1];
+				bucket->Delete(bucket->Size() - 1);
+				GC::AllocBytes += *known; // exactly what M_Malloc would have added
+				return mem;
+			}
+		}
+	}
+	void *block = M_Malloc(len);
+	if (PoolRealSize == NULL)
+		PoolRealSize = new TMap<size_t, size_t>;
+	PoolRealSize->Insert(len, ZX_POOL_MSIZE(block));
+	return block;
+}
+
+void DObject::operator delete (void *mem)
+{
+	if (mem == NULL) return;
+	size_t realsize = ZX_POOL_MSIZE(mem);
+	if (realsize <= POOL_MAX_BLOCK)
+	{
+		if (PoolBuckets == NULL)
+			PoolBuckets = new TMap<size_t, TArray<void *> >;
+		TArray<void *> *bucket = PoolBuckets->CheckKey(realsize);
+		if (bucket == NULL)
+		{
+			PoolBuckets->Insert(realsize, TArray<void *>());
+			bucket = PoolBuckets->CheckKey(realsize);
+		}
+		if (bucket->Size() < POOL_MAX_PER_BUCKET)
+		{
+#ifndef NDEBUG
+			memset(mem, 0xDD, realsize); // poison: stale references fail loudly
+#endif
+			bucket->Push(mem);
+			GC::AllocBytes -= realsize; // exactly what M_Free would have subtracted
+			return;
+		}
+	}
+	M_Free(mem);
+}
+
 #include "a_sharedglobal.h"
 #include "dsectoreffect.h"
 #include "farchive.h"

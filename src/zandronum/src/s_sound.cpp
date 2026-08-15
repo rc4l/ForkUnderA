@@ -60,6 +60,7 @@
 #include "deathmatch.h"
 #include "network.h"
 #include "sv_commands.h"
+#include "features/fua-caching/fua_caching.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -121,6 +122,9 @@ static void CalcPolyobjSoundOrg(const FPolyObj *poly, fixed_t *x, fixed_t *y, fi
 static FSoundChan *S_StartSound(AActor *mover, const sector_t *sec, const FPolyObj *poly,
 	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation, FRolloffInfo *rolloff, int pitch_override);
 static void S_SetListener(SoundListener &listener, AActor *listenactor);
+
+// [rc4l] uzdoom@3ea49a66d: dedicated pitch-variation stream -- see the use site in S_StartSound.
+static FRandom pr_soundpitch ("SoundPitch");
 
 // PRIVATE DATA DEFINITIONS ------------------------------------------------
 
@@ -549,13 +553,23 @@ void S_PrecacheLevel ()
 			level.info->PrecacheSounds[i].MarkUsed();
 		}
 
+		// [ForkUnderA] cl_fua_caching: property sounds and constant
+		// state-parameter sounds of the placed-class/spawn-closure set.
+		// Must run before the cache/unload loops below.
+		FUA_MarkCachedSounds();
+
+		unsigned int cached = 0;
 		for (i = 1; i < S_sfx.Size(); ++i)
 		{
 			if (S_sfx[i].bUsed)
 			{
 				S_CacheSound (&S_sfx[i]);
+				cached++;
 			}
 		}
+		// [ForkUnderA]
+		if (FUA_CachingMode() > 0)
+			Printf ("FUA caching: %u sounds precached\n", cached);
 		for (i = 1; i < S_sfx.Size(); ++i)
 		{
 			if (!S_sfx[i].bUsed && S_sfx[i].link == sfxinfo_t::NO_LINK)
@@ -1138,7 +1152,13 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 	}
 	else if (snd_pitched && sfx->PitchMask != 0)
 	{
-		pitch = NORM_PITCH - (M_Random() & sfx->PitchMask) + (M_Random() & sfx->PitchMask);
+		// [rc4l] uzdoom@3ea49a66d: pitch variation draws from its OWN stream, not the shared
+		// M_Random the simulation also uses. Whether and when a sound plays depends on
+		// real-time audio channel availability, so drawing from a sim stream let audio timing
+		// perturb gameplay RNG -- proven here: an identical scenario replayed differently with
+		// sound on and identically with -nosound. Upstream walled this off for the same reason
+		// (their FCRandom is explicitly the client-side, non-synced class).
+		pitch = NORM_PITCH - (pr_soundpitch() & sfx->PitchMask) + (pr_soundpitch() & sfx->PitchMask);
 	}
 	else
 	{

@@ -1794,7 +1794,8 @@ void TryRunTics (void)
 		counts = realtics;
 	else
 		counts = availabletics;
-	
+
+
 	if (counts == 0 && !doWait)
 	{
 		// Check possible stall conditions
