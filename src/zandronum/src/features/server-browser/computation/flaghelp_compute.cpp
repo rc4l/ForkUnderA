@@ -250,11 +250,13 @@ const std::vector<std::pair<std::string, std::string> > &Built()
 	table.reserve(sorted.size());
 	for (size_t i = 0; i < sorted.size(); ++i)
 	{
-		// A blank line is a placeholder for a flag this build may or may not have; it is dropped
-		// rather than shown, so hovering it produces nothing instead of an empty box.
-		if (sorted[i].text[0] == 0)
-			continue;
-
+		// [rc4l] Every entry goes in, blank or not.
+		//
+		// There used to be a skip here for a blank line, described as a placeholder for a flag this
+		// build may or may not have. No entry in kHelp has ever been blank, so it was a branch that
+		// could not run -- and it was the wrong answer anyway: EveryFlagHasSomethingToSay already
+		// asserts no entry is empty, and quietly dropping one would have hidden the very mistake
+		// that test exists to catch. A blank now fails the test instead of vanishing.
 		table.push_back(std::make_pair(std::string(sorted[i].name), std::string(sorted[i].text)));
 	}
 

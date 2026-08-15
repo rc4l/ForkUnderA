@@ -232,3 +232,32 @@ TEST(LoadOrder, AnEmptyEverythingIsAnEmptyCommandLine)
 	const std::vector<LoadOrderEntry> list;
 	EXPECT_TRUE(LoadOrderPaths("", list).empty());
 }
+
+TEST(AddToLoadOrder, TwoNamesOfDifferentLengthAreNotTheSameFile)
+{
+	// The cheap half of the name compare: lengths first, so "av.wad" and "av20.wad" are settled
+	// without walking either of them.
+	std::vector<LoadOrderEntry> list;
+	list.push_back(LoadOrderEntry("/a/av.wad", "av.wad", 10));
+
+	const AddResult r = AddToLoadOrder(list, LoadOrderEntry("/a/av20.wad", "av20.wad", 20));
+
+	EXPECT_EQ(AddVerdict::Added, r.verdict);
+	EXPECT_EQ(2u, list.size());
+}
+
+// [rc4l] The empty shapes. Both defaults are load-bearing: a LoadOrderEntry with no size yet is one
+// that has not been measured, and an AddResult that nobody filled in reads as "nothing to add"
+// rather than as a successful add of row zero.
+TEST(LoadOrderShapes, StartAtNothingRatherThanAtWhateverWasOnTheStack)
+{
+	const LoadOrderEntry entry;
+	EXPECT_TRUE(entry.path.empty());
+	EXPECT_TRUE(entry.name.empty());
+	EXPECT_TRUE(entry.md5.empty());
+	EXPECT_EQ(0, entry.size);
+
+	const AddResult result;
+	EXPECT_EQ(AddVerdict::Empty, result.verdict);
+	EXPECT_EQ(0u, result.index);
+}

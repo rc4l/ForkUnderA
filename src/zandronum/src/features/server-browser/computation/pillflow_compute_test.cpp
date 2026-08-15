@@ -144,3 +144,14 @@ TEST(PillFlowHitTest, ARowHeightOfNothingHitsNothing)
 	const std::vector<PillPlace> p = FlowPills(Widths(30), 100, 5);
 	EXPECT_EQ(-1, PillFlowHitTest(p, 0, 5, 5));
 }
+
+TEST(PillPlace, DefaultsToTheOrigin)
+{
+	// The default constructor is what lets a place be filled in as the row is laid out; starting
+	// anywhere but the origin would put a pill on screen before anything had decided where.
+	const PillPlace place;
+
+	EXPECT_EQ(0, place.x);
+	EXPECT_EQ(0, place.row);
+	EXPECT_EQ(0, place.width);
+}

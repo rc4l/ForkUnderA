@@ -216,3 +216,77 @@ TEST(SaveStatus, SaysNothingWhereThereIsNothingToSay)
 	EXPECT_STRNE("", SaveStatusText(SaveState::Asking));
 	EXPECT_STRNE("", SaveStatusText(SaveState::Bad));
 }
+
+// ---------------------------------------------------------------- what a written cfg survives
+
+// [rc4l] The characters a preset name can carry that would otherwise end the JSON string early.
+// A file this writes must be one it can read back, whatever somebody typed into the box.
+TEST(CustomAddonJson, EscapesEveryCharacterThatWouldEndTheStringEarly)
+{
+	CustomEntry entry;
+	entry.name = "a\"b\\c\nd\re\tf";
+	entry.iwad = "doom2.wad";
+	entry.files.push_back(CustomFile("x.wad", "0123456789abcdef0123456789abcdef"));
+
+	const std::string json = CustomAddonJson(entry);
+
+	EXPECT_NE(std::string::npos, json.find("\\\""));
+	EXPECT_NE(std::string::npos, json.find("\\\\"));
+	EXPECT_NE(std::string::npos, json.find("\\n"));
+	EXPECT_NE(std::string::npos, json.find("\\r"));
+	EXPECT_NE(std::string::npos, json.find("\\t"));
+}
+
+TEST(CustomAddonJson, DropsAControlCharacterRatherThanEscapingIt)
+{
+	// A \u escape would be a parser this does not need, and a bell has no business in a name.
+	CustomEntry entry;
+	entry.name = std::string("bell") + '\a' + "end";
+	entry.iwad = "doom2.wad";
+	entry.files.push_back(CustomFile("x.wad", "0123456789abcdef0123456789abcdef"));
+
+	const std::string json = CustomAddonJson(entry);
+
+	EXPECT_NE(std::string::npos, json.find("bellend"));
+	EXPECT_EQ(std::string::npos, json.find('\a'));
+}
+
+TEST(ParseCustomCfg, SkipsAnIndentedCommentAndALineWithNoValue)
+{
+	// The indented comment reaches the leading-whitespace skip; the bare word reaches "no space,
+	// so no value". Neither may become a setting, and the value keeps none of its padding.
+	std::vector<std::pair<std::string, std::string> > cvars;
+	std::vector<std::string> maps;
+
+	ParseCustomCfg("\t  // indented comment\nlonelyword\n  skill  4  \n", cvars, maps);
+
+	ASSERT_EQ(1u, cvars.size());
+	EXPECT_EQ("skill", cvars[0].first);
+	EXPECT_EQ("4", cvars[0].second) << "trailing whitespace is trimmed off the value";
+}
+
+TEST(IsCustomName, RefusesAControlCharacterInside)
+{
+	EXPECT_FALSE(IsCustomName(std::string("bad") + '\x01' + "name"));
+}
+
+TEST(SaveStatusText, SaysSomethingForEveryStateThatNeedsIt)
+{
+	// Swept, so a state cannot be added without a line to show for it.
+	EXPECT_STRNE("", SaveStatusText(SaveState::Empty));
+	EXPECT_STRNE("", SaveStatusText(SaveState::NoFiles));
+	EXPECT_STRNE("", SaveStatusText(SaveState::Replace));
+
+	EXPECT_STREQ("", SaveStatusText(SaveState::Fresh));
+	EXPECT_STREQ("", SaveStatusText(static_cast<SaveState>(999)))
+		<< "a state this build has no word for says nothing rather than crashing";
+}
+
+TEST(CustomFile, DefaultsToEmpty)
+{
+	// The default constructor is what lets a CustomFile sit in a vector before it is filled in.
+	const CustomFile file;
+
+	EXPECT_TRUE(file.name.empty());
+	EXPECT_TRUE(file.md5.empty());
+}
