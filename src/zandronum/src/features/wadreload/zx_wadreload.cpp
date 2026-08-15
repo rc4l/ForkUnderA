@@ -16,7 +16,10 @@
 #include "features/sky-tint/zx_skytint.h"
 #include "g_level.h"  // G_DeferedInitNew
 #include "w_wad.h"    // Wads.CheckNumForName
-#include "gstrings.h" // GStrings, for the restart reset
+#include "gstrings.h"
+#include "p_local.h"
+#include "c_cvars.h"
+#include "features/fua-caching/fua_caching.h" // GStrings, for the restart reset
 #include "gi.h"       // DoomStartupInfo
 
 #include "features/wadreload/zx_wadreload.h"
@@ -196,7 +199,16 @@ void ResetStartupStateForRestart()
 	DoomStartupInfo.BkColor = 0;
 	DoomStartupInfo.Type = FStartupInfo::DefaultStartup;
 
-	// 3. features/sky-tint keeps a per-SUBSECTOR colour table for the level it was built on. A
+	// 3. [rc4l] Flush caches that key on identities the rebuild invalidates: fua-caching's
+	//    DECORATE reference table (PClass pointers -- this one crashed for real in
+	//    GetReplacement), the FindStateByString memo (ClassIndex + FState pointers), and the
+	//    FindCVar memo (CVARINFO cvars are destroyed and recreated). Stale entries here would
+	//    hand the new WAD set pointers into the old one.
+	FUA_CachingReset();
+	P_ClearStateStringCache();
+	C_ClearCVarCache();
+
+	// 4. features/sky-tint keeps a per-SUBSECTOR colour table for the level it was built on. A
 	//    restart happens inside the same process, so that table outlives the sector and subsector
 	//    arrays it indexes: the next level then reads another map's colours at its own indices, and
 	//    since the table said "yes there is a tint" it kept saying so after leaving the map that

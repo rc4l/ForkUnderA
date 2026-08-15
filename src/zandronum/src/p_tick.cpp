@@ -404,6 +404,7 @@ void P_Ticker (void)
 	// I have no idea if this has unwanted side effects. Has to be checked.
 	if(( NETWORK_GetState( ) != NETSTATE_CLIENT ) || (CLIENT_GetConnectionState() == CTS_ACTIVE))
 	{
+		P_ClearEffectRegistry ();	// [rc4l] actors re-register during their Tick below
 		MCP_TicProf_Begin (MCP_TPZ_THINKERS); // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
 		DThinker::RunThinkers ();
 		MCP_TicProf_End (MCP_TPZ_THINKERS);

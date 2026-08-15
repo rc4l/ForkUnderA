@@ -351,6 +351,25 @@ static void GenerateShowSpawnFountain ( FPlayerStart &ts, const int color, const
 //
 // Run effects on all actors in the world
 //
+// [rc4l] Per-tic registry of actors with particle effects. Each actor self-registers
+// from its own Tick (the thinker walk already visits everyone), so P_RunEffects no
+// longer scans the entire thinker list to find the few actors with effects != 0 --
+// an O(actors) walk per tic that got expensive in mass-death storms (thousands of
+// corpses and effect actors). Cleared at the top of each P_Ticker. Effects are
+// client-side eye candy (particles + a client-only RNG stream), so registration
+// order standing in for list order does not touch gameplay state.
+static TArray<AActor *> EffectActors;
+
+void P_ClearEffectRegistry ()
+{
+	EffectActors.Clear ();
+}
+
+void P_RegisterEffectActor (AActor *actor)
+{
+	EffectActors.Push (actor);
+}
+
 void P_RunEffects ()
 {
 	if (players[consoleplayer].camera == NULL) return;
@@ -358,17 +377,16 @@ void P_RunEffects ()
 	int	pnum = int(players[consoleplayer].camera->Sector - sectors) * numsectors;
 
 	AActor *actor;
-	TThinkerIterator<AActor> iterator;
 
-	while ( (actor = iterator.Next ()) )
+	for (unsigned int i = 0; i < EffectActors.Size(); ++i)
 	{
-		if (actor->effects)
-		{
-			// Only run the effect if the actor is potentially visible
-			int rnum = pnum + int(actor->Sector - sectors);
-			if (rejectmatrix == NULL || !(rejectmatrix[rnum>>3] & (1 << (rnum & 7))))
-				P_RunEffect (actor, actor->effects);
-		}
+		actor = EffectActors[i];
+		if ((actor->ObjectFlags & OF_EuthanizeMe) || actor->effects == 0)
+			continue; // destroyed or cleared since it registered this tic
+		// Only run the effect if the actor is potentially visible
+		int rnum = pnum + int(actor->Sector - sectors);
+		if (rejectmatrix == NULL || !(rejectmatrix[rnum>>3] & (1 << (rnum & 7))))
+			P_RunEffect (actor, actor->effects);
 	}
 
 	// [CK] If the client wants to show particles at spawns, do so.
