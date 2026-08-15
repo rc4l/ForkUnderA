@@ -258,7 +258,7 @@ TEST(ParseCustomCfg, SkipsAnIndentedCommentAndALineWithNoValue)
 	std::vector<std::pair<std::string, std::string> > cvars;
 	std::vector<std::string> maps;
 
-	ParseCustomCfg("\t  // indented comment\nlonelyword\n  skill  4  \n", cvars, maps);
+	ParseCustomCfg("\t  // indented comment\n\nlonelyword\n  skill  4  \n", cvars, maps);
 
 	ASSERT_EQ(1u, cvars.size());
 	EXPECT_EQ("skill", cvars[0].first);

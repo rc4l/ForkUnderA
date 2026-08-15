@@ -46,17 +46,19 @@ std::string JsonString(const std::string &value)
 	return out;
 }
 
+// [rc4l] Only ever handed a TRIMMED line: ParseCustomCfg trims before it asks, which is what lets
+// the value parse work at all.
+//
+// So there is no leading whitespace left to walk past, and the loop that used to walk it could not
+// run -- the coverage gate is what noticed. Reading the first character directly says the same thing
+// and says it plainly. If this is ever called on an untrimmed line, trim it there rather than
+// putting the walk back here: two places deciding what a line starts with is how they disagree.
 bool IsCommentOrBlank(const std::string &line)
 {
-	for (size_t i = 0; i < line.size(); ++i)
-	{
-		if ((line[i] == ' ') || (line[i] == '\t'))
-			continue;
+	if (line.empty())
+		return true;
 
-		return ((line[i] == '/') && ((i + 1) < line.size()) && (line[i + 1] == '/'));
-	}
-
-	return true;
+	return (line[0] == '/') && (line.size() > 1) && (line[1] == '/');
 }
 
 std::string Trim(const std::string &s)
