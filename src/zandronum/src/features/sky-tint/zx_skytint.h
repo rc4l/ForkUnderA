@@ -18,6 +18,7 @@
 #define ZX_SKYTINT_H
 
 struct sector_t;
+struct subsector_t;
 struct FColormap;
 
 namespace zx
@@ -30,8 +31,19 @@ void SkyTint_Rebuild();
 // Forget everything. Called when a level ends so no index outlives the sector array it refers to.
 void SkyTint_Clear();
 
-// Substitute the tinted light colour for `sec`, if the feature is on and that sector has one.
-// Anchored where the renderer reads a sector's colormap; a no-op otherwise.
+// [rc4l] Light is computed and stored per SUBSECTOR -- the BSP leaf the renderer actually draws --
+// rather than per sector. A whole sector taking one value is what made the effect look like a flood
+// rather than light: a room next to a lit yard came up evenly bright to its far corner. Leaves are
+// small, so the same room now fades across itself.
+void SkyTint_ApplySub(const subsector_t *sub, FColormap &cm);
+
+// Is there any tint at all this level? Asked once per drawn leaf, so it has to be a plain bool read
+// rather than anything that touches the table.
+bool SkyTint_Active();
+
+// The sector form, for the few places the renderer knows only which sector it is drawing (sprites
+// away from a subsector, horizon portals). Takes the brightest leaf of that sector, so it errs
+// toward the lit side rather than picking an arbitrary one.
 void SkyTint_Apply(const sector_t *sec, FColormap &cm);
 
 } // namespace zx

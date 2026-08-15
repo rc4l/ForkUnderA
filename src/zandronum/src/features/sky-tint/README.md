@@ -39,7 +39,10 @@ and on reload those sectors are no longer "default white" -- so the check that p
 mapper's own colour would start deferring to its own past output. There is no way back from that.
 
 Instead the colour is substituted into the render copy at the places the GL renderer reads a
-sector's colormap. Turning the option off restores the map exactly, and a savegame never learns the
+sector's colormap. It is stored per SUBSECTOR -- the BSP leaf the renderer actually draws -- because
+a whole sector taking one value reads as a flood rather than as light: a room beside a lit yard came
+up evenly bright to its far corner. `GLFlat::DrawSubsector` re-issues the colour per leaf, which
+costs one state change per lit leaf and nothing when the feature is off. Turning the option off restores the map exactly, and a savegame never learns the
 feature exists. It is also client-side by construction: nothing is simulated, nothing is sent, and
 two players disagreeing about it costs nothing.
 

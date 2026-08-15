@@ -279,6 +279,12 @@ public:
 
 	int dynlightindex;
 
+	// [rc4l] What Draw() passed to gl_SetColor, so DrawSubsector can re-issue it per BSP leaf with
+	// that leaf's own sky tint. See features/sky-tint: light is stored per subsector because a whole
+	// sector taking one value reads as a flood rather than as light.
+	int tintRel;
+	float tintAlpha;
+
 	void SetupSubsectorLights(int pass, subsector_t * sub, int *dli = NULL);
 	void DrawSubsector(subsector_t * sub);
 	void DrawSubsectorLights(subsector_t * sub, int pass);

@@ -173,6 +173,17 @@ void GLFlat::SetupSubsectorLights(int pass, subsector_t * sub, int *dli)
 
 void GLFlat::DrawSubsector(subsector_t * sub)
 {
+	// [rc4l] Sky light is stored per BSP LEAF, not per sector, so a room fades across itself
+	// instead of flooding evenly to its far corner. Draw() bound the sector's colour; if this leaf
+	// has its own, re-issue it just for this fan. Costs one state change per lit leaf and nothing
+	// at all when the feature is off, which is what the early-out inside SkyTint_ApplySub is for.
+	if ( zx::SkyTint_Active( ))
+	{
+		FColormap leaf = Colormap;
+		zx::SkyTint_ApplySub( sub, leaf );
+		gl_SetColor( lightlevel, tintRel, leaf, tintAlpha );
+	}
+
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	if (plane.plane.a | plane.plane.b)
 	{
@@ -343,6 +354,7 @@ void GLFlat::Draw(int pass, bool trans)	// trans only has meaning for GLPASS_LIG
 	{
 	case GLPASS_PLAIN:			// Single-pass rendering
 	case GLPASS_ALL:
+		tintRel = rel; tintAlpha = 1.0f;		// [rc4l] features/sky-tint, per-leaf re-issue
 		gl_SetColor(lightlevel, rel, Colormap,1.0f);
 		gl_SetFog(lightlevel, rel, &Colormap, false);
 		gl_RenderState.SetMaterial(gltexture, CLAMP_NONE, 0, -1, false);
@@ -360,6 +372,7 @@ void GLFlat::Draw(int pass, bool trans)	// trans only has meaning for GLPASS_LIG
 
 	case GLPASS_TRANSLUCENT:
 		if (renderstyle==STYLE_Add) gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE);
+		tintRel = rel; tintAlpha = alpha;		// [rc4l] features/sky-tint, per-leaf re-issue
 		gl_SetColor(lightlevel, rel, Colormap, alpha);
 		gl_SetFog(lightlevel, rel, &Colormap, false);
 		gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_threshold);
