@@ -18,7 +18,6 @@
 #include "gstrings.h"
 #include "p_local.h"
 #include "c_cvars.h"
-#include "features/sprite-atlas/spriteatlas.h"
 #include "features/fua-caching/fua_caching.h" // GStrings, for the restart reset
 #include "gi.h"       // DoomStartupInfo
 
@@ -199,12 +198,11 @@ void ResetStartupStateForRestart()
 	DoomStartupInfo.BkColor = 0;
 	DoomStartupInfo.Type = FStartupInfo::DefaultStartup;
 
-	// 3. [rc4l] Flush caches that key on identities the rebuild invalidates: the sprite
-	//    atlas (texture indices + page materials owned by the outgoing texture manager),
-	//    the FindStateByString memo (ClassIndex + FState pointers), and the FindCVar memo
-	//    (CVARINFO cvars are destroyed and recreated). Stale entries here would hand the
-	//    new WAD set pointers into the old one.
-	SpriteAtlas_Reset();
+	// 3. [rc4l] Flush caches that key on identities the rebuild invalidates: fua-caching's
+	//    DECORATE reference table (PClass pointers -- this one crashed for real in
+	//    GetReplacement), the FindStateByString memo (ClassIndex + FState pointers), and the
+	//    FindCVar memo (CVARINFO cvars are destroyed and recreated). Stale entries here would
+	//    hand the new WAD set pointers into the old one.
 	FUA_CachingReset();
 	P_ClearStateStringCache();
 	C_ClearCVarCache();

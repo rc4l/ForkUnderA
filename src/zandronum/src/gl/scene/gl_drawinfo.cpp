@@ -666,7 +666,6 @@ void GLDrawList::DoDraw(int pass, int i, bool trans)
 	case GLDIT_FLAT:
 		{
 			GLFlat * f=&flats[drawitems[i].index];
-			gl_FlushSpriteBatch(); // [rc4l] sprite-batching: non-sprite item ends any open run
 			RenderFlat.Clock();
 			f->Draw(pass, trans);
 			RenderFlat.Unclock();
@@ -676,7 +675,6 @@ void GLDrawList::DoDraw(int pass, int i, bool trans)
 	case GLDIT_WALL:
 		{
 			GLWall * w=&walls[drawitems[i].index];
-			gl_FlushSpriteBatch(); // [rc4l] sprite-batching: non-sprite item ends any open run
 			RenderWall.Clock();
 			w->Draw(pass);
 			RenderWall.Unclock();
@@ -772,7 +770,6 @@ void GLDrawList::DrawSorted()
 	glEnable(GL_CLIP_DISTANCE2);
 	glEnable(GL_CLIP_DISTANCE3);
 	DoDrawSorted(sorted);
-	gl_FlushSpriteBatch(); // [rc4l] sprite-batching: end of the sorted translucent walk
 	glDisable(GL_CLIP_DISTANCE2);
 	glDisable(GL_CLIP_DISTANCE3);
 	gl_RenderState.ClearClipSplit();
@@ -789,7 +786,6 @@ void GLDrawList::Draw(int pass, bool trans)
 	{
 		DoDraw(pass, i, trans);
 	}
-	gl_FlushSpriteBatch(); // [rc4l] sprite-batching: end of an unsorted list walk
 }
 
 //==========================================================================
