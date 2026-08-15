@@ -1,0 +1,22 @@
+{
+  "name": "complex-doom-killstorm",
+  "about": "Scythe 2 MAP30 with Complex Doom loaded: kill everything at once and measure the frames the death cascade produces. ~2000 monsters become ~38000 short-lived actors in the same ~800 blockmap cells, which is the worst p99 the engine sees in normal play.",
+  "requires": "launch with -iwad doom2.wad -file scythe2v2.wad -file complex-doom.pk3",
+
+  "reset": "MAP30",
+  "resetWait": 6000,
+
+  "setup": [
+    { "exec": "god" },
+    { "exec": "+forward" },
+    { "wait": 700 }
+  ],
+
+  "measure": { "kind": "capture", "frames": 300, "warmup": 0 },
+  "trigger": { "exec": "kill monsters" },
+  "teardown": [ { "exec": "-forward" } ],
+
+  "expect": {
+    "actorsSpawned": { "min": 1000 }
+  }
+}

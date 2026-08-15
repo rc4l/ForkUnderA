@@ -29,7 +29,18 @@
 // Start a run against the CALLING thread, which must be the game thread -- the RPC dispatch runs
 // there, which is the whole reason the handle is taken here rather than guessed later. Returns
 // false if a run is already going or the platform has no sampler.
-bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top );
+//
+// ticMin/ticMax (0,0 = the whole run) keep only the samples that landed in a leveltime range. This
+// is the thing an external sampler cannot do, and the reason to have written our own: a six-second
+// sample of a one-second spike reports the steady state, which is how a stall that was 90% thinkers
+// first read as renderer-bound. Pair it with perf.ticprof to find the expensive tics, then re-ask
+// for just those.
+bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax );
+
+// Publish the current leveltime for the sampler thread to stamp onto samples. Called from the game
+// thread once per bridge tick; the sampler only ever READS it, through an atomic, because the
+// threading contract forbids the worker from touching engine state.
+void MCP_Sample_PublishTic( int leveltime );
 
 // True once, when a run has finished and its report is ready to emit.
 bool MCP_Sample_ReportReady( std::string &json );
@@ -39,7 +50,8 @@ bool MCP_Sample_Running();
 
 #else
 
-inline bool MCP_Sample_Arm( double, int, bool, int ) { return false; }
+inline bool MCP_Sample_Arm( double, int, bool, int, int, int ) { return false; }
+inline void MCP_Sample_PublishTic( int ) {}
 inline bool MCP_Sample_ReportReady( std::string & ) { return false; }
 inline bool MCP_Sample_Running() { return false; }
 
