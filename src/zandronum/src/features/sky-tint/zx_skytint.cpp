@@ -17,7 +17,14 @@
 #include "templates.h"
 #include "textures/textures.h"
 #include "bitmap.h"
+#include "g_level.h"
+#include "g_shared/a_sharedglobal.h"	// ASkyViewpoint
 #include "gl/renderer/gl_colormap.h"
+
+// [rc4l] Declared with CVAR() in gl/scene/gl_sky.cpp and never exported. Matched here so a sector
+// with a skybox is classified the same way the renderer classifies it, including when someone turns
+// skyboxes off and the renderer falls back to the texture sky.
+EXTERN_CVAR( Bool, gl_noskyboxes )
 
 #include <cmath>
 #include <functional>
@@ -131,6 +138,10 @@ bool g_any = false;
 FTextureID g_builtForSky = FNullTextureID( );
 FTextureID g_builtForSky2 = FNullTextureID( );
 
+// How many sky-seeing leaves render a 3D skybox rather than a texture. Nothing lights them yet;
+// this exists so the state is visible instead of silently absent.
+int g_skyboxLeaves = 0;
+
 // Read one texture into linear-friendly RGB, and its alpha alongside for layering. Returns false
 // when there is no usable image, which is the normal case indoors and is not an error.
 bool ReadTexture( FTextureID id, std::vector<SkyRgb> &out, std::vector<int> &alpha, int &width )
@@ -197,8 +208,9 @@ struct SectorSky
 	FTextureID front;		// the layer drawn nearest, or the only layer
 	FTextureID back;		// valid only for a double sky, drawn behind `front`
 	bool doubled;
+	ASkyViewpoint *box;		// non-NULL when this sector renders a 3D skybox instead of a texture
 
-	SectorSky( ) : front( FNullTextureID( )), back( FNullTextureID( )), doubled( false ) { }
+	SectorSky( ) : front( FNullTextureID( )), back( FNullTextureID( )), doubled( false ), box( NULL ) { }
 };
 
 SectorSky SkyForSector( const sector_t *sec )
@@ -206,6 +218,20 @@ SectorSky SkyForSector( const sector_t *sec )
 	SectorSky out;
 	if ( sec == NULL )
 		return out;
+
+	// A skybox wins over any texture: the sector renders a whole scene from a viewpoint actor, and
+	// there is no image here to average. Reported so the caller can decide what to do about it.
+	if ( !gl_noskyboxes )
+	{
+		// const_cast because GetSkyBox is non-const upstream; it only reads.
+		sector_t *mutableSec = const_cast<sector_t *>( sec );
+		ASkyViewpoint *boxx = mutableSec->GetSkyBox( sector_t::ceiling );
+		if ( boxx != NULL )
+		{
+			out.box = boxx;
+			return out;
+		}
+	}
 
 	const int sky1 = sec->sky;
 	if (( sky1 & PL_SKYFLAT ) && ( sky1 & ( PL_SKYFLAT - 1 )))
@@ -277,7 +303,10 @@ CCMD( fua_skytintinfo )
 	Printf( "skytint: sky1texture=%d tex=%p w=%d h=%d skyflatnum=%d\n",
 		sky1texture.GetIndex( ), (void *)sky,
 		sky ? sky->GetWidth( ) : -1, sky ? sky->GetHeight( ) : -1, skyflatnum.GetIndex( ));
-	Printf( "skytint: table=%u any=%d\n", (unsigned)zx::SkyTintTableSize( ), (int)zx::SkyTint_Active( ));
+	Printf( "skytint: table=%u any=%d skyboxleaves=%d doublesky=%d swapskies=%d sky2=%d\n",
+		(unsigned)zx::SkyTintTableSize( ), (int)zx::SkyTint_Active( ), zx::SkyTintSkyboxLeaves( ),
+		(int)!!( level.flags & LEVEL_DOUBLESKY ), (int)!!( level.flags & LEVEL_SWAPSKIES ),
+		sky2texture.GetIndex( ));
 }
 
 void SkyTint_Clear( )
@@ -287,6 +316,7 @@ void SkyTint_Clear( )
 	g_any = false;
 	g_builtForSky = FNullTextureID( );
 	g_builtForSky2 = FNullTextureID( );
+	g_skyboxLeaves = 0;
 }
 
 void SkyTint_SkyChanged( )
@@ -376,6 +406,16 @@ void SkyTint_Rebuild( )
 		// Keyed on the front texture: two sectors showing the same sky share one average rather than
 		// paying for it twice. A level with one sky therefore costs exactly what it used to.
 		const SectorSky sky = SkyForSector( s );
+
+		if ( sky.box != NULL )
+		{
+			// A 3D skybox has no texture to average. Counted so the diagnostic can say so, and left
+			// unseeded rather than guessed at: lighting a room from a sky it is not showing would be
+			// worse than not lighting it.
+			++g_skyboxLeaves;
+			continue;
+		}
+
 		const int key = sky.front.GetIndex( );
 
 		std::map<int, int>::const_iterator found = sourceOfTexture.find( key );
@@ -564,6 +604,19 @@ void ApplyIndex( ptrdiff_t at, FColormap &cm )
 	if ( tint.r == 255 && tint.g == 255 && tint.b == 255 )
 		return;
 
+	// [rc4l] "A mapper coloured this, theirs wins" has to be decided HERE, not only when the table is
+	// built, because the two happen at different times. P_SetupLevel builds the table at its line
+	// 4672, but ACS OPEN scripts are started with runNow=false (p_spec.cpp:1835) and therefore do not
+	// run until the first tic. A Sector_SetColor in an OPEN script -- which is how a lot of mods
+	// colour their levels -- lands after we have already decided to tint that sector, and the tint
+	// then multiplied into their colour instead of deferring to it.
+	//
+	// Reading cm rather than the sector costs nothing: cm.LightColor was just copied from the
+	// sector's own colormap by the caller, so a non-white value here means somebody set it, whenever
+	// they set it. That makes the rule true at every moment rather than only at level load.
+	if (( cm.LightColor.r != 255 ) || ( cm.LightColor.g != 255 ) || ( cm.LightColor.b != 255 ))
+		return;
+
 	// [rc4l] TRIPWIRE, not a live guard: nothing in this tree sets blendfactor today. It is the
 	// sector colormap's alpha, and every producer passes alpha 0 (Static_Init uses MAKERGB, UDMF
 	// uses PalEntry(r,g,b), ACS Sector_SetColor takes r/g/b). Boom's own colormaps do NOT arrive
@@ -587,6 +640,11 @@ void ApplyIndex( ptrdiff_t at, FColormap &cm )
 size_t SkyTintTableSize( )
 {
 	return g_tint.size( );
+}
+
+int SkyTintSkyboxLeaves( )
+{
+	return g_skyboxLeaves;
 }
 
 bool SkyTint_Active( )

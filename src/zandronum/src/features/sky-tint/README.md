@@ -94,7 +94,16 @@ two players disagreeing about it costs nothing.
 ## Sectors it leaves alone
 
 A sector whose colour was set by the mapper or a mod (`Sector_SetColor`, ACS, a colormap in the map)
-is skipped outright: theirs wins, and it is never used as a bleed source either. The tint is also
+is skipped outright: theirs wins, and it is never used as a bleed source either.
+
+That rule is enforced at **draw time**, not only when the table is built, because the two happen at
+different moments. `P_SetupLevel` builds the table, but ACS OPEN scripts are started with
+`runNow=false` (`p_spec.cpp:1835`) and do not run until the first tic. A `Sector_SetColor` in an OPEN
+script -- a common way for mods to colour a level -- therefore lands *after* the table already
+decided to tint that sector, and the tint used to multiply into their colour rather than defer to it.
+`ApplyIndex` now checks the colormap it was handed, which the caller copied from the sector moments
+earlier, so a non-white value means somebody set it whenever they set it. The build-time skip stays
+as an optimisation; the draw-time check is what makes the rule true. The tint is also
 multiplied into whatever a sector already had rather than replacing it, because it represents light
 arriving from outside rather than a repaint.
 
