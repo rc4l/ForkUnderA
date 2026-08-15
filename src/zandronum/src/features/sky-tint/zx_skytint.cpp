@@ -76,6 +76,16 @@ CUSTOM_CVAR( Int, cl_fua_skytint_brightness, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG
 	else						zx::SkyTint_Rebuild( );
 }
 
+// [rc4l] How much a sector's OWN light level scales the tint. This is the dial that tells a dark
+// room from a bright yard, which no sky-side control can: the sky is the same for both. A dim
+// sector showing little of the light's colour is also just what light does.
+CUSTOM_CVAR( Int, cl_fua_skytint_lit, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+{
+	if ( self < 0 )				self = 0;
+	else if ( self > 100 )		self = 100;
+	else						zx::SkyTint_Rebuild( );
+}
+
 // 0 = mean (faithful), 1 = dominant (the colour a person would name).
 CUSTOM_CVAR( Int, cl_fua_skytint_mode, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 {
@@ -321,7 +331,14 @@ void SkyTint_Rebuild( )
 		if ( dist[i] >= kInfinity )
 			continue;					// never reached at all
 
-		const int strength = StrengthAtDistance( strengthPct, dist[i], reach );
+		int strength = StrengthAtDistance( strengthPct, dist[i], reach );
+
+		// Scaled by how lit this leaf's sector already is. Read per leaf rather than once, because
+		// the whole point is that a dark room and a bright yard should differ.
+		const sector_t *own = subsectors[i].sector;
+		if ( own != NULL )
+			strength = StrengthForSectorLight( strength, own->lightlevel, cl_fua_skytint_lit );
+
 		if ( strength <= 0 )
 			continue;
 

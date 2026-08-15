@@ -237,6 +237,28 @@ int StrengthForSky(int pct, double luminance, int respectPct)
 	return static_cast<int>((pct * scale) + 0.5);
 }
 
+int StrengthForSectorLight(int pct, int lightLevel, int respectPct)
+{
+	if (respectPct <= 0)
+		return pct;			// every sector tinted alike, however dark it is
+
+	if (respectPct > 100)
+		respectPct = 100;
+	if (lightLevel < 0)
+		lightLevel = 0;
+	if (lightLevel > 255)
+		lightLevel = 255;
+
+	// Doom's light level is already perceptual rather than linear -- mappers pick 128 to mean "half
+	// lit", not "a fifth of the photons" -- so it is used as it stands rather than linearised. The
+	// point is to follow the mapper's intent, not to be physically correct about their intent.
+	const double t = respectPct / 100.0;
+	const double lit = lightLevel / 255.0;
+	const double scale = (1.0 - t) + (t * lit);
+
+	return static_cast<int>((pct * scale) + 0.5);
+}
+
 int SaturationPct(SkyRgb colour)
 {
 	const int maxv = std::max(colour.r, std::max(colour.g, colour.b));

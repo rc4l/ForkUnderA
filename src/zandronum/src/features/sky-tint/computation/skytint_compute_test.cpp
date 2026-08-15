@@ -231,6 +231,37 @@ TEST(StrengthForSky, ClampsNonsenseInsteadOfTrusting)
 	EXPECT_EQ(40, StrengthForSky(40, 1.0, 500));
 }
 
+// [rc4l] The dial the sky-side ones could not be. Two maps under equally dark skies were reduced
+// alike by Follow sky brightness, because the sky is the same for a dark room and a bright yard.
+// The sector's own light level is what tells them apart.
+TEST(StrengthForSectorLight, TellsADarkRoomFromABrightYard)
+{
+	const int dark = StrengthForSectorLight(40, 60, 100);
+	const int bright = StrengthForSectorLight(40, 220, 100);
+
+	EXPECT_LT(dark, bright);
+	EXPECT_LT(dark, 12) << "a dim room should barely take the tint";
+	EXPECT_GT(bright, 30) << "a bright yard should keep almost all of it";
+}
+
+TEST(StrengthForSectorLight, IgnoresTheRoomAtZeroAndIsADialInBetween)
+{
+	EXPECT_EQ(40, StrengthForSectorLight(40, 0, 0)) << "off means every sector tinted alike";
+
+	const int none = StrengthForSectorLight(40, 64, 0);
+	const int half = StrengthForSectorLight(40, 64, 50);
+	const int full = StrengthForSectorLight(40, 64, 100);
+	EXPECT_GT(none, half);
+	EXPECT_GT(half, full);
+}
+
+TEST(StrengthForSectorLight, ClampsALightLevelOutsideDoomsRange)
+{
+	EXPECT_EQ(StrengthForSectorLight(40, 255, 100), StrengthForSectorLight(40, 999, 100));
+	EXPECT_EQ(StrengthForSectorLight(40, 0, 100), StrengthForSectorLight(40, -50, 100));
+	EXPECT_EQ(StrengthForSectorLight(40, 255, 100), StrengthForSectorLight(40, 255, 400));
+}
+
 TEST(SaturationPct, MeasuresTheDistanceFromGrey)
 {
 	EXPECT_EQ(0, SaturationPct(SkyRgb(200, 200, 200)));
