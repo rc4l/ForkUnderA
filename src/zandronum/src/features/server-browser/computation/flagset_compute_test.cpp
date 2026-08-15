@@ -248,3 +248,20 @@ TEST(FlagFieldOrder, AnEmptyEngineIsAnEmptyList)
 {
 	EXPECT_TRUE(FlagFieldOrder(std::vector<std::string>()).empty());
 }
+
+// ---------------------------------------------------------------- the empty shapes
+
+// [rc4l] The default constructors are what let these sit in a vector before they are filled in, and
+// the values they start at are load-bearing: a field read as zero is a field with nothing set, which
+// is what the editor shows for a cvar nobody has touched.
+TEST(FlagShapes, StartAtNothingRatherThanAtWhateverWasOnTheStack)
+{
+	const FlagBit bit;
+	EXPECT_TRUE(bit.name.empty());
+	EXPECT_EQ(0u, bit.bit);
+
+	const FlagField field;
+	EXPECT_TRUE(field.name.empty());
+	EXPECT_TRUE(field.bits.empty());
+	EXPECT_EQ(0u, field.value);
+}

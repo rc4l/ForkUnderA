@@ -166,3 +166,22 @@ TEST(IsMapName, RefusesWhatCannotBeALumpName)
 	EXPECT_FALSE(IsMapName("-warp"));
 	EXPECT_FALSE(IsMapName("MAP;01"));
 }
+
+TEST(MapsInFile, IgnoresAMapsEntryWithNoExtensionAtAll)
+{
+	// maps/foo is a directory entry rather than a map: the engine looks these up by full name, so
+	// something with no extension at all is not a name it would ever open.
+	std::vector<LumpEntry> lumps;
+	lumps.push_back(File("maps/foo"));
+
+	EXPECT_TRUE(MapsInFile(lumps).empty());
+}
+
+TEST(LumpEntry, DefaultsToEmpty)
+{
+	// The default constructor is what lets a LumpEntry be filled in field by field while reading a
+	// directory, rather than built in one go.
+	const LumpEntry entry;
+
+	EXPECT_TRUE(entry.name.empty());
+}

@@ -190,3 +190,15 @@ TEST(ServerVarAccepts, AnEmptyBoxIsSomebodyStillTyping)
 	EXPECT_TRUE(ServerVarAccepts(VarKind::Number, ""));
 	EXPECT_TRUE(ServerVarAccepts(VarKind::Fraction, ""));
 }
+
+TEST(ServerVar, DefaultsToAToggleWithNothingSaidAboutIt)
+{
+	// Toggle is the safe default kind: a row whose kind nobody set draws as a switch rather than as
+	// a text box somebody could type an unvalidated value into.
+	const ServerVar var;
+
+	EXPECT_TRUE(var.name.empty());
+	EXPECT_TRUE(var.label.empty());
+	EXPECT_EQ(VarKind::Toggle, var.kind);
+	EXPECT_TRUE(var.fallback.empty());
+}

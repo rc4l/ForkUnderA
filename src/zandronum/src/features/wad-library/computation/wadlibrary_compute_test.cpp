@@ -301,3 +301,13 @@ TEST(LibraryCaps, AreWellAboveTheCollectionThisWasDesignedFor)
 	EXPECT_GT(LibraryFileCap(), static_cast<size_t>(20000));
 	EXPECT_GE(LibraryDepthCap(), 3);
 }
+
+TEST(LibraryRow, DefaultsToOneCopyRatherThanNone)
+{
+	// One is the honest default: a row exists because a file was found, so the count can never
+	// start at zero without the row claiming a file nobody has.
+	const LibraryRow row;
+
+	EXPECT_EQ(0u, row.index);
+	EXPECT_EQ(1, row.copies);
+}
