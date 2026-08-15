@@ -52,11 +52,6 @@ npx fuactl rpc sim.step '{"tics":1}' --port <P>
 | State | `sim.tic` `state.actors`, etc | leveltime, positions, health, class names |
 | Driving | `console.exec` `ui …`, etc | commands, keys, menu reading, screenshots |
 
-## Why the odd ones exist
-
-- `sim.hash` skips dynamic-light actors: their population follows the renderer, and hashing them makes identical sims look different.
-- `sim.trace`: diff two trace files; the first differing line is the event that diverged.
-
 ## Release builds
 
 The bridge is off unless `ZX_MCP_BRIDGE=1` at build time. Off means: no sockets, no RPC code, every engine anchor compiles to nothing, `nm` finds zero bridge symbols.
