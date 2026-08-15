@@ -80,21 +80,11 @@ void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsect
 			if (!(light->flags2&MF2_DORMANT) &&
 				(!(light->flags4&MF4_DONTLIGHTSELF) || light->target != self))
 			{
-				// [rc4l] Range-test SQUARED, and take the square root only for a light that is
-				// actually in range. Every light in the subsector was being square-rooted just to
-				// be thrown away by the comparison on the next line, once per sprite per frame --
-				// and a Complex Doom death cascade is thousands of sprites against a subsector full
-				// of projectile lights. Same comparison, same frac, same output: sqrt is monotonic,
-				// so d < r and d*d < r*r select the identical set, and the survivors take the same
-				// square root they always did.
+				float dist = FVector3(FIXED2FLOAT(x - light->x), FIXED2FLOAT(y - light->y), FIXED2FLOAT(z - light->z)).Length();
 				radius = light->GetRadius() * gl_lights_size;
 
-				const float distSq = (float)FVector3(FIXED2FLOAT(x - light->x),
-					FIXED2FLOAT(y - light->y), FIXED2FLOAT(z - light->z)).LengthSquared();
-
-				if (distSq < radius * radius)
+				if (dist < radius)
 				{
-					const float dist = sqrtf(distSq);
 					frac = 1.0f - (dist / radius);
 
 					if (frac > 0)
@@ -105,6 +95,7 @@ void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsect
 						if (light->IsSubtractive())
 						{
 							float bright = FVector3(lr, lg, lb).Length();
+							FVector3 lightColor(lr, lg, lb);
 							lr = (bright - lr) * -1;
 							lg = (bright - lg) * -1;
 							lb = (bright - lb) * -1;
