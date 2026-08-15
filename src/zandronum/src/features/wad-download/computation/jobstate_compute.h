@@ -32,12 +32,48 @@
 namespace zx
 {
 
-// [rc4l] Whether a new run may start now.
+// [rc4l] WHAT A BUSY WORKER MEANS is the one thing the three of them do NOT agree on, and it is the
+// difference worth naming rather than flattening.
 //
+// The file resolver and the library scan REFUSE: their work is a question about the disk, the answer
+// will be the same in a moment, and a second run would read the same bytes twice. The downloader
+// DEFERS: its work is a request somebody just made -- they picked another server -- so dropping it
+// would lose what was asked for, and it queues the new one behind cancelling the old.
+//
+// Passing that policy in is what lets one function answer for all three without any of them
+// pretending to be another.
+enum class JobWhenBusy
+{
+	Refuse,
+	Defer,
+};
+
+enum class JobStart
+{
+	Start,
+	Refuse,
+	Defer,
+};
+
 // `bRunning` is the live flag the worker clears when it finishes. `workCount` is how much there is
 // to do -- zero is not "start an empty run", it is "there is nothing to ask", and starting a thread
-// to do nothing is a thread that still has to be created, scheduled and joined by the OS.
+// to do nothing is a thread that still has to be created and scheduled by the OS.
+//
+// Nothing to do beats every other consideration, INCLUDING deferring: queueing an empty job would
+// have the downloader cancel a run in flight to make room for nothing.
+JobStart JobDecideStart(bool bRunning, size_t workCount, JobWhenBusy whenBusy);
+
+// Whether a new run may start now, for a caller that refuses while busy. JobDecideStart with the
+// Refuse policy, named for the common case.
 bool JobAcceptsBegin(bool bRunning, size_t workCount);
+
+// [rc4l] Whether a scan that runs ONCE PER SESSION should run now.
+//
+// The library's rule, which is not the resolver's: it is not answering a question somebody asked, it
+// is filling a list that only has to be built once, so having already started is itself a reason not
+// to start again. `bForce` is the explicit rebuild that overrides that, and it still will not stack
+// a second run on top of one already going.
+bool JobAcceptsRescan(bool bRunning, bool bStarted, bool bForce);
 
 // Whether a result stamped `resultEpoch` still answers the question being asked at `currentEpoch`.
 //

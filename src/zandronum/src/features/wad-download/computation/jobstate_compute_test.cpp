@@ -7,6 +7,9 @@
 
 using namespace zx;
 
+using zx::JobStart;
+using zx::JobWhenBusy;
+
 namespace
 {
 
@@ -36,6 +39,76 @@ TEST(JobState, WillNotStartWithNothingToDo)
 	// answered" is the ordinary state of this screen, so it must not cost one.
 	EXPECT_FALSE(JobAcceptsBegin(false, 0));
 	EXPECT_FALSE(JobAcceptsBegin(true, 0));
+}
+
+// ---------------------------------------------------------------- what busy means
+
+TEST(JobDecideStart, StartsWhenNothingIsRunning)
+{
+	EXPECT_EQ(JobStart::Start, JobDecideStart(false, 3, JobWhenBusy::Refuse));
+	EXPECT_EQ(JobStart::Start, JobDecideStart(false, 3, JobWhenBusy::Defer));
+}
+
+TEST(JobDecideStart, RefusesOrDefersAccordingToThePolicy)
+{
+	// The one thing the three workers do not agree on. A resolver asked twice would read the same
+	// bytes twice; a download dropped would lose what somebody just asked for.
+	EXPECT_EQ(JobStart::Refuse, JobDecideStart(true, 3, JobWhenBusy::Refuse));
+	EXPECT_EQ(JobStart::Defer, JobDecideStart(true, 3, JobWhenBusy::Defer));
+}
+
+TEST(JobDecideStart, NothingToDoBeatsEvenDeferring)
+{
+	// Queueing an empty job would have the downloader cancel the run in flight to make room for
+	// nothing, which is the one way "defer" could be worse than "refuse".
+	EXPECT_EQ(JobStart::Refuse, JobDecideStart(true, 0, JobWhenBusy::Defer));
+	EXPECT_EQ(JobStart::Refuse, JobDecideStart(false, 0, JobWhenBusy::Defer));
+	EXPECT_EQ(JobStart::Refuse, JobDecideStart(false, 0, JobWhenBusy::Refuse));
+}
+
+TEST(JobAcceptsBegin, IsTheRefusePolicyByAnotherName)
+{
+	// The wrapper and the function it wraps must not drift: every combination, both ways.
+	const bool running[] = { false, true };
+	const size_t work[] = { 0, 1, 9 };
+
+	for (size_t r = 0; r < 2; ++r)
+	{
+		for (size_t w = 0; w < 3; ++w)
+		{
+			const bool expected =
+				(JobDecideStart(running[r], work[w], JobWhenBusy::Refuse) == JobStart::Start);
+
+			EXPECT_EQ(expected, JobAcceptsBegin(running[r], work[w]))
+				<< "running=" << running[r] << " work=" << work[w];
+		}
+	}
+}
+
+// ---------------------------------------------------------------- the once-per-session scan
+
+TEST(JobAcceptsRescan, RunsTheFirstTimeItIsAsked)
+{
+	EXPECT_TRUE(JobAcceptsRescan(false, false, false));
+}
+
+TEST(JobAcceptsRescan, DoesNotRunAgainOnItsOwn)
+{
+	// The library's whole point: a list that only has to be built once, asked for from a draw.
+	EXPECT_FALSE(JobAcceptsRescan(false, true, false));
+}
+
+TEST(JobAcceptsRescan, RunsAgainWhenForced)
+{
+	EXPECT_TRUE(JobAcceptsRescan(false, true, true));
+}
+
+TEST(JobAcceptsRescan, NeverStacksTwoRunsEvenWhenForced)
+{
+	// Two workers writing the same list is the one outcome forcing must not be able to produce.
+	EXPECT_FALSE(JobAcceptsRescan(true, true, true));
+	EXPECT_FALSE(JobAcceptsRescan(true, false, true));
+	EXPECT_FALSE(JobAcceptsRescan(true, false, false));
 }
 
 // ---------------------------------------------------------------- accepting a result
