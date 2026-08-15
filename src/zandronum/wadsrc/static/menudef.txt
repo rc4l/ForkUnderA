@@ -318,6 +318,22 @@ OptionValue "OnOff"
 	1, "On"
 }
 
+// [rc4l] Sky lighting. A mean is faithful to the whole sky; a burning sky is bright fire plus dark
+// smoke and its mean is a muddy colour matching neither, which is when Dominant reads better.
+OptionValue "SkyTintModes"
+{
+	0, "Average"
+	1, "Dominant"
+}
+
+// Horizon is the band the player looks at. Overhead is what physically lights a floor. They
+// genuinely disagree on a sky with a coloured horizon, so it is a look choice, not a right answer.
+OptionValue "SkyTintWeights"
+{
+	0, "Horizon"
+	1, "Overhead"
+}
+
 OptionValue "OffOn"
 {
 	0, "On"
@@ -887,6 +903,17 @@ OptionMenu "VideoOptions"
 	Option "Vertical Sync",				"vid_vsync", "OnOff"
 	Option "Rendering Interpolation",	"cl_capfps", "OffOn"	// [rc4l] uzdoom@c6cb8493e
 	Option "Column render mode",		"r_columnmethod", "ColumnMethods"
+
+	StaticText " "
+	// [rc4l] Sky-derived outdoor light. Applied at draw time only, so the map's own colours are
+	// untouched and turning it off puts everything back exactly.
+	StaticText "Sky lighting", 1
+	Option "Tint from sky",				"cl_fua_skytint", "OnOff"
+	Slider "Strength",					"cl_fua_skytint_strength", 0.0, 100.0, 5.0, 0
+	Slider "Max colour",				"cl_fua_skytint_saturation", 0.0, 100.0, 5.0, 0
+	Slider "Indoor bleed",				"cl_fua_skytint_bleed", 0.0, 4.0, 1.0, 0
+	Option "Sky colour from",			"cl_fua_skytint_mode", "SkyTintModes"
+	Option "Sky area",					"cl_fua_skytint_weight", "SkyTintWeights"
 
 	StaticText " "
 	Option "Screen wipe style",			"wipetype", "Wipes"

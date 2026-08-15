@@ -60,6 +60,7 @@
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/shaders/gl_shader.h"
+#include "features/sky-tint/zx_skytint.h"
 
 
 //==========================================================================
@@ -1501,6 +1502,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 	glseg.x2 = FIXED2FLOAT(v2->x);
 	glseg.y2 = FIXED2FLOAT(v2->y);
 	Colormap = frontsector->ColorMap;
+	zx::SkyTint_Apply( frontsector, Colormap );
 	flags = 0;
 	dynlightindex = UINT_MAX;
 
@@ -1770,6 +1772,7 @@ void GLWall::ProcessLowerMiniseg(seg_t *seg, sector_t * frontsector, sector_t * 
 		alpha = 1.0f;
 		RenderStyle = STYLE_Normal;
 		Colormap = frontsector->ColorMap;
+		zx::SkyTint_Apply( frontsector, Colormap );
 
 		topflat = frontsector->GetTexture(sector_t::ceiling);	// for glowing textures
 		bottomflat = frontsector->GetTexture(sector_t::floor);

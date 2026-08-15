@@ -57,6 +57,7 @@
 #include "gl/utility/gl_templates.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/stereo3d/scoped_color_mask.h"
+#include "features/sky-tint/zx_skytint.h"
 
 FDrawInfo * gl_drawinfo;
 
@@ -1099,6 +1100,7 @@ void FDrawInfo::DrawFloodedPlane(wallseg * ws, float planez, sector_t * sec, boo
 	else
 	{
 		Colormap=sec->ColorMap;
+		zx::SkyTint_Apply( sec, Colormap );
 		if (gltexture->tex->isFullbright())
 		{
 			Colormap.LightColor.r = Colormap.LightColor.g = Colormap.LightColor.b = 0xff;
