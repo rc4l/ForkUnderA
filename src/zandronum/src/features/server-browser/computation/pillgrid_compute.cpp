@@ -3,6 +3,10 @@
 
 #include "features/server-browser/computation/pillgrid_compute.h"
 
+// [rc4l] size_t, which this file loops with -- see pillflow_compute.cpp for why <vector> is not
+// enough on libstdc++.
+#include <cstddef>
+
 namespace zx
 {
 

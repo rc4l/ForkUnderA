@@ -6,14 +6,29 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 
-// Resolve the engine binary + its data dir. Override with FUACTL_ENGINE (path to the `forkundera`
-// binary inside the .app, whose folder also holds the IWAD + pk3s).
+// Where each platform's compile script leaves a staged binary, relative to the repo root. The
+// folder is the data dir too: it holds the pk3s and iwads/, so a launched engine finds its game
+// data and `screenshot` writes the PNG there.
+const STAGED_ENGINES = [
+  "build/ForkUnderA.app/Contents/MacOS/forkundera",	// mac_compile.sh
+  "dist-windows/forkundera.exe",				// windows_build_run.ps1
+  "dist-linux/forkundera",					// linux_compile.sh
+];
+
+// Resolve the engine binary + its data dir. Override with FUACTL_ENGINE.
+//
+// [rc4l] All three platforms, not just the .app. This listed only the mac path, so on Windows every
+// command that needs the binary failed with "engine binary not found" -- including `ui screenshot`,
+// which is talking to an ALREADY RUNNING instance over a port and wants the path only to know where
+// the PNG lands. `ui read` and every `rpc` worked, so the tool looked fine right up until the one
+// call that reads a file back off disk. Found driving a Windows build.
 export function resolveEngine() {
   const env = process.env.FUACTL_ENGINE;
-  const candidates = env ? [env] : [
-    path.resolve(process.cwd(), "build/ForkUnderA.app/Contents/MacOS/forkundera"),
-    path.resolve(process.cwd(), "../../build/ForkUnderA.app/Contents/MacOS/forkundera"),
-  ];
+  // cwd is either the repo root or tools/fuactl, so each candidate is tried from both.
+  const candidates = env ? [env] : STAGED_ENGINES.flatMap((rel) => [
+    path.resolve(process.cwd(), rel),
+    path.resolve(process.cwd(), "../..", rel),
+  ]);
   for (const c of candidates) if (fs.existsSync(c)) return c;
   throw new Error(`engine binary not found (set FUACTL_ENGINE). tried:\n  ${candidates.join("\n  ")}`);
 }
@@ -29,22 +44,17 @@ export function freePort() {
   });
 }
 
-// Spawn one instance. opts: { iwad, map, skill, seed, port, token, logDir, extraArgs, host }.
-export async function launchInstance(opts = {}) {
-  const bin = opts.engine || resolveEngine();
-  const dir = path.dirname(bin);
-  const port = opts.port || (await freePort());
-  const token = opts.token || crypto.randomBytes(12).toString("hex");
-  const logDir = opts.logDir || fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-"));
-  const log = path.join(logDir, `engine-${port}.log`);
-
+// The engine command line for one instance, given the per-instance config path. Split out from the
+// spawn so the argument list is testable without starting a process -- the cvars here decide what a
+// harness run can and cannot do, and one wrong value is invisible until a drive silently no-ops.
+export function engineArgs(opts = {}, configPath) {
   const args = ["-iwad", opts.iwad || "freedoom2.wad"];
   // Isolated config, per instance. Without -config the engine reads AND writes the user's shared
   // ini, so a bridge run would both inherit whatever cvars the user happens to have archived (not a
   // clean, reproducible baseline) and, on exit, save its own overrides -- e.g. use_mouse 0 -- back
   // into that ini and break the user's real mouse. A fresh file starts from engine defaults, which is
   // identical across instances and never touches the user's config.
-  args.push("-config", path.join(logDir, "fua-bridge.ini"));
+  args.push("-config", configPath);
   // A client joins a server with +connect (and no local map); otherwise start in a local map.
   if (opts.connect) args.push("+connect", opts.connect);
   else args.push("+map", opts.map || "MAP01");
@@ -59,10 +69,28 @@ export async function launchInstance(opts = {}) {
     // input still arrives through the bridge (input.event / input.look / input.axis), untouched.
     "+set", "use_mouse", "0",
     "+set", "use_joystick", "0",
-    "+set", "m_use_mouse", "0", // also silence the MENU cursor, so nothing the harness didn't inject moves it
+    // [rc4l] m_use_mouse is deliberately LEFT ALONE. It used to be forced to 0 here to silence the
+    // menu cursor, but menu.cpp:859 drops every GUI mouse event when it is 0 -- including the ones
+    // the harness injects. So `ui click`, `ui rightclick` and `ui drag` returned {"clicked":[x,y]}
+    // and did nothing at all, on every platform. A harness must not disable the input it then
+    // injects. Keeping a stray physical cursor out is the input lock's job
+    // (ZANDRONUM_BRIDGE_INPUT_LOCK), not a cvar's.
   );
   if (opts.seed != null) args.push("-rngseed", String(opts.seed));
   if (opts.extraArgs) args.push(...opts.extraArgs);
+
+  return args;
+}
+
+// Spawn one instance. opts: { iwad, map, skill, seed, port, token, logDir, extraArgs, host }.
+export async function launchInstance(opts = {}) {
+  const bin = opts.engine || resolveEngine();
+  const dir = path.dirname(bin);
+  const port = opts.port || (await freePort());
+  const token = opts.token || crypto.randomBytes(12).toString("hex");
+  const logDir = opts.logDir || fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-"));
+  const log = path.join(logDir, `engine-${port}.log`);
+  const args = engineArgs(opts, path.join(logDir, "fua-bridge.ini"));
 
   const proc = spawn(bin, args, {
     cwd: dir,

@@ -45,11 +45,17 @@ enum class OwnJoinAction
 
 struct OwnJoinIn
 {
-	// Whether the running server was started from a catalogue entry rather than from the form. A
-	// custom setup runs the client's own files and needs no reload.
+	// Whether the running server was started from a catalogue entry rather than from the form.
+	//
+	// [rc4l] This no longer means "needs no reload" on its own, and reading it that way was a bug:
+	// the NEW screen and the CUSTOM tab are not catalogue entries either, and both start servers on
+	// files the client is not running. What decides is `haveRememberedFiles` below; this only says
+	// whether a forgotten list can be rebuilt.
 	bool hostingCatalogueEntry;
 
-	// Whether the list built when the server was started is still in hand.
+	// [rc4l] Whether the list the server was ACTUALLY HANDED is still in hand. The strongest of the
+	// three and the one asked first: the other two are inferences about what the server is probably
+	// running, and this is a record of what it was told to run.
 	bool haveRememberedFiles;
 
 	// Whether the list can be rebuilt from the entry now. False when a file has gone missing since

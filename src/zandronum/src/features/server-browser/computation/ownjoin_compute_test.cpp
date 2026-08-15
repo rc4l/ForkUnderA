@@ -25,32 +25,58 @@ OwnJoinIn Hosting(bool remembered, bool rebuildable)
 
 // ------------------------------------------------------------ the case that was already right
 
-TEST(OwnJoin, ACustomSetupIsAlreadyRunningWhatTheServerIs)
+TEST(OwnJoin, ACustomSetupWithNothingRememberedIsAlreadyRunningWhatTheServerIs)
 {
-	// The server's command line came from ours, so there is nothing to reload onto. Reloading here
-	// would tear the game down to arrive back where it started.
+	// The hosting FORM's server: its command line came from ours, so there is nothing to reload
+	// onto and reloading would tear the game down to arrive back where it started.
 	OwnJoinIn in;
 	in.hostingCatalogueEntry = false;
 
 	EXPECT_EQ(OwnJoinAction::ConnectDirectly, DecideOwnJoin(in).action);
 }
 
-TEST(OwnJoin, ACustomSetupDoesNotCareWhetherAnythingWasRemembered)
+// [rc4l] THE TEST THAT USED TO SAY THE OPPOSITE, and was wrong for a reason worth keeping.
+//
+// It swept `remembered` under a custom setup and asserted ConnectDirectly either way, on the stated
+// reasoning that "the remembered list belongs to catalogue hosting". That held while the only custom
+// setup was the form. The NEW screen builds a server out of files picked from the library and the
+// CUSTOM tab starts a saved preset -- neither is a catalogue entry, both hand the server a list the
+// client is not running -- and this rule sent them straight to a connect that Zandronum refused with
+// PROTECTED LUMP AUTHENTICATION FAILED.
+//
+// A remembered list is evidence about what the server was actually handed. Nothing else here is.
+TEST(OwnJoin, ARememberedListIsReloadedOntoWhateverKindOfServerItWas)
 {
-	// Swept, because the remembered list belongs to catalogue hosting and must not start deciding
-	// anything for the case that has no entry at all.
-	for (int remembered = 0; remembered < 2; ++remembered)
+	for (int entry = 0; entry < 2; ++entry)
 	{
 		for (int rebuildable = 0; rebuildable < 2; ++rebuildable)
 		{
 			OwnJoinIn in;
-			in.hostingCatalogueEntry = false;
-			in.haveRememberedFiles = ( remembered != 0 );
+			in.hostingCatalogueEntry = ( entry != 0 );
+			in.haveRememberedFiles = true;
 			in.canRebuildFiles = ( rebuildable != 0 );
 
-			EXPECT_EQ(OwnJoinAction::ConnectDirectly, DecideOwnJoin(in).action)
-				<< "remembered=" << remembered << " rebuildable=" << rebuildable;
+			EXPECT_EQ(OwnJoinAction::ReloadThenConnect, DecideOwnJoin(in).action)
+				<< "entry=" << entry << " rebuildable=" << rebuildable;
+
+			EXPECT_FALSE(DecideOwnJoin(in).useRebuilt) << "the handed list beats a rebuild";
 		}
+	}
+}
+
+TEST(OwnJoin, ACustomSetupStillConnectsDirectlyWhenNothingWasRemembered)
+{
+	// The half of the old sweep that stays true, kept so the form's server is not dragged through a
+	// reload it does not need.
+	for (int rebuildable = 0; rebuildable < 2; ++rebuildable)
+	{
+		OwnJoinIn in;
+		in.hostingCatalogueEntry = false;
+		in.haveRememberedFiles = false;
+		in.canRebuildFiles = ( rebuildable != 0 );
+
+		EXPECT_EQ(OwnJoinAction::ConnectDirectly, DecideOwnJoin(in).action)
+			<< "rebuildable=" << rebuildable;
 	}
 }
 

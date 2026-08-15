@@ -1500,9 +1500,14 @@ add_executable( zdoom WIN32
 	features/net/zx_httpsget.cpp
 	features/net/zx_httpfile.cpp
 	features/net/zx_httpfile_win.cpp
+	features/wad-library/zx_wadlibrary.cpp
+	features/wad-library/computation/wadlibrary_compute.cpp
+	features/wad-library/computation/loadorder_compute.cpp
 	features/wad-download/zx_waddownload.cpp
+	features/wad-download/zx_resolvejob.cpp
 	features/wad-download/zx_filehash.cpp
 	features/wad-download/zx_wadsearch.cpp
+	features/wad-download/computation/jobstate_compute.cpp
 	features/wad-download/computation/downloadplan_compute.cpp
 	features/wad-download/computation/iwadallow_compute.cpp
 	features/wad-download/computation/iwadsubstitute_compute.cpp
@@ -1554,6 +1559,15 @@ add_executable( zdoom WIN32
 	features/server-browser/computation/browserfocus_compute.cpp
 	features/server-browser/computation/browserhit_compute.cpp
 	features/server-browser/computation/dialog_compute.cpp
+	features/server-browser/computation/pillflow_compute.cpp
+	features/server-browser/computation/flagset_compute.cpp
+	features/server-browser/computation/customsave_compute.cpp
+	features/server-browser/computation/flaghelp_compute.cpp
+	features/server-browser/computation/maplist_compute.cpp
+	features/server-browser/computation/servervar_compute.cpp
+	features/server-browser/zx_customstore.cpp
+	features/server-browser/zx_mapscan.cpp
+	features/server-browser/zx_flagtable.cpp
 	features/server-browser/computation/glowtravel_compute.cpp
 	features/server-browser/computation/bytesize_compute.cpp
 	features/server-browser/computation/colortext_compute.cpp
@@ -1818,7 +1832,7 @@ source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_
 # mcp_bridge.cpp = transport/lifecycle (header-pure); mcp_rpc.cpp = typed RPC dispatch + determinism/
 # state/session handlers (engine-facing); the rest are reader/crash/input/hud backends.
 if( FUA_MCP_BRIDGE )
-	target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_rpc.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_hud.cpp mcp_glperf.cpp mcp_ticprof.cpp mcp_simtrace.cpp )
+	target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_rpc.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_hud.cpp mcp_glperf.cpp mcp_ticprof.cpp mcp_simtrace.cpp mcp_sample.cpp )
 	target_compile_definitions( zdoom PRIVATE FUA_MCP_BRIDGE )
 endif()
 
