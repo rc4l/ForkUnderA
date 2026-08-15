@@ -116,6 +116,10 @@ void	P_PredictPlayer (player_t *player);
 void	P_UnPredictPlayer ();
 */
 
+// [rc4l] Flush the FindStateByString memo (p_states.cpp) -- entries key on ClassIndex and
+// hold FState pointers, both invalidated when a wad_reload rebuilds the actor classes.
+void P_ClearStateStringCache ();
+
 //
 // P_MOBJ
 //
@@ -346,23 +350,31 @@ class FBlockThingsIterator
 	};
 	HashEntry FixedHash[10];
 	int NumFixedHash;
-	TArray<HashEntry> DynHash;
+	// [rc4l] Leased from a shared pool on first dense-block overflow and returned by
+	// the destructor (see p_maputl.cpp). Iterators are constructed for every collision
+	// check, and per-iterator allocation churn was measurable in mass-actor storms;
+	// pooled blocks keep their grown capacity across leases. NULL until needed.
+	TArray<HashEntry> *DynHash;
+	static TArray<TArray<HashEntry> *> DynHashPool;
 
-	HashEntry *GetHashEntry(int i) { return i < (int)countof(FixedHash) ? &FixedHash[i] : &DynHash[i - countof(FixedHash)]; }
+	HashEntry *GetHashEntry(int i) { return i < (int)countof(FixedHash) ? &FixedHash[i] : &(*DynHash)[i - countof(FixedHash)]; }
 
 	void StartBlock(int x, int y);
 	void SwitchBlock(int x, int y);
 	void ClearHash();
 
-	// The following is only for use in the path traverser 
+	// The following is only for use in the path traverser
 	// and therefore declared private.
 	FBlockThingsIterator();
+
+	FBlockThingsIterator(const FBlockThingsIterator &); // [rc4l] not implemented: copying would double-return the leased hash block
 
 	friend class FPathTraverse;
 
 public:
 	FBlockThingsIterator(int minx, int miny, int maxx, int maxy);
 	FBlockThingsIterator(const FBoundingBox &box);
+	~FBlockThingsIterator(); // [rc4l] returns the leased DynHash block to the pool
 	AActor *Next(bool centeronly = false);
 	void Reset() { StartBlock(minx, miny); }
 };

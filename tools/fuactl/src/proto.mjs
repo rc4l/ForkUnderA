@@ -92,8 +92,8 @@ export function parseHudDump(dump) {
     const kind = sp < 0 ? line : line.slice(0, sp);
     const rest = sp < 0 ? "" : line.slice(sp + 1);
     if (kind === "text") {
-      const m = rest.match(/^(-?\d+) (-?\d+) ?(.*)$/);
-      if (m) texts.push({ x: Number(m[1]), y: Number(m[2]), text: m[3] });
+      const m = rest.match(/^(-?\d+) (-?\d+) (-?\d+) ?(.*)$/);
+      if (m) texts.push({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), text: m[4] });
     } else if (kind === "image") {
       const m = rest.match(/^(-?\d+) (-?\d+) (.*)$/);
       if (m) images.push({ x: Number(m[1]), y: Number(m[2]), name: m[3] });
@@ -115,11 +115,39 @@ export function hudLines(texts, yTol = 3) {
     if (row) { row.parts.push(t); row.y = Math.min(row.y, t.y); }
     else rows.push({ y: t.y, parts: [t] });
   }
-  return rows.map((r) => ({
-    y: r.y,
-    x: Math.min(...r.parts.map((p) => p.x)),
-    text: r.parts.sort((a, b) => a.x - b.x).map((p) => p.text).join("").replace(/\s+/g, " ").trim(),
-  }));
+  return rows.map((r) => {
+    const parts = r.parts.sort((a, b) => a.x - b.x);
+    const x = parts[0].x;
+    const last = parts[parts.length - 1];
+    return {
+      y: r.y,
+      x,
+      w: last.x + (last.w || 0) - x, // full span of the merged fragments, for a centred click
+      text: parts.map((p) => p.text).join("").replace(/\s+/g, " ").trim(),
+    };
+  });
+}
+
+// Format a gl.timers report (the "glperf" event payload) into one human line, ranked by cost so the
+// hottest GPU pass is obvious. Pure so it is unit-tested. report =
+//   { available, frames, note?, total:{mean_ms,...}, zones:{scene:{mean_ms,...},...}, counters?:{...} }
+// When the driver couldn't time (available:false) we say so rather than printing fake zeros.
+export function summarizeGlTimers(report) {
+  if (!report || report.available === false) {
+    const why = report && report.note ? ` (${report.note})` : "";
+    return `GPU timing unavailable${why}`;
+  }
+  const ms = (s) => (s && typeof s.mean_ms === "number" ? s.mean_ms.toFixed(2) : "?");
+  const zones = report.zones || {};
+  const ranked = Object.keys(zones)
+    .map((k) => ({ k, v: typeof zones[k].mean_ms === "number" ? zones[k].mean_ms : -1 }))
+    .sort((a, b) => b.v - a.v); // hottest pass first
+  const parts = ranked.map(({ k }) => `${k} ${ms(zones[k])}`).join(" / ");
+  let line = `GPU ${ms(report.total)}ms/frame over ${report.frames ?? 0} frames`;
+  if (parts) line += ` — ${parts}`;
+  const c = report.counters;
+  if (c) line += ` [${c.walls ?? 0}w ${c.flats ?? 0}f ${c.sprites ?? 0}s ${c.vertices ?? 0}v]`;
+  return line;
 }
 
 // Find the on-screen label matching `needle` (case-insensitive substring) and return its anchor
@@ -129,7 +157,7 @@ export function hudLines(texts, yTol = 3) {
 export function findHudLabel(texts, needle) {
   const want = String(needle).toLowerCase();
   const frag = texts.find((t) => String(t.text).toLowerCase().includes(want));
-  if (frag) return { x: frag.x, y: frag.y, text: frag.text };
+  if (frag) return { x: frag.x, y: frag.y, w: frag.w || 0, text: frag.text, cx: frag.x + Math.round((frag.w || 0) / 2) };
   const line = hudLines(texts).find((l) => l.text.toLowerCase().includes(want));
-  return line || null;
+  return line ? { ...line, cx: line.x + Math.round((line.w || 0) / 2) } : null;
 }

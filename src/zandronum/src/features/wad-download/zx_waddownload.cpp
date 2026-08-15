@@ -49,6 +49,7 @@
 #include "features/wad-download/computation/downloadplan_compute.h"
 #include "features/wad-download/computation/fileresolve_compute.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
+#include "features/wad-download/computation/jobstate_compute.h"
 #include "features/wad-download/computation/wadstore_compute.h"
 
 //*****************************************************************************
@@ -636,6 +637,24 @@ void RegisterDownloadDirInSearchPath(const char *dir)
 
 namespace zx { namespace waddownload {
 
+// Where earlier builds wrote: `Downloads` beside the savegames.
+static FString LegacyDownloadDir()
+{
+	FString legacy = M_GetSavegamesPath();
+	if (legacy.IsEmpty())
+		return FString();
+
+	if (legacy.Len() > 0 && legacy[legacy.Len() - 1] != '/' && legacy[legacy.Len() - 1] != '\\')
+		legacy += "/";
+	legacy += "Downloads/";
+
+	// [rc4l] With the trailing slash, which is the form DownloadDir() returns and so the form an
+	// earlier session already wrote into FileSearch.Directories. The dedupe there is an exact string
+	// compare, so a path spelled differently is added a second time every launch.
+	FixPathSeperator(legacy);
+	return legacy;
+}
+
 // [rc4l] Registered at startup because the folder already holds what earlier sessions fetched
 // and whatever the player dropped in by hand, none of which a session that downloaded nothing
 // could see.
@@ -644,6 +663,48 @@ void RegisterDownloadDirEarly()
 	const FString dir = DownloadDir();
 	if (dir.IsNotEmpty())
 		RegisterDownloadDirInSearchPath(dir.GetChars());
+
+	// [rc4l] And the old folder, if it is still there. The move below is a rename and a rename
+	// cannot cross volumes, so an install whose two roots are on different drives keeps its store
+	// where it is -- and a store nobody searches is one every join downloads again.
+	const FString legacy = LegacyDownloadDir();
+	if (legacy.IsNotEmpty() && DirEntryExists(legacy.GetChars()))
+		RegisterDownloadDirInSearchPath(legacy.GetChars());
+}
+
+// [rc4l] The store this build reads is `pwads`. Renamed rather than left behind, because a store
+// nobody looks in is a folder of hundreds of megabytes that every join then fetches again.
+//
+// One rename of the whole folder, and a failure is not an error: RegisterDownloadDirEarly keeps the
+// old path searchable, so everything in it is still found by name.
+static void MigrateLegacyDownloads(const FString &current)
+{
+	// Both bare, because rename() takes a directory by its name and not all platforms accept one
+	// with a trailing separator.
+	FString from = LegacyDownloadDir();
+	FString to = current;
+
+	while (from.Len() > 0 && (from[from.Len() - 1] == '/' || from[from.Len() - 1] == '\\'))
+		from.Truncate(from.Len() - 1);
+	while (to.Len() > 0 && (to[to.Len() - 1] == '/' || to[to.Len() - 1] == '\\'))
+		to.Truncate(to.Len() - 1);
+
+	if (from.IsEmpty() || to.IsEmpty())
+		return;
+
+	if (!DirEntryExists(from.GetChars()) || DirEntryExists(to.GetChars()))
+		return;
+
+	FString parent = to;
+	const long cut = parent.LastIndexOfAny("/\\");
+	if (cut > 0)
+	{
+		parent.Truncate(cut);
+		CreatePath(parent.GetChars());
+	}
+
+	if (rename(from.GetChars(), to.GetChars()) == 0)
+		Printf("PWADs: moved the downloaded copies into %s\n", to.GetChars());
 }
 
 FString DownloadDir()
@@ -651,14 +712,25 @@ FString DownloadDir()
 	FString dir = *cl_fua_download_dir;
 	if (dir.IsEmpty())
 	{
-		// A per-user, writable location that already exists on every platform -- and one that falls
-		// back to progdir for a portable install, which is where a portable install expects its files.
-		dir = M_GetSavegamesPath();
+		// [rc4l] `pwads`, beside the `iwads` store and under the same per-user folder as the
+		// identity keys, so everything this install keeps for the player is in one place a player
+		// can find. Falls back to progdir for a portable install, which is where a portable install
+		// expects its files.
+		dir = M_GetFuaUserPath();
 		if (dir.IsEmpty())
 			dir = progdir;
 		if (dir.Len() > 0 && dir[dir.Len() - 1] != '/' && dir[dir.Len() - 1] != '\\')
 			dir += "/";
-		dir += "Downloads/";
+		dir += "pwads/";
+
+		// Once a session, on the first ask, so a store written by an earlier build is moved rather
+		// than left sitting beside the new one.
+		static bool bMigrated = false;
+		if (!bMigrated)
+		{
+			bMigrated = true;
+			MigrateLegacyDownloads(dir);
+		}
 	}
 	else if (dir.Len() > 0 && dir[dir.Len() - 1] != '/' && dir[dir.Len() - 1] != '\\')
 	{
@@ -671,7 +743,14 @@ FString DownloadDir()
 
 // Walk a resolve plan and return the first step that holds the wanted bytes. A Stat step is taken on
 // the strength of its path, since the digest names the folder. Only a Hash step is read.
-static FString WalkResolvePlan(const std::vector<zx::ResolveStep> &steps, const std::string &digest)
+// [rc4l] std::string, NOT FString, because this runs on a worker.
+//
+// FString's default constructor points at a SHARED NullString and bumps its refcount, and that
+// counter is not atomic -- two threads making an empty FString is a data race on a global, which is
+// exactly the class of bug the threading contract in wad-library's header forbids. Everything in
+// here is std::string, FileExists and Md5OfFile: stat, fopen, and an EVP context on the local stack.
+static std::string WalkResolvePlan(const std::vector<zx::ResolveStep> &steps,
+	const std::string &digest)
 {
 	for (size_t i = 0; i < steps.size(); ++i)
 	{
@@ -679,17 +758,17 @@ static FString WalkResolvePlan(const std::vector<zx::ResolveStep> &steps, const 
 			continue;
 
 		if (steps[i].check == zx::ResolveCheck::Stat)
-			return FString(steps[i].path.c_str());
+			return steps[i].path;
 
 		char actual[33];
 		if (zx::Md5OfFile(steps[i].path.c_str(), actual, sizeof actual) &&
 			EqualsIgnoreCase(actual, digest))
 		{
-			return FString(steps[i].path.c_str());
+			return steps[i].path;
 		}
 	}
 
-	return FString();
+	return std::string();
 }
 
 FString FindLocalCopy(const char *name, const char *md5Hex)
@@ -698,15 +777,18 @@ FString FindLocalCopy(const char *name, const char *md5Hex)
 		return FString();
 
 	// No search hits: our own folder is the whole of this question by contract.
-	return WalkResolvePlan(zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(),
-		std::vector<std::string>()), md5Hex);
+	return FString(WalkResolvePlan(zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(),
+		std::vector<std::string>()), md5Hex).c_str());
 }
 
-FString FindVerifiedCopy(const char *name, const char *md5Hex)
+std::vector<zx::ResolveStep> PlanVerifiedCopy(const char *name, const char *md5Hex)
 {
 	if ((name == NULL) || (md5Hex == NULL) || (md5Hex[0] == '\0'))
-		return FString();
+		return std::vector<zx::ResolveStep>();
 
+	// [rc4l] The half that must stay on the main thread: FindAllFilesInEngineSearchPaths reads
+	// GameConfig, and DownloadDir builds an FString. Both are stats and string work -- cheap. What
+	// comes out is plain paths, which is exactly what a worker can be handed.
 	TArray<FString> found;
 	zx::FindAllFilesInEngineSearchPaths(name, found);
 
@@ -715,7 +797,22 @@ FString FindVerifiedCopy(const char *name, const char *md5Hex)
 	for (unsigned i = 0; i < found.Size(); ++i)
 		hits.push_back(found[i].GetChars());
 
-	return WalkResolvePlan(zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(), hits), md5Hex);
+	return zx::PlanFileResolve(name, md5Hex, DownloadDir().GetChars(), hits);
+}
+
+std::string WalkVerifiedPlan(const std::vector<zx::ResolveStep> &steps, const std::string &md5Hex)
+{
+	// [rc4l] The half that may run anywhere: FileExists and Md5OfFile are stat, fopen and EVP over a
+	// local context. Nothing here is an engine global, which is the whole reason the split exists.
+	return WalkResolvePlan(steps, md5Hex);
+}
+
+FString FindVerifiedCopy(const char *name, const char *md5Hex)
+{
+	// The two halves composed. Written this way rather than duplicated so the answer the menu gets
+	// on a worker and the answer hosting gets inline cannot come to differ.
+	return FString(WalkVerifiedPlan(PlanVerifiedCopy(name, md5Hex),
+		(md5Hex != NULL) ? md5Hex : "").c_str());
 }
 
 bool IsRunning()
@@ -768,7 +865,20 @@ bool Start(const std::vector<std::string> &extraSites,
 	}
 	// [rc4l] A run already going means the player picked another server. Abandon that one and queue
 	// this -- see g_deferredJob for why it is queued rather than started here.
-	const bool replacing = IsRunning();
+	//
+	// Through computation/jobstate_compute, which is where the three workers' policies now live side
+	// by side. This one DEFERS where the library scan and the file resolver refuse, and having that
+	// difference be a named argument rather than three separate ifs is the reason to share it at
+	// all: the saving is not lines, it is that the policies can be read against each other.
+	const zx::JobStart decision = zx::JobDecideStart(IsRunning(), files.size(),
+		zx::JobWhenBusy::Defer);
+
+	// files.empty() was already refused above, so Refuse cannot reach here -- asserted by returning
+	// the same false it would have, rather than falling through into a job with nothing in it.
+	if (decision == zx::JobStart::Refuse)
+		return false;
+
+	const bool replacing = (decision == zx::JobStart::Defer);
 	if (replacing)
 		Abandon();
 

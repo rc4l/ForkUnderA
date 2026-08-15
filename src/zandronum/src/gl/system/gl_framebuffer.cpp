@@ -65,6 +65,7 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/gl_functions.h"
+#include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 #ifdef ZX_ENABLE_REPLAY
 #include "features/replay/zx_replay.h"   // [rc4l] FUA instant-replay frame capture hook
 #include "features/replay/computation/replay_compute.h" // [rc4l] pure readback sizing/lifecycle logic
@@ -232,6 +233,8 @@ void OpenGLFrameBuffer::Update()
 		return;
 	}
 
+	MCP_GLPerf_ZoneBegin(MCP_GLZ_HUD2D); // [rc4l] GPU-time the 2D/HUD pass (no-op unless bridge+capture)
+
 	Begin2D(false);
 
 	DrawRateStuff();
@@ -239,7 +242,7 @@ void OpenGLFrameBuffer::Update()
 
 	if (GetTrueHeight() != GetHeight())
 	{
-		if (GLRenderer != NULL) 
+		if (GLRenderer != NULL)
 			GLRenderer->ClearBorders();
 
 		Begin2D(false);
@@ -248,6 +251,11 @@ void OpenGLFrameBuffer::Update()
 	// to fill the window before the backbuffer is presented.
 	if (mScaleActive)
 		BlitScaleBuffer();
+
+	// [rc4l] Close the 2D span and the whole-frame GPU span here, BEFORE Swap(), so the buffer swap /
+	// vsync wait is never charged to render time. No-op unless the bridge is profiling.
+	MCP_GLPerf_ZoneEnd(MCP_GLZ_HUD2D);
+	MCP_GLPerf_FrameEnd();
 
 	if (gl_draw_sync || !swapped)
 	{

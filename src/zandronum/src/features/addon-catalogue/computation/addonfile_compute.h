@@ -74,10 +74,12 @@ enum class HostGameMode
 	TeamPossession,
 	Terminator,
 
-	// The two that take their sides from the map rather than from a cvar, both wanting a flag on
-	// the floor, so a pack can only offer them on maps built for them.
+	// The three that take their sides from the map rather than from a cvar, so a pack can only offer
+	// them on maps built for them. The first two want a flag on the floor; Teamgame wants team
+	// starts, which come one set per side and are placed by the mapper.
 	CaptureTheFlag,
 	Skulltag,
+	Teamgame,
 };
 
 HostGameMode ParseGameMode(const std::string &s);

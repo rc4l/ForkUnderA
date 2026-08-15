@@ -332,7 +332,10 @@ find_local() {
 		[ -f "${path}" ] && { printf '%s' "${path}"; return 0; }
 	fi
 
-	for path in "${DATA_DIR}/wads/${name}" "${INSTALL_DIR}/${name}"; do
+	# [rc4l] INSTALL_DIR/iwads as well as INSTALL_DIR: the staged payload keeps the IWADs it ships in
+	# a subfolder now, and this list is how the image finds them. Both are searched rather than the
+	# new one only, because an operator's older image layout is still a layout that works.
+	for path in "${DATA_DIR}/wads/${name}" "${INSTALL_DIR}/iwads/${name}" "${INSTALL_DIR}/${name}"; do
 		if [ -f "${path}" ]; then
 			# [rc4l] A loose file that does not match is not "found". Having a file by that name is not
 			# the same as having THAT file: the engine authenticates lumps on join, so serving
@@ -431,13 +434,17 @@ IWAD_PATH=""
 if [ -n "${ENTRY_IWAD}" ]; then
 	is_bare_name "${ENTRY_IWAD}" || die "entry names an unusable iwad '${ENTRY_IWAD}'"
 
+	SUBSTITUTE="$(free_stand_in "${ENTRY_IWAD}")"
+
 	if IWAD_PATH="$(find_local "${ENTRY_IWAD}" "")"; then
 		log "iwad:   ${IWAD_PATH}"
-	elif [ "${SUBSTITUTE_IWAD}" = "1" ] && [ -f "${INSTALL_DIR}/$(free_stand_in "${ENTRY_IWAD}")" ]; then
+	elif [ "${SUBSTITUTE_IWAD}" = "1" ] && IWAD_PATH="$(find_local "${SUBSTITUTE}" "")"; then
 		# [rc4l] Never fetched, always substituted. Every IWAD is assumed commercial (see
 		# features/wad-download/README.md), and a container has no way to know what its operator owns.
-		SUBSTITUTE="$(free_stand_in "${ENTRY_IWAD}")"
-		IWAD_PATH="${INSTALL_DIR}/${SUBSTITUTE}"
+		#
+		# Through find_local, like the wanted one above. It used to build the path itself out of
+		# INSTALL_DIR, which meant one of the two knew where IWADs live and the other did not -- so
+		# moving them into iwads/ would have left the substitute looking in the old place only.
 		warn "${ENTRY_IWAD} is not on this box; hosting on ${SUBSTITUTE} instead."
 		warn "  This works for a PWAD that replaces every map. On STOCK maps the geometry differs and"
 		warn "  joining clients will fail level authentication. Put ${ENTRY_IWAD} in /data/wads to fix."

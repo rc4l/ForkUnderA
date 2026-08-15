@@ -3078,3 +3078,11 @@ FxExpression *FStateExpressions::Get(int num)
 	return NULL;
 }
 
+// [ForkUnderA] fua-caching: see the declaration.
+const PClass *FStateExpressions::GetOwner(unsigned int num)
+{
+	if (num < Size())
+		return expressions[num].owner;
+	return NULL;
+}
+

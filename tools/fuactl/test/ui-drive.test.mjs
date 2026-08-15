@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   menuNav, click, rightClick, middleClick, drag, wheel, typeText,
-  padButton, padDpad, look, stick, stickHold, stickClear, readMenu, findLabel, screenshot, verifyMenu,
+  padButton, padDpad, look, stick, stickHold, stickClear, readMenu, findLabel, clickLabel, screenshot, verifyMenu,
+  warp, damagingSectors,
 } from "../src/ui.mjs";
 
 // A stand-in for BridgeClient: records every rpc(), and (for readMenu) replays a dumphud capture
@@ -89,14 +90,31 @@ test("look and stick call the right RPCs", async () => {
   assert.deepEqual(c.calls[3].args, { clear: true }); // released after the hold
 });
 
+test("warp and damagingSectors call the world-navigation RPCs", async () => {
+  const c = mockClient();
+  await warp(c, 2148.7, -2020.2);
+  assert.deepEqual(c.calls[0], { cmd: "player.setpos", args: { x: 2149, y: -2020 } }); // rounded
+  await damagingSectors(c, 8);
+  assert.deepEqual(c.calls[1], { cmd: "world.sectors", args: { damaging: 1, limit: 8 } });
+});
+
 test("readMenu runs dumphud and returns parsed lines; findLabel finds a fragment", async () => {
-  const hud = "MCP_HUD\ntext 396 247 Vanilla\ntext 493 260 Complex Doom\n";
+  const hud = "MCP_HUD\ntext 396 247 56 Vanilla\ntext 493 260 96 Complex Doom\n";
   const c = mockClient({ hud });
   const m = await readMenu(c, { settle: 5 });
   assert.equal(c.calls[0].args.text, "dumphud");
   assert.ok(m.lines.some((l) => l.text === "Complex Doom"));
   const hit = await findLabel(c, "complex doom", { settle: 5 });
-  assert.deepEqual(hit, { x: 493, y: 260, text: "Complex Doom" });
+  assert.deepEqual(hit, { x: 493, y: 260, w: 96, text: "Complex Doom", cx: 541 });
+});
+
+test("clickLabel clicks the label centre (cx), not its text-start", async () => {
+  const hud = "MCP_HUD\ntext 100 200 80 Popular Co-op Maps\n";
+  const c = mockClient({ hud });
+  const hit = await clickLabel(c, "Popular", { delay: 0 });
+  assert.equal(hit.cx, 140); // 100 + 80/2
+  const move = c.events().find((e) => e.subtype === 6); // the hover move
+  assert.equal(move.data1, 140); // clicked the centre, not 100
 });
 
 test("screenshot polls while the PNG is absent, then throws if it never lands", async () => {

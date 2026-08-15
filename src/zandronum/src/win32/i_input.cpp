@@ -107,6 +107,7 @@
 #include "v_text.h"
 #include "version.h"
 #include "features/video-scale/computation/videoscale_compute.h" // [rc4l] VID_SCALE_UI_MIN_*
+#include "mcp_bridge.h" // [rc4l] MCP_InputLocked: drop OS input on a hands-off harness-driven instance
 
 // Prototypes and declarations.
 #include "rawinput.h"
@@ -218,6 +219,35 @@ bool GUIWndProcHook(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, LRESU
 	event_t ev = { EV_GUI_Event };
 
 	*result = 0;
+
+	// [rc4l] A harness-driven instance is hands-off: swallow the OS input messages here so a stray
+	// keypress or click on its window cannot perturb the run. Bridge-injected events go straight to
+	// D_PostEvent and never pass through this hook, so driving the instance still works.
+	//
+	// Only the messages this function would otherwise turn into events are consumed -- returning true
+	// for everything would eat WM_PAINT and friends out of the WndProc switch below and leave a dead
+	// window. The mac side drops OS input at I_ProcessEvent for the same reason; this is that anchor
+	// on Windows, which had none, so ZANDRONUM_BRIDGE_INPUT_LOCK silently did nothing here.
+	//
+	// Physical MOUSE input is already gated by use_mouse further down; this closes the keyboard and
+	// wheel, which nothing gated.
+	if ( MCP_InputLocked( ))
+	{
+		switch (message)
+		{
+		case WM_KEYDOWN:	case WM_SYSKEYDOWN:
+		case WM_KEYUP:		case WM_SYSKEYUP:
+		case WM_CHAR:		case WM_SYSCHAR:
+		case WM_LBUTTONDOWN:	case WM_LBUTTONUP:
+		case WM_RBUTTONDOWN:	case WM_RBUTTONUP:
+		case WM_MBUTTONDOWN:	case WM_MBUTTONUP:
+		case WM_XBUTTONDOWN:	case WM_XBUTTONUP:
+		case WM_MOUSEMOVE:	case WM_MOUSEWHEEL:
+			return true;
+		default:
+			break;
+		}
+	}
 
 	switch (message)
 	{
@@ -877,6 +907,13 @@ void I_GetEvent ()
 			DispatchMessage (&mess);
 		}
 	}
+
+	// [rc4l] The raw/DirectInput devices are the OTHER way OS input reaches the sim, and they do not
+	// go through GUIWndProcHook at all -- so a hands-off instance has to skip them here too, or the
+	// window hook's lock is half a lock. The message pump above still runs: the window must stay
+	// alive and answer WM_QUIT/WM_PAINT whether or not anybody is allowed to type at it.
+	if ( MCP_InputLocked( ))
+		return;
 
 	if (Keyboard != NULL)
 	{

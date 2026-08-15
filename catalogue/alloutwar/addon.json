@@ -1,0 +1,29 @@
+{
+  "name": "All Out War 2",
+  "summary": "Two bases, a war economy, and everything from a rifleman to a mech bought with credits you earn in the field.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "gamemode": "teamgame",
+  "files": [
+    {
+      "name": "aow2.3_data_r260606.pk3",
+      "md5": "11109c8541a6b9b3982545d8ab79f986"
+    },
+    {
+      "name": "aow2.3_code_r260606.pk3",
+      "md5": "46a08cbad4e08a795581e46ec97656c6"
+    },
+    {
+      "name": "aow2.3_maps_r230122.pk3",
+      "md5": "273e4b7c31f825519acc9f9e25ff97cb"
+    },
+    {
+      "name": "aow2.3_music_r230122.pk3",
+      "md5": "cca3692aabebc42d830a4f79737e2eee"
+    },
+    {
+      "name": "aow2.3_patch_r260606.pk3",
+      "md5": "6675a80ed21d43e7bd101ef68166dc15"
+    }
+  ]
+}

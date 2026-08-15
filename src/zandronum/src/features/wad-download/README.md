@@ -269,13 +269,28 @@ registered into **both** config sections — unexpanded, once each, visible in t
 can remove them. A mod already downloaded through Doomseeker should not be downloaded again for
 anything, not just for a join.
 
+`RegisterKnownWadDirectories` also registers **`$PROGDIR/iwads`**, which is ours rather than another
+tool's: the release keeps the IWADs it ships (Freedoom, `fuamega.wad`) in that folder instead of loose
+beside the binary, so opening the install shows a program to run rather than game data a player did
+not put there. It is registered here, on every launch, rather than in `GameConfigFile`'s defaults —
+those are written only when the section does not exist yet, so a player updating from a build that
+kept the IWADs loose would never be told about the folder and would open a build that could not find
+the data it had just shipped with. It is also seeded before `IdentifyVersion` looks, for the same
+reason the Doomseeker paths are.
+
 ## Where files go
 
-`cl_fua_download_dir`, or by default a `Downloads/` folder under `M_GetSavegamesPath()` — per-user
-and writable on all three platforms, and `progdir` for a portable install. The folder is registered
-once in the config's `FileSearch.Directories`, so `BaseFileSearch` finds what we downloaded: this
-run, every run after, and anything the player drops in there by hand. That is why the join path
-needs no special case for a downloaded file — the retry resolves it exactly like any other WAD.
+`cl_fua_download_dir`, or by default `pwads/` under `M_GetFuaUserPath()` — beside the `iwads/`
+store and the identity keys, so everything this install keeps for the player is in one folder, and
+`progdir` for a portable install. The folder is registered once in the config's
+`FileSearch.Directories`, so `BaseFileSearch` finds what we downloaded: this run, every run after,
+and anything the player drops in there by hand. That is why the join path needs no special case for
+a downloaded file — the retry resolves it exactly like any other WAD.
+
+Earlier builds wrote `Downloads/` under `M_GetSavegamesPath()`. That folder is renamed into place
+on the first ask, once, rather than left behind as hundreds of megabytes every join would fetch
+again. A rename that fails — the two roots can be on different volumes — is not an error: the old
+path is still in `FileSearch.Directories` from the session that wrote it.
 
 ## CVARs and commands
 

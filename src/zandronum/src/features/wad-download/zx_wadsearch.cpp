@@ -181,6 +181,16 @@ void RegisterKnownWadDirectories( void )
 	if ( GameConfig == NULL )
 		return;
 
+	// [rc4l] OUR OWN iwads/ folder, beside the binary, which is where the release puts the IWADs it
+	// ships. Everything below this is somebody else's tool; this one is ours.
+	//
+	// Registered HERE rather than in the config file's defaults because those are written once, when
+	// the section does not exist yet. A player updating from a build that kept the IWADs loose beside
+	// the exe already has the section, would never be told about the new folder, and would open a
+	// build that could not find the game data it had just shipped with.
+	AddPathOnce( "FileSearch.Directories", "$PROGDIR/iwads" );
+	AddPathOnce( "IWADSearch.Directories", "$PROGDIR/iwads" );
+
 	for ( int i = 0; i < kKnownWadDirCount; ++i )
 	{
 		// Only register what exists. An entry for a tool the player does not have would otherwise sit

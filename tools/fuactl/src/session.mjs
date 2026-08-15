@@ -71,6 +71,27 @@ async function capturePerf(c, frames) {
   return done; // { total: {mean_ms, p99_ms, fps_avg, fps_1pct_low, ...}, sim_mean_ms, render_mean_ms }
 }
 
+// GPU render profiling against an already-running instance (attach by port/token). Arms a gl.timers
+// capture and awaits the async "glperf" event: per-pass GPU milliseconds (scene / translucent / hud2d),
+// the whole-frame total, and per-frame draw counters. Returns { info, report } so the caller can see the
+// renderer identity + whether timer queries are even usable on this driver alongside the numbers.
+export async function runGlTimers(opts = {}) {
+  const { port, token, frames = 120, warmup = 3, timeoutMs = 60000 } = opts;
+  if (!port) throw new Error("runGlTimers needs a port");
+  const c = new BridgeClient();
+  await c.connect(port, { token: token || null });
+  await c.waitHello();
+  try {
+    const info = await c.rpc("renderer.info");
+    const done = c.waitEvent("glperf", timeoutMs);
+    await c.rpc("gl.timers", { frames, warmup });
+    const report = await done;
+    return { info, report };
+  } finally {
+    c.close();
+  }
+}
+
 // Deterministic perf ABLATION: measure a scene, apply a perturbation with everything else held
 // constant, measure again, and diff -- so the frametime delta is CAUSAL. Attributes the cost to
 // sim (CPU) vs render (GPU-ish) via the coarse split, and correlates with the actor-count jump.
@@ -109,7 +130,9 @@ export async function runPerfAblation(opts = {}) {
     // functions are hot (called a lot) while the load is active. No source instrumentation.
     const [perturbed, sample] = await Promise.all([
       capturePerf(c, frames),
-      sampleProcess(insts[0].pid, { seconds: 2, top: 12, engineOnly: true }),
+      // conn is what the in-engine Windows backend needs; the mac/Linux backends ignore it and
+      // attach to the pid. Both answer in the same shape, so the verdict below reads the same.
+      sampleProcess(insts[0].pid, { seconds: 2, top: 12, engineOnly: true, conn: c }),
     ]);
     const perturbedCounters = await c.rpc("perf.counters");
 

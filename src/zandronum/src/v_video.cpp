@@ -67,6 +67,7 @@
 #include "r_renderer.h"
 #include "menu/menu.h"
 #include "r_data/voxels.h"
+#include "features/fua-caching/fua_caching.h"
 
 // [TP] New includes.
 #include "cl_commands.h"
@@ -1304,6 +1305,10 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 		}
 	}
 
+	// [ForkUnderA] cl_fua_caching: every state of every placed class, plus
+	// (mode 2) the spawn closure. No-op in mode 0.
+	FUA_MarkCachedSprites (spritelist, sprites.Size());
+
 	for (i = (int)(sprites.Size () - 1); i >= 0; i--)
 	{
 		if (spritelist[i])
@@ -1318,11 +1323,14 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 					FTextureID pic = frame->Texture[k];
 					if (pic.isValid())
 					{
-						// [rc4l] uzdoom@74f4ae86d -- name the precache hit classes. This was 5,
-						// i.e. HIT_Wall|HIT_Sky, so sprites never set HIT_Sprite and
-						// FMaterial::PrecacheGL's sprite branch never ran: sprites were being
-						// precached as walls.
-						hitlist[pic.GetIndex()] = FTextureManager::HIT_Sprite;
+						// [ForkUnderA] The GL precacher must build the expanded material sprites
+						// actually render with. The stock value was HIT_Wall|HIT_Sky, so sprites
+						// never set HIT_Sprite and FMaterial::PrecacheGL's sprite branch never ran
+						// -- sprites were precached as walls (uzdoom@74f4ae86d names these classes).
+						// Kept behind the caching mode, which retains the stock value for mode 0.
+						hitlist[pic.GetIndex()] = FUA_CachingMode() > 0
+							? FTextureManager::HIT_Sprite
+							: (FTextureManager::HIT_Wall | FTextureManager::HIT_Sky);
 					}
 				}
 			}

@@ -722,6 +722,20 @@ void ShowErrorPane(const char *text)
 	if (StartScreen != NULL)	// Ensure that the network pane is hidden.
 	{
 		StartScreen->NetDone();
+
+		// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+		//   SUPERSEDED BY: uzdoom@3f50136c8d2301f4be931c5392262d5810aff82c (2023-12-28) "Create
+		//   initial error and netstart windows". It moves the error out of the main window into a
+		//   modal ErrorWindow of its own, which nothing on the startup screen can cover. That is
+		//   the real fix, and it is built on the ZWidget toolkit that commit adds as a library.
+		//   ON PORT: take that window and DELETE this teardown, rather than reconciling the two.
+		//
+		// The error pane is a CHILD of the main window and the text goes into ConWindow, so a
+		// startup screen painting the whole client area hides both. A mod that supplies one turned
+		// every fatal error into a window titled "Fatal Error" with no error visible in it, which
+		// is the least useful thing a crash can do.
+		delete StartScreen;
+		StartScreen = NULL;
 	}
 	if (text != NULL)
 	{

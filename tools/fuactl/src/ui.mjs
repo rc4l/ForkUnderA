@@ -152,6 +152,16 @@ export async function screenshot(c, engineBinPath, name = "fuactl_shot", { tries
 // capture, collects the console output, and parses it. Returns { texts, images, msgs, lines }, where
 // `lines` is the visible text in reading order. This is what lets navigation match labels
 // ("Complex Doom", "Play Now") rather than guess pixels -- deterministic, no image reading.
+// Teleport the (single-player) pawn to map coordinates -- no more blind steering loops.
+export async function warp(c, x, y) {
+  return c.rpc("player.setpos", { x: Math.round(x), y: Math.round(y) });
+}
+
+// The level's damaging sectors, each with a guaranteed-interior point to warp to.
+export async function damagingSectors(c, limit = 64) {
+  return c.rpc("world.sectors", { damaging: 1, limit });
+}
+
 export async function readMenu(c, { settle = 350 } = {}) {
   const out = [];
   const off = c.onEvent((n, d) => { if (n === "out" && d && d.text) out.push(d.text); });
@@ -166,6 +176,15 @@ export async function readMenu(c, { settle = 350 } = {}) {
 // Where a label is on screen (its click anchor), or null. Convenience over readMenu + findHudLabel.
 export async function findLabel(c, needle, opts) {
   return findHudLabel((await readMenu(c, opts)).texts, needle);
+}
+
+// Click a label by name: read the menu, find the label, and click its CENTRE (cx) -- the text-start
+// alone can sit on a row's clickable edge and miss. Returns the label hit, or throws if not found.
+export async function clickLabel(c, needle, { button = "left", double = false, delay = 40 } = {}) {
+  const hit = findHudLabel((await readMenu(c)).texts, needle);
+  if (!hit) throw new Error(`label not found on screen: ${needle}`);
+  await click(c, hit.cx, hit.y, { button, double, delay });
+  return hit;
 }
 
 // Open a menu, apply nav/click steps, screenshot to verify -- the old verify_menu, ported.

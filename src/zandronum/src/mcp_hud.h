@@ -10,8 +10,9 @@ class FTexture;
 
 #ifdef FUA_MCP_BRIDGE
 
-// Tees, called from the engine's draw funnels (anchored inserts in v_text.cpp / v_draw.cpp).
-void MCP_HUD_TeeText( int x, int y, const char *string );
+// Tees, called from the engine's draw funnels (anchored inserts in v_text.cpp / v_draw.cpp). x/y/w
+// are SCREEN pixels (w = the string's drawn width), so a driver can click a label's centre.
+void MCP_HUD_TeeText( int x, int y, int w, const char *string );
 void MCP_HUD_TeeTexture( double x, double y, FTexture *img );
 
 // Snapshot the frame just drawn (called once per frame from the RPC tick).
@@ -19,7 +20,7 @@ void MCP_HUD_BeginFrame();
 
 #else
 
-inline void MCP_HUD_TeeText( int, int, const char * ) {}
+inline void MCP_HUD_TeeText( int, int, int, const char * ) {}
 inline void MCP_HUD_TeeTexture( double, double, FTexture * ) {}
 inline void MCP_HUD_BeginFrame() {}
 

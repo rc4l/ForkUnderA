@@ -223,6 +223,8 @@ class FShader
 	FBufferedUniform1f muClipHeightBottom;
 	FBufferedUniform1f muAlphaThreshold;
 	FBufferedUniform1f muTimer;
+	FBufferedUniform4f muDamageTint;		// [rc4l] features/damage-tint (rgb + strength)
+	FBufferedUniform4f muDamageTintRange;	// [rc4l] gradient top/bottom in texture V + mode
 	
 	int lights_index;
 	int projectionmatrix_index;

@@ -514,9 +514,23 @@ class FOptionMenuSliderBase : public FOptionMenuItem
 	int mDrawX;
 	int mSliderShort;
 
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+	//   SUPERSEDED BY: nothing. Upstream's slider (optionmenuitems.zs, OptionMenuSliderBase::
+	//   MouseEvent) writes the CVAR on every drag event exactly as ours did, so there is no fix
+	//   there to take and no reason to expect one.
+	//   ON PORT: keep this. It is behaviour upstream does not have.
+	//
+	// A dragged slider whose CVAR resizes the display moves the ground under the drag: the render
+	// target changes size mid-gesture, the pointer maps to a different place in it, and the thumb
+	// slides away from the cursor. Holding the value until the button comes up leaves one
+	// coordinate space for the whole drag.
+	bool mDeferApply;
+	bool mDragging;
+	double mPendingValue;
+
 public:
 	// [TP] Now takes menu as well
-	FOptionMenuSliderBase(const char *label, double min, double max, double step, int showval, FName menu = NAME_None)
+	FOptionMenuSliderBase(const char *label, double min, double max, double step, int showval, FName menu = NAME_None, bool deferApply = false)
 		: FOptionMenuItem(label, menu)
 	{
 		mMin = min;
@@ -525,6 +539,9 @@ public:
 		mShowValue = showval;
 		mDrawX = 0;
 		mSliderShort = 0;
+		mDeferApply = deferApply;
+		mDragging = false;
+		mPendingValue = 0;
 	}
 
 	virtual double GetSliderValue() = 0;
@@ -582,7 +599,11 @@ public:
 		// [TP] Support for graying
 		drawLabel(indent, y, selected? OptionSettings.mFontColorSelection : OptionSettings.mFontColor, Selectable() == false );
 		mDrawX = indent + CURSORSPACE;
-		DrawSlider (mDrawX, y, mMin, mMax, GetSliderValue(), mShowValue, indent);
+
+		// [rc4l] The pending value while a deferred drag is in progress, so the thumb follows the
+		// cursor even though the CVAR has not been written yet.
+		const double shown = mDragging ? mPendingValue : GetSliderValue();
+		DrawSlider (mDrawX, y, mMin, mMax, shown, mShowValue, indent);
 		return indent;
 	}
 
@@ -630,11 +651,25 @@ public:
 
 		x = clamp(x, slide_left, slide_right);
 		double v = mMin + ((x - slide_left) * (mMax - mMin)) / (slide_right - slide_left);
-		if (v != GetSliderValue())
+
+		// [rc4l] Held rather than written, for a slider whose CVAR resizes what we are drawing on.
+		// See the note on mDeferApply.
+		if (mDeferApply && type != DMenu::MOUSE_Release)
 		{
-			SetSliderValue(v);
-			//S_Sound (CHAN_VOICE | CHAN_UI, "menu/change", snd_menuvolume, ATTN_NONE);
+			mDragging = true;
+			mPendingValue = v;
 		}
+		else
+		{
+			mDragging = false;
+
+			if (v != GetSliderValue())
+			{
+				SetSliderValue(v);
+				//S_Sound (CHAN_VOICE | CHAN_UI, "menu/change", snd_menuvolume, ATTN_NONE);
+			}
+		}
+
 		if (type == DMenu::MOUSE_Click)
 		{
 			lm->SetFocus(this);
@@ -668,8 +703,8 @@ class FOptionMenuSliderCVar : public FOptionMenuSliderBase
 {
 	FBaseCVar *mCVar;
 public:
-	FOptionMenuSliderCVar(const char *label, const char *menu, double min, double max, double step, int showval)
-		: FOptionMenuSliderBase(label, min, max, step, showval, menu) // [TP] Added menu parameter
+	FOptionMenuSliderCVar(const char *label, const char *menu, double min, double max, double step, int showval, bool deferApply = false)
+		: FOptionMenuSliderBase(label, min, max, step, showval, menu, deferApply) // [TP] Added menu parameter
 	{
 		mCVar = FindCVar(menu, NULL);
 	}

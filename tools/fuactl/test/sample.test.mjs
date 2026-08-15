@@ -57,11 +57,43 @@ test("sampleProcess: Linux surfaces perf-not-installed and perf-blocked", async 
   assert.match(noReport.error, /no output/);
 });
 
-test("sampleProcess: unsupported platform explains the fallback", async () => {
+test("sampleProcess: Windows without a connection says what to pass instead", async () => {
+  // [rc4l] Windows used to have no sampler at all and this pointed at Tracy/WPR. It has one now, in
+  // the engine (src/mcp_sample.h), so the only thing that can be missing is the connection it needs
+  // -- a pid alone cannot reach an in-process sampler.
   const r = await sampleProcess(1, { _platform: "win32" });
   assert.equal(r.available, false);
   assert.equal(r.backend, "none");
-  assert.match(r.error, /Tracy|Windows Performance Recorder/);
+  assert.match(r.error, /--port/);
+});
+
+test("sampleProcess: Windows with a connection uses the in-engine sampler", async () => {
+  const asked = [];
+  const conn = {
+    rpc: async (cmd, args) => { asked.push([cmd, args]); return { sampling: true }; },
+    waitEvent: async () => ({
+      seconds: 2.01, samples: 1500,
+      functions: [{ symbol: "P_CheckPosition", dso: "forkundera", samples: 900, percent: 60 }],
+    }),
+  };
+
+  const r = await sampleProcess(1, { _platform: "win32", conn, seconds: 2, top: 5, engineOnly: true });
+
+  assert.deepEqual(asked, [["perf.sample", { seconds: 2, top: 5, engine: 1 }]]);
+  assert.equal(r.available, true);
+  assert.equal(r.backend, "bridge");
+  assert.equal(r.samples, 1500);
+  // Renamed to `binary` so a caller cannot tell which of the three backends answered.
+  assert.deepEqual(r.functions, [{ symbol: "P_CheckPosition", binary: "forkundera", samples: 900, percent: 60 }]);
+});
+
+test("sampleProcess: a refused sample run is reported, not treated as empty", async () => {
+  const conn = { rpc: async () => null, waitEvent: async () => { throw new Error("must not wait"); } };
+
+  const r = await sampleProcess(1, { _platform: "win32", conn });
+
+  assert.equal(r.available, false);
+  assert.match(r.error, /refused/);
 });
 
 const SAMPLE = `

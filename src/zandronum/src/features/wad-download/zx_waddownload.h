@@ -40,6 +40,8 @@
 #include <string>
 #include <vector>
 
+#include "features/wad-download/computation/fileresolve_compute.h"	// ResolveStep
+
 #include "zstring.h"
 
 namespace zx { namespace waddownload {
@@ -144,6 +146,21 @@ FString FindLocalCopy(const char *name, const char *md5Hex);
 //
 // Main thread only: the search reads GameConfig. Read-only on anything outside our own folder.
 FString FindVerifiedCopy(const char *name, const char *md5Hex);
+
+// [rc4l] THE SAME QUESTION, SPLIT AT THE THREAD SEAM, because the two halves have very different
+// costs and very different rules about where they may run.
+//
+// PlanVerifiedCopy is the cheap half and the unsafe one: it reads GameConfig and the engine's search
+// paths, so it is MAIN THREAD ONLY, and all it does is stat. WalkVerifiedPlan is the expensive half
+// and the safe one: given the plan, it opens files and hashes them, touching nothing the engine
+// considers single-threaded -- no FString, no CVARs, no Printf -- so it may run on a worker.
+//
+// FindVerifiedCopy is exactly these two composed, and is written that way rather than duplicated, so
+// the synchronous answer and the asynchronous one cannot come to differ.
+std::vector<zx::ResolveStep> PlanVerifiedCopy(const char *name, const char *md5Hex);
+
+// Safe on any thread. Returns the first candidate whose bytes match, or "" when none does.
+std::string WalkVerifiedPlan(const std::vector<zx::ResolveStep> &steps, const std::string &md5Hex);
 
 }} // namespace zx::waddownload
 
