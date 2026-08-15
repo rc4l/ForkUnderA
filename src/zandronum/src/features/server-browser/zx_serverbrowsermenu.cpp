@@ -17771,9 +17771,19 @@ public:
 
 			// Each screen has its own idea of where the keyboard should land first.
 			if ( g_HostKind == HostKind::New )
+			{
 				g_NewFocus = NewFocus::Wads;
+			}
 			else
+			{
 				g_HostFocus = zx::HostFocusPos( zx::HostSlot::List, 0 );
+
+				// [rc4l] Arrive on the experience's own HEADING, not its default way-of-playing, so
+				// the first Enter OPENS it (revealing Sunder/HR2/etc.) exactly as a click on the row
+				// does. Only meaningful for a collapsed multi-variant entry; the Enter handler falls
+				// back to hosting for anything else, so this is safe for single-experience rows too.
+				g_HostOnEntryRow = true;
+			}
 
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return true;
@@ -18146,7 +18156,24 @@ public:
 				else if ( HostOnToggle( ))
 					PressHostSettingsToggle( );
 				else if ( HostOnList( ))
-					PressHostAction( );		// the list's enter is "host this one"
+				{
+					// [rc4l] On an UNOPENED entry that offers ways of playing, Enter OPENS it to reveal
+					// them -- exactly as clicking the row does -- instead of hosting its default and
+					// leaving Sunder/HR2/etc. reachable only by mouse. On a variant row, or an entry
+					// with no variants, Enter still means "host this one".
+					const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+					if ( g_HostOnEntryRow && ( g_HostEntrySel >= 0 )
+						&& ( g_HostEntrySel < static_cast<int>( entries.size( )))
+						&& !entries[g_HostEntrySel].addon.variants.empty( )
+						&& !HostEntryIsOpen( g_HostEntrySel ))
+					{
+						HostToggleEntryOpen( g_HostEntrySel );
+						g_HostOnEntryRow = false; // cursor drops to the default variant, as the click does
+						S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					}
+					else
+						PressHostAction( );		// the list's enter is "host this one"
+				}
 				else if ( HostOnVisibility( ))
 					PressHostVisibility( );
 				else if ( g_HostFocus.slot == zx::HostSlot::Copy )

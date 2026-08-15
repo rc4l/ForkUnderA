@@ -33,10 +33,10 @@ static void MCP_AppendSanitized( FString &out, const char *s )
 	}
 }
 
-void MCP_HUD_TeeText( int x, int y, const char *string )
+void MCP_HUD_TeeText( int x, int y, int w, const char *string )
 {
 	if ( string == NULL || g_curHud.Len() > 32000 ) return;
-	g_curHud.AppendFormat( "text %d %d ", x, y );
+	g_curHud.AppendFormat( "text %d %d %d ", x, y, w );
 	MCP_AppendSanitized( g_curHud, string );
 	g_curHud += '\n';
 }

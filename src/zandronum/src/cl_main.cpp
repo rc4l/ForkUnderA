@@ -49,6 +49,7 @@
 //-----------------------------------------------------------------------------
 
 #include "networkheaders.h"
+#include "mcp_bridge.h" // [rc4l] MCP_NetProf_Recv (no-op when the bridge is off)
 
 // [AK] Including "networkheaders.h" in Windows also includes <wingdi.h> which
 // already defines OPAQUE. We need this constant for SVC2_FLASHSTEALTHMONSTER,
@@ -1436,6 +1437,10 @@ void CLIENT_ParsePacket( BYTESTREAM_s *pByteStream, bool bSequencedPacket )
 
 		// Process this command.
 		CLIENT_ProcessCommand( lCommand, pByteStream );
+
+		// [rc4l] Per-command RECEIVE bandwidth accounting for the MCP net profiler. One seam; the byte
+		// span (command byte + payload) is exactly what the demo path below already measures. No-op off.
+		MCP_NetProf_Recv( (int)lCommand, (int)( pByteStream->pbStream - commandAsStream.pbStream ) );
 
 		g_lLastCmd = lCommand;
 

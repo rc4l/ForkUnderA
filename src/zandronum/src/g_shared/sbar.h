@@ -380,7 +380,10 @@ protected:
 	void DrawTeamScores ();
 
 	void UpdateRect (int x, int y, int width, int height) const;
-	void DrawImage (FTexture *image, int x, int y, FRemapTable *translation=NULL) const;
+	// [rc4l] colorOverlay: optional ARGB stamped over the image (features/damage-tint mugshot);
+	// alpha 0 = none. overlayCoverage < 1 bands the overlay from the image's bottom edge up to
+	// that fraction (a stepped bottom-up gradient) instead of covering the whole image.
+	void DrawImage (FTexture *image, int x, int y, FRemapTable *translation=NULL, PalEntry colorOverlay=0, float overlayCoverage=1.0f, bool overlayGlow=false) const;
 	void DrawDimImage (FTexture *image, int x, int y, bool dimmed) const;
 	void DrawFadedImage (FTexture *image, int x, int y, fixed_t shade) const;
 	void DrawPartialImage (FTexture *image, int wx, int ww) const;

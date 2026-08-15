@@ -84,6 +84,12 @@ void FRenderState::Reset()
 	mAlphaThreshold = 0.5f;
 	mBlendEquation = GL_FUNC_ADD;
 	mObjectColor = 0xffffffff;
+	// [rc4l] features/damage-tint: off until a draw arms it.
+	mDamageTint[0] = mDamageTint[1] = mDamageTint[2] = mDamageTint[3] = 0.0f;
+	mDamageTintRange[0] = 0.0f;
+	mDamageTintRange[1] = 1.0f;
+	mDamageTintRange[2] = 0.0f;
+	mDamageTintRange[3] = 0.0f;
 	m2D = true;
 	mVertexBuffer = mCurrentVertexBuffer = NULL;
 	mColormapState = CM_DEFAULT;
@@ -143,6 +149,8 @@ bool FRenderState::ApplyShader()
 	activeShader->muLightParms.Set(mLightParms);
 	activeShader->muFogColor.Set(mFogColor);
 	activeShader->muObjectColor.Set(mObjectColor);
+	activeShader->muDamageTint.Set(mDamageTint);				// [rc4l] features/damage-tint
+	activeShader->muDamageTintRange.Set(mDamageTintRange);	// [rc4l]
 	activeShader->muDynLightColor.Set(mDynColor.vec);
 	activeShader->muInterpolationFactor.Set(mInterpolationFactor);
 	activeShader->muClipHeightTop.Set(mClipHeightTop);

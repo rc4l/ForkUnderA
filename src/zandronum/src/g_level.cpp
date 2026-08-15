@@ -113,6 +113,7 @@
 #include <set> // [CK] For CCMD listmusic
 
 #include "g_hub.h"
+#include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 
 void STAT_StartNewGame(const char *lev);
 void STAT_ChangeLevel(const char *newl);
@@ -414,7 +415,10 @@ static void InitPlayerClasses ()
 			SinglePlayerClass[i] = players[i].userinfo.GetPlayerClassNum();
 			if (SinglePlayerClass[i] < 0 || !playeringame[i])
 			{
-				SinglePlayerClass[i] = (pr_classchoice()) % PlayerClasses.Size ();
+				// [rc4l] A mod that set NoRandomPlayerClass gets a selectable class here instead of
+				// a roll; -1 means it didn't ask, so the roll stays exactly as it was.
+				const int fallback = ZX_PlayerClassFallback(SinglePlayerClass[i], false, 0);
+				SinglePlayerClass[i] = (fallback >= 0) ? fallback : ((pr_classchoice()) % PlayerClasses.Size ());
 			}
 			players[i].cls = NULL;
 			players[i].CurrentPlayerClass = SinglePlayerClass[i];
@@ -441,7 +445,13 @@ void G_UpdateSinglePlayerClass (const unsigned int player)
 	// [AK] Assign a random class for the player if necessary.
 	if (SinglePlayerClass[player] < 0)
 	{
-		if (players[player].bOnTeam)
+		// [rc4l] Unless the mod forbade random classes, in which case pick a selectable one.
+		const int fallback = ZX_PlayerClassFallback(SinglePlayerClass[player],
+			!!players[player].bOnTeam, players[player].Team);
+
+		if (fallback >= 0)
+			SinglePlayerClass[player] = fallback;
+		else if (players[player].bOnTeam)
 			SinglePlayerClass[player] = TEAM_SelectRandomValidPlayerClass(players[player].Team);
 		else
 			SinglePlayerClass[player] = (pr_classchoice()) % PlayerClasses.Size();
