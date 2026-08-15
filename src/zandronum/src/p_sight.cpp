@@ -650,11 +650,6 @@ sightcounts[2]++;
 =====================
 */
 
-// [rc4l] sight-cache: bumped whenever level geometry that can affect a sight ray changes
-// (sector plane movers, polyobjects, line-blocking flags). Any bump invalidates every
-// actor's cached sight result for that tic and later.
-DWORD SightGeomRevision;
-
 bool P_CheckSight (const AActor *t1, const AActor *t2, int flags)
 {
 	SightCycles.Clock();
@@ -666,21 +661,6 @@ bool P_CheckSight (const AActor *t1, const AActor *t2, int flags)
 	if (t1 == NULL || t2 == NULL)
 	{
 		return false;
-	}
-
-	// [rc4l] sight-cache: identical endpoints + flags + unchanged geometry must give the
-	// identical answer, so reuse the viewer's last result. Calls where the invisibility
-	// branch below could draw from pr_checksight are excluded outright -- caching them
-	// would skip RNG draws and shift the deterministic stream.
-	const bool sightRngReachable = (flags & SF_IGNOREVISIBILITY) == 0 &&
-		((t2->renderflags & RF_INVISIBLE) || !t2->RenderStyle.IsVisible(t2->alpha));
-	AActor::FSightCache &sc = const_cast<AActor *>(t1)->SightCache;
-	if (!sightRngReachable && sc.valid && sc.rev == SightGeomRevision && sc.flags == flags &&
-		sc.sx == t1->x && sc.sy == t1->y && sc.sz == t1->z && sc.sh == t1->height &&
-		sc.tx == t2->x && sc.ty == t2->y && sc.tz == t2->z && sc.th == t2->height)
-	{
-		SightCycles.Unclock();
-		return sc.result;
 	}
 
 	const sector_t *s1 = t1->Sector;
@@ -743,17 +723,6 @@ sightcounts[0]++;
 	}
 
 done:
-	// [rc4l] sight-cache: remember the answer for identical future queries (never for calls
-	// where the RNG branch was reachable -- see above).
-	if (!sightRngReachable)
-	{
-		sc.rev = SightGeomRevision;
-		sc.flags = flags;
-		sc.sx = t1->x; sc.sy = t1->y; sc.sz = t1->z; sc.sh = t1->height;
-		sc.tx = t2->x; sc.ty = t2->y; sc.tz = t2->z; sc.th = t2->height;
-		sc.result = res;
-		sc.valid = true;
-	}
 	SightCycles.Unclock();
 	return res;
 }
