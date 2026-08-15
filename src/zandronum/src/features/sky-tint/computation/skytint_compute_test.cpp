@@ -150,6 +150,65 @@ TEST(RowWeight, SurvivesDegenerateGeometry)
 	EXPECT_EQ(RowWeight(9, 10, SkyWeight::Horizon), RowWeight(99, 10, SkyWeight::Horizon));
 }
 
+// ---------------------------------------------------------------- layered skies
+
+TEST(CompositeOver, TheEndsAreTheLayersThemselves)
+{
+	const SkyRgb front(255, 0, 0), back(0, 0, 255);
+	EXPECT_TRUE(back == CompositeOver(front, 0, back));		// fully transparent front
+	EXPECT_TRUE(front == CompositeOver(front, 255, back));	// fully opaque front
+	EXPECT_TRUE(back == CompositeOver(front, -3, back));		// nonsense alpha clamps
+	EXPECT_TRUE(front == CompositeOver(front, 999, back));
+}
+
+TEST(CompositeOver, HalfAlphaLandsHalfwayInLIGHTNotInTheEncoding)
+{
+	// The whole reason this is not a byte lerp. Half of 255 and half of 0 is 188 in sRGB, because
+	// half the LIGHT is a much brighter byte than half the number. A naive (255+0)/2 gives 128, which
+	// is visibly too dark and is the same mistake linear averaging exists to avoid.
+	const SkyRgb mid = CompositeOver(SkyRgb(255, 255, 255), 128, SkyRgb(0, 0, 0));
+	EXPECT_NEAR(188, mid.r, 2);
+	EXPECT_NEAR(188, mid.g, 2);
+	EXPECT_NEAR(188, mid.b, 2);
+}
+
+TEST(CompositeSkyLayers, MissingBackLayerLeavesTheFrontAlone)
+{
+	const std::vector<SkyRgb> front(4, SkyRgb(10, 20, 30));
+	const std::vector<int> alpha(4, 128);
+	const std::vector<SkyRgb> none;
+
+	const std::vector<SkyRgb> out = CompositeSkyLayers(front, alpha, 2, none, 0);
+	ASSERT_EQ(front.size(), out.size());
+	EXPECT_TRUE(front[0] == out[0]);
+}
+
+TEST(CompositeSkyLayers, LayersOfDifferentSizesLineUpProportionally)
+{
+	// A 2x2 front over a 1x1 back. Every front pixel must see the single back pixel rather than
+	// reading off the end, which is what indexing by raw offset would do.
+	std::vector<SkyRgb> front(4, SkyRgb(255, 255, 255));
+	const std::vector<int> alpha(4, 0);				// fully transparent: result must be all back
+	const std::vector<SkyRgb> back(1, SkyRgb(7, 8, 9));
+
+	const std::vector<SkyRgb> out = CompositeSkyLayers(front, alpha, 2, back, 1);
+	ASSERT_EQ(size_t(4), out.size());
+	for (size_t i = 0; i < out.size(); ++i)
+		EXPECT_TRUE(SkyRgb(7, 8, 9) == out[i]);
+}
+
+TEST(CompositeSkyLayers, AnOpaqueFrontHidesTheBackCompletely)
+{
+	const std::vector<SkyRgb> front(4, SkyRgb(1, 2, 3));
+	const std::vector<int> alpha(4, 255);
+	const std::vector<SkyRgb> back(4, SkyRgb(200, 200, 200));
+
+	const std::vector<SkyRgb> out = CompositeSkyLayers(front, alpha, 2, back, 2);
+	ASSERT_EQ(size_t(4), out.size());
+	for (size_t i = 0; i < out.size(); ++i)
+		EXPECT_TRUE(SkyRgb(1, 2, 3) == out[i]);
+}
+
 TEST(AverageSky, WeightingChoosesWhichHalfOfATwoToneSkyWins)
 {
 	// Blue above, orange below: horizon weighting must return orange, cosine must lean blue.

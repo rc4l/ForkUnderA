@@ -74,6 +74,21 @@ int RowsAboveHorizon(int height);
 // below the horizon (see RowsAboveHorizon).
 double RowWeight(int row, int height, SkyWeight mode);
 
+// [rc4l] Lay one sky layer over another, the way a double sky is drawn: LEVEL_DOUBLESKY puts
+// sky1texture in front of sky2texture and lets sky1's transparency show the back layer through. The
+// colour on screen is the composite, so that is what has to be averaged -- taking either layer alone
+// gives a colour nobody ever sees.
+//
+// Composited in LINEAR light, for the same reason everything else here is: `over` at half alpha
+// should land halfway in light, not halfway in the gamma encoding.
+//
+// The layers need not share dimensions. `under` is sampled proportionally, so a 256x128 back layer
+// under a 512x128 front one lines up rather than tiling by accident.
+SkyRgb CompositeOver(SkyRgb over, int overAlpha, SkyRgb under);
+
+std::vector<SkyRgb> CompositeSkyLayers(const std::vector<SkyRgb> &over, const std::vector<int> &overAlpha,
+	int overWidth, const std::vector<SkyRgb> &under, int underWidth);
+
 // Reduce a sky image to one colour. `pixels` is row-major, `width` columns per row.
 //
 // Averaging happens in linear light and the result is re-encoded, so the answer is the colour of
