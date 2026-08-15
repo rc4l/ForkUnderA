@@ -44,22 +44,17 @@ export function freePort() {
   });
 }
 
-// Spawn one instance. opts: { iwad, map, skill, seed, port, token, logDir, extraArgs, host }.
-export async function launchInstance(opts = {}) {
-  const bin = opts.engine || resolveEngine();
-  const dir = path.dirname(bin);
-  const port = opts.port || (await freePort());
-  const token = opts.token || crypto.randomBytes(12).toString("hex");
-  const logDir = opts.logDir || fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-"));
-  const log = path.join(logDir, `engine-${port}.log`);
-
+// The engine command line for one instance, given the per-instance config path. Split out from the
+// spawn so the argument list is testable without starting a process -- the cvars here decide what a
+// harness run can and cannot do, and one wrong value is invisible until a drive silently no-ops.
+export function engineArgs(opts = {}, configPath) {
   const args = ["-iwad", opts.iwad || "freedoom2.wad"];
   // Isolated config, per instance. Without -config the engine reads AND writes the user's shared
   // ini, so a bridge run would both inherit whatever cvars the user happens to have archived (not a
   // clean, reproducible baseline) and, on exit, save its own overrides -- e.g. use_mouse 0 -- back
   // into that ini and break the user's real mouse. A fresh file starts from engine defaults, which is
   // identical across instances and never touches the user's config.
-  args.push("-config", path.join(logDir, "fua-bridge.ini"));
+  args.push("-config", configPath);
   // A client joins a server with +connect (and no local map); otherwise start in a local map.
   if (opts.connect) args.push("+connect", opts.connect);
   else args.push("+map", opts.map || "MAP01");
@@ -74,10 +69,28 @@ export async function launchInstance(opts = {}) {
     // input still arrives through the bridge (input.event / input.look / input.axis), untouched.
     "+set", "use_mouse", "0",
     "+set", "use_joystick", "0",
-    "+set", "m_use_mouse", "0", // also silence the MENU cursor, so nothing the harness didn't inject moves it
+    // [rc4l] m_use_mouse is deliberately LEFT ALONE. It used to be forced to 0 here to silence the
+    // menu cursor, but menu.cpp:859 drops every GUI mouse event when it is 0 -- including the ones
+    // the harness injects. So `ui click`, `ui rightclick` and `ui drag` returned {"clicked":[x,y]}
+    // and did nothing at all, on every platform. A harness must not disable the input it then
+    // injects. Keeping a stray physical cursor out is the input lock's job
+    // (ZANDRONUM_BRIDGE_INPUT_LOCK), not a cvar's.
   );
   if (opts.seed != null) args.push("-rngseed", String(opts.seed));
   if (opts.extraArgs) args.push(...opts.extraArgs);
+
+  return args;
+}
+
+// Spawn one instance. opts: { iwad, map, skill, seed, port, token, logDir, extraArgs, host }.
+export async function launchInstance(opts = {}) {
+  const bin = opts.engine || resolveEngine();
+  const dir = path.dirname(bin);
+  const port = opts.port || (await freePort());
+  const token = opts.token || crypto.randomBytes(12).toString("hex");
+  const logDir = opts.logDir || fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-"));
+  const log = path.join(logDir, `engine-${port}.log`);
+  const args = engineArgs(opts, path.join(logDir, "fua-bridge.ini"));
 
   const proc = spawn(bin, args, {
     cwd: dir,
