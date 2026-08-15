@@ -338,8 +338,6 @@ public:
 
 public:
 
-	void ComputeVertices(class Vector &v1, class Vector &v2, class Vector &v3, class Vector &v4); // [rc4l] sprite-batching: billboard/roll quad corners
-	bool atlased; // [rc4l] sprite-atlas: texture is a shared page cell (bind NOMIP, batch key field)
 	void Draw(int pass);
 	void PutSprite(bool translucent);
 	void Process(AActor* thing,sector_t * sector);
@@ -360,10 +358,5 @@ inline float Dist2(float x1,float y1,float x2,float y2)
 
 void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec);
 void gl_SetDynSpriteLight(AActor *actor, particle_t *particle);
-// [rc4l] sprite-batching: compute-only variants (no GL state touched).
-void gl_GetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, float *out);
-void gl_GetDynSpriteLight(AActor *actor, particle_t *particle, float *out);
-// [rc4l] sprite-batching: draw any accumulated sprite batch and restore post-sprite state.
-void gl_FlushSpriteBatch();
 
 #endif

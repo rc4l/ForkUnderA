@@ -42,8 +42,6 @@
 #include "p_effect.h"
 #include "g_level.h"
 #include "doomstat.h"
-#include "c_dispatch.h"
-#include "features/sprite-atlas/spriteatlas.h"
 #include "gl/gl_functions.h"
 #include "r_defs.h"
 #include "r_sky.h"
@@ -117,217 +115,9 @@ CVAR(Bool, gl_nolayer, false, 0)
 // 
 //
 //==========================================================================
-// [rc4l] sprite-batching: mass-death storms draw thousands of near-identical translucent
-// sprites (blood, gibs, smoke), and this renderer issued one glDrawArrays per sprite -- on
-// GL-over-Metal each draw pays heavy state-translation overhead, which profiling showed as
-// ~70% of storm render time. Consecutive sprites in the sorted translucent list whose ENTIRE
-// applied state matches (material, translation, render style, colormap, light, fog inputs,
-// object color, alpha, dynamic-light color) accumulate into one GL_TRIANGLES draw instead.
-// Merging only adjacent sprites preserves the blend order exactly; the batch key covering
-// every state input preserves the output exactly. Excluded for safety: models, fuzz/shadow
-// (distance-dependent color), subtractive styles (two-layer fog path), player actors
-// (damage-tint), and non-translucent passes.
-CVAR(Bool, gl_sprite_batching, true, CVAR_ARCHIVE)
-
-// [rc4l] sprite-cull: skip sprites whose projected size is below this many pixels (0 = off).
-// A distant 4-unit gib projects to a fraction of a pixel; drawing it costs a full state-change
-// + draw call on GL-over-Metal while contributing sub-pixel noise. Mass-death storms are
-// mostly such sprites. 1.0 culls only the genuinely invisible.
-CVAR(Float, gl_sprite_cull_size, 1.0f, CVAR_ARCHIVE)
-
-CCMD(gl_batchstats)
-{
-	extern int g_bs_dump();
-	g_bs_dump();
-}
-
-struct SpriteBatchState
-{
-	FMaterial *material;
-	int translation;
-	int overrideshader;
-	DWORD renderstyle;
-	int hwstyle;
-	int lightlevel;
-	int rel;
-	DWORD lightcolor;
-	DWORD fadecolor;
-	int desaturation;
-	int blendfactor;
-	float trans;
-	DWORD thingcolor;
-	float dynlight[3];
-	float clipsplit[2];
-	BYTE redisalpha;
-	BYTE usecolorblend;
-	BYTE fullbright;
-	BYTE atlased;
-};
-
-static SpriteBatchState g_spriteBatchKey;
-static bool g_spriteBatchOpen;
-static FFlatVertex *g_spriteBatchPtr;
-
-// [rc4l] merge-ratio diagnostics (dev tuning; dump with gl_batchstats)
-static int g_bs_appended, g_bs_opened, g_bs_unbatchable;
-static int g_bs_why[16]; // index of first differing key field on a mismatch flush
-
-int g_bs_dump()
-{
-	static const char *why[] = { "material", "translation", "renderstyle", "lightlevel", "colormap", "trans", "thingcolor", "dynlight", "clipsplit", "other" };
-	Printf("sprite batching: opened=%d appended=%d (merge ratio %.2f)\n", g_bs_opened, g_bs_appended,
-		g_bs_opened ? (float)(g_bs_appended + g_bs_opened) / g_bs_opened : 0.f);
-	for (int i = 0; i < 10; i++) if (g_bs_why[i]) Printf("  break on %s: %d\n", why[i], g_bs_why[i]);
-	g_bs_opened = g_bs_appended = 0;
-	memset(g_bs_why, 0, sizeof g_bs_why);
-	return 0;
-}
-
-void gl_FlushSpriteBatch()
-{
-	if (!g_spriteBatchOpen) return;
-	g_spriteBatchOpen = false;
-	GLRenderer->mVBO->RenderCurrent(g_spriteBatchPtr, GL_TRIANGLES);
-	// The post-sprite state resets from GLSprite::Draw's tail, deferred while batching.
-	gl_RenderState.EnableBrightmap(true);
-	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	gl_RenderState.BlendEquation(GL_FUNC_ADD);
-	gl_RenderState.SetTextureMode(TM_MODULATE);
-	gl_RenderState.SetObjectColor(0xffffffff);
-	gl_RenderState.EnableTexture(true);
-	gl_RenderState.SetDynLight(0, 0, 0);
-}
-
-// [rc4l] sprite-batching: the quad-corner computation, split out of Draw so both the
-// state-applying open path and the state-free append path produce identical vertices.
-void GLSprite::ComputeVertices(Vector &v1, Vector &v2, Vector &v3, Vector &v4)
-{
-	// [BB] Billboard stuff
-	const bool drawWithXYBillboard = ( (particle && gl_billboard_particles) || (!(actor && actor->renderflags & RF_FORCEYBILLBOARD)
-	                                   //&& GLRenderer->mViewActor != NULL
-	                                   && (gl_billboard_mode == 1 || (actor && actor->renderflags & RF_FORCEXYBILLBOARD ))) );
-
-	// [rc4l] uzdoom: [Nash]/[fgsfds] +ROLLSPRITE rotates the billboard about the sight vector.
-	// Upstream's copy of this is float-sim (actor->Angles.Roll.Degrees); ours converts from the
-	// fixed-point angle_t instead. Interpolated against PrevRoll so the sprite turns smoothly
-	// between tics rather than stepping.
-	const bool drawRollSpriteActor = ( actor != NULL && ( actor->renderflags & RF_ROLLSPRITE ) );
-
-	if (drawWithXYBillboard || drawRollSpriteActor)
-	{
-		// Rotate the sprite about the vector starting at the center of the sprite
-		// triangle strip and with direction orthogonal to where the player is looking
-		// in the x/y plane.
-		float xcenter = (x1 + x2)*0.5;
-		float ycenter = (y1 + y2)*0.5;
-		float zcenter = (z1 + z2)*0.5;
-		float angleRad = DEG2RAD(270. - float(GLRenderer->mAngles.Yaw));
-
-		Matrix3x4 mat;
-		mat.MakeIdentity();
-		mat.Translate(xcenter, zcenter, ycenter);
-		if (drawWithXYBillboard)
-		{
-			mat.Rotate(-sin(angleRad), 0, cos(angleRad), -GLRenderer->mAngles.Pitch);
-		}
-		if (drawRollSpriteActor)
-		{
-			mat.Rotate(cos(angleRad), 0, sin(angleRad),
-				zx::ComputeSpriteRollDegrees( actor->PrevRoll, actor->roll,
-					// [rc4l] strong fixed_t -> the unit takes the raw 16.16 bits.
-					( C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac ).Raw() ));
-		}
-		mat.Translate(-xcenter, -zcenter, -ycenter);
-		v1 = mat * Vector(x1, z1, y1);
-		v2 = mat * Vector(x2, z1, y2);
-		v3 = mat * Vector(x1, z2, y1);
-		v4 = mat * Vector(x2, z2, y2);
-	}
-	else
-	{
-		v1 = Vector(x1, z1, y1);
-		v2 = Vector(x2, z1, y2);
-		v3 = Vector(x1, z2, y1);
-		v4 = Vector(x2, z2, y2);
-	}
-}
-
 void GLSprite::Draw(int pass)
 {
 	if (pass == GLPASS_DECALS || pass == GLPASS_LIGHTSONLY) return;
-
-	// [rc4l] sprite-batching: build this sprite's state key; append to the open batch when it
-	// matches, otherwise flush and fall through to the normal (state-applying) path, which
-	// opens a new batch at the vertex stage below.
-	bool batchable = false;
-	SpriteBatchState batchkey;
-	if (gl_sprite_batching && pass == GLPASS_TRANSLUCENT && modelframe == NULL && gltexture != NULL &&
-		RenderStyle.BlendOp != STYLEOP_Shadow && RenderStyle.BlendOp != STYLEOP_Sub &&
-		RenderStyle.BlendOp != STYLEOP_RevSub && !(RenderStyle.Flags & STYLEF_FadeToBlack) &&
-		(actor == NULL || actor->player == NULL))
-	{
-		memset(&batchkey, 0, sizeof batchkey);
-		batchkey.material = gltexture;
-		batchkey.translation = translation;
-		batchkey.overrideshader = OverrideShader;
-		batchkey.renderstyle = RenderStyle.AsDWORD;
-		batchkey.hwstyle = hw_styleflags;
-		batchkey.lightlevel = lightlevel;
-		batchkey.rel = fullbright ? 0 : getExtraLight();
-		batchkey.lightcolor = Colormap.LightColor.d;
-		batchkey.fadecolor = Colormap.FadeColor.d;
-		batchkey.desaturation = Colormap.desaturation;
-		batchkey.blendfactor = Colormap.blendfactor;
-		batchkey.trans = trans;
-		batchkey.thingcolor = ThingColor.d;
-		batchkey.redisalpha = !!(RenderStyle.Flags & STYLEF_RedIsAlpha);
-		batchkey.fullbright = fullbright;
-		batchkey.atlased = atlased;
-		batchkey.usecolorblend = trans > 1.f - FLT_EPSILON && gl_usecolorblending &&
-			gl_fixedcolormap == CM_DEFAULT && actor && fullbright && gltexture && !gltexture->GetTransparent();
-		if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && !fullbright)
-			gl_GetDynSpriteLight(gl_light_sprites ? actor : NULL, gl_light_particles ? particle : NULL, batchkey.dynlight);
-		// The sorted-list walk moves clip-split planes between tree branches; sprites under
-		// different splits must not share a batch.
-		gl_RenderState.GetClipSplit(batchkey.clipsplit);
-		batchable = true;
-
-		if (g_spriteBatchOpen)
-		{
-			// diagnostics: which field breaks the run?
-			const SpriteBatchState &o = g_spriteBatchKey, &k = batchkey;
-			int why = -1;
-			if (k.material != o.material) why = 0;
-			else if (k.translation != o.translation) why = 1;
-			else if (k.renderstyle != o.renderstyle) why = 2;
-			else if (k.lightlevel != o.lightlevel) why = 3;
-			else if (k.lightcolor != o.lightcolor || k.fadecolor != o.fadecolor) why = 4;
-			else if (k.trans != o.trans) why = 5;
-			else if (k.thingcolor != o.thingcolor) why = 6;
-			else if (memcmp(k.dynlight, o.dynlight, sizeof k.dynlight)) why = 7;
-			else if (memcmp(k.clipsplit, o.clipsplit, sizeof k.clipsplit)) why = 8;
-			else if (memcmp(&k, &o, sizeof k)) why = 9;
-			if (why >= 0) g_bs_why[why]++;
-		}
-		if (g_spriteBatchOpen && memcmp(&batchkey, &g_spriteBatchKey, sizeof batchkey) == 0)
-		{
-			g_bs_appended++;
-			// Identical applied state: emit this sprite's two triangles and return. GL state
-			// is untouched, so the draw is pixel-identical to an unbatched one.
-			Vector v1, v2, v3, v4;
-			ComputeVertices(v1, v2, v3, v4);
-			FFlatVertex *ptr = g_spriteBatchPtr;
-			ptr->Set(v1[0], v1[1], v1[2], ul, vt); ptr++;
-			ptr->Set(v2[0], v2[1], v2[2], ur, vt); ptr++;
-			ptr->Set(v3[0], v3[1], v3[2], ul, vb); ptr++;
-			ptr->Set(v3[0], v3[1], v3[2], ul, vb); ptr++;
-			ptr->Set(v2[0], v2[1], v2[2], ur, vt); ptr++;
-			ptr->Set(v4[0], v4[1], v4[2], ur, vb); ptr++;
-			g_spriteBatchPtr = ptr;
-			return;
-		}
-	}
-	gl_FlushSpriteBatch();
 
 
 
@@ -433,37 +223,65 @@ void GLSprite::Draw(int pass)
 		gl_RenderState.SetFog(0, 0);
 	}
 
-	// [rc4l] sprite-atlas: pages bind without mipmaps (mip reduction would blend cells).
-	if (gltexture) gl_RenderState.SetMaterial(gltexture, atlased ? CLAMP_XY_NOMIP : CLAMP_XY, translation, OverrideShader, !!(RenderStyle.Flags & STYLEF_RedIsAlpha));
+	if (gltexture) gl_RenderState.SetMaterial(gltexture, CLAMP_XY, translation, OverrideShader, !!(RenderStyle.Flags & STYLEF_RedIsAlpha));
 	else if (!modelframe) gl_RenderState.EnableTexture(false);
 
 	if (!modelframe)
 	{
+		// [BB] Billboard stuff
+		const bool drawWithXYBillboard = ( (particle && gl_billboard_particles) || (!(actor && actor->renderflags & RF_FORCEYBILLBOARD)
+		                                   //&& GLRenderer->mViewActor != NULL
+		                                   && (gl_billboard_mode == 1 || (actor && actor->renderflags & RF_FORCEXYBILLBOARD ))) );
+
+		// [rc4l] uzdoom: [Nash]/[fgsfds] +ROLLSPRITE rotates the billboard about the sight vector.
+		// Upstream's copy of this is float-sim (actor->Angles.Roll.Degrees); ours converts from the
+		// fixed-point angle_t instead. Interpolated against PrevRoll so the sprite turns smoothly
+		// between tics rather than stepping.
+		const bool drawRollSpriteActor = ( actor != NULL && ( actor->renderflags & RF_ROLLSPRITE ) );
+
 		gl_RenderState.Apply();
 
 		Vector v1;
 		Vector v2;
 		Vector v3;
 		Vector v4;
-		ComputeVertices(v1, v2, v3, v4);
 
-		// [rc4l] sprite-batching: a batchable sprite opens a batch here instead of drawing;
-		// equal-keyed successors append in Draw's entry path and the whole run is drawn by
-		// gl_FlushSpriteBatch, which also performs the deferred post-sprite state resets.
-		if (batchable)
+		if (drawWithXYBillboard || drawRollSpriteActor)
 		{
-			FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
-			ptr->Set(v1[0], v1[1], v1[2], ul, vt); ptr++;
-			ptr->Set(v2[0], v2[1], v2[2], ur, vt); ptr++;
-			ptr->Set(v3[0], v3[1], v3[2], ul, vb); ptr++;
-			ptr->Set(v3[0], v3[1], v3[2], ul, vb); ptr++;
-			ptr->Set(v2[0], v2[1], v2[2], ur, vt); ptr++;
-			ptr->Set(v4[0], v4[1], v4[2], ur, vb); ptr++;
-			g_spriteBatchPtr = ptr;
-			g_spriteBatchKey = batchkey;
-			g_spriteBatchOpen = true;
-			g_bs_opened++;
-			return;
+			// Rotate the sprite about the vector starting at the center of the sprite
+			// triangle strip and with direction orthogonal to where the player is looking
+			// in the x/y plane.
+			float xcenter = (x1 + x2)*0.5;
+			float ycenter = (y1 + y2)*0.5;
+			float zcenter = (z1 + z2)*0.5;
+			float angleRad = DEG2RAD(270. - float(GLRenderer->mAngles.Yaw));
+
+			Matrix3x4 mat;
+			mat.MakeIdentity();
+			mat.Translate(xcenter, zcenter, ycenter);
+			if (drawWithXYBillboard)
+			{
+				mat.Rotate(-sin(angleRad), 0, cos(angleRad), -GLRenderer->mAngles.Pitch);
+			}
+			if (drawRollSpriteActor)
+			{
+				mat.Rotate(cos(angleRad), 0, sin(angleRad),
+					zx::ComputeSpriteRollDegrees( actor->PrevRoll, actor->roll,
+						// [rc4l] strong fixed_t -> the unit takes the raw 16.16 bits.
+						( C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac ).Raw() ));
+			}
+			mat.Translate(-xcenter, -zcenter, -ycenter);
+			v1 = mat * Vector(x1, z1, y1);
+			v2 = mat * Vector(x2, z1, y2);
+			v3 = mat * Vector(x1, z2, y1);
+			v4 = mat * Vector(x2, z2, y2);
+		}
+		else
+		{
+			v1 = Vector(x1, z1, y1);
+			v2 = Vector(x2, z1, y2);
+			v3 = Vector(x1, z2, y1);
+			v4 = Vector(x2, z2, y2);
 		}
 
 		FFlatVertex *ptr;
@@ -872,42 +690,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 			}
 		}
 
-		// [rc4l] sprite-atlas: substitute the shared page material and remap the UVs into
-		// this texture's cell, so consecutive effect sprites bind one material and the
-		// batcher can merge their draws. Geometry (r) stays from the original texture.
-		// Untranslated face sprites without extra material layers (brightmaps) only;
-		// everything else keeps the classic path and looks identical either way.
-		atlased = false;
-		if (type == RF_FACESPRITE && thing->Translation == 0 && gltexture->GetLayers() == 1)
-		{
-			FSpriteAtlasEntry *ae = SpriteAtlas_GetOrPack(TexMan[patch], patch.GetIndex());
-			if (ae != NULL)
-			{
-				gltexture = ae->material;
-				ul = ae->u0 + ul * ae->uscale;
-				ur = ae->u0 + ur * ae->uscale;
-				vt = ae->v0 + vt * ae->vscale;
-				vb = ae->v0 + vb * ae->vscale;
-				atlased = true;
-			}
-		}
-
 		r.Scale(FIXED2FLOAT(spritescaleX),FIXED2FLOAT(spritescaleY));
-
-		// [rc4l] sprite-cull: see the cvar. Models are unaffected (this is the !modelframe path).
-		if (gl_sprite_cull_size > 0.f)
-		{
-			float cdx = x - FIXED2FLOAT(viewx);
-			float cdy = y - FIXED2FLOAT(viewy);
-			float cdist = (float)sqrt(cdx*cdx + cdy*cdy);
-			if (cdist > 1.f)
-			{
-				float worldsize = MAX(r.width, r.height);
-				float tanHalf = (float)tan(DEG2RAD(clamp<float>((float)player->FOV, 5.f, 175.f)) * 0.5);
-				float projpix = worldsize * (screen->GetWidth() * 0.5f) / (cdist * tanHalf);
-				if (projpix < gl_sprite_cull_size) return;
-			}
-		}
 
 		float rightfac=-r.left;
 		float leftfac=rightfac-r.width;
@@ -1155,7 +938,6 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 
 void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int shade, int fakeside)
 {
-	atlased = false; // [rc4l] sprite-atlas: particles keep the classic path
 	if (GLRenderer->mCurrentPortal)
 	{
 		int clipres = GLRenderer->mCurrentPortal->ClipPoint(particle->x, particle->y);
