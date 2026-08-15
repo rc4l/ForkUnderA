@@ -1,27 +1,33 @@
 # fuactl
 
-Drive the engine from the outside. Launch it, step it one tic at a time, read its world, measure its frames. Dev builds only — release builds do not contain the bridge.
+Reproducing a bug or a lag spike by hand is guesswork: no two runs are alike, and you cannot see inside a slow frame. fuactl fixes that by making a dev engine fully scriptable. Launch it, run it one tic at a time, read its world, measure its frames, and get the exact same run every time.
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Trebuchet MS, Verdana, sans-serif","fontSize":"14px","lineColor":"#64748b"},"flowchart":{"curve":"basis","nodeSpacing":40,"rankSpacing":55}}}%%
 flowchart LR
-    subgraph You
-        CLI[fuactl CLI]
-        AI[agent / script]
+    AI["🤖 agent"] -->|MCP| CLI["🖥️ fuactl CLI"]
+    CLI ==>|"NDJSON over TCP"| B["🔌 bridge"]
+
+    subgraph DEV["  dev build · ZX_MCP_BRIDGE=1  "]
+        direction LR
+        B --> SIM["⏱️ sim clock<br/>pause · step · cheat at tic N"]
+        B --> STATE["🌍 world state<br/>actors · hashes · RNG streams"]
+        B --> PROF["📊 profilers<br/>tic ms · worst frames · GPU passes"]
+        B --> TRACE["🧾 event tracer<br/>damage · kills · spawns"]
+        B --> UI["🎮 input & UI<br/>keys · menus · screenshots"]
     end
 
-    CLI -- "NDJSON over TCP" --> B
-    AI -- "MCP" --> CLI
+    REL["🚢 release build<br/>no bridge · zero symbols"]
 
-    subgraph Engine["dev engine (FUA_MCP_BRIDGE=ON)"]
-        B[bridge]
-        B --> SIM["sim clock<br/>pause · step · cheat at tic N"]
-        B --> STATE["world state<br/>actors · hashes · RNG streams"]
-        B --> PROF["profilers<br/>per-tic ms · worst frames · GPU passes"]
-        B --> TRACE["event tracer<br/>every damage / kill / spawn"]
-        B --> UI["input & UI<br/>keys · menus · screenshots"]
-    end
-
-    R["release engine"] x--x B2["no bridge<br/>zero symbols"]
+    classDef you fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
+    classDef hub fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#78350f
+    classDef cap fill:#d1fae5,stroke:#10b981,stroke-width:2px,color:#064e3b
+    classDef off fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#7f1d1d,stroke-dasharray:6 4
+    class AI,CLI you
+    class B hub
+    class SIM,STATE,PROF,TRACE,UI cap
+    class REL off
+    style DEV fill:#f8fafc,stroke:#94a3b8,stroke-width:1px,color:#475569
 ```
 
 ## Quick start
@@ -34,23 +40,23 @@ npx fuactl rpc sim.pause --port <P>
 npx fuactl rpc sim.step '{"tics":1}' --port <P>
 ```
 
-`fuactl mcp` runs the same surface as an MCP server for agents.
+`npx fuactl mcp` exposes the same surface as an MCP server for agents.
 
 ## What it does
 
 | Area | RPCs | Use |
 |---|---|---|
 | Sim control | `sim.pause` `sim.step` `sim.cheatat` | run exactly N tics; fire a cheat at an exact tic |
-| Determinism | `sim.hash {scope:"world"}` `sim.rngdump` `sim.trace` | compare two runs: world hash, every RNG stream, every damage/kill/spawn |
+| Determinism | `sim.hash` `sim.rngdump` `sim.trace` | compare two runs: world hash, every RNG stream, every damage/kill/spawn |
 | Profiling | `perf.ticprof` `perf.capture` `gl.timers` | what is inside a slow tic; what composes a spike frame; GPU ms per pass |
 | State | `sim.tic` `state.player` `state.actors` | leveltime, positions, health, class names |
 | Driving | `console.exec` `input.event` `ui …` | commands, keys, menu reading, screenshots |
 
 ## Why the odd ones exist
 
-- `sim.cheatat` — console cheats execute at a wall-clock-dependent tic. Pinning them makes two runs comparable.
-- `sim.hash` skips dynamic-light actors — their population follows the renderer, and hashing them makes identical sims look different.
-- `sim.trace` — diff two trace files; the first differing line is the event that diverged.
+- `sim.cheatat`: console cheats execute at a wall-clock-dependent tic. Pinning them makes two runs comparable.
+- `sim.hash` skips dynamic-light actors: their population follows the renderer, and hashing them makes identical sims look different.
+- `sim.trace`: diff two trace files; the first differing line is the event that diverged.
 
 ## Release builds
 
