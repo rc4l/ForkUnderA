@@ -38,6 +38,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <chrono>
 #include <stdlib.h>
 
@@ -75,6 +76,8 @@ namespace
 	int    g_perfWant       = 0;
 	int    g_perfWarmup     = 0; // discard the first few frames of a capture (one-time costs)
 	std::vector<double> g_perfTotal, g_perfSim, g_perfRender;
+	std::vector<int> g_perfTics;      // sim tics run inside each captured frame
+	int g_ticsThisFrame;              // incremented by MCP_SimPreTic, reset per frame
 
 	// --- network RECEIVE bandwidth accounting (per server-command / SVC id) --
 	// O(1) integer tally at the client parse funnel; read out here off the hot path.
@@ -208,6 +211,8 @@ void MCP_RPC_OverrideAxes( float *axes )
 // tic-scheduled actions so scenario injection is deterministic -- see sim.cheatat.
 void MCP_SimPreTic()
 {
+	g_ticsThisFrame++; // frame-composition accounting for perf.capture's worst-frame report
+
 	if ( g_cheatAtArmed && gamestate == GS_LEVEL && level.time >= g_cheatAtTic )
 	{
 		g_cheatAtArmed = false;
@@ -238,18 +243,40 @@ void MCP_RPC_Tick()
 				g_perfTotal.push_back( total );
 				g_perfSim.push_back( sim );
 				g_perfRender.push_back( render );
+				g_perfTics.push_back( g_ticsThisFrame );
 				if ( (int)g_perfTotal.size() >= g_perfWant )
 				{
 					std::string data = "{\"total\":" + PerfSummaryJson( SummarizeFrameTimes( g_perfTotal ) );
 					data += ",\"sim_mean_ms\":" + std::to_string( MeanOf( g_perfSim ) );
-					data += ",\"render_mean_ms\":" + std::to_string( MeanOf( g_perfRender ) ) + "}";
+					data += ",\"render_mean_ms\":" + std::to_string( MeanOf( g_perfRender ) );
+					// Worst-frame composition: the top frames by total time, each split into
+					// sim ms / render ms / sim tics run inside the frame -- answers "is the
+					// spike a tic train, one huge tic, or a render stall?" directly.
+					{
+						std::vector<size_t> idx( g_perfTotal.size() );
+						for ( size_t k = 0; k < idx.size(); ++k ) idx[k] = k;
+						std::partial_sort( idx.begin(), idx.begin() + std::min<size_t>( 8, idx.size() ), idx.end(),
+							[]( size_t a, size_t b ) { return g_perfTotal[a] > g_perfTotal[b]; } );
+						data += ",\"worst\":[";
+						for ( size_t k = 0; k < std::min<size_t>( 8, idx.size() ); ++k )
+						{
+							if ( k ) data += ",";
+							data += "{\"total\":" + std::to_string( g_perfTotal[idx[k]] );
+							data += ",\"sim\":" + std::to_string( g_perfSim[idx[k]] );
+							data += ",\"render\":" + std::to_string( g_perfRender[idx[k]] );
+							data += ",\"tics\":" + I( g_perfTics[idx[k]] ) + "}";
+						}
+						data += "]";
+					}
+					data += "}";
 					EmitEvent( "perf", data );
 					g_perfCapturing = false;
-					g_perfTotal.clear(); g_perfSim.clear(); g_perfRender.clear();
+					g_perfTotal.clear(); g_perfSim.clear(); g_perfRender.clear(); g_perfTics.clear(); g_perfTics.clear();
 				}
 			}
 		}
 		g_frameStart = now;
+		g_ticsThisFrame = 0;
 		g_haveFrameStart = true;
 		g_haveRenderMark = false;
 	}
