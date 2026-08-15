@@ -4218,6 +4218,11 @@ void AActor::Tick ()
 	// [BB] Start to measure how much outbound net traffic this call of AActor::Tick() needs.
 	NETWORK_StartTrafficMeasurement ( );
 
+	// [rc4l] Self-register for this tic's P_RunEffects pass (see p_effect.cpp) --
+	// the effects walk no longer scans every thinker.
+	if (effects && ( NETWORK_GetState( ) != NETSTATE_SERVER ))
+		P_RegisterEffectActor (this);
+
 	// [RH] Data for Heretic/Hexen scrolling sectors
 	static const BYTE HexenScrollDirs[8] = { 64, 0, 192, 128, 96, 32, 224, 160 };
 	static const BYTE HexenSpeedMuls[3] = { 5, 10, 25 };
@@ -5508,6 +5513,13 @@ void AActor::PostBeginPlay ()
 }
 
 void AActor::MarkPrecacheSounds() const
+{
+	MarkPropertySounds();
+}
+
+// [ForkUnderA] Split out of MarkPrecacheSounds so fua-caching can mark a
+// never-spawned class's sounds through its Defaults without virtual dispatch.
+void AActor::MarkPropertySounds() const
 {
 	SeeSound.MarkUsed();
 	AttackSound.MarkUsed();
