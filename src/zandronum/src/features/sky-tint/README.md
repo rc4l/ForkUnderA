@@ -48,7 +48,9 @@ two players disagreeing about it costs nothing.
 - `gl/scene/gl_flats.cpp`, `gl_walls.cpp`, `gl_sprite.cpp`, `gl_drawinfo.cpp` -- one gated
   `zx::SkyTint_Apply` line after each `Colormap = <sector>->ColorMap`, 8 in total.
 - `p_setup.cpp` -- `SkyTint_Rebuild()` at the end of `P_SetupLevel`.
-- `wadsrc/static/menudef.txt` -- the sliders, under DISPLAY OPTIONS.
+- `wadsrc/static/menudef.txt` -- the `FUASkyTintOptions` submenu, under FUA Options. Not
+  Display Options: that menu is Zandronum's and `menudef.z` redefines it, so FUA features keep to
+  their own room and a re-sync never has to untangle ours from theirs.
 
 ## Sectors it leaves alone
 
