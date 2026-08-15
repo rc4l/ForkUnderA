@@ -308,7 +308,9 @@ void MCP_RPC_Tick()
 			EmitEvent( "trace", trace );
 	}
 
-	// Sampling profiler (perf.sample): the sampler thread finished a run and left a ranked table.
+	// Sampling profiler (perf.sample). Publish the clock first so a sample taken this frame is
+	// stamped with the tic it actually belongs to, then drain any finished run.
+	MCP_Sample_PublishTic( InLevel() ? level.time : 0 );
 	{
 		std::string sample;
 		if ( MCP_Sample_ReportReady( sample ) )
@@ -605,13 +607,18 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			return;
 		}
 
-		long seconds = 2, hz = 1000, top = 20, engineOnly = 0;
+		long seconds = 2, hz = 1000, top = 20, engineOnly = 0, ticMin = 0, ticMax = 0;
 		GetInt( args, "seconds", seconds );
 		GetInt( args, "hz", hz );
 		GetInt( args, "top", top );
 		GetInt( args, "engine", engineOnly );
+		// Keep only the samples that landed in a leveltime range (0,0 = all of them). Ask
+		// perf.ticprof which tics were expensive, then ask here for exactly those.
+		GetInt( args, "tic_min", ticMin );
+		GetInt( args, "tic_max", ticMax );
 
-		if ( !MCP_Sample_Arm( (double)seconds, (int)hz, engineOnly != 0, (int)top ) )
+		if ( !MCP_Sample_Arm( (double)seconds, (int)hz, engineOnly != 0, (int)top,
+			(int)ticMin, (int)ticMax ) )
 		{
 			SendErr( id, "no in-engine sampler on this platform (macOS and Linux use fuactl's "
 				"external sample/perf backend)" );
@@ -619,7 +626,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		}
 
 		SendOk( id, std::string( "{\"sampling\":true,\"seconds\":" ) + I( seconds ) +
-			",\"hz\":" + I( hz ) + "}" );
+			",\"hz\":" + I( hz ) + ",\"tic_min\":" + I( ticMin ) + ",\"tic_max\":" + I( ticMax ) + "}" );
 	}
 	else if ( cmd == "perf.counters" )
 	{

@@ -11,6 +11,7 @@
 
 #include "features/mcp-bridge/computation/sampleagg_compute.h"
 
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <string>
@@ -34,6 +35,11 @@ std::mutex g_lock;
 std::string g_report;
 bool g_ready = false;
 bool g_running = false;
+
+// [rc4l] The game thread's leveltime, published for the sampler to stamp onto each sample. Atomic
+// and one-way: the worker reads, never writes, and never touches level.time itself -- reading an
+// engine global from another thread is exactly what the bridge's threading contract forbids.
+std::atomic<int> g_publishedTic( 0 );
 
 #ifdef _WIN32
 
@@ -63,9 +69,10 @@ std::string SymbolFor( HANDLE proc, DWORD64 addr, std::string &dsoOut )
 }
 
 // One run: interrupt `thread` at `hz`, then resolve what was collected. Owns `thread` and closes it.
-void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top )
+void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax )
 {
 	std::vector<DWORD64> pcs;
+	std::vector<int> tics;					// the leveltime each sample landed in, parallel to pcs
 
 	const int intervalUs = ( hz > 0 ) ? ( 1000000 / hz ) : 1000;
 
@@ -107,6 +114,7 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top 
 #else
 				pcs.push_back( (DWORD64)ctx.Eip );
 #endif
+				tics.push_back( g_publishedTic.load( std::memory_order_relaxed ));
 			}
 
 			ResumeThread( thread );
@@ -143,8 +151,21 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top 
 	std::vector<zx::SampleHit> hits;
 	hits.reserve( pcs.size( ));
 
+	// [rc4l] The tic window, applied BEFORE symbolising so a narrow window is also cheap to resolve.
+	// 0,0 means the whole run. This is the point of an in-engine sampler: ask perf.ticprof which
+	// tics were expensive, then ask for exactly those, instead of averaging a spike into the calm
+	// either side of it and being told the wrong answer.
+	const bool bWindowed = ( ticMin > 0 ) || ( ticMax > 0 );
+
 	for ( size_t i = 0; i < pcs.size( ); ++i )
 	{
+		if ( bWindowed )
+		{
+			const int at_tic = ( i < tics.size( )) ? tics[i] : 0;
+			if (( ticMin > 0 ) && ( at_tic < ticMin ))	continue;
+			if (( ticMax > 0 ) && ( at_tic > ticMax ))	continue;
+		}
+
 		std::map<DWORD64, zx::SampleHit>::iterator at = resolved.find( pcs[i] );
 		if ( at == resolved.end( ))
 		{
@@ -178,7 +199,7 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top 
 
 } // namespace
 
-bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top )
+bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax )
 {
 #ifdef _WIN32
 	{
@@ -203,11 +224,11 @@ bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top )
 		return false;
 	}
 
-	std::thread( SampleRun, thread, seconds, hz, engineOnly, top ).detach( );
+	std::thread( SampleRun, thread, seconds, hz, engineOnly, top, ticMin, ticMax ).detach( );
 	return true;
 #else
 	// mac and Linux keep the external samplers, which walk the whole stack and see every thread.
-	(void)seconds; (void)hz; (void)engineOnly; (void)top;
+	(void)seconds; (void)hz; (void)engineOnly; (void)top; (void)ticMin; (void)ticMax;
 	return false;
 #endif
 }
@@ -222,6 +243,11 @@ bool MCP_Sample_ReportReady( std::string &json )
 	g_ready = false;
 	g_report.clear( );
 	return true;
+}
+
+void MCP_Sample_PublishTic( int leveltime )
+{
+	g_publishedTic.store( leveltime, std::memory_order_relaxed );
 }
 
 bool MCP_Sample_Running( )
