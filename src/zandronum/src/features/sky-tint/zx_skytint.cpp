@@ -21,6 +21,7 @@
 
 #include <cmath>
 #include <functional>
+#include <map>
 #include <queue>
 #include <utility>
 #include <vector>
@@ -125,13 +126,16 @@ bool g_any = false;
 
 // Which sky the table above was built from, so SkyTint_SkyChanged can tell a real sky swap from the
 // view-size changes that share its call sites. Invalid until the first successful build.
+// Both, not just sky1: a swapped or doubled sky is drawn from sky2texture, so a change there is a
+// change to what the player sees even when sky1texture has not moved.
 FTextureID g_builtForSky = FNullTextureID( );
+FTextureID g_builtForSky2 = FNullTextureID( );
 
-// Read the current sky texture into linear-friendly RGB. Returns false when there is no usable sky,
-// which is the normal case indoors and must not be treated as an error.
-bool ReadSky( std::vector<SkyRgb> &out, int &width )
+// Read one texture into linear-friendly RGB, and its alpha alongside for layering. Returns false
+// when there is no usable image, which is the normal case indoors and is not an error.
+bool ReadTexture( FTextureID id, std::vector<SkyRgb> &out, std::vector<int> &alpha, int &width )
 {
-	FTexture *sky = TexMan( sky1texture );
+	FTexture *sky = TexMan( id );
 	if ( sky == NULL )
 		return false;
 
@@ -149,12 +153,116 @@ bool ReadSky( std::vector<SkyRgb> &out, int &width )
 	// averages sRGB bytes -- the exact thing the compute unit exists to stop doing.
 	const BYTE *pix = bmp.GetPixels( );
 	out.clear( );
+	alpha.clear( );
 	out.reserve( (size_t)w * h );
+	alpha.reserve( (size_t)w * h );
 	for ( int i = 0; i < w * h; ++i )
+	{
 		out.push_back( SkyRgb( pix[i * 4 + 2], pix[i * 4 + 1], pix[i * 4 + 0] ));
+		alpha.push_back( pix[i * 4 + 3] );
+	}
 
 	width = w;
 	return true;
+}
+
+// [rc4l] Which sky textures a given sector actually shows, mirroring GLWall::SkyPlane in
+// gl/scene/gl_sky.cpp (the `sector->GetTexture(plane)==skyflatnum` branch, its PL_SKYFLAT lookup and
+// its `normalsky` label). Three things a map can do that reading the global sky1texture misses:
+//
+//   Init_TransferSky (p_spec.cpp)  a sector carries its own sky, taken from a linedef's sidedef, so
+//                                  two sectors in one map can show different skies.
+//   LEVEL_SWAPSKIES                the engine draws sky2texture. Reading sky1texture here is not an
+//                                  approximation, it is a different image entirely.
+//   LEVEL_DOUBLESKY                sky1texture is drawn IN FRONT of sky2texture, and what the player
+//                                  sees is the composite of the two.
+//
+// PROVENANCE: NO UPSTREAM COMMIT -- ours. This mirrors upstream logic rather than calling it,
+//   deliberately: extracting a shared helper would mean refactoring a vendored renderer file that we
+//   re-sync, and this feature is not worth a permanent conflict there. The cost is that it can drift.
+//   ON PORT: if gl_sky.cpp's sky selection changes upstream, re-read it and update this to match.
+//   The two are expected to agree; nothing enforces it.
+// One distinct sky in the level, reduced to what the light actually needs: its colour, and how hard
+// it pushes. Levels almost always have exactly one of these; maps using Init_TransferSky have more.
+struct SkySource
+{
+	SkyRgb tint;
+	int strengthPct;
+
+	SkySource( ) : tint( 255, 255, 255 ), strengthPct( 0 ) { }
+};
+
+struct SectorSky
+{
+	FTextureID front;		// the layer drawn nearest, or the only layer
+	FTextureID back;		// valid only for a double sky, drawn behind `front`
+	bool doubled;
+
+	SectorSky( ) : front( FNullTextureID( )), back( FNullTextureID( )), doubled( false ) { }
+};
+
+SectorSky SkyForSector( const sector_t *sec )
+{
+	SectorSky out;
+	if ( sec == NULL )
+		return out;
+
+	const int sky1 = sec->sky;
+	if (( sky1 & PL_SKYFLAT ) && ( sky1 & ( PL_SKYFLAT - 1 )))
+	{
+		const line_t *l = &lines[( sky1 & ( PL_SKYFLAT - 1 )) - 1];
+		const side_t *s = l->sidedef[0];
+		if ( s != NULL )
+		{
+			const int pos = (( level.flags & LEVEL_SWAPSKIES ) && s->GetTexture( side_t::bottom ).isValid( ))
+				? side_t::bottom : side_t::top;
+
+			const FTextureID tex = s->GetTexture( pos );
+			FTexture *t = TexMan( tex );
+			if (( t != NULL ) && ( t->UseType != FTexture::TEX_Null ))
+			{
+				out.front = tex;
+				return out;
+			}
+			// Falls through to the level sky, exactly as gl_sky.cpp's `goto normalsky` does.
+		}
+	}
+
+	if ( level.flags & LEVEL_DOUBLESKY )
+	{
+		out.doubled = true;
+		out.front = sky1texture;
+		out.back = ( sky2texture != sky1texture ) ? sky2texture : sky1texture;
+		return out;
+	}
+
+	const bool useSky2 = (( level.flags & LEVEL_SWAPSKIES ) || ( sky1 == PL_SKYFLAT ))
+		&& ( sky2texture != sky1texture );
+	out.front = useSky2 ? sky2texture : sky1texture;
+	return out;
+}
+
+// The colour of one sector's sky, composited if it is a double sky. False when there is nothing
+// usable to read.
+bool ReadSkyForSector( const sector_t *sec, std::vector<SkyRgb> &out, int &width )
+{
+	const SectorSky sky = SkyForSector( sec );
+
+	std::vector<int> alpha;
+	if ( !ReadTexture( sky.front, out, alpha, width ))
+		return false;
+
+	if ( !sky.doubled || ( sky.back == sky.front ))
+		return true;
+
+	std::vector<SkyRgb> back;
+	std::vector<int> backAlpha;
+	int backWidth = 0;
+	if ( !ReadTexture( sky.back, back, backAlpha, backWidth ))
+		return true;			// no usable back layer; the front one stands on its own
+
+	out = CompositeSkyLayers( out, alpha, width, back, backWidth );
+	return !out.empty( );
 }
 
 } // namespace
@@ -178,11 +286,12 @@ void SkyTint_Clear( )
 	g_brightestOf.clear( );
 	g_any = false;
 	g_builtForSky = FNullTextureID( );
+	g_builtForSky2 = FNullTextureID( );
 }
 
 void SkyTint_SkyChanged( )
 {
-	if ( g_builtForSky == sky1texture )
+	if (( g_builtForSky == sky1texture ) && ( g_builtForSky2 == sky2texture ))
 		return;
 
 	SkyTint_Rebuild( );
@@ -204,23 +313,8 @@ void SkyTint_Rebuild( )
 	if ( !cl_fua_skytint || ( gamestate != GS_LEVEL ) || ( sectors == NULL ) || ( numsectors <= 0 ))
 		return;
 
-	std::vector<SkyRgb> pixels;
-	int width = 0;
-	if ( !ReadSky( pixels, width ))
-		return;
-
 	const SkyAverage mode = ( cl_fua_skytint_mode == 1 ) ? SkyAverage::Dominant : SkyAverage::Mean;
 	const SkyWeight weight = ( cl_fua_skytint_weight == 1 ) ? SkyWeight::Cosine : SkyWeight::Horizon;
-
-	SkyRgb tint = AverageSky( pixels, width, mode, weight );
-
-	// Measured BEFORE the brightness is normalised away, because afterwards there is none left to
-	// read. This is what lets a dark sky tint gently and a bright one tint hard, per map.
-	const int strengthPct = StrengthForSky( cl_fua_skytint_strength, SkyLuminance( tint ),
-		cl_fua_skytint_brightness );
-
-	tint = NormaliseBrightness( tint );				// the sky says WHICH colour, not how much
-	tint = ClampSaturation( tint, cl_fua_skytint_saturation );
 
 	// [rc4l] Dijkstra outward from open sky over SUBSECTORS, measured in map units.
 	//
@@ -261,6 +355,15 @@ void SkyTint_Rebuild( )
 	std::priority_queue<std::pair<double, int>, std::vector<std::pair<double, int> >,
 		std::greater<std::pair<double, int> > > queue;
 
+	// [rc4l] One entry per DISTINCT sky in the level, and which one every leaf is lit by. A map can
+	// show different skies in different sectors (Init_TransferSky), so there is no single answer to
+	// "what colour is the sky here" -- the seeds carry their own colour outward and the Dijkstra
+	// front decides. Nearest source wins; where two fronts meet there is a seam rather than a blend,
+	// which is deliberate for now.
+	std::vector<SkySource> sources;
+	std::vector<int> litBy( numsubsectors, -1 );
+	std::map<int, int> sourceOfTexture;			// texture index -> index into `sources`
+
 	for ( int i = 0; i < numsubsectors; ++i )
 	{
 		const sector_t *s = subsectors[i].sector;
@@ -270,9 +373,53 @@ void SkyTint_Rebuild( )
 		if (( s->ColorMap == NULL ) || (( s->ColorMap->Color.d & 0xFFFFFF ) != 0xFFFFFF ))
 			continue;
 
+		// Keyed on the front texture: two sectors showing the same sky share one average rather than
+		// paying for it twice. A level with one sky therefore costs exactly what it used to.
+		const SectorSky sky = SkyForSector( s );
+		const int key = sky.front.GetIndex( );
+
+		std::map<int, int>::const_iterator found = sourceOfTexture.find( key );
+		int which = -1;
+		if ( found != sourceOfTexture.end( ))
+		{
+			which = found->second;
+		}
+		else
+		{
+			std::vector<SkyRgb> pixels;
+			int width = 0;
+			if ( !ReadSkyForSector( s, pixels, width ))
+			{
+				sourceOfTexture[key] = -1;		// remember the failure so we do not retry per leaf
+				continue;
+			}
+
+			SkySource src;
+			SkyRgb tint = AverageSky( pixels, width, mode, weight );
+
+			// Measured BEFORE the brightness is normalised away, because afterwards there is none
+			// left to read. This is what lets a dark sky tint gently and a bright one tint hard.
+			src.strengthPct = StrengthForSky( cl_fua_skytint_strength, SkyLuminance( tint ),
+				cl_fua_skytint_brightness );
+
+			tint = NormaliseBrightness( tint );			// the sky says WHICH colour, not how much
+			src.tint = ClampSaturation( tint, cl_fua_skytint_saturation );
+
+			which = (int)sources.size( );
+			sources.push_back( src );
+			sourceOfTexture[key] = which;
+		}
+
+		if ( which < 0 )
+			continue;
+
 		dist[i] = 0.0;
+		litBy[i] = which;
 		queue.push( std::make_pair( 0.0, i ));
 	}
+
+	if ( sources.empty( ))
+		return;
 
 	const double blend = cl_fua_skytint_gap / 100.0;
 
@@ -342,6 +489,7 @@ void SkyTint_Rebuild( )
 			if (( next < dist[ti] ) && ( next < reach ))
 			{
 				dist[ti] = next;
+				litBy[ti] = litBy[here];	// the light carries its own sky with it
 				queue.push( std::make_pair( next, ti ));
 			}
 		}
@@ -358,7 +506,11 @@ void SkyTint_Rebuild( )
 		if ( dist[i] >= kInfinity )
 			continue;					// never reached at all
 
-		int strength = StrengthAtDistance( strengthPct, dist[i], reach );
+		const int src = litBy[i];
+		if (( src < 0 ) || ( src >= (int)sources.size( )))
+			continue;
+
+		int strength = StrengthAtDistance( sources[src].strengthPct, dist[i], reach );
 
 		// Scaled by how lit this leaf's sector already is. Read per leaf rather than once, because
 		// the whole point is that a dark room and a bright yard should differ.
@@ -369,7 +521,7 @@ void SkyTint_Rebuild( )
 		if ( strength <= 0 )
 			continue;
 
-		const SkyRgb lit = BlendFromWhite( tint, strength );
+		const SkyRgb lit = BlendFromWhite( sources[src].tint, strength );
 		g_tint[i] = PalEntry( (BYTE)lit.r, (BYTE)lit.g, (BYTE)lit.b );
 		g_any = true;
 	}
@@ -396,6 +548,7 @@ void SkyTint_Rebuild( )
 	// Only after a build that got this far. Every early return above leaves this invalid on purpose,
 	// so a later SkyTint_SkyChanged retries instead of believing a table that was never filled.
 	g_builtForSky = sky1texture;
+	g_builtForSky2 = sky2texture;
 }
 
 namespace

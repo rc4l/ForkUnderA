@@ -115,6 +115,62 @@ double RowWeight(int row, int height, SkyWeight mode)
 	return std::sin(elevation);		// sin(elevation) == cos(angle from straight up)
 }
 
+SkyRgb CompositeOver(SkyRgb over, int overAlpha, SkyRgb under)
+{
+	if (overAlpha <= 0)
+		return under;
+	if (overAlpha >= 255)
+		return over;
+
+	const double a = overAlpha / 255.0;
+	const double r = (LinearFromSrgb(over.r) * a) + (LinearFromSrgb(under.r) * (1.0 - a));
+	const double g = (LinearFromSrgb(over.g) * a) + (LinearFromSrgb(under.g) * (1.0 - a));
+	const double b = (LinearFromSrgb(over.b) * a) + (LinearFromSrgb(under.b) * (1.0 - a));
+
+	return SkyRgb(SrgbFromLinear(r), SrgbFromLinear(g), SrgbFromLinear(b));
+}
+
+std::vector<SkyRgb> CompositeSkyLayers(const std::vector<SkyRgb> &over, const std::vector<int> &overAlpha,
+	int overWidth, const std::vector<SkyRgb> &under, int underWidth)
+{
+	std::vector<SkyRgb> out;
+	if (over.empty() || (overWidth <= 0))
+		return out;
+
+	// No usable back layer: the front one is the whole picture.
+	if (under.empty() || (underWidth <= 0))
+		return over;
+
+	const int overHeight = static_cast<int>(over.size()) / overWidth;
+	const int underHeight = static_cast<int>(under.size()) / underWidth;
+	if ((overHeight <= 0) || (underHeight <= 0))
+		return over;
+
+	out.reserve(over.size());
+	for (int y = 0; y < overHeight; ++y)
+	{
+		// Proportional, not modulo: the layers line up by position rather than by pixel index, so
+		// differing sizes scale against each other instead of sliding out of registration.
+		const int uy = (overHeight == 1) ? 0 : ((y * underHeight) / overHeight);
+		for (int x = 0; x < overWidth; ++x)
+		{
+			const int ux = (overWidth == 1) ? 0 : ((x * underWidth) / overWidth);
+			const size_t oi = (static_cast<size_t>(y) * overWidth) + x;
+			const size_t ui = (static_cast<size_t>(uy) * underWidth) + ux;
+			if (ui >= under.size())
+			{
+				out.push_back(over[oi]);
+				continue;
+			}
+
+			const int a = (oi < overAlpha.size()) ? overAlpha[oi] : 255;
+			out.push_back(CompositeOver(over[oi], a, under[ui]));
+		}
+	}
+
+	return out;
+}
+
 SkyRgb AverageSky(const std::vector<SkyRgb> &pixels, int width, SkyAverage mode, SkyWeight weight)
 {
 	if (pixels.empty() || (width <= 0))

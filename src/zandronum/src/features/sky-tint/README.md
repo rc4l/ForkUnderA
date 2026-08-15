@@ -31,6 +31,25 @@ Horizon and Overhead genuinely disagree on a sky with a coloured horizon: one is
 sees, the other is the light a floor actually receives. That is a look choice, not a right answer,
 which is why it is a knob rather than a constant.
 
+## Which sky, per sector
+
+There is no such thing as "the level's sky". A map can show different skies in different sectors
+(`Init_TransferSky`, `p_spec.cpp`), draw `sky2texture` instead of `sky1texture` (`LEVEL_SWAPSKIES`),
+or layer the two (`LEVEL_DOUBLESKY`). Reading the global `sky1texture` got the first case wrong, the
+second case *completely* wrong (a different image from the one on screen), and ignored the second
+layer of the third.
+
+`SkyForSector` mirrors `GLWall::SkyPlane` in `gl/scene/gl_sky.cpp` to answer this. It mirrors rather
+than calls, deliberately: extracting a shared helper would mean refactoring a vendored renderer file
+we re-sync, and a permanent conflict there costs more than this feature is worth. The trade is that
+it can drift, so it carries a `PROVENANCE`/`ON PORT` note saying to re-read `gl_sky.cpp` if upstream
+changes sky selection.
+
+Each distinct sky becomes a Dijkstra seed carrying its own colour and strength, so a leaf takes the
+colour of whichever sky reaches it first. **Nearest source wins**; where two fronts meet there is a
+seam, not a gradient. Blending by relative distance would be a deliberate addition and is not here.
+Levels with one sky, which is nearly all of them, resolve to one source and cost what they always did.
+
 **Only rows at or above the horizon are averaged at all** (`RowsAboveHorizon`). `gl_skydome` scales
 a sky taller than 240 by `240/height`, so the dome's upper hemisphere covers the first 240 rows and
 everything past that is drawn below eye level. Averaging the whole image counted sky that is under
