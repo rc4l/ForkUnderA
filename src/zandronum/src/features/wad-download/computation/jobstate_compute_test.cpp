@@ -70,11 +70,11 @@ TEST(JobAcceptsBegin, IsTheRefusePolicyByAnotherName)
 {
 	// The wrapper and the function it wraps must not drift: every combination, both ways.
 	const bool running[] = { false, true };
-	const size_t work[] = { 0, 1, 9 };
+	const std::size_t work[] = { 0, 1, 9 };
 
-	for (size_t r = 0; r < 2; ++r)
+	for (std::size_t r = 0; r < 2; ++r)
 	{
-		for (size_t w = 0; w < 3; ++w)
+		for (std::size_t w = 0; w < 3; ++w)
 		{
 			const bool expected =
 				(JobDecideStart(running[r], work[w], JobWhenBusy::Refuse) == JobStart::Start);

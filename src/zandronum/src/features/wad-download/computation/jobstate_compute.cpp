@@ -6,7 +6,7 @@
 namespace zx
 {
 
-JobStart JobDecideStart(bool bRunning, size_t workCount, JobWhenBusy whenBusy)
+JobStart JobDecideStart(bool bRunning, std::size_t workCount, JobWhenBusy whenBusy)
 {
 	// Asked FIRST, ahead of the busy test: an empty job is not worth deferring, and queueing one
 	// would have a caller cancel the run in flight to make room for nothing.
@@ -19,7 +19,7 @@ JobStart JobDecideStart(bool bRunning, size_t workCount, JobWhenBusy whenBusy)
 	return (whenBusy == JobWhenBusy::Defer) ? JobStart::Defer : JobStart::Refuse;
 }
 
-bool JobAcceptsBegin(bool bRunning, size_t workCount)
+bool JobAcceptsBegin(bool bRunning, std::size_t workCount)
 {
 	return JobDecideStart(bRunning, workCount, JobWhenBusy::Refuse) == JobStart::Start;
 }
@@ -49,7 +49,7 @@ int JobNextEpoch(int epoch, const std::vector<int> &previous, const std::vector<
 {
 	bChanged = (previous.size() != now.size());
 
-	for (size_t i = 0; !bChanged && (i < now.size()); ++i)
+	for (std::size_t i = 0; !bChanged && (i < now.size()); ++i)
 	{
 		if (previous[i] != now[i])
 			bChanged = true;
