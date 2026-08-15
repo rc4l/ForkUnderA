@@ -260,8 +260,22 @@ foreach ($wad in @("freedoom1.wad", "freedoom2.wad")) {
         throw "tools/freedoom/$wad missing - the zip would ship without a game to fall back on"
     }
 }
-Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
+# [rc4l] Into iwads/ rather than loose beside the exe, the same layout windows_build.ps1 ships. The
+# engine learns the folder in features/wad-download/zx_wadsearch.cpp.
+$IwadDir = Join-Path $DistDir "iwads"
+New-Item -ItemType Directory -Force -Path $IwadDir | Out-Null
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $IwadDir\
+
+# The notice stays at the top level, where notices are read.
 Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
+
+# [rc4l] Our own base data, which this script did not ship at all until now -- so a zip built here
+# left Mega Man 8-bit Deathmatch unhostable while the one from windows_build.ps1 could host it.
+# Checked rather than copied blind, the same as the two above.
+if (-not (Test-Path (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad"))) {
+    throw "tools/mkiwad/fuamega.wad missing, so rebuild it with tools/mkiwad/mkiwad.py"
+}
+Copy-Item (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad") $IwadDir\
 
 # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and point at the source.
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\

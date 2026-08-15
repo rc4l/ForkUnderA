@@ -55,6 +55,15 @@ struct HostConfig
 	// what it must set depends on the gamemode, and a shared file exec'd by a cooperative entry and
 	// an invasion one cannot mean the right thing in both.
 	std::vector<std::pair<std::string, std::string> > extraCvars;
+
+	// [rc4l] The map rotation, in order, as lump names. Empty leaves the server on one map.
+	//
+	// A list of CCMDs rather than a cvar, which is why it is not in extraCvars: addmap is a command
+	// and is meant to be given more than once, and that vector is keyed by name. The first entry is
+	// also where the server starts, so a rotation and a starting map are one decision here rather
+	// than two that can disagree.
+	std::vector<std::string> mapRotation;
+
 	std::string password;			// empty for an open server
 	std::string joinPassword;		// empty unless the operator wants a join gate
 	std::string rconSecret;			// the one-shot secret the host authenticates with
@@ -80,6 +89,17 @@ bool IsSafeArgValue(const std::string &value);
 // Whether `name` is a bare filename we are willing to name on a command line: no directory
 // separators, no `..`, no drive letters.
 bool IsBareFileName(const std::string &name);
+
+// [rc4l] Whether a name may be given to +map or +addmap: one to eight characters, letters, digits
+// and underscore, which is everything a map lump can be called.
+//
+// Stricter than IsSafeArgValue on purpose. A rotation is built from what was READ OUT OF A FILE,
+// and a file can say anything; "MAP 01" passes every general check here and is still not a map, so
+// the server would take an argument it cannot use. The reading side has its own version of this
+// question in maplist_compute -- that one keeps nonsense off the screen, this one keeps it off the
+// command line, and they are deliberately separate because a bad row and a bad argument are
+// different failures.
+bool IsLumpName(const std::string &name);
 
 // [rc4l] Whether a resolved PATH may be named on a command line: everything IsSafeArgValue requires,
 // plus no `..` anywhere in it.
