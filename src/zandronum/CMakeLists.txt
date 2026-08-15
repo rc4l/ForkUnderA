@@ -158,6 +158,22 @@ if( CMAKE_BUILD_TYPE MATCHES Release AND ( CMAKE_COMPILER_IS_GNUCXX OR MSVC ) AN
 	option( RELEASE_WITH_DEBUG_FILE "Create the debug symbols file for the release build." ON )
 endif( CMAKE_BUILD_TYPE MATCHES Release AND ( CMAKE_COMPILER_IS_GNUCXX OR MSVC ) AND NOT APPLE )
 
+# [rc4l] The same thing again for a MULTI-CONFIG generator, which is what Visual Studio is and so
+# what every local Windows build uses. Those pick the config at BUILD time, leaving CMAKE_BUILD_TYPE
+# empty at configure time, so the block above never even created the option and a local Release
+# build got no /Zi and no PDB whatsoever. SymFromAddr then has nothing to read: mcp_crash.cpp writes
+# unsymbolised backtraces and the sampling profiler cannot name one of our own functions. Found when
+# perf.sample reported 13% of a kill storm as "[unknown]" inside forkundera.
+#
+# Tied to the BRIDGE rather than turned on for everyone, because "everyone" includes the release CI
+# that builds what players download. That path already emits its PDB deliberately and separately
+# (ZX_WITH_SYMBOLS, src/CMakeLists.txt), gated so ordinary dev and PR builds stay lean -- and this
+# must not quietly override that decision. A bridge build is a dev build by construction (the bridge
+# is never ON in a shipped binary), and it is the one that needs symbols to be worth anything.
+if( FUA_MCP_BRIDGE AND CMAKE_CONFIGURATION_TYPES AND MSVC AND NOT APPLE )
+	option( RELEASE_WITH_DEBUG_FILE "Create the debug symbols file for the release build." ON )
+endif( )
+
 find_package( BZip2 )
 find_package( JPEG )
 find_package( ZLIB )

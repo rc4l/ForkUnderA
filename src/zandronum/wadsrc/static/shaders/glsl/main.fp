@@ -85,6 +85,17 @@ vec4 getTexel(vec2 st)
 	}
 	texel *= uObjectColor;
 
+	// [rc4l] features/damage-tint: gradient in texture-V space; a == 0 -> no-op. Mode 0 stains
+	// (multiply -- taking damage); mode 1 glows (screen blend, bright on any base -- protected).
+	if (uDamageTint.a > 0.0)
+	{
+		float dtf = clamp((vTexCoord.t - uDamageTintRange.x) / max(uDamageTintRange.y - uDamageTintRange.x, 0.0001), 0.0, 1.0);
+		vec3 tinted = (uDamageTintRange.z > 0.5)
+			? 1.0 - (1.0 - texel.rgb) * (1.0 - uDamageTint.rgb)
+			: texel.rgb * uDamageTint.rgb;
+		texel.rgb = mix(texel.rgb, tinted, dtf * uDamageTint.a);
+	}
+
 	return desaturate(texel);
 }
 

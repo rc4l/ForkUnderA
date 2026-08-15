@@ -87,6 +87,11 @@ void P_ThinkParticles (void);
 void P_InitEffects (void);
 void P_RunEffects (void);
 
+// [rc4l] Per-tic effect-actor registry (see p_effect.cpp): actors self-register from
+// AActor::Tick so P_RunEffects doesn't walk the whole thinker list. Cleared each P_Ticker.
+void P_ClearEffectRegistry (void);
+void P_RegisterEffectActor (AActor *actor);
+
 void P_RunEffect (AActor *actor, int effects);
 
 void P_DrawRailTrail (AActor *source, const FVector3 &start, const FVector3 &end, int color1, int color2, float maxdiff = 0, int flags = 0, const PClass *spawnclass = NULL, angle_t angle = 0, int duration = 35, float sparsity = 1.0, float drift = 1.0);

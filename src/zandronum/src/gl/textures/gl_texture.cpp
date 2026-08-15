@@ -53,6 +53,7 @@
 #include "gl/textures/gl_texture.h"
 #include "gl/textures/gl_material.h"
 #include "gl/textures/gl_samplers.h"
+#include "features/fua-caching/fua_caching.h"
 
 //==========================================================================
 //
@@ -321,7 +322,9 @@ void FTexture::CreateDefaultBrightmap()
 
 void FTexture::PrecacheGL(int cache)
 {
-	if (gl_precache)
+	// [ForkUnderA] cl_fua_caching arms the upload path; gl_precache kept as
+	// the legacy opt-in.
+	if (gl_precache || FUA_CachingMode() > 0)
 	{
 		if (cache & (FTextureManager::HIT_Wall | FTextureManager::HIT_Flat | FTextureManager::HIT_Sky))
 		{
@@ -522,6 +525,11 @@ void FTexture::CheckTrans(unsigned char * buffer, int size, int trans)
 					return;
 				}
 			}
+			// [rc4l] Latch the opaque outcome too (upstream texture.cpp does the same). Without this
+			// a fully-opaque or binary-alpha true-color image leaves the flag at -1 "unknown", so
+			// FMaterial::GetTransparent re-runs the ENTIRE image decode every frame for every
+			// visible sprite that uses it -- 3x whole-frame cost on PNG-heavy mods.
+			gl_info.mIsTransparent = 0;
 		}
 	}
 }

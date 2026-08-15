@@ -75,6 +75,27 @@ bool IsSafeFilePath(const std::string &path)
 	return true;
 }
 
+// [rc4l] See the header: a map name is narrower than a safe argument, and a rotation is built out
+// of what a file said.
+bool IsLumpName(const std::string &name)
+{
+	if (name.empty() || (name.size() > 8))
+		return false;
+
+	for (size_t i = 0; i < name.size(); ++i)
+	{
+		const char c = name[i];
+
+		const bool ok = ((c >= 'A') && (c <= 'Z')) || ((c >= 'a') && (c <= 'z')) ||
+			((c >= '0') && (c <= '9')) || (c == '_');
+
+		if (!ok)
+			return false;
+	}
+
+	return true;
+}
+
 bool IsBareFileName(const std::string &name)
 {
 	if (!IsSafeArgValue(name))
@@ -186,6 +207,18 @@ std::vector<std::string> BuildHostArgs(const std::string &exePath, const HostCon
 
 		out.push_back("+" + name);
 		out.push_back(value);
+	}
+
+	// [rc4l] The rotation, before the starting map, so the server has somewhere to go next before it
+	// is told where to begin. Each name is checked the way every other value here is: a rotation
+	// entry that is not a plain lump name is dropped rather than escaped.
+	for (size_t i = 0; i < config.mapRotation.size(); ++i)
+	{
+		if (!IsLumpName(config.mapRotation[i]))
+			continue;
+
+		out.push_back("+addmap");
+		out.push_back(config.mapRotation[i]);
 	}
 
 	if (IsSafeArgValue(config.map))

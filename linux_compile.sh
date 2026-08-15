@@ -143,14 +143,22 @@ cp build-linux/*.pk3 "$STAGE"/
 for wad in freedoom1.wad freedoom2.wad; do
   [ -f "tools/freedoom/$wad" ] || { echo "ERROR: tools/freedoom/$wad missing -- the tarball would ship without a game to fall back on" >&2; exit 1; }
 done
-cp tools/freedoom/*.wad "$STAGE"/
+# [rc4l] Into iwads/, not loose beside the binary. Somebody opening the tarball should see a program
+# to run rather than a pile of game data they cannot tell from their own. The engine is told about
+# the folder in features/wad-download/zx_wadsearch.cpp, on every launch rather than only on a fresh
+# config, so an update that moves them does not strand an existing player.
+mkdir -p "$STAGE"/iwads
+cp tools/freedoom/*.wad "$STAGE"/iwads/
+
+# The licence stays at the top level: clause 2 wants it to accompany the distribution, and a notice
+# filed inside a data folder is one nobody opens.
 cp tools/freedoom/License.txt "$STAGE"/FREEDOOM-LICENSE.txt
 
 # [rc4l] Our own base data for total conversions that ship no base file of their own. Built by
 # tools/mkiwad and entirely generated, so it carries nobody else's work. Checked for the same
 # reason the two above are: without it that catalogue entry is unhostable.
 [ -f tools/mkiwad/fuamega.wad ] || { echo "ERROR: tools/mkiwad/fuamega.wad missing, so rebuild it with tools/mkiwad/mkiwad.py" >&2; exit 1; }
-cp tools/mkiwad/fuamega.wad "$STAGE"/
+cp tools/mkiwad/fuamega.wad "$STAGE"/iwads/
 
 # [rc4l] The addon catalogue. Required rather than best-effort: the HOST tab reads it from beside
 # the binary, and a build without it offers nothing to host.

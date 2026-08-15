@@ -106,7 +106,6 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 	if (font == NULL || string == NULL)
 		return;
 
-	MCP_HUD_TeeText( x, y, string );
 	if (normalcolor >= NumTextColors)
 		normalcolor = CR_UNTRANSLATED;
 	boldcolor = normalcolor ? normalcolor - 1 : NumTextColors - 1;
@@ -219,6 +218,53 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 		tag = va_arg (tags, uint32);
 	}
 	va_end(tags);
+
+#ifdef FUA_MCP_BRIDGE
+	// [rc4l] The MCP HUD tee reports the string's SCREEN position, not the caller's pre-scale layout
+	// coords, so a driver (fuactl) can click exactly where a label was drawn. A menu draws in a virtual
+	// space (DTA_VirtualWidth/Height, or DTA_Clean=320x200) and the renderer maps it to real pixels with
+	// VirtualToRealCoords; we re-read the same tags and run the same mapping. Gated so release builds get
+	// no tee at all. The scan mirrors the loop above -- one DWORD per tag, TAG_MORE chains lists.
+	{
+		int teeVW = Width, teeVH = Height;
+		bool teeKeep = false, teeClean = false;
+		va_list tt;
+#ifndef NO_VA_COPY
+		va_copy( tt, taglist );
+#else
+		tt = taglist;
+#endif
+		for ( uint32 t = va_arg( tt, uint32 ); t != TAG_DONE; t = va_arg( tt, uint32 ) )
+		{
+			if ( t == TAG_MORE )
+			{
+				va_list *m = va_arg( tt, va_list* );
+				va_end( tt );
+#ifndef NO_VA_COPY
+				va_copy( tt, *m );
+#else
+				tt = *m;
+#endif
+				continue;
+			}
+			DWORD v = va_arg( tt, DWORD );
+			if ( t == DTA_VirtualWidth )       teeVW = (int) v;
+			else if ( t == DTA_VirtualHeight ) teeVH = (int) v;
+			else if ( t == DTA_KeepRatio )     teeKeep = ( v != 0 );
+			else if ( ( t == DTA_Clean || t == DTA_320x200 ) && v ) teeClean = true;
+		}
+		va_end( tt );
+
+		if ( teeClean ) { teeVW = 320; teeVH = 200; teeKeep = false; }
+
+		// Map the string's origin AND its width to screen pixels, so a driver can aim for the label's
+		// centre -- the text-start alone sits at a row's clickable edge and a click there can miss.
+		int sx = x, sy = y, sw = font->StringWidth( string ), sh = 1;
+		if ( teeVW != Width || teeVH != Height )
+			VirtualToRealCoordsInt( sx, sy, sw, sh, teeVW, teeVH, false, !teeKeep );
+		MCP_HUD_TeeText( sx, sy, sw, string );
+	}
+#endif
 
 	height *= scaley;
 		

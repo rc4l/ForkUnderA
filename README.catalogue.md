@@ -225,7 +225,7 @@ Anything else is refused.
 Accepted values:
 
 `cooperative`, `survival`, `invasion`, `deathmatch`, `teamdeathmatch`, `duel`, `lastmanstanding`,
-`teamlms`, `possession`, `teampossession`, `terminator`, `ctf`, `skulltag`.
+`teamlms`, `possession`, `teampossession`, `terminator`, `ctf`, `skulltag`, `teamgame`.
 
 Anything else, including an absent field, means unknown. Unknown is not an error. It costs the
 controls that read the mode.
@@ -295,9 +295,9 @@ Three modes have a team twin, and `teams` switches between them.
 | `lastmanstanding` | `teamlms` |
 | `possession` | `teampossession` |
 
-`ctf` and `skulltag` get no control. They have sides, but the count is the map's: one flag per
-side, so a third team would spawn with nothing to take. `terminator` gets none either, because one
-ball against everyone is the mode.
+`ctf`, `skulltag` and `teamgame` get no control. They have sides, but the count is the map's: one
+flag per side, or one set of team starts per side, so a third team would spawn with nothing to take
+and nowhere to stand. `terminator` gets none either, because one ball against everyone is the mode.
 
 A slider needs room to move. When the lowest and `maxlives` are the same value it is not drawn,
 but the value is still sent to the server.

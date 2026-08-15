@@ -98,6 +98,8 @@
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
 #include "features/quake-movement/quakemove.h"
+#include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
+#include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -4211,6 +4213,11 @@ void AActor::Tick ()
 	// [BB] Start to measure how much outbound net traffic this call of AActor::Tick() needs.
 	NETWORK_StartTrafficMeasurement ( );
 
+	// [rc4l] Self-register for this tic's P_RunEffects pass (see p_effect.cpp) --
+	// the effects walk no longer scans every thinker.
+	if (effects && ( NETWORK_GetState( ) != NETSTATE_SERVER ))
+		P_RegisterEffectActor (this);
+
 	// [RH] Data for Heretic/Hexen scrolling sectors
 	static const BYTE HexenScrollDirs[8] = { 64, 0, 192, 128, 96, 32, 224, 160 };
 	static const BYTE HexenSpeedMuls[3] = { 5, 10, 25 };
@@ -5347,6 +5354,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 			TEAM_ExecuteReturnRoutine( teams.Size( ), NULL );
 	}
 
+	MCP_SimTrace_Spawn (actor); // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 	g_SpawnCycles.Unclock();
 	return actor;
 }
@@ -5500,6 +5508,13 @@ void AActor::PostBeginPlay ()
 }
 
 void AActor::MarkPrecacheSounds() const
+{
+	MarkPropertySounds();
+}
+
+// [ForkUnderA] Split out of MarkPrecacheSounds so fua-caching can mark a
+// never-spawned class's sounds through its Defaults without virtual dispatch.
+void AActor::MarkPropertySounds() const
 {
 	SeeSound.MarkUsed();
 	AttackSound.MarkUsed();
@@ -5735,8 +5750,14 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 					type = p->userinfo.GetPlayerClassNum();
 					if (type < 0)
 					{
+						// [rc4l] Unless the mod forbade random classes, in which case pick a
+						// selectable one rather than re-rolling on every respawn.
+						const int fallback = ZX_PlayerClassFallback( type, !!p->bOnTeam, p->Team );
+
+						if ( fallback >= 0 )
+							type = fallback;
 						// [BB] If the player is on a team, only a class valid for this team may be selected.
-						if ( p->bOnTeam )
+						else if ( p->bOnTeam )
 							type = TEAM_SelectRandomValidPlayerClass( p->Team );
 						else
 							type = pr_multiclasschoice() % PlayerClasses.Size ();

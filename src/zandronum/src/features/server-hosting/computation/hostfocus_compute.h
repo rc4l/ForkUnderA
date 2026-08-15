@@ -27,8 +27,11 @@
 //                     and the rows of pills. Up and down walk them, left and right change the row
 //                     they are on rather than moving off it -- the same split the visibility row
 //                     makes, and for the same reason.
-//     VISIBILITY      up returns to the last field, down goes to the foot. Left and right pick the
-//                     choice rather than moving.
+//     VISIBILITY      up returns to the last field, down goes to the COPY button when it is being
+//                     offered and the foot when it is not. Left and right pick the choice rather
+//                     than moving.
+//     COPY            one button, so up and down are the only keys it has: back to the visibility
+//                     row, on to the foot.
 //     ACTION/TOGGLE   the foot is a ROW: left and right move along it, up returns to the column.
 //                     Left off the action returns to the list, the way the browser's ACTION returns
 //                     to its rows. Down goes nowhere, because there is nothing below it.
@@ -65,6 +68,13 @@ enum class HostSlot
 	Gameplay,
 
 	Visibility,	// the INTERNET / HOME row
+
+	// [rc4l] COPY THIS TO NEW, under the visibility row. Offered only when every file the chosen
+	// experience asks for is already on the machine -- a copy of something you cannot load is a
+	// prefilled screen that refuses to start, and finding that out one screen later is worse than
+	// not being offered it.
+	Copy,
+
 	Action,		// PLAY NOW! and its other faces
 	Toggle,		// SETTINGS / BACK, beside the action
 
@@ -113,18 +123,19 @@ struct HostNavResult
 // row, which appear and disappear together with the settings. `hasToggle` is whether the SETTINGS
 // button is beside the action. `gameplayRows` is how many rows the gameplay panel is drawing, which
 // is zero whenever the form is open, while a server is running, or for an experience that offers
-// nothing to decide.
+// nothing to decide. `hasCopy` is whether the COPY button is under the visibility row, which needs
+// the settings open AND every file already downloaded.
 //
 // A position that no longer exists -- a field while the settings are shut, a gameplay row on an
 // experience that has none -- is corrected rather than honoured, because the panel can change
 // underneath a focus that was legitimate when it was set.
 HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
-                             bool hasFields, bool hasToggle, int gameplayRows);
+                             bool hasFields, bool hasToggle, int gameplayRows, bool hasCopy);
 
 // The position to correct to when `pos` names something not currently on screen. Returns `pos`
 // unchanged when it is already valid.
 HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bool hasToggle,
-                            int gameplayRows);
+                            int gameplayRows, bool hasCopy);
 
 // [rc4l] Where LEFT lands when a text field finally gives it back.
 //

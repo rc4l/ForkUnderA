@@ -113,6 +113,14 @@ TEST(McpRpc, GetStrDecodesEscapes)
 	EXPECT_EQ(out, "a\nb\t\"c\\d");
 }
 
+TEST(McpRpc, GetStrDecodesCarriageReturnSlashAndUnknownEscapes)
+{
+	// \r and \/ decode to their characters; an unknown escape (\q) keeps the escaped char verbatim.
+	std::string out;
+	EXPECT_TRUE(GetStr("{\"s\":\"a\\rb\\/c\\qd\"}", "s", out));
+	EXPECT_EQ(out, "a\rb/cqd");
+}
+
 TEST(McpRpc, GetStrRejectsUnterminated)
 {
 	std::string out;

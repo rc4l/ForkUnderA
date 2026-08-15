@@ -300,8 +300,18 @@ build() {
     for wad in freedoom1.wad freedoom2.wad; do
         [[ -f "$TOOLS_DIR/freedoom/$wad" ]] || { echo "ERROR: tools/freedoom/$wad missing -- the app would ship without a game to fall back on" >&2; exit 1; }
     done
-    cp -n "$TOOLS_DIR/freedoom/"*.wad "$BUILD_DIR/" 2>/dev/null || true
+    # [rc4l] Into iwads/, the layout the Windows and Linux builds ship. The engine is told about the
+    # folder in features/wad-download/zx_wadsearch.cpp, every launch rather than only on a fresh
+    # config, so an update that moves them does not strand an existing player.
+    mkdir -p "$BUILD_DIR/iwads"
+    cp -n "$TOOLS_DIR/freedoom/"*.wad "$BUILD_DIR/iwads/" 2>/dev/null || true
     cp -f "$TOOLS_DIR/freedoom/License.txt" "$BUILD_DIR/FREEDOOM-LICENSE.txt" 2>/dev/null || true
+
+    # [rc4l] Our own base data, which this script did not ship at all until now -- so a mac build
+    # left Mega Man 8-bit Deathmatch unhostable while Windows and Linux could host it. Checked
+    # rather than copied blind, the same as Freedoom above.
+    [[ -f "$TOOLS_DIR/mkiwad/fuamega.wad" ]] || { echo "ERROR: tools/mkiwad/fuamega.wad missing, so rebuild it with tools/mkiwad/mkiwad.py" >&2; exit 1; }
+    cp -f "$TOOLS_DIR/mkiwad/fuamega.wad" "$BUILD_DIR/iwads/"
 }
 
 # ---------------------------------------------------------------------------

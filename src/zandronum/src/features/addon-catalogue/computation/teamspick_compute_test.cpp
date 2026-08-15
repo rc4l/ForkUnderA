@@ -94,9 +94,10 @@ TEST(TeamsPick, AModeWithNoFreeForAllToLeaveGetsNoControlEvenWhenAsked)
 
 TEST(TeamsPick, TheModesWhoseSidesComeFromTheMapSaySoInThoseWords)
 {
-	// Both of these have sides, so the generic refusal would send an author looking for a mistake
+	// All of these have sides, so the generic refusal would send an author looking for a mistake
 	// that is not there, which is the whole point of the branch.
-	const HostGameMode fromTheMap[] = { HostGameMode::CaptureTheFlag, HostGameMode::Skulltag };
+	const HostGameMode fromTheMap[] = { HostGameMode::CaptureTheFlag, HostGameMode::Skulltag,
+									    HostGameMode::Teamgame };
 
 	for (size_t i = 0; i < sizeof(fromTheMap) / sizeof(fromTheMap[0]); ++i)
 	{

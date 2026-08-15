@@ -471,14 +471,29 @@ static void ParseUserVariable (FScanner &sc, PSymbolTable *symt, PClass *cls)
 	}
 	sc.MustGetToken(';');
 
-	// [rc4l] uzdoom@cbf72fe99: reject a name already defined in an ANCESTOR too, not just this
-	// class. The serializer stores user variables by name and cannot tell a child's copy from its
-	// parent's, so a shadowing declaration corrupts the save.
+	// [rc4l] uzdoom@cbf72fe9922e221ab441f7579c229382af72ab27: a name already defined in an ANCESTOR
+	// is refused, not just one defined in this class. The serializer stores user variables by name
+	// and cannot tell a child's copy from its parent's, so a second one corrupts the save.
+	//
+	// [rc4l] PROVENANCE: upstream's behaviour, ours is the severity.
+	//   SUPERSEDED BY: nothing. Upstream counts this as an error and always will, because upstream
+	//   does not have to run the Zandronum library.
+	//   ON PORT: keep the warning. Taking upstream's error back would re-break every mod below.
+	//
+	// The declaration is still discarded, exactly as upstream discards it, so the name keeps
+	// resolving to the ancestor's variable and there is still only one field of that name to
+	// serialize. What we do not do is count it as an error, because DECORATE errors are fatal at
+	// the end of parsing and that killed mods that load fine on Zandronum.
+	//
+	// This is not a rare shape. DND alone declares user_count 34 times across an inheritance chain,
+	// plus user_ripperid, user_expdmg and user_hitcount, and it is a normal thing to find in mods
+	// written against an engine that only ever checked the current class.
 	if (symt->FindSymbol(symname, true) != NULL)
 	{
-		sc.ScriptMessage ("'%s' is already defined in '%s' or one of its ancestors.",
+		FScriptPosition(sc).Message (MSG_WARNING,
+			"'%s' is already defined in '%s' or one of its ancestors, so this declaration is "
+			"ignored and the ancestor's is used.",
 			symname.GetChars(), cls ? cls->TypeName.GetChars() : "Global");
-		FScriptPosition::ErrorCounter++;
 		return;
 	}
 

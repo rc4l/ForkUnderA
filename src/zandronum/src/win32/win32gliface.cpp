@@ -1047,6 +1047,15 @@ void Win32GLFrameBuffer::InitializeState()
 
 // [rc4l] windowed-video: resize the OS window's client area to w x h (windowed only). WM_SIZE then
 // persists the new size and MaybeResizeForScale resizes the render target. See features/windowed-video.
+//
+// [rc4l] Ported from uzdoom@156ed5790ed2d98354c5d08e2a90a41ed4506d7e ("added vid_setsize CCMD"):
+// AdjustWindowRectEx turns the client rect we want into the window rect SetWindowPos takes, using
+// this window's real style rather than a guess assembled from system metrics.
+//
+// The guess was wrong and the error compounded. SM_CXSIZEFRAME omits SM_CXPADDEDBORDER on Windows
+// 10 and 11, so the client area came out smaller than asked for, WM_SIZE persisted that smaller
+// size, and the next press shrank it again from there. Pressing the menu's "Apply windowed size"
+// repeatedly walked the window down to the 320x200 clamp.
 void Win32GLFrameBuffer::SetWindowSize (int w, int h)
 {
 	if (Window == NULL || IsFullscreen())

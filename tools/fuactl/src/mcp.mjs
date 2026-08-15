@@ -3,10 +3,10 @@
 // programmable engine (launch instances, run the determinism check, reap, raw RPC).
 import readline from "node:readline";
 import { reap, readRegistry } from "./registry.mjs";
-import { runDeterminismCheck, runPerfAblation } from "./session.mjs";
+import { runDeterminismCheck, runPerfAblation, runGlTimers } from "./session.mjs";
 import { launchInstance, resolveEngine } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
-import { menuNav, click, typeText, screenshot, padButton, padDpad, look, readMenu, findLabel } from "./ui.mjs";
+import { menuNav, click, clickLabel, typeText, screenshot, padButton, padDpad, look, readMenu, findLabel } from "./ui.mjs";
 
 // Run fn with a short-lived, connected+greeted client, then close it.
 async function withClient(port, token, fn) {
@@ -29,6 +29,12 @@ const TOOLS = [
   { name: "perf_ablation", description: "Deterministic perf ablation: baseline vs a perturbation, causal frametime delta + sim/render (CPU/GPU) verdict.",
     inputSchema: { type: "object", properties: {
       seed: { type: "number" }, map: { type: "string" }, spawn: { type: "string" }, count: { type: "number" }, frames: { type: "number" } } } },
+  { name: "gl_timers", description: "GPU render profiling: arm a gl.timers capture on a running instance and return per-pass GPU milliseconds (scene/translucent/hud2d), whole-frame total, and draw counters. Answers 'which GL pass is eating the frame on this laggy map'. Includes renderer.info (whether timer queries even work on this driver).",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" }, frames: { type: "number" }, warmup: { type: "number" } } } },
+  { name: "renderer_info", description: "Renderer identity (vendor/renderer/GL version) + whether GL timer queries are usable on this driver, so you know if gl_timers will return real numbers.",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" } } } },
   { name: "rpc", description: "Send one raw RPC to an instance and return the result.",
     inputSchema: { type: "object", required: ["port", "cmd"], properties: {
       port: { type: "number" }, token: { type: "string" }, cmd: { type: "string" }, args: { type: "object" } } } },
@@ -37,9 +43,9 @@ const TOOLS = [
     inputSchema: { type: "object", required: ["port", "steps"], properties: {
       port: { type: "number" }, token: { type: "string" },
       steps: { type: "array", items: { type: "string", enum: ["up", "down", "left", "right", "enter", "back", "backspace"] } } } } },
-  { name: "ui_click", description: "Mouse click at (x,y). button: left/middle/right; double for dbl-click.",
-    inputSchema: { type: "object", required: ["port", "x", "y"], properties: {
-      port: { type: "number" }, token: { type: "string" }, x: { type: "number" }, y: { type: "number" },
+  { name: "ui_click", description: "Mouse click. Give `label` to click an on-screen label's centre (robust), or x,y for a point. button: left/middle/right; double for dbl-click.",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" }, label: { type: "string" }, x: { type: "number" }, y: { type: "number" },
       button: { type: "string", enum: ["left", "middle", "right"] }, double: { type: "boolean" } } } },
   { name: "ui_type", description: "Type text as GUI char events (menu name fields, console).",
     inputSchema: { type: "object", required: ["port", "text"], properties: {
@@ -65,6 +71,12 @@ const TOOLS = [
   { name: "ui_find", description: "Find an on-screen label (case-insensitive substring) and return its {x,y,text}, or null.",
     inputSchema: { type: "object", required: ["port", "label"], properties: {
       port: { type: "number" }, token: { type: "string" }, label: { type: "string" } } } },
+  { name: "world_sectors", description: "Query the level's sectors with specials/damage; damaging:true narrows to floors that hurt. Each row has a guaranteed-interior x,y to warp to.",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" }, damaging: { type: "boolean" }, limit: { type: "number" } } } },
+  { name: "player_setpos", description: "Teleport the console player to map coordinates (single-player instances only), snapped to the floor.",
+    inputSchema: { type: "object", required: ["port", "x", "y"], properties: {
+      port: { type: "number" }, token: { type: "string" }, x: { type: "number" }, y: { type: "number" } } } },
 ];
 
 async function callTool(name, a = {}) {
@@ -74,9 +86,14 @@ async function callTool(name, a = {}) {
     case "launch_instance": { const i = await launchInstance({ map: a.map, seed: a.seed }); return { pid: i.pid, port: i.port, token: i.token }; }
     case "session_check": return runDeterminismCheck({ instances: a.instances, seed: a.seed, map: a.map, tics: a.tics });
     case "perf_ablation": return runPerfAblation({ seed: a.seed, map: a.map, spawn: a.spawn, count: a.count, frames: a.frames });
+    case "gl_timers": return runGlTimers({ port: a.port, token: a.token, frames: a.frames, warmup: a.warmup });
+    case "renderer_info": return withClient(a.port, a.token, (c) => c.rpc("renderer.info"));
     case "rpc": return withClient(a.port, a.token, (c) => c.rpc(a.cmd, a.args));
     case "ui_menu_nav": return withClient(a.port, a.token, async (c) => { await menuNav(c, a.steps); return { navigated: a.steps }; });
-    case "ui_click": return withClient(a.port, a.token, async (c) => { await click(c, a.x, a.y, { button: a.button || "left", double: !!a.double }); return { clicked: { x: a.x, y: a.y, button: a.button || "left" } }; });
+    case "ui_click": return withClient(a.port, a.token, async (c) => {
+      if (a.label) return clickLabel(c, a.label, { button: a.button || "left", double: !!a.double });
+      await click(c, a.x, a.y, { button: a.button || "left", double: !!a.double }); return { clicked: { x: a.x, y: a.y, button: a.button || "left" } };
+    });
     case "ui_type": return withClient(a.port, a.token, async (c) => { await typeText(c, a.text); return { typed: a.text.length }; });
     case "ui_screenshot": return withClient(a.port, a.token, (c) => screenshot(c, resolveEngine(), a.name || "fuactl_shot"));
     case "ui_pad_button": return withClient(a.port, a.token, async (c) => {
@@ -87,6 +104,8 @@ async function callTool(name, a = {}) {
     case "ui_look": return withClient(a.port, a.token, (c) => look(c, { yaw: a.yaw, pitch: a.pitch }));
     case "ui_read": return withClient(a.port, a.token, async (c) => { const m = await readMenu(c); return a.full ? m : { lines: m.lines.map((l) => l.text) }; });
     case "ui_find": return withClient(a.port, a.token, (c) => findLabel(c, a.label));
+    case "world_sectors": return withClient(a.port, a.token, (c) => c.rpc("world.sectors", { damaging: a.damaging ? 1 : 0, limit: a.limit ?? 64 }));
+    case "player_setpos": return withClient(a.port, a.token, (c) => c.rpc("player.setpos", { x: a.x, y: a.y }));
     default: throw new Error(`unknown tool: ${name}`);
   }
 }
