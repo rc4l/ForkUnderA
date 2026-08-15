@@ -150,9 +150,16 @@ endif( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" S
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}")
 
 # [EP/BB]
-if( CMAKE_BUILD_TYPE MATCHES Release AND ( CMAKE_COMPILER_IS_GNUCXX OR MSVC ) AND NOT APPLE )
+# [rc4l] CMAKE_CONFIGURATION_TYPES as well as CMAKE_BUILD_TYPE. A multi-config generator -- Visual
+# Studio, which is what windows_build_run.ps1 and every local Windows build use -- picks the config
+# at BUILD time, so CMAKE_BUILD_TYPE is empty at configure time and this option was never even
+# created. The result was a Release build with no /Zi and no PDB at all, which is not a missing
+# nicety: SymFromAddr has nothing to read, so mcp_crash.cpp wrote unsymbolised crash backtraces and
+# the sampling profiler could not name a single one of our own functions. Found when perf.sample
+# reported 13% of a kill storm as "[unknown]" inside forkundera.
+if( ( CMAKE_BUILD_TYPE MATCHES Release OR CMAKE_CONFIGURATION_TYPES ) AND ( CMAKE_COMPILER_IS_GNUCXX OR MSVC ) AND NOT APPLE )
 	option( RELEASE_WITH_DEBUG_FILE "Create the debug symbols file for the release build." ON )
-endif( CMAKE_BUILD_TYPE MATCHES Release AND ( CMAKE_COMPILER_IS_GNUCXX OR MSVC ) AND NOT APPLE )
+endif( )
 
 find_package( BZip2 )
 find_package( JPEG )
