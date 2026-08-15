@@ -6,14 +6,29 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 
-// Resolve the engine binary + its data dir. Override with FUACTL_ENGINE (path to the `forkundera`
-// binary inside the .app, whose folder also holds the IWAD + pk3s).
+// Where each platform's compile script leaves a staged binary, relative to the repo root. The
+// folder is the data dir too: it holds the pk3s and iwads/, so a launched engine finds its game
+// data and `screenshot` writes the PNG there.
+const STAGED_ENGINES = [
+  "build/ForkUnderA.app/Contents/MacOS/forkundera",	// mac_compile.sh
+  "dist-windows/forkundera.exe",				// windows_build_run.ps1
+  "dist-linux/forkundera",					// linux_compile.sh
+];
+
+// Resolve the engine binary + its data dir. Override with FUACTL_ENGINE.
+//
+// [rc4l] All three platforms, not just the .app. This listed only the mac path, so on Windows every
+// command that needs the binary failed with "engine binary not found" -- including `ui screenshot`,
+// which is talking to an ALREADY RUNNING instance over a port and wants the path only to know where
+// the PNG lands. `ui read` and every `rpc` worked, so the tool looked fine right up until the one
+// call that reads a file back off disk. Found driving a Windows build.
 export function resolveEngine() {
   const env = process.env.FUACTL_ENGINE;
-  const candidates = env ? [env] : [
-    path.resolve(process.cwd(), "build/ForkUnderA.app/Contents/MacOS/forkundera"),
-    path.resolve(process.cwd(), "../../build/ForkUnderA.app/Contents/MacOS/forkundera"),
-  ];
+  // cwd is either the repo root or tools/fuactl, so each candidate is tried from both.
+  const candidates = env ? [env] : STAGED_ENGINES.flatMap((rel) => [
+    path.resolve(process.cwd(), rel),
+    path.resolve(process.cwd(), "../..", rel),
+  ]);
   for (const c of candidates) if (fs.existsSync(c)) return c;
   throw new Error(`engine binary not found (set FUACTL_ENGINE). tried:\n  ${candidates.join("\n  ")}`);
 }
