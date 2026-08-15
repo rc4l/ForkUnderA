@@ -97,7 +97,8 @@ double Distance2( double ax, double ay, double bx, double by )
 
 // Per sector: the light colour to substitute, or white for "leave this one alone". Sized to the
 // current level and cleared with it, so an index can never outlive its sector array.
-std::vector<PalEntry> g_tint;
+std::vector<PalEntry> g_tint;			// per SUBSECTOR: what the renderer actually draws
+std::vector<PalEntry> g_brightestOf;	// per SECTOR: its lightest leaf, for the few sector-only callers
 bool g_any = false;
 
 // Read the current sky texture into linear-friendly RGB. Returns false when there is no usable sky,
@@ -135,6 +136,7 @@ bool ReadSky( std::vector<SkyRgb> &out, int &width )
 void SkyTint_Clear( )
 {
 	g_tint.clear( );
+	g_brightestOf.clear( );
 	g_any = false;
 }
 
@@ -166,42 +168,59 @@ void SkyTint_Rebuild( )
 	tint = NormaliseBrightness( tint );				// the sky says WHICH colour, not how much
 	tint = ClampSaturation( tint, cl_fua_skytint_saturation );
 
-	// [rc4l] Dijkstra outward from open sky, measured in MAP UNITS. Counting sectors made the reach
-	// depend on how finely the mapper cut their geometry -- two hops crosses a room in a blocky map
-	// and dies inside one doorway's trim in a detailed one. Distance does not care how many pieces a
-	// room was built from, so the setting means one thing on every map.
+	// [rc4l] Dijkstra outward from open sky over SUBSECTORS, measured in map units.
+	//
+	// Two problems, one answer. Counting sector hops made the reach depend on how finely the mapper
+	// cut their geometry; measuring distance fixes that. And lighting a whole sector at one value
+	// made the effect look like a flood rather than light -- a room beside a lit yard came up evenly
+	// bright to its far corner. BSP leaves are small and the renderer already draws them one at a
+	// time, so the same room now fades across itself.
+	//
+	// Adjacency is free: every seg carries its PartnerSeg, so leaves inside one sector are joined
+	// with no opening test at all, which is what produces the gradient indoors.
 	const double reach = (double)cl_fua_skytint_reach;
 	const double kInfinity = 1e30;
 
-	std::vector<double> dist( numsectors, kInfinity );
+	if (( subsectors == NULL ) || ( numsubsectors <= 0 ))
+		return;
+
+	// Leaf centres, averaged from the leaf's own corners. Cheap, and needed because a subsector has
+	// no centre point of its own the way a sector does.
+	std::vector<double> cx( numsubsectors, 0.0 ), cy( numsubsectors, 0.0 );
+	for ( int i = 0; i < numsubsectors; ++i )
+	{
+		const subsector_t &sub = subsectors[i];
+		if ( sub.numlines == 0 )
+			continue;
+
+		double sx = 0.0, sy = 0.0;
+		for ( DWORD k = 0; k < sub.numlines; ++k )
+		{
+			sx += FIXED2FLOAT( sub.firstline[k].v1->x );
+			sy += FIXED2FLOAT( sub.firstline[k].v1->y );
+		}
+		cx[i] = sx / (double)sub.numlines;
+		cy[i] = sy / (double)sub.numlines;
+	}
+
+	std::vector<double> dist( numsubsectors, kInfinity );
 	std::priority_queue<std::pair<double, int>, std::vector<std::pair<double, int> >,
 		std::greater<std::pair<double, int> > > queue;
 
-	for ( int i = 0; i < numsectors; ++i )
+	for ( int i = 0; i < numsubsectors; ++i )
 	{
-		const sector_t &s = sectors[i];
-		if ( s.GetTexture( sector_t::ceiling ) != skyflatnum )
+		const sector_t *s = subsectors[i].sector;
+		if (( s == NULL ) || ( s->GetTexture( sector_t::ceiling ) != skyflatnum ))
 			continue;
 		// A mapper or mod that coloured this sector meant it; theirs wins and we never touch it.
-		if (( s.ColorMap == NULL ) || (( s.ColorMap->Color.d & 0xFFFFFF ) != 0xFFFFFF ))
+		if (( s->ColorMap == NULL ) || (( s->ColorMap->Color.d & 0xFFFFFF ) != 0xFFFFFF ))
 			continue;
 
 		dist[i] = 0.0;
 		queue.push( std::make_pair( 0.0, i ));
 	}
 
-	// Every two-sided line, indexed by the sector it leads out of, so the walk does not rescan the
-	// whole level per step. Built once; a big map has far more lines than a sector has neighbours.
-	std::vector<std::vector<int> > linesOf( numsectors );
-	for ( int i = 0; i < numlines; ++i )
-	{
-		const line_t &l = lines[i];
-		if (( l.frontsector == NULL ) || ( l.backsector == NULL ))
-			continue;
-
-		linesOf[(int)( l.frontsector - sectors )].push_back( i );
-		linesOf[(int)( l.backsector - sectors )].push_back( i );
-	}
+	const double blend = cl_fua_skytint_gap / 100.0;
 
 	while ( !queue.empty( ))
 	{
@@ -214,44 +233,54 @@ void SkyTint_Rebuild( )
 		if ( at >= reach )
 			continue;					// nothing past the limit can be lit
 
-		for ( size_t n = 0; n < linesOf[here].size( ); ++n )
+		const subsector_t &sub = subsectors[here];
+		for ( DWORD k = 0; k < sub.numlines; ++k )
 		{
-			const line_t &l = lines[linesOf[here][n]];
-			const sector_t *from = &sectors[here];
-			sector_t *to = ( l.frontsector == from ) ? l.backsector : l.frontsector;
-			const int ti = (int)( to - sectors );
-
-			if ( to == from )
-				continue;
-			if (( to->ColorMap == NULL ) || (( to->ColorMap->Color.d & 0xFFFFFF ) != 0xFFFFFF ))
+			const seg_t &seg = sub.firstline[k];
+			if (( seg.PartnerSeg == NULL ) || ( seg.PartnerSeg->Subsector == NULL ))
 				continue;
 
-			// The gap light has to get through. A closed door passes nothing; a slit passes a
-			// little, at the cost of counting as a longer journey.
-			const fixed_t mx = ( l.v1->x + l.v2->x ) / 2, my = ( l.v1->y + l.v2->y ) / 2;
-			const fixed_t openTop = MIN( from->ceilingplane.ZatPoint( mx, my ), to->ceilingplane.ZatPoint( mx, my ));
-			const fixed_t openBot = MAX( from->floorplane.ZatPoint( mx, my ), to->floorplane.ZatPoint( mx, my ));
-			if ( openTop <= openBot )
+			const int ti = (int)( seg.PartnerSeg->Subsector - subsectors );
+			if (( ti < 0 ) || ( ti >= numsubsectors ) || ( ti == here ))
 				continue;
 
-			const double opening = FIXED2FLOAT( openTop - openBot );
-			const double full = FIXED2FLOAT( MAX( from->ceilingplane.ZatPoint( mx, my ) - from->floorplane.ZatPoint( mx, my ),
-				to->ceilingplane.ZatPoint( mx, my ) - to->floorplane.ZatPoint( mx, my )));
+			const sector_t *to = subsectors[ti].sector;
+			if (( to == NULL ) || ( to->ColorMap == NULL ) ||
+				(( to->ColorMap->Color.d & 0xFFFFFF ) != 0xFFFFFF ))
+			{
+				continue;
+			}
 
-			// Centre to the doorway to the next centre: an approximation of the path light takes,
-			// and one that costs nothing since every sector already carries its own centre point.
-			const double toDoor = Distance2( FIXED2FLOAT( from->soundorg[0] ), FIXED2FLOAT( from->soundorg[1] ),
-				FIXED2FLOAT( mx ), FIXED2FLOAT( my ));
-			const double fromDoor = Distance2( FIXED2FLOAT( mx ), FIXED2FLOAT( my ),
-				FIXED2FLOAT( to->soundorg[0] ), FIXED2FLOAT( to->soundorg[1] ));
+			const double mx = FIXED2FLOAT(( seg.v1->x / 2 ) + ( seg.v2->x / 2 ));
+			const double my = FIXED2FLOAT(( seg.v1->y / 2 ) + ( seg.v2->y / 2 ));
 
-			// cl_fua_skytint_gap decides how much the size of the gap matters: at 0 every opening
-			// counts as wide open, at 100 a half-height gap costs twice the distance.
-			const double raw = OpeningFactor( opening, full );
-			const double blend = cl_fua_skytint_gap / 100.0;
-			const double factor = ( raw * blend ) + ( 1.0 - blend );
+			double factor = 1.0;
+			if ( seg.linedef != NULL )
+			{
+				// A real wall between two sectors: light only crosses a genuine gap, so a closed
+				// door stays dark. A seg with no linedef is a BSP cut INSIDE one sector -- there is
+				// nothing there to block anything, which is exactly why a room can fade across
+				// itself now.
+				const sector_t *from = sub.sector;
+				const fixed_t fx = FLOAT2FIXED( mx ), fy = FLOAT2FIXED( my );
+				const fixed_t openTop = MIN( from->ceilingplane.ZatPoint( fx, fy ), to->ceilingplane.ZatPoint( fx, fy ));
+				const fixed_t openBot = MAX( from->floorplane.ZatPoint( fx, fy ), to->floorplane.ZatPoint( fx, fy ));
+				if ( openTop <= openBot )
+					continue;
 
-			const double step = StepCost( toDoor + fromDoor, factor );
+				const double opening = FIXED2FLOAT( openTop - openBot );
+				const double full = FIXED2FLOAT( MAX(
+					from->ceilingplane.ZatPoint( fx, fy ) - from->floorplane.ZatPoint( fx, fy ),
+					to->ceilingplane.ZatPoint( fx, fy ) - to->floorplane.ZatPoint( fx, fy )));
+
+				// cl_fua_skytint_gap: at 0 every opening counts as wide open, at 100 a half-height
+				// gap costs twice the distance.
+				const double raw = OpeningFactor( opening, full );
+				factor = ( raw * blend ) + ( 1.0 - blend );
+			}
+
+			const double step = StepCost(
+				Distance2( cx[here], cy[here], mx, my ) + Distance2( mx, my, cx[ti], cy[ti] ), factor );
 			if ( step < 0.0 )
 				continue;				// impassable
 
@@ -264,9 +293,9 @@ void SkyTint_Rebuild( )
 		}
 	}
 
-	g_tint.assign( numsectors, PalEntry( 255, 255, 255 ));
+	g_tint.assign( numsubsectors, PalEntry( 255, 255, 255 ));
 
-	for ( int i = 0; i < numsectors; ++i )
+	for ( int i = 0; i < numsubsectors; ++i )
 	{
 		// Distance 0 is the open sky itself and is always lit: reach controls how far the light
 		// travels INDOORS, so setting it to nothing should mean "outdoors only", not "off".
@@ -283,6 +312,60 @@ void SkyTint_Rebuild( )
 		g_tint[i] = PalEntry( (BYTE)lit.r, (BYTE)lit.g, (BYTE)lit.b );
 		g_any = true;
 	}
+
+	// Per-sector summary for the callers that know only a sector. "Brightest" by total, so a
+	// doorway leaf speaks for its sector rather than the darkest corner of it.
+	g_brightestOf.assign( numsectors, PalEntry( 255, 255, 255 ));
+	for ( int i = 0; i < numsubsectors; ++i )
+	{
+		const sector_t *s = subsectors[i].sector;
+		if ( s == NULL )
+			continue;
+
+		const ptrdiff_t si = s - sectors;
+		if (( si < 0 ) || ( si >= (ptrdiff_t)numsectors ))
+			continue;
+
+		const PalEntry &mine = g_tint[i];
+		PalEntry &best = g_brightestOf[si];
+		if (( mine.r + mine.g + mine.b ) < ( best.r + best.g + best.b ))
+			best = mine;
+	}
+}
+
+namespace
+{
+
+// Multiply a stored tint into whatever the surface already had.
+void ApplyIndex( ptrdiff_t at, FColormap &cm )
+{
+	if (( at < 0 ) || ( at >= (ptrdiff_t)g_tint.size( )))
+		return;
+
+	const PalEntry &tint = g_tint[at];
+	if ( tint.r == 255 && tint.g == 255 && tint.b == 255 )
+		return;
+
+	// Multiplied into whatever the surface already had rather than replacing it: the tint is light
+	// arriving from outside, not a repaint, so a coloured sector keeps its own character.
+	cm.LightColor.r = (BYTE)(( cm.LightColor.r * tint.r ) / 255 );
+	cm.LightColor.g = (BYTE)(( cm.LightColor.g * tint.g ) / 255 );
+	cm.LightColor.b = (BYTE)(( cm.LightColor.b * tint.b ) / 255 );
+}
+
+} // namespace
+
+bool SkyTint_Active( )
+{
+	return g_any;
+}
+
+void SkyTint_ApplySub( const subsector_t *sub, FColormap &cm )
+{
+	if ( !g_any || ( sub == NULL ) || ( subsectors == NULL ))
+		return;
+
+	ApplyIndex( sub - subsectors, cm );
 }
 
 void SkyTint_Apply( const sector_t *sec, FColormap &cm )
@@ -290,14 +373,18 @@ void SkyTint_Apply( const sector_t *sec, FColormap &cm )
 	if ( !g_any || ( sec == NULL ) || ( sectors == NULL ))
 		return;
 
-	// gl_FakeFlat hands out pointers to STACK copies as well as to the real array, so an index is
-	// only meaningful for a sector that actually lives in the level's array.
-	const ptrdiff_t at = sec - sectors;
-	if (( at < 0 ) || ( at >= (ptrdiff_t)g_tint.size( )))
+	// [rc4l] Only a few callers know just the sector: sprites away from a leaf, horizon portals.
+	// Light lives per subsector now, so pick this sector's BRIGHTEST leaf -- erring toward the lit
+	// side keeps a thing standing in a doorway from going dark, which reads worse than the reverse.
+	//
+	// gl_FakeFlat hands out pointers to STACK copies as well as to the real array, so a sector that
+	// does not live in the level's array has no leaves to look up and is left alone.
+	const ptrdiff_t si = sec - sectors;
+	if (( si < 0 ) || ( si >= (ptrdiff_t)numsectors ))
 		return;
 
-	const PalEntry &tint = g_tint[at];
-	if ( tint.d == 0xFFFFFF || ( tint.r == 255 && tint.g == 255 && tint.b == 255 ))
+	const PalEntry &tint = g_brightestOf[si];
+	if ( tint.r == 255 && tint.g == 255 && tint.b == 255 )
 		return;
 
 	// Multiplied into whatever the sector already had rather than replacing it: the tint is light
