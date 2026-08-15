@@ -18,6 +18,7 @@
 #define ZX_SKYTINT_H
 
 #include <cstddef>
+#include <string>
 
 struct sector_t;
 struct subsector_t;
@@ -53,6 +54,21 @@ bool SkyTint_Active();
 
 // TEMPORARY, for the fua_skytintinfo diagnostic.
 size_t SkyTintTableSize();
+
+// [rc4l] Once per frame, straight after FCanvasTextureInfo::UpdateAll.
+//
+// A 3D skybox is a camera, not an image, so the only way to know its colour is to render it and
+// look. This drives that: it registers a small canvas texture against a SkyViewpoint, lets the
+// engine's own camera-texture pass render it, reads the result back and rebuilds the table with it.
+//
+// It has to be here rather than at level load because P_SetupLevel runs outside a frame, with no
+// usable GL state. Costs nothing once every skybox in the level has been sampled, which is normally
+// within the first frame or two, and nothing at all on a level without one.
+void SkyTint_FrameHook();
+
+// TEMPORARY, for fua_skytintinfo: the colour each sampled skybox resolved to. std::string rather
+// than FString so this header stays free of engine string headers; the caller converts.
+void SkyTintSkyboxSamples(std::string &out);
 
 // How many sky-seeing leaves render a 3D skybox instead of a texture. Those are not lit yet, and
 // this is how you find out a map has them rather than wondering why part of it stayed grey.

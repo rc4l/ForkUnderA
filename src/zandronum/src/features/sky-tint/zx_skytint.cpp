@@ -3,6 +3,10 @@
 //
 // [rc4l] See zx_skytint.h for why nothing here writes to the world.
 
+// [rc4l] Before everything else, like features/hitboxviz: the system GL headers have to land before
+// anything that pulls in the renderer, and the feature header cannot pull them in for us.
+#include "gl/system/gl_system.h"
+
 #include "features/sky-tint/zx_skytint.h"
 #include "features/sky-tint/computation/skytint_compute.h"
 
@@ -19,7 +23,9 @@
 #include "bitmap.h"
 #include "g_level.h"
 #include "g_shared/a_sharedglobal.h"	// ASkyViewpoint
+#include "r_utility.h"					// FCanvasTextureInfo
 #include "gl/renderer/gl_colormap.h"
+#include "gl/textures/gl_material.h"	// FMaterial, to bind the rendered canvas for readback
 
 // [rc4l] Declared with CVAR() in gl/scene/gl_sky.cpp and never exported. Matched here so a sector
 // with a skybox is classified the same way the renderer classifies it, including when someone turns
@@ -268,6 +274,68 @@ SectorSky SkyForSector( const sector_t *sec )
 	return out;
 }
 
+// [rc4l] Sampling a 3D skybox.
+//
+// A skybox is not an image, it is a camera: the engine renders the level from a SkyViewpoint actor
+// and shows that where the sky would be. So the only honest way to know its colour is to render it
+// and look, which is what a real engine does for reflection probes too.
+//
+// The pieces are all the engine's own. FCanvasTextureInfo::Add is how a map wires a camera to a
+// texture, and FCanvasTextureInfo::UpdateAll (called once per frame from gl_scene) renders every
+// registered one. Going through that rather than calling RenderTextureView directly matters:
+// UpdateAll saves and restores the fixedcolormap globals that camera rendering clobbers, and it
+// respects bNeedsUpdate. Nothing ever draws our texture on a surface, so nothing re-arms
+// bNeedsUpdate, which means it renders once and then stops on its own rather than costing a scene
+// render every frame forever.
+//
+// 32x32 is deliberate: we want one average colour, and a smaller render is a cheaper one. Power of
+// two so there is no padding to skip past on readback.
+const int kBoxSampleSize = 32;
+
+FCanvasTexture *g_boxCanvas = NULL;
+FTextureID g_boxCanvasId = FNullTextureID( );
+ASkyViewpoint *g_boxPendingFor = NULL;		// registered and waiting for a frame to render it
+
+// Viewpoints still needing a sample, and the answers for the ones already done. Keyed by actor
+// pointer, which is safe only because both are cleared with the level (SkyTint_Clear).
+std::vector<ASkyViewpoint *> g_boxQueue;
+std::map<ASkyViewpoint *, SkySource> g_boxDone;
+
+// Read the canvas back off the GPU. In GL a canvas texture lives in an FBO and its CPU-side pixels
+// are never filled, so GetPixels() would hand back an empty buffer -- checked, not assumed.
+bool ReadCanvas( std::vector<SkyRgb> &out, int &width )
+{
+	if ( g_boxCanvas == NULL )
+		return false;
+
+	FMaterial *mat = FMaterial::ValidateTexture( g_boxCanvas, false );
+	if ( mat == NULL )
+		return false;
+
+	mat->Bind( 0, 0 );
+
+	const int w = kBoxSampleSize, h = kBoxSampleSize;
+	std::vector<unsigned char> buf( (size_t)w * h * 4, 0 );
+	glGetTexImage( GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, &buf[0] );
+
+	// An all-black read means the render has not landed yet. Treated as "not ready" rather than as a
+	// black sky, because tinting the world black off a failed read would be a spectacular way to be
+	// wrong.
+	bool anyLight = false;
+	out.clear( );
+	out.reserve( (size_t)w * h );
+	for ( int i = 0; i < w * h; ++i )
+	{
+		const int r = buf[i * 4 + 0], g = buf[i * 4 + 1], b = buf[i * 4 + 2];
+		if (( r | g | b ) != 0 )
+			anyLight = true;
+		out.push_back( SkyRgb( r, g, b ));
+	}
+
+	width = w;
+	return anyLight;
+}
+
 // The colour of one sector's sky, composited if it is a double sky. False when there is nothing
 // usable to read.
 bool ReadSkyForSector( const sector_t *sec, std::vector<SkyRgb> &out, int &width )
@@ -291,6 +359,26 @@ bool ReadSkyForSector( const sector_t *sec, std::vector<SkyRgb> &out, int &width
 	return !out.empty( );
 }
 
+// The per-leaf tables only. Split out from SkyTint_Clear so a rebuild can reset them WITHOUT
+// throwing away sampled skyboxes, which is what the frame hook needs.
+void ClearTables( )
+{
+	g_tint.clear( );
+	g_brightestOf.clear( );
+	g_any = false;
+	g_builtForSky = FNullTextureID( );
+	g_builtForSky2 = FNullTextureID( );
+	g_skyboxLeaves = 0;
+}
+
+// Sampled skyboxes, keyed by actor pointer and therefore only valid within one level.
+void ForgetSkyboxes( )
+{
+	g_boxQueue.clear( );
+	g_boxDone.clear( );
+	g_boxPendingFor = NULL;
+}
+
 } // namespace
 
 // [rc4l] TEMPORARY diagnostic: what does the rebuild actually see? Added chasing sky tint dying
@@ -307,16 +395,19 @@ CCMD( fua_skytintinfo )
 		(unsigned)zx::SkyTintTableSize( ), (int)zx::SkyTint_Active( ), zx::SkyTintSkyboxLeaves( ),
 		(int)!!( level.flags & LEVEL_DOUBLESKY ), (int)!!( level.flags & LEVEL_SWAPSKIES ),
 		sky2texture.GetIndex( ));
+
+	std::string boxes;
+	zx::SkyTintSkyboxSamples( boxes );
+	Printf( "skytint: skyboxes=%s\n", boxes.c_str( ));
 }
 
 void SkyTint_Clear( )
 {
-	g_tint.clear( );
-	g_brightestOf.clear( );
-	g_any = false;
-	g_builtForSky = FNullTextureID( );
-	g_builtForSky2 = FNullTextureID( );
-	g_skyboxLeaves = 0;
+	ClearTables( );
+
+	// Skybox results are keyed by actor pointer, which only stays meaningful within one level. The
+	// canvas texture itself is kept: it belongs to TexMan now and is reused for the next level.
+	ForgetSkyboxes( );
 }
 
 void SkyTint_SkyChanged( )
@@ -329,7 +420,21 @@ void SkyTint_SkyChanged( )
 
 void SkyTint_Rebuild( )
 {
-	SkyTint_Clear( );
+	// [rc4l] NOT SkyTint_Clear: that also forgets sampled skyboxes, and this function is what the
+	// frame hook calls right after caching one. Clearing here would drop the answer, re-queue the
+	// same viewpoint, and spin forever rendering it. The skybox cache is dropped on a level change
+	// instead, detected below.
+	//
+	// The subsector array is the level-change signal: a new level allocates a new one, and the actor
+	// pointers the cache is keyed by belong to the level that is going away.
+	static subsector_t *lastLevel = NULL;
+	if ( subsectors != lastLevel )
+	{
+		ForgetSkyboxes( );
+		lastLevel = subsectors;
+	}
+
+	ClearTables( );
 
 	// [rc4l] NEVER on a server. P_SetupLevel runs there too, and this reads the sky TEXTURE -- which
 	// a dedicated server has no business touching and does not keep in a usable state. Doing it
@@ -392,7 +497,8 @@ void SkyTint_Rebuild( )
 	// which is deliberate for now.
 	std::vector<SkySource> sources;
 	std::vector<int> litBy( numsubsectors, -1 );
-	std::map<int, int> sourceOfTexture;			// texture index -> index into `sources`
+	std::map<int, int> sourceOfTexture;					// texture index -> index into `sources`
+	std::map<ASkyViewpoint *, int> boxSourceIdx;		// skybox viewpoint -> index into `sources`
 
 	for ( int i = 0; i < numsubsectors; ++i )
 	{
@@ -409,10 +515,41 @@ void SkyTint_Rebuild( )
 
 		if ( sky.box != NULL )
 		{
-			// A 3D skybox has no texture to average. Counted so the diagnostic can say so, and left
-			// unseeded rather than guessed at: lighting a room from a sky it is not showing would be
-			// worse than not lighting it.
 			++g_skyboxLeaves;
+
+			// Already sampled: it seeds like any other sky. Not yet: queue it and leave this leaf
+			// dark for now. SkyTint_FrameHook renders it and rebuilds, so it lights up a frame or
+			// two into the level rather than never.
+			std::map<ASkyViewpoint *, SkySource>::const_iterator got = g_boxDone.find( sky.box );
+			if ( got == g_boxDone.end( ))
+			{
+				bool queued = false;
+				for ( size_t q = 0; q < g_boxQueue.size( ); ++q )
+					if ( g_boxQueue[q] == sky.box ) { queued = true; break; }
+				if ( !queued )
+					g_boxQueue.push_back( sky.box );
+				continue;
+			}
+
+			// Keyed by the actor itself, in its own map. Folding it into the texture-keyed one meant
+			// inventing a fake texture index, and every scheme for that either collided with a real
+			// texture or changed as the map grew.
+			std::map<ASkyViewpoint *, int>::const_iterator seen = boxSourceIdx.find( sky.box );
+			int idx;
+			if ( seen != boxSourceIdx.end( ))
+			{
+				idx = seen->second;
+			}
+			else
+			{
+				idx = (int)sources.size( );
+				sources.push_back( got->second );
+				boxSourceIdx[sky.box] = idx;
+			}
+
+			dist[i] = 0.0;
+			litBy[i] = idx;
+			queue.push( std::make_pair( 0.0, i ));
 			continue;
 		}
 
@@ -645,6 +782,86 @@ size_t SkyTintTableSize( )
 int SkyTintSkyboxLeaves( )
 {
 	return g_skyboxLeaves;
+}
+
+// TEMPORARY, for fua_skytintinfo: what colour did each sampled skybox come out as, and how hard
+// does it push. Without this, "the table is built" and "the table does anything" look identical.
+void SkyTintSkyboxSamples( std::string &out )
+{
+	out.clear( );
+	if ( g_boxDone.empty( ))
+	{
+		out = ( g_boxQueue.empty( ) && ( g_boxPendingFor == NULL )) ? "none" : "pending";
+		return;
+	}
+
+	char buf[96];
+	for ( std::map<ASkyViewpoint *, SkySource>::const_iterator it = g_boxDone.begin( );
+		it != g_boxDone.end( ); ++it )
+	{
+		mysnprintf( buf, sizeof( buf ), "[%d,%d,%d str=%d] ", it->second.tint.r, it->second.tint.g,
+			it->second.tint.b, it->second.strengthPct );
+		out += buf;
+	}
+}
+
+void SkyTint_FrameHook( )
+{
+	// Called from gl_scene straight after FCanvasTextureInfo::UpdateAll, so anything registered on a
+	// previous frame has just been rendered and is ready to read.
+	if ( !cl_fua_skytint || ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+		return;
+	if (( g_boxPendingFor == NULL ) && g_boxQueue.empty( ))
+		return;
+	if ( gamestate != GS_LEVEL )
+		return;
+
+	// A viewpoint registered last frame: try to read what was rendered for it.
+	if ( g_boxPendingFor != NULL )
+	{
+		std::vector<SkyRgb> pixels;
+		int width = 0;
+		if ( !ReadCanvas( pixels, width ))
+			return;			// not rendered yet; try again next frame
+
+		const SkyAverage mode = ( cl_fua_skytint_mode == 1 ) ? SkyAverage::Dominant : SkyAverage::Mean;
+
+		// Weighting is NOT applied here. Row weights describe where a row sits on the sky dome, and
+		// this is a camera frame of a room, not a dome: its rows mean nothing of the kind. Every
+		// pixel counts equally, which is the honest reading of "what is up there".
+		SkyRgb tint = AverageSky( pixels, width, mode, SkyWeight::Cosine );
+
+		SkySource src;
+		src.strengthPct = StrengthForSky( cl_fua_skytint_strength, SkyLuminance( tint ),
+			cl_fua_skytint_brightness );
+		tint = NormaliseBrightness( tint );
+		src.tint = ClampSaturation( tint, cl_fua_skytint_saturation );
+
+		g_boxDone[g_boxPendingFor] = src;
+		g_boxPendingFor = NULL;
+
+		// The table was built without this sky. Rebuild so the leaves under it stop being dark.
+		SkyTint_Rebuild( );
+		return;
+	}
+
+	// Nothing in flight: register the next one and let UpdateAll draw it on the following frame.
+	ASkyViewpoint *box = g_boxQueue.back( );
+	g_boxQueue.pop_back( );
+	if ( box == NULL )
+		return;
+
+	if ( g_boxCanvas == NULL )
+	{
+		g_boxCanvas = new FCanvasTexture( "__fua_skysample", kBoxSampleSize, kBoxSampleSize );
+		g_boxCanvasId = TexMan.AddTexture( g_boxCanvas );
+	}
+	if ( !g_boxCanvasId.isValid( ))
+		return;
+
+	g_boxCanvas->NeedUpdate( );
+	FCanvasTextureInfo::Add( box, g_boxCanvasId, 90 );
+	g_boxPendingFor = box;
 }
 
 bool SkyTint_Active( )
