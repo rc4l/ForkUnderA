@@ -74,16 +74,6 @@ int SrgbFromLinear(double linear)
 	return Clamp255(static_cast<int>((s * 255.0) + 0.5));
 }
 
-int RowsAboveHorizon(int height)
-{
-	if (height <= 0)
-		return 0;
-
-	// See the header: gl_skydome scales anything taller by 240/height, so the upper hemisphere ends
-	// at row 240 and the rest of the texture is drawn below eye level.
-	return (height > 240) ? 240 : height;
-}
-
 double RowWeight(int row, int height, SkyWeight mode)
 {
 	if (height <= 0)
@@ -93,23 +83,19 @@ double RowWeight(int row, int height, SkyWeight mode)
 	if (row >= height)
 		row = height - 1;
 
-	// Below the horizon contributes nothing. It cannot light a floor, and it is not what a player
-	// looking around actually sees, so it has no business in either weighting.
-	const int visible = RowsAboveHorizon(height);
-	if (row >= visible)
-		return 0.0;
-
 	if (mode == SkyWeight::Horizon)
 	{
-		// The lower half OF THE VISIBLE BAND. Not the lower half of the texture: on a tall sky those
-		// are different by a long way, and the texture-half version was mostly below the horizon.
-		return (row >= (visible / 2)) ? 1.0 : 0.0;
+		// The lower half only. This is not the physically correct weighting and is not trying to
+		// be: it is the band a player actually looks at, so it matches the mood they see.
+		return (row >= (height / 2)) ? 1.0 : 0.0;
 	}
 
-	// Cosine of elevation across the visible band. Row 0 is the zenith and the last visible row is
-	// the horizon, so elevation runs 90 degrees down to 0. A horizontal surface takes light in
-	// proportion to cos(angle-from-normal), which is largest straight overhead.
-	const double t = (visible > 1) ? (static_cast<double>(row) / static_cast<double>(visible - 1)) : 0.0;
+	// Cosine of elevation. A Doom sky texture spans the dome with the TOP row at the zenith, so
+	// elevation runs from 90 degrees at row 0 down to 0 at the bottom. A horizontal surface takes
+	// light in proportion to cos(angle-from-normal), which is largest straight overhead -- the
+	// opposite end of the texture from the Horizon mode, which is exactly the disagreement the
+	// header warns about.
+	const double t = (height > 1) ? (static_cast<double>(row) / static_cast<double>(height - 1)) : 0.0;
 	const double elevation = (1.0 - t) * (3.14159265358979323846 / 2.0);
 
 	return std::sin(elevation);		// sin(elevation) == cos(angle from straight up)
