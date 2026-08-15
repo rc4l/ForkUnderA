@@ -13,6 +13,8 @@
 #include <mutex>
 #include <thread>
 
+#include "features/wad-download/computation/jobstate_compute.h"
+
 #include "cmdlib.h"
 #include "c_dispatch.h"
 #include "doomtype.h"
@@ -269,9 +271,10 @@ std::vector<std::string> CollectRoots()
 
 void Begin(bool force)
 {
-	if (g_running.load())
-		return;
-	if (!force && g_started)
+	// [rc4l] The rule, not a copy of it: computation/jobstate_compute, shared with the downloader
+	// and the file resolver. Asked BEFORE CollectRoots, which reads GameConfig -- the ordinary case
+	// is a draw asking again for a scan that has already run, and that must stay a bool test.
+	if (!zx::JobAcceptsRescan(g_running.load(), g_started, force))
 		return;
 
 	const std::vector<std::string> roots = CollectRoots();

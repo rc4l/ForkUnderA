@@ -49,6 +49,7 @@
 #include "features/wad-download/computation/downloadplan_compute.h"
 #include "features/wad-download/computation/fileresolve_compute.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
+#include "features/wad-download/computation/jobstate_compute.h"
 #include "features/wad-download/computation/wadstore_compute.h"
 
 //*****************************************************************************
@@ -864,7 +865,20 @@ bool Start(const std::vector<std::string> &extraSites,
 	}
 	// [rc4l] A run already going means the player picked another server. Abandon that one and queue
 	// this -- see g_deferredJob for why it is queued rather than started here.
-	const bool replacing = IsRunning();
+	//
+	// Through computation/jobstate_compute, which is where the three workers' policies now live side
+	// by side. This one DEFERS where the library scan and the file resolver refuse, and having that
+	// difference be a named argument rather than three separate ifs is the reason to share it at
+	// all: the saving is not lines, it is that the policies can be read against each other.
+	const zx::JobStart decision = zx::JobDecideStart(IsRunning(), files.size(),
+		zx::JobWhenBusy::Defer);
+
+	// files.empty() was already refused above, so Refuse cannot reach here -- asserted by returning
+	// the same false it would have, rather than falling through into a job with nothing in it.
+	if (decision == zx::JobStart::Refuse)
+		return false;
+
+	const bool replacing = (decision == zx::JobStart::Defer);
 	if (replacing)
 		Abandon();
 
