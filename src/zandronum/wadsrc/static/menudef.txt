@@ -449,14 +449,16 @@ OptionMenu "FUASkyTintOptions"
 	Option	"Tint from sky",			"cl_fua_skytint",				"OnOff"
 	Slider	"Strength",					"cl_fua_skytint_strength",		0.0, 100.0, 5.0, 0
 	Slider	"Max colour",				"cl_fua_skytint_saturation",	0.0, 100.0, 5.0, 0
-	Slider	"Indoor bleed",				"cl_fua_skytint_bleed",			0.0, 4.0, 1.0, 0
+	Slider	"Indoor reach",				"cl_fua_skytint_reach",			0.0, 2048.0, 64.0, 0
+	Slider	"Doorway matters",			"cl_fua_skytint_gap",			0.0, 100.0, 5.0, 0
 	StaticText " "
 	Option	"Sky colour from",			"cl_fua_skytint_mode",			"SkyTintModes"
 	Option	"Sky area",					"cl_fua_skytint_weight",		"SkyTintWeights"
 	StaticText " "
 	StaticText "Average is faithful; Dominant names the biggest colour in the sky.", 1
 	StaticText "Horizon is what you look at; Overhead is what lights a floor.", 1
-	StaticText "Indoor bleed: rooms inward the light reaches, halving each step.", 1
+	StaticText "Indoor reach: map units the light travels in (128 = a doorway).", 1
+	StaticText "Doorway matters: how much a narrow gap slows the light down.", 1
 }
 
 // [rc4l] fov-interp: FOV and how fast the view tweens to it. Its own submenu rather than rows in

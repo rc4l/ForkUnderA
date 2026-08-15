@@ -248,16 +248,48 @@ SkyRgb BlendFromWhite(SkyRgb tint, int pct)
 		((255 * (100 - pct)) + (tint.b * pct)) / 100);
 }
 
-int StrengthAtHop(int pct, int hop, int maxHops)
+int StrengthAtDistance(int pct, double distance, double reach)
 {
-	if ((hop < 0) || (maxHops < 0) || (hop > maxHops))
-		return 0;
 	if (pct <= 0)
 		return 0;
+	if (distance <= 0.0)
+		return pct;			// the open sky itself, lit whatever the reach is set to
+	if (reach <= 0.0)
+		return 0;			// no reach means no light travels indoors at all
+	if (distance >= reach)
+		return 0;
 
-	// Halving per hop. Deep enough and it reaches zero on its own, which is the wanted behaviour:
-	// light that has turned two corners is not lighting anything.
-	return (hop >= 31) ? 0 : (pct >> hop);
+	// Squared falloff: steep to begin with, trailing off toward the limit. Light through a doorway
+	// really does die fast, and a curve avoids the visible step a per-sector halving left between
+	// two pieces of the same wall.
+	const double t = 1.0 - (distance / reach);
+
+	return static_cast<int>((pct * t * t) + 0.5);
+}
+
+double OpeningFactor(double openingHeight, double fullHeight)
+{
+	if ((openingHeight <= 0.0) || (fullHeight <= 0.0))
+		return 0.0;			// a closed door passes nothing
+
+	const double t = openingHeight / fullHeight;
+
+	return (t >= 1.0) ? 1.0 : t;
+}
+
+double StepCost(double distance, double openingFactor)
+{
+	if (distance < 0.0)
+		distance = 0.0;
+	if (openingFactor <= 0.0)
+		return -1.0;		// impassable, and said so rather than returning a huge number
+
+	// Floored so a hairline gap costs ten times the distance rather than infinity: a crack under a
+	// door should let a little light through, just not much, and an unbounded multiplier would make
+	// the result depend on floating-point noise in the opening height.
+	const double factor = (openingFactor < 0.1) ? 0.1 : openingFactor;
+
+	return distance / factor;
 }
 
 } // namespace zx

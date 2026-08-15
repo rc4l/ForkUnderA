@@ -235,20 +235,71 @@ TEST(BlendFromWhite, ClampsAPercentageOutOfRange)
 
 // ---------------------------------------------------------------- the bleed
 
-TEST(StrengthAtHop, HalvesPerHopAndStopsAtTheLimit)
+TEST(StrengthAtDistance, IsFullAtTheSkyAndNothingBeyondTheReach)
 {
-	EXPECT_EQ(40, StrengthAtHop(40, 0, 2));
-	EXPECT_EQ(20, StrengthAtHop(40, 1, 2));
-	EXPECT_EQ(10, StrengthAtHop(40, 2, 2));
-	EXPECT_EQ(0, StrengthAtHop(40, 3, 2)) << "past the limit the light has turned too many corners";
+	EXPECT_EQ(40, StrengthAtDistance(40, 0.0, 512.0));
+	EXPECT_EQ(0, StrengthAtDistance(40, 512.0, 512.0));
+	EXPECT_EQ(0, StrengthAtDistance(40, 900.0, 512.0));
 }
 
-TEST(StrengthAtHop, RefusesNonsenseInsteadOfInventingLight)
+TEST(StrengthAtDistance, FallsOffFastAtFirstAndThenTrails)
 {
-	EXPECT_EQ(0, StrengthAtHop(0, 0, 2));
-	EXPECT_EQ(0, StrengthAtHop(40, -1, 2));
-	EXPECT_EQ(0, StrengthAtHop(40, 0, -1));
-	EXPECT_EQ(0, StrengthAtHop(40, 40, 99)) << "a shift that would overrun the type gives nothing";
+	// Squared curve: half way out keeps a quarter, not a half.
+	EXPECT_EQ(10, StrengthAtDistance(40, 256.0, 512.0));
+	EXPECT_GT(StrengthAtDistance(40, 128.0, 512.0), 20);
+	EXPECT_LT(StrengthAtDistance(40, 384.0, 512.0), 5);
+}
+
+// [rc4l] The reason this replaced a per-hop halving: the answer must not depend on how finely the
+// mapper cut their sectors. Same room, same distance, whether it is one sector or forty.
+TEST(StrengthAtDistance, DoesNotCareHowManySectorsTheDistanceWasSplitInto)
+{
+	const int oneBigStep = StrengthAtDistance(60, 300.0, 800.0);
+
+	double walked = 0.0;
+	for (int i = 0; i < 40; ++i)
+		walked += 300.0 / 40.0;		// the same 300 units, chopped into detail sectors
+
+	EXPECT_EQ(oneBigStep, StrengthAtDistance(60, walked, 800.0));
+}
+
+TEST(StrengthAtDistance, RefusesNonsenseInsteadOfInventingLight)
+{
+	EXPECT_EQ(0, StrengthAtDistance(0, 10.0, 512.0));
+	EXPECT_EQ(0, StrengthAtDistance(40, 10.0, 0.0));
+	EXPECT_EQ(0, StrengthAtDistance(40, 10.0, -5.0));
+	EXPECT_EQ(40, StrengthAtDistance(40, -1.0, 512.0)) << "behind the origin is still the origin";
+
+	// [rc4l] Reach governs how far light travels INDOORS. Zero must mean "outdoors only", not
+	// "feature off" -- the open sky is lit by definition and has no distance to travel.
+	EXPECT_EQ(40, StrengthAtDistance(40, 0.0, 0.0));
+}
+
+TEST(OpeningFactor, PassesEverythingThroughAFullGapAndNothingThroughAClosedDoor)
+{
+	EXPECT_DOUBLE_EQ(1.0, OpeningFactor(128.0, 128.0));
+	EXPECT_DOUBLE_EQ(1.0, OpeningFactor(200.0, 128.0)) << "wider than the wall is still just open";
+	EXPECT_DOUBLE_EQ(0.5, OpeningFactor(64.0, 128.0));
+	EXPECT_DOUBLE_EQ(0.0, OpeningFactor(0.0, 128.0));
+	EXPECT_DOUBLE_EQ(0.0, OpeningFactor(-5.0, 128.0));
+	EXPECT_DOUBLE_EQ(0.0, OpeningFactor(64.0, 0.0));
+}
+
+TEST(StepCost, MakesANarrowOpeningCostMoreDistanceRatherThanBlockingOutright)
+{
+	EXPECT_DOUBLE_EQ(100.0, StepCost(100.0, 1.0));
+	EXPECT_DOUBLE_EQ(200.0, StepCost(100.0, 0.5));
+
+	// Floored at a tenth, so a hairline gap is expensive but finite -- an unbounded multiplier would
+	// hand the result to floating-point noise in the opening height.
+	EXPECT_DOUBLE_EQ(1000.0, StepCost(100.0, 0.01));
+	EXPECT_DOUBLE_EQ(1000.0, StepCost(100.0, 0.1));
+}
+
+TEST(StepCost, SaysImpassableRatherThanReturningAHugeNumber)
+{
+	EXPECT_LT(StepCost(100.0, 0.0), 0.0);
+	EXPECT_DOUBLE_EQ(0.0, StepCost(-50.0, 1.0)) << "a negative distance is no distance";
 }
 
 TEST(SkyRgb, DefaultsToBlackAndClampsWhatItIsGiven)
