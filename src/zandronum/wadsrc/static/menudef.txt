@@ -387,6 +387,17 @@ OptionMenu "OptionsMenu"
 //
 //-------------------------------------------------------------------------------------------
 
+// [rc4l] fua-caching: what gets preloaded at level load. "Placed actors" warms every animation of
+// everything standing on the map; "Full" additionally follows spawn references in DECORATE (the
+// explosions/debris/blood a death can produce), which is what stops first-kill hitching in
+// effect-heavy mods. Off restores stock lazy loading, byte for byte.
+OptionValue "FuaCachingModes"
+{
+	0, "Off"
+	1, "Placed actors"
+	2, "Full (spawn closure)"
+}
+
 OptionMenu "FUAOptions"
 {
 	Title "FUA OPTIONS"
@@ -399,6 +410,7 @@ OptionMenu "FUAOptions"
 	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
 	// notice. On by default; off means no update check and no network call.
 	Option	"Check for updates",		"cl_fua_update_notify",		"OnOff"
+	Option	"Asset caching",			"cl_fua_caching",			"FuaCachingModes"
 }
 
 // [rc4l] features/damage-tint: players on damaging floors pick up the floor's color -- a glow

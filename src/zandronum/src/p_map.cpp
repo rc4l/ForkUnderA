@@ -139,6 +139,19 @@ static int		tmunstuck;     /* killough 8/1/98: whether to allow unsticking */
 // but don't process them until the move is proven valid
 TArray<line_t *> spechit;
 
+// [rc4l] Secnode replay: P_CreateSecNodeList used to re-sweep the same blockmap lines
+// P_CheckPosition had just enumerated for the same (thing, x, y) box. P_CheckPosition
+// records its completed line enumeration here and AActor::LinkToWorld's
+// P_CreateSecNodeList replays it in identical order instead of sweeping again.
+// One-shot: every P_CreateSecNodeList call consumes or discards the recording, so a
+// stale list can never replay -- the world can change between unrelated calls, but not
+// between a move's check and its link, which run back to back inside P_TryMove with no
+// thinkers in between.
+static TArray<line_t *> SecnodeReplayLines;
+static AActor *SecnodeReplayThing;
+static fixed_t SecnodeReplayX, SecnodeReplayY;
+static bool SecnodeReplayValid;
+
 // Temporary holder for thing_sectorlist threads
 msecnode_t* sector_list = NULL;		// phares 3/16/98
 
@@ -1801,11 +1814,21 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 
 	bool good = true;
 
+	// [rc4l] Loop-invariant: the answer depends only on `thing` and per-tic client state, so hoist
+	// it out of the line loop. It was being recomputed (network state + demo lookups) once per
+	// blockmap line, per move, per actor -- measurable during mass-death actor storms.
+	const bool specUnrestricted = P_IsSpectatorUnrestricted(thing);
+
+	SecnodeReplayValid = false;
+	SecnodeReplayLines.Clear();
+
 	while ((ld = it.Next()))
 	{
+		SecnodeReplayLines.Push(ld); // [rc4l] record the enumeration for the secnode replay
+
 		// [AK] Spectators without physical restrictions should only be executing
 		// line specials if they reached this point.
-		if (P_IsSpectatorUnrestricted(thing))
+		if (specUnrestricted)
 		{
 			if (ld->special)
 				spechit.Push(ld);
@@ -1815,6 +1838,13 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 
 		good &= PIT_CheckLine(ld, box, tm);
 	}
+	// [rc4l] The enumeration completed, so it is a faithful line list for this
+	// (thing, x, y) box -- publish it for the matching LinkToWorld.
+	SecnodeReplayThing = thing;
+	SecnodeReplayX = x;
+	SecnodeReplayY = y;
+	SecnodeReplayValid = true;
+
 	if (!good)
 	{
 		return false;
@@ -2447,7 +2477,11 @@ bool P_TryMove(AActor *thing, fixed_t x, fixed_t y,
 	// [BC] Flag this thing as having moved.
 	thing->STFlags |= STFL_POSITIONCHANGED;
 
-	thing->LinkToWorld();
+	// [rc4l] P_CheckPosition already resolved this exact (x, y) into tm.sector at the top of this
+	// move; the parameterless LinkToWorld() would walk the gameplay BSP again for the identical
+	// answer. Bit-exact elision -- measured against mass simultaneous deaths (a "kill monsters"
+	// storm of ~5k effect actors), where the per-move re-walk was a top sim hotspot.
+	thing->LinkToWorld(tm.sector);
 
 	if (thing->flags2 & MF2_FLOORCLIP)
 	{
@@ -2675,7 +2709,8 @@ bool P_OldTryMove (AActor *thing, fixed_t x, fixed_t y,
 	thing->x = x;
 	thing->y = y;
 
-	thing->LinkToWorld( );
+	// [rc4l] Same elision as P_TryMove: tm.sector is P_CheckPosition's answer for this (x, y).
+	thing->LinkToWorld( tm.sector );
 
 	// if any special lines were hit, do the effect
 	// [AK] Allow spectators without physical restrictions to execute line specials.
@@ -7222,11 +7257,32 @@ void P_CreateSecNodeList(AActor *thing, fixed_t x, fixed_t y)
 	}
 
 	FBoundingBox box(thing->x, thing->y, thing->radius);
+
+	// [rc4l] Secnode replay (see the statics near spechit): when the immediately
+	// preceding P_CheckPosition enumerated this exact (thing, x, y) box, replay its
+	// recorded line list in identical order instead of sweeping the blockmap again.
+	// Any P_CreateSecNodeList call consumes or discards the recording.
+	const bool replay = SecnodeReplayValid && SecnodeReplayThing == thing &&
+		SecnodeReplayX == thing->x && SecnodeReplayY == thing->y;
+	SecnodeReplayValid = false;
+
 	FBlockLinesIterator it(box);
 	line_t *ld;
+	unsigned int ri = 0;
 
-	while ((ld = it.Next()))
+	for (;;)
 	{
+		if (replay)
+		{
+			if (ri >= SecnodeReplayLines.Size())
+				break;
+			ld = SecnodeReplayLines[ri++];
+		}
+		else if ((ld = it.Next()) == NULL)
+		{
+			break;
+		}
+
 		if (box.Right() <= ld->bbox[BOXLEFT] ||
 			box.Left() >= ld->bbox[BOXRIGHT] ||
 			box.Top() <= ld->bbox[BOXBOTTOM] ||
