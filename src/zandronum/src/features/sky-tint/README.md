@@ -67,17 +67,6 @@ colour of whichever sky reaches it first. **Nearest source wins**; where two fro
 seam, not a gradient. Blending by relative distance would be a deliberate addition and is not here.
 Levels with one sky, which is nearly all of them, resolve to one source and cost what they always did.
 
-**Only rows at or above the horizon are averaged at all** (`RowsAboveHorizon`). `gl_skydome` scales
-a sky taller than 240 by `240/height`, so the dome's upper hemisphere covers the first 240 rows and
-everything past that is drawn below eye level. Averaging the whole image counted sky that is under
-the player's feet: it lights nothing, and it is not what they look at.
-
-That was not cosmetic. On GSKY1 (gvh10, 400 tall) it meant 40% of every average came from the
-invisible tail, and because both weightings drowned in the same tail they returned nearly the same
-colour (measured 0.19 out of 255 apart, in-game, which is noise). Horizon also used to split the
-*texture* in half rather than the visible band, so on a tall sky it was sampling almost entirely
-below the horizon.
-
 ## Why nothing is written to the world
 
 The tint never touches `sector_t::ColorMap`. Sector colours are serialised into savegames

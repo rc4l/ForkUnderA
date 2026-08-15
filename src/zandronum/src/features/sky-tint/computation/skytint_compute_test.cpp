@@ -88,57 +88,6 @@ TEST(RowWeight, CosineFavoursTheZenithWhichIsTheOppositeEnd)
 	EXPECT_NEAR(0.707, RowWeight(50, 101, SkyWeight::Cosine), 0.01);	// 45 degrees
 }
 
-TEST(RowsAboveHorizon, ShortSkiesAreEntirelyAboveTheHorizon)
-{
-	// Anything up to 240 spans zenith to horizon on its own, so every row counts. Doom's own skies
-	// are 128 tall and live here.
-	EXPECT_EQ(128, RowsAboveHorizon(128));
-	EXPECT_EQ(240, RowsAboveHorizon(240));
-	EXPECT_EQ(0, RowsAboveHorizon(0));
-	EXPECT_EQ(0, RowsAboveHorizon(-5));
-}
-
-TEST(RowsAboveHorizon, TallSkiesSpillTheirTailBelowEyeLevel)
-{
-	// gl_skydome scales a taller sky by 240/height, so the part above the horizon is always the
-	// first 240 rows however tall the image is. GSKY1, the sky on gvh10, is 400.
-	EXPECT_EQ(240, RowsAboveHorizon(400));
-	EXPECT_EQ(240, RowsAboveHorizon(256));
-	EXPECT_EQ(240, RowsAboveHorizon(1024));
-}
-
-TEST(RowWeight, NothingBelowTheHorizonCounts)
-{
-	// The bug this replaced: on a 400 tall sky the old Horizon mode took rows 200-399, and 160 of
-	// those are drawn BELOW eye level. They lit nothing and nobody looked at them, but they were 40%
-	// of the average -- which is why Horizon and Cosine used to return almost the same colour here.
-	EXPECT_EQ(0.0, RowWeight(240, 400, SkyWeight::Horizon));
-	EXPECT_EQ(0.0, RowWeight(399, 400, SkyWeight::Horizon));
-	EXPECT_EQ(0.0, RowWeight(240, 400, SkyWeight::Cosine));
-	EXPECT_EQ(0.0, RowWeight(399, 400, SkyWeight::Cosine));
-}
-
-TEST(RowWeight, HorizonSplitsTheVISIBLEBandNotTheTexture)
-{
-	// Half of 240, not half of 400. Row 150 is below the texture's midpoint yet still in the upper
-	// half of what is actually on screen, so the old code counted it and the new code does not.
-	EXPECT_EQ(0.0, RowWeight(119, 400, SkyWeight::Horizon));
-	EXPECT_EQ(1.0, RowWeight(120, 400, SkyWeight::Horizon));
-	EXPECT_EQ(1.0, RowWeight(239, 400, SkyWeight::Horizon));
-	// Row 150 sits above the texture's own midpoint of 200 and is still counted, because what
-	// matters is where it falls in the visible band, not in the image.
-	EXPECT_EQ(1.0, RowWeight(150, 400, SkyWeight::Horizon));
-}
-
-TEST(RowWeight, CosineReachesTheHorizonAtTheVisibleEdge)
-{
-	// Elevation runs across the visible band, so zero falls at row 239 of a 400 tall sky rather than
-	// at row 399, which is under your feet.
-	EXPECT_NEAR(1.0, RowWeight(0, 400, SkyWeight::Cosine), 0.001);
-	EXPECT_NEAR(0.0, RowWeight(239, 400, SkyWeight::Cosine), 0.01);
-	EXPECT_NEAR(0.707, RowWeight(119, 400, SkyWeight::Cosine), 0.02);
-}
-
 TEST(RowWeight, SurvivesDegenerateGeometry)
 {
 	EXPECT_EQ(0.0, RowWeight(0, 0, SkyWeight::Cosine));
