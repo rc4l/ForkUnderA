@@ -53,6 +53,7 @@
 #include "gl/textures/gl_texture.h"
 #include "gl/textures/gl_material.h"
 #include "gl/textures/gl_samplers.h"
+#include "features/fua-caching/fua_caching.h"
 
 //==========================================================================
 //
@@ -321,7 +322,9 @@ void FTexture::CreateDefaultBrightmap()
 
 void FTexture::PrecacheGL(int cache)
 {
-	if (gl_precache)
+	// [ForkUnderA] cl_fua_caching arms the upload path; gl_precache kept as
+	// the legacy opt-in.
+	if (gl_precache || FUA_CachingMode() > 0)
 	{
 		if (cache & (FTextureManager::HIT_Wall | FTextureManager::HIT_Flat | FTextureManager::HIT_Sky))
 		{

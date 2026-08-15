@@ -65,6 +65,13 @@ namespace
 	int g_cheatAtTic    = 0;
 	int g_cheatAtCheat  = 0;
 
+	// --- tic-scheduled pause (sim.pauseat; fired by MCP_SimPreTic) ----------
+	// The free-running stretch between launch and a wall-clock sim.pause is the
+	// nondeterministic catch-up-batching mode, so lockstep scenarios must freeze at an
+	// EXACT tic instead.
+	bool g_pauseAtArmed = false;
+	int g_pauseAtTic    = 0;
+
 	// --- perf capture -------------------------------------------------------
 	// Frame timing at the D_DoomLoop seam: MCP_RPC_Tick runs at the TOP of each iteration, so the
 	// delta between two Ticks is the FULL just-completed frame. MCP_RPC_MarkRender (anchored right
@@ -216,6 +223,12 @@ void MCP_SimPreTic()
 {
 	g_ticsThisFrame++; // frame-composition accounting for perf.capture's worst-frame report
 
+	if ( g_pauseAtArmed && gamestate == GS_LEVEL && level.time >= g_pauseAtTic )
+	{
+		g_pauseAtArmed = false;
+		paused = 1;
+	}
+
 	if ( g_cheatAtArmed && gamestate == GS_LEVEL && level.time >= g_cheatAtTic )
 	{
 		g_cheatAtArmed = false;
@@ -348,7 +361,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
-			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.rngdump\",\"sim.trace\","
+			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
 			"\"world.sectors\",\"player.setpos\""
@@ -445,6 +458,17 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		}, &ctx );
 		body += "],\"leveltime\":" + I( level.time ) + "}";
 		SendOk( id, body );
+	}
+	else if ( cmd == "sim.pauseat" )
+	{
+		// Freeze the sim at an exact leveltime (see g_pauseAtArmed above).
+		if ( IsNetInstance() ) { SendErr( id, "pauseat unsupported in a netgame" ); return; }
+		long tic = -1;
+		GetInt( args, "tic", tic );
+		if ( tic < 0 ) { SendErr( id, "sim.pauseat requires args.tic" ); return; }
+		g_pauseAtTic = (int)tic;
+		g_pauseAtArmed = true;
+		SendOk( id, std::string( "{\"scheduled\":true,\"tic\":" ) + I( tic ) + "}" );
 	}
 	else if ( cmd == "sim.cheatat" )
 	{

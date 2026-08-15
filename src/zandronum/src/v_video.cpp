@@ -67,6 +67,7 @@
 #include "r_renderer.h"
 #include "menu/menu.h"
 #include "r_data/voxels.h"
+#include "features/fua-caching/fua_caching.h"
 
 // [TP] New includes.
 #include "cl_commands.h"
@@ -1304,6 +1305,10 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 		}
 	}
 
+	// [ForkUnderA] cl_fua_caching: every state of every placed class, plus
+	// (mode 2) the spawn closure. No-op in mode 0.
+	FUA_MarkCachedSprites (spritelist, sprites.Size());
+
 	for (i = (int)(sprites.Size () - 1); i >= 0; i--)
 	{
 		if (spritelist[i])
@@ -1318,7 +1323,10 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 					FTextureID pic = frame->Texture[k];
 					if (pic.isValid())
 					{
-						hitlist[pic.GetIndex()] = 5;
+						// [ForkUnderA] 8 = HIT_Sprite, so the GL precacher builds the
+						// expanded material sprites actually render with. The stock
+						// value 5 (wall|sky) built the wrong variant; kept for mode 0.
+						hitlist[pic.GetIndex()] = FUA_CachingMode() > 0 ? 8 : 5;
 					}
 				}
 			}
