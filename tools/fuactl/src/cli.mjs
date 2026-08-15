@@ -38,7 +38,7 @@ function parseFlags(argv) {
 const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
-  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N]   launch one supervised bridge instance (stays up until Ctrl-C)
+  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3]   launch one supervised bridge instance (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
@@ -78,6 +78,11 @@ async function main() {
         token: flags.token || undefined,
         iwad: flags.iwad || undefined,
         skill: flags.skill != null ? Number(flags.skill) : undefined,
+        // [rc4l] PWADs, comma-separated. Without this the only launchable thing was a bare IWAD, so
+        // a mod could be profiled only by hosting a server first and measuring through the netcode.
+        extraArgs: flags.file
+          ? String(flags.file).split(",").flatMap((f) => ["-file", f.trim()])
+          : undefined,
       });
       console.log(`launched pid=${inst.pid} port=${inst.port} token=${inst.token}`);
       console.log(`(rpc it with: fuactl rpc sim.tic --port ${inst.port} --token ${inst.token})`);
