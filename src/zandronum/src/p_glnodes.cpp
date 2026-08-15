@@ -1240,7 +1240,10 @@ static bool CheckCachedNodes(MapData *map)
 		long pos = ftell(f);
 		FileReader fr(f);
 		fr.Seek(pos, SEEK_SET);
-		P_LoadZNodes (fr, MAKE_ID('Z','G','L','2'));
+		// [rc4l] uzdoom@84f8c299c, the reader half: parse the format the file declares. The writer
+		// emits ZGL3 (32-bit node coords); parsing it as ZGL2 (16-bit) desynced the stream and
+		// corrupted every node's bbox/children on any map big enough to be cached.
+		P_LoadZNodes (fr, MAKE_ID(magic[0],magic[1],magic[2],magic[3]));
 	}
 	catch (CRecoverableError &error)
 	{

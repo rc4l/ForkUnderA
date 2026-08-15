@@ -83,6 +83,7 @@
 #include "d_event.h"
 #include "p_acs.h"
 #include "m_joy.h"
+#include "mcp_bridge.h" // synthetic analog-axis injection anchor (no-op unless FUA_MCP_BRIDGE)
 #include "farchive.h"
 #include "r_renderer.h"
 #include "r_data/colormaps.h"
@@ -123,6 +124,7 @@
 #include <zlib.h>
 
 #include "g_hub.h"
+#include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler anchor (no-op unless FUA_MCP_BRIDGE)
 
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
@@ -882,6 +884,7 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 	float joyaxes[NUM_JOYAXIS];
 
 	I_GetAxes(joyaxes);
+	MCP_RPC_OverrideAxes(joyaxes); // bridge synthetic sticks (no-op in release; anchor byte-identical)
 
 	// [Leo] Clamp JOYAXIS_Side.
 	joyaxes[JOYAXIS_Side] = clamp<float>(joyaxes[JOYAXIS_Side], -1.f, 1.f);
@@ -1975,7 +1978,11 @@ void G_Ticker ()
 		// This significantly reduces CPU usage on maps with many monsters
 		// (of course only as long as there are no connected clients).
 		if ( ( NETWORK_GetState( ) != NETSTATE_SERVER ) || ( SERVER_CalcNumConnectedClients() > 0 ) )
+		{
+			MCP_TicProf_Begin (MCP_TPZ_PTICKER); // [ForkUnderA] per-tic sim profiler anchor (no-op unless FUA_MCP_BRIDGE)
 			P_Ticker ();
+			MCP_TicProf_End (MCP_TPZ_PTICKER);
+		}
 		AM_Ticker ();
 
 		// Tick the medal system.

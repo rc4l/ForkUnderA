@@ -1491,6 +1491,7 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
+	features/playerclass-fallback/zx_playerclassfallback.cpp
 	features/iwad-registry/zx_iwadregistry.cpp
 	features/identity/zx_identity.cpp
 	features/identity/zx_identitynet.cpp
@@ -1514,6 +1515,7 @@ add_executable( zdoom WIN32
 	features/port-mapping/computation/ssdp_compute.cpp
 	features/port-mapping/computation/upnpsoap_compute.cpp
 	features/port-mapping/computation/natpmp_compute.cpp
+	features/damage-tint/damagetint.cpp
 	features/server-hosting/zx_hosting.cpp
 	features/server-hosting/zx_hostprocess.cpp
 	features/server-hosting/zx_hostwatchdog.cpp
@@ -1823,8 +1825,14 @@ source_group("Network\\Server" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/
 source_group("Network\\Protocol\\Specs" REGULAR_EXPRESSION "^${CMAKE_SOURCE_DIR}/protocolspec/.+\\.txt$")
 source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_DIR}/protocolspec/generator/.+")
 
-# MCP dev bridge (overlay -- not committed upstream)
-target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_actorstate.cpp mcp_hud.cpp )
+# [rc4l] Native MCP "programmable engine" control bridge -- DEV/TEST ONLY, gated OFF by default so
+# release binaries ship without it (no remote-control surface). Enable with -DFUA_MCP_BRIDGE=ON.
+# mcp_bridge.cpp = transport/lifecycle (header-pure); mcp_rpc.cpp = typed RPC dispatch + determinism/
+# state/session handlers (engine-facing); the rest are reader/crash/input/hud backends.
+if( FUA_MCP_BRIDGE )
+	target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_rpc.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_hud.cpp mcp_glperf.cpp mcp_ticprof.cpp mcp_simtrace.cpp )
+	target_compile_definitions( zdoom PRIVATE FUA_MCP_BRIDGE )
+endif()
 
 # [rc4l] Pure Compute* helpers extracted for testability live in computation/ folders as
 # *_compute.cpp. They register no classes, so link order is irrelevant — pull them all in

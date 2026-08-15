@@ -79,6 +79,7 @@
 #include "gl/utility/gl_templates.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "features/fov-interp/fovinterp.h"
+#include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 
 //==========================================================================
 //
@@ -568,14 +569,18 @@ void FGLRenderer::DrawScene(bool toscreen)
 		static_cast<OpenGLFrameBuffer*>(screen)->Swap();
 		All.Clock();
 	}
+	MCP_GLPerf_ZoneBegin(MCP_GLZ_SCENE); // [rc4l] GPU-time the opaque BSP pass (no-op unless bridge+capture)
 	RenderScene(recursion);
+	MCP_GLPerf_ZoneEnd(MCP_GLZ_SCENE);
 
 	// Handle all portals after rendering the opaque objects but before
 	// doing all translucent stuff
 	recursion++;
 	GLPortal::EndFrame();
 	recursion--;
+	MCP_GLPerf_ZoneBegin(MCP_GLZ_TRANSLUCENT); // [rc4l] GPU-time the translucent/overdraw pass
 	RenderTranslucent();
+	MCP_GLPerf_ZoneEnd(MCP_GLZ_TRANSLUCENT);
 }
 
 
@@ -963,6 +968,8 @@ void FGLRenderer::RenderView (player_t* player)
 		}
 	}
 #endif
+
+	MCP_GLPerf_FrameBegin(); // [rc4l] earliest GL work of the frame -- open the GPU-time frame span
 
 	OpenGLFrameBuffer* GLTarget = static_cast<OpenGLFrameBuffer*>(screen);
 	AActor *&LastCamera = GLTarget->LastCamera;

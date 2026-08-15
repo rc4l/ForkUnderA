@@ -62,6 +62,7 @@
 #include "cooperative.h"
 #include "gamemode.h"
 #include "team.h"
+#include "features/damage-tint/damagetint.h"	// [rc4l] mugshot damage tint
 
 #define ARTIFLASH_OFFSET (statusBar->invBarOffset+6)
 enum
@@ -1201,7 +1202,8 @@ public:
 	}
 
 	//draws an image with the specified flags
-	void DrawGraphic(FTexture* texture, SBarInfoCoordinate x, SBarInfoCoordinate y, int xOffset, int yOffset, int alpha, bool fullScreenOffsets, bool translate=false, bool dim=false, int offsetflags=0, bool alphaMap=false, int forceWidth=-1, int forceHeight=-1, fixed_t cx=0, fixed_t cy=0, fixed_t cr=0, fixed_t cb=0, bool clearDontDraw=false) const
+	// [rc4l] colorOverlay: optional ARGB stamped over the graphic (features/damage-tint mugshot); alpha 0 = none.
+	void DrawGraphic(FTexture* texture, SBarInfoCoordinate x, SBarInfoCoordinate y, int xOffset, int yOffset, int alpha, bool fullScreenOffsets, bool translate=false, bool dim=false, int offsetflags=0, bool alphaMap=false, int forceWidth=-1, int forceHeight=-1, fixed_t cx=0, fixed_t cy=0, fixed_t cr=0, fixed_t cb=0, bool clearDontDraw=false, PalEntry colorOverlay=0) const
 	{
 		if (texture == NULL)
 			return;
@@ -1269,7 +1271,7 @@ public:
 						DTA_ClipRight, static_cast<int>(MIN<double>(INT_MAX, dcr)),
 						DTA_ClipBottom, static_cast<int>(MIN<double>(INT_MAX, dcb)),
 						DTA_Translation, translate ? GetTranslation() : 0,
-						DTA_ColorOverlay, dim ? DIM_OVERLAY : 0,
+						DTA_ColorOverlay, colorOverlay.a ? colorOverlay.d : (dim ? DIM_OVERLAY : 0),
 						DTA_CenterBottomOffset, (offsetflags & SBarInfoCommand::CENTER_BOTTOM) == SBarInfoCommand::CENTER_BOTTOM,
 						DTA_Alpha, alpha,
 						DTA_AlphaChannel, alphaMap,
@@ -1286,7 +1288,7 @@ public:
 						DTA_ClipRight, static_cast<int>(MIN<double>(INT_MAX, dcr)),
 						DTA_ClipBottom, static_cast<int>(MIN<double>(INT_MAX, dcb)),
 						DTA_Translation, translate ? GetTranslation() : 0,
-						DTA_ColorOverlay, dim ? DIM_OVERLAY : 0,
+						DTA_ColorOverlay, colorOverlay.a ? colorOverlay.d : (dim ? DIM_OVERLAY : 0),
 						DTA_CenterBottomOffset, (offsetflags & SBarInfoCommand::CENTER_BOTTOM) == SBarInfoCommand::CENTER_BOTTOM,
 						DTA_Alpha, alpha,
 						TAG_DONE);
@@ -1350,7 +1352,7 @@ public:
 						DTA_ClipRight, static_cast<int>(rcr),
 						DTA_ClipBottom, static_cast<int>(rcb),
 						DTA_Translation, translate ? GetTranslation() : 0,
-						DTA_ColorOverlay, dim ? DIM_OVERLAY : 0,
+						DTA_ColorOverlay, colorOverlay.a ? colorOverlay.d : (dim ? DIM_OVERLAY : 0),
 						DTA_CenterBottomOffset, (offsetflags & SBarInfoCommand::CENTER_BOTTOM) == SBarInfoCommand::CENTER_BOTTOM,
 						DTA_Alpha, alpha,
 						DTA_AlphaChannel, alphaMap,
@@ -1367,7 +1369,7 @@ public:
 						DTA_ClipRight, static_cast<int>(rcr),
 						DTA_ClipBottom, static_cast<int>(rcb),
 						DTA_Translation, translate ? GetTranslation() : 0,
-						DTA_ColorOverlay, dim ? DIM_OVERLAY : 0,
+						DTA_ColorOverlay, colorOverlay.a ? colorOverlay.d : (dim ? DIM_OVERLAY : 0),
 						DTA_CenterBottomOffset, (offsetflags & SBarInfoCommand::CENTER_BOTTOM) == SBarInfoCommand::CENTER_BOTTOM,
 						DTA_Alpha, alpha,
 						TAG_DONE);
