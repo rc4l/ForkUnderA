@@ -314,6 +314,7 @@ DWORD FRandom::StaticSumSeeds ()
 //
 //==========================================================================
 
+#ifdef FUA_MCP_BRIDGE
 void FRandom::StaticEnumStates (void (*fn)(DWORD crc, unsigned int idx, DWORD u0, void *ctx), void *ctx)
 {
 	for (FRandom *rng = RNGList; rng != NULL; rng = rng->Next)
@@ -321,6 +322,7 @@ void FRandom::StaticEnumStates (void (*fn)(DWORD crc, unsigned int idx, DWORD u0
 		fn (rng->NameCRC, (unsigned int)rng->idx, rng->sfmt.u[0], ctx);
 	}
 }
+#endif
 
 //==========================================================================
 //
