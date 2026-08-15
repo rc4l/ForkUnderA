@@ -33,6 +33,14 @@ void SkyTint_Rebuild();
 // Forget everything. Called when a level ends so no index outlives the sector array it refers to.
 void SkyTint_Clear();
 
+// [rc4l] The sky can change WITHOUT the level changing: ACS ChangeSky, the changesky console
+// command, and -- on every client, for every map -- the server's SetMapSky arriving after the level
+// has already loaded. The table is derived from that texture, so a sky swapped underneath it leaves
+// the old sky's colour on the walls with nothing to trigger a recompute. Rebuilds only when the sky
+// really differs from the one the table was built for, because the call sites also fire on view
+// size changes, where nothing about the light has moved.
+void SkyTint_SkyChanged();
+
 // [rc4l] Light is computed and stored per SUBSECTOR -- the BSP leaf the renderer actually draws --
 // rather than per sector. A whole sector taking one value is what made the effect look like a flood
 // rather than light: a room next to a lit yard came up evenly bright to its far corner. Leaves are

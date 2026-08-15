@@ -123,6 +123,10 @@ std::vector<PalEntry> g_tint;			// per SUBSECTOR: what the renderer actually dra
 std::vector<PalEntry> g_brightestOf;	// per SECTOR: its lightest leaf, for the few sector-only callers
 bool g_any = false;
 
+// Which sky the table above was built from, so SkyTint_SkyChanged can tell a real sky swap from the
+// view-size changes that share its call sites. Invalid until the first successful build.
+FTextureID g_builtForSky = FNullTextureID( );
+
 // Read the current sky texture into linear-friendly RGB. Returns false when there is no usable sky,
 // which is the normal case indoors and must not be treated as an error.
 bool ReadSky( std::vector<SkyRgb> &out, int &width )
@@ -173,6 +177,15 @@ void SkyTint_Clear( )
 	g_tint.clear( );
 	g_brightestOf.clear( );
 	g_any = false;
+	g_builtForSky = FNullTextureID( );
+}
+
+void SkyTint_SkyChanged( )
+{
+	if ( g_builtForSky == sky1texture )
+		return;
+
+	SkyTint_Rebuild( );
 }
 
 void SkyTint_Rebuild( )
@@ -379,6 +392,10 @@ void SkyTint_Rebuild( )
 		if (( mine.r + mine.g + mine.b ) < ( best.r + best.g + best.b ))
 			best = mine;
 	}
+
+	// Only after a build that got this far. Every early return above leaves this invalid on purpose,
+	// so a later SkyTint_SkyChanged retries instead of believing a table that was never filled.
+	g_builtForSky = sky1texture;
 }
 
 namespace

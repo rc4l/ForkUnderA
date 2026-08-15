@@ -51,6 +51,12 @@ two players disagreeing about it costs nothing.
 - `gl/scene/gl_flats.cpp`, `gl_walls.cpp`, `gl_sprite.cpp`, `gl_drawinfo.cpp` -- one gated
   `zx::SkyTint_Apply` line after each `Colormap = <sector>->ColorMap`, 8 in total.
 - `p_setup.cpp` -- `SkyTint_Rebuild()` at the end of `P_SetupLevel`.
+- `cl_main.cpp`, `p_acs.cpp`, `c_cmds.cpp` -- `SkyTint_SkyChanged()` after each `R_InitSkyMap()`
+  that follows a real sky swap: the server's `SetMapSky`, ACS `ChangeSky`, and the `changesky`
+  console command. The table is derived from `sky1texture`; these three change it without the level
+  changing, and the client one fires on every map a client loads.
+- `features/wadreload/zx_wadreload.cpp` -- `SkyTint_Clear()` in `ResetStartupStateForRestart()`, so a
+  per-subsector table cannot outlive the subsector array across an in-process restart.
 - `wadsrc/static/menudef.txt` -- the `FUASkyTintOptions` submenu, under FUA Options. Not
   Display Options: that menu is Zandronum's and `menudef.z` redefines it, so FUA features keep to
   their own room and a re-sync never has to untangle ours from theirs.

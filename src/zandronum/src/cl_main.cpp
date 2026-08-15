@@ -121,6 +121,7 @@
 #include "callvote.h"
 #include "invasion.h"
 #include "r_sky.h"
+#include "features/sky-tint/zx_skytint.h" // [rc4l] SkyTint_SkyChanged()
 #include "r_data/r_translate.h"
 #include "domination.h"
 #include "p_3dmidtex.h"
@@ -7652,6 +7653,11 @@ void ServerCommands::SetMapSky::Execute()
 
 	// Set some other sky properties.
 	R_InitSkyMap( );
+
+	// [rc4l] features/sky-tint derives its colour from sky1texture, and this handler can land after
+	// the level has already loaded and built its table -- on a client that is the normal case, not an
+	// edge one. Without this the tint keeps the previous sky's colour for the whole map.
+	zx::SkyTint_SkyChanged( );
 }
 
 //*****************************************************************************
