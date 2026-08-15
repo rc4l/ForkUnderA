@@ -27,8 +27,12 @@
 #include "r_state.h"
 #include "m_random.h"
 #include "zstring.h"
+#include "m_cheat.h"
+#include "d_protocol.h"
 #include "mcp_hud.h"
 #include "mcp_glperf.h"
+#include "mcp_ticprof.h"
+#include "mcp_simtrace.h"
 #include "textures/textures.h"
 #include "features/damage-tint/damagetint.h"
 
@@ -36,6 +40,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <chrono>
 #include <stdlib.h>
 
@@ -54,6 +59,11 @@ namespace
 	bool g_stepping   = false;
 	long g_stepTarget = 0;
 
+	// --- tic-scheduled cheat (sim.cheatat; fired by MCP_SimPreTic) ----------
+	bool g_cheatAtArmed = false;
+	int g_cheatAtTic    = 0;
+	int g_cheatAtCheat  = 0;
+
 	// --- perf capture -------------------------------------------------------
 	// Frame timing at the D_DoomLoop seam: MCP_RPC_Tick runs at the TOP of each iteration, so the
 	// delta between two Ticks is the FULL just-completed frame. MCP_RPC_MarkRender (anchored right
@@ -68,6 +78,8 @@ namespace
 	int    g_perfWant       = 0;
 	int    g_perfWarmup     = 0; // discard the first few frames of a capture (one-time costs)
 	std::vector<double> g_perfTotal, g_perfSim, g_perfRender;
+	std::vector<int> g_perfTics;      // sim tics run inside each captured frame
+	int g_ticsThisFrame;              // incremented by MCP_SimPreTic, reset per frame
 
 	// --- network RECEIVE bandwidth accounting (per server-command / SVC id) --
 	// O(1) integer tally at the client parse funnel; read out here off the hot path.
@@ -127,17 +139,29 @@ namespace
 	// Deterministic fingerprint of the sim: level clock + RNG position + every actor's transform &
 	// health, mixed in thinker-list order (stable across save/load round-trips). Two instances at the
 	// same level.time with identical simulation return the same value; a mismatch is a desync.
-	QWORD StateHash()
+	// withRng mixes in the sum of ALL FRandom streams -- including sound RNGs (pr_randsound
+	// etc.) whose draw count depends on real-time audio channel availability, so it is NOT
+	// run-to-run stable on sound-heavy mods even when the world is bit-identical. Use the
+	// world-only form (sim.hash {scope:"world"}) for cross-binary determinism gates.
+	// Either scope skips attached dynamic-light actors: they are client-side eye candy
+	// spawned into the thinker list whose population couples to rendering, and hashing them
+	// makes a bit-identical gameplay sim look divergent (proven: identical 65-tic event
+	// traces with "diverging" hashes on the Complex Doom kill storm).
+	QWORD StateHash( bool withRng )
 	{
 		uint64_t h = FnvInit();
 		h = FnvMixU64( h, (uint64_t)level.time );
-		h = FnvMixU64( h, (uint64_t)FRandom::StaticSumSeeds() );
+		if ( withRng )
+			h = FnvMixU64( h, (uint64_t)FRandom::StaticSumSeeds() );
 		if ( InLevel() )
 		{
+			const PClass *lightcls = PClass::FindClass( "DynamicLight" );
 			TThinkerIterator<AActor> it;
 			AActor *mo;
 			while ( ( mo = it.Next() ) != NULL )
 			{
+				if ( lightcls != NULL && mo->IsKindOf( lightcls ) )
+					continue;
 				h = FnvMixU64( h, (uint64_t)mo->x );
 				h = FnvMixU64( h, (uint64_t)mo->y );
 				h = FnvMixU64( h, (uint64_t)mo->z );
@@ -150,7 +174,9 @@ namespace
 
 	std::string ActorJson( AActor *mo )
 	{
-		std::string s = "{\"x\":" + I( (long long)( mo->x >> FRACBITS ) );
+		std::string s = "{\"c\":\"";
+		s += ( mo->GetClass() != NULL ) ? mo->GetClass()->TypeName.GetChars() : "?";
+		s += "\",\"x\":" + I( (long long)( mo->x >> FRACBITS ) );
 		s += ",\"y\":" + I( (long long)( mo->y >> FRACBITS ) );
 		s += ",\"z\":" + I( (long long)( mo->z >> FRACBITS ) );
 		s += ",\"angle\":" + I( (long long)( mo->angle >> 24 ) ); // ~degrees*256/360; raw hi byte
@@ -183,6 +209,20 @@ void MCP_RPC_OverrideAxes( float *axes )
 	for ( int i = 0; i < NUM_JOYAXIS; ++i ) axes[i] = g_axisOverride[i];
 }
 
+// Called at the top of every game tic (anchor in d_net.cpp, before G_Ticker). Fires
+// tic-scheduled actions so scenario injection is deterministic -- see sim.cheatat.
+void MCP_SimPreTic()
+{
+	g_ticsThisFrame++; // frame-composition accounting for perf.capture's worst-frame report
+
+	if ( g_cheatAtArmed && gamestate == GS_LEVEL && level.time >= g_cheatAtTic )
+	{
+		g_cheatAtArmed = false;
+		if ( consoleplayer >= 0 && consoleplayer < MAXPLAYERS && playeringame[consoleplayer] )
+			cht_DoCheat( &players[consoleplayer], g_cheatAtCheat );
+	}
+}
+
 void MCP_RPC_Tick()
 {
 	MCP_HUD_BeginFrame(); // snapshot the frame the engine just drew (for screenshots/HUD reads)
@@ -205,18 +245,40 @@ void MCP_RPC_Tick()
 				g_perfTotal.push_back( total );
 				g_perfSim.push_back( sim );
 				g_perfRender.push_back( render );
+				g_perfTics.push_back( g_ticsThisFrame );
 				if ( (int)g_perfTotal.size() >= g_perfWant )
 				{
 					std::string data = "{\"total\":" + PerfSummaryJson( SummarizeFrameTimes( g_perfTotal ) );
 					data += ",\"sim_mean_ms\":" + std::to_string( MeanOf( g_perfSim ) );
-					data += ",\"render_mean_ms\":" + std::to_string( MeanOf( g_perfRender ) ) + "}";
+					data += ",\"render_mean_ms\":" + std::to_string( MeanOf( g_perfRender ) );
+					// Worst-frame composition: the top frames by total time, each split into
+					// sim ms / render ms / sim tics run inside the frame -- answers "is the
+					// spike a tic train, one huge tic, or a render stall?" directly.
+					{
+						std::vector<size_t> idx( g_perfTotal.size() );
+						for ( size_t k = 0; k < idx.size(); ++k ) idx[k] = k;
+						std::partial_sort( idx.begin(), idx.begin() + std::min<size_t>( 8, idx.size() ), idx.end(),
+							[]( size_t a, size_t b ) { return g_perfTotal[a] > g_perfTotal[b]; } );
+						data += ",\"worst\":[";
+						for ( size_t k = 0; k < std::min<size_t>( 8, idx.size() ); ++k )
+						{
+							if ( k ) data += ",";
+							data += "{\"total\":" + std::to_string( g_perfTotal[idx[k]] );
+							data += ",\"sim\":" + std::to_string( g_perfSim[idx[k]] );
+							data += ",\"render\":" + std::to_string( g_perfRender[idx[k]] );
+							data += ",\"tics\":" + I( g_perfTics[idx[k]] ) + "}";
+						}
+						data += "]";
+					}
+					data += "}";
 					EmitEvent( "perf", data );
 					g_perfCapturing = false;
-					g_perfTotal.clear(); g_perfSim.clear(); g_perfRender.clear();
+					g_perfTotal.clear(); g_perfSim.clear(); g_perfRender.clear(); g_perfTics.clear(); g_perfTics.clear();
 				}
 			}
 		}
 		g_frameStart = now;
+		g_ticsThisFrame = 0;
 		g_haveFrameStart = true;
 		g_haveRenderMark = false;
 	}
@@ -228,6 +290,21 @@ void MCP_RPC_Tick()
 		std::string glperf;
 		if ( MCP_GLPerf_ReportReady( glperf ) )
 			EmitEvent( "glperf", glperf );
+	}
+
+	// Per-tic sim profiler (perf.ticprof): the tic anchors accumulate phase times; when the armed
+	// tic count completes, the per-tic report goes out as a "ticprof" event.
+	{
+		std::string ticprof;
+		if ( MCP_TicProf_ReportReady( ticprof ) )
+			EmitEvent( "ticprof", ticprof );
+	}
+
+	// Sim event tracer (sim.trace): completion notice once the trace file is written.
+	{
+		std::string trace;
+		if ( MCP_SimTrace_ReportReady( trace ) )
+			EmitEvent( "trace", trace );
 	}
 
 	// Drive a scheduled step. Force paused=0 EVERY frame while stepping so the single-player
@@ -261,11 +338,11 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
-			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\","
+			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
-			"\"perf.capture\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
+			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
 			"\"world.sectors\",\"player.setpos\""
-			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\"]}" );
+			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\",\"trace\"]}" );
 	}
 	else if ( cmd == "console.exec" )
 	{
@@ -289,8 +366,10 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	}
 	else if ( cmd == "sim.hash" )
 	{
+		std::string scope;
+		GetStr( args, "scope", scope );
 		std::string body = "{\"leveltime\":" + I( level.time );
-		body += ",\"hash\":\"" + I( (long long)StateHash() ) + "\"}"; // string to survive 64-bit in JSON
+		body += ",\"hash\":\"" + I( (long long)StateHash( scope != "world" ) ) + "\"}"; // string to survive 64-bit in JSON
 		SendOk( id, body );
 	}
 	else if ( cmd == "sim.seed" )
@@ -328,6 +407,51 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		g_stepping = true;
 		paused = 0; // let the world advance; MCP_RPC_Tick refreezes at the target and emits "stepped"
 		SendOk( id, std::string( "{\"target\":" ) + I( g_stepTarget ) + "}" );
+	}
+	else if ( cmd == "sim.trace" )
+	{
+		// Arm the sim event tracer: every damage/kill/spawn for the next `tics` tics is
+		// recorded and written to args.path when done (a "trace" event reports completion).
+		// Diff two runs' files to find the exact event that shifts between them.
+		long tics = 35;
+		std::string path;
+		GetInt( args, "tics", tics );
+		if ( !GetStr( args, "path", path ) || path.empty() ) { SendErr( id, "sim.trace requires args.path" ); return; }
+		MCP_SimTrace_Arm( (int)tics, path.c_str() );
+		SendOk( id, std::string( "{\"tracing\":true,\"tics\":" ) + I( tics ) + "}" );
+	}
+	else if ( cmd == "sim.rngdump" )
+	{
+		// Every FRandom stream's (name CRC, index, first state word). Diff two runs at the
+		// same tic to name the exact subsystem whose RNG stream diverged first.
+		std::string body = "{\"rngs\":[";
+		struct Ctx { std::string *out; bool first; } ctx = { &body, true };
+		FRandom::StaticEnumStates( []( DWORD crc, unsigned int idx, DWORD u0, void *vctx )
+		{
+			Ctx *c = (Ctx *)vctx;
+			if ( !c->first ) *c->out += ",";
+			c->first = false;
+			*c->out += "{\"c\":" + I( (long long)crc ) + ",\"i\":" + I( (long long)idx ) + ",\"u\":" + I( (long long)u0 ) + "}";
+		}, &ctx );
+		body += "],\"leveltime\":" + I( level.time ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "sim.cheatat" )
+	{
+		// Schedule a cheat to run at an exact leveltime, bypassing the net-command stream.
+		// Console cheats (kill monsters = cheat 19/CHT_MASSACRE) land in the demo stream at a
+		// wall-clock-dependent maketic, so the tic they execute on jitters between runs --
+		// which breaks cross-binary lockstep determinism gates. This calls cht_DoCheat
+		// directly at the start of the scheduled tic: same tic, every run, every binary.
+		if ( IsNetInstance() ) { SendErr( id, "cheatat unsupported in a netgame" ); return; }
+		long tic = -1, cheat = -1;
+		GetInt( args, "tic", tic );
+		GetInt( args, "cheat", cheat );
+		if ( tic < 0 || cheat < 0 ) { SendErr( id, "sim.cheatat requires args.tic and args.cheat (CHT_* id; massacre is 19)" ); return; }
+		g_cheatAtTic = (int)tic;
+		g_cheatAtCheat = (int)cheat;
+		g_cheatAtArmed = true;
+		SendOk( id, std::string( "{\"scheduled\":true,\"tic\":" ) + I( tic ) + ",\"cheat\":" + I( cheat ) + "}" );
 	}
 	else if ( cmd == "sim.snapshot" )
 	{
@@ -449,6 +573,17 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		g_perfCapturing = true;
 		// The summary arrives asynchronously as a "perf" event once `frames` frames are collected.
 		SendOk( id, std::string( "{\"capturing\":true,\"frames\":" ) + I( frames ) + ",\"warmup\":" + I( warmup ) + "}" );
+	}
+	else if ( cmd == "perf.ticprof" )
+	{
+		// Arm the per-tic sim profiler: times the next `tics` game tics with a phase split
+		// (G_Ticker total incl. net-command execution, P_Ticker, thinkers, effects, specials).
+		// The per-tic array arrives asynchronously as a "ticprof" event. Combine with sim.pause +
+		// sim.step to dissect a specific tic (e.g. the one that runs "kill monsters").
+		long tics = 35;
+		GetInt( args, "tics", tics );
+		MCP_TicProf_Arm( (int)tics );
+		SendOk( id, std::string( "{\"capturing\":true,\"tics\":" ) + I( tics ) + "}" );
 	}
 	else if ( cmd == "perf.counters" )
 	{
