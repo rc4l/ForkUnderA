@@ -8,6 +8,7 @@
 
 #include "doomtype.h"
 #include "doomstat.h"
+#include "network.h"
 #include "c_cvars.h"
 #include "r_defs.h"
 #include "r_state.h"
@@ -17,6 +18,10 @@
 #include "bitmap.h"
 #include "gl/renderer/gl_colormap.h"
 
+#include <cmath>
+#include <functional>
+#include <queue>
+#include <utility>
 #include <vector>
 
 // [rc4l] cl_ because this is one player's view of the light: it changes nothing the server
@@ -41,12 +46,23 @@ CUSTOM_CVAR( Int, cl_fua_skytint_saturation, 60, CVAR_ARCHIVE | CVAR_GLOBALCONFI
 	else					zx::SkyTint_Rebuild( );
 }
 
-// How many rooms inward the outdoor light reaches, halving each step. 0 = open sky only.
-CUSTOM_CVAR( Int, cl_fua_skytint_bleed, 2, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+// [rc4l] How far indoors the outdoor light reaches, in MAP UNITS -- 128 is a standard doorway's
+// width, so 512 is about four of them. Measured rather than counted in sectors, because a sector
+// count means something different on every map depending how finely it was cut up.
+CUSTOM_CVAR( Int, cl_fua_skytint_reach, 512, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 {
-	if ( self < 0 )			self = 0;
-	else if ( self > 4 )	self = 4;
-	else					zx::SkyTint_Rebuild( );
+	if ( self < 0 )				self = 0;
+	else if ( self > 2048 )		self = 2048;
+	else						zx::SkyTint_Rebuild( );
+}
+
+// How much a narrow opening slows the light down. 0 lets a crack under a door light a room as well
+// as an archway would; higher makes the size of the gap matter more.
+CUSTOM_CVAR( Int, cl_fua_skytint_gap, 100, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+{
+	if ( self < 0 )				self = 0;
+	else if ( self > 100 )		self = 100;
+	else						zx::SkyTint_Rebuild( );
 }
 
 // 0 = mean (faithful), 1 = dominant (the colour a person would name).
@@ -70,6 +86,14 @@ namespace zx
 
 namespace
 {
+
+// Plain 2D distance in map units. Doubles rather than fixed point: this is a lighting hint that
+// never touches the simulation, so precision is free and overflow is not a worry.
+double Distance2( double ax, double ay, double bx, double by )
+{
+	const double dx = bx - ax, dy = by - ay;
+	return std::sqrt(( dx * dx ) + ( dy * dy ));
+}
 
 // Per sector: the light colour to substitute, or white for "leave this one alone". Sized to the
 // current level and cleared with it, so an index can never outlive its sector array.
@@ -118,6 +142,15 @@ void SkyTint_Rebuild( )
 {
 	SkyTint_Clear( );
 
+	// [rc4l] NEVER on a server. P_SetupLevel runs there too, and this reads the sky TEXTURE -- which
+	// a dedicated server has no business touching and does not keep in a usable state. Doing it
+	// anyway killed every hosted server the moment the cvar was on, and because the cvar is
+	// ARCHIVE|GLOBALCONFIG, one player enabling it in their own game poisoned the shared ini and
+	// every server spawned afterwards died at map load. A client-side look setting must be inert
+	// wherever there is nothing to look at.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
 	if ( !cl_fua_skytint || ( gamestate != GS_LEVEL ) || ( sectors == NULL ) || ( numsectors <= 0 ))
 		return;
 
@@ -133,9 +166,16 @@ void SkyTint_Rebuild( )
 	tint = NormaliseBrightness( tint );				// the sky says WHICH colour, not how much
 	tint = ClampSaturation( tint, cl_fua_skytint_saturation );
 
-	// hop 0 = open sky, then outward through two-sided lines with a real vertical opening.
-	const int maxHops = cl_fua_skytint_bleed;
-	std::vector<BYTE> hop( numsectors, 255 );
+	// [rc4l] Dijkstra outward from open sky, measured in MAP UNITS. Counting sectors made the reach
+	// depend on how finely the mapper cut their geometry -- two hops crosses a room in a blocky map
+	// and dies inside one doorway's trim in a detailed one. Distance does not care how many pieces a
+	// room was built from, so the setting means one thing on every map.
+	const double reach = (double)cl_fua_skytint_reach;
+	const double kInfinity = 1e30;
+
+	std::vector<double> dist( numsectors, kInfinity );
+	std::priority_queue<std::pair<double, int>, std::vector<std::pair<double, int> >,
+		std::greater<std::pair<double, int> > > queue;
 
 	for ( int i = 0; i < numsectors; ++i )
 	{
@@ -146,36 +186,80 @@ void SkyTint_Rebuild( )
 		if (( s.ColorMap == NULL ) || (( s.ColorMap->Color.d & 0xFFFFFF ) != 0xFFFFFF ))
 			continue;
 
-		hop[i] = 0;
+		dist[i] = 0.0;
+		queue.push( std::make_pair( 0.0, i ));
 	}
 
-	for ( int pass = 1; pass <= maxHops; ++pass )
+	// Every two-sided line, indexed by the sector it leads out of, so the walk does not rescan the
+	// whole level per step. Built once; a big map has far more lines than a sector has neighbours.
+	std::vector<std::vector<int> > linesOf( numsectors );
+	for ( int i = 0; i < numlines; ++i )
 	{
-		for ( int i = 0; i < numlines; ++i )
+		const line_t &l = lines[i];
+		if (( l.frontsector == NULL ) || ( l.backsector == NULL ))
+			continue;
+
+		linesOf[(int)( l.frontsector - sectors )].push_back( i );
+		linesOf[(int)( l.backsector - sectors )].push_back( i );
+	}
+
+	while ( !queue.empty( ))
+	{
+		const double at = queue.top( ).first;
+		const int here = queue.top( ).second;
+		queue.pop( );
+
+		if ( at > dist[here] )
+			continue;					// a shorter way here was already found
+		if ( at >= reach )
+			continue;					// nothing past the limit can be lit
+
+		for ( size_t n = 0; n < linesOf[here].size( ); ++n )
 		{
-			const line_t &l = lines[i];
-			if (( l.frontsector == NULL ) || ( l.backsector == NULL ))
+			const line_t &l = lines[linesOf[here][n]];
+			const sector_t *from = &sectors[here];
+			sector_t *to = ( l.frontsector == from ) ? l.backsector : l.frontsector;
+			const int ti = (int)( to - sectors );
+
+			if ( to == from )
+				continue;
+			if (( to->ColorMap == NULL ) || (( to->ColorMap->Color.d & 0xFFFFFF ) != 0xFFFFFF ))
 				continue;
 
-			for ( int dir = 0; dir < 2; ++dir )
+			// The gap light has to get through. A closed door passes nothing; a slit passes a
+			// little, at the cost of counting as a longer journey.
+			const fixed_t mx = ( l.v1->x + l.v2->x ) / 2, my = ( l.v1->y + l.v2->y ) / 2;
+			const fixed_t openTop = MIN( from->ceilingplane.ZatPoint( mx, my ), to->ceilingplane.ZatPoint( mx, my ));
+			const fixed_t openBot = MAX( from->floorplane.ZatPoint( mx, my ), to->floorplane.ZatPoint( mx, my ));
+			if ( openTop <= openBot )
+				continue;
+
+			const double opening = FIXED2FLOAT( openTop - openBot );
+			const double full = FIXED2FLOAT( MAX( from->ceilingplane.ZatPoint( mx, my ) - from->floorplane.ZatPoint( mx, my ),
+				to->ceilingplane.ZatPoint( mx, my ) - to->floorplane.ZatPoint( mx, my )));
+
+			// Centre to the doorway to the next centre: an approximation of the path light takes,
+			// and one that costs nothing since every sector already carries its own centre point.
+			const double toDoor = Distance2( FIXED2FLOAT( from->soundorg[0] ), FIXED2FLOAT( from->soundorg[1] ),
+				FIXED2FLOAT( mx ), FIXED2FLOAT( my ));
+			const double fromDoor = Distance2( FIXED2FLOAT( mx ), FIXED2FLOAT( my ),
+				FIXED2FLOAT( to->soundorg[0] ), FIXED2FLOAT( to->soundorg[1] ));
+
+			// cl_fua_skytint_gap decides how much the size of the gap matters: at 0 every opening
+			// counts as wide open, at 100 a half-height gap costs twice the distance.
+			const double raw = OpeningFactor( opening, full );
+			const double blend = cl_fua_skytint_gap / 100.0;
+			const double factor = ( raw * blend ) + ( 1.0 - blend );
+
+			const double step = StepCost( toDoor + fromDoor, factor );
+			if ( step < 0.0 )
+				continue;				// impassable
+
+			const double next = at + step;
+			if (( next < dist[ti] ) && ( next < reach ))
 			{
-				const sector_t *from = dir ? l.backsector : l.frontsector;
-				sector_t *to = dir ? l.frontsector : l.backsector;
-				const int fi = (int)( from - sectors ), ti = (int)( to - sectors );
-
-				if (( hop[fi] != pass - 1 ) || ( hop[ti] != 255 ))
-					continue;
-				if (( to->ColorMap == NULL ) || (( to->ColorMap->Color.d & 0xFFFFFF ) != 0xFFFFFF ))
-					continue;
-
-				// Light only crosses a real gap, so a closed door stays dark.
-				const fixed_t mx = ( l.v1->x + l.v2->x ) / 2, my = ( l.v1->y + l.v2->y ) / 2;
-				const fixed_t openTop = MIN( from->ceilingplane.ZatPoint( mx, my ), to->ceilingplane.ZatPoint( mx, my ));
-				const fixed_t openBot = MAX( from->floorplane.ZatPoint( mx, my ), to->floorplane.ZatPoint( mx, my ));
-				if ( openTop <= openBot )
-					continue;
-
-				hop[ti] = (BYTE)pass;
+				dist[ti] = next;
+				queue.push( std::make_pair( next, ti ));
 			}
 		}
 	}
@@ -184,10 +268,14 @@ void SkyTint_Rebuild( )
 
 	for ( int i = 0; i < numsectors; ++i )
 	{
-		if ( hop[i] == 255 )
+		// Distance 0 is the open sky itself and is always lit: reach controls how far the light
+		// travels INDOORS, so setting it to nothing should mean "outdoors only", not "off".
+		if (( dist[i] > 0.0 ) && ( dist[i] >= reach ))
 			continue;
+		if ( dist[i] >= kInfinity )
+			continue;					// never reached at all
 
-		const int strength = StrengthAtHop( cl_fua_skytint_strength, hop[i], maxHops );
+		const int strength = StrengthAtDistance( cl_fua_skytint_strength, dist[i], reach );
 		if ( strength <= 0 )
 			continue;
 

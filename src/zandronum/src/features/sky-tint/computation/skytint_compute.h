@@ -82,8 +82,27 @@ int SaturationPct(SkyRgb colour);
 // without special-casing "off".
 SkyRgb BlendFromWhite(SkyRgb tint, int pct);
 
-// Strength at `hop` steps from an open-sky sector, halving each step. Past `maxHops` there is none.
-int StrengthAtHop(int pct, int hop, int maxHops);
+// [rc4l] Propagation is by DISTANCE, not by sector count.
+//
+// It used to halve per sector crossed, which made the reach depend on how finely the mapper chopped
+// their geometry: two hops crosses a whole room in a blocky map and dies inside one doorway's trim
+// in a detailed one, so the setting meant something different on every map. Distance is invariant
+// to that -- a room cut into forty detail sectors is the same number of map units across as the
+// same room built as one -- so the control finally means one thing everywhere.
+
+// Strength at `distance` map units from open sky, reaching nothing at `reach`. Falls off quickly at
+// first and then trails, which is roughly how a doorway lights a room and, more practically, avoids
+// the banding a per-sector step produced across adjacent trim.
+int StrengthAtDistance(int pct, double distance, double reach);
+
+// How much of the light an opening passes: 1.0 for a full-height gap, less for a slit. Without this
+// a 4-unit crack under a door lets through exactly as much as an archway.
+double OpeningFactor(double openingHeight, double fullHeight);
+
+// What one step through an opening costs, in effective map units. A narrow gap makes the light
+// travel FURTHER rather than stopping it outright, which keeps the falloff smooth and means a
+// tight opening and a long corridor are expressed in the same currency.
+double StepCost(double distance, double openingFactor);
 
 } // namespace zx
 
