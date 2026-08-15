@@ -46,15 +46,14 @@ npx fuactl rpc sim.step '{"tics":1}' --port <P>
 
 | Area | RPCs | Use |
 |---|---|---|
-| Sim control | `sim.pause` `sim.step` `sim.cheatat` | run exactly N tics; fire a cheat at an exact tic |
-| Determinism | `sim.hash` `sim.rngdump` `sim.trace` | compare two runs: world hash, every RNG stream, every damage/kill/spawn |
-| Profiling | `perf.ticprof` `perf.capture` `gl.timers` | what is inside a slow tic; what composes a spike frame; GPU ms per pass |
-| State | `sim.tic` `state.player` `state.actors` | leveltime, positions, health, class names |
-| Driving | `console.exec` `input.event` `ui …` | commands, keys, menu reading, screenshots |
+| Sim control | `sim.pause` `sim.step`, etc | run exactly N tics, every time |
+| Determinism | `sim.hash` `sim.trace`, etc | compare two runs: world hash, every RNG stream, every damage/kill/spawn |
+| Profiling | `perf.ticprof` `perf.capture`, etc | what is inside a slow tic; what composes a spike frame; GPU ms per pass |
+| State | `sim.tic` `state.actors`, etc | leveltime, positions, health, class names |
+| Driving | `console.exec` `ui …`, etc | commands, keys, menu reading, screenshots |
 
 ## Why the odd ones exist
 
-- `sim.cheatat`: console cheats execute at a wall-clock-dependent tic. Pinning them makes two runs comparable.
 - `sim.hash` skips dynamic-light actors: their population follows the renderer, and hashing them makes identical sims look different.
 - `sim.trace`: diff two trace files; the first differing line is the event that diverged.
 
