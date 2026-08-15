@@ -262,8 +262,29 @@ foreach ($wad in @("freedoom1.wad", "freedoom2.wad")) {
         throw "tools/freedoom/$wad missing — the zip would ship without a game to fall back on"
     }
 }
-Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
+# [rc4l] Into iwads/, not loose beside the exe. A player opening the folder should see a program to
+# run, not a pile of game data they did not put there. The engine is told about the folder in
+# features/wad-download/zx_wadsearch.cpp.
+#
+# THIS IS THE SCRIPT CI ACTUALLY RUNS. The same move was made in windows_build.ps1,
+# windows10_compile.ps1, linux_compile.sh and mac_compile.sh, and missing this one meant the release
+# zip still shipped them loose -- and shipped no fuamega.wad at all, because only this path had never
+# learned to. Four packaging scripts were changed and the fifth was the one that mattered.
+$IwadDir = Join-Path $DistDir "iwads"
+New-Item -ItemType Directory -Force -Path $IwadDir | Out-Null
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $IwadDir\
+
+# The notice stays at the top level: clause 2 wants it to accompany the distribution, and a notice
+# filed inside a data folder is one nobody opens.
 Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
+
+# [rc4l] Our own base data for total conversions that ship no base file of their own. Checked rather
+# than copied blind, the same as Freedoom above: without it Mega Man 8-bit Deathmatch is unhostable,
+# which is exactly what every release built by this script has been.
+if (-not (Test-Path (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad"))) {
+    throw "tools/mkiwad/fuamega.wad missing, so rebuild it with tools/mkiwad/mkiwad.py"
+}
+Copy-Item (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad") $IwadDir\
 
 # [rc4l] The addon catalogue. Required rather than best-effort: the HOST tab reads it from beside the
 # exe, and a build without it offers nothing to host.

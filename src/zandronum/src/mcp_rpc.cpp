@@ -33,6 +33,7 @@
 #include "mcp_glperf.h"
 #include "mcp_ticprof.h"
 #include "mcp_simtrace.h"
+#include "mcp_sample.h"
 #include "textures/textures.h"
 #include "features/damage-tint/damagetint.h"
 
@@ -318,6 +319,15 @@ void MCP_RPC_Tick()
 		std::string trace;
 		if ( MCP_SimTrace_ReportReady( trace ) )
 			EmitEvent( "trace", trace );
+	}
+
+	// Sampling profiler (perf.sample). Publish the clock first so a sample taken this frame is
+	// stamped with the tic it actually belongs to, then drain any finished run.
+	MCP_Sample_PublishTic( InLevel() ? level.time : 0 );
+	{
+		std::string sample;
+		if ( MCP_Sample_ReportReady( sample ) )
+			EmitEvent( "sample", sample );
 	}
 
 	// Drive a scheduled step. Force paused=0 EVERY frame while stepping so the single-player
@@ -608,6 +618,39 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		GetInt( args, "tics", tics );
 		MCP_TicProf_Arm( (int)tics );
 		SendOk( id, std::string( "{\"capturing\":true,\"tics\":" ) + I( tics ) + "}" );
+	}
+	else if ( cmd == "perf.sample" )
+	{
+		// Flat self-time profile of the game thread: which functions the CPU was actually inside.
+		// Runs on its own thread, so this returns at once and the table arrives as a "sample" event.
+		// Bracket it with sim.pause/sim.step to attribute the samples to a known tic range, which is
+		// the thing an external sampler cannot do.
+		if ( MCP_Sample_Running( ) )
+		{
+			SendErr( id, "a sample run is already in progress" );
+			return;
+		}
+
+		long seconds = 2, hz = 1000, top = 20, engineOnly = 0, ticMin = 0, ticMax = 0;
+		GetInt( args, "seconds", seconds );
+		GetInt( args, "hz", hz );
+		GetInt( args, "top", top );
+		GetInt( args, "engine", engineOnly );
+		// Keep only the samples that landed in a leveltime range (0,0 = all of them). Ask
+		// perf.ticprof which tics were expensive, then ask here for exactly those.
+		GetInt( args, "tic_min", ticMin );
+		GetInt( args, "tic_max", ticMax );
+
+		if ( !MCP_Sample_Arm( (double)seconds, (int)hz, engineOnly != 0, (int)top,
+			(int)ticMin, (int)ticMax ) )
+		{
+			SendErr( id, "no in-engine sampler on this platform (macOS and Linux use fuactl's "
+				"external sample/perf backend)" );
+			return;
+		}
+
+		SendOk( id, std::string( "{\"sampling\":true,\"seconds\":" ) + I( seconds ) +
+			",\"hz\":" + I( hz ) + ",\"tic_min\":" + I( ticMin ) + ",\"tic_max\":" + I( ticMax ) + "}" );
 	}
 	else if ( cmd == "perf.counters" )
 	{
