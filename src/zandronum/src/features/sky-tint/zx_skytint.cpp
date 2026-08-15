@@ -411,6 +411,17 @@ void ApplyIndex( ptrdiff_t at, FColormap &cm )
 	if ( tint.r == 255 && tint.g == 255 && tint.b == 255 )
 		return;
 
+	// [rc4l] TRIPWIRE, not a live guard: nothing in this tree sets blendfactor today. It is the
+	// sector colormap's alpha, and every producer passes alpha 0 (Static_Init uses MAKERGB, UDMF
+	// uses PalEntry(r,g,b), ACS Sector_SetColor takes r/g/b). Boom's own colormaps do NOT arrive
+	// here at all: Transfer_Heights writes bottommap/midmap/topmap, which is a viewer screen blend.
+	//
+	// Kept because if a port ever does light it up, a non-zero blendfactor sends gl_CalcLightColor
+	// down a path that mixes the colour in at a FIXED factor regardless of light level, and
+	// multiplying into that would darken an authored colour rather than light anything.
+	if ( cm.blendfactor != 0 )
+		return;
+
 	// Multiplied into whatever the surface already had rather than replacing it: the tint is light
 	// arriving from outside, not a repaint, so a coloured sector keeps its own character.
 	cm.LightColor.r = (BYTE)(( cm.LightColor.r * tint.r ) / 255 );
