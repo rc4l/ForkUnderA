@@ -1616,7 +1616,11 @@ class CommandDrawMugShot : public SBarInfoCommand
 		{
 			FTexture *face = script->MugShot.GetFace(statusBar->CPlayer, defaultFace, accuracy, stateFlags);
 			if (face != NULL)
-				statusBar->DrawGraphic(face, x, y, block->XOffset(), block->YOffset(), block->Alpha(), block->FullScreenOffsets());
+			{
+				// [rc4l] features/damage-tint: the floor's tint reaches the mugshot too.
+				statusBar->DrawGraphic(face, x, y, block->XOffset(), block->YOffset(), block->Alpha(), block->FullScreenOffsets(),
+					false, false, 0, false, -1, -1, 0, 0, 0, 0, false, DamageTint_FaceOverlay());
+			}
 		}
 		void	Parse(FScanner &sc, bool fullScreenOffsets)
 		{

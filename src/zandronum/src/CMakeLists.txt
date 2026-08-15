@@ -1491,6 +1491,7 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
+	features/playerclass-fallback/zx_playerclassfallback.cpp
 	features/iwad-registry/zx_iwadregistry.cpp
 	features/identity/zx_identity.cpp
 	features/identity/zx_identitynet.cpp
@@ -1509,6 +1510,7 @@ add_executable( zdoom WIN32
 	features/port-mapping/computation/ssdp_compute.cpp
 	features/port-mapping/computation/upnpsoap_compute.cpp
 	features/port-mapping/computation/natpmp_compute.cpp
+	features/damage-tint/damagetint.cpp
 	features/server-hosting/zx_hosting.cpp
 	features/server-hosting/zx_hostprocess.cpp
 	features/server-hosting/zx_hostwatchdog.cpp

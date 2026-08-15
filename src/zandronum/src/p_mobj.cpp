@@ -99,6 +99,7 @@
 #include "features/fov-interp/computation/fovrequest_compute.h"
 #include "features/quake-movement/quakemove.h"
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
+#include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -5742,8 +5743,14 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 					type = p->userinfo.GetPlayerClassNum();
 					if (type < 0)
 					{
+						// [rc4l] Unless the mod forbade random classes, in which case pick a
+						// selectable one rather than re-rolling on every respawn.
+						const int fallback = ZX_PlayerClassFallback( type, !!p->bOnTeam, p->Team );
+
+						if ( fallback >= 0 )
+							type = fallback;
 						// [BB] If the player is on a team, only a class valid for this team may be selected.
-						if ( p->bOnTeam )
+						else if ( p->bOnTeam )
 							type = TEAM_SelectRandomValidPlayerClass( p->Team );
 						else
 							type = pr_multiclasschoice() % PlayerClasses.Size ();
