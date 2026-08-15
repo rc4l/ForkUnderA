@@ -482,6 +482,7 @@ bool GLWall::DoHorizon(seg_t * seg,sector_t * fs, vertex_t * v1,vertex_t * v2)
 			hi.plane.GetFromSector(fs, true);
 			hi.lightlevel = gl_ClampLight(fs->GetCeilingLight());
 			hi.colormap = fs->ColorMap;
+			zx::SkyTint_Apply( fs, hi.colormap );	// [rc4l] features/sky-tint
 
 			if (fs->e->XFloor.ffloors.Size())
 			{
@@ -511,6 +512,7 @@ bool GLWall::DoHorizon(seg_t * seg,sector_t * fs, vertex_t * v1,vertex_t * v2)
 			hi.plane.GetFromSector(fs, false);
 			hi.lightlevel = gl_ClampLight(fs->GetFloorLight());
 			hi.colormap = fs->ColorMap;
+			zx::SkyTint_Apply( fs, hi.colormap );	// [rc4l] features/sky-tint
 
 			if (fs->e->XFloor.ffloors.Size())
 			{

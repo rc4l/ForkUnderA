@@ -54,6 +54,7 @@
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/dynlights/gl_glow.h"
 #include "gl/scene/gl_drawinfo.h"
+#include "features/sky-tint/zx_skytint.h"
 #include "gl/models/gl_models.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
@@ -347,6 +348,10 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		else 
 		{
 			cm=fakesec->ColorMap;
+			// [rc4l] Sky-derived outdoor light, before nocoloredspritelighting gets its say -- that
+			// flag turns coloured light on the weapon OFF, so tinting after it would ignore a map
+			// that asked not to be tinted. See features/sky-tint.
+			zx::SkyTint_Apply( fakesec, cm );
 			if (glset.nocoloredspritelighting) cm.ClearColor();
 		}
 	}
