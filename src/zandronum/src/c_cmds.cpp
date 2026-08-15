@@ -65,6 +65,7 @@
 #include "templates.h"
 #include "p_local.h"
 #include "r_sky.h"
+#include "features/sky-tint/zx_skytint.h" // [rc4l] SkyTint_SkyChanged()
 #include "p_setup.h"
 #include "cmdlib.h"
 #include "d_net.h"
@@ -1383,6 +1384,8 @@ CCMD(changesky)
 		}
 	}
 	R_InitSkyMap ();
+	// [rc4l] features/sky-tint is derived from sky1texture, so tell it the sky moved.
+	zx::SkyTint_SkyChanged ();
 }
 
 //-----------------------------------------------------------------------------
