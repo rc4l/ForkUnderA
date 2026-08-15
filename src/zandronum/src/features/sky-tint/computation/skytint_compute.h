@@ -72,6 +72,18 @@ SkyRgb AverageSky(const std::vector<SkyRgb> &pixels, int width, SkyAverage mode,
 // the light is; the map's own light levels say how much of it there is.
 SkyRgb NormaliseBrightness(SkyRgb colour);
 
+// [rc4l] How bright the sky is, 0..1, in LINEAR light and weighted the way an eye weighs it.
+//
+// Normalising brightness away means a DIM sky produces just as vivid a tint as a blazing one, which
+// is why a dark green sky can read as a green filter over the whole map. This is the number that
+// lets a caller put some of that brightness back, per map, instead of turning the effect down
+// globally and losing it everywhere the sky was fine.
+double SkyLuminance(SkyRgb colour);
+
+// Strength scaled by how bright the sky is. `respect` 0 keeps the full strength whatever the sky
+// looks like, 100 hands it entirely to the sky's own brightness.
+int StrengthForSky(int pct, double luminance, int respectPct);
+
 // Pull toward grey until saturation is at most `maxPct` (0 = grey, 100 = untouched).
 SkyRgb ClampSaturation(SkyRgb colour, int maxPct);
 

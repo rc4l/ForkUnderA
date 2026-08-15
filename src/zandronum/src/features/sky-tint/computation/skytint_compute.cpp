@@ -208,6 +208,35 @@ SkyRgb NormaliseBrightness(SkyRgb colour)
 	return SkyRgb((colour.r * 255) / maxv, (colour.g * 255) / maxv, (colour.b * 255) / maxv);
 }
 
+double SkyLuminance(SkyRgb colour)
+{
+	// Rec. 709 weights on LINEARISED components. Green carries most of what an eye reads as
+	// brightness, which matters here precisely because the skies that cause trouble are green ones.
+	return (0.2126 * LinearFromSrgb(colour.r))
+		+ (0.7152 * LinearFromSrgb(colour.g))
+		+ (0.0722 * LinearFromSrgb(colour.b));
+}
+
+int StrengthForSky(int pct, double luminance, int respectPct)
+{
+	if (respectPct <= 0)
+		return pct;			// hue only, whatever the sky's brightness
+
+	if (respectPct > 100)
+		respectPct = 100;
+	if (luminance < 0.0)
+		luminance = 0.0;
+	if (luminance > 1.0)
+		luminance = 1.0;
+
+	// Blend between "ignore the sky's brightness" and "let it decide", so the control is a dial
+	// rather than a switch and a map with a mid-bright sky lands somewhere sensible.
+	const double t = respectPct / 100.0;
+	const double scale = (1.0 - t) + (t * luminance);
+
+	return static_cast<int>((pct * scale) + 0.5);
+}
+
 int SaturationPct(SkyRgb colour)
 {
 	const int maxv = std::max(colour.r, std::max(colour.g, colour.b));

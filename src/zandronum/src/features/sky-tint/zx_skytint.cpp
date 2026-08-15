@@ -65,6 +65,17 @@ CUSTOM_CVAR( Int, cl_fua_skytint_gap, 100, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 	else						zx::SkyTint_Rebuild( );
 }
 
+// [rc4l] How much the sky's OWN brightness scales the tint. 0 keeps hue only, so a dim sky tints
+// as hard as a blazing one -- which is why a dark green sky can read as a filter over a whole map.
+// Higher lets each map's sky limit itself, which the Max colour slider cannot do because it is
+// global: turning that down to tame one map costs the tint on every map where it was already fine.
+CUSTOM_CVAR( Int, cl_fua_skytint_brightness, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+{
+	if ( self < 0 )				self = 0;
+	else if ( self > 100 )		self = 100;
+	else						zx::SkyTint_Rebuild( );
+}
+
 // 0 = mean (faithful), 1 = dominant (the colour a person would name).
 CUSTOM_CVAR( Int, cl_fua_skytint_mode, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 {
@@ -165,6 +176,12 @@ void SkyTint_Rebuild( )
 	const SkyWeight weight = ( cl_fua_skytint_weight == 1 ) ? SkyWeight::Cosine : SkyWeight::Horizon;
 
 	SkyRgb tint = AverageSky( pixels, width, mode, weight );
+
+	// Measured BEFORE the brightness is normalised away, because afterwards there is none left to
+	// read. This is what lets a dark sky tint gently and a bright one tint hard, per map.
+	const int strengthPct = StrengthForSky( cl_fua_skytint_strength, SkyLuminance( tint ),
+		cl_fua_skytint_brightness );
+
 	tint = NormaliseBrightness( tint );				// the sky says WHICH colour, not how much
 	tint = ClampSaturation( tint, cl_fua_skytint_saturation );
 
@@ -304,7 +321,7 @@ void SkyTint_Rebuild( )
 		if ( dist[i] >= kInfinity )
 			continue;					// never reached at all
 
-		const int strength = StrengthAtDistance( cl_fua_skytint_strength, dist[i], reach );
+		const int strength = StrengthAtDistance( strengthPct, dist[i], reach );
 		if ( strength <= 0 )
 			continue;
 
