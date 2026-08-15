@@ -54,6 +54,10 @@ bool SkyTint_Active();
 // TEMPORARY, for the fua_skytintinfo diagnostic.
 size_t SkyTintTableSize();
 
+// How many sky-seeing leaves render a 3D skybox instead of a texture. Those are not lit yet, and
+// this is how you find out a map has them rather than wondering why part of it stayed grey.
+int SkyTintSkyboxLeaves();
+
 // The sector form, for the few places the renderer knows only which sector it is drawing (sprites
 // away from a subsector, horizon portals). Takes the brightest leaf of that sector, so it errs
 // toward the lit side rather than picking an arbitrary one.
