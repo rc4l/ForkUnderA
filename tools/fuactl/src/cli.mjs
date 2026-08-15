@@ -12,8 +12,24 @@ import { summarizeGlTimers } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
 import fs from "node:fs";
+import path from "node:path";
 
 const num = (v) => (v != null && v !== true ? Number(v) : undefined);
+
+// [rc4l] Resolve --file entries against the CALLER's cwd and fail loudly on a miss. The engine runs
+// with its own cwd (the staged dist dir), so a path relative to the repo silently matched nothing:
+// the engine started on a bare IWAD, and a screenshot of Doom 2 MAP01 is indistinguishable from a
+// mod that loaded and broke. Cost a full diagnostic cycle before the pixels gave it away.
+function resolvePwads(spec) {
+  if (!spec) return undefined;
+  const files = String(spec).split(",").map((f) => path.resolve(f.trim()));
+  const missing = files.filter((f) => !fs.existsSync(f));
+  if (missing.length) {
+    console.error(`--file: not found:\n  ${missing.join("\n  ")}`);
+    process.exit(2);
+  }
+  return files.flatMap((f) => ["-file", f]);
+}
 
 // Connect to an instance, run fn with the client, print nothing extra, then close.
 async function withUi(flags, fn) {
@@ -85,9 +101,7 @@ async function main() {
         skill: flags.skill != null ? Number(flags.skill) : undefined,
         // [rc4l] PWADs, comma-separated. Without this the only launchable thing was a bare IWAD, so
         // a mod could be profiled only by hosting a server first and measuring through the netcode.
-        extraArgs: flags.file
-          ? String(flags.file).split(",").flatMap((f) => ["-file", f.trim()])
-          : undefined,
+        extraArgs: resolvePwads(flags.file),
       });
       console.log(`launched pid=${inst.pid} port=${inst.port} token=${inst.token}`);
       console.log(`(rpc it with: fuactl rpc sim.tic --port ${inst.port} --token ${inst.token})`);
