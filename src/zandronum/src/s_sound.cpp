@@ -123,6 +123,9 @@ static FSoundChan *S_StartSound(AActor *mover, const sector_t *sec, const FPolyO
 	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation, FRolloffInfo *rolloff, int pitch_override);
 static void S_SetListener(SoundListener &listener, AActor *listenactor);
 
+// [rc4l] uzdoom@3ea49a66d: dedicated pitch-variation stream -- see the use site in S_StartSound.
+static FRandom pr_soundpitch ("SoundPitch");
+
 // PRIVATE DATA DEFINITIONS ------------------------------------------------
 
 static bool		SoundPaused;		// whether sound is paused
@@ -1149,7 +1152,13 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 	}
 	else if (snd_pitched && sfx->PitchMask != 0)
 	{
-		pitch = NORM_PITCH - (M_Random() & sfx->PitchMask) + (M_Random() & sfx->PitchMask);
+		// [rc4l] uzdoom@3ea49a66d: pitch variation draws from its OWN stream, not the shared
+		// M_Random the simulation also uses. Whether and when a sound plays depends on
+		// real-time audio channel availability, so drawing from a sim stream let audio timing
+		// perturb gameplay RNG -- proven here: an identical scenario replayed differently with
+		// sound on and identically with -nosound. Upstream walled this off for the same reason
+		// (their FCRandom is explicitly the client-side, non-synced class).
+		pitch = NORM_PITCH - (pr_soundpitch() & sfx->PitchMask) + (pr_soundpitch() & sfx->PitchMask);
 	}
 	else
 	{
