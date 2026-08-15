@@ -38,7 +38,9 @@ function parseFlags(argv) {
 const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
-  launch [--map M] [--seed S]        launch one supervised bridge instance (stays up until Ctrl-C)
+  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N]   launch one supervised bridge instance (stays up until Ctrl-C)
+  sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
+  net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
@@ -65,7 +67,18 @@ async function main() {
       break;
     }
     case "launch": {
-      const inst = await launchInstance({ map: flags.map, seed: flags.seed != null ? Number(flags.seed) : undefined });
+      // [rc4l] --port/--token/--iwad/--skill are passed through rather than dropped. launchInstance
+      // has always taken them; launch forwarded only map and seed, so `--port 7777` was accepted
+      // silently and then ignored, and the caller had to read the chosen port back out of stdout.
+      // A fixed port is the difference between scripting a run and parsing for it.
+      const inst = await launchInstance({
+        map: flags.map,
+        seed: flags.seed != null ? Number(flags.seed) : undefined,
+        port: flags.port != null ? Number(flags.port) : undefined,
+        token: flags.token || undefined,
+        iwad: flags.iwad || undefined,
+        skill: flags.skill != null ? Number(flags.skill) : undefined,
+      });
       console.log(`launched pid=${inst.pid} port=${inst.port} token=${inst.token}`);
       console.log(`(rpc it with: fuactl rpc sim.tic --port ${inst.port} --token ${inst.token})`);
       process.on("SIGINT", async () => { await stopInstance(inst); process.exit(0); });
