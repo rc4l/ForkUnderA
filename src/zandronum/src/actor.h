@@ -1271,22 +1271,6 @@ public:
 	FSoundIDNoInit WallBounceSound;
 	FSoundIDNoInit CrushPainSound;
 
-	// [rc4l] sight-cache (p_sight.cpp): memoized result of this actor's last P_CheckSight
-	// as viewer. Sight is a pure function of both endpoints and static-until-moved geometry,
-	// so the entry is keyed on both positions/heights/flags plus a global geometry revision
-	// (bumped by sector movers, polyobjects and line-blocking changes). Never valid across
-	// saves (not serialized; defaults are zero). Calls that can reach the pr_checksight RNG
-	// draw bypass the cache entirely so the RNG stream is untouched.
-	struct FSightCache
-	{
-		DWORD rev;
-		fixed_t sx, sy, sz, sh;
-		fixed_t tx, ty, tz, th;
-		int flags;
-		bool result;
-		bool valid;
-	} SightCache;
-
 	fixed_t Speed;
 	fixed_t FloatSpeed;
 	fixed_t MaxDropOffHeight, MaxStepHeight;
