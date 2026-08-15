@@ -411,6 +411,7 @@ OptionMenu "FUAOptions"
 	Submenu "Crash Reporting",			"CrashReportOptions"
 	Submenu "Hitbox Visualization",		"HitboxVizOptions"
 	Submenu "Damage Tint",				"FUADamageTintOptions"
+	Submenu "Sky Lighting",				"FUASkyTintOptions"
 	StaticText " "
 	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
 	// notice. On by default; off means no update check and no network call.
@@ -435,6 +436,27 @@ OptionMenu "FUADamageTintOptions"
 	Slider	"Face tint coverage",		"cl_damagetint_face_coverage",		0.0, 100.0, 5.0, 0
 	StaticText " "
 	StaticText "Coverage: how far up each sprite the tint reaches (50 = half).", 1
+}
+
+// [rc4l] features/sky-tint: sectors that can see the sky take their light colour from it, bleeding
+// inward through real openings. Applied at draw time, so the map's own colours are untouched and
+// turning it off puts the level back exactly as the mapper left it.
+OptionMenu "FUASkyTintOptions"
+{
+	Title "SKY LIGHTING"
+	StaticText "Outdoor sectors take their light colour from the sky texture.", 1
+	StaticText " "
+	Option	"Tint from sky",			"cl_fua_skytint",				"OnOff"
+	Slider	"Strength",					"cl_fua_skytint_strength",		0.0, 100.0, 5.0, 0
+	Slider	"Max colour",				"cl_fua_skytint_saturation",	0.0, 100.0, 5.0, 0
+	Slider	"Indoor bleed",				"cl_fua_skytint_bleed",			0.0, 4.0, 1.0, 0
+	StaticText " "
+	Option	"Sky colour from",			"cl_fua_skytint_mode",			"SkyTintModes"
+	Option	"Sky area",					"cl_fua_skytint_weight",		"SkyTintWeights"
+	StaticText " "
+	StaticText "Average is faithful; Dominant names the biggest colour in the sky.", 1
+	StaticText "Horizon is what you look at; Overhead is what lights a floor.", 1
+	StaticText "Indoor bleed: rooms inward the light reaches, halving each step.", 1
 }
 
 // [rc4l] fov-interp: FOV and how fast the view tweens to it. Its own submenu rather than rows in
@@ -903,17 +925,6 @@ OptionMenu "VideoOptions"
 	Option "Vertical Sync",				"vid_vsync", "OnOff"
 	Option "Rendering Interpolation",	"cl_capfps", "OffOn"	// [rc4l] uzdoom@c6cb8493e
 	Option "Column render mode",		"r_columnmethod", "ColumnMethods"
-
-	StaticText " "
-	// [rc4l] Sky-derived outdoor light. Applied at draw time only, so the map's own colours are
-	// untouched and turning it off puts everything back exactly.
-	StaticText "Sky lighting", 1
-	Option "Tint from sky",				"cl_fua_skytint", "OnOff"
-	Slider "Strength",					"cl_fua_skytint_strength", 0.0, 100.0, 5.0, 0
-	Slider "Max colour",				"cl_fua_skytint_saturation", 0.0, 100.0, 5.0, 0
-	Slider "Indoor bleed",				"cl_fua_skytint_bleed", 0.0, 4.0, 1.0, 0
-	Option "Sky colour from",			"cl_fua_skytint_mode", "SkyTintModes"
-	Option "Sky area",					"cl_fua_skytint_weight", "SkyTintWeights"
 
 	StaticText " "
 	Option "Screen wipe style",			"wipetype", "Wipes"
