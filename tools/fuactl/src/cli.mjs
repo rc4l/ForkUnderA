@@ -10,6 +10,8 @@ import { BridgeClient } from "./client.mjs";
 import { sampleProcess } from "./sample.mjs";
 import { summarizeGlTimers } from "./proto.mjs";
 import * as ui from "./ui.mjs";
+import { runBench } from "./bench.mjs";
+import fs from "node:fs";
 
 const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
@@ -38,11 +40,16 @@ function parseFlags(argv) {
 const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
-  launch [--map M] [--seed S]        launch one supervised bridge instance (stays up until Ctrl-C)
+  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3]   launch one supervised bridge instance (stays up until Ctrl-C)
+  sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
+  net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
   gl-timers --port P [--token T] [--frames N] [--warmup M]   GPU render profiling: per-pass GPU ms (scene/translucent/hud2d) of a running instance
+  capture --port P [--frames N] [--warmup M]   frametime distribution (p50/p95/p99/max, sim vs render split)
+  ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
+  bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   mcp                                run as an MCP stdio server for agents
@@ -65,7 +72,23 @@ async function main() {
       break;
     }
     case "launch": {
-      const inst = await launchInstance({ map: flags.map, seed: flags.seed != null ? Number(flags.seed) : undefined });
+      // [rc4l] --port/--token/--iwad/--skill are passed through rather than dropped. launchInstance
+      // has always taken them; launch forwarded only map and seed, so `--port 7777` was accepted
+      // silently and then ignored, and the caller had to read the chosen port back out of stdout.
+      // A fixed port is the difference between scripting a run and parsing for it.
+      const inst = await launchInstance({
+        map: flags.map,
+        seed: flags.seed != null ? Number(flags.seed) : undefined,
+        port: flags.port != null ? Number(flags.port) : undefined,
+        token: flags.token || undefined,
+        iwad: flags.iwad || undefined,
+        skill: flags.skill != null ? Number(flags.skill) : undefined,
+        // [rc4l] PWADs, comma-separated. Without this the only launchable thing was a bare IWAD, so
+        // a mod could be profiled only by hosting a server first and measuring through the netcode.
+        extraArgs: flags.file
+          ? String(flags.file).split(",").flatMap((f) => ["-file", f.trim()])
+          : undefined,
+      });
       console.log(`launched pid=${inst.pid} port=${inst.port} token=${inst.token}`);
       console.log(`(rpc it with: fuactl rpc sim.tic --port ${inst.port} --token ${inst.token})`);
       process.on("SIGINT", async () => { await stopInstance(inst); process.exit(0); });
@@ -117,7 +140,16 @@ async function main() {
         if (e) pid = e.pid;
       }
       if (!pid) { console.error("usage: fuactl sample --pid P | --port P [--seconds N]"); process.exit(2); }
-      const r = await sampleProcess(pid, { seconds: flags.seconds ? Number(flags.seconds) : 2, engineOnly: !!flags.engine });
+      const opts = {
+        seconds: flags.seconds ? Number(flags.seconds) : 2,
+        top: flags.top ? Number(flags.top) : 12,
+        engineOnly: !!flags.engine,
+      };
+      // [rc4l] The Windows backend lives inside the engine, so it needs a connection rather than a
+      // pid. Opened only when --port was given; the external backends never touch it.
+      const r = flags.port
+        ? await withUi(flags, (c) => sampleProcess(pid, { ...opts, conn: c }))
+        : await sampleProcess(pid, opts);
       console.log(JSON.stringify(r, null, 2));
       break;
     }
@@ -132,6 +164,50 @@ async function main() {
       });
       console.error(`[gl-timers] ${summarizeGlTimers(report)}`);
       console.log(JSON.stringify({ info, report }, null, 2));
+      break;
+    }
+    // [rc4l] capture and ticprof reply immediately and deliver their numbers as an EVENT, so `rpc`
+    // closes the socket before the report exists and can never see one. These hold the connection.
+    case "capture": {
+      if (!flags.port) { console.error("usage: fuactl capture --port P [--token T] [--frames N] [--warmup M]"); process.exit(2); }
+      const report = await withUi(flags, async (c) => {
+        const done = c.waitEvent("perf", 120000);
+        await c.rpc("perf.capture", { frames: num(flags.frames) ?? 300, warmup: num(flags.warmup) ?? 0 });
+        return done;
+      });
+      console.error(`[capture] p50=${report.total.p50_ms}ms p99=${report.total.p99_ms}ms max=${report.total.max_ms}ms (sim ${report.sim_mean_ms.toFixed(2)} / render ${report.render_mean_ms.toFixed(2)})`);
+      console.log(JSON.stringify(report, null, 2));
+      break;
+    }
+    case "ticprof": {
+      if (!flags.port) { console.error("usage: fuactl ticprof --port P [--token T] [--tics N]"); process.exit(2); }
+      const report = await withUi(flags, async (c) => {
+        const done = c.waitEvent("ticprof", 120000);
+        await c.rpc("perf.ticprof", { tics: num(flags.tics) ?? 80 });
+        return done;
+      });
+      const tics = report.tics || [];
+      const worst = [...tics].sort((a, b) => (b.total || 0) - (a.total || 0))[0];
+      if (worst) console.error(`[ticprof] worst tic ${worst.total}ms (P_Ticker ${worst.pticker} / thinkers ${worst.thinkers} / effects ${worst.effects})`);
+      console.log(JSON.stringify(report, null, 2));
+      break;
+    }
+    case "bench": {
+      if (!flags.port) { console.error("usage: fuactl bench --port P --scenario FILE.json [--runs N] [--metric total.p99_ms]"); process.exit(2); }
+      if (!flags.scenario) { console.error("bench needs --scenario FILE.json (see scenarios/)"); process.exit(2); }
+      const scenario = JSON.parse(fs.readFileSync(String(flags.scenario), "utf8"));
+      const result = await withUi(flags, (c) => runBench(c, scenario, {
+        runs: num(flags.runs) ?? 5,
+        metric: flags.metric ? String(flags.metric) : "total.p99_ms",
+        log: (m) => console.error(`[bench] ${m}`),
+      }));
+      if (result.summary) {
+        const s = result.summary;
+        console.error(`[bench] ${result.metric}: median ${s.median}, range ${s.min}-${s.max}, sd ${s.stddev} over ${s.n} valid runs`);
+      }
+      // A bench that kept nothing is a failure, not an empty result -- exit non-zero so a script notices.
+      console.log(JSON.stringify(result, null, 2));
+      if (!result.runs_kept) process.exit(1);
       break;
     }
     case "renderer-info": {

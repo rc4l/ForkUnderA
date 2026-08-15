@@ -74,17 +74,43 @@ async function sampleLinux(pid, seconds, top, engineOnly, run) {
   return { available: true, backend: "perf", seconds, functions: parseLinuxPerf(rep.stdout, { top, onlyBinary: engineOnly ? ENGINE_HINT : null }) };
 }
 
-// Sample `pid` for `seconds`, returning the hottest functions (engineOnly filters to the engine
-// binary, the actionable "what in OUR code is hot"). Cross-platform via the pluggable backend.
+// [rc4l] Windows has no external sampler worth scripting, so the ENGINE samples itself: perf.sample
+// arms a sampler thread that interrupts the game thread and resolves the addresses through dbghelp,
+// and the ranked table comes back as a "sample" event. See src/mcp_sample.h.
+//
+// Needs a bridge connection rather than a pid, which is why sampleProcess takes one. It is also the
+// only backend that can be scoped to a tic range, because it is inside the thing being measured.
+export async function sampleBridge(conn, seconds, top, engineOnly) {
+  const started = await conn.rpc("perf.sample", { seconds, top, engine: engineOnly ? 1 : 0 });
+  if (!started) return { available: false, backend: "bridge", error: "perf.sample was refused", functions: [] };
+
+  // The run itself takes `seconds`; symbolising thousands of addresses afterwards takes a moment
+  // more, so the wait is the run plus a generous tail rather than a fixed timeout.
+  const report = await conn.waitEvent("sample", (seconds + 30) * 1000);
+
+  return {
+    available: true,
+    backend: "bridge",
+    seconds: report.seconds,
+    samples: report.samples,
+    // Same field names the mac and Linux parsers emit, so a caller cannot tell which answered.
+    functions: (report.functions || []).map((f) => ({ symbol: f.symbol, binary: f.dso, samples: f.samples, percent: f.percent })),
+  };
+}
+
+// Sample for `seconds`, returning the hottest functions (engineOnly filters to the engine binary,
+// the actionable "what in OUR code is hot"). Cross-platform via the pluggable backend: an external
+// sampler where the OS has a good one, the in-engine sampler on Windows where it does not.
 // `_run`/`_platform` are test seams (default to the real spawn / host platform); production never
 // passes them.
-export function sampleProcess(pid, { seconds = 2, top = 12, engineOnly = false, _run = realRun, _platform = os.platform() } = {}) {
+export function sampleProcess(pid, { seconds = 2, top = 12, engineOnly = false, conn = null, _run = realRun, _platform = os.platform() } = {}) {
   const plat = _platform;
   if (plat === "darwin") return sampleMac(pid, seconds, top, engineOnly, _run);
   if (plat === "linux") return sampleLinux(pid, seconds, top, engineOnly, _run);
+  if (conn) return sampleBridge(conn, seconds, top, engineOnly);
   return Promise.resolve({
     available: false, backend: "none",
-    error: "no built-in CLI sampler on Windows — use Tracy (BSD, cross-platform) or Windows Performance Recorder (wpr/WPA). The in-engine perf metrics (frametime/percentiles/sim-render split/counters) work here regardless.",
+    error: "the Windows sampler is in-engine and needs a bridge connection: pass --port (and --token), not --pid",
     functions: [],
   });
 }
