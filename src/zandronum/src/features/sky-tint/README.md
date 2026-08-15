@@ -68,6 +68,25 @@ is skipped outright: theirs wins, and it is never used as a bleed source either.
 multiplied into whatever a sector already had rather than replacing it, because it represents light
 arriving from outside rather than a repaint.
 
+## Custom palettes and colormaps
+
+Neither needs special handling, which was worth establishing rather than assuming.
+
+Custom **palettes**: `ReadSky` goes through `CopyTrueColorPixels`, whose base implementation resolves
+indices against the live `screen->GetPalette()`, so a mod's PLAYPAL is already reflected. True-colour
+skies carry their own RGB and never consult a palette.
+
+Custom **colormaps** never collide with the tint, because the two Boom mechanisms land elsewhere:
+
+- `Transfer_Heights` (linedef 242) writes `sector_t::bottommap/midmap/topmap`, a packed ARGB word
+  used only for the viewer's fullscreen blend (`r_utility.cpp`, `gl_scene.cpp`). Nothing here reads it.
+- `Static_Init` (linedef 190) sets the sector's `ColorMap` to a real colour, which the "a mapper
+  coloured this, theirs wins" rule above already defers to.
+
+`FColormap::blendfactor` looks like it should be the flag for this and is not: every producer in the
+tree passes alpha 0, so it is always 0. `ApplyIndex` still checks it, as a tripwire for a future port
+rather than a live guard, and says so at the call site.
+
 ## History
 
 Grew out of `experiment/sky-autotint`, a `fua_skytint` CCMD that baked into `sector_t::ColorMap` for
