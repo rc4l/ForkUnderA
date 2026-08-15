@@ -27,6 +27,11 @@
 #ifndef ZX_JOBSTATE_COMPUTE_H
 #define ZX_JOBSTATE_COMPUTE_H
 
+// [rc4l] <cstddef> for std::size_t, which this header names in its own interface. <vector> happens
+// to drag it in on MSVC and does not on libstdc++, so leaving it out built here and failed on the
+// Linux server image with "'i' was not declared in this scope" -- the size_t in the loop header had
+// silently not been a type at all.
+#include <cstddef>
 #include <vector>
 
 namespace zx
@@ -61,11 +66,11 @@ enum class JobStart
 //
 // Nothing to do beats every other consideration, INCLUDING deferring: queueing an empty job would
 // have the downloader cancel a run in flight to make room for nothing.
-JobStart JobDecideStart(bool bRunning, size_t workCount, JobWhenBusy whenBusy);
+JobStart JobDecideStart(bool bRunning, std::size_t workCount, JobWhenBusy whenBusy);
 
 // Whether a new run may start now, for a caller that refuses while busy. JobDecideStart with the
 // Refuse policy, named for the common case.
-bool JobAcceptsBegin(bool bRunning, size_t workCount);
+bool JobAcceptsBegin(bool bRunning, std::size_t workCount);
 
 // [rc4l] Whether a scan that runs ONCE PER SESSION should run now.
 //
