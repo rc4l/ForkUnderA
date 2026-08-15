@@ -2002,7 +2002,7 @@ static void ParseAddOptionMenu(FScanner &sc)
 //
 //=============================================================================
 
-namespace zx { void GlobalHeader_ShiftMenusDown(); }
+namespace zx { void GlobalHeader_ShiftMenusDown(); void MenuPin_RestoreFuaOptions(); }
 
 void M_ParseMenuDefs()
 {
@@ -2090,6 +2090,10 @@ void M_ParseMenuDefs()
 			}
 		}
 	}
+
+	// [rc4l] Put FUA Options back if a mod replaced OptionsMenu without it. Before the shift below,
+	// so the restored entry gets moved with everything else rather than being left behind the bar.
+	zx::MenuPin_RestoreFuaOptions();
 
 	// [rc4l] Make room for the global tab bar. Here because it is the only point at which every
 	// MENUDEF, ours and every mod's, has been read -- a shift applied earlier would miss whatever
