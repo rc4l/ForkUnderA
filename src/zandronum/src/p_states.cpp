@@ -310,6 +310,20 @@ FState *FActorInfo::FindState (int numnames, FName *names, bool exact) const
 //
 //==========================================================================
 
+// [rc4l] The memo table lives behind an accessor so the restart path can flush it: entries
+// key on ClassIndex and hold FState pointers owned by the actor classes, all of which a
+// wad_reload rebuild invalidates.
+TMap<QWORD, FState *> &StateStringCache()
+{
+	static TMap<QWORD, FState *> cache;
+	return cache;
+}
+
+void P_ClearStateStringCache()
+{
+	StateStringCache().Clear();
+}
+
 FState *FActorInfo::FindStateByString(const char *name, bool exact)
 {
 	// [rc4l] Memoized: ACS SetActorState and friends resolve state-name strings on
@@ -320,7 +334,7 @@ FState *FActorInfo::FindStateByString(const char *name, bool exact)
 	// exactly like the parse itself; ClassIndex + name index + exact packed into one
 	// collision-free key. A cached NULL ("no such state") is stored too, as the
 	// sentinel value (FState*)-1.
-	static TMap<QWORD, FState *> cache;
+	static TMap<QWORD, FState *> &cache = StateStringCache();
 	const FName key (name);
 	const QWORD ck = ((QWORD)key << 18) | ((QWORD)Class->ClassIndex << 1) | (exact ? 1 : 0);
 	FState **cached = cache.CheckKey (ck);

@@ -34,6 +34,16 @@ CVAR (Int, cl_fua_caching, 2, CVAR_ARCHIVE)
 // what is cut off just stays lazy-loaded.
 static const unsigned int FUA_CACHING_MAX_CLASSES = 4096;
 
+struct FStateRefs;
+static TMap<const PClass *, FStateRefs> g_stateRefs;
+static bool g_stateRefsBuilt;
+
+void FUA_CachingReset ()
+{
+	g_stateRefs.Clear();
+	g_stateRefsBuilt = false;
+}
+
 int FUA_CachingMode ()
 {
 	return clamp<int> (cl_fua_caching, 0, 2);
@@ -53,8 +63,6 @@ struct FStateRefs
 	TArray<int> sounds;
 };
 
-static TMap<const PClass *, FStateRefs> g_stateRefs;
-static bool g_stateRefsBuilt;
 
 static void BuildStateRefs ()
 {

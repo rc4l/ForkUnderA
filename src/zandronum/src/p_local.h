@@ -116,6 +116,10 @@ void	P_PredictPlayer (player_t *player);
 void	P_UnPredictPlayer ();
 */
 
+// [rc4l] Flush the FindStateByString memo (p_states.cpp) -- entries key on ClassIndex and
+// hold FState pointers, both invalidated when a wad_reload rebuilds the actor classes.
+void P_ClearStateStringCache ();
+
 //
 // P_MOBJ
 //
