@@ -128,6 +128,12 @@ CVAR(Bool, gl_nolayer, false, 0)
 // (damage-tint), and non-translucent passes.
 CVAR(Bool, gl_sprite_batching, true, CVAR_ARCHIVE)
 
+// [rc4l] sprite-cull: skip sprites whose projected size is below this many pixels (0 = off).
+// A distant 4-unit gib projects to a fraction of a pixel; drawing it costs a full state-change
+// + draw call on GL-over-Metal while contributing sub-pixel noise. Mass-death storms are
+// mostly such sprites. 1.0 culls only the genuinely invisible.
+CVAR(Float, gl_sprite_cull_size, 1.0f, CVAR_ARCHIVE)
+
 CCMD(gl_batchstats)
 {
 	extern int g_bs_dump();
@@ -863,6 +869,21 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		}
 
 		r.Scale(FIXED2FLOAT(spritescaleX),FIXED2FLOAT(spritescaleY));
+
+		// [rc4l] sprite-cull: see the cvar. Models are unaffected (this is the !modelframe path).
+		if (gl_sprite_cull_size > 0.f)
+		{
+			float cdx = x - FIXED2FLOAT(viewx);
+			float cdy = y - FIXED2FLOAT(viewy);
+			float cdist = (float)sqrt(cdx*cdx + cdy*cdy);
+			if (cdist > 1.f)
+			{
+				float worldsize = MAX(r.width, r.height);
+				float tanHalf = (float)tan(DEG2RAD(clamp<float>((float)player->FOV, 5.f, 175.f)) * 0.5);
+				float projpix = worldsize * (screen->GetWidth() * 0.5f) / (cdist * tanHalf);
+				if (projpix < gl_sprite_cull_size) return;
+			}
+		}
 
 		float rightfac=-r.left;
 		float leftfac=rightfac-r.width;
