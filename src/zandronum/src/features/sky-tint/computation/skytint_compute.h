@@ -84,6 +84,15 @@ double SkyLuminance(SkyRgb colour);
 // looks like, 100 hands it entirely to the sky's own brightness.
 int StrengthForSky(int pct, double luminance, int respectPct);
 
+// [rc4l] Strength scaled by how bright THIS SECTOR already is (Doom light level, 0..255).
+//
+// The sky-side dials could not tell Speed of Doom MAP01 from MAP20: both skies are dark, so both
+// were reduced alike. What actually separates them is the scene -- MAP01 is near-neutral dark grey
+// so a green cast screams, MAP20 is already warm brown so a warm cast disappears into it. A dim
+// sector taking a weaker tint targets that directly, and it is what light does anyway: a room that
+// receives little light shows little of its colour.
+int StrengthForSectorLight(int pct, int lightLevel, int respectPct);
+
 // Pull toward grey until saturation is at most `maxPct` (0 = grey, 100 = untouched).
 SkyRgb ClampSaturation(SkyRgb colour, int maxPct);
 
