@@ -59,7 +59,19 @@ enum class SkyWeight
 double LinearFromSrgb(int byte);
 int SrgbFromLinear(double linear);
 
-// Weight for one row of the sky texture, row 0 at the top. Never negative.
+// How many rows of a texture of this height sit at or above the horizon, row 0 being the zenith.
+// Rows past this are drawn on the sky dome's LOWER hemisphere, below eye level.
+//
+// [rc4l] The 240 comes from gl_skydome.cpp, which scales a taller sky by 240/height so that its
+// upper hemisphere, the dome's whole v range 0..1, covers the first 240 rows and the remainder
+// spills below the horizon. Averaging past this point was the bug: on a 400 tall sky it meant 40%
+// of every average came from sky that is under your feet, which lights nothing and is not what you
+// look at either. It is also why Horizon and Cosine used to agree on such skies -- both were
+// dominated by the same invisible tail.
+int RowsAboveHorizon(int height);
+
+// Weight for one row of the sky texture, row 0 at the top. Never negative, and zero for any row
+// below the horizon (see RowsAboveHorizon).
 double RowWeight(int row, int height, SkyWeight mode);
 
 // Reduce a sky image to one colour. `pixels` is row-major, `width` columns per row.
