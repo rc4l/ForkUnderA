@@ -98,6 +98,7 @@
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
 #include "features/quake-movement/quakemove.h"
+#include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
@@ -5353,6 +5354,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 			TEAM_ExecuteReturnRoutine( teams.Size( ), NULL );
 	}
 
+	MCP_SimTrace_Spawn (actor); // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 	g_SpawnCycles.Unclock();
 	return actor;
 }

@@ -170,6 +170,12 @@ public:
 	// Static interface
 	static void StaticClearRandom ();
 	static DWORD StaticSumSeeds ();
+#ifdef FUA_MCP_BRIDGE
+	// [ForkUnderA] mcp-bridge: enumerate every RNG stream's identity and position so a
+	// driver can diff two runs and name the exact subsystem whose stream diverged
+	// (sim.rngdump). fn receives (name CRC, index counter, first state word, ctx).
+	static void StaticEnumStates (void (*fn)(DWORD crc, unsigned int idx, DWORD u0, void *ctx), void *ctx);
+#endif
 	static void StaticReadRNGState (PNGHandle *png);
 	static void StaticWriteRNGState (FILE *file);
 	static FRandom *StaticFindRNG(const char *name);
