@@ -501,7 +501,7 @@ protected:
 class MUSSong2 : public MIDIStreamer
 {
 public:
-	MUSSong2(FILE *file, BYTE *musiccache, int length, EMidiDevice type);
+	MUSSong2(FileReader &reader, EMidiDevice type);
 	~MUSSong2();
 
 	MusInfo *GetOPLDumper(const char *filename);
@@ -527,7 +527,7 @@ protected:
 class MIDISong2 : public MIDIStreamer
 {
 public:
-	MIDISong2(FILE *file, BYTE *musiccache, int length, EMidiDevice type);
+	MIDISong2(FileReader &reader, EMidiDevice type);
 	~MIDISong2();
 
 	MusInfo *GetOPLDumper(const char *filename);
@@ -584,7 +584,7 @@ protected:
 class HMISong : public MIDIStreamer
 {
 public:
-	HMISong(FILE *file, BYTE *musiccache, int length, EMidiDevice type);
+	HMISong(FileReader &reader, EMidiDevice type);
 	~HMISong();
 
 	MusInfo *GetOPLDumper(const char *filename);
@@ -627,7 +627,7 @@ protected:
 class XMISong : public MIDIStreamer
 {
 public:
-	XMISong(FILE *file, BYTE *musiccache, int length, EMidiDevice type);
+	XMISong(FileReader &reader, EMidiDevice type);
 	~XMISong();
 
 	MusInfo *GetOPLDumper(const char *filename);
@@ -666,7 +666,8 @@ protected:
 class StreamSong : public MusInfo
 {
 public:
-	StreamSong (const char *file, int offset, int length);
+    StreamSong (FileReader *reader);
+	StreamSong (const char *url);
 	~StreamSong ();
 	void Play (bool looping, int subsong);
 	void Pause ();
@@ -691,7 +692,7 @@ protected:
 class OPLMUSSong : public StreamSong
 {
 public:
-	OPLMUSSong (FILE *file, BYTE *musiccache, int length);
+	OPLMUSSong (FileReader &reader);
 	~OPLMUSSong ();
 	void Play (bool looping, int subsong);
 	bool IsPlaying ();
@@ -740,17 +741,17 @@ protected:
 class CDDAFile : public CDSong
 {
 public:
-	CDDAFile (FILE *file, int length);
+	CDDAFile (FileReader &reader);
 };
 
 // Module played via foo_dumb -----------------------------------------------
 
-MusInfo *MOD_OpenSong(FILE *file, BYTE *musiccache, int len);
+MusInfo *MOD_OpenSong(FileReader &reader);
 
 // Music played via Game Music Emu ------------------------------------------
 
 const char *GME_CheckFormat(uint32 header);
-MusInfo *GME_OpenSong(FILE *file, BYTE *musiccache, int len, const char *fmt);
+MusInfo *GME_OpenSong(FileReader &reader, const char *fmt);
 
 // --------------------------------------------------------------------------
 
