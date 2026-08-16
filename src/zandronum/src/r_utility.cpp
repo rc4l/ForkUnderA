@@ -768,12 +768,22 @@ void R_ClearPastViewer (AActor *actor)
 // [AK] We need chase_height to setup the free chasecam view.
 EXTERN_CVAR(Float, chase_height)
 
-// [rc4l] uzdoom@2827c13d0
-static fixed_t QuakePower(fixed_t factor, fixed_t intensity)
-{
-	// [rc4l] fixed_t is the strong zx::Fixed here; upstream's plain int let it index the RNG and
-	// subtract directly. The modulus is the RAW 16.16 span, and the draw comes back as raw bits.
-	return FixedMul(factor, fixed_t::FromRaw(pr_torchflicker(intensity.Raw() * 2)) - intensity);
+// [rc4l] uzdoom@e29b8b209 -- takes an offset as well, for QF_WAVE
+static fixed_t QuakePower(fixed_t factor, fixed_t intensity, fixed_t offset)
+{ 
+	fixed_t randumb;
+
+	if (intensity == 0)
+	{
+		randumb = 0;
+	}
+	else
+	{
+		// [rc4l] strong fixed_t: the RNG takes a raw int modulus and returns raw bits, where
+		// upstream's plain int did both implicitly.
+		randumb = fixed_t::FromRaw(pr_torchflicker(intensity.Raw() * 2)) - intensity;
+	}
+	return FixedMul(factor, randumb + offset);
 }
 
 void R_SetupFrame (AActor *actor)
@@ -914,41 +924,44 @@ void R_SetupFrame (AActor *actor)
 	// [AK] Don't apply earthquake effects to free-roaming spectators.
 	if (!paused && ((camera->player == nullptr) || (camera->player->bSpectating == false)))
 	{
-		// [rc4l] uzdoom@7050d0322..2827c13d0 -- per-axis quakes. The [AK] spectator guard above is ours.
-		fixed_t intensityX, intensityY, intensityZ, relIntensityX, relIntensityY, relIntensityZ;
-		if (DEarthquake::StaticGetQuakeIntensities(camera,
-			intensityX, intensityY, intensityZ,
-			relIntensityX, relIntensityY, relIntensityZ) > 0)
+		// [rc4l] uzdoom@e29b8b209 -- per-axis quakes with QF_WAVE. The [AK] spectator guard above is ours.
+		FQuakeJiggers jiggers = { 0, };
+
+		if (DEarthquake::StaticGetQuakeIntensities(camera, jiggers) > 0)
 		{
 			fixed_t quakefactor = FLOAT2FIXED(r_quakeintensity);
 
-			if (relIntensityX != 0)
+			if ((jiggers.RelIntensityX | jiggers.RelOffsetX) != 0)
 			{
 				int ang = (camera->angle) >> ANGLETOFINESHIFT;
-				fixed_t power = QuakePower(quakefactor, relIntensityX);
+				fixed_t power = QuakePower(quakefactor, jiggers.RelIntensityX, jiggers.RelOffsetX);
 				viewx += FixedMul(finecosine[ang], power);
 				viewy += FixedMul(finesine[ang], power);
 			}
-			if (relIntensityY != 0)
+			if ((jiggers.RelIntensityY | jiggers.RelOffsetY) != 0)
 			{
 				int ang = (camera->angle + ANG90) >> ANGLETOFINESHIFT;
-				fixed_t power = QuakePower(quakefactor, relIntensityY);
+				fixed_t power = QuakePower(quakefactor, jiggers.RelIntensityY, jiggers.RelOffsetY);
 				viewx += FixedMul(finecosine[ang], power);
 				viewy += FixedMul(finesine[ang], power);
 			}
-			if (intensityX != 0)
-			{
-				viewx += QuakePower(quakefactor, intensityX);
-			}
-			if (intensityY != 0)
-			{
-				viewy += QuakePower(quakefactor, intensityY);
-			}
 			// FIXME: Relative Z is not relative
-			intensityZ = MAX(intensityZ, relIntensityZ);
-			if (intensityZ != 0)
+			// [MC]On it! Will be introducing pitch after QF_WAVE.
+			if ((jiggers.RelIntensityZ | jiggers.RelOffsetZ) != 0)
 			{
-				viewz += QuakePower(quakefactor, intensityZ);
+				viewz += QuakePower(quakefactor, jiggers.RelIntensityZ, jiggers.RelOffsetZ);
+			}
+			if ((jiggers.IntensityX | jiggers.OffsetX) != 0)
+			{
+				viewx += QuakePower(quakefactor, jiggers.IntensityX, jiggers.OffsetX);
+			}
+			if ((jiggers.IntensityY | jiggers.OffsetY) != 0)
+			{
+				viewy += QuakePower(quakefactor, jiggers.IntensityY, jiggers.OffsetY);
+			}
+			if ((jiggers.IntensityZ | jiggers.OffsetZ) != 0)
+			{
+				viewz += QuakePower(quakefactor, jiggers.IntensityZ, jiggers.OffsetZ);
 			}
 		}
 	}

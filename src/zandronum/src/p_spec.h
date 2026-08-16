@@ -1202,7 +1202,7 @@ void P_DoDeferedScripts (void);
 // [RH] p_quake.c
 //
 // [rc4l] uzdoom@7050d0322
-bool P_StartQuakeXYZ(AActor *activator, int tid, int intensityX, int intensityY, int intensityZ, int duration, int damrad, int tremrad, FSoundID quakesfx, int flags);
+bool P_StartQuakeXYZ(AActor *activator, int tid, int intensityX, int intensityY, int intensityZ, int duration, int damrad, int tremrad, FSoundID quakesfx, int flags, double waveSpeedX = 0, double waveSpeedY = 0, double waveSpeedZ = 0);
 bool P_StartQuake (AActor *activator, int tid, int intensity, int duration, int damrad, int tremrad, FSoundID quakesfx);
 
 // [BC] Prototypes dealing with network IDs for movers.

@@ -2726,7 +2726,7 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 	else
 	{
 		int lumpnum = -1;
-		int offset = 0, length = 0;
+		int length = 0;
 		int device = MDEV_DEFAULT;
 		MusInfo *handle = NULL;
 		FName musicasname = musicname;
@@ -2747,6 +2747,9 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 			musicname += 7;
 		}
 
+		// [rc4l] uzdoom@0017e1e6e -- one reader for all three sources, instead of a filename plus
+		// offset for a file and a raw pointer for cached bytes.
+		FileReader *reader = NULL;
 		if (!FileExists (musicname))
 		{
 			if ((lumpnum = Wads.CheckNumForFullName (musicname, true, ns_music)) == -1)
@@ -2776,8 +2779,6 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 					// shut down old music before reallocating and overwriting the cache!
 					S_StopMusic (true);
 
-					offset = -1;							// this tells the low level code that the music 
-															// is being used from memory
 					length = Wads.LumpLength (lumpnum);
 					if (length == 0)
 					{
@@ -2785,17 +2786,25 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 					}
 					musiccache.Resize(length);
 					Wads.ReadLump(lumpnum, &musiccache[0]);
+
+					reader = new MemoryReader((const char*)&musiccache[0], musiccache.Size());
 				}
 				else
 				{
-					offset = Wads.GetLumpOffset (lumpnum);
-					length = Wads.LumpLength (lumpnum);
-					if (length == 0)
+					if (Wads.LumpLength (lumpnum) == 0)
 					{
 						return false;
 					}
+					reader = Wads.ReopenLumpNum(lumpnum);
 				}
 			}
+		}
+		else
+		{
+			// [rc4l] uzdoom@98b2475fb -- load an external file. Their conversion dropped this
+			// branch, leaving reader NULL for any name that is not a lump, which silently broke
+			// music loaded from a loose file on disk.
+			reader = new FileReader(musicname);
 		}
 
 		// shutdown old music
@@ -2816,15 +2825,9 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 		{
 			mus_playing.handle = handle;
 		}
-		else if (offset != -1)
-		{
-			mus_playing.handle = I_RegisterSong (lumpnum != -1 ?
-				Wads.GetWadFullName (Wads.GetLumpFile (lumpnum)) :
-				musicname, NULL, offset, length, device);
-		}
 		else
 		{
-			mus_playing.handle = I_RegisterSong (NULL, &musiccache[0], -1, length, device);
+			mus_playing.handle = I_RegisterSong (reader, device);
 		}
 	}
 

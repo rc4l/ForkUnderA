@@ -228,6 +228,12 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize,
 					sc.ScriptError("Unknown keyword '%s'", sc.String);
 				}
 			}
+			if (iwad->MapInfo.IsEmpty())
+			{
+				// [rc4l] uzdoom@268e7df99 -- an IWAD that names no MAPINFO gets the minimum set, or it starts
+				// with no editor numbers defined at all and every thing in its maps is unknown.
+				iwad->MapInfo = "mapinfo/mindefaults.txt";
+			}
 		}
 		else if (sc.Compare("NAMES"))
 		{
@@ -276,7 +282,7 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize,
 
 //==========================================================================
 //
-// Lool for IWAD definition lump
+// Look for IWAD definition lump
 //
 //==========================================================================
 
@@ -400,11 +406,11 @@ int FIWadManager::ScanIWAD (const char *iwad)
 			FResourceLump *lump = iwadfile->GetLump(ii);
 
 			CheckLumpName(lump->Name);
-			if (lump->FullName != NULL)
+			if (lump->FullName.IsNotEmpty())
 			{
 				if (strnicmp(lump->FullName, "maps/", 5) == 0)
 				{
-					FString mapname(lump->FullName+5, strcspn(lump->FullName+5, "."));
+					FString mapname(&lump->FullName[5], strcspn(&lump->FullName[5], "."));
 					CheckLumpName(mapname);
 				}
 			}
@@ -524,7 +530,6 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 	bool iwadparmfound = false;
 	FString custwad;
 
-	ParseIWadInfos(zdoom_wad);
 	wads.Resize(mIWadNames.Size());
 	foundwads.Resize(mIWads.Size());
 	memset(&foundwads[0], 0, foundwads.Size() * sizeof(foundwads[0]));

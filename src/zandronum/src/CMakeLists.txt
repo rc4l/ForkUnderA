@@ -1021,6 +1021,7 @@ set( NOT_COMPILED_SOURCE_FILES
 	g_heretic/a_knight.cpp
 	g_heretic/a_wizard.cpp
 	g_hexen/a_bats.cpp
+	g_hexen/a_flies.cpp
 	g_hexen/a_bishop.cpp
 	g_hexen/a_blastradius.cpp
 	g_hexen/a_boostarmor.cpp
@@ -1167,6 +1168,7 @@ add_executable( zdoom WIN32
 	files.cpp
 	g_game.cpp
 	g_hub.cpp
+	g_doomedmap.cpp
 	g_level.cpp
 	g_mapinfo.cpp
 	g_skill.cpp

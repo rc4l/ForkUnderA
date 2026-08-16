@@ -7,6 +7,7 @@ precision highp float;
 uniform vec4 uCameraPos;
 uniform int uTextureMode;
 uniform float uClipHeightTop, uClipHeightBottom;
+uniform vec2 uClipSplit;
 
 uniform float uAlphaThreshold;
 

@@ -572,11 +572,8 @@ void AActor::Serialize (FArchive &arc)
 	}
 }
 
-void FMapThing::Serialize (FArchive &arc)
-{
-	arc << thingid << x << y << z << angle << type << flags << special
-		<< args[0] << args[1] << args[2] << args[3] << args[4];
-}
+// [rc4l] uzdoom@51591d10b removed FMapThing::Serialize -- nothing called it, here either, and it
+// only ever wrote a subset of the struct.
 
 AActor::AActor () throw()
 {
@@ -693,7 +690,7 @@ bool AActor::SetState (FState *newstate, bool nofunction)
 		}
 		state = newstate;
 		tics = GetTics(newstate);
-		renderflags = (renderflags & ~RF_FULLBRIGHT) | newstate->GetFullbright();
+		renderflags = (renderflags & ~RF_FULLBRIGHT) | ActorRenderFlags::FromInt (newstate->GetFullbright());
 		newsprite = newstate->sprite;
 		if (newsprite != SPR_FIXED)
 		{ // okay to change sprite and/or frame
@@ -3770,22 +3767,20 @@ void P_NightmareRespawn (AActor *mobj)
 	}
 
 	// spawn a teleport fog at old spot because of removal of the body?
-	mo = Spawn ("TeleportFog", mobj->x, mobj->y, mobj->z, ALLOW_REPLACE);
+	// [rc4l] uzdoom@30acb7200: route this through P_SpawnTeleportFog so the actor's own
+	// TeleFogSourceType/TeleFogDestType are honoured here too, not just in P_Teleport.
+	mo = P_SpawnTeleportFog(mobj, mobj->x, mobj->y, mobj->z + TELEFOGHEIGHT, true, true);
 	if (mo != NULL)
 	{
-		mo->z += TELEFOGHEIGHT;
-
 		// [BC] If we're the server, tell clients to spawn the thing.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			SERVERCOMMANDS_SpawnThing( mo );
 	}
 
 	// spawn a teleport fog at the new spot
-	mo = Spawn ("TeleportFog", x, y, z, ALLOW_REPLACE);
+	mo = P_SpawnTeleportFog(mobj, x, y, z + TELEFOGHEIGHT, false, true);
 	if (mo != NULL)
 	{
-		mo->z += TELEFOGHEIGHT;
-
 		// [BC] If we're the server, tell clients to spawn the thing.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			SERVERCOMMANDS_SpawnThing( mo );
@@ -5200,7 +5195,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 	
 	actor->sprite = st->sprite;
 	actor->frame = st->GetFrame();
-	actor->renderflags = (actor->renderflags & ~RF_FULLBRIGHT) | st->GetFullbright();
+	actor->renderflags = (actor->renderflags & ~RF_FULLBRIGHT) | ActorRenderFlags::FromInt (st->GetFullbright());
 	actor->touching_sectorlist = NULL;	// NULL head of sector list // phares 3/13/98
 	if (G_SkillProperty(SKILLP_FastMonsters))
 		actor->Speed = actor->GetClass()->Meta.GetMetaFixed(AMETA_FastSpeed, actor->Speed);
@@ -5931,6 +5926,8 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	p->mo->ResetAirSupply(false);
 	p->Uncrouch();
 	p->MinPitch = p->MaxPitch = 0;	// will be filled in by PostBeginPlay()/netcode
+	p->MUSINFOactor = NULL;
+	p->MUSINFOtics = -1;
 	// [rc4l] uzdoom@337682934 -- the fly state lives on the actor now (MF7_FLYCHEAT), and a freshly
 	// spawned pawn has default flags7, so there is nothing to clear here.
 
@@ -6227,21 +6224,13 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	AActor *mobj;
 	fixed_t x, y, z;
 
-	if (mthing->type == 0 || mthing->type == -1)
+	if (mthing->EdNum == 0 || mthing->EdNum == -1)
 		return NULL;
-
-	// count deathmatch start positions
-	if (mthing->type == 11)
-	{
-		FPlayerStart start(mthing);
-		deathmatchstarts.Push(start);
-		return NULL;
-	}
 
 	// [BC] Count temporary team starts.
-	if ( mthing->type == 5082 )
+	if ( mthing->EdNum == 5082 )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->EdNum );
 		TemporaryTeamStarts.Push( start );
 		return NULL;
 	}
@@ -6249,26 +6238,26 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	// [CW] Count team starts.
 	for ( ULONG i = 0; i < teams.Size( ); i++ )
 	{
-		if ( mthing->type == static_cast<int> (teams[i].ulPlayerStartThingNumber) )
+		if ( mthing->EdNum == static_cast<int> (teams[i].ulPlayerStartThingNumber) )
 		{
-			FPlayerStart start( mthing );
+			FPlayerStart start( mthing, mthing->EdNum );
 			teams[i].TeamStarts.Push( start );
 			return NULL;
 		}
 	}
 
 	// [RC] Catalog possession starts
-	if ( mthing->type == 6000 )
+	if ( mthing->EdNum == 6000 )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->EdNum );
 		PossessionStarts.Push( start );
 		return NULL;
 	}
 
 	// [RC] Catalog terminator starts
-	if ( mthing->type == 6001 )
+	if ( mthing->EdNum == 6001 )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->EdNum );
 		TerminatorStarts.Push( start );
 		return NULL;
 	}
@@ -6276,67 +6265,107 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	// [BC/BB] Count invasion starts.
 	if ( INVASION_IsMapThingInvasionSpot( mthing ) )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->EdNum );
 		GenericInvasionStarts.Push( start );
 	}
 
-	// Convert Strife starts to Hexen-style starts
-	if (gameinfo.gametype == GAME_Strife && mthing->type >= 118 && mthing->type <= 127)
-	{
-		mthing->args[0] = mthing->type - 117;
-		mthing->type = 1;
-	}
-
-	// [RH] Record polyobject-related things
-	if (gameinfo.gametype == GAME_Hexen)
-	{
-		switch (mthing->type)
-		{
-		case PO_HEX_ANCHOR_TYPE:
-			mthing->type = PO_ANCHOR_TYPE;
-			break;
-		case PO_HEX_SPAWN_TYPE:
-			mthing->type = PO_SPAWN_TYPE;
-			break;
-		case PO_HEX_SPAWNCRUSH_TYPE:
-			mthing->type = PO_SPAWNCRUSH_TYPE;
-			break;
-		}
-	}
-
-	if (mthing->type == PO_ANCHOR_TYPE ||
-		mthing->type == PO_SPAWN_TYPE ||
-		mthing->type == PO_SPAWNCRUSH_TYPE ||
-		mthing->type == PO_SPAWNHURT_TYPE)
-	{
-		polyspawns_t *polyspawn = new polyspawns_t;
-		polyspawn->next = polyspawns;
-		polyspawn->x = mthing->x;
-		polyspawn->y = mthing->y;
-		polyspawn->angle = mthing->angle;
-		polyspawn->type = mthing->type;
-		polyspawns = polyspawn;
-		if (mthing->type != PO_ANCHOR_TYPE)
-			po_NumPolyobjs++;
-		return NULL;
-	}
-
-	// check for players specially
+	// [rc4l] uzdoom@9e5bf3812 -- the editor-number lookup moves up to here, after Zandronum's own
+	// special mapthings. Those must stay ahead of it: the team start numbers come from
+	// teams[].ulPlayerStartThingNumber, which is configurable at runtime and so can never be a
+	// static MAPINFO entry. Everything upstream recognised by hardcoded number -- player and
+	// deathmatch starts, the Strife start conversion, the polyobject spots and the sound sequence
+	// overrides -- is a MAPINFO entry carrying an ESpecialMapthings code now.
+	// [rc4l] Zandronum supports more players than upstream's eight, and those extra starts are
+	// computed from gameinfo.player5start rather than listed anywhere, so they can never be static
+	// MAPINFO entries. Work the player number out before the lookup, so such a start is not
+	// reported as an unknown type. This also covers starts 5 to 8, which makes the MAPINFO entries
+	// for those redundant but harmless.
 	int pnum = -1;
-
-	if (mthing->type <= 4 && mthing->type > 0)
-	{
-		pnum = mthing->type - 1;
-	}
-	else
 	{
 		// [BC] We can't use the value of 32 for MAXPLAYERS here, otherwise it
 		// messes with Strife items.
 		// [BB] Only apply the restriction if we actually play Strife.
 		const int maxPlayerStarts = (gameinfo.gametype == GAME_Strife) ? 8 : MAXPLAYERS;
-		if (mthing->type >= gameinfo.player5start && mthing->type < gameinfo.player5start + maxPlayerStarts - 4)
+		if (mthing->EdNum >= gameinfo.player5start && mthing->EdNum < gameinfo.player5start + maxPlayerStarts - 4)
 		{
-			pnum = mthing->type - gameinfo.player5start + 4;
+			pnum = mthing->EdNum - gameinfo.player5start + 4;
+		}
+	}
+
+	// [rc4l] uzdoom@51591d10b -- the entry was resolved when the thing was read.
+	FDoomEdEntry *mentry = mthing->info;
+
+	if (mentry == NULL)
+	{
+		// [RH] Don't die if the map tries to spawn an unknown thing
+		if (pnum == -1)
+		Printf ("Unknown type %i at (%i, %i)\n",
+				 mthing->EdNum,
+				 mthing->x>>FRACBITS, mthing->y>>FRACBITS);
+		mentry = DoomEdMap.CheckKey(0);
+		if (mentry == NULL)	// we need a valid entry for the rest of this function so if we can't find a default, let's exit right away.
+		{
+			return NULL;
+		}
+	}
+	if (mentry->Type == NULL && mentry->Special <= 0)
+	{
+		// has been explicitly set to not spawning anything.
+		return NULL;
+	}
+
+	// copy args to mapthing so that we have them in one place for the rest of this function
+	// [rc4l] uzdoom@6f5dbdefb -- only for entries that name an actor. A special-only entry
+	// carries no args of its own, and copying them wiped the ones the map supplied.
+	if (mentry->ArgsDefined)
+	{
+		if (mentry->Type != NULL) mthing->special = mentry->Special;
+		memcpy(mthing->args, mentry->Args, sizeof(mthing->args));
+	}
+
+	if (pnum == -1 && mentry->Type == NULL)
+	{
+		switch (mentry->Special)
+		{
+		case SMT_DeathmatchStart:
+		{
+			// count deathmatch start positions
+			FPlayerStart start(mthing, 0);
+			deathmatchstarts.Push(start);
+			return NULL;
+		}
+
+		case SMT_PolyAnchor:
+		case SMT_PolySpawn:
+		case SMT_PolySpawnCrush:
+		case SMT_PolySpawnHurt:
+		{
+			polyspawns_t *polyspawn = new polyspawns_t;
+			polyspawn->next = polyspawns;
+			polyspawn->x = mthing->x;
+			polyspawn->y = mthing->y;
+			polyspawn->angle = mthing->angle;
+			polyspawn->type = mentry->Special;
+			polyspawns = polyspawn;
+			if (mentry->Special != SMT_PolyAnchor)
+				po_NumPolyobjs++;
+			return NULL;
+		}
+
+		case SMT_Player1Start:
+		case SMT_Player2Start:
+		case SMT_Player3Start:
+		case SMT_Player4Start:
+		case SMT_Player5Start:
+		case SMT_Player6Start:
+		case SMT_Player7Start:
+		case SMT_Player8Start:
+			pnum = mentry->Special - SMT_Player1Start;
+			break;
+
+		// Sound sequence override will be handled later
+		default:
+			break;
 		}
 	}
 
@@ -6409,7 +6438,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 			return NULL;
 
 		// save spots for respawning in network games
-		FPlayerStart start(mthing);
+		FPlayerStart start(mthing, pnum+1);
 		playerstarts[pnum] = start;
 		AllPlayerStarts.Push(start);
 
@@ -6425,20 +6454,12 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	}
 
 	// [RH] sound sequence overriders
-	if (mthing->type >= 1400 && mthing->type < 1410)
+	// [rc4l] uzdoom@9e5bf3812 -- 1400-1409 and 1411 are MAPINFO $SSeqOverride entries now, the
+	// first ten carrying their sequence number as an argument.
+	if (mentry->Type == NULL && mentry->Special == SMT_SSeqOverride)
 	{
-		P_PointInSector (mthing->x, mthing->y)->seqType = mthing->type - 1400;
-		return NULL;
-	}
-	else if (mthing->type == 1411)
-	{
-		int type;
-
-		if (mthing->args[0] == 255)
-			type = -1;
-		else
-			type = mthing->args[0];
-
+		int type = mentry->Args[0];
+		if (type == 255) type = -1;
 		if (type > 63)
 		{
 			Printf ("Sound sequence %d out of range\n", type);
@@ -6452,34 +6473,22 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 
 	// [RH] Determine if it is an old ambient thing, and if so,
 	//		map it to MT_AMBIENT with the proper parameter.
-	if (mthing->type >= 14001 && mthing->type <= 14064)
+	if (mthing->EdNum >= 14001 && mthing->EdNum <= 14064)
 	{
-		mthing->args[0] = mthing->type - 14000;
-		mthing->type = 14065;
+		mthing->args[0] = mthing->EdNum - 14000;
+		mthing->EdNum = 14065;
 	}
-	else if (mthing->type >= 14101 && mthing->type <= 14164)
+	else if (mthing->EdNum >= 14101 && mthing->EdNum <= 14164)
 	{
-		mthing->args[0] = mthing->type - 14100;
-		mthing->type = 14165;
-	}
-	// find which type to spawn
-	i = DoomEdMap.FindType (mthing->type);
-
-	if (i == NULL)
-	{
-		// [RH] Don't die if the map tries to spawn an unknown thing
-		Printf ("Unknown type %i at (%i, %i)\n",
-				 mthing->type,
-				 mthing->x>>FRACBITS, mthing->y>>FRACBITS);
-		i = PClass::FindClass("Unknown");
+		mthing->args[0] = mthing->EdNum - 14100;
+		mthing->EdNum = 14165;
 	}
 	// [RH] If the thing's corresponding sprite has no frames, also map
 	//		it to the unknown thing.
-	else
+	// Handle decorate replacements explicitly here
+	// to check for missing frames in the replacement object.
 	{
-		// Handle decorate replacements explicitly here
-		// to check for missing frames in the replacement object.
-		i = i->GetReplacement();
+		i = mentry->Type->GetReplacement();
 
 		const AActor *defaults = GetDefaultByType (i);
 		if (defaults->SpawnState == NULL ||
@@ -8231,11 +8240,11 @@ void AActor::Crash()
 	}
 }
 
-void AActor::SetIdle()
+void AActor::SetIdle(bool nofunction)
 {
 	FState *idle = FindState (NAME_Idle);
 	if (idle == NULL) idle = SpawnState;
-	SetState(idle);
+	SetState(idle, nofunction);
 }
 
 int AActor::SpawnHealth()
@@ -8465,27 +8474,28 @@ void PrintMiscActorInfo(AActor *query)
 			}
 		}
 		static const char * renderstyles[]= {"None", "Normal", "Fuzzy", "SoulTrans",
-			"OptFuzzy", "Stencil", "Translucent", "Add", "Shaded", "TranslucentStencil"};
+			"OptFuzzy", "Stencil", "Translucent", "Add", "Shaded", "TranslucentStencil",
+			"Shadow", "Subtract", "AddStencil", "AddShaded"};
 
-		Printf("%s @ %p has the following flags:\n   flags: %x", query->GetTag(), query, query->flags);
+		Printf("%s @ %p has the following flags:\n   flags: %x", query->GetTag(), query, query->flags.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags));
-		Printf("\n   flags2: %x", query->flags2);
+		Printf("\n   flags2: %x", query->flags2.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags2 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags2));
-		Printf("\n   flags3: %x", query->flags3);
+		Printf("\n   flags3: %x", query->flags3.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags3 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags3));
-		Printf("\n   flags4: %x", query->flags4);
+		Printf("\n   flags4: %x", query->flags4.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags4 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags4));
-		Printf("\n   flags5: %x", query->flags5);
+		Printf("\n   flags5: %x", query->flags5.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags5 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags5));
-		Printf("\n   flags6: %x", query->flags6);
+		Printf("\n   flags6: %x", query->flags6.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags6 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags6));
-		Printf("\n   flags7: %x", query->flags7);
+		Printf("\n   flags7: %x", query->flags7.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags7 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags7));
 		Printf("\nBounce flags: %x\nBounce factors: f:%f, w:%f", 
@@ -8495,7 +8505,7 @@ void PrintMiscActorInfo(AActor *query)
 			if (query->BounceFlags & 1<<flagi) Printf(" %s", flagnamesb[flagi]);*/
 		Printf("\nRender style = %i:%s, alpha %f\nRender flags: %x", 
 			querystyle, (querystyle < STYLE_Count ? renderstyles[querystyle] : "Unknown"),
-			FIXED2FLOAT(query->alpha), query->renderflags);
+			FIXED2FLOAT(query->alpha), query->renderflags.GetValue());
 		/*for (flagi = 0; flagi < 31; flagi++)
 			if (query->renderflags & 1<<flagi) Printf(" %s", flagnamesr[flagi]);*/
 		Printf("\nSpecial+args: %s(%i, %i, %i, %i, %i)\nspecial1: %i, special2: %i.",

@@ -5561,7 +5561,7 @@ void ServerCommands::SetThingFlags::Execute()
 			if ( relinkActor )
 				actor->UnlinkFromWorld ();
 
-			actor->flags = flags;
+			actor->flags = ActorFlags::FromInt (flags);
 
 			// [BB] Link based on the new flags.
 			if ( relinkActor )
@@ -5570,36 +5570,36 @@ void ServerCommands::SetThingFlags::Execute()
 		break;
 	case FLAGSET_FLAGS2:
 
-		actor->flags2 = flags;
+		actor->flags2 = ActorFlags2::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS3:
 
-		actor->flags3 = flags;
+		actor->flags3 = ActorFlags3::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS4:
 
-		actor->flags4 = flags;
+		actor->flags4 = ActorFlags4::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS5:
 
-		actor->flags5 = flags;
+		actor->flags5 = ActorFlags5::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS6:
 
-		actor->flags6 = flags;
+		actor->flags6 = ActorFlags6::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS7:
 
-		actor->flags7 = flags;
+		actor->flags7 = ActorFlags7::FromInt (flags);
 		break;
 	// [MGOOOOOO] flags8 (MBF21) and flags9 (ZandroX's own word, see actor.h MF9_*).
 	case FLAGSET_FLAGS8:
 
-		actor->flags8 = flags;
+		actor->flags8 = ActorFlags8::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS9:
 
-		actor->flags9 = flags;
+		actor->flags9 = ActorFlags9::FromInt (flags);
 		break;
 	// [rc4l] Movement-model flags (see actor.h MV_*).
 	case FLAGSET_MVFLAGS:
@@ -9425,7 +9425,9 @@ static void client_EarthQuake( BYTESTREAM_s *pByteStream )
 		return;
 
 	// Create the earthquake. Since this is client-side, damage is always 0.
-	new DEarthquake( pCenter, lIntensityX, lIntensityY, lIntensityZ, lDuration, 0, lTremorRadius, quakesound, lQuakeFlags );
+	// [rc4l] Wave speeds are not on the wire (see the note in DEarthquake's constructor), so a
+	// client reconstructs the quake without wave motion. Zero is the "no wave" value.
+	new DEarthquake( pCenter, lIntensityX, lIntensityY, lIntensityZ, lDuration, 0, lTremorRadius, quakesound, lQuakeFlags, 0, 0, 0 );
 }
 
 //*****************************************************************************

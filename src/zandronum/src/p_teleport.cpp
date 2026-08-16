@@ -86,7 +86,9 @@ void ATeleportFog::PostBeginPlay ()
 // [rc4l] uzdoom@30acb7200 through 2747f9a9f, taken as one settled form. The fog an actor leaves
 // behind and the fog it arrives in are now its own properties, and either may be NULL to mean
 // "spawn nothing" (uzdoom@dcab57b23 -- the earlier versions could not express that).
-void P_SpawnTeleportFog(AActor *mobj, fixed_t x, fixed_t y, fixed_t z, bool beforeTele, bool setTarget)
+// [rc4l] returns the fog it spawned, which upstream has no need for -- we do, because the server
+// has to tell clients about anything it spawns and the call sites are the ones holding that duty.
+AActor *P_SpawnTeleportFog(AActor *mobj, fixed_t x, fixed_t y, fixed_t z, bool beforeTele, bool setTarget)
 {
 	AActor *mo = NULL;
 	const PClass *fog = beforeTele ? mobj->TeleFogSourceType : mobj->TeleFogDestType;
@@ -99,6 +101,8 @@ void P_SpawnTeleportFog(AActor *mobj, fixed_t x, fixed_t y, fixed_t z, bool befo
 
 	if (mo != NULL && setTarget)
 		mo->target = mobj;
+
+	return mo;
 }
 
 //

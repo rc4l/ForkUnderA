@@ -49,6 +49,10 @@
 #include "zstring.h"
 #include "vectors.h"
 
+// [rc4l] uzdoom@b6a4511dd -- shared by the spawn-number and conversation-ID maps.
+struct PClass;
+typedef TMap<int, const PClass *> FClassMap;
+
 // Since this file is included by everything, it seems an appropriate place
 // to check the NOASM/USEASM macros.
 

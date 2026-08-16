@@ -35,7 +35,7 @@ protected:
 class OPLmusicFile : public OPLmusicBlock
 {
 public:
-	OPLmusicFile(FILE *file, BYTE *musiccache, int len);
+	OPLmusicFile(FileReader *reader);
 	OPLmusicFile(const OPLmusicFile *source, const char *filename);
 	virtual ~OPLmusicFile();
 

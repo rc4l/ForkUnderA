@@ -183,7 +183,9 @@ std::vector<std::string> MapsInPath(const std::string &path)
 
 		// FullName is set only for entries that HAVE a path; a plain WAD lump has just its eight
 		// characters, which is the difference the two rules turn on.
-		lumps.push_back(LumpEntry(lump->Name, (lump->FullName != NULL) ? lump->FullName : ""));
+		// [rc4l] FullName became an FString upstream, so an empty one -- not a null pointer -- is
+		// now what "this lump has no path" looks like. GetChars() on an empty FString is "".
+		lumps.push_back(LumpEntry(lump->Name, lump->FullName.GetChars()));
 	}
 
 	delete file;
