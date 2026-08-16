@@ -82,6 +82,7 @@
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/wallcache.h"
+#include "features/hwrender/hud2d.h"
 #include "features/fov-interp/fovinterp.h"
 #include "features/fua-caching/fua_caching.h"
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
@@ -629,6 +630,32 @@ void FGLRenderer::DrawScene(bool toscreen)
 }
 
 
+// [rc4l] features/hwrender: record what FillScreen is about to draw, so a foreign backend gets the
+// same tint without reimplementing any of the logic above it.
+//
+// The screen blend is not a nicety -- it is every pickup, every hit taken, berserk, a radiation suit
+// and invulnerability. Without it the Vulkan view was missing the red flash entirely, which measured
+// as 96.8% of the frame differing from GL and looked, in motion, like damage simply not registering.
+//
+// It goes into the 2D quad list rather than anywhere new because the ordering falls out for free:
+// DrawBlend runs after the weapon sprite and before the status bar, so a quad recorded here lands
+// between them, exactly where GL puts it.
+static void RecordScreenBlend(float r, float g, float b, float a, int blendMode)
+{
+	zx::hwrender::Quad2D q;
+	memset(&q, 0, sizeof(q));
+	q.material = NULL;               // untextured fill
+	q.x = 0; q.y = 0;
+	q.w = (float)SCREENWIDTH; q.h = (float)SCREENHEIGHT;
+	q.u1 = 0; q.v1 = 0; q.u2 = 1; q.v2 = 1;
+	q.r = r; q.g = g; q.b = b; q.a = a;
+	q.clipR = 0; q.clipL = 0;        // no scissor
+	q.blend = blendMode;
+	q.translation = 0;
+	q.texMode = 0;
+	zx::hwrender::Record2D(q);
+}
+
 static void FillScreen()
 {
 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
@@ -735,6 +762,7 @@ void FGLRenderer::DrawBlend(sector_t * viewsector)
 				gl_RenderState.BlendFunc(GL_DST_COLOR, GL_ZERO);
 				gl_RenderState.SetColor(extra_red, extra_green, extra_blue, 1.0f);
 				FillScreen();
+				RecordScreenBlend(extra_red, extra_green, extra_blue, 1.0f, 2);
 			}
 		}
 		else if (blendv.a)
@@ -765,6 +793,7 @@ void FGLRenderer::DrawBlend(sector_t * viewsector)
 		gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		gl_RenderState.SetColor(blend[0], blend[1], blend[2], blend[3]);
 		FillScreen();
+		RecordScreenBlend(blend[0], blend[1], blend[2], blend[3], 0);
 	}
 }
 
