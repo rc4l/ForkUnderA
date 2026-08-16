@@ -81,6 +81,7 @@
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/flatmesh.h"
+#include "features/levelmesh/wallcache.h"
 #include "features/fov-interp/fovinterp.h"
 #include "features/fua-caching/fua_caching.h"
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
@@ -360,6 +361,12 @@ void FGLRenderer::CreateScene()
 	// camera moves, so it is dropped here and rebuilt as this frame generates it.
 	zx::levelmesh::DynClear();
 	zx::levelmesh::ClearSprites();
+
+	// [rc4l] features/levelmesh: geometry whose sector moved is no longer valid, and this has to run
+	// BEFORE the BSP walk so anything still visible re-bakes in the same frame. See
+	// InvalidateMovedSectors -- a door's far face is never walked, so without this it kept the
+	// full-height quad it was baked with while the door was shut, standing in the open doorway.
+	zx::levelmesh::InvalidateMovedSectors();
 
 	// reset the portal manager
 	GLPortal::StartFrame();

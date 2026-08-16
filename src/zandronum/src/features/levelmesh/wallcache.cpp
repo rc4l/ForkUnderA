@@ -27,6 +27,13 @@ EXTERN_CVAR(Int, gl_fogmode)
 namespace zx { namespace levelmesh {
 
 static TArray<SegCache> g_cache;
+// [rc4l] Per-sector fua_dirty as of the last invalidation sweep, and the segs each sector owns.
+//
+// See InvalidateMovedSectors: a moving sector's geometry has to be dropped from the mesh whether or
+// not the BSP happens to walk it, and answering "which segs belong to this sector" by scanning all
+// segs every frame would be silly when the mapping never changes.
+static TArray<int>          g_sectorDirty;
+static TArray<TArray<int> > g_sectorSegs;
 static TArray<bool>     g_uncacheable;   // sticky: this seg produced a portal, never cache it
 static int              g_captureSeg = -1;
 static bool             g_sawPortal = false;
@@ -43,6 +50,22 @@ void AllocForLevel(int numsegs)
 	if (numsegs <= 0) return;
 	g_cache.Resize(numsegs);
 	g_uncacheable.Resize(numsegs);
+	g_sectorDirty.Clear();
+	g_sectorSegs.Clear();
+	if (numsectors > 0)
+	{
+		g_sectorDirty.Resize(numsectors);
+		g_sectorSegs.Resize(numsectors);
+		for (int i = 0; i < numsectors; i++) { g_sectorDirty[i] = sectors[i].fua_dirty; g_sectorSegs[i].Clear(); }
+		for (int i = 0; i < numsegs; i++)
+		{
+			if (segs[i].frontsector != NULL)
+				g_sectorSegs[int(segs[i].frontsector - sectors)].Push(i);
+			if (segs[i].backsector != NULL && segs[i].backsector != segs[i].frontsector)
+				g_sectorSegs[int(segs[i].backsector - sectors)].Push(i);
+		}
+	}
+
 	for (int i = 0; i < numsegs; i++)
 	{
 		g_cache[i].filled = false;
@@ -91,6 +114,25 @@ void BakeSeg(int segIndex)
 
 	static FFlatVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
 	static FFlatVertex tris[GLWall::MAX_BATCH_FAN_VERTICES * 3];
+
+	// [rc4l] Collapse pieces this seg no longer produces.
+	//
+	// The mesh hands a backend fixed vertex ranges, and a backend draws them until told otherwise --
+	// there is no "remove" in a bump-allocated arena. So a piece that stops existing has to be
+	// squashed to zero area rather than abandoned, or it keeps rendering. Opening a door is exactly
+	// this case: its middle texture disappears, and without this the shut door stayed drawn across
+	// the doorway in the Vulkan view while GL showed the room behind it.
+	for (int i = sc.pieceCount; i < sc.bakedCount && i < kMaxCachedPieces; i++)
+	{
+		MeshRange &r = sc.pieces[i].range;
+		if (r.count == 0) continue;
+		const unsigned int n = r.count;
+		if (n > (unsigned)(GLWall::MAX_BATCH_FAN_VERTICES * 3)) { r.count = 0; continue; }
+		// All vertices at one point: the triangles have no area and rasterise to nothing.
+		memset(tris, 0, n * sizeof(FFlatVertex));
+		MeshStore(r, tris, (int)n);
+	}
+	sc.bakedCount = sc.pieceCount;
 
 	for (int i = 0; i < sc.pieceCount; i++)
 	{
@@ -358,6 +400,65 @@ void GetCoverage(CoverageStats &out)
 	}
 }
 
+// [rc4l] Drop baked geometry for sectors that moved, whether or not anything can see them.
+//
+// This is the bug the door hunt ended at, and it is a property of the design rather than a slip. The
+// mesh draws the WHOLE level; the wall cache only re-bakes segs the BSP walks. Those two are fine
+// while nothing moves. Open a door and they part company: the near face is on screen, so it re-bakes
+// every frame and tracks the door correctly -- while the FAR face, eight units behind it, is never
+// walked, so it keeps the full-height quad it was baked with while the door was shut. GL never showed
+// it because GL only draws what it walked. Vulkan drew it, and it stood in the open doorway looking
+// exactly like a door that had failed to open.
+//
+// Squash rather than re-bake: re-baking here would mean running GLWall::Process outside the BSP walk,
+// with no subsector, no area resolution and no draw lists to route into. A seg nobody has re-baked
+// since its sector moved is simply not valid to draw, so it renders as nothing until the BSP reaches
+// it -- which, if it is ever actually visible, is the same frame.
+//
+// Called before the BSP walk so segs that ARE visible re-bake immediately afterwards and never blink.
+void InvalidateMovedSectors()
+{
+	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
+
+	for (int s = 0; s < numsectors; s++)
+	{
+		if (sectors[s].fua_dirty == g_sectorDirty[s]) continue;
+		g_sectorDirty[s] = sectors[s].fua_dirty;
+
+		const TArray<int> &segList = g_sectorSegs[s];
+		for (unsigned k = 0; k < segList.Size(); k++)
+		{
+			const int idx = segList[k];
+			if ((unsigned)idx >= g_cache.Size()) continue;
+			SegCache &sc = g_cache[idx];
+			sc.filled = false;   // force a re-capture when the BSP next reaches it
+			// Squash, not release: the range stays allocated so the re-bake writes back over it.
+			// Freeing here re-allocates every frame the sector moves and the arena runs away.
+			for (int i = 0; i < kMaxCachedPieces; i++)
+				MeshSquash(sc.pieces[i].range);
+		}
+	}
+}
+
+// [rc4l] Read-only views of one seg's cache state, for fua_line_mesh. The cache array is file-static
+// on purpose; exposing two getters beats exporting the storage.
+void GetSegMeshInfo(int segIndex, int &pieces, int &baked)
+{
+	pieces = baked = 0;
+	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return;
+	pieces = g_cache[segIndex].pieceCount;
+	baked  = g_cache[segIndex].bakedCount;
+}
+
+void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned int &count)
+{
+	offset = count = 0;
+	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return;
+	if (piece < 0 || piece >= kMaxCachedPieces) return;
+	offset = g_cache[segIndex].pieces[piece].range.offset;
+	count  = g_cache[segIndex].pieces[piece].range.count;
+}
+
 }} // namespace zx::levelmesh
 
 //==========================================================================
@@ -378,4 +479,56 @@ CCMD( fua_wallcache_stats )
 		Printf( "  hit rate %.1f%%, uncacheable %.1f%%\n",
 				100.0 * hits / total, 100.0 * uncacheable / total );
 	zx::levelmesh::ResetStats( );
+}
+
+//==========================================================================
+//
+// fua_line_mesh <linedef>
+//
+// [rc4l] What the MESH holds for one linedef, as opposed to what the screen shows.
+//
+// A door that stayed shut in the Vulkan view while GL showed it open produced three plausible
+// theories -- stale piece map, uncollapsed slot, cache hit that should have missed -- and screenshots
+// could not tell them apart, because every one of them looks like "the old door". The heights of the
+// baked vertices settle it in one line: if the mesh still spans the closed door, the bake never ran;
+// if it does not, the bake ran and the backend is drawing something else.
+//
+//==========================================================================
+
+CCMD( fua_line_mesh )
+{
+	if ( lines == NULL || argv.argc( ) < 2 )
+	{
+		Printf( "usage: fua_line_mesh <linedef index>\n" );
+		return;
+	}
+	const int want = atoi( argv[1] );
+	if ( want < 0 || want >= numlines ) { Printf( "no such line\n" ); return; }
+
+	int nv = 0;
+	const FFlatVertex *verts = zx::levelmesh::MeshVertexData( nv );
+	int found = 0;
+	for ( int i = 0; i < numsegs; i++ )
+	{
+		if ( segs[i].linedef == NULL || int( segs[i].linedef - lines ) != want ) continue;
+		found++;
+		int pieces = 0, baked = 0;
+		zx::levelmesh::GetSegMeshInfo( i, pieces, baked );
+		Printf( "seg %d: %d pieces (%d baked last time)\n", i, pieces, baked );
+		for ( int k = 0; k < pieces; k++ )
+		{
+			unsigned off = 0, cnt = 0;
+			zx::levelmesh::GetSegPieceRange( i, k, off, cnt );
+			if ( cnt == 0 ) { Printf( "   piece %d: empty\n", k ); continue; }
+			float zlo = 1e9f, zhi = -1e9f;
+			for ( unsigned v = 0; v < cnt && off + v < (unsigned)nv; v++ )
+			{
+				const float z = verts[off + v].z;
+				if ( z < zlo ) zlo = z;
+				if ( z > zhi ) zhi = z;
+			}
+			Printf( "   piece %d: range %u+%u, z %.1f..%.1f\n", k, off, cnt, zlo, zhi );
+		}
+	}
+	if ( found == 0 ) Printf( "line %d has no segs\n", want );
 }
