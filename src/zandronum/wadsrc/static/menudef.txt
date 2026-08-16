@@ -444,7 +444,8 @@ OptionMenu "FUASkyTintOptions"
 	StaticText " "
 	Option	"Tint from sky",			"cl_fua_skytint",				"OnOff"
 	Slider	"Strength",					"cl_fua_skytint_strength",		0.0, 100.0, 5.0, 0
-	// [rc4l] A ceiling on the push, not a cap on the sky's own saturation.
+	// [rc4l] A floor and a ceiling on the push. Neither caps the sky's own saturation.
+	Slider	"Min colour",				"cl_fua_skytint_mincolour",		0.0, 100.0, 5.0, 0
 	Slider	"Max colour",				"cl_fua_skytint_saturation",	0.0, 100.0, 5.0, 0
 	Slider	"Follow room light",		"cl_fua_skytint_lit",			0.0, 100.0, 5.0, 0
 	Slider	"Indoor reach",				"cl_fua_skytint_reach",			0.0, 2048.0, 64.0, 0
