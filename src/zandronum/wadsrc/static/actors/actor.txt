@@ -281,6 +281,8 @@ ACTOR Actor native //: Thinker
 	action native A_RemoveChildren(bool removeall = false, int flags = 0, class<Actor> filter = "None", name species = "None");
 	action native A_RemoveSiblings(bool removeall = false, int flags = 0, class<Actor> filter = "None", name species = "None");
 	action native A_Remove(int removee, int flags = 0, class<Actor> filter = "None", name species = "None");
+	action native A_SetTeleFog(class<Actor> oldpos, class<Actor> newpos);
+	action native A_SwapTeleFog();
 	action native A_KillTarget(name damagetype = "none", int flags = 0, class<Actor> filter = "None", name species = "None");
 	action native A_KillTracer(name damagetype = "none", int flags = 0, class<Actor> filter = "None", name species = "None");
 	action native A_KillMaster(name damagetype = "none", int flags = 0, class<Actor> filter = "None", name species = "None");

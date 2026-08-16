@@ -5847,6 +5847,56 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Remove)
 
 //===========================================================================
 //
+// A_SetTeleFog
+//
+// Sets the teleport fog(s) for the calling actor.
+// Takes a name of the classes for the source and destination.
+//
+// [rc4l] uzdoom@30acb7200, at the settled form of uzdoom@4d5919044 (class
+// parameters rather than names) and uzdoom@d481ba7b5 (any Actor, not only a
+// TeleportFog descendant). The ACS half of this pair came across with the
+// original cluster; these two DECORATE actions did not, which left scripts able
+// to set an actor's telefog while DECORATE could not.
+//
+// Deliberately NOT server-gated. P_Teleport spawns the fog on the client too --
+// it guards only against a predicting client (p_teleport.cpp) -- and reads the
+// type straight off these two fields, which no SERVERCOMMANDS carries. Both
+// sides therefore have to reach the same value on their own, so this has to run
+// wherever the state runs. Gating it to the server would leave a client holding
+// the old type and spawning the wrong fog.
+//===========================================================================
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTeleFog)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_CLASS(oldpos, 0);
+	ACTION_PARAM_CLASS(newpos, 1);
+
+	self->TeleFogSourceType = oldpos;
+	self->TeleFogDestType = newpos;
+}
+
+//===========================================================================
+//
+// A_SwapTeleFog
+//
+// Switches the source and dest telefogs around.
+//
+// [rc4l] Same cluster and the same reasoning about gating as A_SetTeleFog.
+//===========================================================================
+
+DEFINE_ACTION_FUNCTION(AActor, A_SwapTeleFog)
+{
+	if ((self->TeleFogSourceType != self->TeleFogDestType)) //Does nothing if they're the same.
+	{
+		const PClass *temp = self->TeleFogSourceType;
+		self->TeleFogSourceType = self->TeleFogDestType;
+		self->TeleFogDestType = temp;
+	}
+}
+
+//===========================================================================
+//
 // A_RaiseMaster
 //
 //===========================================================================
