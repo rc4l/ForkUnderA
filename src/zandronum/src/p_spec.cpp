@@ -271,13 +271,33 @@ bool CheckIfExitIsGood (AActor *self, level_info_t *info)
 // Find the next sector with a specified tag.
 // Rewritten by Lee Killough to use chained hashing to improve speed
 
-int P_FindSectorFromTag (int tag, int start)
+int FSectorTagIterator::Next()
 {
-	start = start >= 0 ? sectors[start].nexttag :
-		sectors[(unsigned) tag % (unsigned) numsectors].firsttag;
-	while (start >= 0 && !sectors[start].HasTag(tag))
+	int ret;
+	if (searchtag == INT_MIN)
+	{
+		ret = start;
+		start = -1;
+	}
+	else
+	{
+		while (start != -1 && sectors[start].tag != searchtag) start = sectors[start].nexttag;
+		if (start == -1) return -1;
+		ret = start;
 		start = sectors[start].nexttag;
-	return start;
+	}
+	return ret;
+}
+
+int FSectorTagIterator::NextCompat(bool compat, int start)
+{
+	if (!compat) return Next();
+
+	for (int i = start + 1; i < numsectors; i++)
+	{
+		if (sectors[i].HasTag(searchtag)) return i;
+	}
+	return -1;
 }
 
 // killough 4/16/98: Same thing, only for linedefs
@@ -360,7 +380,7 @@ bool P_ActivateLine (line_t *line, AActor *mo, int side, int activationType)
 		special &&												// not for lines without a special
 		line->args[0] == line->id &&							// Safety check: exclude edited UDMF linedefs or ones that don't map the tag to args[0]
 		line->args[0] &&										// only if there's a tag (which is stored in the first arg)
-		P_FindSectorFromTag (line->args[0], -1) == -1)			// only if no sector is tagged to this linedef
+		P_FindFirstSectorFromTag (line->args[0]) == -1)			// only if no sector is tagged to this linedef
 	{
 		P_ChangeSwitchTexture (line->sidedef[0], repeat, special);
 		line->special = 0;
@@ -778,9 +798,9 @@ static void DoSectorDamage(AActor *actor, sector_t *sec, int amount, FName type,
 
 void P_SectorDamage(int tag, int amount, FName type, const PClass *protectClass, int flags)
 {
-	int secnum = -1;
-
-	while ((secnum = P_FindSectorFromTag (tag, secnum)) >= 0)
+	FSectorTagIterator itr(tag);
+	int secnum;
+	while ((secnum = itr.Next()) >= 0)
 	{
 		AActor *actor, *next;
 		sector_t *sec = &sectors[secnum];
@@ -1105,12 +1125,14 @@ DLightTransfer::DLightTransfer (sector_t *srcSec, int target, bool copyFloor)
 
 	if (copyFloor)
 	{
-		for (secnum = -1; (secnum = P_FindSectorFromTag (target, secnum)) >= 0; )
+		FSectorTagIterator itr(target);
+		while ((secnum = itr.Next()) >= 0)
 			sectors[secnum].ChangeFlags(sector_t::floor, 0, PLANEF_ABSLIGHTING);
 	}
 	else
 	{
-		for (secnum = -1; (secnum = P_FindSectorFromTag (target, secnum)) >= 0; )
+		FSectorTagIterator itr(target);
+		while ((secnum = itr.Next()) >= 0)
 			sectors[secnum].ChangeFlags(sector_t::ceiling, 0, PLANEF_ABSLIGHTING);
 	}
 	ChangeStatNum (STAT_LIGHTTRANSFER);
@@ -1133,12 +1155,14 @@ void DLightTransfer::DoTransfer (int level, int target, bool floor)
 
 	if (floor)
 	{
-		for (secnum = -1; (secnum = P_FindSectorFromTag (target, secnum)) >= 0; )
+		FSectorTagIterator itr(target);
+		while ((secnum = itr.Next()) >= 0)
 			sectors[secnum].SetPlaneLight(sector_t::floor, level);
 	}
 	else
 	{
-		for (secnum = -1; (secnum = P_FindSectorFromTag (target, secnum)) >= 0; )
+		FSectorTagIterator itr(target);
+		while ((secnum = itr.Next()) >= 0)
 			sectors[secnum].SetPlaneLight(sector_t::ceiling, level);
 	}
 }
@@ -1385,7 +1409,9 @@ void P_SpawnPortal(line_t *line, int sectortag, int plane, int alpha)
 			reference->flags |= MF_JUSTATTACKED;
 			anchor->flags |= MF_JUSTATTACKED;
 
-		    for (int s=-1; (s = P_FindSectorFromTag(sectortag,s)) >= 0;)
+			int s;
+			FSectorTagIterator itr(sectortag);
+			while ((s = itr.Next()) >= 0)
 			{
 				SetPortal(&sectors[s], plane, reference, alpha);
 			}
@@ -1405,7 +1431,8 @@ void P_SpawnPortal(line_t *line, int sectortag, int plane, int alpha)
 					}
 					else
 					{
-						for (int s=-1; (s = P_FindSectorFromTag(lines[j].args[0],s)) >= 0;)
+						FSectorTagIterator itr(lines[j].args[0]);
+						while ((s = itr.Next()) >= 0)
 						{
 							SetPortal(&sectors[s], plane, reference, alpha);
 						}
@@ -1650,38 +1677,41 @@ void P_SpawnSpecials (void)
 		// killough 3/7/98:
 		// support for drawn heights coming from different sector
 		case Transfer_Heights:
-			sec = lines[i].frontsector;
-			if (lines[i].args[1] & 2)
 			{
-				sec->MoreFlags |= SECF_FAKEFLOORONLY;
+				sec = lines[i].frontsector;
+				if (lines[i].args[1] & 2)
+				{
+					sec->MoreFlags |= SECF_FAKEFLOORONLY;
+				}
+				if (lines[i].args[1] & 4)
+				{
+					sec->MoreFlags |= SECF_CLIPFAKEPLANES;
+				}
+				if (lines[i].args[1] & 8)
+				{
+					sec->MoreFlags |= SECF_UNDERWATER;
+				}
+				else if (forcewater)
+				{
+					sec->MoreFlags |= SECF_FORCEDUNDERWATER;
+				}
+				if (lines[i].args[1] & 16)
+				{
+					sec->MoreFlags |= SECF_IGNOREHEIGHTSEC;
+				}
+				if (lines[i].args[1] & 32)
+				{
+					sec->MoreFlags |= SECF_NOFAKELIGHT;
+				}
+				FSectorTagIterator itr(lines[i].args[0]);
+				while ((s = itr.Next()) >= 0)
+				{
+					sectors[s].heightsec = sec;
+					sec->e->FakeFloor.Sectors.Push(&sectors[s]);
+					sectors[s].AdjustFloorClip();
+				}
+				break;
 			}
-			if (lines[i].args[1] & 4)
-			{
-				sec->MoreFlags |= SECF_CLIPFAKEPLANES;
-			}
-			if (lines[i].args[1] & 8)
-			{
-				sec->MoreFlags |= SECF_UNDERWATER;
-			}
-			else if (forcewater)
-			{
-				sec->MoreFlags |= SECF_FORCEDUNDERWATER;
-			}
-			if (lines[i].args[1] & 16)
-			{
-				sec->MoreFlags |= SECF_IGNOREHEIGHTSEC;
-			}
-			if (lines[i].args[1] & 32)
-			{
-				sec->MoreFlags |= SECF_NOFAKELIGHT;
-			}
-			for (s = -1; (s = P_FindSectorFromTag(lines[i].args[0],s)) >= 0;)
-			{
-				sectors[s].heightsec = sec;
-				sec->e->FakeFloor.Sectors.Push(&sectors[s]);
-				sectors[s].AdjustFloorClip();
-			}
-			break;
 
 		// killough 3/16/98: Add support for setting
 		// floor lighting independently (e.g. lava)
@@ -1742,7 +1772,8 @@ void P_SpawnSpecials (void)
 
 				{
 				float grav = ((float)P_AproxDistance (lines[i].dx, lines[i].dy)) / (double)((double(FRACUNIT) * 100.0f));
-				for (s = -1; (s = P_FindSectorFromTag(lines[i].args[0],s)) >= 0;)
+				FSectorTagIterator itr(lines[i].args[0]);
+				while ((s = itr.Next()) >= 0)
 					sectors[s].gravity = grav;
 				}
 				break;
@@ -1760,7 +1791,8 @@ void P_SpawnSpecials (void)
 
 				{
 					int damage = (int)(P_AproxDistance (lines[i].dx, lines[i].dy) >> FRACBITS);
-					for (s = -1; (s = P_FindSectorFromTag(lines[i].args[0],s)) >= 0;)
+					FSectorTagIterator itr(lines[i].args[0]);
+				while ((s = itr.Next()) >= 0)
 					{
 						sectors[s].damage = damage;
 						sectors[s].mod = 0;//MOD_UNKNOWN;
@@ -1783,9 +1815,12 @@ void P_SpawnSpecials (void)
 			// or ceiling texture, to distinguish floor and ceiling sky.
 
 			case Init_TransferSky:
-				for (s = -1; (s = P_FindSectorFromTag(lines[i].args[0],s)) >= 0;)
-					sectors[s].sky = (i+1) | PL_SKYFLAT;
-				break;
+				{
+					FSectorTagIterator itr(lines[i].args[0]);
+					while ((s = itr.Next()) >= 0)
+						 sectors[s].sky = (i + 1) | PL_SKYFLAT; 
+					break;
+				}
 			}
 			break;
 		}
@@ -2185,12 +2220,13 @@ static void P_SpawnScrollers(void)
 			register int s;
 
 		case Scroll_Ceiling:
-
+		{
 			// [BC] The server will update these for us.
 			if ( NETWORK_InClientMode() )
 				break;
 
-			for (s=-1; (s = P_FindSectorFromTag (l->args[0],s)) >= 0;)
+			FSectorTagIterator itr(l->args[0]);
+			while ((s = itr.Next()) >= 0)
 			{
 				new DScroller (DScroller::sc_ceiling, -dx, dy, control, s, accel);
 			}
@@ -2204,6 +2240,7 @@ static void P_SpawnScrollers(void)
 				}
 			}
 			break;
+		}
 
 		case Scroll_Floor:
 
@@ -2213,7 +2250,8 @@ static void P_SpawnScrollers(void)
 
 			if (l->args[2] != 1)
 			{ // scroll the floor texture
-				for (s=-1; (s = P_FindSectorFromTag (l->args[0],s)) >= 0;)
+				FSectorTagIterator itr(l->args[0]);
+				while ((s = itr.Next()) >= 0)
 				{
 					new DScroller (DScroller::sc_floor, -dx, dy, control, s, accel);
 				}
@@ -2230,7 +2268,8 @@ static void P_SpawnScrollers(void)
 
 			if (l->args[2] > 0)
 			{ // carry objects on the floor
-				for (s=-1; (s = P_FindSectorFromTag (l->args[0],s)) >= 0;)
+				FSectorTagIterator itr(l->args[0]);
+				while ((s = itr.Next()) >= 0)
 				{
 					new DScroller (DScroller::sc_carry, dx, dy, control, s, accel);
 				}
@@ -2467,7 +2506,8 @@ void P_SetSectorFriction (int tag, int amount, bool alterFlag)
 
 	movefactor = FrictionToMoveFactor(friction);
 
-	for (s = -1; (s = P_FindSectorFromTag (tag,s)) >= 0; )
+	FSectorTagIterator itr(tag);
+	while ((s = itr.Next()) >= 0)
 	{
 		// killough 8/28/98:
 		//
@@ -2813,20 +2853,27 @@ static void P_SpawnPushers ()
 		switch (l->special)
 		{
 		case Sector_SetWind: // wind
-			for (s = -1; (s = P_FindSectorFromTag (l->args[0],s)) >= 0 ; )
-				new DPusher (DPusher::p_wind, l->args[3] ? l : NULL, l->args[1], l->args[2], NULL, s);
+		{
+			FSectorTagIterator itr(l->args[0]);
+			while ((s = itr.Next()) >= 0)
+				new DPusher(DPusher::p_wind, l->args[3] ? l : NULL, l->args[1], l->args[2], NULL, s);
 			l->special = 0;
 			break;
+		}
 
 		case Sector_SetCurrent: // current
-			for (s = -1; (s = P_FindSectorFromTag (l->args[0],s)) >= 0 ; )
-				new DPusher (DPusher::p_current, l->args[3] ? l : NULL, l->args[1], l->args[2], NULL, s);
+		{
+			FSectorTagIterator itr(l->args[0]);
+			while ((s = itr.Next()) >= 0)
+				new DPusher(DPusher::p_current, l->args[3] ? l : NULL, l->args[1], l->args[2], NULL, s);
 			l->special = 0;
 			break;
+		}
 
 		case PointPush_SetForce: // push/pull
 			if (l->args[0]) {	// [RH] Find thing by sector
-				for (s = -1; (s = P_FindSectorFromTag (l->args[0], s)) >= 0 ; )
+				FSectorTagIterator itr(l->args[0]);
+				while ((s = itr.Next()) >= 0)
 				{
 					AActor *thing = P_GetPushThing (s);
 					if (thing) {	// No MT_P* means no effect
