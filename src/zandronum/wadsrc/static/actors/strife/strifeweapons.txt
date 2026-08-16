@@ -45,7 +45,6 @@ ACTOR StrifeSpark : StrifePuff
 
 ACTOR PunchDagger : StrifeWeapon
 {
-	Game Strife
 	Weapon.SelectionOrder 3900
 	+WEAPON.NOALERT
 	+WEAPON.ALLOW_WITH_RESPAWN_INVUL // [AK]
@@ -101,7 +100,6 @@ ACTOR StrifeZap1
 
 ACTOR ElectricBolt : StrifeZap1
 {
-	ConversationID 102,-1,-1
 	Speed 30
 	Radius 10
 	Height 10
@@ -126,7 +124,6 @@ ACTOR ElectricBolt : StrifeZap1
 
 ACTOR PoisonBolt native
 {
-	ConversationID 102,-1,-1
 	Speed 30
 	Radius 10
 	Height 10
@@ -151,11 +148,9 @@ ACTOR PoisonBolt native
 
 // Strife's Crossbow --------------------------------------------------------
 
-ACTOR StrifeCrossbow : StrifeWeapon 2001
+ACTOR StrifeCrossbow : StrifeWeapon
 {
-	Game Strife
 	+FLOORCLIP
-	ConversationID 194, 188, 192
 	Weapon.SelectionOrder 1200
 	+WEAPON.NOALERT
 	Weapon.AmmoUse1 1
@@ -204,7 +199,6 @@ ACTOR StrifeCrossbow : StrifeWeapon 2001
 
 ACTOR StrifeCrossbow2 : StrifeCrossbow
 {
-	Game Strife
 	Weapon.SelectionOrder 2700
 	Weapon.AmmoUse1 1
 	Weapon.AmmoGive1 0
@@ -239,10 +233,8 @@ ACTOR StrifeCrossbow2 : StrifeCrossbow
 
 // Assault Gun --------------------------------------------------------------
 
-actor AssaultGun : StrifeWeapon 2002
+actor AssaultGun : StrifeWeapon
 {
-	Game Strife
-	ConversationID 188, 182, 186
 	+FLOORCLIP
 	Weapon.SelectionOrder 600
 	Weapon.AmmoUse1 1
@@ -278,10 +270,8 @@ actor AssaultGun : StrifeWeapon 2002
 
 // Standing variant of the assault gun --------------------------------------
 
-ACTOR AssaultGunStanding : WeaponGiver 2006
+ACTOR AssaultGunStanding : WeaponGiver
 {
-	Game Strife
-	ConversationID 189, 183, 187
 	DropItem "AssaultGun"
 	Inventory.PickupMessage "$TXT_ASSAULTGUN"
 	States
@@ -296,10 +286,8 @@ ACTOR AssaultGunStanding : WeaponGiver 2006
 // Mini-Missile Launcher ----------------------------------------------------
 
 
-ACTOR MiniMissileLauncher : StrifeWeapon 2003
+ACTOR MiniMissileLauncher : StrifeWeapon
 {
-	Game Strife
-	ConversationID 192, 186, 190
 	+FLOORCLIP
 	Weapon.SelectionOrder 1800
 	Weapon.AmmoUse1 1
@@ -342,7 +330,6 @@ ACTOR MiniMissileLauncher : StrifeWeapon 2003
 
 ACTOR RocketTrail
 {
-	ConversationID 51,-1,-1
 	+NOBLOCKMAP
 	+NOGRAVITY
 	RenderStyle Translucent
@@ -372,8 +359,6 @@ ACTOR MiniMissilePuff : StrifePuff
 
 ACTOR MiniMissile
 {
-	Game Strife
-	ConversationID 99,-1,-1
 	Speed 20
 	Radius 10
 	Height 14
@@ -402,10 +387,8 @@ ACTOR MiniMissile
 
 // Flame Thrower ------------------------------------------------------------
 
-ACTOR FlameThrower : StrifeWeapon 2005
+ACTOR FlameThrower : StrifeWeapon
 {
-	Game Strife
-	ConversationID 190, 184, 188
 	+FLOORCLIP
 	Weapon.SelectionOrder 2100
 	Weapon.Kickback 0
@@ -481,10 +464,8 @@ ACTOR FlameMissile
 // Mauler -------------------------------------------------------------------
 // The scatter version
 
-ACTOR Mauler : StrifeWeapon 2004
+ACTOR Mauler : StrifeWeapon
 {
-	Game Strife
-	ConversationID 193, 187, 191
 	+FLOORCLIP
 	Weapon.SelectionOrder 300
 	Weapon.AmmoUse1 20
@@ -529,7 +510,6 @@ ACTOR Mauler : StrifeWeapon 2004
 
 ACTOR Mauler2 : Mauler
 {
-	Game Strife
 	Weapon.SelectionOrder 3300
 	Weapon.AmmoUse1 30
 	Weapon.AmmoGive1 0
@@ -644,8 +624,6 @@ ACTOR MaulerTorpedoWave
 
 ACTOR HEGrenade
 {
-	Game Strife
-	ConversationID 106,-1,-1
 	Speed 15
 	Radius 13
 	Height 13
@@ -682,8 +660,6 @@ ACTOR HEGrenade
 
 ACTOR PhosphorousGrenade
 {
-	Game Strife
-	ConversationID 107,-1,-1
 	Speed 15
 	Radius 13
 	Height 13
@@ -753,10 +729,8 @@ ACTOR PhosphorousFire native
 
 // High-Explosive Grenade Launcher ------------------------------------------
 
-ACTOR StrifeGrenadeLauncher : StrifeWeapon 154
+ACTOR StrifeGrenadeLauncher : StrifeWeapon
 {
-	Game Strife
-	ConversationID 195, 189, 193
 	+FLOORCLIP
 	Weapon.SelectionOrder 2400
 	Weapon.AmmoUse1 1
@@ -804,7 +778,6 @@ ACTOR StrifeGrenadeLauncher : StrifeWeapon 154
 
 ACTOR StrifeGrenadeLauncher2 : StrifeGrenadeLauncher
 {
-	Game Strife
 	Weapon.SelectionOrder 3200
 	Weapon.AmmoUse1 1
 	Weapon.AmmoGive1 0

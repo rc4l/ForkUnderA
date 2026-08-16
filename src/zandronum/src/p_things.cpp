@@ -45,6 +45,8 @@
 #include "gi.h"
 #include "templates.h"
 #include "g_level.h"
+#include "v_text.h"
+#include "i_system.h"
 // [BC] New #includes.
 #include "a_doomglobal.h"
 #include "sv_commands.h"
@@ -56,6 +58,110 @@
 
 // Set of spawnable things for the Thing_Spawn and Thing_Projectile specials.
 TMap<int, const PClass *> SpawnableThings;
+
+// [rc4l] uzdoom@2ec8e2c2a -- spawn numbers come from MAPINFO now. DECORATE is read after MAPINFO,
+// so the class name is stored here and resolved later by InitSpawnablesFromMapinfo.
+struct MapinfoSpawnItem
+{
+	FName classname;	// DECORATE is read after MAPINFO so we do not have the actual classes available here yet.
+	// These are for error reporting. We must store the file information because it's no longer available when these items get resolved.
+	FString filename;
+	int linenum;
+};
+
+typedef TMap<int, MapinfoSpawnItem> SpawnMap;
+static SpawnMap SpawnablesFromMapinfo;
+static SpawnMap ConversationIDsFromMapinfo;
+
+// [rc4l] uzdoom@b6a4511dd -- shared by spawnnums and conversationids.
+static void ParseSpawnMap(FScanner &sc, SpawnMap & themap, const char *descript)
+{
+	TMap<int, bool> defined;
+	int error = 0;
+
+	MapinfoSpawnItem editem;
+
+	editem.filename = sc.ScriptName;
+
+	while (true)
+	{
+		if (sc.CheckString("}")) return;
+		else if (sc.CheckNumber())
+		{
+			int ednum = sc.Number;
+			sc.MustGetStringName("=");
+			sc.MustGetString();
+
+			bool *def = defined.CheckKey(ednum);
+			if (def != NULL)
+			{
+				sc.ScriptMessage("%s %d defined more than once", descript, ednum);
+				error++;
+			}
+			else if (ednum < 0)
+			{
+				sc.ScriptMessage("%s must be positive, got %d", descript, ednum);
+				error++;
+			}
+			defined[ednum] = true;
+			editem.linenum = sc.Line;
+			editem.classname = sc.String;
+
+			themap.Insert(ednum, editem);
+		}
+		else
+		{
+			sc.ScriptError("Number expected");
+		}
+	}
+}
+
+void FMapInfoParser::ParseSpawnNums()
+{
+	ParseOpenBrace();
+	ParseSpawnMap(sc, SpawnablesFromMapinfo, "Spawn number");
+}
+
+void FMapInfoParser::ParseConversationIDs()
+{
+	ParseOpenBrace();
+	ParseSpawnMap(sc, ConversationIDsFromMapinfo, "Conversation ID");
+}
+
+static void InitClassMap(FClassMap &themap, SpawnMap &thedata)
+{
+	themap.Clear();
+	SpawnMap::Iterator it(thedata);
+	SpawnMap::Pair *pair;
+	int error = 0;
+
+	while (it.NextPair(pair))
+	{
+		const PClass *cls = NULL;
+		if (pair->Value.classname != NAME_None)
+		{
+			cls = PClass::FindClass(pair->Value.classname);
+			if (cls == NULL)
+			{
+				Printf(TEXTCOLOR_RED "Script error, \"%s\" line %d:\nUnknown actor class %s\n",
+					pair->Value.filename.GetChars(), pair->Value.linenum, pair->Value.classname.GetChars());
+				error++;
+			}
+		}
+		themap.Insert(pair->Key, cls);
+	}
+	if (error > 0)
+	{
+		I_Error("%d unknown actor classes found", error);
+	}
+	thedata.Clear();	// we do not need this any longer
+}
+
+void InitSpawnablesFromMapinfo()
+{
+	InitClassMap(SpawnableThings, SpawnablesFromMapinfo);
+	InitClassMap(StrifeTypes, ConversationIDsFromMapinfo);
+}
 
 static FRandom pr_leadtarget ("LeadTarget");
 
@@ -92,7 +198,7 @@ bool P_Thing_Spawn (int tid, AActor *source, int type, angle_t angle, bool fog, 
 
 		if (mobj != NULL)
 		{
-			DWORD oldFlags2 = mobj->flags2;
+			ActorFlags2 oldFlags2 = mobj->flags2;
 			mobj->flags2 |= MF2_PASSMOBJ;
 			// [BC] Potentially spawn this thing even if it's going to be blocked.
 			bool	bSpawn = true;
@@ -120,7 +226,9 @@ bool P_Thing_Spawn (int tid, AActor *source, int type, angle_t angle, bool fog, 
 					// [BC]
 					AActor	*pFog;
 
-					pFog = Spawn<ATeleportFog> (spot->x, spot->y, spot->z + TELEFOGHEIGHT, ALLOW_REPLACE);
+					// [rc4l] uzdoom@30acb7200 / uzdoom@1799ae91c: per-actor fog types, and the fog
+					// points back at what it is fogging for.
+					pFog = P_SpawnTeleportFog(mobj, spot->x, spot->y, spot->z + TELEFOGHEIGHT, false, true);
 
 					// [BC] If we're the server, tell clients to spawn the thing.
 					if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog ))
@@ -176,16 +284,23 @@ bool P_MoveThing(AActor *source, fixed_t x, fixed_t y, fixed_t z, bool fog)
 	{
 		if (fog)
 		{
-			pFog = Spawn<ATeleportFog> (x, y, z + TELEFOGHEIGHT, ALLOW_REPLACE);
+			// [rc4l] uzdoom@1799ae91c: this pair was the wrong way round -- the arrival fog belongs
+			// at the destination and the departure fog at the old spot, which only became visible
+			// once the two could be different types.
+			pFog = P_SpawnTeleportFog(source, x, y, z + TELEFOGHEIGHT, false, true);
 
 			// [BC] If we're the server, tell clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			// [rc4l] P_SpawnTeleportFog returns NULL when the actor's fog type is none, which a mod
+			// can set -- so this null check is load-bearing now in a way the old Spawn call's was not.
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 
-			pFog = Spawn<ATeleportFog> (oldx, oldy, oldz + TELEFOGHEIGHT, ALLOW_REPLACE);
+			pFog = P_SpawnTeleportFog(source, oldx, oldy, oldz + TELEFOGHEIGHT, true, true);
 
 			// [BC] If we're the server, tell clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			// [rc4l] P_SpawnTeleportFog returns NULL when the actor's fog type is none, which a mod
+			// can set -- so this null check is load-bearing now in a way the old Spawn call's was not.
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 		source->PrevX = x;
@@ -545,7 +660,7 @@ bool P_Thing_Raise(AActor *thing, bool byClient, AActor *raiser)
 	// [RH] Check against real height and radius
 	fixed_t oldheight = thing->height;
 	fixed_t oldradius = thing->radius;
-	int oldflags = thing->flags;
+	ActorFlags oldflags = thing->flags;
 
 	thing->flags |= MF_SOLID;
 	thing->height = info->height;	// [RH] Use real height
@@ -589,7 +704,7 @@ bool P_Thing_CanRaise(AActor *thing)
 	AActor *info = thing->GetDefault();
 
 	// Check against real height and radius
-	int oldflags = thing->flags;
+	ActorFlags oldflags = thing->flags;
 	fixed_t oldheight = thing->height;
 	fixed_t oldradius = thing->radius;
 
@@ -655,22 +770,23 @@ const PClass *P_GetSpawnableType(int spawnnum)
 	return NULL;
 }
 
-typedef TMap<int, const PClass *>::Pair SpawnablePair;
+
 
 static int STACK_ARGS SpawnableSort(const void *a, const void *b)
 {
-	return (*((SpawnablePair **)a))->Key - (*((SpawnablePair **)b))->Key;
+	return (*((FClassMap::Pair **)a))->Key - (*((FClassMap::Pair **)b))->Key;
 }
 
-CCMD (dumpspawnables)
+// [rc4l] uzdoom@b6a4511dd -- shared by dumpspawnables and the new dumpconversationids.
+static void DumpClassMap(FClassMap &themap)
 {
-	TMapIterator<int, const PClass *> it(SpawnableThings);
-	SpawnablePair *pair, **allpairs;
+	FClassMap::Iterator it(themap);
+	FClassMap::Pair *pair, **allpairs;
 	int i = 0;
 
 	// Sort into numerical order, since their arrangement in the map can
 	// be in an unspecified order.
-	allpairs = new TMap<int, const PClass *>::Pair *[SpawnableThings.CountUsed()];
+	allpairs = new FClassMap::Pair *[themap.CountUsed()];
 	while (it.NextPair(pair))
 	{
 		allpairs[i++] = pair;
@@ -682,5 +798,15 @@ CCMD (dumpspawnables)
 		Printf ("%d %s\n", pair->Key, pair->Value->TypeName.GetChars());
 	}
 	delete[] allpairs;
+}
+
+CCMD (dumpspawnables)
+{
+	DumpClassMap(SpawnableThings);
+}
+
+CCMD (dumpconversationids)
+{
+	DumpClassMap(StrifeTypes);
 }
 

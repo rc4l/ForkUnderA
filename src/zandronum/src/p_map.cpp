@@ -1057,7 +1057,9 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 	// Both things overlap in x or y direction
 	bool unblocking = false;
 
-	if (tm.FromPMove)
+	// [rc4l] uzdoom@0a16855232 -- players get the same unstick handling as a P_PlayerMove, so two
+	// overlapping players can separate instead of staying wedged together.
+	if (tm.FromPMove || tm.thing->player != NULL)
 	{
 		// Both actors already overlap. To prevent them from remaining stuck allow the move if it
 		// takes them further apart or the move does not change the position (when called from P_ChangeSector.)
@@ -1341,7 +1343,9 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						// [rc4l] uzdoom@5ac7e4fc3: friends never harm each other, unless the shooter
 						// has HARMFRIENDS set. The species and TIDtoHate tests below now only apply
 						// when the two are NOT friends, which is what the else was added for.
-						if (!(thing->flags7 & MF7_HARMFRIENDS)) return false;
+						// [rc4l] uzdoom@123da6873 -- the flag belongs to the SHOOTER, not the victim;
+						// it was read off `thing` (the thing being hit) until now.
+						if (!(tm.thing->target->flags7 & MF7_HARMFRIENDS)) return false;
 					}
 					else
 					{
@@ -1505,7 +1509,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		damage = tm.thing->GetMissileDamage((tm.thing->flags4 & MF4_STRIFEDAMAGE) ? 3 : 7, 1);
 		if ( NETWORK_InClientMode() == false )
 		{
-			if ((damage > 0) || (tm.thing->flags6 & MF6_FORCEPAIN))
+			if ((damage > 0) || (tm.thing->flags6 & MF6_FORCEPAIN) || (tm.thing->flags7 & MF7_CAUSEPAIN))
 			{
 				if (( tm.thing->target ) &&
 					( tm.thing->target->player ) &&
@@ -1882,7 +1886,7 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, bool actorsonly)
 
 bool P_TestMobjLocation(AActor *mobj)
 {
-	int flags;
+	ActorFlags flags;
 
 	flags = mobj->flags;
 	mobj->flags &= ~MF_PICKUP;
@@ -5135,6 +5139,7 @@ struct RailData
 	TArray<SRailHit> RailHits;
 	bool StopAtOne;
 	bool StopAtInvul;
+	bool ThruSpecies;
 
 	// [AK] Added caller and hitscan puff actor pointers.
 	AActor *pCaller;
@@ -5159,6 +5164,12 @@ static ETraceStatus ProcessRailHit(FTraceResults &res, void *userdata)
 	if (data->StopAtInvul && res.Actor->flags2 & MF2_INVULNERABLE)
 	{
 		return TRACE_Stop;
+	}
+
+	// Skip actors with the same species if the puff has MTHRUSPECIES.
+	if (data->ThruSpecies && res.Actor->GetSpecies() == data->pCaller->GetSpecies())
+	{
+		return TRACE_Skip;
 	}
 
 	// Save this thing for damaging later, and continue the trace
@@ -5231,6 +5242,7 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 
 	flags = (puffDefaults->flags6 & MF6_NOTRIGGER) ? 0 : TRACE_PCross | TRACE_Impact;
 	rail_data.StopAtInvul = (puffDefaults->flags3 & MF3_FOILINVUL) ? false : true;
+	rail_data.ThruSpecies = (puffDefaults->flags6 & MF6_MTHRUSPECIES) ? true : false;
 
 	// [AK] Remember the actor who fired the rail and the puff actor that is supposed to spawn.
 	rail_data.pCaller = source;
@@ -5294,20 +5306,25 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 			// [BC] Damage is server side.
 			if ( NETWORK_InClientMode() == false )
 			{
-				if (puffDefaults && puffDefaults->PoisonDamage > 0 && puffDefaults->PoisonDuration != INT_MIN)
-				{
-					P_PoisonMobj(hitactor, thepuff ? thepuff : source, source, puffDefaults->PoisonDamage, puffDefaults->PoisonDuration, puffDefaults->PoisonPeriod, puffDefaults->PoisonDamageType);
-				}
 				// [BC/BB] Support for instagib.
 				if ( instagib )
 					damage = 999;
 
 				// [RK] If the attack source is a player, send the DMG_PLAYERATTACK flag.
 				// [rc4l] uzdoom@71ce4bcf0: pass the puff's FOILINVUL/FOILBUDDHA through, which
-				// the old call dropped entirely.
+				// the old call dropped entirely. uzdoom@375c0ac73 then folded the poison check and
+				// the flag reads under one puffDefaults guard -- the flag reads were dereferencing
+				// it unconditionally, immediately after a line that admits it can be NULL.
 				int dmgFlagPass = DMG_INFLICTOR_IS_PUFF | (source->player ? DMG_PLAYERATTACK : 0);
-				dmgFlagPass += (puffDefaults->flags3 & MF3_FOILINVUL) ? DMG_FOILINVUL : 0;
-				dmgFlagPass += (puffDefaults->flags7 & MF7_FOILBUDDHA) ? DMG_FOILBUDDHA : 0;
+				if (puffDefaults != NULL)	// is this even possible?
+				{
+					if (puffDefaults->PoisonDamage > 0 && puffDefaults->PoisonDuration != INT_MIN)
+					{
+						P_PoisonMobj(hitactor, thepuff ? thepuff : source, source, puffDefaults->PoisonDamage, puffDefaults->PoisonDuration, puffDefaults->PoisonPeriod, puffDefaults->PoisonDamageType);
+					}
+					if (puffDefaults->flags3 & MF3_FOILINVUL) dmgFlagPass |= DMG_FOILINVUL;
+					if (puffDefaults->flags7 & MF7_FOILBUDDHA) dmgFlagPass |= DMG_FOILBUDDHA;
+				}
 				int newdam = P_DamageMobj(hitactor, thepuff ? thepuff : source, source, damage, damagetype, dmgFlagPass);
 
 				if (bleed)
@@ -6028,8 +6045,6 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 	double bombdistancefloat = 1.f / (double)(bombdistance - fulldamagedistance);
 	double bombdamagefloat = (double)bombdamage;
 
-	FVector3 bombvec(FIXED2FLOAT(bombspot->x), FIXED2FLOAT(bombspot->y), FIXED2FLOAT(bombspot->z));
-
 	FBlockThingsIterator it(FBoundingBox(bombspot->x, bombspot->y, bombdistance << FRACBITS));
 	AActor *thing;
 
@@ -6141,7 +6156,10 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 			// points and bombdamage should be the same sign
 			// [rc4l] uzdoom@62a4945ca: a CAUSEPAIN bomb must reach the victim even when the radius
 			// damage works out to zero, or it can never trigger the pain it exists to cause.
-			if (((bombspot->flags7 & MF7_CAUSEPAIN) || (points * bombdamage) > 0) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
+			// [rc4l] uzdoom@34aeb428a dropped the CAUSEPAIN test here: the sign check is about
+			// whether damage and thrust agree, not about pain, and CAUSEPAIN is honoured inside
+			// P_DamageMobj anyway.
+			if (((points * bombdamage) > 0) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
 			{ // OK to damage; target is in direct path
 				double velz;
 				double thrust;
@@ -6321,7 +6339,7 @@ EXTERN_CVAR(Int, cl_bloodtype)
 
 bool P_AdjustFloorCeil(AActor *thing, FChangePosition *cpos)
 {
-	int flags2 = thing->flags2 & MF2_PASSMOBJ;
+	ActorFlags2 flags2 = thing->flags2 & MF2_PASSMOBJ;
 	FCheckPosition tm;
 
 	if ((thing->flags2 & MF2_PASSMOBJ) && (thing->flags3 & MF3_ISMONSTER))

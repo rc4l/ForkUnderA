@@ -55,6 +55,9 @@ struct wadlump_t
 
 // [RH] Namespaces from BOOM.
 typedef enum {
+	// [rc4l] uzdoom@431542320 -- named, since it marks a lump hidden from the name lookups.
+	ns_hidden = -1,
+
 	ns_global = 0,
 	ns_sprites,
 	ns_flats,

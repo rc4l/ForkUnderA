@@ -107,6 +107,9 @@ struct FMapInfoParser
 
 	void ParseIntermissionAction(FIntermissionDescriptor *Desc);
 	void ParseIntermission();
+	void ParseDoomEdNums();
+	void ParseSpawnNums();
+	void ParseConversationIDs();
 	void ParseAMColors(bool);
 	FName CheckEndSequence();
 	FName ParseEndGame();
@@ -482,7 +485,6 @@ struct FLevelLocals
 	int			musicorder;
 	int			cdtrack;
 	unsigned int cdid;
-	int			nextmusic;				// For MUSINFO purposes
 	FTextureID	skytexture1;
 	FTextureID	skytexture2;
 

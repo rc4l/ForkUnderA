@@ -939,16 +939,21 @@ public:
         return true;
     }
 
-    bool Init(const char *filename, bool loop)
+    // [rc4l] uzdoom@0017e1e6e -- the stream now takes an already-open reader and owns it, so a
+    // caller can hand over a file, a lump or a block of memory without this needing to know which.
+    // The two older overloads survive as thin wrappers because our loop-tag scanning below is ours
+    // and there is no reason to write it three times.
+    bool Init(FileReader *reader, bool loop)
     {
         if(!SetupSource())
         {
+            delete reader;
             return false;
         }
 
         if(Decoder) delete Decoder;
         if(Reader) delete Reader;
-        Reader = new FileReader(filename);
+        Reader = reader;
         
         Loop_Start = 0;
         Loop_End = ~0u;
@@ -991,56 +996,14 @@ public:
         return true;
     }
 
+    bool Init(const char *filename, bool loop)
+    {
+        return Init(new FileReader(filename), loop);
+    }
+
     bool Init(const BYTE *data, bool loop, unsigned int datalen)
     {
-        if(!SetupSource())
-        {
-            return false;
-        }
-
-        if(Decoder) delete Decoder;
-        if(Reader) delete Reader;
-        Reader = new MemoryReader((const char*)data, datalen);
-
-        Loop_Start = 0;
-        Loop_End = ~0u;
-        bool startass = false, endass = false;
-        FindLoopTags(Reader, &Loop_Start, &startass, &Loop_End, &endass);
-        Reader->Seek(0, SEEK_SET);
-
-        Decoder = Renderer->CreateDecoder(Reader);
-        if(!Decoder) return false;
-
-        Callback = DecoderCallback;
-        UserData = NULL;
-
-        ChannelConfig chans;
-        SampleType type;
-        int srate;
-
-        Decoder->getInfo(&srate, &chans, &type);
-        ZxSampleFormat sf = ComputeSampleFormat(chans, type);
-        Format = sf.format;
-        FrameSize = sf.sampleSize;
-
-        if(Format == AL_NONE)
-        {
-            /*Printf("Unsupported audio format: %s, %s\n", GetChannelConfigName(chans),
-                   GetSampleTypeName(type));*/
-            Printf("Unsupported audio format: %d, %d\n", chans, type);
-            return false;
-        }
-        SampleRate = srate;
-        Looping = loop;
-
-        Data.Resize((SampleRate / 5) * FrameSize);
-
-        size_t samples = Decoder->getSampleLength();
-        ZxLoopPoints lp = ComputeLoopPoints(Loop_Start, Loop_End, startass, endass, srate, samples);
-        Loop_Start = lp.start;
-        Loop_End = lp.end;
-
-        return true;
+        return Init(new MemoryReader((const char*)data, datalen), loop);
     }
 };
 
@@ -1729,12 +1692,10 @@ SoundStream *OpenALSoundRenderer::CreateStream(SoundStreamCallback callback, int
 	return stream;
 }
 
-SoundStream *OpenALSoundRenderer::OpenStream(const char *filename, int flags, int offset, int length)
+SoundStream *OpenALSoundRenderer::OpenStream(FileReader *reader, int flags)
 {
 	OpenALSoundStream *stream = new OpenALSoundStream(this);
-    bool ok = ((offset == -1) ? stream->Init((const BYTE*)filename, !!(flags&SoundStream::Loop), length) :
-                                stream->Init(filename, !!(flags&SoundStream::Loop)));
-    if(ok == false)
+	if (!stream->Init(reader, !!(flags&SoundStream::Loop)))
 	{
 		delete stream;
 		return NULL;

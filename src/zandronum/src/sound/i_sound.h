@@ -104,7 +104,10 @@ public:
 
 	// Streaming sounds.
 	virtual SoundStream *CreateStream (SoundStreamCallback callback, int buffbytes, int flags, int samplerate, void *userdata) = 0;
-	virtual SoundStream *OpenStream (const char *filename, int flags, int offset, int length) = 0;
+	virtual SoundStream *OpenStream (FileReader *reader, int flags) = 0;
+	// [rc4l] uzdoom@0017e1e6e -- a URL has no reader to open; the base returns nothing and a
+	// backend that can stream from the network overrides it.
+	virtual SoundStream *OpenStream (const char *url, int flags);
 
 	// Starts a sound.
 	virtual FISoundChannel *StartSound (SoundHandle sfx, float vol, int pitch, int chanflags, FISoundChannel *reuse_chan) = 0;

@@ -97,7 +97,7 @@ int GetRevisionNumber();
 // Version stored in the ini's [LastRun] section.
 // Bump it if you made some configuration change that you want to
 // be able to migrate in FGameConfigFile::DoGlobalSetup().
-#define LASTRUNVERSION "210"
+#define LASTRUNVERSION "211"
 
 // [TP] Same as above except for Zandronum-specific changes
 #define LASTZARUNVERSION "181"
@@ -167,7 +167,7 @@ int GetRevisionNumber();
 // model and its flag word (features/quake-movement). Numbered above upstream's 4520 rather than
 // reusing the 4513 this branch was written against: saves made by builds 4514-4520 do not contain
 // these fields, and a >= 4513 guard would have read them out of a file that never had them.
-#define SAVEVER 4522	// [rc4l] uzdoom quake cluster: per-axis intensities, flags, CountdownStart
+#define SAVEVER 4523	// [rc4l] uzdoom@3463b8787: MUSINFO state moved onto player_t
 
 
 #define SAVEVERSTRINGIFY2(x) #x

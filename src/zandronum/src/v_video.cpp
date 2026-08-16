@@ -148,7 +148,7 @@ extern "C" {
 DWORD Col2RGB8[65][256];
 DWORD *Col2RGB8_LessPrecision[65];
 DWORD Col2RGB8_Inverse[65][256];
-BYTE RGB32k[32][32][32];
+ColorTable32k RGB32k;
 }
 
 static DWORD Col2RGB8_2[63][256];
@@ -399,7 +399,7 @@ void DCanvas::Dim (PalEntry color, float damount, int x1, int y1, int w, int h)
 
 			bg = bg2rgb[(*spot)&0xff];
 			bg = (fg+bg) | 0x1f07c1f;
-			*spot = RGB32k[0][0][bg&(bg>>15)];
+			*spot = RGB32k.All[bg&(bg>>15)];
 			spot++;
 		}
 		spot += gap;
@@ -670,7 +670,7 @@ static void BuildTransTable (const PalEntry *palette)
 	for (r = 0; r < 32; r++)
 		for (g = 0; g < 32; g++)
 			for (b = 0; b < 32; b++)
-				RGB32k[r][g][b] = ColorMatcher.Pick ((r<<3)|(r>>2), (g<<3)|(g>>2), (b<<3)|(b>>2));
+				RGB32k.RGB[r][g][b] = ColorMatcher.Pick ((r<<3)|(r>>2), (g<<3)|(g>>2), (b<<3)|(b>>2));
 
 	int x, y;
 
@@ -1323,10 +1323,14 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 					FTextureID pic = frame->Texture[k];
 					if (pic.isValid())
 					{
-						// [ForkUnderA] 8 = HIT_Sprite, so the GL precacher builds the
-						// expanded material sprites actually render with. The stock
-						// value 5 (wall|sky) built the wrong variant; kept for mode 0.
-						hitlist[pic.GetIndex()] = FUA_CachingMode() > 0 ? 8 : 5;
+						// [ForkUnderA] The GL precacher must build the expanded material sprites
+						// actually render with. The stock value was HIT_Wall|HIT_Sky, so sprites
+						// never set HIT_Sprite and FMaterial::PrecacheGL's sprite branch never ran
+						// -- sprites were precached as walls (uzdoom@74f4ae86d names these classes).
+						// Kept behind the caching mode, which retains the stock value for mode 0.
+						hitlist[pic.GetIndex()] = FUA_CachingMode() > 0
+							? FTextureManager::HIT_Sprite
+							: (FTextureManager::HIT_Wall | FTextureManager::HIT_Sky);
 					}
 				}
 			}
@@ -1338,14 +1342,14 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 	for (i = numsectors - 1; i >= 0; i--)
 	{
 		hitlist[sectors[i].GetTexture(sector_t::floor).GetIndex()] = 
-			hitlist[sectors[i].GetTexture(sector_t::ceiling).GetIndex()] |= 2;
+			hitlist[sectors[i].GetTexture(sector_t::ceiling).GetIndex()] |= FTextureManager::HIT_Flat;
 	}
 
 	for (i = numsides - 1; i >= 0; i--)
 	{
 		hitlist[sides[i].GetTexture(side_t::top).GetIndex()] =
 		hitlist[sides[i].GetTexture(side_t::mid).GetIndex()] =
-		hitlist[sides[i].GetTexture(side_t::bottom).GetIndex()] |= 3;
+		hitlist[sides[i].GetTexture(side_t::bottom).GetIndex()] |= FTextureManager::HIT_Wall;
 	}
 
 	// Sky texture is always present.
@@ -1357,11 +1361,11 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 
 	if (sky1texture.isValid())
 	{
-		hitlist[sky1texture.GetIndex()] |= 1;
+		hitlist[sky1texture.GetIndex()] |= FTextureManager::HIT_Sky;
 	}
 	if (sky2texture.isValid())
 	{
-		hitlist[sky2texture.GetIndex()] |= 1;
+		hitlist[sky2texture.GetIndex()] |= FTextureManager::HIT_Sky;
 	}
 }
 

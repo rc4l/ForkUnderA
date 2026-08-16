@@ -217,9 +217,11 @@ void P_RemoveThing(AActor * actor);
 // so it goes third and defaults to NULL (the old behaviour).
 bool P_Thing_Raise(AActor *thing, bool byClient = false, AActor *raiser = NULL); // [BB/EP] Added 'byClient'.
 // [rc4l] uzdoom@30acb7200: per-actor teleport fog; declared here so A_Teleport can reach it.
-void P_SpawnTeleportFog(AActor *mobj, fixed_t x, fixed_t y, fixed_t z, bool beforeTele = true, bool setTarget = false);
+AActor *P_SpawnTeleportFog(AActor *mobj, fixed_t x, fixed_t y, fixed_t z, bool beforeTele = true, bool setTarget = false);
 bool P_Thing_CanRaise(AActor *thing);
 const PClass *P_GetSpawnableType(int spawnnum);
+void InitSpawnablesFromMapinfo();
+extern FClassMap StrifeTypes;
 
 //
 // P_MAPUTL
@@ -669,19 +671,6 @@ struct polyspawns_t
 	fixed_t y;
 	short angle;
 	short type;
-};
-
-enum
-{
-	PO_HEX_ANCHOR_TYPE = 3000,
-	PO_HEX_SPAWN_TYPE,
-	PO_HEX_SPAWNCRUSH_TYPE,
-
-	// [RH] Thing numbers that don't conflict with Doom things
-	PO_ANCHOR_TYPE = 9300,
-	PO_SPAWN_TYPE,
-	PO_SPAWNCRUSH_TYPE,
-	PO_SPAWNHURT_TYPE
 };
 
 extern int po_NumPolyobjs;
