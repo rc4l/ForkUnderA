@@ -749,8 +749,9 @@ struct sector_t
 	// [rc4l] uzdoom@238046655 -- every read and write of the tag goes through these, so the
 	// storage behind it can change without touching the call sites again.
 	bool HasTag(int checktag) const;
-	void SetTag(int tagnum, bool discardall = true);
-	int GetTag() const;
+	void SetMainTag(int tagnum);
+	int GetMainTag() const;
+	void ClearTags();
 	static void HashTags();
 
 	int			sky;
