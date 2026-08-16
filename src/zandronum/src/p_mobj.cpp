@@ -100,6 +100,7 @@
 #include "features/quake-movement/quakemove.h"
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
+#include "features/friendly-monsters/zx_friendlymonsters.h" // [rc4l]
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -5510,6 +5511,11 @@ void AActor::PostBeginPlay ()
 	// flag must be disabled after that.
 	if (( STFlags & STFL_RANDOMSPAWNED ) && ( STFlags & STFL_LEVELSPAWNED ))
 		STFlags &= ~STFL_LEVELSPAWNED;
+
+	// [rc4l] Monsters that arrive after sv_fua_friendlymonsters was set -- teleport ambushes,
+	// spawners, `summon` -- have to be caught here too, or the level stays peaceful only until the
+	// first closet opens. See features/friendly-monsters/.
+	zx::FriendlyMonsters_Spawned( this );
 }
 
 void AActor::MarkPrecacheSounds() const

@@ -1,4 +1,4 @@
-//
+﻿//
 // mcp_rpc.cpp -- the "programmable engine" RPC dispatch for the native MCP bridge (ENGINE-FACING).
 //
 // mcp_bridge.cpp owns the socket and queue and hands each request here on the GAME THREAD (so every
@@ -750,13 +750,62 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			return;
 		}
 		P_TeleportMove( mo, fixed_t( x ) << FRACBITS, fixed_t( y ) << FRACBITS, mo->z, true );
-		mo->z = mo->floorz;
+
+		// [rc4l] z, angle and pitch are all optional and all ABSOLUTE. Omitting z keeps the original
+		// behaviour (drop to the floor), which is what the console `warp` cheat can do and all it can
+		// do -- it is hardcoded to ONFLOORZ, so a raised viewpoint is only reachable from here.
+		double z = 0.0;
+		if ( GetFloat( args, "z", z ))
+		{
+			// Clamp into the space the pawn actually fits in, so a bad number parks the view inside
+			// geometry instead of reporting a position that renders as solid wall.
+			const fixed_t want = fixed_t( z * 65536.0 );
+			const fixed_t lo = mo->floorz;
+			fixed_t hi = mo->ceilingz - mo->height;
+			// In a gap shorter than the pawn the ceiling bound falls BELOW the floor, and clamping to
+			// it buries the view under the floor -- asking for z 200 in a low sector returned -32
+			// against a floor of -3. Where they cross, the floor wins.
+			if ( hi < lo ) hi = lo;
+			mo->z = ( want < lo ) ? lo : (( want > hi ) ? hi : want );
+		}
+		else
+		{
+			mo->z = mo->floorz;
+		}
+
+		// Degrees, with the same sign convention input.look already uses: pitch>0 looks DOWN. Assigned
+		// straight onto the pawn rather than fed through the ticcmd because those are deltas -- an
+		// absolute facing cannot be expressed as one without first knowing where you are pointing.
+		// P_PlayerThink only ever ADDS to these, so a direct write survives until real input arrives.
+		double angleDeg = 0.0, pitchDeg = 0.0;
+		if ( GetFloat( args, "angle", angleDeg ))
+		{
+			double wrapped = angleDeg - ( 360.0 * (double)(long long)( angleDeg / 360.0 ));
+			if ( wrapped < 0.0 ) wrapped += 360.0;
+			mo->angle = (angle_t)(unsigned long)( wrapped / 360.0 * 4294967296.0 );
+		}
+		if ( GetFloat( args, "pitch", pitchDeg ))
+		{
+			// Past straight up/down the view is meaningless, and the renderer is not asked to try.
+			if ( pitchDeg > 90.0 ) pitchDeg = 90.0;
+			if ( pitchDeg < -90.0 ) pitchDeg = -90.0;
+			// pitch is declared fixed_t but carries a BAM angle, and unlike `angle` it is signed
+			// (negative = up). FromSignedBits is the strong type's name for exactly that case: a
+			// plain unsigned conversion zero-extends and turns every upward pitch into a huge
+			// downward one. At +-90 the magnitude is 2^30, so int32 is not close to overflowing.
+			const int32_t bam = (int32_t)( pitchDeg / 360.0 * 4294967296.0 );
+			mo->pitch = fixed_t::FromSignedBits( (uint32_t)bam );
+		}
+
 		mo->velx = mo->vely = mo->velz = 0;
 		mo->PrevX = mo->x;
 		mo->PrevY = mo->y;
 		mo->PrevZ = mo->z;
+		const double outAngle = (double)(unsigned long)mo->angle * 360.0 / 4294967296.0;
+		const double outPitch = (double)(long long)mo->pitch * 360.0 / 4294967296.0;
 		std::string body = "{\"x\":" + I( (long long)( mo->x >> FRACBITS )) + ",\"y\":" + I( (long long)( mo->y >> FRACBITS ))
-			+ ",\"z\":" + I( (long long)( mo->z >> FRACBITS )) + ",\"sector\":" + I( (int)( mo->Sector - sectors )) + "}";
+			+ ",\"z\":" + I( (long long)( mo->z >> FRACBITS )) + ",\"sector\":" + I( (int)( mo->Sector - sectors ))
+			+ ",\"angle\":" + std::to_string( outAngle ) + ",\"pitch\":" + std::to_string( outPitch ) + "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "gl.timers" )

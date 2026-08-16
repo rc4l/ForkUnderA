@@ -74,9 +74,12 @@ const TOOLS = [
   { name: "world_sectors", description: "Query the level's sectors with specials/damage; damaging:true narrows to floors that hurt. Each row has a guaranteed-interior x,y to warp to.",
     inputSchema: { type: "object", required: ["port"], properties: {
       port: { type: "number" }, token: { type: "string" }, damaging: { type: "boolean" }, limit: { type: "number" } } } },
-  { name: "player_setpos", description: "Teleport the console player to map coordinates (single-player instances only), snapped to the floor.",
+  { name: "player_setpos", description: "Teleport the console player (single-player instances only). z, angle and pitch are optional and absolute; without z the pawn snaps to the floor. Returns where it actually landed, which differs from the request when z is clamped into the gap the pawn fits in. Prefer this over the `warp` console command, which is x/y only and always floor-snaps.",
     inputSchema: { type: "object", required: ["port", "x", "y"], properties: {
-      port: { type: "number" }, token: { type: "string" }, x: { type: "number" }, y: { type: "number" } } } },
+      port: { type: "number" }, token: { type: "string" }, x: { type: "number" }, y: { type: "number" },
+      z: { type: "number", description: "Absolute height in map units; omit to drop to the floor." },
+      angle: { type: "number", description: "Absolute facing in degrees (0 = east), wrapped into 0-360." },
+      pitch: { type: "number", description: "Absolute view pitch in degrees, clamped to +-90. POSITIVE LOOKS DOWN; use -90 to look straight up at the sky." } } } },
 ];
 
 async function callTool(name, a = {}) {
