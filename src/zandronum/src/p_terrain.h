@@ -71,6 +71,14 @@ public:
 	}
 	void Set(int index, int value)
 	{
+		// [rc4l] uzdoom@9f2b3efd1 -- a long texture name can produce an index past the end of the
+		// array, so grow it and fill the gap with 0xff (no terrain) rather than writing out of bounds.
+		if ((unsigned)index >= Types.Size())
+		{
+			int oldsize = Types.Size();
+			Resize(index + 1);
+			memset(&Types[oldsize], 0xff, (index + 1 - oldsize)*sizeof(WORD));
+		}
 		Types[index] = value;
 	}
 };
